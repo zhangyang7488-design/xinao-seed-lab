@@ -23,6 +23,7 @@ from services.agent_runtime.dispatch_economics import (
     validate_dispatch_envelope,
     validate_dispatch_route_claim,
     validate_package_batch_manifest,
+    validate_prior_accepted_ancestor_action,
 )
 from services.agent_runtime.execution_contract import (
     ATTEMPT_RECEIPT_VERSION,
@@ -462,6 +463,17 @@ def _attempt_receipt(
 ) -> dict[str, object]:
     selected = contract["selection"]
     state = "accepted" if accepted else "failed"
+    provider_path = Path(fixture["root"]) / (
+        f"native-provider-{contract['logical_operation_id']}.json"
+    )
+    provider_sha = _write_json(
+        provider_path,
+        {
+            "provider": selected["provider_id"],
+            "model": selected["model_id"],
+            "accepted": accepted,
+        },
+    )
     return {
         "schema_version": ATTEMPT_RECEIPT_VERSION,
         "contract_sha256": logical_contract_sha256(contract),
@@ -519,8 +531,8 @@ def _attempt_receipt(
             "session_id": "session-1",
         },
         "provider_contract_version": "xinao.grok.shared_execution_contract.v1",
-        "provider_evidence_ref": "D:/evidence/native-provider.json",
-        "provider_evidence_sha256": "f" * 64,
+        "provider_evidence_ref": str(provider_path),
+        "provider_evidence_sha256": provider_sha,
         "provider_evidence_valid": True,
         "replayed": False,
     }
@@ -2496,3 +2508,110 @@ def test_dispatch_route_claim_accepts_complete_legacy_shape_but_rejects_partial_
             expected_task_run_dir=partial_action["run_dir"],
             expected_run_id="run-continuity-test",
         )
+
+
+def test_accepted_ancestor_reuse_projects_zero_current_cost_and_retains_history(
+    tmp_path: Path,
+) -> None:
+    fixture = _fixture(tmp_path)
+    r1_manifest_ref, r1_envelope_ref, _ = _seal_dispatch(fixture, suffix="-r1")
+    prior_event, _, artifact_ref = _worker_event(
+        fixture,
+        package_id="p1",
+        manifest_ref=r1_manifest_ref,
+        envelope_ref=r1_envelope_ref,
+        total_tokens=100,
+        suffix="-r1",
+    )
+    prior_contract_ref = dict(prior_event["common_contract_ref"])
+    prior_attempt_ref = dict(prior_event["common_attempt_ref"])
+    prior_contract = json.loads(Path(prior_contract_ref["path"]).read_text(encoding="utf-8"))
+    prior_attempt = json.loads(Path(prior_attempt_ref["path"]).read_text(encoding="utf-8"))
+
+    r2_manifest = copy.deepcopy(fixture["manifest"])
+    r2_manifest["graph_revision"] = 2
+    r2_manifest["predecessor_manifest_ref"] = r1_manifest_ref
+    r2_package = r2_manifest["packages"][0]
+    r2_manifest["reseal_of"] = {
+        "package_id": "p1",
+        "package_identity_sha256": r2_package["package_identity_sha256"],
+        "graph_revision": 1,
+    }
+    r2_manifest["affected_cone"] = ["p1", "p2"]
+    r2_package["prior_attempt_receipt_ref"] = prior_attempt_ref
+    r2_package["prior_logical_contract_ref"] = prior_contract_ref
+    r2_manifest_ref, r2_envelope_ref, _ = _seal_dispatch(
+        fixture,
+        manifest=r2_manifest,
+        package_ids=["p1"],
+        suffix="-r2",
+    )
+    action_binding = {
+        "logical_operation_id": prior_contract["logical_operation_id"],
+        "package_input_sha256": r2_package["input_sha256"],
+        "input_sha256": r2_package["prompt_ref"]["sha256"],
+        "frozen_context_sha256": r2_package["context_sha256"],
+        "context_sha256": prior_contract["context_sha256"],
+        "rules_sha256": r2_package["rules_sha256"],
+        "package_output_contract_sha256": r2_package["output_contract_sha256"],
+        "output_contract_sha256": prior_contract["output_contract_sha256"],
+        "selection": prior_contract["selection"],
+    }
+    ancestor = validate_prior_accepted_ancestor_action(
+        current_manifest_ref=r2_manifest_ref,
+        package_id="p1",
+        prior_logical_contract_ref=prior_contract_ref,
+        expected_consumer_id=GROK_DIRECT_WORKER_POOL_CONSUMER_ID,
+        expected_action_binding=action_binding,
+    )
+    reused = build_dispatch_outcome_event(
+        event_type="worker_terminal",
+        parent_work_key=str(r2_package["parent_work_key"]),
+        work_key=str(r2_package["work_key"]),
+        package_id="p1",
+        package_manifest_ref=r2_manifest_ref,
+        dispatch_envelope_ref=r2_envelope_ref,
+        logical_operation_id=str(prior_contract["logical_operation_id"]),
+        leg="A",
+        role=str(r2_package["role"]),
+        artifact_refs=[artifact_ref],
+        common_attempt_ref=prior_attempt_ref,
+        common_contract_ref=prior_contract_ref,
+        prior_accepted_ancestor_binding=ancestor,
+    )
+
+    zero_usage = {
+        "invocation_count": 0,
+        "total_tokens": 0,
+        "accepted_tokens": 0,
+        "cancelled_tokens": 0,
+        "failed_tokens": 0,
+    }
+    assert reused["attempt_usage"] == zero_usage
+    assert reused["subject_attempt_usage"] == prior_attempt["usage"]
+    assert reused["reuse_disposition"] == "ACCEPTED_IDENTICAL_REUSE"
+    assert reused["graph_revision"] == 2
+
+    reused_path = tmp_path / "worker-event-r2-reuse.json"
+    reused_ref = {"path": str(reused_path), "sha256": _write_json(reused_path, reused)}
+    run = tmp_path / "reuse-run"
+    _write_run(
+        run,
+        [
+            _task_event(
+                phase="worker_terminal",
+                target="wk-1",
+                evidence_ref=reused_ref,
+                ordinal=1,
+            )
+        ],
+    )
+    projection = project_dispatch_outcomes(run)
+    assert projection["metrics"]["total_tokens"] == 0
+    assert projection["metrics"]["accepted_tokens"] == 0
+    assert projection["metrics"]["cancelled_tokens"] == 0
+    assert projection["metrics"]["failed_tokens"] == 0
+    assert projection["work_keys"][0]["total_tokens"] == 0
+    assert projection["work_keys"][0]["accepted_tokens"] == 0
+    assert projection["work_keys"][0]["cancelled_tokens"] == 0
+    assert projection["work_keys"][0]["failed_tokens"] == 0

@@ -33,11 +33,13 @@ from services.agent_runtime.dispatch_economics import (
     validate_dispatch_envelope,
     validate_dispatch_route_claim,
     validate_package_batch_manifest,
+    validate_prior_accepted_ancestor_action,
 )
 from services.agent_runtime.execution_contract import (
     ATTEMPT_RECEIPT_VERSION,
     LOGICAL_CONTRACT_VERSION,
     artifact_json_bytes,
+    build_common_receipt_binding,
     canonical_json_bytes,
     logical_contract_sha256,
     validate_attempt_receipt,
@@ -160,6 +162,32 @@ def _write_bytes_atomic(path: Path, raw: bytes) -> str:
 def _write_json_atomic(path: Path, value: object) -> str:
     raw = _json_bytes(value)
     return _write_bytes_atomic(path, raw)
+
+
+def _write_bytes_create_once(path: Path, raw: bytes, *, artifact_name: str) -> str:
+    """Publish an immutable operation artifact or verify the existing exact bytes."""
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = path.with_name(f".{path.name}.{os.getpid()}.{uuid.uuid4().hex}.tmp")
+    temporary.write_bytes(raw)
+    try:
+        try:
+            os.link(temporary, path)
+        except FileExistsError:
+            pass
+    finally:
+        temporary.unlink(missing_ok=True)
+    try:
+        observed = path.read_bytes()
+    except OSError as exc:
+        raise RuntimeError(f"{artifact_name} could not be read after publication") from exc
+    if observed != raw:
+        raise RuntimeError(f"{artifact_name} immutable bytes drifted")
+    return _sha256(observed)
+
+
+def _write_json_create_once(path: Path, value: object, *, artifact_name: str) -> str:
+    return _write_bytes_create_once(path, _json_bytes(value), artifact_name=artifact_name)
 
 
 def _read_json(path: Path) -> dict[str, Any]:
@@ -686,6 +714,8 @@ def _canonical_package_lane(
         "logical_effect_contract": dict(package["logical_effect_contract"]),
         "physical_consumer_id": physical_consumer_id,
         "input_sha256": str(package["input_sha256"]),
+        "input_digest_profile": "raw-bytes-sha256-v1",
+        "input_text_profile": "utf8-universal-newlines-v1",
         "context_sha256": str(package["context_sha256"]),
         "rules_sha256": str(package["rules_sha256"]),
         "rules_ref": validated_rules_ref,
@@ -717,6 +747,10 @@ def _canonical_package_lane(
         "external_research": GROK_DOCKER_PACKAGE_CAPABILITY_POLICY["external_research"],
         "memory": GROK_DOCKER_PACKAGE_CAPABILITY_POLICY["memory"],
     }
+    if package.get("prior_attempt_receipt_ref") is not None:
+        lane["prior_attempt_receipt_ref"] = dict(package["prior_attempt_receipt_ref"])
+    if package.get("prior_logical_contract_ref") is not None:
+        lane["prior_logical_contract_ref"] = dict(package["prior_logical_contract_ref"])
     if result_format == "json_object":
         schema_ref, _, schema, _ = _read_hash_bound_json_ref(
             acceptance["json_schema_ref"],
@@ -728,6 +762,47 @@ def _canonical_package_lane(
         # replacing it with a digest of a re-serialized JSON object.
         lane["result_json_schema_sha256"] = schema_ref["sha256"]
     return lane
+
+
+def _bind_canonical_package_intake(
+    lanes: list[dict[str, Any]],
+    *,
+    content_md: str,
+) -> str:
+    """Bind each lane to its own package input; caller text never shapes execution."""
+
+    canonical_intakes: list[str] = []
+    for lane in lanes:
+        refs = lane.get("input_refs")
+        if not isinstance(refs, list) or len(refs) != 1:
+            raise ValueError(
+                "Docker Grok canonical package currently requires exactly one input_ref per lane"
+            )
+        ref, _, bound_bytes = _read_hash_bound_bytes_ref(
+            refs[0],
+            label=f"package {lane.get('package_id')} input_refs[0]",
+        )
+        if ref["sha256"] != str(lane.get("input_sha256") or ""):
+            raise ValueError("Docker Grok intake bytes drifted from the canonical package")
+        try:
+            canonical_text = bound_bytes.decode("utf-8")
+        except UnicodeError as exc:
+            raise ValueError("canonical Docker Grok intake must be UTF-8") from exc
+        normalized_text = canonical_text.replace("\r\n", "\n").replace("\r", "\n")
+        lane["_canonical_intake"] = normalized_text
+        canonical_intakes.append(normalized_text)
+
+    # A single-package caller is expected to present the same input and is
+    # rejected before any provider process if it drifts.  Multi-package
+    # batches have no single caller-shaped intake; every lane consumes only
+    # its own sealed input above.
+    if len(canonical_intakes) == 1 and content_md != canonical_intakes[0]:
+        raise ValueError("Docker Grok caller content drifted from hash-bound package input")
+    return (
+        canonical_intakes[0]
+        if len(canonical_intakes) == 1
+        else "\n".join(f"package_input_sha256={lane['input_sha256']}" for lane in lanes)
+    )
 
 
 def _reject_canonical_caller_drift(
@@ -762,6 +837,8 @@ def _reject_canonical_caller_drift(
         "logical_consumer_id",
         "logical_effect_contract",
         "physical_consumer_id",
+        "input_digest_profile",
+        "input_text_profile",
         "rules_ref",
         "allowed_output_root",
         "planning",
@@ -981,6 +1058,7 @@ def _operation_id(
     min_result_chars: int = 1,
     required_result_markers: tuple[str, ...] = (),
     route_choice_sha256: str = "",
+    dispatch_task_run_id: str = "",
 ) -> str:
     identity = {
         "lane_id": lane_id,
@@ -1021,6 +1099,7 @@ def _operation_id(
             work_key=work_key,
             package_manifest_sha256=package_manifest_sha256,
             route_choice_sha256=route_choice_sha256,
+            dispatch_task_run_id=dispatch_task_run_id,
             package_attempt_identity_version="xinao.grok_package_attempt.v1",
         )
     raw = _json_bytes(identity)
@@ -1574,6 +1653,119 @@ def _bind_replay_capability_observation(
     }
 
 
+def _bind_current_canonical_carrier(
+    result: dict[str, Any],
+    lane: dict[str, Any],
+) -> dict[str, Any]:
+    """Rebind an accepted result to the exact current, already-validated carrier."""
+
+    return {
+        **result,
+        "work_key": str(lane.get("work_key") or ""),
+        "package_id": str(lane.get("package_id") or ""),
+        "package_manifest_ref": str(lane.get("package_manifest_ref") or ""),
+        "package_manifest_sha256": str(lane.get("package_manifest_sha256") or ""),
+        "dispatch_envelope_ref": str(lane.get("dispatch_envelope_ref") or ""),
+        "dispatch_envelope_sha256": str(lane.get("dispatch_envelope_sha256") or ""),
+        "dispatch_route_claim_ref": str(lane.get("dispatch_route_claim_ref") or ""),
+        "dispatch_task_run_dir": str(lane.get("dispatch_task_run_dir") or ""),
+        "dispatch_task_run_id": str(lane.get("dispatch_task_run_id") or ""),
+        "package_seal_sha256": str(lane.get("package_seal_sha256") or ""),
+    }
+
+
+def _prior_accepted_ancestor_lane(
+    *,
+    lane: dict[str, Any],
+    requested_model: str,
+    prompt_sha256: str,
+    execution_prompt_sha256: str,
+    current_operation_id: str,
+    current_manifest_ref: dict[str, str],
+    expected_provider_selection: dict[str, str],
+    model_capabilities: dict[str, Any],
+) -> dict[str, Any] | None:
+    """Reuse one accepted strict ancestor without treating it as the current carrier."""
+
+    prior_attempt_raw = lane.get("prior_attempt_receipt_ref")
+    prior_contract_raw = lane.get("prior_logical_contract_ref")
+    if prior_attempt_raw is None and prior_contract_raw is None:
+        return None
+    if prior_attempt_raw is None or prior_contract_raw is None:
+        raise ValueError("Docker Grok prior reuse requires both attempt and logical-contract refs")
+    prior_contract_ref, prior_contract_path, prior_contract, _ = _read_hash_bound_json_ref(
+        prior_contract_raw,
+        label="prior_logical_contract_ref",
+    )
+    prior_attempt_ref, prior_attempt_path, _, _ = _read_hash_bound_json_ref(
+        prior_attempt_raw,
+        label="prior_attempt_receipt_ref",
+    )
+    expected_action_binding = {
+        "logical_operation_id": str(prior_contract.get("logical_operation_id") or ""),
+        "package_input_sha256": str(lane.get("input_sha256") or ""),
+        "input_sha256": str((lane.get("prompt_ref") or {}).get("sha256") or ""),
+        "frozen_context_sha256": str(lane.get("context_sha256") or ""),
+        "context_sha256": str(prior_contract.get("context_sha256") or ""),
+        "rules_sha256": str(lane.get("rules_sha256") or ""),
+        "package_output_contract_sha256": str(lane.get("output_contract_sha256") or ""),
+        "output_contract_sha256": str(prior_contract.get("output_contract_sha256") or ""),
+        "selection": expected_provider_selection,
+    }
+    ancestor_binding = validate_prior_accepted_ancestor_action(
+        current_manifest_ref=current_manifest_ref,
+        package_id=str(lane.get("package_id") or ""),
+        prior_logical_contract_ref=prior_contract_ref,
+        expected_consumer_id=GROK_DOCKER_CONSUMER_ID,
+        expected_action_binding=expected_action_binding,
+        path_resolver=_map_host_path_to_container,
+    )
+    prior_operation_id = str(prior_contract.get("logical_operation_id") or "")
+    prior_manifest_path = prior_contract_path.parent / "manifest.json"
+    prior_manifest = _read_json(prior_manifest_path)
+    cached = _cached_lane(
+        prior_manifest_path,
+        operation_id=prior_operation_id,
+        requested_model=requested_model,
+        prompt_sha256=prompt_sha256,
+        execution_prompt_sha256=execution_prompt_sha256,
+        operation_spec_sha256=str(prior_manifest.get("operation_spec_sha256") or ""),
+    )
+    if cached is None:
+        raise DockerGrokPermanentError(
+            "accepted ancestor has no intact reusable Docker Grok operation"
+        )
+    cached_contract_path = Path(str(cached.get("cross_seam_logical_contract_ref") or "")).resolve()
+    cached_attempt_path = Path(str(cached.get("cross_seam_attempt_receipt_ref") or "")).resolve()
+    if (
+        cached.get("cross_seam_logical_contract") != prior_contract
+        or cached_contract_path != prior_contract_path.resolve()
+        or cached_attempt_path != prior_attempt_path.resolve()
+        or cached.get("cross_seam_logical_contract_artifact_sha256") != prior_contract_ref["sha256"]
+        or cached.get("cross_seam_attempt_receipt_sha256") != prior_attempt_ref["sha256"]
+        or cached.get("package_manifest_sha256")
+        != ancestor_binding["subject_manifest_ref"]["sha256"]
+        or cached.get("work_key") != lane.get("work_key")
+        or cached.get("package_id") != lane.get("package_id")
+    ):
+        raise DockerGrokPermanentError(
+            "accepted ancestor Docker Grok operation disagrees with the validated action"
+        )
+    reused = _bind_current_canonical_carrier(
+        _bind_replay_capability_observation(cached, model_capabilities),
+        lane,
+    )
+    reused.update(
+        {
+            "prior_accepted_ancestor_binding": ancestor_binding,
+            "terminal_record_id": current_operation_id,
+            "replayed": True,
+            "reuse_disposition": "ACCEPTED_IDENTICAL_REUSE",
+        }
+    )
+    return reused
+
+
 async def _communicate_with_heartbeats(
     process: asyncio.subprocess.Process,
     *,
@@ -1931,6 +2123,9 @@ async def _execute_lane_locked(
             if canonical_package_mode and isinstance(route_choice, dict)
             else ""
         ),
+        dispatch_task_run_id=(
+            str(lane.get("dispatch_task_run_id") or "") if canonical_package_mode else ""
+        ),
     )
     common_output_contract_sha256 = _sha256(
         _json_bytes(
@@ -1964,6 +2159,35 @@ async def _execute_lane_locked(
     logical_workflow_id = (
         f"package-attempt:{operation_id}" if canonical_package_mode else workflow_id
     )
+    expected_provider_selection: dict[str, str] = {}
+    if canonical_package_mode:
+        dispatch_selection = lane.get("dispatch_selection")
+        if not isinstance(dispatch_selection, dict) or not isinstance(route_adapter, dict):
+            raise ValueError("Docker Grok canonical dispatch binding is missing")
+        expected_provider_selection = {
+            "provider_id": str(dispatch_selection.get("provider_id") or ""),
+            "profile_ref": str(dispatch_selection.get("profile_ref") or ""),
+            "model_id": str(dispatch_selection.get("model_id") or ""),
+            "transport_id": str(route_adapter.get("provider_transport_id") or ""),
+            "capability_binding_sha256": str(
+                route_adapter.get("provider_capability_binding_sha256") or ""
+            ),
+        }
+        prior_reuse = _prior_accepted_ancestor_lane(
+            lane=lane,
+            requested_model=model,
+            prompt_sha256=prompt_sha256,
+            execution_prompt_sha256=execution_prompt_sha256,
+            current_operation_id=operation_id,
+            current_manifest_ref={
+                "path": package_manifest_ref,
+                "sha256": package_manifest_sha256,
+            },
+            expected_provider_selection=expected_provider_selection,
+            model_capabilities=model_capabilities,
+        )
+        if prior_reuse is not None:
+            return prior_reuse
     logical_contract = build_grok_logical_contract(
         workflow_id=logical_workflow_id,
         lane_id=lane_id,
@@ -1995,16 +2219,6 @@ async def _execute_lane_locked(
         ),
     )
     if canonical_package_mode:
-        dispatch_selection = lane.get("dispatch_selection")
-        if not isinstance(dispatch_selection, dict) or not isinstance(route_adapter, dict):
-            raise ValueError("Docker Grok canonical dispatch binding is missing")
-        expected_provider_selection = {
-            "provider_id": dispatch_selection.get("provider_id"),
-            "profile_ref": dispatch_selection.get("profile_ref"),
-            "model_id": dispatch_selection.get("model_id"),
-            "transport_id": route_adapter.get("provider_transport_id"),
-            "capability_binding_sha256": route_adapter.get("provider_capability_binding_sha256"),
-        }
         if logical_contract["selection"] != expected_provider_selection:
             raise ValueError("Docker Grok logical contract drifted from route-to-provider adapter")
     cross_seam_contract_sha256 = logical_contract_sha256(logical_contract)
@@ -2064,16 +2278,29 @@ async def _execute_lane_locked(
                 "package_manifest_sha256": package_manifest_sha256,
                 "dispatch_envelope_ref": str(lane.get("dispatch_envelope_ref") or ""),
                 "dispatch_envelope_sha256": str(lane.get("dispatch_envelope_sha256") or ""),
+                "dispatch_task_run_dir": str(lane.get("dispatch_task_run_dir") or ""),
+                "dispatch_task_run_id": str(lane.get("dispatch_task_run_id") or ""),
                 "package_seal_sha256": str(lane.get("package_seal_sha256") or ""),
             }
         )
     operation_spec_sha256 = _sha256(_json_bytes(operation_spec))
     if (
-        _write_json_atomic(logical_contract_path, logical_contract)
+        _write_json_create_once(
+            logical_contract_path,
+            logical_contract,
+            artifact_name="cross-seam logical contract",
+        )
         != logical_contract_artifact_sha256
     ):
         raise RuntimeError("cross-seam logical contract artifact hash drifted")
-    if _write_json_atomic(operation_spec_path, operation_spec) != operation_spec_sha256:
+    if (
+        _write_json_create_once(
+            operation_spec_path,
+            operation_spec,
+            artifact_name="Docker Grok operation-spec",
+        )
+        != operation_spec_sha256
+    ):
         raise RuntimeError("Docker Grok operation-spec artifact hash drifted")
     cached = _cached_lane(
         operation_manifest,
@@ -2084,7 +2311,10 @@ async def _execute_lane_locked(
         operation_spec_sha256=operation_spec_sha256,
     )
     if cached is not None:
-        return _bind_replay_capability_observation(cached, model_capabilities)
+        replayed = _bind_replay_capability_observation(cached, model_capabilities)
+        return (
+            _bind_current_canonical_carrier(replayed, lane) if canonical_package_mode else replayed
+        )
     previous_manifest = _read_json(operation_manifest)
     prior_invocation_evidence = [
         dict(item)
@@ -2575,17 +2805,7 @@ async def _execute_lane_locked(
         "cross_seam_attempt_receipt_sha256": attempt_receipt_sha256,
     }
     if canonical_package_mode:
-        lane_result.update(
-            {
-                "work_key": effective_work_key,
-                "package_id": str(lane.get("package_id") or ""),
-                "package_manifest_ref": package_manifest_ref,
-                "package_manifest_sha256": package_manifest_sha256,
-                "dispatch_envelope_ref": str(lane.get("dispatch_envelope_ref") or ""),
-                "dispatch_envelope_sha256": str(lane.get("dispatch_envelope_sha256") or ""),
-                "package_seal_sha256": str(lane.get("package_seal_sha256") or ""),
-            }
-        )
+        lane_result = _bind_current_canonical_carrier(lane_result, lane)
     if lane.get("correlation_id"):
         lane_result["correlation_id"] = str(lane["correlation_id"])
     if lane.get("parent_operation_id"):
@@ -2710,6 +2930,10 @@ async def run_docker_native_grok_fanin(
             dispatch_task_run_id=dispatch_task_run_id,
             ready_frontier=ready_frontier,
         )
+        content_md = _bind_canonical_package_intake(
+            lanes,
+            content_md=content_md,
+        )
     else:
         raw_lanes = ready_frontier if isinstance(ready_frontier, list) else []
         lanes = [dict(item) for item in raw_lanes if isinstance(item, dict)]
@@ -2817,7 +3041,11 @@ async def run_docker_native_grok_fanin(
                 root=root,
                 workflow_id=workflow_id,
                 lane=lane,
-                intake=content_md,
+                intake=(
+                    str(lane.get("_canonical_intake") or "")
+                    if canonical_package_mode
+                    else content_md
+                ),
             )
         except DockerGrokTransientError:
             raise
@@ -2948,18 +3176,22 @@ async def run_docker_native_grok_fanin(
                 "successful Grok lane failed common receipt validation: "
                 + ",".join(verdict.reason_codes)
             )
-        receipt_binding = {
-            "lane_id": str(item.get("lane_id") or ""),
-            "contract_sha256": logical_contract_sha256(logical_contract),
-            "attempt_receipt_sha256": str(item.get("cross_seam_attempt_receipt_sha256") or ""),
-        }
-        if canonical_package_mode:
-            receipt_binding.update(
-                {
-                    "work_key": str(item.get("work_key") or ""),
-                    "package_manifest_sha256": str(item.get("package_manifest_sha256") or ""),
-                }
-            )
+        receipt_binding = build_common_receipt_binding(
+            logical_contract,
+            lane_id=str(item.get("lane_id") or ""),
+            attempt_receipt_sha256=str(item.get("cross_seam_attempt_receipt_sha256") or ""),
+            attempt_receipt=attempt_receipt,
+            work_key=str(item.get("work_key") or "") if canonical_package_mode else "",
+            package_manifest_sha256=(
+                str(item.get("package_manifest_sha256") or "") if canonical_package_mode else ""
+            ),
+            prior_accepted_ancestor_binding=(
+                item.get("prior_accepted_ancestor_binding")
+                if canonical_package_mode
+                and isinstance(item.get("prior_accepted_ancestor_binding"), dict)
+                else None
+            ),
+        )
         common_receipt_bindings.append(receipt_binding)
     common_receipt_set_sha256 = _sha256(canonical_json_bytes(common_receipt_bindings))
     observed_backend_models = sorted(
@@ -3000,6 +3232,21 @@ async def run_docker_native_grok_fanin(
     token_accounting["accepted_total"] = token_accounting["accepted_tokens"]
     token_accounting["cancelled_total"] = token_accounting["cancelled_tokens"]
     token_accounting["failed_total"] = token_accounting["failed_tokens"]
+    current_lane_accounting = [
+        item["invocation_accounting"]
+        for item in results
+        if item.get("replayed") is not True and isinstance(item.get("invocation_accounting"), dict)
+    ]
+    current_dispatch_usage_delta = {
+        key: sum(int(item.get(key) or 0) for item in current_lane_accounting)
+        for key in (
+            "invocation_count",
+            "total_tokens",
+            "accepted_tokens",
+            "cancelled_tokens",
+            "failed_tokens",
+        )
+    }
     manifest = {
         "schema_version": FANIN_SCHEMA_VERSION,
         "execution_contract_version": EXECUTION_CONTRACT_VERSION,
@@ -3035,6 +3282,7 @@ async def run_docker_native_grok_fanin(
         "execution_location": "docker:houtai-gongren",
         "container_id": socket.gethostname(),
         "token_accounting": token_accounting,
+        "current_dispatch_usage_delta": current_dispatch_usage_delta,
         "completion_claim_allowed": False,
         "supervisor_worker_decision_sha256": decision_sha256,
     }
@@ -3048,6 +3296,7 @@ async def run_docker_native_grok_fanin(
                 "package_manifest_sha256": package_sha256,
                 "dispatch_envelope_ref": package_binding["dispatch_envelope_ref"]["path"],
                 "dispatch_envelope_sha256": package_binding["dispatch_envelope_sha256"],
+                "dispatch_task_run_id": package_binding["dispatch_task_run_id"],
                 "route_choice": package_binding["route_choice"],
                 "route_adapter": package_binding["route_adapter"],
             }
@@ -3075,6 +3324,7 @@ async def run_docker_native_grok_fanin(
         "succeeded": len(successful),
         "failed": len(results) - len(successful),
         "token_accounting": token_accounting,
+        "current_dispatch_usage_delta": current_dispatch_usage_delta,
         "cross_seam_contract_version": LOGICAL_CONTRACT_VERSION,
         "cross_seam_attempt_receipt_version": ATTEMPT_RECEIPT_VERSION,
         "cross_seam_receipt_set_sha256": common_receipt_set_sha256,
@@ -3099,8 +3349,11 @@ async def run_docker_native_grok_fanin(
     total_tokens = int(token_accounting["total_tokens"])
     return {
         "grok_fanin_ok": full_success,
+        "grok_canonical_dispatch": canonical_package_mode,
         "grok_fanin_manifest_ref": str(manifest_path),
+        "grok_fanin_manifest_sha256": manifest_sha256,
         "grok_fanin_evidence_ref": str(manifest_path),
+        "grok_fanin_evidence_sha256": manifest_sha256,
         "grok_fanin_lane_count": len(results),
         "grok_fanin_lane_modes": [str(item.get("mode") or "") for item in results],
         "grok_fanin_model_identity_ok": manifest["model_identity_ok"],
@@ -3117,6 +3370,7 @@ async def run_docker_native_grok_fanin(
         "grok_failed_tokens": int(token_accounting["failed_tokens"]),
         "grok_invocation_count": int(token_accounting["invocation_count"]),
         "grok_token_accounting": token_accounting,
+        "grok_current_dispatch_usage_delta": current_dispatch_usage_delta,
         "grok_execution_location": "docker:houtai-gongren",
         "grok_container_id": socket.gethostname(),
         "supervisor_worker_decision_sha256": decision_sha256,

@@ -11,6 +11,7 @@ import subprocess
 import sys
 import tempfile
 from pathlib import Path
+from typing import Callable
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
@@ -20,6 +21,29 @@ from services.agent_runtime.dispatch_economics import (  # noqa: E402
     DispatchEconomicsError,
     build_dispatch_outcome_event,
 )
+
+WINDOWLESS_CREATIONFLAGS = getattr(subprocess, "CREATE_NO_WINDOW", 0) if os.name == "nt" else 0
+
+
+def _runtime_path_resolver(runtime_root: Path) -> Callable[[str], Path]:
+    """Map the container's immutable /evidence carrier to the exact host runtime."""
+
+    root = runtime_root.resolve(strict=True)
+
+    def resolve(logical: str) -> Path:
+        text = str(logical or "").strip()
+        normalized = text.replace("\\", "/")
+        if normalized == "/evidence" or normalized.startswith("/evidence/"):
+            relative = normalized.removeprefix("/evidence").lstrip("/")
+            parts = tuple(part for part in relative.split("/") if part)
+            if any(part in {".", ".."} for part in parts):
+                raise ValueError("container evidence path cannot traverse runtime root")
+            candidate = (root.joinpath(*parts)).resolve(strict=False)
+            candidate.relative_to(root)
+            return candidate
+        return Path(text)
+
+    return resolve
 
 
 def _atomic_json(path: Path, value: object) -> str:
@@ -54,13 +78,17 @@ def main() -> int:
     parser.add_argument("--task-run-cli", type=Path, required=True)
     parser.add_argument("--task-run-root", type=Path, required=True)
     parser.add_argument("--task-run-id", required=True)
+    parser.add_argument("--runtime-root", type=Path)
     parser.add_argument("--actor", default="codex-owner")
     args = parser.parse_args()
     try:
         request = json.loads(args.request.read_text(encoding="utf-8-sig"))
         if not isinstance(request, dict):
             raise TypeError("request must be an object")
-        event = build_dispatch_outcome_event(**request)
+        path_resolver = (
+            _runtime_path_resolver(args.runtime_root) if args.runtime_root is not None else None
+        )
+        event = build_dispatch_outcome_event(**request, path_resolver=path_resolver)
         event_sha = _atomic_json(args.output, event)
         phase = str(event["event_type"])
         parent_work_key = str(event["parent_work_key"])
@@ -114,6 +142,7 @@ def main() -> int:
             text=True,
             encoding="utf-8",
             errors="replace",
+            creationflags=WINDOWLESS_CREATIONFLAGS,
         )
         if completed.returncode != 0:
             raise RuntimeError(

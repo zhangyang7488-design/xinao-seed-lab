@@ -13,6 +13,7 @@ from services.agent_runtime.execution_contract import (
     ATTEMPT_RECEIPT_VERSION,
     LOGICAL_CONTRACT_VERSION,
     artifact_json_bytes,
+    build_common_receipt_binding,
     canonical_json_bytes,
     logical_contract_sha256,
 )
@@ -543,6 +544,7 @@ def _attested_grok_manifest(
     *,
     workflow_id: str = "parent-wf",
     model: str = COMPOSER_MODEL,
+    canonical_package_mode: bool = False,
 ) -> dict:
     backend_models = expected_docker_grok_backend_models(model)
     identity_binding = grok_docker_model_identity_binding(model)
@@ -555,15 +557,37 @@ def _attested_grok_manifest(
         )
         for lane_id, mode in lanes
     ]
+    if canonical_package_mode:
+        for lane in lane_payloads:
+            lane["work_key"] = lane["cross_seam_logical_contract"]["work_key"]
+            lane["package_manifest_sha256"] = "d" * 64
+            lane["dispatch_envelope_sha256"] = "9" * 64
+            lane["cross_seam_logical_contract"]["task_contract_ref"] = (
+                "D:/canonical-package.json#sha256=" + "d" * 64
+            )
+            lane["cross_seam_attempt_receipt"]["contract_sha256"] = logical_contract_sha256(
+                lane["cross_seam_logical_contract"]
+            )
+            lane["cross_seam_attempt_receipt_sha256"] = hashlib.sha256(
+                artifact_json_bytes(lane["cross_seam_attempt_receipt"])
+            ).hexdigest()
+            lane["cross_seam_contract_sha256"] = logical_contract_sha256(
+                lane["cross_seam_logical_contract"]
+            )
     receipt_bindings = [
-        {
-            "lane_id": lane["lane_id"],
-            "contract_sha256": lane["cross_seam_contract_sha256"],
-            "attempt_receipt_sha256": lane["cross_seam_attempt_receipt_sha256"],
-        }
+        build_common_receipt_binding(
+            lane["cross_seam_logical_contract"],
+            lane_id=lane["lane_id"],
+            attempt_receipt_sha256=lane["cross_seam_attempt_receipt_sha256"],
+            attempt_receipt=lane["cross_seam_attempt_receipt"],
+            work_key=lane.get("work_key", "") if canonical_package_mode else "",
+            package_manifest_sha256=(
+                lane.get("package_manifest_sha256", "") if canonical_package_mode else ""
+            ),
+        )
         for lane in lane_payloads
     ]
-    return {
+    manifest = {
         "schema_version": "xinao.grok.temporal_acpx_fanin.v2",
         "execution_contract_version": GROK_EXECUTION_CONTRACT_VERSION,
         "cross_seam_contract_version": LOGICAL_CONTRACT_VERSION,
@@ -598,6 +622,12 @@ def _attested_grok_manifest(
         },
         "intake_sha256": hashlib.sha256(intake.read_bytes()).hexdigest(),
     }
+    if canonical_package_mode:
+        manifest["package_contract_mode"] = "xinao.worker_package_batch.v3"
+        manifest["package_manifest_sha256"] = "d" * 64
+        manifest["dispatch_envelope_sha256"] = "9" * 64
+        manifest["canonical_work_keys"] = sorted(str(lane["work_key"]) for lane in lane_payloads)
+    return manifest
 
 
 def test_docker_grok_cli_parser_requires_observed_composer_and_real_usage() -> None:
@@ -1514,6 +1544,8 @@ def test_docker_grok_leg_b_rechecks_live_package_guard_after_route_claim(
     )
     with pytest.raises(ValueError, match="no longer model-start eligible"):
         docker_worker._revalidate_canonical_route_claim(lane)
+
+
 def test_docker_grok_leg_b_rejects_rules_ref_drift_before_provider(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -1576,6 +1608,42 @@ def test_docker_grok_leg_b_rejects_caller_identity_drift_before_provider(
                 input_path=fixture["input_path"],
                 content_md="bounded\n",
                 ready_frontier=[{"work_key": "caller-forged-work-key"}],
+                dispatch_envelope_ref=fixture["envelope_ref"],
+                dispatch_route_claim_ref=fixture["route_claim_ref"],
+                dispatch_task_run_dir=fixture["action"]["run_dir"],
+                dispatch_task_run_id="run-continuity-test",
+            )
+        )
+
+    assert provider_calls == []
+    assert not (tmp_path / "runtime" / "state" / "grok_docker_native").exists()
+
+
+def test_docker_grok_leg_b_rejects_unbound_caller_intake_before_provider(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import asyncio
+
+    from services.agent_runtime import grok_build_docker_worker as docker_worker
+
+    fixture = _docker_leg_b_package_fixture(tmp_path)
+    provider_calls: list[dict] = []
+
+    async def forbidden_provider(**kwargs: object) -> dict:
+        provider_calls.append(dict(kwargs))
+        raise AssertionError("provider ran with caller intake outside the package seal")
+
+    monkeypatch.setattr(docker_worker, "docker_native_grok_enabled", lambda: True)
+    monkeypatch.setattr(docker_worker, "_map_host_path_to_container", fixture["resolver"])
+    monkeypatch.setattr(docker_worker, "_execute_lane", forbidden_provider)
+    with pytest.raises(ValueError, match="caller content drifted"):
+        asyncio.run(
+            docker_worker.run_docker_native_grok_fanin(
+                runtime_root=tmp_path / "runtime",
+                workflow_id="wf-leg-b-intake-drift",
+                input_path=fixture["input_path"],
+                content_md="different caller input\n",
                 dispatch_envelope_ref=fixture["envelope_ref"],
                 dispatch_route_claim_ref=fixture["route_claim_ref"],
                 dispatch_task_run_dir=fixture["action"]["run_dir"],
@@ -2266,9 +2334,10 @@ def test_docker_grok_receives_current_project_rules_read_only() -> None:
         "_revalidate_canonical_route_claim(lane)"
     ) < execution_source.index("_discover_model_capabilities")
     process_start = execution_source.index("asyncio.create_subprocess_exec")
-    assert execution_source[:process_start].rindex(
-        "_revalidate_canonical_route_claim(lane)"
-    ) < process_start
+    assert (
+        execution_source[:process_start].rindex("_revalidate_canonical_route_claim(lane)")
+        < process_start
+    )
 
 
 def test_docker_grok_running_process_stops_when_live_route_guard_freezes() -> None:
@@ -2319,6 +2388,7 @@ def test_canonical_package_attempt_identity_is_stable_across_workflow_carriers()
         "package_manifest_sha256": "b" * 64,
         "contract_id": "package-identity-p1",
         "route_choice_sha256": "c" * 64,
+        "dispatch_task_run_id": "run-parent",
     }
     first = _operation_id(
         "workflow-a",
@@ -2347,8 +2417,18 @@ def test_canonical_package_attempt_identity_is_stable_across_workflow_carriers()
         parent_operation_id="parent-b",
         **{**common, "route_choice_sha256": "e" * 64},
     )
+    changed_task_run = _operation_id(
+        "workflow-b",
+        "p1",
+        "d" * 64,
+        "grok-4.5",
+        correlation_id="correlation-b",
+        parent_operation_id="parent-b",
+        **{**common, "dispatch_task_run_id": "run-other"},
+    )
     assert first == second
     assert first != changed_route
+    assert first != changed_task_run
     assert 'root.parent / "_canonical_package_attempts"' in inspect.getsource(_execute_lane)
 
 
@@ -2629,6 +2709,339 @@ def test_docker_native_manifest_is_consumed_without_host_prefan_marker(tmp_path:
     assert lane["worker_lane_model"] == COMPOSER_MODEL
     assert lane["worker_lane_adapter"] == "grok_build_cli_docker_native"
     assert lane["grok_execution_location"] == "docker:houtai-gongren"
+
+
+def test_canonical_package_fanin_uses_one_shared_receipt_set_binding(tmp_path: Path) -> None:
+    from services.agent_runtime.integrated_bus_graph import _grok_fanin_worker_lane
+
+    runtime = tmp_path / "runtime"
+    input_path = runtime / "input.md"
+    input_path.parent.mkdir(parents=True)
+    input_path.write_text("canonical package intake", encoding="utf-8")
+    manifest_path = runtime / "fanin.json"
+    manifest = _attested_grok_manifest(
+        input_path,
+        [("native", "audit")],
+        workflow_id="wf",
+        canonical_package_mode=True,
+    )
+    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+    state = {
+        "runtime_root": str(runtime),
+        "repo_root": str(REPO_ROOT),
+        "workflow_id": "wf",
+        "input_path": str(input_path),
+        "content_md": "canonical package intake",
+        "grok_fanin_manifest_ref": str(manifest_path),
+        "grok_fanin_manifest_sha256": hashlib.sha256(manifest_path.read_bytes()).hexdigest(),
+    }
+
+    accepted = _grok_fanin_worker_lane(state)
+    assert accepted is not None
+    assert accepted["worker_lane_ok"] is True
+
+    manifest["cross_seam_receipt_bindings"][0].pop("work_key")
+    manifest["cross_seam_receipt_set_sha256"] = hashlib.sha256(
+        canonical_json_bytes(manifest["cross_seam_receipt_bindings"])
+    ).hexdigest()
+    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+    state["grok_fanin_manifest_sha256"] = hashlib.sha256(manifest_path.read_bytes()).hexdigest()
+    rejected = _grok_fanin_worker_lane(state)
+    assert rejected is not None
+    assert rejected["worker_lane_ok"] is False
+    assert rejected["worker_lane_named_blocker"] == "GROK_FANIN_COMMON_RECEIPT_SET_INVALID"
+
+
+def test_canonical_package_fanin_rejects_manifest_byte_drift(tmp_path: Path) -> None:
+    from services.agent_runtime.integrated_bus_graph import _grok_fanin_worker_lane
+
+    runtime = tmp_path / "runtime"
+    input_path = runtime / "input.md"
+    input_path.parent.mkdir(parents=True)
+    input_path.write_text("canonical package intake", encoding="utf-8")
+    manifest_path = runtime / "fanin.json"
+    manifest = _attested_grok_manifest(
+        input_path,
+        [("native", "audit")],
+        workflow_id="wf",
+        canonical_package_mode=True,
+    )
+    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+    state = {
+        "runtime_root": str(runtime),
+        "repo_root": str(REPO_ROOT),
+        "workflow_id": "wf",
+        "input_path": str(input_path),
+        "content_md": "canonical package intake",
+        "grok_fanin_manifest_ref": str(manifest_path),
+        "grok_fanin_manifest_sha256": hashlib.sha256(manifest_path.read_bytes()).hexdigest(),
+    }
+    manifest["generated_at"] = "mutated-after-producer"
+    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+
+    rejected = _grok_fanin_worker_lane(state)
+    assert rejected is not None
+    assert rejected["worker_lane_ok"] is False
+    assert rejected["worker_lane_named_blocker"] == "GROK_FANIN_MANIFEST_HASH_MISMATCH"
+
+
+@pytest.mark.parametrize(
+    ("mutation", "expected_blocker"),
+    [
+        ("empty_task_contract", "GROK_FANIN_COMMON_RECEIPT_INVALID"),
+        ("receipt_lane_drift", "GROK_FANIN_COMMON_RECEIPT_INVALID"),
+        ("lane_package_hash_drift", "GROK_FANIN_CANONICAL_PACKAGE_BINDING_INVALID"),
+        ("canonical_work_keys_drift", "GROK_FANIN_CANONICAL_PACKAGE_BINDING_INVALID"),
+    ],
+)
+def test_canonical_package_fanin_rejects_semantic_binding_drift(
+    tmp_path: Path,
+    mutation: str,
+    expected_blocker: str,
+) -> None:
+    from services.agent_runtime.integrated_bus_graph import _grok_fanin_worker_lane
+
+    runtime = tmp_path / "runtime"
+    input_path = runtime / "input.md"
+    input_path.parent.mkdir(parents=True)
+    input_path.write_text("canonical package intake", encoding="utf-8")
+    manifest_path = runtime / "fanin.json"
+    manifest = _attested_grok_manifest(
+        input_path,
+        [("native", "audit")],
+        workflow_id="wf",
+        canonical_package_mode=True,
+    )
+    lane = manifest["lanes"][0]
+    if mutation == "empty_task_contract":
+        lane["cross_seam_logical_contract"]["task_contract_ref"] = ""
+    elif mutation == "receipt_lane_drift":
+        lane["cross_seam_attempt_receipt"]["lineage"]["lane_id"] = "other-lane"
+    elif mutation == "lane_package_hash_drift":
+        lane["package_manifest_sha256"] = "e" * 64
+    else:
+        manifest["canonical_work_keys"] = ["other-work"]
+    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+    state = {
+        "runtime_root": str(runtime),
+        "repo_root": str(REPO_ROOT),
+        "workflow_id": "wf",
+        "input_path": str(input_path),
+        "content_md": "canonical package intake",
+        "grok_fanin_manifest_ref": str(manifest_path),
+        "grok_fanin_manifest_sha256": hashlib.sha256(manifest_path.read_bytes()).hexdigest(),
+    }
+
+    rejected = _grok_fanin_worker_lane(state)
+    assert rejected is not None
+    assert rejected["worker_lane_ok"] is False
+    assert rejected["worker_lane_named_blocker"] == expected_blocker
+
+
+def test_temporal_enrichment_rejects_stale_cross_workflow_latest(tmp_path: Path) -> None:
+    from services.agent_runtime.integrated_bus_runner import (
+        _enrich_result_from_invoke_evidence,
+        _enrich_result_from_parallel_evidence,
+    )
+
+    runtime = tmp_path / "runtime"
+    parallel_dir = runtime / "state" / "integrated_bus_parallel"
+    parallel_dir.mkdir(parents=True)
+    (parallel_dir / "latest.json").write_text(
+        json.dumps(
+            {
+                "workflow_id": "old-workflow",
+                "parallel_lane_models": [
+                    {
+                        "lane_id": 0,
+                        "lane_role": "parallel_draft_slice",
+                        "model": "qwen3.6-flash",
+                        "model_invocation_performed": True,
+                    }
+                ],
+                "langgraph_send_wired": True,
+            }
+        ),
+        encoding="utf-8",
+    )
+    litellm_dir = runtime / "state" / "litellm"
+    litellm_dir.mkdir(parents=True)
+    (litellm_dir / "latest.json").write_text(
+        json.dumps(
+            {
+                "workflow_id": "old-workflow",
+                "invoke_ok": True,
+                "adapter": "litellm.completion",
+            }
+        ),
+        encoding="utf-8",
+    )
+    current = {
+        "workflow_id": "current-workflow",
+        "parallel_semantic": "rolling",
+        "parallel_width_n": 1,
+        "parallel_succeeded": 1,
+        "langgraph_send_wired": False,
+        "litellm_completion_via": "grok_fanin_provider_trace",
+        "gateway_trace_ok": True,
+    }
+
+    enriched = _enrich_result_from_parallel_evidence(
+        current,
+        runtime_root=runtime,
+        workflow_id="current-workflow",
+    )
+    enriched = _enrich_result_from_invoke_evidence(
+        enriched,
+        runtime_root=runtime,
+        workflow_id="current-workflow",
+    )
+
+    assert enriched["langgraph_send_wired"] is False
+    assert enriched.get("parallel_lane_models") in (None, [])
+    assert enriched["litellm_completion_via"] == "grok_fanin_provider_trace"
+
+
+def test_leg_b_terminal_consumer_binds_exact_task_run_and_is_replayable(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import subprocess
+
+    from services.agent_runtime import integrated_bus_runner as runner
+
+    runtime = tmp_path / "runtime"
+    runtime.mkdir()
+    run_id = "run-leg-b-consumer"
+    run_dir = tmp_path / "runs" / run_id
+    run_dir.mkdir(parents=True)
+    (run_dir / "task.json").write_text(json.dumps({"run_id": run_id}), encoding="utf-8")
+    package = {
+        "package_id": "p1",
+        "work_key": "wk:p1",
+        "parent_work_key": "parent",
+        "role": "audit",
+    }
+    manifest_path = tmp_path / "manifest.json"
+    manifest_path.write_text(json.dumps({"packages": [package]}), encoding="utf-8")
+    manifest_sha256 = hashlib.sha256(manifest_path.read_bytes()).hexdigest()
+    envelope_path = tmp_path / "envelope.json"
+    envelope_path.write_text(
+        json.dumps(
+            {
+                "package_manifest_ref": {
+                    "path": str(manifest_path),
+                    "sha256": manifest_sha256,
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    envelope_sha256 = hashlib.sha256(envelope_path.read_bytes()).hexdigest()
+
+    def artifact(name: str, payload: str) -> tuple[Path, str]:
+        path = runtime / name
+        path.write_text(payload, encoding="utf-8")
+        return path, hashlib.sha256(path.read_bytes()).hexdigest()
+
+    final_path, final_sha = artifact("final.txt", "accepted result")
+    attempt_path, attempt_sha = artifact("attempt.json", "{}")
+    contract_path, contract_sha = artifact("contract.json", "{}")
+    lane = {
+        "ok": True,
+        "operation_state": "completed",
+        "operation_id": "op-p1",
+        "package_id": "p1",
+        "work_key": "wk:p1",
+        "dispatch_task_run_id": run_id,
+        "dispatch_envelope_sha256": envelope_sha256,
+        "package_manifest_sha256": manifest_sha256,
+        "final_ref": str(final_path),
+        "result_text_sha256": final_sha,
+        "cross_seam_attempt_receipt_ref": str(attempt_path),
+        "cross_seam_attempt_receipt_sha256": attempt_sha,
+        "cross_seam_logical_contract_ref": str(contract_path),
+        "cross_seam_logical_contract_artifact_sha256": contract_sha,
+    }
+    calls: list[list[str]] = []
+    run_kwargs: list[dict[str, object]] = []
+
+    def fake_run(command: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
+        calls.append(command)
+        run_kwargs.append(kwargs)
+        output = Path(command[command.index("--output") + 1])
+        output.parent.mkdir(parents=True, exist_ok=True)
+        output.write_text("{}\n", encoding="utf-8")
+        return subprocess.CompletedProcess(
+            command,
+            0,
+            stdout=json.dumps(
+                {
+                    "event_ref": str(output),
+                    "event_sha256": hashlib.sha256(output.read_bytes()).hexdigest(),
+                    "phase": "worker_terminal",
+                }
+            ),
+            stderr="",
+        )
+
+    monkeypatch.setattr(runner.subprocess, "run", fake_run)
+    result = {
+        "grok_fanin_ok": True,
+        "worker_lane_ok": True,
+        "grok_lanes": [lane],
+    }
+    kwargs = {
+        "runtime_root": runtime,
+        "repo_root": REPO_ROOT,
+        "dispatch_envelope_ref": {
+            "path": str(envelope_path),
+            "sha256": envelope_sha256,
+        },
+        "dispatch_task_run_dir": run_dir,
+        "dispatch_task_run_id": run_id,
+        "task_run_cli": Path(sys.executable),
+        "record_script": Path(sys.executable),
+    }
+    first = runner._record_leg_b_worker_terminals(result, **kwargs)
+    second = runner._record_leg_b_worker_terminals(result, **kwargs)
+    assert first == second
+    assert len(calls) == 2
+    assert all(command[0] == sys.executable for command in calls)
+    assert all("--runtime-root" in command for command in calls)
+    assert all(kwargs["creationflags"] == runner.WINDOWLESS_CREATIONFLAGS for kwargs in run_kwargs)
+    assert first[0]["task_run_id"] == run_id
+
+    lane["dispatch_task_run_id"] = "other-run"
+    with pytest.raises(ValueError, match="cannot be transplanted"):
+        runner._record_leg_b_worker_terminals(result, **kwargs)
+    assert len(calls) == 2
+
+
+def test_operation_identity_artifact_is_create_once_and_drift_closed(tmp_path: Path) -> None:
+    from services.agent_runtime.grok_build_docker_worker import _write_bytes_create_once
+
+    artifact = tmp_path / "operation-spec.json"
+    expected = b'{"operation_id":"op-1"}\n'
+    expected_sha256 = hashlib.sha256(expected).hexdigest()
+
+    assert (
+        _write_bytes_create_once(artifact, expected, artifact_name="operation-spec")
+        == expected_sha256
+    )
+    original_mtime_ns = artifact.stat().st_mtime_ns
+    assert (
+        _write_bytes_create_once(artifact, expected, artifact_name="operation-spec")
+        == expected_sha256
+    )
+    assert artifact.stat().st_mtime_ns == original_mtime_ns
+
+    with pytest.raises(RuntimeError, match="immutable bytes drifted"):
+        _write_bytes_create_once(
+            artifact,
+            b'{"operation_id":"op-2"}\n',
+            artifact_name="operation-spec",
+        )
 
 
 def test_docker_native_manifest_rejects_unbound_receipt_digest(tmp_path: Path) -> None:

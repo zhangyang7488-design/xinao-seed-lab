@@ -24,6 +24,7 @@ from services.agent_runtime.system_awareness_consumer import (
     reconcile_identity,
     reconcile_problem_lifecycle,
     reconcile_temporal_identity,
+    resolve_worktree_carrier,
     scan_task_run,
     scan_worktree_lifecycle,
     validate_strict_json_result,
@@ -39,7 +40,7 @@ def _write_json(path: Path, value: object) -> None:
 
 def _write_scan_run(root: Path, run_id: str, events: list[dict[str, object]]) -> Path:
     run_dir = root / run_id
-    run_dir.mkdir(parents=True)
+    run_dir.mkdir(parents=True, exist_ok=True)
     _write_json(
         run_dir / "task.json",
         {"schema_version": "codex.verified-task-run.v1", "run_id": run_id},
@@ -730,27 +731,139 @@ def test_problem_projection_merges_splits_requires_effectiveness_and_reopens() -
     assert "NO_BUILD_SELECTED" in no_build["reason_codes"]
 
 
-def test_global_frontier_reconciliation_keeps_local_wait_scoped_and_requires_full_proof() -> None:
-    local = reconcile_global_frontier(
+def _frontier_inventory_ref(
+    tmp_path: Path,
+    *,
+    name: str,
+    task_run_id: str,
+    event_head: dict[str, object],
+    transactions: list[dict[str, object]],
+    covered: list[str],
+) -> str:
+    path = tmp_path / f"{name}.inventory.json"
+    _write_json(
+        path,
         {
+            "schema_version": "xinao.global_frontier_inventory.v1",
+            "authority": False,
+            "completion_claim_allowed": False,
             "parent_mainline_id": "mainline-1",
-            "event_head": "event-12",
-            "scan_generation": "scan-3",
-            "frontier_disposition": "local_wait",
-            "transactions": [
-                {
-                    "transaction_id": "package-a",
-                    "scope": "package",
-                    "work_key": "package-a",
-                    "batch_id": "batch-a",
-                    "package_id": "a",
-                    "state": "blocked",
-                    "affected_cone": "package-a",
-                    "consumer": "consumer-a",
-                }
-            ],
-            "covered_transaction_ids": ["package-a"],
+            "task_run_id": task_run_id,
+            "event_head": event_head,
+            "scan_generation": name,
+            "inventory_complete": True,
+            "enumeration_basis": {
+                "discovery_consumer": "mainline-dag-reader",
+                "source_refs": [f"events.jsonl#{event_head['event_id']}"],
+                "alternative_paths_checked": True,
+                "prerequisites_checked": True,
+            },
+            "transactions": transactions,
+            "covered_transaction_ids": covered,
+        },
+    )
+    return f"{path}#sha256={hashlib.sha256(path.read_bytes()).hexdigest()}"
+
+
+def _frontier_receipt(
+    *,
+    task_run_id: str,
+    event_head: dict[str, object],
+    inventory_ref: str,
+    scan_generation: str,
+    disposition: str,
+) -> dict[str, object]:
+    return {
+        "schema_version": "xinao.global_frontier_reconciliation.v2",
+        "parent_mainline_id": "mainline-1",
+        "task_run_id": task_run_id,
+        "event_head": event_head,
+        "scan_generation": scan_generation,
+        "inventory_ref": inventory_ref,
+        "frontier_disposition": disposition,
+        "wakeable_wait": {
+            "frontier_reconciled": True,
+            "alternative_paths_checked": True,
+            "prerequisites_checked": True,
+            "positive_actions": [],
+            "wake_conditions": ["new task-run event or external fact"],
+            "durable_surface_verified": True,
+        },
+    }
+
+
+def _global_frontier_transactions() -> list[dict[str, object]]:
+    return [
+        {
+            "transaction_id": "mainline-1",
+            "scope": "parent",
+            "work_key": "mainline-1",
+            "state": "no_positive_action",
+            "affected_cone": "mainline-1",
+            "consumer": "mainline-owner",
+            "evidence_refs": ["events.jsonl#seed-1"],
+        },
+        {
+            "transaction_id": "batch-a",
+            "scope": "batch",
+            "work_key": "batch-a",
+            "batch_id": "batch-a",
+            "state": "waiting_external",
+            "affected_cone": "batch-a",
+            "consumer": "batch-reconciler",
+            "evidence_refs": ["events.jsonl#seed-1"],
+        },
+        {
+            "transaction_id": "package-a",
+            "scope": "package",
+            "work_key": "wk:package-a",
+            "batch_id": "batch-a",
+            "package_id": "package-a",
+            "state": "waiting_external",
+            "affected_cone": "wk:package-a",
+            "consumer": "package-runner",
+            "evidence_refs": ["events.jsonl#seed-1"],
+        },
+    ]
+
+
+def test_global_frontier_reconciliation_keeps_local_wait_scoped_and_requires_full_proof(
+    tmp_path: Path,
+) -> None:
+    head = {
+        "event_count": 1,
+        "event_id": "event-12",
+        "prefix_sha256": "1" * 64,
+    }
+    local_transactions = [
+        {
+            "transaction_id": "package-a",
+            "scope": "package",
+            "work_key": "wk:package-a",
+            "batch_id": "batch-a",
+            "package_id": "package-a",
+            "state": "blocked",
+            "affected_cone": "wk:package-a",
+            "consumer": "consumer-a",
+            "evidence_refs": ["events.jsonl#event-12"],
         }
+    ]
+    local_ref = _frontier_inventory_ref(
+        tmp_path,
+        name="scan-local",
+        task_run_id="run-frontier",
+        event_head=head,
+        transactions=local_transactions,
+        covered=["package-a"],
+    )
+    local = reconcile_global_frontier(
+        _frontier_receipt(
+            task_run_id="run-frontier",
+            event_head=head,
+            inventory_ref=local_ref,
+            scan_generation="scan-local",
+            disposition="local_wait",
+        )
     )
     assert local["status"] == "valid"
     assert local["parent_state"] == "open"
@@ -758,44 +871,52 @@ def test_global_frontier_reconciliation_keeps_local_wait_scoped_and_requires_ful
     assert local["global_frontier_reconciled"] is False
     assert "LOCAL_WAIT_SCOPE_PRESERVED" in local["reason_codes"]
 
+    global_transactions = _global_frontier_transactions()
+    incomplete_ref = _frontier_inventory_ref(
+        tmp_path,
+        name="scan-incomplete",
+        task_run_id="run-frontier",
+        event_head=head,
+        transactions=global_transactions,
+        covered=["mainline-1", "batch-a"],
+    )
     incomplete = reconcile_global_frontier(
-        {
-            "parent_mainline_id": "mainline-1",
-            "event_head": "event-13",
-            "scan_generation": "scan-4",
-            "frontier_disposition": "no_positive_global_candidate",
-            "transactions": [
-                {"transaction_id": "package-a", "scope": "package"},
-                {"transaction_id": "package-b", "scope": "package"},
-            ],
-            "covered_transaction_ids": ["package-a"],
-        }
+        _frontier_receipt(
+            task_run_id="run-frontier",
+            event_head=head,
+            inventory_ref=incomplete_ref,
+            scan_generation="scan-incomplete",
+            disposition="no_positive_global_candidate",
+        )
     )
     assert incomplete["status"] == "invalid"
     assert incomplete["parent_wait_claim_allowed"] is False
     assert "GLOBAL_COVERAGE_INCOMPLETE" in incomplete["reason_codes"]
 
+    collision_transactions = _global_frontier_transactions()
+    collision_transactions[-1]["work_key"] = "mainline-1"
+    collision_ref = _frontier_inventory_ref(
+        tmp_path,
+        name="scan-collision",
+        task_run_id="run-frontier",
+        event_head=head,
+        transactions=collision_transactions,
+        covered=["mainline-1", "batch-a", "package-a"],
+    )
     collision = reconcile_global_frontier(
-        {
-            "parent_mainline_id": "mainline-1",
-            "event_head": "event-14",
-            "scan_generation": "scan-5",
-            "frontier_disposition": "durable_wait",
-            "transactions": [
-                {
-                    "transaction_id": "mainline-1",
-                    "scope": "package",
-                    "work_key": "mainline-1",
-                }
-            ],
-            "covered_transaction_ids": ["mainline-1"],
-        }
+        _frontier_receipt(
+            task_run_id="run-frontier",
+            event_head=head,
+            inventory_ref=collision_ref,
+            scan_generation="scan-collision",
+            disposition="durable_wait",
+        )
     )
     assert collision["status"] == "invalid"
     assert "PACKAGE_PARENT_SCOPE_COLLISION" in collision["scope_violations"]
 
 
-def test_scan_task_run_projects_invalid_parent_wait_receipt_fail_closed(tmp_path: Path) -> None:
+def test_scan_task_run_treats_v1_parent_wait_as_legacy_untrusted(tmp_path: Path) -> None:
     run_dir = _write_scan_run(
         tmp_path,
         "frontier-scope",
@@ -825,9 +946,89 @@ def test_scan_task_run_projects_invalid_parent_wait_receipt_fail_closed(tmp_path
     )
     report = scan_task_run(run_dir)
     receipt = report["global_frontier_reconciliation"]
-    assert receipt["status"] == "invalid"
+    assert receipt["status"] == "legacy_untrusted"
     assert receipt["parent_wait_claim_allowed"] is False
+    assert "GLOBAL_FRONTIER_V1_LEGACY_UNTRUSTED" in receipt["reason_codes"]
     assert "GLOBAL_FRONTIER_RECONCILIATION_PROJECTED" in report["reason_codes"]
+
+
+def test_global_frontier_v2_binds_exact_task_run_prefix_inventory_and_stales_on_later_event(
+    tmp_path: Path,
+) -> None:
+    run_id = "frontier-v2"
+    seed = {
+        "run_id": run_id,
+        "schema_version": "codex.verified-task-run.v1",
+        "event_id": "seed-1",
+        "phase": "work_unit_active",
+        "kind": "result",
+        "target": "wk:package-a",
+        "exit_code": 0,
+    }
+    run_dir = _write_scan_run(tmp_path, run_id, [seed])
+    seed_raw = (run_dir / "events.jsonl").read_bytes()
+    event_head = {
+        "event_count": 1,
+        "event_id": "seed-1",
+        "prefix_sha256": hashlib.sha256(seed_raw).hexdigest(),
+    }
+    transactions = _global_frontier_transactions()
+    inventory_ref = _frontier_inventory_ref(
+        tmp_path,
+        name="scan-v2",
+        task_run_id=run_id,
+        event_head=event_head,
+        transactions=transactions,
+        covered=[row["transaction_id"] for row in transactions],
+    )
+    receipt = _frontier_receipt(
+        task_run_id=run_id,
+        event_head=event_head,
+        inventory_ref=inventory_ref,
+        scan_generation="scan-v2",
+        disposition="durable_wait",
+    )
+    reconciliation = {
+        "run_id": run_id,
+        "schema_version": "codex.verified-task-run.v1",
+        "event_id": "frontier-2",
+        "phase": "global_frontier_reconciliation",
+        "kind": "result",
+        "target": "mainline-1",
+        "exit_code": 0,
+        "global_frontier_reconciliation": receipt,
+    }
+    _write_scan_run(tmp_path, run_id, [seed, reconciliation])
+    projected = scan_task_run(run_dir)["global_frontier_reconciliation"]
+    assert projected["status"] == "valid"
+    assert projected["parent_state"] == "waiting"
+    assert projected["parent_wait_claim_allowed"] is True
+    assert projected["wakeable_wait"]["wait_allowed"] is True
+
+    bad_receipt = dict(receipt)
+    bad_receipt["event_head"] = {**event_head, "prefix_sha256": "0" * 64}
+    reconciliation["global_frontier_reconciliation"] = bad_receipt
+    _write_scan_run(tmp_path, run_id, [seed, reconciliation])
+    invalid = scan_task_run(run_dir)["global_frontier_reconciliation"]
+    assert invalid["status"] == "invalid"
+    assert "GLOBAL_FRONTIER_EVENT_HEAD_MISMATCH" in invalid["reason_codes"]
+
+    reconciliation["global_frontier_reconciliation"] = receipt
+    material = {
+        "run_id": run_id,
+        "schema_version": "codex.verified-task-run.v1",
+        "event_id": "material-3",
+        "phase": "work_unit_resume_reconciled",
+        "kind": "result",
+        "target": "wk:package-a",
+        "exit_code": 0,
+    }
+    _write_scan_run(tmp_path, run_id, [seed, reconciliation, material])
+    stale = scan_task_run(run_dir)["global_frontier_reconciliation"]
+    assert stale["status"] == "stale"
+    assert stale["parent_state"] == "open"
+    assert stale["parent_wait_claim_allowed"] is False
+    assert "GLOBAL_FRONTIER_RECEIPT_STALE" in stale["reason_codes"]
 
 
 def test_identity_json_and_preflight_are_fail_closed_before_model(tmp_path: Path) -> None:
@@ -1612,6 +1813,36 @@ def test_record_producer_publishes_real_observation_and_rejects_generation_reuse
     side = next(row for row in rescanned["worktrees"] if Path(row["worktree_path"]) == worktree)
     assert side["decision"] == "active"
 
+    rebound_event = _lifecycle_event(
+        run_dir.name,
+        "carrier-rebound",
+        2,
+        "worktree_lifecycle_active",
+        "work-other",
+        "se:carrier-rebound",
+        [
+            "xinao-worktree-carrier:carrier:producer:1",
+            f"xinao-worktree-observation-sha256:{observed['observation_sha256']}",
+        ],
+    )
+    _write_lifecycle_run(run_dir, [event, rebound_event])
+    with pytest.raises(awareness_module.SystemAwarenessError) as rebound:
+        publish_worktree_lifecycle_record(
+            repo,
+            records_path,
+            worktree_path=worktree,
+            task_run_event_ref=f"{run_dir / 'events.jsonl'}#carrier-rebound",
+            carrier_id="carrier:producer",
+            carrier_generation=1,
+            purpose="must not rebind the logical transaction",
+            owner="codex_owner",
+            declared_state="active",
+            work_key="work-other",
+            side_effect_id="se:carrier-rebound",
+            base_ref="main",
+        )
+    assert rebound.value.reason_code == "WORKTREE_CARRIER_IDENTITY_REBOUND"
+
     other_worktree = tmp_path / "second carrier"
     _git(repo, "worktree", "add", "-b", "feature/second", str(other_worktree), "main")
     with pytest.raises(awareness_module.SystemAwarenessError) as reused:
@@ -1630,6 +1861,86 @@ def test_record_producer_publishes_real_observation_and_rejects_generation_reuse
             base_ref="main",
         )
     assert reused.value.reason_code == "WORKTREE_CARRIER_GENERATION_REUSED"
+
+
+def test_resolve_carrier_reuses_fresh_binding_reseals_fact_drift_and_never_mutates(
+    tmp_path: Path,
+) -> None:
+    repo, worktree = _worktree_repo(tmp_path)
+    observed = next(
+        row
+        for row in scan_worktree_lifecycle(repo, base_ref="main")["worktrees"]
+        if Path(row["worktree_path"]) == worktree.resolve()
+    )["observed"]
+    run_dir = tmp_path / "task-runs" / "carrier-resolve-run"
+    event = _lifecycle_event(
+        run_dir.name,
+        "carrier-active",
+        1,
+        "worktree_lifecycle_active",
+        "wk:resolve",
+        "se:carrier-active",
+        [
+            "xinao-worktree-carrier:carrier:resolve:1",
+            f"xinao-worktree-observation-sha256:{observed['observation_sha256']}",
+        ],
+    )
+    _write_lifecycle_run(run_dir, [event])
+    records_path = tmp_path / "records.json"
+    publish_worktree_lifecycle_record(
+        repo,
+        records_path,
+        worktree_path=worktree,
+        task_run_event_ref=f"{run_dir / 'events.jsonl'}#carrier-active",
+        carrier_id="carrier:resolve",
+        carrier_generation=1,
+        purpose="cross-window carrier continuity",
+        owner="codex_owner",
+        declared_state="active",
+        work_key="wk:resolve",
+        side_effect_id="se:carrier-active",
+        base_ref="main",
+    )
+    records = json.loads(records_path.read_text(encoding="utf-8"))
+    before = _git(repo, "status", "--porcelain=v1")
+    reuse = resolve_worktree_carrier(
+        repo,
+        records=records,
+        work_key="wk:resolve",
+        owner="codex_owner",
+        task_run_dir=run_dir,
+        base_ref="main",
+        now=datetime(2026, 7, 20, 0, 10, tzinfo=timezone.utc),
+    )
+    assert reuse["decision"] == "reuse_existing"
+    assert reuse["carrier"]["carrier_id"] == "carrier:resolve"
+
+    (worktree / "unfinished.txt").write_text("candidate\n", encoding="utf-8")
+    reseal = resolve_worktree_carrier(
+        repo,
+        records=records,
+        work_key="wk:resolve",
+        owner="codex_owner",
+        task_run_dir=run_dir,
+        base_ref="main",
+        now=datetime(2026, 7, 20, 0, 10, tzinfo=timezone.utc),
+    )
+    assert reseal["decision"] == "reseal_existing"
+    assert reseal["next_transition"] == "worktree_lifecycle_resealed"
+    assert reseal["mutation_performed"] is False
+
+    new_transition = resolve_worktree_carrier(
+        repo,
+        records=records,
+        work_key="wk:new",
+        owner="codex_owner",
+        task_run_dir=run_dir,
+        base_ref="main",
+        now=datetime(2026, 7, 20, 0, 10, tzinfo=timezone.utc),
+    )
+    assert new_transition["decision"] == "new_transition_required"
+    assert new_transition["carrier"] is None
+    assert _git(repo, "status", "--porcelain=v1") == before
 
 
 def test_ignored_material_tree_equivalence_and_polluted_git_env_fail_closed(
@@ -1664,6 +1975,55 @@ def test_ignored_material_tree_equivalence_and_polluted_git_env_fail_closed(
     assert reverted["observed"]["head_is_ancestor_of_base"] is False
     assert reverted["observed"]["commits_absorbed"] is False
     assert reverted["retire_ready"] is False
+
+
+def test_ignored_cache_and_material_are_classified_on_separate_axes(tmp_path: Path) -> None:
+    repo, worktree = _worktree_repo(tmp_path)
+    (worktree / ".gitignore").write_text(
+        "*.secret\n.pytest_cache/\n.ruff_cache/\n__pycache__/\n", encoding="utf-8"
+    )
+    _git(worktree, "add", ".gitignore")
+    _git(worktree, "commit", "-m", "ignore deterministic caches")
+    (worktree / ".pytest_cache").mkdir()
+    (worktree / ".pytest_cache" / "nodeids").write_text("[]\n", encoding="utf-8")
+    (worktree / "pkg" / "__pycache__").mkdir(parents=True)
+    (worktree / "pkg" / "__pycache__" / "module.pyc").write_bytes(b"cache")
+
+    cache_only = scan_worktree_lifecycle(repo, base_ref="main")
+    observed = next(
+        row["observed"]
+        for row in cache_only["worktrees"]
+        if Path(row["worktree_path"]) == worktree.resolve()
+    )
+    assert observed["ignored_cache_count"] >= 2
+    assert observed["ignored_material_count"] == 0
+    assert observed["ignored_material_present"] is False
+    assert observed["ignored_classification_profile"] == (
+        "xinao.worktree_ignored_classification.v1"
+    )
+    cache_observation_sha256 = observed["observation_sha256"]
+    cache_fingerprint = observed["ignored_cache_fingerprint"]
+    (worktree / ".pytest_cache" / "lastfailed").write_text("{}\n", encoding="utf-8")
+    cache_changed = scan_worktree_lifecycle(repo, base_ref="main")
+    observed = next(
+        row["observed"]
+        for row in cache_changed["worktrees"]
+        if Path(row["worktree_path"]) == worktree.resolve()
+    )
+    assert observed["ignored_cache_fingerprint"] != cache_fingerprint
+    assert observed["observation_sha256"] == cache_observation_sha256
+
+    (worktree / "local.secret").write_text("unique\n", encoding="utf-8")
+    with_material = scan_worktree_lifecycle(repo, base_ref="main")
+    observed = next(
+        row["observed"]
+        for row in with_material["worktrees"]
+        if Path(row["worktree_path"]) == worktree.resolve()
+    )
+    assert observed["ignored_cache_count"] >= 2
+    assert observed["ignored_material_count"] == 1
+    assert observed["ignored_material_present"] is True
+    assert observed["ignored_material_sample"] == ["local.secret"]
 
 
 def test_retired_tombstone_is_distinct_from_unexplained_missing_carrier(tmp_path: Path) -> None:

@@ -35,6 +35,21 @@ def _load_record_module() -> ModuleType:
     return module
 
 
+def test_runtime_path_resolver_maps_only_container_evidence_root(tmp_path: Path) -> None:
+    module = _load_record_module()
+    runtime = tmp_path / "runtime"
+    expected = runtime / "state" / "attempt.json"
+    expected.parent.mkdir(parents=True)
+    expected.write_text("{}\n", encoding="utf-8")
+
+    resolver = module._runtime_path_resolver(runtime)
+
+    assert resolver("/evidence/state/attempt.json") == expected.resolve()
+    assert resolver(str(expected)) == expected
+    with pytest.raises(ValueError, match="cannot traverse"):
+        resolver("/evidence/../outside.json")
+
+
 def _run_task(root: Path, *args: str) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
         [sys.executable, str(TASK_RUN_SCRIPT), "--root", str(root), *args],

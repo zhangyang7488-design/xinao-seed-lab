@@ -249,6 +249,16 @@ def build_neutral_manifest(
                 prior_logical,
                 path_resolver=path_resolver,
             )
+        prior_contract = raw.get("prior_logical_contract_ref")
+        if isinstance(prior_contract, Mapping):
+            prior_contract_logical = _logical_path(
+                prior_contract.get("path"),
+                f"packages[{index}].prior_logical_contract_ref.path",
+            )
+            package["prior_logical_contract_ref"] = _path_ref(
+                prior_contract_logical,
+                path_resolver=path_resolver,
+            )
         packages.append(package)
 
     limits = copy.deepcopy(dict(spec.get("limits") or {}))

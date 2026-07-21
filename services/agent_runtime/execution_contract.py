@@ -73,6 +73,137 @@ def artifact_json_bytes(value: object) -> bytes:
     return (json.dumps(value, ensure_ascii=False, indent=2, sort_keys=True) + "\n").encode("utf-8")
 
 
+def build_common_receipt_binding(
+    logical_contract: Mapping[str, object],
+    *,
+    lane_id: str,
+    attempt_receipt_sha256: str,
+    attempt_receipt: Mapping[str, object] | None = None,
+    work_key: str = "",
+    package_manifest_sha256: str = "",
+    prior_accepted_ancestor_binding: Mapping[str, object] | None = None,
+) -> dict[str, str]:
+    """Build the one producer/consumer receipt-set member representation."""
+
+    contract = validate_logical_contract(logical_contract)
+    binding = {
+        "lane_id": _require_text(lane_id, "lane_id"),
+        "contract_sha256": logical_contract_sha256(contract),
+        "attempt_receipt_sha256": _require_sha256(
+            attempt_receipt_sha256,
+            "attempt_receipt_sha256",
+        ),
+    }
+    package_bound = bool(work_key or package_manifest_sha256)
+    if package_bound:
+        bound_work_key = _require_text(work_key, "work_key")
+        bound_lane_id = binding["lane_id"]
+        bound_manifest_sha256 = _require_sha256(
+            package_manifest_sha256,
+            "package_manifest_sha256",
+        )
+        if bound_work_key != contract["work_key"]:
+            raise ExecutionContractError("receipt binding work_key disagrees with logical contract")
+        task_contract_ref = _require_text(
+            contract.get("task_contract_ref"),
+            "task_contract_ref",
+        )
+        _, separator, task_contract_sha256 = task_contract_ref.rpartition("#sha256=")
+        if not separator or not _SHA256_RE.fullmatch(task_contract_sha256):
+            raise ExecutionContractError(
+                "package-bound task_contract_ref must carry one lowercase sha256"
+            )
+        if attempt_receipt is None:
+            raise ExecutionContractError("package-bound receipt binding requires attempt_receipt")
+        attempt = _validate_attempt_shape(attempt_receipt)
+        lineage = _require_mapping(attempt.get("lineage"), "lineage")
+        if lineage.get("lane_id") != bound_lane_id:
+            raise ExecutionContractError("attempt receipt lineage lane_id drifted")
+        if attempt.get("work_key") != bound_work_key:
+            raise ExecutionContractError("attempt receipt work_key drifted")
+        if prior_accepted_ancestor_binding is None:
+            if task_contract_sha256 != bound_manifest_sha256:
+                raise ExecutionContractError(
+                    "task_contract_ref disagrees with package_manifest_sha256"
+                )
+        else:
+            ancestor = _require_mapping(
+                prior_accepted_ancestor_binding,
+                "prior_accepted_ancestor_binding",
+            )
+            current_ref = _require_mapping(
+                ancestor.get("current_manifest_ref"),
+                "prior_accepted_ancestor_binding.current_manifest_ref",
+            )
+            subject_ref = _require_mapping(
+                ancestor.get("subject_manifest_ref"),
+                "prior_accepted_ancestor_binding.subject_manifest_ref",
+            )
+            prior_attempt_ref = _require_mapping(
+                ancestor.get("prior_attempt_receipt_ref"),
+                "prior_accepted_ancestor_binding.prior_attempt_receipt_ref",
+            )
+            prior_action = _require_mapping(
+                ancestor.get("prior_action_binding"),
+                "prior_accepted_ancestor_binding.prior_action_binding",
+            )
+            prior_action_sha256 = hashlib.sha256(canonical_json_bytes(prior_action)).hexdigest()
+            if (
+                ancestor.get("schema_version") != "xinao.prior_accepted_ancestor_action.v1"
+                or ancestor.get("reuse_disposition") != "ACCEPTED_IDENTICAL_REUSE"
+                or ancestor.get("skip_provider_execution") is not True
+                or ancestor.get("model_invocation_allowed") is not False
+                or ancestor.get("authority") is not False
+                or ancestor.get("completion_claim_allowed") is not False
+                or ancestor.get("work_key") != bound_work_key
+                or ancestor.get("package_id") != bound_lane_id
+                or _require_sha256(
+                    current_ref.get("sha256"),
+                    "prior_accepted_ancestor_binding.current_manifest_ref.sha256",
+                )
+                != bound_manifest_sha256
+                or _require_sha256(
+                    subject_ref.get("sha256"),
+                    "prior_accepted_ancestor_binding.subject_manifest_ref.sha256",
+                )
+                != task_contract_sha256
+                or _require_sha256(
+                    prior_attempt_ref.get("sha256"),
+                    "prior_accepted_ancestor_binding.prior_attempt_receipt_ref.sha256",
+                )
+                != binding["attempt_receipt_sha256"]
+                or _require_sha256(
+                    ancestor.get("contract_sha256"),
+                    "prior_accepted_ancestor_binding.contract_sha256",
+                )
+                != binding["contract_sha256"]
+                or _require_sha256(
+                    ancestor.get("prior_action_binding_sha256"),
+                    "prior_accepted_ancestor_binding.prior_action_binding_sha256",
+                )
+                != prior_action_sha256
+                or prior_action.get("logical_operation_id") != contract.get("logical_operation_id")
+                or prior_action.get("selection") != contract.get("selection")
+            ):
+                raise ExecutionContractError(
+                    "prior accepted ancestor binding disagrees with current carrier or subject"
+                )
+            binding.update(
+                {
+                    "reuse_disposition": "ACCEPTED_IDENTICAL_REUSE",
+                    "subject_manifest_sha256": task_contract_sha256,
+                    "prior_action_binding_sha256": prior_action_sha256,
+                }
+            )
+        binding.update(
+            {
+                "work_key": bound_work_key,
+                "package_manifest_sha256": bound_manifest_sha256,
+            }
+        )
+    return binding
+
+
 def _require_mapping(value: object, field: str) -> dict[str, Any]:
     if not isinstance(value, Mapping):
         raise ExecutionContractError(f"{field} must be an object")
@@ -899,10 +1030,22 @@ def _validate_registry_terminal_receipts(
     catalog: Mapping[str, object],
     repo_root: Path,
     field: str,
+    expected_provider_sha256s: set[str] | None = None,
 ) -> set[str]:
     refs = evidence.get("terminal_receipt_evidence")
     if not isinstance(refs, list) or not refs:
         raise ExecutionContractError(f"{field} lacks terminal_receipt_evidence")
+    contract_refs = evidence.get("logical_contract_evidence")
+    contracts: dict[str, Mapping[str, object]] = {}
+    if isinstance(contract_refs, list):
+        for index, raw_ref in enumerate(contract_refs):
+            _, contract = _verified_registry_json(
+                raw_ref,
+                catalog=catalog,
+                repo_root=repo_root,
+                field=f"{field}.logical_contract_evidence[{index}]",
+            )
+            contracts[logical_contract_sha256(contract)] = contract
     receipt_session_ids: set[str] = set()
     for index, raw_ref in enumerate(refs):
         _, payload = _verified_registry_json(
@@ -923,8 +1066,20 @@ def _validate_registry_terminal_receipts(
             if isinstance(invocations, list) and invocations
             else {}
         )
+        contract = contracts.get(str(payload.get("contract_sha256") or ""))
+        if contract_refs is not None and contract is None:
+            raise ExecutionContractError(f"{field} terminal receipt has no exact logical contract")
+        contract_accepted = bool(
+            contract is not None
+            and validate_attempt_receipt(
+                contract,
+                payload,
+                expected_consumer_id="canonical_docker_grok_worker",
+            ).accepted
+        )
         receipt_ok = bool(
-            payload.get("schema_version") == ATTEMPT_RECEIPT_VERSION
+            (contract_accepted if contracts else int(output.get("chars") or 0) >= 256)
+            and payload.get("schema_version") == ATTEMPT_RECEIPT_VERSION
             and payload.get("terminal_state") == "completed"
             and str(payload.get("stop_reason") or "").lower() == "endturn"
             and payload.get("provider_evidence_valid") is True
@@ -932,7 +1087,7 @@ def _validate_registry_terminal_receipts(
             and output.get("substantive") is True
             and output.get("markers_ok") is True
             and output.get("schema_valid") is True
-            and int(output.get("chars") or 0) >= 256
+            and int(output.get("chars") or 0) > 0
             and isinstance(output.get("content_sha256"), str)
             and _SHA256_RE.fullmatch(str(output.get("content_sha256") or ""))
             and int(usage.get("invocation_count") or 0) >= 1
@@ -941,7 +1096,12 @@ def _validate_registry_terminal_receipts(
             and final_invocation.get("state") == "accepted"
             and str(final_invocation.get("stop_reason") or "").lower() == "endturn"
             and int(final_invocation.get("total_tokens") or 0) > 0
-            and int(final_invocation.get("output_chars") or 0) >= 256
+            and int(final_invocation.get("output_chars") or 0) == int(output.get("chars") or 0)
+            and (
+                expected_provider_sha256s is None
+                or not contracts
+                or str(payload.get("provider_evidence_sha256") or "") in expected_provider_sha256s
+            )
         )
         if not receipt_ok:
             raise ExecutionContractError(
@@ -1032,7 +1192,7 @@ def validate_consumer_registry(
         and composer_binding.get("session_evidence_required") is True
         and composer_binding.get("capability_ledger") == "composer_exact_capability"
         and composer_binding.get("composer_completion_credit") is True
-        and grok45_binding.get("allowed_backend_model_ids") == ["grok-4.5"]
+        and grok45_binding.get("allowed_backend_model_ids") == ["grok-4.5-build"]
         and grok45_binding.get("session_model_id") == "grok-4.5"
         and grok45_binding.get("session_evidence_required") is True
         and grok45_binding.get("capability_ledger") == "grok_45_productivity"
@@ -1059,8 +1219,9 @@ def validate_consumer_registry(
             raise ExecutionContractError(f"{field} lacks raw_identity_evidence")
         raw_models: set[str] = set()
         raw_session_ids: set[str] = set()
+        raw_evidence_sha256s: set[str] = set()
         for raw_index, raw_ref in enumerate(raw_refs):
-            _, raw_payload = _verified_registry_json(
+            raw_evidence, raw_payload = _verified_registry_json(
                 raw_ref,
                 catalog=catalog,
                 repo_root=repo_root,
@@ -1068,6 +1229,7 @@ def validate_consumer_registry(
             )
             raw_models.update(_registry_observed_models(raw_payload))
             raw_session_ids.update(_registry_session_ids(raw_payload))
+            raw_evidence_sha256s.add(str(raw_evidence.get("sha256") or ""))
         _validate_registry_session_identity(
             evidence,
             selected_model="grok-4.5",
@@ -1080,6 +1242,7 @@ def validate_consumer_registry(
             evidence,
             selected_model="grok-4.5",
             expected_session_ids=raw_session_ids,
+            expected_provider_sha256s=raw_evidence_sha256s,
             catalog=catalog,
             repo_root=repo_root,
             field=field,
@@ -1411,6 +1574,7 @@ __all__ = [
     "LOGICAL_CONTRACT_VERSION",
     "ReceiptVerdict",
     "aggregate_attempt_receipts",
+    "build_common_receipt_binding",
     "build_common_dispatch_disposition",
     "canonical_json_bytes",
     "classify_identical_work_disposition",

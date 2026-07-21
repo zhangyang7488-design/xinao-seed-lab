@@ -18,10 +18,49 @@
     "execution_scope": "docker:houtai-gongren",
     "conformance_test": "tests/test_cross_seam_execution_conformance.py::test_docker_grok_identity_bindings_keep_productivity_and_composer_ledgers_separate",
     "current_productivity_evidence": [
-      "grok45-docker-productivity-20260718T003102Z"
+      "grok45-docker-productivity-20260721T052426Z"
     ]
   },
   "evidence_catalog": {
+    "grok45-docker-productivity-20260721T052426Z": {
+      "kind": "productivity_canary",
+      "observed_at": "2026-07-21T05:24:26.5099310+00:00",
+      "path": "D:/XINAO_RESEARCH_RUNTIME/state/grok_docker_native/_canonical_package_attempts/operations/op_grok_docker_887fd3213fb4f67af2f6b5dd79643be3/cli_result.json",
+      "sha256": "1598cb57127a58c093fe23b8b1e74a8d82c10df3fe39e531ede0a7a76f7ca1d4",
+      "requested_model": "grok-4.5",
+      "observed_models": ["grok-4.5-build"],
+      "capability_ledger": "grok_45_productivity",
+      "composer_completion_credit": false,
+      "completion_claim_allowed": true,
+      "raw_identity_evidence": ["grok45-raw-identity-20260721T052426Z"],
+      "session_identity_evidence": ["grok45-session-identity-20260721T052426Z"],
+      "terminal_receipt_evidence": ["grok45-terminal-receipt-20260721T052426Z"],
+      "logical_contract_evidence": ["grok45-logical-contract-20260721T052419Z"]
+    },
+    "grok45-raw-identity-20260721T052426Z": {
+      "kind": "raw_model_identity",
+      "observed_at": "2026-07-21T05:24:26.4965264+00:00",
+      "path": "D:/XINAO_RESEARCH_RUNTIME/state/grok_docker_native/_canonical_package_attempts/operations/op_grok_docker_887fd3213fb4f67af2f6b5dd79643be3/cli_result.json",
+      "sha256": "1598cb57127a58c093fe23b8b1e74a8d82c10df3fe39e531ede0a7a76f7ca1d4"
+    },
+    "grok45-session-identity-20260721T052426Z": {
+      "kind": "session_model_identity",
+      "observed_at": "2026-07-21T05:24:26.5015534+00:00",
+      "path": "D:/XINAO_RESEARCH_RUNTIME/state/grok_docker_native/_canonical_package_attempts/operations/op_grok_docker_887fd3213fb4f67af2f6b5dd79643be3/session_model_evidence.json",
+      "sha256": "68eed80679336ec5192e7211f659a0f04d545dd5e64c1ab2cc60f9d9e7ff2c3c"
+    },
+    "grok45-terminal-receipt-20260721T052426Z": {
+      "kind": "terminal_attempt_receipt",
+      "observed_at": "2026-07-21T05:24:26.5099310+00:00",
+      "path": "D:/XINAO_RESEARCH_RUNTIME/state/grok_docker_native/_canonical_package_attempts/operations/op_grok_docker_887fd3213fb4f67af2f6b5dd79643be3/attempt_receipt.json",
+      "sha256": "f52ff499598f2ddf61430319da16a4d803382aa12ba134db0096e1f071c970e4"
+    },
+    "grok45-logical-contract-20260721T052419Z": {
+      "kind": "logical_execution_contract",
+      "observed_at": "2026-07-21T05:24:19.6900438+00:00",
+      "path": "D:/XINAO_RESEARCH_RUNTIME/state/grok_docker_native/_canonical_package_attempts/operations/op_grok_docker_887fd3213fb4f67af2f6b5dd79643be3/logical_contract.json",
+      "sha256": "72e60ec99c8bddca370e568a8fd4a92a23c5b89ddb4e33729aeeccb7ee8b2d58"
+    },
     "grok45-docker-productivity-20260718T003102Z": {
       "kind": "productivity_canary",
       "observed_at": "2026-07-18T00:31:02.3273512+00:00",
@@ -403,12 +442,13 @@
       "contract_mode": "read_only_existing_facts_to_non_authoritative_decisions",
       "status": "boundary_verified_non_parent_owner",
       "conformance_status": "boundary_verified_non_parent_owner",
-      "status_reason": "The consumer discovers and recovers hash-bound problem projections, keeps provider invocation/evaluation/outcome conversion separate, reports token conservation unknown without an independent native total, and advances typed work-unit transitions only through semantic readbacks.",
+      "status_reason": "The consumer replays hash-bound typed problem transitions by stable problem_ref and generation, adapts non-verified task-run terminals, rejects caller-injected close/effect state, keeps provider invocation/evaluation/outcome conversion separate, and advances typed work-unit transitions only through semantic readbacks.",
       "writes_effects": false,
       "parent_completion_authority": false,
       "independent_gap_discovery": true,
       "conformance_tests": [
-        "tests/test_system_awareness_consumer.py"
+        "tests/test_system_awareness_consumer.py",
+        "tests/test_problem_transition.py"
       ],
       "replay_evidence": [],
       "current_positive_canary_evidence": [
@@ -422,6 +462,47 @@
       ]
     },
     {
+      "consumer_id": "problem_transition_task_run_adapter",
+      "source_path": "scripts/record_problem_transition.py",
+      "entrypoint": "main",
+      "role": "hash_bound_problem_transition_and_nonverified_finish_adapter",
+      "contract_mode": "immutable_transition_artifact_plus_canonical_task_run_event",
+      "status": "boundary_verified_non_parent_owner",
+      "conformance_status": "boundary_verified_non_parent_owner",
+      "status_reason": "The adapter writes immutable typed transition artifacts, appends only their exact hashes through the canonical task-run CLI, and records unmet completion criteria before partial, blocked, or unverified finish; it cannot decide adoption, effect, close, or parent completion on its own.",
+      "writes_effects": true,
+      "parent_completion_authority": false,
+      "independent_gap_discovery": false,
+      "conformance_tests": [
+        "tests/test_problem_transition.py"
+      ],
+      "replay_evidence": [],
+      "current_positive_canary_evidence": [],
+      "superseded_evidence": [],
+      "negative_canary_evidence": [],
+      "blocking_evidence": [],
+      "fresh_canary_evidence": []
+    },
+    {
+      "consumer_id": "global_frontier_reconciliation_v2",
+      "source_path": "services/agent_runtime/system_awareness_consumer.py",
+      "entrypoint": "evaluate_global_frontier_at_task_run_head",
+      "role": "parent_frontier_wait_claim_consumer",
+      "contract_mode": "exact_task_run_prefix_plus_hash_bound_inventory_and_wake_proof",
+      "status": "boundary_verified_non_parent_owner",
+      "conformance_status": "boundary_verified_non_parent_owner",
+      "status_reason": "The read-only v2 consumer binds a prospective or event-carried reconciliation to one exact task-run prefix, a hash-bound typed package/batch/parent inventory and an existing wakeable surface; v1 receipts and any v2 receipt followed by a material event cannot pause the parent.",
+      "writes_effects": false,
+      "parent_completion_authority": false,
+      "conformance_tests": [
+        "tests/test_system_awareness_consumer.py::test_global_frontier_v2_binds_exact_task_run_prefix_inventory_and_stales_on_later_event"
+      ],
+      "replay_evidence": [],
+      "current_positive_canary_evidence": [],
+      "negative_canary_evidence": [],
+      "fresh_canary_evidence": []
+    },
+    {
       "consumer_id": "worktree_lifecycle_scanner",
       "source_path": "services/agent_runtime/system_awareness_consumer.py",
       "entrypoint": "scan_worktree_lifecycle",
@@ -429,7 +510,7 @@
       "contract_mode": "git_porcelain_plus_hash_bound_task_run_records",
       "status": "boundary_verified_non_parent_owner",
       "conformance_status": "boundary_verified_non_parent_owner",
-      "status_reason": "The scanner separates logical work_key, carrier generation and one-effect identity; reconciles tracked, untracked, ignored, ancestry, locks and event finalizers; and distinguishes a removal candidate from a verified retired tombstone without deleting anything.",
+      "status_reason": "The scanner separates logical work_key, carrier generation and one-effect identity; reconciles tracked, untracked, ignored material versus proven cache, ancestry, locks and event finalizers; and distinguishes a removal candidate from a verified retired tombstone without deleting anything.",
       "writes_effects": false,
       "parent_completion_authority": false,
       "delete_authority": false,
@@ -450,6 +531,27 @@
       ]
     },
     {
+      "consumer_id": "worktree_carrier_resolver",
+      "source_path": "services/agent_runtime/system_awareness_consumer.py",
+      "entrypoint": "resolve_worktree_carrier",
+      "role": "read_only_cross_window_carrier_resolution",
+      "contract_mode": "hash_bound_lifecycle_records_plus_live_git_scan",
+      "status": "boundary_verified_non_parent_owner",
+      "conformance_status": "boundary_verified_non_parent_owner",
+      "status_reason": "The resolver preserves one work_key, owner and task-run binding within a carrier generation, reuses fresh carriers, requests an explicit reseal for bounded live-fact drift, and requests a new transition only when no safe binding exists; it never creates, removes or mutates a carrier.",
+      "writes_effects": false,
+      "parent_completion_authority": false,
+      "delete_authority": false,
+      "automatic_delete_allowed": false,
+      "conformance_tests": [
+        "tests/test_system_awareness_consumer.py::test_resolve_carrier_reuses_fresh_binding_reseals_fact_drift_and_never_mutates"
+      ],
+      "replay_evidence": [],
+      "current_positive_canary_evidence": [],
+      "negative_canary_evidence": [],
+      "fresh_canary_evidence": []
+    },
+    {
       "consumer_id": "worktree_lifecycle_record_producer",
       "source_path": "services/agent_runtime/system_awareness_consumer.py",
       "entrypoint": "publish_worktree_lifecycle_record",
@@ -457,7 +559,7 @@
       "contract_mode": "existing_task_run_event_plus_live_git_observation_to_hashable_records",
       "status": "boundary_verified_non_parent_owner",
       "conformance_status": "boundary_verified_non_parent_owner",
-      "status_reason": "The producer binds one current Git observation to work_key, carrier generation, event prefix and side effect, preserves generation floors, and writes only a non-authoritative records artifact plus the next records-published event reference.",
+      "status_reason": "The producer binds one current Git observation to work_key, owner, task-run, carrier generation, event prefix and side effect; rejects logical identity rebinding within one generation; preserves generation floors; and writes only a non-authoritative records artifact plus the next records-published event reference.",
       "writes_effects": true,
       "git_mutation_performed": false,
       "parent_completion_authority": false,

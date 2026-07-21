@@ -22,6 +22,7 @@ from services.agent_runtime.execution_contract import (
     ATTEMPT_RECEIPT_VERSION,
     LOGICAL_CONTRACT_VERSION,
     artifact_json_bytes,
+    build_common_receipt_binding,
     canonical_json_bytes,
     logical_contract_sha256,
     validate_attempt_receipt,
@@ -361,7 +362,9 @@ class BusState(TypedDict, total=False):
     provider_evidence_sha256: str
     fanin_evidence_sha256: str
     grok_fanin_manifest_ref: str
+    grok_fanin_manifest_sha256: str
     grok_fanin_evidence_ref: str
+    grok_fanin_evidence_sha256: str
     grok_fanin_lane_count: int
     grok_fanin_lane_modes: list[str]
     grok_fanin_audit_lane_count: int
@@ -556,11 +559,23 @@ def _grok_fanin_worker_lane(state: BusState) -> dict[str, Any] | None:
     ).resolve()
     try:
         manifest_path.relative_to(runtime)
-        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-    except (OSError, ValueError, json.JSONDecodeError):
+        manifest_bytes = manifest_path.read_bytes()
+        manifest = json.loads(manifest_bytes.decode("utf-8"))
+    except (OSError, UnicodeError, ValueError, json.JSONDecodeError):
         return failed("GROK_FANIN_MANIFEST_INVALID")
     if not isinstance(manifest, dict):
         return failed("GROK_FANIN_MANIFEST_INVALID")
+    manifest_sha256 = hashlib.sha256(manifest_bytes).hexdigest()
+    declared_manifest_sha256 = str(
+        state.get("grok_fanin_manifest_sha256") or state.get("grok_fanin_evidence_sha256") or ""
+    ).strip()
+    canonical_package_mode = (
+        manifest.get("package_contract_mode") == "xinao.worker_package_batch.v3"
+    )
+    if declared_manifest_sha256 and declared_manifest_sha256 != manifest_sha256:
+        return failed("GROK_FANIN_MANIFEST_HASH_MISMATCH")
+    if canonical_package_mode and declared_manifest_sha256 != manifest_sha256:
+        return failed("GROK_FANIN_MANIFEST_HASH_REQUIRED")
     workflow_id = str(state.get("workflow_id") or "")
     source_workflow_id = str(manifest.get("workflow_id") or "")
     lineage_ok = workflow_id == source_workflow_id or workflow_id.startswith(
@@ -632,6 +647,26 @@ def _grok_fanin_worker_lane(state: BusState) -> dict[str, Any] | None:
         return failed("GROK_FANIN_FULL_FRONTIER_OR_MODEL_INVALID")
     if any(not isinstance(item, dict) for item in lanes):
         return failed("GROK_FANIN_LANE_PROVIDER_OR_STATE_INVALID")
+    if canonical_package_mode:
+        top_package_sha256 = str(manifest.get("package_manifest_sha256") or "")
+        top_envelope_sha256 = str(manifest.get("dispatch_envelope_sha256") or "")
+        canonical_work_keys = manifest.get("canonical_work_keys")
+        observed_work_keys = sorted(str(item.get("work_key") or "") for item in lanes)
+        if not (
+            re.fullmatch(r"[0-9a-f]{64}", top_package_sha256)
+            and re.fullmatch(r"[0-9a-f]{64}", top_envelope_sha256)
+            and canonical_work_keys == observed_work_keys
+            and str(manifest.get("dispatch_task_run_id") or "")
+            == str(state.get("dispatch_task_run_id") or "")
+            and len(set(observed_work_keys)) == len(observed_work_keys)
+            and all(observed_work_keys)
+            and all(
+                str(item.get("package_manifest_sha256") or "") == top_package_sha256
+                and str(item.get("dispatch_envelope_sha256") or "") == top_envelope_sha256
+                for item in lanes
+            )
+        ):
+            return failed("GROK_FANIN_CANONICAL_PACKAGE_BINDING_INVALID")
     lane_accounting = [item.get("invocation_accounting") for item in lanes]
     if any(not isinstance(item, dict) for item in lane_accounting) or any(
         int(token_accounting.get(key) or 0)
@@ -699,11 +734,24 @@ def _grok_fanin_worker_lane(state: BusState) -> dict[str, Any] | None:
             ):
                 raise ValueError("common contract or receipt rejected")
             common_receipt_bindings.append(
-                {
-                    "lane_id": str(item.get("lane_id") or ""),
-                    "contract_sha256": contract_sha256,
-                    "attempt_receipt_sha256": receipt_sha256,
-                }
+                build_common_receipt_binding(
+                    logical_contract,
+                    lane_id=str(item.get("lane_id") or ""),
+                    attempt_receipt_sha256=receipt_sha256,
+                    attempt_receipt=attempt_receipt,
+                    work_key=(str(item.get("work_key") or "") if canonical_package_mode else ""),
+                    package_manifest_sha256=(
+                        str(item.get("package_manifest_sha256") or "")
+                        if canonical_package_mode
+                        else ""
+                    ),
+                    prior_accepted_ancestor_binding=(
+                        item.get("prior_accepted_ancestor_binding")
+                        if canonical_package_mode
+                        and isinstance(item.get("prior_accepted_ancestor_binding"), dict)
+                        else None
+                    ),
+                )
             )
     except (TypeError, ValueError):
         return failed("GROK_FANIN_COMMON_RECEIPT_INVALID")
@@ -755,6 +803,12 @@ def _grok_fanin_worker_lane(state: BusState) -> dict[str, Any] | None:
         return failed("GROK_FANIN_LANE_PROVIDER_OR_STATE_INVALID")
     lane_modes = [str(item.get("mode") or "") for item in lanes if isinstance(item, dict)]
     lane_count = len(lanes)
+    route_roles = {str(item.get("model_route_role") or "") for item in lanes} - {""}
+    route_role = (
+        next(iter(route_roles))
+        if len(route_roles) == 1
+        else ("mixed_grok_frontier" if route_roles else "default_background_worker")
+    )
     return {
         "worker_lane_ok": True,
         "worker_lane_status": "completed",
@@ -771,8 +825,12 @@ def _grok_fanin_worker_lane(state: BusState) -> dict[str, Any] | None:
         "worker_lane_cross_seam_receipt_version": ATTEMPT_RECEIPT_VERSION,
         "worker_lane_cross_seam_receipt_set_sha256": common_receipt_set_sha256,
         "worker_lane_cross_seam_receipt_ok": True,
-        "worker_lane_tier": "T0_DEFAULT_GROK",
-        "worker_lane_route_role": "default_background_worker",
+        "worker_lane_tier": (
+            "T1_ESCALATED_GROK"
+            if any(item.get("is_escalated") is True for item in lanes)
+            else "T0_DEFAULT_GROK"
+        ),
+        "worker_lane_route_role": route_role,
         "worker_lane_adapter": (
             "grok_build_cli_docker_native" if docker_native else "temporal_acpx_fanin"
         ),
@@ -782,6 +840,8 @@ def _grok_fanin_worker_lane(state: BusState) -> dict[str, Any] | None:
         "grok_fanin_requested_model": model,
         "grok_fanin_observed_model": str(manifest.get("observed_model") or ""),
         "grok_fanin_manifest_ref": str(manifest_path),
+        "grok_fanin_manifest_sha256": manifest_sha256,
+        "grok_fanin_evidence_sha256": manifest_sha256,
         "grok_fanin_lane_count": lane_count,
         "grok_fanin_lane_modes": lane_modes,
         "grok_fanin_audit_lane_count": sum(
