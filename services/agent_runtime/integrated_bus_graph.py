@@ -567,9 +567,7 @@ def _grok_fanin_worker_lane(state: BusState) -> dict[str, Any] | None:
         return failed("GROK_FANIN_MANIFEST_INVALID")
     manifest_sha256 = hashlib.sha256(manifest_bytes).hexdigest()
     declared_manifest_sha256 = str(
-        state.get("grok_fanin_manifest_sha256")
-        or state.get("grok_fanin_evidence_sha256")
-        or ""
+        state.get("grok_fanin_manifest_sha256") or state.get("grok_fanin_evidence_sha256") or ""
     ).strip()
     canonical_package_mode = (
         manifest.get("package_contract_mode") == "xinao.worker_package_batch.v3"
@@ -806,8 +804,10 @@ def _grok_fanin_worker_lane(state: BusState) -> dict[str, Any] | None:
     lane_modes = [str(item.get("mode") or "") for item in lanes if isinstance(item, dict)]
     lane_count = len(lanes)
     route_roles = {str(item.get("model_route_role") or "") for item in lanes} - {""}
-    route_role = next(iter(route_roles)) if len(route_roles) == 1 else (
-        "mixed_grok_frontier" if route_roles else "default_background_worker"
+    route_role = (
+        next(iter(route_roles))
+        if len(route_roles) == 1
+        else ("mixed_grok_frontier" if route_roles else "default_background_worker")
     )
     return {
         "worker_lane_ok": True,

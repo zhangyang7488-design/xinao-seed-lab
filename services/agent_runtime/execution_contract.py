@@ -147,12 +147,9 @@ def build_common_receipt_binding(
                 ancestor.get("prior_action_binding"),
                 "prior_accepted_ancestor_binding.prior_action_binding",
             )
-            prior_action_sha256 = hashlib.sha256(
-                canonical_json_bytes(prior_action)
-            ).hexdigest()
+            prior_action_sha256 = hashlib.sha256(canonical_json_bytes(prior_action)).hexdigest()
             if (
-                ancestor.get("schema_version")
-                != "xinao.prior_accepted_ancestor_action.v1"
+                ancestor.get("schema_version") != "xinao.prior_accepted_ancestor_action.v1"
                 or ancestor.get("reuse_disposition") != "ACCEPTED_IDENTICAL_REUSE"
                 or ancestor.get("skip_provider_execution") is not True
                 or ancestor.get("model_invocation_allowed") is not False
@@ -185,8 +182,7 @@ def build_common_receipt_binding(
                     "prior_accepted_ancestor_binding.prior_action_binding_sha256",
                 )
                 != prior_action_sha256
-                or prior_action.get("logical_operation_id")
-                != contract.get("logical_operation_id")
+                or prior_action.get("logical_operation_id") != contract.get("logical_operation_id")
                 or prior_action.get("selection") != contract.get("selection")
             ):
                 raise ExecutionContractError(
@@ -1034,10 +1030,22 @@ def _validate_registry_terminal_receipts(
     catalog: Mapping[str, object],
     repo_root: Path,
     field: str,
+    expected_provider_sha256s: set[str] | None = None,
 ) -> set[str]:
     refs = evidence.get("terminal_receipt_evidence")
     if not isinstance(refs, list) or not refs:
         raise ExecutionContractError(f"{field} lacks terminal_receipt_evidence")
+    contract_refs = evidence.get("logical_contract_evidence")
+    contracts: dict[str, Mapping[str, object]] = {}
+    if isinstance(contract_refs, list):
+        for index, raw_ref in enumerate(contract_refs):
+            _, contract = _verified_registry_json(
+                raw_ref,
+                catalog=catalog,
+                repo_root=repo_root,
+                field=f"{field}.logical_contract_evidence[{index}]",
+            )
+            contracts[logical_contract_sha256(contract)] = contract
     receipt_session_ids: set[str] = set()
     for index, raw_ref in enumerate(refs):
         _, payload = _verified_registry_json(
@@ -1058,8 +1066,20 @@ def _validate_registry_terminal_receipts(
             if isinstance(invocations, list) and invocations
             else {}
         )
+        contract = contracts.get(str(payload.get("contract_sha256") or ""))
+        if contract_refs is not None and contract is None:
+            raise ExecutionContractError(f"{field} terminal receipt has no exact logical contract")
+        contract_accepted = bool(
+            contract is not None
+            and validate_attempt_receipt(
+                contract,
+                payload,
+                expected_consumer_id="canonical_docker_grok_worker",
+            ).accepted
+        )
         receipt_ok = bool(
-            payload.get("schema_version") == ATTEMPT_RECEIPT_VERSION
+            (contract_accepted if contracts else int(output.get("chars") or 0) >= 256)
+            and payload.get("schema_version") == ATTEMPT_RECEIPT_VERSION
             and payload.get("terminal_state") == "completed"
             and str(payload.get("stop_reason") or "").lower() == "endturn"
             and payload.get("provider_evidence_valid") is True
@@ -1067,7 +1087,7 @@ def _validate_registry_terminal_receipts(
             and output.get("substantive") is True
             and output.get("markers_ok") is True
             and output.get("schema_valid") is True
-            and int(output.get("chars") or 0) >= 256
+            and int(output.get("chars") or 0) > 0
             and isinstance(output.get("content_sha256"), str)
             and _SHA256_RE.fullmatch(str(output.get("content_sha256") or ""))
             and int(usage.get("invocation_count") or 0) >= 1
@@ -1076,7 +1096,12 @@ def _validate_registry_terminal_receipts(
             and final_invocation.get("state") == "accepted"
             and str(final_invocation.get("stop_reason") or "").lower() == "endturn"
             and int(final_invocation.get("total_tokens") or 0) > 0
-            and int(final_invocation.get("output_chars") or 0) >= 256
+            and int(final_invocation.get("output_chars") or 0) == int(output.get("chars") or 0)
+            and (
+                expected_provider_sha256s is None
+                or not contracts
+                or str(payload.get("provider_evidence_sha256") or "") in expected_provider_sha256s
+            )
         )
         if not receipt_ok:
             raise ExecutionContractError(
@@ -1194,8 +1219,9 @@ def validate_consumer_registry(
             raise ExecutionContractError(f"{field} lacks raw_identity_evidence")
         raw_models: set[str] = set()
         raw_session_ids: set[str] = set()
+        raw_evidence_sha256s: set[str] = set()
         for raw_index, raw_ref in enumerate(raw_refs):
-            _, raw_payload = _verified_registry_json(
+            raw_evidence, raw_payload = _verified_registry_json(
                 raw_ref,
                 catalog=catalog,
                 repo_root=repo_root,
@@ -1203,6 +1229,7 @@ def validate_consumer_registry(
             )
             raw_models.update(_registry_observed_models(raw_payload))
             raw_session_ids.update(_registry_session_ids(raw_payload))
+            raw_evidence_sha256s.add(str(raw_evidence.get("sha256") or ""))
         _validate_registry_session_identity(
             evidence,
             selected_model="grok-4.5",
@@ -1215,6 +1242,7 @@ def validate_consumer_registry(
             evidence,
             selected_model="grok-4.5",
             expected_session_ids=raw_session_ids,
+            expected_provider_sha256s=raw_evidence_sha256s,
             catalog=catalog,
             repo_root=repo_root,
             field=field,

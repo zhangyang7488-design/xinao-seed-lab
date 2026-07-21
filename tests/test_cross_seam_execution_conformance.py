@@ -12,6 +12,7 @@ from services.agent_runtime.execution_contract import (
     IDENTICAL_WORK_DISPOSITIONS,
     LOGICAL_CONTRACT_VERSION,
     ExecutionContractError,
+    _validate_registry_terminal_receipts,
     artifact_json_bytes,
     build_common_dispatch_disposition,
     classify_identical_work_disposition,
@@ -908,7 +909,7 @@ def test_consumer_registry_requires_current_exact_evidence_for_complete_status()
         pytest.skip("canonical operator evidence is unavailable on this runner")
     report = validate_consumer_registry(registry, repo_root=ROOT)
     assert report["ok"] is True
-    assert report["consumer_count"] == 14
+    assert report["consumer_count"] == 16
     exact_consumers = {
         "canonical_docker_grok_worker",
         "canonical_langgraph_grok_fanin",
@@ -945,8 +946,10 @@ def test_consumer_registry_requires_current_exact_evidence_for_complete_status()
     }
     assert set(boundary_consumers) == {
         "action_resume_preaction_guard",
+        "global_frontier_reconciliation_v2",
         "problem_transition_task_run_adapter",
         "system_awareness_task_run_scanner",
+        "worktree_carrier_resolver",
         "worktree_lifecycle_record_producer",
         "worktree_lifecycle_scanner",
     }
@@ -971,6 +974,43 @@ def _write_registry_evidence(path: Path, payload: dict[str, object]) -> str:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_bytes(artifact_json_bytes(payload))
     return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def test_registry_terminal_receipt_uses_exact_contract_and_provider_bytes(
+    tmp_path: Path,
+) -> None:
+    contract_path = tmp_path / "logical_contract.json"
+    receipt_path = tmp_path / "attempt_receipt.json"
+    contract_sha = _write_registry_evidence(contract_path, _contract())
+    receipt_sha = _write_registry_evidence(receipt_path, _receipt())
+    evidence = {
+        "logical_contract_evidence": ["contract"],
+        "terminal_receipt_evidence": ["receipt"],
+    }
+    catalog = {
+        "contract": {"path": str(contract_path), "sha256": contract_sha},
+        "receipt": {"path": str(receipt_path), "sha256": receipt_sha},
+    }
+
+    assert _validate_registry_terminal_receipts(
+        evidence,
+        selected_model="grok-composer-2.5-fast",
+        expected_session_ids={"session-1"},
+        expected_provider_sha256s={"8" * 64},
+        catalog=catalog,
+        repo_root=tmp_path,
+        field="strong_registry_fixture",
+    ) == {"session-1"}
+    with pytest.raises(ExecutionContractError, match="substantive completion"):
+        _validate_registry_terminal_receipts(
+            evidence,
+            selected_model="grok-composer-2.5-fast",
+            expected_session_ids={"session-1"},
+            expected_provider_sha256s={"9" * 64},
+            catalog=catalog,
+            repo_root=tmp_path,
+            field="strong_registry_fixture",
+        )
 
 
 def _terminal_registry_receipt(selected_model: str, session_id: str) -> dict[str, object]:

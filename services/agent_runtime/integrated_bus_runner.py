@@ -64,9 +64,7 @@ from services.agent_runtime.tool_table_coverage import build_tool_table_coverage
 
 SCHEMA_VERSION = "xinao.integrated_bus_runner.v1"
 SENTINEL = "SENTINEL:XINAO_INTEGRATED_BUS_RUNNER_READY"
-WINDOWLESS_CREATIONFLAGS = (
-    getattr(subprocess, "CREATE_NO_WINDOW", 0) if os.name == "nt" else 0
-)
+WINDOWLESS_CREATIONFLAGS = getattr(subprocess, "CREATE_NO_WINDOW", 0) if os.name == "nt" else 0
 REPLACES = [
     "phase0_minimal_weld_activity",
     "phase0_external_seam_invoke",
@@ -310,8 +308,10 @@ def _normalize_evidence_path(ref: str) -> Path | None:
 
 def _runtime_host_path(raw: object, *, runtime_root: Path) -> Path:
     text = str(raw or "").strip().replace("\\", "/")
-    path = runtime_root / text[len("/evidence/") :] if text.startswith("/evidence/") else Path(
-        str(raw or "")
+    path = (
+        runtime_root / text[len("/evidence/") :]
+        if text.startswith("/evidence/")
+        else Path(str(raw or ""))
     )
     resolved = path.resolve(strict=True)
     resolved.relative_to(runtime_root.resolve())
@@ -335,9 +335,7 @@ def _hash_bound_runtime_ref(
 
 
 def _write_json_create_once(path: Path, value: object) -> str:
-    raw = (json.dumps(value, ensure_ascii=False, indent=2, sort_keys=True) + "\n").encode(
-        "utf-8"
-    )
+    raw = (json.dumps(value, ensure_ascii=False, indent=2, sort_keys=True) + "\n").encode("utf-8")
     path.parent.mkdir(parents=True, exist_ok=True)
     temporary = path.with_name(f".{path.name}.{os.getpid()}.{uuid.uuid4().hex}.tmp")
     temporary.write_bytes(raw)
@@ -369,7 +367,11 @@ def _record_leg_b_worker_terminals(
     if result.get("grok_fanin_ok") is not True or result.get("worker_lane_ok") is not True:
         return []
     lanes = result.get("grok_lanes")
-    if not isinstance(lanes, list) or not lanes or any(not isinstance(item, Mapping) for item in lanes):
+    if (
+        not isinstance(lanes, list)
+        or not lanes
+        or any(not isinstance(item, Mapping) for item in lanes)
+    ):
         raise ValueError("accepted leg-B fan-in has no typed lanes")
     run_dir = dispatch_task_run_dir.resolve(strict=True)
     if run_dir.name != dispatch_task_run_id:
@@ -479,6 +481,8 @@ def _record_leg_b_worker_terminals(
                 str(run_dir.parent),
                 "--task-run-id",
                 dispatch_task_run_id,
+                "--runtime-root",
+                str(runtime_root.resolve(strict=True)),
                 "--actor",
                 "leg-b-terminal-consumer",
             ],
@@ -1329,10 +1333,9 @@ def _build_payload(
         ),
     }
     if result.get("grok_canonical_dispatch") is True:
-        checks["leg_b_task_run_worker_terminal"] = (
-            result.get("grok_worker_terminal_recorded") is True
-            and bool(result.get("grok_worker_terminal_records"))
-        )
+        checks["leg_b_task_run_worker_terminal"] = result.get(
+            "grok_worker_terminal_recorded"
+        ) is True and bool(result.get("grok_worker_terminal_records"))
     if langfuse_keys_missing:
         result.setdefault("langfuse_skipped", True)
         result.setdefault("langfuse_named_blocker", "LANGFUSE_KEYS_MISSING")

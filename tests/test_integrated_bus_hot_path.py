@@ -626,9 +626,7 @@ def _attested_grok_manifest(
         manifest["package_contract_mode"] = "xinao.worker_package_batch.v3"
         manifest["package_manifest_sha256"] = "d" * 64
         manifest["dispatch_envelope_sha256"] = "9" * 64
-        manifest["canonical_work_keys"] = sorted(
-            str(lane["work_key"]) for lane in lane_payloads
-        )
+        manifest["canonical_work_keys"] = sorted(str(lane["work_key"]) for lane in lane_payloads)
     return manifest
 
 
@@ -2747,9 +2745,7 @@ def test_canonical_package_fanin_uses_one_shared_receipt_set_binding(tmp_path: P
         canonical_json_bytes(manifest["cross_seam_receipt_bindings"])
     ).hexdigest()
     manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
-    state["grok_fanin_manifest_sha256"] = hashlib.sha256(
-        manifest_path.read_bytes()
-    ).hexdigest()
+    state["grok_fanin_manifest_sha256"] = hashlib.sha256(manifest_path.read_bytes()).hexdigest()
     rejected = _grok_fanin_worker_lane(state)
     assert rejected is not None
     assert rejected["worker_lane_ok"] is False
@@ -2919,9 +2915,7 @@ def test_leg_b_terminal_consumer_binds_exact_task_run_and_is_replayable(
     run_id = "run-leg-b-consumer"
     run_dir = tmp_path / "runs" / run_id
     run_dir.mkdir(parents=True)
-    (run_dir / "task.json").write_text(
-        json.dumps({"run_id": run_id}), encoding="utf-8"
-    )
+    (run_dir / "task.json").write_text(json.dumps({"run_id": run_id}), encoding="utf-8")
     package = {
         "package_id": "p1",
         "work_key": "wk:p1",
@@ -3014,10 +3008,8 @@ def test_leg_b_terminal_consumer_binds_exact_task_run_and_is_replayable(
     assert first == second
     assert len(calls) == 2
     assert all(command[0] == sys.executable for command in calls)
-    assert all(
-        kwargs["creationflags"] == runner.WINDOWLESS_CREATIONFLAGS
-        for kwargs in run_kwargs
-    )
+    assert all("--runtime-root" in command for command in calls)
+    assert all(kwargs["creationflags"] == runner.WINDOWLESS_CREATIONFLAGS for kwargs in run_kwargs)
     assert first[0]["task_run_id"] == run_id
 
     lane["dispatch_task_run_id"] = "other-run"

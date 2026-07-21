@@ -1578,9 +1578,7 @@ def reconcile_global_frontier(raw: Mapping[str, object]) -> dict[str, Any]:
             "INPUT_INVALID",
             "parent_mainline_id, task_run_id, event_head, and scan_generation are required",
         )
-    inventory, inventory_binding = _read_hash_bound_frontier_inventory(
-        data.get("inventory_ref")
-    )
+    inventory, inventory_binding = _read_hash_bound_frontier_inventory(data.get("inventory_ref"))
     inventory_head = _frontier_event_head(inventory.get("event_head"), "inventory.event_head")
 
     reasons: list[str] = []
@@ -1734,9 +1732,7 @@ def reconcile_global_frontier(raw: Mapping[str, object]) -> dict[str, Any]:
         if not basis_ok:
             fatal_reasons.append("GLOBAL_FRONTIER_INVENTORY_PROOF_INCOMPLETE")
         wake_raw = data.get("wakeable_wait")
-        wakeable_wait = evaluate_wakeable_wait(
-            wake_raw if isinstance(wake_raw, Mapping) else {}
-        )
+        wakeable_wait = evaluate_wakeable_wait(wake_raw if isinstance(wake_raw, Mapping) else {})
         if wakeable_wait.get("wait_allowed") is not True:
             fatal_reasons.append("GLOBAL_FRONTIER_WAKE_PROOF_INCOMPLETE")
 
@@ -2404,15 +2400,11 @@ def _dirty_facts(worktree: Path) -> dict[str, Any]:
             classified_full = worktree / classified_path.rstrip("/")
             try:
                 stat = classified_full.stat()
-                fact = (
-                    f"{classified_path}\0{stat.st_size}\0{stat.st_mtime_ns}".encode(
-                        "utf-8", errors="surrogateescape"
-                    )
-                )
-            except OSError:
-                fact = f"{classified_path}\0MISSING".encode(
+                fact = f"{classified_path}\0{stat.st_size}\0{stat.st_mtime_ns}".encode(
                     "utf-8", errors="surrogateescape"
                 )
+            except OSError:
+                fact = f"{classified_path}\0MISSING".encode("utf-8", errors="surrogateescape")
             ignored_parts.append(fact)
             if path_class == "cache":
                 ignored_cache_parts.append(fact)
@@ -3452,9 +3444,7 @@ def resolve_worktree_carrier(
         "task_run_id": str(task.get("run_id") or "").strip(),
     }
     if any(not value for value in required.values()):
-        raise SystemAwarenessError(
-            "INPUT_INVALID", "work_key, owner, and task_run_id are required"
-        )
+        raise SystemAwarenessError("INPUT_INVALID", "work_key, owner, and task_run_id are required")
     lifecycle_records = _normalize_lifecycle_records(records)
     matches = [row for row in lifecycle_records if row.get("work_key") == required["work_key"]]
     scan = scan_worktree_lifecycle(repo_root, base_ref=base_ref, records=records, now=now)
@@ -3547,9 +3537,7 @@ def resolve_worktree_carrier(
                     )
                 else:
                     carrier = None
-                    reasons.extend(
-                        ["WORKTREE_CARRIER_NEW_TRANSITION_REQUIRED", *report_reasons]
-                    )
+                    reasons.extend(["WORKTREE_CARRIER_NEW_TRANSITION_REQUIRED", *report_reasons])
 
     return {
         "schema_version": WORKTREE_CARRIER_RESOLUTION_VERSION,
@@ -4412,9 +4400,7 @@ def _frontier_invalidated(
         "parent_state": "open",
         "global_frontier_reconciled": False,
         "parent_wait_claim_allowed": False,
-        "reason_codes": list(
-            dict.fromkeys([reason_code, *(projection.get("reason_codes") or [])])
-        ),
+        "reason_codes": list(dict.fromkeys([reason_code, *(projection.get("reason_codes") or [])])),
         "authority": False,
         "completion_claim_allowed": False,
     }
@@ -4451,9 +4437,7 @@ def evaluate_global_frontier_at_task_run_head(
         projection.get("task_run_id") != task.get("run_id")
         or projection.get("event_head") != expected_head
     ):
-        invalid = _frontier_invalidated(
-            projection, "GLOBAL_FRONTIER_EVENT_HEAD_MISMATCH"
-        )
+        invalid = _frontier_invalidated(projection, "GLOBAL_FRONTIER_EVENT_HEAD_MISMATCH")
         invalid["expected_task_run_id"] = task.get("run_id")
         invalid["expected_event_head"] = expected_head
         return invalid
@@ -4516,16 +4500,12 @@ def _frontier_reconciliation_from_events(
         projection.get("task_run_id") != task_run_id
         or projection.get("event_head") != expected_head
     ):
-        invalid = _frontier_invalidated(
-            projection, "GLOBAL_FRONTIER_EVENT_HEAD_MISMATCH"
-        )
+        invalid = _frontier_invalidated(projection, "GLOBAL_FRONTIER_EVENT_HEAD_MISMATCH")
         invalid["expected_task_run_id"] = task_run_id
         invalid["expected_event_head"] = expected_head
         return invalid
     if any(_frontier_event_is_material(event) for event in events[candidate_index + 1 :]):
-        return _frontier_invalidated(
-            projection, "GLOBAL_FRONTIER_RECEIPT_STALE", status="stale"
-        )
+        return _frontier_invalidated(projection, "GLOBAL_FRONTIER_RECEIPT_STALE", status="stale")
     return projection
 
 

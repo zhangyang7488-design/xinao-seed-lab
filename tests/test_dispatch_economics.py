@@ -2525,12 +2525,8 @@ def test_accepted_ancestor_reuse_projects_zero_current_cost_and_retains_history(
     )
     prior_contract_ref = dict(prior_event["common_contract_ref"])
     prior_attempt_ref = dict(prior_event["common_attempt_ref"])
-    prior_contract = json.loads(
-        Path(prior_contract_ref["path"]).read_text(encoding="utf-8")
-    )
-    prior_attempt = json.loads(
-        Path(prior_attempt_ref["path"]).read_text(encoding="utf-8")
-    )
+    prior_contract = json.loads(Path(prior_contract_ref["path"]).read_text(encoding="utf-8"))
+    prior_attempt = json.loads(Path(prior_attempt_ref["path"]).read_text(encoding="utf-8"))
 
     r2_manifest = copy.deepcopy(fixture["manifest"])
     r2_manifest["graph_revision"] = 2

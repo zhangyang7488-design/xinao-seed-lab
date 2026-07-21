@@ -18,10 +18,49 @@
     "execution_scope": "docker:houtai-gongren",
     "conformance_test": "tests/test_cross_seam_execution_conformance.py::test_docker_grok_identity_bindings_keep_productivity_and_composer_ledgers_separate",
     "current_productivity_evidence": [
-      "grok45-docker-productivity-20260718T003102Z"
+      "grok45-docker-productivity-20260721T052426Z"
     ]
   },
   "evidence_catalog": {
+    "grok45-docker-productivity-20260721T052426Z": {
+      "kind": "productivity_canary",
+      "observed_at": "2026-07-21T05:24:26.5099310+00:00",
+      "path": "D:/XINAO_RESEARCH_RUNTIME/state/grok_docker_native/_canonical_package_attempts/operations/op_grok_docker_887fd3213fb4f67af2f6b5dd79643be3/cli_result.json",
+      "sha256": "1598cb57127a58c093fe23b8b1e74a8d82c10df3fe39e531ede0a7a76f7ca1d4",
+      "requested_model": "grok-4.5",
+      "observed_models": ["grok-4.5-build"],
+      "capability_ledger": "grok_45_productivity",
+      "composer_completion_credit": false,
+      "completion_claim_allowed": true,
+      "raw_identity_evidence": ["grok45-raw-identity-20260721T052426Z"],
+      "session_identity_evidence": ["grok45-session-identity-20260721T052426Z"],
+      "terminal_receipt_evidence": ["grok45-terminal-receipt-20260721T052426Z"],
+      "logical_contract_evidence": ["grok45-logical-contract-20260721T052419Z"]
+    },
+    "grok45-raw-identity-20260721T052426Z": {
+      "kind": "raw_model_identity",
+      "observed_at": "2026-07-21T05:24:26.4965264+00:00",
+      "path": "D:/XINAO_RESEARCH_RUNTIME/state/grok_docker_native/_canonical_package_attempts/operations/op_grok_docker_887fd3213fb4f67af2f6b5dd79643be3/cli_result.json",
+      "sha256": "1598cb57127a58c093fe23b8b1e74a8d82c10df3fe39e531ede0a7a76f7ca1d4"
+    },
+    "grok45-session-identity-20260721T052426Z": {
+      "kind": "session_model_identity",
+      "observed_at": "2026-07-21T05:24:26.5015534+00:00",
+      "path": "D:/XINAO_RESEARCH_RUNTIME/state/grok_docker_native/_canonical_package_attempts/operations/op_grok_docker_887fd3213fb4f67af2f6b5dd79643be3/session_model_evidence.json",
+      "sha256": "68eed80679336ec5192e7211f659a0f04d545dd5e64c1ab2cc60f9d9e7ff2c3c"
+    },
+    "grok45-terminal-receipt-20260721T052426Z": {
+      "kind": "terminal_attempt_receipt",
+      "observed_at": "2026-07-21T05:24:26.5099310+00:00",
+      "path": "D:/XINAO_RESEARCH_RUNTIME/state/grok_docker_native/_canonical_package_attempts/operations/op_grok_docker_887fd3213fb4f67af2f6b5dd79643be3/attempt_receipt.json",
+      "sha256": "f52ff499598f2ddf61430319da16a4d803382aa12ba134db0096e1f071c970e4"
+    },
+    "grok45-logical-contract-20260721T052419Z": {
+      "kind": "logical_execution_contract",
+      "observed_at": "2026-07-21T05:24:19.6900438+00:00",
+      "path": "D:/XINAO_RESEARCH_RUNTIME/state/grok_docker_native/_canonical_package_attempts/operations/op_grok_docker_887fd3213fb4f67af2f6b5dd79643be3/logical_contract.json",
+      "sha256": "72e60ec99c8bddca370e568a8fd4a92a23c5b89ddb4e33729aeeccb7ee8b2d58"
+    },
     "grok45-docker-productivity-20260718T003102Z": {
       "kind": "productivity_canary",
       "observed_at": "2026-07-18T00:31:02.3273512+00:00",

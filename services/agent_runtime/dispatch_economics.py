@@ -947,9 +947,7 @@ def validate_package_batch_manifest(
             "prior_attempt_receipt_ref": package.get("prior_attempt_receipt_ref"),
         }
         if package.get("prior_logical_contract_ref") is not None:
-            execution_seal["prior_logical_contract_ref"] = package[
-                "prior_logical_contract_ref"
-            ]
+            execution_seal["prior_logical_contract_ref"] = package["prior_logical_contract_ref"]
         package["package_seal_sha256"] = _canonical_sha(execution_seal)
         normalized.append(package)
 
@@ -2583,9 +2581,7 @@ def plan_package_frontier(
             "prior_attempt_receipt_ref": row.get("prior_attempt_receipt_ref"),
         }
         if row.get("prior_logical_contract_ref") is not None:
-            execution_seal["prior_logical_contract_ref"] = row[
-                "prior_logical_contract_ref"
-            ]
+            execution_seal["prior_logical_contract_ref"] = row["prior_logical_contract_ref"]
         row["package_seal_sha256"] = _canonical_sha(execution_seal)
         if row["package_seal_sha256"] != old_seal:
             row["resealed_from_package_seal_sha256"] = old_seal
@@ -2972,9 +2968,7 @@ def build_dispatch_outcome_event(
                 path_resolver=path_resolver,
             )
             if validated_ancestor != candidate_ancestor:
-                raise DispatchEconomicsError(
-                    "prior accepted ancestor binding is not fully derived"
-                )
+                raise DispatchEconomicsError("prior accepted ancestor binding is not fully derived")
         expected_task_ref = (
             str(validated_ancestor["task_contract_ref"])
             if validated_ancestor is not None
@@ -3053,10 +3047,8 @@ def build_dispatch_outcome_event(
             "capability_binding_sha256": provider_capability_binding_sha256,
         }
         if validated_ancestor is not None and (
-            operation
-            != str(validated_ancestor["prior_action_binding"]["logical_operation_id"])
-            or provider_selection
-            != dict(validated_ancestor["prior_action_binding"]["selection"])
+            operation != str(validated_ancestor["prior_action_binding"]["logical_operation_id"])
+            or provider_selection != dict(validated_ancestor["prior_action_binding"]["selection"])
         ):
             raise DispatchEconomicsError(
                 "current route disagrees with the accepted ancestor action"

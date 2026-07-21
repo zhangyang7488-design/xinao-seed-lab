@@ -801,10 +801,7 @@ def _bind_canonical_package_intake(
     return (
         canonical_intakes[0]
         if len(canonical_intakes) == 1
-        else "\n".join(
-            f"package_input_sha256={lane['input_sha256']}"
-            for lane in lanes
-        )
+        else "\n".join(f"package_input_sha256={lane['input_sha256']}" for lane in lanes)
     )
 
 
@@ -1695,9 +1692,7 @@ def _prior_accepted_ancestor_lane(
     if prior_attempt_raw is None and prior_contract_raw is None:
         return None
     if prior_attempt_raw is None or prior_contract_raw is None:
-        raise ValueError(
-            "Docker Grok prior reuse requires both attempt and logical-contract refs"
-        )
+        raise ValueError("Docker Grok prior reuse requires both attempt and logical-contract refs")
     prior_contract_ref, prior_contract_path, prior_contract, _ = _read_hash_bound_json_ref(
         prior_contract_raw,
         label="prior_logical_contract_ref",
@@ -1740,18 +1735,13 @@ def _prior_accepted_ancestor_lane(
         raise DockerGrokPermanentError(
             "accepted ancestor has no intact reusable Docker Grok operation"
         )
-    cached_contract_path = Path(
-        str(cached.get("cross_seam_logical_contract_ref") or "")
-    ).resolve()
-    cached_attempt_path = Path(
-        str(cached.get("cross_seam_attempt_receipt_ref") or "")
-    ).resolve()
+    cached_contract_path = Path(str(cached.get("cross_seam_logical_contract_ref") or "")).resolve()
+    cached_attempt_path = Path(str(cached.get("cross_seam_attempt_receipt_ref") or "")).resolve()
     if (
         cached.get("cross_seam_logical_contract") != prior_contract
         or cached_contract_path != prior_contract_path.resolve()
         or cached_attempt_path != prior_attempt_path.resolve()
-        or cached.get("cross_seam_logical_contract_artifact_sha256")
-        != prior_contract_ref["sha256"]
+        or cached.get("cross_seam_logical_contract_artifact_sha256") != prior_contract_ref["sha256"]
         or cached.get("cross_seam_attempt_receipt_sha256") != prior_attempt_ref["sha256"]
         or cached.get("package_manifest_sha256")
         != ancestor_binding["subject_manifest_ref"]["sha256"]
@@ -2294,17 +2284,23 @@ async def _execute_lane_locked(
             }
         )
     operation_spec_sha256 = _sha256(_json_bytes(operation_spec))
-    if _write_json_create_once(
-        logical_contract_path,
-        logical_contract,
-        artifact_name="cross-seam logical contract",
-    ) != logical_contract_artifact_sha256:
+    if (
+        _write_json_create_once(
+            logical_contract_path,
+            logical_contract,
+            artifact_name="cross-seam logical contract",
+        )
+        != logical_contract_artifact_sha256
+    ):
         raise RuntimeError("cross-seam logical contract artifact hash drifted")
-    if _write_json_create_once(
-        operation_spec_path,
-        operation_spec,
-        artifact_name="Docker Grok operation-spec",
-    ) != operation_spec_sha256:
+    if (
+        _write_json_create_once(
+            operation_spec_path,
+            operation_spec,
+            artifact_name="Docker Grok operation-spec",
+        )
+        != operation_spec_sha256
+    ):
         raise RuntimeError("Docker Grok operation-spec artifact hash drifted")
     cached = _cached_lane(
         operation_manifest,
@@ -2317,9 +2313,7 @@ async def _execute_lane_locked(
     if cached is not None:
         replayed = _bind_replay_capability_observation(cached, model_capabilities)
         return (
-            _bind_current_canonical_carrier(replayed, lane)
-            if canonical_package_mode
-            else replayed
+            _bind_current_canonical_carrier(replayed, lane) if canonical_package_mode else replayed
         )
     previous_manifest = _read_json(operation_manifest)
     prior_invocation_evidence = [
@@ -3241,8 +3235,7 @@ async def run_docker_native_grok_fanin(
     current_lane_accounting = [
         item["invocation_accounting"]
         for item in results
-        if item.get("replayed") is not True
-        and isinstance(item.get("invocation_accounting"), dict)
+        if item.get("replayed") is not True and isinstance(item.get("invocation_accounting"), dict)
     ]
     current_dispatch_usage_delta = {
         key: sum(int(item.get(key) or 0) for item in current_lane_accounting)
