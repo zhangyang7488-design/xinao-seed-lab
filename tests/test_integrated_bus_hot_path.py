@@ -1467,8 +1467,6 @@ def test_docker_grok_leg_b_rechecks_live_package_guard_after_route_claim(
     )
     with pytest.raises(ValueError, match="no longer model-start eligible"):
         docker_worker._revalidate_canonical_route_claim(lane)
-
-
 def test_docker_grok_leg_b_rejects_rules_ref_drift_before_provider(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
