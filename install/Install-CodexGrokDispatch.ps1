@@ -66,6 +66,29 @@ $receipt = [ordered]@{
 $receiptPath = Join-Path $releaseRoot "install-receipt.json"
 $utf8 = [Text.UTF8Encoding]::new($false)
 [IO.File]::WriteAllText($receiptPath, ($receipt | ConvertTo-Json -Depth 8), $utf8)
+$receiptSha256 = (Get-FileHash -LiteralPath $receiptPath -Algorithm SHA256).Hash.ToLowerInvariant()
+$pointer = [ordered]@{
+    schema_version = "xinao.codex_grok_dispatch_release_pointer.v1"
+    release_id = $releaseId
+    install_receipt_ref = [IO.Path]::GetFullPath($receiptPath)
+    install_receipt_sha256 = $receiptSha256
+    source_sha256 = $sourceHash
+    target_sha256 = $installedHash
+    authority = $false
+    completion_claim_allowed = $false
+}
+$releaseBase = Split-Path -Parent $releaseRoot
+$currentPath = Join-Path $releaseBase "current.json"
+$currentTemporary = $currentPath + "." + [guid]::NewGuid().ToString("N") + ".tmp"
+try {
+    [IO.File]::WriteAllText($currentTemporary, ($pointer | ConvertTo-Json -Depth 8), $utf8)
+    Move-Item -LiteralPath $currentTemporary -Destination $currentPath -Force
+}
+finally {
+    Remove-Item -LiteralPath $currentTemporary -Force -ErrorAction SilentlyContinue
+}
 $receipt | Add-Member -NotePropertyName receipt_ref -NotePropertyValue $receiptPath
-$receipt | Add-Member -NotePropertyName receipt_sha256 -NotePropertyValue ((Get-FileHash -LiteralPath $receiptPath -Algorithm SHA256).Hash.ToLowerInvariant())
+$receipt | Add-Member -NotePropertyName receipt_sha256 -NotePropertyValue $receiptSha256
+$receipt | Add-Member -NotePropertyName release_pointer_ref -NotePropertyValue $currentPath
+$receipt | Add-Member -NotePropertyName release_pointer_sha256 -NotePropertyValue ((Get-FileHash -LiteralPath $currentPath -Algorithm SHA256).Hash.ToLowerInvariant())
 $receipt | ConvertTo-Json -Depth 8

@@ -10,11 +10,12 @@ import importlib
 import json
 import os
 from pathlib import Path
+import re
 import stat
 import subprocess
 import sys
 import tempfile
-from typing import Any, Callable
+from typing import Any, Callable, Mapping
 import uuid
 
 
@@ -784,12 +785,13 @@ def _run_package(
 
     output_root = effective_cwd
     attempt_root = output_root / f"attempt-{attempt_number:04d}-{dispatch_id}"
-    artifact_refs: list[dict[str, str]] = [
+    control_artifact_refs: list[dict[str, str]] = [
         _hash_bound_ref(common_receipt_path, common_receipt_sha),
         _hash_bound_ref(attempt_path, attempt_sha),
         _hash_bound_ref(contract_path, contract_sha),
         _hash_bound_ref(pool_summary),
     ]
+    provider_artifact_refs: list[dict[str, str]] = []
     provider_output_ref: dict[str, str] | None = None
     provider_cli_ref: dict[str, str] | None = None
     provider_meta_ref: dict[str, str] | None = None
@@ -846,8 +848,10 @@ def _run_package(
         )
         return result
     for ref in (provider_output_ref, provider_cli_ref, provider_meta_ref):
-        if ref is not None and ref not in artifact_refs:
-            artifact_refs.append(ref)
+        if ref is not None and ref not in provider_artifact_refs:
+            provider_artifact_refs.append(ref)
+
+    artifact_refs = [*control_artifact_refs, *provider_artifact_refs]
 
     envelope = {
         "schema_version": "xinao.worker_package_result.v2",
@@ -892,7 +896,7 @@ def _run_package(
         common_adapter_receipt_ref=str(common_receipt_path),
         common_adapter_receipt_sha256=common_receipt_sha,
         attempt=attempt_number,
-        event_artifact_refs=artifact_refs,
+        event_artifact_refs=provider_artifact_refs,
         pool_summary_sha256=_sha(pool_summary),
     )
     return result
@@ -963,6 +967,81 @@ def _append_task_run_event(
         raise RuntimeError(
             f"task-run append failed exit={completed.returncode}: {completed.stderr.strip()}"
         )
+
+
+def _append_task_run_non_conversion(
+    *,
+    task_run_cli: Path,
+    task_run_root: Path,
+    task_run_id: str,
+    result: Mapping[str, Any],
+) -> bool:
+    pool_summary = Path(str(result.get("pool_summary_ref") or ""))
+    if not pool_summary.is_file():
+        return False
+    observed_pool_summary_sha = _sha(pool_summary)
+    declared_pool_summary_sha = str(result.get("pool_summary_sha256") or "").lower()
+    if declared_pool_summary_sha and (
+        not re.fullmatch(r"[0-9a-f]{64}", declared_pool_summary_sha)
+        or declared_pool_summary_sha != observed_pool_summary_sha
+    ):
+        raise RuntimeError("pool summary sha256 drifted before non-conversion recording")
+    pool_summary_sha = observed_pool_summary_sha
+    package_id = str(result.get("package_id") or "unknown-package")
+    work_key = str(result.get("work_key") or "unknown-work-key")
+    failure = str(result.get("failure") or "dispatch attempt did not reach worker_terminal")
+    provider_exit_code = int(result.get("exit_code") or 0)
+    retry_class = str(result.get("retry_class") or "").lower()
+    if retry_class not in {"transient", "deterministic"}:
+        failure_lower = failure.lower()
+        retry_class = (
+            "transient"
+            if result.get("timed_out") is True or "timeout" in failure_lower
+            else "deterministic"
+        )
+    command = [
+        sys.executable,
+        str(task_run_cli),
+        "--root",
+        str(task_run_root),
+        "event",
+        "--run-id",
+        task_run_id,
+        "--event-id",
+        f"evt-dispatch-nonconversion-{pool_summary_sha[:24]}",
+        "--actor",
+        "grok-worker-pool",
+        "--kind",
+        "failure",
+        "--phase",
+        "dispatch_attempt_non_conversion",
+        "--summary",
+        f"package {package_id} did not convert to worker_terminal: {failure}",
+        "--evidence-ref",
+        f"{pool_summary.resolve(strict=True)}#sha256={pool_summary_sha}",
+        "--target",
+        work_key,
+        "--exit-code",
+        str(provider_exit_code or 20),
+        "--retry-class",
+        retry_class,
+        "--side-effect-id",
+        f"se:dispatch-nonconversion:{task_run_id}:{pool_summary_sha[:32]}",
+    ]
+    completed = subprocess.run(
+        command,
+        check=False,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+    )
+    if completed.returncode != 0:
+        raise RuntimeError(
+            "task-run non-conversion append failed "
+            f"exit={completed.returncode}: {completed.stderr.strip()}"
+        )
+    return True
 
 
 def main() -> int:
@@ -1212,6 +1291,23 @@ def main() -> int:
                     provider_satisfied.add(package_id)
                     continue
                 if result.get("terminal_recordable") is not True:
+                    try:
+                        recorded = _append_task_run_non_conversion(
+                            task_run_cli=task_run_cli,
+                            task_run_root=task_run_root,
+                            task_run_id=task_run_id,
+                            result=result,
+                        )
+                        result["non_conversion_event_recorded"] = recorded
+                        if not recorded:
+                            result["non_conversion_recording_error"] = (
+                                "pool summary unavailable; native usage could not be hash-bound"
+                            )
+                    except Exception as exc:
+                        result["non_conversion_event_recorded"] = False
+                        result["non_conversion_recording_error"] = (
+                            f"{type(exc).__name__}: {exc}"
+                        )
                     failed.add(package_id)
                     continue
                 try:
@@ -1262,6 +1358,23 @@ def main() -> int:
                     result["failure"] = (
                         f"worker terminal recording failed: {type(exc).__name__}: {exc}"
                     )
+                    try:
+                        recorded = _append_task_run_non_conversion(
+                            task_run_cli=task_run_cli,
+                            task_run_root=task_run_root,
+                            task_run_id=task_run_id,
+                            result=result,
+                        )
+                        result["non_conversion_event_recorded"] = recorded
+                        if not recorded:
+                            result["non_conversion_recording_error"] = (
+                                "pool summary unavailable; native usage could not be hash-bound"
+                            )
+                    except Exception as record_exc:
+                        result["non_conversion_event_recorded"] = False
+                        result["non_conversion_recording_error"] = (
+                            f"{type(record_exc).__name__}: {record_exc}"
+                        )
                     failed.add(package_id)
 
     ordered_results = [

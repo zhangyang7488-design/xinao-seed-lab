@@ -427,7 +427,8 @@ $Prompt
     $script = {
         param(
             $WorkerScript, $PromptFile, $Cwd, $Model, $MaxTurns, $GrokHome,
-            $EvidenceDir, $MinChars, $Markers, $RequireJson, $JsonSchemaPath, $TimeoutSec
+            $EvidenceDir, $MinChars, $Markers, $RequireJson, $JsonSchemaPath, $TimeoutSec,
+            $RulesFile, $RulesSha256
         )
         $ErrorActionPreference = "Continue"
         $workerArgs = @{
@@ -440,6 +441,8 @@ $Prompt
             MinResultChars = $MinChars
             RequiredResultMarkers = @($Markers)
             TimeoutSec = $TimeoutSec
+            RulesFile = $RulesFile
+            RulesSha256 = $RulesSha256
             Quiet = $true
         }
         if ($RequireJson) { $workerArgs.RequireJsonObject = $true }
@@ -450,7 +453,7 @@ $Prompt
             evidence_dir = $EvidenceDir
         }
     }
-    [void]$ps.AddScript($script).AddArgument($workerScript).AddArgument($promptLane).AddArgument($Cwd).AddArgument($Model).AddArgument($MaxTurns).AddArgument($GrokHome).AddArgument($laneDir).AddArgument($MinResultChars).AddArgument(@($RequiredResultMarkers)).AddArgument([bool]$RequireJsonObject).AddArgument($JsonSchemaPath).AddArgument($TimeoutSec)
+    [void]$ps.AddScript($script).AddArgument($workerScript).AddArgument($promptLane).AddArgument($Cwd).AddArgument($Model).AddArgument($MaxTurns).AddArgument($GrokHome).AddArgument($laneDir).AddArgument($MinResultChars).AddArgument(@($RequiredResultMarkers)).AddArgument([bool]$RequireJsonObject).AddArgument($JsonSchemaPath).AddArgument($TimeoutSec).AddArgument($CommonRulesFile).AddArgument($CommonRulesSha256)
     $handle = $ps.BeginInvoke()
     $jobs += [pscustomobject]@{
         lane   = $lane
@@ -516,8 +519,21 @@ foreach ($j in $jobs) {
         try {
             $m = Get-Content -LiteralPath $laneLatest -Raw -Encoding UTF8 | ConvertFrom-Json
             if ($commonMode) {
+                $observedRulesSha256 = [string]$m.observed_rules_sha256
+                $rulesIdentityOk = [string]::Equals(
+                    $observedRulesSha256,
+                    $CommonRulesSha256,
+                    [StringComparison]::Ordinal
+                )
                 $m | Add-Member -NotePropertyName "observed_capability_binding_sha256" -NotePropertyValue ([string]$commonPreflight.capability_binding_sha256) -Force
                 $m | Add-Member -NotePropertyName "common_contract_preflight" -NotePropertyValue ([pscustomobject]$commonPreflight) -Force
+                $m | Add-Member -NotePropertyName "expected_rules_sha256" -NotePropertyValue $CommonRulesSha256 -Force
+                $m | Add-Member -NotePropertyName "rules_identity_ok" -NotePropertyValue $rulesIdentityOk -Force
+                if (-not $rulesIdentityOk) {
+                    $m.status = "rejected"
+                    $m.effective_output_accepted = $false
+                    $m | Add-Member -NotePropertyName "contract_failure" -NotePropertyValue "GROK_WORKER_POOL_OBSERVED_RULES_MISMATCH" -Force
+                }
                 [System.IO.File]::WriteAllText(
                     $laneLatest,
                     ($m | ConvertTo-Json -Depth 20),
@@ -558,6 +574,9 @@ foreach ($j in $jobs) {
             $item.structured_output_present = $m.structured_output_present -eq $true
             if ($commonMode) {
                 $item.observed_capability_binding_sha256 = [string]$m.observed_capability_binding_sha256
+                $item.observed_rules_sha256 = [string]$m.observed_rules_sha256
+                $item.expected_rules_sha256 = [string]$m.expected_rules_sha256
+                $item.rules_identity_ok = $m.rules_identity_ok -eq $true
                 $item.common_contract_preflight = $m.common_contract_preflight
             }
             $item.status = if ($item.timed_out -or $item.worker_timed_out) {
@@ -565,7 +584,8 @@ foreach ($j in $jobs) {
             } elseif (
                 $item.exit_code -eq 0 -and
                 $item.worker_status -eq "accepted" -and
-                $item.effective_output_accepted
+                $item.effective_output_accepted -and
+                (-not $commonMode -or $item.rules_identity_ok)
             ) { "accepted" } else { "rejected" }
         } catch { }
     }

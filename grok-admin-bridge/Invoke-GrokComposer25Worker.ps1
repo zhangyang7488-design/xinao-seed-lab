@@ -28,6 +28,8 @@ param(
     [string[]]$RequiredResultMarkers = @(),
     [switch]$RequireJsonObject,
     [string]$JsonSchemaPath = "",
+    [string]$RulesFile = "",
+    [string]$RulesSha256 = "",
     [switch]$Background,
     [switch]$NoAlwaysApprove,
     [switch]$Quiet,
@@ -161,6 +163,8 @@ if (-not [string]::IsNullOrWhiteSpace($BackgroundInvocationPath)) {
         $RequiredResultMarkers = @($backgroundInvocation.required_result_markers | ForEach-Object { [string]$_ })
         $RequireJsonObject = [bool]$backgroundInvocation.require_json_object
         $JsonSchemaPath = $candidateSchemaPath
+        $RulesFile = [string]$backgroundInvocation.rules_file
+        $RulesSha256 = [string]$backgroundInvocation.rules_sha256
         $NoAlwaysApprove = [bool]$backgroundInvocation.no_always_approve
         $Quiet = $true
         $Background = $false
@@ -326,6 +330,32 @@ if ($Background -and -not $DetachedDrain) {
             Write-Utf8CreateNew -Path $resolvedBackgroundSchemaPath -Text $backgroundSchemaText
             $backgroundSchemaSourceSha256 = Get-FileSha256Lower $resolvedBackgroundSchemaPath
         }
+        $resolvedBackgroundRulesPath = ""
+        $backgroundRulesSha256 = ""
+        if (-not [string]::IsNullOrWhiteSpace($RulesFile) -or -not [string]::IsNullOrWhiteSpace($RulesSha256)) {
+            if ([string]::IsNullOrWhiteSpace($RulesFile) -or $RulesSha256 -notmatch '^[0-9a-f]{64}$') {
+                throw "GROK_BACKGROUND_RULES_BINDING_INVALID"
+            }
+            $backgroundRulesSource = [IO.Path]::GetFullPath($RulesFile)
+            if (-not (Test-Path -LiteralPath $backgroundRulesSource -PathType Leaf)) {
+                throw "GROK_BACKGROUND_RULES_SOURCE_MISSING: $backgroundRulesSource"
+            }
+            $backgroundRulesBytes = [IO.File]::ReadAllBytes($backgroundRulesSource)
+            $backgroundRulesDigest = [Security.Cryptography.SHA256]::Create()
+            try {
+                $backgroundRulesSha256 = (
+                    [BitConverter]::ToString($backgroundRulesDigest.ComputeHash($backgroundRulesBytes)).Replace('-', '').ToLowerInvariant()
+                )
+            }
+            finally {
+                $backgroundRulesDigest.Dispose()
+            }
+            if (-not [string]::Equals($backgroundRulesSha256, $RulesSha256, [StringComparison]::Ordinal)) {
+                throw "GROK_BACKGROUND_RULES_SOURCE_HASH_MISMATCH"
+            }
+            $resolvedBackgroundRulesPath = Join-Path $EvidenceDir ($runId + ".background.rules.source")
+            [IO.File]::WriteAllBytes($resolvedBackgroundRulesPath, $backgroundRulesBytes)
+        }
         $backgroundDeadline = [DateTimeOffset]::UtcNow.AddSeconds($TimeoutSec)
     $backgroundInvocationBody = [ordered]@{
         schema_version = "xinao.grok_worker_background_invocation.v1"
@@ -349,6 +379,8 @@ if ($Background -and -not $DetachedDrain) {
         require_json_object = [bool]$RequireJsonObject
         json_schema_path = $resolvedBackgroundSchemaPath
         json_schema_source_sha256 = $backgroundSchemaSourceSha256
+        rules_file = $resolvedBackgroundRulesPath
+        rules_sha256 = $backgroundRulesSha256
         no_always_approve = [bool]$NoAlwaysApprove
     }
     $backgroundInvocationPath = Join-Path $EvidenceDir ($runId + ".background.invocation.json")
@@ -441,6 +473,8 @@ if ($Background -and -not $DetachedDrain) {
         prompt_snapshot_path = $backgroundPromptPath
         json_schema_source_snapshot_path = $resolvedBackgroundSchemaPath
         json_schema_source_sha256 = $backgroundSchemaSourceSha256
+        rules_source_snapshot_path = $resolvedBackgroundRulesPath
+        rules_source_sha256 = $backgroundRulesSha256
         deadline_utc = $backgroundDeadline.ToString("o")
         worker_meta_path = $metaPath
         latest_path = $latest
@@ -739,18 +773,51 @@ if ($PromptFile -and (Test-Path -LiteralPath $PromptFile)) {
 $shortExecutionContractSource = ""
 $shortExecutionContractSha256 = ""
 $shortExecutionContractRules = ""
+$observedRulesSha256 = ""
 $canonicalWorkerHome = [IO.Path]::GetFullPath("C:\Users\xx363\.grok-bg-workers").TrimEnd('\')
 $isCanonicalWorkerPool = [string]::Equals(
     $GrokHome.TrimEnd('\'),
     $canonicalWorkerHome,
     [StringComparison]::OrdinalIgnoreCase
 )
-if ($isCanonicalWorkerPool) {
+if (-not [string]::IsNullOrWhiteSpace($RulesFile) -or -not [string]::IsNullOrWhiteSpace($RulesSha256)) {
+    if ([string]::IsNullOrWhiteSpace($RulesFile)) {
+        throw "GROK_WORKER_RULES_FILE_REQUIRED"
+    }
+    if ($RulesSha256 -notmatch '^[0-9a-f]{64}$') {
+        throw "GROK_WORKER_RULES_SHA256_INVALID"
+    }
+    $shortExecutionContractSource = [IO.Path]::GetFullPath($RulesFile)
+    if (-not (Test-Path -LiteralPath $shortExecutionContractSource -PathType Leaf)) {
+        throw "GROK_WORKER_RULES_FILE_MISSING: $shortExecutionContractSource"
+    }
+    $rulesBytes = [IO.File]::ReadAllBytes($shortExecutionContractSource)
+    $rulesDigest = [Security.Cryptography.SHA256]::Create()
+    try {
+        $shortExecutionContractSha256 = (
+            [BitConverter]::ToString($rulesDigest.ComputeHash($rulesBytes)).Replace('-', '').ToLowerInvariant()
+        )
+    }
+    finally {
+        $rulesDigest.Dispose()
+    }
+    if (-not [string]::Equals($shortExecutionContractSha256, $RulesSha256, [StringComparison]::Ordinal)) {
+        throw "GROK_WORKER_RULES_SHA256_MISMATCH"
+    }
+    $strictUtf8 = [Text.UTF8Encoding]::new($false, $true)
+    $shortExecutionContractRules = $strictUtf8.GetString($rulesBytes)
+    if ($shortExecutionContractRules.Length -gt 0 -and $shortExecutionContractRules[0] -eq [char]0xFEFF) {
+        $shortExecutionContractRules = $shortExecutionContractRules.Substring(1)
+    }
+    $observedRulesSha256 = $shortExecutionContractSha256
+}
+elseif ($isCanonicalWorkerPool) {
     $shortExecutionContractSource = "C:\Users\xx363\Desktop\主线\工具胶水宪法\软件工具胶水宪法_当前有效.txt"
     if (-not (Test-Path -LiteralPath $shortExecutionContractSource -PathType Leaf)) {
         throw "GROK_CANONICAL_SHORT_CONTRACT_SOURCE_MISSING: $shortExecutionContractSource"
     }
     $shortExecutionContractSha256 = Get-FileSha256Lower $shortExecutionContractSource
+    $observedRulesSha256 = $shortExecutionContractSha256
     $shortExecutionContractRules = @"
 Canonical local worker contract source: $shortExecutionContractSource
 source_sha256=$shortExecutionContractSha256
@@ -859,6 +926,7 @@ $meta = [ordered]@{
     canonical_worker_pool = $isCanonicalWorkerPool
     short_execution_contract_source = $shortExecutionContractSource
     short_execution_contract_sha256 = $shortExecutionContractSha256
+    observed_rules_sha256 = $observedRulesSha256
     usage_accounting_complete = $false
     note_cn = "Authenticated-catalog exact-model Grok worker; default Composer 2.5; SuperGrok Build quota; CREATE_NO_WINDOW"
     hot_path_cn = "Codex->Grok headless worker (not visible TUI inject; not Docker desktop .lnk)"
