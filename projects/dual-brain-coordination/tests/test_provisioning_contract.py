@@ -113,15 +113,18 @@ def test_managed_generation_probe_pins_temporal_sdk() -> None:
 def test_temporal_pin_generator_is_read_only_and_not_self_referential() -> None:
     generator = (ROOT / "provisioning" / "_lane_c_build_pin.ps1").read_text()
     pin = json.loads((ROOT / "provisioning" / "temporal_mcp_pin.json").read_text())
+    deployment = json.loads(
+        (ROOT / "adapters" / "temporal" / "worker_deployment.v1.json").read_text()
+    )
 
     assert "uv run" not in generator
     assert "provisioning/temporal_mcp_pin.json" not in pin["key_files_sha256"]
     assert pin["worker_deployment"] == {
         "manifest": "adapters/temporal/worker_deployment.v1.json",
-        "deployment_name": "xinao-dualbrain-promoted",
-        "build_id": "593c2245181d7fc954187af956bbbdba",
-        "default_versioning_behavior": "PINNED",
-        "target_server": "1.31.0",
+        "deployment_name": deployment["deployment_name"],
+        "build_id": deployment["build_id"],
+        "default_versioning_behavior": deployment["default_versioning_behavior"],
+        "target_server": deployment["target_server"],
         "replay_gate": "adapters/temporal/replay_promoted_histories.py",
     }
     for relative, expected in pin["key_files_sha256"].items():
