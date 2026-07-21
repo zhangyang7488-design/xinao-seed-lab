@@ -59,6 +59,10 @@ function Get-FileSha256Lower([string]$Path) {
 
 function Write-Utf8CreateNew([string]$Path, [string]$Text) {
     $bytes = [Text.Encoding]::UTF8.GetBytes($Text)
+    Write-BytesCreateNew -Path $Path -Bytes $bytes
+}
+
+function Write-BytesCreateNew([string]$Path, [byte[]]$Bytes) {
     $stream = [IO.File]::Open(
         $Path,
         [IO.FileMode]::CreateNew,
@@ -66,7 +70,7 @@ function Write-Utf8CreateNew([string]$Path, [string]$Text) {
         [IO.FileShare]::None
     )
     try {
-        $stream.Write($bytes, 0, $bytes.Length)
+        $stream.Write($Bytes, 0, $Bytes.Length)
         $stream.Flush()
     }
     finally {
@@ -135,6 +139,9 @@ if (-not [string]::IsNullOrWhiteSpace($BackgroundInvocationPath)) {
             }
             if ((Get-FileSha256Lower $candidateSchemaPath) -ne [string]$backgroundInvocation.json_schema_source_sha256) {
                 throw "GROK_BACKGROUND_SCHEMA_SNAPSHOT_HASH_MISMATCH"
+            }
+            if ([string]$backgroundInvocation.json_schema_digest_profile -ne 'raw-bytes-sha256-v1') {
+                throw "GROK_BACKGROUND_SCHEMA_DIGEST_PROFILE_MISMATCH"
             }
         }
         $absoluteDeadline = [DateTimeOffset]::MinValue
@@ -274,7 +281,7 @@ $metaPath = Join-Path $EvidenceDir ($runId + ".json")
 $latest = Join-Path $EvidenceDir "latest.json"
 $resolvedJsonSchemaPath = ""
 $jsonSchemaSnapshotPath = ""
-$jsonSchemaCompact = ""
+$jsonSchemaPayload = ""
 $jsonSchemaSha256 = ""
 $jsonSchemaRequested = -not [string]::IsNullOrWhiteSpace($JsonSchemaPath)
 $effectiveRequireJsonObject = [bool]($RequireJsonObject -or -not [string]::IsNullOrWhiteSpace($JsonSchemaPath))
@@ -321,13 +328,11 @@ if ($Background -and -not $DetachedDrain) {
             if (-not (Test-Path -LiteralPath $backgroundSchemaSource -PathType Leaf)) {
                 throw "GROK_JSON_SCHEMA_MISSING: $backgroundSchemaSource"
             }
+            $backgroundSchemaBytes = [IO.File]::ReadAllBytes($backgroundSchemaSource)
             $strictBackgroundSchemaUtf8 = [Text.UTF8Encoding]::new($false, $true)
-            $backgroundSchemaText = [IO.File]::ReadAllText(
-                $backgroundSchemaSource,
-                $strictBackgroundSchemaUtf8
-            )
+            $null = $strictBackgroundSchemaUtf8.GetString($backgroundSchemaBytes)
             $resolvedBackgroundSchemaPath = Join-Path $EvidenceDir ($runId + ".background.schema.source.json")
-            Write-Utf8CreateNew -Path $resolvedBackgroundSchemaPath -Text $backgroundSchemaText
+            Write-BytesCreateNew -Path $resolvedBackgroundSchemaPath -Bytes $backgroundSchemaBytes
             $backgroundSchemaSourceSha256 = Get-FileSha256Lower $resolvedBackgroundSchemaPath
         }
         $resolvedBackgroundRulesPath = ""
@@ -379,6 +384,8 @@ if ($Background -and -not $DetachedDrain) {
         require_json_object = [bool]$RequireJsonObject
         json_schema_path = $resolvedBackgroundSchemaPath
         json_schema_source_sha256 = $backgroundSchemaSourceSha256
+        json_schema_digest_profile = if ($resolvedBackgroundSchemaPath) { "raw-bytes-sha256-v1" } else { "" }
+        json_schema_transformation_profile = if ($resolvedBackgroundSchemaPath) { "identity" } else { "" }
         rules_file = $resolvedBackgroundRulesPath
         rules_sha256 = $backgroundRulesSha256
         no_always_approve = [bool]$NoAlwaysApprove
@@ -528,8 +535,9 @@ try {
             throw "GROK_JSON_SCHEMA_MISSING: $resolvedJsonSchemaPath"
         }
         try {
+            $jsonSchemaBytes = [IO.File]::ReadAllBytes($resolvedJsonSchemaPath)
             $strictUtf8 = [Text.UTF8Encoding]::new($false, $true)
-            $jsonSchemaSource = [IO.File]::ReadAllText($resolvedJsonSchemaPath, $strictUtf8)
+            $jsonSchemaSource = $strictUtf8.GetString($jsonSchemaBytes)
         } catch [Text.DecoderFallbackException] {
             throw "GROK_JSON_SCHEMA_INVALID_UTF8: $resolvedJsonSchemaPath"
         } catch {
@@ -548,8 +556,7 @@ try {
         ) {
             throw "GROK_JSON_SCHEMA_TOP_LEVEL_NOT_OBJECT: $resolvedJsonSchemaPath"
         }
-        $jsonSchemaCompact = $jsonSchemaObject | ConvertTo-Json -Depth 100 -Compress
-        $jsonSchemaBytes = [Text.Encoding]::UTF8.GetBytes($jsonSchemaCompact)
+        $jsonSchemaPayload = $jsonSchemaSource
         $schemaHasher = [Security.Cryptography.SHA256]::Create()
         try {
             $schemaHashText = [BitConverter]::ToString(
@@ -833,9 +840,9 @@ if ($null -ne $maxTurnsValue) {
     [void]$argsList.Add("--max-turns"); [void]$argsList.Add("$maxTurnsValue")
 }
 [void]$argsList.Add("--output-format"); [void]$argsList.Add("json")
-if ($jsonSchemaCompact) {
+if ($jsonSchemaPayload) {
     [void]$argsList.Add("--json-schema")
-    [void]$argsList.Add($jsonSchemaCompact)
+    [void]$argsList.Add($jsonSchemaPayload)
 }
 [void]$argsList.Add("--no-auto-update")
 [void]$argsList.Add("--prompt-file"); [void]$argsList.Add($promptForFile)
@@ -898,9 +905,12 @@ $meta = [ordered]@{
     json_schema_source_path = $resolvedJsonSchemaPath
     json_schema_snapshot_path = $jsonSchemaSnapshotPath
     json_schema_sha256 = $jsonSchemaSha256
+    json_schema_digest_profile = if ($jsonSchemaRequested) { "raw-bytes-sha256-v1" } else { "" }
+    json_schema_transformation_profile = if ($jsonSchemaRequested) { "identity" } else { "" }
+    json_schema_size_bytes = if ($jsonSchemaRequested) { $jsonSchemaBytes.Length } else { 0 }
     json_schema_expected_sha256 = $jsonSchemaSha256
     json_schema_observed_sha256 = $jsonSchemaSha256
-    json_schema_cli_applied = [bool]$jsonSchemaCompact
+    json_schema_cli_applied = [bool]$jsonSchemaPayload
     json_schema_validator = $localJsonSchemaValidator
     json_schema_validator_version = $localJsonSchemaValidatorVersion
     json_schema_python_exe = $localJsonSchemaPythonExe
