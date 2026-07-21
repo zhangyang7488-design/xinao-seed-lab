@@ -718,11 +718,15 @@ def _canonical_package_lane(
         "memory": GROK_DOCKER_PACKAGE_CAPABILITY_POLICY["memory"],
     }
     if result_format == "json_object":
-        _, _, schema, _ = _read_hash_bound_json_ref(
+        schema_ref, _, schema, _ = _read_hash_bound_json_ref(
             acceptance["json_schema_ref"],
             label=f"package {package['package_id']} acceptance.json_schema_ref",
         )
         lane["result_json_schema"] = schema
+        # The neutral package contract binds the schema file's exact bytes.
+        # Preserve that digest across the B-leg adapter instead of silently
+        # replacing it with a digest of a re-serialized JSON object.
+        lane["result_json_schema_sha256"] = schema_ref["sha256"]
     return lane
 
 
@@ -1722,14 +1726,22 @@ def _lane_output_contract(lane: dict[str, Any]) -> dict[str, Any]:
         raise ValueError("Docker Grok result_json_schema requires result_format=json_object")
     else:
         result_json_schema = None
+    schema_sha256 = ""
+    if result_json_schema is not None:
+        canonical_schema_sha256 = _sha256(_json_bytes(result_json_schema))
+        bound_schema_sha256 = str(lane.get("result_json_schema_sha256") or "").lower()
+        if lane.get("package_contract_mode") == "xinao.worker_package_batch.v3":
+            if not re.fullmatch(r"[0-9a-f]{64}", bound_schema_sha256):
+                raise ValueError("canonical Docker Grok JSON schema digest is missing")
+            schema_sha256 = bound_schema_sha256
+        else:
+            schema_sha256 = canonical_schema_sha256
     return {
         "result_format": result_format,
         "min_result_chars": min_result_chars,
         "required_result_markers": markers,
         "result_json_schema": result_json_schema,
-        "result_json_schema_sha256": (
-            _sha256(_json_bytes(result_json_schema)) if result_json_schema is not None else ""
-        ),
+        "result_json_schema_sha256": schema_sha256,
     }
 
 
