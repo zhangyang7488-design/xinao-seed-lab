@@ -3129,9 +3129,11 @@ def build_dispatch_outcome_event(
             "attempt_number": int(attempt["attempt"]),
             "attempt_usage": (
                 {
-                    "input_tokens": 0,
-                    "output_tokens": 0,
+                    "invocation_count": 0,
                     "total_tokens": 0,
+                    "accepted_tokens": 0,
+                    "cancelled_tokens": 0,
+                    "failed_tokens": 0,
                 }
                 if validated_ancestor is not None
                 else dict(attempt["usage"])
