@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
 """One-shot durability canary for the canonical Docker LangGraph worker.
 
-Starts one real ``XinaoIntegratedBusWorkflow``, waits for a running activity,
-restarts the exact pre-identified ``houtai-gongren`` container once, and proves
-that the same Temporal workflow/run resumes and completes.  No scheduler,
-watchdog, Grok/Admin invocation, or resident helper is created.
+Starts one real ``XinaoIntegratedBusWorkflow``, waits until its Docker-native
+Grok operation and session are both materialized, restarts the exact
+pre-identified ``houtai-gongren`` container once, and proves that the same
+Temporal workflow/run resumes and completes. No scheduler, Admin invocation,
+or resident helper is created.
 """
 
 from __future__ import annotations
@@ -39,6 +40,7 @@ DEFAULT_RUN_DIR = (
 DEFAULT_LATEST = RUNTIME / "state" / "integrated_bus_worker_restart" / "latest.json"
 DAEMON_LATEST = RUNTIME / "state" / "integrated_bus_worker_daemon" / "latest.json"
 CONTAINER_NAME = "houtai-gongren"
+COMPOSER_MODEL = "grok-composer-2.5-fast"
 WORKFLOW_TYPE = "XinaoIntegratedBusWorkflow"
 WORKFLOW_QUEUE = "xinao-integrated-langgraph-plugin-queue"
 ALL_QUEUES = (
@@ -301,7 +303,7 @@ def _attempt_two_restart_lineage(
     post_started: datetime,
     worker_identity_fragment: str,
 ) -> list[dict[str, Any]]:
-    """Bind the post-restart attempt-2 start to its scheduled activity and timeout cause."""
+    """Bind the post-restart attempt-2 start to its scheduled activity and worker-loss timeout."""
     scheduled = {
         int(row["id"]): row
         for row in rows
@@ -319,7 +321,10 @@ def _attempt_two_restart_lineage(
         started_at = str(row.get("time") or "")
         if not started_at or _parse_time(started_at) <= post_started:
             continue
-        if row.get("last_failure_timeout_type") != "TIMEOUT_TYPE_START_TO_CLOSE":
+        if row.get("last_failure_timeout_type") not in {
+            "TIMEOUT_TYPE_HEARTBEAT",
+            "TIMEOUT_TYPE_START_TO_CLOSE",
+        }:
             continue
         scheduled_event_id = int(row.get("scheduled_event_id") or 0)
         scheduled_row = scheduled.get(scheduled_event_id)
@@ -386,26 +391,84 @@ def _blast_radius_gate(
     return actual == expected
 
 
-async def _wait_running_activity(handle: Any, *, timeout: float = 90.0) -> dict[str, Any]:
+def _grok_sessions_root(container: dict[str, Any]) -> Path:
+    for mount in container.get("mounts") or []:
+        if str(mount.get("destination") or "").rstrip("/") == "/grok-home/.grok":
+            return Path(str(mount.get("source") or "")) / "sessions"
+    raise RuntimeError("canonical Docker worker has no mounted Grok session root")
+
+
+def _operation_session_gate(workflow_id: str, sessions_root: Path) -> dict[str, Any]:
+    operation_root = RUNTIME / "state" / "grok_docker_native" / workflow_id / "operations"
+    for manifest_path in sorted(operation_root.glob("*/manifest.json")):
+        try:
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        except (OSError, UnicodeError, json.JSONDecodeError):
+            continue
+        if not isinstance(manifest, dict) or manifest.get("state") != "running":
+            continue
+        session_id = str(manifest.get("requested_session_id") or "").strip()
+        operation_id = str(manifest.get("operation_id") or "").strip()
+        if not session_id or not operation_id:
+            continue
+        session_dirs = [
+            path for path in sessions_root.glob(f"*/{session_id}") if path.is_dir()
+        ]
+        for session_dir in session_dirs:
+            materialized = [
+                name
+                for name in ("prompt_context.json", "events.jsonl", "summary.json.lock")
+                if (session_dir / name).is_file()
+            ]
+            if len(materialized) < 2:
+                continue
+            return {
+                "ok": True,
+                "operation_id": operation_id,
+                "manifest_path": str(manifest_path),
+                "manifest_sha256": _sha256(manifest_path),
+                "operation_attempt": int(manifest.get("attempt") or 0),
+                "session_id": session_id,
+                "session_path": str(session_dir),
+                "materialized_files": materialized,
+            }
+    return {
+        "ok": False,
+        "operation_root": str(operation_root),
+        "sessions_root": str(sessions_root),
+    }
+
+
+async def _wait_running_activity(
+    handle: Any,
+    *,
+    workflow_id: str,
+    sessions_root: Path,
+    timeout: float = 90.0,
+) -> dict[str, Any]:
     deadline = asyncio.get_running_loop().time() + timeout
     while asyncio.get_running_loop().time() < deadline:
         desc = await handle.describe()
         history = await handle.fetch_history()
         rows = _event_rows(history)
+        operation_session_gate = _operation_session_gate(workflow_id, sessions_root)
         if desc.status == WorkflowExecutionStatus.RUNNING and any(
             row["type"] == "EVENT_TYPE_ACTIVITY_TASK_STARTED" for row in rows
-        ):
+        ) and operation_session_gate["ok"]:
             return {
                 "run_id": desc.run_id,
                 "status": desc.status.name,
                 "max_event_id": max(row["id"] for row in rows),
                 "history_event_count": len(rows),
                 "event_types": [row["type"] for row in rows],
+                "operation_session_gate": operation_session_gate,
             }
         if desc.status in TERMINAL:
             raise RuntimeError(f"workflow reached {desc.status.name} before restart gate")
         await asyncio.sleep(0.05)
-    raise TimeoutError("workflow did not expose a running activity before restart gate")
+    raise TimeoutError(
+        "workflow did not materialize a running Grok operation/session before restart gate"
+    )
 
 
 async def _wait_daemon_and_queues(
@@ -476,6 +539,58 @@ def _host_path(raw: str) -> Path:
     return Path(raw)
 
 
+def _grok_result_summary(result: dict[str, Any]) -> dict[str, Any]:
+    raw_lanes = result.get("grok_lanes")
+    if isinstance(raw_lanes, dict):
+        lanes = [raw_lanes]
+    elif isinstance(raw_lanes, list):
+        lanes = [item for item in raw_lanes if isinstance(item, dict)]
+    else:
+        lanes = []
+    successful = [item for item in lanes if item.get("ok") is True]
+    return {
+        "execution_location": str(result.get("grok_execution_location") or ""),
+        "worker_lane_adapter": str(result.get("worker_lane_adapter") or ""),
+        "requested_models": sorted(
+            {str(item.get("requested_model") or "") for item in lanes if item}
+        ),
+        "observed_models": sorted(
+            {str(item.get("observed_model") or "") for item in successful if item}
+        ),
+        "lane_count": len(lanes),
+        "successful_lanes": len(successful),
+        "total_tokens": int(result.get("grok_total_tokens") or 0),
+    }
+
+
+def _real_result_accepted(result: dict[str, Any]) -> bool:
+    base_ok = all(
+        result.get(name) is True
+        for name in (
+            "validate_ok",
+            "planner_ok",
+            "fanin_ok",
+            "checkpoint_ok",
+            "promotion_gate_passed",
+            "pytest_slice_ok",
+        )
+    )
+    legacy_send_ok = result.get("langgraph_send_wired") is True
+    grok = _grok_result_summary(result)
+    docker_native_ok = bool(
+        result.get("worker_lane_ok") is True
+        and result.get("grok_fanin_ok") is True
+        and grok["execution_location"] == "docker:houtai-gongren"
+        and grok["worker_lane_adapter"] == "grok_build_cli_docker_native"
+        and grok["requested_models"] == [COMPOSER_MODEL]
+        and grok["observed_models"] == [COMPOSER_MODEL]
+        and grok["lane_count"] > 0
+        and grok["successful_lanes"] == grok["lane_count"]
+        and grok["total_tokens"] > 0
+    )
+    return base_ok and (legacy_send_ok or docker_native_ok)
+
+
 async def fresh_verify(preliminary: Path) -> dict[str, Any]:
     pre = json.loads(preliminary.read_text(encoding="utf-8"))
     workflow_id = str(pre["workflow_id"])
@@ -511,6 +626,7 @@ async def fresh_verify(preliminary: Path) -> dict[str, Any]:
     activity_types = [row["activity_type"] for row in rows if row["activity_type"]]
     proof_raw = str(result.get("proof_path") or "")
     proof_path = _host_path(proof_raw) if proof_raw else RUNTIME / "missing-proof"
+    grok_summary = _grok_result_summary(result)
     checks = {
         "same_workflow_id": desc.id == workflow_id,
         "same_run_id": desc.run_id == expected_run_id,
@@ -519,8 +635,9 @@ async def fresh_verify(preliminary: Path) -> dict[str, Any]:
         > int(pre["pre_history_max_event_id"]),
         "post_restart_worker_event_attributed": bool(post_worker_events),
         "attempt_2_restart_lineage": bool(attempt_two_lineage),
-        "start_to_close_timeout_reported": any(
-            row.get("last_failure_timeout_type") == "TIMEOUT_TYPE_START_TO_CLOSE"
+        "worker_loss_timeout_reported": any(
+            row.get("last_failure_timeout_type")
+            in {"TIMEOUT_TYPE_HEARTBEAT", "TIMEOUT_TYPE_START_TO_CLOSE"}
             for row in activity_timeouts
         ),
         "workflow_execution_completed_event": "EVENT_TYPE_WORKFLOW_EXECUTION_COMPLETED"
@@ -543,20 +660,9 @@ async def fresh_verify(preliminary: Path) -> dict[str, Any]:
             for q in ALL_QUEUES
             for kind in ("workflow", "activity")
         ),
-        "real_result_acceptance": all(
-            result.get(name) is True
-            for name in (
-                "validate_ok",
-                "planner_ok",
-                "fanin_ok",
-                "checkpoint_ok",
-                "langgraph_send_wired",
-                "promotion_gate_passed",
-                "pytest_slice_ok",
-            )
-        ),
+        "real_result_acceptance": _real_result_accepted(result),
         "d_disk_proof_exists": proof_path.is_file(),
-        "no_grok_activity_scheduled": not any(
+        "no_host_grok_activity_scheduled": not any(
             name.startswith("xinao.grok.") for name in activity_types
         ),
         "blast_radius_baseline_clear": bool((pre.get("blast_radius_before") or {}).get("ok")),
@@ -602,6 +708,7 @@ async def fresh_verify(preliminary: Path) -> dict[str, Any]:
                 "worker_lane_model",
             )
         },
+        "grok": grok_summary,
         "history": {"path": str(history_path), "sha256": _sha256(history_path)},
         "proof": {
             "path": str(proof_path),
@@ -645,6 +752,13 @@ async def run_canary(run_dir: Path) -> dict[str, Any]:
     evidence_dir = run_dir / run_id
     evidence_dir.mkdir(parents=True, exist_ok=False)
     workflow_id = f"xinao-restart-canary-{uuid.uuid4().hex}"
+    canary_input = evidence_dir / "canary_input.md"
+    canary_input.write_text(
+        "# Docker worker restart/recovery canary\n\n"
+        "Audit this bounded local fixture and return one concise recovery finding.\n",
+        encoding="utf-8",
+    )
+    canary_input_container = "/evidence/" + canary_input.relative_to(RUNTIME).as_posix()
     container_pre = docker_identity()
     _ACTIVE_CONTAINER_PRE = container_pre
     mount_pre = await asyncio.to_thread(
@@ -699,6 +813,8 @@ async def run_canary(run_dir: Path) -> dict[str, Any]:
             "workflow_id": workflow_id,
             "workflow_type": WORKFLOW_TYPE,
             "task_queue": WORKFLOW_QUEUE,
+            "input_path": str(canary_input),
+            "input_sha256": _sha256(canary_input),
         },
         "control": {
             "container_running_healthy": True,
@@ -717,7 +833,8 @@ async def run_canary(run_dir: Path) -> dict[str, Any]:
         "success_thresholds": [
             "same workflow_id and run_id",
             "no other active workflow on any canonical worker queue at baseline/restart gate",
-            "post-restart attempt 2 links to the scheduled activity and StartToClose timeout",
+            "post-restart attempt 2 links to the scheduled activity and worker-loss timeout",
+            "Grok operation manifest and session files materialized before restart",
             "new container PID and StartedAt with unchanged static identity",
             "fresh daemon generation and all six workflow/activity poller surfaces",
             "Temporal completion, post-restart attributed event, D-disk proof hash",
@@ -753,7 +870,7 @@ async def run_canary(run_dir: Path) -> dict[str, Any]:
         }
 
     initial = {
-        "input_path": "/app/materials/phase0_test_input.md",
+        "input_path": canary_input_container,
         "params_path": "/app/materials/authority_glue/seams/integrated_bus_params.v1.json",
         "repo_root": "/app",
         "runtime_root": "/evidence",
@@ -772,7 +889,11 @@ async def run_canary(run_dir: Path) -> dict[str, Any]:
     )
     _ACTIVE_WORKFLOW_ID = workflow_id
     _ACTIVE_WORKFLOW_RUN_ID = str(handle.run_id or handle.result_run_id or "")
-    pre_history = await _wait_running_activity(handle)
+    pre_history = await _wait_running_activity(
+        handle,
+        workflow_id=workflow_id,
+        sessions_root=_grok_sessions_root(container_pre),
+    )
     _ACTIVE_WORKFLOW_RUN_ID = str(pre_history["run_id"])
     container_gate = docker_identity(container_pre["id"])
     mount_gate = await asyncio.to_thread(
@@ -796,6 +917,7 @@ async def run_canary(run_dir: Path) -> dict[str, Any]:
         and container_gate["started_at"] == container_pre["started_at"]
         and desc_gate.status == WorkflowExecutionStatus.RUNNING
         and desc_gate.run_id == pre_history["run_id"]
+        and bool((pre_history.get("operation_session_gate") or {}).get("ok"))
         and blast_radius_restart_gate["ok"]
         and mount_gate.get("ok") is True
     )
@@ -940,7 +1062,13 @@ async def run_canary(run_dir: Path) -> dict[str, Any]:
             "sha256": _sha256(preliminary_path),
         },
         "side_effects": {
-            "grok_invocations": 0,
+            "grok_invocations": int(
+                ((fresh_payload.get("grok") or {}).get("successful_lanes") or 0)
+            ),
+            "grok_model": COMPOSER_MODEL,
+            "grok_total_tokens": int(
+                ((fresh_payload.get("grok") or {}).get("total_tokens") or 0)
+            ),
             "admin_invocations": 0,
             "visible_window": False,
             "focus_or_input": False,

@@ -3,9 +3,50 @@ from __future__ import annotations
 import asyncio
 import json
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 from types import SimpleNamespace
 
+import pytest
 from scripts import verify_houtai_gongren_restart_resume as canary
+
+
+def test_restart_gate_requires_materialized_operation_and_session(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(canary, "RUNTIME", tmp_path)
+    workflow_id = "restart-canary-wf"
+    manifest = (
+        tmp_path
+        / "state"
+        / "grok_docker_native"
+        / workflow_id
+        / "operations"
+        / "op-1"
+        / "manifest.json"
+    )
+    manifest.parent.mkdir(parents=True)
+    manifest.write_text(
+        json.dumps(
+            {
+                "state": "running",
+                "operation_id": "op-1",
+                "attempt": 1,
+                "requested_session_id": "session-1",
+            }
+        ),
+        encoding="utf-8",
+    )
+    sessions_root = tmp_path / "sessions"
+    assert canary._operation_session_gate(workflow_id, sessions_root)["ok"] is False
+    session = sessions_root / "%2Fapp" / "session-1"
+    session.mkdir(parents=True)
+    (session / "prompt_context.json").write_text("{}", encoding="utf-8")
+    (session / "events.jsonl").write_text("{}\n", encoding="utf-8")
+    gate = canary._operation_session_gate(workflow_id, sessions_root)
+    assert gate["ok"] is True
+    assert gate["operation_id"] == "op-1"
+    assert gate["session_id"] == "session-1"
 from temporalio.api.enums.v1 import EventType, TimeoutType
 from temporalio.api.history.v1 import HistoryEvent
 from temporalio.client import WorkflowExecutionStatus
@@ -66,6 +107,32 @@ def test_static_identity_ignores_only_runtime_generation() -> None:
     assert canary._static_identity(before) == canary._static_identity(after)
     assert before["pid"] != after["pid"]
     assert before["started_at"] != after["started_at"]
+
+
+def test_result_acceptance_admits_real_docker_composer_without_legacy_send() -> None:
+    result = {
+        "validate_ok": True,
+        "planner_ok": True,
+        "fanin_ok": True,
+        "checkpoint_ok": True,
+        "promotion_gate_passed": True,
+        "pytest_slice_ok": True,
+        "langgraph_send_wired": False,
+        "worker_lane_ok": True,
+        "grok_fanin_ok": True,
+        "grok_execution_location": "docker:houtai-gongren",
+        "worker_lane_adapter": "grok_build_cli_docker_native",
+        "grok_total_tokens": 10_989,
+        "grok_lanes": [
+            {
+                "ok": True,
+                "requested_model": canary.COMPOSER_MODEL,
+                "observed_model": canary.COMPOSER_MODEL,
+            }
+        ],
+    }
+
+    assert canary._real_result_accepted(result) is True
 
 
 def test_docker_identity_selects_fields_without_environment(monkeypatch) -> None:
@@ -235,6 +302,36 @@ def test_event_rows_reports_retry_start_to_close_timeout_and_attempt_lineage() -
             "last_failure_message": "activity StartToClose timeout",
         }
     ]
+
+
+def test_attempt_lineage_accepts_heartbeat_timeout_after_worker_restart() -> None:
+    rows = [
+        {
+            "id": 37,
+            "type": "EVENT_TYPE_ACTIVITY_TASK_SCHEDULED",
+            "time": "2026-07-12T00:42:00Z",
+            "activity_type": "xinao-integrated-bus-v2-grok-heartbeat-v1.validate",
+        },
+        {
+            "id": 38,
+            "type": "EVENT_TYPE_ACTIVITY_TASK_STARTED",
+            "time": "2026-07-12T00:42:23Z",
+            "identity": "1@container123",
+            "attempt": 2,
+            "scheduled_event_id": 37,
+            "last_failure_timeout_type": "TIMEOUT_TYPE_HEARTBEAT",
+            "last_failure_message": "activity Heartbeat timeout",
+        },
+    ]
+
+    lineage = canary._attempt_two_restart_lineage(
+        rows,
+        post_started=datetime(2026, 7, 12, 0, 42, 12, tzinfo=UTC),
+        worker_identity_fragment="container123",
+    )
+
+    assert lineage[0]["activity_type"].endswith(".validate")
+    assert lineage[0]["last_failure_timeout_type"] == "TIMEOUT_TYPE_HEARTBEAT"
 
 
 def test_blast_radius_gate_allows_only_exact_canary_run() -> None:
