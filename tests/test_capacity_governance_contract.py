@@ -77,6 +77,7 @@ def test_schedule_is_paused_by_default_and_uses_temporal_safety_policy() -> None
 def test_capacity_path_does_not_create_an_os_scheduler_or_generic_cleanup() -> None:
     paths = [
         ROOT / "services" / "agent_runtime" / "platform_capacity_maintenance.py",
+        ROOT / "services" / "agent_runtime" / "platform_control_worker.py",
         ROOT / "scripts" / "manage_platform_capacity_schedule.py",
     ]
     text = "\n".join(path.read_text(encoding="utf-8") for path in paths).lower()

@@ -389,12 +389,14 @@ services:
       start_period: 90s
 
   mowei-zhixing:
-    image: xinao-base-houtai-gongren:latest
+    image: xinao-base-houtai-gongren:platform-control-e74057f0
+    pull_policy: never
     container_name: mowei-zhixing
     labels:
       xinao.display_cn: "末端执行"
       xinao.role_cn: "固定角色 OpenHands 隔离执行 broker"
       xinao.endpoint_owner: "openhands-execution-broker-v1"
+      xinao.platform_maintenance_owner: "xinao-platform-maintenance-v1"
     depends_on:
       naijiu-shiwu:
         condition: service_healthy
@@ -405,13 +407,24 @@ services:
       TEMPORAL_NAMESPACE: default
       XINAO_OPENHANDS_WORKER_IDENTITY: xinao-openhands-execution-broker-v1
       XINAO_OPENHANDS_BROKER_CONTAINER: mowei-zhixing
+      XINAO_CAPACITY_POLICY: /app/services/agent_runtime/maintenance-policy.v1.json
+      XINAO_PGBACKREST_CONFIG: /app/services/agent_runtime/pgbackrest.conf
+      XINAO_PLATFORM_BROKER_IMAGE_ID: sha256:e74057f05d1f337180e32372296cda91146890b7854d31bc0ab7b78b9e4a85b0
+      XINAO_PLATFORM_CONTROL_WORKER_SHA256: 4a4be34bc057868daa1e4c2aeb3660d54e5d97eab4a9f26d3f025c5bd78ea960
+      XINAO_PLATFORM_CAPACITY_MODULE_SHA256: a55cb194620ee5e2218271cba9d5ed8746b06a9cc8e65553d38187fd96c29509
+      XINAO_PLATFORM_CAPACITY_POLICY_SHA256: ec265fb9c132240ecda63e555a487234ea8dc4f80a9806e6d876b9e1d63ea58e
+      XINAO_PGBACKREST_CONFIG_SHA256: 076d8d88f3a91a645445ff55d8d806c3286d5f8912a38d4d9d1d56358faa77bb
     volumes:
       - ${XINAO_EVIDENCE_HOST:-D:/XINAO_RESEARCH_RUNTIME}:/evidence
       - /var/run/docker.sock:/var/run/docker.sock
+      - ./services/agent_runtime/platform_control_worker.py:/app/services/agent_runtime/platform_control_worker.py:ro
+      - ./services/agent_runtime/platform_capacity_maintenance.py:/app/services/agent_runtime/platform_capacity_maintenance.py:ro
+      - ./infra/capacity/maintenance-policy.v1.json:/app/services/agent_runtime/maintenance-policy.v1.json:ro
+      - ./infra/postgres/pgbackrest/pgbackrest.conf:/app/services/agent_runtime/pgbackrest.conf:ro
     command:
       - python
       - -m
-      - services.agent_runtime.openhands_execution_worker
+      - services.agent_runtime.platform_control_worker
       - --runtime-root
       - /evidence
     networks:
