@@ -4619,32 +4619,18 @@ def project_work_unit_lifecycle(
     }
 
 
-def scan_task_run(
-    run_dir: Path,
-    *,
-    high_burn_threshold: int | None = None,
-    previous_problem_projection: Mapping[str, object] | None = None,
-    effectiveness_evidence: Sequence[Mapping[str, object]] | None = None,
-    close_requested: bool = False,
-) -> dict[str, Any]:
-    """Real read-only consumer: turn a task-run into problem and token projections."""
+def _project_problem_state_from_events(
+    task: Mapping[str, object],
+    events: Sequence[Mapping[str, object]],
+) -> tuple[dict[str, Any], dict[str, object] | None]:
+    """Project only problem facts after the shared task-run envelope is validated.
 
-    if (
-        previous_problem_projection is not None
-        or effectiveness_evidence is not None
-        or close_requested
-    ):
-        raise SystemAwarenessError(
-            "EXTERNAL_PROBLEM_FACTS_NOT_AUTHORIZED",
-            "problem state may only be replayed from the hash-bound task-run fact chain",
-        )
+    This boundary intentionally excludes dispatch, frontier, usage, and carrier
+    projections.  Consumers that only need problem identity and generation must
+    not lose their write path because an unrelated semantic projection is
+    invalid.  Typed problem evidence and its exact event binding remain strict.
+    """
 
-    resolved = Path(run_dir).resolve()
-    task, state, events, hashes = _load_task_run(resolved)
-    dispatch_outcome_projection = _dispatch_outcome_projection_if_present(resolved, events)
-    frontier_reconciliation = _frontier_reconciliation_from_events(
-        resolved, str(task["run_id"]), events
-    )
     typed_transitions = _typed_problem_transitions(events)
     typed_event_ids = {
         str(transition.get("source_event_id") or "") for transition in typed_transitions
@@ -4689,6 +4675,138 @@ def scan_task_run(
                     ]
                 )
             )
+    return problems, problem_history_binding
+
+
+def scan_task_run_problem_projection(run_dir: Path) -> dict[str, Any]:
+    """Strict problem-only consumer over the canonical task-run fact chain.
+
+    The common task/state/event envelope and every typed problem transition are
+    validated exactly as in :func:`scan_task_run`.  Unrelated semantic
+    projections are not evaluated, so their own invalid state stays isolated
+    to their consumers rather than disabling problem accounting.
+    """
+
+    resolved = Path(run_dir).resolve()
+    task, _state, events, _hashes = _load_task_run(resolved)
+    problems, _history = _project_problem_state_from_events(task, events)
+    return problems
+
+
+def scan_task_run_problem_append_snapshot(run_dir: Path) -> dict[str, Any]:
+    """Return one immutable read snapshot for a problem-transition append.
+
+    Generation derivation, exact-transition replay detection, and lifecycle
+    prevalidation must all use this same event prefix. The canonical append
+    later receives ``expected_events_count`` as its locked compare-and-swap
+    precondition; a caller must never silently refresh this snapshot midway
+    through one logical mutation.
+    """
+
+    resolved = Path(run_dir).resolve()
+    task, state, events, hashes = _load_task_run(resolved)
+    problems, _history = _project_problem_state_from_events(task, events)
+    return {
+        "task_run_id": task["run_id"],
+        "state_status": state.get("status"),
+        "problem_projection": problems,
+        "events": [dict(event) for event in events],
+        "expected_events_count": len(events),
+        "events_sha256": hashes["events_sha256"],
+        "authority": False,
+        "completion_claim_allowed": False,
+    }
+
+
+def validate_problem_transition_append(
+    run_dir: Path,
+    transition: Mapping[str, object],
+    *,
+    expected_events_count: int,
+    expected_events_sha256: str,
+) -> dict[str, object]:
+    """Validate one proposed transition and bind it to an event-head CAS.
+
+    Validation happens before the carrier is published.  The returned event
+    count must be supplied to the canonical task-run append command so another
+    writer cannot change lifecycle facts between validation and commit.
+    """
+
+    resolved = Path(run_dir).resolve()
+    task, state, events, hashes = _load_task_run(resolved)
+    if len(events) != expected_events_count or hashes["events_sha256"] != expected_events_sha256:
+        raise SystemAwarenessError(
+            "TASK_RUN_EVENT_HEAD_CHANGED",
+            "task-run event head changed after problem generation was derived",
+        )
+    if state.get("status") != "in_progress":
+        raise SystemAwarenessError(
+            "TASK_RUN_NOT_IN_PROGRESS",
+            f"task run is not in progress: {state.get('status')}",
+        )
+    normalized = _validate_problem_transition(transition)
+    if normalized.get("task_run_id") != task.get("run_id"):
+        raise SystemAwarenessError(
+            "PROBLEM_TRANSITION_EVENT_BINDING_INVALID",
+            "proposed problem transition targets a different task run",
+        )
+    event_id = str(normalized.get("task_run_event_id") or "")
+    if any(str(event.get("event_id") or "") == event_id for event in events):
+        raise SystemAwarenessError(
+            "PROBLEM_TRANSITION_EVENT_ID_CONFLICT",
+            "proposed problem transition event_id already exists",
+        )
+    for index, proof_ref in enumerate(normalized.get("evidence_refs") or []):
+        _verify_hash_bound_file_reference(
+            str(proof_ref), f"problem_transition.evidence_refs[{index}]"
+        )
+    existing = _typed_problem_transitions(events)
+    candidate = {
+        **normalized,
+        "source_event_id": event_id,
+        "source_event_ordinal": len(events) + 1,
+        "transition_evidence_ref": "pending-preappend-validation",
+    }
+    # This rejects explicit generation gaps, orphan effects/close requests, and
+    # stale repair generations before any authoritative event is appended.
+    reconcile_typed_problem_lifecycle([*existing, candidate])
+    return {
+        "expected_events_count": expected_events_count,
+        "events_sha256": expected_events_sha256,
+        "problem_generation": normalized["problem_generation"],
+        "repair_generation": normalized["repair_generation"],
+        "authority": False,
+        "completion_claim_allowed": False,
+    }
+
+
+def scan_task_run(
+    run_dir: Path,
+    *,
+    high_burn_threshold: int | None = None,
+    previous_problem_projection: Mapping[str, object] | None = None,
+    effectiveness_evidence: Sequence[Mapping[str, object]] | None = None,
+    close_requested: bool = False,
+) -> dict[str, Any]:
+    """Real read-only consumer: turn a task-run into problem and token projections."""
+
+    if (
+        previous_problem_projection is not None
+        or effectiveness_evidence is not None
+        or close_requested
+    ):
+        raise SystemAwarenessError(
+            "EXTERNAL_PROBLEM_FACTS_NOT_AUTHORIZED",
+            "problem state may only be replayed from the hash-bound task-run fact chain",
+        )
+
+    resolved = Path(run_dir).resolve()
+    task, state, events, hashes = _load_task_run(resolved)
+    dispatch_outcome_projection = _dispatch_outcome_projection_if_present(resolved, events)
+    frontier_reconciliation = _frontier_reconciliation_from_events(
+        resolved, str(task["run_id"]), events
+    )
+    problems, problem_history_binding = _project_problem_state_from_events(task, events)
     attempts = _attempts_from_evidence(events)
     native_total, native_usage_binding = _native_usage_total_from_events(events)
     episode_input: dict[str, object] = {
@@ -4984,5 +5102,8 @@ __all__ = [
     "evaluate_promotion_evidence",
     "evaluate_wakeable_wait",
     "scan_task_run",
+    "scan_task_run_problem_append_snapshot",
+    "scan_task_run_problem_projection",
+    "validate_problem_transition_append",
     "main",
 ]

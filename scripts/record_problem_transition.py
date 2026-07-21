@@ -30,7 +30,8 @@ from services.agent_runtime.system_awareness_consumer import (  # noqa: E402
     PROBLEM_TRANSITION_VERSION,
     SystemAwarenessError,
     build_problem_transition,
-    scan_task_run,
+    scan_task_run_problem_append_snapshot,
+    validate_problem_transition_append,
 )
 
 _SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
@@ -47,6 +48,15 @@ _PROBLEM_TERMINALS = frozenset({"partial", "blocked", "unverified"})
 
 class ProblemTransitionAdapterError(RuntimeError):
     """The adapter cannot make the requested task-run mutation safely."""
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        reason_code: str = "PROBLEM_TRANSITION_ADAPTER_FAILED",
+    ) -> None:
+        super().__init__(message)
+        self.reason_code = reason_code
 
 
 def _load_object(path: Path, field: str) -> dict[str, Any]:
@@ -78,7 +88,18 @@ def _atomic_exact_json(path: Path, value: Mapping[str, object]) -> str:
             stream.write(raw)
             stream.flush()
             os.fsync(stream.fileno())
-        os.replace(temporary_path, path)
+        try:
+            # Link the fully fsynced temporary inode into its deterministic
+            # final name without replacing an identical concurrent writer.
+            # This keeps readers from ever observing partial JSON and avoids
+            # Windows os.replace races on the same destination.
+            os.link(temporary_path, path)
+        except FileExistsError:
+            observed = path.read_bytes()
+            if observed != raw:
+                raise ProblemTransitionAdapterError(
+                    f"problem transition carrier already contains different bytes: {path}"
+                )
     finally:
         temporary_path.unlink(missing_ok=True)
     return hashlib.sha256(raw).hexdigest()
@@ -121,8 +142,16 @@ def _run_cli(task_run_cli: Path, task_run_root: Path, arguments: Sequence[str]) 
     )
     if completed.returncode != 0:
         detail = completed.stderr.strip() or completed.stdout.strip()
+        reason_code = "PROBLEM_TRANSITION_ADAPTER_FAILED"
+        if "event head changed" in detail:
+            reason_code = "TASK_RUN_EVENT_HEAD_CHANGED"
+        elif "unrecognized arguments:" in detail and (
+            "--expected-events-count" in detail or "--expected-events-sha256" in detail
+        ):
+            reason_code = "TASK_RUN_EVENT_HEAD_CAS_UNAVAILABLE"
         raise ProblemTransitionAdapterError(
-            f"task-run command failed exit={completed.returncode}: {detail}"
+            f"task-run command failed exit={completed.returncode}: {detail}",
+            reason_code=reason_code,
         )
     try:
         value = json.loads(completed.stdout)
@@ -141,8 +170,8 @@ def _run_dir(task_run_root: Path, task_run_id: str) -> Path:
     return candidate
 
 
-def _problem_rows(run_dir: Path) -> list[dict[str, Any]]:
-    projection = scan_task_run(run_dir)["problem_projection"]
+def _problem_rows(snapshot: Mapping[str, object]) -> list[dict[str, Any]]:
+    projection = snapshot.get("problem_projection")
     rows = projection.get("problems") if isinstance(projection, Mapping) else None
     if not isinstance(rows, list):
         raise ProblemTransitionAdapterError("problem projection has no problems[]")
@@ -206,22 +235,15 @@ def _derive_generations(
 
 
 def _existing_transition(
-    run_dir: Path,
+    events: Sequence[Mapping[str, object]],
     config: Mapping[str, object],
     *,
     problem_ref: str,
     evidence_refs: Sequence[str],
 ) -> tuple[dict[str, Any], dict[str, Any], str] | None:
-    try:
-        lines = (run_dir / "events.jsonl").read_text(encoding="utf-8").splitlines()
-    except (OSError, UnicodeDecodeError) as exc:
-        raise ProblemTransitionAdapterError("cannot read task-run events") from exc
-    for line in reversed(lines):
-        try:
-            event = json.loads(line)
-        except json.JSONDecodeError:
-            continue
-        if not isinstance(event, dict) or event.get("phase") != "problem_transition_recorded":
+    for raw_event in reversed(events):
+        event = dict(raw_event)
+        if event.get("phase") != "problem_transition_recorded":
             continue
         refs = event.get("evidence_refs")
         if not isinstance(refs, list):
@@ -349,8 +371,14 @@ def _record_transition(config: Mapping[str, object]) -> dict[str, Any]:
         problem_ref = _draft_problem_ref(config)
 
     evidence_refs = _verified_refs(list(config.get("evidence_refs") or []))
+    snapshot = scan_task_run_problem_append_snapshot(run_dir)
+    snapshot_events = snapshot.get("events")
+    if not isinstance(snapshot_events, list) or not all(
+        isinstance(event, Mapping) for event in snapshot_events
+    ):
+        raise ProblemTransitionAdapterError("problem append snapshot has no valid events[]")
     existing = _existing_transition(
-        run_dir,
+        snapshot_events,
         config,
         problem_ref=problem_ref,
         evidence_refs=evidence_refs,
@@ -378,7 +406,7 @@ def _record_transition(config: Mapping[str, object]) -> dict[str, Any]:
         }
 
     current = next(
-        (row for row in _problem_rows(run_dir) if row.get("problem_ref") == problem_ref),
+        (row for row in _problem_rows(snapshot) if row.get("problem_ref") == problem_ref),
         None,
     )
     problem_generation, repair_generation = _derive_generations(
@@ -442,6 +470,12 @@ def _record_transition(config: Mapping[str, object]) -> dict[str, Any]:
         expected_net_benefit_positive=config.get("expected_net_benefit_positive"),  # type: ignore[arg-type]
         evidence_refs=evidence_refs,
     )
+    preappend = validate_problem_transition_append(
+        run_dir,
+        transition,
+        expected_events_count=int(snapshot["expected_events_count"]),
+        expected_events_sha256=str(snapshot["events_sha256"]),
+    )
     output_dir = Path(str(config.get("output_dir") or (run_dir / "problem_transitions")))
     output = output_dir.resolve(strict=False) / f"{event_id}.json"
     transition_sha = _atomic_exact_json(output, transition)
@@ -475,6 +509,10 @@ def _record_transition(config: Mapping[str, object]) -> dict[str, Any]:
             "deterministic" if observed else "none",
             "--side-effect-id",
             side_effect_id,
+            "--expected-events-count",
+            str(preappend["expected_events_count"]),
+            "--expected-events-sha256",
+            str(preappend["events_sha256"]),
         ],
     )
     return {

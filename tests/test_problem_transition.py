@@ -4,9 +4,12 @@ import hashlib
 import json
 import subprocess
 import sys
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
+from threading import Barrier
 
 import pytest
+import scripts.record_problem_transition as transition_adapter
 import services.agent_runtime.system_awareness_consumer as awareness_module
 from services.agent_runtime.execution_contract import artifact_json_bytes
 from services.agent_runtime.system_awareness_consumer import (
@@ -15,6 +18,7 @@ from services.agent_runtime.system_awareness_consumer import (
     build_problem_transition,
     reconcile_typed_problem_lifecycle,
     scan_task_run,
+    scan_task_run_problem_projection,
 )
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -260,11 +264,15 @@ def test_task_run_scanner_requires_hash_and_exact_event_binding(tmp_path: Path) 
     assert projection["truth_sources"] == "typed_hash_bound_task_run_problem_transitions"
     assert projection["problem_count"] == 1
     assert projection["problems"][0]["problem_class"] == "systemic_capability_gap"
+    assert scan_task_run_problem_projection(run_dir) == projection
 
     carrier.write_text('{"tampered":true}\n', encoding="utf-8")
     with pytest.raises(SystemAwarenessError) as caught:
         scan_task_run(run_dir)
     assert caught.value.reason_code == "PROBLEM_TRANSITION_EVIDENCE_INVALID"
+    with pytest.raises(SystemAwarenessError) as narrow_caught:
+        scan_task_run_problem_projection(run_dir)
+    assert narrow_caught.value.reason_code == "PROBLEM_TRANSITION_EVIDENCE_INVALID"
 
 
 def test_legacy_free_text_does_not_manufacture_systemic_identity_and_terminal_is_visible(
@@ -633,3 +641,389 @@ def test_fresh_process_record_adapter_closes_exact_repair_generation(
     assert problem["repair_generation"] == 1
     assert problem["status"] == "effective"
     assert problem["next_consumer"] is None
+
+
+@pytest.mark.skipif(not TASK_RUN_CLI.is_file(), reason="canonical task-run CLI unavailable")
+def test_fresh_process_recorder_appends_despite_invalid_dispatch_projection(
+    tmp_path: Path,
+) -> None:
+    run_root = tmp_path / "task-runs"
+    run_id = "problem-dispatch-isolation-canary"
+    initialized = subprocess.run(
+        [
+            sys.executable,
+            str(TASK_RUN_CLI),
+            "--root",
+            str(run_root),
+            "init",
+            "--run-id",
+            run_id,
+            "--mode",
+            "bounded_task",
+            "--objective",
+            "verify problem recorder isolation",
+            "--risk",
+            "reversible_local",
+            "--completion",
+            "problem transition is appended once",
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+    )
+    assert initialized.returncode == 0, initialized.stderr
+
+    invalid_dispatch = tmp_path / "invalid-dispatch.json"
+    _json(invalid_dispatch, {"schema_version": "xinao.dispatch_outcome_event.v2"})
+    invalid_ref = (
+        f"{invalid_dispatch}#sha256={hashlib.sha256(invalid_dispatch.read_bytes()).hexdigest()}"
+    )
+    appended = subprocess.run(
+        [
+            sys.executable,
+            str(TASK_RUN_CLI),
+            "--root",
+            str(run_root),
+            "event",
+            "--run-id",
+            run_id,
+            "--event-id",
+            "evt-invalid-dispatch",
+            "--actor",
+            "worker",
+            "--kind",
+            "result",
+            "--phase",
+            "worker_terminal",
+            "--summary",
+            "invalid dispatch projection remains isolated",
+            "--evidence-ref",
+            invalid_ref,
+            "--target",
+            "wk:dispatch",
+            "--exit-code",
+            "0",
+            "--side-effect-id",
+            "se:invalid-dispatch",
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+    )
+    assert appended.returncode == 0, appended.stderr
+    with pytest.raises(SystemAwarenessError) as full_scan_error:
+        scan_task_run(run_root / run_id)
+    assert full_scan_error.value.reason_code == "DISPATCH_OUTCOME_PROJECTION_INVALID"
+
+    proof_ref = _proof(tmp_path, "problem-observation.json")
+    adapter = REPO_ROOT / "scripts" / "record_problem_transition.py"
+    command = [
+        sys.executable,
+        str(adapter),
+        "record",
+        "--task-run-cli",
+        str(TASK_RUN_CLI),
+        "--task-run-root",
+        str(run_root),
+        "--task-run-id",
+        run_id,
+        "--transition-type",
+        "problem_observed",
+        "--family-signature",
+        "independent-problem",
+        "--governing-cause",
+        "independent-cause",
+        "--work-key",
+        "wk:independent-problem",
+        "--component-id",
+        "problem-consumer",
+        "--evidence-ref",
+        proof_ref,
+        "--side-effect-id",
+        "se:independent-problem",
+    ]
+    recorded = subprocess.run(
+        command,
+        cwd=REPO_ROOT,
+        check=False,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+    )
+    assert recorded.returncode == 0, recorded.stderr
+    result = json.loads(recorded.stdout)
+    assert result["replayed"] is False
+    replay = subprocess.run(
+        command,
+        cwd=REPO_ROOT,
+        check=False,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+    )
+    assert replay.returncode == 0, replay.stderr
+    assert json.loads(replay.stdout)["replayed"] is True
+    assert scan_task_run_problem_projection(run_root / run_id)["problem_count"] == 1
+    with pytest.raises(SystemAwarenessError) as after_error:
+        scan_task_run(run_root / run_id)
+    assert after_error.value.reason_code == "DISPATCH_OUTCOME_PROJECTION_INVALID"
+
+
+@pytest.mark.skipif(not TASK_RUN_CLI.is_file(), reason="canonical task-run CLI unavailable")
+def test_recorder_rejects_explicit_generation_gap_before_append(tmp_path: Path) -> None:
+    run_root = tmp_path / "task-runs"
+    run_id = "problem-generation-preappend-canary"
+    initialized = subprocess.run(
+        [
+            sys.executable,
+            str(TASK_RUN_CLI),
+            "--root",
+            str(run_root),
+            "init",
+            "--run-id",
+            run_id,
+            "--mode",
+            "bounded_task",
+            "--objective",
+            "reject an invalid problem generation",
+            "--risk",
+            "reversible_local",
+            "--completion",
+            "invalid generation performs no append",
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+    )
+    assert initialized.returncode == 0, initialized.stderr
+    run_dir = run_root / run_id
+    before = (run_dir / "events.jsonl").read_bytes()
+
+    rejected = subprocess.run(
+        [
+            sys.executable,
+            str(REPO_ROOT / "scripts" / "record_problem_transition.py"),
+            "record",
+            "--task-run-cli",
+            str(TASK_RUN_CLI),
+            "--task-run-root",
+            str(run_root),
+            "--task-run-id",
+            run_id,
+            "--transition-type",
+            "problem_observed",
+            "--family-signature",
+            "generation-gap",
+            "--governing-cause",
+            "explicit-invalid-generation",
+            "--work-key",
+            "wk:generation-gap",
+            "--component-id",
+            "problem-consumer",
+            "--problem-generation",
+            "3",
+        ],
+        cwd=REPO_ROOT,
+        check=False,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+    )
+    assert rejected.returncode == 20
+    assert json.loads(rejected.stderr)["reason_code"] == "PROBLEM_GENERATION_INVALID"
+    assert (run_dir / "events.jsonl").read_bytes() == before
+    assert not (run_dir / "problem_transitions").exists()
+
+
+@pytest.mark.skipif(not TASK_RUN_CLI.is_file(), reason="canonical task-run CLI unavailable")
+def test_recorder_rejects_a_stale_derivation_snapshot_before_carrier(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    run_root = tmp_path / "task-runs"
+    run_id = "problem-stale-snapshot-canary"
+    initialized = subprocess.run(
+        [
+            sys.executable,
+            str(TASK_RUN_CLI),
+            "--root",
+            str(run_root),
+            "init",
+            "--run-id",
+            run_id,
+            "--mode",
+            "bounded_task",
+            "--objective",
+            "reject stale problem derivation",
+            "--risk",
+            "reversible_local",
+            "--completion",
+            "stale snapshot performs no append",
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+    )
+    assert initialized.returncode == 0, initialized.stderr
+    run_dir = run_root / run_id
+    stale_snapshot = transition_adapter.scan_task_run_problem_append_snapshot(run_dir)
+    advanced = subprocess.run(
+        [
+            sys.executable,
+            str(TASK_RUN_CLI),
+            "--root",
+            str(run_root),
+            "event",
+            "--run-id",
+            run_id,
+            "--event-id",
+            "evt-unrelated-head-advance",
+            "--actor",
+            "test",
+            "--kind",
+            "observation",
+            "--phase",
+            "unrelated_head_advance",
+            "--summary",
+            "advance the event head",
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+    )
+    assert advanced.returncode == 0, advanced.stderr
+    before = (run_dir / "events.jsonl").read_bytes()
+    monkeypatch.setattr(
+        transition_adapter,
+        "scan_task_run_problem_append_snapshot",
+        lambda _run_dir: stale_snapshot,
+    )
+
+    with pytest.raises(SystemAwarenessError) as caught:
+        transition_adapter._record_transition(  # noqa: SLF001
+            {
+                "task_run_cli": str(TASK_RUN_CLI),
+                "task_run_root": str(run_root),
+                "task_run_id": run_id,
+                "actor": "codex",
+                "owner_id": "codex-owner",
+                "transition_type": "problem_observed",
+                "family_signature": "stale-snapshot",
+                "governing_cause": "concurrent-event-head-change",
+                "work_key": "wk:stale-snapshot",
+                "component_id": "problem-consumer",
+                "evidence_refs": [],
+            }
+        )
+    assert caught.value.reason_code == "TASK_RUN_EVENT_HEAD_CHANGED"
+    assert (run_dir / "events.jsonl").read_bytes() == before
+    assert not (run_dir / "problem_transitions").exists()
+
+
+@pytest.mark.skipif(not TASK_RUN_CLI.is_file(), reason="canonical task-run CLI unavailable")
+@pytest.mark.parametrize("distinct", [False, True])
+def test_concurrent_repairs_share_one_snapshot_and_one_generation(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, distinct: bool
+) -> None:
+    run_root = tmp_path / "task-runs"
+    run_id = f"problem-generation-cas-{'distinct' if distinct else 'identical'}"
+    initialized = subprocess.run(
+        [
+            sys.executable,
+            str(TASK_RUN_CLI),
+            "--root",
+            str(run_root),
+            "init",
+            "--run-id",
+            run_id,
+            "--mode",
+            "bounded_task",
+            "--objective",
+            "serialize problem repair generations",
+            "--risk",
+            "reversible_local",
+            "--completion",
+            "concurrent repair proposals cannot poison lifecycle",
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+    )
+    assert initialized.returncode == 0, initialized.stderr
+    common: dict[str, object] = {
+        "task_run_cli": str(TASK_RUN_CLI),
+        "task_run_root": str(run_root),
+        "task_run_id": run_id,
+        "actor": "codex",
+        "owner_id": "codex-owner",
+        "family_signature": "generation-cas",
+        "governing_cause": "concurrent-repair-proposals",
+        "work_key": "wk:generation-cas",
+        "component_id": "problem-consumer",
+        "evidence_refs": [],
+    }
+    observed = transition_adapter._record_transition(  # noqa: SLF001
+        {**common, "transition_type": "problem_observed"}
+    )
+    problem_ref = observed["problem_ref"]
+    proof_refs = [_proof(tmp_path, f"repair-{index}.json") for index in (1, 2)]
+
+    original_snapshot = transition_adapter.scan_task_run_problem_append_snapshot
+    barrier = Barrier(2)
+
+    def shared_snapshot(run_dir: Path) -> dict[str, object]:
+        snapshot = original_snapshot(run_dir)
+        barrier.wait(timeout=10)
+        return snapshot
+
+    monkeypatch.setattr(
+        transition_adapter, "scan_task_run_problem_append_snapshot", shared_snapshot
+    )
+    original_validate = transition_adapter.validate_problem_transition_append
+    validation_barrier = Barrier(2)
+
+    def shared_validation(*args: object, **kwargs: object) -> dict[str, object]:
+        result = original_validate(*args, **kwargs)  # type: ignore[arg-type]
+        validation_barrier.wait(timeout=10)
+        return result
+
+    monkeypatch.setattr(transition_adapter, "validate_problem_transition_append", shared_validation)
+
+    def propose(index: int) -> tuple[str, object]:
+        identity_index = index if distinct else 1
+        try:
+            result = transition_adapter._record_transition(  # noqa: SLF001
+                {
+                    **common,
+                    "transition_type": "repair_adopted",
+                    "problem_ref": problem_ref,
+                    "repair_decision": "small_repair",
+                    "repair_level": "local_patch",
+                    "evidence_refs": [proof_refs[identity_index - 1]],
+                    "side_effect_id": f"se:repair:{identity_index}",
+                }
+            )
+        except (SystemAwarenessError, transition_adapter.ProblemTransitionAdapterError) as exc:
+            return "error", exc.reason_code
+        return "ok", result
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        results = list(executor.map(propose, (1, 2)))
+
+    if distinct:
+        assert [status for status, _detail in results].count("ok") == 1
+        assert [detail for status, detail in results if status == "error"] == [
+            "TASK_RUN_EVENT_HEAD_CHANGED"
+        ]
+    else:
+        assert [status for status, _detail in results] == ["ok", "ok"]
+        assert {bool(detail["replayed"]) for _status, detail in results} == {False, True}  # type: ignore[index]
+    projection = scan_task_run_problem_projection(run_root / run_id)
+    problem = next(row for row in projection["problems"] if row["problem_ref"] == problem_ref)
+    assert problem["repair_generation"] == 1
+    assert problem["status"] == "monitoring"
