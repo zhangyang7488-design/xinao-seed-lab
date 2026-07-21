@@ -26,6 +26,7 @@ EXPECTED_PACKAGE_IDENTITY_SCHEMA = "xinao.worker_package_identity.v2"
 EXPECTED_PACKAGE_BATCH_SCHEMA = "xinao.worker_package_batch.v3"
 EXPECTED_DISPATCH_ENVELOPE_SCHEMA = "xinao.worker_dispatch_envelope.v2"
 EXPECTED_LOGICAL_CANDIDATE_CONSUMER_ID = "worker_candidate_producer"
+EXPECTED_DIRECT_ATTEMPT_CONSUMER_ID = "direct_grok_worker_pool"
 EXPECTED_LOGICAL_CANDIDATE_EFFECT_CONTRACT = {
     "schema_version": "xinao.worker_candidate_effect_contract.v1",
     "effect_kind": "candidate_artifact_write",
@@ -444,6 +445,7 @@ def _prior_reuse_contract_binding(
     validated_manifest: dict[str, Any],
     current_manifest_path: Path,
     current_manifest_sha256: str,
+    validate_attempt_receipt: Callable[..., Any],
 ) -> dict[str, str]:
     """Bind prior reuse to the exact accepted ancestor contract.
 
@@ -469,11 +471,9 @@ def _prior_reuse_contract_binding(
     lane_root = prior_path.parent
     adapter_path = lane_root / "common_adapter_receipt.json"
     contract_path = lane_root / "common_logical_contract.json"
-    meta_path = lane_root / "latest.json"
     adapter = _load_object(adapter_path, "prior common adapter receipt")
     contract = _load_object(contract_path, "prior common logical contract")
     attempt = _load_object(prior_path, "prior common attempt receipt")
-    meta = _load_object(meta_path, "prior provider evidence")
 
     artifact_paths = adapter.get("artifact_paths")
     artifact_sha256 = adapter.get("artifact_sha256")
@@ -493,6 +493,14 @@ def _prior_reuse_contract_binding(
         or adapter.get("completion_claim_allowed") is not False
     ):
         raise ValueError("prior adapter receipt is not an accepted candidate-only fact")
+    provider_ref_text = str(attempt.get("provider_evidence_ref") or "")
+    provider_sha256 = str(attempt.get("provider_evidence_sha256") or "")
+    if not provider_ref_text or not re.fullmatch(r"[0-9a-f]{64}", provider_sha256):
+        raise ValueError("prior receipt provider evidence binding is invalid")
+    provider_path = Path(provider_ref_text).resolve(strict=True)
+    if _sha(provider_path) != provider_sha256:
+        raise ValueError("prior receipt provider evidence bytes drifted")
+    meta = _load_object(provider_path, "prior provider evidence")
     preflight = meta.get("common_contract_preflight")
     if not isinstance(preflight, dict) or preflight.get("validated") is not True:
         raise ValueError("prior provider evidence has no validated common preflight")
@@ -503,6 +511,17 @@ def _prior_reuse_contract_binding(
         or str(preflight.get("logical_contract_sha256") or "") != contract_digest
     ):
         raise ValueError("prior logical contract digest binding drifted")
+    try:
+        verdict = validate_attempt_receipt(
+            contract,
+            attempt,
+            expected_consumer_id=EXPECTED_DIRECT_ATTEMPT_CONSUMER_ID,
+        )
+    except Exception as exc:
+        raise ValueError(f"prior attempt receipt validation failed: {exc}") from exc
+    if getattr(verdict, "accepted", False) is not True:
+        reasons = ",".join(str(value) for value in getattr(verdict, "reason_codes", ()))
+        raise ValueError(f"prior attempt receipt is not accepted: {reasons}")
     if (
         str(contract.get("logical_operation_id") or "") != _operation_id(package)
         or str(contract.get("work_key") or "") != str(package.get("work_key") or "")
@@ -515,7 +534,10 @@ def _prior_reuse_contract_binding(
     task_path_text, separator, task_sha256 = task_contract_ref.rpartition("#sha256=")
     if not separator or not re.fullmatch(r"[0-9a-f]{64}", task_sha256):
         raise ValueError("prior task_contract_ref is not hash-bound")
-    task_path = Path(task_path_text).resolve(strict=True)
+    task_path_input = Path(task_path_text)
+    if not task_path_input.is_absolute():
+        raise ValueError("prior task_contract_ref path must be absolute")
+    task_path = task_path_input.resolve(strict=True)
     if _sha(task_path) != task_sha256:
         raise ValueError("prior task_contract_ref bytes drifted")
     subject_sha256 = str(preflight.get("subject_manifest_sha256") or "")
@@ -523,9 +545,17 @@ def _prior_reuse_contract_binding(
         raise ValueError("prior subject manifest is not its task contract carrier")
 
     ancestor_ref = validated_manifest.get("predecessor_manifest_ref")
+    current_revision = int(validated_manifest.get("graph_revision") or 0)
+    current_parent_work_key = str(validated_manifest.get("parent_work_key") or "")
+    if current_revision < 2 or not current_parent_work_key:
+        raise ValueError("prior reuse requires a validated reseal manifest")
     seen: set[tuple[str, str]] = set()
     matched_ancestor = False
+    depth = 0
     while ancestor_ref is not None:
+        depth += 1
+        if depth > 32:
+            raise ValueError("reseal ancestor chain exceeds depth 32")
         if not isinstance(ancestor_ref, dict) or set(ancestor_ref) != {"path", "sha256"}:
             raise ValueError("reseal ancestor ref is not exact and hash-bound")
         ancestor_path = Path(str(ancestor_ref["path"])).resolve(strict=True)
@@ -539,6 +569,11 @@ def _prior_reuse_contract_binding(
         ancestor = _load_object(ancestor_path, "reseal ancestor manifest")
         if ancestor.get("schema_version") != EXPECTED_PACKAGE_BATCH_SCHEMA:
             raise ValueError("reseal ancestor manifest schema drifted")
+        ancestor_revision = int(ancestor.get("graph_revision") or 0)
+        if ancestor_revision != current_revision - depth:
+            raise ValueError("reseal ancestor graph revision drifted")
+        if str(ancestor.get("parent_work_key") or "") != current_parent_work_key:
+            raise ValueError("reseal ancestor parent work key drifted")
         ancestor_packages = ancestor.get("packages")
         if not isinstance(ancestor_packages, list):
             raise ValueError("reseal ancestor package set is invalid")
@@ -558,6 +593,8 @@ def _prior_reuse_contract_binding(
             != str(package.get("package_identity_sha256") or "")
             or str(prior_package.get("work_key") or "")
             != str(package.get("work_key") or "")
+            or str(prior_package.get("parent_work_key") or "")
+            != str(package.get("parent_work_key") or "")
         ):
             raise ValueError("reseal ancestor package identity drifted")
         if _same_file_path(task_path, ancestor_path) and task_sha256 == ancestor_sha:
@@ -574,6 +611,9 @@ def _prior_reuse_contract_binding(
         "prior_attempt_receipt_sha256": prior_ref["sha256"],
         "prior_logical_contract_ref": str(contract_path.resolve(strict=True)),
         "prior_logical_contract_sha256": _sha(contract_path),
+        "frozen_context_sha256": str(preflight.get("frozen_context_sha256") or ""),
+        "provider_evidence_ref": str(provider_path),
+        "provider_evidence_sha256": provider_sha256,
     }
 
 
@@ -732,6 +772,24 @@ def _run_package(
     dispatch_id = _identifier("cdx")
     pool_id = _identifier("gwp")
     operation_id = _operation_id(package)
+    if common_contract_binding.get("binding_source") == "prior_accepted_ancestor_manifest":
+        contract_binding_args = [
+            "-CommonLogicalContractPath",
+            str(common_contract_binding["prior_logical_contract_ref"]),
+            "-CommonSubjectManifestSha256",
+            str(common_contract_binding["subject_manifest_sha256"]),
+            "-CommonFrozenContextSha256",
+            str(common_contract_binding["frozen_context_sha256"]),
+        ]
+    else:
+        contract_binding_args = [
+            "-CommonTaskContractRef",
+            str(common_contract_binding["task_contract_ref"]),
+            "-CommonSubjectManifestSha256",
+            str(common_contract_binding["subject_manifest_sha256"]),
+            "-CommonContextManifestPath",
+            str(package["context_manifest_ref"]["path"]),
+        ]
     command = [
         pwsh,
         "-NoProfile",
@@ -768,14 +826,9 @@ def _run_package(
         str(package["work_key"]),
         "-CommonOperationId",
         operation_id,
-        "-CommonTaskContractRef",
-        str(common_contract_binding["task_contract_ref"]),
         "-CommonCorrelationId",
         str(package["parent_work_key"]),
-        "-CommonSubjectManifestSha256",
-        str(common_contract_binding["subject_manifest_sha256"]),
-        "-CommonContextManifestPath",
-        str(package["context_manifest_ref"]["path"]),
+        *contract_binding_args,
         "-CommonRulesFile",
         rules_ref["path"],
         "-CommonRulesSha256",
@@ -1317,6 +1370,7 @@ def main() -> int:
             validated_manifest=validated,
             current_manifest_path=manifest_path,
             current_manifest_sha256=manifest_sha,
+            validate_attempt_receipt=validate_attempt_receipt,
         )
         for package_id, package in packages.items()
     }
