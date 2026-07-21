@@ -425,7 +425,10 @@ def test_context_intent_alignment_eval_is_balanced_and_friction_bounded() -> Non
     assert codex_exception["expected_owner_execution_state"] == "dynamic_supervisor"
     assert "workers are unsuitable" in routing_prompt
     assert "materially shortens the active critical path" in routing_prompt
-    assert all(token not in routing_prompt for token in ("Luna", "Terra", "Spark", "automatic model ladder"))
+    assert all(
+        token not in routing_prompt
+        for token in ("Luna", "Terra", "Spark", "automatic model ladder")
+    )
     quota_failure = cases["REG_QUOTA_QUERY_FAILURE_NONBLOCKING"]["vars"]
     assert quota_failure["expected_ask_user"] is False
     assert quota_failure["expected_worker_provider"] == "grok"
@@ -875,9 +878,7 @@ def test_context_intent_alignment_eval_is_balanced_and_friction_bounded() -> Non
     assert "REG_DYNAMIC_SUPERVISOR_EXTERNAL_DEFAULT" in decision["anchor_regression_cases"]
     assert "REG_DYNAMIC_SUPERVISOR_TERMINAL_REFILL" in decision["anchor_regression_cases"]
     assert "REG_DYNAMIC_SUPERVISOR_LIVE_ROUTING_FACTS" in decision["anchor_regression_cases"]
-    assert "REG_WORK_UNIT_LANDS_EFFECT_THEN_RETIRES_CARRIER" in decision[
-        "anchor_regression_cases"
-    ]
+    assert "REG_WORK_UNIT_LANDS_EFFECT_THEN_RETIRES_CARRIER" in decision["anchor_regression_cases"]
     assert "REG_FRESH_WINDOW_REUSES_ACCEPTED_D_CANDIDATE" in decision["anchor_regression_cases"]
     assert "NEG_FRESH_WINDOW_DIRECTORY_ONLY_IS_NOT_REUSE" in decision["anchor_regression_cases"]
     assert "REG_LIVE_FACT_MUST_CHANGE_DOMINATED_NEXT_ACTION" in decision["anchor_regression_cases"]
