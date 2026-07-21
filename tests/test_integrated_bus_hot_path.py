@@ -79,6 +79,7 @@ def _docker_leg_b_package_fixture(
     tmp_path: Path,
     *,
     dependency_condition: str | None = None,
+    json_schema_text: str | None = None,
 ) -> dict:
     from services.agent_runtime.context_slice_manifest import (
         build_context_slice_manifest,
@@ -146,11 +147,19 @@ def _docker_leg_b_package_fixture(
 
     selection_receipt = _supervisor_decision("grok-4.5")
     selected_candidate = dict(selection_receipt["selected_candidate"])
+    schema_ref = None
+    if json_schema_text is not None:
+        schema_path = source_root / "result.schema.json"
+        schema_path.write_text(json_schema_text, encoding="utf-8")
+        schema_ref = {
+            "path": to_logical(schema_path),
+            "sha256": hashlib.sha256(schema_path.read_bytes()).hexdigest(),
+        }
     output_contract_sha256 = hashlib.sha256(
         artifact_json_bytes(
             {
-                "result_format": "text",
-                "result_json_schema_sha256": "",
+                "result_format": "json_object" if schema_ref else "text",
+                "result_json_schema_sha256": schema_ref["sha256"] if schema_ref else "",
                 "min_result_chars": 1,
                 "required_result_markers": ["OK"],
             }
@@ -211,7 +220,8 @@ def _docker_leg_b_package_fixture(
             "acceptance": {
                 "min_result_chars": 1,
                 "required_result_markers": ["OK"],
-                "require_json_object": False,
+                "require_json_object": schema_ref is not None,
+                **({"json_schema_ref": dict(schema_ref)} if schema_ref else {}),
             },
             "timeout_sec": 60,
         }
@@ -1431,6 +1441,43 @@ def test_docker_grok_leg_b_derives_lane_from_same_neutral_manifest_bytes(
     assert fanin_manifest["route_choice"] == fixture["envelope"]["route_choice"]
     assert fanin_manifest["route_adapter"] == fixture["envelope"]["execution_adapter"]
     assert result["grok_fanin"]["route_choice"] == fixture["envelope"]["route_choice"]
+
+
+def test_docker_grok_leg_b_preserves_exact_schema_file_digest_across_adapter(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from services.agent_runtime import grok_build_docker_worker as docker_worker
+
+    fixture = _docker_leg_b_package_fixture(
+        tmp_path,
+        json_schema_text=' {\n  "required": ["marker"],\n  "type": "object"\n}\n',
+    )
+    monkeypatch.setattr(docker_worker, "_map_host_path_to_container", fixture["resolver"])
+    lanes, _ = docker_worker._derive_canonical_package_lanes(
+        dispatch_envelope_ref=fixture["envelope_ref"],
+        dispatch_route_claim_ref=fixture["route_claim_ref"],
+        dispatch_task_run_dir=fixture["action"]["run_dir"],
+        dispatch_task_run_id="run-continuity-test",
+        ready_frontier=None,
+    )
+
+    lane = lanes[0]
+    package = fixture["manifest"]["packages"][0]
+    output_contract = docker_worker._lane_output_contract(lane)
+    observed = hashlib.sha256(
+        artifact_json_bytes(
+            {
+                "result_format": output_contract["result_format"],
+                "result_json_schema_sha256": output_contract["result_json_schema_sha256"],
+                "min_result_chars": output_contract["min_result_chars"],
+                "required_result_markers": list(output_contract["required_result_markers"]),
+            }
+        )
+    ).hexdigest()
+
+    assert lane["result_json_schema_sha256"] == package["acceptance"]["json_schema_ref"]["sha256"]
+    assert observed == package["output_contract_sha256"]
 
 
 def test_docker_grok_leg_b_rechecks_live_package_guard_after_route_claim(
