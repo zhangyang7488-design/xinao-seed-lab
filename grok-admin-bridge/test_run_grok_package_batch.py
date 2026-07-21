@@ -731,6 +731,25 @@ def test_provider_process_is_terminated_when_live_route_guard_freezes() -> None:
     assert checks == 1
 
 
+@pytest.mark.skipif(os.name != "nt", reason="Windows console semantics")
+def test_production_guarded_spawn_is_windowless_and_keeps_stdout() -> None:
+    completed = subject._run_process_with_live_guard(
+        [
+            sys.executable,
+            "-c",
+            (
+                "import ctypes; "
+                "print(int(ctypes.windll.kernel32.GetConsoleWindow()))"
+            ),
+        ],
+        timeout_seconds=10,
+        live_guard=lambda: None,
+    )
+
+    assert completed.returncode == 0
+    assert completed.stdout.strip() == "0"
+
+
 def test_candidate_cwd_is_exact_existing_output_not_source_repo_or_traversal(
     tmp_path: Path,
 ) -> None:
@@ -1295,9 +1314,11 @@ def test_rejected_terminal_is_appended_with_retry_specific_identity(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     observed: list[str] = []
+    observed_kwargs: dict[str, object] = {}
 
-    def fake_run(command: list[str], **_: object) -> subprocess.CompletedProcess[str]:
+    def fake_run(command: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
         observed.extend(command)
+        observed_kwargs.update(kwargs)
         return subprocess.CompletedProcess(command, 0, "", "")
 
     monkeypatch.setattr(subject.subprocess, "run", fake_run)
@@ -1323,12 +1344,16 @@ def test_rejected_terminal_is_appended_with_retry_specific_identity(
     assert (
         "provider rejected package pkg-1" in observed[observed.index("--summary") + 1]
     )
+    assert observed[0] == sys.executable
+    assert not str(observed[0]).casefold().endswith(".py")
+    assert observed_kwargs["creationflags"] == subject.WINDOWLESS_CREATIONFLAGS
 
 
 def test_non_conversion_is_hash_bound_to_native_pool_usage(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     observed: list[str] = []
+    observed_kwargs: dict[str, object] = {}
     pool_summary = tmp_path / "pool-summary.json"
     pool_summary.write_text(
         '{"pool_id":"gwp-1","results":[{"status":"accepted","usage":{"total_tokens":17}}]}\n',
@@ -1336,8 +1361,9 @@ def test_non_conversion_is_hash_bound_to_native_pool_usage(
     )
     pool_sha = subject._sha(pool_summary)
 
-    def fake_run(command: list[str], **_: object) -> subprocess.CompletedProcess[str]:
+    def fake_run(command: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
         observed.extend(command)
+        observed_kwargs.update(kwargs)
         return subprocess.CompletedProcess(command, 0, "", "")
 
     monkeypatch.setattr(subject.subprocess, "run", fake_run)
@@ -1362,6 +1388,8 @@ def test_non_conversion_is_hash_bound_to_native_pool_usage(
         f"{pool_summary.resolve()}#sha256={pool_sha}"
     )
     assert observed[observed.index("--side-effect-id") + 1].endswith(pool_sha[:32])
+    assert observed[0] == sys.executable
+    assert observed_kwargs["creationflags"] == subject.WINDOWLESS_CREATIONFLAGS
 
 
 def test_non_conversion_does_not_claim_recorded_without_pool_summary(tmp_path: Path) -> None:
