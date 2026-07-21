@@ -1,0 +1,57 @@
+{
+  "schema_version": "xinao.openai_compatible_relay_worker.v1",
+  "sentinel": "SENTINEL:OPENAI_COMPATIBLE_RELAY_WORKER_CONTRACT",
+  "status": "available_provider_native_a_leg_peer",
+  "route_role": "a_leg_peer_not_grok_pool_not_temporal",
+  "transport_id": "direct-openai-compatible-relay",
+  "provider_id": "ssstoken_openai_compatible_relay",
+  "peer_of": {
+    "transport_id": "direct-grok-worker-pool",
+    "dispatch": "Invoke-CodexDispatchGrokWorkerPool.ps1",
+    "worker": "Invoke-GrokComposer25Worker.ps1"
+  },
+  "selection": "explicit_codex_or_4_5_direct_call",
+  "not_333_mainline": true,
+  "completion_claim_allowed": false,
+  "common_execution_contract_status": "provider_native_candidate_receipt_only",
+  "common_execution_contract_note": "work_key, logical_operation_id, attempt, exact model, terminal state, usage and hash readback are bound; parent completion remains denied until a caller adapts the provider receipt through the S common consumer",
+  "auth": {
+    "mode": "key_file_handle",
+    "default_key_path": "C:\\Users\\xx363\\私钥\\Codex-api.txt",
+    "swap": "overwrite_or_point_-KeyPath_no_script_edit",
+    "reveal_in_receipt": "none_key_path_is_runtime_only"
+  },
+  "defaults": {
+    "base_url": "https://api.ssstoken.net/v1",
+    "model": "gpt-5.6-sol",
+    "api_style": "chat_completions"
+  },
+  "files": [
+    "Invoke-CodexDispatchOpenAiRelayWorker.ps1",
+    "Invoke-OpenAiCompatibleRelayWorker.ps1",
+    "grok_openai_compatible_relay_worker.v1.json",
+    "../launchers/Invoke-Codex-OpenAiRelayWorker.ps1",
+    "../install/Install-CodexOpenAiRelayWorker.ps1"
+  ],
+  "stable_entry": "C:\\Users\\xx363\\CodexLaunchers\\Invoke-Codex-OpenAiRelayWorker.ps1",
+  "invoke_examples": [
+    ".\\Invoke-CodexDispatchOpenAiRelayWorker.ps1 -WorkKey relay:smoke -Prompt \"Reply only: RELAY_OK\" -Model gpt-5.6-sol -RequiredResultMarkers RELAY_OK",
+    ".\\Invoke-CodexDispatchOpenAiRelayWorker.ps1 -WorkKey mainline:bounded-research -PromptFile .\\task.md -Model gpt-5.4 -KeyPath C:\\Users\\xx363\\私钥\\Codex-api.txt"
+  ],
+  "evidence_root": "D:\\XINAO_RESEARCH_RUNTIME\\state\\openai_relay_worker",
+  "prohibited": [
+    "inject_into_Invoke-GrokWorkerPool",
+    "temporal_default",
+    "resident_loop",
+    "second_orchestrator",
+    "hardcode_api_key_in_script",
+    "record_key_fingerprint_or_key_file_hash",
+    "accept_requested_model_without_observed_response_model",
+    "accept_missing_or_zero_usage"
+    ,"accept_nonterminal_or_truncated_response"
+    ,"overwrite_existing_run_or_dispatch_evidence"
+    ,"send_authorization_to_unadmitted_base_url"
+    ,"claim_parallel_width_above_one"
+  ],
+  "note_cn": "与 Grok A 腿同级的 Codex 可直调 HTTP 中转工人；换密钥=换文件或 -KeyPath"
+}

@@ -12,7 +12,7 @@
   "route_authority": "bridge.config.json#canonical_route",
   "route_continuity": "existing_route_receipt_first; checkpoint_or_resume_does_not_switch_leg",
   "model_worker_routing": "bridge.config.json#model_worker_routing",
-  "soft_preference_when_close": "grok",
+  "soft_preference_when_close": "openai_relay",
   "worker_width": "dynamic",
   "prohibited_side_effects": [
     "worker_dispatch",

@@ -19,6 +19,9 @@
       "transport_id": "direct-grok-worker-pool",
       "route_role": "normal_bounded_online_current_tui",
       "typical_when": "current_interactive_owner_is_online_and_work_is_bounded",
+      "admitted_peer_transports": [
+        "direct-openai-compatible-relay"
+      ],
       "durable_after_owner_exit": false
     },
     "leg_b": {
@@ -41,10 +44,11 @@
     "selection": "dynamic_positive_net_benefit",
     "available_workers": [
       "grok",
+      "openai_relay",
       "codex_agents",
       "combined"
     ],
-    "soft_preference_when_close": "grok",
+    "soft_preference_when_close": "openai_relay",
     "quota_role": "scheduling_telemetry_not_dispatch_gate",
     "empty_burn": false,
     "width_policy": "dynamic_ready_frontier_quota_latency_evidence"

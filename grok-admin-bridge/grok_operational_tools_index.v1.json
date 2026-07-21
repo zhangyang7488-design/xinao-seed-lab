@@ -10,8 +10,8 @@
     "leg_b": "Temporal + Docker houtai-gongren + worker-internal LangGraph after explicit durable handoff",
     "continuous_or_resume_switches_leg": false,
     "worker_selection": "dynamic_positive_net_benefit",
-    "available_workers": ["grok", "codex_agents", "combined"],
-    "soft_preference_when_close": "grok",
+    "available_workers": ["grok", "openai_relay", "codex_agents", "combined"],
+    "soft_preference_when_close": "openai_relay",
     "width_policy": "dynamic_ready_frontier_quota_latency_evidence",
     "codex_role": "thinking_orchestration_and_tightly_coupled_single_writer"
   },
@@ -78,6 +78,20 @@
     "scheduler": false,
     "watchdog": false,
     "is_unconditional_default": false
+  },
+  "openai_compatible_relay_peer": {
+    "route_role": "a_leg_peer_not_grok_pool_not_temporal",
+    "selection": "explicit_task_or_dynamic_positive_net_benefit",
+    "transport_id": "direct-openai-compatible-relay",
+    "provider_id": "ssstoken_openai_compatible_relay",
+    "contract": "grok_openai_compatible_relay_worker.v1.json",
+    "dispatch": "Invoke-CodexDispatchOpenAiRelayWorker.ps1",
+    "completion_claim_allowed": false,
+    "common_execution_contract_status": "provider_native_candidate_receipt_only",
+    "max_width": 1,
+    "resident_refill": false,
+    "scheduler": false,
+    "watchdog": false
   },
   "generated_state_root": "D:\\XINAO_RESEARCH_RUNTIME",
   "completion_claim_allowed": false,

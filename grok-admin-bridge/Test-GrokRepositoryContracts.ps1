@@ -36,8 +36,9 @@ Assert-Contract ([bool]$config.canonical_route.continuity.existing_route_receipt
 Assert-Contract (-not [bool]$config.canonical_route.continuity.continuous_or_resume_switches_leg) "continuous_resume_never_switches_leg"
 Assert-Contract ([string]$config.model_worker_routing.selection -eq "dynamic_positive_net_benefit") "dynamic_worker_selection"
 Assert-Contract (@($config.model_worker_routing.available_workers) -contains "grok") "grok_available"
+Assert-Contract (@($config.model_worker_routing.available_workers) -contains "openai_relay") "openai_relay_available"
 Assert-Contract (@($config.model_worker_routing.available_workers) -contains "codex_agents") "codex_agents_available"
-Assert-Contract ([string]$config.model_worker_routing.soft_preference_when_close -eq "grok") "grok_soft_preference"
+Assert-Contract ([string]$config.model_worker_routing.soft_preference_when_close -eq "openai_relay") "relay_soft_preference"
 Assert-Contract ([string]$config.model_worker_routing.quota_role -eq "scheduling_telemetry_not_dispatch_gate") "quota_not_gate"
 Assert-Contract (-not [bool]$config.model_worker_routing.empty_burn) "no_empty_burn"
 Assert-Contract ([string]$config.model_worker_routing.width_policy -eq "dynamic_ready_frontier_quota_latency_evidence") "dynamic_width"
@@ -170,6 +171,34 @@ Assert-Contract ([string]$poolContract.selection -eq "selected_by_task_fit_or_ex
 Assert-Contract ([string]$poolContract.activation -notmatch "fallback") "pool_contract_not_fallback"
 Assert-Contract ([string]$poolContract.execution_contract_version -eq "xinao.grok.shared_execution_contract.v1") "pool_execution_contract"
 Assert-Contract (@($poolContract.common_contract_features) -contains "validated_bounded_context_slice_manifest_for_first_time_tasks") "pool_validated_context_slice_feature"
+Assert-Contract (@($config.canonical_route.leg_a.admitted_peer_transports) -contains "direct-openai-compatible-relay") "relay_admitted_as_leg_a_peer"
+
+$relayFiles = @(
+    "grok-admin-bridge/Invoke-CodexDispatchOpenAiRelayWorker.ps1",
+    "grok-admin-bridge/Invoke-OpenAiCompatibleRelayWorker.ps1",
+    "grok-admin-bridge/grok_openai_compatible_relay_worker.v1.json",
+    "grok-admin-bridge/Test-OpenAiCompatibleRelayWorker.ps1",
+    "launchers/Invoke-Codex-OpenAiRelayWorker.ps1",
+    "install/Install-CodexOpenAiRelayWorker.ps1"
+)
+foreach ($relative in $relayFiles) {
+    Assert-Contract (Test-Path -LiteralPath (Join-Path $repoRoot $relative) -PathType Leaf) ("relay_missing:" + $relative)
+}
+$relayContract = Read-Json "grok-admin-bridge/grok_openai_compatible_relay_worker.v1.json"
+$relayWorkerText = Get-Content -LiteralPath (Join-Path $repoRoot "grok-admin-bridge/Invoke-OpenAiCompatibleRelayWorker.ps1") -Raw -Encoding UTF8
+Assert-Contract ([string]$relayContract.route_role -eq "a_leg_peer_not_grok_pool_not_temporal") "relay_is_a_leg_peer"
+Assert-Contract (-not [bool]$relayContract.completion_claim_allowed) "relay_cannot_claim_completion"
+Assert-Contract ($relayWorkerText -notmatch 'key_fingerprint|key_file_sha256') "relay_records_no_secret_fingerprint"
+Assert-Contract ($relayWorkerText -match 'RELAY_WORKER_MODEL_IDENTITY_MISMATCH') "relay_checks_observed_model"
+Assert-Contract ($relayWorkerText -match 'RELAY_WORKER_POSITIVE_USAGE_REQUIRED') "relay_requires_positive_usage"
+Assert-Contract ($relayWorkerText -match 'RELAY_WORKER_CHAT_TERMINAL_NOT_ACCEPTED') "relay_requires_terminal_chat_response"
+Assert-Contract ($relayWorkerText -match 'RELAY_WORKER_RESPONSES_TERMINAL_NOT_ACCEPTED') "relay_requires_terminal_responses_response"
+Assert-Contract ($relayWorkerText -match 'RELAY_WORKER_EVIDENCE_ID_CONFLICT') "relay_evidence_is_immutable"
+Assert-Contract ($relayWorkerText -match 'RELAY_WORKER_BASE_URL_NOT_ADMITTED') "relay_restricts_authorization_target"
+$relayDispatchText = Get-Content -LiteralPath (Join-Path $repoRoot "grok-admin-bridge/Invoke-CodexDispatchOpenAiRelayWorker.ps1") -Raw -Encoding UTF8
+Assert-Contract ($relayDispatchText -match '\[ValidateRange\(1, 1\)\]') "relay_width_is_truthfully_one"
+Assert-Contract ($relayDispatchText -match 'result_hash_readback') "relay_dispatch_rehashes_result"
+Assert-Contract ($relayDispatchText -match 'raw_hash_readback') "relay_dispatch_rehashes_raw_response"
 
 $workerText = Get-Content -LiteralPath (Join-Path $repoRoot "grok-admin-bridge/Invoke-GrokComposer25Worker.ps1") -Raw -Encoding UTF8
 $poolText = Get-Content -LiteralPath (Join-Path $repoRoot "grok-admin-bridge/Invoke-GrokWorkerPool.ps1") -Raw -Encoding UTF8
