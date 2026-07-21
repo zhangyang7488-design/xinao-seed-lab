@@ -35,6 +35,7 @@ REPORT_VERSION = "xinao.system_awareness.report.v1"
 COMPLETION_CARD_VERSION = "xinao.work_key_completion_card.v1"
 EPISODE_OUTCOME_VERSION = "xinao.episode_outcome_projection.v1"
 PROBLEM_PROJECTION_VERSION = "xinao.problem_projection.v1"
+PROBLEM_TRANSITION_VERSION = "xinao.problem_transition.v1"
 FRONTIER_RECONCILIATION_VERSION = "xinao.global_frontier_reconciliation.v1"
 IDENTITY_VERSION = "xinao.identity_reconciliation.v1"
 PREFLIGHT_VERSION = "xinao.supervisor_capability_preflight.v1"
@@ -63,6 +64,30 @@ DISPATCH_OUTCOME_PHASES = frozenset(
 EXECUTION_PHASES = frozenset({"EXPLORE", "CONSTRUCT", "VERIFY", "LAND"})
 FAILURE_PHASE_RE = re.compile(r"(?:reject|fail|error|blocked|invalid|unverified)", re.I)
 FAMILY_NORMALIZE_RE = re.compile(r"(?:retry|attempt|wave|event|v)[-_ ]?\d+", re.I)
+PROBLEM_REF_RE = re.compile(r"^PRB-[0-9A-F]{12}$")
+PROBLEM_TRANSITION_TYPES = frozenset(
+    {
+        "problem_observed",
+        "repair_adopted",
+        "consumer_effect_verified",
+        "effect_window_completed",
+        "problem_close_requested",
+    }
+)
+PROBLEM_REPAIR_DECISIONS = frozenset({"small_repair", "structural_repair", "no_build"})
+PROBLEM_REPAIR_LEVELS = frozenset(
+    {"local_patch", "structural_chain_repair", "governing_boundary_repair", "no_build"}
+)
+PROBLEM_SYSTEMIC_SIGNALS = frozenset(
+    {
+        "capability_gap",
+        "missing_consumer",
+        "governing_assumption",
+        "cross_entrypoint",
+        "control_boundary",
+    }
+)
+PROBLEM_TERMINAL_STATUSES = frozenset({"blocked", "partial", "unverified"})
 WORKTREE_DECLARED_STATES = frozenset(
     {
         "active",
@@ -368,6 +393,404 @@ def _problem_ref(signature: str, cause: str) -> str:
     return f"PRB-{digest}"
 
 
+def _positive_int(value: object, field: str) -> int:
+    normalized = _nonnegative_int(value, field)
+    if normalized == 0:
+        raise SystemAwarenessError("INPUT_INVALID", f"{field} must be an integer >= 1")
+    return normalized
+
+
+def _problem_reference(value: object, field: str = "problem_ref") -> str:
+    normalized = _require_text(value, field).upper()
+    if not PROBLEM_REF_RE.fullmatch(normalized):
+        raise SystemAwarenessError("INPUT_INVALID", f"{field} must match PRB-[0-9A-F]{{12}}")
+    return normalized
+
+
+def _problem_signal_map(raw: object) -> dict[str, bool]:
+    if raw is None:
+        return {key: False for key in sorted(PROBLEM_SYSTEMIC_SIGNALS)}
+    value = _require_mapping(raw, "systemic_signals")
+    unknown = sorted(set(value) - PROBLEM_SYSTEMIC_SIGNALS)
+    if unknown:
+        raise SystemAwarenessError(
+            "INPUT_INVALID", f"systemic_signals contains unknown keys: {unknown}"
+        )
+    normalized = {key: False for key in sorted(PROBLEM_SYSTEMIC_SIGNALS)}
+    for key, state in value.items():
+        if not isinstance(state, bool):
+            raise SystemAwarenessError("INPUT_INVALID", f"systemic_signals.{key} must be boolean")
+        normalized[str(key)] = state
+    return normalized
+
+
+def _problem_transition_identity(payload: Mapping[str, object]) -> str:
+    identity = {key: value for key, value in payload.items() if key != "transition_id"}
+    return "PTR-" + _sha256_bytes(artifact_json_bytes(identity))[:24].upper()
+
+
+def build_problem_transition(
+    *,
+    transition_type: str,
+    task_run_id: str,
+    task_run_event_id: str,
+    side_effect_id: str,
+    family_signature: str,
+    governing_cause: str,
+    work_key: str,
+    component_id: str,
+    problem_generation: int,
+    repair_generation: int = 0,
+    problem_ref: str = "",
+    owner_id: str = "codex-owner",
+    systemic_signals: Mapping[str, object] | None = None,
+    repair_decision: str = "",
+    repair_level: str = "",
+    terminal_status: str = "",
+    consumer_id: str = "",
+    window_id: str = "",
+    window_completed: bool = False,
+    passed: bool = False,
+    relevant_to_parent: bool | None = None,
+    expected_net_benefit_positive: bool | None = None,
+    evidence_refs: Sequence[str] = (),
+) -> dict[str, object]:
+    """Build one strict, hashable transition over the existing task-run fact chain."""
+
+    kind = _require_text(transition_type, "transition_type")
+    if kind not in PROBLEM_TRANSITION_TYPES:
+        raise SystemAwarenessError("INPUT_INVALID", f"unsupported transition_type: {kind}")
+    normalized_family = _family_signature(
+        {"family_signature": _require_text(family_signature, "family_signature")}
+    )
+    normalized_cause = _require_text(governing_cause, "governing_cause")
+    normalized_ref = (
+        _problem_reference(problem_ref)
+        if str(problem_ref or "").strip()
+        else _problem_ref(normalized_family, normalized_cause)
+    )
+    normalized_problem_generation = _positive_int(problem_generation, "problem_generation")
+    normalized_repair_generation = _nonnegative_int(repair_generation, "repair_generation")
+    normalized_decision = str(repair_decision or "").strip()
+    normalized_level = str(repair_level or "").strip()
+    normalized_terminal = str(terminal_status or "").strip()
+    normalized_consumer = str(consumer_id or "").strip()
+    normalized_window = str(window_id or "").strip()
+    if normalized_terminal and normalized_terminal not in PROBLEM_TERMINAL_STATUSES:
+        raise SystemAwarenessError("INPUT_INVALID", "terminal_status is not a problem terminal")
+    if relevant_to_parent is not None and not isinstance(relevant_to_parent, bool):
+        raise SystemAwarenessError("INPUT_INVALID", "relevant_to_parent must be boolean or null")
+    if expected_net_benefit_positive is not None and not isinstance(
+        expected_net_benefit_positive, bool
+    ):
+        raise SystemAwarenessError(
+            "INPUT_INVALID", "expected_net_benefit_positive must be boolean or null"
+        )
+    if not isinstance(window_completed, bool) or not isinstance(passed, bool):
+        raise SystemAwarenessError("INPUT_INVALID", "window_completed and passed must be boolean")
+
+    if isinstance(evidence_refs, (str, bytes)) or not isinstance(evidence_refs, Sequence):
+        raise SystemAwarenessError("INPUT_INVALID", "evidence_refs must be an array")
+    proof_refs = [
+        _require_text(reference, f"evidence_refs[{index}]")
+        for index, reference in enumerate(evidence_refs)
+    ]
+    if kind == "problem_observed":
+        if (
+            normalized_repair_generation != 0
+            or normalized_decision
+            or normalized_level
+            or normalized_consumer
+            or normalized_window
+            or window_completed
+            or passed
+        ):
+            raise SystemAwarenessError(
+                "INPUT_INVALID", "problem_observed contains fields owned by a later transition"
+            )
+    elif kind == "repair_adopted":
+        if normalized_repair_generation < 1:
+            raise SystemAwarenessError("INPUT_INVALID", "repair_adopted requires repair_generation")
+        if normalized_decision not in PROBLEM_REPAIR_DECISIONS:
+            raise SystemAwarenessError("INPUT_INVALID", "repair_adopted has invalid decision")
+        if normalized_level not in PROBLEM_REPAIR_LEVELS:
+            raise SystemAwarenessError("INPUT_INVALID", "repair_adopted has invalid repair_level")
+        if (
+            (normalized_decision == "small_repair" and normalized_level != "local_patch")
+            or (
+                normalized_decision == "structural_repair"
+                and normalized_level not in {"structural_chain_repair", "governing_boundary_repair"}
+            )
+            or (normalized_decision == "no_build") != (normalized_level == "no_build")
+        ):
+            raise SystemAwarenessError("INPUT_INVALID", "repair_decision and repair_level disagree")
+        if (
+            normalized_terminal
+            or normalized_consumer
+            or normalized_window
+            or window_completed
+            or passed
+        ):
+            raise SystemAwarenessError(
+                "INPUT_INVALID", "repair_adopted contains effect or terminal fields"
+            )
+        if not proof_refs:
+            raise SystemAwarenessError("INPUT_INVALID", "repair_adopted requires evidence_refs")
+    elif kind == "consumer_effect_verified":
+        if (
+            normalized_repair_generation < 1
+            or not normalized_consumer
+            or not passed
+            or normalized_decision
+            or normalized_level
+            or normalized_terminal
+            or normalized_window
+            or window_completed
+        ):
+            raise SystemAwarenessError(
+                "INPUT_INVALID",
+                "consumer_effect_verified requires repair_generation, consumer_id, and passed=true",
+            )
+        if not proof_refs:
+            raise SystemAwarenessError(
+                "INPUT_INVALID", "consumer_effect_verified requires evidence_refs"
+            )
+    elif kind == "effect_window_completed":
+        if (
+            normalized_repair_generation < 1
+            or not normalized_window
+            or not window_completed
+            or not passed
+            or normalized_decision
+            or normalized_level
+            or normalized_terminal
+            or normalized_consumer
+        ):
+            raise SystemAwarenessError(
+                "INPUT_INVALID",
+                "effect_window_completed requires repair_generation, window_id, and completed pass",
+            )
+        if not proof_refs:
+            raise SystemAwarenessError(
+                "INPUT_INVALID", "effect_window_completed requires evidence_refs"
+            )
+    elif kind == "problem_close_requested":
+        if (
+            normalized_repair_generation < 1
+            or normalized_decision
+            or normalized_level
+            or normalized_terminal
+            or normalized_consumer
+            or normalized_window
+            or window_completed
+            or passed
+        ):
+            raise SystemAwarenessError(
+                "INPUT_INVALID", "problem_close_requested contains invalid fields"
+            )
+
+    payload: dict[str, object] = {
+        "schema_version": PROBLEM_TRANSITION_VERSION,
+        "transition_type": kind,
+        "task_run_id": _require_text(task_run_id, "task_run_id"),
+        "task_run_event_id": _require_text(task_run_event_id, "task_run_event_id"),
+        "side_effect_id": _require_text(side_effect_id, "side_effect_id"),
+        "problem_ref": normalized_ref,
+        "problem_generation": normalized_problem_generation,
+        "repair_generation": normalized_repair_generation,
+        "family_signature": normalized_family,
+        "governing_cause": normalized_cause,
+        "work_key": _require_text(work_key, "work_key"),
+        "component_id": _require_text(component_id, "component_id"),
+        "owner_id": _require_text(owner_id, "owner_id"),
+        "systemic_signals": _problem_signal_map(systemic_signals),
+        "repair_decision": normalized_decision,
+        "repair_level": normalized_level,
+        "terminal_status": normalized_terminal,
+        "consumer_id": normalized_consumer,
+        "window_id": normalized_window,
+        "window_completed": window_completed,
+        "passed": passed,
+        "relevant_to_parent": relevant_to_parent,
+        "expected_net_benefit_positive": expected_net_benefit_positive,
+        "evidence_refs": proof_refs,
+        "authority": False,
+        "completion_claim_allowed": False,
+    }
+    payload["transition_id"] = _problem_transition_identity(payload)
+    return payload
+
+
+def _validate_problem_transition(raw: Mapping[str, object]) -> dict[str, object]:
+    data = _require_mapping(raw, "problem_transition")
+    expected_keys = {
+        "schema_version",
+        "transition_id",
+        "transition_type",
+        "task_run_id",
+        "task_run_event_id",
+        "side_effect_id",
+        "problem_ref",
+        "problem_generation",
+        "repair_generation",
+        "family_signature",
+        "governing_cause",
+        "work_key",
+        "component_id",
+        "owner_id",
+        "systemic_signals",
+        "repair_decision",
+        "repair_level",
+        "terminal_status",
+        "consumer_id",
+        "window_id",
+        "window_completed",
+        "passed",
+        "relevant_to_parent",
+        "expected_net_benefit_positive",
+        "evidence_refs",
+        "authority",
+        "completion_claim_allowed",
+    }
+    if set(data) != expected_keys:
+        raise SystemAwarenessError(
+            "PROBLEM_TRANSITION_SCHEMA_INVALID",
+            f"problem transition keys drifted: missing={sorted(expected_keys - set(data))} "
+            f"extra={sorted(set(data) - expected_keys)}",
+        )
+    if data.get("schema_version") != PROBLEM_TRANSITION_VERSION:
+        raise SystemAwarenessError(
+            "PROBLEM_TRANSITION_SCHEMA_INVALID", "problem transition schema drifted"
+        )
+    rebuilt = build_problem_transition(
+        transition_type=str(data.get("transition_type") or ""),
+        task_run_id=str(data.get("task_run_id") or ""),
+        task_run_event_id=str(data.get("task_run_event_id") or ""),
+        side_effect_id=str(data.get("side_effect_id") or ""),
+        problem_ref=str(data.get("problem_ref") or ""),
+        problem_generation=data.get("problem_generation"),  # type: ignore[arg-type]
+        repair_generation=data.get("repair_generation"),  # type: ignore[arg-type]
+        family_signature=str(data.get("family_signature") or ""),
+        governing_cause=str(data.get("governing_cause") or ""),
+        work_key=str(data.get("work_key") or ""),
+        component_id=str(data.get("component_id") or ""),
+        owner_id=str(data.get("owner_id") or ""),
+        systemic_signals=_require_mapping(data.get("systemic_signals"), "systemic_signals"),
+        repair_decision=str(data.get("repair_decision") or ""),
+        repair_level=str(data.get("repair_level") or ""),
+        terminal_status=str(data.get("terminal_status") or ""),
+        consumer_id=str(data.get("consumer_id") or ""),
+        window_id=str(data.get("window_id") or ""),
+        window_completed=data.get("window_completed"),  # type: ignore[arg-type]
+        passed=data.get("passed"),  # type: ignore[arg-type]
+        relevant_to_parent=data.get("relevant_to_parent"),  # type: ignore[arg-type]
+        expected_net_benefit_positive=data.get("expected_net_benefit_positive"),  # type: ignore[arg-type]
+        evidence_refs=data.get("evidence_refs") or [],  # type: ignore[arg-type]
+    )
+    if rebuilt != data:
+        raise SystemAwarenessError(
+            "PROBLEM_TRANSITION_SCHEMA_INVALID", "problem transition is not canonical"
+        )
+    return rebuilt
+
+
+def _verify_hash_bound_file_reference(reference: str, field: str) -> Path:
+    if "#sha256=" not in reference:
+        raise SystemAwarenessError(
+            "PROBLEM_TRANSITION_EVIDENCE_INVALID", f"{field} is not hash-bound"
+        )
+    path_text, expected_sha = reference.rsplit("#sha256=", 1)
+    if not _SHA256_RE.fullmatch(expected_sha):
+        raise SystemAwarenessError(
+            "PROBLEM_TRANSITION_EVIDENCE_INVALID", f"{field} has an invalid sha256"
+        )
+    path = Path(path_text).resolve()
+    try:
+        observed_sha = _sha256_file(path)
+    except OSError as exc:
+        raise SystemAwarenessError(
+            "PROBLEM_TRANSITION_EVIDENCE_INVALID", f"{field} cannot be read"
+        ) from exc
+    if observed_sha != expected_sha:
+        raise SystemAwarenessError("PROBLEM_TRANSITION_EVIDENCE_INVALID", f"{field} sha256 drifted")
+    return path
+
+
+def _typed_problem_transitions(
+    events: Sequence[Mapping[str, object]],
+) -> list[dict[str, object]]:
+    transitions: list[dict[str, object]] = []
+    for event in events:
+        if str(event.get("phase") or "").lower() != "problem_transition_recorded":
+            continue
+        refs = event.get("evidence_refs")
+        if not isinstance(refs, list):
+            raise SystemAwarenessError(
+                "PROBLEM_TRANSITION_REQUIRED", "problem transition event has no evidence_refs"
+            )
+        candidates: list[tuple[dict[str, object], str]] = []
+        for index, raw_ref in enumerate(refs):
+            reference = str(raw_ref or "")
+            if "#sha256=" not in reference:
+                continue
+            path_text, expected_sha = reference.rsplit("#sha256=", 1)
+            if not _SHA256_RE.fullmatch(expected_sha):
+                continue
+            try:
+                raw = Path(path_text).read_bytes()
+            except OSError:
+                continue
+            if _sha256_bytes(raw) != expected_sha:
+                raise SystemAwarenessError(
+                    "PROBLEM_TRANSITION_EVIDENCE_INVALID",
+                    f"problem transition evidence_refs[{index}] sha256 drifted",
+                )
+            try:
+                payload = _require_mapping(
+                    json.loads(raw.decode("utf-8-sig")), "problem_transition"
+                )
+            except (UnicodeDecodeError, json.JSONDecodeError, SystemAwarenessError):
+                continue
+            if payload.get("schema_version") != PROBLEM_TRANSITION_VERSION:
+                continue
+            candidates.append((_validate_problem_transition(payload), reference))
+        if len(candidates) != 1:
+            raise SystemAwarenessError(
+                "PROBLEM_TRANSITION_REQUIRED",
+                "problem transition event must bind exactly one typed transition",
+            )
+        transition, reference = candidates[0]
+        expected_kind = (
+            "failure" if transition["transition_type"] == "problem_observed" else "result"
+        )
+        expected_exit = 1 if expected_kind == "failure" else 0
+        if (
+            transition.get("task_run_id") != event.get("run_id")
+            or transition.get("task_run_event_id") != event.get("event_id")
+            or transition.get("side_effect_id") != event.get("side_effect_id")
+            or transition.get("work_key") != event.get("target")
+            or event.get("kind") != expected_kind
+            or event.get("exit_code") != expected_exit
+        ):
+            raise SystemAwarenessError(
+                "PROBLEM_TRANSITION_EVENT_BINDING_INVALID",
+                "problem transition disagrees with its task-run event",
+            )
+        for index, proof_ref in enumerate(transition.get("evidence_refs") or []):
+            _verify_hash_bound_file_reference(
+                str(proof_ref), f"problem_transition.evidence_refs[{index}]"
+            )
+        transitions.append(
+            {
+                **transition,
+                "source_event_id": event.get("event_id"),
+                "source_event_ordinal": event.get("ordinal"),
+                "transition_evidence_ref": reference,
+            }
+        )
+    return transitions
+
+
 def _classify_problem(
     events: Sequence[Mapping[str, object]], previous: Mapping[str, object] | None
 ) -> str:
@@ -478,6 +901,21 @@ def reconcile_problem_lifecycle(raw: Mapping[str, object]) -> dict[str, Any]:
             if rows
             else str(previous.get("problem_class") or "undetermined")
         )
+        work_keys = sorted({str(row.get("work_key") or "") for row in rows if row.get("work_key")})
+        components = sorted(
+            {str(row.get("component") or "") for row in rows if row.get("component")}
+        )
+        classification_basis = [
+            f"SIGNAL:{flag}"
+            for flag in sorted(PROBLEM_SYSTEMIC_SIGNALS)
+            if any(row.get(flag) is True for row in rows)
+        ]
+        if len(work_keys) > 1:
+            classification_basis.append("MULTIPLE_TYPED_WORK_KEYS")
+        if len(components) > 1:
+            classification_basis.append("MULTIPLE_TYPED_COMPONENTS")
+        if not classification_basis:
+            classification_basis.append("SINGLE_TYPED_SCOPE")
         default_level = (
             "structural_chain_repair"
             if classification == "systemic_capability_gap"
@@ -582,6 +1020,9 @@ def reconcile_problem_lifecycle(raw: Mapping[str, object]) -> dict[str, Any]:
                 "family_signature": signature,
                 "governing_cause": cause,
                 "problem_class": classification,
+                "classification_basis": classification_basis,
+                "work_keys": work_keys,
+                "components": components,
                 "repair_level": repair_level,
                 "repair_decision": repair_decision,
                 "status": status,
@@ -603,6 +1044,435 @@ def reconcile_problem_lifecycle(raw: Mapping[str, object]) -> dict[str, Any]:
         "problems": problems,
         "receipts": receipts,
         "problem_count": len(problems),
+    }
+
+
+def reconcile_typed_problem_lifecycle(
+    transitions: Sequence[Mapping[str, object]],
+    *,
+    legacy_events: Sequence[Mapping[str, object]] = (),
+) -> dict[str, Any]:
+    """Replay typed problem facts; projections remain non-authoritative and disposable."""
+
+    normalized: list[dict[str, object]] = [dict(row) for row in transitions]
+    typed_source_ids = {str(row.get("source_event_id") or "") for row in normalized}
+    for legacy in legacy_events:
+        event_id = str(legacy.get("event_id") or "")
+        if not event_id or event_id in typed_source_ids:
+            continue
+        signature = _family_signature(legacy)
+        cause = str(legacy.get("governing_cause") or signature)
+        candidate_ref = str(legacy.get("problem_ref") or "").upper()
+        if not PROBLEM_REF_RE.fullmatch(candidate_ref):
+            candidate_ref = _problem_ref(signature, cause)
+        normalized.append(
+            {
+                "schema_version": PROBLEM_TRANSITION_VERSION,
+                "transition_id": f"LEGACY-{event_id}",
+                "transition_type": "problem_observed",
+                "problem_ref": candidate_ref,
+                "problem_generation": 1,
+                "repair_generation": 0,
+                "family_signature": signature,
+                "governing_cause": cause,
+                "work_key": str(legacy.get("work_key") or ""),
+                "component_id": str(legacy.get("component") or ""),
+                "owner_id": "unclassified-legacy-producer",
+                "systemic_signals": {
+                    key: bool(legacy.get(key) is True) for key in sorted(PROBLEM_SYSTEMIC_SIGNALS)
+                },
+                "repair_decision": "",
+                "repair_level": "",
+                "terminal_status": str(legacy.get("terminal_status") or ""),
+                "consumer_id": "",
+                "window_id": "",
+                "window_completed": False,
+                "passed": False,
+                "relevant_to_parent": legacy.get("relevant_to_parent"),
+                "expected_net_benefit_positive": legacy.get("expected_net_benefit_positive"),
+                "evidence_refs": [],
+                "authority": False,
+                "completion_claim_allowed": False,
+                "source_event_id": event_id,
+                "source_event_ordinal": legacy.get("ordinal") or 0,
+                "transition_evidence_ref": "",
+            }
+        )
+
+    normalized.sort(key=lambda row: int(row.get("source_event_ordinal") or 0))
+    by_ref: dict[str, list[dict[str, object]]] = defaultdict(list)
+    for row in normalized:
+        problem_ref = _problem_reference(row.get("problem_ref"))
+        by_ref[problem_ref].append(row)
+
+    problems: list[dict[str, object]] = []
+    refs_by_family: dict[str, set[str]] = defaultdict(set)
+    causes_by_family: dict[str, set[str]] = defaultdict(set)
+    for problem_ref, rows in sorted(by_ref.items()):
+        observations = [row for row in rows if row.get("transition_type") == "problem_observed"]
+        if not observations:
+            raise SystemAwarenessError(
+                "PROBLEM_TRANSITION_ORPHANED",
+                f"{problem_ref} has lifecycle transitions but no problem_observed fact",
+            )
+        families = {str(row.get("family_signature") or "") for row in rows}
+        if len(families) != 1 or not next(iter(families)):
+            raise SystemAwarenessError(
+                "PROBLEM_IDENTITY_DRIFT",
+                f"{problem_ref} changed family_signature",
+            )
+        family = next(iter(families))
+        refs_by_family[family].add(problem_ref)
+        cause_history = list(
+            dict.fromkeys(str(row.get("governing_cause") or "") for row in observations)
+        )
+        causes_by_family[family].update(cause_history)
+
+        generations = [
+            _positive_int(row.get("problem_generation"), "problem_generation") for row in rows
+        ]
+        if generations[0] != 1:
+            raise SystemAwarenessError(
+                "PROBLEM_GENERATION_INVALID", f"{problem_ref} must begin at generation 1"
+            )
+        seen_generation = 1
+        for generation in generations:
+            if generation < seen_generation or generation > seen_generation + 1:
+                raise SystemAwarenessError(
+                    "PROBLEM_GENERATION_INVALID",
+                    f"{problem_ref} problem_generation is not monotonic",
+                )
+            seen_generation = max(seen_generation, generation)
+        current_generation = max(generations)
+        generation_states: dict[int, dict[str, object]] = {}
+        previous_terminal = ""
+        for generation in range(1, current_generation + 1):
+            generation_rows = [
+                row for row in rows if int(row.get("problem_generation") or 0) == generation
+            ]
+            generation_observations = [
+                row for row in generation_rows if row.get("transition_type") == "problem_observed"
+            ]
+            if not generation_observations:
+                raise SystemAwarenessError(
+                    "PROBLEM_GENERATION_INVALID",
+                    f"{problem_ref} generation {generation} has no observation",
+                )
+            if generation > 1 and previous_terminal not in {"effective", "retired"}:
+                raise SystemAwarenessError(
+                    "PROBLEM_GENERATION_INVALID",
+                    f"{problem_ref} advanced before the prior generation closed",
+                )
+            repairs = [
+                row for row in generation_rows if row.get("transition_type") == "repair_adopted"
+            ]
+            repair_generations = [int(row.get("repair_generation") or 0) for row in repairs]
+            if repair_generations and (
+                len(set(repair_generations)) != len(repair_generations)
+                or repair_generations != sorted(repair_generations)
+                or repair_generations != list(range(1, max(repair_generations) + 1))
+            ):
+                raise SystemAwarenessError(
+                    "REPAIR_GENERATION_INVALID",
+                    f"{problem_ref} repair_generation is duplicated, gapped, or non-monotonic",
+                )
+            repairs_by_generation = {int(row.get("repair_generation") or 0): row for row in repairs}
+            for row in generation_rows:
+                if row.get("transition_type") not in {
+                    "consumer_effect_verified",
+                    "effect_window_completed",
+                    "problem_close_requested",
+                }:
+                    continue
+                referenced_repair = int(row.get("repair_generation") or 0)
+                repair_fact = repairs_by_generation.get(referenced_repair)
+                if (
+                    repair_fact is None
+                    or int(row.get("source_event_ordinal") or 0)
+                    <= int(repair_fact.get("source_event_ordinal") or 0)
+                    or repair_fact.get("repair_decision") == "no_build"
+                ):
+                    raise SystemAwarenessError(
+                        "PROBLEM_TRANSITION_ORPHANED",
+                        f"{problem_ref} effect or close transition has no prior active repair",
+                    )
+            repair = repairs[-1] if repairs else None
+            repair_generation = int(repair.get("repair_generation") or 0) if repair else 0
+            repair_ordinal = int(repair.get("source_event_ordinal") or 0) if repair else 0
+            consumers = [
+                row
+                for row in generation_rows
+                if row.get("transition_type") == "consumer_effect_verified"
+                and int(row.get("repair_generation") or 0) == repair_generation
+                and int(row.get("source_event_ordinal") or 0) > repair_ordinal
+            ]
+            windows = [
+                row
+                for row in generation_rows
+                if row.get("transition_type") == "effect_window_completed"
+                and int(row.get("repair_generation") or 0) == repair_generation
+                and int(row.get("source_event_ordinal") or 0) > repair_ordinal
+            ]
+            close_requests = [
+                row
+                for row in generation_rows
+                if row.get("transition_type") == "problem_close_requested"
+                and int(row.get("repair_generation") or 0) == repair_generation
+            ]
+            consumer = consumers[-1] if consumers else None
+            window = windows[-1] if windows else None
+            last_effect_ordinal = max(
+                int(consumer.get("source_event_ordinal") or 0) if consumer else 0,
+                int(window.get("source_event_ordinal") or 0) if window else 0,
+            )
+            close = next(
+                (
+                    row
+                    for row in reversed(close_requests)
+                    if int(row.get("source_event_ordinal") or 0) > last_effect_ordinal > 0
+                ),
+                None,
+            )
+            no_build = bool(repair and repair.get("repair_decision") == "no_build")
+            effective = bool(repair and consumer and window and close and not no_build)
+            terminal = "retired" if no_build else "effective" if effective else "open"
+            terminal_ordinal = (
+                int(repair.get("source_event_ordinal") or 0)
+                if no_build and repair
+                else int(close.get("source_event_ordinal") or 0)
+                if effective and close
+                else 0
+            )
+            if terminal_ordinal and any(
+                int(row.get("source_event_ordinal") or 0) > terminal_ordinal
+                for row in generation_observations
+            ):
+                raise SystemAwarenessError(
+                    "PROBLEM_GENERATION_STALE",
+                    f"{problem_ref} observed again without advancing problem_generation",
+                )
+            generation_states[generation] = {
+                "observations": generation_observations,
+                "repair": repair,
+                "repair_generation": repair_generation,
+                "consumer": consumer,
+                "window": window,
+                "close": close,
+                "terminal": terminal,
+            }
+            previous_terminal = terminal
+
+        current = generation_states[current_generation]
+        current_observations = current["observations"]
+        assert isinstance(current_observations, list)
+        work_keys = {
+            str(row.get("work_key") or "")
+            for row in current_observations
+            if str(row.get("work_key") or "")
+        }
+        components = {
+            str(row.get("component_id") or "")
+            for row in current_observations
+            if str(row.get("component_id") or "")
+        }
+        active_signals = sorted(
+            key
+            for key in PROBLEM_SYSTEMIC_SIGNALS
+            if any(
+                isinstance(row.get("systemic_signals"), Mapping)
+                and row["systemic_signals"].get(key) is True  # type: ignore[index]
+                for row in current_observations
+            )
+        )
+        classification_basis: list[str] = []
+        if active_signals:
+            classification_basis.extend(f"SIGNAL:{value}" for value in active_signals)
+        if len(work_keys) > 1:
+            classification_basis.append("MULTIPLE_TYPED_WORK_KEYS")
+        if len(components) > 1:
+            classification_basis.append("MULTIPLE_TYPED_COMPONENTS")
+        if current_generation > 1:
+            classification_basis.append("RECURRENCE_AFTER_EFFECTIVE_GENERATION")
+        classification = "systemic_capability_gap" if classification_basis else "local_defect"
+        repair = current["repair"]
+        repair_generation = int(current["repair_generation"] or 0)
+        if isinstance(repair, Mapping):
+            repair_level = str(repair.get("repair_level") or "")
+            repair_decision = str(repair.get("repair_decision") or "")
+        else:
+            repair_level = (
+                "governing_boundary_repair"
+                if current_generation >= 3
+                else "structural_chain_repair"
+                if classification == "systemic_capability_gap"
+                else "local_patch"
+            )
+            repair_decision = (
+                "small_repair" if repair_level == "local_patch" else "structural_repair"
+            )
+            if current_observations and all(
+                row.get("relevant_to_parent") is False
+                or row.get("expected_net_benefit_positive") is False
+                for row in current_observations
+            ):
+                repair_decision = "no_build"
+                repair_level = "no_build"
+
+        consumer = current["consumer"]
+        window = current["window"]
+        close = current["close"]
+        terminal = str(current["terminal"])
+        if terminal == "effective":
+            status = recurrence_state = "effective"
+            next_consumer = None
+        elif terminal == "retired":
+            status = recurrence_state = "retired"
+            next_consumer = None
+        elif current_generation > 1:
+            status = "open" if repair is None else "monitoring"
+            recurrence_state = "recurred"
+            next_consumer = (
+                "owner_repair_adoption"
+                if repair is None
+                else "real_consumer_effect_verification"
+                if consumer is None
+                else "effectiveness_window_completion"
+                if window is None
+                else "problem_close_request"
+            )
+        else:
+            status = "open" if repair is None else "monitoring"
+            recurrence_state = status
+            next_consumer = (
+                "owner_repair_adoption"
+                if repair is None
+                else "real_consumer_effect_verification"
+                if consumer is None
+                else "effectiveness_window_completion"
+                if window is None
+                else "problem_close_request"
+            )
+        reasons = [
+            "TYPED_PROBLEM_TRANSITIONS_REPLAYED",
+            "SYSTEMIC_REPAIR_SELECTED"
+            if repair_decision == "structural_repair"
+            else "LOCAL_REPAIR_SELECTED"
+            if repair_decision == "small_repair"
+            else "NO_BUILD_SELECTED",
+        ]
+        if len(current_observations) > 1:
+            reasons.append("PROBLEM_FAMILY_MERGED")
+        if current_generation > 1:
+            reasons.append("PROBLEM_RECURRENCE_DETECTED")
+        if status == "monitoring":
+            reasons.append(
+                "EFFECTIVENESS_EVIDENCE_MISSING"
+                if consumer is None or window is None
+                else "PROBLEM_CLOSE_REQUEST_MISSING"
+            )
+        if status == "effective":
+            reasons.append("PROBLEM_EFFECTIVENESS_VERIFIED")
+        effectiveness_rows: list[dict[str, object]] = []
+        if isinstance(consumer, Mapping):
+            effectiveness_rows.append(
+                {
+                    "kind": "real_consumer",
+                    "problem_ref": problem_ref,
+                    "problem_generation": current_generation,
+                    "repair_generation": repair_generation,
+                    "consumer_id": consumer.get("consumer_id"),
+                    "passed": True,
+                    "source_event_id": consumer.get("source_event_id"),
+                    "evidence_refs": list(consumer.get("evidence_refs") or []),
+                }
+            )
+        if isinstance(window, Mapping):
+            effectiveness_rows.append(
+                {
+                    "kind": "effectiveness_window",
+                    "problem_ref": problem_ref,
+                    "problem_generation": current_generation,
+                    "repair_generation": repair_generation,
+                    "window_id": window.get("window_id"),
+                    "window_completed": True,
+                    "passed": True,
+                    "source_event_id": window.get("source_event_id"),
+                    "evidence_refs": list(window.get("evidence_refs") or []),
+                }
+            )
+        problems.append(
+            {
+                "problem_ref": problem_ref,
+                "problem_generation": current_generation,
+                "repair_generation": repair_generation,
+                "family_signature": family,
+                "governing_cause": cause_history[-1],
+                "governing_cause_history": cause_history,
+                "problem_class": classification,
+                "classification_basis": classification_basis or ["SINGLE_TYPED_SCOPE"],
+                "repair_level": repair_level,
+                "repair_decision": repair_decision,
+                "repair_event_ref": repair.get("source_event_id")
+                if isinstance(repair, Mapping)
+                else None,
+                "repair_evidence_refs": list(repair.get("evidence_refs") or [])
+                if isinstance(repair, Mapping)
+                else [],
+                "status": status,
+                "recurrence_state": recurrence_state,
+                "owner_id": repair.get("owner_id")
+                if isinstance(repair, Mapping)
+                else current_observations[-1].get("owner_id"),
+                "next_consumer": next_consumer,
+                "source_event_refs": [
+                    str(row.get("source_event_id") or "") for row in observations
+                ],
+                "transition_event_refs": [str(row.get("source_event_id") or "") for row in rows],
+                "new_event_refs": [
+                    str(row.get("source_event_id") or "") for row in current_observations
+                ],
+                "terminal_statuses": sorted(
+                    {
+                        str(row.get("terminal_status") or "")
+                        for row in observations
+                        if str(row.get("terminal_status") or "")
+                    }
+                ),
+                "effectiveness_evidence": effectiveness_rows,
+                "close_event_ref": close.get("source_event_id")
+                if isinstance(close, Mapping)
+                else None,
+                "reason_codes": list(dict.fromkeys(reasons)),
+                "problem_effectiveness_boundary_verified": status == "effective",
+                "completion_claim_allowed": False,
+            }
+        )
+
+    receipts: list[dict[str, object]] = []
+    split_families = {family for family, refs in refs_by_family.items() if len(refs) > 1}
+    for family in sorted(split_families):
+        refs = sorted(refs_by_family[family])
+        receipts.append(
+            {
+                "reason_code": "PROBLEM_FAMILY_SPLIT",
+                "family_signature": family,
+                "problem_refs": refs,
+                "governing_cause_lineage": sorted(causes_by_family[family]),
+            }
+        )
+        for problem in problems:
+            if problem.get("family_signature") == family:
+                problem["reason_codes"] = list(
+                    dict.fromkeys([*problem.get("reason_codes", []), "PROBLEM_FAMILY_SPLIT"])
+                )
+    return {
+        "schema_version": PROBLEM_PROJECTION_VERSION,
+        "authority": False,
+        "truth_sources": "typed_hash_bound_task_run_problem_transitions",
+        "problems": problems,
+        "receipts": receipts,
+        "problem_count": len(problems),
+        "transition_count": len(normalized),
     }
 
 
@@ -2636,9 +3506,27 @@ def _load_task_run(
     return task, state, events, hashes
 
 
-def _problem_candidates(events: Sequence[Mapping[str, object]]) -> list[dict[str, object]]:
+def _problem_candidates(
+    events: Sequence[Mapping[str, object]],
+    *,
+    skip_event_ids: set[str] | None = None,
+    terminal_statuses_accounted_for: set[str] | None = None,
+) -> list[dict[str, object]]:
+    """Project legacy failure facts without inventing typed identity from free text.
+
+    ``actor`` and arbitrary ``target`` values are presentation fields in the
+    canonical task-run contract.  They cannot safely stand in for component or
+    work-unit identity.  A ``wk:`` target remains a backwards-compatible typed
+    work key; new producers should use a problem-transition artifact instead.
+    """
+
+    ignored = skip_event_ids or set()
+    accounted_terminals = terminal_statuses_accounted_for or set()
     candidates: list[dict[str, object]] = []
     for event in events:
+        event_id = str(event.get("event_id") or "")
+        if event_id in ignored:
+            continue
         exit_code = event.get("exit_code")
         retry_class = str(event.get("retry_class") or "none").lower()
         phase = str(event.get("phase") or "")
@@ -2647,17 +3535,20 @@ def _problem_candidates(events: Sequence[Mapping[str, object]]) -> list[dict[str
             or retry_class != "none"
             or FAILURE_PHASE_RE.search(phase)
         ):
+            explicit_work_key = str(event.get("work_key") or "").strip()
+            target = str(event.get("target") or "").strip()
+            work_key = explicit_work_key or (target if target.startswith("wk:") else "")
             candidate = {
-                "event_id": event.get("event_id"),
+                "event_id": event_id,
+                "ordinal": event.get("ordinal"),
                 "phase": phase,
                 "family_signature": FAMILY_NORMALIZE_RE.sub("#", phase),
                 "governing_cause": str(
-                    event.get("problem_ref")
-                    or event.get("reason_code")
-                    or (retry_class if retry_class != "none" else phase)
+                    event.get("reason_code") or (retry_class if retry_class != "none" else phase)
                 ),
-                "work_key": event.get("target"),
-                "component": event.get("actor"),
+                "problem_ref": event.get("problem_ref"),
+                "work_key": work_key,
+                "component": str(event.get("component_id") or "").strip(),
                 "reason_code": str(event.get("reason_code") or "TASK_RUN_FAILURE_EVENT"),
             }
             for flag in (
@@ -2672,6 +3563,29 @@ def _problem_candidates(events: Sequence[Mapping[str, object]]) -> list[dict[str
                 if flag in event:
                     candidate[flag] = event.get(flag)
             candidates.append(candidate)
+
+    if events:
+        tail = events[-1]
+        terminal_status = str(tail.get("terminal_status") or "").lower()
+        if (
+            str(tail.get("phase") or "").lower() == "finished"
+            and terminal_status in PROBLEM_TERMINAL_STATUSES
+            and terminal_status not in accounted_terminals
+        ):
+            run_id = str(tail.get("run_id") or "unknown")
+            candidates.append(
+                {
+                    "event_id": str(tail.get("event_id") or ""),
+                    "ordinal": tail.get("ordinal"),
+                    "phase": "task_run_terminal_outcome",
+                    "family_signature": f"task-run-terminal-{terminal_status}",
+                    "governing_cause": f"TASK_RUN_{terminal_status.upper()}",
+                    "work_key": f"wk:task-run:{run_id}",
+                    "component": "canonical-task-run-finish",
+                    "reason_code": "TASK_RUN_NONVERIFIED_TERMINAL",
+                    "terminal_status": terminal_status,
+                }
+            )
     return candidates
 
 
@@ -2837,25 +3751,20 @@ def _native_usage_total_from_events(
     return None, None
 
 
-def _previous_problem_rows(raw: Mapping[str, object] | None) -> list[dict[str, Any]]:
-    if raw is None:
-        return []
-    candidate: object = raw
-    if isinstance(candidate, Mapping) and isinstance(candidate.get("problem_projection"), Mapping):
-        candidate = candidate["problem_projection"]
-    if isinstance(candidate, Mapping):
-        candidate = candidate.get("problems") or []
-    if not isinstance(candidate, list):
-        raise SystemAwarenessError(
-            "INPUT_INVALID", "previous problem projection must contain problems[]"
-        )
-    return [dict(row) for row in candidate if isinstance(row, Mapping)]
-
-
 def _latest_problem_projection_binding(
     events: Sequence[Mapping[str, object]],
+    *,
+    expected_run_id: str,
 ) -> tuple[dict[str, object] | None, dict[str, object] | None]:
     for event in reversed(events):
+        if (
+            event.get("kind") != "result"
+            or event.get("exit_code") != 0
+            or str(event.get("phase") or "").lower() != "problem_projection_recorded"
+            or event.get("run_id") != expected_run_id
+            or not str(event.get("side_effect_id") or "").strip()
+        ):
+            continue
         refs = event.get("evidence_refs")
         if not isinstance(refs, list):
             continue
@@ -2881,11 +3790,14 @@ def _latest_problem_projection_binding(
                 if isinstance(payload.get("problem_projection"), Mapping)
                 else payload
             )
+            source = payload.get("source")
             if (
                 not isinstance(candidate, Mapping)
                 or candidate.get("schema_version") != PROBLEM_PROJECTION_VERSION
                 or candidate.get("authority") is not False
                 or not isinstance(candidate.get("problems"), list)
+                or not isinstance(source, Mapping)
+                or source.get("run_id") != expected_run_id
             ):
                 continue
             return dict(candidate), {
@@ -2896,59 +3808,6 @@ def _latest_problem_projection_binding(
                 "authority": False,
             }
     return None, None
-
-
-def _effectiveness_evidence_from_events(
-    events: Sequence[Mapping[str, object]],
-) -> list[dict[str, object]]:
-    rows: list[dict[str, object]] = []
-    allowed_kinds = {
-        "real_consumer",
-        "live_canary",
-        "monitoring_window",
-        "effectiveness_window",
-        "observation_window",
-    }
-    for event in events:
-        if (
-            event.get("kind") != "result"
-            or event.get("exit_code") != 0
-            or str(event.get("phase") or "").lower() != "problem_effectiveness_observed"
-        ):
-            continue
-        refs = event.get("evidence_refs")
-        if not isinstance(refs, list):
-            continue
-        for raw_ref in refs:
-            reference = str(raw_ref or "")
-            if "#sha256=" not in reference:
-                continue
-            path_text, expected_sha = reference.rsplit("#sha256=", 1)
-            if not _SHA256_RE.fullmatch(expected_sha):
-                continue
-            try:
-                raw = Path(path_text).read_bytes()
-                payload = _require_mapping(
-                    json.loads(raw.decode("utf-8-sig")), "effectiveness_evidence"
-                )
-            except (OSError, UnicodeDecodeError, json.JSONDecodeError, SystemAwarenessError):
-                continue
-            if _sha256_bytes(raw) != expected_sha:
-                continue
-            candidates = payload.get("effectiveness_evidence")
-            candidates = candidates if isinstance(candidates, list) else [payload]
-            for candidate in candidates:
-                if not isinstance(candidate, Mapping):
-                    continue
-                kind = str(candidate.get("kind") or "")
-                if kind not in allowed_kinds or candidate.get("passed") is not True:
-                    continue
-                row = dict(candidate)
-                row["source_event_id"] = event.get("event_id")
-                row["evidence_ref"] = reference
-                if row not in rows:
-                    rows.append(row)
-    return rows
 
 
 def _latest_worktree_records_binding(
@@ -3144,7 +4003,7 @@ def _frontier_reconciliation_from_events(
             "parent_state": "open",
             "global_frontier_reconciled": False,
             "parent_wait_claim_allowed": False,
-            "reason_codes": [exc.code, "GLOBAL_FRONTIER_RECEIPT_INVALID"],
+            "reason_codes": [exc.reason_code, "GLOBAL_FRONTIER_RECEIPT_INVALID"],
             "authority": False,
             "completion_claim_allowed": False,
         }
@@ -3270,34 +4129,64 @@ def scan_task_run(
 ) -> dict[str, Any]:
     """Real read-only consumer: turn a task-run into problem and token projections."""
 
+    if (
+        previous_problem_projection is not None
+        or effectiveness_evidence is not None
+        or close_requested
+    ):
+        raise SystemAwarenessError(
+            "EXTERNAL_PROBLEM_FACTS_NOT_AUTHORIZED",
+            "problem state may only be replayed from the hash-bound task-run fact chain",
+        )
+
     resolved = Path(run_dir).resolve()
     task, state, events, hashes = _load_task_run(resolved)
     dispatch_outcome_projection = _dispatch_outcome_projection_if_present(resolved, events)
     frontier_reconciliation = _frontier_reconciliation_from_events(events)
-    candidates = _problem_candidates(events)
-    recovered_problem_projection, problem_history_binding = _latest_problem_projection_binding(
-        events
+    typed_transitions = _typed_problem_transitions(events)
+    typed_event_ids = {
+        str(transition.get("source_event_id") or "") for transition in typed_transitions
+    }
+    accounted_terminals = {
+        str(transition.get("terminal_status") or "")
+        for transition in typed_transitions
+        if transition.get("transition_type") == "problem_observed"
+    }
+    candidates = _problem_candidates(
+        events,
+        skip_event_ids=typed_event_ids,
+        terminal_statuses_accounted_for=accounted_terminals,
     )
-    effective_previous = previous_problem_projection or recovered_problem_projection
-    typed_close_requested = any(
-        event.get("kind") == "result"
-        and event.get("exit_code") == 0
-        and str(event.get("phase") or "").lower() == "problem_close_requested"
-        for event in events
+    _, problem_history_binding = _latest_problem_projection_binding(
+        events, expected_run_id=str(task["run_id"])
     )
-    recovered_effectiveness = _effectiveness_evidence_from_events(events)
-    combined_effectiveness = [
-        *recovered_effectiveness,
-        *[dict(row) for row in (effectiveness_evidence or [])],
-    ]
-    problems = reconcile_problem_lifecycle(
-        {
-            "events": candidates,
-            "previous": _previous_problem_rows(effective_previous),
-            "effectiveness_evidence": combined_effectiveness,
-            "close_requested": close_requested or typed_close_requested,
-        }
-    )
+    if typed_transitions:
+        problems = reconcile_typed_problem_lifecycle(
+            typed_transitions,
+            legacy_events=candidates,
+        )
+        problem_history_binding = None
+    else:
+        # Legacy failures remain discoverable, but an untyped projection,
+        # effect artifact, or global close event cannot advance lifecycle
+        # state.  New closure must use exact problem/generation transitions.
+        problems = reconcile_problem_lifecycle(
+            {
+                "events": candidates,
+                "previous": [],
+                "effectiveness_evidence": [],
+                "close_requested": False,
+            }
+        )
+        for problem in problems["problems"]:
+            problem["reason_codes"] = list(
+                dict.fromkeys(
+                    [
+                        *problem.get("reason_codes", []),
+                        "TYPED_PROBLEM_TRANSITION_REQUIRED_FOR_LIFECYCLE_ADVANCE",
+                    ]
+                )
+            )
     attempts = _attempts_from_evidence(events)
     native_total, native_usage_binding = _native_usage_total_from_events(events)
     episode_input: dict[str, object] = {
@@ -3382,9 +4271,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     scan = sub.add_parser("scan-task-run")
     scan.add_argument("--task-run-dir", type=Path, required=True)
     scan.add_argument("--high-burn-threshold", type=int)
-    scan.add_argument("--previous-problems", type=Path)
-    scan.add_argument("--effectiveness-evidence", type=Path)
-    scan.add_argument("--close-requested", action="store_true")
+    scan.add_argument("--previous-problems", type=Path, help=argparse.SUPPRESS)
+    scan.add_argument("--effectiveness-evidence", type=Path, help=argparse.SUPPRESS)
+    scan.add_argument("--close-requested", action="store_true", help=argparse.SUPPRESS)
     scan.add_argument("--output", type=Path)
 
     worktrees = sub.add_parser("scan-worktrees")
@@ -3458,24 +4347,14 @@ def main(argv: Sequence[str] | None = None) -> int:
                 finalizer_event_refs=finalizers_payload,
             )
         elif args.command == "scan-task-run":
-            effectiveness_payload = (
-                _load_input(args.effectiveness_evidence) if args.effectiveness_evidence else {}
-            )
-            effectiveness_rows = effectiveness_payload.get("effectiveness_evidence") or []
-            if not isinstance(effectiveness_rows, list):
+            if args.previous_problems or args.effectiveness_evidence or args.close_requested:
                 raise SystemAwarenessError(
-                    "INPUT_INVALID", "effectiveness_evidence must be an array"
+                    "EXTERNAL_PROBLEM_FACTS_NOT_AUTHORIZED",
+                    "problem state may only be replayed from the hash-bound task-run fact chain",
                 )
             value = scan_task_run(
                 args.task_run_dir,
                 high_burn_threshold=args.high_burn_threshold,
-                previous_problem_projection=(
-                    _load_input(args.previous_problems) if args.previous_problems else None
-                ),
-                effectiveness_evidence=[
-                    dict(row) for row in effectiveness_rows if isinstance(row, Mapping)
-                ],
-                close_requested=args.close_requested,
             )
         elif args.command == "scan-worktrees":
             records_payload = _load_input(args.records) if args.records else None
@@ -3554,9 +4433,12 @@ if __name__ == "__main__":
 
 __all__ = [
     "SystemAwarenessError",
+    "PROBLEM_TRANSITION_VERSION",
+    "build_problem_transition",
     "evaluate_completion_card",
     "project_episode_outcome",
     "reconcile_problem_lifecycle",
+    "reconcile_typed_problem_lifecycle",
     "reconcile_identity",
     "validate_strict_json_result",
     "preflight_supervisor_root",

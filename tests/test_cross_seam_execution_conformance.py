@@ -908,7 +908,7 @@ def test_consumer_registry_requires_current_exact_evidence_for_complete_status()
         pytest.skip("canonical operator evidence is unavailable on this runner")
     report = validate_consumer_registry(registry, repo_root=ROOT)
     assert report["ok"] is True
-    assert report["consumer_count"] == 13
+    assert report["consumer_count"] == 14
     exact_consumers = {
         "canonical_docker_grok_worker",
         "canonical_langgraph_grok_fanin",
@@ -945,6 +945,7 @@ def test_consumer_registry_requires_current_exact_evidence_for_complete_status()
     }
     assert set(boundary_consumers) == {
         "action_resume_preaction_guard",
+        "problem_transition_task_run_adapter",
         "system_awareness_task_run_scanner",
         "worktree_lifecycle_record_producer",
         "worktree_lifecycle_scanner",

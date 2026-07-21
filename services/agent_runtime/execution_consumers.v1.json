@@ -403,12 +403,13 @@
       "contract_mode": "read_only_existing_facts_to_non_authoritative_decisions",
       "status": "boundary_verified_non_parent_owner",
       "conformance_status": "boundary_verified_non_parent_owner",
-      "status_reason": "The consumer discovers and recovers hash-bound problem projections, keeps provider invocation/evaluation/outcome conversion separate, reports token conservation unknown without an independent native total, and advances typed work-unit transitions only through semantic readbacks.",
+      "status_reason": "The consumer replays hash-bound typed problem transitions by stable problem_ref and generation, adapts non-verified task-run terminals, rejects caller-injected close/effect state, keeps provider invocation/evaluation/outcome conversion separate, and advances typed work-unit transitions only through semantic readbacks.",
       "writes_effects": false,
       "parent_completion_authority": false,
       "independent_gap_discovery": true,
       "conformance_tests": [
-        "tests/test_system_awareness_consumer.py"
+        "tests/test_system_awareness_consumer.py",
+        "tests/test_problem_transition.py"
       ],
       "replay_evidence": [],
       "current_positive_canary_evidence": [
@@ -420,6 +421,28 @@
       "fresh_canary_evidence": [
         "D:/XINAO_RESEARCH_RUNTIME/evidence/worktree_lifecycle_closure/20260721/fresh_canary/task_run_projection.v1.json"
       ]
+    },
+    {
+      "consumer_id": "problem_transition_task_run_adapter",
+      "source_path": "scripts/record_problem_transition.py",
+      "entrypoint": "main",
+      "role": "hash_bound_problem_transition_and_nonverified_finish_adapter",
+      "contract_mode": "immutable_transition_artifact_plus_canonical_task_run_event",
+      "status": "boundary_verified_non_parent_owner",
+      "conformance_status": "boundary_verified_non_parent_owner",
+      "status_reason": "The adapter writes immutable typed transition artifacts, appends only their exact hashes through the canonical task-run CLI, and records unmet completion criteria before partial, blocked, or unverified finish; it cannot decide adoption, effect, close, or parent completion on its own.",
+      "writes_effects": true,
+      "parent_completion_authority": false,
+      "independent_gap_discovery": false,
+      "conformance_tests": [
+        "tests/test_problem_transition.py"
+      ],
+      "replay_evidence": [],
+      "current_positive_canary_evidence": [],
+      "superseded_evidence": [],
+      "negative_canary_evidence": [],
+      "blocking_evidence": [],
+      "fresh_canary_evidence": []
     },
     {
       "consumer_id": "worktree_lifecycle_scanner",
