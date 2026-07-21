@@ -36,6 +36,7 @@ RELEASE_FILES = (
     "services/agent_runtime/thin_glue_stack.py",
     "services/agent_runtime/direct_worker_pool_common_adapter.py",
     "services/agent_runtime/execution_contract.py",
+    "services/agent_runtime/work_unit_lifecycle.py",
     "services/agent_runtime/action_resume_receipt.py",
     "services/agent_runtime/grok_execution_contract_adapter.py",
     "services/agent_runtime/context_slice_manifest.py",

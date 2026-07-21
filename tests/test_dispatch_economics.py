@@ -1968,7 +1968,7 @@ def test_dispatch_route_claim_is_cross_process_exclusive_and_winner_reuses(
     )
 
     _, a_ref, _, b_ref, _ = _a_b_dispatch_refs(tmp_path)
-    action = action_fixture(tmp_path / "action", work_key="parent-work")
+    action = action_fixture(tmp_path / "action", work_key="wk-1")
     task_run_cli = tmp_path / "task_run_cli.py"
     _write_task_run_cli_fixture(task_run_cli)
     script = Path(__file__).resolve().parents[1] / "scripts" / "claim_worker_dispatch_route.py"
@@ -2038,6 +2038,8 @@ def test_dispatch_route_claim_is_cross_process_exclusive_and_winner_reuses(
     validated = validate_dispatch_route_claim(
         route_claim_evidence_ref=winner["route_claim_evidence_ref"],
         dispatch_envelope_ref=winner_ref,
+        expected_task_run_dir=action["run_dir"],
+        expected_run_id="run-continuity-test",
     )
     assert validated["alternative_group_sha256"] == winner["alternative_group_sha256"]
     events = [
@@ -2048,3 +2050,449 @@ def test_dispatch_route_claim_is_cross_process_exclusive_and_winner_reuses(
     ]
     route_events = [row for row in events if row.get("phase") == "worker_route_claimed"]
     assert len(route_events) == 1
+
+
+def test_dispatch_route_claim_keeps_parent_pause_out_of_package_mutation_scope(
+    tmp_path: Path,
+) -> None:
+    from tests.test_action_resume_receipt import _append_event, _event, _write_task_run_cli_fixture
+    from tests.test_action_resume_receipt import _fixture as action_fixture
+
+    _, envelope_ref, _, _, _ = _a_b_dispatch_refs(tmp_path)
+    action = action_fixture(tmp_path / "action", work_key="wk-1")
+    _append_event(
+        action,
+        _event(
+            "run-continuity-test",
+            5,
+            target="parent-work",
+            phase="work_unit_planned",
+            kind="result",
+        ),
+    )
+    _append_event(
+        action,
+        _event(
+            "run-continuity-test",
+            6,
+            target="parent-work",
+            phase="work_unit_active",
+            kind="result",
+        ),
+    )
+    _append_event(
+        action,
+        _event(
+            "run-continuity-test",
+            7,
+            target="parent-work",
+            phase="work_unit_paused",
+            kind="result",
+        ),
+    )
+    task_run_cli = tmp_path / "task_run_cli.py"
+    _write_task_run_cli_fixture(task_run_cli)
+
+    claimed = claim_dispatch_route(
+        dispatch_envelope_ref=envelope_ref,
+        checkpoint_path=action["checkpoint"],
+        task_run_dir=action["run_dir"],
+        task_run_cli=task_run_cli,
+        holder_id="scoped-parent-pause",
+    )
+
+    assert claimed["status"] == "won"
+    assert claimed["parent_work_key"] == "parent-work"
+    assert claimed["mutation_guard_work_keys"] == ["wk-1"]
+    assert claimed["claim_scope_id"].startswith("dispatch-alternative:")
+
+
+def test_dispatch_route_claim_reports_exact_paused_package_guard_before_effect(
+    tmp_path: Path,
+) -> None:
+    from tests.test_action_resume_receipt import _append_event, _event, _write_task_run_cli_fixture
+    from tests.test_action_resume_receipt import _fixture as action_fixture
+
+    _, envelope_ref, _, _, _ = _a_b_dispatch_refs(tmp_path)
+    action = action_fixture(tmp_path / "action", work_key="wk-1")
+    _append_event(
+        action,
+        _event(
+            "run-continuity-test",
+            5,
+            target="wk-1",
+            phase="work_unit_paused",
+            kind="result",
+        ),
+    )
+    task_run_cli = tmp_path / "task_run_cli.py"
+    _write_task_run_cli_fixture(task_run_cli)
+
+    with pytest.raises(DispatchEconomicsError) as caught:
+        claim_dispatch_route(
+            dispatch_envelope_ref=envelope_ref,
+            checkpoint_path=action["checkpoint"],
+            task_run_dir=action["run_dir"],
+            task_run_cli=task_run_cli,
+            holder_id="paused-package",
+        )
+
+    message = str(caught.value)
+    assert "RUN_MUTATION_FROZEN" in message
+    assert "work_key=wk-1" in message
+    assert "event_id=event-id-5" in message
+    assert "claim_scope_id=dispatch-alternative:" in message
+    assert not (action["run_dir"] / "dispatch_route_claims").exists()
+
+
+def test_claim_reuse_and_model_start_recheck_package_pause_until_hash_bound_resume(
+    tmp_path: Path,
+) -> None:
+    from tests.test_action_resume_receipt import _append_event, _event, _write_task_run_cli_fixture
+    from tests.test_action_resume_receipt import _fixture as action_fixture
+
+    _, envelope_ref, _, _, _ = _a_b_dispatch_refs(tmp_path)
+    action = action_fixture(tmp_path / "action", work_key="wk-1")
+    task_run_cli = tmp_path / "task_run_cli.py"
+    _write_task_run_cli_fixture(task_run_cli)
+    claimed = claim_dispatch_route(
+        dispatch_envelope_ref=envelope_ref,
+        checkpoint_path=action["checkpoint"],
+        task_run_dir=action["run_dir"],
+        task_run_cli=task_run_cli,
+        holder_id="first-claim",
+    )
+    _append_event(
+        action,
+        _event(
+            "run-continuity-test",
+            6,
+            target="wk-1",
+            phase="work_unit_paused",
+            kind="result",
+        ),
+    )
+
+    with pytest.raises(DispatchEconomicsError, match="event_id=event-id-6"):
+        claim_dispatch_route(
+            dispatch_envelope_ref=envelope_ref,
+            checkpoint_path=action["checkpoint"],
+            task_run_dir=action["run_dir"],
+            task_run_cli=task_run_cli,
+            holder_id="paused-reuse",
+        )
+    with pytest.raises(DispatchEconomicsError, match="no longer model-start eligible"):
+        validate_dispatch_route_claim(
+            route_claim_evidence_ref=claimed["route_claim_evidence_ref"],
+            dispatch_envelope_ref=envelope_ref,
+            expected_task_run_dir=action["run_dir"],
+            expected_run_id="run-continuity-test",
+        )
+
+    proof = tmp_path / "action" / "resume-readback.json"
+    proof.write_text('{"work_key":"wk-1","reconciled":true}\n', encoding="utf-8")
+    _append_event(
+        action,
+        _event(
+            "run-continuity-test",
+            7,
+            target="wk-1",
+            phase="work_unit_resume_reconciled",
+            kind="result",
+            evidence_refs=[f"{proof}#sha256={hashlib.sha256(proof.read_bytes()).hexdigest()}"],
+        ),
+    )
+    reused = claim_dispatch_route(
+        dispatch_envelope_ref=envelope_ref,
+        checkpoint_path=action["checkpoint"],
+        task_run_dir=action["run_dir"],
+        task_run_cli=task_run_cli,
+        holder_id="resumed-reuse",
+    )
+    validated = validate_dispatch_route_claim(
+        route_claim_evidence_ref=claimed["route_claim_evidence_ref"],
+        dispatch_envelope_ref=envelope_ref,
+        expected_task_run_dir=action["run_dir"],
+        expected_run_id="run-continuity-test",
+    )
+    assert reused["status"] == "reused"
+    assert reused["choice_sha256"] == claimed["choice_sha256"]
+    assert validated["mutation_guard_preflight"]["reason_code"] == "MUTATION_GUARDS_ACTIVE"
+    events = [
+        json.loads(line)
+        for line in (action["run_dir"] / "events.jsonl").read_text(encoding="utf-8").splitlines()
+    ]
+    assert len([row for row in events if row.get("phase") == "worker_route_claimed"]) == 1
+
+
+def test_claim_reuse_rechecks_global_task_run_pause(
+    tmp_path: Path,
+) -> None:
+    from tests.test_action_resume_receipt import _fixture as action_fixture
+    from tests.test_action_resume_receipt import _write_task_run_cli_fixture
+
+    _, envelope_ref, _, _, _ = _a_b_dispatch_refs(tmp_path)
+    action = action_fixture(tmp_path / "action", work_key="wk-1")
+    task_run_cli = tmp_path / "task_run_cli.py"
+    _write_task_run_cli_fixture(task_run_cli)
+    claimed = claim_dispatch_route(
+        dispatch_envelope_ref=envelope_ref,
+        checkpoint_path=action["checkpoint"],
+        task_run_dir=action["run_dir"],
+        task_run_cli=task_run_cli,
+        holder_id="first-claim",
+    )
+    state_path = action["run_dir"] / "state.json"
+    state = json.loads(state_path.read_text(encoding="utf-8"))
+    state["status"] = "paused"
+    state_path.write_text(json.dumps(state, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+
+    with pytest.raises(DispatchEconomicsError, match="scope=task_run"):
+        claim_dispatch_route(
+            dispatch_envelope_ref=envelope_ref,
+            checkpoint_path=action["checkpoint"],
+            task_run_dir=action["run_dir"],
+            task_run_cli=task_run_cli,
+            holder_id="global-paused-reuse",
+        )
+    with pytest.raises(DispatchEconomicsError, match="scope=task_run"):
+        validate_dispatch_route_claim(
+            route_claim_evidence_ref=claimed["route_claim_evidence_ref"],
+            dispatch_envelope_ref=envelope_ref,
+            expected_task_run_dir=action["run_dir"],
+            expected_run_id="run-continuity-test",
+        )
+
+
+def test_dispatch_route_claim_rejects_wrong_checkpoint_even_on_exact_reuse(
+    tmp_path: Path,
+) -> None:
+    from tests.test_action_resume_receipt import _fixture as action_fixture
+    from tests.test_action_resume_receipt import _write_task_run_cli_fixture
+
+    _, envelope_ref, _, _, _ = _a_b_dispatch_refs(tmp_path)
+    action = action_fixture(tmp_path / "action-a", work_key="wk-1")
+    other = action_fixture(tmp_path / "action-b", work_key="wk-1")
+    task_run_cli = tmp_path / "task_run_cli.py"
+    _write_task_run_cli_fixture(task_run_cli)
+    claim_dispatch_route(
+        dispatch_envelope_ref=envelope_ref,
+        checkpoint_path=action["checkpoint"],
+        task_run_dir=action["run_dir"],
+        task_run_cli=task_run_cli,
+        holder_id="first-claim",
+    )
+
+    with pytest.raises(DispatchEconomicsError, match="CHECKPOINT_CURSOR_INVALID"):
+        claim_dispatch_route(
+            dispatch_envelope_ref=envelope_ref,
+            checkpoint_path=other["checkpoint"],
+            task_run_dir=action["run_dir"],
+            task_run_cli=task_run_cli,
+            holder_id="wrong-checkpoint-reuse",
+        )
+
+
+def test_dispatch_route_claim_rejects_cross_run_transplant_before_model_start(
+    tmp_path: Path,
+) -> None:
+    from tests.test_action_resume_receipt import _fixture as action_fixture
+    from tests.test_action_resume_receipt import _write_task_run_cli_fixture
+
+    _, envelope_ref, _, _, _ = _a_b_dispatch_refs(tmp_path)
+    action = action_fixture(tmp_path / "action-a", work_key="wk-1")
+    other = action_fixture(tmp_path / "action-b", work_key="wk-1")
+    task_run_cli = tmp_path / "task_run_cli.py"
+    _write_task_run_cli_fixture(task_run_cli)
+    claimed = claim_dispatch_route(
+        dispatch_envelope_ref=envelope_ref,
+        checkpoint_path=action["checkpoint"],
+        task_run_dir=action["run_dir"],
+        task_run_cli=task_run_cli,
+        holder_id="first-claim",
+    )
+
+    with pytest.raises(DispatchEconomicsError, match="transplanted across task-runs"):
+        validate_dispatch_route_claim(
+            route_claim_evidence_ref=claimed["route_claim_evidence_ref"],
+            dispatch_envelope_ref=envelope_ref,
+            expected_task_run_dir=other["run_dir"],
+            expected_run_id="run-continuity-test",
+        )
+
+
+def test_dispatch_route_claim_rejects_overlapping_package_scope_and_reuses_exact_batch(
+    tmp_path: Path,
+) -> None:
+    from tests.test_action_resume_receipt import (
+        _append_event,
+        _event,
+        _write_task_run_cli_fixture,
+    )
+    from tests.test_action_resume_receipt import (
+        _fixture as action_fixture,
+    )
+
+    fixture = _fixture(tmp_path / "dispatch")
+    ready_manifest = copy.deepcopy(fixture["manifest"])
+    ready_manifest["packages"][1]["depends_on"] = []
+    _, both_ref, _ = _seal_dispatch(
+        fixture,
+        manifest=ready_manifest,
+        package_ids=["p1", "p2"],
+        suffix="-both",
+    )
+    _, one_ref, _ = _seal_dispatch(
+        fixture,
+        manifest=ready_manifest,
+        package_ids=["p1"],
+        suffix="-one",
+    )
+    action = action_fixture(tmp_path / "action", work_key="wk-1")
+    _append_event(
+        action,
+        _event(
+            "run-continuity-test",
+            5,
+            target="wk-2",
+            phase="work_unit_planned",
+            kind="result",
+        ),
+    )
+    _append_event(
+        action,
+        _event(
+            "run-continuity-test",
+            6,
+            target="wk-2",
+            phase="work_unit_active",
+            kind="result",
+        ),
+    )
+    task_run_cli = tmp_path / "task_run_cli.py"
+    _write_task_run_cli_fixture(task_run_cli)
+    first = claim_dispatch_route(
+        dispatch_envelope_ref=both_ref,
+        checkpoint_path=action["checkpoint"],
+        task_run_dir=action["run_dir"],
+        task_run_cli=task_run_cli,
+        holder_id="both-first",
+    )
+    exact = claim_dispatch_route(
+        dispatch_envelope_ref=both_ref,
+        checkpoint_path=action["checkpoint"],
+        task_run_dir=action["run_dir"],
+        task_run_cli=task_run_cli,
+        holder_id="both-reuse",
+    )
+    assert exact["status"] == "reused"
+    assert exact["choice_sha256"] == first["choice_sha256"]
+
+    with pytest.raises(DispatchEconomicsError, match="overlaps an existing package work-key"):
+        claim_dispatch_route(
+            dispatch_envelope_ref=one_ref,
+            checkpoint_path=action["checkpoint"],
+            task_run_dir=action["run_dir"],
+            task_run_cli=task_run_cli,
+            holder_id="overlapping-subset",
+        )
+
+
+def _rewrite_route_claim_evidence(
+    *,
+    action: dict[str, Path],
+    evidence_ref: str,
+    mutate: Callable[[dict[str, object]], None],
+) -> str:
+    evidence_path = Path(evidence_ref.rsplit("#sha256=", 1)[0])
+    evidence = json.loads(evidence_path.read_text(encoding="utf-8"))
+    mutate(evidence)
+    evidence_sha = _write_json(evidence_path, evidence)
+    rewritten_ref = f"{evidence_path}#sha256={evidence_sha}"
+    events_path = action["run_dir"] / "events.jsonl"
+    events = [json.loads(line) for line in events_path.read_text(encoding="utf-8").splitlines()]
+    for event in events:
+        if event.get("phase") == "worker_route_claimed":
+            event["evidence_refs"] = [rewritten_ref]
+    events_path.write_text(
+        "".join(
+            json.dumps(event, ensure_ascii=False, sort_keys=True, separators=(",", ":")) + "\n"
+            for event in events
+        ),
+        encoding="utf-8",
+    )
+    return rewritten_ref
+
+
+def test_dispatch_route_claim_accepts_complete_legacy_shape_but_rejects_partial_downgrade(
+    tmp_path: Path,
+) -> None:
+    from tests.test_action_resume_receipt import _fixture as action_fixture
+    from tests.test_action_resume_receipt import _write_task_run_cli_fixture
+
+    _, envelope_ref, _, _, _ = _a_b_dispatch_refs(tmp_path)
+    task_run_cli = tmp_path / "task_run_cli.py"
+    _write_task_run_cli_fixture(task_run_cli)
+
+    legacy_action = action_fixture(tmp_path / "legacy-action", work_key="wk-1")
+    legacy_claim = claim_dispatch_route(
+        dispatch_envelope_ref=envelope_ref,
+        checkpoint_path=legacy_action["checkpoint"],
+        task_run_dir=legacy_action["run_dir"],
+        task_run_cli=task_run_cli,
+        holder_id="legacy-shape",
+    )
+    legacy_ref = _rewrite_route_claim_evidence(
+        action=legacy_action,
+        evidence_ref=str(legacy_claim["route_claim_evidence_ref"]),
+        mutate=lambda evidence: [
+            evidence.pop(field, None)
+            for field in (
+                "claim_scope_id",
+                "claim_storage_work_key",
+                "parent_work_key",
+                "mutation_guard_work_keys",
+                "task_run_id",
+            )
+        ],
+    )
+    claim_path = Path(str(legacy_claim["claim_path"]))
+    claim = json.loads(claim_path.read_text(encoding="utf-8"))
+    claim.pop("mutation_guard_work_keys", None)
+    details = claim["effect_outcome"]["details"]
+    for field in (
+        "claim_scope_id",
+        "claim_storage_work_key",
+        "parent_work_key",
+        "mutation_guard_work_keys",
+        "task_run_id",
+        "task_run_path",
+    ):
+        details.pop(field, None)
+    _write_json(claim_path, claim)
+    validated = validate_dispatch_route_claim(
+        route_claim_evidence_ref=legacy_ref,
+        dispatch_envelope_ref=envelope_ref,
+    )
+    assert validated["scoped_claim"] is False
+
+    partial_action = action_fixture(tmp_path / "partial-action", work_key="wk-1")
+    partial_claim = claim_dispatch_route(
+        dispatch_envelope_ref=envelope_ref,
+        checkpoint_path=partial_action["checkpoint"],
+        task_run_dir=partial_action["run_dir"],
+        task_run_cli=task_run_cli,
+        holder_id="partial-shape",
+    )
+    partial_ref = _rewrite_route_claim_evidence(
+        action=partial_action,
+        evidence_ref=str(partial_claim["route_claim_evidence_ref"]),
+        mutate=lambda evidence: evidence.pop("claim_storage_work_key", None),
+    )
+    with pytest.raises(DispatchEconomicsError, match="partial or downgraded"):
+        validate_dispatch_route_claim(
+            route_claim_evidence_ref=partial_ref,
+            dispatch_envelope_ref=envelope_ref,
+            expected_task_run_dir=partial_action["run_dir"],
+            expected_run_id="run-continuity-test",
+        )

@@ -25,6 +25,11 @@ from jsonschema import exceptions as jsonschema_exceptions
 from jsonschema import validators as jsonschema_validators
 
 from services.agent_runtime.execution_contract import artifact_json_bytes
+from services.agent_runtime.work_unit_lifecycle import (
+    WORK_UNIT_LIFECYCLE_VERSION,
+    discover_work_unit_keys,
+    project_work_unit_state,
+)
 
 REPORT_VERSION = "xinao.system_awareness.report.v1"
 COMPLETION_CARD_VERSION = "xinao.work_key_completion_card.v1"
@@ -40,7 +45,6 @@ WORKTREE_LIFECYCLE_VERSION = "xinao.worktree_lifecycle_report.v1"
 WORKTREE_RECORDS_VERSION = "xinao.worktree_lifecycle_records.v1"
 WORKTREE_ARCHIVE_VERSION = "xinao.worktree_archive_manifest.v1"
 WORKTREE_RESTORE_VERSION = "xinao.worktree_archive_restore_receipt.v1"
-WORK_UNIT_LIFECYCLE_VERSION = "xinao.work_unit_lifecycle_projection.v1"
 WORK_UNIT_EVIDENCE_VERSION = "xinao.work_unit_finalizer_evidence.v1"
 TRAJECTORY_VERSION = "xinao.trajectory_sample_evaluation.v1"
 PROMOTION_VERSION = "xinao.system_awareness.promotion_evidence.v1"
@@ -3157,12 +3161,7 @@ def project_work_unit_lifecycle(
     # A task-run target is free text (paths, refs and component names are common),
     # so only typed work-unit events or hash-bound carrier records may introduce
     # a logical work identity.  Prefix guessing would manufacture false units.
-    work_keys = {
-        str(event.get("target"))
-        for event in events
-        if str(event.get("target") or "").strip()
-        and str(event.get("phase") or "").lower().startswith("work_unit_")
-    }
+    work_keys = discover_work_unit_keys(events)
     if records_payload:
         work_keys.update(
             str(record.get("work_key"))
@@ -3171,127 +3170,13 @@ def project_work_unit_lifecycle(
         )
     ordered_work_keys = sorted(work_keys) or [f"wk:task-run:{task.get('run_id')}"]
     projections: list[dict[str, object]] = []
-    transition_rules = {
-        "work_unit_planned": ("planned", frozenset({"planned"})),
-        "work_unit_active": ("active", frozenset({"planned", "active"})),
-        "work_unit_paused": ("paused", frozenset({"active"})),
-        "work_unit_interrupted": ("interrupted", frozenset({"active"})),
-        "work_unit_resume_reconciled": (
-            "active",
-            frozenset({"paused", "interrupted"}),
-        ),
-        "work_unit_verifying": ("verifying", frozenset({"active"})),
-        "work_unit_boundary_verified": ("verifying", frozenset({"verifying"})),
-        "work_unit_land_requested": ("land_requested", frozenset({"verifying"})),
-        "work_unit_land_verified": ("landed", frozenset({"land_requested"})),
-        "work_unit_effect_verified": ("effect_verified", frozenset({"landed"})),
-        "work_unit_effect_not_required": (
-            "effect_not_required",
-            frozenset({"landed"}),
-        ),
-        "work_unit_blocked": (
-            "blocked",
-            frozenset(
-                {
-                    "planned",
-                    "active",
-                    "paused",
-                    "interrupted",
-                    "verifying",
-                    "land_requested",
-                    "landed",
-                }
-            ),
-        ),
-        "work_unit_failed": (
-            "failed",
-            frozenset(
-                {
-                    "planned",
-                    "active",
-                    "paused",
-                    "interrupted",
-                    "verifying",
-                    "land_requested",
-                    "landed",
-                }
-            ),
-        ),
-        "work_unit_cancelled": (
-            "cancelled",
-            frozenset(
-                {
-                    "planned",
-                    "active",
-                    "paused",
-                    "interrupted",
-                    "verifying",
-                    "land_requested",
-                    "landed",
-                }
-            ),
-        ),
-    }
-    next_consumers = {
-        "planned": "execution_owner",
-        "active": "boundary_verifier",
-        "paused": "action_resume_preaction_guard",
-        "interrupted": "action_resume_preaction_guard",
-        "verifying": "land_owner",
-        "land_requested": "git_pr_land_observer",
-        "landed": "real_effect_consumer",
-        "effect_verified": "parent_completion_owner",
-        "effect_not_required": "parent_completion_owner",
-        "blocked": "owner_reconciliation",
-        "failed": "owner_reconciliation",
-        "cancelled": "parent_completion_owner",
-    }
     for work_key in ordered_work_keys:
         relevant = [dict(event) for event in events if str(event.get("target") or "") == work_key]
-        current_state = "planned"
-        invalid_transitions: list[dict[str, object]] = []
-        for event in relevant:
-            phase = str(event.get("phase") or "").lower()
-            rule = transition_rules.get(phase)
-            if rule is None:
-                continue
-            candidate, allowed_predecessors = rule
-            terminal_failure = phase in {"work_unit_blocked", "work_unit_failed"}
-            outcome_valid = (
-                event.get("kind") == "result"
-                and bool(str(event.get("side_effect_id") or ""))
-                and (
-                    (
-                        terminal_failure
-                        and isinstance(event.get("exit_code"), int)
-                        and event.get("exit_code") != 0
-                    )
-                    or (not terminal_failure and event.get("exit_code") == 0)
-                )
-            )
-            if not outcome_valid or current_state not in allowed_predecessors:
-                invalid_transitions.append(
-                    {
-                        "event_id": event.get("event_id"),
-                        "phase": phase,
-                        "from_state": current_state,
-                        "reason_code": "WORK_UNIT_TRANSITION_INVALID",
-                    }
-                )
-                continue
-            if phase == "work_unit_resume_reconciled" and not _verified_hash_bound_evidence(
-                event.get("evidence_refs")
-            ):
-                invalid_transitions.append(
-                    {
-                        "event_id": event.get("event_id"),
-                        "phase": phase,
-                        "from_state": current_state,
-                        "reason_code": "WORK_UNIT_RESUME_READBACK_MISSING",
-                    }
-                )
-                continue
-            current_state = candidate
+        lifecycle = project_work_unit_state(events, work_key)
+        current_state = str(lifecycle["state"])
+        if current_state == "unbound":
+            current_state = "planned"
+        invalid_transitions = list(lifecycle["invalid_transitions"])
         boundary = _work_unit_finalizer(relevant, "work_unit_boundary_verified", work_key)
         land = _work_unit_finalizer(relevant, "work_unit_land_verified", work_key)
         effect = _work_unit_finalizer(relevant, "work_unit_effect_verified", work_key)
@@ -3332,7 +3217,7 @@ def project_work_unit_lifecycle(
             {
                 "work_key": work_key,
                 "state": current_state,
-                "next_consumer": next_consumers[current_state],
+                "next_consumer": lifecycle["next_consumer"],
                 "event_count": len(relevant),
                 "event_head": {
                     "event_id": latest.get("event_id") if latest else None,
@@ -3348,6 +3233,7 @@ def project_work_unit_lifecycle(
                 },
                 "execution_bindings": bindings,
                 "invalid_transitions": invalid_transitions,
+                "pending_invalid_transitions": list(lifecycle["pending_invalid_transitions"]),
                 "carrier_records_binding": records_binding,
                 "resume_requires_live_fact_reconciliation": current_state
                 in {"paused", "interrupted", "blocked"},

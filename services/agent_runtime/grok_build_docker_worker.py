@@ -18,7 +18,7 @@ import socket
 import uuid
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 import portalocker
 from jsonschema import Draft202012Validator
@@ -753,6 +753,8 @@ def _reject_canonical_caller_drift(
         "route_choice",
         "dispatch_route_claim_ref",
         "dispatch_route_claim",
+        "dispatch_task_run_dir",
+        "dispatch_task_run_id",
         "logical_consumer_id",
         "logical_effect_contract",
         "physical_consumer_id",
@@ -775,6 +777,8 @@ def _derive_canonical_package_lanes(
     *,
     dispatch_envelope_ref: object,
     dispatch_route_claim_ref: object,
+    dispatch_task_run_dir: object,
+    dispatch_task_run_id: object,
     ready_frontier: object,
 ) -> tuple[list[dict[str, Any]], dict[str, Any]]:
     envelope_ref, _, envelope_raw, _ = _read_hash_bound_json_ref(
@@ -804,18 +808,6 @@ def _derive_canonical_package_lanes(
         expected_leg="B",
         path_resolver=_map_host_path_to_container,
     )
-    route_claim = validate_dispatch_route_claim(
-        route_claim_evidence_ref=dispatch_route_claim_ref,
-        dispatch_envelope_ref=envelope_ref,
-        path_resolver=_map_host_path_to_container,
-    )
-    if (
-        route_claim.get("leg") != "B"
-        or route_claim.get("physical_consumer_id") != GROK_DOCKER_CONSUMER_ID
-        or route_claim.get("choice_sha256") != route_choice["choice_sha256"]
-    ):
-        raise ValueError("leg-B model start is not owned by this durable route claim")
-
     manifest_ref = dict(envelope["package_manifest_ref"])
     manifest_ref, manifest_path, manifest_raw, manifest_bytes = _read_hash_bound_json_ref(
         manifest_ref,
@@ -835,13 +827,28 @@ def _derive_canonical_package_lanes(
         path_resolver=_map_host_path_to_container,
     )
     admitted_by_id = {str(package["package_id"]): dict(package) for package in frontier["admitted"]}
-    lanes: list[dict[str, Any]] = []
     for package_id in envelope["package_ids"]:
-        package = admitted_by_id.get(str(package_id))
-        if package is None:
+        if str(package_id) not in admitted_by_id:
             raise ValueError(
                 f"leg-B envelope package is not admitted by the canonical frontier: {package_id}"
             )
+    route_claim = validate_dispatch_route_claim(
+        route_claim_evidence_ref=dispatch_route_claim_ref,
+        dispatch_envelope_ref=envelope_ref,
+        expected_task_run_dir=Path(str(dispatch_task_run_dir)),
+        expected_run_id=str(dispatch_task_run_id),
+        path_resolver=_map_host_path_to_container,
+    )
+    if (
+        route_claim.get("leg") != "B"
+        or route_claim.get("physical_consumer_id") != GROK_DOCKER_CONSUMER_ID
+        or route_claim.get("choice_sha256") != route_choice["choice_sha256"]
+    ):
+        raise ValueError("leg-B model start is not owned by this durable route claim")
+    lanes: list[dict[str, Any]] = []
+    for package_id in envelope["package_ids"]:
+        package = admitted_by_id.get(str(package_id))
+        assert package is not None
         if envelope["validated_package_seals"].get(package_id) != package["package_seal_sha256"]:
             raise ValueError(f"leg-B package execution seal drifted: {package_id}")
         if physical_consumer_id != GROK_DOCKER_CONSUMER_ID:
@@ -860,6 +867,8 @@ def _derive_canonical_package_lanes(
         )
         lanes[-1]["dispatch_route_claim_ref"] = str(dispatch_route_claim_ref)
         lanes[-1]["dispatch_route_claim"] = dict(route_claim)
+        lanes[-1]["dispatch_task_run_dir"] = str(dispatch_task_run_dir)
+        lanes[-1]["dispatch_task_run_id"] = str(dispatch_task_run_id)
     _reject_canonical_caller_drift(ready_frontier, lanes)
     if (
         manifest_path.read_bytes() != manifest_bytes
@@ -877,7 +886,39 @@ def _derive_canonical_package_lanes(
         "route_choice": route_choice,
         "candidate_consumer_binding": consumer_binding,
         "dispatch_route_claim": route_claim,
+        "dispatch_task_run_dir": str(dispatch_task_run_dir),
+        "dispatch_task_run_id": str(dispatch_task_run_id),
     }
+
+
+def _revalidate_canonical_route_claim(lane: dict[str, Any]) -> dict[str, Any]:
+    """Re-read the live task-run guard immediately before a Grok subprocess."""
+
+    claim_ref = str(lane.get("dispatch_route_claim_ref") or "").strip()
+    envelope_path = str(lane.get("dispatch_envelope_ref") or "").strip()
+    envelope_sha256 = str(lane.get("dispatch_envelope_sha256") or "").strip()
+    if not claim_ref or not envelope_path or not re.fullmatch(r"[0-9a-f]{64}", envelope_sha256):
+        raise ValueError("Docker Grok canonical route guard is incomplete")
+    live = validate_dispatch_route_claim(
+        route_claim_evidence_ref=claim_ref,
+        dispatch_envelope_ref={"path": envelope_path, "sha256": envelope_sha256},
+        expected_task_run_dir=Path(str(lane.get("dispatch_task_run_dir") or "")),
+        expected_run_id=str(lane.get("dispatch_task_run_id") or ""),
+        path_resolver=_map_host_path_to_container,
+    )
+    route_choice = lane.get("route_choice") if isinstance(lane.get("route_choice"), dict) else {}
+    guard_work_keys = live.get("mutation_guard_work_keys")
+    if (
+        live.get("model_invocation_allowed") is not True
+        or live.get("leg") != "B"
+        or live.get("physical_consumer_id") != GROK_DOCKER_CONSUMER_ID
+        or live.get("choice_sha256") != route_choice.get("choice_sha256")
+        or not isinstance(guard_work_keys, list)
+        or str(lane.get("work_key") or "") not in guard_work_keys
+    ):
+        raise ValueError("Docker Grok live route guard drifted before model process")
+    lane["dispatch_route_claim"] = dict(live)
+    return dict(live)
 
 
 def _container_cwd(raw: object, *, write: bool) -> Path:
@@ -935,9 +976,9 @@ def _operation_id(
     result_json_schema_sha256: str = "",
     min_result_chars: int = 1,
     required_result_markers: tuple[str, ...] = (),
+    route_choice_sha256: str = "",
 ) -> str:
     identity = {
-        "workflow_id": workflow_id,
         "lane_id": lane_id,
         "prompt_sha256": prompt_sha256,
         "execution_prompt_sha256": execution_prompt_sha256,
@@ -947,8 +988,6 @@ def _operation_id(
         "write": write,
         "max_turns": max_turns,
         "deadline_seconds": deadline_seconds,
-        "correlation_id": correlation_id,
-        "parent_operation_id": parent_operation_id,
         "contract_id": contract_id,
         "allowed_tools": list(allowed_tools),
         "planning": planning,
@@ -965,12 +1004,20 @@ def _operation_id(
         "required_result_markers": list(required_result_markers),
         "cli_policy_version": CLI_POLICY_VERSION,
     }
+    if not work_key:
+        identity.update(
+            workflow_id=workflow_id,
+            correlation_id=correlation_id,
+            parent_operation_id=parent_operation_id,
+        )
     if write:
         identity["sandbox_profile"] = CANDIDATE_SANDBOX_PROFILE
     if work_key or package_manifest_sha256:
         identity.update(
             work_key=work_key,
             package_manifest_sha256=package_manifest_sha256,
+            route_choice_sha256=route_choice_sha256,
+            package_attempt_identity_version="xinao.grok_package_attempt.v1",
         )
     raw = _json_bytes(identity)
     return f"op_grok_docker_{_sha256(raw)[:32]}"
@@ -1529,6 +1576,7 @@ async def _communicate_with_heartbeats(
     operation_id: str,
     lane_id: str,
     deadline_seconds: int,
+    guard_check: Callable[[], object] | None = None,
 ) -> tuple[bytes, bytes]:
     task = asyncio.create_task(process.communicate())
     elapsed = 0
@@ -1538,6 +1586,8 @@ async def _communicate_with_heartbeats(
                 await asyncio.wait_for(asyncio.shield(task), timeout=2)
             except TimeoutError:
                 elapsed += 2
+                if guard_check is not None:
+                    guard_check()
                 _heartbeat(
                     {
                         "operation_id": operation_id,
@@ -1769,6 +1819,7 @@ async def _execute_lane_locked(
             != (lane.get("route_choice") or {}).get("choice_sha256")
         ):
             raise ValueError("Docker Grok candidate output boundary drifted before model process")
+        _revalidate_canonical_route_claim(lane)
     # Resolve the candidate write boundary before any model process or model
     # capability subprocess can be started.
     cwd = _container_cwd(lane.get("cwd"), write=write)
@@ -1863,6 +1914,11 @@ async def _execute_lane_locked(
         result_json_schema_sha256=str(output_contract["result_json_schema_sha256"]),
         min_result_chars=int(output_contract["min_result_chars"]),
         required_result_markers=tuple(output_contract["required_result_markers"]),
+        route_choice_sha256=(
+            str(route_choice.get("choice_sha256") or "")
+            if canonical_package_mode and isinstance(route_choice, dict)
+            else ""
+        ),
     )
     common_output_contract_sha256 = _sha256(
         _json_bytes(
@@ -1893,13 +1949,16 @@ async def _execute_lane_locked(
         if canonical_package_mode
         else str(requested_rules_snapshot["sha256"])
     )
+    logical_workflow_id = (
+        f"package-attempt:{operation_id}" if canonical_package_mode else workflow_id
+    )
     logical_contract = build_grok_logical_contract(
-        workflow_id=workflow_id,
+        workflow_id=logical_workflow_id,
         lane_id=lane_id,
         operation_id=operation_id,
         work_key=effective_work_key,
-        correlation_id=correlation_id,
-        parent_operation_id=parent_operation_id,
+        correlation_id="" if canonical_package_mode else correlation_id,
+        parent_operation_id="" if canonical_package_mode else parent_operation_id,
         task_contract_ref=(
             f"{package_manifest_ref}#sha256={package_manifest_sha256}"
             if canonical_package_mode
@@ -1949,7 +2008,7 @@ async def _execute_lane_locked(
         "execution_contract_version": EXECUTION_CONTRACT_VERSION,
         "cli_policy_version": CLI_POLICY_VERSION,
         "operation_id": operation_id,
-        "workflow_id": workflow_id,
+        "workflow_id": logical_workflow_id,
         "lane_id": lane_id,
         "mode": mode,
         "model": model,
@@ -1961,8 +2020,8 @@ async def _execute_lane_locked(
         "max_turns": max_turns,
         "deadline_seconds": deadline_seconds,
         "requested_session_id": requested_session_id,
-        "correlation_id": correlation_id,
-        "parent_operation_id": parent_operation_id,
+        "correlation_id": "" if canonical_package_mode else correlation_id,
+        "parent_operation_id": "" if canonical_package_mode else parent_operation_id,
         "contract_id": contract_id,
         "allowed_tools": list(allowed_tools),
         "planning": capability_policy["planning"],
@@ -2100,6 +2159,8 @@ async def _execute_lane_locked(
             # process startup.  Its writable CWD is the exact manifest-bound
             # candidate root validated above; the repository mounts stay RO.
             args.extend(["--sandbox", CANDIDATE_SANDBOX_PROFILE, "--always-approve"])
+        if canonical_package_mode:
+            _revalidate_canonical_route_claim(lane)
         process = await asyncio.create_subprocess_exec(
             *args,
             cwd=str(cwd),
@@ -2113,6 +2174,11 @@ async def _execute_lane_locked(
             operation_id=operation_id,
             lane_id=lane_id,
             deadline_seconds=remaining_seconds,
+            guard_check=(
+                (lambda: _revalidate_canonical_route_claim(lane))
+                if canonical_package_mode
+                else None
+            ),
         )
         cli_payload = _decode_cli_payload(stdout)
         summary = _safe_cli_summary(
@@ -2545,7 +2611,24 @@ async def _execute_lane(
     lane_id = str(lane.get("lane_id") or "").strip()
     if not lane_id:
         raise ValueError("Docker Grok lane requires lane_id")
-    lease_path = root / "leases" / f"{_safe(lane_id)}.lock"
+    canonical_package_mode = (
+        str(lane.get("package_contract_mode") or "") == "xinao.worker_package_batch.v3"
+    )
+    execution_root = root
+    lease_identity = lane_id
+    if canonical_package_mode:
+        execution_root = root.parent / "_canonical_package_attempts"
+        lease_identity = _sha256(
+            _json_bytes(
+                {
+                    "work_key": lane.get("work_key"),
+                    "package_seal_sha256": lane.get("package_seal_sha256"),
+                    "choice_sha256": (lane.get("route_choice") or {}).get("choice_sha256"),
+                    "model": lane.get("model"),
+                }
+            )
+        )
+    lease_path = execution_root / "leases" / f"{_safe(lease_identity)}.lock"
     lease_token = uuid.uuid4().hex
     lane["_lease_token"] = lease_token
     lease = await _acquire_operation_lease(
@@ -2556,14 +2639,14 @@ async def _execute_lane(
     try:
         try:
             return await _execute_lane_locked(
-                root=root,
+                root=execution_root,
                 workflow_id=workflow_id,
                 lane=lane,
                 intake=intake,
             )
         except Exception as exc:
             _record_operation_failure(
-                root=root,
+                root=execution_root,
                 workflow_id=workflow_id,
                 lane=lane,
                 exc=exc,
@@ -2587,6 +2670,8 @@ async def run_docker_native_grok_fanin(
     supervisor_selection_required: bool = False,
     dispatch_envelope_ref: object = None,
     dispatch_route_claim_ref: object = None,
+    dispatch_task_run_dir: object = None,
+    dispatch_task_run_id: object = None,
 ) -> dict[str, Any]:
     """Execute a legacy caller frontier or a canonical leg-B package envelope."""
 
@@ -2601,9 +2686,16 @@ async def run_docker_native_grok_fanin(
     if canonical_package_mode:
         if not str(dispatch_route_claim_ref or "").strip():
             raise ValueError("canonical Docker Grok package mode requires dispatch_route_claim_ref")
+        if (
+            not str(dispatch_task_run_dir or "").strip()
+            or not str(dispatch_task_run_id or "").strip()
+        ):
+            raise ValueError("canonical Docker Grok package mode requires exact task-run identity")
         lanes, package_binding = _derive_canonical_package_lanes(
             dispatch_envelope_ref=dispatch_envelope_ref,
             dispatch_route_claim_ref=dispatch_route_claim_ref,
+            dispatch_task_run_dir=dispatch_task_run_dir,
+            dispatch_task_run_id=dispatch_task_run_id,
             ready_frontier=ready_frontier,
         )
     else:

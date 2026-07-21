@@ -378,6 +378,8 @@ class BusState(TypedDict, total=False):
     grok_ready_frontier: list[dict[str, Any]]
     dispatch_envelope_ref: dict[str, str]
     dispatch_route_claim_ref: str
+    dispatch_task_run_dir: str
+    dispatch_task_run_id: str
     supervisor_selection_required: bool
     supervisor_worker_decision: dict[str, Any] | None
     grok_serial_reason: str
@@ -948,6 +950,8 @@ async def _validate_node_impl(
                     ),
                     dispatch_envelope_ref=state.get("dispatch_envelope_ref"),
                     dispatch_route_claim_ref=state.get("dispatch_route_claim_ref"),
+                    dispatch_task_run_dir=state.get("dispatch_task_run_dir"),
+                    dispatch_task_run_id=state.get("dispatch_task_run_id"),
                 )
                 grok_lane = _grok_fanin_worker_lane({**state, **native_fanin})
             except DockerGrokTransientError as exc:
@@ -1755,6 +1759,8 @@ def default_initial_state(
     workflow_id: str = "",
     dispatch_envelope_ref: Mapping[str, object] | None = None,
     dispatch_route_claim_ref: str = "",
+    dispatch_task_run_dir: Path | None = None,
+    dispatch_task_run_id: str = "",
 ) -> BusState:
     rt = resolve_runtime_root(runtime_root or DEFAULT_RUNTIME)
     repo = resolve_repo_root(repo_root)
@@ -1793,4 +1799,8 @@ def default_initial_state(
         }
     if dispatch_route_claim_ref:
         initial["dispatch_route_claim_ref"] = str(dispatch_route_claim_ref)
+    if dispatch_task_run_dir is not None:
+        initial["dispatch_task_run_dir"] = str(dispatch_task_run_dir)
+    if dispatch_task_run_id:
+        initial["dispatch_task_run_id"] = str(dispatch_task_run_id)
     return initial
