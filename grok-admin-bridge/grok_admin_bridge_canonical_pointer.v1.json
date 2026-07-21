@@ -1,11 +1,12 @@
 {
-  "schema_version": "xinao.grok_repository_pointer.v2",
-  "sentinel": "SENTINEL:GROK_REPOSITORY_POINTER_V2",
+  "schema_version": "xinao.grok_repository_pointer.v3",
+  "sentinel": "SENTINEL:GROK_REPOSITORY_POINTER_V3",
   "status": "active",
   "repository_root": "D:\\Grok_Admin_Isolated\\workspace",
   "role": "isolated_admin_configuration_and_bounded_grok_lane",
   "peer_repository": "D:\\Grok_Admin_Isolated\\workspace-grok-4.5-island",
   "mirror_relationship": "none",
   "runtime_state_root": "D:\\XINAO_RESEARCH_RUNTIME",
-  "canonical_route": "Temporal + Docker houtai-gongren + worker-internal LangGraph"
+  "route_authority": "bridge.config.json#canonical_route",
+  "route_selection": "selected_by_task_fit_or_existing_route_receipt"
 }

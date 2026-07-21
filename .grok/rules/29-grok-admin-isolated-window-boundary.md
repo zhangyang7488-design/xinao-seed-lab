@@ -30,7 +30,7 @@ SENTINEL:GROK_ADMIN_ISOLATED_WINDOW_BOUNDARY_RULE_V1
 
 | 本窗 | 4.5 窗 |
 |------|--------|
-| continuity checkpoint；按正净收益或 canonical 路由不可用时动态启用有界 WorkerPool fallback | endpoint capability / hidden-stdio canary（由 4.5 岛仓持有） |
+| continuity checkpoint；按 task fit/既有 route receipt 选择正常 A 腿 WorkerPool，continuous/resume 不自行切腿 | endpoint capability / hidden-stdio canary（由 4.5 岛仓持有） |
 
 本窗不存在长期循环、可见终端注入、跨仓热写或第二编排器。
 

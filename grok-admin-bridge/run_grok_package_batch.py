@@ -411,6 +411,33 @@ def _hash_bound_ref(path: Path, expected_sha256: str | None = None) -> dict[str,
     return {"path": str(resolved), "sha256": observed}
 
 
+def _package_artifact_ref(
+    package: dict[str, Any], field: str, *, expected_sha256_field: str | None = None
+) -> dict[str, str]:
+    raw = package.get(field)
+    if not isinstance(raw, dict) or set(raw) != {"path", "sha256"}:
+        raise ValueError(f"package {field} must be one exact hash-bound artifact ref")
+    expected = str(raw.get("sha256") or "").strip().lower()
+    if len(expected) != 64 or any(char not in "0123456789abcdef" for char in expected):
+        raise ValueError(f"package {field}.sha256 is invalid")
+    if expected_sha256_field is not None:
+        package_expected = str(package.get(expected_sha256_field) or "").strip().lower()
+        if package_expected != expected:
+            raise ValueError(
+                f"package {field}.sha256 does not match {expected_sha256_field}"
+            )
+    return _hash_bound_ref(Path(str(raw.get("path") or "")), expected)
+
+
+def _candidate_write_domain(candidate_root: Path) -> str:
+    """Name the physical candidate boundary without granting an authority domain."""
+
+    normalized = str(candidate_root.resolve(strict=True)).replace("\\", "/").rstrip("/")
+    if not normalized:
+        raise ValueError("candidate output root is empty")
+    return "candidate_output_root:" + normalized.casefold()
+
+
 def _extract_cli_final_text(cli_json_path: Path, lane_meta: dict[str, Any]) -> str:
     """Reproduce the provider validator's exact effective-output selection."""
 
@@ -543,6 +570,16 @@ def _run_package(
         route_choice_sha256=route_choice_sha256,
         physical_consumer_id=physical_consumer_id,
     )
+    if package.get("write_domains"):
+        raise ValueError(
+            "candidate-only package cannot pass authority write domains to leg A"
+        )
+    rules_ref = _package_artifact_ref(
+        package,
+        "rules_ref",
+        expected_sha256_field="rules_sha256",
+    )
+    candidate_write_domain = _candidate_write_domain(effective_cwd)
     dispatch_id = _identifier("cdx")
     pool_id = _identifier("gwp")
     operation_id = _operation_id(package)
@@ -590,6 +627,12 @@ def _run_package(
         manifest_sha256,
         "-CommonContextManifestPath",
         str(package["context_manifest_ref"]["path"]),
+        "-CommonRulesFile",
+        rules_ref["path"],
+        "-CommonRulesSha256",
+        rules_ref["sha256"],
+        "-CommonCandidateOutputRoot",
+        str(effective_cwd),
         "-CommonPhase",
         str(package["phase"]),
         "-CommonAdapterRoot",
@@ -605,6 +648,8 @@ def _run_package(
         "-PoolId",
         pool_id,
         "-Quiet",
+        "-CommonWriteDomains",
+        candidate_write_domain,
     ]
     if package["acceptance"]["required_result_markers"]:
         command.append("-RequiredResultMarkers")
@@ -616,9 +661,6 @@ def _run_package(
         command.extend(
             ["-JsonSchemaPath", str(package["acceptance"]["json_schema_ref"]["path"])]
         )
-    if package["write_domains"]:
-        command.append("-CommonWriteDomains")
-        command.extend(str(domain) for domain in package["write_domains"])
     if package["depends_on"]:
         command.append("-CommonDependsOn")
         command.extend(

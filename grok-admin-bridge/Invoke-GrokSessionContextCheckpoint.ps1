@@ -47,7 +47,7 @@ if ($Read) {
     $checkpoint = Read-JsonFile $latest
     if (-not $checkpoint) {
         $checkpoint = [ordered]@{
-            schema_version = "xinao.grok_session_context_checkpoint.v2"
+            schema_version = "xinao.grok_session_context_checkpoint.v3"
             status = "no_checkpoint_yet"
             checkpoint_path = $latest
         }
@@ -77,7 +77,7 @@ if ($InputJson) {
 
 New-Item -ItemType Directory -Force -Path $stateRoot | Out-Null
 $checkpoint = [ordered]@{
-    schema_version = "xinao.grok_session_context_checkpoint.v2"
+    schema_version = "xinao.grok_session_context_checkpoint.v3"
     status = "active"
     generated_at = (Get-Date).ToString("o")
     user_intent_anchor_cn = $UserIntentAnchorCn
@@ -87,7 +87,9 @@ $checkpoint = [ordered]@{
     named_blockers = @($NamedBlockers)
     evidence_refs = @($EvidenceRefs)
     do_not_re_explain_cn = @($DoNotReExplain)
-    canonical_route = "Temporal + Docker houtai-gongren + worker-internal LangGraph"
+    route_authority = "bridge.config.json#canonical_route"
+    route_selection = "selected_by_task_fit_or_existing_route_receipt"
+    route_continuity = "continuous_or_resume_does_not_switch_leg"
     worker_selection = "dynamic_positive_net_benefit"
     available_workers = @("grok", "codex_agents", "combined")
     soft_preference_when_close = "grok"

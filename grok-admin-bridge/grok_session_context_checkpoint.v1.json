@@ -1,6 +1,6 @@
 {
-  "schema_version": "xinao.grok_session_context_checkpoint.v2",
-  "sentinel": "SENTINEL:GROK_SESSION_CONTEXT_CHECKPOINT_V2",
+  "schema_version": "xinao.grok_session_context_checkpoint.v3",
+  "sentinel": "SENTINEL:GROK_SESSION_CONTEXT_CHECKPOINT_V3",
   "status": "active_thin_continuity_only",
   "purpose_cn": "仅保存和读取短接力检查点；不承担调度、保活、补池或控制面职责。",
   "script": "grok-admin-bridge/Invoke-GrokSessionContextCheckpoint.ps1",
@@ -9,7 +9,8 @@
     "admin": "D:\\XINAO_RESEARCH_RUNTIME\\state\\grok_session_context\\latest.json",
     "grok_4_5": "D:\\XINAO_RESEARCH_RUNTIME\\state\\grok_4_5\\session_context\\latest.json"
   },
-  "canonical_route": "Temporal + Docker houtai-gongren + worker-internal LangGraph",
+  "route_authority": "bridge.config.json#canonical_route",
+  "route_continuity": "existing_route_receipt_first; checkpoint_or_resume_does_not_switch_leg",
   "model_worker_routing": "bridge.config.json#model_worker_routing",
   "soft_preference_when_close": "grok",
   "worker_width": "dynamic",

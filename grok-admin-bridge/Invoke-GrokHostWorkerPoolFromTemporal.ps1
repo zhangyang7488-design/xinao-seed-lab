@@ -58,7 +58,7 @@ if ($env:XINAO_FORCE_HOST_POOL_IN_CONTAINER -ne "1") {
 
 $dispatch = Join-Path $bridge "Invoke-CodexDispatchGrokWorkerPool.ps1"
 if (-not (Test-Path -LiteralPath $dispatch)) {
-    throw "MISSING_HOST_POOL: canonical dispatch wrapper unavailable: $dispatch"
+    throw "MISSING_HOST_POOL: leg-A dispatch wrapper unavailable: $dispatch"
 }
 $selectionHelper = Join-Path $bridge "GrokWorkerSelectionReceipt.ps1"
 if (-not (Test-Path -LiteralPath $selectionHelper -PathType Leaf)) {
@@ -109,6 +109,9 @@ $meta = [ordered]@{
     not_docker_worker = $true
     activity_name = $ActivityName
     activity_semantics_cn = "Temporal Activity 语义=触发 Host 上的 Grok WorkerPool；Grok 进程只在 Host 跑"
+    route_role = "auxiliary_temporal_trigger_to_host_leg_a_not_durable_leg_b"
+    route_selection = "selected_by_task_fit_or_existing_route_receipt"
+    route_continuity = "continuous_or_resume_does_not_switch_leg"
     workflow_id = $WorkflowId
     run_id = $RunId
     temporal_address_hint = "127.0.0.1:7233"

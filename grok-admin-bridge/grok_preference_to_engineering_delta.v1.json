@@ -1,6 +1,6 @@
 {
-  "schema_version": "xinao.grok_preference_to_engineering_delta.v1",
-  "sentinel": "SENTINEL:GROK_PREFERENCE_TO_ENGINEERING_DELTA_V1",
+  "schema_version": "xinao.grok_preference_to_engineering_delta.v2",
+  "sentinel": "SENTINEL:GROK_PREFERENCE_TO_ENGINEERING_DELTA_V2",
   "status": "active",
   "purpose_cn": "稳定口语偏好/纠正 → 最小有效工程增量，减少后续解释、选择、监督与返工；不为每条偏好新建项目、门禁或例行追问。",
   "source_alignment": {
@@ -49,9 +49,11 @@
     "width": "dynamic"
   },
   "worker_transport": {
-    "policy": "adaptive_by_net_value",
-    "bounded_independent": "direct_or_headless_batch_ok",
-    "durable_multiwave_mainline": "Temporal + Docker houtai-gongren + worker-internal LangGraph"
+    "authority": "bridge.config.json#canonical_route",
+    "policy": "selected_by_task_fit_or_existing_route_receipt",
+    "bounded_online_current_tui": "leg_a_direct_grok_worker_pool_typical",
+    "post_window_cross_restart_or_unattended_multiwave": "leg_b_temporal_docker_langgraph_after_explicit_handoff",
+    "continuous_or_resume_switches_leg": false
   },
   "window_roles": {
     "grok_4_5": "judge_stability_and_land_delta; may_write_admin_under_standing_auth",

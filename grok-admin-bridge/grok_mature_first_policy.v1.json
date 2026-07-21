@@ -1,8 +1,9 @@
 {
-  "schema_version": "xinao.mature_first_policy.v2",
-  "sentinel": "SENTINEL:MATURE_FIRST_POLICY_V2",
+  "schema_version": "xinao.mature_first_policy.v3",
+  "sentinel": "SENTINEL:MATURE_FIRST_POLICY_V3",
   "status": "active",
-  "locked_core": "Temporal + Docker houtai-gongren + worker-internal LangGraph",
+  "route_authority": "bridge.config.json#canonical_route",
+  "locked_core": "A/B dual-leg selection by task fit or existing route receipt; continuous/resume alone never switches leg",
   "default_for_non_core": "external mature component before new local glue",
   "local_code_limit": [
     "parameters",

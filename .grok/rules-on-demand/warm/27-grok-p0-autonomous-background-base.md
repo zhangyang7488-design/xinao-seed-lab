@@ -3,7 +3,7 @@
 SENTINEL:GROK_P0_AUTONOMOUS_BACKGROUND_BASE_RULE_V2
 
 **主合同：** `grok_p0_autonomous_background_base.v1.json`
-**规范主路：** Temporal + Docker `houtai-gongren` + worker-internal LangGraph。
+**双腿主路：** 当前交互 TUI 在线的有界工作通常走 A=`direct-grok-worker-pool`；只有显式交接后的关窗耐久、跨重启续作或无人后台多波才走 B=`Temporal→Docker houtai-gongren→worker-internal LangGraph`。已有 route receipt 优先连续，`continuous`/`resume` 本身不切腿。
 
 ## 全局语义
 
@@ -18,7 +18,7 @@ SENTINEL:GROK_P0_AUTONOMOUS_BACKGROUND_BASE_RULE_V2
 | **Grok** | 研究、审计、测试、证据和独立视角；收益接近时软偏好 |
 | **Codex agents** | 上下文继承、紧耦合工程、并行验证 |
 | **combined** | 两类优势能互补且额外成本有净收益时组合 |
-| **WorkerPool** | 有界 bootstrap/fallback；不是默认耐久路由或常驻补池 |
+| **WorkerPool** | 正常 A 腿；按 task fit/既有 route receipt 选择，不是 fallback、无条件默认或常驻补池 |
 
 工人、工具、外搜、宽度和顺序均动态选择；没有唯一默认模型工人，也不要求用户逐次点名。额度是调度遥测，不是“不调用”的门禁。
 

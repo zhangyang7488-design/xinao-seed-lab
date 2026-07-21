@@ -268,6 +268,34 @@ def test_provider_output_write_is_atomic_and_immutable(tmp_path: Path) -> None:
         subject._atomic_bytes(target, b"replacement")
 
 
+def test_rules_ref_and_candidate_write_boundary_are_hash_bound_before_model(
+    tmp_path: Path,
+) -> None:
+    rules = tmp_path / "rules.txt"
+    rules.write_text("sealed rules", encoding="utf-8")
+    rules_sha = subject._sha(rules)
+    package = {
+        "rules_ref": {"path": str(rules), "sha256": rules_sha},
+        "rules_sha256": rules_sha,
+    }
+    assert subject._package_artifact_ref(
+        package, "rules_ref", expected_sha256_field="rules_sha256"
+    ) == {"path": str(rules.resolve()), "sha256": rules_sha}
+
+    candidate = tmp_path / "candidate"
+    candidate.mkdir()
+    assert subject._candidate_write_domain(candidate) == (
+        "candidate_output_root:"
+        + str(candidate.resolve()).replace("\\", "/").casefold()
+    )
+
+    rules.write_text("drifted rules", encoding="utf-8")
+    with pytest.raises(ValueError, match="hash-bound artifact drifted"):
+        subject._package_artifact_ref(
+            package, "rules_ref", expected_sha256_field="rules_sha256"
+        )
+
+
 def test_direct_runner_rejects_b_temporal_and_fake_adapter_before_provider() -> None:
     envelope = {
         "leg": "A",
@@ -306,6 +334,9 @@ def test_nonzero_provider_exit_with_valid_common_receipt_is_terminal_recordable(
     prompt.write_text("bounded task", encoding="utf-8")
     context = tmp_path / "context.json"
     _write_json(context, {"authority": False, "completion_claim_allowed": False})
+    rules = tmp_path / "rules.txt"
+    rules.write_text("candidate-only rules", encoding="utf-8")
+    rules_sha = subject._sha(rules)
     manifest = tmp_path / "worker-package-batch.json"
     envelope = tmp_path / "dispatch-envelope.json"
     selection = tmp_path / "selection.json"
@@ -323,6 +354,8 @@ def test_nonzero_provider_exit_with_valid_common_receipt_is_terminal_recordable(
         "package_identity_sha256": "1" * 64,
         "prompt_ref": {"path": str(prompt)},
         "context_manifest_ref": {"path": str(context)},
+        "rules_ref": {"path": str(rules), "sha256": rules_sha},
+        "rules_sha256": rules_sha,
         "cwd": str(cwd),
         "phase": "VERIFY",
         "role": "critic",
@@ -348,6 +381,16 @@ def test_nonzero_provider_exit_with_valid_common_receipt_is_terminal_recordable(
         assert command[command.index("-QuotaSnapshotId") + 1] == "quota-1"
         assert command[command.index("-QuotaResolutionStatus") + 1] == (
             "sealed_manifest"
+        )
+        assert command[command.index("-CommonRulesFile") + 1] == str(rules.resolve())
+        assert command[command.index("-CommonRulesSha256") + 1] == rules_sha
+        assert command[command.index("-CommonCandidateOutputRoot") + 1] == str(
+            output_root.resolve()
+        )
+        write_domain_index = command.index("-CommonWriteDomains") + 1
+        assert command[write_domain_index] == (
+            "candidate_output_root:"
+            + str(output_root.resolve()).replace("\\", "/").casefold()
         )
         pool_id = command[command.index("-PoolId") + 1]
         operation_id = command[command.index("-CommonOperationId") + 1]
