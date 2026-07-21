@@ -15,6 +15,7 @@ import stat
 import subprocess
 import sys
 import tempfile
+import time
 from typing import Any, Callable, Mapping
 import uuid
 
@@ -715,6 +716,62 @@ def _build_worker_terminal_event(
     )
 
 
+def _terminate_process_tree(process: subprocess.Popen[str]) -> None:
+    """Terminate only the exact provider wrapper tree started by this runner."""
+
+    if process.poll() is not None:
+        return
+    if os.name == "nt":
+        subprocess.run(
+            ["taskkill", "/PID", str(process.pid), "/T", "/F"],
+            check=False,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+        )
+    else:
+        process.terminate()
+    try:
+        process.wait(timeout=5)
+    except subprocess.TimeoutExpired:
+        process.kill()
+        process.wait(timeout=5)
+
+
+def _run_process_with_live_guard(
+    command: list[str],
+    *,
+    timeout_seconds: int,
+    live_guard: Callable[[], object],
+) -> subprocess.CompletedProcess[str]:
+    """Run one provider wrapper while periodically re-reading task-run guards."""
+
+    process = subprocess.Popen(
+        command,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+    )
+    deadline = time.monotonic() + timeout_seconds
+    try:
+        while True:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise subprocess.TimeoutExpired(command, timeout_seconds)
+            try:
+                stdout, stderr = process.communicate(timeout=min(2.0, remaining))
+            except subprocess.TimeoutExpired:
+                live_guard()
+                continue
+            return subprocess.CompletedProcess(command, int(process.returncode or 0), stdout, stderr)
+    except BaseException:
+        _terminate_process_tree(process)
+        raise
+
+
 def _run_package(
     *,
     package: dict[str, Any],
@@ -735,6 +792,8 @@ def _run_package(
     route_claim_evidence_ref: str,
     route_choice_sha256: str,
     physical_consumer_id: str,
+    task_run_dir: Path,
+    task_run_id: str,
     common_contract_binding: Mapping[str, str],
     validate_dispatch_route_claim: Callable[..., dict[str, Any]],
     timeout_sec: int,
@@ -747,18 +806,24 @@ def _run_package(
         selector_root=selector_root,
         runtime_root=runtime_root,
     )
-    route_claim_validation = validate_dispatch_route_claim(
-        route_claim_evidence_ref=route_claim_evidence_ref,
-        dispatch_envelope_ref={
-            "path": str(dispatch_envelope_path),
-            "sha256": dispatch_envelope_sha256,
-        },
-    )
-    _require_route_claim_binding(
-        route_claim_validation,
-        route_choice_sha256=route_choice_sha256,
-        physical_consumer_id=physical_consumer_id,
-    )
+    def live_route_guard() -> dict[str, Any]:
+        validation = validate_dispatch_route_claim(
+            route_claim_evidence_ref=route_claim_evidence_ref,
+            dispatch_envelope_ref={
+                "path": str(dispatch_envelope_path),
+                "sha256": dispatch_envelope_sha256,
+            },
+            expected_task_run_dir=task_run_dir,
+            expected_run_id=task_run_id,
+        )
+        _require_route_claim_binding(
+            validation,
+            route_choice_sha256=route_choice_sha256,
+            physical_consumer_id=physical_consumer_id,
+        )
+        return validation
+
+    route_claim_validation = live_route_guard()
     if package.get("write_domains"):
         raise ValueError(
             "candidate-only package cannot pass authority write domains to leg A"
@@ -871,14 +936,15 @@ def _run_package(
     prior = package.get("prior_attempt_receipt_ref")
     if isinstance(prior, dict) and prior.get("path"):
         command.extend(["-CommonPriorAttemptReceiptPath", str(prior["path"])])
-    completed = subprocess.run(
+    # The first validation admits construction of this package invocation.
+    # Re-read the live scoped mutation guards at the physical side-effect
+    # boundary so a pause/stop racing with command assembly cannot start the
+    # provider from a stale route claim.
+    route_claim_validation = live_route_guard()
+    completed = _run_process_with_live_guard(
         command,
-        check=False,
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-        errors="replace",
-        timeout=max(30, min(timeout_sec, int(package["timeout_sec"])) + 60),
+        timeout_seconds=max(30, min(timeout_sec, int(package["timeout_sec"])) + 60),
+        live_guard=live_route_guard,
     )
     pool_summary = (
         runtime_root / "state" / "grok_worker_pool" / pool_id / "pool_summary.json"
@@ -1399,6 +1465,8 @@ def main() -> int:
     route_claim_validation = validate_dispatch_route_claim(
         route_claim_evidence_ref=route_claim_evidence_ref,
         dispatch_envelope_ref=dispatch_envelope_ref,
+        expected_task_run_dir=task_run_dir,
+        expected_run_id=task_run_id,
     )
     _require_route_claim_binding(
         route_claim_validation,
@@ -1440,6 +1508,8 @@ def main() -> int:
             route_claim_evidence_ref=route_claim_evidence_ref,
             route_choice_sha256=direct_route["route_choice"]["choice_sha256"],
             physical_consumer_id=physical_consumer_id,
+            task_run_dir=task_run_dir,
+            task_run_id=task_run_id,
             common_contract_binding=common_contract_bindings[package_id],
             validate_dispatch_route_claim=validate_dispatch_route_claim,
             timeout_sec=args.timeout_sec,

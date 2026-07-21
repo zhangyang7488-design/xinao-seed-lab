@@ -135,6 +135,9 @@ $commonMode = (
     -not [string]::IsNullOrWhiteSpace($CommonPriorAttemptReceiptPath) -or
     -not [string]::IsNullOrWhiteSpace($CommonAdapterRoot)
 )
+if ($commonMode -and $SkipPauseGate) {
+    throw "GROK_WORKER_POOL_COMMON_SKIP_PAUSE_FORBIDDEN"
+}
 $commonContract = $null
 $commonPreflight = $null
 $commonAdapterScript = ""
