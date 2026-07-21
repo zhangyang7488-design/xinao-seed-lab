@@ -480,8 +480,12 @@ def test_leg_b_consumer_reuses_validated_ancestor_without_current_model_call(
         "output_contract_sha256": package["output_contract_sha256"],
         "prior_attempt_receipt_ref": package["prior_attempt_receipt_ref"],
         "prior_logical_contract_ref": package["prior_logical_contract_ref"],
+        "package_manifest_ref": fixture["current_ref"]["path"],
+        "package_manifest_sha256": fixture["current_ref"]["sha256"],
         "dispatch_envelope_ref": str(tmp_path / "current-envelope.json"),
         "dispatch_envelope_sha256": "9" * 64,
+        "dispatch_route_claim_ref": str(tmp_path / "route-claim.json"),
+        "dispatch_task_run_dir": str(tmp_path / "run-current"),
         "dispatch_task_run_id": "run-current",
         "package_seal_sha256": "8" * 64,
     }
@@ -501,6 +505,8 @@ def test_leg_b_consumer_reuses_validated_ancestor_without_current_model_call(
     assert reused["operation_id"] == contract["logical_operation_id"]
     assert reused["terminal_record_id"] == "op-current-carrier"
     assert reused["package_manifest_sha256"] == fixture["current_ref"]["sha256"]
+    assert reused["dispatch_task_run_dir"] == str(tmp_path / "run-current")
+    assert reused["dispatch_task_run_id"] == "run-current"
     assert reused["replayed"] is True
     assert reused["reuse_disposition"] == "ACCEPTED_IDENTICAL_REUSE"
     assert reused["prior_accepted_ancestor_binding"]["skip_provider_execution"] is True

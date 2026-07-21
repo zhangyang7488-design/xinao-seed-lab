@@ -1656,6 +1656,27 @@ def _bind_replay_capability_observation(
     }
 
 
+def _bind_current_canonical_carrier(
+    result: dict[str, Any],
+    lane: dict[str, Any],
+) -> dict[str, Any]:
+    """Rebind an accepted result to the exact current, already-validated carrier."""
+
+    return {
+        **result,
+        "work_key": str(lane.get("work_key") or ""),
+        "package_id": str(lane.get("package_id") or ""),
+        "package_manifest_ref": str(lane.get("package_manifest_ref") or ""),
+        "package_manifest_sha256": str(lane.get("package_manifest_sha256") or ""),
+        "dispatch_envelope_ref": str(lane.get("dispatch_envelope_ref") or ""),
+        "dispatch_envelope_sha256": str(lane.get("dispatch_envelope_sha256") or ""),
+        "dispatch_route_claim_ref": str(lane.get("dispatch_route_claim_ref") or ""),
+        "dispatch_task_run_dir": str(lane.get("dispatch_task_run_dir") or ""),
+        "dispatch_task_run_id": str(lane.get("dispatch_task_run_id") or ""),
+        "package_seal_sha256": str(lane.get("package_seal_sha256") or ""),
+    }
+
+
 def _prior_accepted_ancestor_lane(
     *,
     lane: dict[str, Any],
@@ -1740,15 +1761,12 @@ def _prior_accepted_ancestor_lane(
         raise DockerGrokPermanentError(
             "accepted ancestor Docker Grok operation disagrees with the validated action"
         )
-    reused = _bind_replay_capability_observation(cached, model_capabilities)
+    reused = _bind_current_canonical_carrier(
+        _bind_replay_capability_observation(cached, model_capabilities),
+        lane,
+    )
     reused.update(
         {
-            "package_manifest_ref": current_manifest_ref["path"],
-            "package_manifest_sha256": current_manifest_ref["sha256"],
-            "dispatch_envelope_ref": str(lane.get("dispatch_envelope_ref") or ""),
-            "dispatch_envelope_sha256": str(lane.get("dispatch_envelope_sha256") or ""),
-            "dispatch_task_run_id": str(lane.get("dispatch_task_run_id") or ""),
-            "package_seal_sha256": str(lane.get("package_seal_sha256") or ""),
             "prior_accepted_ancestor_binding": ancestor_binding,
             "terminal_record_id": current_operation_id,
             "replayed": True,
@@ -2297,7 +2315,12 @@ async def _execute_lane_locked(
         operation_spec_sha256=operation_spec_sha256,
     )
     if cached is not None:
-        return _bind_replay_capability_observation(cached, model_capabilities)
+        replayed = _bind_replay_capability_observation(cached, model_capabilities)
+        return (
+            _bind_current_canonical_carrier(replayed, lane)
+            if canonical_package_mode
+            else replayed
+        )
     previous_manifest = _read_json(operation_manifest)
     prior_invocation_evidence = [
         dict(item)
@@ -2788,17 +2811,7 @@ async def _execute_lane_locked(
         "cross_seam_attempt_receipt_sha256": attempt_receipt_sha256,
     }
     if canonical_package_mode:
-        lane_result.update(
-            {
-                "work_key": effective_work_key,
-                "package_id": str(lane.get("package_id") or ""),
-                "package_manifest_ref": package_manifest_ref,
-                "package_manifest_sha256": package_manifest_sha256,
-                "dispatch_envelope_ref": str(lane.get("dispatch_envelope_ref") or ""),
-                "dispatch_envelope_sha256": str(lane.get("dispatch_envelope_sha256") or ""),
-                "package_seal_sha256": str(lane.get("package_seal_sha256") or ""),
-            }
-        )
+        lane_result = _bind_current_canonical_carrier(lane_result, lane)
     if lane.get("correlation_id"):
         lane_result["correlation_id"] = str(lane["correlation_id"])
     if lane.get("parent_operation_id"):
