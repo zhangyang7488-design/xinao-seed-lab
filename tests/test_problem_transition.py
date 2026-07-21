@@ -337,11 +337,14 @@ def test_external_problem_state_is_rejected_and_malformed_frontier_is_reported(
     assert caught.value.reason_code == "EXTERNAL_PROBLEM_FACTS_NOT_AUTHORIZED"
 
     frontier = awareness_module._frontier_reconciliation_from_events(  # noqa: SLF001
-        [{"kind": "global_frontier_reconciliation"}]
+        run_dir,
+        run_id,
+        [{"kind": "global_frontier_reconciliation"}],
     )
     assert frontier is not None
-    assert frontier["status"] == "invalid"
-    assert frontier["reason_codes"] == ["INPUT_INVALID", "GLOBAL_FRONTIER_RECEIPT_INVALID"]
+    assert frontier["status"] == "legacy_untrusted"
+    assert frontier["parent_wait_claim_allowed"] is False
+    assert frontier["reason_codes"] == ["GLOBAL_FRONTIER_V1_LEGACY_UNTRUSTED"]
 
 
 def test_untyped_effect_and_global_close_cannot_advance_problem_lifecycle(

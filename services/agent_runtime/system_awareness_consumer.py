@@ -36,7 +36,9 @@ COMPLETION_CARD_VERSION = "xinao.work_key_completion_card.v1"
 EPISODE_OUTCOME_VERSION = "xinao.episode_outcome_projection.v1"
 PROBLEM_PROJECTION_VERSION = "xinao.problem_projection.v1"
 PROBLEM_TRANSITION_VERSION = "xinao.problem_transition.v1"
-FRONTIER_RECONCILIATION_VERSION = "xinao.global_frontier_reconciliation.v1"
+FRONTIER_RECONCILIATION_VERSION = "xinao.global_frontier_reconciliation.v2"
+LEGACY_FRONTIER_RECONCILIATION_VERSION = "xinao.global_frontier_reconciliation.v1"
+FRONTIER_INVENTORY_VERSION = "xinao.global_frontier_inventory.v1"
 IDENTITY_VERSION = "xinao.identity_reconciliation.v1"
 PREFLIGHT_VERSION = "xinao.supervisor_capability_preflight.v1"
 TEMPORAL_VERSION = "xinao.temporal_identity_reconciliation.v1"
@@ -44,6 +46,8 @@ RECOVERY_VERSION = "xinao.recovery_truth.v1"
 TEMP_OBJECT_VERSION = "xinao.temporary_object_lifecycle.v1"
 WORKTREE_LIFECYCLE_VERSION = "xinao.worktree_lifecycle_report.v1"
 WORKTREE_RECORDS_VERSION = "xinao.worktree_lifecycle_records.v1"
+WORKTREE_CARRIER_RESOLUTION_VERSION = "xinao.worktree_carrier_resolution.v1"
+WORKTREE_IGNORED_CLASSIFICATION_VERSION = "xinao.worktree_ignored_classification.v1"
 WORKTREE_ARCHIVE_VERSION = "xinao.worktree_archive_manifest.v1"
 WORKTREE_RESTORE_VERSION = "xinao.worktree_archive_restore_receipt.v1"
 WORK_UNIT_EVIDENCE_VERSION = "xinao.work_unit_finalizer_evidence.v1"
@@ -1476,51 +1480,168 @@ def reconcile_typed_problem_lifecycle(
     }
 
 
-def reconcile_global_frontier(raw: Mapping[str, object]) -> dict[str, Any]:
-    """Validate the proof boundary for a parent-wide frontier decision.
+def _legacy_untrusted_frontier(source_schema_version: object) -> dict[str, Any]:
+    return {
+        "schema_version": FRONTIER_RECONCILIATION_VERSION,
+        "source_schema_version": str(
+            source_schema_version or LEGACY_FRONTIER_RECONCILIATION_VERSION
+        ),
+        "ok": False,
+        "status": "legacy_untrusted",
+        "parent_state": "open",
+        "global_frontier_reconciled": False,
+        "parent_wait_claim_allowed": False,
+        "reason_codes": ["GLOBAL_FRONTIER_V1_LEGACY_UNTRUSTED"],
+        "authority": False,
+        "completion_claim_allowed": False,
+    }
 
-    This is a read-only consumer over task-run facts.  A local wait or a
-    transport failure can describe only its affected cone; it cannot become a
-    parent-wide wait without a complete, hash-bound coverage record.
-    """
+
+def _frontier_event_head(raw: object, field: str) -> dict[str, object]:
+    head = _require_mapping(raw, field)
+    event_count = head.get("event_count")
+    event_id = str(head.get("event_id") or "").strip()
+    prefix_sha256 = str(head.get("prefix_sha256") or "").strip()
+    if (
+        isinstance(event_count, bool)
+        or not isinstance(event_count, int)
+        or event_count < 1
+        or not event_id
+        or not _SHA256_RE.fullmatch(prefix_sha256)
+    ):
+        raise SystemAwarenessError(
+            "GLOBAL_FRONTIER_EVENT_HEAD_INVALID",
+            f"{field} must bind a positive event_count, event_id, and sha256 prefix",
+        )
+    return {
+        "event_count": event_count,
+        "event_id": event_id,
+        "prefix_sha256": prefix_sha256,
+    }
+
+
+def _read_hash_bound_frontier_inventory(reference: object) -> tuple[dict[str, Any], dict]:
+    reference_text = str(reference or "").strip()
+    if "#sha256=" not in reference_text:
+        raise SystemAwarenessError(
+            "GLOBAL_FRONTIER_INVENTORY_REF_INVALID",
+            "inventory_ref must contain an exact #sha256 binding",
+        )
+    path_text, expected_sha256 = reference_text.rsplit("#sha256=", 1)
+    if not path_text or not _SHA256_RE.fullmatch(expected_sha256):
+        raise SystemAwarenessError(
+            "GLOBAL_FRONTIER_INVENTORY_REF_INVALID", "inventory_ref is malformed"
+        )
+    path = Path(path_text).resolve()
+    try:
+        inventory, raw = _read_json(path, "global_frontier_inventory")
+    except SystemAwarenessError as exc:
+        raise SystemAwarenessError(
+            "GLOBAL_FRONTIER_INVENTORY_UNREADABLE", "inventory artifact cannot be read"
+        ) from exc
+    actual_sha256 = _sha256_bytes(raw)
+    if actual_sha256 != expected_sha256:
+        raise SystemAwarenessError(
+            "GLOBAL_FRONTIER_INVENTORY_HASH_DRIFT",
+            "inventory artifact no longer matches its digest",
+        )
+    if (
+        inventory.get("schema_version") != FRONTIER_INVENTORY_VERSION
+        or inventory.get("authority") is not False
+        or inventory.get("completion_claim_allowed") is not False
+    ):
+        raise SystemAwarenessError(
+            "GLOBAL_FRONTIER_INVENTORY_INVALID",
+            "inventory must be the non-authoritative v1 artifact",
+        )
+    return inventory, {
+        "path": str(path),
+        "sha256": actual_sha256,
+        "schema_version": FRONTIER_INVENTORY_VERSION,
+    }
+
+
+def reconcile_global_frontier(raw: Mapping[str, object]) -> dict[str, Any]:
+    """Validate a hash-bound parent-frontier proof without becoming its authority."""
 
     data = _require_mapping(raw, "global_frontier_reconciliation")
+    if data.get("schema_version") != FRONTIER_RECONCILIATION_VERSION:
+        return _legacy_untrusted_frontier(data.get("schema_version"))
+
     parent_mainline_id = str(data.get("parent_mainline_id") or "").strip()
-    event_head = str(data.get("event_head") or "").strip()
+    task_run_id = str(data.get("task_run_id") or "").strip()
     scan_generation = str(data.get("scan_generation") or "").strip()
-    if not parent_mainline_id or not event_head or not scan_generation:
+    disposition = str(data.get("frontier_disposition") or "").strip()
+    event_head = _frontier_event_head(data.get("event_head"), "event_head")
+    if not parent_mainline_id or not task_run_id or not scan_generation:
         raise SystemAwarenessError(
             "INPUT_INVALID",
-            "parent_mainline_id, event_head, and scan_generation are required",
+            "parent_mainline_id, task_run_id, event_head, and scan_generation are required",
         )
-    raw_transactions = data.get("transactions")
+    inventory, inventory_binding = _read_hash_bound_frontier_inventory(
+        data.get("inventory_ref")
+    )
+    inventory_head = _frontier_event_head(inventory.get("event_head"), "inventory.event_head")
+
+    reasons: list[str] = []
+    fatal_reasons: list[str] = []
+    if (
+        inventory.get("parent_mainline_id") != parent_mainline_id
+        or inventory.get("task_run_id") != task_run_id
+        or inventory.get("scan_generation") != scan_generation
+    ):
+        fatal_reasons.append("GLOBAL_FRONTIER_INVENTORY_IDENTITY_MISMATCH")
+    if inventory_head != event_head:
+        fatal_reasons.append("GLOBAL_FRONTIER_EVENT_HEAD_MISMATCH")
+
+    raw_transactions = inventory.get("transactions")
     if not isinstance(raw_transactions, list):
-        raise SystemAwarenessError("INPUT_INVALID", "transactions must be an array")
+        raise SystemAwarenessError("INPUT_INVALID", "inventory.transactions must be an array")
     transactions: list[dict[str, Any]] = []
     transaction_ids: set[str] = set()
     scope_violations: list[str] = []
+    batch_ids: set[str] = set()
+    package_batch_ids: set[str] = set()
+    parent_count = 0
     for index, raw_transaction in enumerate(raw_transactions):
         transaction = _require_mapping(raw_transaction, f"transactions[{index}]")
-        transaction_id = str(
-            transaction.get("transaction_id") or transaction.get("work_key") or ""
-        ).strip()
+        transaction_id = str(transaction.get("transaction_id") or "").strip()
+        scope = str(transaction.get("scope") or "").strip()
+        work_key = str(transaction.get("work_key") or "").strip()
+        batch_id = str(transaction.get("batch_id") or "").strip()
+        package_id = str(transaction.get("package_id") or "").strip()
+        state = str(transaction.get("state") or "").strip()
+        affected_cone = str(transaction.get("affected_cone") or "").strip()
+        consumer = str(transaction.get("consumer") or "").strip()
+        evidence_refs_raw = transaction.get("evidence_refs")
+        evidence_refs = (
+            [str(value).strip() for value in evidence_refs_raw if str(value).strip()]
+            if isinstance(evidence_refs_raw, list)
+            else []
+        )
         if not transaction_id or transaction_id in transaction_ids:
             scope_violations.append("DUPLICATE_OR_MISSING_TRANSACTION_ID")
         transaction_ids.add(transaction_id)
-        scope = str(transaction.get("scope") or "").strip()
         if scope not in {"package", "batch", "parent"}:
             scope_violations.append("TRANSACTION_SCOPE_INVALID")
-        batch_id = str(transaction.get("batch_id") or "").strip()
-        package_id = str(transaction.get("package_id") or "").strip()
-        work_key = str(transaction.get("work_key") or transaction_id).strip()
-        if scope == "package" and (
-            work_key == parent_mainline_id or (batch_id and batch_id == parent_mainline_id)
-        ):
-            scope_violations.append("PACKAGE_PARENT_SCOPE_COLLISION")
-        if scope == "batch" and batch_id == parent_mainline_id:
-            scope_violations.append("BATCH_PARENT_SCOPE_COLLISION")
-        if scope == "parent" and transaction_id != parent_mainline_id:
-            scope_violations.append("PARENT_SCOPE_ID_MISMATCH")
+        if not work_key or not state or not affected_cone or not consumer or not evidence_refs:
+            scope_violations.append("TRANSACTION_PROOF_INCOMPLETE")
+        if scope == "package":
+            if not batch_id or not package_id:
+                scope_violations.append("PACKAGE_IDENTITY_INCOMPLETE")
+            package_batch_ids.add(batch_id)
+            if work_key == parent_mainline_id or batch_id == parent_mainline_id:
+                scope_violations.append("PACKAGE_PARENT_SCOPE_COLLISION")
+        elif scope == "batch":
+            batch_ids.add(batch_id)
+            if not batch_id:
+                scope_violations.append("BATCH_IDENTITY_INCOMPLETE")
+            if batch_id == parent_mainline_id:
+                scope_violations.append("BATCH_PARENT_SCOPE_COLLISION")
+        elif scope == "parent":
+            parent_count += 1
+            if transaction_id != parent_mainline_id or work_key != parent_mainline_id:
+                scope_violations.append("PARENT_SCOPE_ID_MISMATCH")
         transactions.append(
             {
                 "transaction_id": transaction_id,
@@ -1528,44 +1649,27 @@ def reconcile_global_frontier(raw: Mapping[str, object]) -> dict[str, Any]:
                 "work_key": work_key,
                 "batch_id": batch_id,
                 "package_id": package_id,
-                "state": str(transaction.get("state") or "open"),
-                "affected_cone": str(transaction.get("affected_cone") or transaction_id),
-                "consumer": str(transaction.get("consumer") or ""),
+                "state": state,
+                "affected_cone": affected_cone,
+                "consumer": consumer,
+                "evidence_refs": evidence_refs,
             }
         )
 
-    covered_raw = data.get("covered_transaction_ids")
+    covered_raw = inventory.get("covered_transaction_ids")
     if not isinstance(covered_raw, list):
-        raise SystemAwarenessError("INPUT_INVALID", "covered_transaction_ids must be an array")
+        raise SystemAwarenessError(
+            "INPUT_INVALID", "inventory.covered_transaction_ids must be an array"
+        )
     covered = {str(value).strip() for value in covered_raw if str(value).strip()}
     unknown_covered = sorted(covered - transaction_ids)
     uncovered = sorted(transaction_ids - covered)
-    disposition = str(data.get("frontier_disposition") or "").strip()
     global_exhaustion_requested = disposition in {
         "durable_wait",
         "no_positive_global_candidate",
     }
     local_wait_only = disposition in {"local_wait", "blocked_cone"}
-    reasons: list[str] = []
-    fatal_reasons: list[str] = []
-    if scope_violations:
-        fatal_reasons.extend(sorted(set(scope_violations)))
-        reasons.extend(sorted(set(scope_violations)))
-    if unknown_covered:
-        fatal_reasons.append("UNKNOWN_COVERED_TRANSACTION")
-        reasons.append("UNKNOWN_COVERED_TRANSACTION")
-    if uncovered:
-        fatal_reasons.append("GLOBAL_COVERAGE_INCOMPLETE")
-        reasons.append("GLOBAL_COVERAGE_INCOMPLETE")
-    if local_wait_only:
-        reasons.append("LOCAL_WAIT_SCOPE_PRESERVED")
-    if global_exhaustion_requested and not covered == transaction_ids:
-        fatal_reasons.append("GLOBAL_EXHAUSTION_REQUIRES_COMPLETE_COVERAGE")
-        reasons.append("GLOBAL_EXHAUSTION_REQUIRES_COMPLETE_COVERAGE")
-    if global_exhaustion_requested and not transactions:
-        fatal_reasons.append("GLOBAL_EXHAUSTION_REQUIRES_TRANSACTION_SET")
-        reasons.append("GLOBAL_EXHAUSTION_REQUIRES_TRANSACTION_SET")
-    valid = not fatal_reasons and disposition in {
+    valid_disposition = disposition in {
         "execute",
         "advance_mainline",
         "local_wait",
@@ -1573,25 +1677,89 @@ def reconcile_global_frontier(raw: Mapping[str, object]) -> dict[str, Any]:
         "durable_wait",
         "no_positive_global_candidate",
     }
-    parent_state = (
-        "open"
-        if local_wait_only or not valid
-        else "waiting"
-        if global_exhaustion_requested
-        else "open"
-    )
+    if not valid_disposition:
+        fatal_reasons.append("GLOBAL_FRONTIER_DISPOSITION_INVALID")
+    if scope_violations:
+        fatal_reasons.extend(sorted(set(scope_violations)))
+    if unknown_covered:
+        fatal_reasons.append("UNKNOWN_COVERED_TRANSACTION")
+    if uncovered:
+        fatal_reasons.append("GLOBAL_COVERAGE_INCOMPLETE")
+    if local_wait_only:
+        reasons.append("LOCAL_WAIT_SCOPE_PRESERVED")
+
+    wakeable_wait: dict[str, Any] = {
+        "schema_version": WAKEABLE_WAIT_VERSION,
+        "status": "not_required",
+        "wait_allowed": False,
+        "reason_codes": ["WAKEABLE_WAIT_NOT_REQUIRED_FOR_LOCAL_DECISION"],
+        "mutation_performed": False,
+        "completion_claim_allowed": False,
+        "blocked_claim_allowed": False,
+    }
+    if global_exhaustion_requested:
+        exhausted_states = {
+            "completed",
+            "retired",
+            "blocked_external",
+            "waiting_external",
+            "no_positive_action",
+            "discarded",
+            "superseded",
+        }
+        enumeration_basis = inventory.get("enumeration_basis")
+        basis = (
+            _require_mapping(enumeration_basis, "inventory.enumeration_basis")
+            if isinstance(enumeration_basis, Mapping)
+            else {}
+        )
+        basis_ok = (
+            inventory.get("inventory_complete") is True
+            and bool(str(basis.get("discovery_consumer") or "").strip())
+            and isinstance(basis.get("source_refs"), list)
+            and any(str(value or "").strip() for value in basis.get("source_refs") or [])
+            and basis.get("alternative_paths_checked") is True
+            and basis.get("prerequisites_checked") is True
+        )
+        if not transactions:
+            fatal_reasons.append("GLOBAL_EXHAUSTION_REQUIRES_TRANSACTION_SET")
+        if parent_count != 1:
+            fatal_reasons.append("GLOBAL_EXHAUSTION_REQUIRES_EXACT_PARENT")
+        if package_batch_ids - batch_ids:
+            fatal_reasons.append("GLOBAL_EXHAUSTION_PACKAGE_BATCH_UNBOUND")
+        if any(row["state"] not in exhausted_states for row in transactions):
+            fatal_reasons.append("GLOBAL_EXHAUSTION_ACTIVE_TRANSACTION_PRESENT")
+        if covered != transaction_ids:
+            fatal_reasons.append("GLOBAL_EXHAUSTION_REQUIRES_COMPLETE_COVERAGE")
+        if not basis_ok:
+            fatal_reasons.append("GLOBAL_FRONTIER_INVENTORY_PROOF_INCOMPLETE")
+        wake_raw = data.get("wakeable_wait")
+        wakeable_wait = evaluate_wakeable_wait(
+            wake_raw if isinstance(wake_raw, Mapping) else {}
+        )
+        if wakeable_wait.get("wait_allowed") is not True:
+            fatal_reasons.append("GLOBAL_FRONTIER_WAKE_PROOF_INCOMPLETE")
+
+    reasons.extend(fatal_reasons)
+    valid = not fatal_reasons
+    parent_state = "waiting" if valid and global_exhaustion_requested else "open"
     receipt_core = {
         "schema_version": FRONTIER_RECONCILIATION_VERSION,
         "parent_mainline_id": parent_mainline_id,
+        "task_run_id": task_run_id,
         "event_head": event_head,
         "scan_generation": scan_generation,
+        "inventory_ref": str(data.get("inventory_ref") or ""),
         "frontier_disposition": disposition,
         "covered_transaction_ids": sorted(covered),
         "transactions": transactions,
+        "wakeable_wait": wakeable_wait,
     }
     return {
         **receipt_core,
+        "inventory_binding": inventory_binding,
         "receipt_sha256": hashlib.sha256(artifact_json_bytes(receipt_core)).hexdigest(),
+        "ok": valid,
         "status": "valid" if valid else "invalid",
         "parent_state": parent_state,
         "global_frontier_reconciled": valid and global_exhaustion_requested,
@@ -2117,6 +2285,25 @@ def _hash_parts(parts: Sequence[bytes]) -> str:
     return digest.hexdigest()
 
 
+def _ignored_path_class(relative: str) -> str:
+    """Classify only proven disposable caches; every other ignored path is material."""
+
+    normalized = relative.replace("\\", "/").strip("/")
+    components = [component.casefold() for component in normalized.split("/") if component]
+    cache_components = {
+        ".hypothesis",
+        ".mypy_cache",
+        ".pytest_cache",
+        ".ruff_cache",
+        "__pycache__",
+    }
+    if any(component in cache_components for component in components):
+        return "cache"
+    if components and components[-1].endswith((".pyc", ".pyo")):
+        return "cache"
+    return "material"
+
+
 def _dirty_facts(worktree: Path) -> dict[str, Any]:
     status_raw, _ = _git_bytes(worktree, "status", "--porcelain=v1", "-z", "--untracked-files=all")
     parts = status_raw.split(b"\0")
@@ -2162,22 +2349,75 @@ def _dirty_facts(worktree: Path) -> dict[str, Any]:
         "-z",
     )
     ignored_parts: list[bytes] = []
+    ignored_cache_parts: list[bytes] = []
+    ignored_material_parts: list[bytes] = []
     ignored_sample: list[str] = []
+    ignored_cache_sample: list[str] = []
+    ignored_material_sample: list[str] = []
+    ignored_cache_count = 0
+    ignored_material_count = 0
     for raw_path in ignored_raw.split(b"\0"):
         if not raw_path:
             continue
         relative = raw_path.decode("utf-8", errors="surrogateescape")
-        if len(ignored_sample) < 20:
-            ignored_sample.append(relative)
         full = worktree / relative.rstrip("/")
-        try:
-            stat = full.stat()
-            fact = f"{relative}\0{stat.st_size}\0{stat.st_mtime_ns}".encode(
-                "utf-8", errors="surrogateescape"
+        classified_paths = [relative]
+        if full.is_dir() and _ignored_path_class(relative) == "material":
+            _, direct_ignore_code = _git_bytes(
+                worktree,
+                "check-ignore",
+                "-q",
+                "--",
+                relative.rstrip("/"),
+                allowed=(0, 1),
             )
-        except OSError:
-            fact = f"{relative}\0MISSING".encode("utf-8", errors="surrogateescape")
-        ignored_parts.append(fact)
+            if direct_ignore_code == 1:
+                nested_raw, _ = _git_bytes(
+                    worktree,
+                    "ls-files",
+                    "--others",
+                    "--ignored",
+                    "--exclude-standard",
+                    "-z",
+                    "--",
+                    relative.rstrip("/"),
+                )
+                nested_paths = [
+                    value.decode("utf-8", errors="surrogateescape")
+                    for value in nested_raw.split(b"\0")
+                    if value
+                ]
+                if nested_paths:
+                    classified_paths = nested_paths
+        for classified_path in classified_paths:
+            if len(ignored_sample) < 20:
+                ignored_sample.append(classified_path)
+            path_class = _ignored_path_class(classified_path)
+            if path_class == "cache":
+                ignored_cache_count += 1
+                if len(ignored_cache_sample) < 20:
+                    ignored_cache_sample.append(classified_path)
+            else:
+                ignored_material_count += 1
+                if len(ignored_material_sample) < 20:
+                    ignored_material_sample.append(classified_path)
+            classified_full = worktree / classified_path.rstrip("/")
+            try:
+                stat = classified_full.stat()
+                fact = (
+                    f"{classified_path}\0{stat.st_size}\0{stat.st_mtime_ns}".encode(
+                        "utf-8", errors="surrogateescape"
+                    )
+                )
+            except OSError:
+                fact = f"{classified_path}\0MISSING".encode(
+                    "utf-8", errors="surrogateescape"
+                )
+            ignored_parts.append(fact)
+            if path_class == "cache":
+                ignored_cache_parts.append(fact)
+            else:
+                ignored_material_parts.append(fact)
 
     working_diff, _ = _git_bytes(worktree, "diff", "--binary", "--no-ext-diff", "HEAD", "--")
     index_diff, _ = _git_bytes(
@@ -2185,6 +2425,8 @@ def _dirty_facts(worktree: Path) -> dict[str, Any]:
     )
     fingerprint = _hash_parts([status_raw, working_diff, index_diff, *sorted(untracked_parts)])
     ignored_fingerprint = _hash_parts([ignored_raw, *sorted(ignored_parts)])
+    ignored_cache_fingerprint = _hash_parts(sorted(ignored_cache_parts))
+    ignored_material_fingerprint = _hash_parts(sorted(ignored_material_parts))
     staged = sum(1 for row in entries if row["code"] != "??" and str(row["code"])[0] != " ")
     unstaged = sum(1 for row in entries if row["code"] != "??" and str(row["code"])[1] != " ")
     untracked = sum(1 for row in entries if row["code"] == "??")
@@ -2199,7 +2441,14 @@ def _dirty_facts(worktree: Path) -> dict[str, Any]:
         "unstaged": unstaged,
         "untracked": untracked,
         "ignored": len(ignored_parts),
-        "ignored_material_present": bool(ignored_parts),
+        "ignored_classification_profile": WORKTREE_IGNORED_CLASSIFICATION_VERSION,
+        "ignored_cache_count": ignored_cache_count,
+        "ignored_cache_sample": ignored_cache_sample,
+        "ignored_cache_fingerprint": ignored_cache_fingerprint,
+        "ignored_material_count": ignored_material_count,
+        "ignored_material_sample": ignored_material_sample,
+        "ignored_material_fingerprint": ignored_material_fingerprint,
+        "ignored_material_present": ignored_material_count > 0,
         "ignored_fingerprint": ignored_fingerprint,
         "ignored_sample": ignored_sample,
         "conflicted": conflicted,
@@ -2217,6 +2466,17 @@ def _unavailable_dirty_facts(worktree: Path) -> dict[str, Any]:
         "unstaged": 0,
         "untracked": 0,
         "ignored": 0,
+        "ignored_classification_profile": WORKTREE_IGNORED_CLASSIFICATION_VERSION,
+        "ignored_cache_count": 0,
+        "ignored_cache_sample": [],
+        "ignored_cache_fingerprint": _sha256_bytes(
+            f"IGNORED_CACHE_FACTS_UNAVAILABLE\n{_path_identity(worktree)}".encode("utf-8")
+        ),
+        "ignored_material_count": 0,
+        "ignored_material_sample": [],
+        "ignored_material_fingerprint": _sha256_bytes(
+            f"IGNORED_MATERIAL_FACTS_UNAVAILABLE\n{_path_identity(worktree)}".encode("utf-8")
+        ),
         "ignored_material_present": True,
         "ignored_fingerprint": _sha256_bytes(
             f"IGNORED_FACTS_UNAVAILABLE\n{_path_identity(worktree)}".encode("utf-8")
@@ -2252,9 +2512,10 @@ def _observation_sha256(observed: Mapping[str, object]) -> str:
             "staged",
             "unstaged",
             "untracked",
-            "ignored",
+            "ignored_classification_profile",
+            "ignored_material_count",
             "ignored_material_present",
-            "ignored_fingerprint",
+            "ignored_material_fingerprint",
             "conflicted",
             "dirty_fingerprint",
             "ahead_base",
@@ -2627,7 +2888,7 @@ def _record_template(observed: Mapping[str, object]) -> dict[str, object]:
             "head": observed["head"],
             "branch": observed["branch"],
             "dirty_fingerprint": observed["dirty_fingerprint"],
-            "ignored_fingerprint": observed["ignored_fingerprint"],
+            "ignored_material_fingerprint": observed["ignored_material_fingerprint"],
             "observation_sha256": observed["observation_sha256"],
         },
     }
@@ -2713,7 +2974,7 @@ def evaluate_worktree_lifecycle(
                     "head",
                     "branch",
                     "dirty_fingerprint",
-                    "ignored_fingerprint",
+                    "ignored_material_fingerprint",
                     "observation_sha256",
                 )
             ):
@@ -3163,6 +3424,152 @@ def scan_worktree_lifecycle(
     }
 
 
+def _carrier_record_task_run_id(record: Mapping[str, object]) -> str | None:
+    try:
+        event_path, _ = _event_reference(record.get("task_run_event_ref"))
+    except SystemAwarenessError:
+        return None
+    return event_path.parent.name
+
+
+def resolve_worktree_carrier(
+    repo_root: Path,
+    *,
+    records: Mapping[str, object] | Sequence[Mapping[str, object]],
+    work_key: str,
+    owner: str,
+    task_run_dir: Path,
+    base_ref: str = "origin/main",
+    now: datetime | None = None,
+) -> dict[str, Any]:
+    """Resolve reuse versus reseal versus a new transition without mutating Git or state."""
+
+    resolved_task_run = Path(task_run_dir).resolve()
+    task, _, _, _ = _load_task_run(resolved_task_run)
+    required = {
+        "work_key": str(work_key or "").strip(),
+        "owner": str(owner or "").strip(),
+        "task_run_id": str(task.get("run_id") or "").strip(),
+    }
+    if any(not value for value in required.values()):
+        raise SystemAwarenessError(
+            "INPUT_INVALID", "work_key, owner, and task_run_id are required"
+        )
+    lifecycle_records = _normalize_lifecycle_records(records)
+    matches = [row for row in lifecycle_records if row.get("work_key") == required["work_key"]]
+    scan = scan_worktree_lifecycle(repo_root, base_ref=base_ref, records=records, now=now)
+
+    decision = "new_transition_required"
+    next_transition = "worktree_lifecycle_active"
+    carrier: dict[str, object] | None = None
+    reasons: list[str] = []
+    if not matches:
+        reasons.append("WORKTREE_CARRIER_BINDING_NOT_FOUND")
+    elif len(matches) != 1:
+        reasons.append("WORKTREE_CARRIER_BINDING_AMBIGUOUS")
+    else:
+        record = matches[0]
+        record_path = _path_identity(record.get("worktree_path") or "")
+        report = next(
+            (
+                row
+                for row in scan["worktrees"]
+                if _path_identity(row.get("worktree_path") or "") == record_path
+                and row.get("carrier_id") == record.get("carrier_id")
+                and row.get("carrier_generation") == record.get("carrier_generation")
+            ),
+            None,
+        )
+        identity_matches = (
+            record.get("owner") == required["owner"]
+            and _carrier_record_task_run_id(record) == required["task_run_id"]
+            and _path_identity(_event_reference(record.get("task_run_event_ref"))[0].parent)
+            == _path_identity(resolved_task_run)
+        )
+        if not identity_matches:
+            reasons.append("WORKTREE_CARRIER_IDENTITY_MISMATCH")
+        elif report is None:
+            reasons.append("WORKTREE_CARRIER_LIVE_INSTANCE_NOT_FOUND")
+        else:
+            carrier = {
+                "carrier_id": record.get("carrier_id"),
+                "carrier_generation": record.get("carrier_generation"),
+                "worktree_path": record.get("worktree_path"),
+                "work_key": record.get("work_key"),
+                "owner": record.get("owner"),
+                "task_run_id": required["task_run_id"],
+                "declared_state": record.get("declared_state"),
+                "observed_head": report["observed"].get("head"),
+                "observed_branch": report["observed"].get("branch"),
+                "observation_sha256": report["observed"].get("observation_sha256"),
+            }
+            if report.get("decision") in {"active", "paused"}:
+                decision = "reuse_existing"
+                next_transition = None
+                reasons.append("WORKTREE_CARRIER_FRESH_BINDING_REUSED")
+            else:
+                report_reasons = set(report.get("reason_codes") or [])
+                resealable_drift = bool(
+                    report_reasons
+                    & {
+                        "WORKTREE_LIFECYCLE_FACT_DRIFT",
+                        "WORKTREE_LIFECYCLE_RECORD_EXPIRED",
+                    }
+                )
+                observed = report["observed"]
+                safe_live_instance = (
+                    record.get("declared_state") in {"active", "paused"}
+                    and observed.get("facts_available") is True
+                    and observed.get("facts_stable") is True
+                    and observed.get("locked") is not True
+                    and observed.get("prunable") is not True
+                )
+                forbidden_drift = bool(
+                    report_reasons
+                    & {
+                        "WORKTREE_LIFECYCLE_IDENTITY_DRIFT",
+                        "WORKTREE_LIFECYCLE_RECORD_DUPLICATE",
+                        "WORKTREE_TASK_EVENT_TARGET_MISMATCH",
+                        "WORKTREE_TASK_EVENT_OWNER_MISMATCH",
+                        "WORKTREE_TASK_RUN_INVALID",
+                    }
+                )
+                if (
+                    report.get("decision") == "record_stale"
+                    and resealable_drift
+                    and safe_live_instance
+                    and not forbidden_drift
+                ):
+                    decision = "reseal_existing"
+                    next_transition = "worktree_lifecycle_resealed"
+                    reasons.extend(
+                        ["WORKTREE_CARRIER_SAME_GENERATION_RESEAL_REQUIRED", *report_reasons]
+                    )
+                else:
+                    carrier = None
+                    reasons.extend(
+                        ["WORKTREE_CARRIER_NEW_TRANSITION_REQUIRED", *report_reasons]
+                    )
+
+    return {
+        "schema_version": WORKTREE_CARRIER_RESOLUTION_VERSION,
+        "decision": decision,
+        "work_key": required["work_key"],
+        "owner": required["owner"],
+        "task_run_id": required["task_run_id"],
+        "task_run_dir": str(resolved_task_run),
+        "carrier": carrier,
+        "next_transition": next_transition,
+        "reason_codes": list(dict.fromkeys(reasons)),
+        "mutation_performed": False,
+        "git_mutation_performed": False,
+        "delete_performed": False,
+        "authority": False,
+        "delete_authority": False,
+        "completion_claim_allowed": False,
+    }
+
+
 def _iso_time(value: datetime) -> str:
     return value.astimezone(timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z")
 
@@ -3259,6 +3666,24 @@ def publish_worktree_lifecycle_record(
     event = next((row for row in task_events if row.get("event_id") == event_id), None)
     if event is None:
         raise SystemAwarenessError("WORKTREE_TASK_EVENT_NOT_FOUND", "event does not exist")
+    if same_instance:
+        try:
+            prior_event_path, _ = _event_reference(same_path.get("task_run_event_ref"))
+        except SystemAwarenessError as exc:
+            raise SystemAwarenessError(
+                "WORKTREE_CARRIER_IDENTITY_REBOUND",
+                "the existing carrier generation has no trustworthy task-run identity",
+            ) from exc
+        immutable_binding_changed = (
+            str(same_path.get("work_key") or "") != work_key
+            or str(same_path.get("owner") or "") != owner
+            or _path_identity(prior_event_path.parent) != _path_identity(event_path.parent)
+        )
+        if immutable_binding_changed:
+            raise SystemAwarenessError(
+                "WORKTREE_CARRIER_IDENTITY_REBOUND",
+                "work_key, owner, and task-run cannot change within one carrier generation",
+            )
     event_time = _parse_time(event.get("timestamp"), "event.timestamp")
     event_head = {
         "event_count": event.get("ordinal"),
@@ -3977,28 +4402,102 @@ def _dispatch_outcome_projection_if_present(
     return dict(projection)
 
 
+def _frontier_invalidated(
+    projection: Mapping[str, object], reason_code: str, *, status: str = "invalid"
+) -> dict[str, Any]:
+    return {
+        **dict(projection),
+        "ok": False,
+        "status": status,
+        "parent_state": "open",
+        "global_frontier_reconciled": False,
+        "parent_wait_claim_allowed": False,
+        "reason_codes": list(
+            dict.fromkeys([reason_code, *(projection.get("reason_codes") or [])])
+        ),
+        "authority": False,
+        "completion_claim_allowed": False,
+    }
+
+
+def _task_run_prefix_head(
+    run_dir: Path, events: Sequence[Mapping[str, object]], event_count: int
+) -> dict[str, object]:
+    if event_count < 1 or event_count > len(events):
+        raise SystemAwarenessError(
+            "GLOBAL_FRONTIER_EVENT_HEAD_INVALID",
+            "a frontier receipt requires a non-empty existing event prefix",
+        )
+    event = events[event_count - 1]
+    return {
+        "event_count": event_count,
+        "event_id": str(event.get("event_id") or ""),
+        "prefix_sha256": _event_prefix_sha256(run_dir / "events.jsonl", event_count),
+    }
+
+
+def evaluate_global_frontier_at_task_run_head(
+    run_dir: Path, raw: Mapping[str, object]
+) -> dict[str, Any]:
+    """Evaluate a prospective v2 receipt against the exact current task-run prefix."""
+
+    resolved = Path(run_dir).resolve()
+    task, _, events, _ = _load_task_run(resolved)
+    projection = reconcile_global_frontier(raw)
+    if projection.get("status") == "legacy_untrusted":
+        return projection
+    expected_head = _task_run_prefix_head(resolved, events, len(events))
+    if (
+        projection.get("task_run_id") != task.get("run_id")
+        or projection.get("event_head") != expected_head
+    ):
+        invalid = _frontier_invalidated(
+            projection, "GLOBAL_FRONTIER_EVENT_HEAD_MISMATCH"
+        )
+        invalid["expected_task_run_id"] = task.get("run_id")
+        invalid["expected_event_head"] = expected_head
+        return invalid
+    return projection
+
+
+def _frontier_event_is_material(event: Mapping[str, object]) -> bool:
+    phase = str(event.get("phase") or event.get("kind") or "").strip().lower()
+    return phase not in {
+        "frontier_reconciliation_projected",
+        "global_frontier_reconciliation_projected",
+        "system_awareness_scan_projected",
+    }
+
+
 def _frontier_reconciliation_from_events(
+    run_dir: Path,
+    task_run_id: str,
     events: Sequence[Mapping[str, object]],
 ) -> dict[str, Any] | None:
-    """Consume the newest explicit parent-frontier receipt, if one exists."""
+    """Consume the newest explicit receipt against its exact pre-event task-run prefix."""
 
-    candidates: list[Mapping[str, object]] = []
-    for event in events:
+    candidates: list[tuple[int, Mapping[str, object]]] = []
+    for index, event in enumerate(events):
         embedded = event.get("global_frontier_reconciliation")
         if isinstance(embedded, Mapping):
-            candidates.append(embedded)
-        elif str(event.get("kind") or event.get("phase") or "") in {
+            candidates.append((index, embedded))
+        elif str(event.get("phase") or "") in {
+            "global_frontier_reconciliation",
+            "frontier_reconciliation",
+        } or str(event.get("kind") or "") in {
             "global_frontier_reconciliation",
             "frontier_reconciliation",
         }:
-            candidates.append(event)
+            candidates.append((index, event))
     if not candidates:
         return None
+    candidate_index, candidate = candidates[-1]
     try:
-        return reconcile_global_frontier(candidates[-1])
+        projection = reconcile_global_frontier(candidate)
     except SystemAwarenessError as exc:
         return {
             "schema_version": FRONTIER_RECONCILIATION_VERSION,
+            "ok": False,
             "status": "invalid",
             "parent_state": "open",
             "global_frontier_reconciled": False,
@@ -4007,6 +4506,27 @@ def _frontier_reconciliation_from_events(
             "authority": False,
             "completion_claim_allowed": False,
         }
+    if projection.get("status") == "legacy_untrusted":
+        return projection
+    try:
+        expected_head = _task_run_prefix_head(run_dir, events, candidate_index)
+    except SystemAwarenessError as exc:
+        return _frontier_invalidated(projection, exc.reason_code)
+    if (
+        projection.get("task_run_id") != task_run_id
+        or projection.get("event_head") != expected_head
+    ):
+        invalid = _frontier_invalidated(
+            projection, "GLOBAL_FRONTIER_EVENT_HEAD_MISMATCH"
+        )
+        invalid["expected_task_run_id"] = task_run_id
+        invalid["expected_event_head"] = expected_head
+        return invalid
+    if any(_frontier_event_is_material(event) for event in events[candidate_index + 1 :]):
+        return _frontier_invalidated(
+            projection, "GLOBAL_FRONTIER_RECEIPT_STALE", status="stale"
+        )
+    return projection
 
 
 def project_work_unit_lifecycle(
@@ -4142,7 +4662,9 @@ def scan_task_run(
     resolved = Path(run_dir).resolve()
     task, state, events, hashes = _load_task_run(resolved)
     dispatch_outcome_projection = _dispatch_outcome_projection_if_present(resolved, events)
-    frontier_reconciliation = _frontier_reconciliation_from_events(events)
+    frontier_reconciliation = _frontier_reconciliation_from_events(
+        resolved, str(task["run_id"]), events
+    )
     typed_transitions = _typed_problem_transitions(events)
     typed_event_ids = {
         str(transition.get("source_event_id") or "") for transition in typed_transitions
@@ -4276,6 +4798,11 @@ def main(argv: Sequence[str] | None = None) -> int:
     scan.add_argument("--close-requested", action="store_true", help=argparse.SUPPRESS)
     scan.add_argument("--output", type=Path)
 
+    global_frontier = sub.add_parser("global-frontier")
+    global_frontier.add_argument("--task-run-dir", type=Path, required=True)
+    global_frontier.add_argument("--input", type=Path, required=True)
+    global_frontier.add_argument("--output", type=Path)
+
     worktrees = sub.add_parser("scan-worktrees")
     worktrees.add_argument("--repo-root", type=Path, required=True)
     worktrees.add_argument("--base-ref", default="origin/main")
@@ -4283,6 +4810,16 @@ def main(argv: Sequence[str] | None = None) -> int:
     worktrees.add_argument("--task-run-dir", type=Path)
     worktrees.add_argument("--now")
     worktrees.add_argument("--output", type=Path)
+
+    resolve_carrier = sub.add_parser("resolve-carrier")
+    resolve_carrier.add_argument("--repo-root", type=Path, required=True)
+    resolve_carrier.add_argument("--records", type=Path, required=True)
+    resolve_carrier.add_argument("--work-key", required=True)
+    resolve_carrier.add_argument("--owner", required=True)
+    resolve_carrier.add_argument("--task-run-dir", type=Path, required=True)
+    resolve_carrier.add_argument("--base-ref", default="origin/main")
+    resolve_carrier.add_argument("--now")
+    resolve_carrier.add_argument("--output", type=Path)
 
     publish_record = sub.add_parser("publish-worktree-record")
     publish_record.add_argument("--repo-root", type=Path, required=True)
@@ -4346,6 +4883,10 @@ def main(argv: Sequence[str] | None = None) -> int:
                 ttl_seconds=args.ttl_seconds,
                 finalizer_event_refs=finalizers_payload,
             )
+        elif args.command == "global-frontier":
+            value = evaluate_global_frontier_at_task_run_head(
+                args.task_run_dir, _load_input(args.input)
+            )
         elif args.command == "scan-task-run":
             if args.previous_problems or args.effectiveness_evidence or args.close_requested:
                 raise SystemAwarenessError(
@@ -4355,6 +4896,16 @@ def main(argv: Sequence[str] | None = None) -> int:
             value = scan_task_run(
                 args.task_run_dir,
                 high_burn_threshold=args.high_burn_threshold,
+            )
+        elif args.command == "resolve-carrier":
+            value = resolve_worktree_carrier(
+                args.repo_root,
+                records=_load_input(args.records),
+                work_key=args.work_key,
+                owner=args.owner,
+                task_run_dir=args.task_run_dir,
+                base_ref=args.base_ref,
+                now=_parse_time(args.now, "now") if args.now else None,
             )
         elif args.command == "scan-worktrees":
             records_payload = _load_input(args.records) if args.records else None

@@ -445,6 +445,25 @@
       "fresh_canary_evidence": []
     },
     {
+      "consumer_id": "global_frontier_reconciliation_v2",
+      "source_path": "services/agent_runtime/system_awareness_consumer.py",
+      "entrypoint": "evaluate_global_frontier_at_task_run_head",
+      "role": "parent_frontier_wait_claim_consumer",
+      "contract_mode": "exact_task_run_prefix_plus_hash_bound_inventory_and_wake_proof",
+      "status": "boundary_verified_non_parent_owner",
+      "conformance_status": "boundary_verified_non_parent_owner",
+      "status_reason": "The read-only v2 consumer binds a prospective or event-carried reconciliation to one exact task-run prefix, a hash-bound typed package/batch/parent inventory and an existing wakeable surface; v1 receipts and any v2 receipt followed by a material event cannot pause the parent.",
+      "writes_effects": false,
+      "parent_completion_authority": false,
+      "conformance_tests": [
+        "tests/test_system_awareness_consumer.py::test_global_frontier_v2_binds_exact_task_run_prefix_inventory_and_stales_on_later_event"
+      ],
+      "replay_evidence": [],
+      "current_positive_canary_evidence": [],
+      "negative_canary_evidence": [],
+      "fresh_canary_evidence": []
+    },
+    {
       "consumer_id": "worktree_lifecycle_scanner",
       "source_path": "services/agent_runtime/system_awareness_consumer.py",
       "entrypoint": "scan_worktree_lifecycle",
@@ -452,7 +471,7 @@
       "contract_mode": "git_porcelain_plus_hash_bound_task_run_records",
       "status": "boundary_verified_non_parent_owner",
       "conformance_status": "boundary_verified_non_parent_owner",
-      "status_reason": "The scanner separates logical work_key, carrier generation and one-effect identity; reconciles tracked, untracked, ignored, ancestry, locks and event finalizers; and distinguishes a removal candidate from a verified retired tombstone without deleting anything.",
+      "status_reason": "The scanner separates logical work_key, carrier generation and one-effect identity; reconciles tracked, untracked, ignored material versus proven cache, ancestry, locks and event finalizers; and distinguishes a removal candidate from a verified retired tombstone without deleting anything.",
       "writes_effects": false,
       "parent_completion_authority": false,
       "delete_authority": false,
@@ -473,6 +492,27 @@
       ]
     },
     {
+      "consumer_id": "worktree_carrier_resolver",
+      "source_path": "services/agent_runtime/system_awareness_consumer.py",
+      "entrypoint": "resolve_worktree_carrier",
+      "role": "read_only_cross_window_carrier_resolution",
+      "contract_mode": "hash_bound_lifecycle_records_plus_live_git_scan",
+      "status": "boundary_verified_non_parent_owner",
+      "conformance_status": "boundary_verified_non_parent_owner",
+      "status_reason": "The resolver preserves one work_key, owner and task-run binding within a carrier generation, reuses fresh carriers, requests an explicit reseal for bounded live-fact drift, and requests a new transition only when no safe binding exists; it never creates, removes or mutates a carrier.",
+      "writes_effects": false,
+      "parent_completion_authority": false,
+      "delete_authority": false,
+      "automatic_delete_allowed": false,
+      "conformance_tests": [
+        "tests/test_system_awareness_consumer.py::test_resolve_carrier_reuses_fresh_binding_reseals_fact_drift_and_never_mutates"
+      ],
+      "replay_evidence": [],
+      "current_positive_canary_evidence": [],
+      "negative_canary_evidence": [],
+      "fresh_canary_evidence": []
+    },
+    {
       "consumer_id": "worktree_lifecycle_record_producer",
       "source_path": "services/agent_runtime/system_awareness_consumer.py",
       "entrypoint": "publish_worktree_lifecycle_record",
@@ -480,7 +520,7 @@
       "contract_mode": "existing_task_run_event_plus_live_git_observation_to_hashable_records",
       "status": "boundary_verified_non_parent_owner",
       "conformance_status": "boundary_verified_non_parent_owner",
-      "status_reason": "The producer binds one current Git observation to work_key, carrier generation, event prefix and side effect, preserves generation floors, and writes only a non-authoritative records artifact plus the next records-published event reference.",
+      "status_reason": "The producer binds one current Git observation to work_key, owner, task-run, carrier generation, event prefix and side effect; rejects logical identity rebinding within one generation; preserves generation floors; and writes only a non-authoritative records artifact plus the next records-published event reference.",
       "writes_effects": true,
       "git_mutation_performed": false,
       "parent_completion_authority": false,
