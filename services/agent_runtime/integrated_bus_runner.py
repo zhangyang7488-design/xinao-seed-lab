@@ -64,6 +64,9 @@ from services.agent_runtime.tool_table_coverage import build_tool_table_coverage
 
 SCHEMA_VERSION = "xinao.integrated_bus_runner.v1"
 SENTINEL = "SENTINEL:XINAO_INTEGRATED_BUS_RUNNER_READY"
+WINDOWLESS_CREATIONFLAGS = (
+    getattr(subprocess, "CREATE_NO_WINDOW", 0) if os.name == "nt" else 0
+)
 REPLACES = [
     "phase0_minimal_weld_activity",
     "phase0_external_seam_invoke",
@@ -452,8 +455,13 @@ def _record_leg_b_worker_terminals(
             "common_attempt_ref": attempt_ref,
             "common_contract_ref": contract_ref,
         }
+        if isinstance(lane.get("prior_accepted_ancestor_binding"), Mapping):
+            request["prior_accepted_ancestor_binding"] = dict(
+                lane["prior_accepted_ancestor_binding"]
+            )
         operation_id = str(lane.get("operation_id") or "")
-        output_root = run_dir / "dispatch_outcomes" / operation_id
+        terminal_record_id = str(lane.get("terminal_record_id") or operation_id)
+        output_root = run_dir / "dispatch_outcomes" / terminal_record_id
         request_path = output_root / "worker-terminal-request.json"
         output_path = output_root / "worker-terminal-event.json"
         request_sha256 = _write_json_create_once(request_path, request)
@@ -479,6 +487,7 @@ def _record_leg_b_worker_terminals(
             text=True,
             encoding="utf-8",
             errors="replace",
+            creationflags=WINDOWLESS_CREATIONFLAGS,
         )
         if completed.returncode != 0:
             raise RuntimeError(

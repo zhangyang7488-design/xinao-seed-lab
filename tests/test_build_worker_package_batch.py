@@ -64,6 +64,10 @@ def _logical_spec(
             row["prior_attempt_receipt_ref"] = {
                 "path": logical(package["prior_attempt_receipt_ref"]["path"])
             }
+        if package.get("prior_logical_contract_ref"):
+            row["prior_logical_contract_ref"] = {
+                "path": logical(package["prior_logical_contract_ref"]["path"])
+            }
         packages.append(row)
     return {
         "schema_version": "xinao.worker_package_batch_spec.v1",

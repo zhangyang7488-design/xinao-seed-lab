@@ -81,6 +81,7 @@ def build_common_receipt_binding(
     attempt_receipt: Mapping[str, object] | None = None,
     work_key: str = "",
     package_manifest_sha256: str = "",
+    prior_accepted_ancestor_binding: Mapping[str, object] | None = None,
 ) -> dict[str, str]:
     """Build the one producer/consumer receipt-set member representation."""
 
@@ -112,10 +113,6 @@ def build_common_receipt_binding(
             raise ExecutionContractError(
                 "package-bound task_contract_ref must carry one lowercase sha256"
             )
-        if task_contract_sha256 != bound_manifest_sha256:
-            raise ExecutionContractError(
-                "task_contract_ref disagrees with package_manifest_sha256"
-            )
         if attempt_receipt is None:
             raise ExecutionContractError("package-bound receipt binding requires attempt_receipt")
         attempt = _validate_attempt_shape(attempt_receipt)
@@ -124,6 +121,84 @@ def build_common_receipt_binding(
             raise ExecutionContractError("attempt receipt lineage lane_id drifted")
         if attempt.get("work_key") != bound_work_key:
             raise ExecutionContractError("attempt receipt work_key drifted")
+        if prior_accepted_ancestor_binding is None:
+            if task_contract_sha256 != bound_manifest_sha256:
+                raise ExecutionContractError(
+                    "task_contract_ref disagrees with package_manifest_sha256"
+                )
+        else:
+            ancestor = _require_mapping(
+                prior_accepted_ancestor_binding,
+                "prior_accepted_ancestor_binding",
+            )
+            current_ref = _require_mapping(
+                ancestor.get("current_manifest_ref"),
+                "prior_accepted_ancestor_binding.current_manifest_ref",
+            )
+            subject_ref = _require_mapping(
+                ancestor.get("subject_manifest_ref"),
+                "prior_accepted_ancestor_binding.subject_manifest_ref",
+            )
+            prior_attempt_ref = _require_mapping(
+                ancestor.get("prior_attempt_receipt_ref"),
+                "prior_accepted_ancestor_binding.prior_attempt_receipt_ref",
+            )
+            prior_action = _require_mapping(
+                ancestor.get("prior_action_binding"),
+                "prior_accepted_ancestor_binding.prior_action_binding",
+            )
+            prior_action_sha256 = hashlib.sha256(
+                canonical_json_bytes(prior_action)
+            ).hexdigest()
+            if (
+                ancestor.get("schema_version")
+                != "xinao.prior_accepted_ancestor_action.v1"
+                or ancestor.get("reuse_disposition") != "ACCEPTED_IDENTICAL_REUSE"
+                or ancestor.get("skip_provider_execution") is not True
+                or ancestor.get("model_invocation_allowed") is not False
+                or ancestor.get("authority") is not False
+                or ancestor.get("completion_claim_allowed") is not False
+                or ancestor.get("work_key") != bound_work_key
+                or ancestor.get("package_id") != bound_lane_id
+                or _require_sha256(
+                    current_ref.get("sha256"),
+                    "prior_accepted_ancestor_binding.current_manifest_ref.sha256",
+                )
+                != bound_manifest_sha256
+                or _require_sha256(
+                    subject_ref.get("sha256"),
+                    "prior_accepted_ancestor_binding.subject_manifest_ref.sha256",
+                )
+                != task_contract_sha256
+                or _require_sha256(
+                    prior_attempt_ref.get("sha256"),
+                    "prior_accepted_ancestor_binding.prior_attempt_receipt_ref.sha256",
+                )
+                != binding["attempt_receipt_sha256"]
+                or _require_sha256(
+                    ancestor.get("contract_sha256"),
+                    "prior_accepted_ancestor_binding.contract_sha256",
+                )
+                != binding["contract_sha256"]
+                or _require_sha256(
+                    ancestor.get("prior_action_binding_sha256"),
+                    "prior_accepted_ancestor_binding.prior_action_binding_sha256",
+                )
+                != prior_action_sha256
+                or prior_action.get("logical_operation_id")
+                != contract.get("logical_operation_id")
+                or prior_action.get("selection") != contract.get("selection")
+            ):
+                raise ExecutionContractError(
+                    "prior accepted ancestor binding disagrees with current carrier or subject"
+                )
+            binding.update(
+                {
+                    "reuse_disposition": "ACCEPTED_IDENTICAL_REUSE",
+                    "subject_manifest_sha256": task_contract_sha256,
+                    "prior_action_binding_sha256": prior_action_sha256,
+                }
+            )
         binding.update(
             {
                 "work_key": bound_work_key,

@@ -2970,9 +2970,11 @@ def test_leg_b_terminal_consumer_binds_exact_task_run_and_is_replayable(
         "cross_seam_logical_contract_artifact_sha256": contract_sha,
     }
     calls: list[list[str]] = []
+    run_kwargs: list[dict[str, object]] = []
 
-    def fake_run(command: list[str], **_: object) -> subprocess.CompletedProcess[str]:
+    def fake_run(command: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
         calls.append(command)
+        run_kwargs.append(kwargs)
         output = Path(command[command.index("--output") + 1])
         output.parent.mkdir(parents=True, exist_ok=True)
         output.write_text("{}\n", encoding="utf-8")
@@ -3011,6 +3013,11 @@ def test_leg_b_terminal_consumer_binds_exact_task_run_and_is_replayable(
     second = runner._record_leg_b_worker_terminals(result, **kwargs)
     assert first == second
     assert len(calls) == 2
+    assert all(command[0] == sys.executable for command in calls)
+    assert all(
+        kwargs["creationflags"] == runner.WINDOWLESS_CREATIONFLAGS
+        for kwargs in run_kwargs
+    )
     assert first[0]["task_run_id"] == run_id
 
     lane["dispatch_task_run_id"] = "other-run"

@@ -10,11 +10,14 @@ from services.agent_runtime.dispatch_economics import (
     DispatchEconomicsError,
     build_worker_package_identity,
     neutral_output_contract_sha256,
+    plan_package_frontier,
     validate_prior_accepted_ancestor_action,
 )
 from services.agent_runtime.execution_contract import (
     ATTEMPT_RECEIPT_VERSION,
     LOGICAL_CONTRACT_VERSION,
+    ExecutionContractError,
+    build_common_receipt_binding,
     canonical_json_bytes,
     logical_contract_sha256,
 )
@@ -143,7 +146,7 @@ def _accepted_receipt(
         },
         "lineage": {
             "workflow_id": "workflow-1",
-            "lane_id": "lane-1",
+            "lane_id": "p1",
             "parent_operation_id": "",
             "correlation_id": "",
             "session_id": "session-1",
@@ -271,6 +274,7 @@ def _fixture(tmp_path: Path) -> dict[str, object]:
 
     current_package = copy.deepcopy(package)
     current_package["prior_attempt_receipt_ref"] = attempt_ref
+    current_package["prior_logical_contract_ref"] = contract_ref
     current = {
         **copy.deepcopy(ancestor),
         "graph_revision": 2,
@@ -372,6 +376,136 @@ def test_valid_reseal_returns_zero_model_prior_action_binding_without_writes(
     assert len(result["prior_action_binding_sha256"]) == 64
 
 
+def test_frontier_execution_seal_binds_both_prior_receipt_refs(tmp_path: Path) -> None:
+    fixture = _fixture(tmp_path)
+
+    frontier = plan_package_frontier(fixture["current"])
+    admitted = frontier["admitted"]
+
+    assert len(admitted) == 1
+    package = admitted[0]
+    expected_seal = hashlib.sha256(
+        canonical_json_bytes(
+            {
+                "schema_version": "xinao.worker_package_execution_seal.v1",
+                "graph_revision": 2,
+                "package_identity_sha256": package["package_identity_sha256"],
+                "depends_on": [],
+                "prior_attempt_receipt_ref": fixture["current"]["packages"][0][
+                    "prior_attempt_receipt_ref"
+                ],
+                "prior_logical_contract_ref": fixture["current"]["packages"][0][
+                    "prior_logical_contract_ref"
+                ],
+            }
+        )
+    ).hexdigest()
+    assert package["package_seal_sha256"] == expected_seal
+
+
+def test_common_receipt_binding_separates_current_carrier_from_prior_subject(
+    tmp_path: Path,
+) -> None:
+    fixture = _fixture(tmp_path)
+    ancestor = _validate(fixture)
+    contract = json.loads(Path(fixture["contract_path"]).read_text(encoding="utf-8"))
+    attempt = json.loads(Path(fixture["attempt_path"]).read_text(encoding="utf-8"))
+
+    binding = build_common_receipt_binding(
+        contract,
+        lane_id="p1",
+        attempt_receipt_sha256=_sha(fixture["attempt_path"]),
+        attempt_receipt=attempt,
+        work_key="wk-1",
+        package_manifest_sha256=fixture["current_ref"]["sha256"],
+        prior_accepted_ancestor_binding=ancestor,
+    )
+
+    assert binding["package_manifest_sha256"] == fixture["current_ref"]["sha256"]
+    assert binding["subject_manifest_sha256"] == _sha(fixture["ancestor_path"])
+    assert binding["reuse_disposition"] == "ACCEPTED_IDENTICAL_REUSE"
+
+    drifted = copy.deepcopy(ancestor)
+    drifted["current_manifest_ref"]["sha256"] = "f" * 64
+    with pytest.raises(ExecutionContractError, match="current carrier or subject"):
+        build_common_receipt_binding(
+            contract,
+            lane_id="p1",
+            attempt_receipt_sha256=_sha(fixture["attempt_path"]),
+            attempt_receipt=attempt,
+            work_key="wk-1",
+            package_manifest_sha256=fixture["current_ref"]["sha256"],
+            prior_accepted_ancestor_binding=drifted,
+        )
+
+
+def test_leg_b_consumer_reuses_validated_ancestor_without_current_model_call(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from services.agent_runtime import grok_build_docker_worker as docker_worker
+
+    fixture = _fixture(tmp_path)
+    current = fixture["current"]
+    package = current["packages"][0]
+    contract = json.loads(Path(fixture["contract_path"]).read_text(encoding="utf-8"))
+    cached = {
+        "ok": True,
+        "operation_id": contract["logical_operation_id"],
+        "work_key": package["work_key"],
+        "package_id": package["package_id"],
+        "package_manifest_sha256": _sha(fixture["ancestor_path"]),
+        "cross_seam_logical_contract": contract,
+        "cross_seam_logical_contract_ref": str(fixture["contract_path"]),
+        "cross_seam_logical_contract_artifact_sha256": _sha(fixture["contract_path"]),
+        "cross_seam_attempt_receipt_ref": str(fixture["attempt_path"]),
+        "cross_seam_attempt_receipt_sha256": _sha(fixture["attempt_path"]),
+        "invocation_accounting": {
+            "invocation_count": 1,
+            "total_tokens": 100,
+            "accepted_tokens": 100,
+            "cancelled_tokens": 0,
+            "failed_tokens": 0,
+        },
+    }
+    monkeypatch.setattr(docker_worker, "_cached_lane", lambda *_args, **_kwargs: cached)
+    monkeypatch.setattr(docker_worker, "_map_host_path_to_container", lambda value: str(value))
+    lane = {
+        "package_id": package["package_id"],
+        "work_key": package["work_key"],
+        "input_sha256": package["input_sha256"],
+        "prompt_ref": package["prompt_ref"],
+        "context_sha256": package["context_sha256"],
+        "rules_sha256": package["rules_sha256"],
+        "output_contract_sha256": package["output_contract_sha256"],
+        "prior_attempt_receipt_ref": package["prior_attempt_receipt_ref"],
+        "prior_logical_contract_ref": package["prior_logical_contract_ref"],
+        "dispatch_envelope_ref": str(tmp_path / "current-envelope.json"),
+        "dispatch_envelope_sha256": "9" * 64,
+        "dispatch_task_run_id": "run-current",
+        "package_seal_sha256": "8" * 64,
+    }
+
+    reused = docker_worker._prior_accepted_ancestor_lane(
+        lane=lane,
+        requested_model="grok-4.5",
+        prompt_sha256=package["prompt_ref"]["sha256"],
+        execution_prompt_sha256="7" * 64,
+        current_operation_id="op-current-carrier",
+        current_manifest_ref=fixture["current_ref"],
+        expected_provider_selection=fixture["action_binding"]["selection"],
+        model_capabilities={"binding_sha256": "6" * 64},
+    )
+
+    assert reused is not None
+    assert reused["operation_id"] == contract["logical_operation_id"]
+    assert reused["terminal_record_id"] == "op-current-carrier"
+    assert reused["package_manifest_sha256"] == fixture["current_ref"]["sha256"]
+    assert reused["replayed"] is True
+    assert reused["reuse_disposition"] == "ACCEPTED_IDENTICAL_REUSE"
+    assert reused["prior_accepted_ancestor_binding"]["skip_provider_execution"] is True
+
+
 @pytest.mark.parametrize(
     ("field", "value"),
     [
@@ -423,6 +557,7 @@ def test_prior_receipt_content_drift_is_rejected(tmp_path: Path) -> None:
     current = fixture["current"]
     assert isinstance(current, dict)
     current["packages"][0]["prior_attempt_receipt_ref"]["sha256"] = attempt_sha256
+    current["packages"][0]["prior_logical_contract_ref"] = fixture["contract_ref"]
     _rewrite_current(fixture)
 
     with pytest.raises(DispatchEconomicsError, match="CONTRACT_DIGEST_MISMATCH"):
@@ -464,6 +599,7 @@ def test_hash_valid_non_ancestor_task_contract_is_rejected(tmp_path: Path) -> No
     current = fixture["current"]
     assert isinstance(current, dict)
     current["packages"][0]["prior_attempt_receipt_ref"]["sha256"] = attempt_sha256
+    current["packages"][0]["prior_logical_contract_ref"] = fixture["contract_ref"]
     _rewrite_current(fixture)
 
     with pytest.raises(DispatchEconomicsError, match="not in the reseal ancestor chain"):

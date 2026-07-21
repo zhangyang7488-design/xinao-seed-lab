@@ -747,6 +747,12 @@ def _grok_fanin_worker_lane(state: BusState) -> dict[str, Any] | None:
                         if canonical_package_mode
                         else ""
                     ),
+                    prior_accepted_ancestor_binding=(
+                        item.get("prior_accepted_ancestor_binding")
+                        if canonical_package_mode
+                        and isinstance(item.get("prior_accepted_ancestor_binding"), dict)
+                        else None
+                    ),
                 )
             )
     except (TypeError, ValueError):

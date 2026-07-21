@@ -543,6 +543,7 @@ def _validate_package_identity(package: Mapping[str, object], index: int) -> Non
         "timeout_sec",
         "lane_index",
         "prior_attempt_receipt_ref",
+        "prior_logical_contract_ref",
         "package_seal_sha256",
         "execution_seal_ready",
         "resealed_from_package_seal_sha256",
@@ -726,6 +727,7 @@ def _package_reseal_shape(package: Mapping[str, object]) -> dict[str, object]:
         if isinstance(dependency, dict):
             dependency["pin"] = None
     value.pop("prior_attempt_receipt_ref", None)
+    value.pop("prior_logical_contract_ref", None)
     return value
 
 
@@ -929,17 +931,26 @@ def validate_package_batch_manifest(
                 f"packages[{index}].prior_attempt_receipt_ref",
                 path_resolver=path_resolver,
             )
+        if package.get("prior_logical_contract_ref") is not None:
+            package["prior_logical_contract_ref"] = _validate_path_ref(
+                package["prior_logical_contract_ref"],
+                f"packages[{index}].prior_logical_contract_ref",
+                path_resolver=path_resolver,
+            )
         package["lane_index"] = index
         package["execution_seal_ready"] = all(item["pin"] is not None for item in dependencies)
-        package["package_seal_sha256"] = _canonical_sha(
-            {
-                "schema_version": "xinao.worker_package_execution_seal.v1",
-                "graph_revision": graph_revision,
-                "package_identity_sha256": package["package_identity_sha256"],
-                "depends_on": dependencies,
-                "prior_attempt_receipt_ref": package.get("prior_attempt_receipt_ref"),
-            }
-        )
+        execution_seal = {
+            "schema_version": "xinao.worker_package_execution_seal.v1",
+            "graph_revision": graph_revision,
+            "package_identity_sha256": package["package_identity_sha256"],
+            "depends_on": dependencies,
+            "prior_attempt_receipt_ref": package.get("prior_attempt_receipt_ref"),
+        }
+        if package.get("prior_logical_contract_ref") is not None:
+            execution_seal["prior_logical_contract_ref"] = package[
+                "prior_logical_contract_ref"
+            ]
+        package["package_seal_sha256"] = _canonical_sha(execution_seal)
         normalized.append(package)
 
     for package in normalized:
@@ -2564,15 +2575,18 @@ def plan_package_frontier(
         row["depends_on"] = resolved_dependencies
         old_seal = str(row["package_seal_sha256"])
         row["execution_seal_ready"] = True
-        row["package_seal_sha256"] = _canonical_sha(
-            {
-                "schema_version": "xinao.worker_package_execution_seal.v1",
-                "graph_revision": validated["graph_revision"],
-                "package_identity_sha256": row["package_identity_sha256"],
-                "depends_on": resolved_dependencies,
-                "prior_attempt_receipt_ref": row.get("prior_attempt_receipt_ref"),
-            }
-        )
+        execution_seal = {
+            "schema_version": "xinao.worker_package_execution_seal.v1",
+            "graph_revision": validated["graph_revision"],
+            "package_identity_sha256": row["package_identity_sha256"],
+            "depends_on": resolved_dependencies,
+            "prior_attempt_receipt_ref": row.get("prior_attempt_receipt_ref"),
+        }
+        if row.get("prior_logical_contract_ref") is not None:
+            execution_seal["prior_logical_contract_ref"] = row[
+                "prior_logical_contract_ref"
+            ]
+        row["package_seal_sha256"] = _canonical_sha(execution_seal)
         if row["package_seal_sha256"] != old_seal:
             row["resealed_from_package_seal_sha256"] = old_seal
         ready.append(row)
@@ -2823,6 +2837,7 @@ def build_dispatch_outcome_event(
     role: str = "",
     common_attempt_ref: Mapping[str, object] | None = None,
     common_contract_ref: Mapping[str, object] | None = None,
+    prior_accepted_ancestor_binding: Mapping[str, object] | None = None,
     provider_event_ref: Mapping[str, object] | None = None,
     owner_verdict_event_ref: Mapping[str, object] | None = None,
     owner_adopted_event_ref: Mapping[str, object] | None = None,
@@ -2934,7 +2949,37 @@ def build_dispatch_outcome_event(
                 "common attempt identity drifted: " + ",".join(sorted(identity_reasons))
             )
         operation = _text(logical_operation_id, "logical_operation_id")
-        expected_task_ref = f"{manifest_ref['path']}#sha256={manifest_ref['sha256']}"
+        validated_ancestor: dict[str, object] | None = None
+        if prior_accepted_ancestor_binding is not None:
+            candidate_ancestor = dict(
+                _mapping(
+                    prior_accepted_ancestor_binding,
+                    "prior_accepted_ancestor_binding",
+                )
+            )
+            validated_ancestor = validate_prior_accepted_ancestor_action(
+                current_manifest_ref=manifest_ref,
+                package_id=package,
+                prior_logical_contract_ref=_mapping(
+                    candidate_ancestor.get("prior_logical_contract_ref"),
+                    "prior_accepted_ancestor_binding.prior_logical_contract_ref",
+                ),
+                expected_consumer_id=physical_consumer_id,
+                expected_action_binding=_mapping(
+                    candidate_ancestor.get("prior_action_binding"),
+                    "prior_accepted_ancestor_binding.prior_action_binding",
+                ),
+                path_resolver=path_resolver,
+            )
+            if validated_ancestor != candidate_ancestor:
+                raise DispatchEconomicsError(
+                    "prior accepted ancestor binding is not fully derived"
+                )
+        expected_task_ref = (
+            str(validated_ancestor["task_contract_ref"])
+            if validated_ancestor is not None
+            else f"{manifest_ref['path']}#sha256={manifest_ref['sha256']}"
+        )
         route_selection = envelope["validated_selected_candidate"]
         try:
             from services.agent_runtime.grok_execution_contract_adapter import (
@@ -3007,6 +3052,15 @@ def build_dispatch_outcome_event(
             "transport_id": provider_transport_id,
             "capability_binding_sha256": provider_capability_binding_sha256,
         }
+        if validated_ancestor is not None and (
+            operation
+            != str(validated_ancestor["prior_action_binding"]["logical_operation_id"])
+            or provider_selection
+            != dict(validated_ancestor["prior_action_binding"]["selection"])
+        ):
+            raise DispatchEconomicsError(
+                "current route disagrees with the accepted ancestor action"
+            )
         if (
             contract.get("logical_operation_id") != operation
             or contract.get("work_key") != work
@@ -3073,10 +3127,26 @@ def build_dispatch_outcome_event(
             "common_attempt_ref": attempt_ref,
             "common_contract_ref": contract_ref,
             "attempt_number": int(attempt["attempt"]),
-            "attempt_usage": dict(attempt["usage"]),
+            "attempt_usage": (
+                {
+                    "input_tokens": 0,
+                    "output_tokens": 0,
+                    "total_tokens": 0,
+                }
+                if validated_ancestor is not None
+                else dict(attempt["usage"])
+            ),
             "authority": False,
             "completion_claim_allowed": False,
         }
+        if validated_ancestor is not None:
+            event.update(
+                {
+                    "reuse_disposition": "ACCEPTED_IDENTICAL_REUSE",
+                    "prior_accepted_ancestor_binding": validated_ancestor,
+                    "subject_attempt_usage": dict(attempt["usage"]),
+                }
+            )
     elif kind == "owner_verdict":
         if provider_event_ref is None:
             raise DispatchEconomicsError("owner verdict requires provider_event_ref")
@@ -3351,6 +3421,14 @@ def validate_dispatch_outcome_event(
             leg=str(payload.get("leg") or ""),
             common_attempt_ref=_mapping(payload.get("common_attempt_ref"), "common_attempt_ref"),
             common_contract_ref=_mapping(payload.get("common_contract_ref"), "common_contract_ref"),
+            prior_accepted_ancestor_binding=(
+                _mapping(
+                    payload.get("prior_accepted_ancestor_binding"),
+                    "prior_accepted_ancestor_binding",
+                )
+                if payload.get("prior_accepted_ancestor_binding") is not None
+                else None
+            ),
         )
     elif kind == "owner_verdict":
         rebuilt = build_dispatch_outcome_event(
