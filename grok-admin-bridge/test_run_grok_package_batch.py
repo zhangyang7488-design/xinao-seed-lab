@@ -303,10 +303,13 @@ def _prior_reuse_binding_fixture(
     package: dict[str, object] = {
         "package_id": "pkg-1",
         "work_key": "wk-1",
+        "parent_work_key": "parent-1",
         "package_identity_sha256": "1" * 64,
     }
     ancestor = {
         "schema_version": "xinao.worker_package_batch.v3",
+        "parent_work_key": "parent-1",
+        "graph_revision": 1,
         "predecessor_manifest_ref": None,
         "packages": [dict(package)],
     }
@@ -321,6 +324,18 @@ def _prior_reuse_binding_fixture(
     }
     contract_file_sha = _write_json(contract_path, contract)
     contract_digest = "2" * 64
+    provider_path = lane / "latest.json"
+    provider_sha = _write_json(
+        provider_path,
+        {
+            "common_contract_preflight": {
+                "validated": True,
+                "logical_contract_sha256": contract_digest,
+                "subject_manifest_sha256": ancestor_sha,
+                "frozen_context_sha256": "3" * 64,
+            }
+        },
+    )
     attempt_path = lane / "common_attempt_receipt.json"
     attempt_sha = _write_json(
         attempt_path,
@@ -328,16 +343,8 @@ def _prior_reuse_binding_fixture(
             "logical_operation_id": operation_id,
             "work_key": "wk-1",
             "contract_sha256": contract_digest,
-        },
-    )
-    _write_json(
-        lane / "latest.json",
-        {
-            "common_contract_preflight": {
-                "validated": True,
-                "logical_contract_sha256": contract_digest,
-                "subject_manifest_sha256": ancestor_sha,
-            }
+            "provider_evidence_ref": str(provider_path.resolve()),
+            "provider_evidence_sha256": provider_sha,
         },
     )
     _write_json(
@@ -364,6 +371,8 @@ def _prior_reuse_binding_fixture(
     }
     validated = {
         "schema_version": "xinao.worker_package_batch.v3",
+        "parent_work_key": "parent-1",
+        "graph_revision": 2,
         "predecessor_manifest_ref": {
             "path": str(ancestor_path.resolve()),
             "sha256": ancestor_sha,
@@ -382,6 +391,9 @@ def test_prior_reuse_binds_exact_accepted_ancestor_contract(tmp_path: Path) -> N
         validated_manifest=validated,
         current_manifest_path=current_path,
         current_manifest_sha256=current_sha,
+        validate_attempt_receipt=lambda *_args, **_kwargs: SimpleNamespace(
+            accepted=True, reason_codes=()
+        ),
     )
     predecessor = validated["predecessor_manifest_ref"]
     assert isinstance(predecessor, dict)
@@ -392,39 +404,23 @@ def test_prior_reuse_binds_exact_accepted_ancestor_contract(tmp_path: Path) -> N
     assert binding["subject_manifest_sha256"] == predecessor["sha256"]
 
 
-def test_prior_reuse_rejects_identity_drift_before_claim(tmp_path: Path) -> None:
+def test_prior_reuse_rejects_ancestor_bytes_drift_before_claim(tmp_path: Path) -> None:
     package, validated, current_path, current_sha = _prior_reuse_binding_fixture(tmp_path)
     predecessor = validated["predecessor_manifest_ref"]
     assert isinstance(predecessor, dict)
     ancestor_path = Path(str(predecessor["path"]))
     ancestor = json.loads(ancestor_path.read_text(encoding="utf-8"))
     ancestor["packages"][0]["package_identity_sha256"] = "9" * 64
-    predecessor["sha256"] = _write_json(ancestor_path, ancestor)
-    prior = package["prior_attempt_receipt_ref"]
-    assert isinstance(prior, dict)
-    lane = Path(str(prior["path"])).parent
-    contract_path = lane / "common_logical_contract.json"
-    contract = json.loads(contract_path.read_text(encoding="utf-8"))
-    contract["task_contract_ref"] = (
-        f"{ancestor_path.resolve()}#sha256={predecessor['sha256']}"
-    )
-    contract_file_sha = _write_json(contract_path, contract)
-    adapter_path = lane / "common_adapter_receipt.json"
-    adapter = json.loads(adapter_path.read_text(encoding="utf-8"))
-    adapter["artifact_sha256"]["logical_contract"] = contract_file_sha
-    _write_json(adapter_path, adapter)
-    meta_path = lane / "latest.json"
-    meta = json.loads(meta_path.read_text(encoding="utf-8"))
-    meta["common_contract_preflight"]["subject_manifest_sha256"] = predecessor[
-        "sha256"
-    ]
-    _write_json(meta_path, meta)
-    with pytest.raises(ValueError, match="package identity drifted"):
+    _write_json(ancestor_path, ancestor)
+    with pytest.raises(ValueError, match="task_contract_ref bytes drifted"):
         subject._prior_reuse_contract_binding(
             package=package,
             validated_manifest=validated,
             current_manifest_path=current_path,
             current_manifest_sha256=current_sha,
+            validate_attempt_receipt=lambda *_args, **_kwargs: SimpleNamespace(
+                accepted=True, reason_codes=()
+            ),
         )
 
 
@@ -442,6 +438,9 @@ def test_prior_reuse_rejects_adapter_artifact_drift_before_claim(tmp_path: Path)
             validated_manifest=validated,
             current_manifest_path=current_path,
             current_manifest_sha256=current_sha,
+            validate_attempt_receipt=lambda *_args, **_kwargs: SimpleNamespace(
+                accepted=True, reason_codes=()
+            ),
         )
 
 
