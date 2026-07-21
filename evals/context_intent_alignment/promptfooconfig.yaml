@@ -57,11 +57,8 @@ providers:
           - preference_update
           - starts_new_project
           - reason
-          - supervisor_tier
-          - quota_consumption_objective
           - quota_query_disposition
           - owner_execution_state
-          - tier_transition
           - terminal_refill
           - worker_receipt_disposition
           - completion_claim_scope
@@ -105,9 +102,9 @@ providers:
             enum: [supervisor_only, single_supervisor_worker]
           mainline_owner: { type: string, const: codex_main }
           worker_provider:
-            enum: [grok, codex_agent, mixed, not_applicable]
+            enum: [grok, external_worker, codex_subagent_exceptional, not_applicable]
           worker_transport:
-            enum: [adaptive, in_turn_agent, direct_batch, temporal_durable, not_applicable]
+            enum: [adaptive, direct_batch, temporal_durable, not_applicable]
           quota_action:
             enum: [query_now, reuse_episode_cache, repair_and_continue, not_applicable]
           text_writer:
@@ -131,12 +128,9 @@ providers:
             enum: [none, smallest_existing_artifact, new_project]
           starts_new_project: { type: boolean }
           reason: { type: string, minLength: 1 }
-          supervisor_tier: { type: string, enum: [default, medium, highest] }
-          quota_consumption_objective: { type: boolean }
           quota_query_disposition: { type: string, enum: [query_now_before_routing, reuse_fresh_snapshot, not_applicable] }
-          owner_execution_state: { type: string, enum: [adaptive, thin_supervisor, owner_only_interlude] }
-          tier_transition: { type: string, enum: [none, highest_to_medium_now, default_to_medium, medium_to_highest] }
-          terminal_refill: { type: string, enum: [task_driven, immediate_positive_value, not_applicable] }
+          owner_execution_state: { type: string, enum: [dynamic_supervisor, authority_lane, inseparable_owner_slice, not_applicable] }
+          terminal_refill: { type: string, enum: [immediate_positive_value, not_applicable] }
           worker_receipt_disposition: { type: string, enum: [accept, reject_and_recover, reuse, not_applicable] }
           completion_claim_scope: { type: string, enum: [local_object, parent_mainline, not_applicable] }
           local_completion_transition: { type: string, enum: [finish_bounded_task, rederive_mainline_frontier, not_applicable] }
