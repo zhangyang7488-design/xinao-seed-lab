@@ -758,7 +758,6 @@ async def run_canary(run_dir: Path) -> dict[str, Any]:
         "Audit this bounded local fixture and return one concise recovery finding.\n",
         encoding="utf-8",
     )
-    canary_input_container = "/evidence/" + canary_input.relative_to(RUNTIME).as_posix()
     container_pre = docker_identity()
     _ACTIVE_CONTAINER_PRE = container_pre
     mount_pre = await asyncio.to_thread(
@@ -784,6 +783,7 @@ async def run_canary(run_dir: Path) -> dict[str, Any]:
                 "report": mount_pre,
             },
         }
+    canary_input_container = "/evidence/" + canary_input.relative_to(RUNTIME).as_posix()
     client = await Client.connect("127.0.0.1:7233", namespace="default")
     daemon_pre = _daemon_state()
     queues_pre = await queue_snapshot(client)
