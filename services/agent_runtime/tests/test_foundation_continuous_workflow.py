@@ -435,9 +435,11 @@ def test_time_skipping_parent_reconciles_again_after_external_wave(tmp_path: Pat
                     )
                     reconciled = await _query_until(
                         parent,
-                        lambda value: value.get("waves_completed") == 1
-                        and isinstance(value.get("last_decision"), dict)
-                        and value["last_decision"].get("action") == "WAIT",
+                        lambda value: (
+                            value.get("waves_completed") == 1
+                            and isinstance(value.get("last_decision"), dict)
+                            and value["last_decision"].get("action") == "WAIT"
+                        ),
                     )
                     await parent.execute_update(
                         "control",
@@ -455,9 +457,7 @@ def test_time_skipping_parent_reconciles_again_after_external_wave(tmp_path: Pat
     assert reconciled["last_wave_result"]["verification"]["ok"] is True
     assert terminal["status"] == "STOPPED"
     requests = list(
-        (tmp_path / "state" / "foundation_continuous" / "foundation-op" / "requests").glob(
-            "*.json"
-        )
+        (tmp_path / "state" / "foundation_continuous" / "foundation-op" / "requests").glob("*.json")
     )
     assert len(requests) == 1
     request = json.loads(requests[0].read_text(encoding="utf-8"))

@@ -113,9 +113,7 @@ def test_managed_generation_probe_pins_temporal_sdk() -> None:
 def test_temporal_pin_generator_is_read_only_and_not_self_referential() -> None:
     generator = (ROOT / "provisioning" / "_lane_c_build_pin.ps1").read_text()
     pin = json.loads((ROOT / "provisioning" / "temporal_mcp_pin.json").read_text())
-    deployment = json.loads(
-        (ROOT / "adapters" / "temporal" / "worker_deployment.v1.json").read_text()
-    )
+    deployment = json.loads((ROOT / "adapters" / "temporal" / "worker_deployment.v1.json").read_text())
 
     assert "uv run" not in generator
     assert "provisioning/temporal_mcp_pin.json" not in pin["key_files_sha256"]

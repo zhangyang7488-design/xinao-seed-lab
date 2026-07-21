@@ -411,9 +411,7 @@ def _operation_session_gate(workflow_id: str, sessions_root: Path) -> dict[str, 
         operation_id = str(manifest.get("operation_id") or "").strip()
         if not session_id or not operation_id:
             continue
-        session_dirs = [
-            path for path in sessions_root.glob(f"*/{session_id}") if path.is_dir()
-        ]
+        session_dirs = [path for path in sessions_root.glob(f"*/{session_id}") if path.is_dir()]
         for session_dir in session_dirs:
             materialized = [
                 name
@@ -452,9 +450,11 @@ async def _wait_running_activity(
         history = await handle.fetch_history()
         rows = _event_rows(history)
         operation_session_gate = _operation_session_gate(workflow_id, sessions_root)
-        if desc.status == WorkflowExecutionStatus.RUNNING and any(
-            row["type"] == "EVENT_TYPE_ACTIVITY_TASK_STARTED" for row in rows
-        ) and operation_session_gate["ok"]:
+        if (
+            desc.status == WorkflowExecutionStatus.RUNNING
+            and any(row["type"] == "EVENT_TYPE_ACTIVITY_TASK_STARTED" for row in rows)
+            and operation_session_gate["ok"]
+        ):
             return {
                 "run_id": desc.run_id,
                 "status": desc.status.name,
@@ -1066,9 +1066,7 @@ async def run_canary(run_dir: Path) -> dict[str, Any]:
                 ((fresh_payload.get("grok") or {}).get("successful_lanes") or 0)
             ),
             "grok_model": COMPOSER_MODEL,
-            "grok_total_tokens": int(
-                ((fresh_payload.get("grok") or {}).get("total_tokens") or 0)
-            ),
+            "grok_total_tokens": int(((fresh_payload.get("grok") or {}).get("total_tokens") or 0)),
             "admin_invocations": 0,
             "visible_window": False,
             "focus_or_input": False,

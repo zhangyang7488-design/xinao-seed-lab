@@ -255,12 +255,16 @@ async def _require_task_queue_pollers(
                 age = now - last_access
                 if timedelta(minutes=-1) <= age <= timedelta(minutes=2):
                     fresh.append((poller, last_access))
-            unexpected = [poller.identity for poller, _ in fresh if poller.identity != expected_identity]
+            unexpected = [
+                poller.identity for poller, _ in fresh if poller.identity != expected_identity
+            ]
             if unexpected:
                 raise ValueError(
                     f"{task_queue} {type_name} has unexpected fresh pollers: {unexpected}"
                 )
-            expected = [(poller, seen) for poller, seen in fresh if poller.identity == expected_identity]
+            expected = [
+                (poller, seen) for poller, seen in fresh if poller.identity == expected_identity
+            ]
             if expected:
                 break
             if asyncio.get_running_loop().time() >= deadline:

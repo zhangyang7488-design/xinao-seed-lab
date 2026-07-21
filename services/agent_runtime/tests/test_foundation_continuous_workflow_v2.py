@@ -142,9 +142,7 @@ def _admitted_method(root: Path) -> tuple[dict[str, object], str, str]:
         "executable": {
             "schema_version": "xinao.f4_prompted_method_executable.v1",
             "method_id": "method.f4-canary.v1",
-            "method_evidence_rule": (
-                "F4_EVIDENCE_BOUND_CANARY:{stage}:{work_key_last_12}"
-            ),
+            "method_evidence_rule": ("F4_EVIDENCE_BOUND_CANARY:{stage}:{work_key_last_12}"),
             "instructions": [
                 "Apply the F4 canary method to the exact bound method_input.",
                 "Derive method_evidence from the executable rule.",
@@ -481,9 +479,7 @@ def _runtime_fixture(
             {
                 "candidate_id": f"candidate-{index:04d}",
                 "work_item": entry["work_item"],
-                "lane_templates_sha256": canonical_sha256(
-                    entry["lane_templates"]
-                ),
+                "lane_templates_sha256": canonical_sha256(entry["lane_templates"]),
                 "portfolio_lane": "EXPLOITATION",
             }
             for index, entry in enumerate(ready)
@@ -553,9 +549,7 @@ def _strict_runtime_fixture(
     frontier_path, _ = _runtime_fixture(root, item_count=13)
     frontier = json.loads(frontier_path.read_text(encoding="utf-8"))
     graph = json.loads(
-        Path(str(frontier["source_dependency_graph_ref"])).read_text(
-            encoding="utf-8"
-        )
+        Path(str(frontier["source_dependency_graph_ref"])).read_text(encoding="utf-8")
     )
     selection_value = json.loads(
         Path(str(frontier["selection_manifest_ref"])).read_text(encoding="utf-8")
@@ -718,9 +712,7 @@ def _roll_forward_fixture(root: Path, operation_id: str) -> tuple[Path, str]:
     )
     history_ref, history_hash = _write(root / "v1-history.json", history_value)
     history_event_count = len(history_value["events"])
-    workflow_code_hash = hashlib.sha256(
-        Path(foundation_v1.__file__).read_bytes()
-    ).hexdigest()
+    workflow_code_hash = hashlib.sha256(Path(foundation_v1.__file__).read_bytes()).hexdigest()
     replay_ref, replay_hash = _write(
         root / "v1-replay.json",
         {
@@ -777,9 +769,7 @@ def _external_stage_result(
         {
             "prompt": full_prompt,
             "task_prompt_sha256": prompt_sha256,
-            "full_prompt_sha256": hashlib.sha256(
-                full_prompt.encode("utf-8")
-            ).hexdigest(),
+            "full_prompt_sha256": hashlib.sha256(full_prompt.encode("utf-8")).hexdigest(),
             "model": SELECTED_MODEL,
             "contract_id": "xinao.foundation.f4.readonly_lane.v1",
             "write": False,
@@ -865,9 +855,7 @@ def _external_stage_result(
         "actor_id": lane_id,
         "method_id": str(method_binding["method_id"]),
         "method_admission_hash": str(method_binding["method_admission_hash"]),
-        "method_material_bundle_sha256": str(
-            method_binding["method_material_bundle_sha256"]
-        ),
+        "method_material_bundle_sha256": str(method_binding["method_material_bundle_sha256"]),
         "work_item_content_sha256": work_item_content_hash,
         "upstream": {
             "producer_ref": str(response.get("target_artifact_ref") or ""),
@@ -881,9 +869,7 @@ def _external_stage_result(
         "method_admission_hash": method_binding["method_admission_hash"],
         "method_executable_ref": method_binding["method_executable_ref"],
         "method_executable_sha256": method_binding["method_executable_sha256"],
-        "method_material_bundle_sha256": method_binding[
-            "method_material_bundle_sha256"
-        ],
+        "method_material_bundle_sha256": method_binding["method_material_bundle_sha256"],
         "method_input_sha256": method_input_sha256,
     }
     if include_method_output:
@@ -891,9 +877,7 @@ def _external_stage_result(
             "applied": True,
             "stage": stage,
             "work_key": work_key,
-            "method_evidence": (
-                f"F4_EVIDENCE_BOUND_CANARY:{stage}:{work_key[-12:]}"
-            ),
+            "method_evidence": (f"F4_EVIDENCE_BOUND_CANARY:{stage}:{work_key[-12:]}"),
         }
     final_response = {**response_binding, **response}
     lane_binding: dict[str, object] = {
@@ -917,27 +901,19 @@ def _external_stage_result(
         "work_item_content_sha256": work_item_content_hash,
         "active_research_surface_ref": active_surface_ref,
         "active_research_surface_sha256": active_surface_hash,
-        "active_research_surface_content_sha256": active_surface[
-            "content_sha256"
-        ],
+        "active_research_surface_content_sha256": active_surface["content_sha256"],
         "research_portfolio_policy_ref": portfolio_policy_ref,
         "research_portfolio_policy_sha256": portfolio_policy_hash,
-        "research_portfolio_policy_content_sha256": portfolio_policy[
-            "content_sha256"
-        ],
+        "research_portfolio_policy_content_sha256": portfolio_policy["content_sha256"],
         "research_question_ref": research_question_ref,
         "research_question_sha256": research_question_hash,
         "research_question_content_sha256": research_question["content_sha256"],
         "research_candidate_snapshot_ref": candidate_snapshot_ref,
         "research_candidate_snapshot_sha256": candidate_snapshot_hash,
-        "research_candidate_snapshot_content_sha256": candidate_snapshot[
-            "content_sha256"
-        ],
+        "research_candidate_snapshot_content_sha256": candidate_snapshot["content_sha256"],
         "research_portfolio_allocation_ref": portfolio_allocation_ref,
         "research_portfolio_allocation_sha256": portfolio_allocation_hash,
-        "research_portfolio_allocation_content_sha256": portfolio_allocation[
-            "content_sha256"
-        ],
+        "research_portfolio_allocation_content_sha256": portfolio_allocation["content_sha256"],
         "ready_frontier_sha256": portfolio_allocation["ready_frontier_sha256"],
     }
     final_path = root / "external" / stage_key / lane_id / "final.txt"
@@ -980,7 +956,7 @@ def _external_stage_result(
                             "name": "final.txt",
                             "uri": final_ref,
                             "sha256": final_hash,
-                        }
+                        },
                     ],
                 }
             ],
@@ -1052,21 +1028,18 @@ def test_plan_dispatch_materializes_exact_decision_width(tmp_path: Path) -> None
             validator.validate("```json\n{}\n```")
         binding = payload["lane_bindings"][lane["lane_id"]]
         assert binding["result_format"] == "json_object"
-        assert binding["result_json_schema_sha256"] == hashlib.sha256(
-            foundation_v2.artifact_json_bytes(schema)
-        ).hexdigest()
+        assert (
+            binding["result_json_schema_sha256"]
+            == hashlib.sha256(foundation_v2.artifact_json_bytes(schema)).hexdigest()
+        )
         assert "required_result_markers" not in binding
 
 
 def test_v3_dispatch_uses_exact_f3_source_allocation_prefix(tmp_path: Path) -> None:
-    frontier, frontier_hash, candidate_snapshot, allocation = _strict_runtime_fixture(
-        tmp_path
-    )
+    frontier, frontier_hash, candidate_snapshot, allocation = _strict_runtime_fixture(tmp_path)
     frontier_value = json.loads(frontier.read_text(encoding="utf-8"))
     graph = json.loads(
-        Path(str(frontier_value["source_dependency_graph_ref"])).read_text(
-            encoding="utf-8"
-        )
+        Path(str(frontier_value["source_dependency_graph_ref"])).read_text(encoding="utf-8")
     )
     legacy = dedupe_ready_frontier(
         [row["entry"]["work_item"] for row in candidate_snapshot["candidate_rows"]],
@@ -1087,18 +1060,14 @@ def test_v3_dispatch_uses_exact_f3_source_allocation_prefix(tmp_path: Path) -> N
     )
     assert decision["capacity_decision"]["dispatch_width"] == 2
     assert decision["wave"]["work_keys"] == allocation["ready_work_keys"][:2]
-    payload = json.loads(
-        Path(decision["wave"]["payload_ref"]).read_text(encoding="utf-8")
-    )
+    payload = json.loads(Path(decision["wave"]["payload_ref"]).read_text(encoding="utf-8"))
     assert payload["canonical_work_keys"] == allocation["ready_work_keys"][:2]
     assert (
         payload["research_surface_binding"]["frontier_binding_mode"]
         == "STRICT_F3_SURFACE_SOURCE_BOUND"
     )
     assert (
-        payload["research_surface_binding"][
-            "research_candidate_source_snapshot_content_sha256"
-        ]
+        payload["research_surface_binding"]["research_candidate_source_snapshot_content_sha256"]
         == candidate_snapshot["candidate_source_snapshot_ref"]
     )
 
@@ -1165,9 +1134,9 @@ def test_partial_capacity_downshifts_and_bare_closed_is_rejected(tmp_path: Path)
     selection_value = json.loads(
         Path(str(value["selection_manifest_ref"])).read_text(encoding="utf-8")
     )
-    registrations = json.loads(
-        Path(str(value["method_registry_ref"])).read_text(encoding="utf-8")
-    )["registrations"]
+    registrations = json.loads(Path(str(value["method_registry_ref"])).read_text(encoding="utf-8"))[
+        "registrations"
+    ]
     empty_question = finalize_research_candidate_question(
         question_id="question:f4-v2-empty-fixture",
         candidate_generator_id="generator:f4-v2-fixture.v1",
@@ -1223,9 +1192,7 @@ def test_partial_capacity_downshifts_and_bare_closed_is_rejected(tmp_path: Path)
 def test_frozen_route_quote_never_reaches_temporal_dispatch(tmp_path: Path) -> None:
     frontier, _ = _runtime_fixture(tmp_path, item_count=1)
     value = json.loads(frontier.read_text(encoding="utf-8"))
-    value["ready_frontier"][0]["work_item"]["physical_role"] = (
-        "FROZEN_AGENT_ROUTE_QUOTE"
-    )
+    value["ready_frontier"][0]["work_item"]["physical_role"] = "FROZEN_AGENT_ROUTE_QUOTE"
     _, frozen_hash = _write(frontier, value)
 
     with pytest.raises(ValueError, match="ACTIVE_SETTLEMENT"):
@@ -1500,9 +1467,7 @@ def test_external_result_rejects_method_snapshot_drift(tmp_path: Path) -> None:
             "claim_refs": [],
         },
     )
-    executable_snapshot = Path(
-        method_binding["materials"]["executable"]["artifact_ref"]
-    )
+    executable_snapshot = Path(method_binding["materials"]["executable"]["artifact_ref"])
     executable_snapshot.write_text("drifted", encoding="utf-8")
 
     with pytest.raises(ValueError, match="snapshot hash drifted"):
@@ -1557,9 +1522,7 @@ def test_critique_cannot_bind_a_different_producer_artifact(tmp_path: Path) -> N
         response={
             "work_key": work_key,
             "critic_id": "critic-1",
-            "target_artifact_ref": producer["stage_records"][work_key][
-                "artifact_ref"
-            ],
+            "target_artifact_ref": producer["stage_records"][work_key]["artifact_ref"],
             "target_artifact_hash": "0" * 64,
             "verdict": "APPROVED",
             "finding_refs": [],
@@ -1658,9 +1621,7 @@ def test_method_execution_rejects_schema_valid_semantic_drift(
         "applied": True,
         "stage": "PRODUCER",
         "work_key": work_key,
-        "method_evidence": (
-            f"F4_EVIDENCE_BOUND_CANARY:PRODUCER:{work_key[-12:]}"
-        ),
+        "method_evidence": (f"F4_EVIDENCE_BOUND_CANARY:PRODUCER:{work_key[-12:]}"),
         **method_output_patch,
     }
     result_path, result_hash, lane_binding = _external_stage_result(
@@ -1717,9 +1678,7 @@ def test_external_lane_rejects_ambiguous_artifact_or_model_identity(
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     lane = manifest["lanes"][0]
     if mutation == "duplicate-final":
-        final_artifact = next(
-            value for value in lane["artifacts"] if value["name"] == "final.txt"
-        )
+        final_artifact = next(value for value in lane["artifacts"] if value["name"] == "final.txt")
         lane["artifacts"].append(dict(final_artifact))
         expected = "artifact names must be unique"
     else:

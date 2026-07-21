@@ -58,9 +58,7 @@ def _proof_evidence(path: Path) -> dict[str, Any]:
         "exists": True,
         "sha256": _sha256(path),
         "checkpoint_ok": fields.get("checkpoint_ok", "").casefold() == "true",
-        "continue_as_new_wired": (
-            fields.get("continue_as_new_wired", "").casefold() == "true"
-        ),
+        "continue_as_new_wired": (fields.get("continue_as_new_wired", "").casefold() == "true"),
         "episode_cache_ref_present": fields.get("episode_cache_ref", "").casefold()
         not in {"", "none"},
     }
@@ -68,8 +66,7 @@ def _proof_evidence(path: Path) -> dict[str, Any]:
 
 def _proof_path(runtime_root: Path, workflow_id: str) -> Path:
     proof_stem = "".join(
-        character if character.isalnum() or character in "-_." else "_"
-        for character in workflow_id
+        character if character.isalnum() or character in "-_." else "_" for character in workflow_id
     )[:120]
     return runtime_root / "state" / "integrated_bus_proof" / f"{proof_stem}.txt"
 
@@ -150,9 +147,7 @@ def _continued_record(event: dict[str, Any], *, workflow_id: str) -> dict[str, A
     if not isinstance(state, dict):
         raise ValueError("Continue-As-New state transfer is missing")
     checkpoints = _checkpoint_records(state.get("episode_cache"))
-    matching = [
-        item for item in checkpoints if item.get("checkpoint_thread_id") == workflow_id
-    ]
+    matching = [item for item in checkpoints if item.get("checkpoint_thread_id") == workflow_id]
     return {
         "event_id": int(event.get("eventId", 0)),
         "new_run_id": str(attributes.get("newExecutionRunId") or ""),
@@ -163,11 +158,7 @@ def _continued_record(event: dict[str, Any], *, workflow_id: str) -> dict[str, A
         "checkpoint_count": len(checkpoints),
         "checkpoint_thread_matches": bool(matching),
         "checkpoint_ids": sorted(
-            {
-                str(item.get("checkpoint_id"))
-                for item in matching
-                if item.get("checkpoint_id")
-            }
+            {str(item.get("checkpoint_id")) for item in matching if item.get("checkpoint_id")}
         ),
     }
 
@@ -195,9 +186,7 @@ def inspect_history_chain(
         events = history.get("events")
         if not isinstance(events, list) or not events:
             raise ValueError("Temporal run history is empty")
-        event_types = [
-            str(event.get("eventType")) for event in events if isinstance(event, dict)
-        ]
+        event_types = [str(event.get("eventType")) for event in events if isinstance(event, dict)]
         failed_event_types.extend(item for item in event_types if item in FAILED_EVENTS)
         continued_events = [
             event
@@ -231,10 +220,14 @@ def inspect_history_chain(
 
     phases = [int(item["episode_phase"]) for item in continuations]
     maximum_phases = [int(item["episode_max_phase"]) for item in continuations]
-    phase_progression_ok = bool(phases) and bool(maximum_phases) and bool(
-        phases == list(range(phases[0], phases[0] + len(phases)))
-        and len(set(maximum_phases)) == 1
-        and all(0 <= phase <= maximum_phases[0] for phase in phases)
+    phase_progression_ok = (
+        bool(phases)
+        and bool(maximum_phases)
+        and bool(
+            phases == list(range(phases[0], phases[0] + len(phases)))
+            and len(set(maximum_phases)) == 1
+            and all(0 <= phase <= maximum_phases[0] for phase in phases)
+        )
     )
     checkpoint_recovery_verified = bool(
         continuations

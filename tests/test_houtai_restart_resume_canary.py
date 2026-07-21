@@ -47,6 +47,8 @@ def test_restart_gate_requires_materialized_operation_and_session(
     assert gate["ok"] is True
     assert gate["operation_id"] == "op-1"
     assert gate["session_id"] == "session-1"
+
+
 from temporalio.api.enums.v1 import EventType, TimeoutType
 from temporalio.api.history.v1 import HistoryEvent
 from temporalio.client import WorkflowExecutionStatus

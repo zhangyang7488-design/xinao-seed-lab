@@ -75,9 +75,7 @@ def test_build_initial_can_seed_a_real_width_two_resume_state() -> None:
     inputs = {
         "frontier_ref": r"D:\XINAO_RESEARCH_RUNTIME\fixture\frontier.json",
         "frontier_sha256": "a" * 64,
-        "roll_forward_manifest_ref": (
-            r"D:\XINAO_RESEARCH_RUNTIME\fixture\roll-forward.json"
-        ),
+        "roll_forward_manifest_ref": (r"D:\XINAO_RESEARCH_RUNTIME\fixture\roll-forward.json"),
         "roll_forward_manifest_sha256": "b" * 64,
     }
     initial = build_initial(
@@ -88,9 +86,7 @@ def test_build_initial_can_seed_a_real_width_two_resume_state() -> None:
 
     assert set(initial) == {"resume_state"}
     assert initial["resume_state"]["previous_width"] == 2
-    assert initial["resume_state"]["operation_id"] == (
-        "negative-companion-width-two"
-    )
+    assert initial["resume_state"]["operation_id"] == ("negative-companion-width-two")
 
 
 def test_report_contract_requires_three_replayed_zero_model_cases() -> None:
