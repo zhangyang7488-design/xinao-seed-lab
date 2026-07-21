@@ -1041,7 +1041,11 @@ def _run_package(
     contract = _load_object(contract_path, "common logical contract")
     attempt_receipt = _load_object(attempt_path, "common attempt receipt")
     try:
-        validate_attempt_receipt(contract, attempt_receipt)
+        validate_attempt_receipt(
+            contract,
+            attempt_receipt,
+            expected_consumer_id=EXPECTED_DIRECT_ATTEMPT_CONSUMER_ID,
+        )
     except (TypeError, ValueError) as exc:
         result.update(status="failed", failure=f"common attempt receipt invalid: {exc}")
         return result

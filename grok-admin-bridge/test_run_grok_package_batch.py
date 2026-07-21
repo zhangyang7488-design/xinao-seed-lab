@@ -640,6 +640,19 @@ def test_nonzero_provider_exit_with_valid_common_receipt_is_terminal_recordable(
         return fake_run(command)
 
     monkeypatch.setattr(subject, "_run_process_with_live_guard", fake_guarded_run)
+    expected_consumers: list[str | None] = []
+
+    def validate_terminal_attempt(
+        _contract: object,
+        _attempt: object,
+        *,
+        expected_consumer_id: str | None = None,
+    ) -> SimpleNamespace:
+        expected_consumers.append(expected_consumer_id)
+        return SimpleNamespace(
+            accepted=False, reason_codes=("TERMINAL_STATE_NOT_COMPLETED",)
+        )
+
     result = subject._run_package(
         package=package,
         candidate_cwd=output_root,
@@ -673,12 +686,11 @@ def test_nonzero_provider_exit_with_valid_common_receipt_is_terminal_recordable(
         },
         validate_dispatch_route_claim=validate_route_claim,
         timeout_sec=30,
-        validate_attempt_receipt=lambda _contract, _attempt: SimpleNamespace(
-            accepted=False, reason_codes=("TERMINAL_STATE_NOT_COMPLETED",)
-        ),
+        validate_attempt_receipt=validate_terminal_attempt,
     )
 
     assert result["status"] == "terminal_ready"
+    assert expected_consumers == [subject.EXPECTED_DIRECT_ATTEMPT_CONSUMER_ID]
     assert route_validation_calls == 3
     assert result["terminal_recordable"] is True
     assert result["exit_code"] == 3
