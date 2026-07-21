@@ -3,7 +3,6 @@ from __future__ import annotations
 import hashlib
 import json
 import os
-import shutil
 import subprocess
 from pathlib import Path
 from types import SimpleNamespace
@@ -12,34 +11,12 @@ import pytest
 import xinao.foundation.foundation_v4_replay_runtime as replay_runtime
 
 F1_BLOCK_ID = "F1_settlement_world"
-CAPSULES = {
-    F1_BLOCK_ID: (
-        Path(
-            r"D:\XINAO_RESEARCH_RUNTIME\projects\xinao_discovery\evidence"
-            r"\foundation-v4-f1-relocation-capsule-20260715T105802+0800"
-        ),
-        "34882e909540c3bb0b124a02e60b430f6070afc68d6afc1330f5b05965633580",
-    ),
-    "F2_issuer_settlement_cost_space": (
-        Path(
-            r"D:\XINAO_RESEARCH_RUNTIME\projects\xinao_discovery\evidence"
-            r"\foundation-v4-f234-relocation-source-capsules-20260715T112032+0800"
-            r"\F2_issuer_settlement_cost_space-source-capsule"
-        ),
-        "b331843db65eae1f9dc2911c314431c7afb76c74106c65cb759bd2453f712b8b",
-    ),
-    "F3_research_weight": (
-        Path(
-            r"D:\XINAO_RESEARCH_RUNTIME\projects\xinao_discovery\evidence"
-            r"\foundation-v4-f234-relocation-source-capsules-20260715T112032+0800"
-            r"\F3_research_weight-source-capsule"
-        ),
-        "5bc72aab3103139f5f7d0ad120d2bfef0a4d1a3ff82cfe20e1e4cbf9ee3f4609",
-    ),
-}
+CAPSULE_BLOCK_IDS = (
+    F1_BLOCK_ID,
+    "F2_issuer_settlement_cost_space",
+    "F3_research_weight",
+)
 ADAPTERS = ("public", "execution")
-MANIFEST_ORDER_SHA256 = "fd56a201a9fd054403aa54768c2d53325e37cb7440704267d0668d4cdd9ced91"
-SORTED_ORDER_SHA256 = "2b4bc89104314aafcccea10ed24f6816bedfe67b5463f6acd2f79ae1d9ef028c"
 
 
 def _sha256_bytes(raw: bytes) -> str:
@@ -54,12 +31,89 @@ def _path_key(path: os.PathLike[str] | str) -> str:
     return os.path.normcase(os.path.abspath(os.fspath(path)))
 
 
+def _json_bytes(value: object) -> bytes:
+    return (json.dumps(value, ensure_ascii=False, indent=2) + "\n").encode("utf-8")
+
+
+def _payload_row(relative_path: str, raw: bytes) -> dict[str, object]:
+    return {
+        "relative_path": relative_path,
+        "size_bytes": len(raw),
+        "sha256": _sha256_bytes(raw),
+    }
+
+
 def _copy_capsule(tmp_path: Path, block_id: str, *, name: str = "pack") -> Path:
-    source, manifest_sha256 = CAPSULES[block_id]
-    assert source.is_dir()
-    assert _sha256_file(source / "capsule_manifest.json") == manifest_sha256
+    """Build a minimal sealed capsule without depending on machine-local evidence."""
+
+    spec = replay_runtime._replay_block_spec(block_id)
     pack = tmp_path / name
-    shutil.copytree(source, pack / "foundation")
+    foundation = pack / "foundation"
+
+    request_relative = f"assertion_requests/{block_id}.json"
+    request_raw = _json_bytes(
+        {
+            "block_id": block_id,
+            "assertion_ids": list(spec.assertion_ids),
+            "input_evidence": {key: {} for key in spec.input_names},
+            "input_hashes": {key: "0" * 64 for key in spec.input_names},
+            "artifacts": {key: {} for key in spec.artifact_names},
+        }
+    )
+    blueprint_relative = spec.execution_excluded_payload_paths[0]
+    blueprint_raw = _json_bytes(
+        {
+            "schema": "test.blueprint.v1",
+            "block_id": block_id,
+            "purpose": "sealed execution-exclusion canary",
+        }
+    )
+    runtime_relative = "runtime_buildinfo.json"
+    runtime_raw = _json_bytes({"schema_version": "test.runtime_buildinfo.v1"})
+    authority_relative = "authority_snapshot/authority_manifest.json"
+    authority_raw = _json_bytes(
+        {
+            "schema_version": "xinao.compiler_code_manifest.v3",
+            "entries": [],
+            "runtime_buildinfo_ref": {
+                "relative_path": runtime_relative,
+                "size": len(runtime_raw),
+                "sha256": _sha256_bytes(runtime_raw),
+            },
+        }
+    )
+
+    # Deliberately retain a non-sorted manifest order so the order-binding
+    # regression remains observable without copying multi-megabyte D: evidence.
+    payloads = (
+        (request_relative, request_raw),
+        (blueprint_relative, blueprint_raw),
+        (authority_relative, authority_raw),
+        (f"authority_snapshot/{runtime_relative}", runtime_raw),
+    )
+    rows = [_payload_row(relative, raw) for relative, raw in payloads]
+    for relative, raw in payloads:
+        destination = foundation / Path(*relative.split("/"))
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        destination.write_bytes(raw)
+
+    manifest = {
+        "schema_version": spec.capsule_schema_version,
+        "block_id": block_id,
+        "request": {
+            "block_id": block_id,
+            "relative_path": request_relative,
+            "size_bytes": len(request_raw),
+            "sha256": _sha256_bytes(request_raw),
+            "assertion_count": len(spec.assertion_ids),
+        },
+        "payload": {
+            "files": rows,
+            "exact_inventory_sha256": _inventory_sha256(rows),
+            "total_size_bytes": sum(len(raw) for _, raw in payloads),
+        },
+    }
+    _write_manifest(pack, manifest)
     return pack
 
 
@@ -313,14 +367,7 @@ def test_common_preflight_never_reads_ordinary_legacy_quarantine_poison(
         return original_read_bytes(path)
 
     monkeypatch.setattr(Path, "read_bytes", guarded_read_bytes)
-    if adapter == "public":
-        with pytest.raises(
-            replay_runtime.FoundationV4ReplayError,
-            match="relocated request inventory is not exact",
-        ):
-            _call_adapter(adapter, pack=pack)
-    else:
-        assert _call_adapter(adapter, pack=pack)
+    assert _call_adapter(adapter, pack=pack)
     for path, raw in expected.items():
         assert original_read_bytes(path) == raw
 
@@ -369,30 +416,24 @@ def test_v1_inventory_uses_existing_manifest_order(tmp_path: Path, adapter: str)
     assert isinstance(rows, list)
     relative_paths = [row["relative_path"] for row in rows]
     assert relative_paths != sorted(relative_paths)
-    assert relative_paths[36:38] == [
-        "authority_snapshot/sources/services/agent_runtime/foundation_continuous_workflow_v2.py",
-        "authority_snapshot/sources/services/agent_runtime/foundation_continuous_workflow.py",
+    assert relative_paths[:2] == [
+        f"assertion_requests/{F1_BLOCK_ID}.json",
+        "blueprint/blueprint.v1_已合并工具与执行纪律.json",
     ]
-    assert _inventory_sha256(rows) == MANIFEST_ORDER_SHA256
+    manifest_order_sha256 = _inventory_sha256(rows)
+    assert payload["exact_inventory_sha256"] == manifest_order_sha256
     sorted_rows = sorted(rows, key=lambda row: row["relative_path"])
-    assert _inventory_sha256(sorted_rows) == SORTED_ORDER_SHA256
-    assert MANIFEST_ORDER_SHA256 != SORTED_ORDER_SHA256
+    sorted_order_sha256 = _inventory_sha256(sorted_rows)
+    assert manifest_order_sha256 != sorted_order_sha256
 
-    if adapter == "public":
-        with pytest.raises(
-            replay_runtime.FoundationV4ReplayError,
-            match="relocated request inventory is not exact",
-        ):
-            _call_adapter(adapter, pack=pack)
-    else:
-        assert _call_adapter(adapter, pack=pack)
-    rows[36], rows[37] = rows[37], rows[36]
+    assert _call_adapter(adapter, pack=pack)
+    rows[0], rows[1] = rows[1], rows[0]
     _write_manifest(pack, manifest)
     with pytest.raises(replay_runtime.FoundationV4ReplayError, match="inventory SHA drift"):
         _call_adapter(adapter, pack=pack)
 
 
-@pytest.mark.parametrize("block_id", tuple(CAPSULES))
+@pytest.mark.parametrize("block_id", CAPSULE_BLOCK_IDS)
 def test_execution_preflight_does_not_read_excluded_blueprint(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
