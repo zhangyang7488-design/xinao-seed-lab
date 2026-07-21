@@ -245,7 +245,8 @@ $backgroundEvidence = Join-Path $testRoot "worker-background"
 $backgroundHome = Join-Path $testRoot "grok-home"
 New-Item -ItemType Directory -Force -Path $backgroundEvidence, $backgroundHome | Out-Null
 $backgroundSchema = Join-Path $testRoot "background-schema.json"
-[IO.File]::WriteAllText($backgroundSchema, '{"type":"object"}', $utf8)
+$backgroundSchemaBytes = [Text.Encoding]::UTF8.GetBytes("{`n  `"title`": `"原始字节`",`n  `"type`": `"object`"`n}")
+[IO.File]::WriteAllBytes($backgroundSchema, $backgroundSchemaBytes)
 $workerParentInfo = [Diagnostics.ProcessStartInfo]::new()
 $workerParentInfo.FileName = $pwshExe
 $workerParentInfo.UseShellExecute = $false
@@ -280,6 +281,19 @@ Assert-Contract ($launch.status -eq "pending_background") "background_launch_pen
 Assert-Contract ($launch.completion_claim_allowed -eq $false) "background_pending_is_not_completion"
 Assert-Contract (Test-Path -LiteralPath $launch.claim_path -PathType Leaf) "background_claim_present"
 Assert-Contract ([string]$launch.argv_transport -eq "process_start_info_argument_list") "background_argument_list"
+$backgroundSchemaSnapshot = Get-ChildItem -LiteralPath $backgroundEvidence -Filter "*.background.schema.source.json" |
+    Select-Object -First 1
+Assert-Contract ($null -ne $backgroundSchemaSnapshot) "background_schema_snapshot_present"
+$backgroundSchemaSnapshotBytes = [IO.File]::ReadAllBytes($backgroundSchemaSnapshot.FullName)
+Assert-Contract (
+    [Linq.Enumerable]::SequenceEqual[byte]($backgroundSchemaBytes, $backgroundSchemaSnapshotBytes)
+) "background_schema_snapshot_exact_raw_bytes"
+$backgroundInvocation = Get-ChildItem -LiteralPath $backgroundEvidence -Filter "*.background.invocation.json" |
+    Select-Object -First 1 | ForEach-Object {
+        Get-Content -LiteralPath $_.FullName -Raw -Encoding UTF8 | ConvertFrom-Json
+    }
+Assert-Contract ([string]$backgroundInvocation.json_schema_digest_profile -eq "raw-bytes-sha256-v1") "background_schema_digest_profile"
+Assert-Contract ([string]$backgroundInvocation.json_schema_transformation_profile -eq "identity") "background_schema_identity_transform"
 $workerMetaPath = [string]$launch.worker_meta_path
 $drainAliveAtParentExit = $null -ne (Get-Process -Id ([int]$launch.drain_pid) -ErrorAction SilentlyContinue)
 $terminalPresentAtParentExit = $false
