@@ -15,6 +15,9 @@ Return only one JSON object with these fields:
 - next_step: act when no user answer or object classification is needed (routine preflight checks are
   part of act), inspect_then_act only when read-only classification must identify the exact local
   objects before acting, or ask_material_fork when a material fork requires a user answer
+  Verifying current Git, remote, carrier, baseline, or consumer facts for an already identified existing
+  repository transaction is routine preflight and remains `act`; do not turn that verification into a
+  second classification gate.
 - ask_user: whether work must stop for a user answer before the next meaningful action
 - create_repository: whether this request authorizes creating a remote repository
 - create_daemon: whether this request authorizes a resident daemon or OS persistence
@@ -50,9 +53,9 @@ Return only one JSON object with these fields:
   other independently useful frontier stated, use supervisor_only and set worker_provider,
   worker_transport, quota_action, and quota_query_disposition to not_applicable. If facts instead
   state multiple candidate sources, unresolved compatibility, broad multi-platform validation, or
-  another independently useful lane, worker-first remains required. Medium and highest still route
-  every positive-benefit separable lane to workers; default also delegates when net benefit is
-  positive. For a broad frontier with multiple objects, sources, stages, duplicates, or
+  another independently useful lane, worker-first remains required. Under the single dynamic
+  whole-package supervisor, external workers are default labor for every separable positive-benefit
+  package; Codex is not default labor. For a broad frontier with multiple objects, sources, stages, duplicates, or
   unresolved dependencies, the worker surface starts with a non-authoritative whole-frontier map of
   objects, dependencies, overlaps, gaps, completion bars, and candidate waves; Codex main governs and
   formally writes the one human-readable execution plan, then workers keep taking every positive-value
@@ -62,36 +65,25 @@ Return only one JSON object with these fields:
   map -> Codex-governed unique plan -> dependency-safe dispatch -> substantive worker drafts/tests/
   counterexamples/evidence -> deterministic fan-in -> Codex main-tree integration and acceptance ->
   recompute the next wave from accepted, rejected, and new facts. Research prose, a plan, one dispatch,
-  or token consumption alone is not completion. Saving scarce Codex usage and productively consuming
-  abundant or expiring worker quota are the same allocation decision: keep Codex for supervision,
-  formal integration, and acceptance while scaling useful worker breadth and depth without lowering the
-  completion bar or burning work with no landing point. Codex main remains the sole supervisor, formal
-  writer, and acceptance owner; worker output is a non-authoritative candidate
+  or token consumption alone is not completion. Provider quota, price, latency, health, concurrency,
+  and capability are live routing facts, never a consumption objective. Codex main remains the sole
+  supervisor, authority writer, integrator, and acceptance owner; worker output is a non-authoritative candidate
 - mainline_owner: the literal codex_main
-- worker_provider: choose grok, codex_agent, or mixed through a provider-agnostic policy. For any
-  eligible positive-benefit separable work, strongly prefer the configured machine default, currently
-  Grok; current remaining quota can determine or reinforce that preference without a weekly burn
-  forecast, and reset time is optional additional evidence. A Codex agent may still win when inherited
-  context, capability fit, or task-specific net value materially outweighs the default. Use
-  not_applicable only with supervisor_only; delegation never requires the user to name the worker again
-- outer provider choice precedes Codex-internal optimization. Only work already inside the Codex
-  responsibility cone may use a deterministic no-model precheck or native model, reasoning, and
-  subagents to reduce usage. That inner choice cannot override an eligible default worker, reduce
-  reasoning quality, evidence, or the parent completion bar, or create another router or control plane
-- inside that retained Codex cone, run the deterministic no-model precheck first. When a model is
-  still needed, use the current native read-only profile whose task fit preserves the same bar: Luna
-  for small bounded literal extraction or structural reads, Terra for bounded multi-file analysis,
-  and Sol only for owner integration, verification, tightly coupled work, or an explicit escalation
-  that the lower profile cannot safely resolve. This is a dynamic task-fit choice, not an automatic
-  ladder. A Luna or Terra attempt may return one ESCALATE candidate, but it never selects or invokes
-  another model. Spark is a separate quota bucket and is not part of the Sol/Terra/Luna inner tier.
-  Freeze and hash every input, prove requested=observed model identity and positive terminal usage,
-  and return only a non-authoritative candidate to Sol for deterministic fan-in
+- worker_provider: external_worker for a provider-neutral eligible package; grok only when the current
+  scenario or verified route facts explicitly bind Grok; codex_subagent_exceptional only when external
+  workers are unsuitable, inherited Codex context or native capability creates unusually high evidence
+  or quality value, and one bounded subagent materially shortens the active critical path. A routine
+  capacity shortage, convenience, or desire for another planner never satisfies that exception. Use
+  not_applicable only with supervisor_only. Provider, model, concurrency, transport, quota, price,
+  latency, and internal worker role remain current routing facts rather than a permanent role table
+- outer external-worker eligibility precedes Codex-internal optimization. A deterministic local
+  precheck may run first, but it cannot turn an eligible package into Codex-default labor, reduce
+  reasoning or evidence, or create another router or control plane
 - worker_transport: adaptive when the exact surface should be chosen from live net benefit,
-  in_turn_agent for a Codex subagent whose inherited context is decisive, direct_batch for a bounded
-  online whole-package transaction owned by the current interactive TUI, temporal_durable only for
+  direct_batch for a bounded online whole-package transaction owned by the current interactive TUI,
+  temporal_durable only for
   an explicitly required healthy durable background, cross-restart, or unattended multi-wave handoff,
-  and not_applicable only with supervisor_only. Direct batch is a normal leg A, not a fallback.
+  and not_applicable with supervisor_only or the exceptional native Codex-subagent case. Direct batch is a normal leg A, not a fallback.
   Active `continuous`/`永续` mode, resume, compaction, or a window change alone is not a durable-transport
   fact and must not switch legs. A still-valid restored route receipt keeps its selected transport only
   after its event head, work key, input pins, carrier facts, and route-health facts revalidate; a stale
@@ -116,7 +108,7 @@ Return only one JSON object with these fields:
   cannot replace the Codex main write; otherwise not_applicable. Merely naming Codex main as the single
   writer/owner does not itself
   request a text mutation
-  Selecting a supervisor tier, or reserving Codex for possible necessary formal single writes, does
+  Reserving Codex for possible necessary formal single writes
   not itself request a text mutation; use not_applicable unless the current increment actually asks
   to create, rewrite, align, clean, or finalize a text artifact.
   A Git/PR/runtime/carrier lifecycle action is not a text mutation merely because Codex main owns the
@@ -150,7 +142,7 @@ Return only one JSON object with these fields:
 - When an admitted deterministic `action_resume_receipt` consumer must run before the first dispatch,
   apply, land, or retire action, it must bind the exact next action, a unique side effect, and re-readable
   live facts; a self-declared work pin is not live reconciliation. Classify that immediate recovery step
-  as `supervisor_only` plus `owner_only_interlude`; provider,
+  as `supervisor_only` plus `authority_lane`; provider,
   transport, and quota fields are `not_applicable`. Only after its live reconciliation exposes a real
   provider or width decision does the once-per-wave quota rule apply. Do not fuse that later routing step
   into the pre-action receipt decision.
@@ -166,6 +158,14 @@ Return only one JSON object with these fields:
   half-finished work surface. Dirty, ignored, unabsorbed, stale, locked, prunable, or unclassified carriers
   fail closed; archive verification does not grant deletion; retire_candidate is not retired; receipts and
   tombstones never gain parent completion or delete authority.
+  For a named transaction in an existing repository with an existing authorized remote and PR/merge
+  workflow, an implement, fix, build, land, finish, or close request itself authorizes and requires the
+  exact commit, push, PR/merge, remote-readback, real-consumer, and transaction-hygiene chain unless the
+  user explicitly says local-only/no-publish/pause/stop. Do not ask for a second publish instruction.
+  Record pre-transaction tree baselines, commit every useful scoped artifact, and after remote/effect
+  verification retire classified temporary files, worktrees, branches, containers, and one-shot evidence.
+  Verify physical absence and no transaction-added dirt while preserving every unrelated baseline change;
+  dirty, unique, unclassified, or unabsorbed carriers fail closed.
 - recovery_probe: bounded_event_driven when a degraded endpoint/capability should be isolated or cooled
   down and later re-admitted through a limited probe, otherwise not_applicable; telemetry repair alone is
   not endpoint re-admission, and no degraded scope means no recovery probe; never probe before every task
@@ -173,7 +173,7 @@ Return only one JSON object with these fields:
   behavior, none when this is not a preference delta, or new_project only when explicitly requested
   A user-visible cross-window structural failure whose correction is not yet represented by an
   accepted promoted carrier uses `smallest_existing_artifact`; reusing an already-promoted accepted
-  carrier unchanged uses `none`. This is separate from persisting a supervisor tier.
+  carrier unchanged uses `none`. Dynamic routing facts are not a durable preference update.
   A normative current increment that tells the agent how to interpret future user examples or clues
   is itself a stable preference correction, even when phrased as a current task instruction or while
   its target is not yet classified. The same applies when a correction merges unique governing intent
@@ -182,13 +182,12 @@ Return only one JSON object with these fields:
   `smallest_existing_artifact` and `text_writer=codex_main` unless restored evidence explicitly says
   the same rule is already effective.
 - starts_new_project: whether the preference itself requires creating a new engineering project
-- supervisor_tier: default, medium, or highest; the selected tier does not change task mode or ownership
-- quota_consumption_objective: true only for an active verified highest-tier quota window; false for
-  default, medium, and an explicitly stopped highest-tier run
 - quota_query_disposition: query_now_before_routing, reuse_fresh_snapshot, or not_applicable
-- owner_execution_state: adaptive, thin_supervisor, or owner_only_interlude
-- tier_transition: none, highest_to_medium_now, default_to_medium, or medium_to_highest
-- terminal_refill: task_driven, immediate_positive_value, or not_applicable
+- owner_execution_state: dynamic_supervisor while Codex dispatches or accepts a worker frontier;
+  authority_lane for the serial owner-only adoption, CAS, formal integration, commit/push/merge,
+  effect verdict, or verified carrier retirement; inseparable_owner_slice only for substantive work
+  that cannot beneficially separate and is not itself a formal authority-lane action; or not_applicable
+- terminal_refill: immediate_positive_value or not_applicable
 - worker_receipt_disposition: accept, reject_and_recover, reuse, or not_applicable
 - completion_claim_scope: local_object, parent_mainline, or not_applicable
   `completion_claim_scope` reports completion actually established by current evidence, not the
@@ -240,21 +239,26 @@ authorized reversible local write, unless the same increment names a larger effe
 `degraded_scope=none` requires `unaffected_frontier_action=not_applicable` and
 `recovery_probe=not_applicable`.
 `supervisor_only` requires `worker_provider=not_applicable`, `worker_transport=not_applicable`, and
-`quota_action=not_applicable`; `single_supervisor_worker` requires a real provider and transport.
+`quota_action=not_applicable`; `single_supervisor_worker` requires a real provider and an external
+transport, except `codex_subagent_exceptional` uses `worker_transport=not_applicable`.
 
 
-## Supervisor tiers (default / medium / highest)
-- A supervisor tier never changes task mode, parent completion identity, acceptance, authority, or owner identity.
-- Medium and highest use the same worker-led work-conserving production loop: dynamic width, per-terminal positive-value refill, worker self-bootstrap, and a thin owner cone.
-- Highest differs only by setting quota_consumption_objective=true for its verified expiring window; medium keeps quota_consumption_objective=false. Quota burn is never an objective under medium or default.
-- Applying an already-effective default or selected tier, or a one-off task routing instruction, is not a durable preference update unless the user explicitly establishes ongoing tier-selection state.
-- `tier_transition` requires an explicit prior active tier in restored context and a current change.
-  Selecting medium at fresh episode entry with no prior-tier fact is `none`; never infer `default`.
+## Dynamic whole-package supervisor
+- Codex is not default labor; external workers are. Route every separable positive-benefit whole
+  package to the current admitted external-worker surface and keep Codex to field setting, thin
+  acceptance, the logical width-one authority lane, integration, and final verification.
+- Width remains dynamic and may be one. Only real result dependencies, write-domain collisions,
+  shared authority targets, or saturated owner acceptance capacity serialize work.
+- Accept each terminal independently, adopt or reject it once per immutable seal, refill useful
+  capacity immediately, and recompute the complete unresolved parent DAG after every relevant fact.
+- Quota and price alter provider and width only; they never create a usage objective or completion claim.
+- Codex collaboration subagents are exceptional only under all three conditions encoded by
+  `codex_subagent_exceptional`; they never become a routine second worker surface.
 
 ## Automatic once-per-dispatch-epoch quota query
 - Every fresh window or continuous episode opens a dispatch epoch and queries remaining quota before its first provider or width choice. Ordinary package terminals, positive-value refills, repair/reseal packages, and frontier recomputation stay in that epoch while its authenticated snapshot is fresh.
 - Never ask the user to report quota. Prefer query_now on epoch entry; reuse_episode_cache after a successful query until significant consumption, reset proximity/passage, material provider/capability change, or snapshot staleness explicitly opens a new epoch; repair_and_continue on query failure without blocking positive work.
-- Reuse only when restored context explicitly states a still-fresh authenticated snapshot for the current dispatch epoch. If that fact is absent, use query_now before the next provider or width choice. A terminal, refill, tier application, or new package alone neither proves a snapshot nor forces a new query.
+- Reuse only when restored context explicitly states a still-fresh authenticated snapshot for the current dispatch epoch. If that fact is absent, use query_now before the next provider or width choice. A terminal, refill, dynamic routing application, or new package alone neither proves a snapshot nor forces a new query.
 - Keep the fields paired: query_now and repair_and_continue map to query_now_before_routing; reuse_episode_cache maps to reuse_fresh_snapshot; not_applicable maps to not_applicable.
 
 ## Accepted D reuse and directory-only negative
@@ -302,7 +306,7 @@ authorized reversible local write, unless the same increment names a larger effe
   `text_writer=codex_main` even when the exact target object is still unresolved and the increment
   does not name a document; the smallest carrier is selected after inspection. Do not confuse the
   absence of a named text file with the absence of a behavior rule that must survive future windows.
-- Reuse a quota snapshot only when restored context explicitly records a still-fresh authenticated observation for this dispatch epoch; otherwise query_now before the next provider or width decision. Terminal release, ordinary refill, repair/reseal, or applying an already-effective tier neither opens a new epoch nor proves a snapshot by itself.
+- Reuse a quota snapshot only when restored context explicitly records a still-fresh authenticated observation for this dispatch epoch; otherwise query_now before the next provider or width decision. Terminal release, ordinary refill, repair/reseal, or applying current dynamic routing facts neither opens a new epoch nor proves a snapshot by itself.
 - `global_frontier_reconciled=true` only with `durable_wait` or `no_positive_global_candidate` after
   full global recomputation; ordinary owner-only or worker `execute` of still-positive work keeps
   false even when local facts mention reconciliation, no separable package, or non-junk routing.

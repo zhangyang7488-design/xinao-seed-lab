@@ -70,15 +70,7 @@ module.exports = (output, context) => {
     context.vars.expected_unaffected_frontier_action ?? 'not_applicable';
   const expectedRecoveryProbe = context.vars.expected_recovery_probe ?? 'not_applicable';
 
-  // Supervisor, continuity, and candidate-reuse fields are asserted when a case sets gold.
-  const expectedSupervisorTiers = hasVar('expected_supervisor_tier')
-    ? alternatives(context.vars.expected_supervisor_tier)
-    : null;
-  const expectedQuotaConsumptionObjective = hasVar(
-    'expected_quota_consumption_objective',
-  )
-    ? context.vars.expected_quota_consumption_objective
-    : null;
+  // Dynamic-supervisor, continuity, and candidate-reuse fields are asserted when a case sets gold.
   const expectedQuotaQueryDispositions = hasVar(
     'expected_quota_query_disposition',
   )
@@ -86,9 +78,6 @@ module.exports = (output, context) => {
     : null;
   const expectedOwnerExecutionStates = hasVar('expected_owner_execution_state')
     ? alternatives(context.vars.expected_owner_execution_state)
-    : null;
-  const expectedTierTransitions = hasVar('expected_tier_transition')
-    ? alternatives(context.vars.expected_tier_transition)
     : null;
   const expectedTerminalRefills = hasVar('expected_terminal_refill')
     ? alternatives(context.vars.expected_terminal_refill)
@@ -198,15 +187,6 @@ module.exports = (output, context) => {
     preference_update: context.vars.expected_preference_update,
     starts_new_project: context.vars.expected_starts_new_project,
   };
-  if (expectedSupervisorTiers) {
-    expected.supervisor_tier =
-      expectedSupervisorTiers.length === 1
-        ? expectedSupervisorTiers[0]
-        : expectedSupervisorTiers;
-  }
-  if (expectedQuotaConsumptionObjective !== null) {
-    expected.quota_consumption_objective = expectedQuotaConsumptionObjective;
-  }
   if (expectedQuotaQueryDispositions) {
     expected.quota_query_disposition =
       expectedQuotaQueryDispositions.length === 1
@@ -218,12 +198,6 @@ module.exports = (output, context) => {
       expectedOwnerExecutionStates.length === 1
         ? expectedOwnerExecutionStates[0]
         : expectedOwnerExecutionStates;
-  }
-  if (expectedTierTransitions) {
-    expected.tier_transition =
-      expectedTierTransitions.length === 1
-        ? expectedTierTransitions[0]
-        : expectedTierTransitions;
   }
   if (expectedTerminalRefills) {
     expected.terminal_refill =
@@ -296,10 +270,8 @@ module.exports = (output, context) => {
     'worker_provider',
     'worker_transport',
     'quota_action',
-    'supervisor_tier',
     'quota_query_disposition',
     'owner_execution_state',
-    'tier_transition',
     'terminal_refill',
     'worker_receipt_disposition',
     'completion_claim_scope',
@@ -309,16 +281,10 @@ module.exports = (output, context) => {
     'candidate_value',
   ];
   const optionalFieldMatches =
-    (expectedSupervisorTiers === null ||
-      expectedSupervisorTiers.includes(parsed.supervisor_tier)) &&
-    (expectedQuotaConsumptionObjective === null ||
-      parsed.quota_consumption_objective === expectedQuotaConsumptionObjective) &&
     (expectedQuotaQueryDispositions === null ||
       expectedQuotaQueryDispositions.includes(parsed.quota_query_disposition)) &&
     (expectedOwnerExecutionStates === null ||
       expectedOwnerExecutionStates.includes(parsed.owner_execution_state)) &&
-    (expectedTierTransitions === null ||
-      expectedTierTransitions.includes(parsed.tier_transition)) &&
     (expectedTerminalRefills === null ||
       expectedTerminalRefills.includes(parsed.terminal_refill)) &&
     (expectedWorkerReceiptDispositions === null ||
@@ -381,7 +347,12 @@ module.exports = (output, context) => {
       parsed.quota_action === 'not_applicable') ||
     (parsed.coordination_mode === 'single_supervisor_worker' &&
       parsed.worker_provider !== 'not_applicable' &&
+      parsed.worker_provider !== 'codex_subagent_exceptional' &&
       parsed.worker_transport !== 'not_applicable' &&
+      parsed.quota_action !== 'not_applicable') ||
+    (parsed.coordination_mode === 'single_supervisor_worker' &&
+      parsed.worker_provider === 'codex_subagent_exceptional' &&
+      parsed.worker_transport === 'not_applicable' &&
       parsed.quota_action !== 'not_applicable');
   const workerEffectHasAuthority =
     parsed.coordination_mode !== 'single_supervisor_worker' ||
@@ -438,28 +409,6 @@ module.exports = (output, context) => {
     (parsed.freeze_unaffected_provider === false &&
       parsed.ask_user === false &&
       ['act', 'inspect_then_act'].includes(parsed.next_step));
-  // Medium and highest share the same work-conserving loop; only an active
-  // highest-tier quota window has a burn objective. An explicit stop freezes it.
-  const highestStopIsCoherent =
-    parsed.continuous_run_disposition === 'stop_requested' &&
-    parsed.quota_consumption_objective === false &&
-    parsed.terminal_refill === 'not_applicable' &&
-    parsed.worker_provider === 'not_applicable' &&
-    parsed.worker_transport === 'not_applicable';
-  const tierWorkLoopInvariant =
-    expectedSupervisorTiers === null ||
-    expectedQuotaConsumptionObjective === null ||
-    !(
-      expectedSupervisorTiers.includes('medium') ||
-      expectedSupervisorTiers.includes('highest')
-    ) ||
-    (parsed.supervisor_tier === 'highest'
-      ? parsed.continuous_run_disposition === 'stop_requested'
-        ? highestStopIsCoherent
-        : parsed.quota_consumption_objective === true
-      : parsed.supervisor_tier === 'medium'
-        ? parsed.quota_consumption_objective === false
-        : true);
   const traceIsReal =
     Boolean(appServer.threadId) &&
     Boolean(appServer.turnId) &&
@@ -482,7 +431,6 @@ module.exports = (output, context) => {
     lowerLevelScopePreservesParent &&
     endpointRecoveryIsBounded &&
     unaffectedFrontierContinues &&
-    tierWorkLoopInvariant &&
     traceIsReal &&
     Boolean(parsed.reason?.trim());
   const evidence = {
@@ -501,7 +449,6 @@ module.exports = (output, context) => {
     lowerLevelScopePreservesParent,
     endpointRecoveryIsBounded,
     unaffectedFrontierContinues,
-    tierWorkLoopInvariant,
     optionalFieldMatches,
     threadIdPresent: Boolean(appServer.threadId),
     turnIdPresent: Boolean(appServer.turnId),

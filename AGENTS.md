@@ -32,5 +32,5 @@
 - 永续运行中的状态询问、解释性插问或增量纠正默认不替换父目标，也不形成回合终点：在 commentary 回答或吸收增量后从精确断点继续。只要全局运行账本仍为 `in_progress`，局部 `verified/partial/blocked`、报告生成或插问回答都不得触发 final；局部阻塞只冻结其依赖锥并重算其他前沿。
 - 控制面、连续运行、事故、session ownership、进程终止或 rollback 任务，必须先读 `docs/current/CODEX_S_PROJECT_AGREEMENT_COLD_2026-07-13.md` 与 `D:\XINAO_RESEARCH_RUNTIME\state\Codex_Situation_Island\contracts\working_agreement.md` 的匹配完整章节；本文件不替代那些细节。用户 stop/pause 取消整条相关生命周期。
 - 非平凡实现先定义可观察完成尺，实施后运行相称的 pytest/Promptfoo/fresh-process/真实环境证据；报告 `verified / partial / blocked / unverified`。静态 fixture、配置、队列空或长报告不等于 runtime 闭环。
-- “收口”对已明确仓库表示有限审阅、删除可证明无用残留、验证，并在当前请求已包含该仓库外部流程时有意提交/推送/合并；不扩成部署、身份、秘密、广泛删除或永续执行。
+- 对已识别且已有远端/PR 合并流程的仓库，用户要求实施、修复、建设、落地、完成或收口时，默认授权和完成谓词按全局 working agreement 与当前工具胶水宪法继续到该封印事务的提交、推送、PR/合并、远端回读、真实消费者验证和事务卫生，不等待第二次发布指令；事务卫生按开工前基线保留无关用户状态，并在验证后退役已分类的临时 worktree、分支、容器与残留。混合脏工作树只发布当前事务写域，不扩成新仓库/远端、无关部署、账户/受众、身份、秘密、广泛删除或永续执行。
 - 物料、缓存、证据和大状态的盘符路由按当前工具胶水宪法；重大进展更新 25 行以内的 session checkpoint。保留用户文件和秘密，紧耦合改动由单写者完成。

@@ -265,6 +265,10 @@ def test_project_agreement_keeps_capabilities_available_but_activation_adaptive(
     assert "availability as the hard default and activation as adaptive" in text
     assert "Do not impose a fixed score, lane count, or mandatory sequence" in text
     assert "decode “收口” as bounded review" in text
+    assert "do not wait for a second publish instruction" in text
+    assert "transaction-hygiene chain" in text
+    assert "recorded pre-transaction baselines" in text
+    assert "preserve unrelated user state" in text
 
 
 def test_project_agreement_orients_on_live_context_without_approval_theater() -> None:
@@ -316,10 +320,10 @@ def test_context_intent_alignment_eval_is_balanced_and_friction_bounded() -> Non
         "REG_CLOSE_AND_PUSH_EXISTING_OBJECTS",
         "POS_EXPLICIT_REPOSITORY_CREATE",
         "NEG_AMBIGUOUS_PUBLICATION_OBJECT",
-        "REG_MANAGER_WORKER_GROK_QUOTA_OFFLOAD",
+        "REG_EXTERNAL_WORKER_PROVIDER_AND_TRANSPORT_ADAPTIVE",
         "REG_DYNAMIC_WHOLE_PACKAGE_GLOBAL_DAG",
         "REG_INNER_CODEX_OPTIMIZATION_CANNOT_OVERRIDE_OUTER_PROVIDER",
-        "REG_CODEX_AGENT_CONTEXT_NET_VALUE_WINS",
+        "REG_DYNAMIC_SUPERVISOR_CODEX_SUBAGENT_EXCEPTION",
         "REG_TIGHT_CORE_DELEGATES_FROZEN_REPRO",
         "REG_DIRECT_FALLBACK_BY_NET_VALUE",
         "REG_DURABLE_BACKGROUND_BY_NET_VALUE",
@@ -334,16 +338,16 @@ def test_context_intent_alignment_eval_is_balanced_and_friction_bounded() -> Non
         "REG_EXTERNAL_AI_INVENTORY_NOT_SECOND_TRUTH",
         "REG_TEXT_CLEANUP_DIRECT_CURRENT_INTENT",
         "REG_ALL_TEXT_PREFINALIZATION_TEMPLATE_CLEANUP",
-        "REG_SUP_TIER_DEFAULT_DYNAMIC",
-        "REG_SUP_TIER_MEDIUM_EXPLICIT",
-        "REG_SUP_TIER_HIGH_TERMINAL_REFILL",
-        "REG_SUP_TIER_SEAL_MISMATCH",
-        "REG_SUP_TIER_OWNER_FORMAL_INTERLUDE",
-        "REG_SUP_TIER_NO_SEPARABLE_NO_JUNK",
-        "REG_SUP_TIER_PAUSE_STOPS",
-        "REG_SUP_TIER_HIGH_RESET_STEPDOWN",
+        "REG_DYNAMIC_SUPERVISOR_NET_BENEFIT",
+        "REG_DYNAMIC_SUPERVISOR_EXTERNAL_DEFAULT",
+        "REG_DYNAMIC_SUPERVISOR_TERMINAL_REFILL",
+        "REG_DYNAMIC_SUPERVISOR_SEAL_MISMATCH",
+        "REG_DYNAMIC_SUPERVISOR_AUTHORITY_LANE",
+        "REG_DYNAMIC_SUPERVISOR_NO_SEPARABLE_NO_JUNK",
+        "REG_DYNAMIC_SUPERVISOR_PAUSE_STOPS",
+        "REG_DYNAMIC_SUPERVISOR_LIVE_ROUTING_FACTS",
         "REG_LIVE_FACT_MUST_CHANGE_DOMINATED_NEXT_ACTION",
-        "REG_FRESH_WINDOW_PARENT_INTENT_FIRST_MEDIUM_CONTINUOUS",
+        "REG_FRESH_WINDOW_PARENT_INTENT_FIRST_DYNAMIC_CONTINUOUS",
         "REG_FRESH_WINDOW_REUSES_ACCEPTED_D_CANDIDATE",
         "NEG_FRESH_WINDOW_DIRECTORY_ONLY_IS_NOT_REUSE",
         "REG_DIRECT_ROUTE_AND_CARRIER_SURVIVE_WINDOW",
@@ -352,15 +356,15 @@ def test_context_intent_alignment_eval_is_balanced_and_friction_bounded() -> Non
     assert cases["POS_CLEAR_REVERSIBLE_LOCAL_FIX"]["vars"]["expected_ask_user"] is False
     assert cases["POS_EXPLICIT_REPOSITORY_CREATE"]["vars"]["expected_create_repository"] is True
     assert cases["NEG_AMBIGUOUS_PUBLICATION_OBJECT"]["vars"]["expected_ask_user"] is True
-    grok_offload = cases["REG_MANAGER_WORKER_GROK_QUOTA_OFFLOAD"]["vars"]
-    assert grok_offload["expected_coordination_mode"] == "single_supervisor_worker"
-    assert grok_offload["expected_worker_provider"] == "grok"
-    assert grok_offload["expected_quota_action"] == "query_now"
-    assert grok_offload["expected_text_writer"] == "codex_main"
-    assert grok_offload["expected_mature_comparison_triggered"] is False
-    assert grok_offload["expected_preference_update"] == "smallest_existing_artifact"
-    assert "whole-frontier map" in grok_offload["user_increment"]
-    assert "Small bounded Grok tasks" in grok_offload["restored_context"]
+    external_route = cases["REG_EXTERNAL_WORKER_PROVIDER_AND_TRANSPORT_ADAPTIVE"]["vars"]
+    assert set(external_route["expected_worker_provider"].split("|")) == {
+        "external_worker",
+        "grok",
+    }
+    assert external_route["expected_worker_transport"] == "adaptive"
+    assert external_route["expected_mature_comparison_triggered"] is False
+    assert external_route["expected_preference_update"] == "smallest_existing_artifact"
+    assert "current live facts" in external_route["user_increment"]
     whole_package = cases["REG_DYNAMIC_WHOLE_PACKAGE_GLOBAL_DAG"]["vars"]
     assert whole_package["expected_quota_action"] == "reuse_episode_cache"
     assert whole_package["expected_quota_query_disposition"] == "reuse_fresh_snapshot"
@@ -399,9 +403,8 @@ def test_context_intent_alignment_eval_is_balanced_and_friction_bounded() -> Non
         encoding="utf-8"
     )
     for required in (
-        "Small bounded worker tasks are a valid subset of this complete mode",
-        "Saving scarce Codex usage",
-        "abundant or expiring worker quota are the same allocation decision",
+        "external workers are default labor",
+        "Codex is not default labor",
         "formally writes the one human-readable execution plan",
         "A complete worker loop is whole-frontier candidate",
         "Research prose, a plan, one dispatch,",
@@ -416,31 +419,13 @@ def test_context_intent_alignment_eval_is_balanced_and_friction_bounded() -> Non
     assert inner_optimization["expected_text_writer"] == "not_applicable"
     assert inner_optimization["expected_preference_update"] == "none"
     assert inner_optimization["expected_preserve_parent_completion_bar"] is True
-    codex_context = cases["REG_CODEX_AGENT_CONTEXT_NET_VALUE_WINS"]["vars"]
-    assert codex_context["expected_worker_provider"] == "codex_agent"
-    assert codex_context["expected_worker_transport"] == "in_turn_agent"
-    assert codex_context["expected_quota_action"] == "reuse_episode_cache"
-    assert codex_context["expected_recovered_requirement_atoms"].split("|") == [
-        "ATOM_OUTER_CODEX_CONE_RETAINED",
-        "ATOM_DETERMINISTIC_PRECHECK_FIRST",
-        "ATOM_LUNA_TERRA_TASK_FIT",
-        "ATOM_SOL_THIN_OWNER_FANIN",
-        "ATOM_QUALITY_EVIDENCE_PARENT_BAR_PRESERVED",
-    ]
-    assert codex_context["expected_rejected_proxy_atoms"].split("|") == [
-        "ATOM_SOL_DEFAULT_DIRECT_LOW_COMPLEXITY_READ",
-        "ATOM_SPARK_AS_INNER_TIER",
-        "ATOM_AUTOMATIC_MODEL_LADDER",
-        "ATOM_SECOND_INNER_ROUTER",
-    ]
-    for required in (
-        "small bounded literal extraction or structural reads",
-        "Terra for bounded multi-file analysis",
-        "Sol only for owner integration, verification, tightly coupled work",
-        "Spark is a separate quota bucket",
-        "not an automatic",
-    ):
-        assert required in routing_prompt
+    codex_exception = cases["REG_DYNAMIC_SUPERVISOR_CODEX_SUBAGENT_EXCEPTION"]["vars"]
+    assert codex_exception["expected_worker_provider"] == "codex_subagent_exceptional"
+    assert codex_exception["expected_worker_transport"] == "not_applicable"
+    assert codex_exception["expected_owner_execution_state"] == "dynamic_supervisor"
+    assert "workers are unsuitable" in routing_prompt
+    assert "materially shortens the active critical path" in routing_prompt
+    assert all(token not in routing_prompt for token in ("Luna", "Terra", "Spark", "automatic model ladder"))
     quota_failure = cases["REG_QUOTA_QUERY_FAILURE_NONBLOCKING"]["vars"]
     assert quota_failure["expected_ask_user"] is False
     assert quota_failure["expected_worker_provider"] == "grok"
@@ -563,8 +548,8 @@ def test_context_intent_alignment_eval_is_balanced_and_friction_bounded() -> Non
     }
     assert output_schema["properties"]["worker_provider"]["enum"] == [
         "grok",
-        "codex_agent",
-        "mixed",
+        "external_worker",
+        "codex_subagent_exceptional",
         "not_applicable",
     ]
     worker_provider_enum = set(output_schema["properties"]["worker_provider"]["enum"])
@@ -596,14 +581,20 @@ def test_context_intent_alignment_eval_is_balanced_and_friction_bounded() -> Non
         "not_applicable",
     ]
     for optional_key in (
-        "supervisor_tier",
-        "quota_consumption_objective",
         "quota_query_disposition",
+        "owner_execution_state",
+        "terminal_refill",
         "worker_receipt_disposition",
         "recovered_requirement_atoms",
         "rejected_proxy_atoms",
     ):
         assert optional_key in output_schema["properties"]
+    for retired_key in (
+        "supervisor_tier",
+        "quota_consumption_objective",
+        "tier_transition",
+    ):
+        assert retired_key not in output_schema["properties"]
     assert all(
         case["vars"]["expected_preference_update"] != "new_project" for case in cases.values()
     )
@@ -614,108 +605,74 @@ def test_context_intent_alignment_eval_is_balanced_and_friction_bounded() -> Non
         if key != "POS_EXPLICIT_REPOSITORY_CREATE"
     )
 
-    # Supervisor-tier, fresh-window continuity, and D-candidate reuse invariants.
-    for required_tier_case in (
-        "REG_SUP_TIER_DEFAULT_DYNAMIC",
-        "REG_SUP_TIER_MEDIUM_EXPLICIT",
-        "REG_SUP_TIER_HIGH_TERMINAL_REFILL",
-        "REG_SUP_TIER_SEAL_MISMATCH",
-        "REG_SUP_TIER_OWNER_FORMAL_INTERLUDE",
-        "REG_SUP_TIER_NO_SEPARABLE_NO_JUNK",
-        "REG_SUP_TIER_PAUSE_STOPS",
-        "REG_SUP_TIER_HIGH_RESET_STEPDOWN",
+    # Dynamic supervisor, repository completion, continuity, and candidate-reuse invariants.
+    for required_dynamic_case in (
+        "REG_DYNAMIC_SUPERVISOR_NET_BENEFIT",
+        "REG_DYNAMIC_SUPERVISOR_EXTERNAL_DEFAULT",
+        "REG_DYNAMIC_SUPERVISOR_TERMINAL_REFILL",
+        "REG_DYNAMIC_SUPERVISOR_SEAL_MISMATCH",
+        "REG_DYNAMIC_SUPERVISOR_AUTHORITY_LANE",
+        "REG_DYNAMIC_SUPERVISOR_NO_SEPARABLE_NO_JUNK",
+        "REG_DYNAMIC_SUPERVISOR_PAUSE_STOPS",
+        "REG_DYNAMIC_SUPERVISOR_LIVE_ROUTING_FACTS",
         "REG_LIVE_FACT_MUST_CHANGE_DOMINATED_NEXT_ACTION",
-        "REG_FRESH_WINDOW_PARENT_INTENT_FIRST_MEDIUM_CONTINUOUS",
+        "REG_FRESH_WINDOW_PARENT_INTENT_FIRST_DYNAMIC_CONTINUOUS",
         "REG_FRESH_WINDOW_REUSES_ACCEPTED_D_CANDIDATE",
         "NEG_FRESH_WINDOW_DIRECTORY_ONLY_IS_NOT_REUSE",
     ):
-        assert required_tier_case in cases
-    medium = cases["REG_SUP_TIER_MEDIUM_EXPLICIT"]["vars"]
-    assert medium["expected_supervisor_tier"] == "medium"
-    assert medium["expected_quota_consumption_objective"] is False
-    assert medium["expected_quota_query_disposition"] == "query_now_before_routing"
-    assert medium["expected_owner_execution_state"] == "thin_supervisor"
-    assert medium["expected_terminal_refill"] == "immediate_positive_value"
-    assert medium["expected_preference_update"] == "none"
-    assert medium["expected_text_writer"] == "not_applicable"
-    prompt = (REPO_ROOT / "evals/context_intent_alignment/prompt.txt").read_text(encoding="utf-8")
-    assert "Selecting a supervisor tier" in prompt
-    highest = cases["REG_SUP_TIER_HIGH_TERMINAL_REFILL"]["vars"]
-    assert highest["expected_supervisor_tier"] == "highest"
-    assert highest["expected_quota_consumption_objective"] is True
-    assert highest["expected_terminal_refill"] == "immediate_positive_value"
-    assert highest["expected_worker_receipt_disposition"] == "accept"
-    assert highest["expected_local_completion_transition"] == "rederive_mainline_frontier"
-    assert highest["expected_continuous_run_disposition"] == "continue"
-    assert highest["expected_frontier_disposition"] == "advance_mainline"
-    stepdown = cases["REG_SUP_TIER_HIGH_RESET_STEPDOWN"]["vars"]
-    assert stepdown["expected_supervisor_tier"] == "medium"
-    assert stepdown["expected_quota_consumption_objective"] is False
-    assert stepdown["expected_tier_transition"] == "highest_to_medium_now"
-    assert stepdown["expected_completion_claim_scope"] == "not_applicable"
-    assert stepdown["expected_local_completion_transition"] == "rederive_mainline_frontier"
-    assert stepdown["expected_continuous_run_disposition"] == "continue"
-    assert stepdown["expected_frontier_disposition"] == "execute"
-    no_junk = cases["REG_SUP_TIER_NO_SEPARABLE_NO_JUNK"]["vars"]
-    assert no_junk["expected_supervisor_tier"] == "medium"
-    assert no_junk["expected_quota_consumption_objective"] is False
-    assert no_junk["expected_worker_provider"] == "not_applicable"
-    assert no_junk["expected_quota_action"] == "not_applicable"
-    assert no_junk["expected_quota_query_disposition"] == "not_applicable"
-    pause = cases["REG_SUP_TIER_PAUSE_STOPS"]["vars"]
-    assert pause["expected_supervisor_tier"] == "highest"
-    assert pause["expected_quota_consumption_objective"] is False
-    assert pause["expected_continuous_run_disposition"] == "stop_requested"
-    assert pause["expected_quota_action"] == "not_applicable"
-    assert pause["expected_quota_query_disposition"] == "not_applicable"
-    seal = cases["REG_SUP_TIER_SEAL_MISMATCH"]["vars"]
-    durable = cases["REG_DURABLE_BACKGROUND_BY_NET_VALUE"]["vars"]
+        assert required_dynamic_case in cases
+
+    dynamic_default = cases["REG_DYNAMIC_SUPERVISOR_EXTERNAL_DEFAULT"]["vars"]
+    assert set(dynamic_default["expected_worker_provider"].split("|")) == {
+        "grok",
+        "external_worker",
+    }
+    assert dynamic_default["expected_owner_execution_state"] == "dynamic_supervisor"
+    assert dynamic_default["expected_terminal_refill"] == "immediate_positive_value"
+    assert dynamic_default["expected_preference_update"] == "none"
+
+    terminal = cases["REG_DYNAMIC_SUPERVISOR_TERMINAL_REFILL"]["vars"]
+    assert terminal["expected_worker_receipt_disposition"] == "accept"
+    assert terminal["expected_completion_claim_scope"] == "local_object"
+    assert terminal["expected_terminal_refill"] == "immediate_positive_value"
+
+    seal = cases["REG_DYNAMIC_SUPERVISOR_SEAL_MISMATCH"]["vars"]
     assert seal["expected_worker_receipt_disposition"] == "reject_and_recover"
-    assert seal["expected_supervisor_tier"] == "medium"
-    assert seal["expected_worker_transport"] == "direct_batch"
-    assert durable["expected_worker_transport"] == "temporal_durable"
-    assert seal["expected_degraded_scope"] == "frontier_only"
-    assert seal["expected_unaffected_frontier_action"] == "continue_recompute"
+    assert seal["expected_owner_execution_state"] == "dynamic_supervisor"
     assert seal["expected_local_completion_transition"] == "finish_bounded_task"
-    owner_interlude = cases["REG_SUP_TIER_OWNER_FORMAL_INTERLUDE"]["vars"]
-    assert owner_interlude["expected_owner_execution_state"] == "owner_only_interlude"
-    assert owner_interlude["expected_text_writer"] == "codex_main"
-    assert owner_interlude["expected_supervisor_tier"] == "medium"
-    fresh_parent = cases["REG_FRESH_WINDOW_PARENT_INTENT_FIRST_MEDIUM_CONTINUOUS"]["vars"]
-    assert fresh_parent["expected_supervisor_tier"] == "medium"
-    assert fresh_parent["expected_quota_query_disposition"] == "query_now_before_routing"
-    assert fresh_parent["expected_quota_consumption_objective"] is False
-    assert fresh_parent["expected_terminal_refill"] == "not_applicable"
-    assert fresh_parent["expected_worker_transport"] == "adaptive"
+
+    authority_lane = cases["REG_DYNAMIC_SUPERVISOR_AUTHORITY_LANE"]["vars"]
+    assert authority_lane["expected_owner_execution_state"] == "authority_lane"
+    assert authority_lane["expected_text_writer"] == "not_applicable"
+    assert authority_lane["expected_continuous_run_disposition"] == "continue"
+
+    no_junk = cases["REG_DYNAMIC_SUPERVISOR_NO_SEPARABLE_NO_JUNK"]["vars"]
+    assert no_junk["expected_worker_provider"] == "not_applicable"
+    assert no_junk["expected_owner_execution_state"] == "inseparable_owner_slice"
+    assert no_junk["expected_candidate_value"] == "positive"
+
+    pause = cases["REG_DYNAMIC_SUPERVISOR_PAUSE_STOPS"]["vars"]
+    assert pause["expected_continuous_run_disposition"] == "stop_requested"
+    assert pause["expected_worker_provider"] == "not_applicable"
+    assert pause["expected_owner_execution_state"] == "not_applicable"
+
+    live_routing = cases["REG_DYNAMIC_SUPERVISOR_LIVE_ROUTING_FACTS"]["vars"]
+    assert set(live_routing["expected_worker_provider"].split("|")) == {
+        "grok",
+        "external_worker",
+    }
+    assert live_routing["expected_quota_query_disposition"] == "query_now_before_routing"
+    assert live_routing["expected_owner_execution_state"] == "dynamic_supervisor"
+    assert "quota use into an objective" in live_routing["user_increment"]
+
+    fresh_parent = cases["REG_FRESH_WINDOW_PARENT_INTENT_FIRST_DYNAMIC_CONTINUOUS"]["vars"]
+    assert set(fresh_parent["expected_worker_provider"].split("|")) == {
+        "grok",
+        "external_worker",
+    }
+    assert fresh_parent["expected_owner_execution_state"] == "dynamic_supervisor"
     assert fresh_parent["expected_preference_update"] == "smallest_existing_artifact"
-    assert fresh_parent["expected_tier_transition"] == "none"
-    assert fresh_parent["expected_completion_claim_scope"] == "not_applicable"
-    assert fresh_parent["expected_degraded_scope"] == "frontier_only"
-    assert fresh_parent["expected_unaffected_frontier_action"] == "continue_recompute"
     assert fresh_parent["expected_local_completion_transition"] == "rederive_mainline_frontier"
-    assert "no lane newly reached terminal or released capacity" in fresh_parent["restored_context"]
-    fact_binding = cases["REG_LIVE_FACT_MUST_CHANGE_DOMINATED_NEXT_ACTION"]["vars"]
-    assert fact_binding["expected_worker_provider"] == "grok"
-    assert fact_binding["expected_quota_action"] == "reuse_episode_cache"
-    assert fact_binding["expected_quota_query_disposition"] == "reuse_fresh_snapshot"
-    assert fact_binding["expected_owner_execution_state"] == "thin_supervisor"
-    assert fact_binding["expected_learning_loop"] == "not_applicable"
-    assert fact_binding["expected_repair_target"] == "not_applicable"
-    assert fact_binding["expected_closure_evidence"] == "not_applicable"
-    assert fact_binding["expected_preference_update"] == "none"
-    assert set(fact_binding["expected_recovered_requirement_atoms"].split("|")) == {
-        "ATOM_PARENT_MODE_RECOVERED",
-        "ATOM_LIVE_FACTS_BOUND_TO_ROUTE",
-        "ATOM_DOMINANT_REVERSIBLE_ACTION_EXECUTED",
-        "ATOM_COMPLETION_AND_QUALITY_BARS_PRESERVED",
-    }
-    assert set(fact_binding["expected_rejected_proxy_atoms"].split("|")) == {
-        "ATOM_ACKNOWLEDGE_ONLY_NO_ROUTE_CHANGE",
-        "ATOM_CODEX_SUBAGENT_ON_SHARED_SCARCE_BUCKET",
-        "ATOM_FIXED_PERCENT_OR_PROVIDER_LOCK",
-        "ATOM_QUOTA_BLOCKS_POSITIVE_WORK",
-        "ATOM_LOWER_REASONING_TO_SAVE_CODEX",
-    }
     assert set(fresh_parent["expected_recovered_requirement_atoms"].split("|")) == {
         "ATOM_PARENT_INTENT_FIRST",
         "ATOM_MINIMUM_WIRING_CONTEXT",
@@ -726,145 +683,80 @@ def test_context_intent_alignment_eval_is_balanced_and_friction_bounded() -> Non
         "ATOM_WORKER_SELF_BOOTSTRAP_FULL_LOOP",
         "ATOM_DYNAMIC_MAX_USEFUL_WIDTH",
         "ATOM_ONLY_TRUE_DEPENDENCY_WRITE_FENCES_SERIALIZE",
-        "ATOM_MEDIUM_QUOTA_NON_OBJECTIVE",
+        "ATOM_ROUTING_FACTS_NOT_OBJECTIVE",
         "ATOM_PRIVATE_TUI_EXCLUDED",
         "ATOM_RESUME_PARENT_FRONTIER",
     }
-    assert set(fresh_parent["expected_rejected_proxy_atoms"].split("|")) == {
-        "ATOM_STALE_CHECKPOINT_NEXT_ACTION",
-        "ATOM_PARALLEL_ACTION_STATE_TRUTH",
-        "ATOM_RULE_AUDIT_FIRST",
-        "ATOM_FULL_HISTORY_LOAD",
-        "ATOM_OWNER_SERIAL_RECOVERY",
-        "ATOM_OWNER_DEFAULT_PLANNER_DRAFTER",
-        "ATOM_PREPAY_ONLY_ONE_TWO_STEPS",
-        "ATOM_FIXED_LANE_REFILL",
-        "ATOM_FIXED_LANE_OR_RESEAL_BUDGET",
-        "ATOM_NONFENCE_GLOBAL_SERIAL_WAIT",
-        "ATOM_TOKEN_BURN_AS_PROGRESS",
-        "ATOM_USER_RECONFIRMATION",
-    }
+
+    fact_binding = cases["REG_LIVE_FACT_MUST_CHANGE_DOMINATED_NEXT_ACTION"]["vars"]
+    assert fact_binding["expected_worker_provider"] == "grok"
+    assert fact_binding["expected_quota_action"] == "reuse_episode_cache"
+    assert fact_binding["expected_owner_execution_state"] == "dynamic_supervisor"
+    assert fact_binding["expected_preference_update"] == "none"
+
     compact_resume = cases["REG_COMPACT_RESUME_RECEIPT_BEFORE_DISPATCH"]["vars"]
-    assert compact_resume["expected_next_step"] == "act"
-    assert compact_resume["expected_learning_loop"] == "double_loop_structural"
-    assert compact_resume["expected_repair_target"] == "governing_invariant"
-    assert compact_resume["expected_closure_evidence"] == "cross_context_entry_and_negative"
-    assert compact_resume["expected_starts_new_project"] is False
-    assert compact_resume["expected_coordination_mode"] == "supervisor_only"
-    assert compact_resume["expected_owner_execution_state"] == "owner_only_interlude"
-    assert compact_resume["expected_worker_provider"] == "not_applicable"
-    assert compact_resume["expected_quota_action"] == "not_applicable"
-    assert set(compact_resume["expected_recovered_requirement_atoms"].split("|")) == {
-        "ATOM_KEEP_TASK_RUN_AS_ONLY_TRUTH",
-        "ATOM_RUN_EXISTING_RECOVERY_CONSUMER",
-        "ATOM_REPLAY_ONLY_CHECKPOINT_DELTA",
-        "ATOM_BIND_SIDE_EFFECT_ID_AND_LIVE_FACTS",
-        "ATOM_ISSUE_EPHEMERAL_ACTION_RECEIPT",
-        "ATOM_VERIFY_EVENT_HEAD_BEFORE_EFFECT",
-        "ATOM_RESUME_PARENT_FRONTIER",
-    }
     stale_receipt = cases["NEG_STALE_RESUME_RECEIPT_REJECTS_ACTION"]["vars"]
-    assert stale_receipt["expected_next_step"] == "act"
-    assert stale_receipt["expected_completion_claim_scope"] == "local_object"
-    assert stale_receipt["expected_degraded_scope"] == "frontier_only"
-    assert stale_receipt["expected_coordination_mode"] == "supervisor_only"
-    assert stale_receipt["expected_owner_execution_state"] == "owner_only_interlude"
-    assert stale_receipt["expected_worker_provider"] == "not_applicable"
-    assert stale_receipt["expected_quota_action"] == "not_applicable"
-    assert stale_receipt["expected_effect_authority"] == "explicit_current_user"
+    assert compact_resume["expected_owner_execution_state"] == "authority_lane"
+    assert stale_receipt["expected_owner_execution_state"] == "authority_lane"
     assert stale_receipt["expected_worker_receipt_disposition"] == "reject_and_recover"
-    assert "ATOM_REJECT_STALE_RECEIPT" in stale_receipt[
-        "expected_recovered_requirement_atoms"
-    ].split("|")
-    assert "ATOM_EXECUTE_STALE_RECEIPT" in stale_receipt["expected_rejected_proxy_atoms"].split("|")
+    assert compact_resume["expected_starts_new_project"] is False
+
     d_reuse = cases["REG_FRESH_WINDOW_REUSES_ACCEPTED_D_CANDIDATE"]["vars"]
-    assert d_reuse["expected_worker_receipt_disposition"] == "reuse"
-    assert d_reuse["expected_supervisor_tier"] == "medium"
-    assert d_reuse["expected_coordination_mode"] == "single_supervisor_worker"
-    assert d_reuse["expected_worker_provider"] == "grok"
-    assert d_reuse["expected_worker_transport"] == "adaptive"
-    assert d_reuse["expected_quota_action"] == "query_now"
-    assert d_reuse["expected_quota_query_disposition"] == "query_now_before_routing"
-    assert d_reuse["expected_terminal_refill"] == "not_applicable"
-    assert d_reuse["expected_text_writer"] == "codex_main"
-    assert d_reuse["expected_local_completion_transition"] == "rederive_mainline_frontier"
-    assert d_reuse["expected_continuous_run_disposition"] == "continue"
-    assert d_reuse["expected_frontier_disposition"] == "advance_mainline"
-    assert d_reuse["expected_learning_loop"] == "double_loop_structural"
-    assert d_reuse["expected_repair_target"] == "governing_invariant"
-    assert d_reuse["expected_closure_evidence"] == "cross_context_entry_and_negative"
-    assert (
-        "no lane has newly reached terminal or released capacity"
-        in cases["REG_FRESH_WINDOW_REUSES_ACCEPTED_D_CANDIDATE"]["vars"]["restored_context"]
-    )
     dir_only = cases["NEG_FRESH_WINDOW_DIRECTORY_ONLY_IS_NOT_REUSE"]["vars"]
+    assert d_reuse["expected_worker_receipt_disposition"] == "reuse"
+    assert d_reuse["expected_owner_execution_state"] == "dynamic_supervisor"
+    assert d_reuse["expected_local_completion_transition"] == "rederive_mainline_frontier"
     assert dir_only["expected_worker_receipt_disposition"] == "reject_and_recover"
-    assert dir_only["expected_quota_action"] == "query_now"
-    assert dir_only["expected_quota_query_disposition"] == "query_now_before_routing"
-    assert dir_only["expected_supervisor_tier"] == "medium"
-    default_dyn = cases["REG_SUP_TIER_DEFAULT_DYNAMIC"]["vars"]
-    assert default_dyn["expected_quota_query_disposition"] == "query_now_before_routing"
-    assert medium["expected_local_completion_transition"] == "finish_bounded_task"
-    assert highest["expected_quota_query_disposition"] == "reuse_fresh_snapshot"
-    assert (
-        "still-fresh authenticated quota snapshot"
-        in cases["REG_SUP_TIER_HIGH_TERMINAL_REFILL"]["vars"]["restored_context"]
-    )
-    assert seal["expected_quota_query_disposition"] == "query_now_before_routing"
-    assert (
-        "new bounded dispatch wave"
-        in cases["REG_SUP_TIER_SEAL_MISMATCH"]["vars"]["restored_context"]
-    )
-    assert (
-        "no still-fresh authenticated quota snapshot"
-        in cases["REG_SUP_TIER_SEAL_MISMATCH"]["vars"]["restored_context"]
-    )
-    assert owner_interlude["expected_worker_receipt_disposition"] == "accept"
-    assert owner_interlude["expected_completion_claim_scope"] == "local_object"
-    assert owner_interlude["expected_quota_query_disposition"] == "query_now_before_routing"
-    assert (
-        "never been thin-accepted"
-        in cases["REG_SUP_TIER_OWNER_FORMAL_INTERLUDE"]["vars"]["restored_context"]
-    )
-    assert (
-        "new dispatch wave"
-        in cases["REG_SUP_TIER_OWNER_FORMAL_INTERLUDE"]["vars"]["restored_context"]
-    )
-    assert no_junk["expected_local_completion_transition"] == "finish_bounded_task"
-    assert stepdown["expected_quota_query_disposition"] == "reuse_fresh_snapshot"
-    assert "useful worker terminal just released capacity" in default_dyn["restored_context"]
-    assert (
-        "still-fresh authenticated quota snapshot"
-        in cases["REG_SUP_TIER_HIGH_RESET_STEPDOWN"]["vars"]["restored_context"]
-    )
-    assert d_reuse["expected_effect_authority"] == "explicit_current_user"
+    assert dir_only["expected_owner_execution_state"] == "dynamic_supervisor"
     assert dir_only["expected_learning_loop"] == "single_loop_instance"
-    assert dir_only["expected_repair_target"] == "instance_action"
-    assert dir_only["expected_closure_evidence"] == "current_object_verification"
-    assert dir_only["expected_effect_authority"] == "explicit_current_user"
-    assert dir_only["expected_terminal_refill"] == "not_applicable"
     assert dir_only["expected_completion_claim_scope"] == "local_object"
-    assert dir_only["expected_local_completion_transition"] == "rederive_mainline_frontier"
-    assert dir_only["expected_text_writer"] == "codex_main"
-    assert dir_only["expected_degraded_scope"] == "frontier_only"
-    assert dir_only["expected_unaffected_frontier_action"] == "continue_recompute"
-    assert (
-        "reuse governing invariant"
-        in cases["NEG_FRESH_WINDOW_DIRECTORY_ONLY_IS_NOT_REUSE"]["vars"]["restored_context"]
-    )
-    assert "explicit_current_user` wins over `restored_task_scope`" in prompt
-    assert "terminal_refill` requires an actual terminal" in prompt
-    assert "REUSE never redispatches or regenerates the accepted package" in prompt
-    assert "describe the next meaningful consumer" in prompt
-    assert "directory-only instance repair" in prompt
+
+    repo_completion = cases["REG_WORK_UNIT_LANDS_EFFECT_THEN_RETIRES_CARRIER"]["vars"]
+    assert repo_completion["expected_next_step"] == "act"
+    assert repo_completion["expected_ask_user"] is False
+    assert repo_completion["expected_effect_scope"] == "mutate_existing_external"
+    assert repo_completion["expected_effect_authority"] == "explicit_current_user"
+    assert repo_completion["expected_owner_execution_state"] == "authority_lane"
+    assert repo_completion["expected_preference_update"] == "none"
+    assert set(repo_completion["expected_recovered_requirement_atoms"].split("|")) >= {
+        "ATOM_DEFAULT_EXISTING_REPO_CHAIN_AUTHORIZED",
+        "ATOM_LIVE_EFFECT_VERIFIED",
+        "ATOM_TRANSACTION_HYGIENE",
+        "ATOM_PRESERVE_UNRELATED_BASELINE",
+        "ATOM_RETIRE_AFTER_POSTCONDITION",
+    }
+    assert set(repo_completion["expected_rejected_proxy_atoms"].split("|")) >= {
+        "ATOM_SECOND_PUBLISH_INSTRUCTION_REQUIRED",
+        "ATOM_LEAVE_TEMPORARY_CARRIERS",
+        "ATOM_SCRUB_UNRELATED_USER_STATE",
+        "ATOM_AUTO_DELETE_UNCLASSIFIED",
+    }
+
+    assert "Dynamic whole-package supervisor" in prompt
+    assert "Codex is not default labor; external workers are" in prompt
+    assert "Do not ask for a second publish instruction" in prompt
+    assert "transaction-hygiene chain" in prompt
+    assert "pre-transaction tree baselines" in prompt
+    assert "dirty, unique, unclassified, or unabsorbed carriers fail closed" in prompt
+    assert "Automatic once-per-dispatch-epoch quota query" in prompt
+    assert "Accepted D reuse and directory-only negative" in prompt
     assert "must not switch legs" in prompt
     assert "Direct batch is a normal leg A, not a fallback" in prompt
     assert "do not create a branch or worktree merely because a new" in prompt
-    assert "requires an explicit prior active tier" in prompt
     assert "already-promoted governing invariant" in prompt
     assert "completed local adjudication" in prompt
     assert "one-shot rejected-lane recovery" in prompt
-
+    assert all(
+        retired not in prompt
+        for retired in (
+            "Supervisor tiers (default / medium / highest)",
+            "supervisor_tier",
+            "quota_consumption_objective",
+            "tier_transition",
+            "owner_only_interlude",
+            "thin_supervisor",
+        )
+    )
     for case in cases.values():
         values = case["vars"]
         transition = values.get("expected_local_completion_transition")
@@ -874,22 +766,21 @@ def test_context_intent_alignment_eval_is_balanced_and_friction_bounded() -> Non
         elif transition == "rederive_mainline_frontier":
             assert continuous == "continue"
 
-    assert medium["expected_terminal_refill"] == highest["expected_terminal_refill"]
-    assert medium["expected_owner_execution_state"] == "thin_supervisor"
-    assert highest["expected_owner_execution_state"] == "thin_supervisor"
-    assert "Supervisor tiers (default / medium / highest)" in prompt
-    assert "Automatic once-per-dispatch-epoch quota query" in prompt
-    assert "Accepted D reuse and directory-only negative" in prompt
     assert "stale checkpoint projection" in prompt
-    assert "tierWorkLoopInvariant" in assertion
-    assert "highestStopIsCoherent" in assertion
-    assert "expected_supervisor_tier" in assertion
-    assert "quota_consumption_objective" in assertion
+    assert "codex_subagent_exceptional" in assertion
     assert "quota_query_disposition" in assertion
     assert "quotaDispositionIsCoherent" in assertion
     assert "localCompletionTransitionIsCoherent" in assertion
     assert "continuousReuseAdvancesBoundConsumer" in assertion
     assert "atomSelectionMatches" in assertion
+    for retired_assertion_token in (
+        "tierWorkLoopInvariant",
+        "highestStopIsCoherent",
+        "expected_supervisor_tier",
+        "quota_consumption_objective",
+        "tier_transition",
+    ):
+        assert retired_assertion_token not in assertion
     prompt = (REPO_ROOT / "evals/context_intent_alignment/prompt.txt").read_text(encoding="utf-8")
     assert "how to interpret future user examples or clues" in prompt
     assert "Existing memory, retrieval, or learning surfaces do not" in prompt
@@ -945,7 +836,8 @@ def test_context_intent_alignment_eval_is_balanced_and_friction_bounded() -> Non
     assert decision["observable_lens_bindings"]["mature_external_capability_coverage"] == [
         "mature_comparison_triggered"
     ]
-    assert "supervisor_tier_invariant" in decision["input_interpretation"]
+    assert "dynamic_whole_package_supervisor_invariant" in decision["input_interpretation"]
+    assert "existing_repository_completion_invariant" in decision["input_interpretation"]
     assert "candidate_reuse_invariant" in decision["input_interpretation"]
     assert "observed_fact_action_binding" in decision["input_interpretation"]
     assert "action_continuity_invariant" in decision["input_interpretation"]
@@ -953,12 +845,17 @@ def test_context_intent_alignment_eval_is_balanced_and_friction_bounded() -> Non
         "Merely acknowledging a fact while retaining an action it now dominates is a failure"
         in decision["input_interpretation"]["observed_fact_action_binding"]
     )
-    assert "quota" in decision["input_interpretation"]["supervisor_tier_invariant"].lower()
-    assert "directory" in decision["input_interpretation"]["candidate_reuse_invariant"].lower()
     assert (
-        "never infer default from absence"
-        in decision["input_interpretation"]["supervisor_tier_invariant"]
+        "external workers are default labor"
+        in decision["input_interpretation"]["dynamic_whole_package_supervisor_invariant"].lower()
     )
+    existing_repo_invariant = decision["input_interpretation"][
+        "existing_repository_completion_invariant"
+    ]
+    assert "without a second publish instruction" in existing_repo_invariant
+    assert "transaction hygiene" in existing_repo_invariant
+    assert "pre-transaction baselines" in existing_repo_invariant
+    assert "directory" in decision["input_interpretation"]["candidate_reuse_invariant"].lower()
     assert (
         "already-promoted invariant being exercised"
         in decision["input_interpretation"]["candidate_reuse_invariant"]
@@ -975,7 +872,12 @@ def test_context_intent_alignment_eval_is_balanced_and_friction_bounded() -> Non
         "Worker transport is evidence-bound"
         in decision["input_interpretation"]["model_worker_routing"]
     )
-    assert "REG_SUP_TIER_MEDIUM_EXPLICIT" in decision["anchor_regression_cases"]
+    assert "REG_DYNAMIC_SUPERVISOR_EXTERNAL_DEFAULT" in decision["anchor_regression_cases"]
+    assert "REG_DYNAMIC_SUPERVISOR_TERMINAL_REFILL" in decision["anchor_regression_cases"]
+    assert "REG_DYNAMIC_SUPERVISOR_LIVE_ROUTING_FACTS" in decision["anchor_regression_cases"]
+    assert "REG_WORK_UNIT_LANDS_EFFECT_THEN_RETIRES_CARRIER" in decision[
+        "anchor_regression_cases"
+    ]
     assert "REG_FRESH_WINDOW_REUSES_ACCEPTED_D_CANDIDATE" in decision["anchor_regression_cases"]
     assert "NEG_FRESH_WINDOW_DIRECTORY_ONLY_IS_NOT_REUSE" in decision["anchor_regression_cases"]
     assert "REG_LIVE_FACT_MUST_CHANGE_DOMINATED_NEXT_ACTION" in decision["anchor_regression_cases"]
