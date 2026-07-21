@@ -3061,12 +3061,17 @@ def build_dispatch_outcome_event(
             raise DispatchEconomicsError(
                 "current route disagrees with the accepted ancestor action"
             )
+        contract_context_sha256 = (
+            str(validated_ancestor["prior_action_binding"]["context_sha256"])
+            if validated_ancestor is not None
+            else provider_context_sha256
+        )
         if (
             contract.get("logical_operation_id") != operation
             or contract.get("work_key") != work
             or contract.get("task_contract_ref") != expected_task_ref
             or contract.get("input_sha256") != package_row["prompt_ref"]["sha256"]
-            or contract.get("context_sha256") != provider_context_sha256
+            or contract.get("context_sha256") != contract_context_sha256
             or contract.get("rules_sha256") != package_row["rules_sha256"]
             or contract.get("output_contract_sha256") != provider_output_contract_sha256
             or package_row.get("logical_consumer_id") != LOGICAL_CANDIDATE_CONSUMER_ID
