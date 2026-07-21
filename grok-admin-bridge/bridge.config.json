@@ -1,6 +1,6 @@
 {
-  "schema_version": "xinao.grok_bridge_config.v3",
-  "sentinel": "SENTINEL:GROK_BRIDGE_CONFIG_V3",
+  "schema_version": "xinao.grok_bridge_config.v4",
+  "sentinel": "SENTINEL:GROK_BRIDGE_CONFIG_V4",
   "status": "active_thin",
   "repo_root": "E:\\XINAO_RESEARCH_WORKSPACES\\S",
   "runtime_roots": {
@@ -9,15 +9,35 @@
     "readback": "D:\\XINAO_RESEARCH_RUNTIME\\readback"
   },
   "canonical_route": {
-    "shape": "Temporal + Docker houtai-gongren + worker-internal LangGraph",
-    "temporal_address": "127.0.0.1:7233",
-    "temporal_namespace": "default",
-    "temporal_task_queue": "xinao-dualbrain-promoted-v1",
-    "docker_worker": "houtai-gongren",
-    "langgraph_queue": "xinao-integrated-langgraph-plugin-queue"
+    "shape": "A/B dual-leg selected by task fit or existing route receipt",
+    "selection": "selected_by_task_fit_or_existing_route_receipt",
+    "continuity": {
+      "existing_route_receipt_precedence": true,
+      "continuous_or_resume_switches_leg": false
+    },
+    "leg_a": {
+      "transport_id": "direct-grok-worker-pool",
+      "route_role": "normal_bounded_online_current_tui",
+      "typical_when": "current_interactive_owner_is_online_and_work_is_bounded",
+      "durable_after_owner_exit": false
+    },
+    "leg_b": {
+      "transport_id": "temporal-docker-langgraph",
+      "route_role": "durable_after_explicit_owner_handoff",
+      "only_when": [
+        "explicit_post_window_durable",
+        "cross_restart_continuation",
+        "unattended_background_multiwave"
+      ],
+      "temporal_address": "127.0.0.1:7233",
+      "temporal_namespace": "default",
+      "temporal_task_queue": "xinao-dualbrain-promoted-v1",
+      "docker_worker": "houtai-gongren",
+      "langgraph_queue": "xinao-integrated-langgraph-plugin-queue"
+    }
   },
   "model_worker_routing": {
-    "engineering_authority": "C:\\Users\\xx363\\Desktop\\主线\\工具胶水宪法\\软件工具胶水宪法_当前有效.txt#四、唯一默认软件主路",
+    "engineering_authority": "C:\\Users\\xx363\\Desktop\\主线\\工具胶水宪法\\软件工具胶水宪法_当前有效.txt#四、唯一软件主路与双腿选择",
     "selection": "dynamic_positive_net_benefit",
     "available_workers": [
       "grok",
@@ -36,7 +56,8 @@
     "grok_home": "C:\\Users\\xx363\\.grok-bg-workers"
   },
   "grok_codex_s_native_temporal_route": {
-    "enabled_default": true,
+    "route_role": "leg_b_durable_after_explicit_owner_handoff",
+    "enabled_when_selected": true,
     "compose": "E:\\XINAO_RESEARCH_WORKSPACES\\S\\docker-compose.yml",
     "compose_display_names": "E:\\XINAO_RESEARCH_WORKSPACES\\S\\materials\\xinao_compose_display_names.v1.json",
     "evidence_root": "D:\\XINAO_RESEARCH_RUNTIME"
@@ -47,8 +68,10 @@
     "dispatch_side_effect": false
   },
   "bounded_worker_pool": {
-    "is_default_durable_route": false,
-    "activation": "dynamic_positive_net_benefit_or_canonical_route_unavailable_bounded_fallback",
+    "route_role": "normal_leg_a",
+    "is_unconditional_default": false,
+    "selection": "selected_by_task_fit_or_existing_route_receipt",
+    "activation": "bounded_online_current_tui_or_existing_leg_a_route_receipt",
     "dispatch_script": "grok-admin-bridge/Invoke-CodexDispatchGrokWorkerPool.ps1",
     "execution_contract_version": "xinao.grok.shared_execution_contract.v1",
     "resident_loop": false,

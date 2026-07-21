@@ -1,9 +1,10 @@
 {
-  "schema_version": "xinao.grok_island_core_index.v2",
-  "sentinel": "SENTINEL:GROK_ISLAND_CORE_INDEX_V2",
+  "schema_version": "xinao.grok_island_core_index.v3",
+  "sentinel": "SENTINEL:GROK_ISLAND_CORE_INDEX_V3",
   "status": "active_thin",
   "repository_role": "isolated_admin_configuration_and_bounded_grok_lane",
-  "canonical_route": "Temporal + Docker houtai-gongren + worker-internal LangGraph",
+  "route_authority": "bridge.config.json#canonical_route",
+  "route_selection": "selected_by_task_fit_or_existing_route_receipt",
   "tier0": [
     "grok_brain_and_executor.v1.json",
     "grok_p0_autonomous_background_base.v1.json",

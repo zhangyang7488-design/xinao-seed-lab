@@ -21,19 +21,30 @@ $forbidden = @(
 )
 $present = @($forbidden | Where-Object { Test-Path -LiteralPath (Join-Path $repoRoot $_) })
 $ok = (
-    [string]$config.canonical_route.shape -eq "Temporal + Docker houtai-gongren + worker-internal LangGraph" -and
+    [string]$config.canonical_route.shape -eq "A/B dual-leg selected by task fit or existing route receipt" -and
+    [string]$config.canonical_route.selection -eq "selected_by_task_fit_or_existing_route_receipt" -and
+    [string]$config.canonical_route.leg_a.transport_id -eq "direct-grok-worker-pool" -and
+    [string]$config.canonical_route.leg_b.transport_id -eq "temporal-docker-langgraph" -and
+    [bool]$config.canonical_route.continuity.existing_route_receipt_precedence -and
+    -not [bool]$config.canonical_route.continuity.continuous_or_resume_switches_leg -and
     [string]$config.model_worker_routing.selection -eq "dynamic_positive_net_benefit" -and
     @($config.model_worker_routing.available_workers) -contains "codex_agents" -and
     [string]$config.model_worker_routing.width_policy -eq "dynamic_ready_frontier_quota_latency_evidence" -and
-    -not [bool]$config.bounded_worker_pool.is_default_durable_route -and
+    [string]$config.bounded_worker_pool.route_role -eq "normal_leg_a" -and
+    -not [bool]$config.bounded_worker_pool.is_unconditional_default -and
     [bool]$config.prohibited_surfaces.visible_terminal -and
     [bool]$config.prohibited_surfaces.resident_loop -and
     $present.Count -eq 0
 )
 $result = [ordered]@{
-    schema_version = "xinao.grok_l0_bootstrap_gate.v2"
+    schema_version = "xinao.grok_l0_bootstrap_gate.v3"
     ok = [bool]$ok
-    canonical_route = [string]$config.canonical_route.shape
+    route_topology = [string]$config.canonical_route.shape
+    route_selection = [string]$config.canonical_route.selection
+    leg_a_transport = [string]$config.canonical_route.leg_a.transport_id
+    leg_b_transport = [string]$config.canonical_route.leg_b.transport_id
+    existing_route_receipt_precedence = [bool]$config.canonical_route.continuity.existing_route_receipt_precedence
+    continuous_or_resume_switches_leg = [bool]$config.canonical_route.continuity.continuous_or_resume_switches_leg
     worker_selection = [string]$config.model_worker_routing.selection
     available_workers = @($config.model_worker_routing.available_workers)
     grok_lane_model = [string]$config.grok_lane.model

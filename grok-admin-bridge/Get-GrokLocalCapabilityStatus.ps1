@@ -23,7 +23,6 @@ $checkpoint = if ($isGrok45) {
 
 $required = [ordered]@{
     bridge_config = $ConfigPath
-    compose = [string]$config.canonical_route.shape
     compose_file = [string]$config.grok_codex_s_native_temporal_route.compose
     checkpoint_script = (Join-Path $PSScriptRoot "Invoke-GrokSessionContextCheckpoint.ps1")
     contract_test = (Join-Path $PSScriptRoot "Test-GrokRepositoryContracts.ps1")
@@ -37,11 +36,17 @@ if ($isGrok45) {
 
 $files = [ordered]@{}
 foreach ($entry in $required.GetEnumerator()) {
-    if ($entry.Key -eq "compose") { continue }
     $files[$entry.Key] = [bool](Test-Path -LiteralPath ([string]$entry.Value) -PathType Leaf)
 }
 $ok = (
-    [string]$config.canonical_route.shape -eq "Temporal + Docker houtai-gongren + worker-internal LangGraph" -and
+    [string]$config.canonical_route.shape -eq "A/B dual-leg selected by task fit or existing route receipt" -and
+    [string]$config.canonical_route.selection -eq "selected_by_task_fit_or_existing_route_receipt" -and
+    [string]$config.canonical_route.leg_a.transport_id -eq "direct-grok-worker-pool" -and
+    [string]$config.canonical_route.leg_b.transport_id -eq "temporal-docker-langgraph" -and
+    [bool]$config.canonical_route.continuity.existing_route_receipt_precedence -and
+    -not [bool]$config.canonical_route.continuity.continuous_or_resume_switches_leg -and
+    [string]$config.bounded_worker_pool.route_role -eq "normal_leg_a" -and
+    -not [bool]$config.bounded_worker_pool.is_unconditional_default -and
     [string]$config.model_worker_routing.selection -eq "dynamic_positive_net_benefit" -and
     @($config.model_worker_routing.available_workers) -contains "codex_agents" -and
     [string]$config.grok_lane.provider -eq "grok" -and
@@ -51,11 +56,16 @@ $ok = (
 )
 
 $result = [ordered]@{
-    schema_version = "xinao.grok_local_capability_status.v2"
+    schema_version = "xinao.grok_local_capability_status.v3"
     ok = [bool]$ok
     repository_root = $repoRoot
     repository_role = [string]$config.repository_role
-    canonical_route = [string]$config.canonical_route.shape
+    route_topology = [string]$config.canonical_route.shape
+    route_selection = [string]$config.canonical_route.selection
+    leg_a_transport = [string]$config.canonical_route.leg_a.transport_id
+    leg_b_transport = [string]$config.canonical_route.leg_b.transport_id
+    existing_route_receipt_precedence = [bool]$config.canonical_route.continuity.existing_route_receipt_precedence
+    continuous_or_resume_switches_leg = [bool]$config.canonical_route.continuity.continuous_or_resume_switches_leg
     worker_selection = [string]$config.model_worker_routing.selection
     available_workers = @($config.model_worker_routing.available_workers)
     grok_lane_model = [string]$config.grok_lane.model

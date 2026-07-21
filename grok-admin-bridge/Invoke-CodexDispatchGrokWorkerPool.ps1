@@ -1,10 +1,11 @@
 #Requires -Version 5.1
 <#
 .SYNOPSIS
-  Explicit bootstrap/fallback entry: dispatch bounded Grok headless workers.
+  Explicit leg-A entry: dispatch bounded Grok headless workers.
 .DESCRIPTION
   Use when a bounded direct Grok batch has positive net benefit for parallel
-  work, diagnosis, or evidence, including canonical-route fallback. Thin
+  work, diagnosis, or evidence when selected by task fit or an existing
+  leg-A route receipt. This is a normal bounded transport, not a fallback. Thin
   wrapper over Invoke-GrokWorkerPool.ps1; never durable truth.
 .EXAMPLE
   .\Invoke-CodexDispatchGrokWorkerPool.ps1 -N 4 -Prompt "Implement X; write evidence" -Cwd E:\repo -Model grok-4.5
@@ -50,6 +51,9 @@ param(
     [string]$CommonSubjectManifestSha256 = "",
     [string]$CommonFrozenContextSha256 = "",
     [string]$CommonContextManifestPath = "",
+    [string]$CommonRulesFile = "",
+    [string]$CommonRulesSha256 = "",
+    [string]$CommonCandidateOutputRoot = "",
     [string]$CommonPhase = "",
     [string[]]$CommonWriteDomains = @(),
     [string[]]$CommonDependsOn = @(),
@@ -193,11 +197,47 @@ $commonRequested = (
     -not [string]::IsNullOrWhiteSpace($CommonSubjectManifestSha256) -or
     -not [string]::IsNullOrWhiteSpace($CommonFrozenContextSha256) -or
     -not [string]::IsNullOrWhiteSpace($CommonContextManifestPath) -or
+    -not [string]::IsNullOrWhiteSpace($CommonRulesFile) -or
+    -not [string]::IsNullOrWhiteSpace($CommonRulesSha256) -or
+    -not [string]::IsNullOrWhiteSpace($CommonCandidateOutputRoot) -or
     -not [string]::IsNullOrWhiteSpace($CommonPhase) -or
     -not [string]::IsNullOrWhiteSpace($CommonPriorAttemptReceiptPath)
 )
 if ($commonRequested) {
     if ($N -ne 1) { throw "CODEX_GROK_COMMON_REQUIRES_SINGLE_LANE" }
+    if ([string]::IsNullOrWhiteSpace($CommonRulesFile)) {
+        throw "CODEX_GROK_COMMON_REQUIRED: rules_file"
+    }
+    if ($CommonRulesSha256 -notmatch '^[0-9a-f]{64}$') {
+        throw "CODEX_GROK_COMMON_RULES_SHA256_INVALID"
+    }
+    try { $CommonRulesFile = [IO.Path]::GetFullPath($CommonRulesFile) }
+    catch { throw "CODEX_GROK_COMMON_RULES_FILE_INVALID: $CommonRulesFile" }
+    if (-not (Test-Path -LiteralPath $CommonRulesFile -PathType Leaf)) {
+        throw "CODEX_GROK_COMMON_RULES_FILE_MISSING: $CommonRulesFile"
+    }
+    $observedRulesSha256 = (Get-FileHash -LiteralPath $CommonRulesFile -Algorithm SHA256).Hash.ToLowerInvariant()
+    if (-not [string]::Equals($observedRulesSha256, $CommonRulesSha256, [StringComparison]::Ordinal)) {
+        throw "CODEX_GROK_COMMON_RULES_FILE_HASH_MISMATCH"
+    }
+    if (-not [string]::IsNullOrWhiteSpace($CommonCandidateOutputRoot)) {
+        try { $CommonCandidateOutputRoot = [IO.Path]::GetFullPath($CommonCandidateOutputRoot) }
+        catch { throw "CODEX_GROK_COMMON_CANDIDATE_OUTPUT_ROOT_INVALID: $CommonCandidateOutputRoot" }
+        if (-not (Test-Path -LiteralPath $CommonCandidateOutputRoot -PathType Container)) {
+            throw "CODEX_GROK_COMMON_CANDIDATE_OUTPUT_ROOT_MISSING: $CommonCandidateOutputRoot"
+        }
+        $resolvedCwd = [IO.Path]::GetFullPath($Cwd)
+        if (-not [string]::Equals($CommonCandidateOutputRoot, $resolvedCwd, [StringComparison]::OrdinalIgnoreCase)) {
+            throw "CODEX_GROK_COMMON_CANDIDATE_OUTPUT_ROOT_CWD_MISMATCH"
+        }
+        $expectedCandidateWriteDomain = "candidate_output_root:" + ($CommonCandidateOutputRoot.Replace('\', '/').TrimEnd('/').ToLowerInvariant())
+        if (
+            @($CommonWriteDomains).Count -ne 1 -or
+            -not [string]::Equals([string]$CommonWriteDomains[0], $expectedCandidateWriteDomain, [StringComparison]::Ordinal)
+        ) {
+            throw "CODEX_GROK_COMMON_CANDIDATE_WRITE_DOMAIN_MISMATCH"
+        }
+    }
     if (
         -not [string]::IsNullOrWhiteSpace($CommonLogicalContractPath) -and
         -not [string]::IsNullOrWhiteSpace($CommonContextManifestPath)
@@ -266,6 +306,7 @@ if ($commonRequested) {
             "--task-contract-ref", $CommonTaskContractRef,
             "--parent-operation-id", $CommonParentOperationId,
             "--correlation-id", $CommonCorrelationId,
+            "--rules-file", $CommonRulesFile,
             "--min-result-chars", ([string]$MinResultChars),
             "--deadline-seconds", ([string]$TimeoutSec),
             "--output", $CommonLogicalContractPath
@@ -313,6 +354,16 @@ if ($commonRequested) {
         ) {
             throw "CODEX_GROK_COMMON_CONTEXT_MANIFEST_NOT_BOUND"
         }
+        if (
+            -not [string]::Equals([string]$commonPrepareReceipt.rules_sha256, $CommonRulesSha256, [StringComparison]::Ordinal) -or
+            -not [string]::Equals(
+                [IO.Path]::GetFullPath([string]$commonPrepareReceipt.rules_file),
+                $CommonRulesFile,
+                [StringComparison]::OrdinalIgnoreCase
+            )
+        ) {
+            throw "CODEX_GROK_COMMON_RULES_NOT_BOUND"
+        }
         $CommonFrozenContextSha256 = $preparedContextSha256
     }
 }
@@ -348,8 +399,12 @@ $dispatchMeta = [ordered]@{
     pool_id = $poolId
     pool_summary_path = $poolSummaryPath
     role_cn = "dynamic positive-benefit bounded Grok headless worker pool"
-    canonical_default_cn = "Temporal + Docker houtai-gongren + worker-internal LangGraph + dynamic Grok"
-    not_default_cn = @(
+    route_role = "normal_leg_a_bounded_online_current_tui"
+    route_selection = "selected_by_task_fit_or_existing_route_receipt"
+    route_continuity = "continuous_or_resume_does_not_switch_leg"
+    is_unconditional_default = $false
+    leg_b_cn = "explicit durable handoff -> Temporal + Docker houtai-gongren + worker-internal LangGraph"
+    prohibited_cn = @(
         "codex_to_grok visible typeahead inject",
         "Docker integrated_bus Desktop .lnk"
     )
@@ -380,6 +435,9 @@ $dispatchMeta = [ordered]@{
     json_schema_path = $JsonSchemaPath
     common_contract_path = $CommonLogicalContractPath
     common_context_manifest_path = $CommonContextManifestPath
+    common_rules_file = $CommonRulesFile
+    common_rules_sha256 = $CommonRulesSha256
+    common_candidate_output_root = $CommonCandidateOutputRoot
     common_context_binding_mode = if ($null -ne $commonPrepareReceipt) {
         [string]$commonPrepareReceipt.context_binding_mode
     } else { "" }
@@ -419,6 +477,9 @@ if ($CommonLogicalContractPath) {
     $args.CommonLogicalContractPath = $CommonLogicalContractPath
     $args.CommonSubjectManifestSha256 = $CommonSubjectManifestSha256
     $args.CommonFrozenContextSha256 = $CommonFrozenContextSha256
+    $args.CommonRulesFile = $CommonRulesFile
+    $args.CommonRulesSha256 = $CommonRulesSha256
+    $args.CommonCandidateOutputRoot = $CommonCandidateOutputRoot
     $args.CommonPhase = $CommonPhase
     $args.CommonWriteDomains = @($CommonWriteDomains)
     $args.CommonDependsOn = @($CommonDependsOn)

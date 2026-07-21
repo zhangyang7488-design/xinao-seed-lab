@@ -26,7 +26,14 @@ $governanceLoop = Read-Json "grok-admin-bridge/grok_mature_first_governance_loop
 $runtimeRoots = Read-Json "grok-admin-bridge/grok_runtime_roots.v1.json"
 $brain = Read-Json "grok-admin-bridge/grok_brain_and_executor.v1.json"
 
-Assert-Contract ([string]$config.canonical_route.shape -eq "Temporal + Docker houtai-gongren + worker-internal LangGraph") "canonical_route"
+Assert-Contract ([string]$config.canonical_route.shape -eq "A/B dual-leg selected by task fit or existing route receipt") "dual_leg_route_topology"
+Assert-Contract ([string]$config.canonical_route.selection -eq "selected_by_task_fit_or_existing_route_receipt") "route_selected_by_task_fit_or_receipt"
+Assert-Contract ([string]$config.canonical_route.leg_a.transport_id -eq "direct-grok-worker-pool") "leg_a_direct_transport"
+Assert-Contract ([string]$config.canonical_route.leg_a.route_role -eq "normal_bounded_online_current_tui") "leg_a_normal_online_role"
+Assert-Contract ([string]$config.canonical_route.leg_b.transport_id -eq "temporal-docker-langgraph") "leg_b_durable_transport"
+Assert-Contract ([string]$config.canonical_route.leg_b.route_role -eq "durable_after_explicit_owner_handoff") "leg_b_explicit_handoff_role"
+Assert-Contract ([bool]$config.canonical_route.continuity.existing_route_receipt_precedence) "existing_route_receipt_precedence"
+Assert-Contract (-not [bool]$config.canonical_route.continuity.continuous_or_resume_switches_leg) "continuous_resume_never_switches_leg"
 Assert-Contract ([string]$config.model_worker_routing.selection -eq "dynamic_positive_net_benefit") "dynamic_worker_selection"
 Assert-Contract (@($config.model_worker_routing.available_workers) -contains "grok") "grok_available"
 Assert-Contract (@($config.model_worker_routing.available_workers) -contains "codex_agents") "codex_agents_available"
@@ -37,7 +44,9 @@ Assert-Contract ([string]$config.model_worker_routing.width_policy -eq "dynamic_
 Assert-Contract ([string]$config.grok_lane.scope -eq "this_grok_endpoint_only_not_global_router") "lane_scope"
 Assert-Contract ([string]$config.grok_lane.model -eq "grok-composer-2.5-fast") "composer_2_5_lane"
 Assert-Contract ([string]$config.grok_lane.grok_home -eq "C:\Users\xx363\.grok-bg-workers") "composer_profile"
-Assert-Contract (-not [bool]$config.bounded_worker_pool.is_default_durable_route) "worker_pool_not_default_durable_route"
+Assert-Contract ([string]$config.bounded_worker_pool.route_role -eq "normal_leg_a") "worker_pool_is_normal_leg_a"
+Assert-Contract (-not [bool]$config.bounded_worker_pool.is_unconditional_default) "leg_a_not_unconditional_default"
+Assert-Contract ([string]$config.bounded_worker_pool.selection -eq "selected_by_task_fit_or_existing_route_receipt") "leg_a_selected_not_fallback"
 Assert-Contract ([bool]$config.prohibited_surfaces.second_orchestrator) "second_orchestrator_prohibited"
 Assert-Contract ([bool]$config.prohibited_surfaces.visible_terminal) "visible_terminal_prohibited"
 Assert-Contract ([bool]$config.prohibited_surfaces.visible_injection) "visible_injection_prohibited"
@@ -47,16 +56,20 @@ Assert-Contract ([bool]$config.prohibited_surfaces.keepalive) "keepalive_prohibi
 Assert-Contract ([bool]$config.prohibited_surfaces.resident_loop) "resident_loop_prohibited"
 Assert-Contract ([string]$index.status -eq "active_thin_surface") "thin_operational_index"
 Assert-Contract ([string]$pointer.mirror_relationship -eq "none") "no_stale_mirror_identity"
+Assert-Contract ([string]$pointer.route_authority -eq "bridge.config.json#canonical_route") "pointer_route_authority"
+Assert-Contract ([string]$core.route_authority -eq "bridge.config.json#canonical_route") "core_route_authority"
 Assert-Contract (@($p0.stop_conditions) -contains "user_changes_continuous_mode") "p0_mode_change_stop"
 Assert-Contract (@($p0.stop_conditions) -contains "whole_mainline_frontier_unavoidably_blocked_after_alternatives") "p0_global_frontier_stop"
 Assert-Contract (@($p0.stop_conditions) -notcontains "whole_named_objective_verified") "p0_local_milestone_not_stop"
 Assert-Contract ([string]$p0.model_worker_routing -eq "bridge.config.json#model_worker_routing") "p0_dynamic_worker_pointer"
 Assert-Contract ([string]$checkpointContract.model_worker_routing -eq "bridge.config.json#model_worker_routing") "checkpoint_dynamic_worker_pointer"
+Assert-Contract ([string]$checkpointContract.route_continuity -match "does_not_switch_leg") "checkpoint_preserves_route_leg"
 Assert-Contract ([string]$governanceLoop.activation -match "current_external_facts_can_change") "governance_dynamic_activation"
 Assert-Contract ([string]$governanceLoop.local_live_direct -match "do_not_require_external_search_or_adr") "governance_local_live_direct"
 Assert-Contract ([string]$runtimeRoots.coordination -eq "E:\XINAO_RESEARCH_WORKSPACES\S\projects\dual-brain-coordination") "coordination_root_migrated"
-Assert-Contract ([string]$brain.execution_boundary.durable_multiwave_work -eq "canonical_route_only") "durable_multiwave_uses_canonical_route"
-Assert-Contract ($null -eq $brain.execution_boundary.durable_or_parallel_work) "bounded_parallel_not_forced_to_canonical_route"
+Assert-Contract ([string]$brain.execution_boundary.online_bounded_current_tui -eq "leg_a_direct_grok_worker_pool_typical") "brain_online_bounded_uses_leg_a"
+Assert-Contract ([string]$brain.execution_boundary.post_window_cross_restart_or_unattended_multiwave -match "leg_b_temporal_docker_langgraph") "brain_durable_handoff_uses_leg_b"
+Assert-Contract (-not [bool]$brain.execution_boundary.continuous_or_resume_switches_leg) "brain_resume_preserves_leg"
 
 foreach ($name in @($core.tier0) + @($core.control_contracts) + @($core.endpoint_contracts)) {
     Assert-Contract (Test-Path -LiteralPath (Join-Path $PSScriptRoot ([string]$name)) -PathType Leaf) ("core_index_target_missing:" + $name)
@@ -99,6 +112,8 @@ Assert-Contract ($checkpointText -notmatch "SubagentPool|refill_required|Invoke-
 Assert-Contract ($checkpointText -match 'dispatch = \$false') "checkpoint_declares_no_dispatch"
 Assert-Contract ($checkpointText -match 'visible_terminal = \$false') "checkpoint_declares_no_visible_terminal"
 Assert-Contract ($checkpointText -match 'worker_selection = "dynamic_positive_net_benefit"') "checkpoint_dynamic_workers"
+Assert-Contract ($checkpointText -match 'route_selection = "selected_by_task_fit_or_existing_route_receipt"') "checkpoint_route_receipt_selection"
+Assert-Contract ($checkpointText -match 'route_continuity = "continuous_or_resume_does_not_switch_leg"') "checkpoint_resume_preserves_leg"
 Assert-Contract ($checkpointText -notmatch 'default_model_worker') "checkpoint_no_fixed_default_worker"
 
 $governanceSkillText = Get-Content -LiteralPath (Join-Path $repoRoot ".grok/skills/mature-first-governance/SKILL.md") -Raw
@@ -120,6 +135,8 @@ $adaptiveRuleText = @(
 ) | ForEach-Object { Get-Content -LiteralPath (Join-Path $repoRoot $_) -Raw } | Out-String
 Assert-Contract ($adaptiveRuleText -notmatch 'Grok 是唯一默认模型工人|Grok heavy / 4[.]5.+唯一默认模型工人|非 Grok 模型.+默认冻结|只有用户显式点名才可调用|任何事务默认走治理环|0–4.+落盘后方可|未规划就改 ps1/compose|先短外搜成熟') "active_rules_no_rigid_worker_or_external_template"
 Assert-Contract ($adaptiveRuleText -match '局部.+continuous.+主线全局') "active_rules_preserve_continuous_parent"
+Assert-Contract ($adaptiveRuleText -match 'route receipt.+continuous/resume.+不自行切腿') "active_rules_preserve_route_receipt_leg"
+Assert-Contract ($adaptiveRuleText -notmatch 'WorkerPool fallback') "active_rules_do_not_demote_leg_a_to_fallback"
 
 $overlayText = Get-Content -LiteralPath (Join-Path $repoRoot ".grok/config.toml") -Raw
 Assert-Contract ($overlayText -notmatch 'profile\s*=\s*"off"') "sandbox_off_override_absent"
@@ -147,8 +164,10 @@ foreach ($relative in $poolFiles) {
     Assert-Contract (Test-Path -LiteralPath (Join-Path $repoRoot $relative) -PathType Leaf) ("fallback_missing:" + $relative)
 }
 $poolContract = Read-Json "grok-admin-bridge/grok_codex_grok_worker_pool_hot_path.v1.json"
-Assert-Contract (-not [bool]$poolContract.is_default_hot_path) "pool_contract_not_default"
-Assert-Contract ([string]$poolContract.activation -match "positive_net_benefit") "pool_contract_dynamic_benefit"
+Assert-Contract ([string]$poolContract.route_role -eq "normal_bounded_online_current_tui") "pool_contract_normal_leg_a"
+Assert-Contract (-not [bool]$poolContract.is_unconditional_default) "pool_contract_not_unconditional_default"
+Assert-Contract ([string]$poolContract.selection -eq "selected_by_task_fit_or_existing_route_receipt") "pool_contract_route_receipt_selection"
+Assert-Contract ([string]$poolContract.activation -notmatch "fallback") "pool_contract_not_fallback"
 Assert-Contract ([string]$poolContract.execution_contract_version -eq "xinao.grok.shared_execution_contract.v1") "pool_execution_contract"
 Assert-Contract (@($poolContract.common_contract_features) -contains "validated_bounded_context_slice_manifest_for_first_time_tasks") "pool_validated_context_slice_feature"
 
@@ -174,6 +193,8 @@ $readmeText = Get-Content -LiteralPath (Join-Path $repoRoot "README.md") -Raw
 $intentRuleText = Get-Content -LiteralPath (Join-Path $repoRoot ".grok/rules/36-grok-live-field-intent-decode.md") -Raw
 Assert-Contract ($readmeText -notmatch 'Grok is the only default model worker') "readme_not_grok_only"
 Assert-Contract ($readmeText -match 'selected by positive net benefit') "readme_dynamic_worker_selection"
+Assert-Contract ($readmeText -match 'Leg A is not a fallback') "readme_leg_a_is_normal_transport"
+Assert-Contract ($readmeText -match 'continuous.+resume.+never switches legs') "readme_resume_preserves_leg"
 Assert-Contract ($intentRuleText -notmatch 'grok_live_field_intent_decode[.]v1[.]json') "intent_rule_has_no_missing_external_first_contract"
 Assert-Contract ($intentRuleText -match '状态/进度/对账/inventory.+本机现状') "intent_rule_local_state_first"
 Assert-Contract ($workerText -notmatch '[.]grok-4[.]5-lane') "worker_has_no_stale_profile"
@@ -211,6 +232,9 @@ foreach ($entry in ([ordered]@{
 Assert-Contract ($codexLauncherText -match 'SelectionPath\s*=\s*\$SelectionPath') "launcher_forwards_selection_path"
 Assert-Contract ($codexLauncherText -match '\[string\]\$CommonContextManifestPath') "launcher_context_manifest_parameter"
 Assert-Contract ($codexLauncherText -match 'CommonContextManifestPath\s*=\s*\$CommonContextManifestPath') "launcher_forwards_context_manifest"
+Assert-Contract ($packageLauncherSourceText -match '\[string\]\$CommonRulesFile') "launcher_source_rules_file_parameter"
+Assert-Contract ($packageLauncherSourceText -match 'CommonRulesSha256\s*=\s*\$CommonRulesSha256') "launcher_source_forwards_rules_hash"
+Assert-Contract ($packageLauncherSourceText -match 'CommonCandidateOutputRoot\s*=\s*\$CommonCandidateOutputRoot') "launcher_source_forwards_candidate_boundary"
 Assert-Contract ($codexLauncherText -notmatch '\[string\]\$CommonLogicalContractPath') "launcher_does_not_expose_logical_contract_path"
 Assert-Contract ($dispatchText -match 'Read-GrokWorkerSelectionReceipt') "dispatch_validates_selection_receipt"
 Assert-Contract ($dispatchText -match 'resolve_grok_worker_selection_receipt[.]py') "dispatch_generates_missing_selection_receipt"
@@ -220,9 +244,15 @@ Assert-Contract ($selectionResolverText -match 'resolve_supervisor_worker_decisi
 Assert-Contract ($selectionResolverText -notmatch 'select_supervisor_worker') "selection_adapter_does_not_reimplement_selector"
 Assert-Contract ($dispatchText -match 'ExpectedSelectionDecisionSha256\s*=\s*\[string\]\$selection[.]decision_sha256') "dispatch_binds_decision_hash_to_pool"
 Assert-Contract ($dispatchText -match 'CODEX_GROK_POOL_SELECTION_RECEIPT_MISMATCH') "dispatch_fanin_binds_selection_receipt"
+Assert-Contract ($dispatchText -match 'route_role = "normal_leg_a_bounded_online_current_tui"') "dispatch_meta_names_normal_leg_a"
+Assert-Contract ($dispatchText -match 'route_continuity = "continuous_or_resume_does_not_switch_leg"') "dispatch_meta_preserves_route_leg"
+Assert-Contract ($dispatchText -notmatch 'canonical-route fallback') "dispatch_no_longer_calls_leg_a_fallback"
 Assert-Contract ($dispatchText -match 'prepare_direct_worker_pool_common_contract[.]py') "dispatch_auto_prepares_common_contract"
 Assert-Contract ($dispatchText -match '\[string\]\$CommonContextManifestPath') "dispatch_context_manifest_parameter"
 Assert-Contract ($dispatchText -match '"--context-manifest-file",\s*\$CommonContextManifestPath') "dispatch_preparer_receives_context_manifest"
+Assert-Contract ($dispatchText -match '"--rules-file",\s*\$CommonRulesFile') "dispatch_preparer_receives_exact_rules_file"
+Assert-Contract ($dispatchText -match 'CODEX_GROK_COMMON_RULES_FILE_HASH_MISMATCH') "dispatch_rules_bytes_fail_closed"
+Assert-Contract ($dispatchText -match 'CODEX_GROK_COMMON_CANDIDATE_WRITE_DOMAIN_MISMATCH') "dispatch_candidate_write_boundary_fail_closed"
 Assert-Contract ($dispatchText -match 'contract_prepare_receipt[.]json') "dispatch_reads_contract_prepare_receipt"
 Assert-Contract ($dispatchText -match 'validated_context_slice_manifest') "dispatch_requires_validated_context_binding"
 Assert-Contract ($dispatchText -match 'CODEX_GROK_COMMON_CONTEXT_MANIFEST_REQUIRES_PREPARATION') "dispatch_rejects_unvalidated_manifest_with_existing_contract"
@@ -251,6 +281,10 @@ Assert-Contract ($packageRunnerText -match 'attempt-\{int\(attempt\)\}:retry-\{d
 Assert-Contract ($packageRunnerText -match '"-DispatchEpochId"') "package_runner_forwards_exact_epoch"
 Assert-Contract ($packageRunnerText -match '"neutral_package_manifest"') "package_runner_records_manifest_epoch_source"
 Assert-Contract ($packageRunnerText -match '"-QuotaSnapshotSha256"') "package_runner_forwards_hash_bound_quota_snapshot"
+Assert-Contract ($packageRunnerText -match '"-CommonRulesFile"') "package_runner_forwards_hash_bound_rules_file"
+Assert-Contract ($packageRunnerText -match '"-CommonRulesSha256"') "package_runner_forwards_hash_bound_rules_sha"
+Assert-Contract ($packageRunnerText -match '"-CommonCandidateOutputRoot"') "package_runner_forwards_candidate_boundary"
+Assert-Contract ($packageRunnerText -match 'candidate_output_root:') "package_runner_uses_non_authority_candidate_write_domain"
 Assert-Contract ($packageRunnerText -match 'EXPECTED_PACKAGE_IDENTITY_SCHEMA\s*=\s*"xinao[.]worker_package_identity[.]v2"') "package_runner_pins_identity_v2"
 Assert-Contract ($packageRunnerText -match 'EXPECTED_PACKAGE_BATCH_SCHEMA\s*=\s*"xinao[.]worker_package_batch[.]v3"') "package_runner_pins_batch_v3"
 Assert-Contract ($packageRunnerText -match 'EXPECTED_DISPATCH_ENVELOPE_SCHEMA\s*=\s*"xinao[.]worker_dispatch_envelope[.]v2"') "package_runner_pins_envelope_v2"
@@ -272,6 +306,10 @@ Assert-Contract ($poolText -match 'GROK_WORKER_POOL_SELECTION_DECISION_CHANGED')
 Assert-Contract ($poolText -match '\[string\]\$CommonLogicalContractPath') "pool_common_contract_optional_surface"
 Assert-Contract ($poolText -match 'GROK_WORKER_POOL_COMMON_REQUIRES_SINGLE_LANE') "pool_common_contract_single_lane"
 Assert-Contract ($poolText -match 'GROK_WORKER_POOL_COMMON_CONTRACT_MISMATCH: \$Field') "pool_common_contract_preflight_fail_closed"
+Assert-Contract ($poolText -match 'GROK_WORKER_POOL_COMMON_CANDIDATE_WRITE_DOMAIN_MISMATCH') "pool_candidate_boundary_premodel_fail_closed"
+Assert-Contract ($poolText -match 'Assert-CommonEqual \$observedRulesFileSha256 \$CommonRulesSha256') "pool_rules_bytes_premodel_fail_closed"
+Assert-Contract ($poolText -match 'Assert-CommonEqual \(\[string\]\$commonContract[.]effect_mode\) \$expectedEffectMode') "pool_effect_mode_is_honest"
+Assert-Contract ($poolText -notmatch '\$rulesPath\s*=\s*"C:\\Users\\xx363\\Desktop') "pool_has_no_hardcoded_rules_identity"
 Assert-Contract ($poolText -match 'observed_capability_binding_sha256') "pool_records_observed_capability_binding"
 Assert-Contract ($poolText -match 'common_contract_preflight') "pool_records_common_contract_preflight"
 Assert-Contract ($poolText -match 'classify-prior-only') "pool_has_zero_model_prior_precheck"
@@ -412,15 +450,22 @@ if ($isGrok45) {
 }
 
 [ordered]@{
-    schema_version = "xinao.grok_repository_contract_check.v2"
+    schema_version = "xinao.grok_repository_contract_check.v3"
     ok = $true
-    canonical_route = [string]$config.canonical_route.shape
+    route_topology = [string]$config.canonical_route.shape
+    route_selection = [string]$config.canonical_route.selection
+    leg_a_transport = [string]$config.canonical_route.leg_a.transport_id
+    leg_a_role = [string]$config.canonical_route.leg_a.route_role
+    leg_b_transport = [string]$config.canonical_route.leg_b.transport_id
+    leg_b_role = [string]$config.canonical_route.leg_b.route_role
+    existing_route_receipt_precedence = [bool]$config.canonical_route.continuity.existing_route_receipt_precedence
+    continuous_or_resume_switches_leg = [bool]$config.canonical_route.continuity.continuous_or_resume_switches_leg
     worker_selection = [string]$config.model_worker_routing.selection
     available_workers = @($config.model_worker_routing.available_workers)
     soft_preference_when_close = [string]$config.model_worker_routing.soft_preference_when_close
     grok_lane_model = [string]$config.grok_lane.model
     dynamic_width_policy = [string]$config.model_worker_routing.width_policy
-    worker_pool_default = $false
+    leg_a_is_unconditional_default = [bool]$config.bounded_worker_pool.is_unconditional_default
     resident_control_plane_default = $false
     visible_terminal_default = $false
     endpoint_canaries_checked = [bool]$isGrok45

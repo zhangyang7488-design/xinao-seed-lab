@@ -1,6 +1,6 @@
 {
-  "schema_version": "xinao.grok_brain_and_executor.v2",
-  "sentinel": "SENTINEL:GROK_BRAIN_EXECUTOR_V2",
+  "schema_version": "xinao.grok_brain_and_executor.v3",
+  "sentinel": "SENTINEL:GROK_BRAIN_EXECUTOR_V3",
   "status": "active",
   "repository_role": "isolated_admin_configuration_and_bounded_grok_lane",
   "codex_role": "thinking_orchestration_and_tightly_coupled_single_writer",
@@ -15,10 +15,14 @@
     "model": "grok-composer-2.5-fast",
     "width": "dynamic_ready_frontier_quota_latency_evidence"
   },
-  "canonical_route": "Temporal + Docker houtai-gongren + worker-internal LangGraph",
+  "route_authority": "bridge.config.json#canonical_route",
   "execution_boundary": {
-    "durable_multiwave_work": "canonical_route_only",
-    "worker_pool": "dynamic_positive_net_benefit_or_bounded_fallback",
+    "route_selection": "selected_by_task_fit_or_existing_route_receipt",
+    "online_bounded_current_tui": "leg_a_direct_grok_worker_pool_typical",
+    "post_window_cross_restart_or_unattended_multiwave": "leg_b_temporal_docker_langgraph_only_after_explicit_handoff",
+    "continuous_or_resume_switches_leg": false,
+    "existing_route_receipt_precedence": true,
+    "worker_pool": "normal_leg_a_not_fallback_not_unconditional_default",
     "endpoint_shell": "denied_by_capability_alias_class"
   },
   "user_visible_language": "clear_chinese_by_default",

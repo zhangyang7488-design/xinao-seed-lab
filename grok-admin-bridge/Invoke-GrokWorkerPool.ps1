@@ -4,9 +4,9 @@
   Codex -> N x Grok headless worker pool (CREATE_NO_WINDOW).
 .DESCRIPTION
   Bounded dynamic lane: a caller dispatches Grok Composer workers on the
-  Windows host when that has positive net benefit or the canonical route needs
-  a temporary fallback. Not TUI inject, not Docker desktop .lnk, and not a
-  second owner beside Temporal + houtai-gongren + LangGraph.
+  Windows host when selected by task fit or an existing leg-A route receipt.
+  This is normal bounded leg A, not a fallback or unconditional default. It is
+  not TUI inject, not Docker desktop .lnk, and not a second owner beside Codex.
 .EXAMPLE
   .\Invoke-GrokWorkerPool.ps1 -N 2 -Prompt "Reply only: POOL_OK" -Cwd E:\repo -Model grok-4.5 -SelectionPath D:\decision.json -MaxTurns 1 -MinResultChars 1 -RequiredResultMarkers POOL_OK
   .\Invoke-GrokWorkerPool.ps1 -N 4 -PromptFile .\task.md -Cwd E:\repo -Model grok-4.5 -SelectionPath D:\decision.json
@@ -33,6 +33,9 @@ param(
     [string]$CommonLogicalContractPath = "",
     [string]$CommonSubjectManifestSha256 = "",
     [string]$CommonFrozenContextSha256 = "",
+    [string]$CommonRulesFile = "",
+    [string]$CommonRulesSha256 = "",
+    [string]$CommonCandidateOutputRoot = "",
     [string]$CommonPhase = "",
     [string[]]$CommonWriteDomains = @(),
     [string[]]$CommonDependsOn = @(),
@@ -123,6 +126,9 @@ $commonMode = (
     -not [string]::IsNullOrWhiteSpace($CommonLogicalContractPath) -or
     -not [string]::IsNullOrWhiteSpace($CommonSubjectManifestSha256) -or
     -not [string]::IsNullOrWhiteSpace($CommonFrozenContextSha256) -or
+    -not [string]::IsNullOrWhiteSpace($CommonRulesFile) -or
+    -not [string]::IsNullOrWhiteSpace($CommonRulesSha256) -or
+    -not [string]::IsNullOrWhiteSpace($CommonCandidateOutputRoot) -or
     -not [string]::IsNullOrWhiteSpace($CommonPhase) -or
     @($CommonWriteDomains).Count -gt 0 -or
     @($CommonDependsOn).Count -gt 0 -or
@@ -152,6 +158,8 @@ if ($commonMode) {
         logical_contract_path = $CommonLogicalContractPath
         subject_manifest_sha256 = $CommonSubjectManifestSha256
         frozen_context_sha256 = $CommonFrozenContextSha256
+        rules_file = $CommonRulesFile
+        rules_sha256 = $CommonRulesSha256
         phase = $CommonPhase
         adapter_root = $CommonAdapterRoot
         python_exe = $CommonPythonExe
@@ -170,10 +178,36 @@ if ($commonMode) {
     }
     Assert-CommonSha256 $CommonSubjectManifestSha256 "subject_manifest_sha256"
     Assert-CommonSha256 $CommonFrozenContextSha256 "frozen_context_sha256"
+    Assert-CommonSha256 $CommonRulesSha256 "rules_sha256"
 
     $CommonLogicalContractPath = [IO.Path]::GetFullPath($CommonLogicalContractPath)
     if (-not (Test-Path -LiteralPath $CommonLogicalContractPath -PathType Leaf)) {
         throw "GROK_WORKER_POOL_COMMON_CONTRACT_MISSING: $CommonLogicalContractPath"
+    }
+    try { $CommonRulesFile = [IO.Path]::GetFullPath($CommonRulesFile) }
+    catch { throw "GROK_WORKER_POOL_COMMON_RULES_FILE_INVALID: $CommonRulesFile" }
+    if (-not (Test-Path -LiteralPath $CommonRulesFile -PathType Leaf)) {
+        throw "GROK_WORKER_POOL_COMMON_RULES_MISSING: $CommonRulesFile"
+    }
+    $observedRulesFileSha256 = (Get-FileHash -LiteralPath $CommonRulesFile -Algorithm SHA256).Hash.ToLowerInvariant()
+    Assert-CommonEqual $observedRulesFileSha256 $CommonRulesSha256 "rules_file.sha256"
+    if (-not [string]::IsNullOrWhiteSpace($CommonCandidateOutputRoot)) {
+        try { $CommonCandidateOutputRoot = [IO.Path]::GetFullPath($CommonCandidateOutputRoot) }
+        catch { throw "GROK_WORKER_POOL_COMMON_CANDIDATE_OUTPUT_ROOT_INVALID: $CommonCandidateOutputRoot" }
+        if (-not (Test-Path -LiteralPath $CommonCandidateOutputRoot -PathType Container)) {
+            throw "GROK_WORKER_POOL_COMMON_CANDIDATE_OUTPUT_ROOT_MISSING: $CommonCandidateOutputRoot"
+        }
+        $resolvedCwd = [IO.Path]::GetFullPath($Cwd)
+        if (-not [string]::Equals($CommonCandidateOutputRoot, $resolvedCwd, [StringComparison]::OrdinalIgnoreCase)) {
+            throw "GROK_WORKER_POOL_COMMON_CANDIDATE_OUTPUT_ROOT_CWD_MISMATCH"
+        }
+        $expectedCandidateWriteDomain = "candidate_output_root:" + ($CommonCandidateOutputRoot.Replace('\', '/').TrimEnd('/').ToLowerInvariant())
+        if (
+            @($CommonWriteDomains).Count -ne 1 -or
+            -not [string]::Equals([string]$CommonWriteDomains[0], $expectedCandidateWriteDomain, [StringComparison]::Ordinal)
+        ) {
+            throw "GROK_WORKER_POOL_COMMON_CANDIDATE_WRITE_DOMAIN_MISMATCH"
+        }
     }
     $CommonAdapterRoot = [IO.Path]::GetFullPath($CommonAdapterRoot)
     if (-not (Test-Path -LiteralPath $CommonAdapterRoot -PathType Container)) {
@@ -206,11 +240,7 @@ if ($commonMode) {
     Assert-CommonEqual ([string]$commonContract.selection.transport_id) ([string]$selection.transport_id) "selection.transport_id"
 
     $promptSha256 = Get-GrokUtf8Sha256Hex -Text $Prompt
-    $rulesPath = "C:\Users\xx363\Desktop\主线\工具胶水宪法\软件工具胶水宪法_当前有效.txt"
-    if (-not (Test-Path -LiteralPath $rulesPath -PathType Leaf)) {
-        throw "GROK_WORKER_POOL_COMMON_RULES_MISSING: $rulesPath"
-    }
-    $rulesSha256 = (Get-FileHash -LiteralPath $rulesPath -Algorithm SHA256).Hash.ToLowerInvariant()
+    $rulesSha256 = $observedRulesFileSha256
     $schemaSha256 = ""
     if (-not [string]::IsNullOrWhiteSpace($JsonSchemaPath)) {
         $resolvedSchema = [IO.Path]::GetFullPath($JsonSchemaPath)
@@ -245,6 +275,8 @@ if ($commonMode) {
     Assert-CommonEqual ([string]$commonContract.rules_sha256) $rulesSha256 "rules_sha256"
     Assert-CommonEqual ([string]$commonContract.output_contract_sha256) $outputContractSha256 "output_contract_sha256"
     Assert-CommonEqual ([string]$commonContract.selection.capability_binding_sha256) $capabilityBindingSha256 "selection.capability_binding_sha256"
+    $expectedEffectMode = if (@($CommonWriteDomains).Count -gt 0) { "authorized_write" } else { "read_only" }
+    Assert-CommonEqual ([string]$commonContract.effect_mode) $expectedEffectMode "effect_mode"
 
     $logicalContractSha256 = Get-GrokUtf8Sha256Hex -Text (ConvertTo-GrokCanonicalJson $commonContract)
     $commonPreflight = [ordered]@{
@@ -255,6 +287,9 @@ if ($commonMode) {
         input_sha256 = $promptSha256
         context_sha256 = $contextSha256
         rules_sha256 = $rulesSha256
+        rules_file = $CommonRulesFile
+        candidate_output_root = $CommonCandidateOutputRoot
+        effect_mode = $expectedEffectMode
         output_contract_sha256 = $outputContractSha256
         capability_binding_sha256 = $capabilityBindingSha256
     }
@@ -331,6 +366,9 @@ if ($commonMode -and -not [string]::IsNullOrWhiteSpace($CommonPriorAttemptReceip
         common_contract_preflight = $commonPreflight
         common_phase = $CommonPhase
         common_write_domains = @($CommonWriteDomains)
+        common_rules_file = $CommonRulesFile
+        common_rules_sha256 = $CommonRulesSha256
+        common_candidate_output_root = $CommonCandidateOutputRoot
         common_depends_on = @($CommonDependsOn)
         reuse_skipped_execution = $true
         reuse_disposition = $reuse
@@ -349,6 +387,9 @@ if ($commonMode -and -not [string]::IsNullOrWhiteSpace($CommonPriorAttemptReceip
         pool_dir = $poolDir
         results = @()
         completion_claim_allowed = $false
+        route_role = "normal_leg_a_bounded_online_current_tui"
+        route_selection = "selected_by_task_fit_or_existing_route_receipt"
+        route_continuity = "continuous_or_resume_does_not_switch_leg"
     }
     $reuseSummaryPath = Join-Path $poolDir "pool_summary.json"
     [System.IO.File]::WriteAllText($reuseSummaryPath, ($reuseSummary | ConvertTo-Json -Depth 12), $utf8)
@@ -574,6 +615,9 @@ $summary = [ordered]@{
     pool_dir = $poolDir
     results = $results
     completion_claim_allowed = $false
+    route_role = "normal_leg_a_bounded_online_current_tui"
+    route_selection = "selected_by_task_fit_or_existing_route_receipt"
+    route_continuity = "continuous_or_resume_does_not_switch_leg"
     invoke_cn = ".\Invoke-GrokWorkerPool.ps1 -N $N -Prompt '...' -Cwd '<explicit>' -Model '$Model' -SelectionPath '<decision-receipt.json>' -MaxTurns auto"
 }
 if ($commonMode) {
@@ -581,6 +625,9 @@ if ($commonMode) {
     $summary["common_contract_preflight"] = $commonPreflight
     $summary["common_phase"] = $CommonPhase
     $summary["common_write_domains"] = @($CommonWriteDomains)
+    $summary["common_rules_file"] = $CommonRulesFile
+    $summary["common_rules_sha256"] = $CommonRulesSha256
+    $summary["common_candidate_output_root"] = $CommonCandidateOutputRoot
     $summary["common_depends_on"] = @($CommonDependsOn)
     $summary["reuse_skipped_execution"] = $false
     $summary["common_adapter_ok"] = $false

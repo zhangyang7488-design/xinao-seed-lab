@@ -1,8 +1,9 @@
 {
-  "schema_version": "xinao.grok_p0_execution_base.v2",
-  "sentinel": "SENTINEL:GROK_P0_EXECUTION_BASE_V2",
+  "schema_version": "xinao.grok_p0_execution_base.v3",
+  "sentinel": "SENTINEL:GROK_P0_EXECUTION_BASE_V3",
   "status": "active",
-  "canonical_route": "Temporal + Docker houtai-gongren + worker-internal LangGraph",
+  "route_authority": "bridge.config.json#canonical_route",
+  "route_continuity": "existing_route_receipt_first; continuous_or_resume_alone_never_switches_leg",
   "meaning_cn": "成功阶段只是检查点；在当前请求仍有真实净收益动作时继续有限 episode。",
   "episode_contract": {
     "finite": true,
