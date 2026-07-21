@@ -35,6 +35,9 @@ EXPECTED_LOGICAL_CANDIDATE_EFFECT_CONTRACT = {
     "authority": False,
     "completion_claim_allowed": False,
 }
+WINDOWLESS_CREATIONFLAGS = (
+    getattr(subprocess, "CREATE_NO_WINDOW", 0) if os.name == "nt" else 0
+)
 
 
 def _require_dispatch_contract_pin(contract: Any) -> None:
@@ -741,6 +744,7 @@ def _terminate_process_tree(process: subprocess.Popen[str]) -> None:
             text=True,
             encoding="utf-8",
             errors="replace",
+            creationflags=WINDOWLESS_CREATIONFLAGS,
         )
     else:
         process.terminate()
@@ -766,6 +770,7 @@ def _run_process_with_live_guard(
         text=True,
         encoding="utf-8",
         errors="replace",
+        creationflags=WINDOWLESS_CREATIONFLAGS,
     )
     deadline = time.monotonic() + timeout_seconds
     try:
@@ -1247,6 +1252,7 @@ def _append_task_run_event(
         text=True,
         encoding="utf-8",
         errors="replace",
+        creationflags=WINDOWLESS_CREATIONFLAGS,
     )
     if completed.returncode != 0:
         raise RuntimeError(
@@ -1320,6 +1326,7 @@ def _append_task_run_non_conversion(
         text=True,
         encoding="utf-8",
         errors="replace",
+        creationflags=WINDOWLESS_CREATIONFLAGS,
     )
     if completed.returncode != 0:
         raise RuntimeError(
