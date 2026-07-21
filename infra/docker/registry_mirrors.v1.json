@@ -1,0 +1,18 @@
+{
+  "schema_version": "xinao.docker.registry_mirrors.v1",
+  "status": "disabled_by_user",
+  "purpose_cn": "可选：Docker Hub 拉取加速。用户已判定当前环境无用，默认不启用。",
+  "default_enabled": false,
+  "daemon_path_windows": "%USERPROFILE%\\.docker\\daemon.json",
+  "apply_script": "scripts/Apply-DockerRegistryMirrors.ps1",
+  "mirrors": [
+    "https://docker.m.daocloud.io",
+    "https://docker.1ms.run"
+  ],
+  "evidence_dir": "D:\\XINAO_RESEARCH_RUNTIME\\state\\docker_registry_mirrors",
+  "notes": [
+    "Not on the default mainline path.",
+    "Only re-enable if docker.io pulls fail and engine is healthy.",
+    "Does not fix Docker Desktop spinning or proxy/WSL issues."
+  ]
+}

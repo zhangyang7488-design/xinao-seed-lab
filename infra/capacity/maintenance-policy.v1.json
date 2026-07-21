@@ -1,0 +1,115 @@
+{
+  "schema_version": "xinao.platform_capacity_policy.v1",
+  "policy_id": "xinao-single-host-capacity-v1",
+  "policy_is_not_authorization": true,
+  "physical_topology": {
+    "expected_disk_number": 0,
+    "expected_partitions": [
+      "C",
+      "D",
+      "E"
+    ],
+    "same_physical_device": true
+  },
+  "volume_thresholds": {
+    "warning_free_percent": 15,
+    "critical_free_percent": 10,
+    "forecast_horizon_hours": 72
+  },
+  "postgres": {
+    "container_name": "shiwu-ku",
+    "compose_project": "xinao-base",
+    "compose_service": "shiwu-ku",
+    "expected_compose_config_hash": "d56dc52f84edbed29e4bcfed04eee3b2d2e16d67825f85f2a409e44d88ddd383",
+    "expected_image_id": "sha256:8e7c7e041a94684f9b3abf23a712a60afa10c8e32c1c19c6450b93f6e76a90ca",
+    "expected_image_version": "postgres-16.14_pgbackrest-2.58.0",
+    "expected_pgbackrest_config_sha256": "076d8d88f3a91a645445ff55d8d806c3286d5f8912a38d4d9d1d56358faa77bb",
+    "exec_os_user": "postgres",
+    "stanza": "xinao-core",
+    "legacy_raw_wal_required_file_count": 0,
+    "repository_soft_limit_bytes": 5368709120,
+    "commands": {
+      "preflight": [
+        "pgbackrest",
+        "--stanza=xinao-core",
+        "check"
+      ],
+      "backup": [
+        "pgbackrest",
+        "--stanza=xinao-core",
+        "backup",
+        "--type=full"
+      ],
+      "verify": [
+        "pgbackrest",
+        "--stanza=xinao-core",
+        "verify"
+      ],
+      "info": [
+        "pgbackrest",
+        "--stanza=xinao-core",
+        "info",
+        "--output=json"
+      ]
+    }
+  },
+  "docker_control_broker": {
+    "container_name": "mowei-zhixing",
+    "compose_project": "xinao-base",
+    "compose_service": "mowei-zhixing",
+    "endpoint_owner": "openhands-execution-broker-v1",
+    "expected_image_id": "sha256:e74057f05d1f337180e32372296cda91146890b7854d31bc0ab7b78b9e4a85b0"
+  },
+  "native_budgets": {
+    "docker_buildkit_retained_bytes": 20000000000,
+    "docker_new_container_log_driver": "local",
+    "docker_new_container_log_max_size": "10m",
+    "docker_new_container_log_max_files": 3,
+    "wsl_max_crash_dump_count": 1
+  },
+  "unenforced_thresholds": {
+    "worktree_cargo_target_warning_bytes": 10737418240
+  },
+  "temporal": {
+    "schedule_id": "xinao-platform-capacity-daily-v1",
+    "workflow_id": "xinao-platform-capacity-daily-v1",
+    "workflow_type": "XinaoPlatformCapacityMaintenanceWorkflowV1",
+    "task_queue": "xinao-platform-maintenance-v1",
+    "cron": "30 3 * * *",
+    "time_zone": "Asia/Shanghai",
+    "overlap_policy": "SKIP",
+    "catchup_window_minutes": 30,
+    "pause_on_failure": true
+  },
+  "enforced_automatic_actions": [
+    "pgbackrest_check",
+    "pgbackrest_info_observation",
+    "pgbackrest_full_backup",
+    "pgbackrest_verify",
+    "pgbackrest_catalog_expire_after_successful_backup"
+  ],
+  "desired_state_unenforced": [
+    "three_volume_growth_forecast_requires_windows_host_metrics",
+    "repository_soft_limit_alert_requires_capacity_collector",
+    "rust_target_budget_requires_build_wrapper_or_collector",
+    "docker_vhd_physical_reclaim_requires_post_restart_measurement",
+    "windows_storage_sense_requires_post_update_restart_validation"
+  ],
+  "approval_required_actions": [
+    "delete_unknown_path",
+    "delete_backup_or_wal_outside_pgbackrest_expire",
+    "docker_image_or_volume_prune",
+    "docker_vhd_compaction",
+    "windows_component_store_cleanup",
+    "delete_crash_dump_without_minimal_incident_evidence",
+    "delete_active_or_unclassified_cargo_target"
+  ],
+  "protected_scopes": [
+    "current_codex_input_bridge_0.144.5",
+    "codex_hardmode",
+    "paused_f4_worktrees_and_images",
+    "rollback_images_and_manifests",
+    "source_and_unique_evidence",
+    "authentication_state"
+  ]
+}
