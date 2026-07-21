@@ -48,7 +48,7 @@
       "codex_agents",
       "combined"
     ],
-    "soft_preference_when_close": "grok",
+    "soft_preference_when_close": "openai_relay",
     "quota_role": "scheduling_telemetry_not_dispatch_gate",
     "empty_burn": false,
     "width_policy": "dynamic_ready_frontier_quota_latency_evidence"

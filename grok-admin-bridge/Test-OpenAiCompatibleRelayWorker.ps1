@@ -106,6 +106,54 @@ function Invoke-StubbedCase(
     return [pscustomobject]@{ exit_code = $exitCode; meta = $meta; evidence = $evidence }
 }
 
+function Invoke-StubbedResponsesCase(
+    [string]$Root,
+    [string]$CaseId,
+    [string]$ResponseStatus
+) {
+    $port = Get-FreeTcpPort
+    $response = [ordered]@{
+        id = "resp-$CaseId"
+        object = "response"
+        model = "gpt-5.6-sol"
+        status = $ResponseStatus
+        output_text = "RELAY_CONTRACT_OK $CaseId"
+        usage = [ordered]@{ input_tokens = 2; output_tokens = 3; total_tokens = 5 }
+    }
+    if ($ResponseStatus -ne "completed") {
+        $response.incomplete_details = [ordered]@{ reason = "max_output_tokens" }
+    }
+    $job = Start-OneShotRelayStub -Port $port -ResponseJson ($response | ConvertTo-Json -Depth 8 -Compress)
+    $evidence = Join-Path $Root $CaseId
+    $keyPath = Join-Path $Root "test-key.txt"
+    try {
+        & $worker `
+            -Prompt "Return RELAY_CONTRACT_OK" `
+            -Model "gpt-5.6-sol" `
+            -ApiStyle responses `
+            -BaseUrl "http://127.0.0.1:$port/v1" `
+            -KeyPath $keyPath `
+            -EvidenceDir $evidence `
+            -RunId $CaseId `
+            -WorkKey ("relay-test:" + $CaseId) `
+            -LogicalOperationId ("relay-op:" + $CaseId) `
+            -MaxTokens 32 `
+            -TimeoutSec 15 `
+            -MinResultChars 1 `
+            -RequiredResultMarkers RELAY_CONTRACT_OK `
+            -AllowInsecureLoopbackForTest `
+            -Quiet
+        $exitCode = $LASTEXITCODE
+    }
+    finally {
+        Wait-Job -Job $job -Timeout 5 | Out-Null
+        Receive-Job -Job $job -ErrorAction SilentlyContinue | Out-Null
+        Remove-Job -Job $job -Force -ErrorAction SilentlyContinue
+    }
+    $meta = Get-Content -LiteralPath (Join-Path $evidence "$CaseId\meta.json") -Raw -Encoding UTF8 | ConvertFrom-Json
+    return [pscustomobject]@{ exit_code = $exitCode; meta = $meta }
+}
+
 Assert-Relay (Test-Path -LiteralPath $worker -PathType Leaf) "worker exists"
 $root = Join-Path ([IO.Path]::GetTempPath()) ("xinao-relay-worker-test-" + [guid]::NewGuid().ToString("N"))
 [IO.Directory]::CreateDirectory($root) | Out-Null
@@ -146,6 +194,14 @@ try {
     Assert-Relay ($truncated.exit_code -ne 0) "truncated exit"
     Assert-Relay ($truncated.meta.status -eq "failed") "truncated status"
     Assert-Relay ([string]$truncated.meta.error -eq "RELAY_WORKER_CHAT_TERMINAL_NOT_ACCEPTED") "truncated reason"
+
+    $responsesCompleted = Invoke-StubbedResponsesCase -Root $root -CaseId "responses-completed" -ResponseStatus "completed"
+    Assert-Relay ($responsesCompleted.exit_code -eq 0) "responses completed exit"
+    Assert-Relay ($responsesCompleted.meta.terminal_state -eq "completed") "responses completed terminal"
+
+    $responsesIncomplete = Invoke-StubbedResponsesCase -Root $root -CaseId "responses-incomplete" -ResponseStatus "incomplete"
+    Assert-Relay ($responsesIncomplete.exit_code -ne 0) "responses incomplete exit"
+    Assert-Relay ([string]$responsesIncomplete.meta.error -eq "RELAY_WORKER_RESPONSES_TERMINAL_NOT_ACCEPTED") "responses incomplete reason"
 
     $reflected = Invoke-StubbedCase -Root $root -CaseId "secret-reflection" -ObservedModel "gpt-5.6-sol" -IncludeUsage $true -ResponseText $dummySecret
     Assert-Relay ($reflected.exit_code -ne 0) "secret reflection exit"
@@ -199,9 +255,23 @@ try {
     }
     Assert-Relay $unapprovedBaseRejected "unapproved base url rejected before request"
 
+    $userinfoRejected = $false
+    try {
+        & $worker -Prompt "x" -Model "gpt-5.6-sol" -BaseUrl "https://user@api.ssstoken.net/v1" -KeyPath $keyPath -EvidenceDir (Join-Path $root "userinfo") -RunId "userinfo" -WorkKey "relay-test:userinfo" -Quiet
+    }
+    catch { $userinfoRejected = $_.Exception.Message -match "RELAY_WORKER_BASE_URL_NOT_ADMITTED" }
+    Assert-Relay $userinfoRejected "userinfo base url rejected"
+
+    $portRejected = $false
+    try {
+        & $worker -Prompt "x" -Model "gpt-5.6-sol" -BaseUrl "https://api.ssstoken.net:444/v1" -KeyPath $keyPath -EvidenceDir (Join-Path $root "port") -RunId "port" -WorkKey "relay-test:port" -Quiet
+    }
+    catch { $portRejected = $_.Exception.Message -match "RELAY_WORKER_BASE_URL_NOT_ADMITTED" }
+    Assert-Relay $portRejected "non-default production port rejected"
+
     [ordered]@{
         ok = $true
-        cases = @("success", "observed_model_mismatch", "missing_usage", "truncated_terminal", "secret_reflection", "http_error_scrub", "duplicate_id", "unapproved_base_url")
+        cases = @("success", "observed_model_mismatch", "missing_usage", "truncated_terminal", "responses_completed", "responses_incomplete", "secret_reflection", "http_error_scrub", "duplicate_id", "unapproved_base_url", "userinfo_url", "nondefault_port")
         secret_material_recorded = $false
     } | ConvertTo-Json -Compress
 }

@@ -101,6 +101,8 @@ if (-not [Uri]::TryCreate($BaseUrl, [UriKind]::Absolute, [ref]$baseUri)) {
 $isApprovedProductionProfile = (
     $baseUri.Scheme -ceq "https" -and
     $baseUri.Host -ceq "api.ssstoken.net" -and
+    $baseUri.Port -eq 443 -and
+    [string]::IsNullOrEmpty($baseUri.UserInfo) -and
     $baseUri.AbsolutePath.TrimEnd('/') -ceq "/v1" -and
     $baseUri.Query.Length -eq 0 -and
     $baseUri.Fragment.Length -eq 0
@@ -109,6 +111,7 @@ $isLoopbackTestProfile = (
     $AllowInsecureLoopbackForTest.IsPresent -and
     $baseUri.Scheme -ceq "http" -and
     $baseUri.Host -ceq "127.0.0.1" -and
+    [string]::IsNullOrEmpty($baseUri.UserInfo) -and
     $baseUri.AbsolutePath.TrimEnd('/') -ceq "/v1"
 )
 if (-not $isApprovedProductionProfile -and -not $isLoopbackTestProfile) {

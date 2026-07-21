@@ -11,7 +11,7 @@
     "continuous_or_resume_switches_leg": false,
     "worker_selection": "dynamic_positive_net_benefit",
     "available_workers": ["grok", "openai_relay", "codex_agents", "combined"],
-    "soft_preference_when_close": "grok",
+    "soft_preference_when_close": "openai_relay",
     "width_policy": "dynamic_ready_frontier_quota_latency_evidence",
     "codex_role": "thinking_orchestration_and_tightly_coupled_single_writer"
   },

@@ -38,7 +38,7 @@ Assert-Contract ([string]$config.model_worker_routing.selection -eq "dynamic_pos
 Assert-Contract (@($config.model_worker_routing.available_workers) -contains "grok") "grok_available"
 Assert-Contract (@($config.model_worker_routing.available_workers) -contains "openai_relay") "openai_relay_available"
 Assert-Contract (@($config.model_worker_routing.available_workers) -contains "codex_agents") "codex_agents_available"
-Assert-Contract ([string]$config.model_worker_routing.soft_preference_when_close -eq "grok") "grok_soft_preference"
+Assert-Contract ([string]$config.model_worker_routing.soft_preference_when_close -eq "openai_relay") "relay_soft_preference"
 Assert-Contract ([string]$config.model_worker_routing.quota_role -eq "scheduling_telemetry_not_dispatch_gate") "quota_not_gate"
 Assert-Contract (-not [bool]$config.model_worker_routing.empty_burn) "no_empty_burn"
 Assert-Contract ([string]$config.model_worker_routing.width_policy -eq "dynamic_ready_frontier_quota_latency_evidence") "dynamic_width"

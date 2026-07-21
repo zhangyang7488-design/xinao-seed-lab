@@ -45,7 +45,7 @@
   "model_worker_routing": {
     "authority": "bridge.config.json#model_worker_routing",
     "selection": "dynamic_positive_net_benefit",
-    "soft_preference_when_close": "grok",
+    "soft_preference_when_close": "openai_relay",
     "width": "dynamic"
   },
   "worker_transport": {
