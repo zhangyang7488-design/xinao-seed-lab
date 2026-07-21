@@ -22,6 +22,7 @@ from services.agent_runtime.dispatch_economics import (  # noqa: E402
     DispatchEconomicsError,
     build_route_choice_identity,
     build_worker_package_identity,
+    neutral_output_contract_sha256,
     plan_package_frontier,
     validate_dispatch_envelope,
     validate_package_batch_manifest,
@@ -194,15 +195,19 @@ def build_neutral_manifest(
                 schema_path_value,
                 path_resolver=path_resolver,
             )
-        rules_path_value = str(raw.get("rules_path") or "").strip()
-        rules_sha = (
-            _sha(_resolve_path(rules_path_value, path_resolver=path_resolver))
-            if rules_path_value
-            else str(raw.get("rules_sha256") or "")
+        rules_path_value = _logical_path(
+            raw.get("rules_path"),
+            f"packages[{index}].rules_path",
         )
-        output_contract_sha = str(raw.get("output_contract_sha256") or "").strip()
-        if not output_contract_sha:
-            output_contract_sha = _canonical_sha(acceptance)
+        rules_ref = _path_ref(rules_path_value, path_resolver=path_resolver)
+        declared_rules_sha = str(raw.get("rules_sha256") or "").strip()
+        if declared_rules_sha and declared_rules_sha != rules_ref["sha256"]:
+            raise ValueError(f"packages[{index}].rules_sha256 does not bind rules_path")
+        rules_sha = rules_ref["sha256"]
+        output_contract_sha = neutral_output_contract_sha256(acceptance)
+        declared_output_contract_sha = str(raw.get("output_contract_sha256") or "").strip()
+        if declared_output_contract_sha and declared_output_contract_sha != output_contract_sha:
+            raise ValueError(f"packages[{index}].output_contract_sha256 does not bind acceptance")
         candidate_only = raw.get("candidate_only", True)
         if not isinstance(candidate_only, bool):
             raise TypeError(f"packages[{index}].candidate_only must be boolean")
@@ -224,6 +229,7 @@ def build_neutral_manifest(
             **identity,
             "prompt_ref": prompt_ref,
             "context_manifest_ref": context_ref,
+            "rules_ref": rules_ref,
             "input_refs": input_refs,
             "allowed_output_root": _logical_path(
                 raw.get("allowed_output_root"),

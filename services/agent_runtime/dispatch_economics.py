@@ -18,6 +18,12 @@ from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any, Callable
 
+from services.agent_runtime.context_slice_manifest import (
+    ContextSliceManifestError,
+    validate_context_slice_manifest,
+)
+from services.agent_runtime.execution_contract import artifact_json_bytes
+
 PACKAGE_IDENTITY_SCHEMA = "xinao.worker_package_identity.v2"
 PACKAGE_BATCH_SCHEMA = "xinao.worker_package_batch.v3"
 DISPATCH_ENVELOPE_SCHEMA = "xinao.worker_dispatch_envelope.v2"
@@ -51,6 +57,61 @@ def _canonical_bytes(value: object) -> bytes:
 
 def _canonical_sha(value: object) -> str:
     return hashlib.sha256(_canonical_bytes(value)).hexdigest()
+
+
+def build_neutral_output_contract(acceptance: Mapping[str, object]) -> dict[str, object]:
+    """Return the provider-neutral output shape consumed unchanged by leg B."""
+
+    raw = _mapping(acceptance, "acceptance")
+    min_result_chars = _int_at_least(
+        raw.get("min_result_chars"),
+        "acceptance.min_result_chars",
+        1,
+    )
+    if min_result_chars > 200_000:
+        raise DispatchEconomicsError("acceptance.min_result_chars must be <= 200000")
+    markers_raw = _sequence(
+        raw.get("required_result_markers"),
+        "acceptance.required_result_markers",
+    )
+    markers = [str(value).strip() for value in markers_raw]
+    if (
+        any(not value or len(value) > 256 for value in markers)
+        or len(markers) > 32
+        or len(markers) != len(set(markers))
+        or markers != list(markers_raw)
+    ):
+        raise DispatchEconomicsError(
+            "acceptance.required_result_markers must be unique canonical strings"
+        )
+    require_json = raw.get("require_json_object")
+    if not isinstance(require_json, bool):
+        raise DispatchEconomicsError("acceptance.require_json_object must be boolean")
+    schema_ref = raw.get("json_schema_ref")
+    schema_sha256 = ""
+    if schema_ref is not None:
+        schema_sha256 = _sha(
+            _mapping(schema_ref, "acceptance.json_schema_ref").get("sha256"),
+            "acceptance.json_schema_ref.sha256",
+        )
+    if require_json is True and not schema_sha256:
+        raise DispatchEconomicsError("acceptance requires a hash-bound json_schema_ref")
+    if require_json is False and schema_sha256:
+        raise DispatchEconomicsError("acceptance.json_schema_ref requires require_json_object=true")
+    return {
+        "result_format": "json_object" if require_json else "text",
+        "result_json_schema_sha256": schema_sha256,
+        "min_result_chars": min_result_chars,
+        "required_result_markers": markers,
+    }
+
+
+def neutral_output_contract_sha256(acceptance: Mapping[str, object]) -> str:
+    """Hash the one neutral output contract deterministically from acceptance."""
+
+    return hashlib.sha256(
+        artifact_json_bytes(build_neutral_output_contract(acceptance))
+    ).hexdigest()
 
 
 def build_route_choice_identity(
@@ -395,9 +456,13 @@ def _validate_context_binding(
         raise DispatchEconomicsError(
             f"packages[{index}].context_sha256 does not bind context_manifest_ref"
         )
+    try:
+        validated_context = validate_context_slice_manifest(context)
+    except ContextSliceManifestError as exc:
+        raise DispatchEconomicsError(f"{label} is not a valid context slice: {exc}") from exc
     if (
-        context.get("authority") is not False
-        or context.get("completion_claim_allowed") is not False
+        validated_context.get("authority") is not False
+        or validated_context.get("completion_claim_allowed") is not False
     ):
         raise DispatchEconomicsError(f"{label} must be non-authoritative")
     input_refs = _sequence(package.get("input_refs"), f"packages[{index}].input_refs")
@@ -463,6 +528,7 @@ def _validate_package_identity(package: Mapping[str, object], index: int) -> Non
     for key in (
         "prompt_ref",
         "context_manifest_ref",
+        "rules_ref",
         "input_refs",
         "allowed_output_root",
         "cwd",
@@ -770,6 +836,13 @@ def validate_package_batch_manifest(
             path_resolver=path_resolver,
         )
         _validate_context_binding(package, index, path_resolver=path_resolver)
+        package["rules_ref"] = _validate_path_ref(
+            package.get("rules_ref"),
+            f"packages[{index}].rules_ref",
+            path_resolver=path_resolver,
+        )
+        if package["rules_sha256"] != package["rules_ref"]["sha256"]:
+            raise DispatchEconomicsError(f"packages[{index}].rules_sha256 does not bind rules_ref")
         logical_output_root, physical_output_root = _candidate_output_directory(
             package.get("allowed_output_root"),
             f"packages[{index}].allowed_output_root",
@@ -822,21 +895,6 @@ def validate_package_batch_manifest(
             raise DispatchEconomicsError(f"duplicate dependency: {package_id}")
         package["depends_on"] = dependencies
         acceptance = dict(_mapping(package.get("acceptance"), f"packages[{index}].acceptance"))
-        _int_at_least(
-            acceptance.get("min_result_chars"),
-            f"packages[{index}].acceptance.min_result_chars",
-            0,
-        )
-        markers = _sequence(
-            acceptance.get("required_result_markers"),
-            f"packages[{index}].acceptance.required_result_markers",
-        )
-        for marker in markers:
-            _text(marker, f"packages[{index}].acceptance.required_result_markers[]")
-        if not isinstance(acceptance.get("require_json_object"), bool):
-            raise DispatchEconomicsError(
-                f"packages[{index}].acceptance.require_json_object must be boolean"
-            )
         schema_ref = acceptance.get("json_schema_ref")
         if acceptance.get("require_json_object") is True and schema_ref is None:
             raise DispatchEconomicsError(
@@ -847,6 +905,11 @@ def validate_package_batch_manifest(
                 schema_ref,
                 f"packages[{index}].acceptance.json_schema_ref",
                 path_resolver=path_resolver,
+            )
+        expected_output_contract_sha256 = neutral_output_contract_sha256(acceptance)
+        if package["output_contract_sha256"] != expected_output_contract_sha256:
+            raise DispatchEconomicsError(
+                f"packages[{index}].output_contract_sha256 does not bind acceptance"
             )
         package["acceptance"] = acceptance
         _int_at_least(package.get("timeout_sec"), f"packages[{index}].timeout_sec", 1)
@@ -2242,15 +2305,44 @@ def build_dispatch_outcome_event(
             from services.agent_runtime.grok_execution_contract_adapter import (
                 GROK_DIRECT_WORKER_POOL_TRANSPORT_ID,
                 direct_worker_pool_capability_binding,
+                direct_worker_pool_context_binding_sha256,
+                direct_worker_pool_output_contract,
             )
 
             if selected_leg == "A":
                 provider_transport_id = GROK_DIRECT_WORKER_POOL_TRANSPORT_ID
+                _, context_manifest = _load_hash_bound_ref(
+                    package_row["context_manifest_ref"],
+                    "package.context_manifest_ref",
+                    path_resolver=path_resolver,
+                )
+                validated_context = validate_context_slice_manifest(context_manifest)
+                acceptance = _mapping(package_row.get("acceptance"), "package.acceptance")
+                schema_ref = acceptance.get("json_schema_ref")
+                provider_output_contract = direct_worker_pool_output_contract(
+                    min_result_chars=int(acceptance["min_result_chars"]),
+                    required_result_markers=[
+                        str(value) for value in acceptance["required_result_markers"]
+                    ],
+                    require_json_object=acceptance["require_json_object"] is True,
+                    json_schema_sha256=(
+                        str(_mapping(schema_ref, "package.acceptance.json_schema_ref")["sha256"])
+                        if schema_ref is not None
+                        else ""
+                    ),
+                )
+                provider_output_contract_sha256 = hashlib.sha256(
+                    canonical_json_bytes(provider_output_contract)
+                ).hexdigest()
+                provider_context_sha256 = direct_worker_pool_context_binding_sha256(
+                    frozen_context_sha256=str(validated_context["context_sha256"]),
+                    subject_manifest_sha256=manifest_ref["sha256"],
+                )
                 provider_capability_binding_sha256 = hashlib.sha256(
                     canonical_json_bytes(
                         direct_worker_pool_capability_binding(
                             selection_decision_sha256=str(envelope["selection"]["decision_sha256"]),
-                            output_contract_sha256=str(package_row["output_contract_sha256"]),
+                            output_contract_sha256=provider_output_contract_sha256,
                         )
                     )
                 ).hexdigest()
@@ -2267,6 +2359,8 @@ def build_dispatch_outcome_event(
                     adapter.get("provider_capability_binding_sha256"),
                     "validated_execution_adapter.provider_capability_binding_sha256",
                 )
+                provider_context_sha256 = str(package_row["context_sha256"])
+                provider_output_contract_sha256 = str(package_row["output_contract_sha256"])
         except (TypeError, ValueError) as exc:
             raise DispatchEconomicsError(
                 f"provider capability binding could not be derived: {exc}"
@@ -2283,9 +2377,9 @@ def build_dispatch_outcome_event(
             or contract.get("work_key") != work
             or contract.get("task_contract_ref") != expected_task_ref
             or contract.get("input_sha256") != package_row["prompt_ref"]["sha256"]
-            or contract.get("context_sha256") != package_row["context_sha256"]
+            or contract.get("context_sha256") != provider_context_sha256
             or contract.get("rules_sha256") != package_row["rules_sha256"]
-            or contract.get("output_contract_sha256") != package_row["output_contract_sha256"]
+            or contract.get("output_contract_sha256") != provider_output_contract_sha256
             or package_row.get("logical_consumer_id") != LOGICAL_CANDIDATE_CONSUMER_ID
             or package_row.get("logical_effect_contract") != LOGICAL_CANDIDATE_EFFECT_CONTRACT
             or contract.get("effect_mode") != "authorized_write"

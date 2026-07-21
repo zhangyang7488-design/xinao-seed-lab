@@ -16,6 +16,7 @@ from services.agent_runtime.dispatch_economics import (
     build_route_choice_identity,
     build_worker_package_identity,
     claim_dispatch_route,
+    neutral_output_contract_sha256,
     plan_package_frontier,
     project_dispatch_outcomes,
     validate_candidate_consumer_binding,
@@ -33,8 +34,11 @@ from services.agent_runtime.grok_execution_contract_adapter import (
     GROK_DIRECT_WORKER_POOL_CONSUMER_ID,
     GROK_DIRECT_WORKER_POOL_TRANSPORT_ID,
     GROK_DOCKER_CONSUMER_ID,
+    build_direct_worker_pool_logical_contract,
     build_grok_docker_route_adapter_binding,
     direct_worker_pool_capability_binding,
+    direct_worker_pool_context_binding_sha256,
+    direct_worker_pool_output_contract,
 )
 
 
@@ -56,44 +60,57 @@ def _ref(path: Path) -> dict[str, str]:
 
 
 def _context_manifest(path: Path, *, content_sha: str) -> str:
+    content = "bounded\n"
+    content_bytes = content.encode("utf-8")
+    source_identity = [
+        {
+            "path": "input.txt",
+            "sha256": content_sha,
+            "bytes": len(content_bytes),
+        }
+    ]
+    slice_row = {
+        "selector": {"kind": "line_range", "start": 1, "end": 1},
+        "line_start": 1,
+        "line_end": 1,
+        "content_sha256": content_sha,
+        "content_bytes": len(content_bytes),
+        "content": content,
+    }
+    identity_slice = dict(slice_row)
+    identity_slice.pop("content")
+    context_identity = {
+        "schema_version": "xinao.context_slice_identity.v1",
+        "sources": [
+            {
+                "path": "input.txt",
+                "source_sha256": content_sha,
+                "source_bytes": len(content_bytes),
+                "slices": [identity_slice],
+            }
+        ],
+    }
     return _write_json(
         path,
         {
             "schema_version": "xinao.context_slice_manifest.v1",
             "authority": False,
             "completion_claim_allowed": False,
-            "context_identity": {
-                "schema_version": "xinao.context_slice_identity.v1",
-                "sources": [
-                    {
-                        "path": "input.txt",
-                        "source_sha256": content_sha,
-                        "slices": [
-                            {
-                                "selector": "line_range:1-1",
-                                "start": 1,
-                                "end": 1,
-                                "content_sha256": content_sha,
-                            }
-                        ],
-                    }
-                ],
-            },
+            "spec_sha256": "a" * 64,
+            "source_manifest_sha256": hashlib.sha256(
+                canonical_json_bytes(source_identity)
+            ).hexdigest(),
+            "context_sha256": hashlib.sha256(canonical_json_bytes(context_identity)).hexdigest(),
+            "total_content_bytes": len(content_bytes),
             "sources": [
                 {
                     "path": "input.txt",
                     "source_sha256": content_sha,
-                    "slices": [
-                        {
-                            "selector": "line_range:1-1",
-                            "start": 1,
-                            "end": 1,
-                            "content_sha256": content_sha,
-                            "content": "bounded\n",
-                        }
-                    ],
+                    "source_bytes": len(content_bytes),
+                    "slices": [slice_row],
                 }
             ],
+            "false_green_deny": "fixture context is input only",
         },
     )
 
@@ -120,9 +137,11 @@ def _fixture(
     prompt_one.write_text("package one\n", encoding="utf-8")
     prompt_two.write_text("package two\n", encoding="utf-8")
     input_file = source / "input.txt"
-    input_file.write_text("bounded\n", encoding="utf-8")
+    input_file.write_bytes(b"bounded\n")
     context = source / "context.json"
     context_sha = _context_manifest(context, content_sha=_sha(input_file))
+    rules = source / "rules.txt"
+    rules.write_text("bounded worker rules\n", encoding="utf-8")
     quota = source / "quota.json"
     quota_sha = _write_json(
         quota,
@@ -164,6 +183,11 @@ def _fixture(
         *,
         candidate_only: bool,
     ) -> dict[str, object]:
+        acceptance = {
+            "min_result_chars": 1,
+            "required_result_markers": ["OK"],
+            "require_json_object": False,
+        }
         identity = build_worker_package_identity(
             package_id=package_id,
             work_key=work_key,
@@ -173,8 +197,8 @@ def _fixture(
             phase="EXPLORE",
             input_sha256=_sha(input_file),
             context_sha256=context_sha,
-            rules_sha256="b" * 64,
-            output_contract_sha256="c" * 64,
+            rules_sha256=_sha(rules),
+            output_contract_sha256=neutral_output_contract_sha256(acceptance),
             write_domains=[] if candidate_only else [f"owner:{package_id}"],
             candidate_only=candidate_only,
         )
@@ -182,15 +206,12 @@ def _fixture(
             **identity,
             "prompt_ref": {"path": str(prompt), "sha256": _sha(prompt)},
             "context_manifest_ref": {"path": str(context), "sha256": context_sha},
+            "rules_ref": {"path": str(rules), "sha256": _sha(rules)},
             "input_refs": [{"path": str(input_file), "sha256": _sha(input_file)}],
             "allowed_output_root": str(output / package_id),
             "cwd": str(source),
             "depends_on": dependencies,
-            "acceptance": {
-                "min_result_chars": 1,
-                "required_result_markers": ["OK"],
-                "require_json_object": False,
-            },
+            "acceptance": acceptance,
             "timeout_sec": 60,
         }
 
@@ -380,9 +401,23 @@ def _logical_contract(
     operation_id: str,
 ) -> dict[str, object]:
     route_selected = fixture["selected_candidate"]
+    context = json.loads(
+        Path(str(package["context_manifest_ref"]["path"])).read_text(encoding="utf-8")
+    )
+    acceptance = package["acceptance"]
+    schema_ref = acceptance.get("json_schema_ref")
+    provider_output_contract = direct_worker_pool_output_contract(
+        min_result_chars=int(acceptance["min_result_chars"]),
+        required_result_markers=list(acceptance["required_result_markers"]),
+        require_json_object=acceptance["require_json_object"] is True,
+        json_schema_sha256=(str(schema_ref["sha256"]) if schema_ref else ""),
+    )
+    provider_output_contract_sha256 = hashlib.sha256(
+        canonical_json_bytes(provider_output_contract)
+    ).hexdigest()
     capability_binding = direct_worker_pool_capability_binding(
         selection_decision_sha256=str(fixture["selection_decision_sha256"]),
-        output_contract_sha256=str(package["output_contract_sha256"]),
+        output_contract_sha256=provider_output_contract_sha256,
     )
     selected = {
         **{
@@ -393,27 +428,26 @@ def _logical_contract(
             canonical_json_bytes(capability_binding)
         ).hexdigest(),
     }
-    return {
-        "schema_version": LOGICAL_CONTRACT_VERSION,
-        "logical_operation_id": operation_id,
-        "work_key": package["work_key"],
-        "task_contract_ref": f"{manifest_ref['path']}#sha256={manifest_ref['sha256']}",
-        "parent_operation_id": "parent-operation",
-        "correlation_id": "correlation-1",
-        "input_sha256": package["prompt_ref"]["sha256"],
-        "context_sha256": package["context_sha256"],
-        "rules_sha256": package["rules_sha256"],
-        "output_contract_sha256": package["output_contract_sha256"],
-        "selection": selected,
-        "effect_mode": "authorized_write",
-        "idempotency_key": f"idempotency:{package['work_key']}",
-        "deadline": {
-            "owner": "temporal",
-            "mode": "relative_from_activity_start",
-            "seconds": 1800,
-        },
-        "cancellation_generation": 0,
-    }
+    contract = build_direct_worker_pool_logical_contract(
+        work_key=str(package["work_key"]),
+        operation_id=operation_id,
+        task_contract_ref=f"{manifest_ref['path']}#sha256={manifest_ref['sha256']}",
+        parent_operation_id="parent-operation",
+        correlation_id="correlation-1",
+        provider_id=str(route_selected["provider_id"]),
+        profile_ref=str(route_selected["profile_ref"]),
+        model_id=str(route_selected["model_id"]),
+        frozen_input_sha256=str(package["prompt_ref"]["sha256"]),
+        frozen_context_sha256=str(context["context_sha256"]),
+        subject_manifest_sha256=str(manifest_ref["sha256"]),
+        rules_sha256=str(package["rules_sha256"]),
+        output_contract_sha256=provider_output_contract_sha256,
+        capability_binding=capability_binding,
+        write=True,
+        deadline_seconds=1800,
+    )
+    assert contract["selection"] == selected
+    return contract
 
 
 def _attempt_receipt(
@@ -441,7 +475,7 @@ def _attempt_receipt(
         "attempt": attempt,
         "observed": {
             **selected,
-            "rules_sha256": package["rules_sha256"],
+            "rules_sha256": contract["rules_sha256"],
             "runtime_version": "0.2.101",
             "execution_location": "docker:houtai-gongren",
             "executor_id": "container-1",
@@ -449,10 +483,12 @@ def _attempt_receipt(
         "terminal_state": "completed" if accepted else "failed",
         "stop_reason": "EndTurn" if accepted else "provider_failed",
         "output": {
-            "format": "json_object",
+            "format": (
+                "json_object" if package["acceptance"]["require_json_object"] is True else "text"
+            ),
             "content_sha256": output_sha,
             "chars": 120 if accepted else 0,
-            "schema_sha256": package["output_contract_sha256"],
+            "schema_sha256": contract["output_contract_sha256"],
             "schema_valid": accepted,
             "markers_ok": accepted,
             "substantive": accepted,
@@ -1134,6 +1170,24 @@ def test_manifest_rejects_identity_and_hash_drift_before_execution(tmp_path: Pat
     with pytest.raises(DispatchEconomicsError, match="prompt_ref sha256 mismatch"):
         validate_package_batch_manifest(drift)
 
+    missing_rules = _fixture(tmp_path / "missing-rules")["manifest"]
+    missing_rules["packages"][0].pop("rules_ref")
+    with pytest.raises(DispatchEconomicsError, match="rules_ref"):
+        validate_package_batch_manifest(missing_rules)
+
+    rules_drift = _fixture(tmp_path / "rules-drift")["manifest"]
+    rules_drift["packages"][0]["rules_ref"]["sha256"] = "0" * 64
+    with pytest.raises(DispatchEconomicsError, match="rules_ref sha256 mismatch"):
+        validate_package_batch_manifest(rules_drift)
+
+    acceptance_drift = _fixture(tmp_path / "acceptance-drift")["manifest"]
+    acceptance_drift["packages"][0]["acceptance"]["min_result_chars"] = 2
+    with pytest.raises(
+        DispatchEconomicsError,
+        match="output_contract_sha256 does not bind acceptance",
+    ):
+        validate_package_batch_manifest(acceptance_drift)
+
 
 def test_json_package_requires_hash_bound_schema_before_provider(tmp_path: Path) -> None:
     manifest = _fixture(tmp_path)["manifest"]
@@ -1148,11 +1202,135 @@ def test_json_package_requires_hash_bound_schema_before_provider(tmp_path: Path)
         {"type": "object", "required": ["marker"], "properties": {"marker": {"type": "string"}}},
     )
     acceptance["json_schema_ref"] = {"path": str(schema), "sha256": schema_sha}
+    package = manifest["packages"][0]
+    package.update(
+        build_worker_package_identity(
+            package_id=str(package["package_id"]),
+            work_key=str(package["work_key"]),
+            parent_work_key=str(package["parent_work_key"]),
+            work_class=str(package["work_class"]),
+            role=str(package["role"]),
+            phase=str(package["phase"]),
+            input_sha256=str(package["input_sha256"]),
+            context_sha256=str(package["context_sha256"]),
+            rules_sha256=str(package["rules_sha256"]),
+            output_contract_sha256=neutral_output_contract_sha256(acceptance),
+            write_domains=list(package["write_domains"]),
+            candidate_only=package["candidate_only"] is True,
+        )
+    )
     assert (
         validate_package_batch_manifest(manifest)["packages"][0]["acceptance"]["json_schema_ref"][
             "sha256"
         ]
         == schema_sha
+    )
+
+
+def test_worker_terminal_a_maps_neutral_context_and_acceptance_to_direct_contract(
+    tmp_path: Path,
+) -> None:
+    fixture = _fixture(tmp_path)
+    package = fixture["manifest"]["packages"][0]
+    schema_path = tmp_path / "direct-result.schema.json"
+    schema_sha256 = _write_json(
+        schema_path,
+        {
+            "type": "object",
+            "required": ["result"],
+            "properties": {"result": {"type": "string"}},
+        },
+    )
+    package["acceptance"] = {
+        **package["acceptance"],
+        "require_json_object": True,
+        "json_schema_ref": {"path": str(schema_path), "sha256": schema_sha256},
+    }
+    package.update(
+        build_worker_package_identity(
+            package_id=str(package["package_id"]),
+            work_key=str(package["work_key"]),
+            parent_work_key=str(package["parent_work_key"]),
+            work_class=str(package["work_class"]),
+            role=str(package["role"]),
+            phase=str(package["phase"]),
+            input_sha256=str(package["input_sha256"]),
+            context_sha256=str(package["context_sha256"]),
+            rules_sha256=str(package["rules_sha256"]),
+            output_contract_sha256=neutral_output_contract_sha256(package["acceptance"]),
+            write_domains=list(package["write_domains"]),
+            candidate_only=True,
+        )
+    )
+    manifest_ref, envelope_ref, _ = _seal_dispatch(fixture)
+    context = json.loads(Path(package["context_manifest_ref"]["path"]).read_text(encoding="utf-8"))
+    provider_output_contract = direct_worker_pool_output_contract(
+        min_result_chars=package["acceptance"]["min_result_chars"],
+        required_result_markers=package["acceptance"]["required_result_markers"],
+        require_json_object=package["acceptance"]["require_json_object"],
+        json_schema_sha256=schema_sha256,
+    )
+    provider_output_sha256 = hashlib.sha256(
+        canonical_json_bytes(provider_output_contract)
+    ).hexdigest()
+    capability = direct_worker_pool_capability_binding(
+        selection_decision_sha256=str(fixture["selection_decision_sha256"]),
+        output_contract_sha256=provider_output_sha256,
+    )
+    operation_id = "op-p1-direct-provider-map"
+    contract = build_direct_worker_pool_logical_contract(
+        work_key=str(package["work_key"]),
+        operation_id=operation_id,
+        task_contract_ref=f"{manifest_ref['path']}#sha256={manifest_ref['sha256']}",
+        parent_operation_id="parent-operation",
+        correlation_id="correlation-1",
+        provider_id=str(fixture["selected_candidate"]["provider_id"]),
+        profile_ref=str(fixture["selected_candidate"]["profile_ref"]),
+        model_id=str(fixture["selected_candidate"]["model_id"]),
+        frozen_input_sha256=str(package["prompt_ref"]["sha256"]),
+        frozen_context_sha256=str(context["context_sha256"]),
+        subject_manifest_sha256=str(manifest_ref["sha256"]),
+        rules_sha256=str(package["rules_sha256"]),
+        output_contract_sha256=provider_output_sha256,
+        capability_binding=capability,
+        write=True,
+        deadline_seconds=60,
+    )
+    contract_path = tmp_path / "direct-contract.json"
+    contract_ref = {"path": str(contract_path), "sha256": _write_json(contract_path, contract)}
+    output_path = tmp_path / "direct-output.json"
+    output_sha = _write_json(output_path, {"result": "OK"})
+    attempt = _attempt_receipt(
+        fixture,
+        contract=contract,
+        package=package,
+        output_sha=output_sha,
+        attempt=1,
+        total_tokens=10,
+        accepted=True,
+    )
+    attempt["output"]["schema_sha256"] = provider_output_sha256
+    attempt_path = tmp_path / "direct-attempt.json"
+    attempt_ref = {"path": str(attempt_path), "sha256": _write_json(attempt_path, attempt)}
+
+    event = build_dispatch_outcome_event(
+        event_type="worker_terminal",
+        parent_work_key=str(package["parent_work_key"]),
+        work_key=str(package["work_key"]),
+        package_id=str(package["package_id"]),
+        package_manifest_ref=manifest_ref,
+        dispatch_envelope_ref=envelope_ref,
+        logical_operation_id=operation_id,
+        leg="A",
+        role=str(package["role"]),
+        artifact_refs=[{"path": str(output_path), "sha256": output_sha}],
+        common_attempt_ref=attempt_ref,
+        common_contract_ref=contract_ref,
+    )
+    assert event["provider_accepted"] is True
+    assert (
+        event["provider_selection"]["capability_binding_sha256"]
+        == contract["selection"]["capability_binding_sha256"]
     )
 
 

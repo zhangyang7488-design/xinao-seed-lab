@@ -2,11 +2,15 @@
 
 This repository contains the thin, locally verified capabilities that Codex uses directly. The
 retired custom Seed Cortex / 333 / CLEAN controllers are not startup paths. The retained software
-main route is the Tool Glue Constitution triplet: Temporal + Docker `houtai-gongren` + LangGraph.
+route is one Codex owner and task-run with two task-fit transports: bounded online work normally
+uses the direct Grok WorkerPool leg, while explicitly durable post-window work uses the Temporal +
+Docker `houtai-gongren` + LangGraph leg.
 
 ## Current roots
 
-- Workspace entry: `E:\XINAO_RESEARCH_WORKSPACES\S` (a junction to the active Git worktree).
+- Workspace discovery entry: `E:\XINAO_RESEARCH_WORKSPACES\S` (a junction that may resolve to a
+  Git root, but does not by itself identify the current writable carrier; recover that from the
+  task-run lifecycle record).
 - Human material entry: `C:\Users\xx363\Desktop\主线`.
 - Runtime and evidence: `D:\XINAO_RESEARCH_RUNTIME`.
 - Situation and cross-window checkpoint:
@@ -84,7 +88,12 @@ The Grok Admin and Grok 4.5 identity/isolation workspaces are recovery bundles o
 public subprojects. See `materials/repository_topology/recovery_manifest.v1.json` for exact hashes
 and dispositions.
 
-## Software main route
+## A/B execution legs
+
+Leg A is the normal bounded online route while the current Codex TUI remains the owner. It uses the
+hash-bound `direct-grok-worker-pool` dispatch envelope and is not a fallback. Leg B is selected only
+for an explicit post-window, cross-restart, or unattended multi-wave durability need; then its
+default implementation is:
 
 ```powershell
 docker compose up -d
@@ -93,11 +102,13 @@ docker exec houtai-gongren python -m services.agent_runtime.integrated_bus_runne
   --input /evidence/state/integrated_bus_intake/default_input.md
 ```
 
-Acceptance requires a real workflow ID and history, `worker_ownership=docker_daemon`,
+Leg-B acceptance requires a real workflow ID and history, `worker_ownership=docker_daemon`,
 `invoke_mode=temporal_langgraph_plugin`, and matching evidence under
 `D:\XINAO_RESEARCH_RUNTIME`. Finalization records a read-only GitPython snapshot and writes proof
 to `D:\XINAO_RESEARCH_RUNTIME\state\integrated_bus_proof`; it never stages or commits the S
-worktree. WorkerPool remains an explicit bootstrap/fallback only.
+worktree. Leg-A acceptance instead requires its selected route receipt, exact provider/common
+contract, effective output, usage, and terminal event. Continuous mode, resume, or a Git-resolved
+root never changes an existing leg; only a new fact-backed route event does.
 
 ## Operating model
 

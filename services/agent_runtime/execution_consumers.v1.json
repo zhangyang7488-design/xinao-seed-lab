@@ -4,7 +4,12 @@
   "authority": false,
   "logical_contract_version": "xinao.execution.logical_contract.v1",
   "attempt_receipt_version": "xinao.execution.attempt_receipt.v1",
-  "durability_owner": "temporal",
+  "authority_owner": "codex_main",
+  "dispatch_owner_by_transport": {
+    "direct-grok-worker-pool": "current_codex_tui",
+    "temporal-docker-langgraph": "temporal_history"
+  },
+  "transport_continuity": "continuous, compact, resume, and window changes preserve the current hash-bound route receipt; only an explicit fact-backed route event changes transport",
   "purpose": "Discover and test actual cross-seam consumers without creating a second runtime, policy engine, or owner.",
   "provider_identity_binding_contract": {
     "schema_version": "xinao.execution.provider_identity_binding_ref.v1",
@@ -152,6 +157,7 @@
   "consumers": [
     {
       "consumer_id": "canonical_docker_grok_worker",
+      "route_transport_id": "temporal-docker-langgraph",
       "source_path": "services/agent_runtime/grok_build_docker_worker.py",
       "entrypoint": "_execute_lane_locked",
       "role": "provider_worker",
@@ -181,6 +187,7 @@
     },
     {
       "consumer_id": "canonical_langgraph_grok_fanin",
+      "route_transport_id": "temporal-docker-langgraph",
       "source_path": "services/agent_runtime/integrated_bus_graph.py",
       "entrypoint": "_grok_fanin_worker_lane",
       "role": "wave_fanin_validator",
@@ -210,6 +217,7 @@
     },
     {
       "consumer_id": "integrated_bus_provider_promotion",
+      "route_transport_id": "temporal-docker-langgraph",
       "source_path": "services/agent_runtime/integrated_bus_promotion_gate.py",
       "entrypoint": "evaluate_current_promotion",
       "role": "provider_evidence_promotion",
@@ -239,6 +247,7 @@
     },
     {
       "consumer_id": "promoted_temporal_task_workflow",
+      "route_transport_id": "temporal-docker-langgraph",
       "source_path": "projects/dual-brain-coordination/src/xinao_coordination/temporal/workflow.py",
       "entrypoint": "XinaoPromotedTaskWorkflowV1.run",
       "role": "durability_owner",
@@ -268,6 +277,7 @@
     },
     {
       "consumer_id": "foundation_v2_reconciliation",
+      "route_transport_id": "temporal-docker-langgraph",
       "source_path": "services/agent_runtime/foundation_continuous_workflow_v2.py",
       "entrypoint": "FoundationContinuousWorkflowV2",
       "role": "mainline_reconciliation",
@@ -298,9 +308,10 @@
     },
     {
       "consumer_id": "direct_grok_composer25_worker",
+      "route_transport_id": "direct-grok-worker-pool",
       "source_path": "C:/Users/xx363/Grok_Admin_Isolated/workspace/grok-admin-bridge/Invoke-GrokComposer25Worker.ps1",
       "entrypoint": "Invoke-GrokComposer25Worker.ps1",
-      "role": "bounded_direct_fallback",
+      "role": "direct_provider_primitive",
       "contract_mode": "provider_v1_only",
       "status": "partial",
       "status_reason": "Real model preflight and effective-output validation pass, but common work-key, contract digest and receipt are not emitted yet.",
@@ -311,9 +322,10 @@
     },
     {
       "consumer_id": "direct_grok_worker_pool",
+      "route_transport_id": "direct-grok-worker-pool",
       "source_path": "C:/Users/xx363/Grok_Admin_Isolated/workspace/grok-admin-bridge/Invoke-GrokWorkerPool.ps1",
       "entrypoint": "Invoke-GrokWorkerPool.ps1",
-      "role": "bounded_parallel_fallback",
+      "role": "normal_bounded_online_leg_a",
       "contract_mode": "provider_v1_then_common_adapter",
       "status": "partial",
       "conformance_status": "complete",

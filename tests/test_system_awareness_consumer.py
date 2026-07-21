@@ -20,6 +20,7 @@ from services.agent_runtime.system_awareness_consumer import (
     preflight_supervisor_root,
     project_episode_outcome,
     publish_worktree_lifecycle_record,
+    reconcile_global_frontier,
     reconcile_identity,
     reconcile_problem_lifecycle,
     reconcile_temporal_identity,
@@ -666,6 +667,106 @@ def test_problem_projection_merges_splits_requires_effectiveness_and_reopens() -
     assert no_build["repair_decision"] == "no_build"
     assert no_build["status"] == "retired"
     assert "NO_BUILD_SELECTED" in no_build["reason_codes"]
+
+
+def test_global_frontier_reconciliation_keeps_local_wait_scoped_and_requires_full_proof() -> None:
+    local = reconcile_global_frontier(
+        {
+            "parent_mainline_id": "mainline-1",
+            "event_head": "event-12",
+            "scan_generation": "scan-3",
+            "frontier_disposition": "local_wait",
+            "transactions": [
+                {
+                    "transaction_id": "package-a",
+                    "scope": "package",
+                    "work_key": "package-a",
+                    "batch_id": "batch-a",
+                    "package_id": "a",
+                    "state": "blocked",
+                    "affected_cone": "package-a",
+                    "consumer": "consumer-a",
+                }
+            ],
+            "covered_transaction_ids": ["package-a"],
+        }
+    )
+    assert local["status"] == "valid"
+    assert local["parent_state"] == "open"
+    assert local["parent_wait_claim_allowed"] is False
+    assert local["global_frontier_reconciled"] is False
+    assert "LOCAL_WAIT_SCOPE_PRESERVED" in local["reason_codes"]
+
+    incomplete = reconcile_global_frontier(
+        {
+            "parent_mainline_id": "mainline-1",
+            "event_head": "event-13",
+            "scan_generation": "scan-4",
+            "frontier_disposition": "no_positive_global_candidate",
+            "transactions": [
+                {"transaction_id": "package-a", "scope": "package"},
+                {"transaction_id": "package-b", "scope": "package"},
+            ],
+            "covered_transaction_ids": ["package-a"],
+        }
+    )
+    assert incomplete["status"] == "invalid"
+    assert incomplete["parent_wait_claim_allowed"] is False
+    assert "GLOBAL_COVERAGE_INCOMPLETE" in incomplete["reason_codes"]
+
+    collision = reconcile_global_frontier(
+        {
+            "parent_mainline_id": "mainline-1",
+            "event_head": "event-14",
+            "scan_generation": "scan-5",
+            "frontier_disposition": "durable_wait",
+            "transactions": [
+                {
+                    "transaction_id": "mainline-1",
+                    "scope": "package",
+                    "work_key": "mainline-1",
+                }
+            ],
+            "covered_transaction_ids": ["mainline-1"],
+        }
+    )
+    assert collision["status"] == "invalid"
+    assert "PACKAGE_PARENT_SCOPE_COLLISION" in collision["scope_violations"]
+
+
+def test_scan_task_run_projects_invalid_parent_wait_receipt_fail_closed(tmp_path: Path) -> None:
+    run_dir = _write_scan_run(
+        tmp_path,
+        "frontier-scope",
+        [
+            {
+                "run_id": "frontier-scope",
+                "schema_version": "codex.verified-task-run.v1",
+                "event_id": "frontier-1",
+                "phase": "global_frontier_reconciliation",
+                "exit_code": 0,
+                "global_frontier_reconciliation": {
+                    "parent_mainline_id": "mainline-1",
+                    "event_head": "event-9",
+                    "scan_generation": "scan-1",
+                    "frontier_disposition": "durable_wait",
+                    "transactions": [
+                        {
+                            "transaction_id": "mainline-1",
+                            "scope": "package",
+                            "work_key": "mainline-1",
+                        }
+                    ],
+                    "covered_transaction_ids": ["mainline-1"],
+                },
+            }
+        ],
+    )
+    report = scan_task_run(run_dir)
+    receipt = report["global_frontier_reconciliation"]
+    assert receipt["status"] == "invalid"
+    assert receipt["parent_wait_claim_allowed"] is False
+    assert "GLOBAL_FRONTIER_RECONCILIATION_PROJECTED" in report["reason_codes"]
 
 
 def test_identity_json_and_preflight_are_fail_closed_before_model(tmp_path: Path) -> None:
@@ -1363,6 +1464,8 @@ def test_worktree_candidate_binds_logical_identity_finalizers_and_fresh_process(
             "main",
             "--task-run-dir",
             str(run_dir),
+            "--now",
+            "2026-07-20T00:10:00Z",
             "--output",
             str(output),
         ],

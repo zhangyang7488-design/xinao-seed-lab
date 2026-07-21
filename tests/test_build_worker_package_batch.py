@@ -12,6 +12,7 @@ from scripts import build_worker_package_batch as builder
 from scripts import validate_worker_package_batch as preflight
 from services.agent_runtime.dispatch_economics import (
     DispatchEconomicsError,
+    build_neutral_output_contract,
     validate_dispatch_envelope,
     validate_package_batch_manifest,
 )
@@ -50,8 +51,7 @@ def _logical_spec(
             "prompt_path": logical(package["prompt_ref"]["path"]),
             "context_manifest_path": logical(package["context_manifest_ref"]["path"]),
             "input_paths": [logical(item["path"]) for item in package["input_refs"]],
-            "rules_sha256": package["rules_sha256"],
-            "output_contract_sha256": package["output_contract_sha256"],
+            "rules_path": logical(package["rules_ref"]["path"]),
             "write_domains": list(package["write_domains"]),
             "candidate_only": package["candidate_only"],
             "allowed_output_root": logical(package["allowed_output_root"]),
@@ -155,6 +155,38 @@ def test_route_bound_envelopes_keep_neutral_manifest_bytes_but_not_dispatch_iden
         a["selection"]["route_decision_binding_sha256"]
         != b["selection"]["route_decision_binding_sha256"]
     )
+
+
+def test_builder_requires_rules_path_and_derives_neutral_output_contract(
+    tmp_path: Path,
+) -> None:
+    fixture = _fixture(tmp_path / "inputs")
+    spec = _logical_spec(fixture)
+    expected_rules_ref = copy.deepcopy(fixture["manifest"]["packages"][0]["rules_ref"])
+    manifest = builder.build_neutral_manifest(spec)
+    package = manifest["packages"][0]
+    assert package["rules_ref"] == expected_rules_ref
+    assert package["rules_sha256"] == expected_rules_ref["sha256"]
+    assert (
+        package["output_contract_sha256"]
+        == fixture["manifest"]["packages"][0]["output_contract_sha256"]
+    )
+    assert build_neutral_output_contract(package["acceptance"]) == {
+        "result_format": "text",
+        "result_json_schema_sha256": "",
+        "min_result_chars": 1,
+        "required_result_markers": ["OK"],
+    }
+
+    missing_rules = copy.deepcopy(spec)
+    missing_rules["packages"][0].pop("rules_path")
+    with pytest.raises(ValueError, match="rules_path"):
+        builder.build_neutral_manifest(missing_rules)
+
+    output_drift = copy.deepcopy(spec)
+    output_drift["packages"][0]["output_contract_sha256"] = "0" * 64
+    with pytest.raises(ValueError, match="output_contract_sha256 does not bind acceptance"):
+        builder.build_neutral_manifest(output_drift)
 
 
 def test_route_bound_envelope_rejects_wrong_leg_and_selector_capability_claim() -> None:
