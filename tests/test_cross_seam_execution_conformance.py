@@ -805,7 +805,7 @@ def test_docker_grok_identity_bindings_keep_productivity_and_composer_ledgers_se
     assert composer["session_evidence_required"] is True
     assert composer["capability_ledger"] == "composer_exact_capability"
     assert composer["composer_completion_credit"] is True
-    assert grok45["allowed_backend_model_ids"] == ["grok-4.5"]
+    assert grok45["allowed_backend_model_ids"] == ["grok-4.5-build"]
     assert grok45["session_model_id"] == "grok-4.5"
     assert grok45["session_evidence_required"] is True
     assert grok45["capability_ledger"] == "grok_45_productivity"
@@ -882,11 +882,11 @@ def test_docker_grok_identity_bindings_keep_productivity_and_composer_ledgers_se
             replayed=False,
         )
 
-    receipt = build(["grok-4.5"])
+    receipt = build(["grok-4.5-build"])
     assert receipt["observed"]["model_id"] == "grok-4.5"
     assert receipt["invocations"][0]["observed_model"] == "grok-4.5"
     for raw_models in (
-        ["grok-4.5-build"],
+        ["grok-4.5"],
         ["grok-composer-2.5-fast"],
         ["grok-4.5-build", "grok-composer-2.5-fast"],
     ):
@@ -1039,12 +1039,12 @@ def _earned_registry_fixture(tmp_path: Path) -> dict[str, object]:
             "stopReason": "EndTurn",
             "text": "x" * 300,
             "usage": {"total_tokens": 100},
-            "modelUsage": {"grok-4.5": {"modelCalls": 1}},
+            "modelUsage": {"grok-4.5-build": {"modelCalls": 1}},
         },
     )
     productivity45_hash = _write_registry_evidence(
         productivity45,
-        {"requested_model": "grok-4.5", "observed_models": ["grok-4.5"]},
+        {"requested_model": "grok-4.5", "observed_models": ["grok-4.5-build"]},
     )
     session_composer_hash = _write_registry_evidence(
         session_composer,
@@ -1104,7 +1104,7 @@ def _earned_registry_fixture(tmp_path: Path) -> dict[str, object]:
                 "path": str(productivity45),
                 "sha256": productivity45_hash,
                 "requested_model": "grok-4.5",
-                "observed_models": ["grok-4.5"],
+                "observed_models": ["grok-4.5-build"],
                 "capability_ledger": "grok_45_productivity",
                 "composer_completion_credit": False,
                 "completion_claim_allowed": True,

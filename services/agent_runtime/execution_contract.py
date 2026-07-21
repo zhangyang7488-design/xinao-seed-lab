@@ -1032,7 +1032,7 @@ def validate_consumer_registry(
         and composer_binding.get("session_evidence_required") is True
         and composer_binding.get("capability_ledger") == "composer_exact_capability"
         and composer_binding.get("composer_completion_credit") is True
-        and grok45_binding.get("allowed_backend_model_ids") == ["grok-4.5"]
+        and grok45_binding.get("allowed_backend_model_ids") == ["grok-4.5-build"]
         and grok45_binding.get("session_model_id") == "grok-4.5"
         and grok45_binding.get("session_evidence_required") is True
         and grok45_binding.get("capability_ledger") == "grok_45_productivity"

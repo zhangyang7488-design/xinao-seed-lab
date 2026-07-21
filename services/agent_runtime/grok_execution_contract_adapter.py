@@ -31,13 +31,13 @@ GROK_DIRECT_WORKER_POOL_CONSUMER_ID = "direct_grok_worker_pool"
 GROK_DIRECT_WORKER_POOL_EXECUTION_LOCATION = "host:grok_worker_pool"
 GROK_DIRECT_WORKER_POOL_TRANSPORT_ID = "direct-grok-worker-pool"
 GROK_DIRECT_WORKER_POOL_CONTRACT_MODE = "provider_v1_then_common_adapter"
-GROK_MODEL_IDENTITY_BINDING_VERSION = "xinao.grok.model_identity_binding.v2"
+GROK_MODEL_IDENTITY_BINDING_VERSION = "xinao.grok.model_identity_binding.v3"
 
 # The CLI session selector and the backend modelUsage identifier are separate
-# identities.  Composer currently records the shared backend build identifier,
-# while a directly selected Grok 4.5 session records its public model id.
-# Completion credit still requires exact session summary + turn-event evidence;
-# backend usage alone can never prove which selector the supervisor chose.
+# identities.  Grok CLI 0.2.103 currently records the shared backend build
+# identifier for both selectors.  Completion credit still requires exact
+# session summary + turn-event evidence, so the shared accounting identifier
+# cannot collapse the Grok 4.5 and Composer capability ledgers.
 _GROK_DOCKER_MODEL_IDENTITY_BINDINGS: dict[str, dict[str, object]] = {
     "grok-composer-2.5-fast": {
         "allowed_backend_model_ids": ["grok-4.5-build"],
@@ -45,7 +45,7 @@ _GROK_DOCKER_MODEL_IDENTITY_BINDINGS: dict[str, dict[str, object]] = {
         "composer_completion_credit": True,
     },
     "grok-4.5": {
-        "allowed_backend_model_ids": ["grok-4.5"],
+        "allowed_backend_model_ids": ["grok-4.5-build"],
         "capability_ledger": "grok_45_productivity",
         "composer_completion_credit": False,
     },
