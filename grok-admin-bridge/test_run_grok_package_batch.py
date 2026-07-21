@@ -520,8 +520,20 @@ def test_nonzero_provider_exit_with_valid_common_receipt_is_terminal_recordable(
     }
     final_text = "rejected but receipted\r\n最终"
     final_sha = hashlib.sha256(final_text.encode("utf-8")).hexdigest()
+    route_validation_calls = 0
+
+    def validate_route_claim(**_kwargs: object) -> dict[str, object]:
+        nonlocal route_validation_calls
+        route_validation_calls += 1
+        return {
+            "leg": "A",
+            "choice_sha256": "e" * 64,
+            "physical_consumer_id": "grok_direct_worker_pool_consumer",
+            "model_invocation_allowed": True,
+        }
 
     def fake_run(command: list[str], **_: object) -> subprocess.CompletedProcess[str]:
+        assert route_validation_calls == 3
         assert command[command.index("-DispatchEpochId") + 1] == "epoch-1"
         assert command[command.index("-DispatchEpochSource") + 1] == (
             "neutral_package_manifest"
@@ -613,7 +625,18 @@ def test_nonzero_provider_exit_with_valid_common_receipt_is_terminal_recordable(
         )
         return subprocess.CompletedProcess(command, 3, "", "provider rejected")
 
-    monkeypatch.setattr(subject.subprocess, "run", fake_run)
+    def fake_guarded_run(
+        command: list[str],
+        *,
+        timeout_seconds: int,
+        live_guard: object,
+    ) -> subprocess.CompletedProcess[str]:
+        del timeout_seconds
+        assert callable(live_guard)
+        live_guard()
+        return fake_run(command)
+
+    monkeypatch.setattr(subject, "_run_process_with_live_guard", fake_guarded_run)
     result = subject._run_package(
         package=package,
         candidate_cwd=output_root,
@@ -638,17 +661,14 @@ def test_nonzero_provider_exit_with_valid_common_receipt_is_terminal_recordable(
         route_claim_evidence_ref="route-claim.json#sha256=" + "9" * 64,
         route_choice_sha256="e" * 64,
         physical_consumer_id="grok_direct_worker_pool_consumer",
+        task_run_dir=tmp_path / "run-1",
+        task_run_id="run-1",
         common_contract_binding={
             "task_contract_ref": "task-ref",
             "subject_manifest_sha256": "7" * 64,
             "binding_source": "fixture",
         },
-        validate_dispatch_route_claim=lambda **_kwargs: {
-            "leg": "A",
-            "choice_sha256": "e" * 64,
-            "physical_consumer_id": "grok_direct_worker_pool_consumer",
-            "model_invocation_allowed": True,
-        },
+        validate_dispatch_route_claim=validate_route_claim,
         timeout_sec=30,
         validate_attempt_receipt=lambda _contract, _attempt: SimpleNamespace(
             accepted=False, reason_codes=("TERMINAL_STATE_NOT_COMPLETED",)
@@ -656,6 +676,7 @@ def test_nonzero_provider_exit_with_valid_common_receipt_is_terminal_recordable(
     )
 
     assert result["status"] == "terminal_ready"
+    assert route_validation_calls == 3
     assert result["terminal_recordable"] is True
     assert result["exit_code"] == 3
     assert result["attempt"] == 2
@@ -676,6 +697,23 @@ def test_nonzero_provider_exit_with_valid_common_receipt_is_terminal_recordable(
     assert "usage" not in package_result
     assert package_result["package_manifest_ref"]["sha256"] == subject._sha(manifest)
     assert package_result["dispatch_envelope_ref"]["sha256"] == subject._sha(envelope)
+
+
+def test_provider_process_is_terminated_when_live_route_guard_freezes() -> None:
+    checks = 0
+
+    def frozen_guard() -> None:
+        nonlocal checks
+        checks += 1
+        raise RuntimeError("RUN_MUTATION_FROZEN")
+
+    with pytest.raises(RuntimeError, match="RUN_MUTATION_FROZEN"):
+        subject._run_process_with_live_guard(
+            [sys.executable, "-c", "import time; time.sleep(30)"],
+            timeout_seconds=10,
+            live_guard=frozen_guard,
+        )
+    assert checks == 1
 
 
 def test_candidate_cwd_is_exact_existing_output_not_source_repo_or_traversal(
