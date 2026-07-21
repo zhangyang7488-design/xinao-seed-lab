@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
+import re
+import subprocess
 import sys
 import uuid
 from concurrent.futures import ThreadPoolExecutor
@@ -302,6 +305,198 @@ def _normalize_evidence_path(ref: str) -> Path | None:
     return None
 
 
+def _runtime_host_path(raw: object, *, runtime_root: Path) -> Path:
+    text = str(raw or "").strip().replace("\\", "/")
+    path = runtime_root / text[len("/evidence/") :] if text.startswith("/evidence/") else Path(
+        str(raw or "")
+    )
+    resolved = path.resolve(strict=True)
+    resolved.relative_to(runtime_root.resolve())
+    return resolved
+
+
+def _hash_bound_runtime_ref(
+    raw_path: object,
+    raw_sha256: object,
+    *,
+    runtime_root: Path,
+) -> dict[str, str]:
+    path = _runtime_host_path(raw_path, runtime_root=runtime_root)
+    expected = str(raw_sha256 or "").strip()
+    if not re.fullmatch(r"[0-9a-f]{64}", expected):
+        raise ValueError("runtime artifact ref has no lowercase sha256")
+    observed = hashlib.sha256(path.read_bytes()).hexdigest()
+    if observed != expected:
+        raise ValueError(f"runtime artifact bytes drifted: {path}")
+    return {"path": str(path), "sha256": observed}
+
+
+def _write_json_create_once(path: Path, value: object) -> str:
+    raw = (json.dumps(value, ensure_ascii=False, indent=2, sort_keys=True) + "\n").encode(
+        "utf-8"
+    )
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = path.with_name(f".{path.name}.{os.getpid()}.{uuid.uuid4().hex}.tmp")
+    temporary.write_bytes(raw)
+    try:
+        try:
+            os.link(temporary, path)
+        except FileExistsError:
+            pass
+    finally:
+        temporary.unlink(missing_ok=True)
+    if path.read_bytes() != raw:
+        raise RuntimeError(f"immutable JSON artifact drifted: {path}")
+    return hashlib.sha256(raw).hexdigest()
+
+
+def _record_leg_b_worker_terminals(
+    result: Mapping[str, object],
+    *,
+    runtime_root: Path,
+    repo_root: Path,
+    dispatch_envelope_ref: Mapping[str, object],
+    dispatch_task_run_dir: Path,
+    dispatch_task_run_id: str,
+    task_run_cli: Path | None = None,
+    record_script: Path | None = None,
+) -> list[dict[str, object]]:
+    """Append accepted leg-B provider facts to the exact canonical task-run."""
+
+    if result.get("grok_fanin_ok") is not True or result.get("worker_lane_ok") is not True:
+        return []
+    lanes = result.get("grok_lanes")
+    if not isinstance(lanes, list) or not lanes or any(not isinstance(item, Mapping) for item in lanes):
+        raise ValueError("accepted leg-B fan-in has no typed lanes")
+    run_dir = dispatch_task_run_dir.resolve(strict=True)
+    if run_dir.name != dispatch_task_run_id:
+        raise ValueError("dispatch task-run directory and run id disagree")
+    task = json.loads((run_dir / "task.json").read_text(encoding="utf-8"))
+    if not isinstance(task, dict) or str(task.get("run_id") or "") != dispatch_task_run_id:
+        raise ValueError("dispatch task-run task.json identity drifted")
+    envelope_path = Path(str(dispatch_envelope_ref.get("path") or "")).resolve(strict=True)
+    envelope_sha256 = str(dispatch_envelope_ref.get("sha256") or "")
+    if hashlib.sha256(envelope_path.read_bytes()).hexdigest() != envelope_sha256:
+        raise ValueError("dispatch envelope bytes drifted before worker-terminal recording")
+    envelope = json.loads(envelope_path.read_text(encoding="utf-8-sig"))
+    package_ref = envelope.get("package_manifest_ref") if isinstance(envelope, dict) else None
+    if not isinstance(package_ref, dict):
+        raise ValueError("dispatch envelope has no package manifest ref")
+    manifest_path = Path(str(package_ref.get("path") or "")).resolve(strict=True)
+    manifest_sha256 = str(package_ref.get("sha256") or "")
+    if hashlib.sha256(manifest_path.read_bytes()).hexdigest() != manifest_sha256:
+        raise ValueError("package manifest bytes drifted before worker-terminal recording")
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8-sig"))
+    packages = manifest.get("packages") if isinstance(manifest, dict) else None
+    if not isinstance(packages, list):
+        raise ValueError("package manifest has no package set")
+    package_by_id = {
+        str(item.get("package_id") or ""): item for item in packages if isinstance(item, dict)
+    }
+    task_run_cli = task_run_cli or Path(
+        os.environ.get(
+            "XINAO_TASK_RUN_CLI",
+            str(
+                Path.home()
+                / ".codex"
+                / "skills"
+                / "verified-agent-loop"
+                / "scripts"
+                / "task_run.py"
+            ),
+        )
+    )
+    record_script = record_script or repo_root / "scripts" / "record_dispatch_outcome.py"
+    task_run_cli = task_run_cli.resolve(strict=True)
+    record_script = record_script.resolve(strict=True)
+    records: list[dict[str, object]] = []
+    for raw_lane in lanes:
+        lane = dict(raw_lane)
+        package_id = str(lane.get("package_id") or "")
+        package = package_by_id.get(package_id)
+        if not isinstance(package, dict):
+            raise ValueError(f"leg-B lane package is absent from manifest: {package_id}")
+        if (
+            lane.get("ok") is not True
+            or lane.get("operation_state") != "completed"
+            or str(lane.get("work_key") or "") != str(package.get("work_key") or "")
+            or str(lane.get("dispatch_task_run_id") or "") != dispatch_task_run_id
+            or str(lane.get("dispatch_envelope_sha256") or "") != envelope_sha256
+            or str(lane.get("package_manifest_sha256") or "") != manifest_sha256
+        ):
+            raise ValueError("leg-B lane cannot be transplanted into this task-run")
+        final_ref = _hash_bound_runtime_ref(
+            lane.get("final_ref"), lane.get("result_text_sha256"), runtime_root=runtime_root
+        )
+        attempt_ref = _hash_bound_runtime_ref(
+            lane.get("cross_seam_attempt_receipt_ref"),
+            lane.get("cross_seam_attempt_receipt_sha256"),
+            runtime_root=runtime_root,
+        )
+        contract_ref = _hash_bound_runtime_ref(
+            lane.get("cross_seam_logical_contract_ref"),
+            lane.get("cross_seam_logical_contract_artifact_sha256"),
+            runtime_root=runtime_root,
+        )
+        request = {
+            "event_type": "worker_terminal",
+            "parent_work_key": str(package.get("parent_work_key") or ""),
+            "work_key": str(package.get("work_key") or ""),
+            "package_id": package_id,
+            "package_manifest_ref": {"path": str(manifest_path), "sha256": manifest_sha256},
+            "dispatch_envelope_ref": {"path": str(envelope_path), "sha256": envelope_sha256},
+            "logical_operation_id": str(lane.get("operation_id") or ""),
+            "leg": "B",
+            "role": str(package.get("role") or ""),
+            "artifact_refs": [final_ref],
+            "common_attempt_ref": attempt_ref,
+            "common_contract_ref": contract_ref,
+        }
+        operation_id = str(lane.get("operation_id") or "")
+        output_root = run_dir / "dispatch_outcomes" / operation_id
+        request_path = output_root / "worker-terminal-request.json"
+        output_path = output_root / "worker-terminal-event.json"
+        request_sha256 = _write_json_create_once(request_path, request)
+        completed = subprocess.run(
+            [
+                sys.executable,
+                str(record_script),
+                "--request",
+                str(request_path),
+                "--output",
+                str(output_path),
+                "--task-run-cli",
+                str(task_run_cli),
+                "--task-run-root",
+                str(run_dir.parent),
+                "--task-run-id",
+                dispatch_task_run_id,
+                "--actor",
+                "leg-b-terminal-consumer",
+            ],
+            check=False,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+        )
+        if completed.returncode != 0:
+            raise RuntimeError(
+                f"leg-B worker-terminal append failed exit={completed.returncode}: "
+                f"{completed.stderr.strip()}"
+            )
+        receipt = json.loads(completed.stdout)
+        records.append(
+            {
+                **receipt,
+                "request_ref": str(request_path),
+                "request_sha256": request_sha256,
+                "task_run_id": dispatch_task_run_id,
+            }
+        )
+    return records
+
+
 def _load_fanin_evidence(
     result: dict[str, Any], *, runtime_root: Path | None = None
 ) -> dict[str, Any]:
@@ -491,25 +686,32 @@ def _resolve_parallel_evidence_path(
     runtime_root: Path,
     workflow_id: str | None = None,
 ) -> Path | None:
+    wf_id = str(workflow_id or result.get("workflow_id") or "").strip()
+
+    def belongs_to_workflow(candidate: Path) -> bool:
+        if not wf_id:
+            return True
+        try:
+            payload = json.loads(candidate.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            return False
+        return str(payload.get("workflow_id") or "").strip() == wf_id
+
     ref = str(result.get("parallel_evidence_ref") or "")
     path = _normalize_evidence_path(ref) if ref else None
     if path is not None:
-        return path
+        return path if path.is_file() and belongs_to_workflow(path) else None
     parallel_dir = runtime_root / "state" / "integrated_bus_parallel"
     if not parallel_dir.is_dir():
         return None
-    wf_id = str(workflow_id or result.get("workflow_id") or "").strip()
     candidates = sorted(
         parallel_dir.glob("parallel_*.json"), key=lambda p: p.stat().st_mtime, reverse=True
     )
     if wf_id:
         for cand in candidates:
-            try:
-                payload = json.loads(cand.read_text(encoding="utf-8"))
-            except json.JSONDecodeError:
-                continue
-            if str(payload.get("workflow_id") or "") == wf_id:
+            if belongs_to_workflow(cand):
                 return cand
+        return None
     latest = parallel_dir / "latest.json"
     if latest.is_file():
         return latest
@@ -610,22 +812,43 @@ def _resolve_docker_worker_enforced(
     return False
 
 
-def _read_invoke_evidence(runtime_root: Path, subdir: str) -> dict[str, Any]:
-    path = runtime_root / "state" / subdir / "latest.json"
-    if not path.is_file():
-        return {}
-    try:
-        return json.loads(path.read_text(encoding="utf-8"))
-    except json.JSONDecodeError:
-        return {}
+def _read_invoke_evidence(
+    runtime_root: Path,
+    subdir: str,
+    *,
+    workflow_id: str | None = None,
+) -> dict[str, Any]:
+    out_dir = runtime_root / "state" / subdir
+    wf_id = str(workflow_id or "").strip()
+    candidates: list[Path]
+    if wf_id:
+        records_dir = out_dir / "records"
+        candidates = (
+            sorted(records_dir.glob("invoke_*.json"), key=lambda p: p.stat().st_mtime, reverse=True)
+            if records_dir.is_dir()
+            else []
+        )
+    else:
+        candidates = [out_dir / "latest.json"]
+    for path in candidates:
+        if not path.is_file():
+            continue
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            continue
+        if not wf_id or str(payload.get("workflow_id") or "").strip() == wf_id:
+            return payload
+    return {}
 
 
 def _enrich_result_from_invoke_evidence(
     result: dict[str, Any],
     *,
     runtime_root: Path,
+    workflow_id: str | None = None,
 ) -> dict[str, Any]:
-    """Temporal LangGraphPlugin may omit early-node keys — hydrate from state/*/latest.json."""
+    """Hydrate omitted node keys only from evidence bound to the same workflow."""
     merged = dict(result)
     evidence_map = (
         ("duckdb", ("duckdb_invoked", "duckdb_ok")),
@@ -639,21 +862,21 @@ def _enrich_result_from_invoke_evidence(
         ("crawl4ai", ("crawl4ai_invoked", "crawl4ai_ok")),
     )
     for subdir, keys in evidence_map:
-        ev = _read_invoke_evidence(runtime_root, subdir)
+        ev = _read_invoke_evidence(runtime_root, subdir, workflow_id=workflow_id)
         if ev.get("invoke_ok") is not True:
             continue
         for key in keys:
-            merged[key] = True
+            merged.setdefault(key, True)
         if subdir == "fastmcp_invoke" and ev.get("adapter"):
             merged.setdefault("mcp_adapter", str(ev.get("adapter")))
         if subdir == "gitpython" and ev.get("commit_hash"):
             merged.setdefault("commit_hash", str(ev.get("commit_hash")))
             merged.setdefault("git_commit_adapter", str(ev.get("adapter") or "gitpython"))
-    lit = _read_invoke_evidence(runtime_root, "litellm")
-    if lit.get("invoke_ok") is True:
+    lit = _read_invoke_evidence(runtime_root, "litellm", workflow_id=workflow_id)
+    if lit.get("invoke_ok") is True and not merged.get("litellm_completion_via"):
         merged["litellm_completion_via"] = str(lit.get("adapter") or "litellm.completion")
-        merged["gateway_trace_ok"] = True
-        merged["litellm_completion_ok"] = True
+        merged.setdefault("gateway_trace_ok", True)
+        merged.setdefault("litellm_completion_ok", True)
         if (
             lit.get("callback_wired") is not True
             and merged.get("langfuse_callback_wired") is not True
@@ -946,7 +1169,11 @@ def _build_payload(
         params=bus_params,
         workflow_id=workflow_id,
     )
-    result = _enrich_result_from_invoke_evidence(result, runtime_root=runtime_root)
+    result = _enrich_result_from_invoke_evidence(
+        result,
+        runtime_root=runtime_root,
+        workflow_id=workflow_id,
+    )
     result = enrich_bus_escalate_evidence(result, runtime_root=runtime_root)
     result.setdefault(
         "draft_model",
@@ -1069,7 +1296,20 @@ def _build_payload(
         is True,
         "parallel_semantic_documented": str(result.get("parallel_semantic") or "")
         in {"barrier", "rolling"},
-        "grok_fanin_manifest_bound": bool(str(result.get("grok_fanin_manifest_ref") or "")),
+        "grok_fanin_manifest_bound": bool(str(result.get("grok_fanin_manifest_ref") or ""))
+        and (
+            result.get("grok_canonical_dispatch") is not True
+            or (
+                bool(
+                    re.fullmatch(
+                        r"[0-9a-f]{64}",
+                        str(result.get("grok_fanin_manifest_sha256") or ""),
+                    )
+                )
+                and result.get("grok_fanin_manifest_sha256")
+                == result.get("grok_fanin_evidence_sha256")
+            )
+        ),
         "mainline_default_path": mainline_default,
         "docker_worker_enforced": _resolve_docker_worker_enforced(
             invoke_mode=invoke_mode,
@@ -1079,6 +1319,11 @@ def _build_payload(
             result=result,
         ),
     }
+    if result.get("grok_canonical_dispatch") is True:
+        checks["leg_b_task_run_worker_terminal"] = (
+            result.get("grok_worker_terminal_recorded") is True
+            and bool(result.get("grok_worker_terminal_records"))
+        )
     if langfuse_keys_missing:
         result.setdefault("langfuse_skipped", True)
         result.setdefault("langfuse_named_blocker", "LANGFUSE_KEYS_MISSING")
@@ -1250,8 +1495,23 @@ async def run_integrated_bus_temporal(
                     id=workflow_id,
                     task_queue=task_queue,
                 )
+    result = dict(result)
+    if dispatch_envelope_ref is not None:
+        if dispatch_task_run_dir is None or not dispatch_task_run_id:
+            raise ValueError("canonical leg-B result requires exact task-run identity")
+        terminal_records = _record_leg_b_worker_terminals(
+            result,
+            runtime_root=runtime_root,
+            repo_root=repo_root,
+            dispatch_envelope_ref=dispatch_envelope_ref,
+            dispatch_task_run_dir=dispatch_task_run_dir,
+            dispatch_task_run_id=dispatch_task_run_id,
+        )
+        result["grok_canonical_dispatch"] = True
+        result["grok_worker_terminal_records"] = terminal_records
+        result["grok_worker_terminal_recorded"] = bool(terminal_records)
     payload = _build_payload(
-        dict(result),
+        result,
         invoke_mode="temporal_langgraph_plugin",
         runtime_root=runtime_root,
         workflow_id=workflow_id,
@@ -1318,6 +1578,20 @@ async def run_integrated_bus_local(
         finalize_node,
     ):
         state.update(await step(state))
+    if dispatch_envelope_ref is not None:
+        if dispatch_task_run_dir is None or not dispatch_task_run_id:
+            raise ValueError("canonical leg-B result requires exact task-run identity")
+        terminal_records = _record_leg_b_worker_terminals(
+            state,
+            runtime_root=runtime_root,
+            repo_root=repo_root,
+            dispatch_envelope_ref=dispatch_envelope_ref,
+            dispatch_task_run_dir=dispatch_task_run_dir,
+            dispatch_task_run_id=dispatch_task_run_id,
+        )
+        state["grok_canonical_dispatch"] = True
+        state["grok_worker_terminal_records"] = terminal_records
+        state["grok_worker_terminal_recorded"] = bool(terminal_records)
     return _build_payload(
         dict(state),
         invoke_mode="local_graph_nodes",

@@ -38,6 +38,7 @@ from services.agent_runtime.execution_contract import (
     ATTEMPT_RECEIPT_VERSION,
     LOGICAL_CONTRACT_VERSION,
     artifact_json_bytes,
+    build_common_receipt_binding,
     canonical_json_bytes,
     logical_contract_sha256,
     validate_attempt_receipt,
@@ -160,6 +161,32 @@ def _write_bytes_atomic(path: Path, raw: bytes) -> str:
 def _write_json_atomic(path: Path, value: object) -> str:
     raw = _json_bytes(value)
     return _write_bytes_atomic(path, raw)
+
+
+def _write_bytes_create_once(path: Path, raw: bytes, *, artifact_name: str) -> str:
+    """Publish an immutable operation artifact or verify the existing exact bytes."""
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = path.with_name(f".{path.name}.{os.getpid()}.{uuid.uuid4().hex}.tmp")
+    temporary.write_bytes(raw)
+    try:
+        try:
+            os.link(temporary, path)
+        except FileExistsError:
+            pass
+    finally:
+        temporary.unlink(missing_ok=True)
+    try:
+        observed = path.read_bytes()
+    except OSError as exc:
+        raise RuntimeError(f"{artifact_name} could not be read after publication") from exc
+    if observed != raw:
+        raise RuntimeError(f"{artifact_name} immutable bytes drifted")
+    return _sha256(observed)
+
+
+def _write_json_create_once(path: Path, value: object, *, artifact_name: str) -> str:
+    return _write_bytes_create_once(path, _json_bytes(value), artifact_name=artifact_name)
 
 
 def _read_json(path: Path) -> dict[str, Any]:
@@ -686,6 +713,8 @@ def _canonical_package_lane(
         "logical_effect_contract": dict(package["logical_effect_contract"]),
         "physical_consumer_id": physical_consumer_id,
         "input_sha256": str(package["input_sha256"]),
+        "input_digest_profile": "raw-bytes-sha256-v1",
+        "input_text_profile": "utf8-universal-newlines-v1",
         "context_sha256": str(package["context_sha256"]),
         "rules_sha256": str(package["rules_sha256"]),
         "rules_ref": validated_rules_ref,
@@ -717,6 +746,8 @@ def _canonical_package_lane(
         "external_research": GROK_DOCKER_PACKAGE_CAPABILITY_POLICY["external_research"],
         "memory": GROK_DOCKER_PACKAGE_CAPABILITY_POLICY["memory"],
     }
+    if package.get("prior_attempt_receipt_ref") is not None:
+        lane["prior_attempt_receipt_ref"] = dict(package["prior_attempt_receipt_ref"])
     if result_format == "json_object":
         schema_ref, _, schema, _ = _read_hash_bound_json_ref(
             acceptance["json_schema_ref"],
@@ -728,6 +759,50 @@ def _canonical_package_lane(
         # replacing it with a digest of a re-serialized JSON object.
         lane["result_json_schema_sha256"] = schema_ref["sha256"]
     return lane
+
+
+def _bind_canonical_package_intake(
+    lanes: list[dict[str, Any]],
+    *,
+    content_md: str,
+) -> str:
+    """Bind each lane to its own package input; caller text never shapes execution."""
+
+    canonical_intakes: list[str] = []
+    for lane in lanes:
+        refs = lane.get("input_refs")
+        if not isinstance(refs, list) or len(refs) != 1:
+            raise ValueError(
+                "Docker Grok canonical package currently requires exactly one input_ref per lane"
+            )
+        ref, _, bound_bytes = _read_hash_bound_bytes_ref(
+            refs[0],
+            label=f"package {lane.get('package_id')} input_refs[0]",
+        )
+        if ref["sha256"] != str(lane.get("input_sha256") or ""):
+            raise ValueError("Docker Grok intake bytes drifted from the canonical package")
+        try:
+            canonical_text = bound_bytes.decode("utf-8")
+        except UnicodeError as exc:
+            raise ValueError("canonical Docker Grok intake must be UTF-8") from exc
+        normalized_text = canonical_text.replace("\r\n", "\n").replace("\r", "\n")
+        lane["_canonical_intake"] = normalized_text
+        canonical_intakes.append(normalized_text)
+
+    # A single-package caller is expected to present the same input and is
+    # rejected before any provider process if it drifts.  Multi-package
+    # batches have no single caller-shaped intake; every lane consumes only
+    # its own sealed input above.
+    if len(canonical_intakes) == 1 and content_md != canonical_intakes[0]:
+        raise ValueError("Docker Grok caller content drifted from hash-bound package input")
+    return (
+        canonical_intakes[0]
+        if len(canonical_intakes) == 1
+        else "\n".join(
+            f"package_input_sha256={lane['input_sha256']}"
+            for lane in lanes
+        )
+    )
 
 
 def _reject_canonical_caller_drift(
@@ -762,6 +837,8 @@ def _reject_canonical_caller_drift(
         "logical_consumer_id",
         "logical_effect_contract",
         "physical_consumer_id",
+        "input_digest_profile",
+        "input_text_profile",
         "rules_ref",
         "allowed_output_root",
         "planning",
@@ -981,6 +1058,7 @@ def _operation_id(
     min_result_chars: int = 1,
     required_result_markers: tuple[str, ...] = (),
     route_choice_sha256: str = "",
+    dispatch_task_run_id: str = "",
 ) -> str:
     identity = {
         "lane_id": lane_id,
@@ -1021,6 +1099,7 @@ def _operation_id(
             work_key=work_key,
             package_manifest_sha256=package_manifest_sha256,
             route_choice_sha256=route_choice_sha256,
+            dispatch_task_run_id=dispatch_task_run_id,
             package_attempt_identity_version="xinao.grok_package_attempt.v1",
         )
     raw = _json_bytes(identity)
@@ -1931,6 +2010,9 @@ async def _execute_lane_locked(
             if canonical_package_mode and isinstance(route_choice, dict)
             else ""
         ),
+        dispatch_task_run_id=(
+            str(lane.get("dispatch_task_run_id") or "") if canonical_package_mode else ""
+        ),
     )
     common_output_contract_sha256 = _sha256(
         _json_bytes(
@@ -2064,16 +2146,23 @@ async def _execute_lane_locked(
                 "package_manifest_sha256": package_manifest_sha256,
                 "dispatch_envelope_ref": str(lane.get("dispatch_envelope_ref") or ""),
                 "dispatch_envelope_sha256": str(lane.get("dispatch_envelope_sha256") or ""),
+                "dispatch_task_run_dir": str(lane.get("dispatch_task_run_dir") or ""),
+                "dispatch_task_run_id": str(lane.get("dispatch_task_run_id") or ""),
                 "package_seal_sha256": str(lane.get("package_seal_sha256") or ""),
             }
         )
     operation_spec_sha256 = _sha256(_json_bytes(operation_spec))
-    if (
-        _write_json_atomic(logical_contract_path, logical_contract)
-        != logical_contract_artifact_sha256
-    ):
+    if _write_json_create_once(
+        logical_contract_path,
+        logical_contract,
+        artifact_name="cross-seam logical contract",
+    ) != logical_contract_artifact_sha256:
         raise RuntimeError("cross-seam logical contract artifact hash drifted")
-    if _write_json_atomic(operation_spec_path, operation_spec) != operation_spec_sha256:
+    if _write_json_create_once(
+        operation_spec_path,
+        operation_spec,
+        artifact_name="Docker Grok operation-spec",
+    ) != operation_spec_sha256:
         raise RuntimeError("Docker Grok operation-spec artifact hash drifted")
     cached = _cached_lane(
         operation_manifest,
@@ -2710,6 +2799,10 @@ async def run_docker_native_grok_fanin(
             dispatch_task_run_id=dispatch_task_run_id,
             ready_frontier=ready_frontier,
         )
+        content_md = _bind_canonical_package_intake(
+            lanes,
+            content_md=content_md,
+        )
     else:
         raw_lanes = ready_frontier if isinstance(ready_frontier, list) else []
         lanes = [dict(item) for item in raw_lanes if isinstance(item, dict)]
@@ -2817,7 +2910,11 @@ async def run_docker_native_grok_fanin(
                 root=root,
                 workflow_id=workflow_id,
                 lane=lane,
-                intake=content_md,
+                intake=(
+                    str(lane.get("_canonical_intake") or "")
+                    if canonical_package_mode
+                    else content_md
+                ),
             )
         except DockerGrokTransientError:
             raise
@@ -2948,18 +3045,16 @@ async def run_docker_native_grok_fanin(
                 "successful Grok lane failed common receipt validation: "
                 + ",".join(verdict.reason_codes)
             )
-        receipt_binding = {
-            "lane_id": str(item.get("lane_id") or ""),
-            "contract_sha256": logical_contract_sha256(logical_contract),
-            "attempt_receipt_sha256": str(item.get("cross_seam_attempt_receipt_sha256") or ""),
-        }
-        if canonical_package_mode:
-            receipt_binding.update(
-                {
-                    "work_key": str(item.get("work_key") or ""),
-                    "package_manifest_sha256": str(item.get("package_manifest_sha256") or ""),
-                }
-            )
+        receipt_binding = build_common_receipt_binding(
+            logical_contract,
+            lane_id=str(item.get("lane_id") or ""),
+            attempt_receipt_sha256=str(item.get("cross_seam_attempt_receipt_sha256") or ""),
+            attempt_receipt=attempt_receipt,
+            work_key=str(item.get("work_key") or "") if canonical_package_mode else "",
+            package_manifest_sha256=(
+                str(item.get("package_manifest_sha256") or "") if canonical_package_mode else ""
+            ),
+        )
         common_receipt_bindings.append(receipt_binding)
     common_receipt_set_sha256 = _sha256(canonical_json_bytes(common_receipt_bindings))
     observed_backend_models = sorted(
@@ -3000,6 +3095,22 @@ async def run_docker_native_grok_fanin(
     token_accounting["accepted_total"] = token_accounting["accepted_tokens"]
     token_accounting["cancelled_total"] = token_accounting["cancelled_tokens"]
     token_accounting["failed_total"] = token_accounting["failed_tokens"]
+    current_lane_accounting = [
+        item["invocation_accounting"]
+        for item in results
+        if item.get("replayed") is not True
+        and isinstance(item.get("invocation_accounting"), dict)
+    ]
+    current_dispatch_usage_delta = {
+        key: sum(int(item.get(key) or 0) for item in current_lane_accounting)
+        for key in (
+            "invocation_count",
+            "total_tokens",
+            "accepted_tokens",
+            "cancelled_tokens",
+            "failed_tokens",
+        )
+    }
     manifest = {
         "schema_version": FANIN_SCHEMA_VERSION,
         "execution_contract_version": EXECUTION_CONTRACT_VERSION,
@@ -3035,6 +3146,7 @@ async def run_docker_native_grok_fanin(
         "execution_location": "docker:houtai-gongren",
         "container_id": socket.gethostname(),
         "token_accounting": token_accounting,
+        "current_dispatch_usage_delta": current_dispatch_usage_delta,
         "completion_claim_allowed": False,
         "supervisor_worker_decision_sha256": decision_sha256,
     }
@@ -3048,6 +3160,7 @@ async def run_docker_native_grok_fanin(
                 "package_manifest_sha256": package_sha256,
                 "dispatch_envelope_ref": package_binding["dispatch_envelope_ref"]["path"],
                 "dispatch_envelope_sha256": package_binding["dispatch_envelope_sha256"],
+                "dispatch_task_run_id": package_binding["dispatch_task_run_id"],
                 "route_choice": package_binding["route_choice"],
                 "route_adapter": package_binding["route_adapter"],
             }
@@ -3075,6 +3188,7 @@ async def run_docker_native_grok_fanin(
         "succeeded": len(successful),
         "failed": len(results) - len(successful),
         "token_accounting": token_accounting,
+        "current_dispatch_usage_delta": current_dispatch_usage_delta,
         "cross_seam_contract_version": LOGICAL_CONTRACT_VERSION,
         "cross_seam_attempt_receipt_version": ATTEMPT_RECEIPT_VERSION,
         "cross_seam_receipt_set_sha256": common_receipt_set_sha256,
@@ -3099,8 +3213,11 @@ async def run_docker_native_grok_fanin(
     total_tokens = int(token_accounting["total_tokens"])
     return {
         "grok_fanin_ok": full_success,
+        "grok_canonical_dispatch": canonical_package_mode,
         "grok_fanin_manifest_ref": str(manifest_path),
+        "grok_fanin_manifest_sha256": manifest_sha256,
         "grok_fanin_evidence_ref": str(manifest_path),
+        "grok_fanin_evidence_sha256": manifest_sha256,
         "grok_fanin_lane_count": len(results),
         "grok_fanin_lane_modes": [str(item.get("mode") or "") for item in results],
         "grok_fanin_model_identity_ok": manifest["model_identity_ok"],
@@ -3117,6 +3234,7 @@ async def run_docker_native_grok_fanin(
         "grok_failed_tokens": int(token_accounting["failed_tokens"]),
         "grok_invocation_count": int(token_accounting["invocation_count"]),
         "grok_token_accounting": token_accounting,
+        "grok_current_dispatch_usage_delta": current_dispatch_usage_delta,
         "grok_execution_location": "docker:houtai-gongren",
         "grok_container_id": socket.gethostname(),
         "supervisor_worker_decision_sha256": decision_sha256,

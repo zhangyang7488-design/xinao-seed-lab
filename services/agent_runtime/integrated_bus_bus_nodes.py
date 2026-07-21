@@ -293,9 +293,26 @@ class BusInstructorExtractModel(BaseModel):
 def _write_invoke_evidence(runtime_root: Path, subdir: str, record: dict[str, Any]) -> str:
     out_dir = resolve_runtime_root(runtime_root) / "state" / subdir
     out_dir.mkdir(parents=True, exist_ok=True)
-    path = out_dir / "latest.json"
-    write_json(path, record)
-    return str(path)
+    workflow_id, temporal_run_id = _temporal_evidence_lineage(
+        str(record.get("workflow_id") or "")
+    )
+    records_dir = out_dir / "records"
+    record_path, evidence_id = _unique_lineage_evidence_path(
+        records_dir,
+        prefix="invoke",
+        workflow_id=workflow_id,
+        temporal_run_id=temporal_run_id,
+    )
+    payload = {
+        **record,
+        "workflow_id": workflow_id,
+        "temporal_run_id": temporal_run_id,
+        "evidence_id": evidence_id,
+        "recorded_at": datetime.now(timezone.utc).astimezone().isoformat(),
+    }
+    _write_fanin_json_atomic(record_path, payload)
+    _write_fanin_json_atomic(out_dir / "latest.json", payload)
+    return str(record_path)
 
 
 def _safe_evidence_component(value: str, *, fallback: str) -> str:
