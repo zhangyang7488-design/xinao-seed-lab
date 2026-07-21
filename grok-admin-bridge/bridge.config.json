@@ -19,6 +19,9 @@
       "transport_id": "direct-grok-worker-pool",
       "route_role": "normal_bounded_online_current_tui",
       "typical_when": "current_interactive_owner_is_online_and_work_is_bounded",
+      "admitted_peer_transports": [
+        "direct-openai-compatible-relay"
+      ],
       "durable_after_owner_exit": false
     },
     "leg_b": {
@@ -41,6 +44,7 @@
     "selection": "dynamic_positive_net_benefit",
     "available_workers": [
       "grok",
+      "openai_relay",
       "codex_agents",
       "combined"
     ],
