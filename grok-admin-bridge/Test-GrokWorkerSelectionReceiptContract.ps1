@@ -55,9 +55,20 @@ function Write-JsonFile([string]$Path, [object]$Value) {
 }
 
 function Invoke-FreshPowerShell([string[]]$Arguments) {
-    $output = @(& $pwsh -NoLogo -NoProfile @Arguments 2>&1 | ForEach-Object { [string]$_ })
+    $previousErrorActionPreference = $ErrorActionPreference
+    try {
+        # Negative fresh-process probes are expected below. Capture their
+        # typed stderr and exit code instead of letting PowerShell 5.1 turn
+        # native stderr into a terminating ErrorRecord.
+        $ErrorActionPreference = "Continue"
+        $output = @(& $pwsh -NoLogo -NoProfile @Arguments 2>&1 | ForEach-Object { [string]$_ })
+        $exitCode = $LASTEXITCODE
+    }
+    finally {
+        $ErrorActionPreference = $previousErrorActionPreference
+    }
     return [pscustomobject]@{
-        exit_code = $LASTEXITCODE
+        exit_code = $exitCode
         output = ($output -join "`n")
     }
 }
@@ -229,16 +240,26 @@ exit 0
     Assert-True ([string]$poisonProbe.imported_module_source -notmatch 'pythonpath-poison') "pythonpath_poison_source_not_loaded"
 
     $driftOutput = Join-Path $root "source-drift-selection.json"
-    $driftResult = @(
-        & $dSupervisorPython -I -B $resolver `
-            --supervisor-root $dSupervisorRoot `
-            --runtime-root "D:\XINAO_RESEARCH_RUNTIME" `
-            --model "grok-4.5" `
-            --output $driftOutput `
-            --expected-selector-sha256 ("0" * 64) 2>&1 |
-            ForEach-Object { [string]$_ }
-    )
-    $driftExit = $LASTEXITCODE
+    $previousErrorActionPreference = $ErrorActionPreference
+    try {
+        # This invocation is an intentional negative probe. PowerShell 5.1
+        # promotes native stderr to an ErrorRecord when Stop is active, which
+        # would terminate the contract before its typed failure can be checked.
+        $ErrorActionPreference = "Continue"
+        $driftResult = @(
+            & $dSupervisorPython -I -B $resolver `
+                --supervisor-root $dSupervisorRoot `
+                --runtime-root "D:\XINAO_RESEARCH_RUNTIME" `
+                --model "grok-4.5" `
+                --output $driftOutput `
+                --expected-selector-sha256 ("0" * 64) 2>&1 |
+                ForEach-Object { [string]$_ }
+        )
+        $driftExit = $LASTEXITCODE
+    }
+    finally {
+        $ErrorActionPreference = $previousErrorActionPreference
+    }
     Assert-True ($driftExit -ne 0) "selector_source_drift_rejected"
     Assert-True (($driftResult -join "`n") -match "SUPERVISOR_SELECTOR_SOURCE_CHANGED") "selector_source_drift_typed_reason"
     Assert-True (-not (Test-Path -LiteralPath $driftOutput)) "selector_source_drift_fails_before_receipt"
@@ -599,3 +620,4 @@ finally {
     }
     if (Test-Path -LiteralPath $root) { Remove-Item -LiteralPath $root -Force -Recurse }
 }
+exit 0

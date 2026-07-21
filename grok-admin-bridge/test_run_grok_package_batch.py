@@ -508,6 +508,12 @@ def test_nonzero_provider_exit_with_valid_common_receipt_is_terminal_recordable(
     assert provider_output.name == "provider-output"
     assert provider_output.read_bytes() == final_text.encode("utf-8")
     assert result["provider_output_ref"]["sha256"] == final_sha
+    event_shas = {ref["sha256"] for ref in result["event_artifact_refs"]}
+    assert result["provider_output_ref"]["sha256"] in event_shas
+    assert result["common_attempt_sha256"] not in event_shas
+    assert result["common_contract_sha256"] not in event_shas
+    assert result["common_adapter_receipt_sha256"] not in event_shas
+    assert result["pool_summary_sha256"] not in event_shas
     package_result = json.loads(
         Path(result["package_result_ref"]).read_text(encoding="utf-8")
     )
@@ -1109,6 +1115,105 @@ def test_rejected_terminal_is_appended_with_retry_specific_identity(
     assert (
         "provider rejected package pkg-1" in observed[observed.index("--summary") + 1]
     )
+
+
+def test_non_conversion_is_hash_bound_to_native_pool_usage(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    observed: list[str] = []
+    pool_summary = tmp_path / "pool-summary.json"
+    pool_summary.write_text(
+        '{"pool_id":"gwp-1","results":[{"status":"accepted","usage":{"total_tokens":17}}]}\n',
+        encoding="utf-8",
+    )
+    pool_sha = subject._sha(pool_summary)
+
+    def fake_run(command: list[str], **_: object) -> subprocess.CompletedProcess[str]:
+        observed.extend(command)
+        return subprocess.CompletedProcess(command, 0, "", "")
+
+    monkeypatch.setattr(subject.subprocess, "run", fake_run)
+    recorded = subject._append_task_run_non_conversion(
+        task_run_cli=tmp_path / "task_run.py",
+        task_run_root=tmp_path / "runs",
+        task_run_id="run-1",
+        result={
+            "package_id": "pkg-1",
+            "work_key": "wk-1",
+            "pool_summary_ref": str(pool_summary),
+            "failure": "fan-in rejected control evidence",
+            "exit_code": 0,
+        },
+    )
+
+    assert recorded is True
+    assert observed[observed.index("--kind") + 1] == "failure"
+    assert observed[observed.index("--phase") + 1] == "dispatch_attempt_non_conversion"
+    assert observed[observed.index("--exit-code") + 1] == "20"
+    assert observed[observed.index("--evidence-ref") + 1] == (
+        f"{pool_summary.resolve()}#sha256={pool_sha}"
+    )
+    assert observed[observed.index("--side-effect-id") + 1].endswith(pool_sha[:32])
+
+
+def test_non_conversion_does_not_claim_recorded_without_pool_summary(tmp_path: Path) -> None:
+    assert (
+        subject._append_task_run_non_conversion(
+            task_run_cli=tmp_path / "task_run.py",
+            task_run_root=tmp_path / "runs",
+            task_run_id="run-1",
+            result={"package_id": "pkg-1", "work_key": "wk-1"},
+        )
+        is False
+    )
+
+
+def test_non_conversion_rehashes_and_rejects_drifted_pool_summary(tmp_path: Path) -> None:
+    pool_summary = tmp_path / "pool-summary.json"
+    pool_summary.write_text('{"pool_id":"gwp-1","results":[]}\n', encoding="utf-8")
+    with pytest.raises(RuntimeError, match="pool summary sha256 drifted"):
+        subject._append_task_run_non_conversion(
+            task_run_cli=tmp_path / "task_run.py",
+            task_run_root=tmp_path / "runs",
+            task_run_id="run-1",
+            result={
+                "package_id": "pkg-1",
+                "work_key": "wk-1",
+                "pool_summary_ref": str(pool_summary),
+                "pool_summary_sha256": "0" * 64,
+            },
+        )
+
+
+def test_non_conversion_preserves_timeout_as_transient(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    observed: list[str] = []
+    pool_summary = tmp_path / "pool-summary.json"
+    pool_summary.write_text(
+        '{"pool_id":"gwp-1","results":[{"status":"timeout","usage":{"total_tokens":3}}]}\n',
+        encoding="utf-8",
+    )
+
+    def fake_run(command: list[str], **_: object) -> subprocess.CompletedProcess[str]:
+        observed.extend(command)
+        return subprocess.CompletedProcess(command, 0, "", "")
+
+    monkeypatch.setattr(subject.subprocess, "run", fake_run)
+    assert subject._append_task_run_non_conversion(
+        task_run_cli=tmp_path / "task_run.py",
+        task_run_root=tmp_path / "runs",
+        task_run_id="run-1",
+        result={
+            "package_id": "pkg-1",
+            "work_key": "wk-1",
+            "pool_summary_ref": str(pool_summary),
+            "failure": "worker timeout after provider start",
+            "exit_code": 124,
+            "timed_out": True,
+        },
+    )
+    assert observed[observed.index("--retry-class") + 1] == "transient"
 
 
 def test_dispatch_envelope_is_primary_powershell_parameter() -> None:

@@ -1,4 +1,4 @@
-#Requires -Version 5.1
+﻿#Requires -Version 5.1
 <#
 .SYNOPSIS
   Fail-closed repository contract test for the thin Grok endpoint/config surface.
@@ -107,7 +107,7 @@ foreach ($relative in $forbiddenPaths) {
 Assert-Contract (@(Get-ChildItem -LiteralPath (Join-Path $repoRoot "grok-admin-bridge") -Filter "Invoke-Handoff-*.ps1" -File -ErrorAction SilentlyContinue).Count -eq 0) "handoff_scripts_absent"
 Assert-Contract (@(Get-ChildItem -LiteralPath (Join-Path $repoRoot "grok-admin-bridge") -Filter "run_grok_*worker.py" -File -ErrorAction SilentlyContinue).Count -eq 0) "retired_audit_worker_scripts_absent"
 
-$checkpointText = Get-Content -LiteralPath (Join-Path $repoRoot "grok-admin-bridge/Invoke-GrokSessionContextCheckpoint.ps1") -Raw
+$checkpointText = Get-Content -LiteralPath (Join-Path $repoRoot "grok-admin-bridge/Invoke-GrokSessionContextCheckpoint.ps1") -Raw -Encoding UTF8
 Assert-Contract ($checkpointText -notmatch "SubagentPool|refill_required|Invoke-GrokWorkerPool|Start-Process|while\s*\(") "checkpoint_has_no_control_plane"
 Assert-Contract ($checkpointText -match 'dispatch = \$false') "checkpoint_declares_no_dispatch"
 Assert-Contract ($checkpointText -match 'visible_terminal = \$false') "checkpoint_declares_no_visible_terminal"
@@ -116,8 +116,8 @@ Assert-Contract ($checkpointText -match 'route_selection = "selected_by_task_fit
 Assert-Contract ($checkpointText -match 'route_continuity = "continuous_or_resume_does_not_switch_leg"') "checkpoint_resume_preserves_leg"
 Assert-Contract ($checkpointText -notmatch 'default_model_worker') "checkpoint_no_fixed_default_worker"
 
-$governanceSkillText = Get-Content -LiteralPath (Join-Path $repoRoot ".grok/skills/mature-first-governance/SKILL.md") -Raw
-$governanceGateText = Get-Content -LiteralPath (Join-Path $repoRoot "grok-admin-bridge/Invoke-GrokMatureFirstGovernanceGate.ps1") -Raw
+$governanceSkillText = Get-Content -LiteralPath (Join-Path $repoRoot ".grok/skills/mature-first-governance/SKILL.md") -Raw -Encoding UTF8
+$governanceGateText = Get-Content -LiteralPath (Join-Path $repoRoot "grok-admin-bridge/Invoke-GrokMatureFirstGovernanceGate.ps1") -Raw -Encoding UTF8
 Assert-Contract ($governanceSkillText -notmatch 'Use on EVERY|治理环（必须按序）|Desktop\\Grok_Admin_Isolated') "governance_not_universal_template"
 Assert-Contract ($governanceSkillText -match '本地事实盘点、状态读取、已确定路线内的普通可回滚动作') "governance_local_direct_path"
 Assert-Contract ($governanceGateText -match 'Class -eq "research_external"') "governance_external_is_conditional"
@@ -132,13 +132,13 @@ $adaptiveRuleText = @(
     ".grok/rules/36-grok-live-field-intent-decode.md",
     ".grok/rules-on-demand/warm/27-grok-p0-autonomous-background-base.md",
     ".grok/rules-on-demand/warm/28-grok-mature-first-governance-loop.md"
-) | ForEach-Object { Get-Content -LiteralPath (Join-Path $repoRoot $_) -Raw } | Out-String
+) | ForEach-Object { Get-Content -LiteralPath (Join-Path $repoRoot $_) -Raw -Encoding UTF8 } | Out-String
 Assert-Contract ($adaptiveRuleText -notmatch 'Grok 是唯一默认模型工人|Grok heavy / 4[.]5.+唯一默认模型工人|非 Grok 模型.+默认冻结|只有用户显式点名才可调用|任何事务默认走治理环|0–4.+落盘后方可|未规划就改 ps1/compose|先短外搜成熟') "active_rules_no_rigid_worker_or_external_template"
 Assert-Contract ($adaptiveRuleText -match '局部.+continuous.+主线全局') "active_rules_preserve_continuous_parent"
 Assert-Contract ($adaptiveRuleText -match 'route receipt.+continuous/resume.+不自行切腿') "active_rules_preserve_route_receipt_leg"
 Assert-Contract ($adaptiveRuleText -notmatch 'WorkerPool fallback') "active_rules_do_not_demote_leg_a_to_fallback"
 
-$overlayText = Get-Content -LiteralPath (Join-Path $repoRoot ".grok/config.toml") -Raw
+$overlayText = Get-Content -LiteralPath (Join-Path $repoRoot ".grok/config.toml") -Raw -Encoding UTF8
 Assert-Contract ($overlayText -notmatch 'profile\s*=\s*"off"') "sandbox_off_override_absent"
 Assert-Contract ($overlayText -notmatch 'auto_allow_bash\s*=\s*true') "auto_allow_bash_absent"
 Assert-Contract ($overlayText -notmatch '\[toolset[.]bash\]') "bash_toolset_override_absent"
@@ -171,32 +171,35 @@ Assert-Contract ([string]$poolContract.activation -notmatch "fallback") "pool_co
 Assert-Contract ([string]$poolContract.execution_contract_version -eq "xinao.grok.shared_execution_contract.v1") "pool_execution_contract"
 Assert-Contract (@($poolContract.common_contract_features) -contains "validated_bounded_context_slice_manifest_for_first_time_tasks") "pool_validated_context_slice_feature"
 
-$workerText = Get-Content -LiteralPath (Join-Path $repoRoot "grok-admin-bridge/Invoke-GrokComposer25Worker.ps1") -Raw
-$poolText = Get-Content -LiteralPath (Join-Path $repoRoot "grok-admin-bridge/Invoke-GrokWorkerPool.ps1") -Raw
-$dispatchText = Get-Content -LiteralPath (Join-Path $repoRoot "grok-admin-bridge/Invoke-CodexDispatchGrokWorkerPool.ps1") -Raw
-$hostTriggerText = Get-Content -LiteralPath (Join-Path $repoRoot "grok-admin-bridge/Invoke-GrokHostWorkerPoolFromTemporal.ps1") -Raw
-$hostAliasText = Get-Content -LiteralPath (Join-Path $repoRoot "grok-admin-bridge/Invoke-GrokTemporalHostPoolTrigger.ps1") -Raw
-$effectiveValidatorText = Get-Content -LiteralPath (Join-Path $repoRoot "grok-admin-bridge/Test-GrokCliEffectiveOutput.ps1") -Raw
-$processRuntimeText = Get-Content -LiteralPath (Join-Path $repoRoot "grok-admin-bridge/GrokWorkerProcessRuntime.ps1") -Raw
-$catalogTimeText = Get-Content -LiteralPath (Join-Path $repoRoot "grok-admin-bridge/GrokAuthenticatedCatalogTime.ps1") -Raw
-$selectionReceiptText = Get-Content -LiteralPath (Join-Path $repoRoot "grok-admin-bridge/GrokWorkerSelectionReceipt.ps1") -Raw
-$selectionResolverText = Get-Content -LiteralPath (Join-Path $repoRoot "grok-admin-bridge/resolve_grok_worker_selection_receipt.py") -Raw
-$pathIdentityText = Get-Content -LiteralPath (Join-Path $repoRoot "grok-admin-bridge/GrokWindowsPathIdentity.ps1") -Raw
-$poolAccountingText = Get-Content -LiteralPath (Join-Path $repoRoot "grok-admin-bridge/GrokWorkerPoolAccounting.ps1") -Raw
-$packageRunnerText = Get-Content -LiteralPath (Join-Path $repoRoot "grok-admin-bridge/run_grok_package_batch.py") -Raw
-$packageEntryText = Get-Content -LiteralPath (Join-Path $repoRoot "grok-admin-bridge/Invoke-CodexGrokPackageBatch.ps1") -Raw
-$packageLauncherSourceText = Get-Content -LiteralPath (Join-Path $repoRoot "launchers/Invoke-Codex-GrokWorkerPool.ps1") -Raw
+$workerText = Get-Content -LiteralPath (Join-Path $repoRoot "grok-admin-bridge/Invoke-GrokComposer25Worker.ps1") -Raw -Encoding UTF8
+$poolText = Get-Content -LiteralPath (Join-Path $repoRoot "grok-admin-bridge/Invoke-GrokWorkerPool.ps1") -Raw -Encoding UTF8
+$dispatchText = Get-Content -LiteralPath (Join-Path $repoRoot "grok-admin-bridge/Invoke-CodexDispatchGrokWorkerPool.ps1") -Raw -Encoding UTF8
+$hostTriggerText = Get-Content -LiteralPath (Join-Path $repoRoot "grok-admin-bridge/Invoke-GrokHostWorkerPoolFromTemporal.ps1") -Raw -Encoding UTF8
+$hostAliasText = Get-Content -LiteralPath (Join-Path $repoRoot "grok-admin-bridge/Invoke-GrokTemporalHostPoolTrigger.ps1") -Raw -Encoding UTF8
+$effectiveValidatorText = Get-Content -LiteralPath (Join-Path $repoRoot "grok-admin-bridge/Test-GrokCliEffectiveOutput.ps1") -Raw -Encoding UTF8
+$processRuntimeText = Get-Content -LiteralPath (Join-Path $repoRoot "grok-admin-bridge/GrokWorkerProcessRuntime.ps1") -Raw -Encoding UTF8
+$catalogTimeText = Get-Content -LiteralPath (Join-Path $repoRoot "grok-admin-bridge/GrokAuthenticatedCatalogTime.ps1") -Raw -Encoding UTF8
+$selectionReceiptText = Get-Content -LiteralPath (Join-Path $repoRoot "grok-admin-bridge/GrokWorkerSelectionReceipt.ps1") -Raw -Encoding UTF8
+$selectionResolverText = Get-Content -LiteralPath (Join-Path $repoRoot "grok-admin-bridge/resolve_grok_worker_selection_receipt.py") -Raw -Encoding UTF8
+$pathIdentityText = Get-Content -LiteralPath (Join-Path $repoRoot "grok-admin-bridge/GrokWindowsPathIdentity.ps1") -Raw -Encoding UTF8
+$poolAccountingText = Get-Content -LiteralPath (Join-Path $repoRoot "grok-admin-bridge/GrokWorkerPoolAccounting.ps1") -Raw -Encoding UTF8
+$packageRunnerText = Get-Content -LiteralPath (Join-Path $repoRoot "grok-admin-bridge/run_grok_package_batch.py") -Raw -Encoding UTF8
+$packageEntryText = Get-Content -LiteralPath (Join-Path $repoRoot "grok-admin-bridge/Invoke-CodexGrokPackageBatch.ps1") -Raw -Encoding UTF8
+$packageLauncherSourceText = Get-Content -LiteralPath (Join-Path $repoRoot "launchers/Invoke-Codex-GrokWorkerPool.ps1") -Raw -Encoding UTF8
+$installerText = Get-Content -LiteralPath (Join-Path $repoRoot "install/Install-CodexGrokDispatch.ps1") -Raw -Encoding UTF8
 $codexLauncherPath = "C:\Users\xx363\CodexLaunchers\Invoke-Codex-GrokWorkerPool.ps1"
 Assert-Contract (Test-Path -LiteralPath $codexLauncherPath -PathType Leaf) "codex_worker_pool_launcher_present"
-$codexLauncherText = Get-Content -LiteralPath $codexLauncherPath -Raw
-$readmeText = Get-Content -LiteralPath (Join-Path $repoRoot "README.md") -Raw
-$intentRuleText = Get-Content -LiteralPath (Join-Path $repoRoot ".grok/rules/36-grok-live-field-intent-decode.md") -Raw
+$codexLauncherText = Get-Content -LiteralPath $codexLauncherPath -Raw -Encoding UTF8
+$readmeText = Get-Content -LiteralPath (Join-Path $repoRoot "README.md") -Raw -Encoding UTF8
+$intentRuleText = Get-Content -LiteralPath (Join-Path $repoRoot ".grok/rules/36-grok-live-field-intent-decode.md") -Raw -Encoding UTF8
 Assert-Contract ($readmeText -notmatch 'Grok is the only default model worker') "readme_not_grok_only"
 Assert-Contract ($readmeText -match 'selected by positive net benefit') "readme_dynamic_worker_selection"
 Assert-Contract ($readmeText -match 'Leg A is not a fallback') "readme_leg_a_is_normal_transport"
 Assert-Contract ($readmeText -match 'continuous.+resume.+never switches legs') "readme_resume_preserves_leg"
 Assert-Contract ($intentRuleText -notmatch 'grok_live_field_intent_decode[.]v1[.]json') "intent_rule_has_no_missing_external_first_contract"
 Assert-Contract ($intentRuleText -match '状态/进度/对账/inventory.+本机现状') "intent_rule_local_state_first"
+Assert-Contract ($installerText -match 'xinao[.]codex_grok_dispatch_release_pointer[.]v1') "installer_publishes_hash_bound_current_pointer"
+Assert-Contract ($installerText -match 'install_receipt_sha256\s*=\s*\$receiptSha256') "installer_pointer_binds_receipt_hash"
 Assert-Contract ($workerText -notmatch '[.]grok-4[.]5-lane') "worker_has_no_stale_profile"
 Assert-Contract ($workerText -notmatch 'GROK_COMPOSER25_EXACT_MODEL_REQUIRED') "worker_has_no_static_composer_only_gate"
 Assert-Contract ($workerText -match '\$cliModelIds -notcontains \$Model') "worker_exact_profile_models_admission"
@@ -308,6 +311,19 @@ Assert-Contract ($poolText -match 'GROK_WORKER_POOL_COMMON_REQUIRES_SINGLE_LANE'
 Assert-Contract ($poolText -match 'GROK_WORKER_POOL_COMMON_CONTRACT_MISMATCH: \$Field') "pool_common_contract_preflight_fail_closed"
 Assert-Contract ($poolText -match 'GROK_WORKER_POOL_COMMON_CANDIDATE_WRITE_DOMAIN_MISMATCH') "pool_candidate_boundary_premodel_fail_closed"
 Assert-Contract ($poolText -match 'Assert-CommonEqual \$observedRulesFileSha256 \$CommonRulesSha256') "pool_rules_bytes_premodel_fail_closed"
+Assert-Contract ($poolText -match 'RulesFile\s*=\s*\$RulesFile') "pool_forwards_rules_file_to_provider_worker"
+Assert-Contract ($poolText -match 'RulesSha256\s*=\s*\$RulesSha256') "pool_forwards_rules_sha_to_provider_worker"
+Assert-Contract ($poolText -match 'AddArgument\(\$CommonRulesFile\)[.]AddArgument\(\$CommonRulesSha256\)') "pool_binds_common_rules_to_each_lane"
+Assert-Contract ($poolText -match '(?s)\$observedRulesSha256.+?\$CommonRulesSha256') "pool_compares_observed_rules_to_contract"
+Assert-Contract ($poolText -match 'GROK_WORKER_POOL_OBSERVED_RULES_MISMATCH') "pool_rejects_observed_rules_mismatch"
+Assert-Contract ($poolText -match '(?s)rules_identity_ok.+?effective_output_accepted') "pool_acceptance_requires_rules_identity"
+Assert-Contract ($workerText -match '\[string\]\$RulesFile') "worker_accepts_hash_bound_rules_file"
+Assert-Contract ($workerText -match 'GROK_WORKER_RULES_SHA256_MISMATCH') "worker_rehashes_rules_before_model"
+Assert-Contract ($workerText -match 'ReadAllBytes\(\$shortExecutionContractSource\)') "worker_hashes_and_decodes_one_rules_snapshot"
+Assert-Contract ($workerText -notmatch 'Get-Content -LiteralPath \$shortExecutionContractSource -Raw -Encoding UTF8') "worker_has_no_rules_hash_read_toctou"
+Assert-Contract ($workerText -match 'observed_rules_sha256\s*=\s*\$observedRulesSha256') "worker_reports_physical_rules_identity"
+Assert-Contract ($workerText -match 'rules_file\s*=\s*\$resolvedBackgroundRulesPath') "background_invocation_carries_rules_snapshot"
+Assert-Contract ($workerText -match '\$RulesFile\s*=\s*\[string\]\$backgroundInvocation[.]rules_file') "background_child_restores_rules_binding"
 Assert-Contract ($poolText -match 'Assert-CommonEqual \(\[string\]\$commonContract[.]effect_mode\) \$expectedEffectMode') "pool_effect_mode_is_honest"
 Assert-Contract ($poolText -notmatch '\$rulesPath\s*=\s*"C:\\Users\\xx363\\Desktop') "pool_has_no_hardcoded_rules_identity"
 Assert-Contract ($poolText -match 'observed_capability_binding_sha256') "pool_records_observed_capability_binding"
@@ -443,7 +459,7 @@ if ($isGrok45) {
     $aliases = Read-Json "grok-admin-bridge/grok_shell_capability_aliases.v1.json"
     Assert-Contract (@($aliases.tool_ids) -contains "run_terminal_cmd") "terminal_alias_cmd"
     Assert-Contract (@($aliases.tool_ids) -contains "run_terminal_command") "terminal_alias_command"
-    $weldText = Get-Content -LiteralPath (Join-Path $repoRoot "grok-admin-bridge/Invoke-GrokAcpSchedulerHiddenStdioWeld.ps1") -Raw
+    $weldText = Get-Content -LiteralPath (Join-Path $repoRoot "grok-admin-bridge/Invoke-GrokAcpSchedulerHiddenStdioWeld.ps1") -Raw -Encoding UTF8
     Assert-Contract ($weldText -match 'scheduler_tick_default = \$false') "weld_scheduler_false"
     Assert-Contract ($weldText -match 'worker_pool_default = \$false') "weld_pool_false"
     Assert-Contract ($weldText -notmatch "WorkerPoolOrchestrator|SchedulerTick") "weld_has_no_retired_entry"
