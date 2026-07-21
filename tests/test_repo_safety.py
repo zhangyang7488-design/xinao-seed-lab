@@ -66,6 +66,8 @@ ALLOWED_AGENT_RUNTIME_MODULES = {
     "openhands_execution_activity.py",
     "openhands_execution_contract.py",
     "openhands_execution_worker.py",
+    "platform_capacity_maintenance.py",
+    "platform_control_worker.py",
     "pro_review_after_draft.py",
     "provider_routing_preference.py",
     "quota_dispatch_epoch.py",

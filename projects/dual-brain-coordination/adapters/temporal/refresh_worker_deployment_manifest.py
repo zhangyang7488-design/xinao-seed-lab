@@ -15,8 +15,15 @@ SOURCE_FILES = (
     "src/xinao_coordination/temporal/workflow.py",
     "src/xinao_coordination/temporal/activities.py",
     "src/xinao_coordination/temporal/grok_parallel.py",
+    "src/xinao_coordination/agent_controller.py",
+    "src/xinao_coordination/agent_launcher.py",
+    "src/xinao_coordination/agent_worker.py",
+    "src/xinao_coordination/agent_operations.py",
+    "src/xinao_coordination/database.py",
+    "src/xinao_coordination/errors.py",
     "adapters/temporal/worker_runtime.py",
     "adapters/temporal/names.py",
+    "provisioning/acpx-toolchain-lock.json",
 )
 
 

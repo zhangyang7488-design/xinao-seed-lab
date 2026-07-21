@@ -22,6 +22,7 @@ from .errors import CoordinationError, InvalidTransitionError, LeaseError
 ACPX_CURRENT = Path(r"D:\XINAO_RESEARCH_RUNTIME\tools\acpx\current.json")
 ACPX_STATE = Path(r"D:\XINAO_RESEARCH_RUNTIME\state\acpx-runtime-grok")
 DEFAULT_GROK_HOME = Path(r"C:\Users\xx363\.grok-bg-workers")
+DEFAULT_GROK_MODEL = "grok-4.5"
 
 
 def process_start_time_ms(process_handle: int | None = None) -> int:
@@ -155,6 +156,49 @@ def file_evidence(path: Path) -> dict[str, object]:
     }
 
 
+def normalize_session_identity(value: dict[str, object]) -> dict[str, str]:
+    normalized = {key: str(value.get(key) or "") for key in ("acpxRecordId", "backendSessionId")}
+    agent_session_id = str(value.get("agentSessionId") or "")
+    if agent_session_id:
+        normalized["agentSessionId"] = agent_session_id
+    return normalized
+
+
+def validate_session_model_evidence(
+    *,
+    outcome_state: str,
+    spec_model: str,
+    evidence: dict[str, object],
+    resolved_session: dict[str, str] | None,
+    terminal_resolved_session: dict[str, str],
+    final_session: dict[str, str],
+) -> bool:
+    available = evidence.get("availableModelIds")
+    if not isinstance(available, list):
+        available = []
+    requested = str(evidence.get("requestedModel") or "")
+    current = str(evidence.get("currentModelId") or "")
+    evidence_session = normalize_session_identity(evidence)
+    normalized_resolved = (
+        normalize_session_identity(resolved_session) if resolved_session is not None else None
+    )
+    normalized_terminal = normalize_session_identity(terminal_resolved_session)
+    normalized_final = normalize_session_identity(final_session)
+    return bool(
+        outcome_state == "completed"
+        and evidence.get("source") == "acpx_runtime_status_after_turn"
+        and requested == spec_model
+        and current == requested
+        and current in set(map(str, available))
+        and all(normalized_final[field] for field in ("acpxRecordId", "backendSessionId"))
+        and normalized_resolved is not None
+        and all(normalized_resolved[field] for field in ("acpxRecordId", "backendSessionId"))
+        and evidence_session == normalized_final
+        and normalized_terminal == normalized_resolved
+        and normalized_resolved == normalized_final
+    )
+
+
 def read_acpx_runtime() -> dict[str, Path]:
     current = json.loads(ACPX_CURRENT.read_text(encoding="utf-8"))
     generation = Path(current["generation_path"]).resolve()
@@ -285,11 +329,13 @@ def run(
         non_interactive_permissions = "fail"
     remaining_ms = max(1_000, int(operation["deadline_at_ms"]) - store.now_ms())
     timeout_ms = min(remaining_ms, int(metadata.get("turn_timeout_ms", remaining_ms)))
+    task_prompt = str(operation["prompt"])
+    task_prompt_sha256 = hashlib.sha256(task_prompt.encode("utf-8")).hexdigest()
     prompt = (
         "[Coordination metadata; this identifier is not additional authority.]\n"
         f"{operation['operation_token']}\n"
         "Task:\n"
-        f"{operation['prompt']}"
+        f"{task_prompt}"
     )
     spec: dict[str, object] = {
         "runtime_module": str(runtime["runtime_module"]),
@@ -298,10 +344,14 @@ def run(
         "session_key": operation["session_name"],
         "request_id": operation["request_id"],
         "prompt": prompt,
+        "task_prompt_sha256": task_prompt_sha256,
+        "full_prompt_sha256": hashlib.sha256(prompt.encode("utf-8")).hexdigest(),
+        "contract_id": str(metadata.get("contract_id") or ""),
+        "write": metadata.get("write") is True,
         "permission_mode": permission_mode,
         "non_interactive_permissions": non_interactive_permissions,
         "timeout_ms": timeout_ms,
-        "model": str(metadata.get("model", "grok-4.5")),
+        "model": str(metadata.get("model", DEFAULT_GROK_MODEL)),
         "agent_env": {
             "GROK_HOME": str(Path(os.environ.get("XINAO_GROK_HOME", DEFAULT_GROK_HOME)).resolve()),
             "XINAO_COORD_ROLE": "grok_4_5",
@@ -418,6 +468,7 @@ def run(
     reader = threading.Thread(target=read_lines, args=(process.stdout, lines), daemon=True)
     reader.start()
     terminal: dict[str, Any] | None = None
+    resolved_session: dict[str, str] | None = None
     turn_may_have_started = False
     cancel_sent_at: float | None = None
     last_heartbeat = time.monotonic()
@@ -445,6 +496,7 @@ def run(
                 except json.JSONDecodeError:
                     event = {"type": "invalid_json"}
                 if event.get("type") == "session_resolved":
+                    resolved_session = normalize_session_identity(event)
                     control_epoch = record_transport_fenced(
                         store,
                         operation_id,
@@ -589,7 +641,34 @@ def run(
         )
         outcome_state = outcome
 
-    evidence_files = [path for path in (event_path, stderr_path, final_path) if path.exists()]
+    requested_model = str(terminal.get("requestedModel") or "") if isinstance(terminal, dict) else ""
+    requested_model_matches_spec = requested_model == str(spec["model"])
+    observed_models = (
+        dict(terminal.get("observedModels"))
+        if isinstance(terminal, dict) and isinstance(terminal.get("observedModels"), dict)
+        else {}
+    )
+    session_model_evidence = (
+        dict(terminal.get("sessionModelEvidence"))
+        if isinstance(terminal, dict) and isinstance(terminal.get("sessionModelEvidence"), dict)
+        else {}
+    )
+    raw_terminal_resolved_session = (
+        terminal.get("resolvedSession")
+        if isinstance(terminal, dict) and isinstance(terminal.get("resolvedSession"), dict)
+        else {}
+    )
+    terminal_resolved_session = normalize_session_identity(raw_terminal_resolved_session)
+    final_session = normalize_session_identity(terminal or {})
+    session_model_evidence_valid = validate_session_model_evidence(
+        outcome_state=outcome_state,
+        spec_model=str(spec["model"]),
+        evidence=session_model_evidence,
+        resolved_session=resolved_session,
+        terminal_resolved_session=terminal_resolved_session,
+        final_session=final_session,
+    )
+    evidence_files = [path for path in (spec_path, event_path, stderr_path, final_path) if path.exists()]
     evidence = [file_evidence(path) for path in evidence_files]
     manifest = {
         "schema_version": 1,
@@ -599,6 +678,14 @@ def run(
         "collector_pid": os.getpid(),
         "collector_start_time_ms": collector_start_time_ms,
         "runner_exit_code": process.returncode,
+        "requested_model": requested_model,
+        "requested_model_matches_spec": requested_model_matches_spec,
+        "observed_models": observed_models,
+        "session_model_evidence": session_model_evidence,
+        "session_model_evidence_valid": session_model_evidence_valid,
+        "resolved_session": resolved_session or {},
+        "task_prompt_sha256": task_prompt_sha256,
+        "operation_spec_sha256": hashlib.sha256(spec_path.read_bytes()).hexdigest(),
         "files": evidence,
         "raw_chain_of_thought_stored": False,
     }
@@ -609,7 +696,13 @@ def run(
             operation_id,
             name=path.name,
             uri=str(path),
-            media_type=("application/x-ndjson" if path.suffix == ".ndjson" else "text/plain"),
+            media_type=(
+                "application/x-ndjson"
+                if path.suffix == ".ndjson"
+                else "application/json"
+                if path.suffix == ".json"
+                else "text/plain"
+            ),
             sha256=str(item["sha256"]),
             size_bytes=int(item["size_bytes"]),
             metadata={"attempt": attempt},

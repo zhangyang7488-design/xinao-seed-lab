@@ -7,10 +7,23 @@ from adapters.temporal.deployment_management import load_verified_deployment
 from adapters.temporal.refresh_worker_deployment_manifest import (
     DEFAULT_MANIFEST,
     PROJECT_ROOT,
+    SOURCE_FILES,
     refreshed_manifest,
 )
 
 CANONICAL_GROK_MANIFEST = DEFAULT_MANIFEST.with_name("canonical_grok_host_deployment.v1.json")
+
+
+def test_worker_deployment_manifest_seals_model_evidence_execution_closure() -> None:
+    assert {
+        "src/xinao_coordination/agent_controller.py",
+        "src/xinao_coordination/agent_launcher.py",
+        "src/xinao_coordination/agent_worker.py",
+        "src/xinao_coordination/agent_operations.py",
+        "src/xinao_coordination/database.py",
+        "src/xinao_coordination/errors.py",
+        "provisioning/acpx-toolchain-lock.json",
+    }.issubset(SOURCE_FILES)
 
 
 def test_worker_deployment_manifest_matches_current_worker_sources() -> None:

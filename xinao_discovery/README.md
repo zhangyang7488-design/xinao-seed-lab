@@ -1,17 +1,27 @@
 # Xinao Discovery
 
-This directory is the engineering root for the new Xinao research system defined by:
+This directory is an implementation surface for the Xinao research system. Current domain authority is:
 
-- `C:\Users\xx363\Desktop\主线\01_主线入口\新澳完整研究施工与旁路双环进化_施工级终稿_v1.0_2026-07-13.txt`
-- `C:\Users\xx363\Desktop\主线\01_主线入口\blueprint.v1_已合并工具与执行纪律.json`
+- `C:\Users\xx363\Desktop\主线\01_主线入口\新澳完整研究施工与旁路双环进化_当前有效.txt`
+- `C:\Users\xx363\Desktop\主线\02正式合同\新澳整体基础执行与自主研究准入合同_当前有效.txt`
+- Machine projection only: `D:\XINAO_RESEARCH_RUNTIME\state\mainline_domain_research_current\blueprint.current_domain_research.json`
 
-Runtime state, evidence, caches, backups, and isolated probes belong under
-`D:\XINAO_RESEARCH_RUNTIME\projects\xinao_discovery`. Large data and the DVC
-remote belong under `E:\XINAO_RESEARCH_DATA\xinao_discovery`. This repository
-contains only engineering code, schemas, migrations, tests, and versioned
-configuration.
+Software products, routes, models, versions, disks, and runtime defaults are not defined by this README; they bind only through the current tool-glue constitution and current machine evidence.
 
-Current verified WBS state:
+The original V1 implementation snapshot placed runtime state and evidence under
+`D:\XINAO_RESEARCH_RUNTIME\projects\xinao_discovery` and large data under
+`E:\XINAO_RESEARCH_DATA\xinao_discovery`. Those paths are historical evidence,
+not current storage authority. Current placement and runtime bindings come only
+from the tool-glue constitution and verified machine facts. This repository
+contains engineering code, schemas, migrations, tests, and versioned configuration.
+
+Historical P0-P11 evidence projection:
+
+The following bullets describe the original V1 vertical under source hash
+`316b5b20dd29f5ebc454faa33eab3a4b92c0e7b5c9a4a68c3be2922ec730aae7`.
+They do not prove current G0-G8 admission, autonomous-discovery capability, or runtime
+consumption of `DomainResearchAdmissionReport`. The V2 gate/runtime cutover is
+`NOT_PERFORMED`; current implementation status must be re-derived from matching reports.
 
 - P0 capability/input admission, dedicated branch, locked dependency BOM, licenses, and SBOM.
 - P1 canonical profile, 37-object registry, and 16-kind typed handoff contract.

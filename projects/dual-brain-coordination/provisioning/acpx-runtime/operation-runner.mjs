@@ -85,14 +85,16 @@ function createBackgroundPermissionHandler(requestId, summary) {
 async function main() {
   let input;
   let turn;
+  let spec;
   let turnStarted = false;
   let resultAuthoritative = false;
+  let resolvedSession;
   const specPath = process.argv[2];
   try {
     if (!specPath) {
       throw new Error("operation spec path is required");
     }
-    const spec = JSON.parse(fs.readFileSync(specPath, "utf8"));
+    spec = JSON.parse(fs.readFileSync(specPath, "utf8"));
     for (const [key, value] of Object.entries(spec.agent_env ?? {})) {
       process.env[key] = String(value);
     }
@@ -168,13 +170,16 @@ async function main() {
         maxTurns: spec.max_turns,
       },
     });
+    resolvedSession = {
+      acpxRecordId: handle.acpxRecordId,
+      backendSessionId: handle.backendSessionId,
+      agentSessionId: handle.agentSessionId,
+    };
     emit({
       type: "session_resolved",
       requestId: spec.request_id,
       sessionKey: handle.sessionKey,
-      acpxRecordId: handle.acpxRecordId,
-      backendSessionId: handle.backendSessionId,
-      agentSessionId: handle.agentSessionId,
+      ...resolvedSession,
     });
 
     if (cancelPending) {
@@ -214,6 +219,22 @@ async function main() {
     const result = await turn.result;
     resultAuthoritative = true;
     const status = await runtime.getStatus({ handle }).catch(() => ({}));
+    const finalSession = {
+      acpxRecordId: status.acpxRecordId ?? handle.acpxRecordId,
+      backendSessionId: status.backendSessionId ?? handle.backendSessionId,
+      agentSessionId: status.agentSessionId ?? handle.agentSessionId,
+    };
+    const currentModelId = status.models?.currentModelId ?? "";
+    const availableModelIds = Array.isArray(status.models?.availableModelIds)
+      ? [...status.models.availableModelIds]
+      : [];
+    const sessionModelEvidence = {
+      source: "acpx_runtime_status_after_turn",
+      requestedModel: spec.model,
+      currentModelId,
+      availableModelIds,
+      ...finalSession,
+    };
     emit({
       type: "terminal",
       requestId: spec.request_id,
@@ -221,9 +242,11 @@ async function main() {
       finalText,
       turnStarted,
       resultAuthoritative,
-      acpxRecordId: status.acpxRecordId ?? handle.acpxRecordId,
-      backendSessionId: status.backendSessionId ?? handle.backendSessionId,
-      agentSessionId: status.agentSessionId ?? handle.agentSessionId,
+      ...finalSession,
+      requestedModel: spec.model,
+      observedModels: status.models ?? {},
+      resolvedSession,
+      sessionModelEvidence,
       permissionSummary,
     });
     input.close();
@@ -235,6 +258,7 @@ async function main() {
       error: safeError(error),
       turnStarted,
       resultAuthoritative,
+      requestedModel: spec?.model,
     });
     input?.close();
     await exitAfterFlush(2);

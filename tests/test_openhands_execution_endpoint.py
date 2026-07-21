@@ -8,6 +8,7 @@ from pathlib import Path
 
 import pytest
 from services.agent_runtime import openhands_execution_activity as endpoint
+from services.agent_runtime import platform_control_worker as control_worker
 from services.agent_runtime.integrated_bus_workflow_registry import (
     collect_openhands_worker_binding,
     collect_worker_bindings,
@@ -87,7 +88,100 @@ def test_compose_gives_docker_control_only_to_execution_broker() -> None:
     assert broker["networks"] == ["xinao_internal", "xinao_sandbox_control"]
     assert broker["labels"]["xinao.endpoint_owner"] == BROKER_ENDPOINT_ID
     assert broker["environment"]["XINAO_OPENHANDS_BROKER_CONTAINER"] == "mowei-zhixing"
-    assert "openhands_execution_worker" in " ".join(broker["command"])
+    assert "platform_control_worker" in " ".join(broker["command"])
+    assert broker["image"] == "xinao-base-houtai-gongren:platform-control-e74057f0"
+    assert broker["pull_policy"] == "never"
+    assert any(
+        "platform_control_worker.py" in item and item.endswith(":ro") for item in broker_volumes
+    )
+    combined = (
+        Path(__file__).resolve().parents[1]
+        / "services"
+        / "agent_runtime"
+        / "platform_control_worker.py"
+    ).read_text(encoding="utf-8")
+    assert "collect_openhands_worker_binding" in combined
+    assert "xinao-openhands-execution-broker-v1" in combined
+
+
+def test_capacity_input_drift_keeps_original_openhands_worker_available(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    from types import SimpleNamespace
+
+    import temporalio.client
+    import temporalio.worker
+
+    queues: list[str] = []
+    states: dict[str, dict[str, object]] = {}
+
+    class StopAfterState(Exception):
+        pass
+
+    class FakeWorker:
+        def __init__(self, _client: object, *, task_queue: str, **_kwargs: object) -> None:
+            queues.append(task_queue)
+
+        async def __aenter__(self) -> "FakeWorker":
+            return self
+
+        async def __aexit__(self, *_args: object) -> bool:
+            return False
+
+    class FakeClient:
+        @classmethod
+        async def connect(cls, *_args: object, **_kwargs: object) -> object:
+            return object()
+
+    class FakeEvent:
+        async def wait(self) -> None:
+            raise StopAfterState
+
+    monkeypatch.setattr(temporalio.client, "Client", FakeClient)
+    monkeypatch.setattr(temporalio.worker, "Worker", FakeWorker)
+    monkeypatch.setattr(control_worker.asyncio, "Event", FakeEvent)
+    monkeypatch.setattr(
+        control_worker, "_validate_worker_input", lambda: {"worker_sha256": "a" * 64}
+    )
+    monkeypatch.setattr(
+        control_worker,
+        "_validate_broker_identity",
+        lambda: {"container_id": "broker", "image_id": "image", "endpoint_owner": "owner"},
+    )
+    monkeypatch.setattr(
+        control_worker,
+        "_validate_maintenance_inputs",
+        lambda: (_ for _ in ()).throw(ValueError("policy hash drift")),
+    )
+    monkeypatch.setattr(
+        control_worker,
+        "collect_openhands_worker_binding",
+        lambda: SimpleNamespace(task_queue=TASK_QUEUE, workflows=[], activities=[]),
+    )
+    monkeypatch.setattr(
+        control_worker,
+        "_write_json_atomic",
+        lambda path, value: states.__setitem__(str(path), value),
+    )
+
+    with pytest.raises(StopAfterState):
+        asyncio.run(
+            control_worker.run_platform_control_worker(
+                address="temporal:7233",
+                namespace="default",
+                runtime_root=tmp_path,
+                identity=BROKER_ENDPOINT_ID,
+                maintenance_only=False,
+            )
+        )
+
+    assert queues == [TASK_QUEUE]
+    maintenance = next(value for path, value in states.items() if "capacity" in path)
+    openhands = next(value for path, value in states.items() if "openhands" in path)
+    assert maintenance["maintenance_enabled"] is False
+    assert maintenance["status"] == "openhands_only"
+    assert openhands["status"] == "polling"
+    assert openhands["platform_maintenance_extension"]["enabled"] is False
 
 
 def test_core_uses_hardened_pinned_container_and_exact_cleanup(
