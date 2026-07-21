@@ -95,7 +95,8 @@ def _install_fake_selector_contract(
                 for package in envelope["validated_package_manifest"]["packages"]
                 if package["package_id"] in envelope["package_ids"]
             ],
-            "model_invocation_allowed": True,
+            "candidate_boundary_valid": True,
+            "live_start_gate_required": True,
             "authority": False,
             "completion_claim_allowed": False,
         }
@@ -111,7 +112,8 @@ def _install_fake_selector_contract(
             "leg": "A",
             "physical_consumer_id": envelope["validated_physical_consumer_id"],
             "route_claim_evidence_ref": "route-claim.json#sha256=" + "9" * 64,
-            "model_invocation_allowed": True,
+            "route_claim_selected": True,
+            "live_start_gate_required": True,
             "authority": False,
             "completion_claim_allowed": False,
         }
@@ -235,7 +237,8 @@ def _route_claim_result(
         "leg": "A",
         "physical_consumer_id": envelope["validated_physical_consumer_id"],
         "route_claim_evidence_ref": "route-claim.json#sha256=" + "9" * 64,
-        "model_invocation_allowed": True,
+        "route_claim_selected": True,
+        "live_start_gate_required": True,
         "authority": False,
         "completion_claim_allowed": False,
     }

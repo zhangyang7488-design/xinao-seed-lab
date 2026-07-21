@@ -171,7 +171,9 @@ def _candidate_cwds_from_binding(
         or binding.get("logical_effect_contract")
         != EXPECTED_LOGICAL_CANDIDATE_EFFECT_CONTRACT
         or binding.get("physical_consumer_id") != physical_consumer_id
-        or binding.get("model_invocation_allowed") is not True
+        or binding.get("candidate_boundary_valid") is not True
+        or binding.get("live_start_gate_required") is not True
+        or "model_invocation_allowed" in binding
         or binding.get("authority") is not False
         or binding.get("completion_claim_allowed") is not False
         or (binding.get("route_choice") or {}).get("choice_sha256")
@@ -233,12 +235,22 @@ def _require_route_claim_binding(
     *,
     route_choice_sha256: str,
     physical_consumer_id: str,
+    final_start_gate: bool,
 ) -> None:
+    gate_valid = (
+        claim.get("model_invocation_allowed") is True
+        if final_start_gate
+        else (
+            claim.get("route_claim_selected") is True
+            and claim.get("live_start_gate_required") is True
+            and "model_invocation_allowed" not in claim
+        )
+    )
     if (
         claim.get("leg") != "A"
         or claim.get("choice_sha256") != route_choice_sha256
         or claim.get("physical_consumer_id") != physical_consumer_id
-        or claim.get("model_invocation_allowed") is not True
+        or not gate_valid
     ):
         raise ValueError("leg-A model start is not owned by this durable route claim")
 
@@ -820,6 +832,7 @@ def _run_package(
             validation,
             route_choice_sha256=route_choice_sha256,
             physical_consumer_id=physical_consumer_id,
+            final_start_gate=True,
         )
         return validation
 
@@ -1458,6 +1471,7 @@ def main() -> int:
         route_claim,
         route_choice_sha256=direct_route["route_choice"]["choice_sha256"],
         physical_consumer_id=physical_consumer_id,
+        final_start_gate=False,
     )
     route_claim_evidence_ref = str(route_claim.get("route_claim_evidence_ref") or "")
     if not route_claim_evidence_ref:
@@ -1472,6 +1486,7 @@ def main() -> int:
         route_claim_validation,
         route_choice_sha256=direct_route["route_choice"]["choice_sha256"],
         physical_consumer_id=physical_consumer_id,
+        final_start_gate=True,
     )
     runtime_dependencies = _runtime_worker_dependencies(packages)
     pending = set(packages)
