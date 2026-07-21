@@ -23,7 +23,12 @@ from services.agent_runtime.context_slice_manifest import (
     ContextSliceManifestError,
     validate_context_slice_manifest,
 )
-from services.agent_runtime.execution_contract import artifact_json_bytes
+from services.agent_runtime.execution_contract import (
+    artifact_json_bytes,
+    logical_contract_sha256,
+    validate_attempt_receipt,
+    validate_logical_contract,
+)
 
 PACKAGE_IDENTITY_SCHEMA = "xinao.worker_package_identity.v2"
 PACKAGE_BATCH_SCHEMA = "xinao.worker_package_batch.v3"
@@ -1061,6 +1066,305 @@ def validate_package_batch_manifest(
     value["lane_index_base"] = 0
     value["validated_manifest_sha256"] = _canonical_sha(_manifest_digest_body(value))
     return value
+
+
+def _validate_expected_prior_action_binding(
+    raw: Mapping[str, object],
+) -> dict[str, object]:
+    value = copy.deepcopy(dict(_mapping(raw, "expected_action_binding")))
+    required = {
+        "logical_operation_id",
+        "package_input_sha256",
+        "input_sha256",
+        "frozen_context_sha256",
+        "context_sha256",
+        "rules_sha256",
+        "package_output_contract_sha256",
+        "output_contract_sha256",
+        "selection",
+    }
+    if set(value) != required:
+        raise DispatchEconomicsError("expected_action_binding fields do not match v1")
+    value["logical_operation_id"] = _text(
+        value.get("logical_operation_id"),
+        "expected_action_binding.logical_operation_id",
+    )
+    for field in required - {"logical_operation_id", "selection"}:
+        value[field] = _sha(value.get(field), f"expected_action_binding.{field}")
+    selection = dict(_mapping(value.get("selection"), "expected_action_binding.selection"))
+    selection_fields = {
+        "provider_id",
+        "profile_ref",
+        "model_id",
+        "transport_id",
+        "capability_binding_sha256",
+    }
+    if set(selection) != selection_fields:
+        raise DispatchEconomicsError("expected_action_binding.selection fields do not match v1")
+    for field in selection_fields - {"capability_binding_sha256"}:
+        selection[field] = _text(
+            selection.get(field),
+            f"expected_action_binding.selection.{field}",
+        )
+    selection["capability_binding_sha256"] = _sha(
+        selection.get("capability_binding_sha256"),
+        "expected_action_binding.selection.capability_binding_sha256",
+    )
+    value["selection"] = selection
+    return value
+
+
+def validate_prior_accepted_ancestor_action(
+    *,
+    current_manifest_ref: Mapping[str, object],
+    package_id: str,
+    prior_logical_contract_ref: Mapping[str, object],
+    expected_consumer_id: str,
+    expected_action_binding: Mapping[str, object],
+    path_resolver: PathResolver | None = None,
+) -> dict[str, object]:
+    """Validate a prior accepted action on a strict reseal ancestor.
+
+    The helper is read-only and transport neutral.  Callers supply the action
+    identity derived by their existing adapter; this function proves that the
+    current package did not drift, the prior contract and receipt are still an
+    accepted match for the expected consumer, and their task carrier is an
+    exact predecessor of the current v3 manifest.
+    """
+
+    if set(_mapping(current_manifest_ref, "current_manifest_ref")) != {"path", "sha256"}:
+        raise DispatchEconomicsError("current_manifest_ref must be exact and hash-bound")
+    current_ref = _validate_path_ref(
+        current_manifest_ref,
+        "current_manifest_ref",
+        path_resolver=path_resolver,
+    )
+    _, current_raw = _load_hash_bound_ref(
+        current_ref,
+        "current_manifest_ref",
+        expected_schema=PACKAGE_BATCH_SCHEMA,
+        path_resolver=path_resolver,
+    )
+    current = validate_package_batch_manifest(current_raw, path_resolver=path_resolver)
+    current_revision = int(current["graph_revision"])
+    if current_revision < 2 or current.get("predecessor_manifest_ref") is None:
+        raise DispatchEconomicsError("prior reuse requires a strict reseal ancestor")
+
+    wanted_package_id = _text(package_id, "package_id")
+    package = next(
+        (row for row in current["packages"] if row["package_id"] == wanted_package_id),
+        None,
+    )
+    if package is None:
+        raise DispatchEconomicsError(f"current manifest has no package: {wanted_package_id}")
+    if (
+        package.get("candidate_only") is not True
+        or package.get("authority") is not False
+        or package.get("completion_claim_allowed") is not False
+    ):
+        raise DispatchEconomicsError("prior reuse is limited to candidate-only packages")
+    prior_attempt_raw = package.get("prior_attempt_receipt_ref")
+    if prior_attempt_raw is None:
+        raise DispatchEconomicsError("current package has no prior_attempt_receipt_ref")
+    prior_attempt_ref = _validate_path_ref(
+        prior_attempt_raw,
+        "prior_attempt_receipt_ref",
+        path_resolver=path_resolver,
+    )
+    _, prior_attempt = _load_hash_bound_ref(
+        prior_attempt_ref,
+        "prior_attempt_receipt_ref",
+        path_resolver=path_resolver,
+    )
+
+    if set(_mapping(prior_logical_contract_ref, "prior_logical_contract_ref")) != {
+        "path",
+        "sha256",
+    }:
+        raise DispatchEconomicsError("prior_logical_contract_ref must be exact and hash-bound")
+    contract_ref = _validate_path_ref(
+        prior_logical_contract_ref,
+        "prior_logical_contract_ref",
+        path_resolver=path_resolver,
+    )
+    _, contract_raw = _load_hash_bound_ref(
+        contract_ref,
+        "prior_logical_contract_ref",
+        path_resolver=path_resolver,
+    )
+    try:
+        contract = validate_logical_contract(contract_raw)
+        contract_sha256 = logical_contract_sha256(contract)
+        receipt_verdict = validate_attempt_receipt(
+            contract,
+            prior_attempt,
+            expected_consumer_id=_text(expected_consumer_id, "expected_consumer_id"),
+        )
+    except (TypeError, ValueError) as exc:
+        raise DispatchEconomicsError(f"prior accepted action is invalid: {exc}") from exc
+    if not receipt_verdict.accepted:
+        raise DispatchEconomicsError(
+            "prior attempt receipt is not accepted: " + ",".join(receipt_verdict.reason_codes)
+        )
+
+    provider_logical, provider_path = _physical_path(
+        prior_attempt.get("provider_evidence_ref"),
+        "prior attempt provider_evidence_ref",
+        path_resolver,
+    )
+    provider_sha256 = _sha(
+        prior_attempt.get("provider_evidence_sha256"),
+        "prior attempt provider_evidence_sha256",
+    )
+    if not provider_path.is_file():
+        raise DispatchEconomicsError(f"prior provider evidence missing: {provider_path}")
+    observed_provider_sha256 = _file_sha(provider_path)
+    if observed_provider_sha256 != provider_sha256:
+        raise DispatchEconomicsError(
+            "prior provider evidence sha256 mismatch: "
+            f"expected={provider_sha256}; observed={observed_provider_sha256}"
+        )
+    provider_ref = {"path": provider_logical, "sha256": provider_sha256}
+
+    action = _validate_expected_prior_action_binding(expected_action_binding)
+    package_expected = {
+        "package_input_sha256": package["input_sha256"],
+        "input_sha256": _mapping(package["prompt_ref"], "package.prompt_ref")["sha256"],
+        "frozen_context_sha256": package["context_sha256"],
+        "rules_sha256": package["rules_sha256"],
+        "package_output_contract_sha256": package["output_contract_sha256"],
+    }
+    for field, expected in package_expected.items():
+        if action[field] != expected:
+            raise DispatchEconomicsError(
+                f"current action binding {field} drifted from current package"
+            )
+    if contract.get("work_key") != package["work_key"]:
+        raise DispatchEconomicsError("prior logical contract work_key drifted")
+    contract_expected = {
+        "logical_operation_id": action["logical_operation_id"],
+        "input_sha256": action["input_sha256"],
+        "context_sha256": action["context_sha256"],
+        "rules_sha256": action["rules_sha256"],
+        "output_contract_sha256": action["output_contract_sha256"],
+    }
+    for field, expected in contract_expected.items():
+        if contract.get(field) != expected:
+            raise DispatchEconomicsError(f"prior logical contract {field} drifted")
+    if contract.get("selection") != action["selection"]:
+        raise DispatchEconomicsError("prior logical contract selection drifted")
+    if (
+        contract.get("effect_mode") != "authorized_write"
+        or contract.get("idempotency_key") != action["logical_operation_id"]
+    ):
+        raise DispatchEconomicsError("prior logical contract action identity drifted")
+
+    task_contract_ref = _text(contract.get("task_contract_ref"), "task_contract_ref")
+    task_path_text, separator, task_sha256_raw = task_contract_ref.rpartition("#sha256=")
+    if not separator or not task_path_text:
+        raise DispatchEconomicsError("prior task_contract_ref is not hash-bound")
+    task_sha256 = _sha(task_sha256_raw, "prior task_contract_ref.sha256")
+    _, task_path = _physical_path(
+        task_path_text,
+        "prior task_contract_ref.path",
+        path_resolver,
+    )
+    if not task_path.is_file():
+        raise DispatchEconomicsError(f"prior task contract manifest missing: {task_path}")
+    observed_task_sha256 = _file_sha(task_path)
+    if observed_task_sha256 != task_sha256:
+        raise DispatchEconomicsError(
+            "prior task_contract_ref sha256 mismatch: "
+            f"expected={task_sha256}; observed={observed_task_sha256}"
+        )
+
+    current_parent = str(current["parent_work_key"])
+    current_identity = str(package["package_identity_sha256"])
+    current_work_key = str(package["work_key"])
+    ancestor_ref: object = current["predecessor_manifest_ref"]
+    expected_revision = current_revision - 1
+    seen: set[tuple[str, str]] = set()
+    subject_ref: dict[str, str] | None = None
+    for depth in range(1, 33):
+        raw_ref = _mapping(ancestor_ref, f"ancestor[{depth}].ref")
+        if set(raw_ref) != {"path", "sha256"}:
+            raise DispatchEconomicsError("reseal ancestor ref is not exact and hash-bound")
+        normalized_ref = _validate_path_ref(
+            raw_ref,
+            f"ancestor[{depth}].ref",
+            path_resolver=path_resolver,
+        )
+        ancestor_path, ancestor = _load_hash_bound_ref(
+            normalized_ref,
+            f"ancestor[{depth}].ref",
+            expected_schema=PACKAGE_BATCH_SCHEMA,
+            path_resolver=path_resolver,
+        )
+        key = (os.path.normcase(str(ancestor_path)), normalized_ref["sha256"])
+        if key in seen:
+            raise DispatchEconomicsError("reseal ancestor chain contains a cycle")
+        seen.add(key)
+        if ancestor.get("graph_revision") != expected_revision:
+            raise DispatchEconomicsError("reseal ancestor graph revision drifted")
+        if ancestor.get("parent_work_key") != current_parent:
+            raise DispatchEconomicsError("reseal ancestor parent_work_key drifted")
+        ancestor_packages = _sequence(ancestor.get("packages"), "ancestor.packages")
+        ancestor_package = next(
+            (
+                row
+                for row in ancestor_packages
+                if isinstance(row, Mapping) and row.get("package_id") == wanted_package_id
+            ),
+            None,
+        )
+        if ancestor_package is None:
+            raise DispatchEconomicsError("reseal ancestor is missing the current package")
+        if (
+            ancestor_package.get("package_identity_sha256") != current_identity
+            or ancestor_package.get("work_key") != current_work_key
+            or ancestor_package.get("parent_work_key") != current_parent
+        ):
+            raise DispatchEconomicsError("reseal ancestor package identity drifted")
+        if (
+            _same_physical_path(ancestor_path, task_path)
+            and normalized_ref["sha256"] == task_sha256
+        ):
+            subject_ref = normalized_ref
+            break
+        ancestor_ref = ancestor.get("predecessor_manifest_ref")
+        if ancestor_ref is None:
+            break
+        expected_revision -= 1
+    if subject_ref is None:
+        raise DispatchEconomicsError(
+            "prior accepted task contract is not in the reseal ancestor chain"
+        )
+
+    binding: dict[str, object] = {
+        "schema_version": "xinao.prior_accepted_ancestor_action.v1",
+        "binding_source": "prior_accepted_ancestor_manifest",
+        "reuse_disposition": "ACCEPTED_IDENTICAL_REUSE",
+        "skip_provider_execution": True,
+        "model_invocation_allowed": False,
+        "authority": False,
+        "completion_claim_allowed": False,
+        "package_id": wanted_package_id,
+        "work_key": current_work_key,
+        "parent_work_key": current_parent,
+        "package_identity_sha256": current_identity,
+        "current_manifest_ref": current_ref,
+        "subject_manifest_ref": subject_ref,
+        "task_contract_ref": task_contract_ref,
+        "prior_attempt_receipt_ref": prior_attempt_ref,
+        "prior_logical_contract_ref": contract_ref,
+        "provider_evidence_ref": provider_ref,
+        "contract_sha256": contract_sha256,
+        "prior_attempt": int(prior_attempt["attempt"]),
+        "prior_action_binding": action,
+        "reason_codes": ["CURRENT_ACTION_VALIDATED_PRIOR_ACCEPTED_ANCESTOR"],
+    }
+    binding["prior_action_binding_sha256"] = _canonical_sha(action)
+    return binding
 
 
 def validate_dispatch_envelope(
