@@ -1,0 +1,7 @@
+{
+  "schema_version": "xinao.f4_oci_production_checker_inputs.v1",
+  "external_synthesis_ref": "D:\\XINAO_RESEARCH_RUNTIME\\projects\\xinao_discovery\\evidence\\weight_prior_snapshot_v0\\raw_search_runs\\20260714_121327\\web_search\\external_mature_funnel_layering_raw.json",
+  "play_catalog_ref": "D:\\XINAO_RESEARCH_RUNTIME\\projects\\xinao_discovery\\state\\catalog\\play_catalog.v1.json",
+  "prior_draft_ref": "D:\\XINAO_RESEARCH_RUNTIME\\projects\\xinao_discovery\\evidence\\weight_prior_snapshot_v0\\contracts_draft\\settlement_event_class_prior_projection_v0.json",
+  "service_graph_ref": "D:\\XINAO_RESEARCH_RUNTIME\\projects\\xinao_discovery\\evidence\\weight_prior_snapshot_v0\\contracts_draft\\SettlementEventAttentionPrior_service_graph_v0.json"
+}

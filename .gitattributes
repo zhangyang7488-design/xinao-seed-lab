@@ -23,6 +23,7 @@ evals/mature_capability_recall/** text eol=lf
 evals/thin_localization/** text eol=lf
 
 # F4 authority sources are content-addressed and must retain verified LF bytes.
+docker/f4-verifier/*.json text eol=lf
 scripts/run_f4_snapshot_stage0.py text eol=lf
 scripts/verify_f4_live_canary_pack.py text eol=lf
 scripts/verify_f4_negative_companion_pack.py text eol=lf
