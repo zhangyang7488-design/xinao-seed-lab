@@ -160,7 +160,7 @@
     case_id: REG_WORK_UNIT_INTERRUPTION_PRESERVES_EXACT_CONTINUATION
     domain: work_unit_lifecycle
     restored_context: |-
-      One repository work unit is half complete in a side worktree. Its task-run event tail has the logical work_key, carrier_id/generation, current observation hash, side-effect identities, and exact next consumer. A checkpoint is older than the event tail. The user is switching attention to another already-known task; no stop, cancel, supersede, deletion, hidden continuation, second owner, or daemon was authorized. Neutral candidate pool: ATOM_PAUSE_EXISTING_WORK_UNIT=record the current work unit as paused/interrupted without declaring completion; ATOM_EVENT_TAIL_LIVE_RECONCILE=a later window replays the task-run tail and rechecks current Git/PR/runtime facts; ATOM_EXACT_NEXT_ACTION_AND_SIDE_EFFECT=resume only the bound next action under a fresh side-effect identity; ATOM_NO_HIDDEN_OWNER=no second TUI, background owner or daemon continues mutation; ATOM_RESUME_SAME_WORK_KEY=continue the same logical work unit even if its carrier changes; ATOM_STALE_CHECKPOINT_AS_TRUTH=follow the older checkpoint without event-tail reconciliation; ATOM_RESTART_FROM_ZERO=discard the half work and regenerate it; ATOM_ABANDON_HALF_WORK=leave the carrier indefinitely unclassified; ATOM_HIDDEN_DAEMON_CONTINUES=create a persistent controller to keep working; ATOM_PATH_IS_WORK_IDENTITY=treat the worktree path as the logical work identity.
+      One repository work unit is half complete in a side worktree. Its task-run event tail has the logical work_key, carrier_id/generation, current observation hash, side-effect identities, and exact next consumer. The bound carrier still exists, belongs to the current owner, matches the write domain and can be revalidated; a checkpoint is older than the event tail. The user is switching attention to another already-known task; no stop, cancel, supersede, deletion, hidden continuation, second owner, daemon, or new carrier was authorized. Neutral candidate pool: ATOM_PAUSE_EXISTING_WORK_UNIT=record the current work unit as paused/interrupted without declaring completion; ATOM_EVENT_TAIL_LIVE_RECONCILE=a later window replays the task-run tail and rechecks current Git/PR/runtime facts; ATOM_EXACT_NEXT_ACTION_AND_SIDE_EFFECT=resume only the bound next action under a fresh side-effect identity; ATOM_NO_HIDDEN_OWNER=no second TUI, background owner or daemon continues mutation; ATOM_RESUME_SAME_WORK_KEY=continue the same logical work unit; ATOM_REUSE_BOUND_ACTIVE_CARRIER=reuse the same still-valid carrier after live revalidation rather than creating one per window; ATOM_STALE_CHECKPOINT_AS_TRUTH=follow the older checkpoint without event-tail reconciliation; ATOM_RESTART_FROM_ZERO=discard the half work and regenerate it; ATOM_ABANDON_HALF_WORK=leave the carrier indefinitely unclassified; ATOM_HIDDEN_DAEMON_CONTINUES=create a persistent controller to keep working; ATOM_PATH_IS_WORK_IDENTITY=treat any Git-resolved path as the logical work identity; ATOM_NEW_CARRIER_PER_WINDOW=create another branch or worktree merely because a new window opened; ATOM_LONG_LIVED_CARRIER_AFTER_CLOSURE=keep the carrier active indefinitely after land and effect closure.
     user_increment: |-
       Switch to the other task now, but preserve this half-finished work so the next window continues exactly from current facts. Do not keep it mutating in the background, restart it, or ask me to reconstruct what happened.
     expected_target_relation: existing_object
@@ -191,8 +191,64 @@
     expected_freeze_unaffected_provider: false
     expected_preference_update: none
     expected_starts_new_project: false
-    expected_recovered_requirement_atoms: ATOM_PAUSE_EXISTING_WORK_UNIT|ATOM_EVENT_TAIL_LIVE_RECONCILE|ATOM_EXACT_NEXT_ACTION_AND_SIDE_EFFECT|ATOM_NO_HIDDEN_OWNER|ATOM_RESUME_SAME_WORK_KEY
-    expected_rejected_proxy_atoms: ATOM_STALE_CHECKPOINT_AS_TRUTH|ATOM_RESTART_FROM_ZERO|ATOM_ABANDON_HALF_WORK|ATOM_HIDDEN_DAEMON_CONTINUES|ATOM_PATH_IS_WORK_IDENTITY
+    expected_recovered_requirement_atoms: ATOM_PAUSE_EXISTING_WORK_UNIT|ATOM_EVENT_TAIL_LIVE_RECONCILE|ATOM_EXACT_NEXT_ACTION_AND_SIDE_EFFECT|ATOM_NO_HIDDEN_OWNER|ATOM_RESUME_SAME_WORK_KEY|ATOM_REUSE_BOUND_ACTIVE_CARRIER
+    expected_rejected_proxy_atoms: ATOM_STALE_CHECKPOINT_AS_TRUTH|ATOM_RESTART_FROM_ZERO|ATOM_ABANDON_HALF_WORK|ATOM_HIDDEN_DAEMON_CONTINUES|ATOM_PATH_IS_WORK_IDENTITY|ATOM_NEW_CARRIER_PER_WINDOW|ATOM_LONG_LIVED_CARRIER_AFTER_CLOSURE
+
+- description: A direct route receipt and suitable carrier survive a window change
+  metadata:
+    id: REG_DIRECT_ROUTE_AND_CARRIER_SURVIVE_WINDOW
+    domain: continuity
+    class: structural_regression
+    profiles: [smoke, core, deep]
+    source_type: explicit_user_correction
+    source_ref: current-user-2026-07-21/transport-carrier-mode-separation
+    lifecycle: regression
+    added_at: '2026-07-21'
+    not_authority: true
+  vars:
+    case_id: REG_DIRECT_ROUTE_AND_CARRIER_SURVIVE_WINDOW
+    domain: continuity
+    restored_context: |-
+      A fresh window resumes an active continuous parent under the same Codex owner. The task-run event tail binds one unfinished work_key, a fresh hash-bound route receipt selecting direct-grok-worker-pool, and a D candidate carrier that still exists, is clean for its declared write domain, and belongs to this work unit. The current TUI is online; the package is bounded and independently verifiable. No post-window handoff, cross-restart recovery, unattended background multi-wave need, route-health failure, carrier invalidation or new isolation boundary exists. A Git discovery entry also resolves to an unrelated dirty root owned by another TUI. Neutral candidate pool: ATOM_PARENT_WORK_KEY_CONTINUES=resume the same task-run work identity; ATOM_EXISTING_DIRECT_ROUTE_CONTINUES=honor the fresh direct route receipt across the window; ATOM_REUSE_SUITABLE_BOUND_CARRIER=continue the existing D carrier after live revalidation; ATOM_GIT_ROOT_NOT_CURRENT_CARRIER=keep the unrelated resolved Git root read-only and out of the write surface; ATOM_MODE_ROUTE_CARRIER_SEPARATE=continuous mode, A/B transport and carrier lifecycle remain independent; ATOM_RESUME_IMPLIES_TEMPORAL=select temporal_durable merely because the request says resume or continuous; ATOM_GIT_DISCOVERY_GRANTS_WRITE=treat the resolved dirty root as the current writable carrier; ATOM_NEW_BRANCH_PER_WINDOW=create another half-finished branch because the window changed; ATOM_ROUTE_RECEIPT_IGNORED=recompute a different leg without a new dominating fact; ATOM_CARRIER_IS_PERMANENT=keep a carrier active after its work unit eventually lands and verifies effect.
+    user_increment: 新窗口继续刚才的工作；沿现有事实接上，不要因为 continuous、恢复或 Git 找到另一个根就切 Temporal 或再开一棵半成品分支。
+    expected_target_relation: existing_object
+    expected_next_step: act
+    expected_ask_user: false
+    expected_create_repository: false
+    expected_create_daemon: false
+    expected_object_identity_source: restored_context
+    expected_mature_comparison_triggered: false
+    expected_learning_loop: double_loop_structural
+    expected_repair_target: governing_invariant
+    expected_closure_evidence: cross_context_entry_and_negative
+    expected_effect_scope: reversible_local
+    expected_effect_authority: explicit_current_user
+    expected_coordination_mode: single_supervisor_worker
+    expected_worker_provider: grok
+    expected_worker_transport: direct_batch
+    expected_supervisor_tier: default
+    expected_quota_consumption_objective: false
+    expected_quota_action: query_now
+    expected_quota_query_disposition: query_now_before_routing
+    expected_owner_execution_state: thin_supervisor
+    expected_tier_transition: none
+    expected_terminal_refill: not_applicable
+    expected_worker_receipt_disposition: not_applicable
+    expected_text_writer: not_applicable
+    expected_completion_claim_scope: not_applicable
+    expected_local_completion_transition: rederive_mainline_frontier
+    expected_continuous_run_disposition: continue
+    expected_frontier_disposition: execute
+    expected_candidate_value: positive
+    expected_global_frontier_reconciled: false
+    expected_downstream_recovery_required: false
+    expected_freeze_unaffected_provider: false
+    expected_degraded_scope: none
+    expected_unaffected_frontier_action: continue_recompute
+    expected_preference_update: smallest_existing_artifact
+    expected_starts_new_project: false
+    expected_recovered_requirement_atoms: ATOM_PARENT_WORK_KEY_CONTINUES|ATOM_EXISTING_DIRECT_ROUTE_CONTINUES|ATOM_REUSE_SUITABLE_BOUND_CARRIER|ATOM_GIT_ROOT_NOT_CURRENT_CARRIER|ATOM_MODE_ROUTE_CARRIER_SEPARATE
+    expected_rejected_proxy_atoms: ATOM_RESUME_IMPLIES_TEMPORAL|ATOM_GIT_DISCOVERY_GRANTS_WRITE|ATOM_NEW_BRANCH_PER_WINDOW|ATOM_ROUTE_RECEIPT_IGNORED|ATOM_CARRIER_IS_PERMANENT
 
 - description: Compact recovery consumes the existing event chain before first dispatch
   metadata:
@@ -311,6 +367,122 @@
     expected_starts_new_project: false
     expected_recovered_requirement_atoms: ATOM_REJECT_STALE_RECEIPT|ATOM_RECONCILE_CURRENT_EVENT_HEAD|ATOM_KEEP_FAILURE_SCOPE_LOCAL|ATOM_NEW_UNIQUE_EFFECT_ONLY_IF_STILL_NEEDED|ATOM_CONTINUE_PARENT_AFTER_LOCAL_REJECTION
     expected_rejected_proxy_atoms: ATOM_EXECUTE_STALE_RECEIPT|ATOM_EDIT_RECEIPT_TO_CURRENT|ATOM_IGNORE_NEW_EVENT|ATOM_RECEIPT_IS_AUTHORITY|ATOM_REUSE_RECORDED_EFFECT|ATOM_STOP_WHOLE_RUN
+- description: Local transport wait cannot poison the parent frontier
+  metadata:
+    id: REG_LOCAL_WAIT_CANNOT_POISON_PARENT
+    domain: continuity
+    class: structural_regression
+    profiles:
+    - smoke
+    - core
+    - deep
+    source_type: explicit_user_correction
+    source_ref: current-user-2026-07-21/local-wait-parent-scope
+    lifecycle: regression
+    added_at: '2026-07-21'
+    not_authority: true
+  vars:
+    case_id: REG_LOCAL_WAIT_CANNOT_POISON_PARENT
+    domain: continuity
+    restored_context: |-
+      One parent mainline contains two unresolved transactions with distinct parent, batch and package identities. Package A has a local direct-transport failure and must wait inside its affected cone. Package B remains ready through an independent route and consumer. No global frontier reconciliation receipt covers all transactions, and no parent-wide completion or wait proof exists. The previous window incorrectly copied the local WAIT into the parent status. Neutral candidate pool: ATOM_DISTINCT_SCOPE_IDENTITIES=keep parent_mainline_id, batch_id and package work_key distinct; ATOM_LOCAL_WAIT_SCOPED=freeze only package A's affected cone; ATOM_UNRELATED_FRONTIER_CONTINUES=package B remains eligible; ATOM_GLOBAL_RECONCILIATION_REQUIRED=run a fresh whole-parent DAG scan after the local terminal; ATOM_GLOBAL_WAIT_NEEDS_COVERAGE=only a hash-bound receipt covering every unresolved transaction may claim global wait; ATOM_LOCAL_WAIT_POISONS_PARENT=copy package A WAIT to the parent; ATOM_PARENT_KEY_COLLISION=use the parent mainline key as the package identity; ATOM_STALE_FRONTIER_REUSED=trust the prior scan after the transport fact changed; ATOM_NO_RECEIPT_NO_GLOBAL_IDLE=declare the whole mainline idle without coverage proof.
+    user_increment: 当前 transport 只是局部坏了，不要因此把整条主线置为等待；局部收口后重新扫描所有未闭事务。
+    expected_target_relation: existing_object
+    expected_next_step: act
+    expected_ask_user: false
+    expected_create_repository: false
+    expected_create_daemon: false
+    expected_object_identity_source: restored_context
+    expected_mature_comparison_triggered: false
+    expected_learning_loop: double_loop_structural
+    expected_repair_target: governing_invariant
+    expected_closure_evidence: cross_context_entry_and_negative
+    expected_effect_scope: reversible_local
+    expected_effect_authority: explicit_current_user
+    expected_coordination_mode: supervisor_only
+    expected_worker_provider: not_applicable
+    expected_worker_transport: not_applicable
+    expected_supervisor_tier: default
+    expected_quota_consumption_objective: false
+    expected_quota_action: not_applicable
+    expected_quota_query_disposition: not_applicable
+    expected_owner_execution_state: owner_only_interlude
+    expected_tier_transition: none
+    expected_terminal_refill: not_applicable
+    expected_worker_receipt_disposition: reject_and_recover
+    expected_text_writer: not_applicable
+    expected_completion_claim_scope: local_object
+    expected_local_completion_transition: rederive_mainline_frontier
+    expected_continuous_run_disposition: continue
+    expected_frontier_disposition: execute
+    expected_candidate_value: positive
+    expected_global_frontier_reconciled: false
+    expected_downstream_recovery_required: false
+    expected_freeze_unaffected_provider: false
+    expected_degraded_scope: frontier_only
+    expected_unaffected_frontier_action: continue_recompute
+    expected_preference_update: none
+    expected_starts_new_project: false
+    expected_recovered_requirement_atoms: ATOM_DISTINCT_SCOPE_IDENTITIES|ATOM_LOCAL_WAIT_SCOPED|ATOM_UNRELATED_FRONTIER_CONTINUES|ATOM_GLOBAL_RECONCILIATION_REQUIRED|ATOM_GLOBAL_WAIT_NEEDS_COVERAGE
+    expected_rejected_proxy_atoms: ATOM_LOCAL_WAIT_POISONS_PARENT|ATOM_PARENT_KEY_COLLISION|ATOM_STALE_FRONTIER_REUSED|ATOM_NO_RECEIPT_NO_GLOBAL_IDLE
+- description: 主管模式宽度为一仍应推进不可分离工作
+  metadata:
+    id: REG_SUPERVISOR_WIDTH_ONE_REMAINS_PROGRESS
+    domain: supervisor_worker
+    class: structural_regression
+    profiles:
+    - smoke
+    - core
+    - deep
+    source_type: explicit_user_correction
+    source_ref: current-user-2026-07-21/supervisor-width-one
+    lifecycle: regression
+    added_at: '2026-07-21'
+    not_authority: true
+  vars:
+    case_id: REG_SUPERVISOR_WIDTH_ONE_REMAINS_PROGRESS
+    domain: supervisor_worker
+    restored_context: |-
+      Dynamic supervisor mode is active over the unresolved parent DAG. Only one positive-benefit transaction is currently ready: it is tightly coupled, owner-owned, and cannot be cleanly frozen for a worker package. All other transactions have real dependencies or are conditionally pinned. No worker dispatch is needed for this slice, but the owner must execute the bounded transaction and continue recomputing the parent frontier. A recently successful direct route receipt is present for a different worker package; it may be reused only after live event-head, work-key, pin, carrier and route-health checks, not because the current slice has width one. Neutral candidate pool: ATOM_WIDTH_ONE_IS_VALID_PROGRESS=dynamic supervisor width may be one; ATOM_OWNER_DOES_NONSEPARABLE_WORK=Codex may execute the irreducibly coupled slice; ATOM_PARENT_FRONTIER_CONTINUES=local width does not end or block the parent; ATOM_ROUTE_RECEIPT_REVALIDATED=existing transport is reused only after live facts revalidate; ATOM_NO_WORKER_DOES_NOT_MEAN_NO_WORK=absence of a worker call is not global idle; ATOM_FIXED_WORKER_PARALLELISM=force a worker merely to preserve the appearance of supervision; ATOM_WIDTH_ZERO_EQUALS_DONE=declare parent complete because no worker is dispatched; ATOM_RECEIPT_AUTO_SWITCH=change transport without validating the existing receipt; ATOM_SERIAL_OWNER_IS_FAILURE=turn necessary owner work into a parent blocker.
+    user_increment: 只有一条不可分离的正收益事务时也继续推进，不要因为没有派工人就判定主管模式失效。
+    expected_target_relation: existing_object
+    expected_next_step: act
+    expected_ask_user: false
+    expected_create_repository: false
+    expected_create_daemon: false
+    expected_object_identity_source: restored_context
+    expected_mature_comparison_triggered: false
+    expected_learning_loop: double_loop_structural
+    expected_repair_target: governing_invariant
+    expected_closure_evidence: cross_context_entry_and_negative
+    expected_effect_scope: reversible_local
+    expected_effect_authority: explicit_current_user
+    expected_coordination_mode: supervisor_only
+    expected_worker_provider: not_applicable
+    expected_worker_transport: not_applicable
+    expected_supervisor_tier: default
+    expected_quota_consumption_objective: false
+    expected_quota_action: not_applicable
+    expected_quota_query_disposition: not_applicable
+    expected_owner_execution_state: thin_supervisor
+    expected_tier_transition: none
+    expected_terminal_refill: not_applicable
+    expected_worker_receipt_disposition: not_applicable
+    expected_text_writer: not_applicable
+    expected_completion_claim_scope: local_object
+    expected_local_completion_transition: rederive_mainline_frontier
+    expected_continuous_run_disposition: continue
+    expected_frontier_disposition: execute
+    expected_candidate_value: positive
+    expected_global_frontier_reconciled: false
+    expected_downstream_recovery_required: false
+    expected_freeze_unaffected_provider: false
+    expected_degraded_scope: none
+    expected_unaffected_frontier_action: continue_recompute
+    expected_preference_update: none
+    expected_starts_new_project: false
+    expected_recovered_requirement_atoms: ATOM_WIDTH_ONE_IS_VALID_PROGRESS|ATOM_OWNER_DOES_NONSEPARABLE_WORK|ATOM_PARENT_FRONTIER_CONTINUES|ATOM_ROUTE_RECEIPT_REVALIDATED|ATOM_NO_WORKER_DOES_NOT_MEAN_NO_WORK
+    expected_rejected_proxy_atoms: ATOM_FIXED_WORKER_PARALLELISM|ATOM_WIDTH_ZERO_EQUALS_DONE|ATOM_RECEIPT_AUTO_SWITCH|ATOM_SERIAL_OWNER_IS_FAILURE
 - description: Live resource facts must change a now-dominated worker route
   metadata:
     id: REG_LIVE_FACT_MUST_CHANGE_DOMINATED_NEXT_ACTION
@@ -546,7 +718,7 @@
     expected_effect_authority: explicit_current_user
     expected_coordination_mode: single_supervisor_worker
     expected_worker_provider: grok
-    expected_worker_transport: adaptive|temporal_durable
+    expected_worker_transport: adaptive|direct_batch
     expected_quota_action: query_now
     expected_text_writer: codex_main
     expected_degraded_scope: none

@@ -45,6 +45,7 @@ existing task-run events / ledgers / runtime APIs / evidence
 三种身份不可混用：
 
 - `work_key`：用户意图下的逻辑工作单元；从腿 A/腿 B、窗口、commit、PR 到真实效果保持不变。
+- branch/worktree/D artifact 只是该 work key 的临时 carrier：换窗优先续用仍适配的绑定载体，不按窗口增殖半成品；Git 解析根不自动取得写入身份，carrier 闭合后必须 land、freeze/archive 或 retire。
 - `carrier_id + carrier_generation`：某一次 worktree/线程/Temporal run 等临时载体实例；同路径重建必须是新 generation。
 - `side_effect_id`：一次 dispatch/apply/land/retire 或状态转换；不能拿路径哈希代替，也不能跨动作复用。
 

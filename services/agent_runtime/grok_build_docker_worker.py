@@ -193,6 +193,28 @@ def _rules_snapshot(paths: tuple[Path, ...] = REQUIRED_RULE_PATHS) -> dict[str, 
     }
 
 
+def _package_rules_snapshot(raw_ref: object) -> dict[str, Any]:
+    """Consume the exact neutral-package rules bytes instead of an implicit host set."""
+
+    ref, physical_path, raw = _read_hash_bound_bytes_ref(
+        raw_ref,
+        label="canonical package rules_ref",
+    )
+    return {
+        "schema_version": RULES_SNAPSHOT_VERSION,
+        "sha256": ref["sha256"],
+        "files": [
+            {
+                "path": str(physical_path),
+                "logical_path": ref["path"],
+                "sha256": ref["sha256"],
+                "size_bytes": len(raw),
+            }
+        ],
+        "package_rules_ref": ref,
+    }
+
+
 def _rules_cli_text(snapshot: dict[str, Any]) -> str:
     paths = ", ".join(str(item.get("path") or "") for item in snapshot["files"])
     return (
@@ -636,6 +658,13 @@ def _canonical_package_lane(
         raise ValueError(f"package {package['package_id']} prompt_ref must be UTF-8 text") from exc
     if not prompt.strip():
         raise ValueError(f"package {package['package_id']} prompt_ref is empty")
+    rules_ref = dict(package["rules_ref"])
+    validated_rules_ref, _, _ = _read_hash_bound_bytes_ref(
+        rules_ref,
+        label=f"package {package['package_id']} rules_ref",
+    )
+    if validated_rules_ref["sha256"] != str(package["rules_sha256"]):
+        raise ValueError(f"package {package['package_id']} rules_ref drifted")
 
     acceptance = dict(package["acceptance"])
     result_format = "json_object" if acceptance["require_json_object"] is True else "text"
@@ -659,6 +688,7 @@ def _canonical_package_lane(
         "input_sha256": str(package["input_sha256"]),
         "context_sha256": str(package["context_sha256"]),
         "rules_sha256": str(package["rules_sha256"]),
+        "rules_ref": validated_rules_ref,
         "output_contract_sha256": str(package["output_contract_sha256"]),
         "prompt": prompt,
         "prompt_ref": prompt_ref,
@@ -726,6 +756,7 @@ def _reject_canonical_caller_drift(
         "logical_consumer_id",
         "logical_effect_contract",
         "physical_consumer_id",
+        "rules_ref",
         "allowed_output_root",
         "planning",
         "subagents",
@@ -1749,6 +1780,11 @@ async def _execute_lane_locked(
         raise DockerGrokPermanentError(
             "Docker Grok CLI or cached grok.com login handle is unavailable"
         )
+    requested_rules_snapshot = (
+        _package_rules_snapshot(lane.get("rules_ref"))
+        if canonical_package_mode
+        else _rules_snapshot()
+    )
     env, profile_dir = _grok_cli_environment(grok_home)
     model_capabilities = await _discover_model_capabilities(
         grok_bin,
@@ -1756,7 +1792,6 @@ async def _execute_lane_locked(
         profile_dir=profile_dir,
         requested_model=model,
     )
-    requested_rules_snapshot = _rules_snapshot()
     context_inspect = await _inspect_grok_context(grok_bin, env=env, cwd=cwd)
     execution_limits = _lane_execution_limits(lane)
     deadline_seconds = execution_limits["deadline_seconds"]
@@ -2269,7 +2304,11 @@ async def _execute_lane_locked(
     observed_backend_models = _observed_backend_models(model_usage)
     observed_model = observed_backend_models[0]
     model_identity_binding = grok_docker_model_identity_binding(model)
-    observed_rules_snapshot = _rules_snapshot()
+    observed_rules_snapshot = (
+        _package_rules_snapshot(lane.get("rules_ref"))
+        if canonical_package_mode
+        else _rules_snapshot()
+    )
     if observed_rules_snapshot["sha256"] != requested_rules_snapshot["sha256"]:
         raise DockerGrokTransientError("Grok shared rules changed during the lane execution")
     invocation_accounting = _aggregate_invocation_usage(invocation_evidence)

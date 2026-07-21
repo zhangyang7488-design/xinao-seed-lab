@@ -305,7 +305,7 @@ def test_context_intent_alignment_eval_is_balanced_and_friction_bounded() -> Non
         (REPO_ROOT / "evals/context_intent_alignment/cases.yaml").read_text(encoding="utf-8")
     )
     cases = {case["metadata"]["id"]: case for case in loaded}
-    assert len(cases) == suite["case_count"] == 48
+    assert len(cases) == suite["case_count"] == 51
     assert len(cases) == len(loaded)
     assert all(case["metadata"]["domain"] == case["vars"]["domain"] for case in cases.values())
     for required in (
@@ -343,6 +343,7 @@ def test_context_intent_alignment_eval_is_balanced_and_friction_bounded() -> Non
         "REG_FRESH_WINDOW_PARENT_INTENT_FIRST_MEDIUM_CONTINUOUS",
         "REG_FRESH_WINDOW_REUSES_ACCEPTED_D_CANDIDATE",
         "NEG_FRESH_WINDOW_DIRECTORY_ONLY_IS_NOT_REUSE",
+        "REG_DIRECT_ROUTE_AND_CARRIER_SURVIVE_WINDOW",
     ):
         assert required in cases
     assert cases["POS_CLEAR_REVERSIBLE_LOCAL_FIX"]["vars"]["expected_ask_user"] is False
@@ -380,6 +381,17 @@ def test_context_intent_alignment_eval_is_balanced_and_friction_bounded() -> Non
         "ATOM_USER_REAUTHORIZES_ROUTINE_DISPATCH",
         "ATOM_OWNER_REBUILDS_WORKER_PACKAGE",
     }
+    route_continuity = cases["REG_DIRECT_ROUTE_AND_CARRIER_SURVIVE_WINDOW"]["vars"]
+    assert route_continuity["expected_worker_transport"] == "direct_batch"
+    assert "ATOM_EXISTING_DIRECT_ROUTE_CONTINUES" in route_continuity[
+        "expected_recovered_requirement_atoms"
+    ].split("|")
+    assert "ATOM_RESUME_IMPLIES_TEMPORAL" in route_continuity[
+        "expected_rejected_proxy_atoms"
+    ].split("|")
+    assert "ATOM_NEW_BRANCH_PER_WINDOW" in route_continuity["expected_rejected_proxy_atoms"].split(
+        "|"
+    )
     routing_prompt = (REPO_ROOT / "evals/context_intent_alignment/prompt.txt").read_text(
         encoding="utf-8"
     )
@@ -842,7 +854,9 @@ def test_context_intent_alignment_eval_is_balanced_and_friction_bounded() -> Non
     assert "REUSE never redispatches or regenerates the accepted package" in prompt
     assert "describe the next meaningful consumer" in prompt
     assert "directory-only instance repair" in prompt
-    assert "alone is not a durable-transport fact" in prompt
+    assert "must not switch legs" in prompt
+    assert "Direct batch is a normal leg A, not a fallback" in prompt
+    assert "do not create a branch or worktree merely because a new" in prompt
     assert "requires an explicit prior active tier" in prompt
     assert "already-promoted governing invariant" in prompt
     assert "completed local adjudication" in prompt
@@ -880,8 +894,8 @@ def test_context_intent_alignment_eval_is_balanced_and_friction_bounded() -> Non
         (REPO_ROOT / "evals/behavior_regression/catalog.json").read_text(encoding="utf-8")
     )
     context_suite = next(s for s in catalog["suites"] if s["id"] == "context_intent_alignment")
-    assert context_suite["case_count"] == 48
-    assert catalog["declared_case_count"] == 95
+    assert context_suite["case_count"] == 51
+    assert catalog["declared_case_count"] == 98
 
     decision = json.loads(
         (REPO_ROOT / "evals/context_intent_alignment/decision_model.v1.json").read_text(
@@ -1276,7 +1290,7 @@ def test_dual_self_evolution_runners_are_thin_and_claims_stay_separate() -> None
         (REPO_ROOT / "evals/behavior_regression/catalog.json").read_text(encoding="utf-8")
     )
     suite_count = sum(item["case_count"] for item in catalog["suites"])
-    assert suite_count == catalog["declared_case_count"] == 95
+    assert suite_count == catalog["declared_case_count"] == 98
     context_cases = yaml.safe_load(
         (REPO_ROOT / "evals/context_intent_alignment/cases.yaml").read_text(encoding="utf-8")
     )

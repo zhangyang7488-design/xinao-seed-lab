@@ -88,12 +88,17 @@ Return only one JSON object with these fields:
   Freeze and hash every input, prove requested=observed model identity and positive terminal usage,
   and return only a non-authoritative candidate to Sol for deterministic fan-in
 - worker_transport: adaptive when the exact surface should be chosen from live net benefit,
-  in_turn_agent for a Codex subagent whose inherited context is decisive, direct_batch when bounded
-  direct diagnosis or fallback has higher value, temporal_durable for healthy durable background or
-  multi-wave work, and not_applicable only with supervisor_only
-  Active `continuous`/`永续` mode alone is not a durable-transport fact. Use
-  `temporal_durable` only when restored context explicitly requires durable background or restart
-  recovery and identifies a healthy existing durable route; otherwise keep `adaptive`.
+  in_turn_agent for a Codex subagent whose inherited context is decisive, direct_batch for a bounded
+  online whole-package transaction owned by the current interactive TUI, temporal_durable only for
+  an explicitly required healthy durable background, cross-restart, or unattended multi-wave handoff,
+  and not_applicable only with supervisor_only. Direct batch is a normal leg A, not a fallback.
+  Active `continuous`/`永续` mode, resume, compaction, or a window change alone is not a durable-transport
+  fact and must not switch legs. A still-valid restored route receipt keeps its selected transport only
+  after its event head, work key, input pins, carrier facts, and route-health facts revalidate; a stale
+  receipt triggers bounded recovery/reseal, not an arbitrary leg migration.
+  Without such a receipt, use `temporal_durable` only when restored context explicitly requires the
+  durable handoff and identifies a healthy existing route; otherwise choose from task fit and live net
+  benefit rather than inferring a transport from stage, directory, or mode.
   When restored evidence already proves a selected-observed, task-identity, or seal mismatch and the
   rejected candidate's next consumer is one frozen bounded recovery or reseal key in an explicitly new
   bounded dispatch wave, use `direct_batch`; this is one-shot rejected-lane recovery, not general
@@ -150,12 +155,17 @@ Return only one JSON object with these fields:
   provider or width decision does the once-per-wave quota rule apply. Do not fuse that later routing step
   into the pre-action receipt decision.
 - Preserve one logical work key across windows, direct and Temporal legs, branches, commits, PRs, and
-  runtime verification. A worktree path or carrier is not that identity. Interruption pauses mutation and
-  preserves the exact next consumer on the existing task-run chain; it does not authorize a hidden owner,
-  daemon, restart from zero, or abandonment. Local green, commit, push, PR checks, merge, real effect, and
-  carrier retirement are separate predicates. Dirty, ignored, unabsorbed, stale, locked, prunable, or
-  unclassified carriers fail closed; archive verification does not grant deletion; retire_candidate is
-  not retired; receipts and tombstones never gain parent completion or delete authority.
+  runtime verification. A worktree path or carrier is not that identity. Reuse the suitable carrier already
+  bound to an unfinished work key across windows; do not create a branch or worktree merely because a new
+  window opened. Create a new isolated carrier only when the prior carrier is closed or invalid, or a real
+  write-domain conflict requires it. A Git-resolved root is not automatically the current writable carrier.
+  Interruption pauses mutation and preserves the exact next consumer on the existing task-run chain; it does
+  not authorize a hidden owner, daemon, restart from zero, or abandonment. Local green, commit, push, PR
+  checks, merge, real effect, and carrier retirement are separate predicates. Once a carrier's work is
+  closed, land it or freeze it as a recoverable object and then retire it; do not keep it as a permanent
+  half-finished work surface. Dirty, ignored, unabsorbed, stale, locked, prunable, or unclassified carriers
+  fail closed; archive verification does not grant deletion; retire_candidate is not retired; receipts and
+  tombstones never gain parent completion or delete authority.
 - recovery_probe: bounded_event_driven when a degraded endpoint/capability should be isolated or cooled
   down and later re-admitted through a limited probe, otherwise not_applicable; telemetry repair alone is
   not endpoint re-admission, and no degraded scope means no recovery probe; never probe before every task

@@ -79,6 +79,10 @@ def _docker_leg_b_package_fixture(
     *,
     dependency_condition: str | None = None,
 ) -> dict:
+    from services.agent_runtime.context_slice_manifest import (
+        build_context_slice_manifest,
+        write_context_slice_manifest,
+    )
     from services.agent_runtime.dispatch_economics import (
         build_route_choice_identity,
         build_worker_package_identity,
@@ -109,47 +113,33 @@ def _docker_leg_b_package_fixture(
     input_path = source_root / "input.txt"
     input_path.write_text("bounded\n", encoding="utf-8")
     input_sha256 = hashlib.sha256(input_path.read_bytes()).hexdigest()
-    context_path = source_root / "context.json"
-    context_ref = _write_dispatch_fixture_json(
-        context_path,
+    context_spec_path = source_root / "context-spec.json"
+    _write_dispatch_fixture_json(
+        context_spec_path,
         {
-            "schema_version": "xinao.context_slice_manifest.v1",
-            "authority": False,
-            "completion_claim_allowed": False,
-            "context_identity": {
-                "schema_version": "xinao.context_slice_identity.v1",
-                "sources": [
-                    {
-                        "path": "input.txt",
-                        "source_sha256": input_sha256,
-                        "slices": [
-                            {
-                                "selector": "line_range:1-1",
-                                "start": 1,
-                                "end": 1,
-                                "content_sha256": input_sha256,
-                            }
-                        ],
-                    }
-                ],
-            },
-            "sources": [
+            "schema_version": "xinao.context_slice_spec.v1",
+            "entries": [
                 {
                     "path": "input.txt",
-                    "source_sha256": input_sha256,
-                    "slices": [
-                        {
-                            "selector": "line_range:1-1",
-                            "start": 1,
-                            "end": 1,
-                            "content_sha256": input_sha256,
-                            "content": "bounded\n",
-                        }
-                    ],
+                    "selectors": [{"kind": "line_range", "start": 1, "end": 1}],
                 }
             ],
         },
     )
+    context_path = source_root / "context.json"
+    context_ref = {
+        "path": str(context_path),
+        "sha256": write_context_slice_manifest(
+            context_path,
+            build_context_slice_manifest(root=source_root, spec_path=context_spec_path),
+        ),
+    }
+    rules_path = source_root / "rules.txt"
+    rules_path.write_text("bounded worker rules\n", encoding="utf-8")
+    rules_ref = {
+        "path": to_logical(rules_path),
+        "sha256": hashlib.sha256(rules_path.read_bytes()).hexdigest(),
+    }
     context_ref["path"] = to_logical(context_path)
     input_ref = {"path": to_logical(input_path), "sha256": input_sha256}
 
@@ -200,7 +190,7 @@ def _docker_leg_b_package_fixture(
             phase="EXPLORE",
             input_sha256=input_sha256,
             context_sha256=context_ref["sha256"],
-            rules_sha256="b" * 64,
+            rules_sha256=rules_ref["sha256"],
             output_contract_sha256=output_contract_sha256,
             write_domains=[],
             candidate_only=True,
@@ -212,6 +202,7 @@ def _docker_leg_b_package_fixture(
                 "sha256": hashlib.sha256(prompt_path.read_bytes()).hexdigest(),
             },
             "context_manifest_ref": dict(context_ref),
+            "rules_ref": dict(rules_ref),
             "input_refs": [dict(input_ref)],
             "allowed_output_root": f"{logical_root}/outputs/{package_id}",
             "cwd": f"{logical_root}/source",
@@ -338,6 +329,8 @@ def _docker_leg_b_package_fixture(
         "route_claim_ref": route_claim_ref,
         "route_claim": route_claim,
         "input_path": input_path,
+        "rules_path": rules_path,
+        "rules_ref": rules_ref,
     }
 
 
@@ -904,6 +897,29 @@ def test_docker_grok_rules_snapshot_binds_every_required_source(tmp_path: Path) 
     assert _rules_snapshot((first, second))["sha256"] != snapshot["sha256"]
 
 
+def test_docker_grok_canonical_package_rules_snapshot_consumes_exact_ref(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from services.agent_runtime import grok_build_docker_worker as docker_worker
+
+    rules = tmp_path / "rules.txt"
+    rules.write_text("canonical rules\n", encoding="utf-8")
+    rules_ref = {
+        "path": str(rules),
+        "sha256": hashlib.sha256(rules.read_bytes()).hexdigest(),
+    }
+    monkeypatch.setattr(docker_worker, "_map_host_path_to_container", lambda raw: str(raw))
+    snapshot = docker_worker._package_rules_snapshot(rules_ref)
+    assert snapshot["sha256"] == rules_ref["sha256"]
+    assert snapshot["package_rules_ref"] == rules_ref
+    assert snapshot["files"][0]["path"] == str(rules.resolve())
+
+    rules.write_text("drifted rules\n", encoding="utf-8")
+    with pytest.raises(ValueError, match="sha256 mismatch"):
+        docker_worker._package_rules_snapshot(rules_ref)
+
+
 def test_docker_grok_maps_both_live_repo_identities_to_app_mount() -> None:
     from services.agent_runtime.grok_build_docker_worker import _map_host_path_to_container
 
@@ -1393,6 +1409,8 @@ def test_docker_grok_leg_b_derives_lane_from_same_neutral_manifest_bytes(
     assert lane["logical_consumer_id"] == "worker_candidate_producer"
     assert lane["physical_consumer_id"] == GROK_DOCKER_CONSUMER_ID
     assert lane["prompt"] == "canonical prompt p1"
+    assert lane["rules_ref"] == fixture["rules_ref"]
+    assert lane["rules_sha256"] == fixture["rules_ref"]["sha256"]
     assert lane["depends_on"] == []
     assert lane["package_manifest_ref"] == fixture["manifest_ref"]["path"]
     assert lane["package_manifest_sha256"] == fixture["manifest_ref"]["sha256"]
@@ -1408,6 +1426,40 @@ def test_docker_grok_leg_b_derives_lane_from_same_neutral_manifest_bytes(
     assert fanin_manifest["route_choice"] == fixture["envelope"]["route_choice"]
     assert fanin_manifest["route_adapter"] == fixture["envelope"]["execution_adapter"]
     assert result["grok_fanin"]["route_choice"] == fixture["envelope"]["route_choice"]
+
+
+def test_docker_grok_leg_b_rejects_rules_ref_drift_before_provider(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import asyncio
+
+    from services.agent_runtime import grok_build_docker_worker as docker_worker
+    from services.agent_runtime.dispatch_economics import DispatchEconomicsError
+
+    fixture = _docker_leg_b_package_fixture(tmp_path)
+    provider_calls: list[dict] = []
+
+    async def forbidden_provider(**kwargs: object) -> dict:
+        provider_calls.append(dict(kwargs))
+        raise AssertionError("provider ran after canonical rules drift")
+
+    fixture["rules_path"].write_text("drifted rules\n", encoding="utf-8")
+    monkeypatch.setattr(docker_worker, "docker_native_grok_enabled", lambda: True)
+    monkeypatch.setattr(docker_worker, "_map_host_path_to_container", fixture["resolver"])
+    monkeypatch.setattr(docker_worker, "_execute_lane", forbidden_provider)
+    with pytest.raises(DispatchEconomicsError, match="rules_ref sha256 mismatch"):
+        asyncio.run(
+            docker_worker.run_docker_native_grok_fanin(
+                runtime_root=tmp_path / "runtime",
+                workflow_id="wf-leg-b-rules-drift",
+                input_path=fixture["input_path"],
+                content_md="bounded\n",
+                dispatch_envelope_ref=fixture["envelope_ref"],
+                dispatch_route_claim_ref=fixture["route_claim_ref"],
+            )
+        )
+    assert provider_calls == []
 
 
 def test_docker_grok_leg_b_rejects_caller_identity_drift_before_provider(

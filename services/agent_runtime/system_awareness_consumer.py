@@ -30,6 +30,7 @@ REPORT_VERSION = "xinao.system_awareness.report.v1"
 COMPLETION_CARD_VERSION = "xinao.work_key_completion_card.v1"
 EPISODE_OUTCOME_VERSION = "xinao.episode_outcome_projection.v1"
 PROBLEM_PROJECTION_VERSION = "xinao.problem_projection.v1"
+FRONTIER_RECONCILIATION_VERSION = "xinao.global_frontier_reconciliation.v1"
 IDENTITY_VERSION = "xinao.identity_reconciliation.v1"
 PREFLIGHT_VERSION = "xinao.supervisor_capability_preflight.v1"
 TEMPORAL_VERSION = "xinao.temporal_identity_reconciliation.v1"
@@ -598,6 +599,135 @@ def reconcile_problem_lifecycle(raw: Mapping[str, object]) -> dict[str, Any]:
         "problems": problems,
         "receipts": receipts,
         "problem_count": len(problems),
+    }
+
+
+def reconcile_global_frontier(raw: Mapping[str, object]) -> dict[str, Any]:
+    """Validate the proof boundary for a parent-wide frontier decision.
+
+    This is a read-only consumer over task-run facts.  A local wait or a
+    transport failure can describe only its affected cone; it cannot become a
+    parent-wide wait without a complete, hash-bound coverage record.
+    """
+
+    data = _require_mapping(raw, "global_frontier_reconciliation")
+    parent_mainline_id = str(data.get("parent_mainline_id") or "").strip()
+    event_head = str(data.get("event_head") or "").strip()
+    scan_generation = str(data.get("scan_generation") or "").strip()
+    if not parent_mainline_id or not event_head or not scan_generation:
+        raise SystemAwarenessError(
+            "INPUT_INVALID",
+            "parent_mainline_id, event_head, and scan_generation are required",
+        )
+    raw_transactions = data.get("transactions")
+    if not isinstance(raw_transactions, list):
+        raise SystemAwarenessError("INPUT_INVALID", "transactions must be an array")
+    transactions: list[dict[str, Any]] = []
+    transaction_ids: set[str] = set()
+    scope_violations: list[str] = []
+    for index, raw_transaction in enumerate(raw_transactions):
+        transaction = _require_mapping(raw_transaction, f"transactions[{index}]")
+        transaction_id = str(
+            transaction.get("transaction_id") or transaction.get("work_key") or ""
+        ).strip()
+        if not transaction_id or transaction_id in transaction_ids:
+            scope_violations.append("DUPLICATE_OR_MISSING_TRANSACTION_ID")
+        transaction_ids.add(transaction_id)
+        scope = str(transaction.get("scope") or "").strip()
+        if scope not in {"package", "batch", "parent"}:
+            scope_violations.append("TRANSACTION_SCOPE_INVALID")
+        batch_id = str(transaction.get("batch_id") or "").strip()
+        package_id = str(transaction.get("package_id") or "").strip()
+        work_key = str(transaction.get("work_key") or transaction_id).strip()
+        if scope == "package" and (
+            work_key == parent_mainline_id or (batch_id and batch_id == parent_mainline_id)
+        ):
+            scope_violations.append("PACKAGE_PARENT_SCOPE_COLLISION")
+        if scope == "batch" and batch_id == parent_mainline_id:
+            scope_violations.append("BATCH_PARENT_SCOPE_COLLISION")
+        if scope == "parent" and transaction_id != parent_mainline_id:
+            scope_violations.append("PARENT_SCOPE_ID_MISMATCH")
+        transactions.append(
+            {
+                "transaction_id": transaction_id,
+                "scope": scope,
+                "work_key": work_key,
+                "batch_id": batch_id,
+                "package_id": package_id,
+                "state": str(transaction.get("state") or "open"),
+                "affected_cone": str(transaction.get("affected_cone") or transaction_id),
+                "consumer": str(transaction.get("consumer") or ""),
+            }
+        )
+
+    covered_raw = data.get("covered_transaction_ids")
+    if not isinstance(covered_raw, list):
+        raise SystemAwarenessError("INPUT_INVALID", "covered_transaction_ids must be an array")
+    covered = {str(value).strip() for value in covered_raw if str(value).strip()}
+    unknown_covered = sorted(covered - transaction_ids)
+    uncovered = sorted(transaction_ids - covered)
+    disposition = str(data.get("frontier_disposition") or "").strip()
+    global_exhaustion_requested = disposition in {
+        "durable_wait",
+        "no_positive_global_candidate",
+    }
+    local_wait_only = disposition in {"local_wait", "blocked_cone"}
+    reasons: list[str] = []
+    fatal_reasons: list[str] = []
+    if scope_violations:
+        fatal_reasons.extend(sorted(set(scope_violations)))
+        reasons.extend(sorted(set(scope_violations)))
+    if unknown_covered:
+        fatal_reasons.append("UNKNOWN_COVERED_TRANSACTION")
+        reasons.append("UNKNOWN_COVERED_TRANSACTION")
+    if uncovered:
+        fatal_reasons.append("GLOBAL_COVERAGE_INCOMPLETE")
+        reasons.append("GLOBAL_COVERAGE_INCOMPLETE")
+    if local_wait_only:
+        reasons.append("LOCAL_WAIT_SCOPE_PRESERVED")
+    if global_exhaustion_requested and not covered == transaction_ids:
+        fatal_reasons.append("GLOBAL_EXHAUSTION_REQUIRES_COMPLETE_COVERAGE")
+        reasons.append("GLOBAL_EXHAUSTION_REQUIRES_COMPLETE_COVERAGE")
+    if global_exhaustion_requested and not transactions:
+        fatal_reasons.append("GLOBAL_EXHAUSTION_REQUIRES_TRANSACTION_SET")
+        reasons.append("GLOBAL_EXHAUSTION_REQUIRES_TRANSACTION_SET")
+    valid = not fatal_reasons and disposition in {
+        "execute",
+        "advance_mainline",
+        "local_wait",
+        "blocked_cone",
+        "durable_wait",
+        "no_positive_global_candidate",
+    }
+    parent_state = (
+        "open"
+        if local_wait_only or not valid
+        else "waiting"
+        if global_exhaustion_requested
+        else "open"
+    )
+    receipt_core = {
+        "schema_version": FRONTIER_RECONCILIATION_VERSION,
+        "parent_mainline_id": parent_mainline_id,
+        "event_head": event_head,
+        "scan_generation": scan_generation,
+        "frontier_disposition": disposition,
+        "covered_transaction_ids": sorted(covered),
+        "transactions": transactions,
+    }
+    return {
+        **receipt_core,
+        "receipt_sha256": hashlib.sha256(artifact_json_bytes(receipt_core)).hexdigest(),
+        "status": "valid" if valid else "invalid",
+        "parent_state": parent_state,
+        "global_frontier_reconciled": valid and global_exhaustion_requested,
+        "parent_wait_claim_allowed": valid and global_exhaustion_requested,
+        "scope_violations": sorted(set(scope_violations)),
+        "uncovered_transaction_ids": uncovered,
+        "unknown_covered_transaction_ids": unknown_covered,
+        "reason_codes": list(dict.fromkeys(reasons or ["GLOBAL_FRONTIER_RECONCILED"])),
+        "authority": False,
+        "completion_claim_allowed": False,
     }
 
 
@@ -2984,6 +3114,38 @@ def _dispatch_outcome_projection_if_present(
     return dict(projection)
 
 
+def _frontier_reconciliation_from_events(
+    events: Sequence[Mapping[str, object]],
+) -> dict[str, Any] | None:
+    """Consume the newest explicit parent-frontier receipt, if one exists."""
+
+    candidates: list[Mapping[str, object]] = []
+    for event in events:
+        embedded = event.get("global_frontier_reconciliation")
+        if isinstance(embedded, Mapping):
+            candidates.append(embedded)
+        elif str(event.get("kind") or event.get("phase") or "") in {
+            "global_frontier_reconciliation",
+            "frontier_reconciliation",
+        }:
+            candidates.append(event)
+    if not candidates:
+        return None
+    try:
+        return reconcile_global_frontier(candidates[-1])
+    except SystemAwarenessError as exc:
+        return {
+            "schema_version": FRONTIER_RECONCILIATION_VERSION,
+            "status": "invalid",
+            "parent_state": "open",
+            "global_frontier_reconciled": False,
+            "parent_wait_claim_allowed": False,
+            "reason_codes": [exc.code, "GLOBAL_FRONTIER_RECEIPT_INVALID"],
+            "authority": False,
+            "completion_claim_allowed": False,
+        }
+
+
 def project_work_unit_lifecycle(
     task: Mapping[str, object],
     state: Mapping[str, object],
@@ -3225,6 +3387,7 @@ def scan_task_run(
     resolved = Path(run_dir).resolve()
     task, state, events, hashes = _load_task_run(resolved)
     dispatch_outcome_projection = _dispatch_outcome_projection_if_present(resolved, events)
+    frontier_reconciliation = _frontier_reconciliation_from_events(events)
     candidates = _problem_candidates(events)
     recovered_problem_projection, problem_history_binding = _latest_problem_projection_binding(
         events
@@ -3292,6 +3455,9 @@ def scan_task_run(
     if dispatch_outcome_projection is not None:
         report["dispatch_outcome_projection"] = dispatch_outcome_projection
         report["reason_codes"].append("DISPATCH_OUTCOME_V2_PROJECTED")
+    if frontier_reconciliation is not None:
+        report["global_frontier_reconciliation"] = frontier_reconciliation
+        report["reason_codes"].append("GLOBAL_FRONTIER_RECONCILIATION_PROJECTED")
     return report
 
 
@@ -3340,6 +3506,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     worktrees.add_argument("--base-ref", default="origin/main")
     worktrees.add_argument("--records", type=Path)
     worktrees.add_argument("--task-run-dir", type=Path)
+    worktrees.add_argument("--now")
     worktrees.add_argument("--output", type=Path)
 
     publish_record = sub.add_parser("publish-worktree-record")
@@ -3433,6 +3600,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 args.repo_root,
                 base_ref=args.base_ref,
                 records=records_payload,
+                now=_parse_time(args.now, "now") if args.now else None,
             )
         elif args.command == "preflight":
             value = preflight_supervisor_root(
