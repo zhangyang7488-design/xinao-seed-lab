@@ -26,6 +26,7 @@ from services.agent_runtime.system_awareness_consumer import (
     reconcile_temporal_identity,
     resolve_worktree_carrier,
     scan_task_run,
+    scan_task_run_problem_projection,
     scan_worktree_lifecycle,
     validate_strict_json_result,
 )
@@ -367,6 +368,52 @@ def test_task_run_scan_lazily_consumes_dispatch_outcome_v2_projection(
     }
     assert report["dispatch_outcome_projection"]["completion_claim_allowed"] is False
     assert "DISPATCH_OUTCOME_V2_PROJECTED" in report["reason_codes"]
+
+
+def test_problem_only_projection_isolates_unrelated_invalid_dispatch_projection(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import services.agent_runtime.dispatch_economics as dispatch_economics
+
+    outcome = tmp_path / "worker-terminal-event.json"
+    _write_json(outcome, {"schema_version": "xinao.dispatch_outcome_event.v2"})
+    outcome_ref = f"{outcome}#sha256={hashlib.sha256(outcome.read_bytes()).hexdigest()}"
+    run_id = "problem-consumer-dispatch-isolation"
+    run_dir = _write_scan_run(
+        tmp_path,
+        run_id,
+        [
+            {
+                "schema_version": "codex.verified-task-run.v1",
+                "event_id": "worker-terminal-invalid-projection",
+                "run_id": run_id,
+                "phase": "worker_terminal",
+                "kind": "result",
+                "exit_code": 0,
+                "retry_class": "none",
+                "summary": "dispatch projection is independently invalid",
+                "evidence_refs": [outcome_ref],
+                "target": "wk:dispatch",
+                "actor": "worker",
+                "side_effect_id": "se:invalid-dispatch-projection",
+            }
+        ],
+    )
+    calls: list[Path] = []
+
+    def invalid_dispatch(path: Path) -> dict[str, object]:
+        calls.append(Path(path))
+        raise dispatch_economics.DispatchEconomicsError("input ref sha256 drifted")
+
+    monkeypatch.setattr(dispatch_economics, "project_dispatch_outcomes", invalid_dispatch)
+    with pytest.raises(awareness_module.SystemAwarenessError) as caught:
+        scan_task_run(run_dir)
+    assert caught.value.reason_code == "DISPATCH_OUTCOME_PROJECTION_INVALID"
+
+    problem_projection = scan_task_run_problem_projection(run_dir)
+    assert problem_projection["schema_version"] == "xinao.problem_projection.v1"
+    assert problem_projection["problem_count"] == 0
+    assert calls == [run_dir.resolve()]
 
 
 @pytest.mark.parametrize("phase", ["owner_adopted", "authority_applied"])

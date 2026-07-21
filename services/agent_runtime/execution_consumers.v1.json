@@ -442,7 +442,7 @@
       "contract_mode": "read_only_existing_facts_to_non_authoritative_decisions",
       "status": "boundary_verified_non_parent_owner",
       "conformance_status": "boundary_verified_non_parent_owner",
-      "status_reason": "The consumer replays hash-bound typed problem transitions by stable problem_ref and generation, adapts non-verified task-run terminals, rejects caller-injected close/effect state, keeps provider invocation/evaluation/outcome conversion separate, and advances typed work-unit transitions only through semantic readbacks.",
+      "status_reason": "The full consumer remains fail-closed across dispatch, frontier, usage, carrier, and problem projections. Its strict problem-only entry reuses the same task/state/event envelope and typed transition validation so unrelated semantic projection failure cannot disable problem accounting, while corrupt problem evidence still blocks.",
       "writes_effects": false,
       "parent_completion_authority": false,
       "independent_gap_discovery": true,
@@ -469,7 +469,7 @@
       "contract_mode": "immutable_transition_artifact_plus_canonical_task_run_event",
       "status": "boundary_verified_non_parent_owner",
       "conformance_status": "boundary_verified_non_parent_owner",
-      "status_reason": "The adapter writes immutable typed transition artifacts, appends only their exact hashes through the canonical task-run CLI, and records unmet completion criteria before partial, blocked, or unverified finish; it cannot decide adoption, effect, close, or parent completion on its own.",
+      "status_reason": "The adapter derives identity and generation from one immutable problem snapshot, validates before publishing, binds the append to that snapshot's event count and digest through the canonical locked CLI, and replays stable event/side-effect identity idempotently. It cannot suppress unrelated full-scan defects or decide adoption, effect, close, or parent completion on its own.",
       "writes_effects": true,
       "parent_completion_authority": false,
       "independent_gap_discovery": false,
@@ -477,11 +477,16 @@
         "tests/test_problem_transition.py"
       ],
       "replay_evidence": [],
-      "current_positive_canary_evidence": [],
+      "current_positive_canary_evidence": [
+        "D:/XINAO_RESEARCH_RUNTIME/state/codex_task_runs/composer25-mainline-continuous-20260717/problem_transitions/evt-problem-c1580cb88f2eed6aa2dc5869a3eeda91.json",
+        "D:/XINAO_RESEARCH_RUNTIME/state/codex_task_runs/composer25-mainline-continuous-20260717/evidence/horizontal_maturity_closure_20260721/dependabot_diskcache_observation_20260721.json"
+      ],
       "superseded_evidence": [],
       "negative_canary_evidence": [],
       "blocking_evidence": [],
-      "fresh_canary_evidence": []
+      "fresh_canary_evidence": [
+        "D:/XINAO_RESEARCH_RUNTIME/state/codex_task_runs/composer25-mainline-continuous-20260717/problem_transitions/evt-problem-c1580cb88f2eed6aa2dc5869a3eeda91.json"
+      ]
     },
     {
       "consumer_id": "global_frontier_reconciliation_v2",

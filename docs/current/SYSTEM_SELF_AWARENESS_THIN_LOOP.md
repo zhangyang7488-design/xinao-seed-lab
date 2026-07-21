@@ -76,7 +76,8 @@ temporary carrier: active/paused -> archive review or retire candidate -> retire
 3. 判断：单 work key/单组件默认 `local_defect`；跨 work key、跨组件、缺消费者、控制边界或 governing assumption 默认 `systemic_capability_gap`。
 4. 选择：输出 `small_repair | structural_repair | no_build`。与父目标无关或预期净收益明确非正时可 `no_build`，不为维持运行制造工程。
 5. 关闭：必须同时有真实消费者或 live canary，以及类型明确为 monitoring/effectiveness/observation 的已完成效果窗口；同一条 real-consumer 证据即使自称 `window_completed` 也不能双算。diff、单测、Promptfoo 单独为绿时只能 monitoring/partial。
-6. 复发：effective 后出现新的同根因事件即 reopen，保留旧证据并提升修复层级候选。
+6. 写入隔离：全量 `scan_task_run` 对 dispatch、frontier、usage、carrier 与问题投影继续整体 fail-closed；问题写入适配器只调用同一 task/state/events 真源上的严格 problem projection，仍完整校验 typed transition 的哈希、事件绑定与代际。查重、代际推导和预验证只消费同一个不可变快照；候选转移在产物发布前完成生命周期预验证，再以 `expected-events-count + expected-events-sha256` 进入 canonical task-run 文件锁。头部漂移必须拒绝/重算，完全相同事件只作幂等重放，不能写入重复或跳代。
+7. 复发：effective 后出现新的同根因事件即 reopen，保留旧证据并提升修复层级候选。
 
 ## 默认授权记录
 
@@ -117,11 +118,12 @@ python scripts/run_system_awareness_consumer.py scan-worktrees --repo-root <repo
 python scripts/run_system_awareness_consumer.py publish-worktree-record --repo-root <repo> --records <records.json> --worktree <path> --task-run-event-ref <events.jsonl#event-id> --carrier-id <id> --carrier-generation <n> --purpose <text> --owner <owner> --declared-state active --work-key <key> --side-effect-id <id>
 python scripts/run_system_awareness_consumer.py temporal --repo-manifest <pin.json> --live-snapshot <describe.json> --output <receipt>
 python scripts/run_system_awareness_consumer.py recovery --input <probe.json> --output <receipt>
+python scripts/record_problem_transition.py record --task-run-cli <task_run.py> --task-run-root <root> --task-run-id <run> --transition-type problem_observed --family-signature <family> --governing-cause <cause> --work-key <key> --component-id <consumer>
 python scripts/run_action_resume_consumer.py issue ... --output <receipt>
 python scripts/run_action_resume_consumer.py consume-canary ...
 ```
 
-`scan-task-run` 可用 `--previous-problems` 保留 problem_ref 与历史，用 `--effectiveness-evidence --close-requested` 做关闭/复发判断，并同时产出 work-unit 生命周期投影。`scan-worktrees` 优先从 task-run event tail 反向发现最新 hash-bound records，也可显式传 `--records`；没有 records 时全部 fail closed 为 unclassified。
+`scan-task-run` 只从 hash-bound task-run 事实链重放 problem_ref、效果与关闭状态；`--previous-problems`、`--effectiveness-evidence` 或 `--close-requested` 等外部注入会以 `EXTERNAL_PROBLEM_FACTS_NOT_AUTHORIZED` 拒绝。写入只能经 `record_problem_transition.py` 形成 typed transition 并原子追加。`scan-worktrees` 优先从 task-run event tail 反向发现最新 hash-bound records，也可显式传 `--records`；没有 records 时全部 fail closed 为 unclassified。
 
 任何写动作先核对 event head、world、已存在的 typed work key、精确 `next_action/action_digest` 和 side-effect identity，取得由 `run_id + work_key + side_effect_id` 固定寻址的 one-shot claim 后再立即复验一次；apply 必须绑定可重读 live fact，land 必须绑定同 key 的 Git remote/PR readback，retire 必须绑定同 key 的 carrier inventory，自称 `work_pin` 或无关文件不能过门。effect 后、event 前崩溃会留下 uncertain claim 并拒绝重放，必须先读回真实效果；消费记录也不能代替动作后的 task-run result 与物理 readback。
 
