@@ -64,6 +64,67 @@ def _write_scan_run(root: Path, run_id: str, events: list[dict[str, object]]) ->
     return run_dir
 
 
+def test_action_resume_and_system_awareness_share_exact_lifecycle_projection(
+    tmp_path: Path,
+) -> None:
+    from services.agent_runtime.action_resume_receipt import _work_unit_control_projection
+
+    work_key = "wk:shared-projection"
+
+    def event(ordinal: int, phase: str, *, evidence_refs: list[str] | None = None) -> dict:
+        return {
+            "schema_version": "codex.verified-task-run.v1",
+            "event_id": f"evt-{ordinal}",
+            "run_id": "run-shared-projection",
+            "kind": "result",
+            "phase": phase,
+            "target": work_key,
+            "exit_code": 0,
+            "evidence_refs": evidence_refs or [],
+        }
+
+    events = [
+        event(1, "work_unit_planned"),
+        event(2, "work_unit_active"),
+        event(3, "work_unit_paused"),
+        event(4, "work_unit_future_unknown"),
+        event(5, "work_unit_resume_reconciled"),
+    ]
+
+    def projections() -> tuple[dict, dict]:
+        action = _work_unit_control_projection({"events": events}, work_key)
+        awareness = awareness_module.project_work_unit_lifecycle(
+            {"run_id": "run-shared-projection"},
+            {"status": "in_progress"},
+            events,
+        )["work_units"][0]
+        return action, awareness
+
+    action, awareness = projections()
+    for field in ("state", "next_consumer", "invalid_transitions", "pending_invalid_transitions"):
+        assert action[field] == awareness[field]
+    assert action["state"] == "paused"
+    assert {row["reason_code"] for row in action["pending_invalid_transitions"]} == {
+        "WORK_UNIT_PHASE_UNKNOWN",
+        "WORK_UNIT_RESUME_READBACK_MISSING",
+    }
+
+    proof = tmp_path / "resume-readback.json"
+    proof.write_text('{"reconciled":true}\n', encoding="utf-8")
+    events.append(
+        event(
+            6,
+            "work_unit_resume_reconciled",
+            evidence_refs=[f"{proof}#sha256={hashlib.sha256(proof.read_bytes()).hexdigest()}"],
+        )
+    )
+    action, awareness = projections()
+    for field in ("state", "next_consumer", "invalid_transitions", "pending_invalid_transitions"):
+        assert action[field] == awareness[field]
+    assert action["state"] == "active"
+    assert action["pending_invalid_transitions"] == []
+
+
 def test_completion_card_keeps_boundary_parent_and_internal_child_distinct() -> None:
     binder = evaluate_completion_card(
         {

@@ -23,6 +23,10 @@ from pathlib import Path
 from typing import Any
 
 from services.agent_runtime.execution_contract import artifact_json_bytes, canonical_json_bytes
+from services.agent_runtime.work_unit_lifecycle import (
+    WORK_UNIT_FROZEN_STATES,
+    project_work_unit_state,
+)
 
 CHECKPOINT_VERSION = "xinao.codex_session_checkpoint.v2"
 CHECKPOINT_SENTINEL = "SENTINEL:XINAO_CODEX_SESSION_CHECKPOINT_V2"
@@ -62,21 +66,19 @@ _FROZEN_STATUSES = frozenset({"paused", "stopped", "cancelled"})
 _SEMANTIC_FACT_KINDS = frozenset(
     {"git_remote_ref", "pull_request", "runtime_consumer", "carrier_inventory"}
 )
-_TERMINAL_WORK_UNIT_PHASES = frozenset(
-    {
-        "work_unit_effect_verified",
-        "work_unit_effect_not_required",
-        "work_unit_blocked",
-        "work_unit_failed",
-        "work_unit_cancelled",
-    }
-)
 
 
 class ActionResumeError(ValueError):
-    def __init__(self, reason_code: str, message: str) -> None:
+    def __init__(
+        self,
+        reason_code: str,
+        message: str,
+        *,
+        details: Mapping[str, object] | None = None,
+    ) -> None:
         super().__init__(message)
         self.reason_code = reason_code
+        self.details = dict(details or {})
 
 
 def _sha256_bytes(value: bytes) -> str:
@@ -418,6 +420,10 @@ def _action_digest(action: Mapping[str, object]) -> str:
             "expected_result_phase",
         )
     }
+    # v2 receipts issued before scoped route claims did not carry this field;
+    # preserve their immutable digest while binding every newly scoped receipt.
+    if "mutation_guard_work_keys" in action:
+        identity["mutation_guard_work_keys"] = action.get("mutation_guard_work_keys")
     return _sha256_bytes(canonical_json_bytes(identity))
 
 
@@ -475,44 +481,66 @@ def _hash_bound_event_evidence(event: Mapping[str, object]) -> bool:
     return False
 
 
-def _work_unit_control_state(chain: Mapping[str, object], work_key: str) -> tuple[bool, str]:
+def _work_unit_control_projection(chain: Mapping[str, object], work_key: str) -> dict[str, object]:
     events = chain.get("events") or []
-    bound = False
-    state = "unbound"
     if not isinstance(events, list):
-        return bound, state
-    for event in events:
-        if not isinstance(event, Mapping) or str(event.get("target") or "") != work_key:
-            continue
-        phase = str(event.get("phase") or "").lower()
-        if not phase.startswith("work_unit_"):
-            continue
-        kind = str(event.get("kind") or "").lower()
-        exit_code = event.get("exit_code")
-        if phase in {"work_unit_paused", "work_unit_interrupted"}:
-            if kind not in {"pause", "result"} or exit_code not in {None, 0}:
-                continue
-            bound = True
-            state = phase.removeprefix("work_unit_")
-        elif phase == "work_unit_resume_reconciled":
-            if kind != "result" or exit_code != 0 or not _hash_bound_event_evidence(event):
-                continue
-            bound = True
-            state = "active"
-        elif kind == "result" and exit_code == 0:
-            bound = True
-            state = phase.removeprefix("work_unit_")
-    return bound, state
+        return {
+            "scope": "work_unit",
+            "work_key": work_key,
+            "bound": False,
+            "state": "unbound",
+            "event_id": None,
+            "phase": None,
+            "pending_invalid_transitions": [],
+        }
+    projection = project_work_unit_state(
+        [event for event in events if isinstance(event, Mapping)],
+        work_key,
+    )
+    return {"scope": "work_unit", **projection}
 
 
-def _mutation_frozen(chain: Mapping[str, object], work_key: str) -> bool:
+def _normalized_mutation_guard_work_keys(
+    work_key: str,
+    mutation_guard_work_keys: Sequence[str] | None,
+) -> list[str]:
+    if mutation_guard_work_keys is None:
+        return [work_key]
+    if isinstance(mutation_guard_work_keys, (str, bytes)) or not isinstance(
+        mutation_guard_work_keys, Sequence
+    ):
+        raise ActionResumeError(
+            "ACTION_IDENTITY_INVALID",
+            "mutation_guard_work_keys must be an array of work-key strings",
+        )
+    if any(not isinstance(value, str) or not value.strip() for value in mutation_guard_work_keys):
+        raise ActionResumeError(
+            "ACTION_IDENTITY_INVALID",
+            "mutation_guard_work_keys must contain only non-empty strings",
+        )
+    normalized = sorted({value.strip() for value in mutation_guard_work_keys})
+    if not normalized:
+        raise ActionResumeError(
+            "ACTION_IDENTITY_INVALID",
+            "mutation_guard_work_keys must not be empty when explicitly supplied",
+        )
+    return normalized
+
+
+def _mutation_freeze_details(
+    chain: Mapping[str, object], work_key: str
+) -> dict[str, object] | None:
     state = _mapping(chain.get("state"), "state")
     status = str(state.get("status") or "").lower()
-    # The canonical task-run has exactly one mutable state: in_progress.
-    # verified/partial/blocked/unverified are terminal outcomes, not synonyms
-    # for an active run that may issue another dispatch/apply/land/retire.
     if status != "in_progress" or status in _FROZEN_STATUSES:
-        return True
+        return {
+            "scope": "task_run",
+            "work_key": work_key,
+            "state": status or "missing",
+            "event_id": None,
+            "phase": state.get("current_phase"),
+            "reason": "TASK_RUN_NOT_IN_PROGRESS",
+        }
     events = chain.get("events") or []
     if isinstance(events, list):
         for event in events:
@@ -520,17 +548,142 @@ def _mutation_frozen(chain: Mapping[str, object], work_key: str) -> bool:
                 continue
             phase = str(event.get("phase") or "").lower()
             kind = str(event.get("kind") or "").lower()
-            if kind == "stop" or (phase.endswith("_stopped") and not event.get("target")):
-                return True
-    bound, work_state = _work_unit_control_state(chain, work_key)
-    if not bound:
+            if not event.get("target") and (kind == "stop" or phase.endswith("_stopped")):
+                return {
+                    "scope": "task_run",
+                    "work_key": work_key,
+                    "state": "stopped",
+                    "event_id": event.get("event_id"),
+                    "phase": event.get("phase"),
+                    "actor": event.get("actor"),
+                    "reason": "TASK_RUN_STOP_EVENT",
+                }
+    projection = _work_unit_control_projection(chain, work_key)
+    if not projection["bound"]:
         raise ActionResumeError(
             "WORK_KEY_UNBOUND",
-            "mutating actions require an existing typed work_unit event for the same work_key",
+            f"mutating actions require an existing typed work_unit event for work_key={work_key}",
+            details=projection,
         )
-    return work_state in {"paused", "interrupted"} or (
-        f"work_unit_{work_state}" in _TERMINAL_WORK_UNIT_PHASES
-    )
+    work_state = str(projection["state"])
+    if work_state in WORK_UNIT_FROZEN_STATES:
+        return {**projection, "reason": "WORK_UNIT_NOT_MUTABLE"}
+    pending_invalid = projection.get("pending_invalid_transitions")
+    if isinstance(pending_invalid, list) and pending_invalid:
+        invalid = pending_invalid[-1]
+        if isinstance(invalid, Mapping):
+            return {
+                **projection,
+                "event_id": invalid.get("event_id"),
+                "phase": invalid.get("phase"),
+                "reason": str(invalid.get("reason_code") or "WORK_UNIT_TRANSITION_INVALID"),
+            }
+    return None
+
+
+def _raise_if_mutation_frozen(chain: Mapping[str, object], guard_work_keys: Sequence[str]) -> None:
+    for guard_work_key in guard_work_keys:
+        details = _mutation_freeze_details(chain, guard_work_key)
+        if details is None:
+            continue
+        message = (
+            "mutation guard frozen: "
+            f"scope={details.get('scope')}; work_key={details.get('work_key')}; "
+            f"state={details.get('state')}; event_id={details.get('event_id')}; "
+            f"phase={details.get('phase')}"
+        )
+        raise ActionResumeError("RUN_MUTATION_FROZEN", message, details=details)
+
+
+def verify_mutation_guards(
+    *,
+    task_run_dir: Path,
+    work_keys: Sequence[str],
+) -> dict[str, Any]:
+    """Read the canonical live chain and verify scoped mutation guards.
+
+    This is the zero-model preflight shared by first claim, claim reuse, and
+    the final physical consumer.  It creates no receipt and grants no
+    authority; task-run state remains the global stop gate while each listed
+    work key remains an independent local gate.
+    """
+
+    run_dir = Path(task_run_dir).resolve()
+    task, _ = _read_json(run_dir / "task.json", "task")
+    state, _ = _read_json(run_dir / "state.json", "state")
+    run_id = _text(task.get("run_id"), "task.run_id")
+    if (
+        task.get("schema_version") != TASK_RUN_VERSION
+        or state.get("schema_version") != TASK_RUN_VERSION
+        or state.get("run_id") != run_id
+        or run_dir.name != run_id
+    ):
+        raise ActionResumeError("TASK_RUN_IDENTITY_DRIFT", "task-run identity disagrees")
+    events_path = run_dir / "events.jsonl"
+    try:
+        events_raw = events_path.read_bytes()
+    except OSError as exc:
+        raise ActionResumeError("TASK_RUN_MISSING", f"cannot read events: {events_path}") from exc
+    events = _parse_events(events_raw, run_id)
+    if not events:
+        raise ActionResumeError("TASK_RUN_EMPTY", "task-run has no events")
+    if state.get("events_count") != len(events):
+        raise ActionResumeError("EVENT_HEAD_DRIFT", "state.events_count disagrees with events")
+    head = events[-1]
+    if state.get("current_phase") != head.get("phase"):
+        raise ActionResumeError("EVENT_HEAD_DRIFT", "state.current_phase disagrees with event head")
+    event_ids = [str(row.get("event_id") or "") for row in events]
+    if not all(event_ids) or len(set(event_ids)) != len(event_ids):
+        raise ActionResumeError("EVENT_ID_INVALID", "event IDs are missing or duplicated")
+    normalized = _normalized_mutation_guard_work_keys("", work_keys)
+    chain = {"state": state, "events": events}
+    _raise_if_mutation_frozen(chain, normalized)
+    return {
+        "schema_version": "xinao.mutation_guard_preflight.v1",
+        "ok": True,
+        "reason_code": "MUTATION_GUARDS_ACTIVE",
+        "task_run_path": str(run_dir),
+        "run_id": run_id,
+        "event_head": {
+            "event_count": len(events),
+            "event_id": head.get("event_id"),
+            "phase": head.get("phase"),
+        },
+        "mutation_guard_work_keys": normalized,
+        "guard_states": [_work_unit_control_projection(chain, work_key) for work_key in normalized],
+        "model_invocation_allowed": True,
+        "authority": False,
+        "completion_claim_allowed": False,
+    }
+
+
+def verify_checkpoint_task_run_binding(
+    *, checkpoint_path: Path, task_run_dir: Path
+) -> dict[str, Any]:
+    """Verify a checkpoint belongs to the exact live task-run without issuing a receipt."""
+
+    resolved_checkpoint = Path(checkpoint_path).resolve()
+    checkpoint, checkpoint_raw = _read_json(resolved_checkpoint, "checkpoint")
+    _validate_checkpoint(checkpoint)
+    _, cursor = _event_ref(checkpoint)
+    run_dir = Path(task_run_dir).resolve()
+    chain = _load_chain(run_dir, checkpoint, cursor)
+    return {
+        "schema_version": "xinao.checkpoint_task_run_binding.v1",
+        "checkpoint_path": str(resolved_checkpoint),
+        "checkpoint_sha256": _sha256_bytes(checkpoint_raw),
+        "task_run_path": str(run_dir),
+        "run_id": chain["run_id"],
+        "cursor": cursor,
+        "event_count": chain["event_count"],
+        "event_head_id": chain["head"].get("event_id"),
+        "authority": False,
+        "completion_claim_allowed": False,
+    }
+
+
+def _mutation_frozen(chain: Mapping[str, object], work_key: str) -> bool:
+    return _mutation_freeze_details(chain, work_key) is not None
 
 
 def _claim_path(run_dir: Path, work_key: str, side_effect_id: str) -> Path:
@@ -608,6 +761,7 @@ def issue_action_resume_receipt(
     work_pin: str = "",
     expected_result_phase: str = "",
     expected_world_sha256: str = "",
+    mutation_guard_work_keys: Sequence[str] | None = None,
     ttl_seconds: int = DEFAULT_TTL_SECONDS,
     now: datetime | None = None,
 ) -> dict[str, Any]:
@@ -639,8 +793,10 @@ def issue_action_resume_receipt(
             "CHECKPOINT_CURSOR_INVALID", "explicit run disagrees with checkpoint"
         )
     chain = _load_chain(run_dir, checkpoint, cursor)
-    if action_kind != "reconcile" and _mutation_frozen(chain, work_key):
-        raise ActionResumeError("RUN_MUTATION_FROZEN", "run is not in progress, paused, or stopped")
+    guard_work_keys: list[str] = []
+    if action_kind != "reconcile":
+        guard_work_keys = _normalized_mutation_guard_work_keys(work_key, mutation_guard_work_keys)
+        _raise_if_mutation_frozen(chain, guard_work_keys)
     if side_effect_id and side_effect_id in chain["side_effect_ids"]:
         raise ActionResumeError("DUPLICATE_SIDE_EFFECT_BLOCKED", "side_effect_id already exists")
     if side_effect_id:
@@ -699,6 +855,7 @@ def issue_action_resume_receipt(
             "side_effect_id": side_effect_id or None,
             "world_sha256": world_sha,
             "expected_result_phase": result_phase or None,
+            "mutation_guard_work_keys": guard_work_keys,
         },
         "task_run": {
             "path": str(run_dir),
@@ -755,6 +912,7 @@ def verify_action_resume_receipt(
     expected_side_effect_id: str,
     expected_next_action: str = "",
     expected_result_phase: str = "",
+    expected_mutation_guard_work_keys: Sequence[str] | None = None,
     _allowed_claim_receipt_sha256: str = "",
     _allowed_claim_generation: int = 0,
     _allowed_fence_token: str = "",
@@ -787,6 +945,24 @@ def verify_action_resume_receipt(
         )
     if action.get("next_action") != expected_next_action:
         raise ActionResumeError("ACTION_IDENTITY_MISMATCH", "next_action mismatch")
+    if "mutation_guard_work_keys" in action:
+        raw_guard_work_keys = action.get("mutation_guard_work_keys")
+        if not isinstance(raw_guard_work_keys, list):
+            raise ActionResumeError(
+                "ACTION_IDENTITY_INVALID",
+                "receipt mutation_guard_work_keys must be an array",
+            )
+        receipt_guard_work_keys = _normalized_mutation_guard_work_keys(
+            expected_work_key, raw_guard_work_keys
+        )
+    else:
+        receipt_guard_work_keys = [expected_work_key]
+    if expected_mutation_guard_work_keys is not None:
+        expected_guard_work_keys = _normalized_mutation_guard_work_keys(
+            expected_work_key, expected_mutation_guard_work_keys
+        )
+        if receipt_guard_work_keys != expected_guard_work_keys:
+            raise ActionResumeError("ACTION_IDENTITY_MISMATCH", "mutation guard work keys mismatch")
     if expected_action_kind not in _MUTATING_ACTION_KINDS:
         raise ActionResumeError("ACTION_KIND_INVALID", "only mutating actions can cross the gate")
     result_phase = _result_phase_for_action(expected_action_kind, expected_result_phase)
@@ -830,8 +1006,7 @@ def verify_action_resume_receipt(
         allowed_claim_generation=_allowed_claim_generation,
         allowed_fence_token=_allowed_fence_token,
     )
-    if _mutation_frozen(chain, expected_work_key):
-        raise ActionResumeError("RUN_MUTATION_FROZEN", "run is not in progress, paused, or stopped")
+    _raise_if_mutation_frozen(chain, receipt_guard_work_keys)
     facts = data.get("observed_facts")
     if not isinstance(facts, list):
         raise ActionResumeError("WORLD_FACT_INVALID", "observed_facts must be an array")
@@ -872,6 +1047,7 @@ def verify_action_resume_receipt(
         "side_effect_id": expected_side_effect_id,
         "next_action": action.get("next_action"),
         "expected_result_phase": result_phase,
+        "mutation_guard_work_keys": receipt_guard_work_keys,
         "action_digest": action.get("action_digest"),
         "authority": False,
         "completion_claim_allowed": False,
@@ -1257,6 +1433,7 @@ def _create_claim(
             "idempotency_key": verification["side_effect_id"],
             "next_action": verification["next_action"],
             "expected_result_phase": verification["expected_result_phase"],
+            "mutation_guard_work_keys": verification["mutation_guard_work_keys"],
             "action_digest": verification["action_digest"],
             "expected_version": expected_version,
             "effect_started": False,
@@ -1300,6 +1477,7 @@ def _claim_context(claim: Mapping[str, object]) -> dict[str, Any]:
         "side_effect_id": claim.get("side_effect_id"),
         "next_action": claim.get("next_action"),
         "expected_result_phase": claim.get("expected_result_phase"),
+        "mutation_guard_work_keys": claim.get("mutation_guard_work_keys"),
         "action_digest": claim.get("action_digest"),
         "expected_version": claim.get("expected_version"),
         "claim_generation": claim.get("claim_generation"),
@@ -1488,6 +1666,7 @@ def consume_action_resume_receipt(
     expected_side_effect_id: str,
     expected_next_action: str = "",
     expected_result_phase: str = "",
+    expected_mutation_guard_work_keys: Sequence[str] | None = None,
     consumer: Callable[..., object],
     consumption_path: Path | None = None,
     expected_version: str = "",
@@ -1511,6 +1690,7 @@ def consume_action_resume_receipt(
         expected_side_effect_id=expected_side_effect_id,
         expected_next_action=expected_next_action,
         expected_result_phase=expected_result_phase,
+        expected_mutation_guard_work_keys=expected_mutation_guard_work_keys,
         now=now,
     )
     task_info = _mapping(receipt.get("task_run"), "task_run")
@@ -1543,6 +1723,7 @@ def consume_action_resume_receipt(
             expected_side_effect_id=expected_side_effect_id,
             expected_next_action=expected_next_action,
             expected_result_phase=expected_result_phase,
+            expected_mutation_guard_work_keys=expected_mutation_guard_work_keys,
             _allowed_claim_receipt_sha256=verification["receipt_sha256"],
             _allowed_claim_generation=int(claim["claim_generation"]),
             _allowed_fence_token=str(claim["fence_token"]),
@@ -2329,6 +2510,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                     "ok": False,
                     "reason_code": exc.reason_code,
                     "error": str(exc),
+                    "details": exc.details,
                 },
                 ensure_ascii=False,
                 sort_keys=True,
@@ -2347,6 +2529,8 @@ __all__ = [
     "issue_action_resume_receipt",
     "write_action_resume_receipt",
     "verify_action_resume_receipt",
+    "verify_checkpoint_task_run_binding",
+    "verify_mutation_guards",
     "build_action_effect_outcome",
     "consume_action_resume_receipt",
     "reconcile_action_resume_claim",

@@ -238,6 +238,8 @@ def _initial_state_for_docker_worker(
     workflow_id: str,
     dispatch_envelope_ref: Mapping[str, object] | None = None,
     dispatch_route_claim_ref: str = "",
+    dispatch_task_run_dir: Path | None = None,
+    dispatch_task_run_id: str = "",
 ) -> dict[str, Any]:
     """Host client submits container paths so houtai-gongren activities can read files."""
     input_container = _host_path_to_container(
@@ -269,6 +271,15 @@ def _initial_state_for_docker_worker(
         }
     if dispatch_route_claim_ref:
         initial["dispatch_route_claim_ref"] = str(dispatch_route_claim_ref)
+    if dispatch_task_run_dir is not None:
+        initial["dispatch_task_run_dir"] = _host_path_to_container(
+            dispatch_task_run_dir,
+            host_root=repo_root,
+            container_root="/app",
+            runtime_root=runtime_root,
+        )
+    if dispatch_task_run_id:
+        initial["dispatch_task_run_id"] = str(dispatch_task_run_id)
     return initial
 
 
@@ -1161,6 +1172,8 @@ async def run_integrated_bus_temporal(
     mainline_default: bool = True,
     dispatch_envelope_ref: Mapping[str, object] | None = None,
     dispatch_route_claim_ref: str = "",
+    dispatch_task_run_dir: Path | None = None,
+    dispatch_task_run_id: str = "",
 ) -> dict[str, Any]:
     from temporalio.client import Client
 
@@ -1192,6 +1205,8 @@ async def run_integrated_bus_temporal(
                 workflow_id=workflow_id,
                 dispatch_envelope_ref=dispatch_envelope_ref,
                 dispatch_route_claim_ref=dispatch_route_claim_ref,
+                dispatch_task_run_dir=dispatch_task_run_dir,
+                dispatch_task_run_id=dispatch_task_run_id,
             )
         else:
             initial = default_initial_state(
@@ -1201,6 +1216,8 @@ async def run_integrated_bus_temporal(
                 workflow_id=workflow_id,
                 dispatch_envelope_ref=dispatch_envelope_ref,
                 dispatch_route_claim_ref=dispatch_route_claim_ref,
+                dispatch_task_run_dir=dispatch_task_run_dir,
+                dispatch_task_run_id=dispatch_task_run_id,
             )
 
         if worker_ownership == "docker_daemon":
@@ -1254,6 +1271,8 @@ async def run_integrated_bus_local(
     mainline_default: bool = True,
     dispatch_envelope_ref: Mapping[str, object] | None = None,
     dispatch_route_claim_ref: str = "",
+    dispatch_task_run_dir: Path | None = None,
+    dispatch_task_run_id: str = "",
 ) -> dict[str, Any]:
     local_params = _load_params()
     workflow_id = f"{local_params.get('workflow_id_prefix', 'xinao-integrated-bus')}-local-{uuid.uuid4().hex[:12]}"
@@ -1264,6 +1283,8 @@ async def run_integrated_bus_local(
         workflow_id=workflow_id,
         dispatch_envelope_ref=dispatch_envelope_ref,
         dispatch_route_claim_ref=dispatch_route_claim_ref,
+        dispatch_task_run_dir=dispatch_task_run_dir,
+        dispatch_task_run_id=dispatch_task_run_id,
     )
     for step in (
         signal_feed_node,
@@ -1320,6 +1341,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--dispatch-envelope-ref", default="")
     parser.add_argument("--dispatch-envelope-sha256", default="")
     parser.add_argument("--dispatch-route-claim-ref", default="")
+    parser.add_argument("--dispatch-task-run-dir", default="")
+    parser.add_argument("--dispatch-task-run-id", default="")
     args = parser.parse_args(argv)
 
     if bool(args.dispatch_envelope_ref) != bool(args.dispatch_envelope_sha256):
@@ -1329,6 +1352,12 @@ def main(argv: list[str] | None = None) -> int:
     if bool(args.dispatch_envelope_ref) != bool(args.dispatch_route_claim_ref):
         parser.error(
             "--dispatch-envelope-ref and --dispatch-route-claim-ref must be supplied together"
+        )
+    if bool(args.dispatch_envelope_ref) != bool(args.dispatch_task_run_dir) or bool(
+        args.dispatch_envelope_ref
+    ) != bool(args.dispatch_task_run_id):
+        parser.error(
+            "canonical dispatch requires --dispatch-task-run-dir and --dispatch-task-run-id"
         )
     dispatch_envelope_ref = None
     if args.dispatch_envelope_ref:
@@ -1347,6 +1376,10 @@ def main(argv: list[str] | None = None) -> int:
             mainline_default=True,
             dispatch_envelope_ref=dispatch_envelope_ref,
             dispatch_route_claim_ref=str(args.dispatch_route_claim_ref),
+            dispatch_task_run_dir=(
+                Path(args.dispatch_task_run_dir) if args.dispatch_task_run_dir else None
+            ),
+            dispatch_task_run_id=str(args.dispatch_task_run_id),
         )
     except FileNotFoundError as exc:
         print(str(exc), file=sys.stderr)
@@ -1376,6 +1409,8 @@ def run_integrated_bus(
     mainline_default: bool = True,
     dispatch_envelope_ref: Mapping[str, object] | None = None,
     dispatch_route_claim_ref: str = "",
+    dispatch_task_run_dir: Path | None = None,
+    dispatch_task_run_id: str = "",
 ) -> dict[str, Any]:
     import asyncio
 
@@ -1390,6 +1425,8 @@ def run_integrated_bus(
                 mainline_default=mainline_default,
                 dispatch_envelope_ref=dispatch_envelope_ref,
                 dispatch_route_claim_ref=dispatch_route_claim_ref,
+                dispatch_task_run_dir=dispatch_task_run_dir,
+                dispatch_task_run_id=dispatch_task_run_id,
             )
         )
     return asyncio.run(
@@ -1400,6 +1437,8 @@ def run_integrated_bus(
             mainline_default=mainline_default,
             dispatch_envelope_ref=dispatch_envelope_ref,
             dispatch_route_claim_ref=dispatch_route_claim_ref,
+            dispatch_task_run_dir=dispatch_task_run_dir,
+            dispatch_task_run_id=dispatch_task_run_id,
         )
     )
 

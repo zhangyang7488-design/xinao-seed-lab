@@ -950,7 +950,7 @@ def test_work_key_binding_pause_isolation_and_hash_bound_resume(
             7,
             target="work-A",
             phase="work_unit_paused",
-            kind="pause",
+            kind="result",
         ),
     )
 
@@ -1021,6 +1021,391 @@ def test_work_key_binding_pause_isolation_and_hash_bound_resume(
             now=now,
         )
     assert unrelated.value.reason_code == "WORK_KEY_UNBOUND"
+
+
+def test_same_key_stale_results_and_unbound_resume_cannot_bypass_pause(
+    tmp_path: Path,
+) -> None:
+    now = datetime(2026, 7, 20, 1, 0, tzinfo=timezone.utc)
+    paths = _fixture(tmp_path / "pause-monotonic", work_key="work-A")
+    _append_event(
+        paths,
+        _event(
+            "run-continuity-test",
+            5,
+            target="work-A",
+            phase="work_unit_paused",
+            kind="result",
+        ),
+    )
+    _append_event(
+        paths,
+        _event(
+            "run-continuity-test",
+            6,
+            target="work-A",
+            phase="work_unit_active",
+            kind="result",
+        ),
+    )
+    _append_event(
+        paths,
+        _event(
+            "run-continuity-test",
+            7,
+            target="work-A",
+            phase="work_unit_resume_reconciled",
+            kind="result",
+        ),
+    )
+    bad_proof = tmp_path / "pause-monotonic" / "bad-resume.json"
+    bad_proof.write_text('{"work_key":"work-A"}\n', encoding="utf-8")
+    _append_event(
+        paths,
+        _event(
+            "run-continuity-test",
+            8,
+            target="work-A",
+            phase="work_unit_resume_reconciled",
+            kind="result",
+            evidence_refs=[f"{bad_proof}#sha256={'0' * 64}"],
+        ),
+    )
+
+    with pytest.raises(ActionResumeError) as frozen:
+        issue_action_resume_receipt(
+            checkpoint_path=paths["checkpoint"],
+            action_kind="dispatch",
+            work_key="work-A",
+            next_action="must remain paused",
+            side_effect_id="dispatch-stale-active",
+            now=now,
+        )
+    assert frozen.value.reason_code == "RUN_MUTATION_FROZEN"
+    assert frozen.value.details["event_id"] == "event-id-5"
+    assert frozen.value.details["state"] == "paused"
+
+    proof = tmp_path / "pause-monotonic" / "good-resume.json"
+    proof.write_text('{"work_key":"work-A","reconciled":true}\n', encoding="utf-8")
+    _append_event(
+        paths,
+        _event(
+            "run-continuity-test",
+            9,
+            target="work-A",
+            phase="work_unit_resume_reconciled",
+            kind="result",
+            evidence_refs=[f"{proof}#sha256={hashlib.sha256(proof.read_bytes()).hexdigest()}"],
+        ),
+    )
+    resumed = issue_action_resume_receipt(
+        checkpoint_path=paths["checkpoint"],
+        action_kind="dispatch",
+        work_key="work-A",
+        next_action="dispatch after exact resume",
+        side_effect_id="dispatch-good-resume",
+        now=now,
+    )
+    assert resumed["action"]["mutation_guard_work_keys"] == ["work-A"]
+
+
+def test_terminal_work_unit_is_absorbing_against_late_active_and_resume(
+    tmp_path: Path,
+) -> None:
+    now = datetime(2026, 7, 20, 1, 0, tzinfo=timezone.utc)
+    paths = _fixture(tmp_path / "terminal-absorbing", work_key="work-A")
+    failed = _event(
+        "run-continuity-test",
+        5,
+        target="work-A",
+        phase="work_unit_failed",
+        kind="result",
+    )
+    failed["exit_code"] = 20
+    _append_event(paths, failed)
+    _append_event(
+        paths,
+        _event(
+            "run-continuity-test",
+            6,
+            target="work-A",
+            phase="work_unit_active",
+            kind="result",
+        ),
+    )
+    proof = tmp_path / "terminal-absorbing" / "resume.json"
+    proof.write_text('{"work_key":"work-A","reconciled":true}\n', encoding="utf-8")
+    _append_event(
+        paths,
+        _event(
+            "run-continuity-test",
+            7,
+            target="work-A",
+            phase="work_unit_resume_reconciled",
+            kind="result",
+            evidence_refs=[f"{proof}#sha256={hashlib.sha256(proof.read_bytes()).hexdigest()}"],
+        ),
+    )
+
+    with pytest.raises(ActionResumeError) as frozen:
+        issue_action_resume_receipt(
+            checkpoint_path=paths["checkpoint"],
+            action_kind="dispatch",
+            work_key="work-A",
+            next_action="must not reopen terminal work",
+            side_effect_id="dispatch-after-terminal",
+            now=now,
+        )
+    assert frozen.value.reason_code == "RUN_MUTATION_FROZEN"
+    assert frozen.value.details["event_id"] == "event-id-5"
+    assert frozen.value.details["state"] == "failed"
+
+
+@pytest.mark.parametrize(
+    ("terminal_phase", "exit_code", "terminal_state"),
+    [
+        ("work_unit_failed", 20, "failed"),
+        ("work_unit_cancelled", 0, "cancelled"),
+        ("work_unit_blocked", 20, "blocked"),
+    ],
+)
+def test_terminal_result_while_paused_is_absorbing_before_late_resume(
+    tmp_path: Path,
+    terminal_phase: str,
+    exit_code: int,
+    terminal_state: str,
+) -> None:
+    now = datetime(2026, 7, 20, 1, 0, tzinfo=timezone.utc)
+    paths = _fixture(tmp_path / terminal_state, work_key="work-A")
+    _append_event(
+        paths,
+        _event(
+            "run-continuity-test",
+            5,
+            target="work-A",
+            phase="work_unit_paused",
+            kind="result",
+        ),
+    )
+    terminal = _event(
+        "run-continuity-test",
+        6,
+        target="work-A",
+        phase=terminal_phase,
+        kind="result",
+    )
+    terminal["exit_code"] = exit_code
+    _append_event(paths, terminal)
+    proof = tmp_path / terminal_state / "resume.json"
+    proof.write_text('{"work_key":"work-A","reconciled":true}\n', encoding="utf-8")
+    _append_event(
+        paths,
+        _event(
+            "run-continuity-test",
+            7,
+            target="work-A",
+            phase="work_unit_resume_reconciled",
+            kind="result",
+            evidence_refs=[f"{proof}#sha256={hashlib.sha256(proof.read_bytes()).hexdigest()}"],
+        ),
+    )
+
+    with pytest.raises(ActionResumeError) as frozen:
+        issue_action_resume_receipt(
+            checkpoint_path=paths["checkpoint"],
+            action_kind="dispatch",
+            work_key="work-A",
+            next_action="must not resume terminal work",
+            side_effect_id=f"dispatch-after-{terminal_state}",
+            now=now,
+        )
+    assert frozen.value.reason_code == "RUN_MUTATION_FROZEN"
+    assert frozen.value.details["event_id"] == "event-id-6"
+    assert frozen.value.details["state"] == terminal_state
+
+
+@pytest.mark.parametrize(
+    "raw_guards",
+    ["work-A", {"work-A": True}, ["work-A", 7]],
+)
+def test_mutation_guard_input_rejects_non_array_and_non_string_members(
+    tmp_path: Path, raw_guards: object
+) -> None:
+    paths = _fixture(tmp_path / "invalid-guards", work_key="work-A")
+    with pytest.raises(ActionResumeError) as invalid:
+        issue_action_resume_receipt(
+            checkpoint_path=paths["checkpoint"],
+            action_kind="dispatch",
+            work_key="claim-scope",
+            mutation_guard_work_keys=raw_guards,  # type: ignore[arg-type]
+            next_action="must reject malformed guards",
+            side_effect_id="invalid-guards",
+        )
+    assert invalid.value.reason_code == "ACTION_IDENTITY_INVALID"
+
+
+def test_receipt_guard_field_is_strict_but_legacy_absence_remains_compatible(
+    tmp_path: Path,
+) -> None:
+    paths = _fixture(tmp_path / "guard-compat", work_key="work-A")
+    receipt = issue_action_resume_receipt(
+        checkpoint_path=paths["checkpoint"],
+        action_kind="dispatch",
+        work_key="work-A",
+        next_action="verify strict guards",
+        side_effect_id="guard-compat",
+    )
+
+    for raw_guards in (None, "work-A", {"work-A": True}):
+        malformed = json.loads(json.dumps(receipt))
+        malformed["action"]["mutation_guard_work_keys"] = raw_guards
+        malformed["action"]["action_digest"] = action_resume_module._action_digest(
+            malformed["action"]
+        )
+        malformed.pop("receipt_sha256", None)
+        malformed["receipt_sha256"] = action_resume_module._sha256_bytes(
+            action_resume_module.canonical_json_bytes(malformed)
+        )
+        with pytest.raises(ActionResumeError) as invalid:
+            verify_action_resume_receipt(
+                malformed,
+                expected_action_kind="dispatch",
+                expected_work_key="work-A",
+                expected_side_effect_id="guard-compat",
+                expected_next_action="verify strict guards",
+            )
+        assert invalid.value.reason_code == "ACTION_IDENTITY_INVALID"
+
+    legacy = json.loads(json.dumps(receipt))
+    legacy["action"].pop("mutation_guard_work_keys")
+    legacy["action"]["action_digest"] = action_resume_module._action_digest(legacy["action"])
+    legacy.pop("receipt_sha256", None)
+    legacy["receipt_sha256"] = action_resume_module._sha256_bytes(
+        action_resume_module.canonical_json_bytes(legacy)
+    )
+    verified = verify_action_resume_receipt(
+        legacy,
+        expected_action_kind="dispatch",
+        expected_work_key="work-A",
+        expected_side_effect_id="guard-compat",
+        expected_next_action="verify strict guards",
+    )
+    assert verified["mutation_guard_work_keys"] == ["work-A"]
+
+
+def test_only_untargeted_stop_freezes_the_whole_task_run(tmp_path: Path) -> None:
+    paths = _fixture(tmp_path / "targeted-stop", work_key="work-A")
+    _append_event(
+        paths,
+        _event(
+            "run-continuity-test",
+            5,
+            target="work-B",
+            phase="work_unit_active",
+            kind="result",
+        ),
+    )
+    _append_event(
+        paths,
+        _event(
+            "run-continuity-test",
+            6,
+            target="work-A",
+            phase="package_stopped",
+            kind="stop",
+        ),
+    )
+    allowed = issue_action_resume_receipt(
+        checkpoint_path=paths["checkpoint"],
+        action_kind="dispatch",
+        work_key="work-B",
+        next_action="unrelated package continues",
+        side_effect_id="targeted-stop-is-local",
+    )
+    assert allowed["action"]["work_key"] == "work-B"
+    with pytest.raises(ActionResumeError) as locally_stopped:
+        issue_action_resume_receipt(
+            checkpoint_path=paths["checkpoint"],
+            action_kind="dispatch",
+            work_key="work-A",
+            next_action="stopped package must remain frozen",
+            side_effect_id="targeted-stop-blocks-target",
+        )
+    assert locally_stopped.value.reason_code == "RUN_MUTATION_FROZEN"
+    assert locally_stopped.value.details["scope"] == "work_unit"
+    assert locally_stopped.value.details["state"] == "stopped"
+    assert locally_stopped.value.details["event_id"] == "event-id-6"
+
+    global_paths = _fixture(tmp_path / "global-stop", work_key="work-A")
+    stop = _event(
+        "run-continuity-test",
+        5,
+        target="placeholder",
+        phase="task_run_stopped",
+        kind="stop",
+    )
+    stop["target"] = None
+    _append_event(global_paths, stop)
+    with pytest.raises(ActionResumeError) as frozen:
+        issue_action_resume_receipt(
+            checkpoint_path=global_paths["checkpoint"],
+            action_kind="dispatch",
+            work_key="work-A",
+            next_action="must stop globally",
+            side_effect_id="global-stop",
+        )
+    assert frozen.value.reason_code == "RUN_MUTATION_FROZEN"
+    assert frozen.value.details["scope"] == "task_run"
+    assert frozen.value.details["event_id"] == "event-id-5"
+
+
+def test_targeted_stop_is_absorbing_against_late_active_and_resume(tmp_path: Path) -> None:
+    paths = _fixture(tmp_path / "targeted-stop-absorbing", work_key="work-A")
+    _append_event(
+        paths,
+        _event(
+            "run-continuity-test",
+            5,
+            target="work-A",
+            phase="package_stopped",
+            kind="stop",
+        ),
+    )
+    _append_event(
+        paths,
+        _event(
+            "run-continuity-test",
+            6,
+            target="work-A",
+            phase="work_unit_active",
+            kind="result",
+        ),
+    )
+    proof = tmp_path / "targeted-stop-absorbing" / "resume.json"
+    proof.write_text('{"work_key":"work-A","reconciled":true}\n', encoding="utf-8")
+    _append_event(
+        paths,
+        _event(
+            "run-continuity-test",
+            7,
+            target="work-A",
+            phase="work_unit_resume_reconciled",
+            kind="result",
+            evidence_refs=[f"{proof}#sha256={hashlib.sha256(proof.read_bytes()).hexdigest()}"],
+        ),
+    )
+
+    with pytest.raises(ActionResumeError) as frozen:
+        issue_action_resume_receipt(
+            checkpoint_path=paths["checkpoint"],
+            action_kind="dispatch",
+            work_key="work-A",
+            next_action="must not reopen stopped work",
+            side_effect_id="dispatch-after-targeted-stop",
+        )
+    assert frozen.value.reason_code == "RUN_MUTATION_FROZEN"
+    assert frozen.value.details["state"] == "stopped"
+    assert frozen.value.details["event_id"] == "event-id-5"
 
 
 def test_durable_claim_blocks_post_effect_pre_event_replay(tmp_path: Path) -> None:

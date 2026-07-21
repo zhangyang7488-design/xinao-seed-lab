@@ -39,6 +39,9 @@ def test_versioned_selector_release_is_not_task_cwd_dependent(tmp_path: Path) ->
     assert Path(current["release_manifest"]["probe"]["action_resume_module"]) == (
         Path(current["release_root"]) / "services" / "agent_runtime" / "action_resume_receipt.py"
     )
+    assert (
+        Path(current["release_root"]) / "services" / "agent_runtime" / "work_unit_lifecycle.py"
+    ).is_file()
 
     # A stale or unrelated task cwd is not an input to pointer resolution.
     stale_task_cwd = tmp_path / "stale-task-cwd"

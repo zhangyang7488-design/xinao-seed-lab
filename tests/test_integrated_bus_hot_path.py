@@ -4,6 +4,7 @@ import hashlib
 import inspect
 import io
 import json
+import sys
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
@@ -304,8 +305,9 @@ def _docker_leg_b_package_fixture(
 
     route_claim: dict[str, object] = {}
     route_claim_ref = "pre-model-envelope-rejection"
+    action: dict[str, Path] | None = None
     if dependency_condition is None:
-        action = action_fixture(tmp_path / "dispatch-claim", work_key="parent-work")
+        action = action_fixture(tmp_path / "dispatch-claim", work_key="work-p1")
         task_run_cli = tmp_path / "dispatch-claim-task-run.py"
         _write_task_run_cli_fixture(task_run_cli)
         route_claim = claim_dispatch_route(
@@ -328,6 +330,7 @@ def _docker_leg_b_package_fixture(
         "envelope_ref": envelope_ref,
         "route_claim_ref": route_claim_ref,
         "route_claim": route_claim,
+        "action": action,
         "input_path": input_path,
         "rules_path": rules_path,
         "rules_ref": rules_ref,
@@ -1393,6 +1396,8 @@ def test_docker_grok_leg_b_derives_lane_from_same_neutral_manifest_bytes(
             supervisor_selection_required=True,
             dispatch_envelope_ref=fixture["envelope_ref"],
             dispatch_route_claim_ref=fixture["route_claim_ref"],
+            dispatch_task_run_dir=fixture["action"]["run_dir"],
+            dispatch_task_run_id="run-continuity-test",
         )
     )
 
@@ -1428,6 +1433,42 @@ def test_docker_grok_leg_b_derives_lane_from_same_neutral_manifest_bytes(
     assert result["grok_fanin"]["route_choice"] == fixture["envelope"]["route_choice"]
 
 
+def test_docker_grok_leg_b_rechecks_live_package_guard_after_route_claim(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from services.agent_runtime import grok_build_docker_worker as docker_worker
+    from tests.test_action_resume_receipt import _append_event, _event
+
+    fixture = _docker_leg_b_package_fixture(tmp_path)
+    monkeypatch.setattr(docker_worker, "_map_host_path_to_container", fixture["resolver"])
+    lanes, _ = docker_worker._derive_canonical_package_lanes(
+        dispatch_envelope_ref=fixture["envelope_ref"],
+        dispatch_route_claim_ref=fixture["route_claim_ref"],
+        dispatch_task_run_dir=fixture["action"]["run_dir"],
+        dispatch_task_run_id="run-continuity-test",
+        ready_frontier=None,
+    )
+    lane = lanes[0]
+    live = docker_worker._revalidate_canonical_route_claim(lane)
+    assert live["model_invocation_allowed"] is True
+
+    action = fixture["action"]
+    assert action is not None
+    _append_event(
+        action,
+        _event(
+            "run-continuity-test",
+            6,
+            target="work-p1",
+            phase="work_unit_paused",
+            kind="result",
+        ),
+    )
+    with pytest.raises(ValueError, match="no longer model-start eligible"):
+        docker_worker._revalidate_canonical_route_claim(lane)
+
+
 def test_docker_grok_leg_b_rejects_rules_ref_drift_before_provider(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -1457,6 +1498,8 @@ def test_docker_grok_leg_b_rejects_rules_ref_drift_before_provider(
                 content_md="bounded\n",
                 dispatch_envelope_ref=fixture["envelope_ref"],
                 dispatch_route_claim_ref=fixture["route_claim_ref"],
+                dispatch_task_run_dir=fixture["action"]["run_dir"],
+                dispatch_task_run_id="run-continuity-test",
             )
         )
     assert provider_calls == []
@@ -1490,6 +1533,8 @@ def test_docker_grok_leg_b_rejects_caller_identity_drift_before_provider(
                 ready_frontier=[{"work_key": "caller-forged-work-key"}],
                 dispatch_envelope_ref=fixture["envelope_ref"],
                 dispatch_route_claim_ref=fixture["route_claim_ref"],
+                dispatch_task_run_dir=fixture["action"]["run_dir"],
+                dispatch_task_run_id="run-continuity-test",
             )
         )
 
@@ -1591,6 +1636,8 @@ def test_docker_grok_leg_b_rejects_other_route_or_fake_adapter_before_provider(
                 content_md="bounded\n",
                 dispatch_envelope_ref=invalid_envelope_ref,
                 dispatch_route_claim_ref=fixture["route_claim_ref"],
+                dispatch_task_run_dir=fixture["action"]["run_dir"],
+                dispatch_task_run_id="run-continuity-test",
             )
         )
 
@@ -1809,6 +1856,8 @@ def test_docker_grok_leg_b_does_not_release_unsatisfied_typed_dependency(
                 ],
                 dispatch_envelope_ref=fixture["envelope_ref"],
                 dispatch_route_claim_ref=fixture["route_claim_ref"],
+                dispatch_task_run_dir=tmp_path / "unused-task-run",
+                dispatch_task_run_id="run-continuity-test",
             )
         )
 
@@ -2166,6 +2215,96 @@ def test_docker_grok_receives_current_project_rules_read_only() -> None:
     execution_source = inspect.getsource(_execute_lane_locked)
     assert '"--sandbox", CANDIDATE_SANDBOX_PROFILE' in execution_source
     assert '_container_cwd(lane.get("cwd"), write=write)' in execution_source
+    assert execution_source.count("_revalidate_canonical_route_claim(lane)") == 3
+    assert "guard_check=" in execution_source
+    assert execution_source.index(
+        "_revalidate_canonical_route_claim(lane)"
+    ) < execution_source.index("_discover_model_capabilities")
+    process_start = execution_source.index("asyncio.create_subprocess_exec")
+    assert execution_source[:process_start].rindex(
+        "_revalidate_canonical_route_claim(lane)"
+    ) < process_start
+
+
+def test_docker_grok_running_process_stops_when_live_route_guard_freezes() -> None:
+    import asyncio
+
+    from services.agent_runtime import grok_build_docker_worker as docker_worker
+
+    checks = 0
+
+    def frozen_guard() -> None:
+        nonlocal checks
+        checks += 1
+        raise RuntimeError("RUN_MUTATION_FROZEN")
+
+    async def exercise() -> int | None:
+        process = await asyncio.create_subprocess_exec(
+            sys.executable,
+            "-c",
+            "import time; time.sleep(30)",
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        with pytest.raises(RuntimeError, match="RUN_MUTATION_FROZEN"):
+            await docker_worker._communicate_with_heartbeats(
+                process,
+                operation_id="op-live-guard",
+                lane_id="lane-live-guard",
+                deadline_seconds=10,
+                guard_check=frozen_guard,
+            )
+        return process.returncode
+
+    assert asyncio.run(exercise()) is not None
+    assert checks == 1
+
+
+def test_canonical_package_attempt_identity_is_stable_across_workflow_carriers() -> None:
+    from services.agent_runtime.grok_build_docker_worker import _execute_lane, _operation_id
+
+    common = {
+        "execution_prompt_sha256": "a" * 64,
+        "mode": "candidate",
+        "cwd": "/evidence/worktrees/package-p1",
+        "write": True,
+        "max_turns": 4,
+        "deadline_seconds": 240,
+        "work_key": "wk:p1",
+        "package_manifest_sha256": "b" * 64,
+        "contract_id": "package-identity-p1",
+        "route_choice_sha256": "c" * 64,
+    }
+    first = _operation_id(
+        "workflow-a",
+        "p1",
+        "d" * 64,
+        "grok-4.5",
+        correlation_id="correlation-a",
+        parent_operation_id="parent-a",
+        **common,
+    )
+    second = _operation_id(
+        "workflow-b",
+        "p1",
+        "d" * 64,
+        "grok-4.5",
+        correlation_id="correlation-b",
+        parent_operation_id="parent-b",
+        **common,
+    )
+    changed_route = _operation_id(
+        "workflow-b",
+        "p1",
+        "d" * 64,
+        "grok-4.5",
+        correlation_id="correlation-b",
+        parent_operation_id="parent-b",
+        **{**common, "route_choice_sha256": "e" * 64},
+    )
+    assert first == second
+    assert first != changed_route
+    assert 'root.parent / "_canonical_package_attempts"' in inspect.getsource(_execute_lane)
 
 
 def test_docker_grok_operation_binding_and_cache_cover_execution_inputs(

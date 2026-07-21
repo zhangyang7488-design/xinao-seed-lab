@@ -15,6 +15,7 @@ import os
 import tempfile
 import time
 from collections.abc import Mapping, Sequence
+from contextlib import ExitStack
 from pathlib import Path
 from typing import Any, Callable
 
@@ -818,6 +819,10 @@ def validate_package_batch_manifest(
             raise DispatchEconomicsError(f"duplicate package_id: {package_id}")
         if work_key in work_keys:
             raise DispatchEconomicsError(f"duplicate work_key: {work_key}")
+        if work_key == parent_work_key:
+            raise DispatchEconomicsError(
+                f"packages[{index}].work_key must remain distinct from parent_work_key"
+            )
         package_ids.add(package_id)
         work_keys.add(work_key)
         _validate_package_identity(package, index)
@@ -1359,7 +1364,8 @@ def validate_candidate_consumer_binding(
         "candidate_output_base": logical_candidate_base,
         "route_choice": dict(validated["validated_route_choice"]),
         "boundaries": boundaries,
-        "model_invocation_allowed": True,
+        "candidate_boundary_valid": True,
+        "live_start_gate_required": True,
         "authority": False,
         "completion_claim_allowed": False,
     }
@@ -1398,7 +1404,7 @@ def _atomic_idempotent_json(path: Path, value: Mapping[str, object]) -> str:
     return hashlib.sha256(raw).hexdigest()
 
 
-def _dispatch_claim_identity(envelope: Mapping[str, object]) -> tuple[str, str, str, str]:
+def _dispatch_claim_identity(envelope: Mapping[str, object]) -> dict[str, object]:
     route_choice = _mapping(envelope.get("validated_route_choice"), "validated_route_choice")
     alternative_group = _sha(
         route_choice.get("alternative_group_sha256"),
@@ -1413,10 +1419,177 @@ def _dispatch_claim_identity(envelope: Mapping[str, object]) -> tuple[str, str, 
         "parent_work_key",
     )
     side_effect_id = f"dispatch-alternative:{alternative_group}"
-    return parent_work_key, alternative_group, choice_sha, side_effect_id
+    package_ids = {
+        _text(value, "package_ids[]")
+        for value in _sequence(envelope.get("package_ids"), "package_ids")
+    }
+    manifest = _mapping(envelope.get("validated_package_manifest"), "validated_package_manifest")
+    guard_work_keys = sorted(
+        {
+            _text(package.get("work_key"), "package.work_key")
+            for package in (
+                _mapping(value, "validated_package_manifest.packages[]")
+                for value in _sequence(
+                    manifest.get("packages"), "validated_package_manifest.packages"
+                )
+            )
+            if _text(package.get("package_id"), "package.package_id") in package_ids
+        }
+    )
+    if len(guard_work_keys) != len(package_ids):
+        raise DispatchEconomicsError("dispatch route claim could not bind every package work_key")
+    if parent_work_key in guard_work_keys:
+        raise DispatchEconomicsError("dispatch route claim package and parent scopes collided")
+    return {
+        "parent_work_key": parent_work_key,
+        "alternative_group_sha256": alternative_group,
+        "choice_sha256": choice_sha,
+        # This is the semantic CAS scope.  The existing parent-keyed storage
+        # namespace remains unchanged for cross-version exclusivity.
+        "claim_scope_id": side_effect_id,
+        "side_effect_id": side_effect_id,
+        "mutation_guard_work_keys": guard_work_keys,
+    }
+
+
+def _route_scope_lock_target(run_dir: Path, work_key: str) -> Path:
+    digest = hashlib.sha256(
+        _canonical_bytes({"run_id": run_dir.name, "work_key": work_key})
+    ).hexdigest()
+    return run_dir / "dispatch_route_claims" / ".work_key_locks" / f"{digest}.json"
+
+
+def _assert_no_overlapping_route_claim(
+    *,
+    run_dir: Path,
+    envelope_ref: Mapping[str, object],
+    envelope: Mapping[str, object],
+    path_resolver: PathResolver | None,
+) -> None:
+    """Reject subset, superset, and resealed route claims for an active work key.
+
+    The evidence scan is a read-only projection over the canonical closed
+    action claims.  Per-work-key OS locks make scan+claim atomic for current
+    consumers; the existing action-resume claim remains the durable truth.
+    """
+
+    current = _dispatch_claim_identity(envelope)
+    current_guards = set(current["mutation_guard_work_keys"])
+    current_choice = str(current["choice_sha256"])
+    current_envelope_sha = str(envelope_ref["sha256"])
+    claims_root = run_dir / "dispatch_route_claims"
+    if not claims_root.is_dir():
+        return
+    for evidence_path in sorted(claims_root.glob("*/*.route_claim.json")):
+        try:
+            evidence = json.loads(evidence_path.read_text(encoding="utf-8-sig"))
+        except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+            raise DispatchEconomicsError(
+                f"existing route claim evidence is unreadable: {evidence_path}"
+            ) from exc
+        if not isinstance(evidence, Mapping) or evidence.get("kind") != "dispatch_route_claim":
+            raise DispatchEconomicsError(
+                f"existing route claim evidence is malformed: {evidence_path}"
+            )
+        existing_ref = _mapping(
+            evidence.get("dispatch_envelope_ref"),
+            "existing_route_claim.dispatch_envelope_ref",
+        )
+        _, existing_raw = _load_hash_bound_ref(
+            existing_ref,
+            "existing_route_claim.dispatch_envelope_ref",
+            expected_schema=DISPATCH_ENVELOPE_SCHEMA,
+            path_resolver=path_resolver,
+        )
+        existing_envelope = validate_dispatch_envelope(
+            existing_raw,
+            path_resolver=path_resolver,
+        )
+        existing = _dispatch_claim_identity(existing_envelope)
+        existing_guards = set(existing["mutation_guard_work_keys"])
+        if not (current_guards & existing_guards):
+            continue
+        if (
+            current_guards == existing_guards
+            and current_choice == str(existing["choice_sha256"])
+            and current_envelope_sha == str(existing_ref.get("sha256") or "")
+        ):
+            continue
+        raise DispatchEconomicsError(
+            "dispatch route claim overlaps an existing package work-key scope; "
+            "reuse the exact sealed batch or close it with explicit supersession before reseal"
+        )
 
 
 def claim_dispatch_route(
+    *,
+    dispatch_envelope_ref: Mapping[str, object],
+    checkpoint_path: Path,
+    task_run_dir: Path,
+    task_run_cli: Path,
+    path_resolver: PathResolver | None = None,
+    holder_id: str = "",
+) -> dict[str, object]:
+    """Atomically claim an exact package set without overlapping A/B scopes."""
+
+    from services.agent_runtime.action_resume_receipt import (
+        ActionResumeError,
+        _claim_lock,
+        verify_checkpoint_task_run_binding,
+        verify_mutation_guards,
+    )
+
+    envelope_ref = _validate_path_ref(
+        dispatch_envelope_ref,
+        "dispatch_envelope_ref",
+        path_resolver=path_resolver,
+    )
+    _, envelope_raw = _load_hash_bound_ref(
+        envelope_ref,
+        "dispatch_envelope_ref",
+        expected_schema=DISPATCH_ENVELOPE_SCHEMA,
+        path_resolver=path_resolver,
+    )
+    envelope = validate_dispatch_envelope(envelope_raw, path_resolver=path_resolver)
+    identity = _dispatch_claim_identity(envelope)
+    run_dir = Path(task_run_dir).resolve()
+    try:
+        verify_checkpoint_task_run_binding(
+            checkpoint_path=Path(checkpoint_path),
+            task_run_dir=run_dir,
+        )
+        verify_mutation_guards(
+            task_run_dir=run_dir,
+            work_keys=list(identity["mutation_guard_work_keys"]),
+        )
+    except ActionResumeError as exc:
+        raise DispatchEconomicsError(
+            f"dispatch pre-lock guard failed: {exc.reason_code}: {exc}; "
+            f"claim_scope_id={identity['side_effect_id']}; "
+            f"parent_work_key={identity['parent_work_key']}; "
+            "mutation_guard_work_keys="
+            f"{','.join(map(str, identity['mutation_guard_work_keys']))}"
+        ) from exc
+    with ExitStack() as locks:
+        for work_key in identity["mutation_guard_work_keys"]:
+            locks.enter_context(_claim_lock(_route_scope_lock_target(run_dir, str(work_key))))
+        _assert_no_overlapping_route_claim(
+            run_dir=run_dir,
+            envelope_ref=envelope_ref,
+            envelope=envelope,
+            path_resolver=path_resolver,
+        )
+        return _claim_dispatch_route_under_scope_locks(
+            dispatch_envelope_ref=dispatch_envelope_ref,
+            checkpoint_path=checkpoint_path,
+            task_run_dir=task_run_dir,
+            task_run_cli=task_run_cli,
+            path_resolver=path_resolver,
+            holder_id=holder_id,
+        )
+
+
+def _claim_dispatch_route_under_scope_locks(
     *,
     dispatch_envelope_ref: Mapping[str, object],
     checkpoint_path: Path,
@@ -1434,6 +1607,8 @@ def claim_dispatch_route(
         build_action_effect_outcome,
         consume_action_resume_receipt,
         issue_action_resume_receipt,
+        verify_checkpoint_task_run_binding,
+        verify_mutation_guards,
         write_action_resume_receipt,
     )
 
@@ -1454,12 +1629,40 @@ def claim_dispatch_route(
         path_resolver=path_resolver,
     )
     envelope = validate_dispatch_envelope(envelope_raw, path_resolver=path_resolver)
-    parent_work_key, alternative_group, choice_sha, side_effect_id = _dispatch_claim_identity(
-        envelope
-    )
+    claim_identity = _dispatch_claim_identity(envelope)
+    parent_work_key = str(claim_identity["parent_work_key"])
+    alternative_group = str(claim_identity["alternative_group_sha256"])
+    choice_sha = str(claim_identity["choice_sha256"])
+    side_effect_id = str(claim_identity["side_effect_id"])
+    mutation_guard_work_keys = list(claim_identity["mutation_guard_work_keys"])
     next_action = f"dispatch-route:{choice_sha}"
     run_dir = Path(task_run_dir).resolve()
     claim_path = action_consumption_path(run_dir, parent_work_key, side_effect_id)
+    try:
+        checkpoint_binding = verify_checkpoint_task_run_binding(
+            checkpoint_path=Path(checkpoint_path),
+            task_run_dir=run_dir,
+        )
+    except ActionResumeError as exc:
+        raise DispatchEconomicsError(
+            f"dispatch checkpoint/run binding failed: {exc.reason_code}: {exc}"
+        ) from exc
+
+    def current_guard_preflight() -> dict[str, object]:
+        try:
+            return verify_mutation_guards(
+                task_run_dir=run_dir,
+                work_keys=mutation_guard_work_keys,
+            )
+        except ActionResumeError as exc:
+            raise DispatchEconomicsError(
+                "dispatch alternative guard preflight failed: "
+                f"{exc.reason_code}: {exc}; claim_scope_id={side_effect_id}; "
+                f"parent_work_key={parent_work_key}; "
+                f"mutation_guard_work_keys={','.join(mutation_guard_work_keys)}"
+            ) from exc
+
+    guard_preflight = current_guard_preflight()
 
     def existing_result(*, wait_for_same_choice: bool = False) -> dict[str, object] | None:
         deadline = time.monotonic() + (5.0 if wait_for_same_choice else 0.0)
@@ -1519,9 +1722,18 @@ def claim_dispatch_route(
             "leg": envelope["leg"],
             "physical_consumer_id": envelope["validated_physical_consumer_id"],
             "side_effect_id": side_effect_id,
+            "claim_scope_id": side_effect_id,
+            "claim_storage_work_key": parent_work_key,
+            "parent_work_key": parent_work_key,
+            "mutation_guard_work_keys": mutation_guard_work_keys,
+            "mutation_guard_preflight": current_guard_preflight(),
+            "checkpoint_task_run_binding": checkpoint_binding,
+            "task_run_id": checkpoint_binding["run_id"],
+            "task_run_path": checkpoint_binding["task_run_path"],
             "claim_path": str(claim_path),
             "route_claim_evidence_ref": str(evidence_refs[0]),
-            "model_invocation_allowed": True,
+            "route_claim_selected": True,
+            "live_start_gate_required": True,
             "authority": False,
             "completion_claim_allowed": False,
         }
@@ -1548,6 +1760,7 @@ def claim_dispatch_route(
             observed_files=[envelope_path],
             work_pin=choice_sha,
             expected_result_phase="worker_route_claimed",
+            mutation_guard_work_keys=mutation_guard_work_keys,
         )
         write_action_resume_receipt(receipt_path, receipt)
 
@@ -1556,6 +1769,10 @@ def claim_dispatch_route(
                 "schema_version": "xinao.work_unit_finalizer_evidence.v1",
                 "kind": "dispatch_route_claim",
                 "work_key": parent_work_key,
+                "claim_scope_id": side_effect_id,
+                "claim_storage_work_key": parent_work_key,
+                "parent_work_key": parent_work_key,
+                "mutation_guard_work_keys": mutation_guard_work_keys,
                 "subject": alternative_group,
                 "observed_value": choice_sha,
                 "readback_verified": True,
@@ -1568,6 +1785,7 @@ def claim_dispatch_route(
                     "sha256": envelope_ref["sha256"],
                 },
                 "task_run_path": str(run_dir),
+                "task_run_id": checkpoint_binding["run_id"],
                 "side_effect_id": side_effect_id,
                 "action_digest": context.get("action_digest"),
                 "authority": False,
@@ -1589,6 +1807,12 @@ def claim_dispatch_route(
                     "choice_sha256": choice_sha,
                     "dispatch_envelope_sha256": envelope_ref["sha256"],
                     "physical_consumer_id": envelope["validated_physical_consumer_id"],
+                    "claim_scope_id": side_effect_id,
+                    "claim_storage_work_key": parent_work_key,
+                    "parent_work_key": parent_work_key,
+                    "mutation_guard_work_keys": mutation_guard_work_keys,
+                    "task_run_id": checkpoint_binding["run_id"],
+                    "task_run_path": checkpoint_binding["task_run_path"],
                 },
             )
 
@@ -1599,6 +1823,7 @@ def claim_dispatch_route(
             expected_side_effect_id=side_effect_id,
             expected_next_action=next_action,
             expected_result_phase="worker_route_claimed",
+            expected_mutation_guard_work_keys=mutation_guard_work_keys,
             consumer=adapter,
             holder_id=holder_id,
         )
@@ -1615,10 +1840,14 @@ def claim_dispatch_route(
             if reused is not None:
                 return reused
         raise DispatchEconomicsError(
-            f"dispatch alternative claim failed: {exc.reason_code}: {exc}"
+            "dispatch alternative claim failed: "
+            f"{exc.reason_code}: {exc}; claim_scope_id={side_effect_id}; "
+            f"parent_work_key={parent_work_key}; "
+            f"mutation_guard_work_keys={','.join(mutation_guard_work_keys)}"
         ) from exc
     if closed.get("status") != "closed":
         raise DispatchEconomicsError("dispatch route claim did not close on task-run events")
+    guard_preflight = current_guard_preflight()
     evidence_sha = _file_sha(evidence_path)
     return {
         "schema_version": "xinao.dispatch_route_claim_result.v1",
@@ -1628,9 +1857,18 @@ def claim_dispatch_route(
         "leg": envelope["leg"],
         "physical_consumer_id": envelope["validated_physical_consumer_id"],
         "side_effect_id": side_effect_id,
+        "claim_scope_id": side_effect_id,
+        "claim_storage_work_key": parent_work_key,
+        "parent_work_key": parent_work_key,
+        "mutation_guard_work_keys": mutation_guard_work_keys,
+        "mutation_guard_preflight": guard_preflight,
+        "checkpoint_task_run_binding": checkpoint_binding,
+        "task_run_id": checkpoint_binding["run_id"],
+        "task_run_path": checkpoint_binding["task_run_path"],
         "claim_path": str(claim_path),
         "route_claim_evidence_ref": f"{evidence_path}#sha256={evidence_sha}",
-        "model_invocation_allowed": True,
+        "route_claim_selected": True,
+        "live_start_gate_required": True,
         "authority": False,
         "completion_claim_allowed": False,
     }
@@ -1640,6 +1878,8 @@ def validate_dispatch_route_claim(
     *,
     route_claim_evidence_ref: object,
     dispatch_envelope_ref: Mapping[str, object],
+    expected_task_run_dir: Path | None = None,
+    expected_run_id: str = "",
     path_resolver: PathResolver | None = None,
 ) -> dict[str, object]:
     """Validate the task-run-backed A/B claim immediately before model start."""
@@ -1656,9 +1896,12 @@ def validate_dispatch_route_claim(
         path_resolver=path_resolver,
     )
     envelope = validate_dispatch_envelope(envelope_raw, path_resolver=path_resolver)
-    parent_work_key, alternative_group, choice_sha, side_effect_id = _dispatch_claim_identity(
-        envelope
-    )
+    claim_identity = _dispatch_claim_identity(envelope)
+    parent_work_key = str(claim_identity["parent_work_key"])
+    alternative_group = str(claim_identity["alternative_group_sha256"])
+    choice_sha = str(claim_identity["choice_sha256"])
+    side_effect_id = str(claim_identity["side_effect_id"])
+    mutation_guard_work_keys = list(claim_identity["mutation_guard_work_keys"])
     evidence_path, evidence_sha = _parse_evidence_ref(
         route_claim_evidence_ref,
         path_resolver=path_resolver,
@@ -1697,7 +1940,8 @@ def validate_dispatch_route_claim(
     )
     events_path = run_dir / "events.jsonl"
     state_path = run_dir / "state.json"
-    if not events_path.is_file() or not state_path.is_file():
+    task_path = run_dir / "task.json"
+    if not events_path.is_file() or not state_path.is_file() or not task_path.is_file():
         raise DispatchEconomicsError("dispatch route claim task-run chain is missing")
     try:
         events = [
@@ -1706,9 +1950,17 @@ def validate_dispatch_route_claim(
             if line.strip()
         ]
         state = json.loads(state_path.read_text(encoding="utf-8-sig"))
+        task = json.loads(task_path.read_text(encoding="utf-8-sig"))
     except (OSError, json.JSONDecodeError) as exc:
         raise DispatchEconomicsError("dispatch route claim task-run chain is invalid") from exc
-    if not isinstance(state, dict) or state.get("events_count") != len(events):
+    run_id = run_dir.name
+    if (
+        not isinstance(state, dict)
+        or not isinstance(task, dict)
+        or task.get("run_id") != run_id
+        or state.get("run_id") != run_id
+        or state.get("events_count") != len(events)
+    ):
         raise DispatchEconomicsError("dispatch route claim task-run cursor drifted")
     evidence_ref_text = _text(route_claim_evidence_ref, "route_claim_evidence_ref")
 
@@ -1739,7 +1991,11 @@ def validate_dispatch_route_claim(
     if len(matching) != 1:
         raise DispatchEconomicsError("dispatch route claim has no unique canonical task-run event")
 
-    from services.agent_runtime.action_resume_receipt import action_consumption_path
+    from services.agent_runtime.action_resume_receipt import (
+        ActionResumeError,
+        action_consumption_path,
+        verify_mutation_guards,
+    )
 
     claim_path = action_consumption_path(run_dir, parent_work_key, side_effect_id)
     try:
@@ -1748,6 +2004,61 @@ def validate_dispatch_route_claim(
         raise DispatchEconomicsError("dispatch route action claim is missing or invalid") from exc
     outcome = _mapping(claim.get("effect_outcome"), "dispatch_route_claim.effect_outcome")
     details = _mapping(outcome.get("details"), "dispatch_route_claim.effect_outcome.details")
+    evidence_scope_fields = {
+        "claim_scope_id",
+        "claim_storage_work_key",
+        "parent_work_key",
+        "mutation_guard_work_keys",
+        "task_run_id",
+        "task_run_path",
+    }
+    # ``task_run_path`` existed in v1 evidence before scoped identities were
+    # introduced.  It therefore cannot by itself distinguish a legacy claim
+    # from a partially downgraded scoped claim.
+    scope_markers = evidence_scope_fields - {"task_run_path"}
+    details_scope_fields = set(evidence_scope_fields)
+    evidence_scope_present = any(field in evidence for field in scope_markers)
+    claim_scope_present = "mutation_guard_work_keys" in claim
+    details_scope_present = any(field in details for field in scope_markers)
+    scoped_claim = evidence_scope_present or claim_scope_present or details_scope_present
+    if scoped_claim:
+        if (
+            not all(field in evidence for field in evidence_scope_fields)
+            or not claim_scope_present
+            or not all(field in details for field in details_scope_fields)
+        ):
+            raise DispatchEconomicsError("dispatch route scoped identity is partial or downgraded")
+        if expected_task_run_dir is None or not str(expected_run_id).strip():
+            raise DispatchEconomicsError(
+                "scoped dispatch route validation requires the caller's expected task-run identity"
+            )
+        _, expected_run_dir = _physical_path(
+            str(expected_task_run_dir),
+            "expected_task_run_dir",
+            path_resolver,
+        )
+        if not _same_physical_path(expected_run_dir, run_dir) or str(expected_run_id) != run_id:
+            raise DispatchEconomicsError("dispatch route claim was transplanted across task-runs")
+        _, details_run_dir = _physical_path(
+            details.get("task_run_path"),
+            "dispatch_route_claim.details.task_run_path",
+            path_resolver,
+        )
+        if (
+            evidence.get("claim_scope_id") != side_effect_id
+            or evidence.get("claim_storage_work_key") != parent_work_key
+            or evidence.get("parent_work_key") != parent_work_key
+            or evidence.get("mutation_guard_work_keys") != mutation_guard_work_keys
+            or evidence.get("task_run_id") != run_id
+            or claim.get("mutation_guard_work_keys") != mutation_guard_work_keys
+            or details.get("claim_scope_id") != side_effect_id
+            or details.get("claim_storage_work_key") != parent_work_key
+            or details.get("parent_work_key") != parent_work_key
+            or details.get("mutation_guard_work_keys") != mutation_guard_work_keys
+            or details.get("task_run_id") != run_id
+            or not _same_physical_path(details_run_dir, run_dir)
+        ):
+            raise DispatchEconomicsError("dispatch route scoped identity drifted")
     if (
         claim.get("status") != "closed"
         or claim.get("work_key") != parent_work_key
@@ -1764,6 +2075,18 @@ def validate_dispatch_route_claim(
         or details.get("dispatch_envelope_sha256") != envelope_ref["sha256"]
     ):
         raise DispatchEconomicsError("dispatch route action claim is not closed on this choice")
+    try:
+        guard_preflight = verify_mutation_guards(
+            task_run_dir=run_dir,
+            work_keys=mutation_guard_work_keys,
+        )
+    except ActionResumeError as exc:
+        raise DispatchEconomicsError(
+            "dispatch route claim is no longer model-start eligible: "
+            f"{exc.reason_code}: {exc}; claim_scope_id={side_effect_id}; "
+            f"parent_work_key={parent_work_key}; "
+            f"mutation_guard_work_keys={','.join(mutation_guard_work_keys)}"
+        ) from exc
     return {
         "schema_version": "xinao.dispatch_route_claim_validation.v1",
         "alternative_group_sha256": alternative_group,
@@ -1771,6 +2094,14 @@ def validate_dispatch_route_claim(
         "leg": envelope["leg"],
         "physical_consumer_id": envelope["validated_physical_consumer_id"],
         "side_effect_id": side_effect_id,
+        "claim_scope_id": side_effect_id,
+        "claim_storage_work_key": parent_work_key,
+        "parent_work_key": parent_work_key,
+        "mutation_guard_work_keys": mutation_guard_work_keys,
+        "mutation_guard_preflight": guard_preflight,
+        "task_run_id": run_id,
+        "task_run_path": str(run_dir),
+        "scoped_claim": scoped_claim,
         "route_claim_evidence_ref": evidence_ref_text,
         "model_invocation_allowed": True,
         "authority": False,

@@ -100,6 +100,7 @@ ALLOWED_AGENT_RUNTIME_MODULES = {
     "thin_langgraph_closure.py",
     "thin_provider_client.py",
     "tool_table_coverage.py",
+    "work_unit_lifecycle.py",
 }
 
 
