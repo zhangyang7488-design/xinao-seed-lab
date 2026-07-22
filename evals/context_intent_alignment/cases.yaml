@@ -30,6 +30,274 @@
     expected_worker_transport: not_applicable
     expected_preference_update: none
     expected_starts_new_project: false
+- description: Temporary module notes become deletable through the machine-wide operational card layer
+  metadata:
+    id: REG_MACHINE_MODULE_OPERATIONAL_NOTE_LAYER
+    domain: capability_contract
+    class: governing_invariant_regression
+    profiles: [smoke, core, deep]
+    source_type: explicit_user_correction
+    source_ref: current-user-2026-07-23/module-self-recovery-metacognition
+    lifecycle: regression
+    added_at: '2026-07-23'
+    not_authority: true
+  vars:
+    case_id: REG_MACHINE_MODULE_OPERATIONAL_NOTE_LAYER
+    domain: capability_contract
+    restored_context: |-
+      This machine has useful but scattered follow-up facts for APIs, launchers, tools, adapters, seam packages and other removable modules: paths, secret-free credential handles, known failures, known-good invocations, local degradation, evidence pointers and retirement effects. They are currently mixed across temporary notes, contracts and evidence, so a fresh AI window cannot reliably discover the relevant facts after identifying an object. Existing rules, runtime evidence and module identities already have separate authority scopes. Codex main is the sole formal writer.
+    user_increment: |-
+      Establish the thin machine-wide card layer and make temporary notes safely deletable. Keep rules in their unique authority, module-bound follow-up facts in separate cards, and evidence in its existing ledger. Index cards by module ID, capability and aliases for on-demand retrieval; extract only facts a later qualified actor needs to discover, diagnose, reproduce, degrade, restore, replace and retire the module without asking me to repeat them. Store external research only as source, adopted decision, rejected scope and revalidation trigger. Record no secret values, private routing preference, dynamic runtime truth or completion claim, and do not add a database, daemon, knowledge platform, provider roster or irrelevant fields.
+    expected_target_relation: existing_object
+    expected_next_step: inspect_then_act
+    expected_ask_user: false
+    expected_create_repository: false
+    expected_create_daemon: false
+    expected_object_identity_source: restored_context
+    expected_mature_comparison_triggered: false
+    expected_learning_loop: double_loop_structural
+    expected_repair_target: governing_invariant
+    expected_closure_evidence: cross_context_entry_and_negative
+    expected_effect_scope: reversible_local
+    expected_effect_authority: explicit_current_user
+    expected_coordination_mode: single_supervisor_worker
+    expected_worker_provider: external_worker
+    expected_worker_transport: adaptive|direct_batch
+    expected_quota_action: query_now
+    expected_quota_query_disposition: query_now_before_routing
+    expected_owner_execution_state: dynamic_supervisor
+    expected_terminal_refill: not_applicable
+    expected_worker_receipt_disposition: not_applicable
+    expected_text_writer: codex_main
+    expected_completion_claim_scope: not_applicable
+    expected_local_completion_transition: finish_bounded_task
+    expected_continuous_run_disposition: not_applicable
+    expected_frontier_disposition: execute
+    expected_candidate_value: positive
+    expected_global_frontier_reconciled: false
+    expected_downstream_recovery_required: false
+    expected_freeze_unaffected_provider: false
+    expected_degraded_scope: none
+    expected_unaffected_frontier_action: not_applicable
+    expected_recovery_probe: not_applicable
+    expected_preference_update: smallest_existing_artifact
+    expected_starts_new_project: false
+- description: A later module failure is recovered from its card without operator restatement
+  metadata:
+    id: REG_MODULE_FAILURE_SELF_RECOVERS_WITHOUT_RENARRATION
+    domain: capability_contract
+    class: changed_context_negative
+    profiles: [smoke, core, deep]
+    source_type: explicit_user_correction
+    source_ref: current-user-2026-07-23/module-self-recovery-metacognition
+    lifecycle: regression
+    added_at: '2026-07-23'
+    not_authority: true
+  vars:
+    case_id: REG_MODULE_FAILURE_SELF_RECOVERS_WITHOUT_RENARRATION
+    domain: capability_contract
+    restored_context: |-
+      The capability-neutral module-card invariant and machine-wide card index are already promoted and verified. In a fresh window, one removable module fails its health probe. After identifying the object, the index retrieves its card by module ID, capability or alias. The card points to the real invocation, configuration or secret-free credential handles when applicable, drift revalidation, known local degradation, evidence, known-good, rollback, readmission and deletion effects. The fixed core and sibling modules remain healthy. This is an exercise of the accepted invariant, not a request for a new preference or policy.
+    user_increment: |-
+      Retrieve the card and diagnose, recover or locally degrade only that module from current machine facts. Do not ask me to restate a known path or invocation, do not expose secrets, do not rewrite the core interface or stable rules, and do not freeze healthy sibling modules.
+    expected_target_relation: existing_object
+    expected_next_step: act|inspect_then_act
+    expected_ask_user: false
+    expected_create_repository: false
+    expected_create_daemon: false
+    expected_object_identity_source: restored_context
+    expected_mature_comparison_triggered: false
+    expected_learning_loop: single_loop_instance
+    expected_repair_target: instance_action
+    expected_closure_evidence: current_object_verification
+    expected_effect_scope: reversible_local
+    expected_effect_authority: explicit_current_user
+    expected_coordination_mode: supervisor_only
+    expected_worker_provider: not_applicable
+    expected_worker_transport: not_applicable
+    expected_quota_action: not_applicable
+    expected_quota_query_disposition: not_applicable
+    expected_owner_execution_state: inseparable_owner_slice
+    expected_terminal_refill: not_applicable
+    expected_worker_receipt_disposition: not_applicable
+    expected_text_writer: not_applicable
+    expected_completion_claim_scope: not_applicable
+    expected_local_completion_transition: finish_bounded_task
+    expected_continuous_run_disposition: not_applicable
+    expected_frontier_disposition: execute
+    expected_candidate_value: positive
+    expected_global_frontier_reconciled: false
+    expected_downstream_recovery_required: false
+    expected_freeze_unaffected_provider: false
+    expected_degraded_scope: endpoint_candidate_only
+    expected_unaffected_frontier_action: continue_recompute
+    expected_recovery_probe: bounded_event_driven
+    expected_preference_update: none
+    expected_starts_new_project: false
+- description: Dynamic net benefit governs AI effort and transaction granularity
+  metadata:
+    id: REG_DYNAMIC_NET_BENEFIT_GOVERNS_AI_EFFORT_AND_GRANULARITY
+    domain: metareasoning
+    class: governing_invariant_regression
+    profiles: [smoke, core, deep]
+    source_type: explicit_user_correction
+    source_ref: current-user-2026-07-23/dynamic-net-benefit-metareasoning
+    lifecycle: regression
+    added_at: '2026-07-23'
+    not_authority: true
+  vars:
+    case_id: REG_DYNAMIC_NET_BENEFIT_GOVERNS_AI_EFFORT_AND_GRANULARITY
+    domain: metareasoning
+    restored_context: |-
+      A local AI workflow has many available capabilities: external mature search, long context, additional reasoning tokens, several models and tool workers, tests, independent review, repository publication, durable state and cleanup. Recent episodes alternated between calling every available capability, minimizing tokens, treating each accepted layer or test pass as a separate repository transaction, and delaying feedback in oversized batches. The user parent outcome, authorization, completion bar, local objects and real consumer are known. Relevant mature patterns are rational metareasoning and value of computation, value of information, economic batch size, small valuable testable batches, and self-contained changes. Neutral candidate pool: ATOM_PARENT_VERIFIED_PROGRESS_IS_UTILITY=settle every choice against verified parent progress and the real consumer; ATOM_HARD_INVARIANTS_BOUND_OPTIMIZATION=apply net-benefit recursion only to authorized replaceable means while authorization, Stop, single-owner, exact identity, fail-closed integrity, real consumer and parent completion remain non-tradable boundaries; ATOM_CONSTRAINT_SYMMETRY_COUNTERFACTUAL=retain or remove a constraint only after identifying its protected parent result or hard boundary, reproducible relaxation harm, authority source, real consumer, risk-proportionate cost and terminal state, preserving it as a candidate when evidence is incomplete; ATOM_MINIMAL_MATURE_COMPARISON_WHEN_DECISION_RELEVANT=perform the smallest current mature comparison likely to change a high-leverage or unclear decision; ATOM_VALUE_OF_INFORMATION_CONTROLS_MORE_RESEARCH=continue search, thought or verification only while it can change the route, verdict or critical evidence; ATOM_DYNAMIC_RESOURCE_ALLOCATION=select context, tokens, models, tools, workers, width and verification depth by marginal benefit minus full cost; ATOM_ADAPTIVE_MEANINGFUL_GRANULARITY=use the smallest meaningful result and the largest currently safe review, rollback and fan-in envelope; ATOM_TRANSACTION_SPLIT_COST_REPAID=split only when feedback, parallelism, independent consumption, isolation, rollback, reuse or downstream unlock repays transaction cost; ATOM_TOKEN_COST_NOT_OBJECTIVE=reduce token cost without reducing required reasoning quality, evidence or completion criteria; ATOM_NO_FIXED_SCORE_OR_TOOL_ORDER=keep the decision qualitative and fact-sensitive; ATOM_ALL_CAPABILITIES_ALWAYS_ACTIVE=invoke every available ability because availability implies value; ATOM_RIGIDITY_KEYWORD_IS_ENOUGH=delete any rule that looks rigid without proving its protected result, consumer or relaxation harm; ATOM_NET_BENEFIT_CAN_TRADE_AUTHORIZATION=let a high utility score override authorization or fail-closed boundaries and auto-authorize audit repair; ATOM_TOKEN_MINIMIZATION_IS_GOAL=use fewer tokens even when quality or evidence falls; ATOM_ONE_INTERNAL_STEP_ONE_TRANSACTION=open a commit and PR for every layer, adapter, schema, test, repair or accepted worker terminal; ATOM_FIXED_SMALL_OR_LARGE_BATCH=apply one fixed package size regardless of consumer, uncertainty or transaction cost; ATOM_ACTIVITY_COUNT_IS_PROGRESS=count calls, tokens, tests, repairs, commits or PRs as parent progress; ATOM_EXTERNAL_SEARCH_IS_UNCONDITIONAL_GATE=browse before every known reversible micro-action even when no result could change the route; ATOM_DISPATCH_EXAMPLE_IS_WHOLE_RULE=reduce the general metareasoning rule to worker dispatch alone.
+    user_increment: |-
+      Make this one capability-neutral governing rule. Recover my parent result first; use a lightweight current mature comparison when it can change a non-trivial decision, then choose how much to search, think, load, spend, delegate, split, verify, land, persist or clean by current marginal net benefit. Do not optimize for more capability use or fewer tokens. Keep quality, evidence and the parent completion bar fixed; settle only through the real consumer. In the supervisor skill, change only commit and merge granularity because worker-package granularity is already sound.
+    expected_target_relation: existing_object
+    expected_next_step: act
+    expected_ask_user: false
+    expected_create_repository: false
+    expected_create_daemon: false
+    expected_object_identity_source: restored_context
+    expected_mature_comparison_triggered: true
+    expected_learning_loop: double_loop_structural
+    expected_repair_target: governing_invariant
+    expected_closure_evidence: cross_context_entry_and_negative
+    expected_effect_scope: reversible_local
+    expected_effect_authority: explicit_current_user
+    expected_coordination_mode: single_supervisor_worker|supervisor_only
+    expected_worker_provider: external_worker|not_applicable
+    expected_worker_transport: adaptive|direct_batch|not_applicable
+    expected_quota_action: query_now|not_applicable
+    expected_quota_query_disposition: query_now_before_routing|not_applicable
+    expected_owner_execution_state: dynamic_supervisor|inseparable_owner_slice
+    expected_terminal_refill: not_applicable
+    expected_worker_receipt_disposition: not_applicable
+    expected_text_writer: codex_main
+    expected_completion_claim_scope: not_applicable
+    expected_local_completion_transition: finish_bounded_task
+    expected_continuous_run_disposition: not_applicable
+    expected_frontier_disposition: execute
+    expected_candidate_value: positive
+    expected_global_frontier_reconciled: false
+    expected_downstream_recovery_required: false
+    expected_freeze_unaffected_provider: false
+    expected_degraded_scope: none
+    expected_unaffected_frontier_action: not_applicable
+    expected_recovery_probe: not_applicable
+    expected_preference_update: smallest_existing_artifact
+    expected_starts_new_project: false
+    expected_recovered_requirement_atoms: ATOM_PARENT_VERIFIED_PROGRESS_IS_UTILITY|ATOM_HARD_INVARIANTS_BOUND_OPTIMIZATION|ATOM_CONSTRAINT_SYMMETRY_COUNTERFACTUAL|ATOM_MINIMAL_MATURE_COMPARISON_WHEN_DECISION_RELEVANT|ATOM_VALUE_OF_INFORMATION_CONTROLS_MORE_RESEARCH|ATOM_DYNAMIC_RESOURCE_ALLOCATION|ATOM_ADAPTIVE_MEANINGFUL_GRANULARITY|ATOM_TRANSACTION_SPLIT_COST_REPAID|ATOM_TOKEN_COST_NOT_OBJECTIVE|ATOM_NO_FIXED_SCORE_OR_TOOL_ORDER
+    expected_rejected_proxy_atoms: ATOM_ALL_CAPABILITIES_ALWAYS_ACTIVE|ATOM_RIGIDITY_KEYWORD_IS_ENOUGH|ATOM_NET_BENEFIT_CAN_TRADE_AUTHORIZATION|ATOM_TOKEN_MINIMIZATION_IS_GOAL|ATOM_ONE_INTERNAL_STEP_ONE_TRANSACTION|ATOM_FIXED_SMALL_OR_LARGE_BATCH|ATOM_ACTIVITY_COUNT_IS_PROGRESS|ATOM_EXTERNAL_SEARCH_IS_UNCONDITIONAL_GATE|ATOM_DISPATCH_EXAMPLE_IS_WHOLE_RULE
+- description: High-value audit selects by evidence capability without provider binding
+  metadata:
+    id: REG_HIGH_VALUE_AUDIT_CAPABILITY_NOT_PROVIDER_IDENTITY
+    domain: audit_adjudication
+    class: governing_invariant_regression
+    profiles:
+    - smoke
+    - core
+    - deep
+    source_type: explicit_user_correction
+    source_ref: current-user-2026-07-23/audit-capability-admission-boundary
+    lifecycle: regression
+    added_at: '2026-07-23'
+    not_authority: true
+  vars:
+    case_id: REG_HIGH_VALUE_AUDIT_CAPABILITY_NOT_PROVIDER_IDENTITY
+    domain: audit_adjudication
+    restored_context: |-
+      The local supervisor has a high-value audit whose object, scope, threat model, completion bar, bug bar, method, depth, coverage and verdict-changing evidence can be frozen as one bounded sufficient package. Cognitive APIs can receive a host-embedded hash-bound copy without filesystem tools; direct-tool workers are required for independent validation. The existing public audit boundary must be provider-neutral. Codex main is the only Owner and formal writer.
+    user_increment: |-
+      Correct the existing public contract and its negative regression for future contexts: select through the normal supervisor, distinguish host-embedded cognitive review from direct-tool independent validation regardless of worker identity, and keep every evaluator output candidate-only until Owner reproduction.
+    expected_target_relation: existing_object
+    expected_next_step: act
+    expected_ask_user: false
+    expected_create_repository: false
+    expected_create_daemon: false
+    expected_object_identity_source: restored_context
+    expected_mature_comparison_triggered: false
+    expected_learning_loop: double_loop_structural
+    expected_repair_target: governing_invariant
+    expected_closure_evidence: cross_context_entry_and_negative
+    expected_effect_scope: reversible_local
+    expected_effect_authority: explicit_current_user
+    expected_coordination_mode: single_supervisor_worker
+    expected_worker_provider: external_worker
+    expected_worker_transport: adaptive
+    expected_quota_action: query_now
+    expected_quota_query_disposition: query_now_before_routing
+    expected_owner_execution_state: dynamic_supervisor
+    expected_terminal_refill: not_applicable
+    expected_worker_receipt_disposition: not_applicable
+    expected_text_writer: codex_main
+    expected_completion_claim_scope: not_applicable
+    expected_local_completion_transition: finish_bounded_task
+    expected_continuous_run_disposition: not_applicable
+    expected_frontier_disposition: execute
+    expected_candidate_value: positive
+    expected_global_frontier_reconciled: false
+    expected_downstream_recovery_required: false
+    expected_freeze_unaffected_provider: false
+    expected_degraded_scope: none
+    expected_unaffected_frontier_action: not_applicable
+    expected_recovery_probe: not_applicable
+    expected_preference_update: smallest_existing_artifact
+    expected_starts_new_project: false
+- description: An auditor without independent evidence access cannot drive repair
+  metadata:
+    id: NEG_UNVERIFIED_AUDITOR_CANNOT_DRIVE_REPAIR
+    domain: audit_adjudication
+    class: authority_boundary_negative
+    profiles:
+    - smoke
+    - core
+    - deep
+    source_type: observed_local_failure
+    source_ref: current-user-2026-07-23/event422-evaluator-repair-pendulum
+    lifecycle: regression
+    added_at: '2026-07-23'
+    not_authority: true
+  vars:
+    case_id: NEG_UNVERIFIED_AUDITOR_CANNOT_DRIVE_REPAIR
+    domain: audit_adjudication
+    restored_context: |-
+      The provider-neutral audit-adjudication invariant and its negative regression have already been promoted into the existing public carrier. A high-value evaluator explicitly cannot access the local filesystem or the complete frozen evidence package, but it emitted a detailed REPAIR_REQUIRED list. The same finding family has already produced repeated repairs. A separate healthy worker can independently read the bounded package, and Codex Owner can run an isolated local reproduction. This is an ordinary exercise of the accepted boundary, not a request for another preference or rule update.
+    user_increment: |-
+      Do not turn the evaluator's prose into another repair. Record it only as a candidate, route the bounded package to the evidence-capable worker, and allow a repair only if Codex Owner reproduces a new in-scope blocker with novel evidence against the frozen bug bar. Otherwise close ACCEPT_HOLD, BLOCKED or INVALID_EVALUATION.
+    expected_target_relation: existing_object
+    expected_next_step: act
+    expected_ask_user: false
+    expected_create_repository: false
+    expected_create_daemon: false
+    expected_object_identity_source: restored_context
+    expected_mature_comparison_triggered: false
+    expected_learning_loop: double_loop_structural
+    expected_repair_target: governing_invariant
+    expected_closure_evidence: cross_context_entry_and_negative
+    expected_effect_scope: reversible_local
+    expected_effect_authority: explicit_current_user
+    expected_coordination_mode: single_supervisor_worker
+    expected_worker_provider: external_worker
+    expected_worker_transport: adaptive|direct_batch
+    expected_quota_action: query_now
+    expected_quota_query_disposition: query_now_before_routing
+    expected_owner_execution_state: dynamic_supervisor
+    expected_terminal_refill: immediate_positive_value
+    expected_worker_receipt_disposition: reject_and_recover
+    expected_text_writer: codex_main
+    expected_completion_claim_scope: local_object
+    expected_local_completion_transition: finish_bounded_task
+    expected_continuous_run_disposition: not_applicable
+    expected_frontier_disposition: execute
+    expected_candidate_value: positive
+    expected_global_frontier_reconciled: false
+    expected_downstream_recovery_required: false
+    expected_freeze_unaffected_provider: false
+    expected_degraded_scope: frontier_only
+    expected_unaffected_frontier_action: continue_recompute
+    expected_recovery_probe: not_applicable
+    expected_preference_update: none
+    expected_starts_new_project: false
 - description: Dynamic supervisor treats cognitive work and conditional packages as one global DAG
   metadata:
     id: REG_DYNAMIC_WHOLE_PACKAGE_GLOBAL_DAG

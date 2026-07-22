@@ -319,6 +319,141 @@ def test_production_bridge_applies_replaceable_default_and_capacity_evidence(
     ]
 
 
+def test_high_value_audit_requires_evidence_capability_before_normal_routing(
+    tmp_path: Path,
+) -> None:
+    policy = _dynamic_policy()
+    policy["stable_preferred_provider_id"] = "preferred-provider"
+    policy["allowed_provider_ids"] = ["preferred-provider", "capable-provider"]
+    policy["quota_capacity_bindings"] = {}
+    policy["routes"] = [
+        {
+            "target": "preferred",
+            "provider_id": "preferred-provider",
+            "worker_id": "preferred-worker",
+            "route_role": "worker_candidate",
+            "profile_ref": "profile:preferred",
+            "model_id": "model:review",
+            "transport_id": "direct-relay",
+        },
+        {
+            "target": "capable",
+            "provider_id": "capable-provider",
+            "worker_id": "capable-worker",
+            "route_role": "worker_candidate",
+            "profile_ref": "profile:capable",
+            "model_id": "model:review",
+            "transport_id": "direct-worker",
+        },
+    ]
+    _write_policy(tmp_path, policy)
+    candidates = [
+        {
+            "provider_id": "preferred-provider",
+            "profile_ref": "profile:preferred",
+            "model_id": "model:review",
+            "transport_id": "direct-relay",
+            "declared_active": True,
+            "healthy": True,
+            "positive_benefit": True,
+            "evidence_access_capable": False,
+            "direct_tool_access_capable": False,
+        },
+        {
+            "provider_id": "capable-provider",
+            "profile_ref": "profile:capable",
+            "model_id": "model:review",
+            "transport_id": "direct-worker",
+            "declared_active": True,
+            "healthy": True,
+            "positive_benefit": True,
+            "evidence_access_capable": True,
+            "direct_tool_access_capable": True,
+        },
+    ]
+    decision = resolve_supervisor_worker_decision(
+        {
+            "work_class": "high_value_audit",
+            "audit_role": "cognitive_review",
+            "task_separable": True,
+            "candidates": candidates,
+        },
+        runtime_root=tmp_path,
+    )
+    assert decision["selected_candidate"]["provider_id"] == "capable-provider"
+    assert decision["decision_reason"] == "sole_eligible_candidate"
+    assert decision["evidence_access_required"] is True
+    assert decision["direct_tool_access_required"] is False
+
+
+def test_high_value_independent_validation_capability_gates_cannot_be_lowered(
+    tmp_path: Path,
+) -> None:
+    policy = _dynamic_policy()
+    policy["stable_preferred_provider_id"] = "preferred-provider"
+    policy["allowed_provider_ids"] = ["preferred-provider", "capable-provider"]
+    policy["quota_capacity_bindings"] = {}
+    policy["routes"] = [
+        {
+            "target": "preferred",
+            "provider_id": "preferred-provider",
+            "worker_id": "preferred-worker",
+            "route_role": "worker_candidate",
+            "profile_ref": "profile:preferred",
+            "model_id": "model:review",
+            "transport_id": "direct-relay",
+        },
+        {
+            "target": "capable",
+            "provider_id": "capable-provider",
+            "worker_id": "capable-worker",
+            "route_role": "worker_candidate",
+            "profile_ref": "profile:capable",
+            "model_id": "model:review",
+            "transport_id": "direct-worker",
+        },
+    ]
+    _write_policy(tmp_path, policy)
+    decision = resolve_supervisor_worker_decision(
+        {
+            "work_class": "high_value_audit",
+            "audit_role": "independent_validation",
+            "evidence_access_required": False,
+            "direct_tool_access_required": False,
+            "task_separable": True,
+            "candidates": [
+                {
+                    "provider_id": "preferred-provider",
+                    "profile_ref": "profile:preferred",
+                    "model_id": "model:review",
+                    "transport_id": "direct-relay",
+                    "declared_active": True,
+                    "healthy": True,
+                    "positive_benefit": True,
+                    "evidence_access_capable": False,
+                    "direct_tool_access_capable": False,
+                },
+                {
+                    "provider_id": "capable-provider",
+                    "profile_ref": "profile:capable",
+                    "model_id": "model:review",
+                    "transport_id": "direct-worker",
+                    "declared_active": True,
+                    "healthy": True,
+                    "positive_benefit": True,
+                    "evidence_access_capable": True,
+                    "direct_tool_access_capable": True,
+                },
+            ],
+        },
+        runtime_root=tmp_path,
+    )
+    assert decision["selected_candidate"]["provider_id"] == "capable-provider"
+    assert decision["decision_reason"] == "sole_eligible_candidate"
+    assert decision["evidence_access_required"] is True
+    assert decision["direct_tool_access_required"] is True
+
+
 def test_codex_inner_optimization_cannot_override_outer_provider_choice(
     tmp_path: Path,
 ) -> None:

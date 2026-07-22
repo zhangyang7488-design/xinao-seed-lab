@@ -162,6 +162,7 @@ def build_neutral_manifest(
         if not isinstance(raw_value, Mapping):
             raise TypeError(f"packages[{index}] must be an object")
         raw = dict(raw_value)
+        work_class = str(raw.get("work_class") or "").strip()
         if "consumer_id" in raw:
             raise ValueError(
                 f"packages[{index}] cannot bind a physical consumer_id in the neutral manifest"
@@ -171,9 +172,41 @@ def build_neutral_manifest(
             raw.get("context_manifest_path"),
             f"packages[{index}].context_manifest_path",
         )
-        input_values = raw.get("input_paths")
-        if not isinstance(input_values, list) or not input_values:
+        raw_input_values = raw.get("input_paths")
+        if not isinstance(raw_input_values, list) or not raw_input_values:
             raise ValueError(f"packages[{index}] requires input_paths")
+        input_values = list(raw_input_values)
+        audit_assessment_logical = ""
+        audit_adjudication_logical = ""
+        prior_audit_adjudication_logicals: list[str] = []
+        if work_class == "audit_repair":
+            audit_assessment_logical = _logical_path(
+                raw.get("audit_assessment_path"),
+                f"packages[{index}].audit_assessment_path",
+            )
+            audit_adjudication_logical = _logical_path(
+                raw.get("audit_adjudication_path"),
+                f"packages[{index}].audit_adjudication_path",
+            )
+            prior_values = raw.get("prior_audit_adjudication_paths", [])
+            if not isinstance(prior_values, list):
+                raise TypeError(
+                    f"packages[{index}].prior_audit_adjudication_paths must be an array"
+                )
+            prior_audit_adjudication_logicals = [
+                _logical_path(
+                    value,
+                    f"packages[{index}].prior_audit_adjudication_paths[]",
+                )
+                for value in prior_values
+            ]
+            for logical in (
+                audit_assessment_logical,
+                audit_adjudication_logical,
+                *prior_audit_adjudication_logicals,
+            ):
+                if logical not in input_values:
+                    input_values.append(logical)
         input_refs = [
             _path_ref(
                 _logical_path(value, f"packages[{index}].input_paths[]"),
@@ -189,6 +222,18 @@ def build_neutral_manifest(
         acceptance.setdefault("min_result_chars", 1)
         acceptance.setdefault("required_result_markers", [])
         acceptance.setdefault("require_json_object", False)
+        if work_class == "high_value_audit":
+            acceptance["require_json_object"] = True
+            acceptance.setdefault(
+                "json_schema_path",
+                str(
+                    REPO_ROOT
+                    / "services"
+                    / "agent_runtime"
+                    / "schemas"
+                    / "audit_candidate_findings.v1.schema.json"
+                ),
+            )
         schema_path_value = str(acceptance.pop("json_schema_path", "") or "").strip()
         if schema_path_value:
             acceptance["json_schema_ref"] = _path_ref(
@@ -215,7 +260,7 @@ def build_neutral_manifest(
             package_id=str(raw.get("package_id") or ""),
             work_key=str(raw.get("work_key") or ""),
             parent_work_key=parent_work_key,
-            work_class=str(raw.get("work_class") or ""),
+            work_class=work_class,
             role=str(raw.get("role") or ""),
             phase=str(raw.get("phase") or ""),
             input_sha256=input_sha,
@@ -240,6 +285,23 @@ def build_neutral_manifest(
             "acceptance": acceptance,
             "timeout_sec": int(raw.get("timeout_sec") or 600),
         }
+        if work_class == "high_value_audit":
+            audit_role = str(raw.get("audit_role") or "").strip().lower()
+            if audit_role not in {"cognitive_review", "independent_validation"}:
+                raise ValueError(
+                    f"packages[{index}].audit_role must be cognitive_review or independent_validation"
+                )
+            package["audit_role"] = audit_role
+            package["cannot_access_filesystem"] = audit_role == "cognitive_review"
+            package["tool_execution_allowed"] = audit_role == "independent_validation"
+            package["evaluator_output_authority"] = "candidate_only"
+        ref_by_path = {str(item["path"]): item for item in input_refs}
+        if work_class == "audit_repair":
+            package["audit_assessment_ref"] = ref_by_path[audit_assessment_logical]
+            package["audit_adjudication_ref"] = ref_by_path[audit_adjudication_logical]
+            package["prior_audit_adjudication_refs"] = [
+                ref_by_path[logical] for logical in prior_audit_adjudication_logicals
+            ]
         prior = raw.get("prior_attempt_receipt_ref")
         if isinstance(prior, Mapping):
             prior_logical = _logical_path(

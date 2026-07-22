@@ -585,6 +585,43 @@
       ]
     },
     {
+      "consumer_id": "audit_adjudication_repair_gate",
+      "source_path": "services/agent_runtime/audit_adjudication.py",
+      "entrypoint": "require_repair_authorization",
+      "role": "candidate_audit_to_owner_reproduction_and_bounded_repair_admission",
+      "contract_mode": "host_embedded_or_direct_tool_evidence_plus_frozen_scope_and_owner_reproduction",
+      "status": "boundary_verified_non_parent_owner",
+      "conformance_status": "boundary_verified_non_parent_owner",
+      "status_reason": "The pure gate, real host-embedded cognitive API, evidence-capable direct-tool review, Owner isolated reproduction, and bounded repair authorization are verified; evaluator outputs remain candidate-only.",
+      "writes_effects": false,
+      "parent_completion_authority": false,
+      "repair_authority_is_derived": true,
+      "provider_identity_grants_authority": false,
+      "complete_hash_bound_evidence_required": true,
+      "cognitive_api_independent_validation_claim_allowed": false,
+      "conformance_tests": [
+        "tests/test_audit_adjudication.py",
+        "tests/test_build_worker_package_batch.py::test_audit_repair_manifest_requires_hash_bound_owner_authorization",
+        "tests/test_supervisor_worker_selector.py::test_evidence_requirement_excludes_incapable_provider_before_preference",
+        "tests/test_supervisor_worker_selector.py::test_independent_validation_requires_direct_tool_capability"
+      ],
+      "replay_evidence": [],
+      "current_positive_canary_evidence": [
+        "D:/XINAO_RESEARCH_RUNTIME/state/codex_task_runs/audit-adjudication-capability-gate-20260723/audit-adjudication-capability-gate-20260723/evidence/fresh_canary_v2/assessment.json",
+        "D:/XINAO_RESEARCH_RUNTIME/state/codex_task_runs/audit-adjudication-capability-gate-20260723/audit-adjudication-capability-gate-20260723/evidence/fresh_canary_v2/adjudication.json",
+        "D:/XINAO_RESEARCH_RUNTIME/state/codex_task_runs/audit-adjudication-capability-gate-20260723/audit-adjudication-capability-gate-20260723/evidence/fresh_canary_v2/repair_gate_receipt.json",
+        "D:/XINAO_RESEARCH_RUNTIME/state/openai_relay_worker/cdx_orw_20260723T064112_57cf3472_w01/meta.json",
+        "D:/XINAO_RESEARCH_RUNTIME/state/grok_worker_pool/gwp_20260723T061616_01648cd7/pool_summary.json"
+      ],
+      "negative_canary_evidence": [
+        "D:/XINAO_RESEARCH_RUNTIME/state/openai_relay_worker/cdx_orw_20260723T064020_710ce451_w01/meta.json"
+      ],
+      "fresh_canary_evidence": [
+        "D:/XINAO_RESEARCH_RUNTIME/state/codex_task_runs/audit-adjudication-capability-gate-20260723/audit-adjudication-capability-gate-20260723/evidence/fresh_canary_v2/context_manifest.json",
+        "D:/XINAO_RESEARCH_RUNTIME/state/openai_relay_worker/cdx_orw_20260723T064112_57cf3472_w01/meta.json"
+      ]
+    },
+    {
       "consumer_id": "legacy_host_temporal_pool_bridge",
       "source_path": "C:/Users/xx363/Grok_Admin_Isolated/workspace/grok-admin-bridge/Invoke-GrokHostWorkerPoolFromTemporal.ps1",
       "entrypoint": "Invoke-GrokHostWorkerPoolFromTemporal.ps1",

@@ -1,0 +1,77 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://xinao.local/schemas/audit_adjudication.v1.schema.json",
+  "title": "Xinao Owner audit adjudication",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "audit_id",
+    "assessment_sha256",
+    "work_key",
+    "finding_id",
+    "finding_family",
+    "owner_identity",
+    "scope_pins",
+    "disposition",
+    "severity",
+    "owner_reproduction",
+    "novel_evidence",
+    "repair_authorized",
+    "terminal_state",
+    "authority",
+    "completion_claim_allowed",
+    "adjudication_sha256"
+  ],
+  "properties": {
+    "schema_version": {"const": "xinao.audit_adjudication.v1"},
+    "audit_id": {"type": "string", "minLength": 1},
+    "assessment_sha256": {"$ref": "#/$defs/sha256"},
+    "work_key": {"type": "string", "minLength": 1},
+    "finding_id": {"type": "string", "minLength": 1},
+    "finding_family": {"type": "string", "minLength": 1},
+    "owner_identity": {"type": "string", "minLength": 1},
+    "scope_pins": {"$ref": "#/$defs/scope_pins"},
+    "disposition": {"enum": ["ACCEPT_HOLD", "ADDITIONAL", "OUT_OF_SCOPE", "DUPLICATE_NO_NEW_PROOF", "INVALID_EVALUATION", "BLOCKED", "BLOCKING"]},
+    "severity": {"type": "string", "minLength": 1},
+    "owner_reproduction": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "method", "evidence_refs"],
+      "properties": {
+        "status": {"enum": ["VERIFIED", "FAILED", "NOT_ATTEMPTED"]},
+        "method": {"type": "string", "minLength": 1},
+        "evidence_refs": {"type": "array", "uniqueItems": true, "items": {"$ref": "#/$defs/ref"}}
+      }
+    },
+    "novel_evidence": {"type": "boolean"},
+    "repair_authorized": {"type": "boolean"},
+    "terminal_state": {"enum": ["ACCEPT_HOLD", "BLOCKED", "INVALID_EVALUATION", "REPAIR_AUTHORIZED"]},
+    "authority": {"const": false},
+    "completion_claim_allowed": {"const": false},
+    "adjudication_sha256": {"$ref": "#/$defs/sha256"}
+  },
+  "$defs": {
+    "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "ref": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "sha256"],
+      "properties": {
+        "path": {"type": "string", "minLength": 1},
+        "sha256": {"$ref": "#/$defs/sha256"}
+      }
+    },
+    "scope_pins": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["object_sha256", "scope_sha256", "threat_model_sha256", "completion_bar_sha256"],
+      "properties": {
+        "object_sha256": {"$ref": "#/$defs/sha256"},
+        "scope_sha256": {"$ref": "#/$defs/sha256"},
+        "threat_model_sha256": {"$ref": "#/$defs/sha256"},
+        "completion_bar_sha256": {"$ref": "#/$defs/sha256"}
+      }
+    }
+  }
+}

@@ -1,0 +1,172 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://xinao.local/schemas/audit_assessment.v1.schema.json",
+  "title": "Xinao high-value audit candidate assessment",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "audit_id",
+    "work_key",
+    "assessor_identity",
+    "assessment_plan",
+    "scope_pins",
+    "required_evidence_refs",
+    "evidence_access",
+    "candidate_verdict",
+    "candidate_summary",
+    "candidate_limitations",
+    "findings",
+    "review_role",
+    "adjudication_eligibility",
+    "authority",
+    "completion_claim_allowed",
+    "repair_authorized",
+    "assessment_sha256"
+  ],
+  "properties": {
+    "schema_version": {"const": "xinao.audit_assessment.v1"},
+    "audit_id": {"type": "string", "minLength": 1},
+    "work_key": {"type": "string", "minLength": 1},
+    "assessor_identity": {"$ref": "#/$defs/identity"},
+    "assessment_plan": {"$ref": "#/$defs/assessment_plan"},
+    "scope_pins": {"$ref": "#/$defs/scope_pins"},
+    "required_evidence_refs": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {"$ref": "#/$defs/ref"}
+    },
+    "evidence_access": {"$ref": "#/$defs/evidence_access"},
+    "candidate_verdict": {
+      "enum": ["ACCEPT_HOLD_CANDIDATE", "CANDIDATE_FINDINGS", "EVIDENCE_INCOMPLETE"]
+    },
+    "candidate_summary": {"type": "string", "minLength": 1},
+    "candidate_limitations": {
+      "type": "array",
+      "items": {"type": "string", "minLength": 1}
+    },
+    "findings": {
+      "type": "array",
+      "items": {"$ref": "#/$defs/finding"}
+    },
+    "review_role": {"enum": ["COGNITIVE_REVIEW", "INDEPENDENT_VALIDATION"]},
+    "adjudication_eligibility": {"enum": ["EVIDENCE_READY", "CANDIDATE_ONLY"]},
+    "authority": {"const": false},
+    "completion_claim_allowed": {"const": false},
+    "repair_authorized": {"const": false},
+    "assessment_sha256": {"$ref": "#/$defs/sha256"}
+  },
+  "$defs": {
+    "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "ref": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "sha256"],
+      "properties": {
+        "path": {"type": "string", "minLength": 1},
+        "sha256": {"$ref": "#/$defs/sha256"}
+      }
+    },
+    "identity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["provider_id", "profile_ref", "model_id", "transport_id"],
+      "properties": {
+        "provider_id": {"type": "string", "minLength": 1},
+        "profile_ref": {"type": "string", "minLength": 1},
+        "model_id": {"type": "string", "minLength": 1},
+        "transport_id": {"type": "string", "minLength": 1}
+      }
+    },
+    "scope_pins": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "object_sha256",
+        "scope_sha256",
+        "threat_model_sha256",
+        "completion_bar_sha256"
+      ],
+      "properties": {
+        "object_sha256": {"$ref": "#/$defs/sha256"},
+        "scope_sha256": {"$ref": "#/$defs/sha256"},
+        "threat_model_sha256": {"$ref": "#/$defs/sha256"},
+        "completion_bar_sha256": {"$ref": "#/$defs/sha256"}
+      }
+    },
+    "assessment_plan": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "methods",
+        "objects",
+        "depth",
+        "coverage",
+        "blocking_severities",
+        "in_scope",
+        "out_of_scope"
+      ],
+      "properties": {
+        "methods": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"type": "string", "minLength": 1}},
+        "objects": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"type": "string", "minLength": 1}},
+        "depth": {"type": "string", "minLength": 1},
+        "coverage": {"type": "string", "minLength": 1},
+        "blocking_severities": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"type": "string", "minLength": 1}},
+        "in_scope": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}},
+        "out_of_scope": {"type": "array", "items": {"type": "string", "minLength": 1}}
+      }
+    },
+    "evidence_access": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "status",
+        "mode",
+        "package_ref",
+        "accessed_evidence_refs",
+        "required_evidence_complete",
+        "cannot_access_filesystem",
+        "independent_validation_claim_allowed",
+        "limitations"
+      ],
+      "properties": {
+        "status": {"enum": ["VERIFIED", "UNVERIFIED", "INCOMPLETE"]},
+        "mode": {"enum": ["HOST_EMBEDDED", "DIRECT_TOOL", "NONE"]},
+        "package_ref": {"oneOf": [{"$ref": "#/$defs/ref"}, {"type": "null"}]},
+        "accessed_evidence_refs": {"type": "array", "uniqueItems": true, "items": {"$ref": "#/$defs/ref"}},
+        "required_evidence_complete": {"type": "boolean"},
+        "cannot_access_filesystem": {"type": "boolean"},
+        "independent_validation_claim_allowed": {"type": "boolean"},
+        "limitations": {"type": "array", "items": {"type": "string", "minLength": 1}}
+      }
+    },
+    "finding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["finding_id", "family", "title", "claim", "severity_claim", "evidence_citations", "reproduction_conditions", "finding_kind"],
+      "properties": {
+        "finding_id": {"type": "string", "minLength": 1},
+        "family": {"type": "string", "minLength": 1},
+        "title": {"type": "string", "minLength": 1},
+        "claim": {"type": "string", "minLength": 1},
+        "severity_claim": {"type": "string", "minLength": 1},
+        "evidence_citations": {"type": "array", "uniqueItems": true, "items": {"$ref": "#/$defs/citation"}},
+        "reproduction_conditions": {"type": "array", "uniqueItems": true, "items": {"type": "string", "minLength": 1}},
+        "finding_kind": {"const": "CANDIDATE_FINDING"}
+      }
+    },
+    "citation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "source_sha256", "line_start", "line_end", "content_sha256"],
+      "properties": {
+        "path": {"type": "string", "minLength": 1},
+        "source_sha256": {"$ref": "#/$defs/sha256"},
+        "line_start": {"type": "integer", "minimum": 1},
+        "line_end": {"type": "integer", "minimum": 1},
+        "content_sha256": {"$ref": "#/$defs/sha256"}
+      }
+    }
+  }
+}

@@ -227,11 +227,31 @@ def resolve_supervisor_worker_decision(
             ctx.get("quota_capacity_bindings", {}),
         )
 
+    work_class = str(request.get("work_class") or "").strip()
+    high_value_audit = work_class == "high_value_audit"
+    audit_role = str(request.get("audit_role") or "").strip().lower()
+    if high_value_audit and audit_role not in {"cognitive_review", "independent_validation"}:
+        raise ValueError(
+            "high_value_audit requires audit_role=cognitive_review or independent_validation"
+        )
+    direct_tool_required = high_value_audit and audit_role == "independent_validation"
+    evidence_access_required = (
+        True
+        if high_value_audit
+        else request.get("evidence_access_required", False)
+    )
+    direct_tool_access_required = (
+        True
+        if direct_tool_required
+        else request.get("direct_tool_access_required", False)
+    )
     decision = select_supervisor_worker(
         candidates,
         task_separable=request.get("task_separable"),
         supervisor_choice=request.get("supervisor_choice"),
         context_inheritance_required=request.get("context_inheritance_required", False),
+        evidence_access_required=evidence_access_required,
+        direct_tool_access_required=direct_tool_access_required,
         stable_preferred_provider_id=str(
             request.get("stable_preferred_provider_id")
             or ctx.get("stable_preferred_provider_id")
@@ -245,6 +265,10 @@ def resolve_supervisor_worker_decision(
         "policy_ref": str(policy_path),
         "policy_sha256": hashlib.sha256(policy_raw).hexdigest(),
         "policy_version": str(ctx.get("policy_version") or ""),
+        "work_class": work_class,
+        "audit_role": audit_role,
+        "evidence_access_required": evidence_access_required,
+        "direct_tool_access_required": direct_tool_access_required,
         "provider_preference_scope": str(ctx.get("provider_preference_scope") or ""),
         "worker_output_authority": str(ctx.get("worker_output_authority") or ""),
         "quota_policy": str(ctx.get("quota_policy") or ""),
