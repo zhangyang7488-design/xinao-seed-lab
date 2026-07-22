@@ -155,6 +155,10 @@ function Invoke-StubbedResponsesCase(
 }
 
 Assert-Relay (Test-Path -LiteralPath $worker -PathType Leaf) "worker exists"
+$sdkWire = Join-Path $PSScriptRoot "openai_sdk_wire.py"
+Assert-Relay (Test-Path -LiteralPath $sdkWire -PathType Leaf) "official SDK wire helper exists"
+$workerSource = Get-Content -LiteralPath $worker -Raw -Encoding UTF8
+Assert-Relay ($workerSource -notmatch '\bInvoke-WebRequest\b') "worker no longer hand-builds model HTTP"
 $root = Join-Path ([IO.Path]::GetTempPath()) ("xinao-relay-worker-test-" + [guid]::NewGuid().ToString("N"))
 [IO.Directory]::CreateDirectory($root) | Out-Null
 $dummySecret = "sk-test-only-not-a-real-secret"
@@ -166,7 +170,12 @@ try {
     Assert-Relay ($success.exit_code -eq 0) ("success exit: " + [string]$success.meta.error)
     Assert-Relay ($success.meta.status -eq "ok") "success status"
     Assert-Relay ($success.meta.selected_equals_observed -eq $true) "selected equals observed"
+    Assert-Relay ($success.meta.model_identity_accepted -eq $true) "model identity accepted"
     Assert-Relay ($success.meta.model_invocation_observed -eq $true) "model invocation observed"
+    Assert-Relay ($success.meta.provider_id -eq "loopback_openai_compatible_test") "provider identity bound"
+    Assert-Relay ($success.meta.wire_client -eq "openai-python") "official SDK wire client"
+    Assert-Relay ([int]$success.meta.sdk_max_retries -eq 0) "SDK retries disabled"
+    Assert-Relay ([string]$success.meta.sdk_version -match '^2\.') "SDK version recorded"
     Assert-Relay ([int64]$success.meta.usage.total_tokens -eq 5) "positive usage"
     Assert-Relay ([string]$success.meta.result_sha256 -match '^[0-9a-f]{64}$') "result hash"
     Assert-Relay ([string]$success.meta.raw_response_sha256 -match '^[0-9a-f]{64}$') "raw response hash"
@@ -179,6 +188,10 @@ try {
         Get-Content -LiteralPath $_.FullName -Raw -Encoding UTF8
     }
     Assert-Relay (($recorded -join "`n") -notmatch [regex]::Escape($dummySecret)) "secret absent from evidence"
+
+    $unicodeEnvelope = Invoke-StubbedCase -Root $root -CaseId "unicode-envelope" -ObservedModel "gpt-5.6-sol" -IncludeUsage $true -ResponseText "RELAY_CONTRACT_OK 🚀"
+    Assert-Relay ($unicodeEnvelope.exit_code -eq 0) "SDK envelope survives narrow Windows stdout encoding"
+    Assert-Relay ($unicodeEnvelope.meta.status -eq "ok") "unicode envelope status"
 
     $mismatch = Invoke-StubbedCase -Root $root -CaseId "mismatch" -ObservedModel "gpt-5.4" -IncludeUsage $true
     Assert-Relay ($mismatch.exit_code -ne 0) "mismatch exit"
@@ -271,7 +284,7 @@ try {
 
     [ordered]@{
         ok = $true
-        cases = @("success", "observed_model_mismatch", "missing_usage", "truncated_terminal", "responses_completed", "responses_incomplete", "secret_reflection", "http_error_scrub", "duplicate_id", "unapproved_base_url", "userinfo_url", "nondefault_port")
+        cases = @("success", "unicode_envelope", "observed_model_mismatch", "missing_usage", "truncated_terminal", "responses_completed", "responses_incomplete", "secret_reflection", "http_error_scrub", "duplicate_id", "unapproved_base_url", "userinfo_url", "nondefault_port")
         secret_material_recorded = $false
     } | ConvertTo-Json -Compress
 }

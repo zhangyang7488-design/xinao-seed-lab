@@ -175,8 +175,13 @@ Assert-Contract (@($config.canonical_route.leg_a.admitted_peer_transports) -cont
 
 $relayFiles = @(
     "grok-admin-bridge/Invoke-CodexDispatchOpenAiRelayWorker.ps1",
+    "grok-admin-bridge/Invoke-CodexDispatchQwenWorker.ps1",
+    "grok-admin-bridge/Invoke-CodexDispatchDeepSeekWorker.ps1",
     "grok-admin-bridge/Invoke-OpenAiCompatibleRelayWorker.ps1",
+    "grok-admin-bridge/openai_sdk_wire.py",
     "grok-admin-bridge/grok_openai_compatible_relay_worker.v1.json",
+    "grok-admin-bridge/grok_qwen_bailian_relay_worker.v1.json",
+    "grok-admin-bridge/grok_deepseek_relay_worker.v1.json",
     "grok-admin-bridge/Test-OpenAiCompatibleRelayWorker.ps1",
     "launchers/Invoke-Codex-OpenAiRelayWorker.ps1",
     "install/Install-CodexOpenAiRelayWorker.ps1"
@@ -185,10 +190,29 @@ foreach ($relative in $relayFiles) {
     Assert-Contract (Test-Path -LiteralPath (Join-Path $repoRoot $relative) -PathType Leaf) ("relay_missing:" + $relative)
 }
 $relayContract = Read-Json "grok-admin-bridge/grok_openai_compatible_relay_worker.v1.json"
+$qwenRelayContract = Read-Json "grok-admin-bridge/grok_qwen_bailian_relay_worker.v1.json"
+$deepSeekRelayContract = Read-Json "grok-admin-bridge/grok_deepseek_relay_worker.v1.json"
 $relayWorkerText = Get-Content -LiteralPath (Join-Path $repoRoot "grok-admin-bridge/Invoke-OpenAiCompatibleRelayWorker.ps1") -Raw -Encoding UTF8
+$relaySdkText = Get-Content -LiteralPath (Join-Path $repoRoot "grok-admin-bridge/openai_sdk_wire.py") -Raw -Encoding UTF8
+$relayInstallerText = Get-Content -LiteralPath (Join-Path $repoRoot "install/Install-CodexOpenAiRelayWorker.ps1") -Raw -Encoding UTF8
 Assert-Contract ([string]$relayContract.route_role -eq "a_leg_peer_not_grok_pool_not_temporal") "relay_is_a_leg_peer"
 Assert-Contract (-not [bool]$relayContract.completion_claim_allowed) "relay_cannot_claim_completion"
+Assert-Contract ([string]$relayContract.wire_client.implementation -eq "official_openai_python_sdk") "relay_uses_official_sdk"
+Assert-Contract ([int]$relayContract.wire_client.max_retries -eq 0) "relay_sdk_retries_owned_by_outer_receipt"
+foreach ($profile in @($relayContract, $qwenRelayContract, $deepSeekRelayContract)) {
+    Assert-Contract ([int]$profile.defaults.package_width -eq 1) "relay_invocation_is_one_complete_package"
+    Assert-Contract ([string]$profile.defaults.global_concurrency -eq "dynamic_external_supervisor_not_fixed_here") "relay_global_concurrency_is_dynamic"
+}
+Assert-Contract ([string]$index.openai_compatible_relay_peer.provider_scope -eq "runtime_selected_admitted_openai_compatible_profile") "relay_index_is_provider_neutral"
+Assert-Contract ([int]$index.openai_compatible_relay_peer.package_width -eq 1) "relay_index_package_width_one"
+Assert-Contract ([string]$index.openai_compatible_relay_peer.global_concurrency -eq "dynamic_external_supervisor_not_fixed_here") "relay_index_global_concurrency_dynamic"
+Assert-Contract (@($index.openai_compatible_relay_peer.contracts).Count -eq 3) "relay_index_discovers_all_profiles"
 Assert-Contract ($relayWorkerText -notmatch 'key_fingerprint|key_file_sha256') "relay_records_no_secret_fingerprint"
+Assert-Contract ($relayWorkerText -notmatch 'Invoke-WebRequest|Invoke-RestMethod') "relay_has_no_hand_built_http_wire"
+Assert-Contract ($relaySdkText -match 'OpenAI\(') "relay_sdk_helper_constructs_openai_client"
+Assert-Contract ($relaySdkText -match 'max_retries=0') "relay_sdk_helper_disables_hidden_retries"
+Assert-Contract ($relayInstallerText -match 'openai_sdk_wire\.py') "relay_installer_closes_sdk_helper"
+Assert-Contract ($relayInstallerText -notmatch 'max_width\s*=') "relay_installer_does_not_freeze_global_width"
 Assert-Contract ($relayWorkerText -match 'RELAY_WORKER_MODEL_IDENTITY_MISMATCH') "relay_checks_observed_model"
 Assert-Contract ($relayWorkerText -match 'RELAY_WORKER_POSITIVE_USAGE_REQUIRED') "relay_requires_positive_usage"
 Assert-Contract ($relayWorkerText -match 'RELAY_WORKER_CHAT_TERMINAL_NOT_ACCEPTED') "relay_requires_terminal_chat_response"

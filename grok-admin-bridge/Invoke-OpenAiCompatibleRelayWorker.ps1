@@ -18,6 +18,7 @@ param(
     [string]$ApiStyle = "chat_completions",
     [string]$BaseUrl = "https://api.ssstoken.net/v1",
     [string]$KeyPath = "C:\Users\xx363\私钥\Codex-api.txt",
+    [string]$PythonExe = "",
     [string]$EvidenceDir = "D:\XINAO_RESEARCH_RUNTIME\state\openai_relay_worker",
     [ValidateRange(1, 200000)]
     [int]$MaxTokens = 2048,
@@ -75,12 +76,35 @@ if (-not (Test-Path -LiteralPath $KeyPath -PathType Leaf)) {
     throw "RELAY_WORKER_KEY_PATH_MISSING: $KeyPath"
 }
 
-$apiKey = Read-Utf8Text $KeyPath
-if ([string]::IsNullOrWhiteSpace($apiKey)) {
+$rawKeyMaterial = Read-Utf8Text $KeyPath
+if ([string]::IsNullOrWhiteSpace($rawKeyMaterial)) {
     throw "RELAY_WORKER_KEY_EMPTY: $KeyPath"
 }
-# allow "KEY=sk-..." or pure sk-
-if ($apiKey -match '(?im)^\s*(?:OPENAI_API_KEY|API_KEY|KEY)\s*=\s*(.+)\s*$') {
+$apiKey = $rawKeyMaterial
+$csvOpenAiCompatible = ""
+# Aliyun Bailian / DashScope export CSV: id,apiKey,apiHost,openAiCompatible,...
+if ($KeyPath -match '(?i)\.csv$') {
+    $csvKey = ""
+    foreach ($line in ($rawKeyMaterial -split "`r?`n")) {
+        if ($line -match '^\s*apiKey\s*,\s*(.+)\s*$') {
+            $csvKey = $Matches[1].Trim().Trim('"').Trim("'")
+        }
+        elseif ($line -match '^\s*openAiCompatible\s*,\s*(.+)\s*$') {
+            $csvOpenAiCompatible = $Matches[1].Trim().Trim('"').Trim("'")
+        }
+    }
+    if ([string]::IsNullOrWhiteSpace($csvKey)) {
+        throw "RELAY_WORKER_CSV_APIKEY_MISSING: $KeyPath"
+    }
+    $apiKey = $csvKey
+    if ([string]::IsNullOrWhiteSpace($BaseUrl) -or $BaseUrl -eq "https://api.ssstoken.net/v1") {
+        if (-not [string]::IsNullOrWhiteSpace($csvOpenAiCompatible)) {
+            $BaseUrl = $csvOpenAiCompatible
+        }
+    }
+}
+# allow "KEY=sk-..." or pure sk- / sk-ws- (DashScope workspace keys)
+if ($apiKey -match '(?im)^\s*(?:OPENAI_API_KEY|API_KEY|KEY|apiKey)\s*=\s*(.+)\s*$') {
     $apiKey = $Matches[1].Trim().Trim('"').Trim("'")
 }
 if ($apiKey -notmatch '^sk-') {
@@ -88,25 +112,56 @@ if ($apiKey -notmatch '^sk-') {
 }
 
 $BaseUrl = $BaseUrl.TrimEnd('/')
-if ($BaseUrl -notmatch '/v1$') {
-    # accept root gateway; normalize to /v1 for OpenAI-compatible paths
+if ($BaseUrl -notmatch '/v1$' -and $BaseUrl -notmatch '/compatible-mode/v1$') {
+    # accept root gateway; normalize known hosts to OpenAI-compatible paths
     if ($BaseUrl -match 'ssstoken\.net/?$') {
         $BaseUrl = "https://api.ssstoken.net/v1"
+    }
+    elseif ($BaseUrl -match 'lucisapi\.ai/?$') {
+        $BaseUrl = "https://lucisapi.ai/v1"
+    }
+    elseif ($BaseUrl -match 'api\.deepseek\.com/?$') {
+        $BaseUrl = "https://api.deepseek.com/v1"
     }
 }
 $baseUri = $null
 if (-not [Uri]::TryCreate($BaseUrl, [UriKind]::Absolute, [ref]$baseUri)) {
     throw "RELAY_WORKER_BASE_URL_INVALID"
 }
-$isApprovedProductionProfile = (
+function Test-RelayAdmittedHttpsBase([Uri]$Uri, [string]$HostExact, [string]$PathExact) {
+    return (
+        $Uri.Scheme -ceq "https" -and
+        $Uri.Host -ceq $HostExact -and
+        $Uri.Port -eq 443 -and
+        [string]::IsNullOrEmpty($Uri.UserInfo) -and
+        $Uri.AbsolutePath.TrimEnd('/') -ceq $PathExact -and
+        $Uri.Query.Length -eq 0 -and
+        $Uri.Fragment.Length -eq 0
+    )
+}
+$pathNorm = $baseUri.AbsolutePath.TrimEnd('/')
+$isSss = Test-RelayAdmittedHttpsBase $baseUri "api.ssstoken.net" "/v1"
+$isLucis = (Test-RelayAdmittedHttpsBase $baseUri "lucisapi.ai" "/v1") -or (Test-RelayAdmittedHttpsBase $baseUri "www.lucisapi.ai" "/v1")
+$isDeepSeek = (Test-RelayAdmittedHttpsBase $baseUri "api.deepseek.com" "/v1") -or (
     $baseUri.Scheme -ceq "https" -and
-    $baseUri.Host -ceq "api.ssstoken.net" -and
+    $baseUri.Host -ceq "api.deepseek.com" -and
     $baseUri.Port -eq 443 -and
     [string]::IsNullOrEmpty($baseUri.UserInfo) -and
-    $baseUri.AbsolutePath.TrimEnd('/') -ceq "/v1" -and
+    ($pathNorm -ceq "" -or $pathNorm -ceq "/" -or $pathNorm -ceq "/v1") -and
     $baseUri.Query.Length -eq 0 -and
     $baseUri.Fragment.Length -eq 0
 )
+$isDashScopeDefault = Test-RelayAdmittedHttpsBase $baseUri "dashscope.aliyuncs.com" "/compatible-mode/v1"
+$isBailianWorkspace = (
+    $baseUri.Scheme -ceq "https" -and
+    $baseUri.Port -eq 443 -and
+    [string]::IsNullOrEmpty($baseUri.UserInfo) -and
+    $baseUri.Query.Length -eq 0 -and
+    $baseUri.Fragment.Length -eq 0 -and
+    $pathNorm -ceq "/compatible-mode/v1" -and
+    $baseUri.Host -match '^[a-z0-9-]+\.cn-beijing\.maas\.aliyuncs\.com$'
+)
+$isApprovedProductionProfile = $isSss -or $isLucis -or $isDeepSeek -or $isDashScopeDefault -or $isBailianWorkspace
 $isLoopbackTestProfile = (
     $AllowInsecureLoopbackForTest.IsPresent -and
     $baseUri.Scheme -ceq "http" -and
@@ -115,7 +170,86 @@ $isLoopbackTestProfile = (
     $baseUri.AbsolutePath.TrimEnd('/') -ceq "/v1"
 )
 if (-not $isApprovedProductionProfile -and -not $isLoopbackTestProfile) {
-    throw "RELAY_WORKER_BASE_URL_NOT_ADMITTED"
+    throw "RELAY_WORKER_BASE_URL_NOT_ADMITTED: $BaseUrl"
+}
+
+$providerId = "openai_compatible_relay"
+$profileRef = $baseUri.Host + $pathNorm
+if ($isSss) { $providerId = "ssstoken_openai_compatible_relay" }
+elseif ($isLucis) { $providerId = "lucis_openai_compatible_relay" }
+elseif ($isDeepSeek) { $providerId = "deepseek_openai_compatible" }
+elseif ($isDashScopeDefault -or $isBailianWorkspace) { $providerId = "qwen_bailian_openai_compatible" }
+elseif ($isLoopbackTestProfile) { $providerId = "loopback_openai_compatible_test" }
+
+$sdkWire = Join-Path $PSScriptRoot "openai_sdk_wire.py"
+if (-not (Test-Path -LiteralPath $sdkWire -PathType Leaf)) {
+    throw "RELAY_WORKER_SDK_WIRE_MISSING: $sdkWire"
+}
+if ([string]::IsNullOrWhiteSpace($PythonExe)) {
+    if (-not [string]::IsNullOrWhiteSpace($env:XINAO_OPENAI_SDK_PYTHON)) {
+        $PythonExe = $env:XINAO_OPENAI_SDK_PYTHON
+    }
+    else {
+        $PythonExe = "E:\XINAO_RESEARCH_WORKSPACES\S\.venv\Scripts\python.exe"
+    }
+}
+if (-not (Test-Path -LiteralPath $PythonExe -PathType Leaf)) {
+    $pythonCommand = Get-Command $PythonExe -CommandType Application -ErrorAction SilentlyContinue
+    if ($null -eq $pythonCommand) {
+        throw "RELAY_WORKER_SDK_PYTHON_MISSING: $PythonExe"
+    }
+    $PythonExe = $pythonCommand.Source
+}
+
+function Invoke-RelaySdk([string]$RequestJson) {
+    $startInfo = New-Object System.Diagnostics.ProcessStartInfo
+    $startInfo.FileName = $PythonExe
+    $startInfo.Arguments = '"' + $sdkWire + '"'
+    $startInfo.UseShellExecute = $false
+    $startInfo.CreateNoWindow = $true
+    $startInfo.RedirectStandardInput = $true
+    $startInfo.RedirectStandardOutput = $true
+    $startInfo.RedirectStandardError = $true
+    $process = New-Object System.Diagnostics.Process
+    $process.StartInfo = $startInfo
+    try {
+        if (-not $process.Start()) {
+            throw "RELAY_WORKER_SDK_PROCESS_START_FAILED"
+        }
+        $stdoutTask = $process.StandardOutput.ReadToEndAsync()
+        $stderrTask = $process.StandardError.ReadToEndAsync()
+        $process.StandardInput.Write($RequestJson)
+        $process.StandardInput.Close()
+        $waitMilliseconds = [Math]::Min([int64]::MaxValue, ([int64]$TimeoutSec + 15) * 1000)
+        if (-not $process.WaitForExit([int]$waitMilliseconds)) {
+            try { $process.Kill() } catch {}
+            throw "RELAY_WORKER_TIMEOUT"
+        }
+        $stdout = [string]$stdoutTask.Result
+        [void]$stderrTask.Result
+        if ([string]::IsNullOrWhiteSpace($stdout)) {
+            throw "RELAY_WORKER_SDK_EMPTY_ENVELOPE"
+        }
+        try { $sdkResult = $stdout | ConvertFrom-Json }
+        catch { throw "RELAY_WORKER_SDK_INVALID_ENVELOPE" }
+        if ($sdkResult.ok -ne $true -or $process.ExitCode -ne 0) {
+            $sdkStatus = [int]$sdkResult.status_code
+            $sdkErrorType = [string]$sdkResult.error_type
+            if ($sdkErrorType -match '(?i)timeout') {
+                throw "RELAY_WORKER_TIMEOUT"
+            }
+            if ($sdkStatus -gt 0) {
+                throw "RELAY_WORKER_HTTP_$sdkStatus"
+            }
+            $safeErrorType = [regex]::Replace($sdkErrorType.ToUpperInvariant(), '[^A-Z0-9_]', '_')
+            if ([string]::IsNullOrWhiteSpace($safeErrorType)) { $safeErrorType = "REQUEST_FAILED" }
+            throw "RELAY_WORKER_SDK_$safeErrorType"
+        }
+        return $sdkResult
+    }
+    finally {
+        $process.Dispose()
+    }
 }
 
 $runId = if ([string]::IsNullOrWhiteSpace($RunId)) {
@@ -149,8 +283,13 @@ $httpStatus = 0
 $endpoint = ""
 $requestDispatched = $false
 $modelInvocationObserved = $false
+$modelIdentityAccepted = $false
+$selectedEqualsObserved = $false
+$modelAliasAccepted = $false
 $observedModel = ""
 $responseId = ""
+$sdkRequestId = ""
+$sdkVersion = ""
 $terminalState = ""
 $stopReason = ""
 $resultSha256 = ""
@@ -168,13 +307,15 @@ $meta = [ordered]@{
     route_role = "a_leg_peer_not_grok_pool_not_temporal"
     not_333_mainline = $true
     completion_claim_allowed = $false
-    provider_id = "ssstoken_openai_compatible_relay"
-    profile_ref = "api.ssstoken.net/v1"
+    provider_id = $providerId
+    profile_ref = $profileRef
     selected_model = $Model
     api_style = $ApiStyle
     base_url = $BaseUrl
     auth_source = "key_file_handle"
     secret_material_recorded = $false
+    wire_client = "openai-python"
+    sdk_max_retries = 0
     max_tokens = $MaxTokens
     timeout_sec = $TimeoutSec
     min_result_chars = $MinResultChars
@@ -188,38 +329,31 @@ Write-Utf8File $metaPath ($meta | ConvertTo-Json -Depth 8)
 Copy-Item -LiteralPath $metaPath -Destination $latest -Force
 
 try {
-    $headers = @{
-        Authorization = "Bearer $apiKey"
-        "Content-Type" = "application/json"
-    }
-
     if ($ApiStyle -eq "chat_completions") {
         $endpoint = "$BaseUrl/chat/completions"
-        $bodyObj = [ordered]@{
-            model = $Model
-            messages = @(
-                [ordered]@{ role = "user"; content = $Prompt }
-            )
-            max_tokens = $MaxTokens
-        }
     }
     else {
         $endpoint = "$BaseUrl/responses"
-        $bodyObj = [ordered]@{
-            model = $Model
-            input = $Prompt
-            max_output_tokens = $MaxTokens
-        }
     }
 
-    $bodyJson = $bodyObj | ConvertTo-Json -Depth 8 -Compress
     $meta.endpoint = $endpoint
-    $meta.request_body_chars = $bodyJson.Length
+    $sdkRequest = [ordered]@{
+        api_key = $apiKey
+        base_url = $BaseUrl
+        api_style = $ApiStyle
+        model = $Model
+        prompt = $Prompt
+        max_tokens = $MaxTokens
+        timeout_seconds = $TimeoutSec
+    }
+    $sdkRequestJson = $sdkRequest | ConvertTo-Json -Depth 8 -Compress
 
     $requestDispatched = $true
-    $resp = Invoke-WebRequest -Uri $endpoint -Method POST -Headers $headers -Body $bodyJson -UseBasicParsing -TimeoutSec $TimeoutSec -MaximumRedirection 0
-    $httpStatus = [int]$resp.StatusCode
-    $raw = $resp.Content
+    $sdkResult = Invoke-RelaySdk $sdkRequestJson
+    $httpStatus = [int]$sdkResult.status_code
+    $sdkRequestId = [string]$sdkResult.request_id
+    $sdkVersion = [string]$sdkResult.sdk_version
+    $raw = [string]$sdkResult.raw_response
     if (-not [string]::IsNullOrWhiteSpace($apiKey) -and $raw.Contains($apiKey)) {
         throw "RELAY_WORKER_SECRET_REFLECTION_DETECTED"
     }
@@ -232,9 +366,31 @@ try {
     if ([string]::IsNullOrWhiteSpace($observedModel)) {
         throw "RELAY_WORKER_OBSERVED_MODEL_MISSING"
     }
-    if ($observedModel -cne $Model) {
+    # Exact identity remains separately observable. Provider-specific aliases
+    # may satisfy the acceptance contract without falsifying exact equality.
+    $aliasPairs = @(
+        @("deepseek-chat", "deepseek-v4-flash"),
+        @("deepseek-reasoner", "deepseek-v4-pro"),
+        @("deepseek-reasoner", "deepseek-reasoner")
+    )
+    $aliasOk = $false
+    if ($isDeepSeek) {
+        foreach ($pair in $aliasPairs) {
+            if (($Model -ceq $pair[0] -and $observedModel -ceq $pair[1]) -or
+                ($Model -ceq $pair[1] -and $observedModel -ceq $pair[0])) {
+                $aliasOk = $true
+                break
+            }
+        }
+    }
+    $selectedEqualsObserved = $observedModel -ceq $Model
+    $modelIdentityAccepted = $aliasOk -or $selectedEqualsObserved -or
+        ($observedModel.StartsWith($Model + "-", [StringComparison]::Ordinal)) -or
+        ($Model.StartsWith($observedModel + "-", [StringComparison]::Ordinal))
+    if (-not $modelIdentityAccepted) {
         throw "RELAY_WORKER_MODEL_IDENTITY_MISMATCH: selected=$Model observed=$observedModel"
     }
+    $modelAliasAccepted = $modelIdentityAccepted -and -not $selectedEqualsObserved
     if ($ApiStyle -eq "chat_completions") {
         if ($j.choices -and $j.choices.Count -gt 0) {
             $textOut = [string]$j.choices[0].message.content
@@ -310,6 +466,9 @@ try {
 catch {
     $errorCode = Get-RelayFailureCode $_
     $status = if ($errorCode -eq "RELAY_WORKER_TIMEOUT") { "timed_out" } else { "failed" }
+    if ($errorCode -match '^RELAY_WORKER_HTTP_([0-9]{3})$') {
+        $httpStatus = [int]$Matches[1]
+    }
     if ($_.Exception.Response -and -not $httpStatus) {
         try { $httpStatus = [int]$_.Exception.Response.StatusCode } catch {}
     }
@@ -329,10 +488,12 @@ $meta.usage = $usage
 $meta.request_dispatched = $requestDispatched
 $meta.model_invocation_observed = $modelInvocationObserved
 $meta.observed_model = $observedModel
-$meta.selected_equals_observed = (
-    -not [string]::IsNullOrWhiteSpace($observedModel) -and $observedModel -ceq $Model
-)
+$meta.selected_equals_observed = [bool]$selectedEqualsObserved
+$meta.model_identity_accepted = [bool]$modelIdentityAccepted
+$meta.model_alias_accepted = [bool]$modelAliasAccepted
 $meta.response_id = $responseId
+$meta.sdk_request_id = $sdkRequestId
+$meta.sdk_version = $sdkVersion
 $meta.terminal_state = $terminalState
 $meta.stop_reason = $stopReason
 $meta.result_chars = if ($textOut) { $textOut.Length } else { 0 }

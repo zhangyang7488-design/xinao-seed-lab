@@ -24,11 +24,20 @@
   "defaults": {
     "base_url": "https://api.ssstoken.net/v1",
     "model": "gpt-5.6-sol",
-    "api_style": "chat_completions"
+    "api_style": "chat_completions",
+    "package_width": 1,
+    "global_concurrency": "dynamic_external_supervisor_not_fixed_here"
+  },
+  "wire_client": {
+    "implementation": "official_openai_python_sdk",
+    "version_constraint": ">=2.44,<3",
+    "max_retries": 0,
+    "runtime_dependency": "E:\\XINAO_RESEARCH_WORKSPACES\\S\\pyproject.toml"
   },
   "files": [
     "Invoke-CodexDispatchOpenAiRelayWorker.ps1",
     "Invoke-OpenAiCompatibleRelayWorker.ps1",
+    "openai_sdk_wire.py",
     "grok_openai_compatible_relay_worker.v1.json",
     "../launchers/Invoke-Codex-OpenAiRelayWorker.ps1",
     "../install/Install-CodexOpenAiRelayWorker.ps1"

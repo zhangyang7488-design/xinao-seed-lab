@@ -1,0 +1,30 @@
+{
+  "schema_version": "xinao.deepseek_relay_worker.v1",
+  "sentinel": "SENTINEL:DEEPSEEK_RELAY_WORKER_CONTRACT",
+  "status": "available_a_leg_peer",
+  "transport_id": "direct-openai-compatible-relay",
+  "provider_id": "deepseek_openai_compatible",
+  "peer_of": "Invoke-CodexDispatchGrokWorkerPool / direct-grok-worker-pool",
+  "not_333_mainline": true,
+  "completion_claim_allowed": false,
+  "auth": {
+    "mode": "key_file_handle",
+    "default_key_path": "C:\\Users\\xx363\\私钥\\DeepSeek-api-key-active.txt",
+    "source_multi_key_file": "C:\\Users\\xx363\\私钥\\DeepSeek-api-key.txt",
+    "note": "use single active key; multi-key file is inventory only"
+  },
+  "defaults": {
+    "base_url": "https://api.deepseek.com/v1",
+    "model": "deepseek-chat",
+    "package_width": 1,
+    "global_concurrency": "dynamic_external_supervisor_not_fixed_here"
+  },
+  "files": [
+    "Invoke-CodexDispatchDeepSeekWorker.ps1",
+    "Invoke-CodexDispatchOpenAiRelayWorker.ps1",
+    "Invoke-OpenAiCompatibleRelayWorker.ps1",
+    "grok_deepseek_relay_worker.v1.json"
+  ],
+  "invoke_example": ".\\Invoke-CodexDispatchDeepSeekWorker.ps1 -WorkKey ds:smoke -Prompt \"Reply only: DS_OK\" -Model deepseek-chat -RequiredResultMarkers DS_OK",
+  "evidence_root": "D:\\XINAO_RESEARCH_RUNTIME\\state\\openai_relay_worker"
+}

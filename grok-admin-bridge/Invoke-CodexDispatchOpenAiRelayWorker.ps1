@@ -6,7 +6,9 @@
   Same call shape spirit as Invoke-CodexDispatchGrokWorkerPool, but provider is
   HTTP OpenAI-compatible relay (default ssstoken). Key is a file handle path
   (swap file contents anytime). Does NOT enter Grok WorkerPool. Does NOT start
-  Temporal / Docker / second orchestrator.
+  Temporal / Docker / second orchestrator. One invocation carries one complete
+  provider-native package; outer scheduling may run independent invocations
+  concurrently when current route evidence supports it.
 .EXAMPLE
   .\Invoke-CodexDispatchOpenAiRelayWorker.ps1 -WorkKey relay:smoke -Prompt "Reply only: RELAY_OK" -Model gpt-5.6-sol -RequiredResultMarkers RELAY_OK
 #>
@@ -26,6 +28,7 @@ param(
     [string]$ApiStyle = "chat_completions",
     [string]$BaseUrl = "https://api.ssstoken.net/v1",
     [string]$KeyPath = "C:\Users\xx363\私钥\Codex-api.txt",
+    [string]$PythonExe = "",
     [string]$RuntimeRoot = "D:\XINAO_RESEARCH_RUNTIME",
     [ValidateRange(1, 200000)]
     [int]$MaxTokens = 2048,
@@ -78,6 +81,7 @@ for ($i = 0; $i -lt $N; $i++) {
         ApiStyle = $ApiStyle
         BaseUrl = $BaseUrl
         KeyPath = $KeyPath
+        PythonExe = $PythonExe
         EvidenceDir = $evidenceRoot
         MaxTokens = $MaxTokens
         TimeoutSec = $TimeoutSec
@@ -140,7 +144,7 @@ for ($i = 0; $i -lt $N; $i++) {
     }
     $ok = (
         $exitCode -eq 0 -and $laneMeta -and $laneMeta.status -eq "ok" -and
-        $laneMeta.http_status -eq 200 -and $laneMeta.selected_equals_observed -eq $true -and
+        $laneMeta.http_status -eq 200 -and $laneMeta.model_identity_accepted -eq $true -and
         $laneMeta.model_invocation_observed -eq $true -and $positiveUsage -and
         $laneMeta.terminal_state -eq "completed" -and
         $resultHashReadback -and $rawHashReadback
@@ -157,9 +161,12 @@ for ($i = 0; $i -lt $N; $i++) {
         work_key = $WorkKey
         logical_operation_id = $LogicalOperationId
         attempt = $Attempt
+        provider_id = if ($laneMeta) { [string]$laneMeta.provider_id } else { "" }
+        profile_ref = if ($laneMeta) { [string]$laneMeta.profile_ref } else { "" }
         selected_model = $Model
         observed_model = if ($laneMeta) { [string]$laneMeta.observed_model } else { "" }
         selected_equals_observed = if ($laneMeta) { [bool]$laneMeta.selected_equals_observed } else { $false }
+        model_identity_accepted = if ($laneMeta) { [bool]$laneMeta.model_identity_accepted } else { $false }
         result_excerpt = if ($laneMeta) { [string]$laneMeta.result_excerpt } else { "" }
         usage = if ($laneMeta) { $laneMeta.usage } else { $null }
         meta_path = $metaPath
@@ -175,6 +182,8 @@ $dispatchStatus = "partial"
 if ($failCount -eq 0) { $dispatchStatus = "ok" }
 elseif ($okCount -eq 0) { $dispatchStatus = "failed" }
 
+$providerIds = @($items.ToArray() | ForEach-Object { [string]$_.provider_id } | Where-Object { -not [string]::IsNullOrWhiteSpace($_) } | Select-Object -Unique)
+$summaryProviderId = if ($providerIds.Count -eq 1) { $providerIds[0] } else { "openai_compatible_relay" }
 $summary = [ordered]@{
     schema_version = "xinao.codex_dispatch_openai_relay_worker.v1"
     sentinel = "SENTINEL:CODEX_DISPATCH_OPENAI_RELAY_WORKER"
@@ -189,7 +198,7 @@ $summary = [ordered]@{
     route_role = "a_leg_peer_codex_direct_call"
     not_333_mainline = $true
     completion_claim_allowed = $false
-    provider_id = "ssstoken_openai_compatible_relay"
+    provider_id = $summaryProviderId
     n = $N
     selected_model = $Model
     api_style = $ApiStyle
@@ -203,7 +212,7 @@ $summary = [ordered]@{
     evidence_root = $evidenceRoot
     dispatch_dir = $dispatchDir
     boundary_cn = "A腿同级 peer：Codex 直调 OpenAI 兼容中转工人；密钥文件可热换；不进 Grok WorkerPool；不是 Temporal/333"
-    hot_path_cn = "Codex -> Invoke-CodexDispatchOpenAiRelayWorker -> Invoke-OpenAiCompatibleRelayWorker (HTTP)"
+    hot_path_cn = "Codex -> Invoke-CodexDispatchOpenAiRelayWorker -> Invoke-OpenAiCompatibleRelayWorker -> official OpenAI Python SDK"
     peer_of = "Invoke-CodexDispatchGrokWorkerPool / direct-grok-worker-pool"
 }
 

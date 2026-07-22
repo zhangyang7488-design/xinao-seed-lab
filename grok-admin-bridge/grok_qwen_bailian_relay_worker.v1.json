@@ -1,0 +1,31 @@
+{
+  "schema_version": "xinao.qwen_bailian_relay_worker.v1",
+  "sentinel": "SENTINEL:QWEN_BAILIAN_RELAY_WORKER_CONTRACT",
+  "status": "available_a_leg_peer",
+  "route_role": "a_leg_peer_not_grok_pool_not_temporal",
+  "transport_id": "direct-openai-compatible-relay",
+  "provider_id": "qwen_bailian_openai_compatible",
+  "peer_of": "Invoke-CodexDispatchGrokWorkerPool / direct-grok-worker-pool",
+  "not_333_mainline": true,
+  "completion_claim_allowed": false,
+  "auth": {
+    "mode": "bailian_workspace_csv_or_key_file",
+    "default_key_path": "C:\\Users\\xx363\\私钥\\千问默认业务空间-apiKey-5983797.csv",
+    "fields": ["apiKey", "openAiCompatible", "workspaceId"]
+  },
+  "defaults": {
+    "model": "qwen-plus",
+    "api_style": "chat_completions",
+    "package_width": 1,
+    "global_concurrency": "dynamic_external_supervisor_not_fixed_here"
+  },
+  "files": [
+    "Invoke-CodexDispatchQwenWorker.ps1",
+    "Invoke-CodexDispatchOpenAiRelayWorker.ps1",
+    "Invoke-OpenAiCompatibleRelayWorker.ps1",
+    "grok_qwen_bailian_relay_worker.v1.json"
+  ],
+  "invoke_example": ".\\Invoke-CodexDispatchQwenWorker.ps1 -WorkKey qwen:smoke -Prompt \"只回复: QWEN_OK\" -Model qwen-plus -RequiredResultMarkers QWEN_OK",
+  "evidence_root": "D:\\XINAO_RESEARCH_RUNTIME\\state\\openai_relay_worker",
+  "note_cn": "千问 A 腿 peer：CSV 密钥句柄 + 业务空间 compatible-mode；单次调用承载一个整包，全局并发由主管按当前事实动态决定"
+}

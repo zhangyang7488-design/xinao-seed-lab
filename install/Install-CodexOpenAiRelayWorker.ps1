@@ -10,8 +10,13 @@ $ErrorActionPreference = "Stop"
 $utf8 = [Text.UTF8Encoding]::new($false)
 $relativeFiles = @(
     "grok-admin-bridge\Invoke-CodexDispatchOpenAiRelayWorker.ps1",
+    "grok-admin-bridge\Invoke-CodexDispatchQwenWorker.ps1",
+    "grok-admin-bridge\Invoke-CodexDispatchDeepSeekWorker.ps1",
     "grok-admin-bridge\Invoke-OpenAiCompatibleRelayWorker.ps1",
-    "grok-admin-bridge\grok_openai_compatible_relay_worker.v1.json"
+    "grok-admin-bridge\openai_sdk_wire.py",
+    "grok-admin-bridge\grok_openai_compatible_relay_worker.v1.json",
+    "grok-admin-bridge\grok_qwen_bailian_relay_worker.v1.json",
+    "grok-admin-bridge\grok_deepseek_relay_worker.v1.json"
 )
 $sourceLauncher = Join-Path $SourceRoot "launchers\Invoke-Codex-OpenAiRelayWorker.ps1"
 $allSources = @($sourceLauncher) + @($relativeFiles | ForEach-Object { Join-Path $SourceRoot $_ })
@@ -20,7 +25,7 @@ foreach ($source in $allSources) {
         throw "CODEX_OPENAI_RELAY_INSTALL_SOURCE_MISSING: $source"
     }
 }
-foreach ($source in @($sourceLauncher, (Join-Path $SourceRoot $relativeFiles[0]), (Join-Path $SourceRoot $relativeFiles[1]))) {
+foreach ($source in @($allSources | Where-Object { [IO.Path]::GetExtension($_) -ieq ".ps1" })) {
     $tokens = $null
     $errors = $null
     [void][Management.Automation.Language.Parser]::ParseFile($source, [ref]$tokens, [ref]$errors)
@@ -54,7 +59,7 @@ foreach ($relative in $relativeFiles) {
 $dispatchRef = Join-Path $bridgeTarget "Invoke-CodexDispatchOpenAiRelayWorker.ps1"
 $dispatchSha256 = (Get-FileHash -LiteralPath $dispatchRef -Algorithm SHA256).Hash.ToLowerInvariant()
 $manifest = [ordered]@{
-    schema_version = "xinao.codex_openai_relay_release_manifest.v1"
+    schema_version = "xinao.codex_openai_relay_release_manifest.v2"
     release_id = $releaseId
     created_at = (Get-Date).ToUniversalTime().ToString("o")
     source_root = [IO.Path]::GetFullPath($SourceRoot)
@@ -63,8 +68,15 @@ $manifest = [ordered]@{
     files = $fileHashes
     dispatch_ref = $dispatchRef
     dispatch_sha256 = $dispatchSha256
-    provider_id = "ssstoken_openai_compatible_relay"
-    max_width = 1
+    provider_scope = "runtime_selected_admitted_openai_compatible_profile"
+    default_provider_id = "ssstoken_openai_compatible_relay"
+    provider_profiles = @(
+        "ssstoken_openai_compatible_relay",
+        "qwen_bailian_openai_compatible",
+        "deepseek_openai_compatible"
+    )
+    package_width = 1
+    global_concurrency = "dynamic_external_supervisor_not_fixed_here"
     authority = $false
     completion_claim_allowed = $false
 }
