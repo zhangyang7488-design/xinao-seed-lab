@@ -225,6 +225,36 @@ def normalize_host_mount_source(path: Path) -> dict[str, Any]:
     return {"ok": True, "path": str(p), "normalized": _norm_win_path(p)}
 
 
+def _normalize_planned_host_path(path: Path) -> dict[str, Any]:
+    """Resolve a possibly not-yet-created path after rejecting reparse ancestry."""
+    lexical = _lexical_absolute_path(path)
+    if _has_reparse_ancestor(lexical):
+        return {
+            "ok": False,
+            "reason": "mount_source_reparse_or_symlink_ancestor",
+            "path": str(lexical),
+        }
+    try:
+        resolved = lexical.resolve(strict=False)
+    except (OSError, RuntimeError) as exc:
+        return {
+            "ok": False,
+            "reason": "mount_source_resolve_failed",
+            "path": str(path),
+            "error_class": type(exc).__name__,
+        }
+    return {"ok": True, "path": str(resolved), "normalized": _norm_win_path(resolved)}
+
+
+def _normalize_denied_host_path(path: Path) -> dict[str, Any]:
+    """Normalize a denied root while retaining Windows device-namespace paths."""
+    raw = str(path).replace("/", "\\").lower()
+    if raw.startswith("\\\\.\\pipe\\"):
+        lexical = _lexical_absolute_path(path)
+        return {"ok": True, "path": str(lexical), "normalized": _norm_win_path(lexical)}
+    return _normalize_planned_host_path(path)
+
+
 def default_denied_roots(
     *,
     vault_root: Path | None = None,
@@ -316,7 +346,14 @@ def validate_mount_boundary(
         }
 
     for denied in denied_roots:
-        d = _lexical_absolute_path(denied)
+        denied_check = _normalize_denied_host_path(Path(denied))
+        if not denied_check.get("ok"):
+            return {
+                "ok": False,
+                "reason": "denied_mount_root_invalid",
+                "detail": denied_check,
+            }
+        d = Path(denied_check["path"])
         # source is denied root or nested inside denied tree
         if _is_under_or_equal(src, d):
             return {
@@ -393,6 +430,7 @@ def _preflight_promptfoo_host_paths(
     package_root = op_root.parent.parent
     trusted_adapter_root = package_root / "adapters"
 
+    resolved_inputs: dict[str, Path] = {}
     for label, path in (
         ("config", config_path),
         ("cases", cases_path),
@@ -405,6 +443,24 @@ def _preflight_promptfoo_host_paths(
                 "reason": f"{label}_source_invalid",
                 "detail": check,
             }
+        resolved_inputs[label] = Path(check["path"])
+    config_path = resolved_inputs["config"]
+    config_dir = config_path.parent
+    cases_path = resolved_inputs["cases"]
+    adapter_src = resolved_inputs["adapter"]
+
+    resolved_mounts: dict[str, Path] = {}
+    for label, path in (("state", state_root), ("output", output_root)):
+        check = _normalize_planned_host_path(path)
+        if not check.get("ok"):
+            return {
+                "ok": False,
+                "reason": f"{label}_source_invalid",
+                "detail": check,
+            }
+        resolved_mounts[label] = Path(check["path"])
+    state_root = resolved_mounts["state"]
+    output_root = resolved_mounts["output"]
     if not _is_under_or_equal(config_dir, trusted_mount_root):
         return {"ok": False, "reason": "config_source_outside_operation_promptfoo_root"}
     if not _is_under_or_equal(adapter_src, trusted_adapter_root):
@@ -413,7 +469,16 @@ def _preflight_promptfoo_host_paths(
             "reason": "adapter_source_outside_trusted_package_adapter_root",
         }
 
-    normalized_allowed = [_lexical_absolute_path(root) for root in allowed_roots]
+    normalized_allowed: list[Path] = []
+    for root in allowed_roots:
+        check = _normalize_planned_host_path(Path(root))
+        if not check.get("ok"):
+            return {
+                "ok": False,
+                "reason": "allowed_mount_root_invalid",
+                "detail": check,
+            }
+        normalized_allowed.append(Path(check["path"]))
     expected_allowed = {
         _norm_win_path(config_dir),
         _norm_win_path(state_root),
@@ -439,6 +504,17 @@ def _preflight_promptfoo_host_paths(
                 "path": _norm_win_path(root),
             }
 
+    normalized_denied: list[Path] = []
+    for root in denied_roots:
+        check = _normalize_denied_host_path(Path(root))
+        if not check.get("ok"):
+            return {
+                "ok": False,
+                "reason": "denied_mount_root_invalid",
+                "detail": check,
+            }
+        normalized_denied.append(Path(check["path"]))
+
     executable_sources = (config_dir, adapter_src)
     mount_sources = (output_root, state_root)
     if _paths_intersect(output_root, state_root):
@@ -462,8 +538,8 @@ def _preflight_promptfoo_host_paths(
                     "ok": False,
                     "reason": "mount_source_overlaps_executable_source",
                 }
-        for denied in denied_roots:
-            if _paths_intersect(mount_source, _lexical_absolute_path(denied)):
+        for denied in normalized_denied:
+            if _paths_intersect(mount_source, denied):
                 return {
                     "ok": False,
                     "reason": "mount_source_intersects_denied_root",

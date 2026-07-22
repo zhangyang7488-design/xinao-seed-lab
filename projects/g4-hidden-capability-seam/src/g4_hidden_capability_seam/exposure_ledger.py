@@ -257,7 +257,16 @@ def verify_exposure_admission_evidence(
         return {"ok": False, "reason": "exposure_seal_non_authority_flags_drift"}
 
     exposure = ExposureLedger(ledger)
-    if seal.get("log_path") != str(ledger) or seal.get("lock_db_path") != str(exposure.log.lock_db):
+    try:
+        sealed_log_path = Path(str(seal.get("log_path") or "")).resolve(strict=True)
+        sealed_lock_path = Path(str(seal.get("lock_db_path") or "")).resolve(strict=True)
+        current_lock_path = exposure.log.lock_db.resolve(strict=True)
+    except (OSError, RuntimeError, ValueError):
+        return {"ok": False, "reason": "exposure_seal_path_binding_mismatch"}
+    # Windows may expose the same file through an 8.3 short-name spelling in
+    # TEMP while resolve() returns its long-name spelling. Bind the seal to the
+    # resolved file identities, not to one incidental textual spelling.
+    if sealed_log_path != ledger or sealed_lock_path != current_lock_path:
         return {"ok": False, "reason": "exposure_seal_path_binding_mismatch"}
     if seal.get("chain_ok_at_seal") is not True:
         return {"ok": False, "reason": "exposure_seal_chain_status_not_true"}
