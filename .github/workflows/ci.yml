@@ -70,6 +70,11 @@ jobs:
             os: ubuntu-latest
             pytest_args: -q
             ruff_paths: .
+          - project: g4-hidden-capability-seam
+            path: projects/g4-hidden-capability-seam
+            os: windows-latest
+            pytest_args: -q
+            ruff_paths: src adapters tests
           # AF-005 single_home: exercise the exact package cone and durable unit suite on PRs.
           - project: xinao-discovery
             path: xinao_discovery

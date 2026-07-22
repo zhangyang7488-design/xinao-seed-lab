@@ -1,0 +1,35 @@
+[project]
+name = "xinao-g4-hidden-capability-seam"
+version = "0.1.0"
+description = "Synthetic, non-authoritative hidden-capability isolation seam held for selective reuse."
+readme = "README.md"
+requires-python = ">=3.11,<3.14"
+dependencies = [
+  "PyYAML==6.0.3",
+]
+
+[dependency-groups]
+dev = [
+  "pytest==9.1.1",
+  "ruff==0.15.14",
+]
+
+[tool.uv]
+package = false
+
+[tool.pytest.ini_options]
+addopts = "-ra --strict-config --strict-markers"
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+force-exclude = true
+extend-exclude = [
+  ".venv",
+  ".pytest_cache",
+  ".ruff_cache",
+]
+
+[tool.ruff.lint]
+select = ["E4", "E7", "E9", "F"]
