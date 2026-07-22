@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import tomllib
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -103,11 +104,36 @@ def test_launchers_do_not_depend_on_project_dot_venv() -> None:
     assert "Invoke-XinaoCoordManaged.ps1" in adapter
 
 
-def test_managed_generation_probe_pins_temporal_sdk() -> None:
+def test_managed_generation_probe_derives_exact_project_runtime_versions() -> None:
+    provisioner = (ROOT / "provisioning" / "Invoke-XinaoCoordManaged.ps1").read_text()
+    project = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
+    exact_dependencies = {
+        name: version
+        for dependency in project["project"]["dependencies"]
+        for name, separator, version in [dependency.partition("==")]
+        if separator
+    }
+
+    assert len(exact_dependencies) == len(project["project"]["dependencies"])
+    assert {"mcp", "temporalio"} <= set(exact_dependencies)
+    assert all(exact_dependencies.values())
+    assert "tomllib" in provisioner
+    assert "declared_dependencies" in provisioner
+    assert "installed_dependencies" in provisioner
+    assert "dependency_key_collisions" in provisioner
+    assert "$Probe.direct_dependencies_match" in provisioner
+    assert "$Probe.project_version_match" in provisioner
+    assert "$Probe.required_imports_ok" in provisioner
+    assert "$Probe.mcp -eq" not in provisioner
+    assert "$Probe.temporalio -eq" not in provisioner
+
+
+def test_managed_generation_probe_has_no_duplicate_exact_dependency_version_literals() -> None:
     provisioner = (ROOT / "provisioning" / "Invoke-XinaoCoordManaged.ps1").read_text()
 
-    assert 'm.version("temporalio")' in provisioner
-    assert "$Probe.temporalio -eq '1.30.0'" in provisioner
+    assert "1.28.0" not in provisioner
+    assert "1.28.1" not in provisioner
+    assert "1.30.0" not in provisioner
 
 
 def test_temporal_pin_generator_is_read_only_and_not_self_referential() -> None:
