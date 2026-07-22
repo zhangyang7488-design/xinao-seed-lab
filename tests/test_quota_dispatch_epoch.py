@@ -1,13 +1,67 @@
 from __future__ import annotations
 
 import json
+import os
+import subprocess
+import sys
+import time
 from pathlib import Path
 
+import pytest
 from services.agent_runtime.quota_dispatch_epoch import (
+    QuotaDispatchEpochError,
+    _EpochLock,
     get_or_refresh_dispatch_epoch,
     record_dispatch_epoch_usage,
     validate_dispatch_epoch_pointer,
 )
+
+
+def test_epoch_lock_uses_os_lock_not_stale_file_deletion(tmp_path: Path) -> None:
+    directory = tmp_path / "epoch"
+    with _EpochLock(directory, timeout_sec=1):
+        lock_path = directory / ".refresh.lock"
+        old = time.time() - 3600
+        os.utime(lock_path, (old, old))
+        with pytest.raises(QuotaDispatchEpochError, match="lock timeout"):
+            with _EpochLock(directory, timeout_sec=0.1):
+                pytest.fail("an active OS lock was stolen because its mtime looked stale")
+
+    with _EpochLock(directory, timeout_sec=0.1):
+        assert (directory / ".refresh.lock").is_file()
+
+
+def test_epoch_lock_is_released_when_holder_process_dies(tmp_path: Path) -> None:
+    directory = tmp_path / "epoch"
+    code = (
+        "import sys,time\n"
+        "from pathlib import Path\n"
+        "from services.agent_runtime.quota_dispatch_epoch import _EpochLock\n"
+        "with _EpochLock(Path(sys.argv[1]), timeout_sec=2):\n"
+        " print('READY', flush=True)\n"
+        " time.sleep(60)\n"
+    )
+    process = subprocess.Popen(
+        [sys.executable, "-c", code, str(directory)],
+        cwd=Path(__file__).resolve().parents[1],
+        stdin=subprocess.DEVNULL,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+    )
+    try:
+        assert process.stdout is not None
+        assert process.stdout.readline().strip() == "READY"
+        with pytest.raises(QuotaDispatchEpochError, match="lock timeout"):
+            with _EpochLock(directory, timeout_sec=0.1):
+                pytest.fail("a second process stole an active epoch lock")
+    finally:
+        process.terminate()
+        process.wait(timeout=5)
+
+    with _EpochLock(directory, timeout_sec=0.5):
+        assert (directory / ".refresh.lock").is_file()
 
 
 def _report(call_count: int) -> dict[str, object]:

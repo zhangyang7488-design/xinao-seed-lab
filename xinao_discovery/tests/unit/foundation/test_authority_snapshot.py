@@ -88,10 +88,13 @@ def test_authority_allowlist_is_exact_f1_f4_transitive_source_closure() -> None:
             repo_root / "services" / "agent_runtime" / "__init__.py",
             repo_root / "services" / "agent_runtime" / "foundation_continuous_workflow.py",
             repo_root / "services" / "agent_runtime" / "foundation_continuous_workflow_v2.py",
+            repo_root / "scripts" / "build_current_foundation_closure_pack.py",
+            repo_root / "scripts" / "export_current_foundation_materials.py",
             repo_root / "scripts" / "verify_f4_live_canary_pack.py",
             repo_root / "scripts" / "verify_f4_negative_companion_pack.py",
             repo_root / "scripts" / "verify_f4_portfolio_source_canary_pack.py",
             repo_root / "scripts" / "run_foundation_v2_f4_negative_companion.py",
+            repo_root / "scripts" / "promote_foundation_authority_generation.py",
         }
     )
     manifest = build_canonical_code_manifest()
@@ -125,9 +128,10 @@ def test_runtime_buildinfo_is_recursive_distribution_file_tree_projection() -> N
     assert recorded == canonical_sha256(core)
     expected_roots = {
         "xinao_assertion_runtime": ["hypothesis", "pydantic", "rfc8785", "uuid6"],
-        "f4_dual_brain_runtime": [
-            "temporalio",
-            "pydantic",
+            "f4_workflow_runtime": [
+                "temporalio",
+                "mlflow",
+                "pydantic",
             "rfc8785",
             "uuid6",
             "apsw",

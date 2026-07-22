@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import importlib.util
 import json
+import subprocess
 import sys
 import time
 from pathlib import Path
@@ -303,6 +304,64 @@ def test_stable_transaction_has_one_live_owner(tmp_path: Path) -> None:
         ),
     ):
         pytest.fail("a second owner acquired the same transaction")
+
+
+def test_distinct_transaction_claim_paths_do_not_serialize_each_other(
+    tmp_path: Path,
+) -> None:
+    first_path = tmp_path / "transaction-a" / "execution.lock"
+    second_path = tmp_path / "transaction-b" / "execution.lock"
+    with runner._TransactionClaim(first_path), runner._TransactionClaim(second_path):
+        assert first_path.is_file()
+        assert second_path.is_file()
+
+
+def test_stable_transaction_claim_recovers_after_holder_process_dies(
+    tmp_path: Path,
+) -> None:
+    claim_path = tmp_path / "execution.lock"
+    code = (
+        "import importlib.util,sys,time\n"
+        "from pathlib import Path\n"
+        "spec=importlib.util.spec_from_file_location('claim_runner', sys.argv[1])\n"
+        "module=importlib.util.module_from_spec(spec)\n"
+        "sys.modules[spec.name]=module\n"
+        "spec.loader.exec_module(module)\n"
+        "with module._TransactionClaim(Path(sys.argv[2])):\n"
+        " print('READY', flush=True)\n"
+        " time.sleep(60)\n"
+    )
+    process = subprocess.Popen(
+        [sys.executable, "-c", code, str(RUNNER_PATH), str(claim_path)],
+        cwd=PROJECT_ROOT,
+        stdin=subprocess.DEVNULL,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+    )
+    try:
+        assert process.stdout is not None
+        assert process.stdout.readline().strip() == "READY"
+        with (
+            pytest.raises(runner.TransactionBusyError, match="already active"),
+            runner._TransactionClaim(claim_path),
+        ):
+            pytest.fail("a second process stole an active transaction claim")
+    finally:
+        process.terminate()
+        process.wait(timeout=5)
+
+    deadline = time.monotonic() + 1
+    while True:
+        try:
+            with runner._TransactionClaim(claim_path):
+                assert claim_path.is_file()
+            break
+        except runner.TransactionBusyError:
+            if time.monotonic() >= deadline:
+                raise
+            time.sleep(0.02)
 
 
 class _FakeHandle:

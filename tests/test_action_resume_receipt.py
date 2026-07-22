@@ -5,6 +5,7 @@ import json
 import os
 import subprocess
 import sys
+import threading
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -21,6 +22,76 @@ from services.agent_runtime.action_resume_receipt import (
     verify_action_resume_receipt,
     write_action_resume_receipt,
 )
+
+
+def test_claim_lock_serializes_transitions_with_portalocker(tmp_path: Path) -> None:
+    claim_path = tmp_path / "claim.json"
+    first_entered = threading.Event()
+    release_first = threading.Event()
+    second_entered = threading.Event()
+
+    def hold_first() -> None:
+        with action_resume_module._claim_lock(claim_path):
+            first_entered.set()
+            assert release_first.wait(timeout=5)
+
+    def enter_second() -> None:
+        with action_resume_module._claim_lock(claim_path):
+            second_entered.set()
+
+    first = threading.Thread(target=hold_first)
+    second = threading.Thread(target=enter_second)
+    first.start()
+    assert first_entered.wait(timeout=5)
+    second.start()
+    assert not second_entered.wait(timeout=0.2)
+    release_first.set()
+    first.join(timeout=5)
+    second.join(timeout=5)
+
+    assert not first.is_alive()
+    assert not second.is_alive()
+    assert second_entered.is_set()
+
+
+def test_claim_lock_recovers_after_holder_process_dies(tmp_path: Path) -> None:
+    claim_path = tmp_path / "claim.json"
+    code = (
+        "import sys,time\n"
+        "from pathlib import Path\n"
+        "from services.agent_runtime.action_resume_receipt import _claim_lock\n"
+        "with _claim_lock(Path(sys.argv[1])):\n"
+        " print('READY', flush=True)\n"
+        " time.sleep(60)\n"
+    )
+    process = subprocess.Popen(
+        [sys.executable, "-c", code, str(claim_path)],
+        cwd=Path(__file__).resolve().parents[1],
+        stdin=subprocess.DEVNULL,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+    )
+    second_entered = threading.Event()
+
+    def enter_after_process_exit() -> None:
+        with action_resume_module._claim_lock(claim_path):
+            second_entered.set()
+
+    try:
+        assert process.stdout is not None
+        assert process.stdout.readline().strip() == "READY"
+        waiter = threading.Thread(target=enter_after_process_exit)
+        waiter.start()
+        assert not second_entered.wait(timeout=0.2)
+    finally:
+        process.terminate()
+        process.wait(timeout=5)
+
+    assert second_entered.wait(timeout=5)
+    waiter.join(timeout=5)
+    assert not waiter.is_alive()
 
 
 def _json_bytes(value: object) -> bytes:

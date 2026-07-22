@@ -29,28 +29,33 @@ def _current_projection() -> Path:
     return registry.canonical_projection_path()
 
 
-def test_current_projection_binds_live_authorities_and_exact_model() -> None:
+def test_current_projection_binds_reviewed_generation_and_exact_model() -> None:
     resolution = resolve_foundation_profile(_current_projection())
 
     assert resolution["status"] == "READY"
     assert resolution["authority_binding_valid"] is True
-    assert resolution["human_spec_ref"]["sha256"] == (
-        "6fc4a6bef2845fd4bd47e74a2b0379467714377a354cd98a49d8daa0327bf89a"
+    binding = resolution["foundation_authority_binding"]
+    assert binding["human_spec_snapshot_sha256"] == resolution["human_spec_ref"]["sha256"]
+    assert (
+        binding["formal_contract_snapshot_sha256"] == (resolution["formal_contract_ref"]["sha256"])
     )
-    assert resolution["formal_contract_ref"]["sha256"] == (
-        "c519dde39c738223078da7716f49ddcac69ea339339f5ce6b2a1acc968f7ec5b"
+    assert (
+        resolution["foundation_generation_ref"]["manifest_sha256"]
+        == (binding["generation_manifest_sha256"])
     )
+    assert resolution["source_promotion_pending"] is False
     assert resolution["foundation_projection"]["derived_state"] == ("FOUNDATION_EXECUTION_READY")
     assert resolution["foundation_projection"]["does_not_imply_formal_research"] is True
-    assert resolution["runtime_cutover"] == implementation_model_projection()
-    assert resolution["implementation_model_ref"] == implementation_model_projection()
+    assert resolution["runtime_cutover"] == implementation_model_projection(binding)
+    assert resolution["implementation_model_ref"] == implementation_model_projection(binding)
     assert resolution["missing_implementation_requirements"] == []
     assert resolution["blockers"] == []
 
 
 def test_profile_loader_returns_exact_code_owned_inventory() -> None:
     profile = load_foundation_profile(_current_projection())
-    model = foundation_implementation_model()
+    resolution = resolve_foundation_profile(_current_projection())
+    model = foundation_implementation_model(resolution["foundation_authority_binding"])
 
     assert profile["blocks"] == model["blocks"]
     assert set(profile["blocks"]) == set(registry.FOUNDATION_BLOCK_IDS)
@@ -59,7 +64,11 @@ def test_profile_loader_returns_exact_code_owned_inventory() -> None:
     )
     assert (
         profile["_closure_meta"]["implementation_model_sha256"]
-        == (implementation_model_projection()["implementation_model_sha256"])
+        == (
+            implementation_model_projection(resolution["foundation_authority_binding"])[
+                "implementation_model_sha256"
+            ]
+        )
     )
     assert "formal_research_allowed" in profile["foundation_exclusions"]
 

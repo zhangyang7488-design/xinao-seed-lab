@@ -6667,6 +6667,7 @@ dependencies = [
     { name = "mcp" },
     { name = "mem0ai" },
     { name = "ollama" },
+    { name = "openai" },
     { name = "portalocker" },
     { name = "qdrant-client" },
 ]
@@ -6722,6 +6723,7 @@ requires-dist = [
     { name = "mcp", specifier = ">=1" },
     { name = "mem0ai", specifier = ">=2.0.11,<3" },
     { name = "ollama", specifier = ">=0.4" },
+    { name = "openai", specifier = ">=2.44,<3" },
     { name = "polars", marker = "extra == 'dev'", specifier = ">=1.42,<2" },
     { name = "polars", marker = "extra == 'human-capabilities'", specifier = ">=1.42,<2" },
     { name = "portalocker", specifier = ">=3.2,<4" },

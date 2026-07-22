@@ -79,6 +79,7 @@ _FOUNDATION_AUTHORITY_SCRIPTS = (
     "verify_f4_negative_companion_pack.py",
     "verify_f4_portfolio_source_canary_pack.py",
     "run_foundation_v2_f4_negative_companion.py",
+    "promote_foundation_authority_generation.py",
 )
 
 _RUNTIME_PROBE = r"""

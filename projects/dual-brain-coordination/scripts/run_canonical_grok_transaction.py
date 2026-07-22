@@ -26,6 +26,8 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
+import portalocker
+
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 REPO_ROOT = PROJECT_ROOT.parents[1]
 SRC = PROJECT_ROOT / "src"
@@ -122,64 +124,59 @@ class _TransactionClaim:
     def __init__(self, path: Path) -> None:
         self.path = path
         self._handle: Any | None = None
+        self._lock: portalocker.Lock | None = None
 
     def __enter__(self) -> _TransactionClaim:
         self.path.parent.mkdir(parents=True, exist_ok=True)
-        handle = self.path.open("a+b")
-        handle.seek(0, os.SEEK_END)
-        if handle.tell() == 0:
-            handle.write(b"\0")
-            handle.flush()
-            os.fsync(handle.fileno())
-        handle.seek(0)
+        lock = portalocker.Lock(
+            str(self.path),
+            mode="a+b",
+            timeout=0,
+            fail_when_locked=True,
+            flags=portalocker.LockFlags.EXCLUSIVE | portalocker.LockFlags.NON_BLOCKING,
+        )
         try:
-            if os.name == "nt":
-                import msvcrt
-
-                msvcrt.locking(handle.fileno(), msvcrt.LK_NBLCK, 1)
-            else:
-                import fcntl
-
-                fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
-        except OSError as exc:
-            handle.close()
+            handle = lock.acquire()
+        except portalocker.exceptions.LockException as exc:
             raise TransactionBusyError(
                 f"stable transaction is already active: {self.path.parent.name}"
             ) from exc
-        owner = json.dumps(
-            {
-                "schema_version": "xinao.canonical_grok_transaction.claim.v1",
-                "pid": os.getpid(),
-                "claimed_at": datetime.now(UTC).isoformat(),
-            },
-            ensure_ascii=False,
-            sort_keys=True,
-        ).encode("utf-8")
-        handle.seek(0)
-        handle.truncate()
-        handle.write(owner)
-        handle.flush()
-        os.fsync(handle.fileno())
+        try:
+            handle.seek(0, os.SEEK_END)
+            if handle.tell() == 0:
+                handle.write(b"\0")
+                handle.flush()
+                os.fsync(handle.fileno())
+            handle.seek(0)
+            owner = json.dumps(
+                {
+                    "schema_version": "xinao.canonical_grok_transaction.claim.v1",
+                    "pid": os.getpid(),
+                    "claimed_at": datetime.now(UTC).isoformat(),
+                },
+                ensure_ascii=False,
+                sort_keys=True,
+            ).encode("utf-8")
+            handle.seek(0)
+            handle.truncate()
+            handle.write(owner)
+            handle.flush()
+            os.fsync(handle.fileno())
+        except Exception:
+            lock.release()
+            raise
+        self._lock = lock
         self._handle = handle
         return self
 
     def __exit__(self, exc_type: object, exc: object, traceback: object) -> None:
         handle = self._handle
+        lock = self._lock
         self._handle = None
-        if handle is None:
+        self._lock = None
+        if handle is None or lock is None:
             return
-        try:
-            handle.seek(0)
-            if os.name == "nt":
-                import msvcrt
-
-                msvcrt.locking(handle.fileno(), msvcrt.LK_UNLCK, 1)
-            else:
-                import fcntl
-
-                fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
-        finally:
-            handle.close()
+        lock.release()
 
 
 def _read_payload(

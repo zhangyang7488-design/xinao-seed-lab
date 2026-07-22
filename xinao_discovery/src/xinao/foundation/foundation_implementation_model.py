@@ -8,24 +8,38 @@ not redefine or selectively override it.
 
 from __future__ import annotations
 
+import json
+from collections.abc import Mapping
 from copy import deepcopy
 from typing import Any
 
 from xinao.canonical import canonical_sha256
 from xinao.foundation import f2_assertions, f3_assertions
 from xinao.foundation import f4_current_evidence_verifier as f4_verifier
+from xinao.foundation.assertion_verifier_registry import CANONICAL_PROJECTION_PATH
 from xinao.foundation.assertion_verifiers import common
 from xinao.foundation.assertion_verifiers import f1_assertion_actuals as f1_actuals
 from xinao.foundation.assertion_verifiers import f2_assertion_actuals as f2_actuals
 from xinao.foundation.assertion_verifiers import f3_assertion_actuals as f3_actuals
 from xinao.foundation.assertion_verifiers import f4_assertion_actuals as f4_actuals
+from xinao.foundation.authority_generation import (
+    AuthorityGenerationError,
+    load_generation_binding_from_projection,
+)
 
-IMPLEMENTATION_MODEL_SCHEMA_VERSION = "xinao.foundation_closure_implementation_model.v1"
-IMPLEMENTATION_MODEL_VERSION = "foundation-closure-current.v1"
+IMPLEMENTATION_MODEL_SCHEMA_VERSION = "xinao.foundation_closure_implementation_model.v2"
+IMPLEMENTATION_MODEL_VERSION = "foundation-closure-authority-generation.v2"
 FOUNDATION_CLOSURE_REPORT_SCHEMA_VERSION = "xinao.foundation_closure_report.v2"
 
-CURRENT_HUMAN_SPEC_SHA256 = "6fc4a6bef2845fd4bd47e74a2b0379467714377a354cd98a49d8daa0327bf89a"
-CURRENT_FORMAL_CONTRACT_SHA256 = "c519dde39c738223078da7716f49ddcac69ea339339f5ce6b2a1acc968f7ec5b"
+_AUTHORITY_BINDING_KEYS = {
+    "generation_manifest_sha256",
+    "generation_content_sha256",
+    "human_spec_snapshot_sha256",
+    "formal_contract_snapshot_sha256",
+    "implementation_model_core_sha256",
+    "publication_manifest_sha256",
+    "owner_verdict_sha256",
+}
 
 KNOWN_INPUT_HASHES = {
     "active_quote_projection_sha256": (
@@ -99,19 +113,13 @@ def _block(
     }
 
 
-def foundation_implementation_model() -> dict[str, Any]:
-    """Return the content-addressed current implementation model."""
-
+def _implementation_model_core() -> dict[str, Any]:
     f2_expectations = dict(f2_assertions.F2_REQUIRED_ASSERTIONS)
     f3_expectations = dict(f3_assertions.F3_REQUIRED_ASSERTION_EXPECTATIONS)
     f4_expectations = {assertion_id: True for assertion_id in f4_verifier.ASSERTION_IDS}
-    core: dict[str, Any] = {
+    return {
         "schema_version": IMPLEMENTATION_MODEL_SCHEMA_VERSION,
         "model_version": IMPLEMENTATION_MODEL_VERSION,
-        "authority_binding": {
-            "human_spec_sha256": CURRENT_HUMAN_SPEC_SHA256,
-            "formal_contract_sha256": CURRENT_FORMAL_CONTRACT_SHA256,
-        },
         "blocks": {
             "F1_settlement_world": _block(
                 f1_actuals.ARTIFACT_TYPES,
@@ -143,13 +151,52 @@ def foundation_implementation_model() -> dict[str, Any]:
         "foundation_exclusions": list(FOUNDATION_EXCLUSIONS),
         "does_not_imply_formal_research": True,
     }
+
+
+def implementation_model_core_sha256() -> str:
+    """Return the authority-independent identity reviewed by the owner gate."""
+
+    return canonical_sha256(_implementation_model_core())
+
+
+def _authority_binding(value: Mapping[str, Any] | None) -> dict[str, str]:
+    if value is None:
+        try:
+            projection = json.loads(CANONICAL_PROJECTION_PATH.read_text(encoding="utf-8-sig"))
+            if not isinstance(projection, dict):
+                raise AuthorityGenerationError("current projection must be an object")
+            value, _ = load_generation_binding_from_projection(projection)
+        except (OSError, UnicodeError, json.JSONDecodeError, AuthorityGenerationError) as exc:
+            raise RuntimeError("current Foundation authority generation is unavailable") from exc
+    binding = dict(value)
+    if set(binding) != _AUTHORITY_BINDING_KEYS or not all(
+        isinstance(item, str) and len(item) == 64 for item in binding.values()
+    ):
+        raise RuntimeError("Foundation authority generation binding is invalid")
+    if binding["implementation_model_core_sha256"] != implementation_model_core_sha256():
+        raise RuntimeError("Foundation implementation model core is not owner-reviewed")
+    return dict(sorted(binding.items()))
+
+
+def foundation_implementation_model(
+    authority_binding: Mapping[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Return the content-addressed current implementation model."""
+
+    sealed_binding = _authority_binding(authority_binding)
+    core: dict[str, Any] = {
+        **_implementation_model_core(),
+        "authority_binding": sealed_binding,
+    }
     return {**core, "content_sha256": canonical_sha256(core)}
 
 
-def foundation_profile() -> dict[str, Any]:
+def foundation_profile(
+    authority_binding: Mapping[str, Any] | None = None,
+) -> dict[str, Any]:
     """Materialize the exact profile shape consumed by closure derivation."""
 
-    model = foundation_implementation_model()
+    model = foundation_implementation_model(authority_binding)
     inventory = model["input_hash_inventory"]
     return {
         "blocks": deepcopy(model["blocks"]),
@@ -166,10 +213,12 @@ def foundation_profile() -> dict[str, Any]:
     }
 
 
-def implementation_model_projection() -> dict[str, str]:
+def implementation_model_projection(
+    authority_binding: Mapping[str, Any] | None = None,
+) -> dict[str, str]:
     """Return the only fields the non-authoritative blueprint may project."""
 
-    model = foundation_implementation_model()
+    model = foundation_implementation_model(authority_binding)
     return {
         "implementation_model_schema_version": str(model["schema_version"]),
         "implementation_model_version": str(model["model_version"]),
@@ -183,5 +232,6 @@ __all__ = [
     "IMPLEMENTATION_MODEL_VERSION",
     "foundation_implementation_model",
     "foundation_profile",
+    "implementation_model_core_sha256",
     "implementation_model_projection",
 ]
