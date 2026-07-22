@@ -174,5 +174,8 @@ def test_only_canonical_desktop_blueprint_has_production_identity(tmp_path: Path
     forged = tmp_path / "blueprint.json"
     forged.write_text("{}", encoding="utf-8")
 
-    with pytest.raises(CanonicalVerifierError, match="canonical blueprint"):
+    with pytest.raises(
+        CanonicalVerifierError,
+        match="current non-authoritative machine projection",
+    ):
         canonical_blueprint_path(forged)
