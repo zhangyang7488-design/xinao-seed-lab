@@ -36,6 +36,10 @@ from xinao.foundation.assertion_verifier_registry import (
     canonical_verifier,
     validate_authority_snapshot,
 )
+from xinao.foundation.authority_generation import (
+    AuthorityGenerationError,
+    load_generation_binding_from_projection,
+)
 from xinao.foundation.foundation_implementation_model import (
     FOUNDATION_CLOSURE_REPORT_SCHEMA_VERSION,
     foundation_implementation_model,
@@ -125,6 +129,9 @@ def resolve_foundation_profile(projection_path: Path) -> dict[str, Any]:
             "projection_ref": {},
             "human_spec_ref": {},
             "formal_contract_ref": {},
+            "foundation_generation_ref": {},
+            "foundation_authority_binding": {},
+            "source_promotion_pending": False,
             "runtime_cutover": {},
             "missing_implementation_requirements": list(MISSING_IMPLEMENTATION_REQUIREMENTS),
             "blockers": [f"authority_projection_not_canonical:{exc}"],
@@ -210,8 +217,18 @@ def resolve_foundation_profile(projection_path: Path) -> dict[str, Any]:
     ):
         blockers.append("deprecated_gate_read_only_projection_missing")
 
-    authority_binding_valid = not blockers
-    model = foundation_implementation_model()
+    generation_binding: dict[str, str] = {}
+    generation_ref: dict[str, Any] = {}
+    try:
+        generation_binding, generation_ref = load_generation_binding_from_projection(value)
+    except AuthorityGenerationError as exc:
+        blockers.append(f"foundation_authority_generation_invalid:{exc}")
+
+    try:
+        model = foundation_implementation_model(generation_binding)
+    except RuntimeError as exc:
+        blockers.append(f"implementation_model_authority_binding_unavailable:{exc}")
+        model = {}
     recorded_model_hash = model.get("content_sha256")
     model_body = dict(model)
     model_body.pop("content_sha256", None)
@@ -220,14 +237,11 @@ def resolve_foundation_profile(projection_path: Path) -> dict[str, Any]:
     ):
         blockers.append("implementation_model_content_hash_invalid")
 
-    authority_binding = model.get("authority_binding")
-    if not isinstance(authority_binding, dict):
+    model_authority_binding = model.get("authority_binding")
+    if not isinstance(model_authority_binding, dict):
         blockers.append("implementation_model_authority_binding_missing")
-    else:
-        if authority_binding.get("human_spec_sha256") != spec_ref.get("sha256"):
-            blockers.append("implementation_model_human_spec_hash_mismatch")
-        if authority_binding.get("formal_contract_sha256") != contract_ref.get("sha256"):
-            blockers.append("implementation_model_formal_contract_hash_mismatch")
+    elif model_authority_binding != generation_binding:
+        blockers.append("implementation_model_authority_generation_mismatch")
 
     model_blocks = model.get("blocks")
     if not isinstance(model_blocks, dict) or set(model_blocks) != set(FOUNDATION_BLOCK_IDS):
@@ -293,19 +307,29 @@ def resolve_foundation_profile(projection_path: Path) -> dict[str, Any]:
     if model.get("does_not_imply_formal_research") is not True:
         blockers.append("implementation_model_formal_research_boundary_missing")
 
-    expected_projection = implementation_model_projection()
+    try:
+        expected_projection = implementation_model_projection(generation_binding)
+    except RuntimeError:
+        expected_projection = {}
     if runtime_cutover != expected_projection:
         blockers.append("implementation_model_projection_fingerprint_mismatch")
 
     status = "READY" if not blockers else "NOT_PERFORMED"
+    source_promotion_pending = bool(generation_binding) and (
+        generation_binding.get("human_spec_snapshot_sha256") != spec_ref.get("sha256")
+        or generation_binding.get("formal_contract_snapshot_sha256") != contract_ref.get("sha256")
+    )
 
     return {
         "schema_version": FOUNDATION_PROFILE_RESOLUTION_SCHEMA_VERSION,
         "status": status,
-        "authority_binding_valid": authority_binding_valid,
+        "authority_binding_valid": status == "READY",
         "projection_ref": evidence_ref(canonical),
         "human_spec_ref": spec_ref,
         "formal_contract_ref": contract_ref,
+        "foundation_generation_ref": generation_ref,
+        "foundation_authority_binding": generation_binding,
+        "source_promotion_pending": source_promotion_pending,
         "foundation_projection": {
             "ids": foundation.get("ids"),
             "canonical_names": foundation.get("canonical_names"),
@@ -327,7 +351,7 @@ def load_foundation_profile(blueprint_path: Path) -> dict[str, Any]:
     resolution = resolve_foundation_profile(blueprint_path)
     if resolution.get("status") != "READY":
         raise FoundationProfileUnavailable(resolution)
-    profile = foundation_profile()
+    profile = foundation_profile(resolution["foundation_authority_binding"])
     metadata = profile.get("_closure_meta")
     if (
         not isinstance(metadata, dict)

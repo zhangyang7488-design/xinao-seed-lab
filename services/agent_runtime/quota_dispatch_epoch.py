@@ -13,12 +13,13 @@ import json
 import os
 import re
 import tempfile
-import time
 import uuid
 from collections.abc import Callable, Mapping
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
+
+import portalocker
 
 SNAPSHOT_SCHEMA = "xinao.quota_dispatch_epoch_snapshot.v1"
 POINTER_SCHEMA = "xinao.quota_dispatch_epoch_pointer.v1"
@@ -101,38 +102,40 @@ class _EpochLock:
         self.path = directory / ".refresh.lock"
         self.timeout_sec = timeout_sec
         self.acquired = False
+        self._lock: portalocker.Lock | None = None
 
     def __enter__(self) -> "_EpochLock":
         self.path.parent.mkdir(parents=True, exist_ok=True)
-        deadline = time.monotonic() + self.timeout_sec
-        while True:
-            try:
-                descriptor = os.open(
-                    self.path,
-                    os.O_CREAT | os.O_EXCL | os.O_WRONLY,
-                    0o600,
-                )
-                with os.fdopen(descriptor, "w", encoding="utf-8") as stream:
-                    stream.write(f"pid={os.getpid()} acquired_at={_now()}\n")
-                    stream.flush()
-                    os.fsync(stream.fileno())
-                self.acquired = True
-                return self
-            except FileExistsError:
-                try:
-                    age = time.time() - self.path.stat().st_mtime
-                    if age > 120:
-                        self.path.unlink(missing_ok=True)
-                        continue
-                except OSError:
-                    pass
-                if time.monotonic() >= deadline:
-                    raise QuotaDispatchEpochError(f"quota epoch refresh lock timeout: {self.path}")
-                time.sleep(0.05)
+        lock = portalocker.Lock(
+            str(self.path),
+            mode="a+",
+            timeout=self.timeout_sec,
+            check_interval=0.05,
+            flags=portalocker.LockFlags.EXCLUSIVE | portalocker.LockFlags.NON_BLOCKING,
+        )
+        try:
+            stream = lock.acquire()
+        except portalocker.exceptions.LockException as exc:
+            raise QuotaDispatchEpochError(f"quota epoch refresh lock timeout: {self.path}") from exc
+        try:
+            stream.seek(0)
+            stream.truncate()
+            stream.write(f"pid={os.getpid()} acquired_at={_now()}\n")
+            stream.flush()
+            os.fsync(stream.fileno())
+        except Exception:
+            lock.release()
+            raise
+        self._lock = lock
+        self.acquired = True
+        return self
 
     def __exit__(self, exc_type: object, exc: object, traceback: object) -> None:
-        if self.acquired:
-            self.path.unlink(missing_ok=True)
+        lock = self._lock
+        self._lock = None
+        self.acquired = False
+        if lock is not None:
+            lock.release()
 
 
 def _read_object(path: Path, label: str) -> dict[str, Any]:

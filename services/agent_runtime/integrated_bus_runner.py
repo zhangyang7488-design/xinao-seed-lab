@@ -1420,6 +1420,99 @@ def _build_payload(
     return payload
 
 
+def _workflow_id_component(
+    value: object,
+    *,
+    label: str,
+    limit: int,
+    always_hash: bool = False,
+) -> str:
+    raw = str(value or "").strip()
+    normalized = re.sub(r"[^a-z0-9._-]+", "-", raw.lower())
+    normalized = re.sub(r"-+", "-", normalized).strip("-._")
+    if not normalized:
+        raise ValueError(f"{label} has no usable workflow id characters")
+    if not always_hash and len(normalized) <= limit:
+        return normalized
+    digest = hashlib.sha256(raw.encode("utf-8")).hexdigest()[:12]
+    stem_limit = limit - len(digest) - 1
+    if stem_limit < 1:
+        raise ValueError(f"{label} workflow id length budget is too small")
+    stem = normalized[:stem_limit].rstrip("-._")
+    if not stem:
+        raise ValueError(f"{label} has no usable workflow id prefix")
+    return f"{stem}-{digest}"
+
+
+def _validated_dispatch_envelope_sha256(
+    dispatch_envelope_ref: Mapping[str, object],
+) -> str:
+    expected = str(dispatch_envelope_ref.get("sha256") or "").strip().lower()
+    if not re.fullmatch(r"[0-9a-f]{64}", expected):
+        raise ValueError("canonical dispatch envelope ref requires lowercase sha256")
+    path = Path(str(dispatch_envelope_ref.get("path") or "")).resolve(strict=True)
+    observed = hashlib.sha256(path.read_bytes()).hexdigest()
+    if observed != expected:
+        raise ValueError("canonical dispatch envelope bytes drifted before Temporal submit")
+    return observed
+
+
+def _resolve_integrated_bus_workflow_identity(
+    *,
+    workflow_id_prefix: object,
+    dispatch_envelope_ref: Mapping[str, object] | None,
+    dispatch_task_run_id: str,
+) -> tuple[str, str]:
+    """Use business identity only for a fully bound canonical dispatch."""
+
+    prefix = _workflow_id_component(workflow_id_prefix, label="workflow_id_prefix", limit=60)
+    if dispatch_envelope_ref is None:
+        return f"{prefix}-{uuid.uuid4().hex[:12]}", "legacy_uuid"
+    task_run = _workflow_id_component(
+        dispatch_task_run_id,
+        label="dispatch_task_run_id",
+        limit=80,
+        always_hash=True,
+    )
+    envelope_sha256 = _validated_dispatch_envelope_sha256(dispatch_envelope_ref)
+    return f"{prefix}-canon-{task_run}-{envelope_sha256[:16]}", "canonical_stable"
+
+
+async def _execute_integrated_bus_workflow(
+    client: Any,
+    initial: Mapping[str, object],
+    *,
+    workflow_id: str,
+    task_queue: str,
+    canonical: bool,
+) -> tuple[dict[str, Any], str]:
+    from temporalio.exceptions import WorkflowAlreadyStartedError
+
+    kwargs: dict[str, Any] = {
+        "id": workflow_id,
+        "task_queue": task_queue,
+    }
+    if canonical:
+        from temporalio.common import WorkflowIDConflictPolicy, WorkflowIDReusePolicy
+
+        kwargs.update(
+            id_conflict_policy=WorkflowIDConflictPolicy.USE_EXISTING,
+            id_reuse_policy=WorkflowIDReusePolicy.REJECT_DUPLICATE,
+        )
+    try:
+        result = await client.execute_workflow(
+            XinaoIntegratedBusWorkflow.run,
+            dict(initial),
+            **kwargs,
+        )
+        return dict(result), "submitted_or_attached_open"
+    except WorkflowAlreadyStartedError as exc:
+        if not canonical:
+            raise
+        handle = client.get_workflow_handle(workflow_id, run_id=exc.run_id or None)
+        return dict(await handle.result()), "reused_closed_result"
+
+
 async def run_integrated_bus_temporal(
     input_path: Path,
     *,
@@ -1434,80 +1527,76 @@ async def run_integrated_bus_temporal(
 ) -> dict[str, Any]:
     from temporalio.client import Client
 
-    from services.agent_runtime.integrated_bus_temporal_client_queue import (
-        acquire_temporal_client_slot,
-    )
-
     params = _load_params()
     task_queue = str(params.get("task_queue") or INTEGRATED_BUS_QUEUE)
     graph_id = str(params.get("graph_id") or GRAPH_ID)
     worker_ownership = _resolve_worker_ownership(runtime_root=runtime_root, task_queue=task_queue)
-    workflow_id = (
-        f"{params.get('workflow_id_prefix', 'xinao-integrated-bus')}-{uuid.uuid4().hex[:12]}"
+    if dispatch_envelope_ref is not None and (
+        not dispatch_route_claim_ref or dispatch_task_run_dir is None or not dispatch_task_run_id
+    ):
+        raise ValueError("canonical dispatch requires route claim and exact task-run identity")
+    workflow_id, workflow_id_mode = _resolve_integrated_bus_workflow_identity(
+        workflow_id_prefix=params.get("workflow_id_prefix", "xinao-integrated-bus"),
+        dispatch_envelope_ref=dispatch_envelope_ref,
+        dispatch_task_run_id=dispatch_task_run_id,
     )
-    queue_meta: dict[str, Any] = {}
-    with acquire_temporal_client_slot(
-        runtime_root=runtime_root,
-        task_queue=task_queue,
-        workflow_id=workflow_id,
-        address=address,
-    ) as slot:
-        queue_meta = dict(slot)
-        client = await Client.connect(address)
-        if worker_ownership == "docker_daemon":
-            initial = _initial_state_for_docker_worker(
-                input_path,
-                repo_root=repo_root,
-                runtime_root=runtime_root,
-                workflow_id=workflow_id,
-                dispatch_envelope_ref=dispatch_envelope_ref,
-                dispatch_route_claim_ref=dispatch_route_claim_ref,
-                dispatch_task_run_dir=dispatch_task_run_dir,
-                dispatch_task_run_id=dispatch_task_run_id,
-            )
-        else:
-            initial = default_initial_state(
-                input_path,
-                repo_root=repo_root,
-                runtime_root=runtime_root,
-                workflow_id=workflow_id,
-                dispatch_envelope_ref=dispatch_envelope_ref,
-                dispatch_route_claim_ref=dispatch_route_claim_ref,
-                dispatch_task_run_dir=dispatch_task_run_dir,
-                dispatch_task_run_id=dispatch_task_run_id,
-            )
+    client = await Client.connect(address)
+    if worker_ownership == "docker_daemon":
+        initial = _initial_state_for_docker_worker(
+            input_path,
+            repo_root=repo_root,
+            runtime_root=runtime_root,
+            workflow_id=workflow_id,
+            dispatch_envelope_ref=dispatch_envelope_ref,
+            dispatch_route_claim_ref=dispatch_route_claim_ref,
+            dispatch_task_run_dir=dispatch_task_run_dir,
+            dispatch_task_run_id=dispatch_task_run_id,
+        )
+    else:
+        initial = default_initial_state(
+            input_path,
+            repo_root=repo_root,
+            runtime_root=runtime_root,
+            workflow_id=workflow_id,
+            dispatch_envelope_ref=dispatch_envelope_ref,
+            dispatch_route_claim_ref=dispatch_route_claim_ref,
+            dispatch_task_run_dir=dispatch_task_run_dir,
+            dispatch_task_run_id=dispatch_task_run_id,
+        )
 
-        if worker_ownership == "docker_daemon":
-            # Mature-first: samples-python run_workflow.py — client submits; houtai-gongren polls queue.
-            result = await client.execute_workflow(
-                XinaoIntegratedBusWorkflow.run,
-                initial,
-                id=workflow_id,
-                task_queue=task_queue,
-            )
-        else:
-            from temporalio.contrib.langgraph import LangGraphPlugin
-            from temporalio.worker import Worker
+    canonical = workflow_id_mode == "canonical_stable"
+    if worker_ownership == "docker_daemon":
+        # The Task Queue owns concurrency; stable canonical IDs own duplicate suppression.
+        result, workflow_start_disposition = await _execute_integrated_bus_workflow(
+            client,
+            initial,
+            workflow_id=workflow_id,
+            task_queue=task_queue,
+            canonical=canonical,
+        )
+    else:
+        from temporalio.contrib.langgraph import LangGraphPlugin
+        from temporalio.worker import Worker
 
-            graphs = integrated_temporal_graphs()
-            if graph_id not in graphs:
-                graphs[graph_id] = make_integrated_graph()
-            plugin = LangGraphPlugin(graphs=graphs)
-            async with Worker(
+        graphs = integrated_temporal_graphs()
+        if graph_id not in graphs:
+            graphs[graph_id] = make_integrated_graph()
+        plugin = LangGraphPlugin(graphs=graphs)
+        async with Worker(
+            client,
+            task_queue=task_queue,
+            workflows=[XinaoIntegratedBusWorkflow],
+            plugins=[plugin],
+            activity_executor=ThreadPoolExecutor(4),
+            workflow_runner=integrated_bus_workflow_runner(),
+        ):
+            result, workflow_start_disposition = await _execute_integrated_bus_workflow(
                 client,
+                initial,
+                workflow_id=workflow_id,
                 task_queue=task_queue,
-                workflows=[XinaoIntegratedBusWorkflow],
-                plugins=[plugin],
-                activity_executor=ThreadPoolExecutor(4),
-                workflow_runner=integrated_bus_workflow_runner(),
-            ):
-                result = await client.execute_workflow(
-                    XinaoIntegratedBusWorkflow.run,
-                    initial,
-                    id=workflow_id,
-                    task_queue=task_queue,
-                )
-    result = dict(result)
+                canonical=canonical,
+            )
     if dispatch_envelope_ref is not None:
         if dispatch_task_run_dir is None or not dispatch_task_run_id:
             raise ValueError("canonical leg-B result requires exact task-run identity")
@@ -1531,7 +1620,8 @@ async def run_integrated_bus_temporal(
         worker_ownership=worker_ownership,
         params=params,
     )
-    payload["temporal_client_queue"] = queue_meta
+    payload["temporal_workflow_id_mode"] = workflow_id_mode
+    payload["temporal_workflow_start_disposition"] = workflow_start_disposition
     return payload
 
 

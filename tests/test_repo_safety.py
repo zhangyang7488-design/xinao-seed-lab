@@ -56,7 +56,6 @@ ALLOWED_AGENT_RUNTIME_MODULES = {
     "integrated_bus_parent_workflow.py",
     "integrated_bus_promotion_gate.py",
     "integrated_bus_runner.py",
-    "integrated_bus_temporal_client_queue.py",
     "integrated_bus_temporal_verify.py",
     "integrated_bus_worker_daemon.py",
     "integrated_bus_workflow_registry.py",
