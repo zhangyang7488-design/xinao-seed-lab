@@ -6754,6 +6754,7 @@ dependencies = [
     { name = "opentelemetry-sdk", marker = "python_full_version == '3.12.*'" },
     { name = "optuna", marker = "python_full_version == '3.12.*'" },
     { name = "pandera", marker = "python_full_version == '3.12.*'" },
+    { name = "portalocker", marker = "python_full_version == '3.12.*'" },
     { name = "psycopg", extra = ["binary"], marker = "python_full_version == '3.12.*'" },
     { name = "pydantic", marker = "python_full_version == '3.12.*'" },
     { name = "rfc8785", marker = "python_full_version == '3.12.*'" },
@@ -6777,8 +6778,10 @@ requires-dist = [
     { name = "opentelemetry-sdk", specifier = "==1.43.0" },
     { name = "optuna", specifier = "==4.9.0" },
     { name = "pandera", specifier = "==0.32.1" },
+    { name = "portalocker", specifier = "==3.2.0" },
     { name = "psycopg", extras = ["binary"], specifier = "==3.3.4" },
     { name = "pydantic", specifier = "==2.13.4" },
+    { name = "pyyaml", marker = "extra == 'g4-bootstrap'", specifier = "==6.0.3" },
     { name = "rfc8785", specifier = "==0.1.4" },
     { name = "scikit-learn", specifier = "==1.9.0" },
     { name = "scipy", specifier = "==1.18.0" },
@@ -6786,7 +6789,7 @@ requires-dist = [
     { name = "statsmodels", specifier = "==0.14.6" },
     { name = "uuid6", specifier = "==2025.0.1" },
 ]
-provides-extras = ["foundation-verifier"]
+provides-extras = ["foundation-verifier", "g4-bootstrap"]
 
 [package.metadata.requires-dev]
 dev = [
