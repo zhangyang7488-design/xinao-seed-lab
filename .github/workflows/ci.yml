@@ -81,6 +81,11 @@ jobs:
             os: ubuntu-latest
             pytest_args: -q tests/unit/single_home
             ruff_paths: src/xinao/single_home tests/unit/single_home
+          - project: g4-full-family-generator
+            path: xinao_discovery
+            os: ubuntu-latest
+            pytest_args: -q tests/unit/capability/g4_hidden_benchmark
+            ruff_paths: src/xinao/capability tests/unit/capability
     defaults:
       run:
         working-directory: ${{ matrix.path }}
