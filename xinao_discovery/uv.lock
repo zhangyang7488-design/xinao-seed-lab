@@ -2576,6 +2576,9 @@ dependencies = [
 foundation-verifier = [
     { name = "hypothesis" },
 ]
+g4-bootstrap = [
+    { name = "pyyaml" },
+]
 
 [package.dev-dependencies]
 dev = [
@@ -2601,6 +2604,7 @@ requires-dist = [
     { name = "portalocker", specifier = "==3.2.0" },
     { name = "psycopg", extras = ["binary"], specifier = "==3.3.4" },
     { name = "pydantic", specifier = "==2.13.4" },
+    { name = "pyyaml", marker = "extra == 'g4-bootstrap'", specifier = "==6.0.3" },
     { name = "rfc8785", specifier = "==0.1.4" },
     { name = "scikit-learn", specifier = "==1.9.0" },
     { name = "scipy", specifier = "==1.18.0" },
@@ -2608,7 +2612,7 @@ requires-dist = [
     { name = "statsmodels", specifier = "==0.14.6" },
     { name = "uuid6", specifier = "==2025.0.1" },
 ]
-provides-extras = ["foundation-verifier"]
+provides-extras = ["foundation-verifier", "g4-bootstrap"]
 
 [package.metadata.requires-dev]
 dev = [
