@@ -53,7 +53,8 @@ function Invoke-StubbedCase(
     [bool]$IncludeUsage,
     [string]$FinishReason = "stop",
     [string]$ResponseText = "",
-    [int]$HttpStatus = 200
+    [int]$HttpStatus = 200,
+    [hashtable]$ExtraWorkerArgs = @{}
 ) {
     $port = Get-FreeTcpPort
     $response = [ordered]@{
@@ -77,22 +78,27 @@ function Invoke-StubbedCase(
     $keyPath = Join-Path $Root "test-key.txt"
     $selectedModel = "gpt-5.6-sol"
     try {
-        & $worker `
-            -Prompt "Return RELAY_CONTRACT_OK" `
-            -Model $selectedModel `
-            -ApiStyle chat_completions `
-            -BaseUrl "http://127.0.0.1:$port/v1" `
-            -KeyPath $keyPath `
-            -EvidenceDir $evidence `
-            -RunId $CaseId `
-            -MaxTokens 32 `
-            -TimeoutSec 15 `
-            -MinResultChars 1 `
-            -RequiredResultMarkers RELAY_CONTRACT_OK `
-            -WorkKey ("relay-test:" + $CaseId) `
-            -LogicalOperationId ("relay-op:" + $CaseId) `
-            -AllowInsecureLoopbackForTest `
-            -Quiet
+        $workerArgs = @{
+            Prompt = "Return RELAY_CONTRACT_OK"
+            Model = $selectedModel
+            ApiStyle = "chat_completions"
+            BaseUrl = "http://127.0.0.1:$port/v1"
+            KeyPath = $keyPath
+            EvidenceDir = $evidence
+            RunId = $CaseId
+            MaxTokens = 32
+            TimeoutSec = 15
+            MinResultChars = 1
+            RequiredResultMarkers = @("RELAY_CONTRACT_OK")
+            WorkKey = "relay-test:" + $CaseId
+            LogicalOperationId = "relay-op:" + $CaseId
+            ProviderContractPath = $script:testProviderContractPath
+            ExpectedProviderContractSha256 = $script:testProviderContractSha256
+            AllowInsecureLoopbackForTest = $true
+            Quiet = $true
+        }
+        foreach ($key in $ExtraWorkerArgs.Keys) { $workerArgs[$key] = $ExtraWorkerArgs[$key] }
+        & $worker @workerArgs
         $exitCode = $LASTEXITCODE
     }
     finally {
@@ -129,6 +135,8 @@ function Invoke-StubbedResponsesCase(
     try {
         & $worker `
             -Prompt "Return RELAY_CONTRACT_OK" `
+            -ProviderContractPath $script:testProviderContractPath `
+            -ExpectedProviderContractSha256 $script:testProviderContractSha256 `
             -Model "gpt-5.6-sol" `
             -ApiStyle responses `
             -BaseUrl "http://127.0.0.1:$port/v1" `
@@ -164,6 +172,41 @@ $root = Join-Path ([IO.Path]::GetTempPath()) ("xinao-relay-worker-test-" + [guid
 $dummySecret = "sk-test-only-not-a-real-secret"
 $keyPath = Join-Path $root "test-key.txt"
 [IO.File]::WriteAllText($keyPath, $dummySecret, $utf8)
+$script:testProviderContractPath = Join-Path $root "loopback-provider-binding.json"
+$testProviderContract = [ordered]@{
+    schema_version = "xinao.test_relay_adapter.v1"
+    status = "test_only"
+    module_role = "replaceable_provider_binding"
+    core_entry = "Invoke-CodexDispatchOpenAiRelayWorker.ps1"
+    provider_id = "loopback_openai_compatible_test"
+    transport_id = "direct-openai-compatible-relay"
+    completion_claim_allowed = $false
+    admission = [ordered]@{
+        exact_https_base_urls = @("https://api.ssstoken.net/v1")
+        https_host_patterns = @()
+    }
+    model_identity = [ordered]@{
+        allow_version_suffix_prefix_match = $true
+        accepted_alias_pairs = @()
+    }
+    auth = [ordered]@{ mode = "key_file_handle"; default_key_path = $keyPath }
+    defaults = [ordered]@{
+        base_url = "https://api.ssstoken.net/v1"
+        model = "gpt-5.6-sol"
+        package_width = 1
+        global_concurrency = "dynamic_external_supervisor_not_fixed_here"
+    }
+    recovery_metadata = [ordered]@{
+        rate_limit_semantics = "test_failure_degrades_only_this_binding"
+    }
+    deletion_semantics = "removes_only_this_provider_binding_not_core_contract_owner_authority_or_other_adapters"
+}
+[IO.File]::WriteAllText(
+    $script:testProviderContractPath,
+    ($testProviderContract | ConvertTo-Json -Depth 8),
+    $utf8
+)
+$script:testProviderContractSha256 = (Get-FileHash -LiteralPath $script:testProviderContractPath -Algorithm SHA256).Hash.ToLowerInvariant()
 
 try {
     $success = Invoke-StubbedCase -Root $root -CaseId "success" -ObservedModel "gpt-5.6-sol" -IncludeUsage $true
@@ -192,6 +235,83 @@ try {
     $unicodeEnvelope = Invoke-StubbedCase -Root $root -CaseId "unicode-envelope" -ObservedModel "gpt-5.6-sol" -IncludeUsage $true -ResponseText "RELAY_CONTRACT_OK 🚀"
     Assert-Relay ($unicodeEnvelope.exit_code -eq 0) "SDK envelope survives narrow Windows stdout encoding"
     Assert-Relay ($unicodeEnvelope.meta.status -eq "ok") "unicode envelope status"
+
+    $contextPath = Join-Path $root "cognitive-context.json"
+    $contentHash = "7c79fdaafabb53992adaf9bef24e87a7a5d05cdc2f74ffae2578dc531131966c"
+    $contextPayload = [ordered]@{
+        schema_version = "xinao.context_slice_manifest.v1"
+        authority = $false
+        completion_claim_allowed = $false
+        spec_sha256 = ("d" * 64)
+        source_manifest_sha256 = "352dab0226f9f65a70e86831823ef47729a03ae84cff0e68d17ab6bba5e67e48"
+        context_sha256 = "83571856b8134a9b0a80fcbee0a9744e1c56938cc5adc9114ae403ed3f08cb62"
+        total_content_bytes = 11
+        sources = @(
+            [ordered]@{
+                path = "src/example.py"
+                source_sha256 = $contentHash
+                source_bytes = 11
+                slices = @(
+                    [ordered]@{
+                        kind = "line_range"
+                        start = 1
+                        end = 1
+                        line_start = 1
+                        line_end = 1
+                        content_bytes = 11
+                        content_sha256 = $contentHash
+                        content = "safe = True"
+                    }
+                )
+            }
+        )
+        false_green_deny = "input only"
+    }
+    [IO.File]::WriteAllText($contextPath, ($contextPayload | ConvertTo-Json -Depth 8), $utf8)
+    $contextHash = (Get-FileHash -LiteralPath $contextPath -Algorithm SHA256).Hash.ToLowerInvariant()
+    $schemaPath = Join-Path $root "cognitive-output.schema.json"
+    $schemaPayload = [ordered]@{
+        '$schema' = "https://json-schema.org/draft/2020-12/schema"
+        '$id' = "https://xinao.local/schemas/audit_candidate_findings.v1.schema.json"
+        type = "object"
+        additionalProperties = $false
+        required = @("schema_version", "verdict", "summary", "findings", "limitations", "authority", "completion_claim_allowed", "repair_authorized")
+        properties = [ordered]@{
+            schema_version = [ordered]@{ const = "xinao.audit_candidate_findings.v1" }
+            verdict = [ordered]@{ enum = @("ACCEPT_HOLD_CANDIDATE", "CANDIDATE_FINDINGS", "EVIDENCE_INCOMPLETE") }
+            summary = [ordered]@{ type = "string" }
+            findings = [ordered]@{ type = "array" }
+            limitations = [ordered]@{ type = "array" }
+            authority = [ordered]@{ const = $false }
+            completion_claim_allowed = [ordered]@{ const = $false }
+            repair_authorized = [ordered]@{ const = $false }
+        }
+    }
+    [IO.File]::WriteAllText($schemaPath, ($schemaPayload | ConvertTo-Json -Depth 8), $utf8)
+    $schemaHash = (Get-FileHash -LiteralPath $schemaPath -Algorithm SHA256).Hash.ToLowerInvariant()
+    $cognitiveArgs = @{
+        WorkClass = "cognitive_audit"
+        ContextManifestFile = $contextPath
+        ExpectedContextManifestSha256 = $contextHash
+        JsonSchemaPath = $schemaPath
+        ExpectedJsonSchemaSha256 = $schemaHash
+        RequiredResultMarkers = @("RELAY_CONTRACT_OK")
+    }
+    $validCandidate = '{"schema_version":"xinao.audit_candidate_findings.v1","verdict":"CANDIDATE_FINDINGS","summary":"RELAY_CONTRACT_OK candidate","findings":[{"finding_id":"F-1","family":"example","title":"candidate","claim":"candidate claim","severity_claim":"high","evidence_citations":[{"path":"src/example.py","source_sha256":"' + $contentHash + '","line_start":1,"line_end":1,"content_sha256":"' + $contentHash + '"}],"reproduction_conditions":["Owner reproduces locally"],"finding_kind":"CANDIDATE_FINDING"}],"limitations":[],"authority":false,"completion_claim_allowed":false,"repair_authorized":false}'
+    $cognitive = Invoke-StubbedCase -Root $root -CaseId "cognitive-audit" -ObservedModel "gpt-5.6-sol" -IncludeUsage $true -ResponseText $validCandidate -ExtraWorkerArgs $cognitiveArgs
+    Assert-Relay ($cognitive.exit_code -eq 0) ("cognitive audit exit: " + [string]$cognitive.meta.error)
+    Assert-Relay ($cognitive.meta.cognitive_audit_contract_active -eq $true) "cognitive contract active"
+    Assert-Relay ($cognitive.meta.cannot_access_filesystem -eq $true) "cognitive no filesystem"
+    Assert-Relay ($cognitive.meta.tool_execution_allowed -eq $false) "cognitive no tools"
+    Assert-Relay ($cognitive.meta.schema_instance_valid -eq $true) "cognitive output schema valid"
+    Assert-Relay ([string]$cognitive.meta.prompt_sha256 -match '^[0-9a-f]{64}$') "cognitive prompt hash"
+    Assert-Relay ([string]$cognitive.meta.context_manifest_sha256 -eq $contextHash) "cognitive context hash"
+    Assert-Relay ([string]$cognitive.meta.json_schema_sha256 -eq $schemaHash) "cognitive schema hash"
+
+    $invalidCandidate = $validCandidate.Replace('"authority":false', '"authority":true').Replace('"repair_authorized":false', '"repair_authorized":true')
+    $invalidCognitive = Invoke-StubbedCase -Root $root -CaseId "cognitive-invalid-output" -ObservedModel "gpt-5.6-sol" -IncludeUsage $true -ResponseText $invalidCandidate -ExtraWorkerArgs $cognitiveArgs
+    Assert-Relay ($invalidCognitive.exit_code -ne 0) "invalid cognitive output rejected"
+    Assert-Relay ([string]$invalidCognitive.meta.error -eq "RELAY_WORKER_JSON_SCHEMA_VALIDATION_FAILED") "invalid cognitive schema reason"
 
     $mismatch = Invoke-StubbedCase -Root $root -CaseId "mismatch" -ObservedModel "gpt-5.4" -IncludeUsage $true
     Assert-Relay ($mismatch.exit_code -ne 0) "mismatch exit"
@@ -236,6 +356,8 @@ try {
     try {
         & $worker `
             -Prompt "Return RELAY_CONTRACT_OK" `
+            -ProviderContractPath $script:testProviderContractPath `
+            -ExpectedProviderContractSha256 $script:testProviderContractSha256 `
             -Model "gpt-5.6-sol" `
             -ApiStyle chat_completions `
             -BaseUrl "http://127.0.0.1:1/v1" `
@@ -255,6 +377,8 @@ try {
     try {
         & $worker `
             -Prompt "Return RELAY_CONTRACT_OK" `
+            -ProviderContractPath $script:testProviderContractPath `
+            -ExpectedProviderContractSha256 $script:testProviderContractSha256 `
             -Model "gpt-5.6-sol" `
             -BaseUrl "https://example.invalid/v1" `
             -KeyPath $keyPath `
@@ -270,21 +394,21 @@ try {
 
     $userinfoRejected = $false
     try {
-        & $worker -Prompt "x" -Model "gpt-5.6-sol" -BaseUrl "https://user@api.ssstoken.net/v1" -KeyPath $keyPath -EvidenceDir (Join-Path $root "userinfo") -RunId "userinfo" -WorkKey "relay-test:userinfo" -Quiet
+        & $worker -Prompt "x" -ProviderContractPath $script:testProviderContractPath -ExpectedProviderContractSha256 $script:testProviderContractSha256 -Model "gpt-5.6-sol" -BaseUrl "https://user@api.ssstoken.net/v1" -KeyPath $keyPath -EvidenceDir (Join-Path $root "userinfo") -RunId "userinfo" -WorkKey "relay-test:userinfo" -Quiet
     }
     catch { $userinfoRejected = $_.Exception.Message -match "RELAY_WORKER_BASE_URL_NOT_ADMITTED" }
     Assert-Relay $userinfoRejected "userinfo base url rejected"
 
     $portRejected = $false
     try {
-        & $worker -Prompt "x" -Model "gpt-5.6-sol" -BaseUrl "https://api.ssstoken.net:444/v1" -KeyPath $keyPath -EvidenceDir (Join-Path $root "port") -RunId "port" -WorkKey "relay-test:port" -Quiet
+        & $worker -Prompt "x" -ProviderContractPath $script:testProviderContractPath -ExpectedProviderContractSha256 $script:testProviderContractSha256 -Model "gpt-5.6-sol" -BaseUrl "https://api.ssstoken.net:444/v1" -KeyPath $keyPath -EvidenceDir (Join-Path $root "port") -RunId "port" -WorkKey "relay-test:port" -Quiet
     }
     catch { $portRejected = $_.Exception.Message -match "RELAY_WORKER_BASE_URL_NOT_ADMITTED" }
     Assert-Relay $portRejected "non-default production port rejected"
 
     [ordered]@{
         ok = $true
-        cases = @("success", "unicode_envelope", "observed_model_mismatch", "missing_usage", "truncated_terminal", "responses_completed", "responses_incomplete", "secret_reflection", "http_error_scrub", "duplicate_id", "unapproved_base_url", "userinfo_url", "nondefault_port")
+        cases = @("success", "unicode_envelope", "cognitive_audit", "cognitive_invalid_output", "observed_model_mismatch", "missing_usage", "truncated_terminal", "responses_completed", "responses_incomplete", "secret_reflection", "http_error_scrub", "duplicate_id", "unapproved_base_url", "userinfo_url", "nondefault_port")
         secret_material_recorded = $false
     } | ConvertTo-Json -Compress
 }

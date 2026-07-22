@@ -4,29 +4,59 @@
   "status": "available_provider_native_a_leg_peer",
   "route_role": "a_leg_peer_not_grok_pool_not_temporal",
   "transport_id": "direct-openai-compatible-relay",
-  "provider_id": "ssstoken_openai_compatible_relay",
-  "peer_of": {
-    "transport_id": "direct-grok-worker-pool",
-    "dispatch": "Invoke-CodexDispatchGrokWorkerPool.ps1",
-    "worker": "Invoke-GrokComposer25Worker.ps1"
+  "provider_id": "runtime_selected_admitted_openai_compatible_profile",
+  "capability_peer": {
+    "role": "locally_capable_tool_worker",
+    "boundary": "separate_route_for_filesystem_commands_tests_and_independent_validation"
   },
-  "selection": "explicit_codex_or_4_5_direct_call",
+  "selection": "explicit_task_or_dynamic_positive_net_benefit",
   "not_333_mainline": true,
   "completion_claim_allowed": false,
   "common_execution_contract_status": "provider_native_candidate_receipt_only",
   "common_execution_contract_note": "work_key, logical_operation_id, attempt, exact model, terminal state, usage and hash readback are bound; parent completion remains denied until a caller adapts the provider receipt through the S common consumer",
+  "fixed_cognitive_interface": {
+    "entry": "Invoke-CodexDispatchOpenAiRelayWorker.ps1",
+    "work_classes": ["general_cognitive", "cognitive_audit"],
+    "provider_neutral_core": true,
+    "provider_adapters_are_optional": true,
+    "present_adapters_require_self_recovery_metadata": true,
+    "provider_binding_requires": [
+      "provider_contract_path",
+      "expected_provider_contract_sha256",
+      "model",
+      "base_url",
+      "key_path"
+    ],
+    "cognitive_audit_requires": [
+      "context_manifest_file",
+      "expected_context_manifest_sha256",
+      "json_schema_path",
+      "expected_json_schema_sha256"
+    ],
+    "cognitive_audit_input_mode": "host_embedded_hash_bound",
+    "filesystem_access": false,
+    "tool_execution_allowed": false,
+    "worker_output_authority": "candidate_only",
+    "independent_validation_claim_allowed": false,
+    "repair_authority": "owner_only"
+  },
   "auth": {
     "mode": "key_file_handle",
-    "default_key_path": "C:\\Users\\xx363\\私钥\\Codex-api.txt",
+    "key_path_binding": "required_runtime_parameter",
     "swap": "overwrite_or_point_-KeyPath_no_script_edit",
     "reveal_in_receipt": "none_key_path_is_runtime_only"
   },
   "defaults": {
-    "base_url": "https://api.ssstoken.net/v1",
-    "model": "gpt-5.6-sol",
     "api_style": "chat_completions",
     "package_width": 1,
-    "global_concurrency": "dynamic_external_supervisor_not_fixed_here"
+    "global_concurrency": "dynamic_external_supervisor_not_fixed_here",
+    "required_runtime_bindings": [
+      "provider_contract_path",
+      "expected_provider_contract_sha256",
+      "model",
+      "base_url",
+      "key_path"
+    ]
   },
   "wire_client": {
     "implementation": "official_openai_python_sdk",
@@ -38,18 +68,19 @@
     "Invoke-CodexDispatchOpenAiRelayWorker.ps1",
     "Invoke-OpenAiCompatibleRelayWorker.ps1",
     "openai_sdk_wire.py",
+    "validate_cognitive_audit_contract.py",
     "grok_openai_compatible_relay_worker.v1.json",
     "../launchers/Invoke-Codex-OpenAiRelayWorker.ps1",
     "../install/Install-CodexOpenAiRelayWorker.ps1"
   ],
   "stable_entry": "C:\\Users\\xx363\\CodexLaunchers\\Invoke-Codex-OpenAiRelayWorker.ps1",
   "invoke_examples": [
-    ".\\Invoke-CodexDispatchOpenAiRelayWorker.ps1 -WorkKey relay:smoke -Prompt \"Reply only: RELAY_OK\" -Model gpt-5.6-sol -RequiredResultMarkers RELAY_OK",
-    ".\\Invoke-CodexDispatchOpenAiRelayWorker.ps1 -WorkKey mainline:bounded-research -PromptFile .\\task.md -Model gpt-5.4 -KeyPath C:\\Users\\xx363\\私钥\\Codex-api.txt"
+    ".\\Invoke-CodexDispatchOpenAiRelayWorker.ps1 -WorkKey relay:task -PromptFile .\\task.md -ProviderContractPath <adapter-contract.json> -ExpectedProviderContractSha256 <sha256> -Model <model> -BaseUrl <base-url> -KeyPath <key-handle>",
+    "Prefer an installed thin adapter for a known provider; use the neutral entry directly for a new hash-bound provider contract."
   ],
   "evidence_root": "D:\\XINAO_RESEARCH_RUNTIME\\state\\openai_relay_worker",
   "prohibited": [
-    "inject_into_Invoke-GrokWorkerPool",
+    "merge_cognitive_api_into_tool_worker_route",
     "temporal_default",
     "resident_loop",
     "second_orchestrator",
@@ -61,6 +92,9 @@
     ,"overwrite_existing_run_or_dispatch_evidence"
     ,"send_authorization_to_unadmitted_base_url"
     ,"claim_parallel_width_above_one"
+    ,"cognitive_audit_without_context_manifest_and_schema"
+    ,"cognitive_worker_claims_independent_validation"
+    ,"worker_output_directly_authorizes_repair"
   ],
-  "note_cn": "与 Grok A 腿同级的 Codex 可直调 HTTP 中转工人；换密钥=换文件或 -KeyPath"
+  "note_cn": "固定中性认知入口；provider、model、adapter 和凭据句柄都是可替换的运行时绑定。"
 }

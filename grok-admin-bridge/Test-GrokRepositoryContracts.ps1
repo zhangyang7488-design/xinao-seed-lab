@@ -38,7 +38,7 @@ Assert-Contract ([string]$config.model_worker_routing.selection -eq "dynamic_pos
 Assert-Contract (@($config.model_worker_routing.available_workers) -contains "grok") "grok_available"
 Assert-Contract (@($config.model_worker_routing.available_workers) -contains "openai_relay") "openai_relay_available"
 Assert-Contract (@($config.model_worker_routing.available_workers) -contains "codex_agents") "codex_agents_available"
-Assert-Contract ([string]$config.model_worker_routing.soft_preference_when_close -eq "openai_relay") "relay_soft_preference"
+Assert-Contract ([string]$config.model_worker_routing.tie_breaker_when_close -eq "dynamic_current_task_fit_health_cost_and_evidence") "provider_neutral_dynamic_tie_breaker"
 Assert-Contract ([string]$config.model_worker_routing.quota_role -eq "scheduling_telemetry_not_dispatch_gate") "quota_not_gate"
 Assert-Contract (-not [bool]$config.model_worker_routing.empty_burn) "no_empty_burn"
 Assert-Contract ([string]$config.model_worker_routing.width_policy -eq "dynamic_ready_frontier_quota_latency_evidence") "dynamic_width"
@@ -173,25 +173,47 @@ Assert-Contract ([string]$poolContract.execution_contract_version -eq "xinao.gro
 Assert-Contract (@($poolContract.common_contract_features) -contains "validated_bounded_context_slice_manifest_for_first_time_tasks") "pool_validated_context_slice_feature"
 Assert-Contract (@($config.canonical_route.leg_a.admitted_peer_transports) -contains "direct-openai-compatible-relay") "relay_admitted_as_leg_a_peer"
 
-$relayFiles = @(
+$relayCoreFiles = @(
     "grok-admin-bridge/Invoke-CodexDispatchOpenAiRelayWorker.ps1",
-    "grok-admin-bridge/Invoke-CodexDispatchQwenWorker.ps1",
-    "grok-admin-bridge/Invoke-CodexDispatchDeepSeekWorker.ps1",
     "grok-admin-bridge/Invoke-OpenAiCompatibleRelayWorker.ps1",
     "grok-admin-bridge/openai_sdk_wire.py",
+    "grok-admin-bridge/validate_cognitive_audit_contract.py",
     "grok-admin-bridge/grok_openai_compatible_relay_worker.v1.json",
-    "grok-admin-bridge/grok_qwen_bailian_relay_worker.v1.json",
-    "grok-admin-bridge/grok_deepseek_relay_worker.v1.json",
     "grok-admin-bridge/Test-OpenAiCompatibleRelayWorker.ps1",
     "launchers/Invoke-Codex-OpenAiRelayWorker.ps1",
     "install/Install-CodexOpenAiRelayWorker.ps1"
 )
-foreach ($relative in $relayFiles) {
+foreach ($relative in $relayCoreFiles) {
     Assert-Contract (Test-Path -LiteralPath (Join-Path $repoRoot $relative) -PathType Leaf) ("relay_missing:" + $relative)
 }
+$relayAdapterPairs = @(
+    [ordered]@{
+        contract = "grok-admin-bridge/grok_qwen_bailian_relay_worker.v1.json"
+        dispatch = "grok-admin-bridge/Invoke-CodexDispatchQwenWorker.ps1"
+    },
+    [ordered]@{
+        contract = "grok-admin-bridge/grok_deepseek_relay_worker.v1.json"
+        dispatch = "grok-admin-bridge/Invoke-CodexDispatchDeepSeekWorker.ps1"
+    },
+    [ordered]@{
+        contract = "grok-admin-bridge/grok_lucis_relay_worker.v1.json"
+        dispatch = "grok-admin-bridge/Invoke-CodexDispatchLucisWorker.ps1"
+    },
+    [ordered]@{
+        contract = "grok-admin-bridge/grok_ssstoken_relay_worker.v1.json"
+        dispatch = "grok-admin-bridge/Invoke-CodexDispatchSssTokenWorker.ps1"
+    }
+)
+$optionalRelayContracts = @()
+foreach ($adapterPair in $relayAdapterPairs) {
+    $contractPresent = Test-Path -LiteralPath (Join-Path $repoRoot $adapterPair.contract) -PathType Leaf
+    $dispatchPresent = Test-Path -LiteralPath (Join-Path $repoRoot $adapterPair.dispatch) -PathType Leaf
+    Assert-Contract ($contractPresent -eq $dispatchPresent) ("relay_optional_adapter_pair_complete:" + $adapterPair.contract)
+    if ($contractPresent) {
+        $optionalRelayContracts += Read-Json $adapterPair.contract
+    }
+}
 $relayContract = Read-Json "grok-admin-bridge/grok_openai_compatible_relay_worker.v1.json"
-$qwenRelayContract = Read-Json "grok-admin-bridge/grok_qwen_bailian_relay_worker.v1.json"
-$deepSeekRelayContract = Read-Json "grok-admin-bridge/grok_deepseek_relay_worker.v1.json"
 $relayWorkerText = Get-Content -LiteralPath (Join-Path $repoRoot "grok-admin-bridge/Invoke-OpenAiCompatibleRelayWorker.ps1") -Raw -Encoding UTF8
 $relaySdkText = Get-Content -LiteralPath (Join-Path $repoRoot "grok-admin-bridge/openai_sdk_wire.py") -Raw -Encoding UTF8
 $relayInstallerText = Get-Content -LiteralPath (Join-Path $repoRoot "install/Install-CodexOpenAiRelayWorker.ps1") -Raw -Encoding UTF8
@@ -199,19 +221,42 @@ Assert-Contract ([string]$relayContract.route_role -eq "a_leg_peer_not_grok_pool
 Assert-Contract (-not [bool]$relayContract.completion_claim_allowed) "relay_cannot_claim_completion"
 Assert-Contract ([string]$relayContract.wire_client.implementation -eq "official_openai_python_sdk") "relay_uses_official_sdk"
 Assert-Contract ([int]$relayContract.wire_client.max_retries -eq 0) "relay_sdk_retries_owned_by_outer_receipt"
-foreach ($profile in @($relayContract, $qwenRelayContract, $deepSeekRelayContract)) {
+foreach ($profile in @($relayContract) + @($optionalRelayContracts)) {
     Assert-Contract ([int]$profile.defaults.package_width -eq 1) "relay_invocation_is_one_complete_package"
     Assert-Contract ([string]$profile.defaults.global_concurrency -eq "dynamic_external_supervisor_not_fixed_here") "relay_global_concurrency_is_dynamic"
+}
+foreach ($profile in @($optionalRelayContracts)) {
+    Assert-Contract ([string]$profile.module_role -eq "replaceable_provider_binding") "relay_adapter_role_is_replaceable_binding"
+    Assert-Contract ([string]$profile.core_entry -eq "Invoke-CodexDispatchOpenAiRelayWorker.ps1") "relay_adapter_uses_fixed_core_entry"
+    Assert-Contract ([string]$profile.deletion_semantics -eq "removes_only_this_provider_binding_not_core_contract_owner_authority_or_other_adapters") "relay_adapter_deletion_is_local"
+    Assert-Contract (-not [string]::IsNullOrWhiteSpace([string]$profile.provider_id)) "relay_adapter_provider_identity_recorded"
+    Assert-Contract (-not [string]::IsNullOrWhiteSpace([string]$profile.auth.default_key_path)) "relay_adapter_key_handle_path_recorded"
+    Assert-Contract (-not [string]::IsNullOrWhiteSpace([string]$profile.defaults.model)) "relay_adapter_default_model_recorded"
+    Assert-Contract ($null -ne $profile.recovery_metadata) "relay_adapter_self_recovery_metadata_present"
+    Assert-Contract ($null -ne $profile.model_identity.allow_version_suffix_prefix_match) "relay_adapter_model_identity_policy_present"
+    Assert-Contract ($null -ne $profile.model_identity.accepted_alias_pairs) "relay_adapter_model_alias_inventory_present"
+    Assert-Contract ([string]$profile.recovery_metadata.rate_limit_semantics -match 'this_(provider_)?binding') "relay_adapter_failure_is_locally_scoped"
+    Assert-Contract (
+        -not [string]::IsNullOrWhiteSpace([string]$profile.defaults.base_url) -or
+        -not [string]::IsNullOrWhiteSpace([string]$profile.recovery_metadata.base_url_source)
+    ) "relay_adapter_base_url_or_resolver_recorded"
 }
 Assert-Contract ([string]$index.openai_compatible_relay_peer.provider_scope -eq "runtime_selected_admitted_openai_compatible_profile") "relay_index_is_provider_neutral"
 Assert-Contract ([int]$index.openai_compatible_relay_peer.package_width -eq 1) "relay_index_package_width_one"
 Assert-Contract ([string]$index.openai_compatible_relay_peer.global_concurrency -eq "dynamic_external_supervisor_not_fixed_here") "relay_index_global_concurrency_dynamic"
-Assert-Contract (@($index.openai_compatible_relay_peer.contracts).Count -eq 3) "relay_index_discovers_all_profiles"
+Assert-Contract ([string]$index.openai_compatible_relay_peer.core_contract -eq "grok_openai_compatible_relay_worker.v1.json") "relay_index_core_contract_is_generic"
+Assert-Contract ([string]$index.openai_compatible_relay_peer.module_binding_policy -eq "provider_and_adapter_identity_is_replaceable_without_changing_core_contract_or_owner_authority") "relay_index_module_identity_is_replaceable"
+Assert-Contract (@($index.openai_compatible_relay_peer.optional_adapter_contracts).Count -eq @($core.optional_endpoint_contracts).Count) "relay_index_optional_adapter_inventory_consistent"
 Assert-Contract ($relayWorkerText -notmatch 'key_fingerprint|key_file_sha256') "relay_records_no_secret_fingerprint"
 Assert-Contract ($relayWorkerText -notmatch 'Invoke-WebRequest|Invoke-RestMethod') "relay_has_no_hand_built_http_wire"
 Assert-Contract ($relaySdkText -match 'OpenAI\(') "relay_sdk_helper_constructs_openai_client"
 Assert-Contract ($relaySdkText -match 'max_retries=0') "relay_sdk_helper_disables_hidden_retries"
 Assert-Contract ($relayInstallerText -match 'openai_sdk_wire\.py') "relay_installer_closes_sdk_helper"
+Assert-Contract ($relayInstallerText -match '\$coreRelativeFiles') "relay_installer_has_stable_core_closure"
+Assert-Contract ($relayInstallerText -match '\$optionalAdapterGroups') "relay_installer_treats_provider_adapters_as_optional"
+Assert-Contract ($relayInstallerText -match 'CODEX_OPENAI_RELAY_OPTIONAL_ADAPTER_INCOMPLETE') "relay_installer_rejects_half_adapter"
+Assert-Contract ($relayInstallerText -notmatch 'default_provider_id') "relay_installer_has_no_core_provider_default"
+Assert-Contract ($relayInstallerText -notmatch 'provider_profiles') "relay_installer_has_no_fixed_provider_roster"
 Assert-Contract ($relayInstallerText -notmatch 'max_width\s*=') "relay_installer_does_not_freeze_global_width"
 Assert-Contract ($relayWorkerText -match 'RELAY_WORKER_MODEL_IDENTITY_MISMATCH') "relay_checks_observed_model"
 Assert-Contract ($relayWorkerText -match 'RELAY_WORKER_POSITIVE_USAGE_REQUIRED') "relay_requires_positive_usage"
@@ -219,10 +264,25 @@ Assert-Contract ($relayWorkerText -match 'RELAY_WORKER_CHAT_TERMINAL_NOT_ACCEPTE
 Assert-Contract ($relayWorkerText -match 'RELAY_WORKER_RESPONSES_TERMINAL_NOT_ACCEPTED') "relay_requires_terminal_responses_response"
 Assert-Contract ($relayWorkerText -match 'RELAY_WORKER_EVIDENCE_ID_CONFLICT') "relay_evidence_is_immutable"
 Assert-Contract ($relayWorkerText -match 'RELAY_WORKER_BASE_URL_NOT_ADMITTED') "relay_restricts_authorization_target"
+Assert-Contract ([bool]$relayContract.fixed_cognitive_interface.provider_neutral_core) "relay_cognitive_core_provider_neutral"
+Assert-Contract ([bool]$relayContract.fixed_cognitive_interface.provider_adapters_are_optional) "relay_provider_adapters_optional"
+Assert-Contract ([bool]$relayContract.fixed_cognitive_interface.present_adapters_require_self_recovery_metadata) "relay_adapter_recovery_metadata_required"
+Assert-Contract ([string]$relayContract.fixed_cognitive_interface.worker_output_authority -eq "candidate_only") "relay_cognitive_output_candidate_only"
+Assert-Contract ([string]$relayContract.fixed_cognitive_interface.repair_authority -eq "owner_only") "relay_repair_authority_owner_only"
+Assert-Contract ($relayWorkerText -match 'RELAY_WORKER_COGNITIVE_AUDIT_CONTRACT_INCOMPLETE') "relay_cognitive_contract_fails_closed"
+Assert-Contract ($relayWorkerText -match 'CANNOT_ACCESS_FS=true') "relay_cognitive_prompt_denies_filesystem"
+Assert-Contract ($relayWorkerText -match 'RELAY_WORKER_JSON_SCHEMA_VALIDATION_FAILED') "relay_cognitive_output_schema_gate"
+Assert-Contract ($relayWorkerText -notmatch '\[string\]\$Model\s*=|\[string\]\$BaseUrl\s*=|\[string\]\$KeyPath\s*=') "relay_worker_requires_runtime_provider_binding"
+Assert-Contract ($relayWorkerText -notmatch '\$isSss|\$isLucis|\$isDeepSeek|\$isDashScope|\$isBailian') "relay_worker_has_no_provider_identity_branches"
+Assert-Contract ($relayWorkerText -match 'RELAY_WORKER_PROVIDER_CONTRACT_HASH_MISMATCH') "relay_worker_hash_binds_provider_contract"
+Assert-Contract ($relayWorkerText -match 'provider_contract_sha256\s*=\s*\$providerContractSha256') "relay_worker_records_provider_contract_identity"
 $relayDispatchText = Get-Content -LiteralPath (Join-Path $repoRoot "grok-admin-bridge/Invoke-CodexDispatchOpenAiRelayWorker.ps1") -Raw -Encoding UTF8
 Assert-Contract ($relayDispatchText -match '\[ValidateRange\(1, 1\)\]') "relay_width_is_truthfully_one"
+Assert-Contract ($relayDispatchText -notmatch '\[string\]\$Model\s*=|\[string\]\$BaseUrl\s*=|\[string\]\$KeyPath\s*=') "relay_dispatch_requires_runtime_provider_binding"
+Assert-Contract ($relayDispatchText -match 'RELAY_DISPATCH_PROVIDER_CONTRACT_HASH_MISMATCH') "relay_dispatch_hash_binds_provider_contract_before_lane_start"
 Assert-Contract ($relayDispatchText -match 'result_hash_readback') "relay_dispatch_rehashes_result"
 Assert-Contract ($relayDispatchText -match 'raw_hash_readback') "relay_dispatch_rehashes_raw_response"
+Assert-Contract ($relayDispatchText -match 'RELAY_DISPATCH_COGNITIVE_AUDIT_CONTRACT_INCOMPLETE') "relay_dispatch_requires_context_and_schema"
 
 $workerText = Get-Content -LiteralPath (Join-Path $repoRoot "grok-admin-bridge/Invoke-GrokComposer25Worker.ps1") -Raw -Encoding UTF8
 $poolText = Get-Content -LiteralPath (Join-Path $repoRoot "grok-admin-bridge/Invoke-GrokWorkerPool.ps1") -Raw -Encoding UTF8
@@ -545,7 +605,7 @@ if ($isGrok45) {
     continuous_or_resume_switches_leg = [bool]$config.canonical_route.continuity.continuous_or_resume_switches_leg
     worker_selection = [string]$config.model_worker_routing.selection
     available_workers = @($config.model_worker_routing.available_workers)
-    soft_preference_when_close = [string]$config.model_worker_routing.soft_preference_when_close
+    tie_breaker_when_close = [string]$config.model_worker_routing.tie_breaker_when_close
     grok_lane_model = [string]$config.grok_lane.model
     dynamic_width_policy = [string]$config.model_worker_routing.width_policy
     leg_a_is_unconditional_default = [bool]$config.bounded_worker_pool.is_unconditional_default

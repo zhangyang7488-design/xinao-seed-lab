@@ -8,7 +8,7 @@
     "authority": "bridge.config.json#model_worker_routing",
     "selection": "dynamic_positive_net_benefit",
     "available": ["grok", "openai_relay", "codex_agents", "combined"],
-    "soft_preference_when_close": "openai_relay"
+    "tie_breaker_when_close": "dynamic_current_task_fit_health_cost_and_evidence"
   },
   "grok_lane": {
     "provider": "grok",

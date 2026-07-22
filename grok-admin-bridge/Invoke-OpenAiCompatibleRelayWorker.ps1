@@ -1,11 +1,11 @@
 #Requires -Version 5.1
 <#
 .SYNOPSIS
-  Single-shot OpenAI-compatible relay worker (A-leg peer, not Grok pool, not Temporal).
+  Single-shot provider-neutral OpenAI-compatible cognitive worker.
 .DESCRIPTION
-  Codex (or Grok 4.5) can direct-call this like a bounded host worker.
-  Auth is a swappable key FILE HANDLE — never hardcode secrets in the script.
-  Default: ssstoken OpenAI-compatible gateway. Not 333 mainline. Not Docker houtai-gongren.
+  A host supervisor calls this with explicit provider, model and key-file
+  bindings. Auth is a swappable key FILE HANDLE; the worker has no local tool
+  authority and never hardcodes secrets.
 .EXAMPLE
   .\Invoke-OpenAiCompatibleRelayWorker.ps1 -Prompt "Reply only: RELAY_OK" -Model gpt-5.6-sol -MinResultChars 1 -RequiredResultMarkers RELAY_OK
   .\Invoke-OpenAiCompatibleRelayWorker.ps1 -PromptFile .\task.md -Model gpt-5.4 -ApiStyle responses
@@ -13,11 +13,29 @@
 param(
     [string]$Prompt = "",
     [string]$PromptFile = "",
-    [string]$Model = "gpt-5.6-sol",
+    [ValidateSet("general_cognitive", "cognitive_audit")]
+    [string]$WorkClass = "general_cognitive",
+    [Parameter(Mandatory=$true)]
+    [ValidateNotNullOrEmpty()]
+    [string]$ProviderContractPath,
+    [Parameter(Mandatory=$true)]
+    [ValidatePattern('^[0-9a-fA-F]{64}$')]
+    [string]$ExpectedProviderContractSha256,
+    [string]$ContextManifestFile = "",
+    [string]$ExpectedContextManifestSha256 = "",
+    [string]$JsonSchemaPath = "",
+    [string]$ExpectedJsonSchemaSha256 = "",
+    [Parameter(Mandatory=$true)]
+    [ValidateNotNullOrEmpty()]
+    [string]$Model,
     [ValidateSet("chat_completions", "responses")]
     [string]$ApiStyle = "chat_completions",
-    [string]$BaseUrl = "https://api.ssstoken.net/v1",
-    [string]$KeyPath = "C:\Users\xx363\私钥\Codex-api.txt",
+    [Parameter(Mandatory=$true)]
+    [ValidateNotNullOrEmpty()]
+    [string]$BaseUrl,
+    [Parameter(Mandatory=$true)]
+    [ValidateNotNullOrEmpty()]
+    [string]$KeyPath,
     [string]$PythonExe = "",
     [string]$EvidenceDir = "D:\XINAO_RESEARCH_RUNTIME\state\openai_relay_worker",
     [ValidateRange(1, 200000)]
@@ -47,6 +65,18 @@ function Write-Utf8File([string]$Path, [string]$Text) {
     [IO.File]::WriteAllText($Path, $Text, $utf8)
 }
 
+function Get-FileSha256Lower([string]$Path) {
+    return (Get-FileHash -LiteralPath $Path -Algorithm SHA256).Hash.ToLowerInvariant()
+}
+
+function Get-BytesSha256Lower([byte[]]$Bytes) {
+    $hasher = [Security.Cryptography.SHA256]::Create()
+    try {
+        return (([BitConverter]::ToString($hasher.ComputeHash($Bytes))) -replace "-", "").ToLowerInvariant()
+    }
+    finally { $hasher.Dispose() }
+}
+
 function Get-RelayFailureCode([System.Management.Automation.ErrorRecord]$Record) {
     $message = [string]$Record.Exception.Message
     $owned = [regex]::Match($message, 'RELAY_WORKER_[A-Z0-9_]+')
@@ -72,6 +102,109 @@ if (-not [string]::IsNullOrWhiteSpace($PromptFile)) {
 if ([string]::IsNullOrWhiteSpace($Prompt)) {
     throw "RELAY_WORKER_PROMPT_EMPTY"
 }
+
+$resolvedProviderContract = [IO.Path]::GetFullPath($ProviderContractPath)
+if (-not (Test-Path -LiteralPath $resolvedProviderContract -PathType Leaf)) {
+    throw "RELAY_WORKER_PROVIDER_CONTRACT_MISSING: $resolvedProviderContract"
+}
+$providerContractSha256 = Get-FileSha256Lower $resolvedProviderContract
+if (-not [string]::Equals(
+    $providerContractSha256,
+    $ExpectedProviderContractSha256.ToLowerInvariant(),
+    [StringComparison]::Ordinal
+)) {
+    throw "RELAY_WORKER_PROVIDER_CONTRACT_HASH_MISMATCH"
+}
+try {
+    $providerContract = Read-Utf8Text $resolvedProviderContract | ConvertFrom-Json
+}
+catch {
+    throw "RELAY_WORKER_PROVIDER_CONTRACT_INVALID_JSON"
+}
+if ([string]$providerContract.module_role -cne "replaceable_provider_binding") {
+    throw "RELAY_WORKER_PROVIDER_CONTRACT_ROLE_INVALID"
+}
+$providerId = [string]$providerContract.provider_id
+if ([string]::IsNullOrWhiteSpace($providerId)) {
+    throw "RELAY_WORKER_PROVIDER_CONTRACT_ID_MISSING"
+}
+$admittedExactBaseUrls = @($providerContract.admission.exact_https_base_urls)
+$admittedHostPatterns = @($providerContract.admission.https_host_patterns)
+if ($admittedExactBaseUrls.Count -eq 0 -and $admittedHostPatterns.Count -eq 0) {
+    throw "RELAY_WORKER_PROVIDER_CONTRACT_ADMISSION_EMPTY"
+}
+if ($providerContract.model_identity.allow_version_suffix_prefix_match -notin @($true, $false)) {
+    throw "RELAY_WORKER_PROVIDER_CONTRACT_MODEL_IDENTITY_INVALID"
+}
+if ($null -eq $providerContract.model_identity.accepted_alias_pairs) {
+    throw "RELAY_WORKER_PROVIDER_CONTRACT_MODEL_ALIASES_MISSING"
+}
+
+$cognitiveAudit = $WorkClass -ceq "cognitive_audit"
+$resolvedContextManifest = ""
+$contextManifestSha256 = ""
+$contextSha256 = ""
+$resolvedJsonSchema = ""
+$jsonSchemaSha256 = ""
+$schemaInstanceValid = $null
+if ($cognitiveAudit) {
+    if ([string]::IsNullOrWhiteSpace($ContextManifestFile) -or
+        [string]::IsNullOrWhiteSpace($ExpectedContextManifestSha256) -or
+        [string]::IsNullOrWhiteSpace($JsonSchemaPath) -or
+        [string]::IsNullOrWhiteSpace($ExpectedJsonSchemaSha256)) {
+        throw "RELAY_WORKER_COGNITIVE_AUDIT_CONTRACT_INCOMPLETE"
+    }
+    $resolvedContextManifest = [IO.Path]::GetFullPath($ContextManifestFile)
+    if (-not (Test-Path -LiteralPath $resolvedContextManifest -PathType Leaf)) {
+        throw "RELAY_WORKER_CONTEXT_MANIFEST_MISSING"
+    }
+    $contextManifestSha256 = Get-FileSha256Lower $resolvedContextManifest
+    if ($ExpectedContextManifestSha256 -notmatch '^[0-9a-fA-F]{64}$' -or
+        $contextManifestSha256 -cne $ExpectedContextManifestSha256.ToLowerInvariant()) {
+        throw "RELAY_WORKER_CONTEXT_MANIFEST_HASH_MISMATCH"
+    }
+    $contextRaw = [IO.File]::ReadAllText($resolvedContextManifest, $utf8)
+    try { $contextManifest = $contextRaw | ConvertFrom-Json -ErrorAction Stop }
+    catch { throw "RELAY_WORKER_CONTEXT_MANIFEST_INVALID_JSON" }
+    if ([string]$contextManifest.schema_version -cne "xinao.context_slice_manifest.v1" -or
+        $contextManifest.authority -ne $false -or
+        $contextManifest.completion_claim_allowed -ne $false -or
+        @($contextManifest.sources).Count -lt 1 -or
+        [string]$contextManifest.context_sha256 -notmatch '^[0-9a-f]{64}$') {
+        throw "RELAY_WORKER_CONTEXT_MANIFEST_CONTRACT_INVALID"
+    }
+    $contextSha256 = [string]$contextManifest.context_sha256
+
+    $resolvedJsonSchema = [IO.Path]::GetFullPath($JsonSchemaPath)
+    if (-not (Test-Path -LiteralPath $resolvedJsonSchema -PathType Leaf)) {
+        throw "RELAY_WORKER_JSON_SCHEMA_MISSING"
+    }
+    $jsonSchemaSha256 = Get-FileSha256Lower $resolvedJsonSchema
+    if ($ExpectedJsonSchemaSha256 -notmatch '^[0-9a-fA-F]{64}$' -or
+        $jsonSchemaSha256 -cne $ExpectedJsonSchemaSha256.ToLowerInvariant()) {
+        throw "RELAY_WORKER_JSON_SCHEMA_HASH_MISMATCH"
+    }
+    try { $null = [IO.File]::ReadAllText($resolvedJsonSchema, $utf8) | ConvertFrom-Json -ErrorAction Stop }
+    catch { throw "RELAY_WORKER_JSON_SCHEMA_INVALID_JSON" }
+
+    $roleContract = @"
+XINAO_COGNITIVE_AUDIT_CONTRACT_V1
+WORK_CLASS=cognitive_audit
+CANNOT_ACCESS_FS=true
+TOOL_EXECUTION_ALLOWED=false
+INPUT_MODE=host_embedded_hash_bound
+OUTPUT_AUTHORITY=candidate_only
+INDEPENDENT_VALIDATION_CLAIM_ALLOWED=false
+REPAIR_AUTHORIZED=false
+Base every claim only on the embedded evidence package. Cite its exact path, source sha256, line range, and content sha256. If the package is insufficient, return EVIDENCE_INCOMPLETE. Return only one JSON object conforming to the bound output schema. Never emit REPAIR_REQUIRED or a worktree mutation instruction as authority.
+"@
+    $Prompt = $roleContract.Trim() + "`n`nTASK`n" + $Prompt.Trim() + "`n`nHASH_BOUND_EVIDENCE_PACKAGE`n" + $contextRaw.Trim()
+}
+elseif (-not [string]::IsNullOrWhiteSpace($ContextManifestFile) -or
+        -not [string]::IsNullOrWhiteSpace($ExpectedContextManifestSha256)) {
+    throw "RELAY_WORKER_CONTEXT_MANIFEST_REQUIRES_COGNITIVE_AUDIT"
+}
+$promptSha256 = Get-BytesSha256Lower $utf8.GetBytes($Prompt)
 if (-not (Test-Path -LiteralPath $KeyPath -PathType Leaf)) {
     throw "RELAY_WORKER_KEY_PATH_MISSING: $KeyPath"
 }
@@ -97,11 +230,6 @@ if ($KeyPath -match '(?i)\.csv$') {
         throw "RELAY_WORKER_CSV_APIKEY_MISSING: $KeyPath"
     }
     $apiKey = $csvKey
-    if ([string]::IsNullOrWhiteSpace($BaseUrl) -or $BaseUrl -eq "https://api.ssstoken.net/v1") {
-        if (-not [string]::IsNullOrWhiteSpace($csvOpenAiCompatible)) {
-            $BaseUrl = $csvOpenAiCompatible
-        }
-    }
 }
 # allow "KEY=sk-..." or pure sk- / sk-ws- (DashScope workspace keys)
 if ($apiKey -match '(?im)^\s*(?:OPENAI_API_KEY|API_KEY|KEY|apiKey)\s*=\s*(.+)\s*$') {
@@ -112,56 +240,54 @@ if ($apiKey -notmatch '^sk-') {
 }
 
 $BaseUrl = $BaseUrl.TrimEnd('/')
-if ($BaseUrl -notmatch '/v1$' -and $BaseUrl -notmatch '/compatible-mode/v1$') {
-    # accept root gateway; normalize known hosts to OpenAI-compatible paths
-    if ($BaseUrl -match 'ssstoken\.net/?$') {
-        $BaseUrl = "https://api.ssstoken.net/v1"
-    }
-    elseif ($BaseUrl -match 'lucisapi\.ai/?$') {
-        $BaseUrl = "https://lucisapi.ai/v1"
-    }
-    elseif ($BaseUrl -match 'api\.deepseek\.com/?$') {
-        $BaseUrl = "https://api.deepseek.com/v1"
-    }
-}
 $baseUri = $null
 if (-not [Uri]::TryCreate($BaseUrl, [UriKind]::Absolute, [ref]$baseUri)) {
     throw "RELAY_WORKER_BASE_URL_INVALID"
 }
-function Test-RelayAdmittedHttpsBase([Uri]$Uri, [string]$HostExact, [string]$PathExact) {
-    return (
-        $Uri.Scheme -ceq "https" -and
-        $Uri.Host -ceq $HostExact -and
-        $Uri.Port -eq 443 -and
-        [string]::IsNullOrEmpty($Uri.UserInfo) -and
-        $Uri.AbsolutePath.TrimEnd('/') -ceq $PathExact -and
-        $Uri.Query.Length -eq 0 -and
-        $Uri.Fragment.Length -eq 0
-    )
-}
 $pathNorm = $baseUri.AbsolutePath.TrimEnd('/')
-$isSss = Test-RelayAdmittedHttpsBase $baseUri "api.ssstoken.net" "/v1"
-$isLucis = (Test-RelayAdmittedHttpsBase $baseUri "lucisapi.ai" "/v1") -or (Test-RelayAdmittedHttpsBase $baseUri "www.lucisapi.ai" "/v1")
-$isDeepSeek = (Test-RelayAdmittedHttpsBase $baseUri "api.deepseek.com" "/v1") -or (
+$isSecureBaseShape = (
     $baseUri.Scheme -ceq "https" -and
-    $baseUri.Host -ceq "api.deepseek.com" -and
     $baseUri.Port -eq 443 -and
     [string]::IsNullOrEmpty($baseUri.UserInfo) -and
-    ($pathNorm -ceq "" -or $pathNorm -ceq "/" -or $pathNorm -ceq "/v1") -and
     $baseUri.Query.Length -eq 0 -and
     $baseUri.Fragment.Length -eq 0
 )
-$isDashScopeDefault = Test-RelayAdmittedHttpsBase $baseUri "dashscope.aliyuncs.com" "/compatible-mode/v1"
-$isBailianWorkspace = (
-    $baseUri.Scheme -ceq "https" -and
-    $baseUri.Port -eq 443 -and
-    [string]::IsNullOrEmpty($baseUri.UserInfo) -and
-    $baseUri.Query.Length -eq 0 -and
-    $baseUri.Fragment.Length -eq 0 -and
-    $pathNorm -ceq "/compatible-mode/v1" -and
-    $baseUri.Host -match '^[a-z0-9-]+\.cn-beijing\.maas\.aliyuncs\.com$'
-)
-$isApprovedProductionProfile = $isSss -or $isLucis -or $isDeepSeek -or $isDashScopeDefault -or $isBailianWorkspace
+$isApprovedProductionProfile = $false
+if ($isSecureBaseShape) {
+    foreach ($exactBaseUrl in $admittedExactBaseUrls) {
+        if ([string]::Equals(
+            $BaseUrl,
+            ([string]$exactBaseUrl).TrimEnd('/'),
+            [StringComparison]::Ordinal
+        )) {
+            $isApprovedProductionProfile = $true
+            break
+        }
+    }
+    if (-not $isApprovedProductionProfile) {
+        foreach ($pattern in $admittedHostPatterns) {
+            $hostRegex = [string]$pattern.host_regex
+            $requiredPath = ([string]$pattern.path).TrimEnd('/')
+            if ([string]::IsNullOrWhiteSpace($hostRegex) -or [string]::IsNullOrWhiteSpace($requiredPath)) {
+                throw "RELAY_WORKER_PROVIDER_CONTRACT_ADMISSION_PATTERN_INVALID"
+            }
+            try {
+                $hostMatches = [regex]::IsMatch(
+                    $baseUri.Host,
+                    $hostRegex,
+                    [Text.RegularExpressions.RegexOptions]::CultureInvariant
+                )
+            }
+            catch {
+                throw "RELAY_WORKER_PROVIDER_CONTRACT_HOST_REGEX_INVALID"
+            }
+            if ($hostMatches -and $pathNorm -ceq $requiredPath) {
+                $isApprovedProductionProfile = $true
+                break
+            }
+        }
+    }
+}
 $isLoopbackTestProfile = (
     $AllowInsecureLoopbackForTest.IsPresent -and
     $baseUri.Scheme -ceq "http" -and
@@ -173,17 +299,15 @@ if (-not $isApprovedProductionProfile -and -not $isLoopbackTestProfile) {
     throw "RELAY_WORKER_BASE_URL_NOT_ADMITTED: $BaseUrl"
 }
 
-$providerId = "openai_compatible_relay"
-$profileRef = $baseUri.Host + $pathNorm
-if ($isSss) { $providerId = "ssstoken_openai_compatible_relay" }
-elseif ($isLucis) { $providerId = "lucis_openai_compatible_relay" }
-elseif ($isDeepSeek) { $providerId = "deepseek_openai_compatible" }
-elseif ($isDashScopeDefault -or $isBailianWorkspace) { $providerId = "qwen_bailian_openai_compatible" }
-elseif ($isLoopbackTestProfile) { $providerId = "loopback_openai_compatible_test" }
+$profileRef = $resolvedProviderContract + "#" + $providerContractSha256
 
 $sdkWire = Join-Path $PSScriptRoot "openai_sdk_wire.py"
 if (-not (Test-Path -LiteralPath $sdkWire -PathType Leaf)) {
     throw "RELAY_WORKER_SDK_WIRE_MISSING: $sdkWire"
+}
+$cognitiveValidator = Join-Path $PSScriptRoot "validate_cognitive_audit_contract.py"
+if ($cognitiveAudit -and -not (Test-Path -LiteralPath $cognitiveValidator -PathType Leaf)) {
+    throw "RELAY_WORKER_COGNITIVE_VALIDATOR_MISSING"
 }
 if ([string]::IsNullOrWhiteSpace($PythonExe)) {
     if (-not [string]::IsNullOrWhiteSpace($env:XINAO_OPENAI_SDK_PYTHON)) {
@@ -199,6 +323,19 @@ if (-not (Test-Path -LiteralPath $PythonExe -PathType Leaf)) {
         throw "RELAY_WORKER_SDK_PYTHON_MISSING: $PythonExe"
     }
     $PythonExe = $pythonCommand.Source
+}
+
+if ($cognitiveAudit) {
+    $schemaCheckOutput = @(
+        & $PythonExe $cognitiveValidator `
+            --context $resolvedContextManifest `
+            --expected-context-sha256 $contextManifestSha256 `
+            --schema $resolvedJsonSchema `
+            --expected-schema-sha256 $jsonSchemaSha256 2>&1
+    )
+    if ($LASTEXITCODE -ne 0) {
+        throw "RELAY_WORKER_COGNITIVE_CONTRACT_PREFLIGHT_FAILED"
+    }
 }
 
 function Invoke-RelaySdk([string]$RequestJson) {
@@ -309,6 +446,8 @@ $meta = [ordered]@{
     completion_claim_allowed = $false
     provider_id = $providerId
     profile_ref = $profileRef
+    provider_contract_path = $resolvedProviderContract
+    provider_contract_sha256 = $providerContractSha256
     selected_model = $Model
     api_style = $ApiStyle
     base_url = $BaseUrl
@@ -321,8 +460,23 @@ $meta = [ordered]@{
     min_result_chars = $MinResultChars
     required_result_markers = @($RequiredResultMarkers)
     prompt_chars = $Prompt.Length
+    prompt_sha256 = $promptSha256
+    work_class = $WorkClass
+    cognitive_audit_contract_active = [bool]$cognitiveAudit
+    cannot_access_filesystem = $true
+    tool_execution_allowed = $false
+    input_mode = if ($cognitiveAudit) { "host_embedded_hash_bound" } else { "caller_prompt" }
+    context_manifest_path = $resolvedContextManifest
+    context_manifest_sha256 = $contextManifestSha256
+    context_sha256 = $contextSha256
+    json_schema_path = $resolvedJsonSchema
+    json_schema_sha256 = $jsonSchemaSha256
+    schema_instance_valid = $schemaInstanceValid
+    evaluator_output_authority = "candidate_only"
+    independent_validation_claim_allowed = $false
+    repair_authorized = $false
     status = $status
-    note_cn = "A腿同级 peer：Codex可直调；密钥只读文件句柄可热换；非 Grok WorkerPool、非 Temporal/houtai-gongren"
+    note_cn = "固定中性认知入口；provider 由哈希绑定的可替换合同注入，结果始终是候选。"
 }
 
 Write-Utf8File $metaPath ($meta | ConvertTo-Json -Depth 8)
@@ -366,27 +520,27 @@ try {
     if ([string]::IsNullOrWhiteSpace($observedModel)) {
         throw "RELAY_WORKER_OBSERVED_MODEL_MISSING"
     }
-    # Exact identity remains separately observable. Provider-specific aliases
-    # may satisfy the acceptance contract without falsifying exact equality.
-    $aliasPairs = @(
-        @("deepseek-chat", "deepseek-v4-flash"),
-        @("deepseek-reasoner", "deepseek-v4-pro"),
-        @("deepseek-reasoner", "deepseek-reasoner")
-    )
+    # Exact identity remains separately observable. Any allowed alias is data
+    # in the hash-bound provider contract, never a provider branch in core.
+    $aliasPairs = @($providerContract.model_identity.accepted_alias_pairs)
     $aliasOk = $false
-    if ($isDeepSeek) {
-        foreach ($pair in $aliasPairs) {
-            if (($Model -ceq $pair[0] -and $observedModel -ceq $pair[1]) -or
-                ($Model -ceq $pair[1] -and $observedModel -ceq $pair[0])) {
-                $aliasOk = $true
-                break
-            }
+    foreach ($pair in $aliasPairs) {
+        if (@($pair).Count -ne 2) {
+            throw "RELAY_WORKER_PROVIDER_CONTRACT_MODEL_ALIAS_INVALID"
+        }
+        if (($Model -ceq [string]$pair[0] -and $observedModel -ceq [string]$pair[1]) -or
+            ($Model -ceq [string]$pair[1] -and $observedModel -ceq [string]$pair[0])) {
+            $aliasOk = $true
+            break
         }
     }
     $selectedEqualsObserved = $observedModel -ceq $Model
-    $modelIdentityAccepted = $aliasOk -or $selectedEqualsObserved -or
+    $prefixMatchAllowed = $providerContract.model_identity.allow_version_suffix_prefix_match -eq $true
+    $prefixMatch = $prefixMatchAllowed -and (
         ($observedModel.StartsWith($Model + "-", [StringComparison]::Ordinal)) -or
         ($Model.StartsWith($observedModel + "-", [StringComparison]::Ordinal))
+    )
+    $modelIdentityAccepted = $aliasOk -or $selectedEqualsObserved -or $prefixMatch
     if (-not $modelIdentityAccepted) {
         throw "RELAY_WORKER_MODEL_IDENTITY_MISMATCH: selected=$Model observed=$observedModel"
     }
@@ -460,6 +614,20 @@ try {
     }
 
     Write-Utf8File $resultPath $textOut
+    if ($cognitiveAudit) {
+        $schemaValidationOutput = @(
+            & $PythonExe $cognitiveValidator `
+                --context $resolvedContextManifest `
+                --expected-context-sha256 $contextManifestSha256 `
+                --schema $resolvedJsonSchema `
+                --expected-schema-sha256 $jsonSchemaSha256 `
+                --result $resultPath 2>&1
+        )
+        if ($LASTEXITCODE -ne 0) {
+            throw "RELAY_WORKER_JSON_SCHEMA_VALIDATION_FAILED"
+        }
+        $schemaInstanceValid = $true
+    }
     $resultSha256 = (Get-FileHash -LiteralPath $resultPath -Algorithm SHA256).Hash.ToLowerInvariant()
     $status = "ok"
 }
@@ -499,6 +667,7 @@ $meta.stop_reason = $stopReason
 $meta.result_chars = if ($textOut) { $textOut.Length } else { 0 }
 $meta.result_path = $resultPath
 $meta.result_sha256 = $resultSha256
+$meta.schema_instance_valid = $schemaInstanceValid
 $meta.raw_response_path = $rawPath
 $meta.raw_response_sha256 = $rawResponseSha256
 $meta.result_excerpt = if ($textOut.Length -gt 500) { $textOut.Substring(0, 500) } else { $textOut }

@@ -22,9 +22,13 @@
     "grok_cross_window_golden_path.v1.json"
   ],
   "endpoint_contracts": [
-    "grok_openai_compatible_relay_worker.v1.json",
+    "grok_openai_compatible_relay_worker.v1.json"
+  ],
+  "optional_endpoint_contracts": [
     "grok_qwen_bailian_relay_worker.v1.json",
-    "grok_deepseek_relay_worker.v1.json"
+    "grok_deepseek_relay_worker.v1.json",
+    "grok_lucis_relay_worker.v1.json",
+    "grok_ssstoken_relay_worker.v1.json"
   ],
   "generated_state_root": "D:\\XINAO_RESEARCH_RUNTIME",
   "completion_claim_allowed": false

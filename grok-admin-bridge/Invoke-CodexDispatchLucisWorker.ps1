@@ -1,14 +1,10 @@
 #Requires -Version 5.1
 <#
 .SYNOPSIS
-  Thin DeepSeek binding for the fixed OpenAI-compatible cognitive entry.
+  Thin Lucis binding for the fixed OpenAI-compatible cognitive entry.
 .DESCRIPTION
-  Thin profile over Invoke-CodexDispatchOpenAiRelayWorker.
-  Default key handle = single active key (not multi-key file).
-  It supplies replaceable provider defaults only. Each call is one complete
-  package; the neutral core owns work identity and audit semantics.
-.EXAMPLE
-  .\Invoke-CodexDispatchDeepSeekWorker.ps1 -WorkKey ds:smoke -Prompt "Reply only: DS_OK" -Model deepseek-chat -RequiredResultMarkers DS_OK
+  Supplies replaceable provider defaults only. Work identity, cognitive audit
+  contract, evidence ledger, and Owner authority remain in the neutral core.
 #>
 param(
     [Parameter(Mandatory = $true)]
@@ -25,12 +21,11 @@ param(
     [string]$ExpectedContextManifestSha256 = "",
     [string]$JsonSchemaPath = "",
     [string]$ExpectedJsonSchemaSha256 = "",
-    # 默认 deepseek-chat（服务端常映射为 deepseek-v4-flash）；也可显式 deepseek-v4-flash / deepseek-v4-pro
-    [string]$Model = "deepseek-chat",
+    [string]$Model = "gpt-5.6-sol",
     [ValidateSet("chat_completions", "responses")]
     [string]$ApiStyle = "chat_completions",
-    [string]$BaseUrl = "https://api.deepseek.com/v1",
-    [string]$KeyPath = "C:\Users\xx363\私钥\DeepSeek-api-key-active.txt",
+    [string]$BaseUrl = "https://lucisapi.ai/v1",
+    [string]$KeyPath = "C:\Users\xx363\私钥\lucis-Codex-api.txt",
     [string]$PythonExe = "",
     [string]$RuntimeRoot = "D:\XINAO_RESEARCH_RUNTIME",
     [ValidateRange(1, 200000)]
@@ -45,18 +40,17 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
-$bridge = $PSScriptRoot
-$dispatch = Join-Path $bridge "Invoke-CodexDispatchOpenAiRelayWorker.ps1"
+$dispatch = Join-Path $PSScriptRoot "Invoke-CodexDispatchOpenAiRelayWorker.ps1"
 if (-not (Test-Path -LiteralPath $dispatch -PathType Leaf)) {
     throw "RELAY_DISPATCH_MISSING: $dispatch"
 }
 if (-not (Test-Path -LiteralPath $KeyPath -PathType Leaf)) {
-    throw "DEEPSEEK_KEY_PATH_MISSING: $KeyPath"
+    throw "LUCIS_KEY_PATH_MISSING: $KeyPath"
 }
-$providerContractPath = Join-Path $PSScriptRoot "grok_deepseek_relay_worker.v1.json"
+$providerContractPath = Join-Path $PSScriptRoot "grok_lucis_relay_worker.v1.json"
 $providerContractSha256 = (Get-FileHash -LiteralPath $providerContractPath -Algorithm SHA256).Hash.ToLowerInvariant()
 
-$args = @{
+$arguments = @{
     N = 1
     WorkKey = $WorkKey
     Attempt = $Attempt
@@ -82,11 +76,11 @@ $args = @{
     Quiet = $Quiet
 }
 if (-not [string]::IsNullOrWhiteSpace($PromptFile)) {
-    $args.PromptFile = $PromptFile
+    $arguments.PromptFile = $PromptFile
 }
 else {
-    $args.Prompt = $Prompt
+    $arguments.Prompt = $Prompt
 }
 
-& $dispatch @args
+& $dispatch @arguments
 exit $LASTEXITCODE

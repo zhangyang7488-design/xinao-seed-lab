@@ -2,9 +2,22 @@
   "schema_version": "xinao.deepseek_relay_worker.v1",
   "sentinel": "SENTINEL:DEEPSEEK_RELAY_WORKER_CONTRACT",
   "status": "available_a_leg_peer",
+  "module_role": "replaceable_provider_binding",
+  "core_entry": "Invoke-CodexDispatchOpenAiRelayWorker.ps1",
   "transport_id": "direct-openai-compatible-relay",
+  "admission": {
+    "exact_https_base_urls": ["https://api.deepseek.com/v1"],
+    "https_host_patterns": []
+  },
+  "model_identity": {
+    "allow_version_suffix_prefix_match": true,
+    "accepted_alias_pairs": [
+      ["deepseek-chat", "deepseek-v4-flash"],
+      ["deepseek-reasoner", "deepseek-v4-pro"],
+      ["deepseek-reasoner", "deepseek-reasoner"]
+    ]
+  },
   "provider_id": "deepseek_openai_compatible",
-  "peer_of": "Invoke-CodexDispatchGrokWorkerPool / direct-grok-worker-pool",
   "not_333_mainline": true,
   "completion_claim_allowed": false,
   "auth": {
@@ -19,6 +32,18 @@
     "package_width": 1,
     "global_concurrency": "dynamic_external_supervisor_not_fixed_here"
   },
+  "recovery_metadata": {
+    "known_model_candidates_revalidate_against_current_provider_catalog": [
+      "deepseek-chat",
+      "deepseek-v4-flash",
+      "deepseek-v4-pro"
+    ],
+    "known_observed_alias": {
+      "requested": "deepseek-chat",
+      "observed": "deepseek-v4-flash"
+    },
+    "rate_limit_semantics": "provider_failure_or_429_degrades_only_this_binding_not_the_core_or_other_workers"
+  },
   "files": [
     "Invoke-CodexDispatchDeepSeekWorker.ps1",
     "Invoke-CodexDispatchOpenAiRelayWorker.ps1",
@@ -26,5 +51,6 @@
     "grok_deepseek_relay_worker.v1.json"
   ],
   "invoke_example": ".\\Invoke-CodexDispatchDeepSeekWorker.ps1 -WorkKey ds:smoke -Prompt \"Reply only: DS_OK\" -Model deepseek-chat -RequiredResultMarkers DS_OK",
-  "evidence_root": "D:\\XINAO_RESEARCH_RUNTIME\\state\\openai_relay_worker"
+  "evidence_root": "D:\\XINAO_RESEARCH_RUNTIME\\state\\openai_relay_worker",
+  "deletion_semantics": "removes_only_this_provider_binding_not_core_contract_owner_authority_or_other_adapters"
 }
