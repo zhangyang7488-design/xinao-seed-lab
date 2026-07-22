@@ -8,17 +8,59 @@ param(
 
 $ErrorActionPreference = "Stop"
 $utf8 = [Text.UTF8Encoding]::new($false)
-$relativeFiles = @(
+$coreRelativeFiles = @(
     "grok-admin-bridge\Invoke-CodexDispatchOpenAiRelayWorker.ps1",
-    "grok-admin-bridge\Invoke-CodexDispatchQwenWorker.ps1",
-    "grok-admin-bridge\Invoke-CodexDispatchDeepSeekWorker.ps1",
     "grok-admin-bridge\Invoke-OpenAiCompatibleRelayWorker.ps1",
     "grok-admin-bridge\openai_sdk_wire.py",
-    "grok-admin-bridge\grok_openai_compatible_relay_worker.v1.json",
-    "grok-admin-bridge\grok_qwen_bailian_relay_worker.v1.json",
-    "grok-admin-bridge\grok_deepseek_relay_worker.v1.json"
+    "grok-admin-bridge\validate_cognitive_audit_contract.py",
+    "grok-admin-bridge\grok_openai_compatible_relay_worker.v1.json"
+)
+$optionalAdapterGroups = @(
+    [ordered]@{
+        adapter_id = "qwen_bailian_openai_compatible"
+        files = @(
+            "grok-admin-bridge\Invoke-CodexDispatchQwenWorker.ps1",
+            "grok-admin-bridge\grok_qwen_bailian_relay_worker.v1.json"
+        )
+    },
+    [ordered]@{
+        adapter_id = "deepseek_openai_compatible"
+        files = @(
+            "grok-admin-bridge\Invoke-CodexDispatchDeepSeekWorker.ps1",
+            "grok-admin-bridge\grok_deepseek_relay_worker.v1.json"
+        )
+    },
+    [ordered]@{
+        adapter_id = "lucis_openai_compatible"
+        files = @(
+            "grok-admin-bridge\Invoke-CodexDispatchLucisWorker.ps1",
+            "grok-admin-bridge\grok_lucis_relay_worker.v1.json"
+        )
+    },
+    [ordered]@{
+        adapter_id = "ssstoken_openai_compatible_relay"
+        files = @(
+            "grok-admin-bridge\Invoke-CodexDispatchSssTokenWorker.ps1",
+            "grok-admin-bridge\grok_ssstoken_relay_worker.v1.json"
+        )
+    }
 )
 $sourceLauncher = Join-Path $SourceRoot "launchers\Invoke-Codex-OpenAiRelayWorker.ps1"
+$includedOptionalAdapters = @()
+$includedOptionalAdapterFiles = @()
+foreach ($adapterGroup in $optionalAdapterGroups) {
+    $presentFiles = @($adapterGroup.files | Where-Object {
+        Test-Path -LiteralPath (Join-Path $SourceRoot $_) -PathType Leaf
+    })
+    if ($presentFiles.Count -notin @(0, @($adapterGroup.files).Count)) {
+        throw "CODEX_OPENAI_RELAY_OPTIONAL_ADAPTER_INCOMPLETE: $($adapterGroup.adapter_id)"
+    }
+    if ($presentFiles.Count -gt 0) {
+        $includedOptionalAdapters += [string]$adapterGroup.adapter_id
+        $includedOptionalAdapterFiles += @($adapterGroup.files)
+    }
+}
+$relativeFiles = @($coreRelativeFiles) + @($includedOptionalAdapterFiles)
 $allSources = @($sourceLauncher) + @($relativeFiles | ForEach-Object { Join-Path $SourceRoot $_ })
 foreach ($source in $allSources) {
     if (-not (Test-Path -LiteralPath $source -PathType Leaf)) {
@@ -69,12 +111,11 @@ $manifest = [ordered]@{
     dispatch_ref = $dispatchRef
     dispatch_sha256 = $dispatchSha256
     provider_scope = "runtime_selected_admitted_openai_compatible_profile"
-    default_provider_id = "ssstoken_openai_compatible_relay"
-    provider_profiles = @(
-        "ssstoken_openai_compatible_relay",
-        "qwen_bailian_openai_compatible",
-        "deepseek_openai_compatible"
-    )
+    core_files = @($coreRelativeFiles | ForEach-Object { $_.Replace('\', '/') })
+    optional_adapters_included = @($includedOptionalAdapters)
+    optional_adapter_files = @($includedOptionalAdapterFiles | ForEach-Object { $_.Replace('\', '/') })
+    fixed_work_classes = @("general_cognitive", "cognitive_audit")
+    module_binding_policy = "provider_and_adapter_identity_is_replaceable_without_changing_core_contract_or_owner_authority"
     package_width = 1
     global_concurrency = "dynamic_external_supervisor_not_fixed_here"
     authority = $false

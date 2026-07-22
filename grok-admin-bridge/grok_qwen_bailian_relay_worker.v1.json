@@ -2,10 +2,24 @@
   "schema_version": "xinao.qwen_bailian_relay_worker.v1",
   "sentinel": "SENTINEL:QWEN_BAILIAN_RELAY_WORKER_CONTRACT",
   "status": "available_a_leg_peer",
+  "module_role": "replaceable_provider_binding",
+  "core_entry": "Invoke-CodexDispatchOpenAiRelayWorker.ps1",
   "route_role": "a_leg_peer_not_grok_pool_not_temporal",
   "transport_id": "direct-openai-compatible-relay",
+  "admission": {
+    "exact_https_base_urls": ["https://dashscope.aliyuncs.com/compatible-mode/v1"],
+    "https_host_patterns": [
+      {
+        "host_regex": "^[a-z0-9-]+\\.cn-beijing\\.maas\\.aliyuncs\\.com$",
+        "path": "/compatible-mode/v1"
+      }
+    ]
+  },
+  "model_identity": {
+    "allow_version_suffix_prefix_match": true,
+    "accepted_alias_pairs": []
+  },
   "provider_id": "qwen_bailian_openai_compatible",
-  "peer_of": "Invoke-CodexDispatchGrokWorkerPool / direct-grok-worker-pool",
   "not_333_mainline": true,
   "completion_claim_allowed": false,
   "auth": {
@@ -19,6 +33,15 @@
     "package_width": 1,
     "global_concurrency": "dynamic_external_supervisor_not_fixed_here"
   },
+  "recovery_metadata": {
+    "base_url_source": "openAiCompatible field in the bound workspace CSV",
+    "known_model_candidates_revalidate_against_current_provider_catalog": [
+      "qwen-plus",
+      "qwen-max",
+      "qwen-turbo"
+    ],
+    "rate_limit_semantics": "provider_failure_or_429_degrades_only_this_binding_not_the_core_or_other_workers"
+  },
   "files": [
     "Invoke-CodexDispatchQwenWorker.ps1",
     "Invoke-CodexDispatchOpenAiRelayWorker.ps1",
@@ -27,5 +50,6 @@
   ],
   "invoke_example": ".\\Invoke-CodexDispatchQwenWorker.ps1 -WorkKey qwen:smoke -Prompt \"只回复: QWEN_OK\" -Model qwen-plus -RequiredResultMarkers QWEN_OK",
   "evidence_root": "D:\\XINAO_RESEARCH_RUNTIME\\state\\openai_relay_worker",
-  "note_cn": "千问 A 腿 peer：CSV 密钥句柄 + 业务空间 compatible-mode；单次调用承载一个整包，全局并发由主管按当前事实动态决定"
+  "note_cn": "可替换的千问 provider 绑定；单次调用承载一个整包，全局并发由主管按当前事实动态决定",
+  "deletion_semantics": "removes_only_this_provider_binding_not_core_contract_owner_authority_or_other_adapters"
 }

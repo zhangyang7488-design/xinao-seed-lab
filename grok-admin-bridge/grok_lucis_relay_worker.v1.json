@@ -1,0 +1,43 @@
+{
+  "schema_version": "xinao.lucis_relay_adapter.v1",
+  "status": "available_optional_adapter",
+  "module_role": "replaceable_provider_binding",
+  "core_entry": "Invoke-CodexDispatchOpenAiRelayWorker.ps1",
+  "provider_id": "lucis_openai_compatible",
+  "transport_id": "direct-openai-compatible-relay",
+  "admission": {
+    "exact_https_base_urls": ["https://lucisapi.ai/v1"],
+    "https_host_patterns": []
+  },
+  "model_identity": {
+    "allow_version_suffix_prefix_match": true,
+    "accepted_alias_pairs": []
+  },
+  "completion_claim_allowed": false,
+  "auth": {
+    "mode": "key_file_handle",
+    "default_key_path": "C:\\Users\\xx363\\私钥\\lucis-Codex-api.txt"
+  },
+  "defaults": {
+    "base_url": "https://lucisapi.ai/v1",
+    "model": "gpt-5.6-sol",
+    "api_style": "chat_completions",
+    "package_width": 1,
+    "global_concurrency": "dynamic_external_supervisor_not_fixed_here"
+  },
+  "recovery_metadata": {
+    "known_model_candidates_revalidate_against_current_provider_catalog": [
+      "gpt-5.6-sol",
+      "gpt-5.6-terra",
+      "gpt-5.6-luna",
+      "gpt-5.4",
+      "gpt-5.5"
+    ],
+    "known_local_tls_failure_endpoint": "https://api.lucisapi.ai/v1",
+    "preferred_endpoint_after_local_tls_check": "https://lucisapi.ai/v1",
+    "rate_limit_semantics": "account_concurrency_429_degrades_only_this_provider_binding_and_width_not_global_worker_availability",
+    "evidence_root": "D:\\XINAO_RESEARCH_RUNTIME\\state\\openai_relay_worker",
+    "invoke_example": ".\\Invoke-CodexDispatchLucisWorker.ps1 -WorkKey lucis:task -Prompt \"<task>\" -Model gpt-5.6-sol"
+  },
+  "deletion_semantics": "removes_only_this_provider_binding_not_core_contract_owner_authority_or_other_adapters"
+}

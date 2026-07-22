@@ -1,12 +1,12 @@
 #Requires -Version 5.1
 <#
 .SYNOPSIS
-  Codex A-leg peer: 阿里云百炼 / 通义千问 (OpenAI-compatible).
+  Thin 阿里云百炼 / 通义千问 binding for the fixed cognitive entry.
 .DESCRIPTION
   Thin profile over Invoke-CodexDispatchOpenAiRelayWorker.
   Default key = Bailian workspace CSV export (apiKey + openAiCompatible).
-  Does NOT enter Grok WorkerPool. Not Temporal/333. Each call is one complete
-  package; global concurrency remains a dynamic supervisor decision.
+  It supplies replaceable provider defaults only. Each call is one complete
+  package; the neutral core owns work identity and audit semantics.
 .EXAMPLE
   .\Invoke-CodexDispatchQwenWorker.ps1 -WorkKey qwen:smoke -Prompt "只回复: QWEN_OK" -Model qwen-plus -RequiredResultMarkers QWEN_OK
 #>
@@ -19,6 +19,12 @@ param(
     [string]$LogicalOperationId = "",
     [string]$Prompt = "",
     [string]$PromptFile = "",
+    [ValidateSet("general_cognitive", "cognitive_audit")]
+    [string]$WorkClass = "general_cognitive",
+    [string]$ContextManifestFile = "",
+    [string]$ExpectedContextManifestSha256 = "",
+    [string]$JsonSchemaPath = "",
+    [string]$ExpectedJsonSchemaSha256 = "",
     [string]$Model = "qwen-plus",
     [ValidateSet("chat_completions", "responses")]
     [string]$ApiStyle = "chat_completions",
@@ -47,16 +53,35 @@ if (-not (Test-Path -LiteralPath $KeyPath -PathType Leaf)) {
     throw "QWEN_KEY_PATH_MISSING: $KeyPath"
 }
 
-# If BaseUrl omitted, worker will pull openAiCompatible from CSV.
+# Resolve the provider endpoint from the bound workspace export before entering
+# the neutral core. The core never carries a provider-specific fallback.
 if ([string]::IsNullOrWhiteSpace($BaseUrl)) {
-    $BaseUrl = "https://api.ssstoken.net/v1" # sentinel; worker replaces from CSV when KeyPath is .csv
+    $rawBinding = [IO.File]::ReadAllText($KeyPath, [Text.UTF8Encoding]::new($false))
+    foreach ($line in ($rawBinding -split "`r?`n")) {
+        if ($line -match '^\s*openAiCompatible\s*,\s*(.+)\s*$') {
+            $BaseUrl = $Matches[1].Trim().Trim('"').Trim("'")
+            break
+        }
+    }
+    if ([string]::IsNullOrWhiteSpace($BaseUrl)) {
+        throw "QWEN_OPENAI_COMPATIBLE_BASE_URL_MISSING: $KeyPath"
+    }
 }
+$providerContractPath = Join-Path $PSScriptRoot "grok_qwen_bailian_relay_worker.v1.json"
+$providerContractSha256 = (Get-FileHash -LiteralPath $providerContractPath -Algorithm SHA256).Hash.ToLowerInvariant()
 
 $args = @{
     N = 1
     WorkKey = $WorkKey
     Attempt = $Attempt
     LogicalOperationId = $LogicalOperationId
+    WorkClass = $WorkClass
+    ProviderContractPath = $providerContractPath
+    ExpectedProviderContractSha256 = $providerContractSha256
+    ContextManifestFile = $ContextManifestFile
+    ExpectedContextManifestSha256 = $ExpectedContextManifestSha256
+    JsonSchemaPath = $JsonSchemaPath
+    ExpectedJsonSchemaSha256 = $ExpectedJsonSchemaSha256
     Model = $Model
     ApiStyle = $ApiStyle
     BaseUrl = $BaseUrl

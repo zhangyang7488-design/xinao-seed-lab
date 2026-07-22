@@ -11,7 +11,7 @@
     "continuous_or_resume_switches_leg": false,
     "worker_selection": "dynamic_positive_net_benefit",
     "available_workers": ["grok", "openai_relay", "codex_agents", "combined"],
-    "soft_preference_when_close": "openai_relay",
+    "tie_breaker_when_close": "dynamic_current_task_fit_health_cost_and_evidence",
     "width_policy": "dynamic_ready_frontier_quota_latency_evidence",
     "codex_role": "thinking_orchestration_and_tightly_coupled_single_writer"
   },
@@ -84,16 +84,21 @@
     "selection": "explicit_task_or_dynamic_positive_net_benefit",
     "transport_id": "direct-openai-compatible-relay",
     "provider_scope": "runtime_selected_admitted_openai_compatible_profile",
-    "contracts": [
-      "grok_openai_compatible_relay_worker.v1.json",
+    "core_contract": "grok_openai_compatible_relay_worker.v1.json",
+    "optional_adapter_contracts": [
       "grok_qwen_bailian_relay_worker.v1.json",
-      "grok_deepseek_relay_worker.v1.json"
+      "grok_deepseek_relay_worker.v1.json",
+      "grok_lucis_relay_worker.v1.json",
+      "grok_ssstoken_relay_worker.v1.json"
     ],
     "dispatch": "Invoke-CodexDispatchOpenAiRelayWorker.ps1",
     "profile_dispatch": {
       "qwen_bailian_openai_compatible": "Invoke-CodexDispatchQwenWorker.ps1",
-      "deepseek_openai_compatible": "Invoke-CodexDispatchDeepSeekWorker.ps1"
+      "deepseek_openai_compatible": "Invoke-CodexDispatchDeepSeekWorker.ps1",
+      "lucis_openai_compatible": "Invoke-CodexDispatchLucisWorker.ps1",
+      "ssstoken_openai_compatible_relay": "Invoke-CodexDispatchSssTokenWorker.ps1"
     },
+    "module_binding_policy": "provider_and_adapter_identity_is_replaceable_without_changing_core_contract_or_owner_authority",
     "wire_client": "openai_sdk_wire.py#official_openai_python_sdk",
     "completion_claim_allowed": false,
     "common_execution_contract_status": "provider_native_candidate_receipt_only",

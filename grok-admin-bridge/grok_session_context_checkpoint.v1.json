@@ -12,7 +12,7 @@
   "route_authority": "bridge.config.json#canonical_route",
   "route_continuity": "existing_route_receipt_first; checkpoint_or_resume_does_not_switch_leg",
   "model_worker_routing": "bridge.config.json#model_worker_routing",
-  "soft_preference_when_close": "openai_relay",
+  "tie_breaker_when_close": "dynamic_current_task_fit_health_cost_and_evidence",
   "worker_width": "dynamic",
   "prohibited_side_effects": [
     "worker_dispatch",

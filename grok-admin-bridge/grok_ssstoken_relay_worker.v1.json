@@ -1,0 +1,35 @@
+{
+  "schema_version": "xinao.ssstoken_relay_adapter.v1",
+  "status": "available_optional_adapter",
+  "module_role": "replaceable_provider_binding",
+  "core_entry": "Invoke-CodexDispatchOpenAiRelayWorker.ps1",
+  "provider_id": "ssstoken_openai_compatible_relay",
+  "transport_id": "direct-openai-compatible-relay",
+  "admission": {
+    "exact_https_base_urls": ["https://api.ssstoken.net/v1"],
+    "https_host_patterns": []
+  },
+  "model_identity": {
+    "allow_version_suffix_prefix_match": true,
+    "accepted_alias_pairs": []
+  },
+  "completion_claim_allowed": false,
+  "auth": {
+    "mode": "key_file_handle",
+    "default_key_path": "C:\\Users\\xx363\\私钥\\Codex-api.txt"
+  },
+  "defaults": {
+    "base_url": "https://api.ssstoken.net/v1",
+    "model": "gpt-5.6-sol",
+    "api_style": "chat_completions",
+    "package_width": 1,
+    "global_concurrency": "dynamic_external_supervisor_not_fixed_here"
+  },
+  "recovery_metadata": {
+    "model_catalog_policy": "revalidate_requested_model_against_current_provider_response_identity",
+    "rate_limit_semantics": "provider_failure_or_429_degrades_only_this_binding_not_the_core_or_other_workers",
+    "evidence_root": "D:\\XINAO_RESEARCH_RUNTIME\\state\\openai_relay_worker",
+    "invoke_example": ".\\Invoke-CodexDispatchSssTokenWorker.ps1 -WorkKey ssstoken:task -Prompt \"<task>\" -Model gpt-5.6-sol"
+  },
+  "deletion_semantics": "removes_only_this_provider_binding_not_core_contract_owner_authority_or_other_adapters"
+}

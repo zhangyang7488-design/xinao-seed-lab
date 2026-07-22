@@ -3,12 +3,10 @@
 .SYNOPSIS
   Codex A-leg peer entry: dispatch OpenAI-compatible relay worker(s).
 .DESCRIPTION
-  Same call shape spirit as Invoke-CodexDispatchGrokWorkerPool, but provider is
-  HTTP OpenAI-compatible relay (default ssstoken). Key is a file handle path
-  (swap file contents anytime). Does NOT enter Grok WorkerPool. Does NOT start
-  Temporal / Docker / second orchestrator. One invocation carries one complete
-  provider-native package; outer scheduling may run independent invocations
-  concurrently when current route evidence supports it.
+  Provider-neutral HTTP OpenAI-compatible cognitive entry. Provider identity,
+  model, base URL and key-file handle are required runtime bindings. It does
+  not enter a tool-worker route or start another orchestrator. One invocation
+  carries one complete package; outer scheduling owns any concurrency.
 .EXAMPLE
   .\Invoke-CodexDispatchOpenAiRelayWorker.ps1 -WorkKey relay:smoke -Prompt "Reply only: RELAY_OK" -Model gpt-5.6-sol -RequiredResultMarkers RELAY_OK
 #>
@@ -23,11 +21,29 @@ param(
     [string]$LogicalOperationId = "",
     [string]$Prompt = "",
     [string]$PromptFile = "",
-    [string]$Model = "gpt-5.6-sol",
+    [ValidateSet("general_cognitive", "cognitive_audit")]
+    [string]$WorkClass = "general_cognitive",
+    [Parameter(Mandatory=$true)]
+    [ValidateNotNullOrEmpty()]
+    [string]$ProviderContractPath,
+    [Parameter(Mandatory=$true)]
+    [ValidatePattern('^[0-9a-fA-F]{64}$')]
+    [string]$ExpectedProviderContractSha256,
+    [string]$ContextManifestFile = "",
+    [string]$ExpectedContextManifestSha256 = "",
+    [string]$JsonSchemaPath = "",
+    [string]$ExpectedJsonSchemaSha256 = "",
+    [Parameter(Mandatory=$true)]
+    [ValidateNotNullOrEmpty()]
+    [string]$Model,
     [ValidateSet("chat_completions", "responses")]
     [string]$ApiStyle = "chat_completions",
-    [string]$BaseUrl = "https://api.ssstoken.net/v1",
-    [string]$KeyPath = "C:\Users\xx363\私钥\Codex-api.txt",
+    [Parameter(Mandatory=$true)]
+    [ValidateNotNullOrEmpty()]
+    [string]$BaseUrl,
+    [Parameter(Mandatory=$true)]
+    [ValidateNotNullOrEmpty()]
+    [string]$KeyPath,
     [string]$PythonExe = "",
     [string]$RuntimeRoot = "D:\XINAO_RESEARCH_RUNTIME",
     [ValidateRange(1, 200000)]
@@ -50,6 +66,26 @@ if (-not (Test-Path -LiteralPath $worker -PathType Leaf)) {
 
 if ([string]::IsNullOrWhiteSpace($Prompt) -and [string]::IsNullOrWhiteSpace($PromptFile)) {
     throw "RELAY_DISPATCH_PROMPT_REQUIRED"
+}
+$resolvedProviderContract = [IO.Path]::GetFullPath($ProviderContractPath)
+if (-not (Test-Path -LiteralPath $resolvedProviderContract -PathType Leaf)) {
+    throw "RELAY_DISPATCH_PROVIDER_CONTRACT_MISSING: $resolvedProviderContract"
+}
+$observedProviderContractSha256 = (Get-FileHash -LiteralPath $resolvedProviderContract -Algorithm SHA256).Hash.ToLowerInvariant()
+if (-not [string]::Equals(
+    $observedProviderContractSha256,
+    $ExpectedProviderContractSha256.ToLowerInvariant(),
+    [StringComparison]::Ordinal
+)) {
+    throw "RELAY_DISPATCH_PROVIDER_CONTRACT_HASH_MISMATCH"
+}
+if ($WorkClass -ceq "cognitive_audit" -and (
+    [string]::IsNullOrWhiteSpace($ContextManifestFile) -or
+    [string]::IsNullOrWhiteSpace($ExpectedContextManifestSha256) -or
+    [string]::IsNullOrWhiteSpace($JsonSchemaPath) -or
+    [string]::IsNullOrWhiteSpace($ExpectedJsonSchemaSha256)
+)) {
+    throw "RELAY_DISPATCH_COGNITIVE_AUDIT_CONTRACT_INCOMPLETE"
 }
 
 $dispatchId = if ([string]::IsNullOrWhiteSpace($DispatchId)) {
@@ -91,6 +127,13 @@ for ($i = 0; $i -lt $N; $i++) {
         WorkKey = $WorkKey
         Attempt = $Attempt
         LogicalOperationId = $LogicalOperationId
+        WorkClass = $WorkClass
+        ProviderContractPath = $resolvedProviderContract
+        ExpectedProviderContractSha256 = $observedProviderContractSha256
+        ContextManifestFile = $ContextManifestFile
+        ExpectedContextManifestSha256 = $ExpectedContextManifestSha256
+        JsonSchemaPath = $JsonSchemaPath
+        ExpectedJsonSchemaSha256 = $ExpectedJsonSchemaSha256
         Quiet = $true
     }
     if (-not [string]::IsNullOrWhiteSpace($PromptFile)) {
@@ -149,6 +192,16 @@ for ($i = 0; $i -lt $N; $i++) {
         $laneMeta.terminal_state -eq "completed" -and
         $resultHashReadback -and $rawHashReadback
     )
+    if ($WorkClass -ceq "cognitive_audit") {
+        $ok = $ok -and (
+            $laneMeta.cognitive_audit_contract_active -eq $true -and
+            $laneMeta.cannot_access_filesystem -eq $true -and
+            $laneMeta.tool_execution_allowed -eq $false -and
+            $laneMeta.schema_instance_valid -eq $true -and
+            $laneMeta.evaluator_output_authority -eq "candidate_only" -and
+            $laneMeta.repair_authorized -eq $false
+        )
+    }
     if ($ok) { $okCount++ } else { $failCount++ }
 
     $items.Add([ordered]@{
@@ -168,6 +221,11 @@ for ($i = 0; $i -lt $N; $i++) {
         selected_equals_observed = if ($laneMeta) { [bool]$laneMeta.selected_equals_observed } else { $false }
         model_identity_accepted = if ($laneMeta) { [bool]$laneMeta.model_identity_accepted } else { $false }
         result_excerpt = if ($laneMeta) { [string]$laneMeta.result_excerpt } else { "" }
+        prompt_sha256 = if ($laneMeta) { [string]$laneMeta.prompt_sha256 } else { "" }
+        context_manifest_sha256 = if ($laneMeta) { [string]$laneMeta.context_manifest_sha256 } else { "" }
+        context_sha256 = if ($laneMeta) { [string]$laneMeta.context_sha256 } else { "" }
+        json_schema_sha256 = if ($laneMeta) { [string]$laneMeta.json_schema_sha256 } else { "" }
+        schema_instance_valid = if ($laneMeta) { $laneMeta.schema_instance_valid -eq $true } else { $false }
         usage = if ($laneMeta) { $laneMeta.usage } else { $null }
         meta_path = $metaPath
         duration_ms = [int]((Get-Date) - $laneStarted).TotalMilliseconds
@@ -196,8 +254,11 @@ $summary = [ordered]@{
     attempt = $Attempt
     transport_id = "direct-openai-compatible-relay"
     route_role = "a_leg_peer_codex_direct_call"
+    work_class = $WorkClass
     not_333_mainline = $true
     completion_claim_allowed = $false
+    worker_output_authority = "candidate_only"
+    repair_authority = "owner_only"
     provider_id = $summaryProviderId
     n = $N
     selected_model = $Model
