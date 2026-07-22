@@ -1,0 +1,62 @@
+{
+  "authority": false,
+  "completion_claim_allowed": false,
+  "public_safe_exposures": [
+    "commitment_digest",
+    "public_case_id",
+    "public_manifest",
+    "public_prompt_text",
+    "raw_output_envelope_public_fields",
+    "route_public_descriptor"
+  ],
+  "role_duties": {
+    "independent_evaluator": "Separate process/state root; may read vault under capability",
+    "owner": "Codex owner; sole formal write/adopt/authority actor outside this package",
+    "promptfoo_runner_operator": "Enumerates public cases offline; no scorer/vault access",
+    "real_generator_author": "Future only; mints real hidden suites outside this package",
+    "result_release_reviewer": "Reviews sealed envelopes before any release decision",
+    "seam_author": "Build generic isolation machinery and synthetic fixtures only",
+    "subject": "Produces raw outputs from public cases only",
+    "vault_custodian": "Holds sealed vault; never co-process with subject/Promptfoo"
+  },
+  "roles": [
+    "seam_author",
+    "real_generator_author",
+    "vault_custodian",
+    "subject",
+    "promptfoo_runner_operator",
+    "independent_evaluator",
+    "result_release_reviewer",
+    "owner"
+  ],
+  "same_suite_subject_rule": "Eligible only if ExposureLedger proves no disqualifying exposure for that principal on the suite-bound exposure_subject_identity.",
+  "schema_version": "xinao.g4.hidden_capability_seam.security_model.v1",
+  "subject_disqualifying_exposures": [
+    "family_identity",
+    "final_generator_semantics",
+    "hidden_parameter",
+    "per_case_scoring_rule",
+    "truth"
+  ],
+  "subject_forbidden_public_keys": [
+    "answer",
+    "answer_key",
+    "evaluator_token",
+    "family_identity",
+    "ground_truth",
+    "heldout_truth",
+    "hidden_parameters",
+    "parameters",
+    "rejection_label",
+    "scorer_credentials",
+    "scorer_features",
+    "scoring_rule",
+    "sealed_answer",
+    "seed",
+    "truth",
+    "vault_locator",
+    "vault_path"
+  ],
+  "synthetic_only": true,
+  "this_package_may_mint_real_identity": false
+}

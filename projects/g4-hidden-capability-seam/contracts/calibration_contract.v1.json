@@ -1,0 +1,32 @@
+{
+  "authority": false,
+  "bounds": {
+    "cost_when_trustworthy": null,
+    "inflight_disposition": "abort_fail_closed",
+    "kill_grace_ms": 0,
+    "log_abort": true,
+    "max_concurrency": 0,
+    "max_input_tokens": 0,
+    "max_output_tokens": 0,
+    "max_provider_errors": 0,
+    "max_rate_limits": 0,
+    "max_requests": 0,
+    "max_retries_per_request": 0,
+    "max_total_retries": 0,
+    "max_total_tokens": 0,
+    "max_unlogged_requests": 0,
+    "max_wall_clock_ms": 0,
+    "quota_abort": true,
+    "route_abort": true,
+    "truth_abort": true,
+    "vault_abort": true
+  },
+  "calibration_executed": false,
+  "contract_identity_sha256": "ac9030b6311895248b7739f1f1febb4fd0ec85869af3cc70560bf65bc9831535",
+  "g4_closed": false,
+  "hidden_cases_consumed": false,
+  "note": "shape_only_not_calibration_package",
+  "object": "CalibrationContract",
+  "schema_version": "xinao.g4.hidden_capability_seam.calibration_contract.v1",
+  "scoring_enabled": false
+}

@@ -1,0 +1,37 @@
+{
+  "authority": false,
+  "required_objects": [
+    "HiddenSuiteIdentityEnvelope",
+    "GeneratorArtifactDescriptor",
+    "SealedParameterCommitment",
+    "SubjectPublicManifest",
+    "SealedTruthVault",
+    "EvaluatorBundle",
+    "SubjectExecutionRouteDescriptor",
+    "PromptfooSubjectAdapter",
+    "ImmutableRunEnvelope",
+    "RunIdempotencyRegistry",
+    "ExposureLedger",
+    "RotationRevocationRegistry",
+    "HeldoutNonCollisionAttestation",
+    "CalibrationContract"
+  ],
+  "schema_version": "xinao.g4.hidden_capability_seam.required_objects.v1",
+  "schema_versions": {
+    "CalibrationContract": "xinao.g4.hidden_capability_seam.calibration_contract.v1",
+    "EvaluatorBundle": "xinao.g4.hidden_capability_seam.evaluator_bundle.v1",
+    "ExposureLedger": "xinao.g4.hidden_capability_seam.exposure_ledger.v1",
+    "GeneratorArtifactDescriptor": "xinao.g4.hidden_capability_seam.generator_artifact_descriptor.v1",
+    "HeldoutNonCollisionAttestation": "xinao.g4.hidden_capability_seam.heldout_non_collision_attestation.v1",
+    "HiddenSuiteIdentityEnvelope": "xinao.g4.hidden_capability_seam.hidden_suite_identity_envelope.v1",
+    "ImmutableRunEnvelope": "xinao.g4.hidden_capability_seam.immutable_run_envelope.v1",
+    "PromptfooSubjectAdapter": "xinao.g4.hidden_capability_seam.promptfoo_subject_adapter.v1",
+    "RotationRevocationRegistry": "xinao.g4.hidden_capability_seam.rotation_revocation_registry.v1",
+    "RunIdempotencyRegistry": "xinao.g4.hidden_capability_seam.run_idempotency_registry.v1",
+    "SealedParameterCommitment": "xinao.g4.hidden_capability_seam.sealed_parameter_commitment.v1",
+    "SealedTruthVault": "xinao.g4.hidden_capability_seam.sealed_truth_vault.v1",
+    "SubjectExecutionRouteDescriptor": "xinao.g4.hidden_capability_seam.subject_execution_route_descriptor.v1",
+    "SubjectPublicManifest": "xinao.g4.hidden_capability_seam.subject_public_manifest.v1"
+  },
+  "synthetic_only": true
+}
