@@ -374,9 +374,79 @@ function Get-ContentTreeFingerprint {
 
 function Get-PythonRuntimeProbe {
     param([Parameter(Mandatory)][string]$PythonPath)
+    $probeScript = @'
+import importlib.metadata as metadata
+import json
+import os
+import platform
+import re
+import sys
+import tomllib
+
+import apsw
+import mcp
+import opentelemetry
+import portalocker
+import temporalio
+from xinao_coordination import mcp_server as coordination_mcp_server
+
+
+def canonical_dependency_name(name):
+    return re.sub(r"[-_.]+", "-", name).lower()
+
+
+with open(sys.argv[1], "rb") as project_file:
+    project = tomllib.load(project_file)["project"]
+
+declared_dependencies = {}
+for dependency in project["dependencies"]:
+    match = re.fullmatch(r"([A-Za-z0-9][A-Za-z0-9._-]*)==([^;\s]+)", dependency)
+    if match is None:
+        raise RuntimeError(f"direct dependency must use an exact pin: {dependency}")
+    name = canonical_dependency_name(match.group(1))
+    if name in declared_dependencies:
+        raise RuntimeError(f"duplicate direct dependency: {name}")
+    declared_dependencies[name] = match.group(2)
+
+installed_dependencies = {
+    name: metadata.version(name)
+    for name in sorted(declared_dependencies)
+}
+project_version = metadata.version(project["name"])
+machine = platform.machine().lower()
+target = (
+    "x86_64-pc-windows-msvc"
+    if os.name == "nt" and machine in {"amd64", "x86_64"}
+    else f"{machine}-{sys.platform}"
+)
+if not hasattr(coordination_mcp_server, "mcp"):
+    raise RuntimeError("coordination MCP adapter did not expose its FastMCP server")
+
+payload = {
+    "python": platform.python_version(),
+    "implementation": sys.implementation.name,
+    "platform": target,
+    "base_prefix": sys.base_prefix,
+    "project": project_version,
+    "project_expected": project["version"],
+    "project_version_match": project_version == project["version"],
+    "declared_dependencies": declared_dependencies,
+    "installed_dependencies": installed_dependencies,
+    "direct_dependencies_match": installed_dependencies == declared_dependencies,
+    "required_imports_ok": True,
+}
+reserved_probe_keys = set(payload)
+dependency_key_collisions = reserved_probe_keys.intersection(installed_dependencies)
+if dependency_key_collisions:
+    names = ", ".join(sorted(dependency_key_collisions))
+    raise RuntimeError(f"direct dependency names collide with reserved probe keys: {names}")
+payload.update(installed_dependencies)
+print(json.dumps(payload, sort_keys=True, separators=(",", ":")))
+'@
     $probe = Invoke-CapturedProcess -FilePath $PythonPath -Arguments @(
         '-c',
-        'import apsw,importlib.metadata as m,json,mcp,opentelemetry,os,platform,sys; machine=platform.machine().lower(); target="x86_64-pc-windows-msvc" if os.name=="nt" and machine in {"amd64","x86_64"} else f"{machine}-{sys.platform}"; print(json.dumps({"python":platform.python_version(),"implementation":sys.implementation.name,"platform":target,"base_prefix":sys.base_prefix,"project":m.version("xinao-dual-brain-coordination"),"mcp":m.version("mcp"),"a2a-sdk":m.version("a2a-sdk"),"apsw":m.version("apsw"),"opentelemetry-api":m.version("opentelemetry-api"),"temporalio":m.version("temporalio")}))'
+        $probeScript,
+        (Join-Path $ProjectRoot 'pyproject.toml')
     ) -Label 'generation runtime probe' -TimeoutSeconds 60
     return $probe.Stdout.Trim() | ConvertFrom-Json
 }
@@ -386,9 +456,9 @@ function Test-PythonRuntimeProbe {
     return [string]$Probe.python -eq [string]$toolchain.python.request -and
         [string]$Probe.implementation -eq [string]$toolchain.python.implementation -and
         [string]$Probe.platform -eq [string]$toolchain.python.platform -and
-        [string]$Probe.project -eq '0.1.0' -and
-        [string]$Probe.mcp -eq '1.28.0' -and
-        [string]$Probe.temporalio -eq '1.30.0'
+        [bool]$Probe.project_version_match -and
+        [bool]$Probe.direct_dependencies_match -and
+        [bool]$Probe.required_imports_ok
 }
 
 function Get-GenerationDescriptor {

@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "project": "xinao-dual-brain-coordination",
-  "recorded_at_utc": "2026-07-22T05:32:51.5586870Z",
+  "recorded_at_utc": "2026-07-22T08:55:20.7109183Z",
   "lane": "C",
   "purpose": "managed_temporal_mcp_pin",
   "python": {
@@ -60,8 +60,8 @@
     "runtime_root": "D:\\XINAO_RESEARCH_RUNTIME\\tools\\xinao-coordination"
   },
   "key_files_sha256": {
-    "provisioning/Invoke-XinaoCoordManaged.ps1": "E05988AF128AF3F709F6702E2AF2276D06795BEE0C6CC23EFC1C3C1599C90503",
-    "provisioning/toolchain-lock.json": "510B452F25543BDA06CB770BE5FD4962C55B4925B5BC33295191D725E50C2F2E",
+    "provisioning/Invoke-XinaoCoordManaged.ps1": "E8FABB5B5D5BAE3E94736014D9A9C918C232DA23F722281B8FDAD7A4134AC8C6",
+    "provisioning/toolchain-lock.json": "976CBB6F759100FE36A468D29E101BCA2A648A24C2A9060B7A9D2F5EE71EA8F8",
     "pyproject.toml": "D995DFF02D3B0758D6BBD7129E1273B19CBCA201407DCA024D61443A5AFFB8AA",
     "uv.lock": "82E901551D28237E9BA28F6C299C7654870E63673FCB141067E8E19C05D8484B",
     "configs/modules/temporal.toml": "E30FF1728E1EFB931C95EB53FC8AD7294FCA2DDDC7D59DB52D9C465CA6971E0F",
