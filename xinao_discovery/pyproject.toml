@@ -37,6 +37,9 @@ xinao = "xinao.cli:main"
 foundation-verifier = [
   "hypothesis==6.156.6",
 ]
+g4-bootstrap = [
+  "PyYAML==6.0.3",
+]
 
 [dependency-groups]
 dev = [
