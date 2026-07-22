@@ -194,12 +194,17 @@ def test_agent_runtime_cannot_commit_the_worktree() -> None:
     assert "gitpython_readonly" in text
 
 
-def test_project_hot_entry_points_to_work_unit_carrier_lifecycle_consumer() -> None:
+def test_project_hot_entry_points_to_unique_tool_glue_constitution() -> None:
     agreement = (REPO_ROOT / "AGENTS.md").read_text(encoding="utf-8")
-    assert "publish-worktree-record" in agreement
-    assert "docs/current/SYSTEM_SELF_AWARENESS_THIN_LOOP.md" in agreement
-    assert "services/agent_runtime/execution_consumers.v1.json" in agreement
-    assert "未分类、dirty、ignored、未吸收或缺 finalizer 的载体不自动删除" in agreement
+    assert "软件工具胶水宪法_当前有效.txt" in agreement
+    assert "唯一维护表" in agreement
+    assert "本热卡不复制实现细节" in agreement
+    for duplicated_lifecycle_detail in (
+        "publish-worktree-record",
+        "docs/current/SYSTEM_SELF_AWARENESS_THIN_LOOP.md",
+        "services/agent_runtime/execution_consumers.v1.json",
+    ):
+        assert duplicated_lifecycle_detail not in agreement
 
 
 def test_retained_executable_sources_have_no_dead_desktop_or_runtime_entry() -> None:
@@ -283,7 +288,7 @@ def test_project_agreement_orients_on_live_context_without_approval_theater() ->
         "never let an agent assumption create authorization",
         "smallest verifiable existing landing",
         "Do not turn each preference into a project, gate, or routine question",
-        "never encode a fixed provider, mandatory per-wave call, lane count, or transport",
+        "current software tool-glue constitution",
     ):
         assert required in text, required
 
@@ -1063,20 +1068,23 @@ def test_gitleaks_import_allowlist_is_exact_fingerprint_only() -> None:
     }
 
 
-def test_project_agreement_enforces_proactive_mature_first_and_dynamic_supervisor_workers() -> None:
+def test_project_agreement_defers_mature_first_and_worker_routing_to_unique_constitution() -> None:
     text = _project_agreement_contract_text()
     for required in (
-        "Apply proactive mature-first before incidents",
-        "every hand-written runtime, control, execution, tool-surface, adapter, or glue surface is a replacement candidate even while green",
-        '"No incident yet", "currently works", or "another patch is possible" is not a retention reason',
-        "local code should be limited to parameters, paths, contract translation, and the thinnest necessary adapter",
-        "single supervisor and writer for tightly coupled edits",
-        "Select Grok, Codex agents, or a mixed set",
-        "Query the single local quota entry once",
-        "repair query failure without blocking positive work",
-        "never encode a fixed provider, mandatory per-wave call, lane count, or transport",
+        "软件工具胶水宪法_当前有效.txt",
+        "Apply the current software tool-glue constitution directly",
+        "This cold agreement deliberately does not restate those rules",
+        "单一动态整包主管",
+        "外部工人默认劳动",
+        "Codex 权威窄通道",
     ):
         assert required in text, required
+    for retired_duplicate in (
+        "Select Grok, Codex agents, or a mixed set",
+        "single supervisor and writer for tightly coupled edits",
+        "never encode a fixed provider, mandatory per-wave call, lane count, or transport",
+    ):
+        assert retired_duplicate not in text
 
 
 def test_proactive_mature_first_eval_has_no_duplicate_worker_routing_protocol() -> None:
