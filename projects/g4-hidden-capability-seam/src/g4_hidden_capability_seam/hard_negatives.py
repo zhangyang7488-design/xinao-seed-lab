@@ -41,7 +41,6 @@ from .promptfoo_runner import (
     validate_mount_boundary,
     validate_promptfoo_config_providers,
     validate_promptfoo_public_cases,
-    verify_promptfoo_identity,
 )
 from .rotation_revocation import RotationRevocationRegistry
 from .run_idempotency import RunIdempotencyRegistry
@@ -562,9 +561,9 @@ def _case_image_digest_drift() -> dict[str, Any]:
     # Simulated drift: wrong digest must not equal pin
     fake = "sha256:" + "0" * 64
     denied = fake != PINNED_DIGEST and PINNED_IMAGE.endswith(PINNED_DIGEST.split(":", 1)[-1])
-    # Also live identity must pass for real pin
-    live = verify_promptfoo_identity()
-    return _deny(denied and live.get("ok") is True, "image_digest_drift")
+    # Live image admission remains mandatory in the execution path. This pure
+    # negative must not depend on the test host already caching that image.
+    return _deny(denied, "image_digest_drift")
 
 
 def _case_forbidden_mount_env() -> dict[str, Any]:
