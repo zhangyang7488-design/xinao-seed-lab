@@ -274,12 +274,8 @@ def _repo_source_from_binding(
     raw_path = str(binding.get("path") or "")
     expected_hash = str(binding.get("sha256") or "")
     expected_size = binding.get("size_bytes")
-    if not _snapshot_enabled():
-        path = Path(raw_path).resolve()
-        _require(_inside(path, REPO_ROOT), f"{label} is outside the current repository: {path}")
-        _require(path.is_file(), f"{label} is missing: {path}")
-        relative = path.relative_to(REPO_ROOT).as_posix()
-    else:
+
+    def _hash_identical_candidates() -> list[tuple[Path, str]]:
         parts = [part for part in raw_path.replace("\\", "/").split("/") if part]
         candidates: list[tuple[Path, str]] = []
         for index in range(len(parts)):
@@ -295,6 +291,24 @@ def _repo_source_from_binding(
                 and file_sha256(candidate) == expected_hash
             ):
                 candidates.append((candidate, relative.as_posix()))
+        return candidates
+
+    if not _snapshot_enabled():
+        path = Path(raw_path).resolve()
+        if path.is_file() and _inside(path, REPO_ROOT):
+            relative = path.relative_to(REPO_ROOT).as_posix()
+        else:
+            # A retired checkout path is only a diagnostic identity. Resolve it
+            # through an exact hash/size match under the current authority root.
+            candidates = _hash_identical_candidates()
+            _require(
+                candidates,
+                f"{label} is outside the current repository and has no "
+                f"hash-identical current authority source: {raw_path}",
+            )
+            path, relative = max(candidates, key=lambda item: len(Path(item[1]).parts))
+    else:
+        candidates = _hash_identical_candidates()
         _require(candidates, f"{label} has no hash-identical authority source: {raw_path}")
         path, relative = max(candidates, key=lambda item: len(Path(item[1]).parts))
     _require(
@@ -602,7 +616,7 @@ def _command_failure_detail(
     )
 
 
-def _clean_subprocess_env() -> dict[str, str]:
+def _clean_subprocess_env(*, inject_package_snapshot: bool = False) -> dict[str, str]:
     allowed = {
         "APPDATA",
         "COMSPEC",
@@ -624,10 +638,27 @@ def _clean_subprocess_env() -> dict[str, str]:
     environment = {
         key: value
         for key, value in os.environ.items()
-        if key.upper() in allowed or key.upper().startswith("XINAO_F4_")
+        if (key.upper() in allowed or key.upper().startswith("XINAO_F4_"))
+        and key.upper() != "XINAO_F4_SNAPSHOT_SOFT_PATH_KEYS"
     }
     environment["PYTHONDONTWRITEBYTECODE"] = "1"
     environment["PYTHONUTF8"] = "1"
+    package_manifest = os.environ.get("XINAO_F4_PACKAGE_SNAPSHOT_MANIFEST", "").strip()
+    if inject_package_snapshot and package_manifest:
+        environment["XINAO_F4_SNAPSHOT_MANIFEST"] = package_manifest
+        for key in (
+            "XINAO_F4_SNAPSHOT_OUTPUT_ROOT",
+            "XINAO_F4_SNAPSHOT_TRACE_DIR",
+            "XINAO_F4_AUTHORITY_ROOT",
+            "XINAO_F4_AUTHORITY_IDENTITY",
+            "XINAO_F4_SNAPSHOT_SOFT_PATH_ALLOWLIST",
+            "XINAO_F4_SNAPSHOT_SOFT_PATH_ALLOWLIST_SHA256",
+            "PYTHONPATH",
+            "PYTHONNOUSERSITE",
+        ):
+            value = os.environ.get(key, "").strip()
+            if value:
+                environment[key] = value
     return environment
 
 
@@ -713,7 +744,13 @@ def rerun_bound_verifiers(
     sources = _bound_sources(current.source_bindings)
     results: dict[str, FreshVerification] = {}
     output_root = _output_root()
-    temp_parent = output_root / "fresh" if output_root is not None else current.root.parent
+    package_output = os.environ.get("XINAO_F4_SNAPSHOT_OUTPUT_ROOT", "").strip()
+    if output_root is not None:
+        temp_parent = output_root / "fresh"
+    elif package_output:
+        temp_parent = Path(package_output).resolve() / "fresh"
+    else:
+        temp_parent = current.root.parent
     temp_parent.mkdir(parents=True, exist_ok=True)
     for label, binding in sources.items():
         pack, manifest, bound_path, bound = _validate_bound_verification(
@@ -744,7 +781,7 @@ def rerun_bound_verifiers(
                 argv,
                 cwd=REPO_ROOT,
                 timeout_seconds=timeout_seconds,
-                env=_clean_subprocess_env(),
+                env=_clean_subprocess_env(inject_package_snapshot=True),
             )
             _require(
                 completed.returncode == 0,

@@ -42,7 +42,7 @@ from services.agent_runtime.foundation_continuous_workflow import (
 )
 
 with workflow.unsafe.imports_passed_through():
-    from xinao.foundation.f4_snapshot_runtime import retained_path
+    from xinao.foundation.f4_snapshot_runtime import input_path, retained_path
     from xinao.foundation.research_candidate_source import (
         compile_f4_canary_candidate_snapshot,
         compile_f4_canary_candidate_source,
@@ -133,6 +133,11 @@ def _external_worker_cwd(frontier: Mapping[str, Any]) -> str:
     raw = str(frontier.get("external_worker_cwd") or "").strip()
     if not raw:
         raise ValueError("F4 frontier requires an explicit supervisor-selected external worker cwd")
+    if os.environ.get("XINAO_F4_SNAPSHOT_MANIFEST", "").strip():
+        # Snapshot mode proves the retired logical cwd is present in the sealed
+        # capsule, then preserves that logical identity for strict reconciliation.
+        input_path(raw, expect="directory")
+        return retained_path(raw)
     path = Path(raw).resolve()
     if not path.is_dir():
         raise ValueError(f"F4 external worker cwd does not exist: {path}")

@@ -48,6 +48,36 @@ def _rewrite_manifest(path: Path, value: dict[str, object]) -> None:
     path.write_bytes(snapshot.canonical_json_bytes(value))
 
 
+def _write_soft_path_allowlist(
+    path: Path,
+    entries: list[dict[str, str]],
+    *,
+    source_manifest_sha256: str = "1" * 64,
+    source_content_sha256: str = "2" * 64,
+) -> Path:
+    ordered = sorted(
+        entries,
+        key=lambda item: (
+            item["source_ref"],
+            item["json_pointer"],
+            item["recorded_value"],
+            item["reason"],
+        ),
+    )
+    core = {
+        "schema_version": "xinao.evidence_snapshot.unresolved_path_allowlist.v1",
+        "source_snapshot_manifest_sha256": source_manifest_sha256,
+        "source_snapshot_content_sha256": source_content_sha256,
+        "entries_count": len(ordered),
+        "entries_sha256": snapshot.canonical_sha256(ordered),
+        "entries": ordered,
+    }
+    path.write_bytes(
+        snapshot.canonical_json_bytes({**core, "content_sha256": snapshot.canonical_sha256(core)})
+    )
+    return path
+
+
 def test_snapshot_identity_is_output_root_independent_and_movable(tmp_path: Path) -> None:
     source, external = _source_tree(tmp_path)
     manifests = []
@@ -70,14 +100,13 @@ def test_snapshot_identity_is_output_root_independent_and_movable(tmp_path: Path
         json_pointer="/pack_ref",
         recorded_value=retained["pack_ref"],
     ) == resolver.logical_root("primary")
-    assert (
-        resolver.resolve_reference(
-            source_ref=logical_ref,
-            json_pointer="/child_ref",
-            recorded_value=retained["child_ref"],
-        ).read_bytes()
-        == external.read_bytes()
+    resolved_child = resolver.resolve_reference(
+        source_ref=logical_ref,
+        json_pointer="/child_ref",
+        recorded_value=retained["child_ref"],
     )
+    assert resolved_child.read_bytes() == external.read_bytes()
+    assert resolved_child.name == external.name
 
     moved = tmp_path / "moved-capsule"
     shutil.copytree(manifests[0].parent, moved)
@@ -234,6 +263,22 @@ def test_same_bytes_keep_distinct_logical_identities_but_share_cas(tmp_path: Pat
     assert len({item["logical_ref"] for item in external_refs}) == 2
     assert len({item["source_identity"] for item in external_refs}) == 2
     assert len({item["cas_ref"] for item in external_refs}) == 1
+    assert {item["view_ref"].rsplit("/", 1)[-1] for item in external_refs} == {
+        "left.json",
+        "right.json",
+    }
+
+    tampered = copy.deepcopy(manifest)
+    external = next(
+        item
+        for item in tampered["logical_refs"]
+        if item["logical_ref"].startswith("external/reference/")
+    )
+    external["view_ref"] = external["view_ref"].rsplit("/", 1)[0] + "/wrong.json"
+    manifest_path = tmp_path / "snapshot" / snapshot.MANIFEST_NAME
+    _rewrite_manifest(manifest_path, tampered)
+    with pytest.raises(snapshot.SnapshotError, match="standalone view topology drifted"):
+        snapshot.verify_snapshot_manifest(manifest_path)
 
 
 def test_empty_files_are_valid_but_empty_directory_targets_fail_closed(
@@ -376,6 +421,102 @@ def test_declared_missing_absolute_local_reference_fails_closed(
     builder.add_root("primary", source)
     with pytest.raises(snapshot.SnapshotError, match="required local reference is missing"):
         builder.build()
+
+
+def test_exact_hash_pinned_soft_path_allowlist_has_no_broad_fallback(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    source = tmp_path / "source"
+    source.mkdir()
+    missing = tmp_path / "retired" / "AGENTS.md"
+    (source / "index.json").write_text(
+        json.dumps({"path": str(missing.resolve())}) + "\n",
+        encoding="utf-8",
+    )
+    entry = {
+        "source_ref": "root/primary/index.json",
+        "json_pointer": "/path",
+        "recorded_value": str(missing.resolve()),
+        "reason": "missing_local_target",
+    }
+    allowlist = _write_soft_path_allowlist(tmp_path / "allowlist.json", [entry])
+    monkeypatch.setenv("XINAO_F4_SNAPSHOT_SOFT_PATH_ALLOWLIST", str(allowlist))
+    monkeypatch.setenv(
+        "XINAO_F4_SNAPSHOT_SOFT_PATH_ALLOWLIST_SHA256",
+        snapshot.file_sha256(allowlist),
+    )
+
+    # Seed the deterministic snapshot once, then bind the production allowlist
+    # to its exact manifest bytes and content identity for the real verification.
+    parsed_allowlist = snapshot._soft_path_allowlist_from_environment()
+    original_loader = snapshot._soft_path_allowlist_from_environment
+    monkeypatch.setattr(
+        snapshot,
+        "_soft_path_allowlist_from_environment",
+        lambda: snapshot._SoftPathAllowlist(
+            parsed_allowlist.entries,
+            parsed_allowlist.keys,
+            None,
+            None,
+        ),
+    )
+    builder = snapshot.EvidenceSnapshotBuilder(
+        tmp_path / "snapshot",
+        allowed_source_roots=[tmp_path],
+    )
+    builder.add_root("primary", source)
+    manifest_path = builder.build()
+    monkeypatch.setattr(snapshot, "_soft_path_allowlist_from_environment", original_loader)
+    manifest_payload = json.loads(manifest_path.read_text(encoding="utf-8"))
+    allowlist = _write_soft_path_allowlist(
+        allowlist,
+        [entry],
+        source_manifest_sha256=snapshot.file_sha256(manifest_path),
+        source_content_sha256=manifest_payload["content_sha256"],
+    )
+    monkeypatch.setenv(
+        "XINAO_F4_SNAPSHOT_SOFT_PATH_ALLOWLIST_SHA256",
+        snapshot.file_sha256(allowlist),
+    )
+    manifest = snapshot.verify_snapshot_manifest(manifest_path)
+    assert manifest["unresolved_metadata_refs"] == [entry]
+
+    _write_soft_path_allowlist(
+        allowlist,
+        [entry],
+        source_manifest_sha256="f" * 64,
+        source_content_sha256=manifest_payload["content_sha256"],
+    )
+    monkeypatch.setenv(
+        "XINAO_F4_SNAPSHOT_SOFT_PATH_ALLOWLIST_SHA256",
+        snapshot.file_sha256(allowlist),
+    )
+    with pytest.raises(snapshot.SnapshotError, match="source manifest identity drifted"):
+        snapshot.verify_snapshot_manifest(manifest_path)
+
+    _write_soft_path_allowlist(
+        allowlist,
+        [entry],
+        source_manifest_sha256=snapshot.file_sha256(manifest_path),
+        source_content_sha256="e" * 64,
+    )
+    monkeypatch.setenv(
+        "XINAO_F4_SNAPSHOT_SOFT_PATH_ALLOWLIST_SHA256",
+        snapshot.file_sha256(allowlist),
+    )
+    with pytest.raises(snapshot.SnapshotError, match="source content identity drifted"):
+        snapshot.verify_snapshot_manifest(manifest_path)
+
+    monkeypatch.delenv("XINAO_F4_SNAPSHOT_SOFT_PATH_ALLOWLIST")
+    monkeypatch.delenv("XINAO_F4_SNAPSHOT_SOFT_PATH_ALLOWLIST_SHA256")
+    monkeypatch.setenv("XINAO_F4_SNAPSHOT_SOFT_PATH_KEYS", "1")
+    rejected = snapshot.EvidenceSnapshotBuilder(
+        tmp_path / "broad-switch-rejected",
+        allowed_source_roots=[tmp_path],
+    )
+    rejected.add_root("primary", source)
+    with pytest.raises(snapshot.SnapshotError, match="required local reference is missing"):
+        rejected.build()
 
 
 def test_semantic_reference_is_not_misclassified_as_a_missing_local_path(

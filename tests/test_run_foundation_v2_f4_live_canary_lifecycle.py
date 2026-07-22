@@ -167,6 +167,31 @@ def test_f4_external_worker_cwd_must_be_explicit_and_existing(tmp_path: Path) ->
         controller._external_worker_cwd({"external_worker_cwd": str(tmp_path / "missing")})
 
 
+def test_f4_external_worker_cwd_uses_only_snapshot_mapping(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    retired = str(tmp_path / "retired-host")
+    observed: list[tuple[str, str | None]] = []
+    monkeypatch.setenv("XINAO_F4_SNAPSHOT_MANIFEST", str(tmp_path / "snapshot.json"))
+
+    def mapped(value: object, *, expect: str | None = None) -> Path:
+        observed.append((str(value), expect))
+        return tmp_path / "capsule" / "roots" / "retired-cwd"
+
+    monkeypatch.setattr(controller, "input_path", mapped)
+    monkeypatch.setattr(controller, "retained_path", lambda value: str(value))
+
+    assert controller._external_worker_cwd({"external_worker_cwd": retired}) == retired
+    assert observed == [(retired, "directory")]
+
+    def rejected(_value: object, *, expect: str | None = None) -> Path:
+        raise ValueError(f"snapshot mapping rejected: {expect}")
+
+    monkeypatch.setattr(controller, "input_path", rejected)
+    with pytest.raises(ValueError, match="snapshot mapping rejected"):
+        controller._external_worker_cwd({"external_worker_cwd": retired})
+
+
 def _composer_fanin_identity() -> dict[str, Any]:
     selected = "grok-composer-2.5-fast"
     backend = controller.expected_docker_grok_backend_models(selected)
