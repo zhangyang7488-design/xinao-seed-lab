@@ -122,7 +122,10 @@ def test_fake_blueprint_with_identical_bytes_has_no_production_identity(
     forged = tmp_path / canonical.name
     forged.write_bytes(canonical.read_bytes())
 
-    with pytest.raises(CanonicalVerifierError, match="canonical blueprint"):
+    with pytest.raises(
+        CanonicalVerifierError,
+        match="current non-authoritative machine projection",
+    ):
         canonical_blueprint_path(forged)
 
 
