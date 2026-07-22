@@ -257,6 +257,75 @@ def test_clean_subprocess_env_preserves_snapshot_bindings_and_drops_unrelated(
     assert "UNRELATED_HOST_SECRET" not in environment
 
 
+def test_package_snapshot_is_injected_only_for_verifier_children(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("XINAO_F4_SNAPSHOT_MANIFEST", raising=False)
+    monkeypatch.setenv("XINAO_F4_PACKAGE_SNAPSHOT_MANIFEST", "/capsule/snapshot.json")
+    monkeypatch.setenv("XINAO_F4_SNAPSHOT_OUTPUT_ROOT", "/capsule/output")
+    monkeypatch.setenv("XINAO_F4_SNAPSHOT_SOFT_PATH_ALLOWLIST", "/capsule/allowlist.json")
+    monkeypatch.setenv("XINAO_F4_SNAPSHOT_SOFT_PATH_ALLOWLIST_SHA256", "a" * 64)
+    monkeypatch.setenv("XINAO_F4_SNAPSHOT_SOFT_PATH_KEYS", "1")
+    monkeypatch.setenv("xinao_f4_snapshot_soft_path_keys", "2")
+    monkeypatch.setenv("PYTHONPATH", "/authority/src")
+
+    parent_environment = subject._clean_subprocess_env()
+    child_environment = subject._clean_subprocess_env(inject_package_snapshot=True)
+
+    assert "XINAO_F4_SNAPSHOT_MANIFEST" not in parent_environment
+    assert child_environment["XINAO_F4_SNAPSHOT_MANIFEST"] == "/capsule/snapshot.json"
+    assert child_environment["XINAO_F4_SNAPSHOT_OUTPUT_ROOT"] == "/capsule/output"
+    assert child_environment["XINAO_F4_SNAPSHOT_SOFT_PATH_ALLOWLIST_SHA256"] == "a" * 64
+    assert child_environment["PYTHONPATH"] == "/authority/src"
+    assert "XINAO_F4_SNAPSHOT_SOFT_PATH_KEYS" not in parent_environment
+    assert "XINAO_F4_SNAPSHOT_SOFT_PATH_KEYS" not in child_environment
+    assert all(key.upper() != "XINAO_F4_SNAPSHOT_SOFT_PATH_KEYS" for key in child_environment)
+
+
+def test_retired_repo_source_resolves_only_to_hash_identical_current_authority(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    implementation = subject._implementation
+    repo_root = tmp_path / "repo"
+    relative = Path("xinao_discovery/src/xinao/foundation/research_factory.py")
+    current = repo_root / relative
+    current.parent.mkdir(parents=True)
+    current.write_bytes(b"current authority bytes\n")
+    retired = tmp_path / "retired-root" / relative
+    binding = {
+        "path": str(retired),
+        "sha256": subject.file_sha256(current),
+        "size_bytes": current.stat().st_size,
+    }
+    monkeypatch.delenv("XINAO_F4_SNAPSHOT_MANIFEST", raising=False)
+    monkeypatch.setattr(implementation, "REPO_ROOT", repo_root)
+
+    resolved, observed_relative = implementation._repo_source_from_binding(
+        binding, label="retired source"
+    )
+    assert resolved == current.resolve()
+    assert observed_relative == relative.as_posix()
+
+    wrong_hash = dict(binding)
+    wrong_hash["sha256"] = "0" * 64
+    with pytest.raises(subject.VerificationError, match="no hash-identical"):
+        implementation._repo_source_from_binding(wrong_hash, label="retired source")
+
+    unrelated = repo_root / "unrelated.py"
+    unrelated.write_bytes(current.read_bytes())
+    unrelated_binding = {
+        "path": str(tmp_path / "retired-root" / "unrelated.py"),
+        "sha256": subject.file_sha256(unrelated),
+        "size_bytes": unrelated.stat().st_size,
+    }
+    with pytest.raises(subject.VerificationError, match="repository identity drifted"):
+        implementation._require_repo_source_binding(
+            unrelated_binding,
+            relative.as_posix(),
+            label="retired source",
+        )
+
+
 def test_snapshot_python_selection_uses_current_container_interpreter(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

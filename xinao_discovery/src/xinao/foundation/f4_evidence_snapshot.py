@@ -31,6 +31,9 @@ _ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]*$")
 _SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 _PATH_KEYS = frozenset({"manifest_path", "pack", "path", "ref", "source_pack", "uri"})
 _REFERENCE_REGISTRY_SCHEMA = "xinao.evidence_snapshot.required_reference_registry.v1"
+_SOFT_PATH_ALLOWLIST_SCHEMA = "xinao.evidence_snapshot.unresolved_path_allowlist.v1"
+_SOFT_PATH_ALLOWLIST_ENV = "XINAO_F4_SNAPSHOT_SOFT_PATH_ALLOWLIST"
+_SOFT_PATH_ALLOWLIST_SHA256_ENV = "XINAO_F4_SNAPSHOT_SOFT_PATH_ALLOWLIST_SHA256"
 _UNRESOLVED_REASONS = frozenset({"invalid_local_identity", "missing_local_target"})
 _WINDOWS_RESERVED = frozenset(
     {"CON", "PRN", "AUX", "NUL"}
@@ -41,6 +44,14 @@ _WINDOWS_RESERVED = frozenset(
 
 class SnapshotError(ValueError):
     """Raised when a snapshot is incomplete, ambiguous, or not portable."""
+
+
+@dataclass(frozen=True)
+class _SoftPathAllowlist:
+    entries: list[dict[str, str]]
+    keys: set[tuple[str, str, str, str]]
+    source_manifest_sha256: str | None
+    source_content_sha256: str | None
 
 
 def canonical_json_bytes(value: object) -> bytes:
@@ -63,6 +74,117 @@ def file_sha256(path: Path) -> str:
         for block in iter(lambda: stream.read(1024 * 1024), b""):
             digest.update(block)
     return digest.hexdigest()
+
+
+def _soft_path_allowlist_from_environment() -> _SoftPathAllowlist:
+    """Load one byte-pinned exact allowlist; broad soft-path switches are unsupported."""
+
+    raw_path = os.environ.get(_SOFT_PATH_ALLOWLIST_ENV, "").strip()
+    expected_sha256 = os.environ.get(_SOFT_PATH_ALLOWLIST_SHA256_ENV, "").strip()
+    if not raw_path and not expected_sha256:
+        return _SoftPathAllowlist([], set(), None, None)
+    _require(
+        bool(raw_path) and bool(expected_sha256), "soft path allowlist path/hash pair is incomplete"
+    )
+    _require(
+        _SHA256_RE.fullmatch(expected_sha256) is not None,
+        "soft path allowlist hash is invalid",
+    )
+    path = _assert_no_lexical_reparse(Path(raw_path), label="soft path allowlist").resolve()
+    _require(path.is_file() and not _is_reparse(path), "soft path allowlist is missing or reparse")
+    _require(file_sha256(path) == expected_sha256, "soft path allowlist file hash drifted")
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise SnapshotError("soft path allowlist is not valid JSON") from exc
+    _require(isinstance(payload, dict), "soft path allowlist is not an object")
+    _require(
+        set(payload)
+        == {
+            "schema_version",
+            "source_snapshot_manifest_sha256",
+            "source_snapshot_content_sha256",
+            "entries_count",
+            "entries_sha256",
+            "entries",
+            "content_sha256",
+        },
+        "soft path allowlist key set drifted",
+    )
+    _require(
+        payload.get("schema_version") == _SOFT_PATH_ALLOWLIST_SCHEMA,
+        "soft path allowlist schema drifted",
+    )
+    for label in (
+        "source_snapshot_manifest_sha256",
+        "source_snapshot_content_sha256",
+        "entries_sha256",
+        "content_sha256",
+    ):
+        _require(
+            _SHA256_RE.fullmatch(str(payload.get(label) or "")) is not None,
+            f"soft path allowlist {label} is invalid",
+        )
+    core = dict(payload)
+    content_sha256 = str(core.pop("content_sha256"))
+    _require(
+        content_sha256 == canonical_sha256(core), "soft path allowlist content identity drifted"
+    )
+    raw_entries = payload.get("entries")
+    _require(isinstance(raw_entries, list), "soft path allowlist entries are not a list")
+    entries: list[dict[str, str]] = []
+    keys: set[tuple[str, str, str, str]] = set()
+    for raw in raw_entries:
+        _require(
+            isinstance(raw, dict)
+            and set(raw) == {"source_ref", "json_pointer", "recorded_value", "reason"},
+            "soft path allowlist entry shape drifted",
+        )
+        source_ref = _validate_relative(raw.get("source_ref"), label="soft path source_ref")
+        pointer = str(raw.get("json_pointer") or "")
+        parts = _pointer_parts(pointer)
+        recorded_value = str(raw.get("recorded_value") or "")
+        reason = str(raw.get("reason") or "")
+        _require(parts and parts[-1] in _PATH_KEYS, "soft path allowlist entry is not a PATH_KEY")
+        _require(
+            reason == "missing_local_target",
+            "soft path allowlist reason is not missing_local_target",
+        )
+        entry = {
+            "json_pointer": pointer,
+            "reason": reason,
+            "recorded_value": recorded_value,
+            "source_ref": source_ref,
+        }
+        key = (source_ref, pointer, recorded_value, reason)
+        _require(key not in keys, "soft path allowlist contains a duplicate entry")
+        entries.append(entry)
+        keys.add(key)
+    expected_entries = sorted(
+        entries,
+        key=lambda item: (
+            item["source_ref"],
+            item["json_pointer"],
+            item["recorded_value"],
+            item["reason"],
+        ),
+    )
+    _require(entries == expected_entries, "soft path allowlist entries are not canonically ordered")
+    _require(
+        _integer(payload.get("entries_count"), label="soft path allowlist entries_count")
+        == len(entries),
+        "soft path allowlist entry count drifted",
+    )
+    _require(
+        payload.get("entries_sha256") == canonical_sha256(entries),
+        "soft path allowlist entries identity drifted",
+    )
+    return _SoftPathAllowlist(
+        entries=entries,
+        keys=keys,
+        source_manifest_sha256=str(payload["source_snapshot_manifest_sha256"]),
+        source_content_sha256=str(payload["source_snapshot_content_sha256"]),
+    )
 
 
 def _require(condition: bool, message: str) -> None:
@@ -549,6 +671,9 @@ class EvidenceSnapshotBuilder:
             ).resolve()
         self.source_aliases = aliases
         self.required_reference_registry = _reference_registry(required_reference_registry)
+        soft_path_allowlist = _soft_path_allowlist_from_environment()
+        self.soft_path_allowlist = soft_path_allowlist.entries
+        self._soft_path_allowlist_keys = soft_path_allowlist.keys
         self._roots: dict[str, Path] = {}
         self._records: dict[str, _SourceRecord] = {}
         self._source_to_ref: dict[str, str] = {}
@@ -721,10 +846,13 @@ class EvidenceSnapshotBuilder:
         logical_identity = hashlib.sha256(f"{source_ref}\0{pointer}".encode()).hexdigest()
         logical_ref = f"external/reference/{logical_identity}"
         if logical_ref not in self._records:
+            safe_name = source.name.replace("\\", "_").replace("/", "_")
             self._register(
                 logical_ref=logical_ref,
                 source=source,
-                view_ref=(f"external/reference/{logical_identity[:2]}/{logical_identity}"),
+                view_ref=(
+                    f"external/reference/{logical_identity[:2]}/{logical_identity}/{safe_name}"
+                ),
                 root_id=None,
                 relative_path=None,
             )
@@ -797,6 +925,31 @@ class EvidenceSnapshotBuilder:
                     continue
                 candidate = self._source_candidate(raw, record)
                 if candidate is None:
+                    soft_entry = {
+                        "source_ref": logical_ref,
+                        "json_pointer": pointer,
+                        "recorded_value": raw,
+                        "reason": "missing_local_target",
+                    }
+                    soft_key = (
+                        logical_ref,
+                        pointer,
+                        raw,
+                        "missing_local_target",
+                    )
+                    if (
+                        key_name in _PATH_KEYS
+                        and local_path is not None
+                        and not required_by_rule
+                        and soft_key in self._soft_path_allowlist_keys
+                    ):
+                        unresolved[(logical_ref, pointer)] = soft_entry
+                        continue
+                    if key_name in _PATH_KEYS and local_path is not None:
+                        _require(
+                            soft_key not in self._soft_path_allowlist_keys,
+                            "soft path allowlist entry was inconsistently classified",
+                        )
                     _require(
                         not required_by_rule
                         and not (key_name in _PATH_KEYS and local_path is not None),
@@ -871,6 +1024,15 @@ class EvidenceSnapshotBuilder:
                 _require(key not in edges or edges[key] == edge, f"ambiguous reference edge: {key}")
                 edges[key] = edge
         self._unresolved_metadata_refs = [unresolved[key] for key in sorted(unresolved)]
+        observed_soft_paths = [
+            entry
+            for entry in self._unresolved_metadata_refs
+            if _pointer_parts(entry["json_pointer"])[-1] in _PATH_KEYS
+        ]
+        _require(
+            observed_soft_paths == self.soft_path_allowlist,
+            "soft path allowlist is not the exact observed PATH_KEY inventory",
+        )
         self._required_reference_matches = [
             required_matches[key] for key in sorted(required_matches)
         ]
@@ -1062,6 +1224,18 @@ def verify_snapshot_manifest(manifest_path: Path) -> dict[str, Any]:
     _require(_SHA256_RE.fullmatch(content_hash) is not None, "snapshot content hash is invalid")
     _require(content_hash == canonical_sha256(core), "snapshot content identity drifted")
     root = manifest_path.parent.resolve()
+    soft_path_allowlist = _soft_path_allowlist_from_environment()
+    if soft_path_allowlist.source_manifest_sha256 is not None:
+        _require(
+            soft_path_allowlist.source_manifest_sha256 == file_sha256(manifest_path),
+            "soft path allowlist source manifest identity drifted",
+        )
+        _require(
+            soft_path_allowlist.source_content_sha256 == content_hash,
+            "soft path allowlist source content identity drifted",
+        )
+    soft_path_allowlist_entries = soft_path_allowlist.entries
+    soft_path_allowlist_keys = soft_path_allowlist.keys
 
     raw_refs = manifest.get("logical_refs")
     _require(isinstance(raw_refs, list) and raw_refs, "snapshot logical refs are empty")
@@ -1123,9 +1297,17 @@ def verify_snapshot_manifest(manifest_path: Path) -> dict[str, Any]:
                     f"external logical identity is invalid: {logical_ref}",
                 )
                 expected_view = f"external/reference/{identity[:2]}/{identity}"
+                expected_named_view = f"{expected_view}/{source_identity.rsplit('/', 1)[-1]}"
             else:
                 raise SnapshotError(f"unknown standalone logical class: {logical_ref}")
-            _require(view_ref == expected_view, f"standalone view topology drifted: {logical_ref}")
+            _require(
+                view_ref == expected_view
+                or (
+                    logical_ref.startswith("external/reference/")
+                    and view_ref == expected_named_view
+                ),
+                f"standalone view topology drifted: {logical_ref}",
+            )
         else:
             root_id = _validate_id(root_id_value, label=f"logical ref root_id: {logical_ref}")
             relative = _validate_relative(
@@ -1445,8 +1627,10 @@ def verify_snapshot_manifest(manifest_path: Path) -> dict[str, Any]:
             f"unresolved metadata identity drifted: {source_ref}:{pointer}",
         )
         key_name = _pointer_parts(pointer)[-1]
+        soft_key = (source_ref, pointer, recorded_value, reason)
         _require(
-            key_name.endswith("_ref") and key_name not in _PATH_KEYS,
+            (key_name.endswith("_ref") and key_name not in _PATH_KEYS)
+            or (key_name in _PATH_KEYS and soft_key in soft_path_allowlist_keys),
             f"unresolved metadata is not an optional ref: {source_ref}:{pointer}",
         )
         _require(
@@ -1471,6 +1655,15 @@ def verify_snapshot_manifest(manifest_path: Path) -> dict[str, Any]:
     _require(
         raw_unresolved == [unresolved[key] for key in sorted(unresolved)],
         "unresolved metadata refs are not canonically ordered",
+    )
+    observed_soft_paths = [
+        entry
+        for entry in raw_unresolved
+        if _pointer_parts(str(entry["json_pointer"]))[-1] in _PATH_KEYS
+    ]
+    _require(
+        observed_soft_paths == soft_path_allowlist_entries,
+        "manifest PATH_KEY diagnostics do not equal the exact soft path allowlist",
     )
     _require(
         _integer(
@@ -1521,6 +1714,19 @@ def verify_snapshot_manifest(manifest_path: Path) -> dict[str, Any]:
                 f"registry-required reference is unbound: {source_ref}:{pointer}",
             )
             if key_name in _PATH_KEYS and local_path is not None:
+                unresolved_entry = unresolved.get(key)
+                soft_key = (
+                    source_ref,
+                    pointer,
+                    recorded_value,
+                    "missing_local_target",
+                )
+                if (
+                    unresolved_entry is not None
+                    and unresolved_entry["reason"] == "missing_local_target"
+                    and soft_key in soft_path_allowlist_keys
+                ):
+                    continue
                 raise SnapshotError(
                     f"builtin-required reference is unbound: {source_ref}:{pointer}"
                 )

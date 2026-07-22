@@ -684,6 +684,62 @@ def _same_evidence_ref(left: object, right: object) -> bool:
     )
 
 
+def _entrypoint_source_path_matches(value: object, *, authority_relative_path: str) -> bool:
+    """Bind a diagnostic absolute checkout path to one canonical repository path."""
+
+    if not isinstance(value, str) or not value or "\x00" in value:
+        return False
+    normalized = value.replace("\\", "/")
+    if not (normalized.startswith("/") or re.match(r"^[A-Za-z]:/", normalized)):
+        return False
+    parts = [part for part in normalized.split("/") if part]
+    expected = [part for part in authority_relative_path.split("/") if part]
+    if not expected or any(part in {".", ".."} for part in parts):
+        return False
+    return len(parts) >= len(expected) and parts[-len(expected) :] == expected
+
+
+def _bundle_entrypoint_matches(value: object, *, block_id: str) -> bool:
+    if not isinstance(value, dict):
+        return False
+    try:
+        canonical_entry = canonical_verifier(block_id)
+    except CanonicalVerifierError:
+        return False
+    authority_relative_path = f"xinao_discovery/src/{canonical_entry.relative_source}"
+    return (
+        set(value)
+        == {
+            "module_name",
+            "source_path",
+            "source_sha256",
+            "checker_id",
+            "checker_version",
+        }
+        and value.get("module_name") == canonical_entry.module_name
+        and _entrypoint_source_path_matches(
+            value.get("source_path"), authority_relative_path=authority_relative_path
+        )
+        and value.get("source_sha256") == canonical_entry.source_sha256
+        and value.get("checker_id") == canonical_entry.checker_id
+        and value.get("checker_version") == canonical_entry.checker_version
+    )
+
+
+def _receipt_entrypoint_matches(value: object, *, expected: dict[str, Any]) -> bool:
+    if not isinstance(value, dict) or set(value) != set(expected):
+        return False
+    authority_relative_path = expected.get("authority_relative_path")
+    if not isinstance(authority_relative_path, str):
+        return False
+    return all(
+        value.get(key) == item for key, item in expected.items() if key != "live_source_path"
+    ) and _entrypoint_source_path_matches(
+        value.get("live_source_path"),
+        authority_relative_path=authority_relative_path,
+    )
+
+
 def _snapshot_entrypoint_identity(
     *,
     compiler_code_manifest_ref: object,
@@ -898,9 +954,7 @@ def _assertion_passes(
         or actuals.get(assertion_id) != actual
         or not isinstance(actual_hashes, dict)
         or actual_hashes.get(assertion_id) != actual_content_hash
-        or not isinstance(entrypoint, dict)
-        or entrypoint.get("module_name") != canonical_entry.module_name
-        or entrypoint.get("source_path") != str(canonical_entry.source_path)
+        or not _bundle_entrypoint_matches(entrypoint, block_id=block_id)
         or entrypoint.get("source_sha256") != checker_code_hash
         or entrypoint.get("checker_id") != checker_id
         or entrypoint.get("checker_version") != checker_version
@@ -929,7 +983,9 @@ def _assertion_passes(
         or not _valid_evidence_ref(receipt.get("request_ref"))
         or not _valid_evidence_ref(receipt.get("entrypoint_source_ref"))
         or not _same_evidence_ref(receipt.get("entrypoint_source_ref"), snapshot_source_ref)
-        or receipt.get("canonical_entrypoint") != canonical_entrypoint
+        or not _receipt_entrypoint_matches(
+            receipt.get("canonical_entrypoint"), expected=canonical_entrypoint
+        )
     ):
         return False, f"assertion_fresh_receipt_mismatch:{assertion_id}"
     request = _load_evidence_object(receipt["request_ref"])

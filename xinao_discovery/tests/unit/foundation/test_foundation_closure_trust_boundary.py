@@ -270,6 +270,61 @@ def test_source_path_replacement_is_rejected(
         load_canonical_actuals_callable("F3_research_weight")
 
 
+def test_sealed_entrypoint_identity_is_portable_only_across_checkout_roots() -> None:
+    block_id = "F3_research_weight"
+    entry = canonical_verifier(block_id)
+    relative = f"xinao_discovery/src/{entry.relative_source}"
+    portable_path = rf"D:\retired-carrier\live_repo\{relative.replace('/', chr(92))}"
+    bundle_entrypoint = {
+        "module_name": entry.module_name,
+        "source_path": portable_path,
+        "source_sha256": entry.source_sha256,
+        "checker_id": entry.checker_id,
+        "checker_version": entry.checker_version,
+    }
+
+    assert closure_module._bundle_entrypoint_matches(bundle_entrypoint, block_id=block_id)
+    assert closure_module._entrypoint_source_path_matches(
+        f"/mnt/another-checkout/{relative}", authority_relative_path=relative
+    )
+
+    wrong_relative = dict(bundle_entrypoint)
+    wrong_relative["source_path"] = "/tmp/f3_assertion_actuals.py"
+    assert not closure_module._bundle_entrypoint_matches(wrong_relative, block_id=block_id)
+
+    wrong_hash = dict(bundle_entrypoint)
+    wrong_hash["source_sha256"] = "0" * 64
+    assert not closure_module._bundle_entrypoint_matches(wrong_hash, block_id=block_id)
+
+    assert not closure_module._entrypoint_source_path_matches(
+        f"/tmp/../forged/{relative}", authority_relative_path=relative
+    )
+
+
+def test_receipt_entrypoint_ignores_only_checkout_root() -> None:
+    entry = canonical_verifier("F2_issuer_settlement_cost_space")
+    relative = f"xinao_discovery/src/{entry.relative_source}"
+    expected = {
+        "module_name": entry.module_name,
+        "live_source_path": str(entry.source_path),
+        "authority_relative_path": relative,
+        "source_sha256": entry.source_sha256,
+        "checker_id": entry.checker_id,
+        "checker_version": entry.checker_version,
+    }
+    relocated = dict(expected)
+    relocated["live_source_path"] = f"/sealed/carrier/{relative}"
+    assert closure_module._receipt_entrypoint_matches(relocated, expected=expected)
+
+    wrong_relative = dict(relocated)
+    wrong_relative["authority_relative_path"] = relative + ".forged"
+    assert not closure_module._receipt_entrypoint_matches(wrong_relative, expected=expected)
+
+    missing_path = dict(relocated)
+    missing_path.pop("live_source_path")
+    assert not closure_module._receipt_entrypoint_matches(missing_path, expected=expected)
+
+
 def test_pythonpath_injection_is_ignored_by_fixed_runner(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
