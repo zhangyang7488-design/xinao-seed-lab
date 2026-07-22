@@ -76,13 +76,10 @@ def _logical_spec(
         if package.get("audit_assessment_ref"):
             row["audit_assessment_path"] = logical(package["audit_assessment_ref"]["path"])
         if package.get("audit_adjudication_ref"):
-            row["audit_adjudication_path"] = logical(
-                package["audit_adjudication_ref"]["path"]
-            )
+            row["audit_adjudication_path"] = logical(package["audit_adjudication_ref"]["path"])
         if package.get("prior_audit_adjudication_refs"):
             row["prior_audit_adjudication_paths"] = [
-                logical(item["path"])
-                for item in package["prior_audit_adjudication_refs"]
+                logical(item["path"]) for item in package["prior_audit_adjudication_refs"]
             ]
         if package.get("audit_role"):
             row["audit_role"] = package["audit_role"]
@@ -124,8 +121,10 @@ def _audit_gate_inputs(
         "path": str(evidence_path),
         "sha256": builder._sha(evidence_path),
     }
+
     def pin(label: str) -> str:
         return hashlib.sha256(label.encode()).hexdigest()
+
     assessment = build_audit_assessment(
         audit_id="audit-repair-gate",
         work_key=work_key,

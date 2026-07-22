@@ -23,9 +23,7 @@ AUDIT_CANDIDATE_SCHEMA = "xinao.audit_candidate_findings.v1"
 EVIDENCE_VERIFIED = "VERIFIED"
 EVIDENCE_UNVERIFIED = "UNVERIFIED"
 EVIDENCE_INCOMPLETE = "INCOMPLETE"
-EVIDENCE_ACCESS_STATES = frozenset(
-    {EVIDENCE_VERIFIED, EVIDENCE_UNVERIFIED, EVIDENCE_INCOMPLETE}
-)
+EVIDENCE_ACCESS_STATES = frozenset({EVIDENCE_VERIFIED, EVIDENCE_UNVERIFIED, EVIDENCE_INCOMPLETE})
 ACCESS_MODE_HOST_EMBEDDED = "HOST_EMBEDDED"
 ACCESS_MODE_DIRECT_TOOL = "DIRECT_TOOL"
 ACCESS_MODE_NONE = "NONE"
@@ -188,8 +186,14 @@ def _scope_pins(value: object) -> dict[str, str]:
 
 def _assessment_plan(value: object) -> dict[str, Any]:
     raw = _mapping(value, "assessment_plan")
-    methods = [_text(item, "assessment_plan.methods[]") for item in _sequence(raw.get("methods"), "assessment_plan.methods")]
-    objects = [_text(item, "assessment_plan.objects[]") for item in _sequence(raw.get("objects"), "assessment_plan.objects")]
+    methods = [
+        _text(item, "assessment_plan.methods[]")
+        for item in _sequence(raw.get("methods"), "assessment_plan.methods")
+    ]
+    objects = [
+        _text(item, "assessment_plan.objects[]")
+        for item in _sequence(raw.get("objects"), "assessment_plan.objects")
+    ]
     blocking = [
         _text(item, "assessment_plan.blocking_severities[]").lower()
         for item in _sequence(raw.get("blocking_severities"), "assessment_plan.blocking_severities")
@@ -256,7 +260,9 @@ def _evidence_access(value: object, required_refs: Sequence[Mapping[str, str]]) 
             "VERIFIED evidence access requires a hash-bound package and every required evidence ref"
         )
     if mode == ACCESS_MODE_NONE and (accessed or package_ref is not None):
-        raise AuditAdjudicationError("NONE evidence access cannot bind accessed evidence or a package")
+        raise AuditAdjudicationError(
+            "NONE evidence access cannot bind accessed evidence or a package"
+        )
     if status != EVIDENCE_VERIFIED and not limitations:
         raise AuditAdjudicationError("non-verified evidence access requires limitations")
     return {
@@ -267,9 +273,7 @@ def _evidence_access(value: object, required_refs: Sequence[Mapping[str, str]]) 
         "required_evidence_complete": complete,
         "cannot_access_filesystem": mode != ACCESS_MODE_DIRECT_TOOL,
         "independent_validation_claim_allowed": bool(
-            status == EVIDENCE_VERIFIED
-            and complete
-            and mode == ACCESS_MODE_DIRECT_TOOL
+            status == EVIDENCE_VERIFIED and complete and mode == ACCESS_MODE_DIRECT_TOOL
         ),
         "limitations": limitations,
     }
@@ -485,9 +489,7 @@ def _owner_reproduction(value: object) -> dict[str, Any]:
 
 def _validated_prior(value: object) -> list[dict[str, Any]]:
     priors: list[dict[str, Any]] = []
-    for index, item in enumerate(
-        _sequence(value, "prior_adjudications", allow_empty=True)
-    ):
+    for index, item in enumerate(_sequence(value, "prior_adjudications", allow_empty=True)):
         raw = _mapping(item, f"prior_adjudications[{index}]")
         if raw.get("schema_version") != AUDIT_ADJUDICATION_SCHEMA:
             raise AuditAdjudicationError("prior adjudication schema mismatch")

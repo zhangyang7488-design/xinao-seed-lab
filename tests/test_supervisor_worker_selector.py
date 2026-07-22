@@ -208,9 +208,7 @@ def test_independent_validation_requires_direct_tool_capability() -> None:
 
     assert result["decision"] == "selected"
     assert result["selected_candidate"]["provider_id"] == "tool-worker"
-    assert result["excluded_reasons"][0]["reasons"] == [
-        "direct_tool_access_unsupported"
-    ]
+    assert result["excluded_reasons"][0]["reasons"] == ["direct_tool_access_unsupported"]
 
 
 def test_capacity_preference_uses_current_remaining_quota_without_reset_math() -> None:

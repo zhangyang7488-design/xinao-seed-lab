@@ -104,7 +104,9 @@ def _assessment(
             "status": evidence_status,
             "mode": access_mode,
             "package_ref": _ref("package") if access_mode != "NONE" else None,
-            "accessed_evidence_refs": required if verified else ([] if access_mode == "NONE" else required[:1]),
+            "accessed_evidence_refs": required
+            if verified
+            else ([] if access_mode == "NONE" else required[:1]),
             "limitations": [] if verified else ["complete bounded evidence was not available"],
         },
         candidate_output=candidate,
@@ -135,14 +137,19 @@ def test_verified_access_and_owner_reproduction_authorize_one_bounded_repair() -
     assert assessment["repair_authorized"] is False
     assert adjudication["terminal_state"] == "REPAIR_AUTHORIZED"
     assert adjudication["repair_authorized"] is True
-    assert require_repair_authorization(
-        adjudication,
-        assessment=assessment,
-        expected_work_key="work-1",
-    ) == adjudication
+    assert (
+        require_repair_authorization(
+            adjudication,
+            assessment=assessment,
+            expected_work_key="work-1",
+        )
+        == adjudication
+    )
 
 
-def test_host_embedded_cognitive_review_has_no_independent_v_claim_but_owner_can_adjudicate() -> None:
+def test_host_embedded_cognitive_review_has_no_independent_v_claim_but_owner_can_adjudicate() -> (
+    None
+):
     assessment = _assessment(access_mode="HOST_EMBEDDED")
     assert assessment["review_role"] == "COGNITIVE_REVIEW"
     assert assessment["evidence_access"]["cannot_access_filesystem"] is True
@@ -286,9 +293,7 @@ def test_published_json_schemas_accept_canonical_objects() -> None:
     )
     assessment_schema = json.loads((root / "audit_assessment.v1.schema.json").read_text())
     adjudication_schema = json.loads((root / "audit_adjudication.v1.schema.json").read_text())
-    candidate_schema = json.loads(
-        (root / "audit_candidate_findings.v1.schema.json").read_text()
-    )
+    candidate_schema = json.loads((root / "audit_candidate_findings.v1.schema.json").read_text())
 
     Draft202012Validator(candidate_schema).validate(_candidate_output())
     assert validate_audit_candidate_output(_candidate_output())["authority"] is False

@@ -236,14 +236,10 @@ def resolve_supervisor_worker_decision(
         )
     direct_tool_required = high_value_audit and audit_role == "independent_validation"
     evidence_access_required = (
-        True
-        if high_value_audit
-        else request.get("evidence_access_required", False)
+        True if high_value_audit else request.get("evidence_access_required", False)
     )
     direct_tool_access_required = (
-        True
-        if direct_tool_required
-        else request.get("direct_tool_access_required", False)
+        True if direct_tool_required else request.get("direct_tool_access_required", False)
     )
     decision = select_supervisor_worker(
         candidates,

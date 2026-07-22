@@ -53,7 +53,9 @@ def _atomic_json(path: Path, value: object) -> None:
 
 
 def _prior(paths: list[str]) -> list[dict[str, Any]]:
-    return [_object(Path(path), f"prior_adjudications[{index}]") for index, path in enumerate(paths)]
+    return [
+        _object(Path(path), f"prior_adjudications[{index}]") for index, path in enumerate(paths)
+    ]
 
 
 def main(argv: list[str] | None = None) -> int:
