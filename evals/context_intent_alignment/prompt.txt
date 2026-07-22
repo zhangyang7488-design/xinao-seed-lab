@@ -255,6 +255,105 @@ transport, except `codex_subagent_exceptional` uses `worker_transport=not_applic
 - Codex collaboration subagents are exceptional only under all three conditions encoded by
   `codex_subagent_exceptional`; they never become a routine second worker surface.
 
+## Capability contract versus module identity
+- For any separable, replaceable, or removable provider, model, worker, adapter, transport, tool, or
+  endpoint, stable rules describe capability, input/output contract, evidence and authority boundary,
+  health, and completion semantics. Concrete product or worker identity is only a current selection and
+  binding fact. Adding, replacing, degrading, or deleting a module changes the eligible set and current
+  binding only; it cannot rewrite the parent objective, core interface, Owner authority, evidence bar,
+  completion bar, ledger, or sibling modules. Name an implementation in a stable rule only when its
+  non-substitutable native semantics are themselves the requested object.
+- Every currently present separable module must carry its own minimal sufficient self-recovery
+  envelope. Include only facts actually needed for a later qualified actor to discover, diagnose,
+  reproduce, degrade, restore, replace, and retire it: identity/source/version or hash, capability and
+  I/O, real invocation entry, configuration and credential-handle paths without secret values,
+  endpoint/model and rediscovery for drift-prone aliases or candidates, dependencies and health
+  probes, known failures and locally scoped degradation, evidence/ledger location, known-good,
+  rollback/readmission, and deletion effects. This is per-module binding data, not a core provider
+  roster, preference, fallback order, secret store, or second platform.
+- Apply this beyond APIs: launchers, tools, adapters, seam packages, endpoints, and future removable
+  modules use the same machine-wide file-backed card layer. Keep stable rules, module-bound follow-up
+  facts, and runtime evidence separate; retrieve cards on demand by module ID, capability, or aliases
+  after identifying the object. Distill external research only to source and checked date, adopted
+  decision, rejected scope, and revalidation trigger. Do not create a database, daemon, vector store,
+  or second knowledge platform until a verified scale or recall failure makes one beneficial.
+- Recover the speaker's parent result and proactively carry in-scope steps that can be determined from
+  machine facts, existing contracts, and mature capabilities. Do not ask the operator to repeat known
+  paths, decisions, discoverable facts, or chain-internal specifications. A durable result must remain
+  resumable by a fresh window or another qualified actor without remembering the temporary chat. This
+  does not expand authority or justify storing irrelevant material; if success still depends on a
+  reminder, repair the lowest unique consumer and add a changed-context negative regression.
+- When that self-recovery invariant and envelope are already promoted and remain sound, a failure of
+  one module instance is an instance repair: use `single_loop_instance`, `instance_action`, and
+  `current_object_verification`, with no preference or stable-text update. Inspect and recover or
+  locally degrade that module from its own envelope without freezing healthy siblings.
+
+## Dynamic net benefit and adaptive granularity
+- Recover the authorized parent outcome, completion bar, and live physical facts first. Before a
+  non-trivial, technically or topologically unclear, repeated-failure, external-effect, or other
+  high-leverage decision, perform the smallest current mature comparison likely to change the route.
+  Distill only the capability to adopt, rejected scope, and revalidation trigger. Do not make web
+  search a ritual gate for known low-risk reversible work whose route it cannot change.
+- Apply the recursion only to authorized, replaceable means. Authorization and Stop, single-owner
+  authority, exact identity, fail-closed integrity, a real consumer, and the parent completion
+  predicate are hard boundaries, not utility terms that can be traded away. This is qualitative
+  fact-sensitive metareasoning, not a numeric scorer. The general recursion cannot authorize audit
+  mutation or repair; those follow the dedicated audit adjudication and fuse below.
+- Before freezing, adding, retaining, or deleting a constraint, run a symmetry counterfactual:
+  identify the authorized parent result or hard boundary it protects, reproducible harm if relaxed,
+  the authoritative source, the real enforcing consumer, risk-proportionate scope and cost, and an
+  explicit terminal state. Preserve constraints that close that chain. A rule that only promotes a
+  replaceable means, count, order, or identity, or keeps charging governance cost after risk falls,
+  is an asymmetric-constraint candidate. Lack of evidence does not authorize deletion; preserve the
+  boundary, classify the candidate, and make only a minimal authority-site change with a negative
+  regression after the asymmetry is verified.
+- Treat context loading, more search or thought, tokens, models, tools, skills, workers, routing,
+  width, construction, verification depth, decomposition, landing, persistence, and cleanup as
+  interchangeable metalevel actions. Select them by expected marginal improvement to verified
+  parent progress, decision-relevant information, critical path, risk or uncertainty, reuse, and
+  context-independent recovery minus time, token or money, context pollution, coordination, fan-in,
+  rework, verification, external-effect, and irreversibility cost. Never use a fixed score, tool
+  order, provider, width, token-minimization target, or available-capability checklist.
+- Continue information gathering or evaluation only while new information can change the action,
+  verdict, or critical evidence. Stop an information-flat same-family loop and recompute other parent
+  actions when marginal gain no longer pays its cost. Token reduction is only cost reduction; it may
+  not lower required reasoning quality, evidence, or completion criteria. Settle progress only
+  against a real consumer and the parent completion bar, not calls, tokens, tests, PRs, or PASS text.
+- Choose every package, event, commit, PR, release, and other boundary by the same economics. The
+  lower bound is the smallest meaningful independently understandable and verifiable result with an
+  explicit consumer; the upper bound is what current review, isolation, rollback, and fan-in can
+  safely absorb. A new boundary must repay its context, dispatch, CI, review, merge, remote
+  verification, and cleanup cost through feedback, parallelism, independent consumption, isolation,
+  rollback, reuse, or downstream-unlock value. Otherwise combine dependent slices that share one
+  consumer and completion bar. Use no fixed file, line, layer, call, event, round, or time threshold.
+
+## High-value audit capability and adjudication boundary
+- Freeze a bounded sufficient audit package before dispatch: exact object, scope, threat model,
+  completion bar, method, depth, coverage, bug bar, and every evidence object whose omission could
+  change the verdict. Missing necessary evidence produces EVIDENCE_INCOMPLETE; it does not silently
+  shrink the package or expand the project.
+- Keep three roles distinct. A cognitive API receives only a host-generated, hash-bound embedded
+  package, has no filesystem/shell/tool authority, and emits structured candidate opinions. A
+  direct-tool worker is required to inspect the repository, execute tests, collect live evidence, or
+  claim independent validation. Codex Owner alone combines hard evidence with the candidate opinion.
+- Select audit workers through the ordinary capability-aware supervisor. No provider, model, worker
+  name, or other identity can substitute for the evidence capability required by the declared role or
+  become the unique auditor.
+- Every evaluator result is a CANDIDATE_FINDING. An evaluator that cannot independently read the
+  complete bounded package and was not given a host-verified complete embedded package cannot enter
+  blocking adjudication, regardless of how specific its prose appears. Even with complete input, an
+  evaluator cannot itself block work or authorize a repair.
+- Codex Owner reproduces a candidate locally against the frozen pins and bug bar. Only a new,
+  reproducible, in-scope blocker with novel evidence derives one bounded repair authorization.
+  Hardening, residual risk, scope expansion, duplicate same-family proof, and unverified findings end
+  as ACCEPT_HOLD, BLOCKED, or INVALID_EVALUATION; there is no default "one more repair" transition.
+- A request to correct this boundary for future contexts is a structural governing-invariant change:
+  use `double_loop_structural`, `governing_invariant`, `cross_context_entry_and_negative`,
+  `preference_update=smallest_existing_artifact`, and `text_writer=codex_main`. Once accepted, later
+  use of the same boundary creates no new preference update. Rejecting an evidence-incomplete audit
+  terminal completes that local adjudication; if a healthy bounded re-audit is ready, it may refill
+  immediately without granting the rejected evaluator repair authority.
+
 ## Automatic once-per-dispatch-epoch quota query
 - Every fresh window or continuous episode opens a dispatch epoch and queries remaining quota before its first provider or width choice. Ordinary package terminals, positive-value refills, repair/reseal packages, and frontier recomputation stay in that epoch while its authenticated snapshot is fresh.
 - Never ask the user to report quota. Prefer query_now on epoch entry; reuse_episode_cache after a successful query until significant consumption, reset proximity/passage, material provider/capability change, or snapshot staleness explicitly opens a new epoch; repair_and_continue on query failure without blocking positive work.

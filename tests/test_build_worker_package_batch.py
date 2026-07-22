@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import copy
+import hashlib
 import json
 import subprocess
 import sys
@@ -10,6 +11,10 @@ from typing import Callable
 import pytest
 from scripts import build_worker_package_batch as builder
 from scripts import validate_worker_package_batch as preflight
+from services.agent_runtime.audit_adjudication import (
+    build_audit_assessment,
+    build_owner_adjudication,
+)
 from services.agent_runtime.dispatch_economics import (
     DispatchEconomicsError,
     build_neutral_output_contract,
@@ -68,6 +73,16 @@ def _logical_spec(
             row["prior_logical_contract_ref"] = {
                 "path": logical(package["prior_logical_contract_ref"]["path"])
             }
+        if package.get("audit_assessment_ref"):
+            row["audit_assessment_path"] = logical(package["audit_assessment_ref"]["path"])
+        if package.get("audit_adjudication_ref"):
+            row["audit_adjudication_path"] = logical(package["audit_adjudication_ref"]["path"])
+        if package.get("prior_audit_adjudication_refs"):
+            row["prior_audit_adjudication_paths"] = [
+                logical(item["path"]) for item in package["prior_audit_adjudication_refs"]
+            ]
+        if package.get("audit_role"):
+            row["audit_role"] = package["audit_role"]
         packages.append(row)
     return {
         "schema_version": "xinao.worker_package_batch_spec.v1",
@@ -94,6 +109,156 @@ def _write_json(path: Path, value: object) -> None:
         json.dumps(value, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
         encoding="utf-8",
     )
+
+
+def _audit_gate_inputs(
+    tmp_path: Path,
+    *,
+    work_key: str,
+    evidence_path: Path,
+) -> tuple[Path, Path]:
+    evidence_ref = {
+        "path": str(evidence_path),
+        "sha256": builder._sha(evidence_path),
+    }
+
+    def pin(label: str) -> str:
+        return hashlib.sha256(label.encode()).hexdigest()
+
+    assessment = build_audit_assessment(
+        audit_id="audit-repair-gate",
+        work_key=work_key,
+        assessor_identity={
+            "provider_id": "provider-a",
+            "profile_ref": "profile:independent-audit",
+            "model_id": "model:strong-audit",
+            "transport_id": "worker-pool",
+        },
+        assessment_plan={
+            "methods": ["read", "replay"],
+            "objects": ["source", "evidence"],
+            "depth": "bounded",
+            "coverage": "verdict-changing evidence",
+            "blocking_severities": ["high"],
+            "in_scope": ["frozen object"],
+            "out_of_scope": ["expanded platform"],
+        },
+        scope_pins={
+            "object_sha256": pin("object"),
+            "scope_sha256": pin("scope"),
+            "threat_model_sha256": pin("threat"),
+            "completion_bar_sha256": pin("bar"),
+        },
+        required_evidence_refs=[evidence_ref],
+        evidence_access={
+            "status": "VERIFIED",
+            "mode": "DIRECT_TOOL",
+            "package_ref": evidence_ref,
+            "accessed_evidence_refs": [evidence_ref],
+            "limitations": [],
+        },
+        candidate_output={
+            "schema_version": "xinao.audit_candidate_findings.v1",
+            "verdict": "CANDIDATE_FINDINGS",
+            "summary": "candidate-only result",
+            "findings": [
+                {
+                    "finding_id": "finding-1",
+                    "family": "identity-binding",
+                    "title": "reproducible bypass",
+                    "claim": "the frozen identity can be replaced",
+                    "severity_claim": "high",
+                    "evidence_citations": [
+                        {
+                            "path": str(evidence_path),
+                            "source_sha256": evidence_ref["sha256"],
+                            "line_start": 1,
+                            "line_end": 1,
+                            "content_sha256": evidence_ref["sha256"],
+                        }
+                    ],
+                    "reproduction_conditions": ["replace identity before use"],
+                    "finding_kind": "CANDIDATE_FINDING",
+                }
+            ],
+            "limitations": [],
+            "authority": False,
+            "completion_claim_allowed": False,
+            "repair_authorized": False,
+        },
+    )
+    adjudication = build_owner_adjudication(
+        assessment=assessment,
+        finding_id="finding-1",
+        owner_identity="codex-main",
+        disposition="BLOCKING",
+        severity="high",
+        owner_reproduction={
+            "status": "VERIFIED",
+            "method": "Owner isolated local replay",
+            "evidence_refs": [evidence_ref],
+        },
+    )
+    assessment_path = tmp_path / "assessment.json"
+    adjudication_path = tmp_path / "adjudication.json"
+    _write_json(assessment_path, assessment)
+    _write_json(adjudication_path, adjudication)
+    return assessment_path, adjudication_path
+
+
+def test_high_value_audit_is_candidate_only_and_uses_canonical_candidate_schema(
+    tmp_path: Path,
+) -> None:
+    fixture = _fixture(tmp_path / "fixture")
+    spec = _logical_spec(fixture)
+    spec["packages"][0]["work_class"] = "high_value_audit"
+    spec["packages"][0]["audit_role"] = "cognitive_review"
+
+    manifest = builder.build_neutral_manifest(spec)
+    package = manifest["packages"][0]
+
+    assert package["candidate_only"] is True
+    assert package["write_domains"] == []
+    assert package["audit_role"] == "cognitive_review"
+    assert package["cannot_access_filesystem"] is True
+    assert package["tool_execution_allowed"] is False
+    assert package["evaluator_output_authority"] == "candidate_only"
+    assert package["acceptance"]["require_json_object"] is True
+    assert package["acceptance"]["json_schema_ref"]["path"].endswith(
+        "audit_candidate_findings.v1.schema.json"
+    )
+
+
+def test_audit_repair_manifest_requires_hash_bound_owner_authorization(
+    tmp_path: Path,
+) -> None:
+    fixture = _fixture(tmp_path / "fixture")
+    spec = _logical_spec(fixture)
+    package_spec = spec["packages"][0]
+    evidence_path = Path(package_spec["input_paths"][0])
+    assessment_path, adjudication_path = _audit_gate_inputs(
+        tmp_path,
+        work_key=str(package_spec["work_key"]),
+        evidence_path=evidence_path,
+    )
+    package_spec.update(
+        {
+            "work_class": "audit_repair",
+            "audit_assessment_path": str(assessment_path),
+            "audit_adjudication_path": str(adjudication_path),
+        }
+    )
+
+    manifest = builder.build_neutral_manifest(spec)
+    package = manifest["packages"][0]
+    assert package["audit_assessment_ref"] in package["input_refs"]
+    assert package["audit_adjudication_ref"] in package["input_refs"]
+
+    tampered = json.loads(adjudication_path.read_text(encoding="utf-8"))
+    tampered["repair_authorized"] = False
+    _write_json(adjudication_path, tampered)
+    with pytest.raises(DispatchEconomicsError, match="adjudication_sha256 mismatch"):
+        builder.build_neutral_manifest(spec)
 
 
 def _route_receipt(transport_id: str) -> dict[str, object]:

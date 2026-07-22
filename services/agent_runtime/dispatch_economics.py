@@ -19,6 +19,11 @@ from contextlib import ExitStack
 from pathlib import Path
 from typing import Any, Callable
 
+from services.agent_runtime.audit_adjudication import (
+    AuditAdjudicationError,
+    audit_candidate_schema_sha256,
+    require_repair_authorization,
+)
 from services.agent_runtime.context_slice_manifest import (
     ContextSliceManifestError,
     validate_context_slice_manifest,
@@ -544,6 +549,13 @@ def _validate_package_identity(package: Mapping[str, object], index: int) -> Non
         "lane_index",
         "prior_attempt_receipt_ref",
         "prior_logical_contract_ref",
+        "audit_assessment_ref",
+        "audit_adjudication_ref",
+        "prior_audit_adjudication_refs",
+        "audit_role",
+        "cannot_access_filesystem",
+        "tool_execution_allowed",
+        "evaluator_output_authority",
         "package_seal_sha256",
         "execution_seal_ready",
         "resealed_from_package_seal_sha256",
@@ -555,6 +567,138 @@ def _validate_package_identity(package: Mapping[str, object], index: int) -> Non
     )
     if _canonical_sha(expected_identity) != observed_identity_sha:
         raise DispatchEconomicsError(f"{label}.package_identity_sha256 mismatch")
+
+
+def _validate_audit_package(
+    package: dict[str, Any],
+    index: int,
+    *,
+    path_resolver: PathResolver | None,
+) -> None:
+    label = f"packages[{index}]"
+    work_class = str(package.get("work_class") or "")
+    if work_class == "high_value_audit":
+        if package.get("candidate_only") is not True or package.get("write_domains"):
+            raise DispatchEconomicsError(
+                f"{label} high_value_audit must be candidate-only with no write domains"
+            )
+        acceptance = _mapping(package.get("acceptance"), f"{label}.acceptance")
+        audit_role = str(package.get("audit_role") or "")
+        expected_contracts = {
+            "cognitive_review": (True, False),
+            "independent_validation": (False, True),
+        }
+        if audit_role not in expected_contracts:
+            raise DispatchEconomicsError(f"{label} high_value_audit requires audit_role")
+        cannot_access_filesystem, tool_execution_allowed = expected_contracts[audit_role]
+        if (
+            package.get("cannot_access_filesystem") is not cannot_access_filesystem
+            or package.get("tool_execution_allowed") is not tool_execution_allowed
+            or package.get("evaluator_output_authority") != "candidate_only"
+        ):
+            raise DispatchEconomicsError(
+                f"{label} high_value_audit role capability contract drifted"
+            )
+        schema_ref = _mapping(
+            acceptance.get("json_schema_ref"),
+            f"{label}.acceptance.json_schema_ref",
+        )
+        if (
+            acceptance.get("require_json_object") is not True
+            or schema_ref.get("sha256") != audit_candidate_schema_sha256()
+        ):
+            raise DispatchEconomicsError(
+                f"{label} high_value_audit must emit the canonical candidate-only schema"
+            )
+        return
+
+    audit_fields = {
+        "audit_assessment_ref",
+        "audit_adjudication_ref",
+        "prior_audit_adjudication_refs",
+        "audit_role",
+        "cannot_access_filesystem",
+        "tool_execution_allowed",
+        "evaluator_output_authority",
+    }
+    if work_class != "audit_repair":
+        unexpected = sorted(audit_fields & set(package))
+        if unexpected:
+            raise DispatchEconomicsError(
+                f"{label} audit authorization refs require work_class=audit_repair"
+            )
+        return
+
+    try:
+        assessment_ref = _validate_path_ref(
+            package.get("audit_assessment_ref"),
+            f"{label}.audit_assessment_ref",
+            path_resolver=path_resolver,
+        )
+        adjudication_ref = _validate_path_ref(
+            package.get("audit_adjudication_ref"),
+            f"{label}.audit_adjudication_ref",
+            path_resolver=path_resolver,
+        )
+        prior_refs = [
+            _validate_path_ref(
+                item,
+                f"{label}.prior_audit_adjudication_refs[{ref_index}]",
+                path_resolver=path_resolver,
+            )
+            for ref_index, item in enumerate(
+                _sequence(
+                    package.get("prior_audit_adjudication_refs", []),
+                    f"{label}.prior_audit_adjudication_refs",
+                )
+            )
+        ]
+        bound_inputs = {
+            _ref_key(
+                _validate_path_ref(
+                    item,
+                    f"{label}.input_refs[{ref_index}]",
+                    path_resolver=path_resolver,
+                )
+            )
+            for ref_index, item in enumerate(
+                _sequence(package.get("input_refs"), f"{label}.input_refs")
+            )
+        }
+        required_refs = [assessment_ref, adjudication_ref, *prior_refs]
+        if not {_ref_key(item) for item in required_refs}.issubset(bound_inputs):
+            raise DispatchEconomicsError(
+                f"{label} audit authorization refs must be hash-bound input_refs"
+            )
+        _, assessment = _load_hash_bound_ref(
+            assessment_ref,
+            "audit_assessment_ref",
+            path_resolver=path_resolver,
+        )
+        _, adjudication = _load_hash_bound_ref(
+            adjudication_ref,
+            "audit_adjudication_ref",
+            path_resolver=path_resolver,
+        )
+        priors = []
+        for prior_ref in prior_refs:
+            _, prior = _load_hash_bound_ref(
+                prior_ref,
+                "prior_audit_adjudication_ref",
+                path_resolver=path_resolver,
+            )
+            priors.append(prior)
+        require_repair_authorization(
+            adjudication,
+            assessment=assessment,
+            expected_work_key=str(package["work_key"]),
+            prior_adjudications=priors,
+        )
+        package["audit_assessment_ref"] = assessment_ref
+        package["audit_adjudication_ref"] = adjudication_ref
+        package["prior_audit_adjudication_refs"] = prior_refs
+    except AuditAdjudicationError as exc:
+        raise DispatchEconomicsError(f"{label} audit repair gate failed: {exc}") from exc
 
 
 _DEPENDENCY_CONDITIONS = frozenset(
@@ -924,6 +1068,7 @@ def validate_package_batch_manifest(
                 f"packages[{index}].output_contract_sha256 does not bind acceptance"
             )
         package["acceptance"] = acceptance
+        _validate_audit_package(package, index, path_resolver=path_resolver)
         _int_at_least(package.get("timeout_sec"), f"packages[{index}].timeout_sec", 1)
         if package.get("prior_attempt_receipt_ref") is not None:
             package["prior_attempt_receipt_ref"] = _validate_path_ref(
@@ -948,6 +1093,17 @@ def validate_package_batch_manifest(
         }
         if package.get("prior_logical_contract_ref") is not None:
             execution_seal["prior_logical_contract_ref"] = package["prior_logical_contract_ref"]
+        for field in (
+            "audit_assessment_ref",
+            "audit_adjudication_ref",
+            "prior_audit_adjudication_refs",
+            "audit_role",
+            "cannot_access_filesystem",
+            "tool_execution_allowed",
+            "evaluator_output_authority",
+        ):
+            if package.get(field) is not None:
+                execution_seal[field] = package[field]
         package["package_seal_sha256"] = _canonical_sha(execution_seal)
         normalized.append(package)
 

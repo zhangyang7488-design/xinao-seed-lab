@@ -25,6 +25,8 @@ _EXCLUSION_ORDER = (
     "unhealthy",
     "no_positive_benefit",
     "context_inheritance_unsupported",
+    "evidence_access_unsupported",
+    "direct_tool_access_unsupported",
 )
 
 
@@ -88,6 +90,8 @@ class WorkerCandidate:
     healthy: bool
     positive_benefit: bool
     context_capable: bool = False
+    evidence_access_capable: bool = False
+    direct_tool_access_capable: bool = False
 
     def __post_init__(self) -> None:
         if not isinstance(self.identity, CandidateIdentity):
@@ -97,6 +101,8 @@ class WorkerCandidate:
             "healthy",
             "positive_benefit",
             "context_capable",
+            "evidence_access_capable",
+            "direct_tool_access_capable",
         ):
             if not isinstance(getattr(self, field), bool):
                 raise TypeError(f"candidate fact {field!r} must be a bool")
@@ -113,6 +119,8 @@ class WorkerCandidate:
             healthy=_boolean_fact(value, "healthy"),
             positive_benefit=_boolean_fact(value, "positive_benefit"),
             context_capable=_boolean_fact(value, "context_capable"),
+            evidence_access_capable=_boolean_fact(value, "evidence_access_capable"),
+            direct_tool_access_capable=_boolean_fact(value, "direct_tool_access_capable"),
         )
 
     def as_dict(self) -> dict[str, Any]:
@@ -122,6 +130,8 @@ class WorkerCandidate:
             "healthy": self.healthy,
             "positive_benefit": self.positive_benefit,
             "context_capable": self.context_capable,
+            "evidence_access_capable": self.evidence_access_capable,
+            "direct_tool_access_capable": self.direct_tool_access_capable,
         }
 
 
@@ -140,6 +150,8 @@ def _exclusion_reasons(
     candidate: WorkerCandidate,
     *,
     context_inheritance_required: bool,
+    evidence_access_required: bool,
+    direct_tool_access_required: bool,
 ) -> list[str]:
     reasons: set[str] = set()
     if not candidate.declared_active:
@@ -150,6 +162,10 @@ def _exclusion_reasons(
         reasons.add("no_positive_benefit")
     if context_inheritance_required and not candidate.context_capable:
         reasons.add("context_inheritance_unsupported")
+    if evidence_access_required and not candidate.evidence_access_capable:
+        reasons.add("evidence_access_unsupported")
+    if direct_tool_access_required and not candidate.direct_tool_access_capable:
+        reasons.add("direct_tool_access_unsupported")
     return [reason for reason in _EXCLUSION_ORDER if reason in reasons]
 
 
@@ -181,20 +197,24 @@ def select_supervisor_worker(
     task_separable: bool,
     supervisor_choice: CandidateIdentity | Mapping[str, Any] | None = None,
     context_inheritance_required: bool = False,
+    evidence_access_required: bool = False,
+    direct_tool_access_required: bool = False,
     stable_preferred_provider_id: str = "",
     capacity_by_provider: Mapping[str, ProviderCapacitySignal | Mapping[str, Any]] | None = None,
 ) -> dict[str, Any]:
     """Select a candidate only when current facts make the choice deterministic.
 
     Selection precedence is explicit supervisor choice, sole eligibility, then
-    the provider-agnostic stable/capacity preference policy.  Provider choice
-    never guesses a model or transport: multiple exact candidates within the
-    preferred provider still return ``decision_required``.
+    the provider-agnostic stable/capacity policy.  Provider identity never
+    substitutes for a required capability, and provider choice never guesses a
+    model or transport.
     """
 
     for field, value in (
         ("task_separable", task_separable),
         ("context_inheritance_required", context_inheritance_required),
+        ("evidence_access_required", evidence_access_required),
+        ("direct_tool_access_required", direct_tool_access_required),
     ):
         if not isinstance(value, bool):
             raise TypeError(f"{field} must be a bool")
@@ -208,6 +228,8 @@ def select_supervisor_worker(
         reasons = _exclusion_reasons(
             candidate,
             context_inheritance_required=context_inheritance_required,
+            evidence_access_required=evidence_access_required,
+            direct_tool_access_required=direct_tool_access_required,
         )
         if reasons:
             excluded.append((candidate, reasons))

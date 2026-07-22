@@ -33,6 +33,7 @@ TEXT_SUFFIXES = {
 ALLOWED_AGENT_RUNTIME_MODULES = {
     "__init__.py",
     "action_resume_receipt.py",
+    "audit_adjudication.py",
     "closure_test_activities.py",
     "closure_test_proof.py",
     "codex_inner_profile_consumer.py",
@@ -316,7 +317,7 @@ def test_context_intent_alignment_eval_is_balanced_and_friction_bounded() -> Non
         (REPO_ROOT / "evals/context_intent_alignment/cases.yaml").read_text(encoding="utf-8")
     )
     cases = {case["metadata"]["id"]: case for case in loaded}
-    assert len(cases) == suite["case_count"] == 51
+    assert len(cases) == suite["case_count"] == 56
     assert len(cases) == len(loaded)
     assert all(case["metadata"]["domain"] == case["vars"]["domain"] for case in cases.values())
     for required in (
@@ -355,6 +356,7 @@ def test_context_intent_alignment_eval_is_balanced_and_friction_bounded() -> Non
         "REG_FRESH_WINDOW_REUSES_ACCEPTED_D_CANDIDATE",
         "NEG_FRESH_WINDOW_DIRECTORY_ONLY_IS_NOT_REUSE",
         "REG_DIRECT_ROUTE_AND_CARRIER_SURVIVE_WINDOW",
+        "REG_DYNAMIC_NET_BENEFIT_GOVERNS_AI_EFFORT_AND_GRANULARITY",
     ):
         assert required in cases
     assert cases["POS_CLEAR_REVERSIBLE_LOCAL_FIX"]["vars"]["expected_ask_user"] is False
@@ -795,8 +797,8 @@ def test_context_intent_alignment_eval_is_balanced_and_friction_bounded() -> Non
         (REPO_ROOT / "evals/behavior_regression/catalog.json").read_text(encoding="utf-8")
     )
     context_suite = next(s for s in catalog["suites"] if s["id"] == "context_intent_alignment")
-    assert context_suite["case_count"] == 51
-    assert catalog["declared_case_count"] == 98
+    assert context_suite["case_count"] == 56
+    assert catalog["declared_case_count"] == 103
 
     decision = json.loads(
         (REPO_ROOT / "evals/context_intent_alignment/decision_model.v1.json").read_text(
@@ -813,6 +815,8 @@ def test_context_intent_alignment_eval_is_balanced_and_friction_bounded() -> Non
     assert decision["not_authority"] is True
     assert "duplicate_platform_or_control_plane_cost" in decision["qualitative_lenses"]
     assert "supervisor_worker_net_benefit" in decision["qualitative_lenses"]
+    assert "dynamic_metareasoning_net_benefit" in decision["qualitative_lenses"]
+    assert "dynamic_net_benefit_metareasoning_invariant" in decision["input_interpretation"]
     assert (
         "hierarchical_failure_scope_without_upward_authority_drift"
         in decision["qualitative_lenses"]
@@ -1203,7 +1207,7 @@ def test_dual_self_evolution_runners_are_thin_and_claims_stay_separate() -> None
         (REPO_ROOT / "evals/behavior_regression/catalog.json").read_text(encoding="utf-8")
     )
     suite_count = sum(item["case_count"] for item in catalog["suites"])
-    assert suite_count == catalog["declared_case_count"] == 98
+    assert suite_count == catalog["declared_case_count"] == 103
     context_cases = yaml.safe_load(
         (REPO_ROOT / "evals/context_intent_alignment/cases.yaml").read_text(encoding="utf-8")
     )

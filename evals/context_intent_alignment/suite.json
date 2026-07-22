@@ -3,7 +3,7 @@
   "purpose": "Turn observed intent or object mismatches into balanced live-agent regressions without a resident gate or routine user questions.",
   "case_source": "cases.yaml",
   "decision_model": "decision_model.v1.json",
-  "case_count": 51,
+  "case_count": 56,
   "profiles": {
     "smoke": "Fast representative checks for ordinary productivity, topology, ambiguity, worker routing, and preference learning.",
     "core": "The normal regression bank for stable behavior changes.",
@@ -77,6 +77,21 @@
       "source": "AWS circuit breaker pattern",
       "url": "https://docs.aws.amazon.com/prescriptive-guidance/latest/cloud-design-patterns/circuit-breaker.html",
       "use": "cool down repeatedly failing endpoints and use bounded recovery probes"
+    },
+    {
+      "source": "NIST SP 800-53A Rev. 5 assessment procedures",
+      "url": "https://csrc.nist.gov/pubs/sp/800/53/a/r5/final",
+      "use": "freeze assessment methods, objects, depth, coverage, and evidence before interpreting a verdict"
+    },
+    {
+      "source": "NIST AI RMF risk tolerance and Manage functions",
+      "url": "https://airc.nist.gov/airmf-resources/airmf/1-sec-risk/",
+      "use": "use contextual risk tolerance and documented residual risk instead of attempting to eliminate every possible negative"
+    },
+    {
+      "source": "OWASP SCVS assessment and certification",
+      "url": "https://scvs.owasp.org/scvs/assessment-and-certification/",
+      "use": "give auditors the bounded resources needed for open-book review and require scoped findings with supporting evidence"
     }
   ]
 }

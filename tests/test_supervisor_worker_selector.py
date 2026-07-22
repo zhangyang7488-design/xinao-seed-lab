@@ -18,6 +18,8 @@ def candidate(
     healthy: bool = True,
     positive_benefit: bool = True,
     context_capable: bool = False,
+    evidence_access_capable: bool = False,
+    direct_tool_access_capable: bool = False,
 ) -> dict[str, object]:
     return {
         "provider_id": provider_id,
@@ -28,6 +30,8 @@ def candidate(
         "healthy": healthy,
         "positive_benefit": positive_benefit,
         "context_capable": context_capable,
+        "evidence_access_capable": evidence_access_capable,
+        "direct_tool_access_capable": direct_tool_access_capable,
     }
 
 
@@ -161,6 +165,50 @@ def test_stable_preference_applies_to_any_positive_separable_work() -> None:
     assert result["decision"] == "selected"
     assert result["selected_candidate"]["provider_id"] == "grok"
     assert result["decision_reason"] == "stable_provider_preference"
+
+
+def test_evidence_requirement_excludes_incapable_provider_before_preference() -> None:
+    result = select_supervisor_worker(
+        [
+            candidate("preferred", "reviewer-a", evidence_access_capable=False),
+            candidate("alternate", "reviewer", evidence_access_capable=True),
+        ],
+        task_separable=True,
+        evidence_access_required=True,
+        stable_preferred_provider_id="preferred",
+    )
+
+    assert result["decision"] == "selected"
+    assert result["selected_candidate"]["provider_id"] == "alternate"
+    assert result["decision_reason"] == "sole_eligible_candidate"
+    assert result["excluded_reasons"][0]["candidate"]["provider_id"] == "preferred"
+    assert result["excluded_reasons"][0]["reasons"] == ["evidence_access_unsupported"]
+
+
+def test_independent_validation_requires_direct_tool_capability() -> None:
+    result = select_supervisor_worker(
+        [
+            candidate(
+                "embedded-api",
+                "reviewer",
+                evidence_access_capable=True,
+                direct_tool_access_capable=False,
+            ),
+            candidate(
+                "tool-worker",
+                "reviewer",
+                evidence_access_capable=True,
+                direct_tool_access_capable=True,
+            ),
+        ],
+        task_separable=True,
+        evidence_access_required=True,
+        direct_tool_access_required=True,
+    )
+
+    assert result["decision"] == "selected"
+    assert result["selected_candidate"]["provider_id"] == "tool-worker"
+    assert result["excluded_reasons"][0]["reasons"] == ["direct_tool_access_unsupported"]
 
 
 def test_capacity_preference_uses_current_remaining_quota_without_reset_math() -> None:
