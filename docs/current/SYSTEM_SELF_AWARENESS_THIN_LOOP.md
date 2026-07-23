@@ -66,8 +66,9 @@ temporary carrier: active/paused -> archive review or retire candidate -> retire
 3. worktree records 必须把逻辑 `work_key`、载体 generation、当前 observation、事件前缀和单次 side effect 绑在一起；旧事件不能给同路径重建或后来漂移的载体复用。
 4. ignored 内容默认是未分类物料。dirty、ignored、未吸收提交、锁定、prunable、primary/base、事实漂移或 finalizer 缺失都不能成为 retire candidate。
 5. archive 只有隔离恢复和内容对账的 hash-bound receipt 才能标为 preserved；即便如此也只进入 owner review，绝不自动清除 removal finalizer。
-6. `retire_candidate` 只是“当前 owner 可重新核验的移除候选”，不是 `retired`。真实移除后还要同时读取 Git inventory 与字面路径证明缺席并写 task-run result；重算 path ID 且带 event-prefix 的 tombstone 才把成功退役与意外目录消失区分开。
-7. 所有投影固定 `authority=false`、`delete_authority=false`、`automatic_delete_allowed=false`、`completion_claim_allowed=false`。
+6. 父级全局等待只接受 `xinao.global_frontier_reconciliation.v3`：每个外部阻塞必须拆成独立 atom，同时绑定当前事件头下的外部观察与“现授权对象/拓扑内确实不能建设”的结构化反事实。只要存在本机可建设 atom，父级保持 open；checkpoint、next_frontier、提示词、模型输出、报告、旧 reconciliation receipt 与 v1/v2 receipt 都不能证明外部性。
+7. `retire_candidate` 只是“当前 owner 可重新核验的移除候选”，不是 `retired`。真实移除后还要同时读取 Git inventory 与字面路径证明缺席并写 task-run result；重算 path ID 且带 event-prefix 的 tombstone 才把成功退役与意外目录消失区分开。
+8. 所有投影固定 `authority=false`、`delete_authority=false`、`automatic_delete_allowed=false`、`completion_claim_allowed=false`。
 
 ## 问题闭环
 
@@ -132,7 +133,7 @@ python scripts/run_action_resume_consumer.py consume-canary ...
 - `xinao-dualbrain-promoted` repo pin 与 live current build 漂移；两个关联 task queue 当前均为 UNVERSIONED 且无 poller：`partial`，未改 live 路由。
 - `shiwu-ku` WAL 正在归档，但未做隔离 restore + 下游 canary，且 data checksums 为 off：`partial`，备份目录存在不等于恢复 verified。
 - BR-DOMAIN-001..004 仍 dependency-gated；没有真实领域 consumer 前不造空壳。
-- 可唤醒 wait 只有谓词与负例；本任务按用户要求完成后停止，不创建 durable wait 控制面。
+- 可唤醒 wait 已接入只读 v3 父级消费者与硬负例；它只裁决现有 wait 候选，不创建 durable wait 控制面，也不取得父级 owner 权。
 - Foundation 腿 B 的 operation/owner-generation/workflow-run 到 task-run work key 仍缺只读 seam adapter；本包不修改正在施工的 Foundation 写域，先按相邻问题记账而不伪称已汇流。
 - token 守恒只有出现独立 `native_usage_total_observed` 证据才可报 balanced；Promptfoo evaluation verdict 与 provider invocation status 已分轴。没有独立总账时为 unknown。
 

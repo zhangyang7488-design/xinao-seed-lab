@@ -36,9 +36,33 @@ COMPLETION_CARD_VERSION = "xinao.work_key_completion_card.v1"
 EPISODE_OUTCOME_VERSION = "xinao.episode_outcome_projection.v1"
 PROBLEM_PROJECTION_VERSION = "xinao.problem_projection.v1"
 PROBLEM_TRANSITION_VERSION = "xinao.problem_transition.v1"
-FRONTIER_RECONCILIATION_VERSION = "xinao.global_frontier_reconciliation.v2"
+FRONTIER_RECONCILIATION_VERSION = "xinao.global_frontier_reconciliation.v3"
 LEGACY_FRONTIER_RECONCILIATION_VERSION = "xinao.global_frontier_reconciliation.v1"
-FRONTIER_INVENTORY_VERSION = "xinao.global_frontier_inventory.v1"
+FRONTIER_INVENTORY_VERSION = "xinao.global_frontier_inventory.v2"
+FRONTIER_EXTERNALITY_PROOF_VERSION = "xinao.frontier_externality_proof.v1"
+FRONTIER_EXTERNAL_OBSERVATION_SOURCE_KINDS = frozenset(
+    {
+        "provider_api_observation",
+        "runtime_probe",
+        "external_system_receipt",
+        "official_primary_source_snapshot",
+        "physical_remote_readback",
+        "host_quota_snapshot",
+    }
+)
+FRONTIER_SELF_PROOF_SOURCE_KINDS = frozenset(
+    {
+        "owner_statement",
+        "checkpoint",
+        "next_frontier",
+        "worker_prompt",
+        "model_output",
+        "report",
+        "prior_reconciliation_receipt",
+        "inventory_boolean_only",
+        "wakeable_wait_boolean_only",
+    }
+)
 IDENTITY_VERSION = "xinao.identity_reconciliation.v1"
 PREFLIGHT_VERSION = "xinao.supervisor_capability_preflight.v1"
 TEMPORAL_VERSION = "xinao.temporal_identity_reconciliation.v1"
@@ -1481,17 +1505,20 @@ def reconcile_typed_problem_lifecycle(
 
 
 def _legacy_untrusted_frontier(source_schema_version: object) -> dict[str, Any]:
+    source_version = str(source_schema_version or LEGACY_FRONTIER_RECONCILIATION_VERSION)
+    legacy_reason = {
+        "xinao.global_frontier_reconciliation.v1": ("GLOBAL_FRONTIER_V1_LEGACY_UNTRUSTED"),
+        "xinao.global_frontier_reconciliation.v2": ("GLOBAL_FRONTIER_V2_LEGACY_UNTRUSTED"),
+    }.get(source_version, "GLOBAL_FRONTIER_SCHEMA_UNTRUSTED")
     return {
         "schema_version": FRONTIER_RECONCILIATION_VERSION,
-        "source_schema_version": str(
-            source_schema_version or LEGACY_FRONTIER_RECONCILIATION_VERSION
-        ),
+        "source_schema_version": source_version,
         "ok": False,
         "status": "legacy_untrusted",
         "parent_state": "open",
         "global_frontier_reconciled": False,
         "parent_wait_claim_allowed": False,
-        "reason_codes": ["GLOBAL_FRONTIER_V1_LEGACY_UNTRUSTED"],
+        "reason_codes": [legacy_reason],
         "authority": False,
         "completion_claim_allowed": False,
     }
@@ -1561,6 +1588,175 @@ def _read_hash_bound_frontier_inventory(reference: object) -> tuple[dict[str, An
     }
 
 
+def _frontier_hash_bound_file(
+    reference: object,
+    *,
+    invalid_reason: str,
+    unreadable_reason: str,
+    drift_reason: str,
+) -> tuple[Path, str]:
+    reference_text = str(reference or "").strip()
+    if "#sha256=" not in reference_text:
+        raise SystemAwarenessError(
+            invalid_reason, "frontier evidence must contain an exact #sha256 binding"
+        )
+    path_text, expected_sha256 = reference_text.rsplit("#sha256=", 1)
+    if not path_text or not _SHA256_RE.fullmatch(expected_sha256):
+        raise SystemAwarenessError(invalid_reason, "frontier evidence reference is malformed")
+    path = Path(path_text).resolve()
+    try:
+        actual_sha256 = _sha256_file(path)
+    except OSError as exc:
+        raise SystemAwarenessError(unreadable_reason, "frontier evidence cannot be read") from exc
+    if actual_sha256 != expected_sha256:
+        raise SystemAwarenessError(drift_reason, "frontier evidence no longer matches its digest")
+    return path, actual_sha256
+
+
+def _frontier_evidence_bindings(references: object) -> list[dict[str, str]]:
+    if not isinstance(references, list) or not references:
+        raise SystemAwarenessError(
+            "GLOBAL_EXTERNALITY_EVIDENCE_MISSING",
+            "externality proof requires hash-bound observation evidence",
+        )
+    bindings: list[dict[str, str]] = []
+    for reference in references:
+        path, sha256 = _frontier_hash_bound_file(
+            reference,
+            invalid_reason="GLOBAL_EXTERNALITY_EVIDENCE_REF_INVALID",
+            unreadable_reason="GLOBAL_EXTERNALITY_EVIDENCE_UNREADABLE",
+            drift_reason="GLOBAL_EXTERNALITY_EVIDENCE_HASH_DRIFT",
+        )
+        bindings.append({"path": str(path), "sha256": sha256})
+    return bindings
+
+
+def _read_hash_bound_frontier_externality_proof(
+    reference: object,
+    *,
+    atom_id: str,
+    parent_mainline_id: str,
+    task_run_id: str,
+    event_head: Mapping[str, object],
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    path, actual_sha256 = _frontier_hash_bound_file(
+        reference,
+        invalid_reason="GLOBAL_EXTERNALITY_PROOF_REF_INVALID",
+        unreadable_reason="GLOBAL_EXTERNALITY_PROOF_UNREADABLE",
+        drift_reason="GLOBAL_EXTERNALITY_PROOF_HASH_DRIFT",
+    )
+    try:
+        proof, _ = _read_json(path, "frontier_externality_proof")
+    except SystemAwarenessError as exc:
+        raise SystemAwarenessError(
+            "GLOBAL_EXTERNALITY_PROOF_UNREADABLE",
+            "externality proof must be a JSON object",
+        ) from exc
+    if (
+        proof.get("schema_version") != FRONTIER_EXTERNALITY_PROOF_VERSION
+        or proof.get("authority") is not False
+        or proof.get("completion_claim_allowed") is not False
+    ):
+        raise SystemAwarenessError(
+            "GLOBAL_EXTERNALITY_PROOF_INVALID",
+            "externality proof must be the non-authoritative v1 artifact",
+        )
+    if (
+        str(proof.get("atom_id") or "").strip() != atom_id
+        or str(proof.get("parent_mainline_id") or "").strip() != parent_mainline_id
+        or str(proof.get("task_run_id") or "").strip() != task_run_id
+    ):
+        raise SystemAwarenessError(
+            "GLOBAL_EXTERNALITY_PROOF_IDENTITY_MISMATCH",
+            "externality proof identity does not match the covered atom",
+        )
+    proof_head = _frontier_event_head(proof.get("event_head"), "externality_proof.event_head")
+    if proof_head != dict(event_head):
+        raise SystemAwarenessError(
+            "GLOBAL_EXTERNALITY_EVENT_HEAD_MISMATCH",
+            "externality proof does not observe the current frontier generation",
+        )
+
+    observed_fact = _require_mapping(proof.get("observed_fact"), "externality_proof.observed_fact")
+    source_kind = str(observed_fact.get("source_kind") or "").strip()
+    if source_kind in FRONTIER_SELF_PROOF_SOURCE_KINDS:
+        raise SystemAwarenessError(
+            "GLOBAL_EXTERNALITY_SELF_PROOF_SOURCE",
+            "Owner-authored status or prose cannot prove an external fact",
+        )
+    if source_kind not in FRONTIER_EXTERNAL_OBSERVATION_SOURCE_KINDS:
+        raise SystemAwarenessError(
+            "GLOBAL_EXTERNALITY_OBSERVATION_SOURCE_INVALID",
+            "external fact source is not an admitted observation surface",
+        )
+    subject = str(observed_fact.get("subject") or "").strip()
+    observation = str(observed_fact.get("observation") or "").strip()
+    observed_at = str(observed_fact.get("observed_at") or "").strip()
+    if not subject or not observation or not observed_at:
+        raise SystemAwarenessError(
+            "GLOBAL_EXTERNALITY_OBSERVATION_INCOMPLETE",
+            "external observation requires subject, observation, and observed_at",
+        )
+    observation_bindings = _frontier_evidence_bindings(observed_fact.get("evidence_refs"))
+
+    counterfactual = _require_mapping(
+        proof.get("constructibility_counterfactual"),
+        "externality_proof.constructibility_counterfactual",
+    )
+    required_lists = (
+        "authorized_objects_checked",
+        "topology_nodes_checked",
+        "local_capabilities_checked",
+    )
+    counterfactual_complete = (
+        counterfactual.get("scope") == "current_authorized_object_and_topology"
+        and counterfactual.get("construction_possible") is False
+        and all(
+            isinstance(counterfactual.get(field), list)
+            and any(str(value or "").strip() for value in counterfactual.get(field) or [])
+            for field in required_lists
+        )
+    )
+    if not counterfactual_complete:
+        raise SystemAwarenessError(
+            "GLOBAL_EXTERNALITY_COUNTERFACTUAL_INCOMPLETE",
+            "externality requires a structured in-scope constructibility counterfactual",
+        )
+    constructibility_bindings = _frontier_evidence_bindings(counterfactual.get("evidence_refs"))
+
+    normalized = {
+        "schema_version": FRONTIER_EXTERNALITY_PROOF_VERSION,
+        "atom_id": atom_id,
+        "event_head": proof_head,
+        "observed_fact": {
+            "source_kind": source_kind,
+            "subject": subject,
+            "observation": observation,
+            "observed_at": observed_at,
+        },
+        "constructibility_counterfactual": {
+            "scope": "current_authorized_object_and_topology",
+            "authorized_objects_checked": [
+                str(value) for value in counterfactual["authorized_objects_checked"]
+            ],
+            "topology_nodes_checked": [
+                str(value) for value in counterfactual["topology_nodes_checked"]
+            ],
+            "local_capabilities_checked": [
+                str(value) for value in counterfactual["local_capabilities_checked"]
+            ],
+            "construction_possible": False,
+        },
+    }
+    return normalized, {
+        "path": str(path),
+        "sha256": actual_sha256,
+        "schema_version": FRONTIER_EXTERNALITY_PROOF_VERSION,
+        "observation_evidence": observation_bindings,
+        "constructibility_evidence": constructibility_bindings,
+    }
+
+
 def reconcile_global_frontier(raw: Mapping[str, object]) -> dict[str, Any]:
     """Validate a hash-bound parent-frontier proof without becoming its authority."""
 
@@ -1572,6 +1768,11 @@ def reconcile_global_frontier(raw: Mapping[str, object]) -> dict[str, Any]:
     task_run_id = str(data.get("task_run_id") or "").strip()
     scan_generation = str(data.get("scan_generation") or "").strip()
     disposition = str(data.get("frontier_disposition") or "").strip()
+    global_exhaustion_requested = disposition in {
+        "durable_wait",
+        "no_positive_global_candidate",
+    }
+    local_wait_only = disposition in {"local_wait", "blocked_cone"}
     event_head = _frontier_event_head(data.get("event_head"), "event_head")
     if not parent_mainline_id or not task_run_id or not scan_generation:
         raise SystemAwarenessError(
@@ -1600,6 +1801,11 @@ def reconcile_global_frontier(raw: Mapping[str, object]) -> dict[str, Any]:
     scope_violations: list[str] = []
     batch_ids: set[str] = set()
     package_batch_ids: set[str] = set()
+    blocker_atom_ids: set[str] = set()
+    locally_constructible_atom_ids: set[str] = set()
+    externality_proof_bindings: list[dict[str, Any]] = []
+    externality_proof_verified = True
+    external_wait_states = {"blocked_external", "waiting_external"}
     parent_count = 0
     for index, raw_transaction in enumerate(raw_transactions):
         transaction = _require_mapping(raw_transaction, f"transactions[{index}]")
@@ -1640,6 +1846,92 @@ def reconcile_global_frontier(raw: Mapping[str, object]) -> dict[str, Any]:
             parent_count += 1
             if transaction_id != parent_mainline_id or work_key != parent_mainline_id:
                 scope_violations.append("PARENT_SCOPE_ID_MISMATCH")
+
+        raw_blocking_atoms = transaction.get("blocking_atoms")
+        blocking_atoms: list[dict[str, Any]] = []
+        if raw_blocking_atoms is not None and not isinstance(raw_blocking_atoms, list):
+            fatal_reasons.append("GLOBAL_EXTERNALITY_ATOMS_INVALID")
+            externality_proof_verified = False
+        elif isinstance(raw_blocking_atoms, list):
+            for atom_index, raw_atom in enumerate(raw_blocking_atoms):
+                try:
+                    atom = _require_mapping(
+                        raw_atom,
+                        f"transactions[{index}].blocking_atoms[{atom_index}]",
+                    )
+                except SystemAwarenessError:
+                    fatal_reasons.append("GLOBAL_EXTERNALITY_ATOM_INVALID")
+                    externality_proof_verified = False
+                    continue
+                atom_id = str(atom.get("atom_id") or "").strip()
+                classification = str(atom.get("classification") or "").strip()
+                description = str(atom.get("description") or "").strip()
+                if not atom_id or atom_id in blocker_atom_ids or not description:
+                    fatal_reasons.append("GLOBAL_EXTERNALITY_ATOM_IDENTITY_INVALID")
+                    externality_proof_verified = False
+                    continue
+                blocker_atom_ids.add(atom_id)
+                if classification == "locally_constructible":
+                    locally_constructible_atom_ids.add(atom_id)
+                    externality_proof_verified = False
+                    atom_evidence_raw = atom.get("evidence_refs")
+                    atom_evidence = (
+                        [str(value).strip() for value in atom_evidence_raw if str(value).strip()]
+                        if isinstance(atom_evidence_raw, list)
+                        else []
+                    )
+                    if not atom_evidence:
+                        fatal_reasons.append("GLOBAL_LOCALLY_CONSTRUCTIBLE_EVIDENCE_MISSING")
+                    blocking_atoms.append(
+                        {
+                            "atom_id": atom_id,
+                            "classification": classification,
+                            "description": description,
+                            "evidence_refs": atom_evidence,
+                        }
+                    )
+                    continue
+                if classification != "external_fact":
+                    fatal_reasons.append("GLOBAL_EXTERNALITY_ATOM_CLASSIFICATION_INVALID")
+                    externality_proof_verified = False
+                    continue
+                proof_ref = str(atom.get("externality_proof_ref") or "").strip()
+                try:
+                    proof, proof_binding = _read_hash_bound_frontier_externality_proof(
+                        proof_ref,
+                        atom_id=atom_id,
+                        parent_mainline_id=parent_mainline_id,
+                        task_run_id=task_run_id,
+                        event_head=event_head,
+                    )
+                except SystemAwarenessError as exc:
+                    fatal_reasons.append(exc.reason_code)
+                    externality_proof_verified = False
+                    continue
+                externality_proof_bindings.append(
+                    {
+                        "transaction_id": transaction_id,
+                        "atom_id": atom_id,
+                        **proof_binding,
+                    }
+                )
+                blocking_atoms.append(
+                    {
+                        "atom_id": atom_id,
+                        "classification": classification,
+                        "description": description,
+                        "externality_proof_ref": proof_ref,
+                        "externality_proof": proof,
+                    }
+                )
+        if state in external_wait_states and not blocking_atoms:
+            fatal_reasons.append("GLOBAL_EXTERNALITY_ATOMS_MISSING")
+            externality_proof_verified = False
+        if state in external_wait_states and any(
+            atom["classification"] != "external_fact" for atom in blocking_atoms
+        ):
+            fatal_reasons.append("GLOBAL_WAIT_LOCALLY_CONSTRUCTIBLE_ATOM_PRESENT")
+            externality_proof_verified = False
         transactions.append(
             {
                 "transaction_id": transaction_id,
@@ -1651,6 +1943,7 @@ def reconcile_global_frontier(raw: Mapping[str, object]) -> dict[str, Any]:
                 "affected_cone": affected_cone,
                 "consumer": consumer,
                 "evidence_refs": evidence_refs,
+                "blocking_atoms": blocking_atoms,
             }
         )
 
@@ -1662,11 +1955,6 @@ def reconcile_global_frontier(raw: Mapping[str, object]) -> dict[str, Any]:
     covered = {str(value).strip() for value in covered_raw if str(value).strip()}
     unknown_covered = sorted(covered - transaction_ids)
     uncovered = sorted(transaction_ids - covered)
-    global_exhaustion_requested = disposition in {
-        "durable_wait",
-        "no_positive_global_candidate",
-    }
-    local_wait_only = disposition in {"local_wait", "blocked_cone"}
     valid_disposition = disposition in {
         "execute",
         "advance_mainline",
@@ -1731,8 +2019,14 @@ def reconcile_global_frontier(raw: Mapping[str, object]) -> dict[str, Any]:
             fatal_reasons.append("GLOBAL_EXHAUSTION_REQUIRES_COMPLETE_COVERAGE")
         if not basis_ok:
             fatal_reasons.append("GLOBAL_FRONTIER_INVENTORY_PROOF_INCOMPLETE")
+        if locally_constructible_atom_ids:
+            fatal_reasons.append("GLOBAL_WAIT_LOCALLY_CONSTRUCTIBLE_ATOM_PRESENT")
+            externality_proof_verified = False
         wake_raw = data.get("wakeable_wait")
-        wakeable_wait = evaluate_wakeable_wait(wake_raw if isinstance(wake_raw, Mapping) else {})
+        wakeable_wait = evaluate_wakeable_wait(
+            wake_raw if isinstance(wake_raw, Mapping) else {},
+            externality_proof_verified=externality_proof_verified,
+        )
         if wakeable_wait.get("wait_allowed") is not True:
             fatal_reasons.append("GLOBAL_FRONTIER_WAKE_PROOF_INCOMPLETE")
 
@@ -1749,6 +2043,7 @@ def reconcile_global_frontier(raw: Mapping[str, object]) -> dict[str, Any]:
         "frontier_disposition": disposition,
         "covered_transaction_ids": sorted(covered),
         "transactions": transactions,
+        "externality_proof_bindings": externality_proof_bindings,
         "wakeable_wait": wakeable_wait,
     }
     return {
@@ -3829,7 +4124,11 @@ def evaluate_promotion_evidence(raw: Mapping[str, object]) -> dict[str, Any]:
     }
 
 
-def evaluate_wakeable_wait(raw: Mapping[str, object]) -> dict[str, Any]:
+def evaluate_wakeable_wait(
+    raw: Mapping[str, object],
+    *,
+    externality_proof_verified: bool = False,
+) -> dict[str, Any]:
     """Prove a no-positive-action wait without claiming completion or blockage."""
 
     data = _require_mapping(raw, "wakeable_wait")
@@ -3844,7 +4143,13 @@ def evaluate_wakeable_wait(raw: Mapping[str, object]) -> dict[str, Any]:
         for field in ("frontier_reconciled", "alternative_paths_checked", "prerequisites_checked")
     )
     durable = data.get("durable_surface_verified") is True
-    wait_allowed = reconciled and not positive_actions and bool(wake_conditions) and durable
+    wait_allowed = (
+        reconciled
+        and not positive_actions
+        and bool(wake_conditions)
+        and durable
+        and externality_proof_verified
+    )
     reasons: list[str] = []
     if not reconciled:
         reasons.append("FRONTIER_RECONCILIATION_INCOMPLETE")
@@ -3854,6 +4159,8 @@ def evaluate_wakeable_wait(raw: Mapping[str, object]) -> dict[str, Any]:
         reasons.append("WAKE_CONDITION_MISSING")
     if not durable:
         reasons.append("WAKEABLE_SURFACE_UNVERIFIED")
+    if not externality_proof_verified:
+        reasons.append("EXTERNALITY_PROOF_UNVERIFIED")
     return {
         "schema_version": WAKEABLE_WAIT_VERSION,
         "status": "wakeable_wait" if wait_allowed else "active_or_partial",
@@ -4425,7 +4732,7 @@ def _task_run_prefix_head(
 def evaluate_global_frontier_at_task_run_head(
     run_dir: Path, raw: Mapping[str, object]
 ) -> dict[str, Any]:
-    """Evaluate a prospective v2 receipt against the exact current task-run prefix."""
+    """Evaluate a prospective v3 receipt against the exact current task-run prefix."""
 
     resolved = Path(run_dir).resolve()
     task, _, events, _ = _load_task_run(resolved)

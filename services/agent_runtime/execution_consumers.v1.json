@@ -489,18 +489,21 @@
       ]
     },
     {
-      "consumer_id": "global_frontier_reconciliation_v2",
+      "consumer_id": "global_frontier_reconciliation_v3",
       "source_path": "services/agent_runtime/system_awareness_consumer.py",
       "entrypoint": "evaluate_global_frontier_at_task_run_head",
       "role": "parent_frontier_wait_claim_consumer",
-      "contract_mode": "exact_task_run_prefix_plus_hash_bound_inventory_and_wake_proof",
+      "contract_mode": "exact_task_run_prefix_plus_atomized_hash_bound_externality_and_constructibility_counterfactual",
       "status": "boundary_verified_non_parent_owner",
       "conformance_status": "boundary_verified_non_parent_owner",
-      "status_reason": "The read-only v2 consumer binds a prospective or event-carried reconciliation to one exact task-run prefix, a hash-bound typed package/batch/parent inventory and an existing wakeable surface; v1 receipts and any v2 receipt followed by a material event cannot pause the parent.",
+      "status_reason": "The read-only v3 consumer binds a prospective or event-carried reconciliation to one exact task-run prefix and a hash-bound typed package/batch/parent inventory. Every external blocker is atomized and must bind both a current admitted observation and a structured counterfactual proving it cannot be constructed inside the authorized local object and topology. Locally constructible atoms keep the parent open; checkpoints, prompts, model output, reports, prior reconciliation receipts, v1/v2 receipts, and any v3 receipt followed by a material event cannot pause the parent.",
       "writes_effects": false,
       "parent_completion_authority": false,
       "conformance_tests": [
-        "tests/test_system_awareness_consumer.py::test_global_frontier_v2_binds_exact_task_run_prefix_inventory_and_stales_on_later_event"
+        "tests/test_system_awareness_consumer.py::test_global_frontier_v3_binds_exact_task_run_prefix_inventory_and_stales_on_later_event",
+        "tests/test_system_awareness_consumer.py::test_global_frontier_v2_parent_wait_is_legacy_untrusted",
+        "tests/test_system_awareness_consumer.py::test_global_frontier_v3_rejects_unatomized_mixed_and_self_proving_waits",
+        "tests/test_system_awareness_consumer.py::test_global_frontier_v3_externality_proof_binds_current_event_head"
       ],
       "replay_evidence": [],
       "current_positive_canary_evidence": [],

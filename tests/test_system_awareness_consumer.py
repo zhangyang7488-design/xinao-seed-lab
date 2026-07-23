@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import copy
 import hashlib
 import json
 import os
@@ -778,6 +779,72 @@ def test_problem_projection_merges_splits_requires_effectiveness_and_reopens() -
     assert "NO_BUILD_SELECTED" in no_build["reason_codes"]
 
 
+def _hash_bound_json_ref(tmp_path: Path, name: str, payload: dict[str, object]) -> str:
+    path = tmp_path / f"{name}.json"
+    _write_json(path, payload)
+    return f"{path}#sha256={hashlib.sha256(path.read_bytes()).hexdigest()}"
+
+
+def _frontier_externality_proof_ref(
+    tmp_path: Path,
+    *,
+    name: str,
+    task_run_id: str,
+    event_head: dict[str, object],
+    atom_id: str,
+    source_kind: str = "provider_api_observation",
+    construction_possible: bool = False,
+    proof_event_head: dict[str, object] | None = None,
+) -> str:
+    observation_ref = _hash_bound_json_ref(
+        tmp_path,
+        f"{name}.observation",
+        {
+            "schema_version": "xinao.test_external_observation.v1",
+            "subject": atom_id,
+            "observed": "The required fact is not available from the current external surface.",
+        },
+    )
+    constructibility_ref = _hash_bound_json_ref(
+        tmp_path,
+        f"{name}.constructibility",
+        {
+            "schema_version": "xinao.test_constructibility_observation.v1",
+            "subject": atom_id,
+            "checked": ["repository", "installed runtime", "authorized topology"],
+            "construction_possible": construction_possible,
+        },
+    )
+    return _hash_bound_json_ref(
+        tmp_path,
+        f"{name}.externality-proof",
+        {
+            "schema_version": "xinao.frontier_externality_proof.v1",
+            "authority": False,
+            "completion_claim_allowed": False,
+            "atom_id": atom_id,
+            "parent_mainline_id": "mainline-1",
+            "task_run_id": task_run_id,
+            "event_head": proof_event_head or event_head,
+            "observed_fact": {
+                "source_kind": source_kind,
+                "subject": atom_id,
+                "observation": "The required fact is absent from the current external source.",
+                "observed_at": "2026-07-23T06:00:00Z",
+                "evidence_refs": [observation_ref],
+            },
+            "constructibility_counterfactual": {
+                "scope": "current_authorized_object_and_topology",
+                "authorized_objects_checked": ["mainline-1"],
+                "topology_nodes_checked": ["repository", "installed runtime"],
+                "local_capabilities_checked": ["source inspection", "runtime probe"],
+                "construction_possible": construction_possible,
+                "evidence_refs": [constructibility_ref],
+            },
+        },
+    )
+
+
 def _frontier_inventory_ref(
     tmp_path: Path,
     *,
@@ -791,7 +858,7 @@ def _frontier_inventory_ref(
     _write_json(
         path,
         {
-            "schema_version": "xinao.global_frontier_inventory.v1",
+            "schema_version": "xinao.global_frontier_inventory.v2",
             "authority": False,
             "completion_claim_allowed": False,
             "parent_mainline_id": "mainline-1",
@@ -821,7 +888,7 @@ def _frontier_receipt(
     disposition: str,
 ) -> dict[str, object]:
     return {
-        "schema_version": "xinao.global_frontier_reconciliation.v2",
+        "schema_version": "xinao.global_frontier_reconciliation.v3",
         "parent_mainline_id": "mainline-1",
         "task_run_id": task_run_id,
         "event_head": event_head,
@@ -839,7 +906,28 @@ def _frontier_receipt(
     }
 
 
-def _global_frontier_transactions() -> list[dict[str, object]]:
+def _global_frontier_transactions(
+    tmp_path: Path,
+    *,
+    task_run_id: str,
+    event_head: dict[str, object],
+) -> list[dict[str, object]]:
+    batch_atom_id = "external-capacity-batch"
+    package_atom_id = "external-capacity-package"
+    batch_proof_ref = _frontier_externality_proof_ref(
+        tmp_path,
+        name=batch_atom_id,
+        task_run_id=task_run_id,
+        event_head=event_head,
+        atom_id=batch_atom_id,
+    )
+    package_proof_ref = _frontier_externality_proof_ref(
+        tmp_path,
+        name=package_atom_id,
+        task_run_id=task_run_id,
+        event_head=event_head,
+        atom_id=package_atom_id,
+    )
     return [
         {
             "transaction_id": "mainline-1",
@@ -859,6 +947,14 @@ def _global_frontier_transactions() -> list[dict[str, object]]:
             "affected_cone": "batch-a",
             "consumer": "batch-reconciler",
             "evidence_refs": ["events.jsonl#seed-1"],
+            "blocking_atoms": [
+                {
+                    "atom_id": batch_atom_id,
+                    "classification": "external_fact",
+                    "description": "An externally observed capacity receipt is unavailable.",
+                    "externality_proof_ref": batch_proof_ref,
+                }
+            ],
         },
         {
             "transaction_id": "package-a",
@@ -870,6 +966,14 @@ def _global_frontier_transactions() -> list[dict[str, object]]:
             "affected_cone": "wk:package-a",
             "consumer": "package-runner",
             "evidence_refs": ["events.jsonl#seed-1"],
+            "blocking_atoms": [
+                {
+                    "atom_id": package_atom_id,
+                    "classification": "external_fact",
+                    "description": "An externally observed capacity receipt is unavailable.",
+                    "externality_proof_ref": package_proof_ref,
+                }
+            ],
         },
     ]
 
@@ -918,7 +1022,9 @@ def test_global_frontier_reconciliation_keeps_local_wait_scoped_and_requires_ful
     assert local["global_frontier_reconciled"] is False
     assert "LOCAL_WAIT_SCOPE_PRESERVED" in local["reason_codes"]
 
-    global_transactions = _global_frontier_transactions()
+    global_transactions = _global_frontier_transactions(
+        tmp_path, task_run_id="run-frontier", event_head=head
+    )
     incomplete_ref = _frontier_inventory_ref(
         tmp_path,
         name="scan-incomplete",
@@ -940,7 +1046,9 @@ def test_global_frontier_reconciliation_keeps_local_wait_scoped_and_requires_ful
     assert incomplete["parent_wait_claim_allowed"] is False
     assert "GLOBAL_COVERAGE_INCOMPLETE" in incomplete["reason_codes"]
 
-    collision_transactions = _global_frontier_transactions()
+    collision_transactions = _global_frontier_transactions(
+        tmp_path, task_run_id="run-frontier", event_head=head
+    )
     collision_transactions[-1]["work_key"] = "mainline-1"
     collision_ref = _frontier_inventory_ref(
         tmp_path,
@@ -961,6 +1069,196 @@ def test_global_frontier_reconciliation_keeps_local_wait_scoped_and_requires_ful
     )
     assert collision["status"] == "invalid"
     assert "PACKAGE_PARENT_SCOPE_COLLISION" in collision["scope_violations"]
+
+
+def test_global_frontier_v2_parent_wait_is_legacy_untrusted() -> None:
+    receipt = _frontier_receipt(
+        task_run_id="frontier-v2",
+        event_head={
+            "event_count": 1,
+            "event_id": "seed-1",
+            "prefix_sha256": "1" * 64,
+        },
+        inventory_ref="legacy-v2-is-not-read",
+        scan_generation="legacy-v2",
+        disposition="durable_wait",
+    )
+    receipt["schema_version"] = "xinao.global_frontier_reconciliation.v2"
+    projected = reconcile_global_frontier(receipt)
+    assert projected["status"] == "legacy_untrusted"
+    assert projected["parent_state"] == "open"
+    assert projected["parent_wait_claim_allowed"] is False
+    assert "GLOBAL_FRONTIER_V2_LEGACY_UNTRUSTED" in projected["reason_codes"]
+
+
+def test_global_frontier_v3_rejects_unatomized_mixed_and_self_proving_waits(
+    tmp_path: Path,
+) -> None:
+    task_run_id = "frontier-v3-negative"
+    event_head = {
+        "event_count": 1,
+        "event_id": "seed-1",
+        "prefix_sha256": "1" * 64,
+    }
+    baseline = _global_frontier_transactions(
+        tmp_path, task_run_id=task_run_id, event_head=event_head
+    )
+    covered = [row["transaction_id"] for row in baseline]
+
+    missing = copy.deepcopy(baseline)
+    missing[-1].pop("blocking_atoms")
+    missing_ref = _frontier_inventory_ref(
+        tmp_path,
+        name="missing-atoms",
+        task_run_id=task_run_id,
+        event_head=event_head,
+        transactions=missing,
+        covered=covered,
+    )
+    missing_result = reconcile_global_frontier(
+        _frontier_receipt(
+            task_run_id=task_run_id,
+            event_head=event_head,
+            inventory_ref=missing_ref,
+            scan_generation="missing-atoms",
+            disposition="durable_wait",
+        )
+    )
+    assert missing_result["parent_wait_claim_allowed"] is False
+    assert "GLOBAL_EXTERNALITY_ATOMS_MISSING" in missing_result["reason_codes"]
+
+    mixed = copy.deepcopy(baseline)
+    mixed[-1]["blocking_atoms"].append(
+        {
+            "atom_id": "relay-envelope-local-repair",
+            "classification": "locally_constructible",
+            "description": "The installed relay can be bound to the exact local contract.",
+            "evidence_refs": ["events.jsonl#seed-1"],
+        }
+    )
+    mixed_ref = _frontier_inventory_ref(
+        tmp_path,
+        name="mixed-local-external",
+        task_run_id=task_run_id,
+        event_head=event_head,
+        transactions=mixed,
+        covered=covered,
+    )
+    mixed_result = reconcile_global_frontier(
+        _frontier_receipt(
+            task_run_id=task_run_id,
+            event_head=event_head,
+            inventory_ref=mixed_ref,
+            scan_generation="mixed-local-external",
+            disposition="durable_wait",
+        )
+    )
+    assert mixed_result["parent_wait_claim_allowed"] is False
+    assert "GLOBAL_WAIT_LOCALLY_CONSTRUCTIBLE_ATOM_PRESENT" in mixed_result["reason_codes"]
+
+    self_proved = copy.deepcopy(baseline)
+    self_proved_atom = self_proved[-1]["blocking_atoms"][0]
+    self_proved_atom["externality_proof_ref"] = _frontier_externality_proof_ref(
+        tmp_path,
+        name="owner-statement-proof",
+        task_run_id=task_run_id,
+        event_head=event_head,
+        atom_id=self_proved_atom["atom_id"],
+        source_kind="owner_statement",
+    )
+    self_proved_ref = _frontier_inventory_ref(
+        tmp_path,
+        name="self-proved",
+        task_run_id=task_run_id,
+        event_head=event_head,
+        transactions=self_proved,
+        covered=covered,
+    )
+    self_proved_result = reconcile_global_frontier(
+        _frontier_receipt(
+            task_run_id=task_run_id,
+            event_head=event_head,
+            inventory_ref=self_proved_ref,
+            scan_generation="self-proved",
+            disposition="durable_wait",
+        )
+    )
+    assert self_proved_result["parent_wait_claim_allowed"] is False
+    assert "GLOBAL_EXTERNALITY_SELF_PROOF_SOURCE" in self_proved_result["reason_codes"]
+
+    locally_buildable = copy.deepcopy(baseline)
+    locally_buildable_atom = locally_buildable[-1]["blocking_atoms"][0]
+    locally_buildable_atom["externality_proof_ref"] = _frontier_externality_proof_ref(
+        tmp_path,
+        name="constructible-counterfactual",
+        task_run_id=task_run_id,
+        event_head=event_head,
+        atom_id=locally_buildable_atom["atom_id"],
+        construction_possible=True,
+    )
+    locally_buildable_ref = _frontier_inventory_ref(
+        tmp_path,
+        name="constructible-counterfactual",
+        task_run_id=task_run_id,
+        event_head=event_head,
+        transactions=locally_buildable,
+        covered=covered,
+    )
+    locally_buildable_result = reconcile_global_frontier(
+        _frontier_receipt(
+            task_run_id=task_run_id,
+            event_head=event_head,
+            inventory_ref=locally_buildable_ref,
+            scan_generation="constructible-counterfactual",
+            disposition="durable_wait",
+        )
+    )
+    assert locally_buildable_result["parent_wait_claim_allowed"] is False
+    assert (
+        "GLOBAL_EXTERNALITY_COUNTERFACTUAL_INCOMPLETE" in locally_buildable_result["reason_codes"]
+    )
+
+
+def test_global_frontier_v3_externality_proof_binds_current_event_head(
+    tmp_path: Path,
+) -> None:
+    task_run_id = "frontier-v3-proof-head"
+    event_head = {
+        "event_count": 1,
+        "event_id": "seed-1",
+        "prefix_sha256": "1" * 64,
+    }
+    transactions = _global_frontier_transactions(
+        tmp_path, task_run_id=task_run_id, event_head=event_head
+    )
+    atom = transactions[-1]["blocking_atoms"][0]
+    atom["externality_proof_ref"] = _frontier_externality_proof_ref(
+        tmp_path,
+        name="stale-externality-proof",
+        task_run_id=task_run_id,
+        event_head=event_head,
+        atom_id=atom["atom_id"],
+        proof_event_head={**event_head, "event_id": "older-event"},
+    )
+    inventory_ref = _frontier_inventory_ref(
+        tmp_path,
+        name="stale-externality-proof",
+        task_run_id=task_run_id,
+        event_head=event_head,
+        transactions=transactions,
+        covered=[row["transaction_id"] for row in transactions],
+    )
+    result = reconcile_global_frontier(
+        _frontier_receipt(
+            task_run_id=task_run_id,
+            event_head=event_head,
+            inventory_ref=inventory_ref,
+            scan_generation="stale-externality-proof",
+            disposition="durable_wait",
+        )
+    )
+    assert result["parent_wait_claim_allowed"] is False
+    assert "GLOBAL_EXTERNALITY_EVENT_HEAD_MISMATCH" in result["reason_codes"]
 
 
 def test_scan_task_run_treats_v1_parent_wait_as_legacy_untrusted(tmp_path: Path) -> None:
@@ -999,10 +1297,10 @@ def test_scan_task_run_treats_v1_parent_wait_as_legacy_untrusted(tmp_path: Path)
     assert "GLOBAL_FRONTIER_RECONCILIATION_PROJECTED" in report["reason_codes"]
 
 
-def test_global_frontier_v2_binds_exact_task_run_prefix_inventory_and_stales_on_later_event(
+def test_global_frontier_v3_binds_exact_task_run_prefix_inventory_and_stales_on_later_event(
     tmp_path: Path,
 ) -> None:
-    run_id = "frontier-v2"
+    run_id = "frontier-v3"
     seed = {
         "run_id": run_id,
         "schema_version": "codex.verified-task-run.v1",
@@ -1019,10 +1317,12 @@ def test_global_frontier_v2_binds_exact_task_run_prefix_inventory_and_stales_on_
         "event_id": "seed-1",
         "prefix_sha256": hashlib.sha256(seed_raw).hexdigest(),
     }
-    transactions = _global_frontier_transactions()
+    transactions = _global_frontier_transactions(
+        tmp_path, task_run_id=run_id, event_head=event_head
+    )
     inventory_ref = _frontier_inventory_ref(
         tmp_path,
-        name="scan-v2",
+        name="scan-v3",
         task_run_id=run_id,
         event_head=event_head,
         transactions=transactions,
@@ -1032,7 +1332,7 @@ def test_global_frontier_v2_binds_exact_task_run_prefix_inventory_and_stales_on_
         task_run_id=run_id,
         event_head=event_head,
         inventory_ref=inventory_ref,
-        scan_generation="scan-v2",
+        scan_generation="scan-v3",
         disposition="durable_wait",
     )
     reconciliation = {
@@ -1343,10 +1643,25 @@ def test_wakeable_wait_requires_complete_reconciliation_and_verified_wake_surfac
             "durable_surface_verified": True,
         }
     )
-    assert wait["status"] == "wakeable_wait"
-    assert wait["reason_codes"] == ["WAKEABLE_WAIT_NO_POSITIVE_ACTION"]
+    assert wait["status"] == "active_or_partial"
+    assert wait["wait_allowed"] is False
+    assert "EXTERNALITY_PROOF_UNVERIFIED" in wait["reason_codes"]
     assert wait["completion_claim_allowed"] is False
     assert wait["blocked_claim_allowed"] is False
+
+    verified = evaluate_wakeable_wait(
+        {
+            "frontier_reconciled": True,
+            "alternative_paths_checked": True,
+            "prerequisites_checked": True,
+            "positive_actions": [],
+            "wake_conditions": ["new task-run event", "external dependency changes"],
+            "durable_surface_verified": True,
+        },
+        externality_proof_verified=True,
+    )
+    assert verified["status"] == "wakeable_wait"
+    assert verified["reason_codes"] == ["WAKEABLE_WAIT_NO_POSITIVE_ACTION"]
 
     active = evaluate_wakeable_wait(
         {
