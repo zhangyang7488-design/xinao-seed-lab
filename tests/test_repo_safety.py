@@ -705,6 +705,24 @@ def test_context_intent_alignment_eval_is_balanced_and_friction_bounded() -> Non
     compact_resume = cases["REG_COMPACT_RESUME_RECEIPT_BEFORE_DISPATCH"]["vars"]
     stale_receipt = cases["NEG_STALE_RESUME_RECEIPT_REJECTS_ACTION"]["vars"]
     assert compact_resume["expected_owner_execution_state"] == "authority_lane"
+    assert set(compact_resume["expected_recovered_requirement_atoms"].split("|")) == {
+        "ATOM_KEEP_TASK_RUN_AS_ONLY_TRUTH",
+        "ATOM_RUN_EXISTING_RECOVERY_CONSUMER",
+        "ATOM_REPLAY_ONLY_CHECKPOINT_DELTA",
+        "ATOM_BIND_SIDE_EFFECT_ID_AND_LIVE_FACTS",
+        "ATOM_ISSUE_EPHEMERAL_ACTION_RECEIPT",
+        "ATOM_VERIFY_EVENT_HEAD_BEFORE_EFFECT",
+        "ATOM_RESUME_PARENT_FRONTIER",
+    }
+    assert set(compact_resume["expected_rejected_proxy_atoms"].split("|")) == {
+        "ATOM_DISPATCH_FROM_STALE_CHECKPOINT",
+        "ATOM_FULL_TRANSCRIPT_RELOAD",
+        "ATOM_NEW_CONTINUITY_DATABASE",
+        "ATOM_RECEIPT_GRANTS_AUTHORITY",
+        "ATOM_IGNORE_EVENT_HEAD_DRIFT",
+        "ATOM_REUSE_SIDE_EFFECT_ID",
+        "ATOM_USER_RESTATES_INTENT",
+    }
     assert stale_receipt["expected_owner_execution_state"] == "authority_lane"
     assert stale_receipt["expected_worker_receipt_disposition"] == "reject_and_recover"
     assert compact_resume["expected_starts_new_project"] is False
