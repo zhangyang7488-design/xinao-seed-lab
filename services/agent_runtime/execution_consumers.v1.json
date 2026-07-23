@@ -442,13 +442,14 @@
       "contract_mode": "read_only_existing_facts_to_non_authoritative_decisions",
       "status": "boundary_verified_non_parent_owner",
       "conformance_status": "boundary_verified_non_parent_owner",
-      "status_reason": "The full consumer remains fail-closed across dispatch, frontier, usage, carrier, and problem projections. Its strict problem-only entry reuses the same task/state/event envelope and typed transition validation so unrelated semantic projection failure cannot disable problem accounting, while corrupt problem evidence still blocks.",
+      "status_reason": "The full consumer remains fail-closed on its task/state/events source envelope while each optional derived projection fails closed inside its own dependency cone. An invalid dispatch projection is emitted as an explicit partial component failure, cannot authorize parent waiting or completion, and cannot suppress independent problem, work-unit, or frontier discovery; corrupt problem evidence still blocks the problem projection itself.",
       "writes_effects": false,
       "parent_completion_authority": false,
       "independent_gap_discovery": true,
       "conformance_tests": [
         "tests/test_system_awareness_consumer.py",
-        "tests/test_problem_transition.py"
+        "tests/test_problem_transition.py",
+        "tests/test_system_awareness_consumer.py::test_invalid_dispatch_projection_keeps_parent_open_without_hiding_frontier"
       ],
       "replay_evidence": [],
       "current_positive_canary_evidence": [

@@ -77,7 +77,7 @@ temporary carrier: active/paused -> archive review or retire candidate -> retire
 3. 判断：单 work key/单组件默认 `local_defect`；跨 work key、跨组件、缺消费者、控制边界或 governing assumption 默认 `systemic_capability_gap`。
 4. 选择：输出 `small_repair | structural_repair | no_build`。与父目标无关或预期净收益明确非正时可 `no_build`，不为维持运行制造工程。
 5. 关闭：必须同时有真实消费者或 live canary，以及类型明确为 monitoring/effectiveness/observation 的已完成效果窗口；同一条 real-consumer 证据即使自称 `window_completed` 也不能双算。diff、单测、Promptfoo 单独为绿时只能 monitoring/partial。
-6. 写入隔离：全量 `scan_task_run` 对 dispatch、frontier、usage、carrier 与问题投影继续整体 fail-closed；问题写入适配器只调用同一 task/state/events 真源上的严格 problem projection，仍完整校验 typed transition 的哈希、事件绑定与代际。查重、代际推导和预验证只消费同一个不可变快照；候选转移在产物发布前完成生命周期预验证，再以 `expected-events-count + expected-events-sha256` 进入 canonical task-run 文件锁。头部漂移必须拒绝/重算，完全相同事件只作幂等重放，不能写入重复或跳代。
+6. 写入隔离：全量 `scan_task_run` 对 task/state/events 真源继续整体 fail-closed；dispatch、frontier、usage、carrier 与问题等派生投影各自在自己的依赖锥内 fail-closed。一个可选投影无效时，报告必须显式标成 `partial`、保留该组件的 invalid 原因并撤销依赖它的完成/等待声明，但仍重放不依赖它的问题、work-unit 与前沿事实，不能把局部证据漂移提升成父扫描停机。问题写入适配器只调用同一 task/state/events 真源上的严格 problem projection，仍完整校验 typed transition 的哈希、事件绑定与代际。查重、代际推导和预验证只消费同一个不可变快照；候选转移在产物发布前完成生命周期预验证，再以 `expected-events-count + expected-events-sha256` 进入 canonical task-run 文件锁。头部漂移必须拒绝/重算，完全相同事件只作幂等重放，不能写入重复或跳代。
 7. 复发：effective 后出现新的同根因事件即 reopen，保留旧证据并提升修复层级候选。
 
 ## 默认授权记录

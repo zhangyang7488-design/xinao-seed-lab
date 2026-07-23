@@ -713,9 +713,11 @@ def test_fresh_process_recorder_appends_despite_invalid_dispatch_projection(
         encoding="utf-8",
     )
     assert appended.returncode == 0, appended.stderr
-    with pytest.raises(SystemAwarenessError) as full_scan_error:
-        scan_task_run(run_root / run_id)
-    assert full_scan_error.value.reason_code == "DISPATCH_OUTCOME_PROJECTION_INVALID"
+    full_scan = scan_task_run(run_root / run_id)
+    assert full_scan["status"] == "partial"
+    assert full_scan["projection_failures"][0]["reason_code"] == (
+        "DISPATCH_OUTCOME_PROJECTION_INVALID"
+    )
 
     proof_ref = _proof(tmp_path, "problem-observation.json")
     adapter = REPO_ROOT / "scripts" / "record_problem_transition.py"
@@ -766,9 +768,10 @@ def test_fresh_process_recorder_appends_despite_invalid_dispatch_projection(
     assert replay.returncode == 0, replay.stderr
     assert json.loads(replay.stdout)["replayed"] is True
     assert scan_task_run_problem_projection(run_root / run_id)["problem_count"] == 1
-    with pytest.raises(SystemAwarenessError) as after_error:
-        scan_task_run(run_root / run_id)
-    assert after_error.value.reason_code == "DISPATCH_OUTCOME_PROJECTION_INVALID"
+    after = scan_task_run(run_root / run_id)
+    assert after["status"] == "partial"
+    assert after["problem_projection"]["problem_count"] == 1
+    assert after["projection_failures"][0]["reason_code"] == ("DISPATCH_OUTCOME_PROJECTION_INVALID")
 
 
 @pytest.mark.skipif(not TASK_RUN_CLI.is_file(), reason="canonical task-run CLI unavailable")
