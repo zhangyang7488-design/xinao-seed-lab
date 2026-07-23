@@ -947,7 +947,7 @@ def test_consumer_registry_requires_current_exact_evidence_for_complete_status()
     assert set(boundary_consumers) == {
         "action_resume_preaction_guard",
         "audit_adjudication_repair_gate",
-        "global_frontier_reconciliation_v2",
+        "global_frontier_reconciliation_v3",
         "problem_transition_task_run_adapter",
         "system_awareness_task_run_scanner",
         "worktree_carrier_resolver",
