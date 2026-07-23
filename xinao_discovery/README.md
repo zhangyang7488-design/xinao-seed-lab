@@ -15,6 +15,14 @@ not current storage authority. Current placement and runtime bindings come only
 from the tool-glue constitution and verified machine facts. This repository
 contains engineering code, schemas, migrations, tests, and versioned configuration.
 
+Current G5 preflight code lives in `xinao.capability.g5_statistical_validity`. It keeps
+sequential alpha spending and online FDR as procedure-specific protocols, debits every
+holdout outcome access, distinguishes public null smoke from a real full-pipeline null run,
+and does not treat distinct runtime identities as proof of statistical independence.
+`scripts/run_g5_statistical_validity_preflight.py` consumes a content-hashed G4 report plus
+an optional candidate bundle and emits a deterministic `READY` or `HOLD` report. The code,
+tests, public smoke, or a generated report do not themselves establish current G5 or G6.
+
 Historical P0-P11 evidence projection:
 
 The following bullets describe the original V1 vertical under source hash
