@@ -137,3 +137,51 @@ def test_accepted_source_is_copied_byte_exact_for_portable_binding(
 
     assert target.read_bytes() == source.read_bytes()
     assert initializer._raw_sha256(target) == initializer._raw_sha256(source)
+
+
+def test_subject_public_cases_are_safe_sorted_and_family_blind(tmp_path: Path) -> None:
+    initializer = _load_initializer()
+    records = [
+        {
+            "family_id": "H01",
+            "public_case_id": "case-z",
+            "public_instructions": "Use only the supplied public values.",
+            "task_input": {"table": [[1, 2], [2, 3]], "labels": ["a", "b"]},
+            "commitment_sha256": "a" * 64,
+        },
+        {
+            "family_id": "H02",
+            "public_case_id": "case-a",
+            "public_instructions": "Use only the supplied public values.",
+            "task_input": {"sequence": [1, 2, 3]},
+            "commitment_sha256": "b" * 64,
+        },
+    ]
+    output_path = tmp_path / "subject" / "public_cases.v1.jsonl"
+
+    receipt = initializer._materialize_public_cases(records, output_path)
+
+    rows = [
+        json.loads(line) for line in output_path.read_text(encoding="utf-8").splitlines() if line
+    ]
+    prompts = [json.loads(row["public_prompt"]) for row in rows]
+    assert [row["public_case_id"] for row in rows] == ["case-a", "case-z"]
+    assert all(set(row) == {"public_case_id", "public_prompt", "commitment_sha256"} for row in rows)
+    assert all(
+        set(prompt)
+        == {
+            "public_case_id",
+            "public_instructions",
+            "task_input",
+            "commitment_sha256",
+        }
+        for prompt in prompts
+    )
+    serialized = output_path.read_text(encoding="utf-8")
+    assert "family_id" not in serialized
+    assert "truth" not in serialized
+    assert "hidden_parameters" not in serialized
+    assert receipt["case_count"] == 2
+    assert receipt["family_labels_exposed"] is False
+    assert receipt["outcome_accessed"] is False
+    assert receipt["sha256"] == initializer._raw_sha256(output_path)

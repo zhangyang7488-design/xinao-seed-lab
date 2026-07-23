@@ -91,6 +91,7 @@ def _request(*, power_status: str = "ADEQUATE") -> dict[str, object]:
             "evaluator_sha256": _sha("6"),
             "scoring_policy_sha256": _sha("7"),
             "subject_adapter_sha256": _sha("8"),
+            "subject_public_cases_sha256": _sha("9"),
         },
         "unit_policy": {
             "unit_of_analysis": "INDEPENDENT_HELDOUT_CASE",

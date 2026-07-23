@@ -107,6 +107,7 @@ def _preregistered_batch() -> dict:
                 "evaluator_sha256": "6" * 64,
                 "scoring_policy_sha256": "7" * 64,
                 "subject_adapter_sha256": "8" * 64,
+                "subject_public_cases_sha256": "9" * 64,
             },
             "unit_policy": {
                 "unit_of_analysis": "INDEPENDENT_HELDOUT_CASE",
@@ -151,7 +152,7 @@ def _contract(batch: dict, *, provider: str, model: str, transport: str) -> dict
         "task_contract_ref": f"batch.json#sha256={batch['content_hash']}",
         "parent_operation_id": "g4-campaign-1",
         "correlation_id": batch["batch_id"],
-        "input_sha256": batch["content_hash"],
+        "input_sha256": "0" * 64,
         "context_sha256": "b" * 64,
         "rules_sha256": "c" * 64,
         "output_contract_sha256": "d" * 64,
@@ -278,6 +279,8 @@ def test_same_batch_can_use_two_replaceable_worker_routes() -> None:
     assert first["batch_execution_accepted"] is True
     assert second["batch_execution_accepted"] is True
     assert first["batch_manifest_sha256"] == second["batch_manifest_sha256"]
+    assert first["task_contract_sha256"] == batch["content_hash"]
+    assert first["execution_prompt_sha256"] != batch["content_hash"]
     assert first["selected_route_for_this_batch"] != second["selected_route_for_this_batch"]
     assert first["provider_binding_scope"] == "batch_attempt_only"
     assert second["campaign_provider_locked"] is False
@@ -377,7 +380,7 @@ def test_batch_contract_rejects_embedded_route_identity() -> None:
         validate_g4_batch(forged)
 
 
-def test_attempt_receipt_must_bind_the_exact_batch_hash() -> None:
+def test_task_contract_ref_must_bind_the_exact_batch_hash() -> None:
     batch = _batch()
     contract = _contract(
         batch,
@@ -385,7 +388,7 @@ def test_attempt_receipt_must_bind_the_exact_batch_hash() -> None:
         model="grok-4.5",
         transport="direct-worker-pool",
     )
-    contract["input_sha256"] = "9" * 64
+    contract["task_contract_ref"] = "batch.json#sha256=" + "9" * 64
     report = adjudicate_g4_batch_execution(
         batch_manifest=batch,
         logical_contract=contract,
@@ -393,7 +396,34 @@ def test_attempt_receipt_must_bind_the_exact_batch_hash() -> None:
     )
 
     assert report["batch_execution_accepted"] is False
-    assert "BATCH_INPUT_HASH_MISMATCH" in report["reason_codes"]
+    assert "BATCH_TASK_CONTRACT_REF_MISMATCH" in report["reason_codes"]
+
+
+def test_prompt_hash_drift_is_owned_by_the_attempt_receipt_not_the_batch_identity() -> None:
+    batch = _batch()
+    contract = _contract(
+        batch,
+        provider="grok",
+        model="grok-4.5",
+        transport="direct-worker-pool",
+    )
+    original = adjudicate_g4_batch_execution(
+        batch_manifest=batch,
+        logical_contract=contract,
+        attempt_receipt=_receipt(contract),
+    )
+    contract["input_sha256"] = "9" * 64
+    changed_prompt = adjudicate_g4_batch_execution(
+        batch_manifest=batch,
+        logical_contract=contract,
+        attempt_receipt=_receipt(contract),
+    )
+
+    assert original["batch_execution_accepted"] is True
+    assert changed_prompt["batch_execution_accepted"] is True
+    assert original["task_contract_sha256"] == changed_prompt["task_contract_sha256"]
+    assert original["logical_contract_sha256"] != changed_prompt["logical_contract_sha256"]
+    assert original["attempt_receipt_sha256"] != changed_prompt["attempt_receipt_sha256"]
 
 
 def test_campaign_wide_provider_capacity_preflight_is_retired() -> None:

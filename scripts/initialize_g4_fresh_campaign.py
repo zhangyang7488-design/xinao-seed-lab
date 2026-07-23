@@ -35,6 +35,11 @@ from xinao.capability.g4_hidden_benchmark import (  # noqa: E402
     generate_full_family_suites,
 )
 from xinao.capability.g4_hidden_benchmark.constants import FAMILY_IDS  # noqa: E402
+from xinao.capability.g4_hidden_benchmark.public_safety import (  # noqa: E402
+    scan_forbidden_public_keys,
+    scan_h03_public_hints,
+    scan_h04_public_hints,
+)
 from xinao.capability.g4_preregistration import (  # noqa: E402
     REQUEST_SCHEMA,
     SUBJECT_CONFIGURATIONS,
@@ -84,6 +89,79 @@ def _copy_exact_source(source: Path, target: Path) -> None:
     target.write_bytes(source.read_bytes())
     if _raw_sha256(target) != _raw_sha256(source):
         raise FreshCampaignError(f"source copy hash drifted: {source}")
+
+
+def _public_payload(record: Mapping[str, Any]) -> dict[str, Any]:
+    return {
+        "public_case_id": record["public_case_id"],
+        "public_instructions": record["public_instructions"],
+        "task_input": record["task_input"],
+        "commitment_sha256": record["commitment_sha256"],
+    }
+
+
+def _verify_public_boundary(records: Sequence[Mapping[str, Any]]) -> None:
+    problems: list[str] = []
+    for record in records:
+        payload = _public_payload(record)
+        family = str(record["family_id"])
+        forbidden = scan_forbidden_public_keys(payload)
+        if forbidden:
+            problems.append(f"forbidden_public_keys:{family}:{forbidden}")
+        if family == "H03":
+            hints = scan_h03_public_hints(payload)
+            if hints:
+                problems.append(f"h03_public_hints:{hints}")
+        if family == "H04":
+            hints = scan_h04_public_hints(payload)
+            if hints:
+                problems.append(f"h04_public_hints:{hints}")
+    if problems:
+        raise FreshCampaignError(f"subject public boundary failed: {problems}")
+
+
+def _materialize_public_cases(
+    records: Sequence[Mapping[str, Any]],
+    path: Path,
+) -> dict[str, Any]:
+    ordered = sorted(records, key=lambda row: str(row["public_case_id"]))
+    if not ordered:
+        raise FreshCampaignError("subject public case set must not be empty")
+    case_ids = [str(record["public_case_id"]) for record in ordered]
+    if len(case_ids) != len(set(case_ids)):
+        raise FreshCampaignError("subject public case IDs must be unique")
+    _verify_public_boundary(ordered)
+    rows: list[str] = []
+    for record in ordered:
+        payload = _public_payload(record)
+        rows.append(
+            json.dumps(
+                {
+                    "public_case_id": payload["public_case_id"],
+                    "public_prompt": json.dumps(
+                        payload,
+                        sort_keys=True,
+                        separators=(",", ":"),
+                        ensure_ascii=False,
+                    ),
+                    "commitment_sha256": payload["commitment_sha256"],
+                },
+                sort_keys=True,
+                separators=(",", ":"),
+                ensure_ascii=False,
+            )
+        )
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text("\n".join(rows) + "\n", encoding="utf-8", newline="\n")
+    return {
+        "path": str(path),
+        "sha256": _raw_sha256(path),
+        "bytes": path.stat().st_size,
+        "case_count": len(rows),
+        "case_ids_sha256": canonical_sha256(case_ids),
+        "family_labels_exposed": False,
+        "outcome_accessed": False,
+    }
 
 
 def _runtime_root(path: Path) -> Path:
@@ -358,6 +436,10 @@ def initialize(args: argparse.Namespace) -> dict[str, Any]:
     acceptance_source_path = package_root / "owner_acceptance_source.v1.json"
     _copy_exact_source(campaign_path, campaign_source_path)
     _copy_exact_source(acceptance_path, acceptance_source_path)
+    adapter_snapshot_path = (
+        package_root / "subject" / "adapter" / "promptfoo_c0_bootstrap_adapter.py"
+    )
+    _copy_exact_source(adapter_path, adapter_snapshot_path)
     write_json(
         package_root / "suite" / "summary.v1.json",
         generated.as_summary_dict(),
@@ -387,9 +469,12 @@ def initialize(args: argparse.Namespace) -> dict[str, Any]:
     ledger_path = package_root / "ledger" / "global_trial_ledger_export.v1.json"
     write_json(ledger_path, ledger_export)
 
-    selected_case_ids = [
-        record["public_case_id"] for family in FAMILY_IDS for record in records_by_family[family]
-    ]
+    selected_records = [record for family in FAMILY_IDS for record in records_by_family[family]]
+    selected_case_ids = [record["public_case_id"] for record in selected_records]
+    subject_public_cases = _materialize_public_cases(
+        selected_records,
+        package_root / "subject" / "public_cases.v1.jsonl",
+    )
     vault = RealHiddenBootstrapVault(package_root / "vault")
     deposit = vault.deposit_private_bundle(
         private_bundle=generated.heldout_private_bundle.as_private_dict(),
@@ -494,7 +579,8 @@ def initialize(args: argparse.Namespace) -> dict[str, Any]:
                     "thresholds": campaign["thresholds"],
                 }
             ),
-            "subject_adapter_sha256": _raw_sha256(adapter_path),
+            "subject_adapter_sha256": _raw_sha256(adapter_snapshot_path),
+            "subject_public_cases_sha256": subject_public_cases["sha256"],
         },
         "unit_policy": {
             "unit_of_analysis": "INDEPENDENT_HELDOUT_CASE",
@@ -549,6 +635,8 @@ def initialize(args: argparse.Namespace) -> dict[str, Any]:
         "heldout_identity_sha256": generated.heldout_identity.identity_sha256,
         "global_registered_execution_cells": len(all_cells),
         "planned_independent_cases": len(selected_case_ids),
+        "subject_public_cases": subject_public_cases,
+        "subject_adapter_snapshot_sha256": _raw_sha256(adapter_snapshot_path),
         "first_batch_execution_cells": len(first_cells),
         "first_batch_manifest_sha256": prepared["batch_manifest"]["content_hash"],
         "published_first_batch_files": published,

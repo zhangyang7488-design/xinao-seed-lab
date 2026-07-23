@@ -559,7 +559,7 @@ def validate_attempt_receipt(
         reasons.append("NON_COMPLETED_TERMINAL_STATE")
     if attempt["provider_evidence_valid"] is not True:
         reasons.append("PROVIDER_EVIDENCE_REJECTED")
-    if usage["accepted_tokens"] <= 0:
+    if usage["total_tokens"] > 0 and usage["accepted_tokens"] <= 0:
         reasons.append("NO_ACCEPTED_TOKENS")
     if not any(item["state"] == "accepted" for item in attempt["invocations"]):
         reasons.append("NO_ACCEPTED_INVOCATION")
