@@ -116,6 +116,48 @@ def test_runtime_receipt_requires_carrier_local_interpreters(
         subject.build_carrier_runtime_receipt()
 
 
+def test_carrier_sync_uses_root_extra_and_project_dependency_group(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[tuple[list[str], Path]] = []
+    monkeypatch.setattr(
+        subject,
+        "_run_checked",
+        lambda command, *, cwd: calls.append((list(command), cwd)),
+    )
+
+    subject.sync_carrier_runtime(uv_executable="uv-test")
+
+    assert calls == [
+        (
+            [
+                "uv-test",
+                "sync",
+                "--frozen",
+                "--extra",
+                "dev",
+                "--extra",
+                "workflow",
+            ],
+            subject.REPO_ROOT,
+        ),
+        (
+            [
+                "uv-test",
+                "sync",
+                "--project",
+                str(subject.PROJECT_ROOT),
+                "--frozen",
+                "--group",
+                "dev",
+                "--extra",
+                "g4-bootstrap",
+            ],
+            subject.REPO_ROOT,
+        ),
+    ]
+
+
 def test_competitor_holds_before_sync_or_runtime_probe(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,

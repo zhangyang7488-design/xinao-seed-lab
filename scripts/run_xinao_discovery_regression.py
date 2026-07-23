@@ -86,7 +86,7 @@ def sync_carrier_runtime(*, uv_executable: str = "uv") -> None:
             "--project",
             str(PROJECT_ROOT),
             "--frozen",
-            "--extra",
+            "--group",
             "dev",
             "--extra",
             "g4-bootstrap",
