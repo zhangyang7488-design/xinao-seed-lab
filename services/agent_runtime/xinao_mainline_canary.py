@@ -17,6 +17,7 @@ MAINLINE_WORKFLOW_NAME = "XinaoMainlineCanaryWorkflow"
 RESEARCH_WORKFLOW_NAME = "XinaoResearchCampaignWorkflow"
 TASK_QUEUE = "xinao-mainline-canary-queue"
 INTEGRATED_BUS_QUEUE = "xinao-integrated-langgraph-plugin-queue"
+DOMAIN_ADMISSION_PATCH_ID = "domain-research-admission-report-v1"
 GROK_PROVIDER_MODELS = frozenset({"grok-composer-2.5-fast", "grok-4.5"})
 _HASH_RE = re.compile(r"^[0-9a-f]{64}$")
 _CONTROL_ACTIONS = {"PAUSE", "RESUME", "STOP"}
@@ -181,6 +182,25 @@ def write_mainline_canary_snapshot(payload: dict[str, Any]) -> dict[str, str]:
     return {"snapshot_hash": snapshot_hash, "artifact_ref": str(artifact)}
 
 
+@activity.defn(name="xinao_verify_domain_research_admission")
+def verify_domain_research_admission_activity(payload: dict[str, Any]) -> dict[str, Any]:
+    """Replay one exact admission report outside the deterministic Workflow sandbox."""
+
+    from datetime import UTC, datetime
+    from pathlib import Path
+
+    from xinao.admission import verify_domain_research_admission_file
+
+    return verify_domain_research_admission_file(
+        Path(str(payload.get("report_ref") or "")),
+        expected_file_sha256=str(payload.get("report_sha256") or ""),
+        expected_scope=str(payload.get("scope") or ""),
+        expected_realm=str(payload.get("realm") or ""),
+        as_of=datetime.now(UTC),
+        evidence_root=Path(str(payload.get("evidence_root") or "/evidence")),
+    )
+
+
 @workflow.defn(name=MAINLINE_WORKFLOW_NAME)
 class XinaoMainlineCanaryWorkflow:
     """Durable fact accumulator with pure Query and validated operator Updates."""
@@ -280,6 +300,38 @@ class XinaoResearchCampaignWorkflow:
         bus_state = dict(initial.get("bus_state") or {})
         if not campaign_id or not bus_state:
             raise ApplicationError("campaign_id and bus_state are required", non_retryable=True)
+        guarded = workflow.patched(DOMAIN_ADMISSION_PATCH_ID)
+        admission: dict[str, Any] = {}
+        if guarded:
+            admission = await workflow.execute_activity(
+                verify_domain_research_admission_activity,
+                {
+                    "report_ref": str(initial.get("domain_admission_report_ref") or ""),
+                    "report_sha256": str(initial.get("domain_admission_report_sha256") or ""),
+                    "scope": str(initial.get("domain_scope") or ""),
+                    "realm": str(initial.get("domain_realm") or ""),
+                    "evidence_root": str(
+                        initial.get("domain_admission_evidence_root") or "/evidence"
+                    ),
+                },
+                start_to_close_timeout=timedelta(seconds=30),
+                retry_policy=RetryPolicy(maximum_attempts=3),
+            )
+            if admission.get("allowed") is not True:
+                reasons = ",".join(str(item) for item in admission.get("reasons") or [])
+                raise ApplicationError(
+                    f"domain research admission denied: {reasons or 'DENY'}",
+                    non_retryable=True,
+                )
+            bus_state["domain_research_admission"] = {
+                "report_ref": admission["report_ref"],
+                "report_file_sha256": admission["report_file_sha256"],
+                "report_content_hash": admission["content_hash"],
+                "report_id": admission["report_id"],
+                "scope": admission["scope"],
+                "realm": admission["realm"],
+                "expires_at": admission["expires_at"],
+            }
         result = await workflow.execute_child_workflow(
             "XinaoIntegratedBusWorkflow",
             bus_state,
@@ -305,7 +357,7 @@ class XinaoResearchCampaignWorkflow:
                 + ",".join(key for key, passed in checks.items() if not passed),
                 non_retryable=True,
             )
-        return {
+        response = {
             "schema_version": "xinao.research_campaign_result.v1",
             "campaign_id": campaign_id,
             "workflow_id": workflow.info().workflow_id,
@@ -318,22 +370,27 @@ class XinaoResearchCampaignWorkflow:
             "promotion_evidence_ref": result.get("promotion_evidence_ref"),
             "proof_path": result.get("proof_path"),
         }
+        if guarded:
+            response["domain_research_admission"] = bus_state["domain_research_admission"]
+        return response
 
 
 def temporal_exports() -> tuple[list[type], list[Any]]:
     return (
         [XinaoMainlineCanaryWorkflow, XinaoResearchCampaignWorkflow],
-        [write_mainline_canary_snapshot],
+        [write_mainline_canary_snapshot, verify_domain_research_admission_activity],
     )
 
 
 __all__ = [
     "INTEGRATED_BUS_QUEUE",
+    "DOMAIN_ADMISSION_PATCH_ID",
     "MAINLINE_WORKFLOW_NAME",
     "RESEARCH_WORKFLOW_NAME",
     "TASK_QUEUE",
     "XinaoMainlineCanaryWorkflow",
     "XinaoResearchCampaignWorkflow",
     "temporal_exports",
+    "verify_domain_research_admission_activity",
     "write_mainline_canary_snapshot",
 ]

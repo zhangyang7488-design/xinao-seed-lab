@@ -86,6 +86,14 @@ jobs:
             os: ubuntu-latest
             pytest_args: -q tests/unit/capability
             ruff_paths: src/xinao/capability tests/unit/capability
+          - project: discovery-domain-admission
+            path: xinao_discovery
+            os: ubuntu-latest
+            pytest_args: >-
+              -q tests/unit/admission tests/unit/ledger/test_formal_vertical_registration.py
+            ruff_paths: >-
+              src/xinao/admission scripts/register/formal_vertical.py
+              tests/unit/admission tests/unit/ledger/test_formal_vertical_registration.py
     defaults:
       run:
         working-directory: ${{ matrix.path }}

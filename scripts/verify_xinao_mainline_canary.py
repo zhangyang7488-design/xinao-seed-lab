@@ -96,6 +96,11 @@ async def prepare(args: argparse.Namespace) -> dict[str, Any]:
         XinaoResearchCampaignWorkflow.run,
         {
             "campaign_id": campaign_id,
+            "domain_admission_report_ref": host_to_evidence(args.domain_admission_report),
+            "domain_admission_report_sha256": args.domain_admission_sha256,
+            "domain_admission_evidence_root": "/evidence",
+            "domain_scope": args.domain_scope,
+            "domain_realm": args.domain_realm,
             "bus_state": {
                 "input_path": host_to_evidence(args.grok_fanin_input),
                 "params_path": "/app/materials/authority_glue/seams/integrated_bus_params.v1.json",
@@ -354,6 +359,10 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--p7-report", type=Path)
     parser.add_argument("--grok-fanin-input", type=Path)
     parser.add_argument("--source-grok-workflow-id")
+    parser.add_argument("--domain-admission-report", type=Path)
+    parser.add_argument("--domain-admission-sha256")
+    parser.add_argument("--domain-scope")
+    parser.add_argument("--domain-realm")
     parser.add_argument("--prepare-report", type=Path)
     parser.add_argument("--restart-report", type=Path)
     parser.add_argument("--output", type=Path, required=True)
@@ -368,6 +377,10 @@ def main() -> int:
             args.p7_report,
             args.grok_fanin_input,
             args.source_grok_workflow_id,
+            args.domain_admission_report,
+            args.domain_admission_sha256,
+            args.domain_scope,
+            args.domain_realm,
         )
     else:
         required = (args.prepare_report, args.restart_report)
