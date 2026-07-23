@@ -1082,6 +1082,7 @@ def test_global_frontier_reconciliation_keeps_local_wait_scoped_and_requires_ful
     assert local["parent_wait_claim_allowed"] is False
     assert local["global_frontier_reconciled"] is False
     assert "LOCAL_WAIT_SCOPE_PRESERVED" in local["reason_codes"]
+    assert "external_blocker_human_report" not in local
 
     global_transactions = _global_frontier_transactions(
         tmp_path, task_run_id="run-frontier", event_head=head
@@ -1150,6 +1151,90 @@ def test_global_frontier_v2_parent_wait_is_legacy_untrusted() -> None:
     assert projected["parent_state"] == "open"
     assert projected["parent_wait_claim_allowed"] is False
     assert "GLOBAL_FRONTIER_V2_LEGACY_UNTRUSTED" in projected["reason_codes"]
+
+
+def test_global_frontier_valid_exhaustion_without_external_atoms_writes_no_report(
+    tmp_path: Path,
+) -> None:
+    run_id = "frontier-no-external-blocker"
+    seed = {
+        "run_id": run_id,
+        "schema_version": "codex.verified-task-run.v1",
+        "event_id": "seed-1",
+        "phase": "work_unit_complete",
+        "kind": "result",
+        "target": "mainline-1",
+        "exit_code": 0,
+    }
+    run_dir = _write_scan_run(tmp_path, run_id, [seed])
+    seed_raw = (run_dir / "events.jsonl").read_bytes()
+    event_head = {
+        "event_count": 1,
+        "event_id": "seed-1",
+        "prefix_sha256": hashlib.sha256(seed_raw).hexdigest(),
+    }
+    transactions = [
+        {
+            "transaction_id": "mainline-1",
+            "scope": "parent",
+            "work_key": "mainline-1",
+            "state": "no_positive_action",
+            "affected_cone": "mainline-1",
+            "consumer": "mainline-owner",
+            "evidence_refs": ["events.jsonl#seed-1"],
+        }
+    ]
+    inventory_ref = _frontier_inventory_ref(
+        tmp_path,
+        name="no-external-blocker",
+        task_run_id=run_id,
+        event_head=event_head,
+        transactions=transactions,
+        covered=["mainline-1"],
+    )
+    receipt = _frontier_receipt(
+        task_run_id=run_id,
+        event_head=event_head,
+        inventory_ref=inventory_ref,
+        scan_generation="no-external-blocker",
+        disposition="no_positive_global_candidate",
+    )
+    direct = reconcile_global_frontier(receipt)
+    assert direct["status"] == "valid"
+    assert direct["parent_wait_claim_allowed"] is True
+    assert "external_blocker_human_report" not in direct
+
+    input_path = tmp_path / "no-external-input.json"
+    output_path = tmp_path / "no-external-output.json"
+    report_dir = tmp_path / "no-external-desktop"
+    _write_json(input_path, receipt)
+    completed = subprocess.run(
+        [
+            sys.executable,
+            str(REPO_ROOT / "scripts" / "run_system_awareness_consumer.py"),
+            "global-frontier",
+            "--task-run-dir",
+            str(run_dir),
+            "--input",
+            str(input_path),
+            "--blocker-report-dir",
+            str(report_dir),
+            "--output",
+            str(output_path),
+        ],
+        cwd=REPO_ROOT,
+        check=False,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+    )
+    assert completed.returncode == 0, completed.stderr
+    projected = json.loads(output_path.read_text(encoding="utf-8"))
+    assert projected["status"] == "valid"
+    assert projected["parent_wait_claim_allowed"] is True
+    assert "external_blocker_human_report" not in projected
+    assert "external_blocker_human_report_path" not in projected
+    assert report_dir.exists() is False
 
 
 def test_global_frontier_v3_parent_wait_is_legacy_untrusted() -> None:
@@ -1500,6 +1585,38 @@ def test_global_frontier_v4_binds_exact_task_run_prefix_inventory_and_stales_on_
         scan_generation="scan-v3",
         disposition="durable_wait",
     )
+    prospective_input = tmp_path / "prospective-frontier.json"
+    prospective_output = tmp_path / "prospective-frontier-output.json"
+    prospective_report_dir = tmp_path / "prospective-desktop"
+    _write_json(prospective_input, receipt)
+    completed = subprocess.run(
+        [
+            sys.executable,
+            str(REPO_ROOT / "scripts" / "run_system_awareness_consumer.py"),
+            "global-frontier",
+            "--task-run-dir",
+            str(run_dir),
+            "--input",
+            str(prospective_input),
+            "--blocker-report-dir",
+            str(prospective_report_dir),
+            "--output",
+            str(prospective_output),
+        ],
+        cwd=REPO_ROOT,
+        check=False,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+    )
+    assert completed.returncode == 0, completed.stderr
+    prospective = json.loads(prospective_output.read_text(encoding="utf-8"))
+    prospective_report_path = Path(prospective["external_blocker_human_report_path"])
+    assert prospective["parent_wait_claim_allowed"] is True
+    assert prospective_report_path.parent == prospective_report_dir
+    assert prospective_report_path.is_file()
+    assert "不是完成声明" in prospective_report_path.read_text(encoding="utf-8")
+
     reconciliation = {
         "run_id": run_id,
         "schema_version": "codex.verified-task-run.v1",
@@ -1516,6 +1633,48 @@ def test_global_frontier_v4_binds_exact_task_run_prefix_inventory_and_stales_on_
     assert projected["parent_state"] == "waiting"
     assert projected["parent_wait_claim_allowed"] is True
     assert projected["wakeable_wait"]["wait_allowed"] is True
+    blocker_report = projected["external_blocker_human_report"]
+    assert blocker_report["schema_version"] == "xinao.external_blocker_human_report.v1"
+    assert blocker_report["authority"] is False
+    assert blocker_report["completion_claim_allowed"] is False
+    assert blocker_report["parent_wait_claim_allowed"] is True
+    assert blocker_report["task_run_id"] == run_id
+    assert blocker_report["event_head"] == event_head
+    assert [item["atom_id"] for item in blocker_report["blockers"]] == [
+        "external-capacity-batch",
+        "external-capacity-package",
+    ]
+    assert blocker_report["exact_freeze_cones"] == ["batch-a", "wk:package-a"]
+    assert blocker_report["still_actionable_transactions"] == []
+    assert blocker_report["wake_conditions"] == [
+        "new task-run event or external fact"
+    ]
+    assert blocker_report["last_verified_at"] == "2026-07-23T06:00:00Z"
+    report_path = awareness_module.write_external_blocker_human_report(
+        projected,
+        tmp_path / "desktop",
+    )
+    assert report_path is not None
+    assert report_path.name.startswith("主线真实外部卡点_")
+    report_text = report_path.read_text(encoding="utf-8")
+    assert "这次为什么必须等待" in report_text
+    assert f"任务账本：{run_id}" in report_text
+    assert '"event_id": "seed-1"' in report_text
+    assert "仍可继续的事务：无" in report_text
+    assert "核验证据：" in report_text
+    assert "当前证据：" in report_text
+    assert "不是完成声明" in report_text
+    assert "每次准备继续等待前都必须重新核验任务账本与事件头" in report_text
+    mismatched_report = copy.deepcopy(projected)
+    mismatched_report["external_blocker_human_report"]["task_run_id"] = "other-run"
+    with pytest.raises(
+        awareness_module.SystemAwarenessError,
+        match="same valid exhausted reconciliation",
+    ):
+        awareness_module.write_external_blocker_human_report(
+            mismatched_report,
+            tmp_path / "forged-desktop",
+        )
 
     bad_receipt = dict(receipt)
     bad_receipt["event_head"] = {**event_head, "prefix_sha256": "0" * 64}
@@ -1540,6 +1699,7 @@ def test_global_frontier_v4_binds_exact_task_run_prefix_inventory_and_stales_on_
     assert stale["status"] == "stale"
     assert stale["parent_state"] == "open"
     assert stale["parent_wait_claim_allowed"] is False
+    assert "external_blocker_human_report" not in stale
     assert "GLOBAL_FRONTIER_RECEIPT_STALE" in stale["reason_codes"]
 
 

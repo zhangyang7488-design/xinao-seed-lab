@@ -12,6 +12,7 @@ from xinao.admission import (
     verify_domain_research_admission_report,
 )
 from xinao.canonical import canonical_sha256
+from xinao.capability.phase_conditions import build_phase_control_state
 
 SCOPE = "xinao-domain-mainline"
 REALM = "DOMAIN_FIXED_AXIOM"
@@ -81,6 +82,16 @@ def _source_payload(source_id: str) -> dict[str, object]:
             "g4_closed": True,
             "completion_claim_allowed": True,
             "decision": "G4_DISCOVERY_CAPABILITY_PROVED",
+            "phase_control_state": build_phase_control_state(
+                observed_generation="4" * 64,
+                g4_engineering_allowed=True,
+                g4_batch_execution_allowed=True,
+                g4_full_evidence_complete=True,
+                g5_design_allowed=True,
+                g5_preregistration_allowed=True,
+                g5_final_adjudication_complete=False,
+                g6_formal_research_allowed=False,
+            ),
         },
         "G5": {
             "schema_version": "xinao.statistical_validity_report.v1",
@@ -89,6 +100,16 @@ def _source_payload(source_id: str) -> dict[str, object]:
             "g5_closed": True,
             "completion_claim_allowed": True,
             "decision": "G5_STATISTICAL_VALIDITY_READY",
+            "phase_control_state": build_phase_control_state(
+                observed_generation="5" * 64,
+                g4_engineering_allowed=True,
+                g4_batch_execution_allowed=True,
+                g4_full_evidence_complete=True,
+                g5_design_allowed=True,
+                g5_preregistration_allowed=True,
+                g5_final_adjudication_complete=True,
+                g6_formal_research_allowed=False,
+            ),
         },
     }
     return {**common, **payloads[source_id]}
@@ -178,6 +199,22 @@ def test_exact_complete_report_replays_and_allows() -> None:
     assert verification["ok"] is True
     assert verification["allowed"] is True
     assert verification["reasons"] == []
+
+
+def test_final_admission_rejects_a_tampered_typed_phase_condition(
+    tmp_path: Path,
+) -> None:
+    paths = _source_paths(tmp_path)
+    g5 = json.loads(paths["G5"].read_text(encoding="utf-8"))
+    g5["phase_control_state"]["conditions"][5]["status"] = "False"
+    _write(paths["G5"], g5)
+
+    report = _report(tmp_path, paths)
+    g5_binding = report["source_reports"]["G5"]
+
+    assert report["decision"] == "DENY"
+    assert g5_binding["ready_for_admission_formula"] is False
+    assert "phase_control_valid" in g5_binding["readiness_failures"]
 
 
 def test_materialization_receipt_cannot_be_reused_for_another_report(tmp_path: Path) -> None:

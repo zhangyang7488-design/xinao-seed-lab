@@ -1,9 +1,9 @@
-"""Fail-closed G4 route calibration for bounded family execution.
+"""Fail-closed G4 route calibration for one bounded batch.
 
 Calibration is deliberately performed on public training cases.  It may measure a
 provider route, actual model identity, usage, and wall time, but it never scores a
-held-out outcome and can never close G4 by itself.  Provider-wide absolute quota is
-optional planning telemetry, not a prerequisite for incremental family execution.
+held-out outcome and can never close G4 by itself. Provider capacity is scoped to
+the current batch and never becomes a whole-campaign prerequisite or provider lock.
 """
 
 from __future__ import annotations
@@ -15,6 +15,12 @@ from collections.abc import Mapping, Sequence
 from typing import Any
 
 from xinao.canonical import canonical_sha256
+from xinao.capability.phase_conditions import (
+    build_phase_control_state,
+    execution_directives,
+    human_summary_cn,
+    legacy_claim_projection,
+)
 
 PUBLIC_CASE_KEYS = frozenset(
     {"public_case_id", "public_instructions", "task_input", "commitment_sha256"}
@@ -234,15 +240,16 @@ def adjudicate_capacity(
     *,
     measurements: Sequence[Mapping[str, Any]],
     quota_snapshot: Mapping[str, Any],
-    required_campaign_cells: int,
+    planned_batch_cells: int,
     hard_bounds: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
-    """Adjudicate route readiness and emit optional full-campaign cost estimates.
+    """Adjudicate route readiness and capacity for the current bounded batch.
 
-    G4 execution is partitioned into pre-registered family batches.  Each family
+    G4 execution is partitioned into pre-registered batches. Each batch
     still requires its own PowerPlan, budget, and stopping conditions; G4_FULL
     remains false until every required family/configuration result is complete.
-    Percentage-only quota telemetry cannot block bounded family planning.
+    Percentage-only quota telemetry cannot block a batch. A known insufficient
+    hard bound holds only this batch so the worker bus can resize or re-route it.
     """
     reasons: list[str] = []
     advisories: list[str] = []
@@ -252,8 +259,8 @@ def adjudicate_capacity(
         "route_contract_pinned": "ROUTE_MEASUREMENT_ROUTE_CONTRACT_NOT_PINNED",
         "filesystem_boundary_recorded": ("ROUTE_MEASUREMENT_FILESYSTEM_BOUNDARY_NOT_RECORDED"),
     }
-    if required_campaign_cells <= 0:
-        raise ValueError("required_campaign_cells must be positive")
+    if planned_batch_cells <= 0:
+        raise ValueError("planned_batch_cells must be positive")
     rows = [dict(row) for row in measurements]
     if len(rows) != 3 or {row.get("stratum") for row in rows} != {
         "low",
@@ -324,54 +331,92 @@ def adjudicate_capacity(
 
     max_tokens = max((value or 0 for value in total_tokens), default=0)
     max_duration = max((value or 0 for value in durations), default=0)
-    estimated_token_ceiling = math.ceil(max_tokens * required_campaign_cells * 1.25)
-    estimated_serial_wall_ms = math.ceil(max_duration * required_campaign_cells * 1.25)
+    estimated_token_ceiling = math.ceil(max_tokens * planned_batch_cells * 1.25)
+    estimated_serial_wall_ms = math.ceil(max_duration * planned_batch_cells * 1.25)
+    batch_scheduling_holds: list[str] = []
     if hard_available_tokens is not None and hard_available_tokens < estimated_token_ceiling:
-        advisories.append("OBSERVED_TOKEN_CAPACITY_BELOW_FULL_CAMPAIGN_ESTIMATE")
-    if hard_max_calls is not None and hard_max_calls < required_campaign_cells:
-        advisories.append("OBSERVED_CALL_CAPACITY_BELOW_FULL_CAMPAIGN_ESTIMATE")
+        batch_scheduling_holds.append("OBSERVED_TOKEN_CAPACITY_BELOW_CURRENT_BATCH_ESTIMATE")
+    if hard_max_calls is not None and hard_max_calls < planned_batch_cells:
+        batch_scheduling_holds.append("OBSERVED_CALL_CAPACITY_BELOW_CURRENT_BATCH_ESTIMATE")
     if hard_wall_clock_ms is not None and hard_wall_clock_ms < estimated_serial_wall_ms:
-        advisories.append("OBSERVED_WALL_BOUND_BELOW_FULL_CAMPAIGN_ESTIMATE")
+        batch_scheduling_holds.append("OBSERVED_WALL_BOUND_BELOW_CURRENT_BATCH_ESTIMATE")
 
-    route_ready = not reasons
-    full_campaign_precommit_sufficient = bool(
+    route_evidence_ready = not reasons
+    current_batch_capacity_observed_sufficient = bool(
         absolute_capacity_available
         and hard_available_tokens is not None
         and hard_available_tokens >= estimated_token_ceiling
         and hard_max_calls is not None
-        and hard_max_calls >= required_campaign_cells
+        and hard_max_calls >= planned_batch_cells
         and hard_wall_clock_ms is not None
         and hard_wall_clock_ms >= estimated_serial_wall_ms
     )
+    batch_execution_ready = route_evidence_ready and not batch_scheduling_holds
+    phase_control = build_phase_control_state(
+        observed_generation=canonical_sha256(
+            {
+                "schema_version": "xinao.g4.capacity.phase_generation.v1",
+                "measurements": rows,
+                "quota_snapshot": dict(quota_snapshot),
+                "planned_batch_cells": planned_batch_cells,
+                "hard_bounds": bound,
+            }
+        ),
+        g4_engineering_allowed=True,
+        g4_batch_execution_allowed=batch_execution_ready,
+        g4_full_evidence_complete=False,
+        g5_design_allowed=True,
+        g5_preregistration_allowed=True,
+        g5_final_adjudication_complete=False,
+        g6_formal_research_allowed=False,
+    )
+    phase_directives = execution_directives(phase_control)
+    legacy_claims = legacy_claim_projection(phase_control)
     report: dict[str, Any] = {
-        "schema_version": "xinao.g4.bounded_family_route_advisory.v2",
-        "terminal": TERMINAL_ROUTE_READY if route_ready else TERMINAL_ROUTE_HOLD,
-        "route_ready_for_bounded_family_planning": route_ready,
+        "schema_version": "xinao.g4.bounded_batch_route_advisory.v3",
+        "terminal": (
+            TERMINAL_ROUTE_READY if batch_execution_ready else TERMINAL_ROUTE_HOLD
+        ),
+        "route_evidence_ready_for_current_batch": route_evidence_ready,
+        "current_batch_execution_ready": batch_execution_ready,
         "execution_mode": "pre_registered_bounded_family_batches",
         "family_power_plan_required": True,
         "single_shot_capacity_required": False,
         "full_report_requires_complete_campaign": True,
-        "estimated_full_campaign_cells": required_campaign_cells,
+        "capacity_scope": "current_batch_only",
+        "campaign_provider_locked": False,
+        "api_quota_is_campaign_gate": False,
+        "planned_batch_cells": planned_batch_cells,
         "calibration_measurements": rows,
         "route_identity_count": len(route_identities),
         "measured_max_tokens_per_call": max_tokens or None,
         "measured_max_duration_ms_per_call": max_duration or None,
-        "estimated_token_ceiling_with_25pct_contingency": estimated_token_ceiling or None,
-        "estimated_serial_wall_ms_with_25pct_contingency": (estimated_serial_wall_ms or None),
+        "estimated_batch_token_ceiling_with_25pct_contingency": (
+            estimated_token_ceiling or None
+        ),
+        "estimated_batch_serial_wall_ms_with_25pct_contingency": (
+            estimated_serial_wall_ms or None
+        ),
         "hard_bounds": bound,
         "absolute_capacity_available": absolute_capacity_available,
-        "full_campaign_precommit_sufficient": full_campaign_precommit_sufficient,
+        "current_batch_capacity_observed_sufficient": (
+            current_batch_capacity_observed_sufficient
+        ),
         "quota_snapshot_sha256": canonical_sha256(dict(quota_snapshot)),
         "quota_percentage_only_advisory": quota_is_percentage_only,
         "reasons": sorted(set(reasons)),
+        "batch_scheduling_holds": sorted(set(batch_scheduling_holds)),
         "advisories": sorted(set(advisories)),
         "hidden_outcome_access": False,
         "scoring_executed": False,
         "authority_freeze_allowed": False,
-        "global_wait_allowed": False,
-        "g4_full": False,
-        "g4_closed": False,
-        "g5_closed": False,
+        "phase_control_state": phase_control,
+        "execution_directives": phase_directives,
+        "human_status_cn": human_summary_cn(phase_control),
+        "global_wait_allowed": phase_directives["parent_global_wait_allowed"],
+        "g4_full": legacy_claims["g4_full"],
+        "g4_closed": legacy_claims["g4_closed"],
+        "g5_closed": legacy_claims["g5_closed"],
         "admission_closed": False,
         "foundation_closed": False,
         "parent_complete": False,

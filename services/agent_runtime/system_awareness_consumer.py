@@ -40,6 +40,7 @@ FRONTIER_RECONCILIATION_VERSION = "xinao.global_frontier_reconciliation.v4"
 LEGACY_FRONTIER_RECONCILIATION_VERSION = "xinao.global_frontier_reconciliation.v1"
 FRONTIER_INVENTORY_VERSION = "xinao.global_frontier_inventory.v2"
 FRONTIER_EXTERNALITY_PROOF_VERSION = "xinao.frontier_externality_proof.v2"
+EXTERNAL_BLOCKER_HUMAN_REPORT_VERSION = "xinao.external_blocker_human_report.v1"
 FRONTIER_EXTERNAL_OBSERVATION_SOURCE_KINDS = frozenset(
     {
         "provider_api_observation",
@@ -2180,10 +2181,11 @@ def reconcile_global_frontier(raw: Mapping[str, object]) -> dict[str, Any]:
         "externality_proof_bindings": externality_proof_bindings,
         "wakeable_wait": wakeable_wait,
     }
-    return {
+    receipt_sha256 = hashlib.sha256(artifact_json_bytes(receipt_core)).hexdigest()
+    result: dict[str, Any] = {
         **receipt_core,
         "inventory_binding": inventory_binding,
-        "receipt_sha256": hashlib.sha256(artifact_json_bytes(receipt_core)).hexdigest(),
+        "receipt_sha256": receipt_sha256,
         "ok": valid,
         "status": "valid" if valid else "invalid",
         "parent_state": parent_state,
@@ -2196,6 +2198,212 @@ def reconcile_global_frontier(raw: Mapping[str, object]) -> dict[str, Any]:
         "authority": False,
         "completion_claim_allowed": False,
     }
+    if valid and global_exhaustion_requested:
+        blocker_report = _project_external_blocker_human_report(
+            transactions,
+            wakeable_wait=wakeable_wait,
+            receipt_sha256=receipt_sha256,
+            task_run_id=task_run_id,
+            event_head=event_head,
+        )
+        if blocker_report is not None:
+            result["external_blocker_human_report"] = blocker_report
+    return result
+
+
+def _project_external_blocker_human_report(
+    transactions: Sequence[Mapping[str, Any]],
+    *,
+    wakeable_wait: Mapping[str, Any],
+    receipt_sha256: str,
+    task_run_id: str,
+    event_head: Mapping[str, Any],
+) -> dict[str, Any] | None:
+    """Project a human report only after the authoritative wait gate is already true."""
+
+    blockers: list[dict[str, Any]] = []
+    exact_freeze_cones: set[str] = set()
+    evidence_refs: set[str] = set()
+    verified_at: list[str] = []
+    exhausted_states = {
+        "completed",
+        "retired",
+        "blocked_external",
+        "waiting_external",
+        "no_positive_action",
+        "discarded",
+        "superseded",
+    }
+    still_actionable = sorted(
+        str(transaction.get("transaction_id") or "")
+        for transaction in transactions
+        if str(transaction.get("state") or "") not in exhausted_states
+    )
+    for transaction in transactions:
+        cone = str(transaction.get("affected_cone") or "").strip()
+        for atom in transaction.get("blocking_atoms") or []:
+            if not isinstance(atom, Mapping) or atom.get("classification") != "external_fact":
+                continue
+            proof = atom.get("externality_proof")
+            if not isinstance(proof, Mapping):
+                continue
+            observed = proof.get("observed_fact")
+            counterfactual = proof.get("constructibility_counterfactual")
+            if not isinstance(observed, Mapping) or not isinstance(counterfactual, Mapping):
+                continue
+            atom_id = str(atom.get("atom_id") or "").strip()
+            observed_at = str(observed.get("observed_at") or "").strip()
+            if observed_at:
+                verified_at.append(observed_at)
+            proof_ref = str(atom.get("externality_proof_ref") or "").strip()
+            if proof_ref:
+                evidence_refs.add(proof_ref)
+            if cone:
+                exact_freeze_cones.add(cone)
+            checked = sorted(
+                {
+                    str(value)
+                    for field in (
+                        "authorized_objects_checked",
+                        "topology_nodes_checked",
+                        "local_capabilities_checked",
+                    )
+                    for value in (counterfactual.get(field) or [])
+                    if str(value).strip()
+                }
+            )
+            blockers.append(
+                {
+                    "atom_id": atom_id,
+                    "description": str(atom.get("description") or "").strip(),
+                    "observed_fact": str(observed.get("observation") or "").strip(),
+                    "why_not_local_cn": (
+                        "已检查当前授权对象、已安装拓扑和本地能力，"
+                        f"仍不能在本机合法构造；检查项：{', '.join(checked)}。"
+                    ),
+                    "exact_freeze_cone": cone,
+                    "externality_proof_ref": proof_ref,
+                }
+            )
+    blockers.sort(key=lambda item: (item["atom_id"], item["exact_freeze_cone"]))
+    wake_conditions = [
+        str(value)
+        for value in (wakeable_wait.get("wake_conditions") or [])
+        if str(value).strip()
+    ]
+    if not blockers:
+        return None
+    return {
+        "schema_version": EXTERNAL_BLOCKER_HUMAN_REPORT_VERSION,
+        "status": "verified_external_wait",
+        "source_receipt_sha256": receipt_sha256,
+        "task_run_id": task_run_id,
+        "event_head": dict(event_head),
+        "blockers": blockers,
+        "exact_freeze_cones": sorted(exact_freeze_cones),
+        "still_actionable_transactions": still_actionable,
+        "current_evidence_refs": sorted(evidence_refs),
+        "wake_conditions": wake_conditions,
+        "last_verified_at": max(verified_at) if verified_at else "",
+        "authority": False,
+        "completion_claim_allowed": False,
+        "parent_wait_claim_allowed": True,
+    }
+
+
+def write_external_blocker_human_report(
+    reconciliation: Mapping[str, Any],
+    output_dir: Path,
+) -> Path | None:
+    """Materialize the verified blocker projection as a unique Chinese text file."""
+
+    if (
+        reconciliation.get("status") != "valid"
+        or reconciliation.get("parent_wait_claim_allowed") is not True
+    ):
+        return None
+    raw_report = reconciliation.get("external_blocker_human_report")
+    if not isinstance(raw_report, Mapping):
+        return None
+    receipt_sha256 = str(raw_report.get("source_receipt_sha256") or "")
+    if (
+        not re.fullmatch(r"[0-9a-f]{64}", receipt_sha256)
+        or receipt_sha256 != reconciliation.get("receipt_sha256")
+        or raw_report.get("status") != "verified_external_wait"
+        or raw_report.get("parent_wait_claim_allowed") is not True
+        or raw_report.get("task_run_id") != reconciliation.get("task_run_id")
+        or raw_report.get("event_head") != reconciliation.get("event_head")
+        or list(raw_report.get("still_actionable_transactions") or [])
+    ):
+        raise SystemAwarenessError(
+            "EXTERNAL_BLOCKER_REPORT_INVALID",
+            "external blocker report must bind the same valid exhausted reconciliation",
+        )
+    blockers = [
+        dict(item)
+        for item in (raw_report.get("blockers") or [])
+        if isinstance(item, Mapping)
+    ]
+    if not blockers:
+        raise SystemAwarenessError(
+            "EXTERNAL_BLOCKER_REPORT_INVALID",
+            "verified external wait must contain at least one blocker",
+        )
+    target_dir = Path(output_dir).resolve()
+    target_dir.mkdir(parents=True, exist_ok=True)
+    target = target_dir / f"主线真实外部卡点_{receipt_sha256[:16]}.txt"
+    lines = [
+        "主线真实外部卡点（机器核验投影）",
+        "",
+        f"任务账本：{raw_report.get('task_run_id') or '未知'}",
+        "事件头："
+        + json.dumps(raw_report.get("event_head") or {}, ensure_ascii=False, sort_keys=True),
+        "",
+        "这次为什么必须等待：",
+        "父级全前沿已经按当前事实穷尽，以下依赖经外部观测和本机构造反事实验证，"
+        "不能在当前授权对象与拓扑内制造；等待只覆盖列出的精确范围。",
+        "",
+        "真实卡点：",
+    ]
+    for index, blocker in enumerate(blockers, start=1):
+        lines.extend(
+            [
+                f"{index}. {blocker.get('description') or blocker.get('atom_id')}",
+                f"   外部事实：{blocker.get('observed_fact') or '未提供人话描述'}",
+                f"   为什么本机不能补：{blocker.get('why_not_local_cn')}",
+                f"   精确冻结范围：{blocker.get('exact_freeze_cone')}",
+                f"   核验证据：{blocker.get('externality_proof_ref')}",
+            ]
+        )
+    still_actionable = [
+        str(value)
+        for value in (raw_report.get("still_actionable_transactions") or [])
+        if str(value).strip()
+    ]
+    lines.extend(
+        [
+            "",
+            "仍可继续的事务："
+            + ("、".join(still_actionable) if still_actionable else "无"),
+            "唤醒条件："
+            + "；".join(str(value) for value in raw_report.get("wake_conditions") or []),
+            "当前证据："
+            + "；".join(
+                str(value) for value in raw_report.get("current_evidence_refs") or []
+            ),
+            f"最近核验时间：{raw_report.get('last_verified_at') or '未知'}",
+            f"来源回执 SHA256：{receipt_sha256}",
+            "",
+            "边界：这不是完成声明，也不扩大冻结范围。",
+            "每次准备继续等待前都必须重新核验任务账本与事件头；新事件出现后旧文本立即失效，",
+            "旧文本不能继续充当当前卡点或等待授权。",
+            "",
+        ]
+    )
+    temporary = target.with_suffix(".tmp")
+    temporary.write_text("\n".join(lines), encoding="utf-8")
+    os.replace(temporary, target)
+    return target
 
 
 def reconcile_identity(raw: Mapping[str, object]) -> dict[str, Any]:
@@ -4834,8 +5042,10 @@ def _dispatch_outcome_projection_if_present(
 def _frontier_invalidated(
     projection: Mapping[str, object], reason_code: str, *, status: str = "invalid"
 ) -> dict[str, Any]:
+    invalidated = dict(projection)
+    invalidated.pop("external_blocker_human_report", None)
     return {
-        **dict(projection),
+        **invalidated,
         "ok": False,
         "status": status,
         "parent_state": "open",
@@ -5379,6 +5589,15 @@ def main(argv: Sequence[str] | None = None) -> int:
     global_frontier = sub.add_parser("global-frontier")
     global_frontier.add_argument("--task-run-dir", type=Path, required=True)
     global_frontier.add_argument("--input", type=Path, required=True)
+    global_frontier.add_argument(
+        "--blocker-report-dir",
+        type=Path,
+        default=Path.home() / "Desktop",
+        help=(
+            "when and only when a real parent external wait verifies, materialize "
+            "one hash-named Chinese report in this directory"
+        ),
+    )
     global_frontier.add_argument("--output", type=Path)
 
     worktrees = sub.add_parser("scan-worktrees")
@@ -5465,6 +5684,15 @@ def main(argv: Sequence[str] | None = None) -> int:
             value = evaluate_global_frontier_at_task_run_head(
                 args.task_run_dir, _load_input(args.input)
             )
+            blocker_report_path = write_external_blocker_human_report(
+                value,
+                args.blocker_report_dir,
+            )
+            if blocker_report_path is not None:
+                value = {
+                    **value,
+                    "external_blocker_human_report_path": str(blocker_report_path),
+                }
         elif args.command == "scan-task-run":
             if args.previous_problems or args.effectiveness_evidence or args.close_requested:
                 raise SystemAwarenessError(
@@ -5581,6 +5809,7 @@ __all__ = [
     "evaluate_trajectory_sample",
     "evaluate_promotion_evidence",
     "evaluate_wakeable_wait",
+    "write_external_blocker_human_report",
     "scan_task_run",
     "scan_task_run_problem_append_snapshot",
     "scan_task_run_problem_projection",

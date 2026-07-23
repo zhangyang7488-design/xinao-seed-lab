@@ -16,6 +16,12 @@ from pathlib import Path
 from typing import Any
 
 from xinao.canonical import canonical_sha256
+from xinao.capability.phase_conditions import (
+    PhaseConditionError,
+    PhaseConditionType,
+    condition_value,
+    validate_phase_control_state,
+)
 
 DOMAIN_ADMISSION_SCHEMA_VERSION = "xinao.domain_research_admission_report.v1"
 DOMAIN_ADMISSION_VERIFICATION_SCHEMA_VERSION = "xinao.domain_research_admission_verification.v1"
@@ -175,6 +181,24 @@ def _source_ready(source_id: str, report: Mapping[str, Any]) -> tuple[bool, list
             "completion_claim": report.get("completion_claim_allowed") is True,
             "decision": report.get("decision") == "G4_DISCOVERY_CAPABILITY_PROVED",
         }
+        phase_control = report.get("phase_control_state")
+        if phase_control is not None:
+            try:
+                if not isinstance(phase_control, Mapping):
+                    raise TypeError("G4.phase_control_state must be an object")
+                validated_phase = validate_phase_control_state(phase_control)
+            except (PhaseConditionError, TypeError, ValueError):
+                checks["phase_control_valid"] = False
+                checks["typed_final_condition"] = False
+            else:
+                checks["phase_control_valid"] = True
+                checks["typed_final_condition"] = (
+                    condition_value(
+                        validated_phase,
+                        PhaseConditionType.G4_FULL_EVIDENCE_COMPLETE,
+                    )
+                    is True
+                )
     elif source_id == "G5":
         checks = {
             "final_schema": schema == "xinao.statistical_validity_report.v1",
@@ -184,6 +208,24 @@ def _source_ready(source_id: str, report: Mapping[str, Any]) -> tuple[bool, list
             "completion_claim": report.get("completion_claim_allowed") is True,
             "decision": report.get("decision") == "G5_STATISTICAL_VALIDITY_READY",
         }
+        phase_control = report.get("phase_control_state")
+        if phase_control is not None:
+            try:
+                if not isinstance(phase_control, Mapping):
+                    raise TypeError("G5.phase_control_state must be an object")
+                validated_phase = validate_phase_control_state(phase_control)
+            except (PhaseConditionError, TypeError, ValueError):
+                checks["phase_control_valid"] = False
+                checks["typed_final_condition"] = False
+            else:
+                checks["phase_control_valid"] = True
+                checks["typed_final_condition"] = (
+                    condition_value(
+                        validated_phase,
+                        PhaseConditionType.G5_FINAL_ADJUDICATION_COMPLETE,
+                    )
+                    is True
+                )
     else:  # pragma: no cover - callers enforce the exact source inventory.
         return False, ["unknown_source_id"]
     failed = [name for name, passed in checks.items() if not passed]

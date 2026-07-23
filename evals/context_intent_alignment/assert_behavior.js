@@ -65,7 +65,9 @@ module.exports = (output, context) => {
   const expectedTextWriters = alternatives(
     context.vars.expected_text_writer ?? 'not_applicable',
   );
-  const expectedDegradedScope = context.vars.expected_degraded_scope ?? 'none';
+  const expectedDegradedScopes = alternatives(
+    context.vars.expected_degraded_scope ?? 'none',
+  );
   const expectedPreserveParentCompletionBar =
     context.vars.expected_preserve_parent_completion_bar ?? true;
   const expectedUnaffectedFrontierAction =
@@ -213,7 +215,10 @@ module.exports = (output, context) => {
       context.vars.expected_downstream_recovery_required ?? false,
     freeze_unaffected_provider:
       context.vars.expected_freeze_unaffected_provider ?? false,
-    degraded_scope: expectedDegradedScope,
+    degraded_scope:
+      expectedDegradedScopes.length === 1
+        ? expectedDegradedScopes[0]
+        : expectedDegradedScopes,
     preserve_parent_completion_bar: expectedPreserveParentCompletionBar,
     unaffected_frontier_action: expectedUnaffectedFrontierAction,
     recovery_probe: expectedRecoveryProbe,
@@ -352,6 +357,7 @@ module.exports = (output, context) => {
     'worker_transport',
     'quota_action',
     'text_writer',
+    'degraded_scope',
     'quota_query_disposition',
     'owner_execution_state',
     'terminal_refill',
@@ -441,7 +447,7 @@ module.exports = (output, context) => {
       (context.vars.expected_downstream_recovery_required ?? false) &&
     parsed.freeze_unaffected_provider ===
       (context.vars.expected_freeze_unaffected_provider ?? false) &&
-    parsed.degraded_scope === expectedDegradedScope &&
+    expectedDegradedScopes.includes(parsed.degraded_scope) &&
     parsed.preserve_parent_completion_bar ===
       expectedPreserveParentCompletionBar &&
     parsed.unaffected_frontier_action === expectedUnaffectedFrontierAction &&

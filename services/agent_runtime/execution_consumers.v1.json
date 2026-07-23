@@ -497,8 +497,8 @@
       "contract_mode": "exact_task_run_prefix_plus_canonical_parent_requirement_plus_atomized_hash_bound_externality_and_constructibility_counterfactual",
       "status": "boundary_verified_non_parent_owner",
       "conformance_status": "boundary_verified_non_parent_owner",
-      "status_reason": "The read-only v4 consumer binds a prospective or event-carried reconciliation to one exact task-run prefix and a hash-bound typed package/batch/parent inventory. Every external blocker must first bind an exact excerpt from a current canonical parent contract catalog entry, then bind both a current admitted observation and a structured counterfactual proving it cannot be constructed inside the authorized local object and topology. Derived contracts, projections and runtime status cannot manufacture parent requirements. Locally constructible atoms keep the parent open; prior reconciliation versions and any v4 receipt followed by a material event cannot pause the parent.",
-      "writes_effects": false,
+      "status_reason": "The v4 consumer binds a prospective or event-carried reconciliation to one exact task-run prefix and a hash-bound typed package/batch/parent inventory. Every external blocker must first bind an exact excerpt from a current canonical parent contract catalog entry, then bind both a current admitted observation and a structured counterfactual proving it cannot be constructed inside the authorized local object and topology. Derived contracts, projections and runtime status cannot manufacture parent requirements. Locally constructible atoms keep the parent open; prior reconciliation versions and any v4 receipt followed by a material event cannot pause the parent. A unique Chinese human report may be materialized only after parent_wait_claim_allowed=true and is invalidated with the receipt on the next relevant event.",
+      "writes_effects": true,
       "parent_completion_authority": false,
       "conformance_tests": [
         "tests/test_system_awareness_consumer.py::test_global_frontier_v4_binds_exact_task_run_prefix_inventory_and_stales_on_later_event",
@@ -512,6 +512,28 @@
       "replay_evidence": [],
       "current_positive_canary_evidence": [],
       "negative_canary_evidence": [],
+      "fresh_canary_evidence": []
+    },
+    {
+      "consumer_id": "g4_provider_neutral_batch_admission",
+      "source_path": "scripts/run_g4_batch_execution_admission.py",
+      "entrypoint": "main",
+      "role": "provider_neutral_scientific_batch_to_common_execution_receipt_admission",
+      "contract_mode": "immutable_scientific_batch_plus_existing_logical_contract_and_attempt_receipt",
+      "status": "boundary_verified_non_parent_owner",
+      "conformance_status": "boundary_verified_non_parent_owner",
+      "status_reason": "The consumer keeps the G4 scientific batch identity free of provider, model, transport, relay, API, quota, and whole-campaign capacity bindings. It accepts only an existing common LogicalExecutionContract and hash-bound ExecutionAttemptReceipt for the current batch attempt, projects scoped phase conditions, and cannot close G4, G5, G6, authorize parent wait, or advance the domain campaign.",
+      "writes_effects": true,
+      "parent_completion_authority": false,
+      "independent_gap_discovery": false,
+      "conformance_tests": [
+        "tests/test_g4_provider_neutral_batch.py"
+      ],
+      "replay_evidence": [],
+      "current_positive_canary_evidence": [],
+      "superseded_evidence": [],
+      "negative_canary_evidence": [],
+      "blocking_evidence": [],
       "fresh_canary_evidence": []
     },
     {

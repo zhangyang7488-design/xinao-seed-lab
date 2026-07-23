@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import copy
 import math
 
 import pytest
@@ -17,6 +18,7 @@ from xinao.capability.g5_statistical_validity import (
     required_effective_n,
 )
 from xinao.capability.g5_statistical_validity.adjudication import G5AdjudicationError
+from xinao.capability.phase_conditions import build_phase_control_state
 from xinao.single_home.ess_report import build_ess_report
 from xinao.single_home.global_trial_ledger import GlobalTrialLedger
 from xinao.single_home.hashing import content_sha256
@@ -37,8 +39,40 @@ def _g4_route_ready_without_full_results() -> dict:
             "g4_full": False,
             "g4_closed": False,
             "authority": False,
+            "phase_control_state": build_phase_control_state(
+                observed_generation="a" * 64,
+                g4_engineering_allowed=True,
+                g4_batch_execution_allowed=True,
+                g4_full_evidence_complete=False,
+                g5_design_allowed=True,
+                g5_preregistration_allowed=True,
+                g5_final_adjudication_complete=False,
+                g6_formal_research_allowed=False,
+            ),
         }
     )
+
+
+def test_g5_treats_tampered_upstream_phase_as_hold_not_exception() -> None:
+    g4 = _g4_route_ready_without_full_results()
+    tampered = copy.deepcopy(g4)
+    tampered["phase_control_state"]["conditions"][0]["message"] = "stop everything"
+    tampered["content_hash"] = canonical_sha256(
+        {key: value for key, value in tampered.items() if key != "content_hash"}
+    )
+
+    report = adjudicate_g5(g4_report=tampered)
+
+    assert report["terminal"] == TERMINAL_HOLD
+    assert report["g5_statistical_validity_ready"] is False
+    assert report["checks"]["g4_phase_control_valid"] is False
+    assert any(
+        reason.startswith("G4_PHASE_CONTROL_INVALID:")
+        for reason in report["reasons"]
+    )
+    assert report["execution_directives"]["g4_batch_runner"] == "UNKNOWN"
+    assert report["execution_directives"]["g5_design"] == "EXECUTE"
+    assert report["execution_directives"]["parent_global_wait_allowed"] is False
 
 
 def _power_pair() -> tuple[dict, dict]:
@@ -174,6 +208,15 @@ def test_route_ready_without_full_g4_results_keeps_g5_and_g6_closed() -> None:
     assert report["parent_complete"] is False
     assert "G4_FULL_CLOSED" in report["reasons"]
     assert report["mature_protocol_boundaries"]["public_null_smoke_is_g5_evidence"] is False
+    assert report["execution_directives"]["g4_batch_runner"] == "EXECUTE"
+    assert report["execution_directives"]["g5_design"] == "EXECUTE"
+    assert report["execution_directives"]["g5_preregistration"] == "EXECUTE"
+    assert report["execution_directives"]["g5_final_claim"] == "OPEN"
+    assert report["execution_directives"]["g6_formal_research"] == "DENY"
+    assert report["execution_directives"]["parent_global_wait_allowed"] is False
+    assert "不等于冻结全部 G5 工作" in report["phase_control_state"]["conditions"][5][
+        "message"
+    ]
 
 
 def test_malformed_error_receipt_fails_to_hold_instead_of_crashing() -> None:
