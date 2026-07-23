@@ -65,6 +65,24 @@ def test_selected_grok_adapter_requires_explicit_supervisor_cwd() -> None:
         )
 
 
+def test_ready_frontier_requires_explicit_cwd_by_default() -> None:
+    with pytest.raises(ValueError, match="explicit supervisor-selected cwd"):
+        grok_parallel.validate_ready_frontier(
+            [{"lane_id": "audit", "prompt": "audit"}],
+            serial_reason="new caller must bind its carrier",
+        )
+
+
+def test_legacy_temporal_replay_can_request_the_historical_cwd_default() -> None:
+    lane = grok_parallel.validate_ready_frontier(
+        [{"lane_id": "legacy", "prompt": "replay"}],
+        serial_reason="replay compatibility only",
+        require_explicit_cwd=False,
+    )[0]
+
+    assert lane["cwd"] == str(grok_parallel.LEGACY_REPLAY_DEFAULT_CWD.resolve())
+
+
 @pytest.mark.parametrize(
     ("model", "route_role", "is_escalated", "escalation_reason"),
     [
@@ -110,7 +128,7 @@ def test_selected_grok_adapter_preserves_each_explicit_admitted_model(
 @pytest.mark.parametrize("raw", [None, "auto"])
 def test_ready_frontier_auto_turn_limit_preserves_native_completion(raw: object) -> None:
     lane = grok_parallel.validate_ready_frontier(
-        [{"lane_id": "native", "prompt": "finish natively", "max_turns": raw}],
+        [{"lane_id": "native", "prompt": "finish natively", "cwd": str(REPO), "max_turns": raw}],
         serial_reason="one native-completion unit",
     )[0]
 
@@ -119,7 +137,7 @@ def test_ready_frontier_auto_turn_limit_preserves_native_completion(raw: object)
 
 def test_ready_frontier_clamps_only_explicit_turn_limit() -> None:
     lane = grok_parallel.validate_ready_frontier(
-        [{"lane_id": "bounded", "prompt": "bounded", "max_turns": 99}],
+        [{"lane_id": "bounded", "prompt": "bounded", "cwd": str(REPO), "max_turns": 99}],
         serial_reason="one explicitly bounded unit",
     )[0]
 
@@ -129,14 +147,26 @@ def test_ready_frontier_clamps_only_explicit_turn_limit() -> None:
 def test_ready_frontier_rejects_unknown_mixed_or_unisolated_write_model(tmp_path: Path) -> None:
     with pytest.raises(ValueError, match="unsupported Grok provider model"):
         grok_parallel.validate_ready_frontier(
-            [{"lane_id": "bad", "prompt": "bad", "model": "grok-unknown"}],
+            [
+                {
+                    "lane_id": "bad",
+                    "prompt": "bad",
+                    "cwd": str(REPO),
+                    "model": "grok-unknown",
+                }
+            ],
             serial_reason="negative model canary",
         )
     with pytest.raises(ValueError, match="cannot mix"):
         grok_parallel.validate_ready_frontier(
             [
-                {"lane_id": "one", "prompt": "one"},
-                {"lane_id": "two", "prompt": "two", "model": "grok-4.5"},
+                {"lane_id": "one", "prompt": "one", "cwd": str(REPO)},
+                {
+                    "lane_id": "two",
+                    "prompt": "two",
+                    "cwd": str(REPO),
+                    "model": "grok-4.5",
+                },
             ]
         )
     with pytest.raises(ValueError, match="isolated worktree root"):
@@ -362,6 +392,9 @@ def test_managed_background_mcp_surface_disables_host_command_tools() -> None:
     assert sandbox["enabled"] is True
     assert sandbox["args"][-2:] == ["-m", "services.mcp.xinao_sandbox_mcp_server"]
     assert "hidden-stdio" in sandbox["command"]
+    carrier_root = Path(sandbox["cwd"])
+    assert carrier_root == Path(sandbox["env"]["PYTHONPATH"])
+    assert Path(sandbox["args"][0]).is_relative_to(carrier_root)
 
 
 def test_fanin_materializes_container_intake_and_lane_lineage(

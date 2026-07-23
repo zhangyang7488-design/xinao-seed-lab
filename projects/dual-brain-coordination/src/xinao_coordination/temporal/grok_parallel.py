@@ -46,7 +46,8 @@ ESCALATION_REASONS = frozenset(
         "worker_conflict",
     }
 )
-DEFAULT_CWD = Path(r"E:\XINAO_RESEARCH_WORKSPACES\S")
+LEGACY_REPLAY_DEFAULT_CWD = Path(r"E:\XINAO_RESEARCH_WORKSPACES\S")
+DEFAULT_CWD = LEGACY_REPLAY_DEFAULT_CWD
 DEFAULT_RUNTIME = Path(r"D:\XINAO_RESEARCH_RUNTIME")
 DEFAULT_EVIDENCE_ROOT = DEFAULT_RUNTIME / "state" / "dual_brain_coordination" / "grok_temporal"
 DEFAULT_GROK_HOME = Path(r"C:\Users\xx363\.grok-bg-workers")
@@ -122,9 +123,9 @@ def validate_ready_frontier(
     serial_reason: str = "",
     default_model: str = DEFAULT_MODEL,
     require_explicit_model: bool = False,
-    require_explicit_cwd: bool = False,
+    require_explicit_cwd: bool = True,
 ) -> list[dict[str, Any]]:
-    """Validate caller-derived ready work; never invent a standing lane count."""
+    """Validate caller-derived ready work; new calls must bind their source carrier."""
 
     if not isinstance(raw, list) or not raw:
         return []
@@ -144,7 +145,7 @@ def validate_ready_frontier(
         if not lane_id or lane_id in seen or not prompt:
             raise ValueError(f"invalid/duplicate ready frontier lane at index {index}")
         seen.add(lane_id)
-        cwd = Path(str(item.get("cwd") or DEFAULT_CWD)).resolve()
+        cwd = Path(str(item.get("cwd") or LEGACY_REPLAY_DEFAULT_CWD)).resolve()
         write = bool(item.get("write", False))
         if write:
             isolated_root = Path(
@@ -600,6 +601,7 @@ __all__ = [
     "FANIN_SENTINEL",
     "GROK_TEMPORAL_ACTIVITIES",
     "LEGACY_DEFAULT_MODEL",
+    "LEGACY_REPLAY_DEFAULT_CWD",
     "MODEL_POLICY_ID",
     "POLICY_ID",
     "PROVIDER_CAPACITY_CEILING",

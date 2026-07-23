@@ -12,12 +12,12 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Literal
 
+from services.agent_runtime.carrier_identity import resolve_code_carrier_root
+
 DEFAULT_RUNTIME = pathlib.Path(
     os.environ.get("XINAO_RESEARCH_RUNTIME", r"D:\XINAO_RESEARCH_RUNTIME")
 )
-DEFAULT_REPO = pathlib.Path(
-    os.environ.get("XINAO_CODEX_S_REPO_ROOT", r"E:\XINAO_RESEARCH_WORKSPACES\S")
-)
+DEFAULT_REPO = resolve_code_carrier_root(anchor=__file__)
 DEFAULT_TASK_QUEUE = "xinao-integrated-langgraph-plugin-queue"
 DEFAULT_CANONICAL_MAINLINE_WORKFLOW_ID = os.environ.get(
     "XINAO_INTEGRATED_BUS_WORKFLOW_ID", "xinao-integrated-bus-mainline"

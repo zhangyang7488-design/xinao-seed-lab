@@ -11,8 +11,10 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from services.agent_runtime.carrier_identity import resolve_code_carrier_root
+
 DEFAULT_RUNTIME = Path(os.environ.get("XINAO_RESEARCH_RUNTIME", r"D:\XINAO_RESEARCH_RUNTIME"))
-DEFAULT_REPO = Path(os.environ.get("XINAO_CODEX_S_REPO_ROOT", r"E:\XINAO_RESEARCH_WORKSPACES\S"))
+DEFAULT_REPO = resolve_code_carrier_root(anchor=__file__)
 DEFAULT_ADDRESS = os.environ.get("TEMPORAL_ADDRESS", "127.0.0.1:7233")
 SCHEMA_VERSION = "xinao.task_entry.claim_durable.v1"
 SENTINEL = "SENTINEL:XINAO_TASK_ENTRY_CLAIM_DURABLE_V1"

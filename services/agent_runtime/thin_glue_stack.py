@@ -8,10 +8,12 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from services.agent_runtime.carrier_identity import resolve_code_carrier_root
+
 SCHEMA_VERSION = "xinao.codex_s.thin_glue_stack.v1"
 SENTINEL = "SENTINEL:XINAO_THIN_GLUE_STACK_READY"
 DEFAULT_RUNTIME = Path(os.environ.get("XINAO_RESEARCH_RUNTIME", r"D:\XINAO_RESEARCH_RUNTIME"))
-DEFAULT_REPO = Path(os.environ.get("XINAO_CODEX_S_REPO_ROOT", r"E:\XINAO_RESEARCH_WORKSPACES\S"))
+DEFAULT_REPO = resolve_code_carrier_root(anchor=__file__)
 DEFAULT_MATERIALS = DEFAULT_REPO / "materials"
 # Container mount for D:\XINAO_RESEARCH_RUNTIME (houtai-gongren). Never default to host Desktop.
 DEFAULT_EVIDENCE_MOUNT = Path("/evidence")
