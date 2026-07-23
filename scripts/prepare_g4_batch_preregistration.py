@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import shutil
 import sys
 import tempfile
+from collections.abc import Mapping
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -37,6 +39,19 @@ def _write_json_exclusive(path: Path, payload: Any) -> None:
         raise
 
 
+def _write_bytes_exclusive(path: Path, payload: bytes) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    descriptor = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    try:
+        with os.fdopen(descriptor, "wb") as handle:
+            handle.write(payload)
+            handle.flush()
+            os.fsync(handle.fileno())
+    except BaseException:
+        path.unlink(missing_ok=True)
+        raise
+
+
 def _package_root(path: Path) -> Path:
     target = path.resolve()
     runtime = Path(
@@ -53,6 +68,7 @@ def publish_preparation_package(
     *,
     package_root: Path,
     result: dict[str, Any],
+    extra_files: Mapping[str, bytes] | None = None,
 ) -> list[str]:
     target = package_root.resolve()
     if target.exists():
@@ -86,6 +102,15 @@ def publish_preparation_package(
                     batch_path.name,
                 )
             )
+        for relative_name, payload in sorted((extra_files or {}).items()):
+            relative_path = Path(relative_name)
+            if relative_path.is_absolute() or ".." in relative_path.parts:
+                raise ValueError(f"extra file must remain package-relative: {relative_name}")
+            extra_path = temp_root / relative_path
+            _write_bytes_exclusive(extra_path, payload)
+            if hashlib.sha256(extra_path.read_bytes()).digest() != hashlib.sha256(payload).digest():
+                raise OSError(f"staged extra file hash drifted: {relative_name}")
+            published.append(relative_path.as_posix())
         os.rename(temp_root, target)
     except BaseException:
         shutil.rmtree(temp_root, ignore_errors=True)

@@ -112,6 +112,20 @@ def test_accepted_design_materializes_full_campaign_ledger_before_first_batch(
     assert all(initializer._stable_cell_id(cell) in registered_ids for cell in first_batch)
 
 
+def test_first_batch_rejects_multiple_configurations_for_one_adapter() -> None:
+    initializer = _load_initializer()
+    records_by_family = {"H01": [{"public_case_id": "pc_h01_001"}]}
+
+    with pytest.raises(initializer.FreshCampaignError, match="exactly one configuration"):
+        initializer._first_batch_cells(
+            records_by_family=records_by_family,
+            families=["H01"],
+            configurations=["C0-ALGO", "C1-CHEAP"],
+            seed_ids=[17, 42, 99],
+            cases_per_family=1,
+        )
+
+
 def test_seed_repetition_cannot_be_reclassified_as_independent_n(tmp_path: Path) -> None:
     initializer = _load_initializer()
     campaign, acceptance, campaign_path = _accepted_campaign(tmp_path)
