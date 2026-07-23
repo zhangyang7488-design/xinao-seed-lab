@@ -1039,7 +1039,8 @@ def _verify_foundation(pack_root: Path, baseline: Mapping[str, Any]) -> dict[str
     _require(
         manifest.get("schema_version") == "xinao.foundation_closure_pack.v4"
         and pack_sha == raw.get("pack_sha256")
-        and manifest.get("foundation_closed") is True
+        and manifest.get("foundation_execution_ready") is True
+        and manifest.get("foundation_closed") is False
         and manifest.get("fresh_process_verified") is True
         and manifest.get("fresh_assertion_bundle_verified") is True
         and manifest.get("artifact_count") == 26
@@ -1102,11 +1103,14 @@ def _verify_foundation(pack_root: Path, baseline: Mapping[str, Any]) -> dict[str
     checks = verification.get("checks")
     _require(
         report.get("status") == "VERIFIED"
-        and report.get("foundation_closed") is True
-        and report.get("formal_research_gate") == "OPEN"
+        and report.get("foundation_execution_ready") is True
+        and report.get("foundation_closed") is False
+        and report.get("formal_research_allowed") is False
+        and report.get("formal_research_gate") == "CLOSED"
         and verification.get("schema_version") == "xinao.foundation_closure_verification.v1"
         and verification.get("ok") is True
-        and verification.get("foundation_closed") is True
+        and verification.get("foundation_execution_ready") is True
+        and verification.get("foundation_closed") is False
         and isinstance(checks, dict)
         and checks
         and all(value is True for value in checks.values()),
@@ -1117,8 +1121,10 @@ def _verify_foundation(pack_root: Path, baseline: Mapping[str, Any]) -> dict[str
         "physical_file_count": len(actual_inventory),
         "physical_inventory_sha256": _canonical_sha256(actual_inventory),
         "report_status": "VERIFIED",
-        "foundation_closed": True,
-        "formal_research_gate": "OPEN",
+        "foundation_execution_ready": True,
+        "foundation_closed": False,
+        "formal_research_allowed": False,
+        "formal_research_gate": "CLOSED",
     }
 
 
@@ -1267,7 +1273,7 @@ def verify_portable_pack(
         claims
         == {
             "f4_runtime_replay": "exact semantic replay of the sealed F4 OCI snapshot",
-            "foundation_v4": "byte-sealed co-packaged final foundation closure tree",
+            "foundation_v4": "byte-sealed co-packaged execution-ready foundation evidence tree",
             "relationship": "co-packaged identities; no runtime-to-foundation derivation claim",
         },
         "portable claim scope drifted",
@@ -1344,7 +1350,8 @@ def _source_identity_for_build(
         and all(isinstance(run, dict) for run in execution_runs)
         and data.get("schema_version") == "xinao.evidence_snapshot.v1"
         and foundation.get("schema_version") == "xinao.foundation_closure_pack.v4"
-        and foundation.get("foundation_closed") is True,
+        and foundation.get("foundation_execution_ready") is True
+        and foundation.get("foundation_closed") is False,
         "build source schemas or states drifted",
     )
     _require(
@@ -1568,7 +1575,7 @@ def build_portable_pack(
             "foundation_v4_relocatable_execution": False,
             "claim_scope": {
                 "f4_runtime_replay": "exact semantic replay of the sealed F4 OCI snapshot",
-                "foundation_v4": "byte-sealed co-packaged final foundation closure tree",
+                "foundation_v4": "byte-sealed co-packaged execution-ready foundation evidence tree",
                 "relationship": "co-packaged identities; no runtime-to-foundation derivation claim",
             },
             "runtime": {

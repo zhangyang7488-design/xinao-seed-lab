@@ -351,7 +351,7 @@ def _minimal_pack(tmp_path: Path) -> tuple[Path, dict[str, str]]:
     bundle = _write(root / portable.IMAGE_TAR_RELATIVE, b"sealed image")
     claim_scope = {
         "f4_runtime_replay": "exact semantic replay of the sealed F4 OCI snapshot",
-        "foundation_v4": "byte-sealed co-packaged final foundation closure tree",
+        "foundation_v4": "byte-sealed co-packaged execution-ready foundation evidence tree",
         "relationship": "co-packaged identities; no runtime-to-foundation derivation claim",
     }
     baseline_core: dict[str, object] = {
@@ -524,6 +524,127 @@ def test_retained_windows_absolute_ref_maps_only_to_pack_local_bytes(
     )
 
     assert mapped == local
+
+
+def _foundation_baseline(
+    tmp_path: Path,
+    *,
+    formal_research_allowed: bool = False,
+    formal_research_gate: str = "CLOSED",
+) -> tuple[Path, dict[str, object]]:
+    root = tmp_path / "pack"
+    foundation = root / portable.FOUNDATION_RELATIVE
+    blueprint = _canonical(root / portable.BLUEPRINT_RELATIVE, {"scope": "fixture"})
+    authority = _canonical(
+        foundation / "authority_snapshot/authority_manifest.json",
+        {"schema_version": "fixture.authority.v1"},
+    )
+    report_input = _canonical(
+        foundation / "foundation_closure_report_input.json",
+        {"schema_version": "fixture.report_input.v1"},
+    )
+    report = _canonical(
+        foundation / "foundation_closure_report.json",
+        {
+            "status": "VERIFIED",
+            "foundation_execution_ready": True,
+            "foundation_closed": False,
+            "formal_research_allowed": formal_research_allowed,
+            "formal_research_gate": formal_research_gate,
+        },
+    )
+    verification = _canonical(
+        foundation / "foundation_closure_verification.json",
+        {
+            "schema_version": "xinao.foundation_closure_verification.v1",
+            "ok": True,
+            "foundation_execution_ready": True,
+            "foundation_closed": False,
+            "checks": {"fixture": True},
+        },
+    )
+
+    def retained_ref(path: Path) -> dict[str, object]:
+        return {
+            "path": str(path),
+            "sha256": portable._file_sha256(path),
+            "size_bytes": path.stat().st_size,
+        }
+
+    receipt_refs: dict[str, dict[str, object]] = {}
+    for block_id in ("F1", "F2", "F3", "F4"):
+        receipt = _canonical(
+            foundation / f"fresh_assertion_bundle_receipts/{block_id}.json",
+            {"block_id": block_id},
+        )
+        receipt_refs[block_id] = retained_ref(receipt)
+    manifest_body: dict[str, object] = {
+        "schema_version": "xinao.foundation_closure_pack.v4",
+        "blueprint_ref": retained_ref(blueprint),
+        "compiler_code_manifest_ref": retained_ref(authority),
+        "authority_snapshot_manifest_ref": retained_ref(authority),
+        "report_input_ref": retained_ref(report_input),
+        "report_ref": retained_ref(report),
+        "verification_ref": retained_ref(verification),
+        "fresh_assertion_bundle_receipt_refs": receipt_refs,
+        "artifact_count": 26,
+        "assertion_count": 63,
+        "retained_input_material_count": 9,
+        "retained_artifact_material_count": 26,
+        "foundation_execution_ready": True,
+        "foundation_closed": False,
+        "fresh_process_verified": True,
+        "fresh_assertion_bundle_verified": True,
+    }
+    manifest = {
+        **manifest_body,
+        "pack_sha256": portable._canonical_sha256(manifest_body),
+    }
+    manifest_path = _canonical(foundation / "foundation_closure_pack.json", manifest)
+    inventory = portable._inventory(foundation)
+    baseline: dict[str, object] = {
+        "blueprint": portable._file_ref(blueprint, relative_path=portable.BLUEPRINT_RELATIVE),
+        "foundation": {
+            "manifest": portable._file_ref(
+                manifest_path,
+                relative_path=f"{portable.FOUNDATION_RELATIVE}/foundation_closure_pack.json",
+            ),
+            "pack_sha256": manifest["pack_sha256"],
+            "physical_inventory": inventory,
+            "physical_inventory_sha256": portable._canonical_sha256(inventory),
+        },
+    }
+    return root, baseline
+
+
+def test_foundation_portable_verifier_preserves_formal_closed_boundary(tmp_path: Path) -> None:
+    root, baseline = _foundation_baseline(tmp_path)
+
+    result = portable._verify_foundation(root, baseline)
+
+    assert result["foundation_execution_ready"] is True
+    assert result["foundation_closed"] is False
+    assert result["formal_research_allowed"] is False
+    assert result["formal_research_gate"] == "CLOSED"
+
+
+@pytest.mark.parametrize(
+    ("formal_research_allowed", "formal_research_gate"),
+    [(True, "CLOSED"), (False, "OPEN")],
+)
+def test_foundation_portable_verifier_rejects_deprecated_formal_reopen(
+    tmp_path: Path,
+    formal_research_allowed: bool,
+    formal_research_gate: str,
+) -> None:
+    root, baseline = _foundation_baseline(
+        tmp_path,
+        formal_research_allowed=formal_research_allowed,
+        formal_research_gate=formal_research_gate,
+    )
+
+    with pytest.raises(portable.PortableClosureError, match="foundation report"):
+        portable._verify_foundation(root, baseline)
 
 
 def _provenance_fixture(

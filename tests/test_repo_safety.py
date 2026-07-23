@@ -46,7 +46,6 @@ ALLOWED_AGENT_RUNTIME_MODULES = {
     "execution_contract.py",
     "foundation_continuous_workflow.py",
     "foundation_continuous_workflow_v2.py",
-    "foundation_continuous_workflow_v3.py",
     "grok_build_docker_worker.py",
     "grok_execution_contract_adapter.py",
     "integrated_bus_bus_nodes.py",
@@ -1309,6 +1308,18 @@ def test_current_retained_executable_roots_have_no_known_retired_continuity_toke
         "codex_continuity_already_running",
         "register-scheduledtask",
         "new-scheduledtasktrigger",
+    ):
+        assert forbidden not in text, forbidden
+
+
+def test_deprecated_formal_gate_has_no_executable_reopen_path() -> None:
+    assert not (REPO_ROOT / "services/agent_runtime/foundation_continuous_workflow_v3.py").exists()
+    text = _executable_text()
+    for forbidden in (
+        '"formal_research_allowed": True',
+        'formal_research_gate") == "OPEN"',
+        'formal_research_gate") != "OPEN"',
+        '"formal_research_gate": "OPEN"',
     ):
         assert forbidden not in text, forbidden
 
