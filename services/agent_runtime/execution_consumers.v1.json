@@ -522,12 +522,13 @@
       "contract_mode": "immutable_campaign_preregistration_pin_plus_explicit_case_configuration_seed_execution_cells",
       "status": "boundary_verified_non_parent_owner",
       "conformance_status": "boundary_verified_non_parent_owner",
-      "status_reason": "The producer publishes one append-only D-runtime package before outcome access, binds an already frozen campaign preregistration and GlobalTrialLedger snapshot, preserves independent held-out cases as the analysis unit, treats seeds only as within-case repetitions, and emits the existing xinao.g4.experiment_batch.v1 manifest. It cannot execute a subject, inspect outcomes, close G4/G5, or claim parent authority.",
+      "status_reason": "The fresh campaign initializer reuses the existing hidden-suite generator, ACL vault, single-home GlobalTrialLedger and PowerPlan interfaces to freeze all campaign obligations before outcome access; the batch producer then publishes one append-only D-runtime package, preserves independent held-out cases as the analysis unit, treats seeds only as within-case repetitions, and emits the existing xinao.g4.experiment_batch.v1 manifest. Neither surface can execute a subject, inspect outcomes, close G4/G5, or claim parent authority.",
       "writes_effects": true,
       "parent_completion_authority": false,
       "independent_gap_discovery": false,
       "conformance_tests": [
         "xinao_discovery/tests/unit/capability/test_g4_preregistration.py",
+        "tests/test_g4_fresh_campaign_initializer.py",
         "tests/test_g4_provider_neutral_batch.py::test_preregistration_producer_feeds_existing_batch_execution_consumer"
       ],
       "replay_evidence": [],
