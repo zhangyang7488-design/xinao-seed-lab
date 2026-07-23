@@ -341,9 +341,7 @@ def expand_test_shards(
                 if statement.name.startswith("test_"):
                     nodes.append(f"{relative}::{statement.name}")
                 continue
-            if not isinstance(statement, ast.ClassDef) or not statement.name.startswith(
-                "Test"
-            ):
+            if not isinstance(statement, ast.ClassDef) or not statement.name.startswith("Test"):
                 continue
             for member in statement.body:
                 if isinstance(member, (ast.FunctionDef, ast.AsyncFunctionDef)) and (

@@ -244,14 +244,7 @@ def test_test_shards_cover_natural_packages_once(tmp_path: Path) -> None:
 
 
 def test_measured_heavy_file_expands_to_static_test_nodes(tmp_path: Path) -> None:
-    heavy = (
-        tmp_path
-        / "xinao_discovery"
-        / "tests"
-        / "unit"
-        / "foundation"
-        / "test_f2_assertions.py"
-    )
+    heavy = tmp_path / "xinao_discovery" / "tests" / "unit" / "foundation" / "test_f2_assertions.py"
     heavy.parent.mkdir(parents=True)
     heavy.write_text(
         "\n".join(
@@ -294,14 +287,7 @@ def test_non_measured_file_remains_one_shard(tmp_path: Path) -> None:
 
 
 def test_measured_file_without_static_test_nodes_fails_closed(tmp_path: Path) -> None:
-    heavy = (
-        tmp_path
-        / "xinao_discovery"
-        / "tests"
-        / "unit"
-        / "foundation"
-        / "test_f2_assertions.py"
-    )
+    heavy = tmp_path / "xinao_discovery" / "tests" / "unit" / "foundation" / "test_f2_assertions.py"
     heavy.parent.mkdir(parents=True)
     heavy.write_text("def helper():\n    return None\n", encoding="utf-8")
 
