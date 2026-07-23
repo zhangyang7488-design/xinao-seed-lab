@@ -87,6 +87,7 @@ _FROZEN_BINDING_FIELDS = frozenset(
         "evaluator_sha256",
         "scoring_policy_sha256",
         "subject_adapter_sha256",
+        "subject_public_cases_sha256",
     }
 )
 _UNIT_POLICY_FIELDS = frozenset(

@@ -349,6 +349,33 @@ def test_attempt_receipt_requires_complete_token_partition() -> None:
         validate_attempt_receipt(_contract(), receipt)
 
 
+def test_non_token_native_execution_can_close_with_an_accepted_invocation() -> None:
+    receipt = _receipt()
+    receipt["invocations"] = [
+        {
+            "invocation": 1,
+            "state": "accepted",
+            "observed_model": "grok-composer-2.5-fast",
+            "stop_reason": "NativeExecutionCompleted",
+            "output_sha256": "6" * 64,
+            "output_chars": 1200,
+            "total_tokens": 0,
+        }
+    ]
+    receipt["usage"] = {
+        "invocation_count": 1,
+        "total_tokens": 0,
+        "accepted_tokens": 0,
+        "cancelled_tokens": 0,
+        "failed_tokens": 0,
+    }
+
+    verdict = validate_attempt_receipt(_contract(), receipt)
+
+    assert verdict.accepted is True
+    assert "NO_ACCEPTED_TOKENS" not in verdict.reason_codes
+
+
 def test_reconciliation_only_closes_the_latest_accepted_attempt() -> None:
     first = _receipt()
     first["terminal_state"] = "failed"

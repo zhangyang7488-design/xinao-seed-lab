@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import re
 from collections.abc import Mapping
 from typing import Any
 
@@ -23,6 +24,12 @@ from services.agent_runtime.execution_contract import (
 )
 
 G4_BATCH_EXECUTION_REPORT_VERSION = "xinao.g4.batch_execution_admission.v1"
+_HASH_BOUND_REF = re.compile(r"#sha256=([0-9a-f]{64})$")
+
+
+def _task_contract_sha256(task_contract_ref: str) -> str:
+    match = _HASH_BOUND_REF.search(task_contract_ref)
+    return match.group(1) if match is not None else ""
 
 
 def adjudicate_g4_batch_execution(
@@ -38,8 +45,9 @@ def adjudicate_g4_batch_execution(
     reasons: list[str] = []
     if contract["work_key"] != batch["work_key"]:
         reasons.append("BATCH_WORK_KEY_MISMATCH")
-    if contract["input_sha256"] != batch["content_hash"]:
-        reasons.append("BATCH_INPUT_HASH_MISMATCH")
+    task_contract_sha256 = _task_contract_sha256(contract["task_contract_ref"])
+    if task_contract_sha256 != batch["content_hash"]:
+        reasons.append("BATCH_TASK_CONTRACT_REF_MISMATCH")
     verdict = validate_attempt_receipt(contract, attempt_receipt)
     reasons.extend(verdict.reason_codes)
     accepted = verdict.accepted and not reasons
@@ -82,6 +90,9 @@ def adjudicate_g4_batch_execution(
         "work_key": batch["work_key"],
         "batch_manifest_sha256": batch["content_hash"],
         "logical_contract_sha256": logical_contract_sha256(contract),
+        "task_contract_ref": contract["task_contract_ref"],
+        "task_contract_sha256": task_contract_sha256,
+        "execution_prompt_sha256": contract["input_sha256"],
         "attempt_receipt_sha256": attempt_receipt_sha256,
         "selected_route_for_this_batch": selection,
         "provider_binding_scope": "batch_attempt_only",
