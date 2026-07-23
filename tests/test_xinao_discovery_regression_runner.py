@@ -214,3 +214,66 @@ def test_one_lease_covers_sync_receipt_and_pytest(
     assert result == 0
     assert calls == ["sync", "receipt", "pytest:['-q']"]
     assert '"ready": true' in capsys.readouterr().out
+
+
+def test_test_shards_cover_natural_packages_once(tmp_path: Path) -> None:
+    test_root = tmp_path / "tests"
+    paths = [
+        test_root / "contract" / "test_contract.py",
+        test_root / "property" / "test_property.py",
+        test_root / "unit" / "foundation" / "test_foundation.py",
+        test_root / "unit" / "test_direct.py",
+        test_root / "fixtures" / "data.json",
+        test_root / "conftest.py",
+        test_root / "__pycache__" / "ignored.pyc",
+    ]
+    for path in paths:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.touch()
+
+    shards = subject.discover_test_shards(test_root=test_root)
+
+    assert shards == [
+        test_root / "contract",
+        test_root / "property",
+        test_root / "unit" / "foundation" / "test_foundation.py",
+        test_root / "unit" / "test_direct.py",
+    ]
+
+
+def test_sharded_suite_runs_fresh_processes_and_aggregates_failures(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    shard_a = subject.REPO_ROOT / "xinao_discovery" / "tests" / "contract"
+    shard_b = subject.REPO_ROOT / "xinao_discovery" / "tests" / "unit" / "foundation"
+    commands: list[list[str]] = []
+    environments: list[dict[str, str]] = []
+    returncodes = iter([0, 1])
+    monkeypatch.setattr(subject, "discover_test_shards", lambda: [shard_a, shard_b])
+    monkeypatch.setattr(
+        subject.subprocess,
+        "run",
+        lambda command, *, cwd, env, check: (
+            commands.append(list(command))
+            or environments.append(dict(env))
+            or SimpleNamespace(returncode=next(returncodes))
+        ),
+    )
+
+    result = subject._run_full_suite(pytest_args=["-q"])
+
+    assert result == 1
+    assert [command[-2:] for command in commands] == [
+        ["xinao_discovery/tests/contract", "-q"],
+        ["xinao_discovery/tests/unit/foundation", "-q"],
+    ]
+    assert all(
+        environment[subject.FULL_SUITE_LEASE_ENV] == subject.FULL_SUITE_LEASE_VALUE
+        for environment in environments
+    )
+    output = capsys.readouterr().out
+    assert '"shard_count": 2' in output
+    assert '"passed_shards": 1' in output
+    assert '"status": "FAIL"' in output

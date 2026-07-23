@@ -33,7 +33,8 @@ def require_safe_full_suite(
         return
     raise pytest.UsageError(
         "The complete xinao_discovery test directory requires the serialized runner: "
-        "uv run python scripts/run_xinao_discovery_regression.py. "
+        "uv run --frozen --extra dev --extra workflow python "
+        "scripts/run_xinao_discovery_regression.py. "
         "Targeted files and subdirectories remain available without the heavy-suite lease."
     )
 

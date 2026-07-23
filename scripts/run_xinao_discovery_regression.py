@@ -8,6 +8,7 @@ import json
 import os
 import subprocess
 import sys
+import time
 from collections.abc import Iterable, Sequence
 from pathlib import Path
 from typing import Any
@@ -24,6 +25,7 @@ LOCK_PATH = Path(
 )
 FULL_SUITE_LEASE_ENV = "XINAO_DISCOVERY_FULL_REGRESSION_LEASE"
 FULL_SUITE_LEASE_VALUE = "runner-v1"
+FILE_ISOLATED_UNIT_DIRS = frozenset({"foundation"})
 
 ROOT_IMPORTS = (
     "apsw",
@@ -200,21 +202,104 @@ def find_competing_full_suites(
 
 
 def _run_full_suite(*, pytest_args: Sequence[str]) -> int:
-    command = [
-        str(PROJECT_PYTHON.resolve()),
-        "-m",
-        "pytest",
-        "xinao_discovery/tests",
-        *pytest_args,
-    ]
+    shards = discover_test_shards()
+    shard_names = [str(path.relative_to(REPO_ROOT)).replace("\\", "/") for path in shards]
+    shard_manifest = {
+        "schema_version": "xinao.discovery.regression_shards.v1",
+        "strategy": "sequential_fresh_process_by_natural_package",
+        "shards": shard_names,
+    }
+    shard_manifest["content_sha256"] = hashlib.sha256(
+        json.dumps(
+            shard_manifest,
+            ensure_ascii=False,
+            separators=(",", ":"),
+            sort_keys=True,
+        ).encode("utf-8")
+    ).hexdigest()
+    print(json.dumps(shard_manifest, ensure_ascii=False, sort_keys=True))
     child_environment = os.environ.copy()
     child_environment[FULL_SUITE_LEASE_ENV] = FULL_SUITE_LEASE_VALUE
-    return subprocess.run(
-        command,
-        cwd=REPO_ROOT,
-        env=child_environment,
-        check=False,
-    ).returncode
+    results: list[dict[str, Any]] = []
+    for shard_name in shard_names:
+        started = time.monotonic()
+        command = [
+            str(PROJECT_PYTHON.resolve()),
+            "-m",
+            "pytest",
+            shard_name,
+            *pytest_args,
+        ]
+        returncode = subprocess.run(
+            command,
+            cwd=REPO_ROOT,
+            env=child_environment,
+            check=False,
+        ).returncode
+        result = {
+            "shard": shard_name,
+            "exit_code": returncode,
+            "duration_ms": round((time.monotonic() - started) * 1000),
+        }
+        results.append(result)
+        print(
+            json.dumps(
+                {
+                    "schema_version": "xinao.discovery.regression_shard_result.v1",
+                    **result,
+                },
+                ensure_ascii=False,
+                sort_keys=True,
+            )
+        )
+    failed = [result for result in results if result["exit_code"] != 0]
+    summary = {
+        "schema_version": "xinao.discovery.regression_summary.v1",
+        "shard_manifest_sha256": shard_manifest["content_sha256"],
+        "shard_count": len(results),
+        "passed_shards": len(results) - len(failed),
+        "failed_shards": failed,
+        "status": "PASS" if not failed else "FAIL",
+    }
+    print(json.dumps(summary, ensure_ascii=False, sort_keys=True))
+    if not failed:
+        return 0
+    first_code = int(failed[0]["exit_code"])
+    return first_code if first_code in range(1, 7) else 3
+
+
+def discover_test_shards(*, test_root: Path | None = None) -> list[Path]:
+    """Cover the test tree once using natural packages and fresh processes."""
+
+    root = PROJECT_ROOT / "tests" if test_root is None else test_root.resolve()
+    if not root.is_dir():
+        raise RegressionRunnerError(f"discovery test root is missing: {root}")
+    shards: list[Path] = []
+    for entry in sorted(root.iterdir(), key=lambda path: path.name):
+        if entry.name.startswith(".") or entry.name == "__pycache__":
+            continue
+        if entry.is_file():
+            if entry.name.startswith("test_") and entry.suffix == ".py":
+                shards.append(entry)
+            continue
+        if entry.name != "unit":
+            if any(entry.rglob("test_*.py")):
+                shards.append(entry)
+            continue
+        for unit_entry in sorted(entry.iterdir(), key=lambda path: path.name):
+            if unit_entry.name.startswith(".") or unit_entry.name == "__pycache__":
+                continue
+            if unit_entry.is_dir():
+                test_files = sorted(unit_entry.rglob("test_*.py"))
+                if unit_entry.name in FILE_ISOLATED_UNIT_DIRS:
+                    shards.extend(test_files)
+                elif test_files:
+                    shards.append(unit_entry)
+            elif unit_entry.name.startswith("test_") and unit_entry.suffix == ".py":
+                shards.append(unit_entry)
+    if not shards:
+        raise RegressionRunnerError(f"no discovery test shards found: {root}")
+    return shards
 
 
 def execute_regression(

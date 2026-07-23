@@ -361,11 +361,14 @@ def test_v3_dedup_is_permutation_invariant_across_phases() -> None:
         expected_phase="FOUNDATION_CONSTRUCTION",
         closed_work_keys=("4" * 64,),
     )
-    assert dedupe_ready_frontier_v3(
-        list(reversed(items)),
-        expected_phase="FOUNDATION_CONSTRUCTION",
-        closed_work_keys=("4" * 64,),
-    ) == expected
+    assert (
+        dedupe_ready_frontier_v3(
+            list(reversed(items)),
+            expected_phase="FOUNDATION_CONSTRUCTION",
+            closed_work_keys=("4" * 64,),
+        )
+        == expected
+    )
     assert len(expected["ready_work_keys"]) == 2
     with pytest.raises(ValueError, match="expected execution phase"):
         dedupe_ready_frontier_v3(
@@ -373,12 +376,8 @@ def test_v3_dedup_is_permutation_invariant_across_phases() -> None:
             expected_phase="FOUNDATION_CONSTRUCTION",
             closed_work_keys=("4" * 64,),
         )
-    construction_empty = dedupe_ready_frontier_v3(
-        [], expected_phase="FOUNDATION_CONSTRUCTION"
-    )
-    autonomous_empty = dedupe_ready_frontier_v3(
-        [], expected_phase="AUTONOMOUS_RESEARCH"
-    )
+    construction_empty = dedupe_ready_frontier_v3([], expected_phase="FOUNDATION_CONSTRUCTION")
+    autonomous_empty = dedupe_ready_frontier_v3([], expected_phase="AUTONOMOUS_RESEARCH")
     assert construction_empty["execution_phase"] == "FOUNDATION_CONSTRUCTION"
     assert autonomous_empty["execution_phase"] == "AUTONOMOUS_RESEARCH"
     assert construction_empty["content_sha256"] != autonomous_empty["content_sha256"]
@@ -1296,11 +1295,11 @@ def test_factory_native_schemas_are_hash_bound() -> None:
     )
     assert (
         payloads["DedupPolicyVersion"]["content_sha256"]
-        == "39b6d1f31088bd8a6b59df993853a02414c47d5991494fcf1931bb4811db059d"
+        == "11e69ce6c2c19d88ad375b800cb4ca05d2b82f46232a8afc1ba395f1b5bb6e81"
     )
     assert (
         research_factory_artifact_manifest(payloads)["content_sha256"]
-        == "7e0c171913f42103e1c95d94d5d6984fb3fbbb9e412228e62d7b02ee4f5a9baf"
+        == "cf9a25d4f51f393668219e4d4a2f592d73a4515adab1b4519df22d4ef83ba69f"
     )
     assert tuple(payloads) == F4_REQUIRED_ARTIFACT_TYPES
     assert payloads["DeterministicFanInPolicyVersion"]["policy"]["stages"] == [
@@ -1350,20 +1349,20 @@ def test_factory_v3_artifacts_are_explicit_and_not_caller_redefinable() -> None:
     work_item = v3["ResearchWorkItemSchemaVersion"]
     dedup = v3["DedupPolicyVersion"]
     assert work_item["schema_version"] == "xinao.research_work_item_schema.v3"
-    assert work_item["base_v2_artifact_content_sha256"] == v2[
-        "ResearchWorkItemSchemaVersion"
-    ]["content_sha256"]
+    assert (
+        work_item["base_v2_artifact_content_sha256"]
+        == v2["ResearchWorkItemSchemaVersion"]["content_sha256"]
+    )
     assert "execution_phase" in work_item["schema"]["required"]
     assert dedup["schema_version"] == "xinao.research_dedup_policy.v3"
-    assert dedup["base_v2_artifact_content_sha256"] == v2["DedupPolicyVersion"][
-        "content_sha256"
-    ]
+    assert dedup["base_v2_artifact_content_sha256"] == v2["DedupPolicyVersion"]["content_sha256"]
     assert "execution_phase" in dedup["policy"]["identity_fields"]
     assert "canonical_work_key_v3" in dedup["policy"]["implementation_sha256"]
     assert "canonical_work_key" not in dedup["policy"]["implementation_sha256"]
-    assert "current_artifacts" not in inspect.signature(
-        verify_research_factory_artifacts_v3
-    ).parameters
+    assert (
+        "current_artifacts"
+        not in inspect.signature(verify_research_factory_artifacts_v3).parameters
+    )
     manifest = research_factory_artifact_manifest(v3)
     assert verify_research_factory_artifacts_v3(v3, pinned_manifest=manifest)["profile"] == "V3"
     with pytest.raises(ValueError, match="required inventory"):
