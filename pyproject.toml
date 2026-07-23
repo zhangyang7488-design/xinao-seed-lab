@@ -9,6 +9,7 @@ dependencies = [
   "ollama>=0.4",
   "openai>=2.44,<3",
   "portalocker>=3.2,<4",
+  "psutil>=7.2,<8",
   "qdrant-client>=1.12",
 ]
 

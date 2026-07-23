@@ -11,7 +11,10 @@ from xinao.foundation.assertion_bundle_runner import (
     PROTOCOL_VERSION,
     REQUEST_SCHEMA_VERSION,
 )
-from xinao.foundation.assertion_verifier_registry import canonical_verifier
+from xinao.foundation.assertion_verifier_registry import (
+    canonical_projection_path,
+    canonical_verifier,
+)
 from xinao.foundation.closure import (
     FOUNDATION_BLOCK_IDS,
     derive_foundation_closure_report,
@@ -170,7 +173,11 @@ def _f1_payloads() -> dict[str, dict[str, Any]]:
     }
 
 
-def _fixture(tmp_path: Path) -> tuple[dict[str, Any], Path]:
+def _fixture(
+    tmp_path: Path,
+    *,
+    canonical_projection: bool = True,
+) -> tuple[dict[str, Any], Path]:
     profile: dict[str, Any] = {
         "blocks": {
             "F1_settlement_world": {
@@ -248,7 +255,7 @@ def _fixture(tmp_path: Path) -> tuple[dict[str, Any], Path]:
     )
     input_refs = {key: evidence_ref(path, input_hash_key=key) for key, path in input_paths.items()}
     input_hashes = {key: ref["sha256"] for key, ref in input_refs.items()}
-    blueprint_path = _write_json(
+    fixture_blueprint_path = _write_json(
         tmp_path,
         "blueprint.json",
         {
@@ -256,6 +263,7 @@ def _fixture(tmp_path: Path) -> tuple[dict[str, Any], Path]:
             "current_foundation_closure_payload": {"input_hashes": input_hashes},
         },
     )
+    blueprint_path = canonical_projection_path() if canonical_projection else fixture_blueprint_path
 
     verifier_sources = {
         block_id: canonical_verifier(block_id).source_path for block_id in FOUNDATION_BLOCK_IDS
@@ -457,8 +465,15 @@ def _fixture(tmp_path: Path) -> tuple[dict[str, Any], Path]:
     return report_input, blueprint_path
 
 
-def _derive(tmp_path: Path) -> tuple[dict[str, Any], dict[str, Any], Path]:
-    report_input, blueprint_path = _fixture(tmp_path)
+def _derive(
+    tmp_path: Path,
+    *,
+    canonical_projection: bool = True,
+) -> tuple[dict[str, Any], dict[str, Any], Path]:
+    report_input, blueprint_path = _fixture(
+        tmp_path,
+        canonical_projection=canonical_projection,
+    )
     return (
         derive_foundation_closure_report(report_input, blueprint_path=blueprint_path),
         report_input,
@@ -469,18 +484,19 @@ def _derive(tmp_path: Path) -> tuple[dict[str, Any], dict[str, Any], Path]:
 def test_caller_forged_identical_bundles_cannot_open_formal_research(
     tmp_path: Path,
 ) -> None:
-    result, _, blueprint_path = _derive(tmp_path)
+    result, _, blueprint_path = _derive(tmp_path, canonical_projection=False)
 
     # This fixture deliberately hand-writes both bundle files and the receipt
-    # without running the canonical verifier.  Integrity-only replay may
-    # describe the PARTIAL report, but it can never acquire production authority.
-    assert result["status"] == "PARTIAL"
+    # without running the canonical verifier.  A non-canonical authority
+    # projection is not eligible even for a PARTIAL production-profile replay.
+    assert result["status"] == "NOT_PERFORMED"
     assert result["foundation_closed"] is False
     assert result["formal_research_allowed"] is False
     assert result["formal_research_gate"] == "CLOSED"
-    assert result["canonical_blueprint_bound"] is False
+    assert result["canonical_projection_bound"] is False
     assert result["canonical_bundle_replay_verified"] is False
     assert result["legacy_a_g_gate_used"] is False
+    assert result["blockers"][0].startswith("authority_projection_not_canonical:")
     assert verify_foundation_closure_report(result, blueprint_path=blueprint_path)["ok"] is True
 
 

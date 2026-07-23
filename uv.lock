@@ -6669,6 +6669,7 @@ dependencies = [
     { name = "ollama" },
     { name = "openai" },
     { name = "portalocker" },
+    { name = "psutil" },
     { name = "qdrant-client" },
 ]
 
@@ -6727,6 +6728,7 @@ requires-dist = [
     { name = "polars", marker = "extra == 'dev'", specifier = ">=1.42,<2" },
     { name = "polars", marker = "extra == 'human-capabilities'", specifier = ">=1.42,<2" },
     { name = "portalocker", specifier = ">=3.2,<4" },
+    { name = "psutil", specifier = ">=7.2,<8" },
     { name = "pydantic", marker = "extra == 'workflow'", specifier = ">=2.13,<3" },
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=9" },
     { name = "pyyaml", marker = "extra == 'workflow'", specifier = ">=6,<7" },
