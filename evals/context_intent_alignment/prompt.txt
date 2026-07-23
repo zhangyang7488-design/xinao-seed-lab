@@ -229,6 +229,32 @@ Return only one JSON object with these fields:
 - rejected_proxy_atoms: when restored context provides a neutral `ATOM_` pool, return the
   pipe-separated identifiers that would replace, delay, or narrow that parent result and therefore
   must be rejected; otherwise return the literal not_applicable
+- decision_responsibility: `user_material_choice` only when at least two admissible in-scope
+  alternatives materially change the business goal, completion shape, user value, or major
+  external effect; `owner_execute_and_inform` when one dominant necessary, bounded, reversible
+  chain-internal route remains inside an already authorized result; `no_action_on_excluded_route`
+  when a proposed route crosses an explicitly excluded object/topology/account/audience/persistent
+  controller/irreversible migration; otherwise `not_applicable`
+- human_explanation_mode: `technical_plain_decision` when a nontechnical user must make a real
+  choice, `technical_plain_action` when they need to understand an Owner action or important state
+  but no real choice exists, otherwise `not_applicable`. Both non-applicable modes preserve the exact
+  technical facts and add familiar-object meaning, current/next state, concrete effect, risk,
+  rollback, non-effects, why user input is or is not needed, and a one-sentence action/choice
+- metacognition_disposition: `capture_event_only` for a new material first-person metacognitive fact
+  whose useful generalization is not yet supported; `capture_then_conditional_proposal` when the
+  material self-report also supports a scoped candidate with conditions/counterexamples;
+  `do_not_capture` for ordinary task state, one-off wording, duplicates, raw chat, or information
+  with no future decision value; otherwise `not_applicable`. The event is preserved without an
+  extra remember/make-rule phrase. Sparse cases limit generalization, not the self-report. Capture
+  never grants authority or automatically promotes a rule. `决策skill`, `进入决策模式`, and
+  `进入运维模式` are guaranteed activators of the same Decision Skill work identity, not a
+  phrase whitelist and not by themselves an event to capture. Decode the material content that
+  follows them semantically. A repeated request to land an already captured burden may correctly
+  use `do_not_capture` while still requiring durable behavior closure
+- durable_behavior_closure: `land_consumer_and_cross_context_regression` when a stable repeated
+  burden requires an authorized behavior consumer plus changed-context/fresh verification;
+  `candidate_partial` when no positive-benefit executable consumer can currently be landed; otherwise
+  `not_applicable`. Discussion, apology, explanation, or event capture alone never closes the burden
 - reason: one concise sentence
 
 Keep the fields internally coherent: `preference_update=smallest_existing_artifact` is itself an

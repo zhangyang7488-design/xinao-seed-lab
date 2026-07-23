@@ -4,22 +4,22 @@
   "runner": "scripts/run_behavior_regression.ps1",
   "candidate_intake": "scripts/New-BehaviorRegressionCandidate.ps1",
   "result_root": "D:\\XINAO_RESEARCH_RUNTIME\\state\\human-capabilities\\evals\\behavior-regression",
-  "declared_case_count": 103,
+  "declared_case_count": 111,
   "profiles": {
     "capability": "One fresh Codex app-server capability canary.",
-    "smoke": "Capability canary plus thirty-nine representative live behavior cases.",
-    "core": "Capability canary, 50 context cases, six proactive mature-first cases, frozen mature-candidate recall, one real thin-localization trajectory, and static validation.",
-    "deep": "Core plus all 55 context cases and one current open-world public-repository search.",
-    "context": "All 55 context and intent live cases; retained for the compatibility runner.",
+    "smoke": "Capability canary plus forty-six representative live behavior cases.",
+    "core": "Capability canary, 58 context cases, six proactive mature-first cases, frozen mature-candidate recall, one real thin-localization trajectory, and static validation.",
+    "deep": "Core plus all 64 context cases and one current open-world public-repository search.",
+    "context": "All 64 context and intent live cases; retained for the compatibility runner.",
     "proactive": "All six mature-first live cases; worker routing is owned by context_intent_alignment.",
     "reuse": "Only the four live open-world-reuse cases plus their deterministic contract validation."
   },
   "live_profile_case_counts": {
     "capability": 1,
-    "smoke": 41,
-    "core": 61,
-    "deep": 67,
-    "context": 56,
+    "smoke": 47,
+    "core": 69,
+    "deep": 75,
+    "context": 64,
     "proactive": 6,
     "reuse": 4
   },
@@ -35,7 +35,7 @@
     {
       "id": "context_intent_alignment",
       "kind": "promptfoo_live",
-      "case_count": 56,
+      "case_count": 64,
       "config": "evals/context_intent_alignment/promptfooconfig.yaml",
       "case_source": "evals/context_intent_alignment/cases.yaml",
       "runtime_claim_allowed": true

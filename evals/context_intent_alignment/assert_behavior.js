@@ -122,6 +122,18 @@ module.exports = (output, context) => {
   const expectedClosureEvidence = hasVar('expected_closure_evidence')
     ? context.vars.expected_closure_evidence
     : null;
+  const expectedDecisionResponsibilities = hasVar('expected_decision_responsibility')
+    ? alternatives(context.vars.expected_decision_responsibility)
+    : null;
+  const expectedHumanExplanationModes = hasVar('expected_human_explanation_mode')
+    ? alternatives(context.vars.expected_human_explanation_mode)
+    : null;
+  const expectedMetacognitionDispositions = hasVar('expected_metacognition_disposition')
+    ? alternatives(context.vars.expected_metacognition_disposition)
+    : null;
+  const expectedDurableBehaviorClosures = hasVar('expected_durable_behavior_closure')
+    ? alternatives(context.vars.expected_durable_behavior_closure)
+    : null;
   const hasRecoveredAtomGold = hasVar('expected_recovered_requirement_atoms');
   const hasRejectedAtomGold = hasVar('expected_rejected_proxy_atoms');
   const expectedRecoveredAtoms = hasRecoveredAtomGold
@@ -253,6 +265,30 @@ module.exports = (output, context) => {
   if (expectedClosureEvidence !== null) {
     expected.closure_evidence = expectedClosureEvidence;
   }
+  if (expectedDecisionResponsibilities) {
+    expected.decision_responsibility =
+      expectedDecisionResponsibilities.length === 1
+        ? expectedDecisionResponsibilities[0]
+        : expectedDecisionResponsibilities;
+  }
+  if (expectedHumanExplanationModes) {
+    expected.human_explanation_mode =
+      expectedHumanExplanationModes.length === 1
+        ? expectedHumanExplanationModes[0]
+        : expectedHumanExplanationModes;
+  }
+  if (expectedMetacognitionDispositions) {
+    expected.metacognition_disposition =
+      expectedMetacognitionDispositions.length === 1
+        ? expectedMetacognitionDispositions[0]
+        : expectedMetacognitionDispositions;
+  }
+  if (expectedDurableBehaviorClosures) {
+    expected.durable_behavior_closure =
+      expectedDurableBehaviorClosures.length === 1
+        ? expectedDurableBehaviorClosures[0]
+        : expectedDurableBehaviorClosures;
+  }
 
   const usage = context.providerResponse?.tokenUsage || {};
   const appServer = context.metadata?.codexAppServer || {};
@@ -279,6 +315,10 @@ module.exports = (output, context) => {
     'continuous_run_disposition',
     'frontier_disposition',
     'candidate_value',
+    'decision_responsibility',
+    'human_explanation_mode',
+    'metacognition_disposition',
+    'durable_behavior_closure',
   ];
   const optionalFieldMatches =
     (expectedQuotaQueryDispositions === null ||
@@ -312,7 +352,15 @@ module.exports = (output, context) => {
     (expectedRepairTarget === null ||
       parsed.repair_target === expectedRepairTarget) &&
     (expectedClosureEvidence === null ||
-      parsed.closure_evidence === expectedClosureEvidence);
+      parsed.closure_evidence === expectedClosureEvidence) &&
+    (expectedDecisionResponsibilities === null ||
+      expectedDecisionResponsibilities.includes(parsed.decision_responsibility)) &&
+    (expectedHumanExplanationModes === null ||
+      expectedHumanExplanationModes.includes(parsed.human_explanation_mode)) &&
+    (expectedMetacognitionDispositions === null ||
+      expectedMetacognitionDispositions.includes(parsed.metacognition_disposition)) &&
+    (expectedDurableBehaviorClosures === null ||
+      expectedDurableBehaviorClosures.includes(parsed.durable_behavior_closure));
   const behaviorMatches =
     expectedNextSteps.includes(parsed.next_step) &&
     expectedTargetRelations.includes(parsed.target_relation) &&

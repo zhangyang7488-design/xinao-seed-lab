@@ -72,6 +72,10 @@ providers:
           - closure_evidence
           - recovered_requirement_atoms
           - rejected_proxy_atoms
+          - decision_responsibility
+          - human_explanation_mode
+          - metacognition_disposition
+          - durable_behavior_closure
         properties:
           case_id: { type: string }
           target_relation:
@@ -143,6 +147,28 @@ providers:
           closure_evidence: { type: string, enum: [current_object_verification, cross_context_entry_and_negative, not_applicable] }
           recovered_requirement_atoms: { type: string, minLength: 1 }
           rejected_proxy_atoms: { type: string, minLength: 1 }
+          decision_responsibility:
+            enum:
+              - owner_execute_and_inform
+              - user_material_choice
+              - no_action_on_excluded_route
+              - not_applicable
+          human_explanation_mode:
+            enum:
+              - technical_plain_action
+              - technical_plain_decision
+              - not_applicable
+          metacognition_disposition:
+            enum:
+              - capture_event_only
+              - capture_then_conditional_proposal
+              - do_not_capture
+              - not_applicable
+          durable_behavior_closure:
+            enum:
+              - land_consumer_and_cross_context_regression
+              - candidate_partial
+              - not_applicable
 
 prompts:
   - prompt.txt
