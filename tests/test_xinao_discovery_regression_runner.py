@@ -12,9 +12,7 @@ assert SPEC is not None and SPEC.loader is not None
 subject = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(subject)
 
-GUARD_SCRIPT = (
-    Path(__file__).resolve().parents[1] / "xinao_discovery" / "tests" / "conftest.py"
-)
+GUARD_SCRIPT = Path(__file__).resolve().parents[1] / "xinao_discovery" / "tests" / "conftest.py"
 GUARD_SPEC = importlib.util.spec_from_file_location("xinao_discovery_test_guard", GUARD_SCRIPT)
 assert GUARD_SPEC is not None and GUARD_SPEC.loader is not None
 guard = importlib.util.module_from_spec(GUARD_SPEC)

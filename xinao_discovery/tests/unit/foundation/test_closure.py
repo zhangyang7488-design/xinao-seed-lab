@@ -263,9 +263,7 @@ def _fixture(
             "current_foundation_closure_payload": {"input_hashes": input_hashes},
         },
     )
-    blueprint_path = (
-        canonical_projection_path() if canonical_projection else fixture_blueprint_path
-    )
+    blueprint_path = canonical_projection_path() if canonical_projection else fixture_blueprint_path
 
     verifier_sources = {
         block_id: canonical_verifier(block_id).source_path for block_id in FOUNDATION_BLOCK_IDS
