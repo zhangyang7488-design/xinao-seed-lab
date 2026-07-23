@@ -130,6 +130,22 @@ def test_preflight_maps_absolute_quota_fields_to_hard_bounds() -> None:
     }
 
 
+def test_dispatch_requires_explicit_provider_bound_launcher() -> None:
+    runner = _load_capacity_runner()
+    args = runner._parser().parse_args(
+        [
+            "--op-root",
+            r"D:\XINAO_RESEARCH_RUNTIME\state\g4-test",
+            "--operation-id",
+            "test-explicit-provider-launcher",
+            "--dispatch",
+        ]
+    )
+    assert args.launcher is None
+    with pytest.raises(SystemExit, match="explicit provider-bound --launcher"):
+        runner._validated_dispatch_launcher(dispatch=args.dispatch, launcher=args.launcher)
+
+
 def test_relay_measurement_fails_wrong_model_and_zero_usage() -> None:
     prompt_sha = "d" * 64
     dispatch, meta = _dispatch_meta(prompt_sha, stratum="low")
