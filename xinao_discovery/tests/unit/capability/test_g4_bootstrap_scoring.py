@@ -9,7 +9,15 @@ from typing import Any
 
 import pytest
 
-from xinao.capability.g4_bootstrap_scoring import TERMINAL_FAIL, TERMINAL_PASS, score_bootstrap
+from xinao.capability.g4_bootstrap_scoring import (
+    FORMAL_CASE_FAIL,
+    FORMAL_CASE_PASS,
+    TERMINAL_FAIL,
+    TERMINAL_PASS,
+    recompute_private_record_commitment,
+    score_bootstrap,
+    score_formal_case,
+)
 from xinao.capability.g4_hidden_benchmark import GeneratorProfile, generate_full_family_suites
 
 REPO_ROOT = Path(__file__).resolve().parents[4]
@@ -123,6 +131,105 @@ def test_subject_output_is_deterministic_for_fixed_public_input(
     second = _score(result, records, _promptfoo_rows(monkeypatch, records))
     assert first["subject_outputs_sha256"] == second["subject_outputs_sha256"]
     assert first["content_hash"] == second["content_hash"]
+
+
+def _synthetic_h01_record() -> dict[str, Any]:
+    observations = [
+        {
+            "f0": float((index * 7) % 11),
+            "f1": float((index * 5) % 13),
+            "f2": float(index),
+        }
+        for index in range(40)
+    ]
+    record = {
+        "public_case_id": "pc_h01_synthetic",
+        "public_instructions": "Use only public observations.",
+        "task_input": {
+            "observations": observations,
+            "targets": [float(index) for index in range(40)],
+            "ask": "Identify which single feature, if any, weakly predicts the target.",
+        },
+        "family_id": "H01",
+        "split": "heldout",
+        "case_index": 0,
+        "hidden_parameters": {
+            "signal_feature_index": 2,
+            "signal_coefficient": 1.0,
+            "n": 40,
+            "power_band": "powered",
+            "split_tag": "heldout",
+            "case_index": 0,
+        },
+        "truth": {
+            "structure": "weak_single_variable",
+            "active_feature": "f2",
+            "coefficient": 1.0,
+            "power_band": "powered",
+            "calibration_required": True,
+        },
+        "expected_disposition": "IDENTIFY_STRUCTURE",
+        "scoring_policy_id": "STRUCTURE",
+    }
+    record["commitment_sha256"] = recompute_private_record_commitment(record)
+    return record
+
+
+def test_h01_subject_and_formal_case_scorer_use_calibrated_feature_screen(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    record = _synthetic_h01_record()
+    rows = _promptfoo_rows(monkeypatch, [record])
+    report = score_formal_case(
+        evaluator_record=record,
+        promptfoo_result={"results": {"results": rows}},
+        suite_identity_sha256="1" * 64,
+        generator_artifact_sha256="2" * 64,
+    )
+
+    assert report["terminal"] == FORMAL_CASE_PASS
+    assert report["pipeline_verified"] is True
+    assert report["capability_case_pass"] is True
+    result = report["family_result"]
+    assert result["statistically_valid"] is True
+    assert result["checks"]["active_feature_exact"] is True
+    assert result["checks"]["multiplicity_declared"] is True
+
+
+def test_h01_formal_case_scorer_distinguishes_valid_failure_from_pipeline_failure(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    record = _synthetic_h01_record()
+    rows = _promptfoo_rows(monkeypatch, [record])
+    envelope = json.loads(rows[0]["response"]["output"])
+    envelope["analysis"]["active_feature"] = "f0"
+    rows[0]["response"]["output"] = json.dumps(envelope)
+    report = score_formal_case(
+        evaluator_record=record,
+        promptfoo_result={"results": {"results": rows}},
+        suite_identity_sha256="1" * 64,
+        generator_artifact_sha256="2" * 64,
+    )
+
+    assert report["terminal"] == FORMAL_CASE_FAIL
+    assert report["pipeline_verified"] is True
+    assert report["capability_case_pass"] is False
+    assert report["family_result"]["checks"]["active_feature_exact"] is False
+
+
+def test_h01_subject_calibrates_no_action_when_public_target_has_no_variance() -> None:
+    adapter = _adapter()
+    analysis = adapter._analyze_weak_signal(
+        {
+            "observations": [{"f0": float(index), "f1": float(index % 3)} for index in range(20)],
+            "targets": [1.0] * 20,
+        }
+    )
+
+    assert analysis["decision"] == "NO_ACTION"
+    assert analysis["p_value"] == 1.0
+    assert analysis["multiplicity"] == "BONFERRONI_FEATURE_SCREEN"
+    assert analysis["promoted"] is False
 
 
 def test_commitment_drift_fails_closed(monkeypatch: pytest.MonkeyPatch) -> None:

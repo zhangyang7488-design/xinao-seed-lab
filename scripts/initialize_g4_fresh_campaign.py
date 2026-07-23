@@ -9,6 +9,7 @@ invokes the evaluator.
 from __future__ import annotations
 
 import argparse
+import ast
 import hashlib
 import json
 import secrets
@@ -30,6 +31,7 @@ from g4_hidden_capability_seam.real_vault import (  # noqa: E402
     RealHiddenBootstrapVault,
 )
 from xinao.canonical import canonical_sha256, format_utc  # noqa: E402
+from xinao.capability.g4_bootstrap_scoring import FORMAL_CASE_FAMILIES  # noqa: E402
 from xinao.capability.g4_hidden_benchmark import (  # noqa: E402
     GeneratorProfile,
     generate_full_family_suites,
@@ -89,6 +91,59 @@ def _copy_exact_source(source: Path, target: Path) -> None:
     target.write_bytes(source.read_bytes())
     if _raw_sha256(target) != _raw_sha256(source):
         raise FreshCampaignError(f"source copy hash drifted: {source}")
+
+
+def _validate_evaluator_family_support(
+    evaluator_path: Path,
+    families: Sequence[str],
+) -> dict[str, Any]:
+    requested = list(families)
+    if not requested or len(requested) != len(set(requested)):
+        raise FreshCampaignError("requested evaluator families must be non-empty and unique")
+    try:
+        tree = ast.parse(evaluator_path.read_text(encoding="utf-8"), filename=str(evaluator_path))
+    except (OSError, SyntaxError, UnicodeError) as exc:
+        raise FreshCampaignError(f"evaluator support registry is unreadable: {exc}") from exc
+    registry: tuple[str, ...] | None = None
+    entrypoint_present = False
+    for node in tree.body:
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            entrypoint_present = entrypoint_present or node.name == "score_formal_case"
+        if not isinstance(node, (ast.Assign, ast.AnnAssign)):
+            continue
+        targets = node.targets if isinstance(node, ast.Assign) else [node.target]
+        if not any(
+            isinstance(target, ast.Name) and target.id == "FORMAL_CASE_FAMILIES"
+            for target in targets
+        ):
+            continue
+        try:
+            value = ast.literal_eval(node.value)
+        except (TypeError, ValueError) as exc:
+            raise FreshCampaignError("evaluator family support registry must be a literal") from exc
+        if not isinstance(value, tuple) or not all(isinstance(item, str) for item in value):
+            raise FreshCampaignError("evaluator family support registry must be a tuple of strings")
+        registry = value
+    if registry is None or not entrypoint_present:
+        raise FreshCampaignError("evaluator lacks formal-case support registry or entrypoint")
+    unsupported = sorted(set(requested) - set(registry))
+    if unsupported:
+        raise FreshCampaignError(
+            f"evaluator does not support requested families: {','.join(unsupported)}"
+        )
+    if tuple(registry) != FORMAL_CASE_FAMILIES and evaluator_path == DEFAULT_EVALUATOR.resolve():
+        raise FreshCampaignError(
+            "default evaluator support registry drifted from imported contract"
+        )
+    return {
+        "schema_version": "xinao.g4.evaluator_family_support_receipt.v1",
+        "evaluator_sha256": _raw_sha256(evaluator_path),
+        "requested_families": requested,
+        "supported_families": list(registry),
+        "entrypoint": "score_formal_case",
+        "support_verified": True,
+        "outcome_accessed": False,
+    }
 
 
 def _public_payload(record: Mapping[str, Any]) -> dict[str, Any]:
@@ -382,6 +437,7 @@ def initialize(args: argparse.Namespace) -> dict[str, Any]:
     ):
         if not required_path.is_file():
             raise FreshCampaignError(f"required binding file is missing: {required_path}")
+    evaluator_support = _validate_evaluator_family_support(evaluator_path, args.family)
     campaign = _read_json(campaign_path)
     acceptance = _read_json(acceptance_path)
     designs = _validated_designs(
@@ -637,6 +693,7 @@ def initialize(args: argparse.Namespace) -> dict[str, Any]:
         "planned_independent_cases": len(selected_case_ids),
         "subject_public_cases": subject_public_cases,
         "subject_adapter_snapshot_sha256": _raw_sha256(adapter_snapshot_path),
+        "evaluator_family_support": evaluator_support,
         "first_batch_execution_cells": len(first_cells),
         "first_batch_manifest_sha256": prepared["batch_manifest"]["content_hash"],
         "published_first_batch_files": published,
