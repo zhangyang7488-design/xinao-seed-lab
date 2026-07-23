@@ -43,3 +43,7 @@ closes G4. Percentage-only quota telemetry remains advisory. Missing absolute to
 or wall-clock capacity therefore ends at `G4_FULL_CAPACITY_HOLD_VERIFIED`; an immutable
 attempt can be re-adjudicated without another provider call when adjudication logic changes.
 A relay-envelope or route-identity change requires a fresh public calibration.
+
+Live dispatch requires `--launcher` to name an installed provider-bound thin adapter.
+The provider-neutral stable relay entry intentionally has no implicit provider, endpoint,
+or credential binding and is not a dispatch default.

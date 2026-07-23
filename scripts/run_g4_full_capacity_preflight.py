@@ -34,7 +34,6 @@ from xinao.capability.g4_hidden_benchmark.artifact import (  # noqa: E402
 )
 from xinao.capability.g4_hidden_benchmark.constants import SPLIT_TRAINING  # noqa: E402
 
-DEFAULT_LAUNCHER = Path(r"C:\Users\xx363\CodexLaunchers\Invoke-Codex-OpenAiRelayWorker.ps1")
 DEFAULT_QUOTA_QUERY = Path(r"D:\XINAO_RESEARCH_RUNTIME\state\quota_query\Get-AIQuota.ps1")
 DEFAULT_RELAY_EVIDENCE = Path(r"D:\XINAO_RESEARCH_RUNTIME\state\openai_relay_worker")
 REQUIRED_CAMPAIGN_CELLS = 10_206
@@ -262,7 +261,16 @@ def _hard_bounds_from_quota(quota: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _validated_dispatch_launcher(*, dispatch: bool, launcher: Path | None) -> Path | None:
+    if dispatch and launcher is None:
+        raise SystemExit("dispatch requires an explicit provider-bound --launcher")
+    if launcher is not None and not launcher.is_file():
+        raise SystemExit("provider-bound relay launcher missing")
+    return launcher
+
+
 def run(args: argparse.Namespace) -> dict[str, Any]:
+    launcher = _validated_dispatch_launcher(dispatch=args.dispatch, launcher=args.launcher)
     op_root = _allowed_op_root(args.op_root)
     reused_attempt = args.reuse_attempt_root is not None
     if reused_attempt:
@@ -315,11 +323,10 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
                 }
             )
     elif args.dispatch:
-        if not args.launcher.is_file():
-            raise SystemExit("stable relay launcher missing")
+        assert launcher is not None
         for prompt in plan["prompts"]:
             returncode, summary_path = _invoke_relay(
-                launcher=args.launcher,
+                launcher=launcher,
                 prompt=prompt,
                 model=args.model,
                 max_tokens=args.max_tokens,
@@ -359,8 +366,8 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
             "invocation_results": invocation_results,
             "reused_attempt": reused_attempt,
             "new_provider_calls": 0 if reused_attempt else len(invocation_results),
-            "relay_launcher_path": str(args.launcher),
-            "relay_launcher_sha256": _file_sha256(args.launcher),
+            "relay_launcher_path": str(launcher) if launcher is not None else None,
+            "relay_launcher_sha256": _file_sha256(launcher) if launcher is not None else None,
             "quota_query_path": str(args.quota_query),
             "quota_query_sha256": _file_sha256(args.quota_query),
             "quota_snapshot_source_path": str(quota_source_path),
@@ -385,7 +392,11 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--reuse-attempt-root", type=Path)
     parser.add_argument("--source-operation-id", default="")
     parser.add_argument("--quota-snapshot", type=Path)
-    parser.add_argument("--launcher", type=Path, default=DEFAULT_LAUNCHER)
+    parser.add_argument(
+        "--launcher",
+        type=Path,
+        help="explicit installed provider-bound relay adapter; required with --dispatch",
+    )
     parser.add_argument("--quota-query", type=Path, default=DEFAULT_QUOTA_QUERY)
     return parser
 
