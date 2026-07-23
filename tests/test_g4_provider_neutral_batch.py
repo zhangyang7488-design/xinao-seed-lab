@@ -19,6 +19,13 @@ from xinao.capability.g4_batch import (
     build_g4_batch,
     validate_g4_batch,
 )
+from xinao.capability.g4_preregistration import (
+    REQUEST_SCHEMA,
+    TERMINAL_READY,
+    build_split_manifest,
+    prepare_g4_preregistration,
+)
+from xinao.single_home.power_plan import build_power_plan
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
@@ -42,6 +49,98 @@ def _batch() -> dict:
         global_trial_ledger_ref="D:/evidence/g4/global-trial-ledger.json",
         global_trial_ledger_snapshot_sha256="a" * 64,
     )
+
+
+def _preregistered_batch() -> dict:
+    split = build_split_manifest(
+        split_manifest_id="split-fresh-1",
+        suite_version="suite-v1",
+        boundaries={
+            "training": {
+                "case_count": 4,
+                "suite_commitment_sha256": "1" * 64,
+            },
+            "heldout": {
+                "case_count": 4,
+                "suite_commitment_sha256": "2" * 64,
+            },
+        },
+        purge_cases=1,
+        embargo_cases=1,
+        holdout_exposure_budget=2,
+    )
+    power_plan = build_power_plan(
+        plan_id="power-H03-1",
+        family_id="H03",
+        mde=0.1,
+        target_power=0.9,
+        max_budget_trials=2,
+        holdout_split_binding=split["content_hash"],
+        serial_dependence_declared=True,
+        status="ADEQUATE",
+    )
+    prepared = prepare_g4_preregistration(
+        {
+            "schema_version": REQUEST_SCHEMA,
+            "campaign_id": "g4-campaign-preregistered",
+            "batch_id": "batch-preregistered-1",
+            "batch_sequence": 1,
+            "work_key": "g4:batch-preregistered-1",
+            "campaign_preregistration_ref": "D:/evidence/g4/campaign-preregistration.json",
+            "campaign_preregistration_sha256": "3" * 64,
+            "families": ["H03"],
+            "subject_configurations": ["C0-ALGO"],
+            "batch_cells": [
+                {
+                    "family_id": "H03",
+                    "public_case_id": "pc_h03_001",
+                    "subject_configuration": "C0-ALGO",
+                    "seed_id": seed_id,
+                }
+                for seed_id in (17, 42)
+            ],
+            "split_manifest": split,
+            "power_plans": {"H03": power_plan},
+            "frozen_bindings": {
+                "suite_sha256": "4" * 64,
+                "generator_sha256": "5" * 64,
+                "evaluator_sha256": "6" * 64,
+                "scoring_policy_sha256": "7" * 64,
+                "subject_adapter_sha256": "8" * 64,
+            },
+            "unit_policy": {
+                "unit_of_analysis": "INDEPENDENT_HELDOUT_CASE",
+                "seed_role": "WITHIN_CASE_REPLICATION_NOT_INDEPENDENT_N",
+                "fixed_seed_ids": [17, 42],
+                "model_identity_policy": "PIN_EXACT_OBSERVED_IDENTITY",
+            },
+            "budget_policy": {
+                "max_batch_executions": 2,
+                "max_outcome_accesses": 2,
+            },
+            "stopping_policy": {
+                "kind": "FIXED_BUDGET_NO_EARLY_SUCCESS",
+                "allow_early_success_stop": False,
+                "underpowered_terminal": "UNDERPOWERED",
+            },
+            "analysis_policy": {
+                "primary_endpoint_policy_sha256": "9" * 64,
+                "threshold_policy_sha256": "a" * 64,
+                "contingency_policy_sha256": "b" * 64,
+                "deviation_policy_sha256": "c" * 64,
+                "power_analysis_policy_sha256_by_family": {"H03": "d" * 64},
+            },
+            "campaign_contract_sha256": "e" * 64,
+            "retry_policy_sha256": "f" * 64,
+            "global_trial_ledger_ref": "D:/evidence/g4/global-trial-ledger.json",
+            "global_trial_ledger_snapshot_sha256": "0" * 64,
+            "declared_prior_outcome_receipts": [],
+            "reused_outcome_evidence_ids": [],
+        },
+        prepared_at_utc="2026-07-23T14:00:00.000Z",
+    )
+    assert prepared["terminal"] == TERMINAL_READY
+    return prepared["batch_manifest"]
 
 
 def _contract(batch: dict, *, provider: str, model: str, transport: str) -> dict:
@@ -186,6 +285,29 @@ def test_same_batch_can_use_two_replaceable_worker_routes() -> None:
     assert second["api_quota_is_campaign_gate"] is False
     assert second["global_wait_allowed"] is False
     assert first["attempt_receipt_sha256"] != second["attempt_receipt_sha256"]
+
+
+def test_preregistration_producer_feeds_existing_batch_execution_consumer() -> None:
+    batch = _preregistered_batch()
+    contract = _contract(
+        batch,
+        provider="grok",
+        model="grok-4.5",
+        transport="direct-worker-pool",
+    )
+
+    report = adjudicate_g4_batch_execution(
+        batch_manifest=batch,
+        logical_contract=contract,
+        attempt_receipt=_receipt(contract),
+    )
+
+    assert report["batch_execution_accepted"] is True
+    assert report["batch_manifest_sha256"] == batch["content_hash"]
+    assert report["provider_binding_scope"] == "batch_attempt_only"
+    assert report["g4_full"] is False
+    assert report["g5_closed"] is False
+    assert report["formal_research_allowed"] is False
 
 
 def test_fresh_cli_consumes_common_receipt_without_campaign_route_lock(

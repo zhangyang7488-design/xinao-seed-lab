@@ -515,6 +515,29 @@
       "fresh_canary_evidence": []
     },
     {
+      "consumer_id": "g4_batch_preregistration_producer",
+      "source_path": "scripts/prepare_g4_batch_preregistration.py",
+      "entrypoint": "main",
+      "role": "pre_outcome_batch_preregistration_to_existing_provider_neutral_g4_batch",
+      "contract_mode": "immutable_campaign_preregistration_pin_plus_explicit_case_configuration_seed_execution_cells",
+      "status": "boundary_verified_non_parent_owner",
+      "conformance_status": "boundary_verified_non_parent_owner",
+      "status_reason": "The producer publishes one append-only D-runtime package before outcome access, binds an already frozen campaign preregistration and GlobalTrialLedger snapshot, preserves independent held-out cases as the analysis unit, treats seeds only as within-case repetitions, and emits the existing xinao.g4.experiment_batch.v1 manifest. It cannot execute a subject, inspect outcomes, close G4/G5, or claim parent authority.",
+      "writes_effects": true,
+      "parent_completion_authority": false,
+      "independent_gap_discovery": false,
+      "conformance_tests": [
+        "xinao_discovery/tests/unit/capability/test_g4_preregistration.py",
+        "tests/test_g4_provider_neutral_batch.py::test_preregistration_producer_feeds_existing_batch_execution_consumer"
+      ],
+      "replay_evidence": [],
+      "current_positive_canary_evidence": [],
+      "superseded_evidence": [],
+      "negative_canary_evidence": [],
+      "blocking_evidence": [],
+      "fresh_canary_evidence": []
+    },
+    {
       "consumer_id": "g4_provider_neutral_batch_admission",
       "source_path": "scripts/run_g4_batch_execution_admission.py",
       "entrypoint": "main",

@@ -70,7 +70,7 @@ def test_raw_full_suite_requires_runner_lease() -> None:
         },
     )
     guard.require_safe_full_suite(
-        ["xinao_discovery/tests/unit/capability/test_g4_family_batch.py"],
+        ["xinao_discovery/tests/unit/capability/test_g4_preregistration.py"],
         environment={},
     )
 
