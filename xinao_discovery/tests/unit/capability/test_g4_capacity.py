@@ -99,9 +99,7 @@ def test_three_size_strata_and_prompt_are_public_only() -> None:
 def test_campaign_wide_provider_capacity_runner_is_a_no_effect_tombstone() -> None:
     runner = _load_retired_capacity_runner()
 
-    assert runner.RETIREMENT_REASON == (
-        "RETIRED_FULL_CAMPAIGN_PROVIDER_CAPACITY_PREFLIGHT"
-    )
+    assert runner.RETIREMENT_REASON == ("RETIRED_FULL_CAMPAIGN_PROVIDER_CAPACITY_PREFLIGHT")
     assert runner.REPLACEMENT == "scripts/run_g4_batch_execution_admission.py"
     assert runner.main(["--dispatch", "--launcher", "legacy-provider"]) == 2
 
@@ -211,10 +209,7 @@ def test_invalid_route_reasons_describe_failed_evidence() -> None:
     assert "ROUTE_MEASUREMENT_FILESYSTEM_BOUNDARY_NOT_RECORDED" in report["reasons"]
     assert "ROUTE_MEASUREMENT_PROMPT_HASH_RECORDED" not in report["reasons"]
     assert report["execution_directives"]["g4_engineering"] == "EXECUTE"
-    assert (
-        report["execution_directives"]["g4_batch_runner"]
-        == "HOLD_LOCAL_PREREQUISITE"
-    )
+    assert report["execution_directives"]["g4_batch_runner"] == "HOLD_LOCAL_PREREQUISITE"
     assert report["execution_directives"]["g5_design"] == "EXECUTE"
     assert report["global_wait_allowed"] is False
 
@@ -283,23 +278,16 @@ def test_small_absolute_bound_holds_only_the_current_batch() -> None:
     assert report["route_evidence_ready_for_current_batch"] is True
     assert report["current_batch_execution_ready"] is False
     assert report["current_batch_capacity_observed_sufficient"] is False
-    assert "OBSERVED_TOKEN_CAPACITY_BELOW_CURRENT_BATCH_ESTIMATE" in report[
-        "batch_scheduling_holds"
-    ]
-    assert "OBSERVED_CALL_CAPACITY_BELOW_CURRENT_BATCH_ESTIMATE" in report[
-        "batch_scheduling_holds"
-    ]
-    assert "OBSERVED_WALL_BOUND_BELOW_CURRENT_BATCH_ESTIMATE" in report[
-        "batch_scheduling_holds"
-    ]
+    assert (
+        "OBSERVED_TOKEN_CAPACITY_BELOW_CURRENT_BATCH_ESTIMATE" in report["batch_scheduling_holds"]
+    )
+    assert "OBSERVED_CALL_CAPACITY_BELOW_CURRENT_BATCH_ESTIMATE" in report["batch_scheduling_holds"]
+    assert "OBSERVED_WALL_BOUND_BELOW_CURRENT_BATCH_ESTIMATE" in report["batch_scheduling_holds"]
     assert report["reasons"] == []
     assert report["family_power_plan_required"] is True
     assert report["full_report_requires_complete_campaign"] is True
     assert report["execution_directives"]["g4_engineering"] == "EXECUTE"
-    assert (
-        report["execution_directives"]["g4_batch_runner"]
-        == "HOLD_LOCAL_PREREQUISITE"
-    )
+    assert report["execution_directives"]["g4_batch_runner"] == "HOLD_LOCAL_PREREQUISITE"
     assert report["execution_directives"]["g5_design"] == "EXECUTE"
     assert report["execution_directives"]["g5_preregistration"] == "EXECUTE"
     assert report["global_wait_allowed"] is False

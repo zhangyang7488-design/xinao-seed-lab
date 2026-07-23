@@ -590,9 +590,7 @@ def adjudicate_g5(
         route_ready = g4.get("current_batch_execution_ready")
         if not isinstance(route_ready, bool):
             route_ready = g4.get("route_ready_for_bounded_family_planning")
-        g4_batch_execution_allowed = (
-            route_ready if isinstance(route_ready, bool) else None
-        )
+        g4_batch_execution_allowed = route_ready if isinstance(route_ready, bool) else None
     for name, passed in checks.items():
         if not passed:
             reasons.append(name.upper())
@@ -608,9 +606,7 @@ def adjudicate_g5(
         ),
         g4_engineering_allowed=g4_engineering_allowed,
         g4_batch_execution_allowed=g4_batch_execution_allowed,
-        g4_full_evidence_complete=(
-            g4.get("g4_full") is True and g4.get("g4_closed") is True
-        ),
+        g4_full_evidence_complete=(g4.get("g4_full") is True and g4.get("g4_closed") is True),
         g5_design_allowed=True,
         g5_preregistration_allowed=True,
         g5_final_adjudication_complete=ready,

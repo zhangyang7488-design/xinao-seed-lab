@@ -2287,9 +2287,7 @@ def _project_external_blocker_human_report(
             )
     blockers.sort(key=lambda item: (item["atom_id"], item["exact_freeze_cone"]))
     wake_conditions = [
-        str(value)
-        for value in (wakeable_wait.get("wake_conditions") or [])
-        if str(value).strip()
+        str(value) for value in (wakeable_wait.get("wake_conditions") or []) if str(value).strip()
     ]
     if not blockers:
         return None
@@ -2340,9 +2338,7 @@ def write_external_blocker_human_report(
             "external blocker report must bind the same valid exhausted reconciliation",
         )
     blockers = [
-        dict(item)
-        for item in (raw_report.get("blockers") or [])
-        if isinstance(item, Mapping)
+        dict(item) for item in (raw_report.get("blockers") or []) if isinstance(item, Mapping)
     ]
     if not blockers:
         raise SystemAwarenessError(
@@ -2383,14 +2379,11 @@ def write_external_blocker_human_report(
     lines.extend(
         [
             "",
-            "仍可继续的事务："
-            + ("、".join(still_actionable) if still_actionable else "无"),
+            "仍可继续的事务：" + ("、".join(still_actionable) if still_actionable else "无"),
             "唤醒条件："
             + "；".join(str(value) for value in raw_report.get("wake_conditions") or []),
             "当前证据："
-            + "；".join(
-                str(value) for value in raw_report.get("current_evidence_refs") or []
-            ),
+            + "；".join(str(value) for value in raw_report.get("current_evidence_refs") or []),
             f"最近核验时间：{raw_report.get('last_verified_at') or '未知'}",
             f"来源回执 SHA256：{receipt_sha256}",
             "",

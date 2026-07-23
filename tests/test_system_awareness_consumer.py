@@ -1646,9 +1646,7 @@ def test_global_frontier_v4_binds_exact_task_run_prefix_inventory_and_stales_on_
     ]
     assert blocker_report["exact_freeze_cones"] == ["batch-a", "wk:package-a"]
     assert blocker_report["still_actionable_transactions"] == []
-    assert blocker_report["wake_conditions"] == [
-        "new task-run event or external fact"
-    ]
+    assert blocker_report["wake_conditions"] == ["new task-run event or external fact"]
     assert blocker_report["last_verified_at"] == "2026-07-23T06:00:00Z"
     report_path = awareness_module.write_external_blocker_human_report(
         projected,

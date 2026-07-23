@@ -374,9 +374,7 @@ def adjudicate_capacity(
     legacy_claims = legacy_claim_projection(phase_control)
     report: dict[str, Any] = {
         "schema_version": "xinao.g4.bounded_batch_route_advisory.v3",
-        "terminal": (
-            TERMINAL_ROUTE_READY if batch_execution_ready else TERMINAL_ROUTE_HOLD
-        ),
+        "terminal": (TERMINAL_ROUTE_READY if batch_execution_ready else TERMINAL_ROUTE_HOLD),
         "route_evidence_ready_for_current_batch": route_evidence_ready,
         "current_batch_execution_ready": batch_execution_ready,
         "execution_mode": "pre_registered_bounded_family_batches",
@@ -391,17 +389,11 @@ def adjudicate_capacity(
         "route_identity_count": len(route_identities),
         "measured_max_tokens_per_call": max_tokens or None,
         "measured_max_duration_ms_per_call": max_duration or None,
-        "estimated_batch_token_ceiling_with_25pct_contingency": (
-            estimated_token_ceiling or None
-        ),
-        "estimated_batch_serial_wall_ms_with_25pct_contingency": (
-            estimated_serial_wall_ms or None
-        ),
+        "estimated_batch_token_ceiling_with_25pct_contingency": (estimated_token_ceiling or None),
+        "estimated_batch_serial_wall_ms_with_25pct_contingency": (estimated_serial_wall_ms or None),
         "hard_bounds": bound,
         "absolute_capacity_available": absolute_capacity_available,
-        "current_batch_capacity_observed_sufficient": (
-            current_batch_capacity_observed_sufficient
-        ),
+        "current_batch_capacity_observed_sufficient": (current_batch_capacity_observed_sufficient),
         "quota_snapshot_sha256": canonical_sha256(dict(quota_snapshot)),
         "quota_percentage_only_advisory": quota_is_percentage_only,
         "reasons": sorted(set(reasons)),

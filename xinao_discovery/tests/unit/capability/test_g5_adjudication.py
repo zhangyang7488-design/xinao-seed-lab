@@ -66,10 +66,7 @@ def test_g5_treats_tampered_upstream_phase_as_hold_not_exception() -> None:
     assert report["terminal"] == TERMINAL_HOLD
     assert report["g5_statistical_validity_ready"] is False
     assert report["checks"]["g4_phase_control_valid"] is False
-    assert any(
-        reason.startswith("G4_PHASE_CONTROL_INVALID:")
-        for reason in report["reasons"]
-    )
+    assert any(reason.startswith("G4_PHASE_CONTROL_INVALID:") for reason in report["reasons"])
     assert report["execution_directives"]["g4_batch_runner"] == "UNKNOWN"
     assert report["execution_directives"]["g5_design"] == "EXECUTE"
     assert report["execution_directives"]["parent_global_wait_allowed"] is False
@@ -214,9 +211,7 @@ def test_route_ready_without_full_g4_results_keeps_g5_and_g6_closed() -> None:
     assert report["execution_directives"]["g5_final_claim"] == "OPEN"
     assert report["execution_directives"]["g6_formal_research"] == "DENY"
     assert report["execution_directives"]["parent_global_wait_allowed"] is False
-    assert "不等于冻结全部 G5 工作" in report["phase_control_state"]["conditions"][5][
-        "message"
-    ]
+    assert "不等于冻结全部 G5 工作" in report["phase_control_state"]["conditions"][5]["message"]
 
 
 def test_malformed_error_receipt_fails_to_hold_instead_of_crashing() -> None:
