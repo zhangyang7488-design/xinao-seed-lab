@@ -29,24 +29,26 @@ All public objects remain marked synthetic and non-authoritative. Any future act
 real provider call, or broader threat model requires a separate work key and completion
 contract.
 
-## Bounded-family route preflight
+## Provider-neutral bounded batch execution
 
-`scripts/run_g4_full_capacity_preflight.py` is the fail-closed consumer for the next
-bounded family execution boundary. It selects three size-stratified cases from a newly generated
-training-only suite, sends only their public views, and accepts route measurements only
-when the relay records the exact prompt hash, a hash-pinned provider contract, the
-filesystem-unavailable boundary, actual model identity, positive usage, and artifact hash
-readbacks.
+`xinao.capability.g4_batch` defines the scientific identity of one pre-registered G4
+batch: the exact cells, suite/evaluator/policy identities, PowerPlan, stopping and retry
+rules, holdout/no-peek contract, and ledger snapshot. Provider, model, transport, relay,
+quota, and whole-campaign capacity fields are forbidden from that identity.
 
-The preflight never generates a heldout suite, scores an outcome, freezes authority, or
-closes G4. Percentage-only and absolute quota telemetry are planning advisories: neither is
-a hard gate for pre-registered, bounded family batches. Every executable family still needs
-its own PowerPlan, budget, stopping conditions, immutable receipts, and no-peek boundary;
-`G4_FULL` remains false until the complete H01-H14/configuration/repeat result set is present.
-An immutable calibration attempt can be re-adjudicated without another provider call when
-adjudication logic changes. A relay-envelope or route-identity change requires a fresh
-public calibration.
+`scripts/run_g4_batch_execution_admission.py` is the fail-closed consumer for one selected
+batch attempt. It accepts the provider-neutral batch together with the existing common
+`LogicalExecutionContract` and `ExecutionAttemptReceipt`, verifies their hashes and
+observed route identity, and projects the seven scoped phase conditions. The selected
+provider/transport is evidence for that attempt only; the same scientific batch may be
+retried through another admitted worker-bus route without changing its content hash.
 
-Live dispatch requires `--launcher` to name an installed provider-bound thin adapter.
-The provider-neutral stable relay entry intentionally has no implicit provider, endpoint,
-or credential binding and is not a dispatch default.
+Quota and capacity are batch scheduling inputs. They may hold the current batch route but
+cannot lock the campaign to one API account, require a full-campaign capacity precommit,
+freeze G4 engineering or G5 pre-outcome design/preregistration, or authorize parent-global
+waiting. `G4_FULL` remains false until the complete pre-registered result set is present;
+G5 final adjudication and G6 formal research remain closed until their own prerequisites
+are complete.
+
+The former `scripts/run_g4_full_capacity_preflight.py` entry is a no-effect tombstone. It
+does not query quota or invoke a relay and points callers to the batch admission consumer.

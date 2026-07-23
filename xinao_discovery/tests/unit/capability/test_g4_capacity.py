@@ -19,7 +19,7 @@ from xinao.capability.g4_capacity import (
 REPO_ROOT = Path(__file__).resolve().parents[4]
 
 
-def _load_capacity_runner():
+def _load_retired_capacity_runner():
     script = REPO_ROOT / "scripts" / "run_g4_full_capacity_preflight.py"
     spec = importlib.util.spec_from_file_location("g4_capacity_preflight_tested", script)
     assert spec is not None and spec.loader is not None
@@ -96,54 +96,12 @@ def test_three_size_strata_and_prompt_are_public_only() -> None:
     assert '"completion_claim_allowed":false' in prompt
 
 
-def test_preflight_generates_only_the_training_split(monkeypatch: pytest.MonkeyPatch) -> None:
-    runner = _load_capacity_runner()
-    actual = runner.generate_split_suite
-    observed_splits: list[str] = []
+def test_campaign_wide_provider_capacity_runner_is_a_no_effect_tombstone() -> None:
+    runner = _load_retired_capacity_runner()
 
-    def recording_generate_split_suite(**kwargs):
-        observed_splits.append(kwargs["split"])
-        return actual(**kwargs)
-
-    monkeypatch.setattr(runner, "generate_split_suite", recording_generate_split_suite)
-    _artifact, manifest, identity, cases = runner._public_training_cases()
-    assert observed_splits == [runner.SPLIT_TRAINING]
-    assert manifest.split == runner.SPLIT_TRAINING
-    assert identity.split == runner.SPLIT_TRAINING
-    assert len(cases) == 14
-
-
-def test_preflight_maps_absolute_quota_fields_to_hard_bounds() -> None:
-    runner = _load_capacity_runner()
-    assert runner._hard_bounds_from_quota(
-        {
-            "hard_available_tokens": 1_000_000,
-            "hard_max_calls": 20_000,
-            "hard_wall_clock_ms": 2_000_000,
-            "hard_capacity_source": "owner-pinned-receipt",
-        }
-    ) == {
-        "available_tokens": 1_000_000,
-        "max_calls": 20_000,
-        "wall_clock_ms": 2_000_000,
-        "source": "owner-pinned-receipt",
-    }
-
-
-def test_dispatch_requires_explicit_provider_bound_launcher() -> None:
-    runner = _load_capacity_runner()
-    args = runner._parser().parse_args(
-        [
-            "--op-root",
-            r"D:\XINAO_RESEARCH_RUNTIME\state\g4-test",
-            "--operation-id",
-            "test-explicit-provider-launcher",
-            "--dispatch",
-        ]
-    )
-    assert args.launcher is None
-    with pytest.raises(SystemExit, match="explicit provider-bound --launcher"):
-        runner._validated_dispatch_launcher(dispatch=args.dispatch, launcher=args.launcher)
+    assert runner.RETIREMENT_REASON == ("RETIRED_FULL_CAMPAIGN_PROVIDER_CAPACITY_PREFLIGHT")
+    assert runner.REPLACEMENT == "scripts/run_g4_batch_execution_admission.py"
+    assert runner.main(["--dispatch", "--launcher", "legacy-provider"]) == 2
 
 
 def test_relay_measurement_fails_wrong_model_and_zero_usage() -> None:
@@ -191,10 +149,14 @@ def test_percentage_only_quota_does_not_block_bounded_family_route() -> None:
     report = adjudicate_capacity(
         measurements=[_measurement("low"), _measurement("median"), _measurement("high")],
         quota_snapshot={"codex": {"remainingPercent": 59}},
-        required_campaign_cells=10_206,
+        planned_batch_cells=3,
     )
     assert report["terminal"] == TERMINAL_ROUTE_READY
-    assert report["route_ready_for_bounded_family_planning"] is True
+    assert report["route_evidence_ready_for_current_batch"] is True
+    assert report["current_batch_execution_ready"] is True
+    assert report["capacity_scope"] == "current_batch_only"
+    assert report["campaign_provider_locked"] is False
+    assert report["api_quota_is_campaign_gate"] is False
     assert report["absolute_capacity_available"] is False
     assert report["single_shot_capacity_required"] is False
     assert "QUOTA_TELEMETRY_PERCENTAGE_ONLY_ADVISORY" in report["advisories"]
@@ -203,6 +165,22 @@ def test_percentage_only_quota_does_not_block_bounded_family_route() -> None:
     assert report["global_wait_allowed"] is False
     assert report["hidden_outcome_access"] is False
     assert report["g4_closed"] is False
+    assert report["execution_directives"] == {
+        "g4_engineering": "EXECUTE",
+        "g4_batch_runner": "EXECUTE",
+        "g5_design": "EXECUTE",
+        "g5_preregistration": "EXECUTE",
+        "g5_final_claim": "OPEN",
+        "g6_formal_research": "DENY",
+        "parent_global_wait_allowed": False,
+    }
+    assert report["phase_control_state"]["actionable_frontier"] == [
+        "g4_engineering_allowed",
+        "g4_batch_execution_allowed",
+        "g5_design_allowed",
+        "g5_preregistration_allowed",
+    ]
+    assert "G5 设计=执行" in report["human_status_cn"]
 
 
 def test_invalid_route_reasons_describe_failed_evidence() -> None:
@@ -223,16 +201,20 @@ def test_invalid_route_reasons_describe_failed_evidence() -> None:
     report = adjudicate_capacity(
         measurements=[invalid, _measurement("median"), _measurement("high")],
         quota_snapshot={"codex": {"remainingPercent": 59}},
-        required_campaign_cells=10_206,
+        planned_batch_cells=3,
     )
     assert "ROUTE_MEASUREMENT_PROMPT_HASH_NOT_RECORDED" in report["reasons"]
     assert "ROUTE_MEASUREMENT_PROMPT_HASH_NOT_EXACT" in report["reasons"]
     assert "ROUTE_MEASUREMENT_ROUTE_CONTRACT_NOT_PINNED" in report["reasons"]
     assert "ROUTE_MEASUREMENT_FILESYSTEM_BOUNDARY_NOT_RECORDED" in report["reasons"]
     assert "ROUTE_MEASUREMENT_PROMPT_HASH_RECORDED" not in report["reasons"]
+    assert report["execution_directives"]["g4_engineering"] == "EXECUTE"
+    assert report["execution_directives"]["g4_batch_runner"] == "HOLD_LOCAL_PREREQUISITE"
+    assert report["execution_directives"]["g5_design"] == "EXECUTE"
+    assert report["global_wait_allowed"] is False
 
 
-def test_absolute_capacity_is_optional_planning_telemetry() -> None:
+def test_absolute_capacity_is_scoped_to_current_batch_planning() -> None:
     measurements = [_measurement("low"), _measurement("median"), _measurement("high")]
     report = adjudicate_capacity(
         measurements=measurements,
@@ -241,7 +223,7 @@ def test_absolute_capacity_is_optional_planning_telemetry() -> None:
             "hard_max_calls": 100_000,
             "hard_wall_clock_ms": 100_000_000,
         },
-        required_campaign_cells=100,
+        planned_batch_cells=100,
         hard_bounds={
             "available_tokens": 1_000_000,
             "max_calls": 100_000,
@@ -250,24 +232,25 @@ def test_absolute_capacity_is_optional_planning_telemetry() -> None:
         },
     )
     assert report["terminal"] == TERMINAL_ROUTE_READY
-    assert report["route_ready_for_bounded_family_planning"] is True
+    assert report["route_evidence_ready_for_current_batch"] is True
+    assert report["current_batch_execution_ready"] is True
     assert report["absolute_capacity_available"] is True
-    assert report["full_campaign_precommit_sufficient"] is True
+    assert report["current_batch_capacity_observed_sufficient"] is True
     assert report["authority_freeze_allowed"] is False
     assert report["global_wait_allowed"] is False
     assert report["g4_full"] is False
 
 
-def test_invalid_required_cells_rejected() -> None:
-    with pytest.raises(ValueError, match="required_campaign_cells"):
-        adjudicate_capacity(measurements=[], quota_snapshot={}, required_campaign_cells=0)
+def test_invalid_planned_batch_cells_rejected() -> None:
+    with pytest.raises(ValueError, match="planned_batch_cells"):
+        adjudicate_capacity(measurements=[], quota_snapshot={}, planned_batch_cells=0)
 
 
 def test_zero_measurements_fail_closed_to_hold_instead_of_raising() -> None:
     report = adjudicate_capacity(
         measurements=[],
         quota_snapshot={"codex": {"remainingPercent": 59}},
-        required_campaign_cells=10_206,
+        planned_batch_cells=3,
     )
     assert report["terminal"] == TERMINAL_ROUTE_HOLD
     assert "THREE_SIZE_STRATA_NOT_MEASURED" in report["reasons"]
@@ -275,7 +258,7 @@ def test_zero_measurements_fail_closed_to_hold_instead_of_raising() -> None:
     assert report["measured_max_tokens_per_call"] is None
 
 
-def test_small_absolute_bound_cannot_recreate_a_single_shot_gate() -> None:
+def test_small_absolute_bound_holds_only_the_current_batch() -> None:
     report = adjudicate_capacity(
         measurements=[_measurement("low"), _measurement("median"), _measurement("high")],
         quota_snapshot={
@@ -283,7 +266,7 @@ def test_small_absolute_bound_cannot_recreate_a_single_shot_gate() -> None:
             "hard_max_calls": 1,
             "hard_wall_clock_ms": 1,
         },
-        required_campaign_cells=10_206,
+        planned_batch_cells=100,
         hard_bounds={
             "available_tokens": 1,
             "max_calls": 1,
@@ -291,12 +274,20 @@ def test_small_absolute_bound_cannot_recreate_a_single_shot_gate() -> None:
             "source": "small-observed-bound",
         },
     )
-    assert report["terminal"] == TERMINAL_ROUTE_READY
-    assert report["route_ready_for_bounded_family_planning"] is True
-    assert report["full_campaign_precommit_sufficient"] is False
-    assert "OBSERVED_TOKEN_CAPACITY_BELOW_FULL_CAMPAIGN_ESTIMATE" in report["advisories"]
-    assert "OBSERVED_CALL_CAPACITY_BELOW_FULL_CAMPAIGN_ESTIMATE" in report["advisories"]
-    assert "OBSERVED_WALL_BOUND_BELOW_FULL_CAMPAIGN_ESTIMATE" in report["advisories"]
+    assert report["terminal"] == TERMINAL_ROUTE_HOLD
+    assert report["route_evidence_ready_for_current_batch"] is True
+    assert report["current_batch_execution_ready"] is False
+    assert report["current_batch_capacity_observed_sufficient"] is False
+    assert (
+        "OBSERVED_TOKEN_CAPACITY_BELOW_CURRENT_BATCH_ESTIMATE" in report["batch_scheduling_holds"]
+    )
+    assert "OBSERVED_CALL_CAPACITY_BELOW_CURRENT_BATCH_ESTIMATE" in report["batch_scheduling_holds"]
+    assert "OBSERVED_WALL_BOUND_BELOW_CURRENT_BATCH_ESTIMATE" in report["batch_scheduling_holds"]
     assert report["reasons"] == []
     assert report["family_power_plan_required"] is True
     assert report["full_report_requires_complete_campaign"] is True
+    assert report["execution_directives"]["g4_engineering"] == "EXECUTE"
+    assert report["execution_directives"]["g4_batch_runner"] == "HOLD_LOCAL_PREREQUISITE"
+    assert report["execution_directives"]["g5_design"] == "EXECUTE"
+    assert report["execution_directives"]["g5_preregistration"] == "EXECUTE"
+    assert report["global_wait_allowed"] is False

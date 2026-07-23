@@ -8,6 +8,15 @@ from statistics import NormalDist
 from typing import Any
 
 from xinao.canonical import canonical_sha256
+from xinao.capability.phase_conditions import (
+    PhaseConditionError,
+    PhaseConditionType,
+    build_phase_control_state,
+    condition_value,
+    execution_directives,
+    human_summary_cn,
+    legacy_claim_projection,
+)
 from xinao.single_home.ess_report import validate_ess_report
 from xinao.single_home.global_trial_ledger import GlobalTrialLedger
 from xinao.single_home.power_plan import validate_power_plan
@@ -557,10 +566,54 @@ def adjudicate_g5(
             checks["cross_bindings_exact"] = False
             reasons.append("CROSS_BINDING_VALUE_INVALID")
 
+    upstream_phase = g4.get("phase_control_state")
+    if isinstance(upstream_phase, Mapping):
+        try:
+            g4_engineering_allowed = condition_value(
+                upstream_phase,
+                PhaseConditionType.G4_ENGINEERING_ALLOWED,
+            )
+            g4_batch_execution_allowed = condition_value(
+                upstream_phase,
+                PhaseConditionType.G4_BATCH_EXECUTION_ALLOWED,
+            )
+        except PhaseConditionError as exc:
+            g4_engineering_allowed = None
+            g4_batch_execution_allowed = None
+            checks["g4_phase_control_valid"] = False
+            reasons.append(f"G4_PHASE_CONTROL_INVALID:{exc}")
+        else:
+            checks["g4_phase_control_valid"] = True
+    else:
+        checks["g4_phase_control_valid"] = True
+        g4_engineering_allowed = True
+        route_ready = g4.get("current_batch_execution_ready")
+        if not isinstance(route_ready, bool):
+            route_ready = g4.get("route_ready_for_bounded_family_planning")
+        g4_batch_execution_allowed = route_ready if isinstance(route_ready, bool) else None
     for name, passed in checks.items():
         if not passed:
             reasons.append(name.upper())
     ready = all(checks.values())
+    phase_control = build_phase_control_state(
+        observed_generation=canonical_sha256(
+            {
+                "schema_version": "xinao.g5.phase_generation.v1",
+                "g4_report_content_hash": g4.get("content_hash"),
+                "checks": checks,
+                "evidence_content_hashes": evidence_hashes,
+            }
+        ),
+        g4_engineering_allowed=g4_engineering_allowed,
+        g4_batch_execution_allowed=g4_batch_execution_allowed,
+        g4_full_evidence_complete=(g4.get("g4_full") is True and g4.get("g4_closed") is True),
+        g5_design_allowed=True,
+        g5_preregistration_allowed=True,
+        g5_final_adjudication_complete=ready,
+        g6_formal_research_allowed=False,
+    )
+    phase_directives = execution_directives(phase_control)
+    legacy_claims = legacy_claim_projection(phase_control)
     report: dict[str, Any] = {
         "schema_version": "xinao.g5.statistical_validity_adjudication.v1",
         "terminal": TERMINAL_READY if ready else TERMINAL_HOLD,
@@ -575,9 +628,12 @@ def adjudicate_g5(
             "public_null_smoke_is_g5_evidence": False,
             "operational_identity_is_statistical_independence": False,
         },
-        "g4_full": g4.get("g4_full") is True,
-        "g4_closed": g4.get("g4_closed") is True,
-        "g5_closed": ready,
+        "phase_control_state": phase_control,
+        "execution_directives": phase_directives,
+        "human_status_cn": human_summary_cn(phase_control),
+        "g4_full": legacy_claims["g4_full"],
+        "g4_closed": legacy_claims["g4_closed"],
+        "g5_closed": legacy_claims["g5_closed"],
         "foundation_closed": False,
         "formal_admission": False,
         "g6_closed": False,

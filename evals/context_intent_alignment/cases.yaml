@@ -2762,6 +2762,106 @@
     expected_recovered_requirement_atoms: |-
       ATOM_PROBLEM_FORMATION_IS_FIRST_CLASS|ATOM_FOUNDATIONAL_MULTILEVEL_BACKGROUND|ATOM_DECODING_FAILURE_RETAINED|ATOM_CORRECT_ANSWER_DOES_NOT_ERASE_FAILURE|ATOM_VISIBLE_WAIT_REOPENED|ATOM_USER_DEFINED_PROBLEM_PRESERVED|ATOM_BASE_CASE_RETAINED|ATOM_META_CASE_LINKED|ATOM_MIXED_PREREQUISITE_DECOMPOSED|ATOM_LOCAL_RELAY_REMAINS_ACTIONABLE|ATOM_PRIOR_TEXT_IS_CANDIDATE_ONLY|ATOM_EXTERNALITY_REQUIRES_CURRENT_EVIDENCE|ATOM_LOCAL_CONSTRUCTION_COUNTERFACTUAL|ATOM_MACHINE_CONSUMER_FAILS_CLOSED|ATOM_CAUSAL_LINEAGE_TRACED|ATOM_REMEDY_RECHECKS_ORIGINAL_PROBLEM|ATOM_CHANGED_CONTEXT_META_REGRESSION
     expected_rejected_proxy_atoms: ATOM_TECHNICAL_STATUS_DEFINES_PROBLEM|ATOM_MULTILEVEL_EXPRESSION_IS_VAGUE|ATOM_LATER_CORRECTNESS_ERASES_DECODE_FAILURE|ATOM_ONLY_REWRITE_EVENT430|ATOM_FLATTEN_CASE_TO_RULE|ATOM_RECURSIVE_TRANSCRIPT_COPIES|ATOM_BAN_ALL_WAIT|ATOM_COMPLETE_FLAG_PROVES_EXTERNAL|ATOM_PROMPT_FREEZE_IS_FACT|ATOM_REPORT_ONLY|ATOM_USER_MUST_NAME_RULE
+- description: Final phase observations cannot become cross-scope stop commands
+  metadata:
+    id: REG_PHASE_OBSERVATION_CANNOT_COMMAND_UNRELATED_WORK
+    domain: continuity
+    class: orthogonal_phase_condition_regression
+    profiles:
+    - smoke
+    - core
+    - deep
+    source_type: explicit_user_correction
+    source_ref: current-user-2026-07-23/g4-g5-phase-scope-accident
+    lifecycle: regression
+    added_at: '2026-07-23'
+    not_authority: true
+  vars:
+    case_id: REG_PHASE_OBSERVATION_CANNOT_COMMAND_UNRELATED_WORK
+    domain: continuity
+    restored_context: |-
+      The current mainline defines G4_FULL as final evidence-set completeness and allows G4 to run
+      in pre-registered hash-bound batches. One current G4 route measurement is HOLD because its
+      local route evidence is incomplete. G4_FULL is therefore false. G5 final statistical
+      adjudication is also false because the complete G4 results do not yet exist, while G5 design,
+      PowerPlan, split binding, preregistration, error-control and holdout planning are explicitly
+      pre-outcome work and remain locally constructible. G6 formal research is denied until
+      Foundation plus G0-G5 all close. A previous implementation also multiplied all 10,206
+      campaign cells against one provider-bound API relay account and treated that full-campaign
+      oil gauge as a prerequisite, even though the machine worker bus and provider/transport are
+      replaceable and quota only constrains the next bounded batch.
+      Neutral candidate pool:
+      ATOM_FINAL_OBSERVATION_NOT_COMMAND=final false and terminal HOLD are observations, not a
+      universal stop instruction;
+      ATOM_G4_ENGINEERING_CONTINUES=G4 engineering and route repair stay actionable;
+      ATOM_G4_BATCH_SCOPE_LOCAL=only the exact batch or route dependency cone may hold;
+      ATOM_G5_PREOUTCOME_WORK_CONTINUES=G5 design, PowerPlan, preregistration, error-control and
+      holdout planning continue before G4_FULL;
+      ATOM_G5_FINAL_REMAINS_FALSE=only G5 final statistical adjudication remains false;
+      ATOM_G6_FORMAL_RESEARCH_DENIED=G6 formal research remains denied until the final admission
+      formula is satisfied;
+      ATOM_PROVIDER_ROUTE_REPLACEABLE=each bounded batch uses the current provider-neutral worker
+      contract and route receipt rather than one permanent API account;
+      ATOM_CAPACITY_IS_BATCH_SCHEDULING=quota and capacity constrain batch size, width and timing,
+      not the whole campaign or parent wait;
+      ATOM_REAL_EXTERNAL_REPORT_AFTER_PROOF=only a fresh atomized externality proof plus complete
+      parent frontier exhaustion may create a Chinese external-blocker report;
+      ATOM_STALE_BLOCKER_REPORT_INVALID=any later material event invalidates the wait and its human
+      report;
+      ATOM_REPAIR_LOCAL_DEPENDENCY_PREREQUISITE=when authorized-task tests expose a locally
+      installable dependency or repairable integration prerequisite, restore it from the current
+      lock or a current official/mature source and rerun the real test chain;
+      ATOM_G4_FULL_FALSE_FREEZES_G4=treat G4_FULL false as a total G4 stop;
+      ATOM_G5_CLOSED_FALSE_FREEZES_G5=treat G5 final false as a total G5 stop;
+      ATOM_ROUTE_HOLD_FREEZES_PARENT=expand one route HOLD into parent waiting;
+      ATOM_ONE_API_IS_CAMPAIGN_OIL_TANK=bind all campaign cells to one API relay account;
+      ATOM_WRITE_BLOCKER_REPORT_WITHOUT_PROOF=create a blocker narrative from owner prose, a
+      checkpoint, a final false boolean or a locally constructible gap;
+      ATOM_START_G6_EARLY=run formal G6 research before Foundation and G0-G5 close;
+      ATOM_ADVANCE_DOMAIN_CAMPAIGN=use this control repair as authority to execute the G4/G5
+      research campaign itself.
+      ATOM_LABEL_LOCAL_DEPENDENCY_ENVIRONMENT_DEBT=label a locally repairable dependency or
+      integration prerequisite as repository environment debt and substitute a report for repair.
+    user_increment: |-
+      Repair and land the control and execution seams completely. Do not advance the domain
+      campaign itself. A false final claim must not stop unrelated construction; one provider
+      account must not own the whole campaign; and a Desktop blocker report may exist only for a
+      currently verified external dependency that the machine cannot construct.
+    expected_target_relation: existing_object
+    expected_next_step: act
+    expected_ask_user: false
+    expected_create_repository: false
+    expected_create_daemon: false
+    expected_object_identity_source: restored_context
+    expected_mature_comparison_triggered: true
+    expected_learning_loop: double_loop_structural
+    expected_repair_target: governing_invariant
+    expected_closure_evidence: cross_context_entry_and_negative
+    expected_effect_scope: reversible_local
+    expected_effect_authority: explicit_current_user
+    expected_coordination_mode: single_supervisor_worker
+    expected_worker_provider: external_worker
+    expected_worker_transport: direct_batch|adaptive
+    expected_quota_action: query_now
+    expected_quota_query_disposition: query_now_before_routing
+    expected_owner_execution_state: dynamic_supervisor
+    expected_terminal_refill: not_applicable|immediate_positive_value
+    expected_worker_receipt_disposition: not_applicable
+    expected_text_writer: codex_main
+    expected_completion_claim_scope: not_applicable
+    expected_local_completion_transition: finish_bounded_task|not_applicable
+    expected_continuous_run_disposition: not_applicable
+    expected_frontier_disposition: execute
+    expected_candidate_value: positive
+    expected_global_frontier_reconciled: false
+    expected_downstream_recovery_required: true
+    expected_freeze_unaffected_provider: false
+    expected_degraded_scope: dependency_cone_only|frontier_only
+    expected_unaffected_frontier_action: continue_recompute
+    expected_preference_update: smallest_existing_artifact
+    expected_starts_new_project: false
+    expected_recovered_requirement_atoms: ATOM_FINAL_OBSERVATION_NOT_COMMAND|ATOM_G4_ENGINEERING_CONTINUES|ATOM_G4_BATCH_SCOPE_LOCAL|ATOM_G5_PREOUTCOME_WORK_CONTINUES|ATOM_G5_FINAL_REMAINS_FALSE|ATOM_G6_FORMAL_RESEARCH_DENIED|ATOM_PROVIDER_ROUTE_REPLACEABLE|ATOM_CAPACITY_IS_BATCH_SCHEDULING|ATOM_REAL_EXTERNAL_REPORT_AFTER_PROOF|ATOM_STALE_BLOCKER_REPORT_INVALID|ATOM_REPAIR_LOCAL_DEPENDENCY_PREREQUISITE
+    expected_rejected_proxy_atoms: ATOM_G4_FULL_FALSE_FREEZES_G4|ATOM_G5_CLOSED_FALSE_FREEZES_G5|ATOM_ROUTE_HOLD_FREEZES_PARENT|ATOM_ONE_API_IS_CAMPAIGN_OIL_TANK|ATOM_WRITE_BLOCKER_REPORT_WITHOUT_PROOF|ATOM_START_G6_EARLY|ATOM_ADVANCE_DOMAIN_CAMPAIGN|ATOM_LABEL_LOCAL_DEPENDENCY_ENVIRONMENT_DEBT
 - description: A task diagnosis does not become personal metacognition and a local exclusion does not cancel a mainline prerequisite
   metadata:
     id: REG_ACTIVE_SUBJECT_AND_OBJECT_SCOPE_BIND_BEFORE_GENERALIZATION
