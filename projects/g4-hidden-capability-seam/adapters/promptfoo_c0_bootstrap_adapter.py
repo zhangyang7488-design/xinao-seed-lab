@@ -12,10 +12,12 @@ import json
 import math
 import os
 from itertools import combinations
+from statistics import NormalDist
 from typing import Any
 
 
 FORBIDDEN_ENV_TOKENS = ("VAULT", "TRUTH", "SCORER", "HIDDEN", "SECRET", "API_KEY")
+H01_FAMILY_ALPHA = 0.05
 
 
 def _mean(values: list[float]) -> float:
@@ -259,6 +261,53 @@ def _correlation(values: list[float], labels: list[float]) -> float:
     return sum(a * b for a, b in zip(dx, dy, strict=True)) / denominator
 
 
+def _analyze_weak_signal(task: dict[str, Any]) -> dict[str, Any]:
+    observations = task.get("observations")
+    targets = task.get("targets")
+    if not isinstance(observations, list) or not observations or not isinstance(targets, list):
+        return {"decision": "INVALID_INPUT", "reason": "observations_or_targets_missing"}
+    if len(observations) != len(targets) or not all(isinstance(row, dict) for row in observations):
+        return {"decision": "INVALID_INPUT", "reason": "observation_target_shape_mismatch"}
+    if len(observations) <= 3:
+        return {"decision": "INVALID_INPUT", "reason": "too_few_observations"}
+    columns = sorted(set.intersection(*(set(row) for row in observations)))
+    if not columns:
+        return {"decision": "INVALID_INPUT", "reason": "no_common_features"}
+    labels = [float(value) for value in targets]
+    correlations = {
+        column: _correlation([float(row[column]) for row in observations], labels)
+        for column in columns
+    }
+    selected_feature = max(columns, key=lambda column: abs(correlations[column]))
+    selected_correlation = correlations[selected_feature]
+    clipped_correlation = max(-1.0 + 1e-15, min(1.0 - 1e-15, selected_correlation))
+    fisher_z = math.atanh(clipped_correlation) * math.sqrt(len(observations) - 3)
+    p_value = 2.0 * (1.0 - NormalDist().cdf(abs(fisher_z)))
+    alpha_eff = H01_FAMILY_ALPHA / len(columns)
+    decision = "STRUCTURE" if p_value <= alpha_eff else "NO_ACTION"
+    return {
+        "analysis_kind": "weak_signal_pearson_screen",
+        "decision": decision,
+        "correlations": {key: round(value, 8) for key, value in correlations.items()},
+        "selected_feature": selected_feature,
+        "active_feature": selected_feature if decision == "STRUCTURE" else None,
+        "selected_correlation": round(selected_correlation, 8),
+        "direction": (
+            "positive"
+            if selected_correlation > 0
+            else "negative"
+            if selected_correlation < 0
+            else "zero"
+        ),
+        "p_value": round(p_value, 12),
+        "alpha": H01_FAMILY_ALPHA,
+        "alpha_eff": round(alpha_eff, 12),
+        "multiplicity": "BONFERRONI_FEATURE_SCREEN",
+        "attempts": len(columns),
+        "promoted": False,
+    }
+
+
 def _analyze_feature_target(task: dict[str, Any]) -> dict[str, Any]:
     features = task.get("features")
     targets = task.get("targets")
@@ -293,6 +342,8 @@ def _analyze(task: dict[str, Any]) -> dict[str, Any]:
         return _analyze_table(task)
     if "sequence" in task:
         return _analyze_sequence(task)
+    if "observations" in task and "targets" in task:
+        return _analyze_weak_signal(task)
     if "features" in task and "targets" in task:
         return _analyze_feature_target(task)
     return {"decision": "UNSUPPORTED", "reason": "no_supported_public_shape", "promoted": False}

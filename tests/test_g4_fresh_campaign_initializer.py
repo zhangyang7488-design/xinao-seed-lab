@@ -185,3 +185,22 @@ def test_subject_public_cases_are_safe_sorted_and_family_blind(tmp_path: Path) -
     assert receipt["family_labels_exposed"] is False
     assert receipt["outcome_accessed"] is False
     assert receipt["sha256"] == initializer._raw_sha256(output_path)
+
+
+def test_evaluator_family_support_preflight_accepts_h01_and_rejects_unknown_family() -> None:
+    initializer = _load_initializer()
+
+    receipt = initializer._validate_evaluator_family_support(
+        initializer.DEFAULT_EVALUATOR.resolve(),
+        ["H01"],
+    )
+
+    assert receipt["support_verified"] is True
+    assert receipt["requested_families"] == ["H01"]
+    assert "H01" in receipt["supported_families"]
+    assert receipt["outcome_accessed"] is False
+    with pytest.raises(initializer.FreshCampaignError, match="does not support"):
+        initializer._validate_evaluator_family_support(
+            initializer.DEFAULT_EVALUATOR.resolve(),
+            ["H02"],
+        )
