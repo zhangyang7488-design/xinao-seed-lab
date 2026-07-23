@@ -11,6 +11,7 @@ from typing import Any
 
 import psycopg
 
+from xinao.admission import verify_domain_research_admission_file
 from xinao.canonical import canonical_sha256
 from xinao.catalog.compiler import DEFAULT_CATALOG_PATH, write_atomic
 from xinao.contracts.objects import AuthorityContract, BaselineOddsWaterVersion, DatasetSnapshot
@@ -37,6 +38,10 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--catalog", type=Path, default=DEFAULT_CATALOG_PATH)
     parser.add_argument("--world-root", type=Path, default=WORLD_ROOT)
     parser.add_argument("--validation-root", type=Path, default=VALIDATION_ROOT)
+    parser.add_argument("--domain-admission-report", type=Path, required=True)
+    parser.add_argument("--domain-admission-sha256", required=True)
+    parser.add_argument("--domain-scope", required=True)
+    parser.add_argument("--domain-realm", required=True)
     parser.add_argument("--out", type=Path, required=True)
     return parser.parse_args()
 
@@ -162,8 +167,35 @@ def event_id(index: int, family: str) -> str:
     return f"0190f9c0-6f4c-7{family}{index:02x}-8b22-334455667788"
 
 
+def require_domain_research_admission(
+    report_path: Path,
+    *,
+    report_sha256: str,
+    scope: str,
+    realm: str,
+    as_of: datetime | None = None,
+) -> dict[str, Any]:
+    admission = verify_domain_research_admission_file(
+        report_path,
+        expected_file_sha256=report_sha256,
+        expected_scope=scope,
+        expected_realm=realm,
+        as_of=as_of or datetime.now(UTC),
+    )
+    if admission["allowed"] is not True:
+        reasons = ",".join(admission["reasons"])
+        raise SystemExit(f"formal vertical registration denied by domain admission: {reasons}")
+    return admission
+
+
 def main() -> int:
     args = parse_args()
+    admission = require_domain_research_admission(
+        args.domain_admission_report,
+        report_sha256=args.domain_admission_sha256,
+        scope=args.domain_scope,
+        realm=args.domain_realm,
+    )
     registrations = objects(
         catalog_path=args.catalog,
         world_root=args.world_root,
@@ -235,6 +267,15 @@ def main() -> int:
         "event_ids": first_ids,
         "event_hashes": [event.event_hash for event in events],
         "aggregate_types": [event.aggregate_type for event in events],
+        "domain_research_admission": {
+            "report_ref": admission["report_ref"],
+            "report_file_sha256": admission["report_file_sha256"],
+            "report_content_hash": admission["content_hash"],
+            "report_id": admission["report_id"],
+            "scope": admission["scope"],
+            "realm": admission["realm"],
+            "expires_at": admission["expires_at"],
+        },
         "status": "verified",
     }
     write_atomic(args.out, report)

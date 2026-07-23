@@ -1,8 +1,21 @@
 """Regression checks for deterministic formal-vertical event identifiers and timestamps."""
 
+import importlib.util
 from datetime import UTC, datetime
+from pathlib import Path
+
+import pytest
 
 from xinao.ledger import create_event
+
+
+def _registration_module():
+    path = Path(__file__).resolve().parents[3] / "scripts" / "register" / "formal_vertical.py"
+    spec = importlib.util.spec_from_file_location("xinao_formal_vertical_registration", path)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
 
 
 def test_all_registration_timestamps_fit_the_same_second() -> None:
@@ -36,3 +49,17 @@ def test_event_creation_accepts_the_registration_time_profile() -> None:
     )
 
     assert event.occurred_at == datetime(2026, 7, 14, 4, 5, 0, 1000, tzinfo=UTC)
+
+
+def test_formal_registration_fails_before_database_when_admission_is_missing(
+    tmp_path: Path,
+) -> None:
+    module = _registration_module()
+    with pytest.raises(SystemExit, match="formal vertical registration denied"):
+        module.require_domain_research_admission(
+            tmp_path / "missing-admission.json",
+            report_sha256="a" * 64,
+            scope="xinao-domain-mainline",
+            realm="DOMAIN_FIXED_AXIOM",
+            as_of=datetime(2026, 7, 23, 1, tzinfo=UTC),
+        )

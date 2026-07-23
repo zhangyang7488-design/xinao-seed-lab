@@ -75,3 +75,4 @@ def test_canonical_worker_registry_contains_p8_workflows() -> None:
     assert "xinao-mainline-canary-queue" in summary["task_queues"]
     assert "XinaoMainlineCanaryWorkflow" in summary["workflows_registered"]
     assert "XinaoResearchCampaignWorkflow" in summary["workflows_registered"]
+    assert "FoundationContinuousWorkflowV3" not in summary["workflows_registered"]

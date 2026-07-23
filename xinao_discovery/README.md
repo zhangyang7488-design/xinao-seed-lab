@@ -27,9 +27,11 @@ Historical P0-P11 evidence projection:
 
 The following bullets describe the original V1 vertical under source hash
 `316b5b20dd29f5ebc454faa33eab3a4b92c0e7b5c9a4a68c3be2922ec730aae7`.
-They do not prove current G0-G8 admission, autonomous-discovery capability, or runtime
-consumption of `DomainResearchAdmissionReport`. The V2 gate/runtime cutover is
-`NOT_PERFORMED`; current implementation status must be re-derived from matching reports.
+They do not prove current G0-G8 admission or autonomous-discovery capability. New canonical
+ResearchCampaign executions and formal-ledger registration attempts now fail closed through one
+hash-bound `DomainResearchAdmissionReport` verifier; pre-cutover Temporal histories retain their
+replay path. Current G4/G5 HOLD evidence cannot produce ALLOW, so G6 and formal domain research
+remain closed until matching final reports are independently admitted.
 
 - P0 capability/input admission, dedicated branch, locked dependency BOM, licenses, and SBOM.
 - P1 canonical profile, 37-object registry, and 16-kind typed handoff contract.
