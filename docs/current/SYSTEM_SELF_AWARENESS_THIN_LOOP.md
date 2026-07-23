@@ -66,7 +66,7 @@ temporary carrier: active/paused -> archive review or retire candidate -> retire
 3. worktree records 必须把逻辑 `work_key`、载体 generation、当前 observation、事件前缀和单次 side effect 绑在一起；旧事件不能给同路径重建或后来漂移的载体复用。
 4. ignored 内容默认是未分类物料。dirty、ignored、未吸收提交、锁定、prunable、primary/base、事实漂移或 finalizer 缺失都不能成为 retire candidate。
 5. archive 只有隔离恢复和内容对账的 hash-bound receipt 才能标为 preserved；即便如此也只进入 owner review，绝不自动清除 removal finalizer。
-6. 父级全局等待只接受 `xinao.global_frontier_reconciliation.v3`：每个外部阻塞必须拆成独立 atom，同时绑定当前事件头下的外部观察与“现授权对象/拓扑内确实不能建设”的结构化反事实。只要存在本机可建设 atom，父级保持 open；checkpoint、next_frontier、提示词、模型输出、报告、旧 reconciliation receipt 与 v1/v2 receipt 都不能证明外部性。
+6. 父级全局等待只接受 `xinao.global_frontier_reconciliation.v4`：每个外部阻塞必须先绑定当前稳定目录中具备相应 authority scope 的 canonical 父合同精确原文，再拆成独立 atom，并绑定当前事件头下的外部观察与“现授权对象/拓扑内确实不能建设”的结构化反事实。派生合同、机器投影、运行状态、checkpoint、next_frontier、提示词、模型输出、报告及旧 reconciliation receipt 不能制造父级要求；只要存在本机可建设 atom，父级保持 open。
 7. `retire_candidate` 只是“当前 owner 可重新核验的移除候选”，不是 `retired`。真实移除后还要同时读取 Git inventory 与字面路径证明缺席并写 task-run result；重算 path ID 且带 event-prefix 的 tombstone 才把成功退役与意外目录消失区分开。
 8. 所有投影固定 `authority=false`、`delete_authority=false`、`automatic_delete_allowed=false`、`completion_claim_allowed=false`。
 

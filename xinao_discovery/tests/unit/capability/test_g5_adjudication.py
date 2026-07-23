@@ -29,11 +29,11 @@ def _sealed(value: dict) -> dict:
     return result
 
 
-def _g4_hold() -> dict:
+def _g4_route_ready_without_full_results() -> dict:
     return _sealed(
         {
-            "schema_version": "xinao.g4.full_capacity_adjudication.v1",
-            "terminal": "G4_FULL_CAPACITY_HOLD_VERIFIED",
+            "schema_version": "xinao.g4.bounded_family_route_advisory.v2",
+            "terminal": "G4_BOUNDED_FAMILY_ROUTE_READY_NO_OUTCOME_ACCESS",
             "g4_full": False,
             "g4_closed": False,
             "authority": False,
@@ -163,10 +163,11 @@ def test_trial_ledger_requires_exact_observed_set_and_one_terminal() -> None:
     assert duplicate["all_registered_trials_terminal"] is False
 
 
-def test_event425_shape_yields_g5_hold_without_inventing_inputs() -> None:
-    report = adjudicate_g5(g4_report=_g4_hold())
+def test_route_ready_without_full_g4_results_keeps_g5_and_g6_closed() -> None:
+    report = adjudicate_g5(g4_report=_g4_route_ready_without_full_results())
     assert report["terminal"] == TERMINAL_HOLD
     assert report["g5_closed"] is False
+    assert report["g6_closed"] is False
     assert report["g4_closed"] is False
     assert report["foundation_closed"] is False
     assert report["formal_admission"] is False
@@ -184,7 +185,10 @@ def test_malformed_error_receipt_fails_to_hold_instead_of_crashing() -> None:
             "generic_alpha_or_e_balance": False,
         }
     )
-    report = adjudicate_g5(g4_report=_g4_hold(), error_control_receipt=malformed)
+    report = adjudicate_g5(
+        g4_report=_g4_route_ready_without_full_results(),
+        error_control_receipt=malformed,
+    )
     assert report["terminal"] == TERMINAL_HOLD
     assert report["checks"]["error_control_passed"] is False
     assert any(reason.startswith("ERROR_CONTROL_INVALID:") for reason in report["reasons"])
@@ -215,7 +219,7 @@ def test_provisional_power_and_trial_schema_cannot_be_laundered_by_other_green_c
         max_accesses=0,
     )
     report = adjudicate_g5(
-        g4_report=_g4_hold(),
+        g4_report=_g4_route_ready_without_full_results(),
         power_plan=plan,
         ess_report=ess,
         power_evidence=power_evidence,
@@ -241,7 +245,7 @@ def test_required_effective_n_rejects_invalid_sidedness() -> None:
 
 
 def test_g4_report_content_hash_is_enforced() -> None:
-    report = _g4_hold()
+    report = _g4_route_ready_without_full_results()
     report["g4_closed"] = True
     with pytest.raises(G5AdjudicationError, match="content_hash mismatch"):
         adjudicate_g5(g4_report=report)

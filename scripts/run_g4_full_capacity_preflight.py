@@ -1,4 +1,4 @@
-"""Measure a public-only G4 subject route and adjudicate full-campaign capacity."""
+"""Measure a public-only G4 route for bounded, pre-registered family execution."""
 
 from __future__ import annotations
 
@@ -36,7 +36,7 @@ from xinao.capability.g4_hidden_benchmark.constants import SPLIT_TRAINING  # noq
 
 DEFAULT_QUOTA_QUERY = Path(r"D:\XINAO_RESEARCH_RUNTIME\state\quota_query\Get-AIQuota.ps1")
 DEFAULT_RELAY_EVIDENCE = Path(r"D:\XINAO_RESEARCH_RUNTIME\state\openai_relay_worker")
-REQUIRED_CAMPAIGN_CELLS = 10_206
+ESTIMATED_FULL_CAMPAIGN_CELLS = 10_206
 
 
 def _write_json(path: Path, value: Any) -> str:
@@ -355,7 +355,7 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
     report = adjudicate_capacity(
         measurements=measurements,
         quota_snapshot=quota,
-        required_campaign_cells=REQUIRED_CAMPAIGN_CELLS,
+        required_campaign_cells=ESTIMATED_FULL_CAMPAIGN_CELLS,
         hard_bounds=_hard_bounds_from_quota(quota),
     )
     report.update(
@@ -409,8 +409,8 @@ def main() -> int:
         0
         if report.get("terminal")
         in {
-            "G4_FULL_CAPACITY_HOLD_VERIFIED",
-            "G4_FULL_CAPACITY_MEASURED_FEASIBLE_NO_OUTCOME_ACCESS",
+            "G4_BOUNDED_FAMILY_ROUTE_HOLD_NO_OUTCOME_ACCESS",
+            "G4_BOUNDED_FAMILY_ROUTE_READY_NO_OUTCOME_ACCESS",
         }
         else 1
     )

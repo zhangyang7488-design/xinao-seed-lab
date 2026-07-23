@@ -1,8 +1,9 @@
-"""Fail-closed G4 full-campaign capacity calibration and adjudication.
+"""Fail-closed G4 route calibration for bounded family execution.
 
 Calibration is deliberately performed on public training cases.  It may measure a
 provider route, actual model identity, usage, and wall time, but it never scores a
-held-out outcome and can never close G4 by itself.
+held-out outcome and can never close G4 by itself.  Provider-wide absolute quota is
+optional planning telemetry, not a prerequisite for incremental family execution.
 """
 
 from __future__ import annotations
@@ -41,8 +42,11 @@ FORBIDDEN_PUBLIC_KEYS = frozenset(
         "vault_path",
     }
 )
-TERMINAL_HOLD = "G4_FULL_CAPACITY_HOLD_VERIFIED"
-TERMINAL_FEASIBLE = "G4_FULL_CAPACITY_MEASURED_FEASIBLE_NO_OUTCOME_ACCESS"
+TERMINAL_ROUTE_HOLD = "G4_BOUNDED_FAMILY_ROUTE_HOLD_NO_OUTCOME_ACCESS"
+TERMINAL_ROUTE_READY = "G4_BOUNDED_FAMILY_ROUTE_READY_NO_OUTCOME_ACCESS"
+# Backward-compatible imports; the old campaign-wide semantics and terminal strings are retired.
+TERMINAL_HOLD = TERMINAL_ROUTE_HOLD
+TERMINAL_FEASIBLE = TERMINAL_ROUTE_READY
 
 
 def _canonical_text(value: Any) -> str:
@@ -233,11 +237,15 @@ def adjudicate_capacity(
     required_campaign_cells: int,
     hard_bounds: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
-    """Adjudicate whether a full campaign has measured, absolute capacity.
+    """Adjudicate route readiness and emit optional full-campaign cost estimates.
 
-    Percentage-only quota telemetry remains advisory and therefore yields HOLD.
+    G4 execution is partitioned into pre-registered family batches.  Each family
+    still requires its own PowerPlan, budget, and stopping conditions; G4_FULL
+    remains false until every required family/configuration result is complete.
+    Percentage-only quota telemetry cannot block bounded family planning.
     """
     reasons: list[str] = []
+    advisories: list[str] = []
     failed_check_reasons = {
         "prompt_hash_recorded": "ROUTE_MEASUREMENT_PROMPT_HASH_NOT_RECORDED",
         "prompt_hash_exact": "ROUTE_MEASUREMENT_PROMPT_HASH_NOT_EXACT",
@@ -290,39 +298,60 @@ def adjudicate_capacity(
     hard_max_calls = _positive_int(bound.get("max_calls"))
     hard_wall_clock_ms = _positive_int(bound.get("wall_clock_ms"))
     hard_source = bound.get("source")
+    absolute_capacity_available = (
+        all(
+            value is not None
+            for value in (hard_available_tokens, hard_max_calls, hard_wall_clock_ms)
+        )
+        and isinstance(hard_source, str)
+        and bool(hard_source)
+    )
     if hard_available_tokens is None:
-        reasons.append("HARD_ABSOLUTE_TOKEN_CAPACITY_NOT_PINNED")
+        advisories.append("ABSOLUTE_TOKEN_CAPACITY_NOT_AVAILABLE_ADVISORY")
     if hard_max_calls is None:
-        reasons.append("HARD_ABSOLUTE_CALL_CAPACITY_NOT_PINNED")
+        advisories.append("ABSOLUTE_CALL_CAPACITY_NOT_AVAILABLE_ADVISORY")
     if hard_wall_clock_ms is None:
-        reasons.append("HARD_WALL_CLOCK_BOUND_NOT_PINNED")
+        advisories.append("ABSOLUTE_WALL_CLOCK_CAPACITY_NOT_AVAILABLE_ADVISORY")
     if not isinstance(hard_source, str) or not hard_source:
-        reasons.append("HARD_CAPACITY_SOURCE_NOT_PINNED")
+        advisories.append("ABSOLUTE_CAPACITY_SOURCE_NOT_AVAILABLE_ADVISORY")
 
     quota_is_percentage_only = not any(
         _positive_int(quota_snapshot.get(key)) is not None
         for key in ("hard_available_tokens", "hard_max_calls", "hard_wall_clock_ms")
     )
     if quota_is_percentage_only:
-        reasons.append("QUOTA_TELEMETRY_PERCENTAGE_ONLY_ADVISORY")
+        advisories.append("QUOTA_TELEMETRY_PERCENTAGE_ONLY_ADVISORY")
 
     max_tokens = max((value or 0 for value in total_tokens), default=0)
     max_duration = max((value or 0 for value in durations), default=0)
     estimated_token_ceiling = math.ceil(max_tokens * required_campaign_cells * 1.25)
     estimated_serial_wall_ms = math.ceil(max_duration * required_campaign_cells * 1.25)
     if hard_available_tokens is not None and hard_available_tokens < estimated_token_ceiling:
-        reasons.append("HARD_TOKEN_CAPACITY_BELOW_MEASURED_CAMPAIGN_CEILING")
+        advisories.append("OBSERVED_TOKEN_CAPACITY_BELOW_FULL_CAMPAIGN_ESTIMATE")
     if hard_max_calls is not None and hard_max_calls < required_campaign_cells:
-        reasons.append("HARD_CALL_CAPACITY_BELOW_REQUIRED_CELLS")
+        advisories.append("OBSERVED_CALL_CAPACITY_BELOW_FULL_CAMPAIGN_ESTIMATE")
     if hard_wall_clock_ms is not None and hard_wall_clock_ms < estimated_serial_wall_ms:
-        reasons.append("HARD_WALL_BOUND_BELOW_MEASURED_SERIAL_CEILING")
+        advisories.append("OBSERVED_WALL_BOUND_BELOW_FULL_CAMPAIGN_ESTIMATE")
 
-    feasible = not reasons
+    route_ready = not reasons
+    full_campaign_precommit_sufficient = bool(
+        absolute_capacity_available
+        and hard_available_tokens is not None
+        and hard_available_tokens >= estimated_token_ceiling
+        and hard_max_calls is not None
+        and hard_max_calls >= required_campaign_cells
+        and hard_wall_clock_ms is not None
+        and hard_wall_clock_ms >= estimated_serial_wall_ms
+    )
     report: dict[str, Any] = {
-        "schema_version": "xinao.g4.full_capacity_adjudication.v1",
-        "terminal": TERMINAL_FEASIBLE if feasible else TERMINAL_HOLD,
-        "capacity_feasible": feasible,
-        "required_campaign_cells": required_campaign_cells,
+        "schema_version": "xinao.g4.bounded_family_route_advisory.v2",
+        "terminal": TERMINAL_ROUTE_READY if route_ready else TERMINAL_ROUTE_HOLD,
+        "route_ready_for_bounded_family_planning": route_ready,
+        "execution_mode": "pre_registered_bounded_family_batches",
+        "family_power_plan_required": True,
+        "single_shot_capacity_required": False,
+        "full_report_requires_complete_campaign": True,
+        "estimated_full_campaign_cells": required_campaign_cells,
         "calibration_measurements": rows,
         "route_identity_count": len(route_identities),
         "measured_max_tokens_per_call": max_tokens or None,
@@ -330,12 +359,16 @@ def adjudicate_capacity(
         "estimated_token_ceiling_with_25pct_contingency": estimated_token_ceiling or None,
         "estimated_serial_wall_ms_with_25pct_contingency": (estimated_serial_wall_ms or None),
         "hard_bounds": bound,
+        "absolute_capacity_available": absolute_capacity_available,
+        "full_campaign_precommit_sufficient": full_campaign_precommit_sufficient,
         "quota_snapshot_sha256": canonical_sha256(dict(quota_snapshot)),
         "quota_percentage_only_advisory": quota_is_percentage_only,
         "reasons": sorted(set(reasons)),
+        "advisories": sorted(set(advisories)),
         "hidden_outcome_access": False,
         "scoring_executed": False,
-        "authority_freeze_allowed": feasible,
+        "authority_freeze_allowed": False,
+        "global_wait_allowed": False,
         "g4_full": False,
         "g4_closed": False,
         "g5_closed": False,

@@ -213,17 +213,19 @@ def test_materialization_receipt_cannot_be_reused_for_another_report(tmp_path: P
     assert predicates["transactional_materialization_bound"] is False
 
 
-def test_current_hold_schema_materializes_deny_but_replays_exactly(tmp_path: Path) -> None:
+def test_current_route_advisory_materializes_deny_but_replays_exactly(
+    tmp_path: Path,
+) -> None:
     paths = _source_paths(tmp_path)
     g4 = _source_payload("G4")
     g4.update(
         {
-            "schema_version": "xinao.g4_full_capacity_adjudication.v1",
+            "schema_version": "xinao.g4.bounded_family_route_advisory.v2",
             "authority": False,
             "g4_full": False,
             "g4_closed": False,
             "completion_claim_allowed": False,
-            "terminal": "G4_FULL_CAPACITY_HOLD_VERIFIED",
+            "terminal": "G4_BOUNDED_FAMILY_ROUTE_READY_NO_OUTCOME_ACCESS",
         }
     )
     _write(paths["G4"], g4)
