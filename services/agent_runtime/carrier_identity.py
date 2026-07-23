@@ -34,10 +34,9 @@ def repository_root_from_anchor(anchor: str | Path) -> Path:
     if current.is_file():
         current = current.parent
     for candidate in (current, *current.parents):
-        if (
-            (candidate / "services" / "__init__.py").is_file()
-            and (candidate / "services" / "agent_runtime" / "__init__.py").is_file()
-        ):
+        if (candidate / "services" / "__init__.py").is_file() and (
+            candidate / "services" / "agent_runtime" / "__init__.py"
+        ).is_file():
             return candidate
     raise RuntimeError(f"cannot derive repository carrier from loaded source: {anchor}")
 
