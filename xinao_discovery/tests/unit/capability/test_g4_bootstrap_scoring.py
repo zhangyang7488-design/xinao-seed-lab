@@ -20,7 +20,7 @@ ADAPTER_PATH = (
     / "adapters"
     / "promptfoo_c0_bootstrap_adapter.py"
 )
-EXPECTED_GENERATOR_ARTIFACT = "9a1f577d1199734813e1055d49283b7c02018d98b8d01c41334de9a0bcbf5fc4"
+EXPECTED_GENERATOR_ARTIFACT = "d879700a74f52cdd1a9ebd7cad97b9e0b77c47e1992ef230fbbaa0ad8f5c974c"
 
 
 def _adapter() -> ModuleType:

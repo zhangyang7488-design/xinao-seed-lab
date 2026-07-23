@@ -174,6 +174,8 @@ def test_ready_builds_preregistration_and_pending_obligations() -> None:
     assert all("repeat_index" not in row for row in ledger["obligations"])
     assert all(row["status"] == "PENDING" for row in ledger["obligations"])
     assert all(row["result_sha256"] is None for row in ledger["obligations"])
+    first_cell = result["request"]["batch_cells"][0]
+    assert ledger["obligations"][0]["obligation_id"] == canonical_sha256(first_cell)
     assert result["batch_manifest"]["cell_ids"] == [
         row["obligation_id"] for row in ledger["obligations"]
     ]

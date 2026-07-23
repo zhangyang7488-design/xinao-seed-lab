@@ -221,6 +221,7 @@ def test_test_shards_cover_natural_packages_once(tmp_path: Path) -> None:
     paths = [
         test_root / "contract" / "test_contract.py",
         test_root / "property" / "test_property.py",
+        test_root / "unit" / "capability" / "test_capability.py",
         test_root / "unit" / "foundation" / "test_foundation.py",
         test_root / "unit" / "test_direct.py",
         test_root / "fixtures" / "data.json",
@@ -236,9 +237,62 @@ def test_test_shards_cover_natural_packages_once(tmp_path: Path) -> None:
     assert shards == [
         test_root / "contract",
         test_root / "property",
+        test_root / "unit" / "capability" / "test_capability.py",
         test_root / "unit" / "foundation" / "test_foundation.py",
         test_root / "unit" / "test_direct.py",
     ]
+
+
+def test_measured_heavy_file_expands_to_static_test_nodes(tmp_path: Path) -> None:
+    heavy = tmp_path / "xinao_discovery" / "tests" / "unit" / "foundation" / "test_f2_assertions.py"
+    heavy.parent.mkdir(parents=True)
+    heavy.write_text(
+        "\n".join(
+            [
+                "def helper():",
+                "    return None",
+                "",
+                "def test_function():",
+                "    pass",
+                "",
+                "async def test_async_function():",
+                "    pass",
+                "",
+                "class TestGroup:",
+                "    def helper(self):",
+                "        return None",
+                "",
+                "    def test_method(self):",
+                "        pass",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    assert subject.expand_test_shards([heavy], repo_root=tmp_path) == [
+        "xinao_discovery/tests/unit/foundation/test_f2_assertions.py::test_function",
+        "xinao_discovery/tests/unit/foundation/test_f2_assertions.py::test_async_function",
+        "xinao_discovery/tests/unit/foundation/test_f2_assertions.py::TestGroup::test_method",
+    ]
+
+
+def test_non_measured_file_remains_one_shard(tmp_path: Path) -> None:
+    ordinary = tmp_path / "xinao_discovery" / "tests" / "unit" / "test_direct.py"
+    ordinary.parent.mkdir(parents=True)
+    ordinary.write_text("def test_direct():\n    pass\n", encoding="utf-8")
+
+    assert subject.expand_test_shards([ordinary], repo_root=tmp_path) == [
+        "xinao_discovery/tests/unit/test_direct.py"
+    ]
+
+
+def test_measured_file_without_static_test_nodes_fails_closed(tmp_path: Path) -> None:
+    heavy = tmp_path / "xinao_discovery" / "tests" / "unit" / "foundation" / "test_f2_assertions.py"
+    heavy.parent.mkdir(parents=True)
+    heavy.write_text("def helper():\n    return None\n", encoding="utf-8")
+
+    with pytest.raises(subject.RegressionRunnerError, match="no static test nodes"):
+        subject.expand_test_shards([heavy], repo_root=tmp_path)
 
 
 def test_sharded_suite_runs_fresh_processes_and_aggregates_failures(

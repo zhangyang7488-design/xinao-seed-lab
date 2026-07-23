@@ -761,6 +761,18 @@ def test_h01_rotates_explicit_power_calibration_bands() -> None:
     assert [record["hidden_parameters"]["n"] for record in h01_records] == [256, 128, 64]
 
 
+def test_generator_supports_the_preregistered_h10_case_ceiling() -> None:
+    result = generate_full_family_suites(
+        training_secret=TRAIN_SECRET,
+        heldout_secret=HOLD_SECRET,
+        profile=GeneratorProfile(cases_per_family=122, suite_version="2"),
+    )
+
+    assert len(result.training_private_bundle.records) == 14 * 122
+    assert len(result.heldout_private_bundle.records) == 14 * 122
+    assert sum(record.family_id == "H10" for record in result.heldout_private_bundle.records) == 122
+
+
 def test_profile_is_frozen_public_configuration() -> None:
     with pytest.raises(ValueError, match="profile_id"):
         GeneratorProfile(profile_id="heldout-secret-profile")
@@ -771,7 +783,7 @@ def test_profile_is_frozen_public_configuration() -> None:
     with pytest.raises(ValueError, match="cases_per_family"):
         GeneratorProfile(cases_per_family=0)
     with pytest.raises(ValueError, match="cases_per_family"):
-        GeneratorProfile(cases_per_family=65)
+        GeneratorProfile(cases_per_family=257)
 
 
 def test_generation_itself_rejects_public_secret_or_answer_hint_leaks(

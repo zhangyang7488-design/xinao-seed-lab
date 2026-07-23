@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import ast
 import hashlib
 import json
 import os
@@ -25,7 +26,18 @@ LOCK_PATH = Path(
 )
 FULL_SUITE_LEASE_ENV = "XINAO_DISCOVERY_FULL_REGRESSION_LEASE"
 FULL_SUITE_LEASE_VALUE = "runner-v1"
-FILE_ISOLATED_UNIT_DIRS = frozenset({"foundation"})
+FILE_ISOLATED_UNIT_DIRS = frozenset({"capability", "foundation"})
+NODE_ISOLATED_TEST_PATHS = frozenset(
+    {
+        "xinao_discovery/tests/unit/foundation/test_f2_assertion_actuals_v2.py",
+        "xinao_discovery/tests/unit/foundation/test_f2_assertions.py",
+        "xinao_discovery/tests/unit/foundation/test_f2_compile.py",
+        "xinao_discovery/tests/unit/foundation/test_f3_assertion_actuals_v2.py",
+        "xinao_discovery/tests/unit/foundation/test_f4_production_checker.py",
+        "xinao_discovery/tests/unit/foundation/test_research_factory.py",
+        "xinao_discovery/tests/unit/foundation/test_research_weight_inputs.py",
+    }
+)
 
 ROOT_IMPORTS = (
     "apsw",
@@ -202,11 +214,10 @@ def find_competing_full_suites(
 
 
 def _run_full_suite(*, pytest_args: Sequence[str]) -> int:
-    shards = discover_test_shards()
-    shard_names = [str(path.relative_to(REPO_ROOT)).replace("\\", "/") for path in shards]
+    shard_names = expand_test_shards(discover_test_shards())
     shard_manifest = {
         "schema_version": "xinao.discovery.regression_shards.v1",
-        "strategy": "sequential_fresh_process_by_natural_package",
+        "strategy": "sequential_fresh_process_by_measured_crash_domain",
         "shards": shard_names,
     }
     shard_manifest["content_sha256"] = hashlib.sha256(
@@ -300,6 +311,49 @@ def discover_test_shards(*, test_root: Path | None = None) -> list[Path]:
     if not shards:
         raise RegressionRunnerError(f"no discovery test shards found: {root}")
     return shards
+
+
+def expand_test_shards(
+    shards: Sequence[Path],
+    *,
+    repo_root: Path = REPO_ROOT,
+    node_isolated_paths: frozenset[str] = NODE_ISOLATED_TEST_PATHS,
+) -> list[str]:
+    """Expand measured long-running files into function-level pytest node IDs."""
+
+    root = repo_root.resolve()
+    expanded: list[str] = []
+    for shard in shards:
+        resolved = shard.resolve()
+        try:
+            relative = resolved.relative_to(root).as_posix()
+        except ValueError as error:
+            raise RegressionRunnerError(
+                f"test shard escapes repository root: {resolved}"
+            ) from error
+        if relative not in node_isolated_paths:
+            expanded.append(relative)
+            continue
+        parsed = ast.parse(resolved.read_text(encoding="utf-8"), filename=str(resolved))
+        nodes: list[str] = []
+        for statement in parsed.body:
+            if isinstance(statement, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                if statement.name.startswith("test_"):
+                    nodes.append(f"{relative}::{statement.name}")
+                continue
+            if not isinstance(statement, ast.ClassDef) or not statement.name.startswith("Test"):
+                continue
+            for member in statement.body:
+                if isinstance(member, (ast.FunctionDef, ast.AsyncFunctionDef)) and (
+                    member.name.startswith("test_")
+                ):
+                    nodes.append(f"{relative}::{statement.name}::{member.name}")
+        if not nodes:
+            raise RegressionRunnerError(
+                f"node-isolated test file exposes no static test nodes: {relative}"
+            )
+        expanded.extend(nodes)
+    return expanded
 
 
 def execute_regression(

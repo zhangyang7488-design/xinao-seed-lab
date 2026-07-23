@@ -723,14 +723,12 @@ def _build_obligation_ledger(
 ) -> dict[str, Any]:
     obligations: list[dict[str, Any]] = []
     for cell in request["batch_cells"]:
-        identity = {
-            "batch_id": request["batch_id"],
-            **deepcopy(cell),
-        }
+        cell_identity = deepcopy(cell)
         obligations.append(
             {
-                "obligation_id": canonical_sha256(identity),
-                **identity,
+                "obligation_id": canonical_sha256(cell_identity),
+                "batch_id": request["batch_id"],
+                **cell_identity,
                 "status": "PENDING",
                 "outcome_accessed": False,
                 "result_sha256": None,

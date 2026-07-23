@@ -217,8 +217,8 @@ class GeneratorProfile:
             raise ValueError("profile_id must equal the frozen generator profile")
         if self.generator_id != GENERATOR_ID:
             raise ValueError("generator_id must equal the executable generator identity")
-        if not 1 <= self.cases_per_family <= 64:
-            raise ValueError("cases_per_family must be between 1 and 64")
+        if not 1 <= self.cases_per_family <= 256:
+            raise ValueError("cases_per_family must be between 1 and 256")
         if re.fullmatch(r"[1-9][0-9]{0,5}", self.suite_version) is None:
             raise ValueError("suite_version must be a positive decimal version")
 
