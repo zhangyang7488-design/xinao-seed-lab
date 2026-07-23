@@ -407,9 +407,25 @@ def test_problem_only_projection_isolates_unrelated_invalid_dispatch_projection(
         raise dispatch_economics.DispatchEconomicsError("input ref sha256 drifted")
 
     monkeypatch.setattr(dispatch_economics, "project_dispatch_outcomes", invalid_dispatch)
-    with pytest.raises(awareness_module.SystemAwarenessError) as caught:
-        scan_task_run(run_dir)
-    assert caught.value.reason_code == "DISPATCH_OUTCOME_PROJECTION_INVALID"
+    report = scan_task_run(run_dir)
+    assert report["status"] == "partial"
+    assert report["problem_projection"]["problem_count"] == 0
+    assert "dispatch_outcome_projection" not in report
+    assert report["projection_failures"] == [
+        {
+            "component": "dispatch_outcome_projection",
+            "status": "invalid",
+            "reason_code": "DISPATCH_OUTCOME_PROJECTION_INVALID",
+            "message": ("dispatch outcome v2 projection failed: input ref sha256 drifted"),
+            "affected_claims": [
+                "dispatch_outcome_projection",
+                "parent_wait_claim",
+            ],
+            "authority": False,
+            "completion_claim_allowed": False,
+        }
+    ]
+    assert "SYSTEM_AWARENESS_SCAN_PARTIAL" in report["reason_codes"]
 
     problem_projection = scan_task_run_problem_projection(run_dir)
     assert problem_projection["schema_version"] == "xinao.problem_projection.v1"
@@ -487,7 +503,9 @@ def test_task_run_without_dispatch_events_remains_projection_compatible(
     assert report["episode_outcome"]["tokens"]["known_total"] == 0
 
 
-def test_malformed_dispatch_v2_event_fails_closed_at_awareness_seam(tmp_path: Path) -> None:
+def test_malformed_dispatch_v2_event_fails_closed_in_its_projection_cone(
+    tmp_path: Path,
+) -> None:
     outcome = tmp_path / "malformed-worker-terminal-event.json"
     _write_json(outcome, {"schema_version": "xinao.dispatch_outcome_event.v2"})
     outcome_ref = f"{outcome}#sha256={hashlib.sha256(outcome.read_bytes()).hexdigest()}"
@@ -513,9 +531,14 @@ def test_malformed_dispatch_v2_event_fails_closed_at_awareness_seam(tmp_path: Pa
         ],
     )
 
-    with pytest.raises(awareness_module.SystemAwarenessError) as raised:
-        scan_task_run(run_dir)
-    assert raised.value.reason_code == "DISPATCH_OUTCOME_PROJECTION_INVALID"
+    report = scan_task_run(run_dir)
+    assert report["status"] == "partial"
+    assert report["projection_failures"][0]["reason_code"] == (
+        "DISPATCH_OUTCOME_PROJECTION_INVALID"
+    )
+    assert report["projection_failures"][0]["authority"] is False
+    assert report["projection_failures"][0]["completion_claim_allowed"] is False
+    assert "dispatch_outcome_projection" not in report
 
 
 def test_work_unit_projection_preserves_non_prefixed_execution_work_keys(
@@ -1376,6 +1399,78 @@ def test_global_frontier_v3_binds_exact_task_run_prefix_inventory_and_stales_on_
     assert stale["parent_state"] == "open"
     assert stale["parent_wait_claim_allowed"] is False
     assert "GLOBAL_FRONTIER_RECEIPT_STALE" in stale["reason_codes"]
+
+
+def test_invalid_dispatch_projection_keeps_parent_open_without_hiding_frontier(
+    tmp_path: Path,
+) -> None:
+    run_id = "frontier-v3-invalid-dispatch-dependency"
+    invalid_outcome = tmp_path / "invalid-dispatch-outcome.json"
+    _write_json(invalid_outcome, {"schema_version": "xinao.dispatch_outcome_event.v2"})
+    invalid_ref = (
+        f"{invalid_outcome}#sha256={hashlib.sha256(invalid_outcome.read_bytes()).hexdigest()}"
+    )
+    seed = {
+        "run_id": run_id,
+        "schema_version": "codex.verified-task-run.v1",
+        "event_id": "seed-invalid-dispatch",
+        "phase": "worker_terminal",
+        "kind": "result",
+        "target": "wk:historical-dispatch",
+        "actor": "worker",
+        "side_effect_id": "se:historical-dispatch",
+        "evidence_refs": [invalid_ref],
+        "exit_code": 0,
+    }
+    run_dir = _write_scan_run(tmp_path, run_id, [seed])
+    event_head = {
+        "event_count": 1,
+        "event_id": seed["event_id"],
+        "prefix_sha256": hashlib.sha256((run_dir / "events.jsonl").read_bytes()).hexdigest(),
+    }
+    transactions = _global_frontier_transactions(
+        tmp_path,
+        task_run_id=run_id,
+        event_head=event_head,
+    )
+    inventory_ref = _frontier_inventory_ref(
+        tmp_path,
+        name="invalid-dispatch-frontier",
+        task_run_id=run_id,
+        event_head=event_head,
+        transactions=transactions,
+        covered=[row["transaction_id"] for row in transactions],
+    )
+    reconciliation = {
+        "run_id": run_id,
+        "schema_version": "codex.verified-task-run.v1",
+        "event_id": "frontier-after-invalid-dispatch",
+        "phase": "global_frontier_reconciliation",
+        "kind": "result",
+        "target": "mainline-1",
+        "exit_code": 0,
+        "global_frontier_reconciliation": _frontier_receipt(
+            task_run_id=run_id,
+            event_head=event_head,
+            inventory_ref=inventory_ref,
+            scan_generation="invalid-dispatch-frontier",
+            disposition="durable_wait",
+        ),
+    }
+    _write_scan_run(tmp_path, run_id, [seed, reconciliation])
+
+    report = scan_task_run(run_dir)
+
+    assert report["status"] == "partial"
+    assert report["projection_failures"][0]["reason_code"] == (
+        "DISPATCH_OUTCOME_PROJECTION_INVALID"
+    )
+    frontier = report["global_frontier_reconciliation"]
+    assert frontier["status"] == "invalid"
+    assert frontier["parent_state"] == "open"
+    assert frontier["parent_wait_claim_allowed"] is False
+    assert "GLOBAL_FRONTIER_DEPENDENCY_PROJECTION_INVALID" in frontier["reason_codes"]
+    assert "GLOBAL_FRONTIER_RECONCILIATION_PROJECTED" in report["reason_codes"]
 
 
 def test_identity_json_and_preflight_are_fail_closed_before_model(tmp_path: Path) -> None:

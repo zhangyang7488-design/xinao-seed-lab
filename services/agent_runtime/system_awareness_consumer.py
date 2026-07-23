@@ -5109,10 +5109,39 @@ def scan_task_run(
 
     resolved = Path(run_dir).resolve()
     task, state, events, hashes = _load_task_run(resolved)
-    dispatch_outcome_projection = _dispatch_outcome_projection_if_present(resolved, events)
+    projection_failures: list[dict[str, object]] = []
+    try:
+        dispatch_outcome_projection = _dispatch_outcome_projection_if_present(resolved, events)
+    except SystemAwarenessError as exc:
+        if exc.reason_code != "DISPATCH_OUTCOME_PROJECTION_INVALID":
+            raise
+        dispatch_outcome_projection = None
+        projection_failures.append(
+            {
+                "component": "dispatch_outcome_projection",
+                "status": "invalid",
+                "reason_code": exc.reason_code,
+                "message": str(exc),
+                "affected_claims": [
+                    "dispatch_outcome_projection",
+                    "parent_wait_claim",
+                ],
+                "authority": False,
+                "completion_claim_allowed": False,
+            }
+        )
     frontier_reconciliation = _frontier_reconciliation_from_events(
         resolved, str(task["run_id"]), events
     )
+    if (
+        projection_failures
+        and frontier_reconciliation is not None
+        and frontier_reconciliation.get("parent_wait_claim_allowed") is True
+    ):
+        frontier_reconciliation = _frontier_invalidated(
+            frontier_reconciliation,
+            "GLOBAL_FRONTIER_DEPENDENCY_PROJECTION_INVALID",
+        )
     problems, problem_history_binding = _project_problem_state_from_events(task, events)
     attempts = _attempts_from_evidence(events)
     native_total, native_usage_binding = _native_usage_total_from_events(events)
@@ -5135,6 +5164,7 @@ def scan_task_run(
         "consumer_id": "system_awareness_task_run_scanner",
         "authority": False,
         "completion_claim_allowed": False,
+        "status": "partial" if projection_failures else "valid",
         "source": {
             "task_run_dir": str(resolved),
             "run_id": task["run_id"],
@@ -5152,8 +5182,17 @@ def scan_task_run(
             "searchable_sha256": _sha256_bytes(searchable_text.encode("utf-8")),
             "reason_codes": ["UTF8_PATH_ROUNDTRIP_OK", "UTF8_EVENT_SEARCHABLE"],
         },
-        "reason_codes": ["SYSTEM_AWARENESS_SCAN_COMPLETED"],
+        "reason_codes": [
+            "SYSTEM_AWARENESS_SCAN_PARTIAL"
+            if projection_failures
+            else "SYSTEM_AWARENESS_SCAN_COMPLETED"
+        ],
     }
+    if projection_failures:
+        report["projection_failures"] = projection_failures
+        report["reason_codes"].extend(
+            str(failure["reason_code"]) for failure in projection_failures
+        )
     if dispatch_outcome_projection is not None:
         report["dispatch_outcome_projection"] = dispatch_outcome_projection
         report["reason_codes"].append("DISPATCH_OUTCOME_V2_PROJECTED")
