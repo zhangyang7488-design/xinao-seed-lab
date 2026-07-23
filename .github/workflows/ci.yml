@@ -94,6 +94,11 @@ jobs:
             ruff_paths: >-
               src/xinao/admission scripts/register/formal_vertical.py
               tests/unit/admission tests/unit/ledger/test_formal_vertical_registration.py
+          - project: discovery-operational-assurance
+            path: xinao_discovery
+            os: ubuntu-latest
+            pytest_args: -q tests/unit/assurance
+            ruff_paths: src/xinao/assurance tests/unit/assurance
     defaults:
       run:
         working-directory: ${{ matrix.path }}
