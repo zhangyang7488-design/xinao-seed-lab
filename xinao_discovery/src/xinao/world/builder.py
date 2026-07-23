@@ -25,8 +25,8 @@ DEFAULT_WORLD_ROOT = Path(
     r"D:\XINAO_RESEARCH_RUNTIME\projects\xinao_discovery\state\world\special-number-settlement.v1"
 )
 DEFAULT_BLUEPRINT_PATH = Path(
-    r"C:\Users\xx363\Desktop\主线\01_主线入口"
-    r"\blueprint.v1_已合并工具与执行纪律.json"
+    r"D:\XINAO_RESEARCH_RUNTIME\state\mainline_domain_research_current"
+    r"\blueprint.current_domain_research.json"
 )
 
 

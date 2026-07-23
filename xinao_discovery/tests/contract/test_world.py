@@ -4,7 +4,17 @@ from pathlib import Path
 
 import pytest
 
-from xinao.world.builder import DEFAULT_DATASET_PATH, build_world, replay_world
+from xinao.foundation.assertion_verifier_registry import canonical_projection_path
+from xinao.world.builder import (
+    DEFAULT_BLUEPRINT_PATH,
+    DEFAULT_DATASET_PATH,
+    build_world,
+    replay_world,
+)
+
+
+def test_world_builder_uses_current_canonical_projection() -> None:
+    assert canonical_projection_path() == DEFAULT_BLUEPRINT_PATH
 
 
 @pytest.mark.skipif(not DEFAULT_DATASET_PATH.is_file(), reason="formal dataset is not mounted")
