@@ -30,6 +30,12 @@ revoked, non-independent, or incomplete evidence produces a replayable `DENY`.
 `scripts/run_g8_operational_assurance_preflight.py` materializes the report,
 verification, and run manifest under a bounded runtime root. Even a valid G8
 `READY` report does not grant live-shadow admission or parent-mainline completion.
+`scripts/run_g8_reproducibility_dimension.py` builds only the reproducibility
+dimension in two phases: `capture` checks lock/metadata agreement, replays a
+frozen isolated environment, compares two fresh-process report materializations,
+and binds subject files; `finalize` requires a separate review bound to that
+exact capture before invoking the existing G8 consumer. Reproducibility alone
+keeps the report at `DENY` with the other five dimensions unready.
 
 Historical P0-P11 evidence projection:
 
