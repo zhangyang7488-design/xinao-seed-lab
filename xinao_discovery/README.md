@@ -23,6 +23,14 @@ and does not treat distinct runtime identities as proof of statistical independe
 an optional candidate bundle and emits a deterministic `READY` or `HOLD` report. The code,
 tests, public smoke, or a generated report do not themselves establish current G5 or G6.
 
+Current G8 preflight code lives in `xinao.assurance`. It consumes exactly six
+hash-bound evidence dimensions: security-negative, reproducibility, capacity,
+real recovery, supply chain, and independent audit. Missing, stale, tampered,
+revoked, non-independent, or incomplete evidence produces a replayable `DENY`.
+`scripts/run_g8_operational_assurance_preflight.py` materializes the report,
+verification, and run manifest under a bounded runtime root. Even a valid G8
+`READY` report does not grant live-shadow admission or parent-mainline completion.
+
 Historical P0-P11 evidence projection:
 
 The following bullets describe the original V1 vertical under source hash
