@@ -64,6 +64,10 @@ providers:
           - completion_claim_scope
           - local_completion_transition
           - continuous_run_disposition
+          - active_window_role
+          - interruption_frame_action
+          - resume_target_source
+          - completed_history_disposition
           - frontier_disposition
           - candidate_value
           - global_frontier_reconciled
@@ -137,8 +141,12 @@ providers:
           terminal_refill: { type: string, enum: [immediate_positive_value, not_applicable] }
           worker_receipt_disposition: { type: string, enum: [accept, reject_and_recover, reuse, not_applicable] }
           completion_claim_scope: { type: string, enum: [local_object, parent_mainline, not_applicable] }
-          local_completion_transition: { type: string, enum: [finish_bounded_task, rederive_mainline_frontier, not_applicable] }
+          local_completion_transition: { type: string, enum: [finish_bounded_task, rederive_mainline_frontier, resume_suspended_parent, not_applicable] }
           continuous_run_disposition: { type: string, enum: [continue, stop_requested, not_applicable] }
+          active_window_role: { type: string, enum: [decision_window, mainline_owner, bounded_task, not_applicable] }
+          interruption_frame_action: { type: string, enum: [push_inserted_child, resume_suspended_parent, preserve_current_parent, not_applicable] }
+          resume_target_source: { type: string, enum: [suspended_frame, current_user_increment, not_applicable] }
+          completed_history_disposition: { type: string, enum: [keep_closed, reopen_with_new_evidence, not_applicable] }
           frontier_disposition: { type: string, enum: [execute, advance_mainline, durable_wait, not_applicable] }
           candidate_value: { type: string, enum: [positive, local_no_action, no_positive_global_candidate, not_applicable] }
           global_frontier_reconciled: { type: boolean }

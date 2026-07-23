@@ -62,7 +62,9 @@ module.exports = (output, context) => {
           ? 'not_applicable|query_now|reuse_episode_cache'
           : 'query_now|reuse_episode_cache'),
   );
-  const expectedTextWriter = context.vars.expected_text_writer ?? 'not_applicable';
+  const expectedTextWriters = alternatives(
+    context.vars.expected_text_writer ?? 'not_applicable',
+  );
   const expectedDegradedScope = context.vars.expected_degraded_scope ?? 'none';
   const expectedPreserveParentCompletionBar =
     context.vars.expected_preserve_parent_completion_bar ?? true;
@@ -101,6 +103,22 @@ module.exports = (output, context) => {
     'expected_continuous_run_disposition',
   )
     ? alternatives(context.vars.expected_continuous_run_disposition)
+    : null;
+  const expectedActiveWindowRoles = hasVar('expected_active_window_role')
+    ? alternatives(context.vars.expected_active_window_role)
+    : null;
+  const expectedInterruptionFrameActions = hasVar(
+    'expected_interruption_frame_action',
+  )
+    ? alternatives(context.vars.expected_interruption_frame_action)
+    : null;
+  const expectedResumeTargetSources = hasVar('expected_resume_target_source')
+    ? alternatives(context.vars.expected_resume_target_source)
+    : null;
+  const expectedCompletedHistoryDispositions = hasVar(
+    'expected_completed_history_disposition',
+  )
+    ? alternatives(context.vars.expected_completed_history_disposition)
     : null;
   const expectedFrontierDispositions = hasVar('expected_frontier_disposition')
     ? alternatives(context.vars.expected_frontier_disposition)
@@ -187,7 +205,10 @@ module.exports = (output, context) => {
       expectedQuotaActions.length === 1
         ? expectedQuotaActions[0]
         : expectedQuotaActions,
-    text_writer: expectedTextWriter,
+    text_writer:
+      expectedTextWriters.length === 1
+        ? expectedTextWriters[0]
+        : expectedTextWriters,
     downstream_recovery_required:
       context.vars.expected_downstream_recovery_required ?? false,
     freeze_unaffected_provider:
@@ -240,6 +261,30 @@ module.exports = (output, context) => {
       expectedContinuousRunDispositions.length === 1
         ? expectedContinuousRunDispositions[0]
         : expectedContinuousRunDispositions;
+  }
+  if (expectedActiveWindowRoles) {
+    expected.active_window_role =
+      expectedActiveWindowRoles.length === 1
+        ? expectedActiveWindowRoles[0]
+        : expectedActiveWindowRoles;
+  }
+  if (expectedInterruptionFrameActions) {
+    expected.interruption_frame_action =
+      expectedInterruptionFrameActions.length === 1
+        ? expectedInterruptionFrameActions[0]
+        : expectedInterruptionFrameActions;
+  }
+  if (expectedResumeTargetSources) {
+    expected.resume_target_source =
+      expectedResumeTargetSources.length === 1
+        ? expectedResumeTargetSources[0]
+        : expectedResumeTargetSources;
+  }
+  if (expectedCompletedHistoryDispositions) {
+    expected.completed_history_disposition =
+      expectedCompletedHistoryDispositions.length === 1
+        ? expectedCompletedHistoryDispositions[0]
+        : expectedCompletedHistoryDispositions;
   }
   if (expectedFrontierDispositions) {
     expected.frontier_disposition =
@@ -306,6 +351,7 @@ module.exports = (output, context) => {
     'worker_provider',
     'worker_transport',
     'quota_action',
+    'text_writer',
     'quota_query_disposition',
     'owner_execution_state',
     'terminal_refill',
@@ -313,6 +359,10 @@ module.exports = (output, context) => {
     'completion_claim_scope',
     'local_completion_transition',
     'continuous_run_disposition',
+    'active_window_role',
+    'interruption_frame_action',
+    'resume_target_source',
+    'completed_history_disposition',
     'frontier_disposition',
     'candidate_value',
     'decision_responsibility',
@@ -340,6 +390,18 @@ module.exports = (output, context) => {
     (expectedContinuousRunDispositions === null ||
       expectedContinuousRunDispositions.includes(
         parsed.continuous_run_disposition,
+      )) &&
+    (expectedActiveWindowRoles === null ||
+      expectedActiveWindowRoles.includes(parsed.active_window_role)) &&
+    (expectedInterruptionFrameActions === null ||
+      expectedInterruptionFrameActions.includes(
+        parsed.interruption_frame_action,
+      )) &&
+    (expectedResumeTargetSources === null ||
+      expectedResumeTargetSources.includes(parsed.resume_target_source)) &&
+    (expectedCompletedHistoryDispositions === null ||
+      expectedCompletedHistoryDispositions.includes(
+        parsed.completed_history_disposition,
       )) &&
     (expectedFrontierDispositions === null ||
       expectedFrontierDispositions.includes(parsed.frontier_disposition)) &&
@@ -372,7 +434,7 @@ module.exports = (output, context) => {
     expectedWorkerTransports.includes(parsed.worker_transport) &&
     expectedQuotaActions.includes(parsed.quota_action) &&
     parsed.mainline_owner === 'codex_main' &&
-    parsed.text_writer === expectedTextWriter &&
+    expectedTextWriters.includes(parsed.text_writer) &&
     parsed.mature_comparison_triggered ===
       context.vars.expected_mature_comparison_triggered &&
     parsed.downstream_recovery_required ===
@@ -424,7 +486,16 @@ module.exports = (output, context) => {
       ? parsed.continuous_run_disposition === 'not_applicable'
       : parsed.local_completion_transition === 'rederive_mainline_frontier'
         ? parsed.continuous_run_disposition === 'continue'
+        : parsed.local_completion_transition === 'resume_suspended_parent'
+          ? parsed.continuous_run_disposition === 'not_applicable' &&
+            parsed.interruption_frame_action === 'resume_suspended_parent' &&
+            parsed.resume_target_source === 'suspended_frame'
         : true;
+  const interruptionFrameIsCoherent =
+    parsed.interruption_frame_action !== 'resume_suspended_parent' ||
+    (parsed.local_completion_transition === 'resume_suspended_parent' &&
+      parsed.active_window_role !== 'mainline_owner' &&
+      parsed.completed_history_disposition === 'keep_closed');
   const continuousReuseAdvancesBoundConsumer =
     parsed.worker_receipt_disposition !== 'reuse' ||
     parsed.continuous_run_disposition !== 'continue' ||
@@ -474,6 +545,7 @@ module.exports = (output, context) => {
     quotaFailureContinues &&
     quotaDispositionIsCoherent &&
     localCompletionTransitionIsCoherent &&
+    interruptionFrameIsCoherent &&
     continuousReuseAdvancesBoundConsumer &&
     atomSelectionMatches &&
     lowerLevelScopePreservesParent &&
@@ -490,6 +562,7 @@ module.exports = (output, context) => {
     quotaFailureContinues,
     quotaDispositionIsCoherent,
     localCompletionTransitionIsCoherent,
+    interruptionFrameIsCoherent,
     continuousReuseAdvancesBoundConsumer,
     atomSelectionMatches,
     expectedRecoveredAtoms: [...expectedRecoveredAtoms].sort(),

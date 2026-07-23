@@ -3,7 +3,7 @@
   "purpose": "Turn observed intent or object mismatches into balanced live-agent regressions without a resident gate or routine user questions.",
   "case_source": "cases.yaml",
   "decision_model": "decision_model.v1.json",
-  "case_count": 64,
+  "case_count": 67,
   "profiles": {
     "smoke": "Fast representative checks for ordinary productivity, topology, ambiguity, worker routing, and preference learning.",
     "core": "The normal regression bank for stable behavior changes.",
@@ -57,6 +57,16 @@
       "source": "Langfuse trace-linked dataset model",
       "url": "https://langfuse.com/docs/evaluation/experiments/data-model",
       "use": "retain a source trace reference when a real failure becomes a candidate; no Langfuse platform required"
+    },
+    {
+      "source": "LangGraph persistence and interrupt checkpoints",
+      "url": "https://docs.langchain.com/oss/python/langgraph/interrupts",
+      "use": "resume an interruption from the same durable thread and exact checkpoint rather than reconstructing state from the latest topic"
+    },
+    {
+      "source": "Goal resumption-lag research",
+      "url": "https://pubmed.ncbi.nlm.nih.gov/19102614/",
+      "use": "preserve an explicit return cue and suspended-goal state before an interruption so resumption does not depend on unaided recall"
     },
     {
       "source": "Erlang OTP supervisor strategies",
