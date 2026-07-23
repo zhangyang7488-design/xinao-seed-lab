@@ -29,20 +29,23 @@ All public objects remain marked synthetic and non-authoritative. Any future act
 real provider call, or broader threat model requires a separate work key and completion
 contract.
 
-## Full-campaign capacity preflight
+## Bounded-family route preflight
 
 `scripts/run_g4_full_capacity_preflight.py` is the fail-closed consumer for the next
-full-family boundary. It selects three size-stratified cases from a newly generated
+bounded family execution boundary. It selects three size-stratified cases from a newly generated
 training-only suite, sends only their public views, and accepts route measurements only
 when the relay records the exact prompt hash, a hash-pinned provider contract, the
 filesystem-unavailable boundary, actual model identity, positive usage, and artifact hash
 readbacks.
 
 The preflight never generates a heldout suite, scores an outcome, freezes authority, or
-closes G4. Percentage-only quota telemetry remains advisory. Missing absolute token, call,
-or wall-clock capacity therefore ends at `G4_FULL_CAPACITY_HOLD_VERIFIED`; an immutable
-attempt can be re-adjudicated without another provider call when adjudication logic changes.
-A relay-envelope or route-identity change requires a fresh public calibration.
+closes G4. Percentage-only and absolute quota telemetry are planning advisories: neither is
+a hard gate for pre-registered, bounded family batches. Every executable family still needs
+its own PowerPlan, budget, stopping conditions, immutable receipts, and no-peek boundary;
+`G4_FULL` remains false until the complete H01-H14/configuration/repeat result set is present.
+An immutable calibration attempt can be re-adjudicated without another provider call when
+adjudication logic changes. A relay-envelope or route-identity change requires a fresh
+public calibration.
 
 Live dispatch requires `--launcher` to name an installed provider-bound thin adapter.
 The provider-neutral stable relay entry intentionally has no implicit provider, endpoint,

@@ -36,10 +36,10 @@ COMPLETION_CARD_VERSION = "xinao.work_key_completion_card.v1"
 EPISODE_OUTCOME_VERSION = "xinao.episode_outcome_projection.v1"
 PROBLEM_PROJECTION_VERSION = "xinao.problem_projection.v1"
 PROBLEM_TRANSITION_VERSION = "xinao.problem_transition.v1"
-FRONTIER_RECONCILIATION_VERSION = "xinao.global_frontier_reconciliation.v3"
+FRONTIER_RECONCILIATION_VERSION = "xinao.global_frontier_reconciliation.v4"
 LEGACY_FRONTIER_RECONCILIATION_VERSION = "xinao.global_frontier_reconciliation.v1"
 FRONTIER_INVENTORY_VERSION = "xinao.global_frontier_inventory.v2"
-FRONTIER_EXTERNALITY_PROOF_VERSION = "xinao.frontier_externality_proof.v1"
+FRONTIER_EXTERNALITY_PROOF_VERSION = "xinao.frontier_externality_proof.v2"
 FRONTIER_EXTERNAL_OBSERVATION_SOURCE_KINDS = frozenset(
     {
         "provider_api_observation",
@@ -1509,6 +1509,9 @@ def _legacy_untrusted_frontier(source_schema_version: object) -> dict[str, Any]:
     legacy_reason = {
         "xinao.global_frontier_reconciliation.v1": ("GLOBAL_FRONTIER_V1_LEGACY_UNTRUSTED"),
         "xinao.global_frontier_reconciliation.v2": ("GLOBAL_FRONTIER_V2_LEGACY_UNTRUSTED"),
+        "xinao.global_frontier_reconciliation.v3": (
+            "GLOBAL_FRONTIER_V3_REQUIREMENT_BASIS_UNTRUSTED"
+        ),
     }.get(source_version, "GLOBAL_FRONTIER_SCHEMA_UNTRUSTED")
     return {
         "schema_version": FRONTIER_RECONCILIATION_VERSION,
@@ -1631,6 +1634,132 @@ def _frontier_evidence_bindings(references: object) -> list[dict[str, str]]:
     return bindings
 
 
+def _frontier_requirement_basis(raw: object) -> tuple[dict[str, Any], dict[str, Any]]:
+    if not isinstance(raw, Mapping):
+        raise SystemAwarenessError(
+            "GLOBAL_EXTERNALITY_REQUIREMENT_BASIS_MISSING",
+            "external wait requires a canonical parent requirement basis",
+        )
+    basis = dict(raw)
+    if basis.get("source_kind") != "canonical_parent_contract":
+        raise SystemAwarenessError(
+            "GLOBAL_EXTERNALITY_REQUIREMENT_SOURCE_INVALID",
+            "requirement basis must come from a canonical parent contract",
+        )
+
+    catalog_path, catalog_sha256 = _frontier_hash_bound_file(
+        basis.get("authority_catalog_ref"),
+        invalid_reason="GLOBAL_EXTERNALITY_REQUIREMENT_CATALOG_REF_INVALID",
+        unreadable_reason="GLOBAL_EXTERNALITY_REQUIREMENT_CATALOG_UNREADABLE",
+        drift_reason="GLOBAL_EXTERNALITY_REQUIREMENT_CATALOG_HASH_DRIFT",
+    )
+    try:
+        catalog, _ = _read_json(catalog_path, "authority_catalog")
+    except SystemAwarenessError as exc:
+        raise SystemAwarenessError(
+            "GLOBAL_EXTERNALITY_REQUIREMENT_CATALOG_UNREADABLE",
+            "authority catalog must be a JSON object",
+        ) from exc
+    if (
+        catalog.get("schema_version") != "xinao.codex_context_catalog.v2"
+        or catalog.get("authority") is not False
+        or catalog.get("stage_specific_entries_forbidden") is not True
+        or not isinstance(catalog.get("entries"), list)
+    ):
+        raise SystemAwarenessError(
+            "GLOBAL_EXTERNALITY_REQUIREMENT_CATALOG_INVALID",
+            "authority catalog does not identify stable canonical parent sources",
+        )
+
+    source_path, source_sha256 = _frontier_hash_bound_file(
+        basis.get("authority_source_ref"),
+        invalid_reason="GLOBAL_EXTERNALITY_REQUIREMENT_SOURCE_REF_INVALID",
+        unreadable_reason="GLOBAL_EXTERNALITY_REQUIREMENT_SOURCE_UNREADABLE",
+        drift_reason="GLOBAL_EXTERNALITY_REQUIREMENT_SOURCE_HASH_DRIFT",
+    )
+    source_identity = os.path.normcase(str(source_path))
+    matching_entries = [
+        entry
+        for entry in catalog["entries"]
+        if isinstance(entry, Mapping)
+        and os.path.normcase(str(Path(str(entry.get("source_path") or "")).resolve()))
+        == source_identity
+    ]
+    if len(matching_entries) != 1:
+        raise SystemAwarenessError(
+            "GLOBAL_EXTERNALITY_REQUIREMENT_SOURCE_NOT_CATALOGED",
+            "parent requirement source must be an exact current catalog entry",
+        )
+    entry = dict(matching_entries[0])
+    authority_scope = str(entry.get("authority_scope") or "").strip()
+    content_type = str(entry.get("content_type") or "").strip()
+    cataloged_sha256 = str(entry.get("sha256") or "").strip().lower()
+    if (
+        entry.get("available") is not True
+        or entry.get("runtime_status_source") is not False
+        or not content_type.startswith("canonical_")
+        or not authority_scope
+        or authority_scope == "projection_only"
+        or authority_scope.startswith("none")
+        or cataloged_sha256 != source_sha256
+    ):
+        raise SystemAwarenessError(
+            "GLOBAL_EXTERNALITY_REQUIREMENT_AUTHORITY_INVALID",
+            "projection, runtime status, or non-authority material cannot create a parent blocker",
+        )
+
+    locator = _require_mapping(basis.get("locator"), "requirement_basis.locator")
+    start = locator.get("start")
+    end = locator.get("end")
+    if (
+        locator.get("kind") != "line_range"
+        or isinstance(start, bool)
+        or not isinstance(start, int)
+        or isinstance(end, bool)
+        or not isinstance(end, int)
+        or start < 1
+        or end < start
+    ):
+        raise SystemAwarenessError(
+            "GLOBAL_EXTERNALITY_REQUIREMENT_LOCATOR_INVALID",
+            "requirement basis must identify a positive one-based line range",
+        )
+    try:
+        source_lines = source_path.read_text(encoding="utf-8-sig").splitlines()
+    except (OSError, UnicodeError) as exc:
+        raise SystemAwarenessError(
+            "GLOBAL_EXTERNALITY_REQUIREMENT_SOURCE_UNREADABLE",
+            "canonical parent source must be readable UTF-8 text",
+        ) from exc
+    if end > len(source_lines):
+        raise SystemAwarenessError(
+            "GLOBAL_EXTERNALITY_REQUIREMENT_LOCATOR_INVALID",
+            "requirement line range exceeds canonical parent source",
+        )
+    actual_excerpt = "\n".join(source_lines[start - 1 : end])
+    if basis.get("authority_excerpt") != actual_excerpt or not actual_excerpt.strip():
+        raise SystemAwarenessError(
+            "GLOBAL_EXTERNALITY_REQUIREMENT_EXCERPT_MISMATCH",
+            "requirement excerpt must exactly match the canonical parent source",
+        )
+    return {
+        "source_kind": "canonical_parent_contract",
+        "authority_scope": authority_scope,
+        "content_type": content_type,
+        "locator": {"kind": "line_range", "start": start, "end": end},
+        "authority_excerpt": actual_excerpt,
+    }, {
+        "authority_catalog": {
+            "path": str(catalog_path),
+            "sha256": catalog_sha256,
+        },
+        "authority_source": {
+            "path": str(source_path),
+            "sha256": source_sha256,
+        },
+    }
+
+
 def _read_hash_bound_frontier_externality_proof(
     reference: object,
     *,
@@ -1676,6 +1805,9 @@ def _read_hash_bound_frontier_externality_proof(
             "GLOBAL_EXTERNALITY_EVENT_HEAD_MISMATCH",
             "externality proof does not observe the current frontier generation",
         )
+    requirement_basis, requirement_binding = _frontier_requirement_basis(
+        proof.get("requirement_basis")
+    )
 
     observed_fact = _require_mapping(proof.get("observed_fact"), "externality_proof.observed_fact")
     source_kind = str(observed_fact.get("source_kind") or "").strip()
@@ -1728,6 +1860,7 @@ def _read_hash_bound_frontier_externality_proof(
         "schema_version": FRONTIER_EXTERNALITY_PROOF_VERSION,
         "atom_id": atom_id,
         "event_head": proof_head,
+        "requirement_basis": requirement_basis,
         "observed_fact": {
             "source_kind": source_kind,
             "subject": subject,
@@ -1752,6 +1885,7 @@ def _read_hash_bound_frontier_externality_proof(
         "path": str(path),
         "sha256": actual_sha256,
         "schema_version": FRONTIER_EXTERNALITY_PROOF_VERSION,
+        "requirement_basis": requirement_binding,
         "observation_evidence": observation_bindings,
         "constructibility_evidence": constructibility_bindings,
     }

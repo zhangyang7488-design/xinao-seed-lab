@@ -818,6 +818,8 @@ def _frontier_externality_proof_ref(
     source_kind: str = "provider_api_observation",
     construction_possible: bool = False,
     proof_event_head: dict[str, object] | None = None,
+    include_requirement_basis: bool = True,
+    authority_scope: str = "domain_only",
 ) -> str:
     observation_ref = _hash_bound_json_ref(
         tmp_path,
@@ -838,33 +840,69 @@ def _frontier_externality_proof_ref(
             "construction_possible": construction_possible,
         },
     )
+    authority_source = tmp_path / f"{name}.canonical-parent-spec.txt"
+    authority_excerpt = f"{atom_id} is required from the external provider."
+    authority_source.write_text(authority_excerpt + "\n", encoding="utf-8")
+    authority_source_sha256 = hashlib.sha256(authority_source.read_bytes()).hexdigest()
+    authority_catalog_ref = _hash_bound_json_ref(
+        tmp_path,
+        f"{name}.authority-catalog",
+        {
+            "schema_version": "xinao.codex_context_catalog.v2",
+            "authority": False,
+            "stage_specific_entries_forbidden": True,
+            "entries": [
+                {
+                    "source_path": str(authority_source),
+                    "content_type": (
+                        "canonical_current_domain_research_spec"
+                        if authority_scope == "domain_only"
+                        else "current_domain_machine_projection_non_authority"
+                    ),
+                    "authority_scope": authority_scope,
+                    "runtime_status_source": False,
+                    "sha256": authority_source_sha256,
+                    "available": True,
+                }
+            ],
+        },
+    )
+    proof: dict[str, object] = {
+        "schema_version": "xinao.frontier_externality_proof.v2",
+        "authority": False,
+        "completion_claim_allowed": False,
+        "atom_id": atom_id,
+        "parent_mainline_id": "mainline-1",
+        "task_run_id": task_run_id,
+        "event_head": proof_event_head or event_head,
+        "observed_fact": {
+            "source_kind": source_kind,
+            "subject": atom_id,
+            "observation": "The required fact is absent from the current external source.",
+            "observed_at": "2026-07-23T06:00:00Z",
+            "evidence_refs": [observation_ref],
+        },
+        "constructibility_counterfactual": {
+            "scope": "current_authorized_object_and_topology",
+            "authorized_objects_checked": ["mainline-1"],
+            "topology_nodes_checked": ["repository", "installed runtime"],
+            "local_capabilities_checked": ["source inspection", "runtime probe"],
+            "construction_possible": construction_possible,
+            "evidence_refs": [constructibility_ref],
+        },
+    }
+    if include_requirement_basis:
+        proof["requirement_basis"] = {
+            "source_kind": "canonical_parent_contract",
+            "authority_catalog_ref": authority_catalog_ref,
+            "authority_source_ref": f"{authority_source}#sha256={authority_source_sha256}",
+            "locator": {"kind": "line_range", "start": 1, "end": 1},
+            "authority_excerpt": authority_excerpt,
+        }
     return _hash_bound_json_ref(
         tmp_path,
         f"{name}.externality-proof",
-        {
-            "schema_version": "xinao.frontier_externality_proof.v1",
-            "authority": False,
-            "completion_claim_allowed": False,
-            "atom_id": atom_id,
-            "parent_mainline_id": "mainline-1",
-            "task_run_id": task_run_id,
-            "event_head": proof_event_head or event_head,
-            "observed_fact": {
-                "source_kind": source_kind,
-                "subject": atom_id,
-                "observation": "The required fact is absent from the current external source.",
-                "observed_at": "2026-07-23T06:00:00Z",
-                "evidence_refs": [observation_ref],
-            },
-            "constructibility_counterfactual": {
-                "scope": "current_authorized_object_and_topology",
-                "authorized_objects_checked": ["mainline-1"],
-                "topology_nodes_checked": ["repository", "installed runtime"],
-                "local_capabilities_checked": ["source inspection", "runtime probe"],
-                "construction_possible": construction_possible,
-                "evidence_refs": [constructibility_ref],
-            },
-        },
+        proof,
     )
 
 
@@ -911,7 +949,7 @@ def _frontier_receipt(
     disposition: str,
 ) -> dict[str, object]:
     return {
-        "schema_version": "xinao.global_frontier_reconciliation.v3",
+        "schema_version": "xinao.global_frontier_reconciliation.v4",
         "parent_mainline_id": "mainline-1",
         "task_run_id": task_run_id,
         "event_head": event_head,
@@ -1114,7 +1152,27 @@ def test_global_frontier_v2_parent_wait_is_legacy_untrusted() -> None:
     assert "GLOBAL_FRONTIER_V2_LEGACY_UNTRUSTED" in projected["reason_codes"]
 
 
-def test_global_frontier_v3_rejects_unatomized_mixed_and_self_proving_waits(
+def test_global_frontier_v3_parent_wait_is_legacy_untrusted() -> None:
+    receipt = _frontier_receipt(
+        task_run_id="frontier-v3",
+        event_head={
+            "event_count": 1,
+            "event_id": "seed-1",
+            "prefix_sha256": "1" * 64,
+        },
+        inventory_ref="legacy-v3-is-not-read",
+        scan_generation="legacy-v3",
+        disposition="durable_wait",
+    )
+    receipt["schema_version"] = "xinao.global_frontier_reconciliation.v3"
+    projected = reconcile_global_frontier(receipt)
+    assert projected["status"] == "legacy_untrusted"
+    assert projected["parent_state"] == "open"
+    assert projected["parent_wait_claim_allowed"] is False
+    assert "GLOBAL_FRONTIER_V3_REQUIREMENT_BASIS_UNTRUSTED" in projected["reason_codes"]
+
+
+def test_global_frontier_v4_rejects_unatomized_mixed_and_self_proving_waits(
     tmp_path: Path,
 ) -> None:
     task_run_id = "frontier-v3-negative"
@@ -1242,7 +1300,7 @@ def test_global_frontier_v3_rejects_unatomized_mixed_and_self_proving_waits(
     )
 
 
-def test_global_frontier_v3_externality_proof_binds_current_event_head(
+def test_global_frontier_v4_externality_proof_binds_current_event_head(
     tmp_path: Path,
 ) -> None:
     task_run_id = "frontier-v3-proof-head"
@@ -1284,6 +1342,90 @@ def test_global_frontier_v3_externality_proof_binds_current_event_head(
     assert "GLOBAL_EXTERNALITY_EVENT_HEAD_MISMATCH" in result["reason_codes"]
 
 
+def test_global_frontier_external_wait_requires_canonical_parent_requirement(
+    tmp_path: Path,
+) -> None:
+    task_run_id = "frontier-requirement-basis"
+    event_head = {
+        "event_count": 1,
+        "event_id": "seed-1",
+        "prefix_sha256": "1" * 64,
+    }
+    transactions = _global_frontier_transactions(
+        tmp_path, task_run_id=task_run_id, event_head=event_head
+    )
+    atom = transactions[-1]["blocking_atoms"][0]
+    atom["externality_proof_ref"] = _frontier_externality_proof_ref(
+        tmp_path,
+        name="missing-requirement-basis",
+        task_run_id=task_run_id,
+        event_head=event_head,
+        atom_id=atom["atom_id"],
+        include_requirement_basis=False,
+    )
+    inventory_ref = _frontier_inventory_ref(
+        tmp_path,
+        name="missing-requirement-basis",
+        task_run_id=task_run_id,
+        event_head=event_head,
+        transactions=transactions,
+        covered=[row["transaction_id"] for row in transactions],
+    )
+    result = reconcile_global_frontier(
+        _frontier_receipt(
+            task_run_id=task_run_id,
+            event_head=event_head,
+            inventory_ref=inventory_ref,
+            scan_generation="missing-requirement-basis",
+            disposition="durable_wait",
+        )
+    )
+    assert result["parent_wait_claim_allowed"] is False
+    assert "GLOBAL_EXTERNALITY_REQUIREMENT_BASIS_MISSING" in result["reason_codes"]
+
+
+def test_global_frontier_rejects_projection_as_parent_requirement(
+    tmp_path: Path,
+) -> None:
+    task_run_id = "frontier-projection-requirement"
+    event_head = {
+        "event_count": 1,
+        "event_id": "seed-1",
+        "prefix_sha256": "1" * 64,
+    }
+    transactions = _global_frontier_transactions(
+        tmp_path, task_run_id=task_run_id, event_head=event_head
+    )
+    atom = transactions[-1]["blocking_atoms"][0]
+    atom["externality_proof_ref"] = _frontier_externality_proof_ref(
+        tmp_path,
+        name="projection-requirement",
+        task_run_id=task_run_id,
+        event_head=event_head,
+        atom_id=atom["atom_id"],
+        authority_scope="projection_only",
+    )
+    inventory_ref = _frontier_inventory_ref(
+        tmp_path,
+        name="projection-requirement",
+        task_run_id=task_run_id,
+        event_head=event_head,
+        transactions=transactions,
+        covered=[row["transaction_id"] for row in transactions],
+    )
+    result = reconcile_global_frontier(
+        _frontier_receipt(
+            task_run_id=task_run_id,
+            event_head=event_head,
+            inventory_ref=inventory_ref,
+            scan_generation="projection-requirement",
+            disposition="durable_wait",
+        )
+    )
+    assert result["parent_wait_claim_allowed"] is False
+    assert "GLOBAL_EXTERNALITY_REQUIREMENT_AUTHORITY_INVALID" in result["reason_codes"]
+
+
 def test_scan_task_run_treats_v1_parent_wait_as_legacy_untrusted(tmp_path: Path) -> None:
     run_dir = _write_scan_run(
         tmp_path,
@@ -1320,7 +1462,7 @@ def test_scan_task_run_treats_v1_parent_wait_as_legacy_untrusted(tmp_path: Path)
     assert "GLOBAL_FRONTIER_RECONCILIATION_PROJECTED" in report["reason_codes"]
 
 
-def test_global_frontier_v3_binds_exact_task_run_prefix_inventory_and_stales_on_later_event(
+def test_global_frontier_v4_binds_exact_task_run_prefix_inventory_and_stales_on_later_event(
     tmp_path: Path,
 ) -> None:
     run_id = "frontier-v3"

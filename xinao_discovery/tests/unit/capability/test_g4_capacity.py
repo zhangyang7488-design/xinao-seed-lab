@@ -7,8 +7,8 @@ from pathlib import Path
 import pytest
 
 from xinao.capability.g4_capacity import (
-    TERMINAL_FEASIBLE,
-    TERMINAL_HOLD,
+    TERMINAL_ROUTE_HOLD,
+    TERMINAL_ROUTE_READY,
     adjudicate_capacity,
     build_subject_prompt,
     normalize_relay_measurement,
@@ -187,16 +187,20 @@ def test_relay_measurement_requires_prompt_and_route_contract_evidence() -> None
     assert "filesystem_boundary_recorded" in result["problems"]
 
 
-def test_percentage_only_quota_holds_even_with_valid_route_measurements() -> None:
+def test_percentage_only_quota_does_not_block_bounded_family_route() -> None:
     report = adjudicate_capacity(
         measurements=[_measurement("low"), _measurement("median"), _measurement("high")],
         quota_snapshot={"codex": {"remainingPercent": 59}},
         required_campaign_cells=10_206,
     )
-    assert report["terminal"] == TERMINAL_HOLD
-    assert report["capacity_feasible"] is False
-    assert "QUOTA_TELEMETRY_PERCENTAGE_ONLY_ADVISORY" in report["reasons"]
+    assert report["terminal"] == TERMINAL_ROUTE_READY
+    assert report["route_ready_for_bounded_family_planning"] is True
+    assert report["absolute_capacity_available"] is False
+    assert report["single_shot_capacity_required"] is False
+    assert "QUOTA_TELEMETRY_PERCENTAGE_ONLY_ADVISORY" in report["advisories"]
+    assert "QUOTA_TELEMETRY_PERCENTAGE_ONLY_ADVISORY" not in report["reasons"]
     assert report["authority_freeze_allowed"] is False
+    assert report["global_wait_allowed"] is False
     assert report["hidden_outcome_access"] is False
     assert report["g4_closed"] is False
 
@@ -228,7 +232,7 @@ def test_invalid_route_reasons_describe_failed_evidence() -> None:
     assert "ROUTE_MEASUREMENT_PROMPT_HASH_RECORDED" not in report["reasons"]
 
 
-def test_absolute_capacity_can_make_pre_outcome_gate_feasible() -> None:
+def test_absolute_capacity_is_optional_planning_telemetry() -> None:
     measurements = [_measurement("low"), _measurement("median"), _measurement("high")]
     report = adjudicate_capacity(
         measurements=measurements,
@@ -245,9 +249,12 @@ def test_absolute_capacity_can_make_pre_outcome_gate_feasible() -> None:
             "source": "owner-pinned-test-bound",
         },
     )
-    assert report["terminal"] == TERMINAL_FEASIBLE
-    assert report["capacity_feasible"] is True
-    assert report["authority_freeze_allowed"] is True
+    assert report["terminal"] == TERMINAL_ROUTE_READY
+    assert report["route_ready_for_bounded_family_planning"] is True
+    assert report["absolute_capacity_available"] is True
+    assert report["full_campaign_precommit_sufficient"] is True
+    assert report["authority_freeze_allowed"] is False
+    assert report["global_wait_allowed"] is False
     assert report["g4_full"] is False
 
 
@@ -262,7 +269,34 @@ def test_zero_measurements_fail_closed_to_hold_instead_of_raising() -> None:
         quota_snapshot={"codex": {"remainingPercent": 59}},
         required_campaign_cells=10_206,
     )
-    assert report["terminal"] == TERMINAL_HOLD
+    assert report["terminal"] == TERMINAL_ROUTE_HOLD
     assert "THREE_SIZE_STRATA_NOT_MEASURED" in report["reasons"]
     assert "ROUTE_MEASUREMENT_INVALID" not in report["reasons"]
     assert report["measured_max_tokens_per_call"] is None
+
+
+def test_small_absolute_bound_cannot_recreate_a_single_shot_gate() -> None:
+    report = adjudicate_capacity(
+        measurements=[_measurement("low"), _measurement("median"), _measurement("high")],
+        quota_snapshot={
+            "hard_available_tokens": 1,
+            "hard_max_calls": 1,
+            "hard_wall_clock_ms": 1,
+        },
+        required_campaign_cells=10_206,
+        hard_bounds={
+            "available_tokens": 1,
+            "max_calls": 1,
+            "wall_clock_ms": 1,
+            "source": "small-observed-bound",
+        },
+    )
+    assert report["terminal"] == TERMINAL_ROUTE_READY
+    assert report["route_ready_for_bounded_family_planning"] is True
+    assert report["full_campaign_precommit_sufficient"] is False
+    assert "OBSERVED_TOKEN_CAPACITY_BELOW_FULL_CAMPAIGN_ESTIMATE" in report["advisories"]
+    assert "OBSERVED_CALL_CAPACITY_BELOW_FULL_CAMPAIGN_ESTIMATE" in report["advisories"]
+    assert "OBSERVED_WALL_BOUND_BELOW_FULL_CAMPAIGN_ESTIMATE" in report["advisories"]
+    assert report["reasons"] == []
+    assert report["family_power_plan_required"] is True
+    assert report["full_report_requires_complete_campaign"] is True
