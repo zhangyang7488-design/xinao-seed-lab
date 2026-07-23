@@ -23,7 +23,7 @@ dev = [
 human-capabilities = [
   "duckdb>=1.5,<2",
   "faster-whisper>=1.2,<2",
-  "jupyterlab>=4.6,<5",
+  "jupyterlab>=4.6.2,<5",
   "markitdown[docx,outlook,pdf,pptx,xls,xlsx]>=0.1.5,<0.2",
   "polars>=1.42,<2",
 ]
