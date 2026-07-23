@@ -16,6 +16,7 @@ args = [
   '-m',
   'services.mcp.xinao_sandbox_mcp_server',
 ]
+cwd = 'E:\XINAO_RESEARCH_WORKSPACES\S'
 enabled = true
 startup_timeout_sec = 60
 tool_timeout_sec = 360

@@ -34,6 +34,7 @@ ALLOWED_AGENT_RUNTIME_MODULES = {
     "__init__.py",
     "action_resume_receipt.py",
     "audit_adjudication.py",
+    "carrier_identity.py",
     "closure_test_activities.py",
     "closure_test_proof.py",
     "codex_inner_profile_consumer.py",

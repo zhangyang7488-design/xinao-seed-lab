@@ -3,13 +3,13 @@
 from __future__ import annotations
 
 import json
-import os
 import subprocess
 import sys
 from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+from services.agent_runtime.carrier_identity import resolve_code_carrier_root
 from services.agent_runtime.thin_evidence_writer import (
     DEFAULT_RUNTIME,
     append_jsonl,
@@ -24,7 +24,7 @@ from services.agent_runtime.thin_glue_stack import l0_intake_markdown, l9_probe_
 from services.agent_runtime.thin_langgraph_closure import run_closure_graph
 
 SCHEMA_VERSION = "xinao.codex_s.closure_test_activities.v1"
-DEFAULT_REPO = Path(os.environ.get("XINAO_CODEX_S_REPO_ROOT", r"E:\XINAO_RESEARCH_WORKSPACES\S"))
+DEFAULT_REPO = resolve_code_carrier_root(anchor=__file__)
 
 SUNSET_MODULES_NOT_INVOKED = [
     "codex_333_control_vs_evidence_boundary_contract",

@@ -18,6 +18,7 @@ from urllib.parse import urlparse
 import portalocker
 from pydantic import BaseModel, Field
 
+from services.agent_runtime.carrier_identity import resolve_code_carrier_root
 from services.agent_runtime.default_plus_dynamic_escalate import (
     resolve_parallel_lane_model_binding,
     resolve_search_tier_evidence,
@@ -176,24 +177,9 @@ def _build_registry_disk_matrix(
 
 
 def resolve_repo_root(raw: str | Path | None = None) -> Path:
-    """Map host Windows repo paths onto container /app when the worker runs in docker."""
-    if raw:
-        path = Path(str(raw))
-        if path.is_dir():
-            return path
-    env = os.environ.get("XINAO_CODEX_S_REPO_ROOT", "").strip()
-    if env:
-        cand = Path(env)
-        if cand.is_dir():
-            return cand
-    if raw:
-        ms = str(raw).replace("\\", "/")
-        if "XINAO_RESEARCH_WORKSPACES" in ms:
-            cand = Path("/app")
-            if cand.is_dir():
-                return cand
-    fallback = Path(r"E:\XINAO_RESEARCH_WORKSPACES\S")
-    return fallback if fallback.is_dir() else Path.cwd()
+    """Resolve the explicit/container carrier or the repository containing this code."""
+
+    return resolve_code_carrier_root(raw, anchor=__file__)
 
 
 def resolve_runtime_root(raw: str | Path | None = None) -> Path:

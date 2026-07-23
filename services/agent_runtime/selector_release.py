@@ -33,6 +33,7 @@ RELEASE_FILES = (
     "services/agent_runtime/supervisor_worker_selector.py",
     "services/agent_runtime/provider_routing_preference.py",
     "services/agent_runtime/quota_capacity_adapter.py",
+    "services/agent_runtime/carrier_identity.py",
     "services/agent_runtime/thin_glue_stack.py",
     "services/agent_runtime/direct_worker_pool_common_adapter.py",
     "services/agent_runtime/execution_contract.py",
