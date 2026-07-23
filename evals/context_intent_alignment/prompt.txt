@@ -139,6 +139,10 @@ Return only one JSON object with these fields:
   intact. Refreshing that same checkpoint is a Codex-main machine-projection write; once the bounded
   reconciliation returns to an explicitly active continuous parent, use
   local_completion_transition=rederive_mainline_frontier rather than treating the projection as another truth.
+- When a prior `NONE` or no-positive-frontier candidate is rejected because its prompt or inventory
+  excluded a still-actionable edge, use `degraded_scope=frontier_only`: the invalid frontier
+  conclusion is retired while the parent remains open. A structural repair to the shared consumer
+  does not by itself reclassify that observed instance as a dependency outage.
 - When an admitted deterministic `action_resume_receipt` consumer must run before the first dispatch,
   apply, land, or retire action, it must bind the exact next action, a unique side effect, and re-readable
   live facts; a self-declared work pin is not live reconciliation. Classify that immediate recovery step
@@ -197,17 +201,40 @@ Return only one JSON object with these fields:
   a completed local adjudication and uses `local_object`, even when its downstream repair or consumer
   continues.
 - local_completion_transition: finish_bounded_task when the current request is bounded and no active
-  continuous parent run is stated; rederive_mainline_frontier only when restored context explicitly
-  states an active continuous parent and this local result returns to that parent's frontier; otherwise
-  not_applicable
+  parent remains; rederive_mainline_frontier only when restored context explicitly states that this
+  window owns an active continuous mainline and the local result returns to its frontier;
+  resume_suspended_parent when an inserted child closes and a typed interruption frame identifies a
+  different unfinished parent plus its exact return point; otherwise not_applicable
+- When an inserted child merely diagnoses or repairs a historical object whose live frontier is now
+  owned by another window, describe the child closure and the suspended parent owned by this window.
+  Do not reclassify that other window's live frontier as degraded, unaffected work to recompute, or
+  this window's next frontier. With an exact `resume_suspended_parent` transition, use
+  `degraded_scope=none`, `unaffected_frontier_action=not_applicable`, and
+  `frontier_disposition=not_applicable` unless the restored frame itself proves that this window owns
+  a separate currently degraded frontier.
 - continuous_run_disposition: continue, stop_requested, or not_applicable
+- active_window_role: decision_window, mainline_owner, bounded_task, or not_applicable
+- interruption_frame_action: push_inserted_child before a child displaces an unfinished parent;
+  resume_suspended_parent after that child closes; preserve_current_parent when no displacement
+  occurs; otherwise not_applicable
+- resume_target_source: suspended_frame only when the exact parent ID, role, state hash and top-frame
+  return point are available; current_user_increment when the user explicitly replaces the parent;
+  otherwise not_applicable. Never infer a return target from topic similarity, the newest unrelated
+  checkpoint, or repository file presence.
+- completed_history_disposition: keep_closed unless current evidence specifically reopens a completed
+  object; reopen_with_new_evidence only for that evidence-backed object; otherwise not_applicable
 - frontier_disposition: execute, advance_mainline, durable_wait, or not_applicable
   Use `frontier_disposition=execute` while an unclosed or repair frontier is acted. Use
   `advance_mainline` after an accepted or reused local result is deterministically fanned in and the
   active continuous parent moves into its recorded next consumer. Use `durable_wait` only after the
   entire currently discoverable parent-mainline frontier has been recomputed and still has no
   positive-value action; a local NO_ACTION, blocked cone, or owner-only interlude alone is not
-  durable_wait.
+  durable_wait. Decompose every remaining prerequisite into atomic `locally_constructible` or
+  `external_fact` parts before making that claim. A mixed prerequisite cannot be frozen as one
+  external edge: keep its locally constructible part active. A prior checkpoint, next-frontier
+  sentence, prompt, model report, or reconciliation receipt is only a candidate and cannot prove
+  its own externality; an external wait also needs current evidence plus a counterfactual check that
+  the atom cannot be constructed inside the current authorized object and topology.
 - candidate_value: positive, local_no_action, no_positive_global_candidate, or not_applicable
   Use `positive` while any in-scope actionable frontier still has net benefit, including a compact
   owner-only or single-writer slice. Use `local_no_action` when only the current cone is retired and
@@ -229,6 +256,36 @@ Return only one JSON object with these fields:
 - rejected_proxy_atoms: when restored context provides a neutral `ATOM_` pool, return the
   pipe-separated identifiers that would replace, delay, or narrow that parent result and therefore
   must be rejected; otherwise return the literal not_applicable
+- decision_responsibility: `user_material_choice` only when at least two admissible in-scope
+  alternatives materially change the business goal, completion shape, user value, or major
+  external effect; `owner_execute_and_inform` when one dominant necessary, bounded, reversible
+  chain-internal route remains inside an already authorized result; `no_action_on_excluded_route`
+  when a proposed route crosses an explicitly excluded object/topology/account/audience/persistent
+  controller/irreversible migration; otherwise `not_applicable`
+- human_explanation_mode: `technical_plain_decision` when a nontechnical user must make a real
+  choice, `technical_plain_action` when they need to understand an Owner action or important state
+  but no real choice exists, otherwise `not_applicable`. Both non-applicable modes preserve the exact
+  technical facts and add familiar-object meaning, current/next state, concrete effect, risk,
+  rollback, non-effects, why user input is or is not needed, and a one-sentence action/choice
+- metacognition_disposition: `capture_event_only` for a new material first-person metacognitive fact
+  whose useful generalization is not yet supported; `capture_then_conditional_proposal` when the
+  material self-report also supports a scoped candidate with conditions/counterexamples;
+  `do_not_capture` for ordinary task state, one-off wording, duplicates, raw chat, or information
+  with no future decision value; otherwise `not_applicable`. The event is preserved without an
+  extra remember/make-rule phrase. Sparse cases limit generalization, not the self-report. Capture
+  never grants authority or automatically promotes a rule. `决策skill`, `进入决策模式`, and
+  `进入运维模式` are guaranteed activators of the same Decision Skill work identity, not a
+  phrase whitelist and not by themselves an event to capture. Decode the material content that
+  follows them semantically. A repeated request to land an already captured burden may correctly
+  use `do_not_capture` while still requiring durable behavior closure
+  Bind the active subject before using this field. A causal or high-abstraction diagnosis of a
+  task, mainline, controller, prompt, worker, or tool remains task evidence and uses
+  `do_not_capture` unless the user explicitly elevates it into reusable personal cross-case
+  decision logic. Abstract language alone does not make the subject personal metacognition
+- durable_behavior_closure: `land_consumer_and_cross_context_regression` when a stable repeated
+  burden requires an authorized behavior consumer plus changed-context/fresh verification;
+  `candidate_partial` when no positive-benefit executable consumer can currently be landed; otherwise
+  `not_applicable`. Discussion, apology, explanation, or event capture alone never closes the burden
 - reason: one concise sentence
 
 Keep the fields internally coherent: `preference_update=smallest_existing_artifact` is itself an
@@ -409,6 +466,37 @@ transport, except `codex_subagent_exceptional` uses `worker_transport=not_applic
 - `global_frontier_reconciled=true` only with `durable_wait` or `no_positive_global_candidate` after
   full global recomputation; ordinary owner-only or worker `execute` of still-positive work keeps
   false even when local facts mention reconciliation, no separable package, or non-junk routing.
+- When the user explains why an observed state counts as a problem, first bind whether the active
+  subject is the task/system or the user's reusable personal decision model. Preserve the
+  problem-formation chain in the task's causal evidence either way; do not automatically write it
+  into personal memory or Decision Skill. When the user explicitly elevates it as a personal
+  cross-case base/meta-case, treat that problem-formation
+  judgment as the first-class fact: preserve the parent intent, experienced burden or harm,
+  violated expectation, and boundary by which the user distinguished a real problem from a merely
+  visible technical state. Do not let a status label, defect taxonomy, or model finding define the
+  problem in advance. Then trace the causal lineage through upstream framing and scope decisions to
+  the lowest enforcing consumer or missing counterfactual, land the correction there, and verify
+  that the remedy still closes the problem as the user defined it.
+- Scope exclusions and stop words to their bound object and dependency cone. `Do not handle X`
+  cannot exclude a sibling or parent prerequisite Y unless the user or a real dependency states
+  that relation. A task workaround or restored running state does not close a still-required
+  governing repair merely because an unrelated object was excluded.
+- If the user identifies that this problem-formation chain is itself a reusable example, retain
+  both levels with typed provenance: the base decision case and a meta-case about how the user
+  recognized, bounded, explained, and required closure of the problem. Add a changed-context
+  regression for the complete `observation -> user problem definition -> upstream cause -> remedy
+  -> closure against the original definition` chain. Do not flatten either level into one generic
+  rule, duplicate the full conversation recursively, or require the user to engineer the
+  representation.
+- Treat the user's coherent multi-level metacognitive expression as a foundational background on
+  the same level as their nontechnical and non-English background. The former requires an active
+  discourse-level stack and reanchoring on signals such as "more upstream", "not this concrete
+  example", or "the case is itself a case"; the latter requires plain-language meaning adaptation.
+  Neither is a subordinate style preference.
+- Preserve an abstraction-collapse decoding failure as a negative trajectory when the AI ignored
+  those level-shift signals: input cue, wrong active subject, missed higher-level subject,
+  correction, and future detection. A later correct answer does not erase that failure or make the
+  regression pass.
 - When restored context says exact local path records exist but the current episode has not read and
   verified them, use `next_step=inspect_then_act`; restored path identity does not substitute for the
   required read-only classification.

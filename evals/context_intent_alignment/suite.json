@@ -3,7 +3,7 @@
   "purpose": "Turn observed intent or object mismatches into balanced live-agent regressions without a resident gate or routine user questions.",
   "case_source": "cases.yaml",
   "decision_model": "decision_model.v1.json",
-  "case_count": 56,
+  "case_count": 67,
   "profiles": {
     "smoke": "Fast representative checks for ordinary productivity, topology, ambiguity, worker routing, and preference learning.",
     "core": "The normal regression bank for stable behavior changes.",
@@ -59,6 +59,16 @@
       "use": "retain a source trace reference when a real failure becomes a candidate; no Langfuse platform required"
     },
     {
+      "source": "LangGraph persistence and interrupt checkpoints",
+      "url": "https://docs.langchain.com/oss/python/langgraph/interrupts",
+      "use": "resume an interruption from the same durable thread and exact checkpoint rather than reconstructing state from the latest topic"
+    },
+    {
+      "source": "Goal resumption-lag research",
+      "url": "https://pubmed.ncbi.nlm.nih.gov/19102614/",
+      "use": "preserve an explicit return cue and suspended-goal state before an interruption so resumption does not depend on unaided recall"
+    },
+    {
       "source": "Erlang OTP supervisor strategies",
       "url": "https://www.erlang.org/doc/apps/stdlib/supervisor.html",
       "use": "scope child failure and recovery without granting a child authority over its supervisor"
@@ -92,6 +102,21 @@
       "source": "OWASP SCVS assessment and certification",
       "url": "https://scvs.owasp.org/scvs/assessment-and-certification/",
       "use": "give auditors the bounded resources needed for open-book review and require scoped findings with supporting evidence"
+    },
+    {
+      "source": "NIST AI RMF Appendix C human-AI roles",
+      "url": "https://airc.nist.gov/airmf-resources/airmf/appendices/app-c-ai-risk-management-and-human-ai-interaction/",
+      "use": "differentiate when technical Owner action, user decision, or human oversight is actually required"
+    },
+    {
+      "source": "Microsoft Guidelines for Human-AI Interaction",
+      "url": "https://www.microsoft.com/en-us/research/?p=564561",
+      "use": "support efficient correction, contextual action, cautious adaptation, and clear consequences"
+    },
+    {
+      "source": "W3C clear and understandable content",
+      "url": "https://www.w3.org/WAI/WCAG2/supplemental/objectives/o3-clear-content/",
+      "use": "retain exact facts while adding a concise unambiguous meaning layer for unfamiliar users"
     }
   ]
 }

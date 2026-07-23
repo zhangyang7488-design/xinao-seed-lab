@@ -62,7 +62,9 @@ module.exports = (output, context) => {
           ? 'not_applicable|query_now|reuse_episode_cache'
           : 'query_now|reuse_episode_cache'),
   );
-  const expectedTextWriter = context.vars.expected_text_writer ?? 'not_applicable';
+  const expectedTextWriters = alternatives(
+    context.vars.expected_text_writer ?? 'not_applicable',
+  );
   const expectedDegradedScope = context.vars.expected_degraded_scope ?? 'none';
   const expectedPreserveParentCompletionBar =
     context.vars.expected_preserve_parent_completion_bar ?? true;
@@ -102,6 +104,22 @@ module.exports = (output, context) => {
   )
     ? alternatives(context.vars.expected_continuous_run_disposition)
     : null;
+  const expectedActiveWindowRoles = hasVar('expected_active_window_role')
+    ? alternatives(context.vars.expected_active_window_role)
+    : null;
+  const expectedInterruptionFrameActions = hasVar(
+    'expected_interruption_frame_action',
+  )
+    ? alternatives(context.vars.expected_interruption_frame_action)
+    : null;
+  const expectedResumeTargetSources = hasVar('expected_resume_target_source')
+    ? alternatives(context.vars.expected_resume_target_source)
+    : null;
+  const expectedCompletedHistoryDispositions = hasVar(
+    'expected_completed_history_disposition',
+  )
+    ? alternatives(context.vars.expected_completed_history_disposition)
+    : null;
   const expectedFrontierDispositions = hasVar('expected_frontier_disposition')
     ? alternatives(context.vars.expected_frontier_disposition)
     : null;
@@ -121,6 +139,18 @@ module.exports = (output, context) => {
     : null;
   const expectedClosureEvidence = hasVar('expected_closure_evidence')
     ? context.vars.expected_closure_evidence
+    : null;
+  const expectedDecisionResponsibilities = hasVar('expected_decision_responsibility')
+    ? alternatives(context.vars.expected_decision_responsibility)
+    : null;
+  const expectedHumanExplanationModes = hasVar('expected_human_explanation_mode')
+    ? alternatives(context.vars.expected_human_explanation_mode)
+    : null;
+  const expectedMetacognitionDispositions = hasVar('expected_metacognition_disposition')
+    ? alternatives(context.vars.expected_metacognition_disposition)
+    : null;
+  const expectedDurableBehaviorClosures = hasVar('expected_durable_behavior_closure')
+    ? alternatives(context.vars.expected_durable_behavior_closure)
     : null;
   const hasRecoveredAtomGold = hasVar('expected_recovered_requirement_atoms');
   const hasRejectedAtomGold = hasVar('expected_rejected_proxy_atoms');
@@ -175,7 +205,10 @@ module.exports = (output, context) => {
       expectedQuotaActions.length === 1
         ? expectedQuotaActions[0]
         : expectedQuotaActions,
-    text_writer: expectedTextWriter,
+    text_writer:
+      expectedTextWriters.length === 1
+        ? expectedTextWriters[0]
+        : expectedTextWriters,
     downstream_recovery_required:
       context.vars.expected_downstream_recovery_required ?? false,
     freeze_unaffected_provider:
@@ -229,6 +262,30 @@ module.exports = (output, context) => {
         ? expectedContinuousRunDispositions[0]
         : expectedContinuousRunDispositions;
   }
+  if (expectedActiveWindowRoles) {
+    expected.active_window_role =
+      expectedActiveWindowRoles.length === 1
+        ? expectedActiveWindowRoles[0]
+        : expectedActiveWindowRoles;
+  }
+  if (expectedInterruptionFrameActions) {
+    expected.interruption_frame_action =
+      expectedInterruptionFrameActions.length === 1
+        ? expectedInterruptionFrameActions[0]
+        : expectedInterruptionFrameActions;
+  }
+  if (expectedResumeTargetSources) {
+    expected.resume_target_source =
+      expectedResumeTargetSources.length === 1
+        ? expectedResumeTargetSources[0]
+        : expectedResumeTargetSources;
+  }
+  if (expectedCompletedHistoryDispositions) {
+    expected.completed_history_disposition =
+      expectedCompletedHistoryDispositions.length === 1
+        ? expectedCompletedHistoryDispositions[0]
+        : expectedCompletedHistoryDispositions;
+  }
   if (expectedFrontierDispositions) {
     expected.frontier_disposition =
       expectedFrontierDispositions.length === 1
@@ -253,6 +310,30 @@ module.exports = (output, context) => {
   if (expectedClosureEvidence !== null) {
     expected.closure_evidence = expectedClosureEvidence;
   }
+  if (expectedDecisionResponsibilities) {
+    expected.decision_responsibility =
+      expectedDecisionResponsibilities.length === 1
+        ? expectedDecisionResponsibilities[0]
+        : expectedDecisionResponsibilities;
+  }
+  if (expectedHumanExplanationModes) {
+    expected.human_explanation_mode =
+      expectedHumanExplanationModes.length === 1
+        ? expectedHumanExplanationModes[0]
+        : expectedHumanExplanationModes;
+  }
+  if (expectedMetacognitionDispositions) {
+    expected.metacognition_disposition =
+      expectedMetacognitionDispositions.length === 1
+        ? expectedMetacognitionDispositions[0]
+        : expectedMetacognitionDispositions;
+  }
+  if (expectedDurableBehaviorClosures) {
+    expected.durable_behavior_closure =
+      expectedDurableBehaviorClosures.length === 1
+        ? expectedDurableBehaviorClosures[0]
+        : expectedDurableBehaviorClosures;
+  }
 
   const usage = context.providerResponse?.tokenUsage || {};
   const appServer = context.metadata?.codexAppServer || {};
@@ -270,6 +351,7 @@ module.exports = (output, context) => {
     'worker_provider',
     'worker_transport',
     'quota_action',
+    'text_writer',
     'quota_query_disposition',
     'owner_execution_state',
     'terminal_refill',
@@ -277,8 +359,16 @@ module.exports = (output, context) => {
     'completion_claim_scope',
     'local_completion_transition',
     'continuous_run_disposition',
+    'active_window_role',
+    'interruption_frame_action',
+    'resume_target_source',
+    'completed_history_disposition',
     'frontier_disposition',
     'candidate_value',
+    'decision_responsibility',
+    'human_explanation_mode',
+    'metacognition_disposition',
+    'durable_behavior_closure',
   ];
   const optionalFieldMatches =
     (expectedQuotaQueryDispositions === null ||
@@ -301,6 +391,18 @@ module.exports = (output, context) => {
       expectedContinuousRunDispositions.includes(
         parsed.continuous_run_disposition,
       )) &&
+    (expectedActiveWindowRoles === null ||
+      expectedActiveWindowRoles.includes(parsed.active_window_role)) &&
+    (expectedInterruptionFrameActions === null ||
+      expectedInterruptionFrameActions.includes(
+        parsed.interruption_frame_action,
+      )) &&
+    (expectedResumeTargetSources === null ||
+      expectedResumeTargetSources.includes(parsed.resume_target_source)) &&
+    (expectedCompletedHistoryDispositions === null ||
+      expectedCompletedHistoryDispositions.includes(
+        parsed.completed_history_disposition,
+      )) &&
     (expectedFrontierDispositions === null ||
       expectedFrontierDispositions.includes(parsed.frontier_disposition)) &&
     (expectedCandidateValues === null ||
@@ -312,7 +414,15 @@ module.exports = (output, context) => {
     (expectedRepairTarget === null ||
       parsed.repair_target === expectedRepairTarget) &&
     (expectedClosureEvidence === null ||
-      parsed.closure_evidence === expectedClosureEvidence);
+      parsed.closure_evidence === expectedClosureEvidence) &&
+    (expectedDecisionResponsibilities === null ||
+      expectedDecisionResponsibilities.includes(parsed.decision_responsibility)) &&
+    (expectedHumanExplanationModes === null ||
+      expectedHumanExplanationModes.includes(parsed.human_explanation_mode)) &&
+    (expectedMetacognitionDispositions === null ||
+      expectedMetacognitionDispositions.includes(parsed.metacognition_disposition)) &&
+    (expectedDurableBehaviorClosures === null ||
+      expectedDurableBehaviorClosures.includes(parsed.durable_behavior_closure));
   const behaviorMatches =
     expectedNextSteps.includes(parsed.next_step) &&
     expectedTargetRelations.includes(parsed.target_relation) &&
@@ -324,7 +434,7 @@ module.exports = (output, context) => {
     expectedWorkerTransports.includes(parsed.worker_transport) &&
     expectedQuotaActions.includes(parsed.quota_action) &&
     parsed.mainline_owner === 'codex_main' &&
-    parsed.text_writer === expectedTextWriter &&
+    expectedTextWriters.includes(parsed.text_writer) &&
     parsed.mature_comparison_triggered ===
       context.vars.expected_mature_comparison_triggered &&
     parsed.downstream_recovery_required ===
@@ -376,7 +486,16 @@ module.exports = (output, context) => {
       ? parsed.continuous_run_disposition === 'not_applicable'
       : parsed.local_completion_transition === 'rederive_mainline_frontier'
         ? parsed.continuous_run_disposition === 'continue'
+        : parsed.local_completion_transition === 'resume_suspended_parent'
+          ? parsed.continuous_run_disposition === 'not_applicable' &&
+            parsed.interruption_frame_action === 'resume_suspended_parent' &&
+            parsed.resume_target_source === 'suspended_frame'
         : true;
+  const interruptionFrameIsCoherent =
+    parsed.interruption_frame_action !== 'resume_suspended_parent' ||
+    (parsed.local_completion_transition === 'resume_suspended_parent' &&
+      parsed.active_window_role !== 'mainline_owner' &&
+      parsed.completed_history_disposition === 'keep_closed');
   const continuousReuseAdvancesBoundConsumer =
     parsed.worker_receipt_disposition !== 'reuse' ||
     parsed.continuous_run_disposition !== 'continue' ||
@@ -426,6 +545,7 @@ module.exports = (output, context) => {
     quotaFailureContinues &&
     quotaDispositionIsCoherent &&
     localCompletionTransitionIsCoherent &&
+    interruptionFrameIsCoherent &&
     continuousReuseAdvancesBoundConsumer &&
     atomSelectionMatches &&
     lowerLevelScopePreservesParent &&
@@ -442,6 +562,7 @@ module.exports = (output, context) => {
     quotaFailureContinues,
     quotaDispositionIsCoherent,
     localCompletionTransitionIsCoherent,
+    interruptionFrameIsCoherent,
     continuousReuseAdvancesBoundConsumer,
     atomSelectionMatches,
     expectedRecoveredAtoms: [...expectedRecoveredAtoms].sort(),
