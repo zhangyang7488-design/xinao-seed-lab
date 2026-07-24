@@ -552,8 +552,7 @@ def test_context_intent_alignment_eval_is_balanced_and_friction_bounded() -> Non
     assert "workerEffectHasAuthority" in assertion
     assert "expectedUnaffectedFrontierActions" in assertion
     assert (
-        "expectedUnaffectedFrontierActions.includes(\n"
-        "      parsed.unaffected_frontier_action"
+        "expectedUnaffectedFrontierActions.includes(\n      parsed.unaffected_frontier_action"
     ) in assertion
     output_schema = promptfoo_config["providers"][0]["config"]["output_schema"]
     assert set(output_schema["required"]) == set(output_schema["properties"])
@@ -736,9 +735,9 @@ def test_context_intent_alignment_eval_is_balanced_and_friction_bounded() -> Non
         "ATOM_ASK_USER_FOR_NEXT_TASK",
     }
 
-    trajectory_evolution = cases[
-        "REG_FRESH_WINDOW_BOUNDED_TRAJECTORY_EVOLUTION_IS_POSITIVE_DUTY"
-    ]["vars"]
+    trajectory_evolution = cases["REG_FRESH_WINDOW_BOUNDED_TRAJECTORY_EVOLUTION_IS_POSITIVE_DUTY"][
+        "vars"
+    ]
     assert trajectory_evolution["user_increment"] == "继续当前主线。"
     assert trajectory_evolution["expected_effect_authority"] == "restored_task_scope"
     assert trajectory_evolution["expected_next_step"] == "act"
