@@ -4,22 +4,22 @@
   "runner": "scripts/run_behavior_regression.ps1",
   "candidate_intake": "scripts/New-BehaviorRegressionCandidate.ps1",
   "result_root": "D:\\XINAO_RESEARCH_RUNTIME\\state\\human-capabilities\\evals\\behavior-regression",
-  "declared_case_count": 118,
+  "declared_case_count": 119,
   "profiles": {
     "capability": "One fresh Codex app-server capability canary.",
-    "smoke": "Capability canary plus 53 representative live behavior cases.",
-    "core": "Capability canary, 66 context cases, six proactive mature-first cases, frozen mature-candidate recall, one real thin-localization trajectory, and static validation.",
-    "deep": "Core plus all 71 context cases and one current open-world public-repository search.",
-    "context": "All 71 context and intent live cases; retained for the compatibility runner.",
+    "smoke": "Capability canary plus 54 representative live behavior cases.",
+    "core": "Capability canary, 67 context cases, six proactive mature-first cases, frozen mature-candidate recall, one real thin-localization trajectory, and static validation.",
+    "deep": "Core plus all 72 context cases and one current open-world public-repository search.",
+    "context": "All 72 context and intent live cases; retained for the compatibility runner.",
     "proactive": "All six mature-first live cases; worker routing is owned by context_intent_alignment.",
     "reuse": "Only the four live open-world-reuse cases plus their deterministic contract validation."
   },
   "live_profile_case_counts": {
     "capability": 1,
-    "smoke": 54,
-    "core": 76,
-    "deep": 82,
-    "context": 71,
+    "smoke": 55,
+    "core": 77,
+    "deep": 83,
+    "context": 72,
     "proactive": 6,
     "reuse": 4
   },
@@ -35,7 +35,7 @@
     {
       "id": "context_intent_alignment",
       "kind": "promptfoo_live",
-      "case_count": 71,
+      "case_count": 72,
       "config": "evals/context_intent_alignment/promptfooconfig.yaml",
       "case_source": "evals/context_intent_alignment/cases.yaml",
       "runtime_claim_allowed": true

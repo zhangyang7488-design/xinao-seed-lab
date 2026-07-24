@@ -70,8 +70,9 @@ module.exports = (output, context) => {
   );
   const expectedPreserveParentCompletionBar =
     context.vars.expected_preserve_parent_completion_bar ?? true;
-  const expectedUnaffectedFrontierAction =
-    context.vars.expected_unaffected_frontier_action ?? 'not_applicable';
+  const expectedUnaffectedFrontierActions = alternatives(
+    context.vars.expected_unaffected_frontier_action ?? 'not_applicable',
+  );
   const expectedRecoveryProbe = context.vars.expected_recovery_probe ?? 'not_applicable';
 
   // Dynamic-supervisor, continuity, and candidate-reuse fields are asserted when a case sets gold.
@@ -220,7 +221,10 @@ module.exports = (output, context) => {
         ? expectedDegradedScopes[0]
         : expectedDegradedScopes,
     preserve_parent_completion_bar: expectedPreserveParentCompletionBar,
-    unaffected_frontier_action: expectedUnaffectedFrontierAction,
+    unaffected_frontier_action:
+      expectedUnaffectedFrontierActions.length === 1
+        ? expectedUnaffectedFrontierActions[0]
+        : expectedUnaffectedFrontierActions,
     recovery_probe: expectedRecoveryProbe,
     preference_update: context.vars.expected_preference_update,
     starts_new_project: context.vars.expected_starts_new_project,
@@ -358,6 +362,7 @@ module.exports = (output, context) => {
     'quota_action',
     'text_writer',
     'degraded_scope',
+    'unaffected_frontier_action',
     'quota_query_disposition',
     'owner_execution_state',
     'terminal_refill',
@@ -450,7 +455,9 @@ module.exports = (output, context) => {
     expectedDegradedScopes.includes(parsed.degraded_scope) &&
     parsed.preserve_parent_completion_bar ===
       expectedPreserveParentCompletionBar &&
-    parsed.unaffected_frontier_action === expectedUnaffectedFrontierAction &&
+    expectedUnaffectedFrontierActions.includes(
+      parsed.unaffected_frontier_action,
+    ) &&
     parsed.recovery_probe === expectedRecoveryProbe &&
     optionalFieldMatches &&
     Object.entries(expected).every(

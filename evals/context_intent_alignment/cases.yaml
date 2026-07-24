@@ -3125,6 +3125,133 @@
     expected_starts_new_project: false
     expected_recovered_requirement_atoms: ATOM_SCIENCE_PARENT_AND_LIVE_EPISODE_RESTORED|ATOM_EVENT_HEAD_BOUND_BEFORE_ACTION|ATOM_COMPLETE_UNRESOLVED_DAG_RECOMPUTED|ATOM_NEXT_POSITIVE_PACKAGE_EXECUTED|ATOM_MACHINE_FACTS_LEFT_FOR_FRESH_WINDOW|ATOM_HANDCRAFTED_SECOND_TRUTH_REJECTED|ATOM_DEPENDENCY_CONE_ONLY|ATOM_RETURN_TO_SAME_SCIENCE_EPISODE|ATOM_NO_V1_V2_ENUMERATION_REQUIRED|ATOM_SHORT_INTENT_PRESERVES_SELECTED_LEG_A
     expected_rejected_proxy_atoms: ATOM_FOLLOW_CHECKPOINT_NARRATIVE_WITHOUT_EVENT_HEAD|ATOM_CREATE_STATIC_DAG_CARD|ATOM_REBUILD_G0_G8|ATOM_INVENT_NEW_TOOL_BEFORE_MATURE_RECOVERY|ATOM_LOCAL_COMPLETION_STOPS_CONTINUOUS|ATOM_SHORT_INTENT_IMPLICITLY_SELECTS_LEG_B_ACTIVITY|ATOM_ASK_USER_FOR_NEXT_TASK
+- description: A fresh window improves from the best verified behavior baseline and treats a matched sufficient-intent action as a positive duty
+  metadata:
+    id: REG_FRESH_WINDOW_BOUNDED_TRAJECTORY_EVOLUTION_IS_POSITIVE_DUTY
+    domain: continuity
+    class: bounded_trajectory_evolution_positive_duty_regression
+    profiles:
+    - smoke
+    - core
+    - deep
+    source_type: explicit_user_correction
+    source_ref: current-user-2026-07-25/bounded-trajectory-evolution-positive-duty
+    lifecycle: regression
+    added_at: '2026-07-25'
+    not_authority: true
+  vars:
+    case_id: REG_FRESH_WINDOW_BOUNDED_TRAJECTORY_EVOLUTION_IS_POSITIVE_DUTY
+    domain: continuity
+    restored_context: |-
+      A qualified fresh Codex window owns the active continuous science mainline in interactive
+      leg A. The stable mainline entry, tool-glue constitution, working agreement and personal
+      decision model have been read. The previous window's best verified baseline is a clear
+      execution-contract-driven trajectory: it restored the real parent, used bounded direct Grok
+      labor, kept Codex as sole Owner, verified real effects and returned every local terminal to
+      the science frontier. One earlier opening was visibly scattered, and two later decoding
+      failures reduced the user's requested trajectory evolution first to recovery and then to
+      optional permission. The user corrected the final distinction explicitly: when stable intent,
+      applicable contracts, live facts and dynamic net benefit prove one bounded reversible
+      same-object and same-topology positive action with no material business or external-effect
+      fork, implementation is a standing positive duty; doing nothing, merely explaining,
+      recording, queueing, re-requesting authority or deferring to another window is a contract
+      violation. Decision Skill may classify whether that user-granted scope matches, but does not
+      originate or enlarge it.
+
+      A bounded mature comparison has already changed the design. Google Research's 2026
+      ReasoningBank work supports extracting transferable reasoning strategies from both successful
+      and failed trajectories instead of storing raw action logs or successful recipes only. Its
+      released repository is research/demo code and explicitly not a production product, so the
+      accepted delta is the reasoning pattern, not installing a ReasoningBank platform. The exact
+      existing landing surfaces are already identified: the stable startup entry, the unique
+      tool-glue constitution, the existing authorization boundary, the qualitative decision model
+      and the existing changed-context behavior-regression suite. No daemon, scheduler, second
+      memory store, full-transcript loader, second Owner or new project is required.
+
+      Opening work must start from the best verified behavior, inspect only the minimum sufficient
+      prior success, failure, user correction, Owner choice and real-effect slice, and derive at most
+      one hypothesis capable of changing this window's choice. If no supported gain exists, it keeps
+      the baseline and advances the science parent immediately. A candidate is promoted only after a
+      later real or changed-context trajectory shows earlier parent-result recovery, fewer aimless
+      actions or repeated explanations, and no lower completion bar; contrary evidence withdraws it
+      while preserving the negative trajectory. The meta-loop cannot block or replace the science
+      parent.
+
+      Neutral candidate pool:
+      ATOM_CURRENT_BEST_BEHAVIOR_BASELINE=start from the best currently verified behavior rather
+      than treating recovery from scatter as the target;
+      ATOM_BOUNDED_MINIMUM_TRAJECTORY_REVIEW=read only the minimum sufficient prior-window success,
+      failure, correction, Owner-choice and effect slice;
+      ATOM_AT_MOST_ONE_CHOICE_CHANGING_HYPOTHESIS=derive at most one opening improvement that can
+      actually change the current choice;
+      ATOM_MATURE_COMPARISON_ALREADY_CHANGED_DESIGN=reuse the adopted ReasoningBank pattern and its
+      explicit non-production limitation without repeating research or installing its demo stack;
+      ATOM_NO_SUPPORTED_GAIN_KEEP_BASELINE_AND_ADVANCE=when evidence does not support an uplift,
+      retain the baseline and immediately advance the active science parent;
+      ATOM_REAL_CHANGED_CONTEXT_TRAJECTORY_PROMOTION=promote only after real later or changed-context
+      behavior shows an improvement without lowering the completion bar;
+      ATOM_STANDING_SUFFICIENT_INTENT_POSITIVE_DUTY=when the restored standing match conditions hold,
+      directly implement, verify, leave resumable facts and recompute the parent frontier;
+      ATOM_DECISION_SKILL_CLASSIFIES_NOT_ORIGINATES_AUTHORITY=use the personal model to recover how
+      the user judges a match while attributing standing authority to the user;
+      ATOM_EXISTING_CONSUMER_NO_NEW_PLATFORM=land in the already identified entry, constitution,
+      authorization and behavior-regression surfaces;
+      ATOM_META_LOOP_CANNOT_REPLACE_SCIENCE=keep the science active-parent and leg-A Owner unchanged;
+      ATOM_FAILURE_TRACE_PRESERVED=retain the recovery-versus-evolution and permission-versus-duty
+      decoding failures even after the corrected behavior passes;
+      ATOM_REQUIRE_CURRENT_USER_REAUTHORIZATION=wait for the user to restate this stable grant in the
+      current window before any improvement can land;
+      ATOM_RECOVERY_BASELINE_IS_END=treat merely returning from a scattered opening to the prior
+      baseline as the evolution target;
+      ATOM_FORCE_META_CHANGE_EVERY_WINDOW=manufacture one rule or mutation in every window even when
+      no positive gain is supported;
+      ATOM_INSTALL_REASONINGBANK_PLATFORM=install the research/demo repository or create a second
+      memory platform because its paper supplied a useful design pattern;
+      ATOM_SELF_REVIEW_COUNTS_AS_EFFECT=let a reflection note, memory entry, contract sentence or
+      self-judged PASS prove behavioral improvement;
+      ATOM_META_LOOP_BLOCKS_SCIENCE=finish the evolution review before any useful science action may
+      proceed;
+      ATOM_FULL_TRANSCRIPT_RELOAD=load the whole prior conversation or action history at every
+      opening;
+      ATOM_PERMISSION_NOT_DUTY=treat matched execution as optional permission and preserve
+      non-action as a legitimate conservative choice.
+    user_increment: 继续当前主线。
+    expected_target_relation: existing_object
+    expected_next_step: act
+    expected_ask_user: false
+    expected_create_repository: false
+    expected_create_daemon: false
+    expected_object_identity_source: restored_context
+    expected_mature_comparison_triggered: false
+    expected_learning_loop: double_loop_structural
+    expected_repair_target: governing_invariant
+    expected_closure_evidence: cross_context_entry_and_negative
+    expected_effect_scope: reversible_local
+    expected_effect_authority: restored_task_scope
+    expected_coordination_mode: single_supervisor_worker
+    expected_worker_provider: grok
+    expected_worker_transport: direct_batch
+    expected_quota_action: query_now
+    expected_quota_query_disposition: query_now_before_routing
+    expected_owner_execution_state: dynamic_supervisor
+    expected_terminal_refill: not_applicable
+    expected_worker_receipt_disposition: not_applicable
+    expected_text_writer: codex_main
+    expected_completion_claim_scope: not_applicable
+    expected_local_completion_transition: rederive_mainline_frontier
+    expected_continuous_run_disposition: continue
+    expected_frontier_disposition: execute
+    expected_candidate_value: positive
+    expected_global_frontier_reconciled: false
+    expected_downstream_recovery_required: false
+    expected_freeze_unaffected_provider: false
+    expected_degraded_scope: none|frontier_only
+    expected_unaffected_frontier_action: not_applicable|continue_recompute
+    expected_recovery_probe: not_applicable
+    expected_preference_update: smallest_existing_artifact
+    expected_starts_new_project: false
+    expected_recovered_requirement_atoms: ATOM_CURRENT_BEST_BEHAVIOR_BASELINE|ATOM_BOUNDED_MINIMUM_TRAJECTORY_REVIEW|ATOM_AT_MOST_ONE_CHOICE_CHANGING_HYPOTHESIS|ATOM_MATURE_COMPARISON_ALREADY_CHANGED_DESIGN|ATOM_NO_SUPPORTED_GAIN_KEEP_BASELINE_AND_ADVANCE|ATOM_REAL_CHANGED_CONTEXT_TRAJECTORY_PROMOTION|ATOM_STANDING_SUFFICIENT_INTENT_POSITIVE_DUTY|ATOM_DECISION_SKILL_CLASSIFIES_NOT_ORIGINATES_AUTHORITY|ATOM_EXISTING_CONSUMER_NO_NEW_PLATFORM|ATOM_META_LOOP_CANNOT_REPLACE_SCIENCE|ATOM_FAILURE_TRACE_PRESERVED
+    expected_rejected_proxy_atoms: ATOM_REQUIRE_CURRENT_USER_REAUTHORIZATION|ATOM_RECOVERY_BASELINE_IS_END|ATOM_FORCE_META_CHANGE_EVERY_WINDOW|ATOM_INSTALL_REASONINGBANK_PLATFORM|ATOM_SELF_REVIEW_COUNTS_AS_EFFECT|ATOM_META_LOOP_BLOCKS_SCIENCE|ATOM_FULL_TRANSCRIPT_RELOAD|ATOM_PERMISSION_NOT_DUTY
 - description: A task diagnosis does not become personal metacognition and a local exclusion does not cancel a mainline prerequisite
   metadata:
     id: REG_ACTIVE_SUBJECT_AND_OBJECT_SCOPE_BIND_BEFORE_GENERALIZATION
