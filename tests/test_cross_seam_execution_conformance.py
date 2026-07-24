@@ -1003,6 +1003,18 @@ def test_consumer_registry_requires_current_exact_evidence_for_complete_status()
     assert science_source["current_positive_canary_evidence"]
     assert science_source["negative_canary_evidence"]
     assert science_source["fresh_canary_evidence"]
+    science_fresh = set(science_source["fresh_canary_evidence"])
+    tool_gap_id = "science-tool-gap-behavior-regression-20260724T104812Z"
+    self_bootstrap_id = "science-mainline-self-bootstrap-behavior-regression-20260724T184208Z"
+    assert {tool_gap_id, self_bootstrap_id} <= science_fresh
+    assert evidence_catalog[tool_gap_id]["case_ids"] == [
+        "REG_SCIENCE_TOOL_GAP_STAYS_IN_EPISODE_CONE"
+    ]
+    assert evidence_catalog[self_bootstrap_id]["case_ids"] == [
+        "REG_FRESH_WINDOW_SCIENCE_MAINLINE_SELF_BOOTSTRAPS_DAG_LOOP"
+    ]
+    assert evidence_catalog[self_bootstrap_id]["research_progress_claim_allowed"] is False
+    assert evidence_catalog[self_bootstrap_id]["completion_claim_allowed"] is False
     by_id = {item["consumer_id"]: item for item in registry["consumers"]}
     for consumer_id in (
         "foundation_v2_reconciliation",
