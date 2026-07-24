@@ -393,6 +393,10 @@ def _first_batch_cells(
 ) -> list[dict[str, Any]]:
     if cases_per_family < 1:
         raise FreshCampaignError("first batch cases_per_family must be >= 1")
+    if len(configurations) != 1:
+        raise FreshCampaignError(
+            "first batch must bind exactly one configuration to its subject adapter"
+        )
     cells: list[dict[str, Any]] = []
     for family in families:
         if family not in FAMILY_IDS:
@@ -423,6 +427,10 @@ def _timestamp() -> str:
 
 def initialize(args: argparse.Namespace) -> dict[str, Any]:
     package_root = _runtime_root(args.package_root)
+    if len(args.configuration) != 1:
+        raise FreshCampaignError(
+            "fresh first batch must bind exactly one configuration to its subject adapter"
+        )
     campaign_path = args.campaign_preregistration.resolve()
     acceptance_path = args.owner_acceptance.resolve()
     campaign_contract_path = args.campaign_contract.resolve()

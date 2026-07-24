@@ -369,6 +369,11 @@ def _validate_request(raw: Mapping[str, Any]) -> dict[str, Any]:
         request["subject_configurations"],
         allowed=frozenset(SUBJECT_CONFIGURATIONS),
     )
+    if len(request["subject_configurations"]) != 1:
+        raise G4FamilyBatchError(
+            "BATCH_CONFIGURATION_CARDINALITY",
+            "each batch must bind exactly one subject configuration to its subject adapter",
+        )
 
     unit_policy = request["unit_policy"]
     if not isinstance(unit_policy, Mapping):

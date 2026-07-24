@@ -293,6 +293,31 @@ def test_each_case_configuration_requires_the_complete_fixed_seed_set() -> None:
     assert result["receipt"]["problems"] == ["INCOMPLETE_WITHIN_CASE_SEEDS"]
 
 
+def test_one_batch_cannot_share_one_adapter_across_multiple_configurations() -> None:
+    request = _request()
+    request["subject_configurations"] = ["C0-ALGO", "C1-CHEAP"]
+    request["batch_cells"].extend(
+        {
+            **cell,
+            "subject_configuration": "C1-CHEAP",
+        }
+        for cell in list(request["batch_cells"])
+    )
+    request["budget_policy"] = {
+        "max_batch_executions": 12,
+        "max_outcome_accesses": 12,
+    }
+    request["split_manifest"]["holdout_exposure_budget"] = 12
+    request["split_manifest"]["content_hash"] = canonical_sha256(
+        {key: value for key, value in request["split_manifest"].items() if key != "content_hash"}
+    )
+
+    result = _prepare(request)
+
+    assert result["terminal"] == TERMINAL_HOLD
+    assert result["receipt"]["problems"] == ["BATCH_CONFIGURATION_CARDINALITY"]
+
+
 def test_campaign_wide_10206_capacity_is_not_a_batch_gate() -> None:
     request = _request()
     request["budget_policy"] = {
