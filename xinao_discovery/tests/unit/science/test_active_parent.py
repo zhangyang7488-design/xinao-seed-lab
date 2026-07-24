@@ -750,3 +750,65 @@ def test_carrier_resolver_is_bidirectional_for_runtime_and_mainline_refs() -> No
     else:
         assert runtime == Path("/evidence/state/projection.json")
         assert mainline == Path("/mainline/01_主线入口/science.txt")
+
+
+def test_research_pin_survives_transactional_trial_journal_append(
+    tmp_path: Path,
+) -> None:
+    from xinao.science.trial_ledger import (
+        EMPTY_SCIENCE_TRIAL_ENTRIES_SHA256,
+        append_science_trial_entry,
+    )
+
+    projection, payload = _projection(tmp_path)
+    active_hash = str(payload["active_parent"]["sha256"])
+    protocol_pin = tmp_path / "protocol_pin.json"
+    _protocol_pin(
+        protocol_pin,
+        active_hash,
+        str(payload["background_contract"]["sha256"]),
+    )
+    pin = _convert_to_research_pin(protocol_pin)
+    protocol_pin.write_text(json.dumps(pin), encoding="utf-8")
+    protocol_hash = hashlib.sha256(protocol_pin.read_bytes()).hexdigest()
+    ledger_path = tmp_path / "science_trial_ledger.json"
+    anchor_hash = hashlib.sha256(ledger_path.read_bytes()).hexdigest()
+
+    initial = verify_science_episode_admission_file(
+        protocol_pin,
+        expected_file_sha256=protocol_hash,
+        expected_active_parent_sha256=active_hash,
+        projection_path=projection,
+    )
+    assert initial["trial_ledger"]["entry_count"] == 0
+
+    appended = append_science_trial_entry(
+        ledger_path,
+        expected_anchor_sha256=anchor_hash,
+        episode_id=str(pin["episode_id"]),
+        event_id="science-trial-register-1",
+        work_key="science-trial-1",
+        status="REGISTERED",
+        family_id="bounded-family-1",
+        equivalence_cluster_id="variant-1",
+        path_kind="PRIMARY",
+        failure_reason=None,
+        meta={"candidate_id": "variant-1"},
+        expected_entry_count=0,
+        expected_entries_sha256=EMPTY_SCIENCE_TRIAL_ENTRIES_SHA256,
+        terminal=False,
+    )
+
+    assert hashlib.sha256(ledger_path.read_bytes()).hexdigest() == anchor_hash
+    assert appended["entry_count"] == 1
+    assert appended["replayed"] is False
+
+    resumed = verify_science_episode_admission_file(
+        protocol_pin,
+        expected_file_sha256=protocol_hash,
+        expected_active_parent_sha256=active_hash,
+        projection_path=projection,
+    )
+    assert resumed["trial_ledger"]["entry_count"] == 1
+    assert resumed["trial_ledger"]["entries_sha256"] == appended["entries_sha256"]
+    assert resumed["trial_ledger"]["anchor_sha256"] == anchor_hash
