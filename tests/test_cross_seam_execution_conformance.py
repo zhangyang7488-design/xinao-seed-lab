@@ -974,6 +974,7 @@ def test_consumer_registry_requires_current_exact_evidence_for_complete_status()
     assert set(boundary_consumers) == {
         "action_resume_preaction_guard",
         "audit_adjudication_repair_gate",
+        "current_science_temporal_entry",
         "g4_batch_preregistration_producer",
         "g4_provider_neutral_batch_admission",
         "global_frontier_reconciliation_v4",
@@ -989,6 +990,19 @@ def test_consumer_registry_requires_current_exact_evidence_for_complete_status()
         and item["parent_completion_authority"] is False
         for item in boundary_consumers.values()
     )
+    science = boundary_consumers["current_science_temporal_entry"]
+    assert science["conformance_status"] == "complete"
+    science_source = next(
+        item
+        for item in registry["consumers"]
+        if item["consumer_id"] == "current_science_temporal_entry"
+    )
+    assert science_source["legacy_parent_gate_consumed"] is False
+    assert science_source["research_progress_authority"] is False
+    assert science_source["replay_evidence"]
+    assert science_source["current_positive_canary_evidence"]
+    assert science_source["negative_canary_evidence"]
+    assert science_source["fresh_canary_evidence"]
     by_id = {item["consumer_id"]: item for item in registry["consumers"]}
     for consumer_id in (
         "foundation_v2_reconciliation",

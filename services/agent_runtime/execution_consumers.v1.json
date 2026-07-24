@@ -191,6 +191,33 @@
       "selected_model": "grok-composer-2.5-fast",
       "observed_models": ["grok-4.5-build"],
       "completion_claim_allowed": false
+    },
+    "science-startup-validation-20260724T122023Z": {
+      "kind": "science_startup_validation",
+      "observed_at": "2026-07-24T12:20:23.582Z",
+      "path": "D:/XINAO_RESEARCH_RUNTIME/state/Codex_Situation_Island/runs/xinao-science-active-parent-20260724/evidence/release_cutover_candidate_06ac68d5/science_startup_validation.candidate.json",
+      "sha256": "0d88122dcb7ddd2255b611ecfe20c4b4758e4d5b98d60529a3603e9857bd1fe3",
+      "status": "VERIFIED",
+      "code_git_sha": "06ac68d5fc4f01c3833188901a306560a3fd31bb",
+      "active_parent_sha256": "63acbb04c98f6826756f1f7e541e63cb91035957364db2d354fd4d81995fc56c",
+      "requested_model": "grok-4.5",
+      "observed_models": ["grok-4.5-build"],
+      "validation_only": true,
+      "science_trial_appends": 0,
+      "evaluation_outcome_accessed": false,
+      "research_progress_claim_allowed": false,
+      "completion_claim_allowed": false
+    },
+    "science-parent-behavior-regression-20260724T104812Z": {
+      "kind": "behavior_regression",
+      "observed_at": "2026-07-24T10:48:12.716Z",
+      "path": "D:/XINAO_RESEARCH_RUNTIME/state/human-capabilities/evals/behavior-regression/20260724-184450-238/summary.json",
+      "sha256": "f816b562bda49df33954430441d667a92981502a30459d774d1031e567b7f1da",
+      "status": "PASSED",
+      "successes": 1,
+      "failures": 0,
+      "errors": 0,
+      "live_source_manifest_unchanged": true
     }
   },
   "consumers": [
@@ -203,9 +230,9 @@
       "authority_scope": "XINAO_SCIENCE_PROTOCOL_ACTIVE",
       "usable_as_current_science_parent": true,
       "contract_mode": "hash_bound_protocol_pin_plus_world_exposure_ledger_then_run_scoped_startup_activity_or_research_instrument_bus",
-      "status": "partial",
-      "conformance_status": "partial",
-      "status_reason": "The current workflow verifies the active parent and real ProtocolPin carriers before any tool call, builds and replays the bound science world, re-reads the zero-entry TrialLedger, and uses one run-scoped no-tools Grok Activity for startup validation. Only RESEARCH mode may call the reusable integrated bus. Live release cutover and restart evidence remain required.",
+      "status": "boundary_verified_non_parent_owner",
+      "conformance_status": "complete",
+      "status_reason": "The content-addressed 06ac68d5 release completed a live Temporal startup validation: active-parent and ProtocolPin admission, bound science-world build and replay, zero-entry TrialLedger re-read, one run-scoped no-tools Grok call with positive usage, same-run pause/restart/resume, negative controls, cleanup, and immutable-release re-verification all passed. This verifies the current consumer boundary without granting parent-completion or research-progress authority.",
       "writes_effects": true,
       "parent_completion_authority": false,
       "research_progress_authority": false,
@@ -217,10 +244,15 @@
         "xinao_discovery/tests/unit/science/test_active_parent.py",
         "xinao_discovery/tests/contract/test_world.py"
       ],
-      "replay_evidence": [],
-      "current_positive_canary_evidence": [],
-      "negative_canary_evidence": [],
-      "fresh_canary_evidence": []
+      "replay_evidence": ["science-startup-validation-20260724T122023Z"],
+      "current_positive_canary_evidence": [
+        "science-startup-validation-20260724T122023Z"
+      ],
+      "negative_canary_evidence": ["science-startup-validation-20260724T122023Z"],
+      "fresh_canary_evidence": [
+        "science-startup-validation-20260724T122023Z",
+        "science-parent-behavior-regression-20260724T104812Z"
+      ]
     },
     {
       "consumer_id": "canonical_docker_grok_worker",
