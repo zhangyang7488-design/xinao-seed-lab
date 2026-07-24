@@ -319,7 +319,7 @@ def test_context_intent_alignment_eval_is_balanced_and_friction_bounded() -> Non
         (REPO_ROOT / "evals/context_intent_alignment/cases.yaml").read_text(encoding="utf-8")
     )
     cases = {case["metadata"]["id"]: case for case in loaded}
-    assert len(cases) == suite["case_count"] == 70
+    assert len(cases) == suite["case_count"] == 71
     assert len(cases) == len(loaded)
     assert all(case["metadata"]["domain"] == case["vars"]["domain"] for case in cases.values())
     for required in (
@@ -355,6 +355,7 @@ def test_context_intent_alignment_eval_is_balanced_and_friction_bounded() -> Non
         "REG_DYNAMIC_SUPERVISOR_LIVE_ROUTING_FACTS",
         "REG_LIVE_FACT_MUST_CHANGE_DOMINATED_NEXT_ACTION",
         "REG_FRESH_WINDOW_PARENT_INTENT_FIRST_DYNAMIC_CONTINUOUS",
+        "REG_FRESH_WINDOW_SCIENCE_MAINLINE_SELF_BOOTSTRAPS_DAG_LOOP",
         "REG_FRESH_WINDOW_REUSES_ACCEPTED_D_CANDIDATE",
         "NEG_FRESH_WINDOW_DIRECTORY_ONLY_IS_NOT_REUSE",
         "REG_DIRECT_ROUTE_AND_CARRIER_SURVIVE_WINDOW",
@@ -628,6 +629,7 @@ def test_context_intent_alignment_eval_is_balanced_and_friction_bounded() -> Non
         "REG_DYNAMIC_SUPERVISOR_LIVE_ROUTING_FACTS",
         "REG_LIVE_FACT_MUST_CHANGE_DOMINATED_NEXT_ACTION",
         "REG_FRESH_WINDOW_PARENT_INTENT_FIRST_DYNAMIC_CONTINUOUS",
+        "REG_FRESH_WINDOW_SCIENCE_MAINLINE_SELF_BOOTSTRAPS_DAG_LOOP",
         "REG_FRESH_WINDOW_REUSES_ACCEPTED_D_CANDIDATE",
         "NEG_FRESH_WINDOW_DIRECTORY_ONLY_IS_NOT_REUSE",
     ):
@@ -697,6 +699,37 @@ def test_context_intent_alignment_eval_is_balanced_and_friction_bounded() -> Non
         "ATOM_ROUTING_FACTS_NOT_OBJECTIVE",
         "ATOM_PRIVATE_TUI_EXCLUDED",
         "ATOM_RESUME_PARENT_FRONTIER",
+    }
+
+    science_bootstrap = cases[
+        "REG_FRESH_WINDOW_SCIENCE_MAINLINE_SELF_BOOTSTRAPS_DAG_LOOP"
+    ]["vars"]
+    assert science_bootstrap["user_increment"] == (
+        "推进主线，按全部未闭 DAG 循环持续施工。"
+    )
+    assert science_bootstrap["expected_owner_execution_state"] == "dynamic_supervisor"
+    assert science_bootstrap["expected_local_completion_transition"] == (
+        "rederive_mainline_frontier"
+    )
+    assert science_bootstrap["expected_continuous_run_disposition"] == "continue"
+    assert set(science_bootstrap["expected_recovered_requirement_atoms"].split("|")) == {
+        "ATOM_SCIENCE_PARENT_AND_LIVE_EPISODE_RESTORED",
+        "ATOM_EVENT_HEAD_BOUND_BEFORE_ACTION",
+        "ATOM_COMPLETE_UNRESOLVED_DAG_RECOMPUTED",
+        "ATOM_NEXT_POSITIVE_PACKAGE_EXECUTED",
+        "ATOM_MACHINE_FACTS_LEFT_FOR_FRESH_WINDOW",
+        "ATOM_HANDCRAFTED_SECOND_TRUTH_REJECTED",
+        "ATOM_DEPENDENCY_CONE_ONLY",
+        "ATOM_RETURN_TO_SAME_SCIENCE_EPISODE",
+        "ATOM_NO_V1_V2_ENUMERATION_REQUIRED",
+    }
+    assert set(science_bootstrap["expected_rejected_proxy_atoms"].split("|")) == {
+        "ATOM_FOLLOW_CHECKPOINT_NARRATIVE_WITHOUT_EVENT_HEAD",
+        "ATOM_CREATE_STATIC_DAG_CARD",
+        "ATOM_REBUILD_G0_G8",
+        "ATOM_INVENT_NEW_TOOL_BEFORE_MATURE_RECOVERY",
+        "ATOM_LOCAL_COMPLETION_STOPS_CONTINUOUS",
+        "ATOM_ASK_USER_FOR_NEXT_TASK",
     }
 
     fact_binding = cases["REG_LIVE_FACT_MUST_CHANGE_DOMINATED_NEXT_ACTION"]["vars"]
@@ -817,8 +850,8 @@ def test_context_intent_alignment_eval_is_balanced_and_friction_bounded() -> Non
         (REPO_ROOT / "evals/behavior_regression/catalog.json").read_text(encoding="utf-8")
     )
     context_suite = next(s for s in catalog["suites"] if s["id"] == "context_intent_alignment")
-    assert context_suite["case_count"] == 70
-    assert catalog["declared_case_count"] == 117
+    assert context_suite["case_count"] == 71
+    assert catalog["declared_case_count"] == 118
 
     decision = json.loads(
         (REPO_ROOT / "evals/context_intent_alignment/decision_model.v1.json").read_text(
@@ -1227,7 +1260,7 @@ def test_dual_self_evolution_runners_are_thin_and_claims_stay_separate() -> None
         (REPO_ROOT / "evals/behavior_regression/catalog.json").read_text(encoding="utf-8")
     )
     suite_count = sum(item["case_count"] for item in catalog["suites"])
-    assert suite_count == catalog["declared_case_count"] == 117
+    assert suite_count == catalog["declared_case_count"] == 118
     context_cases = yaml.safe_load(
         (REPO_ROOT / "evals/context_intent_alignment/cases.yaml").read_text(encoding="utf-8")
     )

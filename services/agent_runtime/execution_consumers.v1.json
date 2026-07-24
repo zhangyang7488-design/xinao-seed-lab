@@ -208,7 +208,7 @@
       "research_progress_claim_allowed": false,
       "completion_claim_allowed": false
     },
-    "science-parent-behavior-regression-20260724T104812Z": {
+    "science-tool-gap-behavior-regression-20260724T104812Z": {
       "kind": "behavior_regression",
       "observed_at": "2026-07-24T10:48:12.716Z",
       "path": "D:/XINAO_RESEARCH_RUNTIME/state/human-capabilities/evals/behavior-regression/20260724-184450-238/summary.json",
@@ -217,7 +217,28 @@
       "successes": 1,
       "failures": 0,
       "errors": 0,
-      "live_source_manifest_unchanged": true
+      "live_source_manifest_unchanged": true,
+      "case_ids": [
+        "REG_SCIENCE_TOOL_GAP_STAYS_IN_EPISODE_CONE"
+      ],
+      "research_progress_claim_allowed": false,
+      "completion_claim_allowed": false
+    },
+    "science-mainline-self-bootstrap-behavior-regression-20260724T182448Z": {
+      "kind": "behavior_regression",
+      "observed_at": "2026-07-24T18:24:48.093Z",
+      "path": "D:/XINAO_RESEARCH_RUNTIME/state/human-capabilities/evals/behavior-regression/20260725-022251-743/summary.json",
+      "sha256": "0075ad34f75152e785d0f72469205fe6fc8ef88288d6f92841d0d95427c4582a",
+      "status": "PASSED",
+      "successes": 1,
+      "failures": 0,
+      "errors": 0,
+      "live_source_manifest_unchanged": true,
+      "case_ids": [
+        "REG_FRESH_WINDOW_SCIENCE_MAINLINE_SELF_BOOTSTRAPS_DAG_LOOP"
+      ],
+      "research_progress_claim_allowed": false,
+      "completion_claim_allowed": false
     }
   },
   "consumers": [
@@ -251,7 +272,8 @@
       "negative_canary_evidence": ["science-startup-validation-20260724T122023Z"],
       "fresh_canary_evidence": [
         "science-startup-validation-20260724T122023Z",
-        "science-parent-behavior-regression-20260724T104812Z"
+        "science-tool-gap-behavior-regression-20260724T104812Z",
+        "science-mainline-self-bootstrap-behavior-regression-20260724T182448Z"
       ]
     },
     {
