@@ -18,6 +18,10 @@ from xinao.science.active_parent import (
     load_science_active_parent,
     resolve_science_carrier_path,
 )
+from xinao.science.trial_ledger import (
+    ScienceTrialLedgerError,
+    load_science_trial_journal,
+)
 from xinao.settlement import SPECIAL_NUMBER_FUNCTION, SPECIAL_NUMBER_RULE
 
 _HASH_RE = re.compile(r"^[0-9a-f]{64}$")
@@ -408,11 +412,24 @@ def _validate_trial_ledger(
             raise ScienceEpisodeAdmissionError(
                 f"science TrialLedger entry {index - 1} has an unsupported event"
             )
+    try:
+        journal = load_science_trial_journal(
+            path,
+            expected_anchor_sha256=observed_hash,
+            episode_id=episode_id,
+        )
+    except ScienceTrialLedgerError as exc:
+        raise ScienceEpisodeAdmissionError(str(exc)) from exc
     return {
         "ref": str(path),
         "sha256": observed_hash,
+        "anchor_sha256": observed_hash,
         "append_only": True,
-        "entry_count": len(entries),
+        "entry_count": journal["entry_count"],
+        "entries_sha256": journal["entries_sha256"],
+        "journal_ref": journal["journal_ref"],
+        "journal_exists": journal["journal_exists"],
+        "journal_file_sha256": journal["journal_file_sha256"],
     }
 
 
