@@ -701,12 +701,8 @@ def test_context_intent_alignment_eval_is_balanced_and_friction_bounded() -> Non
         "ATOM_RESUME_PARENT_FRONTIER",
     }
 
-    science_bootstrap = cases[
-        "REG_FRESH_WINDOW_SCIENCE_MAINLINE_SELF_BOOTSTRAPS_DAG_LOOP"
-    ]["vars"]
-    assert science_bootstrap["user_increment"] == (
-        "推进主线，按全部未闭 DAG 循环持续施工。"
-    )
+    science_bootstrap = cases["REG_FRESH_WINDOW_SCIENCE_MAINLINE_SELF_BOOTSTRAPS_DAG_LOOP"]["vars"]
+    assert science_bootstrap["user_increment"] == ("推进主线，按全部未闭 DAG 循环持续施工。")
     assert science_bootstrap["expected_owner_execution_state"] == "dynamic_supervisor"
     assert science_bootstrap["expected_local_completion_transition"] == (
         "rederive_mainline_frontier"
