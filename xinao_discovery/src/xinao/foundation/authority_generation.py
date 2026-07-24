@@ -23,6 +23,13 @@ from xinao.canonical import canonical_dumps, canonical_sha256
 AUTHORITY_GENERATION_SCHEMA_VERSION = "xinao.foundation_authority_generation.v1"
 AUTHORITY_GENERATION_REF_SCHEMA_VERSION = "xinao.foundation_authority_generation_ref.v1"
 OWNER_VERDICT_SCHEMA_VERSION = "xinao.foundation_authority_compatibility_verdict.v1"
+LEGACY_OWNER_SCOPE = (
+    "LEGACY_PARENT_G0_G8 Foundation F1-F4 implementation binding only; "
+    "not current science admission"
+)
+PRE_SWITCH_OWNER_SCOPE = (
+    "Foundation F1-F4 implementation binding only; formal research remains closed"
+)
 
 DEFAULT_ARCHIVE_MANIFEST_PATH = Path(
     r"D:\XINAO_RESEARCH_RUNTIME\state\mainline_domain_research_current"
@@ -100,21 +107,26 @@ def load_reviewed_publication(
     verification_report_path: Path = DEFAULT_VERIFICATION_REPORT_PATH,
     review_summary_path: Path = DEFAULT_REVIEW_SUMMARY_PATH,
 ) -> dict[str, Any]:
-    """Validate and return the current reviewed document publication."""
+    """Validate the reviewed LEGACY_PARENT_G0_G8 publication only."""
 
     archive, _ = _load_object(archive_manifest_path, label="archive manifest")
-    publication = archive.get("current_publication")
+    publication = archive.get("legacy_parent")
     if archive.get("schema_version") != "xinao.archive-relocation-manifest.v1" or not isinstance(
         publication, dict
     ):
-        raise AuthorityGenerationError("archive manifest has no current publication")
+        raise AuthorityGenerationError("archive manifest has no legacy G0-G8 publication")
+    if (
+        publication.get("authority_scope") != "LEGACY_PARENT_G0_G8"
+        or publication.get("active_parent_status") != "SUPERSEDED_AS_ACTIVE_PARENT"
+    ):
+        raise AuthorityGenerationError("legacy publication escaped its authority scope")
 
-    stable_spec = _resolved_path(publication.get("stable_spec_path"), label="stable spec")
-    spec_snapshot = _resolved_path(
-        publication.get("versioned_snapshot_path"), label="versioned spec snapshot"
+    stable_spec = _resolved_path(
+        publication.get("stable_archive_path"), label="legacy stable archive"
     )
+    spec_snapshot = stable_spec
     formal_contract = _resolved_path(
-        publication.get("formal_contract_path"), label="formal contract"
+        publication.get("formal_contract_path"), label="legacy formal contract"
     )
     for path, label in (
         (stable_spec, "stable spec"),
@@ -129,11 +141,10 @@ def load_reviewed_publication(
     contract_ref = _file_ref(formal_contract)
     if (
         stable_ref["sha256"] != snapshot_ref["sha256"]
-        or publication.get("stable_spec_sha256") != stable_ref["sha256"]
-        or publication.get("versioned_snapshot_sha256") != snapshot_ref["sha256"]
+        or publication.get("stable_archive_sha256") != stable_ref["sha256"]
         or publication.get("formal_contract_sha256") != contract_ref["sha256"]
     ):
-        raise AuthorityGenerationError("current publication material identity is inconsistent")
+        raise AuthorityGenerationError("legacy publication material identity is inconsistent")
 
     report, _ = _load_object(verification_report_path, label="verification report")
     summary, _ = _load_object(review_summary_path, label="independent review summary")
@@ -160,14 +171,13 @@ def load_reviewed_publication(
     output_hashes = report.get("output_hashes")
     if not isinstance(output_hashes, dict):
         raise AuthorityGenerationError("verification report has no promoted output hashes")
-    required_outputs = {
-        str(stable_spec): stable_ref["sha256"],
-        str(spec_snapshot): snapshot_ref["sha256"],
-        str(formal_contract): contract_ref["sha256"],
-    }
-    for path, digest in required_outputs.items():
-        if str(output_hashes.get(path, "")).lower() != digest:
-            raise AuthorityGenerationError(f"promoted output hash is missing or stale: {path}")
+    promoted_digests = {str(value).lower() for value in output_hashes.values()}
+    for label, digest in (
+        ("legacy stable archive", stable_ref["sha256"]),
+        ("legacy formal contract", contract_ref["sha256"]),
+    ):
+        if digest not in promoted_digests:
+            raise AuthorityGenerationError(f"reviewed output hash is missing or stale: {label}")
 
     return {
         "archive_manifest_ref": _file_ref(archive_manifest_path),
@@ -177,6 +187,8 @@ def load_reviewed_publication(
         "stable_spec_ref": stable_ref,
         "human_spec_snapshot_ref": snapshot_ref,
         "formal_contract_ref": contract_ref,
+        "authority_scope": "LEGACY_PARENT_G0_G8",
+        "active_parent_status": "SUPERSEDED_AS_ACTIVE_PARENT",
     }
 
 
@@ -205,7 +217,7 @@ def build_owner_verdict(
         "publication_manifest_sha256": str(publication["frozen_manifest_ref"]["sha256"]).lower(),
         "human_spec_snapshot_sha256": str(publication["human_spec_snapshot_ref"]["sha256"]).lower(),
         "formal_contract_sha256": str(publication["formal_contract_ref"]["sha256"]).lower(),
-        "scope": "Foundation F1-F4 implementation binding only; formal research remains closed",
+        "scope": LEGACY_OWNER_SCOPE,
     }
     return {**core, "content_sha256": canonical_sha256(core)}
 
@@ -389,8 +401,7 @@ def validate_authority_generation(
         verdict.get("schema_version") != OWNER_VERDICT_SCHEMA_VERSION
         or verdict.get("authority") is not True
         or verdict.get("decision") != "ADOPT_COMPATIBLE_PUBLICATION"
-        or verdict.get("scope")
-        != "Foundation F1-F4 implementation binding only; formal research remains closed"
+        or verdict.get("scope") not in {LEGACY_OWNER_SCOPE, PRE_SWITCH_OWNER_SCOPE}
         or canonical_sha256(verdict_core) != verdict_content_hash
         or verdict_ref.get("relative_path") != OWNER_VERDICT_FILENAME
         or verdict_ref.get("sha256") != _sha256_bytes(verdict_bytes)

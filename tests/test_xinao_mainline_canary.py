@@ -74,5 +74,8 @@ def test_canonical_worker_registry_contains_p8_workflows() -> None:
     summary = registry_summary()
     assert "xinao-mainline-canary-queue" in summary["task_queues"]
     assert "XinaoMainlineCanaryWorkflow" in summary["workflows_registered"]
+    assert "XinaoScienceEpisodeWorkflowV1" in summary["workflows_registered"]
     assert "XinaoResearchCampaignWorkflow" in summary["workflows_registered"]
+    assert summary["workflow_roles"]["XinaoScienceEpisodeWorkflowV1"] == ("CURRENT_SCIENCE_ENTRY")
+    assert summary["workflow_roles"]["XinaoResearchCampaignWorkflow"] == "LEGACY_REPLAY"
     assert "FoundationContinuousWorkflowV3" not in summary["workflows_registered"]

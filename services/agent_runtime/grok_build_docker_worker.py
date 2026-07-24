@@ -85,6 +85,8 @@ MAX_RECOVERY_CONTINUATIONS = 8
 COMPLETED_STOP_REASONS = frozenset({"endturn"})
 RESULT_FORMATS = frozenset({"text", "json_object"})
 CANDIDATE_SANDBOX_PROFILE = "workspace"
+READ_ONLY_SANDBOX_PROFILE = "read-only"
+READ_ONLY_PERMISSION_MODE = "dontAsk"
 CLI_POLICY_VERSION = GROK_CLI_POLICY_VERSION
 EXECUTION_CONTRACT_VERSION = "xinao.grok.shared_execution_contract.v1"
 MODEL_CAPABILITY_SNAPSHOT_VERSION = "xinao.grok.model_capabilities.v2"
@@ -1045,6 +1047,8 @@ def _operation_id(
     package_manifest_sha256: str = "",
     contract_id: str = "",
     allowed_tools: tuple[str, ...] = (),
+    sandbox_read_only: bool = False,
+    tool_allowlist_enforced: bool = False,
     planning: str = "auto",
     subagents: str = "auto",
     external_research: str = "auto",
@@ -1092,8 +1096,17 @@ def _operation_id(
             correlation_id=correlation_id,
             parent_operation_id=parent_operation_id,
         )
-    if write:
-        identity["sandbox_profile"] = CANDIDATE_SANDBOX_PROFILE
+    sandbox_profile = _lane_sandbox_profile(
+        write=write,
+        sandbox_read_only=sandbox_read_only,
+    )
+    if sandbox_profile:
+        identity["sandbox_profile"] = sandbox_profile
+    if sandbox_read_only:
+        identity["sandbox_read_only"] = True
+        identity["permission_mode"] = READ_ONLY_PERMISSION_MODE
+    if tool_allowlist_enforced:
+        identity["tool_allowlist_enforced"] = True
     if work_key or package_manifest_sha256:
         identity.update(
             work_key=work_key,
@@ -1104,6 +1117,39 @@ def _operation_id(
         )
     raw = _json_bytes(identity)
     return f"op_grok_docker_{_sha256(raw)[:32]}"
+
+
+def _lane_sandbox_profile(*, write: bool, sandbox_read_only: bool) -> str:
+    if write:
+        return CANDIDATE_SANDBOX_PROFILE
+    if sandbox_read_only:
+        return READ_ONLY_SANDBOX_PROFILE
+    return ""
+
+
+def _lane_security_cli_args(
+    *,
+    write: bool,
+    sandbox_read_only: bool,
+    tool_allowlist_enforced: bool,
+    allowed_tools: tuple[str, ...],
+) -> list[str]:
+    """Build the exact security argv passed to the Grok subprocess."""
+
+    args: list[str] = []
+    sandbox_profile = _lane_sandbox_profile(
+        write=write,
+        sandbox_read_only=sandbox_read_only,
+    )
+    if sandbox_profile:
+        args.extend(["--sandbox", sandbox_profile])
+    if write:
+        args.append("--always-approve")
+    elif sandbox_read_only:
+        args.extend(["--permission-mode", READ_ONLY_PERMISSION_MODE])
+    if tool_allowlist_enforced:
+        args.extend(["--tools", ",".join(allowed_tools)])
+    return args
 
 
 def _session_cli_args(
@@ -2003,6 +2049,12 @@ async def _execute_lane_locked(
     model = str(lane.get("model") or "").strip()
     mode = str(lane.get("mode") or "audit").strip()
     write = lane.get("write") is True
+    sandbox_read_only = not write and lane.get("sandbox_read_only") is True
+    tool_allowlist_enforced = lane.get("tool_allowlist_enforced") is True
+    sandbox_profile = _lane_sandbox_profile(
+        write=write,
+        sandbox_read_only=sandbox_read_only,
+    )
     if not lane_id or not task_prompt.strip():
         raise ValueError("Docker Grok lane requires lane_id and prompt")
     if not model:
@@ -2089,6 +2141,12 @@ async def _execute_lane_locked(
     )
     contract_id = str(lane.get("contract_id") or "")
     allowed_tools = tuple(sorted(map(str, lane.get("allowed_tools") or [])))
+    security_cli_args = _lane_security_cli_args(
+        write=write,
+        sandbox_read_only=sandbox_read_only,
+        tool_allowlist_enforced=tool_allowlist_enforced,
+        allowed_tools=allowed_tools,
+    )
     operation_id = _operation_id(
         workflow_id,
         lane_id,
@@ -2106,6 +2164,8 @@ async def _execute_lane_locked(
         package_manifest_sha256=package_manifest_sha256 if canonical_package_mode else "",
         contract_id=contract_id,
         allowed_tools=allowed_tools,
+        sandbox_read_only=sandbox_read_only,
+        tool_allowlist_enforced=tool_allowlist_enforced,
         planning=str(capability_policy["planning"]),
         subagents=str(capability_policy["subagents"]),
         external_research=str(capability_policy["external_research"]),
@@ -2242,7 +2302,11 @@ async def _execute_lane_locked(
         "execution_prompt_sha256": execution_prompt_sha256,
         "cwd": str(cwd),
         "write": write,
-        "sandbox_profile": CANDIDATE_SANDBOX_PROFILE if write else "",
+        "sandbox_profile": sandbox_profile,
+        "sandbox_read_only": sandbox_read_only,
+        "permission_mode": READ_ONLY_PERMISSION_MODE if sandbox_read_only else "",
+        "security_cli_args": security_cli_args,
+        "tool_allowlist_enforced": tool_allowlist_enforced,
         "max_turns": max_turns,
         "deadline_seconds": deadline_seconds,
         "requested_session_id": requested_session_id,
@@ -2396,11 +2460,7 @@ async def _execute_lane_locked(
                     ),
                 ]
             )
-        if write:
-            # xAI's native Linux Landlock profile is applied irreversibly at
-            # process startup.  Its writable CWD is the exact manifest-bound
-            # candidate root validated above; the repository mounts stay RO.
-            args.extend(["--sandbox", CANDIDATE_SANDBOX_PROFILE, "--always-approve"])
+        args.extend(security_cli_args)
         if canonical_package_mode:
             _revalidate_canonical_route_claim(lane)
         process = await asyncio.create_subprocess_exec(
@@ -2712,6 +2772,9 @@ async def _execute_lane_locked(
         "contract_id": contract_id,
         "write": write,
         "allowed_tools": list(allowed_tools),
+        "sandbox_read_only": sandbox_read_only,
+        "tool_allowlist_enforced": tool_allowlist_enforced,
+        "security_cli_args": security_cli_args,
         "planning": capability_policy["planning"],
         "subagents": capability_policy["subagents"],
         "external_research": capability_policy["external_research"],
@@ -2732,7 +2795,16 @@ async def _execute_lane_locked(
         "result_json_schema_sha256": output_contract["result_json_schema_sha256"],
         "min_result_chars": output_contract["min_result_chars"],
         "required_result_markers": list(output_contract["required_result_markers"]),
-        "permission_mode": "approve-all" if write else "read_only_single_turn",
+        "permission_mode": (
+            "approve-all"
+            if write
+            else (
+                READ_ONLY_PERMISSION_MODE
+                if sandbox_read_only and tool_allowlist_enforced and not allowed_tools
+                else "read_only_single_turn"
+            )
+        ),
+        "sandbox_profile": sandbox_profile,
         "operation_id": operation_id,
         "operation_state": "completed",
         "activity_attempt": attempt,

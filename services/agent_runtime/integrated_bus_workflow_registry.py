@@ -37,6 +37,9 @@ from services.agent_runtime.xinao_mainline_canary import (
     TASK_QUEUE as MAINLINE_CANARY_TASK_QUEUE,
 )
 from services.agent_runtime.xinao_mainline_canary import temporal_exports as mainline_exports
+from services.agent_runtime.xinao_science_episode_workflow import (
+    temporal_exports_v1 as science_episode_exports,
+)
 
 
 @dataclass
@@ -103,6 +106,7 @@ def collect_worker_bindings() -> list[WorkerBinding]:
     )
 
     mainline_workflows, mainline_activities = mainline_exports()
+    science_workflows, science_activities = science_episode_exports()
     foundation_workflows, foundation_activities = foundation_continuous_exports()
     foundation_v2_workflows, foundation_v2_activities = foundation_continuous_exports_v2()
     bindings.append(
@@ -110,11 +114,13 @@ def collect_worker_bindings() -> list[WorkerBinding]:
             task_queue=MAINLINE_CANARY_TASK_QUEUE,
             workflows=[
                 *mainline_workflows,
+                *science_workflows,
                 *foundation_workflows,
                 *foundation_v2_workflows,
             ],
             activities=[
                 *mainline_activities,
+                *science_activities,
                 *foundation_activities,
                 *foundation_v2_activities,
             ],
@@ -126,12 +132,24 @@ def collect_worker_bindings() -> list[WorkerBinding]:
 
 def registry_summary() -> dict[str, Any]:
     bindings = collect_worker_bindings()
+    workflow_roles = {
+        "XinaoIntegratedBusWorkflow": "REUSABLE_INSTRUMENT",
+        "XinaoIntegratedBusParentWorkflow": "REUSABLE_INSTRUMENT_ORCHESTRATOR",
+        "XinaoIntegratedBusChildWorkflow": "REUSABLE_INSTRUMENT_CHILD",
+        "XinaoScienceEpisodeWorkflowV1": "CURRENT_SCIENCE_ENTRY",
+        "XinaoResearchCampaignWorkflow": "LEGACY_REPLAY",
+        "XinaoMainlineCanaryWorkflow": "INFRASTRUCTURE_CANARY",
+        "FoundationContinuousWorkflowV1": "LEGACY_PARENT_G0_G8_REPLAY",
+        "FoundationWaveChildWorkflowV1": "LEGACY_PARENT_G0_G8_REPLAY",
+        "FoundationContinuousWorkflowV2": "LEGACY_PARENT_G0_G8_REPLAY",
+    }
     return {
         "binding_count": len(bindings),
         "task_queues": [b.task_queue for b in bindings],
         "workflows_registered": [
             getattr(w, "__name__", str(w)) for b in bindings for w in b.workflows
         ],
+        "workflow_roles": workflow_roles,
         "activity_count": sum(len(b.activities) for b in bindings),
         "graph_ids": [b.graph_id for b in bindings if b.graph_id],
         "langgraph_plugin_queues": [b.task_queue for b in bindings if b.langgraph_plugin],

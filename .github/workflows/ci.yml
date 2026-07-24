@@ -86,6 +86,13 @@ jobs:
             os: ubuntu-latest
             pytest_args: -q tests/unit/capability
             ruff_paths: src/xinao/capability tests/unit/capability
+          - project: discovery-science-parent
+            path: xinao_discovery
+            os: ubuntu-latest
+            pytest_args: -q tests/unit/science tests/contract/test_world.py
+            ruff_paths: >-
+              src/xinao/science src/xinao/world/builder.py
+              tests/unit/science tests/contract/test_world.py
           - project: discovery-domain-admission
             path: xinao_discovery
             os: ubuntu-latest

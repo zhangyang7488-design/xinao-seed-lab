@@ -2317,7 +2317,13 @@ def test_docker_grok_output_contract_hashes_exact_artifact_schema_bytes() -> Non
 
 
 def test_docker_grok_receives_current_project_rules_read_only() -> None:
-    from services.agent_runtime.grok_build_docker_worker import _execute_lane_locked
+    from services.agent_runtime.grok_build_docker_worker import (
+        CANDIDATE_SANDBOX_PROFILE,
+        READ_ONLY_PERMISSION_MODE,
+        READ_ONLY_SANDBOX_PROFILE,
+        _execute_lane_locked,
+        _lane_security_cli_args,
+    )
 
     compose = (REPO_ROOT / "docker-compose.yml").read_text(encoding="utf-8")
     assert "/AGENTS.md:/app/AGENTS.md:ro" in compose
@@ -2325,8 +2331,27 @@ def test_docker_grok_receives_current_project_rules_read_only() -> None:
     assert "/projects:/app/projects:ro" in compose
     assert "/scripts:/app/scripts:ro" in compose
     assert "GROK_HOME: /grok-home/.grok" in compose
+    assert _lane_security_cli_args(
+        write=True,
+        sandbox_read_only=False,
+        tool_allowlist_enforced=False,
+        allowed_tools=(),
+    ) == ["--sandbox", CANDIDATE_SANDBOX_PROFILE, "--always-approve"]
+    assert _lane_security_cli_args(
+        write=False,
+        sandbox_read_only=True,
+        tool_allowlist_enforced=True,
+        allowed_tools=(),
+    ) == [
+        "--sandbox",
+        READ_ONLY_SANDBOX_PROFILE,
+        "--permission-mode",
+        READ_ONLY_PERMISSION_MODE,
+        "--tools",
+        "",
+    ]
     execution_source = inspect.getsource(_execute_lane_locked)
-    assert '"--sandbox", CANDIDATE_SANDBOX_PROFILE' in execution_source
+    assert "args.extend(security_cli_args)" in execution_source
     assert '_container_cwd(lane.get("cwd"), write=write)' in execution_source
     assert execution_source.count("_revalidate_canonical_route_claim(lane)") == 3
     assert "guard_check=" in execution_source
@@ -2488,6 +2513,18 @@ def test_docker_grok_operation_binding_and_cache_cover_execution_inputs(
         COMPOSER_MODEL,
         **{**common, "result_format": "json_object", "min_result_chars": 1_000},
     )
+    changed_read_only_sandbox = _operation_id(
+        "wf",
+        "lane",
+        "b" * 64,
+        COMPOSER_MODEL,
+        **{
+            **common,
+            "sandbox_read_only": True,
+            "tool_allowlist_enforced": True,
+            "allowed_tools": (),
+        },
+    )
     assert (
         len(
             {
@@ -2497,9 +2534,10 @@ def test_docker_grok_operation_binding_and_cache_cover_execution_inputs(
                 changed_tools,
                 changed_capability,
                 changed_output_contract,
+                changed_read_only_sandbox,
             }
         )
-        == 6
+        == 7
     )
 
     operation_root = tmp_path / operation_id
@@ -3435,11 +3473,20 @@ def test_integrated_bus_worker_registry_contains_real_temporal_langgraph_route()
         "XinaoIntegratedBusChildWorkflow",
         "XinaoMainlineCanaryWorkflow",
         "XinaoResearchCampaignWorkflow",
+        "XinaoScienceEpisodeWorkflowV1",
         "FoundationContinuousWorkflowV1",
         "FoundationWaveChildWorkflowV1",
         "FoundationContinuousWorkflowV2",
     ]
-    assert registry["activity_count"] == 11
+    assert registry["activity_count"] == 14
+    assert registry["workflow_roles"]["XinaoScienceEpisodeWorkflowV1"] == ("CURRENT_SCIENCE_ENTRY")
+    assert registry["workflow_roles"]["XinaoResearchCampaignWorkflow"] == "LEGACY_REPLAY"
+    assert registry["workflow_roles"]["FoundationContinuousWorkflowV1"] == (
+        "LEGACY_PARENT_G0_G8_REPLAY"
+    )
+    assert registry["workflow_roles"]["FoundationContinuousWorkflowV2"] == (
+        "LEGACY_PARENT_G0_G8_REPLAY"
+    )
     assert not any("ThinGlue" in name for name in registry["workflows_registered"])
     assert not any(queue.startswith("xinao-thin-glue-") for queue in registry["task_queues"])
     assert "xinao-integrated-bus-v2" in registry["graph_ids"]
@@ -3686,6 +3733,62 @@ def test_hot_graph_registers_no_legacy_model_worker_nodes() -> None:
         "fallback_model_invocation_performed",
         "memory_model_bind_frozen",
     }.issubset(BusState.__annotations__)
+
+
+def test_science_instrument_contract_is_consumed_without_claiming_progress() -> None:
+    from services.agent_runtime.integrated_bus_graph import (
+        consume_science_instrument_contract,
+    )
+
+    result = consume_science_instrument_contract(
+        {
+            "science_instrument_mode": "RESEARCH",
+            "science_episode_admission": {
+                "allowed": True,
+                "active_parent_id": "XINAO_SCIENCE_PROTOCOL_ACTIVE",
+                "claim_intent": "EXPLORATORY",
+                "old_g6_equivalent": False,
+                "evaluation_outcome_access": False,
+            },
+        }
+    )
+    assert result == {
+        "science_instrument_mode": "RESEARCH",
+        "science_instrument_admission_consumed": True,
+        "science_trial_appends": 0,
+        "research_progress_claim_allowed": False,
+        "completion_claim_allowed": False,
+        "evaluation_outcome_access": False,
+        "legacy_parent_scope_consumed": False,
+    }
+
+
+def test_science_instrument_contract_rejects_legacy_or_startup_research_bypass() -> None:
+    from services.agent_runtime.integrated_bus_graph import (
+        consume_science_instrument_contract,
+    )
+
+    base = {
+        "allowed": True,
+        "active_parent_id": "XINAO_SCIENCE_PROTOCOL_ACTIVE",
+        "claim_intent": "STARTUP_VALIDATION",
+        "old_g6_equivalent": False,
+        "evaluation_outcome_access": False,
+    }
+    with pytest.raises(ValueError, match="startup-only claim"):
+        consume_science_instrument_contract(
+            {
+                "science_instrument_mode": "RESEARCH",
+                "science_episode_admission": base,
+            }
+        )
+    with pytest.raises(ValueError, match="direct science worker activity"):
+        consume_science_instrument_contract(
+            {
+                "science_instrument_mode": "SCIENCE_STARTUP_VALIDATION",
+                "science_episode_admission": base,
+            }
+        )
 
 
 def test_selected_grok_adapter_fails_closed_without_valid_fanin() -> None:

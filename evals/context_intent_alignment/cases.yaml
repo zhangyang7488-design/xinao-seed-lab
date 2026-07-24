@@ -2762,7 +2762,7 @@
     expected_recovered_requirement_atoms: |-
       ATOM_PROBLEM_FORMATION_IS_FIRST_CLASS|ATOM_FOUNDATIONAL_MULTILEVEL_BACKGROUND|ATOM_DECODING_FAILURE_RETAINED|ATOM_CORRECT_ANSWER_DOES_NOT_ERASE_FAILURE|ATOM_VISIBLE_WAIT_REOPENED|ATOM_USER_DEFINED_PROBLEM_PRESERVED|ATOM_BASE_CASE_RETAINED|ATOM_META_CASE_LINKED|ATOM_MIXED_PREREQUISITE_DECOMPOSED|ATOM_LOCAL_RELAY_REMAINS_ACTIONABLE|ATOM_PRIOR_TEXT_IS_CANDIDATE_ONLY|ATOM_EXTERNALITY_REQUIRES_CURRENT_EVIDENCE|ATOM_LOCAL_CONSTRUCTION_COUNTERFACTUAL|ATOM_MACHINE_CONSUMER_FAILS_CLOSED|ATOM_CAUSAL_LINEAGE_TRACED|ATOM_REMEDY_RECHECKS_ORIGINAL_PROBLEM|ATOM_CHANGED_CONTEXT_META_REGRESSION
     expected_rejected_proxy_atoms: ATOM_TECHNICAL_STATUS_DEFINES_PROBLEM|ATOM_MULTILEVEL_EXPRESSION_IS_VAGUE|ATOM_LATER_CORRECTNESS_ERASES_DECODE_FAILURE|ATOM_ONLY_REWRITE_EVENT430|ATOM_FLATTEN_CASE_TO_RULE|ATOM_RECURSIVE_TRANSCRIPT_COPIES|ATOM_BAN_ALL_WAIT|ATOM_COMPLETE_FLAG_PROVES_EXTERNAL|ATOM_PROMPT_FREEZE_IS_FACT|ATOM_REPORT_ONLY|ATOM_USER_MUST_NAME_RULE
-- description: Final phase observations cannot become cross-scope stop commands
+- description: Legacy phase observations cannot become cross-scope stop commands
   metadata:
     id: REG_PHASE_OBSERVATION_CANNOT_COMMAND_UNRELATED_WORK
     domain: continuity
@@ -2780,13 +2780,15 @@
     case_id: REG_PHASE_OBSERVATION_CANNOT_COMMAND_UNRELATED_WORK
     domain: continuity
     restored_context: |-
-      The current mainline defines G4_FULL as final evidence-set completeness and allows G4 to run
+      At the 2026-07-23 incident, the then-active LEGACY_PARENT_G0_G8 defined G4_FULL as final
+      evidence-set completeness and allowed G4 to run
       in pre-registered hash-bound batches. One current G4 route measurement is HOLD because its
       local route evidence is incomplete. G4_FULL is therefore false. G5 final statistical
       adjudication is also false because the complete G4 results do not yet exist, while G5 design,
       PowerPlan, split binding, preregistration, error-control and holdout planning are explicitly
-      pre-outcome work and remain locally constructible. G6 formal research is denied until
-      Foundation plus G0-G5 all close. A previous implementation also multiplied all 10,206
+      pre-outcome work and remained locally constructible. Under that legacy parent, G6 formal
+      research was denied until Foundation plus G0-G5 all closed. These are incident facts, not
+      the current science-parent completion ruler. A previous implementation also multiplied all 10,206
       campaign cells against one provider-bound API relay account and treated that full-campaign
       oil gauge as a prerequisite, even though the machine worker bus and provider/transport are
       replaceable and quota only constrains the next bounded batch.
@@ -2798,8 +2800,8 @@
       ATOM_G5_PREOUTCOME_WORK_CONTINUES=G5 design, PowerPlan, preregistration, error-control and
       holdout planning continue before G4_FULL;
       ATOM_G5_FINAL_REMAINS_FALSE=only G5 final statistical adjudication remains false;
-      ATOM_G6_FORMAL_RESEARCH_DENIED=G6 formal research remains denied until the final admission
-      formula is satisfied;
+      ATOM_G6_FORMAL_RESEARCH_DENIED=the historical G6 formal research remained denied under the
+      LEGACY_PARENT_G0_G8 formula;
       ATOM_PROVIDER_ROUTE_REPLACEABLE=each bounded batch uses the current provider-neutral worker
       contract and route receipt rather than one permanent API account;
       ATOM_CAPACITY_IS_BATCH_SCHEDULING=quota and capacity constrain batch size, width and timing,
@@ -2862,6 +2864,160 @@
     expected_starts_new_project: false
     expected_recovered_requirement_atoms: ATOM_FINAL_OBSERVATION_NOT_COMMAND|ATOM_G4_ENGINEERING_CONTINUES|ATOM_G4_BATCH_SCOPE_LOCAL|ATOM_G5_PREOUTCOME_WORK_CONTINUES|ATOM_G5_FINAL_REMAINS_FALSE|ATOM_G6_FORMAL_RESEARCH_DENIED|ATOM_PROVIDER_ROUTE_REPLACEABLE|ATOM_CAPACITY_IS_BATCH_SCHEDULING|ATOM_REAL_EXTERNAL_REPORT_AFTER_PROOF|ATOM_STALE_BLOCKER_REPORT_INVALID|ATOM_REPAIR_LOCAL_DEPENDENCY_PREREQUISITE
     expected_rejected_proxy_atoms: ATOM_G4_FULL_FALSE_FREEZES_G4|ATOM_G5_CLOSED_FALSE_FREEZES_G5|ATOM_ROUTE_HOLD_FREEZES_PARENT|ATOM_ONE_API_IS_CAMPAIGN_OIL_TANK|ATOM_WRITE_BLOCKER_REPORT_WITHOUT_PROOF|ATOM_START_G6_EARLY|ATOM_ADVANCE_DOMAIN_CAMPAIGN|ATOM_LABEL_LOCAL_DEPENDENCY_ENVIRONMENT_DEBT
+- description: Fresh window restores the active science parent instead of a stale pre-switch checkpoint
+  metadata:
+    id: REG_FRESH_WINDOW_SCIENCE_PARENT_OVERRIDES_PRE_SWITCH_CHECKPOINT
+    domain: continuity
+    class: active_parent_cutover_regression
+    profiles:
+    - smoke
+    - core
+    - deep
+    source_type: explicit_user_correction
+    source_ref: current-user-2026-07-24/science-parent-cutover
+    lifecycle: regression
+    added_at: '2026-07-24'
+    not_authority: true
+  vars:
+    case_id: REG_FRESH_WINDOW_SCIENCE_PARENT_OVERRIDES_PRE_SWITCH_CHECKPOINT
+    domain: continuity
+    restored_context: |-
+      Stable entry and the hash-bound active-parent projection select
+      XINAO_SCIENCE_PROTOCOL_ACTIVE. ParentScopeSwitch is PERFORMED and preserves the old mixed
+      parent as LEGACY_PARENT_G0_G8. A stale, non-authoritative checkpoint still mentions event448,
+      G4/G5/G6, C1-C6, H02-H14 and 10,206 cells. The current request is to continue after migration
+      but first prove that a clean new window can start the new parent without producing a research
+      finding. This is a bounded current-runtime validation, not discovery of a new governing
+      invariant. Independent read-only audit and execution evidence are separable positive-benefit
+      work on the available external worker route; Codex main remains the only formal writer and
+      final verifier. A failed check requires repair and rerun of its real downstream consumer, but
+      freezes only that exact dependency cone.
+      Neutral candidate pool:
+      ATOM_CURRENT_SCIENCE_PARENT_WINS=current stable authority and performed switch override a
+      stale pre-switch checkpoint;
+      ATOM_STALE_CHECKPOINT_IGNORED=the stale checkpoint is retained as history but not resumed;
+      ATOM_STARTUP_VALIDATION_FIRST=run SCIENCE_STARTUP_VALIDATION with no outcome access and no
+      scientific progress claim;
+      ATOM_FIRST_RESEARCH_FRONTIER_PRESERVED=after validation the first real frontier remains
+      ExposureInventory, bounded ResearchQuestion and ProtocolPin;
+      ATOM_LEGACY_STATUS_PRESERVED=old G4/G5/G6 states remain unchanged in the legacy namespace;
+      ATOM_RESUME_EVENT448=continue C1-C6/H02-H14 from event448;
+      ATOM_RESTART_G4_FULL=resume 10,206-cell G4_FULL as the current parent;
+      ATOM_MARK_OLD_GATES_PASS=convert historical incomplete gates to PASS during migration.
+    user_increment: |-
+      Open this as a fresh window and validate that the new science mainline starts cleanly. Do not
+      advance real research and do not rewrite old history.
+    expected_target_relation: existing_object
+    expected_next_step: act
+    expected_ask_user: false
+    expected_create_repository: false
+    expected_create_daemon: false
+    expected_object_identity_source: restored_context
+    expected_mature_comparison_triggered: false
+    expected_learning_loop: single_loop_instance
+    expected_repair_target: instance_action
+    expected_closure_evidence: cross_context_entry_and_negative
+    expected_effect_scope: reversible_local
+    expected_effect_authority: explicit_current_user
+    expected_coordination_mode: single_supervisor_worker
+    expected_worker_provider: external_worker
+    expected_worker_transport: adaptive|direct_batch
+    expected_quota_action: query_now
+    expected_quota_query_disposition: query_now_before_routing
+    expected_owner_execution_state: dynamic_supervisor
+    expected_terminal_refill: not_applicable
+    expected_worker_receipt_disposition: not_applicable
+    expected_text_writer: not_applicable
+    expected_completion_claim_scope: not_applicable
+    expected_local_completion_transition: not_applicable
+    expected_continuous_run_disposition: not_applicable
+    expected_frontier_disposition: execute
+    expected_candidate_value: positive
+    expected_global_frontier_reconciled: false
+    expected_downstream_recovery_required: false
+    expected_freeze_unaffected_provider: false
+    expected_degraded_scope: frontier_only
+    expected_unaffected_frontier_action: continue_recompute
+    expected_preference_update: none
+    expected_starts_new_project: false
+    expected_recovered_requirement_atoms: ATOM_CURRENT_SCIENCE_PARENT_WINS|ATOM_STALE_CHECKPOINT_IGNORED|ATOM_STARTUP_VALIDATION_FIRST|ATOM_FIRST_RESEARCH_FRONTIER_PRESERVED|ATOM_LEGACY_STATUS_PRESERVED
+    expected_rejected_proxy_atoms: ATOM_RESUME_EVENT448|ATOM_RESTART_G4_FULL|ATOM_MARK_OLD_GATES_PASS
+- description: A science instrument gap stays inside its episode dependency cone
+  metadata:
+    id: REG_SCIENCE_TOOL_GAP_STAYS_IN_EPISODE_CONE
+    domain: continuity
+    class: science_instrument_scope_regression
+    profiles:
+    - smoke
+    - core
+    - deep
+    source_type: explicit_user_correction
+    source_ref: current-user-2026-07-24/science-instrument-scope
+    lifecycle: regression
+    added_at: '2026-07-24'
+    not_authority: true
+  vars:
+    case_id: REG_SCIENCE_TOOL_GAP_STAYS_IN_EPISODE_CONE
+    domain: continuity
+    restored_context: |-
+      One SCIENCE_STARTUP_VALIDATION discovers that a replaceable runner is missing from the
+      current carrier, while the same capability is already available from a mature local route or
+      can be restored from the pinned lock. The active parent is XINAO_SCIENCE_PROTOCOL_ACTIVE;
+      software is a reusable instrument foundation, not a global research gate. The governing
+      dependency-cone invariant is already known; this bounded task repairs its current runtime
+      binding, lands the already-requested cross-context regression, and is not complete until the
+      original startup consumer replays successfully. Independent route audit is separable
+      positive-benefit work on the available external worker route; Codex main remains the only
+      formal writer and final verifier.
+      Neutral candidate pool:
+      ATOM_RESTORE_OR_REROUTE_INSTRUMENT=restore the current carrier or choose the existing
+      equivalent mature route;
+      ATOM_RERUN_ORIGINAL_CONSUMER=verify the same startup consumer after the repair;
+      ATOM_FREEZE_DEPENDENCY_CONE_ONLY=until repaired, freeze only the exact dependent episode leg;
+      ATOM_RETURN_TO_SCIENCE_EPISODE=after repair return to the same science episode;
+      ATOM_REOPEN_FOUNDATION=reopen all Foundation work as the global parent;
+      ATOM_RESTART_G0_G8=rebuild G0-G8/G6 admission before science can continue;
+      ATOM_REPORT_ENVIRONMENT_DEBT=write a report instead of restoring a locally constructible
+      carrier dependency.
+    user_increment: |-
+      Fix the problem directly and prove the original startup path works. Do not let one tool gap
+      turn the old platform programme back into the parent goal.
+    expected_target_relation: existing_object
+    expected_next_step: act
+    expected_ask_user: false
+    expected_create_repository: false
+    expected_create_daemon: false
+    expected_object_identity_source: restored_context
+    expected_mature_comparison_triggered: false
+    expected_learning_loop: double_loop_structural
+    expected_repair_target: governing_invariant
+    expected_closure_evidence: cross_context_entry_and_negative
+    expected_effect_scope: reversible_local
+    expected_effect_authority: explicit_current_user
+    expected_coordination_mode: single_supervisor_worker
+    expected_worker_provider: external_worker
+    expected_worker_transport: adaptive|direct_batch
+    expected_quota_action: query_now
+    expected_quota_query_disposition: query_now_before_routing
+    expected_owner_execution_state: dynamic_supervisor
+    expected_terminal_refill: not_applicable
+    expected_worker_receipt_disposition: not_applicable
+    expected_text_writer: codex_main
+    expected_completion_claim_scope: not_applicable
+    expected_local_completion_transition: not_applicable
+    expected_continuous_run_disposition: not_applicable
+    expected_frontier_disposition: execute
+    expected_candidate_value: positive
+    expected_global_frontier_reconciled: false
+    expected_downstream_recovery_required: true
+    expected_freeze_unaffected_provider: false
+    expected_degraded_scope: dependency_cone_only
+    expected_unaffected_frontier_action: continue_recompute
+    expected_recovery_probe: bounded_event_driven
+    expected_preference_update: smallest_existing_artifact
+    expected_starts_new_project: false
+    expected_recovered_requirement_atoms: ATOM_RESTORE_OR_REROUTE_INSTRUMENT|ATOM_RERUN_ORIGINAL_CONSUMER|ATOM_FREEZE_DEPENDENCY_CONE_ONLY|ATOM_RETURN_TO_SCIENCE_EPISODE
+    expected_rejected_proxy_atoms: ATOM_REOPEN_FOUNDATION|ATOM_RESTART_G0_G8|ATOM_REPORT_ENVIRONMENT_DEBT
 - description: A task diagnosis does not become personal metacognition and a local exclusion does not cancel a mainline prerequisite
   metadata:
     id: REG_ACTIVE_SUBJECT_AND_OBJECT_SCOPE_BIND_BEFORE_GENERALIZATION

@@ -219,6 +219,14 @@ def _grok_raw_model_identity_valid(
 
 class BusState(TypedDict, total=False):
     input_path: str
+    science_episode_admission: dict[str, Any]
+    science_instrument_mode: str
+    science_instrument_admission_consumed: bool
+    science_trial_appends: int
+    research_progress_claim_allowed: bool
+    completion_claim_allowed: bool
+    evaluation_outcome_access: bool
+    legacy_parent_scope_consumed: bool
     intake_named_blocker: str
     intake_requested_path: str
     intake_used_fallback_text: bool
@@ -908,6 +916,40 @@ def _resolve_gateway_base_url(params: dict[str, Any]) -> str:
     return resolve_gateway_base_url(str(params.get("gateway_base_url") or "").strip() or None)
 
 
+def consume_science_instrument_contract(state: BusState) -> dict[str, Any]:
+    """Fail closed when the reusable bus is entered through a science episode."""
+
+    raw_admission = state.get("science_episode_admission")
+    mode = str(state.get("science_instrument_mode") or "").strip().upper()
+    if raw_admission is None and not mode:
+        return {}
+    if not isinstance(raw_admission, Mapping):
+        raise ValueError("science instrument admission must be an object")
+    if mode == "SCIENCE_STARTUP_VALIDATION":
+        raise ValueError("startup validation must use the direct science worker activity")
+    if mode != "RESEARCH":
+        raise ValueError("science instrument mode is missing or unsupported")
+    claim_intent = str(raw_admission.get("claim_intent") or "").strip().upper()
+    if (
+        raw_admission.get("allowed") is not True
+        or raw_admission.get("active_parent_id") != "XINAO_SCIENCE_PROTOCOL_ACTIVE"
+        or raw_admission.get("old_g6_equivalent") is not False
+        or raw_admission.get("evaluation_outcome_access") is not False
+    ):
+        raise ValueError("science instrument admission is not current-parent safe")
+    if claim_intent not in {"EXPLORATORY", "CONFIRMATORY"}:
+        raise ValueError("research instrument cannot consume a startup-only claim")
+    return {
+        "science_instrument_mode": mode,
+        "science_instrument_admission_consumed": True,
+        "science_trial_appends": 0,
+        "research_progress_claim_allowed": False,
+        "completion_claim_allowed": False,
+        "evaluation_outcome_access": False,
+        "legacy_parent_scope_consumed": False,
+    }
+
+
 async def intake_node(state: BusState) -> dict[str, Any]:
     """
     L0 intake activity. Never raise on host Desktop\\*.lnk (container cannot see it).
@@ -934,6 +976,7 @@ async def intake_node(state: BusState) -> dict[str, Any]:
     # Prefer evidence-resolved path for downstream nodes; keep requested for evidence.
     effective_path = str(intake.get("source") or intake_target)
     return {
+        **consume_science_instrument_contract(state),
         "content_md": str(intake.get("content_md") or ""),
         "adapter": str(intake.get("adapter") or ""),
         "input_path": effective_path,
