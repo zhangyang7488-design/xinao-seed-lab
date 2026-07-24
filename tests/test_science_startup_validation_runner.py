@@ -24,6 +24,7 @@ from xinao.science import (
     canonical_world_measurement_bindings,
     verify_science_episode_admission_file,
 )
+from xinao.science import episode_admission as admission_subject
 
 
 def _sha256(path: Path) -> str:
@@ -46,7 +47,18 @@ def test_materialized_startup_episode_uses_the_canonical_five_world_bindings(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    parent = subject.load_science_active_parent()
+    parent = {
+        "active_parent": {
+            "id": "XINAO_SCIENCE_PROTOCOL_ACTIVE",
+            "sha256": "a" * 64,
+        },
+        "background_contract": {"sha256": "b" * 64},
+    }
+    monkeypatch.setattr(
+        admission_subject,
+        "load_science_active_parent",
+        lambda _projection_path: parent,
+    )
     materials = subject._materialize_validation_episode(
         tmp_path,
         active_parent_sha256=str(parent["active_parent"]["sha256"]),

@@ -474,10 +474,40 @@ def test_legacy_world_remains_replayable_but_not_current_science(
         )
 
 
-def test_wrong_world_inputs_fail_closed(tmp_path: Path) -> None:
-    with pytest.raises(ValueError, match="unsupported dataset"):
+@pytest.mark.parametrize(
+    ("dataset", "baseline", "rule", "message"),
+    (
+        ("wrong", "baseline-odds-water.v1", "special-number-rule.v1", "unsupported dataset"),
+        ("verified-913", "wrong", "special-number-rule.v1", "baseline or rule"),
+        ("verified-913", "baseline-odds-water.v1", "wrong", "baseline or rule"),
+    ),
+)
+def test_wrong_world_inputs_fail_before_legacy_carrier_reads(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    dataset: str,
+    baseline: str,
+    rule: str,
+    message: str,
+) -> None:
+    monkeypatch.setattr(world_builder, "LEGACY_BLUEPRINT_PATH", tmp_path / "missing.json")
+    with pytest.raises(ValueError, match=message):
         build_world(
-            dataset="wrong",
+            dataset=dataset,
+            baseline=baseline,
+            rule=rule,
+            output_root=tmp_path,
+        )
+
+
+def test_valid_legacy_world_selectors_still_require_the_blueprint(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(world_builder, "LEGACY_BLUEPRINT_PATH", tmp_path / "missing.json")
+    with pytest.raises(FileNotFoundError):
+        build_world(
+            dataset="verified-913",
             baseline="baseline-odds-water.v1",
             rule="special-number-rule.v1",
             output_root=tmp_path,

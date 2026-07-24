@@ -219,6 +219,15 @@ def _now() -> str:
     return datetime.now(UTC).isoformat(timespec="milliseconds").replace("+00:00", "Z")
 
 
+def _validate_world_selectors(*, dataset: str, baseline: str, rule: str) -> None:
+    """Reject unsupported caller selectors before reading any carrier state."""
+
+    if dataset not in {"verified-913", DATASET_REF}:
+        raise ValueError("unsupported dataset ref")
+    if baseline != BASELINE_REF or rule != SPECIAL_NUMBER_RULE.rule_ref:
+        raise ValueError("baseline or rule does not match the registered vertical slice")
+
+
 def _build_world(
     *,
     dataset: str,
@@ -235,11 +244,8 @@ def _build_world(
     science_episode_binding: dict[str, Any] | None = None,
     code_git_sha: str | None = None,
 ) -> dict[str, Any]:
+    _validate_world_selectors(dataset=dataset, baseline=baseline, rule=rule)
     resolved_code_git_sha = _git_sha(code_git_sha)
-    if dataset not in {"verified-913", DATASET_REF}:
-        raise ValueError("unsupported dataset ref")
-    if baseline != BASELINE_REF or rule != SPECIAL_NUMBER_RULE.rule_ref:
-        raise ValueError("baseline or rule does not match the registered vertical slice")
     dataset_path = resolve_science_carrier_path(str(DEFAULT_DATASET_PATH))
     if sha256_file(dataset_path) != DATASET_SHA256:
         raise ValueError("dataset hash changed")
@@ -402,6 +408,7 @@ def build_world(
 ) -> dict[str, Any]:
     """Build the preserved G0-G8 world carrier for explicit legacy replay."""
 
+    _validate_world_selectors(dataset=dataset, baseline=baseline, rule=rule)
     return _build_world(
         dataset=dataset,
         baseline=baseline,
