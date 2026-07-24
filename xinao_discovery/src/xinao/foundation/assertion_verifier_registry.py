@@ -17,19 +17,28 @@ from typing import Any
 
 from xinao.canonical import canonical_dumps, canonical_sha256
 
-CANONICAL_PROJECTION_PATH = Path(
+LEGACY_PROJECTION_PATH = Path(
     r"D:\XINAO_RESEARCH_RUNTIME\state\mainline_domain_research_current"
     r"\blueprint.current_domain_research.json"
 )
-CANONICAL_BLUEPRINT_PATH = CANONICAL_PROJECTION_PATH
-CURRENT_HUMAN_SPEC_PATH = Path(
+CANONICAL_PROJECTION_PATH = LEGACY_PROJECTION_PATH
+CANONICAL_BLUEPRINT_PATH = LEGACY_PROJECTION_PATH
+LEGACY_HUMAN_SPEC_PATH = Path(
+    r"C:\Users\xx363\Desktop\主线\05_归档输入"
+    r"\新澳完整研究施工与旁路双环进化_当前有效.txt"
+)
+LEGACY_DECLARED_HUMAN_SPEC_PATH = Path(
     r"C:\Users\xx363\Desktop\主线\01_主线入口"
     r"\新澳完整研究施工与旁路双环进化_当前有效.txt"
 )
-CURRENT_FORMAL_CONTRACT_PATH = Path(
+LEGACY_FORMAL_CONTRACT_PATH = Path(
     r"C:\Users\xx363\Desktop\主线\02正式合同"
     r"\新澳整体基础执行与自主研究准入合同_当前有效.txt"
 )
+# Compatibility aliases are deliberately scoped to the legacy Foundation
+# consumer. They must never be imported as the current science active-parent.
+CURRENT_HUMAN_SPEC_PATH = LEGACY_HUMAN_SPEC_PATH
+CURRENT_FORMAL_CONTRACT_PATH = LEGACY_FORMAL_CONTRACT_PATH
 FOUNDATION_BLOCK_IDS = (
     "F1_settlement_world",
     "F2_issuer_settlement_cost_space",
@@ -752,6 +761,10 @@ __all__ = [
     "CURRENT_FORMAL_CONTRACT_PATH",
     "CURRENT_HUMAN_SPEC_PATH",
     "FOUNDATION_BLOCK_IDS",
+    "LEGACY_DECLARED_HUMAN_SPEC_PATH",
+    "LEGACY_FORMAL_CONTRACT_PATH",
+    "LEGACY_HUMAN_SPEC_PATH",
+    "LEGACY_PROJECTION_PATH",
     "RUNTIME_BUILDINFO_FILENAME",
     "RUNTIME_BUILDINFO_SCHEMA_VERSION",
     "CanonicalVerifier",

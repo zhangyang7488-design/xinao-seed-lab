@@ -1,10 +1,19 @@
 # Xinao Discovery
 
-This directory is an implementation surface for the Xinao research system. Current domain authority is:
+This directory is the reusable software/instrument surface for the Xinao
+research system. The current science authority is:
 
-- `C:\Users\xx363\Desktop\主线\01_主线入口\新澳完整研究施工与旁路双环进化_当前有效.txt`
-- `C:\Users\xx363\Desktop\主线\02正式合同\新澳整体基础执行与自主研究准入合同_当前有效.txt`
-- Machine projection only: `D:\XINAO_RESEARCH_RUNTIME\state\mainline_domain_research_current\blueprint.current_domain_research.json`
+- `C:\Users\xx363\Desktop\主线\01_主线入口\《新澳严格数学科学研究模式——独立融合稿》.txt`
+- Non-authoritative selector:
+  `D:\XINAO_RESEARCH_RUNTIME\state\mainline_science_current\active_parent.current.json`
+
+The former mixed G0-G8 parent, its admission contract, G4/G5/G6 gates and
+`mainline_domain_research_current` projection are preserved under
+`LEGACY_PARENT_G0_G8`. They remain valid for historical replay, regression and
+reusable statistical/software instruments, but they cannot admit or block a
+current science episode. The current Temporal entry is
+`XinaoScienceEpisodeWorkflowV1`; `XinaoResearchCampaignWorkflow` and the
+Foundation continuous workflows are legacy replay types.
 
 Software products, routes, models, versions, disks, and runtime defaults are not defined by this README; they bind only through the current tool-glue constitution and current machine evidence.
 
@@ -15,15 +24,17 @@ not current storage authority. Current placement and runtime bindings come only
 from the tool-glue constitution and verified machine facts. This repository
 contains engineering code, schemas, migrations, tests, and versioned configuration.
 
-Current G5 preflight code lives in `xinao.capability.g5_statistical_validity`. It keeps
+Legacy G5 statistical-instrument code lives in
+`xinao.capability.g5_statistical_validity`. It keeps
 sequential alpha spending and online FDR as procedure-specific protocols, debits every
 holdout outcome access, distinguishes public null smoke from a real full-pipeline null run,
 and does not treat distinct runtime identities as proof of statistical independence.
 `scripts/run_g5_statistical_validity_preflight.py` consumes a content-hashed G4 report plus
 an optional candidate bundle and emits a deterministic `READY` or `HOLD` report. The code,
-tests, public smoke, or a generated report do not themselves establish current G5 or G6.
+tests, public smoke, or a generated report do not establish a current science
+episode or scientific conclusion.
 
-Current G8 preflight code lives in `xinao.assurance`. It consumes exactly six
+The reusable/legacy G8 operational-assurance code lives in `xinao.assurance`. It consumes exactly six
 hash-bound evidence dimensions: security-negative, reproducibility, capacity,
 real recovery, supply chain, and independent audit. Missing, stale, tampered,
 revoked, non-independent, or incomplete evidence produces a replayable `DENY`.
@@ -41,11 +52,11 @@ Historical P0-P11 evidence projection:
 
 The following bullets describe the original V1 vertical under source hash
 `316b5b20dd29f5ebc454faa33eab3a4b92c0e7b5c9a4a68c3be2922ec730aae7`.
-They do not prove current G0-G8 admission or autonomous-discovery capability. New canonical
-ResearchCampaign executions and formal-ledger registration attempts now fail closed through one
-hash-bound `DomainResearchAdmissionReport` verifier; pre-cutover Temporal histories retain their
-replay path. Current G4/G5 HOLD evidence cannot produce ALLOW, so G6 and formal domain research
-remain closed until matching final reports are independently admitted.
+They do not prove current science admission or scientific conclusions. Explicit
+legacy ResearchCampaign executions and formal-ledger registration attempts
+still fail closed through the hash-bound `DomainResearchAdmissionReport`
+verifier; pre-cutover Temporal histories retain their replay path. No old
+G4/G5/G6 outcome is equivalent to `XINAO_SCIENCE_EPISODE_ALLOWED`.
 
 - P0 capability/input admission, dedicated branch, locked dependency BOM, licenses, and SBOM.
 - P1 canonical profile, 37-object registry, and 16-kind typed handoff contract.

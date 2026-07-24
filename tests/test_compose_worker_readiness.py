@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
+import json
 import os
 import shutil
 import subprocess
@@ -30,7 +32,46 @@ def _ready_marker() -> dict[str, object]:
         "binding_count": 3,
         "worker_context_count": 3,
         "all_workers_running": True,
+        "workflow_roles": {
+            "XinaoScienceEpisodeWorkflowV1": "CURRENT_SCIENCE_ENTRY",
+            "XinaoResearchCampaignWorkflow": "LEGACY_REPLAY",
+        },
     }
+
+
+def _source_release_fixture(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> tuple[Path, Path, dict[str, object]]:
+    commit = "a" * 40
+    runtime_root = tmp_path / "runtime"
+    app_root = tmp_path / "app"
+    files: dict[str, dict[str, str]] = {}
+    for relative in daemon.SOURCE_RELEASE_CRITICAL_FILES:
+        path = app_root.joinpath(*relative.split("/"))
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(f"{relative}\n", encoding="utf-8")
+        files[relative] = {"sha256": hashlib.sha256(path.read_bytes()).hexdigest()}
+    manifest = {
+        "schema_version": daemon.SOURCE_RELEASE_SCHEMA_VERSION,
+        "commit": commit,
+        "files": files,
+    }
+    manifest_path = (
+        runtime_root / "state" / "s_runtime_releases" / f"{commit}.release-manifest.json"
+    )
+    manifest_path.parent.mkdir(parents=True)
+    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+    monkeypatch.setenv("XINAO_S_RUNTIME_RELEASE_COMMIT", commit)
+    monkeypatch.setenv(
+        "XINAO_S_RUNTIME_RELEASE_MANIFEST_SHA256",
+        hashlib.sha256(manifest_path.read_bytes()).hexdigest(),
+    )
+    expected = daemon.source_release_identity(
+        runtime_root=runtime_root,
+        app_root=app_root,
+    )
+    return runtime_root, app_root, expected
 
 
 def test_readiness_marker_binds_current_container_and_process_generation() -> None:
@@ -51,6 +92,51 @@ def test_readiness_marker_binds_current_container_and_process_generation() -> No
         expected_container_id="container-generation",
         expected_process_id=1,
         expected_process_start_ticks="987654",
+    )
+
+
+def test_source_release_identity_binds_manifest_and_mounted_critical_files(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    runtime_root, app_root, expected = _source_release_fixture(tmp_path, monkeypatch)
+    assert expected["status"] == "VERIFIED"
+    assert expected["commit"] == "a" * 40
+    assert len(expected["critical_files"]) == len(daemon.SOURCE_RELEASE_CRITICAL_FILES)
+
+    drifted = app_root / "services" / "agent_runtime" / "integrated_bus_worker_daemon.py"
+    drifted.write_text("drift\n", encoding="utf-8")
+    with pytest.raises(RuntimeError, match="critical file drifted"):
+        daemon.source_release_identity(
+            runtime_root=runtime_root,
+            app_root=app_root,
+        )
+
+
+def test_readiness_marker_rejects_source_release_identity_drift(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _, _, expected = _source_release_fixture(tmp_path, monkeypatch)
+    marker = _ready_marker()
+    marker["source_release"] = expected
+    assert (
+        daemon.readiness_marker_issues(
+            marker,
+            expected_container_id="container-generation",
+            expected_process_id=1,
+            expected_process_start_ticks="987654",
+            expected_source_release=expected,
+        )
+        == []
+    )
+    marker["source_release"] = {**expected, "commit": "b" * 40}
+    assert "source_release_identity_mismatch" in daemon.readiness_marker_issues(
+        marker,
+        expected_container_id="container-generation",
+        expected_process_id=1,
+        expected_process_start_ticks="987654",
+        expected_source_release=expected,
     )
 
 
@@ -104,6 +190,9 @@ def test_polling_gate_times_out_before_publishing_false_readiness() -> None:
 
 def test_compose_healthcheck_invokes_generation_aware_readiness() -> None:
     compose = yaml.safe_load((REPO_ROOT / "docker-compose.yml").read_text(encoding="utf-8"))
+    environment = compose["services"]["houtai-gongren"]["environment"]
+    assert "XINAO_S_RUNTIME_RELEASE_COMMIT" in environment
+    assert "XINAO_S_RUNTIME_RELEASE_MANIFEST_SHA256" in environment
     healthcheck = compose["services"]["houtai-gongren"]["healthcheck"]["test"]
     assert healthcheck == [
         "CMD",

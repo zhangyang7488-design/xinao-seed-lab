@@ -1,7 +1,8 @@
-"""Derived F1-F4 foundation execution-readiness report.
+"""Derived legacy F1-F4 foundation execution-readiness report.
 
-The human specification and formal admission contract are authoritative.  The
-current D-drive JSON is only a hash-bound machine projection.  Until a
+The byte-preserved mixed-parent specification and its formal admission contract
+remain authoritative only inside ``LEGACY_PARENT_G0_G8``. The D-drive JSON is
+only a hash-bound legacy machine projection. Until a
 versioned F1-F4 implementation model is admitted, this module must return
 ``NOT_PERFORMED`` and must never reopen the deprecated formal-research gate.
 """
@@ -28,9 +29,10 @@ from xinao.foundation.assertion_bundle_runner import (
 )
 from xinao.foundation.assertion_verifier_registry import (
     AUTHORITY_MANIFEST_SCHEMA_VERSION,
-    CURRENT_FORMAL_CONTRACT_PATH,
-    CURRENT_HUMAN_SPEC_PATH,
     FOUNDATION_BLOCK_IDS,
+    LEGACY_DECLARED_HUMAN_SPEC_PATH,
+    LEGACY_FORMAL_CONTRACT_PATH,
+    LEGACY_HUMAN_SPEC_PATH,
     CanonicalVerifierError,
     canonical_projection_path,
     canonical_verifier,
@@ -170,9 +172,13 @@ def resolve_foundation_profile(projection_path: Path) -> dict[str, Any]:
     if authority.get("binding_role") != "non_authoritative_source_fingerprints":
         blockers.append("projection_binding_role_mismatch")
 
-    spec_path = CURRENT_HUMAN_SPEC_PATH.resolve()
-    contract_path = CURRENT_FORMAL_CONTRACT_PATH.resolve()
-    if _resolved_declared_path(authority.get("human_spec")) != spec_path:
+    spec_path = LEGACY_HUMAN_SPEC_PATH.resolve()
+    contract_path = LEGACY_FORMAL_CONTRACT_PATH.resolve()
+    declared_spec_path = _resolved_declared_path(authority.get("human_spec"))
+    if declared_spec_path not in {
+        spec_path,
+        LEGACY_DECLARED_HUMAN_SPEC_PATH.resolve(),
+    }:
         blockers.append("human_spec_path_mismatch")
     if _resolved_declared_path(authority.get("formal_admission_contract")) != contract_path:
         blockers.append("formal_contract_path_mismatch")

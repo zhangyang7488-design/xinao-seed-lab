@@ -24,8 +24,13 @@ from xinao.projection import (
     render_tui,
     verify_evidence_report,
 )
-from xinao.world import build_world, replay_world
-from xinao.world.builder import DEFAULT_WORLD_ROOT
+from xinao.world import (
+    build_science_episode_world,
+    build_world,
+    replay_science_episode_world,
+    replay_world,
+)
+from xinao.world.builder import LEGACY_WORLD_ROOT
 
 
 def _load_json(path: Path) -> dict[str, object]:
@@ -57,14 +62,30 @@ def build_parser() -> argparse.ArgumentParser:
     world_build.add_argument("--dataset", required=True)
     world_build.add_argument("--baseline", required=True)
     world_build.add_argument("--rule", required=True)
-    world_build.add_argument("--out", type=Path, default=DEFAULT_WORLD_ROOT)
+    world_build.add_argument("--out", type=Path)
     world_build.add_argument("--correlation-id")
-    world_build.add_argument("--workflow-id", default="xinao-build-001-world-local")
+    world_build.add_argument("--workflow-id", default="xinao-science-world-local")
     world_build.add_argument("--run-id")
+    world_build.add_argument("--protocol-pin", type=Path, required=True)
+    world_build.add_argument("--protocol-pin-sha256", required=True)
+    legacy_build = world_commands.add_parser("build-legacy")
+    legacy_build.add_argument("--dataset", required=True)
+    legacy_build.add_argument("--baseline", required=True)
+    legacy_build.add_argument("--rule", required=True)
+    legacy_build.add_argument("--out", type=Path, default=LEGACY_WORLD_ROOT)
+    legacy_build.add_argument("--correlation-id")
+    legacy_build.add_argument("--workflow-id", default="xinao-build-001-world-local")
+    legacy_build.add_argument("--run-id")
     world_replay = world_commands.add_parser("replay")
-    world_replay.add_argument("--out", type=Path, default=DEFAULT_WORLD_ROOT)
+    world_replay.add_argument("--out", type=Path, required=True)
+    world_replay.add_argument("--protocol-pin", type=Path, required=True)
+    world_replay.add_argument("--protocol-pin-sha256", required=True)
     world_replay.add_argument("--verify-hash", action="store_true")
     world_replay.add_argument("--report", type=Path)
+    legacy_replay = world_commands.add_parser("replay-legacy")
+    legacy_replay.add_argument("--out", type=Path, default=LEGACY_WORLD_ROOT)
+    legacy_replay.add_argument("--verify-hash", action="store_true")
+    legacy_replay.add_argument("--report", type=Path)
     workflow = groups.add_parser("workflow")
     workflow_commands = workflow.add_subparsers(dest="command", required=True)
     workflow_status = workflow_commands.add_parser("status")
@@ -142,6 +163,33 @@ def main() -> int:
         )
         return 0 if registry["identity_complete"] else 1
     if args.group == "world" and args.command == "build":
+        result = build_science_episode_world(
+            dataset=args.dataset,
+            baseline=args.baseline,
+            rule=args.rule,
+            output_root=args.out,
+            correlation_id=args.correlation_id,
+            workflow_id=args.workflow_id,
+            run_id=args.run_id,
+            protocol_pin_path=args.protocol_pin,
+            protocol_pin_sha256=args.protocol_pin_sha256,
+        )
+        snapshot = result["event_matrix_snapshot"]
+        print(
+            json.dumps(
+                {
+                    "ok": result["ok"],
+                    "matrix_sha256": snapshot["matrix_sha256"],
+                    "row_count": snapshot["row_count"],
+                    "nnz": snapshot["nnz"],
+                    "output": str(result["output_root"]),
+                },
+                ensure_ascii=False,
+                sort_keys=True,
+            )
+        )
+        return 0
+    if args.group == "world" and args.command == "build-legacy":
         result = build_world(
             dataset=args.dataset,
             baseline=args.baseline,
@@ -156,9 +204,8 @@ def main() -> int:
             json.dumps(
                 {
                     "ok": result["ok"],
+                    "authority_scope": "LEGACY_PARENT_G0_G8",
                     "matrix_sha256": snapshot["matrix_sha256"],
-                    "row_count": snapshot["row_count"],
-                    "nnz": snapshot["nnz"],
                     "output": str(args.out),
                 },
                 ensure_ascii=False,
@@ -169,6 +216,17 @@ def main() -> int:
     if args.group == "world" and args.command == "replay":
         if not args.verify_hash:
             raise ValueError("world replay requires --verify-hash")
+        result = replay_science_episode_world(
+            args.out,
+            protocol_pin_path=args.protocol_pin,
+            protocol_pin_sha256=args.protocol_pin_sha256,
+            report_path=args.report,
+        )
+        print(json.dumps(result, ensure_ascii=False, sort_keys=True))
+        return 0 if result["ok"] else 1
+    if args.group == "world" and args.command == "replay-legacy":
+        if not args.verify_hash:
+            raise ValueError("legacy world replay requires --verify-hash")
         result = replay_world(args.out, report_path=args.report)
         print(json.dumps(result, ensure_ascii=False, sort_keys=True))
         return 0 if result["ok"] else 1

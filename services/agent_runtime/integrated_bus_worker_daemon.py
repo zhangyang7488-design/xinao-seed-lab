@@ -4,8 +4,10 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import hashlib
 import json
 import os
+import re
 import socket
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import AsyncExitStack
@@ -28,6 +30,20 @@ from services.agent_runtime.thin_glue_sunset_registry import summarize_sunset_re
 SCHEMA_VERSION = "xinao.integrated_bus_worker_daemon.v2"
 SENTINEL = "SENTINEL:XINAO_INTEGRATED_BUS_WORKER_DAEMON_READY"
 DEFAULT_POLLING_START_TIMEOUT_SECONDS = 30.0
+SOURCE_RELEASE_SCHEMA_VERSION = "xinao.s_runtime_source_release.v1"
+SOURCE_RELEASE_CRITICAL_FILES = (
+    "services/agent_runtime/integrated_bus_worker_daemon.py",
+    "services/agent_runtime/integrated_bus_workflow_registry.py",
+    "services/agent_runtime/xinao_science_episode_workflow.py",
+    "services/agent_runtime/grok_build_docker_worker.py",
+    "xinao_discovery/src/xinao/science/episode_admission.py",
+    "xinao_discovery/src/xinao/world/builder.py",
+    "scripts/verify_science_startup_validation.py",
+    "pyproject.toml",
+    "uv.lock",
+)
+_HASH_RE = re.compile(r"^[0-9a-f]{64}$")
+_COMMIT_RE = re.compile(r"^[0-9a-f]{40}$")
 
 
 def _load_params() -> dict[str, Any]:
@@ -58,12 +74,74 @@ def _read_json(path: Path) -> dict[str, Any]:
     return value if isinstance(value, dict) else {}
 
 
+def _sha256(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as stream:
+        for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def source_release_identity(
+    *,
+    runtime_root: Path,
+    app_root: Path,
+) -> dict[str, Any]:
+    """Verify the mounted worker bytes against one content-addressed release."""
+
+    commit = os.environ.get("XINAO_S_RUNTIME_RELEASE_COMMIT", "").strip().lower()
+    expected_manifest_sha256 = (
+        os.environ.get("XINAO_S_RUNTIME_RELEASE_MANIFEST_SHA256", "").strip().lower()
+    )
+    if not _COMMIT_RE.fullmatch(commit):
+        raise RuntimeError("XINAO_S_RUNTIME_RELEASE_COMMIT is missing or invalid")
+    if not _HASH_RE.fullmatch(expected_manifest_sha256):
+        raise RuntimeError("XINAO_S_RUNTIME_RELEASE_MANIFEST_SHA256 is missing or invalid")
+    manifest_path = (
+        runtime_root / "state" / "s_runtime_releases" / f"{commit}.release-manifest.json"
+    )
+    if not manifest_path.is_file():
+        raise RuntimeError(f"S runtime release manifest is missing: {manifest_path}")
+    observed_manifest_sha256 = _sha256(manifest_path)
+    if observed_manifest_sha256 != expected_manifest_sha256:
+        raise RuntimeError("S runtime release manifest hash drifted")
+    manifest = _read_json(manifest_path)
+    if (
+        manifest.get("schema_version") != SOURCE_RELEASE_SCHEMA_VERSION
+        or manifest.get("commit") != commit
+    ):
+        raise RuntimeError("S runtime release manifest identity is invalid")
+    files = manifest.get("files")
+    if not isinstance(files, dict):
+        raise RuntimeError("S runtime release manifest has no file identities")
+    critical_files: dict[str, str] = {}
+    for relative in SOURCE_RELEASE_CRITICAL_FILES:
+        binding = files.get(relative)
+        if not isinstance(binding, dict):
+            raise RuntimeError(f"S runtime release omitted critical file: {relative}")
+        expected_sha256 = str(binding.get("sha256") or "").lower()
+        if not _HASH_RE.fullmatch(expected_sha256):
+            raise RuntimeError(f"S runtime critical file hash is invalid: {relative}")
+        mounted_path = app_root.joinpath(*relative.split("/"))
+        if not mounted_path.is_file() or _sha256(mounted_path) != expected_sha256:
+            raise RuntimeError(f"mounted S runtime critical file drifted: {relative}")
+        critical_files[relative] = expected_sha256
+    return {
+        "status": "VERIFIED",
+        "commit": commit,
+        "manifest_ref": str(manifest_path),
+        "manifest_sha256": observed_manifest_sha256,
+        "critical_files": critical_files,
+    }
+
+
 def readiness_marker_issues(
     evidence: dict[str, Any],
     *,
     expected_container_id: str,
     expected_process_id: int,
     expected_process_start_ticks: str,
+    expected_source_release: dict[str, Any] | None = None,
 ) -> list[str]:
     """Validate that a polling marker belongs to the current daemon process."""
 
@@ -90,6 +168,18 @@ def readiness_marker_issues(
         issues.append("worker_context_count_mismatch")
     if evidence.get("all_workers_running") is not True:
         issues.append("workers_not_running")
+    roles = evidence.get("workflow_roles")
+    if not isinstance(roles, dict):
+        issues.append("workflow_roles_missing")
+    elif roles.get("XinaoScienceEpisodeWorkflowV1") != "CURRENT_SCIENCE_ENTRY":
+        issues.append("current_science_workflow_role_missing")
+    elif roles.get("XinaoResearchCampaignWorkflow") != "LEGACY_REPLAY":
+        issues.append("legacy_campaign_workflow_role_missing")
+    if (
+        expected_source_release is not None
+        and evidence.get("source_release") != expected_source_release
+    ):
+        issues.append("source_release_identity_mismatch")
     return issues
 
 
@@ -102,16 +192,28 @@ def check_readiness(
 
     marker_path = runtime_root / "state" / "integrated_bus_worker_daemon" / "latest.json"
     evidence = _read_json(marker_path)
+    issues: list[str] = []
+    try:
+        release = source_release_identity(
+            runtime_root=runtime_root,
+            app_root=Path(os.environ.get("XINAO_CODEX_S_REPO_ROOT") or "/app"),
+        )
+    except (OSError, UnicodeError, RuntimeError) as exc:
+        release = None
+        issues.append(f"source_release_unavailable:{type(exc).__name__}")
     try:
         process_start_ticks = _process_start_ticks(expected_process_id)
     except (OSError, UnicodeError, RuntimeError) as exc:
-        issues = [f"process_generation_unavailable:{type(exc).__name__}"]
+        issues.append(f"process_generation_unavailable:{type(exc).__name__}")
     else:
-        issues = readiness_marker_issues(
-            evidence,
-            expected_container_id=socket.gethostname(),
-            expected_process_id=expected_process_id,
-            expected_process_start_ticks=process_start_ticks,
+        issues.extend(
+            readiness_marker_issues(
+                evidence,
+                expected_container_id=socket.gethostname(),
+                expected_process_id=expected_process_id,
+                expected_process_start_ticks=process_start_ticks,
+                expected_source_release=release,
+            )
         )
     return {
         "schema_version": "xinao.integrated_bus_worker_readiness_check.v1",
@@ -156,6 +258,10 @@ async def run_integrated_bus_worker_daemon(
     reg = registry_summary()
     process_id = os.getpid()
     process_start_ticks = _process_start_ticks(process_id)
+    release = source_release_identity(
+        runtime_root=runtime_root,
+        app_root=Path(os.environ.get("XINAO_CODEX_S_REPO_ROOT") or "/app"),
+    )
     evidence: dict[str, Any] = {
         "schema_version": SCHEMA_VERSION,
         "sentinel": SENTINEL,
@@ -172,6 +278,8 @@ async def run_integrated_bus_worker_daemon(
         "readiness_confirmed": False,
         "task_queues": reg.get("task_queues", []),
         "workflows_registered": reg.get("workflows_registered", []),
+        "workflow_roles": reg.get("workflow_roles", {}),
+        "source_release": release,
         "activity_count": reg.get("activity_count", 0),
         "handroll_intact": False,
         "facade_hard_redirect": True,

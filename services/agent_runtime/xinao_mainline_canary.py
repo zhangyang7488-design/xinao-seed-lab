@@ -18,6 +18,7 @@ RESEARCH_WORKFLOW_NAME = "XinaoResearchCampaignWorkflow"
 TASK_QUEUE = "xinao-mainline-canary-queue"
 INTEGRATED_BUS_QUEUE = "xinao-integrated-langgraph-plugin-queue"
 DOMAIN_ADMISSION_PATCH_ID = "domain-research-admission-report-v1"
+LEGACY_RESEARCH_FRESH_START_RETIREMENT_PATCH_ID = "legacy-research-campaign-fresh-start-retired-v1"
 GROK_PROVIDER_MODELS = frozenset({"grok-composer-2.5-fast", "grok-4.5"})
 _HASH_RE = re.compile(r"^[0-9a-f]{64}$")
 _CONTROL_ACTIONS = {"PAUSE", "RESUME", "STOP"}
@@ -184,7 +185,7 @@ def write_mainline_canary_snapshot(payload: dict[str, Any]) -> dict[str, str]:
 
 @activity.defn(name="xinao_verify_domain_research_admission")
 def verify_domain_research_admission_activity(payload: dict[str, Any]) -> dict[str, Any]:
-    """Replay one exact admission report outside the deterministic Workflow sandbox."""
+    """Replay one legacy G0-G8 admission report for preserved Workflow histories."""
 
     from datetime import UTC, datetime
     from pathlib import Path
@@ -292,7 +293,7 @@ class XinaoMainlineCanaryWorkflow:
 
 @workflow.defn(name=RESEARCH_WORKFLOW_NAME)
 class XinaoResearchCampaignWorkflow:
-    """Typed wrapper over the existing Temporal LangGraphPlugin research wave."""
+    """Legacy G0-G8 wrapper retained only for existing histories and explicit replay."""
 
     @workflow.run
     async def run(self, initial: dict[str, Any]) -> dict[str, Any]:
@@ -300,6 +301,12 @@ class XinaoResearchCampaignWorkflow:
         bus_state = dict(initial.get("bus_state") or {})
         if not campaign_id or not bus_state:
             raise ApplicationError("campaign_id and bus_state are required", non_retryable=True)
+        if workflow.patched(LEGACY_RESEARCH_FRESH_START_RETIREMENT_PATCH_ID):
+            raise ApplicationError(
+                "legacy G0-G8 research campaign is retired for fresh starts; "
+                "use XinaoScienceEpisodeWorkflowV1",
+                non_retryable=True,
+            )
         guarded = workflow.patched(DOMAIN_ADMISSION_PATCH_ID)
         admission: dict[str, Any] = {}
         if guarded:
@@ -385,6 +392,7 @@ def temporal_exports() -> tuple[list[type], list[Any]]:
 __all__ = [
     "INTEGRATED_BUS_QUEUE",
     "DOMAIN_ADMISSION_PATCH_ID",
+    "LEGACY_RESEARCH_FRESH_START_RETIREMENT_PATCH_ID",
     "MAINLINE_WORKFLOW_NAME",
     "RESEARCH_WORKFLOW_NAME",
     "TASK_QUEUE",
