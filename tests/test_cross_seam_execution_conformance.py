@@ -1005,7 +1005,7 @@ def test_consumer_registry_requires_current_exact_evidence_for_complete_status()
     assert science_source["fresh_canary_evidence"]
     science_fresh = set(science_source["fresh_canary_evidence"])
     tool_gap_id = "science-tool-gap-behavior-regression-20260724T104812Z"
-    self_bootstrap_id = "science-mainline-self-bootstrap-behavior-regression-20260724T182448Z"
+    self_bootstrap_id = "science-mainline-self-bootstrap-behavior-regression-20260724T184208Z"
     assert {tool_gap_id, self_bootstrap_id} <= science_fresh
     assert evidence_catalog[tool_gap_id]["case_ids"] == [
         "REG_SCIENCE_TOOL_GAP_STAYS_IN_EPISODE_CONE"

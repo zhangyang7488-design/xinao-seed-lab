@@ -718,6 +718,7 @@ def test_context_intent_alignment_eval_is_balanced_and_friction_bounded() -> Non
         "ATOM_DEPENDENCY_CONE_ONLY",
         "ATOM_RETURN_TO_SAME_SCIENCE_EPISODE",
         "ATOM_NO_V1_V2_ENUMERATION_REQUIRED",
+        "ATOM_SHORT_INTENT_PRESERVES_SELECTED_LEG_A",
     }
     assert set(science_bootstrap["expected_rejected_proxy_atoms"].split("|")) == {
         "ATOM_FOLLOW_CHECKPOINT_NARRATIVE_WITHOUT_EVENT_HEAD",
@@ -725,6 +726,7 @@ def test_context_intent_alignment_eval_is_balanced_and_friction_bounded() -> Non
         "ATOM_REBUILD_G0_G8",
         "ATOM_INVENT_NEW_TOOL_BEFORE_MATURE_RECOVERY",
         "ATOM_LOCAL_COMPLETION_STOPS_CONTINUOUS",
+        "ATOM_SHORT_INTENT_IMPLICITLY_SELECTS_LEG_B_ACTIVITY",
         "ATOM_ASK_USER_FOR_NEXT_TASK",
     }
 

@@ -224,11 +224,11 @@
       "research_progress_claim_allowed": false,
       "completion_claim_allowed": false
     },
-    "science-mainline-self-bootstrap-behavior-regression-20260724T182448Z": {
+    "science-mainline-self-bootstrap-behavior-regression-20260724T184208Z": {
       "kind": "behavior_regression",
-      "observed_at": "2026-07-24T18:24:48.093Z",
-      "path": "D:/XINAO_RESEARCH_RUNTIME/state/human-capabilities/evals/behavior-regression/20260725-022251-743/summary.json",
-      "sha256": "0075ad34f75152e785d0f72469205fe6fc8ef88288d6f92841d0d95427c4582a",
+      "observed_at": "2026-07-24T18:42:08.710Z",
+      "path": "D:/XINAO_RESEARCH_RUNTIME/state/human-capabilities/evals/behavior-regression/20260725-023946-457/summary.json",
+      "sha256": "33ff77d4fee6c88d31a28948a53596d954bc6be4bd81972856a8418633a9d3d4",
       "status": "PASSED",
       "successes": 1,
       "failures": 0,
@@ -273,7 +273,7 @@
       "fresh_canary_evidence": [
         "science-startup-validation-20260724T122023Z",
         "science-tool-gap-behavior-regression-20260724T104812Z",
-        "science-mainline-self-bootstrap-behavior-regression-20260724T182448Z"
+        "science-mainline-self-bootstrap-behavior-regression-20260724T184208Z"
       ]
     },
     {
