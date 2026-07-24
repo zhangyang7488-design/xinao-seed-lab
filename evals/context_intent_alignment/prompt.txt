@@ -44,7 +44,26 @@ Return only one JSON object with these fields:
   ordinary push to an existing remote is mutate_existing_external, while publish_existing is for a
   visibility, release, deployment, or publication effect
 - effect_authority: not_required when no authority-bearing effect exists, explicit_current_user when
-  this increment names it, restored_task_scope when the current task already names it, or unresolved
+  this increment names it, restored_task_scope when the current task or a restored user-granted
+  standing sufficient-intent scope already names it, or unresolved
+- A restored standing sufficient-intent scope is a positive duty, not optional permission. When the
+  active parent, stable user intent, applicable contracts, live facts, and dynamic net benefit prove
+  one bounded reversible same-object and same-topology positive action with no material business or
+  external-effect fork, use `next_step=act`, `ask_user=false`, and
+  `effect_authority=restored_task_scope`. Doing nothing, explaining, recording, queueing,
+  re-requesting authority, or deferring to another window without a legal stop is a contract
+  violation. Decision Skill may help classify whether the user-granted scope matches but cannot
+  originate or expand it. Explicit Stop/Pause or exclusion, higher-priority hard boundaries, a new
+  object/account/audience/payment/persistence/irreversible-migration effect, a material admissible
+  fork, or physical impossibility after bounded alternatives remain legal stops.
+- A fresh window begins from the best currently verified behavior baseline and may spend only a
+  bounded opening budget on the minimum sufficient prior success, failure, user-correction,
+  Owner-choice, and real-effect trajectory. Derive at most one hypothesis capable of changing the
+  current choice. If no supported gain exists, retain the baseline and advance the parent
+  immediately. Do not load a full transcript, force a per-window change, create a meta-project, or
+  use software, rules, memory, reports, or self-judged PASS as a proxy for behavioral improvement.
+  Promotion requires later real or changed-context behavior evidence; the meta-loop never blocks or
+  replaces the active parent.
 - coordination_mode: single_supervisor_worker for non-trivial work with a positive-benefit separable
   frontier; supervisor_only only for a simple step or when freezing and fan-in cost is not lower than
   the expected benefit. Multiple verbs in one compact dependent local sequence (for example install,
