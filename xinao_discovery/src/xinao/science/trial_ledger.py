@@ -169,25 +169,17 @@ def _validate_transitions(entries: Sequence[Mapping[str, Any]]) -> None:
         previous = last_status.get(work_key)
         if status == "REGISTERED":
             if previous is not None:
-                raise ScienceTrialLedgerError(
-                    f"trial {work_key!r} was registered more than once"
-                )
+                raise ScienceTrialLedgerError(f"trial {work_key!r} was registered more than once")
         elif previous is None:
             raise ScienceTrialLedgerError(
                 f"trial {work_key!r} has a silent unregistered transition"
             )
         elif previous in _TERMINAL_STATUSES:
-            raise ScienceTrialLedgerError(
-                f"trial {work_key!r} changed after a terminal status"
-            )
+            raise ScienceTrialLedgerError(f"trial {work_key!r} changed after a terminal status")
         elif status == "RUNNING" and previous != "REGISTERED":
-            raise ScienceTrialLedgerError(
-                f"trial {work_key!r} has an invalid RUNNING transition"
-            )
+            raise ScienceTrialLedgerError(f"trial {work_key!r} has an invalid RUNNING transition")
         elif status in _TERMINAL_STATUSES and previous not in {"REGISTERED", "RUNNING"}:
-            raise ScienceTrialLedgerError(
-                f"trial {work_key!r} has an invalid terminal transition"
-            )
+            raise ScienceTrialLedgerError(f"trial {work_key!r} has an invalid terminal transition")
         last_status[work_key] = status
 
 
@@ -501,17 +493,12 @@ def append_science_trial_entry(
         _validate_transitions(entries)
 
         existing = next(
-            (
-                item
-                for item in journal_entries
-                if item["meta"].get("event_id") == event_id
-            ),
+            (item for item in journal_entries if item["meta"].get("event_id") == event_id),
             None,
         )
         if existing is not None:
-            same_request = (
-                existing["payload_hash"] == requested_hash
-                and existing.get("event") == ("TERMINAL" if terminal else None)
+            same_request = existing["payload_hash"] == requested_hash and existing.get("event") == (
+                "TERMINAL" if terminal else None
             )
             if not same_request:
                 raise ScienceTrialLedgerError(
