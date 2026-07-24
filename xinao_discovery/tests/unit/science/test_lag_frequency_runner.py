@@ -375,6 +375,7 @@ def test_journal_orchestration_reuses_single_cas_writer(
             "world_content_hash": "d" * 64,
         },
     )
+    monkeypatch.setattr(runner, "load_draws", lambda: [])
     with pytest.raises(
         runner.LagFrequencyRunnerError,
         match="all 262 frozen identities must be RUNNING",
