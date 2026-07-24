@@ -432,3 +432,30 @@ def test_direct_workflow_application_error_is_extracted() -> None:
 
     assert "science startup validation mode required" in chain["message_text"]
     assert chain["entries"][-1]["application_error_type"] == "ApplicationError"
+
+
+def test_offline_legacy_replay_cannot_write_bytecode_or_pytest_cache(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured: dict[str, object] = {}
+
+    def fake_run(command: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
+        captured["command"] = command
+        captured["kwargs"] = kwargs
+        return subprocess.CompletedProcess(command, 0, stdout="2 passed", stderr="")
+
+    monkeypatch.setattr(subject, "REPO", tmp_path)
+    monkeypatch.setattr(subject.subprocess, "run", fake_run)
+
+    result = subject._offline_legacy_synthetic_contract_replay()
+
+    command = captured["command"]
+    kwargs = captured["kwargs"]
+    assert isinstance(command, list)
+    assert isinstance(kwargs, dict)
+    assert command[1:4] == ["-B", "-m", "pytest"]
+    assert command[4:7] == ["-q", "-p", "no:cacheprovider"]
+    assert kwargs["cwd"] == tmp_path
+    assert kwargs["env"]["PYTHONDONTWRITEBYTECODE"] == "1"
+    assert result["ok"] is True

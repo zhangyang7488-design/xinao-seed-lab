@@ -800,9 +800,12 @@ def _verify_positive_worker_receipt(
 def _offline_legacy_synthetic_contract_replay() -> dict[str, Any]:
     command = [
         sys.executable,
+        "-B",
         "-m",
         "pytest",
         "-q",
+        "-p",
+        "no:cacheprovider",
         (
             "tests/test_xinao_research_campaign_admission.py::"
             "test_pre_cutover_history_replays_without_admission_activity"
@@ -812,9 +815,12 @@ def _offline_legacy_synthetic_contract_replay() -> dict[str, Any]:
             "test_pre_retirement_domain_admission_history_still_replays"
         ),
     ]
+    child_env = os.environ.copy()
+    child_env["PYTHONDONTWRITEBYTECODE"] = "1"
     completed = subprocess.run(
         command,
         cwd=REPO,
+        env=child_env,
         capture_output=True,
         text=True,
         encoding="utf-8",
