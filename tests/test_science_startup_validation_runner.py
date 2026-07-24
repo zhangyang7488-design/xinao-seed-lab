@@ -18,6 +18,8 @@ from services.agent_runtime.grok_build_docker_worker import (
 from services.agent_runtime.grok_execution_contract_adapter import (
     expected_docker_grok_backend_models,
 )
+from temporalio.client import WorkflowFailureError
+from temporalio.exceptions import ActivityError, ApplicationError, RetryState
 from xinao.science import (
     canonical_world_measurement_bindings,
     verify_science_episode_admission_file,
@@ -278,3 +280,155 @@ def test_cleanup_rpc_timeout_is_bounded_when_cancel_stalls() -> None:
                 rpc_timeout=0.01,
             )
         )
+
+
+def _temporal_failure(
+    message: str = "WorldMeasurementBundle dataset binding drifted from the current world contract",
+) -> WorkflowFailureError:
+    application = ApplicationError(
+        message,
+        type="ScienceEpisodeAdmissionError",
+        non_retryable=True,
+    )
+    activity = ActivityError(
+        "Activity task failed",
+        scheduled_event_id=1,
+        started_event_id=2,
+        identity="test-worker",
+        activity_type="xinao_verify_science_episode_admission_v1",
+        activity_id="1",
+        retry_state=RetryState.MAXIMUM_ATTEMPTS_REACHED,
+    )
+    activity.__cause__ = application
+    return WorkflowFailureError(cause=activity)
+
+
+def test_failure_chain_extracts_application_error_below_activity_error() -> None:
+    chain = subject._failure_chain(_temporal_failure())
+
+    assert "Activity task failed" in chain["message_text"]
+    assert (
+        "WorldMeasurementBundle dataset binding drifted from the current world contract"
+        in chain["message_text"]
+    )
+    assert chain["entries"][1]["activity_type"] == "xinao_verify_science_episode_admission_v1"
+    assert chain["entries"][2]["application_error_type"] == "ScienceEpisodeAdmissionError"
+    assert chain["cycle_detected"] is False
+    assert chain["depth_limited"] is False
+
+
+def test_failure_chain_is_cycle_and_depth_safe() -> None:
+    first = RuntimeError("first")
+    second = RuntimeError("second")
+    first.cause = second
+    second.cause = first
+
+    cycle = subject._failure_chain(first)
+    limited = subject._failure_chain(_temporal_failure(), max_depth=2)
+
+    assert cycle["cycle_detected"] is True
+    assert len(cycle["entries"]) == 2
+    assert limited["depth_limited"] is True
+    assert len(limited["entries"]) == 2
+
+
+class _NegativeHandle:
+    def __init__(self, failure: WorkflowFailureError, activities: tuple[str, ...]) -> None:
+        self.failure = failure
+        self.activities = activities
+
+    async def result(self) -> None:
+        raise self.failure
+
+    async def describe(self) -> SimpleNamespace:
+        return SimpleNamespace(status=subject.WorkflowExecutionStatus.FAILED)
+
+    async def fetch_history(self) -> SimpleNamespace:
+        events = [
+            SimpleNamespace(
+                event_type=subject.EventType.EVENT_TYPE_ACTIVITY_TASK_SCHEDULED,
+                activity_task_scheduled_event_attributes=SimpleNamespace(
+                    activity_type=SimpleNamespace(name=name)
+                ),
+            )
+            for name in self.activities
+        ]
+        return SimpleNamespace(events=events)
+
+
+class _NegativeClient:
+    def __init__(self, handle: _NegativeHandle) -> None:
+        self.handle = handle
+
+    async def start_workflow(self, *args: object, **kwargs: object) -> _NegativeHandle:
+        return self.handle
+
+
+def _run_expected_failure(
+    *,
+    expected_text: str,
+    activities: tuple[str, ...],
+    forbidden: tuple[str, ...],
+) -> dict[str, object]:
+    handle = _NegativeHandle(_temporal_failure(), activities)
+    return asyncio.run(
+        subject._expected_failure(
+            _NegativeClient(handle),
+            workflow=object(),
+            initial={},
+            workflow_id="negative-test",
+            expected_text=expected_text,
+            forbidden_activity_types=forbidden,
+        )
+    )
+
+
+def test_bad_world_failure_is_accepted_before_instrument_execution() -> None:
+    result = _run_expected_failure(
+        expected_text="WorldMeasurementBundle dataset binding drifted",
+        activities=("xinao_verify_science_episode_admission_v1",),
+        forbidden=(
+            "xinao_verify_science_instruments_v1",
+            "xinao_run_science_startup_worker_v1",
+        ),
+    )
+
+    assert result["expected_root_cause_found"] is True
+    assert result["forbidden_activities_absent"] is True
+    assert result["child_scheduled"] is False
+
+
+def test_missing_expected_root_cause_is_not_reported_as_boundary_crossing() -> None:
+    with pytest.raises(AssertionError, match="did not expose its expected root cause"):
+        _run_expected_failure(
+            expected_text="different domain failure",
+            activities=("xinao_verify_science_episode_admission_v1",),
+            forbidden=("xinao_verify_science_instruments_v1",),
+        )
+
+
+def test_forbidden_activity_still_fails_when_root_cause_matches() -> None:
+    with pytest.raises(AssertionError, match="crossed its denied execution boundary"):
+        _run_expected_failure(
+            expected_text="WorldMeasurementBundle dataset binding drifted",
+            activities=(
+                "xinao_verify_science_episode_admission_v1",
+                "xinao_verify_science_instruments_v1",
+            ),
+            forbidden=("xinao_verify_science_instruments_v1",),
+        )
+
+
+def test_direct_workflow_application_error_is_extracted() -> None:
+    chain = subject._failure_chain(
+        WorkflowFailureError(
+            cause=ApplicationError(
+                "science startup validation mode required",
+                type="ApplicationError",
+                non_retryable=True,
+            )
+        )
+    )
+
+    assert "science startup validation mode required" in chain["message_text"]
+    assert chain["entries"][-1]["application_error_type"] == "ApplicationError"

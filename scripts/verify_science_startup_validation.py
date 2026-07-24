@@ -31,6 +31,7 @@ from temporalio.client import (
     WorkflowExecutionStatus,
     WorkflowFailureError,
 )
+from temporalio.exceptions import ActivityError, ApplicationError
 from temporalio.worker import Replayer
 
 REPO = Path(__file__).resolve().parents[1]
@@ -564,6 +565,55 @@ async def _cancel_and_verify_terminal(
     return terminal
 
 
+def _failure_chain(
+    exc: BaseException,
+    *,
+    max_depth: int = 16,
+) -> dict[str, Any]:
+    """Expose bounded Temporal failure causes and their structured identities."""
+
+    if max_depth < 1:
+        raise ValueError("max_depth must be positive")
+    entries: list[dict[str, Any]] = []
+    seen: set[int] = set()
+    current: BaseException | None = exc
+    cycle_detected = False
+    depth_limited = False
+    for depth in range(max_depth):
+        if current is None:
+            break
+        if id(current) in seen:
+            cycle_detected = True
+            break
+        seen.add(id(current))
+        entry: dict[str, Any] = {
+            "depth": depth,
+            "exception_type": type(current).__name__,
+            "message": str(current),
+        }
+        if isinstance(current, ApplicationError):
+            entry["application_error_type"] = current.type
+            entry["non_retryable"] = current.non_retryable
+        if isinstance(current, ActivityError):
+            entry["activity_type"] = current.activity_type
+            entry["activity_id"] = current.activity_id
+            entry["retry_state"] = str(current.retry_state)
+        entries.append(entry)
+        nested = getattr(current, "cause", None)
+        if not isinstance(nested, BaseException):
+            nested = current.__cause__
+        current = nested if isinstance(nested, BaseException) else None
+    else:
+        depth_limited = current is not None
+    messages = [str(entry["message"]) for entry in entries if entry["message"]]
+    return {
+        "entries": entries,
+        "message_text": " | caused by: ".join(messages),
+        "cycle_detected": cycle_detected,
+        "depth_limited": depth_limited,
+    }
+
+
 async def _expected_failure(
     client: Client,
     *,
@@ -577,6 +627,7 @@ async def _expected_failure(
     _ACTIVE_WORKFLOW_IDS.add(workflow_id)
     handle = None
     error = ""
+    failure_chain: dict[str, Any] = {}
     try:
         handle = await client.start_workflow(
             workflow,
@@ -587,7 +638,8 @@ async def _expected_failure(
         try:
             await asyncio.wait_for(handle.result(), timeout=timeout)
         except WorkflowFailureError as exc:
-            error = str(exc.cause or exc)
+            failure_chain = _failure_chain(exc)
+            error = str(failure_chain["message_text"])
         else:
             raise AssertionError(f"negative scenario unexpectedly succeeded: {workflow_id}")
     finally:
@@ -604,12 +656,17 @@ async def _expected_failure(
     )
     names = _event_names(history)
     activity_types = _activity_types(history)
-    ok = (
-        expected_text in error
-        and "EVENT_TYPE_START_CHILD_WORKFLOW_EXECUTION_INITIATED" not in names
-        and all(name not in activity_types for name in forbidden_activity_types)
+    expected_root_cause_found = expected_text in error
+    child_absent = "EVENT_TYPE_START_CHILD_WORKFLOW_EXECUTION_INITIATED" not in names
+    forbidden_activities_absent = all(
+        name not in activity_types for name in forbidden_activity_types
     )
-    if not ok:
+    if not expected_root_cause_found:
+        raise AssertionError(
+            "negative scenario did not expose its expected root cause: "
+            f"{workflow_id}: expected={expected_text!r}; error={error}"
+        )
+    if not child_absent or not forbidden_activities_absent:
         raise AssertionError(
             "negative scenario crossed its denied execution boundary: "
             f"{workflow_id}: error={error}; activities={activity_types}"
@@ -619,7 +676,10 @@ async def _expected_failure(
         "error": error[:1000],
         "event_count": len(names),
         "activity_types": activity_types,
-        "child_scheduled": False,
+        "failure_chain": failure_chain,
+        "expected_root_cause_found": expected_root_cause_found,
+        "child_scheduled": not child_absent,
+        "forbidden_activities_absent": forbidden_activities_absent,
         "ok": True,
     }
 
