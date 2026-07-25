@@ -20,6 +20,7 @@ from xinao.canonical.hashing import canonical_sha256
 from xinao.canonical.identifiers import generate_uuid7
 from xinao.canonical.jcs import canonical_dumps
 from xinao.canonical.time_profile import format_utc
+from xinao.decision import DecisionGateInput, compile_decision_plan, freeze_decision
 from xinao.ledger import EventRecord, create_event, replay_stream, verify_event
 
 APPEND_SQL = "SELECT xinao_append_event(" + ",".join(["%s"] * 24) + ")"
@@ -89,6 +90,7 @@ def expect_alembic_guard(config: str, database: str) -> str:
     try:
         alembic(config, database, "downgrade", "base")
     except subprocess.CalledProcessError as exc:
+        alembic(config, database, "upgrade", "head")
         return f"rejected:{exc.returncode}"
     raise AssertionError("destructive downgrade was not guarded")
 
@@ -147,6 +149,61 @@ def make_event(
         trace_id=generate_uuid7(),
         workflow_id="xinao-p2-postgres-canary",
         run_id="run-live-1",
+    )
+
+
+def make_no_action_freeze(
+    *,
+    target_ref: str,
+    target_start: datetime,
+    target_end: datetime,
+    target_open: datetime,
+    freeze_deadline: datetime,
+    knowledge_cutoff: datetime,
+):
+    plan = compile_decision_plan(
+        DecisionGateInput(
+            candidate_ref="candidate:special-number-settlement.v1",
+            requested_decision_kind="NO_ACTION",
+            candidate_qualification=None,
+            adjudicated_decision_kinds=("NO_ACTION",),
+            court_verdict_bundle_ref="courts.ledger-canary.v1",
+            court_verdict_bundle_content_hash="b" * 64,
+            protocol_pin_ref="protocol.ledger-canary.v1",
+            protocol_pin_sha256="c" * 64,
+            information_set_ref="information-set.ledger-canary.v1",
+            information_set_hash="d" * 64,
+            validation_report_ref="validation.ledger-canary.v1",
+            validation_output_hash="a" * 64,
+            validation_verdict="ACTION",
+            baseline_ref="baseline-odds-water.v1",
+            baseline_active=True,
+            rule_ref="special-number-rule.v1",
+            rule_active=True,
+            odds_version_ref="odds.ledger-canary.v1",
+            cost_version_ref="cost.ledger-canary.v1",
+            friction_version_ref="friction.ledger-canary.v1",
+            exposure_policy_ref="shadow-exposure.ledger-canary.v1",
+            target_ref=target_ref,
+            target_window_start=target_start,
+            target_window_end=target_end,
+            target_open_time=target_open,
+            freeze_deadline=freeze_deadline,
+            knowledge_cutoff=knowledge_cutoff,
+            compiled_at=knowledge_cutoff,
+            panel="B",
+            selected_number=1,
+            stake="1.0000",
+            lower_expected_net="0.2000",
+            estimated_cost="0.0100",
+            risk_limit="1.0000",
+        ),
+        plan_ref=generate_uuid7(),
+    )
+    return freeze_decision(
+        plan,
+        decision_ref=generate_uuid7(),
+        frozen_at=knowledge_cutoff,
     )
 
 
@@ -369,8 +426,6 @@ def exercise_domain(database: str) -> dict[str, Any]:
         )
         conn.execute("RESET ROLE")
 
-        decision_id = generate_uuid7()
-        decision_plan_id = generate_uuid7()
         candidates = ["candidate:special-number-settlement.v1"]
         candidate_hash = canonical_sha256(candidates)
         target_start = datetime(2099, 1, 1, tzinfo=UTC)
@@ -378,9 +433,12 @@ def exercise_domain(database: str) -> dict[str, Any]:
         target_open = datetime(2100, 1, 1, tzinfo=UTC)
         freeze_deadline = datetime(2099, 12, 31, tzinfo=UTC)
         knowledge_cutoff = datetime(2026, 7, 14, tzinfo=UTC)
-        decision_basis = {
-            "decision_id": decision_id,
-            "decision_plan_id": decision_plan_id,
+
+        legacy_decision_id = generate_uuid7()
+        legacy_plan_id = generate_uuid7()
+        legacy_basis = {
+            "decision_id": legacy_decision_id,
+            "decision_plan_id": legacy_plan_id,
             "target_window_start": format_utc(target_start),
             "target_window_end": format_utc(target_end),
             "target_open_time": format_utc(target_open),
@@ -388,31 +446,31 @@ def exercise_domain(database: str) -> dict[str, Any]:
             "candidate_refs_hash": candidate_hash,
             "freeze_deadline": format_utc(freeze_deadline),
             "knowledge_cutoff": format_utc(knowledge_cutoff),
-            "decision_type": "NO_ACTION",
+            "decision_type": "ACTION",
         }
-        decision_hash = canonical_sha256(decision_basis)
-        freeze_payload = {
-            "decision_id": decision_id,
-            "decision_hash": decision_hash,
-            "decision_plan_id": decision_plan_id,
+        legacy_hash = canonical_sha256(legacy_basis)
+        legacy_payload = {
+            "decision_id": legacy_decision_id,
+            "decision_hash": legacy_hash,
+            "decision_plan_id": legacy_plan_id,
         }
-        freeze_event = make_event(
-            aggregate_id=decision_id,
+        legacy_event = make_event(
+            aggregate_id=legacy_decision_id,
             version=1,
             prior_hash=None,
-            idempotency_key="freeze-canary-1",
-            payload=freeze_payload,
-            event_type="NoActionFrozen",
+            idempotency_key="freeze-legacy-canary-1",
+            payload=legacy_payload,
+            event_type="ActionFrozen",
             aggregate_type="FrozenDecision",
         )
-        freeze_args = (
+        legacy_args = (
             *json_arguments(
-                freeze_event.append_arguments(
+                legacy_event.append_arguments(
                     outbox_id=generate_uuid7(), topic="xinao.decision-frozen.v1"
                 )
             ),
-            decision_id,
-            decision_plan_id,
+            legacy_decision_id,
+            legacy_plan_id,
             target_start,
             target_end,
             target_open,
@@ -420,12 +478,91 @@ def exercise_domain(database: str) -> dict[str, Any]:
             candidate_hash,
             freeze_deadline,
             knowledge_cutoff,
-            "NO_ACTION",
+            "ACTION",
+            canonical_dumps(legacy_basis),
+            legacy_hash,
+        )
+        assert (
+            conn.execute(
+                "SELECT xinao_freeze_decision_rollback_0002(" + ",".join(["%s"] * 36) + ")",
+                legacy_args,
+            ).fetchone()[0]
+            == legacy_decision_id
+        )
+        legacy_axes = conn.execute(
+            "SELECT decision_kind,candidate_qualification,content_hash "
+            "FROM frozen_decision WHERE decision_id=%s",
+            (legacy_decision_id,),
+        ).fetchone()
+        assert legacy_axes == (None, None, None)
+        conn.execute("SET ROLE xinao_discovery_freeze_writer")
+        report["checks"]["rollback_freeze_writer_denied_sqlstate"] = expect_database_error(
+            conn,
+            "SELECT xinao_freeze_decision_rollback_0002(" + ",".join(["%s"] * 36) + ")",
+            legacy_args,
+        )
+        conn.execute("RESET ROLE")
+        report["checks"]["legacy_action_settlement_rejected"] = expect_database_error(
+            conn,
+            """
+            INSERT INTO settlement_record(
+                settlement_id,frozen_decision_id,outcome_id,rule_ref,settlement_hash,
+                journal_group_id,payload,event_id
+            ) VALUES (%s,%s,%s,%s,%s,%s,%s,%s)
+            """,
+            (
+                generate_uuid7(),
+                legacy_decision_id,
+                "outcome.missing",
+                "special-number-rule.v1",
+                "e" * 64,
+                "journal.missing",
+                Jsonb({}),
+                "event.missing",
+            ),
+        )
+
+        frozen = make_no_action_freeze(
+            target_ref="draw.ledger-canary.no-action",
+            target_start=target_start,
+            target_end=target_end,
+            target_open=target_open,
+            freeze_deadline=freeze_deadline,
+            knowledge_cutoff=knowledge_cutoff,
+        )
+        decision_basis = frozen.canonical_content()
+        freeze_payload = frozen.model_dump(mode="json")
+        freeze_event = make_event(
+            aggregate_id=frozen.decision_ref,
+            version=1,
+            prior_hash=None,
+            idempotency_key="freeze-canary-1",
+            payload=freeze_payload,
+            event_type="NoActionFrozen",
+            aggregate_type="FrozenDecision",
+            occurred_at=frozen.frozen_at,
+        )
+        freeze_args = (
+            *json_arguments(
+                freeze_event.append_arguments(
+                    outbox_id=generate_uuid7(), topic="xinao.decision-frozen.v1"
+                )
+            ),
+            frozen.decision_ref,
+            frozen.decision_plan_ref,
+            frozen.target_window_start,
+            frozen.target_window_end,
+            frozen.target_open_time,
+            Jsonb(list(frozen.candidate_refs)),
+            frozen.candidate_refs_hash,
+            frozen.freeze_deadline,
+            frozen.knowledge_cutoff,
+            frozen.decision_type,
             canonical_dumps(decision_basis),
-            decision_hash,
+            frozen.content_hash,
         )
         conn.execute("SET ROLE xinao_discovery_freeze_writer")
-        assert conn.execute(FREEZE_SQL, freeze_args).fetchone()[0] == decision_id
+        assert conn.execute(FREEZE_SQL, freeze_args).fetchone()[0] == frozen.decision_ref
         conn.execute("RESET ROLE")
         frozen_counts = conn.execute(
             "SELECT (SELECT count(*) FROM frozen_decision),"
@@ -433,17 +570,26 @@ def exercise_domain(database: str) -> dict[str, Any]:
             "(SELECT count(*) FROM transactional_outbox o JOIN domain_event e "
             " ON e.event_id=o.event_id WHERE e.aggregate_type='FrozenDecision')"
         ).fetchone()
-        assert frozen_counts == (1, 1, 1)
+        assert frozen_counts == (2, 2, 2)
         conn.execute("SET ROLE xinao_discovery_freeze_writer")
-        assert conn.execute(FREEZE_SQL, freeze_args).fetchone()[0] == decision_id
+        assert conn.execute(FREEZE_SQL, freeze_args).fetchone()[0] == frozen.decision_ref
         conn.execute("RESET ROLE")
-        assert conn.execute("SELECT count(*) FROM frozen_decision").fetchone()[0] == 1
+        assert conn.execute("SELECT count(*) FROM frozen_decision").fetchone()[0] == 2
         report["checks"]["atomic_idempotent_freeze"] = list(frozen_counts)
         readback_decision = conn.execute(
-            "SELECT decision_hash,payload,event_id FROM frozen_decision WHERE decision_id=%s",
-            (decision_id,),
+            """
+            SELECT decision_hash,content_hash,decision_kind,candidate_qualification,payload,event_id
+            FROM frozen_decision WHERE decision_id=%s
+            """,
+            (frozen.decision_ref,),
         ).fetchone()
-        assert readback_decision[0] == canonical_sha256(decision_basis)
+        assert readback_decision[:4] == (
+            frozen.content_hash,
+            frozen.content_hash,
+            "NO_ACTION",
+            None,
+        )
+        assert readback_decision[4] == freeze_payload
         freeze_row = conn.execute(
             """
             SELECT event_id,event_type,aggregate_type,aggregate_id,aggregate_version,
@@ -452,56 +598,54 @@ def exercise_domain(database: str) -> dict[str, Any]:
                    prior_event_hash,event_hash,trace_id,workflow_id,run_id,artifact_refs
             FROM domain_event WHERE event_id=%s
             """,
-            (readback_decision[2],),
+            (readback_decision[5],),
         ).fetchone()
         verify_event(event_from_row(freeze_row))
         assert freeze_row[15] == freeze_event.event_hash
         report["checks"]["freeze_hash_readback"] = {
-            "decision_hash": readback_decision[0],
+            "content_hash": readback_decision[1],
+            "decision_kind": readback_decision[2],
             "event_hash": freeze_row[15],
         }
         report["checks"]["freeze_update_sqlstate"] = expect_database_error(
             conn,
-            "UPDATE frozen_decision SET decision_type='ACTION' WHERE decision_id=%s",
-            (decision_id,),
+            "UPDATE frozen_decision SET decision_kind='FROZEN_ELIGIBLE_ACTION' "
+            "WHERE decision_id=%s",
+            (frozen.decision_ref,),
         )
         report["checks"]["freeze_delete_sqlstate"] = expect_database_error(
-            conn, "DELETE FROM frozen_decision WHERE decision_id=%s", (decision_id,)
+            conn,
+            "DELETE FROM frozen_decision WHERE decision_id=%s",
+            (frozen.decision_ref,),
         )
         report["checks"]["freeze_truncate_sqlstate"] = expect_database_error(
             conn, "TRUNCATE frozen_decision"
         )
 
-        late_decision_id = generate_uuid7()
-        late_plan_id = generate_uuid7()
         late_start = datetime(2020, 1, 1, tzinfo=UTC)
         late_end = datetime(2020, 1, 2, tzinfo=UTC)
         late_open = datetime(2020, 1, 3, tzinfo=UTC)
         late_deadline = datetime(2020, 1, 2, tzinfo=UTC)
         late_cutoff = datetime(2020, 1, 1, tzinfo=UTC)
-        late_basis = {
-            "decision_id": late_decision_id,
-            "decision_plan_id": late_plan_id,
-            "target_window_start": format_utc(late_start),
-            "target_window_end": format_utc(late_end),
-            "target_open_time": format_utc(late_open),
-            "candidate_refs": candidates,
-            "candidate_refs_hash": candidate_hash,
-            "freeze_deadline": format_utc(late_deadline),
-            "knowledge_cutoff": format_utc(late_cutoff),
-            "decision_type": "NO_ACTION",
-        }
-        late_hash = canonical_sha256(late_basis)
-        late_payload = {"decision_id": late_decision_id, "decision_hash": late_hash}
+        late_frozen = make_no_action_freeze(
+            target_ref="draw.ledger-canary.late",
+            target_start=late_start,
+            target_end=late_end,
+            target_open=late_open,
+            freeze_deadline=late_deadline,
+            knowledge_cutoff=late_cutoff,
+        )
+        late_basis = late_frozen.canonical_content()
+        late_payload = late_frozen.model_dump(mode="json")
         late_event = make_event(
-            aggregate_id=late_decision_id,
+            aggregate_id=late_frozen.decision_ref,
             version=1,
             prior_hash=None,
             idempotency_key="freeze-late-1",
             payload=late_payload,
             event_type="NoActionFrozen",
             aggregate_type="FrozenDecision",
-            occurred_at=datetime(2020, 1, 1, tzinfo=UTC),
+            occurred_at=late_frozen.frozen_at,
         )
         late_args = (
             *json_arguments(
@@ -509,18 +653,18 @@ def exercise_domain(database: str) -> dict[str, Any]:
                     outbox_id=generate_uuid7(), topic="xinao.decision-frozen.v1"
                 )
             ),
-            late_decision_id,
-            late_plan_id,
-            late_start,
-            late_end,
-            late_open,
-            Jsonb(candidates),
-            candidate_hash,
-            late_deadline,
-            late_cutoff,
-            "NO_ACTION",
+            late_frozen.decision_ref,
+            late_frozen.decision_plan_ref,
+            late_frozen.target_window_start,
+            late_frozen.target_window_end,
+            late_frozen.target_open_time,
+            Jsonb(list(late_frozen.candidate_refs)),
+            late_frozen.candidate_refs_hash,
+            late_frozen.freeze_deadline,
+            late_frozen.knowledge_cutoff,
+            late_frozen.decision_type,
             canonical_dumps(late_basis),
-            late_hash,
+            late_frozen.content_hash,
         )
         before_late = conn.execute(
             "SELECT count(*) FROM domain_event WHERE aggregate_type='FrozenDecision'"
@@ -533,7 +677,7 @@ def exercise_domain(database: str) -> dict[str, Any]:
         after_late = conn.execute(
             "SELECT count(*) FROM domain_event WHERE aggregate_type='FrozenDecision'"
         ).fetchone()[0]
-        assert before_late == after_late == 1
+        assert before_late == after_late == 2
         report["checks"]["late_freeze_atomic_no_event"] = after_late
 
     report["checks"]["destructive_downgrade_guard"] = expect_alembic_guard(

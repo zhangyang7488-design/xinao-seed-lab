@@ -1,7 +1,9 @@
 """Mechanical shadow-decision compilation and immutable freeze models."""
 
 from .compiler import (
+    CandidateQualification,
     DecisionGateInput,
+    DecisionKind,
     DecisionPlan,
     FrozenDecision,
     NoActionReason,
@@ -10,7 +12,9 @@ from .compiler import (
 )
 
 __all__ = [
+    "CandidateQualification",
     "DecisionGateInput",
+    "DecisionKind",
     "DecisionPlan",
     "FrozenDecision",
     "NoActionReason",

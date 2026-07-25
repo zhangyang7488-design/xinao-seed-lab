@@ -16,7 +16,6 @@ from psycopg.types.json import Jsonb
 from xinao.canonical import canonical_sha256
 from xinao.canonical.identifiers import generate_uuid7
 from xinao.canonical.jcs import canonical_dumps
-from xinao.canonical.time_profile import format_utc
 from xinao.catalog.compiler import write_atomic
 from xinao.decision import DecisionGateInput, compile_decision_plan, freeze_decision
 from xinao.ledger import (
@@ -45,14 +44,21 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def event(*, event_type: str, aggregate_type: str, aggregate_id: str, payload: dict[str, Any]):
+def event(
+    *,
+    event_type: str,
+    aggregate_type: str,
+    aggregate_id: str,
+    payload: dict[str, Any],
+    occurred_at: datetime | None = None,
+):
     return create_event(
         event_id=generate_uuid7(),
         event_type=event_type,
         aggregate_type=aggregate_type,
         aggregate_id=aggregate_id,
         aggregate_version=1,
-        occurred_at=now_utc(),
+        occurred_at=occurred_at or now_utc(),
         correlation_id="0190fa00-1111-7000-8222-334455667788",
         causation_id=None,
         actor="Codex-single-writer",
@@ -106,11 +112,26 @@ def expect_settlement_error(
     raise AssertionError("settlement writer accepted a prohibited operation")
 
 
-def freeze_action(conn: psycopg.Connection, *, target_ref: str):
+def freeze_action(
+    conn: psycopg.Connection,
+    *,
+    target_ref: str,
+    decision_kind: str = "FROZEN_EXPERIMENTAL_SHADOW",
+    candidate_qualification: str | None = "SHADOW_EXPERIMENTAL",
+):
     now = now_utc()
     open_time = now + timedelta(hours=3)
     gate = DecisionGateInput(
         candidate_ref="candidate.signal.p6.v1",
+        requested_decision_kind=decision_kind,
+        candidate_qualification=candidate_qualification,
+        adjudicated_decision_kinds=("FROZEN_EXPERIMENTAL_SHADOW", "NO_ACTION"),
+        court_verdict_bundle_ref="courts.signal.p6.v1",
+        court_verdict_bundle_content_hash="b" * 64,
+        protocol_pin_ref="protocol.signal.p6.v1",
+        protocol_pin_sha256="c" * 64,
+        information_set_ref="information-set.signal.p6.v1",
+        information_set_hash="d" * 64,
         validation_report_ref="validation.signal.p6.v1",
         validation_output_hash="a" * 64,
         validation_verdict="ACTION",
@@ -118,6 +139,10 @@ def freeze_action(conn: psycopg.Connection, *, target_ref: str):
         baseline_active=True,
         rule_ref="special-number-rule.v1",
         rule_active=True,
+        odds_version_ref="odds.signal.p6.v1",
+        cost_version_ref="cost.signal.p6.v1",
+        friction_version_ref="friction.signal.p6.v1",
+        exposure_policy_ref="shadow-exposure.signal.p6.v1",
         target_ref=target_ref,
         target_window_start=open_time,
         target_window_end=open_time,
@@ -136,40 +161,17 @@ def freeze_action(conn: psycopg.Connection, *, target_ref: str):
     frozen = freeze_decision(
         plan,
         decision_ref=generate_uuid7(),
-        frozen_at=now + timedelta(seconds=1),
+        frozen_at=now,
     )
     candidate_refs = list(frozen.candidate_refs)
-    candidate_hash = canonical_sha256(candidate_refs)
-    decision_basis = {
-        "decision_id": frozen.decision_ref,
-        "decision_plan_id": frozen.decision_plan_ref,
-        "target_window_start": format_utc(frozen.target_window_start),
-        "target_window_end": format_utc(frozen.target_window_end),
-        "target_open_time": format_utc(frozen.target_open_time),
-        "candidate_refs": candidate_refs,
-        "candidate_refs_hash": candidate_hash,
-        "freeze_deadline": format_utc(frozen.freeze_deadline),
-        "knowledge_cutoff": format_utc(frozen.knowledge_cutoff),
-        "decision_type": "ACTION",
-    }
-    database_hash = canonical_sha256(decision_basis)
-    payload = {
-        "decision_id": frozen.decision_ref,
-        "decision_hash": database_hash,
-        "decision_plan_id": frozen.decision_plan_ref,
-        "target_ref": target_ref,
-        "selection": {
-            "panel": frozen.panel,
-            "selected_number": frozen.selected_number,
-            "stake": frozen.stake,
-        },
-        "domain_decision_hash": frozen.decision_hash,
-    }
+    decision_basis = frozen.canonical_content()
+    payload = frozen.model_dump(mode="json")
     record = event(
-        event_type="ActionFrozen",
+        event_type="NoActionFrozen" if frozen.decision_type == "NO_ACTION" else "ActionFrozen",
         aggregate_type="FrozenDecision",
         aggregate_id=frozen.decision_ref,
         payload=payload,
+        occurred_at=frozen.frozen_at,
     )
     arguments = list(
         record.append_arguments(outbox_id=generate_uuid7(), topic="xinao.decision-frozen.v1")
@@ -184,12 +186,12 @@ def freeze_action(conn: psycopg.Connection, *, target_ref: str):
         frozen.target_window_end,
         frozen.target_open_time,
         Jsonb(candidate_refs),
-        candidate_hash,
+        frozen.candidate_refs_hash,
         frozen.freeze_deadline,
         frozen.knowledge_cutoff,
-        "ACTION",
+        frozen.decision_type,
         canonical_dumps(decision_basis),
-        database_hash,
+        frozen.content_hash,
     )
     conn.execute("SET ROLE xinao_discovery_freeze_writer")
     try:
@@ -363,6 +365,47 @@ def run(database: str) -> dict[str, Any]:
             )
             assert post_group(conn, position) == position.group_ref
         assert frozen is not None
+        frozen_readback = conn.execute(
+            """
+            SELECT decision_kind,candidate_qualification,content_hash,decision_hash,payload
+            FROM frozen_decision WHERE decision_id=%s
+            """,
+            (frozen.decision_ref,),
+        ).fetchone()
+        assert frozen_readback[:4] == (
+            "FROZEN_EXPERIMENTAL_SHADOW",
+            "SHADOW_EXPERIMENTAL",
+            frozen.content_hash,
+            frozen.content_hash,
+        )
+        assert frozen_readback[4] == frozen.model_dump(mode="json")
+        report["checks"]["exact_freeze_readback"] = {
+            "decision_kind": frozen_readback[0],
+            "candidate_qualification": frozen_readback[1],
+            "content_hash": frozen_readback[2],
+        }
+
+        with conn.transaction():
+            frozen_no_action = freeze_action(
+                conn,
+                target_ref="draw.p6-canary.no-action",
+                decision_kind="NO_ACTION",
+                candidate_qualification=None,
+            )
+        report["checks"]["no_action_settlement_rejected"] = expect_settlement_error(
+            conn,
+            "SELECT xinao_record_settlement(%s,%s,%s,%s,%s,%s,%s,%s)",
+            (
+                generate_uuid7(),
+                frozen_no_action.decision_ref,
+                "outcome.does-not-exist",
+                frozen_no_action.rule_ref,
+                "f" * 64,
+                "journal.does-not-exist",
+                Jsonb({}),
+                "event.does-not-exist",
+            ),
+        )
 
         observed = OutcomeObservation(
             outcome_ref=generate_uuid7(),
@@ -732,10 +775,10 @@ def main() -> int:
         text=True,
         env=environment,
     )
-    if downgrade.returncode == 0 or "shadow accounting history exists" not in (
+    if downgrade.returncode == 0 or "scientific frozen decisions exist" not in (
         downgrade.stdout + downgrade.stderr
     ):
-        raise AssertionError("P6 destructive downgrade guard did not reject history loss")
+        raise AssertionError("scientific freeze downgrade guard did not reject history loss")
     report["checks"]["destructive_downgrade_guard"] = f"rejected:{downgrade.returncode}"
     restore = subprocess.run(
         ["alembic", "-c", "migrations/alembic.ini", "upgrade", "head"],
@@ -749,7 +792,7 @@ def main() -> int:
             "P6 guard migration was not restored after downgrade rejection: "
             + (restore.stdout + restore.stderr)[-1000:]
         )
-    report["checks"]["migration_head_restored"] = "0004_closed_period_journal_guard"
+    report["checks"]["migration_head_restored"] = "0005_science_decision_kind"
     write_atomic(args.output, report)
     print(json.dumps({"status": report["status"], "output": str(args.output)}, sort_keys=True))
     return 0
