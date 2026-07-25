@@ -8,7 +8,7 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field
 
 from xinao.canonical import canonical_sha256
-from xinao.decision import FrozenDecision
+from xinao.decision import DecisionKind, FrozenDecision
 from xinao.ledger.accounting import JournalGroup, settlement_group
 
 from .special_number import SettlementResult, settle_special_number
@@ -103,10 +103,14 @@ def settle_frozen_decision(
     portfolio_ref: str,
     occurred_at: datetime,
 ) -> SettlementBundle:
-    if frozen.decision_hash is None or outcome.result_hash is None:
+    if frozen.content_hash is None or outcome.result_hash is None:
         raise ValueError("freeze and outcome must be hash sealed")
-    if frozen.decision_type != "ACTION":
-        raise ValueError("NO_ACTION freeze cannot produce a settlement")
+    if getattr(frozen, "decision_kind", None) not in {
+        DecisionKind.FROZEN_EXPERIMENTAL_SHADOW,
+        DecisionKind.FROZEN_ELIGIBLE_ACTION,
+    }:
+        raise ValueError("only an exact frozen shadow decision kind can produce a settlement")
+    frozen = FrozenDecision.model_validate(frozen.model_dump(mode="python"))
     if not outcome.verified:
         raise ValueError("unverified outcome cannot produce a settlement")
     if outcome.target_ref != frozen.target_ref:
@@ -127,7 +131,7 @@ def settle_frozen_decision(
     record = SettlementRecord(
         settlement_ref=settlement_ref,
         frozen_decision_ref=frozen.decision_ref,
-        frozen_decision_hash=frozen.decision_hash,
+        frozen_decision_hash=frozen.content_hash,
         outcome_ref=outcome.outcome_ref,
         outcome_hash=outcome.result_hash,
         rule_ref=frozen.rule_ref,

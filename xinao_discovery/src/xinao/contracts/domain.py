@@ -327,7 +327,10 @@ DOMAIN_OBJECT_SPECS = (
     DomainObjectSpec("NoActionReason", "Enumerated refusal reason", "Freeze Service"),
     DomainObjectSpec(
         "FrozenDecision",
-        "Immutable pre-event ACTION or NO_ACTION",
+        (
+            "Immutable pre-outcome experimental shadow, claim-eligible shadow, "
+            "or NO_ACTION with exact decision kind and content hash"
+        ),
         "Freeze Service",
         _refs(decision_plan_ref="DecisionPlan"),
     ),
