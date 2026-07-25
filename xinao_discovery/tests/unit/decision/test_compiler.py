@@ -107,7 +107,17 @@ def test_claim_eligible_kind_requires_matching_court_and_qualification() -> None
         ({"baseline_active": False}, "BASELINE_INACTIVE"),
         ({"rule_active": False}, "RULE_INACTIVE"),
         (
-            {"lower_expected_net": "0.0100", "estimated_cost": "0.0100"},
+            {
+                "requested_decision_kind": "FROZEN_ELIGIBLE_ACTION",
+                "candidate_qualification": "SHADOW_CLAIM_ELIGIBLE",
+                "adjudicated_decision_kinds": (
+                    "FROZEN_EXPERIMENTAL_SHADOW",
+                    "FROZEN_ELIGIBLE_ACTION",
+                    "NO_ACTION",
+                ),
+                "lower_expected_net": "0.0100",
+                "estimated_cost": "0.0100",
+            },
             "UNCERTAINTY_NOT_POSITIVE_AFTER_COST",
         ),
         ({"stake": "1.0001"}, "RISK_LIMIT_EXCEEDED"),
@@ -126,6 +136,62 @@ def test_any_gate_failure_compiles_to_zero_exposure_no_action(
     assert plan.claim_scope == "NO_ACTION"
     assert plan.stake == "0.0000"
     assert reason in plan.no_action_reasons
+
+
+@pytest.mark.parametrize(
+    ("lower_expected_net", "estimated_cost"),
+    [
+        ("0.0000", "0.0000"),
+        ("0.0100", "0.0100"),
+        ("-0.0100", "0.0000"),
+    ],
+)
+def test_experimental_shadow_does_not_require_positive_post_cost_lower_bound(
+    lower_expected_net: str, estimated_cost: str
+) -> None:
+    plan = compile_decision_plan(
+        gate(
+            lower_expected_net=lower_expected_net,
+            estimated_cost=estimated_cost,
+        ),
+        plan_ref=f"decision-plan.experimental.{lower_expected_net}.{estimated_cost}",
+    )
+
+    assert plan.decision_kind == DecisionKind.FROZEN_EXPERIMENTAL_SHADOW
+    assert plan.candidate_qualification == CandidateQualification.SHADOW_EXPERIMENTAL
+    assert plan.claim_scope == "EXPERIMENTAL_ONLY"
+    assert plan.stake == "1.0000"
+    assert plan.no_action_reasons == ()
+
+
+@pytest.mark.parametrize(
+    ("lower_expected_net", "estimated_cost"),
+    [
+        ("0.0100", "0.0100"),
+        ("-0.0100", "0.0000"),
+    ],
+)
+def test_claim_eligible_action_still_requires_positive_post_cost_lower_bound(
+    lower_expected_net: str, estimated_cost: str
+) -> None:
+    plan = compile_decision_plan(
+        gate(
+            requested_decision_kind="FROZEN_ELIGIBLE_ACTION",
+            candidate_qualification="SHADOW_CLAIM_ELIGIBLE",
+            adjudicated_decision_kinds=(
+                "FROZEN_EXPERIMENTAL_SHADOW",
+                "FROZEN_ELIGIBLE_ACTION",
+                "NO_ACTION",
+            ),
+            lower_expected_net=lower_expected_net,
+            estimated_cost=estimated_cost,
+        ),
+        plan_ref=f"decision-plan.eligible.{lower_expected_net}.{estimated_cost}",
+    )
+
+    assert plan.decision_kind == DecisionKind.NO_ACTION
+    assert plan.stake == "0.0000"
+    assert plan.no_action_reasons == ("UNCERTAINTY_NOT_POSITIVE_AFTER_COST",)
 
 
 def test_explicit_no_action_is_hash_sealed_and_has_no_candidate_qualification() -> None:
