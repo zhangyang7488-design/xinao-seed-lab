@@ -281,7 +281,7 @@ def compile_decision_plan(gate: DecisionGateInput, *, plan_ref: str) -> Decision
         reasons.append(NoActionReason.BASELINE_INACTIVE)
     if not gate.rule_active:
         reasons.append(NoActionReason.RULE_INACTIVE)
-    if lower - cost <= 0:
+    if gate.requested_decision_kind == DecisionKind.FROZEN_ELIGIBLE_ACTION and lower - cost <= 0:
         reasons.append(NoActionReason.UNCERTAINTY_NOT_POSITIVE_AFTER_COST)
     if stake > risk_limit:
         reasons.append(NoActionReason.RISK_LIMIT_EXCEEDED)
