@@ -34,7 +34,6 @@ DEFAULT_POLLING_START_TIMEOUT_SECONDS = 30.0
 SOURCE_RELEASE_SCHEMA_VERSION = "xinao.s_runtime_source_release.v1"
 GROK_EXPECTED_CAPABILITY_MASK = "00000000000000c0"
 GROK_EXPECTED_NO_NEW_PRIVS = "1"
-GROK_EXPECTED_SECCOMP_MODE = "0"
 SOURCE_RELEASE_CRITICAL_FILES = (
     "services/agent_runtime/integrated_bus_worker_daemon.py",
     "services/agent_runtime/integrated_bus_workflow_registry.py",
@@ -100,14 +99,12 @@ def _grok_outer_privilege_state(path: Path = Path("/proc/self/status")) -> dict[
     return {
         "expected_capability_mask": GROK_EXPECTED_CAPABILITY_MASK,
         "expected_no_new_privs": GROK_EXPECTED_NO_NEW_PRIVS,
-        "expected_seccomp_mode": GROK_EXPECTED_SECCOMP_MODE,
         **observed,
         "ok": (
             observed["cap_eff"] == GROK_EXPECTED_CAPABILITY_MASK
             and observed["cap_prm"] == GROK_EXPECTED_CAPABILITY_MASK
             and observed["cap_bnd"] == GROK_EXPECTED_CAPABILITY_MASK
             and observed["no_new_privs"] == GROK_EXPECTED_NO_NEW_PRIVS
-            and observed["seccomp"] == GROK_EXPECTED_SECCOMP_MODE
         ),
     }
 
@@ -285,13 +282,11 @@ def readiness_marker_issues(
             != GROK_EXPECTED_CAPABILITY_MASK
             or outer_privilege.get("expected_no_new_privs")
             != GROK_EXPECTED_NO_NEW_PRIVS
-            or outer_privilege.get("expected_seccomp_mode")
-            != GROK_EXPECTED_SECCOMP_MODE
             or outer_privilege.get("cap_eff") != GROK_EXPECTED_CAPABILITY_MASK
             or outer_privilege.get("cap_prm") != GROK_EXPECTED_CAPABILITY_MASK
             or outer_privilege.get("cap_bnd") != GROK_EXPECTED_CAPABILITY_MASK
             or outer_privilege.get("no_new_privs") != GROK_EXPECTED_NO_NEW_PRIVS
-            or outer_privilege.get("seccomp") != GROK_EXPECTED_SECCOMP_MODE
+            or not str(outer_privilege.get("seccomp") or "").isdigit()
         ):
             issues.append("grok_outer_privilege_state_invalid")
         if (

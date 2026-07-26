@@ -207,12 +207,11 @@ def _valid_outer_privilege_state() -> dict[str, object]:
     return {
         "expected_capability_mask": daemon.GROK_EXPECTED_CAPABILITY_MASK,
         "expected_no_new_privs": daemon.GROK_EXPECTED_NO_NEW_PRIVS,
-        "expected_seccomp_mode": daemon.GROK_EXPECTED_SECCOMP_MODE,
         "cap_eff": daemon.GROK_EXPECTED_CAPABILITY_MASK,
         "cap_prm": daemon.GROK_EXPECTED_CAPABILITY_MASK,
         "cap_bnd": daemon.GROK_EXPECTED_CAPABILITY_MASK,
         "no_new_privs": daemon.GROK_EXPECTED_NO_NEW_PRIVS,
-        "seccomp": daemon.GROK_EXPECTED_SECCOMP_MODE,
+        "seccomp": "2",
         "ok": True,
     }
 
@@ -225,7 +224,7 @@ def test_proc_status_parser_and_outer_privilege_probe(tmp_path: Path) -> None:
         f"CapPrm:\t{daemon.GROK_EXPECTED_CAPABILITY_MASK}\n"
         f"CapBnd:\t{daemon.GROK_EXPECTED_CAPABILITY_MASK}\n"
         "NoNewPrivs:\t1\n"
-        "Seccomp:\t0\n",
+        "Seccomp:\t2\n",
         encoding="utf-8",
     )
     assert daemon._grok_outer_privilege_state(status_path) == _valid_outer_privilege_state()
