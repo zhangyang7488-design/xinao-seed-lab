@@ -64,12 +64,18 @@
     "route_role": "normal_leg_a",
     "selection": "selected_by_task_fit_or_existing_route_receipt",
     "activation": "bounded_online_current_tui_or_existing_leg_a_route_receipt",
+    "common_contract_execution_backend": "linux-container",
+    "common_contract_effect_modes": ["authorized_write", "read_only"],
+    "common_contract_boundary": "exact_workspace_mount_plus_unprivileged_capability_free_model_tool_shell",
+    "legacy_non_common_execution_backend": "windows-host_provider_sandbox_only",
+    "terminal_gate": "worker_terminal_then_codex_verify_adopt_then_formal_write_or_merge_then_effect_verification",
     "files": [
       "Invoke-GrokWorkerPool.ps1",
       "Invoke-GrokComposer25Worker.ps1",
       "Invoke-CodexDispatchGrokWorkerPool.ps1",
       "Invoke-GrokHostWorkerPoolFromTemporal.ps1",
       "Invoke-GrokTemporalHostPoolTrigger.ps1",
+      "Test-GrokContainerWorkerRuntime.ps1",
       "grok_codex_grok_worker_pool_hot_path.v1.json",
       "grok_temporal_host_grok_pool.v1.json",
       "docs/temporal_host_grok_pool_activity.md"

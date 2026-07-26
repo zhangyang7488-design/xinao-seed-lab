@@ -185,6 +185,8 @@ exit 0
     $selectorManifest = Get-Content -LiteralPath ([string]$selectorPointer.release_manifest_ref) -Raw | ConvertFrom-Json
     $dSupervisorRoot = [string]$selectorPointer.release_root
     $sSupervisorPython = Join-Path $sSupervisorRoot ".venv\Scripts\python.exe"
+    $incompatibleSupervisorRoot = Join-Path $root "incompatible-supervisor-root"
+    New-Item -ItemType Directory -Force -Path $incompatibleSupervisorRoot | Out-Null
     $dSupervisorPython = [string]$selectorManifest.python_executable
     Assert-True (Test-Path -LiteralPath $sSupervisorPython -PathType Leaf) "s_supervisor_python_present"
     Assert-True (Test-Path -LiteralPath $dSupervisorPython -PathType Leaf) "d_supervisor_python_present"
@@ -205,13 +207,13 @@ exit 0
     )) "compatible_d_root_source_identity"
 
     $sProbeOutput = @(
-        & $sSupervisorPython -I -B $resolver --probe-only --supervisor-root $sSupervisorRoot 2>&1 |
+        & $sSupervisorPython -I -B $resolver --probe-only --supervisor-root $incompatibleSupervisorRoot 2>&1 |
             ForEach-Object { [string]$_ }
     )
     $sProbeExit = $LASTEXITCODE
     $sProbe = ConvertFrom-LastJsonLine $sProbeOutput
-    Assert-True ($sProbeExit -eq 20 -and $sProbe.capable -eq $false) "incompatible_s_root_rejected"
-    Assert-True ([string]$sProbe.failure_code -eq "SUPERVISOR_SELECTOR_INTERFACE_MISSING") "incompatible_s_root_typed_reason"
+    Assert-True ($sProbeExit -eq 20 -and $sProbe.capable -eq $false) "incompatible_fixture_root_rejected"
+    Assert-True ([string]$sProbe.failure_code -eq "SUPERVISOR_SELECTOR_ENTRY_MISSING") "incompatible_fixture_root_typed_reason"
 
     $poisonRoot = Join-Path $root "pythonpath-poison"
     $poisonModule = Join-Path $poisonRoot "services\agent_runtime\routing_policy_reader.py"

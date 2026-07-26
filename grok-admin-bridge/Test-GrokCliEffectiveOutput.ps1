@@ -17,7 +17,10 @@ param(
     [string]$JsonSchemaPath = "",
     [string]$ExpectedJsonSchemaSha256 = "",
     [string]$JsonSchemaValidator = "",
-    [string]$JsonSchemaPythonExe = ""
+    [string]$JsonSchemaPythonExe = "",
+    [string]$ExpectedSessionCwd = "",
+    [string]$ExpectedSessionGrokHome = "",
+    [string]$SessionEvidenceRoot = ""
 )
 
 $ErrorActionPreference = "Stop"
@@ -159,6 +162,21 @@ foreach ($observedBackendModel in $observedBackendModels) {
 
 $resolvedGrokHome = Get-NormalizedPath $GrokHome
 $resolvedExpectedCwd = Get-NormalizedPath $ExpectedCwd
+$expectedSessionCwdBinding = if ([string]::IsNullOrWhiteSpace($ExpectedSessionCwd)) {
+    $resolvedExpectedCwd
+} else {
+    $ExpectedSessionCwd
+}
+$expectedSessionHomeBinding = if ([string]::IsNullOrWhiteSpace($ExpectedSessionGrokHome)) {
+    $resolvedGrokHome
+} else {
+    $ExpectedSessionGrokHome
+}
+$sessionPathBindingMode = if ([string]::IsNullOrWhiteSpace($ExpectedSessionCwd)) {
+    "host_object_identity"
+} else {
+    "container_mount_alias_plus_host_lease"
+}
 $expectedCwdLease = $null
 $sessionCwdLease = $null
 $expectedCwdFinalPath = ""
@@ -176,7 +194,13 @@ if ($resolvedExpectedCwd) {
         $errors.Add("expected_cwd_identity_invalid")
     }
 }
-$sessionEvidenceRoot = if ($resolvedGrokHome) { Join-Path $resolvedGrokHome "sessions" } else { "" }
+$sessionEvidenceRoot = if (-not [string]::IsNullOrWhiteSpace($SessionEvidenceRoot)) {
+    Get-NormalizedPath $SessionEvidenceRoot
+} elseif ($resolvedGrokHome) {
+    Join-Path $resolvedGrokHome "sessions"
+} else {
+    ""
+}
 $sessionEvidenceDir = ""
 $sessionSummaryPath = ""
 $sessionEventsPath = ""
@@ -234,11 +258,26 @@ else {
                 $sessionSummary = Get-Content -LiteralPath $sessionSummaryPath -Raw -Encoding UTF8 | ConvertFrom-Json -ErrorAction Stop
                 $sessionSummarySha256 = Get-FileSha256Lower $sessionSummaryPath
                 $summarySessionId = [string]$sessionSummary.info.id
-                $summaryCwd = Get-NormalizedPath ([string]$sessionSummary.info.cwd)
-                $summaryGrokHome = Get-NormalizedPath ([string]$sessionSummary.grok_home)
+                $summaryCwdRaw = [string]$sessionSummary.info.cwd
+                $summaryGrokHomeRaw = [string]$sessionSummary.grok_home
+                $summaryCwd = if ([string]::IsNullOrWhiteSpace($ExpectedSessionCwd)) {
+                    Get-NormalizedPath $summaryCwdRaw
+                } else {
+                    $summaryCwdRaw
+                }
+                $summaryGrokHome = if ([string]::IsNullOrWhiteSpace($ExpectedSessionGrokHome)) {
+                    Get-NormalizedPath $summaryGrokHomeRaw
+                } else {
+                    $summaryGrokHomeRaw
+                }
                 $sessionModel = [string]$sessionSummary.current_model_id
                 $sessionIdBindingOk = Test-OrdinalEquals $summarySessionId $sessionId
-                if ($summaryCwd -and $null -ne $expectedCwdLease) {
+                if (-not [string]::IsNullOrWhiteSpace($ExpectedSessionCwd)) {
+                    $sessionCwdBindingOk = Test-OrdinalEquals $summaryCwd $expectedSessionCwdBinding
+                    $sessionCwdFinalPath = $summaryCwd
+                    $sessionCwdObjectId = "container_mount_alias"
+                }
+                elseif ($summaryCwd -and $null -ne $expectedCwdLease) {
                     try {
                         $sessionCwdLease = Open-GrokDirectoryIdentityLease -Path $summaryCwd
                         $sessionCwdFinalPath = [string]$sessionCwdLease.final_path
@@ -251,7 +290,11 @@ else {
                         $errors.Add("session_summary_cwd_identity_invalid")
                     }
                 }
-                $sessionHomeBindingOk = Test-OrdinalIgnoreCaseEquals $summaryGrokHome $resolvedGrokHome
+                $sessionHomeBindingOk = if (-not [string]::IsNullOrWhiteSpace($ExpectedSessionGrokHome)) {
+                    Test-OrdinalEquals $summaryGrokHome $expectedSessionHomeBinding
+                } else {
+                    Test-OrdinalIgnoreCaseEquals $summaryGrokHome $resolvedGrokHome
+                }
                 $sessionModelIdentityOk = Test-OrdinalEquals $sessionModel $RequestedModel
                 if (-not $sessionIdBindingOk) { $errors.Add("session_summary_id_mismatch") }
                 if (-not $sessionCwdBindingOk) { $errors.Add("session_summary_cwd_mismatch") }
@@ -467,6 +510,9 @@ $result = [ordered]@{
     model_identity_binding = "exact_session_model_plus_explicit_backend_usage_binding"
     grok_home = $resolvedGrokHome
     expected_cwd = $resolvedExpectedCwd
+    expected_session_cwd = $expectedSessionCwdBinding
+    expected_session_grok_home = $expectedSessionHomeBinding
+    session_path_binding_mode = $sessionPathBindingMode
     expected_cwd_final_path = $expectedCwdFinalPath
     expected_cwd_object_id = $expectedCwdObjectId
     session_cwd_final_path = $sessionCwdFinalPath

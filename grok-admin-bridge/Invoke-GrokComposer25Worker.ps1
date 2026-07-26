@@ -30,6 +30,12 @@ param(
     [string]$JsonSchemaPath = "",
     [string]$RulesFile = "",
     [string]$RulesSha256 = "",
+    [ValidateSet("windows-host", "linux-container")]
+    [string]$ExecutionBackend = "windows-host",
+    [ValidateSet("authorized_write", "read_only")]
+    [string]$ContainerEffectMode = "authorized_write",
+    [string]$ContainerImage = "xinao-houtai-gongren:worker-boundary-v5-20260727",
+    [string]$DockerExe = "",
     [switch]$Background,
     [switch]$NoAlwaysApprove,
     [switch]$Quiet,
@@ -226,6 +232,39 @@ function Stop-ExactProcessTree([int]$RootProcessId) {
     return @($ordered)
 }
 
+function Invoke-NativeCapture(
+    [string]$FileName,
+    [string[]]$Arguments,
+    [string]$WorkingDirectory,
+    [int]$DeadlineSeconds = 30
+) {
+    $startInfo = [Diagnostics.ProcessStartInfo]::new()
+    $startInfo.FileName = $FileName
+    $startInfo.WorkingDirectory = $WorkingDirectory
+    $startInfo.UseShellExecute = $false
+    $startInfo.CreateNoWindow = $true
+    $startInfo.RedirectStandardOutput = $true
+    $startInfo.RedirectStandardError = $true
+    $transport = Set-XinaoProcessArguments -StartInfo $startInfo -Arguments $Arguments
+    $process = [Diagnostics.Process]::new()
+    $process.StartInfo = $startInfo
+    [void]$process.Start()
+    $stdoutTask = $process.StandardOutput.ReadToEndAsync()
+    $stderrTask = $process.StandardError.ReadToEndAsync()
+    $completed = $process.WaitForExit($DeadlineSeconds * 1000)
+    if (-not $completed) {
+        [void](Stop-ExactProcessTree -RootProcessId $process.Id)
+        [void]$process.WaitForExit(10000)
+    }
+    return [pscustomobject]@{
+        exit_code = if ($completed) { $process.ExitCode } else { 124 }
+        stdout = $stdoutTask.GetAwaiter().GetResult()
+        stderr = $stderrTask.GetAwaiter().GetResult()
+        timed_out = -not $completed
+        argv_transport = $transport
+    }
+}
+
 if (-not $GrokExe) {
     $cand = @(
         (Get-Command grok.exe -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Source),
@@ -249,6 +288,32 @@ $EvidenceDir = [IO.Path]::GetFullPath($EvidenceDir)
 if (-not (Test-Path -LiteralPath $Cwd -PathType Container)) { throw "GROK_CWD_MISSING: $Cwd" }
 if (-not (Test-Path -LiteralPath $GrokHome -PathType Container)) { throw "GROK_HOME_MISSING: $GrokHome" }
 if ($OutputFormat -ne "json") { throw "GROK_EFFECTIVE_OUTPUT_REQUIRES_JSON" }
+$containerMode = $ExecutionBackend -eq "linux-container"
+$containerWorkspaceCwd = "/workspace"
+$containerProfileRoot = "/grok-home/.grok"
+$containerPromptPath = "/inputs/prompt.md"
+$containerSandboxProfile = "off"
+$containerRuntimeUser = "0:0"
+$containerToolUser = "65532:65532"
+$containerSeccompMode = "unconfined_for_unprivileged_bubblewrap_bootstrap"
+$containerWorkspaceReadOnly = $ContainerEffectMode -eq "read_only"
+$containerImageId = ""
+$containerRuntimeImageRef = ""
+$containerDockerOs = ""
+$containerSecurityOptions = @()
+$containerSessionsSource = ""
+$containerLogsSource = ""
+$containerCatalogSource = ""
+$containerTransportRoot = ""
+$containerPersistentAuthSource = ""
+$containerPersistentAuthSha256Before = ""
+$containerAuthPlaceholder = ""
+$containerSandboxConfigPath = ""
+$containerConfigPath = ""
+$containerRunBaseArgs = @()
+if ($containerMode -and ($Background -or $DetachedDrain -or $BackgroundInvocationPath)) {
+    throw "GROK_CONTAINER_BACKGROUND_UNSUPPORTED: use the bounded synchronous worker pool"
+}
 
 $maxTurnsValue = $null
 $maxTurnsText = ([string]$MaxTurns).Trim()
@@ -313,6 +378,145 @@ if (-not $processArgumentListAvailable) {
     $argumentTransportFailure | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath $metaPath -Encoding UTF8
     Copy-Item -LiteralPath $metaPath -Destination $latest -Force
     throw $argumentTransportFailure.error
+}
+
+if ($containerMode) {
+    if ([string]::IsNullOrWhiteSpace($ContainerImage)) {
+        throw "GROK_CONTAINER_IMAGE_REQUIRED"
+    }
+    if (-not $DockerExe) {
+        $DockerExe = Get-Command docker.exe -ErrorAction SilentlyContinue |
+            Select-Object -ExpandProperty Source -First 1
+    }
+    if (-not $DockerExe -or -not (Test-Path -LiteralPath $DockerExe -PathType Leaf)) {
+        throw "GROK_CONTAINER_DOCKER_CLI_MISSING"
+    }
+    $DockerExe = [IO.Path]::GetFullPath($DockerExe)
+
+    $containerPersistentAuthSource = Join-Path $GrokHome "auth.json"
+    if (-not (Test-Path -LiteralPath $containerPersistentAuthSource -PathType Leaf)) {
+        throw "GROK_CONTAINER_AUTH_SOURCE_MISSING"
+    }
+    $containerPersistentAuthSha256Before = Get-FileSha256Lower $containerPersistentAuthSource
+    $containerTransportRoot = Join-Path $EvidenceDir ($runId + ".transport-profile")
+    if (Test-Path -LiteralPath $containerTransportRoot) {
+        throw "GROK_CONTAINER_TRANSPORT_ROOT_ALREADY_EXISTS"
+    }
+    $containerSessionsSource = Join-Path $containerTransportRoot "sessions"
+    $containerLogsSource = Join-Path $containerTransportRoot "logs"
+    New-Item -ItemType Directory -Path $containerTransportRoot, $containerSessionsSource, $containerLogsSource | Out-Null
+    $containerAuthPlaceholder = Join-Path $containerTransportRoot "auth.json"
+    [IO.File]::WriteAllBytes($containerAuthPlaceholder, [byte[]]@())
+    $containerSandboxConfigPath = Join-Path $containerTransportRoot "sandbox.toml"
+    $containerSandboxConfig = @"
+# The OCI mount boundary is authoritative for the transport process. Model
+# Bash tools cross the image-owned privilege-separation wrapper, which adds a
+# child bubblewrap namespace and masks GROK_HOME. The provider-wide sandbox is
+# off because it encloses the authenticated transport itself.
+"@
+    [IO.File]::WriteAllText(
+        $containerSandboxConfigPath,
+        $containerSandboxConfig,
+        [Text.UTF8Encoding]::new($false)
+    )
+    $containerConfigPath = Join-Path $containerTransportRoot "config.toml"
+    $containerConfig = @"
+[shell_environment_policy]
+inherit = "core"
+ignore_default_excludes = false
+include_only = ["PATH", "HOME", "GROK_HOME", "TMPDIR", "SHELL"]
+
+[permission]
+deny = [
+  "Read($containerProfileRoot/auth.json)",
+  "Edit($containerProfileRoot/auth.json)",
+]
+"@
+    [IO.File]::WriteAllText(
+        $containerConfigPath,
+        $containerConfig,
+        [Text.UTF8Encoding]::new($false)
+    )
+    $containerPersistentCatalogSource = Join-Path $GrokHome "models_cache.json"
+    if (-not (Test-Path -LiteralPath $containerPersistentCatalogSource -PathType Leaf)) {
+        throw "GROK_CONTAINER_MODEL_CATALOG_SOURCE_MISSING"
+    }
+    $containerCatalogSource = Join-Path $containerTransportRoot "models_cache.json"
+    [IO.File]::WriteAllBytes(
+        $containerCatalogSource,
+        [IO.File]::ReadAllBytes($containerPersistentCatalogSource)
+    )
+    foreach ($bindSource in @($Cwd, $containerTransportRoot, $containerPersistentAuthSource)) {
+        if ($bindSource -match '[,\r\n]') {
+            throw "GROK_CONTAINER_BIND_SOURCE_UNSAFE: $bindSource"
+        }
+    }
+
+    $dockerOsProbe = Invoke-NativeCapture -FileName $DockerExe -WorkingDirectory $Cwd -Arguments @(
+        "info", "--format", "{{json .OSType}}"
+    )
+    if ($dockerOsProbe.exit_code -ne 0) {
+        throw "GROK_CONTAINER_DOCKER_INFO_FAILED: $($dockerOsProbe.stderr)"
+    }
+    try { $containerDockerOs = [string]($dockerOsProbe.stdout | ConvertFrom-Json -ErrorAction Stop) }
+    catch { throw "GROK_CONTAINER_DOCKER_OS_INVALID" }
+    if ($containerDockerOs -ne "linux") {
+        throw "GROK_CONTAINER_LINUX_ENGINE_REQUIRED: observed=$containerDockerOs"
+    }
+
+    $dockerSecurityProbe = Invoke-NativeCapture -FileName $DockerExe -WorkingDirectory $Cwd -Arguments @(
+        "info", "--format", "{{json .SecurityOptions}}"
+    )
+    if ($dockerSecurityProbe.exit_code -ne 0) {
+        throw "GROK_CONTAINER_DOCKER_SECURITY_INFO_FAILED: $($dockerSecurityProbe.stderr)"
+    }
+    try { $containerSecurityOptions = @($dockerSecurityProbe.stdout | ConvertFrom-Json -ErrorAction Stop) }
+    catch { throw "GROK_CONTAINER_DOCKER_SECURITY_INFO_INVALID" }
+    if (-not (@($containerSecurityOptions) -match '^name=seccomp')) {
+        throw "GROK_CONTAINER_SECCOMP_REQUIRED"
+    }
+
+    $imageProbe = Invoke-NativeCapture -FileName $DockerExe -WorkingDirectory $Cwd -Arguments @(
+        "image", "inspect", "--format", "{{json .Id}}", $ContainerImage
+    )
+    if ($imageProbe.exit_code -ne 0) {
+        throw "GROK_CONTAINER_IMAGE_UNAVAILABLE: image=$ContainerImage error=$($imageProbe.stderr)"
+    }
+    try { $containerImageId = [string]($imageProbe.stdout | ConvertFrom-Json -ErrorAction Stop) }
+    catch { throw "GROK_CONTAINER_IMAGE_ID_INVALID" }
+    if ($containerImageId -notmatch '^sha256:[0-9a-f]{64}$') {
+        throw "GROK_CONTAINER_IMAGE_ID_INVALID: $containerImageId"
+    }
+    $containerRuntimeImageRef = $containerImageId
+
+    $workspaceMount = "type=bind,source=$Cwd,target=$containerWorkspaceCwd"
+    if ($containerWorkspaceReadOnly) { $workspaceMount += ",readonly" }
+    $containerRunBaseArgs = @(
+        "run", "--rm",
+        "--read-only",
+        "--user", $containerRuntimeUser,
+        "--tmpfs", "/tmp:rw,nosuid,nodev,size=512m,uid=0,gid=0,mode=1777",
+        "--tmpfs", "/grok-home/.cache:rw,nosuid,nodev,size=128m,uid=0,gid=0,mode=0700",
+        "--tmpfs", "/grok-home/.grok:rw,nosuid,nodev,size=256m,uid=0,gid=0,mode=0755",
+        "--cap-drop", "ALL",
+        "--cap-add", "SETUID",
+        "--cap-add", "SETGID",
+        "--security-opt", "seccomp=unconfined",
+        "--security-opt", "no-new-privileges:true",
+        "--pids-limit", "256",
+        "--network", "bridge",
+        "-e", "HOME=/grok-home",
+        "-e", "GROK_HOME=$containerProfileRoot",
+        "-e", "TMPDIR=/tmp",
+        "-e", "SHELL=/usr/bin/bash",
+        "--mount", $workspaceMount,
+        "--mount", "type=bind,source=$containerPersistentAuthSource,target=$containerProfileRoot/auth.json,readonly",
+        "--mount", "type=bind,source=$containerSessionsSource,target=$containerProfileRoot/sessions",
+        "--mount", "type=bind,source=$containerCatalogSource,target=$containerProfileRoot/models_cache.json",
+        "--mount", "type=bind,source=$containerSandboxConfigPath,target=/inputs/transport-sandbox.toml,readonly",
+        "--mount", "type=bind,source=$containerConfigPath,target=/inputs/transport-config.toml,readonly",
+        "-w", $containerWorkspaceCwd
+    )
 }
 
 if ($Background -and -not $DetachedDrain) {
@@ -643,9 +847,22 @@ validator_class.check_schema(schema)
         }
     }
     $env:GROK_HOME = $GrokHome
-    $versionOutput = @(& $GrokExe version 2>&1 | ForEach-Object { [string]$_ })
-    $versionExit = $LASTEXITCODE
-    $versionText = $versionOutput -join "`n"
+    if ($containerMode) {
+        $containerVersionProbe = Invoke-NativeCapture `
+            -FileName $DockerExe `
+            -WorkingDirectory $Cwd `
+            -DeadlineSeconds 60 `
+            -Arguments @($containerRunBaseArgs + @(
+                $containerRuntimeImageRef, "/usr/local/bin/xinao-grok-entrypoint", "version"
+            ))
+        $versionExit = [int]$containerVersionProbe.exit_code
+        $versionText = ([string]$containerVersionProbe.stdout).Trim()
+    }
+    else {
+        $versionOutput = @(& $GrokExe version 2>&1 | ForEach-Object { [string]$_ })
+        $versionExit = $LASTEXITCODE
+        $versionText = $versionOutput -join "`n"
+    }
     $versionMatch = [regex]::Match($versionText, '(\d+)[.](\d+)[.](\d+)')
     if ($versionExit -ne 0 -or -not $versionMatch.Success) {
         throw "GROK_CLI_VERSION_DISCOVERY_FAILED"
@@ -654,9 +871,22 @@ validator_class.check_schema(schema)
     if ($cliVersion -lt [version]'0.2.85') {
         throw "GROK_CLI_VERSION_TOO_OLD: observed=$cliVersion required=0.2.85"
     }
-    $modelsOutput = @(& $GrokExe models 2>&1 | ForEach-Object { [string]$_ })
-    $modelsExit = $LASTEXITCODE
-    $modelsText = $modelsOutput -join "`n"
+    if ($containerMode) {
+        $containerModelsProbe = Invoke-NativeCapture `
+            -FileName $DockerExe `
+            -WorkingDirectory $Cwd `
+            -DeadlineSeconds 120 `
+            -Arguments @($containerRunBaseArgs + @(
+                $containerRuntimeImageRef, "/usr/local/bin/xinao-grok-entrypoint", "models"
+            ))
+        $modelsExit = [int]$containerModelsProbe.exit_code
+        $modelsText = [string]$containerModelsProbe.stdout
+    }
+    else {
+        $modelsOutput = @(& $GrokExe models 2>&1 | ForEach-Object { [string]$_ })
+        $modelsExit = $LASTEXITCODE
+        $modelsText = $modelsOutput -join "`n"
+    }
     $cliModelIds = @(
         [regex]::Matches(
             $modelsText,
@@ -667,7 +897,11 @@ validator_class.check_schema(schema)
         throw "GROK_REQUESTED_MODEL_UNAVAILABLE: requested=$Model profile=$GrokHome"
     }
 
-    $catalogPath = Join-Path $GrokHome "models_cache.json"
+    $catalogPath = if ($containerMode) {
+        Join-Path $containerTransportRoot "models_cache.json"
+    } else {
+        Join-Path $GrokHome "models_cache.json"
+    }
     if (-not (Test-Path -LiteralPath $catalogPath -PathType Leaf)) {
         throw "GROK_AUTHENTICATED_MODEL_CATALOG_MISSING: profile=$GrokHome"
     }
@@ -834,8 +1068,8 @@ Before substantive work, read the current section 七、并发与角色 from tha
 
 $argsList = [System.Collections.Generic.List[string]]::new()
 [void]$argsList.Add("-m"); [void]$argsList.Add($Model)
-[void]$argsList.Add("--cwd"); [void]$argsList.Add($Cwd)
-[void]$argsList.Add("--sandbox"); [void]$argsList.Add("workspace")
+[void]$argsList.Add("--cwd"); [void]$argsList.Add($(if ($containerMode) { $containerWorkspaceCwd } else { $Cwd }))
+[void]$argsList.Add("--sandbox"); [void]$argsList.Add($(if ($containerMode) { $containerSandboxProfile } else { "workspace" }))
 if ($null -ne $maxTurnsValue) {
     [void]$argsList.Add("--max-turns"); [void]$argsList.Add("$maxTurnsValue")
 }
@@ -845,7 +1079,11 @@ if ($jsonSchemaPayload) {
     [void]$argsList.Add($jsonSchemaPayload)
 }
 [void]$argsList.Add("--no-auto-update")
-[void]$argsList.Add("--prompt-file"); [void]$argsList.Add($promptForFile)
+if ($containerMode) {
+    [void]$argsList.Add("--no-subagents")
+    [void]$argsList.Add("--no-memory")
+}
+[void]$argsList.Add("--prompt-file"); [void]$argsList.Add($(if ($containerMode) { $containerPromptPath } else { $promptForFile }))
 if ($shortExecutionContractRules) {
     [void]$argsList.Add("--rules")
     [void]$argsList.Add($shortExecutionContractRules)
@@ -891,7 +1129,44 @@ $meta = [ordered]@{
     grok_exe = $GrokExe
     grok_home = $GrokHome
     cwd = $Cwd
-    sandbox_profile = "workspace"
+    execution_backend = $ExecutionBackend
+    effect_mode = if ($containerMode) { $ContainerEffectMode } else { "unbounded_host_legacy" }
+    sandbox_profile = if ($containerMode) { $containerSandboxProfile } else { "workspace" }
+    sandbox_profile_extends = ""
+    sandbox_enforcement = if ($containerMode) {
+        "linux_docker_mount_boundary_plus_tool_shell_bwrap_profile_mask"
+    } else {
+        "provider_cli_profile_only"
+    }
+    container_image = if ($containerMode) { $ContainerImage } else { "" }
+    container_image_id = if ($containerMode) { $containerImageId } else { "" }
+    container_runtime_image_ref = if ($containerMode) { $containerRuntimeImageRef } else { "" }
+    container_engine_os = if ($containerMode) { $containerDockerOs } else { "" }
+    container_security_options = if ($containerMode) { @($containerSecurityOptions) } else { @() }
+    container_runtime_user = if ($containerMode) { $containerRuntimeUser } else { "" }
+    container_tool_user = if ($containerMode) { $containerToolUser } else { "" }
+    outer_non_root = $false
+    outer_capability_policy = if ($containerMode) { "drop_all_add_setuid_setgid_for_tool_shell_wrapper_only" } else { "" }
+    outer_seccomp_mode = if ($containerMode) { $containerSeccompMode } else { "" }
+    container_workspace = if ($containerMode) { $containerWorkspaceCwd } else { "" }
+    container_workspace_read_only = [bool]($containerMode -and $containerWorkspaceReadOnly)
+    container_profile_root = if ($containerMode) { $containerProfileRoot } else { "" }
+    container_profile_tmpfs = [bool]$containerMode
+    container_sessions_source = if ($containerMode) { $containerSessionsSource } else { "" }
+    container_logs_tmpfs = [bool]$containerMode
+    container_sensitive_logs_retained = if ($containerMode) { $null } else { $false }
+    container_transport_root = if ($containerMode) { $containerTransportRoot } else { "" }
+    container_persistent_profile_mounted = $false
+    container_persistent_auth_source = if ($containerMode) { $containerPersistentAuthSource } else { "" }
+    container_persistent_auth_read_only = [bool]$containerMode
+    container_persistent_auth_unchanged = if ($containerMode) { $null } else { $false }
+    container_auth_deny_path = if ($containerMode) { "$containerProfileRoot/auth.json" } else { "" }
+    container_tool_shell = if ($containerMode) { "/usr/bin/bash" } else { "" }
+    container_tool_profile_masked = [bool]$containerMode
+    container_auth_secret_copied = $false
+    outer_rootfs_read_only = [bool]$containerMode
+    outer_capabilities_dropped = [bool]$containerMode
+    outer_no_new_privileges = [bool]$containerMode
     max_turns = if ($null -eq $maxTurnsValue) { "auto" } else { $maxTurnsValue }
     max_turns_cli_applied = ($null -ne $maxTurnsValue)
     cli_version = $cliVersion.ToString()
@@ -942,17 +1217,46 @@ $meta = [ordered]@{
     hot_path_cn = "Codex->Grok headless worker (not visible TUI inject; not Docker desktop .lnk)"
 }
 
-# Mature Windows spawn: ArgumentList owns Windows quoting; the worker fails
-# pre-token on runtimes that do not expose this API.
+# ArgumentList owns Windows quoting for both the legacy host CLI and the
+# Docker CLI.  A common-contract worker uses the Linux container branch so
+# the model sees one workspace mount rather than the host filesystem.
+$containerName = ""
+$processExecutable = $GrokExe
+$processArguments = $argsList.ToArray()
+if ($containerMode) {
+    if ($promptForFile -match '[,\r\n]') {
+        throw "GROK_CONTAINER_PROMPT_BIND_SOURCE_UNSAFE"
+    }
+    $containerName = ("xinao-grok-" + $runId.Replace('_', '-')).ToLowerInvariant()
+    $containerArguments = [System.Collections.Generic.List[string]]::new()
+    foreach ($value in @("run", "--rm", "--name", $containerName)) {
+        [void]$containerArguments.Add([string]$value)
+    }
+    foreach ($value in @($containerRunBaseArgs | Select-Object -Skip 2)) {
+        [void]$containerArguments.Add([string]$value)
+    }
+    [void]$containerArguments.Add("--mount")
+    [void]$containerArguments.Add("type=bind,source=$promptForFile,target=$containerPromptPath,readonly")
+    [void]$containerArguments.Add($containerRuntimeImageRef)
+    [void]$containerArguments.Add("/usr/local/bin/xinao-grok-entrypoint")
+    foreach ($value in $argsList.ToArray()) {
+        [void]$containerArguments.Add([string]$value)
+    }
+    $processExecutable = $DockerExe
+    $processArguments = $containerArguments.ToArray()
+    $meta["container_name"] = $containerName
+    $meta["container_prompt_read_only"] = $true
+    $meta["container_workspace_mount_mode"] = if ($containerWorkspaceReadOnly) { "ro" } else { "rw" }
+}
 $psi = New-Object System.Diagnostics.ProcessStartInfo
-$psi.FileName = $GrokExe
-$argvTransport = Set-XinaoProcessArguments -StartInfo $psi -Arguments $argsList.ToArray()
+$psi.FileName = $processExecutable
+$argvTransport = Set-XinaoProcessArguments -StartInfo $psi -Arguments $processArguments
 $psi.WorkingDirectory = $Cwd
 $psi.UseShellExecute = $false
 $psi.RedirectStandardOutput = $true
 $psi.RedirectStandardError = $true
 $psi.CreateNoWindow = $true
-if ($GrokHome) {
+if ($GrokHome -and -not $containerMode) {
     $psi.EnvironmentVariables["GROK_HOME"] = $GrokHome
 }
 
@@ -971,9 +1275,17 @@ $stderrTask = $proc.StandardError.ReadToEndAsync()
 $completed = $proc.WaitForExit($TimeoutSec * 1000)
 $timedOut = -not $completed
 $terminatedPids = @()
+$containerCleanup = $null
 if ($timedOut) {
     $terminatedPids = @(Stop-ExactProcessTree -RootProcessId $proc.Id)
     [void]$proc.WaitForExit(10000)
+    if ($containerMode -and $containerName) {
+        $containerCleanup = Invoke-NativeCapture `
+            -FileName $DockerExe `
+            -WorkingDirectory $Cwd `
+            -DeadlineSeconds 30 `
+            -Arguments @("container", "rm", "--force", $containerName)
+    }
 }
 $stdout = $stdoutTask.GetAwaiter().GetResult()
 $stderr = $stderrTask.GetAwaiter().GetResult()
@@ -1006,6 +1318,11 @@ if ($jsonSchemaSnapshotPath) {
     $validatorArgs.JsonSchemaValidator = $localJsonSchemaValidator
     if ($localJsonSchemaPythonExe) { $validatorArgs.JsonSchemaPythonExe = $localJsonSchemaPythonExe }
 }
+if ($containerMode) {
+    $validatorArgs.ExpectedSessionCwd = $containerWorkspaceCwd
+    $validatorArgs.ExpectedSessionGrokHome = $containerProfileRoot
+    $validatorArgs.SessionEvidenceRoot = $containerSessionsSource
+}
 $validationText = [string](& $validatorScript @validatorArgs)
 $validatorExit = $LASTEXITCODE
 $validation = $validationText | ConvertFrom-Json -ErrorAction Stop
@@ -1015,6 +1332,37 @@ foreach ($property in $validation.PSObject.Properties) {
     $meta[$property.Name] = $property.Value
 }
 $meta.status = if ($validation.effective_output_accepted) { "accepted" } else { "rejected" }
+if ($containerMode) {
+    $containerAuthPlaceholderSize = (Get-Item -LiteralPath $containerAuthPlaceholder -Force).Length
+    $containerPersistentLogFiles = @(
+        Get-ChildItem -LiteralPath $containerLogsSource -File -Recurse -Force -ErrorAction SilentlyContinue
+    ).Count
+    $containerPersistentAuthSha256After = Get-FileSha256Lower $containerPersistentAuthSource
+    $containerPersistentAuthUnchanged = [string]::Equals(
+        $containerPersistentAuthSha256Before,
+        $containerPersistentAuthSha256After,
+        [StringComparison]::Ordinal
+    )
+    $meta.container_auth_placeholder_size_bytes = [int64]$containerAuthPlaceholderSize
+    $meta.container_auth_placeholder_clean = $containerAuthPlaceholderSize -eq 0
+    $meta.container_persistent_log_file_count = [int]$containerPersistentLogFiles
+    $meta.container_sensitive_logs_retained = $containerPersistentLogFiles -ne 0
+    $meta.container_persistent_auth_unchanged = $containerPersistentAuthUnchanged
+    if ($containerAuthPlaceholderSize -ne 0 -or -not $containerPersistentAuthUnchanged -or $containerPersistentLogFiles -ne 0) {
+        $meta.status = "rejected"
+        $meta.effective_output_accepted = $false
+        $meta.validation.effective_output_accepted = $false
+        if ($containerAuthPlaceholderSize -ne 0) {
+            $meta.validation.validation_errors = @($meta.validation.validation_errors) + "container_auth_placeholder_changed"
+        }
+        if (-not $containerPersistentAuthUnchanged) {
+            $meta.validation.validation_errors = @($meta.validation.validation_errors) + "container_persistent_auth_changed"
+        }
+        if ($containerPersistentLogFiles -ne 0) {
+            $meta.validation.validation_errors = @($meta.validation.validation_errors) + "container_sensitive_logs_persisted"
+        }
+    }
+}
 if ($timedOut) {
     $meta.status = "timeout"
     $meta.effective_output_accepted = $false
@@ -1028,6 +1376,7 @@ $meta.validator_exit_code = $validatorExit
 $meta.pid = $proc.Id
 $meta.timed_out = $timedOut
 $meta.terminated_process_ids = @($terminatedPids)
+$meta.container_cleanup_exit_code = if ($null -ne $containerCleanup) { [int]$containerCleanup.exit_code } else { $null }
 $meta.finished_at = (Get-Date).ToString("o")
 $meta | ConvertTo-Json -Depth 10 | Set-Content -LiteralPath $metaPath -Encoding UTF8
 Copy-Item $metaPath $latest -Force

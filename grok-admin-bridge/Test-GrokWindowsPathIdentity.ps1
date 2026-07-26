@@ -10,9 +10,14 @@ function Assert-PathIdentity([bool]$Condition, [string]$Name) {
     Write-Output "PASS: $Name"
 }
 
-$junction = "E:\XINAO_RESEARCH_WORKSPACES\S"
-$physical = "E:\XINAO_RESEARCH_WORKSPACES\nianhua-new-route-active"
-$alien = "D:\XINAO_RESEARCH_RUNTIME"
+$testRoot = Join-Path "D:\XINAO_RESEARCH_RUNTIME\tmp" (
+    "grok-path-identity-" + [guid]::NewGuid().ToString("N")
+)
+$physical = Join-Path $testRoot "physical"
+$junction = Join-Path $testRoot "junction"
+$alien = Join-Path $testRoot "alien"
+New-Item -ItemType Directory -Force -Path $physical, $alien | Out-Null
+[void](New-Item -ItemType Junction -Path $junction -Target $physical)
 
 $junctionLease = Open-GrokDirectoryIdentityLease -Path $junction
 $physicalLease = Open-GrokDirectoryIdentityLease -Path $physical
@@ -38,4 +43,7 @@ finally {
     Close-GrokDirectoryIdentityLease -Lease $junctionLease
     Close-GrokDirectoryIdentityLease -Lease $physicalLease
     Close-GrokDirectoryIdentityLease -Lease $alienLease
+    if (Test-Path -LiteralPath $testRoot -PathType Container) {
+        Remove-Item -LiteralPath $testRoot -Recurse -Force
+    }
 }
