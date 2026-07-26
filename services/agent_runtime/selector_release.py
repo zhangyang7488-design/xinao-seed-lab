@@ -13,6 +13,7 @@ import os
 import shutil
 import subprocess
 import tempfile
+import tomllib
 from pathlib import Path
 from typing import Any
 
@@ -25,6 +26,8 @@ REQUIRED_DISTRIBUTIONS = (
     "portalocker",
     "referencing",
     "rpds-py",
+    "typing-extensions",
+    *(("pywin32",) if os.name == "nt" else ()),
 )
 
 RELEASE_FILES = (
@@ -153,6 +156,70 @@ def _absolute_executable(path: Path) -> Path:
     if not executable.is_file():
         raise SelectorReleaseError(f"selector release python missing: {executable}")
     return executable
+
+
+def _locked_requirement_specs(source_root: Path) -> tuple[str, ...]:
+    """Resolve the release dependency subset to exact versions from ``uv.lock``."""
+
+    lock_path = source_root / "uv.lock"
+    try:
+        lock = tomllib.loads(lock_path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeError, tomllib.TOMLDecodeError) as exc:
+        raise SelectorReleaseError(f"selector release lock invalid: {lock_path}: {exc}") from exc
+    packages = lock.get("package")
+    if not isinstance(packages, list):
+        raise SelectorReleaseError(f"selector release lock has no package list: {lock_path}")
+    versions: dict[str, set[str]] = {name: set() for name in REQUIRED_DISTRIBUTIONS}
+    for raw in packages:
+        if not isinstance(raw, dict):
+            continue
+        name = str(raw.get("name") or "").strip().lower()
+        version = str(raw.get("version") or "").strip()
+        if name in versions and version:
+            versions[name].add(version)
+    invalid = {name: sorted(found) for name, found in versions.items() if len(found) != 1}
+    if invalid:
+        raise SelectorReleaseError(
+            "selector release dependencies are not uniquely pinned in uv.lock: "
+            + json.dumps(invalid, ensure_ascii=False, sort_keys=True)
+        )
+    return tuple(f"{name}=={next(iter(versions[name]))}" for name in REQUIRED_DISTRIBUTIONS)
+
+
+def _bootstrap_release_dependencies(
+    *, source_root: Path, python_executable: Path
+) -> tuple[str, ...]:
+    """Install only the exact locked release closure into its isolated venv."""
+
+    uv_executable = shutil.which("uv")
+    if not uv_executable:
+        raise SelectorReleaseError("selector release bootstrap requires the uv executable")
+    requirements = _locked_requirement_specs(source_root)
+    completed = subprocess.run(
+        [
+            uv_executable,
+            "--no-config",
+            "pip",
+            "install",
+            "--python",
+            str(_absolute_executable(python_executable)),
+            "--no-deps",
+            *requirements,
+        ],
+        cwd=source_root,
+        check=False,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+    )
+    if completed.returncode != 0:
+        raise SelectorReleaseError(
+            "selector release locked dependency bootstrap failed: "
+            f"exit={completed.returncode}; stdout={completed.stdout.strip()}; "
+            f"stderr={completed.stderr.strip()}"
+        )
+    return requirements
 
 
 def _probe_release(release_root: Path, python_executable: Path) -> dict[str, object]:
@@ -300,7 +367,6 @@ def build_selector_release(
                     "venv",
                     str(release_root / ".venv"),
                     "--without-pip",
-                    "--system-site-packages",
                 ],
                 check=False,
                 capture_output=True,
@@ -314,6 +380,10 @@ def build_selector_release(
                     f"exit={completed.returncode}; stderr={completed.stderr.strip()}"
                 )
             selected_python = _python_in_venv(release_root)
+            _bootstrap_release_dependencies(
+                source_root=source,
+                python_executable=selected_python,
+            )
         probe = _probe_release(release_root, selected_python)
         manifest: dict[str, object] = {
             "schema_version": RELEASE_SCHEMA,
