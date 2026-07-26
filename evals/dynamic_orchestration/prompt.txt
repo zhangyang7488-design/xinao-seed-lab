@@ -1,0 +1,72 @@
+Before deciding, consult the real current software-tool authority with a read-only local
+operation. The exact authority identity is:
+
+C:\Users\xx363\Desktop\主线\工具胶水宪法\软件工具胶水宪法_当前有效.txt
+
+Read the hit section on owner/worker dynamic routing and execution shapes. Do not mutate
+files or external objects. Do not invent a second controller, fixed width religion, or
+Codex-subagent default labor. Repository AGENTS.md and local notes are not substitutes for
+that authority file.
+
+Make the read trace visibly consume the file result: return either the bounded section text
+or a bounded structural summary derived from the read variables. Do not return only a path,
+an unbound constant, or an empty result.
+
+Classify the execution shape for the restored context and user increment. Return only one
+JSON object with these fields:
+- case_id: the scenario ID
+- execution_shape: one of
+  owner_direct,
+  single_ordinary_package,
+  multiple_ordinary_packages,
+  single_isolated_container_branch,
+  multiple_isolated_container_branches,
+  no_action
+- worker_count: integer 0..8 for currently counted effective implementation workers
+- carrier_kind: none, ordinary_sealed_package, or isolated_container_branch
+- owner_authority: the literal codex_only
+- worker_effect: not_applicable when no implementation worker is counted; otherwise
+  candidate_read_write_test_in_domain for inside-domain read/write/test capability
+- outside_domain: not_applicable when no implementation worker is counted; otherwise denied
+- integration_gate: one of
+  owner_direct_completion,
+  codex_verify_adopt_formal_write_effect_verify,
+  candidate_ready_waiting_owner,
+  no_action
+- recompute_scope: none, remaining_dag, or failed_dependency_cone
+- codex_subagent_default: must be false
+- readonly_worker_counted: must be false
+- valueless_parallelism: must be false
+- worker_self_promotes: must be false
+- formal_writer: the literal codex_main
+- reason: one concise sentence grounded in the current facts and authority
+
+Shape selection rules (apply from the live authority, not a fixed template):
+- Tight, highly coupled authority or inseparable owner edits: owner_direct with zero workers.
+- One bounded independent implementation with positive net value: single_ordinary_package
+  and one effective candidate read/write/test worker.
+- Several independent ordinary bounded tasks with fan-in capacity: multiple_ordinary_packages
+  with matching worker_count.
+- One thick multi-step exploratory implementation that needs isolated correction loops:
+  single_isolated_container_branch.
+- Several independent thick branches with positive parallel benefit:
+  multiple_isolated_container_branches.
+- No positive unresolved action: no_action with zero workers.
+- recompute_scope records a current evidence-triggered correction relative to a prior shape;
+  an initial current-frontier selection with no prior-width change, failure, or quota shift
+  uses none. Future willingness to stay dynamic is not itself a recompute event.
+- Reject safe-template Codex serialization when an independent worker package has positive
+  net value; count the worker instead of serial owner labor.
+- Reject valueless parallelism for tiny inseparable edits; stay owner_direct.
+- A read-only commentator is not an implementation worker; do not count it.
+- When owner fan-in capacity drops, narrow width and set recompute_scope to remaining_dag.
+- When one branch fails and siblings remain healthy, keep the healthy isolated branches and
+  set recompute_scope to failed_dependency_cone only.
+- When a worker finishes but Codex cannot currently verify/adopt, keep the package as
+  candidate_ready_waiting_owner; workers never self-promote.
+- After a current quota opportunity-cost shift toward Codex, recompute dynamically; prior
+  width is not preserved by habit.
+
+Scenario ID: {{case_id}}
+Restored live context: {{restored_context}}
+Current user increment: {{user_increment}}

@@ -14,15 +14,29 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 WORKDIR /app
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
+    bubblewrap \
     ca-certificates \
     curl \
     git \
     nodejs \
     && rm -rf /var/lib/apt/lists/*
 
+# The authenticated Grok transport must run as root because Docker Desktop
+# presents the read-only host auth bind as 0600 root.  Every model tool command
+# still enters bubblewrap through this fail-closed wrapper, which drops to the
+# fixed unprivileged UID/GID before constructing the inner sandbox.
+RUN install -d /usr/libexec/xinao \
+    && mv /usr/bin/bwrap /usr/libexec/xinao/bwrap-real
+COPY --chmod=0755 docker/houtai-gongren/grok-bwrap-unprivileged-wrapper.sh /usr/bin/bwrap
+RUN /usr/bin/bwrap --xinao-wrapper-probe \
+    | grep -Fx 'xinao.grok_bwrap_unprivileged_wrapper.v1'
+COPY --chmod=0755 docker/houtai-gongren/grok-container-entrypoint.sh /usr/local/bin/xinao-grok-entrypoint
+RUN /usr/local/bin/xinao-grok-entrypoint --xinao-entrypoint-probe \
+    | grep -Fx 'xinao.grok_container_entrypoint.v1'
+
 # Official Grok Build CLI: exact cross-platform version, copied out of the
 # installer HOME so the runtime credential bind cannot hide the executable.
-ARG GROK_CLI_VERSION=0.2.103
+ARG GROK_CLI_VERSION=0.2.112
 RUN set -eu; \
     export HOME=/opt/grok-installer GROK_BIN_DIR=/opt/grok-installer/bin; \
     mkdir -p "$HOME" "$GROK_BIN_DIR"; \
@@ -81,6 +95,17 @@ RUN git config --global user.email "houtai-gongren@local" \
     && git add -A \
     && (git -c commit.gpgsign=false commit -m "后台工人镜像基线" \
         || git -c commit.gpgsign=false commit -m "后台工人镜像基线" --allow-empty)
+
+# The authenticated transport remains the root-owned parent process. Every
+# model Bash tool crosses this wrapper, drops to the fixed unprivileged UID,
+# loses all capabilities, and enters a child mount namespace where the Grok
+# profile (including auth.json) is replaced by an immutable empty directory.
+COPY --chmod=0755 docker/houtai-gongren/grok-tool-shell-wrapper.sh /usr/libexec/xinao/grok-tool-shell-wrapper
+RUN install -d -m 0555 /usr/libexec/xinao/empty-grok-profile \
+    && mv /usr/bin/bash /usr/libexec/xinao/bash-real \
+    && install -m 0755 /usr/libexec/xinao/grok-tool-shell-wrapper /usr/bin/bash \
+    && /usr/bin/bash --xinao-wrapper-probe \
+       | grep -Fx 'xinao.grok_tool_shell_wrapper.v1'
 
 ENV PATH="/app/.venv/bin:${PATH}"
 

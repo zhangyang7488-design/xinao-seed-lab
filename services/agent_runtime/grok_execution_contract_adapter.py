@@ -34,7 +34,7 @@ GROK_DIRECT_WORKER_POOL_CONTRACT_MODE = "provider_v1_then_common_adapter"
 GROK_MODEL_IDENTITY_BINDING_VERSION = "xinao.grok.model_identity_binding.v3"
 
 # The CLI session selector and the backend modelUsage identifier are separate
-# identities.  Grok CLI 0.2.103 currently records the shared backend build
+# identities.  Grok CLI 0.2.112 currently records the shared backend build
 # identifier for both selectors.  Completion credit still requires exact
 # session summary + turn-event evidence, so the shared accounting identifier
 # cannot collapse the Grok 4.5 and Composer capability ledgers.
