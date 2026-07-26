@@ -34,6 +34,8 @@ def _ready_marker() -> dict[str, object]:
         "all_workers_running": True,
         "grok_sandbox_tty_required": False,
         "grok_sandbox_tty_available": False,
+        "grok_outer_privilege_required": False,
+        "grok_outer_privilege": None,
         "workflow_roles": {
             "XinaoScienceEpisodeWorkflowV1": "CURRENT_SCIENCE_ENTRY",
             "XinaoResearchCampaignWorkflow": "LEGACY_REPLAY",
@@ -199,6 +201,61 @@ def test_controlling_tty_probe_fails_closed(monkeypatch: pytest.MonkeyPatch) -> 
     assert daemon._controlling_tty_available() is False
 
 
+def _valid_outer_privilege_state() -> dict[str, object]:
+    return {
+        "expected_capability_mask": daemon.GROK_EXPECTED_CAPABILITY_MASK,
+        "expected_no_new_privs": daemon.GROK_EXPECTED_NO_NEW_PRIVS,
+        "cap_eff": daemon.GROK_EXPECTED_CAPABILITY_MASK,
+        "cap_prm": daemon.GROK_EXPECTED_CAPABILITY_MASK,
+        "cap_bnd": daemon.GROK_EXPECTED_CAPABILITY_MASK,
+        "no_new_privs": daemon.GROK_EXPECTED_NO_NEW_PRIVS,
+        "ok": True,
+    }
+
+
+def test_proc_status_parser_and_outer_privilege_probe(tmp_path: Path) -> None:
+    status_path = tmp_path / "status"
+    status_path.write_text(
+        "Name:\tpython\n"
+        f"CapEff:\t{daemon.GROK_EXPECTED_CAPABILITY_MASK}\n"
+        f"CapPrm:\t{daemon.GROK_EXPECTED_CAPABILITY_MASK}\n"
+        f"CapBnd:\t{daemon.GROK_EXPECTED_CAPABILITY_MASK}\n"
+        "NoNewPrivs:\t1\n",
+        encoding="utf-8",
+    )
+    assert daemon._grok_outer_privilege_state(status_path) == _valid_outer_privilege_state()
+
+
+def test_readiness_marker_requires_exact_outer_privilege_state() -> None:
+    marker = _ready_marker()
+    privilege_state = _valid_outer_privilege_state()
+    marker["grok_outer_privilege_required"] = True
+    marker["grok_outer_privilege"] = privilege_state
+    assert (
+        daemon.readiness_marker_issues(
+            marker,
+            expected_container_id="container-generation",
+            expected_process_id=1,
+            expected_process_start_ticks="987654",
+            expected_grok_outer_privilege_required=True,
+            expected_grok_outer_privilege_state=privilege_state,
+        )
+        == []
+    )
+
+    marker["grok_outer_privilege"] = {**privilege_state, "cap_eff": "0" * 16}
+    issues = daemon.readiness_marker_issues(
+        marker,
+        expected_container_id="container-generation",
+        expected_process_id=1,
+        expected_process_start_ticks="987654",
+        expected_grok_outer_privilege_required=True,
+        expected_grok_outer_privilege_state=privilege_state,
+    )
+    assert "grok_outer_privilege_state_invalid" in issues
+    assert "grok_outer_privilege_state_mismatch" in issues
+
+
 def test_polling_gate_waits_for_temporal_worker_state() -> None:
     worker = _FakeWorker()
 
@@ -226,8 +283,12 @@ def test_polling_gate_times_out_before_publishing_false_readiness() -> None:
 
 def test_compose_healthcheck_invokes_generation_aware_readiness() -> None:
     compose = yaml.safe_load((REPO_ROOT / "docker-compose.yml").read_text(encoding="utf-8"))
-    environment = compose["services"]["houtai-gongren"]["environment"]
-    assert compose["services"]["houtai-gongren"]["tty"] is True
+    service = compose["services"]["houtai-gongren"]
+    environment = service["environment"]
+    assert service["tty"] is True
+    assert service["cap_drop"] == ["ALL"]
+    assert set(service["cap_add"]) == {"SETUID", "SETGID"}
+    assert service["security_opt"] == ["no-new-privileges:true"]
     assert "XINAO_S_RUNTIME_RELEASE_COMMIT" in environment
     assert "XINAO_S_RUNTIME_RELEASE_MANIFEST_SHA256" in environment
     healthcheck = compose["services"]["houtai-gongren"]["healthcheck"]["test"]

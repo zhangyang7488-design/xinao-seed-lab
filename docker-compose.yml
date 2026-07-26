@@ -323,6 +323,16 @@ services:
     # Allocate the service PTY without keeping stdin open so sandboxed workers
     # fail closed on policy violations instead of failing before execution.
     tty: true
+    # The inner bwrap wrapper is intentionally fail-closed unless the outer
+    # container has only the identity-switch capabilities it needs and cannot
+    # gain any new privileges.
+    cap_drop:
+      - ALL
+    cap_add:
+      - SETUID
+      - SETGID
+    security_opt:
+      - no-new-privileges:true
     labels:
       xinao.display_cn: "后台工人"
       xinao.role_cn: "333主路步2·波内真执行"
