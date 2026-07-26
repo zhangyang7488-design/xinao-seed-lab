@@ -7,6 +7,7 @@ from pathlib import Path
 import pytest
 from scripts.prepare_direct_worker_pool_common_contract import (
     ContractPreparationError,
+    build_effective_prompt_bytes,
     prepare_contract,
 )
 from services.agent_runtime.context_slice_manifest import (
@@ -291,7 +292,14 @@ def test_prepare_contract_derives_context_from_validated_manifest(tmp_path: Path
         frozen_context_sha256=context_manifest["context_sha256"],
         subject_manifest_sha256="b" * 64,
     )
-    assert contract["input_sha256"] == hashlib.sha256(prompt.read_bytes()).hexdigest()
+    effective_prompt = build_effective_prompt_bytes(prompt.read_bytes(), context_manifest)
+    assert contract["input_sha256"] == hashlib.sha256(effective_prompt).hexdigest()
+    assert b"# Verified context slice" in effective_prompt
+    assert b"def selected():" in effective_prompt
+    assert receipt["prompt_sha256"] == hashlib.sha256(prompt.read_bytes()).hexdigest()
+    assert receipt["effective_prompt_sha256"] == contract["input_sha256"]
+    assert receipt["context_application_status"] == "effective_prompt_bytes_prepared"
+    assert receipt["model_input_effect_verified"] is False
     assert receipt["context_binding_mode"] == "validated_context_slice_manifest"
     assert (
         receipt["context_manifest_sha256"]

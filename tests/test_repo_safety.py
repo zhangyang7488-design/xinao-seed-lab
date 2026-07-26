@@ -77,6 +77,7 @@ ALLOWED_AGENT_RUNTIME_MODULES = {
     "quota_capacity_adapter.py",
     "routing_policy_reader.py",
     "selector_release.py",
+    "session_frontier_projection.py",
     "supervisor_worker_selector.py",
     "system_awareness_consumer.py",
     "task_entry_claim.py",

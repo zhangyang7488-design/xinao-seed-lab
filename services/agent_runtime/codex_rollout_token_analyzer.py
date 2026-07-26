@@ -8,6 +8,7 @@ import re
 import tempfile
 from collections import Counter, defaultdict
 from collections.abc import Mapping, Sequence
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -24,6 +25,7 @@ WAIT_TOOL_NAMES = frozenset({"wait", "write_stdin"})
 _NESTED_TOOL_PATTERN = re.compile(
     r"\btools(?:\.([A-Za-z_][A-Za-z0-9_]*)|\[['\"]([A-Za-z_][A-Za-z0-9_]*)['\"]\])\s*\("
 )
+_YIELDED_CELL_PATTERN = re.compile(r"Script running with cell ID\s+([^\s\\\"']+)")
 
 
 class CodexRolloutAnalysisError(ValueError):
@@ -164,6 +166,15 @@ def _call_input(payload: Mapping[str, object]) -> str:
     return ""
 
 
+def _call_parameters(payload: Mapping[str, object]) -> dict[str, object]:
+    raw = _call_input(payload)
+    try:
+        decoded = json.loads(raw)
+    except json.JSONDecodeError:
+        return {}
+    return dict(decoded) if isinstance(decoded, Mapping) else {}
+
+
 def _find_nearest_token_total(
     token_rows: Sequence[dict[str, object]],
     line_number: int,
@@ -174,6 +185,7 @@ def _find_nearest_token_total(
         row
         for row in token_rows
         if (int(row["line"]) < line_number if before else int(row["line"]) > line_number)
+        and int(row["charged_delta"]["total_tokens"]) > 0  # type: ignore[index]
     ]
     if not candidates:
         return None
@@ -184,9 +196,151 @@ def _find_nearest_token_total(
     )
     return {
         "line": chosen["line"],
+        "timestamp": chosen["timestamp"],
         "basis": chosen["basis"],
         "total_usage": chosen["total_usage"],
         "charged_delta": chosen["charged_delta"],
+    }
+
+
+def _elapsed_seconds(start: object, end: object) -> float | None:
+    if not isinstance(start, str) or not isinstance(end, str):
+        return None
+    try:
+        start_dt = datetime.fromisoformat(start.replace("Z", "+00:00"))
+        end_dt = datetime.fromisoformat(end.replace("Z", "+00:00"))
+        elapsed = (end_dt - start_dt).total_seconds()
+    except (TypeError, ValueError):
+        return None
+    return round(elapsed, 6) if elapsed >= 0 else None
+
+
+def _linear_slope(values: Sequence[int]) -> float | None:
+    if len(values) < 2:
+        return None
+    x_mean = (len(values) - 1) / 2
+    y_mean = sum(values) / len(values)
+    denominator = sum((index - x_mean) ** 2 for index in range(len(values)))
+    numerator = sum((index - x_mean) * (value - y_mean) for index, value in enumerate(values))
+    return round(numerator / denominator, 6)
+
+
+def _pair_compaction_events(
+    events: Sequence[dict[str, object]],
+    token_rows: Sequence[dict[str, object]],
+) -> list[dict[str, object]]:
+    measured_rows = [
+        row
+        for row in token_rows
+        if int(row["charged_delta"]["total_tokens"]) > 0  # type: ignore[index]
+    ]
+    episodes: list[dict[str, object]] = []
+    index = 0
+    while index < len(events):
+        first = events[index]
+        last = first
+        pairing = "single_marker"
+        if (
+            first.get("kind") == "compacted"
+            and index + 1 < len(events)
+            and events[index + 1].get("kind") == "context_compacted"
+        ):
+            last = events[index + 1]
+            pairing = "paired_top_level_and_event_marker"
+            index += 1
+        before = first.get("before")
+        after = last.get("after")
+        before_input = None
+        after_input = None
+        if isinstance(before, Mapping) and isinstance(before.get("charged_delta"), Mapping):
+            before_input = int(before["charged_delta"]["input_tokens"])  # type: ignore[index]
+        if isinstance(after, Mapping) and isinstance(after.get("charged_delta"), Mapping):
+            after_input = int(after["charged_delta"]["input_tokens"])  # type: ignore[index]
+        post_line = int(after["line"]) if isinstance(after, Mapping) else None
+        next_marker_line = int(events[index + 1]["line"]) if index + 1 < len(events) else None
+        regrowth_rows = [
+            row
+            for row in measured_rows
+            if post_line is not None
+            and int(row["line"]) > post_line
+            and (next_marker_line is None or int(row["line"]) < next_marker_line)
+        ]
+        recovery: dict[str, object] = {}
+        for label, fraction in (("t50", 0.50), ("t75", 0.75), ("t90", 0.90)):
+            target = math.ceil(before_input * fraction) if before_input else None
+            hit = next(
+                (
+                    (rounds, row)
+                    for rounds, row in enumerate(regrowth_rows, start=1)
+                    if target is not None and int(row["charged_delta"]["input_tokens"]) >= target  # type: ignore[index]
+                ),
+                None,
+            )
+            recovery[label] = {
+                "rounds": hit[0] if hit else None,
+                "wall_seconds": (
+                    _elapsed_seconds(after.get("timestamp"), hit[1].get("timestamp"))
+                    if hit and isinstance(after, Mapping)
+                    else None
+                ),
+            }
+        episodes.append(
+            {
+                "pairing": pairing,
+                "marker_count": 2 if last is not first else 1,
+                "marker_line_start": int(first["line"]),
+                "marker_line_end": int(last["line"]),
+                "pre_model_input_tokens": before_input,
+                "post_model_input_tokens": after_input,
+                "released_model_input_tokens": (
+                    before_input - after_input
+                    if before_input is not None and after_input is not None
+                    else None
+                ),
+                "recovery": recovery,
+            }
+        )
+        index += 1
+    return episodes
+
+
+def _summarize_context_epoch(
+    *,
+    epoch_index: int,
+    start_line_exclusive: int,
+    end_line_exclusive: int,
+    token_rows: Sequence[dict[str, object]],
+    tool_output_rows: Sequence[dict[str, object]],
+) -> dict[str, object]:
+    model_rows = [
+        row
+        for row in token_rows
+        if start_line_exclusive < int(row["line"]) < end_line_exclusive
+        and int(row["charged_delta"]["total_tokens"]) > 0  # type: ignore[index]
+    ]
+    input_values = [int(row["charged_delta"]["input_tokens"]) for row in model_rows]  # type: ignore[index]
+    cached_values = [
+        int(row["charged_delta"]["cached_input_tokens"])
+        for row in model_rows  # type: ignore[index]
+    ]
+    uncached_values = [
+        int(row["charged_delta"]["uncached_read_input_tokens"])
+        for row in model_rows  # type: ignore[index]
+    ]
+    return {
+        "epoch": epoch_index,
+        "model_round_count": len(model_rows),
+        "first_model_input_tokens": input_values[0] if input_values else None,
+        "last_model_input_tokens": input_values[-1] if input_values else None,
+        "input_growth_tokens_per_round": _linear_slope(input_values),
+        "input_tokens": sum(input_values),
+        "cached_input_tokens": sum(cached_values),
+        "uncached_read_input_tokens": sum(uncached_values),
+        "tool_output_text_chars": sum(
+            int(row["chars"])
+            for row in tool_output_rows
+            if start_line_exclusive < int(row["line"]) < end_line_exclusive
+        ),
     }
 
 
@@ -260,8 +414,12 @@ def analyze_codex_rollout(path: Path) -> dict[str, object]:
     call_inputs: dict[tuple[str, str], list[int]] = defaultdict(list)
     output_chars_by_tool: dict[str, list[int]] = defaultdict(list)
     orphan_output_chars: list[int] = []
+    tool_output_rows: list[dict[str, object]] = []
     exec_cells: list[dict[str, object]] = []
     direct_wait_calls: list[dict[str, object]] = []
+    wait_exec_lines: dict[str, int] = {}
+    yielded_wait_cells: dict[str, tuple[int, int]] = {}
+    double_hop_pairs: list[dict[str, object]] = []
 
     previous_total = prefix_baseline
     spend = _zero_usage()
@@ -352,6 +510,7 @@ def analyze_codex_rollout(path: Path) -> dict[str, object]:
                 token_rows.append(
                     {
                         "line": line_number,
+                        "timestamp": record.get("timestamp"),
                         "turn_id": active_turn_id,
                         "basis": basis,
                         "total_usage": _derived_usage(total),
@@ -386,26 +545,48 @@ def analyze_codex_rollout(path: Path) -> dict[str, object]:
             call_inputs[(name, fingerprint)].append(line_number)
             if name in WAIT_TOOL_NAMES:
                 direct_wait_calls.append({"line": line_number, "name": name})
+                parameters = _call_parameters(payload)
+                cell_id = parameters.get("cell_id")
+                yielded = yielded_wait_cells.pop(str(cell_id), None)
+                if yielded and 0 < line_number - yielded[1] <= 15:
+                    double_hop_pairs.append(
+                        {
+                            "exec_call_line": yielded[0],
+                            "exec_output_line": yielded[1],
+                            "direct_wait_line": line_number,
+                            "cell_id": str(cell_id),
+                        }
+                    )
             if name == "exec":
                 nested_names = [
                     dot_name or bracket_name
                     for dot_name, bracket_name in _NESTED_TOOL_PATTERN.findall(call_input)
                 ]
-                exec_cells.append(
-                    {
-                        "line": line_number,
-                        "nested_call_count": len(nested_names),
-                        "nested_tools": dict(sorted(Counter(nested_names).items())),
-                        "uses_promise_all": "Promise.all(" in call_input,
-                        "uses_promise_all_settled": "Promise.allSettled(" in call_input,
-                        "wait_only": bool(nested_names)
-                        and set(nested_names).issubset(WAIT_TOOL_NAMES),
-                    }
-                )
+                wait_only = bool(nested_names) and set(nested_names).issubset(WAIT_TOOL_NAMES)
+                cell = {
+                    "line": line_number,
+                    "nested_call_count": len(nested_names),
+                    "nested_tools": dict(sorted(Counter(nested_names).items())),
+                    "uses_promise_all": "Promise.all(" in call_input,
+                    "uses_promise_all_settled": "Promise.allSettled(" in call_input,
+                    "wait_only": wait_only,
+                }
+                exec_cells.append(cell)
+                if wait_only:
+                    wait_exec_lines[call_id] = line_number
         elif payload_type in {"custom_tool_call_output", "function_call_output"}:
             call_id = str(payload.get("call_id") or payload.get("id") or "")
             chars = _text_chars(payload.get("output"))
             name = call_name_by_id.get(call_id)
+            output_text = payload.get("output")
+            if call_id in wait_exec_lines and isinstance(output_text, str):
+                yielded = _YIELDED_CELL_PATTERN.search(output_text)
+                if yielded:
+                    yielded_wait_cells[yielded.group(1)] = (
+                        wait_exec_lines[call_id],
+                        line_number,
+                    )
+            tool_output_rows.append({"line": line_number, "chars": chars})
             if name is None:
                 orphan_output_chars.append(chars)
             else:
@@ -421,6 +602,29 @@ def analyze_codex_rollout(path: Path) -> dict[str, object]:
                 "after": _find_nearest_token_total(token_rows, line_number, before=False),
             }
         )
+    compaction_episodes = _pair_compaction_events(compaction_events, token_rows)
+    context_epochs: list[dict[str, object]] = []
+    previous_marker_end = 0
+    for episode in compaction_episodes:
+        context_epochs.append(
+            _summarize_context_epoch(
+                epoch_index=len(context_epochs),
+                start_line_exclusive=previous_marker_end,
+                end_line_exclusive=int(episode["marker_line_start"]),
+                token_rows=token_rows,
+                tool_output_rows=tool_output_rows,
+            )
+        )
+        previous_marker_end = int(episode["marker_line_end"])
+    context_epochs.append(
+        _summarize_context_epoch(
+            epoch_index=len(context_epochs),
+            start_line_exclusive=previous_marker_end,
+            end_line_exclusive=records[-1][0] + 1,
+            token_rows=token_rows,
+            tool_output_rows=tool_output_rows,
+        )
+    )
 
     repeated_inputs = [
         {"tool": name, "input_sha256": fingerprint, "count": len(lines), "lines": lines}
@@ -448,7 +652,6 @@ def analyze_codex_rollout(path: Path) -> dict[str, object]:
         for row in multi_call_cells
         if bool(row["uses_promise_all"]) or bool(row["uses_promise_all_settled"])
     ]
-
     return {
         "schema_version": ANALYSIS_SCHEMA_VERSION,
         "authority": False,
@@ -509,6 +712,10 @@ def analyze_codex_rollout(path: Path) -> dict[str, object]:
             ),
             "wait_only_exec_cells": [row for row in exec_cells if row["wait_only"]],
             "direct_wait_calls": direct_wait_calls,
+            "wait_diagnostics": {
+                "double_hop_count": len(double_hop_pairs),
+                "double_hop_pairs": double_hop_pairs,
+            },
             "repeated_identical_inputs": repeated_inputs,
             "exec_cell_details": exec_cells,
             "output_text_chars": {
@@ -519,6 +726,9 @@ def analyze_codex_rollout(path: Path) -> dict[str, object]:
         "compaction": {
             "marker_count": len(compaction_events),
             "events": compaction_events,
+            "episode_count": len(compaction_episodes),
+            "episodes": compaction_episodes,
+            "context_epochs": context_epochs,
         },
         "rate_limits": {
             "snapshot_or_change_count": len(rate_limit_snapshots),

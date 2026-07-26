@@ -16,7 +16,10 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from services.agent_runtime.context_slice_manifest import load_context_slice_manifest
+from services.agent_runtime.context_slice_manifest import (
+    load_context_slice_manifest,
+    render_context_slice_manifest,
+)
 from services.agent_runtime.execution_contract import (
     artifact_json_bytes,
     canonical_json_bytes,
@@ -29,6 +32,7 @@ from services.agent_runtime.grok_execution_contract_adapter import (
 )
 
 DEFAULT_RULES_FILE = Path(r"C:\Users\xx363\Desktop\主线\工具胶水宪法\软件工具胶水宪法_当前有效.txt")
+CONTEXT_SLICE_PROMPT_SEPARATOR = "\n\n---\n\n"
 
 
 class ContractPreparationError(ValueError):
@@ -49,6 +53,23 @@ def _load_json(path: Path, field: str) -> dict[str, Any]:
     if not isinstance(raw, Mapping):
         raise ValueError(f"{field} must be an object")
     return dict(raw)
+
+
+def build_effective_prompt_bytes(
+    prompt_bytes: bytes, context_manifest: Mapping[str, object] | None
+) -> bytes:
+    """Return the exact model input bytes bound by the common contract."""
+
+    try:
+        prompt_text = prompt_bytes.decode("utf-8-sig")
+    except UnicodeDecodeError as exc:
+        raise ValueError("prompt bytes are not valid UTF-8") from exc
+    if context_manifest is None:
+        return prompt_bytes
+    rendered_context = render_context_slice_manifest(context_manifest)
+    return (
+        prompt_text.rstrip() + CONTEXT_SLICE_PROMPT_SEPARATOR + rendered_context.rstrip() + "\n"
+    ).encode("utf-8")
 
 
 def prepare_contract(
@@ -90,12 +111,14 @@ def prepare_contract(
         raise ValueError("frozen_context_sha256 or a validated context_manifest_file is required")
     else:
         frozen_context_sha256 = requested_context_sha256
+    effective_prompt_bytes = build_effective_prompt_bytes(prompt_bytes, context_manifest)
     selection_receipt = _load_json(selection_receipt_file, "selection_receipt")
     selected_raw = selection_receipt.get("selected_candidate")
     if not isinstance(selected_raw, Mapping):
         raise ValueError("selection_receipt.selected_candidate must be an object")
     selected = dict(selected_raw)
     selection_digest = str(selection_receipt.get("decision_sha256") or "")
+    rules_sha256 = _sha256_bytes(rules_file.read_bytes())
 
     schema_digest = ""
     schema_binding_status = "not_requested"
@@ -140,10 +163,10 @@ def prepare_contract(
         provider_id=str(selected.get("provider_id") or ""),
         profile_ref=str(selected.get("profile_ref") or ""),
         model_id=str(selected.get("model_id") or ""),
-        frozen_input_sha256=_sha256_bytes(prompt_bytes),
+        frozen_input_sha256=_sha256_bytes(effective_prompt_bytes),
         frozen_context_sha256=frozen_context_sha256,
         subject_manifest_sha256=subject_manifest_sha256,
-        rules_sha256=_sha256_bytes(rules_file.read_bytes()),
+        rules_sha256=rules_sha256,
         output_contract_sha256=output_contract_sha256,
         capability_binding=capability_binding,
         write=write,
@@ -155,7 +178,15 @@ def prepare_contract(
         "completion_claim_allowed": False,
         "logical_contract_sha256": logical_contract_sha256(contract),
         "prompt_file": str(prompt_file),
-        "prompt_sha256": contract["input_sha256"],
+        "prompt_sha256": _sha256_bytes(prompt_bytes),
+        "original_prompt_sha256": _sha256_bytes(prompt_bytes),
+        "effective_prompt_sha256": _sha256_bytes(effective_prompt_bytes),
+        "effective_prompt_bytes": len(effective_prompt_bytes),
+        "effective_prompt_file": "",
+        "context_application_status": (
+            "effective_prompt_bytes_prepared" if context_manifest is not None else "not_requested"
+        ),
+        "model_input_effect_verified": False,
         "selection_receipt_file": str(selection_receipt_file),
         "selection_decision_sha256": selection_digest,
         "rules_file": str(rules_file),
@@ -200,6 +231,7 @@ def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--rules-file", type=Path, default=DEFAULT_RULES_FILE)
     parser.add_argument("--frozen-context-sha256", default="")
     parser.add_argument("--context-manifest-file", type=Path, default=None)
+    parser.add_argument("--effective-prompt-output", type=Path, default=None)
     parser.add_argument("--subject-manifest-sha256", required=True)
     parser.add_argument("--work-key", required=True)
     parser.add_argument("--operation-id", required=True)
@@ -255,6 +287,65 @@ def main(argv: Sequence[str] | None = None) -> int:
             file=sys.stderr,
         )
         return 2
+    if args.effective_prompt_output is not None and args.context_manifest_file is None:
+        print(
+            json.dumps(
+                {
+                    "ok": False,
+                    "error": "--effective-prompt-output requires --context-manifest-file",
+                },
+                ensure_ascii=False,
+            ),
+            file=sys.stderr,
+        )
+        return 2
+    if args.context_manifest_file is not None:
+        effective_prompt_path = (
+            args.effective_prompt_output
+            if args.effective_prompt_output is not None
+            else args.output.with_name("effective_prompt.md")
+        ).resolve()
+        context_manifest = load_context_slice_manifest(args.context_manifest_file)
+        effective_prompt_bytes = build_effective_prompt_bytes(
+            args.prompt_file.read_bytes(), context_manifest
+        )
+        if _sha256_bytes(effective_prompt_bytes) != contract["input_sha256"]:
+            print(
+                json.dumps(
+                    {
+                        "ok": False,
+                        "error": "effective prompt changed after contract preparation",
+                    },
+                    ensure_ascii=False,
+                ),
+                file=sys.stderr,
+            )
+            return 2
+        effective_prompt_path.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            with effective_prompt_path.open("xb") as handle:
+                handle.write(effective_prompt_bytes)
+                handle.flush()
+        except FileExistsError:
+            print(
+                json.dumps(
+                    {"ok": False, "error": "effective prompt output already exists"},
+                    ensure_ascii=False,
+                ),
+                file=sys.stderr,
+            )
+            return 2
+        if _sha256_bytes(effective_prompt_path.read_bytes()) != contract["input_sha256"]:
+            print(
+                json.dumps(
+                    {"ok": False, "error": "effective prompt writeback hash mismatch"},
+                    ensure_ascii=False,
+                ),
+                file=sys.stderr,
+            )
+            return 2
+        manifest["effective_prompt_file"] = str(effective_prompt_path)
+        manifest["context_application_status"] = "effective_prompt_artifact_written"
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_bytes(artifact_json_bytes(contract))
     receipt_path = args.receipt_output or args.output.with_name("contract_prepare_receipt.json")
