@@ -78,6 +78,9 @@
     "activation": "bounded_online_current_tui_or_existing_leg_a_route_receipt",
     "dispatch_script": "grok-admin-bridge/Invoke-CodexDispatchGrokWorkerPool.ps1",
     "execution_contract_version": "xinao.grok.shared_execution_contract.v1",
+    "common_contract_execution_backend": "linux-container",
+    "common_contract_effect_modes": ["authorized_write", "read_only"],
+    "legacy_non_common_execution_backend": "windows-host",
     "resident_loop": false,
     "scheduler": false,
     "refill": false

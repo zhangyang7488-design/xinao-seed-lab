@@ -17,19 +17,26 @@
     "pre_dispatch_frozen_input_context_rules_output_and_capability_binding",
     "validated_bounded_context_slice_manifest_for_first_time_tasks",
     "phase_and_write_domain_fence",
+    "common_contract_worker_linux_container_with_exact_workspace_mount",
+    "authorized_write_or_read_only_workspace_effect_mode",
+    "model_tool_shell_drops_to_uid_65532_without_capabilities",
+    "transport_auth_read_only_and_model_tool_profile_masked",
     "provider_attempt_receipt_with_usage",
-    "explicit_prior_receipt_zero_model_identical_reuse"
+    "explicit_prior_receipt_zero_model_identical_reuse",
+    "candidate_only_until_codex_verify_adopt_and_effect_verification"
   ],
   "files": [
     "Invoke-CodexDispatchGrokWorkerPool.ps1",
     "Invoke-GrokWorkerPool.ps1",
     "Invoke-GrokComposer25Worker.ps1",
-    "Test-GrokCliEffectiveOutput.ps1"
+    "Test-GrokCliEffectiveOutput.ps1",
+    "Test-GrokContainerWorkerRuntime.ps1"
   ],
   "limitations": [
     "no Temporal history",
     "no worker-internal LangGraph fanout",
-    "CREATE_NO_WINDOW is not sandbox isolation"
+    "legacy non-common Windows host workers use provider-only sandboxing and are not a physical boundary",
+    "common-contract container workers require a Linux Docker engine and an inspected immutable image id"
   ],
   "prohibited": [
     "resident refill",

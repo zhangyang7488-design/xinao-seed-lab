@@ -208,9 +208,13 @@ $null = Invoke-Case "wrong_session_model" $base $false -SessionModel "grok-4.5"
 $null = Invoke-Case "wrong_turn_model" $base $false -TurnModel "grok-4.5"
 $null = Invoke-Case "missing_session_evidence" $base $false -SkipSessionEvidence
 $null = Invoke-Case "wrong_session_cwd" $base $false -SessionCwd ([IO.Path]::GetTempPath())
+$junctionPhysical = Join-Path $root "junction_physical"
+$junctionAlias = Join-Path $root "junction_alias"
+[void][IO.Directory]::CreateDirectory($junctionPhysical)
+[void](New-Item -ItemType Junction -Path $junctionAlias -Target $junctionPhysical)
 $junctionResult = Invoke-Case "junction_equivalent_cwd" $base $true `
-    -ExpectedCwd "E:\XINAO_RESEARCH_WORKSPACES\S" `
-    -SessionCwd "E:\XINAO_RESEARCH_WORKSPACES\nianhua-new-route-active"
+    -ExpectedCwd $junctionAlias `
+    -SessionCwd $junctionPhysical
 Assert-True (
     [string]$junctionResult.expected_cwd_object_id -eq [string]$junctionResult.session_cwd_object_id
 ) "junction_equivalent_cwd:object_identity"

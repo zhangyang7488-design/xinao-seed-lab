@@ -142,6 +142,9 @@ $commonContract = $null
 $commonPreflight = $null
 $commonAdapterScript = ""
 $commonOutputContract = $null
+$workerExecutionBackend = if ($commonMode) { "linux-container" } else { "windows-host" }
+$workerEffectMode = if (@($CommonWriteDomains).Count -gt 0) { "authorized_write" } else { "read_only" }
+$reportedEffectMode = if ($commonMode) { $workerEffectMode } else { "unbounded_host_legacy" }
 
 function Assert-CommonSha256([string]$Value, [string]$Field) {
     if ($Value -notmatch '^[0-9a-f]{64}$') {
@@ -431,7 +434,7 @@ $Prompt
         param(
             $WorkerScript, $PromptFile, $Cwd, $Model, $MaxTurns, $GrokHome,
             $EvidenceDir, $MinChars, $Markers, $RequireJson, $JsonSchemaPath, $TimeoutSec,
-            $RulesFile, $RulesSha256
+            $RulesFile, $RulesSha256, $ExecutionBackend, $ContainerEffectMode
         )
         $ErrorActionPreference = "Continue"
         $workerArgs = @{
@@ -446,6 +449,8 @@ $Prompt
             TimeoutSec = $TimeoutSec
             RulesFile = $RulesFile
             RulesSha256 = $RulesSha256
+            ExecutionBackend = $ExecutionBackend
+            ContainerEffectMode = $ContainerEffectMode
             Quiet = $true
         }
         if ($RequireJson) { $workerArgs.RequireJsonObject = $true }
@@ -456,7 +461,7 @@ $Prompt
             evidence_dir = $EvidenceDir
         }
     }
-    [void]$ps.AddScript($script).AddArgument($workerScript).AddArgument($promptLane).AddArgument($Cwd).AddArgument($Model).AddArgument($MaxTurns).AddArgument($GrokHome).AddArgument($laneDir).AddArgument($MinResultChars).AddArgument(@($RequiredResultMarkers)).AddArgument([bool]$RequireJsonObject).AddArgument($JsonSchemaPath).AddArgument($TimeoutSec).AddArgument($CommonRulesFile).AddArgument($CommonRulesSha256)
+    [void]$ps.AddScript($script).AddArgument($workerScript).AddArgument($promptLane).AddArgument($Cwd).AddArgument($Model).AddArgument($MaxTurns).AddArgument($GrokHome).AddArgument($laneDir).AddArgument($MinResultChars).AddArgument(@($RequiredResultMarkers)).AddArgument([bool]$RequireJsonObject).AddArgument($JsonSchemaPath).AddArgument($TimeoutSec).AddArgument($CommonRulesFile).AddArgument($CommonRulesSha256).AddArgument($workerExecutionBackend).AddArgument($workerEffectMode)
     $handle = $ps.BeginInvoke()
     $jobs += [pscustomobject]@{
         lane   = $lane
@@ -547,6 +552,15 @@ foreach ($j in $jobs) {
             $item.pid = $m.pid
             $item.worker_status = $m.status
             $item.create_no_window = $m.create_no_window
+            $item.execution_backend = [string]$m.execution_backend
+            $item.effect_mode = [string]$m.effect_mode
+            $item.sandbox_enforcement = [string]$m.sandbox_enforcement
+            $item.container_image = [string]$m.container_image
+            $item.container_image_id = [string]$m.container_image_id
+            $item.container_workspace_read_only = $m.container_workspace_read_only -eq $true
+            $item.outer_rootfs_read_only = $m.outer_rootfs_read_only -eq $true
+            $item.outer_capabilities_dropped = $m.outer_capabilities_dropped -eq $true
+            $item.outer_no_new_privileges = $m.outer_no_new_privileges -eq $true
             $item.effective_output_accepted = $m.effective_output_accepted -eq $true
             $item.requested_model = [string]$m.requested_model
             $item.observed_models = @($m.observed_models)
@@ -608,7 +622,11 @@ $summary = [ordered]@{
     sentinel = "SENTINEL:GROK_WORKER_POOL"
     generated_at = (Get-Date).ToString("o")
     pool_id = $poolId
-    hot_path_cn = "Codex->N Grok headless workers (CREATE_NO_WINDOW)"
+    hot_path_cn = if ($commonMode) {
+        "Codex->bounded Grok worker in Linux container workspace"
+    } else {
+        "Codex->N Grok headless workers (legacy Windows host path)"
+    }
     not_cn = @(
         "visible TUI typeahead inject as default",
         "Docker integrated_bus reading Desktop .lnk",
@@ -622,6 +640,8 @@ $summary = [ordered]@{
     selected_profile_ref = [string]$selection.profile_ref
     selected_transport_id = [string]$selection.transport_id
     cwd = $Cwd
+    execution_backend = $workerExecutionBackend
+    effect_mode = $reportedEffectMode
     max_turns = $MaxTurns
     timeout_sec = $TimeoutSec
     min_result_chars = $MinResultChars

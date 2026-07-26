@@ -159,6 +159,7 @@ $poolFiles = @(
     "grok-admin-bridge/Invoke-GrokTemporalHostPoolTrigger.ps1",
     "grok-admin-bridge/Test-GrokAuthenticatedCatalogTime.ps1",
     "grok-admin-bridge/Test-GrokWorkerProcessRuntime.ps1",
+    "grok-admin-bridge/Test-GrokContainerWorkerRuntime.ps1",
     "grok-admin-bridge/Test-GrokWorkerSelectionReceiptContract.ps1"
 )
 foreach ($relative in $poolFiles) {
@@ -171,6 +172,13 @@ Assert-Contract ([string]$poolContract.selection -eq "selected_by_task_fit_or_ex
 Assert-Contract ([string]$poolContract.activation -notmatch "fallback") "pool_contract_not_fallback"
 Assert-Contract ([string]$poolContract.execution_contract_version -eq "xinao.grok.shared_execution_contract.v1") "pool_execution_contract"
 Assert-Contract (@($poolContract.common_contract_features) -contains "validated_bounded_context_slice_manifest_for_first_time_tasks") "pool_validated_context_slice_feature"
+Assert-Contract (@($poolContract.common_contract_features) -contains "common_contract_worker_linux_container_with_exact_workspace_mount") "pool_container_boundary_feature"
+Assert-Contract (@($poolContract.common_contract_features) -contains "candidate_only_until_codex_verify_adopt_and_effect_verification") "pool_candidate_terminal_gate_feature"
+Assert-Contract ([string]$config.bounded_worker_pool.common_contract_execution_backend -eq "linux-container") "config_common_pool_container_backend"
+Assert-Contract (@($config.bounded_worker_pool.common_contract_effect_modes) -contains "authorized_write") "config_common_pool_write_effect"
+Assert-Contract (@($config.bounded_worker_pool.common_contract_effect_modes) -contains "read_only") "config_common_pool_read_only_effect"
+Assert-Contract ([string]$index.bounded_worker_pool.common_contract_execution_backend -eq "linux-container") "index_common_pool_container_backend"
+Assert-Contract ([string]$index.bounded_worker_pool.terminal_gate -match "codex_verify_adopt") "index_pool_terminal_gate"
 Assert-Contract (@($config.canonical_route.leg_a.admitted_peer_transports) -contains "direct-openai-compatible-relay") "relay_admitted_as_leg_a_peer"
 
 $relayCoreFiles = @(
@@ -591,11 +599,39 @@ Assert-Contract ($poolAccountingText -match 'cache_read_input_tokens') "pool_acc
 Assert-Contract ($poolAccountingText -match 'reasoning_tokens') "pool_accounting_preserves_reasoning_tokens"
 Assert-Contract ($workerText.Contains('$argsList.Add("--rules")')) "canonical_worker_injects_short_contract_rules"
 Assert-Contract ($workerText.Contains('$argsList.Add("--sandbox")')) "worker_cli_sandbox_flag"
-Assert-Contract ($workerText.Contains('$argsList.Add("workspace")')) "worker_cli_workspace_sandbox"
+Assert-Contract ($workerText -match 'argsList[.]Add\(\$\(if \(\$containerMode\).*containerSandboxProfile.*"workspace"') "worker_cli_explicit_container_sandbox"
 $sandboxArgIndex = $workerText.IndexOf('$argsList.Add("--sandbox")')
 $modelStartIndex = $workerText.IndexOf('[void]$proc.Start()')
 Assert-Contract ($sandboxArgIndex -gt 0 -and $sandboxArgIndex -lt $modelStartIndex) "worker_sandbox_bound_before_model_start"
-Assert-Contract ($workerText -match 'sandbox_profile\s*=\s*"workspace"') "worker_records_workspace_sandbox"
+Assert-Contract ($workerText -match 'sandbox_profile\s*=\s*if \(\$containerMode\).*"workspace"') "worker_records_workspace_sandbox"
+Assert-Contract ($workerText -match 'ExecutionBackend\s*=\s*"windows-host"') "worker_backend_is_explicit"
+Assert-Contract ($workerText -match 'linux_docker_mount_boundary_plus_tool_shell_bwrap_profile_mask') "worker_records_linux_container_enforcement"
+Assert-Contract ($workerText -match '"--read-only"') "worker_container_rootfs_read_only"
+Assert-Contract ($workerText -match 'containerRuntimeUser\s*=\s*"0:0"') "worker_container_transport_root_for_auth"
+Assert-Contract ($workerText -match 'containerToolUser\s*=\s*"65532:65532"') "worker_container_tool_user_non_root"
+Assert-Contract ($workerText -match '"--cap-drop",\s*"ALL"') "worker_container_drops_capabilities"
+Assert-Contract ($workerText -match '"--cap-add",\s*"SETUID"') "worker_container_adds_only_setuid_for_wrapper"
+Assert-Contract ($workerText -match '"--cap-add",\s*"SETGID"') "worker_container_adds_only_setgid_for_wrapper"
+Assert-Contract ($workerText -match '"seccomp=unconfined"') "worker_container_bwrap_bootstrap_seccomp_mode"
+Assert-Contract ($workerText -match 'no-new-privileges:true') "worker_container_no_new_privileges"
+Assert-Contract ($workerText -match 'target=\$containerWorkspaceCwd') "worker_container_exact_workspace_mount"
+Assert-Contract ($workerText -match 'target=\$containerPromptPath,readonly') "worker_container_prompt_read_only"
+Assert-Contract ($workerText -match 'containerSandboxProfile\s*=\s*"off"') "worker_container_provider_sandbox_off"
+Assert-Contract ($workerText -match 'container_tool_profile_masked') "worker_container_tool_profile_masked"
+Assert-Contract ($workerText.Contains('"Read($containerProfileRoot/auth.json)"')) "worker_container_auth_read_permission_deny"
+Assert-Contract ($workerText.Contains('"Edit($containerProfileRoot/auth.json)"')) "worker_container_auth_edit_permission_deny"
+Assert-Contract ($workerText -match 'target=\$containerProfileRoot/auth[.]json,readonly') "worker_container_auth_mount_read_only"
+Assert-Contract ($workerText -match '/grok-home/[.]grok:rw') "worker_container_profile_is_tmpfs"
+Assert-Contract ($workerText -match 'target=\$containerProfileRoot/sessions') "worker_container_session_evidence_mount"
+Assert-Contract ($workerText -match 'target=\$containerProfileRoot/models_cache[.]json') "worker_container_catalog_evidence_mount"
+Assert-Contract ($workerText -match 'container_sensitive_logs_retained') "worker_container_checks_sensitive_log_persistence"
+Assert-Contract ($workerText -match 'container_persistent_auth_unchanged') "worker_container_checks_persistent_auth_unchanged"
+Assert-Contract ($workerText -match 'containerRuntimeImageRef\s*=\s*\$containerImageId') "worker_container_pins_inspected_image_id"
+Assert-Contract ($workerText -match 'container_persistent_profile_mounted\s*=\s*\$false') "worker_container_omits_persistent_profile"
+Assert-Contract ($workerText -match 'container_auth_secret_copied\s*=\s*\$false') "worker_container_does_not_copy_auth_secret"
+Assert-Contract ($poolText -match 'workerExecutionBackend\s*=\s*if\s*\(\$commonMode\)\s*\{\s*"linux-container"') "common_pool_routes_linux_container"
+Assert-Contract ($poolText -match 'workerEffectMode') "common_pool_propagates_effect_mode"
+Assert-Contract (Test-Path -LiteralPath (Join-Path $repoRoot "grok-admin-bridge/Test-GrokContainerWorkerRuntime.ps1") -PathType Leaf) "container_worker_runtime_test_present"
 Assert-Contract ($workerText -match 'short_execution_contract_sha256') "canonical_worker_records_short_contract_hash"
 Assert-Contract ($workerText -match '软件工具胶水宪法_当前有效[.]txt') "canonical_worker_points_to_formal_contract"
 Assert-Contract ($workerText -match 'private Codex conversation, Plan') "canonical_worker_excludes_private_plan"
