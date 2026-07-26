@@ -6,12 +6,36 @@ from pathlib import Path
 
 import pytest
 from services.agent_runtime.selector_release import (
+    REQUIRED_DISTRIBUTIONS,
     SelectorReleaseError,
+    _locked_requirement_specs,
     build_selector_release,
     load_current_selector_release,
     promote_selector_release,
     validate_selector_release_pointer,
 )
+
+
+def _write_release_lock(path: Path, names: tuple[str, ...]) -> None:
+    rows = ["version = 1", "revision = 3"]
+    for name in names:
+        rows.extend(["", "[[package]]", f'name = "{name}"', 'version = "1.2.3"'])
+    path.write_text("\n".join(rows) + "\n", encoding="utf-8")
+
+
+def test_release_dependencies_are_exactly_derived_from_uv_lock(tmp_path: Path) -> None:
+    _write_release_lock(tmp_path / "uv.lock", REQUIRED_DISTRIBUTIONS)
+
+    assert _locked_requirement_specs(tmp_path) == tuple(
+        f"{name}==1.2.3" for name in REQUIRED_DISTRIBUTIONS
+    )
+
+
+def test_release_dependency_bootstrap_rejects_incomplete_lock(tmp_path: Path) -> None:
+    _write_release_lock(tmp_path / "uv.lock", REQUIRED_DISTRIBUTIONS[:-1])
+
+    with pytest.raises(SelectorReleaseError, match="not uniquely pinned"):
+        _locked_requirement_specs(tmp_path)
 
 
 def test_versioned_selector_release_is_not_task_cwd_dependent(tmp_path: Path) -> None:
