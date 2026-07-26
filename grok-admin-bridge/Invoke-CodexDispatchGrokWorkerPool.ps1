@@ -40,6 +40,7 @@ param(
     [ValidateRange(1, 200000)]
     [int]$MinResultChars = 256,
     [string[]]$RequiredResultMarkers = @(),
+    [string]$RequiredResultMarkersJson = "",
     [switch]$RequireJsonObject,
     [string]$JsonSchemaPath = "",
     [string]$CommonLogicalContractPath = "",
@@ -67,6 +68,33 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
+if (-not [string]::IsNullOrWhiteSpace($RequiredResultMarkersJson)) {
+    if (@($RequiredResultMarkers).Count -gt 0) {
+        throw "CODEX_GROK_RESULT_MARKERS_AMBIGUOUS: use either RequiredResultMarkers or RequiredResultMarkersJson"
+    }
+    try {
+        $decodedMarkers = @(
+            $RequiredResultMarkersJson |
+                ConvertFrom-Json -ErrorAction Stop
+        )
+    } catch {
+        throw "CODEX_GROK_RESULT_MARKERS_JSON_INVALID"
+    }
+    if ($decodedMarkers.Count -lt 1 -or $decodedMarkers.Count -gt 32) {
+        throw "CODEX_GROK_RESULT_MARKERS_JSON_COUNT_INVALID"
+    }
+    $normalizedMarkers = @()
+    foreach ($marker in $decodedMarkers) {
+        if ($marker -isnot [string] -or [string]::IsNullOrWhiteSpace([string]$marker)) {
+            throw "CODEX_GROK_RESULT_MARKERS_JSON_ITEM_INVALID"
+        }
+        $normalizedMarkers += [string]$marker
+    }
+    if (@($normalizedMarkers | Select-Object -Unique).Count -ne $normalizedMarkers.Count) {
+        throw "CODEX_GROK_RESULT_MARKERS_JSON_DUPLICATE"
+    }
+    $RequiredResultMarkers = $normalizedMarkers
+}
 $bridge = $PSScriptRoot
 . (Join-Path $bridge "GrokWindowsPathIdentity.ps1")
 $dispatchId = if ([string]::IsNullOrWhiteSpace($DispatchId)) {

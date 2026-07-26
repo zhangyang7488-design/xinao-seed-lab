@@ -937,9 +937,18 @@ def _run_package(
         candidate_write_domain,
     ]
     if package["acceptance"]["required_result_markers"]:
-        command.append("-RequiredResultMarkers")
+        # Native -> pwsh -File argument binding does not preserve multiple
+        # values for a PowerShell array parameter. Carry the complete list as
+        # one JSON argument so the wrapper can reconstruct it losslessly.
         command.extend(
-            str(marker) for marker in package["acceptance"]["required_result_markers"]
+            [
+                "-RequiredResultMarkersJson",
+                json.dumps(
+                    package["acceptance"]["required_result_markers"],
+                    ensure_ascii=False,
+                    separators=(",", ":"),
+                ),
+            ]
         )
     if package["acceptance"]["require_json_object"]:
         command.append("-RequireJsonObject")
