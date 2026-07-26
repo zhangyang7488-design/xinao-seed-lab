@@ -287,6 +287,14 @@ Assert-Contract ($relayDispatchText -match 'RELAY_DISPATCH_COGNITIVE_AUDIT_CONTR
 $workerText = Get-Content -LiteralPath (Join-Path $repoRoot "grok-admin-bridge/Invoke-GrokComposer25Worker.ps1") -Raw -Encoding UTF8
 $poolText = Get-Content -LiteralPath (Join-Path $repoRoot "grok-admin-bridge/Invoke-GrokWorkerPool.ps1") -Raw -Encoding UTF8
 $dispatchText = Get-Content -LiteralPath (Join-Path $repoRoot "grok-admin-bridge/Invoke-CodexDispatchGrokWorkerPool.ps1") -Raw -Encoding UTF8
+$dispatchParseTokens = $null
+$dispatchParseErrors = $null
+[System.Management.Automation.Language.Parser]::ParseFile(
+    (Join-Path $repoRoot "grok-admin-bridge/Invoke-CodexDispatchGrokWorkerPool.ps1"),
+    [ref]$dispatchParseTokens,
+    [ref]$dispatchParseErrors
+) | Out-Null
+Assert-Contract (@($dispatchParseErrors).Count -eq 0) "dispatch_powershell_syntax_valid"
 $hostTriggerText = Get-Content -LiteralPath (Join-Path $repoRoot "grok-admin-bridge/Invoke-GrokHostWorkerPoolFromTemporal.ps1") -Raw -Encoding UTF8
 $hostAliasText = Get-Content -LiteralPath (Join-Path $repoRoot "grok-admin-bridge/Invoke-GrokTemporalHostPoolTrigger.ps1") -Raw -Encoding UTF8
 $effectiveValidatorText = Get-Content -LiteralPath (Join-Path $repoRoot "grok-admin-bridge/Test-GrokCliEffectiveOutput.ps1") -Raw -Encoding UTF8
@@ -363,9 +371,31 @@ Assert-Contract ($dispatchText -match 'CODEX_GROK_POOL_SELECTION_RECEIPT_MISMATC
 Assert-Contract ($dispatchText -match 'route_role = "normal_leg_a_bounded_online_current_tui"') "dispatch_meta_names_normal_leg_a"
 Assert-Contract ($dispatchText -match 'route_continuity = "continuous_or_resume_does_not_switch_leg"') "dispatch_meta_preserves_route_leg"
 Assert-Contract ($dispatchText -notmatch 'canonical-route fallback') "dispatch_no_longer_calls_leg_a_fallback"
+Assert-Contract ($dispatchText -notmatch 'ExecutionShape|execution_shape|select_execution_shape') "dispatch_has_no_execution_shape_code_gate"
 Assert-Contract ($dispatchText -match 'prepare_direct_worker_pool_common_contract[.]py') "dispatch_auto_prepares_common_contract"
 Assert-Contract ($dispatchText -match '\[string\]\$CommonContextManifestPath') "dispatch_context_manifest_parameter"
 Assert-Contract ($dispatchText -match '"--context-manifest-file",\s*\$CommonContextManifestPath') "dispatch_preparer_receives_context_manifest"
+Assert-Contract ($dispatchText -notmatch 'CommonCompiledContextPath|compiled_context|common_compiled') "dispatch_has_no_compiled_context_cache_seam"
+Assert-Contract ($dispatchText -match '"--effective-prompt-output",\s*\$expectedEffectivePromptFile') "dispatch_preparer_writes_bound_effective_prompt"
+Assert-Contract ($dispatchText -match 'CODEX_GROK_COMMON_CONTEXT_MANIFEST_NOT_BOUND') "dispatch_requires_validated_manifest_binding"
+Assert-Contract ($dispatchText -match 'CODEX_GROK_COMMON_EFFECTIVE_PROMPT_PATH_MISMATCH') "dispatch_effective_prompt_path_negative"
+Assert-Contract ($dispatchText -match 'CODEX_GROK_COMMON_ORIGINAL_PROMPT_HASH_MISMATCH') "dispatch_original_prompt_receipt_negative"
+Assert-Contract ($dispatchText -match 'CODEX_GROK_COMMON_EFFECTIVE_PROMPT_RECEIPT_MISMATCH') "dispatch_effective_prompt_receipt_negative"
+Assert-Contract ($dispatchText -match 'CODEX_GROK_COMMON_EFFECTIVE_PROMPT_CONTRACT_HASH_MISMATCH') "dispatch_contract_input_binding_negative"
+Assert-Contract ($dispatchText -match 'CODEX_GROK_COMMON_EFFECTIVE_PROMPT_CHANGED_BEFORE_POOL') "dispatch_effective_prompt_toctou_negative"
+Assert-Contract ($dispatchText -match '\$PromptFile\s*=\s*\$commonEffectivePromptFile') "dispatch_rebinds_worker_pool_prompt_to_effective_prompt"
+Assert-Contract (([regex]::Matches($dispatchText, '\$PromptFile\s*=\s*\$commonEffectivePromptFile')).Count -eq 1) "dispatch_effective_prompt_rebind_is_single"
+Assert-Contract ($dispatchText -match 'Get-FileHash -LiteralPath \$commonEffectivePromptFile -Algorithm SHA256') "dispatch_rehashes_effective_prompt_before_and_after_pool"
+Assert-Contract ($dispatchText -match 'common_effective_prompt_file\s*=\s*\$commonEffectivePromptFile') "dispatch_meta_records_effective_prompt_file"
+Assert-Contract ($dispatchText -match 'common_effective_prompt_sha256\s*=\s*\$commonEffectivePromptSha256') "dispatch_meta_records_effective_prompt_hash"
+Assert-Contract ($dispatchText -match 'worker_pool_invoked_with_verified_effective_prompt_file') "dispatch_records_real_worker_pool_effect_edge"
+Assert-Contract ($dispatchText -match '\[IO[.]File\]::ReadAllBytes\(\$commonPoolLanePromptFile\)') "dispatch_compares_lane_prompt_suffix_as_exact_bytes"
+Assert-Contract ($dispatchText -match 'CODEX_GROK_COMMON_POOL_LANE_PROMPT_EFFECT_MISMATCH') "dispatch_lane_prompt_effect_negative"
+Assert-Contract ($dispatchText -match 'CODEX_GROK_COMMON_EFFECTIVE_PROMPT_CHANGED_DURING_POOL') "dispatch_effective_prompt_pool_toctou_negative"
+Assert-Contract ($dispatchText -match 'model_attempt_consumed_lane_prompt_with_verified_effective_suffix') "dispatch_records_verified_model_input_effect"
+Assert-Contract ($dispatchText -match 'CODEX_GROK_COMMON_MODEL_INPUT_EFFECT_UNVERIFIED') "dispatch_model_input_effect_fails_closed"
+Assert-Contract ($dispatchText -match 'common_model_input_effect_verified') "dispatch_meta_records_model_input_effect"
+Assert-Contract ($dispatchText -match 'common_pool_lane_prompt_effect_verified') "dispatch_meta_records_lane_prompt_effect"
 Assert-Contract ($dispatchText -match '"--rules-file",\s*\$CommonRulesFile') "dispatch_preparer_receives_exact_rules_file"
 Assert-Contract ($dispatchText -match 'CODEX_GROK_COMMON_RULES_FILE_HASH_MISMATCH') "dispatch_rules_bytes_fail_closed"
 Assert-Contract ($dispatchText -match 'CODEX_GROK_COMMON_CANDIDATE_WRITE_DOMAIN_MISMATCH') "dispatch_candidate_write_boundary_fail_closed"
