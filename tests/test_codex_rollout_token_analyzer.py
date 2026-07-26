@@ -249,6 +249,45 @@ def test_classifies_batching_waits_repeated_inputs_and_output_chars(tmp_path: Pa
     assert tools["output_text_chars"]["by_tool"]["exec"]["sum"] == 5
 
 
+def test_wait_diagnostics_detect_exec_to_direct_wait_double_hop(tmp_path: Path) -> None:
+    rollout = tmp_path / "rollout.jsonl"
+    records = [
+        _base_records()[0],
+        {
+            "type": "response_item",
+            "payload": {
+                "type": "custom_tool_call",
+                "name": "exec",
+                "call_id": "exec-wait",
+                "input": "await tools.write_stdin({session_id:42,chars:''});",
+            },
+        },
+        {
+            "type": "response_item",
+            "payload": {
+                "type": "custom_tool_call_output",
+                "call_id": "exec-wait",
+                "output": "Script running with cell ID 731\n",
+            },
+        },
+        {
+            "type": "response_item",
+            "payload": {
+                "type": "function_call",
+                "name": "wait",
+                "call_id": "direct-wait",
+                "arguments": '{"cell_id":"731"}',
+            },
+        },
+    ]
+    _write_rollout(rollout, records)
+
+    diagnostics = analyze_codex_rollout(rollout)["tools"]["wait_diagnostics"]
+
+    assert diagnostics["double_hop_count"] == 1
+    assert diagnostics["double_hop_pairs"][0]["cell_id"] == "731"
+
+
 def test_usage_between_tasks_is_explicitly_unattributed(tmp_path: Path) -> None:
     rollout = tmp_path / "rollout.jsonl"
     records = _base_records()
@@ -282,6 +321,57 @@ def test_compaction_records_nearest_before_and_after_usage(tmp_path: Path) -> No
     for event in analysis["compaction"]["events"]:
         assert event["before"]["total_usage"]["total_tokens"] == 100
         assert event["after"]["total_usage"]["total_tokens"] == 140
+
+
+def test_compaction_pareto_diagnostics_keep_decision_metrics(
+    tmp_path: Path,
+) -> None:
+    rollout = tmp_path / "rollout.jsonl"
+    records = [
+        _base_records()[0],
+        _token(100, 100),
+        {"type": "compacted", "payload": {}},
+        _token(100, 0),
+        {"type": "event_msg", "payload": {"type": "context_compacted"}},
+        _token(100, 0),
+        {
+            "type": "response_item",
+            "payload": {"type": "custom_tool_call_output", "output": "x" * 50},
+        },
+        _token(140, 40, cached=10),
+        _token(190, 50, cached=20),
+        _token(270, 80, cached=30),
+        _token(370, 100, cached=40),
+    ]
+    for minute, record in enumerate(records):
+        record["timestamp"] = f"2026-07-26T00:{minute:02d}:00+00:00"
+    _write_rollout(rollout, records)
+
+    analysis = analyze_codex_rollout(rollout)
+
+    episode = analysis["compaction"]["episodes"][0]
+    assert episode["pairing"] == "paired_top_level_and_event_marker"
+    assert (episode["pre_model_input_tokens"], episode["post_model_input_tokens"]) == (90, 36)
+    assert [episode["recovery"][key]["rounds"] for key in ("t50", "t75", "t90")] == [
+        1,
+        2,
+        3,
+    ]
+    assert episode["recovery"]["t90"]["wall_seconds"] == 180.0
+    epoch = analysis["compaction"]["context_epochs"][1]
+    assert epoch["model_round_count"] == 4
+    assert epoch["input_growth_tokens_per_round"] == 18.9
+    assert (epoch["cached_input_tokens"], epoch["uncached_read_input_tokens"]) == (40, 203)
+    assert epoch["tool_output_text_chars"] == 50
+
+    records[7]["timestamp"] = "2026-07-26T00:07:00"
+    _write_rollout(rollout, records)
+    assert (
+        analyze_codex_rollout(rollout)["compaction"]["episodes"][0]["recovery"]["t90"][
+            "wall_seconds"
+        ]
+        is None
+    )
 
 
 def test_compaction_only_last_total_is_preserved_as_unattributed_diagnostic(

@@ -8,6 +8,7 @@ from pathlib import Path
 import pytest
 from services.agent_runtime.context_slice_manifest import (
     CONTEXT_SLICE_SPEC_VERSION,
+    DEFAULT_MAX_CONTENT_BYTES,
     ContextSliceManifestError,
     build_context_slice_manifest,
     load_context_slice_manifest,
@@ -140,6 +141,26 @@ def test_manifest_round_trip_detects_tamper(tmp_path: Path) -> None:
     tampered["sources"][0]["slices"][0]["content"] += "# tamper\n"
     with pytest.raises(ContextSliceManifestError, match="content_sha256"):
         validate_context_slice_manifest(tampered)
+
+
+def test_loaded_manifest_cannot_bypass_default_content_budget(tmp_path: Path) -> None:
+    source = tmp_path / "large.txt"
+    source.write_text("x" * (DEFAULT_MAX_CONTENT_BYTES + 1), encoding="utf-8")
+    spec = tmp_path / "spec.json"
+    _write_spec(
+        spec,
+        [{"path": "large.txt", "selectors": [{"kind": "line_range", "start": 1, "end": 1}]}],
+    )
+    manifest = build_context_slice_manifest(
+        root=tmp_path,
+        spec_path=spec,
+        max_content_bytes=DEFAULT_MAX_CONTENT_BYTES + 2,
+    )
+    output = tmp_path / "oversized.manifest.json"
+    output.write_text(json.dumps(manifest), encoding="utf-8")
+
+    with pytest.raises(ContextSliceManifestError, match="max_content_bytes"):
+        load_context_slice_manifest(output)
 
 
 def test_builder_cli_runs_from_outside_repo(tmp_path: Path) -> None:

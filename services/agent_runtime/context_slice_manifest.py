@@ -140,7 +140,9 @@ def _context_identity(sources: Sequence[Mapping[str, object]]) -> dict[str, obje
     return {"schema_version": CONTEXT_SLICE_IDENTITY_VERSION, "sources": identity_sources}
 
 
-def validate_context_slice_manifest(raw: Mapping[str, object]) -> dict[str, Any]:
+def validate_context_slice_manifest(
+    raw: Mapping[str, object], *, max_content_bytes: int = DEFAULT_MAX_CONTENT_BYTES
+) -> dict[str, Any]:
     manifest = _require_mapping(raw, "context_slice_manifest")
     if manifest.get("schema_version") != CONTEXT_SLICE_MANIFEST_VERSION:
         raise ContextSliceManifestError("unsupported context slice manifest schema_version")
@@ -206,6 +208,10 @@ def validate_context_slice_manifest(raw: Mapping[str, object]) -> dict[str, Any]
         manifest.get("total_content_bytes"), "total_content_bytes", minimum=0
     ):
         raise ContextSliceManifestError("total_content_bytes mismatch")
+    if total_content_bytes > max_content_bytes:
+        raise ContextSliceManifestError(
+            f"context slice exceeds max_content_bytes: {total_content_bytes}>{max_content_bytes}"
+        )
 
     return {
         "schema_version": CONTEXT_SLICE_MANIFEST_VERSION,
@@ -317,7 +323,7 @@ def build_context_slice_manifest(
             "replace task-specific verification."
         ),
     }
-    return validate_context_slice_manifest(manifest)
+    return validate_context_slice_manifest(manifest, max_content_bytes=max_content_bytes)
 
 
 def write_context_slice_manifest(path: Path, manifest: Mapping[str, object]) -> str:
@@ -334,3 +340,20 @@ def load_context_slice_manifest(path: Path) -> dict[str, Any]:
     except (OSError, json.JSONDecodeError) as exc:
         raise ContextSliceManifestError(f"invalid context slice manifest: {path}") from exc
     return validate_context_slice_manifest(_require_mapping(raw, "context_slice_manifest"))
+
+
+def render_context_slice_manifest(
+    manifest: Mapping[str, object], *, max_content_bytes: int = DEFAULT_MAX_CONTENT_BYTES
+) -> str:
+    """Render the already validated manifest as the exact reusable model view."""
+
+    validated = validate_context_slice_manifest(manifest, max_content_bytes=max_content_bytes)
+    parts = ["# Verified context slice\n"]
+    for source in validated["sources"]:
+        for row in source["slices"]:
+            parts.append(f"\n## {source['path']}:{row['line_start']}-{row['line_end']}\n")
+            content = str(row["content"])
+            parts.append(content)
+            if not content.endswith("\n"):
+                parts.append("\n")
+    return "".join(parts)

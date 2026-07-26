@@ -22,6 +22,7 @@ REQUIRED_DISTRIBUTIONS = (
     "attrs",
     "jsonschema",
     "jsonschema-specifications",
+    "portalocker",
     "referencing",
     "rpds-py",
 )
@@ -219,6 +220,22 @@ def _probe_release(release_root: Path, python_executable: Path) -> dict[str, obj
             f"exit={completed.returncode}; stdout={completed.stdout.strip()}; "
             f"stderr={completed.stderr.strip()}"
         )
+    preparer = release_root / "scripts" / "prepare_direct_worker_pool_common_contract.py"
+    preparer_help = subprocess.run(
+        [str(python_executable), "-I", "-B", str(preparer), "--help"],
+        check=False,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        env=environment,
+    )
+    if preparer_help.returncode != 0 or "usage:" not in preparer_help.stdout.lower():
+        raise SelectorReleaseError(
+            "selector release contract preparer probe failed: "
+            f"exit={preparer_help.returncode}; stdout={preparer_help.stdout.strip()}; "
+            f"stderr={preparer_help.stderr.strip()}"
+        )
     return {
         # On POSIX a venv interpreter is normally a symlink.  Recording its
         # realpath would silently drop the venv's site-packages at replay.
@@ -229,6 +246,8 @@ def _probe_release(release_root: Path, python_executable: Path) -> dict[str, obj
         "selector_source_sha256": payload["sha256"],
         "action_resume_module": payload["action_resume_module"],
         "dispatch_route_claim_callable": True,
+        "contract_preparer": str(preparer.resolve(strict=True)),
+        "contract_preparer_help": True,
         "dependency_distributions": payload["dependencies"],
     }
 
