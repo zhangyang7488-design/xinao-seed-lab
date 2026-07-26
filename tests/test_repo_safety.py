@@ -1327,8 +1327,19 @@ def test_dual_self_evolution_runners_are_thin_and_claims_stay_separate() -> None
     assert catalog["live_profile_case_counts"] == {
         "capability": 1,
         "smoke": 1 + context_profile_counts["smoke"] + orchestration_profile_counts["smoke"],
-        "core": 1 + context_profile_counts["core"] + 6 + orchestration_profile_counts["core"] + 2 + 1,
-        "deep": 1 + context_profile_counts["deep"] + 6 + orchestration_profile_counts["deep"] + 2 + 1 + 1,
+        "core": 1
+        + context_profile_counts["core"]
+        + 6
+        + orchestration_profile_counts["core"]
+        + 2
+        + 1,
+        "deep": 1
+        + context_profile_counts["deep"]
+        + 6
+        + orchestration_profile_counts["deep"]
+        + 2
+        + 1
+        + 1,
         "context": len(context_cases),
         "proactive": 6,
         "reuse": 4,
