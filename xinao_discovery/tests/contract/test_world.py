@@ -72,10 +72,9 @@ def _science_materials(tmp_path: Path) -> tuple[Path, str, Path, str]:
             "path": str(software),
             "sha256": _write(
                 software,
-                "当前主线 active-parent 是 "
-                "《新澳严格数学科学研究模式——独立融合稿》.txt\n"
+                "科学 active-parent 定义做成什么。\n"
                 "旧对象完整保留为 LEGACY_PARENT_G0_G8 的可复用仪器，"  # noqa: RUF001
-                "不得反向取得当前父目标地位。",
+                "不取得当前父目标或全局启动门地位。",
             ),
             "relationship": "REUSABLE_INSTRUMENT_FOUNDATION_NOT_PARENT_GATE",
         },
