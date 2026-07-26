@@ -66,10 +66,9 @@ def _projection(tmp_path: Path) -> tuple[Path, dict[str, object]]:
             "path": str(software),
             "sha256": _write(
                 software,
-                "当前主线 active-parent 是 "
-                "《新澳严格数学科学研究模式——独立融合稿》.txt\n"
+                "科学 active-parent 定义做成什么。\n"
                 "旧对象完整保留为 LEGACY_PARENT_G0_G8 的可复用仪器，"  # noqa: RUF001
-                "不得反向取得当前父目标地位。",
+                "不取得当前父目标或全局启动门地位。",
             ),
             "relationship": "REUSABLE_INSTRUMENT_FOUNDATION_NOT_PARENT_GATE",
         },
@@ -181,6 +180,129 @@ def test_pending_parent_scope_switch_event_is_rejected(tmp_path: Path) -> None:
     payload["parent_scope_switch"]["event_ref"] = "PENDING_EVENT_APPEND"
     with pytest.raises(ScienceActiveParentError, match="has not been appended"):
         validate_science_active_parent_projection(payload)
+
+
+def _apply_science_revision(
+    projection: Path,
+    payload: dict[str, object],
+    *,
+    predecessor_override: str | None = None,
+) -> Path:
+    predecessor_hash = str(payload["active_parent"]["sha256"])
+    science_path = Path(payload["active_parent"]["path"])
+    revised_hash = _write(
+        science_path,
+        science_path.read_text(encoding="utf-8") + "\nrevision-v2",
+    )
+    snapshot_path = projection.with_name("science-v2.snapshot.txt")
+    snapshot_hash = _write(snapshot_path, science_path.read_text(encoding="utf-8"))
+    maintenance_path = projection.with_name("science-v2.maintenance.txt")
+    maintenance_hash = _write(maintenance_path, "science v2 append-only revision")
+
+    switch = payload["parent_scope_switch"]
+    revision_run_id = "test-science-revision"
+    revision_evidence_path = projection.with_name("science_revision.v1.json")
+    revision_evidence = {
+        "schema_version": "xinao.science_revision.v1",
+        "status": "APPLIED",
+        "run_id": revision_run_id,
+        "predecessor_active_parent": {
+            "sha256": predecessor_override or predecessor_hash,
+        },
+        "active_parent": {
+            "id": payload["active_parent"]["id"],
+            "status": payload["active_parent"]["status"],
+            "path": payload["active_parent"]["path"],
+            "sha256": revised_hash,
+        },
+        "frozen_snapshot": {
+            "path": str(snapshot_path),
+            "sha256": snapshot_hash,
+        },
+        "maintenance_record": {
+            "path": str(maintenance_path),
+            "sha256": maintenance_hash,
+        },
+        "parent_scope_switch": {
+            "evidence_ref": switch["switch_evidence_ref"],
+            "evidence_sha256": switch["switch_evidence_sha256"],
+        },
+        "legacy_status_preservation": {"history_rewritten": False},
+        "completion_claim_allowed": False,
+    }
+    revision_evidence_path.write_text(json.dumps(revision_evidence), encoding="utf-8")
+    revision_evidence_hash = hashlib.sha256(revision_evidence_path.read_bytes()).hexdigest()
+    event_path = Path(str(switch["event_ref"]).split("#event_id=", 1)[0])
+    revision_event_id = "science-revision-v2"
+    with event_path.open("a", encoding="utf-8") as stream:
+        stream.write(
+            json.dumps(
+                {
+                    "event_id": revision_event_id,
+                    "kind": "action",
+                    "phase": "SCIENCE_REVISION",
+                    "run_id": revision_run_id,
+                    "evidence_refs": [f"{revision_evidence_path}#sha256={revision_evidence_hash}"],
+                }
+            )
+            + "\n"
+        )
+    payload["active_parent"]["sha256"] = revised_hash
+    payload["science_revision_chain"] = [
+        {
+            "status": "APPLIED",
+            "run_id": revision_run_id,
+            "event_ref": f"{event_path}#event_id={revision_event_id}",
+            "revision_evidence_ref": str(revision_evidence_path),
+            "revision_evidence_sha256": revision_evidence_hash,
+        }
+    ]
+    projection.write_text(json.dumps(payload), encoding="utf-8")
+    return snapshot_path
+
+
+def test_append_only_science_revision_binds_current_identity(tmp_path: Path) -> None:
+    projection, payload = _projection(tmp_path)
+    _apply_science_revision(projection, payload)
+
+    result = load_science_active_parent(projection)
+
+    assert result["status"] == "READY"
+    assert len(result["science_revision_chain"]) == 1
+
+
+def test_science_identity_change_without_revision_fails_closed(tmp_path: Path) -> None:
+    projection, payload = _projection(tmp_path)
+    science_path = Path(payload["active_parent"]["path"])
+    payload["active_parent"]["sha256"] = _write(
+        science_path,
+        science_path.read_text(encoding="utf-8") + "\nunbound-revision",
+    )
+    projection.write_text(json.dumps(payload), encoding="utf-8")
+
+    with pytest.raises(ScienceActiveParentError, match="without an append-only revision"):
+        load_science_active_parent(projection)
+
+
+def test_science_revision_predecessor_mismatch_fails_closed(tmp_path: Path) -> None:
+    projection, payload = _projection(tmp_path)
+    _apply_science_revision(
+        projection,
+        payload,
+        predecessor_override="0" * 64,
+    )
+
+    with pytest.raises(ScienceActiveParentError, match="identity chain is inconsistent"):
+        load_science_active_parent(projection)
+
+
+def test_science_revision_snapshot_drift_fails_closed(tmp_path: Path) -> None:
+    projection, payload = _projection(tmp_path)
+    snapshot_path = _apply_science_revision(projection, payload)
+    snapshot_path.write_text("drift", encoding="utf-8")
+
+    with pytest.raises(ScienceActiveParentError, match="snapshot is missing or drifted"):
+        load_science_active_parent(projection)
 
 
 def _protocol_pin(

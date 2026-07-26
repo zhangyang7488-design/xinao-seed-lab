@@ -234,12 +234,160 @@ def _verify_parent_scope_switch(
     if (
         evidence.get("schema_version") != "xinao.parent_scope_switch.v1"
         or evidence.get("status") != "PERFORMED"
-        or evidence.get("active_parent", {}).get("sha256") != active.get("sha256")
         or evidence.get("legacy_parent", {}).get("sha256") != legacy.get("sha256")
         or evidence.get("legacy_status_preservation", {}).get("history_rewritten") is not False
     ):
         raise ScienceActiveParentError(
-            "ParentScopeSwitch evidence does not bind current identities"
+            "ParentScopeSwitch evidence does not bind its immutable identities"
+        )
+
+    switch_active_hash = _required_text(
+        _mapping(evidence.get("active_parent"), "ParentScopeSwitch.active_parent").get("sha256"),
+        "ParentScopeSwitch.active_parent.sha256",
+    ).lower()
+    current_active_hash = _required_text(active.get("sha256"), "active_parent.sha256").lower()
+    revisions = payload.get("science_revision_chain")
+    if switch_active_hash == current_active_hash and revisions in (None, []):
+        return
+    if not isinstance(revisions, list) or not revisions:
+        raise ScienceActiveParentError(
+            "current science identity drifted without an append-only revision chain"
+        )
+
+    expected_predecessor = switch_active_hash
+    seen_hashes = {switch_active_hash}
+    switch_evidence_ref = str(switch.get("switch_evidence_ref"))
+    switch_evidence_sha256 = expected_evidence_hash
+    for index, raw_revision in enumerate(revisions):
+        revision = _mapping(raw_revision, f"science_revision_chain[{index}]")
+        if revision.get("status") != "APPLIED":
+            raise ScienceActiveParentError("science revision is not applied")
+        revision_run_id = _required_text(
+            revision.get("run_id"), f"science_revision_chain[{index}].run_id"
+        )
+        revision_event_ref = _required_text(
+            revision.get("event_ref"), f"science_revision_chain[{index}].event_ref"
+        )
+        revision_evidence_ref = _required_text(
+            revision.get("revision_evidence_ref"),
+            f"science_revision_chain[{index}].revision_evidence_ref",
+        )
+        revision_evidence_hash = _required_text(
+            revision.get("revision_evidence_sha256"),
+            f"science_revision_chain[{index}].revision_evidence_sha256",
+        ).lower()
+
+        revision_evidence_path = _carrier_path(revision_evidence_ref)
+        if (
+            not revision_evidence_path.is_file()
+            or _sha256(revision_evidence_path) != revision_evidence_hash
+        ):
+            raise ScienceActiveParentError("science revision evidence is missing or drifted")
+        try:
+            revision_evidence = json.loads(revision_evidence_path.read_text(encoding="utf-8"))
+        except json.JSONDecodeError as exc:
+            raise ScienceActiveParentError("science revision evidence is invalid") from exc
+
+        predecessor = _mapping(
+            revision_evidence.get("predecessor_active_parent"),
+            "science_revision.predecessor_active_parent",
+        )
+        revised_active = _mapping(
+            revision_evidence.get("active_parent"), "science_revision.active_parent"
+        )
+        revised_hash = _required_text(
+            revised_active.get("sha256"), "science_revision.active_parent.sha256"
+        ).lower()
+        switch_binding = _mapping(
+            revision_evidence.get("parent_scope_switch"),
+            "science_revision.parent_scope_switch",
+        )
+        if (
+            revision_evidence.get("schema_version") != "xinao.science_revision.v1"
+            or revision_evidence.get("status") != "APPLIED"
+            or revision_evidence.get("run_id") != revision_run_id
+            or _required_text(
+                predecessor.get("sha256"),
+                "science_revision.predecessor_active_parent.sha256",
+            ).lower()
+            != expected_predecessor
+            or revised_active.get("id") != active.get("id")
+            or revised_active.get("status") != active.get("status")
+            or revised_active.get("path") != active.get("path")
+            or switch_binding.get("evidence_ref") != switch_evidence_ref
+            or str(switch_binding.get("evidence_sha256", "")).lower() != switch_evidence_sha256
+            or revision_evidence.get("legacy_status_preservation", {}).get("history_rewritten")
+            is not False
+            or revision_evidence.get("completion_claim_allowed") is not False
+        ):
+            raise ScienceActiveParentError("science revision identity chain is inconsistent")
+        if revised_hash in seen_hashes:
+            raise ScienceActiveParentError("science revision identity chain contains a cycle")
+
+        snapshot = _mapping(
+            revision_evidence.get("frozen_snapshot"), "science_revision.frozen_snapshot"
+        )
+        snapshot_path = _carrier_path(
+            _required_text(snapshot.get("path"), "science_revision.frozen_snapshot.path")
+        )
+        if (
+            str(snapshot.get("sha256", "")).lower() != revised_hash
+            or not snapshot_path.is_file()
+            or _sha256(snapshot_path) != revised_hash
+        ):
+            raise ScienceActiveParentError("science revision snapshot is missing or drifted")
+
+        maintenance_record = _mapping(
+            revision_evidence.get("maintenance_record"),
+            "science_revision.maintenance_record",
+        )
+        maintenance_path = _carrier_path(
+            _required_text(
+                maintenance_record.get("path"),
+                "science_revision.maintenance_record.path",
+            )
+        )
+        maintenance_hash = _required_text(
+            maintenance_record.get("sha256"),
+            "science_revision.maintenance_record.sha256",
+        ).lower()
+        if not maintenance_path.is_file() or _sha256(maintenance_path) != maintenance_hash:
+            raise ScienceActiveParentError(
+                "science revision maintenance record is missing or drifted"
+            )
+
+        marker = "#event_id="
+        if marker not in revision_event_ref:
+            raise ScienceActiveParentError("science revision event ref has no event identity")
+        raw_revision_event_path, revision_event_id = revision_event_ref.rsplit(marker, 1)
+        revision_event_path = _carrier_path(raw_revision_event_path)
+        if not revision_event_path.is_file():
+            raise ScienceActiveParentError("science revision event log is missing")
+        revision_event = None
+        for line in revision_event_path.read_text(encoding="utf-8").splitlines():
+            try:
+                candidate = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if candidate.get("event_id") == revision_event_id:
+                revision_event = candidate
+                break
+        expected_evidence_ref = f"{revision_evidence_ref}#sha256={revision_evidence_hash}"
+        if (
+            revision_event is None
+            or revision_event.get("kind") != "action"
+            or revision_event.get("phase") != "SCIENCE_REVISION"
+            or revision_event.get("run_id") != revision_run_id
+            or expected_evidence_ref not in (revision_event.get("evidence_refs") or [])
+        ):
+            raise ScienceActiveParentError("science revision event identity is not present")
+
+        expected_predecessor = revised_hash
+        seen_hashes.add(revised_hash)
+
+    if expected_predecessor != current_active_hash:
+        raise ScienceActiveParentError(
+            "science revision chain does not terminate at the current active parent"
         )
 
 
@@ -297,9 +445,9 @@ def load_science_active_parent(
         encoding="utf-8"
     )
     required_software_markers = (
-        "《新澳严格数学科学研究模式——独立融合稿》.txt",
+        "科学 active-parent",
         "LEGACY_PARENT_G0_G8",
-        "不得反向取得当前父目标地位",
+        "不取得当前父目标或全局启动门地位",
     )
     if payload["software_foundation"][
         "relationship"
@@ -316,6 +464,7 @@ def load_science_active_parent(
         "legacy_parent": dict(payload["legacy_parent"]),
         "science_episode_gate": dict(payload["science_episode_gate"]),
         "parent_scope_switch": dict(payload["parent_scope_switch"]),
+        "science_revision_chain": list(payload.get("science_revision_chain") or []),
         "completion_claim_allowed": False,
     }
 
