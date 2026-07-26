@@ -512,7 +512,7 @@ def test_nonzero_provider_exit_with_valid_common_receipt_is_terminal_recordable(
         "role": "critic",
         "acceptance": {
             "min_result_chars": 1,
-            "required_result_markers": [],
+            "required_result_markers": ["MARKER_ONE", "MARKER_TWO"],
             "require_json_object": False,
             "json_schema_ref": None,
         },
@@ -552,6 +552,9 @@ def test_nonzero_provider_exit_with_valid_common_receipt_is_terminal_recordable(
         )
         assert command[command.index("-CommonTaskContractRef") + 1] == "task-ref"
         assert command[command.index("-CommonSubjectManifestSha256") + 1] == "7" * 64
+        marker_json = command[command.index("-RequiredResultMarkersJson") + 1]
+        assert json.loads(marker_json) == ["MARKER_ONE", "MARKER_TWO"]
+        assert "-RequiredResultMarkers" not in command
         write_domain_index = command.index("-CommonWriteDomains") + 1
         assert command[write_domain_index] == (
             "candidate_output_root:"
