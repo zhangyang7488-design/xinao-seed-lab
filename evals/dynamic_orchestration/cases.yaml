@@ -165,10 +165,12 @@
       Three independent thick exploratory branches are ready. Each needs its own isolated
       container/worktree with multi-step correction loops. Write domains do not overlap,
       parallel benefit is positive after isolation and fan-in cost, and owner residual
-      capacity is three. External workers are healthy and admitted.
+      capacity is three. External workers are healthy and admitted. This is the initial
+      current-frontier selection: no prior width, branch failure, or quota shift exists.
     user_increment: >-
-      Run the three isolated container branches in parallel, keep width dynamic, and keep
-      Codex as sole authority for verify/adopt and formal write.
+      Select the three isolated container branches in parallel and keep Codex as sole
+      authority for verify/adopt and formal write. Future evidence may trigger a later
+      recomputation, but no recompute event has occurred in this scenario.
     expected_execution_shape: multiple_isolated_container_branches
     expected_worker_count: 3
     expected_carrier_kind: isolated_container_branch

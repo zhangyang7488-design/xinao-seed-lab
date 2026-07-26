@@ -242,6 +242,18 @@ module.exports = (output, context) => {
       new RegExp(`\\b${escapeRegExp(identifier)}\\b`).test(String(code || '')),
     );
 
+  const extractNodeReplWriteSegment = (code) => {
+    const text = String(code || '');
+    const index = text.lastIndexOf('nodeRepl.write');
+    return index >= 0 ? text.slice(index) : '';
+  };
+
+  const resultHasBoundReadSummary = (value) => {
+    const text = String(value || '');
+    return /["']?lineCount["']?\s*:\s*\d+/.test(text) &&
+      /["']?hits["']?\s*:/.test(text);
+  };
+
   const commandInvokesFilesystemRead = (command) => {
     const text = String(command || '');
     return /\b(Get-Content|Select-String|findstr|type|more|rg)\b/i.test(text);
@@ -291,6 +303,24 @@ module.exports = (output, context) => {
     return resultHasAuthorityBody(resultText);
   };
 
+  const isSuccessfulAuthorityMcpBoundSummaryRead = (item) => {
+    if (!isSuccessfulNodeReplCall(item)) return false;
+    const code = extractMcpCodeArgument(item);
+    if (!mentionsAuthorityIdentity(code) || !codeInvokesFilesystemRead(code)) {
+      return false;
+    }
+    const boundIdentifiers = extractReadBoundIdentifiers(code);
+    if (boundIdentifiers.size === 0) return false;
+    const writeSegment = extractNodeReplWriteSegment(code);
+    if (!codeReferencesBoundIdentifier(writeSegment, boundIdentifiers)) {
+      return false;
+    }
+    if (!/\blineCount\b/.test(writeSegment) || !/\bhits\b/.test(writeSegment)) {
+      return false;
+    }
+    return resultHasBoundReadSummary(extractMcpResultText(item));
+  };
+
   const findSuccessfulAuthorityMcpReadChains = () => {
     const chains = [];
     for (let seedIndex = 0; seedIndex < items.length; seedIndex += 1) {
@@ -322,10 +352,14 @@ module.exports = (output, context) => {
 
   const authorityCommandReads = items.filter(isSuccessfulAuthorityCommandRead);
   const authorityMcpReads = items.filter(isSuccessfulAuthorityMcpRead);
+  const authorityMcpBoundSummaryReads = items.filter(
+    isSuccessfulAuthorityMcpBoundSummaryRead,
+  );
   const authorityMcpReadChains = findSuccessfulAuthorityMcpReadChains();
   const hasAuthorityReadEvidence =
     authorityCommandReads.length >= 1 ||
     authorityMcpReads.length >= 1 ||
+    authorityMcpBoundSummaryReads.length >= 1 ||
     authorityMcpReadChains.length >= 1;
 
   const traceIsReal =
@@ -355,6 +389,7 @@ module.exports = (output, context) => {
     hasAuthorityReadEvidence,
     authorityCommandReads: authorityCommandReads.length,
     authorityMcpReads: authorityMcpReads.length,
+    authorityMcpBoundSummaryReads: authorityMcpBoundSummaryReads.length,
     authorityMcpReadChains: authorityMcpReadChains.length,
     threadIdPresent: Boolean(appServer.threadId),
     turnIdPresent: Boolean(appServer.turnId),

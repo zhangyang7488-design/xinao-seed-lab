@@ -318,6 +318,8 @@ def test_prompt_requires_real_authority_path() -> None:
     assert "codex_subagent_default: must be false" in prompt
     assert "worker_self_promotes: must be false" in prompt
     assert "AGENTS.md and local notes are not substitutes" in prompt
+    assert "initial current-frontier selection" in prompt
+    assert "bounded structural summary derived from the read variables" in prompt
 
 
 def test_case_count_ids_and_profile_distribution() -> None:
@@ -575,6 +577,55 @@ def test_assertion_accepts_bound_multi_step_node_repl_read() -> None:
     result = _run_js_assertion(output, context)
     assert result["pass"] is True
     assert '"authorityMcpReadChains":1' in result["reason"]
+
+
+def test_assertion_accepts_same_call_bound_read_summary() -> None:
+    case = _cases_by_id()["REG_REJECT_VALUELESS_PARALLELISM"]
+    output = _output_from_case(case)
+    path_literal = json.dumps(AUTHORITY_PATH, ensure_ascii=False)
+    code = (
+        "var fs = await import('node:fs/promises'); "
+        f"var authorityPath = {path_literal}; "
+        "var authorityText = await fs.readFile(authorityPath, 'utf8'); "
+        "var authorityLines = authorityText.split(/\\r?\\n/); "
+        "var hitIndexes = authorityLines.map((line, i) => i); "
+        "nodeRepl.write(JSON.stringify({lineCount: authorityLines.length, "
+        "hits: hitIndexes.slice(0, 20)}));"
+    )
+    item = _node_repl_authority_item(
+        code=code,
+        result_text='{"lineCount":196,"hits":"[...]"}',
+    )
+    context = _base_context(
+        case=case,
+        items=[{"type": "userMessage"}, item, {"type": "agentMessage"}],
+        item_counts={"userMessage": 1, "mcpToolCall": 1, "agentMessage": 1},
+    )
+    result = _run_js_assertion(output, context)
+    assert result["pass"] is True
+    assert '"authorityMcpBoundSummaryReads":1' in result["reason"]
+
+
+def test_assertion_rejects_unbound_constant_same_call_summary() -> None:
+    case = _cases_by_id()["REG_REJECT_VALUELESS_PARALLELISM"]
+    output = _output_from_case(case)
+    path_literal = json.dumps(AUTHORITY_PATH, ensure_ascii=False)
+    code = (
+        "var fs = await import('node:fs/promises'); "
+        f"var authorityPath = {path_literal}; "
+        "var authorityText = await fs.readFile(authorityPath, 'utf8'); "
+        "nodeRepl.write(JSON.stringify({lineCount: 196, hits: ['constant']}));"
+    )
+    item = _node_repl_authority_item(
+        code=code,
+        result_text='{"lineCount":196,"hits":"[...]"}',
+    )
+    context = _base_context(
+        case=case,
+        items=[{"type": "userMessage"}, item, {"type": "agentMessage"}],
+        item_counts={"userMessage": 1, "mcpToolCall": 1, "agentMessage": 1},
+    )
+    assert _run_js_assertion(output, context)["pass"] is False
 
 
 def test_assertion_rejects_unbound_constant_after_node_repl_read() -> None:

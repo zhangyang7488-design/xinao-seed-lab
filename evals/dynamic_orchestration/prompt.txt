@@ -8,6 +8,10 @@ files or external objects. Do not invent a second controller, fixed width religi
 Codex-subagent default labor. Repository AGENTS.md and local notes are not substitutes for
 that authority file.
 
+Make the read trace visibly consume the file result: return either the bounded section text
+or a bounded structural summary derived from the read variables. Do not return only a path,
+an unbound constant, or an empty result.
+
 Classify the execution shape for the restored context and user increment. Return only one
 JSON object with these fields:
 - case_id: the scenario ID
@@ -48,6 +52,9 @@ Shape selection rules (apply from the live authority, not a fixed template):
 - Several independent thick branches with positive parallel benefit:
   multiple_isolated_container_branches.
 - No positive unresolved action: no_action with zero workers.
+- recompute_scope records a current evidence-triggered correction relative to a prior shape;
+  an initial current-frontier selection with no prior-width change, failure, or quota shift
+  uses none. Future willingness to stay dynamic is not itself a recompute event.
 - Reject safe-template Codex serialization when an independent worker package has positive
   net value; count the worker instead of serial owner labor.
 - Reject valueless parallelism for tiny inseparable edits; stay owner_direct.
