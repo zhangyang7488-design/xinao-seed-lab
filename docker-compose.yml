@@ -333,6 +333,11 @@ services:
       - SETGID
     security_opt:
       - no-new-privileges:true
+      # Docker's default seccomp profile blocks the unprivileged user
+      # namespace that Grok's inner bubblewrap sandbox must bootstrap. The
+      # worker retains NNP and only SETUID/SETGID; daemon readiness proves the
+      # nested sandbox actually starts before this service can become healthy.
+      - seccomp=unconfined
     labels:
       xinao.display_cn: "后台工人"
       xinao.role_cn: "333主路步2·波内真执行"

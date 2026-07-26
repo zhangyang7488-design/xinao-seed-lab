@@ -9,6 +9,7 @@ import json
 import os
 import re
 import socket
+import subprocess
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import AsyncExitStack
 from datetime import datetime, timezone
@@ -27,12 +28,13 @@ from services.agent_runtime.integrated_bus_workflow_registry import (
 from services.agent_runtime.thin_glue_stack import DEFAULT_RUNTIME, write_json
 from services.agent_runtime.thin_glue_sunset_registry import summarize_sunset_registry
 
-SCHEMA_VERSION = "xinao.integrated_bus_worker_daemon.v4"
+SCHEMA_VERSION = "xinao.integrated_bus_worker_daemon.v5"
 SENTINEL = "SENTINEL:XINAO_INTEGRATED_BUS_WORKER_DAEMON_READY"
 DEFAULT_POLLING_START_TIMEOUT_SECONDS = 30.0
 SOURCE_RELEASE_SCHEMA_VERSION = "xinao.s_runtime_source_release.v1"
 GROK_EXPECTED_CAPABILITY_MASK = "00000000000000c0"
 GROK_EXPECTED_NO_NEW_PRIVS = "1"
+GROK_EXPECTED_SECCOMP_MODE = "0"
 SOURCE_RELEASE_CRITICAL_FILES = (
     "services/agent_runtime/integrated_bus_worker_daemon.py",
     "services/agent_runtime/integrated_bus_workflow_registry.py",
@@ -84,7 +86,7 @@ def _grok_outer_privilege_state(path: Path = Path("/proc/self/status")) -> dict[
     """Verify the exact outer capability state required by the bwrap wrapper."""
 
     fields = _parse_proc_status(path.read_text(encoding="utf-8"))
-    required_fields = ("CapEff", "CapPrm", "CapBnd", "NoNewPrivs")
+    required_fields = ("CapEff", "CapPrm", "CapBnd", "NoNewPrivs", "Seccomp")
     missing = [field for field in required_fields if not fields.get(field)]
     if missing:
         raise RuntimeError(f"process privilege status omitted fields: {','.join(missing)}")
@@ -93,18 +95,46 @@ def _grok_outer_privilege_state(path: Path = Path("/proc/self/status")) -> dict[
         "cap_prm": fields["CapPrm"].split()[0].lower(),
         "cap_bnd": fields["CapBnd"].split()[0].lower(),
         "no_new_privs": fields["NoNewPrivs"].split()[0],
+        "seccomp": fields["Seccomp"].split()[0],
     }
     return {
         "expected_capability_mask": GROK_EXPECTED_CAPABILITY_MASK,
         "expected_no_new_privs": GROK_EXPECTED_NO_NEW_PRIVS,
+        "expected_seccomp_mode": GROK_EXPECTED_SECCOMP_MODE,
         **observed,
         "ok": (
             observed["cap_eff"] == GROK_EXPECTED_CAPABILITY_MASK
             and observed["cap_prm"] == GROK_EXPECTED_CAPABILITY_MASK
             and observed["cap_bnd"] == GROK_EXPECTED_CAPABILITY_MASK
             and observed["no_new_privs"] == GROK_EXPECTED_NO_NEW_PRIVS
+            and observed["seccomp"] == GROK_EXPECTED_SECCOMP_MODE
         ),
     }
+
+
+def _grok_bwrap_bootstrap_available(executable: str = "/usr/bin/bwrap") -> bool:
+    """Probe the nested user/PID/network namespace boundary without Grok or network I/O."""
+
+    try:
+        completed = subprocess.run(
+            [
+                executable,
+                "--unshare-user",
+                "--unshare-pid",
+                "--unshare-net",
+                "--die-with-parent",
+                "--ro-bind",
+                "/",
+                "/",
+                "/bin/true",
+            ],
+            check=False,
+            capture_output=True,
+            timeout=10,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return False
+    return completed.returncode == 0
 
 
 def _load_params() -> dict[str, Any]:
@@ -206,6 +236,7 @@ def readiness_marker_issues(
     expected_grok_sandbox_tty_required: bool = False,
     expected_grok_outer_privilege_required: bool = False,
     expected_grok_outer_privilege_state: dict[str, Any] | None = None,
+    expected_grok_bwrap_bootstrap_required: bool = False,
 ) -> list[str]:
     """Validate that a polling marker belongs to the current daemon process."""
 
@@ -254,10 +285,13 @@ def readiness_marker_issues(
             != GROK_EXPECTED_CAPABILITY_MASK
             or outer_privilege.get("expected_no_new_privs")
             != GROK_EXPECTED_NO_NEW_PRIVS
+            or outer_privilege.get("expected_seccomp_mode")
+            != GROK_EXPECTED_SECCOMP_MODE
             or outer_privilege.get("cap_eff") != GROK_EXPECTED_CAPABILITY_MASK
             or outer_privilege.get("cap_prm") != GROK_EXPECTED_CAPABILITY_MASK
             or outer_privilege.get("cap_bnd") != GROK_EXPECTED_CAPABILITY_MASK
             or outer_privilege.get("no_new_privs") != GROK_EXPECTED_NO_NEW_PRIVS
+            or outer_privilege.get("seccomp") != GROK_EXPECTED_SECCOMP_MODE
         ):
             issues.append("grok_outer_privilege_state_invalid")
         if (
@@ -265,6 +299,16 @@ def readiness_marker_issues(
             and outer_privilege != expected_grok_outer_privilege_state
         ):
             issues.append("grok_outer_privilege_state_mismatch")
+    if (
+        evidence.get("grok_bwrap_bootstrap_required")
+        is not expected_grok_bwrap_bootstrap_required
+    ):
+        issues.append("grok_bwrap_bootstrap_requirement_mismatch")
+    if (
+        expected_grok_bwrap_bootstrap_required
+        and evidence.get("grok_bwrap_bootstrap_available") is not True
+    ):
+        issues.append("grok_bwrap_bootstrap_unavailable")
     roles = evidence.get("workflow_roles")
     if not isinstance(roles, dict):
         issues.append("workflow_roles_missing")
@@ -292,6 +336,7 @@ def check_readiness(
     issues: list[str] = []
     grok_sandbox_tty_required = _docker_native_grok_enabled()
     grok_outer_privilege_required = grok_sandbox_tty_required
+    grok_bwrap_bootstrap_required = grok_sandbox_tty_required
     try:
         release = source_release_identity(
             runtime_root=runtime_root,
@@ -323,6 +368,7 @@ def check_readiness(
                 expected_grok_sandbox_tty_required=grok_sandbox_tty_required,
                 expected_grok_outer_privilege_required=grok_outer_privilege_required,
                 expected_grok_outer_privilege_state=outer_privilege,
+                expected_grok_bwrap_bootstrap_required=grok_bwrap_bootstrap_required,
             )
         )
     return {
@@ -334,6 +380,10 @@ def check_readiness(
         "grok_sandbox_tty_available": evidence.get("grok_sandbox_tty_available") is True,
         "grok_outer_privilege_required": grok_outer_privilege_required,
         "grok_outer_privilege": outer_privilege,
+        "grok_bwrap_bootstrap_required": grok_bwrap_bootstrap_required,
+        "grok_bwrap_bootstrap_available": (
+            evidence.get("grok_bwrap_bootstrap_available") is True
+        ),
         "completion_claim_allowed": False,
     }
 
@@ -384,6 +434,12 @@ async def run_integrated_bus_worker_daemon(
         raise RuntimeError(
             "Docker-native Grok requires the exact fail-closed outer capability state"
         )
+    grok_bwrap_bootstrap_required = grok_sandbox_tty_required
+    grok_bwrap_bootstrap_available = _grok_bwrap_bootstrap_available()
+    if grok_bwrap_bootstrap_required and not grok_bwrap_bootstrap_available:
+        raise RuntimeError(
+            "Docker-native Grok requires a working nested bubblewrap namespace boundary"
+        )
     release = source_release_identity(
         runtime_root=runtime_root,
         app_root=Path(os.environ.get("XINAO_CODEX_S_REPO_ROOT") or "/app"),
@@ -406,6 +462,8 @@ async def run_integrated_bus_worker_daemon(
         "grok_sandbox_tty_available": grok_sandbox_tty_available,
         "grok_outer_privilege_required": grok_outer_privilege_required,
         "grok_outer_privilege": grok_outer_privilege,
+        "grok_bwrap_bootstrap_required": grok_bwrap_bootstrap_required,
+        "grok_bwrap_bootstrap_available": grok_bwrap_bootstrap_available,
         "task_queues": reg.get("task_queues", []),
         "workflows_registered": reg.get("workflows_registered", []),
         "workflow_roles": reg.get("workflow_roles", {}),
