@@ -218,6 +218,14 @@ $SelectionPath = [string]$selection.selection_path
 $Model = [string]$selection.model_id
 $Cwd = [string]$selection.cwd
 $commonPrepareReceipt = $null
+$commonPreparedContract = $null
+$commonEffectivePromptFile = ""
+$commonEffectivePromptSha256 = ""
+$commonEffectivePromptBytes = 0
+$commonContextEffectStatus = "not_requested"
+$commonModelInputEffectVerified = $false
+$commonPoolLanePromptFile = ""
+$commonPoolLanePromptEffectVerified = $false
 $commonRequested = (
     -not [string]::IsNullOrWhiteSpace($CommonLogicalContractPath) -or
     -not [string]::IsNullOrWhiteSpace($CommonWorkKey) -or
@@ -324,9 +332,14 @@ if ($commonRequested) {
         )
         New-Item -ItemType Directory -Force -Path $commonContractDir | Out-Null
         $CommonLogicalContractPath = Join-Path $commonContractDir "logical_contract.json"
+        $originalPromptFile = [IO.Path]::GetFullPath($PromptFile)
+        $originalPromptSha256 = (
+            Get-FileHash -LiteralPath $originalPromptFile -Algorithm SHA256
+        ).Hash.ToLowerInvariant()
+        $expectedEffectivePromptFile = Join-Path $commonContractDir "effective_prompt.md"
         $prepareArgs = @(
             $prepareScript,
-            "--prompt-file", ([IO.Path]::GetFullPath($PromptFile)),
+            "--prompt-file", $originalPromptFile,
             "--selection-receipt", $SelectionPath,
             "--subject-manifest-sha256", $CommonSubjectManifestSha256,
             "--work-key", $CommonWorkKey,
@@ -343,7 +356,10 @@ if ($commonRequested) {
             $prepareArgs += @("--frozen-context-sha256", $CommonFrozenContextSha256)
         }
         if (-not [string]::IsNullOrWhiteSpace($CommonContextManifestPath)) {
-            $prepareArgs += @("--context-manifest-file", $CommonContextManifestPath)
+            $prepareArgs += @(
+                "--context-manifest-file", $CommonContextManifestPath,
+                "--effective-prompt-output", $expectedEffectivePromptFile
+            )
         }
         foreach ($marker in @($RequiredResultMarkers)) {
             $prepareArgs += @("--required-result-marker", [string]$marker)
@@ -376,11 +392,67 @@ if ($commonRequested) {
         if ($preparedContextSha256 -notmatch '^[0-9a-f]{64}$') {
             throw "CODEX_GROK_COMMON_PREPARE_CONTEXT_INVALID"
         }
-        if (
-            -not [string]::IsNullOrWhiteSpace($CommonContextManifestPath) -and
-            [string]$commonPrepareReceipt.context_binding_mode -ne "validated_context_slice_manifest"
-        ) {
-            throw "CODEX_GROK_COMMON_CONTEXT_MANIFEST_NOT_BOUND"
+        if (-not [string]::IsNullOrWhiteSpace($CommonContextManifestPath)) {
+            if ([string]$commonPrepareReceipt.context_binding_mode -ne "validated_context_slice_manifest") {
+                throw "CODEX_GROK_COMMON_CONTEXT_MANIFEST_NOT_BOUND"
+            }
+            try {
+                $commonEffectivePromptFile = [IO.Path]::GetFullPath(
+                    [string]$commonPrepareReceipt.effective_prompt_file
+                )
+            }
+            catch {
+                throw "CODEX_GROK_COMMON_EFFECTIVE_PROMPT_PATH_INVALID"
+            }
+            if (-not [string]::Equals(
+                $commonEffectivePromptFile,
+                [IO.Path]::GetFullPath($expectedEffectivePromptFile),
+                [StringComparison]::OrdinalIgnoreCase
+            )) {
+                throw "CODEX_GROK_COMMON_EFFECTIVE_PROMPT_PATH_MISMATCH"
+            }
+            if (-not (Test-Path -LiteralPath $commonEffectivePromptFile -PathType Leaf)) {
+                throw "CODEX_GROK_COMMON_EFFECTIVE_PROMPT_MISSING: $commonEffectivePromptFile"
+            }
+            if (-not [string]::Equals(
+                [string]$commonPrepareReceipt.original_prompt_sha256,
+                $originalPromptSha256,
+                [StringComparison]::Ordinal
+            )) {
+                throw "CODEX_GROK_COMMON_ORIGINAL_PROMPT_HASH_MISMATCH"
+            }
+            $commonEffectivePromptSha256 = (
+                Get-FileHash -LiteralPath $commonEffectivePromptFile -Algorithm SHA256
+            ).Hash.ToLowerInvariant()
+            $commonEffectivePromptBytes = [int64](
+                Get-Item -LiteralPath $commonEffectivePromptFile
+            ).Length
+            if (
+                -not [string]::Equals(
+                    [string]$commonPrepareReceipt.effective_prompt_sha256,
+                    $commonEffectivePromptSha256,
+                    [StringComparison]::Ordinal
+                ) -or
+                [int64]$commonPrepareReceipt.effective_prompt_bytes -ne $commonEffectivePromptBytes
+            ) {
+                throw "CODEX_GROK_COMMON_EFFECTIVE_PROMPT_RECEIPT_MISMATCH"
+            }
+            try {
+                $commonPreparedContract = Get-Content -LiteralPath $CommonLogicalContractPath -Raw -Encoding UTF8 |
+                    ConvertFrom-Json -ErrorAction Stop
+            }
+            catch {
+                throw "CODEX_GROK_COMMON_PREPARED_CONTRACT_INVALID: $CommonLogicalContractPath"
+            }
+            if (-not [string]::Equals(
+                [string]$commonPreparedContract.input_sha256,
+                $commonEffectivePromptSha256,
+                [StringComparison]::Ordinal
+            )) {
+                throw "CODEX_GROK_COMMON_EFFECTIVE_PROMPT_CONTRACT_HASH_MISMATCH"
+            }
+            $PromptFile = $commonEffectivePromptFile
+            $commonContextEffectStatus = "verified_effective_prompt_bound_for_worker_pool"
         }
         if (
             -not [string]::Equals([string]$commonPrepareReceipt.rules_sha256, $CommonRulesSha256, [StringComparison]::Ordinal) -or
@@ -472,6 +544,13 @@ $dispatchMeta = [ordered]@{
     common_context_manifest_sha256 = if ($null -ne $commonPrepareReceipt) {
         [string]$commonPrepareReceipt.context_manifest_sha256
     } else { "" }
+    common_effective_prompt_file = $commonEffectivePromptFile
+    common_effective_prompt_sha256 = $commonEffectivePromptSha256
+    common_effective_prompt_bytes = $commonEffectivePromptBytes
+    common_context_effect_status = $commonContextEffectStatus
+    common_model_input_effect_verified = $commonModelInputEffectVerified
+    common_pool_lane_prompt_file = $commonPoolLanePromptFile
+    common_pool_lane_prompt_effect_verified = $commonPoolLanePromptEffectVerified
     common_phase = $CommonPhase
     common_adapter_root = $CommonAdapterRoot
     cwd = $Cwd
@@ -523,8 +602,26 @@ $args.Cwd = $Cwd
 if ($SkipPauseGate) { $args.SkipPauseGate = $true }
 if ($Quiet) { $args.Quiet = $true }
 
+if (-not [string]::IsNullOrWhiteSpace($CommonContextManifestPath)) {
+    $preInvokeEffectivePromptSha256 = (
+        Get-FileHash -LiteralPath $commonEffectivePromptFile -Algorithm SHA256
+    ).Hash.ToLowerInvariant()
+    if (-not [string]::Equals(
+        $preInvokeEffectivePromptSha256,
+        $commonEffectivePromptSha256,
+        [StringComparison]::Ordinal
+    )) {
+        throw "CODEX_GROK_COMMON_EFFECTIVE_PROMPT_CHANGED_BEFORE_POOL"
+    }
+}
+
 & $pool @args
 $code = $LASTEXITCODE
+if (-not [string]::IsNullOrWhiteSpace($CommonContextManifestPath)) {
+    $dispatchMeta.common_context_effect_status = (
+        "worker_pool_invoked_with_verified_effective_prompt_file"
+    )
+}
 
 $dispatchMeta.finished_at = (Get-Date).ToString("o")
 $dispatchMeta.pool_exit_code = $code
@@ -582,6 +679,69 @@ if ($dispatchMeta.pool_summary_exists) {
             $dispatchMeta.pool_reuse_skipped_execution -eq $true
         )
         $dispatchMeta.pool_acceptance_contract_ok = $poolSummary.acceptance_contract_ok -eq $true
+        if (-not [string]::IsNullOrWhiteSpace($CommonContextManifestPath)) {
+            if ($dispatchMeta.pool_reuse_skipped_execution -eq $true) {
+                $dispatchMeta.common_context_effect_status = (
+                    "worker_pool_reused_prior_result_no_new_model_input"
+                )
+            }
+            elseif (@($poolSummary.results).Count -gt 0) {
+                $commonPoolLanePromptFile = Join-Path (
+                    [string]$poolSummary.results[0].evidence_dir
+                ) "prompt.md"
+                if (-not (Test-Path -LiteralPath $commonPoolLanePromptFile -PathType Leaf)) {
+                    throw "CODEX_GROK_COMMON_POOL_LANE_PROMPT_MISSING: $commonPoolLanePromptFile"
+                }
+                $effectivePromptAfterPoolSha256 = (
+                    Get-FileHash -LiteralPath $commonEffectivePromptFile -Algorithm SHA256
+                ).Hash.ToLowerInvariant()
+                if (-not [string]::Equals(
+                    $effectivePromptAfterPoolSha256,
+                    $commonEffectivePromptSha256,
+                    [StringComparison]::Ordinal
+                )) {
+                    throw "CODEX_GROK_COMMON_EFFECTIVE_PROMPT_CHANGED_DURING_POOL"
+                }
+                $effectivePromptBytes = [IO.File]::ReadAllBytes($commonEffectivePromptFile)
+                $lanePromptBytes = [IO.File]::ReadAllBytes($commonPoolLanePromptFile)
+                $commonPoolLanePromptEffectVerified = (
+                    $lanePromptBytes.Length -ge $effectivePromptBytes.Length
+                )
+                if ($commonPoolLanePromptEffectVerified) {
+                    $suffixOffset = $lanePromptBytes.Length - $effectivePromptBytes.Length
+                    for ($i = 0; $i -lt $effectivePromptBytes.Length; $i++) {
+                        if ($lanePromptBytes[$suffixOffset + $i] -ne $effectivePromptBytes[$i]) {
+                            $commonPoolLanePromptEffectVerified = $false
+                            break
+                        }
+                    }
+                }
+                if (-not $commonPoolLanePromptEffectVerified) {
+                    throw "CODEX_GROK_COMMON_POOL_LANE_PROMPT_EFFECT_MISMATCH"
+                }
+                $commonModelInputEffectVerified = (
+                    [int64]$poolSummary.usage.attempt_count -gt 0 -and
+                    [int64]$poolSummary.usage.input_tokens -gt 0
+                )
+                $dispatchMeta.common_pool_lane_prompt_file = $commonPoolLanePromptFile
+                $dispatchMeta.common_pool_lane_prompt_effect_verified = $true
+                $dispatchMeta.common_model_input_effect_verified = $commonModelInputEffectVerified
+                $dispatchMeta.common_context_effect_status = if (
+                    $commonModelInputEffectVerified
+                ) {
+                    "model_attempt_consumed_lane_prompt_with_verified_effective_suffix"
+                }
+                else {
+                    "worker_lane_prompt_materialized_but_model_input_unverified"
+                }
+            }
+            if (
+                $dispatchMeta.pool_reuse_skipped_execution -ne $true -and
+                -not $commonModelInputEffectVerified
+            ) {
+                throw "CODEX_GROK_COMMON_MODEL_INPUT_EFFECT_UNVERIFIED"
+            }
+        }
     }
     catch {
         if ($code -eq 0) { $code = 4 }
