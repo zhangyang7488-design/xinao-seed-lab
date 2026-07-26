@@ -84,6 +84,7 @@ AUTHORITY_BODY = (
     f"一个任务使用{AUTHORITY_PACKAGE}，厚任务使用{AUTHORITY_CONTAINER}。\n"
     f"实现型工人{AUTHORITY_PERMISSION}；暂时不能验收时保持{AUTHORITY_TERMINAL}。\n"
 )
+AUTHORITY_SECTION_BODY = AUTHORITY_BODY.removeprefix(f"{AUTHORITY_SENTINEL}\n")
 
 
 def _load_cases() -> list[dict[str, Any]]:
@@ -514,6 +515,95 @@ def test_assertion_accepts_node_repl_mcp_authority_read() -> None:
     assert result["pass"] is True
     assert result["score"] == 1
     assert "authorityMcpReads" in result["reason"]
+
+
+def test_assertion_accepts_narrow_command_projection_without_sentinel() -> None:
+    case = _cases_by_id()["POS_THREE_INDEPENDENT_ISOLATED_BRANCHES"]
+    output = _output_from_case(case)
+    command = f'rg -n "Owner|工人|动态" "{AUTHORITY_PATH}"'
+    items = [
+        {"type": "userMessage"},
+        _command_authority_item(command=command, output=AUTHORITY_SECTION_BODY),
+        {"type": "agentMessage"},
+    ]
+    context = _base_context(
+        case=case,
+        items=items,
+        item_counts={"userMessage": 1, "commandExecution": 1, "agentMessage": 1},
+    )
+    assert _run_js_assertion(output, context)["pass"] is True
+
+
+def _node_repl_read_chain(
+    *,
+    authority_path: str = AUTHORITY_PATH,
+    seed_status: str = "completed",
+    seed_error: object = None,
+    consumer_code: str = "nodeRepl.write(authLines.slice(67, 89).join('\\n'));",
+) -> list[dict[str, Any]]:
+    path_literal = json.dumps(authority_path, ensure_ascii=False)
+    seed_code = (
+        "var fs = await import('node:fs/promises'); "
+        f"var authPath = {path_literal}; "
+        "var authText = await fs.readFile(authPath, 'utf8'); "
+        "var authLines = authText.split(/\\r?\\n/); "
+        "nodeRepl.write(JSON.stringify({lineCount: authLines.length}));"
+    )
+    return [
+        _node_repl_authority_item(
+            code=seed_code,
+            status=seed_status,
+            error=seed_error,
+            result_text='{"lineCount":196,"hits":"[...]"}',
+        ),
+        _node_repl_authority_item(
+            code=consumer_code,
+            result_text=AUTHORITY_SECTION_BODY,
+        ),
+    ]
+
+
+def test_assertion_accepts_bound_multi_step_node_repl_read() -> None:
+    case = _cases_by_id()["POS_THREE_INDEPENDENT_ORDINARY_PACKAGES"]
+    output = _output_from_case(case)
+    chain = _node_repl_read_chain()
+    context = _base_context(
+        case=case,
+        items=[{"type": "userMessage"}, *chain, {"type": "agentMessage"}],
+        item_counts={"userMessage": 1, "mcpToolCall": 2, "agentMessage": 1},
+    )
+    result = _run_js_assertion(output, context)
+    assert result["pass"] is True
+    assert '"authorityMcpReadChains":1' in result["reason"]
+
+
+def test_assertion_rejects_unbound_constant_after_node_repl_read() -> None:
+    case = _cases_by_id()["POS_THREE_INDEPENDENT_ORDINARY_PACKAGES"]
+    output = _output_from_case(case)
+    body_literal = json.dumps(AUTHORITY_SECTION_BODY, ensure_ascii=False)
+    chain = _node_repl_read_chain(consumer_code=f"nodeRepl.write({body_literal});")
+    context = _base_context(
+        case=case,
+        items=[{"type": "userMessage"}, *chain, {"type": "agentMessage"}],
+        item_counts={"userMessage": 1, "mcpToolCall": 2, "agentMessage": 1},
+    )
+    assert _run_js_assertion(output, context)["pass"] is False
+
+
+def test_assertion_rejects_wrong_path_or_failed_node_repl_read_seed() -> None:
+    case = _cases_by_id()["POS_THREE_INDEPENDENT_ORDINARY_PACKAGES"]
+    output = _output_from_case(case)
+    chains = (
+        _node_repl_read_chain(authority_path=r"D:\\other\\软件工具胶水宪法_当前有效.txt"),
+        _node_repl_read_chain(seed_status="failed", seed_error="read failed"),
+    )
+    for chain in chains:
+        context = _base_context(
+            case=case,
+            items=[{"type": "userMessage"}, *chain, {"type": "agentMessage"}],
+            item_counts={"userMessage": 1, "mcpToolCall": 2, "agentMessage": 1},
+        )
+        assert _run_js_assertion(output, context)["pass"] is False
 
 
 def test_assertion_rejects_missing_authority_read_trace() -> None:

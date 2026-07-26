@@ -22,6 +22,8 @@ module.exports = (output, context) => {
 
   const AUTHORITY_FILE_NAME = '软件工具胶水宪法_当前有效.txt';
   const AUTHORITY_DIR_MARK = '工具胶水宪法';
+  const AUTHORITY_PATH_MARK =
+    'C:/Users/xx363/Desktop/主线/工具胶水宪法/软件工具胶水宪法_当前有效.txt';
   const AUTHORITY_SENTINEL = 'SENTINEL:XINAO_SOFTWARE_TOOL_GLUE_CONSTITUTION_V2';
   const AUTHORITY_SECTION_HEAD = '## 3. 主管—工人、动态路由与额度';
   const AUTHORITY_OWNER_LINE = 'Codex 是唯一 Owner';
@@ -124,14 +126,13 @@ module.exports = (output, context) => {
   const mentionsAuthorityIdentity = (value) => {
     const text = String(value || '');
     const decoded = decodeJsUnicodeEscapes(text);
-    return (
-      (text.includes(AUTHORITY_FILE_NAME) || decoded.includes(AUTHORITY_FILE_NAME)) &&
-      (text.includes(AUTHORITY_DIR_MARK) || decoded.includes(AUTHORITY_DIR_MARK))
-    );
+    const normalized = decoded.replace(/\\+/g, '/').toLowerCase();
+    return normalized.includes(AUTHORITY_PATH_MARK.toLowerCase());
   };
 
-  const resultHasAuthorityBody = (value) => {
+  const resultHasAuthorityBody = (value, options = {}) => {
     const text = String(value || '');
+    const requireSentinel = Boolean(options.requireSentinel);
     const hasSentinel = text.includes(AUTHORITY_SENTINEL);
     const hasSection =
       text.includes(AUTHORITY_SECTION_HEAD) ||
@@ -147,7 +148,7 @@ module.exports = (output, context) => {
     // Bind the current behavior generation, not a stale constitution body or
     // a path/sentinel echo.
     return (
-      hasSentinel &&
+      (!requireSentinel || hasSentinel) &&
       hasSection &&
       hasOwnerSemantics &&
       hasExecutionShapes &&
@@ -191,6 +192,56 @@ module.exports = (output, context) => {
     return /\breadFile(?:Sync)?\b/.test(text) || /\bGet-Content\b/i.test(text);
   };
 
+  const isSuccessfulNodeReplCall = (item) =>
+    Boolean(item) &&
+    item.type === 'mcpToolCall' &&
+    item.status === 'completed' &&
+    (item.error == null || item.error === '') &&
+    item.server === 'node_repl' &&
+    item.tool === 'js';
+
+  const escapeRegExp = (value) =>
+    String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+  const extractReadBoundIdentifiers = (code) => {
+    const text = String(code || '');
+    const identifiers = new Set();
+    const readAssignment =
+      /(?:\b(?:var|let|const)\s+)?([A-Za-z_$][\w$]*)\s*=\s*(?:await\s+)?[^;\n]*\breadFile(?:Sync)?\s*\(/g;
+    for (const match of text.matchAll(readAssignment)) {
+      identifiers.add(match[1]);
+    }
+
+    // node_repl state persists between calls. Carry forward only identifiers
+    // whose assignment is derived from a variable bound to the actual read.
+    const assignments = [
+      ...text.matchAll(
+        /\b(?:var|let|const)\s+([A-Za-z_$][\w$]*)\s*=\s*([^;\n]+)/g,
+      ),
+    ];
+    let changed = true;
+    while (changed) {
+      changed = false;
+      for (const match of assignments) {
+        const [, target, expression] = match;
+        if (identifiers.has(target)) continue;
+        const derivesFromRead = [...identifiers].some((identifier) =>
+          new RegExp(`\\b${escapeRegExp(identifier)}\\b`).test(expression),
+        );
+        if (derivesFromRead) {
+          identifiers.add(target);
+          changed = true;
+        }
+      }
+    }
+    return identifiers;
+  };
+
+  const codeReferencesBoundIdentifier = (code, identifiers) =>
+    [...identifiers].some((identifier) =>
+      new RegExp(`\\b${escapeRegExp(identifier)}\\b`).test(String(code || '')),
+    );
+
   const commandInvokesFilesystemRead = (command) => {
     const text = String(command || '');
     return /\b(Get-Content|Select-String|findstr|type|more|rg)\b/i.test(text);
@@ -216,7 +267,9 @@ module.exports = (output, context) => {
     if (!output.trim()) {
       return false;
     }
-    // Reject path-only or marker-only command echoes.
+    // A narrow rg/Get-Content projection may not include the file sentinel.
+    // The exact command path binds identity; the result must still contain the
+    // complete current behavior-generation semantics.
     if (!resultHasAuthorityBody(output)) {
       return false;
     }
@@ -224,16 +277,7 @@ module.exports = (output, context) => {
   };
 
   const isSuccessfulAuthorityMcpRead = (item) => {
-    if (!item || item.type !== 'mcpToolCall') {
-      return false;
-    }
-    if (item.status !== 'completed') {
-      return false;
-    }
-    if (item.error != null && item.error !== '') {
-      return false;
-    }
-    if (item.server !== 'node_repl' || item.tool !== 'js') {
+    if (!isSuccessfulNodeReplCall(item)) {
       return false;
     }
     const code = extractMcpCodeArgument(item);
@@ -247,10 +291,42 @@ module.exports = (output, context) => {
     return resultHasAuthorityBody(resultText);
   };
 
+  const findSuccessfulAuthorityMcpReadChains = () => {
+    const chains = [];
+    for (let seedIndex = 0; seedIndex < items.length; seedIndex += 1) {
+      const seed = items[seedIndex];
+      if (!isSuccessfulNodeReplCall(seed)) continue;
+      const seedCode = extractMcpCodeArgument(seed);
+      if (
+        !mentionsAuthorityIdentity(seedCode) ||
+        !codeInvokesFilesystemRead(seedCode)
+      ) {
+        continue;
+      }
+      const boundIdentifiers = extractReadBoundIdentifiers(seedCode);
+      if (boundIdentifiers.size === 0) continue;
+
+      for (let resultIndex = seedIndex + 1; resultIndex < items.length; resultIndex += 1) {
+        const resultItem = items[resultIndex];
+        if (!isSuccessfulNodeReplCall(resultItem)) continue;
+        const resultCode = extractMcpCodeArgument(resultItem);
+        if (!codeReferencesBoundIdentifier(resultCode, boundIdentifiers)) continue;
+        const resultText = extractMcpResultText(resultItem);
+        if (!resultHasAuthorityBody(resultText)) continue;
+        chains.push({ seedIndex, resultIndex });
+        break;
+      }
+    }
+    return chains;
+  };
+
   const authorityCommandReads = items.filter(isSuccessfulAuthorityCommandRead);
   const authorityMcpReads = items.filter(isSuccessfulAuthorityMcpRead);
+  const authorityMcpReadChains = findSuccessfulAuthorityMcpReadChains();
   const hasAuthorityReadEvidence =
-    authorityCommandReads.length >= 1 || authorityMcpReads.length >= 1;
+    authorityCommandReads.length >= 1 ||
+    authorityMcpReads.length >= 1 ||
+    authorityMcpReadChains.length >= 1;
 
   const traceIsReal =
     Boolean(appServer.threadId) &&
@@ -279,6 +355,7 @@ module.exports = (output, context) => {
     hasAuthorityReadEvidence,
     authorityCommandReads: authorityCommandReads.length,
     authorityMcpReads: authorityMcpReads.length,
+    authorityMcpReadChains: authorityMcpReadChains.length,
     threadIdPresent: Boolean(appServer.threadId),
     turnIdPresent: Boolean(appServer.turnId),
     sandboxMode: appServer.sandboxMode,
