@@ -894,7 +894,7 @@ def test_context_intent_alignment_eval_is_balanced_and_friction_bounded() -> Non
     )
     context_suite = next(s for s in catalog["suites"] if s["id"] == "context_intent_alignment")
     assert context_suite["case_count"] == 72
-    assert catalog["declared_case_count"] == 119
+    assert catalog["declared_case_count"] == 132
 
     decision = json.loads(
         (REPO_ROOT / "evals/context_intent_alignment/decision_model.v1.json").read_text(
@@ -1050,7 +1050,7 @@ def test_failed_from_replays_current_cases_not_previous_result_rows() -> None:
     assert "$initial.empty_selection" in runner
     assert "'--filter-failing', (Resolve-Path -LiteralPath $FailedFrom).Path" not in runner
     assert "'--filter-errors-only', $previousResult" in runner
-    assert runner.count("@('--filter-pattern', $failedSelection.pattern)") == 2
+    assert runner.count("@('--filter-pattern', $failedSelection.pattern)") == 3
 
     context_cases = yaml.safe_load(
         (REPO_ROOT / "evals/context_intent_alignment/cases.yaml").read_text(encoding="utf-8")
@@ -1309,7 +1309,7 @@ def test_dual_self_evolution_runners_are_thin_and_claims_stay_separate() -> None
         (REPO_ROOT / "evals/behavior_regression/catalog.json").read_text(encoding="utf-8")
     )
     suite_count = sum(item["case_count"] for item in catalog["suites"])
-    assert suite_count == catalog["declared_case_count"] == 119
+    assert suite_count == catalog["declared_case_count"] == 132
     context_cases = yaml.safe_load(
         (REPO_ROOT / "evals/context_intent_alignment/cases.yaml").read_text(encoding="utf-8")
     )
@@ -1317,14 +1317,22 @@ def test_dual_self_evolution_runners_are_thin_and_claims_stay_separate() -> None
         profile: sum(profile in case["metadata"]["profiles"] for case in context_cases)
         for profile in ("smoke", "core", "deep")
     }
+    orchestration_cases = yaml.safe_load(
+        (REPO_ROOT / "evals/dynamic_orchestration/cases.yaml").read_text(encoding="utf-8")
+    )
+    orchestration_profile_counts = {
+        profile: sum(profile in case["metadata"]["profiles"] for case in orchestration_cases)
+        for profile in ("smoke", "core", "deep")
+    }
     assert catalog["live_profile_case_counts"] == {
         "capability": 1,
-        "smoke": 1 + context_profile_counts["smoke"],
-        "core": 1 + context_profile_counts["core"] + 6 + 2 + 1,
-        "deep": 1 + context_profile_counts["deep"] + 6 + 2 + 1 + 1,
+        "smoke": 1 + context_profile_counts["smoke"] + orchestration_profile_counts["smoke"],
+        "core": 1 + context_profile_counts["core"] + 6 + orchestration_profile_counts["core"] + 2 + 1,
+        "deep": 1 + context_profile_counts["deep"] + 6 + orchestration_profile_counts["deep"] + 2 + 1 + 1,
         "context": len(context_cases),
         "proactive": 6,
         "reuse": 4,
+        "orchestration": len(orchestration_cases),
     }
     proactive = next(item for item in catalog["suites"] if item["id"] == "proactive_mature_first")
     assert proactive["kind"] == "promptfoo_live"
