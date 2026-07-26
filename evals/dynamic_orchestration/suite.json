@@ -1,0 +1,23 @@
+{
+  "schema_version": "xinao.dynamic_orchestration.v1",
+  "id": "dynamic_orchestration",
+  "purpose": "Prove a fresh Codex consumer selects dynamic execution shapes from current software-tool authority instead of repeating a fixed safe template.",
+  "case_source": "cases.yaml",
+  "config": "promptfooconfig.yaml",
+  "case_count": 13,
+  "profiles": {
+    "smoke": "Seven representative execution-shape cases spanning owner-direct, ordinary packages, isolated branches, no-action, and anti-template regressions.",
+    "core": "All thirteen live dynamic orchestration cases.",
+    "deep": "All thirteen live dynamic orchestration cases after material authority, routing, or width-selection changes.",
+    "orchestration": "All thirteen cases without a metadata profile filter."
+  },
+  "authority_identity": "C:\\Users\\xx363\\Desktop\\主线\\工具胶水宪法\\软件工具胶水宪法_当前有效.txt",
+  "friction_budget": {
+    "fixed_width_religion": false,
+    "codex_subagent_default_labor": false,
+    "readonly_commentator_as_worker": false,
+    "valueless_parallelism": false,
+    "worker_self_promotion": false,
+    "authority_file_claim_without_trace": false
+  }
+}

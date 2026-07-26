@@ -5,11 +5,14 @@ agent platform, daemon, scheduler, or approval gate.
 
 ## Shape
 
-- `catalog.json` inventories 72 behavior specifications across live and static suites.
+- `catalog.json` inventories 132 specifications across live and static suites (including 13 dynamic
+  orchestration execution-shape cases owned under `evals/dynamic_orchestration`).
 - `context_intent_alignment/cases.yaml` is the canonical live behavior dataset. Promptfoo reads it
   directly, so expected behavior is not duplicated in the config.
 - `smoke`, `core`, and `deep` profiles make cost proportional to the change. Metadata domains can
   narrow a run further, and a prior result can be supplied to rerun only failures.
+- The explicit `orchestration` profile runs all 13 dynamic-orchestration cases without metadata
+  filtering; `smoke`/`core`/`deep` include that suite and apply `profiles=` metadata filters.
 - Every run gets an operation-scoped D-drive directory containing raw Promptfoo JSON and a compact
   `summary.json`; `latest.json` is only a pointer.
 - Live suites default to Promptfoo concurrency 2 to avoid app-server capacity spikes; callers can
@@ -43,6 +46,9 @@ agent platform, daemon, scheduler, or approval gate.
 # Focused open-world recall plus real parameter-only localization
 .\scripts\run_behavior_regression.ps1 -Profile reuse
 
+# All dynamic orchestration execution-shape cases (no metadata filter)
+.\scripts\run_behavior_regression.ps1 -Profile orchestration
+
 # Raise or lower only the native Promptfoo request concurrency when evidence supports it
 .\scripts\run_behavior_regression.ps1 -Profile core -MaxConcurrency 2
 
@@ -53,8 +59,16 @@ agent platform, daemon, scheduler, or approval gate.
 .\scripts\run_behavior_regression.ps1 -Profile context `
   -CasePattern 'Stopping a user-owned Grok TUI|A nontechnical ambitious idea'
 
+# One orchestration description while developing an execution-shape delta
+.\scripts\run_behavior_regression.ps1 -Profile orchestration `
+  -CasePattern 'exact orchestration case description'
+
 # Rerun only cases that failed in a previous Promptfoo result
 .\scripts\run_behavior_regression.ps1 -Profile context -FailedFrom D:\path\context-result.json
+
+# Rerun only failed dynamic-orchestration cases from a prior suite result
+.\scripts\run_behavior_regression.ps1 -Profile orchestration `
+  -FailedFrom D:\path\dynamic-orchestration.result.json
 
 # Turn failed Promptfoo rows into sourced candidates, without policy mutation
 .\scripts\Import-PromptfooFailuresToBehaviorCandidates.ps1 -ResultPath D:\path\result.json
@@ -73,10 +87,14 @@ agent platform, daemon, scheduler, or approval gate.
 
 `-FailedFrom` replays prior failed testcase definitions. Use it after an implementation or prompt
 fix. When the expected testcase variables themselves change, run that suite normally so Promptfoo
-loads the new definitions.
+loads the new definitions. FailedFrom validates the Promptfoo config description for the selected
+single suite (`context`, `proactive`, or `orchestration`).
 
 Static incident specifications remain specifications until their real environment supplies runtime
 evidence. A green JSON fixture never closes a runtime incident.
+
+Live catalog accounting (not a runtime verification claim): capability 1, smoke 62, core 90, deep 96,
+context 72, proactive 6, reuse 4, orchestration 13.
 
 ## Why the other installed software is not always active
 

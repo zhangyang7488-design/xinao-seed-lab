@@ -4,24 +4,26 @@
   "runner": "scripts/run_behavior_regression.ps1",
   "candidate_intake": "scripts/New-BehaviorRegressionCandidate.ps1",
   "result_root": "D:\\XINAO_RESEARCH_RUNTIME\\state\\human-capabilities\\evals\\behavior-regression",
-  "declared_case_count": 119,
+  "declared_case_count": 132,
   "profiles": {
     "capability": "One fresh Codex app-server capability canary.",
-    "smoke": "Capability canary plus 54 representative live behavior cases.",
-    "core": "Capability canary, 67 context cases, six proactive mature-first cases, frozen mature-candidate recall, one real thin-localization trajectory, and static validation.",
-    "deep": "Core plus all 72 context cases and one current open-world public-repository search.",
+    "smoke": "Capability canary plus 54 representative context cases and seven dynamic-orchestration smoke cases.",
+    "core": "Capability canary, 67 context cases, six proactive mature-first cases, 13 dynamic-orchestration cases, frozen mature-candidate recall, one real thin-localization trajectory, and static validation.",
+    "deep": "Core plus all 72 context cases, all 13 dynamic-orchestration cases, and one current open-world public-repository search.",
     "context": "All 72 context and intent live cases; retained for the compatibility runner.",
     "proactive": "All six mature-first live cases; worker routing is owned by context_intent_alignment.",
-    "reuse": "Only the four live open-world-reuse cases plus their deterministic contract validation."
+    "reuse": "Only the four live open-world-reuse cases plus their deterministic contract validation.",
+    "orchestration": "All 13 dynamic orchestration execution-shape live cases without metadata filtering."
   },
   "live_profile_case_counts": {
     "capability": 1,
-    "smoke": 55,
-    "core": 77,
-    "deep": 83,
+    "smoke": 62,
+    "core": 90,
+    "deep": 96,
     "context": 72,
     "proactive": 6,
-    "reuse": 4
+    "reuse": 4,
+    "orchestration": 13
   },
   "suites": [
     {
@@ -65,6 +67,14 @@
       "validator": "tests/test_repo_safety.py",
       "policy_classification_claim_allowed": true,
       "replacement_runtime_claim_allowed": false
+    },
+    {
+      "id": "dynamic_orchestration",
+      "kind": "promptfoo_live",
+      "case_count": 13,
+      "config": "evals/dynamic_orchestration/promptfooconfig.yaml",
+      "case_source": "evals/dynamic_orchestration/cases.yaml",
+      "runtime_claim_allowed": true
     },
     {
       "id": "mature_capability_recall_replay",
