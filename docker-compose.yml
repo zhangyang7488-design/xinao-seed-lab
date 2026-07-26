@@ -319,6 +319,10 @@ services:
       dockerfile: docker/houtai-gongren/Dockerfile
     image: xinao-houtai-gongren:docker-native-composer25-20260717
     container_name: houtai-gongren
+    # Grok's Linux Landlock sandbox opens /dev/tty even for headless lanes.
+    # Allocate the service PTY without keeping stdin open so sandboxed workers
+    # fail closed on policy violations instead of failing before execution.
+    tty: true
     labels:
       xinao.display_cn: "后台工人"
       xinao.role_cn: "333主路步2·波内真执行"

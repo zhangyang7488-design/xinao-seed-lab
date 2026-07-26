@@ -27,7 +27,7 @@ from services.agent_runtime.integrated_bus_workflow_registry import (
 from services.agent_runtime.thin_glue_stack import DEFAULT_RUNTIME, write_json
 from services.agent_runtime.thin_glue_sunset_registry import summarize_sunset_registry
 
-SCHEMA_VERSION = "xinao.integrated_bus_worker_daemon.v2"
+SCHEMA_VERSION = "xinao.integrated_bus_worker_daemon.v3"
 SENTINEL = "SENTINEL:XINAO_INTEGRATED_BUS_WORKER_DAEMON_READY"
 DEFAULT_POLLING_START_TIMEOUT_SECONDS = 30.0
 SOURCE_RELEASE_SCHEMA_VERSION = "xinao.s_runtime_source_release.v1"
@@ -44,6 +44,27 @@ SOURCE_RELEASE_CRITICAL_FILES = (
 )
 _HASH_RE = re.compile(r"^[0-9a-f]{64}$")
 _COMMIT_RE = re.compile(r"^[0-9a-f]{40}$")
+
+
+def _docker_native_grok_enabled() -> bool:
+    return os.environ.get("XINAO_GROK_DOCKER_NATIVE", "").strip().casefold() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
+
+
+def _controlling_tty_available(path: str = "/dev/tty") -> bool:
+    """Return whether this daemon process owns an openable controlling TTY."""
+
+    flags = os.O_RDWR | getattr(os, "O_NOCTTY", 0)
+    try:
+        descriptor = os.open(path, flags)
+    except OSError:
+        return False
+    os.close(descriptor)
+    return True
 
 
 def _load_params() -> dict[str, Any]:
@@ -142,6 +163,7 @@ def readiness_marker_issues(
     expected_process_id: int,
     expected_process_start_ticks: str,
     expected_source_release: dict[str, Any] | None = None,
+    expected_grok_sandbox_tty_required: bool = False,
 ) -> list[str]:
     """Validate that a polling marker belongs to the current daemon process."""
 
@@ -168,6 +190,13 @@ def readiness_marker_issues(
         issues.append("worker_context_count_mismatch")
     if evidence.get("all_workers_running") is not True:
         issues.append("workers_not_running")
+    if evidence.get("grok_sandbox_tty_required") is not expected_grok_sandbox_tty_required:
+        issues.append("grok_sandbox_tty_requirement_mismatch")
+    if (
+        expected_grok_sandbox_tty_required
+        and evidence.get("grok_sandbox_tty_available") is not True
+    ):
+        issues.append("grok_sandbox_tty_unavailable")
     roles = evidence.get("workflow_roles")
     if not isinstance(roles, dict):
         issues.append("workflow_roles_missing")
@@ -193,6 +222,7 @@ def check_readiness(
     marker_path = runtime_root / "state" / "integrated_bus_worker_daemon" / "latest.json"
     evidence = _read_json(marker_path)
     issues: list[str] = []
+    grok_sandbox_tty_required = _docker_native_grok_enabled()
     try:
         release = source_release_identity(
             runtime_root=runtime_root,
@@ -213,6 +243,7 @@ def check_readiness(
                 expected_process_id=expected_process_id,
                 expected_process_start_ticks=process_start_ticks,
                 expected_source_release=release,
+                expected_grok_sandbox_tty_required=grok_sandbox_tty_required,
             )
         )
     return {
@@ -220,6 +251,8 @@ def check_readiness(
         "ok": not issues,
         "issues": issues,
         "marker_path": str(marker_path),
+        "grok_sandbox_tty_required": grok_sandbox_tty_required,
+        "grok_sandbox_tty_available": evidence.get("grok_sandbox_tty_available") is True,
         "completion_claim_allowed": False,
     }
 
@@ -258,6 +291,12 @@ async def run_integrated_bus_worker_daemon(
     reg = registry_summary()
     process_id = os.getpid()
     process_start_ticks = _process_start_ticks(process_id)
+    grok_sandbox_tty_required = _docker_native_grok_enabled()
+    grok_sandbox_tty_available = _controlling_tty_available()
+    if grok_sandbox_tty_required and not grok_sandbox_tty_available:
+        raise RuntimeError(
+            "Docker-native Grok requires an allocated container TTY for its Landlock sandbox"
+        )
     release = source_release_identity(
         runtime_root=runtime_root,
         app_root=Path(os.environ.get("XINAO_CODEX_S_REPO_ROOT") or "/app"),
@@ -276,6 +315,8 @@ async def run_integrated_bus_worker_daemon(
         "worker_context_count": 0,
         "all_workers_running": False,
         "readiness_confirmed": False,
+        "grok_sandbox_tty_required": grok_sandbox_tty_required,
+        "grok_sandbox_tty_available": grok_sandbox_tty_available,
         "task_queues": reg.get("task_queues", []),
         "workflows_registered": reg.get("workflows_registered", []),
         "workflow_roles": reg.get("workflow_roles", {}),

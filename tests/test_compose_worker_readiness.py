@@ -32,6 +32,8 @@ def _ready_marker() -> dict[str, object]:
         "binding_count": 3,
         "worker_context_count": 3,
         "all_workers_running": True,
+        "grok_sandbox_tty_required": False,
+        "grok_sandbox_tty_available": False,
         "workflow_roles": {
             "XinaoScienceEpisodeWorkflowV1": "CURRENT_SCIENCE_ENTRY",
             "XinaoResearchCampaignWorkflow": "LEGACY_REPLAY",
@@ -163,6 +165,40 @@ def test_readiness_marker_rejects_pre_poll_and_stale_state(
     )
 
 
+def test_readiness_marker_requires_live_tty_for_docker_native_grok() -> None:
+    marker = _ready_marker()
+    marker["grok_sandbox_tty_required"] = True
+    marker["grok_sandbox_tty_available"] = False
+    issues = daemon.readiness_marker_issues(
+        marker,
+        expected_container_id="container-generation",
+        expected_process_id=1,
+        expected_process_start_ticks="987654",
+        expected_grok_sandbox_tty_required=True,
+    )
+    assert issues == ["grok_sandbox_tty_unavailable"]
+
+    marker["grok_sandbox_tty_available"] = True
+    assert (
+        daemon.readiness_marker_issues(
+            marker,
+            expected_container_id="container-generation",
+            expected_process_id=1,
+            expected_process_start_ticks="987654",
+            expected_grok_sandbox_tty_required=True,
+        )
+        == []
+    )
+
+
+def test_controlling_tty_probe_fails_closed(monkeypatch: pytest.MonkeyPatch) -> None:
+    def unavailable(_path: str, _flags: int) -> int:
+        raise OSError("no controlling terminal")
+
+    monkeypatch.setattr(daemon.os, "open", unavailable)
+    assert daemon._controlling_tty_available() is False
+
+
 def test_polling_gate_waits_for_temporal_worker_state() -> None:
     worker = _FakeWorker()
 
@@ -191,6 +227,7 @@ def test_polling_gate_times_out_before_publishing_false_readiness() -> None:
 def test_compose_healthcheck_invokes_generation_aware_readiness() -> None:
     compose = yaml.safe_load((REPO_ROOT / "docker-compose.yml").read_text(encoding="utf-8"))
     environment = compose["services"]["houtai-gongren"]["environment"]
+    assert compose["services"]["houtai-gongren"]["tty"] is True
     assert "XINAO_S_RUNTIME_RELEASE_COMMIT" in environment
     assert "XINAO_S_RUNTIME_RELEASE_MANIFEST_SHA256" in environment
     healthcheck = compose["services"]["houtai-gongren"]["healthcheck"]["test"]
