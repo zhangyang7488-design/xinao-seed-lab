@@ -4,23 +4,23 @@
   "runner": "scripts/run_behavior_regression.ps1",
   "candidate_intake": "scripts/New-BehaviorRegressionCandidate.ps1",
   "result_root": "D:\\XINAO_RESEARCH_RUNTIME\\state\\human-capabilities\\evals\\behavior-regression",
-  "declared_case_count": 146,
+  "declared_case_count": 149,
   "profiles": {
     "capability": "One fresh Codex app-server capability canary.",
-    "smoke": "Capability canary plus 67 representative context cases and seven dynamic-orchestration smoke cases.",
-    "core": "Capability canary, 81 context cases, six proactive mature-first cases, 13 dynamic-orchestration cases, frozen mature-candidate recall, one real thin-localization trajectory, and static validation.",
-    "deep": "Core plus all 86 context cases, all 13 dynamic-orchestration cases, and one current open-world public-repository search.",
-    "context": "All 86 context and intent live cases; retained for the compatibility runner.",
+    "smoke": "Capability canary plus 68 representative context cases and seven dynamic-orchestration smoke cases.",
+    "core": "Capability canary, 83 context cases, six proactive mature-first cases, 13 dynamic-orchestration cases, frozen mature-candidate recall, one real thin-localization trajectory, and static validation.",
+    "deep": "Core plus all 89 context cases, all 13 dynamic-orchestration cases, and one current open-world public-repository search.",
+    "context": "All 89 context and intent live cases; retained for the compatibility runner.",
     "proactive": "All six mature-first live cases; worker routing is owned by context_intent_alignment.",
     "reuse": "Only the four live open-world-reuse cases plus their deterministic contract validation.",
     "orchestration": "All 13 dynamic orchestration execution-shape live cases without metadata filtering."
   },
   "live_profile_case_counts": {
     "capability": 1,
-    "smoke": 75,
-    "core": 104,
-    "deep": 110,
-    "context": 86,
+    "smoke": 77,
+    "core": 107,
+    "deep": 113,
+    "context": 89,
     "proactive": 6,
     "reuse": 4,
     "orchestration": 13
@@ -37,7 +37,7 @@
     {
       "id": "context_intent_alignment",
       "kind": "promptfoo_live",
-      "case_count": 86,
+      "case_count": 89,
       "config": "evals/context_intent_alignment/promptfooconfig.yaml",
       "case_source": "evals/context_intent_alignment/cases.yaml",
       "runtime_claim_allowed": true
