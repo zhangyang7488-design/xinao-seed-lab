@@ -20,6 +20,7 @@ from services.agent_runtime.session_frontier_projection import (  # noqa: E402
     DEFAULT_TASK_RUN_ROOT,
     FrontierProjectionError,
     bind_session,
+    build_live_frontier,
     handle_compact_session_start,
 )
 
@@ -33,6 +34,9 @@ def _parser() -> argparse.ArgumentParser:
     bind.add_argument("--session-id")
     bind.add_argument("--run-directory", type=Path, required=True)
     bind.add_argument("--expected-current-run-id")
+    verify = commands.add_parser("verify-binding")
+    verify.add_argument("--session-id")
+    verify.add_argument("--char-budget", type=int, default=DEFAULT_RENDER_CHAR_BUDGET)
     compact = commands.add_parser("hook-session-start")
     compact.add_argument("--char-budget", type=int, default=DEFAULT_RENDER_CHAR_BUDGET)
     return parser
@@ -61,6 +65,24 @@ def main() -> int:
                 expected_current_run_id=args.expected_current_run_id,
             )
             print(json.dumps(result, ensure_ascii=True, indent=2, sort_keys=True))
+            return 0
+        if args.command == "verify-binding":
+            session_id = args.session_id or os.environ.get("CODEX_THREAD_ID")
+            result = build_live_frontier(
+                session_id=str(session_id or ""),
+                frontier_root=args.frontier_root,
+                allowed_run_root=args.allowed_run_root,
+                char_budget=args.char_budget,
+            )
+            receipt = {
+                "binding_sha256": result["binding_sha256"],
+                "compact_recovery_verified": True,
+                "completion_claim_allowed": False,
+                "rendered_context_chars": result["rendered_context_chars"],
+                "run_id": result["run_id"],
+                "session_id": result["session_id"],
+            }
+            print(json.dumps(receipt, ensure_ascii=True, indent=2, sort_keys=True))
             return 0
         hook_input = _hook_input()
         output = handle_compact_session_start(
