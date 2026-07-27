@@ -34,6 +34,7 @@ param(
     [string]$ExecutionBackend = "windows-host",
     [ValidateSet("authorized_write", "read_only")]
     [string]$ContainerEffectMode = "authorized_write",
+    [string]$SealedInputRoot = "",
     [string]$ContainerImage = "xinao-houtai-gongren:worker-boundary-v5-20260727",
     [string]$DockerExe = "",
     [switch]$Background,
@@ -297,6 +298,8 @@ $containerRuntimeUser = "0:0"
 $containerToolUser = "65532:65532"
 $containerSeccompMode = "unconfined_for_unprivileged_bubblewrap_bootstrap"
 $containerWorkspaceReadOnly = $ContainerEffectMode -eq "read_only"
+$containerSealedInputRoot = ""
+$containerSealedInputMountRoot = "/sealed-inputs"
 $containerImageId = ""
 $containerRuntimeImageRef = ""
 $containerDockerOs = ""
@@ -313,6 +316,19 @@ $containerConfigPath = ""
 $containerRunBaseArgs = @()
 if ($containerMode -and ($Background -or $DetachedDrain -or $BackgroundInvocationPath)) {
     throw "GROK_CONTAINER_BACKGROUND_UNSUPPORTED: use the bounded synchronous worker pool"
+}
+if (-not [string]::IsNullOrWhiteSpace($SealedInputRoot)) {
+    if (-not $containerMode) {
+        throw "GROK_SEALED_INPUT_ROOT_REQUIRES_CONTAINER"
+    }
+    try { $containerSealedInputRoot = [IO.Path]::GetFullPath($SealedInputRoot) }
+    catch { throw "GROK_SEALED_INPUT_ROOT_INVALID: $SealedInputRoot" }
+    if (-not (Test-Path -LiteralPath $containerSealedInputRoot -PathType Container)) {
+        throw "GROK_SEALED_INPUT_ROOT_MISSING: $containerSealedInputRoot"
+    }
+    if ($containerSealedInputRoot -match '[,\r\n]') {
+        throw "GROK_SEALED_INPUT_ROOT_UNSAFE"
+    }
 }
 
 $maxTurnsValue = $null
@@ -515,7 +531,15 @@ deny = [
         "-e", "GROK_HOME=$containerProfileRoot",
         "-e", "TMPDIR=/tmp",
         "-e", "SHELL=/usr/bin/bash",
-        "--mount", $workspaceMount,
+        "--mount", $workspaceMount
+    )
+    if (-not [string]::IsNullOrWhiteSpace($containerSealedInputRoot)) {
+        $containerRunBaseArgs += @(
+            "--mount",
+            "type=bind,source=$containerSealedInputRoot,target=$containerSealedInputMountRoot,readonly"
+        )
+    }
+    $containerRunBaseArgs += @(
         "--mount", "type=bind,source=$containerTransportRoot,target=$containerProfileRoot",
         "--mount", "type=bind,source=$containerPersistentAuthSource,target=$containerProfileRoot/auth.json,readonly",
         "--mount", "type=bind,source=$containerSandboxConfigPath,target=/inputs/transport-sandbox.toml,readonly",
@@ -1154,6 +1178,13 @@ $meta = [ordered]@{
     outer_capability_policy = if ($containerMode) { "drop_all_add_setuid_setgid_for_tool_shell_wrapper_only" } else { "" }
     outer_seccomp_mode = if ($containerMode) { $containerSeccompMode } else { "" }
     container_workspace = if ($containerMode) { $containerWorkspaceCwd } else { "" }
+    sealed_input_root = if ($containerMode) { $containerSealedInputRoot } else { "" }
+    container_sealed_input_root = if (
+        $containerMode -and -not [string]::IsNullOrWhiteSpace($containerSealedInputRoot)
+    ) { $containerSealedInputMountRoot } else { "" }
+    container_sealed_input_read_only = (
+        $containerMode -and -not [string]::IsNullOrWhiteSpace($containerSealedInputRoot)
+    )
     container_workspace_read_only = [bool]($containerMode -and $containerWorkspaceReadOnly)
     container_profile_root = if ($containerMode) { $containerProfileRoot } else { "" }
     container_profile_tmpfs = $false
@@ -1253,6 +1284,11 @@ if ($containerMode) {
     $meta["container_name"] = $containerName
     $meta["container_prompt_read_only"] = $true
     $meta["container_workspace_mount_mode"] = if ($containerWorkspaceReadOnly) { "ro" } else { "rw" }
+    $meta["sealed_input_root"] = $containerSealedInputRoot
+    $meta["container_sealed_input_root"] = if (
+        [string]::IsNullOrWhiteSpace($containerSealedInputRoot)
+    ) { "" } else { $containerSealedInputMountRoot }
+    $meta["container_sealed_input_read_only"] = -not [string]::IsNullOrWhiteSpace($containerSealedInputRoot)
 }
 $psi = New-Object System.Diagnostics.ProcessStartInfo
 $psi.FileName = $processExecutable

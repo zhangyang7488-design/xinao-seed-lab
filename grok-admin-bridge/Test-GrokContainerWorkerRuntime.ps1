@@ -16,7 +16,9 @@ $profile = Join-Path $testRoot "grok-home"
 $sessions = Join-Path $profile "sessions"
 $evidenceWrite = Join-Path $testRoot "evidence-write"
 $evidenceReadOnly = Join-Path $testRoot "evidence-read-only"
-New-Item -ItemType Directory -Force -Path $candidate, $sessions, $evidenceWrite, $evidenceReadOnly | Out-Null
+$sealedInputRoot = Join-Path $testRoot "sealed-inputs"
+New-Item -ItemType Directory -Force -Path $candidate, $sessions, $evidenceWrite, $evidenceReadOnly, $sealedInputRoot | Out-Null
+[IO.File]::WriteAllText((Join-Path $sealedInputRoot "catalog.json"), '{"test":true}', $utf8)
 [IO.File]::WriteAllText((Join-Path $profile "auth.json"), '{"test_auth":true}', $utf8)
 $staleFetchedAt = [DateTimeOffset]::UtcNow.AddMinutes(-10).ToString("o")
 $staleCatalog = [ordered]@{
@@ -177,6 +179,7 @@ try {
             -RulesSha256 $rulesSha256 `
             -ExecutionBackend "linux-container" `
             -ContainerEffectMode $case.effect `
+            -SealedInputRoot $sealedInputRoot `
             -ContainerImage "fake-grok-worker:test" `
             -DockerExe $python `
             -Quiet
@@ -206,6 +209,9 @@ try {
         Assert-Contract ($meta.container_auth_placeholder_clean -eq $true) "auth_placeholder_clean"
         Assert-Contract ($meta.container_logs_tmpfs -eq $true) "logs_nested_tmpfs"
         Assert-Contract ($meta.container_sensitive_logs_retained -eq $false) "sensitive_logs_not_retained"
+        Assert-Contract ($meta.sealed_input_root -eq $sealedInputRoot) "sealed_input_root"
+        Assert-Contract ($meta.container_sealed_input_root -eq "/sealed-inputs") "container_sealed_input_root"
+        Assert-Contract ($meta.container_sealed_input_read_only -eq $true) "container_sealed_input_read_only"
         Assert-Contract ([string]$meta.model_catalog.cache_sha256 -ne $staleCatalogSha256) "catalog_atomic_refresh_sha_advanced"
         Assert-Contract ([DateTimeOffset]::Parse([string]$meta.model_catalog.fetched_at) -gt [DateTimeOffset]::Parse($staleFetchedAt)) "catalog_atomic_refresh_time_advanced"
     }
@@ -232,8 +238,12 @@ $writeMounts = @($writeRun | Where-Object { $_ -like "type=bind,*" })
 $readOnlyMounts = @($readOnlyRun | Where-Object { $_ -like "type=bind,*" })
 $writeWorkspaceMount = @($writeMounts | Where-Object { $_ -like "*target=/workspace*" })
 $readOnlyWorkspaceMount = @($readOnlyMounts | Where-Object { $_ -like "*target=/workspace*" })
+$writeSealedInputMount = @($writeMounts | Where-Object { $_ -like "*target=/sealed-inputs*" })
+$readOnlySealedInputMount = @($readOnlyMounts | Where-Object { $_ -like "*target=/sealed-inputs*" })
 Assert-Contract ($writeWorkspaceMount.Count -eq 1 -and -not $writeWorkspaceMount[0].EndsWith(",readonly")) "write_workspace_rw"
 Assert-Contract ($readOnlyWorkspaceMount.Count -eq 1 -and $readOnlyWorkspaceMount[0].EndsWith(",readonly")) "read_only_workspace_ro"
+Assert-Contract ($writeSealedInputMount.Count -eq 1 -and $writeSealedInputMount[0].EndsWith(",readonly")) "write_sealed_input_ro"
+Assert-Contract ($readOnlySealedInputMount.Count -eq 1 -and $readOnlySealedInputMount[0].EndsWith(",readonly")) "read_only_sealed_input_ro"
 Assert-Contract (@($writeMounts | Where-Object { $_ -like "*target=/inputs/prompt.md,readonly" }).Count -eq 1) "prompt_mount_ro"
 Assert-Contract (@($writeMounts | Where-Object { $_ -like "*target=/grok-home/.grok" }).Count -eq 1) "ephemeral_profile_directory_mount"
 Assert-Contract (@($writeMounts | Where-Object { $_ -like "*target=/grok-home/.grok/auth.json,readonly" }).Count -eq 1) "persistent_auth_mount_ro"
@@ -249,6 +259,8 @@ Assert-Contract (Test-Path -LiteralPath (Join-Path $candidate "container-write-m
     actual_run_count = $actualRuns.Count
     authorized_workspace_mount = $writeWorkspaceMount[0]
     read_only_workspace_mount = $readOnlyWorkspaceMount[0]
+    authorized_sealed_input_mount = $writeSealedInputMount[0]
+    read_only_sealed_input_mount = $readOnlySealedInputMount[0]
     prompt_mount_read_only = $true
     rootfs_read_only = $true
     transport_root_for_read_only_auth = $true

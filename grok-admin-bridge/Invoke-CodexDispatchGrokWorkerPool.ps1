@@ -54,6 +54,7 @@ param(
     [string]$CommonContextManifestPath = "",
     [string]$CommonRulesFile = "",
     [string]$CommonRulesSha256 = "",
+    [string]$CommonSealedInputRoot = "",
     [string]$CommonCandidateOutputRoot = "",
     [string]$CommonPhase = "",
     [string[]]$CommonWriteDomains = @(),
@@ -560,6 +561,18 @@ if ($commonRequested) {
         $CommonFrozenContextSha256 = $preparedContextSha256
     }
 }
+$sealedInputLease = $null
+if (-not [string]::IsNullOrWhiteSpace($CommonSealedInputRoot)) {
+    try { $CommonSealedInputRoot = [IO.Path]::GetFullPath($CommonSealedInputRoot) }
+    catch { throw "CODEX_GROK_COMMON_SEALED_INPUT_ROOT_INVALID: $CommonSealedInputRoot" }
+    if (-not (Test-Path -LiteralPath $CommonSealedInputRoot -PathType Container)) {
+        throw "CODEX_GROK_COMMON_SEALED_INPUT_ROOT_MISSING: $CommonSealedInputRoot"
+    }
+    if ($CommonSealedInputRoot -match '[,\r\n]') {
+        throw "CODEX_GROK_COMMON_SEALED_INPUT_ROOT_UNSAFE"
+    }
+    $sealedInputLease = Open-GrokDirectoryIdentityLease -Path $CommonSealedInputRoot
+}
 $dispatchCwdLease = Open-GrokDirectoryIdentityLease -Path $Cwd
 try {
 if (
@@ -629,6 +642,8 @@ $dispatchMeta = [ordered]@{
     common_context_manifest_path = $CommonContextManifestPath
     common_rules_file = $CommonRulesFile
     common_rules_sha256 = $CommonRulesSha256
+    common_sealed_input_root = $CommonSealedInputRoot
+    common_sealed_input_read_only_required = -not [string]::IsNullOrWhiteSpace($CommonSealedInputRoot)
     common_candidate_output_root = $CommonCandidateOutputRoot
     common_context_binding_mode = if ($null -ne $commonPrepareReceipt) {
         [string]$commonPrepareReceipt.context_binding_mode
@@ -675,6 +690,7 @@ if ($CommonLogicalContractPath) {
     $args.CommonFrozenContextSha256 = $CommonFrozenContextSha256
     $args.CommonRulesFile = $CommonRulesFile
     $args.CommonRulesSha256 = $CommonRulesSha256
+    $args.CommonSealedInputRoot = $CommonSealedInputRoot
     $args.CommonCandidateOutputRoot = $CommonCandidateOutputRoot
     $args.CommonPhase = $CommonPhase
     $args.CommonWriteDomains = @($CommonWriteDomains)
@@ -747,12 +763,24 @@ if ($dispatchMeta.pool_summary_exists) {
                 [string]$poolSummary.selected_transport_id,
                 [string]$selection.transport_id,
                 [StringComparison]::Ordinal
+            ) -or
+            -not [string]::Equals(
+                [string]$poolSummary.common_sealed_input_root,
+                $CommonSealedInputRoot,
+                [StringComparison]::OrdinalIgnoreCase
+            ) -or
+            (
+                -not [string]::IsNullOrWhiteSpace($CommonSealedInputRoot) -and
+                $poolSummary.common_sealed_input_read_only -ne $true
             )
         ) {
             throw "CODEX_GROK_POOL_SELECTION_RECEIPT_MISMATCH"
         }
         [void](Assert-GrokDirectoryIdentityLeaseStable -Lease $poolCwdLease)
         [void](Assert-GrokDirectoryIdentityLeaseStable -Lease $dispatchCwdLease)
+        if ($null -ne $sealedInputLease) {
+            [void](Assert-GrokDirectoryIdentityLeaseStable -Lease $sealedInputLease)
+        }
         }
         finally {
             Close-GrokDirectoryIdentityLease -Lease $poolCwdLease
@@ -859,6 +887,9 @@ if (-not $latestProjection.published -and -not $Quiet) {
 }
 finally {
     Close-GrokDirectoryIdentityLease -Lease $dispatchCwdLease
+    if ($null -ne $sealedInputLease) {
+        Close-GrokDirectoryIdentityLease -Lease $sealedInputLease
+    }
 }
 
 exit $code
