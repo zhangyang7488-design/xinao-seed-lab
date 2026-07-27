@@ -147,6 +147,7 @@ Assert-Contract ($overlayText -notmatch 'permission_mode\s*=\s*"always-approve"'
 
 $poolFiles = @(
     "grok-admin-bridge/GrokAuthenticatedCatalogTime.ps1",
+    "grok-admin-bridge/GrokAuthenticatedCatalogRefresh.ps1",
     "grok-admin-bridge/GrokWorkerProcessRuntime.ps1",
     "grok-admin-bridge/GrokWorkerSelectionReceipt.ps1",
     "grok-admin-bridge/Invoke-GrokWorkerPool.ps1",
@@ -159,6 +160,7 @@ $poolFiles = @(
     "grok-admin-bridge/Invoke-GrokHostWorkerPoolFromTemporal.ps1",
     "grok-admin-bridge/Invoke-GrokTemporalHostPoolTrigger.ps1",
     "grok-admin-bridge/Test-GrokAuthenticatedCatalogTime.ps1",
+    "grok-admin-bridge/Test-GrokAuthenticatedCatalogRefresh.ps1",
     "grok-admin-bridge/Test-GrokWorkerProcessRuntime.ps1",
     "grok-admin-bridge/Test-GrokContainerWorkerRuntime.ps1",
     "grok-admin-bridge/Test-GrokWorkerSelectionReceiptContract.ps1"
@@ -318,6 +320,7 @@ $hostAliasText = Get-Content -LiteralPath (Join-Path $repoRoot "grok-admin-bridg
 $effectiveValidatorText = Get-Content -LiteralPath (Join-Path $repoRoot "grok-admin-bridge/Test-GrokCliEffectiveOutput.ps1") -Raw -Encoding UTF8
 $processRuntimeText = Get-Content -LiteralPath (Join-Path $repoRoot "grok-admin-bridge/GrokWorkerProcessRuntime.ps1") -Raw -Encoding UTF8
 $catalogTimeText = Get-Content -LiteralPath (Join-Path $repoRoot "grok-admin-bridge/GrokAuthenticatedCatalogTime.ps1") -Raw -Encoding UTF8
+$catalogRefreshText = Get-Content -LiteralPath (Join-Path $repoRoot "grok-admin-bridge/GrokAuthenticatedCatalogRefresh.ps1") -Raw -Encoding UTF8
 $selectionReceiptText = Get-Content -LiteralPath (Join-Path $repoRoot "grok-admin-bridge/GrokWorkerSelectionReceipt.ps1") -Raw -Encoding UTF8
 $selectionResolverText = Get-Content -LiteralPath (Join-Path $repoRoot "grok-admin-bridge/resolve_grok_worker_selection_receipt.py") -Raw -Encoding UTF8
 $pathIdentityText = Get-Content -LiteralPath (Join-Path $repoRoot "grok-admin-bridge/GrokWindowsPathIdentity.ps1") -Raw -Encoding UTF8
@@ -585,6 +588,10 @@ Assert-Contract ($catalogTimeText -match 'AdjustToUniversal') "catalog_timestamp
 Assert-Contract ($catalogTimeText -match 'InvariantCulture') "catalog_timestamp_parse_is_culture_independent"
 Assert-Contract ($workerText -match 'Test-GrokCatalogAgeWithinWindow') "worker_uses_executable_catalog_freshness_gate"
 Assert-Contract ($catalogTimeText -match 'Test-GrokCatalogAgeWithinWindow') "catalog_freshness_gate_is_pure_shared_seam"
+Assert-Contract ($workerText -match 'Invoke-GrokAuthenticatedCatalogSingleFlight') "container_catalog_refresh_precedes_provider"
+Assert-Contract ($catalogRefreshText -match 'FileShare\]::None') "catalog_refresh_cross_process_singleflight"
+Assert-Contract ($catalogRefreshText -match 'GROK_AUTHENTICATED_PROFILE_AUTH_MISSING') "catalog_refresh_missing_auth_fails_closed"
+Assert-Contract ($catalogRefreshText -match 'refresh_performed') "catalog_refresh_records_reuse_or_refresh"
 Assert-Contract ($catalogTimeText -match 'IsInfinity') "catalog_infinite_age_rejected"
 Assert-Contract ($catalogTimeText -match 'IsNaN') "catalog_nan_age_rejected"
 Assert-Contract ($workerText -match 'GROK_REQUESTED_MODEL_NOT_IN_AUTHENTICATED_CATALOG') "worker_rejects_custom_alias_model_drift_before_token_use"

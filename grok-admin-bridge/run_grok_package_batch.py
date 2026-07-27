@@ -1246,6 +1246,23 @@ def _locate_common_receipt(
     return None
 
 
+def _terminal_lane_missing_common_failure(lane: Mapping[str, Any]) -> dict[str, str]:
+    raw_error = str(lane.get("error") or "").strip()
+    match = re.search(r"\b((?:GROK|CODEX|XINAO)_[A-Z0-9_]+)\b", raw_error)
+    provider_failure_code = (
+        match.group(1) if match else "UNCLASSIFIED_LANE_FAILURE"
+    )
+    return {
+        "failure": (
+            "terminal lane has no valid common receipt; "
+            f"provider_failure_code={provider_failure_code}"
+        ),
+        "provider_failure_code": provider_failure_code,
+        "provider_lane_status": str(lane.get("status") or "unknown"),
+        "provider_lane_outcome": str(lane.get("outcome") or "unknown"),
+    }
+
+
 def _terminal_side_effect_id(
     *, logical_operation_id: str, attempt: int, dispatch_id: str
 ) -> str:
@@ -1600,9 +1617,7 @@ def _run_package(
         result.update(status="failed", failure=f"common receipt invalid: {exc}")
         return result
     if located_common is None:
-        result.update(
-            status="failed", failure="terminal lane has no valid common receipt"
-        )
+        result.update(status="failed", **_terminal_lane_missing_common_failure(lane))
         return result
     common_receipt_path, common_receipt_sha = located_common
     common = _load_object(common_receipt_path, "common adapter receipt")

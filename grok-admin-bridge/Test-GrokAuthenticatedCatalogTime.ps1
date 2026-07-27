@@ -20,6 +20,11 @@ try {
     $offset = ConvertTo-GrokCatalogFetchedAtUtc "2026-07-17T21:39:45+02:00"
     $jsonValue = ('{"fetched_at":"2026-07-17T19:39:45Z"}' | ConvertFrom-Json).fetched_at
     $jsonDecoded = ConvertTo-GrokCatalogFetchedAtUtc $jsonValue
+    $jsonFractionalValue = (
+        '{"fetched_at":"2026-07-17T19:39:45.1234567+00:00"}' |
+        ConvertFrom-Json
+    ).fetched_at
+    $jsonFractionalDecoded = ConvertTo-GrokCatalogFetchedAtUtc $jsonFractionalValue
     $dateTimeOffsetObject = ConvertTo-GrokCatalogFetchedAtUtc (
         [DateTimeOffset]::Parse("2026-07-17T21:39:45+02:00")
     )
@@ -44,6 +49,9 @@ Assert-Contract ($zoneLess.Offset -eq [TimeSpan]::Zero) "zone_less_result_offset
 Assert-Contract ($zulu -eq $expected) "zulu_timestamp_preserved"
 Assert-Contract ($offset -eq $expected) "explicit_offset_preserved"
 Assert-Contract ($jsonDecoded -eq $expected) "convertfrom_json_datetime_or_string_preserved"
+Assert-Contract (
+    $jsonFractionalDecoded -eq [DateTimeOffset]::Parse("2026-07-17T19:39:45.1234567Z")
+) "convertfrom_json_fractional_datetime_instant_preserved"
 Assert-Contract ($dateTimeOffsetObject -eq $expected) "datetimeoffset_object_preserved"
 Assert-Contract ($unspecifiedObject -eq $expected) "unspecified_datetime_object_assumes_utc"
 

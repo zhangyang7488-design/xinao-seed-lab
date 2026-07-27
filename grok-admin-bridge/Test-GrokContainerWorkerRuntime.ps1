@@ -144,20 +144,49 @@ payload = {
 }
 print(json.dumps(payload, separators=(",", ":")))
 '@
+$hostModelsScript = @'
+import datetime
+import json
+import os
+from pathlib import Path
+
+profile = Path(os.environ["GROK_HOME"])
+payload = {
+    "origin": "https://cli-chat-proxy.grok.com/v1/models",
+    "fetched_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+    "grok_version": "0.2.112",
+    "auth_method": "session",
+    "models": {"grok-4.5": {}},
+}
+temporary = profile / ".models_cache.host-refresh.tmp"
+temporary.write_text(
+    json.dumps(payload, separators=(",", ":")), encoding="utf-8", newline="\n"
+)
+temporary.replace(profile / "models_cache.json")
+with Path(os.environ["XINAO_FAKE_HOST_CATALOG_REFRESH"]).open(
+    "a", encoding="utf-8", newline="\n"
+) as stream:
+    stream.write("refresh\n")
+print("Available models:\n  - grok-4.5")
+'@
 [IO.File]::WriteAllText((Join-Path $candidate "info"), $infoScript, $utf8)
 [IO.File]::WriteAllText((Join-Path $candidate "image"), $imageScript, $utf8)
 [IO.File]::WriteAllText((Join-Path $candidate "run"), $runScript, $utf8)
+[IO.File]::WriteAllText((Join-Path $candidate "models"), $hostModelsScript, $utf8)
 
 $rulesPath = Join-Path $testRoot "rules.txt"
 [IO.File]::WriteAllText($rulesPath, "bounded container test rules`n", $utf8)
 $rulesSha256 = (Get-FileHash -LiteralPath $rulesPath -Algorithm SHA256).Hash.ToLowerInvariant()
 $capturePath = Join-Path $testRoot "docker-run-argv.jsonl"
+$hostRefreshPath = Join-Path $testRoot "host-catalog-refresh.txt"
 $priorCapture = $env:XINAO_FAKE_DOCKER_CAPTURE
+$priorHostRefresh = $env:XINAO_FAKE_HOST_CATALOG_REFRESH
 $priorHome = $env:XINAO_FAKE_GROK_HOME
 $priorSessions = $env:XINAO_FAKE_GROK_SESSIONS
 $priorCandidate = $env:XINAO_FAKE_CANDIDATE
 try {
     $env:XINAO_FAKE_DOCKER_CAPTURE = $capturePath
+    $env:XINAO_FAKE_HOST_CATALOG_REFRESH = $hostRefreshPath
     $env:XINAO_FAKE_GROK_HOME = $profile
     $env:XINAO_FAKE_GROK_SESSIONS = $sessions
     $env:XINAO_FAKE_CANDIDATE = $candidate
@@ -215,9 +244,11 @@ try {
         Assert-Contract ([string]$meta.model_catalog.cache_sha256 -ne $staleCatalogSha256) "catalog_atomic_refresh_sha_advanced"
         Assert-Contract ([DateTimeOffset]::Parse([string]$meta.model_catalog.fetched_at) -gt [DateTimeOffset]::Parse($staleFetchedAt)) "catalog_atomic_refresh_time_advanced"
     }
+    Assert-Contract (@(Get-Content -LiteralPath $hostRefreshPath).Count -eq 1) "host_catalog_singleflight_refresh_once"
 }
 finally {
     if ($null -eq $priorCapture) { Remove-Item Env:XINAO_FAKE_DOCKER_CAPTURE -ErrorAction SilentlyContinue } else { $env:XINAO_FAKE_DOCKER_CAPTURE = $priorCapture }
+    if ($null -eq $priorHostRefresh) { Remove-Item Env:XINAO_FAKE_HOST_CATALOG_REFRESH -ErrorAction SilentlyContinue } else { $env:XINAO_FAKE_HOST_CATALOG_REFRESH = $priorHostRefresh }
     if ($null -eq $priorHome) { Remove-Item Env:XINAO_FAKE_GROK_HOME -ErrorAction SilentlyContinue } else { $env:XINAO_FAKE_GROK_HOME = $priorHome }
     if ($null -eq $priorSessions) { Remove-Item Env:XINAO_FAKE_GROK_SESSIONS -ErrorAction SilentlyContinue } else { $env:XINAO_FAKE_GROK_SESSIONS = $priorSessions }
     if ($null -eq $priorCandidate) { Remove-Item Env:XINAO_FAKE_CANDIDATE -ErrorAction SilentlyContinue } else { $env:XINAO_FAKE_CANDIDATE = $priorCandidate }
