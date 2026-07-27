@@ -411,9 +411,9 @@ def test_context_intent_alignment_eval_is_balanced_and_friction_bounded() -> Non
     assert "ATOM_PRE_REPORT_USER_SIDE_GATE" in pre_report[
         "expected_recovered_requirement_atoms"
     ].split("|")
-    assert "ATOM_INVOKE_SKILL_AFTER_COMPLAINT" in pre_report[
-        "expected_rejected_proxy_atoms"
-    ].split("|")
+    assert "ATOM_INVOKE_SKILL_AFTER_COMPLAINT" in pre_report["expected_rejected_proxy_atoms"].split(
+        "|"
+    )
     assert pre_report["expected_completion_claim_scope"] == "not_applicable"
     external_route = cases["REG_EXTERNAL_WORKER_PROVIDER_AND_TRANSPORT_ADAPTIVE"]["vars"]
     assert set(external_route["expected_worker_provider"].split("|")) == {
@@ -1058,9 +1058,7 @@ def test_context_intent_alignment_eval_is_balanced_and_friction_bounded() -> Non
     assert "candidate_reuse_invariant" in decision["input_interpretation"]
     assert "observed_fact_action_binding" in decision["input_interpretation"]
     assert "action_continuity_invariant" in decision["input_interpretation"]
-    pre_report_gate = decision["input_interpretation"][
-        "pre_report_user_side_gate_invariant"
-    ]
+    pre_report_gate = decision["input_interpretation"]["pre_report_user_side_gate_invariant"]
     assert "before composing any progress or completion claim" in pre_report_gate
     assert "post-hoc Skill load after user objection is remediation" in pre_report_gate
     assert "keeps the operation partial" in pre_report_gate
@@ -1132,8 +1130,7 @@ def test_context_intent_alignment_eval_is_balanced_and_friction_bounded() -> Non
         "REG_OPERATE_FOR_USER_PRESERVES_MATERIAL_USER_FORK" in decision["anchor_regression_cases"]
     )
     assert (
-        "REG_OPERATE_FOR_USER_PRE_REPORT_CROSS_WINDOW_GATE"
-        in decision["anchor_regression_cases"]
+        "REG_OPERATE_FOR_USER_PRE_REPORT_CROSS_WINDOW_GATE" in decision["anchor_regression_cases"]
     )
     for frame_case in (
         "REG_LOCAL_WAIT_CANNOT_POISON_PARENT",
