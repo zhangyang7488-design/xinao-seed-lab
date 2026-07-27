@@ -3,6 +3,7 @@ from __future__ import annotations
 import copy
 import hashlib
 import json
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -86,6 +87,11 @@ def _logical_spec(
         packages.append(row)
     return {
         "schema_version": "xinao.worker_package_batch_spec.v1",
+        "external_input_admission": {
+            "status": "owner_reviewed_redacted",
+            "scope": "all_package_sources",
+            "reviewer_role": "codex_owner",
+        },
         "parent_work_key": manifest["parent_work_key"],
         "candidate_output_base": logical(manifest["candidate_output_base"]),
         "epoch_id": "epoch-1",
@@ -261,6 +267,58 @@ def test_audit_repair_manifest_requires_hash_bound_owner_authorization(
         builder.build_neutral_manifest(spec)
 
 
+def test_audit_repair_provider_inputs_share_snapshot_catalog_and_manifest(
+    tmp_path: Path,
+) -> None:
+    fixture = _fixture(tmp_path / "fixture")
+    spec = _logical_spec(fixture)
+    package_spec = spec["packages"][0]
+    evidence_path = Path(package_spec["input_paths"][0])
+    assessment_path, adjudication_path = _audit_gate_inputs(
+        tmp_path,
+        work_key=str(package_spec["work_key"]),
+        evidence_path=evidence_path,
+    )
+    package_spec.update(
+        {
+            "work_class": "audit_repair",
+            "audit_assessment_path": str(assessment_path),
+            "audit_adjudication_path": str(adjudication_path),
+        }
+    )
+    prior_adjudication_path = tmp_path / "prior-adjudication.json"
+    prior_adjudication = _read_json(str(adjudication_path))
+    prior_adjudication["finding_family"] = "unrelated-prior-family"
+    prior_adjudication.pop("adjudication_sha256")
+    prior_adjudication["adjudication_sha256"] = builder._canonical_sha(
+        prior_adjudication
+    )
+    _write_json(prior_adjudication_path, prior_adjudication)
+    package_spec["prior_audit_adjudication_paths"] = [
+        str(prior_adjudication_path)
+    ]
+
+    frozen, snapshot, bindings = builder.snapshot_package_spec_inputs(
+        spec,
+        snapshot_root=tmp_path / "sealed-inputs",
+    )
+    manifest = builder.build_neutral_manifest(
+        frozen,
+        path_resolver=builder.build_path_resolver(exact_bindings=bindings),
+    )
+    package = manifest["packages"][0]
+    catalog_ref = snapshot["package_catalogs"][0]["catalog_ref"]
+    catalog = _read_json(str(catalog_ref["path"]))
+
+    assert package["audit_assessment_ref"] in package["input_refs"]
+    assert package["audit_adjudication_ref"] in package["input_refs"]
+    assert package["prior_audit_adjudication_refs"][0] in package["input_refs"]
+    assert len(catalog["entries"]) == len(package["input_refs"]) == 4
+    assert {row["sha256"] for row in catalog["entries"]} == {
+        row["sha256"] for row in package["input_refs"]
+    }
+
+
 def _route_receipt(transport_id: str) -> dict[str, object]:
     receipt: dict[str, object] = {
         "schema_version": "xinao.supervisor_worker_decision_receipt.v1",
@@ -356,6 +414,379 @@ def test_builder_requires_rules_path_and_derives_neutral_output_contract(
     output_drift["packages"][0]["output_contract_sha256"] = "0" * 64
     with pytest.raises(ValueError, match="output_contract_sha256 does not bind acceptance"):
         builder.build_neutral_manifest(output_drift)
+
+
+def test_input_snapshot_freezes_all_source_material_and_preserves_provenance(
+    tmp_path: Path,
+) -> None:
+    fixture = _fixture(tmp_path / "inputs")
+    spec = _logical_spec(fixture)
+    original_prompt = Path(str(spec["packages"][0]["prompt_path"]))
+    original_input = Path(str(spec["packages"][0]["input_paths"][0]))
+    frozen_spec, snapshot_manifest, exact_bindings = builder.snapshot_package_spec_inputs(
+        spec,
+        snapshot_root=tmp_path / "sealed-inputs",
+    )
+
+    frozen_package = frozen_spec["packages"][0]
+    frozen_prompt_logical = str(frozen_package["prompt_path"])
+    frozen_prompt = Path(frozen_prompt_logical)
+    frozen_input = Path(str(frozen_package["input_paths"][0]))
+    assert frozen_prompt != original_prompt
+    assert frozen_input != original_input
+    assert frozen_prompt.read_bytes() == original_prompt.read_bytes()
+    assert frozen_input.read_bytes() == original_input.read_bytes()
+    assert exact_bindings[frozen_prompt_logical].resolve() == frozen_prompt.resolve()
+    assert snapshot_manifest["authority"] is False
+    assert snapshot_manifest["completion_claim_allowed"] is False
+    assert len(str(snapshot_manifest["snapshot_identity_sha256"])) == 64
+    assert snapshot_manifest["external_input_admission"] == {
+        "status": "owner_reviewed_redacted",
+        "scope": "all_package_sources",
+        "reviewer_role": "codex_owner",
+        "snapshot_generation_sha256": snapshot_manifest[
+            "snapshot_generation_sha256"
+        ],
+    }
+
+    package_root = next(
+        parent for parent in frozen_input.parents if parent.parent.name == "packages"
+    )
+    assert not frozen_prompt.is_relative_to(package_root)
+    package_files = {
+        path.relative_to(package_root).as_posix()
+        for path in package_root.rglob("*")
+        if path.is_file()
+    }
+    assert package_files == {
+        "catalog.json",
+        frozen_input.relative_to(package_root).as_posix(),
+    }
+
+    manifest = builder.build_neutral_manifest(
+        frozen_spec,
+        path_resolver=builder.build_path_resolver(exact_bindings=exact_bindings),
+    )
+    frozen_ref = manifest["packages"][0]["input_refs"][0]
+    original_input.write_text("live input changed after sealing\n", encoding="utf-8")
+    assert builder._sha(frozen_input) == frozen_ref["sha256"]
+    assert builder.validate_package_batch_manifest(manifest)["packages"][0][
+        "input_refs"
+    ][0] == frozen_ref
+
+
+def test_input_snapshot_ref_root_keeps_logical_and_physical_paths_separate(
+    tmp_path: Path,
+) -> None:
+    fixture = _fixture(tmp_path / "inputs")
+    spec = _logical_spec(fixture)
+    frozen_spec, _, exact_bindings = builder.snapshot_package_spec_inputs(
+        spec,
+        snapshot_root=tmp_path / "physical-sealed-inputs",
+        snapshot_ref_root="/xinao/sealed-inputs",
+    )
+    prompt_logical = str(frozen_spec["packages"][0]["prompt_path"])
+    assert prompt_logical.startswith("/xinao/sealed-inputs/")
+    assert exact_bindings[prompt_logical].is_file()
+    manifest = builder.build_neutral_manifest(
+        frozen_spec,
+        path_resolver=builder.build_path_resolver(exact_bindings=exact_bindings),
+    )
+    assert manifest["packages"][0]["prompt_ref"]["path"] == prompt_logical
+
+
+def test_input_snapshot_package_components_are_collision_resistant() -> None:
+    slash = builder._safe_snapshot_component("review/a", "package_id")
+    underscore = builder._safe_snapshot_component("review_a", "package_id")
+    long_a = builder._safe_snapshot_component("x" * 120 + "a", "package_id")
+    long_b = builder._safe_snapshot_component("x" * 120 + "b", "package_id")
+
+    assert slash != underscore
+    assert long_a != long_b
+    assert len(slash) <= 96
+    assert len(long_a) <= 96
+
+
+def test_input_snapshot_rejects_duplicate_effective_inputs(tmp_path: Path) -> None:
+    fixture = _fixture(tmp_path / "inputs")
+    spec = _logical_spec(fixture)
+    only_input = spec["packages"][0]["input_paths"][0]
+    spec["packages"][0]["input_paths"] = [only_input, only_input]
+
+    with pytest.raises(ValueError, match="duplicate sealed inputs"):
+        builder.snapshot_package_spec_inputs(
+            spec,
+            snapshot_root=tmp_path / "sealed-inputs",
+        )
+
+
+def test_input_snapshot_is_stable_and_survives_source_deletion(tmp_path: Path) -> None:
+    fixture = _fixture(tmp_path / "inputs")
+    spec = _logical_spec(fixture)
+    root = tmp_path / "sealed-inputs"
+    first, first_receipt, first_bindings = builder.snapshot_package_spec_inputs(
+        spec,
+        snapshot_root=root,
+    )
+    second, second_receipt, second_bindings = builder.snapshot_package_spec_inputs(
+        spec,
+        snapshot_root=root,
+    )
+    assert first == second
+    assert first_receipt == second_receipt
+    assert first_bindings == second_bindings
+
+    original = Path(str(spec["packages"][0]["input_paths"][0]))
+    frozen = Path(str(first["packages"][0]["input_paths"][0]))
+    frozen_sha256 = builder._sha(frozen)
+    original.unlink()
+    assert frozen.is_file()
+    assert builder._sha(frozen) == frozen_sha256
+    assert any(frozen_sha256 == row["source_sha256"] for row in first_receipt["sources"])
+
+
+def test_input_snapshot_rejects_secret_files_and_reparse_roots(tmp_path: Path) -> None:
+    fixture = _fixture(tmp_path / "inputs")
+    spec = _logical_spec(fixture)
+    secret = tmp_path / "credentials.json"
+    secret.write_text('{"token":"do-not-copy"}\n', encoding="utf-8")
+    spec["packages"][0]["input_paths"] = [str(secret)]
+    with pytest.raises(ValueError, match="sensitive input cannot be snapshotted"):
+        builder.snapshot_package_spec_inputs(spec, snapshot_root=tmp_path / "sealed-inputs")
+
+    for filename in (".env.local", "token.json", "api-key.txt"):
+        spec = _logical_spec(fixture)
+        secret = tmp_path / filename
+        secret.write_text("redaction required\n", encoding="utf-8")
+        spec["packages"][0]["input_paths"] = [str(secret)]
+        with pytest.raises(ValueError, match="sensitive input cannot be snapshotted"):
+            builder.snapshot_package_spec_inputs(
+                spec, snapshot_root=tmp_path / f"sealed-{filename.replace('.', '_')}"
+            )
+
+    tokenizer = tmp_path / "tokenizer.json"
+    tokenizer.write_text('{"kind":"legitimate model vocabulary"}\n', encoding="utf-8")
+    spec = _logical_spec(fixture)
+    spec["packages"][0]["input_paths"] = [str(tokenizer)]
+    frozen, _, _ = builder.snapshot_package_spec_inputs(
+        spec, snapshot_root=tmp_path / "sealed-tokenizer"
+    )
+    assert Path(str(frozen["packages"][0]["input_paths"][0])).is_file()
+
+    if os.name == "nt":
+        real_root = tmp_path / "real-root"
+        real_root.mkdir()
+        reparse_root = tmp_path / "reparse-root"
+        try:
+            os.symlink(real_root, reparse_root, target_is_directory=True)
+        except OSError:
+            pass
+        else:
+            spec = _logical_spec(fixture)
+            with pytest.raises(ValueError, match="reparse point"):
+                builder.snapshot_package_spec_inputs(spec, snapshot_root=reparse_root)
+
+
+def test_input_snapshot_requires_positive_owner_reviewed_redacted_admission(
+    tmp_path: Path,
+) -> None:
+    fixture = _fixture(tmp_path / "inputs")
+    spec = _logical_spec(fixture)
+    spec.pop("external_input_admission")
+
+    with pytest.raises(ValueError, match="external_input_admission"):
+        builder.snapshot_package_spec_inputs(
+            spec, snapshot_root=tmp_path / "sealed-inputs"
+        )
+
+    for invalid in (
+        {},
+        {
+            "status": "owner_reviewed_redacted",
+            "scope": "all_package_sources",
+            "reviewer_role": "worker",
+        },
+        {
+            "status": "owner_reviewed_redacted",
+            "scope": "all_package_sources",
+            "reviewer_role": "codex_owner",
+            "extra": True,
+        },
+    ):
+        invalid_spec = _logical_spec(fixture)
+        invalid_spec["external_input_admission"] = invalid
+        with pytest.raises(ValueError, match="external_input_admission"):
+            builder.build_neutral_manifest(invalid_spec)
+
+    missing = _logical_spec(fixture)
+    missing.pop("external_input_admission")
+    with pytest.raises(ValueError, match="external_input_admission"):
+        builder.build_neutral_manifest(missing)
+
+
+def test_cli_rejects_no_input_snapshot_bypass_before_loading_sources(
+    tmp_path: Path,
+) -> None:
+    script = Path(builder.__file__).resolve()
+    completed = subprocess.run(
+        [
+            sys.executable,
+            str(script),
+            "--spec",
+            str(tmp_path / "missing-spec.json"),
+            "--quota-resolution",
+            str(tmp_path / "missing-quota.json"),
+            "--output",
+            str(tmp_path / "never-written.json"),
+            "--no-input-snapshot",
+        ],
+        cwd=script.parents[1],
+        check=False,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        timeout=30,
+    )
+    assert completed.returncode == 20
+    assert "--no-input-snapshot is disabled" in completed.stderr
+    assert not (tmp_path / "never-written.json").exists()
+
+
+def test_cli_defaults_to_sealed_input_copy_that_survives_live_source_drift(
+    tmp_path: Path,
+) -> None:
+    fixture = _fixture(tmp_path / "inputs")
+    spec = _logical_spec(fixture)
+    spec_path = tmp_path / "package-spec.json"
+    _write_json(spec_path, spec)
+    selection_path = tmp_path / "selection.json"
+    _write_json(selection_path, _route_receipt("direct-grok-worker-pool"))
+    quota_path = Path(str(fixture["quota_ref"]["path"]))
+    snapshot = _read_json(str(quota_path))
+    snapshot["snapshot_ref"] = str(quota_path)
+    resolution_path = tmp_path / "quota-resolution.json"
+    _write_json(
+        resolution_path,
+        {
+            "schema_version": "xinao.quota_dispatch_epoch_resolution.v1",
+            "snapshot": snapshot,
+        },
+    )
+    manifest_path = tmp_path / "package-manifest.json"
+    envelope_path = tmp_path / "dispatch-envelope.json"
+    script = Path(builder.__file__).resolve()
+    completed = subprocess.run(
+        [
+            sys.executable,
+            str(script),
+            "--spec",
+            str(spec_path),
+            "--quota-resolution",
+            str(resolution_path),
+            "--selection-receipt",
+            str(selection_path),
+            "--output",
+            str(manifest_path),
+            "--dispatch-output-a",
+            str(envelope_path),
+        ],
+        cwd=script.parents[1],
+        check=False,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        timeout=30,
+    )
+    assert completed.returncode == 0, completed.stderr
+    result = json.loads(completed.stdout)
+    assert result["input_snapshot_status"] == "sealed_copy"
+    snapshot_ref = result["input_snapshot_manifest_ref"]
+    assert Path(snapshot_ref["path"]).is_file()
+    assert builder._sha(Path(snapshot_ref["path"])) == snapshot_ref["sha256"]
+    first_snapshot_manifest = _read_json(str(snapshot_ref["path"]))
+    first_snapshot_root = Path(str(first_snapshot_manifest["snapshot_root"]))
+    assert first_snapshot_root.parent.name == "generations"
+    assert first_snapshot_root.parent.parent.name == "sealed-inputs"
+    assert first_snapshot_root.name == first_snapshot_manifest["snapshot_generation_sha256"]
+
+    manifest = _read_json(str(manifest_path))
+    frozen_input_logical = str(manifest["packages"][0]["input_refs"][0]["path"])
+    frozen_input = Path(frozen_input_logical)
+    live_input = Path(str(spec["packages"][0]["input_paths"][0]))
+    assert frozen_input != live_input
+    live_input.write_text("live source drift after CLI seal\n", encoding="utf-8")
+    assert validate_package_batch_manifest(manifest)["packages"][0]["input_refs"][0][
+        "path"
+    ] == frozen_input_logical
+    assert validate_dispatch_envelope(_read_json(str(envelope_path)))[
+        "validated_package_manifest"
+    ]["packages"][0]["input_refs"][0]["sha256"] == builder._sha(frozen_input)
+
+    second_manifest_path = tmp_path / "package-manifest-generation-2.json"
+    second_envelope_path = tmp_path / "dispatch-envelope-generation-2.json"
+    second = subprocess.run(
+        [
+            sys.executable,
+            str(script),
+            "--spec",
+            str(spec_path),
+            "--quota-resolution",
+            str(resolution_path),
+            "--selection-receipt",
+            str(selection_path),
+            "--output",
+            str(second_manifest_path),
+            "--dispatch-output-a",
+            str(second_envelope_path),
+        ],
+        cwd=script.parents[1],
+        check=False,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        timeout=30,
+    )
+    assert second.returncode == 0, second.stderr
+    second_result = json.loads(second.stdout)
+    second_snapshot_manifest = _read_json(
+        str(second_result["input_snapshot_manifest_ref"]["path"])
+    )
+    second_snapshot_root = Path(str(second_snapshot_manifest["snapshot_root"]))
+    assert second_snapshot_root != first_snapshot_root
+    assert second_snapshot_root.name == second_snapshot_manifest[
+        "snapshot_generation_sha256"
+    ]
+    assert (
+        _read_json(str(second_manifest_path))["packages"][0]["input_refs"][0]["sha256"]
+        != _read_json(str(manifest_path))["packages"][0]["input_refs"][0]["sha256"]
+    )
+
+    unsupported = subprocess.run(
+        [
+            sys.executable,
+            str(script),
+            "--spec",
+            str(spec_path),
+            "--quota-resolution",
+            str(resolution_path),
+            "--selection-receipt",
+            str(selection_path),
+            "--output",
+            str(tmp_path / "unsupported-logical-manifest.json"),
+            "--dispatch-output-a",
+            str(tmp_path / "unsupported-logical-envelope.json"),
+            "--input-snapshot-ref-root",
+            "/logical/sealed-inputs",
+        ],
+        cwd=script.parents[1],
+        check=False,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        timeout=30,
+    )
+    assert unsupported.returncode != 0
+    assert "sealed manifest refs must be physical paths" in unsupported.stderr
 
 
 def test_route_bound_envelope_rejects_wrong_leg_and_selector_capability_claim() -> None:

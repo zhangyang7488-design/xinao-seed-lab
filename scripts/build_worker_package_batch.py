@@ -8,6 +8,8 @@ import copy
 import hashlib
 import json
 import os
+import re
+import stat
 import sys
 import tempfile
 from collections.abc import Callable, Mapping, Sequence
@@ -100,6 +102,479 @@ def _atomic_json(path: Path, value: object) -> str:
     return hashlib.sha256(raw).hexdigest()
 
 
+_SENSITIVE_SNAPSHOT_NAMES = {
+    ".env",
+    "auth.json",
+    "credentials",
+    "credentials.json",
+    "id_dsa",
+    "id_ecdsa",
+    "id_ed25519",
+    "id_rsa",
+    "secrets.json",
+}
+_SENSITIVE_SNAPSHOT_SUFFIXES = {".key", ".p12", ".pem", ".pfx"}
+_SENSITIVE_SNAPSHOT_TOKENS = {
+    "credential",
+    "credentials",
+    "secret",
+    "secrets",
+    "token",
+    "tokens",
+}
+_EXTERNAL_INPUT_ADMISSION = {
+    "status": "owner_reviewed_redacted",
+    "scope": "all_package_sources",
+    "reviewer_role": "codex_owner",
+}
+
+
+def _is_reparse_point(path: Path) -> bool:
+    try:
+        attributes = int(getattr(path.lstat(), "st_file_attributes", 0))
+    except OSError:
+        return False
+    return bool(attributes & int(getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0)))
+
+
+def _snapshot_physical_root(snapshot_root: Path) -> Path:
+    """Create one real directory root without traversing a junction/symlink."""
+
+    requested = Path(snapshot_root).absolute()
+    for candidate in [requested, *requested.parents]:
+        if candidate.exists() and _is_reparse_point(candidate):
+            raise ValueError(f"input snapshot root traverses a reparse point: {candidate}")
+    requested.mkdir(parents=True, exist_ok=True)
+    if not requested.is_dir() or _is_reparse_point(requested):
+        raise ValueError(f"input snapshot root must be a real directory: {requested}")
+    return requested.resolve(strict=True)
+
+
+def _require_snapshot_source_allowed(source: Path) -> None:
+    lowered = source.name.lower()
+    compact_stem = re.sub(r"[^a-z0-9]+", "", source.stem.lower())
+    name_tokens = {
+        token for token in re.split(r"[^a-z0-9]+", source.stem.lower()) if token
+    }
+    has_sensitive_marker = bool(name_tokens & _SENSITIVE_SNAPSHOT_TOKENS) or (
+        "apikey" in compact_stem
+    )
+    if (
+        lowered.startswith(".env")
+        or lowered in _SENSITIVE_SNAPSHOT_NAMES
+        or source.suffix.lower() in _SENSITIVE_SNAPSHOT_SUFFIXES
+        or has_sensitive_marker
+    ):
+        raise ValueError(
+            "sensitive input cannot be snapshotted; provide an owner-reviewed redacted sealed file: "
+            f"{source}"
+        )
+
+
+def _require_external_input_admission(spec: Mapping[str, object]) -> dict[str, str]:
+    raw = spec.get("external_input_admission")
+    if not isinstance(raw, Mapping) or dict(raw) != _EXTERNAL_INPUT_ADMISSION:
+        raise ValueError(
+            "package spec requires external_input_admission declaring all package sources "
+            "owner-reviewed and redacted"
+        )
+    return dict(_EXTERNAL_INPUT_ADMISSION)
+
+
+def _safe_snapshot_component(value: object, label: str) -> str:
+    text = str(value or "").strip()
+    if not text:
+        raise ValueError(f"{label} must be non-empty")
+    safe = "".join(char if char.isalnum() or char in {"-", "_"} else "_" for char in text)
+    if not safe or safe in {".", ".."}:
+        raise ValueError(f"{label} cannot form a safe snapshot component")
+    # Sanitising and truncating alone is lossy (`a/b`, `a_b`, and long shared
+    # prefixes can collide).  Keep a readable prefix but bind the directory to
+    # the complete original package identity.
+    digest = hashlib.sha256(text.encode("utf-8")).hexdigest()[:16]
+    return f"{safe[:79]}-{digest}"
+
+
+def _provider_visible_input_logicals(
+    raw_package: Mapping[str, object], package_index: int
+) -> list[str]:
+    """Return the one ordered input set that crosses the provider seam."""
+
+    raw_inputs = raw_package.get("input_paths")
+    if not isinstance(raw_inputs, list) or not raw_inputs:
+        raise ValueError(f"packages[{package_index}] requires input_paths")
+    explicit = [
+        _logical_path(
+            value,
+            f"packages[{package_index}].input_paths[{item_index}]",
+        )
+        for item_index, value in enumerate(raw_inputs)
+    ]
+    if len(set(explicit)) != len(explicit):
+        raise ValueError(
+            f"packages[{package_index}].input_paths collapse to duplicate sealed inputs"
+        )
+
+    visible = list(explicit)
+    if str(raw_package.get("work_class") or "").strip() == "audit_repair":
+        audit_values = [
+            _logical_path(
+                raw_package.get("audit_assessment_path"),
+                f"packages[{package_index}].audit_assessment_path",
+            ),
+            _logical_path(
+                raw_package.get("audit_adjudication_path"),
+                f"packages[{package_index}].audit_adjudication_path",
+            ),
+        ]
+        prior_values = raw_package.get("prior_audit_adjudication_paths", [])
+        if not isinstance(prior_values, list):
+            raise TypeError(
+                f"packages[{package_index}].prior_audit_adjudication_paths must be an array"
+            )
+        audit_values.extend(
+            _logical_path(
+                value,
+                f"packages[{package_index}].prior_audit_adjudication_paths[]",
+            )
+            for value in prior_values
+        )
+        for logical in audit_values:
+            if logical not in visible:
+                visible.append(logical)
+    return visible
+
+
+def _snapshot_bytes(raw: bytes, target: Path, *, expected_sha256: str, root: Path) -> None:
+    """Create one content-addressed file exclusively, or verify an identical prior copy."""
+
+    resolved_parent = target.parent.resolve(strict=False)
+    if not resolved_parent.is_relative_to(root):
+        raise ValueError(f"input snapshot target escapes root: {target}")
+    target.parent.mkdir(parents=True, exist_ok=True)
+    if _is_reparse_point(target.parent):
+        raise ValueError(f"input snapshot target parent is a reparse point: {target.parent}")
+    if target.exists():
+        if _is_reparse_point(target) or not target.is_file() or _sha(target) != expected_sha256:
+            raise FileExistsError(f"input snapshot collision: {target}")
+        return
+
+    flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | int(getattr(os, "O_BINARY", 0))
+    try:
+        descriptor = os.open(target, flags, 0o600)
+    except FileExistsError:
+        if _is_reparse_point(target) or not target.is_file() or _sha(target) != expected_sha256:
+            raise FileExistsError(f"input snapshot collision: {target}") from None
+        return
+    try:
+        with os.fdopen(descriptor, "wb") as stream:
+            stream.write(raw)
+            stream.flush()
+            os.fsync(stream.fileno())
+        if _sha(target) != expected_sha256:
+            raise OSError(f"input snapshot writeback drifted: {target}")
+    except BaseException:
+        target.unlink(missing_ok=True)
+        raise
+
+
+def snapshot_package_spec_inputs(
+    spec: Mapping[str, object],
+    *,
+    snapshot_root: Path,
+    snapshot_ref_root: str | None = None,
+    path_resolver: PathResolver | None = None,
+) -> tuple[dict[str, object], dict[str, object], dict[str, Path]]:
+    """Rewrite mutable package sources to a content-addressed local closure.
+
+    The original paths remain provenance only.  Worker manifests bind the
+    copied bytes, so later edits to live Skills, handoffs, prompts, rules, or
+    source material cannot invalidate or silently change an already sealed
+    batch.  Generated audit/adoption receipts keep their own typed identity
+    paths and are intentionally outside this source snapshot operation.
+    """
+
+    rewritten = copy.deepcopy(dict(spec))
+    external_input_admission = _require_external_input_admission(rewritten)
+    raw_packages = rewritten.get("packages")
+    if not isinstance(raw_packages, list) or not raw_packages:
+        raise ValueError("package spec requires packages")
+    physical_base = _snapshot_physical_root(snapshot_root)
+    logical_base = str(snapshot_ref_root or physical_base).rstrip("/\\")
+    if not logical_base:
+        raise ValueError("input snapshot logical root must be non-empty")
+    source_cache: dict[tuple[str, str], dict[str, object]] = {}
+
+    def preload(value: object, label: str, role: str, package_id: str) -> None:
+        source_logical = _logical_path(value, label)
+        key = (package_id, source_logical)
+        cached = source_cache.get(key)
+        if cached is None:
+            source_physical = _resolve_path(source_logical, path_resolver=path_resolver)
+            _require_snapshot_source_allowed(source_physical)
+            raw = source_physical.read_bytes()
+            cached = {
+                "source_physical": source_physical,
+                "raw": raw,
+                "source_sha256": hashlib.sha256(raw).hexdigest(),
+                "roles": set(),
+            }
+            source_cache[key] = cached
+        roles = cached["roles"]
+        if isinstance(roles, set):
+            roles.add(role)
+
+    for index, raw_package in enumerate(raw_packages):
+        if not isinstance(raw_package, dict):
+            raise TypeError(f"packages[{index}] must be an object")
+        package_id = _logical_path(
+            raw_package.get("package_id"), f"packages[{index}].package_id"
+        )
+        for field in ("prompt_path", "context_manifest_path", "rules_path"):
+            preload(
+                raw_package.get(field),
+                f"packages[{index}].{field}",
+                field,
+                package_id,
+            )
+        for item_index, value in enumerate(
+            _provider_visible_input_logicals(raw_package, index)
+        ):
+            preload(
+                value,
+                f"packages[{index}].provider_inputs[{item_index}]",
+                "input_path",
+                package_id,
+            )
+        acceptance = raw_package.get("acceptance")
+        if isinstance(acceptance, dict) and str(
+            acceptance.get("json_schema_path") or ""
+        ).strip():
+            preload(
+                acceptance["json_schema_path"],
+                f"packages[{index}].acceptance.json_schema_path",
+                "output_schema",
+                package_id,
+            )
+
+    generation_sources = [
+        {
+            "package_id": package_id,
+            "source_path": source_logical,
+            "source_sha256": str(cached["source_sha256"]),
+            "roles": sorted(str(role) for role in cached["roles"]),
+        }
+        for (package_id, source_logical), cached in sorted(source_cache.items())
+    ]
+    snapshot_generation_sha256 = _canonical_sha(
+        {
+            "schema_version": "xinao.worker_package_input_generation.v1",
+            "external_input_admission": external_input_admission,
+            "sources": generation_sources,
+        }
+    )
+    physical_root = _snapshot_physical_root(
+        physical_base / "generations" / snapshot_generation_sha256
+    )
+    logical_root = (
+        logical_base + "/generations/" + snapshot_generation_sha256
+    )
+    exact_bindings: dict[str, Path] = {}
+    sources: dict[tuple[str, str], dict[str, object]] = {}
+    package_catalogs: list[dict[str, object]] = []
+
+    def snapshot(value: object, label: str, role: str, package_id: str) -> str:
+        source_logical = _logical_path(value, label)
+        cached = source_cache[(package_id, source_logical)]
+        source_physical = Path(str(cached["source_physical"]))
+        raw = bytes(cached["raw"])
+        source_sha256 = str(cached["source_sha256"])
+        safe_name = "".join(
+            char if char.isalnum() or char in {".", "-", "_"} else "_"
+            for char in source_physical.name
+        )[:96]
+        if not safe_name:
+            safe_name = "input.bin"
+        package_component = _safe_snapshot_component(package_id, f"{label}.package_id")
+        # Only explicit package input_paths enter the worker-visible mount.
+        # Prompt/context/rules/schema copies remain in the same immutable
+        # generation but outside that mount.  If one source has both roles,
+        # its explicit input_path role makes it a catalogued worker input.
+        visibility_root = (
+            Path("packages")
+            if "input_path" in cached["roles"]
+            else Path("control")
+        )
+        relative = (
+            visibility_root
+            / package_component
+            / source_sha256[:2]
+            / f"{source_sha256}-{safe_name}"
+        )
+        target = physical_root / relative
+        _snapshot_bytes(raw, target, expected_sha256=source_sha256, root=physical_root)
+        target_logical = logical_root + "/" + relative.as_posix()
+        exact_bindings[target_logical] = target
+        row = sources.setdefault(
+            (package_id, source_logical),
+            {
+                "package_id": package_id,
+                "source_path": source_logical,
+                "source_physical_path": str(source_physical),
+                "source_sha256": source_sha256,
+                "snapshot_ref": {
+                    "path": target_logical,
+                    "sha256": source_sha256,
+                },
+                "roles": [],
+            },
+        )
+        roles = row["roles"]
+        if isinstance(roles, list) and role not in roles:
+            roles.append(role)
+        return target_logical
+
+    for index, raw_package in enumerate(raw_packages):
+        if not isinstance(raw_package, dict):
+            raise TypeError(f"packages[{index}] must be an object")
+        package_id = _logical_path(raw_package.get("package_id"), f"packages[{index}].package_id")
+        for field in ("prompt_path", "context_manifest_path", "rules_path"):
+            raw_package[field] = snapshot(
+                raw_package.get(field),
+                f"packages[{index}].{field}",
+                field,
+                package_id,
+            )
+        provider_inputs = _provider_visible_input_logicals(raw_package, index)
+        rewritten_inputs = [
+            snapshot(
+                value,
+                f"packages[{index}].provider_inputs[{item_index}]",
+                "input_path",
+                package_id,
+            )
+            for item_index, value in enumerate(provider_inputs)
+        ]
+        if len(set(rewritten_inputs)) != len(rewritten_inputs):
+            raise ValueError(
+                f"packages[{index}].input_paths collapse to duplicate sealed inputs"
+            )
+        raw_package["input_paths"] = rewritten_inputs
+        provider_input_map = dict(zip(provider_inputs, rewritten_inputs, strict=True))
+        if str(raw_package.get("work_class") or "").strip() == "audit_repair":
+            assessment_logical = _logical_path(
+                raw_package.get("audit_assessment_path"),
+                f"packages[{index}].audit_assessment_path",
+            )
+            adjudication_logical = _logical_path(
+                raw_package.get("audit_adjudication_path"),
+                f"packages[{index}].audit_adjudication_path",
+            )
+            raw_package["audit_assessment_path"] = provider_input_map[
+                assessment_logical
+            ]
+            raw_package["audit_adjudication_path"] = provider_input_map[
+                adjudication_logical
+            ]
+            prior_values = raw_package.get("prior_audit_adjudication_paths", [])
+            if not isinstance(prior_values, list):
+                raise TypeError(
+                    f"packages[{index}].prior_audit_adjudication_paths must be an array"
+                )
+            raw_package["prior_audit_adjudication_paths"] = [
+                provider_input_map[
+                    _logical_path(
+                        value,
+                        f"packages[{index}].prior_audit_adjudication_paths[]",
+                    )
+                ]
+                for value in prior_values
+            ]
+        package_component = _safe_snapshot_component(
+            package_id, f"packages[{index}].package_id"
+        )
+        package_root = physical_root / "packages" / package_component
+        catalog_entries: list[dict[str, object]] = []
+        for item_index, logical in enumerate(rewritten_inputs):
+            physical = exact_bindings[logical]
+            catalog_entries.append(
+                {
+                    "slot": item_index,
+                    "path": "/sealed-inputs/" + physical.relative_to(package_root).as_posix(),
+                    "sha256": _sha(physical),
+                    "bytes": physical.stat().st_size,
+                    "required": True,
+                    "read_strategy": "read_file_required_selected_content",
+                }
+            )
+        catalog = {
+            "schema_version": "xinao.worker_sealed_input_catalog.v2",
+            "package_id": package_id,
+            "container_root": "/sealed-inputs",
+            "mount_scope": "catalog_and_required_entries_only",
+            "external_input_admission": external_input_admission,
+            "entries": catalog_entries,
+            "authority": False,
+            "completion_claim_allowed": False,
+        }
+        catalog_raw = (
+            json.dumps(catalog, ensure_ascii=False, indent=2, sort_keys=True).encode("utf-8")
+            + b"\n"
+        )
+        catalog_sha256 = hashlib.sha256(catalog_raw).hexdigest()
+        catalog_target = package_root / "catalog.json"
+        _snapshot_bytes(
+            catalog_raw,
+            catalog_target,
+            expected_sha256=catalog_sha256,
+            root=physical_root,
+        )
+        catalog_logical = (
+            logical_root
+            + "/packages/"
+            + package_component
+            + "/catalog.json"
+        )
+        exact_bindings[catalog_logical] = catalog_target
+        package_catalogs.append(
+            {
+                "package_id": package_id,
+                "catalog_ref": {
+                    "path": catalog_logical,
+                    "sha256": catalog_sha256,
+                },
+                "required_entry_count": len(catalog_entries),
+            }
+        )
+        acceptance = raw_package.get("acceptance")
+        if isinstance(acceptance, dict) and str(acceptance.get("json_schema_path") or "").strip():
+            acceptance["json_schema_path"] = snapshot(
+                acceptance["json_schema_path"],
+                f"packages[{index}].acceptance.json_schema_path",
+                "output_schema",
+                package_id,
+            )
+
+    snapshot_manifest: dict[str, object] = {
+        "schema_version": "xinao.worker_package_input_snapshot.v1",
+        "snapshot_root": str(physical_root),
+        "snapshot_ref_root": logical_root,
+        "snapshot_generation_sha256": snapshot_generation_sha256,
+        "external_input_admission": {
+            **external_input_admission,
+            "snapshot_generation_sha256": snapshot_generation_sha256,
+        },
+        "sources": sorted(
+            sources.values(), key=lambda row: (str(row["package_id"]), str(row["source_path"]))
+        ),
+        "package_catalogs": package_catalogs,
+        "authority": False,
+        "completion_claim_allowed": False,
+    }
+    snapshot_manifest["snapshot_identity_sha256"] = _canonical_sha(snapshot_manifest)
+    return rewritten, snapshot_manifest, exact_bindings
+
+
 def build_path_resolver(
     bindings: Sequence[str] = (),
     *,
@@ -147,6 +622,7 @@ def build_neutral_manifest(
 
     if spec.get("schema_version") != "xinao.worker_package_batch_spec.v1":
         raise ValueError("package spec schema mismatch")
+    _require_external_input_admission(spec)
     parent_work_key = str(spec.get("parent_work_key") or "").strip()
     if not parent_work_key:
         raise ValueError("package spec requires parent_work_key")
@@ -172,10 +648,7 @@ def build_neutral_manifest(
             raw.get("context_manifest_path"),
             f"packages[{index}].context_manifest_path",
         )
-        raw_input_values = raw.get("input_paths")
-        if not isinstance(raw_input_values, list) or not raw_input_values:
-            raise ValueError(f"packages[{index}] requires input_paths")
-        input_values = list(raw_input_values)
+        input_values = _provider_visible_input_logicals(raw, index)
         audit_assessment_logical = ""
         audit_adjudication_logical = ""
         prior_audit_adjudication_logicals: list[str] = []
@@ -200,13 +673,6 @@ def build_neutral_manifest(
                 )
                 for value in prior_values
             ]
-            for logical in (
-                audit_assessment_logical,
-                audit_adjudication_logical,
-                *prior_audit_adjudication_logicals,
-            ):
-                if logical not in input_values:
-                    input_values.append(logical)
         input_refs = [
             _path_ref(
                 _logical_path(value, f"packages[{index}].input_paths[]"),
@@ -534,8 +1000,20 @@ def main() -> int:
     parser.add_argument("--dispatch-output-a", type=Path)
     parser.add_argument("--dispatch-output-b", type=Path)
     parser.add_argument("--path-map", action="append", default=[])
+    parser.add_argument("--input-snapshot-root", type=Path)
+    parser.add_argument("--input-snapshot-ref-root")
+    parser.add_argument(
+        "--no-input-snapshot",
+        action="store_true",
+        help="disabled fail-closed compatibility flag; provider dispatch always requires the sealed copy",
+    )
     args = parser.parse_args()
     try:
+        if args.no_input_snapshot:
+            raise ValueError(
+                "--no-input-snapshot is disabled for provider dispatch; use the canonical "
+                "owner-reviewed sealed-copy path"
+            )
         spec = _object(args.spec.resolve(strict=True), "package spec")
         parent_work_key = str(spec.get("parent_work_key") or "").strip()
         epoch_id = str(spec.get("epoch_id") or "").strip()
@@ -545,7 +1023,13 @@ def main() -> int:
         target_leg = targets[0][0]
         selection_path, selection_logical = _selection_input_for_leg(args, target_leg)
         output_path = args.output.resolve(strict=False)
-        for target in [output_path, *(path.resolve(strict=False) for _, path in targets)]:
+        snapshot_manifest_path = output_path.with_name(
+            output_path.name + ".input-snapshot.v1.json"
+        )
+        output_targets = [output_path, *(path.resolve(strict=False) for _, path in targets)]
+        if not args.no_input_snapshot:
+            output_targets.append(snapshot_manifest_path)
+        for target in output_targets:
             if target.exists():
                 raise FileExistsError(f"output already exists: {target}")
 
@@ -556,14 +1040,47 @@ def main() -> int:
         selection = _object(selection_path, "selection receipt")
         snapshot_logical = _logical_path(snapshot.get("snapshot_ref"), "snapshot.snapshot_ref")
         manifest_logical = str(args.manifest_ref or args.output)
-        base_resolver = build_path_resolver(
+        source_resolver = build_path_resolver(
             args.path_map,
             exact_bindings={selection_logical: selection_path},
+        )
+        snapshot_manifest: dict[str, object] | None = None
+        snapshot_exact_bindings: dict[str, Path] = {}
+        if not args.no_input_snapshot:
+            if args.input_snapshot_ref_root is not None:
+                raise ValueError(
+                    "--input-snapshot-ref-root is not supported by the current dispatch "
+                    "consumers; sealed manifest refs must be physical paths"
+                )
+            snapshot_root = (
+                args.input_snapshot_root.resolve(strict=False)
+                if args.input_snapshot_root is not None
+                else output_path.parent / "sealed-inputs"
+            )
+            spec, snapshot_manifest, snapshot_exact_bindings = snapshot_package_spec_inputs(
+                spec,
+                snapshot_root=snapshot_root,
+                snapshot_ref_root=args.input_snapshot_ref_root,
+                path_resolver=source_resolver,
+            )
+        base_resolver = build_path_resolver(
+            args.path_map,
+            exact_bindings={
+                selection_logical: selection_path,
+                **snapshot_exact_bindings,
+            },
         )
         manifest = build_neutral_manifest(spec, path_resolver=base_resolver)
         plan = plan_worker_dispatch(manifest, path_resolver=base_resolver)
         manifest_sha = _atomic_json(output_path, manifest)
         manifest_ref = {"path": manifest_logical, "sha256": manifest_sha}
+        snapshot_manifest_ref: dict[str, str] | None = None
+        if snapshot_manifest is not None:
+            snapshot_manifest_sha = _atomic_json(snapshot_manifest_path, snapshot_manifest)
+            snapshot_manifest_ref = {
+                "path": str(snapshot_manifest_path),
+                "sha256": snapshot_manifest_sha,
+            }
         runtime_resolver = build_path_resolver(
             args.path_map,
             exact_bindings={
@@ -610,6 +1127,10 @@ def main() -> int:
             "epoch_id": epoch_id,
             "selection_decision_sha256": selection["decision_sha256"],
             "selected_leg": target_leg,
+            "input_snapshot_status": (
+                "sealed_copy" if snapshot_manifest_ref is not None else "disabled"
+            ),
+            "input_snapshot_manifest_ref": snapshot_manifest_ref,
         }
         if len(dispatch_results) == 1:
             only = next(iter(dispatch_results.values()))
