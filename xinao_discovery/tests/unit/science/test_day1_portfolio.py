@@ -99,9 +99,12 @@ def test_day1_compilation_is_non_vacuous_and_deterministic() -> None:
     assert {item.role for item in first.policies} == set(PolicyRole)
     assert len({item.content_hash for item in first.policies}) == 4
     assert len({item.decision_signature.probe_trace_hash for item in first.policies}) == 4
-    assert next(
-        item for item in first.decisions if item.policy_ref == "policy.day1.no-action.v1"
-    ).requested_decision_kind == DecisionKind.NO_ACTION
+    assert (
+        next(
+            item for item in first.decisions if item.policy_ref == "policy.day1.no-action.v1"
+        ).requested_decision_kind
+        == DecisionKind.NO_ACTION
+    )
 
 
 def test_day1_gates_cover_exact_policy_bindings() -> None:
@@ -179,9 +182,11 @@ def test_compilation_rejects_missing_required_role_after_generalization() -> Non
     substantive_index = next(
         index for index, item in enumerate(policies) if item.role == PolicyRole.SUBSTANTIVE
     )
-    policies[substantive_index] = policies[substantive_index].model_copy(
-        update={"role": PolicyRole.BASELINE, "content_hash": None}
-    ).with_content_hash()
+    policies[substantive_index] = (
+        policies[substantive_index]
+        .model_copy(update={"role": PolicyRole.BASELINE, "content_hash": None})
+        .with_content_hash()
+    )
 
     with pytest.raises(ValueError, match="exact required roles"):
         Day1PolicyCompilation(

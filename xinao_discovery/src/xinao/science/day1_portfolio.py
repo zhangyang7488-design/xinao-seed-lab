@@ -68,9 +68,7 @@ class Day1PolicyCompilation(BaseModel):
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
-    schema_version: Literal["xinao.day1_policy_compilation.v1"] = (
-        "xinao.day1_policy_compilation.v1"
-    )
+    schema_version: Literal["xinao.day1_policy_compilation.v1"] = "xinao.day1_policy_compilation.v1"
     target_ref: str = Field(min_length=1)
     horizon_draws: int = Field(ge=1, le=7)
     knowledge_cutoff: datetime
@@ -186,8 +184,11 @@ class MultipolicyProtocolPin(BaseModel):
         ):
             _require_aware(value, label)
         if not (
-            self.source_captured_at <= self.knowledge_cutoff <= self.frozen_at
-            <= self.freeze_deadline < self.target_open_time
+            self.source_captured_at
+            <= self.knowledge_cutoff
+            <= self.frozen_at
+            <= self.freeze_deadline
+            < self.target_open_time
         ):
             raise ValueError("MultipolicyProtocolPin temporal boundaries are invalid")
         expected_roles = tuple(PolicyRole)
@@ -195,9 +196,7 @@ class MultipolicyProtocolPin(BaseModel):
             raise ValueError("MultipolicyProtocolPin required roles drifted")
         binding_refs = tuple(binding.policy_ref for binding in self.policy_bindings)
         if binding_refs != tuple(sorted(binding_refs)) or len(set(binding_refs)) != 4:
-            raise ValueError(
-                "MultipolicyProtocolPin policy bindings must be sorted and unique"
-            )
+            raise ValueError("MultipolicyProtocolPin policy bindings must be sorted and unique")
         if {binding.role for binding in self.policy_bindings} != set(PolicyRole):
             raise ValueError("MultipolicyProtocolPin policy role bindings are incomplete")
         if len(set(binding.content_hash for binding in self.policy_bindings)) != 4:
@@ -531,9 +530,7 @@ def build_day1_gates(
     if pin.content_hash is None or compilation.content_hash is None:
         raise ValueError("ProtocolPin and policy compilation must be hash sealed")
     policy_hashes = {binding.policy_ref: binding.content_hash for binding in pin.policy_bindings}
-    if policy_hashes != {
-        policy.policy_ref: policy.content_hash for policy in compilation.policies
-    }:
+    if policy_hashes != {policy.policy_ref: policy.content_hash for policy in compilation.policies}:
         raise ValueError("ProtocolPin policy bindings differ from policy compilation")
     decisions = {decision.policy_ref: decision for decision in compilation.decisions}
     gates: dict[str, DecisionGateInput] = {}

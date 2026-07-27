@@ -167,8 +167,10 @@ def _advance_trial_ledger(
     )
     head: dict[str, Any] = replay
     for policy in policies:
-        status = "NO_ACTION" if terminal and policy.role == PolicyRole.NO_ACTION else (
-            "SUCCEEDED" if terminal else "RUNNING"
+        status = (
+            "NO_ACTION"
+            if terminal and policy.role == PolicyRole.NO_ACTION
+            else ("SUCCEEDED" if terminal else "RUNNING")
         )
         receipt = append_science_trial_entry(
             anchor_path,
@@ -231,9 +233,7 @@ def _runtime_source_bindings() -> tuple[RuntimeSourceBinding, ...]:
         "src/xinao/science/portfolio.py": xinao_root / "science" / "portfolio.py",
         "src/xinao/science/trial_ledger.py": xinao_root / "science" / "trial_ledger.py",
         "src/xinao/settlement/shadow.py": xinao_root / "settlement" / "shadow.py",
-        "src/xinao/settlement/special_number.py": xinao_root
-        / "settlement"
-        / "special_number.py",
+        "src/xinao/settlement/special_number.py": xinao_root / "settlement" / "special_number.py",
     }
     return tuple(
         RuntimeSourceBinding(ref=ref, sha256=sha256_file(path))
@@ -518,9 +518,7 @@ def build_episode_package(
         "state": state,
         "evidence_class": evidence_class,
         "manifest_sha256": sha256_file(output_dir / PACKAGE_MANIFEST_NAME),
-        "consumer_receipt_sha256": sha256_file(
-            output_dir / "multipolicy_consumer_receipt.v1.json"
-        ),
+        "consumer_receipt_sha256": sha256_file(output_dir / "multipolicy_consumer_receipt.v1.json"),
         "freeze_set_hash": freeze_set.content_hash,
         "settlement_set_hash": settlement_set.content_hash if settlement_set else None,
         "parent_complete": False,
@@ -589,9 +587,10 @@ def run_live_freeze(
     latest_local = latest.open_time.astimezone(ASIA_SHANGHAI)
     target_local = target_open_time.astimezone(ASIA_SHANGHAI)
     if (
-        (target_local.date() - latest_local.date()).days != horizon_draws
-        or target_local.timetz().replace(tzinfo=None) != latest_local.timetz().replace(tzinfo=None)
-    ):
+        target_local.date() - latest_local.date()
+    ).days != horizon_draws or target_local.timetz().replace(
+        tzinfo=None
+    ) != latest_local.timetz().replace(tzinfo=None):
         raise ValueError("live target schedule does not follow the captured daily stream identity")
     frozen_at = _millisecond_now()
     if frozen_at > freeze_deadline:
@@ -735,8 +734,7 @@ def _verify_trial_ledger_shape(
     if (
         pin.trial_ledger_prefix_entry_count != policy_count
         or len(entries) < policy_count
-        or canonical_sha256(entries[:policy_count])
-        != pin.trial_ledger_prefix_entries_sha256
+        or canonical_sha256(entries[:policy_count]) != pin.trial_ledger_prefix_entries_sha256
     ):
         raise ValueError("fresh readback TrialLedger registration prefix differs from ProtocolPin")
     expected_phases = [("registered", False), ("frozen", False)]
@@ -764,8 +762,7 @@ def _verify_trial_ledger_shape(
                 entry.get("work_key") != policy.policy_ref
                 or entry.get("status") != expected_status
                 or entry.get("family_id") != policy.family_id
-                or entry.get("equivalence_cluster_id")
-                != policy.decision_signature.signature_hash
+                or entry.get("equivalence_cluster_id") != policy.decision_signature.signature_hash
                 or entry.get("path_kind") != expected_path_kind
                 or entry.get("failure_reason") is not None
                 or not isinstance(meta, dict)
@@ -926,8 +923,7 @@ def verify_episode_package(
     if (
         ledger["entry_count"] != receipt["trial_ledger_head"]["entry_count"]
         or ledger["entries_sha256"] != receipt["trial_ledger_head"]["entries_sha256"]
-        or ledger["journal_file_sha256"]
-        != receipt["trial_ledger_head"]["journal_file_sha256"]
+        or ledger["journal_file_sha256"] != receipt["trial_ledger_head"]["journal_file_sha256"]
     ):
         raise ValueError("fresh readback TrialLedger head differs from consumer receipt")
     _verify_trial_ledger_shape(ledger=ledger, pin=pin, compiled=compiled, state=state)

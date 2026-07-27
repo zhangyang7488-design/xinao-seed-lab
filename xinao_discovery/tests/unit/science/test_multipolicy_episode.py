@@ -186,9 +186,9 @@ def test_package_accepts_owner_supplied_external_policy_compilation(tmp_path) ->
     assert readback["ok"] is True
     active_policy_refs = {
         item["policy_ref"]
-        for item in json.loads(
-            (root / "active_set.v1.json").read_text(encoding="utf-8")
-        )["policies"]
+        for item in json.loads((root / "active_set.v1.json").read_text(encoding="utf-8"))[
+            "policies"
+        ]
     }
     assert external.policy_ref in active_policy_refs
 

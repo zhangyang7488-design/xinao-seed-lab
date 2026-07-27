@@ -87,9 +87,7 @@ def gates(active, eligible):
         values[item.policy_ref] = DecisionGateInput(
             candidate_ref=item.policy_ref,
             requested_decision_kind=(
-                DecisionKind.NO_ACTION
-                if no_action
-                else DecisionKind.FROZEN_EXPERIMENTAL_SHADOW
+                DecisionKind.NO_ACTION if no_action else DecisionKind.FROZEN_EXPERIMENTAL_SHADOW
             ),
             candidate_qualification=None if no_action else "SHADOW_EXPERIMENTAL",
             adjudicated_decision_kinds=("FROZEN_EXPERIMENTAL_SHADOW", "NO_ACTION"),
@@ -230,9 +228,7 @@ def test_active_set_rejects_duplicate_role_coverage_rows() -> None:
 
 def test_eligible_set_cannot_shrink_away_substantive_role() -> None:
     active = active_set()
-    refs = tuple(
-        item.policy_ref for item in active.policies if item.role != PolicyRole.SUBSTANTIVE
-    )
+    refs = tuple(item.policy_ref for item in active.policies if item.role != PolicyRole.SUBSTANTIVE)
     with pytest.raises(ValueError, match="role coverage"):
         admit_eligible_set(
             active_set=active,
@@ -282,9 +278,7 @@ def test_settle_all_rejects_target_mismatch_and_unknown_void() -> None:
 
 def test_explicit_void_is_counted_without_silent_omission() -> None:
     frozen = frozen_set()
-    ticket = next(
-        item for item in frozen.tickets if item.role == PolicyRole.NEG_CONTROL
-    )
+    ticket = next(item for item in frozen.tickets if item.role == PolicyRole.NEG_CONTROL)
     result = settle_all(
         freeze_set=frozen,
         outcome=outcome(),
