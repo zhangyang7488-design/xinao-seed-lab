@@ -18,6 +18,7 @@ from services.agent_runtime.dispatch_economics import (
     claim_dispatch_route,
     neutral_output_contract_sha256,
     plan_package_frontier,
+    prepare_worker_package_task_run,
     project_dispatch_outcomes,
     validate_candidate_consumer_binding,
     validate_dispatch_envelope,
@@ -434,6 +435,140 @@ def _a_b_dispatch_refs(
     b_path = Path(fixture["root"]) / "envelope-b.json"
     b_ref = {"path": str(b_path), "sha256": _write_json(b_path, b_envelope)}
     return a_envelope, a_ref, b_envelope, b_ref, manifest_bytes
+
+
+def test_package_task_run_preflight_registers_active_units_then_refreshes_checkpoint(
+    tmp_path: Path,
+) -> None:
+    from tests.test_action_resume_receipt import _fixture as action_fixture
+    from tests.test_action_resume_receipt import _write_task_run_cli_fixture
+
+    fixture = _fixture(tmp_path / "sealed")
+    _, envelope_ref, _ = _seal_dispatch(fixture)
+    action = action_fixture(tmp_path / "action", work_key="wk-existing")
+    task_run_cli = tmp_path / "task_run_cli.py"
+    _write_task_run_cli_fixture(task_run_cli)
+
+    first = prepare_worker_package_task_run(
+        dispatch_envelope_path=Path(envelope_ref["path"]),
+        task_run_dir=action["run_dir"],
+        task_run_cli=task_run_cli,
+    )
+    assert first["schema_version"] == "xinao.worker_package_task_run_preflight.v1"
+    assert first["package_ids"] == ["p1"]
+    assert first["work_keys"] == ["wk-1"]
+    assert first["planned_work_keys"] == ["wk-1"]
+    assert first["activated_work_keys"] == ["wk-1"]
+    assert first["cursor"] == first["event_count"] == 6
+    assert Path(first["checkpoint_path"]) == (action["run_dir"] / "task-local-checkpoint.v2.json")
+    assert first["authority"] is False
+    assert first["completion_claim_allowed"] is False
+
+    second = prepare_worker_package_task_run(
+        dispatch_envelope_path=Path(envelope_ref["path"]),
+        task_run_dir=action["run_dir"],
+        task_run_cli=task_run_cli,
+    )
+    assert second["planned_work_keys"] == []
+    assert second["reused_work_keys"] == ["wk-1"]
+    assert second["activated_work_keys"] == []
+    assert second["active_reused_work_keys"] == ["wk-1"]
+    assert second["cursor"] == second["event_count"] == 6
+    events = [
+        json.loads(line)
+        for line in (action["run_dir"] / "events.jsonl").read_text(encoding="utf-8").splitlines()
+    ]
+    assert [
+        row["phase"]
+        for row in events
+        if row.get("target") == "wk-1" and str(row.get("phase", "")).startswith("work_unit_")
+    ] == ["work_unit_planned", "work_unit_active"]
+
+
+def test_package_task_run_preflight_rejects_frozen_batch_member_before_any_registration(
+    tmp_path: Path,
+) -> None:
+    from services.agent_runtime.action_resume_receipt import ActionResumeError
+    from tests.test_action_resume_receipt import (
+        _append_event,
+        _event,
+        _write_task_run_cli_fixture,
+    )
+    from tests.test_action_resume_receipt import _fixture as action_fixture
+
+    fixture = _fixture(tmp_path / "sealed")
+    fixture["manifest"]["packages"][1]["depends_on"] = []
+    _, envelope_ref, _ = _seal_dispatch(fixture, package_ids=["p1", "p2"])
+    action = action_fixture(tmp_path / "action", work_key="wk-2")
+    _append_event(
+        action,
+        _event(
+            "run-continuity-test",
+            5,
+            target="wk-2",
+            phase="work_unit_paused",
+            kind="result",
+        ),
+    )
+    task_run_cli = tmp_path / "task_run_cli.py"
+    _write_task_run_cli_fixture(task_run_cli)
+    before = (action["run_dir"] / "events.jsonl").read_bytes()
+
+    with pytest.raises(ActionResumeError) as caught:
+        prepare_worker_package_task_run(
+            dispatch_envelope_path=Path(envelope_ref["path"]),
+            task_run_dir=action["run_dir"],
+            task_run_cli=task_run_cli,
+        )
+
+    assert caught.value.reason_code == "RUN_MUTATION_FROZEN"
+    assert caught.value.details["work_key"] == "wk-2"
+    assert (action["run_dir"] / "events.jsonl").read_bytes() == before
+    assert not (action["run_dir"] / "task-local-checkpoint.v2.json").exists()
+
+
+def test_package_task_run_preflight_uses_one_envelope_byte_snapshot(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from tests.test_action_resume_receipt import _fixture as action_fixture
+    from tests.test_action_resume_receipt import _write_task_run_cli_fixture
+
+    fixture = _fixture(tmp_path / "sealed")
+    _, envelope_ref, _ = _seal_dispatch(fixture)
+    envelope_path = Path(envelope_ref["path"]).resolve()
+    action = action_fixture(tmp_path / "action", work_key="wk-existing")
+    task_run_cli = tmp_path / "task_run_cli.py"
+    _write_task_run_cli_fixture(task_run_cli)
+    original_read_bytes = Path.read_bytes
+    original_read_text = Path.read_text
+    envelope_byte_reads = 0
+
+    def read_bytes_once(path: Path) -> bytes:
+        nonlocal envelope_byte_reads
+        if path.resolve() == envelope_path:
+            envelope_byte_reads += 1
+            if envelope_byte_reads > 1:
+                raise AssertionError("dispatch envelope was read more than once")
+        return original_read_bytes(path)
+
+    def reject_envelope_text_read(
+        path: Path, encoding: str | None = None, errors: str | None = None
+    ) -> str:
+        if path.resolve() == envelope_path:
+            raise AssertionError("dispatch envelope must not be re-read as text")
+        return original_read_text(path, encoding=encoding, errors=errors)
+
+    monkeypatch.setattr(Path, "read_bytes", read_bytes_once)
+    monkeypatch.setattr(Path, "read_text", reject_envelope_text_read)
+    report = prepare_worker_package_task_run(
+        dispatch_envelope_path=envelope_path,
+        task_run_dir=action["run_dir"],
+        task_run_cli=task_run_cli,
+    )
+
+    assert envelope_byte_reads == 1
+    assert report["dispatch_envelope_sha256"] == envelope_ref["sha256"]
+    assert report["cursor"] == report["event_count"] == 6
 
 
 def _logical_contract(

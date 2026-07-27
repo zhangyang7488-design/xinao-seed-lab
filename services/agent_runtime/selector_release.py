@@ -238,13 +238,15 @@ def _probe_release(release_root: Path, python_executable: Path) -> dict[str, obj
         "required=getattr(m,'resolve_supervisor_worker_decision',None);"
         "claim=getattr(d,'claim_dispatch_route',None);"
         "checkpoint_preparer=getattr(a,'prepare_task_local_checkpoint',None);"
+        "package_task_run_preparer=getattr(d,'prepare_worker_package_task_run',None);"
         "deps={n:importlib.metadata.version(n) for n in sys.argv[2:]};"
         "print(json.dumps({'module':str(p),'callable':callable(required),"
         "'action_resume_module':str(ap),'claim_callable':callable(claim),"
         "'checkpoint_preparer_callable':callable(checkpoint_preparer),"
+        "'package_task_run_preparer_callable':callable(package_task_run_preparer),"
         "'sha256':hashlib.sha256(p.read_bytes()).hexdigest(),'dependencies':deps}));"
         "raise SystemExit(0 if callable(required) and callable(claim) and "
-        "callable(checkpoint_preparer) and p=="
+        "callable(checkpoint_preparer) and callable(package_task_run_preparer) and p=="
         "r/'services'/'agent_runtime'/'routing_policy_reader.py' and ap=="
         "r/'services'/'agent_runtime'/'action_resume_receipt.py' else 21)"
     )
@@ -277,6 +279,7 @@ def _probe_release(release_root: Path, python_executable: Path) -> dict[str, obj
         or payload.get("callable") is not True
         or payload.get("claim_callable") is not True
         or payload.get("checkpoint_preparer_callable") is not True
+        or payload.get("package_task_run_preparer_callable") is not True
         or payload.get("module") != str(selector.resolve(strict=True))
         or payload.get("action_resume_module")
         != str(
@@ -318,6 +321,7 @@ def _probe_release(release_root: Path, python_executable: Path) -> dict[str, obj
         "action_resume_module": payload["action_resume_module"],
         "dispatch_route_claim_callable": True,
         "task_local_checkpoint_preparer_callable": True,
+        "package_task_run_preparer_callable": True,
         "contract_preparer": str(preparer.resolve(strict=True)),
         "contract_preparer_help": True,
         "dependency_distributions": payload["dependencies"],

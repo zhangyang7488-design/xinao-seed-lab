@@ -43,6 +43,7 @@ CONSUMPTION_VERSION = "xinao.action_resume_consumption.v3"
 CLAIM_CONTEXT_VERSION = "xinao.action_claim_context.v3"
 EFFECT_OUTCOME_VERSION = "xinao.action_effect_outcome.v3"
 WORK_UNIT_FINALIZER_EVIDENCE_VERSION = "xinao.work_unit_finalizer_evidence.v1"
+WORK_UNIT_PLAN_PREFLIGHT_VERSION = "xinao.work_unit_plan_preflight.v1"
 DEFAULT_TTL_SECONDS = 3600
 DEFAULT_CLAIM_LEASE_SECONDS = 300
 MAX_CLAIM_LEASE_SECONDS = 3600
@@ -698,6 +699,564 @@ def verify_mutation_guards(
         "authority": False,
         "completion_claim_allowed": False,
     }
+
+
+def _stable_work_unit_registration_event_id(
+    *,
+    run_id: str,
+    package_id: str,
+    work_key: str,
+    phase: str,
+    evidence_refs: Sequence[str],
+) -> str:
+    identity = {
+        "schema_version": "xinao.work_unit_registration_event_id.v1",
+        "run_id": run_id,
+        "package_id": package_id,
+        "work_key": work_key,
+        "phase": phase,
+        "evidence_refs": list(evidence_refs),
+    }
+    return f"work-unit-register:{_sha256_bytes(canonical_json_bytes(identity))}"
+
+
+def _exact_work_unit_registration_event(
+    events: object,
+    *,
+    event_id: str,
+    phase: str,
+    work_key: str,
+    evidence_refs: Sequence[str],
+) -> Mapping[str, object] | None:
+    if not isinstance(events, list):
+        raise ActionResumeError("TASK_RUN_EVENTS_INVALID", "task-run events must be an array")
+    event = next(
+        (
+            row
+            for row in events
+            if isinstance(row, Mapping) and str(row.get("event_id") or "") == event_id
+        ),
+        None,
+    )
+    if event is None:
+        return None
+    if (
+        event.get("kind") != "result"
+        or event.get("phase") != phase
+        or event.get("target") != work_key
+        or event.get("exit_code") != 0
+        or event.get("evidence_refs") != list(evidence_refs)
+    ):
+        raise ActionResumeError(
+            "WORK_UNIT_REGISTRATION_IDENTITY_DRIFT",
+            f"existing registration event changed semantics: event_id={event_id}",
+            details={"event_id": event_id, "phase": phase, "work_key": work_key},
+        )
+    return event
+
+
+def _require_registration_evidence(reference: str, reason_code: str, label: str) -> None:
+    if not _hash_bound_event_evidence({"evidence_refs": [reference]}):
+        raise ActionResumeError(
+            reason_code,
+            f"{label} evidence must be an existing hash-bound artifact",
+        )
+
+
+def _validate_active_registration_head(
+    events: object,
+    *,
+    projection: Mapping[str, object],
+    run_id: str,
+    package_id: str,
+    work_key: str,
+    plan_reference: str,
+) -> Mapping[str, object]:
+    if not isinstance(events, list):
+        raise ActionResumeError("TASK_RUN_EVENTS_INVALID", "task-run events must be an array")
+    event_id = str(projection.get("event_id") or "")
+    event = next(
+        (
+            row
+            for row in events
+            if isinstance(row, Mapping) and str(row.get("event_id") or "") == event_id
+        ),
+        None,
+    )
+    references = event.get("evidence_refs") if event is not None else None
+    valid_shape = (
+        event is not None
+        and event.get("kind") == "result"
+        and event.get("phase") == "work_unit_active"
+        and event.get("target") == work_key
+        and event.get("exit_code") == 0
+        and isinstance(references, list)
+        and len(references) == 2
+        and references[0] == plan_reference
+        and all(isinstance(reference, str) and reference for reference in references)
+    )
+    if not valid_shape:
+        raise ActionResumeError(
+            "WORK_UNIT_REGISTRATION_ACTIVE_HEAD_INVALID",
+            f"active work-unit head is not a sealed registration event: work_key={work_key}",
+            details=dict(projection),
+        )
+    active_reference = str(references[1])
+    _require_registration_evidence(
+        plan_reference, "WORK_UNIT_PLAN_EVIDENCE_INVALID", "work-unit plan"
+    )
+    _require_registration_evidence(
+        active_reference,
+        "WORK_UNIT_ACTIVE_EVIDENCE_INVALID",
+        "current work-unit activation",
+    )
+    expected_event_id = _stable_work_unit_registration_event_id(
+        run_id=run_id,
+        package_id=package_id,
+        work_key=work_key,
+        phase="work_unit_active",
+        evidence_refs=[plan_reference, active_reference],
+    )
+    if event_id != expected_event_id:
+        raise ActionResumeError(
+            "WORK_UNIT_REGISTRATION_ACTIVE_HEAD_INVALID",
+            f"active work-unit head does not bind its package transaction: work_key={work_key}",
+            details=dict(projection),
+        )
+    return event
+
+
+def _raise_if_task_run_registration_frozen(live: Mapping[str, object]) -> None:
+    state = _mapping(live.get("state"), "live.state")
+    if state.get("status") != "in_progress":
+        raise ActionResumeError(
+            "RUN_MUTATION_FROZEN",
+            f"task-run is not mutable: status={state.get('status')}",
+            details={"scope": "task_run", "state": state.get("status")},
+        )
+    events = live.get("events")
+    if not isinstance(events, list):
+        raise ActionResumeError("TASK_RUN_EVENTS_INVALID", "task-run events must be an array")
+    for event in events:
+        if not isinstance(event, Mapping) or event.get("target"):
+            continue
+        phase = str(event.get("phase") or "").lower()
+        kind = str(event.get("kind") or "").lower()
+        if kind == "stop" or phase.endswith("_stopped"):
+            raise ActionResumeError(
+                "RUN_MUTATION_FROZEN",
+                "task-run has an unscoped stop event",
+                details={
+                    "scope": "task_run",
+                    "state": "stopped",
+                    "event_id": event.get("event_id"),
+                    "phase": event.get("phase"),
+                },
+            )
+
+
+def prepare_work_unit_plan_events(
+    *,
+    task_run_dir: Path,
+    task_run_cli: Path,
+    work_units: Sequence[Mapping[str, object]],
+    evidence_ref: str,
+    active_evidence_ref: str | None = None,
+    actor: str = "codex-owner",
+) -> dict[str, Any]:
+    """Idempotently bind and activate a sealed package frontier in the task run.
+
+    Every package is validated before the first event append.  The canonical
+    task-run CLI remains the only writer, and each deterministic event uses an
+    optimistic event-head guard so a concurrent stop or lifecycle change fails
+    before provider, quota, route-claim, or batch effects.
+    """
+
+    run_dir = Path(task_run_dir).resolve()
+    cli_path = Path(task_run_cli).resolve()
+    if not cli_path.is_file():
+        raise ActionResumeError("TASK_RUN_CLI_MISSING", f"task-run CLI is missing: {cli_path}")
+    plan_reference = _text(evidence_ref, "evidence_ref").strip()
+    _require_registration_evidence(
+        plan_reference, "WORK_UNIT_PLAN_EVIDENCE_INVALID", "work-unit plan"
+    )
+    active_reference = (
+        _text(active_evidence_ref, "active_evidence_ref").strip()
+        if active_evidence_ref is not None
+        else None
+    )
+    if active_reference is not None:
+        _require_registration_evidence(
+            active_reference,
+            "WORK_UNIT_ACTIVE_EVIDENCE_INVALID",
+            "work-unit activation",
+        )
+    if isinstance(work_units, (str, bytes)) or not isinstance(work_units, Sequence):
+        raise ActionResumeError("WORK_UNIT_PLAN_INVALID", "work_units must be an array")
+    normalized: list[dict[str, str]] = []
+    for index, raw in enumerate(work_units):
+        row = _mapping(raw, f"work_units[{index}]")
+        normalized.append(
+            {
+                "package_id": _text(
+                    row.get("package_id"), f"work_units[{index}].package_id"
+                ).strip(),
+                "work_key": _text(row.get("work_key"), f"work_units[{index}].work_key").strip(),
+            }
+        )
+    if not normalized:
+        raise ActionResumeError("WORK_UNIT_PLAN_INVALID", "work_units must not be empty")
+    package_ids = [row["package_id"] for row in normalized]
+    work_keys = [row["work_key"] for row in normalized]
+    if len(package_ids) != len(set(package_ids)) or len(work_keys) != len(set(work_keys)):
+        raise ActionResumeError(
+            "WORK_UNIT_PLAN_INVALID", "package_id and work_key identities must be unique"
+        )
+    registration_by_work_key = {row["work_key"]: row for row in normalized}
+
+    live = _load_live_task_run_head(run_dir)
+    _raise_if_task_run_registration_frozen(live)
+    chain = {"state": live["state"], "events": live["events"]}
+    plan_event_ids = {
+        row["work_key"]: _stable_work_unit_registration_event_id(
+            run_id=str(live["run_id"]),
+            package_id=row["package_id"],
+            work_key=row["work_key"],
+            phase="work_unit_planned",
+            evidence_refs=[plan_reference],
+        )
+        for row in normalized
+    }
+    active_event_ids = (
+        {
+            row["work_key"]: _stable_work_unit_registration_event_id(
+                run_id=str(live["run_id"]),
+                package_id=row["package_id"],
+                work_key=row["work_key"],
+                phase="work_unit_active",
+                evidence_refs=[plan_reference, active_reference],
+            )
+            for row in normalized
+        }
+        if active_reference is not None
+        else {}
+    )
+    initial_projections = {
+        work_key: _work_unit_control_projection(chain, work_key) for work_key in work_keys
+    }
+    for work_key, projection in initial_projections.items():
+        if not projection.get("bound"):
+            continue
+        frozen = _mutation_freeze_details(chain, work_key)
+        if frozen is not None:
+            raise ActionResumeError(
+                "RUN_MUTATION_FROZEN",
+                f"work-unit cannot be planned for dispatch: work_key={work_key}",
+                details=frozen,
+            )
+        if projection.get("state") not in {"planned", "active"}:
+            raise ActionResumeError(
+                "WORK_UNIT_REGISTRATION_STATE_INVALID",
+                f"work-unit is already beyond dispatch registration: work_key={work_key}",
+                details=projection,
+            )
+        plan_event = _exact_work_unit_registration_event(
+            live["events"],
+            event_id=plan_event_ids[work_key],
+            phase="work_unit_planned",
+            work_key=work_key,
+            evidence_refs=[plan_reference],
+        )
+        if plan_event is None:
+            raise ActionResumeError(
+                "WORK_UNIT_REGISTRATION_IDENTITY_MISMATCH",
+                f"work_key is bound to another package manifest: work_key={work_key}",
+                details=projection,
+            )
+        if projection.get("state") == "planned" and projection.get("event_id") != plan_event.get(
+            "event_id"
+        ):
+            raise ActionResumeError(
+                "WORK_UNIT_REGISTRATION_IDENTITY_MISMATCH",
+                f"planned work-unit head does not match this manifest: work_key={work_key}",
+                details=projection,
+            )
+        if active_reference is not None and projection.get("state") == "active":
+            _validate_active_registration_head(
+                live["events"],
+                projection=projection,
+                run_id=str(live["run_id"]),
+                package_id=registration_by_work_key[work_key]["package_id"],
+                work_key=work_key,
+                plan_reference=plan_reference,
+            )
+            active_event = _exact_work_unit_registration_event(
+                live["events"],
+                event_id=active_event_ids[work_key],
+                phase="work_unit_active",
+                work_key=work_key,
+                evidence_refs=[plan_reference, active_reference],
+            )
+            if active_event is not None and projection.get("event_id") != active_event.get(
+                "event_id"
+            ):
+                raise ActionResumeError(
+                    "WORK_UNIT_REGISTRATION_TRANSACTION_STALE",
+                    f"an older dispatch envelope cannot replace the active head: work_key={work_key}",
+                    details=projection,
+                )
+
+    planned: list[str] = []
+    activated: list[str] = []
+    reused: list[str] = []
+    active_reused: list[str] = []
+    event_ids: dict[str, str] = {}
+    for row in normalized:
+        work_key = row["work_key"]
+        _require_registration_evidence(
+            plan_reference, "WORK_UNIT_PLAN_EVIDENCE_INVALID", "work-unit plan"
+        )
+        current = _load_live_task_run_head(run_dir)
+        _raise_if_task_run_registration_frozen(current)
+        current_chain = {"state": current["state"], "events": current["events"]}
+        projection = _work_unit_control_projection(current_chain, work_key)
+        if projection.get("bound"):
+            frozen = _mutation_freeze_details(current_chain, work_key)
+            if frozen is not None:
+                raise ActionResumeError(
+                    "RUN_MUTATION_FROZEN",
+                    f"work-unit cannot be reused for dispatch: work_key={work_key}",
+                    details=frozen,
+                )
+            expected_plan = _exact_work_unit_registration_event(
+                current["events"],
+                event_id=plan_event_ids[work_key],
+                phase="work_unit_planned",
+                work_key=work_key,
+                evidence_refs=[plan_reference],
+            )
+            if expected_plan is None:
+                raise ActionResumeError(
+                    "WORK_UNIT_REGISTRATION_IDENTITY_MISMATCH",
+                    f"work_key is bound to another package manifest: work_key={work_key}",
+                    details=projection,
+                )
+            reused.append(work_key)
+            event_ids[f"{work_key}:planned"] = plan_event_ids[work_key]
+            continue
+
+        event_id = plan_event_ids[work_key]
+        writer_report = _append_work_unit_registration_event(
+            cli_path=cli_path,
+            run_dir=run_dir,
+            current=current,
+            event_id=event_id,
+            actor=actor,
+            phase="work_unit_planned",
+            summary=(
+                f"Planned sealed candidate package {row['package_id']} for bounded worker dispatch"
+            ),
+            work_key=work_key,
+            evidence_refs=[plan_reference],
+        )
+        event_ids[f"{work_key}:planned"] = event_id
+        (reused if writer_report.get("replayed") is True else planned).append(work_key)
+
+    if active_reference is not None:
+        for row in normalized:
+            work_key = row["work_key"]
+            _require_registration_evidence(
+                plan_reference, "WORK_UNIT_PLAN_EVIDENCE_INVALID", "work-unit plan"
+            )
+            _require_registration_evidence(
+                active_reference,
+                "WORK_UNIT_ACTIVE_EVIDENCE_INVALID",
+                "work-unit activation",
+            )
+            current = _load_live_task_run_head(run_dir)
+            _raise_if_task_run_registration_frozen(current)
+            current_chain = {"state": current["state"], "events": current["events"]}
+            projection = _work_unit_control_projection(current_chain, work_key)
+            frozen = _mutation_freeze_details(current_chain, work_key)
+            if frozen is not None:
+                raise ActionResumeError(
+                    "RUN_MUTATION_FROZEN",
+                    f"work-unit cannot be activated for dispatch: work_key={work_key}",
+                    details=frozen,
+                )
+            if projection.get("state") == "active":
+                _validate_active_registration_head(
+                    current["events"],
+                    projection=projection,
+                    run_id=str(current["run_id"]),
+                    package_id=row["package_id"],
+                    work_key=work_key,
+                    plan_reference=plan_reference,
+                )
+            expected_plan = _exact_work_unit_registration_event(
+                current["events"],
+                event_id=plan_event_ids[work_key],
+                phase="work_unit_planned",
+                work_key=work_key,
+                evidence_refs=[plan_reference],
+            )
+            if expected_plan is None:
+                raise ActionResumeError(
+                    "WORK_UNIT_REGISTRATION_IDENTITY_MISMATCH",
+                    f"work_key is bound to another package manifest: work_key={work_key}",
+                    details=projection,
+                )
+            event_id = active_event_ids[work_key]
+            expected_active = _exact_work_unit_registration_event(
+                current["events"],
+                event_id=event_id,
+                phase="work_unit_active",
+                work_key=work_key,
+                evidence_refs=[plan_reference, active_reference],
+            )
+            if projection.get("state") == "active" and projection.get("event_id") == event_id:
+                if expected_active is None:
+                    raise ActionResumeError(
+                        "WORK_UNIT_REGISTRATION_IDENTITY_MISMATCH",
+                        f"active work-unit head lost its sealed identity: work_key={work_key}",
+                        details=projection,
+                    )
+                active_reused.append(work_key)
+                event_ids[f"{work_key}:active"] = event_id
+                continue
+            if expected_active is not None:
+                raise ActionResumeError(
+                    "WORK_UNIT_REGISTRATION_TRANSACTION_STALE",
+                    f"an older dispatch envelope cannot replace the active head: work_key={work_key}",
+                    details=projection,
+                )
+            if projection.get("state") not in {"planned", "active"}:
+                raise ActionResumeError(
+                    "WORK_UNIT_REGISTRATION_STATE_INVALID",
+                    f"work-unit is not dispatch-activatable: work_key={work_key}",
+                    details=projection,
+                )
+            writer_report = _append_work_unit_registration_event(
+                cli_path=cli_path,
+                run_dir=run_dir,
+                current=current,
+                event_id=event_id,
+                actor=actor,
+                phase="work_unit_active",
+                summary=f"Activated sealed candidate package {row['package_id']} for worker dispatch",
+                work_key=work_key,
+                evidence_refs=[plan_reference, active_reference],
+            )
+            event_ids[f"{work_key}:active"] = event_id
+            (active_reused if writer_report.get("replayed") is True else activated).append(work_key)
+
+    _require_registration_evidence(
+        plan_reference, "WORK_UNIT_PLAN_EVIDENCE_INVALID", "work-unit plan"
+    )
+    if active_reference is not None:
+        _require_registration_evidence(
+            active_reference,
+            "WORK_UNIT_ACTIVE_EVIDENCE_INVALID",
+            "work-unit activation",
+        )
+    guard = verify_mutation_guards(task_run_dir=run_dir, work_keys=work_keys)
+    return {
+        "schema_version": WORK_UNIT_PLAN_PREFLIGHT_VERSION,
+        "ok": True,
+        "run_id": guard["run_id"],
+        "work_keys": work_keys,
+        "planned_work_keys": planned,
+        "reused_work_keys": reused,
+        "activated_work_keys": activated,
+        "active_reused_work_keys": active_reused,
+        "event_ids": event_ids,
+        "event_head": guard["event_head"],
+        "model_invocation_allowed": True,
+        "authority": False,
+        "completion_claim_allowed": False,
+    }
+
+
+def _append_work_unit_registration_event(
+    *,
+    cli_path: Path,
+    run_dir: Path,
+    current: Mapping[str, object],
+    event_id: str,
+    actor: str,
+    phase: str,
+    summary: str,
+    work_key: str,
+    evidence_refs: Sequence[str],
+) -> Mapping[str, object]:
+    command = [
+        sys.executable,
+        str(cli_path),
+        "--root",
+        str(run_dir.parent),
+        "event",
+        "--run-id",
+        str(current["run_id"]),
+        "--event-id",
+        event_id,
+        "--actor",
+        _text(actor, "actor").strip(),
+        "--kind",
+        "result",
+        "--phase",
+        phase,
+        "--summary",
+        summary,
+        "--target",
+        work_key,
+        "--exit-code",
+        "0",
+        "--retry-class",
+        "none",
+    ]
+    for evidence_ref in evidence_refs:
+        command.extend(["--evidence-ref", evidence_ref])
+    command.extend(
+        [
+            "--expected-events-count",
+            str(current["event_count"]),
+            "--expected-events-sha256",
+            _sha256_bytes(current["events_raw"]),
+        ]
+    )
+    try:
+        completed = subprocess.run(
+            command,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            check=False,
+            env={**os.environ, "PYTHONDONTWRITEBYTECODE": "1"},
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+        )
+    except OSError as exc:
+        raise ActionResumeError(
+            "TASK_RUN_EVENT_APPEND_FAILED", "cannot launch the canonical task-run CLI"
+        ) from exc
+    if completed.returncode != 0:
+        raise ActionResumeError(
+            "TASK_RUN_EVENT_APPEND_FAILED",
+            f"canonical task-run CLI rejected {phase} (exit={completed.returncode})",
+            details={"work_key": work_key, "stderr": completed.stderr[-1000:]},
+        )
+    try:
+        writer_report = _mapping(json.loads(completed.stdout), "task_run_cli_result")
+    except (json.JSONDecodeError, ActionResumeError) as exc:
+        raise ActionResumeError(
+            "TASK_RUN_EVENT_APPEND_FAILED", "canonical task-run CLI returned invalid JSON"
+        ) from exc
+    if writer_report.get("ok") is not True or writer_report.get("event_id") != event_id:
+        raise ActionResumeError(
+            "TASK_RUN_EVENT_APPEND_FAILED", "canonical task-run CLI did not confirm event identity"
+        )
+    return writer_report
 
 
 def verify_checkpoint_task_run_binding(
@@ -2723,6 +3282,7 @@ __all__ = [
     "verify_action_resume_receipt",
     "verify_checkpoint_task_run_binding",
     "prepare_task_local_checkpoint",
+    "prepare_work_unit_plan_events",
     "verify_mutation_guards",
     "build_action_effect_outcome",
     "consume_action_resume_receipt",

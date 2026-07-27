@@ -63,6 +63,7 @@ def test_versioned_selector_release_is_not_task_cwd_dependent(tmp_path: Path) ->
     assert current["release_manifest"]["probe"]["dependency_distributions"]["portalocker"]
     assert current["release_manifest"]["probe"]["dispatch_route_claim_callable"] is True
     assert current["release_manifest"]["probe"]["task_local_checkpoint_preparer_callable"] is True
+    assert current["release_manifest"]["probe"]["package_task_run_preparer_callable"] is True
     assert current["release_manifest"]["probe"]["contract_preparer_help"] is True
     assert Path(current["release_manifest"]["probe"]["action_resume_module"]) == (
         Path(current["release_root"]) / "services" / "agent_runtime" / "action_resume_receipt.py"
@@ -101,6 +102,37 @@ def test_selector_release_probe_rejects_missing_task_local_checkpoint_preparer(
         source.replace(
             "def prepare_task_local_checkpoint(",
             "def _missing_task_local_checkpoint_preparer(",
+            1,
+        ),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(SelectorReleaseError, match="import probe failed"):
+        _probe_release(Path(built["release_root"]), Path(sys.executable))
+
+
+def test_selector_release_probe_rejects_missing_package_task_run_preparer(
+    tmp_path: Path,
+) -> None:
+    repo = Path(__file__).resolve().parents[1]
+    runtime = tmp_path / "runtime"
+    built = build_selector_release(
+        source_root=repo,
+        runtime_root=runtime,
+        release_id="selector-test-missing-package-task-run-preparer",
+        python_executable=Path(sys.executable),
+        create_venv=False,
+        promote=False,
+    )
+    dispatch_economics = (
+        Path(built["release_root"]) / "services" / "agent_runtime" / "dispatch_economics.py"
+    )
+    source = dispatch_economics.read_text(encoding="utf-8")
+    assert "def prepare_worker_package_task_run(" in source
+    dispatch_economics.write_text(
+        source.replace(
+            "def prepare_worker_package_task_run(",
+            "def _missing_package_task_run_preparer(",
             1,
         ),
         encoding="utf-8",

@@ -40,6 +40,7 @@ PACKAGE_BATCH_SCHEMA = "xinao.worker_package_batch.v3"
 DISPATCH_ENVELOPE_SCHEMA = "xinao.worker_dispatch_envelope.v2"
 OUTCOME_EVENT_SCHEMA = "xinao.dispatch_outcome_event.v2"
 OUTCOME_PROJECTION_SCHEMA = "xinao.dispatch_outcome_projection.v1"
+PACKAGE_TASK_RUN_PREFLIGHT_SCHEMA = "xinao.worker_package_task_run_preflight.v1"
 LOGICAL_CANDIDATE_CONSUMER_ID = "worker_candidate_producer"
 LOGICAL_CANDIDATE_EFFECT_CONTRACT = {
     "schema_version": "xinao.worker_candidate_effect_contract.v1",
@@ -1735,6 +1736,106 @@ def validate_dispatch_envelope(
         validated_envelope_sha256=_canonical_sha(value),
     )
     return value
+
+
+def prepare_worker_package_task_run(
+    *,
+    dispatch_envelope_path: Path,
+    task_run_dir: Path,
+    task_run_cli: Path,
+    checkpoint_path: Path | None = None,
+    actor: str = "codex-owner",
+) -> dict[str, Any]:
+    """Compile a sealed package frontier into typed work units and checkpoint.
+
+    This deterministic sender preflight runs before quota, batch allocation,
+    route claim, or provider use.  It validates the complete hash-bound
+    envelope first, registers only the currently admitted package frontier via
+    the canonical task-run writer, then refreshes the task-local checkpoint to
+    the resulting event head.
+    """
+
+    envelope_path = Path(dispatch_envelope_path).resolve(strict=True)
+    try:
+        envelope_bytes = envelope_path.read_bytes()
+        envelope_raw = json.loads(envelope_bytes.decode("utf-8-sig"))
+    except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+        raise DispatchEconomicsError(
+            f"dispatch envelope is not readable UTF-8 JSON: {envelope_path}"
+        ) from exc
+    if not isinstance(envelope_raw, Mapping):
+        raise DispatchEconomicsError("dispatch envelope must be an object")
+    validated = validate_dispatch_envelope(envelope_raw)
+    manifest = _mapping(validated.get("validated_package_manifest"), "validated manifest")
+    frontier = plan_package_frontier(manifest)
+    admitted_by_id = {
+        str(row["package_id"]): row for row in frontier["admitted"] if isinstance(row, Mapping)
+    }
+    package_ids = [str(value) for value in validated["package_ids"]]
+    outside_frontier = sorted(set(package_ids) - set(admitted_by_id))
+    if outside_frontier:
+        raise DispatchEconomicsError(
+            "dispatch envelope contains packages outside the planned worker frontier: "
+            + ",".join(outside_frontier)
+        )
+    work_units = [
+        {
+            "package_id": package_id,
+            "work_key": _text(admitted_by_id[package_id].get("work_key"), "package.work_key"),
+        }
+        for package_id in package_ids
+    ]
+    work_keys = [str(row["work_key"]) for row in work_units]
+    if len(work_keys) != len(set(work_keys)):
+        raise DispatchEconomicsError("dispatch package work_key identities must be unique")
+    manifest_ref = _mapping(validated.get("package_manifest_ref"), "package_manifest_ref")
+    evidence_ref = (
+        f"{_text(manifest_ref.get('path'), 'package_manifest_ref.path')}"
+        f"#sha256={_sha(manifest_ref.get('sha256'), 'package_manifest_ref.sha256')}"
+    )
+    envelope_sha256 = hashlib.sha256(envelope_bytes).hexdigest()
+    envelope_ref = f"{envelope_path}#sha256={envelope_sha256}"
+
+    from services.agent_runtime.action_resume_receipt import (
+        prepare_task_local_checkpoint,
+        prepare_work_unit_plan_events,
+    )
+
+    work_unit_report = prepare_work_unit_plan_events(
+        task_run_dir=task_run_dir,
+        task_run_cli=task_run_cli,
+        work_units=work_units,
+        evidence_ref=evidence_ref,
+        active_evidence_ref=envelope_ref,
+        actor=actor,
+    )
+    checkpoint_report = prepare_task_local_checkpoint(
+        task_run_dir=task_run_dir,
+        checkpoint_path=checkpoint_path,
+    )
+    return {
+        "schema_version": PACKAGE_TASK_RUN_PREFLIGHT_SCHEMA,
+        "ok": True,
+        "run_id": checkpoint_report["run_id"],
+        "checkpoint_path": checkpoint_report["checkpoint_path"],
+        "cursor": checkpoint_report["cursor"],
+        "event_count": checkpoint_report["event_count"],
+        "package_ids": package_ids,
+        "work_keys": work_keys,
+        "planned_work_keys": work_unit_report["planned_work_keys"],
+        "reused_work_keys": work_unit_report["reused_work_keys"],
+        "activated_work_keys": work_unit_report["activated_work_keys"],
+        "active_reused_work_keys": work_unit_report["active_reused_work_keys"],
+        "work_unit_event_head": work_unit_report["event_head"],
+        "dispatch_envelope_sha256": envelope_sha256,
+        "package_manifest_ref": {
+            "path": str(manifest_ref["path"]),
+            "sha256": str(manifest_ref["sha256"]),
+        },
+        "model_invocation_allowed": True,
+        "authority": False,
+        "completion_claim_allowed": False,
+    }
 
 
 def _dispatch_envelope_route_reuse_equivalence(
