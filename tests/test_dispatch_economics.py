@@ -349,6 +349,48 @@ def _seal_dispatch(
     return manifest_ref, {"path": envelope_path_text, "sha256": envelope_sha}, envelope
 
 
+def _reseal_dispatch_with_quota_snapshot(
+    fixture: dict[str, object],
+    envelope: dict[str, object],
+    *,
+    snapshot_id: str,
+    suffix: str,
+    epoch_id: str = "epoch-1",
+) -> tuple[dict[str, str], dict[str, object]]:
+    root = Path(fixture["root"])
+    quota_path = root / "source" / f"quota{suffix}.json"
+    quota_sha = _write_json(
+        quota_path,
+        {
+            "schema_version": "xinao.quota_dispatch_epoch_snapshot.v1",
+            "snapshot_id": snapshot_id,
+            "epoch_id": epoch_id,
+            "freshness": "fresh",
+        },
+    )
+    resealed = copy.deepcopy(envelope)
+    resealed["dispatch_epoch"] = {
+        "epoch_id": epoch_id,
+        "quota_snapshot_id": snapshot_id,
+        "quota_snapshot_ref": str(quota_path),
+        "quota_snapshot_sha256": quota_sha,
+    }
+    if epoch_id != str(envelope["dispatch_epoch"]["epoch_id"]):
+        resealed["route_choice"] = build_route_choice_identity(
+            package_manifest_sha256=str(resealed["package_manifest_ref"]["sha256"]),
+            package_ids=list(resealed["package_ids"]),
+            epoch_id=epoch_id,
+            leg=str(resealed["leg"]),
+            selection_decision_sha256=str(resealed["selection"]["decision_sha256"]),
+            route_decision_binding_sha256=str(
+                resealed["route_choice"]["route_decision_binding_sha256"]
+            ),
+        )
+    envelope_path = root / f"envelope{suffix}.json"
+    envelope_sha = _write_json(envelope_path, resealed)
+    return {"path": str(envelope_path), "sha256": envelope_sha}, resealed
+
+
 def _route_selection_receipt(transport_id: str) -> dict[str, object]:
     receipt: dict[str, object] = {
         "schema_version": "xinao.supervisor_worker_decision_receipt.v1",
@@ -2407,6 +2449,126 @@ def test_dispatch_route_claim_rejects_overlapping_package_scope_and_reuses_exact
             task_run_dir=action["run_dir"],
             task_run_cli=task_run_cli,
             holder_id="overlapping-subset",
+        )
+
+
+def test_dispatch_route_claim_reuses_only_same_epoch_quota_snapshot_reseal(
+    tmp_path: Path,
+) -> None:
+    from tests.test_action_resume_receipt import (
+        _fixture as action_fixture,
+    )
+    from tests.test_action_resume_receipt import (
+        _write_task_run_cli_fixture,
+    )
+
+    fixture = _fixture(tmp_path / "dispatch")
+    manifest_ref, first_ref, first_envelope = _seal_dispatch(
+        fixture,
+        suffix="-quota-1",
+    )
+    refreshed_ref, refreshed_envelope = _reseal_dispatch_with_quota_snapshot(
+        fixture,
+        first_envelope,
+        snapshot_id="quota-snapshot-2",
+        suffix="-quota-2",
+    )
+    action = action_fixture(tmp_path / "action", work_key="wk-1")
+    task_run_cli = tmp_path / "task_run_cli.py"
+    _write_task_run_cli_fixture(task_run_cli)
+
+    first = claim_dispatch_route(
+        dispatch_envelope_ref=first_ref,
+        checkpoint_path=action["checkpoint"],
+        task_run_dir=action["run_dir"],
+        task_run_cli=task_run_cli,
+        holder_id="quota-first",
+    )
+    reused = claim_dispatch_route(
+        dispatch_envelope_ref=refreshed_ref,
+        checkpoint_path=action["checkpoint"],
+        task_run_dir=action["run_dir"],
+        task_run_cli=task_run_cli,
+        holder_id="quota-refreshed",
+    )
+    validated = validate_dispatch_route_claim(
+        route_claim_evidence_ref=first["route_claim_evidence_ref"],
+        dispatch_envelope_ref=refreshed_ref,
+        expected_task_run_dir=action["run_dir"],
+        expected_run_id="run-continuity-test",
+    )
+
+    assert reused["status"] == "reused"
+    assert reused["reuse_basis"] == "quota_snapshot_only_equivalent"
+    assert validated["reuse_basis"] == "quota_snapshot_only_equivalent"
+    assert reused["origin_dispatch_envelope_ref"] == first_ref
+    assert reused["effective_dispatch_envelope_ref"] == refreshed_ref
+    assert len(str(reused["route_equivalence_projection_sha256"])) == 64
+    events = [
+        json.loads(line)
+        for line in (action["run_dir"] / "events.jsonl").read_text(encoding="utf-8").splitlines()
+    ]
+    assert len([row for row in events if row.get("phase") == "worker_route_claimed"]) == 1
+
+    manifest_alias = Path(fixture["root"]) / "manifest-alias.json"
+    alias_sha = _write_json(
+        manifest_alias,
+        json.loads(Path(str(manifest_ref["path"])).read_text(encoding="utf-8")),
+    )
+    assert alias_sha == manifest_ref["sha256"]
+    manifest_path_reseal = copy.deepcopy(refreshed_envelope)
+    manifest_path_reseal["package_manifest_ref"]["path"] = str(manifest_alias)
+    manifest_path_reseal_path = Path(fixture["root"]) / "envelope-manifest-path.json"
+    manifest_path_reseal_ref = {
+        "path": str(manifest_path_reseal_path),
+        "sha256": _write_json(manifest_path_reseal_path, manifest_path_reseal),
+    }
+    with pytest.raises(DispatchEconomicsError, match="only the exact sealed batch"):
+        claim_dispatch_route(
+            dispatch_envelope_ref=manifest_path_reseal_ref,
+            checkpoint_path=action["checkpoint"],
+            task_run_dir=action["run_dir"],
+            task_run_cli=task_run_cli,
+            holder_id="manifest-path-reseal",
+        )
+    with pytest.raises(DispatchEconomicsError, match="identity drifted"):
+        validate_dispatch_route_claim(
+            route_claim_evidence_ref=first["route_claim_evidence_ref"],
+            dispatch_envelope_ref=manifest_path_reseal_ref,
+            expected_task_run_dir=action["run_dir"],
+            expected_run_id="run-continuity-test",
+        )
+
+    extra_field_reseal = copy.deepcopy(refreshed_envelope)
+    extra_field_reseal["caller_note"] = "not route identity"
+    extra_field_reseal_path = Path(fixture["root"]) / "envelope-extra-field.json"
+    extra_field_reseal_ref = {
+        "path": str(extra_field_reseal_path),
+        "sha256": _write_json(extra_field_reseal_path, extra_field_reseal),
+    }
+    with pytest.raises(DispatchEconomicsError, match="only the exact sealed batch"):
+        claim_dispatch_route(
+            dispatch_envelope_ref=extra_field_reseal_ref,
+            checkpoint_path=action["checkpoint"],
+            task_run_dir=action["run_dir"],
+            task_run_cli=task_run_cli,
+            holder_id="extra-field-reseal",
+        )
+
+    next_epoch_ref, _ = _reseal_dispatch_with_quota_snapshot(
+        fixture,
+        first_envelope,
+        snapshot_id="quota-snapshot-next-epoch",
+        suffix="-epoch-2",
+        epoch_id="epoch-2",
+    )
+    with pytest.raises(DispatchEconomicsError, match="only the exact sealed batch"):
+        claim_dispatch_route(
+            dispatch_envelope_ref=next_epoch_ref,
+            checkpoint_path=action["checkpoint"],
+            task_run_dir=action["run_dir"],
+            task_run_cli=task_run_cli,
+            holder_id="next-epoch-reseal",
         )
 
 

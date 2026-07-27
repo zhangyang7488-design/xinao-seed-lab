@@ -1737,6 +1737,85 @@ def validate_dispatch_envelope(
     return value
 
 
+def _dispatch_envelope_route_reuse_equivalence(
+    *,
+    origin_envelope_ref: Mapping[str, object],
+    effective_envelope_ref: Mapping[str, object],
+    path_resolver: PathResolver | None,
+) -> dict[str, object] | None:
+    """Recognize an exact retry or a same-route quota telemetry refresh.
+
+    A dispatch route claim closes the mutually exclusive route choice.  It is
+    not an attempt lease and quota telemetry is not part of that route choice.
+    Both envelopes still receive full independent validation, and the only
+    admissible reseal removes the three quota snapshot leaves before comparing
+    the complete raw envelopes.  In particular, ``epoch_id`` remains bound.
+    """
+
+    origin_ref = _validate_path_ref(
+        origin_envelope_ref,
+        "origin_dispatch_envelope_ref",
+        path_resolver=path_resolver,
+    )
+    effective_ref = _validate_path_ref(
+        effective_envelope_ref,
+        "effective_dispatch_envelope_ref",
+        path_resolver=path_resolver,
+    )
+    _, origin_raw = _load_hash_bound_ref(
+        origin_ref,
+        "origin_dispatch_envelope_ref",
+        expected_schema=DISPATCH_ENVELOPE_SCHEMA,
+        path_resolver=path_resolver,
+    )
+    _, effective_raw = _load_hash_bound_ref(
+        effective_ref,
+        "effective_dispatch_envelope_ref",
+        expected_schema=DISPATCH_ENVELOPE_SCHEMA,
+        path_resolver=path_resolver,
+    )
+    validate_dispatch_envelope(origin_raw, path_resolver=path_resolver)
+    validate_dispatch_envelope(effective_raw, path_resolver=path_resolver)
+
+    def projection(raw: Mapping[str, object]) -> tuple[dict[str, object], str]:
+        projected = copy.deepcopy(dict(raw))
+        epoch = dict(_mapping(projected.get("dispatch_epoch"), "dispatch_epoch"))
+        snapshot_id = _text(
+            epoch.get("quota_snapshot_id"),
+            "dispatch_epoch.quota_snapshot_id",
+        )
+        for field in (
+            "quota_snapshot_id",
+            "quota_snapshot_ref",
+            "quota_snapshot_sha256",
+        ):
+            epoch.pop(field, None)
+        projected["dispatch_epoch"] = epoch
+        return projected, snapshot_id
+
+    origin_projection, origin_snapshot_id = projection(origin_raw)
+    effective_projection, effective_snapshot_id = projection(effective_raw)
+    projection_sha256 = _canonical_sha(origin_projection)
+    if origin_ref == effective_ref:
+        return {
+            "reuse_basis": "exact_envelope",
+            "origin_dispatch_envelope_ref": dict(origin_ref),
+            "effective_dispatch_envelope_ref": dict(effective_ref),
+            "route_equivalence_projection_sha256": projection_sha256,
+        }
+    if (
+        origin_snapshot_id == effective_snapshot_id
+        or _canonical_bytes(origin_projection) != _canonical_bytes(effective_projection)
+    ):
+        return None
+    return {
+        "reuse_basis": "quota_snapshot_only_equivalent",
+        "origin_dispatch_envelope_ref": dict(origin_ref),
+        "effective_dispatch_envelope_ref": dict(effective_ref),
+        "route_equivalence_projection_sha256": projection_sha256,
+    }
+
+
 def validate_candidate_consumer_binding(
     envelope: Mapping[str, object],
     *,
@@ -1935,7 +2014,7 @@ def _assert_no_overlapping_route_claim(
     envelope: Mapping[str, object],
     path_resolver: PathResolver | None,
 ) -> None:
-    """Reject subset, superset, and resealed route claims for an active work key.
+    """Reject overlapping claims except exact or quota-only same-route retries.
 
     The evidence scan is a read-only projection over the canonical closed
     action claims.  Per-work-key OS locks make scan+claim atomic for current
@@ -1945,7 +2024,6 @@ def _assert_no_overlapping_route_claim(
     current = _dispatch_claim_identity(envelope)
     current_guards = set(current["mutation_guard_work_keys"])
     current_choice = str(current["choice_sha256"])
-    current_envelope_sha = str(envelope_ref["sha256"])
     claims_root = run_dir / "dispatch_route_claims"
     if not claims_root.is_dir():
         return
@@ -1978,15 +2056,19 @@ def _assert_no_overlapping_route_claim(
         existing_guards = set(existing["mutation_guard_work_keys"])
         if not (current_guards & existing_guards):
             continue
-        if (
-            current_guards == existing_guards
-            and current_choice == str(existing["choice_sha256"])
-            and current_envelope_sha == str(existing_ref.get("sha256") or "")
+        if current_guards == existing_guards and current_choice == str(
+            existing["choice_sha256"]
         ):
-            continue
+            equivalence = _dispatch_envelope_route_reuse_equivalence(
+                origin_envelope_ref=existing_ref,
+                effective_envelope_ref=envelope_ref,
+                path_resolver=path_resolver,
+            )
+            if equivalence is not None:
+                continue
         raise DispatchEconomicsError(
             "dispatch route claim overlaps an existing package work-key scope; "
-            "reuse the exact sealed batch or close it with explicit supersession before reseal"
+            "only the exact sealed batch or a same-epoch quota-snapshot-only reseal is reusable"
         )
 
 
@@ -2173,16 +2255,46 @@ def _claim_dispatch_route_under_scope_locks(
             )
         outcome = _mapping(claim.get("effect_outcome"), "route_claim.effect_outcome")
         details = _mapping(outcome.get("details"), "route_claim.effect_outcome.details")
-        if (
-            details.get("alternative_group_sha256") != alternative_group
-            or details.get("choice_sha256") != choice_sha
-            or details.get("dispatch_envelope_sha256") != envelope_ref["sha256"]
-        ):
-            raise DispatchEconomicsError("closed route claim identity drifted")
         evidence_refs = _sequence(
             _mapping(outcome.get("readback"), "route_claim.readback").get("evidence_refs"),
             "route_claim.readback.evidence_refs",
         )
+        if not evidence_refs:
+            raise DispatchEconomicsError("closed route claim has no evidence reference")
+        origin_evidence_path, origin_evidence_sha = _parse_evidence_ref(
+            evidence_refs[0],
+            path_resolver=path_resolver,
+        )
+        if (
+            not origin_evidence_path.is_file()
+            or _file_sha(origin_evidence_path) != origin_evidence_sha
+        ):
+            raise DispatchEconomicsError("closed route claim evidence is missing or drifted")
+        try:
+            origin_evidence = json.loads(
+                origin_evidence_path.read_text(encoding="utf-8-sig")
+            )
+        except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+            raise DispatchEconomicsError("closed route claim evidence is invalid") from exc
+        if not isinstance(origin_evidence, Mapping):
+            raise DispatchEconomicsError("closed route claim evidence must be an object")
+        origin_envelope_ref = _mapping(
+            origin_evidence.get("dispatch_envelope_ref"),
+            "route_claim_evidence.dispatch_envelope_ref",
+        )
+        equivalence = _dispatch_envelope_route_reuse_equivalence(
+            origin_envelope_ref=origin_envelope_ref,
+            effective_envelope_ref=envelope_ref,
+            path_resolver=path_resolver,
+        )
+        if (
+            details.get("alternative_group_sha256") != alternative_group
+            or details.get("choice_sha256") != choice_sha
+            or details.get("dispatch_envelope_sha256")
+            != origin_envelope_ref.get("sha256")
+            or equivalence is None
+        ):
+            raise DispatchEconomicsError("closed route claim identity drifted")
         return {
             "schema_version": "xinao.dispatch_route_claim_result.v1",
             "status": "reused",
@@ -2201,6 +2313,7 @@ def _claim_dispatch_route_under_scope_locks(
             "task_run_path": checkpoint_binding["task_run_path"],
             "claim_path": str(claim_path),
             "route_claim_evidence_ref": str(evidence_refs[0]),
+            **equivalence,
             "route_claim_selected": True,
             "live_start_gate_required": True,
             "authority": False,
@@ -2383,7 +2496,15 @@ def validate_dispatch_route_claim(
         raise DispatchEconomicsError("dispatch route claim evidence is invalid") from exc
     if not isinstance(evidence, dict):
         raise DispatchEconomicsError("dispatch route claim evidence must be an object")
-    expected_envelope_ref = {"path": envelope_ref["path"], "sha256": envelope_ref["sha256"]}
+    origin_envelope_ref = _mapping(
+        evidence.get("dispatch_envelope_ref"),
+        "dispatch_route_claim.dispatch_envelope_ref",
+    )
+    equivalence = _dispatch_envelope_route_reuse_equivalence(
+        origin_envelope_ref=origin_envelope_ref,
+        effective_envelope_ref=envelope_ref,
+        path_resolver=path_resolver,
+    )
     if (
         evidence.get("schema_version") != "xinao.work_unit_finalizer_evidence.v1"
         or evidence.get("kind") != "dispatch_route_claim"
@@ -2394,7 +2515,7 @@ def validate_dispatch_route_claim(
         or evidence.get("choice_sha256") != choice_sha
         or evidence.get("leg") != envelope["leg"]
         or evidence.get("physical_consumer_id") != envelope["validated_physical_consumer_id"]
-        or evidence.get("dispatch_envelope_ref") != expected_envelope_ref
+        or equivalence is None
         or evidence.get("side_effect_id") != side_effect_id
         or evidence.get("readback_verified") is not True
         or evidence.get("authority") is not False
@@ -2541,7 +2662,8 @@ def validate_dispatch_route_claim(
         != "worker_route_claimed"
         or details.get("alternative_group_sha256") != alternative_group
         or details.get("choice_sha256") != choice_sha
-        or details.get("dispatch_envelope_sha256") != envelope_ref["sha256"]
+        or details.get("dispatch_envelope_sha256")
+        != origin_envelope_ref.get("sha256")
     ):
         raise DispatchEconomicsError("dispatch route action claim is not closed on this choice")
     try:
@@ -2572,6 +2694,7 @@ def validate_dispatch_route_claim(
         "task_run_path": str(run_dir),
         "scoped_claim": scoped_claim,
         "route_claim_evidence_ref": evidence_ref_text,
+        **equivalence,
         "model_invocation_allowed": True,
         "authority": False,
         "completion_claim_allowed": False,
