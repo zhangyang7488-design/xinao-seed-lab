@@ -10,9 +10,7 @@ param(
     [string]$Model,
     [string]$RuntimeRoot = "D:\XINAO_RESEARCH_RUNTIME",
     [string]$SelectorReleasePointer = "",
-    [Parameter(Mandatory = $true)]
-    [ValidateNotNullOrEmpty()]
-    [string]$CheckpointPath,
+    [string]$CheckpointPath = "",
     [Parameter(Mandatory = $true)]
     [ValidateNotNullOrEmpty()]
     [string]$TaskRunRoot,
@@ -34,11 +32,6 @@ try { $DispatchEnvelopePath = [IO.Path]::GetFullPath($DispatchEnvelopePath) }
 catch { throw "CODEX_GROK_DISPATCH_ENVELOPE_PATH_INVALID: $DispatchEnvelopePath" }
 if (-not (Test-Path -LiteralPath $DispatchEnvelopePath -PathType Leaf)) {
     throw "CODEX_GROK_DISPATCH_ENVELOPE_MISSING: $DispatchEnvelopePath"
-}
-try { $CheckpointPath = [IO.Path]::GetFullPath($CheckpointPath) }
-catch { throw "CODEX_GROK_CHECKPOINT_PATH_INVALID: $CheckpointPath" }
-if (-not (Test-Path -LiteralPath $CheckpointPath -PathType Leaf)) {
-    throw "CODEX_GROK_CHECKPOINT_MISSING: $CheckpointPath"
 }
 try { $TaskRunRoot = [IO.Path]::GetFullPath($TaskRunRoot) }
 catch { throw "CODEX_GROK_TASK_RUN_ROOT_INVALID: $TaskRunRoot" }
@@ -63,6 +56,21 @@ try {
 $selectionPath = [string]$dispatchEnvelope.selection.receipt_ref
 if ([string]::IsNullOrWhiteSpace($selectionPath)) {
     throw "CODEX_GROK_PACKAGE_SELECTION_RECEIPT_MISSING"
+}
+
+$checkpointPreparer = Join-Path $PSScriptRoot "Prepare-CodexGrokTaskLocalCheckpoint.ps1"
+if (-not (Test-Path -LiteralPath $checkpointPreparer -PathType Leaf)) {
+    throw "CODEX_GROK_CHECKPOINT_PREPARER_MISSING: $checkpointPreparer"
+}
+$checkpointReport = & $checkpointPreparer `
+    -RuntimeRoot $RuntimeRoot `
+    -SelectorReleasePointer $SelectorReleasePointer `
+    -TaskRunRoot $TaskRunRoot `
+    -TaskRunId $TaskRunId `
+    -CheckpointPath $CheckpointPath
+$CheckpointPath = [string]$checkpointReport.checkpoint_path
+if ([string]::IsNullOrWhiteSpace($CheckpointPath)) {
+    throw "CODEX_GROK_CHECKPOINT_PREFLIGHT_OUTPUT_INVALID"
 }
 
 $resolver = Join-Path $PSScriptRoot "resolve_grok_worker_selection_receipt.py"

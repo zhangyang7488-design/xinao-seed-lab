@@ -91,6 +91,48 @@ def _fixture(tmp_path: Path) -> tuple[Path, Path, Path, Path]:
         """,
     )
     _write(
+        bridge / "Prepare-CodexGrokTaskLocalCheckpoint.ps1",
+        r"""
+        param(
+            [string]$RuntimeRoot, [string]$SelectorReleasePointer,
+            [string]$TaskRunRoot, [string]$TaskRunId, [string]$CheckpointPath
+        )
+        $taskRoot = [IO.Path]::GetFullPath($TaskRunRoot)
+        $taskRun = [IO.Path]::GetFullPath((Join-Path $taskRoot $TaskRunId))
+        $canonical = [IO.Path]::GetFullPath((Join-Path $taskRun "task-local-checkpoint.v2.json"))
+        if ([string]::IsNullOrWhiteSpace($CheckpointPath)) {
+            $CheckpointPath = $canonical
+        } else {
+            $CheckpointPath = [IO.Path]::GetFullPath($CheckpointPath)
+        }
+        if (-not [string]::Equals($CheckpointPath, $canonical, [StringComparison]::OrdinalIgnoreCase)) {
+            throw "CHECKPOINT_PATH_OUTSIDE_TASK_RUN"
+        }
+        $quotaCountPath = Join-Path $RuntimeRoot "live-query-count.txt"
+        $quotaCount = if (Test-Path -LiteralPath $quotaCountPath) {
+            [int](Get-Content -LiteralPath $quotaCountPath -Raw)
+        } else { 0 }
+        New-Item -ItemType Directory -Force -Path $taskRun | Out-Null
+        [IO.File]::WriteAllText($CheckpointPath, "{}")
+        $capture = Join-Path $RuntimeRoot "checkpoint-preflight.jsonl"
+        $row = [ordered]@{
+            checkpoint_path = $CheckpointPath
+            task_run_id = $TaskRunId
+            quota_query_count = $quotaCount
+        }
+        Add-Content -LiteralPath $capture -Value ($row | ConvertTo-Json -Compress)
+        [pscustomobject]@{
+            schema_version = "xinao.checkpoint_task_run_binding.v1"
+            checkpoint_path = $CheckpointPath
+            run_id = $TaskRunId
+            cursor = 1
+            event_count = 1
+            authority = $false
+            completion_claim_allowed = $false
+        }
+        """,
+    )
+    _write(
         runtime / "state" / "quota_query" / "Get-AIQuota.ps1",
         r"""
         param(
@@ -426,15 +468,13 @@ def test_package_mode_reuses_exact_sealed_epoch_and_rejects_expired_seal(
         ),
         encoding="utf-8",
     )
-    checkpoint = tmp_path / "session_checkpoint.json"
-    checkpoint.write_text("{}", encoding="utf-8")
     task_run_root = tmp_path / "task-runs"
-    (task_run_root / "run-1").mkdir(parents=True)
+    task_run_dir = task_run_root / "run-1"
+    task_run_dir.mkdir(parents=True)
+    checkpoint = task_run_dir / "task-local-checkpoint.v2.json"
     task_run_cli = tmp_path / "task_run.py"
     task_run_cli.write_text("# fixture", encoding="utf-8")
     package_claim_args = (
-        "-CheckpointPath",
-        str(checkpoint),
         "-TaskRunRoot",
         str(task_run_root),
         "-TaskRunId",
@@ -458,6 +498,17 @@ def test_package_mode_reuses_exact_sealed_epoch_and_rejects_expired_seal(
     package_row = json.loads(package_capture.read_text().splitlines()[-1])
     assert package_row["task_run_id"] == "run-1"
     assert Path(package_row["checkpoint_path"]) == checkpoint
+    checkpoint_rows = [
+        json.loads(line)
+        for line in (runtime / "checkpoint-preflight.jsonl").read_text().splitlines()
+    ]
+    assert checkpoint_rows == [
+        {
+            "checkpoint_path": str(checkpoint),
+            "task_run_id": "run-1",
+            "quota_query_count": 1,
+        }
+    ]
 
     current = (
         runtime / "state" / "quota_dispatch_epochs" / "package-episode" / "current.json"
@@ -483,3 +534,87 @@ def test_package_mode_reuses_exact_sealed_epoch_and_rejects_expired_seal(
         in rejected.stdout + rejected.stderr
     )
     assert (runtime / "live-query-count.txt").read_text() == "1"
+
+
+@pytest.mark.skipif(PWSH is None, reason="pwsh is required")
+def test_package_checkpoint_preflight_rejects_shared_path_before_quota_or_package(
+    tmp_path: Path,
+) -> None:
+    launcher, runtime, capture, package_capture = _fixture(tmp_path)
+    envelope = tmp_path / "dispatch-envelope.json"
+    envelope.write_text(
+        json.dumps({"dispatch_epoch": {"epoch_id": "package-episode"}}),
+        encoding="utf-8",
+    )
+    task_run_root = tmp_path / "task-runs"
+    (task_run_root / "run-1").mkdir(parents=True)
+    shared_checkpoint = tmp_path / "session_checkpoint.json"
+    shared_checkpoint.write_text("{}", encoding="utf-8")
+    task_run_cli = tmp_path / "task_run.py"
+    task_run_cli.write_text("# fixture", encoding="utf-8")
+
+    rejected = _run(
+        launcher,
+        runtime,
+        capture,
+        package_capture,
+        "-DispatchEnvelopePath",
+        str(envelope),
+        "-CheckpointPath",
+        str(shared_checkpoint),
+        "-TaskRunRoot",
+        str(task_run_root),
+        "-TaskRunId",
+        "run-1",
+        "-TaskRunCli",
+        str(task_run_cli),
+        "-Quiet",
+    )
+
+    assert rejected.returncode != 0
+    assert "CHECKPOINT_PATH_OUTSIDE_TASK_RUN" in rejected.stdout + rejected.stderr
+    assert not (runtime / "live-query-count.txt").exists()
+    assert not capture.exists()
+    assert not package_capture.exists()
+    assert not (runtime / "state" / "grok_worker_package_batches").exists()
+
+
+@pytest.mark.skipif(PWSH is None, reason="pwsh is required")
+def test_package_missing_task_run_cli_fails_before_checkpoint_quota_or_package(
+    tmp_path: Path,
+) -> None:
+    launcher, runtime, capture, package_capture = _fixture(tmp_path)
+    envelope = tmp_path / "dispatch-envelope.json"
+    envelope.write_text(
+        json.dumps({"dispatch_epoch": {"epoch_id": "package-episode"}}),
+        encoding="utf-8",
+    )
+    task_run_root = tmp_path / "task-runs"
+    task_run_dir = task_run_root / "run-1"
+    task_run_dir.mkdir(parents=True)
+    missing_cli = tmp_path / "missing-task-run.py"
+
+    rejected = _run(
+        launcher,
+        runtime,
+        capture,
+        package_capture,
+        "-DispatchEnvelopePath",
+        str(envelope),
+        "-TaskRunRoot",
+        str(task_run_root),
+        "-TaskRunId",
+        "run-1",
+        "-TaskRunCli",
+        str(missing_cli),
+        "-Quiet",
+    )
+
+    assert rejected.returncode != 0
+    assert "CODEX_GROK_TASK_RUN_CLI_MISSING" in rejected.stdout + rejected.stderr
+    assert not (task_run_dir / "task-local-checkpoint.v2.json").exists()
+    assert not (runtime / "checkpoint-preflight.jsonl").exists()
+    assert not (runtime / "live-query-count.txt").exists()
+    assert not capture.exists()
+    assert not package_capture.exists()
+    assert not (runtime / "state" / "grok_worker_package_batches").exists()

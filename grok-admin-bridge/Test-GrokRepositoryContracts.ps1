@@ -153,6 +153,7 @@ $poolFiles = @(
     "grok-admin-bridge/Invoke-GrokComposer25Worker.ps1",
     "grok-admin-bridge/Invoke-CodexDispatchGrokWorkerPool.ps1",
     "grok-admin-bridge/Invoke-CodexGrokPackageBatch.ps1",
+    "grok-admin-bridge/Prepare-CodexGrokTaskLocalCheckpoint.ps1",
     "grok-admin-bridge/run_grok_package_batch.py",
     "launchers/Invoke-Codex-GrokWorkerPool.ps1",
     "grok-admin-bridge/Invoke-GrokHostWorkerPoolFromTemporal.ps1",
@@ -304,6 +305,14 @@ $dispatchParseErrors = $null
     [ref]$dispatchParseErrors
 ) | Out-Null
 Assert-Contract (@($dispatchParseErrors).Count -eq 0) "dispatch_powershell_syntax_valid"
+$checkpointParseTokens = $null
+$checkpointParseErrors = $null
+[System.Management.Automation.Language.Parser]::ParseFile(
+    (Join-Path $repoRoot "grok-admin-bridge/Prepare-CodexGrokTaskLocalCheckpoint.ps1"),
+    [ref]$checkpointParseTokens,
+    [ref]$checkpointParseErrors
+) | Out-Null
+Assert-Contract (@($checkpointParseErrors).Count -eq 0) "checkpoint_preparer_powershell_syntax_valid"
 $hostTriggerText = Get-Content -LiteralPath (Join-Path $repoRoot "grok-admin-bridge/Invoke-GrokHostWorkerPoolFromTemporal.ps1") -Raw -Encoding UTF8
 $hostAliasText = Get-Content -LiteralPath (Join-Path $repoRoot "grok-admin-bridge/Invoke-GrokTemporalHostPoolTrigger.ps1") -Raw -Encoding UTF8
 $effectiveValidatorText = Get-Content -LiteralPath (Join-Path $repoRoot "grok-admin-bridge/Test-GrokCliEffectiveOutput.ps1") -Raw -Encoding UTF8
@@ -315,6 +324,8 @@ $pathIdentityText = Get-Content -LiteralPath (Join-Path $repoRoot "grok-admin-br
 $poolAccountingText = Get-Content -LiteralPath (Join-Path $repoRoot "grok-admin-bridge/GrokWorkerPoolAccounting.ps1") -Raw -Encoding UTF8
 $packageRunnerText = Get-Content -LiteralPath (Join-Path $repoRoot "grok-admin-bridge/run_grok_package_batch.py") -Raw -Encoding UTF8
 $packageEntryText = Get-Content -LiteralPath (Join-Path $repoRoot "grok-admin-bridge/Invoke-CodexGrokPackageBatch.ps1") -Raw -Encoding UTF8
+$checkpointPreparerPath = Join-Path $repoRoot "grok-admin-bridge/Prepare-CodexGrokTaskLocalCheckpoint.ps1"
+$checkpointPreparerText = Get-Content -LiteralPath $checkpointPreparerPath -Raw -Encoding UTF8
 $packageLauncherSourceText = Get-Content -LiteralPath (Join-Path $repoRoot "launchers/Invoke-Codex-GrokWorkerPool.ps1") -Raw -Encoding UTF8
 $installerText = Get-Content -LiteralPath (Join-Path $repoRoot "install/Install-CodexGrokDispatch.ps1") -Raw -Encoding UTF8
 $codexLauncherPath = "C:\Users\xx363\CodexLaunchers\Invoke-Codex-GrokWorkerPool.ps1"
@@ -440,6 +451,28 @@ Assert-Contract ($packageLauncherSourceText -match 'state\\quota_query\\Get-AIQu
 Assert-Contract ($packageLauncherSourceText -match 'DispatchEpochMaxAgeSec') "launcher_epoch_has_bounded_ttl"
 Assert-Contract ($packageLauncherSourceText -match 'InvalidateDispatchEpochReason') "launcher_epoch_supports_explicit_invalidation"
 Assert-Contract ($packageLauncherSourceText -match 'CODEX_GROK_PACKAGE_EPOCH_EXPIRED_RESEAL_REQUIRED') "launcher_expired_package_requires_reseal"
+Assert-Contract ($packageLauncherSourceText -notmatch 'state\\Codex_Situation_Island\\state\\session_checkpoint[.]json') "launcher_has_no_shared_checkpoint_default"
+Assert-Contract ($checkpointPreparerText -match 'prepare_task_local_checkpoint') "checkpoint_preparer_reuses_selector_projection"
+Assert-Contract ($checkpointPreparerText -match '-I\s+-B\s+-c') "checkpoint_preparer_uses_isolated_no_bytecode_python"
+$launcherCheckpointIndex = $packageLauncherSourceText.IndexOf('Prepare-CodexGrokTaskLocalCheckpoint.ps1')
+$launcherTaskRunCliIndex = $packageLauncherSourceText.IndexOf('CODEX_GROK_TASK_RUN_CLI_MISSING')
+$launcherDispatchIdIndex = $packageLauncherSourceText.IndexOf('$DispatchId =')
+$launcherQuotaIndex = $packageLauncherSourceText.IndexOf('$quotaEntry =')
+Assert-Contract (
+    $launcherCheckpointIndex -gt 0 -and
+    $launcherCheckpointIndex -lt $launcherDispatchIdIndex -and
+    $launcherCheckpointIndex -lt $launcherQuotaIndex
+) "launcher_checkpoint_preflight_precedes_ids_and_quota"
+Assert-Contract (
+    $launcherTaskRunCliIndex -gt 0 -and
+    $launcherTaskRunCliIndex -lt $launcherCheckpointIndex -and
+    $launcherTaskRunCliIndex -lt $launcherQuotaIndex
+) "launcher_task_run_cli_preflight_precedes_checkpoint_and_quota"
+$entryCheckpointIndex = $packageEntryText.IndexOf('Prepare-CodexGrokTaskLocalCheckpoint.ps1')
+$entryBatchIndex = $packageEntryText.IndexOf('$batchId =')
+Assert-Contract (
+    $entryCheckpointIndex -gt 0 -and $entryCheckpointIndex -lt $entryBatchIndex
+) "package_entry_checkpoint_preflight_precedes_batch_directory"
 Assert-Contract ($packageRunnerText -match 'xinao[.]worker_package_result[.]v2') "package_result_v2"
 Assert-Contract ($packageRunnerText -match 'attempt_root / "provider-output"') "package_runner_writes_provider_output"
 Assert-Contract ($packageRunnerText -match 'provider_output_sha != expected_output_sha') "package_runner_verifies_common_output_hash"
@@ -474,7 +507,7 @@ $routeClaimIndex = $packageRunnerText.IndexOf('route_claim = claim_dispatch_rout
 $providerExecutorIndex = $packageRunnerText.IndexOf('with ThreadPoolExecutor(')
 Assert-Contract ($routeClaimIndex -gt 0 -and $routeClaimIndex -lt $providerExecutorIndex) "package_route_claim_precedes_provider_executor"
 Assert-Contract ($packageRunnerText -match 'validate_dispatch_route_claim\(') "package_runner_revalidates_route_claim_before_model"
-Assert-Contract ($packageEntryText -match '\[string\]\$CheckpointPath') "package_entry_requires_checkpoint"
+Assert-Contract ($packageEntryText -match '\[string\]\$CheckpointPath') "package_entry_accepts_task_local_checkpoint"
 Assert-Contract ($packageEntryText -match '"--checkpoint-path",\s*\$CheckpointPath') "package_entry_forwards_checkpoint"
 Assert-Contract ($packageLauncherSourceText -match 'CheckpointPath\s*=\s*\$CheckpointPath') "package_launcher_forwards_checkpoint"
 Assert-Contract ($dispatchText -match 'pool_effective_ok') "dispatch_accepts_verified_reuse_without_fake_pool_all_ok"

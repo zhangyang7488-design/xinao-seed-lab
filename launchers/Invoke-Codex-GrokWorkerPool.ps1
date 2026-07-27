@@ -52,7 +52,7 @@ param(
     [string]$TaskRunRoot = "",
     [string]$TaskRunId = "",
     [string]$TaskRunCli = "C:\Users\xx363\.codex\skills\verified-agent-loop\scripts\task_run.py",
-    [string]$CheckpointPath = "D:\XINAO_RESEARCH_RUNTIME\state\Codex_Situation_Island\state\session_checkpoint.json",
+    [string]$CheckpointPath = "",
     [string]$RuntimeRoot = "D:\XINAO_RESEARCH_RUNTIME",
     [switch]$SkipPauseGate,
     [switch]$Quiet
@@ -372,8 +372,10 @@ if ($packageMode) {
     if ([string]::IsNullOrWhiteSpace($TaskRunId)) {
         throw "CODEX_GROK_PACKAGE_TASK_RUN_ID_REQUIRED"
     }
-    if ([string]::IsNullOrWhiteSpace($CheckpointPath)) {
-        throw "CODEX_GROK_PACKAGE_CHECKPOINT_REQUIRED"
+    try { $TaskRunCli = [IO.Path]::GetFullPath($TaskRunCli) }
+    catch { throw "CODEX_GROK_TASK_RUN_CLI_PATH_INVALID: $TaskRunCli" }
+    if (-not (Test-Path -LiteralPath $TaskRunCli -PathType Leaf)) {
+        throw "CODEX_GROK_TASK_RUN_CLI_MISSING: $TaskRunCli"
     }
 }
 else {
@@ -413,6 +415,24 @@ else {
     }
     else {
         $dispatchEpochSource = "explicit_dispatch_epoch_id"
+    }
+}
+
+$bridgeRoot = "C:\Users\xx363\Grok_Admin_Isolated\workspace\grok-admin-bridge"
+if ($packageMode) {
+    $checkpointPreparer = Join-Path $bridgeRoot "Prepare-CodexGrokTaskLocalCheckpoint.ps1"
+    if (-not (Test-Path -LiteralPath $checkpointPreparer -PathType Leaf)) {
+        throw "CODEX_GROK_CHECKPOINT_PREPARER_MISSING: $checkpointPreparer"
+    }
+    $checkpointReport = & $checkpointPreparer `
+        -RuntimeRoot $RuntimeRoot `
+        -SelectorReleasePointer $SelectorReleasePointer `
+        -TaskRunRoot $TaskRunRoot `
+        -TaskRunId $TaskRunId `
+        -CheckpointPath $CheckpointPath
+    $CheckpointPath = [string]$checkpointReport.checkpoint_path
+    if ([string]::IsNullOrWhiteSpace($CheckpointPath)) {
+        throw "CODEX_GROK_CHECKPOINT_PREFLIGHT_OUTPUT_INVALID"
     }
 }
 
@@ -456,7 +476,6 @@ if ($null -ne $quotaResolution) {
     }
 }
 
-$bridgeRoot = "C:\Users\xx363\Grok_Admin_Isolated\workspace\grok-admin-bridge"
 if ($packageMode) {
     if (
         $null -ne $quotaResolution -and
