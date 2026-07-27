@@ -344,14 +344,20 @@ if ($commonRequested) {
             "--subject-manifest-sha256", $CommonSubjectManifestSha256,
             "--work-key", $CommonWorkKey,
             "--operation-id", $CommonOperationId,
-            "--task-contract-ref", $CommonTaskContractRef,
-            "--parent-operation-id", $CommonParentOperationId,
-            "--correlation-id", $CommonCorrelationId,
             "--rules-file", $CommonRulesFile,
             "--min-result-chars", ([string]$MinResultChars),
             "--deadline-seconds", ([string]$TimeoutSec),
             "--output", $CommonLogicalContractPath
         )
+        if (-not [string]::IsNullOrWhiteSpace($CommonTaskContractRef)) {
+            $prepareArgs += @("--task-contract-ref", $CommonTaskContractRef)
+        }
+        if (-not [string]::IsNullOrWhiteSpace($CommonParentOperationId)) {
+            $prepareArgs += @("--parent-operation-id", $CommonParentOperationId)
+        }
+        if (-not [string]::IsNullOrWhiteSpace($CommonCorrelationId)) {
+            $prepareArgs += @("--correlation-id", $CommonCorrelationId)
+        }
         if (-not [string]::IsNullOrWhiteSpace($CommonFrozenContextSha256)) {
             $prepareArgs += @("--frozen-context-sha256", $CommonFrozenContextSha256)
         }

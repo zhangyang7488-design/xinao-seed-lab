@@ -154,6 +154,172 @@ function Get-CodexGrokQuotaSnapshotAgeSec($Resolution) {
     [Math]::Max(0.0, ([DateTimeOffset]::UtcNow - $parsed.ToUniversalTime()).TotalSeconds)
 }
 
+function Get-CodexGrokCommonPreflightIssues {
+    $issues = [Collections.Generic.List[string]]::new()
+    $allowedPhases = @("EXPLORE", "CONSTRUCT", "VERIFY", "LAND")
+
+    if ($N -ne 1) {
+        $issues.Add("N must be 1 for common-contract mode")
+    }
+    if ([string]::IsNullOrWhiteSpace($PromptFile)) {
+        $issues.Add("PromptFile is required for common-contract mode")
+    }
+    else {
+        try { $resolvedPromptFile = [IO.Path]::GetFullPath($PromptFile) }
+        catch {
+            $resolvedPromptFile = ""
+            $issues.Add("PromptFile is not a valid path: $PromptFile")
+        }
+        if (
+            -not [string]::IsNullOrWhiteSpace($resolvedPromptFile) -and
+            -not (Test-Path -LiteralPath $resolvedPromptFile -PathType Leaf)
+        ) {
+            $issues.Add("PromptFile does not exist: $resolvedPromptFile")
+        }
+    }
+    if (-not [string]::IsNullOrWhiteSpace($Prompt)) {
+        $issues.Add("inline Prompt is not accepted in common-contract mode; use PromptFile")
+    }
+    if ([string]::IsNullOrWhiteSpace($CommonWorkKey)) {
+        $issues.Add("CommonWorkKey is required")
+    }
+    if ([string]::IsNullOrWhiteSpace($CommonOperationId)) {
+        $issues.Add("CommonOperationId is required")
+    }
+    if ($CommonSubjectManifestSha256 -notmatch '^[0-9a-f]{64}$') {
+        $issues.Add("CommonSubjectManifestSha256 must be 64 lowercase hexadecimal characters")
+    }
+    if ([string]::IsNullOrWhiteSpace($CommonPhase)) {
+        $issues.Add("CommonPhase is required; choose EXPLORE, CONSTRUCT, VERIFY, or LAND")
+    }
+    elseif ($allowedPhases -cnotcontains $CommonPhase) {
+        $issues.Add("CommonPhase must be one of EXPLORE, CONSTRUCT, VERIFY, LAND")
+    }
+    if (
+        [string]::IsNullOrWhiteSpace($CommonFrozenContextSha256) -and
+        [string]::IsNullOrWhiteSpace($CommonContextManifestPath)
+    ) {
+        $issues.Add("CommonFrozenContextSha256 or CommonContextManifestPath is required")
+    }
+    if (
+        -not [string]::IsNullOrWhiteSpace($CommonFrozenContextSha256) -and
+        $CommonFrozenContextSha256 -notmatch '^[0-9a-f]{64}$'
+    ) {
+        $issues.Add("CommonFrozenContextSha256 must be 64 lowercase hexadecimal characters")
+    }
+    if (-not [string]::IsNullOrWhiteSpace($CommonContextManifestPath)) {
+        try { $resolvedContextManifest = [IO.Path]::GetFullPath($CommonContextManifestPath) }
+        catch {
+            $resolvedContextManifest = ""
+            $issues.Add("CommonContextManifestPath is not a valid path: $CommonContextManifestPath")
+        }
+        if (
+            -not [string]::IsNullOrWhiteSpace($resolvedContextManifest) -and
+            -not (Test-Path -LiteralPath $resolvedContextManifest -PathType Leaf)
+        ) {
+            $issues.Add("CommonContextManifestPath does not exist: $resolvedContextManifest")
+        }
+    }
+    if ([string]::IsNullOrWhiteSpace($CommonRulesFile)) {
+        $issues.Add("CommonRulesFile is required")
+    }
+    else {
+        try { $resolvedRulesFile = [IO.Path]::GetFullPath($CommonRulesFile) }
+        catch {
+            $resolvedRulesFile = ""
+            $issues.Add("CommonRulesFile is not a valid path: $CommonRulesFile")
+        }
+        if (
+            -not [string]::IsNullOrWhiteSpace($resolvedRulesFile) -and
+            -not (Test-Path -LiteralPath $resolvedRulesFile -PathType Leaf)
+        ) {
+            $issues.Add("CommonRulesFile does not exist: $resolvedRulesFile")
+        }
+    }
+    if ($CommonRulesSha256 -notmatch '^[0-9a-f]{64}$') {
+        $issues.Add("CommonRulesSha256 must be 64 lowercase hexadecimal characters")
+    }
+    elseif (
+        -not [string]::IsNullOrWhiteSpace($resolvedRulesFile) -and
+        (Test-Path -LiteralPath $resolvedRulesFile -PathType Leaf)
+    ) {
+        $observedRulesSha256 = (
+            Get-FileHash -LiteralPath $resolvedRulesFile -Algorithm SHA256
+        ).Hash.ToLowerInvariant()
+        if (-not [string]::Equals(
+            $observedRulesSha256,
+            $CommonRulesSha256,
+            [StringComparison]::Ordinal
+        )) {
+            $issues.Add("CommonRulesSha256 does not match CommonRulesFile")
+        }
+    }
+    if (-not [string]::IsNullOrWhiteSpace($CommonCandidateOutputRoot)) {
+        try { $resolvedCandidateOutputRoot = [IO.Path]::GetFullPath($CommonCandidateOutputRoot) }
+        catch {
+            $resolvedCandidateOutputRoot = ""
+            $issues.Add("CommonCandidateOutputRoot is not a valid path: $CommonCandidateOutputRoot")
+        }
+        if (
+            -not [string]::IsNullOrWhiteSpace($resolvedCandidateOutputRoot) -and
+            -not (Test-Path -LiteralPath $resolvedCandidateOutputRoot -PathType Container)
+        ) {
+            $issues.Add("CommonCandidateOutputRoot does not exist: $resolvedCandidateOutputRoot")
+        }
+        if (-not [string]::IsNullOrWhiteSpace($resolvedCandidateOutputRoot)) {
+            try { $resolvedCommonCwd = [IO.Path]::GetFullPath($Cwd) }
+            catch { $resolvedCommonCwd = "" }
+            if (
+                -not [string]::IsNullOrWhiteSpace($resolvedCommonCwd) -and
+                -not [string]::Equals(
+                    $resolvedCandidateOutputRoot,
+                    $resolvedCommonCwd,
+                    [StringComparison]::OrdinalIgnoreCase
+                )
+            ) {
+                $issues.Add("CommonCandidateOutputRoot must equal Cwd")
+            }
+            $expectedWriteDomain = "candidate_output_root:" + (
+                $resolvedCandidateOutputRoot.Replace('\', '/').TrimEnd('/').ToLowerInvariant()
+            )
+            if (
+                @($CommonWriteDomains).Count -ne 1 -or
+                -not [string]::Equals(
+                    [string]$CommonWriteDomains[0],
+                    $expectedWriteDomain,
+                    [StringComparison]::Ordinal
+                )
+            ) {
+                $issues.Add("CommonWriteDomains must contain only $expectedWriteDomain")
+            }
+        }
+    }
+    elseif (@($CommonWriteDomains).Count -gt 0) {
+        $issues.Add("CommonCandidateOutputRoot is required when CommonWriteDomains is supplied")
+    }
+    if (-not [string]::IsNullOrWhiteSpace($JsonSchemaPath)) {
+        try { $resolvedJsonSchema = [IO.Path]::GetFullPath($JsonSchemaPath) }
+        catch {
+            $resolvedJsonSchema = ""
+            $issues.Add("JsonSchemaPath is not a valid path: $JsonSchemaPath")
+        }
+        if (
+            -not [string]::IsNullOrWhiteSpace($resolvedJsonSchema) -and
+            -not (Test-Path -LiteralPath $resolvedJsonSchema -PathType Leaf)
+        ) {
+            $issues.Add("JsonSchemaPath does not exist: $resolvedJsonSchema")
+        }
+    }
+    if (
+        -not [string]::IsNullOrWhiteSpace($CommonPriorAttemptReceiptPath) -and
+        -not (Test-Path -LiteralPath $CommonPriorAttemptReceiptPath -PathType Leaf)
+    ) {
+        $issues.Add("CommonPriorAttemptReceiptPath does not exist: $CommonPriorAttemptReceiptPath")
+    }
+
+    return @($issues)
+}
+
 $packageMode = -not [string]::IsNullOrWhiteSpace($DispatchEnvelopePath)
 $dispatchEpochSource = ""
 if ($packageMode) {
@@ -197,6 +363,28 @@ else {
     }
     if ($N -gt 1 -and -not $ReplicaMode) {
         throw "CODEX_GROK_MULTI_LANE_REQUIRES_EXPLICIT_REPLICA_MODE"
+    }
+    $commonRequested = (
+        -not [string]::IsNullOrWhiteSpace($CommonWorkKey) -or
+        -not [string]::IsNullOrWhiteSpace($CommonOperationId) -or
+        -not [string]::IsNullOrWhiteSpace($CommonSubjectManifestSha256) -or
+        -not [string]::IsNullOrWhiteSpace($CommonFrozenContextSha256) -or
+        -not [string]::IsNullOrWhiteSpace($CommonContextManifestPath) -or
+        -not [string]::IsNullOrWhiteSpace($CommonRulesFile) -or
+        -not [string]::IsNullOrWhiteSpace($CommonRulesSha256) -or
+        -not [string]::IsNullOrWhiteSpace($CommonCandidateOutputRoot) -or
+        -not [string]::IsNullOrWhiteSpace($CommonPhase) -or
+        -not [string]::IsNullOrWhiteSpace($CommonPriorAttemptReceiptPath) -or
+        @($CommonWriteDomains).Count -gt 0
+    )
+    if ($commonRequested) {
+        $commonPreflightIssues = @(Get-CodexGrokCommonPreflightIssues)
+        if ($commonPreflightIssues.Count -gt 0) {
+            throw (
+                "CODEX_GROK_COMMON_PREFLIGHT_FAILED:`n - " +
+                ($commonPreflightIssues -join "`n - ")
+            )
+        }
     }
     if ([string]::IsNullOrWhiteSpace($DispatchEpochId)) {
         $resolvedEpoch = Resolve-CodexGrokOrdinaryDispatchEpoch
