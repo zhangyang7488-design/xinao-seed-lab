@@ -321,7 +321,7 @@ def test_context_intent_alignment_eval_is_balanced_and_friction_bounded() -> Non
         (REPO_ROOT / "evals/context_intent_alignment/cases.yaml").read_text(encoding="utf-8")
     )
     cases = {case["metadata"]["id"]: case for case in loaded}
-    assert len(cases) == suite["case_count"] == 93
+    assert len(cases) == suite["case_count"] == 94
     assert len(cases) == len(loaded)
     assert all(case["metadata"]["domain"] == case["vars"]["domain"] for case in cases.values())
     for required in (
@@ -375,6 +375,7 @@ def test_context_intent_alignment_eval_is_balanced_and_friction_bounded() -> Non
         "POS_EXPLICIT_CALLER_WINDOW_TARGET_ALLOWS_CALLER_EFFECT",
         "REG_VALIDATION_DATA_ROLE_CANNOT_BECOME_DEVELOPMENT_INPUT",
         "POS_PREREGISTERED_ADAPTIVE_POLICY_MAY_USE_FEEDBACK",
+        "REG_OPERATE_FOR_USER_PRE_REPORT_CROSS_WINDOW_GATE",
     ):
         assert required in cases
     assert cases["POS_CLEAR_REVERSIBLE_LOCAL_FIX"]["vars"]["expected_ask_user"] is False
@@ -406,6 +407,14 @@ def test_context_intent_alignment_eval_is_balanced_and_friction_bounded() -> Non
     assert "ATOM_BAN_ALL_ONLINE_UPDATE" in adaptive_policy["expected_rejected_proxy_atoms"].split(
         "|"
     )
+    pre_report = cases["REG_OPERATE_FOR_USER_PRE_REPORT_CROSS_WINDOW_GATE"]["vars"]
+    assert "ATOM_PRE_REPORT_USER_SIDE_GATE" in pre_report[
+        "expected_recovered_requirement_atoms"
+    ].split("|")
+    assert "ATOM_INVOKE_SKILL_AFTER_COMPLAINT" in pre_report["expected_rejected_proxy_atoms"].split(
+        "|"
+    )
+    assert pre_report["expected_completion_claim_scope"] == "not_applicable"
     external_route = cases["REG_EXTERNAL_WORKER_PROVIDER_AND_TRANSPORT_ADAPTIVE"]["vars"]
     assert set(external_route["expected_worker_provider"].split("|")) == {
         "external_worker",
@@ -967,8 +976,8 @@ def test_context_intent_alignment_eval_is_balanced_and_friction_bounded() -> Non
         (REPO_ROOT / "evals/behavior_regression/catalog.json").read_text(encoding="utf-8")
     )
     context_suite = next(s for s in catalog["suites"] if s["id"] == "context_intent_alignment")
-    assert context_suite["case_count"] == 93
-    assert catalog["declared_case_count"] == 153
+    assert context_suite["case_count"] == 94
+    assert catalog["declared_case_count"] == 154
 
     decision = json.loads(
         (REPO_ROOT / "evals/context_intent_alignment/decision_model.v1.json").read_text(
@@ -1049,6 +1058,10 @@ def test_context_intent_alignment_eval_is_balanced_and_friction_bounded() -> Non
     assert "candidate_reuse_invariant" in decision["input_interpretation"]
     assert "observed_fact_action_binding" in decision["input_interpretation"]
     assert "action_continuity_invariant" in decision["input_interpretation"]
+    pre_report_gate = decision["input_interpretation"]["pre_report_user_side_gate_invariant"]
+    assert "before composing any progress or completion claim" in pre_report_gate
+    assert "post-hoc Skill load after user objection is remediation" in pre_report_gate
+    assert "keeps the operation partial" in pre_report_gate
     decision_frame = decision["input_interpretation"]["decision_frame_admission_invariant"]
     assert "before any reply, capture, question, dispatch, tool call" in decision_frame
     assert (
@@ -1115,6 +1128,9 @@ def test_context_intent_alignment_eval_is_balanced_and_friction_bounded() -> Non
     )
     assert (
         "REG_OPERATE_FOR_USER_PRESERVES_MATERIAL_USER_FORK" in decision["anchor_regression_cases"]
+    )
+    assert (
+        "REG_OPERATE_FOR_USER_PRE_REPORT_CROSS_WINDOW_GATE" in decision["anchor_regression_cases"]
     )
     for frame_case in (
         "REG_LOCAL_WAIT_CANNOT_POISON_PARENT",
@@ -1544,7 +1560,7 @@ def test_dual_self_evolution_runners_are_thin_and_claims_stay_separate() -> None
         (REPO_ROOT / "evals/behavior_regression/catalog.json").read_text(encoding="utf-8")
     )
     suite_count = sum(item["case_count"] for item in catalog["suites"])
-    assert suite_count == catalog["declared_case_count"] == 153
+    assert suite_count == catalog["declared_case_count"] == 154
     context_cases = yaml.safe_load(
         (REPO_ROOT / "evals/context_intent_alignment/cases.yaml").read_text(encoding="utf-8")
     )
