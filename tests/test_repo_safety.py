@@ -425,9 +425,9 @@ def test_context_intent_alignment_eval_is_balanced_and_friction_bounded() -> Non
     assert quota_negative["expected_coordination_mode"] == "supervisor_only"
     assert quota_negative["expected_worker_provider"] == "not_applicable"
     assert quota_negative["expected_owner_execution_state"] == "inseparable_owner_slice"
-    assert "ATOM_INVENT_COGNITIVE_CHORES" in quota_negative[
-        "expected_rejected_proxy_atoms"
-    ].split("|")
+    assert "ATOM_INVENT_COGNITIVE_CHORES" in quota_negative["expected_rejected_proxy_atoms"].split(
+        "|"
+    )
     route_continuity = cases["REG_DIRECT_ROUTE_AND_CARRIER_SURVIVE_WINDOW"]["vars"]
     assert route_continuity["expected_worker_transport"] == "direct_batch"
     assert "ATOM_EXISTING_DIRECT_ROUTE_CONTINUES" in route_continuity[
