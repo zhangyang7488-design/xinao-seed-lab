@@ -157,6 +157,7 @@ function Get-CodexGrokQuotaSnapshotAgeSec($Resolution) {
 function Get-CodexGrokCommonPreflightIssues {
     $issues = [Collections.Generic.List[string]]::new()
     $allowedPhases = @("EXPLORE", "CONSTRUCT", "VERIFY", "LAND")
+    $resolvedPromptText = $null
 
     if ($N -ne 1) {
         $issues.Add("N must be 1 for common-contract mode")
@@ -175,6 +176,25 @@ function Get-CodexGrokCommonPreflightIssues {
             -not (Test-Path -LiteralPath $resolvedPromptFile -PathType Leaf)
         ) {
             $issues.Add("PromptFile does not exist: $resolvedPromptFile")
+        }
+        elseif (-not [string]::IsNullOrWhiteSpace($resolvedPromptFile)) {
+            try {
+                $strictUtf8 = [Text.UTF8Encoding]::new($false, $true)
+                $resolvedPromptText = [IO.File]::ReadAllText($resolvedPromptFile, $strictUtf8)
+            }
+            catch { $issues.Add("PromptFile must be valid UTF-8: $resolvedPromptFile") }
+        }
+    }
+    foreach ($marker in @($RequiredResultMarkers)) {
+        $markerText = [string]$marker
+        if ([string]::IsNullOrWhiteSpace($markerText)) {
+            $issues.Add("RequiredResultMarkers must not contain an empty value")
+        }
+        elseif (
+            $null -ne $resolvedPromptText -and
+            $resolvedPromptText.IndexOf($markerText, [StringComparison]::Ordinal) -lt 0
+        ) {
+            $issues.Add("PromptFile must explicitly require result marker: $markerText")
         }
     }
     if (-not [string]::IsNullOrWhiteSpace($Prompt)) {

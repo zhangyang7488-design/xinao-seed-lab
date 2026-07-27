@@ -12,7 +12,7 @@
   },
   "grok_lane": {
     "provider": "grok",
-    "model": "grok-composer-2.5-fast",
+    "model": "grok-4.5",
     "width": "dynamic_ready_frontier_quota_latency_evidence"
   },
   "route_authority": "bridge.config.json#canonical_route",
