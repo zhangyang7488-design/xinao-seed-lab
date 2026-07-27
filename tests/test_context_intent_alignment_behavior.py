@@ -8,7 +8,6 @@ from typing import Any
 
 import yaml
 
-
 REPO_ROOT = Path(__file__).resolve().parents[1]
 SUITE_ROOT = REPO_ROOT / "evals" / "context_intent_alignment"
 ASSERTION_PATH = SUITE_ROOT / "assert_behavior.js"
