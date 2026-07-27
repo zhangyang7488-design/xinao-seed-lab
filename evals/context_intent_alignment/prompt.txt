@@ -135,6 +135,13 @@ Return only one JSON object with these fields:
   with no independent research, compatibility, multi-source ranking, multi-platform validation, or
   other independently useful frontier stated, use supervisor_only and set worker_provider,
   worker_transport, quota_action, and quota_query_disposition to not_applicable. If facts instead
+  make the whole problem look tightly coupled, do not stop at that surface label: before choosing
+  owner-only, enumerate whether its frozen raw sources support independently accepted cognitive
+  packages such as inventory, mature research, evidence extraction, counterexamples, critic, or test
+  design. A sealed read-only cognitive result is effective labor when that result is the package's
+  actual deliverable; it is not the same as a read-only commentator pretending to implement code.
+  If honest enumeration finds no positive separable package, do not invent one to consume quota.
+  If facts instead
   state multiple candidate sources, unresolved compatibility, broad multi-platform validation, or
   another independently useful lane, worker-first remains required. Under the single dynamic
   whole-package supervisor, external workers are default labor for every separable positive-benefit

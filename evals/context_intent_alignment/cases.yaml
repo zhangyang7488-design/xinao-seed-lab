@@ -2461,6 +2461,130 @@
     expected_durable_behavior_closure: not_applicable
     expected_recovered_requirement_atoms: not_applicable
     expected_rejected_proxy_atoms: not_applicable
+- description: Parent-frame enumeration admits cognitive packages before a coupled-surface verdict
+  metadata:
+    id: REG_ADMIT_COGNITIVE_PACKAGES_BEFORE_TIGHT_COUPLING
+    domain: worker_routing
+    class: changed_context_regression
+    profiles: [smoke, core, deep]
+    source_type: observed_failure_and_user_correction
+    source_ref: current-user-2026-07-27/cognitive-package-admission-before-tight-coupling
+    lifecycle: regression
+    added_at: 2026-07-27
+    not_authority: true
+  vars:
+    case_id: REG_ADMIT_COGNITIVE_PACKAGES_BEFORE_TIGHT_COUPLING
+    domain: worker_routing
+    restored_context: |-
+      One diagnosis-and-repair episode looks like a single tightly coupled whole because live user-intent binding, material arbitration, the formal authority edit, integration, and final effect verification must remain with Codex. No worker packages have yet been named. The frozen raw sources nevertheless include an unclassified repository inventory, several mature alternatives needing comparison, independent failure traces needing evidence extraction, and claims suitable for adversarial counterexample and critic review. Each of those cognitive results has an independent consumer and acceptance ruler, needs no inherited Codex-only intent, and does not write the authority surface. Owner fan-in can absorb their bounded terminals. A fresh advisory dispatch-epoch snapshot shows Codex at about 70 percent remaining and healthy Grok at about 94 percent remaining; those numbers are opportunity-cost facts, not thresholds or a consumption objective. An archived extreme Grok-delivery example is only a magnified reference, not an activated mode, fixed width, or provider religion. Neutral candidate pool: ATOM_PARENT_FRAME_PRECEDES_ROUTING=restore the live user-owned parent result and Codex authority slice before selecting tools or workers; ATOM_ENUMERATE_COGNITIVE_PACKAGES_BEFORE_TIGHT_COUPLING=enumerate independently accepted cognitive packages before declaring the whole problem tightly coupled; ATOM_LEGITIMATE_READONLY_COGNITIVE_PACKAGE=sealed inventory research evidence counterexample and critic results are effective read-only candidate labor when they are the actual deliverable; ATOM_QUOTA_IS_OPPORTUNITY_COST=current authenticated quota changes qualitative routing preference and width without thresholds or usage targets; ATOM_CODEX_AUTHORITY_SLICE_RETAINED=Codex keeps intent arbitration formal write adoption integration and effect verification; ATOM_REASONING_AND_COMPLETION_BAR_PRESERVED=delegation changes labor allocation rather than reasoning evidence or completion quality; ATOM_BACKUP_MODE_REFERENCE_ONLY=the magnified backup remains non-authoritative and inactive; ATOM_WHOLE_TASK_TIGHT_BY_SURFACE=the coupled final write makes every cognitive input owner-only; ATOM_COGNITIVE_WORK_OWNER_ONLY=Codex personally performs all inventory research evidence extraction and criticism; ATOM_READONLY_COGNITIVE_EQUALS_FAKE_IMPLEMENTER=all read-only worker results are rejected because they cannot modify code; ATOM_FIXED_GROK_RATIO_OR_WIDTH=the snapshot creates a permanent ratio provider lock or lane count; ATOM_SPEND_GROK_AS_OBJECTIVE=workers are invented merely to consume headroom; ATOM_LOWER_REASONING_TO_SAVE_CODEX=reasoning or evidence quality is reduced to save Codex quota; ATOM_BACKUP_MODE_MANDATORY=the archived extreme example becomes the current Grok-only mode; ATOM_WORKER_SELF_PROMOTES=a cognitive candidate may write authority or claim effect completion.
+    user_increment: >-
+      Continue from my real parent intent. Before calling the whole thing tightly coupled, recover the
+      Codex-only slice and enumerate every independently useful cognitive and construction package.
+      Apply current task structure and quota opportunity cost without a fixed ratio, keep reasoning and
+      completion quality unchanged, and let Codex alone adopt, formally write, integrate, and verify effect.
+    expected_target_relation: existing_object
+    expected_next_step: act
+    expected_ask_user: false
+    expected_create_repository: false
+    expected_create_daemon: false
+    expected_create_goal: false
+    expected_predecision_order: parent_frame_before_candidate_selection
+    expected_active_problem_level: parent_intent_and_harm
+    expected_problem_level_order: before_rule_skill_mode_worker_and_tool_selection
+    expected_named_goal_relation: not_applicable|means_not_requested
+    expected_action_binding: current_authorized_object|continue_current_tui
+    expected_object_identity_source: restored_context
+    expected_mature_comparison_triggered: true
+    expected_effect_scope: reversible_local
+    expected_effect_authority: explicit_current_user
+    expected_coordination_mode: single_supervisor_worker
+    expected_worker_provider: grok|external_worker
+    expected_worker_transport: adaptive|direct_batch
+    expected_quota_action: reuse_episode_cache
+    expected_quota_query_disposition: reuse_fresh_snapshot
+    expected_owner_execution_state: dynamic_supervisor
+    expected_terminal_refill: not_applicable
+    expected_worker_receipt_disposition: not_applicable
+    expected_text_writer: codex_main|not_applicable
+    expected_completion_claim_scope: not_applicable
+    expected_continuous_run_disposition: not_applicable
+    expected_frontier_disposition: execute
+    expected_candidate_value: positive
+    expected_global_frontier_reconciled: false
+    expected_downstream_recovery_required: false
+    expected_freeze_unaffected_provider: false
+    expected_degraded_scope: none
+    expected_preserve_parent_completion_bar: true
+    expected_unaffected_frontier_action: not_applicable
+    expected_recovery_probe: not_applicable
+    expected_preference_update: none
+    expected_starts_new_project: false
+    expected_decision_responsibility: owner_execute_and_inform
+    expected_metacognition_disposition: do_not_capture
+    expected_recovered_requirement_atoms: ATOM_PARENT_FRAME_PRECEDES_ROUTING|ATOM_ENUMERATE_COGNITIVE_PACKAGES_BEFORE_TIGHT_COUPLING|ATOM_LEGITIMATE_READONLY_COGNITIVE_PACKAGE|ATOM_QUOTA_IS_OPPORTUNITY_COST|ATOM_CODEX_AUTHORITY_SLICE_RETAINED|ATOM_REASONING_AND_COMPLETION_BAR_PRESERVED|ATOM_BACKUP_MODE_REFERENCE_ONLY
+    expected_rejected_proxy_atoms: ATOM_WHOLE_TASK_TIGHT_BY_SURFACE|ATOM_COGNITIVE_WORK_OWNER_ONLY|ATOM_READONLY_COGNITIVE_EQUALS_FAKE_IMPLEMENTER|ATOM_FIXED_GROK_RATIO_OR_WIDTH|ATOM_SPEND_GROK_AS_OBJECTIVE|ATOM_LOWER_REASONING_TO_SAVE_CODEX|ATOM_BACKUP_MODE_MANDATORY|ATOM_WORKER_SELF_PROMOTES
+- description: Asymmetric quota invents no cognitive lanes after honest enumeration finds none
+  metadata:
+    id: REG_QUOTA_ASYMMETRY_INVENTS_NO_COGNITIVE_THEATER
+    domain: worker_routing
+    class: changed_context_negative
+    profiles: [core, deep]
+    source_type: balanced_counterexample
+    source_ref: current-user-2026-07-27/cognitive-package-admission-negative
+    lifecycle: regression
+    added_at: 2026-07-27
+    not_authority: true
+  vars:
+    case_id: REG_QUOTA_ASYMMETRY_INVENTS_NO_COGNITIVE_THEATER
+    domain: worker_routing
+    restored_context: |-
+      The same dispatch epoch reports Codex at about 70 percent remaining and healthy Grok at about 94 percent remaining. After restoring the parent result and examining the actual sources, the remaining positive action is one tightly coupled live user-intent arbitration and authority edit whose evidence, state, and write surface cannot be frozen into an independently accepted child result. There is no separate inventory, source comparison, evidence extraction, counterexample, critic, test-design, or implementation frontier. The cognitive-package enumeration rule and its balanced no-theater boundary are already accepted in the active governing artifact, so this request is a current routing readback rather than a new preference delta. External workers are healthy, but usage is not an objective and the archived extreme Grok-delivery example remains an inactive reference. Neutral candidate pool: ATOM_PARENT_FRAME_PRECEDES_ROUTING=restore the live parent result before selecting a route; ATOM_ENUMERATION_FOUND_NO_SEPARABLE_PACKAGE=honest cognitive and construction enumeration returns no independently useful package; ATOM_INSEPARABLE_OWNER_SLICE=Codex performs the one coupled authority slice directly; ATOM_QUOTA_NOT_USAGE_OBJECTIVE=asymmetric headroom cannot manufacture work or fixed width; ATOM_REASONING_AND_COMPLETION_BAR_PRESERVED=owner-direct still uses necessary thick reasoning and evidence; ATOM_RECOMPUTE_WHEN_FACTS_CHANGE=re-enumerate when new sources or facts create a separable frontier; ATOM_BACKUP_MODE_REFERENCE_ONLY=the magnified backup remains non-authoritative and inactive; ATOM_INVENT_COGNITIVE_CHORES=create research critic or audit lanes with no consumer merely to use Grok; ATOM_FIXED_GROK_RATIO_OR_WIDTH=turn the snapshot into a permanent provider ratio or lane count; ATOM_SPEND_GROK_AS_OBJECTIVE=token consumption substitutes for parent value; ATOM_LOWER_REASONING_TO_SAVE_CODEX=reduce reasoning quality to preserve Codex quota; ATOM_BACKUP_MODE_MANDATORY=activate the archived Grok-only extreme mode; ATOM_CODEX_SUBAGENT_DEFAULT=replace the absent external package with routine Codex subagents.
+    user_increment: >-
+      Do the inseparable owner slice. Do not invent cognitive chores or fixed Grok lanes merely because
+      Grok has more remaining headroom, and do not lower reasoning quality. Recompute only when the real
+      sources or dependencies change.
+    expected_target_relation: existing_object
+    expected_next_step: act
+    expected_ask_user: false
+    expected_create_repository: false
+    expected_create_daemon: false
+    expected_create_goal: false
+    expected_predecision_order: parent_frame_before_candidate_selection
+    expected_active_problem_level: object_instance
+    expected_problem_level_order: before_rule_skill_mode_worker_and_tool_selection
+    expected_named_goal_relation: not_applicable|means_not_requested
+    expected_action_binding: current_authorized_object|continue_current_tui
+    expected_object_identity_source: restored_context
+    expected_mature_comparison_triggered: false
+    expected_effect_scope: reversible_local
+    expected_effect_authority: explicit_current_user
+    expected_coordination_mode: supervisor_only
+    expected_worker_provider: not_applicable
+    expected_worker_transport: not_applicable
+    expected_quota_action: not_applicable
+    expected_quota_query_disposition: not_applicable
+    expected_owner_execution_state: inseparable_owner_slice
+    expected_terminal_refill: not_applicable
+    expected_worker_receipt_disposition: not_applicable
+    expected_text_writer: codex_main
+    expected_completion_claim_scope: not_applicable
+    expected_continuous_run_disposition: not_applicable
+    expected_frontier_disposition: execute
+    expected_candidate_value: positive
+    expected_global_frontier_reconciled: false
+    expected_downstream_recovery_required: false
+    expected_freeze_unaffected_provider: false
+    expected_degraded_scope: none
+    expected_preserve_parent_completion_bar: true
+    expected_unaffected_frontier_action: not_applicable
+    expected_recovery_probe: not_applicable
+    expected_preference_update: none
+    expected_starts_new_project: false
+    expected_decision_responsibility: owner_execute_and_inform
+    expected_human_explanation_mode: technical_plain_action
+    expected_metacognition_disposition: do_not_capture
+    expected_recovered_requirement_atoms: ATOM_PARENT_FRAME_PRECEDES_ROUTING|ATOM_ENUMERATION_FOUND_NO_SEPARABLE_PACKAGE|ATOM_INSEPARABLE_OWNER_SLICE|ATOM_QUOTA_NOT_USAGE_OBJECTIVE|ATOM_REASONING_AND_COMPLETION_BAR_PRESERVED|ATOM_RECOMPUTE_WHEN_FACTS_CHANGE|ATOM_BACKUP_MODE_REFERENCE_ONLY
+    expected_rejected_proxy_atoms: ATOM_INVENT_COGNITIVE_CHORES|ATOM_FIXED_GROK_RATIO_OR_WIDTH|ATOM_SPEND_GROK_AS_OBJECTIVE|ATOM_LOWER_REASONING_TO_SAVE_CODEX|ATOM_BACKUP_MODE_MANDATORY|ATOM_CODEX_SUBAGENT_DEFAULT
 - description: A known shared generator remains a repair means instead of replacing the user-owned completion identity
   metadata:
     id: NEG_KNOWN_GENERATOR_DOES_NOT_REPLACE_PARENT_COMPLETION_IDENTITY

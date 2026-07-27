@@ -321,7 +321,7 @@ def test_context_intent_alignment_eval_is_balanced_and_friction_bounded() -> Non
         (REPO_ROOT / "evals/context_intent_alignment/cases.yaml").read_text(encoding="utf-8")
     )
     cases = {case["metadata"]["id"]: case for case in loaded}
-    assert len(cases) == suite["case_count"] == 84
+    assert len(cases) == suite["case_count"] == 86
     assert len(cases) == len(loaded)
     assert all(case["metadata"]["domain"] == case["vars"]["domain"] for case in cases.values())
     for required in (
@@ -353,6 +353,8 @@ def test_context_intent_alignment_eval_is_balanced_and_friction_bounded() -> Non
         "REG_DYNAMIC_SUPERVISOR_SEAL_MISMATCH",
         "REG_DYNAMIC_SUPERVISOR_AUTHORITY_LANE",
         "REG_DYNAMIC_SUPERVISOR_NO_SEPARABLE_NO_JUNK",
+        "REG_ADMIT_COGNITIVE_PACKAGES_BEFORE_TIGHT_COUPLING",
+        "REG_QUOTA_ASYMMETRY_INVENTS_NO_COGNITIVE_THEATER",
         "REG_DYNAMIC_SUPERVISOR_PAUSE_STOPS",
         "REG_DYNAMIC_SUPERVISOR_LIVE_ROUTING_FACTS",
         "REG_LIVE_FACT_MUST_CHANGE_DOMINATED_NEXT_ACTION",
@@ -406,6 +408,26 @@ def test_context_intent_alignment_eval_is_balanced_and_friction_bounded() -> Non
         "ATOM_USER_REAUTHORIZES_ROUTINE_DISPATCH",
         "ATOM_OWNER_REBUILDS_WORKER_PACKAGE",
     }
+    cognitive_admission = cases["REG_ADMIT_COGNITIVE_PACKAGES_BEFORE_TIGHT_COUPLING"]["vars"]
+    assert cognitive_admission["expected_coordination_mode"] == "single_supervisor_worker"
+    assert set(cognitive_admission["expected_worker_provider"].split("|")) == {
+        "grok",
+        "external_worker",
+    }
+    assert cognitive_admission["expected_quota_action"] == "reuse_episode_cache"
+    assert "ATOM_ENUMERATE_COGNITIVE_PACKAGES_BEFORE_TIGHT_COUPLING" in cognitive_admission[
+        "expected_recovered_requirement_atoms"
+    ].split("|")
+    assert "ATOM_WHOLE_TASK_TIGHT_BY_SURFACE" in cognitive_admission[
+        "expected_rejected_proxy_atoms"
+    ].split("|")
+    quota_negative = cases["REG_QUOTA_ASYMMETRY_INVENTS_NO_COGNITIVE_THEATER"]["vars"]
+    assert quota_negative["expected_coordination_mode"] == "supervisor_only"
+    assert quota_negative["expected_worker_provider"] == "not_applicable"
+    assert quota_negative["expected_owner_execution_state"] == "inseparable_owner_slice"
+    assert "ATOM_INVENT_COGNITIVE_CHORES" in quota_negative[
+        "expected_rejected_proxy_atoms"
+    ].split("|")
     route_continuity = cases["REG_DIRECT_ROUTE_AND_CARRIER_SURVIVE_WINDOW"]["vars"]
     assert route_continuity["expected_worker_transport"] == "direct_batch"
     assert "ATOM_EXISTING_DIRECT_ROUTE_CONTINUES" in route_continuity[
@@ -908,12 +930,15 @@ def test_context_intent_alignment_eval_is_balanced_and_friction_bounded() -> Non
     assert "standing sufficient-intent scope is a positive duty" in prompt
     assert "best currently verified behavior baseline" in prompt
     assert "self-judged PASS as a proxy" in prompt
+    assert "before choosing\n  owner-only, enumerate" in prompt
+    assert "sealed read-only cognitive result is effective labor" in prompt
+    assert "do not invent one to consume quota" in prompt
     catalog = json.loads(
         (REPO_ROOT / "evals/behavior_regression/catalog.json").read_text(encoding="utf-8")
     )
     context_suite = next(s for s in catalog["suites"] if s["id"] == "context_intent_alignment")
-    assert context_suite["case_count"] == 84
-    assert catalog["declared_case_count"] == 144
+    assert context_suite["case_count"] == 86
+    assert catalog["declared_case_count"] == 146
 
     decision = json.loads(
         (REPO_ROOT / "evals/context_intent_alignment/decision_model.v1.json").read_text(
@@ -1451,7 +1476,7 @@ def test_dual_self_evolution_runners_are_thin_and_claims_stay_separate() -> None
         (REPO_ROOT / "evals/behavior_regression/catalog.json").read_text(encoding="utf-8")
     )
     suite_count = sum(item["case_count"] for item in catalog["suites"])
-    assert suite_count == catalog["declared_case_count"] == 144
+    assert suite_count == catalog["declared_case_count"] == 146
     context_cases = yaml.safe_load(
         (REPO_ROOT / "evals/context_intent_alignment/cases.yaml").read_text(encoding="utf-8")
     )
