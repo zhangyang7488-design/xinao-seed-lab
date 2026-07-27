@@ -37,14 +37,18 @@ if (-not $RuntimeRoot) {
 }
 
 function Invoke-WorkerRepoMountStatus {
-    param([Parameter(Mandatory = $true)][string]$Repo)
+    param(
+        [Parameter(Mandatory = $true)][string]$Repo,
+        [Parameter(Mandatory = $true)][string]$Runtime
+    )
     $python = Join-Path $Repo ".venv\Scripts\python.exe"
     if (-not (Test-Path -LiteralPath $python -PathType Leaf)) {
         $pythonCommand = Get-Command python -ErrorAction Stop
         $python = [string]$pythonCommand.Source
     }
     $raw = (& $python -m services.agent_runtime.worker_repo_mount_identity `
-        --repo-root $Repo --mode actual --container "houtai-gongren" 2>&1 | Out-String).Trim()
+        --repo-root $Repo --runtime-root $Runtime --mode actual `
+        --container "houtai-gongren" 2>&1 | Out-String).Trim()
     $exitCode = $LASTEXITCODE
     try {
         $payload = $raw | ConvertFrom-Json
@@ -251,7 +255,7 @@ try {
         if ($namesRunning -contains $wc -or $namesAll -contains $wc) {
             $st = (& docker inspect -f "{{.State.Status}}/{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}" $wc 2>$null | Out-String).Trim()
             $result.worker_container_state = $st
-            $mountStatus = Invoke-WorkerRepoMountStatus -Repo $RepoRoot
+            $mountStatus = Invoke-WorkerRepoMountStatus -Repo $RepoRoot -Runtime $RuntimeRoot
             $result.worker_mount_actual = $mountStatus.report
             $result.worker_mount_ok = [bool](
                 $mountStatus.exit_code -eq 0 -and $mountStatus.report.ok -eq $true
