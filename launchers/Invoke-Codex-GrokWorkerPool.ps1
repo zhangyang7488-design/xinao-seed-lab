@@ -437,6 +437,8 @@ if ($packageMode) {
         -SelectorReleasePointer $SelectorReleasePointer `
         -TaskRunRoot $TaskRunRoot `
         -TaskRunId $TaskRunId `
+        -DispatchEnvelopePath $DispatchEnvelopePath `
+        -TaskRunCli $TaskRunCli `
         -CheckpointPath $CheckpointPath
     $CheckpointPath = [string]$checkpointReport.checkpoint_path
     if ([string]::IsNullOrWhiteSpace($CheckpointPath)) {

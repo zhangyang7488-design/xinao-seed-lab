@@ -84,6 +84,7 @@ def _fixture(tmp_path: Path) -> tuple[Path, Path, Path, Path]:
             model = $Model
             task_run_root = $TaskRunRoot
             task_run_id = $TaskRunId
+            task_run_cli = $TaskRunCli
             checkpoint_path = $CheckpointPath
         }
         Add-Content -LiteralPath $env:XINAO_PACKAGE_CAPTURE -Value ($row | ConvertTo-Json -Compress)
@@ -95,7 +96,8 @@ def _fixture(tmp_path: Path) -> tuple[Path, Path, Path, Path]:
         r"""
         param(
             [string]$RuntimeRoot, [string]$SelectorReleasePointer,
-            [string]$TaskRunRoot, [string]$TaskRunId, [string]$CheckpointPath
+            [string]$TaskRunRoot, [string]$TaskRunId, [string]$CheckpointPath,
+            [string]$DispatchEnvelopePath, [string]$TaskRunCli
         )
         $taskRoot = [IO.Path]::GetFullPath($TaskRunRoot)
         $taskRun = [IO.Path]::GetFullPath((Join-Path $taskRoot $TaskRunId))
@@ -119,14 +121,24 @@ def _fixture(tmp_path: Path) -> tuple[Path, Path, Path, Path]:
             checkpoint_path = $CheckpointPath
             task_run_id = $TaskRunId
             quota_query_count = $quotaCount
+            dispatch_envelope_path = $DispatchEnvelopePath
+            task_run_cli = $TaskRunCli
         }
         Add-Content -LiteralPath $capture -Value ($row | ConvertTo-Json -Compress)
+        $packageMode = -not [string]::IsNullOrWhiteSpace($DispatchEnvelopePath)
         [pscustomobject]@{
-            schema_version = "xinao.checkpoint_task_run_binding.v1"
+            schema_version = if ($packageMode) {
+                "xinao.worker_package_task_run_preflight.v1"
+            } else {
+                "xinao.checkpoint_task_run_binding.v1"
+            }
             checkpoint_path = $CheckpointPath
             run_id = $TaskRunId
             cursor = 1
             event_count = 1
+            package_ids = if ($packageMode) { @("p1") } else { @() }
+            work_keys = if ($packageMode) { @("wk-1") } else { @() }
+            model_invocation_allowed = $packageMode
             authority = $false
             completion_claim_allowed = $false
         }
@@ -559,6 +571,7 @@ def test_package_mode_reuses_exact_sealed_epoch_and_rejects_expired_seal(
     package_row = json.loads(package_capture.read_text().splitlines()[-1])
     assert package_row["task_run_id"] == "run-1"
     assert Path(package_row["checkpoint_path"]) == checkpoint
+    assert Path(package_row["task_run_cli"]) == task_run_cli
     checkpoint_rows = [
         json.loads(line)
         for line in (runtime / "checkpoint-preflight.jsonl").read_text().splitlines()
@@ -568,6 +581,8 @@ def test_package_mode_reuses_exact_sealed_epoch_and_rejects_expired_seal(
             "checkpoint_path": str(checkpoint),
             "task_run_id": "run-1",
             "quota_query_count": 1,
+            "dispatch_envelope_path": str(envelope),
+            "task_run_cli": str(task_run_cli),
         }
     ]
 
