@@ -321,7 +321,7 @@ def test_context_intent_alignment_eval_is_balanced_and_friction_bounded() -> Non
         (REPO_ROOT / "evals/context_intent_alignment/cases.yaml").read_text(encoding="utf-8")
     )
     cases = {case["metadata"]["id"]: case for case in loaded}
-    assert len(cases) == suite["case_count"] == 89
+    assert len(cases) == suite["case_count"] == 93
     assert len(cases) == len(loaded)
     assert all(case["metadata"]["domain"] == case["vars"]["domain"] for case in cases.values())
     for required in (
@@ -371,11 +371,47 @@ def test_context_intent_alignment_eval_is_balanced_and_friction_bounded() -> Non
         "NEG_KNOWN_GENERATOR_DOES_NOT_REPLACE_PARENT_COMPLETION_IDENTITY",
         "NEG_SINGLE_LOCAL_CAUSE_STAYS_OBJECT_INSTANCE",
         "NEG_INDEPENDENT_BUGS_DO_NOT_INVENT_GENERATOR",
+        "REG_CHILD_PROCESS_RULE_PRESERVES_CALLER_FRAME",
+        "POS_EXPLICIT_CALLER_WINDOW_TARGET_ALLOWS_CALLER_EFFECT",
+        "REG_VALIDATION_DATA_ROLE_CANNOT_BECOME_DEVELOPMENT_INPUT",
+        "POS_PREREGISTERED_ADAPTIVE_POLICY_MAY_USE_FEEDBACK",
     ):
         assert required in cases
     assert cases["POS_CLEAR_REVERSIBLE_LOCAL_FIX"]["vars"]["expected_ask_user"] is False
     assert cases["POS_EXPLICIT_REPOSITORY_CREATE"]["vars"]["expected_create_repository"] is True
     assert cases["NEG_AMBIGUOUS_PUBLICATION_OBJECT"]["vars"]["expected_ask_user"] is True
+    child_frame = cases["REG_CHILD_PROCESS_RULE_PRESERVES_CALLER_FRAME"]["vars"]
+    assert "ATOM_CALLER_WINDOW_FRAME_CONDITION" in child_frame[
+        "expected_recovered_requirement_atoms"
+    ].split("|")
+    assert "ATOM_HIDE_CALLER_TO_SATISFY_ZERO_POPUP" in child_frame[
+        "expected_rejected_proxy_atoms"
+    ].split("|")
+    explicit_caller = cases["POS_EXPLICIT_CALLER_WINDOW_TARGET_ALLOWS_CALLER_EFFECT"][
+        "vars"
+    ]
+    assert explicit_caller["expected_effect_authority"] == "explicit_current_user"
+    assert "ATOM_BAN_ALL_CALLER_EFFECTS" in explicit_caller[
+        "expected_rejected_proxy_atoms"
+    ].split("|")
+    frozen_validation = cases[
+        "REG_VALIDATION_DATA_ROLE_CANNOT_BECOME_DEVELOPMENT_INPUT"
+    ]["vars"]
+    assert "ATOM_VALIDATION_ROLE_ONLY" in frozen_validation[
+        "expected_recovered_requirement_atoms"
+    ].split("|")
+    assert "ATOM_DATA_ROLE_SWITCH_WITHOUT_POLICY_VERSION" in frozen_validation[
+        "expected_rejected_proxy_atoms"
+    ].split("|")
+    adaptive_policy = cases["POS_PREREGISTERED_ADAPTIVE_POLICY_MAY_USE_FEEDBACK"][
+        "vars"
+    ]
+    assert "ATOM_PREREGISTERED_UPDATE_RULE" in adaptive_policy[
+        "expected_recovered_requirement_atoms"
+    ].split("|")
+    assert "ATOM_BAN_ALL_ONLINE_UPDATE" in adaptive_policy[
+        "expected_rejected_proxy_atoms"
+    ].split("|")
     external_route = cases["REG_EXTERNAL_WORKER_PROVIDER_AND_TRANSPORT_ADAPTIVE"]["vars"]
     assert set(external_route["expected_worker_provider"].split("|")) == {
         "external_worker",
@@ -937,8 +973,8 @@ def test_context_intent_alignment_eval_is_balanced_and_friction_bounded() -> Non
         (REPO_ROOT / "evals/behavior_regression/catalog.json").read_text(encoding="utf-8")
     )
     context_suite = next(s for s in catalog["suites"] if s["id"] == "context_intent_alignment")
-    assert context_suite["case_count"] == 89
-    assert catalog["declared_case_count"] == 149
+    assert context_suite["case_count"] == 93
+    assert catalog["declared_case_count"] == 153
 
     decision = json.loads(
         (REPO_ROOT / "evals/context_intent_alignment/decision_model.v1.json").read_text(
@@ -1019,6 +1055,12 @@ def test_context_intent_alignment_eval_is_balanced_and_friction_bounded() -> Non
     assert "candidate_reuse_invariant" in decision["input_interpretation"]
     assert "observed_fact_action_binding" in decision["input_interpretation"]
     assert "action_continuity_invariant" in decision["input_interpretation"]
+    decision_frame = decision["input_interpretation"]["decision_frame_admission_invariant"]
+    assert "before any reply, capture, question, dispatch, tool call" in decision_frame
+    assert "unmentioned callers, Owners, siblings, and external state remain unchanged" in decision_frame
+    assert "only across proven dependency edges" in decision_frame
+    assert "closest no-action world" in decision_frame
+    assert "second router, control plane, or symptom blacklist" in decision_frame
     assert (
         "Merely acknowledging a fact while retaining an action it now dominates is a failure"
         in decision["input_interpretation"]["observed_fact_action_binding"]
@@ -1083,6 +1125,15 @@ def test_context_intent_alignment_eval_is_balanced_and_friction_bounded() -> Non
         "REG_OPERATE_FOR_USER_PRESERVES_MATERIAL_USER_FORK"
         in decision["anchor_regression_cases"]
     )
+    for frame_case in (
+        "REG_LOCAL_WAIT_CANNOT_POISON_PARENT",
+        "REG_GLOBAL_WAIT_REQUIRES_ATOMIC_EXTERNALITY_AND_CAUSAL_REPAIR",
+        "REG_CHILD_PROCESS_RULE_PRESERVES_CALLER_FRAME",
+        "POS_EXPLICIT_CALLER_WINDOW_TARGET_ALLOWS_CALLER_EFFECT",
+        "REG_VALIDATION_DATA_ROLE_CANNOT_BECOME_DEVELOPMENT_INPUT",
+        "POS_PREREGISTERED_ADAPTIVE_POLICY_MAY_USE_FEEDBACK",
+    ):
+        assert frame_case in decision["anchor_regression_cases"]
     assert "stable cross-context correction" in decision["input_interpretation"]["ambitious_ideas"]
     continuity = decision["input_interpretation"]["action_continuity_invariant"]
     assert "action_resume_receipt" in continuity
@@ -1502,7 +1553,7 @@ def test_dual_self_evolution_runners_are_thin_and_claims_stay_separate() -> None
         (REPO_ROOT / "evals/behavior_regression/catalog.json").read_text(encoding="utf-8")
     )
     suite_count = sum(item["case_count"] for item in catalog["suites"])
-    assert suite_count == catalog["declared_case_count"] == 149
+    assert suite_count == catalog["declared_case_count"] == 153
     context_cases = yaml.safe_load(
         (REPO_ROOT / "evals/context_intent_alignment/cases.yaml").read_text(encoding="utf-8")
     )
