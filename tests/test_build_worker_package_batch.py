@@ -6,6 +6,7 @@ import json
 import os
 import subprocess
 import sys
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Callable
 
@@ -1174,3 +1175,174 @@ def test_builder_cli_emits_one_route_at_a_time_and_preserves_neutral_bytes(
         )
         assert validate.returncode == 0, validate.stderr
         assert json.loads(validate.stdout)["worker_admitted_package_ids"] == ["p1"]
+
+
+def test_builder_cli_rebinds_fresh_epoch_without_changing_sealed_manifest(
+    tmp_path: Path,
+) -> None:
+    fixture = _fixture(tmp_path / "inputs")
+    spec = _logical_spec(fixture)
+    spec_path = tmp_path / "spec.json"
+    initial_resolution_path = tmp_path / "quota-resolution-initial.json"
+    selection_path = tmp_path / "selection-a.json"
+    manifest_path = tmp_path / "manifest.json"
+    initial_envelope_path = tmp_path / "envelope-initial.json"
+    rebound_envelope_path = tmp_path / "envelope-rebound.json"
+    _write_json(spec_path, spec)
+    _write_json(selection_path, _route_receipt("direct-grok-worker-pool"))
+    initial_snapshot = _read_json(str(fixture["quota_ref"]["path"]))
+    _write_json(
+        initial_resolution_path,
+        {
+            "snapshot": {
+                **initial_snapshot,
+                "snapshot_ref": fixture["quota_ref"]["path"],
+            }
+        },
+    )
+    initial = subprocess.run(
+        [
+            sys.executable,
+            str(Path(builder.__file__)),
+            "--spec",
+            str(spec_path),
+            "--quota-resolution",
+            str(initial_resolution_path),
+            "--selection-receipt-a",
+            str(selection_path),
+            "--output",
+            str(manifest_path),
+            "--dispatch-output-a",
+            str(initial_envelope_path),
+        ],
+        cwd=Path(builder.__file__).resolve().parents[1],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert initial.returncode == 0, initial.stderr
+    manifest_bytes = manifest_path.read_bytes()
+    manifest_sha256 = builder._sha(manifest_path)
+
+    # The original sender-side input may drift after sealing.  Rebinding the
+    # physical dispatch carrier must continue to consume the sealed manifest.
+    Path(str(spec["packages"][0]["prompt_path"])).write_text(
+        "changed after the neutral manifest was sealed\n",
+        encoding="utf-8",
+    )
+    fresh_snapshot_path = tmp_path / "quota-snapshot-fresh.json"
+    fresh_snapshot = {
+        **initial_snapshot,
+        "epoch_id": "epoch-1",
+        "snapshot_id": "snapshot-fresh",
+        "queried_at": datetime.now(timezone.utc).isoformat(),
+        "snapshot_ref": str(fresh_snapshot_path),
+    }
+    _write_json(fresh_snapshot_path, fresh_snapshot)
+    fresh_resolution_path = tmp_path / "quota-resolution-fresh.json"
+    _write_json(fresh_resolution_path, {"snapshot": fresh_snapshot})
+
+    rebound = subprocess.run(
+        [
+            sys.executable,
+            str(Path(builder.__file__)),
+            "--existing-manifest",
+            str(manifest_path),
+            "--prior-dispatch-envelope",
+            str(initial_envelope_path),
+            "--quota-resolution",
+            str(fresh_resolution_path),
+            "--selection-receipt-a",
+            str(selection_path),
+            "--dispatch-output-a",
+            str(rebound_envelope_path),
+        ],
+        cwd=Path(builder.__file__).resolve().parents[1],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert rebound.returncode == 0, rebound.stderr
+    result = json.loads(rebound.stdout)
+    assert result["manifest_reused"] is True
+    assert result["manifest_sha256"] == manifest_sha256
+    assert result["input_snapshot_status"] == "reused_sealed_manifest"
+    assert result["worker_package_ids"] == ["p1"]
+    assert manifest_path.read_bytes() == manifest_bytes
+    envelope = _read_json(str(rebound_envelope_path))
+    assert envelope["package_manifest_ref"] == {
+        "path": str(manifest_path),
+        "sha256": manifest_sha256,
+    }
+    assert envelope["dispatch_epoch"]["quota_snapshot_id"] == "snapshot-fresh"
+    assert validate_dispatch_envelope(envelope)["package_ids"] == ["p1"]
+
+    wrong_epoch_snapshot_path = tmp_path / "quota-snapshot-wrong-epoch.json"
+    wrong_epoch_snapshot = {
+        **fresh_snapshot,
+        "epoch_id": "different-episode",
+        "snapshot_id": "snapshot-wrong-epoch",
+        "snapshot_ref": str(wrong_epoch_snapshot_path),
+    }
+    _write_json(wrong_epoch_snapshot_path, wrong_epoch_snapshot)
+    wrong_epoch_resolution_path = tmp_path / "quota-resolution-wrong-epoch.json"
+    _write_json(wrong_epoch_resolution_path, {"snapshot": wrong_epoch_snapshot})
+    wrong_epoch_envelope_path = tmp_path / "envelope-wrong-epoch.json"
+    wrong_epoch = subprocess.run(
+        [
+            sys.executable,
+            str(Path(builder.__file__)),
+            "--existing-manifest",
+            str(manifest_path),
+            "--prior-dispatch-envelope",
+            str(initial_envelope_path),
+            "--quota-resolution",
+            str(wrong_epoch_resolution_path),
+            "--selection-receipt-a",
+            str(selection_path),
+            "--dispatch-output-a",
+            str(wrong_epoch_envelope_path),
+        ],
+        cwd=Path(builder.__file__).resolve().parents[1],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert wrong_epoch.returncode == 20
+    assert "must preserve the prior envelope" in wrong_epoch.stderr
+    assert not wrong_epoch_envelope_path.exists()
+
+    stale_snapshot_path = tmp_path / "quota-snapshot-stale.json"
+    stale_snapshot = {
+        **fresh_snapshot,
+        "snapshot_id": "snapshot-stale",
+        "queried_at": "2000-01-01T00:00:00+00:00",
+        "snapshot_ref": str(stale_snapshot_path),
+    }
+    _write_json(stale_snapshot_path, stale_snapshot)
+    stale_resolution_path = tmp_path / "quota-resolution-stale.json"
+    _write_json(stale_resolution_path, {"snapshot": stale_snapshot})
+    stale_envelope_path = tmp_path / "envelope-stale.json"
+    stale = subprocess.run(
+        [
+            sys.executable,
+            str(Path(builder.__file__)),
+            "--existing-manifest",
+            str(manifest_path),
+            "--prior-dispatch-envelope",
+            str(initial_envelope_path),
+            "--quota-resolution",
+            str(stale_resolution_path),
+            "--selection-receipt-a",
+            str(selection_path),
+            "--dispatch-output-a",
+            str(stale_envelope_path),
+        ],
+        cwd=Path(builder.__file__).resolve().parents[1],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert stale.returncode == 20
+    assert "quota snapshot exceeds existing-manifest rebind freshness limit" in stale.stderr
+    assert not stale_envelope_path.exists()
