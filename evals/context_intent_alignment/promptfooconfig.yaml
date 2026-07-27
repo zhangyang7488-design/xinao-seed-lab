@@ -36,6 +36,12 @@ providers:
           - ask_user
           - create_repository
           - create_daemon
+          - create_goal
+          - predecision_order
+          - active_problem_level
+          - problem_level_order
+          - named_goal_relation
+          - action_binding
           - object_identity_source
           - requested_effect_source
           - first_validation
@@ -85,10 +91,26 @@ providers:
           target_relation:
             enum: [existing_object, new_named_object, unresolved_object]
           next_step:
-            enum: [act, inspect_then_act, ask_material_fork]
+            enum: [act, inspect_then_act, ask_material_fork, answer_only]
           ask_user: { type: boolean }
           create_repository: { type: boolean }
           create_daemon: { type: boolean }
+          create_goal: { type: boolean }
+          predecision_order: { type: string, const: parent_frame_before_candidate_selection }
+          active_problem_level:
+            description: The live user-owned problem and completion identity, not the deepest known cause or repair carrier.
+            enum: [object_instance, problem_definition, parent_intent_and_harm, shared_upstream_generator]
+          problem_level_order: { type: string, const: before_rule_skill_mode_worker_and_tool_selection }
+          named_goal_relation:
+            enum: [means_not_requested, explicit_endpoint_requested, not_applicable]
+          action_binding:
+            enum:
+              - current_authorized_object
+              - continue_current_tui
+              - create_explicit_native_goal
+              - answer_only_no_task_tools
+              - ask_material_fork
+              - excluded_no_action
           object_identity_source:
             enum: [restored_context, current_user_increment, unresolved]
           requested_effect_source: { type: string, const: current_user_increment }

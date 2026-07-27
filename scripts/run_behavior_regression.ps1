@@ -170,19 +170,25 @@ if ($FailedFrom) {
 }
 
 $promptfooRoot = Join-Path $RuntimeRoot 'tools\promptfoo'
-$promptfoo = Join-Path $promptfooRoot 'node_modules\.bin\promptfoo.cmd'
-$promptfooPackage = Join-Path $promptfooRoot 'node_modules\promptfoo\package.json'
-if (-not (Test-Path -LiteralPath $promptfoo -PathType Leaf)) {
-    throw "Pinned Promptfoo runtime is missing: $promptfoo"
-}
+$promptfooPackageRoot = Join-Path $promptfooRoot 'node_modules\promptfoo'
+$promptfooPackage = Join-Path $promptfooPackageRoot 'package.json'
 if (-not (Test-Path -LiteralPath $promptfooPackage -PathType Leaf)) {
     throw "Promptfoo package manifest is missing: $promptfooPackage"
 }
-$resolvedPromptfooVersion = (Get-Content -LiteralPath $promptfooPackage -Raw |
-    ConvertFrom-Json).version
+$promptfooManifest = Get-Content -LiteralPath $promptfooPackage -Raw | ConvertFrom-Json
+$resolvedPromptfooVersion = $promptfooManifest.version
 if ($resolvedPromptfooVersion -ne '0.121.18') {
     throw "Promptfoo version drift: expected 0.121.18, got $resolvedPromptfooVersion"
 }
+$promptfooBinRelative = [string]$promptfooManifest.bin.promptfoo
+if ([string]::IsNullOrWhiteSpace($promptfooBinRelative)) {
+    throw "Promptfoo package manifest does not declare bin.promptfoo: $promptfooPackage"
+}
+$promptfooEntrypoint = Join-Path $promptfooPackageRoot $promptfooBinRelative
+if (-not (Test-Path -LiteralPath $promptfooEntrypoint -PathType Leaf)) {
+    throw "Pinned Promptfoo entrypoint is missing: $promptfooEntrypoint"
+}
+$node = (Get-Command node -ErrorAction Stop).Source
 if (-not (Test-Path -LiteralPath $CodexHome -PathType Container)) {
     throw "Canonical CODEX_HOME is missing: $CodexHome"
 }
@@ -303,6 +309,9 @@ function Get-PromptfooResultSummary {
             failures = 0
             errors = 1
             case_ids = @()
+            model_outputs_observed = 0
+            runtime_pass_claim_eligible = $false
+            runtime_claim_denial_reasons = @('missing_result', 'zero_model_output')
         }
     }
     $document = Get-Content -LiteralPath $ResultPath -Raw | ConvertFrom-Json
@@ -324,7 +333,28 @@ function Get-PromptfooResultSummary {
             token_usage = $stats.tokenUsage
             case_ids = @()
             empty_selection = $true
+            model_outputs_observed = 0
+            runtime_pass_claim_eligible = $false
+            runtime_claim_denial_reasons = @('empty_selection', 'zero_model_output')
         }
+    }
+    $rows = @($document.results.results)
+    $modelOutputsObserved = @(
+        $rows | Where-Object {
+            $candidate = $_.response.output
+            if ($null -eq $candidate) { $false }
+            elseif ($candidate -is [string]) { -not [string]::IsNullOrWhiteSpace($candidate) }
+            else { $true }
+        }
+    ).Count
+    $runtimeClaimDenials = @()
+    if ($ExitCode -ne 0) { $runtimeClaimDenials += "nonzero_exit:$ExitCode" }
+    if ([int]$stats.failures -gt 0) { $runtimeClaimDenials += 'failed_rows' }
+    if ([int]$stats.errors -gt 0) { $runtimeClaimDenials += 'error_rows' }
+    if ([int]$stats.successes -le 0) { $runtimeClaimDenials += 'no_successful_rows' }
+    if ($modelOutputsObserved -eq 0) { $runtimeClaimDenials += 'zero_model_output' }
+    if ($modelOutputsObserved -lt [int]$stats.successes) {
+        $runtimeClaimDenials += 'successful_row_without_model_output'
     }
     return [ordered]@{
         suite = $SuiteId
@@ -336,6 +366,9 @@ function Get-PromptfooResultSummary {
         duration_ms = [int64]$stats.durationMs
         token_usage = $stats.tokenUsage
         case_ids = $caseIds
+        model_outputs_observed = $modelOutputsObserved
+        runtime_pass_claim_eligible = ($runtimeClaimDenials.Count -eq 0)
+        runtime_claim_denial_reasons = @($runtimeClaimDenials)
     }
 }
 
@@ -361,7 +394,9 @@ function Invoke-PromptfooSuite {
         '--output', $ResultPath
     ) + $ExtraArguments
     $consolePath = Join-Path $outputRoot "$SuiteId.console.log"
-    $console = & $promptfoo @arguments 2>&1
+    # Invoke the pinned JavaScript entrypoint directly. On Windows, forwarding a regex
+    # containing `|` through promptfoo.cmd lets cmd.exe reinterpret it as a shell pipe.
+    $console = & $node $promptfooEntrypoint @arguments 2>&1
     $exitCode = $LASTEXITCODE
     $console | Set-Content -LiteralPath $consolePath -Encoding utf8NoBOM
     return Get-PromptfooResultSummary -SuiteId $SuiteId -ResultPath $ResultPath -ExitCode $exitCode
@@ -698,7 +733,10 @@ try {
         'tests/test_behavior_regression_incremental.py'
     )
     if ($runContext -or $runProactive) {
-        $preflightTests += 'tests/test_repo_safety.py'
+        $preflightTests += @(
+            'tests/test_repo_safety.py',
+            'tests/test_context_intent_alignment_behavior.py'
+        )
     }
     if ($runOrchestration) {
         $preflightTests += @(
@@ -782,6 +820,9 @@ try {
                 reused_case_ids = @($incrementalSelection.reused_case_ids)
                 incremental_selection = $incrementalSelectionPath
                 terminal_counts_authority = 'incremental_selection_reuse_receipt'
+                model_outputs_observed = 0
+                runtime_pass_claim_eligible = $false
+                runtime_claim_denial_reasons = @('reuse_only_no_fresh_model_trajectory')
             }
         }
         else {
@@ -883,6 +924,12 @@ try {
         elseif ($suite.exit_code -ne 0 -and $suite.exit_code -ne 100) {
             $overallExit = 1
         }
+        elseif ($suite.result -and $suite.runtime_pass_claim_eligible -ne $true) {
+            $overallExit = 1
+            if (-not $infrastructureError) {
+                $infrastructureError = "Suite $($suite.suite) has no claim-eligible model trajectory."
+            }
+        }
     }
 }
 catch {
@@ -969,6 +1016,21 @@ $totals = [ordered]@{
     failures = [int](($suiteRuns | ForEach-Object { [int]$_.failures } | Measure-Object -Sum).Sum)
     errors = [int](($suiteRuns | ForEach-Object { [int]$_.errors } | Measure-Object -Sum).Sum)
 }
+$modelOutputsObserved = [int](
+    ($suiteRuns | ForEach-Object { [int]$_.model_outputs_observed } | Measure-Object -Sum).Sum
+)
+$runtimeClaimDenials = @()
+if ($PreflightOnly) { $runtimeClaimDenials += 'preflight_only' }
+if ($suiteRuns.Count -eq 0) { $runtimeClaimDenials += 'no_model_suite_ran' }
+if ($modelOutputsObserved -eq 0) { $runtimeClaimDenials += 'zero_model_output' }
+foreach ($suite in $suiteRuns) {
+    if ($suite.runtime_pass_claim_eligible -ne $true) {
+        $runtimeClaimDenials += "suite_not_eligible:$($suite.suite)"
+    }
+}
+if ($overallExit -ne 0) { $runtimeClaimDenials += "run_exit:$overallExit" }
+$runtimeClaimDenials = @($runtimeClaimDenials | Select-Object -Unique)
+$runtimePassClaimEligible = $runtimeClaimDenials.Count -eq 0
 $gitSha = (& git -C $repoRoot rev-parse HEAD 2>$null).Trim()
 $gitStatus = @(& git -C $repoRoot status --porcelain=v1 2>$null)
 $summary = [ordered]@{
@@ -1011,6 +1073,9 @@ $summary = [ordered]@{
     static_validation = $staticResult
     suites = $suiteRuns
     totals = $totals
+    model_outputs_observed = $modelOutputsObserved
+    runtime_pass_claim_eligible = $runtimePassClaimEligible
+    runtime_claim_denial_reasons = $runtimeClaimDenials
     exit_code = $overallExit
     infrastructure_error = $infrastructureError
     not_authority = $true

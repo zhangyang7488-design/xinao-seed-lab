@@ -22,6 +22,30 @@ module.exports = (output, context) => {
   const sameSet = (left, right) =>
     left.size === right.size && [...left].every((item) => right.has(item));
   const expectedNextSteps = alternatives(context.vars.expected_next_step);
+  const expectedActionBindings = alternatives(
+    context.vars.expected_action_binding ??
+      (expectedNextSteps.length === 1 && expectedNextSteps[0] === 'ask_material_fork'
+        ? 'ask_material_fork'
+        : expectedNextSteps.length === 1 && expectedNextSteps[0] === 'answer_only'
+          ? 'answer_only_no_task_tools'
+          : 'current_authorized_object|continue_current_tui'),
+  );
+  const expectedNamedGoalRelations = alternatives(
+    context.vars.expected_named_goal_relation ??
+      ((context.vars.expected_create_goal ?? false)
+        ? 'explicit_endpoint_requested'
+        : 'not_applicable|means_not_requested'),
+  );
+  const expectedPredecisionOrder =
+    context.vars.expected_predecision_order ??
+    'parent_frame_before_candidate_selection';
+  const expectedActiveProblemLevels = alternatives(
+    context.vars.expected_active_problem_level ??
+      'object_instance|problem_definition|parent_intent_and_harm|shared_upstream_generator',
+  );
+  const expectedProblemLevelOrder =
+    context.vars.expected_problem_level_order ??
+    'before_rule_skill_mode_worker_and_tool_selection';
   const expectedTargetRelations = alternatives(
     context.vars.expected_target_relation,
   );
@@ -175,6 +199,21 @@ module.exports = (output, context) => {
     ask_user: context.vars.expected_ask_user,
     create_repository: context.vars.expected_create_repository,
     create_daemon: context.vars.expected_create_daemon,
+    create_goal: context.vars.expected_create_goal ?? false,
+    predecision_order: expectedPredecisionOrder,
+    active_problem_level:
+      expectedActiveProblemLevels.length === 1
+        ? expectedActiveProblemLevels[0]
+        : expectedActiveProblemLevels,
+    problem_level_order: expectedProblemLevelOrder,
+    named_goal_relation:
+      expectedNamedGoalRelations.length === 1
+        ? expectedNamedGoalRelations[0]
+        : expectedNamedGoalRelations,
+    action_binding:
+      expectedActionBindings.length === 1
+        ? expectedActionBindings[0]
+        : expectedActionBindings,
     object_identity_source:
       expectedIdentitySources.length === 1
         ? expectedIdentitySources[0]
@@ -352,6 +391,9 @@ module.exports = (output, context) => {
   const tokenCompletion = Number(usage.completion || usage.completion_tokens || 0);
   const multiKeys = [
     'next_step',
+    'active_problem_level',
+    'action_binding',
+    'named_goal_relation',
     'target_relation',
     'object_identity_source',
     'effect_scope',
@@ -436,6 +478,10 @@ module.exports = (output, context) => {
       expectedDurableBehaviorClosures.includes(parsed.durable_behavior_closure));
   const behaviorMatches =
     expectedNextSteps.includes(parsed.next_step) &&
+    expectedActiveProblemLevels.includes(parsed.active_problem_level) &&
+    parsed.problem_level_order === expectedProblemLevelOrder &&
+    expectedActionBindings.includes(parsed.action_binding) &&
+    expectedNamedGoalRelations.includes(parsed.named_goal_relation) &&
     expectedTargetRelations.includes(parsed.target_relation) &&
     expectedIdentitySources.includes(parsed.object_identity_source) &&
     expectedEffectScopes.includes(parsed.effect_scope) &&
@@ -463,6 +509,45 @@ module.exports = (output, context) => {
     Object.entries(expected).every(
       ([key, value]) => multiKeys.includes(key) || parsed[key] === value,
     );
+  const goalBindingIsCoherent =
+    (parsed.create_goal === true &&
+      parsed.named_goal_relation === 'explicit_endpoint_requested' &&
+      parsed.action_binding === 'create_explicit_native_goal' &&
+      parsed.effect_authority === 'explicit_current_user') ||
+    (parsed.create_goal === false &&
+      parsed.action_binding !== 'create_explicit_native_goal' &&
+      parsed.named_goal_relation !== 'explicit_endpoint_requested');
+  const answerOnlyIsCoherent =
+    parsed.action_binding !== 'answer_only_no_task_tools' ||
+    (parsed.next_step === 'answer_only' &&
+      parsed.ask_user === false &&
+      parsed.create_repository === false &&
+      parsed.create_daemon === false &&
+      parsed.create_goal === false &&
+      parsed.worker_provider === 'not_applicable' &&
+      parsed.worker_transport === 'not_applicable' &&
+      parsed.text_writer === 'not_applicable');
+  const traceItems = Array.isArray(appServer.items) ? appServer.items : [];
+  const answerOnlyTaskToolItems = traceItems.filter(
+    (item) => !['userMessage', 'reasoning', 'agentMessage'].includes(item?.type),
+  );
+  const answerOnlyTraceIsCoherent =
+    parsed.action_binding !== 'answer_only_no_task_tools' ||
+    (Number(itemCounts.commandExecution || 0) === 0 &&
+      answerOnlyTaskToolItems.length === 0);
+  const answerOnlyLearningIsCoherent =
+    parsed.action_binding !== 'answer_only_no_task_tools' ||
+    (parsed.learning_loop === 'not_applicable' &&
+      parsed.repair_target === 'not_applicable' &&
+      parsed.closure_evidence === 'not_applicable' &&
+      parsed.metacognition_disposition === 'do_not_capture' &&
+      parsed.durable_behavior_closure === 'not_applicable');
+  const continuousTuiIsCoherent =
+    parsed.action_binding !== 'continue_current_tui' ||
+    (parsed.create_goal === false &&
+      parsed.create_daemon === false &&
+      parsed.named_goal_relation === 'means_not_requested' &&
+      parsed.continuous_run_disposition === 'continue');
   const topologyIsCoherent =
     (parsed.coordination_mode === 'supervisor_only' &&
       parsed.worker_provider === 'not_applicable' &&
@@ -553,6 +638,11 @@ module.exports = (output, context) => {
     tokenTotal >= tokenPrompt + tokenCompletion;
   const pass =
     behaviorMatches &&
+    goalBindingIsCoherent &&
+    answerOnlyIsCoherent &&
+    answerOnlyTraceIsCoherent &&
+    answerOnlyLearningIsCoherent &&
+    continuousTuiIsCoherent &&
     topologyIsCoherent &&
     workerEffectHasAuthority &&
     quotaFailureContinues &&
@@ -571,6 +661,12 @@ module.exports = (output, context) => {
     expected,
     actual: parsed,
     topologyIsCoherent,
+    goalBindingIsCoherent,
+    answerOnlyIsCoherent,
+    answerOnlyTraceIsCoherent,
+    answerOnlyTaskToolTypes: answerOnlyTaskToolItems.map((item) => item?.type),
+    answerOnlyLearningIsCoherent,
+    continuousTuiIsCoherent,
     workerEffectHasAuthority,
     quotaFailureContinues,
     quotaDispositionIsCoherent,
