@@ -453,6 +453,7 @@ def test_package_task_run_preflight_registers_active_units_then_refreshes_checkp
         dispatch_envelope_path=Path(envelope_ref["path"]),
         task_run_dir=action["run_dir"],
         task_run_cli=task_run_cli,
+        allowed_candidate_bases=[Path(fixture["root"]) / "evidence" / "packages"],
     )
     assert first["schema_version"] == "xinao.worker_package_task_run_preflight.v1"
     assert first["package_ids"] == ["p1"]
@@ -468,6 +469,7 @@ def test_package_task_run_preflight_registers_active_units_then_refreshes_checkp
         dispatch_envelope_path=Path(envelope_ref["path"]),
         task_run_dir=action["run_dir"],
         task_run_cli=task_run_cli,
+        allowed_candidate_bases=[Path(fixture["root"]) / "evidence" / "packages"],
     )
     assert second["planned_work_keys"] == []
     assert second["reused_work_keys"] == ["wk-1"]
@@ -483,6 +485,31 @@ def test_package_task_run_preflight_registers_active_units_then_refreshes_checkp
         for row in events
         if row.get("target") == "wk-1" and str(row.get("phase", "")).startswith("work_unit_")
     ] == ["work_unit_planned", "work_unit_active"]
+
+
+def test_package_task_run_preflight_rejects_candidate_root_before_any_registration(
+    tmp_path: Path,
+) -> None:
+    from tests.test_action_resume_receipt import _fixture as action_fixture
+    from tests.test_action_resume_receipt import _write_task_run_cli_fixture
+
+    fixture = _fixture(tmp_path / "sealed")
+    _, envelope_ref, _ = _seal_dispatch(fixture)
+    action = action_fixture(tmp_path / "action", work_key="wk-existing")
+    task_run_cli = tmp_path / "task_run_cli.py"
+    _write_task_run_cli_fixture(task_run_cli)
+    events_path = action["run_dir"] / "events.jsonl"
+    before = events_path.read_bytes()
+
+    with pytest.raises(DispatchEconomicsError, match="outside the admitted D runtime"):
+        prepare_worker_package_task_run(
+            dispatch_envelope_path=Path(envelope_ref["path"]),
+            task_run_dir=action["run_dir"],
+            task_run_cli=task_run_cli,
+        )
+
+    assert events_path.read_bytes() == before
+    assert not (action["run_dir"] / "task-local-checkpoint.v2.json").exists()
 
 
 def test_package_task_run_preflight_rejects_frozen_batch_member_before_any_registration(
@@ -519,6 +546,7 @@ def test_package_task_run_preflight_rejects_frozen_batch_member_before_any_regis
             dispatch_envelope_path=Path(envelope_ref["path"]),
             task_run_dir=action["run_dir"],
             task_run_cli=task_run_cli,
+            allowed_candidate_bases=[Path(fixture["root"]) / "evidence" / "packages"],
         )
 
     assert caught.value.reason_code == "RUN_MUTATION_FROZEN"
@@ -564,6 +592,7 @@ def test_package_task_run_preflight_uses_one_envelope_byte_snapshot(
         dispatch_envelope_path=envelope_path,
         task_run_dir=action["run_dir"],
         task_run_cli=task_run_cli,
+        allowed_candidate_bases=[Path(fixture["root"]) / "evidence" / "packages"],
     )
 
     assert envelope_byte_reads == 1

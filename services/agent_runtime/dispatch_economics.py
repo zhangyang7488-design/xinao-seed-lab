@@ -1745,14 +1745,15 @@ def prepare_worker_package_task_run(
     task_run_cli: Path,
     checkpoint_path: Path | None = None,
     actor: str = "codex-owner",
+    allowed_candidate_bases: Sequence[object] | None = None,
 ) -> dict[str, Any]:
     """Compile a sealed package frontier into typed work units and checkpoint.
 
     This deterministic sender preflight runs before quota, batch allocation,
     route claim, or provider use.  It validates the complete hash-bound
-    envelope first, registers only the currently admitted package frontier via
-    the canonical task-run writer, then refreshes the task-local checkpoint to
-    the resulting event head.
+    envelope and physical candidate boundary first, registers only the
+    currently admitted package frontier via the canonical task-run writer,
+    then refreshes the task-local checkpoint to the resulting event head.
     """
 
     envelope_path = Path(dispatch_envelope_path).resolve(strict=True)
@@ -1788,6 +1789,25 @@ def prepare_worker_package_task_run(
     work_keys = [str(row["work_key"]) for row in work_units]
     if len(work_keys) != len(set(work_keys)):
         raise DispatchEconomicsError("dispatch package work_key identities must be unique")
+    package_by_id = {
+        str(row["package_id"]): row for row in manifest["packages"] if isinstance(row, Mapping)
+    }
+    candidate_binding = validate_candidate_consumer_binding(
+        envelope_raw,
+        physical_consumer_id=_text(
+            validated.get("validated_physical_consumer_id"),
+            "validated_physical_consumer_id",
+        ),
+        expected_leg=_text(validated.get("leg"), "leg"),
+        requested_output_roots={
+            package_id: _mapping(
+                package_by_id.get(package_id),
+                f"package[{package_id}]",
+            ).get("allowed_output_root")
+            for package_id in package_ids
+        },
+        allowed_candidate_bases=allowed_candidate_bases,
+    )
     manifest_ref = _mapping(validated.get("package_manifest_ref"), "package_manifest_ref")
     evidence_ref = (
         f"{_text(manifest_ref.get('path'), 'package_manifest_ref.path')}"
@@ -1832,6 +1852,7 @@ def prepare_worker_package_task_run(
             "path": str(manifest_ref["path"]),
             "sha256": str(manifest_ref["sha256"]),
         },
+        "candidate_consumer_binding": candidate_binding,
         "model_invocation_allowed": True,
         "authority": False,
         "completion_claim_allowed": False,
