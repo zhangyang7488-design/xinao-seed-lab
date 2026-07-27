@@ -442,7 +442,9 @@ def test_common_contract_reports_all_caller_errors_before_quota_or_provider(
 def test_valid_common_contract_preflight_reaches_dispatch_once(tmp_path: Path) -> None:
     launcher, runtime, capture, package_capture = _fixture(tmp_path)
     prompt = tmp_path / "prompt.txt"
-    prompt.write_text("Inspect the sealed evidence and return EXPECTED_MARKER.\n", encoding="utf-8")
+    prompt.write_text(
+        "Inspect the sealed evidence and return EXPECTED_MARKER.\n", encoding="utf-8"
+    )
     rules = tmp_path / "rules.txt"
     rules.write_text("Candidate-only read-only work.\n", encoding="utf-8")
     rules_sha256 = hashlib.sha256(rules.read_bytes()).hexdigest()
@@ -580,37 +582,50 @@ def test_package_mode_reuses_exact_sealed_epoch_and_rejects_expired_seal(
         "-Quiet",
     )
     assert derived_model.returncode == 0, derived_model.stdout + derived_model.stderr
-    package_rows = [json.loads(line) for line in package_capture.read_text().splitlines()]
+    package_rows = [
+        json.loads(line) for line in package_capture.read_text().splitlines()
+    ]
     assert package_rows[-1]["model"] == "grok-test"
 
     mismatch_envelope = tmp_path / "dispatch-envelope-model-mismatch.json"
     mismatch_value = json.loads(envelope.read_text(encoding="utf-8"))
     mismatch_value["selection"]["model_id"] = "different-model"
     mismatch_envelope.write_text(json.dumps(mismatch_value), encoding="utf-8")
-    package_count_before_mismatch = len(package_rows)
-    checkpoint_count_before_mismatch = len(
-        (runtime / "checkpoint-preflight.jsonl").read_text().splitlines()
-    )
+    mismatch_fixture_root = tmp_path / "model-mismatch-fixture"
+    mismatch_fixture_root.mkdir()
+    (
+        mismatch_launcher,
+        mismatch_runtime,
+        mismatch_capture,
+        mismatch_package_capture,
+    ) = _fixture(mismatch_fixture_root)
+    mismatch_task_run_root = tmp_path / "model-mismatch-task-runs"
+    mismatch_task_run_cli = tmp_path / "model-mismatch-task-run.py"
+    mismatch_task_run_cli.write_text("# fixture", encoding="utf-8")
     mismatched_model = _run(
-        launcher,
-        runtime,
-        capture,
-        package_capture,
+        mismatch_launcher,
+        mismatch_runtime,
+        mismatch_capture,
+        mismatch_package_capture,
         "-DispatchEnvelopePath",
         str(mismatch_envelope),
-        *package_claim_args,
+        "-TaskRunRoot",
+        str(mismatch_task_run_root),
+        "-TaskRunId",
+        "model-mismatch-run",
+        "-TaskRunCli",
+        str(mismatch_task_run_cli),
         "-Quiet",
     )
     assert mismatched_model.returncode != 0
     assert "CODEX_GROK_PACKAGE_MODEL_MISMATCH" in (
         mismatched_model.stdout + mismatched_model.stderr
     )
-    assert len(package_capture.read_text().splitlines()) == package_count_before_mismatch
-    assert (
-        len((runtime / "checkpoint-preflight.jsonl").read_text().splitlines())
-        == checkpoint_count_before_mismatch
-    )
-    assert (runtime / "live-query-count.txt").read_text() == "1"
+    assert not mismatch_package_capture.exists()
+    assert not mismatch_capture.exists()
+    assert not (mismatch_runtime / "checkpoint-preflight.jsonl").exists()
+    assert not (mismatch_runtime / "live-query-count.txt").exists()
+    assert not (mismatch_runtime / "state" / "quota_dispatch_epochs").exists()
 
     current = (
         runtime / "state" / "quota_dispatch_epochs" / "package-episode" / "current.json"
