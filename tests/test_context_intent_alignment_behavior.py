@@ -191,9 +191,7 @@ def test_problem_level_fields_are_required_by_the_behavior_assertion() -> None:
 
 def test_constraint_symmetry_cases_pin_three_distinct_dispositions() -> None:
     expected = {
-        "REG_ASYMMETRIC_RITUAL_CONSTRAINT_RETIRES_MINIMALLY": (
-            "minimally_relax_or_retire"
-        ),
+        "REG_ASYMMETRIC_RITUAL_CONSTRAINT_RETIRES_MINIMALLY": ("minimally_relax_or_retire"),
         "NEG_EXPENSIVE_HARD_BOUNDARY_STAYS_PROTECTED": "retain_protected_boundary",
         "NEG_INCOMPLETE_CONSTRAINT_EVIDENCE_PRESERVES_CANDIDATE": (
             "retain_as_candidate_pending_evidence"
@@ -213,9 +211,7 @@ def test_constraint_symmetry_cases_pin_three_distinct_dispositions() -> None:
 
 
 def test_constraint_symmetry_is_a_required_live_output_field() -> None:
-    config = yaml.safe_load(
-        (SUITE_ROOT / "promptfooconfig.yaml").read_text(encoding="utf-8")
-    )
+    config = yaml.safe_load((SUITE_ROOT / "promptfooconfig.yaml").read_text(encoding="utf-8"))
     schema = config["providers"][0]["config"]["output_schema"]
     assert "constraint_governance_disposition" in schema["required"]
     assert set(schema["properties"]["constraint_governance_disposition"]["enum"]) == {
