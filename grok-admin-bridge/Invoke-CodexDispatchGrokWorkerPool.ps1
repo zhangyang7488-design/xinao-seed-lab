@@ -68,6 +68,93 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
+
+function Write-GrokJsonAtomic {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Path,
+        [Parameter(Mandatory = $true)]
+        [object]$Value,
+        [switch]$CreateNew
+    )
+
+    $directory = Split-Path -Parent $Path
+    $leaf = Split-Path -Leaf $Path
+    $temporary = Join-Path $directory ("." + $leaf + "." + [guid]::NewGuid().ToString("N") + ".tmp")
+    $backup = Join-Path $directory ("." + $leaf + "." + [guid]::NewGuid().ToString("N") + ".bak")
+    $encoding = New-Object System.Text.UTF8Encoding $false
+    try {
+        $bytes = $encoding.GetBytes(($Value | ConvertTo-Json -Depth 8))
+        $stream = [IO.File]::Open(
+            $temporary,
+            [IO.FileMode]::CreateNew,
+            [IO.FileAccess]::Write,
+            [IO.FileShare]::None
+        )
+        try {
+            $stream.Write($bytes, 0, $bytes.Length)
+            $stream.Flush()
+        }
+        finally {
+            $stream.Dispose()
+        }
+        if ($CreateNew) {
+            [IO.File]::Move($temporary, $Path)
+        }
+        elseif (Test-Path -LiteralPath $Path -PathType Leaf) {
+            [IO.File]::Replace($temporary, $Path, $backup, $true)
+        }
+        else {
+            [IO.File]::Move($temporary, $Path)
+        }
+    }
+    finally {
+        if (Test-Path -LiteralPath $temporary -PathType Leaf) {
+            Remove-Item -LiteralPath $temporary -Force -ErrorAction SilentlyContinue
+        }
+        if (Test-Path -LiteralPath $backup -PathType Leaf) {
+            Remove-Item -LiteralPath $backup -Force -ErrorAction SilentlyContinue
+        }
+    }
+}
+
+function Publish-GrokAdvisoryLatest {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$SourcePath,
+        [Parameter(Mandatory = $true)]
+        [string]$DestinationPath
+    )
+
+    $mutex = [Threading.Mutex]::new($false, "Local\XinaoCodexGrokDispatchLatestV1")
+    $acquired = $false
+    try {
+        try {
+            $acquired = $mutex.WaitOne([TimeSpan]::FromSeconds(10))
+        }
+        catch [Threading.AbandonedMutexException] {
+            $acquired = $true
+        }
+        if (-not $acquired) {
+            return [pscustomobject]@{ published = $false; error = "latest_projection_mutex_timeout" }
+        }
+        $payload = Get-Content -LiteralPath $SourcePath -Raw -Encoding UTF8 |
+            ConvertFrom-Json -ErrorAction Stop
+        Write-GrokJsonAtomic -Path $DestinationPath -Value $payload
+        return [pscustomobject]@{ published = $true; error = "" }
+    }
+    catch {
+        return [pscustomobject]@{ published = $false; error = [string]$_.Exception.Message }
+    }
+    finally {
+        if ($acquired) {
+            try { $mutex.ReleaseMutex() } catch {}
+        }
+        $mutex.Dispose()
+    }
+}
 if (-not [string]::IsNullOrWhiteSpace($RequiredResultMarkersJson)) {
     if (@($RequiredResultMarkers).Count -gt 0) {
         throw "CODEX_GROK_RESULT_MARKERS_AMBIGUOUS: use either RequiredResultMarkers or RequiredResultMarkersJson"
@@ -488,7 +575,6 @@ if (
 
 $metaDir = "D:\XINAO_RESEARCH_RUNTIME\state\codex_dispatch_grok_worker_pool"
 New-Item -ItemType Directory -Force -Path $metaDir | Out-Null
-$utf8 = New-Object System.Text.UTF8Encoding $false
 $dispatchMetaPath = Join-Path $metaDir ($dispatchId + ".json")
 $poolSummaryPath = Join-Path "D:\XINAO_RESEARCH_RUNTIME\state\grok_worker_pool" (
     $poolId + "\pool_summary.json"
@@ -563,14 +649,11 @@ $dispatchMeta = [ordered]@{
     cwd_final_path = [string]$dispatchCwdLease.final_path
     cwd_object_id = [string]$dispatchCwdLease.object_id
     pool_script = $pool
+    latest_projection_mode = "best_effort_terminal_only"
+    pre_pool_latest_published = $false
     completion_claim_allowed = $false
 }
-[System.IO.File]::WriteAllText(
-    $dispatchMetaPath,
-    ($dispatchMeta | ConvertTo-Json -Depth 6),
-    $utf8
-)
-Copy-Item $dispatchMetaPath (Join-Path $metaDir "latest.json") -Force
+Write-GrokJsonAtomic -Path $dispatchMetaPath -Value $dispatchMeta -CreateNew
 
 $args = @{
     N = $N
@@ -765,12 +848,13 @@ $dispatchMeta.status = if (
     $dispatchMeta.pool_effective_ok -eq $true -and
     $dispatchMeta.pool_acceptance_contract_ok -eq $true
 ) { "accepted" } else { "rejected" }
-[System.IO.File]::WriteAllText(
-    $dispatchMetaPath,
-    ($dispatchMeta | ConvertTo-Json -Depth 6),
-    $utf8
-)
-Copy-Item $dispatchMetaPath (Join-Path $metaDir "latest.json") -Force
+Write-GrokJsonAtomic -Path $dispatchMetaPath -Value $dispatchMeta
+$latestProjection = Publish-GrokAdvisoryLatest `
+    -SourcePath $dispatchMetaPath `
+    -DestinationPath (Join-Path $metaDir "latest.json")
+if (-not $latestProjection.published -and -not $Quiet) {
+    Write-Warning ("CODEX_GROK_LATEST_PROJECTION_SKIPPED: " + [string]$latestProjection.error)
+}
 
 }
 finally {

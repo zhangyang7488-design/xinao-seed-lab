@@ -18,7 +18,21 @@ $evidenceWrite = Join-Path $testRoot "evidence-write"
 $evidenceReadOnly = Join-Path $testRoot "evidence-read-only"
 New-Item -ItemType Directory -Force -Path $candidate, $sessions, $evidenceWrite, $evidenceReadOnly | Out-Null
 [IO.File]::WriteAllText((Join-Path $profile "auth.json"), '{"test_auth":true}', $utf8)
-[IO.File]::WriteAllText((Join-Path $profile "models_cache.json"), '{}', $utf8)
+$staleFetchedAt = [DateTimeOffset]::UtcNow.AddMinutes(-10).ToString("o")
+$staleCatalog = [ordered]@{
+    origin = "https://cli-chat-proxy.grok.com/v1/models"
+    fetched_at = $staleFetchedAt
+    grok_version = "0.2.112"
+    auth_method = "session"
+    models = [ordered]@{ "grok-4.5" = [ordered]@{} }
+}
+$persistentCatalogPath = Join-Path $profile "models_cache.json"
+[IO.File]::WriteAllText(
+    $persistentCatalogPath,
+    ($staleCatalog | ConvertTo-Json -Depth 6 -Compress),
+    $utf8
+)
+$staleCatalogSha256 = (Get-FileHash -LiteralPath $persistentCatalogPath -Algorithm SHA256).Hash.ToLowerInvariant()
 
 function Assert-Contract([bool]$Condition, [string]$Message) {
     if (-not $Condition) { throw "GROK_CONTAINER_WORKER_TEST_FAILED: $Message" }
@@ -64,18 +78,20 @@ if args[-1] == "version":
     print("grok 0.2.112")
     raise SystemExit(0)
 if args[-1] == "models":
-    catalog = bind_source("/grok-home/.grok/models_cache.json")
-    local_offset = datetime.datetime.now().astimezone().utcoffset() or datetime.timedelta()
+    profile = bind_source("/grok-home/.grok")
+    catalog = profile / "models_cache.json"
     payload = {
         "origin": "https://cli-chat-proxy.grok.com/v1/models",
-        "fetched_at": (datetime.datetime.now(datetime.timezone.utc) - local_offset).isoformat(),
+        "fetched_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
         "grok_version": "0.2.112",
         "auth_method": "session",
         "models": {"grok-4.5": {}},
     }
-    catalog.write_text(
+    temporary = profile / f".models_cache.json.{uuid.uuid4().hex}.tmp"
+    temporary.write_text(
         json.dumps(payload, separators=(",", ":")), encoding="utf-8", newline="\n"
     )
+    temporary.replace(catalog)
     print("You are logged in with grok.com.\n\nAvailable models:\n  - grok-4.5")
     raise SystemExit(0)
 
@@ -83,7 +99,7 @@ grok_index = args.index("/usr/local/bin/xinao-grok-entrypoint")
 grok_args = args[grok_index + 1 :]
 model = grok_args[grok_args.index("-m") + 1]
 session_id = str(uuid.uuid4())
-session_root = bind_source("/grok-home/.grok/sessions") / "fake-project" / session_id
+session_root = bind_source("/grok-home/.grok") / "sessions" / "fake-project" / session_id
 session_root.mkdir(parents=True)
 (session_root / "summary.json").write_text(
     json.dumps(
@@ -170,7 +186,8 @@ try {
         Assert-Contract ($meta.status -eq "accepted") ("worker_accepted_" + $case.effect)
         Assert-Contract ($meta.execution_backend -eq "linux-container") "execution_backend"
         Assert-Contract ($meta.sandbox_enforcement -eq "linux_docker_mount_boundary_plus_tool_shell_bwrap_profile_mask") "sandbox_enforcement"
-        Assert-Contract ($meta.container_profile_tmpfs -eq $true) "profile_tmpfs"
+        Assert-Contract ($meta.container_profile_tmpfs -eq $false) "profile_not_tmpfs"
+        Assert-Contract ($meta.container_profile_ephemeral_host_directory -eq $true) "ephemeral_profile_directory"
         Assert-Contract ($meta.outer_rootfs_read_only -eq $true) "rootfs_read_only"
         Assert-Contract ($meta.outer_non_root -eq $false) "transport_root_required_for_auth_bind"
         Assert-Contract ($meta.outer_capabilities_dropped -eq $true) "capabilities_dropped"
@@ -187,8 +204,10 @@ try {
         Assert-Contract ($meta.container_tool_shell -eq "/usr/bin/bash") "tool_shell"
         Assert-Contract ($meta.container_tool_profile_masked -eq $true) "tool_profile_masked"
         Assert-Contract ($meta.container_auth_placeholder_clean -eq $true) "auth_placeholder_clean"
-        Assert-Contract ($meta.container_logs_tmpfs -eq $true) "logs_tmpfs"
+        Assert-Contract ($meta.container_logs_tmpfs -eq $true) "logs_nested_tmpfs"
         Assert-Contract ($meta.container_sensitive_logs_retained -eq $false) "sensitive_logs_not_retained"
+        Assert-Contract ([string]$meta.model_catalog.cache_sha256 -ne $staleCatalogSha256) "catalog_atomic_refresh_sha_advanced"
+        Assert-Contract ([DateTimeOffset]::Parse([string]$meta.model_catalog.fetched_at) -gt [DateTimeOffset]::Parse($staleFetchedAt)) "catalog_atomic_refresh_time_advanced"
     }
 }
 finally {
@@ -216,10 +235,12 @@ $readOnlyWorkspaceMount = @($readOnlyMounts | Where-Object { $_ -like "*target=/
 Assert-Contract ($writeWorkspaceMount.Count -eq 1 -and -not $writeWorkspaceMount[0].EndsWith(",readonly")) "write_workspace_rw"
 Assert-Contract ($readOnlyWorkspaceMount.Count -eq 1 -and $readOnlyWorkspaceMount[0].EndsWith(",readonly")) "read_only_workspace_ro"
 Assert-Contract (@($writeMounts | Where-Object { $_ -like "*target=/inputs/prompt.md,readonly" }).Count -eq 1) "prompt_mount_ro"
+Assert-Contract (@($writeMounts | Where-Object { $_ -like "*target=/grok-home/.grok" }).Count -eq 1) "ephemeral_profile_directory_mount"
 Assert-Contract (@($writeMounts | Where-Object { $_ -like "*target=/grok-home/.grok/auth.json,readonly" }).Count -eq 1) "persistent_auth_mount_ro"
-Assert-Contract (@($writeRun | Where-Object { $_ -like "/grok-home/.grok:rw,*" }).Count -eq 1) "profile_tmpfs"
-Assert-Contract (@($writeMounts | Where-Object { $_ -like "*target=/grok-home/.grok/sessions" }).Count -eq 1) "session_evidence_mount"
-Assert-Contract (@($writeMounts | Where-Object { $_ -like "*target=/grok-home/.grok/models_cache.json" }).Count -eq 1) "catalog_evidence_mount"
+Assert-Contract (@($writeRun | Where-Object { $_ -like "/grok-home/.grok:rw,*" }).Count -eq 0) "profile_has_no_conflicting_tmpfs"
+Assert-Contract (@($writeRun | Where-Object { $_ -like "/grok-home/.grok/logs:rw,*" }).Count -eq 1) "logs_nested_tmpfs"
+Assert-Contract (@($writeMounts | Where-Object { $_ -like "*target=/grok-home/.grok/sessions" }).Count -eq 0) "session_uses_profile_directory"
+Assert-Contract (@($writeMounts | Where-Object { $_ -like "*target=/grok-home/.grok/models_cache.json" }).Count -eq 0) "catalog_has_no_single_file_mount"
 Assert-Contract (Test-Path -LiteralPath (Join-Path $candidate "container-write-marker.txt") -PathType Leaf) "authorized_write_effect"
 
 [ordered]@{
@@ -244,7 +265,10 @@ Assert-Contract (Test-Path -LiteralPath (Join-Path $candidate "container-write-m
     persistent_auth_unchanged = $true
     auth_secret_copied = $false
     sensitive_logs_retained = $false
-    profile_tmpfs = $true
+    profile_tmpfs = $false
+    profile_ephemeral_host_directory = $true
+    logs_nested_tmpfs = $true
+    catalog_atomic_replace_verified = $true
     container_session_alias_verified = $true
 } | ConvertTo-Json -Depth 5
 

@@ -5,10 +5,21 @@ function ConvertTo-GrokCatalogFetchedAtUtc {
     param(
         [Parameter(Mandatory = $true)]
         [AllowEmptyString()]
-        [string]$Value
+        [object]$Value
     )
 
-    $raw = $Value.Trim()
+    if ($Value -is [DateTimeOffset]) {
+        return ([DateTimeOffset]$Value).ToUniversalTime()
+    }
+    if ($Value -is [DateTime]) {
+        $dateTime = [DateTime]$Value
+        if ($dateTime.Kind -eq [DateTimeKind]::Unspecified) {
+            $dateTime = [DateTime]::SpecifyKind($dateTime, [DateTimeKind]::Utc)
+        }
+        return ([DateTimeOffset]$dateTime).ToUniversalTime()
+    }
+
+    $raw = ([string]$Value).Trim()
     if ([string]::IsNullOrWhiteSpace($raw)) {
         throw "GROK_AUTHENTICATED_MODEL_CATALOG_FETCHED_AT_INVALID"
     }

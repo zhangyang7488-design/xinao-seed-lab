@@ -112,11 +112,9 @@ New-Item -ItemType Directory -Force -Path $sandboxHome, $sandboxEvidence, $sandb
 Copy-Item -LiteralPath $fakeModule -Destination (Join-Path $sandboxCwd "fakegrok.py")
 $catalog = [ordered]@{
     origin = "https://cli-chat-proxy.grok.com/v1/models"
-    # PowerShell 7.6 ConvertFrom-Json materializes ISO dates as local DateTime;
-    # compensate so the worker's legacy string seam observes the current UTC clock.
-    fetched_at = [DateTimeOffset]::UtcNow.Subtract(
-        [TimeZoneInfo]::Local.GetUtcOffset([DateTime]::Now)
-    ).ToString("o")
+    # The shared catalog seam preserves DateTime/DateTimeOffset identity and
+    # normalizes it to UTC without a lossy string round-trip.
+    fetched_at = [DateTimeOffset]::UtcNow.ToString("o")
     grok_version = "0.2.85"
     auth_method = "session"
     models = [ordered]@{ "fakegrok" = [ordered]@{} }

@@ -407,7 +407,7 @@ if ($containerMode) {
     New-Item -ItemType Directory -Path $containerTransportRoot, $containerSessionsSource, $containerLogsSource | Out-Null
     $containerAuthPlaceholder = Join-Path $containerTransportRoot "auth.json"
     [IO.File]::WriteAllBytes($containerAuthPlaceholder, [byte[]]@())
-    $containerSandboxConfigPath = Join-Path $containerTransportRoot "sandbox.toml"
+    $containerSandboxConfigPath = Join-Path $EvidenceDir ($runId + ".transport-sandbox.toml")
     $containerSandboxConfig = @"
 # The OCI mount boundary is authoritative for the transport process. Model
 # Bash tools cross the image-owned privilege-separation wrapper, which adds a
@@ -419,7 +419,7 @@ if ($containerMode) {
         $containerSandboxConfig,
         [Text.UTF8Encoding]::new($false)
     )
-    $containerConfigPath = Join-Path $containerTransportRoot "config.toml"
+    $containerConfigPath = Join-Path $EvidenceDir ($runId + ".transport-config.toml")
     $containerConfig = @"
 [shell_environment_policy]
 inherit = "core"
@@ -446,7 +446,13 @@ deny = [
         $containerCatalogSource,
         [IO.File]::ReadAllBytes($containerPersistentCatalogSource)
     )
-    foreach ($bindSource in @($Cwd, $containerTransportRoot, $containerPersistentAuthSource)) {
+    foreach ($bindSource in @(
+        $Cwd,
+        $containerTransportRoot,
+        $containerPersistentAuthSource,
+        $containerSandboxConfigPath,
+        $containerConfigPath
+    )) {
         if ($bindSource -match '[,\r\n]') {
             throw "GROK_CONTAINER_BIND_SOURCE_UNSAFE: $bindSource"
         }
@@ -497,7 +503,7 @@ deny = [
         "--user", $containerRuntimeUser,
         "--tmpfs", "/tmp:rw,nosuid,nodev,size=512m,uid=0,gid=0,mode=1777",
         "--tmpfs", "/grok-home/.cache:rw,nosuid,nodev,size=128m,uid=0,gid=0,mode=0700",
-        "--tmpfs", "/grok-home/.grok:rw,nosuid,nodev,size=256m,uid=0,gid=0,mode=0755",
+        "--tmpfs", "$containerProfileRoot/logs:rw,nosuid,nodev,size=128m,uid=0,gid=0,mode=0700",
         "--cap-drop", "ALL",
         "--cap-add", "SETUID",
         "--cap-add", "SETGID",
@@ -510,9 +516,8 @@ deny = [
         "-e", "TMPDIR=/tmp",
         "-e", "SHELL=/usr/bin/bash",
         "--mount", $workspaceMount,
+        "--mount", "type=bind,source=$containerTransportRoot,target=$containerProfileRoot",
         "--mount", "type=bind,source=$containerPersistentAuthSource,target=$containerProfileRoot/auth.json,readonly",
-        "--mount", "type=bind,source=$containerSessionsSource,target=$containerProfileRoot/sessions",
-        "--mount", "type=bind,source=$containerCatalogSource,target=$containerProfileRoot/models_cache.json",
         "--mount", "type=bind,source=$containerSandboxConfigPath,target=/inputs/transport-sandbox.toml,readonly",
         "--mount", "type=bind,source=$containerConfigPath,target=/inputs/transport-config.toml,readonly",
         "-w", $containerWorkspaceCwd
@@ -916,7 +921,7 @@ validator_class.check_schema(schema)
         $catalogUri.Scheme -ne "https" -or $catalogUri.Host -ne "cli-chat-proxy.grok.com") {
         throw "GROK_AUTHENTICATED_MODEL_CATALOG_ORIGIN_INVALID: origin=$catalogOrigin"
     }
-    $catalogFetchedAt = ConvertTo-GrokCatalogFetchedAtUtc ([string]$catalog.fetched_at)
+    $catalogFetchedAt = ConvertTo-GrokCatalogFetchedAtUtc $catalog.fetched_at
     $catalogAgeSeconds = ([DateTimeOffset]::UtcNow - $catalogFetchedAt).TotalSeconds
     if (-not (Test-GrokCatalogAgeWithinWindow `
         -AgeSeconds $catalogAgeSeconds `
@@ -1151,7 +1156,8 @@ $meta = [ordered]@{
     container_workspace = if ($containerMode) { $containerWorkspaceCwd } else { "" }
     container_workspace_read_only = [bool]($containerMode -and $containerWorkspaceReadOnly)
     container_profile_root = if ($containerMode) { $containerProfileRoot } else { "" }
-    container_profile_tmpfs = [bool]$containerMode
+    container_profile_tmpfs = $false
+    container_profile_ephemeral_host_directory = [bool]$containerMode
     container_sessions_source = if ($containerMode) { $containerSessionsSource } else { "" }
     container_logs_tmpfs = [bool]$containerMode
     container_sensitive_logs_retained = if ($containerMode) { $null } else { $false }
