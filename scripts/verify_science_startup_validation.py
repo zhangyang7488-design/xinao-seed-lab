@@ -23,6 +23,11 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
+# This entrypoint is intentionally executed from a content-addressed source
+# release. Disable bytecode writes before any release-local import so that the
+# verifier cannot mutate the object whose exact file set it is about to verify.
+sys.dont_write_bytecode = True
+
 from temporalio.api.enums.v1 import EventType, TaskQueueType
 from temporalio.api.taskqueue.v1 import TaskQueue
 from temporalio.api.workflowservice.v1 import DescribeTaskQueueRequest

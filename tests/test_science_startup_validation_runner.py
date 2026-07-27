@@ -3,7 +3,10 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import json
+import os
+import shutil
 import subprocess
+import sys
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -192,6 +195,50 @@ def test_startup_verifier_requires_exact_live_no_tools_outer_boundary() -> None:
             marker,
             expected_container_id=container_id,
         )
+
+
+def test_release_verifier_entrypoint_never_writes_bytecode(tmp_path: Path) -> None:
+    release = tmp_path / "release"
+    release.mkdir()
+    tracked = subprocess.run(
+        ["git", "ls-files", "-z"],
+        cwd=subject.REPO,
+        check=True,
+        capture_output=True,
+    ).stdout
+    for raw_relative in tracked.split(b"\0"):
+        if not raw_relative:
+            continue
+        relative = Path(raw_relative.decode("utf-8"))
+        source = subject.REPO / relative
+        if not source.is_file():
+            continue
+        target = release / relative
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(source, target)
+
+    env = dict(os.environ)
+    env.pop("PYTHONDONTWRITEBYTECODE", None)
+    env.pop("PYTHONPYCACHEPREFIX", None)
+    completed = subprocess.run(
+        [
+            sys.executable,
+            str(release / "scripts" / "verify_science_startup_validation.py"),
+            "--help",
+        ],
+        cwd=release,
+        env=env,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    assert completed.returncode == 0, completed.stderr
+    generated = sorted(
+        path.relative_to(release).as_posix()
+        for path in release.rglob("*")
+        if path.is_file() and ("__pycache__" in path.parts or path.suffix == ".pyc")
+    )
+    assert generated == []
 
 
 def test_no_retained_pre_cutover_history_is_explicitly_not_applicable() -> None:
