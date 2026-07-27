@@ -325,6 +325,10 @@ $poolAccountingText = Get-Content -LiteralPath (Join-Path $repoRoot "grok-admin-
 $packageRunnerText = Get-Content -LiteralPath (Join-Path $repoRoot "grok-admin-bridge/run_grok_package_batch.py") -Raw -Encoding UTF8
 $packageEntryText = Get-Content -LiteralPath (Join-Path $repoRoot "grok-admin-bridge/Invoke-CodexGrokPackageBatch.ps1") -Raw -Encoding UTF8
 $checkpointPreparerPath = Join-Path $repoRoot "grok-admin-bridge/Prepare-CodexGrokTaskLocalCheckpoint.ps1"
+$publicLauncherText = Get-Content -LiteralPath (Join-Path $repoRoot "launchers/Invoke-Codex-GrokWorkerPool.ps1") -Raw -Encoding UTF8
+Assert-Contract ($publicLauncherText -match '\$dispatchEnvelope\.selection\.model_id') "package_model_derived_from_envelope"
+Assert-Contract ($publicLauncherText -match 'CODEX_GROK_PACKAGE_MODEL_MISMATCH') "package_model_conflict_fails_closed"
+Assert-Contract ($publicLauncherText -match 'CODEX_GROK_MODEL_REQUIRED') "ordinary_model_remains_required"
 $checkpointPreparerText = Get-Content -LiteralPath $checkpointPreparerPath -Raw -Encoding UTF8
 $packageLauncherSourceText = Get-Content -LiteralPath (Join-Path $repoRoot "launchers/Invoke-Codex-GrokWorkerPool.ps1") -Raw -Encoding UTF8
 $installerText = Get-Content -LiteralPath (Join-Path $repoRoot "install/Install-CodexGrokDispatch.ps1") -Raw -Encoding UTF8

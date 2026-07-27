@@ -213,6 +213,39 @@ def _run(
     )
 
 
+def _run_without_model(
+    launcher: Path,
+    runtime: Path,
+    capture: Path,
+    package_capture: Path,
+    *arguments: str,
+) -> subprocess.CompletedProcess[str]:
+    assert PWSH is not None
+    env = {
+        **os.environ,
+        "XINAO_EPOCH_CAPTURE": str(capture),
+        "XINAO_PACKAGE_CAPTURE": str(package_capture),
+    }
+    return subprocess.run(
+        [
+            PWSH,
+            "-NoProfile",
+            "-NonInteractive",
+            "-File",
+            str(launcher),
+            "-RuntimeRoot",
+            str(runtime),
+            *arguments,
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        env=env,
+    )
+
+
 def _ordinary_args(tmp_path: Path, episode_id: str) -> tuple[str, ...]:
     return (
         "-Prompt",
@@ -329,6 +362,31 @@ def test_unscoped_ordinary_mode_fails_before_quota_or_provider(
 
 
 @pytest.mark.skipif(PWSH is None, reason="pwsh is required")
+def test_ordinary_mode_still_requires_explicit_model_before_quota_or_provider(
+    tmp_path: Path,
+) -> None:
+    launcher, runtime, capture, package_capture = _fixture(tmp_path)
+    result = _run_without_model(
+        launcher,
+        runtime,
+        capture,
+        package_capture,
+        "-Prompt",
+        "fixture-only",
+        "-Cwd",
+        str(tmp_path),
+        "-TaskRunId",
+        "ordinary-model-required",
+        "-Quiet",
+    )
+    assert result.returncode != 0
+    assert "CODEX_GROK_MODEL_REQUIRED" in result.stdout + result.stderr
+    assert not capture.exists()
+    assert not package_capture.exists()
+    assert not (runtime / "live-query-count.txt").exists()
+
+
+@pytest.mark.skipif(PWSH is None, reason="pwsh is required")
 def test_common_contract_reports_all_caller_errors_before_quota_or_provider(
     tmp_path: Path,
 ) -> None:
@@ -384,7 +442,9 @@ def test_common_contract_reports_all_caller_errors_before_quota_or_provider(
 def test_valid_common_contract_preflight_reaches_dispatch_once(tmp_path: Path) -> None:
     launcher, runtime, capture, package_capture = _fixture(tmp_path)
     prompt = tmp_path / "prompt.txt"
-    prompt.write_text("Inspect the sealed evidence and return EXPECTED_MARKER.\n", encoding="utf-8")
+    prompt.write_text(
+        "Inspect the sealed evidence and return EXPECTED_MARKER.\n", encoding="utf-8"
+    )
     rules = tmp_path / "rules.txt"
     rules.write_text("Candidate-only read-only work.\n", encoding="utf-8")
     rules_sha256 = hashlib.sha256(rules.read_bytes()).hexdigest()
@@ -463,7 +523,8 @@ def test_package_mode_reuses_exact_sealed_epoch_and_rejects_expired_seal(
                     "quota_snapshot_id": resolution["snapshot"]["snapshot_id"],
                     "quota_snapshot_ref": resolution["snapshot"]["snapshot_ref"],
                     "quota_snapshot_sha256": resolution["snapshot"]["snapshot_sha256"],
-                }
+                },
+                "selection": {"model_id": "grok-test"},
             }
         ),
         encoding="utf-8",
@@ -510,6 +571,62 @@ def test_package_mode_reuses_exact_sealed_epoch_and_rejects_expired_seal(
         }
     ]
 
+    derived_model = _run_without_model(
+        launcher,
+        runtime,
+        capture,
+        package_capture,
+        "-DispatchEnvelopePath",
+        str(envelope),
+        *package_claim_args,
+        "-Quiet",
+    )
+    assert derived_model.returncode == 0, derived_model.stdout + derived_model.stderr
+    package_rows = [
+        json.loads(line) for line in package_capture.read_text().splitlines()
+    ]
+    assert package_rows[-1]["model"] == "grok-test"
+
+    mismatch_envelope = tmp_path / "dispatch-envelope-model-mismatch.json"
+    mismatch_value = json.loads(envelope.read_text(encoding="utf-8"))
+    mismatch_value["selection"]["model_id"] = "different-model"
+    mismatch_envelope.write_text(json.dumps(mismatch_value), encoding="utf-8")
+    mismatch_fixture_root = tmp_path / "model-mismatch-fixture"
+    mismatch_fixture_root.mkdir()
+    (
+        mismatch_launcher,
+        mismatch_runtime,
+        mismatch_capture,
+        mismatch_package_capture,
+    ) = _fixture(mismatch_fixture_root)
+    mismatch_task_run_root = tmp_path / "model-mismatch-task-runs"
+    mismatch_task_run_cli = tmp_path / "model-mismatch-task-run.py"
+    mismatch_task_run_cli.write_text("# fixture", encoding="utf-8")
+    mismatched_model = _run(
+        mismatch_launcher,
+        mismatch_runtime,
+        mismatch_capture,
+        mismatch_package_capture,
+        "-DispatchEnvelopePath",
+        str(mismatch_envelope),
+        "-TaskRunRoot",
+        str(mismatch_task_run_root),
+        "-TaskRunId",
+        "model-mismatch-run",
+        "-TaskRunCli",
+        str(mismatch_task_run_cli),
+        "-Quiet",
+    )
+    assert mismatched_model.returncode != 0
+    assert "CODEX_GROK_PACKAGE_MODEL_MISMATCH" in (
+        mismatched_model.stdout + mismatched_model.stderr
+    )
+    assert not mismatch_package_capture.exists()
+    assert not mismatch_capture.exists()
+    assert not (mismatch_runtime / "checkpoint-preflight.jsonl").exists()
+    assert not (mismatch_runtime / "live-query-count.txt").exists()
+    assert not (mismatch_runtime / "state" / "quota_dispatch_epochs").exists()
+
     current = (
         runtime / "state" / "quota_dispatch_epochs" / "package-episode" / "current.json"
     )
@@ -543,7 +660,12 @@ def test_package_checkpoint_preflight_rejects_shared_path_before_quota_or_packag
     launcher, runtime, capture, package_capture = _fixture(tmp_path)
     envelope = tmp_path / "dispatch-envelope.json"
     envelope.write_text(
-        json.dumps({"dispatch_epoch": {"epoch_id": "package-episode"}}),
+        json.dumps(
+            {
+                "dispatch_epoch": {"epoch_id": "package-episode"},
+                "selection": {"model_id": "grok-test"},
+            }
+        ),
         encoding="utf-8",
     )
     task_run_root = tmp_path / "task-runs"
@@ -586,7 +708,12 @@ def test_package_missing_task_run_cli_fails_before_checkpoint_quota_or_package(
     launcher, runtime, capture, package_capture = _fixture(tmp_path)
     envelope = tmp_path / "dispatch-envelope.json"
     envelope.write_text(
-        json.dumps({"dispatch_epoch": {"epoch_id": "package-episode"}}),
+        json.dumps(
+            {
+                "dispatch_epoch": {"epoch_id": "package-episode"},
+                "selection": {"model_id": "grok-test"},
+            }
+        ),
         encoding="utf-8",
     )
     task_run_root = tmp_path / "task-runs"
