@@ -5,7 +5,7 @@ agent platform, daemon, scheduler, or approval gate.
 
 ## Shape
 
-- `catalog.json` inventories 132 specifications across live and static suites (including 13 dynamic
+- `catalog.json` inventories 141 specifications across live and static suites (including 13 dynamic
   orchestration execution-shape cases owned under `evals/dynamic_orchestration`).
 - `context_intent_alignment/cases.yaml` is the canonical live behavior dataset. Promptfoo reads it
   directly, so expected behavior is not duplicated in the config.
@@ -30,9 +30,11 @@ agent platform, daemon, scheduler, or approval gate.
   authorize actions and never rewrite instructions, memory, or evals automatically.
 - Promptfoo failures can be imported one way into that same candidate inbox with source trace IDs,
   acceptance criteria, and prohibited side effects. Import never promotes a candidate.
-- `context_intent_alignment/decision_model.v1.json` is a cold-path, qualitative intent model distilled
-  from user-approved Grok planning behavior. It helps map vague examples to mature capabilities; it is
-  not a score, gate, authority source, or replacement for the live user context.
+- `context_intent_alignment/decision_model.v1.json` is a cold-path, qualitative projection of the
+  recursive user-owned problem/completion-identity interface and the orthogonal causal means and software
+  fact/blast-radius axes. It helps
+  map incomplete examples to parent intent and mature capabilities; it is not a score, fixed ladder,
+  gate, authority source, or replacement for the live user context.
 
 ## Commands
 
@@ -93,8 +95,8 @@ single suite (`context`, `proactive`, or `orchestration`).
 Static incident specifications remain specifications until their real environment supplies runtime
 evidence. A green JSON fixture never closes a runtime incident.
 
-Live catalog accounting (not a runtime verification claim): capability 1, smoke 62, core 90, deep 96,
-context 72, proactive 6, reuse 4, orchestration 13.
+Live catalog accounting (not a runtime verification claim): capability 1, smoke 71, core 99, deep 105,
+context 81, proactive 6, reuse 4, orchestration 13.
 
 ## Why the other installed software is not always active
 

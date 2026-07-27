@@ -282,3 +282,53 @@ def test_cli_real_readback_and_hook_failure_emit_nothing(tmp_path: Path) -> None
     failed = invoke(["hook-session-start"], hook_input)
     assert failed.returncode == 0
     assert failed.stdout == ""
+
+
+def test_cli_verify_binding_distinguishes_unbound_from_live_compact_recovery(
+    tmp_path: Path,
+) -> None:
+    runs = tmp_path / "runs"
+    run = _make_run(runs, "run-a")
+    frontier_root = tmp_path / "frontiers"
+    script = Path(__file__).resolve().parents[1] / "scripts" / "manage_session_frontier.py"
+    common = [
+        sys.executable,
+        str(script),
+        "--frontier-root",
+        str(frontier_root),
+        "--allowed-run-root",
+        str(runs),
+    ]
+    env = {**os.environ, "CODEX_THREAD_ID": "session-verify"}
+
+    def invoke(arguments: list[str]) -> subprocess.CompletedProcess[str]:
+        return subprocess.run(
+            [*common, *arguments],
+            env=env,
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+
+    unbound = invoke(["verify-binding"])
+    assert unbound.returncode == 2
+    assert unbound.stdout == ""
+    assert "missing required file" in unbound.stderr
+
+    bound = invoke(["bind", "--run-directory", str(run)])
+    assert bound.returncode == 0, bound.stderr
+    verified = invoke(["verify-binding"])
+    assert verified.returncode == 0, verified.stderr
+    receipt = json.loads(verified.stdout)
+    assert receipt["compact_recovery_verified"] is True
+    assert receipt["completion_claim_allowed"] is False
+    assert receipt["session_id"] == "session-verify"
+    assert receipt["run_id"] == "run-a"
+    assert receipt["binding_sha256"]
+    assert receipt["rendered_context_chars"] > 0
+
+    (run / "state.json").write_text("[]\n", encoding="utf-8")
+    drifted = invoke(["verify-binding"])
+    assert drifted.returncode == 2
+    assert drifted.stdout == ""
+    assert "task-run JSON roots must be objects" in drifted.stderr
