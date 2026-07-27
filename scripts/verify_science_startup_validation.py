@@ -129,6 +129,27 @@ def _sha256(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
+def _runtime_executable_binding(value: Path, *, label: str) -> dict[str, Any]:
+    candidate = Path(value)
+    if not candidate.is_absolute():
+        raise RuntimeError(f"{label} must be an absolute executable path")
+    try:
+        executable = candidate.resolve(strict=True)
+    except FileNotFoundError as exc:
+        raise RuntimeError(f"{label} executable does not exist: {candidate}") from exc
+    if not executable.is_file():
+        raise RuntimeError(f"{label} executable is not a file: {executable}")
+    if os.name == "nt" and executable.suffix.lower() != ".exe":
+        raise RuntimeError(f"{label} must bind an .exe file on Windows: {executable}")
+    return {
+        "label": label,
+        "path": str(executable),
+        "sha256": _sha256(executable),
+        "absolute": True,
+        "exists": True,
+    }
+
+
 def _write_json(path: Path, value: object) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     temporary = path.with_name(f".{path.name}.{os.getpid()}.tmp")
@@ -197,6 +218,7 @@ def _expected_source_release(
     release_dir: Path,
     manifest_path: Path,
     git_repo: Path,
+    git_executable: Path,
     code_git_sha: str,
 ) -> dict[str, Any]:
     release_dir = release_dir.resolve(strict=True)
@@ -207,6 +229,7 @@ def _expected_source_release(
         release_dir,
         manifest_path,
         git_repo=git_repo,
+        git_executable=git_executable,
     )
     if (
         verification.get("commit") != code_git_sha
@@ -611,13 +634,14 @@ def _activity_types(history: Any) -> list[str]:
 async def _wait_container_healthy(
     container: str,
     *,
+    docker_executable: Path,
     expected_static_identity: dict[str, Any],
     timeout: float,
 ) -> dict[str, Any]:
     deadline = asyncio.get_running_loop().time() + timeout
     last: dict[str, Any] = {}
     while asyncio.get_running_loop().time() < deadline:
-        last = docker_identity(container)
+        last = docker_identity(container, docker_executable=docker_executable)
         if _static_identity(last) != expected_static_identity:
             raise RuntimeError("worker identity or mount topology drifted while waiting for health")
         if last.get("status") == "running" and last.get("health") == "healthy":
@@ -1031,6 +1055,16 @@ async def _retained_legacy_history_replay(
 
 
 async def run(args: argparse.Namespace) -> dict[str, Any]:
+    docker_binding = _runtime_executable_binding(
+        args.docker_executable,
+        label="Docker CLI",
+    )
+    git_binding = _runtime_executable_binding(
+        args.git_executable,
+        label="Git CLI",
+    )
+    docker_executable = Path(str(docker_binding["path"]))
+    git_executable = Path(str(git_binding["path"]))
     args.run_dir.mkdir(parents=True, exist_ok=True)
     report_path = args.output or args.run_dir / "science_startup_validation.report.json"
     parent = load_science_active_parent()
@@ -1042,6 +1076,7 @@ async def run(args: argparse.Namespace) -> dict[str, Any]:
         release_dir=args.release_dir,
         manifest_path=args.release_manifest,
         git_repo=args.git_repo,
+        git_executable=git_executable,
         code_git_sha=code_git_sha,
     )
     materials = _materialize_validation_episode(
@@ -1063,7 +1098,10 @@ async def run(args: argparse.Namespace) -> dict[str, Any]:
             "bounded restart denied because another canonical workflow is running: "
             + json.dumps(pre_active, ensure_ascii=False)
         )
-    pre_container = docker_identity(args.container)
+    pre_container = docker_identity(
+        args.container,
+        docker_executable=docker_executable,
+    )
     if pre_container.get("status") != "running" or pre_container.get("health") != "healthy":
         raise RuntimeError("canonical worker is not running and healthy before validation")
     release_mounts_before = _verify_container_release_mounts(
@@ -1109,19 +1147,29 @@ async def run(args: argparse.Namespace) -> dict[str, Any]:
         raise RuntimeError("canonical restart blast radius changed after episode start")
 
     restart_started = datetime.now(UTC)
-    restart = _docker_restart(str(pre_container["id"]))
+    restart = _docker_restart(
+        str(pre_container["id"]),
+        docker_executable=docker_executable,
+    )
     if restart["exit_code"] != 0:
         current = None
         try:
-            current = docker_identity(args.container)
+            current = docker_identity(
+                args.container,
+                docker_executable=docker_executable,
+            )
         except Exception:
             pass
         rollback = _rollback_start_if_exact_stopped(
             pre=pre_container,
             current=current,
+            docker_executable=docker_executable,
         )
         raise RuntimeError(f"bounded worker restart failed: {restart}; rollback={rollback}")
-    post_container = docker_identity(args.container)
+    post_container = docker_identity(
+        args.container,
+        docker_executable=docker_executable,
+    )
     if _static_identity(post_container) != _static_identity(pre_container):
         raise RuntimeError("worker identity or mount topology drifted across restart")
     if (
@@ -1138,6 +1186,7 @@ async def run(args: argparse.Namespace) -> dict[str, Any]:
     )
     post_container = await _wait_container_healthy(
         args.container,
+        docker_executable=docker_executable,
         expected_static_identity=_static_identity(pre_container),
         timeout=180,
     )
@@ -1306,6 +1355,7 @@ async def run(args: argparse.Namespace) -> dict[str, Any]:
         release_dir=args.release_dir,
         manifest_path=args.release_manifest,
         git_repo=args.git_repo,
+        git_executable=git_executable,
         code_git_sha=code_git_sha,
     )
     if source_release_after != source_release:
@@ -1323,6 +1373,15 @@ async def run(args: argparse.Namespace) -> dict[str, Any]:
         "evaluation_outcome_accessed": False,
         "active_parent_sha256": active_parent_sha256,
         "code_git_sha": code_git_sha,
+        "runtime_bindings": {
+            "docker": docker_binding,
+            "git": git_binding,
+            "subprocess": {
+                "shell": False,
+                "argv0_absolute": True,
+                "create_no_window": bool(WINDOWLESS) if os.name == "nt" else True,
+            },
+        },
         "source_release": {
             **source_release,
             "container_mounts_before": release_mounts_before,
@@ -1428,6 +1487,8 @@ def main() -> int:
     parser.add_argument("--address", default="127.0.0.1:7233")
     parser.add_argument("--namespace", default="default")
     parser.add_argument("--container", default=CONTAINER_NAME)
+    parser.add_argument("--docker-executable", type=Path, required=True)
+    parser.add_argument("--git-executable", type=Path, required=True)
     parser.add_argument("--model", default="grok-4.5")
     parser.add_argument("--code-git-sha", required=True)
     parser.add_argument("--release-dir", type=Path, required=True)

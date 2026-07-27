@@ -35,6 +35,31 @@ def _sha256(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
+def test_runtime_executable_binding_requires_an_absolute_existing_file(tmp_path: Path) -> None:
+    docker_executable = tmp_path / "docker.exe"
+    docker_executable.write_bytes(b"fixture executable")
+
+    binding = subject._runtime_executable_binding(
+        docker_executable,
+        label="Docker CLI",
+    )
+
+    assert binding == {
+        "label": "Docker CLI",
+        "path": str(docker_executable.resolve()),
+        "sha256": _sha256(docker_executable),
+        "absolute": True,
+        "exists": True,
+    }
+    with pytest.raises(RuntimeError, match="must be an absolute executable path"):
+        subject._runtime_executable_binding(Path("docker.exe"), label="Docker CLI")
+    with pytest.raises(RuntimeError, match="does not exist"):
+        subject._runtime_executable_binding(
+            tmp_path / "missing-docker.exe",
+            label="Docker CLI",
+        )
+
+
 def _git(repo: Path, *args: str) -> str:
     return subprocess.run(
         ["git", *args],
@@ -133,6 +158,7 @@ def test_startup_verifier_binds_exact_release_and_read_only_app_mounts(
         release_dir=release_dir,
         manifest_path=manifest_path,
         git_repo=repo,
+        git_executable=Path(shutil.which("git") or "git"),
         code_git_sha=commit,
     )
     assert identity["commit"] == commit

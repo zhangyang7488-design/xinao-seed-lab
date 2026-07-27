@@ -8,6 +8,7 @@ from pathlib import Path
 import pytest
 from scripts.build_s_runtime_release import (
     _git_blob_oid,
+    _run_git,
     build_release,
     verify_release,
 )
@@ -23,6 +24,29 @@ def _git(repo: Path, *args: str) -> str:
         encoding="utf-8",
         errors="replace",
     ).stdout.strip()
+
+
+def test_run_git_uses_the_explicit_executable_binding(monkeypatch, tmp_path: Path) -> None:
+    git_executable = tmp_path / "git.exe"
+    git_executable.write_bytes(b"fixture executable")
+    captured: dict[str, object] = {}
+
+    def fake_run(command: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
+        captured["command"] = command
+        captured["kwargs"] = kwargs
+        return subprocess.CompletedProcess(command, 0, stdout="sha1\n", stderr="")
+
+    monkeypatch.setattr("scripts.build_s_runtime_release.subprocess.run", fake_run)
+
+    observed = _run_git(
+        tmp_path,
+        "rev-parse",
+        "--show-object-format",
+        git_executable=git_executable,
+    )
+
+    assert observed == "sha1\n"
+    assert captured["command"][0] == str(git_executable.resolve())
 
 
 def test_git_blob_oid_matches_git_hash_object(tmp_path: Path) -> None:

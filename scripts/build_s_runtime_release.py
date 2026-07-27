@@ -23,9 +23,19 @@ SCHEMA_VERSION = "xinao.s_runtime_source_release.v1"
 DEFAULT_RELEASE_ROOT = Path(r"D:\XINAO_RESEARCH_RUNTIME\state\s_runtime_releases")
 
 
-def _run_git(repo: Path, *args: str, text: bool = True) -> str | bytes:
+def _git_argv0(git_executable: str | Path) -> str:
+    executable = Path(git_executable)
+    return str(executable.resolve()) if executable.is_absolute() else str(executable)
+
+
+def _run_git(
+    repo: Path,
+    *args: str,
+    text: bool = True,
+    git_executable: str | Path = "git",
+) -> str | bytes:
     completed = subprocess.run(
-        ["git", "-c", "core.autocrlf=false", *args],
+        [_git_argv0(git_executable), "-c", "core.autocrlf=false", *args],
         cwd=repo,
         check=True,
         capture_output=True,
@@ -64,9 +74,30 @@ def _safe_parts(raw: str) -> tuple[str, ...]:
     return tuple(path.parts)
 
 
-def _git_tree(repo: Path, commit: str) -> tuple[str, dict[str, dict[str, str]]]:
-    object_format = str(_run_git(repo, "rev-parse", "--show-object-format")).strip()
-    raw = _run_git(repo, "ls-tree", "-r", "-z", "--full-tree", commit, text=False)
+def _git_tree(
+    repo: Path,
+    commit: str,
+    *,
+    git_executable: str | Path = "git",
+) -> tuple[str, dict[str, dict[str, str]]]:
+    object_format = str(
+        _run_git(
+            repo,
+            "rev-parse",
+            "--show-object-format",
+            git_executable=git_executable,
+        )
+    ).strip()
+    raw = _run_git(
+        repo,
+        "ls-tree",
+        "-r",
+        "-z",
+        "--full-tree",
+        commit,
+        text=False,
+        git_executable=git_executable,
+    )
     assert isinstance(raw, bytes)
     entries: dict[str, dict[str, str]] = {}
     for record in raw.split(b"\0"):
@@ -148,6 +179,7 @@ def verify_release(
     manifest_path: Path,
     *,
     git_repo: Path | None = None,
+    git_executable: str | Path = "git",
 ) -> dict[str, Any]:
     release_dir = release_dir.resolve(strict=True)
     manifest_path = manifest_path.resolve(strict=True)
@@ -182,7 +214,11 @@ def verify_release(
     git_commit_verified = False
     if git_repo is not None:
         repo = git_repo.resolve(strict=True)
-        object_format, git_entries = _git_tree(repo, commit)
+        object_format, git_entries = _git_tree(
+            repo,
+            commit,
+            git_executable=git_executable,
+        )
         if object_format != manifest.get("git_object_format"):
             raise ValueError("S runtime release Git object format drifted")
         manifest_entries = {
@@ -194,7 +230,14 @@ def verify_release(
         }
         if manifest_entries != git_entries:
             raise ValueError("S runtime release manifest differs from the committed Git tree")
-        observed_tree = str(_run_git(repo, "rev-parse", f"{commit}^{{tree}}")).strip()
+        observed_tree = str(
+            _run_git(
+                repo,
+                "rev-parse",
+                f"{commit}^{{tree}}",
+                git_executable=git_executable,
+            )
+        ).strip()
         if observed_tree != manifest.get("tree"):
             raise ValueError("S runtime release tree does not match its Git commit")
         git_commit_verified = True
@@ -210,10 +253,24 @@ def verify_release(
     }
 
 
-def build_release(repo: Path, release_root: Path, revision: str) -> dict[str, Any]:
+def build_release(
+    repo: Path,
+    release_root: Path,
+    revision: str,
+    *,
+    git_executable: str | Path = "git",
+) -> dict[str, Any]:
     repo = repo.resolve()
     release_root = release_root.resolve()
-    commit = str(_run_git(repo, "rev-parse", "--verify", f"{revision}^{{commit}}")).strip()
+    commit = str(
+        _run_git(
+            repo,
+            "rev-parse",
+            "--verify",
+            f"{revision}^{{commit}}",
+            git_executable=git_executable,
+        )
+    ).strip()
     if len(commit) != 40:
         raise ValueError("S runtime release currently requires one 40-character commit")
     final_dir = release_root / commit
@@ -222,7 +279,12 @@ def build_release(repo: Path, release_root: Path, revision: str) -> dict[str, An
     if final_dir.exists():
         if not final_tar.is_file() or not final_manifest.is_file():
             raise ValueError("existing release is incomplete; refusing implicit repair")
-        result = verify_release(final_dir, final_manifest, git_repo=repo)
+        result = verify_release(
+            final_dir,
+            final_manifest,
+            git_repo=repo,
+            git_executable=git_executable,
+        )
         if (
             _sha256(final_tar)
             != json.loads(final_manifest.read_text(encoding="utf-8"))["archive_sha256"]
@@ -242,7 +304,7 @@ def build_release(repo: Path, release_root: Path, revision: str) -> dict[str, An
     try:
         subprocess.run(
             [
-                "git",
+                _git_argv0(git_executable),
                 "-c",
                 "core.autocrlf=false",
                 "archive",
@@ -254,7 +316,11 @@ def build_release(repo: Path, release_root: Path, revision: str) -> dict[str, An
             check=True,
             timeout=120,
         )
-        object_format, expected = _git_tree(repo, commit)
+        object_format, expected = _git_tree(
+            repo,
+            commit,
+            git_executable=git_executable,
+        )
         files = _extract_and_verify(
             staging_tar,
             staging_dir,
@@ -265,7 +331,14 @@ def build_release(repo: Path, release_root: Path, revision: str) -> dict[str, An
             "schema_version": SCHEMA_VERSION,
             "status": "VERIFIED_BEFORE_PROMOTION",
             "commit": commit,
-            "tree": str(_run_git(repo, "rev-parse", f"{commit}^{{tree}}")).strip(),
+            "tree": str(
+                _run_git(
+                    repo,
+                    "rev-parse",
+                    f"{commit}^{{tree}}",
+                    git_executable=git_executable,
+                )
+            ).strip(),
             "git_object_format": object_format,
             "archive_sha256": _sha256(staging_tar),
             "file_count": len(files),
@@ -289,7 +362,12 @@ def build_release(repo: Path, release_root: Path, revision: str) -> dict[str, An
 
             shutil.rmtree(staging_dir)
         raise
-    result = verify_release(final_dir, final_manifest, git_repo=repo)
+    result = verify_release(
+        final_dir,
+        final_manifest,
+        git_repo=repo,
+        git_executable=git_executable,
+    )
     if _sha256(final_tar) != manifest["archive_sha256"]:
         raise ValueError("promoted release archive drifted")
     result.update(
@@ -308,6 +386,7 @@ def main() -> int:
     parser.add_argument("--verify-dir", type=Path)
     parser.add_argument("--manifest", type=Path)
     parser.add_argument("--git-repo", type=Path)
+    parser.add_argument("--git-executable", type=Path, default=Path("git"))
     args = parser.parse_args()
     if args.verify_dir or args.manifest:
         if args.verify_dir is None or args.manifest is None:
@@ -316,9 +395,15 @@ def main() -> int:
             args.verify_dir.resolve(),
             args.manifest.resolve(),
             git_repo=args.git_repo,
+            git_executable=args.git_executable,
         )
     else:
-        result = build_release(args.repo, args.release_root, args.revision)
+        result = build_release(
+            args.repo,
+            args.release_root,
+            args.revision,
+            git_executable=args.git_executable,
+        )
     print(json.dumps(result, ensure_ascii=False, indent=2, sort_keys=True))
     return 0
 

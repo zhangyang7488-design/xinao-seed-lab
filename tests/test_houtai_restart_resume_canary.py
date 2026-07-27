@@ -157,7 +157,9 @@ def test_result_acceptance_admits_real_docker_composer_without_legacy_send() -> 
     assert canary._real_result_accepted(result) is True
 
 
-def test_docker_identity_selects_fields_without_environment(monkeypatch) -> None:
+def test_docker_identity_selects_fields_without_environment(monkeypatch, tmp_path: Path) -> None:
+    docker_executable = tmp_path / "docker.exe"
+    docker_executable.write_bytes(b"fixture executable")
     mounts = [
         *[
             {
@@ -186,13 +188,17 @@ def test_docker_identity_selects_fields_without_environment(monkeypatch) -> None
         json.dumps(mounts),
     ]
 
+    captured: dict[str, object] = {}
+
     def fake_run(command, *, timeout=60):
+        captured["command"] = command
         assert "Config.Env" not in " ".join(command)
         return SimpleNamespace(returncode=0, stdout="\n".join(lines), stderr="")
 
     monkeypatch.setattr(canary, "_run", fake_run)
-    value = canary.docker_identity()
+    value = canary.docker_identity(docker_executable=docker_executable)
 
+    assert captured["command"][0] == str(docker_executable.resolve())
     assert value["pid"] == 100
     assert [item["destination"] for item in value["mounts"]] == sorted(
         [destination for _, destination in _SPLIT_REPO_MOUNTS] + ["/evidence"]

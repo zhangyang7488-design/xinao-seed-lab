@@ -96,7 +96,11 @@ def _run(command: list[str], *, timeout: int = 60) -> subprocess.CompletedProces
     )
 
 
-def docker_identity(reference: str = CONTAINER_NAME) -> dict[str, Any]:
+def docker_identity(
+    reference: str = CONTAINER_NAME,
+    *,
+    docker_executable: str | Path = "docker",
+) -> dict[str, Any]:
     # Select fields explicitly: never dump Config.Env, which may contain secrets.
     template = "\n".join(
         [
@@ -116,7 +120,9 @@ def docker_identity(reference: str = CONTAINER_NAME) -> dict[str, Any]:
             "{{json .Mounts}}",
         ]
     )
-    proc = _run(["docker", "inspect", "--format", template, reference])
+    executable = Path(docker_executable)
+    argv0 = str(executable.resolve()) if executable.is_absolute() else str(executable)
+    proc = _run([argv0, "inspect", "--format", template, reference])
     if proc.returncode != 0:
         raise RuntimeError(f"docker inspect failed: {proc.stderr[-500:]}")
     lines = proc.stdout.splitlines()
@@ -507,9 +513,15 @@ async def _wait_daemon_and_queues(
     )
 
 
-def _docker_restart(container_id: str) -> dict[str, Any]:
+def _docker_restart(
+    container_id: str,
+    *,
+    docker_executable: str | Path = "docker",
+) -> dict[str, Any]:
     began = _now()
-    proc = _run(["docker", "restart", "--time", "10", container_id], timeout=30)
+    executable = Path(docker_executable)
+    argv0 = str(executable.resolve()) if executable.is_absolute() else str(executable)
+    proc = _run([argv0, "restart", "--time", "10", container_id], timeout=30)
     return {
         "began_at_utc": began,
         "ended_at_utc": _now(),
@@ -521,7 +533,10 @@ def _docker_restart(container_id: str) -> dict[str, Any]:
 
 
 def _rollback_start_if_exact_stopped(
-    *, pre: dict[str, Any], current: dict[str, Any] | None
+    *,
+    pre: dict[str, Any],
+    current: dict[str, Any] | None,
+    docker_executable: str | Path = "docker",
 ) -> dict[str, Any]:
     if current is None:
         return {"attempted": False, "reason": "identity unavailable; ambiguity is read-only"}
@@ -529,7 +544,9 @@ def _rollback_start_if_exact_stopped(
         return {"attempted": False, "reason": "identity drift; ambiguity is read-only"}
     if current.get("status") == "running":
         return {"attempted": False, "reason": "exact container already running"}
-    proc = _run(["docker", "container", "start", str(pre["id"])], timeout=30)
+    executable = Path(docker_executable)
+    argv0 = str(executable.resolve()) if executable.is_absolute() else str(executable)
+    proc = _run([argv0, "container", "start", str(pre["id"])], timeout=30)
     return {
         "attempted": True,
         "exact_container_id": pre["id"],
