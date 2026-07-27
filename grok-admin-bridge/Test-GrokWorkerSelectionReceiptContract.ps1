@@ -96,6 +96,8 @@ $tempBridge = Join-Path $root "bridge"
 $dispatchLatest = "D:\XINAO_RESEARCH_RUNTIME\state\codex_dispatch_grok_worker_pool\latest.json"
 $dispatchLatestExisted = Test-Path -LiteralPath $dispatchLatest -PathType Leaf
 $dispatchLatestBytes = if ($dispatchLatestExisted) { [IO.File]::ReadAllBytes($dispatchLatest) } else { $null }
+$concurrentDispatchMetas = @()
+$concurrentPoolDirs = @()
 New-Item -ItemType Directory -Force -Path $tempBridge | Out-Null
 
 try {
@@ -132,8 +134,13 @@ $record = [ordered]@{
     expected_selection_decision_sha256 = $ExpectedSelectionDecisionSha256
     pool_id = $PoolId
 }
+$callPath = $env:XINAO_GROK_SELECTION_STUB_CALL
+if (-not [string]::IsNullOrWhiteSpace($env:XINAO_GROK_SELECTION_STUB_CALL_DIR)) {
+    New-Item -ItemType Directory -Force -Path $env:XINAO_GROK_SELECTION_STUB_CALL_DIR | Out-Null
+    $callPath = Join-Path $env:XINAO_GROK_SELECTION_STUB_CALL_DIR ($PoolId + ".json")
+}
 [IO.File]::WriteAllText(
-    $env:XINAO_GROK_SELECTION_STUB_CALL,
+    $callPath,
     ($record | ConvertTo-Json -Depth 4),
     (New-Object Text.UTF8Encoding $false)
 )
@@ -406,6 +413,73 @@ exit 0
         "dated_capacity_receipt_reaches_stub_pool"
     )
     Remove-Item -LiteralPath $stubCall -Force
+
+    $concurrentCallDir = Join-Path $root "concurrent-calls"
+    New-Item -ItemType Directory -Force -Path $concurrentCallDir | Out-Null
+    $env:XINAO_GROK_SELECTION_STUB_CALL_DIR = $concurrentCallDir
+    $concurrentProcesses = @()
+    $concurrentDispatchIds = @()
+    try {
+        foreach ($index in 0..3) {
+            $concurrentSuffix = [guid]::NewGuid().ToString("N").Substring(0, 8)
+            $concurrentDispatchId = "cdx_20000101T000000_$concurrentSuffix"
+            $concurrentPoolId = "gwp_20000101T000000_$concurrentSuffix"
+            $concurrentDispatchIds += $concurrentDispatchId
+            $concurrentDispatchMetas += "D:\XINAO_RESEARCH_RUNTIME\state\codex_dispatch_grok_worker_pool\$concurrentDispatchId.json"
+            $concurrentPoolDirs += "D:\XINAO_RESEARCH_RUNTIME\state\grok_worker_pool\$concurrentPoolId"
+            $stdoutPath = Join-Path $root ("concurrent-$index.stdout.txt")
+            $stderrPath = Join-Path $root ("concurrent-$index.stderr.txt")
+            $arguments = @(
+                "-NoLogo", "-NoProfile", "-NonInteractive",
+                "-File", (Join-Path $tempBridge "Invoke-CodexDispatchGrokWorkerPool.ps1"),
+                "-N", "1", "-Prompt", "fixture-only",
+                "-Cwd", $root, "-Model", "grok-4.5", "-SelectionPath", $validReceipt,
+                "-DispatchId", $concurrentDispatchId,
+                "-PoolId", $concurrentPoolId,
+                "-Quiet"
+            )
+            $concurrentProcesses += [pscustomobject]@{
+                process = Start-Process `
+                    -FilePath $pwsh `
+                    -ArgumentList $arguments `
+                    -WindowStyle Hidden `
+                    -RedirectStandardOutput $stdoutPath `
+                    -RedirectStandardError $stderrPath `
+                    -PassThru
+                stdout = $stdoutPath
+                stderr = $stderrPath
+                dispatch_id = $concurrentDispatchId
+                pool_id = $concurrentPoolId
+            }
+        }
+        foreach ($entry in $concurrentProcesses) {
+            $entry.process.WaitForExit()
+            $failureOutput = @(
+                if (Test-Path -LiteralPath $entry.stdout) { Get-Content -LiteralPath $entry.stdout -Raw }
+                if (Test-Path -LiteralPath $entry.stderr) { Get-Content -LiteralPath $entry.stderr -Raw }
+            ) -join "`n"
+            Assert-True ($entry.process.ExitCode -eq 0) (
+                "concurrent_dispatch_exit:" + $entry.dispatch_id + ":" + $failureOutput
+            )
+            Assert-True (
+                Test-Path -LiteralPath (Join-Path $concurrentCallDir ($entry.pool_id + ".json")) -PathType Leaf
+            ) ("concurrent_dispatch_reaches_pool:" + $entry.dispatch_id)
+        }
+        foreach ($metaPath in $concurrentDispatchMetas) {
+            $concurrentMeta = Get-Content -LiteralPath $metaPath -Raw -Encoding UTF8 |
+                ConvertFrom-Json -ErrorAction Stop
+            Assert-True ($concurrentMeta.status -eq "accepted") ("concurrent_meta_terminal:" + $metaPath)
+            Assert-True ($concurrentMeta.pre_pool_latest_published -eq $false) ("concurrent_no_pre_pool_latest:" + $metaPath)
+            Assert-True ($concurrentMeta.latest_projection_mode -eq "best_effort_terminal_only") ("concurrent_latest_advisory:" + $metaPath)
+        }
+        $concurrentLatest = Get-Content -LiteralPath $dispatchLatest -Raw -Encoding UTF8 |
+            ConvertFrom-Json -ErrorAction Stop
+        Assert-True ($concurrentLatest.status -eq "accepted") "concurrent_latest_is_complete_terminal_json"
+        Assert-True ($concurrentDispatchIds -contains [string]$concurrentLatest.dispatch_id) "concurrent_latest_is_one_terminal_writer"
+    }
+    finally {
+        Remove-Item Env:\XINAO_GROK_SELECTION_STUB_CALL_DIR -ErrorAction SilentlyContinue
+    }
     $negativeCases = @(
         [pscustomobject]@{
             name = "hash_mismatch"
@@ -584,6 +658,8 @@ exit 0
         ok = $true
         positive_fresh_process = $true
         automatic_selection_fresh_process = $true
+        concurrent_terminal_dispatches = 4
+        latest_projection_is_advisory_terminal_only = $true
         negative_cases = @($negativeCases.name) + @(
             "missing_model",
             "missing_cwd",
@@ -602,6 +678,7 @@ exit 0
 }
 finally {
     Remove-Item Env:\XINAO_GROK_SELECTION_STUB_CALL -ErrorAction SilentlyContinue
+    Remove-Item Env:\XINAO_GROK_SELECTION_STUB_CALL_DIR -ErrorAction SilentlyContinue
     foreach ($path in @(
         $dispatchMeta,
         $poolDir,
@@ -611,6 +688,10 @@ finally {
         $fallbackDispatchMeta,
         $fallbackPoolDir,
         $fallbackSelectionDir
+    ) + @(
+        $concurrentDispatchMetas
+    ) + @(
+        $concurrentPoolDirs
     )) {
         if ($path -and (Test-Path -LiteralPath $path)) { Remove-Item -LiteralPath $path -Force -Recurse }
     }

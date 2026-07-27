@@ -18,6 +18,17 @@ try {
     $zoneLess = ConvertTo-GrokCatalogFetchedAtUtc "07/17/2026 19:39:45"
     $zulu = ConvertTo-GrokCatalogFetchedAtUtc "2026-07-17T19:39:45Z"
     $offset = ConvertTo-GrokCatalogFetchedAtUtc "2026-07-17T21:39:45+02:00"
+    $jsonValue = ('{"fetched_at":"2026-07-17T19:39:45Z"}' | ConvertFrom-Json).fetched_at
+    $jsonDecoded = ConvertTo-GrokCatalogFetchedAtUtc $jsonValue
+    $dateTimeOffsetObject = ConvertTo-GrokCatalogFetchedAtUtc (
+        [DateTimeOffset]::Parse("2026-07-17T21:39:45+02:00")
+    )
+    $unspecifiedObject = ConvertTo-GrokCatalogFetchedAtUtc (
+        [DateTime]::SpecifyKind(
+            [DateTime]::Parse("2026-07-17T19:39:45"),
+            [DateTimeKind]::Unspecified
+        )
+    )
 }
 finally {
     [Threading.Thread]::CurrentThread.CurrentCulture = $originalCulture
@@ -32,6 +43,9 @@ Assert-Contract ($zoneLess -eq $expected) "zone_less_cli_timestamp_is_utc"
 Assert-Contract ($zoneLess.Offset -eq [TimeSpan]::Zero) "zone_less_result_offset_is_zero"
 Assert-Contract ($zulu -eq $expected) "zulu_timestamp_preserved"
 Assert-Contract ($offset -eq $expected) "explicit_offset_preserved"
+Assert-Contract ($jsonDecoded -eq $expected) "convertfrom_json_datetime_or_string_preserved"
+Assert-Contract ($dateTimeOffsetObject -eq $expected) "datetimeoffset_object_preserved"
+Assert-Contract ($unspecifiedObject -eq $expected) "unspecified_datetime_object_assumes_utc"
 
 $now = [DateTimeOffset]::Parse("2026-07-17T19:46:33Z")
 $ageSeconds = ($now - $zoneLess).TotalSeconds
