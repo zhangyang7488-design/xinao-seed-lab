@@ -23,6 +23,11 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
+# This entrypoint is intentionally executed from a content-addressed source
+# release. Disable bytecode writes before any release-local import so that the
+# verifier cannot mutate the object whose exact file set it is about to verify.
+sys.dont_write_bytecode = True
+
 from temporalio.api.enums.v1 import EventType, TaskQueueType
 from temporalio.api.taskqueue.v1 import TaskQueue
 from temporalio.api.workflowservice.v1 import DescribeTaskQueueRequest
@@ -48,14 +53,17 @@ from scripts.verify_houtai_gongren_restart_resume import (  # noqa: E402
     docker_identity,
 )
 from services.agent_runtime.grok_build_docker_worker import (  # noqa: E402
+    NO_TOOLS_SANDBOX_ENFORCEMENT,
+    NO_TOOLS_TRANSPORT_SANDBOX_PROFILE,
     PROVIDER_ID,
     READ_ONLY_PERMISSION_MODE,
-    READ_ONLY_SANDBOX_PROFILE,
 )
 from services.agent_runtime.grok_execution_contract_adapter import (  # noqa: E402
     expected_docker_grok_backend_models,
 )
 from services.agent_runtime.integrated_bus_worker_daemon import (  # noqa: E402
+    GROK_EXPECTED_CAPABILITY_MASK,
+    GROK_EXPECTED_NO_NEW_PRIVS,
     SOURCE_RELEASE_CRITICAL_FILES,
 )
 from services.agent_runtime.xinao_mainline_canary import (  # noqa: E402
@@ -107,6 +115,10 @@ RELEASE_APP_MOUNTS = {
     "/app/materials": "materials",
     "/app/policies": "policies",
 }
+GROK_SESSION_STORE_CONTAINER_TARGET = (
+    "/mnt/host/d/XINAO_RESEARCH_RUNTIME/state/tool_profile_sessions/grok-bg-workers"
+)
+GROK_SESSION_STORE_RUNTIME_RELATIVE = Path("state/tool_profile_sessions/grok-bg-workers")
 
 
 def _now() -> str:
@@ -264,6 +276,33 @@ def _verify_container_release_mounts(
     }
 
 
+def _verify_container_grok_session_mount(
+    container: dict[str, Any],
+    *,
+    runtime_root: Path,
+) -> dict[str, Any]:
+    expected_source = (runtime_root / GROK_SESSION_STORE_RUNTIME_RELATIVE).resolve(strict=True)
+    matches = [
+        item
+        for item in container.get("mounts") or []
+        if str(item.get("destination") or "").rstrip("/") == GROK_SESSION_STORE_CONTAINER_TARGET
+    ]
+    if len(matches) != 1:
+        raise RuntimeError("worker is missing the exact Grok session-store mount")
+    mount = matches[0]
+    observed_source = Path(str(mount.get("source") or "")).resolve(strict=True)
+    if observed_source != expected_source:
+        raise RuntimeError("worker Grok session-store mount source drifted")
+    if mount.get("rw") is not True:
+        raise RuntimeError("worker Grok session-store mount is not writable")
+    return {
+        "ok": True,
+        "source": str(observed_source),
+        "destination": GROK_SESSION_STORE_CONTAINER_TARGET,
+        "writable": True,
+    }
+
+
 def _verify_daemon_source_release(
     marker: dict[str, Any],
     *,
@@ -276,6 +315,49 @@ def _verify_daemon_source_release(
         if observed.get(name) != expected.get(name):
             raise RuntimeError(f"worker daemon source release drifted: {name}")
     return dict(observed)
+
+
+def _verify_daemon_security_boundary(
+    marker: dict[str, Any],
+    *,
+    expected_container_id: str,
+) -> dict[str, Any]:
+    """Verify the live outer boundary that replaces provider bwrap for zero-tool audit."""
+
+    observed_container_id = str(marker.get("container_id") or "")
+    outer = marker.get("grok_outer_privilege")
+    checks = {
+        "polling": marker.get("status") == "polling",
+        "readiness_confirmed": marker.get("readiness_confirmed") is True,
+        "all_workers_running": marker.get("all_workers_running") is True,
+        "container_generation_bound": len(observed_container_id) >= 12
+        and expected_container_id.startswith(observed_container_id),
+        "tty_required": marker.get("grok_sandbox_tty_required") is True,
+        "tty_available": marker.get("grok_sandbox_tty_available") is True,
+        "outer_privilege_required": marker.get("grok_outer_privilege_required") is True,
+        "outer_privilege_exact": isinstance(outer, dict)
+        and outer.get("ok") is True
+        and outer.get("expected_capability_mask") == GROK_EXPECTED_CAPABILITY_MASK
+        and outer.get("expected_no_new_privs") == GROK_EXPECTED_NO_NEW_PRIVS
+        and outer.get("cap_eff") == GROK_EXPECTED_CAPABILITY_MASK
+        and outer.get("cap_prm") == GROK_EXPECTED_CAPABILITY_MASK
+        and outer.get("cap_bnd") == GROK_EXPECTED_CAPABILITY_MASK
+        and outer.get("no_new_privs") == GROK_EXPECTED_NO_NEW_PRIVS
+        and str(outer.get("seccomp") or "").isdigit(),
+        "bwrap_bootstrap_required": marker.get("grok_bwrap_bootstrap_required") is True,
+        "bwrap_bootstrap_available": marker.get("grok_bwrap_bootstrap_available") is True,
+    }
+    failed = sorted(name for name, ok in checks.items() if not ok)
+    if failed:
+        raise RuntimeError("worker daemon security boundary is incomplete: " + ",".join(failed))
+    assert isinstance(outer, dict)
+    return {
+        "ok": True,
+        "container_id": observed_container_id,
+        "checks": checks,
+        "outer_privilege": dict(outer),
+        "sandbox_enforcement": NO_TOOLS_SANDBOX_ENFORCEMENT,
+    }
 
 
 def _materialize_validation_episode(
@@ -747,12 +829,13 @@ def _verify_positive_worker_receipt(
         and worker.get("requested_model") == expected_model
         and worker.get("observed_model") == expected_docker_grok_backend_models(expected_model)[0]
         and worker.get("model_identity_ok") is True
-        and worker.get("sandbox_profile") == READ_ONLY_SANDBOX_PROFILE
+        and worker.get("sandbox_profile") == NO_TOOLS_TRANSPORT_SANDBOX_PROFILE
+        and worker.get("sandbox_enforcement") == NO_TOOLS_SANDBOX_ENFORCEMENT
         and worker.get("permission_mode") == READ_ONLY_PERMISSION_MODE
         and worker.get("security_cli_args")
         == [
             "--sandbox",
-            READ_ONLY_SANDBOX_PROFILE,
+            NO_TOOLS_TRANSPORT_SANDBOX_PROFILE,
             "--permission-mode",
             READ_ONLY_PERMISSION_MODE,
             "--tools",
@@ -987,6 +1070,10 @@ async def run(args: argparse.Namespace) -> dict[str, Any]:
         pre_container,
         release_dir=args.release_dir,
     )
+    grok_session_mount_before = _verify_container_grok_session_mount(
+        pre_container,
+        runtime_root=RUNTIME,
+    )
     container_created_at = datetime.fromisoformat(
         str(pre_container.get("created") or "").replace("Z", "+00:00")
     ).astimezone(UTC)
@@ -1000,6 +1087,10 @@ async def run(args: argparse.Namespace) -> dict[str, Any]:
     daemon_release_before = _verify_daemon_source_release(
         daemon_before,
         expected=source_release,
+    )
+    daemon_security_before = _verify_daemon_security_boundary(
+        daemon_before,
+        expected_container_id=str(pre_container["id"]),
     )
     handle = await client.start_workflow(
         XinaoScienceEpisodeWorkflowV1.run,
@@ -1055,9 +1146,17 @@ async def run(args: argparse.Namespace) -> dict[str, Any]:
         post_container,
         release_dir=args.release_dir,
     )
+    grok_session_mount_after = _verify_container_grok_session_mount(
+        post_container,
+        runtime_root=RUNTIME,
+    )
     daemon_release_after = _verify_daemon_source_release(
         daemon_after,
         expected=source_release,
+    )
+    daemon_security_after = _verify_daemon_security_boundary(
+        daemon_after,
+        expected_container_id=str(post_container["id"]),
     )
     if (
         daemon_after.get("workflow_roles", {}).get(SCIENCE_EPISODE_WORKFLOW_NAME)
@@ -1228,6 +1327,8 @@ async def run(args: argparse.Namespace) -> dict[str, Any]:
             **source_release,
             "container_mounts_before": release_mounts_before,
             "container_mounts_after": release_mounts_after,
+            "grok_session_mount_before": grok_session_mount_before,
+            "grok_session_mount_after": grok_session_mount_after,
             "daemon_before": daemon_release_before,
             "daemon_after": daemon_release_after,
             "host_verification_after": source_release_after,
@@ -1266,6 +1367,8 @@ async def run(args: argparse.Namespace) -> dict[str, Any]:
             "static_identity_preserved": True,
             "daemon_run_before": daemon_before.get("run_id"),
             "daemon_run_after": daemon_after.get("run_id"),
+            "security_boundary_before": daemon_security_before,
+            "security_boundary_after": daemon_security_after,
             "integrated_queues": integrated_queues,
             "science_queue": mainline_queue,
         },

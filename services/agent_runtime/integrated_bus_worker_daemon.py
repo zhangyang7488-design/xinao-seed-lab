@@ -9,6 +9,8 @@ import json
 import os
 import re
 import socket
+import subprocess
+import tempfile
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import AsyncExitStack
 from datetime import datetime, timezone
@@ -27,10 +29,12 @@ from services.agent_runtime.integrated_bus_workflow_registry import (
 from services.agent_runtime.thin_glue_stack import DEFAULT_RUNTIME, write_json
 from services.agent_runtime.thin_glue_sunset_registry import summarize_sunset_registry
 
-SCHEMA_VERSION = "xinao.integrated_bus_worker_daemon.v2"
+SCHEMA_VERSION = "xinao.integrated_bus_worker_daemon.v5"
 SENTINEL = "SENTINEL:XINAO_INTEGRATED_BUS_WORKER_DAEMON_READY"
 DEFAULT_POLLING_START_TIMEOUT_SECONDS = 30.0
 SOURCE_RELEASE_SCHEMA_VERSION = "xinao.s_runtime_source_release.v1"
+GROK_EXPECTED_CAPABILITY_MASK = "00000000000000c0"
+GROK_EXPECTED_NO_NEW_PRIVS = "1"
 SOURCE_RELEASE_CRITICAL_FILES = (
     "services/agent_runtime/integrated_bus_worker_daemon.py",
     "services/agent_runtime/integrated_bus_workflow_registry.py",
@@ -44,6 +48,113 @@ SOURCE_RELEASE_CRITICAL_FILES = (
 )
 _HASH_RE = re.compile(r"^[0-9a-f]{64}$")
 _COMMIT_RE = re.compile(r"^[0-9a-f]{40}$")
+
+
+def _docker_native_grok_enabled() -> bool:
+    return os.environ.get("XINAO_GROK_DOCKER_NATIVE", "").strip().casefold() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
+
+
+def _controlling_tty_available(path: str = "/dev/tty") -> bool:
+    """Return whether this daemon process owns an openable controlling TTY."""
+
+    flags = os.O_RDWR | getattr(os, "O_NOCTTY", 0)
+    try:
+        descriptor = os.open(path, flags)
+    except OSError:
+        return False
+    os.close(descriptor)
+    return True
+
+
+def _grok_session_store_state(sessions_root: Path) -> dict[str, Any]:
+    """Prove that Grok's declared session store resolves and accepts a new directory."""
+
+    try:
+        resolved = sessions_root.resolve(strict=True)
+    except OSError as exc:
+        raise RuntimeError("Grok session store is unavailable") from exc
+    if not resolved.is_dir():
+        raise RuntimeError("Grok session store is unavailable")
+    try:
+        with tempfile.TemporaryDirectory(prefix=".xinao-readiness-", dir=resolved):
+            pass
+    except OSError as exc:
+        raise RuntimeError("Grok session store is not writable") from exc
+    return {
+        "ok": True,
+        "declared_root": str(sessions_root),
+        "resolved_root": str(resolved),
+        "writable": True,
+    }
+
+
+def _parse_proc_status(raw: str) -> dict[str, str]:
+    """Parse Linux proc status fields without depending on field ordering."""
+
+    fields: dict[str, str] = {}
+    for line in raw.splitlines():
+        key, separator, value = line.partition(":")
+        if separator:
+            fields[key.strip()] = value.strip()
+    return fields
+
+
+def _grok_outer_privilege_state(path: Path = Path("/proc/self/status")) -> dict[str, Any]:
+    """Verify the exact outer capability state required by the bwrap wrapper."""
+
+    fields = _parse_proc_status(path.read_text(encoding="utf-8"))
+    required_fields = ("CapEff", "CapPrm", "CapBnd", "NoNewPrivs", "Seccomp")
+    missing = [field for field in required_fields if not fields.get(field)]
+    if missing:
+        raise RuntimeError(f"process privilege status omitted fields: {','.join(missing)}")
+    observed = {
+        "cap_eff": fields["CapEff"].split()[0].lower(),
+        "cap_prm": fields["CapPrm"].split()[0].lower(),
+        "cap_bnd": fields["CapBnd"].split()[0].lower(),
+        "no_new_privs": fields["NoNewPrivs"].split()[0],
+        "seccomp": fields["Seccomp"].split()[0],
+    }
+    return {
+        "expected_capability_mask": GROK_EXPECTED_CAPABILITY_MASK,
+        "expected_no_new_privs": GROK_EXPECTED_NO_NEW_PRIVS,
+        **observed,
+        "ok": (
+            observed["cap_eff"] == GROK_EXPECTED_CAPABILITY_MASK
+            and observed["cap_prm"] == GROK_EXPECTED_CAPABILITY_MASK
+            and observed["cap_bnd"] == GROK_EXPECTED_CAPABILITY_MASK
+            and observed["no_new_privs"] == GROK_EXPECTED_NO_NEW_PRIVS
+        ),
+    }
+
+
+def _grok_bwrap_bootstrap_available(executable: str = "/usr/bin/bwrap") -> bool:
+    """Probe the nested user/PID/network namespace boundary without Grok or network I/O."""
+
+    try:
+        completed = subprocess.run(
+            [
+                executable,
+                "--unshare-user",
+                "--unshare-pid",
+                "--unshare-net",
+                "--die-with-parent",
+                "--ro-bind",
+                "/",
+                "/",
+                "/bin/true",
+            ],
+            check=False,
+            capture_output=True,
+            timeout=10,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return False
+    return completed.returncode == 0
 
 
 def _load_params() -> dict[str, Any]:
@@ -142,6 +253,10 @@ def readiness_marker_issues(
     expected_process_id: int,
     expected_process_start_ticks: str,
     expected_source_release: dict[str, Any] | None = None,
+    expected_grok_sandbox_tty_required: bool = False,
+    expected_grok_outer_privilege_required: bool = False,
+    expected_grok_outer_privilege_state: dict[str, Any] | None = None,
+    expected_grok_bwrap_bootstrap_required: bool = False,
 ) -> list[str]:
     """Validate that a polling marker belongs to the current daemon process."""
 
@@ -168,6 +283,42 @@ def readiness_marker_issues(
         issues.append("worker_context_count_mismatch")
     if evidence.get("all_workers_running") is not True:
         issues.append("workers_not_running")
+    if evidence.get("grok_sandbox_tty_required") is not expected_grok_sandbox_tty_required:
+        issues.append("grok_sandbox_tty_requirement_mismatch")
+    if (
+        expected_grok_sandbox_tty_required
+        and evidence.get("grok_sandbox_tty_available") is not True
+    ):
+        issues.append("grok_sandbox_tty_unavailable")
+    if evidence.get("grok_outer_privilege_required") is not expected_grok_outer_privilege_required:
+        issues.append("grok_outer_privilege_requirement_mismatch")
+    outer_privilege = evidence.get("grok_outer_privilege")
+    if expected_grok_outer_privilege_required:
+        if not isinstance(outer_privilege, dict):
+            issues.append("grok_outer_privilege_state_missing")
+        elif (
+            outer_privilege.get("ok") is not True
+            or outer_privilege.get("expected_capability_mask") != GROK_EXPECTED_CAPABILITY_MASK
+            or outer_privilege.get("expected_no_new_privs") != GROK_EXPECTED_NO_NEW_PRIVS
+            or outer_privilege.get("cap_eff") != GROK_EXPECTED_CAPABILITY_MASK
+            or outer_privilege.get("cap_prm") != GROK_EXPECTED_CAPABILITY_MASK
+            or outer_privilege.get("cap_bnd") != GROK_EXPECTED_CAPABILITY_MASK
+            or outer_privilege.get("no_new_privs") != GROK_EXPECTED_NO_NEW_PRIVS
+            or not str(outer_privilege.get("seccomp") or "").isdigit()
+        ):
+            issues.append("grok_outer_privilege_state_invalid")
+        if (
+            expected_grok_outer_privilege_state is not None
+            and outer_privilege != expected_grok_outer_privilege_state
+        ):
+            issues.append("grok_outer_privilege_state_mismatch")
+    if evidence.get("grok_bwrap_bootstrap_required") is not expected_grok_bwrap_bootstrap_required:
+        issues.append("grok_bwrap_bootstrap_requirement_mismatch")
+    if (
+        expected_grok_bwrap_bootstrap_required
+        and evidence.get("grok_bwrap_bootstrap_available") is not True
+    ):
+        issues.append("grok_bwrap_bootstrap_unavailable")
     roles = evidence.get("workflow_roles")
     if not isinstance(roles, dict):
         issues.append("workflow_roles_missing")
@@ -193,6 +344,17 @@ def check_readiness(
     marker_path = runtime_root / "state" / "integrated_bus_worker_daemon" / "latest.json"
     evidence = _read_json(marker_path)
     issues: list[str] = []
+    grok_sandbox_tty_required = _docker_native_grok_enabled()
+    grok_outer_privilege_required = grok_sandbox_tty_required
+    grok_bwrap_bootstrap_required = grok_sandbox_tty_required
+    grok_session_store = None
+    if grok_sandbox_tty_required:
+        try:
+            grok_session_store = _grok_session_store_state(
+                Path(os.environ.get("GROK_HOME") or "/grok-home/.grok") / "sessions"
+            )
+        except RuntimeError as exc:
+            issues.append(f"grok_session_store_unavailable:{type(exc).__name__}")
     try:
         release = source_release_identity(
             runtime_root=runtime_root,
@@ -201,6 +363,12 @@ def check_readiness(
     except (OSError, UnicodeError, RuntimeError) as exc:
         release = None
         issues.append(f"source_release_unavailable:{type(exc).__name__}")
+    try:
+        outer_privilege = _grok_outer_privilege_state(Path(f"/proc/{expected_process_id}/status"))
+    except (OSError, UnicodeError, RuntimeError) as exc:
+        outer_privilege = None
+        if grok_outer_privilege_required:
+            issues.append(f"grok_outer_privilege_unavailable:{type(exc).__name__}")
     try:
         process_start_ticks = _process_start_ticks(expected_process_id)
     except (OSError, UnicodeError, RuntimeError) as exc:
@@ -213,6 +381,10 @@ def check_readiness(
                 expected_process_id=expected_process_id,
                 expected_process_start_ticks=process_start_ticks,
                 expected_source_release=release,
+                expected_grok_sandbox_tty_required=grok_sandbox_tty_required,
+                expected_grok_outer_privilege_required=grok_outer_privilege_required,
+                expected_grok_outer_privilege_state=outer_privilege,
+                expected_grok_bwrap_bootstrap_required=grok_bwrap_bootstrap_required,
             )
         )
     return {
@@ -220,6 +392,13 @@ def check_readiness(
         "ok": not issues,
         "issues": issues,
         "marker_path": str(marker_path),
+        "grok_sandbox_tty_required": grok_sandbox_tty_required,
+        "grok_sandbox_tty_available": evidence.get("grok_sandbox_tty_available") is True,
+        "grok_outer_privilege_required": grok_outer_privilege_required,
+        "grok_outer_privilege": outer_privilege,
+        "grok_bwrap_bootstrap_required": grok_bwrap_bootstrap_required,
+        "grok_bwrap_bootstrap_available": (evidence.get("grok_bwrap_bootstrap_available") is True),
+        "grok_session_store": grok_session_store,
         "completion_claim_allowed": False,
     }
 
@@ -258,6 +437,29 @@ async def run_integrated_bus_worker_daemon(
     reg = registry_summary()
     process_id = os.getpid()
     process_start_ticks = _process_start_ticks(process_id)
+    grok_sandbox_tty_required = _docker_native_grok_enabled()
+    grok_sandbox_tty_available = _controlling_tty_available()
+    if grok_sandbox_tty_required and not grok_sandbox_tty_available:
+        raise RuntimeError(
+            "Docker-native Grok requires an allocated container TTY for its Landlock sandbox"
+        )
+    grok_session_store = None
+    if grok_sandbox_tty_required:
+        grok_session_store = _grok_session_store_state(
+            Path(os.environ.get("GROK_HOME") or "/grok-home/.grok") / "sessions"
+        )
+    grok_outer_privilege_required = grok_sandbox_tty_required
+    grok_outer_privilege = _grok_outer_privilege_state()
+    if grok_outer_privilege_required and grok_outer_privilege.get("ok") is not True:
+        raise RuntimeError(
+            "Docker-native Grok requires the exact fail-closed outer capability state"
+        )
+    grok_bwrap_bootstrap_required = grok_sandbox_tty_required
+    grok_bwrap_bootstrap_available = _grok_bwrap_bootstrap_available()
+    if grok_bwrap_bootstrap_required and not grok_bwrap_bootstrap_available:
+        raise RuntimeError(
+            "Docker-native Grok requires a working nested bubblewrap namespace boundary"
+        )
     release = source_release_identity(
         runtime_root=runtime_root,
         app_root=Path(os.environ.get("XINAO_CODEX_S_REPO_ROOT") or "/app"),
@@ -276,6 +478,13 @@ async def run_integrated_bus_worker_daemon(
         "worker_context_count": 0,
         "all_workers_running": False,
         "readiness_confirmed": False,
+        "grok_sandbox_tty_required": grok_sandbox_tty_required,
+        "grok_sandbox_tty_available": grok_sandbox_tty_available,
+        "grok_outer_privilege_required": grok_outer_privilege_required,
+        "grok_outer_privilege": grok_outer_privilege,
+        "grok_bwrap_bootstrap_required": grok_bwrap_bootstrap_required,
+        "grok_bwrap_bootstrap_available": grok_bwrap_bootstrap_available,
+        "grok_session_store": grok_session_store,
         "task_queues": reg.get("task_queues", []),
         "workflows_registered": reg.get("workflows_registered", []),
         "workflow_roles": reg.get("workflow_roles", {}),

@@ -32,6 +32,12 @@ def _ready_marker() -> dict[str, object]:
         "binding_count": 3,
         "worker_context_count": 3,
         "all_workers_running": True,
+        "grok_sandbox_tty_required": False,
+        "grok_sandbox_tty_available": False,
+        "grok_outer_privilege_required": False,
+        "grok_outer_privilege": None,
+        "grok_bwrap_bootstrap_required": False,
+        "grok_bwrap_bootstrap_available": False,
         "workflow_roles": {
             "XinaoScienceEpisodeWorkflowV1": "CURRENT_SCIENCE_ENTRY",
             "XinaoResearchCampaignWorkflow": "LEGACY_REPLAY",
@@ -163,6 +169,131 @@ def test_readiness_marker_rejects_pre_poll_and_stale_state(
     )
 
 
+def test_readiness_marker_requires_live_tty_for_docker_native_grok() -> None:
+    marker = _ready_marker()
+    marker["grok_sandbox_tty_required"] = True
+    marker["grok_sandbox_tty_available"] = False
+    issues = daemon.readiness_marker_issues(
+        marker,
+        expected_container_id="container-generation",
+        expected_process_id=1,
+        expected_process_start_ticks="987654",
+        expected_grok_sandbox_tty_required=True,
+    )
+    assert issues == ["grok_sandbox_tty_unavailable"]
+
+    marker["grok_sandbox_tty_available"] = True
+    assert (
+        daemon.readiness_marker_issues(
+            marker,
+            expected_container_id="container-generation",
+            expected_process_id=1,
+            expected_process_start_ticks="987654",
+            expected_grok_sandbox_tty_required=True,
+        )
+        == []
+    )
+
+
+def test_controlling_tty_probe_fails_closed(monkeypatch: pytest.MonkeyPatch) -> None:
+    def unavailable(_path: str, _flags: int) -> int:
+        raise OSError("no controlling terminal")
+
+    monkeypatch.setattr(daemon.os, "open", unavailable)
+    assert daemon._controlling_tty_available() is False
+
+
+def _valid_outer_privilege_state() -> dict[str, object]:
+    return {
+        "expected_capability_mask": daemon.GROK_EXPECTED_CAPABILITY_MASK,
+        "expected_no_new_privs": daemon.GROK_EXPECTED_NO_NEW_PRIVS,
+        "cap_eff": daemon.GROK_EXPECTED_CAPABILITY_MASK,
+        "cap_prm": daemon.GROK_EXPECTED_CAPABILITY_MASK,
+        "cap_bnd": daemon.GROK_EXPECTED_CAPABILITY_MASK,
+        "no_new_privs": daemon.GROK_EXPECTED_NO_NEW_PRIVS,
+        "seccomp": "2",
+        "ok": True,
+    }
+
+
+def test_proc_status_parser_and_outer_privilege_probe(tmp_path: Path) -> None:
+    status_path = tmp_path / "status"
+    status_path.write_text(
+        "Name:\tpython\n"
+        f"CapEff:\t{daemon.GROK_EXPECTED_CAPABILITY_MASK}\n"
+        f"CapPrm:\t{daemon.GROK_EXPECTED_CAPABILITY_MASK}\n"
+        f"CapBnd:\t{daemon.GROK_EXPECTED_CAPABILITY_MASK}\n"
+        "NoNewPrivs:\t1\n"
+        "Seccomp:\t2\n",
+        encoding="utf-8",
+    )
+    assert daemon._grok_outer_privilege_state(status_path) == _valid_outer_privilege_state()
+
+
+def test_readiness_marker_requires_exact_outer_privilege_state() -> None:
+    marker = _ready_marker()
+    privilege_state = _valid_outer_privilege_state()
+    marker["grok_outer_privilege_required"] = True
+    marker["grok_outer_privilege"] = privilege_state
+    assert (
+        daemon.readiness_marker_issues(
+            marker,
+            expected_container_id="container-generation",
+            expected_process_id=1,
+            expected_process_start_ticks="987654",
+            expected_grok_outer_privilege_required=True,
+            expected_grok_outer_privilege_state=privilege_state,
+        )
+        == []
+    )
+
+    marker["grok_outer_privilege"] = {**privilege_state, "cap_eff": "0" * 16}
+    issues = daemon.readiness_marker_issues(
+        marker,
+        expected_container_id="container-generation",
+        expected_process_id=1,
+        expected_process_start_ticks="987654",
+        expected_grok_outer_privilege_required=True,
+        expected_grok_outer_privilege_state=privilege_state,
+    )
+    assert "grok_outer_privilege_state_invalid" in issues
+    assert "grok_outer_privilege_state_mismatch" in issues
+
+
+def test_bwrap_bootstrap_probe_and_readiness_gate(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def completed(*_args: object, **_kwargs: object) -> subprocess.CompletedProcess[bytes]:
+        return subprocess.CompletedProcess(args=[], returncode=0, stdout=b"", stderr=b"")
+
+    monkeypatch.setattr(daemon.subprocess, "run", completed)
+    assert daemon._grok_bwrap_bootstrap_available() is True
+
+    marker = _ready_marker()
+    marker["grok_bwrap_bootstrap_required"] = True
+    marker["grok_bwrap_bootstrap_available"] = False
+    issues = daemon.readiness_marker_issues(
+        marker,
+        expected_container_id="container-generation",
+        expected_process_id=1,
+        expected_process_start_ticks="987654",
+        expected_grok_bwrap_bootstrap_required=True,
+    )
+    assert issues == ["grok_bwrap_bootstrap_unavailable"]
+
+    marker["grok_bwrap_bootstrap_available"] = True
+    assert (
+        daemon.readiness_marker_issues(
+            marker,
+            expected_container_id="container-generation",
+            expected_process_id=1,
+            expected_process_start_ticks="987654",
+            expected_grok_bwrap_bootstrap_required=True,
+        )
+        == []
+    )
+
+
 def test_polling_gate_waits_for_temporal_worker_state() -> None:
     worker = _FakeWorker()
 
@@ -190,9 +321,20 @@ def test_polling_gate_times_out_before_publishing_false_readiness() -> None:
 
 def test_compose_healthcheck_invokes_generation_aware_readiness() -> None:
     compose = yaml.safe_load((REPO_ROOT / "docker-compose.yml").read_text(encoding="utf-8"))
-    environment = compose["services"]["houtai-gongren"]["environment"]
+    service = compose["services"]["houtai-gongren"]
+    environment = service["environment"]
+    assert service["tty"] is True
+    assert service["cap_drop"] == ["ALL"]
+    assert set(service["cap_add"]) == {"SETUID", "SETGID"}
+    assert service["security_opt"] == ["no-new-privileges:true", "seccomp=unconfined"]
     assert "XINAO_S_RUNTIME_RELEASE_COMMIT" in environment
     assert "XINAO_S_RUNTIME_RELEASE_MANIFEST_SHA256" in environment
+    assert (
+        "${XINAO_GROK_SESSION_STORE_HOST:-D:/XINAO_RESEARCH_RUNTIME/state/"
+        "tool_profile_sessions/grok-bg-workers}:"
+        "/mnt/host/d/XINAO_RESEARCH_RUNTIME/state/tool_profile_sessions/grok-bg-workers:rw"
+        in service["volumes"]
+    )
     healthcheck = compose["services"]["houtai-gongren"]["healthcheck"]["test"]
     assert healthcheck == [
         "CMD",
@@ -208,6 +350,24 @@ def test_compose_healthcheck_invokes_generation_aware_readiness() -> None:
     )
     assert "--runtime-root /evidence --check-readiness" in dockerfile
     assert "test -f /evidence/state/integrated_bus_worker_daemon/latest.json" not in dockerfile
+
+
+def test_grok_session_store_preflight_requires_a_writable_directory(tmp_path: Path) -> None:
+    missing = tmp_path / "missing-sessions"
+    with pytest.raises(RuntimeError, match="session store is unavailable"):
+        daemon._grok_session_store_state(missing)
+
+    sessions = tmp_path / "sessions"
+    sessions.mkdir()
+    state = daemon._grok_session_store_state(sessions)
+
+    assert state == {
+        "ok": True,
+        "declared_root": str(sessions),
+        "resolved_root": str(sessions.resolve()),
+        "writable": True,
+    }
+    assert list(sessions.iterdir()) == []
 
 
 def test_start_script_returns_nonzero_for_partial_state(tmp_path: Path) -> None:

@@ -2319,9 +2319,12 @@ def test_docker_grok_output_contract_hashes_exact_artifact_schema_bytes() -> Non
 def test_docker_grok_receives_current_project_rules_read_only() -> None:
     from services.agent_runtime.grok_build_docker_worker import (
         CANDIDATE_SANDBOX_PROFILE,
+        NO_TOOLS_SANDBOX_ENFORCEMENT,
+        NO_TOOLS_TRANSPORT_SANDBOX_PROFILE,
         READ_ONLY_PERMISSION_MODE,
         READ_ONLY_SANDBOX_PROFILE,
         _execute_lane_locked,
+        _lane_sandbox_enforcement,
         _lane_security_cli_args,
     )
 
@@ -2336,20 +2339,74 @@ def test_docker_grok_receives_current_project_rules_read_only() -> None:
         sandbox_read_only=False,
         tool_allowlist_enforced=False,
         allowed_tools=(),
+        planning="auto",
+        subagents="auto",
+        external_research="auto",
+        memory="auto",
+        mode="candidate",
+        max_turns=4,
+        result_format="text",
     ) == ["--sandbox", CANDIDATE_SANDBOX_PROFILE, "--always-approve"]
     assert _lane_security_cli_args(
         write=False,
         sandbox_read_only=True,
         tool_allowlist_enforced=True,
         allowed_tools=(),
+        planning="off",
+        subagents="off",
+        external_research="off",
+        memory="off",
+        mode="audit",
+        max_turns=1,
+        result_format="json_object",
+    ) == [
+        "--sandbox",
+        NO_TOOLS_TRANSPORT_SANDBOX_PROFILE,
+        "--permission-mode",
+        READ_ONLY_PERMISSION_MODE,
+        "--tools",
+        "",
+    ]
+    assert (
+        _lane_sandbox_enforcement(NO_TOOLS_TRANSPORT_SANDBOX_PROFILE)
+        == NO_TOOLS_SANDBOX_ENFORCEMENT
+    )
+    assert _lane_security_cli_args(
+        write=False,
+        sandbox_read_only=True,
+        tool_allowlist_enforced=True,
+        allowed_tools=("read_file",),
+        planning="off",
+        subagents="off",
+        external_research="off",
+        memory="off",
+        mode="audit",
+        max_turns=1,
+        result_format="json_object",
     ) == [
         "--sandbox",
         READ_ONLY_SANDBOX_PROFILE,
         "--permission-mode",
         READ_ONLY_PERMISSION_MODE,
         "--tools",
-        "",
+        "read_file",
     ]
+    assert (
+        _lane_security_cli_args(
+            write=False,
+            sandbox_read_only=True,
+            tool_allowlist_enforced=True,
+            allowed_tools=(),
+            planning="off",
+            subagents="off",
+            external_research="off",
+            memory="off",
+            mode="audit",
+            max_turns=2,
+            result_format="json_object",
+        )[1]
+        == READ_ONLY_SANDBOX_PROFILE
+    )
     execution_source = inspect.getsource(_execute_lane_locked)
     assert "args.extend(security_cli_args)" in execution_source
     assert '_container_cwd(lane.get("cwd"), write=write)' in execution_source
@@ -2525,6 +2582,24 @@ def test_docker_grok_operation_binding_and_cache_cover_execution_inputs(
             "allowed_tools": (),
         },
     )
+    changed_no_tools_outer_boundary = _operation_id(
+        "wf",
+        "lane",
+        "b" * 64,
+        COMPOSER_MODEL,
+        **{
+            **common,
+            "sandbox_read_only": True,
+            "tool_allowlist_enforced": True,
+            "allowed_tools": (),
+            "planning": "off",
+            "subagents": "off",
+            "external_research": "off",
+            "memory": "off",
+            "max_turns": 1,
+            "result_format": "json_object",
+        },
+    )
     assert (
         len(
             {
@@ -2535,9 +2610,10 @@ def test_docker_grok_operation_binding_and_cache_cover_execution_inputs(
                 changed_capability,
                 changed_output_contract,
                 changed_read_only_sandbox,
+                changed_no_tools_outer_boundary,
             }
         )
-        == 7
+        == 8
     )
 
     operation_root = tmp_path / operation_id

@@ -20,7 +20,7 @@ GROK_DOCKER_CONSUMER_ID = "canonical_docker_grok_worker"
 GROK_DOCKER_EXECUTION_LOCATION = "docker:houtai-gongren"
 GROK_DOCKER_ROUTE_TRANSPORT_ID = "temporal-docker-langgraph"
 GROK_DOCKER_ROUTE_ADAPTER_VERSION = "xinao.grok.route_provider_adapter.v1"
-GROK_CLI_POLICY_VERSION = "grok-cli-effective-output-v7"
+GROK_CLI_POLICY_VERSION = "grok-cli-effective-output-v8"
 GROK_DOCKER_PACKAGE_CAPABILITY_POLICY = {
     "planning": "auto",
     "subagents": "auto",
