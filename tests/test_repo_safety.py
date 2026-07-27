@@ -321,7 +321,7 @@ def test_context_intent_alignment_eval_is_balanced_and_friction_bounded() -> Non
         (REPO_ROOT / "evals/context_intent_alignment/cases.yaml").read_text(encoding="utf-8")
     )
     cases = {case["metadata"]["id"]: case for case in loaded}
-    assert len(cases) == suite["case_count"] == 86
+    assert len(cases) == suite["case_count"] == 89
     assert len(cases) == len(loaded)
     assert all(case["metadata"]["domain"] == case["vars"]["domain"] for case in cases.values())
     for required in (
@@ -937,8 +937,8 @@ def test_context_intent_alignment_eval_is_balanced_and_friction_bounded() -> Non
         (REPO_ROOT / "evals/behavior_regression/catalog.json").read_text(encoding="utf-8")
     )
     context_suite = next(s for s in catalog["suites"] if s["id"] == "context_intent_alignment")
-    assert context_suite["case_count"] == 86
-    assert catalog["declared_case_count"] == 146
+    assert context_suite["case_count"] == 89
+    assert catalog["declared_case_count"] == 149
 
     decision = json.loads(
         (REPO_ROOT / "evals/context_intent_alignment/decision_model.v1.json").read_text(
@@ -1027,6 +1027,20 @@ def test_context_intent_alignment_eval_is_balanced_and_friction_bounded() -> Non
         "external workers are default labor"
         in decision["input_interpretation"]["dynamic_whole_package_supervisor_invariant"].lower()
     )
+    first_attempt = decision["input_interpretation"][
+        "grok_first_attempt_preparation_invariant"
+    ]
+    assert "complete ready frontier" in first_attempt
+    assert "one provider-neutral heterogeneous package batch" in first_attempt
+    assert "EXPLORE, CONSTRUCT, VERIFY, or LAND" in first_attempt
+    assert "before quota lookup" in first_attempt
+    technical_user_mirror = decision["input_interpretation"][
+        "anticipatory_operator_burden_invariant"
+    ]
+    assert "technical-user mirror" in technical_user_mirror
+    assert "task-local user-side completion ruler" in technical_user_mirror
+    assert "never impersonates the user" in technical_user_mirror
+    assert "product-consumer effect and user-side operational closure" in technical_user_mirror
     existing_repo_invariant = decision["input_interpretation"][
         "existing_repository_completion_invariant"
     ]
@@ -1057,6 +1071,18 @@ def test_context_intent_alignment_eval_is_balanced_and_friction_bounded() -> Non
     assert "REG_FRESH_WINDOW_REUSES_ACCEPTED_D_CANDIDATE" in decision["anchor_regression_cases"]
     assert "NEG_FRESH_WINDOW_DIRECTORY_ONLY_IS_NOT_REUSE" in decision["anchor_regression_cases"]
     assert "REG_LIVE_FACT_MUST_CHANGE_DOMINATED_NEXT_ACTION" in decision["anchor_regression_cases"]
+    assert (
+        "REG_GROK_HETEROGENEOUS_FIRST_ATTEMPT_PREFLIGHT"
+        in decision["anchor_regression_cases"]
+    )
+    assert (
+        "REG_OPERATE_FOR_USER_CROSS_PRODUCT_FIRST_CALL_CLOSURE"
+        in decision["anchor_regression_cases"]
+    )
+    assert (
+        "REG_OPERATE_FOR_USER_PRESERVES_MATERIAL_USER_FORK"
+        in decision["anchor_regression_cases"]
+    )
     assert "stable cross-context correction" in decision["input_interpretation"]["ambitious_ideas"]
     continuity = decision["input_interpretation"]["action_continuity_invariant"]
     assert "action_resume_receipt" in continuity
@@ -1476,7 +1502,7 @@ def test_dual_self_evolution_runners_are_thin_and_claims_stay_separate() -> None
         (REPO_ROOT / "evals/behavior_regression/catalog.json").read_text(encoding="utf-8")
     )
     suite_count = sum(item["case_count"] for item in catalog["suites"])
-    assert suite_count == catalog["declared_case_count"] == 146
+    assert suite_count == catalog["declared_case_count"] == 149
     context_cases = yaml.safe_load(
         (REPO_ROOT / "evals/context_intent_alignment/cases.yaml").read_text(encoding="utf-8")
     )
