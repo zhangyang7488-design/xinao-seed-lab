@@ -80,6 +80,7 @@ providers:
           - learning_loop
           - repair_target
           - closure_evidence
+          - constraint_governance_disposition
           - recovered_requirement_atoms
           - rejected_proxy_atoms
           - decision_responsibility
@@ -175,6 +176,12 @@ providers:
           learning_loop: { type: string, enum: [single_loop_instance, double_loop_structural, not_applicable] }
           repair_target: { type: string, enum: [instance_action, governing_invariant, not_applicable] }
           closure_evidence: { type: string, enum: [current_object_verification, cross_context_entry_and_negative, not_applicable] }
+          constraint_governance_disposition:
+            enum:
+              - retain_protected_boundary
+              - retain_as_candidate_pending_evidence
+              - minimally_relax_or_retire
+              - not_applicable
           recovered_requirement_atoms: { type: string, minLength: 1 }
           rejected_proxy_atoms: { type: string, minLength: 1 }
           decision_responsibility:

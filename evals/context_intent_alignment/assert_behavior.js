@@ -179,6 +179,11 @@ module.exports = (output, context) => {
   const expectedDurableBehaviorClosures = hasVar('expected_durable_behavior_closure')
     ? alternatives(context.vars.expected_durable_behavior_closure)
     : null;
+  const expectedConstraintGovernanceDispositions = hasVar(
+    'expected_constraint_governance_disposition',
+  )
+    ? alternatives(context.vars.expected_constraint_governance_disposition)
+    : null;
   const hasRecoveredAtomGold = hasVar('expected_recovered_requirement_atoms');
   const hasRejectedAtomGold = hasVar('expected_rejected_proxy_atoms');
   const expectedRecoveredAtoms = hasRecoveredAtomGold
@@ -382,6 +387,12 @@ module.exports = (output, context) => {
         ? expectedDurableBehaviorClosures[0]
         : expectedDurableBehaviorClosures;
   }
+  if (expectedConstraintGovernanceDispositions) {
+    expected.constraint_governance_disposition =
+      expectedConstraintGovernanceDispositions.length === 1
+        ? expectedConstraintGovernanceDispositions[0]
+        : expectedConstraintGovernanceDispositions;
+  }
 
   const usage = context.providerResponse?.tokenUsage || {};
   const appServer = context.metadata?.codexAppServer || {};
@@ -422,6 +433,7 @@ module.exports = (output, context) => {
     'human_explanation_mode',
     'metacognition_disposition',
     'durable_behavior_closure',
+    'constraint_governance_disposition',
   ];
   const optionalFieldMatches =
     (expectedQuotaQueryDispositions === null ||
@@ -475,7 +487,11 @@ module.exports = (output, context) => {
     (expectedMetacognitionDispositions === null ||
       expectedMetacognitionDispositions.includes(parsed.metacognition_disposition)) &&
     (expectedDurableBehaviorClosures === null ||
-      expectedDurableBehaviorClosures.includes(parsed.durable_behavior_closure));
+      expectedDurableBehaviorClosures.includes(parsed.durable_behavior_closure)) &&
+    (expectedConstraintGovernanceDispositions === null ||
+      expectedConstraintGovernanceDispositions.includes(
+        parsed.constraint_governance_disposition,
+      ));
   const behaviorMatches =
     expectedNextSteps.includes(parsed.next_step) &&
     expectedActiveProblemLevels.includes(parsed.active_problem_level) &&
