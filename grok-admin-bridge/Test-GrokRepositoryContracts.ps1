@@ -43,7 +43,7 @@ Assert-Contract ([string]$config.model_worker_routing.quota_role -eq "scheduling
 Assert-Contract (-not [bool]$config.model_worker_routing.empty_burn) "no_empty_burn"
 Assert-Contract ([string]$config.model_worker_routing.width_policy -eq "dynamic_ready_frontier_quota_latency_evidence") "dynamic_width"
 Assert-Contract ([string]$config.grok_lane.scope -eq "this_grok_endpoint_only_not_global_router") "lane_scope"
-Assert-Contract ([string]$config.grok_lane.model -eq "grok-composer-2.5-fast") "composer_2_5_lane"
+Assert-Contract ([string]$config.grok_lane.model -eq "grok-4.5") "current_grok_45_lane"
 Assert-Contract ([string]$config.grok_lane.grok_home -eq "C:\Users\xx363\.grok-bg-workers") "composer_profile"
 Assert-Contract ([string]$config.bounded_worker_pool.route_role -eq "normal_leg_a") "worker_pool_is_normal_leg_a"
 Assert-Contract (-not [bool]$config.bounded_worker_pool.is_unconditional_default) "leg_a_not_unconditional_default"
@@ -295,6 +295,7 @@ Assert-Contract ($relayDispatchText -match 'RELAY_DISPATCH_COGNITIVE_AUDIT_CONTR
 $workerText = Get-Content -LiteralPath (Join-Path $repoRoot "grok-admin-bridge/Invoke-GrokComposer25Worker.ps1") -Raw -Encoding UTF8
 $poolText = Get-Content -LiteralPath (Join-Path $repoRoot "grok-admin-bridge/Invoke-GrokWorkerPool.ps1") -Raw -Encoding UTF8
 $dispatchText = Get-Content -LiteralPath (Join-Path $repoRoot "grok-admin-bridge/Invoke-CodexDispatchGrokWorkerPool.ps1") -Raw -Encoding UTF8
+$localCapabilityText = Get-Content -LiteralPath (Join-Path $repoRoot "grok-admin-bridge/Get-GrokLocalCapabilityStatus.ps1") -Raw -Encoding UTF8
 $dispatchParseTokens = $null
 $dispatchParseErrors = $null
 [System.Management.Automation.Language.Parser]::ParseFile(
@@ -350,6 +351,8 @@ Assert-Contract ($dispatchText -notmatch 'GetFullPath\(\[string\]\$poolSummary[.
 Assert-Contract ($dispatchText -match '(?s)\$dispatchCwdLease\s*=\s*Open-GrokDirectoryIdentityLease.+?try\s*\{.+?finally\s*\{\s*Close-GrokDirectoryIdentityLease\s+-Lease\s+\$dispatchCwdLease') "dispatch_cwd_identity_lease_closed_in_finally"
 Assert-Contract ($poolText -notmatch '[.]grok-4[.]5-lane') "pool_has_no_stale_profile"
 Assert-Contract ($dispatchText -notmatch 'explicit user|explicit_user') "dispatch_not_explicit_only"
+Assert-Contract ($localCapabilityText -match 'configured_candidate_not_live_availability') "local_status_does_not_claim_live_model_availability"
+Assert-Contract ($localCapabilityText -match 'grok_lane_model_live_verified\s*=\s*\$false') "local_status_marks_model_unverified"
 foreach ($entry in ([ordered]@{
     codex_launcher = $codexLauncherText
     dispatch = $dispatchText

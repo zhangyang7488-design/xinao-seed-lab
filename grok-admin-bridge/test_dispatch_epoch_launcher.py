@@ -320,15 +320,19 @@ def test_common_contract_reports_all_caller_errors_before_quota_or_provider(
         rules_sha256,
         "-CommonPhase",
         "AUDIT",
+        "-RequiredResultMarkers",
+        "MISSING_MARKER",
         "-Quiet",
     )
 
     output = " ".join((result.stdout + result.stderr).split())
     assert result.returncode != 0
     assert "CODEX_GROK_COMMON_PREFLIGHT_FAILED" in output
-    assert "CommonPhase must be one of EXPLORE, CONSTRUCT, VERIFY, LAND" in output
+    assert "CommonPhase must be one of EXPLORE" in output
+    assert "CONSTRUCT, VERIFY, LAND" in output
     assert "CommonFrozenContextSha256 or" in output
     assert "CommonContextManifestPath is required" in output
+    assert "PromptFile must explicitly require result marker: MISSING_MARKER" in output
     assert not capture.exists()
     assert not package_capture.exists()
     assert not (runtime / "live-query-count.txt").exists()
@@ -338,7 +342,7 @@ def test_common_contract_reports_all_caller_errors_before_quota_or_provider(
 def test_valid_common_contract_preflight_reaches_dispatch_once(tmp_path: Path) -> None:
     launcher, runtime, capture, package_capture = _fixture(tmp_path)
     prompt = tmp_path / "prompt.txt"
-    prompt.write_text("Inspect the sealed evidence.\n", encoding="utf-8")
+    prompt.write_text("Inspect the sealed evidence and return EXPECTED_MARKER.\n", encoding="utf-8")
     rules = tmp_path / "rules.txt"
     rules.write_text("Candidate-only read-only work.\n", encoding="utf-8")
     rules_sha256 = hashlib.sha256(rules.read_bytes()).hexdigest()
@@ -368,6 +372,8 @@ def test_valid_common_contract_preflight_reaches_dispatch_once(tmp_path: Path) -
         rules_sha256,
         "-CommonPhase",
         "EXPLORE",
+        "-RequiredResultMarkers",
+        "EXPECTED_MARKER",
         "-Quiet",
     )
 

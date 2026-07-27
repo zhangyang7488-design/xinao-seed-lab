@@ -56,7 +56,7 @@ $ok = (
 )
 
 $result = [ordered]@{
-    schema_version = "xinao.grok_local_capability_status.v3"
+    schema_version = "xinao.grok_local_capability_status.v4"
     ok = [bool]$ok
     repository_root = $repoRoot
     repository_role = [string]$config.repository_role
@@ -69,6 +69,9 @@ $result = [ordered]@{
     worker_selection = [string]$config.model_worker_routing.selection
     available_workers = @($config.model_worker_routing.available_workers)
     grok_lane_model = [string]$config.grok_lane.model
+    grok_lane_model_source = "configured_candidate_not_live_availability"
+    grok_lane_model_live_verified = $false
+    grok_lane_model_live_verifier = "Invoke-GrokComposer25Worker.ps1#authenticated_model_catalog_preflight"
     width_policy = [string]$config.model_worker_routing.width_policy
     checkpoint_exists = [bool](Test-Path -LiteralPath $checkpoint -PathType Leaf)
     files = $files

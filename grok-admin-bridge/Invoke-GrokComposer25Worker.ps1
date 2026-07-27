@@ -1,7 +1,7 @@
 #Requires -Version 5.1
 <#
 .SYNOPSIS
-  Headless Grok provider worker; Composer 2.5 remains the caller default.
+  Headless Grok provider worker with exact authenticated-model admission.
 .DESCRIPTION
   Thin entry for a Grok main session. The explicitly requested model is admitted
   only when the current authenticated provider catalog exposes that exact model,
@@ -14,7 +14,7 @@ param(
     [string]$Prompt = "",
     [string]$PromptFile = "",
     [string]$Cwd = "",
-    [string]$Model = "grok-composer-2.5-fast",
+    [string]$Model = "grok-4.5",
     [string]$MaxTurns = "auto",
     [ValidateSet("plain", "json", "streaming-json")]
     [string]$OutputFormat = "json",
@@ -1213,7 +1213,7 @@ $meta = [ordered]@{
     short_execution_contract_sha256 = $shortExecutionContractSha256
     observed_rules_sha256 = $observedRulesSha256
     usage_accounting_complete = $false
-    note_cn = "Authenticated-catalog exact-model Grok worker; default Composer 2.5; SuperGrok Build quota; CREATE_NO_WINDOW"
+    note_cn = "Authenticated-catalog exact-model Grok worker; current default grok-4.5; SuperGrok Build quota; CREATE_NO_WINDOW"
     hot_path_cn = "Codex->Grok headless worker (not visible TUI inject; not Docker desktop .lnk)"
 }
 

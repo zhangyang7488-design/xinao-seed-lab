@@ -28,7 +28,7 @@
   "execution_boundary": {
     "canonical_route": "Temporal + Docker houtai-gongren + worker-internal LangGraph",
     "model_worker_routing": "bridge.config.json#model_worker_routing",
-    "grok_lane_model": "grok-composer-2.5-fast",
+    "grok_lane_model": "grok-4.5",
     "width_policy": "dynamic_ready_frontier_quota_latency_evidence",
     "worker_pool": "dynamic positive-net-benefit or bounded fallback",
     "prohibited": [

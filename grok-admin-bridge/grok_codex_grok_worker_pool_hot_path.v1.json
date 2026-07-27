@@ -4,7 +4,7 @@
   "status": "available_normal_leg_a",
   "route_authority": "bridge.config.json#canonical_route",
   "route_role": "normal_bounded_online_current_tui",
-  "grok_lane_model": "grok-composer-2.5-fast",
+  "grok_lane_model": "grok-4.5",
   "grok_home": "C:\\Users\\xx363\\.grok-bg-workers",
   "width_policy": "dynamic_ready_frontier_quota_latency_evidence",
   "is_unconditional_default": false,

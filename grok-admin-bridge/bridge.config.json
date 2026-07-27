@@ -56,7 +56,7 @@
   "grok_lane": {
     "scope": "this_grok_endpoint_only_not_global_router",
     "provider": "grok",
-    "model": "grok-composer-2.5-fast",
+    "model": "grok-4.5",
     "grok_home": "C:\\Users\\xx363\\.grok-bg-workers"
   },
   "grok_codex_s_native_temporal_route": {
