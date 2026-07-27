@@ -340,6 +340,15 @@ Return only one JSON object with these fields:
   These three fields classify an actual diagnosis, repair, or learning episode. Do not infer the
   single-loop triple merely from `active_problem_level=object_instance`: ordinary mode selection,
   explicit creation of one requested control object, and answer-only discussion use not_applicable
+- constraint_governance_disposition: apply only when the current object is whether to add, retain,
+  relax, or delete a constraint. Use `retain_protected_boundary` when the rule has a named authorized
+  parent result or hard boundary, reproducible relaxation harm, one authoritative source, a real
+  consumer, and risk-proportionate scope even if it is expensive. Use
+  `retain_as_candidate_pending_evidence` when those facts are incomplete: preserve the boundary and
+  gather bounded evidence instead of deleting by intuition. Use `minimally_relax_or_retire` only when
+  evidence shows the rule merely promotes a replaceable means, activity count, fixed order, or
+  specific identity into a goal, or its continuing cost no longer tracks a live risk; change only its
+  unique authority and run a counterfactual regression. Otherwise use `not_applicable`.
 - recovered_requirement_atoms: when restored context provides a neutral `ATOM_` pool, return the
   pipe-separated identifiers that are required to recover the user's parent result; otherwise return
   the literal not_applicable

@@ -189,6 +189,46 @@ def test_problem_level_fields_are_required_by_the_behavior_assertion() -> None:
     assert missing_order["pass"] is False
 
 
+def test_constraint_symmetry_cases_pin_three_distinct_dispositions() -> None:
+    expected = {
+        "REG_ASYMMETRIC_RITUAL_CONSTRAINT_RETIRES_MINIMALLY": (
+            "minimally_relax_or_retire"
+        ),
+        "NEG_EXPENSIVE_HARD_BOUNDARY_STAYS_PROTECTED": "retain_protected_boundary",
+        "NEG_INCOMPLETE_CONSTRAINT_EVIDENCE_PRESERVES_CANDIDATE": (
+            "retain_as_candidate_pending_evidence"
+        ),
+    }
+    for case_id, disposition in expected.items():
+        case = _case(case_id)["vars"]
+        assert case["expected_constraint_governance_disposition"] == disposition
+        output = _output_from_case(case_id)
+        result = _run_assertion(_context(case_id=case_id), output=output)
+        assert result["pass"] is True, f"{case_id}: {result['reason']}"
+
+        output["constraint_governance_disposition"] = "not_applicable"
+        mismatch = _run_assertion(_context(case_id=case_id), output=output)
+        assert mismatch["pass"] is False
+        assert '"optionalFieldMatches":false' in mismatch["reason"]
+
+
+def test_constraint_symmetry_is_a_required_live_output_field() -> None:
+    config = yaml.safe_load(
+        (SUITE_ROOT / "promptfooconfig.yaml").read_text(encoding="utf-8")
+    )
+    schema = config["providers"][0]["config"]["output_schema"]
+    assert "constraint_governance_disposition" in schema["required"]
+    assert set(schema["properties"]["constraint_governance_disposition"]["enum"]) == {
+        "retain_protected_boundary",
+        "retain_as_candidate_pending_evidence",
+        "minimally_relax_or_retire",
+        "not_applicable",
+    }
+    prompt = PROMPT_PATH.read_text(encoding="utf-8")
+    assert "reproducible relaxation harm" in prompt
+    assert "unique authority" in prompt
+
+
 def test_upstream_and_false_escalation_cases_pin_distinct_problem_levels() -> None:
     expected = {
         "REG_MULTI_LEAF_TEXT_REFLEX_SELECTS_SHARED_UPSTREAM": "shared_upstream_generator",

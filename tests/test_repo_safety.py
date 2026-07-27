@@ -321,7 +321,7 @@ def test_context_intent_alignment_eval_is_balanced_and_friction_bounded() -> Non
         (REPO_ROOT / "evals/context_intent_alignment/cases.yaml").read_text(encoding="utf-8")
     )
     cases = {case["metadata"]["id"]: case for case in loaded}
-    assert len(cases) == suite["case_count"] == 81
+    assert len(cases) == suite["case_count"] == 84
     assert len(cases) == len(loaded)
     assert all(case["metadata"]["domain"] == case["vars"]["domain"] for case in cases.values())
     for required in (
@@ -912,8 +912,8 @@ def test_context_intent_alignment_eval_is_balanced_and_friction_bounded() -> Non
         (REPO_ROOT / "evals/behavior_regression/catalog.json").read_text(encoding="utf-8")
     )
     context_suite = next(s for s in catalog["suites"] if s["id"] == "context_intent_alignment")
-    assert context_suite["case_count"] == 81
-    assert catalog["declared_case_count"] == 141
+    assert context_suite["case_count"] == 84
+    assert catalog["declared_case_count"] == 144
 
     decision = json.loads(
         (REPO_ROOT / "evals/context_intent_alignment/decision_model.v1.json").read_text(
@@ -1087,6 +1087,7 @@ def test_predecision_frame_goal_pause_and_runtime_evidence_are_enforced() -> Non
         "选择活动问题完成身份位阶",
         "已知共同生成器可作手段但不能抢走用户重锚的父结果完成身份",
         "在该位阶闭合父结果/主动对象/手段与终点/角色/消费者完成尺/硬边界",
+        "约束对称性反事实",
         "Decision Skill 薄 packet 只作旁路背景",
         "continuous 不自动创建 Goal",
         "compact 显式绑定",
@@ -1450,7 +1451,7 @@ def test_dual_self_evolution_runners_are_thin_and_claims_stay_separate() -> None
         (REPO_ROOT / "evals/behavior_regression/catalog.json").read_text(encoding="utf-8")
     )
     suite_count = sum(item["case_count"] for item in catalog["suites"])
-    assert suite_count == catalog["declared_case_count"] == 141
+    assert suite_count == catalog["declared_case_count"] == 144
     context_cases = yaml.safe_load(
         (REPO_ROOT / "evals/context_intent_alignment/cases.yaml").read_text(encoding="utf-8")
     )
