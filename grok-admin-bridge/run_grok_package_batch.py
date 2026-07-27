@@ -392,7 +392,9 @@ def _atomic_json(path: Path, value: object, *, replace: bool = False) -> str:
 
 def _safe_package_component(value: object) -> str:
     text = str(value or "").strip()
-    safe = "".join(char if char.isalnum() or char in {"-", "_"} else "_" for char in text)
+    safe = "".join(
+        char if char.isalnum() or char in {"-", "_"} else "_" for char in text
+    )
     if not safe or safe in {".", ".."}:
         raise ValueError("package_id cannot form a sealed-input directory component")
     digest = hashlib.sha256(text.encode("utf-8")).hexdigest()[:16]
@@ -504,7 +506,9 @@ def _prepare_sealed_model_input(
             raise ValueError(f"package input_refs[{index}].sha256 is invalid")
         lexical = Path(os.path.abspath(str(raw_ref.get("path") or "")))
         if not lexical.is_file() or _contains_reparse_component(lexical):
-            raise ValueError(f"package sealed input is missing or traverses a reparse point: {lexical}")
+            raise ValueError(
+                f"package sealed input is missing or traverses a reparse point: {lexical}"
+            )
         physical = lexical.resolve(strict=True)
         if not _same_path(lexical, physical):
             raise ValueError(f"package sealed input path is aliased: {lexical}")
@@ -516,7 +520,9 @@ def _prepare_sealed_model_input(
             )
         candidate_root = _sealed_input_root(physical)
         if _contains_reparse_component(candidate_root):
-            raise ValueError(f"package sealed input root traverses a reparse point: {candidate_root}")
+            raise ValueError(
+                f"package sealed input root traverses a reparse point: {candidate_root}"
+            )
         candidate_root = candidate_root.resolve(strict=True)
         if host_root is None:
             host_root = candidate_root
@@ -525,7 +531,9 @@ def _prepare_sealed_model_input(
         relative = physical.relative_to(candidate_root).as_posix()
         container_path = f"/sealed-inputs/{relative}"
         if any(row["path"] == container_path for row in model_inputs):
-            raise ValueError(f"package input_refs contain a duplicate sealed input: {container_path}")
+            raise ValueError(
+                f"package input_refs contain a duplicate sealed input: {container_path}"
+            )
         size = physical.stat().st_size
         model_inputs.append(
             {
@@ -574,7 +582,9 @@ def _prepare_sealed_model_input(
         catalog_path, "package sealed input catalog"
     )
     if observed_catalog != expected_catalog:
-        raise ValueError("package sealed input catalog does not exactly bind input_refs")
+        raise ValueError(
+            "package sealed input catalog does not exactly bind input_refs"
+        )
     _require_exact_sealed_input_inventory(
         host_root,
         [catalog_path, *(Path(str(row["host_path"])) for row in host_inputs)],
@@ -625,10 +635,14 @@ def _prepare_sealed_model_input(
         "completion_claim_allowed": False,
     }
     binding_raw = (
-        json.dumps(binding_receipt, ensure_ascii=False, indent=2, sort_keys=True).encode("utf-8")
+        json.dumps(
+            binding_receipt, ensure_ascii=False, indent=2, sort_keys=True
+        ).encode("utf-8")
         + b"\n"
     )
-    binding_ref = _write_or_verify_immutable(artifact_root / "binding.json", binding_raw)
+    binding_ref = _write_or_verify_immutable(
+        artifact_root / "binding.json", binding_raw
+    )
     prompt_ref = _write_or_verify_immutable(
         artifact_root / "effective-package-prompt.md", effective_prompt_bytes
     )
@@ -661,7 +675,9 @@ def _revalidate_sealed_model_input(binding: Mapping[str, Any]) -> None:
     for row in binding.get("input_refs", []):
         path = Path(str(row["host_path"]))
         if not path.is_file() or _contains_reparse_component(path):
-            raise ValueError(f"sealed input disappeared during provider execution: {path}")
+            raise ValueError(
+                f"sealed input disappeared during provider execution: {path}"
+            )
         observed = _sha(path)
         if observed != row["sha256"]:
             raise ValueError(
@@ -672,10 +688,7 @@ def _revalidate_sealed_model_input(binding: Mapping[str, Any]) -> None:
         root,
         [
             catalog_path,
-            *(
-                Path(str(row["host_path"]))
-                for row in binding.get("input_refs", [])
-            ),
+            *(Path(str(row["host_path"])) for row in binding.get("input_refs", [])),
         ],
     )
 
@@ -732,9 +745,13 @@ def _verify_sealed_input_tool_readback(
         try:
             event = json.loads(raw_line)
         except json.JSONDecodeError as exc:
-            raise ValueError(f"provider chat history line {line_number} is invalid JSON") from exc
+            raise ValueError(
+                f"provider chat history line {line_number} is invalid JSON"
+            ) from exc
         if not isinstance(event, Mapping):
-            raise ValueError(f"provider chat history line {line_number} is not an object")
+            raise ValueError(
+                f"provider chat history line {line_number} is not an object"
+            )
         if event.get("type") == "assistant":
             calls = event.get("tool_calls", [])
             if calls is None:
@@ -747,7 +764,9 @@ def _verify_sealed_input_tool_readback(
                 call_id = str(raw_call.get("id") or "").strip()
                 if call_id:
                     if call_id in seen_call_ids:
-                        raise ValueError(f"provider chat history repeats tool call id: {call_id}")
+                        raise ValueError(
+                            f"provider chat history repeats tool call id: {call_id}"
+                        )
                     seen_call_ids.add(call_id)
                 if raw_call.get("name") != "read_file":
                     continue
@@ -771,7 +790,9 @@ def _verify_sealed_input_tool_readback(
             content = event.get("content")
             if call_id and content is not None:
                 if call_id in tool_results:
-                    raise ValueError(f"provider chat history repeats tool result id: {call_id}")
+                    raise ValueError(
+                        f"provider chat history repeats tool result id: {call_id}"
+                    )
                 rendered = str(content)
                 tool_results[call_id] = (
                     hashlib.sha256(rendered.encode("utf-8")).hexdigest(),
@@ -789,12 +810,17 @@ def _verify_sealed_input_tool_readback(
         try:
             event = json.loads(raw_line)
         except json.JSONDecodeError as exc:
-            raise ValueError(f"provider updates line {line_number} is invalid JSON") from exc
+            raise ValueError(
+                f"provider updates line {line_number} is invalid JSON"
+            ) from exc
         if not isinstance(event, Mapping):
             raise ValueError(f"provider updates line {line_number} is not an object")
         params = event.get("params")
         update = params.get("update") if isinstance(params, Mapping) else None
-        if not isinstance(update, Mapping) or update.get("sessionUpdate") != "tool_call_update":
+        if (
+            not isinstance(update, Mapping)
+            or update.get("sessionUpdate") != "tool_call_update"
+        ):
             continue
         call_id = str(update.get("toolCallId") or "").strip()
         status = str(update.get("status") or "").strip().casefold()
@@ -824,7 +850,9 @@ def _verify_sealed_input_tool_readback(
             and (result[2] or allow_empty)
         )
 
-    valid_catalog_calls = [call_id for call_id in catalog_calls if valid_readback(call_id)]
+    valid_catalog_calls = [
+        call_id for call_id in catalog_calls if valid_readback(call_id)
+    ]
     catalog_results = [tool_results[call_id] for call_id in valid_catalog_calls]
     if not catalog_results:
         raise ValueError(
@@ -892,7 +920,9 @@ def _verify_sealed_input_tool_readback(
     ).hexdigest()
     receipt["readback_identity_sha256"] = readback_identity
     raw = (
-        json.dumps(receipt, ensure_ascii=False, indent=2, sort_keys=True).encode("utf-8")
+        json.dumps(receipt, ensure_ascii=False, indent=2, sort_keys=True).encode(
+            "utf-8"
+        )
         + b"\n"
     )
     receipt_ref = _write_or_verify_immutable(
@@ -1121,7 +1151,10 @@ def _prior_reuse_contract_binding(
         depth += 1
         if depth > 32:
             raise ValueError("reseal ancestor chain exceeds depth 32")
-        if not isinstance(ancestor_ref, dict) or set(ancestor_ref) != {"path", "sha256"}:
+        if not isinstance(ancestor_ref, dict) or set(ancestor_ref) != {
+            "path",
+            "sha256",
+        }:
             raise ValueError("reseal ancestor ref is not exact and hash-bound")
         ancestor_path = Path(str(ancestor_ref["path"])).resolve(strict=True)
         ancestor_sha = str(ancestor_ref["sha256"])
@@ -1147,7 +1180,8 @@ def _prior_reuse_contract_binding(
                 row
                 for row in ancestor_packages
                 if isinstance(row, dict)
-                and str(row.get("package_id") or "") == str(package.get("package_id") or "")
+                and str(row.get("package_id") or "")
+                == str(package.get("package_id") or "")
             ),
             None,
         )
@@ -1167,7 +1201,9 @@ def _prior_reuse_contract_binding(
             break
         ancestor_ref = ancestor.get("predecessor_manifest_ref")
     if not matched_ancestor:
-        raise ValueError("prior accepted task contract is not in the reseal ancestor chain")
+        raise ValueError(
+            "prior accepted task contract is not in the reseal ancestor chain"
+        )
     return {
         "task_contract_ref": task_contract_ref,
         "subject_manifest_sha256": subject_sha256,
@@ -1246,12 +1282,257 @@ def _locate_common_receipt(
     return None
 
 
+def _materialize_model_input_binding(
+    *,
+    package: Mapping[str, Any],
+    sealed_model_input: Mapping[str, Any],
+    contract: Mapping[str, Any],
+    contract_path: Path,
+    contract_sha256: str,
+    logical_contract_sha256: str,
+    attempt_receipt: Mapping[str, Any],
+    attempt_path: Path,
+    attempt_sha256: str,
+    pool_summary: Mapping[str, Any],
+    pool_summary_path: Path,
+    runtime_root: Path,
+    dispatch_id: str,
+    pool_id: str,
+    operation_id: str,
+    subject_manifest_sha256: str,
+    attempt_root: Path,
+) -> dict[str, str] | None:
+    """Bind the two prompt transforms and the consumed lane prompt as control evidence.
+
+    Provider output artifacts must stay adoption-pure.  The input lineage is
+    therefore carried by one separate hash-bound receipt instead of being mixed
+    into ``artifact_refs``.
+    """
+
+    package_prompt_ref = _package_artifact_ref(dict(package), "prompt_ref")
+    contract_input_sha = str(contract.get("input_sha256") or "").strip().lower()
+    if contract_input_sha == package_prompt_ref["sha256"]:
+        return None
+    if not re.fullmatch(r"[0-9a-f]{64}", contract_input_sha):
+        raise ValueError("common contract input_sha256 is invalid")
+    if not re.fullmatch(r"[0-9a-f]{64}", logical_contract_sha256):
+        raise ValueError("logical contract digest is invalid")
+    common_attempt_ref = _hash_bound_ref(attempt_path, attempt_sha256)
+    attempt_lineage = attempt_receipt.get("lineage")
+    attempt_observed = attempt_receipt.get("observed")
+    if not isinstance(attempt_lineage, Mapping) or not isinstance(
+        attempt_observed, Mapping
+    ):
+        raise TypeError("common attempt lineage and observed identity must be objects")
+    provider_evidence_ref = _hash_bound_ref(
+        Path(str(attempt_receipt.get("provider_evidence_ref") or "")),
+        str(attempt_receipt.get("provider_evidence_sha256") or ""),
+    )
+
+    sealed_prompt_raw = sealed_model_input.get("effective_prompt_ref")
+    catalog_raw = sealed_model_input.get("catalog_ref")
+    if not isinstance(sealed_prompt_raw, Mapping) or not isinstance(
+        catalog_raw, Mapping
+    ):
+        raise TypeError("sealed model input refs must be hash-bound objects")
+    sealed_prompt_ref = _hash_bound_ref(
+        Path(str(sealed_prompt_raw.get("path") or "")),
+        str(sealed_prompt_raw.get("sha256") or ""),
+    )
+    catalog_ref = _hash_bound_ref(
+        Path(str(catalog_raw.get("path") or "")),
+        str(catalog_raw.get("sha256") or ""),
+    )
+    dispatch_meta_path = (
+        runtime_root
+        / "state"
+        / "codex_dispatch_grok_worker_pool"
+        / f"{dispatch_id}.json"
+    )
+    dispatch_meta, dispatch_meta_ref = _load_hash_bound_object(
+        dispatch_meta_path, "worker-pool dispatch metadata"
+    )
+    prepared_contract_ref = _hash_bound_ref(
+        Path(str(dispatch_meta.get("common_contract_path") or "")),
+        contract_sha256,
+    )
+    prepare_path = Path(prepared_contract_ref["path"]).with_name(
+        "contract_prepare_receipt.json"
+    )
+    prepare, prepare_ref = _load_hash_bound_object(
+        prepare_path, "common contract prepare receipt"
+    )
+    effective_path = Path(str(prepare.get("effective_prompt_file") or ""))
+    effective_raw, effective_ref = _read_hash_bound_bytes(
+        effective_path,
+        "common effective prompt",
+        str(prepare.get("effective_prompt_sha256") or "").strip().lower(),
+    )
+    if (
+        prepare.get("schema_version")
+        != "xinao.direct_worker_pool.contract_prepare_receipt.v1"
+        or prepare.get("authority") is not False
+        or prepare.get("completion_claim_allowed") is not False
+        or prepare.get("context_binding_mode") != "validated_context_slice_manifest"
+        or prepare.get("context_application_status")
+        != "effective_prompt_artifact_written"
+        or prepare.get("model_input_effect_verified") is not False
+        or prepare.get("original_prompt_sha256") != sealed_prompt_ref["sha256"]
+        or prepare.get("prompt_sha256") != sealed_prompt_ref["sha256"]
+        or not _same_path(
+            Path(str(prepare.get("prompt_file") or "")),
+            Path(sealed_prompt_ref["path"]),
+        )
+        or prepare.get("effective_prompt_sha256") != contract_input_sha
+        or prepare.get("effective_prompt_bytes") != len(effective_raw)
+        or prepare.get("logical_contract_sha256") != logical_contract_sha256
+        or prepare.get("subject_manifest_sha256") != subject_manifest_sha256
+    ):
+        raise ValueError(
+            "common prepare receipt does not bind the package prompt transform"
+        )
+
+    context_ref = _package_artifact_ref(dict(package), "context_manifest_ref")
+    rules_ref = _package_artifact_ref(
+        dict(package), "rules_ref", expected_sha256_field="rules_sha256"
+    )
+    if (
+        prepare.get("context_manifest_sha256") != context_ref["sha256"]
+        or not _same_path(
+            Path(str(prepare.get("context_manifest_file") or "")),
+            Path(context_ref["path"]),
+        )
+        or prepare.get("rules_sha256") != rules_ref["sha256"]
+        or not _same_path(
+            Path(str(prepare.get("rules_file") or "")), Path(rules_ref["path"])
+        )
+    ):
+        raise ValueError("common prepare receipt context or rules binding drifted")
+
+    pool_summary_ref = _hash_bound_ref(pool_summary_path)
+    lane_prompt_path = Path(
+        str(dispatch_meta.get("common_pool_lane_prompt_file") or "")
+    )
+    lane_prompt_raw, lane_prompt_ref = _read_hash_bound_bytes(
+        lane_prompt_path, "worker-pool lane prompt"
+    )
+    if (
+        dispatch_meta.get("schema_version")
+        != "xinao.codex_dispatch_grok_worker_pool.v1"
+        or dispatch_meta.get("sentinel") != "SENTINEL:CODEX_DISPATCH_GROK_WORKER_POOL"
+        or dispatch_meta.get("dispatch_id") != dispatch_id
+        or dispatch_meta.get("pool_id") != pool_id
+        or dispatch_meta.get("status") not in {"accepted", "rejected"}
+        or dispatch_meta.get("common_model_input_effect_verified") is not True
+        or dispatch_meta.get("common_pool_lane_prompt_effect_verified") is not True
+        or dispatch_meta.get("common_context_effect_status")
+        != "model_attempt_consumed_lane_prompt_with_verified_effective_suffix"
+        or dispatch_meta.get("completion_claim_allowed") is not False
+        or not _same_path(
+            Path(str(dispatch_meta.get("common_contract_path") or "")),
+            Path(prepared_contract_ref["path"]),
+        )
+        or not _same_path(
+            Path(str(dispatch_meta.get("common_effective_prompt_file") or "")),
+            Path(effective_ref["path"]),
+        )
+        or dispatch_meta.get("common_effective_prompt_sha256")
+        != effective_ref["sha256"]
+        or dispatch_meta.get("common_effective_prompt_bytes") != len(effective_raw)
+        or dispatch_meta.get("pool_summary_sha256") != pool_summary_ref["sha256"]
+        or not _same_path(
+            Path(str(dispatch_meta.get("pool_summary_path") or "")),
+            Path(pool_summary_ref["path"]),
+        )
+    ):
+        raise ValueError(
+            "worker-pool dispatch metadata does not prove model-input effect"
+        )
+    if not lane_prompt_raw.endswith(effective_raw):
+        raise ValueError(
+            "worker-pool lane prompt does not end with the common effective prompt"
+        )
+
+    rows = pool_summary.get("results")
+    usage = pool_summary.get("usage")
+    if (
+        pool_summary.get("schema_version") != "xinao.grok_worker_pool.v2"
+        or pool_summary.get("pool_id") != pool_id
+        or pool_summary.get("n") != 1
+        or pool_summary.get("usage_accounting_complete") is not True
+        or not isinstance(usage, Mapping)
+        or int(usage.get("attempt_count") or 0) < 1
+        or int(usage.get("input_tokens") or 0) < 1
+        or not isinstance(rows, list)
+        or len(rows) != 1
+        or not isinstance(rows[0], Mapping)
+        or rows[0].get("status")
+        not in {"accepted", "rejected", "timeout", "incomplete"}
+        or rows[0].get("outcome")
+        not in {"accepted", "rejected", "timeout", "incomplete"}
+    ):
+        raise ValueError(
+            "worker-pool summary does not prove one accepted model attempt"
+        )
+    row = rows[0]
+    if (
+        attempt_lineage.get("workflow_id") != pool_id
+        or row.get("run_id") != attempt_observed.get("executor_id")
+        or not _same_path(
+            Path(str(row.get("meta_path") or "")).resolve(strict=True),
+            Path(provider_evidence_ref["path"]),
+        )
+    ):
+        raise ValueError(
+            "worker-pool summary does not bind the common attempt provider evidence"
+        )
+    preflight = row.get("common_contract_preflight")
+    if (
+        not isinstance(preflight, Mapping)
+        or preflight.get("validated") is not True
+        or preflight.get("logical_contract_sha256") != logical_contract_sha256
+        or preflight.get("input_sha256") != contract_input_sha
+        or preflight.get("rules_sha256") != rules_ref["sha256"]
+    ):
+        raise ValueError(
+            "worker-pool lane preflight does not bind the common contract input"
+        )
+
+    binding = {
+        "schema_version": "xinao.worker_model_input_binding.v1",
+        "package_id": str(package.get("package_id") or ""),
+        "work_key": str(package.get("work_key") or ""),
+        "logical_operation_id": operation_id,
+        "dispatch_id": dispatch_id,
+        "pool_id": pool_id,
+        "package_prompt_ref": package_prompt_ref,
+        "sealed_package_prompt_ref": sealed_prompt_ref,
+        "sealed_input_catalog_ref": catalog_ref,
+        "common_prepare_receipt_ref": prepare_ref,
+        "common_effective_prompt_ref": effective_ref,
+        "common_contract_ref": _hash_bound_ref(contract_path, contract_sha256),
+        "common_attempt_ref": common_attempt_ref,
+        "prepared_common_contract_ref": prepared_contract_ref,
+        "logical_contract_sha256": logical_contract_sha256,
+        "dispatch_meta_ref": dispatch_meta_ref,
+        "pool_summary_ref": pool_summary_ref,
+        "pool_lane_prompt_ref": lane_prompt_ref,
+        "authority": False,
+        "completion_claim_allowed": False,
+    }
+    raw = (
+        json.dumps(binding, ensure_ascii=False, indent=2, sort_keys=True).encode(
+            "utf-8"
+        )
+        + b"\n"
+    )
+    return _write_or_verify_immutable(attempt_root / "model-input-binding.json", raw)
+
+
 def _terminal_lane_missing_common_failure(lane: Mapping[str, Any]) -> dict[str, str]:
     raw_error = str(lane.get("error") or "").strip()
     match = re.search(r"\b((?:GROK|CODEX|XINAO)_[A-Z0-9_]+)\b", raw_error)
-    provider_failure_code = (
-        match.group(1) if match else "UNCLASSIFIED_LANE_FAILURE"
-    )
+    provider_failure_code = match.group(1) if match else "UNCLASSIFIED_LANE_FAILURE"
     return {
         "failure": (
             "terminal lane has no valid common receipt; "
@@ -1300,6 +1581,11 @@ def _build_worker_terminal_event(
             "path": result["common_contract_ref"],
             "sha256": result["common_contract_sha256"],
         },
+        model_input_binding_ref=(
+            dict(result["model_input_binding_ref"])
+            if isinstance(result.get("model_input_binding_ref"), Mapping)
+            else None
+        ),
     )
 
 
@@ -1355,7 +1641,9 @@ def _run_process_with_live_guard(
             except subprocess.TimeoutExpired:
                 live_guard()
                 continue
-            return subprocess.CompletedProcess(command, int(process.returncode or 0), stdout, stderr)
+            return subprocess.CompletedProcess(
+                command, int(process.returncode or 0), stdout, stderr
+            )
     except BaseException:
         _terminate_process_tree(process)
         raise
@@ -1395,6 +1683,7 @@ def _run_package(
         selector_root=selector_root,
         runtime_root=runtime_root,
     )
+
     def live_route_guard() -> dict[str, Any]:
         validation = validate_dispatch_route_claim(
             route_claim_evidence_ref=route_claim_evidence_ref,
@@ -1431,7 +1720,10 @@ def _run_package(
     dispatch_id = _identifier("cdx")
     pool_id = _identifier("gwp")
     operation_id = _operation_id(package)
-    if common_contract_binding.get("binding_source") == "prior_accepted_ancestor_manifest":
+    if (
+        common_contract_binding.get("binding_source")
+        == "prior_accepted_ancestor_manifest"
+    ):
         contract_binding_args = [
             "-CommonLogicalContractPath",
             str(common_contract_binding["prior_logical_contract_ref"]),
@@ -1677,6 +1969,37 @@ def _run_package(
 
     output_root = effective_cwd
     attempt_root = output_root / f"attempt-{attempt_number:04d}-{dispatch_id}"
+    try:
+        model_input_binding_ref = _materialize_model_input_binding(
+            package=package,
+            sealed_model_input=sealed_model_input,
+            contract=contract,
+            contract_path=contract_path,
+            contract_sha256=contract_sha,
+            logical_contract_sha256=str(attempt_receipt.get("contract_sha256") or ""),
+            attempt_receipt=attempt_receipt,
+            attempt_path=attempt_path,
+            attempt_sha256=attempt_sha,
+            pool_summary=summary,
+            pool_summary_path=pool_summary,
+            runtime_root=runtime_root,
+            dispatch_id=dispatch_id,
+            pool_id=pool_id,
+            operation_id=operation_id,
+            subject_manifest_sha256=manifest_sha256,
+            attempt_root=attempt_root,
+        )
+    except (OSError, TypeError, ValueError, json.JSONDecodeError) as exc:
+        result.update(
+            status="failed",
+            failure=f"model input binding invalid: {exc}",
+            common_attempt_ref=str(attempt_path),
+            common_attempt_sha256=attempt_sha,
+            common_contract_ref=str(contract_path),
+            common_contract_sha256=contract_sha,
+            attempt=attempt_number,
+        )
+        return result
     control_artifact_refs: list[dict[str, str]] = [
         dict(sealed_model_input["catalog_ref"]),
         dict(sealed_model_input["effective_prompt_ref"]),
@@ -1685,6 +2008,8 @@ def _run_package(
         _hash_bound_ref(contract_path, contract_sha),
         _hash_bound_ref(pool_summary),
     ]
+    if model_input_binding_ref is not None:
+        control_artifact_refs.append(model_input_binding_ref)
     provider_artifact_refs: list[dict[str, str]] = []
     provider_output_ref: dict[str, str] | None = None
     provider_cli_ref: dict[str, str] | None = None
@@ -1711,13 +2036,16 @@ def _run_package(
             )
         if (
             meta.get("container_sealed_input_read_only") is not True
-            or meta.get("container_sealed_input_root") != sealed_model_input["container_root"]
+            or meta.get("container_sealed_input_root")
+            != sealed_model_input["container_root"]
             or not _same_path(
                 Path(str(meta.get("sealed_input_root") or "")),
                 Path(str(sealed_model_input["host_root"])),
             )
         ):
-            raise ValueError("provider metadata does not prove the sealed input read-only mount")
+            raise ValueError(
+                "provider metadata does not prove the sealed input read-only mount"
+            )
         readback = _verify_sealed_input_tool_readback(
             meta=meta,
             binding=sealed_model_input,
@@ -1801,6 +2129,7 @@ def _run_package(
         "provider_output_ref": provider_output_ref,
         "sealed_input_catalog_ref": sealed_model_input["catalog_ref"],
         "effective_package_prompt_ref": sealed_model_input["effective_prompt_ref"],
+        "model_input_binding_ref": model_input_binding_ref,
         "sealed_input_readback_ref": sealed_input_readback_ref,
         "provider_chat_history_ref": provider_chat_history_ref,
         "artifact_refs": artifact_refs,
@@ -1826,6 +2155,7 @@ def _run_package(
         common_contract_sha256=contract_sha,
         common_adapter_receipt_ref=str(common_receipt_path),
         common_adapter_receipt_sha256=common_receipt_sha,
+        model_input_binding_ref=model_input_binding_ref,
         attempt=attempt_number,
         event_artifact_refs=provider_artifact_refs,
         pool_summary_sha256=_sha(pool_summary),
@@ -1917,11 +2247,15 @@ def _append_task_run_non_conversion(
         not re.fullmatch(r"[0-9a-f]{64}", declared_pool_summary_sha)
         or declared_pool_summary_sha != observed_pool_summary_sha
     ):
-        raise RuntimeError("pool summary sha256 drifted before non-conversion recording")
+        raise RuntimeError(
+            "pool summary sha256 drifted before non-conversion recording"
+        )
     pool_summary_sha = observed_pool_summary_sha
     package_id = str(result.get("package_id") or "unknown-package")
     work_key = str(result.get("work_key") or "unknown-work-key")
-    failure = str(result.get("failure") or "dispatch attempt did not reach worker_terminal")
+    failure = str(
+        result.get("failure") or "dispatch attempt did not reach worker_terminal"
+    )
     provider_exit_code = int(result.get("exit_code") or 0)
     retry_class = str(result.get("retry_class") or "").lower()
     if retry_class not in {"transient", "deterministic"}:

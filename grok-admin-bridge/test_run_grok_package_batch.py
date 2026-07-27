@@ -1447,6 +1447,7 @@ def test_nonzero_provider_exit_with_valid_common_receipt_is_terminal_recordable(
             {
                 "logical_operation_id": operation_id,
                 "work_key": package["work_key"],
+                "input_sha256": package["prompt_ref"]["sha256"],
             },
         )
         attempt_path = lane_dir / "common_attempt_receipt.json"
@@ -1572,6 +1573,8 @@ def test_nonzero_provider_exit_with_valid_common_receipt_is_terminal_recordable(
     assert result["provider_output_ref"]["sha256"] == final_sha
     event_shas = {ref["sha256"] for ref in result["event_artifact_refs"]}
     assert result["provider_output_ref"]["sha256"] in event_shas
+    assert result["effective_package_prompt_ref"]["sha256"] not in event_shas
+    assert result["sealed_input_catalog_ref"]["sha256"] not in event_shas
     assert result["common_attempt_sha256"] not in event_shas
     assert result["common_contract_sha256"] not in event_shas
     assert result["common_adapter_receipt_sha256"] not in event_shas
@@ -1712,6 +1715,10 @@ def test_worker_terminal_v2_builder_receives_only_hash_bound_predecessors() -> N
         result={
             "operation_id": "op-1",
             "event_artifact_refs": [{"path": "provider-output", "sha256": "a" * 64}],
+            "model_input_binding_ref": {
+                "path": "model-input-binding.json",
+                "sha256": "f" * 64,
+            },
             "common_attempt_ref": "attempt.json",
             "common_attempt_sha256": "b" * 64,
             "common_contract_ref": "contract.json",
@@ -1732,8 +1739,212 @@ def test_worker_terminal_v2_builder_receives_only_hash_bound_predecessors() -> N
         "path": "envelope.json",
         "sha256": "e" * 64,
     }
+    assert captured["artifact_refs"] == [
+        {"path": "provider-output", "sha256": "a" * 64}
+    ]
+    assert captured["model_input_binding_ref"] == {
+        "path": "model-input-binding.json",
+        "sha256": "f" * 64,
+    }
     assert "provider_accepted" not in captured
     assert "usage" not in captured
+
+
+def test_model_input_binding_keeps_two_prompt_transforms_out_of_provider_artifacts(
+    tmp_path: Path,
+) -> None:
+    runtime = tmp_path / "runtime"
+    package_prompt = tmp_path / "package-prompt.md"
+    package_prompt.write_text("package prompt", encoding="utf-8")
+    sealed_prompt = tmp_path / "effective-package-prompt.md"
+    sealed_prompt.write_text("package prompt\nsealed catalog binding", encoding="utf-8")
+    catalog = tmp_path / "catalog.json"
+    _write_json(catalog, {"schema_version": "xinao.worker_sealed_input_catalog.v2"})
+    context = tmp_path / "context.json"
+    _write_json(context, {"context": "bounded"})
+    rules = tmp_path / "rules.txt"
+    rules.write_text("candidate rules", encoding="utf-8")
+    common_prompt = tmp_path / "common-effective-prompt.md"
+    common_prompt.write_bytes(sealed_prompt.read_bytes() + b"\nvalidated context")
+    lane_prompt = tmp_path / "lane-prompt.md"
+    lane_prompt.write_bytes(b"lane prefix\n" + common_prompt.read_bytes())
+    provider_meta = tmp_path / "provider" / "latest.json"
+    provider_meta_sha = _write_json(provider_meta, {"provider": "grok"})
+    attempt_receipt = {
+        "lineage": {"workflow_id": "pool-1"},
+        "observed": {"executor_id": "run-1"},
+        "provider_evidence_ref": str(provider_meta),
+        "provider_evidence_sha256": provider_meta_sha,
+    }
+    attempt_path = tmp_path / "common-attempt-receipt.json"
+    attempt_sha = _write_json(attempt_path, attempt_receipt)
+
+    package = {
+        "package_id": "pkg-1",
+        "work_key": "wk-1",
+        "prompt_ref": {
+            "path": str(package_prompt),
+            "sha256": subject._sha(package_prompt),
+        },
+        "context_manifest_ref": {"path": str(context), "sha256": subject._sha(context)},
+        "rules_ref": {"path": str(rules), "sha256": subject._sha(rules)},
+        "rules_sha256": subject._sha(rules),
+    }
+    contract = {"input_sha256": subject._sha(common_prompt)}
+    lane_contract = tmp_path / "lane" / "common_logical_contract.json"
+    lane_contract_sha = _write_json(lane_contract, contract)
+    prepared_contract = tmp_path / "prepared" / "logical_contract.json"
+    assert _write_json(prepared_contract, contract) == lane_contract_sha
+    logical_contract_digest = "d" * 64
+    prepare_receipt = {
+        "schema_version": "xinao.direct_worker_pool.contract_prepare_receipt.v1",
+        "authority": False,
+        "completion_claim_allowed": False,
+        "context_binding_mode": "validated_context_slice_manifest",
+        "context_application_status": "effective_prompt_artifact_written",
+        "model_input_effect_verified": False,
+        "original_prompt_sha256": subject._sha(sealed_prompt),
+        "prompt_sha256": subject._sha(sealed_prompt),
+        "prompt_file": str(sealed_prompt),
+        "effective_prompt_sha256": subject._sha(common_prompt),
+        "effective_prompt_file": str(common_prompt),
+        "effective_prompt_bytes": common_prompt.stat().st_size,
+        "logical_contract_sha256": logical_contract_digest,
+        "subject_manifest_sha256": "m" * 64,
+        "context_manifest_sha256": subject._sha(context),
+        "context_manifest_file": str(context),
+        "rules_sha256": subject._sha(rules),
+        "rules_file": str(rules),
+    }
+    _write_json(
+        prepared_contract.with_name("contract_prepare_receipt.json"), prepare_receipt
+    )
+    pool_summary = {
+        "schema_version": "xinao.grok_worker_pool.v2",
+        "pool_id": "pool-1",
+        "n": 1,
+        "usage_accounting_complete": True,
+        "usage": {"attempt_count": 1, "input_tokens": 10},
+        "results": [
+            {
+                "status": "accepted",
+                "outcome": "accepted",
+                "exit_code": 0,
+                "meta_path": str(provider_meta),
+                "run_id": "run-1",
+                "common_contract_preflight": {
+                    "validated": True,
+                    "logical_contract_sha256": logical_contract_digest,
+                    "input_sha256": subject._sha(common_prompt),
+                    "rules_sha256": subject._sha(rules),
+                },
+            }
+        ],
+    }
+    pool_summary_path = (
+        runtime / "state" / "grok_worker_pool" / "pool-1" / "pool_summary.json"
+    )
+    pool_summary_sha = _write_json(pool_summary_path, pool_summary)
+    dispatch_meta = {
+        "schema_version": "xinao.codex_dispatch_grok_worker_pool.v1",
+        "sentinel": "SENTINEL:CODEX_DISPATCH_GROK_WORKER_POOL",
+        "dispatch_id": "dispatch-1",
+        "pool_id": "pool-1",
+        "status": "accepted",
+        "common_model_input_effect_verified": True,
+        "common_pool_lane_prompt_effect_verified": True,
+        "common_context_effect_status": (
+            "model_attempt_consumed_lane_prompt_with_verified_effective_suffix"
+        ),
+        "completion_claim_allowed": False,
+        "common_contract_path": str(prepared_contract),
+        "common_effective_prompt_file": str(common_prompt),
+        "common_effective_prompt_sha256": subject._sha(common_prompt),
+        "common_effective_prompt_bytes": common_prompt.stat().st_size,
+        "pool_summary_path": str(pool_summary_path),
+        "pool_summary_sha256": pool_summary_sha,
+        "common_pool_lane_prompt_file": str(lane_prompt),
+    }
+    _write_json(
+        runtime / "state" / "codex_dispatch_grok_worker_pool" / "dispatch-1.json",
+        dispatch_meta,
+    )
+    attempt_root = tmp_path / "attempt"
+    attempt_root.mkdir()
+    binding_ref = subject._materialize_model_input_binding(
+        package=package,
+        sealed_model_input={
+            "effective_prompt_ref": {
+                "path": str(sealed_prompt),
+                "sha256": subject._sha(sealed_prompt),
+            },
+            "catalog_ref": {"path": str(catalog), "sha256": subject._sha(catalog)},
+        },
+        contract=contract,
+        contract_path=lane_contract,
+        contract_sha256=lane_contract_sha,
+        logical_contract_sha256=logical_contract_digest,
+        attempt_receipt=attempt_receipt,
+        attempt_path=attempt_path,
+        attempt_sha256=attempt_sha,
+        pool_summary=pool_summary,
+        pool_summary_path=pool_summary_path,
+        runtime_root=runtime,
+        dispatch_id="dispatch-1",
+        pool_id="pool-1",
+        operation_id="op-1",
+        subject_manifest_sha256="m" * 64,
+        attempt_root=attempt_root,
+    )
+    assert binding_ref is not None
+    binding = json.loads(Path(binding_ref["path"]).read_text(encoding="utf-8"))
+    assert binding["schema_version"] == "xinao.worker_model_input_binding.v1"
+    assert binding["logical_contract_sha256"] == logical_contract_digest
+    assert binding["common_effective_prompt_ref"]["sha256"] == subject._sha(
+        common_prompt
+    )
+    assert binding["common_attempt_ref"] == {
+        "path": str(attempt_path.resolve(strict=True)),
+        "sha256": attempt_sha,
+    }
+
+    swapped_provider_meta = tmp_path / "provider-swapped" / "latest.json"
+    swapped_provider_sha = _write_json(swapped_provider_meta, {"provider": "other-run"})
+    swapped_attempt = {
+        **attempt_receipt,
+        "provider_evidence_ref": str(swapped_provider_meta),
+        "provider_evidence_sha256": swapped_provider_sha,
+    }
+    swapped_attempt_path = tmp_path / "common-attempt-receipt-swapped.json"
+    swapped_attempt_sha = _write_json(swapped_attempt_path, swapped_attempt)
+    with pytest.raises(
+        ValueError, match="does not bind the common attempt provider evidence"
+    ):
+        subject._materialize_model_input_binding(
+            package=package,
+            sealed_model_input={
+                "effective_prompt_ref": {
+                    "path": str(sealed_prompt),
+                    "sha256": subject._sha(sealed_prompt),
+                },
+                "catalog_ref": {"path": str(catalog), "sha256": subject._sha(catalog)},
+            },
+            contract=contract,
+            contract_path=lane_contract,
+            contract_sha256=lane_contract_sha,
+            logical_contract_sha256=logical_contract_digest,
+            attempt_receipt=swapped_attempt,
+            attempt_path=swapped_attempt_path,
+            attempt_sha256=swapped_attempt_sha,
+            pool_summary=pool_summary,
+            pool_summary_path=pool_summary_path,
+            runtime_root=runtime,
+            dispatch_id="dispatch-1",
+            pool_id="pool-1",
+            operation_id="op-1",
+            subject_manifest_sha256="m" * 64,
+            attempt_root=attempt_root,
+        )
 
 
 def test_side_effect_identity_separates_operation_attempt_and_retry() -> None:
