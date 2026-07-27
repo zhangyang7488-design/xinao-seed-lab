@@ -1220,6 +1220,38 @@ def test_sealed_input_readback_rejects_unordered_duplicate_or_failed_native_evid
         subject._verify_sealed_input_tool_readback(meta=meta, binding=binding)
 
 
+def test_missing_common_receipt_preserves_provider_first_cause_code() -> None:
+    failure = subject._terminal_lane_missing_common_failure(
+        {
+            "status": "incomplete",
+            "outcome": "incomplete",
+            "error": (
+                'Exception calling "EndInvoke": '
+                '"GROK_AUTHENTICATED_MODEL_CATALOG_STALE: fetched_at=old"'
+            ),
+        }
+    )
+
+    assert failure == {
+        "failure": (
+            "terminal lane has no valid common receipt; "
+            "provider_failure_code=GROK_AUTHENTICATED_MODEL_CATALOG_STALE"
+        ),
+        "provider_failure_code": "GROK_AUTHENTICATED_MODEL_CATALOG_STALE",
+        "provider_lane_status": "incomplete",
+        "provider_lane_outcome": "incomplete",
+    }
+
+
+def test_missing_common_receipt_does_not_echo_unclassified_raw_error() -> None:
+    failure = subject._terminal_lane_missing_common_failure(
+        {"status": "failed", "error": "private provider detail"}
+    )
+
+    assert failure["provider_failure_code"] == "UNCLASSIFIED_LANE_FAILURE"
+    assert "private provider detail" not in failure["failure"]
+
+
 def test_nonzero_provider_exit_with_valid_common_receipt_is_terminal_recordable(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

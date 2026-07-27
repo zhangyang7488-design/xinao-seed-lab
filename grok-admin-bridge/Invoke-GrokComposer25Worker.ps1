@@ -60,6 +60,12 @@ if (-not (Test-Path -LiteralPath $catalogTimeRuntime -PathType Leaf)) {
 }
 . $catalogTimeRuntime
 
+$catalogRefreshRuntime = Join-Path $PSScriptRoot "GrokAuthenticatedCatalogRefresh.ps1"
+if (-not (Test-Path -LiteralPath $catalogRefreshRuntime -PathType Leaf)) {
+    throw "GROK_AUTHENTICATED_CATALOG_REFRESH_RUNTIME_MISSING: $catalogRefreshRuntime"
+}
+. $catalogRefreshRuntime
+
 function Get-FileSha256Lower([string]$Path) {
     return (Get-FileHash -LiteralPath $Path -Algorithm SHA256).Hash.ToLowerInvariant()
 }
@@ -310,6 +316,7 @@ $containerCatalogSource = ""
 $containerTransportRoot = ""
 $containerPersistentAuthSource = ""
 $containerPersistentAuthSha256Before = ""
+$containerCatalogRefresh = $null
 $containerAuthPlaceholder = ""
 $containerSandboxConfigPath = ""
 $containerConfigPath = ""
@@ -458,10 +465,6 @@ deny = [
         throw "GROK_CONTAINER_MODEL_CATALOG_SOURCE_MISSING"
     }
     $containerCatalogSource = Join-Path $containerTransportRoot "models_cache.json"
-    [IO.File]::WriteAllBytes(
-        $containerCatalogSource,
-        [IO.File]::ReadAllBytes($containerPersistentCatalogSource)
-    )
     foreach ($bindSource in @(
         $Cwd,
         $containerTransportRoot,
@@ -877,6 +880,22 @@ validator_class.check_schema(schema)
     }
     $env:GROK_HOME = $GrokHome
     if ($containerMode) {
+        $hostCatalogRefreshAction = {
+            Invoke-NativeCapture `
+                -FileName $GrokExe `
+                -WorkingDirectory $Cwd `
+                -DeadlineSeconds 120 `
+                -Arguments @("models")
+        }
+        $containerCatalogRefresh = Invoke-GrokAuthenticatedCatalogSingleFlight `
+            -GrokHome $GrokHome `
+            -Model $Model `
+            -TtlSeconds $catalogTtlSeconds `
+            -RefreshAction $hostCatalogRefreshAction
+        [IO.File]::WriteAllBytes(
+            $containerCatalogSource,
+            [IO.File]::ReadAllBytes($containerPersistentCatalogSource)
+        )
         $containerVersionProbe = Invoke-NativeCapture `
             -FileName $DockerExe `
             -WorkingDirectory $Cwd `
@@ -978,6 +997,7 @@ validator_class.check_schema(schema)
         )
         availability_authority = "exact_profile_cli_and_authenticated_server_catalog"
         cache_sha256 = (Get-FileHash -LiteralPath $catalogPath -Algorithm SHA256).Hash.ToLowerInvariant()
+        host_profile_singleflight = $containerCatalogRefresh
         merged_cli_stdout_sha256 = ([BitConverter]::ToString(
             [Security.Cryptography.SHA256]::Create().ComputeHash([Text.Encoding]::UTF8.GetBytes($modelsText))
         ) -replace '-', '').ToLowerInvariant()
