@@ -22,6 +22,7 @@ from services.agent_runtime.dispatch_economics import (
     project_dispatch_outcomes,
     validate_candidate_consumer_binding,
     validate_dispatch_envelope,
+    validate_dispatch_outcome_event,
     validate_dispatch_route_claim,
     validate_package_batch_manifest,
     validate_prior_accepted_ancestor_action,
@@ -802,6 +803,443 @@ def _worker_event(
     event_path = root / f"worker-event-{package_id}{suffix}.json"
     event_ref = {"path": str(event_path), "sha256": _write_json(event_path, event)}
     return event, event_ref, artifact_ref
+
+
+def test_leg_a_worker_terminal_binds_two_stage_model_input_without_output_pollution(
+    tmp_path: Path,
+) -> None:
+    fixture = _fixture(tmp_path)
+    manifest_ref, envelope_ref, _ = _seal_dispatch(fixture)
+    package = fixture["manifest"]["packages"][0]
+    operation_id = f"op-{package['package_id']}"
+    input_path = Path(package["input_refs"][0]["path"])
+    catalog = {
+        "schema_version": "xinao.worker_sealed_input_catalog.v2",
+        "package_id": package["package_id"],
+        "container_root": "/sealed-inputs",
+        "mount_scope": "catalog_and_required_entries_only",
+        "external_input_admission": {
+            "status": "owner_reviewed_redacted",
+            "scope": "all_package_sources",
+            "reviewer_role": "codex_owner",
+        },
+        "entries": [
+            {
+                "slot": 0,
+                "path": "/sealed-inputs/input.txt",
+                "sha256": package["input_refs"][0]["sha256"],
+                "bytes": input_path.stat().st_size,
+                "required": True,
+                "read_strategy": "read_file_required_selected_content",
+            }
+        ],
+        "authority": False,
+        "completion_claim_allowed": False,
+    }
+    catalog_path = tmp_path / "catalog.json"
+    catalog_sha = _write_json(catalog_path, catalog)
+    catalog_ref = {"path": str(catalog_path), "sha256": catalog_sha}
+    package_prompt = Path(package["prompt_ref"]["path"]).read_text(encoding="utf-8-sig")
+    prompt_binding = (
+        "# Sealed package input binding\n\n"
+        "catalog=/sealed-inputs/catalog.json\n"
+        f"catalog_sha256={catalog_sha}\n"
+        "required_entry_count=1\n"
+        "Read the catalog first. In a later model turn, call read_file at least once for every "
+        "required entry before forming findings. The catalog is an index, not the file content; "
+        "do not substitute live paths or treat a listed hash as consumption.\n"
+    )
+    sealed_prompt_path = tmp_path / "effective-package-prompt.md"
+    sealed_prompt_path.write_bytes(
+        (package_prompt.rstrip() + "\n\n---\n\n" + prompt_binding).encode("utf-8")
+    )
+    sealed_prompt_ref = _ref(sealed_prompt_path)
+    common_prompt_path = tmp_path / "effective-prompt.md"
+    common_prompt_path.write_bytes(
+        sealed_prompt_path.read_bytes() + b"\n\n# Validated context slice\ncontext-bound\n"
+    )
+    common_prompt_ref = _ref(common_prompt_path)
+    output_path = tmp_path / "provider-output.json"
+    output_sha = _write_json(output_path, {"result": "OK"})
+    output_ref = {"path": str(output_path), "sha256": output_sha}
+
+    contract = _logical_contract(
+        fixture,
+        package=package,
+        manifest_ref=manifest_ref,
+        operation_id=operation_id,
+    )
+    contract["input_sha256"] = common_prompt_ref["sha256"]
+    contract_path = tmp_path / "contract-effective.json"
+    contract_sha = _write_json(contract_path, contract)
+    attempt = _attempt_receipt(
+        fixture,
+        contract=contract,
+        package=package,
+        output_sha=output_sha,
+        attempt=1,
+        total_tokens=100,
+        accepted=True,
+    )
+    attempt["lineage"]["workflow_id"] = "pool-1"
+    attempt["observed"]["executor_id"] = "run-1"
+    attempt_path = tmp_path / "attempt-effective.json"
+    attempt_sha = _write_json(attempt_path, attempt)
+    attempt_ref = {"path": str(attempt_path), "sha256": attempt_sha}
+    context_ref = package["context_manifest_ref"]
+    rules_ref = package["rules_ref"]
+    prepare_receipt = {
+        "schema_version": "xinao.direct_worker_pool.contract_prepare_receipt.v1",
+        "authority": False,
+        "completion_claim_allowed": False,
+        "context_binding_mode": "validated_context_slice_manifest",
+        "context_application_status": "effective_prompt_artifact_written",
+        "model_input_effect_verified": False,
+        "original_prompt_sha256": sealed_prompt_ref["sha256"],
+        "prompt_sha256": sealed_prompt_ref["sha256"],
+        "prompt_file": sealed_prompt_ref["path"],
+        "effective_prompt_sha256": common_prompt_ref["sha256"],
+        "effective_prompt_file": common_prompt_ref["path"],
+        "effective_prompt_bytes": common_prompt_path.stat().st_size,
+        "logical_contract_sha256": logical_contract_sha256(contract),
+        "subject_manifest_sha256": manifest_ref["sha256"],
+        "context_manifest_sha256": context_ref["sha256"],
+        "context_manifest_file": context_ref["path"],
+        "rules_sha256": rules_ref["sha256"],
+        "rules_file": rules_ref["path"],
+        "selection_decision_sha256": fixture["selection_decision_sha256"],
+        "output_contract_sha256": contract["output_contract_sha256"],
+        "capability_binding_sha256": contract["selection"]["capability_binding_sha256"],
+    }
+    prepare_path = contract_path.with_name("contract_prepare_receipt.json")
+    prepare_ref = {
+        "path": str(prepare_path),
+        "sha256": _write_json(prepare_path, prepare_receipt),
+    }
+    lane_prompt_path = tmp_path / "lane-prompt.md"
+    lane_prompt_path.write_bytes(b"worker-lane-prefix\n" + common_prompt_path.read_bytes())
+    lane_prompt_ref = _ref(lane_prompt_path)
+    pool_summary = {
+        "schema_version": "xinao.grok_worker_pool.v2",
+        "pool_id": "pool-1",
+        "n": 1,
+        "model": contract["selection"]["model_id"],
+        "selection_decision_sha256": fixture["selection_decision_sha256"],
+        "usage_accounting_complete": True,
+        "usage": {"attempt_count": 1, "input_tokens": 50},
+        "results": [
+            {
+                "status": "accepted",
+                "outcome": "accepted",
+                "exit_code": 0,
+                "meta_path": attempt["provider_evidence_ref"],
+                "run_id": "run-1",
+                "common_contract_preflight": {
+                    "validated": True,
+                    "logical_contract_sha256": logical_contract_sha256(contract),
+                    "subject_manifest_sha256": manifest_ref["sha256"],
+                    "input_sha256": common_prompt_ref["sha256"],
+                    "rules_sha256": rules_ref["sha256"],
+                    "output_contract_sha256": contract["output_contract_sha256"],
+                    "capability_binding_sha256": contract["selection"]["capability_binding_sha256"],
+                },
+            }
+        ],
+    }
+    pool_summary_path = tmp_path / "pool-summary.json"
+    pool_summary_ref = {
+        "path": str(pool_summary_path),
+        "sha256": _write_json(pool_summary_path, pool_summary),
+    }
+    dispatch_meta = {
+        "schema_version": "xinao.codex_dispatch_grok_worker_pool.v1",
+        "sentinel": "SENTINEL:CODEX_DISPATCH_GROK_WORKER_POOL",
+        "dispatch_id": "dispatch-1",
+        "pool_id": "pool-1",
+        "status": "accepted",
+        "common_model_input_effect_verified": True,
+        "common_pool_lane_prompt_effect_verified": True,
+        "common_context_effect_status": (
+            "model_attempt_consumed_lane_prompt_with_verified_effective_suffix"
+        ),
+        "completion_claim_allowed": False,
+        "common_contract_path": str(contract_path),
+        "common_effective_prompt_file": common_prompt_ref["path"],
+        "common_effective_prompt_sha256": common_prompt_ref["sha256"],
+        "common_effective_prompt_bytes": common_prompt_path.stat().st_size,
+        "common_context_manifest_sha256": context_ref["sha256"],
+        "common_rules_sha256": rules_ref["sha256"],
+        "common_pool_lane_prompt_file": lane_prompt_ref["path"],
+        "pool_summary_path": pool_summary_ref["path"],
+        "pool_summary_sha256": pool_summary_ref["sha256"],
+    }
+    dispatch_meta_path = tmp_path / "dispatch-meta.json"
+    dispatch_meta_ref = {
+        "path": str(dispatch_meta_path),
+        "sha256": _write_json(dispatch_meta_path, dispatch_meta),
+    }
+    binding = {
+        "schema_version": "xinao.worker_model_input_binding.v1",
+        "package_id": package["package_id"],
+        "work_key": package["work_key"],
+        "logical_operation_id": operation_id,
+        "dispatch_id": "dispatch-1",
+        "pool_id": "pool-1",
+        "package_prompt_ref": package["prompt_ref"],
+        "sealed_package_prompt_ref": sealed_prompt_ref,
+        "sealed_input_catalog_ref": catalog_ref,
+        "common_prepare_receipt_ref": prepare_ref,
+        "common_effective_prompt_ref": common_prompt_ref,
+        "common_contract_ref": {"path": str(contract_path), "sha256": contract_sha},
+        "common_attempt_ref": attempt_ref,
+        "prepared_common_contract_ref": {
+            "path": str(contract_path),
+            "sha256": contract_sha,
+        },
+        "logical_contract_sha256": logical_contract_sha256(contract),
+        "dispatch_meta_ref": dispatch_meta_ref,
+        "pool_summary_ref": pool_summary_ref,
+        "pool_lane_prompt_ref": lane_prompt_ref,
+        "authority": False,
+        "completion_claim_allowed": False,
+    }
+    binding_path = tmp_path / "model-input-binding.json"
+    binding_ref = {
+        "path": str(binding_path),
+        "sha256": _write_json(binding_path, binding),
+    }
+    event = build_dispatch_outcome_event(
+        event_type="worker_terminal",
+        parent_work_key=str(package["parent_work_key"]),
+        work_key=str(package["work_key"]),
+        package_id=str(package["package_id"]),
+        package_manifest_ref=manifest_ref,
+        dispatch_envelope_ref=envelope_ref,
+        logical_operation_id=operation_id,
+        leg="A",
+        role=str(package["role"]),
+        artifact_refs=[output_ref],
+        common_attempt_ref=attempt_ref,
+        common_contract_ref={"path": str(contract_path), "sha256": contract_sha},
+        model_input_binding_ref=binding_ref,
+    )
+    assert event["provider_accepted"] is True
+    assert event["artifact_refs"] == [output_ref]
+    assert event["model_input_binding_ref"] == binding_ref
+    assert validate_dispatch_outcome_event(event) == event
+
+    alternate_contract_binding = copy.deepcopy(binding)
+    alternate_contract_binding["common_contract_ref"]["path"] = str(
+        contract_path.parent / "unused-spelling" / ".." / contract_path.name
+    )
+    alternate_contract_binding_path = tmp_path / "alternate-contract-spelling-binding.json"
+    alternate_contract_binding_ref = {
+        "path": str(alternate_contract_binding_path),
+        "sha256": _write_json(
+            alternate_contract_binding_path,
+            alternate_contract_binding,
+        ),
+    }
+    alternate_event = build_dispatch_outcome_event(
+        event_type="worker_terminal",
+        parent_work_key=str(package["parent_work_key"]),
+        work_key=str(package["work_key"]),
+        package_id=str(package["package_id"]),
+        package_manifest_ref=manifest_ref,
+        dispatch_envelope_ref=envelope_ref,
+        logical_operation_id=operation_id,
+        leg="A",
+        role=str(package["role"]),
+        artifact_refs=[output_ref],
+        common_attempt_ref=attempt_ref,
+        common_contract_ref={"path": str(contract_path), "sha256": contract_sha},
+        model_input_binding_ref=alternate_contract_binding_ref,
+    )
+    assert alternate_event["provider_accepted"] is True
+
+    swapped_attempt = copy.deepcopy(attempt)
+    swapped_attempt["lineage"]["workflow_id"] = "pool-other"
+    swapped_attempt_path = tmp_path / "attempt-swapped-dispatch.json"
+    swapped_attempt_ref = {
+        "path": str(swapped_attempt_path),
+        "sha256": _write_json(swapped_attempt_path, swapped_attempt),
+    }
+    swapped_attempt_binding = copy.deepcopy(binding)
+    swapped_attempt_binding["common_attempt_ref"] = swapped_attempt_ref
+    swapped_attempt_binding_path = tmp_path / "swapped-attempt-binding.json"
+    swapped_attempt_binding_ref = {
+        "path": str(swapped_attempt_binding_path),
+        "sha256": _write_json(swapped_attempt_binding_path, swapped_attempt_binding),
+    }
+    with pytest.raises(DispatchEconomicsError, match="common attempt drifted"):
+        build_dispatch_outcome_event(
+            event_type="worker_terminal",
+            parent_work_key=str(package["parent_work_key"]),
+            work_key=str(package["work_key"]),
+            package_id=str(package["package_id"]),
+            package_manifest_ref=manifest_ref,
+            dispatch_envelope_ref=envelope_ref,
+            logical_operation_id=operation_id,
+            leg="A",
+            role=str(package["role"]),
+            artifact_refs=[output_ref],
+            common_attempt_ref=attempt_ref,
+            common_contract_ref={"path": str(contract_path), "sha256": contract_sha},
+            model_input_binding_ref=swapped_attempt_binding_ref,
+        )
+
+    swapped_provider_path = tmp_path / "provider-swapped.json"
+    _write_json(swapped_provider_path, {"provider": "other-dispatch"})
+    swapped_pool_summary = copy.deepcopy(pool_summary)
+    swapped_pool_summary["results"][0]["meta_path"] = str(swapped_provider_path)
+    swapped_pool_summary_path = tmp_path / "pool-summary-swapped.json"
+    swapped_pool_summary_ref = {
+        "path": str(swapped_pool_summary_path),
+        "sha256": _write_json(swapped_pool_summary_path, swapped_pool_summary),
+    }
+    swapped_dispatch_meta = copy.deepcopy(dispatch_meta)
+    swapped_dispatch_meta["pool_summary_path"] = swapped_pool_summary_ref["path"]
+    swapped_dispatch_meta["pool_summary_sha256"] = swapped_pool_summary_ref["sha256"]
+    swapped_dispatch_meta_path = tmp_path / "dispatch-meta-swapped.json"
+    swapped_dispatch_meta_ref = {
+        "path": str(swapped_dispatch_meta_path),
+        "sha256": _write_json(swapped_dispatch_meta_path, swapped_dispatch_meta),
+    }
+    swapped_pool_binding = copy.deepcopy(binding)
+    swapped_pool_binding["pool_summary_ref"] = swapped_pool_summary_ref
+    swapped_pool_binding["dispatch_meta_ref"] = swapped_dispatch_meta_ref
+    swapped_pool_binding_path = tmp_path / "swapped-pool-binding.json"
+    swapped_pool_binding_ref = {
+        "path": str(swapped_pool_binding_path),
+        "sha256": _write_json(swapped_pool_binding_path, swapped_pool_binding),
+    }
+    with pytest.raises(
+        DispatchEconomicsError,
+        match="does not bind the common attempt provider evidence",
+    ):
+        build_dispatch_outcome_event(
+            event_type="worker_terminal",
+            parent_work_key=str(package["parent_work_key"]),
+            work_key=str(package["work_key"]),
+            package_id=str(package["package_id"]),
+            package_manifest_ref=manifest_ref,
+            dispatch_envelope_ref=envelope_ref,
+            logical_operation_id=operation_id,
+            leg="A",
+            role=str(package["role"]),
+            artifact_refs=[output_ref],
+            common_attempt_ref=attempt_ref,
+            common_contract_ref={"path": str(contract_path), "sha256": contract_sha},
+            model_input_binding_ref=swapped_pool_binding_ref,
+        )
+
+    with pytest.raises(DispatchEconomicsError, match="control evidence cannot be borrowed"):
+        build_dispatch_outcome_event(
+            event_type="worker_terminal",
+            parent_work_key=str(package["parent_work_key"]),
+            work_key=str(package["work_key"]),
+            package_id=str(package["package_id"]),
+            package_manifest_ref=manifest_ref,
+            dispatch_envelope_ref=envelope_ref,
+            logical_operation_id=operation_id,
+            leg="A",
+            role=str(package["role"]),
+            artifact_refs=[output_ref, binding_ref],
+            common_attempt_ref={"path": str(attempt_path), "sha256": attempt_sha},
+            common_contract_ref={"path": str(contract_path), "sha256": contract_sha},
+            model_input_binding_ref=binding_ref,
+        )
+
+    bad_sealed_path = tmp_path / "bad-effective-package-prompt.md"
+    bad_sealed_path.write_text("package prompt with an unbound suffix", encoding="utf-8")
+    bad_sealed_binding = copy.deepcopy(binding)
+    bad_sealed_binding["sealed_package_prompt_ref"] = _ref(bad_sealed_path)
+    bad_sealed_binding_path = tmp_path / "bad-sealed-model-input-binding.json"
+    bad_sealed_binding_ref = {
+        "path": str(bad_sealed_binding_path),
+        "sha256": _write_json(bad_sealed_binding_path, bad_sealed_binding),
+    }
+    with pytest.raises(DispatchEconomicsError, match="sealed package prompt"):
+        build_dispatch_outcome_event(
+            event_type="worker_terminal",
+            parent_work_key=str(package["parent_work_key"]),
+            work_key=str(package["work_key"]),
+            package_id=str(package["package_id"]),
+            package_manifest_ref=manifest_ref,
+            dispatch_envelope_ref=envelope_ref,
+            logical_operation_id=operation_id,
+            leg="A",
+            role=str(package["role"]),
+            artifact_refs=[output_ref],
+            common_attempt_ref={"path": str(attempt_path), "sha256": attempt_sha},
+            common_contract_ref={"path": str(contract_path), "sha256": contract_sha},
+            model_input_binding_ref=bad_sealed_binding_ref,
+        )
+
+    bad_prepare_root = tmp_path / "bad-prepare"
+    bad_prepared_contract_path = bad_prepare_root / "logical_contract.json"
+    bad_prepared_contract_sha = _write_json(bad_prepared_contract_path, contract)
+    assert bad_prepared_contract_sha == contract_sha
+    bad_prepare = copy.deepcopy(prepare_receipt)
+    bad_prepare["original_prompt_sha256"] = "0" * 64
+    bad_prepare_path = bad_prepare_root / "contract_prepare_receipt.json"
+    bad_prepare_ref = {
+        "path": str(bad_prepare_path),
+        "sha256": _write_json(bad_prepare_path, bad_prepare),
+    }
+    bad_prepare_binding = copy.deepcopy(binding)
+    bad_prepare_binding["prepared_common_contract_ref"] = {
+        "path": str(bad_prepared_contract_path),
+        "sha256": bad_prepared_contract_sha,
+    }
+    bad_prepare_binding["common_prepare_receipt_ref"] = bad_prepare_ref
+    bad_prepare_binding_path = tmp_path / "bad-prepare-model-input-binding.json"
+    bad_prepare_binding_ref = {
+        "path": str(bad_prepare_binding_path),
+        "sha256": _write_json(bad_prepare_binding_path, bad_prepare_binding),
+    }
+    with pytest.raises(DispatchEconomicsError, match="prepare receipt prompt lineage"):
+        build_dispatch_outcome_event(
+            event_type="worker_terminal",
+            parent_work_key=str(package["parent_work_key"]),
+            work_key=str(package["work_key"]),
+            package_id=str(package["package_id"]),
+            package_manifest_ref=manifest_ref,
+            dispatch_envelope_ref=envelope_ref,
+            logical_operation_id=operation_id,
+            leg="A",
+            role=str(package["role"]),
+            artifact_refs=[output_ref],
+            common_attempt_ref={"path": str(attempt_path), "sha256": attempt_sha},
+            common_contract_ref={"path": str(contract_path), "sha256": contract_sha},
+            model_input_binding_ref=bad_prepare_binding_ref,
+        )
+
+    bad_lane_path = tmp_path / "bad-lane-prompt.md"
+    bad_lane_path.write_text("does not contain P2", encoding="utf-8")
+    bad_binding = copy.deepcopy(binding)
+    bad_binding["pool_lane_prompt_ref"] = _ref(bad_lane_path)
+    bad_binding_path = tmp_path / "bad-model-input-binding.json"
+    bad_binding_ref = {
+        "path": str(bad_binding_path),
+        "sha256": _write_json(bad_binding_path, bad_binding),
+    }
+    with pytest.raises(DispatchEconomicsError, match="pool lane prompt"):
+        build_dispatch_outcome_event(
+            event_type="worker_terminal",
+            parent_work_key=str(package["parent_work_key"]),
+            work_key=str(package["work_key"]),
+            package_id=str(package["package_id"]),
+            package_manifest_ref=manifest_ref,
+            dispatch_envelope_ref=envelope_ref,
+            logical_operation_id=operation_id,
+            leg="A",
+            role=str(package["role"]),
+            artifact_refs=[output_ref],
+            common_attempt_ref={"path": str(attempt_path), "sha256": attempt_sha},
+            common_contract_ref={"path": str(contract_path), "sha256": contract_sha},
+            model_input_binding_ref=bad_binding_ref,
+        )
 
 
 def _owner_event(

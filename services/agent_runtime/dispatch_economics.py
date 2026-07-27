@@ -402,6 +402,493 @@ def _validate_path_ref(
     return {"path": logical, "sha256": expected}
 
 
+def _validate_leg_a_sealed_package_prompt(
+    *,
+    package: Mapping[str, object],
+    sealed_package_prompt_ref: Mapping[str, object],
+    sealed_input_catalog_ref: Mapping[str, object],
+    path_resolver: PathResolver | None,
+) -> str:
+    """Prove P0 package prompt + exact catalog -> P1 sealed package prompt."""
+
+    sealed_prompt_ref = _validate_path_ref(
+        sealed_package_prompt_ref,
+        "model_input_binding.sealed_package_prompt_ref",
+        path_resolver=path_resolver,
+    )
+    _, sealed_prompt_path = _physical_path(
+        sealed_prompt_ref["path"],
+        "model_input_binding.sealed_package_prompt_ref.path",
+        path_resolver,
+    )
+    catalog_ref = _validate_path_ref(
+        sealed_input_catalog_ref,
+        "model_input_binding.sealed_input_catalog_ref",
+        path_resolver=path_resolver,
+    )
+    _, catalog = _load_hash_bound_ref(
+        catalog_ref,
+        "model_input_binding.sealed_input_catalog_ref",
+        expected_schema="xinao.worker_sealed_input_catalog.v2",
+        path_resolver=path_resolver,
+    )
+    if catalog.get("package_id") != package.get("package_id"):
+        raise DispatchEconomicsError("sealed-input catalog package identity drifted")
+    if set(catalog) != {
+        "schema_version",
+        "package_id",
+        "container_root",
+        "mount_scope",
+        "external_input_admission",
+        "entries",
+        "authority",
+        "completion_claim_allowed",
+    }:
+        raise DispatchEconomicsError("sealed-input catalog fields drifted")
+    if (
+        catalog.get("container_root") != "/sealed-inputs"
+        or catalog.get("mount_scope") != "catalog_and_required_entries_only"
+        or catalog.get("external_input_admission")
+        != {
+            "status": "owner_reviewed_redacted",
+            "scope": "all_package_sources",
+            "reviewer_role": "codex_owner",
+        }
+        or catalog.get("authority") is not False
+        or catalog.get("completion_claim_allowed") is not False
+    ):
+        raise DispatchEconomicsError("sealed-input catalog contract drifted")
+
+    package_inputs = _sequence(package.get("input_refs"), "package.input_refs")
+    entries = _sequence(catalog.get("entries"), "sealed_input_catalog.entries")
+    if len(entries) != len(package_inputs) or not entries:
+        raise DispatchEconomicsError("sealed-input catalog cardinality drifted")
+    observed_container_paths: set[str] = set()
+    for index, (raw_input, raw_entry) in enumerate(zip(package_inputs, entries, strict=True)):
+        input_ref = _validate_path_ref(
+            _mapping(raw_input, f"package.input_refs[{index}]"),
+            f"package.input_refs[{index}]",
+            path_resolver=path_resolver,
+        )
+        _, input_path = _physical_path(
+            input_ref["path"],
+            f"package.input_refs[{index}].path",
+            path_resolver,
+        )
+        entry = _mapping(raw_entry, f"sealed_input_catalog.entries[{index}]")
+        container_path = _text(entry.get("path"), f"sealed_input_catalog.entries[{index}].path")
+        parts = container_path.split("/")
+        if (
+            set(entry) != {"slot", "path", "sha256", "bytes", "required", "read_strategy"}
+            or entry.get("slot") != index
+            or not container_path.startswith("/sealed-inputs/")
+            or any(part in {"", ".", ".."} for part in parts[2:])
+            or container_path in observed_container_paths
+            or entry.get("sha256") != input_ref["sha256"]
+            or entry.get("bytes") != input_path.stat().st_size
+            or entry.get("required") is not True
+            or entry.get("read_strategy") != "read_file_required_selected_content"
+        ):
+            raise DispatchEconomicsError(f"sealed-input catalog entry drifted: index={index}")
+        observed_container_paths.add(container_path)
+
+    package_prompt_ref = _validate_path_ref(
+        package.get("prompt_ref"),
+        "package.prompt_ref",
+        path_resolver=path_resolver,
+    )
+    _, package_prompt_path = _physical_path(
+        package_prompt_ref["path"],
+        "package.prompt_ref.path",
+        path_resolver,
+    )
+    try:
+        prompt_text = package_prompt_path.read_bytes().decode("utf-8-sig")
+    except (OSError, UnicodeDecodeError) as exc:
+        raise DispatchEconomicsError(f"package prompt is not valid UTF-8: {exc}") from exc
+    prompt_binding = (
+        "# Sealed package input binding\n\n"
+        "catalog=/sealed-inputs/catalog.json\n"
+        f"catalog_sha256={catalog_ref['sha256']}\n"
+        f"required_entry_count={len(entries)}\n"
+        "Read the catalog first. In a later model turn, call read_file at least once for every "
+        "required entry before forming findings. The catalog is an index, not the file content; "
+        "do not substitute live paths or treat a listed hash as consumption.\n"
+    )
+    expected_bytes = (prompt_text.rstrip() + "\n\n---\n\n" + prompt_binding).encode("utf-8")
+    if sealed_prompt_path.read_bytes() != expected_bytes:
+        raise DispatchEconomicsError(
+            "sealed package prompt is not derived from the package prompt and catalog"
+        )
+    observed_sha = hashlib.sha256(expected_bytes).hexdigest()
+    if sealed_prompt_ref["sha256"] != observed_sha:
+        raise DispatchEconomicsError("sealed package prompt hash drifted")
+    return observed_sha
+
+
+def _binding_ref(
+    binding: Mapping[str, object],
+    field: str,
+    *,
+    path_resolver: PathResolver | None,
+) -> dict[str, str]:
+    return _validate_path_ref(
+        _mapping(binding.get(field), f"model_input_binding.{field}"),
+        f"model_input_binding.{field}",
+        path_resolver=path_resolver,
+    )
+
+
+def _validate_leg_a_model_input_binding(
+    *,
+    package: Mapping[str, object],
+    manifest_ref: Mapping[str, object],
+    envelope: Mapping[str, object],
+    logical_operation_id: str,
+    contract: Mapping[str, object],
+    contract_ref: Mapping[str, object],
+    attempt: Mapping[str, object],
+    attempt_ref: Mapping[str, object],
+    model_input_binding_ref: Mapping[str, object],
+    path_resolver: PathResolver | None,
+) -> tuple[str, dict[str, str], set[str]]:
+    """Validate P0 -> P1 -> P2 -> consumed P3 without polluting provider outputs."""
+
+    binding_ref = _validate_path_ref(
+        model_input_binding_ref,
+        "model_input_binding_ref",
+        path_resolver=path_resolver,
+    )
+    _, binding = _load_hash_bound_ref(
+        binding_ref,
+        "model_input_binding_ref",
+        expected_schema="xinao.worker_model_input_binding.v1",
+        path_resolver=path_resolver,
+    )
+    expected_fields = {
+        "schema_version",
+        "package_id",
+        "work_key",
+        "logical_operation_id",
+        "dispatch_id",
+        "pool_id",
+        "package_prompt_ref",
+        "sealed_package_prompt_ref",
+        "sealed_input_catalog_ref",
+        "common_prepare_receipt_ref",
+        "common_effective_prompt_ref",
+        "common_contract_ref",
+        "common_attempt_ref",
+        "prepared_common_contract_ref",
+        "logical_contract_sha256",
+        "dispatch_meta_ref",
+        "pool_summary_ref",
+        "pool_lane_prompt_ref",
+        "authority",
+        "completion_claim_allowed",
+    }
+    if (
+        set(binding) != expected_fields
+        or binding.get("package_id") != package.get("package_id")
+        or binding.get("work_key") != package.get("work_key")
+        or binding.get("logical_operation_id") != logical_operation_id
+        or not str(binding.get("dispatch_id") or "").strip()
+        or not str(binding.get("pool_id") or "").strip()
+        or binding.get("authority") is not False
+        or binding.get("completion_claim_allowed") is not False
+    ):
+        raise DispatchEconomicsError("model-input binding identity drifted")
+
+    package_prompt_ref = _binding_ref(binding, "package_prompt_ref", path_resolver=path_resolver)
+    expected_package_prompt_ref = _validate_path_ref(
+        package.get("prompt_ref"),
+        "package.prompt_ref",
+        path_resolver=path_resolver,
+    )
+    _, bound_package_prompt_path = _physical_path(
+        package_prompt_ref["path"], "model_input_binding.package_prompt_ref.path", path_resolver
+    )
+    _, expected_package_prompt_path = _physical_path(
+        expected_package_prompt_ref["path"], "package.prompt_ref.path", path_resolver
+    )
+    if package_prompt_ref["sha256"] != expected_package_prompt_ref[
+        "sha256"
+    ] or not _same_physical_path(bound_package_prompt_path, expected_package_prompt_path):
+        raise DispatchEconomicsError("model-input binding package prompt drifted")
+    sealed_prompt_ref = _binding_ref(
+        binding, "sealed_package_prompt_ref", path_resolver=path_resolver
+    )
+    catalog_ref = _binding_ref(binding, "sealed_input_catalog_ref", path_resolver=path_resolver)
+    sealed_prompt_sha = _validate_leg_a_sealed_package_prompt(
+        package=package,
+        sealed_package_prompt_ref=sealed_prompt_ref,
+        sealed_input_catalog_ref=catalog_ref,
+        path_resolver=path_resolver,
+    )
+
+    bound_contract_ref = _binding_ref(binding, "common_contract_ref", path_resolver=path_resolver)
+    expected_contract_ref = _validate_path_ref(
+        contract_ref,
+        "common_contract_ref",
+        path_resolver=path_resolver,
+    )
+    _, bound_contract_path = _physical_path(
+        bound_contract_ref["path"],
+        "model_input_binding.common_contract_ref.path",
+        path_resolver,
+    )
+    _, expected_contract_path = _physical_path(
+        expected_contract_ref["path"],
+        "common_contract_ref.path",
+        path_resolver,
+    )
+    if bound_contract_ref["sha256"] != expected_contract_ref["sha256"] or not _same_physical_path(
+        bound_contract_path, expected_contract_path
+    ):
+        raise DispatchEconomicsError("model-input binding common contract drifted")
+    bound_attempt_ref = _binding_ref(binding, "common_attempt_ref", path_resolver=path_resolver)
+    expected_attempt_ref = _validate_path_ref(
+        attempt_ref,
+        "common_attempt_ref",
+        path_resolver=path_resolver,
+    )
+    _, bound_attempt_path = _physical_path(
+        bound_attempt_ref["path"],
+        "model_input_binding.common_attempt_ref.path",
+        path_resolver,
+    )
+    _, expected_attempt_path = _physical_path(
+        expected_attempt_ref["path"],
+        "common_attempt_ref.path",
+        path_resolver,
+    )
+    if bound_attempt_ref["sha256"] != expected_attempt_ref["sha256"] or not _same_physical_path(
+        bound_attempt_path, expected_attempt_path
+    ):
+        raise DispatchEconomicsError("model-input binding common attempt drifted")
+    prepared_contract_ref = _binding_ref(
+        binding, "prepared_common_contract_ref", path_resolver=path_resolver
+    )
+    if prepared_contract_ref["sha256"] != bound_contract_ref["sha256"]:
+        raise DispatchEconomicsError("prepared and lane common contract bytes differ")
+    expected_contract_digest = logical_contract_sha256(dict(contract))
+    bound_contract_digest = _sha(
+        binding.get("logical_contract_sha256"),
+        "model_input_binding.logical_contract_sha256",
+    )
+    if bound_contract_digest != expected_contract_digest:
+        raise DispatchEconomicsError("model-input binding logical contract digest drifted")
+    prepare_ref = _binding_ref(binding, "common_prepare_receipt_ref", path_resolver=path_resolver)
+    prepare_path, prepare = _load_hash_bound_ref(
+        prepare_ref,
+        "model_input_binding.common_prepare_receipt_ref",
+        expected_schema="xinao.direct_worker_pool.contract_prepare_receipt.v1",
+        path_resolver=path_resolver,
+    )
+    _, prepared_contract_path = _physical_path(
+        prepared_contract_ref.get("path"),
+        "prepared_common_contract_ref.path",
+        path_resolver,
+    )
+    if not _same_physical_path(
+        prepare_path,
+        prepared_contract_path.with_name("contract_prepare_receipt.json"),
+    ):
+        raise DispatchEconomicsError("common prepare receipt is not beside its contract")
+
+    common_prompt_ref = _binding_ref(
+        binding, "common_effective_prompt_ref", path_resolver=path_resolver
+    )
+    _, common_prompt_path = _physical_path(
+        common_prompt_ref["path"],
+        "model_input_binding.common_effective_prompt_ref.path",
+        path_resolver,
+    )
+    common_prompt_bytes = common_prompt_path.read_bytes()
+    context_ref = _validate_path_ref(
+        package.get("context_manifest_ref"),
+        "package.context_manifest_ref",
+        path_resolver=path_resolver,
+    )
+    rules_ref = _validate_path_ref(
+        package.get("rules_ref"), "package.rules_ref", path_resolver=path_resolver
+    )
+    selection = _mapping(contract.get("selection"), "contract.selection")
+    if (
+        prepare.get("authority") is not False
+        or prepare.get("completion_claim_allowed") is not False
+        or prepare.get("context_binding_mode") != "validated_context_slice_manifest"
+        or prepare.get("context_application_status") != "effective_prompt_artifact_written"
+        or prepare.get("model_input_effect_verified") is not False
+        or prepare.get("original_prompt_sha256") != sealed_prompt_sha
+        or prepare.get("prompt_sha256") != sealed_prompt_sha
+        or prepare.get("effective_prompt_sha256") != common_prompt_ref["sha256"]
+        or prepare.get("effective_prompt_bytes") != len(common_prompt_bytes)
+        or prepare.get("logical_contract_sha256") != bound_contract_digest
+        or prepare.get("subject_manifest_sha256") != manifest_ref["sha256"]
+        or prepare.get("context_manifest_sha256") != context_ref["sha256"]
+        or prepare.get("rules_sha256") != rules_ref["sha256"]
+        or prepare.get("selection_decision_sha256")
+        != _mapping(envelope.get("selection"), "envelope.selection").get("decision_sha256")
+        or prepare.get("output_contract_sha256") != contract.get("output_contract_sha256")
+        or prepare.get("capability_binding_sha256") != selection.get("capability_binding_sha256")
+    ):
+        raise DispatchEconomicsError("common prepare receipt prompt lineage drifted")
+    for observed, expected, label in (
+        (prepare.get("prompt_file"), sealed_prompt_ref["path"], "prompt"),
+        (prepare.get("effective_prompt_file"), common_prompt_ref["path"], "effective prompt"),
+        (prepare.get("context_manifest_file"), context_ref["path"], "context manifest"),
+        (prepare.get("rules_file"), rules_ref["path"], "rules"),
+    ):
+        _, observed_path = _physical_path(observed, f"prepare.{label}_file", path_resolver)
+        _, expected_path = _physical_path(expected, f"expected.{label}_file", path_resolver)
+        if not _same_physical_path(observed_path, expected_path):
+            raise DispatchEconomicsError(f"common prepare receipt {label} path drifted")
+
+    contract_input_sha = _sha(contract.get("input_sha256"), "contract.input_sha256")
+    if common_prompt_ref["sha256"] != contract_input_sha:
+        raise DispatchEconomicsError("common effective prompt does not bind contract input")
+
+    dispatch_meta_ref = _binding_ref(binding, "dispatch_meta_ref", path_resolver=path_resolver)
+    _, dispatch_meta = _load_hash_bound_ref(
+        dispatch_meta_ref,
+        "model_input_binding.dispatch_meta_ref",
+        expected_schema="xinao.codex_dispatch_grok_worker_pool.v1",
+        path_resolver=path_resolver,
+    )
+    pool_summary_ref = _binding_ref(binding, "pool_summary_ref", path_resolver=path_resolver)
+    _, pool_summary = _load_hash_bound_ref(
+        pool_summary_ref,
+        "model_input_binding.pool_summary_ref",
+        expected_schema="xinao.grok_worker_pool.v2",
+        path_resolver=path_resolver,
+    )
+    lane_prompt_ref = _binding_ref(binding, "pool_lane_prompt_ref", path_resolver=path_resolver)
+    _, lane_prompt_path = _physical_path(
+        lane_prompt_ref["path"],
+        "model_input_binding.pool_lane_prompt_ref.path",
+        path_resolver,
+    )
+    if not lane_prompt_path.read_bytes().endswith(common_prompt_bytes):
+        raise DispatchEconomicsError("pool lane prompt does not consume the common prompt")
+
+    def _same_bound_path(observed: object, expected: str, label: str) -> bool:
+        _, left = _physical_path(observed, f"dispatch_meta.{label}", path_resolver)
+        _, right = _physical_path(expected, f"expected.{label}", path_resolver)
+        return _same_physical_path(left, right)
+
+    if (
+        dispatch_meta.get("sentinel") != "SENTINEL:CODEX_DISPATCH_GROK_WORKER_POOL"
+        or dispatch_meta.get("dispatch_id") != binding.get("dispatch_id")
+        or dispatch_meta.get("pool_id") != binding.get("pool_id")
+        or dispatch_meta.get("status") not in {"accepted", "rejected"}
+        or dispatch_meta.get("common_model_input_effect_verified") is not True
+        or dispatch_meta.get("common_pool_lane_prompt_effect_verified") is not True
+        or dispatch_meta.get("common_context_effect_status")
+        != "model_attempt_consumed_lane_prompt_with_verified_effective_suffix"
+        or dispatch_meta.get("completion_claim_allowed") is not False
+        or dispatch_meta.get("common_effective_prompt_sha256") != common_prompt_ref["sha256"]
+        or dispatch_meta.get("common_effective_prompt_bytes") != len(common_prompt_bytes)
+        or dispatch_meta.get("common_context_manifest_sha256") != context_ref["sha256"]
+        or dispatch_meta.get("common_rules_sha256") != rules_ref["sha256"]
+        or dispatch_meta.get("pool_summary_sha256") != pool_summary_ref["sha256"]
+        or not _same_bound_path(
+            dispatch_meta.get("common_contract_path"),
+            prepared_contract_ref["path"],
+            "contract_path",
+        )
+        or not _same_bound_path(
+            dispatch_meta.get("common_effective_prompt_file"),
+            common_prompt_ref["path"],
+            "common_effective_prompt_file",
+        )
+        or not _same_bound_path(
+            dispatch_meta.get("common_pool_lane_prompt_file"),
+            lane_prompt_ref["path"],
+            "pool_lane_prompt_file",
+        )
+        or not _same_bound_path(
+            dispatch_meta.get("pool_summary_path"),
+            pool_summary_ref["path"],
+            "pool_summary_path",
+        )
+    ):
+        raise DispatchEconomicsError("dispatch metadata does not prove model-input effect")
+
+    rows = pool_summary.get("results")
+    usage = _mapping(pool_summary.get("usage"), "pool_summary.usage")
+    if (
+        pool_summary.get("pool_id") != binding.get("pool_id")
+        or pool_summary.get("n") != 1
+        or pool_summary.get("model") != selection.get("model_id")
+        or pool_summary.get("selection_decision_sha256")
+        != _mapping(envelope.get("selection"), "envelope.selection").get("decision_sha256")
+        or pool_summary.get("usage_accounting_complete") is not True
+        or _int_at_least(usage.get("attempt_count"), "pool usage attempt_count", 1) < 1
+        or _int_at_least(usage.get("input_tokens"), "pool usage input_tokens", 1) < 1
+        or not isinstance(rows, list)
+        or len(rows) != 1
+        or not isinstance(rows[0], Mapping)
+    ):
+        raise DispatchEconomicsError("pool summary does not prove one model attempt")
+    row = _mapping(rows[0], "pool_summary.results[0]")
+    lineage = _mapping(attempt.get("lineage"), "common attempt lineage")
+    observed = _mapping(attempt.get("observed"), "common attempt observed")
+    attempt_provider_ref = _validate_path_ref(
+        {
+            "path": attempt.get("provider_evidence_ref"),
+            "sha256": attempt.get("provider_evidence_sha256"),
+        },
+        "common_attempt.provider_evidence_ref",
+        path_resolver=path_resolver,
+    )
+    _, attempt_provider_path = _physical_path(
+        attempt_provider_ref["path"],
+        "common_attempt.provider_evidence_ref.path",
+        path_resolver,
+    )
+    _, pool_provider_path = _physical_path(
+        row.get("meta_path"),
+        "pool_summary.results[0].meta_path",
+        path_resolver,
+    )
+    if (
+        lineage.get("workflow_id") != binding.get("pool_id")
+        or row.get("run_id") != observed.get("executor_id")
+        or not _same_physical_path(attempt_provider_path, pool_provider_path)
+    ):
+        raise DispatchEconomicsError(
+            "pool summary does not bind the common attempt provider evidence"
+        )
+    preflight = _mapping(row.get("common_contract_preflight"), "lane preflight")
+    if (
+        preflight.get("validated") is not True
+        or preflight.get("logical_contract_sha256") != bound_contract_digest
+        or preflight.get("subject_manifest_sha256") != manifest_ref["sha256"]
+        or preflight.get("input_sha256") != contract_input_sha
+        or preflight.get("rules_sha256") != rules_ref["sha256"]
+        or preflight.get("output_contract_sha256") != contract.get("output_contract_sha256")
+        or preflight.get("capability_binding_sha256") != selection.get("capability_binding_sha256")
+    ):
+        raise DispatchEconomicsError("pool lane preflight prompt lineage drifted")
+
+    control_refs = {
+        binding_ref["sha256"],
+        package_prompt_ref["sha256"],
+        sealed_prompt_ref["sha256"],
+        catalog_ref["sha256"],
+        prepare_ref["sha256"],
+        common_prompt_ref["sha256"],
+        bound_contract_ref["sha256"],
+        prepared_contract_ref["sha256"],
+        bound_contract_digest,
+        dispatch_meta_ref["sha256"],
+        pool_summary_ref["sha256"],
+        lane_prompt_ref["sha256"],
+    }
+    return contract_input_sha, binding_ref, control_refs
+
+
 def build_worker_package_identity(
     *,
     package_id: str,
@@ -3227,6 +3714,7 @@ def build_dispatch_outcome_event(
     role: str = "",
     common_attempt_ref: Mapping[str, object] | None = None,
     common_contract_ref: Mapping[str, object] | None = None,
+    model_input_binding_ref: Mapping[str, object] | None = None,
     prior_accepted_ancestor_binding: Mapping[str, object] | None = None,
     provider_event_ref: Mapping[str, object] | None = None,
     owner_verdict_event_ref: Mapping[str, object] | None = None,
@@ -3440,6 +3928,40 @@ def build_dispatch_outcome_event(
             "transport_id": provider_transport_id,
             "capability_binding_sha256": provider_capability_binding_sha256,
         }
+        package_prompt_sha256 = str(package_row["prompt_ref"]["sha256"])
+        contract_input_sha256 = _sha(contract.get("input_sha256"), "contract.input_sha256")
+        expected_provider_input_sha256 = package_prompt_sha256
+        validated_model_input_binding_ref: dict[str, str] | None = None
+        model_input_control_shas: set[str] = set()
+        if contract_input_sha256 != package_prompt_sha256:
+            if selected_leg != "A":
+                raise DispatchEconomicsError(
+                    "non-leg-A common contract cannot replace the sealed package prompt"
+                )
+            if model_input_binding_ref is None:
+                raise DispatchEconomicsError(
+                    "leg-A transformed model input requires model_input_binding_ref"
+                )
+            (
+                expected_provider_input_sha256,
+                validated_model_input_binding_ref,
+                model_input_control_shas,
+            ) = _validate_leg_a_model_input_binding(
+                package=package_row,
+                manifest_ref=manifest_ref,
+                envelope=envelope,
+                logical_operation_id=operation,
+                contract=contract,
+                contract_ref=contract_ref,
+                attempt=attempt,
+                attempt_ref=attempt_ref,
+                model_input_binding_ref=model_input_binding_ref,
+                path_resolver=path_resolver,
+            )
+        elif model_input_binding_ref is not None:
+            raise DispatchEconomicsError(
+                "untransformed package prompt cannot carry model_input_binding_ref"
+            )
         if validated_ancestor is not None and (
             operation != str(validated_ancestor["prior_action_binding"]["logical_operation_id"])
             or provider_selection != dict(validated_ancestor["prior_action_binding"]["selection"])
@@ -3456,7 +3978,7 @@ def build_dispatch_outcome_event(
             contract.get("logical_operation_id") != operation
             or contract.get("work_key") != work
             or contract.get("task_contract_ref") != expected_task_ref
-            or contract.get("input_sha256") != package_row["prompt_ref"]["sha256"]
+            or contract.get("input_sha256") != expected_provider_input_sha256
             or contract.get("context_sha256") != contract_context_sha256
             or contract.get("rules_sha256") != package_row["rules_sha256"]
             or contract.get("output_contract_sha256") != provider_output_contract_sha256
@@ -3480,6 +4002,7 @@ def build_dispatch_outcome_event(
             attempt_ref["sha256"],
             manifest_ref["sha256"],
             envelope_ref["sha256"],
+            *model_input_control_shas,
         }
         if any(ref["sha256"] in forbidden_control_shas for ref in refs):
             raise DispatchEconomicsError(
@@ -3532,6 +4055,8 @@ def build_dispatch_outcome_event(
             "authority": False,
             "completion_claim_allowed": False,
         }
+        if validated_model_input_binding_ref is not None:
+            event["model_input_binding_ref"] = validated_model_input_binding_ref
         if validated_ancestor is not None:
             event.update(
                 {
@@ -3814,6 +4339,14 @@ def validate_dispatch_outcome_event(
             leg=str(payload.get("leg") or ""),
             common_attempt_ref=_mapping(payload.get("common_attempt_ref"), "common_attempt_ref"),
             common_contract_ref=_mapping(payload.get("common_contract_ref"), "common_contract_ref"),
+            model_input_binding_ref=(
+                _mapping(
+                    payload.get("model_input_binding_ref"),
+                    "model_input_binding_ref",
+                )
+                if payload.get("model_input_binding_ref") is not None
+                else None
+            ),
             prior_accepted_ancestor_binding=(
                 _mapping(
                     payload.get("prior_accepted_ancestor_binding"),
