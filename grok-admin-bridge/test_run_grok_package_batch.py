@@ -27,9 +27,7 @@ def _write_json(path: Path, payload: object) -> str:
     return hashlib.sha256(raw).hexdigest()
 
 
-def _write_sealed_catalog(
-    root: Path, package_id: str, sources: list[Path]
-) -> Path:
+def _write_sealed_catalog(root: Path, package_id: str, sources: list[Path]) -> Path:
     catalog = root / "catalog.json"
     _write_json(
         catalog,
@@ -422,7 +420,9 @@ def _prior_reuse_binding_fixture(
 
 
 def test_prior_reuse_binds_exact_accepted_ancestor_contract(tmp_path: Path) -> None:
-    package, validated, current_path, current_sha = _prior_reuse_binding_fixture(tmp_path)
+    package, validated, current_path, current_sha = _prior_reuse_binding_fixture(
+        tmp_path
+    )
     binding = subject._prior_reuse_contract_binding(
         package=package,
         validated_manifest=validated,
@@ -442,7 +442,9 @@ def test_prior_reuse_binds_exact_accepted_ancestor_contract(tmp_path: Path) -> N
 
 
 def test_prior_reuse_rejects_ancestor_bytes_drift_before_claim(tmp_path: Path) -> None:
-    package, validated, current_path, current_sha = _prior_reuse_binding_fixture(tmp_path)
+    package, validated, current_path, current_sha = _prior_reuse_binding_fixture(
+        tmp_path
+    )
     predecessor = validated["predecessor_manifest_ref"]
     assert isinstance(predecessor, dict)
     ancestor_path = Path(str(predecessor["path"]))
@@ -461,8 +463,12 @@ def test_prior_reuse_rejects_ancestor_bytes_drift_before_claim(tmp_path: Path) -
         )
 
 
-def test_prior_reuse_rejects_adapter_artifact_drift_before_claim(tmp_path: Path) -> None:
-    package, validated, current_path, current_sha = _prior_reuse_binding_fixture(tmp_path)
+def test_prior_reuse_rejects_adapter_artifact_drift_before_claim(
+    tmp_path: Path,
+) -> None:
+    package, validated, current_path, current_sha = _prior_reuse_binding_fixture(
+        tmp_path
+    )
     prior = package["prior_attempt_receipt_ref"]
     assert isinstance(prior, dict)
     adapter_path = Path(str(prior["path"])).parent / "common_adapter_receipt.json"
@@ -511,7 +517,9 @@ def test_sealed_model_input_catalog_exposes_files_without_inlining_contents(
     tmp_path: Path,
 ) -> None:
     prompt = tmp_path / "prompt.md"
-    prompt.write_text("Inspect the sealed input and report its finding.", encoding="utf-8")
+    prompt.write_text(
+        "Inspect the sealed input and report its finding.", encoding="utf-8"
+    )
     # Physical naming belongs to the builder; the consumer must bind the exact
     # catalog rather than re-derive this directory name.
     sealed_root = tmp_path / "sealed-inputs" / "packages" / "builder-owned-component"
@@ -533,7 +541,9 @@ def test_sealed_model_input_catalog_exposes_files_without_inlining_contents(
         task_run_dir=tmp_path / "task-run",
     )
 
-    effective = Path(binding["effective_prompt_ref"]["path"]).read_text(encoding="utf-8")
+    effective = Path(binding["effective_prompt_ref"]["path"]).read_text(
+        encoding="utf-8"
+    )
     assert "catalog=/sealed-inputs/catalog.json" in effective
     assert subject._sha(catalog_path) in effective
     assert "required_entry_count=1" in effective
@@ -541,7 +551,9 @@ def test_sealed_model_input_catalog_exposes_files_without_inlining_contents(
     assert source_sha not in effective
     assert "UNIQUE_SEALED_SENTINEL" not in effective
     assert str(source) not in effective
-    catalog = json.loads(Path(binding["catalog_ref"]["path"]).read_text(encoding="utf-8"))
+    catalog = json.loads(
+        Path(binding["catalog_ref"]["path"]).read_text(encoding="utf-8")
+    )
     assert catalog["authority"] is False
     assert catalog["completion_claim_allowed"] is False
     subject._revalidate_sealed_model_input(binding)
@@ -560,7 +572,9 @@ def test_sealed_model_input_rejects_mutable_live_paths(tmp_path: Path) -> None:
         "input_refs": [{"path": str(live), "sha256": subject._sha(live)}],
     }
     with pytest.raises(ValueError, match="canonical sealed-input package root"):
-        subject._prepare_sealed_model_input(package=package, task_run_dir=tmp_path / "run")
+        subject._prepare_sealed_model_input(
+            package=package, task_run_dir=tmp_path / "run"
+        )
 
 
 def test_sealed_model_input_rejects_unlisted_mount_content(tmp_path: Path) -> None:
@@ -750,12 +764,12 @@ def test_sealed_model_input_revalidation_rejects_later_unlisted_content(
 
 
 def test_sealed_package_component_is_collision_resistant() -> None:
-    assert subject._safe_package_component("review/a") != subject._safe_package_component(
-        "review_a"
-    )
-    assert subject._safe_package_component("x" * 120 + "a") != subject._safe_package_component(
-        "x" * 120 + "b"
-    )
+    assert subject._safe_package_component(
+        "review/a"
+    ) != subject._safe_package_component("review_a")
+    assert subject._safe_package_component(
+        "x" * 120 + "a"
+    ) != subject._safe_package_component("x" * 120 + "b")
 
 
 def _sealed_readback_fixture(
@@ -854,9 +868,7 @@ def test_sealed_input_readback_requires_catalog_before_later_exact_entry(
     ]
     meta, binding = _sealed_readback_fixture(tmp_path, events)
 
-    receipt_ref = subject._verify_sealed_input_tool_readback(
-        meta=meta, binding=binding
-    )
+    receipt_ref = subject._verify_sealed_input_tool_readback(meta=meta, binding=binding)
 
     receipt = json.loads(Path(receipt_ref["path"]).read_text(encoding="utf-8"))
     assert receipt["package_id"] == "pkg-1"
@@ -895,13 +907,9 @@ def test_sealed_input_readback_accepts_empty_content_only_for_zero_byte_input(
         },
         {"type": "tool_result", "tool_call_id": "source", "content": ""},
     ]
-    meta, binding = _sealed_readback_fixture(
-        tmp_path, events, source_content=""
-    )
+    meta, binding = _sealed_readback_fixture(tmp_path, events, source_content="")
 
-    receipt_ref = subject._verify_sealed_input_tool_readback(
-        meta=meta, binding=binding
-    )
+    receipt_ref = subject._verify_sealed_input_tool_readback(meta=meta, binding=binding)
 
     receipt = json.loads(Path(receipt_ref["path"]).read_text(encoding="utf-8"))
     assert receipt["all_required_entry_readbacks_observed"] is True
@@ -984,11 +992,17 @@ def test_sealed_input_readback_allows_a_new_provider_attempt_after_downstream_fa
             },
         ]
 
-    first_meta, binding = _sealed_readback_fixture(tmp_path / "first", events("attempt one"))
+    first_meta, binding = _sealed_readback_fixture(
+        tmp_path / "first", events("attempt one")
+    )
     first = subject._verify_sealed_input_tool_readback(meta=first_meta, binding=binding)
 
-    second_meta, _ = _sealed_readback_fixture(tmp_path / "second", events("attempt two"))
-    second = subject._verify_sealed_input_tool_readback(meta=second_meta, binding=binding)
+    second_meta, _ = _sealed_readback_fixture(
+        tmp_path / "second", events("attempt two")
+    )
+    second = subject._verify_sealed_input_tool_readback(
+        meta=second_meta, binding=binding
+    )
 
     assert first["path"] != second["path"]
     assert Path(first["path"]).is_file()
@@ -1129,7 +1143,9 @@ def test_sealed_input_readback_rejects_incomplete_or_wrong_tool_evidence(
         subject._verify_sealed_input_tool_readback(meta=meta, binding=binding)
 
 
-@pytest.mark.parametrize("failure_kind", ["result_before_call", "duplicate_call_id", "native_failed"])
+@pytest.mark.parametrize(
+    "failure_kind", ["result_before_call", "duplicate_call_id", "native_failed"]
+)
 def test_sealed_input_readback_rejects_unordered_duplicate_or_failed_native_evidence(
     tmp_path: Path, failure_kind: str
 ) -> None:
@@ -1335,7 +1351,11 @@ def test_nonzero_provider_exit_with_valid_common_receipt_is_terminal_recordable(
                     }
                 ],
             },
-            {"type": "tool_result", "tool_call_id": "call-catalog", "content": "catalog"},
+            {
+                "type": "tool_result",
+                "tool_call_id": "call-catalog",
+                "content": "catalog",
+            },
             {
                 "type": "assistant",
                 "content": "",
@@ -1349,7 +1369,11 @@ def test_nonzero_provider_exit_with_valid_common_receipt_is_terminal_recordable(
                     }
                 ],
             },
-            {"type": "tool_result", "tool_call_id": "call-source", "content": "sealed source"},
+            {
+                "type": "tool_result",
+                "tool_call_id": "call-source",
+                "content": "sealed source",
+            },
         ]
         chat_history.write_text(
             "\n".join(json.dumps(row) for row in chat_events) + "\n",
@@ -1552,10 +1576,7 @@ def test_production_guarded_spawn_is_windowless_and_keeps_stdout() -> None:
         [
             sys.executable,
             "-c",
-            (
-                "import ctypes; "
-                "print(int(ctypes.windll.kernel32.GetConsoleWindow()))"
-            ),
+            ("import ctypes; print(int(ctypes.windll.kernel32.GetConsoleWindow()))"),
         ],
         timeout_seconds=10,
         live_guard=lambda: None,
@@ -2131,7 +2152,9 @@ def test_rejected_terminal_is_appended_with_retry_specific_identity(
     observed: list[str] = []
     observed_kwargs: dict[str, object] = {}
 
-    def fake_run(command: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
+    def fake_run(
+        command: list[str], **kwargs: object
+    ) -> subprocess.CompletedProcess[str]:
         observed.extend(command)
         observed_kwargs.update(kwargs)
         return subprocess.CompletedProcess(command, 0, "", "")
@@ -2176,7 +2199,9 @@ def test_non_conversion_is_hash_bound_to_native_pool_usage(
     )
     pool_sha = subject._sha(pool_summary)
 
-    def fake_run(command: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
+    def fake_run(
+        command: list[str], **kwargs: object
+    ) -> subprocess.CompletedProcess[str]:
         observed.extend(command)
         observed_kwargs.update(kwargs)
         return subprocess.CompletedProcess(command, 0, "", "")
@@ -2207,7 +2232,9 @@ def test_non_conversion_is_hash_bound_to_native_pool_usage(
     assert observed_kwargs["creationflags"] == subject.WINDOWLESS_CREATIONFLAGS
 
 
-def test_non_conversion_does_not_claim_recorded_without_pool_summary(tmp_path: Path) -> None:
+def test_non_conversion_does_not_claim_recorded_without_pool_summary(
+    tmp_path: Path,
+) -> None:
     assert (
         subject._append_task_run_non_conversion(
             task_run_cli=tmp_path / "task_run.py",
@@ -2219,7 +2246,9 @@ def test_non_conversion_does_not_claim_recorded_without_pool_summary(tmp_path: P
     )
 
 
-def test_non_conversion_rehashes_and_rejects_drifted_pool_summary(tmp_path: Path) -> None:
+def test_non_conversion_rehashes_and_rejects_drifted_pool_summary(
+    tmp_path: Path,
+) -> None:
     pool_summary = tmp_path / "pool-summary.json"
     pool_summary.write_text('{"pool_id":"gwp-1","results":[]}\n', encoding="utf-8")
     with pytest.raises(RuntimeError, match="pool summary sha256 drifted"):
@@ -2279,3 +2308,6 @@ def test_dispatch_envelope_is_primary_powershell_parameter() -> None:
         assert '[Alias("PackageManifestPath")]' in text
         assert "[string]$DispatchEnvelopePath" in text
         assert "$PackageManifestPath" not in text
+        checkpoint_call = text[text.index("& $checkpointPreparer") :]
+        assert "-DispatchEnvelopePath $DispatchEnvelopePath" in checkpoint_call
+        assert "-TaskRunCli $TaskRunCli" in checkpoint_call

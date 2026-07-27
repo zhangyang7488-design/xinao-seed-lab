@@ -457,6 +457,8 @@ Assert-Contract ($packageLauncherSourceText -match 'InvalidateDispatchEpochReaso
 Assert-Contract ($packageLauncherSourceText -match 'CODEX_GROK_PACKAGE_EPOCH_EXPIRED_RESEAL_REQUIRED') "launcher_expired_package_requires_reseal"
 Assert-Contract ($packageLauncherSourceText -notmatch 'state\\Codex_Situation_Island\\state\\session_checkpoint[.]json') "launcher_has_no_shared_checkpoint_default"
 Assert-Contract ($checkpointPreparerText -match 'prepare_task_local_checkpoint') "checkpoint_preparer_reuses_selector_projection"
+Assert-Contract ($checkpointPreparerText -match 'prepare_worker_package_task_run') "checkpoint_preparer_registers_sealed_package_work_units"
+Assert-Contract ($checkpointPreparerText -match 'xinao[.]worker_package_task_run_preflight[.]v1') "checkpoint_preparer_validates_package_task_run_preflight"
 Assert-Contract ($checkpointPreparerText -match '-I\s+-B\s+-c') "checkpoint_preparer_uses_isolated_no_bytecode_python"
 $launcherCheckpointIndex = $packageLauncherSourceText.IndexOf('Prepare-CodexGrokTaskLocalCheckpoint.ps1')
 $launcherTaskRunCliIndex = $packageLauncherSourceText.IndexOf('CODEX_GROK_TASK_RUN_CLI_MISSING')
@@ -513,7 +515,9 @@ Assert-Contract ($routeClaimIndex -gt 0 -and $routeClaimIndex -lt $providerExecu
 Assert-Contract ($packageRunnerText -match 'validate_dispatch_route_claim\(') "package_runner_revalidates_route_claim_before_model"
 Assert-Contract ($packageEntryText -match '\[string\]\$CheckpointPath') "package_entry_accepts_task_local_checkpoint"
 Assert-Contract ($packageEntryText -match '"--checkpoint-path",\s*\$CheckpointPath') "package_entry_forwards_checkpoint"
+Assert-Contract ($packageEntryText -match '(?s)-DispatchEnvelopePath\s+\$DispatchEnvelopePath.+?-TaskRunCli\s+\$TaskRunCli.+?-CheckpointPath') "package_entry_prepares_work_units_from_envelope"
 Assert-Contract ($packageLauncherSourceText -match 'CheckpointPath\s*=\s*\$CheckpointPath') "package_launcher_forwards_checkpoint"
+Assert-Contract ($packageLauncherSourceText -match '(?s)-DispatchEnvelopePath\s+\$DispatchEnvelopePath.+?-TaskRunCli\s+\$TaskRunCli.+?-CheckpointPath') "package_launcher_prepares_work_units_from_envelope"
 Assert-Contract ($dispatchText -match 'pool_effective_ok') "dispatch_accepts_verified_reuse_without_fake_pool_all_ok"
 Assert-Contract ($dispatchText -match 'pool_reuse_skipped_execution') "dispatch_records_zero_model_reuse"
 Assert-Contract ($poolText -match 'Read-GrokWorkerSelectionReceipt') "pool_revalidates_selection_receipt"
