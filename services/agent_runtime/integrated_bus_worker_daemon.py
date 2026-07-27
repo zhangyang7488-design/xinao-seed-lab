@@ -10,6 +10,7 @@ import os
 import re
 import socket
 import subprocess
+import tempfile
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import AsyncExitStack
 from datetime import datetime, timezone
@@ -68,6 +69,28 @@ def _controlling_tty_available(path: str = "/dev/tty") -> bool:
         return False
     os.close(descriptor)
     return True
+
+
+def _grok_session_store_state(sessions_root: Path) -> dict[str, Any]:
+    """Prove that Grok's declared session store resolves and accepts a new directory."""
+
+    try:
+        resolved = sessions_root.resolve(strict=True)
+    except OSError as exc:
+        raise RuntimeError("Grok session store is unavailable") from exc
+    if not resolved.is_dir():
+        raise RuntimeError("Grok session store is unavailable")
+    try:
+        with tempfile.TemporaryDirectory(prefix=".xinao-readiness-", dir=resolved):
+            pass
+    except OSError as exc:
+        raise RuntimeError("Grok session store is not writable") from exc
+    return {
+        "ok": True,
+        "declared_root": str(sessions_root),
+        "resolved_root": str(resolved),
+        "writable": True,
+    }
 
 
 def _parse_proc_status(raw: str) -> dict[str, str]:
@@ -324,6 +347,14 @@ def check_readiness(
     grok_sandbox_tty_required = _docker_native_grok_enabled()
     grok_outer_privilege_required = grok_sandbox_tty_required
     grok_bwrap_bootstrap_required = grok_sandbox_tty_required
+    grok_session_store = None
+    if grok_sandbox_tty_required:
+        try:
+            grok_session_store = _grok_session_store_state(
+                Path(os.environ.get("GROK_HOME") or "/grok-home/.grok") / "sessions"
+            )
+        except RuntimeError as exc:
+            issues.append(f"grok_session_store_unavailable:{type(exc).__name__}")
     try:
         release = source_release_identity(
             runtime_root=runtime_root,
@@ -367,6 +398,7 @@ def check_readiness(
         "grok_outer_privilege": outer_privilege,
         "grok_bwrap_bootstrap_required": grok_bwrap_bootstrap_required,
         "grok_bwrap_bootstrap_available": (evidence.get("grok_bwrap_bootstrap_available") is True),
+        "grok_session_store": grok_session_store,
         "completion_claim_allowed": False,
     }
 
@@ -411,6 +443,11 @@ async def run_integrated_bus_worker_daemon(
         raise RuntimeError(
             "Docker-native Grok requires an allocated container TTY for its Landlock sandbox"
         )
+    grok_session_store = None
+    if grok_sandbox_tty_required:
+        grok_session_store = _grok_session_store_state(
+            Path(os.environ.get("GROK_HOME") or "/grok-home/.grok") / "sessions"
+        )
     grok_outer_privilege_required = grok_sandbox_tty_required
     grok_outer_privilege = _grok_outer_privilege_state()
     if grok_outer_privilege_required and grok_outer_privilege.get("ok") is not True:
@@ -447,6 +484,7 @@ async def run_integrated_bus_worker_daemon(
         "grok_outer_privilege": grok_outer_privilege,
         "grok_bwrap_bootstrap_required": grok_bwrap_bootstrap_required,
         "grok_bwrap_bootstrap_available": grok_bwrap_bootstrap_available,
+        "grok_session_store": grok_session_store,
         "task_queues": reg.get("task_queues", []),
         "workflows_registered": reg.get("workflows_registered", []),
         "workflow_roles": reg.get("workflow_roles", {}),

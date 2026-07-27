@@ -158,6 +158,32 @@ def test_startup_verifier_binds_exact_release_and_read_only_app_mounts(
         )
 
 
+def test_startup_verifier_requires_the_exact_writable_grok_session_mount(
+    tmp_path: Path,
+) -> None:
+    session_store = tmp_path / "state" / "tool_profile_sessions" / "grok-bg-workers"
+    session_store.mkdir(parents=True)
+    mount = {
+        "source": str(session_store),
+        "destination": subject.GROK_SESSION_STORE_CONTAINER_TARGET,
+        "rw": True,
+    }
+
+    verified = subject._verify_container_grok_session_mount(
+        {"mounts": [mount]},
+        runtime_root=tmp_path,
+    )
+    assert verified["ok"] is True
+    assert verified["source"] == str(session_store.resolve())
+
+    mount["rw"] = False
+    with pytest.raises(RuntimeError, match="not writable"):
+        subject._verify_container_grok_session_mount(
+            {"mounts": [mount]},
+            runtime_root=tmp_path,
+        )
+
+
 def test_startup_verifier_requires_exact_live_no_tools_outer_boundary() -> None:
     container_id = "a" * 64
     marker = {

@@ -115,6 +115,10 @@ RELEASE_APP_MOUNTS = {
     "/app/materials": "materials",
     "/app/policies": "policies",
 }
+GROK_SESSION_STORE_CONTAINER_TARGET = (
+    "/mnt/host/d/XINAO_RESEARCH_RUNTIME/state/tool_profile_sessions/grok-bg-workers"
+)
+GROK_SESSION_STORE_RUNTIME_RELATIVE = Path("state/tool_profile_sessions/grok-bg-workers")
 
 
 def _now() -> str:
@@ -269,6 +273,33 @@ def _verify_container_release_mounts(
         "release_dir": str(release_dir.resolve(strict=True)),
         "mount_count": len(verified),
         "mounts": verified,
+    }
+
+
+def _verify_container_grok_session_mount(
+    container: dict[str, Any],
+    *,
+    runtime_root: Path,
+) -> dict[str, Any]:
+    expected_source = (runtime_root / GROK_SESSION_STORE_RUNTIME_RELATIVE).resolve(strict=True)
+    matches = [
+        item
+        for item in container.get("mounts") or []
+        if str(item.get("destination") or "").rstrip("/") == GROK_SESSION_STORE_CONTAINER_TARGET
+    ]
+    if len(matches) != 1:
+        raise RuntimeError("worker is missing the exact Grok session-store mount")
+    mount = matches[0]
+    observed_source = Path(str(mount.get("source") or "")).resolve(strict=True)
+    if observed_source != expected_source:
+        raise RuntimeError("worker Grok session-store mount source drifted")
+    if mount.get("rw") is not True:
+        raise RuntimeError("worker Grok session-store mount is not writable")
+    return {
+        "ok": True,
+        "source": str(observed_source),
+        "destination": GROK_SESSION_STORE_CONTAINER_TARGET,
+        "writable": True,
     }
 
 
@@ -1039,6 +1070,10 @@ async def run(args: argparse.Namespace) -> dict[str, Any]:
         pre_container,
         release_dir=args.release_dir,
     )
+    grok_session_mount_before = _verify_container_grok_session_mount(
+        pre_container,
+        runtime_root=RUNTIME,
+    )
     container_created_at = datetime.fromisoformat(
         str(pre_container.get("created") or "").replace("Z", "+00:00")
     ).astimezone(UTC)
@@ -1110,6 +1145,10 @@ async def run(args: argparse.Namespace) -> dict[str, Any]:
     release_mounts_after = _verify_container_release_mounts(
         post_container,
         release_dir=args.release_dir,
+    )
+    grok_session_mount_after = _verify_container_grok_session_mount(
+        post_container,
+        runtime_root=RUNTIME,
     )
     daemon_release_after = _verify_daemon_source_release(
         daemon_after,
@@ -1288,6 +1327,8 @@ async def run(args: argparse.Namespace) -> dict[str, Any]:
             **source_release,
             "container_mounts_before": release_mounts_before,
             "container_mounts_after": release_mounts_after,
+            "grok_session_mount_before": grok_session_mount_before,
+            "grok_session_mount_after": grok_session_mount_after,
             "daemon_before": daemon_release_before,
             "daemon_after": daemon_release_after,
             "host_verification_after": source_release_after,

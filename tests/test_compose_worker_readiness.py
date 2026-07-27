@@ -329,6 +329,12 @@ def test_compose_healthcheck_invokes_generation_aware_readiness() -> None:
     assert service["security_opt"] == ["no-new-privileges:true", "seccomp=unconfined"]
     assert "XINAO_S_RUNTIME_RELEASE_COMMIT" in environment
     assert "XINAO_S_RUNTIME_RELEASE_MANIFEST_SHA256" in environment
+    assert (
+        "${XINAO_GROK_SESSION_STORE_HOST:-D:/XINAO_RESEARCH_RUNTIME/state/"
+        "tool_profile_sessions/grok-bg-workers}:"
+        "/mnt/host/d/XINAO_RESEARCH_RUNTIME/state/tool_profile_sessions/grok-bg-workers:rw"
+        in service["volumes"]
+    )
     healthcheck = compose["services"]["houtai-gongren"]["healthcheck"]["test"]
     assert healthcheck == [
         "CMD",
@@ -344,6 +350,24 @@ def test_compose_healthcheck_invokes_generation_aware_readiness() -> None:
     )
     assert "--runtime-root /evidence --check-readiness" in dockerfile
     assert "test -f /evidence/state/integrated_bus_worker_daemon/latest.json" not in dockerfile
+
+
+def test_grok_session_store_preflight_requires_a_writable_directory(tmp_path: Path) -> None:
+    missing = tmp_path / "missing-sessions"
+    with pytest.raises(RuntimeError, match="session store is unavailable"):
+        daemon._grok_session_store_state(missing)
+
+    sessions = tmp_path / "sessions"
+    sessions.mkdir()
+    state = daemon._grok_session_store_state(sessions)
+
+    assert state == {
+        "ok": True,
+        "declared_root": str(sessions),
+        "resolved_root": str(sessions.resolve()),
+        "writable": True,
+    }
+    assert list(sessions.iterdir()) == []
 
 
 def test_start_script_returns_nonzero_for_partial_state(tmp_path: Path) -> None:

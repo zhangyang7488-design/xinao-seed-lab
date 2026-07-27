@@ -399,6 +399,10 @@ services:
       - ${XINAO_EXTERNAL_MATURE_HOST:-E:/XINAO_EXTERNAL_MATURE/codex_20260627/official}:/external_mature/official:ro
       - ${XINAO_MAINLINE_HOST:-C:/Users/xx363/Desktop/主线}:/mainline:ro
       - ${XINAO_GROK_WORKER_HOME_HOST:-C:/Users/xx363/.grok-bg-workers}:/grok-home/.grok
+      # The shared Windows profile relocates sessions to this exact Linux path.
+      # Bind only that D-disk store so the existing link resolves in-container;
+      # do not expose a broader host drive.
+      - ${XINAO_GROK_SESSION_STORE_HOST:-D:/XINAO_RESEARCH_RUNTIME/state/tool_profile_sessions/grok-bg-workers}:/mnt/host/d/XINAO_RESEARCH_RUNTIME/state/tool_profile_sessions/grok-bg-workers:rw
     networks:
       - xinao_internal
     restart: unless-stopped

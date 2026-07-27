@@ -49,6 +49,26 @@ def test_restart_gate_requires_materialized_operation_and_session(
     assert gate["session_id"] == "session-1"
 
 
+def test_restart_canary_uses_the_explicit_session_store_mount(tmp_path: Path) -> None:
+    sessions = tmp_path / "sessions"
+    sessions.mkdir()
+    container = {
+        "mounts": [
+            {
+                "source": str(sessions),
+                "destination": canary.GROK_SESSION_STORE_CONTAINER_TARGET,
+                "rw": True,
+            }
+        ]
+    }
+
+    assert canary._grok_sessions_root(container) == sessions
+
+    container["mounts"][0]["rw"] = False
+    with pytest.raises(RuntimeError, match="must be writable"):
+        canary._grok_sessions_root(container)
+
+
 from temporalio.api.enums.v1 import EventType, TimeoutType
 from temporalio.api.history.v1 import HistoryEvent
 from temporalio.client import WorkflowExecutionStatus

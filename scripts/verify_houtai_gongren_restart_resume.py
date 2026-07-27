@@ -40,6 +40,9 @@ DEFAULT_RUN_DIR = (
 DEFAULT_LATEST = RUNTIME / "state" / "integrated_bus_worker_restart" / "latest.json"
 DAEMON_LATEST = RUNTIME / "state" / "integrated_bus_worker_daemon" / "latest.json"
 CONTAINER_NAME = "houtai-gongren"
+GROK_SESSION_STORE_CONTAINER_TARGET = (
+    "/mnt/host/d/XINAO_RESEARCH_RUNTIME/state/tool_profile_sessions/grok-bg-workers"
+)
 COMPOSER_MODEL = "grok-composer-2.5-fast"
 WORKFLOW_TYPE = "XinaoIntegratedBusWorkflow"
 WORKFLOW_QUEUE = "xinao-integrated-langgraph-plugin-queue"
@@ -393,9 +396,14 @@ def _blast_radius_gate(
 
 def _grok_sessions_root(container: dict[str, Any]) -> Path:
     for mount in container.get("mounts") or []:
-        if str(mount.get("destination") or "").rstrip("/") == "/grok-home/.grok":
-            return Path(str(mount.get("source") or "")) / "sessions"
-    raise RuntimeError("canonical Docker worker has no mounted Grok session root")
+        if str(mount.get("destination") or "").rstrip("/") == GROK_SESSION_STORE_CONTAINER_TARGET:
+            if mount.get("rw") is not True:
+                raise RuntimeError("canonical Docker worker session store must be writable")
+            sessions_root = Path(str(mount.get("source") or "")).resolve(strict=True)
+            if not sessions_root.is_dir():
+                raise RuntimeError("canonical Docker worker session store is not a directory")
+            return sessions_root
+    raise RuntimeError("canonical Docker worker has no explicit Grok session-store mount")
 
 
 def _operation_session_gate(workflow_id: str, sessions_root: Path) -> dict[str, Any]:
