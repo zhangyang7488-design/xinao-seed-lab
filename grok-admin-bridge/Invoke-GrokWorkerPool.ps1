@@ -35,6 +35,7 @@ param(
     [string]$CommonFrozenContextSha256 = "",
     [string]$CommonRulesFile = "",
     [string]$CommonRulesSha256 = "",
+    [string]$CommonSealedInputRoot = "",
     [string]$CommonCandidateOutputRoot = "",
     [string]$CommonPhase = "",
     [string[]]$CommonWriteDomains = @(),
@@ -128,6 +129,7 @@ $commonMode = (
     -not [string]::IsNullOrWhiteSpace($CommonFrozenContextSha256) -or
     -not [string]::IsNullOrWhiteSpace($CommonRulesFile) -or
     -not [string]::IsNullOrWhiteSpace($CommonRulesSha256) -or
+    -not [string]::IsNullOrWhiteSpace($CommonSealedInputRoot) -or
     -not [string]::IsNullOrWhiteSpace($CommonCandidateOutputRoot) -or
     -not [string]::IsNullOrWhiteSpace($CommonPhase) -or
     @($CommonWriteDomains).Count -gt 0 -or
@@ -197,6 +199,16 @@ if ($commonMode) {
     }
     $observedRulesFileSha256 = (Get-FileHash -LiteralPath $CommonRulesFile -Algorithm SHA256).Hash.ToLowerInvariant()
     Assert-CommonEqual $observedRulesFileSha256 $CommonRulesSha256 "rules_file.sha256"
+    if (-not [string]::IsNullOrWhiteSpace($CommonSealedInputRoot)) {
+        try { $CommonSealedInputRoot = [IO.Path]::GetFullPath($CommonSealedInputRoot) }
+        catch { throw "GROK_WORKER_POOL_COMMON_SEALED_INPUT_ROOT_INVALID: $CommonSealedInputRoot" }
+        if (-not (Test-Path -LiteralPath $CommonSealedInputRoot -PathType Container)) {
+            throw "GROK_WORKER_POOL_COMMON_SEALED_INPUT_ROOT_MISSING: $CommonSealedInputRoot"
+        }
+        if ($CommonSealedInputRoot -match '[,\r\n]') {
+            throw "GROK_WORKER_POOL_COMMON_SEALED_INPUT_ROOT_UNSAFE"
+        }
+    }
     if (-not [string]::IsNullOrWhiteSpace($CommonCandidateOutputRoot)) {
         try { $CommonCandidateOutputRoot = [IO.Path]::GetFullPath($CommonCandidateOutputRoot) }
         catch { throw "GROK_WORKER_POOL_COMMON_CANDIDATE_OUTPUT_ROOT_INVALID: $CommonCandidateOutputRoot" }
@@ -294,6 +306,8 @@ if ($commonMode) {
         context_sha256 = $contextSha256
         rules_sha256 = $rulesSha256
         rules_file = $CommonRulesFile
+        sealed_input_root = $CommonSealedInputRoot
+        sealed_input_read_only = -not [string]::IsNullOrWhiteSpace($CommonSealedInputRoot)
         candidate_output_root = $CommonCandidateOutputRoot
         effect_mode = $expectedEffectMode
         output_contract_sha256 = $outputContractSha256
@@ -434,7 +448,8 @@ $Prompt
         param(
             $WorkerScript, $PromptFile, $Cwd, $Model, $MaxTurns, $GrokHome,
             $EvidenceDir, $MinChars, $Markers, $RequireJson, $JsonSchemaPath, $TimeoutSec,
-            $RulesFile, $RulesSha256, $ExecutionBackend, $ContainerEffectMode
+            $RulesFile, $RulesSha256, $ExecutionBackend, $ContainerEffectMode,
+            $SealedInputRoot
         )
         $ErrorActionPreference = "Continue"
         $workerArgs = @{
@@ -451,6 +466,7 @@ $Prompt
             RulesSha256 = $RulesSha256
             ExecutionBackend = $ExecutionBackend
             ContainerEffectMode = $ContainerEffectMode
+            SealedInputRoot = $SealedInputRoot
             Quiet = $true
         }
         if ($RequireJson) { $workerArgs.RequireJsonObject = $true }
@@ -461,7 +477,7 @@ $Prompt
             evidence_dir = $EvidenceDir
         }
     }
-    [void]$ps.AddScript($script).AddArgument($workerScript).AddArgument($promptLane).AddArgument($Cwd).AddArgument($Model).AddArgument($MaxTurns).AddArgument($GrokHome).AddArgument($laneDir).AddArgument($MinResultChars).AddArgument(@($RequiredResultMarkers)).AddArgument([bool]$RequireJsonObject).AddArgument($JsonSchemaPath).AddArgument($TimeoutSec).AddArgument($CommonRulesFile).AddArgument($CommonRulesSha256).AddArgument($workerExecutionBackend).AddArgument($workerEffectMode)
+    [void]$ps.AddScript($script).AddArgument($workerScript).AddArgument($promptLane).AddArgument($Cwd).AddArgument($Model).AddArgument($MaxTurns).AddArgument($GrokHome).AddArgument($laneDir).AddArgument($MinResultChars).AddArgument(@($RequiredResultMarkers)).AddArgument([bool]$RequireJsonObject).AddArgument($JsonSchemaPath).AddArgument($TimeoutSec).AddArgument($CommonRulesFile).AddArgument($CommonRulesSha256).AddArgument($workerExecutionBackend).AddArgument($workerEffectMode).AddArgument($CommonSealedInputRoot)
     $handle = $ps.BeginInvoke()
     $jobs += [pscustomobject]@{
         lane   = $lane
@@ -670,6 +686,8 @@ if ($commonMode) {
     $summary["common_write_domains"] = @($CommonWriteDomains)
     $summary["common_rules_file"] = $CommonRulesFile
     $summary["common_rules_sha256"] = $CommonRulesSha256
+    $summary["common_sealed_input_root"] = $CommonSealedInputRoot
+    $summary["common_sealed_input_read_only"] = -not [string]::IsNullOrWhiteSpace($CommonSealedInputRoot)
     $summary["common_candidate_output_root"] = $CommonCandidateOutputRoot
     $summary["common_depends_on"] = @($CommonDependsOn)
     $summary["reuse_skipped_execution"] = $false

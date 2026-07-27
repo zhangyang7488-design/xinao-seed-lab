@@ -27,6 +27,40 @@ def _write_json(path: Path, payload: object) -> str:
     return hashlib.sha256(raw).hexdigest()
 
 
+def _write_sealed_catalog(
+    root: Path, package_id: str, sources: list[Path]
+) -> Path:
+    catalog = root / "catalog.json"
+    _write_json(
+        catalog,
+        {
+            "schema_version": "xinao.worker_sealed_input_catalog.v2",
+            "package_id": package_id,
+            "container_root": "/sealed-inputs",
+            "mount_scope": "catalog_and_required_entries_only",
+            "external_input_admission": {
+                "status": "owner_reviewed_redacted",
+                "scope": "all_package_sources",
+                "reviewer_role": "codex_owner",
+            },
+            "entries": [
+                {
+                    "slot": index,
+                    "path": "/sealed-inputs/" + source.relative_to(root).as_posix(),
+                    "sha256": subject._sha(source),
+                    "bytes": source.stat().st_size,
+                    "required": True,
+                    "read_strategy": "read_file_required_selected_content",
+                }
+                for index, source in enumerate(sources)
+            ],
+            "authority": False,
+            "completion_claim_allowed": False,
+        },
+    )
+    return catalog
+
+
 def _install_fake_selector_contract(
     monkeypatch: pytest.MonkeyPatch,
     *,
@@ -473,6 +507,703 @@ def test_direct_runner_rejects_b_temporal_and_fake_adapter_before_provider() -> 
         subject._require_direct_route_envelope(fake_adapter)
 
 
+def test_sealed_model_input_catalog_exposes_files_without_inlining_contents(
+    tmp_path: Path,
+) -> None:
+    prompt = tmp_path / "prompt.md"
+    prompt.write_text("Inspect the sealed input and report its finding.", encoding="utf-8")
+    # Physical naming belongs to the builder; the consumer must bind the exact
+    # catalog rather than re-derive this directory name.
+    sealed_root = tmp_path / "sealed-inputs" / "packages" / "builder-owned-component"
+    source = sealed_root / "ab" / "source.txt"
+    source.parent.mkdir(parents=True)
+    source.write_text("UNIQUE_SEALED_SENTINEL", encoding="utf-8")
+    source_sha = subject._sha(source)
+    catalog_path = _write_sealed_catalog(sealed_root, "pkg-1", [source])
+    package = {
+        "package_id": "pkg-1",
+        "package_identity_sha256": "1" * 64,
+        "input_sha256": source_sha,
+        "prompt_ref": {"path": str(prompt), "sha256": subject._sha(prompt)},
+        "input_refs": [{"path": str(source), "sha256": source_sha}],
+    }
+
+    binding = subject._prepare_sealed_model_input(
+        package=package,
+        task_run_dir=tmp_path / "task-run",
+    )
+
+    effective = Path(binding["effective_prompt_ref"]["path"]).read_text(encoding="utf-8")
+    assert "catalog=/sealed-inputs/catalog.json" in effective
+    assert subject._sha(catalog_path) in effective
+    assert "required_entry_count=1" in effective
+    assert "/sealed-inputs/ab/source.txt" not in effective
+    assert source_sha not in effective
+    assert "UNIQUE_SEALED_SENTINEL" not in effective
+    assert str(source) not in effective
+    catalog = json.loads(Path(binding["catalog_ref"]["path"]).read_text(encoding="utf-8"))
+    assert catalog["authority"] is False
+    assert catalog["completion_claim_allowed"] is False
+    subject._revalidate_sealed_model_input(binding)
+
+
+def test_sealed_model_input_rejects_mutable_live_paths(tmp_path: Path) -> None:
+    prompt = tmp_path / "prompt.md"
+    prompt.write_text("bounded task", encoding="utf-8")
+    live = tmp_path / "live-input.txt"
+    live.write_text("not snapshotted", encoding="utf-8")
+    package = {
+        "package_id": "pkg-1",
+        "package_identity_sha256": "1" * 64,
+        "input_sha256": subject._sha(live),
+        "prompt_ref": {"path": str(prompt), "sha256": subject._sha(prompt)},
+        "input_refs": [{"path": str(live), "sha256": subject._sha(live)}],
+    }
+    with pytest.raises(ValueError, match="canonical sealed-input package root"):
+        subject._prepare_sealed_model_input(package=package, task_run_dir=tmp_path / "run")
+
+
+def test_sealed_model_input_rejects_unlisted_mount_content(tmp_path: Path) -> None:
+    prompt = tmp_path / "prompt.md"
+    prompt.write_text("bounded task", encoding="utf-8")
+    sealed_root = tmp_path / "sealed-inputs" / "packages" / "builder-component"
+    source = sealed_root / "ab" / "source.txt"
+    source.parent.mkdir(parents=True)
+    source.write_text("sealed source", encoding="utf-8")
+    _write_sealed_catalog(sealed_root, "pkg-1", [source])
+    (sealed_root / "unlisted.txt").write_text("must not be exposed", encoding="utf-8")
+    package = {
+        "package_id": "pkg-1",
+        "package_identity_sha256": "1" * 64,
+        "input_sha256": subject._sha(source),
+        "prompt_ref": {"path": str(prompt), "sha256": subject._sha(prompt)},
+        "input_refs": [{"path": str(source), "sha256": subject._sha(source)}],
+    }
+
+    with pytest.raises(ValueError, match="exact catalog projection"):
+        subject._prepare_sealed_model_input(
+            package=package, task_run_dir=tmp_path / "run"
+        )
+
+
+def test_sealed_model_input_rejects_unlisted_empty_directory(tmp_path: Path) -> None:
+    prompt = tmp_path / "prompt.md"
+    prompt.write_text("bounded task", encoding="utf-8")
+    sealed_root = tmp_path / "sealed-inputs" / "packages" / "builder-component"
+    source = sealed_root / "ab" / "source.txt"
+    source.parent.mkdir(parents=True)
+    source.write_text("sealed source", encoding="utf-8")
+    _write_sealed_catalog(sealed_root, "pkg-1", [source])
+    (sealed_root / "unlisted-directory").mkdir()
+    package = {
+        "package_id": "pkg-1",
+        "package_identity_sha256": "1" * 64,
+        "input_sha256": subject._sha(source),
+        "prompt_ref": {"path": str(prompt), "sha256": subject._sha(prompt)},
+        "input_refs": [{"path": str(source), "sha256": subject._sha(source)}],
+    }
+
+    with pytest.raises(ValueError, match="exact catalog projection"):
+        subject._prepare_sealed_model_input(
+            package=package, task_run_dir=tmp_path / "run"
+        )
+
+
+def test_sealed_model_input_rejects_catalog_without_owner_admission(
+    tmp_path: Path,
+) -> None:
+    prompt = tmp_path / "prompt.md"
+    prompt.write_text("bounded task", encoding="utf-8")
+    sealed_root = tmp_path / "sealed-inputs" / "packages" / "builder-component"
+    source = sealed_root / "ab" / "source.txt"
+    source.parent.mkdir(parents=True)
+    source.write_text("sealed source", encoding="utf-8")
+    catalog_path = _write_sealed_catalog(sealed_root, "pkg-1", [source])
+    catalog = json.loads(catalog_path.read_text(encoding="utf-8"))
+    catalog.pop("external_input_admission")
+    _write_json(catalog_path, catalog)
+    package = {
+        "package_id": "pkg-1",
+        "package_identity_sha256": "1" * 64,
+        "input_sha256": subject._sha(source),
+        "prompt_ref": {"path": str(prompt), "sha256": subject._sha(prompt)},
+        "input_refs": [{"path": str(source), "sha256": subject._sha(source)}],
+    }
+
+    with pytest.raises(ValueError, match="does not exactly bind"):
+        subject._prepare_sealed_model_input(
+            package=package, task_run_dir=tmp_path / "run"
+        )
+
+
+@pytest.mark.parametrize(
+    "invalid_admission",
+    [
+        {
+            "status": "owner_reviewed_redacted",
+            "scope": "all_package_sources",
+            "reviewer_role": "worker",
+        },
+        {
+            "status": "owner_reviewed_redacted",
+            "scope": "selected_sources_only",
+            "reviewer_role": "codex_owner",
+        },
+        {
+            "status": "owner_reviewed_redacted",
+            "scope": "all_package_sources",
+            "reviewer_role": "codex_owner",
+            "extra": True,
+        },
+    ],
+)
+def test_sealed_model_input_rejects_nonexact_owner_admission(
+    tmp_path: Path, invalid_admission: dict[str, object]
+) -> None:
+    prompt = tmp_path / "prompt.md"
+    prompt.write_text("bounded task", encoding="utf-8")
+    sealed_root = tmp_path / "sealed-inputs" / "packages" / "builder-component"
+    source = sealed_root / "ab" / "source.txt"
+    source.parent.mkdir(parents=True)
+    source.write_text("sealed source", encoding="utf-8")
+    catalog_path = _write_sealed_catalog(sealed_root, "pkg-1", [source])
+    catalog = json.loads(catalog_path.read_text(encoding="utf-8"))
+    catalog["external_input_admission"] = invalid_admission
+    _write_json(catalog_path, catalog)
+    package = {
+        "package_id": "pkg-1",
+        "package_identity_sha256": "1" * 64,
+        "input_sha256": subject._sha(source),
+        "prompt_ref": {"path": str(prompt), "sha256": subject._sha(prompt)},
+        "input_refs": [{"path": str(source), "sha256": subject._sha(source)}],
+    }
+
+    with pytest.raises(ValueError, match="does not exactly bind"):
+        subject._prepare_sealed_model_input(
+            package=package, task_run_dir=tmp_path / "run"
+        )
+
+
+@pytest.mark.skipif(os.name != "nt", reason="Windows reparse-point contract")
+@pytest.mark.parametrize("link_kind", ["file", "directory"])
+def test_sealed_model_input_rejects_file_and_directory_reparse_points(
+    tmp_path: Path, link_kind: str
+) -> None:
+    prompt = tmp_path / "prompt.md"
+    prompt.write_text("bounded task", encoding="utf-8")
+    sealed_root = tmp_path / "sealed-inputs" / "packages" / "builder-component"
+    sealed_root.mkdir(parents=True)
+    target_root = tmp_path / "targets"
+    target_root.mkdir()
+    target = target_root / "source.txt"
+    target.write_text("sealed source", encoding="utf-8")
+    try:
+        if link_kind == "file":
+            source = sealed_root / "source.txt"
+            os.symlink(target, source, target_is_directory=False)
+        else:
+            linked_directory = sealed_root / "linked"
+            os.symlink(target_root, linked_directory, target_is_directory=True)
+            source = linked_directory / "source.txt"
+    except OSError as exc:
+        pytest.skip(f"reparse creation unavailable: {exc}")
+
+    _write_sealed_catalog(sealed_root, "pkg-1", [source])
+    package = {
+        "package_id": "pkg-1",
+        "package_identity_sha256": "1" * 64,
+        "input_sha256": subject._sha(source),
+        "prompt_ref": {"path": str(prompt), "sha256": subject._sha(prompt)},
+        "input_refs": [{"path": str(source), "sha256": subject._sha(source)}],
+    }
+
+    with pytest.raises(ValueError, match="reparse point"):
+        subject._prepare_sealed_model_input(
+            package=package, task_run_dir=tmp_path / "run"
+        )
+
+
+def test_sealed_model_input_revalidation_rejects_later_unlisted_content(
+    tmp_path: Path,
+) -> None:
+    prompt = tmp_path / "prompt.md"
+    prompt.write_text("bounded task", encoding="utf-8")
+    sealed_root = tmp_path / "sealed-inputs" / "packages" / "builder-component"
+    source = sealed_root / "ab" / "source.txt"
+    source.parent.mkdir(parents=True)
+    source.write_text("sealed source", encoding="utf-8")
+    _write_sealed_catalog(sealed_root, "pkg-1", [source])
+    package = {
+        "package_id": "pkg-1",
+        "package_identity_sha256": "1" * 64,
+        "input_sha256": subject._sha(source),
+        "prompt_ref": {"path": str(prompt), "sha256": subject._sha(prompt)},
+        "input_refs": [{"path": str(source), "sha256": subject._sha(source)}],
+    }
+    binding = subject._prepare_sealed_model_input(
+        package=package, task_run_dir=tmp_path / "run"
+    )
+    (sealed_root / "later.txt").write_text("late addition", encoding="utf-8")
+
+    with pytest.raises(ValueError, match="exact catalog projection"):
+        subject._revalidate_sealed_model_input(binding)
+
+
+def test_sealed_package_component_is_collision_resistant() -> None:
+    assert subject._safe_package_component("review/a") != subject._safe_package_component(
+        "review_a"
+    )
+    assert subject._safe_package_component("x" * 120 + "a") != subject._safe_package_component(
+        "x" * 120 + "b"
+    )
+
+
+def _sealed_readback_fixture(
+    tmp_path: Path,
+    events: list[dict[str, object]],
+    updates: list[dict[str, object]] | None = None,
+    *,
+    source_content: str = "sealed source",
+) -> tuple[dict[str, object], dict[str, object]]:
+    sealed_root = (
+        tmp_path
+        / "sealed-inputs"
+        / "packages"
+        / subject._safe_package_component("pkg-1")
+    )
+    source = sealed_root / "ab" / "source.txt"
+    source.parent.mkdir(parents=True)
+    source.write_text(source_content, encoding="utf-8")
+    catalog = _write_sealed_catalog(sealed_root, "pkg-1", [source])
+    artifact_root = tmp_path / "artifacts"
+    artifact_root.mkdir()
+    session_dir = tmp_path / "session"
+    session_dir.mkdir()
+    (session_dir / "chat_history.jsonl").write_text(
+        "\n".join(json.dumps(row) for row in events) + "\n",
+        encoding="utf-8",
+    )
+    if updates is None:
+        updates = []
+        for event in events:
+            if event.get("type") != "tool_result":
+                continue
+            call_id = str(event.get("tool_call_id") or "")
+            updates.append(
+                {
+                    "method": "session/update",
+                    "params": {
+                        "update": {
+                            "sessionUpdate": "tool_call_update",
+                            "toolCallId": call_id,
+                            "status": "completed",
+                            "rawOutput": {"type": "ReadFile"},
+                        }
+                    },
+                }
+            )
+    (session_dir / "updates.jsonl").write_text(
+        "\n".join(json.dumps(row) for row in updates) + "\n",
+        encoding="utf-8",
+    )
+    binding = {
+        "package_id": "pkg-1",
+        "artifact_root": artifact_root,
+        "catalog_ref": {"path": str(catalog), "sha256": subject._sha(catalog)},
+        "input_refs": [
+            {
+                "container_path": "/sealed-inputs/ab/source.txt",
+                "sha256": subject._sha(source),
+                "bytes": source.stat().st_size,
+            }
+        ],
+    }
+    return {"session_evidence_dir": str(session_dir)}, binding
+
+
+def test_sealed_input_readback_requires_catalog_before_later_exact_entry(
+    tmp_path: Path,
+) -> None:
+    events = [
+        {
+            "type": "assistant",
+            "tool_calls": [
+                {
+                    "id": "catalog",
+                    "name": "read_file",
+                    "arguments": json.dumps(
+                        {"target_file": "/sealed-inputs/catalog.json"}
+                    ),
+                }
+            ],
+        },
+        {"type": "tool_result", "tool_call_id": "catalog", "content": "catalog"},
+        {
+            "type": "assistant",
+            "tool_calls": [
+                {
+                    "id": "source",
+                    "name": "read_file",
+                    "arguments": json.dumps(
+                        {"target_file": "/sealed-inputs/ab/source.txt"}
+                    ),
+                }
+            ],
+        },
+        {"type": "tool_result", "tool_call_id": "source", "content": "sealed source"},
+    ]
+    meta, binding = _sealed_readback_fixture(tmp_path, events)
+
+    receipt_ref = subject._verify_sealed_input_tool_readback(
+        meta=meta, binding=binding
+    )
+
+    receipt = json.loads(Path(receipt_ref["path"]).read_text(encoding="utf-8"))
+    assert receipt["package_id"] == "pkg-1"
+    assert receipt["all_required_entry_readbacks_observed"] is True
+    assert receipt["required_paths"] == ["/sealed-inputs/ab/source.txt"]
+
+
+def test_sealed_input_readback_accepts_empty_content_only_for_zero_byte_input(
+    tmp_path: Path,
+) -> None:
+    events = [
+        {
+            "type": "assistant",
+            "tool_calls": [
+                {
+                    "id": "catalog",
+                    "name": "read_file",
+                    "arguments": json.dumps(
+                        {"target_file": "/sealed-inputs/catalog.json"}
+                    ),
+                }
+            ],
+        },
+        {"type": "tool_result", "tool_call_id": "catalog", "content": "catalog"},
+        {
+            "type": "assistant",
+            "tool_calls": [
+                {
+                    "id": "source",
+                    "name": "read_file",
+                    "arguments": json.dumps(
+                        {"target_file": "/sealed-inputs/ab/source.txt"}
+                    ),
+                }
+            ],
+        },
+        {"type": "tool_result", "tool_call_id": "source", "content": ""},
+    ]
+    meta, binding = _sealed_readback_fixture(
+        tmp_path, events, source_content=""
+    )
+
+    receipt_ref = subject._verify_sealed_input_tool_readback(
+        meta=meta, binding=binding
+    )
+
+    receipt = json.loads(Path(receipt_ref["path"]).read_text(encoding="utf-8"))
+    assert receipt["all_required_entry_readbacks_observed"] is True
+    assert receipt["readbacks"][0]["tool_result_sha256"] == [
+        hashlib.sha256(b"").hexdigest()
+    ]
+
+
+def test_sealed_input_readback_rejects_empty_result_for_nonempty_input(
+    tmp_path: Path,
+) -> None:
+    events = [
+        {
+            "type": "assistant",
+            "tool_calls": [
+                {
+                    "id": "catalog",
+                    "name": "read_file",
+                    "arguments": json.dumps(
+                        {"target_file": "/sealed-inputs/catalog.json"}
+                    ),
+                }
+            ],
+        },
+        {"type": "tool_result", "tool_call_id": "catalog", "content": "catalog"},
+        {
+            "type": "assistant",
+            "tool_calls": [
+                {
+                    "id": "source",
+                    "name": "read_file",
+                    "arguments": json.dumps(
+                        {"target_file": "/sealed-inputs/ab/source.txt"}
+                    ),
+                }
+            ],
+        },
+        {"type": "tool_result", "tool_call_id": "source", "content": ""},
+    ]
+    meta, binding = _sealed_readback_fixture(tmp_path, events)
+
+    with pytest.raises(ValueError, match="size-consistent tool_result"):
+        subject._verify_sealed_input_tool_readback(meta=meta, binding=binding)
+
+
+def test_sealed_input_readback_allows_a_new_provider_attempt_after_downstream_failure(
+    tmp_path: Path,
+) -> None:
+    def events(source_content: str) -> list[dict[str, object]]:
+        return [
+            {
+                "type": "assistant",
+                "tool_calls": [
+                    {
+                        "id": "catalog",
+                        "name": "read_file",
+                        "arguments": json.dumps(
+                            {"target_file": "/sealed-inputs/catalog.json"}
+                        ),
+                    }
+                ],
+            },
+            {"type": "tool_result", "tool_call_id": "catalog", "content": "catalog"},
+            {
+                "type": "assistant",
+                "tool_calls": [
+                    {
+                        "id": "source",
+                        "name": "read_file",
+                        "arguments": json.dumps(
+                            {"target_file": "/sealed-inputs/ab/source.txt"}
+                        ),
+                    }
+                ],
+            },
+            {
+                "type": "tool_result",
+                "tool_call_id": "source",
+                "content": source_content,
+            },
+        ]
+
+    first_meta, binding = _sealed_readback_fixture(tmp_path / "first", events("attempt one"))
+    first = subject._verify_sealed_input_tool_readback(meta=first_meta, binding=binding)
+
+    second_meta, _ = _sealed_readback_fixture(tmp_path / "second", events("attempt two"))
+    second = subject._verify_sealed_input_tool_readback(meta=second_meta, binding=binding)
+
+    assert first["path"] != second["path"]
+    assert Path(first["path"]).is_file()
+    assert Path(second["path"]).is_file()
+
+
+def test_hash_bound_object_uses_one_byte_read_for_parse_and_digest(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    target = tmp_path / "evidence.json"
+    original_raw = b'{"generation":1}\n'
+    target.write_bytes(original_raw)
+    original_read_bytes = Path.read_bytes
+    reads = 0
+
+    def drifting_read(path: Path) -> bytes:
+        nonlocal reads
+        raw = original_read_bytes(path)
+        if path.resolve() == target.resolve():
+            reads += 1
+            target.write_text('{"generation":2}\n', encoding="utf-8")
+        return raw
+
+    monkeypatch.setattr(Path, "read_bytes", drifting_read)
+    value, ref = subject._load_hash_bound_object(target, "test evidence")
+
+    assert reads == 1
+    assert value == {"generation": 1}
+    assert ref["sha256"] == hashlib.sha256(original_raw).hexdigest()
+
+
+@pytest.mark.parametrize(
+    ("events", "message"),
+    [
+        (
+            [
+                {
+                    "type": "assistant",
+                    "tool_calls": [
+                        {
+                            "id": "source",
+                            "name": "read_file",
+                            "arguments": json.dumps(
+                                {"target_file": "/sealed-inputs/ab/source.txt"}
+                            ),
+                        }
+                    ],
+                },
+                {
+                    "type": "tool_result",
+                    "tool_call_id": "source",
+                    "content": "sealed source",
+                },
+            ],
+            "catalog read_file",
+        ),
+        (
+            [
+                {
+                    "type": "assistant",
+                    "tool_calls": [
+                        {
+                            "id": "catalog",
+                            "name": "read_file",
+                            "arguments": json.dumps(
+                                {"target_file": "/sealed-inputs/catalog.json"}
+                            ),
+                        },
+                        {
+                            "id": "source",
+                            "name": "read_file",
+                            "arguments": json.dumps(
+                                {"target_file": "/sealed-inputs/ab/source.txt"}
+                            ),
+                        },
+                    ],
+                },
+                {
+                    "type": "tool_result",
+                    "tool_call_id": "catalog",
+                    "content": "catalog",
+                },
+                {
+                    "type": "tool_result",
+                    "tool_call_id": "source",
+                    "content": "sealed source",
+                },
+            ],
+            "later read_file",
+        ),
+        (
+            [
+                {
+                    "type": "assistant",
+                    "tool_calls": [
+                        {
+                            "id": "catalog",
+                            "name": "read_file",
+                            "arguments": json.dumps(
+                                {"target_file": "/sealed-inputs/catalog.json"}
+                            ),
+                        }
+                    ],
+                },
+                {
+                    "type": "tool_result",
+                    "tool_call_id": "catalog",
+                    "content": "catalog",
+                },
+                {
+                    "type": "assistant",
+                    "tool_calls": [
+                        {
+                            "id": "wrong",
+                            "name": "read_file",
+                            "arguments": json.dumps(
+                                {"target_file": "/sealed-inputs/ab/other.txt"}
+                            ),
+                        }
+                    ],
+                },
+                {
+                    "type": "tool_result",
+                    "tool_call_id": "wrong",
+                    "content": "wrong source",
+                },
+            ],
+            "/sealed-inputs/ab/source.txt",
+        ),
+    ],
+)
+def test_sealed_input_readback_rejects_incomplete_or_wrong_tool_evidence(
+    tmp_path: Path, events: list[dict[str, object]], message: str
+) -> None:
+    meta, binding = _sealed_readback_fixture(tmp_path, events)
+
+    with pytest.raises(ValueError, match=message):
+        subject._verify_sealed_input_tool_readback(meta=meta, binding=binding)
+
+
+@pytest.mark.parametrize("failure_kind", ["result_before_call", "duplicate_call_id", "native_failed"])
+def test_sealed_input_readback_rejects_unordered_duplicate_or_failed_native_evidence(
+    tmp_path: Path, failure_kind: str
+) -> None:
+    catalog_call = {
+        "type": "assistant",
+        "tool_calls": [
+            {
+                "id": "catalog",
+                "name": "read_file",
+                "arguments": json.dumps({"target_file": "/sealed-inputs/catalog.json"}),
+            }
+        ],
+    }
+    source_call = {
+        "type": "assistant",
+        "tool_calls": [
+            {
+                "id": "source",
+                "name": "read_file",
+                "arguments": json.dumps(
+                    {"target_file": "/sealed-inputs/ab/source.txt"}
+                ),
+            }
+        ],
+    }
+    events = [
+        catalog_call,
+        {"type": "tool_result", "tool_call_id": "catalog", "content": "catalog"},
+        source_call,
+        {"type": "tool_result", "tool_call_id": "source", "content": "sealed source"},
+    ]
+    updates = None
+    expected = "did not prove"
+    if failure_kind == "result_before_call":
+        events = [events[1], events[0], events[2], events[3]]
+    elif failure_kind == "duplicate_call_id":
+        duplicate_source = json.loads(json.dumps(source_call))
+        duplicate_source["tool_calls"][0]["id"] = "catalog"
+        events = [events[0], events[1], duplicate_source, events[3]]
+        expected = "repeats tool call id"
+    else:
+        updates = [
+            {
+                "method": "session/update",
+                "params": {
+                    "update": {
+                        "sessionUpdate": "tool_call_update",
+                        "toolCallId": "catalog",
+                        "status": "completed",
+                        "rawOutput": {"type": "ReadFile"},
+                    }
+                },
+            },
+            {
+                "method": "session/update",
+                "params": {
+                    "update": {
+                        "sessionUpdate": "tool_call_update",
+                        "toolCallId": "source",
+                        "status": "failed",
+                        "rawOutput": {
+                            "error": "permission_denied",
+                            "message": "non-empty error payload",
+                        },
+                    }
+                },
+            },
+        ]
+    meta, binding = _sealed_readback_fixture(tmp_path, events, updates)
+
+    with pytest.raises(ValueError, match=expected):
+        subject._verify_sealed_input_tool_readback(meta=meta, binding=binding)
+
+
 def test_nonzero_provider_exit_with_valid_common_receipt_is_terminal_recordable(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -488,6 +1219,17 @@ def test_nonzero_provider_exit_with_valid_common_receipt_is_terminal_recordable(
     rules = tmp_path / "rules.txt"
     rules.write_text("candidate-only rules", encoding="utf-8")
     rules_sha = subject._sha(rules)
+    sealed_root = (
+        tmp_path
+        / "sealed-inputs"
+        / "packages"
+        / subject._safe_package_component("pkg-1")
+    )
+    sealed_input = sealed_root / "ab" / "source.txt"
+    sealed_input.parent.mkdir(parents=True)
+    sealed_input.write_text("sealed source", encoding="utf-8")
+    sealed_input_sha = subject._sha(sealed_input)
+    _write_sealed_catalog(sealed_root, "pkg-1", [sealed_input])
     manifest = tmp_path / "worker-package-batch.json"
     envelope = tmp_path / "dispatch-envelope.json"
     selection = tmp_path / "selection.json"
@@ -503,7 +1245,9 @@ def test_nonzero_provider_exit_with_valid_common_receipt_is_terminal_recordable(
         "work_key": "wk-1",
         "parent_work_key": "parent-1",
         "package_identity_sha256": "1" * 64,
-        "prompt_ref": {"path": str(prompt)},
+        "input_sha256": sealed_input_sha,
+        "input_refs": [{"path": str(sealed_input), "sha256": sealed_input_sha}],
+        "prompt_ref": {"path": str(prompt), "sha256": subject._sha(prompt)},
         "context_manifest_ref": {"path": str(context)},
         "rules_ref": {"path": str(rules), "sha256": rules_sha},
         "rules_sha256": rules_sha,
@@ -547,6 +1291,15 @@ def test_nonzero_provider_exit_with_valid_common_receipt_is_terminal_recordable(
         )
         assert command[command.index("-CommonRulesFile") + 1] == str(rules.resolve())
         assert command[command.index("-CommonRulesSha256") + 1] == rules_sha
+        assert command[command.index("-CommonSealedInputRoot") + 1] == str(
+            sealed_root.resolve()
+        )
+        effective_prompt = Path(command[command.index("-PromptFile") + 1])
+        effective_prompt_text = effective_prompt.read_text(encoding="utf-8")
+        assert "catalog=/sealed-inputs/catalog.json" in effective_prompt_text
+        assert "required_entry_count=1" in effective_prompt_text
+        assert "/sealed-inputs/ab/source.txt" not in effective_prompt_text
+        assert "sealed source" not in effective_prompt_text
         assert command[command.index("-CommonCandidateOutputRoot") + 1] == str(
             output_root.resolve()
         )
@@ -565,12 +1318,71 @@ def test_nonzero_provider_exit_with_valid_common_receipt_is_terminal_recordable(
         lane_dir = runtime_root / "state" / "grok_worker_pool" / pool_id / "lane_00"
         cli_json = lane_dir / "provider-cli.json"
         _write_json(cli_json, {"text": final_text})
+        session_dir = lane_dir / "session"
+        session_dir.mkdir()
+        chat_history = session_dir / "chat_history.jsonl"
+        chat_events = [
+            {
+                "type": "assistant",
+                "content": "",
+                "tool_calls": [
+                    {
+                        "id": "call-catalog",
+                        "name": "read_file",
+                        "arguments": json.dumps(
+                            {"target_file": "/sealed-inputs/catalog.json"}
+                        ),
+                    }
+                ],
+            },
+            {"type": "tool_result", "tool_call_id": "call-catalog", "content": "catalog"},
+            {
+                "type": "assistant",
+                "content": "",
+                "tool_calls": [
+                    {
+                        "id": "call-source",
+                        "name": "read_file",
+                        "arguments": json.dumps(
+                            {"target_file": "/sealed-inputs/ab/source.txt"}
+                        ),
+                    }
+                ],
+            },
+            {"type": "tool_result", "tool_call_id": "call-source", "content": "sealed source"},
+        ]
+        chat_history.write_text(
+            "\n".join(json.dumps(row) for row in chat_events) + "\n",
+            encoding="utf-8",
+        )
+        native_updates = [
+            {
+                "method": "session/update",
+                "params": {
+                    "update": {
+                        "sessionUpdate": "tool_call_update",
+                        "toolCallId": call_id,
+                        "status": "completed",
+                        "rawOutput": {"type": "ReadFile"},
+                    }
+                },
+            }
+            for call_id in ("call-catalog", "call-source")
+        ]
+        (session_dir / "updates.jsonl").write_text(
+            "\n".join(json.dumps(row) for row in native_updates) + "\n",
+            encoding="utf-8",
+        )
         meta_path = lane_dir / "latest.json"
         meta_sha = _write_json(
             meta_path,
             {
                 "cli_json": str(cli_json),
                 "effective_output_source": "text",
+                "sealed_input_root": str(sealed_root.resolve()),
+                "container_sealed_input_root": "/sealed-inputs",
+                "container_sealed_input_read_only": True,
+                "session_evidence_dir": str(session_dir),
             },
         )
         contract_path = lane_dir / "common_logical_contract.json"

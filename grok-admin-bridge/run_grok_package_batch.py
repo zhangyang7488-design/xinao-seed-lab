@@ -16,7 +16,7 @@ import subprocess
 import sys
 import tempfile
 import time
-from typing import Any, Callable, Mapping
+from typing import Any, Callable, Mapping, Sequence
 import uuid
 
 
@@ -390,6 +390,527 @@ def _atomic_json(path: Path, value: object, *, replace: bool = False) -> str:
     return _atomic_bytes(path, raw, replace=replace)
 
 
+def _safe_package_component(value: object) -> str:
+    text = str(value or "").strip()
+    safe = "".join(char if char.isalnum() or char in {"-", "_"} else "_" for char in text)
+    if not safe or safe in {".", ".."}:
+        raise ValueError("package_id cannot form a sealed-input directory component")
+    digest = hashlib.sha256(text.encode("utf-8")).hexdigest()[:16]
+    return f"{safe[:79]}-{digest}"
+
+
+def _write_or_verify_immutable(path: Path, raw: bytes) -> dict[str, str]:
+    expected = hashlib.sha256(raw).hexdigest()
+    if path.exists():
+        if not path.is_file() or _sha(path) != expected:
+            raise FileExistsError(f"immutable model-input artifact collision: {path}")
+    else:
+        _atomic_bytes(path, raw)
+    return {"path": str(path.resolve(strict=True)), "sha256": expected}
+
+
+def _sealed_input_root(path: Path) -> Path:
+    # The builder owns physical directory naming.  The consumer binds identity
+    # from the exact catalog contents instead of duplicating that naming
+    # algorithm and creating a cross-release compatibility trap.
+    matches = [
+        parent
+        for parent in path.parents
+        if parent.parent.name.casefold() == "packages"
+        and (parent / "catalog.json").is_file()
+    ]
+    if len(matches) != 1:
+        raise ValueError(
+            "package input is not inside one canonical sealed-input package root: "
+            f"{path}"
+        )
+    return matches[0]
+
+
+def _require_exact_sealed_input_inventory(
+    root: Path, expected_files: Sequence[Path]
+) -> None:
+    """Reject anything outside the catalog-bound package projection."""
+
+    physical_root = root.resolve(strict=True)
+    expected = {path.resolve(strict=True) for path in expected_files}
+    allowed_directories = {physical_root}
+    for path in expected:
+        if not path.is_relative_to(physical_root):
+            raise ValueError(f"sealed input inventory escapes package root: {path}")
+        parent = path.parent
+        while parent != physical_root:
+            allowed_directories.add(parent)
+            parent = parent.parent
+
+    observed_files: set[Path] = set()
+    observed_directories = {physical_root}
+    for current, directory_names, file_names in os.walk(
+        physical_root, topdown=True, followlinks=False
+    ):
+        current_path = Path(current)
+        for name in directory_names:
+            candidate = current_path / name
+            if _contains_reparse_component(candidate):
+                raise ValueError(
+                    f"sealed input inventory contains a reparse directory: {candidate}"
+                )
+            observed_directories.add(candidate.resolve(strict=True))
+        for name in file_names:
+            candidate = current_path / name
+            if _contains_reparse_component(candidate) or not candidate.is_file():
+                raise ValueError(
+                    f"sealed input inventory contains a non-regular file: {candidate}"
+                )
+            observed_files.add(candidate.resolve(strict=True))
+
+    extra_files = sorted(str(path) for path in observed_files - expected)
+    missing_files = sorted(str(path) for path in expected - observed_files)
+    extra_directories = sorted(
+        str(path) for path in observed_directories - allowed_directories
+    )
+    if extra_files or missing_files or extra_directories:
+        raise ValueError(
+            "sealed input mount is not the exact catalog projection: "
+            f"extra_files={extra_files};missing_files={missing_files};"
+            f"extra_directories={extra_directories}"
+        )
+
+
+def _prepare_sealed_model_input(
+    *, package: Mapping[str, Any], task_run_dir: Path
+) -> dict[str, Any]:
+    """Expose bound package inputs through one read-only container mount.
+
+    Thick inputs stay as files and are not inlined into the initial prompt.
+    Only a deterministic catalog pointer is appended there; later required
+    ``read_file`` results intentionally enter the provider model context.
+    """
+
+    package_id = str(package.get("package_id") or "").strip()
+    package_component = _safe_package_component(package_id)
+    raw_refs = package.get("input_refs")
+    if not isinstance(raw_refs, list) or not raw_refs:
+        raise ValueError("package requires non-empty sealed input_refs")
+
+    host_root: Path | None = None
+    model_inputs: list[dict[str, object]] = []
+    host_inputs: list[dict[str, object]] = []
+    for index, raw_ref in enumerate(raw_refs):
+        if not isinstance(raw_ref, Mapping):
+            raise TypeError(f"package input_refs[{index}] must be an object")
+        expected_sha256 = str(raw_ref.get("sha256") or "").strip().lower()
+        if not re.fullmatch(r"[0-9a-f]{64}", expected_sha256):
+            raise ValueError(f"package input_refs[{index}].sha256 is invalid")
+        lexical = Path(os.path.abspath(str(raw_ref.get("path") or "")))
+        if not lexical.is_file() or _contains_reparse_component(lexical):
+            raise ValueError(f"package sealed input is missing or traverses a reparse point: {lexical}")
+        physical = lexical.resolve(strict=True)
+        if not _same_path(lexical, physical):
+            raise ValueError(f"package sealed input path is aliased: {lexical}")
+        observed_sha256 = _sha(physical)
+        if observed_sha256 != expected_sha256:
+            raise ValueError(
+                "package sealed input changed before model composition: "
+                f"path={physical};expected={expected_sha256};observed={observed_sha256}"
+            )
+        candidate_root = _sealed_input_root(physical)
+        if _contains_reparse_component(candidate_root):
+            raise ValueError(f"package sealed input root traverses a reparse point: {candidate_root}")
+        candidate_root = candidate_root.resolve(strict=True)
+        if host_root is None:
+            host_root = candidate_root
+        elif not _same_path(host_root, candidate_root):
+            raise ValueError("package input_refs span multiple sealed-input roots")
+        relative = physical.relative_to(candidate_root).as_posix()
+        container_path = f"/sealed-inputs/{relative}"
+        if any(row["path"] == container_path for row in model_inputs):
+            raise ValueError(f"package input_refs contain a duplicate sealed input: {container_path}")
+        size = physical.stat().st_size
+        model_inputs.append(
+            {
+                "slot": index,
+                "path": container_path,
+                "sha256": expected_sha256,
+                "bytes": size,
+            }
+        )
+        host_inputs.append(
+            {
+                "slot": index,
+                "host_path": str(physical),
+                "container_path": container_path,
+                "sha256": expected_sha256,
+                "bytes": size,
+            }
+        )
+    assert host_root is not None
+
+    expected_catalog = {
+        "schema_version": "xinao.worker_sealed_input_catalog.v2",
+        "package_id": package_id,
+        "container_root": "/sealed-inputs",
+        "mount_scope": "catalog_and_required_entries_only",
+        "external_input_admission": {
+            "status": "owner_reviewed_redacted",
+            "scope": "all_package_sources",
+            "reviewer_role": "codex_owner",
+        },
+        "entries": [
+            {
+                **row,
+                "required": True,
+                "read_strategy": "read_file_required_selected_content",
+            }
+            for row in model_inputs
+        ],
+        "authority": False,
+        "completion_claim_allowed": False,
+    }
+    catalog_path = host_root / "catalog.json"
+    if not catalog_path.is_file() or _contains_reparse_component(catalog_path):
+        raise ValueError("package sealed input catalog is missing or aliased")
+    observed_catalog, catalog_ref = _load_hash_bound_object(
+        catalog_path, "package sealed input catalog"
+    )
+    if observed_catalog != expected_catalog:
+        raise ValueError("package sealed input catalog does not exactly bind input_refs")
+    _require_exact_sealed_input_inventory(
+        host_root,
+        [catalog_path, *(Path(str(row["host_path"])) for row in host_inputs)],
+    )
+    prompt_binding = (
+        "# Sealed package input binding\n\n"
+        "catalog=/sealed-inputs/catalog.json\n"
+        f"catalog_sha256={catalog_ref['sha256']}\n"
+        f"required_entry_count={len(model_inputs)}\n"
+        "Read the catalog first. In a later model turn, call read_file at least once for every "
+        "required entry before forming findings. The catalog is an index, not the file content; "
+        "do not substitute live paths or treat a listed hash as consumption.\n"
+    )
+
+    prompt_ref = package.get("prompt_ref")
+    if not isinstance(prompt_ref, Mapping):
+        raise TypeError("package prompt_ref must be an object")
+    prompt_path = Path(str(prompt_ref.get("path") or "")).resolve(strict=True)
+    prompt_bytes = prompt_path.read_bytes()
+    expected_prompt_sha = str(prompt_ref.get("sha256") or "").lower()
+    if hashlib.sha256(prompt_bytes).hexdigest() != expected_prompt_sha:
+        raise ValueError("package prompt changed before sealed model-input composition")
+    try:
+        prompt_text = prompt_bytes.decode("utf-8-sig")
+    except UnicodeDecodeError as exc:
+        raise ValueError("package prompt is not valid UTF-8") from exc
+    effective_prompt_bytes = (
+        prompt_text.rstrip() + "\n\n---\n\n" + prompt_binding
+    ).encode("utf-8")
+
+    artifact_root = (
+        task_run_dir
+        / "sealed-model-inputs"
+        / package_component
+        / str(package["package_identity_sha256"])
+    )
+    artifact_root.mkdir(parents=True, exist_ok=True)
+    binding_receipt = {
+        "schema_version": "xinao.worker_sealed_model_input_binding.v1",
+        "package_id": package_id,
+        "package_identity_sha256": package["package_identity_sha256"],
+        "package_input_sha256": package["input_sha256"],
+        "host_root": str(host_root),
+        "host_inputs": host_inputs,
+        "catalog_ref": catalog_ref,
+        "required_entry_count": len(model_inputs),
+        "authority": False,
+        "completion_claim_allowed": False,
+    }
+    binding_raw = (
+        json.dumps(binding_receipt, ensure_ascii=False, indent=2, sort_keys=True).encode("utf-8")
+        + b"\n"
+    )
+    binding_ref = _write_or_verify_immutable(artifact_root / "binding.json", binding_raw)
+    prompt_ref = _write_or_verify_immutable(
+        artifact_root / "effective-package-prompt.md", effective_prompt_bytes
+    )
+    return {
+        "package_id": package_id,
+        "artifact_root": artifact_root,
+        "host_root": host_root,
+        "container_root": "/sealed-inputs",
+        "catalog_ref": catalog_ref,
+        "binding_ref": binding_ref,
+        "effective_prompt_ref": prompt_ref,
+        "input_refs": host_inputs,
+    }
+
+
+def _revalidate_sealed_model_input(binding: Mapping[str, Any]) -> None:
+    root = Path(str(binding.get("host_root") or ""))
+    if not root.is_dir() or _contains_reparse_component(root):
+        raise ValueError("sealed input root changed during provider execution")
+    catalog_ref = binding.get("catalog_ref")
+    if not isinstance(catalog_ref, Mapping):
+        raise ValueError("sealed input catalog binding is missing")
+    catalog_path = Path(str(catalog_ref.get("path") or ""))
+    if (
+        not catalog_path.is_file()
+        or _contains_reparse_component(catalog_path)
+        or _sha(catalog_path) != catalog_ref.get("sha256")
+    ):
+        raise ValueError("sealed input catalog changed during provider execution")
+    for row in binding.get("input_refs", []):
+        path = Path(str(row["host_path"]))
+        if not path.is_file() or _contains_reparse_component(path):
+            raise ValueError(f"sealed input disappeared during provider execution: {path}")
+        observed = _sha(path)
+        if observed != row["sha256"]:
+            raise ValueError(
+                "sealed input changed during provider execution: "
+                f"path={path};expected={row['sha256']};observed={observed}"
+            )
+    _require_exact_sealed_input_inventory(
+        root,
+        [
+            catalog_path,
+            *(
+                Path(str(row["host_path"]))
+                for row in binding.get("input_refs", [])
+            ),
+        ],
+    )
+
+
+def _normalize_container_path(value: object) -> str:
+    text = str(value or "").strip().replace("\\", "/")
+    while "//" in text:
+        text = text.replace("//", "/")
+    return text.rstrip("/") or "/"
+
+
+def _verify_sealed_input_tool_readback(
+    *, meta: Mapping[str, Any], binding: Mapping[str, Any]
+) -> dict[str, str]:
+    """Bind provider-native read_file/tool_result observations for every sealed input.
+
+    This proves that the provider requested each exact bound path and received a
+    paired result after reading the catalog.  Results must be non-empty except
+    for catalog-declared zero-byte inputs.  It intentionally does not claim that
+    the model semantically understood or exhaustively consumed every byte;
+    substantive use remains part of candidate and Owner review.
+    """
+
+    session_dir = Path(str(meta.get("session_evidence_dir") or ""))
+    if not session_dir.is_dir() or _contains_reparse_component(session_dir):
+        raise ValueError("provider session evidence directory is missing or aliased")
+    chat_history = session_dir / "chat_history.jsonl"
+    if not chat_history.is_file() or _contains_reparse_component(chat_history):
+        raise ValueError("provider chat_history.jsonl is missing or aliased")
+    updates_path = session_dir / "updates.jsonl"
+    if not updates_path.is_file() or _contains_reparse_component(updates_path):
+        raise ValueError("provider updates.jsonl is missing or aliased")
+
+    required = {
+        _normalize_container_path(row["container_path"]): []
+        for row in binding.get("input_refs", [])
+    }
+    required_bytes = {
+        _normalize_container_path(row["container_path"]): int(row["bytes"])
+        for row in binding.get("input_refs", [])
+    }
+    catalog_path = "/sealed-inputs/catalog.json"
+    catalog_calls: list[str] = []
+    call_lines: dict[str, int] = {}
+    tool_results: dict[str, tuple[str, int, bool]] = {}
+    seen_call_ids: set[str] = set()
+    chat_raw, chat_ref = _read_hash_bound_bytes(chat_history, "provider chat history")
+    updates_raw, updates_ref = _read_hash_bound_bytes(updates_path, "provider updates")
+    for line_number, raw_line in enumerate(
+        chat_raw.decode("utf-8-sig").splitlines(), start=1
+    ):
+        if not raw_line.strip():
+            continue
+        try:
+            event = json.loads(raw_line)
+        except json.JSONDecodeError as exc:
+            raise ValueError(f"provider chat history line {line_number} is invalid JSON") from exc
+        if not isinstance(event, Mapping):
+            raise ValueError(f"provider chat history line {line_number} is not an object")
+        if event.get("type") == "assistant":
+            calls = event.get("tool_calls", [])
+            if calls is None:
+                calls = []
+            if not isinstance(calls, list):
+                raise ValueError("provider assistant tool_calls is not an array")
+            for raw_call in calls:
+                if not isinstance(raw_call, Mapping):
+                    continue
+                call_id = str(raw_call.get("id") or "").strip()
+                if call_id:
+                    if call_id in seen_call_ids:
+                        raise ValueError(f"provider chat history repeats tool call id: {call_id}")
+                    seen_call_ids.add(call_id)
+                if raw_call.get("name") != "read_file":
+                    continue
+                arguments = raw_call.get("arguments")
+                if isinstance(arguments, str):
+                    try:
+                        arguments = json.loads(arguments)
+                    except json.JSONDecodeError:
+                        continue
+                if not isinstance(arguments, Mapping):
+                    continue
+                target = _normalize_container_path(arguments.get("target_file"))
+                if call_id:
+                    call_lines[call_id] = line_number
+                    if target == catalog_path:
+                        catalog_calls.append(call_id)
+                    elif target in required:
+                        required[target].append(call_id)
+        elif event.get("type") == "tool_result":
+            call_id = str(event.get("tool_call_id") or "").strip()
+            content = event.get("content")
+            if call_id and content is not None:
+                if call_id in tool_results:
+                    raise ValueError(f"provider chat history repeats tool result id: {call_id}")
+                rendered = str(content)
+                tool_results[call_id] = (
+                    hashlib.sha256(rendered.encode("utf-8")).hexdigest(),
+                    line_number,
+                    bool(rendered.strip()),
+                )
+
+    successful_native_reads: set[str] = set()
+    terminal_updates: set[str] = set()
+    for line_number, raw_line in enumerate(
+        updates_raw.decode("utf-8-sig").splitlines(), start=1
+    ):
+        if not raw_line.strip():
+            continue
+        try:
+            event = json.loads(raw_line)
+        except json.JSONDecodeError as exc:
+            raise ValueError(f"provider updates line {line_number} is invalid JSON") from exc
+        if not isinstance(event, Mapping):
+            raise ValueError(f"provider updates line {line_number} is not an object")
+        params = event.get("params")
+        update = params.get("update") if isinstance(params, Mapping) else None
+        if not isinstance(update, Mapping) or update.get("sessionUpdate") != "tool_call_update":
+            continue
+        call_id = str(update.get("toolCallId") or "").strip()
+        status = str(update.get("status") or "").strip().casefold()
+        if not call_id or status not in {"completed", "failed"}:
+            continue
+        if call_id in terminal_updates:
+            raise ValueError(f"provider updates repeat terminal tool status: {call_id}")
+        terminal_updates.add(call_id)
+        raw_output = update.get("rawOutput")
+        if (
+            status == "completed"
+            and isinstance(raw_output, Mapping)
+            and str(raw_output.get("type") or "").casefold() == "readfile"
+        ):
+            successful_native_reads.add(call_id)
+
+    def valid_readback(
+        call_id: str, *, after_line: int = 0, allow_empty: bool = False
+    ) -> bool:
+        result = tool_results.get(call_id)
+        call_line = call_lines.get(call_id, 0)
+        return bool(
+            result is not None
+            and call_id in successful_native_reads
+            and call_line > after_line
+            and result[1] > call_line
+            and (result[2] or allow_empty)
+        )
+
+    valid_catalog_calls = [call_id for call_id in catalog_calls if valid_readback(call_id)]
+    catalog_results = [tool_results[call_id] for call_id in valid_catalog_calls]
+    if not catalog_results:
+        raise ValueError(
+            "provider did not prove ordered successful catalog read_file plus non-empty tool_result"
+        )
+    catalog_result_line = min(line for _, line, _ in catalog_results)
+
+    missing = sorted(
+        path
+        for path, call_ids in required.items()
+        if not any(
+            valid_readback(
+                call_id,
+                after_line=catalog_result_line,
+                allow_empty=required_bytes[path] == 0,
+            )
+            for call_id in call_ids
+        )
+    )
+    if missing:
+        raise ValueError(
+            "provider did not prove later read_file plus size-consistent tool_result for: "
+            + ", ".join(missing)
+        )
+    receipt = {
+        "schema_version": "xinao.worker_sealed_input_readback.v1",
+        "package_id": binding["package_id"],
+        "chat_history_ref": chat_ref,
+        "updates_ref": updates_ref,
+        "catalog_ref": binding["catalog_ref"],
+        "catalog_read_call_ids": sorted(valid_catalog_calls),
+        "catalog_result_line": catalog_result_line,
+        "required_paths": sorted(required),
+        "readbacks": [
+            {
+                "path": path,
+                "tool_call_ids": sorted(required[path]),
+                "tool_result_sha256": sorted(
+                    {
+                        tool_results[call_id][0]
+                        for call_id in required[path]
+                        if valid_readback(
+                            call_id,
+                            after_line=catalog_result_line,
+                            allow_empty=required_bytes[path] == 0,
+                        )
+                    }
+                ),
+            }
+            for path in sorted(required)
+        ],
+        "all_required_entry_readbacks_observed": True,
+        "authority": False,
+        "completion_claim_allowed": False,
+    }
+    readback_identity = hashlib.sha256(
+        _canonical_bytes(
+            {
+                "package_id": binding["package_id"],
+                "catalog_ref": binding["catalog_ref"],
+                "chat_history_ref": chat_ref,
+                "updates_ref": updates_ref,
+            }
+        )
+    ).hexdigest()
+    receipt["readback_identity_sha256"] = readback_identity
+    raw = (
+        json.dumps(receipt, ensure_ascii=False, indent=2, sort_keys=True).encode("utf-8")
+        + b"\n"
+    )
+    receipt_ref = _write_or_verify_immutable(
+        Path(str(binding["artifact_root"]))
+        / "readbacks"
+        / readback_identity
+        / "tool-readback.json",
+        raw,
+    )
+    return {
+        **receipt_ref,
+        "chat_history_path": chat_ref["path"],
+        "chat_history_sha256": chat_ref["sha256"],
+        "updates_path": updates_ref["path"],
+        "updates_sha256": updates_ref["sha256"],
+    }
+
+
 def _load_object(path: Path, label: str) -> dict[str, Any]:
     if not path.is_file():
         raise ValueError(f"{label} missing: {path}")
@@ -397,6 +918,34 @@ def _load_object(path: Path, label: str) -> dict[str, Any]:
     if not isinstance(value, dict):
         raise TypeError(f"{label} must be an object")
     return value
+
+
+def _read_hash_bound_bytes(
+    path: Path, label: str, expected_sha256: str | None = None
+) -> tuple[bytes, dict[str, str]]:
+    resolved = path.resolve(strict=True)
+    if not resolved.is_file() or _contains_reparse_component(resolved):
+        raise ValueError(f"{label} is missing or aliased: {resolved}")
+    raw = resolved.read_bytes()
+    observed = hashlib.sha256(raw).hexdigest()
+    if expected_sha256 and observed != expected_sha256:
+        raise ValueError(
+            f"{label} hash drifted: expected={expected_sha256}; observed={observed}"
+        )
+    return raw, {"path": str(resolved), "sha256": observed}
+
+
+def _load_hash_bound_object(
+    path: Path, label: str, expected_sha256: str | None = None
+) -> tuple[dict[str, Any], dict[str, str]]:
+    raw, ref = _read_hash_bound_bytes(path, label, expected_sha256)
+    try:
+        value = json.loads(raw.decode("utf-8-sig"))
+    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise ValueError(f"{label} is not valid UTF-8 JSON") from exc
+    if not isinstance(value, dict):
+        raise TypeError(f"{label} must be an object")
+    return value, ref
 
 
 def _identifier(prefix: str) -> str:
@@ -642,10 +1191,16 @@ def _candidate_write_domain(candidate_root: Path) -> str:
     return "candidate_output_root:" + normalized.casefold()
 
 
-def _extract_cli_final_text(cli_json_path: Path, lane_meta: dict[str, Any]) -> str:
+def _extract_cli_final_text(
+    cli_json_path: Path | Mapping[str, Any], lane_meta: dict[str, Any]
+) -> str:
     """Reproduce the provider validator's exact effective-output selection."""
 
-    payload = _load_object(cli_json_path, "provider CLI JSON")
+    payload = (
+        dict(cli_json_path)
+        if isinstance(cli_json_path, Mapping)
+        else _load_object(cli_json_path, "provider CLI JSON")
+    )
     source = str(lane_meta.get("effective_output_source") or "").strip()
     if source == "structuredOutput":
         structured = payload.get("structuredOutput")
@@ -841,7 +1396,7 @@ def _run_package(
         )
         return validation
 
-    route_claim_validation = live_route_guard()
+    live_route_guard()
     if package.get("write_domains"):
         raise ValueError(
             "candidate-only package cannot pass authority write domains to leg A"
@@ -850,6 +1405,10 @@ def _run_package(
         package,
         "rules_ref",
         expected_sha256_field="rules_sha256",
+    )
+    sealed_model_input = _prepare_sealed_model_input(
+        package=package,
+        task_run_dir=task_run_dir,
     )
     candidate_write_domain = _candidate_write_domain(effective_cwd)
     dispatch_id = _identifier("cdx")
@@ -882,7 +1441,7 @@ def _run_package(
         "-N",
         "1",
         "-PromptFile",
-        str(package["prompt_ref"]["path"]),
+        str(sealed_model_input["effective_prompt_ref"]["path"]),
         "-Cwd",
         str(effective_cwd),
         "-Model",
@@ -916,6 +1475,8 @@ def _run_package(
         rules_ref["path"],
         "-CommonRulesSha256",
         rules_ref["sha256"],
+        "-CommonSealedInputRoot",
+        str(sealed_model_input["host_root"]),
         "-CommonCandidateOutputRoot",
         str(effective_cwd),
         "-CommonPhase",
@@ -967,12 +1528,27 @@ def _run_package(
     # Re-read the live scoped mutation guards at the physical side-effect
     # boundary so a pause/stop racing with command assembly cannot start the
     # provider from a stale route claim.
-    route_claim_validation = live_route_guard()
+    live_route_guard()
     completed = _run_process_with_live_guard(
         command,
         timeout_seconds=max(30, min(timeout_sec, int(package["timeout_sec"])) + 60),
         live_guard=live_route_guard,
     )
+    try:
+        _revalidate_sealed_model_input(sealed_model_input)
+    except (OSError, TypeError, ValueError) as exc:
+        return {
+            "package_id": package_id,
+            "work_key": package["work_key"],
+            "operation_id": operation_id,
+            "dispatch_id": dispatch_id,
+            "pool_id": pool_id,
+            "exit_code": completed.returncode,
+            "status": "failed",
+            "failure": f"sealed model input integrity failed after provider: {exc}",
+            "sealed_input_catalog_ref": sealed_model_input["catalog_ref"],
+            "effective_package_prompt_ref": sealed_model_input["effective_prompt_ref"],
+        }
     pool_summary = (
         runtime_root / "state" / "grok_worker_pool" / pool_id / "pool_summary.json"
     )
@@ -987,6 +1563,8 @@ def _run_package(
         "stdout_tail": completed.stdout[-2000:],
         "stderr_tail": completed.stderr[-2000:],
         "pool_summary_ref": str(pool_summary),
+        "sealed_input_catalog_ref": sealed_model_input["catalog_ref"],
+        "effective_package_prompt_ref": sealed_model_input["effective_prompt_ref"],
     }
     if not pool_summary.is_file():
         result.update(
@@ -1085,6 +1663,8 @@ def _run_package(
     output_root = effective_cwd
     attempt_root = output_root / f"attempt-{attempt_number:04d}-{dispatch_id}"
     control_artifact_refs: list[dict[str, str]] = [
+        dict(sealed_model_input["catalog_ref"]),
+        dict(sealed_model_input["effective_prompt_ref"]),
         _hash_bound_ref(common_receipt_path, common_receipt_sha),
         _hash_bound_ref(attempt_path, attempt_sha),
         _hash_bound_ref(contract_path, contract_sha),
@@ -1094,17 +1674,19 @@ def _run_package(
     provider_output_ref: dict[str, str] | None = None
     provider_cli_ref: dict[str, str] | None = None
     provider_meta_ref: dict[str, str] | None = None
+    sealed_input_readback_ref: dict[str, str] | None = None
+    provider_chat_history_ref: dict[str, str] | None = None
     provider_output_error = ""
     try:
-        provider_meta_ref = _hash_bound_ref(meta_path)
         expected_meta_sha = (
             str(common.get("provider_evidence_sha256") or "").strip().lower()
         )
         expected_meta_path = str(common.get("provider_evidence_ref") or "").strip()
-        if expected_meta_sha and provider_meta_ref["sha256"] != expected_meta_sha:
-            raise ValueError(
-                "provider metadata does not match common receipt evidence hash"
-            )
+        meta, provider_meta_ref = _load_hash_bound_object(
+            meta_path,
+            "provider lane metadata",
+            expected_meta_sha or None,
+        )
         if expected_meta_path and (
             Path(expected_meta_path).resolve(strict=False)
             != Path(provider_meta_ref["path"]).resolve(strict=False)
@@ -1112,10 +1694,32 @@ def _run_package(
             raise ValueError(
                 "provider metadata does not match common receipt evidence path"
             )
-        meta = _load_object(meta_path, "provider lane metadata")
+        if (
+            meta.get("container_sealed_input_read_only") is not True
+            or meta.get("container_sealed_input_root") != sealed_model_input["container_root"]
+            or not _same_path(
+                Path(str(meta.get("sealed_input_root") or "")),
+                Path(str(sealed_model_input["host_root"])),
+            )
+        ):
+            raise ValueError("provider metadata does not prove the sealed input read-only mount")
+        readback = _verify_sealed_input_tool_readback(
+            meta=meta,
+            binding=sealed_model_input,
+        )
+        sealed_input_readback_ref = {
+            "path": readback["path"],
+            "sha256": readback["sha256"],
+        }
+        provider_chat_history_ref = {
+            "path": readback["chat_history_path"],
+            "sha256": readback["chat_history_sha256"],
+        }
         cli_json = Path(str(meta.get("cli_json") or ""))
-        provider_cli_ref = _hash_bound_ref(cli_json)
-        final_text = _extract_cli_final_text(cli_json, meta)
+        cli_payload, provider_cli_ref = _load_hash_bound_object(
+            cli_json, "provider CLI JSON"
+        )
+        final_text = _extract_cli_final_text(cli_payload, meta)
         provider_output_path = attempt_root / "provider-output"
         provider_output_sha = _atomic_bytes(
             provider_output_path, final_text.encode("utf-8")
@@ -1146,7 +1750,14 @@ def _run_package(
             attempt=attempt_number,
         )
         return result
-    for ref in (provider_output_ref, provider_cli_ref, provider_meta_ref):
+    if sealed_input_readback_ref is not None:
+        control_artifact_refs.append(sealed_input_readback_ref)
+    for ref in (
+        provider_output_ref,
+        provider_cli_ref,
+        provider_meta_ref,
+        provider_chat_history_ref,
+    ):
         if ref is not None and ref not in provider_artifact_refs:
             provider_artifact_refs.append(ref)
 
@@ -1173,6 +1784,10 @@ def _run_package(
         "common_attempt_ref": _hash_bound_ref(attempt_path, attempt_sha),
         "common_contract_ref": _hash_bound_ref(contract_path, contract_sha),
         "provider_output_ref": provider_output_ref,
+        "sealed_input_catalog_ref": sealed_model_input["catalog_ref"],
+        "effective_package_prompt_ref": sealed_model_input["effective_prompt_ref"],
+        "sealed_input_readback_ref": sealed_input_readback_ref,
+        "provider_chat_history_ref": provider_chat_history_ref,
         "artifact_refs": artifact_refs,
         "authority": False,
         "completion_claim_allowed": False,
@@ -1188,6 +1803,8 @@ def _run_package(
         package_result_ref=str(envelope_path),
         package_result_sha256=envelope_sha,
         provider_output_ref=provider_output_ref,
+        sealed_input_readback_ref=sealed_input_readback_ref,
+        provider_chat_history_ref=provider_chat_history_ref,
         common_attempt_ref=str(attempt_path),
         common_attempt_sha256=attempt_sha,
         common_contract_ref=str(contract_path),
