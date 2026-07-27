@@ -267,10 +267,7 @@ def readiness_marker_issues(
         and evidence.get("grok_sandbox_tty_available") is not True
     ):
         issues.append("grok_sandbox_tty_unavailable")
-    if (
-        evidence.get("grok_outer_privilege_required")
-        is not expected_grok_outer_privilege_required
-    ):
+    if evidence.get("grok_outer_privilege_required") is not expected_grok_outer_privilege_required:
         issues.append("grok_outer_privilege_requirement_mismatch")
     outer_privilege = evidence.get("grok_outer_privilege")
     if expected_grok_outer_privilege_required:
@@ -278,10 +275,8 @@ def readiness_marker_issues(
             issues.append("grok_outer_privilege_state_missing")
         elif (
             outer_privilege.get("ok") is not True
-            or outer_privilege.get("expected_capability_mask")
-            != GROK_EXPECTED_CAPABILITY_MASK
-            or outer_privilege.get("expected_no_new_privs")
-            != GROK_EXPECTED_NO_NEW_PRIVS
+            or outer_privilege.get("expected_capability_mask") != GROK_EXPECTED_CAPABILITY_MASK
+            or outer_privilege.get("expected_no_new_privs") != GROK_EXPECTED_NO_NEW_PRIVS
             or outer_privilege.get("cap_eff") != GROK_EXPECTED_CAPABILITY_MASK
             or outer_privilege.get("cap_prm") != GROK_EXPECTED_CAPABILITY_MASK
             or outer_privilege.get("cap_bnd") != GROK_EXPECTED_CAPABILITY_MASK
@@ -294,10 +289,7 @@ def readiness_marker_issues(
             and outer_privilege != expected_grok_outer_privilege_state
         ):
             issues.append("grok_outer_privilege_state_mismatch")
-    if (
-        evidence.get("grok_bwrap_bootstrap_required")
-        is not expected_grok_bwrap_bootstrap_required
-    ):
+    if evidence.get("grok_bwrap_bootstrap_required") is not expected_grok_bwrap_bootstrap_required:
         issues.append("grok_bwrap_bootstrap_requirement_mismatch")
     if (
         expected_grok_bwrap_bootstrap_required
@@ -341,9 +333,7 @@ def check_readiness(
         release = None
         issues.append(f"source_release_unavailable:{type(exc).__name__}")
     try:
-        outer_privilege = _grok_outer_privilege_state(
-            Path(f"/proc/{expected_process_id}/status")
-        )
+        outer_privilege = _grok_outer_privilege_state(Path(f"/proc/{expected_process_id}/status"))
     except (OSError, UnicodeError, RuntimeError) as exc:
         outer_privilege = None
         if grok_outer_privilege_required:
@@ -376,9 +366,7 @@ def check_readiness(
         "grok_outer_privilege_required": grok_outer_privilege_required,
         "grok_outer_privilege": outer_privilege,
         "grok_bwrap_bootstrap_required": grok_bwrap_bootstrap_required,
-        "grok_bwrap_bootstrap_available": (
-            evidence.get("grok_bwrap_bootstrap_available") is True
-        ),
+        "grok_bwrap_bootstrap_available": (evidence.get("grok_bwrap_bootstrap_available") is True),
         "completion_claim_allowed": False,
     }
 

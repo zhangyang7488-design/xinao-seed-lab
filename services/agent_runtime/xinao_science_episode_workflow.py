@@ -170,9 +170,10 @@ async def run_science_startup_worker_activity(payload: dict[str, Any]) -> dict[s
 
     from services.agent_runtime.execution_contract import validate_attempt_receipt
     from services.agent_runtime.grok_build_docker_worker import (
+        NO_TOOLS_SANDBOX_ENFORCEMENT,
+        NO_TOOLS_TRANSPORT_SANDBOX_PROFILE,
         PROVIDER_ID,
         READ_ONLY_PERMISSION_MODE,
-        READ_ONLY_SANDBOX_PROFILE,
         run_docker_native_grok_fanin,
     )
     from services.agent_runtime.grok_execution_contract_adapter import (
@@ -321,11 +322,12 @@ async def run_science_startup_worker_activity(payload: dict[str, Any]) -> dict[s
         and lane.get("tool_allowlist_enforced") is True
         and lane.get("allowed_tools") == []
         and lane.get("permission_mode") == READ_ONLY_PERMISSION_MODE
-        and lane.get("sandbox_profile") == READ_ONLY_SANDBOX_PROFILE
+        and lane.get("sandbox_profile") == NO_TOOLS_TRANSPORT_SANDBOX_PROFILE
+        and lane.get("sandbox_enforcement") == NO_TOOLS_SANDBOX_ENFORCEMENT
         and lane.get("security_cli_args")
         == [
             "--sandbox",
-            READ_ONLY_SANDBOX_PROFILE,
+            NO_TOOLS_TRANSPORT_SANDBOX_PROFILE,
             "--permission-mode",
             READ_ONLY_PERMISSION_MODE,
             "--tools",
@@ -410,6 +412,7 @@ async def run_science_startup_worker_activity(payload: dict[str, Any]) -> dict[s
         "observed_model": lane["observed_model"],
         "model_identity_ok": True,
         "sandbox_profile": lane["sandbox_profile"],
+        "sandbox_enforcement": lane["sandbox_enforcement"],
         "permission_mode": lane["permission_mode"],
         "security_cli_args": lane["security_cli_args"],
         "usage": usage,

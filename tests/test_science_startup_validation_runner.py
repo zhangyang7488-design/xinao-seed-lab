@@ -11,9 +11,10 @@ import pytest
 from scripts import verify_science_startup_validation as subject
 from scripts.build_s_runtime_release import build_release
 from services.agent_runtime.grok_build_docker_worker import (
+    NO_TOOLS_SANDBOX_ENFORCEMENT,
+    NO_TOOLS_TRANSPORT_SANDBOX_PROFILE,
     PROVIDER_ID,
     READ_ONLY_PERMISSION_MODE,
-    READ_ONLY_SANDBOX_PROFILE,
 )
 from services.agent_runtime.grok_execution_contract_adapter import (
     expected_docker_grok_backend_models,
@@ -154,6 +155,45 @@ def test_startup_verifier_binds_exact_release_and_read_only_app_mounts(
         )
 
 
+def test_startup_verifier_requires_exact_live_no_tools_outer_boundary() -> None:
+    container_id = "a" * 64
+    marker = {
+        "status": "polling",
+        "readiness_confirmed": True,
+        "all_workers_running": True,
+        "container_id": container_id[:12],
+        "grok_sandbox_tty_required": True,
+        "grok_sandbox_tty_available": True,
+        "grok_outer_privilege_required": True,
+        "grok_outer_privilege": {
+            "expected_capability_mask": subject.GROK_EXPECTED_CAPABILITY_MASK,
+            "expected_no_new_privs": subject.GROK_EXPECTED_NO_NEW_PRIVS,
+            "cap_eff": subject.GROK_EXPECTED_CAPABILITY_MASK,
+            "cap_prm": subject.GROK_EXPECTED_CAPABILITY_MASK,
+            "cap_bnd": subject.GROK_EXPECTED_CAPABILITY_MASK,
+            "no_new_privs": subject.GROK_EXPECTED_NO_NEW_PRIVS,
+            "seccomp": "2",
+            "ok": True,
+        },
+        "grok_bwrap_bootstrap_required": True,
+        "grok_bwrap_bootstrap_available": True,
+    }
+
+    verified = subject._verify_daemon_security_boundary(
+        marker,
+        expected_container_id=container_id,
+    )
+    assert verified["ok"] is True
+    assert verified["sandbox_enforcement"] == NO_TOOLS_SANDBOX_ENFORCEMENT
+
+    marker["grok_bwrap_bootstrap_available"] = False
+    with pytest.raises(RuntimeError, match="bwrap_bootstrap_available"):
+        subject._verify_daemon_security_boundary(
+            marker,
+            expected_container_id=container_id,
+        )
+
+
 def test_no_retained_pre_cutover_history_is_explicitly_not_applicable() -> None:
     result = asyncio.run(subject._retained_legacy_history_replay([]))
     assert result["status"] == "NOT_APPLICABLE_NO_RETAINED_PRE_CUTOVER_HISTORY"
@@ -197,11 +237,12 @@ def _accepted_worker_result(runtime_root: Path) -> tuple[dict[str, object], dict
         "requested_model": "grok-4.5",
         "observed_model": expected_docker_grok_backend_models("grok-4.5")[0],
         "model_identity_ok": True,
-        "sandbox_profile": READ_ONLY_SANDBOX_PROFILE,
+        "sandbox_profile": NO_TOOLS_TRANSPORT_SANDBOX_PROFILE,
+        "sandbox_enforcement": NO_TOOLS_SANDBOX_ENFORCEMENT,
         "permission_mode": READ_ONLY_PERMISSION_MODE,
         "security_cli_args": [
             "--sandbox",
-            READ_ONLY_SANDBOX_PROFILE,
+            NO_TOOLS_TRANSPORT_SANDBOX_PROFILE,
             "--permission-mode",
             READ_ONLY_PERMISSION_MODE,
             "--tools",

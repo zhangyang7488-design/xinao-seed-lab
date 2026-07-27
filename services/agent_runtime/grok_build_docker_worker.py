@@ -86,6 +86,9 @@ COMPLETED_STOP_REASONS = frozenset({"endturn"})
 RESULT_FORMATS = frozenset({"text", "json_object"})
 CANDIDATE_SANDBOX_PROFILE = "workspace"
 READ_ONLY_SANDBOX_PROFILE = "read-only"
+NO_TOOLS_TRANSPORT_SANDBOX_PROFILE = "off"
+NO_TOOLS_SANDBOX_ENFORCEMENT = "outer_oci_read_only_sources_plus_no_model_tools"
+PROVIDER_SANDBOX_ENFORCEMENT = "grok_provider_sandbox"
 READ_ONLY_PERMISSION_MODE = "dontAsk"
 CLI_POLICY_VERSION = GROK_CLI_POLICY_VERSION
 EXECUTION_CONTRACT_VERSION = "xinao.grok.shared_execution_contract.v1"
@@ -1099,9 +1102,19 @@ def _operation_id(
     sandbox_profile = _lane_sandbox_profile(
         write=write,
         sandbox_read_only=sandbox_read_only,
+        tool_allowlist_enforced=tool_allowlist_enforced,
+        allowed_tools=allowed_tools,
+        planning=planning,
+        subagents=subagents,
+        external_research=external_research,
+        memory=memory,
+        mode=mode,
+        max_turns=max_turns,
+        result_format=result_format,
     )
     if sandbox_profile:
         identity["sandbox_profile"] = sandbox_profile
+        identity["sandbox_enforcement"] = _lane_sandbox_enforcement(sandbox_profile)
     if sandbox_read_only:
         identity["sandbox_read_only"] = True
         identity["permission_mode"] = READ_ONLY_PERMISSION_MODE
@@ -1119,11 +1132,77 @@ def _operation_id(
     return f"op_grok_docker_{_sha256(raw)[:32]}"
 
 
-def _lane_sandbox_profile(*, write: bool, sandbox_read_only: bool) -> str:
+def _uses_no_tools_outer_oci_boundary(
+    *,
+    write: bool,
+    sandbox_read_only: bool,
+    tool_allowlist_enforced: bool,
+    allowed_tools: tuple[str, ...],
+    planning: str,
+    subagents: str,
+    external_research: str,
+    memory: str,
+    mode: str,
+    max_turns: int | None,
+    result_format: str,
+) -> bool:
+    """Select the mature transport boundary only for an exact zero-capability lane."""
+
+    return (
+        not write
+        and sandbox_read_only
+        and tool_allowlist_enforced
+        and not allowed_tools
+        and planning == "off"
+        and subagents == "off"
+        and external_research == "off"
+        and memory == "off"
+        and mode == "audit"
+        and max_turns == 1
+        and result_format == "json_object"
+    )
+
+
+def _lane_sandbox_profile(
+    *,
+    write: bool,
+    sandbox_read_only: bool,
+    tool_allowlist_enforced: bool,
+    allowed_tools: tuple[str, ...],
+    planning: str,
+    subagents: str,
+    external_research: str,
+    memory: str,
+    mode: str,
+    max_turns: int | None,
+    result_format: str,
+) -> str:
     if write:
         return CANDIDATE_SANDBOX_PROFILE
+    if _uses_no_tools_outer_oci_boundary(
+        write=write,
+        sandbox_read_only=sandbox_read_only,
+        tool_allowlist_enforced=tool_allowlist_enforced,
+        allowed_tools=allowed_tools,
+        planning=planning,
+        subagents=subagents,
+        external_research=external_research,
+        memory=memory,
+        mode=mode,
+        max_turns=max_turns,
+        result_format=result_format,
+    ):
+        return NO_TOOLS_TRANSPORT_SANDBOX_PROFILE
     if sandbox_read_only:
         return READ_ONLY_SANDBOX_PROFILE
+    return ""
+
+
+def _lane_sandbox_enforcement(sandbox_profile: str) -> str:
+    if sandbox_profile == NO_TOOLS_TRANSPORT_SANDBOX_PROFILE:
+        return NO_TOOLS_SANDBOX_ENFORCEMENT
+    if sandbox_profile:
+        return PROVIDER_SANDBOX_ENFORCEMENT
     return ""
 
 
@@ -1133,6 +1212,13 @@ def _lane_security_cli_args(
     sandbox_read_only: bool,
     tool_allowlist_enforced: bool,
     allowed_tools: tuple[str, ...],
+    planning: str,
+    subagents: str,
+    external_research: str,
+    memory: str,
+    mode: str,
+    max_turns: int | None,
+    result_format: str,
 ) -> list[str]:
     """Build the exact security argv passed to the Grok subprocess."""
 
@@ -1140,6 +1226,15 @@ def _lane_security_cli_args(
     sandbox_profile = _lane_sandbox_profile(
         write=write,
         sandbox_read_only=sandbox_read_only,
+        tool_allowlist_enforced=tool_allowlist_enforced,
+        allowed_tools=allowed_tools,
+        planning=planning,
+        subagents=subagents,
+        external_research=external_research,
+        memory=memory,
+        mode=mode,
+        max_turns=max_turns,
+        result_format=result_format,
     )
     if sandbox_profile:
         args.extend(["--sandbox", sandbox_profile])
@@ -2051,10 +2146,8 @@ async def _execute_lane_locked(
     write = lane.get("write") is True
     sandbox_read_only = not write and lane.get("sandbox_read_only") is True
     tool_allowlist_enforced = lane.get("tool_allowlist_enforced") is True
-    sandbox_profile = _lane_sandbox_profile(
-        write=write,
-        sandbox_read_only=sandbox_read_only,
-    )
+    allowed_tools = tuple(sorted(map(str, lane.get("allowed_tools") or [])))
+    capability_policy = _lane_capability_policy(lane)
     if not lane_id or not task_prompt.strip():
         raise ValueError("Docker Grok lane requires lane_id and prompt")
     if not model:
@@ -2076,6 +2169,25 @@ async def _execute_lane_locked(
         ):
             raise ValueError("Docker Grok candidate output boundary drifted before model process")
         _revalidate_canonical_route_claim(lane)
+    execution_limits = _lane_execution_limits(lane)
+    deadline_seconds = execution_limits["deadline_seconds"]
+    max_turns = execution_limits["max_turns"]
+    max_recovery_continuations = execution_limits["max_recovery_continuations"]
+    output_contract = _lane_output_contract(lane)
+    sandbox_profile = _lane_sandbox_profile(
+        write=write,
+        sandbox_read_only=sandbox_read_only,
+        tool_allowlist_enforced=tool_allowlist_enforced,
+        allowed_tools=allowed_tools,
+        planning=str(capability_policy["planning"]),
+        subagents=str(capability_policy["subagents"]),
+        external_research=str(capability_policy["external_research"]),
+        memory=str(capability_policy["memory"]),
+        mode=mode,
+        max_turns=max_turns,
+        result_format=str(output_contract["result_format"]),
+    )
+    sandbox_enforcement = _lane_sandbox_enforcement(sandbox_profile)
     # Resolve the candidate write boundary before any model process or model
     # capability subprocess can be started.
     cwd = _container_cwd(lane.get("cwd"), write=write)
@@ -2100,12 +2212,6 @@ async def _execute_lane_locked(
         requested_model=model,
     )
     context_inspect = await _inspect_grok_context(grok_bin, env=env, cwd=cwd)
-    execution_limits = _lane_execution_limits(lane)
-    deadline_seconds = execution_limits["deadline_seconds"]
-    max_turns = execution_limits["max_turns"]
-    max_recovery_continuations = execution_limits["max_recovery_continuations"]
-    capability_policy = _lane_capability_policy(lane)
-    output_contract = _lane_output_contract(lane)
     execution_prompt = _execution_prompt(task_prompt, intake, write=write)
     execution_prompt_sha256 = _sha256(execution_prompt.encode("utf-8"))
     correlation_id = str(lane.get("correlation_id") or "")
@@ -2140,12 +2246,18 @@ async def _execute_lane_locked(
         work_key or correlation_id or str(lane.get("contract_id") or "") or workflow_id
     )
     contract_id = str(lane.get("contract_id") or "")
-    allowed_tools = tuple(sorted(map(str, lane.get("allowed_tools") or [])))
     security_cli_args = _lane_security_cli_args(
         write=write,
         sandbox_read_only=sandbox_read_only,
         tool_allowlist_enforced=tool_allowlist_enforced,
         allowed_tools=allowed_tools,
+        planning=str(capability_policy["planning"]),
+        subagents=str(capability_policy["subagents"]),
+        external_research=str(capability_policy["external_research"]),
+        memory=str(capability_policy["memory"]),
+        mode=mode,
+        max_turns=max_turns,
+        result_format=str(output_contract["result_format"]),
     )
     operation_id = _operation_id(
         workflow_id,
@@ -2303,6 +2415,7 @@ async def _execute_lane_locked(
         "cwd": str(cwd),
         "write": write,
         "sandbox_profile": sandbox_profile,
+        "sandbox_enforcement": sandbox_enforcement,
         "sandbox_read_only": sandbox_read_only,
         "permission_mode": READ_ONLY_PERMISSION_MODE if sandbox_read_only else "",
         "security_cli_args": security_cli_args,
@@ -2805,6 +2918,7 @@ async def _execute_lane_locked(
             )
         ),
         "sandbox_profile": sandbox_profile,
+        "sandbox_enforcement": sandbox_enforcement,
         "operation_id": operation_id,
         "operation_state": "completed",
         "activity_attempt": attempt,
