@@ -262,6 +262,8 @@ def build_episode_package(
     frozen_at: datetime | None = None,
     synthetic_outcome_number: int | None = None,
     policy_compilation: Day1PolicyCompilation | None = None,
+    protocol_research_question: str | None = None,
+    protocol_residual_axes: tuple[str, ...] | None = None,
 ) -> dict[str, Any]:
     """Build one exclusive multi-policy package in an already-created directory."""
 
@@ -329,7 +331,8 @@ def build_episode_package(
         trial_ledger_anchor_sha256=anchor_sha256,
         trial_ledger_prefix_entry_count=int(registered_head["entry_count"]),
         trial_ledger_prefix_entries_sha256=str(registered_head["entries_sha256"]),
-        research_question=(
+        research_question=protocol_research_question
+        or (
             "Can a pre-outcome Day-1 set containing a target-only negative control, "
             "rolling marginal baseline, and bounded multiscale-overlap challenger "
             "produce behaviorally non-equivalent shadow decisions and settle them all?"
@@ -349,7 +352,8 @@ def build_episode_package(
             for policy in compilation.policies
         ),
         runtime_source_bindings=_runtime_source_bindings(),
-        residual_axes=(
+        residual_axes=protocol_residual_axes
+        or (
             "wave-overlap-prospective-score-vs-null-and-baseline",
             "calibration-and-power-after-consecutive-future-settlements",
         ),

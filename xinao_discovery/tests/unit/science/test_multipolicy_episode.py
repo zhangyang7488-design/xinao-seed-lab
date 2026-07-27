@@ -177,6 +177,10 @@ def test_package_accepts_owner_supplied_external_policy_compilation(tmp_path) ->
         horizon_draws=1,
         frozen_at=history[-1].open_time + timedelta(minutes=10),
         policy_compilation=external_compilation,
+        protocol_research_question=(
+            "Does the Owner-adopted external AI policy produce a bounded future decision?"
+        ),
+        protocol_residual_axes=("external-ai-vs-null-and-baseline",),
     )
     readback = verify_episode_package(
         root,
@@ -184,6 +188,9 @@ def test_package_accepts_owner_supplied_external_policy_compilation(tmp_path) ->
     )
 
     assert readback["ok"] is True
+    protocol = json.loads((root / "multipolicy_protocol_pin.v1.json").read_text(encoding="utf-8"))
+    assert protocol["research_question"].startswith("Does the Owner-adopted external AI")
+    assert protocol["residual_axes"] == ["external-ai-vs-null-and-baseline"]
     active_policy_refs = {
         item["policy_ref"]
         for item in json.loads((root / "active_set.v1.json").read_text(encoding="utf-8"))[
