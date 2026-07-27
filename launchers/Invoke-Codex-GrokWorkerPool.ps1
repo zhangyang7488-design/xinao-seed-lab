@@ -13,9 +13,7 @@ param(
     [string]$DispatchEnvelopePath = "",
     [string]$Cwd = "",
     [string]$SupervisorRoot = "",
-    [Parameter(Mandatory = $true)]
-    [ValidateNotNullOrEmpty()]
-    [string]$Model,
+    [string]$Model = "",
     [string]$SelectionPath = "",
     [string]$SelectorReleasePointer = "",
     [string]$DispatchEpochId = "",
@@ -59,9 +57,6 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
-if ([string]::IsNullOrWhiteSpace($Model)) {
-    throw "CODEX_GROK_MODEL_REQUIRED"
-}
 
 function Get-CodexGrokUtf8Sha256([string]$Value) {
     $bytes = [Text.Encoding]::UTF8.GetBytes($Value)
@@ -352,6 +347,16 @@ if ($packageMode) {
     } catch {
         throw "CODEX_GROK_DISPATCH_ENVELOPE_INVALID: $DispatchEnvelopePath"
     }
+    $manifestModel = [string]$dispatchEnvelope.selection.model_id
+    if ([string]::IsNullOrWhiteSpace($manifestModel)) {
+        throw "CODEX_GROK_PACKAGE_MODEL_REQUIRED"
+    }
+    if ([string]::IsNullOrWhiteSpace($Model)) {
+        $Model = $manifestModel
+    }
+    elseif (-not [string]::Equals($Model, $manifestModel, [StringComparison]::Ordinal)) {
+        throw "CODEX_GROK_PACKAGE_MODEL_MISMATCH"
+    }
     $manifestEpochId = [string]$dispatchEnvelope.dispatch_epoch.epoch_id
     if ([string]::IsNullOrWhiteSpace($manifestEpochId)) {
         throw "CODEX_GROK_PACKAGE_EPOCH_REQUIRED"
@@ -379,6 +384,9 @@ if ($packageMode) {
     }
 }
 else {
+    if ([string]::IsNullOrWhiteSpace($Model)) {
+        throw "CODEX_GROK_MODEL_REQUIRED"
+    }
     if ([string]::IsNullOrWhiteSpace($Cwd)) { throw "CODEX_GROK_CWD_REQUIRED" }
     if ([string]::IsNullOrWhiteSpace($Prompt) -eq [string]::IsNullOrWhiteSpace($PromptFile)) {
         throw "CODEX_GROK_EXACTLY_ONE_PROMPT_SOURCE_REQUIRED"

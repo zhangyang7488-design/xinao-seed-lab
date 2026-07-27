@@ -213,6 +213,39 @@ def _run(
     )
 
 
+def _run_without_model(
+    launcher: Path,
+    runtime: Path,
+    capture: Path,
+    package_capture: Path,
+    *arguments: str,
+) -> subprocess.CompletedProcess[str]:
+    assert PWSH is not None
+    env = {
+        **os.environ,
+        "XINAO_EPOCH_CAPTURE": str(capture),
+        "XINAO_PACKAGE_CAPTURE": str(package_capture),
+    }
+    return subprocess.run(
+        [
+            PWSH,
+            "-NoProfile",
+            "-NonInteractive",
+            "-File",
+            str(launcher),
+            "-RuntimeRoot",
+            str(runtime),
+            *arguments,
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        env=env,
+    )
+
+
 def _ordinary_args(tmp_path: Path, episode_id: str) -> tuple[str, ...]:
     return (
         "-Prompt",
@@ -325,6 +358,31 @@ def test_unscoped_ordinary_mode_fails_before_quota_or_provider(
         "CODEX_GROK_DISPATCH_EPISODE_IDENTITY_REQUIRED" in result.stdout + result.stderr
     )
     assert not capture.exists()
+    assert not (runtime / "live-query-count.txt").exists()
+
+
+@pytest.mark.skipif(PWSH is None, reason="pwsh is required")
+def test_ordinary_mode_still_requires_explicit_model_before_quota_or_provider(
+    tmp_path: Path,
+) -> None:
+    launcher, runtime, capture, package_capture = _fixture(tmp_path)
+    result = _run_without_model(
+        launcher,
+        runtime,
+        capture,
+        package_capture,
+        "-Prompt",
+        "fixture-only",
+        "-Cwd",
+        str(tmp_path),
+        "-TaskRunId",
+        "ordinary-model-required",
+        "-Quiet",
+    )
+    assert result.returncode != 0
+    assert "CODEX_GROK_MODEL_REQUIRED" in result.stdout + result.stderr
+    assert not capture.exists()
+    assert not package_capture.exists()
     assert not (runtime / "live-query-count.txt").exists()
 
 
@@ -463,7 +521,8 @@ def test_package_mode_reuses_exact_sealed_epoch_and_rejects_expired_seal(
                     "quota_snapshot_id": resolution["snapshot"]["snapshot_id"],
                     "quota_snapshot_ref": resolution["snapshot"]["snapshot_ref"],
                     "quota_snapshot_sha256": resolution["snapshot"]["snapshot_sha256"],
-                }
+                },
+                "selection": {"model_id": "grok-test"},
             }
         ),
         encoding="utf-8",
@@ -510,6 +569,49 @@ def test_package_mode_reuses_exact_sealed_epoch_and_rejects_expired_seal(
         }
     ]
 
+    derived_model = _run_without_model(
+        launcher,
+        runtime,
+        capture,
+        package_capture,
+        "-DispatchEnvelopePath",
+        str(envelope),
+        *package_claim_args,
+        "-Quiet",
+    )
+    assert derived_model.returncode == 0, derived_model.stdout + derived_model.stderr
+    package_rows = [json.loads(line) for line in package_capture.read_text().splitlines()]
+    assert package_rows[-1]["model"] == "grok-test"
+
+    mismatch_envelope = tmp_path / "dispatch-envelope-model-mismatch.json"
+    mismatch_value = json.loads(envelope.read_text(encoding="utf-8"))
+    mismatch_value["selection"]["model_id"] = "different-model"
+    mismatch_envelope.write_text(json.dumps(mismatch_value), encoding="utf-8")
+    package_count_before_mismatch = len(package_rows)
+    checkpoint_count_before_mismatch = len(
+        (runtime / "checkpoint-preflight.jsonl").read_text().splitlines()
+    )
+    mismatched_model = _run(
+        launcher,
+        runtime,
+        capture,
+        package_capture,
+        "-DispatchEnvelopePath",
+        str(mismatch_envelope),
+        *package_claim_args,
+        "-Quiet",
+    )
+    assert mismatched_model.returncode != 0
+    assert "CODEX_GROK_PACKAGE_MODEL_MISMATCH" in (
+        mismatched_model.stdout + mismatched_model.stderr
+    )
+    assert len(package_capture.read_text().splitlines()) == package_count_before_mismatch
+    assert (
+        len((runtime / "checkpoint-preflight.jsonl").read_text().splitlines())
+        == checkpoint_count_before_mismatch
+    )
+    assert (runtime / "live-query-count.txt").read_text() == "1"
+
     current = (
         runtime / "state" / "quota_dispatch_epochs" / "package-episode" / "current.json"
     )
@@ -543,7 +645,12 @@ def test_package_checkpoint_preflight_rejects_shared_path_before_quota_or_packag
     launcher, runtime, capture, package_capture = _fixture(tmp_path)
     envelope = tmp_path / "dispatch-envelope.json"
     envelope.write_text(
-        json.dumps({"dispatch_epoch": {"epoch_id": "package-episode"}}),
+        json.dumps(
+            {
+                "dispatch_epoch": {"epoch_id": "package-episode"},
+                "selection": {"model_id": "grok-test"},
+            }
+        ),
         encoding="utf-8",
     )
     task_run_root = tmp_path / "task-runs"
@@ -586,7 +693,12 @@ def test_package_missing_task_run_cli_fails_before_checkpoint_quota_or_package(
     launcher, runtime, capture, package_capture = _fixture(tmp_path)
     envelope = tmp_path / "dispatch-envelope.json"
     envelope.write_text(
-        json.dumps({"dispatch_epoch": {"epoch_id": "package-episode"}}),
+        json.dumps(
+            {
+                "dispatch_epoch": {"epoch_id": "package-episode"},
+                "selection": {"model_id": "grok-test"},
+            }
+        ),
         encoding="utf-8",
     )
     task_run_root = tmp_path / "task-runs"
