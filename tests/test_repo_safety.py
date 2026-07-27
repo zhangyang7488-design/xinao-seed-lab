@@ -951,8 +951,7 @@ def test_context_intent_alignment_eval_is_balanced_and_friction_bounded() -> Non
     ]
     assert problem_levels["default_floor"] == "object_instance"
     assert (
-        problem_levels["problem_level_order"]
-        == "before_rule_skill_mode_worker_and_tool_selection"
+        problem_levels["problem_level_order"] == "before_rule_skill_mode_worker_and_tool_selection"
     )
     assert problem_levels["necessary_reasoning_tokens_allowed"] is True
     assert "decision_skill_sidecar" in problem_levels["orthogonal_landing_targets"]
@@ -1146,9 +1145,7 @@ def test_predecision_frame_goal_pause_and_runtime_evidence_are_enforced() -> Non
     }
     assert set(schema["required"]) == set(schema["properties"])
 
-    prompt = (REPO_ROOT / "evals/context_intent_alignment/prompt.txt").read_text(
-        encoding="utf-8"
-    )
+    prompt = (REPO_ROOT / "evals/context_intent_alignment/prompt.txt").read_text(encoding="utf-8")
     for required in (
         "parent frame before candidate selection",
         "active_problem_level",

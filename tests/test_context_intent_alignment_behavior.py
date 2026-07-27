@@ -229,9 +229,7 @@ def test_dual_subject_personal_burden_cannot_be_dropped_as_task_only_diagnosis()
 def test_already_preserved_personal_burden_is_consumed_without_duplicate_capture() -> None:
     case_id = "REG_USER_BURDEN_REANCHORS_PARENT_INTENT"
     case = _case(case_id)
-    assert "evt-rule-subset-lockin-upstream-level-20260727" in case["vars"][
-        "restored_context"
-    ]
+    assert "evt-rule-subset-lockin-upstream-level-20260727" in case["vars"]["restored_context"]
     assert case["vars"]["expected_metacognition_disposition"] == "do_not_capture"
     result = _run_assertion(_context(case_id=case_id), output=_output_from_case(case_id))
     assert result["pass"] is True, result["reason"]
