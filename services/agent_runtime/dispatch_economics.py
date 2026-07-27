@@ -1790,9 +1790,7 @@ def prepare_worker_package_task_run(
     if len(work_keys) != len(set(work_keys)):
         raise DispatchEconomicsError("dispatch package work_key identities must be unique")
     package_by_id = {
-        str(row["package_id"]): row
-        for row in manifest["packages"]
-        if isinstance(row, Mapping)
+        str(row["package_id"]): row for row in manifest["packages"] if isinstance(row, Mapping)
     }
     candidate_binding = validate_candidate_consumer_binding(
         envelope_raw,
