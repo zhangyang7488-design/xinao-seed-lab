@@ -20,3 +20,18 @@ function Set-XinaoProcessArguments {
     }
     return 'process_start_info_argument_list'
 }
+
+function Set-XinaoUtf8ProcessStreams {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]
+        [Diagnostics.ProcessStartInfo]$StartInfo
+    )
+
+    # Docker and the Linux Grok worker emit UTF-8 bytes regardless of the
+    # active Windows console code page.  Keep decoding deterministic and
+    # fail closed on invalid bytes instead of silently corrupting JSON.
+    $strictUtf8 = [Text.UTF8Encoding]::new($false, $true)
+    $StartInfo.StandardOutputEncoding = $strictUtf8
+    $StartInfo.StandardErrorEncoding = $strictUtf8
+}

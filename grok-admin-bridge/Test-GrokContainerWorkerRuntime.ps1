@@ -129,8 +129,13 @@ if not workspace_mount.endswith(",readonly"):
     (Path(os.environ["XINAO_FAKE_CANDIDATE"]) / "container-write-marker.txt").write_text(
         "CONTAINER_WRITE_OK\n", encoding="utf-8", newline="\n"
     )
+unicode_question = "\u6216NO_ACTION\u51b3\u7b56\uff1f"
 payload = {
-    "text": "CONTAINER_OK",
+    "text": json.dumps(
+        {"marker": "CONTAINER_OK", "research_question": unicode_question},
+        ensure_ascii=False,
+        separators=(",", ":"),
+    ),
     "stopReason": "EndTurn",
     "sessionId": session_id,
     "usage": {
@@ -142,7 +147,9 @@ payload = {
     },
     "modelUsage": {"grok-4.5-build": {"modelCalls": 1}},
 }
-print(json.dumps(payload, separators=(",", ":")))
+sys.stdout.buffer.write(
+    (json.dumps(payload, ensure_ascii=False, separators=(",", ":")) + "\n").encode("utf-8")
+)
 '@
 $hostModelsScript = @'
 import datetime
@@ -184,7 +191,12 @@ $priorHostRefresh = $env:XINAO_FAKE_HOST_CATALOG_REFRESH
 $priorHome = $env:XINAO_FAKE_GROK_HOME
 $priorSessions = $env:XINAO_FAKE_GROK_SESSIONS
 $priorCandidate = $env:XINAO_FAKE_CANDIDATE
+$priorConsoleOutputEncoding = [Console]::OutputEncoding
 try {
+    # Reproduce a host whose active console code page is CP936. Docker still
+    # emits the Linux worker's JSON as UTF-8 bytes; the worker must pin the
+    # redirected stream decoder instead of inheriting this host setting.
+    [Console]::OutputEncoding = [Text.Encoding]::GetEncoding(936)
     $env:XINAO_FAKE_DOCKER_CAPTURE = $capturePath
     $env:XINAO_FAKE_HOST_CATALOG_REFRESH = $hostRefreshPath
     $env:XINAO_FAKE_GROK_HOME = $profile
@@ -216,6 +228,18 @@ try {
         $meta = Get-Content -LiteralPath (Join-Path $case.evidence "latest.json") -Raw -Encoding UTF8 |
             ConvertFrom-Json -ErrorAction Stop
         Assert-Contract ($meta.status -eq "accepted") ("worker_accepted_" + $case.effect)
+        Assert-Contract ([string]$meta.process_stdout_encoding -eq "utf-8-strict") (
+            "worker_stdout_encoding_" + $case.effect
+        )
+        Assert-Contract ([string]$meta.process_stderr_encoding -eq "utf-8-strict") (
+            "worker_stderr_encoding_" + $case.effect
+        )
+        $cliPayload = Get-Content -LiteralPath ([string]$meta.cli_json) -Raw -Encoding UTF8 |
+            ConvertFrom-Json -ErrorAction Stop
+        $resultPayload = [string]$cliPayload.text | ConvertFrom-Json -ErrorAction Stop
+        Assert-Contract ([string]$resultPayload.research_question -eq "或NO_ACTION决策？") (
+            "worker_utf8_stdout_round_trip_" + $case.effect
+        )
         Assert-Contract ($meta.execution_backend -eq "linux-container") "execution_backend"
         Assert-Contract ($meta.sandbox_enforcement -eq "linux_docker_mount_boundary_plus_tool_shell_bwrap_profile_mask") "sandbox_enforcement"
         Assert-Contract ($meta.container_profile_tmpfs -eq $false) "profile_not_tmpfs"
@@ -247,6 +271,7 @@ try {
     Assert-Contract (@(Get-Content -LiteralPath $hostRefreshPath).Count -eq 1) "host_catalog_singleflight_refresh_once"
 }
 finally {
+    [Console]::OutputEncoding = $priorConsoleOutputEncoding
     if ($null -eq $priorCapture) { Remove-Item Env:XINAO_FAKE_DOCKER_CAPTURE -ErrorAction SilentlyContinue } else { $env:XINAO_FAKE_DOCKER_CAPTURE = $priorCapture }
     if ($null -eq $priorHostRefresh) { Remove-Item Env:XINAO_FAKE_HOST_CATALOG_REFRESH -ErrorAction SilentlyContinue } else { $env:XINAO_FAKE_HOST_CATALOG_REFRESH = $priorHostRefresh }
     if ($null -eq $priorHome) { Remove-Item Env:XINAO_FAKE_GROK_HOME -ErrorAction SilentlyContinue } else { $env:XINAO_FAKE_GROK_HOME = $priorHome }
