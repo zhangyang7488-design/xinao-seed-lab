@@ -85,13 +85,17 @@ class Day1PolicyCompilation(BaseModel):
     def validate_compilation(self) -> Self:
         _require_aware(self.knowledge_cutoff, "policy compilation knowledge_cutoff")
         policy_refs = tuple(policy.policy_ref for policy in self.policies)
-        if policy_refs != tuple(sorted(policy_refs)) or policy_refs != DAY1_POLICY_REFS:
-            raise ValueError("Day-1 policy identities or order drifted")
+        if policy_refs != tuple(sorted(policy_refs)) or len(set(policy_refs)) != 4:
+            raise ValueError("policy compilation identities must be sorted and unique")
+        if {policy.role for policy in self.policies} != set(PolicyRole):
+            raise ValueError("policy compilation must cover the exact required roles")
         if any(policy.content_hash is None for policy in self.policies):
-            raise ValueError("Day-1 policies must be hash sealed")
+            raise ValueError("compiled policies must be hash sealed")
+        if len({policy.content_hash for policy in self.policies}) != 4:
+            raise ValueError("compiled policy content hashes must be unique")
         decision_refs = tuple(decision.policy_ref for decision in self.decisions)
         if decision_refs != policy_refs:
-            raise ValueError("Day-1 decisions do not cover the exact policy set")
+            raise ValueError("compiled decisions do not cover the exact policy set")
         if len(set(self.probe_target_refs)) != len(self.probe_target_refs):
             raise ValueError("Day-1 probe target identities must be unique")
         if self.content_hash is not None and self.content_hash != self.compute_content_hash():
@@ -190,8 +194,10 @@ class MultipolicyProtocolPin(BaseModel):
         if self.required_roles != expected_roles:
             raise ValueError("MultipolicyProtocolPin required roles drifted")
         binding_refs = tuple(binding.policy_ref for binding in self.policy_bindings)
-        if binding_refs != DAY1_POLICY_REFS:
-            raise ValueError("MultipolicyProtocolPin policy bindings drifted")
+        if binding_refs != tuple(sorted(binding_refs)) or len(set(binding_refs)) != 4:
+            raise ValueError(
+                "MultipolicyProtocolPin policy bindings must be sorted and unique"
+            )
         if {binding.role for binding in self.policy_bindings} != set(PolicyRole):
             raise ValueError("MultipolicyProtocolPin policy role bindings are incomplete")
         if len(set(binding.content_hash for binding in self.policy_bindings)) != 4:

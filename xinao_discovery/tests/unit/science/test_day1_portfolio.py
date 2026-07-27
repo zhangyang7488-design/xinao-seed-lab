@@ -120,6 +120,81 @@ def test_day1_gates_cover_exact_policy_bindings() -> None:
     assert all(item.target_ref == compiled.target_ref for item in gates.values())
 
 
+def test_compilation_and_protocol_pin_accept_owner_adopted_external_substantive() -> None:
+    compiled = compilation()
+    substantive = next(item for item in compiled.policies if item.role == PolicyRole.SUBSTANTIVE)
+    external = substantive.model_copy(
+        update={
+            "policy_ref": "policy.external.owner-adopted-ai.v1",
+            "semantic_config": {
+                **substantive.semantic_config,
+                "origin": "owner-adopted-external-candidate",
+            },
+            "content_hash": None,
+        }
+    ).with_content_hash()
+    policies = tuple(
+        sorted(
+            (
+                external if item.role == PolicyRole.SUBSTANTIVE else item
+                for item in compiled.policies
+            ),
+            key=lambda item: item.policy_ref,
+        )
+    )
+    decisions = tuple(
+        sorted(
+            (
+                item.model_copy(update={"policy_ref": external.policy_ref})
+                if item.policy_ref == substantive.policy_ref
+                else item
+                for item in compiled.decisions
+            ),
+            key=lambda item: item.policy_ref,
+        )
+    )
+    external_compilation = Day1PolicyCompilation(
+        **{
+            **compiled.model_dump(mode="python", exclude={"policies", "decisions", "content_hash"}),
+            "policies": policies,
+            "decisions": decisions,
+        }
+    ).with_content_hash()
+    protocol = pin(external_compilation)
+    gates = build_day1_gates(
+        pin=protocol,
+        compilation=external_compilation,
+        information_set_ref="information-set.external.v1",
+        information_set_hash=external_compilation.history_identity_hash,
+    )
+
+    assert external.policy_ref in gates
+    assert tuple(sorted(gates)) == tuple(item.policy_ref for item in policies)
+    assert protocol.policy_bindings[-1].policy_ref == external.policy_ref
+
+
+def test_compilation_rejects_missing_required_role_after_generalization() -> None:
+    compiled = compilation()
+    policies = list(compiled.policies)
+    substantive_index = next(
+        index for index, item in enumerate(policies) if item.role == PolicyRole.SUBSTANTIVE
+    )
+    policies[substantive_index] = policies[substantive_index].model_copy(
+        update={"role": PolicyRole.BASELINE, "content_hash": None}
+    ).with_content_hash()
+
+    with pytest.raises(ValueError, match="exact required roles"):
+        Day1PolicyCompilation(
+            **{
+                **compiled.model_dump(
+                    mode="python", exclude={"policies", "decisions", "content_hash"}
+                ),
+                "policies": tuple(policies),
+                "decisions": compiled.decisions,
+            }
+        )
+
+
 def test_frozen_predictors_have_distinct_mechanisms_and_stable_outputs() -> None:
     values = tuple(item.special_number for item in observations())
 

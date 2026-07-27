@@ -261,6 +261,7 @@ def build_episode_package(
     horizon_draws: int,
     frozen_at: datetime | None = None,
     synthetic_outcome_number: int | None = None,
+    policy_compilation: Day1PolicyCompilation | None = None,
 ) -> dict[str, Any]:
     """Build one exclusive multi-policy package in an already-created directory."""
 
@@ -277,12 +278,33 @@ def build_episode_package(
         if evidence_class == "EXECUTION_RECOVERY_ONLY"
         else "PROSPECTIVE_EXPLORATORY_DAY1"
     )
-    compilation = build_day1_policy_compilation(
+    expected_history_identity_hash = canonical_sha256(
+        [
+            {
+                "expect": item.expect,
+                "open_time": item.open_time,
+                "source_row_hash": item.source_row_hash,
+            }
+            for item in observations
+        ]
+    )
+    compilation = policy_compilation or build_day1_policy_compilation(
         observations,
         target_ref=target_ref,
         knowledge_cutoff=knowledge_cutoff,
         horizon_draws=horizon_draws,
     )
+    if (
+        compilation.content_hash is None
+        or compilation.target_ref != target_ref
+        or compilation.horizon_draws != horizon_draws
+        or compilation.knowledge_cutoff != knowledge_cutoff
+        or compilation.history_count != len(observations)
+        or compilation.history_identity_hash != expected_history_identity_hash
+    ):
+        raise ValueError(
+            "supplied policy compilation does not bind the episode target, cutoff, and history"
+        )
     _write_model(output_dir / "day1_policy_compilation.v1.json", compilation)
 
     anchor_path, anchor_sha256, registered_head = _create_trial_ledger(
