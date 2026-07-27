@@ -289,6 +289,11 @@ Return only one JSON object with these fields:
   `completion_claim_scope` reports completion actually established by current evidence, not the
   identity of the parent being resumed. Use `parent_mainline` only when the full parent completion
   bar closes; merely restoring or continuing it is `not_applicable`.
+  For an operate-for-user pre-report gate, missing stable-entry discoverability, applicable
+  maintenance propagation, real-consumer effect, or qualified fresh-window readback means current
+  evidence establishes no completion and therefore uses `not_applicable`. A written file, worker
+  terminal, repository test, merge, or task-run green does not become `local_object` merely because
+  its own narrower predicate is closed.
   A deterministic `accept`, `reject_and_recover`, or `reuse` disposition for the current candidate is
   a completed local adjudication and uses `local_object`, even when its downstream repair or consumer
   continues.
