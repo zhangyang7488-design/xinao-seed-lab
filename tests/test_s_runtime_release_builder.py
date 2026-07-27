@@ -47,6 +47,12 @@ def test_run_git_uses_the_explicit_executable_binding(monkeypatch, tmp_path: Pat
 
     assert observed == "sha1\n"
     assert captured["command"][0] == str(git_executable.resolve())
+    assert captured["kwargs"]["shell"] is False
+    assert captured["kwargs"]["creationflags"] == getattr(
+        subprocess,
+        "CREATE_NO_WINDOW",
+        0,
+    )
 
 
 def test_git_blob_oid_matches_git_hash_object(tmp_path: Path) -> None:

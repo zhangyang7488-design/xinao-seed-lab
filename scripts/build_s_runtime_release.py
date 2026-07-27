@@ -21,6 +21,7 @@ from typing import Any
 
 SCHEMA_VERSION = "xinao.s_runtime_source_release.v1"
 DEFAULT_RELEASE_ROOT = Path(r"D:\XINAO_RESEARCH_RUNTIME\state\s_runtime_releases")
+WINDOWLESS = getattr(subprocess, "CREATE_NO_WINDOW", 0) if os.name == "nt" else 0
 
 
 def _git_argv0(git_executable: str | Path) -> str:
@@ -41,6 +42,8 @@ def _run_git(
         capture_output=True,
         text=text,
         timeout=120,
+        shell=False,
+        creationflags=WINDOWLESS,
     )
     return completed.stdout
 
@@ -315,6 +318,8 @@ def build_release(
             cwd=repo,
             check=True,
             timeout=120,
+            shell=False,
+            creationflags=WINDOWLESS,
         )
         object_format, expected = _git_tree(
             repo,
