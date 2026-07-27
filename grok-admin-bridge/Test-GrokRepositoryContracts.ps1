@@ -359,6 +359,8 @@ Assert-Contract ($effectiveValidatorText -notmatch 'EndsWith\(.+build|TrimEnd\(.
 Assert-Contract ($pathIdentityText -match 'GetFileInformationByHandle') "path_identity_uses_windows_file_identity"
 Assert-Contract ($pathIdentityText -match 'GetFinalPathNameByHandleW') "path_identity_records_final_path"
 Assert-Contract ($pathIdentityText -match 'PATH_IDENTITY_JUNCTION_RETARGET') "path_identity_has_retarget_guard"
+Assert-Contract ($pathIdentityText -match 'ConvertTo-GrokWin32ExtendedPath') "path_identity_supports_extended_length_paths"
+Assert-Contract ($pathIdentityText -match 'CreateFileW\(\s*\$nativeRequested') "path_identity_opens_extended_length_path"
 Assert-Contract ($effectiveValidatorText -match 'Test-GrokDirectoryObjectIdentityEqual') "effective_output_cwd_uses_object_identity"
 Assert-Contract ($effectiveValidatorText -notmatch 'sessionCwdBindingOk\s*=\s*Test-OrdinalIgnoreCaseEquals') "effective_output_cwd_has_no_string_equality"
 Assert-Contract ($dispatchText -match 'Test-GrokDirectoryObjectIdentityEqual') "dispatch_pool_cwd_uses_object_identity"

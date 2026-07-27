@@ -57,6 +57,23 @@ namespace Xinao.Grok {
 "@
 }
 
+function ConvertTo-GrokWin32ExtendedPath {
+    [CmdletBinding()]
+    param([Parameter(Mandatory = $true)][string]$Path)
+
+    $full = [IO.Path]::GetFullPath($Path)
+    if (
+        $full.StartsWith('\\?\', [StringComparison]::Ordinal) -or
+        $full.StartsWith('\\.\', [StringComparison]::Ordinal)
+    ) {
+        return $full
+    }
+    if ($full.StartsWith('\\', [StringComparison]::Ordinal)) {
+        return '\\?\UNC\' + $full.Substring(2)
+    }
+    return '\\?\' + $full
+}
+
 function Open-GrokDirectoryIdentityLease {
     [CmdletBinding()]
     param([Parameter(Mandatory = $true)][string]$Path)
@@ -68,11 +85,12 @@ function Open-GrokDirectoryIdentityLease {
     if (-not (Test-Path -LiteralPath $requested -PathType Container)) {
         throw "PATH_IDENTITY_OPEN_FAILED: $requested"
     }
+    $nativeRequested = ConvertTo-GrokWin32ExtendedPath -Path $requested
     $share = [Xinao.Grok.WindowsPathNative]::FILE_SHARE_READ -bor
         [Xinao.Grok.WindowsPathNative]::FILE_SHARE_WRITE -bor
         [Xinao.Grok.WindowsPathNative]::FILE_SHARE_DELETE
     $handle = [Xinao.Grok.WindowsPathNative]::CreateFileW(
-        $requested,
+        $nativeRequested,
         0,
         $share,
         [IntPtr]::Zero,
