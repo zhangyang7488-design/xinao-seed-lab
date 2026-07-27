@@ -252,6 +252,7 @@ function Invoke-NativeCapture(
     $startInfo.CreateNoWindow = $true
     $startInfo.RedirectStandardOutput = $true
     $startInfo.RedirectStandardError = $true
+    Set-XinaoUtf8ProcessStreams -StartInfo $startInfo
     $transport = Set-XinaoProcessArguments -StartInfo $startInfo -Arguments $Arguments
     $process = [Diagnostics.Process]::new()
     $process.StartInfo = $startInfo
@@ -660,6 +661,7 @@ if ($Background -and -not $DetachedDrain) {
     # redirected stdout/stderr handles open after this launcher exits.
     $drainStartInfo.RedirectStandardOutput = $true
     $drainStartInfo.RedirectStandardError = $true
+    Set-XinaoUtf8ProcessStreams -StartInfo $drainStartInfo
     $drainArgvTransport = Set-XinaoProcessArguments -StartInfo $drainStartInfo -Arguments $drainArguments
     $drainProcess = [Diagnostics.Process]::new()
     $drainProcess.StartInfo = $drainStartInfo
@@ -1264,6 +1266,8 @@ $meta = [ordered]@{
     err_log = $errLog
     cli_json = $cliJsonPath
     create_no_window = $true
+    process_stdout_encoding = "utf-8-strict"
+    process_stderr_encoding = "utf-8-strict"
     completion_claim_allowed = $false
     canonical_worker_pool = $isCanonicalWorkerPool
     short_execution_contract_source = $shortExecutionContractSource
@@ -1318,6 +1322,7 @@ $psi.UseShellExecute = $false
 $psi.RedirectStandardOutput = $true
 $psi.RedirectStandardError = $true
 $psi.CreateNoWindow = $true
+Set-XinaoUtf8ProcessStreams -StartInfo $psi
 if ($GrokHome -and -not $containerMode) {
     $psi.EnvironmentVariables["GROK_HOME"] = $GrokHome
 }
