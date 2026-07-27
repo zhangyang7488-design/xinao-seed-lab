@@ -167,8 +167,10 @@ def _advance_trial_ledger(
     )
     head: dict[str, Any] = replay
     for policy in policies:
-        status = "NO_ACTION" if terminal and policy.role == PolicyRole.NO_ACTION else (
-            "SUCCEEDED" if terminal else "RUNNING"
+        status = (
+            "NO_ACTION"
+            if terminal and policy.role == PolicyRole.NO_ACTION
+            else ("SUCCEEDED" if terminal else "RUNNING")
         )
         receipt = append_science_trial_entry(
             anchor_path,
@@ -231,9 +233,7 @@ def _runtime_source_bindings() -> tuple[RuntimeSourceBinding, ...]:
         "src/xinao/science/portfolio.py": xinao_root / "science" / "portfolio.py",
         "src/xinao/science/trial_ledger.py": xinao_root / "science" / "trial_ledger.py",
         "src/xinao/settlement/shadow.py": xinao_root / "settlement" / "shadow.py",
-        "src/xinao/settlement/special_number.py": xinao_root
-        / "settlement"
-        / "special_number.py",
+        "src/xinao/settlement/special_number.py": xinao_root / "settlement" / "special_number.py",
     }
     return tuple(
         RuntimeSourceBinding(ref=ref, sha256=sha256_file(path))
@@ -261,6 +261,9 @@ def build_episode_package(
     horizon_draws: int,
     frozen_at: datetime | None = None,
     synthetic_outcome_number: int | None = None,
+    policy_compilation: Day1PolicyCompilation | None = None,
+    protocol_research_question: str | None = None,
+    protocol_residual_axes: tuple[str, ...] | None = None,
 ) -> dict[str, Any]:
     """Build one exclusive multi-policy package in an already-created directory."""
 
@@ -277,12 +280,33 @@ def build_episode_package(
         if evidence_class == "EXECUTION_RECOVERY_ONLY"
         else "PROSPECTIVE_EXPLORATORY_DAY1"
     )
-    compilation = build_day1_policy_compilation(
+    expected_history_identity_hash = canonical_sha256(
+        [
+            {
+                "expect": item.expect,
+                "open_time": item.open_time,
+                "source_row_hash": item.source_row_hash,
+            }
+            for item in observations
+        ]
+    )
+    compilation = policy_compilation or build_day1_policy_compilation(
         observations,
         target_ref=target_ref,
         knowledge_cutoff=knowledge_cutoff,
         horizon_draws=horizon_draws,
     )
+    if (
+        compilation.content_hash is None
+        or compilation.target_ref != target_ref
+        or compilation.horizon_draws != horizon_draws
+        or compilation.knowledge_cutoff != knowledge_cutoff
+        or compilation.history_count != len(observations)
+        or compilation.history_identity_hash != expected_history_identity_hash
+    ):
+        raise ValueError(
+            "supplied policy compilation does not bind the episode target, cutoff, and history"
+        )
     _write_model(output_dir / "day1_policy_compilation.v1.json", compilation)
 
     anchor_path, anchor_sha256, registered_head = _create_trial_ledger(
@@ -307,7 +331,8 @@ def build_episode_package(
         trial_ledger_anchor_sha256=anchor_sha256,
         trial_ledger_prefix_entry_count=int(registered_head["entry_count"]),
         trial_ledger_prefix_entries_sha256=str(registered_head["entries_sha256"]),
-        research_question=(
+        research_question=protocol_research_question
+        or (
             "Can a pre-outcome Day-1 set containing a target-only negative control, "
             "rolling marginal baseline, and bounded multiscale-overlap challenger "
             "produce behaviorally non-equivalent shadow decisions and settle them all?"
@@ -327,7 +352,8 @@ def build_episode_package(
             for policy in compilation.policies
         ),
         runtime_source_bindings=_runtime_source_bindings(),
-        residual_axes=(
+        residual_axes=protocol_residual_axes
+        or (
             "wave-overlap-prospective-score-vs-null-and-baseline",
             "calibration-and-power-after-consecutive-future-settlements",
         ),
@@ -496,9 +522,7 @@ def build_episode_package(
         "state": state,
         "evidence_class": evidence_class,
         "manifest_sha256": sha256_file(output_dir / PACKAGE_MANIFEST_NAME),
-        "consumer_receipt_sha256": sha256_file(
-            output_dir / "multipolicy_consumer_receipt.v1.json"
-        ),
+        "consumer_receipt_sha256": sha256_file(output_dir / "multipolicy_consumer_receipt.v1.json"),
         "freeze_set_hash": freeze_set.content_hash,
         "settlement_set_hash": settlement_set.content_hash if settlement_set else None,
         "parent_complete": False,
@@ -567,9 +591,10 @@ def run_live_freeze(
     latest_local = latest.open_time.astimezone(ASIA_SHANGHAI)
     target_local = target_open_time.astimezone(ASIA_SHANGHAI)
     if (
-        (target_local.date() - latest_local.date()).days != horizon_draws
-        or target_local.timetz().replace(tzinfo=None) != latest_local.timetz().replace(tzinfo=None)
-    ):
+        target_local.date() - latest_local.date()
+    ).days != horizon_draws or target_local.timetz().replace(
+        tzinfo=None
+    ) != latest_local.timetz().replace(tzinfo=None):
         raise ValueError("live target schedule does not follow the captured daily stream identity")
     frozen_at = _millisecond_now()
     if frozen_at > freeze_deadline:
@@ -713,8 +738,7 @@ def _verify_trial_ledger_shape(
     if (
         pin.trial_ledger_prefix_entry_count != policy_count
         or len(entries) < policy_count
-        or canonical_sha256(entries[:policy_count])
-        != pin.trial_ledger_prefix_entries_sha256
+        or canonical_sha256(entries[:policy_count]) != pin.trial_ledger_prefix_entries_sha256
     ):
         raise ValueError("fresh readback TrialLedger registration prefix differs from ProtocolPin")
     expected_phases = [("registered", False), ("frozen", False)]
@@ -742,8 +766,7 @@ def _verify_trial_ledger_shape(
                 entry.get("work_key") != policy.policy_ref
                 or entry.get("status") != expected_status
                 or entry.get("family_id") != policy.family_id
-                or entry.get("equivalence_cluster_id")
-                != policy.decision_signature.signature_hash
+                or entry.get("equivalence_cluster_id") != policy.decision_signature.signature_hash
                 or entry.get("path_kind") != expected_path_kind
                 or entry.get("failure_reason") is not None
                 or not isinstance(meta, dict)
@@ -904,8 +927,7 @@ def verify_episode_package(
     if (
         ledger["entry_count"] != receipt["trial_ledger_head"]["entry_count"]
         or ledger["entries_sha256"] != receipt["trial_ledger_head"]["entries_sha256"]
-        or ledger["journal_file_sha256"]
-        != receipt["trial_ledger_head"]["journal_file_sha256"]
+        or ledger["journal_file_sha256"] != receipt["trial_ledger_head"]["journal_file_sha256"]
     ):
         raise ValueError("fresh readback TrialLedger head differs from consumer receipt")
     _verify_trial_ledger_shape(ledger=ledger, pin=pin, compiled=compiled, state=state)
