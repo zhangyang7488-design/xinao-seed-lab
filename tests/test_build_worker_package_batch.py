@@ -290,13 +290,9 @@ def test_audit_repair_provider_inputs_share_snapshot_catalog_and_manifest(
     prior_adjudication = _read_json(str(adjudication_path))
     prior_adjudication["finding_family"] = "unrelated-prior-family"
     prior_adjudication.pop("adjudication_sha256")
-    prior_adjudication["adjudication_sha256"] = builder._canonical_sha(
-        prior_adjudication
-    )
+    prior_adjudication["adjudication_sha256"] = builder._canonical_sha(prior_adjudication)
     _write_json(prior_adjudication_path, prior_adjudication)
-    package_spec["prior_audit_adjudication_paths"] = [
-        str(prior_adjudication_path)
-    ]
+    package_spec["prior_audit_adjudication_paths"] = [str(prior_adjudication_path)]
 
     frozen, snapshot, bindings = builder.snapshot_package_spec_inputs(
         spec,
@@ -444,9 +440,7 @@ def test_input_snapshot_freezes_all_source_material_and_preserves_provenance(
         "status": "owner_reviewed_redacted",
         "scope": "all_package_sources",
         "reviewer_role": "codex_owner",
-        "snapshot_generation_sha256": snapshot_manifest[
-            "snapshot_generation_sha256"
-        ],
+        "snapshot_generation_sha256": snapshot_manifest["snapshot_generation_sha256"],
     }
 
     package_root = next(
@@ -470,9 +464,10 @@ def test_input_snapshot_freezes_all_source_material_and_preserves_provenance(
     frozen_ref = manifest["packages"][0]["input_refs"][0]
     original_input.write_text("live input changed after sealing\n", encoding="utf-8")
     assert builder._sha(frozen_input) == frozen_ref["sha256"]
-    assert builder.validate_package_batch_manifest(manifest)["packages"][0][
-        "input_refs"
-    ][0] == frozen_ref
+    assert (
+        builder.validate_package_batch_manifest(manifest)["packages"][0]["input_refs"][0]
+        == frozen_ref
+    )
 
 
 def test_input_snapshot_ref_root_keeps_logical_and_physical_paths_separate(
@@ -595,9 +590,7 @@ def test_input_snapshot_requires_positive_owner_reviewed_redacted_admission(
     spec.pop("external_input_admission")
 
     with pytest.raises(ValueError, match="external_input_admission"):
-        builder.snapshot_package_spec_inputs(
-            spec, snapshot_root=tmp_path / "sealed-inputs"
-        )
+        builder.snapshot_package_spec_inputs(spec, snapshot_root=tmp_path / "sealed-inputs")
 
     for invalid in (
         {},
@@ -715,12 +708,13 @@ def test_cli_defaults_to_sealed_input_copy_that_survives_live_source_drift(
     live_input = Path(str(spec["packages"][0]["input_paths"][0]))
     assert frozen_input != live_input
     live_input.write_text("live source drift after CLI seal\n", encoding="utf-8")
-    assert validate_package_batch_manifest(manifest)["packages"][0]["input_refs"][0][
-        "path"
-    ] == frozen_input_logical
-    assert validate_dispatch_envelope(_read_json(str(envelope_path)))[
-        "validated_package_manifest"
-    ]["packages"][0]["input_refs"][0]["sha256"] == builder._sha(frozen_input)
+    assert (
+        validate_package_batch_manifest(manifest)["packages"][0]["input_refs"][0]["path"]
+        == frozen_input_logical
+    )
+    assert validate_dispatch_envelope(_read_json(str(envelope_path)))["validated_package_manifest"][
+        "packages"
+    ][0]["input_refs"][0]["sha256"] == builder._sha(frozen_input)
 
     second_manifest_path = tmp_path / "package-manifest-generation-2.json"
     second_envelope_path = tmp_path / "dispatch-envelope-generation-2.json"
@@ -748,14 +742,10 @@ def test_cli_defaults_to_sealed_input_copy_that_survives_live_source_drift(
     )
     assert second.returncode == 0, second.stderr
     second_result = json.loads(second.stdout)
-    second_snapshot_manifest = _read_json(
-        str(second_result["input_snapshot_manifest_ref"]["path"])
-    )
+    second_snapshot_manifest = _read_json(str(second_result["input_snapshot_manifest_ref"]["path"]))
     second_snapshot_root = Path(str(second_snapshot_manifest["snapshot_root"]))
     assert second_snapshot_root != first_snapshot_root
-    assert second_snapshot_root.name == second_snapshot_manifest[
-        "snapshot_generation_sha256"
-    ]
+    assert second_snapshot_root.name == second_snapshot_manifest["snapshot_generation_sha256"]
     assert (
         _read_json(str(second_manifest_path))["packages"][0]["input_refs"][0]["sha256"]
         != _read_json(str(manifest_path))["packages"][0]["input_refs"][0]["sha256"]

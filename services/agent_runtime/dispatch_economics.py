@@ -1803,10 +1803,9 @@ def _dispatch_envelope_route_reuse_equivalence(
             "effective_dispatch_envelope_ref": dict(effective_ref),
             "route_equivalence_projection_sha256": projection_sha256,
         }
-    if (
-        origin_snapshot_id == effective_snapshot_id
-        or _canonical_bytes(origin_projection) != _canonical_bytes(effective_projection)
-    ):
+    if origin_snapshot_id == effective_snapshot_id or _canonical_bytes(
+        origin_projection
+    ) != _canonical_bytes(effective_projection):
         return None
     return {
         "reuse_basis": "quota_snapshot_only_equivalent",
@@ -2056,9 +2055,7 @@ def _assert_no_overlapping_route_claim(
         existing_guards = set(existing["mutation_guard_work_keys"])
         if not (current_guards & existing_guards):
             continue
-        if current_guards == existing_guards and current_choice == str(
-            existing["choice_sha256"]
-        ):
+        if current_guards == existing_guards and current_choice == str(existing["choice_sha256"]):
             equivalence = _dispatch_envelope_route_reuse_equivalence(
                 origin_envelope_ref=existing_ref,
                 effective_envelope_ref=envelope_ref,
@@ -2271,9 +2268,7 @@ def _claim_dispatch_route_under_scope_locks(
         ):
             raise DispatchEconomicsError("closed route claim evidence is missing or drifted")
         try:
-            origin_evidence = json.loads(
-                origin_evidence_path.read_text(encoding="utf-8-sig")
-            )
+            origin_evidence = json.loads(origin_evidence_path.read_text(encoding="utf-8-sig"))
         except (OSError, UnicodeError, json.JSONDecodeError) as exc:
             raise DispatchEconomicsError("closed route claim evidence is invalid") from exc
         if not isinstance(origin_evidence, Mapping):
@@ -2290,8 +2285,7 @@ def _claim_dispatch_route_under_scope_locks(
         if (
             details.get("alternative_group_sha256") != alternative_group
             or details.get("choice_sha256") != choice_sha
-            or details.get("dispatch_envelope_sha256")
-            != origin_envelope_ref.get("sha256")
+            or details.get("dispatch_envelope_sha256") != origin_envelope_ref.get("sha256")
             or equivalence is None
         ):
             raise DispatchEconomicsError("closed route claim identity drifted")
@@ -2662,8 +2656,7 @@ def validate_dispatch_route_claim(
         != "worker_route_claimed"
         or details.get("alternative_group_sha256") != alternative_group
         or details.get("choice_sha256") != choice_sha
-        or details.get("dispatch_envelope_sha256")
-        != origin_envelope_ref.get("sha256")
+        or details.get("dispatch_envelope_sha256") != origin_envelope_ref.get("sha256")
     ):
         raise DispatchEconomicsError("dispatch route action claim is not closed on this choice")
     try:

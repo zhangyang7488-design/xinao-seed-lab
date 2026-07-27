@@ -153,9 +153,7 @@ def _snapshot_physical_root(snapshot_root: Path) -> Path:
 def _require_snapshot_source_allowed(source: Path) -> None:
     lowered = source.name.lower()
     compact_stem = re.sub(r"[^a-z0-9]+", "", source.stem.lower())
-    name_tokens = {
-        token for token in re.split(r"[^a-z0-9]+", source.stem.lower()) if token
-    }
+    name_tokens = {token for token in re.split(r"[^a-z0-9]+", source.stem.lower()) if token}
     has_sensitive_marker = bool(name_tokens & _SENSITIVE_SNAPSHOT_TOKENS) or (
         "apikey" in compact_stem
     )
@@ -327,9 +325,7 @@ def snapshot_package_spec_inputs(
     for index, raw_package in enumerate(raw_packages):
         if not isinstance(raw_package, dict):
             raise TypeError(f"packages[{index}] must be an object")
-        package_id = _logical_path(
-            raw_package.get("package_id"), f"packages[{index}].package_id"
-        )
+        package_id = _logical_path(raw_package.get("package_id"), f"packages[{index}].package_id")
         for field in ("prompt_path", "context_manifest_path", "rules_path"):
             preload(
                 raw_package.get(field),
@@ -337,9 +333,7 @@ def snapshot_package_spec_inputs(
                 field,
                 package_id,
             )
-        for item_index, value in enumerate(
-            _provider_visible_input_logicals(raw_package, index)
-        ):
+        for item_index, value in enumerate(_provider_visible_input_logicals(raw_package, index)):
             preload(
                 value,
                 f"packages[{index}].provider_inputs[{item_index}]",
@@ -347,9 +341,7 @@ def snapshot_package_spec_inputs(
                 package_id,
             )
         acceptance = raw_package.get("acceptance")
-        if isinstance(acceptance, dict) and str(
-            acceptance.get("json_schema_path") or ""
-        ).strip():
+        if isinstance(acceptance, dict) and str(acceptance.get("json_schema_path") or "").strip():
             preload(
                 acceptance["json_schema_path"],
                 f"packages[{index}].acceptance.json_schema_path",
@@ -376,9 +368,7 @@ def snapshot_package_spec_inputs(
     physical_root = _snapshot_physical_root(
         physical_base / "generations" / snapshot_generation_sha256
     )
-    logical_root = (
-        logical_base + "/generations/" + snapshot_generation_sha256
-    )
+    logical_root = logical_base + "/generations/" + snapshot_generation_sha256
     exact_bindings: dict[str, Path] = {}
     sources: dict[tuple[str, str], dict[str, object]] = {}
     package_catalogs: list[dict[str, object]] = []
@@ -400,16 +390,9 @@ def snapshot_package_spec_inputs(
         # Prompt/context/rules/schema copies remain in the same immutable
         # generation but outside that mount.  If one source has both roles,
         # its explicit input_path role makes it a catalogued worker input.
-        visibility_root = (
-            Path("packages")
-            if "input_path" in cached["roles"]
-            else Path("control")
-        )
+        visibility_root = Path("packages") if "input_path" in cached["roles"] else Path("control")
         relative = (
-            visibility_root
-            / package_component
-            / source_sha256[:2]
-            / f"{source_sha256}-{safe_name}"
+            visibility_root / package_component / source_sha256[:2] / f"{source_sha256}-{safe_name}"
         )
         target = physical_root / relative
         _snapshot_bytes(raw, target, expected_sha256=source_sha256, root=physical_root)
@@ -456,9 +439,7 @@ def snapshot_package_spec_inputs(
             for item_index, value in enumerate(provider_inputs)
         ]
         if len(set(rewritten_inputs)) != len(rewritten_inputs):
-            raise ValueError(
-                f"packages[{index}].input_paths collapse to duplicate sealed inputs"
-            )
+            raise ValueError(f"packages[{index}].input_paths collapse to duplicate sealed inputs")
         raw_package["input_paths"] = rewritten_inputs
         provider_input_map = dict(zip(provider_inputs, rewritten_inputs, strict=True))
         if str(raw_package.get("work_class") or "").strip() == "audit_repair":
@@ -470,12 +451,8 @@ def snapshot_package_spec_inputs(
                 raw_package.get("audit_adjudication_path"),
                 f"packages[{index}].audit_adjudication_path",
             )
-            raw_package["audit_assessment_path"] = provider_input_map[
-                assessment_logical
-            ]
-            raw_package["audit_adjudication_path"] = provider_input_map[
-                adjudication_logical
-            ]
+            raw_package["audit_assessment_path"] = provider_input_map[assessment_logical]
+            raw_package["audit_adjudication_path"] = provider_input_map[adjudication_logical]
             prior_values = raw_package.get("prior_audit_adjudication_paths", [])
             if not isinstance(prior_values, list):
                 raise TypeError(
@@ -490,9 +467,7 @@ def snapshot_package_spec_inputs(
                 ]
                 for value in prior_values
             ]
-        package_component = _safe_snapshot_component(
-            package_id, f"packages[{index}].package_id"
-        )
+        package_component = _safe_snapshot_component(package_id, f"packages[{index}].package_id")
         package_root = physical_root / "packages" / package_component
         catalog_entries: list[dict[str, object]] = []
         for item_index, logical in enumerate(rewritten_inputs):
@@ -529,12 +504,7 @@ def snapshot_package_spec_inputs(
             expected_sha256=catalog_sha256,
             root=physical_root,
         )
-        catalog_logical = (
-            logical_root
-            + "/packages/"
-            + package_component
-            + "/catalog.json"
-        )
+        catalog_logical = logical_root + "/packages/" + package_component + "/catalog.json"
         exact_bindings[catalog_logical] = catalog_target
         package_catalogs.append(
             {
@@ -1023,9 +993,7 @@ def main() -> int:
         target_leg = targets[0][0]
         selection_path, selection_logical = _selection_input_for_leg(args, target_leg)
         output_path = args.output.resolve(strict=False)
-        snapshot_manifest_path = output_path.with_name(
-            output_path.name + ".input-snapshot.v1.json"
-        )
+        snapshot_manifest_path = output_path.with_name(output_path.name + ".input-snapshot.v1.json")
         output_targets = [output_path, *(path.resolve(strict=False) for _, path in targets)]
         if not args.no_input_snapshot:
             output_targets.append(snapshot_manifest_path)
