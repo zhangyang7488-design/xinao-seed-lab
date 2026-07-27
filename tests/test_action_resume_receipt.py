@@ -19,9 +19,11 @@ from services.agent_runtime.action_resume_receipt import (
     git_update_ref_cas_adapter,
     issue_action_resume_receipt,
     prepare_task_local_checkpoint,
+    prepare_work_unit_plan_events,
     reconcile_action_resume_claim,
     verify_action_resume_receipt,
     verify_checkpoint_task_run_binding,
+    verify_mutation_guards,
     write_action_resume_receipt,
 )
 
@@ -149,11 +151,19 @@ event.add_argument("--evidence-ref", action="append", default=[])
 event.add_argument("--target", required=True)
 event.add_argument("--exit-code", type=int, required=True)
 event.add_argument("--retry-class", required=True)
-event.add_argument("--side-effect-id", required=True)
+event.add_argument("--side-effect-id")
+event.add_argument("--expected-events-count", type=int)
+event.add_argument("--expected-events-sha256")
 args = parser.parse_args()
 run_dir = args.root.resolve() / args.run_id
 events_path = run_dir / "events.jsonl"
 events = [json.loads(line) for line in events_path.read_text(encoding="utf-8").splitlines()]
+if args.expected_events_count is not None and args.expected_events_count != len(events):
+    raise SystemExit("event head count changed")
+if args.expected_events_sha256 is not None:
+    import hashlib
+    if hashlib.sha256(events_path.read_bytes()).hexdigest() != args.expected_events_sha256:
+        raise SystemExit("event head hash changed")
 candidate = {
     "schema_version": "codex.verified-task-run.v1",
     "event_id": args.event_id,
@@ -456,6 +466,307 @@ def test_prepare_task_local_checkpoint_creates_current_verified_projection(
         )["checkpoint_sha256"]
         == prepared["checkpoint_sha256"]
     )
+
+
+def test_prepare_work_unit_plan_events_is_atomic_before_first_append_and_idempotent(
+    tmp_path: Path,
+) -> None:
+    paths = _fixture(tmp_path / "run", work_key="wk-existing")
+    task_run_cli = tmp_path / "task_run_fixture.py"
+    _write_task_run_cli_fixture(task_run_cli)
+    manifest = tmp_path / "sealed-manifest.json"
+    manifest.write_text('{"sealed":true}\n', encoding="utf-8")
+    evidence_ref = f"{manifest}#sha256={hashlib.sha256(manifest.read_bytes()).hexdigest()}"
+    envelope = tmp_path / "dispatch-envelope.json"
+    envelope.write_text('{"sealed_dispatch":true}\n', encoding="utf-8")
+    active_evidence_ref = f"{envelope}#sha256={hashlib.sha256(envelope.read_bytes()).hexdigest()}"
+    work_units = [
+        {"package_id": "p1", "work_key": "wk-1"},
+        {"package_id": "p2", "work_key": "wk-2"},
+    ]
+
+    first = prepare_work_unit_plan_events(
+        task_run_dir=paths["run_dir"],
+        task_run_cli=task_run_cli,
+        work_units=work_units,
+        evidence_ref=evidence_ref,
+        active_evidence_ref=active_evidence_ref,
+    )
+    assert first["planned_work_keys"] == ["wk-1", "wk-2"]
+    assert first["reused_work_keys"] == []
+    assert first["activated_work_keys"] == ["wk-1", "wk-2"]
+    assert first["active_reused_work_keys"] == []
+    assert first["event_head"]["event_count"] == 8
+    assert first["authority"] is False
+    assert first["completion_claim_allowed"] is False
+    guard = verify_mutation_guards(task_run_dir=paths["run_dir"], work_keys=["wk-1", "wk-2"])
+    assert [row["state"] for row in guard["guard_states"]] == ["active", "active"]
+
+    second = prepare_work_unit_plan_events(
+        task_run_dir=paths["run_dir"],
+        task_run_cli=task_run_cli,
+        work_units=work_units,
+        evidence_ref=evidence_ref,
+        active_evidence_ref=active_evidence_ref,
+    )
+    assert second["planned_work_keys"] == []
+    assert second["reused_work_keys"] == ["wk-1", "wk-2"]
+    assert second["activated_work_keys"] == []
+    assert second["active_reused_work_keys"] == ["wk-1", "wk-2"]
+    assert second["event_head"]["event_count"] == 8
+    events = [
+        json.loads(line)
+        for line in (paths["run_dir"] / "events.jsonl").read_text(encoding="utf-8").splitlines()
+    ]
+    planned = [row for row in events if row.get("phase") == "work_unit_planned"]
+    active = [row for row in events if row.get("phase") == "work_unit_active"]
+    assert [row["target"] for row in planned[-2:]] == ["wk-1", "wk-2"]
+    assert all(row["evidence_refs"] == [evidence_ref] for row in planned[-2:])
+    assert [row["target"] for row in active[-2:]] == ["wk-1", "wk-2"]
+    assert all(row["evidence_refs"] == [evidence_ref, active_evidence_ref] for row in active[-2:])
+
+
+def test_prepare_work_unit_plan_events_binds_exact_manifest_and_monotonic_envelope(
+    tmp_path: Path,
+) -> None:
+    paths = _fixture(tmp_path / "run", work_key="wk-existing")
+    task_run_cli = tmp_path / "task_run_fixture.py"
+    _write_task_run_cli_fixture(task_run_cli)
+    manifest_a = tmp_path / "manifest-a.json"
+    manifest_a.write_text('{"generation":"a"}\n', encoding="utf-8")
+    manifest_b = tmp_path / "manifest-b.json"
+    manifest_b.write_text('{"generation":"b"}\n', encoding="utf-8")
+    envelope_a = tmp_path / "envelope-a.json"
+    envelope_a.write_text('{"attempt":"a"}\n', encoding="utf-8")
+    envelope_b = tmp_path / "envelope-b.json"
+    envelope_b.write_text('{"attempt":"b"}\n', encoding="utf-8")
+
+    def reference(path: Path) -> str:
+        return f"{path}#sha256={hashlib.sha256(path.read_bytes()).hexdigest()}"
+
+    work_units = [{"package_id": "p1", "work_key": "wk-1"}]
+    prepare_work_unit_plan_events(
+        task_run_dir=paths["run_dir"],
+        task_run_cli=task_run_cli,
+        work_units=work_units,
+        evidence_ref=reference(manifest_a),
+        active_evidence_ref=reference(envelope_a),
+    )
+    before_manifest_drift = (paths["run_dir"] / "events.jsonl").read_bytes()
+    with pytest.raises(ActionResumeError) as manifest_drift:
+        prepare_work_unit_plan_events(
+            task_run_dir=paths["run_dir"],
+            task_run_cli=task_run_cli,
+            work_units=[{"package_id": "p2", "work_key": "wk-1"}],
+            evidence_ref=reference(manifest_b),
+            active_evidence_ref=reference(envelope_b),
+        )
+    assert manifest_drift.value.reason_code == "WORK_UNIT_REGISTRATION_IDENTITY_MISMATCH"
+    assert (paths["run_dir"] / "events.jsonl").read_bytes() == before_manifest_drift
+
+    resealed = prepare_work_unit_plan_events(
+        task_run_dir=paths["run_dir"],
+        task_run_cli=task_run_cli,
+        work_units=work_units,
+        evidence_ref=reference(manifest_a),
+        active_evidence_ref=reference(envelope_b),
+    )
+    assert resealed["planned_work_keys"] == []
+    assert resealed["reused_work_keys"] == ["wk-1"]
+    assert resealed["activated_work_keys"] == ["wk-1"]
+    assert resealed["event_head"]["event_count"] == 7
+    before_stale_retry = (paths["run_dir"] / "events.jsonl").read_bytes()
+    with pytest.raises(ActionResumeError) as stale_retry:
+        prepare_work_unit_plan_events(
+            task_run_dir=paths["run_dir"],
+            task_run_cli=task_run_cli,
+            work_units=work_units,
+            evidence_ref=reference(manifest_a),
+            active_evidence_ref=reference(envelope_a),
+        )
+    assert stale_retry.value.reason_code == "WORK_UNIT_REGISTRATION_TRANSACTION_STALE"
+    assert (paths["run_dir"] / "events.jsonl").read_bytes() == before_stale_retry
+
+
+def test_prepare_work_unit_plan_events_rejects_foreign_active_head_before_append(
+    tmp_path: Path,
+) -> None:
+    paths = _fixture(tmp_path / "run", work_key="wk-existing")
+    task_run_cli = tmp_path / "task_run_fixture.py"
+    _write_task_run_cli_fixture(task_run_cli)
+    manifest = tmp_path / "manifest.json"
+    manifest.write_text('{"generation":"a"}\n', encoding="utf-8")
+    envelope = tmp_path / "envelope.json"
+    envelope.write_text('{"attempt":"a"}\n', encoding="utf-8")
+    manifest_ref = f"{manifest}#sha256={hashlib.sha256(manifest.read_bytes()).hexdigest()}"
+    envelope_ref = f"{envelope}#sha256={hashlib.sha256(envelope.read_bytes()).hexdigest()}"
+    work_units = [{"package_id": "p1", "work_key": "wk-1"}]
+    prepare_work_unit_plan_events(
+        task_run_dir=paths["run_dir"],
+        task_run_cli=task_run_cli,
+        work_units=work_units,
+        evidence_ref=manifest_ref,
+    )
+    _append_event(
+        paths,
+        _event(
+            "run-continuity-test",
+            6,
+            target="wk-1",
+            phase="work_unit_active",
+            kind="result",
+            evidence_refs=[manifest_ref, envelope_ref],
+        ),
+    )
+    before = (paths["run_dir"] / "events.jsonl").read_bytes()
+
+    with pytest.raises(ActionResumeError) as foreign:
+        prepare_work_unit_plan_events(
+            task_run_dir=paths["run_dir"],
+            task_run_cli=task_run_cli,
+            work_units=work_units,
+            evidence_ref=manifest_ref,
+            active_evidence_ref=envelope_ref,
+        )
+
+    assert foreign.value.reason_code == "WORK_UNIT_REGISTRATION_ACTIVE_HEAD_INVALID"
+    assert (paths["run_dir"] / "events.jsonl").read_bytes() == before
+
+
+def test_prepare_work_unit_plan_events_rejects_any_frozen_member_before_append(
+    tmp_path: Path,
+) -> None:
+    paths = _fixture(tmp_path / "run", work_key="wk-2")
+    _append_event(
+        paths,
+        _event(
+            "run-continuity-test",
+            5,
+            target="wk-2",
+            phase="work_unit_paused",
+            kind="result",
+        ),
+    )
+    task_run_cli = tmp_path / "task_run_fixture.py"
+    _write_task_run_cli_fixture(task_run_cli)
+    manifest = tmp_path / "sealed-manifest.json"
+    manifest.write_text('{"sealed":true}\n', encoding="utf-8")
+    evidence_ref = f"{manifest}#sha256={hashlib.sha256(manifest.read_bytes()).hexdigest()}"
+    before = (paths["run_dir"] / "events.jsonl").read_bytes()
+
+    with pytest.raises(ActionResumeError) as caught:
+        prepare_work_unit_plan_events(
+            task_run_dir=paths["run_dir"],
+            task_run_cli=task_run_cli,
+            work_units=[
+                {"package_id": "p1", "work_key": "wk-1"},
+                {"package_id": "p2", "work_key": "wk-2"},
+            ],
+            evidence_ref=evidence_ref,
+        )
+
+    assert caught.value.reason_code == "RUN_MUTATION_FROZEN"
+    assert caught.value.details["work_key"] == "wk-2"
+    assert (paths["run_dir"] / "events.jsonl").read_bytes() == before
+
+
+def test_prepare_work_unit_plan_events_recovers_partial_append_without_duplicates(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    paths = _fixture(tmp_path / "run", work_key="wk-existing")
+    task_run_cli = tmp_path / "task_run_fixture.py"
+    _write_task_run_cli_fixture(task_run_cli)
+    manifest = tmp_path / "sealed-manifest.json"
+    manifest.write_text('{"sealed":true}\n', encoding="utf-8")
+    envelope = tmp_path / "dispatch-envelope.json"
+    envelope.write_text('{"sealed_dispatch":true}\n', encoding="utf-8")
+    evidence_ref = f"{manifest}#sha256={hashlib.sha256(manifest.read_bytes()).hexdigest()}"
+    active_evidence_ref = f"{envelope}#sha256={hashlib.sha256(envelope.read_bytes()).hexdigest()}"
+    work_units = [
+        {"package_id": "p1", "work_key": "wk-1"},
+        {"package_id": "p2", "work_key": "wk-2"},
+    ]
+    real_run = action_resume_module.subprocess.run
+    failed_once = False
+
+    def fail_first_activation(*args: object, **kwargs: object) -> subprocess.CompletedProcess[str]:
+        nonlocal failed_once
+        command = args[0]
+        if not failed_once and isinstance(command, list) and "work_unit_active" in command:
+            failed_once = True
+            return subprocess.CompletedProcess(command, 2, stdout="", stderr="injected failure")
+        return real_run(*args, **kwargs)
+
+    monkeypatch.setattr(action_resume_module.subprocess, "run", fail_first_activation)
+    with pytest.raises(ActionResumeError) as interrupted:
+        prepare_work_unit_plan_events(
+            task_run_dir=paths["run_dir"],
+            task_run_cli=task_run_cli,
+            work_units=work_units,
+            evidence_ref=evidence_ref,
+            active_evidence_ref=active_evidence_ref,
+        )
+    assert interrupted.value.reason_code == "TASK_RUN_EVENT_APPEND_FAILED"
+    assert len((paths["run_dir"] / "events.jsonl").read_text(encoding="utf-8").splitlines()) == 6
+
+    recovered = prepare_work_unit_plan_events(
+        task_run_dir=paths["run_dir"],
+        task_run_cli=task_run_cli,
+        work_units=work_units,
+        evidence_ref=evidence_ref,
+        active_evidence_ref=active_evidence_ref,
+    )
+    assert recovered["planned_work_keys"] == []
+    assert recovered["reused_work_keys"] == ["wk-1", "wk-2"]
+    assert recovered["activated_work_keys"] == ["wk-1", "wk-2"]
+    events = [
+        json.loads(line)
+        for line in (paths["run_dir"] / "events.jsonl").read_text(encoding="utf-8").splitlines()
+    ]
+    assert len([row for row in events if row.get("phase") == "work_unit_planned"][-2:]) == 2
+    assert len([row for row in events if row.get("phase") == "work_unit_active"][-2:]) == 2
+    assert len(events) == 8
+
+
+def test_prepare_work_unit_plan_events_rejects_unbound_evidence_and_global_stop(
+    tmp_path: Path,
+) -> None:
+    paths = _fixture(tmp_path / "run", work_key="wk-existing")
+    task_run_cli = tmp_path / "task_run_fixture.py"
+    _write_task_run_cli_fixture(task_run_cli)
+    missing = tmp_path / "missing-manifest.json"
+    before = (paths["run_dir"] / "events.jsonl").read_bytes()
+    with pytest.raises(ActionResumeError) as evidence_error:
+        prepare_work_unit_plan_events(
+            task_run_dir=paths["run_dir"],
+            task_run_cli=task_run_cli,
+            work_units=[{"package_id": "p1", "work_key": "wk-1"}],
+            evidence_ref=f"{missing}#sha256={'0' * 64}",
+        )
+    assert evidence_error.value.reason_code == "WORK_UNIT_PLAN_EVIDENCE_INVALID"
+    assert (paths["run_dir"] / "events.jsonl").read_bytes() == before
+
+    stop_event = _event(
+        "run-continuity-test",
+        5,
+        phase="owner_stopped",
+        kind="stop",
+    )
+    stop_event["target"] = None
+    _append_event(paths, stop_event)
+    stopped = (paths["run_dir"] / "events.jsonl").read_bytes()
+    manifest = tmp_path / "sealed-manifest.json"
+    manifest.write_text('{"sealed":true}\n', encoding="utf-8")
+    evidence_ref = f"{manifest}#sha256={hashlib.sha256(manifest.read_bytes()).hexdigest()}"
+    with pytest.raises(ActionResumeError) as stop_error:
+        prepare_work_unit_plan_events(
+            task_run_dir=paths["run_dir"],
+            task_run_cli=task_run_cli,
+            work_units=[{"package_id": "p1", "work_key": "wk-1"}],
+            evidence_ref=evidence_ref,
+        )
+    assert stop_error.value.reason_code == "RUN_MUTATION_FROZEN"
+    assert (paths["run_dir"] / "events.jsonl").read_bytes() == stopped
 
 
 def test_prepare_task_local_checkpoint_preserves_hints_and_refreshes_same_run_cursor(
