@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Seal one neutral package DAG and bind one or more worker-leg envelopes to it."""
+"""Seal one neutral package DAG or rebind its envelope to fresh quota telemetry."""
 
 from __future__ import annotations
 
@@ -13,6 +13,7 @@ import stat
 import sys
 import tempfile
 from collections.abc import Callable, Mapping, Sequence
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -954,9 +955,145 @@ def _selection_input_for_leg(
     return selected_path.resolve(strict=True), selected_ref
 
 
+def _quota_snapshot_age_sec(snapshot: Mapping[str, object]) -> float:
+    raw = str(snapshot.get("queried_at") or "").strip()
+    if not raw:
+        raise ValueError("quota snapshot requires queried_at for existing-manifest rebind")
+    try:
+        parsed = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+    except ValueError as exc:
+        raise ValueError("quota snapshot queried_at is invalid") from exc
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return max(0.0, (datetime.now(timezone.utc) - parsed.astimezone(timezone.utc)).total_seconds())
+
+
+def _rebind_existing_manifest_dispatch(args: argparse.Namespace) -> dict[str, object]:
+    if args.output is not None:
+        raise ValueError(
+            "--output is only valid with --spec; existing manifest bytes stay in place"
+        )
+    if args.input_snapshot_root is not None or args.input_snapshot_ref_root is not None:
+        raise ValueError("existing-manifest rebind cannot create another input snapshot")
+    if args.no_input_snapshot:
+        raise ValueError("existing-manifest rebind already requires the sealed manifest inputs")
+    if args.prior_dispatch_envelope is None:
+        raise ValueError("existing-manifest rebind requires --prior-dispatch-envelope")
+
+    manifest_path = args.existing_manifest.resolve(strict=True)
+    manifest_logical = str(args.manifest_ref or manifest_path)
+    manifest = _object(manifest_path, "existing package manifest")
+    targets = _dispatch_targets(args, {"leg": "A"})
+    target_leg, target_path = targets[0]
+    selection_path, selection_logical = _selection_input_for_leg(args, target_leg)
+    envelope_path = target_path.resolve(strict=False)
+    if envelope_path.exists():
+        raise FileExistsError(f"output already exists: {envelope_path}")
+
+    resolution = _object(args.quota_resolution.resolve(strict=True), "quota resolution")
+    snapshot = resolution.get("snapshot")
+    if not isinstance(snapshot, Mapping):
+        raise ValueError("quota resolution requires snapshot")
+    epoch_id = _logical_path(snapshot.get("epoch_id"), "snapshot.epoch_id")
+    snapshot_age_sec = _quota_snapshot_age_sec(snapshot)
+    if snapshot_age_sec >= args.max_snapshot_age_sec:
+        raise ValueError(
+            "quota snapshot exceeds existing-manifest rebind freshness limit: "
+            f"age_sec={int(snapshot_age_sec)} max_age_sec={args.max_snapshot_age_sec}"
+        )
+
+    selection = _object(selection_path, "selection receipt")
+    snapshot_logical = _logical_path(snapshot.get("snapshot_ref"), "snapshot.snapshot_ref")
+    resolver = build_path_resolver(
+        args.path_map,
+        exact_bindings={
+            manifest_logical: manifest_path,
+            selection_logical: selection_path,
+        },
+    )
+    prior_envelope_path = args.prior_dispatch_envelope.resolve(strict=True)
+    prior_envelope = _object(prior_envelope_path, "prior dispatch envelope")
+    validate_dispatch_envelope(prior_envelope, path_resolver=resolver)
+    plan = plan_worker_dispatch(manifest, path_resolver=resolver)
+    package_ids = list(plan["worker_package_ids"])
+    if not package_ids:
+        raise ValueError("existing manifest has no admitted candidate package to dispatch")
+
+    snapshot_path = _resolve_path(snapshot_logical, path_resolver=resolver)
+    manifest_ref = {"path": manifest_logical, "sha256": _sha(manifest_path)}
+    snapshot_ref = {"path": snapshot_logical, "sha256": _sha(snapshot_path)}
+    selection_ref = {"path": selection_logical, "sha256": _sha(selection_path)}
+    envelope = build_dispatch_envelope(
+        leg=target_leg,
+        manifest_ref=manifest_ref,
+        package_ids=package_ids,
+        epoch_id=epoch_id,
+        snapshot=snapshot,
+        snapshot_ref=snapshot_ref,
+        selection=selection,
+        selection_ref=selection_ref,
+    )
+    validate_dispatch_envelope(envelope, path_resolver=resolver)
+
+    def quota_snapshot_projection(value: Mapping[str, object]) -> tuple[dict[str, object], str]:
+        projected = copy.deepcopy(dict(value))
+        epoch = dict(projected.get("dispatch_epoch") or {})
+        snapshot_id = str(epoch.get("quota_snapshot_id") or "").strip()
+        for field in (
+            "quota_snapshot_id",
+            "quota_snapshot_ref",
+            "quota_snapshot_sha256",
+        ):
+            epoch.pop(field, None)
+        projected["dispatch_epoch"] = epoch
+        return projected, snapshot_id
+
+    prior_projection, prior_snapshot_id = quota_snapshot_projection(prior_envelope)
+    current_projection, current_snapshot_id = quota_snapshot_projection(envelope)
+    if (
+        not prior_snapshot_id
+        or prior_snapshot_id == current_snapshot_id
+        or _canonical_sha(prior_projection) != _canonical_sha(current_projection)
+    ):
+        raise ValueError(
+            "existing-manifest rebind must preserve the prior envelope and change only "
+            "the quota snapshot id/ref/sha256"
+        )
+    envelope_sha = _atomic_json(envelope_path, envelope)
+    return {
+        "manifest_ref": manifest_logical,
+        "manifest_sha256": manifest_ref["sha256"],
+        "manifest_reused": True,
+        "package_count": len(manifest["packages"]),
+        "worker_package_ids": package_ids,
+        "owner_package_ids": list(plan["owner_package_ids"]),
+        "conditionally_ready_package_ids": list(plan["conditionally_ready_package_ids"]),
+        "unresolved_pin_package_ids": list(plan["unresolved_pin_package_ids"]),
+        "dispatch_envelopes": {target_leg: {"path": str(envelope_path), "sha256": envelope_sha}},
+        "dispatch_envelope_ref": str(envelope_path),
+        "dispatch_envelope_sha256": envelope_sha,
+        "prior_dispatch_envelope_ref": {
+            "path": str(prior_envelope_path),
+            "sha256": _sha(prior_envelope_path),
+        },
+        "dispatch_deferred": False,
+        "epoch_id": epoch_id,
+        "selection_decision_sha256": selection["decision_sha256"],
+        "selected_leg": target_leg,
+        "input_snapshot_status": "reused_sealed_manifest",
+        "quota_snapshot_age_sec": int(snapshot_age_sec),
+    }
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--spec", type=Path, required=True)
+    source = parser.add_mutually_exclusive_group(required=True)
+    source.add_argument("--spec", type=Path, help="build and seal a new neutral manifest")
+    source.add_argument(
+        "--existing-manifest",
+        type=Path,
+        help="reuse one sealed manifest and emit only a quota-snapshot resealed envelope",
+    )
     parser.add_argument("--quota-resolution", type=Path, required=True)
     parser.add_argument("--selection-receipt", type=Path)
     parser.add_argument("--selection-receipt-ref")
@@ -964,8 +1101,13 @@ def main() -> int:
     parser.add_argument("--selection-receipt-ref-a")
     parser.add_argument("--selection-receipt-b", type=Path)
     parser.add_argument("--selection-receipt-ref-b")
-    parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--output", type=Path)
     parser.add_argument("--manifest-ref")
+    parser.add_argument(
+        "--prior-dispatch-envelope",
+        type=Path,
+        help="prior envelope whose only permitted change is the quota snapshot id/ref/sha256",
+    )
     parser.add_argument("--dispatch-output", type=Path)
     parser.add_argument("--dispatch-output-a", type=Path)
     parser.add_argument("--dispatch-output-b", type=Path)
@@ -973,12 +1115,28 @@ def main() -> int:
     parser.add_argument("--input-snapshot-root", type=Path)
     parser.add_argument("--input-snapshot-ref-root")
     parser.add_argument(
+        "--max-snapshot-age-sec",
+        type=int,
+        default=1800,
+        help="maximum accepted age for a rebind quota snapshot (default: 1800)",
+    )
+    parser.add_argument(
         "--no-input-snapshot",
         action="store_true",
         help="disabled fail-closed compatibility flag; provider dispatch always requires the sealed copy",
     )
     args = parser.parse_args()
     try:
+        if args.max_snapshot_age_sec < 1:
+            raise ValueError("--max-snapshot-age-sec must be positive")
+        if args.existing_manifest is not None:
+            result = _rebind_existing_manifest_dispatch(args)
+            print(json.dumps(result, ensure_ascii=False, sort_keys=True, separators=(",", ":")))
+            return 0
+        if args.prior_dispatch_envelope is not None:
+            raise ValueError("--prior-dispatch-envelope is only valid with --existing-manifest")
+        if args.output is None:
+            raise ValueError("--output is required with --spec")
         if args.no_input_snapshot:
             raise ValueError(
                 "--no-input-snapshot is disabled for provider dispatch; use the canonical "
