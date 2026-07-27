@@ -13,6 +13,7 @@ import inspect
 import json
 import os
 import re
+import stat
 import subprocess
 import sys
 import uuid
@@ -134,6 +135,24 @@ def _read_json(path: Path, field: str) -> tuple[dict[str, Any], bytes]:
 
 def _path_key(path: Path) -> str:
     return os.path.normcase(str(path.resolve()))
+
+
+def _lexical_path_key(path: Path) -> str:
+    return os.path.normcase(os.path.abspath(os.fspath(path)))
+
+
+def _is_reparse_point(path: Path) -> bool:
+    try:
+        details = os.lstat(path)
+    except FileNotFoundError:
+        return False
+    except OSError as exc:
+        raise ActionResumeError(
+            "CHECKPOINT_PATH_INVALID", f"cannot inspect checkpoint path: {path}"
+        ) from exc
+    attributes = int(getattr(details, "st_file_attributes", 0))
+    reparse_flag = int(getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0))
+    return path.is_symlink() or bool(attributes & reparse_flag)
 
 
 def _parse_time(value: object, field: str) -> datetime:
@@ -597,22 +616,10 @@ def _raise_if_mutation_frozen(chain: Mapping[str, object], guard_work_keys: Sequ
         raise ActionResumeError("RUN_MUTATION_FROZEN", message, details=details)
 
 
-def verify_mutation_guards(
-    *,
-    task_run_dir: Path,
-    work_keys: Sequence[str],
-) -> dict[str, Any]:
-    """Read the canonical live chain and verify scoped mutation guards.
-
-    This is the zero-model preflight shared by first claim, claim reuse, and
-    the final physical consumer.  It creates no receipt and grants no
-    authority; task-run state remains the global stop gate while each listed
-    work key remains an independent local gate.
-    """
-
+def _load_live_task_run_head(task_run_dir: Path) -> dict[str, Any]:
     run_dir = Path(task_run_dir).resolve()
-    task, _ = _read_json(run_dir / "task.json", "task")
-    state, _ = _read_json(run_dir / "state.json", "state")
+    task, task_raw = _read_json(run_dir / "task.json", "task")
+    state, state_raw = _read_json(run_dir / "state.json", "state")
     run_id = _text(task.get("run_id"), "task.run_id")
     if (
         task.get("schema_version") != TASK_RUN_VERSION
@@ -637,6 +644,40 @@ def verify_mutation_guards(
     event_ids = [str(row.get("event_id") or "") for row in events]
     if not all(event_ids) or len(set(event_ids)) != len(event_ids):
         raise ActionResumeError("EVENT_ID_INVALID", "event IDs are missing or duplicated")
+    return {
+        "run_dir": run_dir,
+        "run_id": run_id,
+        "task": task,
+        "task_raw": task_raw,
+        "state": state,
+        "state_raw": state_raw,
+        "events_path": events_path,
+        "events_raw": events_raw,
+        "events": events,
+        "head": head,
+        "event_count": len(events),
+    }
+
+
+def verify_mutation_guards(
+    *,
+    task_run_dir: Path,
+    work_keys: Sequence[str],
+) -> dict[str, Any]:
+    """Read the canonical live chain and verify scoped mutation guards.
+
+    This is the zero-model preflight shared by first claim, claim reuse, and
+    the final physical consumer.  It creates no receipt and grants no
+    authority; task-run state remains the global stop gate while each listed
+    work key remains an independent local gate.
+    """
+
+    live = _load_live_task_run_head(task_run_dir)
+    run_dir = live["run_dir"]
+    run_id = live["run_id"]
+    state = live["state"]
+    events = live["events"]
+    head = live["head"]
     normalized = _normalized_mutation_guard_work_keys("", work_keys)
     chain = {"state": state, "events": events}
     _raise_if_mutation_frozen(chain, normalized)
@@ -1068,6 +1109,159 @@ def _replace_record(path: Path, value: Mapping[str, object]) -> None:
         os.replace(temporary, path)
     finally:
         temporary.unlink(missing_ok=True)
+
+
+@contextmanager
+def _task_run_lock(run_dir: Path):
+    """Share the task-run lock used by the canonical event writer."""
+
+    lock_path = run_dir / ".lock"
+    with portalocker.Lock(
+        str(lock_path),
+        mode="a+b",
+        timeout=5,
+        check_interval=0.05,
+        flags=portalocker.LockFlags.EXCLUSIVE | portalocker.LockFlags.NON_BLOCKING,
+    ) as handle:
+        handle.seek(0, os.SEEK_END)
+        if handle.tell() == 0:
+            handle.write(b"0")
+            handle.flush()
+        handle.seek(0)
+        yield
+
+
+def prepare_task_local_checkpoint(
+    *,
+    task_run_dir: Path,
+    checkpoint_path: Path | None = None,
+) -> dict[str, Any]:
+    """Create or refresh the one non-authoritative checkpoint inside a task-run.
+
+    The live task/event chain remains the execution truth.  Existing task-local
+    explanatory fields and non-cursor evidence are preserved, while the sole
+    event cursor is refreshed to the locked live head.  A shared, foreign, or
+    malformed checkpoint is rejected rather than rewritten.
+    """
+
+    run_dir = Path(task_run_dir).resolve()
+    if not run_dir.is_dir():
+        raise ActionResumeError("TASK_RUN_MISSING", f"task-run directory is missing: {run_dir}")
+    canonical_path = run_dir / "task-local-checkpoint.v2.json"
+    resolved_checkpoint = canonical_path if checkpoint_path is None else Path(checkpoint_path)
+    if _lexical_path_key(resolved_checkpoint) != _lexical_path_key(canonical_path):
+        raise ActionResumeError(
+            "CHECKPOINT_PATH_OUTSIDE_TASK_RUN",
+            f"checkpoint must be the task-local canonical path: {canonical_path}",
+        )
+    resolved_checkpoint = canonical_path
+
+    with _task_run_lock(run_dir):
+        if _is_reparse_point(resolved_checkpoint):
+            raise ActionResumeError(
+                "CHECKPOINT_PATH_REPARSE_POINT",
+                f"task-local checkpoint must not be a link or reparse point: {resolved_checkpoint}",
+            )
+        live = _load_live_task_run_head(run_dir)
+        task = live["task"]
+        state = live["state"]
+        head = live["head"]
+        events_path = live["events_path"]
+        event_count = int(live["event_count"])
+        existed = resolved_checkpoint.exists()
+        existing_raw = b""
+        if existed:
+            checkpoint, existing_raw = _read_json(resolved_checkpoint, "checkpoint")
+            _validate_checkpoint(checkpoint)
+        else:
+            checkpoint = {
+                "schema_version": CHECKPOINT_VERSION,
+                "sentinel": CHECKPOINT_SENTINEL,
+                "not_authority": True,
+                "user_intent_cn": _text(task.get("objective"), "task.objective"),
+                "resume_brief_cn": _text(
+                    state.get("last_summary") or head.get("summary"),
+                    "state.last_summary",
+                ),
+                "last_machine_actions": [],
+                "named_blockers": [],
+                "next_machine_actions": [
+                    "Resume from the task-run event head and recheck live facts before effects."
+                ],
+                "do_not_re_explain_cn": [
+                    "This task-local projection is not authority; task-run events remain the truth."
+                ],
+                "evidence_refs": [],
+            }
+
+        refs = checkpoint.get("evidence_refs")
+        if not isinstance(refs, list):
+            raise ActionResumeError(
+                "CHECKPOINT_CURSOR_INVALID", "checkpoint.evidence_refs must be an array"
+            )
+        ordinary_refs: list[object] = []
+        cursor_refs: list[tuple[Path, int]] = []
+        for raw_ref in refs:
+            text_ref = str(raw_ref or "").strip()
+            match = _EVENT_REF_RE.fullmatch(text_ref)
+            if match:
+                cursor_refs.append((Path(match.group("path")), int(match.group("count"))))
+                continue
+            if re.search(r"events\.jsonl#", text_ref, flags=re.IGNORECASE):
+                raise ActionResumeError(
+                    "CHECKPOINT_CURSOR_INVALID", "checkpoint contains a malformed event cursor"
+                )
+            ordinary_refs.append(raw_ref)
+        if len(cursor_refs) > 1:
+            raise ActionResumeError(
+                "CHECKPOINT_CURSOR_INVALID", "checkpoint contains multiple event cursors"
+            )
+        if cursor_refs:
+            cursor_path, cursor = cursor_refs[0]
+            if _path_key(cursor_path) != _path_key(events_path):
+                raise ActionResumeError(
+                    "CHECKPOINT_CURSOR_INVALID", "checkpoint points at another task-run"
+                )
+            if cursor > event_count:
+                raise ActionResumeError(
+                    "CHECKPOINT_AHEAD_OF_EVENT_HEAD", "checkpoint cursor is ahead"
+                )
+
+        checkpoint.update(
+            {
+                "schema_version": CHECKPOINT_VERSION,
+                "sentinel": CHECKPOINT_SENTINEL,
+                "not_authority": True,
+                "status": _text(state.get("current_phase"), "state.current_phase"),
+                "updated_at": _text(state.get("updated_at"), "state.updated_at"),
+                "evidence_refs": [
+                    *ordinary_refs,
+                    f"{events_path}#event{event_count}",
+                ],
+            }
+        )
+        _validate_checkpoint(checkpoint)
+        _load_chain(run_dir, checkpoint, event_count)
+        candidate_raw = artifact_json_bytes(checkpoint)
+        if candidate_raw != existing_raw:
+            if _is_reparse_point(resolved_checkpoint):
+                raise ActionResumeError(
+                    "CHECKPOINT_PATH_REPARSE_POINT",
+                    "task-local checkpoint changed into a link or reparse point before write",
+                )
+            _replace_record(resolved_checkpoint, checkpoint)
+        verified = verify_checkpoint_task_run_binding(
+            checkpoint_path=resolved_checkpoint,
+            task_run_dir=run_dir,
+        )
+        verified["status"] = (
+            "checkpoint_created"
+            if not existed
+            else "checkpoint_reused"
+            if candidate_raw == existing_raw
+            else "checkpoint_refreshed"
+        )
+        return verified
 
 
 @contextmanager
@@ -2346,6 +2540,9 @@ def main(argv: Sequence[str] | None = None) -> int:
             stream.reconfigure(encoding="utf-8")
     parser = argparse.ArgumentParser(description=__doc__)
     sub = parser.add_subparsers(dest="command", required=True)
+    prepare = sub.add_parser("prepare-checkpoint")
+    prepare.add_argument("--task-run-dir", type=Path, required=True)
+    prepare.add_argument("--checkpoint", type=Path)
     issue = sub.add_parser("issue")
     issue.add_argument("--checkpoint", type=Path, required=True)
     issue.add_argument("--task-run-dir", type=Path)
@@ -2395,7 +2592,12 @@ def main(argv: Sequence[str] | None = None) -> int:
     close_pending.add_argument("--actor", default="action-resume-owner")
     args = parser.parse_args(list(argv) if argv is not None else None)
     try:
-        if args.command == "issue":
+        if args.command == "prepare-checkpoint":
+            report: Mapping[str, object] = prepare_task_local_checkpoint(
+                task_run_dir=args.task_run_dir,
+                checkpoint_path=args.checkpoint,
+            )
+        elif args.command == "issue":
             receipt = issue_action_resume_receipt(
                 checkpoint_path=args.checkpoint,
                 task_run_dir=args.task_run_dir,
@@ -2419,7 +2621,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 raise ActionResumeError(
                     "OUTPUT_REQUIRED", "mutating action receipt requires --output"
                 )
-            report: Mapping[str, object] = receipt
+            report = receipt
         elif args.command == "verify":
             report = verify_action_resume_receipt(
                 _load_receipt(args.receipt),
@@ -2520,6 +2722,7 @@ __all__ = [
     "write_action_resume_receipt",
     "verify_action_resume_receipt",
     "verify_checkpoint_task_run_binding",
+    "prepare_task_local_checkpoint",
     "verify_mutation_guards",
     "build_action_effect_outcome",
     "consume_action_resume_receipt",

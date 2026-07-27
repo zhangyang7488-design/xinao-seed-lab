@@ -9,6 +9,7 @@ from services.agent_runtime.selector_release import (
     REQUIRED_DISTRIBUTIONS,
     SelectorReleaseError,
     _locked_requirement_specs,
+    _probe_release,
     build_selector_release,
     load_current_selector_release,
     promote_selector_release,
@@ -61,6 +62,7 @@ def test_versioned_selector_release_is_not_task_cwd_dependent(tmp_path: Path) ->
     assert current["release_manifest"]["probe"]["dependency_distributions"]["jsonschema"]
     assert current["release_manifest"]["probe"]["dependency_distributions"]["portalocker"]
     assert current["release_manifest"]["probe"]["dispatch_route_claim_callable"] is True
+    assert current["release_manifest"]["probe"]["task_local_checkpoint_preparer_callable"] is True
     assert current["release_manifest"]["probe"]["contract_preparer_help"] is True
     assert Path(current["release_manifest"]["probe"]["action_resume_module"]) == (
         Path(current["release_root"]) / "services" / "agent_runtime" / "action_resume_receipt.py"
@@ -75,6 +77,37 @@ def test_versioned_selector_release_is_not_task_cwd_dependent(tmp_path: Path) ->
     assert validate_selector_release_pointer(Path(promoted["pointer_path"]))["release_id"] == (
         "selector-test-1"
     )
+
+
+def test_selector_release_probe_rejects_missing_task_local_checkpoint_preparer(
+    tmp_path: Path,
+) -> None:
+    repo = Path(__file__).resolve().parents[1]
+    runtime = tmp_path / "runtime"
+    built = build_selector_release(
+        source_root=repo,
+        runtime_root=runtime,
+        release_id="selector-test-missing-checkpoint-preparer",
+        python_executable=Path(sys.executable),
+        create_venv=False,
+        promote=False,
+    )
+    action_resume = (
+        Path(built["release_root"]) / "services" / "agent_runtime" / "action_resume_receipt.py"
+    )
+    source = action_resume.read_text(encoding="utf-8")
+    assert "def prepare_task_local_checkpoint(" in source
+    action_resume.write_text(
+        source.replace(
+            "def prepare_task_local_checkpoint(",
+            "def _missing_task_local_checkpoint_preparer(",
+            1,
+        ),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(SelectorReleaseError, match="import probe failed"):
+        _probe_release(Path(built["release_root"]), Path(sys.executable))
 
 
 def test_selector_release_hash_drift_fails_closed(tmp_path: Path) -> None:

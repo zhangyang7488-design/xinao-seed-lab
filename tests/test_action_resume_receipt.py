@@ -18,8 +18,10 @@ from services.agent_runtime.action_resume_receipt import (
     consume_action_resume_receipt,
     git_update_ref_cas_adapter,
     issue_action_resume_receipt,
+    prepare_task_local_checkpoint,
     reconcile_action_resume_claim,
     verify_action_resume_receipt,
+    verify_checkpoint_task_run_binding,
     write_action_resume_receipt,
 )
 
@@ -425,6 +427,203 @@ def test_fresh_and_stale_checkpoint_are_reconciled_without_authority(tmp_path: P
     fresh = issue_action_resume_receipt(checkpoint_path=fresh_paths["checkpoint"])
     assert fresh["freshness"]["reason_code"] == "CHECKPOINT_FRESH"
     assert fresh["event_delta"] == []
+
+
+def test_prepare_task_local_checkpoint_creates_current_verified_projection(
+    tmp_path: Path,
+) -> None:
+    paths = _fixture(tmp_path)
+    checkpoint = paths["run_dir"] / "task-local-checkpoint.v2.json"
+
+    prepared = prepare_task_local_checkpoint(
+        task_run_dir=paths["run_dir"], checkpoint_path=checkpoint
+    )
+
+    assert prepared["status"] == "checkpoint_created"
+    assert prepared["cursor"] == 4
+    assert prepared["event_count"] == 4
+    assert prepared["event_head_id"] == "event-id-4"
+    assert prepared["authority"] is False
+    assert prepared["completion_claim_allowed"] is False
+    value = json.loads(checkpoint.read_text(encoding="utf-8"))
+    assert value["user_intent_cn"] == "keep the parent objective stable"
+    assert value["resume_brief_cn"] == "事件摘要-4"
+    assert value["evidence_refs"] == [f"{paths['run_dir'] / 'events.jsonl'}#event4"]
+    assert (
+        verify_checkpoint_task_run_binding(
+            checkpoint_path=checkpoint,
+            task_run_dir=paths["run_dir"],
+        )["checkpoint_sha256"]
+        == prepared["checkpoint_sha256"]
+    )
+
+
+def test_prepare_task_local_checkpoint_preserves_hints_and_refreshes_same_run_cursor(
+    tmp_path: Path,
+) -> None:
+    paths = _fixture(tmp_path)
+    checkpoint = paths["run_dir"] / "task-local-checkpoint.v2.json"
+    ordinary_evidence = str(tmp_path / "package-validation.v1.json")
+    checkpoint.write_bytes(
+        _json_bytes(
+            {
+                "schema_version": "xinao.codex_session_checkpoint.v2",
+                "sentinel": "SENTINEL:XINAO_CODEX_SESSION_CHECKPOINT_V2",
+                "not_authority": True,
+                "status": "phase-2",
+                "updated_at": "2026-07-20T00:02:00Z",
+                "user_intent_cn": "保留这个任务内的用户意图",
+                "resume_brief_cn": "保留这个任务内的恢复摘要",
+                "last_machine_actions": ["已完成封印"],
+                "named_blockers": [],
+                "next_machine_actions": ["调用真实消费者"],
+                "do_not_re_explain_cn": ["不要把投影当权威"],
+                "evidence_refs": [
+                    ordinary_evidence,
+                    f"{paths['run_dir'] / 'events.jsonl'}#event2",
+                ],
+            }
+        )
+    )
+
+    refreshed = prepare_task_local_checkpoint(
+        task_run_dir=paths["run_dir"], checkpoint_path=checkpoint
+    )
+
+    assert refreshed["status"] == "checkpoint_refreshed"
+    value = json.loads(checkpoint.read_text(encoding="utf-8"))
+    assert value["user_intent_cn"] == "保留这个任务内的用户意图"
+    assert value["resume_brief_cn"] == "保留这个任务内的恢复摘要"
+    assert value["last_machine_actions"] == ["已完成封印"]
+    assert value["next_machine_actions"] == ["调用真实消费者"]
+    assert value["evidence_refs"] == [
+        ordinary_evidence,
+        f"{paths['run_dir'] / 'events.jsonl'}#event4",
+    ]
+
+
+def test_prepare_task_local_checkpoint_rejects_noncanonical_or_cross_run_binding(
+    tmp_path: Path,
+) -> None:
+    paths = _fixture(tmp_path / "primary")
+    outside = tmp_path / "shared-session-checkpoint.json"
+
+    with pytest.raises(ActionResumeError) as outside_error:
+        prepare_task_local_checkpoint(task_run_dir=paths["run_dir"], checkpoint_path=outside)
+    assert outside_error.value.reason_code == "CHECKPOINT_PATH_OUTSIDE_TASK_RUN"
+    assert not outside.exists()
+
+    checkpoint = paths["run_dir"] / "task-local-checkpoint.v2.json"
+    foreign_events = tmp_path / "other-run" / "events.jsonl"
+    checkpoint.write_bytes(
+        _json_bytes(
+            {
+                "schema_version": "xinao.codex_session_checkpoint.v2",
+                "sentinel": "SENTINEL:XINAO_CODEX_SESSION_CHECKPOINT_V2",
+                "not_authority": True,
+                "status": "phase-1",
+                "user_intent_cn": "不能跨 run",
+                "resume_brief_cn": "不能跨 run",
+                "evidence_refs": [f"{foreign_events}#event1"],
+            }
+        )
+    )
+    before = checkpoint.read_bytes()
+
+    with pytest.raises(ActionResumeError) as cross_run_error:
+        prepare_task_local_checkpoint(task_run_dir=paths["run_dir"], checkpoint_path=checkpoint)
+    assert cross_run_error.value.reason_code == "CHECKPOINT_CURSOR_INVALID"
+    assert checkpoint.read_bytes() == before
+
+
+def test_prepare_task_local_checkpoint_rejects_live_head_drift_without_overwrite(
+    tmp_path: Path,
+) -> None:
+    paths = _fixture(tmp_path)
+    checkpoint = paths["run_dir"] / "task-local-checkpoint.v2.json"
+    checkpoint.write_bytes(
+        _json_bytes(
+            {
+                "schema_version": "xinao.codex_session_checkpoint.v2",
+                "sentinel": "SENTINEL:XINAO_CODEX_SESSION_CHECKPOINT_V2",
+                "not_authority": True,
+                "status": "phase-3",
+                "user_intent_cn": "保持原文件",
+                "resume_brief_cn": "头漂移时不覆盖",
+                "evidence_refs": [f"{paths['run_dir'] / 'events.jsonl'}#event3"],
+            }
+        )
+    )
+    before = checkpoint.read_bytes()
+    state_path = paths["run_dir"] / "state.json"
+    state = json.loads(state_path.read_text(encoding="utf-8"))
+    state["events_count"] = 99
+    state_path.write_bytes(_json_bytes(state))
+
+    with pytest.raises(ActionResumeError) as drift_error:
+        prepare_task_local_checkpoint(task_run_dir=paths["run_dir"], checkpoint_path=checkpoint)
+    assert drift_error.value.reason_code == "EVENT_HEAD_DRIFT"
+    assert checkpoint.read_bytes() == before
+
+
+def test_prepare_task_local_checkpoint_rejects_reparse_leaf_without_touching_target(
+    tmp_path: Path,
+) -> None:
+    paths = _fixture(tmp_path)
+    checkpoint = paths["run_dir"] / "task-local-checkpoint.v2.json"
+    external = tmp_path / "shared-session-checkpoint.json"
+    external.write_text('{"user_owned":true}\n', encoding="utf-8")
+    before = external.read_bytes()
+    try:
+        checkpoint.symlink_to(external)
+    except OSError as exc:
+        pytest.skip(f"file symlink unavailable on this platform: {exc}")
+
+    with pytest.raises(ActionResumeError) as reparse_error:
+        prepare_task_local_checkpoint(task_run_dir=paths["run_dir"], checkpoint_path=checkpoint)
+
+    assert reparse_error.value.reason_code == "CHECKPOINT_PATH_REPARSE_POINT"
+    assert checkpoint.is_symlink()
+    assert external.read_bytes() == before
+
+
+def test_prepare_task_local_checkpoint_is_atomic_under_concurrent_callers(
+    tmp_path: Path,
+) -> None:
+    paths = _fixture(tmp_path)
+    checkpoint = paths["run_dir"] / "task-local-checkpoint.v2.json"
+    barrier = threading.Barrier(4)
+    reports: list[dict[str, object]] = []
+    errors: list[BaseException] = []
+
+    def prepare() -> None:
+        try:
+            barrier.wait(timeout=5)
+            reports.append(
+                prepare_task_local_checkpoint(
+                    task_run_dir=paths["run_dir"], checkpoint_path=checkpoint
+                )
+            )
+        except BaseException as exc:  # pragma: no cover - captured for the assertion below
+            errors.append(exc)
+
+    threads = [threading.Thread(target=prepare) for _ in range(4)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join(timeout=10)
+
+    assert not errors
+    assert len(reports) == 4
+    assert {report["cursor"] for report in reports} == {4}
+    assert sum(report["status"] == "checkpoint_created" for report in reports) == 1
+    assert (
+        verify_checkpoint_task_run_binding(
+            checkpoint_path=checkpoint,
+            task_run_dir=paths["run_dir"],
+        )["cursor"]
+        == 4
+    )
 
 
 def test_cursor_reuse_hash_and_immutable_prefix_fail_closed(tmp_path: Path) -> None:
