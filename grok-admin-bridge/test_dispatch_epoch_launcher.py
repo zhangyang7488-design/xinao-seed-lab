@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -36,7 +37,8 @@ def _fixture(tmp_path: Path) -> tuple[Path, Path, Path, Path]:
         bridge / "Invoke-CodexDispatchGrokWorkerPool.ps1",
         r"""
         param(
-            [int]$N, [string]$Prompt, [string]$Cwd, [string]$Model,
+            [int]$N, [string]$Prompt, [string]$PromptFile,
+            [string]$Cwd, [string]$Model,
             [string]$SelectionPath, [string]$SupervisorRoot,
             [string]$SelectorReleasePointer, [string]$RuntimeRoot,
             [string]$MaxTurns, [int]$TimeoutSec, [string]$GrokHome,
@@ -46,13 +48,23 @@ def _fixture(tmp_path: Path) -> tuple[Path, Path, Path, Path]:
             [int]$DispatchEpochMaxAgeSec,
             [string]$QuotaSnapshotId, [string]$QuotaSnapshotRef,
             [string]$QuotaSnapshotSha256, [string]$QuotaResolutionStatus,
-            [string]$QuotaResolutionError, [switch]$Quiet
+            [string]$QuotaResolutionError,
+            [string]$CommonWorkKey, [string]$CommonOperationId,
+            [string]$CommonSubjectManifestSha256,
+            [string]$CommonFrozenContextSha256,
+            [string]$CommonContextManifestPath,
+            [string]$CommonRulesFile, [string]$CommonRulesSha256,
+            [string]$CommonPhase, [switch]$Quiet
         )
         $row = [ordered]@{
             dispatch_epoch_id = $DispatchEpochId
             dispatch_epoch_source = $DispatchEpochSource
             quota_status = $QuotaResolutionStatus
             quota_snapshot_id = $QuotaSnapshotId
+            common_work_key = $CommonWorkKey
+            common_phase = $CommonPhase
+            common_frozen_context_sha256 = $CommonFrozenContextSha256
+            common_rules_file = $CommonRulesFile
         }
         Add-Content -LiteralPath $env:XINAO_EPOCH_CAPTURE -Value ($row | ConvertTo-Json -Compress)
         exit 0
@@ -272,6 +284,101 @@ def test_unscoped_ordinary_mode_fails_before_quota_or_provider(
     )
     assert not capture.exists()
     assert not (runtime / "live-query-count.txt").exists()
+
+
+@pytest.mark.skipif(PWSH is None, reason="pwsh is required")
+def test_common_contract_reports_all_caller_errors_before_quota_or_provider(
+    tmp_path: Path,
+) -> None:
+    launcher, runtime, capture, package_capture = _fixture(tmp_path)
+    prompt = tmp_path / "prompt.txt"
+    prompt.write_text("Inspect the sealed evidence.\n", encoding="utf-8")
+    rules = tmp_path / "rules.txt"
+    rules.write_text("Candidate-only read-only work.\n", encoding="utf-8")
+    rules_sha256 = hashlib.sha256(rules.read_bytes()).hexdigest()
+
+    result = _run(
+        launcher,
+        runtime,
+        capture,
+        package_capture,
+        "-PromptFile",
+        str(prompt),
+        "-Cwd",
+        str(tmp_path),
+        "-TaskRunId",
+        "common-preflight-episode",
+        "-CommonWorkKey",
+        "work-a",
+        "-CommonOperationId",
+        "operation-a",
+        "-CommonSubjectManifestSha256",
+        "a" * 64,
+        "-CommonRulesFile",
+        str(rules),
+        "-CommonRulesSha256",
+        rules_sha256,
+        "-CommonPhase",
+        "AUDIT",
+        "-Quiet",
+    )
+
+    output = " ".join((result.stdout + result.stderr).split())
+    assert result.returncode != 0
+    assert "CODEX_GROK_COMMON_PREFLIGHT_FAILED" in output
+    assert "CommonPhase must be one of EXPLORE, CONSTRUCT, VERIFY, LAND" in output
+    assert "CommonFrozenContextSha256 or" in output
+    assert "CommonContextManifestPath is required" in output
+    assert not capture.exists()
+    assert not package_capture.exists()
+    assert not (runtime / "live-query-count.txt").exists()
+
+
+@pytest.mark.skipif(PWSH is None, reason="pwsh is required")
+def test_valid_common_contract_preflight_reaches_dispatch_once(tmp_path: Path) -> None:
+    launcher, runtime, capture, package_capture = _fixture(tmp_path)
+    prompt = tmp_path / "prompt.txt"
+    prompt.write_text("Inspect the sealed evidence.\n", encoding="utf-8")
+    rules = tmp_path / "rules.txt"
+    rules.write_text("Candidate-only read-only work.\n", encoding="utf-8")
+    rules_sha256 = hashlib.sha256(rules.read_bytes()).hexdigest()
+
+    result = _run(
+        launcher,
+        runtime,
+        capture,
+        package_capture,
+        "-PromptFile",
+        str(prompt),
+        "-Cwd",
+        str(tmp_path),
+        "-TaskRunId",
+        "valid-common-preflight-episode",
+        "-CommonWorkKey",
+        "work-a",
+        "-CommonOperationId",
+        "operation-a",
+        "-CommonSubjectManifestSha256",
+        "a" * 64,
+        "-CommonFrozenContextSha256",
+        "b" * 64,
+        "-CommonRulesFile",
+        str(rules),
+        "-CommonRulesSha256",
+        rules_sha256,
+        "-CommonPhase",
+        "EXPLORE",
+        "-Quiet",
+    )
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert (runtime / "live-query-count.txt").read_text() == "1"
+    rows = [json.loads(line) for line in capture.read_text().splitlines()]
+    assert len(rows) == 1
+    assert rows[0]["common_work_key"] == "work-a"
+    assert rows[0]["common_phase"] == "EXPLORE"
+    assert rows[0]["common_frozen_context_sha256"] == "b" * 64
+    assert Path(rows[0]["common_rules_file"]) == rules
 
 
 @pytest.mark.skipif(PWSH is None, reason="pwsh is required")
