@@ -5,7 +5,7 @@ agent platform, daemon, scheduler, or approval gate.
 
 ## Shape
 
-- `catalog.json` inventories 144 specifications across live and static suites (including 13 dynamic
+- `catalog.json` inventories 146 specifications across live and static suites (including 13 dynamic
   orchestration execution-shape cases owned under `evals/dynamic_orchestration`).
 - `context_intent_alignment/cases.yaml` is the canonical live behavior dataset. Promptfoo reads it
   directly, so expected behavior is not duplicated in the config.
@@ -95,8 +95,8 @@ single suite (`context`, `proactive`, or `orchestration`).
 Static incident specifications remain specifications until their real environment supplies runtime
 evidence. A green JSON fixture never closes a runtime incident.
 
-Live catalog accounting (not a runtime verification claim): capability 1, smoke 74, core 102, deep 108,
-context 84, proactive 6, reuse 4, orchestration 13.
+Live catalog accounting (not a runtime verification claim): capability 1, smoke 75, core 104, deep 110,
+context 86, proactive 6, reuse 4, orchestration 13.
 
 ## Why the other installed software is not always active
 
