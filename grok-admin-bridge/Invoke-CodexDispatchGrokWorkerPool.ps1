@@ -21,6 +21,7 @@ param(
     [ValidateNotNullOrEmpty()]
     [string]$Model,
     [string]$SelectionPath = "",
+    [switch]$SelectionOnly,
     [string]$SelectionProbeGrokExe = "",
     [string]$SupervisorRoot = "",
     [string]$SelectorReleasePointer = "",
@@ -69,6 +70,40 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
+
+if ($SelectionOnly) {
+    $selectionOnlyConflicts = [Collections.Generic.List[string]]::new()
+    if ($N -ne 1) { $selectionOnlyConflicts.Add("N must be 1") }
+    if (-not [string]::IsNullOrWhiteSpace($Prompt)) { $selectionOnlyConflicts.Add("Prompt is not allowed") }
+    if (-not [string]::IsNullOrWhiteSpace($PromptFile)) { $selectionOnlyConflicts.Add("PromptFile is not allowed") }
+    if (-not [string]::IsNullOrWhiteSpace($SelectionPath)) { $selectionOnlyConflicts.Add("SelectionPath is output-owned and must be omitted") }
+    if (-not [string]::IsNullOrWhiteSpace($DispatchEpochId)) { $selectionOnlyConflicts.Add("DispatchEpochId is not allowed") }
+    if (-not [string]::IsNullOrWhiteSpace($QuotaSnapshotId)) { $selectionOnlyConflicts.Add("QuotaSnapshotId is not allowed") }
+    if (-not [string]::IsNullOrWhiteSpace($QuotaSnapshotRef)) { $selectionOnlyConflicts.Add("QuotaSnapshotRef is not allowed") }
+    if (-not [string]::IsNullOrWhiteSpace($QuotaSnapshotSha256)) { $selectionOnlyConflicts.Add("QuotaSnapshotSha256 is not allowed") }
+    foreach ($value in @(
+        $CommonLogicalContractPath, $CommonWorkKey, $CommonOperationId,
+        $CommonTaskContractRef, $CommonParentOperationId, $CommonCorrelationId,
+        $CommonSubjectManifestSha256, $CommonFrozenContextSha256,
+        $CommonContextManifestPath, $CommonRulesFile, $CommonRulesSha256,
+        $CommonSealedInputRoot, $CommonCandidateOutputRoot, $CommonPhase,
+        $CommonPriorAttemptReceiptPath, $CommonAdapterRoot
+    )) {
+        if (-not [string]::IsNullOrWhiteSpace([string]$value)) {
+            $selectionOnlyConflicts.Add("Common contract fields are not allowed")
+            break
+        }
+    }
+    if (@($CommonWriteDomains).Count -gt 0 -or @($CommonDependsOn).Count -gt 0) {
+        $selectionOnlyConflicts.Add("Common contract arrays are not allowed")
+    }
+    if ($selectionOnlyConflicts.Count -gt 0) {
+        throw (
+            "CODEX_GROK_SELECTION_ONLY_PREFLIGHT_FAILED: " +
+            [string]::Join("; ", $selectionOnlyConflicts.ToArray())
+        )
+    }
+}
 
 function Write-GrokJsonAtomic {
     [CmdletBinding()]
@@ -305,6 +340,27 @@ $selection = Read-GrokWorkerSelectionReceipt `
 $SelectionPath = [string]$selection.selection_path
 $Model = [string]$selection.model_id
 $Cwd = [string]$selection.cwd
+if ($SelectionOnly) {
+    $selectionReceiptSha256 = (Get-FileHash -LiteralPath $SelectionPath -Algorithm SHA256).Hash.ToLowerInvariant()
+    [ordered]@{
+        schema_version = "xinao.codex_grok_selection_only_result.v1"
+        selection_path = $SelectionPath
+        selection_receipt_sha256 = $selectionReceiptSha256
+        decision_sha256 = [string]$selection.decision_sha256
+        provider_id = [string]$selection.provider_id
+        profile_ref = [string]$selection.profile_ref
+        model_id = [string]$selection.model_id
+        transport_id = [string]$selection.transport_id
+        selector_source_sha256 = [string]$supervisorCapability.selector_source_sha256
+        selector_release_binding = $supervisorCapability.release_binding
+        quota_query_performed = $false
+        dispatch_artifact_created = $false
+        pool_artifact_created = $false
+        model_invocation_count = 0
+        completion_claim_allowed = $false
+    } | ConvertTo-Json -Compress
+    exit 0
+}
 $commonPrepareReceipt = $null
 $commonPreparedContract = $null
 $commonEffectivePromptFile = ""

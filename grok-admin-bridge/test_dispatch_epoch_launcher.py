@@ -54,7 +54,7 @@ def _fixture(tmp_path: Path) -> tuple[Path, Path, Path, Path]:
             [string]$CommonFrozenContextSha256,
             [string]$CommonContextManifestPath,
             [string]$CommonRulesFile, [string]$CommonRulesSha256,
-            [string]$CommonPhase, [switch]$Quiet
+            [string]$CommonPhase, [switch]$SelectionOnly, [switch]$Quiet
         )
         $row = [ordered]@{
             dispatch_epoch_id = $DispatchEpochId
@@ -65,6 +65,7 @@ def _fixture(tmp_path: Path) -> tuple[Path, Path, Path, Path]:
             common_phase = $CommonPhase
             common_frozen_context_sha256 = $CommonFrozenContextSha256
             common_rules_file = $CommonRulesFile
+            selection_only = [bool]$SelectionOnly
         }
         Add-Content -LiteralPath $env:XINAO_EPOCH_CAPTURE -Value ($row | ConvertTo-Json -Compress)
         exit 0
@@ -271,6 +272,61 @@ def _ordinary_args(tmp_path: Path, episode_id: str) -> tuple[str, ...]:
 
 
 @pytest.mark.skipif(PWSH is None, reason="pwsh is required")
+def test_selection_only_uses_public_direct_entry_without_quota_or_package(
+    tmp_path: Path,
+) -> None:
+    launcher, runtime, capture, package_capture = _fixture(tmp_path)
+
+    result = _run(
+        launcher,
+        runtime,
+        capture,
+        package_capture,
+        "-SelectionOnly",
+        "-Cwd",
+        str(tmp_path),
+    )
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    rows = [json.loads(line) for line in capture.read_text().splitlines()]
+    assert len(rows) == 1
+    assert rows[0]["selection_only"] is True
+    assert rows[0]["dispatch_epoch_id"] in (None, "")
+    assert rows[0]["quota_snapshot_id"] in (None, "")
+    assert not (runtime / "live-query-count.txt").exists()
+    assert not (runtime / "state" / "quota_dispatch_epochs").exists()
+    assert not package_capture.exists()
+
+
+@pytest.mark.skipif(PWSH is None, reason="pwsh is required")
+def test_selection_only_rejects_labor_or_package_inputs_before_side_effects(
+    tmp_path: Path,
+) -> None:
+    launcher, runtime, capture, package_capture = _fixture(tmp_path)
+
+    result = _run(
+        launcher,
+        runtime,
+        capture,
+        package_capture,
+        "-SelectionOnly",
+        "-Cwd",
+        str(tmp_path),
+        "-Prompt",
+        "must-not-run",
+        "-DispatchEnvelopePath",
+        str(tmp_path / "must-not-be-read.json"),
+    )
+
+    assert result.returncode != 0
+    assert "CODEX_GROK_SELECTION_ONLY_PREFLIGHT_FAILED" in (result.stdout + result.stderr)
+    assert not capture.exists()
+    assert not package_capture.exists()
+    assert not (runtime / "live-query-count.txt").exists()
+    assert not (runtime / "state" / "quota_dispatch_epochs").exists()
+
+
+@pytest.mark.skipif(PWSH is None, reason="pwsh is required")
 def test_same_episode_reuses_quota_snapshot_across_fresh_processes(
     tmp_path: Path,
 ) -> None:
@@ -441,7 +497,8 @@ def test_common_contract_reports_all_caller_errors_before_quota_or_provider(
     assert result.returncode != 0
     assert "CODEX_GROK_COMMON_PREFLIGHT_FAILED" in output
     assert "CommonPhase must be one of EXPLORE" in output
-    assert "CONSTRUCT, VERIFY, LAND" in output
+    assert "CONSTRUCT" in output
+    assert "VERIFY, LAND" in output
     assert "CommonFrozenContextSha256 or" in output
     assert "CommonContextManifestPath is required" in output
     assert "PromptFile must explicitly require result marker: MISSING_MARKER" in output

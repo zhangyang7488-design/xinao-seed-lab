@@ -332,6 +332,11 @@ $publicLauncherText = Get-Content -LiteralPath (Join-Path $repoRoot "launchers/I
 Assert-Contract ($publicLauncherText -match '\$dispatchEnvelope\.selection\.model_id') "package_model_derived_from_envelope"
 Assert-Contract ($publicLauncherText -match 'CODEX_GROK_PACKAGE_MODEL_MISMATCH') "package_model_conflict_fails_closed"
 Assert-Contract ($publicLauncherText -match 'CODEX_GROK_MODEL_REQUIRED') "ordinary_model_remains_required"
+Assert-Contract ($publicLauncherText -match '\[switch\]\$SelectionOnly') "public_launcher_has_selection_only_mode"
+Assert-Contract ($dispatchText -match '\[switch\]\$SelectionOnly') "direct_entry_has_selection_only_mode"
+Assert-Contract ($dispatchText -match 'xinao[.]codex_grok_selection_only_result[.]v1') "selection_only_emits_typed_result"
+Assert-Contract ($dispatchText -match 'model_invocation_count\s*=\s*0') "selection_only_reports_zero_model_invocations"
+Assert-Contract ($dispatchText -match 'selector_source_sha256\s*=') "selection_only_reports_selector_source_binding"
 $checkpointPreparerText = Get-Content -LiteralPath $checkpointPreparerPath -Raw -Encoding UTF8
 $packageLauncherSourceText = Get-Content -LiteralPath (Join-Path $repoRoot "launchers/Invoke-Codex-GrokWorkerPool.ps1") -Raw -Encoding UTF8
 $installerText = Get-Content -LiteralPath (Join-Path $repoRoot "install/Install-CodexGrokDispatch.ps1") -Raw -Encoding UTF8
@@ -469,6 +474,12 @@ $launcherCheckpointIndex = $packageLauncherSourceText.IndexOf('Prepare-CodexGrok
 $launcherTaskRunCliIndex = $packageLauncherSourceText.IndexOf('CODEX_GROK_TASK_RUN_CLI_MISSING')
 $launcherDispatchIdIndex = $packageLauncherSourceText.IndexOf('$DispatchId =')
 $launcherQuotaIndex = $packageLauncherSourceText.IndexOf('$quotaEntry =')
+$launcherSelectionOnlyIndex = $packageLauncherSourceText.IndexOf('if ($SelectionOnly)')
+Assert-Contract (
+    $launcherSelectionOnlyIndex -gt 0 -and
+    $launcherSelectionOnlyIndex -lt $launcherDispatchIdIndex -and
+    $launcherSelectionOnlyIndex -lt $launcherQuotaIndex
+) "launcher_selection_only_precedes_ids_and_quota"
 Assert-Contract (
     $launcherCheckpointIndex -gt 0 -and
     $launcherCheckpointIndex -lt $launcherDispatchIdIndex -and

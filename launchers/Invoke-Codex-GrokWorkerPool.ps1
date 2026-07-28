@@ -15,6 +15,7 @@ param(
     [string]$SupervisorRoot = "",
     [string]$Model = "",
     [string]$SelectionPath = "",
+    [switch]$SelectionOnly,
     [string]$SelectorReleasePointer = "",
     [string]$DispatchEpochId = "",
     [string]$DispatchEpisodeId = "",
@@ -57,6 +58,7 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
+$bridgeRoot = "C:\Users\xx363\Grok_Admin_Isolated\workspace\grok-admin-bridge"
 
 function Get-CodexGrokUtf8Sha256([string]$Value) {
     $bytes = [Text.Encoding]::UTF8.GetBytes($Value)
@@ -335,6 +337,62 @@ function Get-CodexGrokCommonPreflightIssues {
     return @($issues)
 }
 
+if ($SelectionOnly) {
+    $selectionOnlyConflicts = [Collections.Generic.List[string]]::new()
+    if ($N -ne 1) { $selectionOnlyConflicts.Add("N must be 1") }
+    if ($ReplicaMode) { $selectionOnlyConflicts.Add("ReplicaMode is not allowed") }
+    if (-not [string]::IsNullOrWhiteSpace($Prompt)) { $selectionOnlyConflicts.Add("Prompt is not allowed") }
+    if (-not [string]::IsNullOrWhiteSpace($PromptFile)) { $selectionOnlyConflicts.Add("PromptFile is not allowed") }
+    if (-not [string]::IsNullOrWhiteSpace($DispatchEnvelopePath)) { $selectionOnlyConflicts.Add("DispatchEnvelopePath is not allowed") }
+    if (-not [string]::IsNullOrWhiteSpace($SelectionPath)) { $selectionOnlyConflicts.Add("SelectionPath is output-owned and must be omitted") }
+    if (-not [string]::IsNullOrWhiteSpace($DispatchEpochId)) { $selectionOnlyConflicts.Add("DispatchEpochId is not allowed") }
+    if (-not [string]::IsNullOrWhiteSpace($DispatchEpisodeId)) { $selectionOnlyConflicts.Add("DispatchEpisodeId is not allowed") }
+    if (-not [string]::IsNullOrWhiteSpace($TaskRunRoot)) { $selectionOnlyConflicts.Add("TaskRunRoot is not allowed") }
+    if (-not [string]::IsNullOrWhiteSpace($TaskRunId)) { $selectionOnlyConflicts.Add("TaskRunId is not allowed") }
+    if (-not [string]::IsNullOrWhiteSpace($CheckpointPath)) { $selectionOnlyConflicts.Add("CheckpointPath is not allowed") }
+    foreach ($value in @(
+        $CommonWorkKey, $CommonOperationId, $CommonTaskContractRef,
+        $CommonParentOperationId, $CommonCorrelationId,
+        $CommonSubjectManifestSha256, $CommonFrozenContextSha256,
+        $CommonContextManifestPath, $CommonRulesFile, $CommonRulesSha256,
+        $CommonCandidateOutputRoot, $CommonPhase, $CommonPriorAttemptReceiptPath,
+        $CommonAdapterRoot
+    )) {
+        if (-not [string]::IsNullOrWhiteSpace([string]$value)) {
+            $selectionOnlyConflicts.Add("Common contract fields are not allowed")
+            break
+        }
+    }
+    if (@($CommonWriteDomains).Count -gt 0 -or @($CommonDependsOn).Count -gt 0) {
+        $selectionOnlyConflicts.Add("Common contract arrays are not allowed")
+    }
+    if ([string]::IsNullOrWhiteSpace($Model)) { $selectionOnlyConflicts.Add("Model is required") }
+    if ([string]::IsNullOrWhiteSpace($Cwd)) { $selectionOnlyConflicts.Add("Cwd is required") }
+    if ($selectionOnlyConflicts.Count -gt 0) {
+        throw (
+            "CODEX_GROK_SELECTION_ONLY_PREFLIGHT_FAILED: " +
+            [string]::Join("; ", $selectionOnlyConflicts.ToArray())
+        )
+    }
+
+    $entry = Join-Path $bridgeRoot "Invoke-CodexDispatchGrokWorkerPool.ps1"
+    if (-not (Test-Path -LiteralPath $entry -PathType Leaf)) {
+        throw "CODEX_GROK_WORKER_POOL_ENTRY_MISSING: $entry"
+    }
+    $selectionOnlyArguments = @{
+        N = 1
+        Model = $Model
+        Cwd = $Cwd
+        SelectionOnly = $true
+        SupervisorRoot = $SupervisorRoot
+        SelectorReleasePointer = $SelectorReleasePointer
+        RuntimeRoot = $RuntimeRoot
+        GrokHome = $GrokHome
+    }
+    & $entry @selectionOnlyArguments
+    exit $LASTEXITCODE
+}
+
 $packageMode = -not [string]::IsNullOrWhiteSpace($DispatchEnvelopePath)
 $dispatchEpochSource = ""
 if ($packageMode) {
@@ -426,7 +484,6 @@ else {
     }
 }
 
-$bridgeRoot = "C:\Users\xx363\Grok_Admin_Isolated\workspace\grok-admin-bridge"
 if ($packageMode) {
     $checkpointPreparer = Join-Path $bridgeRoot "Prepare-CodexGrokTaskLocalCheckpoint.ps1"
     if (-not (Test-Path -LiteralPath $checkpointPreparer -PathType Leaf)) {
