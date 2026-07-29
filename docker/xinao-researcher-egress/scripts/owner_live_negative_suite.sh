@@ -88,6 +88,30 @@ else
   record N17 ip_literal allowed 0
 fi
 
+# N17b: decimal/dword IPv4 form must not bypass dotted-quad ACL.
+out="$(run_proxy "https://2130706433/")"
+if echo "$out" | grep -qE '403|denied|Forbidden|can.t connect|bad address|invalid'; then
+  record N17b decimal_ip_literal denied 1
+else
+  record N17b decimal_ip_literal allowed 0
+fi
+
+# N17c: trailing-dot FQDN must not bypass sealed dstdomain tokens.
+out="$(run_proxy "https://example.com./")"
+if echo "$out" | grep -qE '403|denied|Forbidden|can.t connect|bad address'; then
+  record N17c trailing_dot denied 1
+else
+  record N17c trailing_dot allowed 0
+fi
+
+# N17d: bracketed IPv6 literal via proxy (default deny).
+out="$(run_proxy "https://[::1]/")"
+if echo "$out" | grep -qE '403|denied|Forbidden|can.t connect|bad address'; then
+  record N17d ipv6_literal denied 1
+else
+  record N17d ipv6_literal allowed 0
+fi
+
 out="$(run_direct "https://example.com/")"
 if echo "$out" | grep -qiE 'bad address|can.t connect|timed out|network is unreachable|no route|wget:'; then
   record N9 proxy_env_unset_internal_only no_external 1

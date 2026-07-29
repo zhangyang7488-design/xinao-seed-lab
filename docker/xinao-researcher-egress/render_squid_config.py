@@ -15,11 +15,9 @@ from pathlib import Path
 from typing import Any, Sequence
 
 SCHEMA = "xinao.provider_egress_allowlist.v1"
-DOMAIN_PATTERN = re.compile(
-    r"^(?:\.[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?)+"
-    r"|(?:[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?"
-    r"(?:\.[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?)+)$"
-)
+# Exact or leading-dot forms require at least two DNS labels (reject TLD-only .com).
+_LABEL = r"[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?"
+DOMAIN_PATTERN = re.compile(rf"^(?:\.(?:{_LABEL}\.)+{_LABEL}|(?:{_LABEL}\.)+{_LABEL})$")
 FORBIDDEN_ACL_FRAGMENTS = (
     "http_access allow client_localnet",
     "SSRF_PROXY_ALLOW_PRIVATE",
@@ -53,6 +51,27 @@ def canonical_json_bytes(value: object) -> bytes:
     ).encode("utf-8")
 
 
+def validate_domain_token(domain: str) -> None:
+    if not isinstance(domain, str) or not domain:
+        raise RenderError("ALLOWLIST_DOMAIN_TOKEN_INVALID", str(domain))
+    if domain.endswith(".") or ".." in domain or any(ord(ch) > 127 for ch in domain):
+        raise RenderError("ALLOWLIST_DOMAIN_TOKEN_INVALID", domain)
+    if not DOMAIN_PATTERN.fullmatch(domain):
+        # Distinguish TLD-only / single-label overreach from other token failures.
+        body = domain[1:] if domain.startswith(".") else domain
+        labels = [part for part in body.split(".") if part]
+        if domain.startswith(".") and len(labels) < 2:
+            raise RenderError("ALLOWLIST_DOMAIN_SUFFIX_OVERREACH", domain)
+        if (not domain.startswith(".")) and len(labels) < 2:
+            raise RenderError("ALLOWLIST_DOMAIN_SUFFIX_OVERREACH", domain)
+        raise RenderError("ALLOWLIST_DOMAIN_TOKEN_INVALID", domain)
+    if re.fullmatch(r"[0-9.]+", domain.lstrip(".")):
+        raise RenderError("ALLOWLIST_DOMAIN_LOOKS_LIKE_IP", domain)
+    body = domain[1:] if domain.startswith(".") else domain
+    if all(label.isdigit() for label in body.split(".")):
+        raise RenderError("ALLOWLIST_DOMAIN_LOOKS_LIKE_IP", domain)
+
+
 def load_allowlist(path: Path) -> dict[str, Any]:
     raw = path.read_bytes()
     try:
@@ -77,10 +96,7 @@ def load_allowlist(path: Path) -> dict[str, Any]:
             "default deny; empty ip_literals_allowed required",
         )
     for domain in domains:
-        if not DOMAIN_PATTERN.fullmatch(domain):
-            raise RenderError("ALLOWLIST_DOMAIN_TOKEN_INVALID", domain)
-        if re.fullmatch(r"[0-9.]+", domain):
-            raise RenderError("ALLOWLIST_DOMAIN_LOOKS_LIKE_IP", domain)
+        validate_domain_token(domain)
     return data
 
 
@@ -88,6 +104,7 @@ def build_provider_dstdomain_acl(domains: Sequence[str]) -> str:
     if not domains:
         return "acl provider_domains dstdomain .invalid.xinao.local"
     ordered = sorted(set(domains))
+    # Single-line ACL only; entrypoint rejects newlines as injection.
     return "acl provider_domains dstdomain " + " ".join(ordered)
 
 
@@ -100,7 +117,11 @@ def render_template(
 ) -> str:
     if not (1 <= http_port <= 65535):
         raise RenderError("HTTP_PORT_INVALID", str(http_port))
+    for domain in domains:
+        validate_domain_token(domain)
     acl_line = build_provider_dstdomain_acl(domains)
+    if "\n" in acl_line or "\r" in acl_line:
+        raise RenderError("PROVIDER_ACL_MULTILINE_FORBIDDEN", acl_line)
     rendered = (
         template_text.replace("${HTTP_PORT}", str(http_port))
         .replace("${COREDUMP_DIR}", coredump_dir)
@@ -117,10 +138,13 @@ def render_template(
         "http_access deny to_private_networks",
         "http_access deny to_ipv4_literal",
         "http_access deny to_ipv6_literal",
+        "http_access deny to_trailing_dot_name",
         "http_access allow provider_domains",
         "http_access deny all",
         "acl SSL_ports port 443",
         "acl Safe_ports port 443",
+        "acl to_ipv4_literal dstdom_regex ^[0-9]+$",
+        "acl to_trailing_dot_name dstdom_regex \\.$",
     )
     for fragment in required_fragments:
         if fragment not in rendered:
@@ -212,7 +236,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             file=sys.stderr,
         )
         return 2
-    args.output.write_text(rendered["squid_conf"], encoding="utf-8")
+    args.output.write_text(rendered["squid_conf"], encoding="utf-8", newline="\n")
     if args.receipt is not None:
         receipt = {
             "schema_version": rendered["schema_version"],
@@ -226,6 +250,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         args.receipt.write_text(
             json.dumps(receipt, ensure_ascii=False, sort_keys=True, indent=2) + "\n",
             encoding="utf-8",
+            newline="\n",
         )
     print(
         json.dumps(

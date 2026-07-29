@@ -551,3 +551,185 @@ def test_no_unit_test_flips_verified_true_in_source_lock() -> None:
     assert lock["provider_egress_runtime_verified"] is False
     # Source file must not contain a true assignment for the claim bit.
     assert '"provider_egress_runtime_verified": true' not in lock_text.lower().replace(" ", "")
+
+
+def test_render_rejects_tld_only_and_trailing_dot_overreach() -> None:
+    render = _renderer()
+    for bad, code in (
+        (".com", "ALLOWLIST_DOMAIN_SUFFIX_OVERREACH"),
+        (".ai", "ALLOWLIST_DOMAIN_SUFFIX_OVERREACH"),
+        ("localhost", "ALLOWLIST_DOMAIN_SUFFIX_OVERREACH"),
+        ("example.com.", "ALLOWLIST_DOMAIN_TOKEN_INVALID"),
+        (".example.com.", "ALLOWLIST_DOMAIN_TOKEN_INVALID"),
+        ("1.2.3.4", "ALLOWLIST_DOMAIN_LOOKS_LIKE_IP"),
+    ):
+        with pytest.raises(render.RenderError) as err:
+            render.validate_domain_token(bad)
+        assert err.value.reason_code == code, bad
+    render.validate_domain_token(".example.com")
+    render.validate_domain_token("api.example.com")
+
+
+def test_render_requires_alternate_ip_and_trailing_dot_denies() -> None:
+    render = _renderer()
+    template = (EGRESS_ROOT / "squid.conf.template").read_text(encoding="utf-8")
+    conf = render.render_template(template, domains=["api.example.test"])
+    assert "acl to_ipv4_literal dstdom_regex ^[0-9]+$" in conf
+    assert "acl to_ipv6_literal dstdom_regex :" in conf
+    assert "http_access deny to_trailing_dot_name" in conf
+    assert "acl to_trailing_dot_name dstdom_regex \\.$" in conf
+
+
+def test_entrypoint_writes_conf_to_tmpfs_and_guards_acl_injection() -> None:
+    entry = (EGRESS_ROOT / "docker-entrypoint.sh").read_text(encoding="utf-8")
+    assert "/etc/squid/squid.conf" not in entry or "SQUID_CONF=" in entry
+    assert 'SQUID_CONF="${COREDUMP_DIR}/squid.conf"' in entry
+    assert "squid -f \"${SQUID_CONF}\"" in entry or 'squid -f "${SQUID_CONF}"' in entry
+    assert "PROVIDER_DSTDOMAIN_ACL must be a single line" in entry
+    assert "forbidden ACL fragments" in entry
+    # Must not write rendered conf onto read-only rootfs path as the only path.
+    assert 'awk' in entry and 'SQUID_CONF' in entry
+
+
+def test_egress_scripts_are_lf_only() -> None:
+    for path in EGRESS_ROOT.rglob("*"):
+        if not path.is_file():
+            continue
+        if path.suffix.lower() not in {".sh", ".py", ".template", ".yaml", ".yml", ".json", ".md"}:
+            if path.name != "docker-entrypoint.sh":
+                continue
+        raw = path.read_bytes()
+        if b"\0" in raw:
+            continue
+        assert b"\r\n" not in raw, f"CRLF present in {path}"
+        assert b"\r" not in raw, f"bare CR present in {path}"
+
+
+def test_empty_network_membership_fails_closed() -> None:
+    module = _runtime()
+    posture = _sample_posture()
+    lock = {
+        "network_profile": "EGRESS_BOUNDARY_REQUIRED_BEFORE_PROVIDER_CALL",
+        "provider_egress_runtime_verified": True,
+        "egress_internal_network_name": "xinao_researcher_internal",
+        "egress_proxy_endpoint": "http://xinao-researcher-egress-proxy:3128",
+        "egress_host_port_publish_allowed": False,
+    }
+    empty_net = {
+        "Id": posture["internal_network_id"],
+        "Name": posture["internal_network_name"],
+        "Internal": True,
+        "Containers": {},
+    }
+    proxy_ok = {
+        "Id": posture["proxy_container_id"],
+        "Image": posture["proxy_image_id"],
+        "State": {"Running": True, "Status": "running"},
+        "NetworkSettings": {
+            "Networks": {
+                "xinao_researcher_internal": {},
+                "xinao_provider_egress_ext": {},
+            },
+            "Ports": {},
+        },
+    }
+
+    def _inspect(docker, kind, target):
+        if kind == "network":
+            return empty_net
+        return proxy_ok
+
+    module._docker_json_inspect = _inspect  # type: ignore[method-assign]
+    with pytest.raises(module.XinaoError) as err:
+        module._compare_live_egress_objects("docker", posture, lock)
+    assert err.value.reason_code == "EGRESS_NETWORK_MEMBERSHIP_INVALID"
+
+
+def test_container_rejects_no_proxy_star_and_extra_hosts(tmp_path: Path) -> None:
+    module = _runtime()
+    endpoint = "http://xinao-researcher-egress-proxy:3128"
+    network_name = "xinao_researcher_internal"
+    network_id = "netid1"
+    input_root = tmp_path / "input"
+    materials_root = tmp_path / "materials"
+    output_root = tmp_path / "output"
+    auth_path = tmp_path / "auth.json"
+    image_id = "sha256:" + "a" * 64
+    base_inspect = {
+        "Image": image_id,
+        "HostConfig": {
+            "ReadonlyRootfs": True,
+            "CapDrop": ["ALL"],
+            "SecurityOpt": ["no-new-privileges:true"],
+            "NetworkMode": network_name,
+            "PidsLimit": 128,
+            "Memory": 2147483648,
+            "NanoCpus": 2000000000,
+            "Privileged": False,
+            "RestartPolicy": {"Name": "no", "MaximumRetryCount": 0},
+            "Tmpfs": {
+                "/tmp": "rw,nosuid,nodev,size=256m,mode=1777",
+                "/grok-home": "rw,nosuid,nodev,size=256m,mode=0700",
+            },
+        },
+        "Config": {
+            "Env": [
+                "XINAO_CHAIN_CLASS=scientific_researcher",
+                f"HTTP_PROXY={endpoint}",
+                f"HTTPS_PROXY={endpoint}",
+                f"http_proxy={endpoint}",
+                f"https_proxy={endpoint}",
+                "NO_PROXY=*",
+            ]
+        },
+        "NetworkSettings": {"Networks": {network_name: {"NetworkID": network_id}}},
+        "Mounts": [
+            {"Type": "bind", "Source": str(input_root), "Destination": "/input", "RW": False},
+            {
+                "Type": "bind",
+                "Source": str(materials_root),
+                "Destination": "/materials",
+                "RW": False,
+            },
+            {"Type": "bind", "Source": str(output_root), "Destination": "/output", "RW": True},
+            {
+                "Type": "bind",
+                "Source": str(auth_path),
+                "Destination": "/grok-home/auth.json",
+                "RW": False,
+            },
+        ],
+    }
+    kwargs = dict(
+        image_id=image_id,
+        input_root=input_root,
+        materials_root=materials_root,
+        output_root=output_root,
+        auth_path=auth_path,
+        internal_network_name=network_name,
+        internal_network_id=network_id,
+        proxy_endpoint=endpoint,
+    )
+    with pytest.raises(module.XinaoError) as err:
+        module._validate_container_inspect(base_inspect, **kwargs)
+    assert err.value.reason_code == "CONTAINER_NO_PROXY_ESCAPE"
+
+    host_escape = json.loads(json.dumps(base_inspect))
+    host_escape["Config"]["Env"] = [
+        "XINAO_CHAIN_CLASS=scientific_researcher",
+        f"HTTP_PROXY={endpoint}",
+        f"HTTPS_PROXY={endpoint}",
+        f"http_proxy={endpoint}",
+        f"https_proxy={endpoint}",
+    ]
+    host_escape["HostConfig"]["ExtraHosts"] = ["evil:1.2.3.4"]
+    with pytest.raises(module.XinaoError) as err2:
+        module._validate_container_inspect(host_escape, **kwargs)
+    assert err2.value.reason_code == "CONTAINER_NETWORK_PROFILE_INVALID"
+
+
+def test_cleanup_receipt_claims_only_observed_removals() -> None:
+    cleanup = (EGRESS_ROOT / "scripts" / "owner_cleanup_egress.sh").read_text(encoding="utf-8")
+    assert "removed_networks_observed" in cleanup
+    assert "proxy_removed_observed" in cleanup
+    assert "left Dify object untouched" in cleanup

@@ -3781,10 +3781,13 @@ def _compare_live_egress_objects(
             raise XinaoError("EGRESS_NETWORK_NAME_MISMATCH", str(network.get("Name")))
     if network.get("Internal") is not True:
         raise XinaoError("EGRESS_NETWORK_NOT_INTERNAL", str(network.get("Internal")))
-    # Membership must include proxy when Containers is populated; reject Dify/foreign members.
+    # Membership must be observed (fail closed on empty); reject Dify/foreign members.
     containers = network.get("Containers") or {}
-    if not isinstance(containers, dict):
-        raise XinaoError("EGRESS_NETWORK_MEMBERSHIP_INVALID", "Containers")
+    if not isinstance(containers, dict) or not containers:
+        raise XinaoError(
+            "EGRESS_NETWORK_MEMBERSHIP_INVALID",
+            "Containers empty or missing; proxy membership unobserved",
+        )
     member_names: list[str] = []
     proxy_seen = False
     for _cid, meta in containers.items():
@@ -3802,7 +3805,7 @@ def _compare_live_egress_objects(
         # Only proxy and dedicated researcher workloads may join the internal network.
         if normalized != proxy_name and not normalized.startswith("xinao-researcher-"):
             raise XinaoError("EGRESS_FOREIGN_NETWORK_MEMBER", normalized)
-    if containers and not proxy_seen:
+    if not proxy_seen:
         raise XinaoError(
             "EGRESS_NETWORK_MEMBERSHIP_INVALID",
             f"proxy missing from members={sorted(member_names)}",
@@ -3937,12 +3940,19 @@ def _validate_researcher_network_and_proxy_env(
     for key, value in expected.items():
         if env_map.get(key) != value:
             raise XinaoError("CONTAINER_PROXY_ENV_INVALID", key)
-    # NO_PROXY must not open RFC1918 escape hatches.
+    # Alternate proxy knobs must not diverge from the sealed endpoint.
+    for key in ("ALL_PROXY", "all_proxy"):
+        raw = env_map.get(key)
+        if raw is not None and raw != "" and raw != proxy_endpoint:
+            raise XinaoError("CONTAINER_PROXY_ENV_INVALID", key)
+    # NO_PROXY must not open RFC1918 escape hatches or global bypass.
     for key in ("NO_PROXY", "no_proxy"):
         raw = env_map.get(key)
         if raw is None or raw == "":
             continue
-        lowered = raw.lower()
+        lowered = raw.lower().strip()
+        if lowered in {"*", "all", '"*"', "'*'"}:
+            raise XinaoError("CONTAINER_NO_PROXY_ESCAPE", raw)
         for bad in ("10.", "192.168.", "172.16.", "169.254.", "127.", "localhost"):
             if bad in lowered:
                 raise XinaoError("CONTAINER_NO_PROXY_ESCAPE", raw)
@@ -4040,6 +4050,11 @@ def _validate_container_inspect(
         raise XinaoError("CONTAINER_CAP_ADD_INVALID", str(cap_add))
     if host.get("SecurityOpt") != ["no-new-privileges:true"]:
         raise XinaoError("CONTAINER_NO_NEW_PRIVILEGES_MISSING", str(host.get("SecurityOpt")))
+    # Network side-channels that can reintroduce default/bridge-like reachability.
+    for field in ("ExtraHosts", "Links", "Dns", "DnsSearch", "DnsOptions"):
+        value = host.get(field)
+        if value:
+            raise XinaoError("CONTAINER_NETWORK_PROFILE_INVALID", f"{field}={value}")
     _validate_researcher_network_and_proxy_env(
         inspect,
         internal_network_name=internal_network_name,
