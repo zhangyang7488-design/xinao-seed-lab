@@ -1,0 +1,12 @@
+{
+  "schema_version": "xinao.researcher_runtime_lock.v1",
+  "runtime_version": "1.0.0",
+  "model": "grok-4.5",
+  "grok_cli_version": "0.2.112",
+  "grok_donor_image": "xinao-houtai-gongren:worker-boundary-v5-20260727",
+  "grok_donor_image_id": "sha256:396ea42b23de816865d8667fd5dd5fecb35192fa6523eb20d5c86261dd97cce1",
+  "network_profile": "isolated_bridge_model_transport_only",
+  "generic_worker_route_allowed": false,
+  "state_root": "D:/XINAO_RESEARCH_RUNTIME/state/xinao_skill/researcher_container",
+  "run_root": "D:/XINAO_RESEARCH_RUNTIME/runs/xinao_researcher"
+}

@@ -1,0 +1,6 @@
+interface:
+  display_name: "新澳 Skill"
+  short_description: "专用于新澳研究、容器调用和后续能力接入的统一能力入口"
+  default_prompt: "Use $xinao to continue the current Xinao task through its dedicated capability chain."
+policy:
+  allow_implicit_invocation: true
