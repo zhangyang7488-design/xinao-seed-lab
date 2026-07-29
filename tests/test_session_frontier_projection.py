@@ -142,9 +142,67 @@ def test_only_compact_session_start_renders_bounded_non_authoritative_state(
     assert len(context) <= DEFAULT_RENDER_CHAR_BUDGET
     assert "NON-AUTHORITATIVE" in context
     assert "user Stop" in context
-    assert "parent intent" in context
+    assert "task_objective_candidate=" in context
+    assert "parent_result=" not in context
+    assert "parent_rebound" in context
+    assert "candidate evidence" in context
     assert "cannot authorize actions or claim completion" in context
     assert "snapshot_sha256=" in context
+
+
+def test_binding_accepts_either_explicit_canonical_root(tmp_path: Path) -> None:
+    primary_root = tmp_path / "situation-runs"
+    alternate_root = tmp_path / "codex-task-runs"
+    run = _make_run(alternate_root, "run-alt")
+    frontier_root = tmp_path / "frontiers"
+
+    binding = bind_session(
+        session_id="session-alt",
+        run_directory=run,
+        frontier_root=frontier_root,
+        allowed_run_root=(primary_root, alternate_root),
+    )
+    result = build_live_frontier(
+        session_id="session-alt",
+        frontier_root=frontier_root,
+        allowed_run_root=(primary_root, alternate_root),
+    )
+
+    assert Path(binding["run_root"]) == alternate_root.resolve()
+    assert result["run_id"] == "run-alt"
+
+
+def test_parent_rebound_event_is_rendered_as_non_authoritative_candidate(tmp_path: Path) -> None:
+    run, frontier_root = _bind(tmp_path)
+    state = json.loads((run / "state.json").read_text(encoding="utf-8"))
+    state["current_phase"] = "parent_rebound"
+    state["last_summary"] = "AI inferred a global platform from one possible caller example"
+    state["events_count"] = 2
+    _write_json(run / "state.json", state)
+    with (run / "events.jsonl").open("a", encoding="utf-8") as handle:
+        handle.write(
+            json.dumps(
+                {
+                    "run_id": "run-a",
+                    "kind": "observation",
+                    "phase": "parent_rebound",
+                    "summary": state["last_summary"],
+                }
+            )
+            + "\n"
+        )
+
+    result = build_live_frontier(
+        session_id="session-a",
+        frontier_root=frontier_root,
+        allowed_run_root=run.parent,
+    )
+    context = result["rendered_context"]
+
+    assert "parent_rebound" in context
+    assert "candidate evidence" in context
+    assert "cannot prove user intent" in context
+    assert "task_objective_candidate=" in context
 
 
 def test_duplicate_compact_events_are_stateless_and_deterministic(tmp_path: Path) -> None:
