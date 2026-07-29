@@ -30,7 +30,7 @@ RELEASE_RUNTIME_RELATIVE_PATH = Path("skill-bundle") / "scripts" / "xinao_runtim
 # Bound to the co-located bootstrap-migration companion. Tampering fails before execution.
 # Update this whenever the candidate xinao_runtime.py bytes change.
 EXPECTED_COMPANION_RUNTIME_SHA256 = (
-    "557938136d7dcbbd05d2cc0c7f69ee46e5cb559e503c34b4c847046445d71c1f"
+    "724155bb7bda9860bc241638b7c0bc0da99fa5cc5bf7c5f1d98d8be0571c415c"
 )
 RELEASE_ID_PATTERN = re.compile(r"^researcher-[0-9]+\.[0-9]+\.[0-9]+-[0-9a-f]{16}$")
 TXN_ID_PATTERN = re.compile(r"^xra_[0-9]{8}T[0-9]{6}_[0-9a-f]{16}$")
@@ -63,6 +63,25 @@ JOURNAL_KEYS = {
     "canary",
     "failure_reason",
     "terminal_pointer_sha256",
+}
+MIGRATE_FROM_KEYS = {
+    "legacy_pointer_sha256",
+    "legacy_pointer",
+    "previous_verified",
+    "legacy_restore_path",
+    "legacy_restore_manifest_sha256",
+    "legacy_restore_tree_sha256",
+}
+LEGACY_POINTER_KEYS = {
+    "schema_version",
+    "release_id",
+    "release_manifest_path",
+    "release_manifest_sha256",
+    "promoted_at",
+    "previous_pointer_sha256",
+    "previous_release_id",
+    "previous_release_manifest_path",
+    "previous_release_manifest_sha256",
 }
 PENDING_ACTIVATION_STATES = {
     "PREPARED",
@@ -325,7 +344,7 @@ def _validate_journal_shape(
     revision = journal.get("revision")
     if type(revision) is not int or revision < 1:
         raise BootstrapError("ACTIVATION_JOURNAL_REVISION_INVALID", str(revision))
-    if journal.get("operation") not in {"ACTIVATE", "ROLLBACK"}:
+    if journal.get("operation") not in {"ACTIVATE", "ROLLBACK", "MIGRATE"}:
         raise BootstrapError("ACTIVATION_OPERATION_INVALID", str(journal.get("operation")))
     valid_states = PENDING_ACTIVATION_STATES | TERMINAL_ACTIVATION_STATES | {"RECOVERY_CONFLICT"}
     if journal.get("state") not in valid_states:
@@ -342,7 +361,43 @@ def _validate_journal_shape(
     if requested_to.get("activation_txn_id") != txn_id or target.get("activation_txn_id") != txn_id:
         raise BootstrapError("ACTIVATION_TRANSACTION_BINDING_MISMATCH", txn_id)
     from_value = journal.get("from")
-    if from_value is not None:
+    if journal.get("operation") == "MIGRATE":
+        # Terminal MIGRATE journals remain the active activation witness after protocol
+        # transition; ordinary fence formation must accept their legacy restore from-shape.
+        if not isinstance(from_value, dict) or set(from_value) != MIGRATE_FROM_KEYS:
+            raise BootstrapError("ACTIVATION_SOURCE_INVALID", txn_id)
+        legacy_pointer_sha256 = from_value.get("legacy_pointer_sha256")
+        if (
+            not isinstance(legacy_pointer_sha256, str)
+            or HEX_SHA256_PATTERN.fullmatch(legacy_pointer_sha256) is None
+        ):
+            raise BootstrapError("ACTIVATION_SOURCE_INVALID", "legacy_pointer_sha256")
+        legacy_pointer = from_value.get("legacy_pointer")
+        if not isinstance(legacy_pointer, dict) or set(legacy_pointer) != LEGACY_POINTER_KEYS:
+            raise BootstrapError("ACTIVATION_SOURCE_INVALID", "legacy_pointer")
+        if legacy_pointer.get("schema_version") != "xinao.researcher_current_pointer.v1":
+            raise BootstrapError("ACTIVATION_SOURCE_INVALID", "legacy_pointer.schema_version")
+        if from_value.get("previous_verified") is not None:
+            _validate_active_ref_shape(from_value.get("previous_verified"), state_root=state_root)
+        for key in (
+            "legacy_restore_path",
+            "legacy_restore_manifest_sha256",
+            "legacy_restore_tree_sha256",
+        ):
+            observed = from_value.get(key)
+            if not isinstance(observed, str) or not observed:
+                raise BootstrapError("ACTIVATION_SOURCE_INVALID", key)
+        if (
+            HEX_SHA256_PATTERN.fullmatch(str(from_value.get("legacy_restore_manifest_sha256", "")))
+            is None
+            or HEX_SHA256_PATTERN.fullmatch(str(from_value.get("legacy_restore_tree_sha256", "")))
+            is None
+        ):
+            raise BootstrapError("ACTIVATION_SOURCE_INVALID", "legacy_restore_hash")
+        restore_path = Path(str(from_value.get("legacy_restore_path", "")))
+        if not restore_path.is_absolute():
+            raise BootstrapError("ACTIVATION_SOURCE_INVALID", "legacy_restore_path")
+    elif from_value is not None:
         if not isinstance(from_value, dict) or set(from_value) != {
             "generation",
             "pointer_sha256",

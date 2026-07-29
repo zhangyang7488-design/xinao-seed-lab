@@ -2579,6 +2579,135 @@ def test_bootstrap_migrate_concurrent_second_lock_holder_fails_closed(
     assert receipt["status"] == "MIGRATED"
 
 
+def test_build_release_pre_docker_fence_uses_legacy_pointer_under_migration(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Migration builds must not require v2 bootstrap fence before docker build."""
+
+    module = _module()
+    world = _prepare_v1_migration_world(module, tmp_path, monkeypatch)
+    legacy_sha = hashlib.sha256(world["legacy_bytes"]).hexdigest()
+    env = _fake_build_environment(module, monkeypatch, dirty=False)
+    legacy_calls: list[str] = []
+    bootstrap_calls: list[str] = []
+    original_legacy = module._validate_legacy_build_fence_locked
+
+    def track_legacy(expected_pointer_sha256: str):
+        legacy_calls.append(expected_pointer_sha256)
+        return original_legacy(expected_pointer_sha256)
+
+    def forbid_bootstrap(command: str, *, expected=None):
+        bootstrap_calls.append(command)
+        raise module.XinaoError("BOOTSTRAP_FENCE_REQUIRED", "migration must not use v2 fence")
+
+    monkeypatch.setattr(module, "_validate_legacy_build_fence_locked", track_legacy)
+    monkeypatch.setattr(module, "_validate_bootstrap_fence_locked", forbid_bootstrap)
+    # Stop at docker build after pre-docker fence revalidation succeeds.
+    original_run = module._run
+
+    def run_and_stop(arguments, **kwargs):
+        command = [str(item) for item in arguments]
+        if len(command) >= 2 and command[0] == "docker" and command[1] == "build":
+            raise module.XinaoError("INJECTED_STOP_AFTER_PRE_DOCKER_FENCE", "ok")
+        return original_run(arguments, **kwargs)
+
+    monkeypatch.setattr(module, "_run", run_and_stop)
+    monkeypatch.delenv("XINAO_BOOTSTRAP_FENCE_V1", raising=False)
+    with pytest.raises(module.XinaoError) as failure:
+        module.build_release(
+            ROOT,
+            allow_dirty=False,
+            migration_legacy_pointer_sha256=legacy_sha,
+        )
+    assert failure.value.reason_code == "INJECTED_STOP_AFTER_PRE_DOCKER_FENCE"
+    assert bootstrap_calls == []
+    # Start fence + pre-docker fence both re-hold the exact legacy pointer sha.
+    assert legacy_calls == [legacy_sha, legacy_sha]
+    assert world["pointer_path"].read_bytes() == world["legacy_bytes"]
+    assert env["live_containers"] == {}
+
+
+def test_construct_protocol2_release_from_legacy_is_retired_hard_stop(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    module = _module()
+    world = _prepare_v1_migration_world(module, tmp_path, monkeypatch)
+    with pytest.raises(module.XinaoError) as failure:
+        module._construct_protocol2_release_from_legacy(
+            world["active"],
+            source_rows=[],
+            source_root=world["active_rendering"],
+            activation_seed="attack",
+        )
+    assert failure.value.reason_code == "LEGACY_PROTOCOL2_CONSTRUCT_RETIRED"
+    assert world["pointer_path"].read_bytes() == world["legacy_bytes"]
+
+
+def test_apply_legacy_restore_rejects_path_escape_outside_owned_root(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    module = _module()
+    world = _prepare_v1_migration_world(module, tmp_path, monkeypatch)
+    monkeypatch.setattr(
+        module, "_run_activation_canary", lambda value: _canary_value(module, value)
+    )
+    # Capture a real restore bundle via a successful prepare then abort before switch.
+    original_continue = module._continue_migrate_journal
+
+    def stop_prepared(journal, journal_path):
+        assert journal["state"] == "PREPARED"
+        raise module.XinaoError("INJECTED_STOP", "hold restore")
+
+    monkeypatch.setattr(module, "_continue_migrate_journal", stop_prepared)
+    with pytest.raises(module.XinaoError):
+        module.bootstrap_migrate()
+    pending = module._pending_journals()
+    assert len(pending) == 1
+    journal = pending[0][0]
+    restore_root = Path(journal["from"]["legacy_restore_path"])
+    restore_manifest = module._verify_legacy_restore_bundle(
+        restore_root,
+        expected_manifest_sha256=journal["from"]["legacy_restore_manifest_sha256"],
+        expected_tree_sha256=journal["from"]["legacy_restore_tree_sha256"],
+    )
+    # Retarget sealed install path outside the live install root; must fail closed.
+    hostile = dict(restore_manifest)
+    hostile["installed_skill_root"] = str(tmp_path / "not-the-install-root" / "xinao")
+    with pytest.raises(module.XinaoError) as failure:
+        module._apply_legacy_restore_bundle(restore_root, hostile)
+    assert failure.value.reason_code == "LEGACY_RESTORE_PATH_INVALID"
+    assert world["pointer_path"].read_bytes() == world["legacy_bytes"]
+    monkeypatch.setattr(module, "_continue_migrate_journal", original_continue)
+
+
+def test_post_success_migrate_leaves_previous_verified_none_and_blocks_rollback(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Explicit previous_verified=None is a one-way door for rollback_release()."""
+
+    module = _module()
+    world = _prepare_v1_migration_world(module, tmp_path, monkeypatch)
+    monkeypatch.setattr(
+        module, "_run_activation_canary", lambda value: _canary_value(module, value)
+    )
+    receipt = module.bootstrap_migrate()
+    assert receipt["status"] == "MIGRATED"
+    pointer = module._load_json(world["pointer_path"])
+    assert pointer["previous_verified"] is None
+    journal = module._load_json(module._journal_path(receipt["txn_id"]))
+    assert journal["from"]["previous_verified"] is None
+    assert Path(journal["from"]["legacy_restore_path"]).is_dir()
+    # Ordinary thin-bootstrap fence must form over a terminal MIGRATE journal.
+    fence = _install_bootstrap_fence(module, monkeypatch, ["inspect"])
+    assert fence["active_txn_id"] == receipt["txn_id"]
+    before = world["pointer_path"].read_bytes()
+    _install_bootstrap_fence(module, monkeypatch, ["rollback"])
+    with pytest.raises(module.XinaoError) as failure:
+        module.rollback_release()
+    assert failure.value.reason_code == "ROLLBACK_MATERIAL_ABSENT"
+    assert world["pointer_path"].read_bytes() == before
+
+
 def test_generic_worker_arguments_get_typed_rejection(
     capsys: pytest.CaptureFixture[str],
 ) -> None:

@@ -2152,7 +2152,12 @@ def build_release(
             str(build_context),
         ]
         with _activation_lock():
-            _validate_bootstrap_fence_locked("build", expected=fence)
+            # Migration builds run pre-fence (no v2 bootstrap fence). Re-hold the
+            # exact legacy pointer identity instead of requiring XINAO_BOOTSTRAP_FENCE_V1.
+            if migration_legacy_pointer_sha256 is None:
+                _validate_bootstrap_fence_locked("build", expected=fence)
+            else:
+                _validate_legacy_build_fence_locked(migration_legacy_pointer_sha256)
         _run(build_args, cwd=source_root, timeout=1800)
         image = _docker_image(docker, image_tag)
         image_id = str(image.get("Id", ""))
@@ -3075,33 +3080,121 @@ def _verify_legacy_restore_bundle(
     return manifest
 
 
+def _require_safe_tree_destination(destination: Path, *, root: Path, reason_code: str) -> Path:
+    """Reject reparse points and destinations outside an owned absolute root before rmtree."""
+
+    try:
+        dest_abs = Path(os.path.abspath(destination))
+        root_abs = Path(os.path.abspath(root))
+    except OSError as exc:
+        raise XinaoError(reason_code, f"{destination}: {exc}") from exc
+    if not dest_abs.is_absolute() or not root_abs.is_absolute():
+        raise XinaoError(reason_code, f"absolute paths required: {destination}")
+    # Never allow deleting the owned root itself (e.g. drive or state root).
+    if _paths_equal(dest_abs, root_abs):
+        raise XinaoError(reason_code, f"refuses to remove owned root: {destination}")
+    try:
+        relative = dest_abs.relative_to(root_abs)
+    except ValueError as exc:
+        raise XinaoError(reason_code, f"outside owned root: {destination}") from exc
+    if not relative.parts or any(part in {"", ".", ".."} for part in relative.parts):
+        raise XinaoError(reason_code, f"invalid relative destination: {destination}")
+    if os.path.lexists(dest_abs) and _is_reparse(dest_abs):
+        raise XinaoError(reason_code, f"reparse forbidden: {dest_abs}")
+    # Walk parents for junction/symlink escape (Windows reparse / POSIX symlink).
+    for candidate in dest_abs.parents:
+        if candidate == dest_abs.anchor or candidate == Path(dest_abs.anchor):
+            break
+        try:
+            if os.path.lexists(candidate) and _is_reparse(candidate):
+                raise XinaoError(reason_code, f"reparse parent forbidden: {candidate}")
+        except XinaoError:
+            raise
+        except OSError as exc:
+            raise XinaoError(reason_code, f"{candidate}: {exc}") from exc
+        if _paths_equal(candidate, root_abs):
+            break
+    return dest_abs
+
+
+def _safe_remove_tree(destination: Path, *, root: Path, reason_code: str) -> None:
+    target = _require_safe_tree_destination(destination, root=root, reason_code=reason_code)
+    if not os.path.lexists(target):
+        return
+    info = os.lstat(target)
+    if _is_reparse_stat(info):
+        raise XinaoError(reason_code, f"reparse forbidden: {target}")
+    if stat.S_ISDIR(info.st_mode):
+        shutil.rmtree(target)
+    elif stat.S_ISREG(info.st_mode):
+        target.unlink()
+    else:
+        raise XinaoError(reason_code, f"unsupported entry type: {target}")
+
+
 def _apply_legacy_restore_bundle(restore_root: Path, restore_manifest: dict[str, Any]) -> None:
     inventory = restore_manifest["inventory"]
     installed_destination = Path(str(restore_manifest["installed_skill_root"]))
+    live_installed = Path(os.path.abspath(_installed_skill_root()))
+    if not _paths_equal(installed_destination, live_installed):
+        # Never rmtree a sealed path that no longer matches the configured install root.
+        raise XinaoError(
+            "LEGACY_RESTORE_PATH_INVALID",
+            f"sealed={installed_destination} live={live_installed}",
+        )
     installed_rows = _capture_tree_rows(
         restore_root / "installed_skill", reason_code="LEGACY_RESTORE_IDENTITY_MISMATCH"
     )
-    if installed_destination.exists():
-        shutil.rmtree(installed_destination)
-    _materialize_tree(installed_destination, installed_rows)
+    # Contain deletes to the installed skill directory itself (parent must exist and be safe).
+    installed_parent = live_installed.parent
+    _require_safe_tree_destination(
+        live_installed,
+        root=installed_parent,
+        reason_code="LEGACY_RESTORE_PATH_INVALID",
+    )
+    if os.path.lexists(live_installed):
+        _safe_remove_tree(
+            live_installed,
+            root=installed_parent,
+            reason_code="LEGACY_RESTORE_PATH_INVALID",
+        )
+    _materialize_tree(live_installed, installed_rows)
     pointer_payload = (restore_root / "pointer.json").read_bytes()
     _write_bytes_atomic(_state_paths()["pointer"], pointer_payload)
+    release_root = _state_paths()["release_root"]
     for release_id, expected_sha in inventory["releases"].items():
+        if RELEASE_ID_PATTERN.fullmatch(str(release_id)) is None:
+            raise XinaoError("LEGACY_RESTORE_PATH_INVALID", f"release_id:{release_id}")
         source = restore_root / "releases" / str(release_id) / "release.json"
-        destination = _state_paths()["release_root"] / str(release_id) / "release.json"
+        destination = release_root / str(release_id) / "release.json"
         payload = source.read_bytes()
         if _sha256_bytes(payload) != expected_sha:
             raise XinaoError("LEGACY_RESTORE_IDENTITY_MISMATCH", f"release:{release_id}")
         # Restore pure v1 directory: drop any protocol-2 bundle material that migration wrote.
-        release_dir = destination.parent
+        release_dir = _require_safe_tree_destination(
+            destination.parent,
+            root=release_root,
+            reason_code="LEGACY_RESTORE_PATH_INVALID",
+        )
         if release_dir.exists():
             for entry in list(release_dir.iterdir()):
                 if entry.name == "release.json":
                     continue
-                if entry.is_dir():
-                    shutil.rmtree(entry)
-                else:
+                if _is_reparse(entry):
+                    # Unlink the reparse point itself; never follow into foreign trees.
                     entry.unlink()
+                    continue
+                entry_info = os.lstat(entry)
+                if stat.S_ISDIR(entry_info.st_mode):
+                    _safe_remove_tree(
+                        entry,
+                        root=release_dir,
+                        reason_code="LEGACY_RESTORE_PATH_INVALID",
+                    )
+                elif stat.S_ISREG(entry_info.st_mode):
+                    entry.unlink()
+                else:
+                    raise XinaoError("LEGACY_RESTORE_PATH_INVALID", f"entry:{entry}")
         _write_bytes_atomic(destination, payload)
 
 
@@ -3112,151 +3205,21 @@ def _construct_protocol2_release_from_legacy(
     source_root: Path,
     activation_seed: str,
 ) -> tuple[dict[str, Any], Path]:
-    """Build a complete protocol-2 release from a byte-exact historical skill rendering.
+    """Retired footgun: never relabel historical v1 images as protocol-2 releases.
 
-    Never labels a drifted live Skill snapshot as the old release. Image identity is
-    carried from the verified v1 manifest; skill-bundle bytes come only from the
-    hash-matched source rendering.
+    Active migration builds a real current v2 image via ``build_release`` under the
+    legacy-pointer fence. This symbol remains only as an explicit hard stop so stale
+    call sites cannot mint incomplete v2 manifests from v1 image claims.
     """
 
-    package_version = "1.0.0"
-    registry_path = source_root / "references" / "capabilities.v1.json"
-    if registry_path.is_file():
-        registry = _load_json(registry_path)
-        if isinstance(registry.get("skill_version"), str) and SEMVER_PATTERN.fullmatch(
-            str(registry["skill_version"])
-        ):
-            package_version = str(registry["skill_version"])
-    capability_version = "1.0.0"
-    charter_path = source_root / "references" / "researcher-charter.v1.json"
-    runtime_lock_path = source_root / "references" / "researcher-runtime-lock.v1.json"
-    if charter_path.is_file():
-        charter = _load_json(charter_path)
-        if isinstance(charter.get("charter_version"), str) and SEMVER_PATTERN.fullmatch(
-            str(charter["charter_version"])
-        ):
-            capability_version = str(charter["charter_version"])
-    if runtime_lock_path.is_file():
-        runtime_lock = _load_json(runtime_lock_path)
-        runtime_version = runtime_lock.get("runtime_version")
-        if (
-            isinstance(runtime_version, str)
-            and SEMVER_PATTERN.fullmatch(runtime_version)
-            and runtime_version != capability_version
-        ):
-            raise XinaoError(
-                "RESEARCHER_VERSION_IDENTITY_MISMATCH",
-                f"charter={capability_version} runtime={runtime_version}",
-            )
-    bundle_manifest = _skill_bundle_manifest(source_rows, package_version=package_version)
-    skill_hashes = _reference_hashes(source_root)
-    source_identity_raw = legacy_manifest.get("source_identity") or {}
-    source_identity = {
-        "source_commit": source_identity_raw.get("source_commit"),
-        "source_tree": source_identity_raw.get("source_tree"),
-        "source_dirty": False,
-        "grok_donor_image_id": source_identity_raw.get("grok_donor_image_id"),
-    }
-    if (
-        not isinstance(source_identity["source_commit"], str)
-        or not isinstance(source_identity["source_tree"], str)
-        or not isinstance(source_identity["grok_donor_image_id"], str)
-    ):
-        raise XinaoError("RELEASE_SOURCE_IDENTITY_INVALID", str(legacy_manifest.get("release_id")))
-    labels = {
-        "io.xinao.researcher.chain": "dedicated-xinao-science",
-        "io.xinao.researcher.generic-worker-route": "forbidden",
-        "io.xinao.researcher.grok-donor-image-id": source_identity["grok_donor_image_id"],
-        "io.xinao.researcher.charter.sha256": skill_hashes["charter_sha256"],
-        "io.xinao.researcher.output-schema.sha256": skill_hashes["output_schema_sha256"],
-        "io.xinao.researcher.material-bundle-schema.sha256": skill_hashes[
-            "material_bundle_schema_sha256"
-        ],
-        "io.xinao.researcher.runtime-lock.sha256": skill_hashes["runtime_lock_sha256"],
-        "io.xinao.researcher.skill-invoker.sha256": skill_hashes["skill_invoker_sha256"],
-        "io.xinao.researcher.dockerfile.sha256": legacy_manifest["skill_hashes"][
-            "dockerfile_sha256"
-        ],
-        "io.xinao.researcher.entrypoint.sha256": legacy_manifest["skill_hashes"][
-            "entrypoint_sha256"
-        ],
-        "io.xinao.researcher.source-identity.sha256": _sha256_bytes(
-            _canonical_bytes(source_identity)
+    del legacy_manifest, source_rows, source_root, activation_seed
+    raise XinaoError(
+        "LEGACY_PROTOCOL2_CONSTRUCT_RETIRED",
+        (
+            "historical v1 image/source renderings are rollback evidence only; "
+            "build current protocol-2 via build_release(migration_legacy_pointer_sha256=...)"
         ),
-        "io.xinao.researcher.requested-model": REQUESTED_MODEL,
-    }
-    provisional: dict[str, Any] = {
-        "schema_version": RELEASE_SCHEMA,
-        "release_id": "pending",
-        "package_version": package_version,
-        "capability_id": "researcher-container",
-        "capability_version": capability_version,
-        "charter_version": capability_version,
-        "runtime_version": capability_version,
-        "release_identity_sha256": "pending",
-        "source_identity": source_identity,
-        "skill_bundle_path": "pending",
-        "skill_bundle_manifest_path": "pending",
-        "skill_bundle_manifest_sha256": "pending",
-        "skill_bundle_tree_sha256": bundle_manifest["tree_sha256"],
-        "image_tag_observational": legacy_manifest.get("image_tag_observational"),
-        "image_id": legacy_manifest.get("image_id"),
-        "image_entrypoint": legacy_manifest.get("image_entrypoint"),
-        "image_labels": labels,
-        "skill_hashes": skill_hashes,
-        "required_bootstrap_protocol": REQUIRED_BOOTSTRAP_PROTOCOL,
-        "generic_worker_route_allowed": False,
-        "state_namespace": legacy_manifest.get("state_namespace")
-        or "xinao_skill/researcher_container",
-        "run_namespace": legacy_manifest.get("run_namespace") or "xinao_researcher",
-    }
-    identity_sha256 = _sha256_bytes(_canonical_bytes(_release_identity_payload(provisional)))
-    # Bind constructed identity to the seed so release_id remains deterministic per migration target.
-    release_id = f"researcher-{capability_version}-{identity_sha256[:16]}"
-    release_dir = _state_paths()["release_root"] / release_id
-    manifest_path = release_dir / "release.json"
-    provisional.update(
-        {
-            "release_id": release_id,
-            "release_identity_sha256": identity_sha256,
-            "skill_bundle_path": str(release_dir / "skill-bundle"),
-            "skill_bundle_manifest_path": str(release_dir / "skill-bundle.manifest.json"),
-            "skill_bundle_manifest_sha256": _sha256_bytes(_canonical_bytes(bundle_manifest)),
-        }
     )
-    if manifest_path.is_file():
-        existing = _load_json(manifest_path)
-        try:
-            _validate_release_manifest(existing, manifest_path)
-        except XinaoError as exc:
-            raise XinaoError(
-                "MIGRATION_RELEASE_INCOMPLETE",
-                f"{release_id}: {exc.reason_code}: {exc.detail}",
-            ) from exc
-        if existing.get("release_identity_sha256") != identity_sha256:
-            raise XinaoError("RELEASE_ID_COLLISION", str(manifest_path))
-        return existing, manifest_path
-    staging = (
-        _state_paths()["release_root"]
-        / f".staging-migrate-{release_id}-{activation_seed}-{uuid.uuid4().hex[:8]}"
-    )
-    try:
-        staging.mkdir(parents=True, exist_ok=False)
-        _materialize_skill_bundle(staging / "skill-bundle", source_rows, bundle_manifest)
-        _write_json_atomic(
-            staging / "skill-bundle.manifest.json", bundle_manifest, create_new=True
-        )
-        _write_json_atomic(staging / "release.json", provisional, create_new=True)
-        if release_dir.exists():
-            raise XinaoError("RELEASE_ID_COLLISION", str(release_dir))
-        os.replace(staging, release_dir)
-    except Exception:
-        if staging.exists():
-            shutil.rmtree(staging, ignore_errors=True)
-        raise
-    manifest = _load_json(manifest_path)
-    _validate_release_manifest(manifest, manifest_path)
-    return manifest, manifest_path
 
 
 def _switch_migrate_pointer(
