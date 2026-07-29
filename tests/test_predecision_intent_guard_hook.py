@@ -25,6 +25,7 @@ def _invoke(payload: dict[str, object]) -> subprocess.CompletedProcess[str]:
         [_pwsh(), "-NoProfile", "-File", str(SCRIPT)],
         input=json.dumps(payload),
         text=True,
+        encoding="utf-8",
         capture_output=True,
         check=False,
     )
