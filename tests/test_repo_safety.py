@@ -778,9 +778,7 @@ def test_context_intent_alignment_eval_is_balanced_and_friction_bounded() -> Non
         "ATOM_ASK_USER_FOR_NEXT_TASK",
     }
 
-    local_semantics = cases[
-        "REG_AI_LOCAL_SEMANTICS_CANNOT_HIJACK_WHOLE_PARENT_INTENT"
-    ]["vars"]
+    local_semantics = cases["REG_AI_LOCAL_SEMANTICS_CANNOT_HIJACK_WHOLE_PARENT_INTENT"]["vars"]
     assert local_semantics["expected_active_problem_level"] == "parent_intent_and_harm"
     assert local_semantics["expected_coordination_mode"] == "supervisor_only"
     assert local_semantics["expected_worker_provider"] == "not_applicable"
@@ -791,9 +789,7 @@ def test_context_intent_alignment_eval_is_balanced_and_friction_bounded() -> Non
     )
     assert local_semantics["expected_degraded_scope"] == "none"
     assert local_semantics["expected_downstream_recovery_required"] is False
-    assert local_semantics["expected_local_completion_transition"] == (
-        "rederive_mainline_frontier"
-    )
+    assert local_semantics["expected_local_completion_transition"] == ("rederive_mainline_frontier")
     assert local_semantics["expected_metacognition_disposition"] == "capture_event_only"
 
     caller_modality = cases["REG_CALLER_MODALITY_PROBE_NOT_GLOBAL_MATURITY_PARENT"]["vars"]
