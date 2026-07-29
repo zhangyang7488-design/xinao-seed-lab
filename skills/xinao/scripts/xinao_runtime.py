@@ -109,6 +109,7 @@ ACTIVATION_JOURNAL_SCHEMA = "xinao.researcher_activation_journal.v1"
 LEGACY_RESTORE_MANIFEST_SCHEMA = "xinao.researcher_legacy_restore.v1"
 BOOTSTRAP_FENCE_SCHEMA = "xinao.bootstrap_fence.v1"
 BOOTSTRAP_FENCE_ENVIRONMENT = "XINAO_BOOTSTRAP_FENCE_V1"
+MIGRATION_SOURCE_ROOT_ENVIRONMENT = "XINAO_MIGRATION_SOURCE_ROOT"
 REQUIRED_BOOTSTRAP_PROTOCOL = 2
 TERMINAL_ACTIVATION_STATES = {"VERIFIED", "ROLLED_BACK"}
 PENDING_ACTIVATION_STATES = {
@@ -421,6 +422,23 @@ def _state_paths() -> dict[str, Path]:
 
 def _installed_skill_root() -> Path:
     return Path(os.environ.get("XINAO_INSTALLED_SKILL_ROOT", str(DEFAULT_INSTALLED_SKILL_ROOT)))
+
+
+def _migration_source_root() -> Path:
+    configured = os.environ.get(MIGRATION_SOURCE_ROOT_ENVIRONMENT)
+    candidate = Path(configured) if configured else SKILL_ROOT.parents[1]
+    try:
+        resolved = candidate.resolve(strict=True)
+    except OSError as exc:
+        raise XinaoError("MIGRATION_SOURCE_CONE_MISSING", f"{candidate}: {exc}") from exc
+    required = (
+        resolved / "skills" / "xinao",
+        resolved / "docker" / "xinao-researcher" / "Dockerfile",
+        resolved / "docker" / "xinao-researcher" / "entrypoint.py",
+    )
+    if not required[0].is_dir() or not all(path.is_file() for path in required[1:]):
+        raise XinaoError("MIGRATION_SOURCE_CONE_MISSING", str(resolved))
+    return resolved
 
 
 @contextmanager
@@ -1792,7 +1810,8 @@ def _validate_journal(journal: dict[str, Any], journal_path: Path) -> None:
             raise XinaoError("ACTIVATION_SOURCE_INVALID", "legacy_pointer")
         if legacy_pointer.get("schema_version") != LEGACY_POINTER_SCHEMA:
             raise XinaoError("ACTIVATION_SOURCE_INVALID", "legacy_pointer.schema_version")
-        _validate_release_ref(from_value.get("previous_verified"))
+        if from_value.get("previous_verified") is not None:
+            _validate_release_ref(from_value["previous_verified"])
     elif from_value is not None:
         if not isinstance(from_value, dict) or set(from_value) != {
             "generation",
@@ -1972,9 +1991,32 @@ def _source_versions(
     return registry, charter, runtime_lock, package_version, capability_version
 
 
-def build_release(source_root: Path, *, allow_dirty: bool) -> dict[str, Any]:
+def _validate_legacy_build_fence_locked(expected_pointer_sha256: str) -> None:
+    pointer_path = _state_paths()["pointer"]
+    if HEX_SHA256_PATTERN.fullmatch(expected_pointer_sha256) is None:
+        raise XinaoError("MIGRATION_BUILD_FENCE_INVALID", expected_pointer_sha256)
+    if _pending_journals():
+        raise XinaoError("RECOVERY_REQUIRED", "pending activation journal")
+    if not pointer_path.is_file() or _sha256(pointer_path) != expected_pointer_sha256:
+        raise XinaoError("MIGRATION_BUILD_FENCE_MISMATCH", str(pointer_path))
+    pointer = _load_json(pointer_path)
+    if pointer.get("schema_version") != LEGACY_POINTER_SCHEMA:
+        raise XinaoError("MIGRATION_BUILD_FENCE_MISMATCH", str(pointer_path))
+    _validate_legacy_pointer_document(pointer, pointer_path)
+
+
+def build_release(
+    source_root: Path,
+    *,
+    allow_dirty: bool,
+    migration_legacy_pointer_sha256: str | None = None,
+) -> dict[str, Any]:
     with _activation_lock():
-        fence = _validate_bootstrap_fence_locked("build")
+        if migration_legacy_pointer_sha256 is None:
+            fence = _validate_bootstrap_fence_locked("build")
+        else:
+            _validate_legacy_build_fence_locked(migration_legacy_pointer_sha256)
+            fence = None
     source_root = source_root.resolve()
     source_skill = source_root / "skills" / "xinao"
     dockerfile = source_root / "docker" / "xinao-researcher" / "Dockerfile"
@@ -2181,7 +2223,10 @@ def build_release(source_root: Path, *, allow_dirty: bool) -> dict[str, Any]:
         }
     )
     with _activation_lock():
-        _validate_bootstrap_fence_locked("build", expected=fence)
+        if migration_legacy_pointer_sha256 is None:
+            _validate_bootstrap_fence_locked("build", expected=fence)
+        else:
+            _validate_legacy_build_fence_locked(migration_legacy_pointer_sha256)
         release_root = _state_paths()["release_root"]
         release_root.mkdir(parents=True, exist_ok=True)
         for candidate in sorted(release_root.iterdir()):
@@ -2236,6 +2281,50 @@ def build_release(source_root: Path, *, allow_dirty: bool) -> dict[str, Any]:
         "activated": False,
         "completion_claim_allowed": False,
     }
+
+
+def _prepare_migration_target() -> tuple[dict[str, Any], Path] | None:
+    """Build the real protocol-2 target while the byte-exact legacy pointer is fenced.
+
+    Pending/terminal migration paths already carry their target in the journal/pointer and
+    therefore skip rebuilding. A fresh v1 migration builds from the current sealed source cone;
+    historical v1 images remain rollback evidence and are never relabeled as current v2 images.
+    """
+
+    with _activation_lock():
+        if _pending_journals():
+            return None
+        pointer_path = _state_paths()["pointer"]
+        if not pointer_path.is_file():
+            raise XinaoError("CURRENT_POINTER_ABSENT", str(pointer_path))
+        pointer = _load_json(pointer_path)
+        if pointer.get("schema_version") == CURRENT_POINTER_SCHEMA:
+            return None
+        if pointer.get("schema_version") != LEGACY_POINTER_SCHEMA:
+            raise XinaoError("CURRENT_POINTER_SCHEMA_INVALID", str(pointer_path))
+        _validate_legacy_pointer_document(pointer, pointer_path)
+        legacy_pointer_sha256 = _sha256(pointer_path)
+
+    receipt = build_release(
+        _migration_source_root(),
+        allow_dirty=False,
+        migration_legacy_pointer_sha256=legacy_pointer_sha256,
+    )
+    manifest_path = Path(str(receipt.get("release_manifest_path", "")))
+    release_id = str(receipt.get("release_id", ""))
+    expected_path = _state_paths()["release_root"] / release_id / "release.json"
+    if not _paths_equal(manifest_path, expected_path):
+        raise XinaoError("MIGRATION_TARGET_PATH_INVALID", str(manifest_path))
+    if (
+        not manifest_path.is_file()
+        or receipt.get("release_manifest_sha256") != _sha256(manifest_path)
+    ):
+        raise XinaoError("MIGRATION_TARGET_IDENTITY_MISMATCH", str(manifest_path))
+    manifest = _load_json(manifest_path)
+    _validate_release_manifest(manifest, manifest_path)
+    if manifest.get("release_id") != release_id:
+        raise XinaoError("MIGRATION_TARGET_IDENTITY_MISMATCH", release_id)
+    return manifest, manifest_path
 
 
 def _new_txn_id() -> str:
@@ -3253,9 +3342,11 @@ def _continue_migrate_journal(
                 "release_id": receipt["release_id"],
                 "pointer_generation": receipt["pointer_generation"],
                 "current_pointer_sha256": receipt["current_pointer_sha256"],
-                "previous_verified_release_id": journal["from"]["previous_verified"][
-                    "release_id"
-                ],
+                "previous_verified_release_id": (
+                    None
+                    if journal["from"]["previous_verified"] is None
+                    else journal["from"]["previous_verified"]["release_id"]
+                ),
                 "legacy_restore_tree_sha256": journal["from"]["legacy_restore_tree_sha256"],
                 "activation_journal_path": receipt["activation_journal_path"],
                 "activation_journal_sha256": receipt["activation_journal_sha256"],
@@ -3372,9 +3463,11 @@ def bootstrap_migrate() -> dict[str, Any]:
     Models the real starting object: drifted installed Skill tree, byte-exact historical
     source renderings, and original v1 pointer/manifests (release dirs contain only
     release.json). Captures and hash-seals a one-time legacy restore bundle before any
-    live mutation. Constructs complete protocol-2 targets from sealed renderings rather
-    than treating a v1 manifest or commit name as a v2 release.
+    live mutation. Activates a real current protocol-2 build made under the unchanged
+    legacy-pointer fence; historical images remain rollback evidence and are never relabeled.
     """
+
+    prepared_target = _prepare_migration_target()
 
     with _activation_lock():
         pointer_path = _state_paths()["pointer"]
@@ -3479,28 +3572,16 @@ def bootstrap_migrate() -> dict[str, Any]:
             )
         )
 
-        # Construct complete protocol-2 targets from sealed historical renderings.
-        active_manifest, active_manifest_path = _construct_protocol2_release_from_legacy(
-            active_v1,
-            source_rows=active_rows,
-            source_root=active_source_root,
-            activation_seed=txn_id,
-        )
-        previous_txn_id = _new_txn_id()
-        previous_manifest, previous_manifest_path = _construct_protocol2_release_from_legacy(
-            previous_v1,
-            source_rows=previous_rows,
-            source_root=previous_source_root,
-            activation_seed=previous_txn_id,
-        )
-        if previous_manifest["release_id"] == active_manifest["release_id"]:
-            raise XinaoError("ROLLBACK_MATERIAL_INVALID", previous_manifest["release_id"])
+        # Activate the real current protocol-2 build. Historical v1 images and renderings stay
+        # in the sealed restore object; they are not relabeled as current images with labels or
+        # entrypoint bytes they never had.
+        if prepared_target is None:
+            raise XinaoError("MIGRATION_TARGET_ABSENT", str(pointer_path))
+        active_manifest, active_manifest_path = prepared_target
+        _validate_release_manifest(active_manifest, active_manifest_path)
 
         active_ref = _release_ref_from_manifest(
             active_manifest, active_manifest_path, activation_txn_id=txn_id
-        )
-        previous_ref = _release_ref_from_manifest(
-            previous_manifest, previous_manifest_path, activation_txn_id=previous_txn_id
         )
         if _sha256(pointer_path) != legacy_sha256:
             raise XinaoError("CURRENT_POINTER_CAS_CONFLICT", str(pointer_path))
@@ -3520,7 +3601,7 @@ def bootstrap_migrate() -> dict[str, Any]:
             "from": {
                 "legacy_pointer_sha256": legacy_sha256,
                 "legacy_pointer": legacy,
-                "previous_verified": previous_ref,
+                "previous_verified": None,
                 "legacy_restore_path": str(restore_root),
                 "legacy_restore_manifest_sha256": restore_manifest_sha,
                 "legacy_restore_tree_sha256": restore_tree_sha,

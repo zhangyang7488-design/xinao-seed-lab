@@ -2138,6 +2138,18 @@ def _prepare_v1_migration_world(
     pointer_path = module._state_paths()["pointer"]
     legacy = _legacy_pointer_for_v1(module, active, active_path, previous, previous_path)
     module._write_json_atomic(pointer_path, legacy)
+    target, target_path = _sealed_release(
+        module,
+        tmp_path,
+        monkeypatch,
+        image_character="c",
+        variant=b"migration-current-target\n",
+    )
+    monkeypatch.setattr(
+        module,
+        "_prepare_migration_target",
+        lambda: (target, target_path),
+    )
     return {
         "active": active,
         "active_path": active_path,
@@ -2149,6 +2161,8 @@ def _prepare_v1_migration_world(
         "pointer_path": pointer_path,
         "legacy": legacy,
         "legacy_bytes": pointer_path.read_bytes(),
+        "target": target,
+        "target_path": target_path,
         "installed_snapshot": {
             relative.as_posix(): (installed / relative).read_bytes()
             for relative in [
@@ -2184,18 +2198,10 @@ def test_bootstrap_migrate_success_from_pure_v1_and_crlf_lf_renderings(
     pointer = module._load_json(world["pointer_path"])
     assert pointer["schema_version"] == module.CURRENT_POINTER_SCHEMA
     assert pointer["generation"] == 1
-    # Constructed protocol-2 targets, not the raw v1 release ids alone as complete releases.
-    assert pointer["active"]["release_id"] != world["active"]["release_id"] or (
-        module._state_paths()["release_root"]
-        / pointer["active"]["release_id"]
-        / "skill-bundle"
-    ).is_dir()
+    # The active target is a real current v2 build; historical v1 images remain restore-only.
+    assert pointer["active"]["release_id"] == world["target"]["release_id"]
     assert (module._state_paths()["release_root"] / pointer["active"]["release_id"] / "skill-bundle").is_dir()
-    assert (
-        module._state_paths()["release_root"]
-        / pointer["previous_verified"]["release_id"]
-        / "skill-bundle"
-    ).is_dir()
+    assert pointer["previous_verified"] is None
     # Original pure v1 directories remain reconstructible (only release.json).
     assert sorted(
         path.name
@@ -2207,6 +2213,45 @@ def test_bootstrap_migrate_success_from_pure_v1_and_crlf_lf_renderings(
     assert journal["from"]["legacy_restore_tree_sha256"] == receipt["legacy_restore_tree_sha256"]
     context = module._load_current_context(require_terminal=True)
     assert context["release"]["required_bootstrap_protocol"] == 2
+
+
+def test_prepare_migration_target_builds_current_release_under_legacy_pointer_fence(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    module = _module()
+    prepare = module._prepare_migration_target
+    world = _prepare_v1_migration_world(module, tmp_path, monkeypatch)
+    monkeypatch.setattr(module, "_prepare_migration_target", prepare)
+    monkeypatch.setattr(module, "_migration_source_root", lambda: ROOT)
+    calls: list[dict[str, object]] = []
+
+    def fake_build(source_root: Path, *, allow_dirty: bool, migration_legacy_pointer_sha256=None):
+        calls.append(
+            {
+                "source_root": source_root,
+                "allow_dirty": allow_dirty,
+                "legacy_pointer_sha256": migration_legacy_pointer_sha256,
+            }
+        )
+        return {
+            "release_id": world["target"]["release_id"],
+            "release_manifest_path": str(world["target_path"]),
+            "release_manifest_sha256": module._sha256(world["target_path"]),
+        }
+
+    monkeypatch.setattr(module, "build_release", fake_build)
+    before = world["pointer_path"].read_bytes()
+    prepared = module._prepare_migration_target()
+
+    assert prepared == (world["target"], world["target_path"])
+    assert calls == [
+        {
+            "source_root": ROOT,
+            "allow_dirty": False,
+            "legacy_pointer_sha256": hashlib.sha256(before).hexdigest(),
+        }
+    ]
+    assert world["pointer_path"].read_bytes() == before
 
 
 def test_bootstrap_migrate_wrong_line_ending_material_fails_before_mutation(
@@ -2478,6 +2523,15 @@ def test_bootstrap_migrate_companion_runtime_tamper_fails_before_execution(
         assert failure.value.reason_code == "COMPANION_RUNTIME_IDENTITY_MISMATCH"
     finally:
         runtime_path.write_bytes(original)
+
+
+def test_bootstrap_companion_runtime_seal_matches_repository_bytes() -> None:
+    bootstrap = _bootstrap_module()
+    runtime_path = bootstrap._companion_runtime_path()
+
+    assert hashlib.sha256(runtime_path.read_bytes()).hexdigest() == (
+        bootstrap.EXPECTED_COMPANION_RUNTIME_SHA256
+    )
 
 
 def test_bootstrap_migrate_concurrent_second_lock_holder_fails_closed(
