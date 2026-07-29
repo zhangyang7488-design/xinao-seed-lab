@@ -2,7 +2,13 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import os
+import subprocess
+import sys
+import threading
+import time
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -10,121 +16,1592 @@ ROOT = Path(__file__).resolve().parents[1]
 SKILL_ROOT = ROOT / "skills" / "xinao"
 
 
-def _module():
-    path = SKILL_ROOT / "scripts" / "xinao.py"
-    spec = importlib.util.spec_from_file_location("xinao_skill_under_test", path)
+def _load_module(path: Path, name: str):
+    spec = importlib.util.spec_from_file_location(name, path)
     assert spec is not None and spec.loader is not None
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module
 
 
-def test_skill_metadata_and_registry_define_one_dedicated_entry() -> None:
-    skill = (SKILL_ROOT / "SKILL.md").read_text(encoding="utf-8")
-    meta = (SKILL_ROOT / "references" / "meta.md").read_text(encoding="utf-8")
-    registry = json.loads(
-        (SKILL_ROOT / "references" / "capabilities.v1.json").read_text(encoding="utf-8")
+def _module():
+    return _load_module(SKILL_ROOT / "scripts" / "xinao_runtime.py", "xinao_runtime_under_test")
+
+
+def _bootstrap_module():
+    return _load_module(SKILL_ROOT / "scripts" / "xinao.py", "xinao_bootstrap_under_test")
+
+
+def _auth(module, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    auth = tmp_path / "auth.json"
+    auth.write_text("{}\n", encoding="utf-8")
+    monkeypatch.setattr(module, "DEFAULT_AUTH_PATH", auth)
+    return auth
+
+
+def _state(module, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    state = tmp_path / "state"
+    monkeypatch.setenv("XINAO_SKILL_STATE_ROOT", str(state))
+    monkeypatch.setenv("XINAO_RESEARCHER_RUN_ROOT", str(tmp_path / "runs"))
+    lock = state / "researcher_container" / ".activation.lock"
+    lock.parent.mkdir(parents=True, exist_ok=True)
+    lock.write_bytes(b"\0")
+    return state
+
+
+def _sealed_release(
+    module,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    image_character: str = "a",
+    dirty: bool = False,
+    variant: bytes | None = None,
+) -> tuple[dict[str, object], Path]:
+    state = _state(module, tmp_path, monkeypatch)
+    source_rows = module._source_bundle_files(SKILL_ROOT)
+    if variant is not None:
+        source_rows.append(
+            (
+                "references/test-release-variant.txt",
+                tmp_path / "unused-source-path",
+                variant,
+            )
+        )
+        source_rows.sort(key=lambda item: item[0])
+    bundle_manifest = module._skill_bundle_manifest(source_rows, package_version="1.2.0")
+    hashes = module._reference_hashes(SKILL_ROOT)
+    source_identity = {
+        "source_commit": "c" * 40,
+        "source_tree": "d" * 40,
+        "source_dirty": dirty,
+        "grok_donor_image_id": "sha256:" + "b" * 64,
+    }
+    source_identity_sha256 = module._sha256_bytes(module._canonical_bytes(source_identity))
+    image_id = "sha256:" + image_character * 64
+    labels = {
+        "io.xinao.researcher.chain": "dedicated-xinao-science",
+        "io.xinao.researcher.generic-worker-route": "forbidden",
+        "io.xinao.researcher.grok-donor-image-id": source_identity["grok_donor_image_id"],
+        "io.xinao.researcher.charter.sha256": hashes["charter_sha256"],
+        "io.xinao.researcher.output-schema.sha256": hashes["output_schema_sha256"],
+        "io.xinao.researcher.material-bundle-schema.sha256": hashes[
+            "material_bundle_schema_sha256"
+        ],
+        "io.xinao.researcher.runtime-lock.sha256": hashes["runtime_lock_sha256"],
+        "io.xinao.researcher.skill-invoker.sha256": hashes["skill_invoker_sha256"],
+        "io.xinao.researcher.dockerfile.sha256": "1" * 64,
+        "io.xinao.researcher.entrypoint.sha256": "2" * 64,
+        "io.xinao.researcher.source-identity.sha256": source_identity_sha256,
+        "io.xinao.researcher.requested-model": "grok-4.5",
+    }
+    manifest: dict[str, object] = {
+        "schema_version": module.RELEASE_SCHEMA,
+        "release_id": "pending",
+        "package_version": "1.2.0",
+        "capability_id": "researcher-container",
+        "capability_version": "1.1.0",
+        "charter_version": "1.1.0",
+        "runtime_version": "1.1.0",
+        "release_identity_sha256": "pending",
+        "source_identity": source_identity,
+        "skill_bundle_path": "pending",
+        "skill_bundle_manifest_path": "pending",
+        "skill_bundle_manifest_sha256": "pending",
+        "skill_bundle_tree_sha256": bundle_manifest["tree_sha256"],
+        "image_tag_observational": "xinao-researcher:test",
+        "image_id": image_id,
+        "image_entrypoint": ["python", "-I", "/opt/xinao-researcher/entrypoint.py"],
+        "image_labels": labels,
+        "skill_hashes": hashes,
+        "required_bootstrap_protocol": 2,
+        "generic_worker_route_allowed": False,
+        "state_namespace": "xinao_skill/researcher_container",
+        "run_namespace": "xinao_researcher",
+    }
+    identity_sha256 = module._sha256_bytes(
+        module._canonical_bytes(module._release_identity_payload(manifest))
     )
-    assert "name: xinao" in skill
-    assert "ordinary WorkerPool" in skill
-    assert "唯一稳定入口" in meta
-    assert registry["ordinary_worker_chain_allowed"] is False
-    statuses = {item["capability_id"]: item["source_status"] for item in registry["capabilities"]}
-    assert statuses == {
-        "researcher-container": "available",
-        "shadow-account": "planned",
-        "decision-freeze": "planned",
-        "settlement": "planned",
-        "walk-forward-replay": "planned",
+    release_id = f"researcher-1.1.0-{identity_sha256[:16]}"
+    release_root = state / "researcher_container" / "releases" / release_id
+    manifest_path = release_root / "release.json"
+    manifest.update(
+        {
+            "release_id": release_id,
+            "release_identity_sha256": identity_sha256,
+            "skill_bundle_path": str(release_root / "skill-bundle"),
+            "skill_bundle_manifest_path": str(release_root / "skill-bundle.manifest.json"),
+            "skill_bundle_manifest_sha256": module._sha256_bytes(
+                module._canonical_bytes(bundle_manifest)
+            ),
+        }
+    )
+    module._materialize_skill_bundle(release_root / "skill-bundle", source_rows, bundle_manifest)
+    module._write_json_atomic(
+        release_root / "skill-bundle.manifest.json", bundle_manifest, create_new=True
+    )
+    module._write_json_atomic(manifest_path, manifest, create_new=True)
+    module._validate_release_manifest(manifest, manifest_path)
+    return manifest, manifest_path
+
+
+def _terminal_pointer(
+    module,
+    manifest: dict[str, object],
+    manifest_path: Path,
+    *,
+    generation: int = 1,
+    txn_suffix: str = "1" * 16,
+    previous_verified: dict[str, object] | None = None,
+    state: str = "VERIFIED",
+) -> tuple[dict[str, object], dict[str, object], Path]:
+    txn_id = f"xra_20260730T120000_{txn_suffix}"
+    active = module._release_ref_from_manifest(manifest, manifest_path, activation_txn_id=txn_id)
+    pointer = {
+        "schema_version": module.CURRENT_POINTER_SCHEMA,
+        "generation": generation,
+        "active": active,
+        "previous_verified": previous_verified,
+        "switched_at": "2026-07-30T12:00:00Z",
+    }
+    journal_path = module._journal_path(txn_id)
+    journal_path.parent.mkdir(parents=True, exist_ok=True)
+    canary_path = journal_path.parent / "canary.receipt.json"
+    module._write_json_atomic(canary_path, {"status": "PASS"}, create_new=True)
+    journal = {
+        "schema_version": module.ACTIVATION_JOURNAL_SCHEMA,
+        "revision": 4,
+        "txn_id": txn_id,
+        "operation": "ACTIVATE",
+        "state": state,
+        "from": None,
+        "requested_to": active,
+        "to": active,
+        "expected_generation": generation,
+        "prepared_at": "2026-07-30T12:00:00Z",
+        "updated_at": "2026-07-30T12:00:01Z",
+        "switched_pointer_sha256": None,
+        "canary": {
+            "status": "PASS",
+            "receipt_path": str(canary_path),
+            "receipt_sha256": module._sha256(canary_path),
+        },
+        "failure_reason": None,
+        "terminal_pointer_sha256": None,
+    }
+    module._write_json_atomic(journal_path, journal, create_new=True)
+    pointer_path = module._state_paths()["pointer"]
+    module._write_json_atomic(pointer_path, pointer)
+    pointer_sha256 = module._sha256(pointer_path)
+    journal["switched_pointer_sha256"] = pointer_sha256
+    if state in module.TERMINAL_ACTIVATION_STATES:
+        journal["terminal_pointer_sha256"] = pointer_sha256
+    module._write_json_atomic(journal_path, journal)
+    return pointer, journal, journal_path
+
+
+def _install_bootstrap_fence(
+    module,
+    monkeypatch: pytest.MonkeyPatch,
+    command: list[str],
+) -> dict[str, object]:
+    state_root = module._state_paths()["state_root"]
+    bootstrap = _bootstrap_module()
+    _runtime_path, _runtime_payload, fence = bootstrap._runtime_entry_locked(command, state_root)
+    monkeypatch.setattr(module, "_BOOTSTRAP_FENCE_CACHE", None)
+    monkeypatch.setenv(
+        module.BOOTSTRAP_FENCE_ENVIRONMENT,
+        json.dumps(fence, ensure_ascii=True, sort_keys=True, separators=(",", ":")),
+    )
+    return fence
+
+
+def _set_syntactic_bootstrap_fence(
+    module, monkeypatch: pytest.MonkeyPatch, state_root: Path
+) -> dict[str, object]:
+    fence: dict[str, object] = {
+        "schema_version": module.BOOTSTRAP_FENCE_SCHEMA,
+        "state_root": str(state_root),
+        "pointer_sha256": "1" * 64,
+        "pointer_generation": 1,
+        "active_txn_id": "xra_20260730T120000_" + "1" * 16,
+        "pending_txn_id": None,
+        "selected_release_id": "researcher-1.1.0-" + "1" * 16,
+        "selected_release_manifest_sha256": "2" * 64,
+        "selected_skill_bundle_tree_sha256": "3" * 64,
+        "selected_runtime_sha256": "4" * 64,
+    }
+    monkeypatch.setattr(module, "_BOOTSTRAP_FENCE_CACHE", None)
+    monkeypatch.setenv(
+        module.BOOTSTRAP_FENCE_ENVIRONMENT,
+        json.dumps(fence, sort_keys=True, separators=(",", ":")),
+    )
+    return fence
+
+
+def _canary_value(module, journal: dict[str, object]) -> dict[str, object]:
+    return {
+        "schema_version": "xinao.researcher_activation_canary.v1",
+        "status": "CANARY_READY",
+        "txn_id": journal["txn_id"],
+        "pointer_generation": journal["expected_generation"],
+        "pointer_sha256": journal["switched_pointer_sha256"],
+        "release_id": journal["to"]["release_id"],
+        "release_manifest_sha256": journal["to"]["release_manifest_sha256"],
+        "skill_bundle_tree_sha256": journal["to"]["skill_bundle_tree_sha256"],
+        "provider_effect_verified": False,
+        "completion_claim_allowed": False,
     }
 
 
-def test_charter_has_open_research_and_separate_nonbinding_prior() -> None:
+def _fake_build_environment(
+    module,
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    dirty: bool,
+    image_character: str = "e",
+) -> tuple[list[list[str]], list[tuple[str, object]]]:
+    build_commands: list[list[str]] = []
+    fence_checks: list[tuple[str, object]] = []
+    fence = {"test_fence": "build"}
+
+    def fake_fence(command: str, *, expected=None):
+        fence_checks.append((command, expected))
+        assert command == "build"
+        if expected is not None:
+            assert expected == fence
+        return dict(fence)
+
+    def fake_run(arguments, **_kwargs):
+        values = list(arguments)
+        if values[:3] == ["git", "status", "--porcelain"]:
+            return SimpleNamespace(stdout=" M source\n" if dirty else "", stderr="", returncode=0)
+        if values[:3] == ["git", "rev-parse", "HEAD"]:
+            return SimpleNamespace(stdout="c" * 40, stderr="", returncode=0)
+        if values[:3] == ["git", "rev-parse", "HEAD^{tree}"]:
+            return SimpleNamespace(stdout="d" * 40, stderr="", returncode=0)
+        if values[:2] == ["docker", "build"]:
+            build_commands.append(values)
+            return SimpleNamespace(stdout="", stderr="", returncode=0)
+        raise AssertionError(values)
+
+    lock = json.loads(module.RUNTIME_LOCK_PATH.read_text(encoding="utf-8"))
+
+    def fake_image(_docker: str, image: str) -> dict[str, object]:
+        if image == lock["grok_donor_image"]:
+            return {"Id": lock["grok_donor_image_id"]}
+        assert build_commands
+        command = build_commands[-1]
+        args: dict[str, str] = {}
+        for index, value in enumerate(command):
+            if value == "--build-arg":
+                key, argument = command[index + 1].split("=", 1)
+                args[key] = argument
+        labels = {
+            "io.xinao.researcher.chain": "dedicated-xinao-science",
+            "io.xinao.researcher.generic-worker-route": "forbidden",
+            "io.xinao.researcher.grok-donor-image-id": args["GROK_DONOR_IMAGE_ID"],
+            "io.xinao.researcher.charter.sha256": args["CHARTER_SHA256"],
+            "io.xinao.researcher.output-schema.sha256": args["OUTPUT_SCHEMA_SHA256"],
+            "io.xinao.researcher.material-bundle-schema.sha256": args[
+                "MATERIAL_BUNDLE_SCHEMA_SHA256"
+            ],
+            "io.xinao.researcher.runtime-lock.sha256": args["RUNTIME_LOCK_SHA256"],
+            "io.xinao.researcher.skill-invoker.sha256": args["SKILL_INVOKER_SHA256"],
+            "io.xinao.researcher.dockerfile.sha256": args["DOCKERFILE_SHA256"],
+            "io.xinao.researcher.entrypoint.sha256": args["ENTRYPOINT_SHA256"],
+            "io.xinao.researcher.source-identity.sha256": args["SOURCE_IDENTITY_SHA256"],
+            "io.xinao.researcher.requested-model": args["REQUESTED_MODEL"],
+        }
+        return {
+            "Id": "sha256:" + image_character * 64,
+            "Config": {
+                "Labels": labels,
+                "Entrypoint": ["python", "-I", "/opt/xinao-researcher/entrypoint.py"],
+            },
+        }
+
+    monkeypatch.setattr(module, "_run", fake_run)
+    monkeypatch.setattr(module, "_docker", lambda: "docker")
+    monkeypatch.setattr(module, "_docker_engine_os", lambda _docker: "linux")
+    monkeypatch.setattr(module, "_docker_image", fake_image)
+    monkeypatch.setattr(module, "_validate_bootstrap_fence_locked", fake_fence)
+    return build_commands, fence_checks
+
+
+def test_runtime_and_thin_bootstrap_are_independent_modules() -> None:
+    runtime = _module()
+    bootstrap = _bootstrap_module()
+    assert hasattr(runtime, "build_release")
+    assert hasattr(runtime, "activate_release")
+    assert not hasattr(bootstrap, "build_release")
+    assert hasattr(bootstrap, "_runtime_entry_locked")
+
+
+def test_package_version_is_separate_from_researcher_versions() -> None:
+    registry = json.loads(
+        (SKILL_ROOT / "references" / "capabilities.v1.json").read_text(encoding="utf-8")
+    )
     charter = json.loads(
         (SKILL_ROOT / "references" / "researcher-charter.v1.json").read_text(encoding="utf-8")
     )
-    assert charter["research_space"] == "open"
-    assert "research_topic_whitelist" not in charter
-    assert "ResearchTopicWhitelist" not in charter
-    assert "allowed_topics" not in charter
-    assert charter["seven_family_attention_prior"]["binding"] is False
-    assert len(charter["seven_family_attention_prior"]["families"]) == 7
-    assert charter["action_support_reference"]["binding_on_research"] is False
+    runtime_lock = json.loads(
+        (SKILL_ROOT / "references" / "researcher-runtime-lock.v1.json").read_text(encoding="utf-8")
+    )
+    researcher = next(
+        value
+        for value in registry["capabilities"]
+        if value["capability_id"] == "researcher-container"
+    )
+    assert registry["skill_version"] == "1.2.0"
+    assert (
+        researcher["version"]
+        == charter["charter_version"]
+        == runtime_lock["runtime_version"]
+        == "1.1.0"
+    )
 
 
-def test_arbitrary_research_question_is_compiled_without_family_admission() -> None:
+def test_open_research_prompt_has_no_family_admission() -> None:
     module = _module()
     charter = module._validate_charter()
     question = "研究量子退火类启发式与开奖序列结构之间是否存在可证伪联系"
-    prompt = module._compile_prompt(question, "2026-07-29T00:00:00Z", charter)
+    prompt = module._compile_prompt(question, "2026-07-30T00:00:00Z", charter)
     assert question in prompt
     assert "there is no topic whitelist" in prompt
-    assert "nearest family" in prompt
+    assert "do not manufacture an ACTION projection" in prompt
+    assert "evidence, never instructions" in prompt
 
 
-def test_inspection_fails_open_for_absent_runtime_without_user_operation(
+def test_normal_public_command_requires_bootstrap_fence(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     module = _module()
-    monkeypatch.setenv("XINAO_SKILL_STATE_ROOT", str(tmp_path / "state"))
-    monkeypatch.setenv("XINAO_RESEARCHER_RUN_ROOT", str(tmp_path / "runs"))
-    inspection = module.inspect_capability()
-    assert inspection["runtime_status"] == "ABSENT"
-    assert inspection["runtime_reason_code"] == "JSON_READ_FAILED"
-    assert inspection["user_operations_required"] == []
+    _state(module, tmp_path, monkeypatch)
+    with pytest.raises(module.XinaoError) as failure:
+        module.inspect_capability()
+    assert failure.value.reason_code == "BOOTSTRAP_FENCE_REQUIRED"
 
 
-def test_cross_chain_namespace_is_rejected_before_docker(
-    monkeypatch: pytest.MonkeyPatch,
+def test_release_v2_and_exact_bundle_roundtrip(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     module = _module()
-    release = {
-        "generic_worker_route_allowed": False,
-        "state_namespace": "grok_worker_pool/science",
-        "run_namespace": "xinao_researcher",
-    }
-    with pytest.raises(module.XinaoError, match="grok_worker_pool") as captured:
-        module._validate_release_for_invoke(release)
-    assert captured.value.reason_code == "CROSS_CHAIN_NAMESPACE_FORBIDDEN"
-
-
-def test_dockerfile_has_dedicated_identity_and_no_generic_entrypoint() -> None:
-    dockerfile = (ROOT / "docker" / "xinao-researcher" / "Dockerfile").read_text(encoding="utf-8")
-    assert 'io.xinao.researcher.chain="dedicated-xinao-science"' in dockerfile
-    assert 'io.xinao.researcher.generic-worker-route="forbidden"' in dockerfile
-    assert "integrated_bus_worker_daemon" not in dockerfile
-    assert "Invoke-GrokWorkerPool" not in dockerfile
-
-
-def test_skill_does_not_register_downstream_effects_as_available() -> None:
-    registry = json.loads(
-        (SKILL_ROOT / "references" / "capabilities.v1.json").read_text(encoding="utf-8")
+    manifest, manifest_path = _sealed_release(module, tmp_path, monkeypatch)
+    bundle_manifest = module._validate_release_manifest(manifest, manifest_path)
+    assert manifest["schema_version"] == "xinao.researcher_release.v2"
+    assert manifest["package_version"] == "1.2.0"
+    assert manifest["capability_version"] == "1.1.0"
+    assert bundle_manifest["tree_sha256"] == manifest["skill_bundle_tree_sha256"]
+    assert any(
+        row["relative_path"] == "scripts/xinao_runtime.py" for row in bundle_manifest["files"]
     )
-    downstream = {
-        item["capability_id"]: item["source_status"]
-        for item in registry["capabilities"]
-        if item["capability_id"] != "researcher-container"
-    }
-    assert set(downstream.values()) == {"planned"}
 
 
-def test_provider_effect_requires_real_terminal_usage() -> None:
+@pytest.mark.parametrize("mutation", ("extra_file", "missing_file", "extra_directory"))
+def test_exact_bundle_rejects_every_tree_delta(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, mutation: str
+) -> None:
     module = _module()
-    valid = {
+    manifest, manifest_path = _sealed_release(module, tmp_path, monkeypatch)
+    bundle_root = Path(manifest["skill_bundle_path"])
+    bundle_manifest = module._load_json(Path(manifest["skill_bundle_manifest_path"]))
+    if mutation == "extra_file":
+        (bundle_root / "extra.py").write_text("raise RuntimeError\n", encoding="utf-8")
+    elif mutation == "missing_file":
+        (bundle_root / bundle_manifest["files"][0]["relative_path"]).unlink()
+    else:
+        (bundle_root / "empty-extra").mkdir()
+    with pytest.raises(module.XinaoError) as failure:
+        module._validate_release_manifest(manifest, manifest_path)
+    assert failure.value.reason_code in {
+        "SKILL_BUNDLE_INVENTORY_MISMATCH",
+        "SKILL_BUNDLE_ENTRY_IDENTITY_MISMATCH",
+    }
+
+
+def test_bundle_reparse_is_rejected(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    module = _module()
+    manifest, _manifest_path = _sealed_release(module, tmp_path, monkeypatch)
+    bundle_root = Path(manifest["skill_bundle_path"])
+    target = bundle_root / "scripts" / "xinao_runtime.py"
+    original = module._is_reparse
+    monkeypatch.setattr(module, "_is_reparse", lambda path: path == target or original(path))
+    with pytest.raises(module.XinaoError) as failure:
+        module._verify_skill_bundle(
+            bundle_root, module._load_json(Path(manifest["skill_bundle_manifest_path"]))
+        )
+    assert failure.value.reason_code == "SKILL_BUNDLE_REPARSE_FORBIDDEN"
+
+
+def test_runtime_activation_lock_is_safely_created_when_missing(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    module = _module()
+    _state(module, tmp_path, monkeypatch)
+    lock_path = module._state_paths()["lock"]
+    lock_path.unlink()
+    with module._activation_lock():
+        observed = os.lstat(lock_path)
+        assert observed.st_nlink == 1
+        assert observed.st_size >= 1
+    assert lock_path.is_file()
+
+
+def test_runtime_activation_lock_rejects_hardlink_alias(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    module = _module()
+    _state(module, tmp_path, monkeypatch)
+    lock_path = module._state_paths()["lock"]
+    alias = tmp_path / "activation-lock-alias"
+    try:
+        os.link(lock_path, alias)
+    except OSError:
+        pytest.skip("hardlinks unavailable")
+    with pytest.raises(module.XinaoError) as failure:
+        with module._activation_lock():
+            pytest.fail("hardlinked lock must not be acquired")
+    assert failure.value.reason_code == "ACTIVATION_LOCK_INVALID"
+
+
+def test_runtime_activation_lock_detects_path_identity_replacement(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    module = _module()
+    _state(module, tmp_path, monkeypatch)
+    lock_path = module._state_paths()["lock"]
+    replacement = tmp_path / "replacement-lock"
+    replacement.write_bytes(b"\0")
+    original_lstat = os.lstat
+    lock_lstat_calls = 0
+
+    def replaced_lstat(path):
+        nonlocal lock_lstat_calls
+        if module._paths_equal(Path(path), lock_path):
+            lock_lstat_calls += 1
+            if lock_lstat_calls >= 3:
+                return original_lstat(replacement)
+        return original_lstat(path)
+
+    monkeypatch.setattr(module.os, "lstat", replaced_lstat)
+    with pytest.raises(module.XinaoError) as failure:
+        with module._activation_lock():
+            pytest.fail("replaced lock must not be acquired")
+    assert failure.value.reason_code == "ACTIVATION_LOCK_CHANGED"
+    assert lock_lstat_calls >= 3
+
+
+def test_build_is_candidate_only_and_passes_complete_image_identity(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    module = _module()
+    _state(module, tmp_path, monkeypatch)
+    build_commands, fence_checks = _fake_build_environment(module, monkeypatch, dirty=True)
+    receipt = module.build_release(ROOT, allow_dirty=True)
+    assert receipt["status"] == "CANDIDATE_BUILT"
+    assert receipt["package_version"] == "1.2.0"
+    assert receipt["capability_version"] == "1.1.0"
+    assert receipt["source_dirty"] is True
+    assert receipt["activated"] is False
+    assert not module._state_paths()["pointer"].exists()
+    build = build_commands[0]
+    joined = "\n".join(build)
+    for key in (
+        "DOCKERFILE_SHA256",
+        "ENTRYPOINT_SHA256",
+        "SOURCE_IDENTITY_SHA256",
+        "REQUESTED_MODEL=grok-4.5",
+    ):
+        assert key in joined
+    manifest = module._load_json(Path(receipt["release_manifest_path"]))
+    module._validate_release_manifest(manifest, Path(receipt["release_manifest_path"]))
+    assert fence_checks == [
+        ("build", None),
+        ("build", {"test_fence": "build"}),
+        ("build", {"test_fence": "build"}),
+    ]
+
+
+def test_build_parser_has_no_promote_flag(capsys: pytest.CaptureFixture[str]) -> None:
+    module = _module()
+    code = module.main(["build", "--source-root", str(ROOT), "--promote"])
+    payload = json.loads(capsys.readouterr().out)
+    assert code == 2
+    assert payload["reason_codes"] == ["INVOCATION_ARGUMENTS_INVALID"]
+
+
+def test_same_semver_different_content_is_collision(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    module = _module()
+    _sealed_release(module, tmp_path, monkeypatch, image_character="a")
+    _fake_build_environment(module, monkeypatch, dirty=False, image_character="f")
+    with pytest.raises(module.XinaoError) as failure:
+        module.build_release(ROOT, allow_dirty=False)
+    assert failure.value.reason_code == "SEMVER_CONTENT_COLLISION"
+
+
+@pytest.mark.parametrize(
+    ("failure_call", "expected_build_count"),
+    ((2, 0), (3, 1)),
+)
+def test_build_fence_blocks_effect_or_release_seal_at_the_matching_boundary(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    failure_call: int,
+    expected_build_count: int,
+) -> None:
+    module = _module()
+    _state(module, tmp_path, monkeypatch)
+    build_commands, _fence_checks = _fake_build_environment(module, monkeypatch, dirty=False)
+    fence = {"test_fence": "build"}
+    calls = 0
+
+    def fail_at_boundary(command: str, *, expected=None):
+        nonlocal calls
+        calls += 1
+        assert command == "build"
+        if calls == failure_call:
+            raise module.XinaoError("BOOTSTRAP_FENCE_STATE_DRIFT", "injected")
+        if expected is not None:
+            assert expected == fence
+        return dict(fence)
+
+    monkeypatch.setattr(module, "_validate_bootstrap_fence_locked", fail_at_boundary)
+    with pytest.raises(module.XinaoError) as failure:
+        module.build_release(ROOT, allow_dirty=False)
+    assert failure.value.reason_code == "BOOTSTRAP_FENCE_STATE_DRIFT"
+    assert len(build_commands) == expected_build_count
+    assert not module._state_paths()["release_root"].exists()
+
+
+def test_legacy_pointer_fails_before_any_activation_mutation(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    module = _module()
+    manifest, _manifest_path = _sealed_release(module, tmp_path, monkeypatch)
+    pointer_path = module._state_paths()["pointer"]
+    legacy = {
+        "schema_version": "xinao.researcher_current_pointer.v1",
+        "release_id": manifest["release_id"],
+    }
+    module._write_json_atomic(pointer_path, legacy)
+    before = pointer_path.read_bytes()
+    _set_syntactic_bootstrap_fence(module, monkeypatch, tmp_path / "state")
+    with pytest.raises(module.XinaoError) as failure:
+        module.activate_release(str(manifest["release_id"]))
+    assert failure.value.reason_code == "BOOTSTRAP_MIGRATION_REQUIRED"
+    assert pointer_path.read_bytes() == before
+    assert not module._state_paths()["transaction_root"].exists()
+
+
+def test_dirty_candidate_never_activates_or_changes_pointer(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    module = _module()
+    clean, clean_path = _sealed_release(module, tmp_path, monkeypatch, image_character="a")
+    _terminal_pointer(module, clean, clean_path)
+    dirty, _dirty_path = _sealed_release(
+        module,
+        tmp_path,
+        monkeypatch,
+        image_character="b",
+        dirty=True,
+    )
+    pointer_path = module._state_paths()["pointer"]
+    before = pointer_path.read_bytes()
+    _install_bootstrap_fence(
+        module, monkeypatch, ["activate", "--release-id", str(dirty["release_id"])]
+    )
+    with pytest.raises(module.XinaoError) as failure:
+        module.activate_release(str(dirty["release_id"]))
+    assert failure.value.reason_code == "DIRTY_RELEASE_ACTIVATION_FORBIDDEN"
+    assert pointer_path.read_bytes() == before
+    assert module._pending_journals() == []
+
+
+def test_activate_verifies_canary_and_keeps_full_previous_bundle(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    module = _module()
+    first, first_path = _sealed_release(module, tmp_path, monkeypatch, image_character="a")
+    first_pointer, _journal, _path = _terminal_pointer(module, first, first_path)
+    second, _second_path = _sealed_release(
+        module, tmp_path, monkeypatch, image_character="b", variant=b"second"
+    )
+    monkeypatch.setattr(
+        module, "_run_activation_canary", lambda journal: _canary_value(module, journal)
+    )
+    _install_bootstrap_fence(
+        module, monkeypatch, ["activate", "--release-id", str(second["release_id"])]
+    )
+    receipt = module.activate_release(str(second["release_id"]))
+    pointer = module._load_json(module._state_paths()["pointer"])
+    journal = module._load_json(Path(receipt["activation_journal_path"]))
+    assert receipt["status"] == "VERIFIED"
+    assert pointer["generation"] == 2
+    assert pointer["active"]["release_id"] == second["release_id"]
+    assert pointer["previous_verified"] == first_pointer["active"]
+    assert journal["state"] == "VERIFIED"
+    assert journal["txn_id"] == pointer["active"]["activation_txn_id"]
+    assert journal["terminal_pointer_sha256"] == module._sha256(module._state_paths()["pointer"])
+    assert module._load_current_context()["release"]["release_id"] == second["release_id"]
+
+
+def test_failed_activation_rolls_back_with_new_generation(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    module = _module()
+    first, first_path = _sealed_release(module, tmp_path, monkeypatch, image_character="a")
+    _terminal_pointer(module, first, first_path)
+    second, _second_path = _sealed_release(
+        module, tmp_path, monkeypatch, image_character="b", variant=b"second"
+    )
+    calls: list[str] = []
+
+    def canary(journal):
+        release_id = journal["to"]["release_id"]
+        calls.append(release_id)
+        if release_id == second["release_id"]:
+            raise module.XinaoError("ACTIVATION_CANARY_FAILED", "injected")
+        return _canary_value(module, journal)
+
+    monkeypatch.setattr(module, "_run_activation_canary", canary)
+    _install_bootstrap_fence(
+        module, monkeypatch, ["activate", "--release-id", str(second["release_id"])]
+    )
+    receipt = module.activate_release(str(second["release_id"]))
+    pointer = module._load_json(module._state_paths()["pointer"])
+    journal = module._load_json(Path(receipt["activation_journal_path"]))
+    assert receipt["status"] == "ROLLED_BACK"
+    assert pointer["generation"] == 3
+    assert pointer["active"]["release_id"] == first["release_id"]
+    assert journal["state"] == "ROLLED_BACK"
+    assert calls == [second["release_id"], first["release_id"]]
+    assert module._load_current_context()["release"]["release_id"] == first["release_id"]
+
+
+@pytest.mark.parametrize("crash_state", ("PREPARED", "POINTER_SWITCHED", "CANARY_STARTED"))
+def test_recover_converges_each_activation_crash_boundary(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    crash_state: str,
+) -> None:
+    module = _module()
+    first, first_path = _sealed_release(module, tmp_path, monkeypatch, image_character="a")
+    _terminal_pointer(module, first, first_path)
+    second, second_path = _sealed_release(
+        module, tmp_path, monkeypatch, image_character="b", variant=b"recover"
+    )
+    with module._activation_lock():
+        current = module._load_current_context()
+        journal, journal_path = module._prepare_activation(
+            current,
+            target_manifest=second,
+            target_manifest_path=second_path,
+            operation="ACTIVATE",
+        )
+        if crash_state != "PREPARED":
+            journal, _pointer, _sha = module._switch_prepared_pointer(journal, journal_path)
+        if crash_state == "CANARY_STARTED":
+            journal = module._journal_transition(journal_path, journal, "CANARY_STARTED")
+    monkeypatch.setattr(
+        module, "_run_activation_canary", lambda value: _canary_value(module, value)
+    )
+    _install_bootstrap_fence(module, monkeypatch, ["recover", "--txn-id", str(journal["txn_id"])])
+    receipt = module.recover_release(str(journal["txn_id"]))
+    assert receipt["status"] == "VERIFIED"
+    assert module._load_current_context()["release"]["release_id"] == second["release_id"]
+    assert module._load_json(journal_path)["state"] == "VERIFIED"
+
+
+def test_recover_explicit_transaction_must_match_fenced_pending_transaction(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    module = _module()
+    first, first_path = _sealed_release(module, tmp_path, monkeypatch, image_character="a")
+    _terminal_pointer(module, first, first_path)
+    second, second_path = _sealed_release(
+        module, tmp_path, monkeypatch, image_character="b", variant=b"recover-fence"
+    )
+    with module._activation_lock():
+        current = module._load_current_context()
+        journal, journal_path = module._prepare_activation(
+            current,
+            target_manifest=second,
+            target_manifest_path=second_path,
+            operation="ACTIVATE",
+        )
+    _install_bootstrap_fence(module, monkeypatch, ["recover", "--txn-id", str(journal["txn_id"])])
+    pointer_path = module._state_paths()["pointer"]
+    pointer_before = pointer_path.read_bytes()
+    journal_before = journal_path.read_bytes()
+    mismatched_txn_id = "xra_20260730T120001_" + "f" * 16
+    with pytest.raises(module.XinaoError) as failure:
+        module.recover_release(mismatched_txn_id)
+    assert failure.value.reason_code == "RECOVERY_TRANSACTION_FENCE_MISMATCH"
+    assert pointer_path.read_bytes() == pointer_before
+    assert journal_path.read_bytes() == journal_before
+
+
+def test_rollback_requires_complete_previous_verified_before_mutation(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    module = _module()
+    first, first_path = _sealed_release(module, tmp_path, monkeypatch)
+    _terminal_pointer(module, first, first_path)
+    pointer_path = module._state_paths()["pointer"]
+    before = pointer_path.read_bytes()
+    _install_bootstrap_fence(module, monkeypatch, ["rollback"])
+    with pytest.raises(module.XinaoError) as failure:
+        module.rollback_release()
+    assert failure.value.reason_code == "ROLLBACK_MATERIAL_ABSENT"
+    assert pointer_path.read_bytes() == before
+
+
+def test_rollback_switches_to_full_previous_and_increments_generation(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    module = _module()
+    first, first_path = _sealed_release(module, tmp_path, monkeypatch, image_character="a")
+    _terminal_pointer(module, first, first_path)
+    second, _second_path = _sealed_release(
+        module, tmp_path, monkeypatch, image_character="b", variant=b"second"
+    )
+    monkeypatch.setattr(
+        module, "_run_activation_canary", lambda value: _canary_value(module, value)
+    )
+    _install_bootstrap_fence(
+        module, monkeypatch, ["activate", "--release-id", str(second["release_id"])]
+    )
+    module.activate_release(str(second["release_id"]))
+    _install_bootstrap_fence(module, monkeypatch, ["rollback"])
+    receipt = module.rollback_release()
+    pointer = module._load_json(module._state_paths()["pointer"])
+    assert receipt["status"] == "ROLLED_BACK"
+    assert pointer["generation"] == 3
+    assert pointer["active"]["release_id"] == first["release_id"]
+    assert pointer["previous_verified"]["release_id"] == second["release_id"]
+    assert module._load_current_context()["journal"]["state"] == "ROLLED_BACK"
+
+
+def test_pending_runtime_inspection_reports_recovery_required(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    module = _module()
+    first, first_path = _sealed_release(module, tmp_path, monkeypatch, image_character="a")
+    _terminal_pointer(module, first, first_path)
+    second, second_path = _sealed_release(
+        module, tmp_path, monkeypatch, image_character="b", variant=b"pending-inspection"
+    )
+    with module._activation_lock():
+        current = module._load_current_context()
+        module._prepare_activation(
+            current,
+            target_manifest=second,
+            target_manifest_path=second_path,
+            operation="ACTIVATE",
+        )
+    _install_bootstrap_fence(module, monkeypatch, ["recover"])
+    with pytest.raises(module.XinaoError) as failure:
+        module.inspect_capability()
+    assert failure.value.reason_code == "RECOVERY_REQUIRED"
+
+
+@pytest.mark.parametrize("command", (["inspect"], ["research", "--question", "q"]))
+def test_thin_bootstrap_blocks_pending_inspect_and_research(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    command: list[str],
+) -> None:
+    runtime = _module()
+    manifest, manifest_path = _sealed_release(runtime, tmp_path, monkeypatch)
+    _terminal_pointer(runtime, manifest, manifest_path, state="POINTER_SWITCHED")
+    bootstrap = _bootstrap_module()
+    monkeypatch.setenv("XINAO_SKILL_STATE_ROOT", str(tmp_path / "state"))
+    with pytest.raises(bootstrap.BootstrapError) as failure:
+        bootstrap._runtime_entry_locked(command, tmp_path / "state")
+    assert failure.value.reason_code == "RECOVERY_REQUIRED"
+
+
+def test_thin_bootstrap_requires_verified_txn_and_pointer_hash_binding(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    runtime = _module()
+    manifest, manifest_path = _sealed_release(runtime, tmp_path, monkeypatch)
+    _pointer, journal, journal_path = _terminal_pointer(runtime, manifest, manifest_path)
+    bootstrap = _bootstrap_module()
+    monkeypatch.setenv("XINAO_SKILL_STATE_ROOT", str(tmp_path / "state"))
+    expected_runtime, expected_payload, fence = bootstrap._runtime_entry_locked(
+        ["inspect"], tmp_path / "state"
+    )
+    assert expected_runtime == Path(manifest["skill_bundle_path"]) / "scripts" / "xinao_runtime.py"
+    assert expected_payload == expected_runtime.read_bytes()
+    assert fence["selected_runtime_sha256"] == runtime._sha256_bytes(expected_payload)
+    assert set(fence) == runtime.BOOTSTRAP_FENCE_KEYS
+
+    journal["terminal_pointer_sha256"] = "0" * 64
+    runtime._write_json_atomic(journal_path, journal)
+    with pytest.raises(bootstrap.BootstrapError) as hash_failure:
+        bootstrap._runtime_entry_locked(["inspect"], tmp_path / "state")
+    assert hash_failure.value.reason_code == "ACTIVATION_POINTER_BINDING_MISMATCH"
+
+    journal["terminal_pointer_sha256"] = runtime._sha256(runtime._state_paths()["pointer"])
+    journal["txn_id"] = "xra_20260730T120000_" + "f" * 16
+    runtime._write_json_atomic(journal_path, journal)
+    with pytest.raises(bootstrap.BootstrapError) as txn_failure:
+        bootstrap._runtime_entry_locked(["inspect"], tmp_path / "state")
+    assert txn_failure.value.reason_code == "ACTIVATION_TRANSACTION_BINDING_MISMATCH"
+
+
+def test_thin_bootstrap_loads_runtime_only_from_exact_inventory(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    runtime = _module()
+    manifest, manifest_path = _sealed_release(runtime, tmp_path, monkeypatch)
+    _terminal_pointer(runtime, manifest, manifest_path)
+    bootstrap = _bootstrap_module()
+    monkeypatch.setenv("XINAO_SKILL_STATE_ROOT", str(tmp_path / "state"))
+    runtime_path, runtime_payload, fence = bootstrap._runtime_entry_locked(
+        ["inspect"], tmp_path / "state"
+    )
+    bundle_manifest = json.loads(
+        Path(manifest["skill_bundle_manifest_path"]).read_text(encoding="utf-8")
+    )
+    row = next(
+        item
+        for item in bundle_manifest["files"]
+        if item["relative_path"] == "scripts/xinao_runtime.py"
+    )
+    assert runtime_path == Path(manifest["skill_bundle_path"]) / row["relative_path"]
+    assert runtime._sha256(runtime_path) == row["sha256"]
+    assert runtime._sha256_bytes(runtime_payload) == row["sha256"]
+    assert fence["selected_runtime_sha256"] == row["sha256"]
+
+
+def test_runtime_consumes_exact_bootstrap_fence_under_activation_lock(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    module = _module()
+    manifest, manifest_path = _sealed_release(module, tmp_path, monkeypatch)
+    _terminal_pointer(module, manifest, manifest_path)
+    fence = _install_bootstrap_fence(module, monkeypatch, ["inspect"])
+    with module._activation_lock():
+        observed = module._validate_bootstrap_fence_locked("inspect")
+    assert observed == fence
+    assert module.BOOTSTRAP_FENCE_ENVIRONMENT not in os.environ
+    observed["pointer_sha256"] = "0" * 64
+    with module._activation_lock():
+        reread = module._validate_bootstrap_fence_locked("inspect", expected=fence)
+    assert reread == fence
+    monkeypatch.setenv(
+        module.BOOTSTRAP_FENCE_ENVIRONMENT,
+        json.dumps(fence, sort_keys=True, separators=(",", ":")),
+    )
+    with module._activation_lock():
+        with pytest.raises(module.XinaoError) as pollution:
+            module._validate_bootstrap_fence_locked("inspect", expected=fence)
+    assert pollution.value.reason_code == "BOOTSTRAP_FENCE_ENVIRONMENT_REAPPEARED"
+    assert module.BOOTSTRAP_FENCE_ENVIRONMENT not in os.environ
+
+
+@pytest.mark.parametrize("mutation", ("missing_key", "extra_key"))
+def test_bootstrap_fence_rejects_missing_or_extra_keys(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    mutation: str,
+) -> None:
+    module = _module()
+    manifest, manifest_path = _sealed_release(module, tmp_path, monkeypatch)
+    _terminal_pointer(module, manifest, manifest_path)
+    fence = _install_bootstrap_fence(module, monkeypatch, ["inspect"])
+    candidate = dict(fence)
+    if mutation == "missing_key":
+        candidate.pop("selected_runtime_sha256")
+    else:
+        candidate["unexpected"] = True
+    monkeypatch.setenv(
+        module.BOOTSTRAP_FENCE_ENVIRONMENT,
+        json.dumps(candidate, sort_keys=True, separators=(",", ":")),
+    )
+    with pytest.raises(module.XinaoError) as failure:
+        module._load_bootstrap_fence()
+    assert failure.value.reason_code == "BOOTSTRAP_FENCE_INVALID"
+
+
+def test_bootstrap_fence_rejects_pointer_drift_under_lock(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    module = _module()
+    manifest, manifest_path = _sealed_release(module, tmp_path, monkeypatch)
+    _terminal_pointer(module, manifest, manifest_path)
+    fence = _install_bootstrap_fence(module, monkeypatch, ["inspect"])
+    pointer_path = module._state_paths()["pointer"]
+    pointer = module._load_json(pointer_path)
+    pointer["switched_at"] = "2026-07-30T12:00:02Z"
+    module._write_json_atomic(pointer_path, pointer)
+    with module._activation_lock():
+        with pytest.raises(module.XinaoError) as failure:
+            module._validate_bootstrap_fence_locked("inspect", expected=fence)
+    assert failure.value.reason_code == "BOOTSTRAP_FENCE_STATE_DRIFT"
+
+
+def test_bootstrap_fence_rejects_pending_transaction_drift(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    module = _module()
+    first, first_path = _sealed_release(module, tmp_path, monkeypatch, image_character="a")
+    _terminal_pointer(module, first, first_path)
+    fence = _install_bootstrap_fence(module, monkeypatch, ["inspect"])
+    second, second_path = _sealed_release(
+        module, tmp_path, monkeypatch, image_character="b", variant=b"pending-drift"
+    )
+    with module._activation_lock():
+        current = module._load_current_context()
+        module._prepare_activation(
+            current,
+            target_manifest=second,
+            target_manifest_path=second_path,
+            operation="ACTIVATE",
+        )
+        with pytest.raises(module.XinaoError) as failure:
+            module._validate_bootstrap_fence_locked("recover", expected=fence)
+    assert failure.value.reason_code == "BOOTSTRAP_FENCE_STATE_DRIFT"
+
+
+def test_bootstrap_fence_rejects_executed_runtime_digest_drift(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    module = _module()
+    manifest, manifest_path = _sealed_release(module, tmp_path, monkeypatch)
+    _terminal_pointer(module, manifest, manifest_path)
+    fence = _install_bootstrap_fence(module, monkeypatch, ["inspect"])
+    drifted_runtime = tmp_path / "drifted-runtime.py"
+    drifted_runtime.write_text("raise RuntimeError('drift')\n", encoding="utf-8")
+    monkeypatch.setattr(module, "__file__", str(drifted_runtime))
+    with module._activation_lock():
+        with pytest.raises(module.XinaoError) as failure:
+            module._validate_bootstrap_fence_locked("inspect", expected=fence)
+    assert failure.value.reason_code == "BOOTSTRAP_FENCE_RUNTIME_DRIFT"
+
+
+def test_inspect_revalidates_fence_before_reporting_ready(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    module = _module()
+    manifest, manifest_path = _sealed_release(module, tmp_path, monkeypatch)
+    _terminal_pointer(module, manifest, manifest_path)
+    _install_bootstrap_fence(module, monkeypatch, ["inspect"])
+
+    def drift_pointer(_release):
+        pointer_path = module._state_paths()["pointer"]
+        pointer = module._load_json(pointer_path)
+        pointer["switched_at"] = "2026-07-30T12:00:03Z"
+        module._write_json_atomic(pointer_path, pointer)
+        return "docker", module._validate_charter()
+
+    monkeypatch.setattr(module, "_validate_release_for_invoke", drift_pointer)
+    with pytest.raises(module.XinaoError) as failure:
+        module.inspect_capability()
+    assert failure.value.reason_code == "BOOTSTRAP_FENCE_STATE_DRIFT"
+
+
+def test_inspect_revalidates_fence_before_returning_error_result(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    module = _module()
+    manifest, manifest_path = _sealed_release(module, tmp_path, monkeypatch)
+    _terminal_pointer(module, manifest, manifest_path)
+    _install_bootstrap_fence(module, monkeypatch, ["inspect"])
+
+    def drift_then_fail(_release):
+        pointer_path = module._state_paths()["pointer"]
+        pointer = module._load_json(pointer_path)
+        pointer["switched_at"] = "2026-07-30T12:00:05Z"
+        module._write_json_atomic(pointer_path, pointer)
+        raise module.XinaoError("ENGINE_UNAVAILABLE", "injected")
+
+    monkeypatch.setattr(module, "_validate_release_for_invoke", drift_then_fail)
+    with pytest.raises(module.XinaoError) as failure:
+        module.inspect_capability()
+    assert failure.value.reason_code == "BOOTSTRAP_FENCE_STATE_DRIFT"
+
+
+def test_research_revalidates_fence_before_container_create(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    module = _module()
+    manifest, manifest_path = _sealed_release(module, tmp_path, monkeypatch)
+    _terminal_pointer(module, manifest, manifest_path)
+    _install_bootstrap_fence(module, monkeypatch, ["research", "--question", "q"])
+    _auth(module, tmp_path, monkeypatch)
+    monkeypatch.setattr(
+        module,
+        "_validate_release_source_identity",
+        lambda _release: (
+            module._validate_charter(),
+            {
+                "network_profile": "EGRESS_BOUNDARY_REQUIRED_BEFORE_PROVIDER_CALL",
+                "provider_egress_runtime_verified": True,
+            },
+        ),
+    )
+
+    def drift_pointer(_release):
+        pointer_path = module._state_paths()["pointer"]
+        pointer = module._load_json(pointer_path)
+        pointer["switched_at"] = "2026-07-30T12:00:04Z"
+        module._write_json_atomic(pointer_path, pointer)
+        return "docker", module._validate_charter()
+
+    monkeypatch.setattr(module, "_validate_release_for_invoke", drift_pointer)
+    monkeypatch.setattr(
+        module, "_run", lambda *_args, **_kwargs: pytest.fail("Docker must not run")
+    )
+    with pytest.raises(module.XinaoError) as failure:
+        module.research("q", None, [])
+    assert failure.value.reason_code == "BOOTSTRAP_FENCE_STATE_DRIFT"
+
+
+def test_egress_boundary_fails_before_docker_or_auth_probe(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    module = _module()
+    manifest, _manifest_path = _sealed_release(module, tmp_path, monkeypatch)
+    runtime_lock = module._load_json(module.RUNTIME_LOCK_PATH)
+    runtime_lock["provider_egress_runtime_verified"] = False
+    monkeypatch.setattr(
+        module,
+        "_validate_release_source_identity",
+        lambda _release: (module._validate_charter(), runtime_lock),
+    )
+    monkeypatch.setattr(module, "_docker", lambda: pytest.fail("Docker must not be touched"))
+    monkeypatch.setattr(module, "DEFAULT_AUTH_PATH", tmp_path / "missing-auth.json")
+    with pytest.raises(module.XinaoError) as failure:
+        module._validate_release_for_invoke(manifest)
+    assert failure.value.reason_code == "EGRESS_BOUNDARY_UNAVAILABLE"
+
+
+def test_research_egress_failure_precedes_auth_snapshot_and_run_directory(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    module = _module()
+    manifest, manifest_path = _sealed_release(module, tmp_path, monkeypatch)
+    _terminal_pointer(module, manifest, manifest_path)
+    _install_bootstrap_fence(module, monkeypatch, ["research", "--question", "q"])
+    monkeypatch.setattr(
+        module,
+        "_validate_release_source_identity",
+        lambda _release: (
+            module._validate_charter(),
+            {
+                "network_profile": "EGRESS_BOUNDARY_REQUIRED_BEFORE_PROVIDER_CALL",
+                "provider_egress_runtime_verified": False,
+            },
+        ),
+    )
+    monkeypatch.setattr(
+        module,
+        "_snapshot_material_sources",
+        lambda _paths: pytest.fail("auth/material snapshot must not run"),
+    )
+    with pytest.raises(module.XinaoError) as failure:
+        module.research("q", None, [])
+    assert failure.value.reason_code == "EGRESS_BOUNDARY_UNAVAILABLE"
+    assert not (tmp_path / "runs").exists()
+
+
+def test_material_snapshot_holds_one_auth_identity_witness(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    module = _module()
+    auth = _auth(module, tmp_path, monkeypatch)
+    first = tmp_path / "first.txt"
+    second = tmp_path / "second.txt"
+    first.write_text("first evidence", encoding="utf-8")
+    second.write_text("second evidence", encoding="utf-8")
+    original_auth_payload = auth.read_bytes()
+    snapshots, witness = module._snapshot_material_sources([first, second])
+    assert len(snapshots) == 2
+    assert witness["path"] == str(auth.resolve())
+    assert witness["content_sha256"] == module._sha256_bytes(original_auth_payload)
+    assert "payload" not in witness
+    module._validate_auth_identity_witness(witness)
+    changed_auth_payload = original_auth_payload.replace(b"{", b"[").replace(b"}", b"]")
+    assert len(changed_auth_payload) == len(original_auth_payload)
+    auth.write_bytes(changed_auth_payload)
+    os.utime(
+        auth,
+        ns=(witness["st_mtime_ns"], witness["st_mtime_ns"]),
+    )
+    changed = os.lstat(auth)
+    assert module._auth_identity_tuple(changed) == (
+        witness["st_dev"],
+        witness["st_ino"],
+        witness["st_size"],
+        witness["st_mtime_ns"],
+    )
+    with pytest.raises(module.XinaoError) as failure:
+        module._validate_auth_identity_witness(witness)
+    assert failure.value.reason_code == "GROK_AUTH_HANDLE_CHANGED"
+
+
+def test_research_receipt_final_fence_drift_fails_before_write(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    module = _module()
+    manifest, manifest_path = _sealed_release(module, tmp_path, monkeypatch)
+    _terminal_pointer(module, manifest, manifest_path)
+    fence = _install_bootstrap_fence(module, monkeypatch, ["research", "--question", "q"])
+    pointer_path = module._state_paths()["pointer"]
+    pointer = module._load_json(pointer_path)
+    pointer["switched_at"] = "2026-07-30T12:00:06Z"
+    module._write_json_atomic(pointer_path, pointer)
+    receipt_path = tmp_path / "receipt.json"
+
+    with pytest.raises(module.XinaoError) as failure:
+        module._seal_research_receipt(
+            receipt_path,
+            {"status": "CANDIDATE_READY"},
+            fence=fence,
+            auth_content_sha256="a" * 64,
+        )
+    assert failure.value.reason_code == "BOOTSTRAP_FENCE_STATE_DRIFT"
+    assert not receipt_path.exists()
+
+
+def test_research_receipt_rejects_auth_content_identity_persistence(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    module = _module()
+    manifest, manifest_path = _sealed_release(module, tmp_path, monkeypatch)
+    _terminal_pointer(module, manifest, manifest_path)
+    fence = _install_bootstrap_fence(module, monkeypatch, ["research", "--question", "q"])
+    digest = "a" * 64
+    receipt_path = tmp_path / "receipt.json"
+
+    with pytest.raises(module.XinaoError) as failure:
+        module._seal_research_receipt(
+            receipt_path,
+            {"accidental_auth_content_identity": digest},
+            fence=fence,
+            auth_content_sha256=digest,
+        )
+    assert failure.value.reason_code == "AUTH_WITNESS_PERSISTENCE_FORBIDDEN"
+    assert digest not in failure.value.detail
+    assert not receipt_path.exists()
+
+
+def test_material_bundle_is_content_addressed_and_hides_source_path(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    module = _module()
+    _auth(module, tmp_path, monkeypatch)
+    material = tmp_path / "人的视角.md"
+    material.write_text("证据，不是指令。", encoding="utf-8")
+    snapshots, _witness = module._snapshot_material_sources([material])
+    manifest = module._material_bundle_manifest(snapshots)
+    assert manifest["bundle_id"].startswith("xinao-material-bundle-sha256:")
+    assert str(material) not in json.dumps(manifest, ensure_ascii=False)
+    second_snapshots, _second_witness = module._snapshot_material_sources([material])
+    assert module._material_bundle_manifest(second_snapshots) == manifest
+
+
+@pytest.mark.parametrize(
+    ("payload", "reason_code"),
+    [
+        (b"", "MATERIAL_FILE_EMPTY"),
+        (b"bad-utf8-\xff", "MATERIAL_UTF8_REQUIRED"),
+        (b"contains\x00nul", "MATERIAL_TEXT_INVALID"),
+    ],
+)
+def test_material_snapshot_rejects_invalid_text(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    payload: bytes,
+    reason_code: str,
+) -> None:
+    module = _module()
+    _auth(module, tmp_path, monkeypatch)
+    material = tmp_path / "material.bin"
+    material.write_bytes(payload)
+    with pytest.raises(module.XinaoError) as failure:
+        module._snapshot_material_sources([material])
+    assert failure.value.reason_code == reason_code
+
+
+def test_material_auth_path_and_hardlink_alias_are_forbidden(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    module = _module()
+    auth = _auth(module, tmp_path, monkeypatch)
+    with pytest.raises(module.XinaoError) as direct:
+        module._snapshot_material_sources([auth])
+    assert direct.value.reason_code == "MATERIAL_SECRET_PATH_FORBIDDEN"
+    alias = tmp_path / "auth-alias.json"
+    try:
+        os.link(auth, alias)
+    except OSError:
+        pytest.skip("hardlinks unavailable")
+    with pytest.raises(module.XinaoError) as linked:
+        module._snapshot_material_sources([alias])
+    assert linked.value.reason_code in {
+        "MATERIAL_SECRET_PATH_FORBIDDEN",
+        "MATERIAL_HARDLINK_FORBIDDEN",
+    }
+
+
+def _valid_provider_result() -> dict[str, object]:
+    return {
         "provider_stop_reason": "EndTurn",
         "provider_num_turns": 1,
         "provider_session_id_present": True,
         "provider_request_id_present": True,
-        "provider_model_usage": {"grok-4.5-build": {"modelCalls": 1}},
+        "provider_model_usage": {"grok-4.5-build": {"inputTokens": 10, "modelCalls": 1}},
         "usage": {"total_tokens": 12},
     }
-    assert module._provider_effect_valid(valid) is True
-    assert module._provider_effect_valid({**valid, "usage": {"total_tokens": 0}}) is False
 
 
-def test_generic_worker_arguments_get_typed_rejection(capsys: pytest.CaptureFixture[str]) -> None:
+def test_provider_effect_requires_exact_observed_model_and_integer_calls(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     module = _module()
-    exit_code = module.main(["research", "--question", "q", "--CommonWorkKey", "wrong-chain"])
+    runtime_lock = module._load_json(module.RUNTIME_LOCK_PATH)
+    assert module._validate_provider_effect(_valid_provider_result(), runtime_lock) == (
+        "grok-4.5-build",
+        1,
+    )
+    invalid_values = (
+        {"grok-4.5": {"modelCalls": 1}},
+        {
+            "grok-4.5-build": {"modelCalls": 1},
+            "fake": {"modelCalls": 1},
+        },
+        {"grok-4.5-build": {"modelCalls": True}},
+        {"grok-4.5-build": {"modelCalls": 0}},
+    )
+    for model_usage in invalid_values:
+        result = _valid_provider_result()
+        result["provider_model_usage"] = model_usage
+        with pytest.raises(module.XinaoError) as failure:
+            module._validate_provider_effect(result, runtime_lock)
+        assert failure.value.reason_code == "PROVIDER_EFFECT_EVIDENCE_INVALID"
+
+
+def _valid_container_inspect(tmp_path: Path) -> tuple[dict[str, object], dict[str, object]]:
+    input_root = tmp_path / "input"
+    materials_root = tmp_path / "materials"
+    output_root = tmp_path / "output"
+    auth_path = tmp_path / "auth.json"
+    image_id = "sha256:" + "a" * 64
+    inspect: dict[str, object] = {
+        "Image": image_id,
+        "HostConfig": {
+            "ReadonlyRootfs": True,
+            "CapDrop": ["ALL"],
+            "SecurityOpt": ["no-new-privileges:true"],
+            "NetworkMode": "bridge",
+            "PidsLimit": 128,
+            "Memory": 2147483648,
+            "NanoCpus": 2000000000,
+            "Privileged": False,
+            "RestartPolicy": {"Name": "no", "MaximumRetryCount": 0},
+            "Tmpfs": {
+                "/tmp": "rw,nosuid,nodev,size=256m,mode=1777",
+                "/grok-home": "rw,nosuid,nodev,size=256m,mode=0700",
+            },
+        },
+        "Config": {"Env": ["XINAO_CHAIN_CLASS=scientific_researcher"]},
+        "Mounts": [
+            {
+                "Type": "bind",
+                "Source": str(input_root),
+                "Destination": "/input",
+                "RW": False,
+            },
+            {
+                "Type": "bind",
+                "Source": str(materials_root),
+                "Destination": "/materials",
+                "RW": False,
+            },
+            {
+                "Type": "bind",
+                "Source": str(output_root),
+                "Destination": "/output",
+                "RW": True,
+            },
+            {
+                "Type": "bind",
+                "Source": str(auth_path),
+                "Destination": "/grok-home/auth.json",
+                "RW": False,
+            },
+        ],
+    }
+    arguments: dict[str, object] = {
+        "image_id": image_id,
+        "input_root": input_root,
+        "materials_root": materials_root,
+        "output_root": output_root,
+        "auth_path": auth_path,
+    }
+    return inspect, arguments
+
+
+@pytest.mark.parametrize(
+    ("field", "invalid_value", "reason_code"),
+    (
+        ("PidsLimit", 129, "CONTAINER_RESOURCE_BOUNDARY_INVALID"),
+        ("PidsLimit", True, "CONTAINER_RESOURCE_BOUNDARY_INVALID"),
+        ("CapDrop", ["ALL", "SYS_ADMIN"], "CONTAINER_CAP_DROP_INVALID"),
+        ("CapAdd", ["SYS_ADMIN"], "CONTAINER_CAP_ADD_INVALID"),
+        (
+            "SecurityOpt",
+            ["no-new-privileges:true", "seccomp=unconfined"],
+            "CONTAINER_NO_NEW_PRIVILEGES_MISSING",
+        ),
+        ("Memory", 2147483647, "CONTAINER_RESOURCE_BOUNDARY_INVALID"),
+        ("Memory", 2147483648.0, "CONTAINER_RESOURCE_BOUNDARY_INVALID"),
+        ("NanoCpus", 1999999999, "CONTAINER_RESOURCE_BOUNDARY_INVALID"),
+        ("NanoCpus", 2000000000.0, "CONTAINER_RESOURCE_BOUNDARY_INVALID"),
+        ("Privileged", True, "CONTAINER_PRIVILEGE_BOUNDARY_INVALID"),
+        (
+            "RestartPolicy",
+            {"Name": "no", "MaximumRetryCount": False},
+            "CONTAINER_RESTART_POLICY_INVALID",
+        ),
+        (
+            "RestartPolicy",
+            {"Name": "always", "MaximumRetryCount": 0},
+            "CONTAINER_RESTART_POLICY_INVALID",
+        ),
+        (
+            "Tmpfs",
+            {"/tmp": "rw,nosuid,nodev,size=256m,mode=1777"},
+            "CONTAINER_TMPFS_INVALID",
+        ),
+        (
+            "Tmpfs",
+            {
+                "/tmp": "rw,nosuid,nodev,size=256m,mode=1777",
+                "/grok-home": "rw,nosuid,nodev,size=256m,mode=0700",
+                "/extra": "rw",
+            },
+            "CONTAINER_TMPFS_INVALID",
+        ),
+    ),
+)
+def test_container_inspect_requires_exact_runtime_security_values(
+    tmp_path: Path,
+    field: str,
+    invalid_value: object,
+    reason_code: str,
+) -> None:
+    module = _module()
+    inspect, arguments = _valid_container_inspect(tmp_path)
+    module._validate_container_inspect(inspect, **arguments)
+    host = inspect["HostConfig"]
+    assert isinstance(host, dict)
+    host["CapAdd"] = []
+    module._validate_container_inspect(inspect, **arguments)
+    host[field] = invalid_value
+    with pytest.raises(module.XinaoError) as failure:
+        module._validate_container_inspect(inspect, **arguments)
+    assert failure.value.reason_code == reason_code
+
+
+@pytest.mark.parametrize(
+    "delta",
+    (
+        {"Status": "running"},
+        {"Running": True},
+        {"ExitCode": True},
+        {"ExitCode": 1},
+        {"OOMKilled": True},
+        {"Error": "boom"},
+    ),
+)
+def test_container_terminal_state_is_strict(delta: dict[str, object]) -> None:
+    module = _module()
+    terminal = {
+        "Status": "exited",
+        "Running": False,
+        "ExitCode": 0,
+        "OOMKilled": False,
+        "Error": "",
+        "Paused": False,
+        "Restarting": False,
+        "Dead": False,
+    }
+    assert module._validate_container_terminal_state(terminal) == terminal
+    terminal.update(delta)
+    with pytest.raises(module.XinaoError) as failure:
+        module._validate_container_terminal_state(terminal)
+    assert failure.value.reason_code == "CONTAINER_TERMINAL_STATE_INVALID"
+
+
+def test_terminal_attestation_is_bounded_canonical_and_hash_bound() -> None:
+    module = _module()
+    value = {
+        "schema_version": "xinao.researcher_terminal_attestation.v1",
+        "status": "CANDIDATE_READY",
+        "result_sha256": "a" * 64,
+        "request_sha256": "b" * 64,
+        "observed_model_id": "grok-4.5-build",
+        "observed_model_calls": 1,
+    }
+    payload = module._canonical_bytes(value)
+    assert (
+        module._validate_terminal_attestation(
+            payload,
+            request_sha256="b" * 64,
+            result_sha256="a" * 64,
+            result_status="CANDIDATE_READY",
+            observed_model_id="grok-4.5-build",
+            observed_model_calls=1,
+        )
+        == value
+    )
+    with pytest.raises(module.XinaoError) as tampered:
+        module._validate_terminal_attestation(
+            payload,
+            request_sha256="0" * 64,
+            result_sha256="a" * 64,
+            result_status="CANDIDATE_READY",
+            observed_model_id="grok-4.5-build",
+            observed_model_calls=1,
+        )
+    assert tampered.value.reason_code == "CONTAINER_TERMINAL_ATTESTATION_BINDING_INVALID"
+    with pytest.raises(module.XinaoError) as oversized:
+        module._validate_terminal_attestation(
+            b"x" * (module.MAX_TERMINAL_ATTESTATION_BYTES + 1),
+            request_sha256="b" * 64,
+            result_sha256="a" * 64,
+            result_status="CANDIDATE_READY",
+            observed_model_id="grok-4.5-build",
+            observed_model_calls=1,
+        )
+    assert oversized.value.reason_code == "CONTAINER_TERMINAL_ATTESTATION_INVALID"
+
+
+def test_material_result_binding_requires_real_supplied_reference(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    module = _module()
+    _auth(module, tmp_path, monkeypatch)
+    source = tmp_path / "material.txt"
+    source.write_text("evidence", encoding="utf-8")
+    snapshots, _witness = module._snapshot_material_sources([source])
+    manifest = module._material_bundle_manifest(snapshots)
+    manifest_sha = module._sha256_bytes(module._canonical_bytes(manifest))
+    packet = module._material_packet_bytes(manifest, snapshots)
+    packet_sha = module._sha256_bytes(packet)
+    effective_sha = module._sha256_bytes(module._effective_prompt_bytes("base", packet))
+    entry = manifest["materials"][0]
+    candidate = {
+        "schema_version": "xinao.research_candidate.v2",
+        "status": "CANDIDATE_READY",
+        "research_question": "q",
+        "as_of": "2026-07-30T00:00:00Z",
+        "material_bundle_id": manifest["bundle_id"],
+        "material_refs_used": [{"material_id": entry["material_id"], "sha256": entry["sha256"]}],
+        "summary": "candidate only",
+        "hypotheses": ["one hypothesis"],
+        "competing_explanations": ["one competing explanation"],
+        "methods": ["bounded material analysis"],
+        "evidence_used": [
+            {
+                "material_id": entry["material_id"],
+                "finding": "bounded finding",
+                "locator": "whole file",
+            }
+        ],
+        "counterevidence": [],
+        "limitations": ["candidate evidence only"],
+        "next_evidence": ["independent observation"],
+    }
+    request_sha = "1" * 64
+    prompt_sha = "2" * 64
+    output_schema_sha = module._sha256(module.OUTPUT_SCHEMA_PATH)
+    result = {
+        "schema_version": "xinao.researcher_container_result.v2",
+        "status": "CANDIDATE_READY",
+        "reason_codes": [],
+        "candidate": candidate,
+        "request_sha256": request_sha,
+        "prompt_sha256": prompt_sha,
+        "output_schema_sha256": output_schema_sha,
+        "material_bundle_id": manifest["bundle_id"],
+        "material_manifest_sha256": manifest_sha,
+        "material_packet_sha256": packet_sha,
+        "effective_prompt_sha256": effective_sha,
+        "material_refs_available": [entry["material_id"]],
+        "provider": "grok",
+        "requested_model": "grok-4.5",
+        **_valid_provider_result(),
+        "completion_claim_allowed": False,
+        "science_restored": False,
+        "parent_complete": False,
+    }
+    module._validate_material_result_binding(
+        result,
+        manifest=manifest,
+        request_sha256=request_sha,
+        prompt_sha256=prompt_sha,
+        output_schema_sha256=output_schema_sha,
+        manifest_sha256=manifest_sha,
+        material_packet_sha256=packet_sha,
+        effective_prompt_sha256=effective_sha,
+        question="q",
+        as_of="2026-07-30T00:00:00Z",
+    )
+    candidate["material_refs_used"] = []
+    candidate["evidence_used"] = []
+    with pytest.raises(module.XinaoError) as unbound:
+        module._validate_material_result_binding(
+            result,
+            manifest=manifest,
+            request_sha256=request_sha,
+            prompt_sha256=prompt_sha,
+            output_schema_sha256=output_schema_sha,
+            manifest_sha256=manifest_sha,
+            material_packet_sha256=packet_sha,
+            effective_prompt_sha256=effective_sha,
+            question="q",
+            as_of="2026-07-30T00:00:00Z",
+        )
+    assert unbound.value.reason_code == "RESEARCH_CANDIDATE_MATERIAL_USE_UNBOUND"
+
+
+def test_bounded_result_reader_rejects_oversized_json(
+    tmp_path: Path,
+) -> None:
+    module = _module()
+    result = tmp_path / "result.json"
+    result.write_bytes(b'{"x":"' + b"a" * 128 + b'"}\n')
+    with pytest.raises(module.XinaoError) as failure:
+        module._load_json(result, maximum_bytes=32)
+    assert failure.value.reason_code == "JSON_READ_FAILED"
+
+
+def test_bootstrap_migration_is_reserved_and_never_mutates_live_state(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    module = _module()
+    _state(module, tmp_path, monkeypatch)
+    with pytest.raises(module.XinaoError) as failure:
+        module.bootstrap_migrate("researcher-1.1.0-" + "a" * 16)
+    assert failure.value.reason_code == "BOOTSTRAP_MIGRATION_REQUIRED"
+    assert not module._state_paths()["pointer"].exists()
+
+
+def test_generic_worker_arguments_get_typed_rejection(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    module = _module()
+    exit_code = module.main(["research", "--question", "q", "--CommonWorkKey", "wrong"])
     result = json.loads(capsys.readouterr().out)
     assert exit_code == 2
     assert result["status"] == "PREFLIGHT_FAILED"
@@ -132,35 +1609,240 @@ def test_generic_worker_arguments_get_typed_rejection(capsys: pytest.CaptureFixt
     assert result["user_operations_required"] == []
 
 
-def test_rollback_switches_only_current_pointer(
+@pytest.mark.parametrize(
+    "txn_id",
+    (
+        "..",
+        "C:/absolute/activation",
+        "xra_20260730T120000_../../escape",
+    ),
+)
+def test_thin_rejects_malicious_transaction_ids_before_path_use(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, txn_id: str
+) -> None:
+    runtime = _module()
+    manifest, manifest_path = _sealed_release(runtime, tmp_path, monkeypatch)
+    pointer, _journal, _journal_path = _terminal_pointer(runtime, manifest, manifest_path)
+    pointer["active"]["activation_txn_id"] = txn_id
+    runtime._write_json_atomic(runtime._state_paths()["pointer"], pointer)
+    bootstrap = _bootstrap_module()
+    with pytest.raises(bootstrap.BootstrapError) as failure:
+        bootstrap._runtime_entry_locked(["inspect"], tmp_path / "state")
+    assert failure.value.reason_code == "ACTIVATION_TRANSACTION_ID_INVALID"
+
+
+@pytest.mark.parametrize("mutation", ("extra_key", "unknown_state", "redirect_from"))
+def test_thin_pending_journal_shape_is_fail_closed(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    mutation: str,
+) -> None:
+    runtime = _module()
+    first, first_path = _sealed_release(runtime, tmp_path, monkeypatch, image_character="a")
+    _terminal_pointer(runtime, first, first_path)
+    second, second_path = _sealed_release(
+        runtime, tmp_path, monkeypatch, image_character="b", variant=b"pending"
+    )
+    with runtime._activation_lock():
+        current = runtime._load_current_context()
+        journal, journal_path = runtime._prepare_activation(
+            current,
+            target_manifest=second,
+            target_manifest_path=second_path,
+            operation="ACTIVATE",
+        )
+    if mutation == "extra_key":
+        journal["unexpected"] = True
+    elif mutation == "unknown_state":
+        journal["state"] = "UNKNOWN"
+    else:
+        journal["from"]["active"]["release_manifest_path"] = str(
+            tmp_path / "redirected-release.json"
+        )
+    runtime._write_json_atomic(journal_path, journal)
+    bootstrap = _bootstrap_module()
+    with pytest.raises(bootstrap.BootstrapError) as failure:
+        bootstrap._pending_activation_journals(tmp_path / "state")
+    expected = {
+        "extra_key": "ACTIVATION_JOURNAL_SCHEMA_INVALID",
+        "unknown_state": "ACTIVATION_STATE_INVALID",
+        "redirect_from": "RELEASE_MANIFEST_PATH_INVALID",
+    }
+    assert failure.value.reason_code == expected[mutation]
+
+
+@pytest.mark.parametrize("mutation", ("extra_key", "identity_drift", "skill_hash_drift"))
+def test_thin_release_schema_and_identity_are_exact(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    mutation: str,
+) -> None:
+    runtime = _module()
+    manifest, manifest_path = _sealed_release(runtime, tmp_path, monkeypatch)
+    candidate = json.loads(json.dumps(manifest))
+    if mutation == "extra_key":
+        candidate["unexpected"] = True
+    elif mutation == "identity_drift":
+        candidate["release_identity_sha256"] = "0" * 64
+    else:
+        candidate["skill_hashes"]["skill_md_sha256"] = "0" * 64
+    bootstrap = _bootstrap_module()
+    with pytest.raises(bootstrap.BootstrapError) as failure:
+        bootstrap._validate_release_manifest_shape(
+            candidate,
+            manifest_path=manifest_path,
+            state_root=tmp_path / "state",
+        )
+        bootstrap._validate_release_skill_hashes(candidate, Path(candidate["skill_bundle_path"]))
+    assert failure.value.reason_code in {
+        "RELEASE_SCHEMA_INVALID",
+        "RELEASE_IDENTITY_MISMATCH",
+        "RELEASE_IMAGE_IDENTITY_INVALID",
+        "RELEASE_SKILL_HASHES_MISMATCH",
+    }
+
+
+@pytest.mark.parametrize("mutation", ("case_collision", "extra_empty_dir", "too_many"))
+def test_thin_bundle_inventory_rejects_case_empty_dir_and_count_drift(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    mutation: str,
+) -> None:
+    runtime = _module()
+    manifest, manifest_path = _sealed_release(runtime, tmp_path, monkeypatch)
+    active = runtime._release_ref_from_manifest(
+        manifest,
+        manifest_path,
+        activation_txn_id="xra_20260730T120000_" + "1" * 16,
+    )
+    bundle_manifest_path = Path(manifest["skill_bundle_manifest_path"])
+    bundle_manifest = runtime._load_json(bundle_manifest_path)
+    if mutation == "case_collision":
+        row = dict(bundle_manifest["files"][0])
+        row["relative_path"] = str(row["relative_path"]).swapcase()
+        bundle_manifest["files"].append(row)
+        bundle_manifest["files"].sort(key=lambda value: value["relative_path"])
+    elif mutation == "too_many":
+        template = dict(bundle_manifest["files"][0])
+        bundle_manifest["files"] = [
+            {
+                **template,
+                "relative_path": f"bulk/{index:04d}.txt",
+            }
+            for index in range(4097)
+        ]
+    else:
+        (Path(manifest["skill_bundle_path"]) / "empty-extra").mkdir()
+    if mutation != "extra_empty_dir":
+        bundle_manifest["tree_sha256"] = runtime._sha256_bytes(
+            runtime._canonical_bytes(bundle_manifest["files"])
+        )
+        runtime._write_json_atomic(bundle_manifest_path, bundle_manifest)
+        manifest["skill_bundle_manifest_sha256"] = runtime._sha256(bundle_manifest_path)
+        manifest["skill_bundle_tree_sha256"] = bundle_manifest["tree_sha256"]
+        active["skill_bundle_manifest_sha256"] = manifest["skill_bundle_manifest_sha256"]
+        active["skill_bundle_tree_sha256"] = manifest["skill_bundle_tree_sha256"]
+    bootstrap = _bootstrap_module()
+    with pytest.raises(bootstrap.BootstrapError) as failure:
+        bootstrap._validate_bundle(
+            release_root=manifest_path.parent,
+            manifest=manifest,
+            active=active,
+        )
+    expected_codes = {
+        "case_collision": {"SKILL_BUNDLE_PATH_COLLISION"},
+        "extra_empty_dir": {"SKILL_BUNDLE_FILE_SET_MISMATCH"},
+        "too_many": {"SKILL_BUNDLE_INVENTORY_INVALID"},
+    }
+    assert failure.value.reason_code in expected_codes[mutation]
+
+
+def test_thin_child_executes_the_exact_verified_runtime_bytes() -> None:
+    bootstrap = _bootstrap_module()
+    payload = b"import sys\nsys.stdout.write('verified-runtime-bytes')\n"
+    wrapper = bootstrap._runtime_wrapper(Path("sealed/runtime.py"), payload)
+    completed = subprocess.run(
+        [sys.executable, "-I", "-"],
+        input=wrapper,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+    assert completed.returncode == 0
+    assert completed.stdout == b"verified-runtime-bytes"
+    assert completed.stderr == b""
+    assert b"os.execv" not in wrapper
+
+
+def test_thin_handoff_timeout_reaps_only_its_child_and_releases_lock(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    module = _module()
-    state = tmp_path / "state"
-    monkeypatch.setenv("XINAO_SKILL_STATE_ROOT", str(state))
-    release_root = state / "researcher_container" / "releases"
-    a_path = release_root / "a" / "release.json"
-    b_path = release_root / "b" / "release.json"
-    module._write_json_atomic(a_path, {"release_id": "a"}, create_new=True)
-    module._write_json_atomic(b_path, {"release_id": "b"}, create_new=True)
-    pointer_path = state / "researcher_container" / "current.json"
-    module._write_json_atomic(
-        pointer_path,
-        {
-            "schema_version": "xinao.researcher_current_pointer.v1",
-            "release_id": "b",
-            "release_manifest_path": str(b_path),
-            "release_manifest_sha256": module._sha256(b_path),
-            "previous_release_id": "a",
-            "previous_release_manifest_path": str(a_path),
-            "previous_release_manifest_sha256": module._sha256(a_path),
-        },
-        create_new=True,
+    runtime = _module()
+    state_root = _state(runtime, tmp_path, monkeypatch)
+    bootstrap = _bootstrap_module()
+    monkeypatch.setattr(bootstrap, "RUNTIME_HANDOFF_TIMEOUT_SECONDS", 0.1)
+    monkeypatch.setattr(bootstrap, "RUNTIME_REAP_TIMEOUT_SECONDS", 1.0)
+    creation_flags = int(getattr(subprocess, "CREATE_NO_WINDOW", 0))
+    process = subprocess.Popen(
+        [sys.executable, "-I", "-c", "import time; time.sleep(60)"],
+        stdin=subprocess.PIPE,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        creationflags=creation_flags,
     )
-    receipt = module.rollback_release()
-    current = module._load_json(pointer_path)
-    assert receipt["status"] == "ROLLED_BACK"
-    assert current["release_id"] == "a"
-    assert current["previous_release_id"] == "b"
-    assert module._load_json(a_path) == {"release_id": "a"}
-    assert module._load_json(b_path) == {"release_id": "b"}
+    started = time.monotonic()
+    try:
+        with pytest.raises(bootstrap.BootstrapError) as failure:
+            with bootstrap._activation_lock(state_root):
+                bootstrap._handoff_runtime_wrapper(process, b"x" * (8 * 1024 * 1024))
+        assert failure.value.reason_code == "SKILL_RUNTIME_HANDOFF_FAILED"
+        assert time.monotonic() - started < 5.0
+        assert process.poll() is not None
+        assert process.stdin is None
+        assert not any(
+            thread.name == "xinao-runtime-handoff" and thread.is_alive()
+            for thread in threading.enumerate()
+        )
+        with bootstrap._activation_lock(state_root):
+            pass
+    finally:
+        if process.poll() is None:
+            process.kill()
+            process.wait(timeout=5)
+
+
+def test_thin_wrapper_preserves_non_ascii_runtime_and_state_root(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    runtime = _module()
+    unicode_root = tmp_path / "新澳状态根"
+    manifest, manifest_path = _sealed_release(runtime, unicode_root, monkeypatch)
+    _terminal_pointer(runtime, manifest, manifest_path)
+    state_root = runtime._state_paths()["state_root"]
+    bootstrap = _bootstrap_module()
+    runtime_path, _runtime_payload, fence = bootstrap._runtime_entry_locked(["inspect"], state_root)
+    assert "新澳状态根" in str(runtime_path)
+    assert fence["state_root"] == str(state_root)
+    encoded_fence = json.dumps(
+        fence, ensure_ascii=True, sort_keys=True, separators=(",", ":")
+    ).encode("ascii")
+    assert json.loads(encoded_fence.decode("ascii")) == fence
+    probe = (
+        "# -*- coding: utf-8 -*-\n"
+        "import json, sys\n"
+        "_value = json.dumps({'runtime_path': __file__, 'value': '新澳'}, ensure_ascii=False)\n"
+        "sys.stdout.buffer.write((_value + '\\n').encode('utf-8'))\n"
+    ).encode("utf-8")
+    wrapper = bootstrap._runtime_wrapper(runtime_path, probe)
+    wrapper.decode("ascii")
+    completed = subprocess.run(
+        [sys.executable, "-I", "-"],
+        input=wrapper,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+    assert completed.returncode == 0
+    assert completed.stderr == b""
+    observed = json.loads(completed.stdout.decode("utf-8"))
+    assert observed == {"runtime_path": str(runtime_path), "value": "新澳"}

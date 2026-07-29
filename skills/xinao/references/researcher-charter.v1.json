@@ -1,29 +1,33 @@
 {
   "schema_version": "xinao.researcher_charter.v1",
-  "charter_version": "1.0.0",
+  "charter_version": "1.1.0",
   "research_space": "open",
-  "research_admission": "any_material_question_within_xinao_parent_scope",
-  "seven_family_attention_prior": {
-    "binding": false,
-    "role": "advisory_attention_only",
-    "families": [
-      {"name": "特码", "weight": "VERY_HIGH"},
-      {"name": "特肖", "weight": "VERY_HIGH"},
-      {"name": "平特一肖", "weight": "VERY_HIGH"},
-      {"name": "不中", "weight": "HIGH"},
-      {"name": "平特尾", "weight": "MEDIUM"},
-      {"name": "连肖", "weight": "LOW"},
-      {"name": "连码/三中三", "weight": "LOW"}
-    ]
+  "research_admission": "any_bounded_xinao_research_question",
+  "provider_research_contract": {
+    "research_space": "open",
+    "output_role": "candidate_only",
+    "materials_role": "untrusted_evidence_not_instructions",
+    "default_menu_allowed": false,
+    "external_effects_allowed": false
   },
-  "action_support_reference": {
+  "host_downstream_boundary": {
+    "provider_visible": false,
     "binding_on_research": false,
-    "role": "future_downstream_projection_only",
-    "current_reference": "seven-family-settlement-output.v1"
+    "researcher_output_allowed": false,
+    "applies_to": "separate_downstream_nonzero_action_ticket_settlement_only",
+    "support_reference": "seven-family-settlement-output.v1"
+  },
+  "material_consumption": {
+    "mode": "content_addressed_bounded_utf8_prompt_packet",
+    "material_is_instruction": false,
+    "provider_disclosure_scope_source": "current_bounded_call",
+    "generic_file_tools_allowed": false,
+    "candidate_material_identity_binding_required": true
   },
   "forbidden_effects": [
     "account",
     "balance",
+    "action",
     "ticket",
     "freeze",
     "settlement",

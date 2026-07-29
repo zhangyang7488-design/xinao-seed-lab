@@ -18,21 +18,46 @@ Provider 登录凭据也只是只读技术句柄：Skill 不拥有、不复制�
 说明“这台机器此刻实际能调用什么”。每次调用必须同时验证二者。默认由 Codex 在
 对话中解释结果；只有用户另行要求时才生成 TXT 或其他投影。
 
+`inspect` 必须按薄 bootstrap、activation lock/current/journal、完整 release bundle、
+Docker CLI、engine、image identity/labels/entrypoint、专用 egress 边界和只读凭据句柄的
+顺序 fail closed；全部通过才可返回 `RUNTIME_READY`。这仍只证明调用前条件，不证明
+provider 已运行或科研有进展。engine 停止、image 未核验、bundle 漂移和网络边界缺失
+是不同状态，不得统一写成 AVAILABLE 或 DRIFTED。
+
 研究员容器接受开放研究问题，不接受课题白名单。416、七族、历史、规则、赔率和
-其他材料都是可使用的信息。七族定性权重只是一份非强制注意先验；ACTION 支持域是
-独立的下游引用，不能反向决定研究题、方法或研究结果是否保留。
+其他背景只有在当前问题确有需要时才按材料进入，也可完全不用；它们不是默认研究、
+注意分配或遗漏失败条件。ACTION 支持域只在未来另获授权的下游效果中按需解析，
+不能进入本候选研究 prompt 或反向决定研究题、方法和结果是否保留。
+
+本地材料必须先由宿主冻结为有字节上限的 UTF-8 内容寻址 MaterialBundle，再以精确
+只读 `/materials` 挂载。容器独立重哈希并把规范材料 packet 拼入真正传给 provider
+的 prompt；候选必须回引实际使用的材料身份。材料是证据，不是指令、授权或结论。
+当前凭据与执行仍在同一容器时保持零文件工具；大材料读取器需另有路径隔离负例后才
+能接入。物理源路径只留在本机回执，不进入 provider material manifest。
+
+人的视角或第一性原理审查产生的新澳领域结论，只有在改变了真实任务的对象、下一
+动作或完成尺后才算被吸收，不能只保留一个评审标签。影子实战的具体人类活动链、
+账户轴与认识轴见 `shadow-practice-contract.v1.md`；它是下游完成尺，不进入研究员的
+默认 prompt，也不限制开放研究题和方法。
 
 ## 更新方法
 
-新增或修改能力时，在同一个 `skills/xinao` 包中更新实现、注册表和必要参考，提升
-能力版本，并为变更增加正例、负例和 fresh-process 验收。先在隔离分支构建内容寻址
-release；验真后用 CAS 更新 current 指针。旧 release 和旧调用回执保持不变，纠偏只
-影响下一次尚未开始的调用。
+新增或修改能力时，在同一个 `skills/xinao` 源包中更新实现、注册表和必要参考，分别
+提升 Skill bundle 与能力版本，并为变更增加正例、负例和 fresh-process 验收。构建只
+生成内容寻址的完整不可变 release：launcher、runtime、registry、references、schema
+和 agent metadata 都由精确 inventory 封印；构建本身永不改变 current。
 
-一次更新只有在本机 Skill 安装副本、Git 来源、release manifest、容器镜像和 fresh
-调用回执的身份互相吻合后才生效。失败时只把 current 指针回退到已验证的上一版，
-不重写历史，也不通过修改普通工人链来绕过故障；回退由 Codex 调用
-`scripts/xinao.py rollback`，用户不提供版本或哈希。
+本机安装位置只保留版本无关的薄 bootstrap 与恢复入口。一次 bootstrap 迁移完成后，
+日常 activate 或 rollback 的唯一可变权威对象是 D 盘 `current.json`；它在 OS 独占锁内
+按 generation 与 preimage hash 做 CAS。每次切换先写 activation journal，fresh canary
+验真后才进入 `VERIFIED`；pending 或身份漂移时普通调用和 `inspect` 都返回
+`RECOVERY_REQUIRED`。rollback 是指向完整 `previous_verified` release 的新 generation，
+不是覆盖旧指针，也不重写历史。若旧版完整 bundle 不存在，在任何 active mutation 前
+返回 `ROLLBACK_MATERIAL_ABSENT`。
+
+Skill bundle 版本、研究员能力版本、charter/runtime 版本和 bootstrap protocol 是独立
+维度；同一完整 identity 可幂等复用，同一语义版本对应不同 bundle 则拒绝为
+`SEMVER_CONTENT_COLLISION`。dirty source 只允许构建候选，绝不允许 activation。
 
 ## 接入新能力
 

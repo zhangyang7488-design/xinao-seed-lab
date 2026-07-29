@@ -1,28 +1,72 @@
 from __future__ import annotations
 
-import argparse
-import datetime as dt
+import base64
 import hashlib
 import json
+import math
 import os
-import shutil
+import re
+import stat
 import subprocess
 import sys
-import uuid
+import threading
+import time
+from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, Sequence
 
-SKILL_ROOT = Path(__file__).resolve().parents[1]
-REFERENCE_ROOT = SKILL_ROOT / "references"
 DEFAULT_STATE_ROOT = Path(r"D:\XINAO_RESEARCH_RUNTIME\state\xinao_skill")
-DEFAULT_RUN_ROOT = Path(r"D:\XINAO_RESEARCH_RUNTIME\runs\xinao_researcher")
-DEFAULT_AUTH_PATH = Path(r"C:\Users\xx363\.grok-bg-workers\auth.json")
-
-REGISTRY_PATH = REFERENCE_ROOT / "capabilities.v1.json"
-CHARTER_PATH = REFERENCE_ROOT / "researcher-charter.v1.json"
-OUTPUT_SCHEMA_PATH = REFERENCE_ROOT / "researcher-output.v1.schema.json"
-RUNTIME_LOCK_PATH = REFERENCE_ROOT / "researcher-runtime-lock.v1.json"
-
+MAX_CONTROL_BYTES = 512 * 1024
+MAX_MANIFEST_BYTES = 2 * 1024 * 1024
+MAX_BUNDLE_FILE_BYTES = 16 * 1024 * 1024
+MAX_BUNDLE_TOTAL_BYTES = 64 * 1024 * 1024
+MAX_BUNDLE_FILES = 4096
+MAX_BUNDLE_ENTRIES = 65536
+RUNTIME_HANDOFF_TIMEOUT_SECONDS = 30.0
+RUNTIME_REAP_TIMEOUT_SECONDS = 5.0
+MAX_JSON_DEPTH = 64
+MAX_JSON_NODES = 100000
+RELEASE_RUNTIME_RELATIVE_PATH = Path("skill-bundle") / "scripts" / "xinao_runtime.py"
+RELEASE_ID_PATTERN = re.compile(r"^researcher-[0-9]+\.[0-9]+\.[0-9]+-[0-9a-f]{16}$")
+TXN_ID_PATTERN = re.compile(r"^xra_[0-9]{8}T[0-9]{6}_[0-9a-f]{16}$")
+SEMVER_PATTERN = re.compile(r"^[0-9]+\.[0-9]+\.[0-9]+$")
+HEX_SHA256_PATTERN = re.compile(r"^[0-9a-f]{64}$")
+ACTIVE_REF_KEYS = {
+    "release_id",
+    "release_manifest_path",
+    "release_manifest_sha256",
+    "skill_bundle_manifest_sha256",
+    "skill_bundle_tree_sha256",
+    "capability_version",
+    "package_version",
+    "required_bootstrap_protocol",
+    "activation_txn_id",
+}
+JOURNAL_KEYS = {
+    "schema_version",
+    "revision",
+    "txn_id",
+    "operation",
+    "state",
+    "from",
+    "requested_to",
+    "to",
+    "expected_generation",
+    "prepared_at",
+    "updated_at",
+    "switched_pointer_sha256",
+    "canary",
+    "failure_reason",
+    "terminal_pointer_sha256",
+}
+PENDING_ACTIVATION_STATES = {
+    "PREPARED",
+    "POINTER_SWITCHED",
+    "CANARY_STARTED",
+    "ROLLBACK_POINTER_SWITCHED",
+    "ROLLBACK_CANARY_STARTED",
+}
+TERMINAL_ACTIVATION_STATES = {"VERIFIED", "ROLLED_BACK"}
 FORBIDDEN_RUNTIME_TOKENS = (
     "grok_worker_pool",
     "codex_task_runs",
@@ -30,720 +74,1019 @@ FORBIDDEN_RUNTIME_TOKENS = (
     "common_contract",
     "integrated_bus",
 )
+RELEASE_KEYS = {
+    "schema_version",
+    "release_id",
+    "package_version",
+    "capability_id",
+    "capability_version",
+    "charter_version",
+    "runtime_version",
+    "release_identity_sha256",
+    "source_identity",
+    "skill_bundle_path",
+    "skill_bundle_manifest_path",
+    "skill_bundle_manifest_sha256",
+    "skill_bundle_tree_sha256",
+    "image_tag_observational",
+    "image_id",
+    "image_entrypoint",
+    "image_labels",
+    "skill_hashes",
+    "required_bootstrap_protocol",
+    "generic_worker_route_allowed",
+    "state_namespace",
+    "run_namespace",
+}
+SKILL_HASH_PATHS = {
+    "skill_md_sha256": "SKILL.md",
+    "skill_invoker_sha256": "scripts/xinao.py",
+    "capability_registry_sha256": "references/capabilities.v1.json",
+    "charter_sha256": "references/researcher-charter.v1.json",
+    "output_schema_sha256": "references/researcher-output.v2.schema.json",
+    "material_bundle_schema_sha256": "references/material-bundle.v1.schema.json",
+    "runtime_lock_sha256": "references/researcher-runtime-lock.v1.json",
+    "meta_sha256": "references/meta.md",
+}
+IMAGE_LABEL_KEYS = {
+    "io.xinao.researcher.chain",
+    "io.xinao.researcher.generic-worker-route",
+    "io.xinao.researcher.grok-donor-image-id",
+    "io.xinao.researcher.charter.sha256",
+    "io.xinao.researcher.output-schema.sha256",
+    "io.xinao.researcher.material-bundle-schema.sha256",
+    "io.xinao.researcher.runtime-lock.sha256",
+    "io.xinao.researcher.skill-invoker.sha256",
+    "io.xinao.researcher.dockerfile.sha256",
+    "io.xinao.researcher.entrypoint.sha256",
+    "io.xinao.researcher.source-identity.sha256",
+    "io.xinao.researcher.requested-model",
+}
 
 
-class XinaoError(RuntimeError):
+class BootstrapError(RuntimeError):
     def __init__(self, reason_code: str, detail: str) -> None:
         super().__init__(detail)
         self.reason_code = reason_code
-        self.detail = detail
+        self.detail = str(detail)[:2000]
 
 
-class XinaoArgumentParser(argparse.ArgumentParser):
-    def error(self, message: str) -> None:
-        raise XinaoError("INVOCATION_ARGUMENTS_INVALID", message)
-
-
-def _utc_now() -> str:
-    return dt.datetime.now(dt.UTC).isoformat().replace("+00:00", "Z")
-
-
-def _sha256_bytes(value: bytes) -> str:
-    return hashlib.sha256(value).hexdigest()
-
-
-def _sha256(path: Path) -> str:
-    return _sha256_bytes(path.read_bytes())
+def _sha256_bytes(payload: bytes) -> str:
+    return hashlib.sha256(payload).hexdigest()
 
 
 def _canonical_bytes(value: object) -> bytes:
     return (
         json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":")) + "\n"
-    ).encode()
+    ).encode("utf-8")
 
 
-def _load_json(path: Path) -> dict[str, Any]:
-    try:
-        value = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError) as exc:
-        raise XinaoError("JSON_READ_FAILED", f"{path}: {exc}") from exc
-    if not isinstance(value, dict):
-        raise XinaoError("JSON_OBJECT_REQUIRED", str(path))
-    return value
+def _strict_int(value: str) -> int:
+    if len(value.lstrip("-")) > 128:
+        raise ValueError("JSON integer exceeds 128 digits")
+    return int(value)
 
 
-def _write_json_atomic(path: Path, value: dict[str, Any], *, create_new: bool = False) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    payload = _canonical_bytes(value)
-    temporary = path.with_name(f".{path.name}.{os.getpid()}.{uuid.uuid4().hex}.tmp")
-    with temporary.open("xb") as stream:
-        stream.write(payload)
-        stream.flush()
-        os.fsync(stream.fileno())
-    if create_new and path.exists():
-        temporary.unlink(missing_ok=True)
-        raise XinaoError("IMMUTABLE_PATH_EXISTS", str(path))
-    os.replace(temporary, path)
+def _strict_float(value: str) -> float:
+    parsed = float(value)
+    if not math.isfinite(parsed):
+        raise ValueError("non-finite JSON float forbidden")
+    return parsed
 
 
-def _run(
-    arguments: Sequence[str],
-    *,
-    cwd: Path | None = None,
-    timeout: int = 120,
-    check: bool = True,
-) -> subprocess.CompletedProcess[str]:
-    completed = subprocess.run(
-        list(arguments),
-        cwd=str(cwd) if cwd else None,
-        stdin=subprocess.DEVNULL,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        text=True,
-        encoding="utf-8",
-        timeout=timeout,
-        check=False,
-    )
-    if check and completed.returncode != 0:
-        raise XinaoError(
-            "PROCESS_FAILED",
-            f"exit={completed.returncode} command={arguments[0]} stderr={completed.stderr[:2000]}",
-        )
-    return completed
-
-
-def _docker() -> str:
-    docker = shutil.which("docker")
-    if not docker:
-        raise XinaoError("DOCKER_CLI_MISSING", "docker was not found")
-    return docker
-
-
-def _docker_image(docker: str, image: str) -> dict[str, Any]:
-    completed = _run([docker, "image", "inspect", image], timeout=60)
-    try:
-        values = json.loads(completed.stdout)
-    except json.JSONDecodeError as exc:
-        raise XinaoError("DOCKER_IMAGE_INSPECT_INVALID", image) from exc
-    if not isinstance(values, list) or len(values) != 1 or not isinstance(values[0], dict):
-        raise XinaoError("DOCKER_IMAGE_INSPECT_INVALID", image)
-    return values[0]
-
-
-def _reference_hashes(root: Path = SKILL_ROOT) -> dict[str, str]:
-    return {
-        "skill_md_sha256": _sha256(root / "SKILL.md"),
-        "skill_invoker_sha256": _sha256(root / "scripts" / "xinao.py"),
-        "capability_registry_sha256": _sha256(root / "references" / "capabilities.v1.json"),
-        "charter_sha256": _sha256(root / "references" / "researcher-charter.v1.json"),
-        "output_schema_sha256": _sha256(root / "references" / "researcher-output.v1.schema.json"),
-        "runtime_lock_sha256": _sha256(root / "references" / "researcher-runtime-lock.v1.json"),
-        "meta_sha256": _sha256(root / "references" / "meta.md"),
-    }
-
-
-def _validate_registry() -> dict[str, Any]:
-    registry = _load_json(REGISTRY_PATH)
-    if registry.get("schema_version") != "xinao.skill_capability_registry.v1":
-        raise XinaoError("REGISTRY_SCHEMA_INVALID", str(REGISTRY_PATH))
-    if registry.get("ordinary_worker_chain_allowed") is not False:
-        raise XinaoError("GENERIC_WORKER_ROUTE_NOT_FORBIDDEN", str(REGISTRY_PATH))
-    capabilities = registry.get("capabilities")
-    if not isinstance(capabilities, list):
-        raise XinaoError("CAPABILITY_LIST_INVALID", str(REGISTRY_PATH))
-    researcher = [
-        item
-        for item in capabilities
-        if isinstance(item, dict) and item.get("capability_id") == "researcher-container"
-    ]
-    if len(researcher) != 1 or researcher[0].get("source_status") != "available":
-        raise XinaoError("RESEARCHER_CAPABILITY_NOT_AVAILABLE", str(REGISTRY_PATH))
-    return registry
-
-
-def _validate_charter() -> dict[str, Any]:
-    charter = _load_json(CHARTER_PATH)
-    if charter.get("research_space") != "open":
-        raise XinaoError("RESEARCH_SPACE_NOT_OPEN", str(CHARTER_PATH))
-    forbidden_admission_fields = {
-        "ResearchTopicWhitelist",
-        "research_topic_whitelist",
-        "allowed_topics",
-        "required_family",
-    }
-    if forbidden_admission_fields.intersection(charter):
-        raise XinaoError("RESEARCH_TOPIC_WHITELIST_FORBIDDEN", str(CHARTER_PATH))
-    prior = charter.get("seven_family_attention_prior")
-    action_ref = charter.get("action_support_reference")
-    if not isinstance(prior, dict) or prior.get("binding") is not False:
-        raise XinaoError("ATTENTION_PRIOR_BECAME_BINDING", str(CHARTER_PATH))
-    if not isinstance(prior.get("families"), list) or len(prior["families"]) != 7:
-        raise XinaoError("ATTENTION_PRIOR_IDENTITY_INVALID", str(CHARTER_PATH))
-    if not isinstance(action_ref, dict) or action_ref.get("binding_on_research") is not False:
-        raise XinaoError("ACTION_REFERENCE_BECAME_RESEARCH_GATE", str(CHARTER_PATH))
-    return charter
-
-
-def _state_roots() -> tuple[Path, Path]:
-    state_root = Path(os.environ.get("XINAO_SKILL_STATE_ROOT", str(DEFAULT_STATE_ROOT)))
-    run_root = Path(os.environ.get("XINAO_RESEARCHER_RUN_ROOT", str(DEFAULT_RUN_ROOT)))
-    return state_root, run_root
-
-
-def _current_release() -> tuple[dict[str, Any], Path, str]:
-    state_root, _ = _state_roots()
-    pointer_path = state_root / "researcher_container" / "current.json"
-    pointer = _load_json(pointer_path)
-    if pointer.get("schema_version") != "xinao.researcher_current_pointer.v1":
-        raise XinaoError("CURRENT_POINTER_SCHEMA_INVALID", str(pointer_path))
-    manifest_path = Path(str(pointer.get("release_manifest_path", "")))
-    expected = str(pointer.get("release_manifest_sha256", ""))
-    if not manifest_path.is_file() or _sha256(manifest_path) != expected:
-        raise XinaoError("RELEASE_MANIFEST_IDENTITY_MISMATCH", str(manifest_path))
-    return _load_json(manifest_path), manifest_path, _sha256(pointer_path)
-
-
-def inspect_capability() -> dict[str, Any]:
-    registry = _validate_registry()
-    charter = _validate_charter()
-    result: dict[str, Any] = {
-        "schema_version": "xinao.skill_inspection.v1",
-        "skill_id": "xinao",
-        "skill_version": registry["skill_version"],
-        "research_space": charter["research_space"],
-        "ordinary_worker_chain_allowed": False,
-        "user_operations_required": [],
-        "source_capabilities": registry["capabilities"],
-        "runtime_status": "ABSENT",
-    }
-    try:
-        release, manifest_path, pointer_sha = _current_release()
-    except XinaoError as exc:
-        result["runtime_reason_code"] = exc.reason_code
-        result["runtime_detail"] = exc.detail
-        return result
-    result.update(
-        {
-            "runtime_status": "AVAILABLE",
-            "release_id": release.get("release_id"),
-            "release_manifest_path": str(manifest_path),
-            "release_manifest_sha256": _sha256(manifest_path),
-            "current_pointer_sha256": pointer_sha,
-            "image_id": release.get("image_id"),
-        }
-    )
+def _strict_object(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
+    result: dict[str, Any] = {}
+    for key, value in pairs:
+        if key in result:
+            raise ValueError(f"duplicate JSON key forbidden: {key}")
+        result[key] = value
     return result
 
 
-def build_release(source_root: Path, *, promote: bool, allow_dirty: bool) -> dict[str, Any]:
-    source_root = source_root.resolve()
-    source_skill = source_root / "skills" / "xinao"
-    dockerfile = source_root / "docker" / "xinao-researcher" / "Dockerfile"
-    entrypoint = source_root / "docker" / "xinao-researcher" / "entrypoint.py"
-    if not source_skill.is_dir() or not dockerfile.is_file() or not entrypoint.is_file():
-        raise XinaoError("SOURCE_CONE_MISSING", str(source_root))
-    status = _run(["git", "status", "--porcelain"], cwd=source_root).stdout.strip()
-    if status and not allow_dirty:
-        raise XinaoError("SOURCE_TREE_DIRTY", status)
-    commit = _run(["git", "rev-parse", "HEAD"], cwd=source_root).stdout.strip()
-    tree = _run(["git", "rev-parse", "HEAD^{tree}"], cwd=source_root).stdout.strip()
-    lock = _load_json(source_skill / "references" / "researcher-runtime-lock.v1.json")
-    if lock.get("generic_worker_route_allowed") is not False:
-        raise XinaoError("GENERIC_WORKER_ROUTE_NOT_FORBIDDEN", str(RUNTIME_LOCK_PATH))
-    docker = _docker()
-    donor = str(lock.get("grok_donor_image", ""))
-    expected_donor_id = str(lock.get("grok_donor_image_id", ""))
-    observed_donor_id = str(_docker_image(docker, donor).get("Id", ""))
-    if observed_donor_id != expected_donor_id:
-        raise XinaoError(
-            "GROK_DONOR_IMAGE_DRIFT",
-            f"expected={expected_donor_id} observed={observed_donor_id}",
-        )
-    hashes = _reference_hashes(source_skill)
-    hashes.update(
-        {
-            "dockerfile_sha256": _sha256(dockerfile),
-            "entrypoint_sha256": _sha256(entrypoint),
+def _validate_shape(value: Any) -> None:
+    stack: list[tuple[Any, int]] = [(value, 0)]
+    nodes = 0
+    while stack:
+        current, depth = stack.pop()
+        nodes += 1
+        if depth > MAX_JSON_DEPTH:
+            raise ValueError(f"JSON depth exceeds {MAX_JSON_DEPTH}")
+        if nodes > MAX_JSON_NODES:
+            raise ValueError(f"JSON nodes exceed {MAX_JSON_NODES}")
+        if isinstance(current, dict):
+            stack.extend((item, depth + 1) for item in current.values())
+        elif isinstance(current, list):
+            stack.extend((item, depth + 1) for item in current)
+
+
+def _is_reparse_stat(value: os.stat_result) -> bool:
+    attributes = getattr(value, "st_file_attributes", 0)
+    reparse_flag = getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0x400)
+    return stat.S_ISLNK(value.st_mode) or bool(attributes & reparse_flag)
+
+
+def _regular_control_bytes(path: Path, *, maximum: int = MAX_CONTROL_BYTES) -> bytes:
+    try:
+        if not os.path.lexists(path):
+            raise BootstrapError("BOOTSTRAP_CONTROL_MISSING", str(path))
+        before = os.lstat(path)
+        if _is_reparse_stat(before) or not stat.S_ISREG(before.st_mode):
+            raise BootstrapError("BOOTSTRAP_CONTROL_FILE_INVALID", str(path))
+        with path.open("rb") as stream:
+            opened_before = os.fstat(stream.fileno())
+            if not stat.S_ISREG(opened_before.st_mode):
+                raise BootstrapError("BOOTSTRAP_CONTROL_FILE_INVALID", str(path))
+            payload = stream.read(maximum + 1)
+            opened_after = os.fstat(stream.fileno())
+        after = os.lstat(path)
+        if _is_reparse_stat(after) or not stat.S_ISREG(after.st_mode):
+            raise BootstrapError("BOOTSTRAP_CONTROL_FILE_INVALID", str(path))
+        identities = {
+            (item.st_dev, item.st_ino, item.st_size, item.st_mtime_ns)
+            for item in (before, opened_before, opened_after, after)
         }
+        if len(identities) != 1 or len(payload) != after.st_size:
+            raise BootstrapError("BOOTSTRAP_CONTROL_CHANGED", str(path))
+        if len(payload) > maximum:
+            raise BootstrapError("BOOTSTRAP_CONTROL_TOO_LARGE", str(path))
+        return payload
+    except BootstrapError:
+        raise
+    except OSError as exc:
+        raise BootstrapError("BOOTSTRAP_CONTROL_INVALID", f"{path}: {exc}") from exc
+
+
+def _load_json_with_identity(
+    path: Path, *, maximum: int = MAX_CONTROL_BYTES
+) -> tuple[dict[str, Any], str]:
+    payload = _regular_control_bytes(path, maximum=maximum)
+    try:
+        value = json.loads(
+            payload.decode("utf-8"),
+            parse_constant=lambda token: (_ for _ in ()).throw(
+                ValueError(f"non-finite JSON number forbidden: {token}")
+            ),
+            parse_int=_strict_int,
+            parse_float=_strict_float,
+            object_pairs_hook=_strict_object,
+        )
+        _validate_shape(value)
+    except BootstrapError:
+        raise
+    except (OSError, UnicodeError, ValueError, json.JSONDecodeError, RecursionError) as exc:
+        raise BootstrapError("BOOTSTRAP_CONTROL_INVALID", f"{path}: {exc}") from exc
+    if not isinstance(value, dict):
+        raise BootstrapError("BOOTSTRAP_CONTROL_INVALID", f"object required: {path}")
+    return value, _sha256_bytes(payload)
+
+
+def _load_json(path: Path) -> dict[str, Any]:
+    return _load_json_with_identity(path)[0]
+
+
+def _normalized_path(path: Path) -> str:
+    return os.path.normcase(os.path.abspath(path))
+
+
+def _require_plain_directory(path: Path, reason_code: str) -> None:
+    try:
+        observed = os.lstat(path)
+    except OSError as exc:
+        raise BootstrapError(reason_code, f"{path}: {exc}") from exc
+    if _is_reparse_stat(observed) or not stat.S_ISDIR(observed.st_mode):
+        raise BootstrapError(reason_code, str(path))
+
+
+def _validate_active_ref_shape(
+    value: object,
+    *,
+    state_root: Path,
+    reason_code: str = "RELEASE_REF_INVALID",
+) -> dict[str, Any]:
+    if not isinstance(value, dict) or set(value) != ACTIVE_REF_KEYS:
+        raise BootstrapError(reason_code, str(value)[:2000])
+    release_id = value.get("release_id")
+    txn_id = value.get("activation_txn_id")
+    if not isinstance(release_id, str) or RELEASE_ID_PATTERN.fullmatch(release_id) is None:
+        raise BootstrapError("RELEASE_IDENTITY_INVALID", str(release_id))
+    if not isinstance(txn_id, str) or TXN_ID_PATTERN.fullmatch(txn_id) is None:
+        raise BootstrapError("ACTIVATION_TRANSACTION_ID_INVALID", str(txn_id))
+    manifest_value = value.get("release_manifest_path")
+    if not isinstance(manifest_value, str):
+        raise BootstrapError("RELEASE_MANIFEST_PATH_INVALID", str(manifest_value))
+    manifest_path = Path(manifest_value)
+    expected_manifest_path = (
+        state_root / "researcher_container" / "releases" / release_id / "release.json"
     )
-    identity = {
-        "source_commit": commit,
-        "source_tree": tree,
-        "source_dirty": bool(status),
-        "grok_donor_image_id": observed_donor_id,
-        **hashes,
+    if _normalized_path(manifest_path) != _normalized_path(expected_manifest_path):
+        raise BootstrapError("RELEASE_MANIFEST_PATH_INVALID", str(manifest_path))
+    for key in (
+        "release_manifest_sha256",
+        "skill_bundle_manifest_sha256",
+        "skill_bundle_tree_sha256",
+    ):
+        observed = value.get(key)
+        if not isinstance(observed, str) or HEX_SHA256_PATTERN.fullmatch(observed) is None:
+            raise BootstrapError("RELEASE_REF_INVALID", key)
+    for key in ("capability_version", "package_version"):
+        observed = value.get(key)
+        if not isinstance(observed, str) or SEMVER_PATTERN.fullmatch(observed) is None:
+            raise BootstrapError("RELEASE_REF_INVALID", key)
+    if value.get("required_bootstrap_protocol") != 2:
+        raise BootstrapError("BOOTSTRAP_PROTOCOL_UNSUPPORTED", release_id)
+    return value
+
+
+def _validate_journal_shape(
+    journal: dict[str, Any],
+    *,
+    journal_path: Path,
+    state_root: Path,
+) -> None:
+    if (
+        set(journal) != JOURNAL_KEYS
+        or journal.get("schema_version") != "xinao.researcher_activation_journal.v1"
+    ):
+        raise BootstrapError("ACTIVATION_JOURNAL_SCHEMA_INVALID", str(journal_path))
+    txn_id = journal.get("txn_id")
+    if not isinstance(txn_id, str) or TXN_ID_PATTERN.fullmatch(txn_id) is None:
+        raise BootstrapError("ACTIVATION_TRANSACTION_ID_INVALID", str(txn_id))
+    expected_path = (
+        state_root / "researcher_container" / "transactions" / txn_id / "activation.v1.json"
+    )
+    if _normalized_path(journal_path) != _normalized_path(expected_path):
+        raise BootstrapError("ACTIVATION_TRANSACTION_BINDING_MISMATCH", str(journal_path))
+    revision = journal.get("revision")
+    if type(revision) is not int or revision < 1:
+        raise BootstrapError("ACTIVATION_JOURNAL_REVISION_INVALID", str(revision))
+    if journal.get("operation") not in {"ACTIVATE", "ROLLBACK"}:
+        raise BootstrapError("ACTIVATION_OPERATION_INVALID", str(journal.get("operation")))
+    valid_states = PENDING_ACTIVATION_STATES | TERMINAL_ACTIVATION_STATES | {"RECOVERY_CONFLICT"}
+    if journal.get("state") not in valid_states:
+        raise BootstrapError("ACTIVATION_STATE_INVALID", str(journal.get("state")))
+    generation = journal.get("expected_generation")
+    if type(generation) is not int or generation < 1:
+        raise BootstrapError("ACTIVATION_GENERATION_INVALID", str(generation))
+    for key in ("prepared_at", "updated_at"):
+        observed = journal.get(key)
+        if not isinstance(observed, str) or not observed or len(observed) > 128:
+            raise BootstrapError("ACTIVATION_JOURNAL_SCHEMA_INVALID", key)
+    requested_to = _validate_active_ref_shape(journal.get("requested_to"), state_root=state_root)
+    target = _validate_active_ref_shape(journal.get("to"), state_root=state_root)
+    if requested_to.get("activation_txn_id") != txn_id or target.get("activation_txn_id") != txn_id:
+        raise BootstrapError("ACTIVATION_TRANSACTION_BINDING_MISMATCH", txn_id)
+    from_value = journal.get("from")
+    if from_value is not None:
+        if not isinstance(from_value, dict) or set(from_value) != {
+            "generation",
+            "pointer_sha256",
+            "active",
+            "previous_verified",
+        }:
+            raise BootstrapError("ACTIVATION_SOURCE_INVALID", txn_id)
+        source_generation = from_value.get("generation")
+        if type(source_generation) is not int or source_generation < 1:
+            raise BootstrapError("ACTIVATION_SOURCE_INVALID", "generation")
+        source_pointer_sha256 = from_value.get("pointer_sha256")
+        if (
+            not isinstance(source_pointer_sha256, str)
+            or HEX_SHA256_PATTERN.fullmatch(source_pointer_sha256) is None
+        ):
+            raise BootstrapError("ACTIVATION_SOURCE_INVALID", "pointer_sha256")
+        _validate_active_ref_shape(from_value.get("active"), state_root=state_root)
+        if from_value.get("previous_verified") is not None:
+            _validate_active_ref_shape(from_value.get("previous_verified"), state_root=state_root)
+    for key in ("switched_pointer_sha256", "terminal_pointer_sha256"):
+        observed = journal.get(key)
+        if observed is not None and (
+            not isinstance(observed, str) or HEX_SHA256_PATTERN.fullmatch(observed) is None
+        ):
+            raise BootstrapError("ACTIVATION_JOURNAL_SCHEMA_INVALID", key)
+    if journal.get("canary") is not None and not isinstance(journal.get("canary"), dict):
+        raise BootstrapError("ACTIVATION_JOURNAL_SCHEMA_INVALID", "canary")
+    if journal.get("failure_reason") is not None and not isinstance(
+        journal.get("failure_reason"), dict
+    ):
+        raise BootstrapError("ACTIVATION_JOURNAL_SCHEMA_INVALID", "failure_reason")
+
+
+def _release_identity_payload(manifest: dict[str, Any]) -> dict[str, Any]:
+    source_identity = manifest.get("source_identity") or {}
+    return {
+        "package_version": manifest.get("package_version"),
+        "capability_id": manifest.get("capability_id"),
+        "capability_version": manifest.get("capability_version"),
+        "charter_version": manifest.get("charter_version"),
+        "runtime_version": manifest.get("runtime_version"),
+        "grok_donor_image_id": source_identity.get("grok_donor_image_id"),
+        "skill_bundle_tree_sha256": manifest.get("skill_bundle_tree_sha256"),
+        "image_id": manifest.get("image_id"),
+        "image_entrypoint": manifest.get("image_entrypoint"),
+        "image_labels": manifest.get("image_labels"),
+        "required_bootstrap_protocol": manifest.get("required_bootstrap_protocol"),
+        "generic_worker_route_allowed": manifest.get("generic_worker_route_allowed"),
+        "state_namespace": manifest.get("state_namespace"),
+        "run_namespace": manifest.get("run_namespace"),
     }
-    identity_sha = _sha256_bytes(_canonical_bytes(identity))
-    release_id = f"researcher-1.0.0-{identity_sha[:16]}"
-    image_tag = f"xinao-researcher:{release_id}"
-    build_args = [
-        docker,
-        "build",
-        "--file",
-        str(dockerfile),
-        "--tag",
-        image_tag,
-        "--build-arg",
-        f"GROK_DONOR_IMAGE={donor}",
-        "--build-arg",
-        f"GROK_DONOR_IMAGE_ID={observed_donor_id}",
-        "--build-arg",
-        f"CHARTER_SHA256={hashes['charter_sha256']}",
-        "--build-arg",
-        f"OUTPUT_SCHEMA_SHA256={hashes['output_schema_sha256']}",
-        "--build-arg",
-        f"RUNTIME_LOCK_SHA256={hashes['runtime_lock_sha256']}",
-        "--build-arg",
-        f"SKILL_INVOKER_SHA256={hashes['skill_invoker_sha256']}",
-        str(source_root),
-    ]
-    _run(build_args, cwd=source_root, timeout=1800)
-    image = _docker_image(docker, image_tag)
-    image_id = str(image.get("Id", ""))
-    labels = (image.get("Config") or {}).get("Labels") or {}
+
+
+def _validate_release_manifest_shape(
+    manifest: dict[str, Any],
+    *,
+    manifest_path: Path,
+    state_root: Path,
+) -> None:
+    if (
+        set(manifest) != RELEASE_KEYS
+        or manifest.get("schema_version") != "xinao.researcher_release.v2"
+    ):
+        raise BootstrapError("RELEASE_SCHEMA_INVALID", str(manifest_path))
+    package_version = manifest.get("package_version")
+    capability_version = manifest.get("capability_version")
+    charter_version = manifest.get("charter_version")
+    runtime_version = manifest.get("runtime_version")
+    if not isinstance(package_version, str) or SEMVER_PATTERN.fullmatch(package_version) is None:
+        raise BootstrapError("SKILL_VERSION_INVALID", str(package_version))
+    if (
+        not isinstance(capability_version, str)
+        or SEMVER_PATTERN.fullmatch(capability_version) is None
+        or capability_version != charter_version
+        or capability_version != runtime_version
+    ):
+        raise BootstrapError(
+            "RESEARCHER_VERSION_IDENTITY_MISMATCH",
+            f"capability={capability_version} charter={charter_version} runtime={runtime_version}",
+        )
+    if manifest.get("capability_id") != "researcher-container":
+        raise BootstrapError(
+            "RELEASE_CAPABILITY_IDENTITY_INVALID", str(manifest.get("capability_id"))
+        )
+    source_identity = manifest.get("source_identity")
+    if not isinstance(source_identity, dict) or set(source_identity) != {
+        "source_commit",
+        "source_tree",
+        "source_dirty",
+        "grok_donor_image_id",
+    }:
+        raise BootstrapError("RELEASE_SOURCE_IDENTITY_INVALID", str(manifest_path))
+    if source_identity.get("source_dirty") is not False:
+        raise BootstrapError("DIRTY_RELEASE_ACTIVATION_FORBIDDEN", str(manifest_path))
+    for key in ("source_commit", "source_tree"):
+        observed = source_identity.get(key)
+        if not isinstance(observed, str) or re.fullmatch(r"[0-9a-f]{40,64}", observed) is None:
+            raise BootstrapError("RELEASE_SOURCE_IDENTITY_INVALID", key)
+    donor_id = source_identity.get("grok_donor_image_id")
+    if not isinstance(donor_id, str) or re.fullmatch(r"sha256:[0-9a-f]{64}", donor_id) is None:
+        raise BootstrapError("RELEASE_DONOR_IDENTITY_MISSING", str(donor_id))
+    if (
+        manifest.get("required_bootstrap_protocol") != 2
+        or manifest.get("generic_worker_route_allowed") is not False
+    ):
+        raise BootstrapError("RELEASE_CHAIN_CLASS_INVALID", str(manifest_path))
+    if (
+        manifest.get("state_namespace") != "xinao_skill/researcher_container"
+        or manifest.get("run_namespace") != "xinao_researcher"
+    ):
+        raise BootstrapError("CROSS_CHAIN_NAMESPACE_FORBIDDEN", str(manifest_path))
+    for value in (manifest.get("state_namespace"), manifest.get("run_namespace")):
+        normalized = str(value).lower().replace("-", "_")
+        if any(token in normalized for token in FORBIDDEN_RUNTIME_TOKENS):
+            raise BootstrapError("CROSS_CHAIN_NAMESPACE_FORBIDDEN", str(value))
+    image_id = manifest.get("image_id")
+    if not isinstance(image_id, str) or re.fullmatch(r"sha256:[0-9a-f]{64}", image_id) is None:
+        raise BootstrapError("RELEASE_IMAGE_IDENTITY_INVALID", str(image_id))
+    if manifest.get("image_entrypoint") != [
+        "python",
+        "-I",
+        "/opt/xinao-researcher/entrypoint.py",
+    ]:
+        raise BootstrapError("RELEASE_IMAGE_IDENTITY_INVALID", "image_entrypoint")
+    image_tag = manifest.get("image_tag_observational")
+    if not isinstance(image_tag, str) or not image_tag or len(image_tag) > 256:
+        raise BootstrapError("RELEASE_IMAGE_IDENTITY_INVALID", "image_tag_observational")
+    labels = manifest.get("image_labels")
+    if not isinstance(labels, dict) or set(labels) != IMAGE_LABEL_KEYS:
+        raise BootstrapError("RELEASE_IMAGE_IDENTITY_INVALID", "image_labels")
+    hashes = manifest.get("skill_hashes")
+    if not isinstance(hashes, dict) or set(hashes) != set(SKILL_HASH_PATHS):
+        raise BootstrapError("RELEASE_SKILL_HASHES_MISMATCH", str(manifest_path))
+    for key, value in hashes.items():
+        if not isinstance(value, str) or HEX_SHA256_PATTERN.fullmatch(value) is None:
+            raise BootstrapError("RELEASE_SKILL_HASHES_MISMATCH", key)
+    source_identity_sha256 = _sha256_bytes(_canonical_bytes(source_identity))
     expected_labels = {
         "io.xinao.researcher.chain": "dedicated-xinao-science",
         "io.xinao.researcher.generic-worker-route": "forbidden",
-        "io.xinao.researcher.grok-donor-image-id": observed_donor_id,
+        "io.xinao.researcher.grok-donor-image-id": donor_id,
         "io.xinao.researcher.charter.sha256": hashes["charter_sha256"],
         "io.xinao.researcher.output-schema.sha256": hashes["output_schema_sha256"],
+        "io.xinao.researcher.material-bundle-schema.sha256": hashes[
+            "material_bundle_schema_sha256"
+        ],
         "io.xinao.researcher.runtime-lock.sha256": hashes["runtime_lock_sha256"],
         "io.xinao.researcher.skill-invoker.sha256": hashes["skill_invoker_sha256"],
+        "io.xinao.researcher.dockerfile.sha256": labels.get(
+            "io.xinao.researcher.dockerfile.sha256"
+        ),
+        "io.xinao.researcher.entrypoint.sha256": labels.get(
+            "io.xinao.researcher.entrypoint.sha256"
+        ),
+        "io.xinao.researcher.source-identity.sha256": source_identity_sha256,
+        "io.xinao.researcher.requested-model": "grok-4.5",
     }
-    if any(labels.get(key) != value for key, value in expected_labels.items()):
-        raise XinaoError("IMAGE_LABEL_IDENTITY_MISMATCH", image_id)
-    state_root, _ = _state_roots()
-    release_dir = state_root / "researcher_container" / "releases" / release_id
-    manifest_path = release_dir / "release.json"
-    candidate_manifest = {
-        "schema_version": "xinao.researcher_release.v1",
-        "release_id": release_id,
-        "created_at": _utc_now(),
-        "source_identity": identity,
-        "image_tag_observational": image_tag,
-        "image_id": image_id,
-        "image_entrypoint": (image.get("Config") or {}).get("Entrypoint"),
-        "image_labels": expected_labels,
-        "skill_hashes": hashes,
-        "generic_worker_route_allowed": False,
-        "state_namespace": "xinao_skill/researcher_container",
-        "run_namespace": "xinao_researcher",
-    }
-    if manifest_path.exists():
-        manifest = _load_json(manifest_path)
-        stable_fields = (
-            "schema_version",
-            "release_id",
-            "source_identity",
-            "image_id",
-            "image_labels",
-            "skill_hashes",
-            "generic_worker_route_allowed",
-            "state_namespace",
-            "run_namespace",
-        )
-        if any(manifest.get(key) != candidate_manifest.get(key) for key in stable_fields):
-            raise XinaoError("RELEASE_ID_COLLISION", str(manifest_path))
-    else:
-        manifest = candidate_manifest
-        _write_json_atomic(manifest_path, manifest, create_new=True)
-    manifest_sha = _sha256(manifest_path)
-    if promote:
-        pointer_path = state_root / "researcher_container" / "current.json"
-        previous_pointer_sha256 = _sha256(pointer_path) if pointer_path.is_file() else None
-        previous_pointer = _load_json(pointer_path) if pointer_path.is_file() else {}
-        pointer = {
-            "schema_version": "xinao.researcher_current_pointer.v1",
-            "release_id": release_id,
-            "release_manifest_path": str(manifest_path),
-            "release_manifest_sha256": manifest_sha,
-            "promoted_at": _utc_now(),
-            "previous_pointer_sha256": previous_pointer_sha256,
-            "previous_release_id": previous_pointer.get("release_id"),
-            "previous_release_manifest_path": previous_pointer.get("release_manifest_path"),
-            "previous_release_manifest_sha256": previous_pointer.get("release_manifest_sha256"),
-        }
-        observed_pointer_sha256 = _sha256(pointer_path) if pointer_path.is_file() else None
-        if observed_pointer_sha256 != previous_pointer_sha256:
-            raise XinaoError("CURRENT_POINTER_CAS_CONFLICT", str(pointer_path))
-        _write_json_atomic(pointer_path, pointer)
-    return {
-        "schema_version": "xinao.researcher_build_receipt.v1",
-        "release_id": release_id,
-        "image_id": image_id,
-        "release_manifest_path": str(manifest_path),
-        "release_manifest_sha256": manifest_sha,
-        "promoted": promote,
-        "source_dirty": bool(status),
-        "completion_claim_allowed": False,
-    }
-
-
-def rollback_release() -> dict[str, Any]:
-    state_root, _ = _state_roots()
-    pointer_path = state_root / "researcher_container" / "current.json"
-    current = _load_json(pointer_path)
-    current_sha256 = _sha256(pointer_path)
-    previous_path = Path(str(current.get("previous_release_manifest_path", "")))
-    previous_sha256 = str(current.get("previous_release_manifest_sha256", ""))
-    previous_release_id = str(current.get("previous_release_id", ""))
-    if not previous_release_id or not previous_path.is_file():
-        raise XinaoError("ROLLBACK_TARGET_ABSENT", str(pointer_path))
-    if _sha256(previous_path) != previous_sha256:
-        raise XinaoError("ROLLBACK_TARGET_IDENTITY_MISMATCH", str(previous_path))
-    previous_manifest = _load_json(previous_path)
-    if previous_manifest.get("release_id") != previous_release_id:
-        raise XinaoError("ROLLBACK_TARGET_RELEASE_MISMATCH", previous_release_id)
-    if _sha256(pointer_path) != current_sha256:
-        raise XinaoError("CURRENT_POINTER_CAS_CONFLICT", str(pointer_path))
-    pointer = {
-        "schema_version": "xinao.researcher_current_pointer.v1",
-        "release_id": previous_release_id,
-        "release_manifest_path": str(previous_path),
-        "release_manifest_sha256": previous_sha256,
-        "promoted_at": _utc_now(),
-        "previous_pointer_sha256": current_sha256,
-        "previous_release_id": current.get("release_id"),
-        "previous_release_manifest_path": current.get("release_manifest_path"),
-        "previous_release_manifest_sha256": current.get("release_manifest_sha256"),
-    }
-    _write_json_atomic(pointer_path, pointer)
-    return {
-        "schema_version": "xinao.researcher_rollback_receipt.v1",
-        "status": "ROLLED_BACK",
-        "release_id": previous_release_id,
-        "release_manifest_sha256": previous_sha256,
-        "current_pointer_sha256": _sha256(pointer_path),
-        "completion_claim_allowed": False,
-    }
-
-
-def _compile_prompt(question: str, as_of: str, charter: dict[str, Any]) -> str:
-    return (
-        "You are one XINAO scientific researcher in a bounded candidate-only episode.\n"
-        "Research freely: there is no topic whitelist and no required family binding. The seven-family "
-        "weights below are advisory attention only. The ACTION support reference is downstream and must "
-        "not filter, coerce, or discard research. Do not create accounts, tickets, freezes, settlements, "
-        "replays, real-money actions, SCIENCE_RESTORED, or parent-completion claims. Use no tools.\n\n"
-        f"As-of: {as_of}\n"
-        f"Research question: {question}\n\n"
-        "Charter:\n"
-        f"{json.dumps(charter, ensure_ascii=False, sort_keys=True)}\n\n"
-        "Return only the JSON object required by the supplied schema. Preserve an out-of-domain finding "
-        "as research and mark current_action_projection UNSUPPORTED or NOT_ASSESSED instead of mapping it "
-        "to the nearest family."
-    )
-
-
-def _validate_release_for_invoke(release: dict[str, Any]) -> tuple[str, dict[str, Any]]:
-    _validate_registry()
-    charter = _validate_charter()
-    if release.get("generic_worker_route_allowed") is not False:
-        raise XinaoError("RELEASE_CHAIN_CLASS_INVALID", "generic worker route is not forbidden")
-    for value in (
-        str(release.get("state_namespace", "")),
-        str(release.get("run_namespace", "")),
+    if labels != expected_labels:
+        raise BootstrapError("RELEASE_IMAGE_IDENTITY_INVALID", "image_labels")
+    for key in (
+        "io.xinao.researcher.dockerfile.sha256",
+        "io.xinao.researcher.entrypoint.sha256",
     ):
-        normalized = value.lower().replace("-", "_")
-        if any(token in normalized for token in FORBIDDEN_RUNTIME_TOKENS):
-            raise XinaoError("CROSS_CHAIN_NAMESPACE_FORBIDDEN", value)
-    observed_hashes = _reference_hashes()
-    expected_hashes = release.get("skill_hashes")
-    if not isinstance(expected_hashes, dict):
-        raise XinaoError("RELEASE_SKILL_HASHES_MISSING", "skill_hashes")
-    for key, value in observed_hashes.items():
-        if expected_hashes.get(key) != value:
-            raise XinaoError("INSTALLED_SKILL_DRIFT", key)
-    docker = _docker()
-    image_id = str(release.get("image_id", ""))
-    image = _docker_image(docker, image_id)
-    if image.get("Id") != image_id:
-        raise XinaoError("IMAGE_IDENTITY_MISMATCH", image_id)
-    labels = (image.get("Config") or {}).get("Labels") or {}
-    if labels.get("io.xinao.researcher.chain") != "dedicated-xinao-science":
-        raise XinaoError("IMAGE_CHAIN_LABEL_INVALID", image_id)
-    if labels.get("io.xinao.researcher.generic-worker-route") != "forbidden":
-        raise XinaoError("IMAGE_GENERIC_ROUTE_NOT_FORBIDDEN", image_id)
-    return docker, charter
+        if HEX_SHA256_PATTERN.fullmatch(str(labels.get(key, ""))) is None:
+            raise BootstrapError("RELEASE_IMAGE_IDENTITY_INVALID", key)
+    for key in (
+        "skill_bundle_manifest_sha256",
+        "skill_bundle_tree_sha256",
+        "release_identity_sha256",
+    ):
+        observed = manifest.get(key)
+        if not isinstance(observed, str) or HEX_SHA256_PATTERN.fullmatch(observed) is None:
+            raise BootstrapError("RELEASE_IDENTITY_MISMATCH", key)
+    identity_sha256 = _sha256_bytes(_canonical_bytes(_release_identity_payload(manifest)))
+    if manifest.get("release_identity_sha256") != identity_sha256:
+        raise BootstrapError("RELEASE_IDENTITY_MISMATCH", str(manifest_path))
+    expected_release_id = f"researcher-{capability_version}-{identity_sha256[:16]}"
+    if manifest.get("release_id") != expected_release_id:
+        raise BootstrapError("RELEASE_IDENTITY_INVALID", str(manifest.get("release_id")))
+    expected_manifest_path = (
+        state_root / "researcher_container" / "releases" / expected_release_id / "release.json"
+    )
+    if _normalized_path(manifest_path) != _normalized_path(expected_manifest_path):
+        raise BootstrapError("RELEASE_MANIFEST_PATH_INVALID", str(manifest_path))
 
 
-def _mount_source(mount: dict[str, Any]) -> str:
-    return str(mount.get("Source", "")).lower().replace("\\", "/")
-
-
-def _validate_container_inspect(
-    inspect: dict[str, Any],
-    *,
-    image_id: str,
-    input_root: Path,
-    output_root: Path,
-    auth_path: Path,
-) -> None:
-    host = inspect.get("HostConfig") or {}
-    config = inspect.get("Config") or {}
-    if inspect.get("Image") != image_id:
-        raise XinaoError("CONTAINER_IMAGE_IDENTITY_MISMATCH", str(inspect.get("Image")))
-    if host.get("ReadonlyRootfs") is not True:
-        raise XinaoError("CONTAINER_ROOTFS_NOT_READ_ONLY", "ReadonlyRootfs")
-    if "ALL" not in (host.get("CapDrop") or []):
-        raise XinaoError("CONTAINER_CAP_DROP_INVALID", str(host.get("CapDrop")))
-    if "no-new-privileges:true" not in (host.get("SecurityOpt") or []):
-        raise XinaoError("CONTAINER_NO_NEW_PRIVILEGES_MISSING", str(host.get("SecurityOpt")))
-    if host.get("NetworkMode") != "bridge":
-        raise XinaoError("CONTAINER_NETWORK_PROFILE_INVALID", str(host.get("NetworkMode")))
-    if config.get("Env") is None or "XINAO_CHAIN_CLASS=scientific_researcher" not in config["Env"]:
-        raise XinaoError("CONTAINER_CHAIN_IDENTITY_MISSING", "XINAO_CHAIN_CLASS")
-    mounts = inspect.get("Mounts") or []
-    observed = {_mount_source(item): (item.get("Destination"), item.get("RW")) for item in mounts}
-    expected = {
-        str(input_root).lower().replace("\\", "/"): ("/input", False),
-        str(output_root).lower().replace("\\", "/"): ("/output", True),
-        str(auth_path).lower().replace("\\", "/"): ("/grok-home/auth.json", False),
-    }
+def _validate_release_skill_hashes(manifest: dict[str, Any], bundle_root: Path) -> None:
+    expected = manifest["skill_hashes"]
+    observed: dict[str, str] = {}
+    for key, relative in SKILL_HASH_PATHS.items():
+        payload = _regular_control_bytes(
+            bundle_root / Path(relative), maximum=MAX_BUNDLE_FILE_BYTES
+        )
+        observed[key] = _sha256_bytes(payload)
     if observed != expected:
-        raise XinaoError("CONTAINER_MOUNT_SET_INVALID", json.dumps(observed, sort_keys=True))
-    forbidden_fragments = ("/desktop/", "/主线/", "/codex_task_runs/", "/grok_worker_pool/")
-    if any(fragment in source for source in observed for fragment in forbidden_fragments):
-        raise XinaoError("CONTAINER_FORBIDDEN_MOUNT", json.dumps(observed, sort_keys=True))
+        raise BootstrapError("RELEASE_SKILL_HASHES_MISMATCH", str(bundle_root))
 
 
-def _provider_effect_valid(result: dict[str, Any]) -> bool:
-    usage = result.get("usage")
-    model_usage = result.get("provider_model_usage")
-    return (
-        result.get("provider_stop_reason") == "EndTurn"
-        and isinstance(result.get("provider_num_turns"), int)
-        and result["provider_num_turns"] >= 1
-        and result.get("provider_session_id_present") is True
-        and result.get("provider_request_id_present") is True
-        and isinstance(usage, dict)
-        and isinstance(usage.get("total_tokens"), int)
-        and usage["total_tokens"] > 0
-        and isinstance(model_usage, dict)
-        and bool(model_usage)
-    )
-
-
-def research(question: str, as_of: str | None) -> dict[str, Any]:
-    question = question.strip()
-    if not question:
-        raise XinaoError("RESEARCH_QUESTION_INVALID", "question is empty")
-    if len(question.encode("utf-8")) > 128 * 1024:
-        raise XinaoError("RESEARCH_QUESTION_TOO_LARGE", "question exceeds 128 KiB")
-    release, manifest_path, pointer_sha = _current_release()
-    docker, charter = _validate_release_for_invoke(release)
-    if not DEFAULT_AUTH_PATH.is_file():
-        raise XinaoError("GROK_AUTH_HANDLE_MISSING", str(DEFAULT_AUTH_PATH))
-    auth_sha_before = _sha256(DEFAULT_AUTH_PATH)
-    observed_os = _run([docker, "info", "--format", "{{json .OSType}}"], timeout=60).stdout.strip()
-    if observed_os != '"linux"':
-        raise XinaoError("LINUX_CONTAINER_ENGINE_REQUIRED", observed_os)
-
-    _, run_root = _state_roots()
-    run_id = (
-        "xrr_" + dt.datetime.now(dt.UTC).strftime("%Y%m%dT%H%M%S") + "_" + uuid.uuid4().hex[:10]
-    )
-    root = run_root / run_id
-    input_root = root / "input"
-    output_root = root / "output"
-    input_root.mkdir(parents=True, exist_ok=False)
-    output_root.mkdir(parents=True, exist_ok=False)
-    effective_as_of = as_of or _utc_now()
-    request = {
-        "schema_version": "xinao.research_request.v1",
-        "research_question": question,
-        "as_of": effective_as_of,
-    }
-    _write_json_atomic(input_root / "request.json", request, create_new=True)
-    (input_root / "prompt.md").write_text(
-        _compile_prompt(question, effective_as_of, charter), encoding="utf-8"
-    )
-    shutil.copyfile(OUTPUT_SCHEMA_PATH, input_root / "output.schema.json")
-
-    image_id = str(release["image_id"])
-    name = "xinao-researcher-" + run_id.lower().replace("_", "-")
-    create = _run(
-        [
-            docker,
-            "create",
-            "--name",
-            name,
-            "--read-only",
-            "--cap-drop",
-            "ALL",
-            "--security-opt",
-            "no-new-privileges:true",
-            "--pids-limit",
-            "128",
-            "--memory",
-            "2g",
-            "--cpus",
-            "2",
-            "--network",
-            "bridge",
-            "--tmpfs",
-            "/tmp:rw,nosuid,nodev,size=256m,mode=1777",
-            "--tmpfs",
-            "/grok-home:rw,nosuid,nodev,size=256m,mode=0700",
-            "--env",
-            "XINAO_CHAIN_CLASS=scientific_researcher",
-            "--mount",
-            f"type=bind,source={input_root},target=/input,readonly",
-            "--mount",
-            f"type=bind,source={output_root},target=/output",
-            "--mount",
-            f"type=bind,source={DEFAULT_AUTH_PATH},target=/grok-home/auth.json,readonly",
-            image_id,
-        ],
-        timeout=120,
-    )
-    container_id = create.stdout.strip()
-    if not container_id:
-        raise XinaoError("CONTAINER_CREATE_OUTPUT_INVALID", create.stdout)
-    terminal: dict[str, Any] = {}
+@contextmanager
+def _activation_lock(state_root: Path):
+    _require_plain_directory(state_root, "STATE_ROOT_INVALID")
+    _require_plain_directory(state_root / "researcher_container", "STATE_ROOT_INVALID")
+    lock_path = state_root / "researcher_container" / ".activation.lock"
     try:
-        inspected_values = json.loads(_run([docker, "inspect", container_id]).stdout)
-        if not isinstance(inspected_values, list) or len(inspected_values) != 1:
-            raise XinaoError("CONTAINER_INSPECT_INVALID", container_id)
-        inspected = inspected_values[0]
-        _validate_container_inspect(
-            inspected,
-            image_id=image_id,
-            input_root=input_root,
-            output_root=output_root,
-            auth_path=DEFAULT_AUTH_PATH,
-        )
-        started = _run([docker, "start", "--attach", container_id], timeout=1000, check=False)
-        terminal_values = json.loads(_run([docker, "inspect", container_id]).stdout)
-        terminal = terminal_values[0].get("State") or {}
-        if started.returncode != 0:
-            raise XinaoError(
-                "CONTAINER_RUNTIME_FAILED",
-                f"exit={started.returncode} stderr={started.stderr[:2000]}",
-            )
+        before = os.lstat(lock_path)
+    except OSError as exc:
+        raise BootstrapError("ACTIVATION_LOCK_MISSING", f"{lock_path}: {exc}") from exc
+    if (
+        _is_reparse_stat(before)
+        or not stat.S_ISREG(before.st_mode)
+        or before.st_nlink != 1
+        or before.st_size < 1
+    ):
+        raise BootstrapError("ACTIVATION_LOCK_INVALID", str(lock_path))
+    try:
+        stream = lock_path.open("r+b", buffering=0)
+    except OSError as exc:
+        raise BootstrapError("ACTIVATION_LOCK_OPEN_FAILED", f"{lock_path}: {exc}") from exc
+    locked = False
+    deadline = time.monotonic() + 30.0
+    try:
+        opened = os.fstat(stream.fileno())
+        if (opened.st_dev, opened.st_ino) != (before.st_dev, before.st_ino):
+            raise BootstrapError("ACTIVATION_LOCK_CHANGED", str(lock_path))
+        while not locked:
+            try:
+                stream.seek(0)
+                if os.name == "nt":
+                    import msvcrt
+
+                    msvcrt.locking(stream.fileno(), msvcrt.LK_NBLCK, 1)
+                else:
+                    import fcntl
+
+                    fcntl.flock(stream.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+                locked = True
+            except OSError as exc:
+                if time.monotonic() >= deadline:
+                    raise BootstrapError("ACTIVATION_LOCK_TIMEOUT", f"{lock_path}: {exc}") from exc
+                time.sleep(0.05)
+        after = os.lstat(lock_path)
+        if _is_reparse_stat(after) or (after.st_dev, after.st_ino) != (
+            opened.st_dev,
+            opened.st_ino,
+        ):
+            raise BootstrapError("ACTIVATION_LOCK_CHANGED", str(lock_path))
+        yield
     finally:
-        _run([docker, "rm", "--force", container_id], timeout=60, check=False)
-    if _sha256(DEFAULT_AUTH_PATH) != auth_sha_before:
-        raise XinaoError("GROK_AUTH_HANDLE_MUTATED", str(DEFAULT_AUTH_PATH))
-    result_path = output_root / "result.json"
-    result = _load_json(result_path)
-    if result.get("status") not in {"CANDIDATE_READY", "EXPLICIT_NO_ACTION"}:
-        raise XinaoError(
-            "RESEARCH_RESULT_NOT_ACCEPTED", json.dumps(result, ensure_ascii=False)[:2000]
+        if locked:
+            try:
+                stream.seek(0)
+                if os.name == "nt":
+                    import msvcrt
+
+                    msvcrt.locking(stream.fileno(), msvcrt.LK_UNLCK, 1)
+                else:
+                    import fcntl
+
+                    fcntl.flock(stream.fileno(), fcntl.LOCK_UN)
+            except OSError:
+                pass
+        stream.close()
+
+
+def _pending_activation_journals(state_root: Path) -> list[dict[str, Any]]:
+    transactions_root = state_root / "researcher_container" / "transactions"
+    if not os.path.lexists(transactions_root):
+        return []
+    _require_plain_directory(transactions_root, "TRANSACTION_ROOT_INVALID")
+    pending: list[dict[str, Any]] = []
+    entries: list[os.DirEntry[str]] = []
+    try:
+        with os.scandir(transactions_root) as iterator:
+            for entry in iterator:
+                entries.append(entry)
+                if len(entries) > 10000:
+                    raise BootstrapError("TRANSACTION_SET_TOO_LARGE", str(transactions_root))
+    except BootstrapError:
+        raise
+    except OSError as exc:
+        raise BootstrapError("TRANSACTION_ROOT_INVALID", f"{transactions_root}: {exc}") from exc
+    entries.sort(key=lambda item: item.name)
+    for entry in entries:
+        try:
+            entry_stat = os.lstat(entry.path)
+        except OSError as exc:
+            raise BootstrapError("TRANSACTION_ENTRY_INVALID", f"{entry.path}: {exc}") from exc
+        if _is_reparse_stat(entry_stat):
+            raise BootstrapError("TRANSACTION_REPARSE_FORBIDDEN", entry.path)
+        if not stat.S_ISDIR(entry_stat.st_mode):
+            raise BootstrapError("TRANSACTION_ENTRY_INVALID", entry.path)
+        journal_path = Path(entry.path) / "activation.v1.json"
+        if not os.path.lexists(journal_path):
+            continue
+        if TXN_ID_PATTERN.fullmatch(entry.name) is None:
+            raise BootstrapError("ACTIVATION_TRANSACTION_ID_INVALID", entry.name)
+        journal = _load_json(journal_path)
+        _validate_journal_shape(
+            journal,
+            journal_path=journal_path,
+            state_root=state_root,
         )
-    if not _provider_effect_valid(result):
-        raise XinaoError("PROVIDER_EFFECT_EVIDENCE_INVALID", str(result_path))
-    host_config = inspected.get("HostConfig") or {}
-    mounts = inspected.get("Mounts") or []
-    receipt = {
-        "schema_version": "xinao.skill_research_receipt.v1",
-        "run_id": run_id,
-        "status": result["status"],
-        "candidate": result.get("candidate"),
-        "reason_codes": result.get("reason_codes", []),
-        "release_id": release["release_id"],
+        if journal.get("state") == "RECOVERY_CONFLICT":
+            raise BootstrapError("RECOVERY_CONFLICT", str(journal.get("txn_id", "")))
+        if journal.get("state") not in TERMINAL_ACTIVATION_STATES:
+            pending.append(journal)
+    return pending
+
+
+def _validate_bundle(
+    *,
+    release_root: Path,
+    manifest: dict[str, Any],
+    active: dict[str, Any],
+) -> tuple[Path, dict[str, Any]]:
+    expected_bundle_root = release_root / "skill-bundle"
+    expected_manifest_path = release_root / "skill-bundle.manifest.json"
+    bundle_root = Path(str(manifest.get("skill_bundle_path", "")))
+    bundle_manifest_path = Path(str(manifest.get("skill_bundle_manifest_path", "")))
+    if _normalized_path(bundle_root) != _normalized_path(expected_bundle_root):
+        raise BootstrapError("SKILL_BUNDLE_PATH_INVALID", str(bundle_root))
+    if _normalized_path(bundle_manifest_path) != _normalized_path(expected_manifest_path):
+        raise BootstrapError("SKILL_BUNDLE_MANIFEST_PATH_INVALID", str(bundle_manifest_path))
+    _require_plain_directory(release_root.parent, "RELEASE_ROOT_INVALID")
+    _require_plain_directory(release_root, "RELEASE_ROOT_INVALID")
+    bundle_manifest, bundle_manifest_sha256 = _load_json_with_identity(
+        bundle_manifest_path, maximum=MAX_MANIFEST_BYTES
+    )
+    expected_manifest_sha256 = manifest.get("skill_bundle_manifest_sha256")
+    if (
+        bundle_manifest_sha256 != expected_manifest_sha256
+        or active.get("skill_bundle_manifest_sha256") != expected_manifest_sha256
+    ):
+        raise BootstrapError("SKILL_BUNDLE_MANIFEST_IDENTITY_MISMATCH", str(bundle_manifest_path))
+    if bundle_manifest.get("schema_version") != "xinao.skill_bundle_manifest.v1":
+        raise BootstrapError("SKILL_BUNDLE_MANIFEST_SCHEMA_INVALID", str(bundle_manifest_path))
+    if set(bundle_manifest) != {
+        "schema_version",
+        "skill_id",
+        "package_version",
+        "files",
+        "tree_sha256",
+    }:
+        raise BootstrapError("SKILL_BUNDLE_MANIFEST_SHAPE_INVALID", str(bundle_manifest_path))
+    if bundle_manifest.get("skill_id") != "xinao":
+        raise BootstrapError("SKILL_BUNDLE_IDENTITY_INVALID", str(bundle_manifest_path))
+    if bundle_manifest.get("package_version") != manifest.get("package_version"):
+        raise BootstrapError("SKILL_BUNDLE_VERSION_MISMATCH", str(bundle_manifest_path))
+    files = bundle_manifest.get("files")
+    if not isinstance(files, list) or not files or len(files) > MAX_BUNDLE_FILES:
+        raise BootstrapError("SKILL_BUNDLE_INVENTORY_INVALID", str(bundle_manifest_path))
+    expected_rows: dict[str, dict[str, Any]] = {}
+    ordered_paths: list[str] = []
+    for row in files:
+        if not isinstance(row, dict) or set(row) != {
+            "relative_path",
+            "type",
+            "size",
+            "sha256",
+        }:
+            raise BootstrapError("SKILL_BUNDLE_INVENTORY_INVALID", str(row)[:500])
+        relative = row.get("relative_path")
+        size = row.get("size")
+        digest = row.get("sha256")
+        if (
+            not isinstance(relative, str)
+            or not relative
+            or "\\" in relative
+            or relative.startswith("/")
+            or any(part in {"", ".", ".."} for part in relative.split("/"))
+            or row.get("type") != "file"
+            or type(size) is not int
+            or size < 0
+            or not isinstance(digest, str)
+            or re.fullmatch(r"[0-9a-f]{64}", digest) is None
+            or relative in expected_rows
+        ):
+            raise BootstrapError("SKILL_BUNDLE_INVENTORY_INVALID", str(row)[:500])
+        ordered_paths.append(relative)
+        expected_rows[relative] = row
+    if ordered_paths != sorted(ordered_paths):
+        raise BootstrapError("SKILL_BUNDLE_INVENTORY_ORDER_INVALID", str(bundle_manifest_path))
+    normalized_paths = [os.path.normcase(value) for value in ordered_paths]
+    if len(normalized_paths) != len(set(normalized_paths)):
+        raise BootstrapError("SKILL_BUNDLE_PATH_COLLISION", str(bundle_manifest_path))
+    try:
+        root_stat = os.lstat(bundle_root)
+    except OSError as exc:
+        raise BootstrapError("SKILL_BUNDLE_ROOT_INVALID", f"{bundle_root}: {exc}") from exc
+    if _is_reparse_stat(root_stat) or not stat.S_ISDIR(root_stat.st_mode):
+        raise BootstrapError("SKILL_BUNDLE_ROOT_INVALID", str(bundle_root))
+    observed: dict[str, tuple[int, str]] = {}
+    expected_directories: set[str] = set()
+    for relative in expected_rows:
+        parent = Path(relative).parent
+        while parent != Path("."):
+            expected_directories.add(parent.as_posix())
+            parent = parent.parent
+    observed_directories: set[str] = set()
+    total_bytes = 0
+    stack: list[tuple[Path, str]] = [(bundle_root, "")]
+    nodes = 0
+    while stack:
+        directory, prefix = stack.pop()
+        entries: list[os.DirEntry[str]] = []
+        try:
+            with os.scandir(directory) as iterator:
+                for entry in iterator:
+                    entries.append(entry)
+                    if nodes + len(entries) > MAX_BUNDLE_ENTRIES:
+                        raise BootstrapError("SKILL_BUNDLE_TOO_MANY_ENTRIES", str(bundle_root))
+            entries.sort(key=lambda item: item.name)
+        except BootstrapError:
+            raise
+        except OSError as exc:
+            raise BootstrapError("SKILL_BUNDLE_READ_FAILED", f"{directory}: {exc}") from exc
+        for entry in entries:
+            nodes += 1
+            if nodes > MAX_BUNDLE_ENTRIES:
+                raise BootstrapError("SKILL_BUNDLE_TOO_MANY_ENTRIES", str(bundle_root))
+            try:
+                entry_stat = os.lstat(entry.path)
+            except OSError as exc:
+                raise BootstrapError("SKILL_BUNDLE_READ_FAILED", f"{entry.path}: {exc}") from exc
+            relative = f"{prefix}/{entry.name}" if prefix else entry.name
+            relative = relative.replace("\\", "/")
+            if _is_reparse_stat(entry_stat):
+                raise BootstrapError("SKILL_BUNDLE_REPARSE_FORBIDDEN", relative)
+            if stat.S_ISDIR(entry_stat.st_mode):
+                observed_directories.add(relative)
+                stack.append((Path(entry.path), relative))
+                continue
+            if not stat.S_ISREG(entry_stat.st_mode):
+                raise BootstrapError("SKILL_BUNDLE_ENTRY_INVALID", relative)
+            if entry_stat.st_nlink != 1:
+                raise BootstrapError("SKILL_BUNDLE_HARDLINK_FORBIDDEN", relative)
+            payload = _regular_control_bytes(Path(entry.path), maximum=MAX_BUNDLE_FILE_BYTES)
+            total_bytes += len(payload)
+            if total_bytes > MAX_BUNDLE_TOTAL_BYTES:
+                raise BootstrapError("SKILL_BUNDLE_TOO_LARGE", str(bundle_root))
+            observed[relative] = (len(payload), _sha256_bytes(payload))
+    if set(observed) != set(expected_rows) or observed_directories != expected_directories:
+        raise BootstrapError("SKILL_BUNDLE_FILE_SET_MISMATCH", str(bundle_root))
+    for relative, (size, digest) in observed.items():
+        row = expected_rows[relative]
+        if row["size"] != size or row["sha256"] != digest:
+            raise BootstrapError("SKILL_BUNDLE_FILE_IDENTITY_MISMATCH", relative)
+    tree_sha256 = _sha256_bytes(_canonical_bytes(files))
+    if (
+        tree_sha256 != bundle_manifest.get("tree_sha256")
+        or tree_sha256 != manifest.get("skill_bundle_tree_sha256")
+        or tree_sha256 != active.get("skill_bundle_tree_sha256")
+    ):
+        raise BootstrapError("SKILL_BUNDLE_TREE_IDENTITY_MISMATCH", str(bundle_root))
+    return bundle_root, bundle_manifest
+
+
+def _runtime_entry_locked(
+    argv: Sequence[str], state_root: Path
+) -> tuple[Path, bytes, dict[str, Any]]:
+    pointer_path = state_root / "researcher_container" / "current.json"
+    pointer, pointer_sha256 = _load_json_with_identity(pointer_path)
+    if pointer.get("schema_version") != "xinao.researcher_current_pointer.v2":
+        raise BootstrapError("BOOTSTRAP_MIGRATION_REQUIRED", str(pointer_path))
+    if set(pointer) != {
+        "schema_version",
+        "generation",
+        "active",
+        "previous_verified",
+        "switched_at",
+    }:
+        raise BootstrapError("CURRENT_POINTER_SCHEMA_INVALID", str(pointer_path))
+    generation = pointer.get("generation")
+    if type(generation) is not int or generation < 1:
+        raise BootstrapError("CURRENT_POINTER_GENERATION_INVALID", str(generation))
+    switched_at = pointer.get("switched_at")
+    if not isinstance(switched_at, str) or not switched_at or len(switched_at) > 128:
+        raise BootstrapError("CURRENT_POINTER_SCHEMA_INVALID", "switched_at")
+    active = _validate_active_ref_shape(
+        pointer.get("active"),
+        state_root=state_root,
+        reason_code="CURRENT_POINTER_ACTIVE_INVALID",
+    )
+    if pointer.get("previous_verified") is not None:
+        _validate_active_ref_shape(pointer.get("previous_verified"), state_root=state_root)
+    txn_id = active["activation_txn_id"]
+    journal_path = (
+        state_root / "researcher_container" / "transactions" / txn_id / "activation.v1.json"
+    )
+    journal = _load_json(journal_path)
+    _validate_journal_shape(journal, journal_path=journal_path, state_root=state_root)
+    if journal.get("txn_id") != txn_id:
+        raise BootstrapError("ACTIVATION_TRANSACTION_BINDING_MISMATCH", txn_id)
+    if journal.get("expected_generation") != generation:
+        raise BootstrapError("ACTIVATION_GENERATION_BINDING_MISMATCH", txn_id)
+    if journal.get("to") != active:
+        raise BootstrapError("ACTIVATION_TARGET_BINDING_MISMATCH", txn_id)
+    command = argv[0] if argv else ""
+    if journal.get("state") not in TERMINAL_ACTIVATION_STATES and command != "recover":
+        raise BootstrapError("RECOVERY_REQUIRED", f"activation={txn_id}")
+    if journal.get("state") in TERMINAL_ACTIVATION_STATES:
+        if journal.get("terminal_pointer_sha256") != pointer_sha256:
+            raise BootstrapError("ACTIVATION_POINTER_BINDING_MISMATCH", txn_id)
+    pending = _pending_activation_journals(state_root)
+    if len(pending) > 1:
+        raise BootstrapError("RECOVERY_CONFLICT", "multiple pending activation journals")
+    if pending and command != "recover":
+        raise BootstrapError("RECOVERY_REQUIRED", str(pending[0].get("txn_id", "")))
+    runtime_ref = active
+    if pending and command == "recover":
+        recovery_from = pending[0].get("from")
+        if not isinstance(recovery_from, dict) or not isinstance(recovery_from.get("active"), dict):
+            raise BootstrapError("RECOVERY_SOURCE_INVALID", str(pending[0].get("txn_id", "")))
+        runtime_ref = recovery_from["active"]
+    selected_release_id = runtime_ref.get("release_id")
+    if (
+        not isinstance(selected_release_id, str)
+        or RELEASE_ID_PATTERN.fullmatch(selected_release_id) is None
+    ):
+        raise BootstrapError("RELEASE_IDENTITY_INVALID", str(selected_release_id))
+    manifest_path = Path(str(runtime_ref.get("release_manifest_path", "")))
+    expected_manifest_path = (
+        state_root / "researcher_container" / "releases" / selected_release_id / "release.json"
+    )
+    if os.path.normcase(os.path.abspath(manifest_path)) != os.path.normcase(
+        os.path.abspath(expected_manifest_path)
+    ):
+        raise BootstrapError("RELEASE_MANIFEST_PATH_INVALID", str(manifest_path))
+    manifest, manifest_sha256 = _load_json_with_identity(manifest_path)
+    if manifest_sha256 != runtime_ref.get("release_manifest_sha256"):
+        raise BootstrapError("RELEASE_MANIFEST_IDENTITY_MISMATCH", str(manifest_path))
+    _validate_release_manifest_shape(
+        manifest,
+        manifest_path=manifest_path,
+        state_root=state_root,
+    )
+    expected_ref = {
+        "release_id": manifest["release_id"],
         "release_manifest_path": str(manifest_path),
-        "release_manifest_sha256": _sha256(manifest_path),
-        "current_pointer_sha256": pointer_sha,
-        "image_id": image_id,
-        "container_id": container_id,
-        "container_exit_code": terminal.get("ExitCode"),
-        "container_security": {
-            "readonly_rootfs": host_config.get("ReadonlyRootfs"),
-            "cap_drop": host_config.get("CapDrop"),
-            "security_opt": host_config.get("SecurityOpt"),
-            "network_mode": host_config.get("NetworkMode"),
-            "pids_limit": host_config.get("PidsLimit"),
-            "memory": host_config.get("Memory"),
-            "nano_cpus": host_config.get("NanoCpus"),
-            "mounts": [
-                {
-                    "source": item.get("Source"),
-                    "destination": item.get("Destination"),
-                    "rw": item.get("RW"),
-                }
-                for item in mounts
-            ],
-        },
-        "container_removed": _run(
-            [docker, "container", "inspect", container_id], timeout=30, check=False
-        ).returncode
-        != 0,
-        "request_sha256": _sha256(input_root / "request.json"),
-        "prompt_sha256": _sha256(input_root / "prompt.md"),
-        "result_sha256": _sha256(result_path),
-        "result_path": str(result_path),
-        "created_at": _utc_now(),
-        "route_class": "scientific_researcher",
-        "ordinary_worker_chain_used": False,
-        "provider_evidence": {
-            "stop_reason": result.get("provider_stop_reason"),
-            "num_turns": result.get("provider_num_turns"),
-            "session_id_present": result.get("provider_session_id_present"),
-            "request_id_present": result.get("provider_request_id_present"),
-            "model_usage": result.get("provider_model_usage"),
-            "usage": result.get("usage"),
-        },
-        "auth_handle_unchanged": True,
-        "user_operations_required": [],
-        "owner_adopted": False,
-        "research_progress_claim_allowed": False,
-        "science_restored": False,
-        "parent_complete": False,
-        "completion_claim_allowed": False,
+        "release_manifest_sha256": manifest_sha256,
+        "skill_bundle_manifest_sha256": manifest["skill_bundle_manifest_sha256"],
+        "skill_bundle_tree_sha256": manifest["skill_bundle_tree_sha256"],
+        "capability_version": manifest["capability_version"],
+        "package_version": manifest["package_version"],
+        "required_bootstrap_protocol": manifest["required_bootstrap_protocol"],
+        "activation_txn_id": runtime_ref["activation_txn_id"],
     }
-    receipt_path = root / "receipt.json"
-    _write_json_atomic(receipt_path, receipt, create_new=True)
-    receipt["receipt_path"] = str(receipt_path)
-    receipt["receipt_sha256"] = _sha256(receipt_path)
-    return receipt
-
-
-def _error_envelope(error: XinaoError) -> dict[str, Any]:
-    return {
-        "schema_version": "xinao.skill_error.v1",
-        "status": "PREFLIGHT_FAILED",
-        "reason_codes": [error.reason_code],
-        "detail": error.detail,
-        "user_operations_required": [],
-        "science_restored": False,
-        "parent_complete": False,
-        "completion_claim_allowed": False,
+    if runtime_ref != expected_ref:
+        raise BootstrapError("RELEASE_POINTER_IDENTITY_MISMATCH", selected_release_id)
+    bundle_root, bundle_manifest = _validate_bundle(
+        release_root=manifest_path.parent,
+        manifest=manifest,
+        active=runtime_ref,
+    )
+    _validate_release_skill_hashes(manifest, bundle_root)
+    files = bundle_manifest["files"]
+    runtime_relative = RELEASE_RUNTIME_RELATIVE_PATH.relative_to("skill-bundle").as_posix()
+    runtime_rows = [
+        row
+        for row in files
+        if isinstance(row, dict) and row.get("relative_path") == runtime_relative
+    ]
+    if len(runtime_rows) != 1:
+        raise BootstrapError("SKILL_RUNTIME_ENTRY_MISSING", runtime_relative)
+    runtime_path = bundle_root / runtime_relative
+    runtime_payload = _regular_control_bytes(runtime_path, maximum=MAX_BUNDLE_FILE_BYTES)
+    if _sha256_bytes(runtime_payload) != runtime_rows[0].get("sha256"):
+        raise BootstrapError("SKILL_RUNTIME_ENTRY_IDENTITY_MISMATCH", str(runtime_path))
+    try:
+        runtime_payload.decode("utf-8")
+    except UnicodeDecodeError as exc:
+        raise BootstrapError("SKILL_RUNTIME_ENTRY_INVALID", str(runtime_path)) from exc
+    fence = {
+        "schema_version": "xinao.bootstrap_fence.v1",
+        "state_root": str(state_root),
+        "pointer_sha256": pointer_sha256,
+        "pointer_generation": generation,
+        "active_txn_id": txn_id,
+        "pending_txn_id": pending[0]["txn_id"] if pending else None,
+        "selected_release_id": selected_release_id,
+        "selected_release_manifest_sha256": manifest_sha256,
+        "selected_skill_bundle_tree_sha256": manifest["skill_bundle_tree_sha256"],
+        "selected_runtime_sha256": _sha256_bytes(runtime_payload),
     }
+    return runtime_path, runtime_payload, fence
 
 
-def _parser() -> argparse.ArgumentParser:
-    parser = XinaoArgumentParser(prog="xinao-skill")
-    sub = parser.add_subparsers(dest="command", required=True)
-    sub.add_parser("inspect")
-    build = sub.add_parser("build")
-    build.add_argument("--source-root", type=Path, required=True)
-    build.add_argument("--promote", action="store_true")
-    build.add_argument("--allow-dirty", action="store_true")
-    sub.add_parser("rollback")
-    invoke = sub.add_parser("research")
-    invoke.add_argument("--question", required=True)
-    invoke.add_argument("--as-of", default=None)
-    return parser
+def _runtime_wrapper(runtime_path: Path, runtime_payload: bytes) -> bytes:
+    encoded = base64.b64encode(runtime_payload).decode("ascii")
+    source_name = ascii(str(runtime_path))
+    return (
+        "import base64\n"
+        f"_source = base64.b64decode({encoded!r}, validate=True)\n"
+        f"_name = {source_name}\n"
+        "_scope = {\n"
+        "    '__name__': '__main__',\n"
+        "    '__file__': _name,\n"
+        "    '__package__': None,\n"
+        "    '__cached__': None,\n"
+        "}\n"
+        "exec(compile(_source, _name, 'exec'), _scope, _scope)\n"
+    ).encode("ascii")
+
+
+def _reap_failed_runtime_child(process: subprocess.Popen[bytes]) -> str:
+    cleanup_errors: list[str] = []
+    if process.poll() is None:
+        try:
+            process.terminate()
+        except OSError as exc:
+            cleanup_errors.append(f"terminate:{exc}")
+    try:
+        process.wait(timeout=RUNTIME_REAP_TIMEOUT_SECONDS)
+    except subprocess.TimeoutExpired:
+        try:
+            process.kill()
+        except OSError as exc:
+            cleanup_errors.append(f"kill:{exc}")
+        try:
+            process.wait(timeout=RUNTIME_REAP_TIMEOUT_SECONDS)
+        except (OSError, subprocess.TimeoutExpired) as exc:
+            cleanup_errors.append(f"wait:{exc}")
+    except OSError as exc:
+        cleanup_errors.append(f"wait:{exc}")
+    return "; ".join(cleanup_errors)
+
+
+def _handoff_runtime_wrapper(process: subprocess.Popen[bytes], wrapper: bytes) -> None:
+    stream = process.stdin
+    if stream is None:
+        cleanup = _reap_failed_runtime_child(process)
+        raise BootstrapError(
+            "SKILL_RUNTIME_HANDOFF_FAILED",
+            "runtime stdin pipe unavailable" + (f"; cleanup={cleanup}" if cleanup else ""),
+        )
+    outcome: dict[str, object] = {}
+
+    def write_and_close() -> None:
+        try:
+            written = stream.write(wrapper)
+            if written != len(wrapper):
+                raise OSError(f"short runtime handoff: {written}/{len(wrapper)}")
+            stream.flush()
+        except Exception as exc:
+            outcome["error"] = exc
+        finally:
+            try:
+                stream.close()
+            except Exception as exc:
+                outcome.setdefault("error", exc)
+
+    writer = threading.Thread(
+        target=write_and_close,
+        name="xinao-runtime-handoff",
+        daemon=True,
+    )
+    try:
+        writer.start()
+    except RuntimeError as exc:
+        cleanup = _reap_failed_runtime_child(process)
+        raise BootstrapError(
+            "SKILL_RUNTIME_HANDOFF_FAILED",
+            str(exc) + (f"; cleanup={cleanup}" if cleanup else ""),
+        ) from exc
+    writer.join(timeout=RUNTIME_HANDOFF_TIMEOUT_SECONDS)
+    if writer.is_alive() or "error" in outcome:
+        cleanup = _reap_failed_runtime_child(process)
+        writer.join(timeout=RUNTIME_REAP_TIMEOUT_SECONDS)
+        detail = (
+            "runtime stdin handoff timed out"
+            if writer.is_alive()
+            else str(outcome.get("error", "runtime stdin handoff failed"))
+        )
+        if writer.is_alive():
+            detail += "; writer did not stop after child reap"
+        if cleanup:
+            detail += f"; cleanup={cleanup}"
+        process.stdin = None
+        raise BootstrapError("SKILL_RUNTIME_HANDOFF_FAILED", detail)
+    process.stdin = None
+
+
+def _run_runtime(argv: Sequence[str]) -> int:
+    state_root = Path(os.environ.get("XINAO_SKILL_STATE_ROOT", str(DEFAULT_STATE_ROOT)))
+    if not state_root.is_absolute():
+        raise BootstrapError("STATE_ROOT_INVALID", str(state_root))
+    process: subprocess.Popen[bytes] | None = None
+    try:
+        with _activation_lock(state_root):
+            runtime_path, runtime_payload, fence = _runtime_entry_locked(argv, state_root)
+            wrapper = _runtime_wrapper(runtime_path, runtime_payload)
+            child_environment = os.environ.copy()
+            child_environment["XINAO_BOOTSTRAP_FENCE_V1"] = json.dumps(
+                fence,
+                ensure_ascii=True,
+                sort_keys=True,
+                separators=(",", ":"),
+            )
+            try:
+                process = subprocess.Popen(
+                    [sys.executable, "-I", "-", *argv],
+                    stdin=subprocess.PIPE,
+                    env=child_environment,
+                )
+            except OSError as exc:
+                raise BootstrapError("SKILL_RUNTIME_START_FAILED", str(exc)) from exc
+            _handoff_runtime_wrapper(process, wrapper)
+        return process.wait()
+    except BaseException:
+        if process is not None:
+            _reap_failed_runtime_child(process)
+            stream = process.stdin
+            if stream is not None:
+                try:
+                    stream.close()
+                except Exception:
+                    pass
+                process.stdin = None
+        raise
+
+
+def _error(error: BootstrapError) -> None:
+    print(
+        json.dumps(
+            {
+                "schema_version": "xinao.bootstrap_error.v1",
+                "status": "PREFLIGHT_FAILED",
+                "reason_codes": [error.reason_code],
+                "detail": error.detail,
+                "user_operations_required": [],
+                "science_restored": False,
+                "parent_complete": False,
+                "completion_claim_allowed": False,
+            },
+            ensure_ascii=False,
+            sort_keys=True,
+        )
+    )
 
 
 def main(argv: Sequence[str] | None = None) -> int:
+    arguments = list(sys.argv[1:] if argv is None else argv)
     try:
-        args = _parser().parse_args(argv)
-        if args.command == "inspect":
-            value = inspect_capability()
-        elif args.command == "build":
-            value = build_release(
-                args.source_root, promote=args.promote, allow_dirty=args.allow_dirty
-            )
-        elif args.command == "rollback":
-            value = rollback_release()
-        else:
-            value = research(args.question, args.as_of)
-    except XinaoError as error:
-        print(json.dumps(_error_envelope(error), ensure_ascii=False, sort_keys=True))
+        return _run_runtime(arguments)
+    except BootstrapError as exc:
+        _error(exc)
         return 2
-    print(json.dumps(value, ensure_ascii=False, sort_keys=True))
+    except OSError as exc:
+        _error(BootstrapError("SKILL_RUNTIME_START_FAILED", str(exc)))
+        return 2
     return 0
 
 

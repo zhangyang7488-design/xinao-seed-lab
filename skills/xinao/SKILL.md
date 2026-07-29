@@ -10,18 +10,35 @@ Read [meta.md](references/meta.md) before changing or adding a Xinao capability.
 source implementation is present; verify its live runtime status instead of trusting the file.
 
 For the researcher container, run `scripts/xinao.py inspect` first. Invoke it with
-`scripts/xinao.py research --question <material research question>`; derive all paths, hashes,
-image identity, provider settings, mounts, and evidence locations internally. Return the bounded
-receipt and research result in the Codex conversation. Do not require the user to run a command,
-edit a file, or supply an internal field.
+`scripts/xinao.py research --question <material research question>` and add `--material <local
+UTF-8 evidence file>` only for exact files the current bounded call may disclose to the provider;
+repeat the option when needed. The launcher freezes ordinary local evidence into its own sealed
+bundle. Derive all paths, hashes, bundle identity, provider settings, mounts, and evidence locations
+internally. Return the bounded receipt and research result in the Codex conversation. Do not require
+the user to run a command, edit a file, construct a manifest, pre-seal a material, or supply an
+internal field.
+
+`source_status=available` means only that the implementation exists. Treat the runtime as callable
+only when `inspect` returns `RUNTIME_READY`; pointer presence, an old successful receipt, an image
+tag, or source tests are not substitutes. A call with materials must freeze them before runtime
+probing, mount only the run-local snapshot read-only, bind the effective provider prompt and result
+to the bundle hashes, and still return candidate-only research. Never expose generic file tools
+while the provider credential is mounted in the same container.
 
 Do not route Xinao scientific researchers through the ordinary WorkerPool, its task contracts,
 state roots, evidence roots, or completion semantics. Reuse low-level libraries only when the
 scientific chain retains its own identity and tests prove the chains cannot cross.
 
-Research topics are open. Treat the seven-family prior as advisory information and the current
-ACTION-support reference as a separate downstream boundary. Never use either as research
-admission. A successful container call proves only that the capability ran.
+Research topics are open. Do not inject seven-family grades or another inherited background menu
+by default: active-parent background is optional and discardable, not attention allocation.
+Resolve an ACTION-support reference only for a later, separately authorized downstream effect;
+never use it as research admission or include it in this candidate-only prompt. A successful
+container call proves only that the capability ran.
+
+For shadow practice, read [shadow-practice-contract.v1.md](references/shadow-practice-contract.v1.md)
+before designing, implementing, reviewing, or claiming an account, freeze, reveal, settlement,
+replay, or feedback result. Preserve its concrete human-facing episode chain and its separate
+account and knowledge axes; the contract is a downstream completion ruler, not a research menu.
 
 Capabilities marked `planned` are unavailable. Implement and verify them through the update
 procedure in the meta reference before calling them; never emulate them with chat glue.
