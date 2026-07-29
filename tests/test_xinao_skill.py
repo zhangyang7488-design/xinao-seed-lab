@@ -1388,6 +1388,21 @@ def test_research_revalidates_fence_before_container_create(
             },
         ),
     )
+    monkeypatch.setattr(
+        module,
+        "_observe_and_compare_egress_boundary",
+        lambda _lock: {
+            "internal_network_name": "xinao_researcher_internal",
+            "internal_network_id": "netid",
+            "proxy_endpoint": "http://xinao-researcher-egress-proxy:3128",
+            "proxy_container_id": "cid",
+            "proxy_image_id": "sha256:" + "d" * 64,
+            "allowlist_sha256": "a" * 64,
+            "proxy_config_sha256": "b" * 64,
+            "posture": {},
+            "observed": {},
+        },
+    )
 
     def drift_pointer(_release):
         pointer_path = module._state_paths()["pointer"]
@@ -1636,13 +1651,16 @@ def _valid_container_inspect(tmp_path: Path) -> tuple[dict[str, object], dict[st
     output_root = tmp_path / "output"
     auth_path = tmp_path / "auth.json"
     image_id = "sha256:" + "a" * 64
+    endpoint = "http://xinao-researcher-egress-proxy:3128"
+    network_name = "xinao_researcher_internal"
+    network_id = "net_" + "c" * 12
     inspect: dict[str, object] = {
         "Image": image_id,
         "HostConfig": {
             "ReadonlyRootfs": True,
             "CapDrop": ["ALL"],
             "SecurityOpt": ["no-new-privileges:true"],
-            "NetworkMode": "bridge",
+            "NetworkMode": network_name,
             "PidsLimit": 128,
             "Memory": 2147483648,
             "NanoCpus": 2000000000,
@@ -1653,7 +1671,16 @@ def _valid_container_inspect(tmp_path: Path) -> tuple[dict[str, object], dict[st
                 "/grok-home": "rw,nosuid,nodev,size=256m,mode=0700",
             },
         },
-        "Config": {"Env": ["XINAO_CHAIN_CLASS=scientific_researcher"]},
+        "Config": {
+            "Env": [
+                "XINAO_CHAIN_CLASS=scientific_researcher",
+                f"HTTP_PROXY={endpoint}",
+                f"HTTPS_PROXY={endpoint}",
+                f"http_proxy={endpoint}",
+                f"https_proxy={endpoint}",
+            ]
+        },
+        "NetworkSettings": {"Networks": {network_name: {"NetworkID": network_id}}},
         "Mounts": [
             {
                 "Type": "bind",
@@ -1687,6 +1714,9 @@ def _valid_container_inspect(tmp_path: Path) -> tuple[dict[str, object], dict[st
         "materials_root": materials_root,
         "output_root": output_root,
         "auth_path": auth_path,
+        "internal_network_name": network_name,
+        "internal_network_id": network_id,
+        "proxy_endpoint": endpoint,
     }
     return inspect, arguments
 

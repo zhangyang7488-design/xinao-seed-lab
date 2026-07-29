@@ -30,6 +30,41 @@ OUTPUT_SCHEMA_PATH = REFERENCE_ROOT / "researcher-output.v2.schema.json"
 MATERIAL_BUNDLE_SCHEMA_PATH = REFERENCE_ROOT / "material-bundle.v1.schema.json"
 RUNTIME_LOCK_PATH = REFERENCE_ROOT / "researcher-runtime-lock.v1.json"
 
+# Provider-egress topology (dedicated XINAO objects; never Dify ssrf_proxy).
+EGRESS_POSTURE_SCHEMA = "xinao.provider_egress_posture.v1"
+EGRESS_INTERNAL_NETWORK_NAME = "xinao_researcher_internal"
+EGRESS_EXTERNAL_NETWORK_NAME = "xinao_provider_egress_ext"
+EGRESS_PROXY_CONTAINER_NAME = "xinao-researcher-egress-proxy"
+EGRESS_PROXY_ENDPOINT = "http://xinao-researcher-egress-proxy:3128"
+EGRESS_PROXY_LISTEN_PORT = 3128
+EGRESS_FORBIDDEN_RESEARCHER_NETWORK_MODES = frozenset(
+    {"bridge", "host", "none", "default"}
+)
+EGRESS_DIFY_FORBIDDEN_MARKERS = (
+    "ssrf_proxy",
+    "ssrf_proxy_network",
+    "dify_ssrf",
+)
+EGRESS_PROXY_ENV_KEYS = (
+    "HTTP_PROXY",
+    "HTTPS_PROXY",
+    "http_proxy",
+    "https_proxy",
+)
+EGRESS_REQUIRED_POSTURE_KEYS = frozenset(
+    {
+        "schema_version",
+        "internal_network_name",
+        "internal_network_id",
+        "proxy_container_name",
+        "proxy_container_id",
+        "proxy_image_id",
+        "proxy_endpoint",
+        "allowlist_sha256",
+        "proxy_config_sha256",
+    }
+)
+
 MAX_MATERIAL_FILES = 32
 MAX_MATERIAL_FILE_BYTES = 256 * 1024
 MAX_MATERIAL_TOTAL_BYTES = 512 * 1024
@@ -1863,6 +1898,15 @@ def inspect_capability() -> dict[str, Any]:
             _validate_bootstrap_fence_locked("inspect", expected=fence)
         status_by_reason = {
             "EGRESS_BOUNDARY_UNAVAILABLE": "EGRESS_BOUNDARY_UNAVAILABLE",
+            "EGRESS_POSTURE_MISSING": "EGRESS_BOUNDARY_UNAVAILABLE",
+            "EGRESS_POSTURE_INCOMPLETE": "EGRESS_BOUNDARY_UNAVAILABLE",
+            "EGRESS_NETWORK_NOT_INTERNAL": "EGRESS_BOUNDARY_UNAVAILABLE",
+            "EGRESS_PROXY_NOT_RUNNING": "EGRESS_BOUNDARY_UNAVAILABLE",
+            "EGRESS_OBJECT_INSPECT_FAILED": "EGRESS_BOUNDARY_UNAVAILABLE",
+            "EGRESS_DIFY_CROSS_PROJECT_FORBIDDEN": "EGRESS_BOUNDARY_UNAVAILABLE",
+            "EGRESS_FOREIGN_NETWORK_MEMBER": "EGRESS_BOUNDARY_UNAVAILABLE",
+            "EGRESS_PROXY_NOT_DUAL_HOMED": "EGRESS_BOUNDARY_UNAVAILABLE",
+            "EGRESS_HOST_PORT_PUBLISH_FORBIDDEN": "EGRESS_BOUNDARY_UNAVAILABLE",
             "DOCKER_CLI_MISSING": "DOCKER_CLI_MISSING",
             "ENGINE_UNAVAILABLE": "ENGINE_UNAVAILABLE",
             "ENGINE_RESPONSE_INVALID": "ENGINE_UNAVAILABLE",
@@ -3545,13 +3589,296 @@ def _validate_release_source_identity(
     return charter, runtime_lock
 
 
-def _require_host_egress_boundary(runtime_lock: dict[str, Any] | None = None) -> None:
+
+def _egress_posture_path() -> Path:
+    state_root, _ = _state_roots()
+    return state_root / "researcher_container" / "egress" / "current_posture.v1.json"
+
+
+def _proxy_env_pairs(endpoint: str) -> dict[str, str]:
+    if not _plain_json_text(endpoint, nonempty=True, maximum_bytes=512):
+        raise XinaoError("EGRESS_PROXY_ENDPOINT_INVALID", endpoint)
+    if not endpoint.startswith("http://") and not endpoint.startswith("https://"):
+        raise XinaoError("EGRESS_PROXY_ENDPOINT_INVALID", endpoint)
+    # Proxy env is a routing hint only; enforcement is internal network + ACL.
+    return {key: endpoint for key in EGRESS_PROXY_ENV_KEYS}
+
+
+def _docker_json_inspect(docker: str, kind: str, target: str) -> dict[str, Any]:
+    completed = _run([docker, kind, "inspect", target], timeout=60, check=False)
+    if completed.returncode != 0:
+        raise XinaoError(
+            "EGRESS_OBJECT_INSPECT_FAILED",
+            f"{kind}={target} exit={completed.returncode} stderr={completed.stderr[:2000]}",
+        )
+    values = _strict_json_loads(
+        completed.stdout,
+        reason_code="EGRESS_OBJECT_INSPECT_INVALID",
+        detail=f"{kind}:{target}",
+    )
+    if not isinstance(values, list) or len(values) != 1 or not isinstance(values[0], dict):
+        raise XinaoError("EGRESS_OBJECT_INSPECT_INVALID", f"{kind}:{target}")
+    return values[0]
+
+
+def _validate_egress_posture_shape(posture: dict[str, Any]) -> dict[str, Any]:
+    if posture.get("schema_version") != EGRESS_POSTURE_SCHEMA:
+        raise XinaoError("EGRESS_POSTURE_SCHEMA_INVALID", str(posture.get("schema_version")))
+    missing = sorted(EGRESS_REQUIRED_POSTURE_KEYS - set(posture))
+    if missing:
+        raise XinaoError("EGRESS_POSTURE_INCOMPLETE", ",".join(missing))
+    if posture.get("internal_network_name") != EGRESS_INTERNAL_NETWORK_NAME:
+        raise XinaoError(
+            "EGRESS_INTERNAL_NETWORK_NAME_MISMATCH",
+            str(posture.get("internal_network_name")),
+        )
+    if posture.get("proxy_container_name") != EGRESS_PROXY_CONTAINER_NAME:
+        raise XinaoError(
+            "EGRESS_PROXY_NAME_MISMATCH",
+            str(posture.get("proxy_container_name")),
+        )
+    endpoint = posture.get("proxy_endpoint")
+    if endpoint != EGRESS_PROXY_ENDPOINT:
+        raise XinaoError("EGRESS_PROXY_ENDPOINT_MISMATCH", str(endpoint))
+    image_id = posture.get("proxy_image_id")
+    if not isinstance(image_id, str) or not image_id.startswith("sha256:"):
+        raise XinaoError("EGRESS_PROXY_IMAGE_ID_INVALID", str(image_id))
+    for field in ("allowlist_sha256", "proxy_config_sha256", "internal_network_id", "proxy_container_id"):
+        value = posture.get(field)
+        if not isinstance(value, str) or not value:
+            raise XinaoError("EGRESS_POSTURE_FIELD_INVALID", field)
+        if field.endswith("_sha256") and not HEX_SHA256_PATTERN.fullmatch(value):
+            raise XinaoError("EGRESS_POSTURE_HASH_INVALID", field)
+    if posture.get("host_port_published") is True:
+        raise XinaoError("EGRESS_HOST_PORT_PUBLISH_FORBIDDEN", "host_port_published")
+    if posture.get("dify_cross_project") is True:
+        raise XinaoError("EGRESS_DIFY_CROSS_PROJECT_FORBIDDEN", "dify_cross_project")
+    if posture.get("tls_interception") is True:
+        raise XinaoError("EGRESS_TLS_INTERCEPTION_FORBIDDEN", "tls_interception")
+    # Receipt redaction: no secret-bearing keys or auth path fragments.
+    blob = _canonical_bytes(posture).decode("utf-8").lower()
+    forbidden_tokens = (
+        "authorization",
+        "api_key",
+        "auth.json",
+        "password",
+        "begin private",
+    )
+    for token in forbidden_tokens:
+        if token in blob:
+            raise XinaoError("EGRESS_POSTURE_SECRET_LEAK", token)
+    for marker in EGRESS_DIFY_FORBIDDEN_MARKERS:
+        # Names of our objects must not be confused with Dify markers in identity fields.
+        pass
+    return posture
+
+
+def _load_egress_posture() -> dict[str, Any]:
+    path = _egress_posture_path()
+    if not path.is_file():
+        raise XinaoError("EGRESS_POSTURE_MISSING", str(path))
+    posture = _load_json(path)
+    return _validate_egress_posture_shape(posture)
+
+
+def _compare_live_egress_objects(
+    docker: str, posture: dict[str, Any], runtime_lock: dict[str, Any]
+) -> dict[str, Any]:
+    network_name = str(posture["internal_network_name"])
+    network_id = str(posture["internal_network_id"])
+    proxy_name = str(posture["proxy_container_name"])
+    proxy_id = str(posture["proxy_container_id"])
+    network = _docker_json_inspect(docker, "network", network_id)
+    if network.get("Id") != network_id and not str(network.get("Id", "")).startswith(network_id):
+        # Docker may return full id; allow prefix match both ways.
+        live_id = str(network.get("Id", ""))
+        if not (live_id.startswith(network_id) or network_id.startswith(live_id)):
+            raise XinaoError("EGRESS_NETWORK_ID_MISMATCH", live_id)
+    if network.get("Name") not in {network_name, network_id} and network.get("Name") != network_name:
+        # Prefer exact name match when present.
+        if network.get("Name") != network_name:
+            raise XinaoError("EGRESS_NETWORK_NAME_MISMATCH", str(network.get("Name")))
+    if network.get("Internal") is not True:
+        raise XinaoError("EGRESS_NETWORK_NOT_INTERNAL", str(network.get("Internal")))
+    # Membership must include proxy when Containers is populated; reject Dify/foreign members.
+    containers = network.get("Containers") or {}
+    if not isinstance(containers, dict):
+        raise XinaoError("EGRESS_NETWORK_MEMBERSHIP_INVALID", "Containers")
+    member_names: list[str] = []
+    proxy_seen = False
+    for _cid, meta in containers.items():
+        if not isinstance(meta, dict):
+            continue
+        name = str(meta.get("Name", ""))
+        normalized = name.lstrip("/")
+        member_names.append(normalized)
+        if normalized == proxy_name or name == proxy_name:
+            proxy_seen = True
+        lowered = normalized.lower()
+        for marker in EGRESS_DIFY_FORBIDDEN_MARKERS:
+            if marker in lowered:
+                raise XinaoError("EGRESS_DIFY_CROSS_PROJECT_FORBIDDEN", name)
+        # Only proxy and dedicated researcher workloads may join the internal network.
+        if normalized != proxy_name and not normalized.startswith("xinao-researcher-"):
+            raise XinaoError("EGRESS_FOREIGN_NETWORK_MEMBER", normalized)
+    if containers and not proxy_seen:
+        raise XinaoError(
+            "EGRESS_NETWORK_MEMBERSHIP_INVALID",
+            f"proxy missing from members={sorted(member_names)}",
+        )
+
+    proxy = _docker_json_inspect(docker, "container", proxy_id)
+    live_proxy_id = str(proxy.get("Id", ""))
+    if not (live_proxy_id.startswith(proxy_id) or proxy_id.startswith(live_proxy_id)):
+        raise XinaoError("EGRESS_PROXY_ID_MISMATCH", live_proxy_id)
+    live_image = str(proxy.get("Image", ""))
+    if live_image != posture["proxy_image_id"] and not (
+        live_image.startswith(str(posture["proxy_image_id"]))
+        or str(posture["proxy_image_id"]).startswith(live_image)
+    ):
+        raise XinaoError("EGRESS_PROXY_IMAGE_MISMATCH", live_image)
+    state = proxy.get("State") or {}
+    if not isinstance(state, dict) or state.get("Running") is not True:
+        raise XinaoError("EGRESS_PROXY_NOT_RUNNING", str(state.get("Status")))
+    networks = ((proxy.get("NetworkSettings") or {}).get("Networks")) or {}
+    if not isinstance(networks, dict):
+        raise XinaoError("EGRESS_PROXY_NETWORKS_INVALID", "Networks")
+    network_keys = set(networks)
+    for marker in EGRESS_DIFY_FORBIDDEN_MARKERS:
+        if any(marker in key for key in network_keys):
+            raise XinaoError("EGRESS_DIFY_CROSS_PROJECT_FORBIDDEN", marker)
+    # Dual-homed: internal + dedicated external egress path; never bridge-only, never Dify.
+    if network_name not in network_keys and network_id not in network_keys:
+        # Docker keys are usually names.
+        if EGRESS_INTERNAL_NETWORK_NAME not in network_keys:
+            raise XinaoError("EGRESS_PROXY_NOT_ON_INTERNAL", ",".join(sorted(network_keys)))
+    if EGRESS_EXTERNAL_NETWORK_NAME not in network_keys:
+        # Allow alternate external name sealed in posture.
+        external_name = posture.get("external_network_name") or EGRESS_EXTERNAL_NETWORK_NAME
+        if external_name not in network_keys:
+            raise XinaoError("EGRESS_PROXY_NOT_DUAL_HOMED", ",".join(sorted(network_keys)))
+    # Host publish forbidden unless sealed (default false).
+    ports = ((proxy.get("NetworkSettings") or {}).get("Ports")) or {}
+    if ports and runtime_lock.get("egress_host_port_publish_allowed") is not True:
+        # Empty binding map is ok; non-empty host bindings fail closed.
+        for _port, bindings in ports.items() if isinstance(ports, dict) else []:
+            if bindings:
+                raise XinaoError("EGRESS_HOST_PORT_PUBLISH_FORBIDDEN", str(ports))
+
+    # Runtime lock name refs must agree with posture (sealed source defaults).
+    if runtime_lock.get("egress_internal_network_name") not in (None, EGRESS_INTERNAL_NETWORK_NAME):
+        if runtime_lock.get("egress_internal_network_name") != network_name:
+            raise XinaoError(
+                "EGRESS_LOCK_NETWORK_REF_MISMATCH",
+                str(runtime_lock.get("egress_internal_network_name")),
+            )
+    if runtime_lock.get("egress_proxy_endpoint") not in (None, EGRESS_PROXY_ENDPOINT):
+        if runtime_lock.get("egress_proxy_endpoint") != posture.get("proxy_endpoint"):
+            raise XinaoError(
+                "EGRESS_LOCK_ENDPOINT_REF_MISMATCH",
+                str(runtime_lock.get("egress_proxy_endpoint")),
+            )
+
+    return {
+        "internal_network_id": network.get("Id"),
+        "internal_network_name": network_name,
+        "internal": True,
+        "proxy_container_id": live_proxy_id,
+        "proxy_image_id": live_image,
+        "proxy_endpoint": posture["proxy_endpoint"],
+        "allowlist_sha256": posture["allowlist_sha256"],
+        "proxy_config_sha256": posture["proxy_config_sha256"],
+        "proxy_networks": sorted(network_keys),
+        "host_port_published": False,
+        "dify_cross_project": False,
+    }
+
+
+def _observe_and_compare_egress_boundary(runtime_lock: dict[str, Any]) -> dict[str, Any]:
+    posture = _load_egress_posture()
+    docker = _docker()
+    observed = _compare_live_egress_objects(docker, posture, runtime_lock)
+    return {
+        "posture": posture,
+        "observed": observed,
+        "proxy_endpoint": str(posture["proxy_endpoint"]),
+        "internal_network_name": str(posture["internal_network_name"]),
+        "internal_network_id": str(posture["internal_network_id"]),
+        "allowlist_sha256": str(posture["allowlist_sha256"]),
+        "proxy_config_sha256": str(posture["proxy_config_sha256"]),
+        "proxy_image_id": str(posture["proxy_image_id"]),
+        "proxy_container_id": str(posture["proxy_container_id"]),
+    }
+
+
+def _validate_researcher_network_and_proxy_env(
+    inspect: dict[str, Any],
+    *,
+    internal_network_name: str,
+    internal_network_id: str,
+    proxy_endpoint: str,
+) -> None:
+    host = inspect.get("HostConfig") or {}
+    config = inspect.get("Config") or {}
+    network_mode = str(host.get("NetworkMode", ""))
+    if network_mode in EGRESS_FORBIDDEN_RESEARCHER_NETWORK_MODES or network_mode.startswith(
+        "container:"
+    ):
+        raise XinaoError("CONTAINER_NETWORK_PROFILE_INVALID", network_mode)
+    if network_mode not in {internal_network_name, internal_network_id}:
+        # Docker often sets NetworkMode to the user-defined network name.
+        if network_mode != internal_network_name:
+            raise XinaoError("CONTAINER_NETWORK_PROFILE_INVALID", network_mode)
+    networks = ((inspect.get("NetworkSettings") or {}).get("Networks")) or {}
+    if not isinstance(networks, dict) or not networks:
+        raise XinaoError("CONTAINER_NETWORK_MEMBERSHIP_INVALID", "empty Networks")
+    if len(networks) != 1:
+        raise XinaoError(
+            "CONTAINER_NETWORK_MEMBERSHIP_INVALID",
+            f"expected single internal network, got {sorted(networks)}",
+        )
+    only = next(iter(networks))
+    if only not in {internal_network_name, internal_network_id}:
+        raise XinaoError("CONTAINER_NETWORK_MEMBERSHIP_INVALID", only)
+    for marker in EGRESS_DIFY_FORBIDDEN_MARKERS:
+        if marker in only:
+            raise XinaoError("EGRESS_DIFY_CROSS_PROJECT_FORBIDDEN", only)
+    env_list = config.get("Env") or []
+    if not isinstance(env_list, list):
+        raise XinaoError("CONTAINER_PROXY_ENV_INVALID", "Env")
+    env_map: dict[str, str] = {}
+    for item in env_list:
+        if not isinstance(item, str) or "=" not in item:
+            continue
+        key, value = item.split("=", 1)
+        env_map[key] = value
+    expected = _proxy_env_pairs(proxy_endpoint)
+    for key, value in expected.items():
+        if env_map.get(key) != value:
+            raise XinaoError("CONTAINER_PROXY_ENV_INVALID", key)
+    # NO_PROXY must not open RFC1918 escape hatches.
+    for key in ("NO_PROXY", "no_proxy"):
+        raw = env_map.get(key)
+        if raw is None or raw == "":
+            continue
+        lowered = raw.lower()
+        for bad in ("10.", "192.168.", "172.16.", "169.254.", "127.", "localhost"):
+            if bad in lowered:
+                raise XinaoError("CONTAINER_NO_PROXY_ESCAPE", raw)
+
+
+def _require_host_egress_boundary(
+    runtime_lock: dict[str, Any] | None = None,
+) -> dict[str, Any]:
     effective_lock = runtime_lock if runtime_lock is not None else _load_json(RUNTIME_LOCK_PATH)
     if (
         effective_lock.get("network_profile") != "EGRESS_BOUNDARY_REQUIRED_BEFORE_PROVIDER_CALL"
         or effective_lock.get("provider_egress_runtime_verified") is not True
     ):
+        # Source default remains false; only Owner live evidence may seal true later.
         raise XinaoError("EGRESS_BOUNDARY_UNAVAILABLE", str(RUNTIME_LOCK_PATH))
+    # Boolean is a cache of evidence, not enforcement: observe live Docker objects.
+    return _observe_and_compare_egress_boundary(effective_lock)
 
 
 def _validate_release_for_invoke(release: dict[str, Any]) -> tuple[str, dict[str, Any]]:
@@ -3615,6 +3942,9 @@ def _validate_container_inspect(
     materials_root: Path,
     output_root: Path,
     auth_path: Path,
+    internal_network_name: str,
+    internal_network_id: str,
+    proxy_endpoint: str,
 ) -> None:
     host = inspect.get("HostConfig") or {}
     config = inspect.get("Config") or {}
@@ -3629,8 +3959,12 @@ def _validate_container_inspect(
         raise XinaoError("CONTAINER_CAP_ADD_INVALID", str(cap_add))
     if host.get("SecurityOpt") != ["no-new-privileges:true"]:
         raise XinaoError("CONTAINER_NO_NEW_PRIVILEGES_MISSING", str(host.get("SecurityOpt")))
-    if host.get("NetworkMode") != "bridge":
-        raise XinaoError("CONTAINER_NETWORK_PROFILE_INVALID", str(host.get("NetworkMode")))
+    _validate_researcher_network_and_proxy_env(
+        inspect,
+        internal_network_name=internal_network_name,
+        internal_network_id=internal_network_id,
+        proxy_endpoint=proxy_endpoint,
+    )
     if (
         type(host.get("PidsLimit")) is not int
         or host.get("PidsLimit") != 128
@@ -3968,7 +4302,7 @@ def research(
     manifest_path = context["manifest_path"]
     pointer_sha = context["pointer_sha256"]
     _charter_preflight, runtime_lock = _validate_release_source_identity(release)
-    _require_host_egress_boundary(runtime_lock)
+    egress_bound = _require_host_egress_boundary(runtime_lock)
     material_snapshots, auth_identity_witness = _snapshot_material_sources(
         tuple(material_paths or ())
     )
@@ -4036,13 +4370,21 @@ def research(
                 "--cpus",
                 "2",
                 "--network",
-                "bridge",
+                str(egress_bound["internal_network_name"]),
                 "--tmpfs",
                 "/tmp:rw,nosuid,nodev,size=256m,mode=1777",
                 "--tmpfs",
                 "/grok-home:rw,nosuid,nodev,size=256m,mode=0700",
                 "--env",
                 "XINAO_CHAIN_CLASS=scientific_researcher",
+                "--env",
+                f"HTTP_PROXY={egress_bound['proxy_endpoint']}",
+                "--env",
+                f"HTTPS_PROXY={egress_bound['proxy_endpoint']}",
+                "--env",
+                f"http_proxy={egress_bound['proxy_endpoint']}",
+                "--env",
+                f"https_proxy={egress_bound['proxy_endpoint']}",
                 "--mount",
                 f"type=bind,source={input_root},target=/input,readonly",
                 "--mount",
@@ -4076,6 +4418,9 @@ def research(
             materials_root=materials_root,
             output_root=output_root,
             auth_path=DEFAULT_AUTH_PATH,
+            internal_network_name=str(egress_bound["internal_network_name"]),
+            internal_network_id=str(egress_bound["internal_network_id"]),
+            proxy_endpoint=str(egress_bound["proxy_endpoint"]),
         )
         with _activation_lock():
             _validate_research_execution_boundary(fence, auth_identity_witness)
@@ -4184,6 +4529,19 @@ def research(
                 }
                 for item in mounts
             ],
+        },
+        "provider_egress": {
+            "internal_network_name": egress_bound["internal_network_name"],
+            "internal_network_id": egress_bound["internal_network_id"],
+            "proxy_container_id": egress_bound["proxy_container_id"],
+            "proxy_image_id": egress_bound["proxy_image_id"],
+            "proxy_endpoint": egress_bound["proxy_endpoint"],
+            "allowlist_sha256": egress_bound["allowlist_sha256"],
+            "proxy_config_sha256": egress_bound["proxy_config_sha256"],
+            "proxy_env_is_routing_hint_only": True,
+            "dify_cross_project": False,
+            "tls_interception": False,
+            "provider_egress_runtime_verified": False,
         },
         "container_removed": _run(
             [docker, "container", "inspect", container_id], timeout=30, check=False

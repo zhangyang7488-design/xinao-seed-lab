@@ -1,0 +1,11 @@
+{
+  "schema_version": "xinao.provider_egress_proxy_image_pin.v1",
+  "image_repository": "ubuntu/squid",
+  "image_tag_observational": "latest",
+  "image_digest": null,
+  "image_id": null,
+  "authority": "immutable_digest_or_image_id_only",
+  "floating_tag_as_authority": false,
+  "resolve_instruction": "Owner runs scripts/resolve_proxy_image_pin.sh after docker pull; seal image_digest (repo@sha256:...) and image_id (sha256:...) before provision. Never treat floating latest as identity.",
+  "compose_image_env": "XINAO_EGRESS_PROXY_IMAGE"
+}

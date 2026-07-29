@@ -1,0 +1,21 @@
+{
+  "schema_version": "xinao.provider_egress_allowlist.v1",
+  "ports": [443],
+  "methods": ["CONNECT"],
+  "domains": [],
+  "ip_literals_allowed": [],
+  "discovery": {
+    "status": "UNSEALED",
+    "procedure": "Owner-only credential-safe discovery via scripts/owner_discover_provider_endpoints.sh; do not invent provider hostnames in source.",
+    "notes": [
+      "Seal domains only after a real authorized lab capture.",
+      "Prefer name-based dstdomain entries over transient A/AAAA.",
+      "Empty domains keep the proxy fail-closed (deny all public)."
+    ]
+  },
+  "forbidden_reuse": [
+    "dify_ssrf_proxy",
+    "ssrf_proxy_network",
+    "http_access_allow_client_localnet"
+  ]
+}

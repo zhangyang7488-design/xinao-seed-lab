@@ -11,5 +11,15 @@
   "provider_egress_runtime_verified": false,
   "generic_worker_route_allowed": false,
   "state_root": "D:/XINAO_RESEARCH_RUNTIME/state/xinao_skill/researcher_container",
-  "run_root": "D:/XINAO_RESEARCH_RUNTIME/runs/xinao_researcher"
+  "run_root": "D:/XINAO_RESEARCH_RUNTIME/runs/xinao_researcher",
+  "egress_posture_schema": "xinao.provider_egress_posture.v1",
+  "egress_internal_network_name": "xinao_researcher_internal",
+  "egress_external_network_name": "xinao_provider_egress_ext",
+  "egress_proxy_container_name": "xinao-researcher-egress-proxy",
+  "egress_proxy_endpoint": "http://xinao-researcher-egress-proxy:3128",
+  "egress_proxy_listen_port": 3128,
+  "egress_posture_relative_path": "researcher_container/egress/current_posture.v1.json",
+  "egress_host_port_publish_allowed": false,
+  "egress_dify_cross_project_allowed": false,
+  "egress_tls_interception_allowed": false
 }
