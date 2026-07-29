@@ -1,16 +1,28 @@
 from __future__ import annotations
 
 import json
+import shutil
 import subprocess
 from pathlib import Path
 
+import pytest
+
 SCRIPT = Path(__file__).resolve().parents[1] / "scripts" / "predecision_intent_guard_v1.ps1"
-PWSH = Path(r"D:\XINAO_RESEARCH_RUNTIME\tools\powershell\7.6.4\pwsh.exe")
+PINNED_WINDOWS_PWSH = Path(r"D:\XINAO_RESEARCH_RUNTIME\tools\powershell\7.6.4\pwsh.exe")
+
+
+def _pwsh() -> str:
+    if PINNED_WINDOWS_PWSH.is_file():
+        return str(PINNED_WINDOWS_PWSH)
+    discovered = shutil.which("pwsh")
+    if discovered is None:
+        pytest.skip("PowerShell is unavailable in this test environment")
+    return discovered
 
 
 def _invoke(payload: dict[str, object]) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
-        [str(PWSH), "-NoProfile", "-File", str(SCRIPT)],
+        [_pwsh(), "-NoProfile", "-File", str(SCRIPT)],
         input=json.dumps(payload),
         text=True,
         capture_output=True,
