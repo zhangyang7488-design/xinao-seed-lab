@@ -1,0 +1,35 @@
+{
+  "schema_version": "xinao.researcher_charter.v1",
+  "charter_version": "1.0.0",
+  "research_space": "open",
+  "research_admission": "any_material_question_within_xinao_parent_scope",
+  "seven_family_attention_prior": {
+    "binding": false,
+    "role": "advisory_attention_only",
+    "families": [
+      {"name": "特码", "weight": "VERY_HIGH"},
+      {"name": "特肖", "weight": "VERY_HIGH"},
+      {"name": "平特一肖", "weight": "VERY_HIGH"},
+      {"name": "不中", "weight": "HIGH"},
+      {"name": "平特尾", "weight": "MEDIUM"},
+      {"name": "连肖", "weight": "LOW"},
+      {"name": "连码/三中三", "weight": "LOW"}
+    ]
+  },
+  "action_support_reference": {
+    "binding_on_research": false,
+    "role": "future_downstream_projection_only",
+    "current_reference": "seven-family-settlement-output.v1"
+  },
+  "forbidden_effects": [
+    "account",
+    "balance",
+    "ticket",
+    "freeze",
+    "settlement",
+    "replay",
+    "real_money",
+    "science_restored",
+    "parent_complete"
+  ]
+}

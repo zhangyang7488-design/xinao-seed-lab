@@ -1,0 +1,37 @@
+ARG GROK_DONOR_IMAGE=xinao-houtai-gongren:worker-boundary-v5-20260727
+ARG PYTHON_BASE_IMAGE=python:3.12-slim@sha256:423ed6ab25b1921a477529254bfeeabf5855151dc2c3141699a1bfc852199fbf
+
+FROM ${GROK_DONOR_IMAGE} AS grok_donor
+FROM ${PYTHON_BASE_IMAGE}
+
+ARG GROK_DONOR_IMAGE_ID
+ARG CHARTER_SHA256
+ARG OUTPUT_SCHEMA_SHA256
+ARG RUNTIME_LOCK_SHA256
+ARG SKILL_INVOKER_SHA256
+
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates \
+    && rm -rf /var/lib/apt/lists/* \
+    && install -d -m 0555 /opt/xinao-researcher /work
+
+COPY --from=grok_donor /usr/local/bin/grok /usr/local/bin/grok
+COPY --chmod=0555 docker/xinao-researcher/entrypoint.py /opt/xinao-researcher/entrypoint.py
+RUN /usr/local/bin/grok version
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PYTHONUTF8=1 \
+    HOME=/grok-home \
+    GROK_HOME=/grok-home
+
+LABEL org.opencontainers.image.title="XINAO dedicated scientific researcher" \
+      io.xinao.researcher.chain="dedicated-xinao-science" \
+      io.xinao.researcher.generic-worker-route="forbidden" \
+      io.xinao.researcher.grok-donor-image-id="${GROK_DONOR_IMAGE_ID}" \
+      io.xinao.researcher.charter.sha256="${CHARTER_SHA256}" \
+      io.xinao.researcher.output-schema.sha256="${OUTPUT_SCHEMA_SHA256}" \
+      io.xinao.researcher.runtime-lock.sha256="${RUNTIME_LOCK_SHA256}" \
+      io.xinao.researcher.skill-invoker.sha256="${SKILL_INVOKER_SHA256}"
+
+WORKDIR /work
+ENTRYPOINT ["python", "-I", "/opt/xinao-researcher/entrypoint.py"]

@@ -41,13 +41,13 @@ jobs:
         run: uv sync --frozen --extra dev --extra workflow
 
       - name: Ruff lint
-        run: uv run ruff check services scripts tests
+        run: uv run ruff check services scripts tests skills/xinao/scripts docker/xinao-researcher
 
       - name: Ruff format check
-        run: uv run ruff format --check services scripts tests
+        run: uv run ruff format --check services scripts tests skills/xinao/scripts docker/xinao-researcher
 
       - name: Compile retained Python
-        run: uv run python -m compileall -q services scripts tests
+        run: uv run python -m compileall -q services scripts tests skills/xinao/scripts docker/xinao-researcher
 
       - name: Run bounded tests
         run: uv run pytest -q
