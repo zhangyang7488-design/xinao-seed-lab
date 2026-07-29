@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import hashlib
 import importlib.util
 import json
 import os
+import re
 import subprocess
 import sys
 import threading
@@ -14,6 +16,8 @@ import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
 SKILL_ROOT = ROOT / "skills" / "xinao"
+FAKE_DONOR_BINARY_PAYLOAD = b"fake-grok-donor-binary-for-sp-b-001-tests\n"
+FAKE_DONOR_BINARY_SHA256 = hashlib.sha256(FAKE_DONOR_BINARY_PAYLOAD).hexdigest()
 
 
 def _load_module(path: Path, name: str):
@@ -76,6 +80,7 @@ def _sealed_release(
         "source_tree": "d" * 40,
         "source_dirty": dirty,
         "grok_donor_image_id": "sha256:" + "b" * 64,
+        "grok_donor_binary_sha256": "a" * 64,
     }
     source_identity_sha256 = module._sha256_bytes(module._canonical_bytes(source_identity))
     image_id = "sha256:" + image_character * 64
@@ -83,6 +88,9 @@ def _sealed_release(
         "io.xinao.researcher.chain": "dedicated-xinao-science",
         "io.xinao.researcher.generic-worker-route": "forbidden",
         "io.xinao.researcher.grok-donor-image-id": source_identity["grok_donor_image_id"],
+        "io.xinao.researcher.grok-donor-binary.sha256": source_identity[
+            "grok_donor_binary_sha256"
+        ],
         "io.xinao.researcher.charter.sha256": hashes["charter_sha256"],
         "io.xinao.researcher.output-schema.sha256": hashes["output_schema_sha256"],
         "io.xinao.researcher.material-bundle-schema.sha256": hashes[
@@ -254,16 +262,36 @@ def _canary_value(module, journal: dict[str, object]) -> dict[str, object]:
     }
 
 
+def _parse_build_args(command: list[str]) -> dict[str, str]:
+    args: dict[str, str] = {}
+    for index, value in enumerate(command):
+        if value == "--build-arg":
+            key, argument = command[index + 1].split("=", 1)
+            args[key] = argument
+    return args
+
+
 def _fake_build_environment(
     module,
     monkeypatch: pytest.MonkeyPatch,
     *,
     dirty: bool,
     image_character: str = "e",
-) -> tuple[list[list[str]], list[tuple[str, object]]]:
+    donor_binary_payload: bytes = FAKE_DONOR_BINARY_PAYLOAD,
+    on_before_build=None,
+    fail_on: str | None = None,
+) -> dict[str, object]:
     build_commands: list[list[str]] = []
+    docker_commands: list[list[str]] = []
     fence_checks: list[tuple[str, object]] = []
+    created_containers: list[str] = []
+    removed_containers: list[str] = []
     fence = {"test_fence": "build"}
+    donor_binary_sha256 = hashlib.sha256(donor_binary_payload).hexdigest()
+    lock = json.loads(module.RUNTIME_LOCK_PATH.read_text(encoding="utf-8"))
+    donor_id = str(lock["grok_donor_image_id"])
+    donor_tag = str(lock["grok_donor_image"])
+    live_containers: dict[str, dict[str, object]] = {}
 
     def fake_fence(command: str, *, expected=None):
         fence_checks.append((command, expected))
@@ -274,33 +302,95 @@ def _fake_build_environment(
 
     def fake_run(arguments, **_kwargs):
         values = list(arguments)
+        if values and values[0] == "docker":
+            docker_commands.append(list(values))
         if values[:3] == ["git", "status", "--porcelain"]:
             return SimpleNamespace(stdout=" M source\n" if dirty else "", stderr="", returncode=0)
         if values[:3] == ["git", "rev-parse", "HEAD"]:
             return SimpleNamespace(stdout="c" * 40, stderr="", returncode=0)
         if values[:3] == ["git", "rev-parse", "HEAD^{tree}"]:
             return SimpleNamespace(stdout="d" * 40, stderr="", returncode=0)
-        if values[:2] == ["docker", "build"]:
-            build_commands.append(values)
+        if values[:2] == ["docker", "create"]:
+            assert "--name" in values
+            assert values[values.index("--name") + 1]
+            assert "--entrypoint" in values
+            assert values[values.index("--entrypoint") + 1] == "/bin/true"
+            assert values[-1] == donor_id
+            assert donor_tag not in values
+            assert "start" not in values
+            assert "-v" not in values
+            assert "--volume" not in values
+            assert "--mount" not in values
+            name = values[values.index("--name") + 1]
+            assert name.startswith(module.DONOR_EXTRACT_NAME_PREFIX)
+            assert name not in live_containers
+            if fail_on == "create":
+                raise module.XinaoError("PROCESS_FAILED", "injected create failure")
+            live_containers[name] = {
+                "Image": donor_id,
+                "State": {"Running": False, "Status": "created"},
+                "HostConfig": {"Binds": None, "Mounts": None},
+                "Mounts": [],
+            }
+            created_containers.append(name)
+            return SimpleNamespace(stdout=name + "\n", stderr="", returncode=0)
+        if values[:2] == ["docker", "inspect"]:
+            name = values[2]
+            if fail_on == "inspect":
+                raise module.XinaoError("PROCESS_FAILED", "injected inspect failure")
+            assert name in live_containers
+            payload = json.dumps([live_containers[name]])
+            return SimpleNamespace(stdout=payload, stderr="", returncode=0)
+        if values[:2] == ["docker", "cp"]:
+            assert len(values) == 4
+            source = values[2]
+            dest = Path(values[3])
+            assert source.endswith(":/usr/local/bin/grok")
+            container = source.split(":", 1)[0]
+            assert container in live_containers
+            assert "start" not in values
+            if fail_on == "cp":
+                raise module.XinaoError("PROCESS_FAILED", "injected cp failure")
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            dest.write_bytes(donor_binary_payload)
             return SimpleNamespace(stdout="", stderr="", returncode=0)
+        if values[:3] == ["docker", "rm", "-f"] or values[:2] == ["docker", "rm"]:
+            name = values[-1]
+            live_containers.pop(name, None)
+            removed_containers.append(name)
+            return SimpleNamespace(stdout="", stderr="", returncode=0)
+        if values[:2] == ["docker", "build"]:
+            if on_before_build is not None:
+                on_before_build(values)
+            if fail_on == "build":
+                build_commands.append(values)
+                raise module.XinaoError("PROCESS_FAILED", "injected build failure")
+            build_commands.append(values)
+            args = _parse_build_args(values)
+            assert "GROK_DONOR_IMAGE" not in args
+            assert args.get("GROK_DONOR_IMAGE_ID") == donor_id
+            assert args.get("GROK_DONOR_BINARY_SHA256") == donor_binary_sha256
+            context = Path(values[-1])
+            binary = context / module.DONOR_BINARY_CONTEXT_RELATIVE
+            assert binary.is_file()
+            assert binary.read_bytes() == donor_binary_payload
+            assert not any(part == "start" for part in values)
+            return SimpleNamespace(stdout="", stderr="", returncode=0)
+        if values[:2] == ["docker", "start"]:
+            raise AssertionError(f"donor container must never start: {values}")
         raise AssertionError(values)
 
-    lock = json.loads(module.RUNTIME_LOCK_PATH.read_text(encoding="utf-8"))
-
     def fake_image(_docker: str, image: str) -> dict[str, object]:
-        if image == lock["grok_donor_image"]:
-            return {"Id": lock["grok_donor_image_id"]}
+        if image in {donor_tag, donor_id}:
+            return {"Id": donor_id}
         assert build_commands
         command = build_commands[-1]
-        args: dict[str, str] = {}
-        for index, value in enumerate(command):
-            if value == "--build-arg":
-                key, argument = command[index + 1].split("=", 1)
-                args[key] = argument
+        args = _parse_build_args(command)
         labels = {
             "io.xinao.researcher.chain": "dedicated-xinao-science",
             "io.xinao.researcher.generic-worker-route": "forbidden",
             "io.xinao.researcher.grok-donor-image-id": args["GROK_DONOR_IMAGE_ID"],
+            "io.xinao.researcher.grok-donor-binary.sha256": args["GROK_DONOR_BINARY_SHA256"],
             "io.xinao.researcher.charter.sha256": args["CHARTER_SHA256"],
             "io.xinao.researcher.output-schema.sha256": args["OUTPUT_SCHEMA_SHA256"],
             "io.xinao.researcher.material-bundle-schema.sha256": args[
@@ -326,7 +416,18 @@ def _fake_build_environment(
     monkeypatch.setattr(module, "_docker_engine_os", lambda _docker: "linux")
     monkeypatch.setattr(module, "_docker_image", fake_image)
     monkeypatch.setattr(module, "_validate_bootstrap_fence_locked", fake_fence)
-    return build_commands, fence_checks
+    return {
+        "build_commands": build_commands,
+        "docker_commands": docker_commands,
+        "fence_checks": fence_checks,
+        "created_containers": created_containers,
+        "removed_containers": removed_containers,
+        "live_containers": live_containers,
+        "donor_id": donor_id,
+        "donor_tag": donor_tag,
+        "donor_binary_sha256": donor_binary_sha256,
+        "donor_binary_payload": donor_binary_payload,
+    }
 
 
 def test_runtime_and_thin_bootstrap_are_independent_modules() -> None:
@@ -492,12 +593,34 @@ def test_runtime_activation_lock_detects_path_identity_replacement(
     assert lock_lstat_calls >= 3
 
 
+def test_dockerfile_has_no_donor_from_or_raw_image_id_stage() -> None:
+    """Real-failure regression: raw local image Id in FROM is unbuildable under BuildKit."""
+    dockerfile = (ROOT / "docker" / "xinao-researcher" / "Dockerfile").read_text(
+        encoding="utf-8"
+    )
+    assert "ARG GROK_DONOR_IMAGE=" not in dockerfile
+    assert "ARG GROK_DONOR_IMAGE\n" not in dockerfile
+    assert "AS grok_donor" not in dockerfile
+    assert "COPY --from=grok_donor" not in dockerfile
+    assert re.search(r"^FROM\s+\$\{?GROK_DONOR", dockerfile, flags=re.MULTILINE) is None
+    assert re.search(r"^FROM\s+sha256:", dockerfile, flags=re.MULTILINE) is None
+    assert "COPY donor-artifacts/grok" in dockerfile
+    assert "GROK_DONOR_BINARY_SHA256" in dockerfile
+    assert "ARG GROK_DONOR_IMAGE_ID" in dockerfile
+    assert "io.xinao.researcher.grok-donor-binary.sha256" in dockerfile
+
+
 def test_build_is_candidate_only_and_passes_complete_image_identity(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     module = _module()
     _state(module, tmp_path, monkeypatch)
-    build_commands, fence_checks = _fake_build_environment(module, monkeypatch, dirty=True)
+    env = _fake_build_environment(module, monkeypatch, dirty=True)
+    build_commands = env["build_commands"]
+    fence_checks = env["fence_checks"]
+    donor_id = env["donor_id"]
+    donor_tag = env["donor_tag"]
+    donor_binary_sha256 = env["donor_binary_sha256"]
     receipt = module.build_release(ROOT, allow_dirty=True)
     assert receipt["status"] == "CANDIDATE_BUILT"
     assert receipt["package_version"] == "1.2.0"
@@ -512,15 +635,225 @@ def test_build_is_candidate_only_and_passes_complete_image_identity(
         "ENTRYPOINT_SHA256",
         "SOURCE_IDENTITY_SHA256",
         "REQUESTED_MODEL=grok-4.5",
+        f"GROK_DONOR_IMAGE_ID={donor_id}",
+        f"GROK_DONOR_BINARY_SHA256={donor_binary_sha256}",
     ):
         assert key in joined
+    assert "GROK_DONOR_IMAGE=" not in joined
+    assert donor_tag not in joined
+    assert str(ROOT) not in build[-1]
+    assert (Path(build[-1]) / module.DONOR_BINARY_CONTEXT_RELATIVE).name == "grok"
     manifest = module._load_json(Path(receipt["release_manifest_path"]))
     module._validate_release_manifest(manifest, Path(receipt["release_manifest_path"]))
+    assert manifest["source_identity"]["grok_donor_image_id"] == donor_id
+    assert manifest["source_identity"]["grok_donor_binary_sha256"] == donor_binary_sha256
+    assert (
+        manifest["image_labels"]["io.xinao.researcher.grok-donor-image-id"] == donor_id
+    )
+    assert (
+        manifest["image_labels"]["io.xinao.researcher.grok-donor-binary.sha256"]
+        == donor_binary_sha256
+    )
     assert fence_checks == [
         ("build", None),
         ("build", {"test_fence": "build"}),
         ("build", {"test_fence": "build"}),
     ]
+    # Exact create/inspect/cp shape; never start; cleanup removed the extract container.
+    docker_commands = env["docker_commands"]
+    assert any(cmd[:2] == ["docker", "create"] for cmd in docker_commands)
+    assert any(cmd[:2] == ["docker", "inspect"] for cmd in docker_commands)
+    assert any(cmd[:2] == ["docker", "cp"] for cmd in docker_commands)
+    assert any(cmd[:3] == ["docker", "rm", "-f"] for cmd in docker_commands)
+    assert not any(cmd[:2] == ["docker", "start"] for cmd in docker_commands)
+    assert env["created_containers"]
+    assert set(env["created_containers"]).issubset(set(env["removed_containers"]))
+    assert env["live_containers"] == {}
+    assert not any(
+        path.name.startswith(module.DONOR_STAGING_DIR_PREFIX)
+        for path in module._state_paths()["capability_root"].iterdir()
+    )
+
+
+def test_build_extract_pins_binary_against_tag_retarget(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """SP-B-001: tag retarget after first inspect cannot change staged donor bytes."""
+    module = _module()
+    _state(module, tmp_path, monkeypatch)
+    lock = json.loads(module.RUNTIME_LOCK_PATH.read_text(encoding="utf-8"))
+    donor_tag = str(lock["grok_donor_image"])
+    pinned_id = str(lock["grok_donor_image_id"])
+    retargeted_id = "sha256:" + "9" * 64
+    assert retargeted_id != pinned_id
+
+    donor_tag_inspects = 0
+    tag_retargeted = False
+
+    def on_before_build(values: list[str]) -> None:
+        nonlocal tag_retargeted
+        tag_retargeted = True
+        args = _parse_build_args(values)
+        assert "GROK_DONOR_IMAGE" not in args
+        assert args["GROK_DONOR_IMAGE_ID"] == pinned_id
+        assert args["GROK_DONOR_BINARY_SHA256"] == FAKE_DONOR_BINARY_SHA256
+        context = Path(values[-1])
+        assert (context / module.DONOR_BINARY_CONTEXT_RELATIVE).read_bytes() == (
+            FAKE_DONOR_BINARY_PAYLOAD
+        )
+
+    env = _fake_build_environment(
+        module, monkeypatch, dirty=False, on_before_build=on_before_build
+    )
+    original_image = module._docker_image
+
+    def retarget_aware_image(_docker: str, image: str) -> dict[str, object]:
+        nonlocal donor_tag_inspects
+        if image == donor_tag:
+            donor_tag_inspects += 1
+            if tag_retargeted or donor_tag_inspects > 1:
+                return {"Id": retargeted_id}
+            return {"Id": pinned_id}
+        if image == pinned_id:
+            return {"Id": pinned_id}
+        if image == retargeted_id:
+            return {"Id": retargeted_id}
+        return original_image(_docker, image)
+
+    monkeypatch.setattr(module, "_docker_image", retarget_aware_image)
+
+    receipt = module.build_release(ROOT, allow_dirty=False)
+    assert receipt["status"] == "CANDIDATE_BUILT"
+    assert tag_retargeted is True
+    assert donor_tag_inspects == 1
+    assert len(env["build_commands"]) == 1
+    assert module._docker_image("docker", donor_tag)["Id"] == retargeted_id
+    assert module._docker_image("docker", pinned_id)["Id"] == pinned_id
+    manifest = module._load_json(Path(receipt["release_manifest_path"]))
+    module._validate_release_manifest(manifest, Path(receipt["release_manifest_path"]))
+    assert manifest["source_identity"]["grok_donor_image_id"] == pinned_id
+    assert manifest["source_identity"]["grok_donor_binary_sha256"] == FAKE_DONOR_BINARY_SHA256
+    assert (
+        manifest["image_labels"]["io.xinao.researcher.grok-donor-image-id"] == pinned_id
+    )
+    assert (
+        manifest["image_labels"]["io.xinao.researcher.grok-donor-binary.sha256"]
+        == FAKE_DONOR_BINARY_SHA256
+    )
+    assert manifest["source_identity"]["grok_donor_image_id"] != retargeted_id
+
+
+def test_build_detects_staged_binary_tamper_before_docker_build(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    module = _module()
+    _state(module, tmp_path, monkeypatch)
+    env = _fake_build_environment(module, monkeypatch, dirty=False)
+    original_prepare = module._prepare_donor_binary_staging
+
+    def prepare_then_tamper(docker: str, *, donor_image_id: str, entrypoint_path: Path):
+        result = original_prepare(
+            docker, donor_image_id=donor_image_id, entrypoint_path=entrypoint_path
+        )
+        _binary_sha256, _staging_root, build_context, _container_name = result
+        binary = build_context / module.DONOR_BINARY_CONTEXT_RELATIVE
+        binary.write_bytes(b"tampered-donor-binary\n")
+        return result
+
+    monkeypatch.setattr(module, "_prepare_donor_binary_staging", prepare_then_tamper)
+    with pytest.raises(module.XinaoError) as failure:
+        module.build_release(ROOT, allow_dirty=False)
+    assert failure.value.reason_code == "DONOR_BINARY_TAMPERED"
+    assert env["live_containers"] == {}
+    assert not any(
+        path.name.startswith(module.DONOR_STAGING_DIR_PREFIX)
+        for path in module._state_paths()["capability_root"].iterdir()
+        if path.is_dir()
+    )
+
+
+def test_build_rejects_non_regular_staged_donor_binary(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    module = _module()
+    _state(module, tmp_path, monkeypatch)
+    env = _fake_build_environment(module, monkeypatch, dirty=False)
+    original_run = module._run
+
+    def symlink_cp(arguments, **kwargs):
+        values = list(arguments)
+        if values[:2] == ["docker", "cp"]:
+            dest = Path(values[3])
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            target = dest.parent / "link-target"
+            target.write_bytes(FAKE_DONOR_BINARY_PAYLOAD)
+            if dest.exists() or dest.is_symlink():
+                dest.unlink()
+            dest.symlink_to(target)
+            return SimpleNamespace(stdout="", stderr="", returncode=0)
+        return original_run(arguments, **kwargs)
+
+    monkeypatch.setattr(module, "_run", symlink_cp)
+    with pytest.raises(module.XinaoError) as failure:
+        module.build_release(ROOT, allow_dirty=False)
+    assert failure.value.reason_code == "DONOR_BINARY_INVALID"
+    assert env["live_containers"] == {}
+
+
+@pytest.mark.parametrize("fail_on", ("create", "inspect", "cp", "build"))
+def test_build_donor_extract_cleanup_on_every_failure_path(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, fail_on: str
+) -> None:
+    module = _module()
+    _state(module, tmp_path, monkeypatch)
+    env = _fake_build_environment(module, monkeypatch, dirty=False, fail_on=fail_on)
+    with pytest.raises(module.XinaoError) as failure:
+        module.build_release(ROOT, allow_dirty=False)
+    assert failure.value.reason_code == "PROCESS_FAILED"
+    assert env["live_containers"] == {}
+    capability_root = module._state_paths()["capability_root"]
+    leftovers = [
+        path
+        for path in capability_root.iterdir()
+        if path.name.startswith(module.DONOR_STAGING_DIR_PREFIX)
+    ]
+    assert leftovers == []
+    if fail_on != "create":
+        assert env["created_containers"]
+        assert set(env["created_containers"]).issubset(set(env["removed_containers"]))
+
+
+def test_build_concurrent_extract_identities_are_unique(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    module = _module()
+    _state(module, tmp_path, monkeypatch)
+    names: list[str] = []
+    staging_roots: list[Path] = []
+
+    def capture_prepare(docker: str, *, donor_image_id: str, entrypoint_path: Path):
+        result = original_prepare(
+            docker, donor_image_id=donor_image_id, entrypoint_path=entrypoint_path
+        )
+        binary_sha256, staging_root, build_context, container_name = result
+        names.append(container_name)
+        staging_roots.append(staging_root)
+        return result
+
+    env = _fake_build_environment(module, monkeypatch, dirty=False)
+    original_prepare = module._prepare_donor_binary_staging
+    monkeypatch.setattr(module, "_prepare_donor_binary_staging", capture_prepare)
+    first = module.build_release(ROOT, allow_dirty=False)
+    second = module.build_release(ROOT, allow_dirty=False)
+    assert first["status"] == second["status"] == "CANDIDATE_BUILT"
+    assert len(names) == 2
+    assert names[0] != names[1]
+    assert staging_roots[0] != staging_roots[1]
+    assert all(name.startswith(module.DONOR_EXTRACT_NAME_PREFIX) for name in names)
+    assert all(
+        root.name.startswith(module.DONOR_STAGING_DIR_PREFIX) for root in staging_roots
+    )
+    assert env["live_containers"] == {}
 
 
 def test_build_parser_has_no_promote_flag(capsys: pytest.CaptureFixture[str]) -> None:
@@ -554,7 +887,8 @@ def test_build_fence_blocks_effect_or_release_seal_at_the_matching_boundary(
 ) -> None:
     module = _module()
     _state(module, tmp_path, monkeypatch)
-    build_commands, _fence_checks = _fake_build_environment(module, monkeypatch, dirty=False)
+    env = _fake_build_environment(module, monkeypatch, dirty=False)
+    build_commands = env["build_commands"]
     fence = {"test_fence": "build"}
     calls = 0
 
@@ -574,6 +908,13 @@ def test_build_fence_blocks_effect_or_release_seal_at_the_matching_boundary(
     assert failure.value.reason_code == "BOOTSTRAP_FENCE_STATE_DRIFT"
     assert len(build_commands) == expected_build_count
     assert not module._state_paths()["release_root"].exists()
+    # Fence failure after extract still cleans temporary donor staging/container.
+    assert env["live_containers"] == {}
+    capability_root = module._state_paths()["capability_root"]
+    assert not any(
+        path.name.startswith(module.DONOR_STAGING_DIR_PREFIX)
+        for path in capability_root.iterdir()
+    )
 
 
 def test_legacy_pointer_fails_before_any_activation_mutation(

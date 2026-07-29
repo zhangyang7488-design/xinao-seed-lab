@@ -117,6 +117,7 @@ IMAGE_LABEL_KEYS = {
     "io.xinao.researcher.chain",
     "io.xinao.researcher.generic-worker-route",
     "io.xinao.researcher.grok-donor-image-id",
+    "io.xinao.researcher.grok-donor-binary.sha256",
     "io.xinao.researcher.charter.sha256",
     "io.xinao.researcher.output-schema.sha256",
     "io.xinao.researcher.material-bundle-schema.sha256",
@@ -384,6 +385,7 @@ def _release_identity_payload(manifest: dict[str, Any]) -> dict[str, Any]:
         "charter_version": manifest.get("charter_version"),
         "runtime_version": manifest.get("runtime_version"),
         "grok_donor_image_id": source_identity.get("grok_donor_image_id"),
+        "grok_donor_binary_sha256": source_identity.get("grok_donor_binary_sha256"),
         "skill_bundle_tree_sha256": manifest.get("skill_bundle_tree_sha256"),
         "image_id": manifest.get("image_id"),
         "image_entrypoint": manifest.get("image_entrypoint"),
@@ -432,6 +434,7 @@ def _validate_release_manifest_shape(
         "source_tree",
         "source_dirty",
         "grok_donor_image_id",
+        "grok_donor_binary_sha256",
     }:
         raise BootstrapError("RELEASE_SOURCE_IDENTITY_INVALID", str(manifest_path))
     if source_identity.get("source_dirty") is not False:
@@ -443,6 +446,14 @@ def _validate_release_manifest_shape(
     donor_id = source_identity.get("grok_donor_image_id")
     if not isinstance(donor_id, str) or re.fullmatch(r"sha256:[0-9a-f]{64}", donor_id) is None:
         raise BootstrapError("RELEASE_DONOR_IDENTITY_MISSING", str(donor_id))
+    donor_binary_sha256 = source_identity.get("grok_donor_binary_sha256")
+    if (
+        not isinstance(donor_binary_sha256, str)
+        or HEX_SHA256_PATTERN.fullmatch(donor_binary_sha256) is None
+    ):
+        raise BootstrapError(
+            "RELEASE_DONOR_BINARY_IDENTITY_MISSING", str(donor_binary_sha256)
+        )
     if (
         manifest.get("required_bootstrap_protocol") != 2
         or manifest.get("generic_worker_route_allowed") is not False
@@ -483,6 +494,7 @@ def _validate_release_manifest_shape(
         "io.xinao.researcher.chain": "dedicated-xinao-science",
         "io.xinao.researcher.generic-worker-route": "forbidden",
         "io.xinao.researcher.grok-donor-image-id": donor_id,
+        "io.xinao.researcher.grok-donor-binary.sha256": donor_binary_sha256,
         "io.xinao.researcher.charter.sha256": hashes["charter_sha256"],
         "io.xinao.researcher.output-schema.sha256": hashes["output_schema_sha256"],
         "io.xinao.researcher.material-bundle-schema.sha256": hashes[
