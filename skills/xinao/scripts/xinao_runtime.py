@@ -62,9 +62,12 @@ SEMVER_PATTERN = re.compile(r"^[0-9]+\.[0-9]+\.[0-9]+$")
 HEX_SHA256_PATTERN = re.compile(r"^[0-9a-f]{64}$")
 
 RELEASE_SCHEMA = "xinao.researcher_release.v2"
+LEGACY_RELEASE_SCHEMA = "xinao.researcher_release.v1"
 BUNDLE_MANIFEST_SCHEMA = "xinao.skill_bundle_manifest.v1"
 CURRENT_POINTER_SCHEMA = "xinao.researcher_current_pointer.v2"
+LEGACY_POINTER_SCHEMA = "xinao.researcher_current_pointer.v1"
 ACTIVATION_JOURNAL_SCHEMA = "xinao.researcher_activation_journal.v1"
+LEGACY_RESTORE_MANIFEST_SCHEMA = "xinao.researcher_legacy_restore.v1"
 BOOTSTRAP_FENCE_SCHEMA = "xinao.bootstrap_fence.v1"
 BOOTSTRAP_FENCE_ENVIRONMENT = "XINAO_BOOTSTRAP_FENCE_V1"
 REQUIRED_BOOTSTRAP_PROTOCOL = 2
@@ -75,6 +78,50 @@ PENDING_ACTIVATION_STATES = {
     "CANARY_STARTED",
     "ROLLBACK_POINTER_SWITCHED",
     "ROLLBACK_CANARY_STARTED",
+}
+LEGACY_POINTER_KEYS = {
+    "schema_version",
+    "release_id",
+    "release_manifest_path",
+    "release_manifest_sha256",
+    "promoted_at",
+    "previous_pointer_sha256",
+    "previous_release_id",
+    "previous_release_manifest_path",
+    "previous_release_manifest_sha256",
+}
+LEGACY_RELEASE_SKILL_HASH_KEYS = {
+    "capability_registry_sha256",
+    "charter_sha256",
+    "dockerfile_sha256",
+    "entrypoint_sha256",
+    "meta_sha256",
+    "output_schema_sha256",
+    "runtime_lock_sha256",
+    "skill_invoker_sha256",
+    "skill_md_sha256",
+}
+LEGACY_RELEASE_KEYS = {
+    "created_at",
+    "generic_worker_route_allowed",
+    "image_entrypoint",
+    "image_id",
+    "image_labels",
+    "image_tag_observational",
+    "release_id",
+    "run_namespace",
+    "schema_version",
+    "skill_hashes",
+    "source_identity",
+    "state_namespace",
+}
+MIGRATE_FROM_KEYS = {
+    "legacy_pointer_sha256",
+    "legacy_pointer",
+    "previous_verified",
+    "legacy_restore_path",
+    "legacy_restore_manifest_sha256",
+    "legacy_restore_tree_sha256",
 }
 SOURCE_BUNDLE_IGNORED_DIRECTORIES = {"__pycache__"}
 SOURCE_BUNDLE_IGNORED_SUFFIXES = {".pyc", ".pyo"}
@@ -326,9 +373,15 @@ def _state_paths() -> dict[str, Path]:
         "capability_root": capability_root,
         "release_root": capability_root / "releases",
         "transaction_root": capability_root / "transactions",
+        "migration_root": capability_root / "migration",
+        "source_renderings_root": capability_root / "migration" / "source_renderings",
         "pointer": capability_root / "current.json",
         "lock": capability_root / ".activation.lock",
     }
+
+
+def _installed_skill_root() -> Path:
+    return Path(os.environ.get("XINAO_INSTALLED_SKILL_ROOT", str(DEFAULT_INSTALLED_SKILL_ROOT)))
 
 
 @contextmanager
@@ -1534,7 +1587,7 @@ def _validate_journal(journal: dict[str, Any], journal_path: Path) -> None:
         raise XinaoError("ACTIVATION_TRANSACTION_BINDING_MISMATCH", str(journal_path))
     if type(journal.get("revision")) is not int or journal["revision"] < 1:
         raise XinaoError("ACTIVATION_JOURNAL_REVISION_INVALID", str(journal.get("revision")))
-    if journal.get("operation") not in {"ACTIVATE", "ROLLBACK"}:
+    if journal.get("operation") not in {"ACTIVATE", "ROLLBACK", "MIGRATE"}:
         raise XinaoError("ACTIVATION_OPERATION_INVALID", _safe_text(journal.get("operation")))
     valid_states = PENDING_ACTIVATION_STATES | TERMINAL_ACTIVATION_STATES | {"RECOVERY_CONFLICT"}
     if journal.get("state") not in valid_states:
@@ -1544,7 +1597,18 @@ def _validate_journal(journal: dict[str, Any], journal_path: Path) -> None:
     _validate_release_ref(journal.get("requested_to"))
     _validate_release_ref(journal.get("to"))
     from_value = journal.get("from")
-    if from_value is not None:
+    if journal.get("operation") == "MIGRATE":
+        if not isinstance(from_value, dict) or set(from_value) != MIGRATE_FROM_KEYS:
+            raise XinaoError("ACTIVATION_SOURCE_INVALID", _safe_text(from_value))
+        if HEX_SHA256_PATTERN.fullmatch(str(from_value.get("legacy_pointer_sha256", ""))) is None:
+            raise XinaoError("ACTIVATION_SOURCE_INVALID", "legacy_pointer_sha256")
+        legacy_pointer = from_value.get("legacy_pointer")
+        if not isinstance(legacy_pointer, dict) or set(legacy_pointer) != LEGACY_POINTER_KEYS:
+            raise XinaoError("ACTIVATION_SOURCE_INVALID", "legacy_pointer")
+        if legacy_pointer.get("schema_version") != LEGACY_POINTER_SCHEMA:
+            raise XinaoError("ACTIVATION_SOURCE_INVALID", "legacy_pointer.schema_version")
+        _validate_release_ref(from_value.get("previous_verified"))
+    elif from_value is not None:
         if not isinstance(from_value, dict) or set(from_value) != {
             "generation",
             "pointer_sha256",
@@ -2202,9 +2266,70 @@ def _complete_canary(
     }
 
 
+def _rollback_failed_migration(
+    journal: dict[str, Any], journal_path: Path, failure: XinaoError
+) -> dict[str, Any]:
+    """Restore the byte-exact legacy pointer, manifests, and installed Skill tree."""
+
+    from_value = journal.get("from")
+    if not isinstance(from_value, dict) or set(from_value) != MIGRATE_FROM_KEYS:
+        journal = _journal_transition(
+            journal_path,
+            journal,
+            "RECOVERY_CONFLICT",
+            failure_reason={"reason_code": failure.reason_code, "detail": failure.detail},
+        )
+        raise XinaoError("RECOVERY_CONFLICT", str(journal_path))
+    pointer_path = _state_paths()["pointer"]
+    if pointer_path.is_file():
+        pointer = _load_json(pointer_path)
+        pointer_sha256 = _sha256(pointer_path)
+        if pointer.get("schema_version") == CURRENT_POINTER_SCHEMA:
+            if (
+                pointer.get("active") != journal["to"]
+                or pointer_sha256 != journal.get("switched_pointer_sha256")
+            ):
+                raise XinaoError("RECOVERY_CONFLICT", str(pointer_path))
+    restore_root = Path(str(from_value["legacy_restore_path"]))
+    restore_manifest = _verify_legacy_restore_bundle(
+        restore_root,
+        expected_manifest_sha256=str(from_value["legacy_restore_manifest_sha256"]),
+        expected_tree_sha256=str(from_value["legacy_restore_tree_sha256"]),
+    )
+    _apply_legacy_restore_bundle(restore_root, restore_manifest)
+    restored_sha256 = _sha256(pointer_path)
+    if restored_sha256 != from_value["legacy_pointer_sha256"]:
+        raise XinaoError("LEGACY_RESTORE_IDENTITY_MISMATCH", str(pointer_path))
+    journal = _journal_transition(
+        journal_path,
+        journal,
+        "ROLLED_BACK",
+        failure_reason={"reason_code": failure.reason_code, "detail": failure.detail},
+        canary=None,
+        terminal_pointer_sha256=restored_sha256,
+        switched_pointer_sha256=restored_sha256,
+    )
+    return {
+        "schema_version": "xinao.researcher_migration_receipt.v1",
+        "status": "ROLLED_BACK",
+        "txn_id": journal["txn_id"],
+        "operation": "MIGRATE",
+        "reason_code": failure.reason_code,
+        "detail": failure.detail,
+        "legacy_pointer_sha256": from_value["legacy_pointer_sha256"],
+        "legacy_restore_tree_sha256": from_value["legacy_restore_tree_sha256"],
+        "current_pointer_sha256": restored_sha256,
+        "activation_journal_path": str(journal_path),
+        "activation_journal_sha256": _sha256(journal_path),
+        "completion_claim_allowed": False,
+    }
+
+
 def _rollback_failed_activation(
     journal: dict[str, Any], journal_path: Path, failure: XinaoError
 ) -> dict[str, Any]:
+    if journal.get("operation") == "MIGRATE":
+        return _rollback_failed_migration(journal, journal_path, failure)
     from_value = journal.get("from")
     if not isinstance(from_value, dict):
         journal = _journal_transition(
@@ -2322,8 +2447,598 @@ def rollback_release() -> dict[str, Any]:
             raise XinaoError("RECOVERY_CONFLICT", str(journal_path)) from exc
 
 
+def _validate_legacy_pointer_document(pointer: dict[str, Any], pointer_path: Path) -> dict[str, Any]:
+    if set(pointer) != LEGACY_POINTER_KEYS:
+        raise XinaoError("CURRENT_POINTER_SCHEMA_INVALID", str(pointer_path))
+    if pointer.get("schema_version") != LEGACY_POINTER_SCHEMA:
+        raise XinaoError("CURRENT_POINTER_SCHEMA_INVALID", str(pointer_path))
+    for key in (
+        "release_id",
+        "release_manifest_path",
+        "release_manifest_sha256",
+        "previous_release_id",
+        "previous_release_manifest_path",
+        "previous_release_manifest_sha256",
+        "promoted_at",
+    ):
+        if not isinstance(pointer.get(key), str) or not pointer[key]:
+            raise XinaoError("CURRENT_POINTER_SCHEMA_INVALID", key)
+    previous_pointer_sha256 = pointer.get("previous_pointer_sha256")
+    if previous_pointer_sha256 is not None and (
+        not isinstance(previous_pointer_sha256, str)
+        or HEX_SHA256_PATTERN.fullmatch(previous_pointer_sha256) is None
+    ):
+        raise XinaoError("CURRENT_POINTER_SCHEMA_INVALID", "previous_pointer_sha256")
+    return pointer
+
+
+def _load_v1_release_manifest(
+    release_id: object,
+    manifest_path_value: object,
+    expected_sha256: object,
+    *,
+    absent_reason: str,
+) -> tuple[dict[str, Any], Path, str]:
+    """Load a pure protocol-1 release directory that contains only release.json."""
+
+    if not isinstance(release_id, str) or RELEASE_ID_PATTERN.fullmatch(release_id) is None:
+        raise XinaoError(absent_reason, _safe_text(release_id))
+    if not isinstance(expected_sha256, str) or HEX_SHA256_PATTERN.fullmatch(expected_sha256) is None:
+        raise XinaoError(absent_reason, "release_manifest_sha256")
+    manifest_path = Path(str(manifest_path_value or ""))
+    expected_path = _state_paths()["release_root"] / release_id / "release.json"
+    if not _paths_equal(manifest_path, expected_path):
+        raise XinaoError(absent_reason, str(manifest_path))
+    if not manifest_path.is_file():
+        raise XinaoError(absent_reason, str(manifest_path))
+    observed_sha256 = _sha256(manifest_path)
+    if observed_sha256 != expected_sha256:
+        raise XinaoError("RELEASE_MANIFEST_IDENTITY_MISMATCH", str(manifest_path))
+    release_dir = manifest_path.parent
+    try:
+        for entry in sorted(release_dir.iterdir()):
+            if entry.name != "release.json":
+                raise XinaoError(
+                    "V1_RELEASE_DIRECTORY_NOT_PURE",
+                    f"{release_id}: unexpected entry {entry.name}",
+                )
+    except OSError as exc:
+        raise XinaoError(absent_reason, f"{release_dir}: {exc}") from exc
+    manifest = _load_json(manifest_path)
+    if set(manifest) != LEGACY_RELEASE_KEYS or manifest.get("schema_version") != LEGACY_RELEASE_SCHEMA:
+        raise XinaoError("V1_RELEASE_MANIFEST_INVALID", str(manifest_path))
+    if manifest.get("release_id") != release_id:
+        raise XinaoError("RELEASE_IDENTITY_INVALID", release_id)
+    if manifest.get("generic_worker_route_allowed") is not False:
+        raise XinaoError("RELEASE_CHAIN_CLASS_INVALID", release_id)
+    skill_hashes = manifest.get("skill_hashes")
+    if not isinstance(skill_hashes, dict) or set(skill_hashes) != LEGACY_RELEASE_SKILL_HASH_KEYS:
+        raise XinaoError("V1_RELEASE_SKILL_HASHES_INVALID", release_id)
+    for key, value in skill_hashes.items():
+        if not isinstance(value, str) or HEX_SHA256_PATTERN.fullmatch(value) is None:
+            raise XinaoError("V1_RELEASE_SKILL_HASHES_INVALID", key)
+    source_identity = manifest.get("source_identity")
+    if not isinstance(source_identity, dict):
+        raise XinaoError("RELEASE_SOURCE_IDENTITY_INVALID", release_id)
+    if source_identity.get("source_dirty") is not False:
+        raise XinaoError("DIRTY_RELEASE_ACTIVATION_FORBIDDEN", release_id)
+    if (
+        not isinstance(manifest.get("image_id"), str)
+        or not str(manifest["image_id"]).startswith("sha256:")
+        or manifest.get("image_entrypoint")
+        != ["python", "-I", "/opt/xinao-researcher/entrypoint.py"]
+    ):
+        raise XinaoError("RELEASE_IMAGE_IDENTITY_INVALID", release_id)
+    # A v1 manifest alone is never a complete protocol-2 release.
+    return manifest, manifest_path, observed_sha256
+
+
+def _legacy_skill_side_hashes(root: Path) -> dict[str, str]:
+    """Project skill-tree bytes into the v1 skill_hashes skill-side subset."""
+
+    output_v1 = root / "references" / "researcher-output.v1.schema.json"
+    output_v2 = root / "references" / "researcher-output.v2.schema.json"
+    if output_v1.is_file():
+        output_schema_sha256 = _sha256(output_v1)
+    elif output_v2.is_file():
+        output_schema_sha256 = _sha256(output_v2)
+    else:
+        raise XinaoError("MIGRATION_SOURCE_RENDERING_HASH_MISMATCH", "output_schema_missing")
+    required = {
+        "skill_md_sha256": root / "SKILL.md",
+        "skill_invoker_sha256": root / "scripts" / "xinao.py",
+        "capability_registry_sha256": root / "references" / "capabilities.v1.json",
+        "charter_sha256": root / "references" / "researcher-charter.v1.json",
+        "runtime_lock_sha256": root / "references" / "researcher-runtime-lock.v1.json",
+        "meta_sha256": root / "references" / "meta.md",
+    }
+    hashes: dict[str, str] = {"output_schema_sha256": output_schema_sha256}
+    for key, path in required.items():
+        if not path.is_file():
+            raise XinaoError("MIGRATION_SOURCE_RENDERING_HASH_MISMATCH", f"missing:{path.name}")
+        hashes[key] = _sha256(path)
+    return hashes
+
+
+def _source_rendering_root(release_id: str) -> Path:
+    return _state_paths()["source_renderings_root"] / release_id
+
+
+def _resolve_source_rendering(
+    release_id: str, legacy_manifest: dict[str, Any]
+) -> tuple[Path, list[tuple[str, Path, bytes]]]:
+    root = _source_rendering_root(release_id)
+    if not root.is_dir():
+        raise XinaoError("MIGRATION_SOURCE_RENDERING_ABSENT", str(root))
+    rows = _source_bundle_files(root)
+    observed = _legacy_skill_side_hashes(root)
+    expected = legacy_manifest["skill_hashes"]
+    for key, value in observed.items():
+        if expected.get(key) != value:
+            raise XinaoError(
+                "MIGRATION_SOURCE_RENDERING_HASH_MISMATCH",
+                f"{release_id}:{key}: expected={expected.get(key)} observed={value}",
+            )
+    return root, rows
+
+
+def _capture_tree_rows(root: Path, *, reason_code: str) -> list[tuple[str, bytes]]:
+    try:
+        source_rows = _source_bundle_files(root)
+    except XinaoError as exc:
+        raise XinaoError(reason_code, f"{root}: {exc.reason_code}: {exc.detail}") from exc
+    return [(relative, payload) for relative, _path, payload in source_rows]
+
+
+def _tree_inventory(rows: Sequence[tuple[str, bytes]]) -> list[dict[str, Any]]:
+    files = [
+        {
+            "relative_path": relative,
+            "type": "file",
+            "size": len(payload),
+            "sha256": _sha256_bytes(payload),
+        }
+        for relative, payload in rows
+    ]
+    return files
+
+
+def _materialize_tree(destination: Path, rows: Sequence[tuple[str, bytes]]) -> None:
+    if destination.exists():
+        raise XinaoError("LEGACY_RESTORE_CAPTURE_FAILED", f"exists:{destination}")
+    destination.mkdir(parents=True, exist_ok=False)
+    for relative, payload in rows:
+        _write_bytes_atomic(destination / Path(relative), payload, create_new=True)
+
+
+def _capture_legacy_restore_bundle(
+    *,
+    txn_id: str,
+    legacy_pointer: dict[str, Any],
+    legacy_pointer_sha256: str,
+    active_manifest: dict[str, Any],
+    active_manifest_path: Path,
+    active_manifest_sha256: str,
+    previous_manifest: dict[str, Any],
+    previous_manifest_path: Path,
+    previous_manifest_sha256: str,
+) -> tuple[Path, dict[str, Any], str, str]:
+    """Capture every byte needed to restore pre-migration installed Skill + pointer/manifests."""
+
+    installed_root = _installed_skill_root()
+    if not installed_root.is_dir():
+        raise XinaoError("LEGACY_RESTORE_CAPTURE_FAILED", f"installed_skill_absent:{installed_root}")
+    try:
+        installed_rows = _capture_tree_rows(
+            installed_root, reason_code="LEGACY_RESTORE_CAPTURE_FAILED"
+        )
+    except XinaoError:
+        raise
+    pointer_payload = _canonical_bytes(legacy_pointer)
+    if _sha256_bytes(pointer_payload) != legacy_pointer_sha256:
+        # pointer file uses canonical write; re-read live bytes for exact capture
+        pointer_payload = _state_paths()["pointer"].read_bytes()
+        if _sha256_bytes(pointer_payload) != legacy_pointer_sha256:
+            raise XinaoError("LEGACY_RESTORE_CAPTURE_FAILED", "pointer_sha_mismatch")
+    active_payload = active_manifest_path.read_bytes()
+    previous_payload = previous_manifest_path.read_bytes()
+    if _sha256_bytes(active_payload) != active_manifest_sha256:
+        raise XinaoError("LEGACY_RESTORE_CAPTURE_FAILED", "active_manifest_sha_mismatch")
+    if _sha256_bytes(previous_payload) != previous_manifest_sha256:
+        raise XinaoError("LEGACY_RESTORE_CAPTURE_FAILED", "previous_manifest_sha_mismatch")
+
+    restore_root = _state_paths()["transaction_root"] / txn_id / "legacy_restore"
+    restore_root.mkdir(parents=True, exist_ok=False)
+    _materialize_tree(restore_root / "installed_skill", installed_rows)
+    _write_bytes_atomic(restore_root / "pointer.json", pointer_payload, create_new=True)
+    active_restore_path = (
+        restore_root / "releases" / str(active_manifest["release_id"]) / "release.json"
+    )
+    previous_restore_path = (
+        restore_root / "releases" / str(previous_manifest["release_id"]) / "release.json"
+    )
+    _write_bytes_atomic(active_restore_path, active_payload, create_new=True)
+    _write_bytes_atomic(previous_restore_path, previous_payload, create_new=True)
+
+    inventory = {
+        "installed_skill": _tree_inventory(installed_rows),
+        "pointer_sha256": legacy_pointer_sha256,
+        "releases": {
+            str(active_manifest["release_id"]): active_manifest_sha256,
+            str(previous_manifest["release_id"]): previous_manifest_sha256,
+        },
+    }
+    tree_sha256 = _sha256_bytes(_canonical_bytes(inventory))
+    restore_manifest = {
+        "schema_version": LEGACY_RESTORE_MANIFEST_SCHEMA,
+        "txn_id": txn_id,
+        "captured_at": _utc_now(),
+        "installed_skill_root": str(installed_root),
+        "legacy_pointer_sha256": legacy_pointer_sha256,
+        "tree_sha256": tree_sha256,
+        "inventory": inventory,
+    }
+    restore_manifest_path = restore_root / "restore.manifest.json"
+    _write_json_atomic(restore_manifest_path, restore_manifest, create_new=True)
+    restore_manifest_sha256 = _sha256(restore_manifest_path)
+
+    # Immediate re-read / CAS of every captured identity before any live mutation.
+    verified = _verify_legacy_restore_bundle(
+        restore_root,
+        expected_manifest_sha256=restore_manifest_sha256,
+        expected_tree_sha256=tree_sha256,
+    )
+    if verified["legacy_pointer_sha256"] != legacy_pointer_sha256:
+        raise XinaoError("LEGACY_RESTORE_IDENTITY_MISMATCH", "pointer")
+    live_pointer_sha = _sha256(_state_paths()["pointer"])
+    live_active_sha = _sha256(active_manifest_path)
+    live_previous_sha = _sha256(previous_manifest_path)
+    if live_pointer_sha != legacy_pointer_sha256:
+        raise XinaoError("LEGACY_RESTORE_IDENTITY_MISMATCH", "live_pointer_drift")
+    if live_active_sha != active_manifest_sha256 or live_previous_sha != previous_manifest_sha256:
+        raise XinaoError("LEGACY_RESTORE_IDENTITY_MISMATCH", "live_manifest_drift")
+    live_installed = _capture_tree_rows(installed_root, reason_code="LEGACY_RESTORE_CAPTURE_FAILED")
+    if _tree_inventory(live_installed) != inventory["installed_skill"]:
+        raise XinaoError("LEGACY_RESTORE_IDENTITY_MISMATCH", "live_installed_skill_drift")
+    return restore_root, restore_manifest, restore_manifest_sha256, tree_sha256
+
+
+def _verify_legacy_restore_bundle(
+    restore_root: Path,
+    *,
+    expected_manifest_sha256: str,
+    expected_tree_sha256: str,
+) -> dict[str, Any]:
+    manifest_path = restore_root / "restore.manifest.json"
+    if not manifest_path.is_file():
+        raise XinaoError("LEGACY_RESTORE_CAPTURE_FAILED", str(manifest_path))
+    if _sha256(manifest_path) != expected_manifest_sha256:
+        raise XinaoError("LEGACY_RESTORE_IDENTITY_MISMATCH", "restore.manifest.json")
+    manifest = _load_json(manifest_path)
+    if (
+        manifest.get("schema_version") != LEGACY_RESTORE_MANIFEST_SCHEMA
+        or manifest.get("tree_sha256") != expected_tree_sha256
+    ):
+        raise XinaoError("LEGACY_RESTORE_IDENTITY_MISMATCH", "restore_manifest_shape")
+    inventory = manifest.get("inventory")
+    if not isinstance(inventory, dict):
+        raise XinaoError("LEGACY_RESTORE_IDENTITY_MISMATCH", "inventory")
+    installed_rows = _capture_tree_rows(
+        restore_root / "installed_skill", reason_code="LEGACY_RESTORE_IDENTITY_MISMATCH"
+    )
+    if _tree_inventory(installed_rows) != inventory.get("installed_skill"):
+        raise XinaoError("LEGACY_RESTORE_IDENTITY_MISMATCH", "installed_skill")
+    pointer_path = restore_root / "pointer.json"
+    if _sha256(pointer_path) != inventory.get("pointer_sha256"):
+        raise XinaoError("LEGACY_RESTORE_IDENTITY_MISMATCH", "pointer.json")
+    releases = inventory.get("releases")
+    if not isinstance(releases, dict) or not releases:
+        raise XinaoError("LEGACY_RESTORE_IDENTITY_MISMATCH", "releases")
+    for release_id, expected_sha in releases.items():
+        path = restore_root / "releases" / str(release_id) / "release.json"
+        if _sha256(path) != expected_sha:
+            raise XinaoError("LEGACY_RESTORE_IDENTITY_MISMATCH", f"release:{release_id}")
+    recomputed = {
+        "installed_skill": _tree_inventory(installed_rows),
+        "pointer_sha256": inventory["pointer_sha256"],
+        "releases": releases,
+    }
+    if _sha256_bytes(_canonical_bytes(recomputed)) != expected_tree_sha256:
+        raise XinaoError("LEGACY_RESTORE_IDENTITY_MISMATCH", "tree_sha256")
+    return manifest
+
+
+def _apply_legacy_restore_bundle(restore_root: Path, restore_manifest: dict[str, Any]) -> None:
+    inventory = restore_manifest["inventory"]
+    installed_destination = Path(str(restore_manifest["installed_skill_root"]))
+    installed_rows = _capture_tree_rows(
+        restore_root / "installed_skill", reason_code="LEGACY_RESTORE_IDENTITY_MISMATCH"
+    )
+    if installed_destination.exists():
+        shutil.rmtree(installed_destination)
+    _materialize_tree(installed_destination, installed_rows)
+    pointer_payload = (restore_root / "pointer.json").read_bytes()
+    _write_bytes_atomic(_state_paths()["pointer"], pointer_payload)
+    for release_id, expected_sha in inventory["releases"].items():
+        source = restore_root / "releases" / str(release_id) / "release.json"
+        destination = _state_paths()["release_root"] / str(release_id) / "release.json"
+        payload = source.read_bytes()
+        if _sha256_bytes(payload) != expected_sha:
+            raise XinaoError("LEGACY_RESTORE_IDENTITY_MISMATCH", f"release:{release_id}")
+        # Restore pure v1 directory: drop any protocol-2 bundle material that migration wrote.
+        release_dir = destination.parent
+        if release_dir.exists():
+            for entry in list(release_dir.iterdir()):
+                if entry.name == "release.json":
+                    continue
+                if entry.is_dir():
+                    shutil.rmtree(entry)
+                else:
+                    entry.unlink()
+        _write_bytes_atomic(destination, payload)
+
+
+def _construct_protocol2_release_from_legacy(
+    legacy_manifest: dict[str, Any],
+    *,
+    source_rows: Sequence[tuple[str, Path, bytes]],
+    source_root: Path,
+    activation_seed: str,
+) -> tuple[dict[str, Any], Path]:
+    """Build a complete protocol-2 release from a byte-exact historical skill rendering.
+
+    Never labels a drifted live Skill snapshot as the old release. Image identity is
+    carried from the verified v1 manifest; skill-bundle bytes come only from the
+    hash-matched source rendering.
+    """
+
+    package_version = "1.0.0"
+    registry_path = source_root / "references" / "capabilities.v1.json"
+    if registry_path.is_file():
+        registry = _load_json(registry_path)
+        if isinstance(registry.get("skill_version"), str) and SEMVER_PATTERN.fullmatch(
+            str(registry["skill_version"])
+        ):
+            package_version = str(registry["skill_version"])
+    capability_version = "1.0.0"
+    charter_path = source_root / "references" / "researcher-charter.v1.json"
+    runtime_lock_path = source_root / "references" / "researcher-runtime-lock.v1.json"
+    if charter_path.is_file():
+        charter = _load_json(charter_path)
+        if isinstance(charter.get("charter_version"), str) and SEMVER_PATTERN.fullmatch(
+            str(charter["charter_version"])
+        ):
+            capability_version = str(charter["charter_version"])
+    if runtime_lock_path.is_file():
+        runtime_lock = _load_json(runtime_lock_path)
+        runtime_version = runtime_lock.get("runtime_version")
+        if (
+            isinstance(runtime_version, str)
+            and SEMVER_PATTERN.fullmatch(runtime_version)
+            and runtime_version != capability_version
+        ):
+            raise XinaoError(
+                "RESEARCHER_VERSION_IDENTITY_MISMATCH",
+                f"charter={capability_version} runtime={runtime_version}",
+            )
+    bundle_manifest = _skill_bundle_manifest(source_rows, package_version=package_version)
+    skill_hashes = _reference_hashes(source_root)
+    source_identity_raw = legacy_manifest.get("source_identity") or {}
+    source_identity = {
+        "source_commit": source_identity_raw.get("source_commit"),
+        "source_tree": source_identity_raw.get("source_tree"),
+        "source_dirty": False,
+        "grok_donor_image_id": source_identity_raw.get("grok_donor_image_id"),
+    }
+    if (
+        not isinstance(source_identity["source_commit"], str)
+        or not isinstance(source_identity["source_tree"], str)
+        or not isinstance(source_identity["grok_donor_image_id"], str)
+    ):
+        raise XinaoError("RELEASE_SOURCE_IDENTITY_INVALID", str(legacy_manifest.get("release_id")))
+    labels = {
+        "io.xinao.researcher.chain": "dedicated-xinao-science",
+        "io.xinao.researcher.generic-worker-route": "forbidden",
+        "io.xinao.researcher.grok-donor-image-id": source_identity["grok_donor_image_id"],
+        "io.xinao.researcher.charter.sha256": skill_hashes["charter_sha256"],
+        "io.xinao.researcher.output-schema.sha256": skill_hashes["output_schema_sha256"],
+        "io.xinao.researcher.material-bundle-schema.sha256": skill_hashes[
+            "material_bundle_schema_sha256"
+        ],
+        "io.xinao.researcher.runtime-lock.sha256": skill_hashes["runtime_lock_sha256"],
+        "io.xinao.researcher.skill-invoker.sha256": skill_hashes["skill_invoker_sha256"],
+        "io.xinao.researcher.dockerfile.sha256": legacy_manifest["skill_hashes"][
+            "dockerfile_sha256"
+        ],
+        "io.xinao.researcher.entrypoint.sha256": legacy_manifest["skill_hashes"][
+            "entrypoint_sha256"
+        ],
+        "io.xinao.researcher.source-identity.sha256": _sha256_bytes(
+            _canonical_bytes(source_identity)
+        ),
+        "io.xinao.researcher.requested-model": REQUESTED_MODEL,
+    }
+    provisional: dict[str, Any] = {
+        "schema_version": RELEASE_SCHEMA,
+        "release_id": "pending",
+        "package_version": package_version,
+        "capability_id": "researcher-container",
+        "capability_version": capability_version,
+        "charter_version": capability_version,
+        "runtime_version": capability_version,
+        "release_identity_sha256": "pending",
+        "source_identity": source_identity,
+        "skill_bundle_path": "pending",
+        "skill_bundle_manifest_path": "pending",
+        "skill_bundle_manifest_sha256": "pending",
+        "skill_bundle_tree_sha256": bundle_manifest["tree_sha256"],
+        "image_tag_observational": legacy_manifest.get("image_tag_observational"),
+        "image_id": legacy_manifest.get("image_id"),
+        "image_entrypoint": legacy_manifest.get("image_entrypoint"),
+        "image_labels": labels,
+        "skill_hashes": skill_hashes,
+        "required_bootstrap_protocol": REQUIRED_BOOTSTRAP_PROTOCOL,
+        "generic_worker_route_allowed": False,
+        "state_namespace": legacy_manifest.get("state_namespace")
+        or "xinao_skill/researcher_container",
+        "run_namespace": legacy_manifest.get("run_namespace") or "xinao_researcher",
+    }
+    identity_sha256 = _sha256_bytes(_canonical_bytes(_release_identity_payload(provisional)))
+    # Bind constructed identity to the seed so release_id remains deterministic per migration target.
+    release_id = f"researcher-{capability_version}-{identity_sha256[:16]}"
+    release_dir = _state_paths()["release_root"] / release_id
+    manifest_path = release_dir / "release.json"
+    provisional.update(
+        {
+            "release_id": release_id,
+            "release_identity_sha256": identity_sha256,
+            "skill_bundle_path": str(release_dir / "skill-bundle"),
+            "skill_bundle_manifest_path": str(release_dir / "skill-bundle.manifest.json"),
+            "skill_bundle_manifest_sha256": _sha256_bytes(_canonical_bytes(bundle_manifest)),
+        }
+    )
+    if manifest_path.is_file():
+        existing = _load_json(manifest_path)
+        try:
+            _validate_release_manifest(existing, manifest_path)
+        except XinaoError as exc:
+            raise XinaoError(
+                "MIGRATION_RELEASE_INCOMPLETE",
+                f"{release_id}: {exc.reason_code}: {exc.detail}",
+            ) from exc
+        if existing.get("release_identity_sha256") != identity_sha256:
+            raise XinaoError("RELEASE_ID_COLLISION", str(manifest_path))
+        return existing, manifest_path
+    staging = (
+        _state_paths()["release_root"]
+        / f".staging-migrate-{release_id}-{activation_seed}-{uuid.uuid4().hex[:8]}"
+    )
+    try:
+        staging.mkdir(parents=True, exist_ok=False)
+        _materialize_skill_bundle(staging / "skill-bundle", source_rows, bundle_manifest)
+        _write_json_atomic(
+            staging / "skill-bundle.manifest.json", bundle_manifest, create_new=True
+        )
+        _write_json_atomic(staging / "release.json", provisional, create_new=True)
+        if release_dir.exists():
+            raise XinaoError("RELEASE_ID_COLLISION", str(release_dir))
+        os.replace(staging, release_dir)
+    except Exception:
+        if staging.exists():
+            shutil.rmtree(staging, ignore_errors=True)
+        raise
+    manifest = _load_json(manifest_path)
+    _validate_release_manifest(manifest, manifest_path)
+    return manifest, manifest_path
+
+
+def _switch_migrate_pointer(
+    journal: dict[str, Any], journal_path: Path
+) -> tuple[dict[str, Any], dict[str, Any], str]:
+    if journal["operation"] != "MIGRATE" or journal["state"] != "PREPARED":
+        raise XinaoError("ACTIVATION_STATE_INVALID", str(journal.get("state")))
+    from_value = journal["from"]
+    pointer_path = _state_paths()["pointer"]
+    if not pointer_path.is_file():
+        raise XinaoError("CURRENT_POINTER_CAS_CONFLICT", str(pointer_path))
+    observed_sha256 = _sha256(pointer_path)
+    if observed_sha256 != from_value["legacy_pointer_sha256"]:
+        raise XinaoError("CURRENT_POINTER_CAS_CONFLICT", str(pointer_path))
+    observed = _load_json(pointer_path)
+    if observed != from_value["legacy_pointer"]:
+        raise XinaoError("CURRENT_POINTER_CAS_CONFLICT", str(pointer_path))
+    # Re-verify sealed legacy restore immediately before the first pointer mutation.
+    _verify_legacy_restore_bundle(
+        Path(str(from_value["legacy_restore_path"])),
+        expected_manifest_sha256=str(from_value["legacy_restore_manifest_sha256"]),
+        expected_tree_sha256=str(from_value["legacy_restore_tree_sha256"]),
+    )
+    pointer = {
+        "schema_version": CURRENT_POINTER_SCHEMA,
+        "generation": journal["expected_generation"],
+        "active": journal["to"],
+        "previous_verified": from_value["previous_verified"],
+        "switched_at": _utc_now(),
+    }
+    _write_json_atomic(pointer_path, pointer)
+    pointer_sha256 = _sha256(pointer_path)
+    journal = _journal_transition(
+        journal_path,
+        journal,
+        "POINTER_SWITCHED",
+        switched_pointer_sha256=pointer_sha256,
+    )
+    return journal, pointer, pointer_sha256
+
+
+def _continue_migrate_journal(
+    journal: dict[str, Any], journal_path: Path
+) -> dict[str, Any]:
+    if journal["operation"] != "MIGRATE":
+        raise XinaoError("ACTIVATION_OPERATION_INVALID", str(journal.get("operation")))
+    if journal["state"] == "PREPARED":
+        pointer_path = _state_paths()["pointer"]
+        if not pointer_path.is_file():
+            raise XinaoError("RECOVERY_CONFLICT", str(pointer_path))
+        observed_sha256 = _sha256(pointer_path)
+        observed = _load_json(pointer_path)
+        from_value = journal["from"]
+        if (
+            observed_sha256 == from_value["legacy_pointer_sha256"]
+            and observed == from_value["legacy_pointer"]
+        ):
+            journal, _pointer, _sha = _switch_migrate_pointer(journal, journal_path)
+        elif (
+            observed.get("schema_version") == CURRENT_POINTER_SCHEMA
+            and observed.get("generation") == journal["expected_generation"]
+            and observed.get("active") == journal["to"]
+            and observed.get("previous_verified") == from_value["previous_verified"]
+        ):
+            journal = _journal_transition(
+                journal_path,
+                journal,
+                "POINTER_SWITCHED",
+                switched_pointer_sha256=observed_sha256,
+            )
+        else:
+            raise XinaoError("RECOVERY_CONFLICT", str(pointer_path))
+    if journal["state"] in {"POINTER_SWITCHED", "CANARY_STARTED"}:
+        try:
+            _journal, receipt = _complete_canary(
+                journal, journal_path, terminal_state="VERIFIED"
+            )
+            return {
+                "schema_version": "xinao.researcher_migration_receipt.v1",
+                "status": "MIGRATED",
+                "txn_id": receipt["txn_id"],
+                "operation": "MIGRATE",
+                "release_id": receipt["release_id"],
+                "pointer_generation": receipt["pointer_generation"],
+                "current_pointer_sha256": receipt["current_pointer_sha256"],
+                "previous_verified_release_id": journal["from"]["previous_verified"][
+                    "release_id"
+                ],
+                "legacy_restore_tree_sha256": journal["from"]["legacy_restore_tree_sha256"],
+                "activation_journal_path": receipt["activation_journal_path"],
+                "activation_journal_sha256": receipt["activation_journal_sha256"],
+                "canary_receipt_path": receipt["canary_receipt_path"],
+                "canary_receipt_sha256": receipt["canary_receipt_sha256"],
+                "completion_claim_allowed": False,
+            }
+        except XinaoError as exc:
+            return _rollback_failed_activation(_load_json(journal_path), journal_path, exc)
+    raise XinaoError("RECOVERY_CONFLICT", str(journal_path))
+
+
 def recover_release(txn_id: str | None = None) -> dict[str, Any]:
     with _activation_lock():
+        pending = _pending_journals()
+        if txn_id is not None:
+            matches = [(journal, path) for journal, path in pending if journal["txn_id"] == txn_id]
+        else:
+            matches = pending
+        if len(matches) == 1 and matches[0][0].get("operation") == "MIGRATE":
+            return _continue_migrate_journal(matches[0][0], matches[0][1])
         fence = _validate_bootstrap_fence_locked("recover")
         if (
             txn_id is not None
@@ -2334,11 +3049,6 @@ def recover_release(txn_id: str | None = None) -> dict[str, Any]:
                 "RECOVERY_TRANSACTION_FENCE_MISMATCH",
                 f"requested={txn_id} fenced={fence['pending_txn_id']}",
             )
-        pending = _pending_journals()
-        if txn_id is not None:
-            matches = [(journal, path) for journal, path in pending if journal["txn_id"] == txn_id]
-        else:
-            matches = pending
         if not matches:
             if txn_id is not None:
                 path = _journal_path(txn_id)
@@ -2418,11 +3128,181 @@ def recover_release(txn_id: str | None = None) -> dict[str, Any]:
         raise XinaoError("RECOVERY_CONFLICT", str(journal_path))
 
 
-def bootstrap_migrate(_compat_release: str) -> dict[str, Any]:
-    raise XinaoError(
-        "BOOTSTRAP_MIGRATION_REQUIRED",
-        "explicit migration is reserved; no live migration is authorized in this release",
-    )
+def bootstrap_migrate() -> dict[str, Any]:
+    """Migrate pure v1 pointer/manifests into protocol-2 under the activation lock.
+
+    Models the real starting object: drifted installed Skill tree, byte-exact historical
+    source renderings, and original v1 pointer/manifests (release dirs contain only
+    release.json). Captures and hash-seals a one-time legacy restore bundle before any
+    live mutation. Constructs complete protocol-2 targets from sealed renderings rather
+    than treating a v1 manifest or commit name as a v2 release.
+    """
+
+    with _activation_lock():
+        pointer_path = _state_paths()["pointer"]
+        pending = _pending_journals()
+        migrate_pending = [
+            (journal, path) for journal, path in pending if journal.get("operation") == "MIGRATE"
+        ]
+        if migrate_pending:
+            if len(migrate_pending) != 1 or len(pending) != 1:
+                raise XinaoError("RECOVERY_CONFLICT", "multiple pending activation journals")
+            return _continue_migrate_journal(migrate_pending[0][0], migrate_pending[0][1])
+        if pending:
+            raise XinaoError("RECOVERY_REQUIRED", str(pending[0][0]["txn_id"]))
+        if pointer_path.is_file():
+            existing = _load_json(pointer_path)
+            if existing.get("schema_version") == CURRENT_POINTER_SCHEMA:
+                current = _load_current_context(require_terminal=True)
+                return {
+                    "schema_version": "xinao.researcher_migration_receipt.v1",
+                    "status": "ALREADY_MIGRATED",
+                    "txn_id": current["pointer"]["active"]["activation_txn_id"],
+                    "operation": "MIGRATE",
+                    "release_id": current["release"]["release_id"],
+                    "pointer_generation": current["pointer"]["generation"],
+                    "current_pointer_sha256": current["pointer_sha256"],
+                    "previous_verified_release_id": (
+                        None
+                        if current["pointer"]["previous_verified"] is None
+                        else current["pointer"]["previous_verified"]["release_id"]
+                    ),
+                    "completion_claim_allowed": False,
+                }
+            if existing.get("schema_version") != LEGACY_POINTER_SCHEMA:
+                raise XinaoError("CURRENT_POINTER_SCHEMA_INVALID", str(pointer_path))
+        else:
+            raise XinaoError("CURRENT_POINTER_ABSENT", str(pointer_path))
+
+        legacy_sha256 = _sha256(pointer_path)
+        legacy = _validate_legacy_pointer_document(existing, pointer_path)
+        if (
+            not legacy.get("previous_release_id")
+            or not legacy.get("previous_release_manifest_path")
+            or not legacy.get("previous_release_manifest_sha256")
+        ):
+            raise XinaoError("ROLLBACK_MATERIAL_ABSENT", str(pointer_path))
+
+        active_v1, active_v1_path, active_v1_sha = _load_v1_release_manifest(
+            legacy["release_id"],
+            legacy["release_manifest_path"],
+            legacy["release_manifest_sha256"],
+            absent_reason="MIGRATION_RELEASE_INCOMPLETE",
+        )
+        try:
+            previous_v1, previous_v1_path, previous_v1_sha = _load_v1_release_manifest(
+                legacy["previous_release_id"],
+                legacy["previous_release_manifest_path"],
+                legacy["previous_release_manifest_sha256"],
+                absent_reason="ROLLBACK_MATERIAL_ABSENT",
+            )
+        except XinaoError as exc:
+            if exc.reason_code in {
+                "MIGRATION_RELEASE_INCOMPLETE",
+                "V1_RELEASE_DIRECTORY_NOT_PURE",
+                "V1_RELEASE_MANIFEST_INVALID",
+            }:
+                raise XinaoError(
+                    "ROLLBACK_MATERIAL_ABSENT",
+                    f"{legacy['previous_release_id']}: {exc.reason_code}: {exc.detail}",
+                ) from exc
+            raise
+        if previous_v1["release_id"] == active_v1["release_id"]:
+            raise XinaoError("ROLLBACK_MATERIAL_INVALID", previous_v1["release_id"])
+
+        # Resolve byte-exact historical renderings (CRLF-active / LF-previous, etc.).
+        try:
+            active_source_root, active_rows = _resolve_source_rendering(
+                str(active_v1["release_id"]), active_v1
+            )
+            previous_source_root, previous_rows = _resolve_source_rendering(
+                str(previous_v1["release_id"]), previous_v1
+            )
+        except XinaoError as exc:
+            if exc.reason_code == "MIGRATION_SOURCE_RENDERING_ABSENT":
+                # Missing historical bytes for previous is rollback-material absence.
+                if str(previous_v1["release_id"]) in exc.detail:
+                    raise XinaoError("ROLLBACK_MATERIAL_ABSENT", exc.detail) from exc
+            raise
+
+        txn_id = _new_txn_id()
+        # Capture + seal exact legacy restore BEFORE any live mutation.
+        restore_root, _restore_manifest, restore_manifest_sha, restore_tree_sha = (
+            _capture_legacy_restore_bundle(
+                txn_id=txn_id,
+                legacy_pointer=legacy,
+                legacy_pointer_sha256=legacy_sha256,
+                active_manifest=active_v1,
+                active_manifest_path=active_v1_path,
+                active_manifest_sha256=active_v1_sha,
+                previous_manifest=previous_v1,
+                previous_manifest_path=previous_v1_path,
+                previous_manifest_sha256=previous_v1_sha,
+            )
+        )
+
+        # Construct complete protocol-2 targets from sealed historical renderings.
+        active_manifest, active_manifest_path = _construct_protocol2_release_from_legacy(
+            active_v1,
+            source_rows=active_rows,
+            source_root=active_source_root,
+            activation_seed=txn_id,
+        )
+        previous_txn_id = _new_txn_id()
+        previous_manifest, previous_manifest_path = _construct_protocol2_release_from_legacy(
+            previous_v1,
+            source_rows=previous_rows,
+            source_root=previous_source_root,
+            activation_seed=previous_txn_id,
+        )
+        if previous_manifest["release_id"] == active_manifest["release_id"]:
+            raise XinaoError("ROLLBACK_MATERIAL_INVALID", previous_manifest["release_id"])
+
+        active_ref = _release_ref_from_manifest(
+            active_manifest, active_manifest_path, activation_txn_id=txn_id
+        )
+        previous_ref = _release_ref_from_manifest(
+            previous_manifest, previous_manifest_path, activation_txn_id=previous_txn_id
+        )
+        if _sha256(pointer_path) != legacy_sha256:
+            raise XinaoError("CURRENT_POINTER_CAS_CONFLICT", str(pointer_path))
+        # Final pre-mutation CAS of restore + live identities.
+        _verify_legacy_restore_bundle(
+            restore_root,
+            expected_manifest_sha256=restore_manifest_sha,
+            expected_tree_sha256=restore_tree_sha,
+        )
+        now = _utc_now()
+        journal = {
+            "schema_version": ACTIVATION_JOURNAL_SCHEMA,
+            "revision": 1,
+            "txn_id": txn_id,
+            "operation": "MIGRATE",
+            "state": "PREPARED",
+            "from": {
+                "legacy_pointer_sha256": legacy_sha256,
+                "legacy_pointer": legacy,
+                "previous_verified": previous_ref,
+                "legacy_restore_path": str(restore_root),
+                "legacy_restore_manifest_sha256": restore_manifest_sha,
+                "legacy_restore_tree_sha256": restore_tree_sha,
+            },
+            "requested_to": active_ref,
+            "to": active_ref,
+            "expected_generation": 1,
+            "prepared_at": now,
+            "updated_at": now,
+            "switched_pointer_sha256": None,
+            "canary": None,
+            "failure_reason": None,
+            "terminal_pointer_sha256": None,
+        }
+        journal_path = _journal_path(txn_id)
+        # legacy_restore already created txn directory; journal seals beside it.
+        journal_path.parent.mkdir(parents=True, exist_ok=True)
+        _write_json_atomic(journal_path, journal, create_new=True)
+        _validate_journal(journal, journal_path)
+        return _continue_migrate_journal(journal, journal_path)
 
 
 def _compile_prompt(question: str, as_of: str, charter: dict[str, Any]) -> str:
@@ -3189,8 +4069,7 @@ def _parser() -> argparse.ArgumentParser:
     recover = sub.add_parser("recover")
     recover.add_argument("--txn-id", default=None)
     sub.add_parser("rollback")
-    migrate = sub.add_parser("bootstrap-migrate")
-    migrate.add_argument("--compat-release", required=True)
+    sub.add_parser("bootstrap-migrate")
     canary = sub.add_parser("_canary")
     canary.add_argument("--txn-id", required=True)
     invoke = sub.add_parser("research")
@@ -3203,7 +4082,9 @@ def _parser() -> argparse.ArgumentParser:
 def main(argv: Sequence[str] | None = None) -> int:
     try:
         args = _parser().parse_args(argv)
-        if args.command != "_canary":
+        # bootstrap-migrate is the pre-fence protocol transition; recover may continue it
+        # without a v2 fence while the pointer is still legacy or mid-migration.
+        if args.command not in {"_canary", "bootstrap-migrate", "recover"}:
             with _activation_lock():
                 _validate_bootstrap_fence_locked(args.command)
         if args.command == "inspect":
@@ -3217,7 +4098,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         elif args.command == "rollback":
             value = rollback_release()
         elif args.command == "bootstrap-migrate":
-            value = bootstrap_migrate(args.compat_release)
+            value = bootstrap_migrate()
         elif args.command == "_canary":
             value = _activation_canary(args.txn_id)
         else:

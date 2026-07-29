@@ -1586,15 +1586,572 @@ def test_bounded_result_reader_rejects_oversized_json(
     assert failure.value.reason_code == "JSON_READ_FAILED"
 
 
-def test_bootstrap_migration_is_reserved_and_never_mutates_live_state(
+def _copy_skill_tree(source: Path, destination: Path, *, newline: bytes | None = None) -> None:
+    for path in source.rglob("*"):
+        if not path.is_file():
+            continue
+        if "__pycache__" in path.parts or path.suffix in {".pyc", ".pyo"}:
+            continue
+        relative = path.relative_to(source)
+        target = destination / relative
+        target.parent.mkdir(parents=True, exist_ok=True)
+        payload = path.read_bytes()
+        if newline is not None and path.suffix.lower() in {
+            ".md",
+            ".py",
+            ".json",
+            ".yaml",
+            ".yml",
+            ".txt",
+        }:
+            text = payload.replace(b"\r\n", b"\n").replace(b"\r", b"\n")
+            if newline == b"\r\n":
+                payload = text.replace(b"\n", b"\r\n")
+            else:
+                payload = text
+        target.write_bytes(payload)
+
+
+def _stage_source_rendering(
+    module,
+    release_id: str,
+    *,
+    newline: bytes,
+    marker: bytes | None = None,
+) -> Path:
+    root = module._source_rendering_root(release_id)
+    if root.exists():
+        import shutil
+
+        shutil.rmtree(root)
+    _copy_skill_tree(SKILL_ROOT, root, newline=newline)
+    if marker is not None:
+        marker_path = root / "references" / "migration-marker.txt"
+        marker_path.parent.mkdir(parents=True, exist_ok=True)
+        marker_path.write_bytes(marker if newline == b"\n" else marker.replace(b"\n", newline))
+    return root
+
+
+def _legacy_skill_hashes_for_tree(module, root: Path) -> dict[str, str]:
+    skill_side = module._legacy_skill_side_hashes(root)
+    skill_side["dockerfile_sha256"] = "1" * 64
+    skill_side["entrypoint_sha256"] = "2" * 64
+    return skill_side
+
+
+def _write_pure_v1_release(
+    module,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    image_character: str,
+    newline: bytes,
+    marker: bytes,
+    release_suffix: str,
+) -> tuple[dict[str, object], Path, Path]:
+    state = _state(module, tmp_path, monkeypatch)
+    release_id = f"researcher-1.0.0-{release_suffix}"
+    rendering = _stage_source_rendering(
+        module, release_id, newline=newline, marker=marker
+    )
+    skill_hashes = _legacy_skill_hashes_for_tree(module, rendering)
+    source_identity = {
+        "source_commit": "b916f8bd22dd38b4807298a4c935f6bf2969eb13",
+        "source_tree": "71f8994c8e8e8f10c09cf8aef3e21ba3635d627e",
+        "source_dirty": False,
+        "grok_donor_image_id": "sha256:" + "b" * 64,
+        "capability_registry_sha256": skill_hashes["capability_registry_sha256"],
+        "charter_sha256": skill_hashes["charter_sha256"],
+        "dockerfile_sha256": skill_hashes["dockerfile_sha256"],
+        "entrypoint_sha256": skill_hashes["entrypoint_sha256"],
+        "meta_sha256": skill_hashes["meta_sha256"],
+        "output_schema_sha256": skill_hashes["output_schema_sha256"],
+        "runtime_lock_sha256": skill_hashes["runtime_lock_sha256"],
+        "skill_invoker_sha256": skill_hashes["skill_invoker_sha256"],
+        "skill_md_sha256": skill_hashes["skill_md_sha256"],
+    }
+    manifest = {
+        "schema_version": module.LEGACY_RELEASE_SCHEMA,
+        "release_id": release_id,
+        "created_at": "2026-07-29T07:40:23.273627Z",
+        "generic_worker_route_allowed": False,
+        "image_entrypoint": ["python", "-I", "/opt/xinao-researcher/entrypoint.py"],
+        "image_id": "sha256:" + image_character * 64,
+        "image_labels": {
+            "io.xinao.researcher.chain": "dedicated-xinao-science",
+            "io.xinao.researcher.generic-worker-route": "forbidden",
+            "io.xinao.researcher.grok-donor-image-id": source_identity["grok_donor_image_id"],
+        },
+        "image_tag_observational": f"xinao-researcher:{release_id}",
+        "run_namespace": "xinao_researcher",
+        "skill_hashes": skill_hashes,
+        "source_identity": source_identity,
+        "state_namespace": "xinao_skill/researcher_container",
+    }
+    release_dir = state / "researcher_container" / "releases" / release_id
+    release_dir.mkdir(parents=True, exist_ok=True)
+    manifest_path = release_dir / "release.json"
+    module._write_json_atomic(manifest_path, manifest, create_new=True)
+    # Pure v1 directory: only release.json.
+    assert sorted(path.name for path in release_dir.iterdir()) == ["release.json"]
+    return manifest, manifest_path, rendering
+
+
+def _install_drifted_skill(
+    module, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, *, active_rendering: Path
+) -> Path:
+    installed = tmp_path / "installed_skill"
+    _copy_skill_tree(active_rendering, installed, newline=None)
+    # Drift three sealed Skill files relative to active CRLF bundle.
+    (installed / "SKILL.md").write_bytes(
+        (installed / "SKILL.md").read_bytes() + b"\n# installed-drift\n"
+    )
+    capabilities = installed / "references" / "capabilities.v1.json"
+    capabilities.write_bytes(capabilities.read_bytes().rstrip() + b"\n")
+    meta = installed / "references" / "meta.md"
+    meta.write_bytes(meta.read_bytes() + b"\ninstalled-meta-drift\n")
+    monkeypatch.setenv("XINAO_INSTALLED_SKILL_ROOT", str(installed))
+    monkeypatch.setattr(module, "DEFAULT_INSTALLED_SKILL_ROOT", installed)
+    return installed
+
+
+def _legacy_pointer_for_v1(
+    module,
+    active: dict[str, object],
+    active_path: Path,
+    previous: dict[str, object],
+    previous_path: Path,
+) -> dict[str, object]:
+    return {
+        "schema_version": module.LEGACY_POINTER_SCHEMA,
+        "release_id": active["release_id"],
+        "release_manifest_path": str(active_path),
+        "release_manifest_sha256": module._sha256(active_path),
+        "promoted_at": "2026-07-29T07:40:23.281374Z",
+        "previous_pointer_sha256": "d" * 64,
+        "previous_release_id": previous["release_id"],
+        "previous_release_manifest_path": str(previous_path),
+        "previous_release_manifest_sha256": module._sha256(previous_path),
+    }
+
+
+def _prepare_v1_migration_world(
+    module,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    active_newline: bytes = b"\r\n",
+    previous_newline: bytes = b"\n",
+) -> dict[str, object]:
+    previous, previous_path, previous_rendering = _write_pure_v1_release(
+        module,
+        tmp_path,
+        monkeypatch,
+        image_character="a",
+        newline=previous_newline,
+        marker=b"previous-rendering\n",
+        release_suffix="4d3458d9901c09b1",
+    )
+    active, active_path, active_rendering = _write_pure_v1_release(
+        module,
+        tmp_path,
+        monkeypatch,
+        image_character="b",
+        newline=active_newline,
+        marker=b"active-rendering\n",
+        release_suffix="0a7aea3f2ed52581",
+    )
+    installed = _install_drifted_skill(
+        module, tmp_path, monkeypatch, active_rendering=active_rendering
+    )
+    pointer_path = module._state_paths()["pointer"]
+    legacy = _legacy_pointer_for_v1(module, active, active_path, previous, previous_path)
+    module._write_json_atomic(pointer_path, legacy)
+    return {
+        "active": active,
+        "active_path": active_path,
+        "active_rendering": active_rendering,
+        "previous": previous,
+        "previous_path": previous_path,
+        "previous_rendering": previous_rendering,
+        "installed": installed,
+        "pointer_path": pointer_path,
+        "legacy": legacy,
+        "legacy_bytes": pointer_path.read_bytes(),
+        "installed_snapshot": {
+            relative.as_posix(): (installed / relative).read_bytes()
+            for relative in [
+                path.relative_to(installed)
+                for path in installed.rglob("*")
+                if path.is_file()
+            ]
+        },
+    }
+
+
+def test_bootstrap_migrate_success_from_pure_v1_and_crlf_lf_renderings(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     module = _module()
-    _state(module, tmp_path, monkeypatch)
+    world = _prepare_v1_migration_world(module, tmp_path, monkeypatch)
+    # Active rendering is CRLF; previous is LF — commit identity alone is insufficient.
+    active_skill_md = (world["active_rendering"] / "SKILL.md").read_bytes()
+    previous_skill_md = (world["previous_rendering"] / "SKILL.md").read_bytes()
+    assert b"\r\n" in active_skill_md
+    assert b"\r\n" not in previous_skill_md
+    assert world["active"]["source_identity"]["source_commit"] == (
+        world["previous"]["source_identity"]["source_commit"]
+    )
+    monkeypatch.setattr(
+        module, "_run_activation_canary", lambda value: _canary_value(module, value)
+    )
+    receipt = module.bootstrap_migrate()
+    assert receipt["status"] == "MIGRATED"
+    assert receipt["completion_claim_allowed"] is False
+    assert receipt["pointer_generation"] == 1
+    assert "legacy_restore_tree_sha256" in receipt
+    pointer = module._load_json(world["pointer_path"])
+    assert pointer["schema_version"] == module.CURRENT_POINTER_SCHEMA
+    assert pointer["generation"] == 1
+    # Constructed protocol-2 targets, not the raw v1 release ids alone as complete releases.
+    assert pointer["active"]["release_id"] != world["active"]["release_id"] or (
+        module._state_paths()["release_root"]
+        / pointer["active"]["release_id"]
+        / "skill-bundle"
+    ).is_dir()
+    assert (module._state_paths()["release_root"] / pointer["active"]["release_id"] / "skill-bundle").is_dir()
+    assert (
+        module._state_paths()["release_root"]
+        / pointer["previous_verified"]["release_id"]
+        / "skill-bundle"
+    ).is_dir()
+    # Original pure v1 directories remain reconstructible (only release.json).
+    assert sorted(
+        path.name
+        for path in (module._state_paths()["release_root"] / world["active"]["release_id"]).iterdir()
+    ) == ["release.json"]
+    journal = module._load_json(module._journal_path(pointer["active"]["activation_txn_id"]))
+    assert journal["operation"] == "MIGRATE"
+    assert journal["state"] == "VERIFIED"
+    assert journal["from"]["legacy_restore_tree_sha256"] == receipt["legacy_restore_tree_sha256"]
+    context = module._load_current_context(require_terminal=True)
+    assert context["release"]["required_bootstrap_protocol"] == 2
+
+
+def test_bootstrap_migrate_wrong_line_ending_material_fails_before_mutation(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    module = _module()
+    world = _prepare_v1_migration_world(module, tmp_path, monkeypatch)
+    # Replace active rendering with LF bytes while v1 skill_hashes still seal CRLF.
+    wrong = module._source_rendering_root(str(world["active"]["release_id"]))
+    import shutil
+
+    shutil.rmtree(wrong)
+    _copy_skill_tree(SKILL_ROOT, wrong, newline=b"\n")
+    marker = wrong / "references" / "migration-marker.txt"
+    marker.write_bytes(b"active-rendering\n")
+    before = world["pointer_path"].read_bytes()
+    installed_before = {
+        path.relative_to(world["installed"]).as_posix(): path.read_bytes()
+        for path in world["installed"].rglob("*")
+        if path.is_file()
+    }
     with pytest.raises(module.XinaoError) as failure:
-        module.bootstrap_migrate("researcher-1.1.0-" + "a" * 16)
-    assert failure.value.reason_code == "BOOTSTRAP_MIGRATION_REQUIRED"
-    assert not module._state_paths()["pointer"].exists()
+        module.bootstrap_migrate()
+    assert failure.value.reason_code == "MIGRATION_SOURCE_RENDERING_HASH_MISMATCH"
+    assert world["pointer_path"].read_bytes() == before
+    assert {
+        path.relative_to(world["installed"]).as_posix(): path.read_bytes()
+        for path in world["installed"].rglob("*")
+        if path.is_file()
+    } == installed_before
+
+
+def test_bootstrap_migrate_captures_exact_drifted_live_tree(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    module = _module()
+    world = _prepare_v1_migration_world(module, tmp_path, monkeypatch)
+    monkeypatch.setattr(
+        module, "_run_activation_canary", lambda value: _canary_value(module, value)
+    )
+    receipt = module.bootstrap_migrate()
+    journal = module._load_json(module._journal_path(receipt["txn_id"]))
+    restore_root = Path(journal["from"]["legacy_restore_path"])
+    restored_skill = restore_root / "installed_skill"
+    for relative, payload in world["installed_snapshot"].items():
+        assert (restored_skill / relative).read_bytes() == payload
+    # Drifted files must not equal the active historical rendering.
+    assert (restored_skill / "SKILL.md").read_bytes() != (
+        world["active_rendering"] / "SKILL.md"
+    ).read_bytes()
+
+
+def test_bootstrap_migrate_missing_previous_rendering_zero_mutation(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    module = _module()
+    world = _prepare_v1_migration_world(module, tmp_path, monkeypatch)
+    import shutil
+
+    shutil.rmtree(module._source_rendering_root(str(world["previous"]["release_id"])))
+    before = world["pointer_path"].read_bytes()
+    with pytest.raises(module.XinaoError) as failure:
+        module.bootstrap_migrate()
+    assert failure.value.reason_code == "ROLLBACK_MATERIAL_ABSENT"
+    assert world["pointer_path"].read_bytes() == before
+    assert not any(
+        (module._state_paths()["transaction_root"]).glob("*/activation.v1.json")
+    ) if module._state_paths()["transaction_root"].exists() else True
+
+
+def test_bootstrap_migrate_corrupt_v1_manifest_zero_mutation(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    module = _module()
+    world = _prepare_v1_migration_world(module, tmp_path, monkeypatch)
+    world["active_path"].write_text("{not-json", encoding="utf-8")
+    before = world["pointer_path"].read_bytes()
+    with pytest.raises(module.XinaoError) as failure:
+        module.bootstrap_migrate()
+    assert failure.value.reason_code in {
+        "JSON_READ_FAILED",
+        "RELEASE_MANIFEST_IDENTITY_MISMATCH",
+        "MIGRATION_RELEASE_INCOMPLETE",
+    }
+    assert world["pointer_path"].read_bytes() == before
+
+
+def test_bootstrap_migrate_pointer_cas_conflict_fails_closed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    module = _module()
+    world = _prepare_v1_migration_world(module, tmp_path, monkeypatch)
+    pointer_path = world["pointer_path"]
+    original_switch = module._switch_migrate_pointer
+
+    def drift_then_switch(journal, journal_path):
+        drifted = module._load_json(pointer_path)
+        drifted["promoted_at"] = "2026-07-30T00:00:00Z"
+        module._write_json_atomic(pointer_path, drifted)
+        return original_switch(journal, journal_path)
+
+    monkeypatch.setattr(module, "_switch_migrate_pointer", drift_then_switch)
+    with pytest.raises(module.XinaoError) as failure:
+        module.bootstrap_migrate()
+    assert failure.value.reason_code == "CURRENT_POINTER_CAS_CONFLICT"
+    assert module._load_json(pointer_path)["schema_version"] == module.LEGACY_POINTER_SCHEMA
+    pending = module._pending_journals()
+    assert len(pending) == 1
+    assert pending[0][0]["operation"] == "MIGRATE"
+    assert pending[0][0]["state"] == "PREPARED"
+
+
+def test_bootstrap_migrate_repeated_invocation_is_idempotent(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    module = _module()
+    world = _prepare_v1_migration_world(module, tmp_path, monkeypatch)
+    monkeypatch.setattr(
+        module, "_run_activation_canary", lambda value: _canary_value(module, value)
+    )
+    first = module.bootstrap_migrate()
+    pointer_after = world["pointer_path"].read_bytes()
+    journal_path = module._journal_path(first["txn_id"])
+    journal_after = journal_path.read_bytes()
+    second = module.bootstrap_migrate()
+    assert first["status"] == "MIGRATED"
+    assert second["status"] == "ALREADY_MIGRATED"
+    assert world["pointer_path"].read_bytes() == pointer_after
+    assert journal_path.read_bytes() == journal_after
+
+
+def test_bootstrap_migrate_interrupted_prepared_boundary_converges(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    module = _module()
+    world = _prepare_v1_migration_world(module, tmp_path, monkeypatch)
+    pointer_path = world["pointer_path"]
+    monkeypatch.setattr(
+        module, "_run_activation_canary", lambda value: _canary_value(module, value)
+    )
+    original_continue = module._continue_migrate_journal
+    calls = {"count": 0}
+
+    def stop_after_prepare(journal, journal_path):
+        calls["count"] += 1
+        if calls["count"] == 1:
+            assert journal["state"] == "PREPARED"
+            assert module._load_json(pointer_path)["schema_version"] == module.LEGACY_POINTER_SCHEMA
+            raise module.XinaoError("INJECTED_CRASH", "prepared boundary")
+        return original_continue(journal, journal_path)
+
+    monkeypatch.setattr(module, "_continue_migrate_journal", stop_after_prepare)
+    with pytest.raises(module.XinaoError) as failure:
+        module.bootstrap_migrate()
+    assert failure.value.reason_code == "INJECTED_CRASH"
+    pending = module._pending_journals()
+    assert len(pending) == 1
+    assert pending[0][0]["state"] == "PREPARED"
+    monkeypatch.setattr(module, "_continue_migrate_journal", original_continue)
+    receipt = module.bootstrap_migrate()
+    assert receipt["status"] == "MIGRATED"
+    pointer = module._load_json(pointer_path)
+    assert pointer["schema_version"] == module.CURRENT_POINTER_SCHEMA
+    journal = module._load_json(module._journal_path(pointer["active"]["activation_txn_id"]))
+    assert journal["state"] == "VERIFIED"
+    assert not module._pending_journals()
+
+
+def test_bootstrap_migrate_crash_after_pointer_switch_recovers_or_rolls_back(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    module = _module()
+    world = _prepare_v1_migration_world(module, tmp_path, monkeypatch)
+    installed = world["installed"]
+    installed_before = {
+        path.relative_to(installed).as_posix(): path.read_bytes()
+        for path in installed.rglob("*")
+        if path.is_file()
+    }
+    legacy_bytes = world["legacy_bytes"]
+
+    def fail_canary(journal):
+        raise module.XinaoError("INJECTED_CANARY_FAILURE", "post-switch")
+
+    monkeypatch.setattr(module, "_run_activation_canary", fail_canary)
+    receipt = module.bootstrap_migrate()
+    assert receipt["status"] == "ROLLED_BACK"
+    assert world["pointer_path"].read_bytes() == legacy_bytes
+    assert module._load_json(world["pointer_path"])["schema_version"] == module.LEGACY_POINTER_SCHEMA
+    assert {
+        path.relative_to(installed).as_posix(): path.read_bytes()
+        for path in installed.rglob("*")
+        if path.is_file()
+    } == installed_before
+    # Pure v1 release directories restored.
+    assert sorted(
+        path.name
+        for path in (module._state_paths()["release_root"] / world["active"]["release_id"]).iterdir()
+    ) == ["release.json"]
+
+
+def test_bootstrap_migrate_crash_after_pointer_switch_then_recover_finishes(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """POINTER_SWITCHED crash must leave recoverable journal that can finish v2 activation."""
+
+    module = _module()
+    world = _prepare_v1_migration_world(module, tmp_path, monkeypatch)
+    monkeypatch.setattr(
+        module, "_run_activation_canary", lambda value: _canary_value(module, value)
+    )
+    original_switch = module._switch_migrate_pointer
+    calls = {"count": 0}
+
+    def switch_then_crash(journal, journal_path):
+        calls["count"] += 1
+        switched = original_switch(journal, journal_path)
+        if calls["count"] == 1:
+            raise module.XinaoError("INJECTED_CRASH", "after pointer switch")
+        return switched
+
+    monkeypatch.setattr(module, "_switch_migrate_pointer", switch_then_crash)
+    with pytest.raises(module.XinaoError) as failure:
+        module.bootstrap_migrate()
+    assert failure.value.reason_code == "INJECTED_CRASH"
+    pending = module._pending_journals()
+    assert len(pending) == 1
+    assert pending[0][0]["operation"] == "MIGRATE"
+    assert pending[0][0]["state"] == "POINTER_SWITCHED"
+    assert module._load_json(world["pointer_path"])["schema_version"] == module.CURRENT_POINTER_SCHEMA
+    monkeypatch.setattr(module, "_switch_migrate_pointer", original_switch)
+    receipt = module.bootstrap_migrate()
+    assert receipt["status"] == "MIGRATED"
+    journal = module._load_json(module._journal_path(receipt["txn_id"]))
+    assert journal["state"] == "VERIFIED"
+    assert not module._pending_journals()
+
+
+def test_bootstrap_migrate_cli_absorbs_technical_fields(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    module = _module()
+    world = _prepare_v1_migration_world(module, tmp_path, monkeypatch)
+    monkeypatch.setattr(
+        module, "_run_activation_canary", lambda value: _canary_value(module, value)
+    )
+    exit_code = module.main(["bootstrap-migrate"])
+    assert exit_code == 0
+    assert (
+        module._load_json(world["pointer_path"])["schema_version"]
+        == module.CURRENT_POINTER_SCHEMA
+    )
+    exit_code = module.main(
+        ["bootstrap-migrate", "--compat-release", str(world["active"]["release_id"])]
+    )
+    assert exit_code == 2
+
+
+def test_bootstrap_migrate_companion_runtime_tamper_fails_before_execution(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    bootstrap = _bootstrap_module()
+    runtime_path = bootstrap._companion_runtime_path()
+    original = runtime_path.read_bytes()
+    try:
+        runtime_path.write_bytes(original + b"\n# tampered\n")
+        with pytest.raises(bootstrap.BootstrapError) as failure:
+            bootstrap._run_companion_runtime(["bootstrap-migrate"])
+        assert failure.value.reason_code == "COMPANION_RUNTIME_IDENTITY_MISMATCH"
+    finally:
+        runtime_path.write_bytes(original)
+
+
+def test_bootstrap_migrate_concurrent_second_lock_holder_fails_closed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    module = _module()
+    world = _prepare_v1_migration_world(module, tmp_path, monkeypatch)
+    monkeypatch.setattr(
+        module, "_run_activation_canary", lambda value: _canary_value(module, value)
+    )
+    # Simulate OS lock contention with a non-reentrant hold (portable across FS).
+    from contextlib import contextmanager
+
+    gate = threading.Lock()
+    ready = threading.Event()
+    release = threading.Event()
+
+    @contextmanager
+    def contended_lock():
+        if not gate.acquire(blocking=False):
+            raise module.XinaoError("ACTIVATION_LOCK_TIMEOUT", "contended")
+        try:
+            yield
+        finally:
+            gate.release()
+
+    monkeypatch.setattr(module, "_activation_lock", contended_lock)
+
+    def holder() -> None:
+        with module._activation_lock():
+            ready.set()
+            release.wait(timeout=10)
+
+    worker = threading.Thread(target=holder)
+    worker.start()
+    assert ready.wait(timeout=5)
+    before = world["pointer_path"].read_bytes()
+    with pytest.raises(module.XinaoError) as failure:
+        module.bootstrap_migrate()
+    assert failure.value.reason_code == "ACTIVATION_LOCK_TIMEOUT"
+    assert world["pointer_path"].read_bytes() == before
+    release.set()
+    worker.join(timeout=5)
+    receipt = module.bootstrap_migrate()
+    assert receipt["status"] == "MIGRATED"
 
 
 def test_generic_worker_arguments_get_typed_rejection(

@@ -27,6 +27,11 @@ RUNTIME_REAP_TIMEOUT_SECONDS = 5.0
 MAX_JSON_DEPTH = 64
 MAX_JSON_NODES = 100000
 RELEASE_RUNTIME_RELATIVE_PATH = Path("skill-bundle") / "scripts" / "xinao_runtime.py"
+# Bound to the co-located bootstrap-migration companion. Tampering fails before execution.
+# Update this whenever the candidate xinao_runtime.py bytes change.
+EXPECTED_COMPANION_RUNTIME_SHA256 = (
+    "3df507f2846f7e33f05ced6b12c0b987c0a4594381ae1ae35e2b69f6ce862d14"
+)
 RELEASE_ID_PATTERN = re.compile(r"^researcher-[0-9]+\.[0-9]+\.[0-9]+-[0-9a-f]{16}$")
 TXN_ID_PATTERN = re.compile(r"^xra_[0-9]{8}T[0-9]{6}_[0-9a-f]{16}$")
 SEMVER_PATTERN = re.compile(r"^[0-9]+\.[0-9]+\.[0-9]+$")
@@ -1019,10 +1024,122 @@ def _handoff_runtime_wrapper(process: subprocess.Popen[bytes], wrapper: bytes) -
     process.stdin = None
 
 
+def _companion_runtime_path() -> Path:
+    return Path(__file__).resolve().with_name("xinao_runtime.py")
+
+
+def _run_companion_runtime(argv: Sequence[str]) -> int:
+    """Execute the co-located runtime for protocol migration without a v2 fence.
+
+    Ordinary inspect/research never take this path: they always require a verified
+    protocol-2 pointer, terminal journal, and inventory-bound release runtime.
+    """
+
+    if argv and argv[0] not in {"bootstrap-migrate", "recover"}:
+        raise BootstrapError("INVOCATION_ARGUMENTS_INVALID", argv[0])
+    if argv and argv[0] == "bootstrap-migrate" and len(argv) != 1:
+        raise BootstrapError(
+            "INVOCATION_ARGUMENTS_INVALID",
+            "bootstrap-migrate absorbs all technical fields; pass no release, hash, path, or generation",
+        )
+    runtime_path = _companion_runtime_path()
+    if not runtime_path.is_file():
+        raise BootstrapError("BOOTSTRAP_MIGRATION_RUNTIME_ABSENT", str(runtime_path))
+    runtime_payload = _regular_control_bytes(runtime_path, maximum=MAX_BUNDLE_FILE_BYTES)
+    observed_runtime_sha256 = hashlib.sha256(runtime_payload).hexdigest()
+    if (
+        not isinstance(EXPECTED_COMPANION_RUNTIME_SHA256, str)
+        or len(EXPECTED_COMPANION_RUNTIME_SHA256) != 64
+        or any(ch not in "0123456789abcdef" for ch in EXPECTED_COMPANION_RUNTIME_SHA256)
+    ):
+        raise BootstrapError(
+            "COMPANION_RUNTIME_SEAL_INVALID",
+            "EXPECTED_COMPANION_RUNTIME_SHA256 is not a sealed sha256 hex digest",
+        )
+    if observed_runtime_sha256 != EXPECTED_COMPANION_RUNTIME_SHA256:
+        raise BootstrapError(
+            "COMPANION_RUNTIME_IDENTITY_MISMATCH",
+            (
+                f"path={runtime_path} expected={EXPECTED_COMPANION_RUNTIME_SHA256} "
+                f"observed={observed_runtime_sha256}"
+            ),
+        )
+    try:
+        runtime_payload.decode("utf-8")
+    except UnicodeDecodeError as exc:
+        raise BootstrapError("SKILL_RUNTIME_ENTRY_INVALID", str(runtime_path)) from exc
+    process: subprocess.Popen[bytes] | None = None
+    try:
+        wrapper = _runtime_wrapper(runtime_path, runtime_payload)
+        child_environment = os.environ.copy()
+        child_environment.pop("XINAO_BOOTSTRAP_FENCE_V1", None)
+        try:
+            process = subprocess.Popen(
+                [sys.executable, "-I", "-", *argv],
+                stdin=subprocess.PIPE,
+                env=child_environment,
+            )
+        except OSError as exc:
+            raise BootstrapError("SKILL_RUNTIME_START_FAILED", str(exc)) from exc
+        _handoff_runtime_wrapper(process, wrapper)
+        return process.wait()
+    except BaseException:
+        if process is not None:
+            _reap_failed_runtime_child(process)
+            stream = process.stdin
+            if stream is not None:
+                try:
+                    stream.close()
+                except Exception:
+                    pass
+                process.stdin = None
+        raise
+
+
+def _pointer_requires_migration_entry(state_root: Path, command: str) -> bool:
+    if command not in {"bootstrap-migrate", "recover"}:
+        return False
+    pointer_path = state_root / "researcher_container" / "current.json"
+    if command == "bootstrap-migrate":
+        return True
+    if not pointer_path.is_file():
+        return False
+    try:
+        pointer, _sha = _load_json_with_identity(pointer_path)
+    except BootstrapError:
+        return False
+    if pointer.get("schema_version") == "xinao.researcher_current_pointer.v1":
+        return True
+    if pointer.get("schema_version") != "xinao.researcher_current_pointer.v2":
+        return False
+    # Mid-migration recover: pending MIGRATE journal while ordinary fence cannot form.
+    transaction_root = state_root / "researcher_container" / "transactions"
+    if not transaction_root.is_dir():
+        return False
+    try:
+        for entry in sorted(transaction_root.iterdir()):
+            journal_path = entry / "activation.v1.json"
+            if not journal_path.is_file():
+                continue
+            journal = _load_json(journal_path)
+            if (
+                isinstance(journal, dict)
+                and journal.get("operation") == "MIGRATE"
+                and journal.get("state") not in TERMINAL_ACTIVATION_STATES
+            ):
+                return True
+    except BootstrapError:
+        return False
+    return False
+
+
 def _run_runtime(argv: Sequence[str]) -> int:
     state_root = Path(os.environ.get("XINAO_SKILL_STATE_ROOT", str(DEFAULT_STATE_ROOT)))
     if not state_root.is_absolute():
         raise BootstrapError("STATE_ROOT_INVALID", str(state_root))
+    command = argv[0] if argv else ""
+    if _pointer_requires_migration_entry(state_root, command):
+        return _run_companion_runtime(argv)
     process: subprocess.Popen[bytes] | None = None
     try:
         with _activation_lock(state_root):
