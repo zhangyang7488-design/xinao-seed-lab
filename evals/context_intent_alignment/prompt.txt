@@ -566,6 +566,23 @@ transport, except `codex_subagent_exceptional` uses `worker_transport=not_applic
   atom identifiers exactly; their order is not semantically significant.
 
 ## Precedence pins (minimum)
+- A local sentence, field, example, old research question, checkpoint, handoff, or AI-authored
+  "unique next action" has candidate semantics only. When it conflicts with the current user
+  increment plus the restored whole parent result and frozen invariants, downgrade the local
+  projection instead of letting it redefine the research object, role, authority, completion bar,
+  or next action. Correcting that already-identified authority/text projection is an inseparable
+  Codex-main writer slice: use `supervisor_only`, no worker/provider/quota query, no mature-package
+  comparison, `degraded_scope=none`, `downstream_recovery_required=false`, and preserve completed
+  history. After the bounded correction, use
+  `local_completion_transition=rederive_mainline_frontier` and continue the active parent. If the
+  same increment supplies a new material first-person correction about how the AI must understand
+  the user, capture that fact only as a Decision Skill sidecar; do not turn it into another project
+  or conditional proposal. Here the protected constraint is the whole-parent-and-invariants
+  precedence rule itself, so use `constraint_governance_disposition=retain_protected_boundary`;
+  retiring a conflicting stale projection enforces that boundary and is not relaxation of it. A
+  request to continue the current TUI without explicitly creating a native Goal uses
+  `named_goal_relation=means_not_requested`, even when Goal would otherwise be only a possible
+  execution means.
 - An imperative that defines how to interpret a class of future user language, such as "treat my
   incomplete/ambitious idea as a probe" or "examples are probes, not a whitelist", is itself a
   stable cross-context correction. Use `preference_update=smallest_existing_artifact` and
