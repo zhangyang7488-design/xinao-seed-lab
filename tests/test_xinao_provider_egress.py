@@ -911,17 +911,22 @@ def test_windows_engineering_canary_encodes_empty_tool_set_without_empty_argv() 
     assert "'--max-turns', '1'" not in canary
 
 
-def test_research_result_keeps_provider_id_presence_without_raw_identifiers() -> None:
+def test_research_result_writes_provider_ids_in_result_object() -> None:
     entrypoint = (ROOT / "docker" / "xinao-researcher" / "entrypoint.py").read_text(
         encoding="utf-8"
     )
     result_block = entrypoint.split("    result = {", maxsplit=1)[1].split("    try:", maxsplit=1)[
         0
     ]
+    attestation_block = entrypoint.split("def _terminal_attestation_bytes(", maxsplit=1)[1].split(
+        "def _emit_terminal_bytes(", maxsplit=1
+    )[0]
     assert '"provider_session_id_present": True' in result_block
     assert '"provider_request_id_present": True' in result_block
-    assert '"provider_session_id":' not in result_block
-    assert '"provider_request_id":' not in result_block
+    assert '"provider_session_id": provider_effect["session_id"]' in result_block
+    assert '"provider_request_id": provider_effect["request_id"]' in result_block
+    assert "provider_session_id" not in attestation_block
+    assert "provider_request_id" not in attestation_block
 
 
 def test_egress_scripts_are_lf_only() -> None:
