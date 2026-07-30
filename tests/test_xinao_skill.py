@@ -638,7 +638,19 @@ def _fake_build_environment(
             binary = context / module.DONOR_BINARY_CONTEXT_RELATIVE
             assert binary.is_file()
             assert binary.read_bytes() == donor_binary_payload
+            # Live failure regression: Dockerfile COPY shadow-runtime/ requires the locked
+            # cone in the owned staging context (not the repository root).
+            shadow_root = context / module.SHADOW_RUNTIME_CONTEXT_RELATIVE
+            assert shadow_root.is_dir(), f"missing staged shadow-runtime in {context}"
+            shadow_main = shadow_root / "xinao" / "shadow_lifecycle" / "__main__.py"
+            assert shadow_main.is_file(), f"missing staged shadow entrypoint in {context}"
+            assert re.fullmatch(r"[0-9a-f]{64}", args.get("SHADOW_RUNTIME_TREE_SHA256", ""))
+            assert re.fullmatch(r"[0-9a-f]{64}", args.get("SHADOW_RUNTIME_LOCK_SHA256", ""))
             assert not any(part == "start" for part in values)
+            # No broad repository copy into the docker context.
+            assert not (context / "xinao_discovery").exists()
+            assert not (context / "skills").exists()
+            assert not (context / ".git").exists()
             return SimpleNamespace(stdout="", stderr="", returncode=0)
         if values[:2] == ["docker", "start"]:
             raise AssertionError(f"donor container must never start: {values}")
@@ -928,18 +940,8 @@ def test_build_is_candidate_only_and_passes_complete_image_identity(
     assert donor_tag not in joined
     assert str(ROOT) not in build[-1]
     assert (Path(build[-1]) / module.DONOR_BINARY_CONTEXT_RELATIVE).name == "grok"
-    assert (
-        (
-            Path(build[-1])
-            / module.SHADOW_RUNTIME_CONTEXT_RELATIVE
-            / "xinao"
-            / "shadow_lifecycle"
-            / "__main__.py"
-        )
-        .as_posix()
-        .endswith("shadow-runtime/xinao/shadow_lifecycle/__main__.py")
-    )
-    # Build context is cleaned after success; prove staging happened via sealed identities.
+    # Build context is cleaned after success; physical staging is asserted at docker-build
+    # time inside _fake_build_environment. Seal identities still bind the staged cone.
     assert "SHADOW_RUNTIME_TREE_SHA256=" in joined
     assert "SHADOW_RUNTIME_LOCK_SHA256=" in joined
     manifest = module._load_json(Path(receipt["release_manifest_path"]))
@@ -4904,6 +4906,94 @@ def test_dockerfile_stages_shadow_runtime_and_preserves_researcher_entrypoint() 
     assert "xinao.shadow_lifecycle" in dockerfile
     assert "xinao-shadow.pth" in dockerfile
     assert "PYTHONPATH=/opt/xinao-shadow" not in dockerfile
+
+
+def test_build_stages_locked_shadow_runtime_into_docker_context(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Regression for live COPY shadow-runtime/ not found: stage locked cone only."""
+    module = _module()
+    _state(module, tmp_path, monkeypatch)
+    lock = module._load_shadow_runtime_lock(SKILL_ROOT)
+    expected_rows = module._collect_shadow_runtime_rows(ROOT, lock)
+    expected_tree = module._shadow_runtime_tree_sha256(expected_rows)
+    expected_relatives = [relative for relative, _path, _content in expected_rows]
+    observed: dict[str, object] = {}
+
+    def on_before_build(values: list[str]) -> None:
+        context = Path(values[-1])
+        shadow_root = context / module.SHADOW_RUNTIME_CONTEXT_RELATIVE
+        staged = sorted(
+            path.relative_to(shadow_root).as_posix()
+            for path in shadow_root.rglob("*")
+            if path.is_file()
+        )
+        args = _parse_build_args(values)
+        observed["context"] = str(context)
+        observed["staged"] = staged
+        observed["tree"] = args.get("SHADOW_RUNTIME_TREE_SHA256")
+        # Context must remain the owned donor staging root, not source_root.
+        assert context.resolve() != ROOT.resolve()
+        assert str(ROOT.resolve()) not in str(context.resolve())
+        assert staged == expected_relatives
+        module._verify_staged_shadow_runtime(
+            context,
+            expected_rows,
+            expected_tree_sha256=expected_tree,
+        )
+
+    _fake_build_environment(module, monkeypatch, dirty=False, on_before_build=on_before_build)
+    receipt = module.build_release(ROOT, allow_dirty=False)
+    assert receipt["status"] == "CANDIDATE_BUILT"
+    assert observed["staged"] == expected_relatives
+    assert observed["tree"] == expected_tree
+    manifest = module._load_json(Path(receipt["release_manifest_path"]))
+    assert manifest["source_identity"]["shadow_runtime_tree_sha256"] == expected_tree
+    assert (
+        manifest["image_labels"]["io.xinao.researcher.shadow-runtime.sha256"] == expected_tree
+    )
+    # Build context is cleaned after success.
+    assert not Path(str(observed["context"])).exists()
+
+
+def test_build_fails_closed_when_shadow_runtime_not_staged(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Would have passed the weak path-string check before this regression was added."""
+    module = _module()
+    _state(module, tmp_path, monkeypatch)
+
+    def skip_stage(build_context: Path, rows: list) -> Path:
+        # Intentionally omit materialization while keeping destination absent.
+        del rows
+        return build_context / module.SHADOW_RUNTIME_CONTEXT_RELATIVE
+
+    monkeypatch.setattr(module, "_stage_shadow_runtime", skip_stage)
+    _fake_build_environment(module, monkeypatch, dirty=False)
+    with pytest.raises(module.XinaoError) as failure:
+        module.build_release(ROOT, allow_dirty=False)
+    assert failure.value.reason_code == "SHADOW_RUNTIME_STAGING_MISSING"
+
+
+def test_shadow_runtime_stage_and_verify_are_hash_bound(tmp_path: Path) -> None:
+    module = _module()
+    lock = module._load_shadow_runtime_lock(SKILL_ROOT)
+    rows = module._collect_shadow_runtime_rows(ROOT, lock)
+    tree = module._shadow_runtime_tree_sha256(rows)
+    build_context = tmp_path / "build-context"
+    build_context.mkdir()
+    staged = module._stage_shadow_runtime(build_context, rows)
+    assert staged == build_context / "shadow-runtime"
+    module._verify_staged_shadow_runtime(build_context, rows, expected_tree_sha256=tree)
+    # Tamper one staged file: verification must fail closed.
+    target = staged / "xinao" / "shadow_lifecycle" / "__main__.py"
+    target.write_bytes(target.read_bytes() + b"#tamper\n")
+    with pytest.raises(module.XinaoError) as failure:
+        module._verify_staged_shadow_runtime(build_context, rows, expected_tree_sha256=tree)
+    assert failure.value.reason_code in {
+        "SHADOW_RUNTIME_STAGING_DRIFT",
+        "SHADOW_RUNTIME_STAGING_HASH_MISMATCH",
+    }
 
 
 def test_shadow_command_construction_is_network_none_readonly_episode_only() -> None:
