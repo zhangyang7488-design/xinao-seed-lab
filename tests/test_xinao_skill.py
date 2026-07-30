@@ -2523,6 +2523,18 @@ def test_material_result_binding_admits_producer_raw_provider_ids(
             "RESEARCH_RESULT_PROVIDER_ID_INVALID",
         ),
         (
+            lambda r: r.__setitem__("provider_session_id", " \t\r\n"),
+            "RESEARCH_RESULT_PROVIDER_ID_INVALID",
+        ),
+        (
+            lambda r: r.__setitem__("provider_request_id", "request\x00hidden"),
+            "RESEARCH_RESULT_PROVIDER_ID_INVALID",
+        ),
+        (
+            lambda r: r.__setitem__("provider_session_id", "s" * 4097),
+            "RESEARCH_RESULT_PROVIDER_ID_INVALID",
+        ),
+        (
             lambda r: r.__setitem__("provider_session_id", 12345),
             "RESEARCH_RESULT_PROVIDER_ID_INVALID",
         ),

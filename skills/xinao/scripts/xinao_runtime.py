@@ -9692,10 +9692,13 @@ def _validate_material_result_binding(
         present = result.get(present_key)
         raw_id = result.get(id_key)
         if present is True:
-            if not _plain_json_text(
-                raw_id,
-                nonempty=True,
-                maximum_bytes=MAX_PROVIDER_ID_BYTES,
+            if (
+                not _plain_json_text(
+                    raw_id,
+                    nonempty=True,
+                    maximum_bytes=MAX_PROVIDER_ID_BYTES,
+                )
+                or not raw_id.strip()
             ):
                 raise XinaoError("RESEARCH_RESULT_PROVIDER_ID_INVALID", id_key)
         elif present is False:
