@@ -100,6 +100,23 @@ def _cash_balance(balances: dict[str, str]) -> str:
     return balances[Account.SHADOW_CASH.value]
 
 
+def _require_content_seal(obj: object, *, label: str) -> None:
+    """Reject missing or stale content hashes (model_copy can retain an old seal)."""
+
+    sealed = getattr(obj, "content_hash", None)
+    if sealed is None:
+        raise ValueError(f"{label} must be hash sealed")
+    compute = getattr(obj, "compute_content_hash", None)
+    if compute is None:
+        raise ValueError(f"{label} cannot recompute content seal")
+    if compute() != sealed:
+        raise ValueError(f"mutated sealed {label} rejected")
+
+
+def _require_outcome_seal(outcome: OutcomeObservation) -> None:
+    outcome.require_valid_result_hash()
+
+
 class ShadowSeat(BaseModel):
     """Researcher seat with an isolated shadow portfolio and opening capital."""
 
@@ -246,8 +263,12 @@ class FrozenShadowEpisode(BaseModel):
             raise ValueError("frozen_at <= freeze_deadline < target_open_time is required")
         if self.science_decision.content_hash is None:
             raise ValueError("science decision must be hash sealed")
+        if self.science_decision.compute_content_hash() != self.science_decision.content_hash:
+            raise ValueError("mutated sealed science decision rejected")
         if self.account_decision.content_hash is None:
             raise ValueError("account decision must be hash sealed")
+        if self.account_decision.compute_content_hash() != self.account_decision.content_hash:
+            raise ValueError("mutated sealed account decision rejected")
         if self.account_decision.rule_ref != self.rule_ref:
             raise ValueError("account decision rule_ref must match episode rule_ref")
         if self.account_decision.odds_version_ref != self.odds_version_ref:
@@ -263,6 +284,8 @@ class FrozenShadowEpisode(BaseModel):
             frozen = self.bound_frozen_decision
             if frozen.content_hash is None:
                 raise ValueError("bound FrozenDecision must be hash sealed")
+            if frozen.compute_content_hash() != frozen.content_hash:
+                raise ValueError("mutated sealed bound FrozenDecision rejected")
             if frozen.decision_ref != self.account_decision.frozen_decision_ref:
                 raise ValueError("account decision frozen_decision_ref mismatch")
             if frozen.content_hash != self.account_decision.frozen_decision_hash:
@@ -277,6 +300,10 @@ class FrozenShadowEpisode(BaseModel):
                 raise ValueError("bound FrozenDecision odds_version_ref mismatch")
             if frozen.stake != self.account_decision.stake:
                 raise ValueError("account stake must equal bound FrozenDecision stake")
+            if frozen.frozen_at > self.frozen_at:
+                raise ValueError(
+                    "bound FrozenDecision frozen_at must not be after episode frozen_at"
+                )
             if self.opening_journal_group is None or self.position_journal_group is None:
                 raise ValueError("ACTION requires opening and frozen-position journal groups")
             if self.opening_journal_group.portfolio_ref != self.portfolio_ref:
@@ -329,6 +356,10 @@ class AccountStatement(BaseModel):
     episode_ref: str = Field(min_length=1)
     seat_id: str = Field(min_length=1)
     portfolio_ref: str = Field(min_length=1)
+    target_ref: str = Field(min_length=1)
+    outcome_ref: str = Field(min_length=1)
+    actual_special_number: int = Field(ge=1, le=49)
+    observed_at: datetime
     opening_balance: str
     account_decision: AccountDecisionIdentity
     risk_stake: str
@@ -342,6 +373,7 @@ class AccountStatement(BaseModel):
 
     @model_validator(mode="after")
     def validate_statement(self) -> Self:
+        _require_aware(self.observed_at, field_name="observed_at")
         for field in (
             "opening_balance",
             "risk_stake",
@@ -382,8 +414,7 @@ class SettledShadowEpisode(BaseModel):
 
     @model_validator(mode="after")
     def validate_settled(self) -> Self:
-        if self.outcome.result_hash is None:
-            raise ValueError("outcome must be hash sealed")
+        self.outcome.require_valid_result_hash()
         if not self.outcome.verified:
             raise ValueError("settled episode requires verified outcome")
         if self.statement.episode_ref != self.episode_ref:
@@ -393,8 +424,18 @@ class SettledShadowEpisode(BaseModel):
             or self.statement.portfolio_ref != self.portfolio_ref
         ):
             raise ValueError("statement seat/portfolio mismatch")
+        if self.statement.target_ref != self.outcome.target_ref:
+            raise ValueError("statement target_ref mismatch")
+        if self.statement.outcome_ref != self.outcome.outcome_ref:
+            raise ValueError("statement outcome_ref mismatch")
+        if self.statement.actual_special_number != self.outcome.actual_special_number:
+            raise ValueError("statement actual_special_number mismatch")
+        if self.statement.observed_at != self.outcome.observed_at:
+            raise ValueError("statement observed_at mismatch")
         if self.statement.content_hash is None:
             raise ValueError("statement must be hash sealed")
+        if self.statement.compute_content_hash() != self.statement.content_hash:
+            raise ValueError("mutated sealed statement rejected")
         if self.content_hash is not None and self.content_hash != self.compute_content_hash():
             raise ValueError("content_hash does not match the canonical settled episode")
         return self
@@ -410,7 +451,7 @@ class SettledShadowEpisode(BaseModel):
 
 
 class EvidenceAssessment(BaseModel):
-    """Honest evidence labeling. Never invents FIRST_EPISODE_VERIFIED from fixtures."""
+    """Honest evidence labeling. Fixtures/library cannot construct real FIRST milestone."""
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
@@ -422,15 +463,13 @@ class EvidenceAssessment(BaseModel):
 
     @model_validator(mode="after")
     def validate_honesty(self) -> Self:
-        if self.first_episode_verified and self.state != EvidenceState.FIRST_EPISODE_VERIFIED:
-            raise ValueError("first_episode_verified requires FIRST_EPISODE_VERIFIED state")
-        if self.state == EvidenceState.FIRST_EPISODE_VERIFIED:
-            if not (self.prospective_freeze_attested and self.independent_outcome_attested):
-                raise ValueError(
-                    "FIRST_EPISODE_VERIFIED requires prospective freeze and independent outcome"
-                )
-            if not self.first_episode_verified:
-                raise ValueError("FIRST_EPISODE_VERIFIED requires first_episode_verified=true")
+        # This PR has no trusted external attestation carrier: keep the milestone noun,
+        # but refuse any library-side construction of a real FIRST_EPISODE_VERIFIED claim.
+        if self.first_episode_verified or self.state == EvidenceState.FIRST_EPISODE_VERIFIED:
+            raise ValueError(
+                "FIRST_EPISODE_VERIFIED cannot be constructed by library booleans; "
+                "no trusted external attestation carrier on this surface"
+            )
         if (
             self.state == EvidenceState.SHADOW_PRACTICE_STARTED
             and not self.prospective_freeze_attested
@@ -476,8 +515,7 @@ def build_account_action(
     account_decision_ref: str,
     frozen_decision: FrozenDecision,
 ) -> AccountBranchDecision:
-    if frozen_decision.content_hash is None:
-        raise ValueError("FrozenDecision must be hash sealed before account ACTION")
+    _require_content_seal(frozen_decision, label="FrozenDecision")
     if frozen_decision.decision_kind not in _ACTION_DECISION_KINDS:
         raise ValueError("ACTION requires an exact frozen shadow decision kind")
     stake = _amount(frozen_decision.stake)
@@ -529,12 +567,9 @@ def freeze_shadow_episode(
 ) -> FrozenShadowEpisode:
     """Freeze an episode only while the outcome is absent and time bounds hold."""
 
-    if seat.content_hash is None:
-        raise ValueError("seat must be hash sealed")
-    if science_decision.content_hash is None:
-        raise ValueError("science decision must be hash sealed")
-    if account_decision.content_hash is None:
-        raise ValueError("account decision must be hash sealed")
+    _require_content_seal(seat, label="seat")
+    _require_content_seal(science_decision, label="science decision")
+    _require_content_seal(account_decision, label="account decision")
     if outcome_present:
         raise ValueError("cannot freeze after outcome is present")
     _require_aware(target_open_time, field_name="target_open_time")
@@ -547,6 +582,11 @@ def freeze_shadow_episode(
         )
     if science_decision.knowledge_cutoff >= target_open_time:
         raise ValueError("science knowledge_cutoff must be before target_open_time")
+    if science_decision.knowledge_cutoff > frozen_at:
+        raise ValueError(
+            "science knowledge_cutoff must be at or before frozen_at "
+            "(future knowledge cannot enter an earlier freeze)"
+        )
 
     balance = _fmt_amount(
         pre_freeze_balance if pre_freeze_balance is not None else seat.opening_balance
@@ -560,8 +600,7 @@ def freeze_shadow_episode(
     if account_decision.identity == AccountDecisionIdentity.ACTION:
         if bound_frozen_decision is None:
             raise ValueError("ACTION freeze requires bound_frozen_decision")
-        if bound_frozen_decision.content_hash is None:
-            raise ValueError("bound FrozenDecision must be hash sealed")
+        _require_content_seal(bound_frozen_decision, label="bound FrozenDecision")
         if bound_frozen_decision.decision_ref != account_decision.frozen_decision_ref:
             raise ValueError("bound FrozenDecision ref mismatch")
         if bound_frozen_decision.content_hash != account_decision.frozen_decision_hash:
@@ -574,6 +613,8 @@ def freeze_shadow_episode(
             raise ValueError("bound FrozenDecision freeze_deadline mismatch")
         if bound_frozen_decision.stake != account_decision.stake:
             raise ValueError("stake mismatch between account decision and FrozenDecision")
+        if bound_frozen_decision.frozen_at > frozen_at:
+            raise ValueError("bound FrozenDecision frozen_at must not be after episode frozen_at")
         if _amount(account_decision.stake) > _amount(balance):
             raise ValueError("stake exceeds pre-freeze balance")
         if not opening_journal_group_ref or not position_journal_group_ref:
@@ -635,10 +676,8 @@ def admit_episode_outcome(
 ) -> OutcomeAdmission:
     """Admit a verified, target-matching outcome only at/after target open."""
 
-    if episode.content_hash is None:
-        raise ValueError("episode must be hash sealed")
-    if candidate.result_hash is None:
-        raise ValueError("outcome must be hash sealed")
+    _require_content_seal(episode, label="episode")
+    _require_outcome_seal(candidate)
     _require_aware(candidate.observed_at, field_name="observed_at")
     if candidate.observed_at < episode.target_open_time:
         raise ValueError("pre-open outcome rejected")
@@ -663,8 +702,8 @@ def settle_shadow_episode(
 ) -> SettledShadowEpisode:
     """Settle once. ACTION reuses settlement/ledger primitives; no-action is zero P&L."""
 
-    if episode.content_hash is None:
-        raise ValueError("episode must be hash sealed")
+    _require_content_seal(episode, label="episode")
+    _require_outcome_seal(outcome)
     admission = admit_episode_outcome(episode=episode, candidate=outcome)
     if admission.status != "ACCEPTED":
         raise ValueError(f"outcome not admitted for settlement: {admission.status}")
@@ -672,6 +711,8 @@ def settle_shadow_episode(
     _require_aware(settled_at, field_name="occurred_at")
     if settled_at < episode.target_open_time:
         raise ValueError("settlement before target open rejected")
+    if settled_at < outcome.observed_at:
+        raise ValueError("settlement occurred_at must be at or after outcome.observed_at")
 
     if episode.account_decision.identity == AccountDecisionIdentity.RESEARCHER_ACCOUNT_NO_ACTION:
         if settlement_ref is not None or settlement_journal_group_ref is not None:
@@ -681,6 +722,10 @@ def settle_shadow_episode(
             episode_ref=episode.episode_ref,
             seat_id=episode.seat_id,
             portfolio_ref=episode.portfolio_ref,
+            target_ref=episode.target_ref,
+            outcome_ref=outcome.outcome_ref,
+            actual_special_number=outcome.actual_special_number,
+            observed_at=outcome.observed_at,
             opening_balance=episode.pre_freeze_balance,
             account_decision=AccountDecisionIdentity.RESEARCHER_ACCOUNT_NO_ACTION,
             risk_stake=ZERO_AMOUNT,
@@ -705,6 +750,7 @@ def settle_shadow_episode(
     # ACTION path
     if episode.bound_frozen_decision is None:
         raise ValueError("ACTION settle requires bound FrozenDecision")
+    _require_content_seal(episode.bound_frozen_decision, label="bound FrozenDecision")
     if episode.opening_journal_group is None or episode.position_journal_group is None:
         raise ValueError("ACTION settle requires complete freeze journals (half transaction)")
     if not settlement_ref or not settlement_journal_group_ref:
@@ -739,6 +785,10 @@ def settle_shadow_episode(
         episode_ref=episode.episode_ref,
         seat_id=episode.seat_id,
         portfolio_ref=episode.portfolio_ref,
+        target_ref=episode.target_ref,
+        outcome_ref=outcome.outcome_ref,
+        actual_special_number=outcome.actual_special_number,
+        observed_at=outcome.observed_at,
         opening_balance=episode.pre_freeze_balance,
         account_decision=AccountDecisionIdentity.ACTION,
         risk_stake=episode.account_decision.stake,
@@ -772,12 +822,8 @@ def replay_settled_episode(
 ) -> SettledShadowEpisode:
     """Fresh replay from sealed inputs; fail closed on mutation or mismatch."""
 
-    if episode.content_hash is None or settled.content_hash is None:
-        raise ValueError("episode and settled result must be hash sealed")
-    if episode.compute_content_hash() != episode.content_hash:
-        raise ValueError("mutated sealed episode content rejected")
-    if settled.compute_content_hash() != settled.content_hash:
-        raise ValueError("mutated sealed settlement content rejected")
+    _require_content_seal(episode, label="episode")
+    _require_content_seal(settled, label="settled episode")
     if settled.frozen_episode_hash != episode.content_hash:
         raise ValueError("settled episode does not bind frozen episode hash")
     if settled.episode_ref != episode.episode_ref:
@@ -787,21 +833,24 @@ def replay_settled_episode(
     if settled.portfolio_ref != episode.portfolio_ref:
         raise ValueError("cross-portfolio mismatch rejected")
     if seat is not None:
-        if seat.content_hash is None or seat.compute_content_hash() != seat.content_hash:
-            raise ValueError("mutated seat rejected")
+        _require_content_seal(seat, label="seat")
         if seat.seat_id != episode.seat_id:
             raise ValueError("cross-seat mismatch rejected")
         if seat.portfolio_ref != episode.portfolio_ref:
             raise ValueError("cross-portfolio mismatch rejected")
     if portfolio_ref is not None and portfolio_ref != episode.portfolio_ref:
         raise ValueError("cross-portfolio mismatch rejected")
-    if outcome.result_hash is None:
-        raise ValueError("outcome must be hash sealed")
-    recomputed_outcome = outcome.model_copy(update={"result_hash": None}).with_hash()
-    if recomputed_outcome.result_hash != outcome.result_hash:
-        raise ValueError("mutated outcome rejected")
+    _require_outcome_seal(outcome)
     if outcome.target_ref != episode.target_ref:
         raise ValueError("target mismatch rejected")
+    if settled.statement.target_ref != episode.target_ref:
+        raise ValueError("statement target_ref mismatch on replay")
+    if settled.statement.outcome_ref != outcome.outcome_ref:
+        raise ValueError("statement outcome_ref mismatch on replay")
+    if settled.statement.actual_special_number != outcome.actual_special_number:
+        raise ValueError("statement actual_special_number mismatch on replay")
+    if settled.statement.observed_at != outcome.observed_at:
+        raise ValueError("statement observed_at mismatch on replay")
 
     # Half-transaction: ACTION must carry full journal chain
     if episode.account_decision.identity == AccountDecisionIdentity.ACTION:
@@ -909,48 +958,8 @@ def assess_fixture_evidence(
             ),
         )
 
-    # Non-synthetic path is for future real attestation callers only; still fail-closed here
-    # unless explicit attestations are provided by the caller via assess_real_evidence.
-    raise ValueError("use assess_real_evidence for non-synthetic claims")
-
-
-def assess_real_evidence(
-    *,
-    prospective_account_freeze_attested: bool,
-    independent_outcome_attested: bool,
-    closed_loop_verified: bool,
-    walk_forward_only: bool = False,
-) -> EvidenceAssessment:
-    """Explicit real-world attestation path. Fixtures must not call this with synthetic truth."""
-
-    if walk_forward_only:
-        return EvidenceAssessment(
-            state=EvidenceState.WALK_FORWARD_REPLAY,
-            prospective_freeze_attested=False,
-            independent_outcome_attested=independent_outcome_attested,
-            first_episode_verified=False,
-            notes="WALK_FORWARD_REPLAY is scientific evidence, not prospective freeze.",
-        )
-    if not prospective_account_freeze_attested:
-        return EvidenceAssessment(
-            state=EvidenceState.READY_FOR_SHADOW_PRACTICE,
-            prospective_freeze_attested=False,
-            independent_outcome_attested=False,
-            first_episode_verified=False,
-            notes="Components ready; no real account-side pre-outcome freeze yet.",
-        )
-    if not (independent_outcome_attested and closed_loop_verified):
-        return EvidenceAssessment(
-            state=EvidenceState.SHADOW_PRACTICE_STARTED,
-            prospective_freeze_attested=True,
-            independent_outcome_attested=False,
-            first_episode_verified=False,
-            notes="Account ticket frozen prospectively; first episode not yet verified.",
-        )
-    return EvidenceAssessment(
-        state=EvidenceState.FIRST_EPISODE_VERIFIED,
-        prospective_freeze_attested=True,
-        independent_outcome_attested=True,
-        first_episode_verified=True,
-        notes="Real prospective freeze with independent outcome and closed-loop verification.",
+    # No trusted external attestation carrier on this surface: refuse non-synthetic promotion.
+    raise ValueError(
+        "non-synthetic claims require trusted external attestation; "
+        "this library cannot construct FIRST_EPISODE_VERIFIED"
     )
