@@ -2663,8 +2663,39 @@ def _validate_sealed_protocol_v2_release_ref(
     return manifest, manifest_path
 
 
+def _current_source_skill_bundle_identity() -> dict[str, str]:
+    """Compute package/capability/tree identity for the forward-upgrade source cone.
+
+    Used only to decide whether an already-current-schema active release still matches the
+    bytes that would mint the next release. Does not build images or touch installed files.
+    """
+
+    source_root = _migration_source_root()
+    source_skill = source_root / "skills" / "xinao"
+    _registry, _charter, _runtime_lock, package_version, capability_version = _source_versions(
+        source_skill
+    )
+    source_rows = _source_bundle_files(source_skill)
+    bundle_manifest = _skill_bundle_manifest(source_rows, package_version=package_version)
+    tree_sha256 = bundle_manifest.get("tree_sha256")
+    if not isinstance(tree_sha256, str) or HEX_SHA256_PATTERN.fullmatch(tree_sha256) is None:
+        raise XinaoError("SKILL_BUNDLE_MANIFEST_INVALID", "tree_sha256")
+    return {
+        "package_version": package_version,
+        "capability_version": capability_version,
+        "skill_bundle_tree_sha256": tree_sha256,
+    }
+
+
 def _active_release_requires_forward_upgrade(manifest: dict[str, Any]) -> bool:
-    """True when active protocol-v2 release cannot form the exact current ordinary fence."""
+    """True when active protocol-v2 release cannot form the exact current ordinary fence.
+
+    Schema-generation gaps (pre-shadow field sets) still require upgrade. In addition, an
+    active release that already carries current keys must still upgrade when the sealed
+    skill-bundle identity no longer matches the migration/forward-upgrade source cone —
+    otherwise same-version byte drift (or an intentional version bump) can silently claim
+    ALREADY_UPGRADED from a prior journal whose pointer.to still equals current.
+    """
 
     try:
         generation = _source_identity_generation(manifest.get("source_identity"))
@@ -2677,6 +2708,17 @@ def _active_release_requires_forward_upgrade(manifest: dict[str, Any]) -> bool:
     if not isinstance(skill_hashes, dict) or set(skill_hashes) != CURRENT_SKILL_HASH_KEYS:
         return True
     if not isinstance(labels, dict) or set(labels) != CURRENT_IMAGE_LABEL_KEYS:
+        return True
+    try:
+        source = _current_source_skill_bundle_identity()
+    except XinaoError:
+        # Fail closed into the upgrade path rather than claiming current without a source pin.
+        return True
+    if manifest.get("skill_bundle_tree_sha256") != source["skill_bundle_tree_sha256"]:
+        return True
+    if manifest.get("package_version") != source["package_version"]:
+        return True
+    if manifest.get("capability_version") != source["capability_version"]:
         return True
     return False
 

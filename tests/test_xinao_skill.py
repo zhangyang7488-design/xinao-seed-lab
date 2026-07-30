@@ -319,6 +319,7 @@ def _sealed_release(
     image_character: str = "a",
     dirty: bool = False,
     variant: bytes | None = None,
+    package_version: str = "1.3.1",
     capability_version: str = "1.1.0",
 ) -> tuple[dict[str, object], Path]:
     state = _state(module, tmp_path, monkeypatch)
@@ -332,7 +333,7 @@ def _sealed_release(
             )
         )
         source_rows.sort(key=lambda item: item[0])
-    bundle_manifest = module._skill_bundle_manifest(source_rows, package_version="1.3.0")
+    bundle_manifest = module._skill_bundle_manifest(source_rows, package_version=package_version)
     hashes = module._reference_hashes(SKILL_ROOT)
     shadow_lock = module._load_shadow_runtime_lock(SKILL_ROOT)
     shadow_rows = module._collect_shadow_runtime_rows(ROOT, shadow_lock)
@@ -370,7 +371,7 @@ def _sealed_release(
     manifest: dict[str, object] = {
         "schema_version": module.RELEASE_SCHEMA,
         "release_id": "pending",
-        "package_version": "1.3.0",
+        "package_version": package_version,
         "capability_id": "researcher-container",
         "capability_version": capability_version,
         "charter_version": capability_version,
@@ -732,12 +733,12 @@ def test_package_version_is_separate_from_researcher_versions() -> None:
         for value in registry["capabilities"]
         if value["capability_id"] == "researcher-container"
     )
-    assert registry["skill_version"] == "1.3.0"
+    assert registry["skill_version"] == "1.3.1"
     assert (
         researcher["version"]
         == charter["charter_version"]
         == runtime_lock["runtime_version"]
-        == "1.2.0"
+        == "1.2.1"
     )
     shadow = next(
         value
@@ -788,7 +789,7 @@ def test_release_v2_and_exact_bundle_roundtrip(
     manifest, manifest_path = _sealed_release(module, tmp_path, monkeypatch)
     bundle_manifest = module._validate_release_manifest(manifest, manifest_path)
     assert manifest["schema_version"] == "xinao.researcher_release.v2"
-    assert manifest["package_version"] == "1.3.0"
+    assert manifest["package_version"] == "1.3.1"
     assert manifest["capability_version"] == "1.1.0"
     assert bundle_manifest["tree_sha256"] == manifest["skill_bundle_tree_sha256"]
     assert any(
@@ -918,8 +919,8 @@ def test_build_is_candidate_only_and_passes_complete_image_identity(
     donor_binary_sha256 = env["donor_binary_sha256"]
     receipt = module.build_release(ROOT, allow_dirty=True)
     assert receipt["status"] == "CANDIDATE_BUILT"
-    assert receipt["package_version"] == "1.3.0"
-    assert receipt["capability_version"] == "1.2.0"
+    assert receipt["package_version"] == "1.3.1"
+    assert receipt["capability_version"] == "1.2.1"
     assert receipt["source_dirty"] is True
     assert receipt["activated"] is False
     assert not module._state_paths()["pointer"].exists()
@@ -1176,7 +1177,8 @@ def test_same_semver_different_content_is_collision(
         tmp_path,
         monkeypatch,
         image_character="a",
-        capability_version="1.2.0",
+        package_version="1.3.1",
+        capability_version="1.2.1",
     )
     _fake_build_environment(module, monkeypatch, dirty=False, image_character="f")
     with pytest.raises(module.XinaoError) as failure:
@@ -5143,7 +5145,7 @@ def test_shadow_inspect_requires_source_and_live_image_labels(
     registry = module._validate_registry()
     absent = module._shadow_live_status(registry, None, image_ok=False)
     assert absent["runtime_status"] == "RELEASE_ABSENT"
-    manifest, _path = _sealed_release(module, tmp_path, monkeypatch, capability_version="1.2.0")
+    manifest, _path = _sealed_release(module, tmp_path, monkeypatch, capability_version="1.2.1")
     _materialize_installed_from_release(module, tmp_path, monkeypatch, manifest)
     ready = module._shadow_live_status(registry, manifest, image_ok=True)
     assert ready["runtime_status"] == "AVAILABLE"
@@ -5689,13 +5691,15 @@ def _prepare_v2_forward_upgrade_world(
     monkeypatch.setenv("XINAO_INSTALLED_SKILL_ROOT", str(installed))
     monkeypatch.setattr(module, "DEFAULT_INSTALLED_SKILL_ROOT", installed)
 
+    # Target must match current source skill-bundle identity so post-upgrade
+    # idempotent re-entry can return ALREADY_* (schema + tree + versions).
     target, target_path = _sealed_release(
         module,
         tmp_path,
         monkeypatch,
         image_character="c",
-        capability_version="1.2.0",
-        variant=b"forward-upgrade-target-1.3.0\n",
+        package_version="1.3.1",
+        capability_version="1.2.1",
     )
     monkeypatch.setattr(
         module,
@@ -5964,3 +5968,158 @@ def test_bootstrap_forward_upgrade_rejects_hidden_migration_fields_in_parser() -
     with pytest.raises(module.XinaoError) as failure:
         parser.parse_args(["bootstrap-forward-upgrade", "--compat-release", "x"])
     assert failure.value.reason_code == "INVOCATION_ARGUMENTS_INVALID"
+
+
+def _prepare_current_schema_source_drift_world(
+    module,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> dict[str, object]:
+    """Current-schema active with same package/cap versions as source but drifted tree.
+
+    Models the live defect: schema generation is already exact-current and versions match
+    source, yet sealed skill-bundle bytes lag the migration/forward-upgrade source cone.
+    Without bundle-identity awareness, bootstrap-forward-upgrade would claim ALREADY_*.
+    """
+
+    source_identity = module._current_source_skill_bundle_identity()
+    package_version = source_identity["package_version"]
+    capability_version = source_identity["capability_version"]
+    active, active_path = _sealed_release(
+        module,
+        tmp_path,
+        monkeypatch,
+        image_character="d",
+        package_version=package_version,
+        capability_version=capability_version,
+        variant=b"same-version-source-bundle-drift\n",
+    )
+    assert active["skill_bundle_tree_sha256"] != source_identity["skill_bundle_tree_sha256"]
+    assert active["package_version"] == package_version
+    assert active["capability_version"] == capability_version
+    assert module._active_release_requires_forward_upgrade(active) is True
+
+    pointer, journal, journal_path = _terminal_pointer(
+        module,
+        active,
+        active_path,
+        generation=3,
+        txn_suffix="b" * 16,
+        previous_verified=None,
+    )
+
+    import shutil
+
+    installed = tmp_path / "installed_skill_drift"
+    if installed.exists():
+        shutil.rmtree(installed)
+    shutil.copytree(Path(str(active["skill_bundle_path"])), installed)
+    monkeypatch.setenv("XINAO_INSTALLED_SKILL_ROOT", str(installed))
+    monkeypatch.setattr(module, "DEFAULT_INSTALLED_SKILL_ROOT", installed)
+
+    target, target_path = _sealed_release(
+        module,
+        tmp_path,
+        monkeypatch,
+        image_character="e",
+        package_version=package_version,
+        capability_version=capability_version,
+    )
+    assert target["skill_bundle_tree_sha256"] == source_identity["skill_bundle_tree_sha256"]
+    assert target["release_id"] != active["release_id"]
+    monkeypatch.setattr(
+        module,
+        "_prepare_forward_upgrade_target",
+        lambda: (target, target_path),
+    )
+    pointer_path = module._state_paths()["pointer"]
+    return {
+        "active": active,
+        "active_path": active_path,
+        "pointer": pointer,
+        "pointer_path": pointer_path,
+        "journal": journal,
+        "journal_path": journal_path,
+        "target": target,
+        "target_path": target_path,
+        "source_identity": source_identity,
+        "installed": installed,
+    }
+
+
+def test_same_version_skill_bundle_drift_requires_forward_upgrade(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    module = _module()
+    source = module._current_source_skill_bundle_identity()
+    matching, _path = _sealed_release(
+        module,
+        tmp_path,
+        monkeypatch,
+        image_character="a",
+        package_version=source["package_version"],
+        capability_version=source["capability_version"],
+    )
+    assert matching["skill_bundle_tree_sha256"] == source["skill_bundle_tree_sha256"]
+    assert module._active_release_requires_forward_upgrade(matching) is False
+
+    drifted, _drifted_path = _sealed_release(
+        module,
+        tmp_path,
+        monkeypatch,
+        image_character="b",
+        package_version=source["package_version"],
+        capability_version=source["capability_version"],
+        variant=b"future-same-version-byte-drift\n",
+    )
+    assert drifted["skill_bundle_tree_sha256"] != source["skill_bundle_tree_sha256"]
+    assert drifted["package_version"] == source["package_version"]
+    assert drifted["capability_version"] == source["capability_version"]
+    assert module._active_release_requires_forward_upgrade(drifted) is True
+
+
+def test_bootstrap_forward_upgrade_same_version_source_drift_mints_new_release(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    module = _module()
+    world = _prepare_current_schema_source_drift_world(module, tmp_path, monkeypatch)
+    # Without the drift gate this world would claim ALREADY_CURRENT (current schema + match
+    # versions) and never mint a distinct release for the new skill-bundle tree.
+    assert module._active_release_requires_forward_upgrade(world["active"]) is True
+    monkeypatch.setattr(
+        module,
+        "_run_activation_canary",
+        lambda journal: _canary_value(module, journal),
+    )
+    receipt = module.bootstrap_forward_upgrade()
+    assert receipt["status"] == "UPGRADED"
+    assert receipt["operation"] == "FORWARD_UPGRADE"
+    assert receipt["release_id"] == world["target"]["release_id"]
+    assert receipt["release_id"] != world["active"]["release_id"]
+    pointer = module._load_json(module._state_paths()["pointer"])
+    assert pointer["active"]["release_id"] == world["target"]["release_id"]
+    assert (
+        pointer["active"]["skill_bundle_tree_sha256"]
+        == world["source_identity"]["skill_bundle_tree_sha256"]
+    )
+    # Idempotent after source identity is adopted.
+    again = module.bootstrap_forward_upgrade()
+    assert again["status"] in {"ALREADY_UPGRADED", "ALREADY_CURRENT"}
+    assert again["release_id"] == world["target"]["release_id"]
+
+
+def test_bootstrap_forward_upgrade_same_version_drift_never_claims_already(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Negative: drifted current-schema active must not return ALREADY_*."""
+
+    module = _module()
+    world = _prepare_current_schema_source_drift_world(module, tmp_path, monkeypatch)
+    # prepare returns None (as when build fence says not required / no target). Drift gate
+    # must still refuse ALREADY_* and surface TARGET_ABSENT instead of silent current.
+    monkeypatch.setattr(module, "_prepare_forward_upgrade_target", lambda: None)
+    with pytest.raises(module.XinaoError) as failure:
+        module.bootstrap_forward_upgrade()
+    assert failure.value.reason_code == "FORWARD_UPGRADE_TARGET_ABSENT"
+    pointer = module._load_json(world["pointer_path"])
+    assert pointer["active"]["release_id"] == world["active"]["release_id"]
