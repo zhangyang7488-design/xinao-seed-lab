@@ -1,10 +1,13 @@
 from __future__ import annotations
 
+import importlib.util
 import json
 import os
 import subprocess
 import sys
 from pathlib import Path
+from types import ModuleType
+from typing import Any
 
 import pytest
 from services.agent_runtime.session_frontier_projection import (
@@ -13,6 +16,7 @@ from services.agent_runtime.session_frontier_projection import (
     bind_session,
     build_live_frontier,
     handle_compact_session_start,
+    load_binding,
 )
 
 
@@ -81,6 +85,46 @@ def _bind(tmp_path: Path, *, session_id: str = "session-a") -> tuple[Path, Path]
     return run, frontier_root
 
 
+def _load_managed_frontier_module() -> ModuleType:
+    script = Path(__file__).resolve().parents[1] / "scripts" / "manage_session_frontier.py"
+    spec = importlib.util.spec_from_file_location("xinao_session_frontier_binder", script)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def _task_run_prepare_and_bind(
+    module: ModuleType,
+    *,
+    session_id: str,
+    run_directory: Path,
+    allowed_roots: tuple[Path, ...],
+    frontier_root: Path,
+) -> dict[str, Any]:
+    """Mirror verified-agent-loop's load_binding preflight + CAS bind surface."""
+    expected_current_run_id = None
+    assert callable(getattr(module, "load_binding", None))
+    frontier_error = getattr(module, "FrontierProjectionError", None)
+    try:
+        current = module.load_binding(
+            session_id=session_id,
+            frontier_root=frontier_root,
+            allowed_run_root=allowed_roots,
+        )
+        expected_current_run_id = str(current.get("run_id") or "") or None
+    except Exception as exc:
+        if frontier_error is None or not isinstance(exc, frontier_error):
+            raise
+    return module.bind_session(
+        session_id=session_id,
+        run_directory=run_directory,
+        frontier_root=frontier_root,
+        allowed_run_root=allowed_roots,
+        expected_current_run_id=expected_current_run_id,
+    )
+
+
 def test_binding_is_explicit_cas_without_history_or_restore_state(tmp_path: Path) -> None:
     runs = tmp_path / "runs"
     run_a = _make_run(runs, "run-a")
@@ -92,6 +136,7 @@ def test_binding_is_explicit_cas_without_history_or_restore_state(tmp_path: Path
         frontier_root=frontier_root,
         allowed_run_root=runs,
     )
+    assert first["run_id"] == "run-a"
     assert (
         bind_session(
             session_id="session-a",
@@ -108,6 +153,14 @@ def test_binding_is_explicit_cas_without_history_or_restore_state(tmp_path: Path
             frontier_root=frontier_root,
             allowed_run_root=runs,
         )
+    with pytest.raises(FrontierProjectionError, match="expected_current_run_id"):
+        bind_session(
+            session_id="session-a",
+            run_directory=run_b,
+            frontier_root=frontier_root,
+            allowed_run_root=runs,
+            expected_current_run_id="stale-run",
+        )
     rebound = bind_session(
         session_id="session-a",
         run_directory=run_b,
@@ -117,6 +170,116 @@ def test_binding_is_explicit_cas_without_history_or_restore_state(tmp_path: Path
     )
     assert rebound["run_id"] == "run-b"
     assert "history" not in rebound
+    loaded = load_binding(
+        session_id="session-a",
+        frontier_root=frontier_root,
+        allowed_run_root=runs,
+    )
+    assert loaded["run_id"] == "run-b"
+
+
+def test_manage_session_frontier_exports_load_binding_for_task_run_cas(
+    tmp_path: Path,
+) -> None:
+    runs = tmp_path / "runs"
+    alternate = tmp_path / "alternate-runs"
+    run_a = _make_run(runs, "run-a")
+    run_b = _make_run(runs, "run-b")
+    frontier_root = tmp_path / "frontiers"
+    allowed_roots = (runs.resolve(), alternate.resolve())
+    module = _load_managed_frontier_module()
+
+    assert callable(getattr(module, "load_binding", None))
+    assert callable(getattr(module, "bind_session", None))
+    assert getattr(module, "FrontierProjectionError", None) is FrontierProjectionError
+
+    first = _task_run_prepare_and_bind(
+        module,
+        session_id="session-export",
+        run_directory=run_a,
+        allowed_roots=allowed_roots,
+        frontier_root=frontier_root,
+    )
+    assert first["run_id"] == "run-a"
+
+    # Idempotent same-run bind through the managed export surface.
+    same = _task_run_prepare_and_bind(
+        module,
+        session_id="session-export",
+        run_directory=run_a,
+        allowed_roots=allowed_roots,
+        frontier_root=frontier_root,
+    )
+    assert same["run_id"] == "run-a"
+    assert same["binding_sha256"] == first["binding_sha256"]
+
+    # Explicit rebind A -> B using load_binding preflight (no ghost unbound B).
+    rebound = _task_run_prepare_and_bind(
+        module,
+        session_id="session-export",
+        run_directory=run_b,
+        allowed_roots=allowed_roots,
+        frontier_root=frontier_root,
+    )
+    assert rebound["run_id"] == "run-b"
+    live = module.load_binding(
+        session_id="session-export",
+        frontier_root=frontier_root,
+        allowed_run_root=allowed_roots,
+    )
+    assert live["run_id"] == "run-b"
+    assert Path(live["run_directory"]).resolve() == run_b.resolve()
+
+    # Stale expected identity still fails closed when CAS is forced wrong.
+    with pytest.raises(module.FrontierProjectionError, match="expected_current_run_id"):
+        module.bind_session(
+            session_id="session-export",
+            run_directory=run_a,
+            frontier_root=frontier_root,
+            allowed_run_root=allowed_roots,
+            expected_current_run_id="run-a",
+        )
+    still = module.load_binding(
+        session_id="session-export",
+        frontier_root=frontier_root,
+        allowed_run_root=allowed_roots,
+    )
+    assert still["run_id"] == "run-b"
+
+    # Compact frontier remains renderable under the stated default budget.
+    compact = module.build_live_frontier(
+        session_id="session-export",
+        frontier_root=frontier_root,
+        allowed_run_root=allowed_roots,
+        char_budget=DEFAULT_RENDER_CHAR_BUDGET,
+    )
+    assert compact["run_id"] == "run-b"
+    assert compact["rendered_context_chars"] <= DEFAULT_RENDER_CHAR_BUDGET
+    assert "NON-AUTHORITATIVE" in compact["rendered_context"]
+    assert "cannot authorize actions or claim completion" in compact["rendered_context"]
+
+
+def test_binding_accepts_either_explicit_canonical_root(tmp_path: Path) -> None:
+    primary_root = tmp_path / "situation-runs"
+    alternate_root = tmp_path / "codex-task-runs"
+    run = _make_run(alternate_root, "run-alt")
+    frontier_root = tmp_path / "frontiers"
+
+    binding = bind_session(
+        session_id="session-alt",
+        run_directory=run,
+        frontier_root=frontier_root,
+        allowed_run_root=(primary_root, alternate_root),
+    )
+    result = build_live_frontier(
+        session_id="session-alt",
+        frontier_root=frontier_root,
+        allowed_run_root=(primary_root, alternate_root),
+    )
+
+    assert Path(binding["run_root"]) == alternate_root.resolve()
+    assert result["run_id"] == "run-alt"
+    assert result["rendered_context_chars"] <= DEFAULT_RENDER_CHAR_BUDGET
 
 
 def test_only_compact_session_start_renders_bounded_non_authoritative_state(
