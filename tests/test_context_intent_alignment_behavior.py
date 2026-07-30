@@ -167,6 +167,37 @@ def test_pause_answer_only_accepts_no_action_responsibility() -> None:
     assert result["pass"] is True, result["reason"]
 
 
+def test_behavior_repair_boundary_accepts_only_declared_causal_granularities() -> None:
+    case_id = "NEG_MAX_BEHAVIOR_DELEGATION_PRESERVES_MAJOR_EXTERNAL_BOUNDARIES"
+    output = _output_from_case(case_id)
+    output.update(
+        {
+            "quota_action": "not_applicable",
+            "quota_query_disposition": "not_applicable",
+            "freeze_unaffected_provider": False,
+            "recovery_probe": "not_applicable",
+        }
+    )
+    parent_level = _run_assertion(_context(case_id=case_id), output=output)
+    assert parent_level["pass"] is True, parent_level["reason"]
+
+    output.update(
+        {
+            "learning_loop": "not_applicable",
+            "repair_target": "not_applicable",
+            "closure_evidence": "not_applicable",
+            "durable_behavior_closure": "not_applicable",
+        }
+    )
+    local_boundary_only = _run_assertion(_context(case_id=case_id), output=output)
+    assert local_boundary_only["pass"] is True, local_boundary_only["reason"]
+
+    output["repair_target"] = "unrelated_control_plane"
+    outside_gold = _run_assertion(_context(case_id=case_id), output=output)
+    assert outside_gold["pass"] is False
+    assert '"optionalFieldMatches":false' in outside_gold["reason"]
+
+
 def test_legacy_continuous_case_accepts_safe_new_binding_defaults() -> None:
     case_id = "REG_ENTER_PERPETUAL_MODE_DOES_NOT_CREATE_GOAL"
     context = _context(case_id=case_id)
