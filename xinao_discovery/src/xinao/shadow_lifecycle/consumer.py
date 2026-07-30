@@ -12,6 +12,7 @@ from __future__ import annotations
 import argparse
 import json
 from datetime import datetime
+from enum import StrEnum
 from pathlib import Path
 from typing import Any
 
@@ -20,38 +21,55 @@ from xinao.settlement import OutcomeObservation
 from xinao.shadow_lifecycle.lifecycle import (
     AccountBranchDecision,
     AccountDecisionIdentity,
+    AccountFeedback,
+    AccountingBasis,
+    AccountRiskTicket,
     EvidenceState,
+    FeedbackKind,
     ScienceDecisionIdentity,
+    SettledShadowEpisode,
     assess_fixture_evidence,
     build_account_action,
+    build_account_action_from_ticket,
     build_account_no_action,
     build_science_decision,
+    create_portfolio,
     create_seat,
     freeze_shadow_episode,
     replay_settled_episode,
+    seal_account_feedback,
     settle_shadow_episode,
 )
 from xinao.shadow_lifecycle.store import (
     SCHEMA_RECEIPT,
     EpisodePhase,
+    PortfolioPeriodPhase,
     StoreError,
     artifact_paths,
+    derive_portfolio_head,
     detect_phase,
     load_frozen,
     load_outcome,
+    load_portfolio,
     load_seat,
     load_settled,
+    period_directory,
+    portfolio_artifact_paths,
+    prepare_next_period_root,
     read_json,
     resolve_root,
+    write_feedback_exclusive,
     write_frozen_exclusive,
     write_manifest,
     write_outcome_and_settled_exclusive,
+    write_portfolio_exclusive,
+    write_portfolio_manifest,
     write_receipt_exclusive_or_replace,
     write_seat_exclusive,
 )
 
 CONSUMER_ID = "shadow_lifecycle_file_backed_leg_a"
-CONSUMER_VERSION = "0.2.0"
+CONSUMER_VERSION = "0.3.0"
 
 
 def _parse_time(value: str | datetime) -> datetime:
@@ -71,13 +89,42 @@ def _load_request(path: Path) -> dict[str, Any]:
     return raw
 
 
-def _receipt_base(*, root: Path, phase: EpisodePhase, **fields: Any) -> dict[str, Any]:
+def _continuity_context(root: Path) -> str | None:
+    base = resolve_root(root)
+    if portfolio_artifact_paths(base)["portfolio"].is_file():
+        return "portfolio-root"
+    if (
+        base.parent.name == "periods"
+        and portfolio_artifact_paths(base.parent.parent)["portfolio"].is_file()
+    ):
+        return "portfolio-period"
+    return None
+
+
+def _reject_flat_operation_on_continuity_context(
+    root: Path,
+    *,
+    verb: str,
+    allow_internal_period: bool = False,
+) -> None:
+    context = _continuity_context(root)
+    if context is None or (context == "portfolio-period" and allow_internal_period):
+        return
+    raise StoreError(
+        f"{verb} is a legacy flat verb and cannot target a {context}; "
+        f"use portfolio-{verb}"
+    )
+
+
+def _receipt_base(
+    *, root: Path, phase: EpisodePhase | PortfolioPeriodPhase | str, **fields: Any
+) -> dict[str, Any]:
     body: dict[str, Any] = {
         "schema_version": SCHEMA_RECEIPT,
         "consumer_id": CONSUMER_ID,
         "consumer_version": CONSUMER_VERSION,
         "root": str(resolve_root(root)),
-        "phase": phase.value,
+        "phase": phase.value if isinstance(phase, StrEnum) else str(phase),
         "parent_complete": False,
         "scientific_promotion": False,
         "real_money_authorized": False,
@@ -98,6 +145,7 @@ def init_episode(
     opening_balance: str | None = None,
 ) -> dict[str, Any]:
     base = resolve_root(root)
+    _reject_flat_operation_on_continuity_context(base, verb="init")
     if base.exists() and any(base.iterdir()):
         raise StoreError(f"init requires an empty root directory: {base}")
     base.mkdir(parents=True, exist_ok=True)
@@ -130,6 +178,7 @@ def init_episode(
 
 def inspect_episode(*, root: Path) -> dict[str, Any]:
     base = resolve_root(root)
+    _reject_flat_operation_on_continuity_context(base, verb="inspect")
     phase = detect_phase(base)
     if phase == EpisodePhase.MISSING:
         return {
@@ -218,8 +267,28 @@ def inspect_episode(*, root: Path) -> dict[str, Any]:
     return result
 
 
-def freeze_episode(*, root: Path, request_path: Path) -> dict[str, Any]:
+def freeze_episode(
+    *,
+    root: Path,
+    request_path: Path,
+    period_index: int = 1,
+    prior_settled: SettledShadowEpisode | None = None,
+    accounting_basis: AccountingBasis = AccountingBasis.LEGACY_OPENING_JOURNAL,
+    _continuity_internal: bool = False,
+) -> dict[str, Any]:
     base = resolve_root(root)
+    _reject_flat_operation_on_continuity_context(
+        base,
+        verb="freeze",
+        allow_internal_period=_continuity_internal,
+    )
+    if (
+        _continuity_internal
+        and accounting_basis != AccountingBasis.CARRIED_BALANCE_SNAPSHOT
+    ):
+        raise StoreError(
+            "continuity period freeze requires CARRIED_BALANCE_SNAPSHOT accounting"
+        )
     phase = detect_phase(base)
     if phase != EpisodePhase.INIT:
         raise StoreError(f"freeze requires INIT phase, found {phase.value}")
@@ -247,7 +316,11 @@ def freeze_episode(*, root: Path, request_path: Path) -> dict[str, Any]:
 
     account_raw = request.get("account_decision") or request.get("account")
     bound_raw = request.get("bound_frozen_decision")
+    ticket_raw = request.get("bound_account_ticket")
     bound: FrozenDecision | None = None
+    ticket: AccountRiskTicket | None = None
+    if bound_raw is not None and ticket_raw is not None:
+        raise StoreError("ACTION freeze must not bind both scientific and account tickets")
     if bound_raw is not None:
         if not isinstance(bound_raw, dict):
             raise StoreError("bound_frozen_decision must be a JSON object")
@@ -256,26 +329,51 @@ def freeze_episode(*, root: Path, request_path: Path) -> dict[str, Any]:
             bound = bound.with_content_hash()
         elif bound.content_hash != bound.compute_content_hash():
             raise StoreError("bound FrozenDecision content seal invalid")
+    if ticket_raw is not None:
+        if not isinstance(ticket_raw, dict):
+            raise StoreError("bound_account_ticket must be a JSON object")
+        ticket = AccountRiskTicket.model_validate(ticket_raw)
+        if ticket.content_hash is None:
+            ticket = ticket.with_content_hash()
+        elif ticket.content_hash != ticket.compute_content_hash():
+            raise StoreError("bound AccountRiskTicket content seal invalid")
 
     if account_raw is None:
-        if bound is None:
-            raise StoreError("freeze requires account_decision or ACTION bound_frozen_decision")
-        account = build_account_action(
-            account_decision_ref=str(request.get("account_decision_ref") or f"acct.{episode_ref}"),
-            frozen_decision=bound,
+        if (bound is None) == (ticket is None):
+            raise StoreError("freeze requires account_decision or exactly one ACTION ticket")
+        decision_ref = str(request.get("account_decision_ref") or f"acct.{episode_ref}")
+        account = (
+            build_account_action(
+                account_decision_ref=decision_ref,
+                frozen_decision=bound,
+            )
+            if bound is not None
+            else build_account_action_from_ticket(
+                account_decision_ref=decision_ref,
+                account_ticket=ticket,
+            )
         )
     else:
         if not isinstance(account_raw, dict):
             raise StoreError("account_decision must be a JSON object")
         identity = AccountDecisionIdentity(str(account_raw["identity"]))
         if identity == AccountDecisionIdentity.ACTION:
-            if bound is None:
-                raise StoreError("ACTION freeze requires bound_frozen_decision")
-            account = build_account_action(
-                account_decision_ref=str(account_raw["account_decision_ref"]),
-                frozen_decision=bound,
+            if (bound is None) == (ticket is None):
+                raise StoreError("ACTION freeze requires exactly one bound action ticket")
+            account = (
+                build_account_action(
+                    account_decision_ref=str(account_raw["account_decision_ref"]),
+                    frozen_decision=bound,
+                )
+                if bound is not None
+                else build_account_action_from_ticket(
+                    account_decision_ref=str(account_raw["account_decision_ref"]),
+                    account_ticket=ticket,
+                )
             )
         else:
+            if bound is not None or ticket is not None:
+                raise StoreError("account no-action must not bind an ACTION ticket")
             account = build_account_no_action(
                 account_decision_ref=str(account_raw["account_decision_ref"]),
                 rule_ref=str(account_raw["rule_ref"]),
@@ -299,15 +397,26 @@ def freeze_episode(*, root: Path, request_path: Path) -> dict[str, Any]:
         "target_open_time": target_open_time,
         "freeze_deadline": freeze_deadline,
         "frozen_at": frozen_at,
+        "period_index": period_index,
+        "prior_settled": prior_settled,
+        "accounting_basis": accounting_basis,
         "outcome_present": False,
     }
     if request.get("pre_freeze_balance") is not None:
         freeze_kwargs["pre_freeze_balance"] = str(request["pre_freeze_balance"])
     if account.identity == AccountDecisionIdentity.ACTION:
-        freeze_kwargs["bound_frozen_decision"] = bound
-        freeze_kwargs["opening_journal_group_ref"] = str(
-            request.get("opening_journal_group_ref") or f"journal.opening.{episode_ref}"
-        )
+        if bound is not None:
+            freeze_kwargs["bound_frozen_decision"] = bound
+        else:
+            freeze_kwargs["bound_account_ticket"] = ticket
+        if accounting_basis == AccountingBasis.LEGACY_OPENING_JOURNAL:
+            freeze_kwargs["opening_journal_group_ref"] = str(
+                request.get("opening_journal_group_ref") or f"journal.opening.{episode_ref}"
+            )
+        elif request.get("opening_journal_group_ref") is not None:
+            freeze_kwargs["opening_journal_group_ref"] = str(
+                request["opening_journal_group_ref"]
+            )
         freeze_kwargs["position_journal_group_ref"] = str(
             request.get("position_journal_group_ref") or f"journal.position.{episode_ref}"
         )
@@ -334,6 +443,7 @@ def freeze_episode(*, root: Path, request_path: Path) -> dict[str, Any]:
         "root": str(base),
         "episode_ref": episode.episode_ref,
         "frozen_episode_hash": episode.content_hash,
+        "period_index": episode.period_index,
         "account_identity": episode.account_decision.identity.value,
         "completion_claim_allowed": False,
         "next_action": "settle",
@@ -348,8 +458,14 @@ def settle_episode(
     settlement_journal_group_ref: str | None = None,
     statement_ref: str | None = None,
     occurred_at: str | None = None,
+    _continuity_internal: bool = False,
 ) -> dict[str, Any]:
     base = resolve_root(root)
+    _reject_flat_operation_on_continuity_context(
+        base,
+        verb="settle",
+        allow_internal_period=_continuity_internal,
+    )
     phase = detect_phase(base)
     if phase not in {
         EpisodePhase.FROZEN,
@@ -430,8 +546,13 @@ def settle_episode(
     }
 
 
-def replay_episode(*, root: Path) -> dict[str, Any]:
+def replay_episode(*, root: Path, _continuity_internal: bool = False) -> dict[str, Any]:
     base = resolve_root(root)
+    _reject_flat_operation_on_continuity_context(
+        base,
+        verb="replay",
+        allow_internal_period=_continuity_internal,
+    )
     phase = detect_phase(base)
     # Replay requires fully sealed settled; outcome-only recovery is not replayable.
     if phase != EpisodePhase.SETTLED:
@@ -459,6 +580,261 @@ def replay_episode(*, root: Path) -> dict[str, Any]:
         "closing_balance": fresh.statement.closing_balance,
         "first_episode_verified": False,
         "completion_claim_allowed": False,
+    }
+
+
+def init_portfolio(
+    *,
+    root: Path,
+    seat_id: str,
+    portfolio_ref: str,
+    opening_balance: str | None = None,
+) -> dict[str, Any]:
+    """Create an immutable continuity root without opening or funding a second seat."""
+
+    base = resolve_root(root)
+    if base.exists() and any(base.iterdir()):
+        raise StoreError(f"portfolio-init requires an empty root directory: {base}")
+    base.mkdir(parents=True, exist_ok=True)
+    kwargs: dict[str, Any] = {"seat_id": seat_id, "portfolio_ref": portfolio_ref}
+    if opening_balance is not None:
+        kwargs["opening_balance"] = opening_balance
+    seat = create_seat(**kwargs)
+    portfolio = create_portfolio(seat=seat)
+    write_seat_exclusive(base, seat)
+    write_portfolio_exclusive(base, portfolio)
+    portfolio_artifact_paths(base)["periods"].mkdir(exist_ok=True)
+    receipt = _receipt_base(
+        root=base,
+        phase=PortfolioPeriodPhase.INIT,
+        seat_id=seat.seat_id,
+        portfolio_ref=seat.portfolio_ref,
+        seat_content_hash=seat.content_hash,
+        portfolio_content_hash=portfolio.content_hash,
+        opening_balance=seat.opening_balance,
+        head_period_index=0,
+        next_action="portfolio-freeze",
+    )
+    write_receipt_exclusive_or_replace(base, receipt, replace=False)
+    write_portfolio_manifest(base)
+    return {
+        "ok": True,
+        "phase": PortfolioPeriodPhase.INIT.value,
+        "root": str(base),
+        "seat_id": seat.seat_id,
+        "portfolio_ref": seat.portfolio_ref,
+        "seat_content_hash": seat.content_hash,
+        "portfolio_content_hash": portfolio.content_hash,
+        "head_period_index": 0,
+        "opening_balance": seat.opening_balance,
+        "completion_claim_allowed": False,
+        "next_action": "portfolio-freeze",
+    }
+
+
+def inspect_portfolio(*, root: Path) -> dict[str, Any]:
+    base = resolve_root(root)
+    seat = load_seat(base)
+    portfolio = load_portfolio(base)
+    head = derive_portfolio_head(base)
+    if head.phase in {
+        PortfolioPeriodPhase.INIT,
+        PortfolioPeriodPhase.MISSING,
+        PortfolioPeriodPhase.FEEDBACK_SEALED,
+    }:
+        next_action = "portfolio-freeze"
+    elif head.phase in {
+        PortfolioPeriodPhase.FROZEN,
+        PortfolioPeriodPhase.SETTLEMENT_RECOVERY_REQUIRED,
+    }:
+        next_action = "portfolio-settle"
+    else:
+        next_action = "portfolio-feedback"
+    return {
+        "ok": True,
+        "phase": head.phase.value,
+        "root": str(base),
+        "seat_id": seat.seat_id,
+        "portfolio_ref": portfolio.portfolio_ref,
+        "seat_content_hash": seat.content_hash,
+        "portfolio_content_hash": portfolio.content_hash,
+        "head_period_index": head.period_index,
+        "head_period_root": str(head.period_root) if head.period_root is not None else None,
+        "closing_balance": head.closing_balance,
+        "settled_episode_hash": head.settled_episode_hash,
+        "feedback_hash": head.feedback_hash,
+        "candidate_only": True,
+        "first_episode_verified": False,
+        "completion_claim_allowed": False,
+        "scientific_promotion": False,
+        "next_action": next_action,
+    }
+
+
+def freeze_portfolio_period(*, root: Path, request_path: Path) -> dict[str, Any]:
+    base = resolve_root(root)
+    period_root, period_index, prior_settled = prepare_next_period_root(base)
+    result = freeze_episode(
+        root=period_root,
+        request_path=request_path,
+        period_index=period_index,
+        prior_settled=prior_settled,
+        accounting_basis=AccountingBasis.CARRIED_BALANCE_SNAPSHOT,
+        _continuity_internal=True,
+    )
+    receipt = _receipt_base(
+        root=base,
+        phase=PortfolioPeriodPhase.FROZEN,
+        head_period_index=period_index,
+        period_root=str(period_root),
+        episode_ref=result["episode_ref"],
+        frozen_episode_hash=result["frozen_episode_hash"],
+        account_identity=result["account_identity"],
+        next_action="portfolio-settle",
+    )
+    write_receipt_exclusive_or_replace(base, receipt, replace=True)
+    write_portfolio_manifest(base)
+    return {
+        **result,
+        "phase": PortfolioPeriodPhase.FROZEN.value,
+        "root": str(base),
+        "period_root": str(period_root),
+        "period_index": period_index,
+        "next_action": "portfolio-settle",
+    }
+
+
+def settle_portfolio_period(
+    *,
+    root: Path,
+    outcome_path: Path,
+    settlement_ref: str | None = None,
+    settlement_journal_group_ref: str | None = None,
+    statement_ref: str | None = None,
+    occurred_at: str | None = None,
+) -> dict[str, Any]:
+    base = resolve_root(root)
+    head = derive_portfolio_head(base)
+    if head.period_root is None or head.phase not in {
+        PortfolioPeriodPhase.FROZEN,
+        PortfolioPeriodPhase.SETTLEMENT_RECOVERY_REQUIRED,
+    }:
+        raise StoreError(
+            "portfolio-settle requires a FROZEN or SETTLEMENT_RECOVERY_REQUIRED head"
+        )
+    result = settle_episode(
+        root=head.period_root,
+        outcome_path=outcome_path,
+        settlement_ref=settlement_ref,
+        settlement_journal_group_ref=settlement_journal_group_ref,
+        statement_ref=statement_ref,
+        occurred_at=occurred_at,
+        _continuity_internal=True,
+    )
+    receipt = _receipt_base(
+        root=base,
+        phase=PortfolioPeriodPhase.SETTLED,
+        head_period_index=head.period_index,
+        period_root=str(head.period_root),
+        episode_ref=result["episode_ref"],
+        settled_episode_hash=result["settled_episode_hash"],
+        statement_result=result["statement_result"],
+        pnl=result["pnl"],
+        closing_balance=result["closing_balance"],
+        next_action="portfolio-feedback",
+    )
+    write_receipt_exclusive_or_replace(base, receipt, replace=True)
+    write_portfolio_manifest(base)
+    return {
+        **result,
+        "phase": PortfolioPeriodPhase.SETTLED.value,
+        "root": str(base),
+        "period_root": str(head.period_root),
+        "period_index": head.period_index,
+        "scientific_promotion": False,
+        "next_action": "portfolio-feedback",
+    }
+
+
+def feedback_portfolio_period(
+    *,
+    root: Path,
+    kind: FeedbackKind,
+    feedback_ref: str | None = None,
+    reason_code: str | None = None,
+    notes: str = "",
+) -> dict[str, Any]:
+    base = resolve_root(root)
+    head = derive_portfolio_head(base)
+    if head.period_root is None or head.phase != PortfolioPeriodPhase.SETTLED:
+        raise StoreError("portfolio-feedback requires a settled head without feedback")
+    settled = load_settled(head.period_root)
+    outcome = load_outcome(head.period_root)
+    feedback: AccountFeedback = seal_account_feedback(
+        feedback_ref=feedback_ref or f"feedback.{settled.episode_ref}",
+        kind=kind,
+        period_index=head.period_index,
+        settled=settled,
+        outcome=outcome,
+        reason_code=reason_code,
+        notes=notes,
+    )
+    write_feedback_exclusive(head.period_root, feedback)
+    period_receipt = _receipt_base(
+        root=head.period_root,
+        phase=PortfolioPeriodPhase.FEEDBACK_SEALED,
+        period_index=head.period_index,
+        episode_ref=settled.episode_ref,
+        feedback_hash=feedback.content_hash,
+        closing_balance=settled.statement.closing_balance,
+        next_action="portfolio-freeze",
+    )
+    write_receipt_exclusive_or_replace(head.period_root, period_receipt, replace=True)
+    write_manifest(head.period_root)
+    root_receipt = _receipt_base(
+        root=base,
+        phase=PortfolioPeriodPhase.FEEDBACK_SEALED,
+        head_period_index=head.period_index,
+        period_root=str(head.period_root),
+        episode_ref=settled.episode_ref,
+        feedback_hash=feedback.content_hash,
+        closing_balance=settled.statement.closing_balance,
+        next_action="portfolio-freeze",
+    )
+    write_receipt_exclusive_or_replace(base, root_receipt, replace=True)
+    write_portfolio_manifest(base)
+    return {
+        "ok": True,
+        "phase": PortfolioPeriodPhase.FEEDBACK_SEALED.value,
+        "root": str(base),
+        "period_root": str(head.period_root),
+        "period_index": head.period_index,
+        "episode_ref": settled.episode_ref,
+        "feedback_hash": feedback.content_hash,
+        "closing_balance": settled.statement.closing_balance,
+        "scientific_promotion": False,
+        "claim_grade_delta": None,
+        "first_episode_verified": False,
+        "completion_claim_allowed": False,
+        "next_action": "portfolio-freeze",
+    }
+
+
+def replay_portfolio_period(*, root: Path, period_index: int) -> dict[str, Any]:
+    base = resolve_root(root)
+    head = derive_portfolio_head(base)
+    if period_index < 1 or period_index > head.period_index:
+        raise StoreError("portfolio-replay period_index is outside the sealed history")
+    period_root = period_directory(base, period_index)
+    if detect_phase(period_root) != EpisodePhase.SETTLED:
+        raise StoreError("portfolio-replay requires a settled period")
+    result = replay_episode(root=period_root, _continuity_internal=True)
+    return {
+        **result,
+        "root": str(base),
+        "period_root": str(period_root),
+        "period_index": period_index,
+        "scientific_promotion": False,
     }
 
 
@@ -495,6 +871,55 @@ def build_parser() -> argparse.ArgumentParser:
 
     replay_cmd = commands.add_parser("replay", help="Fresh deterministic replay of sealed episode")
     replay_cmd.add_argument("--root", type=Path, required=True)
+
+    portfolio_init_cmd = commands.add_parser(
+        "portfolio-init", help="Create an immutable same-seat continuity root"
+    )
+    portfolio_init_cmd.add_argument("--root", type=Path, required=True)
+    portfolio_init_cmd.add_argument("--seat-id", required=True)
+    portfolio_init_cmd.add_argument("--portfolio-ref", required=True)
+    portfolio_init_cmd.add_argument("--opening-balance")
+
+    portfolio_inspect_cmd = commands.add_parser(
+        "portfolio-inspect", help="Validate the full contiguous history and derive its head"
+    )
+    portfolio_inspect_cmd.add_argument("--root", type=Path, required=True)
+
+    portfolio_freeze_cmd = commands.add_parser(
+        "portfolio-freeze", help="Freeze the only legal next prospective period"
+    )
+    portfolio_freeze_cmd.add_argument("--root", type=Path, required=True)
+    portfolio_freeze_cmd.add_argument("--request", type=Path, required=True)
+
+    portfolio_settle_cmd = commands.add_parser(
+        "portfolio-settle", help="Settle the current period with an explicit outcome"
+    )
+    portfolio_settle_cmd.add_argument("--root", type=Path, required=True)
+    portfolio_settle_cmd.add_argument("--outcome", type=Path, required=True)
+    portfolio_settle_cmd.add_argument("--settlement-ref")
+    portfolio_settle_cmd.add_argument("--settlement-journal-group-ref")
+    portfolio_settle_cmd.add_argument("--statement-ref")
+    portfolio_settle_cmd.add_argument("--occurred-at")
+
+    portfolio_feedback_cmd = commands.add_parser(
+        "portfolio-feedback", help="Seal typed feedback before the next period"
+    )
+    portfolio_feedback_cmd.add_argument("--root", type=Path, required=True)
+    portfolio_feedback_cmd.add_argument(
+        "--kind",
+        type=FeedbackKind,
+        choices=list(FeedbackKind),
+        required=True,
+    )
+    portfolio_feedback_cmd.add_argument("--feedback-ref")
+    portfolio_feedback_cmd.add_argument("--reason-code")
+    portfolio_feedback_cmd.add_argument("--notes", default="")
+
+    portfolio_replay_cmd = commands.add_parser(
+        "portfolio-replay", help="Replay one settled period after validating the full chain"
+    )
+    portfolio_replay_cmd.add_argument("--root", type=Path, required=True)
+    portfolio_replay_cmd.add_argument("--period-index", type=int, required=True)
     return parser
 
 
@@ -521,6 +946,36 @@ def dispatch(args: argparse.Namespace) -> dict[str, Any]:
         )
     if args.command == "replay":
         return replay_episode(root=args.root)
+    if args.command == "portfolio-init":
+        return init_portfolio(
+            root=args.root,
+            seat_id=args.seat_id,
+            portfolio_ref=args.portfolio_ref,
+            opening_balance=args.opening_balance,
+        )
+    if args.command == "portfolio-inspect":
+        return inspect_portfolio(root=args.root)
+    if args.command == "portfolio-freeze":
+        return freeze_portfolio_period(root=args.root, request_path=args.request)
+    if args.command == "portfolio-settle":
+        return settle_portfolio_period(
+            root=args.root,
+            outcome_path=args.outcome,
+            settlement_ref=args.settlement_ref,
+            settlement_journal_group_ref=args.settlement_journal_group_ref,
+            statement_ref=args.statement_ref,
+            occurred_at=args.occurred_at,
+        )
+    if args.command == "portfolio-feedback":
+        return feedback_portfolio_period(
+            root=args.root,
+            kind=args.kind,
+            feedback_ref=args.feedback_ref,
+            reason_code=args.reason_code,
+            notes=args.notes,
+        )
+    if args.command == "portfolio-replay":
+        return replay_portfolio_period(root=args.root, period_index=args.period_index)
     raise StoreError(f"unknown command: {args.command}")
 
 

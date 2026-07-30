@@ -39,16 +39,29 @@ For shadow lifecycle, require `inspect` to report `shadow.runtime_status=AVAILAB
 registration, live image shadow labels, and `installed_projection.status=ALIGNED`). Then use the
 installed Skill only:
 
+Legacy flat (first-period / single-episode) verbs remain:
+
 - `scripts/xinao.py shadow init --root <episode> --seat-id <id> --portfolio-ref <ref>`
 - `scripts/xinao.py shadow inspect|status --root <episode>`
 - `scripts/xinao.py shadow freeze --root <episode> --request <freeze.json>`
 - `scripts/xinao.py shadow settle --root <episode> --outcome <outcome.json>`
 - `scripts/xinao.py shadow replay --root <episode>`
 
+Same-seat portfolio continuity verbs (multi-period consumer surface; not scientific promotion):
+
+- `scripts/xinao.py shadow portfolio-init --root <portfolio> --seat-id <id> --portfolio-ref <ref>`
+- `scripts/xinao.py shadow portfolio-inspect --root <portfolio>`
+- `scripts/xinao.py shadow portfolio-freeze --root <portfolio> --request <freeze.json>`
+- `scripts/xinao.py shadow portfolio-settle --root <portfolio> --outcome <outcome.json>`
+- `scripts/xinao.py shadow portfolio-feedback --root <portfolio> --kind <FeedbackKind> [--feedback-ref <ref>] [--reason-code <code>] [--notes <text>]`
+- `scripts/xinao.py shadow portfolio-replay --root <portfolio> --period-index <n>`
+
 These verbs run an ephemeral leg-A container from the active researcher image by exact image ID
 with read-only rootfs, dropped capabilities, no-new-privileges, and network none; only the episode
-state mount is writable. Do not substitute the repository CLI, host PYTHONPATH, Temporal, a daemon,
-or ordinary worker routes. Shadow results stay candidate-only and never claim parent completion.
+or portfolio state mount is writable. Host Skill passes consumer arguments honestly and does not
+reinterpret account P&L as scientific grade. Do not substitute the repository CLI, host
+PYTHONPATH, Temporal, a daemon, or ordinary worker routes. Shadow results stay candidate-only and
+never claim parent completion. Portfolio continuity does not invent long-research availability.
 
 `source_status=available` means only that the implementation exists. Treat the runtime as callable
 only when `inspect` returns `RUNTIME_READY`; pointer presence, an old successful receipt, an image
@@ -110,5 +123,6 @@ account and knowledge axes; the contract is a downstream completion ruler, not a
 
 Capabilities marked `planned` are unavailable. Implement and verify them through the update
 procedure in the meta reference before calling them; never emulate them with chat glue.
-Shadow account/freeze/settlement/replay are available only as verbs of `shadow-lifecycle-leg-a`
-through the installed Skill container path above, and only when inspect proves live image capability.
+Shadow account/freeze/settlement/replay and portfolio-* continuity verbs are available only as
+verbs of `shadow-lifecycle-leg-a` through the installed Skill container path above, and only when
+inspect proves live image capability. Account settlement never promotes scientific grade.

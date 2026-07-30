@@ -1,6 +1,6 @@
 {
   "schema_version": "xinao.shadow_runtime_lock.v1",
-  "shadow_runtime_version": "0.2.0",
+  "shadow_runtime_version": "0.3.0",
   "execution_boundary": "ephemeral_leg_a_container_in_researcher_image",
   "network_mode": "none",
   "generic_worker_route_allowed": false,
@@ -43,7 +43,13 @@
     "status",
     "freeze",
     "settle",
-    "replay"
+    "replay",
+    "portfolio-init",
+    "portfolio-inspect",
+    "portfolio-freeze",
+    "portfolio-settle",
+    "portfolio-feedback",
+    "portfolio-replay"
   ],
-  "notes": "Locked leg-A shadow runtime cone embedded in the researcher image. Host skill launches ephemeral containers by exact image ID; only episode state is writable. Source registration plus live image labels must both pass before AVAILABLE."
+  "notes": "Locked leg-A shadow runtime cone embedded in the researcher image. Host skill launches ephemeral containers by exact image ID; only episode/portfolio state is writable. Source registration plus live image labels must both pass before AVAILABLE. Flat 0.2.0 verbs remain; portfolio-* verbs expose same-seat continuity already implemented in the consumer."
 }

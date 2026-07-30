@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from datetime import datetime
 from decimal import Decimal
 from enum import StrEnum
@@ -207,9 +208,23 @@ def period_adjustment_group(
     ).with_hash()
 
 
-def replay_balances(groups: tuple[JournalGroup, ...]) -> dict[str, str]:
+def replay_balances(
+    groups: tuple[JournalGroup, ...],
+    *,
+    starting_balances: Mapping[str, str] | None = None,
+) -> dict[str, str]:
     seen: set[str] = set()
     balances = {account.value: Decimal("0.0000") for account in Account}
+    if starting_balances is not None:
+        if set(starting_balances) != set(balances):
+            raise ValueError("starting_balances must contain every accounting account exactly once")
+        for account, raw in starting_balances.items():
+            normalized = format_decimal(raw, ACCOUNTING_DECIMAL)
+            if raw != normalized:
+                raise ValueError("starting_balances must use accounting scale")
+            balances[account] = Decimal(normalized)
+        if sum(balances.values(), Decimal(0)) != 0:
+            raise ValueError("starting_balances must be double-entry balanced")
     for group in groups:
         if group.group_ref in seen:
             raise ValueError("duplicate journal group in replay")

@@ -1,7 +1,7 @@
 {
   "schema_version": "xinao.skill_capability_registry.v1",
   "skill_id": "xinao",
-  "skill_version": "1.3.3",
+  "skill_version": "1.3.4",
   "ordinary_worker_chain_allowed": false,
   "default_visibility": "codex_conversation",
   "capabilities": [
@@ -13,19 +13,19 @@
     },
     {
       "capability_id": "shadow-lifecycle-leg-a",
-      "version": "0.2.0",
+      "version": "0.3.0",
       "source_status": "available",
       "execution_boundary": "ephemeral_leg_a_container_in_researcher_image",
       "entrypoint": "scripts/xinao.py shadow",
-      "skill_verbs": ["init", "inspect", "status", "freeze", "settle", "replay"],
+      "skill_verbs": ["init", "inspect", "status", "freeze", "settle", "replay", "portfolio-init", "portfolio-inspect", "portfolio-freeze", "portfolio-settle", "portfolio-feedback", "portfolio-replay"],
       "network_mode": "none",
       "parent_completion_authority": false,
       "completion_claim_allowed": false,
-      "notes": "Installed Skill launches an ephemeral leg-A container from the active researcher image by exact image ID. Read-only rootfs, cap-drop ALL, no-new-privileges, network none; only the episode state mount is writable. Source registration plus live image shadow labels must both pass before AVAILABLE. Fixture/synthetic runs cannot claim FIRST_EPISODE_VERIFIED or parent completion."
+      "notes": "Installed Skill launches an ephemeral leg-A container from the active researcher image by exact image ID. Read-only rootfs, cap-drop ALL, no-new-privileges, network none; only the episode/portfolio state mount is writable. Source registration plus live image shadow labels must both pass before AVAILABLE. Legacy flat verbs remain; portfolio-* verbs pass through to the same consumer for multi-period continuity. Fixture/synthetic runs cannot claim FIRST_EPISODE_VERIFIED or parent completion. Account P&L never promotes scientific grade."
     },
     {
       "capability_id": "shadow-account",
-      "version": "0.2.0",
+      "version": "0.3.0",
       "source_status": "available",
       "implemented_by": "shadow-lifecycle-leg-a",
       "verb": "init",
@@ -33,7 +33,7 @@
     },
     {
       "capability_id": "decision-freeze",
-      "version": "0.2.0",
+      "version": "0.3.0",
       "source_status": "available",
       "implemented_by": "shadow-lifecycle-leg-a",
       "verb": "freeze",
@@ -41,7 +41,7 @@
     },
     {
       "capability_id": "settlement",
-      "version": "0.2.0",
+      "version": "0.3.0",
       "source_status": "available",
       "implemented_by": "shadow-lifecycle-leg-a",
       "verb": "settle",
@@ -49,7 +49,7 @@
     },
     {
       "capability_id": "walk-forward-replay",
-      "version": "0.2.0",
+      "version": "0.3.0",
       "source_status": "available",
       "implemented_by": "shadow-lifecycle-leg-a",
       "verb": "replay",

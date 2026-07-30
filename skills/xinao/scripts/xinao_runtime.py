@@ -267,7 +267,20 @@ SHADOW_RUNTIME_IMAGE_ROOT = "/opt/xinao-shadow"
 SHADOW_EPISODE_CONTAINER_ROOT = "/episode"
 SHADOW_INPUT_CONTAINER_ROOT = "/input"
 SHADOW_CAPABILITY_ID = "shadow-lifecycle-leg-a"
-SHADOW_SKILL_VERBS = ("init", "inspect", "status", "freeze", "settle", "replay")
+SHADOW_SKILL_VERBS = (
+    "init",
+    "inspect",
+    "status",
+    "freeze",
+    "settle",
+    "replay",
+    "portfolio-init",
+    "portfolio-inspect",
+    "portfolio-freeze",
+    "portfolio-settle",
+    "portfolio-feedback",
+    "portfolio-replay",
+)
 SHADOW_FACET_CAPABILITY_IDS = (
     "shadow-account",
     "decision-freeze",
@@ -11250,13 +11263,18 @@ def run_shadow(
     settlement_journal_group_ref: str | None = None,
     statement_ref: str | None = None,
     occurred_at: str | None = None,
+    kind: str | None = None,
+    feedback_ref: str | None = None,
+    reason_code: str | None = None,
+    notes: str | None = None,
+    period_index: int | None = None,
 ) -> dict[str, Any]:
     if verb not in SHADOW_SKILL_VERBS:
         raise XinaoError("SHADOW_VERB_INVALID", verb)
     docker, release, context, fence = _require_shadow_ready()
     image_id = str(release["image_id"])
     episode_root = root.expanduser().resolve()
-    if verb == "init":
+    if verb in {"init", "portfolio-init"}:
         episode_root.mkdir(parents=True, exist_ok=True)
     elif not episode_root.exists():
         raise XinaoError("SHADOW_EPISODE_ROOT_MISSING", str(episode_root))
@@ -11270,13 +11288,13 @@ def run_shadow(
     work = run_root / "shadow_runs" / run_id
     work.mkdir(parents=True, exist_ok=False)
 
-    if verb == "init":
+    if verb in {"init", "portfolio-init"}:
         if not seat_id or not portfolio_ref:
             raise XinaoError("SHADOW_INIT_ARGUMENTS_INVALID", "seat_id/portfolio_ref required")
         module_argv.extend(["--seat-id", seat_id, "--portfolio-ref", portfolio_ref])
         if opening_balance is not None:
             module_argv.extend(["--opening-balance", opening_balance])
-    elif verb == "freeze":
+    elif verb in {"freeze", "portfolio-freeze"}:
         if request is None or not request.is_file():
             raise XinaoError("SHADOW_REQUEST_MISSING", str(request))
         input_root = work / "input"
@@ -11288,7 +11306,7 @@ def run_shadow(
             )
         )
         module_argv.extend(["--request", f"{SHADOW_INPUT_CONTAINER_ROOT}/request.json"])
-    elif verb == "settle":
+    elif verb in {"settle", "portfolio-settle"}:
         if outcome is None or not outcome.is_file():
             raise XinaoError("SHADOW_OUTCOME_MISSING", str(outcome))
         input_root = work / "input"
@@ -11308,6 +11326,20 @@ def run_shadow(
             module_argv.extend(["--statement-ref", statement_ref])
         if occurred_at:
             module_argv.extend(["--occurred-at", occurred_at])
+    elif verb == "portfolio-feedback":
+        if not kind:
+            raise XinaoError("SHADOW_FEEDBACK_KIND_MISSING", "kind required")
+        module_argv.extend(["--kind", kind])
+        if feedback_ref:
+            module_argv.extend(["--feedback-ref", feedback_ref])
+        if reason_code:
+            module_argv.extend(["--reason-code", reason_code])
+        if notes is not None:
+            module_argv.extend(["--notes", notes])
+    elif verb == "portfolio-replay":
+        if period_index is None:
+            raise XinaoError("SHADOW_PERIOD_INDEX_MISSING", "period_index required")
+        module_argv.extend(["--period-index", str(period_index)])
 
     name = "xinao-shadow-" + run_id.lower().replace("_", "-")
     create_argv = _build_shadow_docker_create_argv(
@@ -11475,6 +11507,32 @@ def _parser() -> argparse.ArgumentParser:
     shadow_settle.add_argument("--occurred-at", default=None)
     shadow_replay = shadow_sub.add_parser("replay")
     shadow_replay.add_argument("--root", type=Path, required=True)
+    shadow_portfolio_init = shadow_sub.add_parser("portfolio-init")
+    shadow_portfolio_init.add_argument("--root", type=Path, required=True)
+    shadow_portfolio_init.add_argument("--seat-id", required=True)
+    shadow_portfolio_init.add_argument("--portfolio-ref", required=True)
+    shadow_portfolio_init.add_argument("--opening-balance", default=None)
+    shadow_portfolio_inspect = shadow_sub.add_parser("portfolio-inspect")
+    shadow_portfolio_inspect.add_argument("--root", type=Path, required=True)
+    shadow_portfolio_freeze = shadow_sub.add_parser("portfolio-freeze")
+    shadow_portfolio_freeze.add_argument("--root", type=Path, required=True)
+    shadow_portfolio_freeze.add_argument("--request", type=Path, required=True)
+    shadow_portfolio_settle = shadow_sub.add_parser("portfolio-settle")
+    shadow_portfolio_settle.add_argument("--root", type=Path, required=True)
+    shadow_portfolio_settle.add_argument("--outcome", type=Path, required=True)
+    shadow_portfolio_settle.add_argument("--settlement-ref", default=None)
+    shadow_portfolio_settle.add_argument("--settlement-journal-group-ref", default=None)
+    shadow_portfolio_settle.add_argument("--statement-ref", default=None)
+    shadow_portfolio_settle.add_argument("--occurred-at", default=None)
+    shadow_portfolio_feedback = shadow_sub.add_parser("portfolio-feedback")
+    shadow_portfolio_feedback.add_argument("--root", type=Path, required=True)
+    shadow_portfolio_feedback.add_argument("--kind", required=True)
+    shadow_portfolio_feedback.add_argument("--feedback-ref", default=None)
+    shadow_portfolio_feedback.add_argument("--reason-code", default=None)
+    shadow_portfolio_feedback.add_argument("--notes", default=None)
+    shadow_portfolio_replay = shadow_sub.add_parser("portfolio-replay")
+    shadow_portfolio_replay.add_argument("--root", type=Path, required=True)
+    shadow_portfolio_replay.add_argument("--period-index", type=int, required=True)
     return parser
 
 
@@ -11545,6 +11603,11 @@ def main(argv: Sequence[str] | None = None) -> int:
                 settlement_journal_group_ref=getattr(args, "settlement_journal_group_ref", None),
                 statement_ref=getattr(args, "statement_ref", None),
                 occurred_at=getattr(args, "occurred_at", None),
+                kind=getattr(args, "kind", None),
+                feedback_ref=getattr(args, "feedback_ref", None),
+                reason_code=getattr(args, "reason_code", None),
+                notes=getattr(args, "notes", None),
+                period_index=getattr(args, "period_index", None),
             )
         else:
             value = research(args.question, args.as_of, args.material)
