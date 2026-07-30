@@ -214,6 +214,28 @@ def test_temporary_pain_inputs_are_not_release_dependencies() -> None:
     assert result["pass"] is True, result["reason"]
 
 
+def test_complete_closure_activates_full_lifecycle_transaction() -> None:
+    case_id = "REG_COMPLETE_CLOSURE_ACTIVATES_FULL_LIFECYCLE_TRANSACTION"
+    case = _case(case_id)
+    vars_ = case["vars"]
+    recovered = vars_["expected_recovered_requirement_atoms"].split("|")
+    rejected = vars_["expected_rejected_proxy_atoms"].split("|")
+    assert "完整收口" in vars_["user_increment"]
+    assert vars_["expected_next_step"] == "act"
+    assert vars_["expected_ask_user"] is False
+    assert "ATOM_REMOTE_MAINLINE_ADOPTION" in recovered
+    assert "ATOM_LOCAL_MAINLINE_ADOPTION" in recovered
+    assert "ATOM_ACTIVE_PROJECTION_AND_REAL_CONSUMER" in recovered
+    assert "ATOM_CLASSIFIED_CARRIER_RETIREMENT" in recovered
+    assert "ATOM_REQUIRE_USER_TO_ENUMERATE_LIFECYCLE" in rejected
+
+    output = _output_from_case(case_id)
+    output["recovered_requirement_atoms"] = vars_["expected_recovered_requirement_atoms"]
+    output["rejected_proxy_atoms"] = vars_["expected_rejected_proxy_atoms"]
+    result = _run_assertion(_context(case_id=case_id), output=output)
+    assert result["pass"] is True, result["reason"]
+
+
 def test_legacy_continuous_case_accepts_safe_new_binding_defaults() -> None:
     case_id = "REG_ENTER_PERPETUAL_MODE_DOES_NOT_CREATE_GOAL"
     context = _context(case_id=case_id)
