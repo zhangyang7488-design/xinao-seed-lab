@@ -2148,6 +2148,9 @@ def _valid_provider_result() -> dict[str, object]:
         "provider_num_turns": 1,
         "provider_session_id_present": True,
         "provider_request_id_present": True,
+        # Producer formal result.json keys (entrypoint #159 raw ids).
+        "provider_session_id": "session-prod-001",
+        "provider_request_id": "request-prod-001",
         "provider_model_usage": {"grok-4.5-build": {"inputTokens": 10, "modelCalls": 1}},
         "usage": {"total_tokens": 12},
     }
@@ -2391,9 +2394,11 @@ def test_terminal_attestation_is_bounded_canonical_and_hash_bound() -> None:
     assert oversized.value.reason_code == "CONTAINER_TERMINAL_ATTESTATION_INVALID"
 
 
-def test_material_result_binding_requires_real_supplied_reference(
+def _production_shaped_material_result_binding(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+) -> tuple[object, dict[str, object], dict[str, object], dict[str, str]]:
+    """Build a production-shaped container result accepted by host material binding."""
+
     module = _module()
     _auth(module, tmp_path, monkeypatch)
     source = tmp_path / "material.txt"
@@ -2430,7 +2435,7 @@ def test_material_result_binding_requires_real_supplied_reference(
     request_sha = "1" * 64
     prompt_sha = "2" * 64
     output_schema_sha = module._sha256(module.OUTPUT_SCHEMA_PATH)
-    result = {
+    result: dict[str, object] = {
         "schema_version": "xinao.researcher_container_result.v2",
         "status": "CANDIDATE_READY",
         "reason_codes": [],
@@ -2450,34 +2455,114 @@ def test_material_result_binding_requires_real_supplied_reference(
         "science_restored": False,
         "parent_complete": False,
     }
-    module._validate_material_result_binding(
-        result,
-        manifest=manifest,
-        request_sha256=request_sha,
-        prompt_sha256=prompt_sha,
-        output_schema_sha256=output_schema_sha,
-        manifest_sha256=manifest_sha,
-        material_packet_sha256=packet_sha,
-        effective_prompt_sha256=effective_sha,
-        question="q",
-        as_of="2026-07-30T00:00:00Z",
+    binding = {
+        "request_sha256": request_sha,
+        "prompt_sha256": prompt_sha,
+        "output_schema_sha256": output_schema_sha,
+        "manifest_sha256": manifest_sha,
+        "material_packet_sha256": packet_sha,
+        "effective_prompt_sha256": effective_sha,
+        "question": "q",
+        "as_of": "2026-07-30T00:00:00Z",
+    }
+    return module, result, manifest, binding
+
+
+def test_material_result_binding_requires_real_supplied_reference(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    module, result, manifest, binding = _production_shaped_material_result_binding(
+        tmp_path, monkeypatch
     )
+    module._validate_material_result_binding(result, manifest=manifest, **binding)
+    candidate = result["candidate"]
+    assert isinstance(candidate, dict)
     candidate["material_refs_used"] = []
     candidate["evidence_used"] = []
     with pytest.raises(module.XinaoError) as unbound:
-        module._validate_material_result_binding(
-            result,
-            manifest=manifest,
-            request_sha256=request_sha,
-            prompt_sha256=prompt_sha,
-            output_schema_sha256=output_schema_sha,
-            manifest_sha256=manifest_sha,
-            material_packet_sha256=packet_sha,
-            effective_prompt_sha256=effective_sha,
-            question="q",
-            as_of="2026-07-30T00:00:00Z",
-        )
+        module._validate_material_result_binding(result, manifest=manifest, **binding)
     assert unbound.value.reason_code == "RESEARCH_CANDIDATE_MATERIAL_USE_UNBOUND"
+
+
+def test_material_result_binding_admits_producer_raw_provider_ids(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Host exact-key allowlist must accept production result.json with raw provider ids."""
+
+    module, result, manifest, binding = _production_shaped_material_result_binding(
+        tmp_path, monkeypatch
+    )
+    assert "provider_session_id" in result
+    assert "provider_request_id" in result
+    assert result["provider_session_id_present"] is True
+    assert result["provider_request_id_present"] is True
+    module._validate_material_result_binding(result, manifest=manifest, **binding)
+
+
+@pytest.mark.parametrize(
+    ("mutate", "reason_code"),
+    [
+        (
+            lambda r: r.pop("provider_session_id"),
+            "RESEARCH_RESULT_FIELDS_INVALID",
+        ),
+        (
+            lambda r: r.pop("provider_request_id"),
+            "RESEARCH_RESULT_FIELDS_INVALID",
+        ),
+        (
+            lambda r: r.__setitem__("extra_provider_field", "nope"),
+            "RESEARCH_RESULT_FIELDS_INVALID",
+        ),
+        (
+            lambda r: r.__setitem__("provider_session_id", ""),
+            "RESEARCH_RESULT_PROVIDER_ID_INVALID",
+        ),
+        (
+            lambda r: r.__setitem__("provider_request_id", ""),
+            "RESEARCH_RESULT_PROVIDER_ID_INVALID",
+        ),
+        (
+            lambda r: r.__setitem__("provider_session_id", 12345),
+            "RESEARCH_RESULT_PROVIDER_ID_INVALID",
+        ),
+        (
+            lambda r: r.__setitem__("provider_request_id", None),
+            "RESEARCH_RESULT_PROVIDER_ID_INVALID",
+        ),
+        (
+            lambda r: (
+                r.__setitem__("provider_session_id_present", False),
+                r.__setitem__("provider_session_id", "still-present"),
+            ),
+            "RESEARCH_RESULT_PROVIDER_ID_INCONSISTENT",
+        ),
+        (
+            lambda r: (
+                r.__setitem__("provider_request_id_present", False),
+                r.__setitem__("provider_request_id", "still-present"),
+            ),
+            "RESEARCH_RESULT_PROVIDER_ID_INCONSISTENT",
+        ),
+        (
+            lambda r: r.__setitem__("provider_session_id_present", "yes"),
+            "RESEARCH_RESULT_FIELDS_INVALID",
+        ),
+    ],
+)
+def test_material_result_binding_rejects_invalid_raw_provider_ids(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    mutate: object,
+    reason_code: str,
+) -> None:
+    module, result, manifest, binding = _production_shaped_material_result_binding(
+        tmp_path, monkeypatch
+    )
+    mutate(result)
+    with pytest.raises(module.XinaoError) as failure:
+        module._validate_material_result_binding(result, manifest=manifest, **binding)
+    assert failure.value.reason_code == reason_code
 
 
 def test_bounded_result_reader_rejects_oversized_json(

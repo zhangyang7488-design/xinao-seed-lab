@@ -255,6 +255,8 @@ MAX_SKILL_BUNDLE_FILE_BYTES = 16 * 1024 * 1024
 MAX_SKILL_BUNDLE_TOTAL_BYTES = 64 * 1024 * 1024
 MAX_SKILL_BUNDLE_FILES = 4096
 MAX_DONOR_BINARY_BYTES = 512 * 1024 * 1024
+# Producer formal provider session/request id bound (entrypoint MAX_PROVIDER_ID_BYTES).
+MAX_PROVIDER_ID_BYTES = 4096
 DONOR_EXTRACT_NAME_PREFIX = "xinao-donor-extract-"
 DONOR_STAGING_DIR_PREFIX = ".donor-extract-"
 DONOR_BINARY_CONTEXT_RELATIVE = Path("donor-artifacts") / "grok"
@@ -9658,6 +9660,9 @@ def _validate_material_result_binding(
         "provider_num_turns",
         "provider_session_id_present",
         "provider_request_id_present",
+        # Producer formal result.json (#159): raw provider ids alongside *_present flags.
+        "provider_session_id",
+        "provider_request_id",
         "provider_model_usage",
         "usage",
         "completion_claim_allowed",
@@ -9680,6 +9685,25 @@ def _validate_material_result_binding(
         or result.get("parent_complete") is not False
     ):
         raise XinaoError("RESEARCH_RESULT_BOUNDARY_INVALID", "provider/model/completion fields")
+    for present_key, id_key in (
+        ("provider_session_id_present", "provider_session_id"),
+        ("provider_request_id_present", "provider_request_id"),
+    ):
+        present = result.get(present_key)
+        raw_id = result.get(id_key)
+        if present is True:
+            if not _plain_json_text(
+                raw_id,
+                nonempty=True,
+                maximum_bytes=MAX_PROVIDER_ID_BYTES,
+            ):
+                raise XinaoError("RESEARCH_RESULT_PROVIDER_ID_INVALID", id_key)
+        elif present is False:
+            # Flag false must not claim a real raw identifier.
+            if raw_id != "":
+                raise XinaoError("RESEARCH_RESULT_PROVIDER_ID_INCONSISTENT", id_key)
+        else:
+            raise XinaoError("RESEARCH_RESULT_FIELDS_INVALID", present_key)
     expected_materials = {item["material_id"]: item["sha256"] for item in manifest["materials"]}
     expected_ids = sorted(expected_materials)
     expected_result_fields = {
