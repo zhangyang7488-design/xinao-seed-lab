@@ -60,11 +60,35 @@ function ConvertFrom-LastJsonObject([string[]]$Lines) {
     return ($candidates[-1] | ConvertFrom-Json -ErrorAction Stop)
 }
 
-function New-SourceWorktree([string]$Root) {
-    $wt = Join-Path $Root "source-worktree"
+function Invoke-GitQuiet {
+    param(
+        [string]$Repo,
+        [string[]]$GitArgs
+    )
+    $prev = $ErrorActionPreference
+    try {
+        $ErrorActionPreference = "Continue"
+        $output = @(& git -C $Repo @GitArgs 2>&1 | ForEach-Object { [string]$_ })
+        $code = if ($null -eq $LASTEXITCODE) { 0 } else { [int]$LASTEXITCODE }
+    }
+    finally {
+        $ErrorActionPreference = $prev
+    }
+    return [pscustomobject]@{ exit_code = $code; output = ($output -join "`n") }
+}
+
+function Initialize-SelfContainedClone {
+    param(
+        [string]$Root,
+        [string]$Name = "valid-clone",
+        [string]$OriginUrl = "https://example.invalid/xinao/leg-a-fixture.git"
+    )
+    $wt = Join-Path $Root $Name
     New-Item -ItemType Directory -Force -Path $wt | Out-Null
-    # Minimal git worktree marker (production Assert-XinaoLegAWorktree checks .git).
-    [IO.File]::WriteAllText((Join-Path $wt ".git"), "gitdir: fake-for-leg-a-consumer-test`n", $utf8)
+    $init = Invoke-GitQuiet -Repo $wt -GitArgs @("init")
+    Assert-True ($init.exit_code -eq 0) "git_init:$Name"
+    [void](Invoke-GitQuiet -Repo $wt -GitArgs @("config", "user.email", "leg-a-test@example.invalid"))
+    [void](Invoke-GitQuiet -Repo $wt -GitArgs @("config", "user.name", "LegA Fixture"))
     [IO.File]::WriteAllText(
         (Join-Path $wt "AGENTS.md"),
         "leg-a oneclick sealed rules; candidate only; no parent completion`n",
@@ -72,12 +96,51 @@ function New-SourceWorktree([string]$Root) {
     )
     $keep = Join-Path $wt "SOURCE_PRESERVE.txt"
     [IO.File]::WriteAllText($keep, "SOURCE_WORKTREE_MUST_SURVIVE`n", $utf8)
+    [void](Invoke-GitQuiet -Repo $wt -GitArgs @("add", "AGENTS.md", "SOURCE_PRESERVE.txt"))
+    $commit = Invoke-GitQuiet -Repo $wt -GitArgs @("commit", "-m", "lega-fixture-init")
+    Assert-True ($commit.exit_code -eq 0) "git_commit:$Name"
+    [void](Invoke-GitQuiet -Repo $wt -GitArgs @("remote", "add", "origin", $OriginUrl))
+    $head = (Invoke-GitQuiet -Repo $wt -GitArgs @("rev-parse", "HEAD")).output.Trim().ToLowerInvariant()
     return [pscustomobject]@{
         path = $wt
         preserve_path = $keep
         preserve_sha256 = (Get-Sha256File $keep)
         rules_file = (Join-Path $wt "AGENTS.md")
         rules_sha256 = (Get-Sha256File (Join-Path $wt "AGENTS.md"))
+        head = $head
+        origin_url = $OriginUrl
+        kind = "self_contained_regular_clone"
+    }
+}
+
+function New-SourceWorktree([string]$Root) {
+    # Production-shaped source is a self-contained regular clone (not a linked worktree).
+    return Initialize-SelfContainedClone -Root $Root -Name "source-worktree"
+}
+
+function New-BrokenGitdirWorktree([string]$Root) {
+    $wt = Join-Path $Root "broken-gitdir"
+    New-Item -ItemType Directory -Force -Path $wt | Out-Null
+    [IO.File]::WriteAllText((Join-Path $wt ".git"), "gitdir: /definitely/not/a/valid/gitdir`n", $utf8)
+    [IO.File]::WriteAllText(
+        (Join-Path $wt "AGENTS.md"),
+        "leg-a oneclick sealed rules; candidate only; no parent completion`n",
+        $utf8
+    )
+    return [pscustomobject]@{ path = $wt; kind = "broken_gitdir" }
+}
+
+function New-LinkedWorktreePair([string]$Root) {
+    $main = Initialize-SelfContainedClone -Root $Root -Name "main-repo"
+    $linked = Join-Path $Root "linked-worktree"
+    $add = Invoke-GitQuiet -Repo $main.path -GitArgs @("worktree", "add", $linked, "-b", "linked-branch")
+    Assert-True ($add.exit_code -eq 0) "git_worktree_add"
+    # Ensure AGENTS.md present in linked tree (shared from main commit).
+    Assert-True (Test-Path -LiteralPath (Join-Path $linked "AGENTS.md") -PathType Leaf) "linked_has_agents"
+    return [pscustomobject]@{
+        main = $main
+        linked_path = $linked
+        kind = "linked_worktree"
     }
 }
 
@@ -437,6 +500,123 @@ $resultBase = [ordered]@{
     evidence = $null
     pool_exit_code = $null
 }
+function Test-PathInside([string]$Candidate, [string]$Root) {
+    $c = [IO.Path]::GetFullPath($Candidate)
+    $r = [IO.Path]::GetFullPath($Root).TrimEnd([char[]]@('\', '/'))
+    if ([string]::Equals($c, $r, [StringComparison]::OrdinalIgnoreCase)) { return $true }
+    $prefix = $r + [IO.Path]::DirectorySeparatorChar
+    return $c.StartsWith($prefix, [StringComparison]::OrdinalIgnoreCase)
+}
+function Get-NonSecretOrigin([string]$Url) {
+    if ([string]::IsNullOrWhiteSpace($Url)) { return "" }
+    $u = $Url.Trim()
+    if ($u -match '^(?i)(https?://)([^/@\s]+@)(.+)$') { return $Matches[1] + $Matches[3] }
+    if ($u -match '^(?i)(ssh://)([^/@\s]+@)(.+)$') { return $Matches[1] + $Matches[3] }
+    return $u
+}
+function Invoke-GitC([string]$Repo, [string[]]$GitArgs) {
+    $prev = $ErrorActionPreference
+    try {
+        $ErrorActionPreference = "Continue"
+        $out = @(& git -C $Repo @GitArgs 2>&1 | ForEach-Object { [string]$_ })
+        $code = if ($null -eq $LASTEXITCODE) { 0 } else { [int]$LASTEXITCODE }
+    }
+    finally { $ErrorActionPreference = $prev }
+    return [pscustomobject]@{ code = $code; text = (($out | ForEach-Object { "$_" }) -join "`n").Trim() }
+}
+function Get-GitSeal([string]$ResolvedCwd, [bool]$AuthWrite) {
+    $marker = Join-Path $ResolvedCwd ".git"
+    if (-not (Test-Path -LiteralPath $marker)) {
+        throw "XINAO_LEG_A_INVALID_WORKTREE: $ResolvedCwd"
+    }
+    $dotType = if (Test-Path -LiteralPath $marker -PathType Container) { "directory" }
+        elseif (Test-Path -LiteralPath $marker -PathType Leaf) { "file" }
+        else { "other" }
+    $top = Invoke-GitC $ResolvedCwd @("rev-parse", "--show-toplevel")
+    $abs = Invoke-GitC $ResolvedCwd @("rev-parse", "--absolute-git-dir")
+    $common = Invoke-GitC $ResolvedCwd @("rev-parse", "--git-common-dir")
+    if ($top.code -ne 0 -or $abs.code -ne 0 -or $common.code -ne 0) {
+        if ($dotType -eq "file") {
+            throw ("XINAO_LEG_A_GIT_BROKEN_GITDIR: " + $abs.text)
+        }
+        throw ("XINAO_LEG_A_GIT_IDENTITY_UNRESOLVED: " + $top.text)
+    }
+    $repoTop = [IO.Path]::GetFullPath($top.text)
+    $gitDir = [IO.Path]::GetFullPath($abs.text)
+    $commonRaw = $common.text
+    $commonDir = if ([IO.Path]::IsPathRooted($commonRaw)) {
+        [IO.Path]::GetFullPath($commonRaw)
+    } else {
+        [IO.Path]::GetFullPath((Join-Path $ResolvedCwd $commonRaw))
+    }
+    $headRun = Invoke-GitC $ResolvedCwd @("rev-parse", "HEAD")
+    $head = if ($headRun.code -eq 0) { $headRun.text.ToLowerInvariant() } else { "" }
+    $originRun = Invoke-GitC $ResolvedCwd @("remote", "get-url", "origin")
+    $originId = Get-NonSecretOrigin $(if ($originRun.code -eq 0) { $originRun.text } else { "" })
+    $gitIn = Test-PathInside $gitDir $ResolvedCwd
+    $commonIn = Test-PathInside $commonDir $ResolvedCwd
+    $selfContained = ($dotType -eq "directory" -and $gitIn -and $commonIn)
+    if ($AuthWrite -and -not $selfContained) {
+        throw ("XINAO_LEG_A_GIT_NOT_SELFCONTAINED: AuthorizedWrite requires self-contained regular clone under Cwd; dot_git_type=$dotType git_dir=$gitDir common_dir=$commonDir")
+    }
+    return [ordered]@{
+        policy = "XINAO_LEGA_SELFCONTAINED_GIT_WRITE_FIX_V1"
+        sealed_at = (Get-Date).ToString("o")
+        repo_toplevel = $repoTop
+        git_dir = $gitDir
+        common_dir = $commonDir
+        dot_git_type = $dotType
+        head = $head
+        head_unborn = [string]::IsNullOrWhiteSpace($head)
+        origin_identity = $originId
+        self_contained = [bool]$selfContained
+        authorized_write = [bool]$AuthWrite
+        git_dir_inside_cwd = [bool]$gitIn
+        common_dir_inside_cwd = [bool]$commonIn
+    }
+}
+function Assert-GitPost([string]$ResolvedCwd, $PreSeal) {
+    $marker = Join-Path $ResolvedCwd ".git"
+    $dotType = if (-not (Test-Path -LiteralPath $marker)) { "missing" }
+        elseif (Test-Path -LiteralPath $marker -PathType Container) { "directory" }
+        elseif (Test-Path -LiteralPath $marker -PathType Leaf) { "file" }
+        else { "other" }
+    if ([string]$PreSeal.dot_git_type -eq "directory" -and $dotType -ne "directory") {
+        throw ("XINAO_LEG_A_GIT_POSTCALL_DOT_GIT_TYPE: pre=$([string]$PreSeal.dot_git_type) post=$dotType")
+    }
+    if ($dotType -eq "missing") {
+        throw "XINAO_LEG_A_GIT_POSTCALL_DOT_GIT_TYPE: post=.git missing"
+    }
+    $abs = Invoke-GitC $ResolvedCwd @("rev-parse", "--absolute-git-dir")
+    if ($abs.code -ne 0) {
+        throw "XINAO_LEG_A_GIT_BROKEN_GITDIR: post-call git identity unresolved"
+    }
+    $originRun = Invoke-GitC $ResolvedCwd @("remote", "get-url", "origin")
+    $originId = Get-NonSecretOrigin $(if ($originRun.code -eq 0) { $originRun.text } else { "" })
+    if (-not [string]::Equals([string]$PreSeal.origin_identity, $originId, [StringComparison]::Ordinal)) {
+        throw ("XINAO_LEG_A_GIT_ORIGIN_IDENTITY_DRIFT: pre=$([string]$PreSeal.origin_identity) post=$originId")
+    }
+    $headRun = Invoke-GitC $ResolvedCwd @("rev-parse", "HEAD")
+    $postHead = if ($headRun.code -eq 0) { $headRun.text.ToLowerInvariant() } else { "" }
+    $preHead = [string]$PreSeal.head
+    if (-not [string]::IsNullOrWhiteSpace($preHead) -and [string]::IsNullOrWhiteSpace($postHead)) {
+        throw ("XINAO_LEG_A_GIT_HEAD_ANCESTRY_BROKEN: post-call HEAD unborn after sealed HEAD $preHead")
+    }
+    if (-not [string]::IsNullOrWhiteSpace($preHead) -and -not [string]::IsNullOrWhiteSpace($postHead) -and
+        -not [string]::Equals($preHead, $postHead, [StringComparison]::OrdinalIgnoreCase)) {
+        $anc = Invoke-GitC $ResolvedCwd @("merge-base", "--is-ancestor", $preHead, $postHead)
+        if ($anc.code -ne 0) {
+            throw ("XINAO_LEG_A_GIT_HEAD_ANCESTRY_BROKEN: pre_head=$preHead is not ancestor of post_head=$postHead (reinit/orphan replacement rejected)")
+        }
+    }
+    return [ordered]@{
+        post_head = $postHead
+        head_unchanged = [string]::Equals($preHead, $postHead, [StringComparison]::OrdinalIgnoreCase)
+        head_ancestry_ok = $true
+        origin_identity = $originId
+        dot_git_type = $dotType
+    }
+}
 try {
     if ([string]::IsNullOrWhiteSpace($Cwd)) { throw "XINAO_LEG_A_CWD_REQUIRED" }
     $resolvedCwd = [IO.Path]::GetFullPath($Cwd)
@@ -455,6 +635,18 @@ try {
     if ($Phase -eq "LAND" -and -not $AuthorizedWrite) {
         throw "XINAO_LEG_A_LAND_REQUIRES_AUTHORIZED_WRITE"
     }
+    $candidateWriteDomain = ""
+    $candidateOutputRoot = ""
+    if ($AuthorizedWrite) {
+        $candidateOutputRoot = $resolvedCwd
+        $candidateWriteDomain = "candidate_output_root:" + ($candidateOutputRoot.Replace('\', '/').TrimEnd('/').ToLowerInvariant())
+        if ($env:XINAO_LEG_A_FIXTURE_FORCE_WRITE_SCOPE -eq "1") {
+            throw "XINAO_LEG_A_WRITE_SCOPE_AMBIGUOUS: forced"
+        }
+    }
+    # Before dispatcher/provider: seal git identity; AuthorizedWrite requires self-contained clone.
+    $gitSeal = Get-GitSeal -ResolvedCwd $resolvedCwd -AuthWrite ([bool]$AuthorizedWrite)
+    $resultBase.git_seal = $gitSeal
     $resolvedRuntimeRoot = [IO.Path]::GetFullPath($RuntimeRoot)
     if (-not (Test-Path -LiteralPath $resolvedRuntimeRoot -PathType Container)) {
         New-Item -ItemType Directory -Force -Path $resolvedRuntimeRoot | Out-Null
@@ -479,15 +671,6 @@ try {
     if (-not [string]::IsNullOrWhiteSpace($env:XINAO_LEG_A_FAKE_BACKEND) -and
         $env:XINAO_LEG_A_FAKE_BACKEND -ne "linux-container") {
         throw ("XINAO_LEG_A_BACKEND_REJECTED: observed=" + $env:XINAO_LEG_A_FAKE_BACKEND)
-    }
-    $candidateWriteDomain = ""
-    $candidateOutputRoot = ""
-    if ($AuthorizedWrite) {
-        $candidateOutputRoot = $resolvedCwd
-        $candidateWriteDomain = "candidate_output_root:" + ($candidateOutputRoot.Replace('\', '/').TrimEnd('/').ToLowerInvariant())
-        if ($env:XINAO_LEG_A_FIXTURE_FORCE_WRITE_SCOPE -eq "1") {
-            throw "XINAO_LEG_A_WRITE_SCOPE_AMBIGUOUS: forced"
-        }
     }
     $runStamp = (Get-Date -Format "yyyyMMddTHHmmss") + "_" + ([guid]::NewGuid().ToString("N").Substring(0, 8))
     $localStateDir = Join-Path $resolvedRuntimeRoot ("state/xinao_leg_a_oneclick/" + $runStamp)
@@ -641,6 +824,26 @@ try {
         if ($joined -match 'XINAO_LEG_A_BACKEND_REJECTED') { throw ($joined) }
         throw ("XINAO_LEG_A_POOL_EXIT_" + $poolExit + ": " + $joined)
     }
+    # Simulate reinit/orphan replacement after provider effect (negative post-call verify).
+    if ($env:XINAO_LEG_A_FIXTURE_SIMULATE_REINIT -eq "1") {
+        $gitPath = Join-Path $resolvedCwd ".git"
+        if (Test-Path -LiteralPath $gitPath) {
+            Remove-Item -LiteralPath $gitPath -Recurse -Force -ErrorAction SilentlyContinue
+        }
+        [void](Invoke-GitC $resolvedCwd @("init"))
+        [void](Invoke-GitC $resolvedCwd @("config", "user.email", "reinit@example.invalid"))
+        [void](Invoke-GitC $resolvedCwd @("config", "user.name", "Reinit"))
+        $orphan = Join-Path $resolvedCwd "ORPHAN_REINIT.txt"
+        [IO.File]::WriteAllText($orphan, "orphan`n", $utf8)
+        [void](Invoke-GitC $resolvedCwd @("add", "ORPHAN_REINIT.txt"))
+        [void](Invoke-GitC $resolvedCwd @("commit", "-m", "orphan-reinit"))
+        # Preserve non-secret origin identity if present so ancestry is the failure mode.
+        if (-not [string]::IsNullOrWhiteSpace([string]$gitSeal.origin_identity)) {
+            [void](Invoke-GitC $resolvedCwd @("remote", "add", "origin", [string]$gitSeal.origin_identity))
+        }
+    }
+    $gitPost = Assert-GitPost -ResolvedCwd $resolvedCwd -PreSeal $gitSeal
+    $resultBase.git_seal_post = $gitPost
     $resultBase.evidence = [ordered]@{
         dispatch_meta_path = ""
         pool_id = ""
@@ -657,6 +860,12 @@ try {
         public_dispatcher_used = $true
         prior_chat_state_required = $false
         manual_hashes_required = $false
+        git_self_contained = [bool]$gitSeal.self_contained
+        git_dot_git_type = [string]$gitSeal.dot_git_type
+        git_pre_head = [string]$gitSeal.head
+        git_post_head = [string]$gitPost.post_head
+        git_origin_identity = [string]$gitSeal.origin_identity
+        git_policy = [string]$gitSeal.policy
     }
     $metaDir = Join-Path $resolvedRuntimeRoot "state/codex_dispatch_grok_worker_pool"
     $latest = Join-Path $metaDir "latest.json"
@@ -780,6 +989,12 @@ function Assert-ProductionShapeBound {
     Assert-True ($WorkerSource -match [regex]::Escape("XINAO_LEG_A_RULES_DRIFT")) "prod_rules_drift_token"
     Assert-True ($WorkerSource -match [regex]::Escape("XINAO_LEG_A_WRITE_SCOPE_AMBIGUOUS")) "prod_write_scope_token"
     Assert-True ($WorkerSource -match [regex]::Escape("XINAO_LEG_A_BACKEND_REJECTED")) "prod_backend_rejected_token"
+    Assert-True ($WorkerSource -match [regex]::Escape("XINAO_LEG_A_GIT_NOT_SELFCONTAINED")) "prod_git_not_selfcontained_token"
+    Assert-True ($WorkerSource -match [regex]::Escape("XINAO_LEG_A_GIT_BROKEN_GITDIR")) "prod_git_broken_gitdir_token"
+    Assert-True ($WorkerSource -match [regex]::Escape("XINAO_LEG_A_GIT_HEAD_ANCESTRY_BROKEN")) "prod_git_head_ancestry_token"
+    Assert-True ($WorkerSource -match [regex]::Escape("XINAO_LEGA_SELFCONTAINED_GIT_WRITE_FIX_V1")) "prod_git_policy_id"
+    Assert-True ($WorkerSource -match [regex]::Escape("Get-XinaoLegAGitSeal")) "prod_git_seal_fn"
+    Assert-True ($WorkerSource -match [regex]::Escape("Assert-XinaoLegAGitPostCall")) "prod_git_post_fn"
 
     Assert-True ($BuilderSource -match [regex]::Escape("OutputDir")) "builder_output_dir_param"
     Assert-True ($BuilderSource -match [regex]::Escape("manifest_path")) "builder_manifest_path"
@@ -807,10 +1022,17 @@ function Assert-ProductionShapeBound {
         "XINAO_LEG_A_SELECTION_STALE",
         "XINAO_LEG_A_RULES_DRIFT",
         "XINAO_LEG_A_WRITE_SCOPE_AMBIGUOUS",
-        "XINAO_LEG_A_BACKEND_REJECTED"
+        "XINAO_LEG_A_BACKEND_REJECTED",
+        "XINAO_LEG_A_GIT_BROKEN_GITDIR",
+        "XINAO_LEG_A_GIT_NOT_SELFCONTAINED",
+        "XINAO_LEG_A_GIT_HEAD_ANCESTRY_BROKEN"
     )) {
         Assert-True ($tokens -contains $tok) "contract_fail_closed_token:$tok"
     }
+    Assert-True ($Contract.isolation.git_metadata.policy_id -eq "XINAO_LEGA_SELFCONTAINED_GIT_WRITE_FIX_V1") `
+        "contract_git_policy_id"
+    Assert-True ($Contract.isolation.git_metadata.authorized_write.requires_self_contained_regular_clone -eq $true) `
+        "contract_git_auth_write_selfcontained"
     # Forbidden fixture-only tokens that previously caused false green.
     Assert-True ($tokens -notcontains "XINAO_LEG_A_DOCKER_UNAVAILABLE") "contract_no_legacy_docker_unavailable_alias"
     Assert-True ($tokens -notcontains "XINAO_LEG_A_CONTEXT_MISSING") "contract_no_legacy_context_missing_alias"
@@ -953,6 +1175,11 @@ try {
     Assert-True (-not [string]::IsNullOrWhiteSpace([string]$commonCall.common_context_manifest_path)) "happy.common_has_manifest"
     Assert-True (-not [string]::IsNullOrWhiteSpace([string]$commonCall.expected_selection_decision_sha256)) "happy.common_has_selection_pin"
     Assert-True ($commonCall.expected_selection_decision_sha256 -eq [string]$r.selection.decision_sha256) "happy.pin_matches_bootstrap"
+    Assert-True ($null -ne $r.git_seal) "happy.git_seal_present"
+    Assert-True ([string]$r.git_seal.policy -eq "XINAO_LEGA_SELFCONTAINED_GIT_WRITE_FIX_V1") "happy.git_policy"
+    Assert-True ($r.git_seal.self_contained -eq $true) "happy.git_self_contained"
+    Assert-True ([string]$r.git_seal.dot_git_type -eq "directory") "happy.git_dot_git_dir"
+    Assert-True (-not [string]::IsNullOrWhiteSpace([string]$r.git_seal.head)) "happy.git_head_sealed"
     [void]$passed.Add("happy_path_fresh_consumer")
     [void]$passed.Add("no_prior_chat_or_manual_hashes")
     [void]$passed.Add("selection_only_and_common_via_public_dispatcher")
@@ -961,7 +1188,7 @@ try {
     [void]$passed.Add("sealed_ro_and_worktree_ro_default")
     [void]$passed.Add("result_json_evidence_surface")
 
-    # --- Authorized write domain (only when explicit) ---
+    # --- Authorized write domain (only when explicit) on valid self-contained clone ---
     if (Test-Path -LiteralPath $callLog) { Remove-Item -LiteralPath $callLog -Force }
     $writeCase = Invoke-OneClickCase `
         -Label "authorized_write" `
@@ -974,7 +1201,64 @@ try {
     Assert-True ($writeCase.result.effect_mode -eq "authorized_write") "write.effect_mode"
     Assert-True ($writeCase.result.authorized_write -eq $true) "write.authorized_write"
     Assert-True (@($writeCase.result.evidence.write_domains).Count -eq 1) "write.single_domain"
+    Assert-True ($writeCase.result.git_seal.self_contained -eq $true) "write.git_self_contained"
+    Assert-True ([string]$writeCase.result.git_seal.dot_git_type -eq "directory") "write.git_dir_type"
+    Assert-True ([string]$writeCase.result.evidence.git_policy -eq "XINAO_LEGA_SELFCONTAINED_GIT_WRITE_FIX_V1") "write.git_policy"
     [void]$passed.Add("authorized_write_domain_only_when_explicit")
+    [void]$passed.Add("valid_selfcontained_clone_authorized_write")
+
+    # --- Fail closed: broken gitdir pointer ---
+    $broken = New-BrokenGitdirWorktree -Root $carrier
+    Invoke-OneClickCase `
+        -Label "broken_gitdir" `
+        -WorkerPath $workerUnderTest `
+        -ContextBuilder $builderUnderTest `
+        -Dispatcher $fakeDispatcher.path `
+        -Cwd $broken.path `
+        -RuntimeRoot (Join-Path $carrier "runtime-broken-gitdir") `
+        -ExpectSuccess:$false `
+        -ExpectedErrorToken "XINAO_LEG_A_GIT_BROKEN_GITDIR" | Out-Null
+    [void]$passed.Add("broken_gitdir_fail_closed")
+
+    # --- Fail closed: linked worktree AuthorizedWrite (external common-dir) ---
+    $linkedPair = New-LinkedWorktreePair -Root $carrier
+    Invoke-OneClickCase `
+        -Label "linked_worktree_authorized_write" `
+        -WorkerPath $workerUnderTest `
+        -ContextBuilder $builderUnderTest `
+        -Dispatcher $fakeDispatcher.path `
+        -Cwd $linkedPair.linked_path `
+        -RuntimeRoot (Join-Path $carrier "runtime-linked-write") `
+        -ExtraArgs @{ AuthorizedWrite = $true } `
+        -ExpectSuccess:$false `
+        -ExpectedErrorToken "XINAO_LEG_A_GIT_NOT_SELFCONTAINED" | Out-Null
+    # Read-only on the same linked worktree may still resolve host git identity (thin policy).
+    if (Test-Path -LiteralPath $callLog) { Remove-Item -LiteralPath $callLog -Force }
+    $linkedRo = Invoke-OneClickCase `
+        -Label "linked_worktree_read_only" `
+        -WorkerPath $workerUnderTest `
+        -ContextBuilder $builderUnderTest `
+        -Dispatcher $fakeDispatcher.path `
+        -Cwd $linkedPair.linked_path `
+        -RuntimeRoot (Join-Path $carrier "runtime-linked-ro")
+    Assert-True ($linkedRo.result.ok -eq $true) "linked_ro.ok"
+    Assert-True ($linkedRo.result.git_seal.self_contained -eq $false) "linked_ro.not_self_contained"
+    Assert-True ([string]$linkedRo.result.git_seal.dot_git_type -eq "file") "linked_ro.dot_git_file"
+    [void]$passed.Add("linked_worktree_authorized_write_fail_closed")
+
+    # --- Fail closed: reinit / orphan HEAD replacement after worker effect ---
+    $reinitClone = Initialize-SelfContainedClone -Root $carrier -Name "reinit-clone"
+    Invoke-OneClickCase `
+        -Label "reinit_ancestry" `
+        -WorkerPath $workerUnderTest `
+        -ContextBuilder $builderUnderTest `
+        -Dispatcher $fakeDispatcher.path `
+        -Cwd $reinitClone.path `
+        -RuntimeRoot (Join-Path $carrier "runtime-reinit") `
+        -EnvOverrides @{ XINAO_LEG_A_FIXTURE_SIMULATE_REINIT = "1" } `
+        -ExpectSuccess:$false `
+        -ExpectedErrorToken "XINAO_LEG_A_GIT_HEAD_ANCESTRY_BROKEN" | Out-Null
+    [void]$passed.Add("reinit_head_ancestry_fail_closed")
 
     # --- Fail closed: missing public dispatcher ---
     Invoke-OneClickCase `
@@ -1128,7 +1412,8 @@ finally {
         "XINAO_LEG_A_FIXTURE_MISSING_CONTEXT",
         "XINAO_LEG_A_FIXTURE_STALE_SELECTION_AFTER_BOOTSTRAP",
         "XINAO_LEG_A_FIXTURE_RULES_DRIFT",
-        "XINAO_LEG_A_FIXTURE_FORCE_WRITE_SCOPE"
+        "XINAO_LEG_A_FIXTURE_FORCE_WRITE_SCOPE",
+        "XINAO_LEG_A_FIXTURE_SIMULATE_REINIT"
     )) {
         [Environment]::SetEnvironmentVariable($name, $null)
     }

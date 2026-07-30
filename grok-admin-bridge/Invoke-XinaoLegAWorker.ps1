@@ -127,6 +127,282 @@ function Get-XinaoLegALastJsonObject([object[]]$Lines) {
     return $null
 }
 
+function Test-XinaoLegAPathInsideRoot([string]$CandidatePath, [string]$RootPath) {
+    if ([string]::IsNullOrWhiteSpace($CandidatePath) -or [string]::IsNullOrWhiteSpace($RootPath)) {
+        return $false
+    }
+    try {
+        $fullCandidate = [IO.Path]::GetFullPath($CandidatePath)
+        $fullRoot = [IO.Path]::GetFullPath($RootPath).TrimEnd([char[]]@('\', '/'))
+    }
+    catch {
+        return $false
+    }
+    if ([string]::Equals($fullCandidate, $fullRoot, [StringComparison]::OrdinalIgnoreCase)) {
+        return $true
+    }
+    $prefix = $fullRoot + [IO.Path]::DirectorySeparatorChar
+    return $fullCandidate.StartsWith($prefix, [StringComparison]::OrdinalIgnoreCase)
+}
+
+function Get-XinaoLegAGitCommandPath {
+    $git = [string](
+        Get-Command git -ErrorAction SilentlyContinue |
+            Select-Object -First 1 -ExpandProperty Source
+    )
+    if ([string]::IsNullOrWhiteSpace($git)) {
+        $git = [string](
+            Get-Command git.exe -ErrorAction SilentlyContinue |
+                Select-Object -First 1 -ExpandProperty Source
+        )
+    }
+    if ([string]::IsNullOrWhiteSpace($git) -or -not (Test-Path -LiteralPath $git -PathType Leaf)) {
+        Throw-XinaoLegAPreflight "XINAO_LEG_A_GIT_CLI_MISSING" "host git identity resolve requires git CLI"
+    }
+    return [IO.Path]::GetFullPath($git)
+}
+
+function Invoke-XinaoLegAGit {
+    param(
+        [Parameter(Mandatory = $true)][string]$GitExe,
+        [Parameter(Mandatory = $true)][string]$ResolvedCwd,
+        [Parameter(Mandatory = $true)][string[]]$GitArgs,
+        [switch]$AllowFail
+    )
+    $psi = [Diagnostics.ProcessStartInfo]::new()
+    $psi.FileName = $GitExe
+    $psi.UseShellExecute = $false
+    $psi.CreateNoWindow = $true
+    $psi.RedirectStandardOutput = $true
+    $psi.RedirectStandardError = $true
+    $psi.WorkingDirectory = $ResolvedCwd
+    $argList = @("-C", $ResolvedCwd) + $GitArgs
+    if ($null -ne $psi.PSObject.Properties['ArgumentList']) {
+        foreach ($a in $argList) { [void]$psi.ArgumentList.Add([string]$a) }
+    }
+    else {
+        $psi.Arguments = (($argList | ForEach-Object {
+            $s = [string]$_
+            if ($s -match '[\s"]') { '"' + ($s.Replace('"', '\"')) + '"' } else { $s }
+        }) -join ' ')
+    }
+    $process = [Diagnostics.Process]::new()
+    $process.StartInfo = $psi
+    [void]$process.Start()
+    $stdout = $process.StandardOutput.ReadToEnd()
+    $stderr = $process.StandardError.ReadToEnd()
+    $process.WaitForExit(60000) | Out-Null
+    if (-not $process.HasExited) {
+        try { $process.Kill($true) } catch { try { $process.Kill() } catch {} }
+        if ($AllowFail) {
+            return [pscustomobject]@{ exit_code = -1; stdout = ""; stderr = "timeout" }
+        }
+        Throw-XinaoLegAPreflight "XINAO_LEG_A_GIT_IDENTITY_UNRESOLVED" "git command timed out"
+    }
+    return [pscustomobject]@{
+        exit_code = [int]$process.ExitCode
+        stdout = [string]$stdout
+        stderr = [string]$stderr
+    }
+}
+
+function ConvertTo-XinaoLegANonSecretOriginIdentity([string]$OriginUrl) {
+    if ([string]::IsNullOrWhiteSpace($OriginUrl)) {
+        return ""
+    }
+    $url = $OriginUrl.Trim()
+    # https://user:pass@host/path → https://host/path
+    if ($url -match '^(?i)(https?://)([^/@\s]+@)(.+)$') {
+        return $Matches[1] + $Matches[3]
+    }
+    # ssh://user@host/path → ssh://host/path (drop userinfo)
+    if ($url -match '^(?i)(ssh://)([^/@\s]+@)(.+)$') {
+        return $Matches[1] + $Matches[3]
+    }
+    return $url
+}
+
+function Get-XinaoLegADotGitType([string]$ResolvedCwd) {
+    $gitMarker = Join-Path $ResolvedCwd ".git"
+    if (-not (Test-Path -LiteralPath $gitMarker)) {
+        return "missing"
+    }
+    if (Test-Path -LiteralPath $gitMarker -PathType Container) {
+        return "directory"
+    }
+    if (Test-Path -LiteralPath $gitMarker -PathType Leaf) {
+        return "file"
+    }
+    return "other"
+}
+
+function Get-XinaoLegAGitSeal {
+    param(
+        [Parameter(Mandatory = $true)][string]$ResolvedCwd,
+        [Parameter(Mandatory = $true)][bool]$AuthorizedWrite
+    )
+    $gitMarker = Join-Path $ResolvedCwd ".git"
+    if (-not (Test-Path -LiteralPath $gitMarker)) {
+        Throw-XinaoLegAPreflight "XINAO_LEG_A_INVALID_WORKTREE" "cwd is not a git worktree: $ResolvedCwd"
+    }
+    $dotGitType = Get-XinaoLegADotGitType -ResolvedCwd $ResolvedCwd
+    $gitExe = Get-XinaoLegAGitCommandPath
+
+    # Broken gitdir pointer / unreadable repo: host git cannot resolve identity.
+    $top = Invoke-XinaoLegAGit -GitExe $gitExe -ResolvedCwd $ResolvedCwd -GitArgs @("rev-parse", "--show-toplevel") -AllowFail
+    $absGit = Invoke-XinaoLegAGit -GitExe $gitExe -ResolvedCwd $ResolvedCwd -GitArgs @("rev-parse", "--absolute-git-dir") -AllowFail
+    $common = Invoke-XinaoLegAGit -GitExe $gitExe -ResolvedCwd $ResolvedCwd -GitArgs @("rev-parse", "--git-common-dir") -AllowFail
+    if ($top.exit_code -ne 0 -or $absGit.exit_code -ne 0 -or $common.exit_code -ne 0) {
+        $detail = (@($top.stderr, $absGit.stderr, $common.stderr) | Where-Object { -not [string]::IsNullOrWhiteSpace($_) }) -join " | "
+        if ($dotGitType -eq "file") {
+            Throw-XinaoLegAPreflight "XINAO_LEG_A_GIT_BROKEN_GITDIR" $detail
+        }
+        Throw-XinaoLegAPreflight "XINAO_LEG_A_GIT_IDENTITY_UNRESOLVED" $detail
+    }
+
+    $repoToplevel = [IO.Path]::GetFullPath(([string]$top.stdout).Trim())
+    $gitDirAbs = [IO.Path]::GetFullPath(([string]$absGit.stdout).Trim())
+    $commonRaw = ([string]$common.stdout).Trim()
+    if ([IO.Path]::IsPathRooted($commonRaw)) {
+        $commonDirAbs = [IO.Path]::GetFullPath($commonRaw)
+    }
+    else {
+        $commonDirAbs = [IO.Path]::GetFullPath((Join-Path $ResolvedCwd $commonRaw))
+    }
+
+    $headRun = Invoke-XinaoLegAGit -GitExe $gitExe -ResolvedCwd $ResolvedCwd -GitArgs @("rev-parse", "HEAD") -AllowFail
+    $head = ""
+    if ($headRun.exit_code -eq 0) {
+        $head = ([string]$headRun.stdout).Trim().ToLowerInvariant()
+    }
+    else {
+        # Unborn HEAD is still a resolvable identity; keep empty and mark unborn.
+        $head = ""
+    }
+
+    $originRun = Invoke-XinaoLegAGit -GitExe $gitExe -ResolvedCwd $ResolvedCwd -GitArgs @("remote", "get-url", "origin") -AllowFail
+    $originRaw = if ($originRun.exit_code -eq 0) { ([string]$originRun.stdout).Trim() } else { "" }
+    $originIdentity = ConvertTo-XinaoLegANonSecretOriginIdentity $originRaw
+
+    $gitDirInside = Test-XinaoLegAPathInsideRoot -CandidatePath $gitDirAbs -RootPath $ResolvedCwd
+    $commonInside = Test-XinaoLegAPathInsideRoot -CandidatePath $commonDirAbs -RootPath $ResolvedCwd
+    $selfContained = (
+        $dotGitType -eq "directory" -and
+        $gitDirInside -and
+        $commonInside
+    )
+
+    # Thin safe policy:
+    # - read-only may use linked worktree when host git identity resolves
+    # - AuthorizedWrite fail-closed unless self-contained regular clone (.git dir +
+    #   absolute git-dir + common-dir all inside Cwd). No shared external common-dir RW.
+    if ($AuthorizedWrite -and -not $selfContained) {
+        Throw-XinaoLegAPreflight "XINAO_LEG_A_GIT_NOT_SELFCONTAINED" (
+            "AuthorizedWrite requires self-contained regular clone under Cwd; " +
+            "dot_git_type=$dotGitType git_dir=$gitDirAbs common_dir=$commonDirAbs"
+        )
+    }
+
+    return [ordered]@{
+        policy = "XINAO_LEGA_SELFCONTAINED_GIT_WRITE_FIX_V1"
+        sealed_at = (Get-Date).ToString("o")
+        repo_toplevel = $repoToplevel
+        git_dir = $gitDirAbs
+        common_dir = $commonDirAbs
+        dot_git_type = $dotGitType
+        head = $head
+        head_unborn = [string]::IsNullOrWhiteSpace($head)
+        origin_identity = $originIdentity
+        self_contained = [bool]$selfContained
+        authorized_write = [bool]$AuthorizedWrite
+        git_dir_inside_cwd = [bool]$gitDirInside
+        common_dir_inside_cwd = [bool]$commonInside
+    }
+}
+
+function Assert-XinaoLegAGitPostCall {
+    param(
+        [Parameter(Mandatory = $true)][string]$ResolvedCwd,
+        [Parameter(Mandatory = $true)]$PreSeal
+    )
+    $dotGitType = Get-XinaoLegADotGitType -ResolvedCwd $ResolvedCwd
+    # After authorized write on a self-contained clone, .git must remain a directory.
+    # After any call, reject replacement of a directory .git with a file/missing marker.
+    if ([string]$PreSeal.dot_git_type -eq "directory" -and $dotGitType -ne "directory") {
+        Throw-XinaoLegAPreflight "XINAO_LEG_A_GIT_POSTCALL_DOT_GIT_TYPE" (
+            "pre=$([string]$PreSeal.dot_git_type) post=$dotGitType"
+        )
+    }
+    if ($dotGitType -eq "missing") {
+        Throw-XinaoLegAPreflight "XINAO_LEG_A_GIT_POSTCALL_DOT_GIT_TYPE" "post=.git missing"
+    }
+
+    $gitExe = Get-XinaoLegAGitCommandPath
+    $postAbs = Invoke-XinaoLegAGit -GitExe $gitExe -ResolvedCwd $ResolvedCwd -GitArgs @("rev-parse", "--absolute-git-dir") -AllowFail
+    $postCommon = Invoke-XinaoLegAGit -GitExe $gitExe -ResolvedCwd $ResolvedCwd -GitArgs @("rev-parse", "--git-common-dir") -AllowFail
+    if ($postAbs.exit_code -ne 0 -or $postCommon.exit_code -ne 0) {
+        Throw-XinaoLegAPreflight "XINAO_LEG_A_GIT_BROKEN_GITDIR" "post-call git identity unresolved"
+    }
+
+    $originRun = Invoke-XinaoLegAGit -GitExe $gitExe -ResolvedCwd $ResolvedCwd -GitArgs @("remote", "get-url", "origin") -AllowFail
+    $originRaw = if ($originRun.exit_code -eq 0) { ([string]$originRun.stdout).Trim() } else { "" }
+    $originIdentity = ConvertTo-XinaoLegANonSecretOriginIdentity $originRaw
+    $preOrigin = [string]$PreSeal.origin_identity
+    if (-not [string]::Equals($preOrigin, $originIdentity, [StringComparison]::Ordinal)) {
+        Throw-XinaoLegAPreflight "XINAO_LEG_A_GIT_ORIGIN_IDENTITY_DRIFT" "pre=$preOrigin post=$originIdentity"
+    }
+
+    $headRun = Invoke-XinaoLegAGit -GitExe $gitExe -ResolvedCwd $ResolvedCwd -GitArgs @("rev-parse", "HEAD") -AllowFail
+    $postHead = if ($headRun.exit_code -eq 0) { ([string]$headRun.stdout).Trim().ToLowerInvariant() } else { "" }
+    $preHead = [string]$PreSeal.head
+    if ([string]::IsNullOrWhiteSpace($preHead) -and [string]::IsNullOrWhiteSpace($postHead)) {
+        return [ordered]@{
+            post_head = $postHead
+            head_unchanged = $true
+            head_ancestry_ok = $true
+            origin_identity = $originIdentity
+            dot_git_type = $dotGitType
+        }
+    }
+    if ([string]::IsNullOrWhiteSpace($preHead) -and -not [string]::IsNullOrWhiteSpace($postHead)) {
+        # Unborn → first commit is acceptable (ancestor N/A); not a reinit of existing history.
+        return [ordered]@{
+            post_head = $postHead
+            head_unchanged = $false
+            head_ancestry_ok = $true
+            origin_identity = $originIdentity
+            dot_git_type = $dotGitType
+        }
+    }
+    if (-not [string]::IsNullOrWhiteSpace($preHead) -and [string]::IsNullOrWhiteSpace($postHead)) {
+        Throw-XinaoLegAPreflight "XINAO_LEG_A_GIT_HEAD_ANCESTRY_BROKEN" "post-call HEAD unborn after sealed HEAD $preHead"
+    }
+    if ([string]::Equals($preHead, $postHead, [StringComparison]::OrdinalIgnoreCase)) {
+        return [ordered]@{
+            post_head = $postHead
+            head_unchanged = $true
+            head_ancestry_ok = $true
+            origin_identity = $originIdentity
+            dot_git_type = $dotGitType
+        }
+    }
+    $anc = Invoke-XinaoLegAGit -GitExe $gitExe -ResolvedCwd $ResolvedCwd -GitArgs @(
+        "merge-base", "--is-ancestor", $preHead, $postHead
+    ) -AllowFail
+    if ($anc.exit_code -ne 0) {
+        Throw-XinaoLegAPreflight "XINAO_LEG_A_GIT_HEAD_ANCESTRY_BROKEN" (
+            "pre_head=$preHead is not ancestor of post_head=$postHead (reinit/orphan replacement rejected)"
+        )
+    }
+    return [ordered]@{
+        post_head = $postHead
+        head_unchanged = $false
+        head_ancestry_ok = $true
+        origin_identity = $originIdentity
+        dot_git_type = $dotGitType
+    }
+}
+
 function Assert-XinaoLegAWorktree([string]$ResolvedCwd) {
     if (-not (Test-Path -LiteralPath $ResolvedCwd -PathType Container)) {
         Throw-XinaoLegAPreflight "XINAO_LEG_A_CWD_MISSING" $ResolvedCwd
@@ -478,6 +754,26 @@ try {
         Throw-XinaoLegAPreflight "XINAO_LEG_A_LAND_REQUIRES_AUTHORIZED_WRITE"
     }
 
+    $candidateWriteDomain = ""
+    $candidateOutputRoot = ""
+    if ($AuthorizedWrite) {
+        $candidateOutputRoot = $resolvedCwd
+        $candidateWriteDomain = ConvertTo-XinaoLegACandidateWriteDomain $candidateOutputRoot
+        # Ambiguous write scope: more than one domain or root != cwd is forbidden by design.
+        if ([string]::IsNullOrWhiteSpace($candidateWriteDomain)) {
+            Throw-XinaoLegAPreflight "XINAO_LEG_A_WRITE_SCOPE_AMBIGUOUS" "empty write domain"
+        }
+        if (-not [string]::Equals($candidateOutputRoot, $resolvedCwd, [StringComparison]::OrdinalIgnoreCase)) {
+            Throw-XinaoLegAPreflight "XINAO_LEG_A_WRITE_SCOPE_AMBIGUOUS" "candidate output root must equal Cwd"
+        }
+    }
+
+    # Seal host git identity before any provider/selection effect. AuthorizedWrite
+    # fails closed unless Cwd is a self-contained regular clone (no external common-dir RW).
+    # Placed before dispatcher/docker so linked-worktree AuthorizedWrite is typed-rejected early.
+    $gitSeal = Get-XinaoLegAGitSeal -ResolvedCwd $resolvedCwd -AuthorizedWrite ([bool]$AuthorizedWrite)
+    $resultBase.git_seal = $gitSeal
+
     try { $resolvedRuntimeRoot = [IO.Path]::GetFullPath($RuntimeRoot) }
     catch { Throw-XinaoLegAPreflight "XINAO_LEG_A_RUNTIME_ROOT_INVALID" $RuntimeRoot }
     if (-not (Test-Path -LiteralPath $resolvedRuntimeRoot -PathType Container)) {
@@ -500,20 +796,6 @@ try {
     catch { Throw-XinaoLegAPreflight "XINAO_LEG_A_CONTEXT_BUILDER_INVALID" $ContextBuilder }
     if (-not (Test-Path -LiteralPath $contextBuilder -PathType Leaf)) {
         Throw-XinaoLegAPreflight "XINAO_LEG_A_CONTEXT_BUILDER_MISSING" $contextBuilder
-    }
-
-    $candidateWriteDomain = ""
-    $candidateOutputRoot = ""
-    if ($AuthorizedWrite) {
-        $candidateOutputRoot = $resolvedCwd
-        $candidateWriteDomain = ConvertTo-XinaoLegACandidateWriteDomain $candidateOutputRoot
-        # Ambiguous write scope: more than one domain or root != cwd is forbidden by design.
-        if ([string]::IsNullOrWhiteSpace($candidateWriteDomain)) {
-            Throw-XinaoLegAPreflight "XINAO_LEG_A_WRITE_SCOPE_AMBIGUOUS" "empty write domain"
-        }
-        if (-not [string]::Equals($candidateOutputRoot, $resolvedCwd, [StringComparison]::OrdinalIgnoreCase)) {
-            Throw-XinaoLegAPreflight "XINAO_LEG_A_WRITE_SCOPE_AMBIGUOUS" "candidate output root must equal Cwd"
-        }
     }
 
     $resolvedDocker = ""
@@ -878,6 +1160,10 @@ try {
         }
     }
 
+    # Post-call git integrity: .git type, non-secret origin identity, HEAD ancestry.
+    $gitPost = Assert-XinaoLegAGitPostCall -ResolvedCwd $resolvedCwd -PreSeal $gitSeal
+    $resultBase.git_seal_post = $gitPost
+
     $resultBase.execution_backend = $observedBackend
     $resultBase.effect_mode = $expectedEffect
     $resultBase.evidence = [ordered]@{
@@ -892,6 +1178,12 @@ try {
         candidate_output_root = $candidateOutputRoot
         write_domains = if ($AuthorizedWrite) { @($candidateWriteDomain) } else { @() }
         docker_exe = $resolvedDocker
+        git_self_contained = [bool]$gitSeal.self_contained
+        git_dot_git_type = [string]$gitSeal.dot_git_type
+        git_pre_head = [string]$gitSeal.head
+        git_post_head = [string]$gitPost.post_head
+        git_origin_identity = [string]$gitSeal.origin_identity
+        git_policy = [string]$gitSeal.policy
     }
     if ($null -ne $evidence -and $null -ne $evidence.dispatch_meta) {
         $resultBase.evidence.dispatch_status = [string]$evidence.dispatch_meta.status
@@ -927,7 +1219,7 @@ catch {
         $resultBase.error = [string]$_
     }
     $exitCode = 2
-    if ($resultBase.error -match 'XINAO_LEG_A_(DOCKER|LINUX_ENGINE|CONTEXT|INVALID_WORKTREE|WRITE_SCOPE|CWD|PROMPT|RULES|MANIFEST|SPEC|PUBLIC_DISPATCHER|SELECTION|BACKEND|EFFECT)') {
+    if ($resultBase.error -match 'XINAO_LEG_A_(DOCKER|LINUX_ENGINE|CONTEXT|INVALID_WORKTREE|WRITE_SCOPE|CWD|PROMPT|RULES|MANIFEST|SPEC|PUBLIC_DISPATCHER|SELECTION|BACKEND|EFFECT|GIT_)') {
         $exitCode = 3
     }
     Write-XinaoLegAResult -Payload $resultBase -ExitCode $exitCode

@@ -134,7 +134,12 @@
     "selection_decision_pinned_when_dispatcher_supports_it",
     "result_json_exposes_candidate_only_evidence",
     "candidate_only_status",
-    "rollback_removes_only_test_carrier"
+    "rollback_removes_only_test_carrier",
+    "git_identity_sealed_before_provider_effect",
+    "authorized_write_requires_self_contained_regular_clone",
+    "read_only_may_use_linked_worktree_when_host_git_resolves",
+    "post_call_git_head_ancestry_and_origin_identity_verified",
+    "no_shared_external_common_dir_rw_mount"
   ],
   "call_sequence": [
     {
@@ -187,6 +192,37 @@
       "path_escape_fails_closed": true,
       "authorized_write_parameter": "AuthorizedWrite",
       "candidate_output_root_must_equal_cwd": true
+    },
+    "git_metadata": {
+      "policy_id": "XINAO_LEGA_SELFCONTAINED_GIT_WRITE_FIX_V1",
+      "host_git_identity_required": true,
+      "seal_before_provider_effect": [
+        "pre_call_head",
+        "repo_toplevel",
+        "absolute_git_dir",
+        "git_common_dir",
+        "dot_git_type",
+        "non_secret_origin_identity"
+      ],
+      "read_only": {
+        "linked_worktree_allowed_when_host_git_resolves": true,
+        "shared_external_common_dir_rw_mount_forbidden": true
+      },
+      "authorized_write": {
+        "requires_self_contained_regular_clone": true,
+        "dot_git_must_be_directory": true,
+        "absolute_git_dir_must_resolve_inside_cwd": true,
+        "git_common_dir_must_resolve_inside_cwd": true,
+        "fail_closed_before_provider_effect": true,
+        "shared_external_common_dir_rw_mount_forbidden": true,
+        "isolation_model": "per_worker_regular_clones_for_branch_commit_pr"
+      },
+      "post_call_verify": [
+        "dot_git_still_directory_when_pre_was_directory",
+        "non_secret_origin_identity_unchanged",
+        "pre_call_head_is_ancestor_of_post_call_head_or_unchanged"
+      ],
+      "reject_reinit_or_orphan_replacement": true
     },
     "branch_isolation": {
       "source_worktree_must_be_preserved_on_rollback": true,
@@ -268,6 +304,41 @@
       "id": "land_requires_authorized_write",
       "trigger": "Phase=LAND without AuthorizedWrite",
       "error_token": "XINAO_LEG_A_LAND_REQUIRES_AUTHORIZED_WRITE"
+    },
+    {
+      "id": "git_cli_missing",
+      "trigger": "host git CLI unavailable for identity resolve",
+      "error_token": "XINAO_LEG_A_GIT_CLI_MISSING"
+    },
+    {
+      "id": "git_broken_gitdir",
+      "trigger": "Cwd .git is a broken gitdir pointer or host git cannot open the repository",
+      "error_token": "XINAO_LEG_A_GIT_BROKEN_GITDIR"
+    },
+    {
+      "id": "git_identity_unresolved",
+      "trigger": "host git cannot resolve toplevel/git-dir/common-dir for Cwd",
+      "error_token": "XINAO_LEG_A_GIT_IDENTITY_UNRESOLVED"
+    },
+    {
+      "id": "git_not_selfcontained_for_authorized_write",
+      "trigger": "AuthorizedWrite on linked worktree or any Cwd whose .git/git-dir/common-dir is not fully inside Cwd",
+      "error_token": "XINAO_LEG_A_GIT_NOT_SELFCONTAINED"
+    },
+    {
+      "id": "git_postcall_dot_git_type",
+      "trigger": "after worker return, .git is no longer a directory when pre-call seal recorded directory",
+      "error_token": "XINAO_LEG_A_GIT_POSTCALL_DOT_GIT_TYPE"
+    },
+    {
+      "id": "git_origin_identity_drift",
+      "trigger": "non-secret origin identity changed across worker call",
+      "error_token": "XINAO_LEG_A_GIT_ORIGIN_IDENTITY_DRIFT"
+    },
+    {
+      "id": "git_head_ancestry_broken",
+      "trigger": "pre-call HEAD is not ancestor of post-call HEAD (reinit/orphan replacement)",
+      "error_token": "XINAO_LEG_A_GIT_HEAD_ANCESTRY_BROKEN"
     }
   ],
   "result_json": {
@@ -299,7 +370,8 @@
       "selection",
       "identities",
       "evidence",
-      "error"
+      "error",
+      "git_seal"
     ],
     "status_requirements": {
       "worker_output_authority": "candidate_only",
@@ -329,7 +401,23 @@
       "prompt_file",
       "subject_manifest_path",
       "write_domains",
-      "docker_exe"
+      "docker_exe",
+      "git_self_contained",
+      "git_dot_git_type",
+      "git_pre_head",
+      "git_post_head",
+      "git_origin_identity",
+      "git_policy"
+    ],
+    "git_seal_required_fields": [
+      "policy",
+      "repo_toplevel",
+      "git_dir",
+      "common_dir",
+      "dot_git_type",
+      "head",
+      "origin_identity",
+      "self_contained"
     ],
     "usage_requirements": {
       "selection_only_model_invocation_count": 0,
@@ -371,6 +459,10 @@
       "backend_linux_container_only",
       "sealed_ro_and_worktree_ro_default",
       "authorized_write_domain_only_when_explicit",
+      "valid_selfcontained_clone_authorized_write",
+      "broken_gitdir_fail_closed",
+      "linked_worktree_authorized_write_fail_closed",
+      "reinit_head_ancestry_fail_closed",
       "missing_public_dispatcher_fail_closed",
       "missing_context_field_fail_closed",
       "rules_drift_fail_closed",
