@@ -15,7 +15,7 @@ import time
 import uuid
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Any, Iterator, Sequence
+from typing import Any, Callable, Iterator, Sequence
 
 SKILL_ROOT = Path(__file__).resolve().parents[1]
 REFERENCE_ROOT = SKILL_ROOT / "references"
@@ -10232,6 +10232,855 @@ def research(
     return receipt
 
 
+RESEARCH_STATE_SCHEMA = "xinao.research_state.v1"
+RESEARCH_STATE_HEAD_SCHEMA = "xinao.research_state_head.v1"
+RESEARCH_STATE_SERIES_SCHEMA = "xinao.research_state_series.v1"
+RESEARCH_STATE_RESULT_SCHEMA = "xinao.research_state_command_result.v1"
+RESEARCH_STATE_MAX_CHAIN_LENGTH = 10000
+RESEARCH_STATE_ARTIFACT_NAMES = ("candidate", "result", "receipt")
+RESEARCH_STATE_PRIOR_MATERIAL_NAMES = (
+    "prior_research_state.json",
+    "prior_candidate.json",
+    "prior_result.json",
+    "prior_receipt.json",
+)
+
+
+def _research_state_root(root: Path, *, create: bool = False) -> Path:
+    expanded = root.expanduser()
+    if not expanded.is_absolute():
+        raise XinaoError("RESEARCH_STATE_ROOT_INVALID", str(root))
+    lexical = Path(os.path.abspath(expanded))
+    try:
+        if create:
+            lexical.mkdir(parents=True, exist_ok=True)
+        info = os.lstat(lexical)
+    except OSError as exc:
+        raise XinaoError("RESEARCH_STATE_ROOT_INVALID", f"{lexical}: {exc}") from exc
+    if _is_reparse_stat(info) or not stat.S_ISDIR(info.st_mode):
+        raise XinaoError("RESEARCH_STATE_ROOT_INVALID", str(lexical))
+    return lexical
+
+
+@contextmanager
+def _research_state_lock(root: Path) -> Iterator[None]:
+    """Serialize one ResearchState series with a real Windows/POSIX file lock."""
+
+    base = _research_state_root(root)
+    lock_path = base / ".research_state.lock"
+    if not os.path.lexists(lock_path):
+        try:
+            with lock_path.open("xb", buffering=0) as created:
+                created.write(b"\0")
+                os.fsync(created.fileno())
+        except FileExistsError:
+            pass
+        except OSError as exc:
+            raise XinaoError("RESEARCH_STATE_LOCK_CREATE_FAILED", f"{lock_path}: {exc}") from exc
+    try:
+        before = os.lstat(lock_path)
+        if (
+            _is_reparse_stat(before)
+            or not stat.S_ISREG(before.st_mode)
+            or before.st_nlink != 1
+            or before.st_size < 1
+        ):
+            raise XinaoError("RESEARCH_STATE_LOCK_INVALID", str(lock_path))
+        stream = lock_path.open("r+b", buffering=0)
+    except XinaoError:
+        raise
+    except OSError as exc:
+        raise XinaoError("RESEARCH_STATE_LOCK_OPEN_FAILED", f"{lock_path}: {exc}") from exc
+    locked = False
+    deadline = time.monotonic() + 30.0
+    try:
+        opened = os.fstat(stream.fileno())
+
+        def identity(value: os.stat_result) -> tuple[int, int, int, int, int]:
+            return (
+                value.st_dev,
+                value.st_ino,
+                value.st_mode,
+                value.st_nlink,
+                value.st_size,
+            )
+
+        if (
+            _is_reparse_stat(opened)
+            or not stat.S_ISREG(opened.st_mode)
+            or identity(opened) != identity(before)
+        ):
+            raise XinaoError("RESEARCH_STATE_LOCK_CHANGED", str(lock_path))
+        while not locked:
+            try:
+                stream.seek(0)
+                if os.name == "nt":
+                    import msvcrt
+
+                    msvcrt.locking(stream.fileno(), msvcrt.LK_NBLCK, 1)
+                else:  # pragma: no cover - non-Windows CI
+                    import fcntl
+
+                    fcntl.flock(stream.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+                locked = True
+            except OSError as exc:
+                if time.monotonic() >= deadline:
+                    raise XinaoError("RESEARCH_STATE_LOCK_TIMEOUT", f"{lock_path}: {exc}") from exc
+                time.sleep(0.05)
+        after = os.lstat(lock_path)
+        if _is_reparse_stat(after) or identity(after) != identity(opened):
+            raise XinaoError("RESEARCH_STATE_LOCK_CHANGED", str(lock_path))
+        yield
+    finally:
+        if locked:
+            try:
+                stream.seek(0)
+                if os.name == "nt":
+                    import msvcrt
+
+                    msvcrt.locking(stream.fileno(), msvcrt.LK_UNLCK, 1)
+                else:  # pragma: no cover - non-Windows CI
+                    import fcntl
+
+                    fcntl.flock(stream.fileno(), fcntl.LOCK_UN)
+            except OSError:
+                pass
+        stream.close()
+
+
+def _research_state_series_path(root: Path) -> Path:
+    return root / "series.json"
+
+
+def _research_state_head_path(root: Path) -> Path:
+    return root / "head.json"
+
+
+def _research_state_cas_path(root: Path, kind: str, digest: str) -> Path:
+    if kind not in {"objects", "artifacts"}:
+        raise XinaoError("RESEARCH_STATE_CAS_KIND_INVALID", kind)
+    if HEX_SHA256_PATTERN.fullmatch(digest) is None:
+        raise XinaoError("RESEARCH_STATE_SHA256_INVALID", digest)
+    return root / kind / "sha256" / digest[:2] / f"{digest}.json"
+
+
+def _research_state_put_bytes(root: Path, kind: str, payload: bytes) -> str:
+    digest = _sha256_bytes(payload)
+    path = _research_state_cas_path(root, kind, digest)
+    if path.is_file():
+        existing = _regular_file_bytes(
+            path,
+            reason_code="RESEARCH_STATE_CAS_READ_FAILED",
+            maximum=MAX_JSON_FILE_BYTES,
+        )
+        if existing != payload:
+            raise XinaoError("RESEARCH_STATE_IMMUTABLE_COLLISION", str(path))
+        return digest
+    _write_bytes_atomic(path, payload, create_new=True)
+    return digest
+
+
+def _research_state_load_bytes(root: Path, kind: str, digest: str) -> bytes:
+    path = _research_state_cas_path(root, kind, digest)
+    payload = _regular_file_bytes(
+        path,
+        reason_code="RESEARCH_STATE_OBJECT_MISSING"
+        if kind == "objects"
+        else "RESEARCH_STATE_ARTIFACT_MISSING",
+        maximum=MAX_JSON_FILE_BYTES,
+    )
+    observed = _sha256_bytes(payload)
+    if observed != digest:
+        raise XinaoError(
+            "RESEARCH_STATE_OBJECT_HASH_MISMATCH"
+            if kind == "objects"
+            else "RESEARCH_STATE_ARTIFACT_HASH_MISMATCH",
+            f"expected={digest} observed={observed}",
+        )
+    return payload
+
+
+def _research_state_json_bytes(payload: bytes, *, reason_code: str, detail: str) -> dict[str, Any]:
+    try:
+        text = payload.decode("utf-8")
+    except UnicodeDecodeError as exc:
+        raise XinaoError(reason_code, detail) from exc
+    value = _strict_json_loads(text, reason_code=reason_code, detail=detail)
+    if not isinstance(value, dict):
+        raise XinaoError(reason_code, detail)
+    return value
+
+
+def _research_state_write_immutable(path: Path, payload: bytes) -> None:
+    if path.is_file():
+        existing = _regular_file_bytes(
+            path,
+            reason_code="RESEARCH_STATE_MATERIAL_VIEW_INVALID",
+            maximum=MAX_JSON_FILE_BYTES,
+        )
+        if existing != payload:
+            raise XinaoError("RESEARCH_STATE_IMMUTABLE_COLLISION", str(path))
+        return
+    _write_bytes_atomic(path, payload, create_new=True)
+
+
+def _validate_research_state_series(value: dict[str, Any]) -> None:
+    if set(value) != {"schema_version", "series_id", "created_at"}:
+        raise XinaoError("RESEARCH_STATE_SERIES_INVALID", "fields")
+    if value.get("schema_version") != RESEARCH_STATE_SERIES_SCHEMA:
+        raise XinaoError("RESEARCH_STATE_SERIES_INVALID", "schema_version")
+    series_id = value.get("series_id")
+    if (
+        not isinstance(series_id, str)
+        or re.fullmatch(r"xrs_[0-9]{8}T[0-9]{6}_[0-9a-f]{12}", series_id) is None
+    ):
+        raise XinaoError("RESEARCH_STATE_SERIES_INVALID", _safe_text(series_id))
+    if not _plain_json_text(value.get("created_at"), nonempty=True, maximum_bytes=4096):
+        raise XinaoError("RESEARCH_STATE_SERIES_INVALID", "created_at")
+
+
+def _validate_research_state_head(value: dict[str, Any]) -> None:
+    if set(value) != {
+        "schema_version",
+        "series_id",
+        "head_state_sha256",
+        "step_index",
+        "generation",
+        "updated_at",
+    }:
+        raise XinaoError("RESEARCH_STATE_HEAD_INVALID", "fields")
+    if value.get("schema_version") != RESEARCH_STATE_HEAD_SCHEMA:
+        raise XinaoError("RESEARCH_STATE_HEAD_INVALID", "schema_version")
+    if HEX_SHA256_PATTERN.fullmatch(str(value.get("head_state_sha256", ""))) is None:
+        raise XinaoError("RESEARCH_STATE_HEAD_INVALID", "head_state_sha256")
+    if type(value.get("step_index")) is not int or value["step_index"] < 0:
+        raise XinaoError("RESEARCH_STATE_HEAD_INVALID", "step_index")
+    if type(value.get("generation")) is not int or value["generation"] < 1:
+        raise XinaoError("RESEARCH_STATE_HEAD_INVALID", "generation")
+    if value["generation"] != value["step_index"] + 1:
+        raise XinaoError("RESEARCH_STATE_HEAD_INVALID", "generation/step_index")
+    if not _plain_json_text(value.get("updated_at"), nonempty=True, maximum_bytes=4096):
+        raise XinaoError("RESEARCH_STATE_HEAD_INVALID", "updated_at")
+
+
+def _validate_research_state_body(value: dict[str, Any]) -> None:
+    expected = {
+        "schema_version",
+        "series_id",
+        "step_index",
+        "predecessor_state_sha256",
+        "predecessor_material_sha256s",
+        "research_question",
+        "as_of",
+        "run_id",
+        "request_sha256",
+        "material_bundle_id",
+        "material_manifest_sha256",
+        "material_packet_sha256",
+        "candidate_sha256",
+        "result_sha256",
+        "receipt_sha256",
+        "artifact_sha256s",
+        "provider_effect",
+        "release_id",
+        "skill_bundle_tree_sha256",
+        "created_at",
+        "research_progress_claim_allowed",
+        "science_restored",
+        "parent_complete",
+        "completion_claim_allowed",
+    }
+    if set(value) != expected or value.get("schema_version") != RESEARCH_STATE_SCHEMA:
+        raise XinaoError("RESEARCH_STATE_FIELDS_INVALID", "state fields/schema")
+    if type(value.get("step_index")) is not int or value["step_index"] < 0:
+        raise XinaoError("RESEARCH_STATE_STEP_INDEX_INVALID", _safe_text(value.get("step_index")))
+    predecessor = value.get("predecessor_state_sha256")
+    predecessor_materials = value.get("predecessor_material_sha256s")
+    if value["step_index"] == 0:
+        if predecessor is not None or predecessor_materials is not None:
+            raise XinaoError("RESEARCH_STATE_PREDECESSOR_MISMATCH", "genesis")
+    else:
+        if not isinstance(predecessor, str) or HEX_SHA256_PATTERN.fullmatch(predecessor) is None:
+            raise XinaoError("RESEARCH_STATE_PREDECESSOR_MISMATCH", "predecessor digest")
+        if not isinstance(predecessor_materials, dict) or set(predecessor_materials) != {
+            "state",
+            "candidate",
+            "result",
+            "receipt",
+        }:
+            raise XinaoError("RESEARCH_STATE_PREDECESSOR_MATERIAL_UNBOUND", "fields")
+        if any(
+            not isinstance(item, str) or HEX_SHA256_PATTERN.fullmatch(item) is None
+            for item in predecessor_materials.values()
+        ):
+            raise XinaoError("RESEARCH_STATE_PREDECESSOR_MATERIAL_UNBOUND", "digests")
+    for key in (
+        "request_sha256",
+        "material_manifest_sha256",
+        "material_packet_sha256",
+        "candidate_sha256",
+        "result_sha256",
+        "receipt_sha256",
+        "skill_bundle_tree_sha256",
+    ):
+        field = value.get(key)
+        if not isinstance(field, str) or HEX_SHA256_PATTERN.fullmatch(field) is None:
+            raise XinaoError("RESEARCH_STATE_SHA256_INVALID", key)
+    for key in (
+        "series_id",
+        "research_question",
+        "as_of",
+        "run_id",
+        "material_bundle_id",
+        "release_id",
+        "created_at",
+    ):
+        if not _plain_json_text(value.get(key), nonempty=True, maximum_bytes=128 * 1024):
+            raise XinaoError("RESEARCH_STATE_TEXT_INVALID", key)
+    artifacts = value.get("artifact_sha256s")
+    if not isinstance(artifacts, dict) or set(artifacts) != set(RESEARCH_STATE_ARTIFACT_NAMES):
+        raise XinaoError("RESEARCH_STATE_ARTIFACT_BINDING_INVALID", "fields")
+    if (
+        artifacts.get("candidate") != value.get("candidate_sha256")
+        or artifacts.get("result") != value.get("result_sha256")
+        or artifacts.get("receipt") != value.get("receipt_sha256")
+    ):
+        raise XinaoError("RESEARCH_STATE_ARTIFACT_BINDING_INVALID", "digest mismatch")
+    effect = value.get("provider_effect")
+    if not isinstance(effect, dict) or set(effect) != {
+        "stop_reason",
+        "num_turns",
+        "model_ids",
+        "model_calls",
+    }:
+        raise XinaoError("RESEARCH_STATE_PROVIDER_EFFECT_INVALID", "fields")
+    if (
+        effect.get("stop_reason") != "EndTurn"
+        or effect.get("num_turns") != 1
+        or not isinstance(effect.get("model_ids"), list)
+        or not effect["model_ids"]
+        or type(effect.get("model_calls")) is not int
+        or effect["model_calls"] < 1
+    ):
+        raise XinaoError("RESEARCH_STATE_PROVIDER_EFFECT_INVALID", "values")
+    for flag in (
+        "research_progress_claim_allowed",
+        "science_restored",
+        "parent_complete",
+        "completion_claim_allowed",
+    ):
+        if value.get(flag) is not False:
+            raise XinaoError("RESEARCH_STATE_BOUNDARY_INVALID", flag)
+
+
+def _research_state_receipt_artifacts(
+    receipt: dict[str, Any],
+) -> tuple[dict[str, bytes], dict[str, Any]]:
+    if receipt.get("schema_version") != "xinao.skill_research_receipt.v2":
+        raise XinaoError("RESEARCH_STATE_RECEIPT_INVALID", "schema_version")
+    receipt_path = Path(str(receipt.get("receipt_path", "")))
+    result_path = Path(str(receipt.get("result_path", "")))
+    if not receipt_path.is_absolute() or not result_path.is_absolute():
+        raise XinaoError("RESEARCH_STATE_RECEIPT_INVALID", "artifact paths")
+    receipt_bytes = _regular_file_bytes(
+        receipt_path,
+        reason_code="RESEARCH_STATE_RECEIPT_INVALID",
+        maximum=MAX_JSON_FILE_BYTES,
+    )
+    result_bytes = _regular_file_bytes(
+        result_path,
+        reason_code="RESEARCH_STATE_RESULT_INVALID",
+        maximum=MAX_JSON_FILE_BYTES,
+    )
+    receipt_sha256 = str(receipt.get("receipt_sha256", ""))
+    result_sha256 = str(receipt.get("result_sha256", ""))
+    if _sha256_bytes(receipt_bytes) != receipt_sha256:
+        raise XinaoError("RESEARCH_STATE_RECEIPT_INVALID", "receipt_sha256")
+    if _sha256_bytes(result_bytes) != result_sha256:
+        raise XinaoError("RESEARCH_STATE_RESULT_INVALID", "result_sha256")
+    sealed_receipt = _research_state_json_bytes(
+        receipt_bytes,
+        reason_code="RESEARCH_STATE_RECEIPT_INVALID",
+        detail=str(receipt_path),
+    )
+    result = _research_state_json_bytes(
+        result_bytes,
+        reason_code="RESEARCH_STATE_RESULT_INVALID",
+        detail=str(result_path),
+    )
+    returned_envelope = dict(receipt)
+    returned_envelope.pop("receipt_path", None)
+    returned_envelope.pop("receipt_sha256", None)
+    if returned_envelope != sealed_receipt:
+        raise XinaoError(
+            "RESEARCH_STATE_RECEIPT_ENVELOPE_MISMATCH",
+            "returned receipt differs from sealed receipt bytes",
+        )
+    for flag in (
+        "research_progress_claim_allowed",
+        "science_restored",
+        "parent_complete",
+        "completion_claim_allowed",
+    ):
+        if sealed_receipt.get(flag) is not False:
+            raise XinaoError("RESEARCH_STATE_BOUNDARY_INVALID", flag)
+    evidence = sealed_receipt.get("provider_evidence")
+    if not isinstance(evidence, dict):
+        raise XinaoError("RESEARCH_STATE_PROVIDER_EFFECT_INVALID", "provider_evidence")
+    try:
+        model_id, model_calls = _validate_provider_effect(
+            {
+                "provider_stop_reason": evidence.get("stop_reason"),
+                "provider_num_turns": evidence.get("num_turns"),
+                "provider_session_id_present": evidence.get("session_id_present"),
+                "provider_request_id_present": evidence.get("request_id_present"),
+                "provider_model_usage": evidence.get("model_usage"),
+                "usage": evidence.get("usage"),
+            },
+            {"provider_model_usage_key": "grok-4.5-build"},
+        )
+    except XinaoError as exc:
+        raise XinaoError(
+            "RESEARCH_STATE_PROVIDER_EFFECT_INVALID", f"{exc.reason_code}:{exc.detail}"
+        ) from exc
+    candidate = sealed_receipt.get("candidate")
+    if not isinstance(candidate, dict):
+        raise XinaoError("RESEARCH_STATE_RECEIPT_INVALID", "candidate")
+    if sealed_receipt.get("candidate") != candidate or result.get("candidate") != candidate:
+        raise XinaoError("RESEARCH_STATE_ARTIFACT_BINDING_INVALID", "candidate drift")
+    candidate_bytes = _canonical_bytes(candidate)
+    return (
+        {
+            "candidate": candidate_bytes,
+            "result": result_bytes,
+            "receipt": receipt_bytes,
+        },
+        {
+            "stop_reason": "EndTurn",
+            "num_turns": 1,
+            "model_ids": [model_id],
+            "model_calls": model_calls,
+        },
+    )
+
+
+def _research_state_load_object(root: Path, digest: str) -> tuple[dict[str, Any], bytes]:
+    payload = _research_state_load_bytes(root, "objects", digest)
+    value = _research_state_json_bytes(
+        payload,
+        reason_code="RESEARCH_STATE_OBJECT_HASH_MISMATCH",
+        detail=digest,
+    )
+    _validate_research_state_body(value)
+    return value, payload
+
+
+def _research_state_verify_artifacts(root: Path, state: dict[str, Any]) -> None:
+    artifact_bytes = {
+        name: _research_state_load_bytes(root, "artifacts", state["artifact_sha256s"][name])
+        for name in RESEARCH_STATE_ARTIFACT_NAMES
+    }
+    candidate = _research_state_json_bytes(
+        artifact_bytes["candidate"],
+        reason_code="RESEARCH_STATE_ARTIFACT_HASH_MISMATCH",
+        detail="candidate",
+    )
+    result = _research_state_json_bytes(
+        artifact_bytes["result"],
+        reason_code="RESEARCH_STATE_ARTIFACT_HASH_MISMATCH",
+        detail="result",
+    )
+    receipt = _research_state_json_bytes(
+        artifact_bytes["receipt"],
+        reason_code="RESEARCH_STATE_ARTIFACT_HASH_MISMATCH",
+        detail="receipt",
+    )
+    if result.get("candidate") != candidate or receipt.get("candidate") != candidate:
+        raise XinaoError("RESEARCH_STATE_ARTIFACT_BINDING_INVALID", "candidate/result/receipt")
+
+
+def _research_state_load_chain(
+    root: Path,
+) -> tuple[dict[str, Any], dict[str, Any], list[tuple[str, dict[str, Any]]]]:
+    series_path = _research_state_series_path(root)
+    head_path = _research_state_head_path(root)
+    if not series_path.is_file() and not head_path.is_file():
+        raise XinaoError("RESEARCH_STATE_HEAD_MISSING", str(root))
+    if not series_path.is_file() or not head_path.is_file():
+        raise XinaoError("RESEARCH_STATE_CRASH_INCONSISTENT", "series/head partial")
+    series = _load_json(series_path)
+    head = _load_json(head_path)
+    _validate_research_state_series(series)
+    _validate_research_state_head(head)
+    if head.get("series_id") != series.get("series_id"):
+        raise XinaoError("RESEARCH_STATE_FOREIGN_SERIES", "head/series")
+    chain: list[tuple[str, dict[str, Any]]] = []
+    digest = str(head["head_state_sha256"])
+    expected_index = int(head["step_index"])
+    visited: set[str] = set()
+    successor: dict[str, Any] | None = None
+    while True:
+        if len(chain) >= RESEARCH_STATE_MAX_CHAIN_LENGTH or digest in visited:
+            raise XinaoError("RESEARCH_STATE_CHAIN_INVALID", "cycle/length")
+        visited.add(digest)
+        state, _payload = _research_state_load_object(root, digest)
+        if state.get("series_id") != series.get("series_id"):
+            raise XinaoError("RESEARCH_STATE_FOREIGN_SERIES", digest)
+        if state.get("step_index") != expected_index:
+            raise XinaoError("RESEARCH_STATE_STEP_INDEX_INVALID", digest)
+        _research_state_verify_artifacts(root, state)
+        if successor is not None:
+            expected_materials = {
+                "state": digest,
+                "candidate": state["candidate_sha256"],
+                "result": state["result_sha256"],
+                "receipt": state["receipt_sha256"],
+            }
+            if successor.get("predecessor_material_sha256s") != expected_materials:
+                raise XinaoError(
+                    "RESEARCH_STATE_PREDECESSOR_MATERIAL_UNBOUND",
+                    f"step={successor.get('step_index')}",
+                )
+        chain.append((digest, state))
+        predecessor = state.get("predecessor_state_sha256")
+        if expected_index == 0:
+            if predecessor is not None:
+                raise XinaoError("RESEARCH_STATE_PREDECESSOR_MISMATCH", digest)
+            break
+        if not isinstance(predecessor, str):
+            raise XinaoError("RESEARCH_STATE_PREDECESSOR_MISMATCH", digest)
+        successor = state
+        digest = predecessor
+        expected_index -= 1
+    if len(chain) != int(head["step_index"]) + 1:
+        raise XinaoError("RESEARCH_STATE_CHAIN_INVALID", "history gap")
+    return series, head, chain
+
+
+def _research_state_prior_materials(
+    root: Path,
+    *,
+    next_step_index: int,
+    predecessor_digest: str,
+    predecessor: dict[str, Any],
+) -> tuple[list[Path], dict[str, str]]:
+    state_bytes = _research_state_load_bytes(root, "objects", predecessor_digest)
+    artifact_bytes = {
+        name: _research_state_load_bytes(root, "artifacts", predecessor["artifact_sha256s"][name])
+        for name in RESEARCH_STATE_ARTIFACT_NAMES
+    }
+    digests = {
+        "state": predecessor_digest,
+        "candidate": predecessor["candidate_sha256"],
+        "result": predecessor["result_sha256"],
+        "receipt": predecessor["receipt_sha256"],
+    }
+    view_root = root / "material_views" / f"step-{next_step_index:06d}-from-{predecessor_digest}"
+    payloads = (
+        (RESEARCH_STATE_PRIOR_MATERIAL_NAMES[0], state_bytes),
+        (RESEARCH_STATE_PRIOR_MATERIAL_NAMES[1], artifact_bytes["candidate"]),
+        (RESEARCH_STATE_PRIOR_MATERIAL_NAMES[2], artifact_bytes["result"]),
+        (RESEARCH_STATE_PRIOR_MATERIAL_NAMES[3], artifact_bytes["receipt"]),
+    )
+    paths: list[Path] = []
+    for name, payload in payloads:
+        path = view_root / name
+        _research_state_write_immutable(path, payload)
+        paths.append(path)
+    return paths, digests
+
+
+def _research_state_require_prior_material_binding(
+    receipt: dict[str, Any], expected: dict[str, str]
+) -> None:
+    refs = receipt.get("material_source_refs")
+    if not isinstance(refs, list):
+        raise XinaoError("RESEARCH_STATE_PREDECESSOR_MATERIAL_UNBOUND", "material_source_refs")
+    expected_by_name = {
+        RESEARCH_STATE_PRIOR_MATERIAL_NAMES[0]: expected["state"],
+        RESEARCH_STATE_PRIOR_MATERIAL_NAMES[1]: expected["candidate"],
+        RESEARCH_STATE_PRIOR_MATERIAL_NAMES[2]: expected["result"],
+        RESEARCH_STATE_PRIOR_MATERIAL_NAMES[3]: expected["receipt"],
+    }
+    observed_by_name: dict[str, str] = {}
+    for item in refs:
+        if not isinstance(item, dict) or set(item) != {"material_id", "source_path", "sha256"}:
+            raise XinaoError(
+                "RESEARCH_STATE_PREDECESSOR_MATERIAL_UNBOUND", "material_source_ref fields"
+            )
+        digest = item.get("sha256")
+        if (
+            not isinstance(digest, str)
+            or HEX_SHA256_PATTERN.fullmatch(digest) is None
+            or item.get("material_id") != f"sha256:{digest}"
+        ):
+            raise XinaoError(
+                "RESEARCH_STATE_PREDECESSOR_MATERIAL_UNBOUND", "material_source_ref identity"
+            )
+        name = Path(str(item.get("source_path", ""))).name
+        if name in expected_by_name:
+            if name in observed_by_name:
+                raise XinaoError("RESEARCH_STATE_PREDECESSOR_MATERIAL_UNBOUND", f"duplicate:{name}")
+            observed_by_name[name] = digest
+    if observed_by_name != expected_by_name:
+        raise XinaoError(
+            "RESEARCH_STATE_PREDECESSOR_MATERIAL_UNBOUND",
+            "prior material filename/digest mapping mismatch",
+        )
+
+
+def _research_state_commit_step(
+    root: Path,
+    *,
+    series_id: str,
+    step_index: int,
+    predecessor_state_sha256: str | None,
+    predecessor_material_sha256s: dict[str, str] | None,
+    question: str,
+    as_of: str | None,
+    receipt: dict[str, Any],
+    create_head: bool,
+) -> dict[str, Any]:
+    artifacts, provider_effect = _research_state_receipt_artifacts(receipt)
+    artifact_sha256s = {
+        name: _research_state_put_bytes(root, "artifacts", artifacts[name])
+        for name in RESEARCH_STATE_ARTIFACT_NAMES
+    }
+    if predecessor_material_sha256s is not None:
+        _research_state_require_prior_material_binding(receipt, predecessor_material_sha256s)
+    effective_as_of = as_of or str(receipt.get("created_at") or _utc_now())
+    state = {
+        "schema_version": RESEARCH_STATE_SCHEMA,
+        "series_id": series_id,
+        "step_index": step_index,
+        "predecessor_state_sha256": predecessor_state_sha256,
+        "predecessor_material_sha256s": predecessor_material_sha256s,
+        "research_question": question,
+        "as_of": effective_as_of,
+        "run_id": receipt.get("run_id"),
+        "request_sha256": receipt.get("request_sha256"),
+        "material_bundle_id": receipt.get("material_bundle_id"),
+        "material_manifest_sha256": receipt.get("material_manifest_sha256"),
+        "material_packet_sha256": receipt.get("material_packet_sha256"),
+        "candidate_sha256": artifact_sha256s["candidate"],
+        "result_sha256": artifact_sha256s["result"],
+        "receipt_sha256": artifact_sha256s["receipt"],
+        "artifact_sha256s": artifact_sha256s,
+        "provider_effect": provider_effect,
+        "release_id": receipt.get("release_id"),
+        "skill_bundle_tree_sha256": receipt.get("skill_bundle_tree_sha256"),
+        "created_at": _utc_now(),
+        "research_progress_claim_allowed": False,
+        "science_restored": False,
+        "parent_complete": False,
+        "completion_claim_allowed": False,
+    }
+    _validate_research_state_body(state)
+    state_digest = _research_state_put_bytes(root, "objects", _canonical_bytes(state))
+    head = {
+        "schema_version": RESEARCH_STATE_HEAD_SCHEMA,
+        "series_id": series_id,
+        "head_state_sha256": state_digest,
+        "step_index": step_index,
+        "generation": step_index + 1,
+        "updated_at": _utc_now(),
+    }
+    _validate_research_state_head(head)
+    _write_json_atomic(_research_state_head_path(root), head, create_new=create_head)
+    return {
+        "schema_version": RESEARCH_STATE_RESULT_SCHEMA,
+        "status": "GENESIS_COMMITTED" if step_index == 0 else "ADVANCE_COMMITTED",
+        "root": str(root),
+        "series_id": series_id,
+        "step_index": step_index,
+        "head_state_sha256": state_digest,
+        "predecessor_state_sha256": predecessor_state_sha256,
+        "state": state,
+        "research_progress_claim_allowed": False,
+        "science_restored": False,
+        "parent_complete": False,
+        "completion_claim_allowed": False,
+    }
+
+
+ResearchStateResearchFn = Callable[[str, str | None, Sequence[Path] | None], dict[str, Any]]
+
+
+def research_state_genesis(
+    *,
+    root: Path,
+    question: str,
+    as_of: str | None = None,
+    material_paths: Sequence[Path] | None = None,
+    research_fn: ResearchStateResearchFn | None = None,
+) -> dict[str, Any]:
+    base = _research_state_root(root, create=True)
+    clean_question = question.strip()
+    if not _plain_json_text(clean_question, nonempty=True, maximum_bytes=128 * 1024):
+        raise XinaoError("RESEARCH_QUESTION_INVALID", "question must be bounded UTF-8 text")
+    runner = research if research_fn is None else research_fn
+    with _research_state_lock(base):
+        if _research_state_series_path(base).exists() or _research_state_head_path(base).exists():
+            raise XinaoError("RESEARCH_STATE_HEAD_EXISTS", str(base))
+        series_id = (
+            "xrs_" + dt.datetime.now(dt.UTC).strftime("%Y%m%dT%H%M%S") + "_" + uuid.uuid4().hex[:12]
+        )
+        receipt = runner(clean_question, as_of, tuple(material_paths or ()))
+        series = {
+            "schema_version": RESEARCH_STATE_SERIES_SCHEMA,
+            "series_id": series_id,
+            "created_at": _utc_now(),
+        }
+        _validate_research_state_series(series)
+        _write_json_atomic(_research_state_series_path(base), series, create_new=True)
+        try:
+            return _research_state_commit_step(
+                base,
+                series_id=series_id,
+                step_index=0,
+                predecessor_state_sha256=None,
+                predecessor_material_sha256s=None,
+                question=clean_question,
+                as_of=as_of,
+                receipt=receipt,
+                create_head=True,
+            )
+        except BaseException:
+            if not _research_state_head_path(base).exists():
+                _research_state_series_path(base).unlink(missing_ok=True)
+            raise
+
+
+def research_state_advance(
+    *,
+    root: Path,
+    expected_head_sha256: str,
+    question: str,
+    as_of: str | None = None,
+    material_paths: Sequence[Path] | None = None,
+    research_fn: ResearchStateResearchFn | None = None,
+) -> dict[str, Any]:
+    base = _research_state_root(root)
+    if HEX_SHA256_PATTERN.fullmatch(expected_head_sha256) is None:
+        raise XinaoError("RESEARCH_STATE_STALE_HEAD", expected_head_sha256)
+    clean_question = question.strip()
+    if not _plain_json_text(clean_question, nonempty=True, maximum_bytes=128 * 1024):
+        raise XinaoError("RESEARCH_QUESTION_INVALID", "question must be bounded UTF-8 text")
+    runner = research if research_fn is None else research_fn
+    with _research_state_lock(base):
+        series, head, chain = _research_state_load_chain(base)
+        if head["head_state_sha256"] != expected_head_sha256:
+            raise XinaoError(
+                "RESEARCH_STATE_STALE_HEAD",
+                f"expected={expected_head_sha256} actual={head['head_state_sha256']}",
+            )
+        predecessor_digest, predecessor = chain[0]
+        next_index = int(head["step_index"]) + 1
+        prior_paths, prior_digests = _research_state_prior_materials(
+            base,
+            next_step_index=next_index,
+            predecessor_digest=predecessor_digest,
+            predecessor=predecessor,
+        )
+        receipt = runner(
+            clean_question,
+            as_of,
+            tuple(material_paths or ()) + tuple(prior_paths),
+        )
+        if receipt.get("run_id") == predecessor.get("run_id"):
+            raise XinaoError("RESEARCH_STATE_PROVIDER_EFFECT_REUSED", str(receipt.get("run_id")))
+        current_head = _load_json(_research_state_head_path(base))
+        _validate_research_state_head(current_head)
+        if current_head.get("head_state_sha256") != expected_head_sha256:
+            raise XinaoError("RESEARCH_STATE_STALE_HEAD", "head changed before commit")
+        return _research_state_commit_step(
+            base,
+            series_id=str(series["series_id"]),
+            step_index=next_index,
+            predecessor_state_sha256=expected_head_sha256,
+            predecessor_material_sha256s=prior_digests,
+            question=clean_question,
+            as_of=as_of,
+            receipt=receipt,
+            create_head=False,
+        )
+
+
+def research_state_inspect(*, root: Path) -> dict[str, Any]:
+    base = _research_state_root(root)
+    with _research_state_lock(base):
+        series, head, chain = _research_state_load_chain(base)
+        return {
+            "schema_version": RESEARCH_STATE_RESULT_SCHEMA,
+            "status": "HEAD_OK",
+            "root": str(base),
+            "series": series,
+            "head": head,
+            "state": chain[0][1],
+            "chain_length": len(chain),
+            "research_progress_claim_allowed": False,
+            "science_restored": False,
+            "parent_complete": False,
+            "completion_claim_allowed": False,
+        }
+
+
+def research_state_recover_partial(*, root: Path) -> dict[str, Any]:
+    """Reset only an uncommitted series marker left before the first head publish."""
+
+    base = _research_state_root(root)
+    with _research_state_lock(base):
+        series_path = _research_state_series_path(base)
+        head_path = _research_state_head_path(base)
+        series_exists = os.path.lexists(series_path)
+        head_exists = os.path.lexists(head_path)
+        if head_exists and not series_exists:
+            raise XinaoError("RESEARCH_STATE_CRASH_INCONSISTENT", "head without series")
+        if head_exists:
+            series, head, chain = _research_state_load_chain(base)
+            return {
+                "schema_version": RESEARCH_STATE_RESULT_SCHEMA,
+                "status": "HEAD_UNCHANGED",
+                "root": str(base),
+                "series": series,
+                "head": head,
+                "chain_length": len(chain),
+                "orphan_cas_preserved": True,
+                "research_progress_claim_allowed": False,
+                "science_restored": False,
+                "parent_complete": False,
+                "completion_claim_allowed": False,
+            }
+        if not series_exists:
+            return {
+                "schema_version": RESEARCH_STATE_RESULT_SCHEMA,
+                "status": "EMPTY_UNCHANGED",
+                "root": str(base),
+                "orphan_cas_preserved": True,
+                "research_progress_claim_allowed": False,
+                "science_restored": False,
+                "parent_complete": False,
+                "completion_claim_allowed": False,
+            }
+        series = _load_json(series_path)
+        _validate_research_state_series(series)
+        info = os.lstat(series_path)
+        if _is_reparse_stat(info) or not stat.S_ISREG(info.st_mode) or info.st_nlink != 1:
+            raise XinaoError("RESEARCH_STATE_SERIES_INVALID", str(series_path))
+        series_path.unlink()
+        return {
+            "schema_version": RESEARCH_STATE_RESULT_SCHEMA,
+            "status": "PARTIAL_GENESIS_RESET",
+            "root": str(base),
+            "reset_series_id": series["series_id"],
+            "orphan_cas_preserved": True,
+            "research_progress_claim_allowed": False,
+            "science_restored": False,
+            "parent_complete": False,
+            "completion_claim_allowed": False,
+        }
+
+
 def _build_shadow_docker_create_argv(
     *,
     docker: str,
@@ -10580,6 +11429,23 @@ def _parser() -> argparse.ArgumentParser:
     invoke.add_argument("--question", required=True)
     invoke.add_argument("--as-of", default=None)
     invoke.add_argument("--material", action="append", type=Path, default=[])
+    research_state = sub.add_parser("research-state")
+    research_state_sub = research_state.add_subparsers(dest="research_state_command", required=True)
+    research_state_genesis_parser = research_state_sub.add_parser("genesis")
+    research_state_genesis_parser.add_argument("--root", type=Path, required=True)
+    research_state_genesis_parser.add_argument("--question", required=True)
+    research_state_genesis_parser.add_argument("--as-of", default=None)
+    research_state_genesis_parser.add_argument("--material", action="append", type=Path, default=[])
+    research_state_advance_parser = research_state_sub.add_parser("advance")
+    research_state_advance_parser.add_argument("--root", type=Path, required=True)
+    research_state_advance_parser.add_argument("--expected-head", required=True)
+    research_state_advance_parser.add_argument("--question", required=True)
+    research_state_advance_parser.add_argument("--as-of", default=None)
+    research_state_advance_parser.add_argument("--material", action="append", type=Path, default=[])
+    research_state_inspect_parser = research_state_sub.add_parser("inspect")
+    research_state_inspect_parser.add_argument("--root", type=Path, required=True)
+    research_state_recover_parser = research_state_sub.add_parser("recover-partial")
+    research_state_recover_parser.add_argument("--root", type=Path, required=True)
     shadow = sub.add_parser("shadow")
     shadow_sub = shadow.add_subparsers(dest="shadow_command", required=True)
     shadow_init = shadow_sub.add_parser("init")
@@ -10640,6 +11506,26 @@ def main(argv: Sequence[str] | None = None) -> int:
             value = sync_projection()
         elif args.command == "_canary":
             value = _activation_canary(args.txn_id)
+        elif args.command == "research-state":
+            if args.research_state_command == "genesis":
+                value = research_state_genesis(
+                    root=args.root,
+                    question=args.question,
+                    as_of=args.as_of,
+                    material_paths=args.material,
+                )
+            elif args.research_state_command == "advance":
+                value = research_state_advance(
+                    root=args.root,
+                    expected_head_sha256=args.expected_head,
+                    question=args.question,
+                    as_of=args.as_of,
+                    material_paths=args.material,
+                )
+            elif args.research_state_command == "recover-partial":
+                value = research_state_recover_partial(root=args.root)
+            else:
+                value = research_state_inspect(root=args.root)
         elif args.command == "shadow":
             value = run_shadow(
                 args.shadow_command,

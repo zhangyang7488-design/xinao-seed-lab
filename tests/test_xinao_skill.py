@@ -319,7 +319,7 @@ def _sealed_release(
     image_character: str = "a",
     dirty: bool = False,
     variant: bytes | None = None,
-    package_version: str = "1.3.1",
+    package_version: str = "1.3.2",
     capability_version: str = "1.1.0",
     shadow_runtime_tree_sha256: str | None = None,
     shadow_runtime_lock_sha256: str | None = None,
@@ -744,7 +744,7 @@ def test_package_version_is_separate_from_researcher_versions() -> None:
         for value in registry["capabilities"]
         if value["capability_id"] == "researcher-container"
     )
-    assert registry["skill_version"] == "1.3.1"
+    assert registry["skill_version"] == "1.3.2"
     assert (
         researcher["version"]
         == charter["charter_version"]
@@ -800,7 +800,7 @@ def test_release_v2_and_exact_bundle_roundtrip(
     manifest, manifest_path = _sealed_release(module, tmp_path, monkeypatch)
     bundle_manifest = module._validate_release_manifest(manifest, manifest_path)
     assert manifest["schema_version"] == "xinao.researcher_release.v2"
-    assert manifest["package_version"] == "1.3.1"
+    assert manifest["package_version"] == "1.3.2"
     assert manifest["capability_version"] == "1.1.0"
     assert bundle_manifest["tree_sha256"] == manifest["skill_bundle_tree_sha256"]
     assert any(
@@ -930,7 +930,7 @@ def test_build_is_candidate_only_and_passes_complete_image_identity(
     donor_binary_sha256 = env["donor_binary_sha256"]
     receipt = module.build_release(ROOT, allow_dirty=True)
     assert receipt["status"] == "CANDIDATE_BUILT"
-    assert receipt["package_version"] == "1.3.1"
+    assert receipt["package_version"] == "1.3.2"
     assert receipt["capability_version"] == "1.2.1"
     assert receipt["source_dirty"] is True
     assert receipt["activated"] is False
@@ -1188,7 +1188,7 @@ def test_same_semver_different_content_is_collision(
         tmp_path,
         monkeypatch,
         image_character="a",
-        package_version="1.3.1",
+        package_version="1.3.2",
         capability_version="1.2.1",
     )
     _fake_build_environment(module, monkeypatch, dirty=False, image_character="f")
@@ -5709,7 +5709,7 @@ def _prepare_v2_forward_upgrade_world(
         tmp_path,
         monkeypatch,
         image_character="c",
-        package_version="1.3.1",
+        package_version="1.3.2",
         capability_version="1.2.1",
     )
     monkeypatch.setattr(
@@ -6135,7 +6135,7 @@ def test_bootstrap_forward_upgrade_same_semver_source_drift_fails_closed(
 
     Formal prepare/build surfaces SEMVER_CONTENT_COLLISION; pointer and the existing
     same-semver release remain byte-identical. Version-bumped source upgrades via the
-    separate legal immutable bump path (package 1.3.1 / capability 1.2.1).
+    separate legal immutable bump path (package 1.3.2 / capability 1.2.1).
     """
 
     module = _module()
