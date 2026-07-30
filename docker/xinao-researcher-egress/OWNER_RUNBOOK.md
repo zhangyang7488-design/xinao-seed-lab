@@ -84,7 +84,15 @@ From package root `docker/xinao-researcher-egress` (or absolute paths):
    Live execute requires immutable client image (no floating tag default):
    `pwsh -File .\scripts\Owner-LiveNegativeSuite.ps1 -ClientImageId 'sha256:<64hex local image id>'`
    Fail-closed unauthorized-domain / private / metadata / non-443 / IP-literal checks.
+   Each case uses a structured probe (Docker exit + bounded stdout/stderr) and the shared
+   `Classify-XinaoNegativeProbeOutcome` oracle: infrastructure (missing applet, exit 125/126/127,
+   invalid reference/options, daemon/image/network setup) and ambiguous outcomes never count as
+   policy denial; proxy denies require concrete HTTP 403 / explicit proxy denial + nonzero client
+   exit; direct cases require concrete no-route / unreachable / connect-timeout class (not bare
+   `wget:`). Any infrastructure/ambiguous case makes the suite non-seal-eligible.
    Seal-eligible negative receipt must include exact 13 case IDs, `suite_passed`/`all_cases_passed`, escape observations (`unauthorized_domain_reachable=false`, `direct_no_proxy_escape=false`), posture IDs, and only sealer-allowed keys. Never seals verified.
+   Local `Test-XinaoNegativeSuiteSealReceipt` is **shape-only** (keys/flags/case IDs); it does not
+   enforce observation freshness—strict sealer/runtime do.
 
 5. **Bounded positive engineering canary** (explicitly **not** `research()`, not scientific adoption)
 
@@ -125,8 +133,10 @@ From package root `docker/xinao-researcher-egress` (or absolute paths):
    - Admission binds `-CanaryImageId` to protocol-v2 active release: exact immutable ID, pointer/manifest same image, release `source_identity.grok_donor_image_id` equals runtime-lock donor, live labels match donor/binary/model/chain/generic-worker-route-forbidden; no floating tag resolution. Seal receipt `canary_image_id` is that active researcher image ID; donor remains provenance only.
    - Disposable container on `xinao_researcher_internal` only; read-only rootfs; `cap-drop ALL`; `no-new-privileges`; bounded pids/memory/cpu; tmpfs `/tmp` + `/grok-home`; auth bind-mounted read-only at `/grok-home/.grok/auth.json` (inspect RO before start); exact `HTTP(S)_PROXY`; empty `NO_PROXY`/`ALL_PROXY`; no published ports; no extra hosts.
    - Invokes packaged `/usr/local/bin/grok` headless JSON contract with fixed non-scientific tool-free prompt, requested model `grok-4.5`, max-turns 1, bounded wall time; stdout/stderr drained asynchronously under timeout (no redirected-pipe deadlock); Docker CLI exit must be 0.
-   - Seal-eligible only when receipt contains every sealer `CANARY_REQUIRED_KEYS` field (including exact `usage={input_tokens,output_tokens,total_tokens}`), only allowed keys, `status=observed`, `path_class=engineering_canary`, `real_provider_call=true`, `provider_effect_verified=true`, observed `grok-4.5-build` / `EndTurn` / positive tokens from parsed metadata (not constants), `endpoint_host=cli-chat-proxy.grok.com`, exact posture IDs + canonical `canary_image_id=sha256:<64hex>` equal to the **active researcher image** (not the donor), isolation/persistence flags, all science/authority/completion flags false, UTC `observed_at`.
-   - Raw CLI stdout lands only under owned D: temp as a strict child file (prefix-sibling / reparse / hardlink / directory rejected); delete that exact file only; `raw_output_persisted=false`. Cleanup fields limited to allowed keys (`canary_container_id`, `canary_container_removed`, `raw_output_sha256`, `connect_probe_ok`).
+   - Seal-eligible only when receipt contains every sealer `CANARY_REQUIRED_KEYS` field (including exact `usage={input_tokens,output_tokens,total_tokens}`), only allowed keys, `status=observed`, `path_class=engineering_canary`, `real_provider_call=true`, `provider_effect_verified=true`, observed `grok-4.5-build` / `EndTurn` / positive tokens from **primary** `usage` metadata (not constants; never backfilled from `modelUsage`), `endpoint_host=cli-chat-proxy.grok.com`, exact posture IDs + canonical `canary_image_id=sha256:<64hex>` equal to the **active researcher image** (not the donor), isolation/persistence flags, all science/authority/completion flags false, UTC `observed_at`.
+   - Primary `usage` must itself contain integer `input_tokens`, `output_tokens>0`, `total_tokens>=input+output`; positive `modelCalls` and backend `grok-4.5-build` required; if `modelUsage` token counts exist they must match primary (mismatch fails closed).
+   - Raw CLI stdout lands only under owned D: temp as a strict child file (prefix-sibling / reparse / hardlink / directory rejected); delete that exact file only; `raw_output_persisted=false`. Disposable canary container must be `docker rm --force`'d and re-inspect must prove absence before any seal-eligible receipt (`canary_container_removed=true` enforced at carrier/builder; fail closed if unobserved). Cleanup fields limited to allowed keys (`canary_container_id`, `canary_container_removed`, `raw_output_sha256`, `connect_probe_ok`).
+   - Local `Test-XinaoEngineeringCanarySealReceipt` is **shape-only** (keys/booleans/usage shape); it does not enforce observation freshness—strict sealer/runtime TTL still applies.
    - CONNECT subcheck remains separate transport evidence and **cannot** alone emit a seal-eligible receipt.
    - Empty allowlist cannot PASS.
 

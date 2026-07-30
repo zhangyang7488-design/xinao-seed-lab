@@ -292,10 +292,24 @@ function Invoke-XinaoNativeProcess {
     } else {
         $proc.WaitForExit()
     }
+    # Bound post-exit/post-kill pipe drain so a pathological child cannot hang forever.
+    $drainTimeoutMs = if ($timedOut) { 5000 } else { 30000 }
     $stdout = ''
     $stderr = ''
-    try { $stdout = $stdoutTask.GetAwaiter().GetResult() } catch { $stdout = '' }
-    try { $stderr = $stderrTask.GetAwaiter().GetResult() } catch { $stderr = '' }
+    try {
+        if ($stdoutTask.Wait($drainTimeoutMs)) {
+            $stdout = $stdoutTask.GetAwaiter().GetResult()
+        } else {
+            $stdout = ''
+        }
+    } catch { $stdout = '' }
+    try {
+        if ($stderrTask.Wait($drainTimeoutMs)) {
+            $stderr = $stderrTask.GetAwaiter().GetResult()
+        } else {
+            $stderr = ''
+        }
+    } catch { $stderr = '' }
     if ($timedOut) {
         throw "EGRESS_PROCESS_TIMEOUT:file=$([System.IO.Path]::GetFileName($FilePath))"
     }
@@ -1203,6 +1217,9 @@ function ConvertFrom-XinaoGrokCliJsonText {
     )
     # Parse headless Grok CLI JSON/event contract into redacted metadata only.
     # Never returns model text body, auth, or non-aggregate secrets.
+    # Primary usage.* is authoritative: never backfill zero/missing primary token
+    # fields from modelUsage (W9D-B01). modelUsage is used only for backend model
+    # identity, positive modelCalls, and optional consistency with primary usage.
     if ([string]::IsNullOrWhiteSpace($JsonText)) {
         return [ordered]@{
             ok                        = $false
@@ -1308,6 +1325,9 @@ function ConvertFrom-XinaoGrokCliJsonText {
     $outputTokens = 0
     $totalTokens = 0
     $usageComplete = $false
+    $inF = $null
+    $outF = $null
+    $totF = $null
     if ($null -ne $usage) {
         $inF = Get-XinaoJsonIntField -Obj $usage -Name 'input_tokens'
         $outF = Get-XinaoJsonIntField -Obj $usage -Name 'output_tokens'
@@ -1315,13 +1335,14 @@ function ConvertFrom-XinaoGrokCliJsonText {
         if ($null -ne $inF) { $inputTokens = $inF }
         if ($null -ne $outF) { $outputTokens = $outF }
         if ($null -ne $totF) { $totalTokens = $totF }
-        # Complete accounting: integer fields present and totals consistent.
+        # Complete accounting from primary usage only: all integer fields present,
+        # output_tokens > 0, and total >= input + output. Never promote modelUsage.
         $usageComplete = (
             ($null -ne $inF) -and
             ($null -ne $outF) -and
             ($null -ne $totF) -and
             ($inputTokens -ge 0) -and
-            ($outputTokens -ge 0) -and
+            ($outputTokens -gt 0) -and
             ($totalTokens -gt 0) -and
             ($totalTokens -ge ($inputTokens + $outputTokens))
         )
@@ -1329,6 +1350,8 @@ function ConvertFrom-XinaoGrokCliJsonText {
 
     $observedBackend = $null
     $modelCalls = 0
+    $muOut = $null
+    $muIn = $null
     $modelUsage = $null
     if ($null -ne $payload.PSObject.Properties['modelUsage']) { $modelUsage = $payload.modelUsage }
     if ($null -ne $modelUsage) {
@@ -1340,10 +1363,9 @@ function ConvertFrom-XinaoGrokCliJsonText {
             if ($calls -gt 0) {
                 $observedBackend = [string]$p.Name
                 $modelCalls = $calls
+                # Read modelUsage token fields for consistency only — never backfill primary.
                 $muOut = Get-XinaoJsonIntField -Obj $stats -Name 'outputTokens'
                 $muIn = Get-XinaoJsonIntField -Obj $stats -Name 'inputTokens'
-                if ($outputTokens -le 0 -and $null -ne $muOut) { $outputTokens = $muOut }
-                if ($inputTokens -le 0 -and $null -ne $muIn) { $inputTokens = $muIn }
                 break
             }
         }
@@ -1353,7 +1375,7 @@ function ConvertFrom-XinaoGrokCliJsonText {
             $calls = Get-XinaoJsonIntField -Obj $stats -Name 'modelCalls'
             if ($null -ne $calls) { $modelCalls = $calls }
             $muOut = Get-XinaoJsonIntField -Obj $stats -Name 'outputTokens'
-            if ($outputTokens -le 0 -and $null -ne $muOut) { $outputTokens = $muOut }
+            $muIn = Get-XinaoJsonIntField -Obj $stats -Name 'inputTokens'
         }
     }
 
@@ -1367,13 +1389,22 @@ function ConvertFrom-XinaoGrokCliJsonText {
         $reason = 'OBSERVED_BACKEND_MODEL_MISMATCH'
     } elseif (-not $usageComplete) {
         $ok = $false
-        $reason = 'USAGE_ACCOUNTING_INCOMPLETE'
-    } elseif ($outputTokens -le 0) {
-        $ok = $false
-        $reason = 'OUTPUT_TOKENS_NOT_POSITIVE'
+        # Prefer specific reason when primary output is present but non-positive.
+        if (($null -ne $outF) -and ($outputTokens -le 0) -and ($null -ne $inF) -and ($null -ne $totF)) {
+            $reason = 'OUTPUT_TOKENS_NOT_POSITIVE'
+        } else {
+            $reason = 'USAGE_ACCOUNTING_INCOMPLETE'
+        }
     } elseif ($modelCalls -lt 1) {
         $ok = $false
         $reason = 'MODEL_CALLS_NOT_POSITIVE'
+    } elseif (($null -ne $muOut) -and ($muOut -ne $outputTokens)) {
+        # Fail closed on primary vs modelUsage output inconsistency.
+        $ok = $false
+        $reason = 'MODELUSAGE_OUTPUT_MISMATCH'
+    } elseif (($null -ne $muIn) -and ($muIn -ne $inputTokens)) {
+        $ok = $false
+        $reason = 'MODELUSAGE_INPUT_MISMATCH'
     }
 
     return [ordered]@{
@@ -1424,12 +1455,280 @@ function Get-XinaoReceiptPropertyValue {
     return $prop.Value
 }
 
+function Limit-XinaoBoundedProbeText {
+    [CmdletBinding()]
+    param(
+        [AllowEmptyString()]
+        [string]$Text,
+        [int]$MaxChars = 400
+    )
+    if ([string]::IsNullOrEmpty($Text)) { return '' }
+    $t = $Text -replace '[\r\n]+', ' '
+    $t = $t.Trim()
+    if ($t.Length -le $MaxChars) { return $t }
+    return $t.Substring(0, $MaxChars)
+}
+
+function Test-XinaoNegativeInfrastructureSignal {
+    [CmdletBinding()]
+    param(
+        [int]$ExitCode,
+        [AllowEmptyString()]
+        [string]$Combined
+    )
+    # Docker client / runtime / tool absence — never policy denial.
+    if ($ExitCode -in @(125, 126, 127)) { return $true }
+    $infraPatterns = @(
+        'applet not found',
+        'executable file not found',
+        'command not found',
+        'not found in \$PATH',
+        'no such file or directory',
+        'invalid reference format',
+        'invalid reference',
+        'unknown flag',
+        'unknown option',
+        'flag provided but not defined',
+        'invalid argument',
+        'Cannot connect to the Docker daemon',
+        'Is the docker daemon running',
+        'Error response from daemon',
+        'No such image',
+        'network .+ not found',
+        'Unable to find image',
+        'permission denied while trying to connect',
+        'docker: ''run'' requires',
+        'requires at least'
+    )
+    foreach ($p in $infraPatterns) {
+        if ($Combined -match $p) { return $true }
+    }
+    return $false
+}
+
+function Test-XinaoNegativeProxyPolicyDenial {
+    [CmdletBinding()]
+    param(
+        [AllowEmptyString()]
+        [string]$Combined
+    )
+    # Concrete proxy/policy denial signals only (not generic connect failures).
+    $denyPatterns = @(
+        'HTTP/1\.[01]\s+403',
+        '\b403\s+Forbidden\b',
+        '\b403 Forbidden\b',
+        'Access Denied',
+        'access denied',
+        'Proxy Deny',
+        'proxy deny',
+        'TCP_DENIED',
+        'TAG_NONE/403',
+        'ERR_ACCESS_DENIED',
+        'Forbidden by proxy',
+        'proxy authorization required',
+        'squid.*denied',
+        'CONNECT denied',
+        'cache_peer.*denied',
+        'Request Denied'
+    )
+    foreach ($p in $denyPatterns) {
+        if ($Combined -match $p) { return $true }
+    }
+    # Bare "403" only when not part of a successful/other status line noise is weak;
+    # require digit-bounded 403 with denial context or HTTP status class.
+    if ($Combined -match '(?i)\bHTTP/[0-9.]+\s+403\b') { return $true }
+    if ($Combined -match '(?i)\b403\b' -and $Combined -match '(?i)(denied|forbidden|reject|block)') { return $true }
+    return $false
+}
+
+function Test-XinaoNegativeDirectNoRouteSignal {
+    [CmdletBinding()]
+    param(
+        [AllowEmptyString()]
+        [string]$Combined
+    )
+    # Concrete isolation/no-route classes for direct-no-proxy cases.
+    # Deliberately excludes bare 'wget:' and tool-missing prefixes.
+    $patterns = @(
+        'Network is unreachable',
+        'network is unreachable',
+        'No route to host',
+        'no route to host',
+        'bad address',
+        'Name or service not known',
+        'Temporary failure in name resolution',
+        'Could not resolve host',
+        "can'?t resolve",
+        'Connection timed out',
+        'connection timed out',
+        'Operation timed out',
+        'connect timed out',
+        'Connection refused',
+        'connection refused',
+        "can'?t connect to remote host",
+        "can'?t connect to",
+        'failed: Network is unreachable',
+        'failed: No route to host',
+        'wget: download timed out',
+        'wget: bad address'
+    )
+    foreach ($p in $patterns) {
+        if ($Combined -match $p) { return $true }
+    }
+    return $false
+}
+
+function Test-XinaoNegativeHttpSuccessSignal {
+    [CmdletBinding()]
+    param(
+        [AllowEmptyString()]
+        [string]$Combined
+    )
+    if ($Combined -match '(?i)\bHTTP/[0-9.]+\s+200\b') { return $true }
+    if ($Combined -match '(?i)\bHTTP/[0-9.]+\s+2\d\d\b') { return $true }
+    return $false
+}
+
+function Classify-XinaoNegativeProbeOutcome {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Expect,
+        [Parameter(Mandatory = $true)]
+        [AllowEmptyString()]
+        [string]$Mode,
+        [int]$ExitCode = 0,
+        [AllowEmptyString()]
+        [string]$StdOut = '',
+        [AllowEmptyString()]
+        [string]$StdErr = ''
+    )
+    # Shared execution oracle for live negative suite + offline pure tests.
+    # Returns structured class/reason; never reduces solely to substring pass.
+    $combined = (([string]$StdOut) + "`n" + ([string]$StdErr))
+    $bounded = Limit-XinaoBoundedProbeText -Text $combined -MaxChars 400
+    $base = [ordered]@{
+        ok           = $false
+        result_class = 'ambiguous'
+        reason       = 'AMBIGUOUS_OR_EMPTY'
+        exit_code    = [int]$ExitCode
+        got_signal   = $bounded
+    }
+
+    if ($Mode -eq 'inspect_proxy_networks') {
+        if ($ExitCode -ne 0) {
+            $base.result_class = 'infrastructure_failure'
+            $base.reason = 'PROXY_INSPECT_FAILED'
+            return $base
+        }
+        if (Test-XinaoNegativeInfrastructureSignal -ExitCode $ExitCode -Combined $combined) {
+            $base.result_class = 'infrastructure_failure'
+            $base.reason = 'PROXY_INSPECT_INFRA'
+            return $base
+        }
+        if ($combined -match 'ssrf_proxy') {
+            $base.result_class = 'escape_or_open'
+            $base.reason = 'DIFY_OR_SSRF_ATTACHED'
+            return $base
+        }
+        if ([string]::IsNullOrWhiteSpace($combined)) {
+            $base.result_class = 'ambiguous'
+            $base.reason = 'PROXY_NETWORKS_EMPTY'
+            return $base
+        }
+        $base.ok = $true
+        $base.result_class = 'policy_isolation'
+        $base.reason = 'NO_DIFY_ATTACH'
+        $base.got_signal = 'inspect_no_ssrf_proxy'
+        return $base
+    }
+
+    if (Test-XinaoNegativeInfrastructureSignal -ExitCode $ExitCode -Combined $combined) {
+        $base.result_class = 'infrastructure_failure'
+        $base.reason = 'INFRA_OR_TOOL_MISSING'
+        return $base
+    }
+
+    if (Test-XinaoNegativeHttpSuccessSignal -Combined $combined) {
+        $base.result_class = 'escape_or_open'
+        $base.reason = 'HTTP_SUCCESS_OBSERVED'
+        return $base
+    }
+
+    if ([string]::IsNullOrWhiteSpace($combined) -and $ExitCode -eq 0) {
+        $base.result_class = 'ambiguous'
+        $base.reason = 'EMPTY_OUTPUT_ZERO_EXIT'
+        return $base
+    }
+    if ([string]::IsNullOrWhiteSpace($combined)) {
+        $base.result_class = 'ambiguous'
+        $base.reason = 'EMPTY_OUTPUT'
+        return $base
+    }
+
+    if ($Expect -eq 'no_route_or_timeout' -or $Expect -eq 'no_external') {
+        if (Test-XinaoNegativeDirectNoRouteSignal -Combined $combined) {
+            # Prefer nonzero client exit for direct isolation, but accept concrete
+            # network-class signals even when busybox wget exit codes vary.
+            $base.ok = $true
+            $base.result_class = 'direct_no_route'
+            $base.reason = 'DIRECT_NO_ROUTE_OR_TIMEOUT'
+            return $base
+        }
+        # Generic command prefix alone is never enough.
+        if ($combined -match '(?i)^wget:' -or $combined -match '(?i)\bwget:\s*$') {
+            $base.result_class = 'ambiguous'
+            $base.reason = 'GENERIC_WGET_PREFIX_ONLY'
+            return $base
+        }
+        $base.result_class = 'ambiguous'
+        $base.reason = 'DIRECT_SIGNAL_NOT_CONCRETE'
+        return $base
+    }
+
+    if ($Expect -eq '403_or_denied' -or $Expect -eq 'denied') {
+        $policyDeny = Test-XinaoNegativeProxyPolicyDenial -Combined $combined
+        if ($policyDeny -and $ExitCode -ne 0) {
+            $base.ok = $true
+            $base.result_class = 'policy_denial'
+            $base.reason = 'PROXY_POLICY_DENIAL'
+            return $base
+        }
+        if ($policyDeny -and $ExitCode -eq 0) {
+            $base.result_class = 'ambiguous'
+            $base.reason = 'POLICY_SIGNAL_BUT_ZERO_EXIT'
+            return $base
+        }
+        # Generic connect / bare invalid must not pass as policy denial.
+        if ($combined -match '(?i)\binvalid\b' -and -not $policyDeny) {
+            $base.result_class = 'infrastructure_failure'
+            $base.reason = 'INVALID_ARG_OR_REFERENCE_NOT_POLICY'
+            return $base
+        }
+        if (Test-XinaoNegativeDirectNoRouteSignal -Combined $combined) {
+            $base.result_class = 'ambiguous'
+            $base.reason = 'GENERIC_CONNECT_NOT_POLICY_DENIAL'
+            return $base
+        }
+        $base.result_class = 'ambiguous'
+        $base.reason = 'POLICY_DENIAL_NOT_PROVEN'
+        return $base
+    }
+
+    $base.result_class = 'ambiguous'
+    $base.reason = 'UNKNOWN_EXPECT'
+    return $base
+}
+
 function Test-XinaoEngineeringCanarySealReceipt {
     [CmdletBinding()]
     param(
         [Parameter(Mandatory = $true)]
         $Receipt
     )
+    # Shape-only local helper: key/field contract only. Does NOT enforce observation
+    # freshness or live posture binding equality (strict sealer/runtime do).
+    # Not a seal-readiness proof by itself.
     $names = @(Get-XinaoReceiptPropertyNames -Receipt $Receipt)
     $missing = [System.Collections.Generic.List[string]]::new()
     foreach ($k in $script:XinaoCanaryRequiredKeys) {
@@ -1551,6 +1850,11 @@ function New-XinaoEngineeringCanarySealReceipt {
     )
     if ($null -eq $Meta -or $Meta.ok -ne $true) {
         throw 'EGRESS_CANARY_META_NOT_OK'
+    }
+    # Carrier/builder invariant: seal-eligible only when disposable container cleanup
+    # was observed (rm + re-inspect absence). Do not weaken strict consumer schema.
+    if ($CanaryContainerRemoved -ne $true) {
+        throw 'EGRESS_CANARY_CONTAINER_NOT_REMOVED'
     }
     $canonicalImage = ConvertTo-XinaoCanonicalImageId -ImageId $CanaryImageId
     $observedAtValue = if ([string]::IsNullOrWhiteSpace($ObservedAt)) { New-XinaoUtcNowIso } else { $ObservedAt }
@@ -1700,15 +2004,24 @@ function New-XinaoNegativeSuiteSealReceipt {
         [string]$Note = 'Negative suite receipt for strict seal consumption when suite_passed and identities complete. verified remains false.'
     )
     $caseList = @($Cases)
-    $pass = @($caseList | Where-Object {
-            $ok = $false
-            if ($_ -is [hashtable] -or $_ -is [System.Collections.Specialized.OrderedDictionary]) {
-                $ok = [bool]$_['ok']
-            } else {
-                $ok = [bool]$_.ok
-            }
-            $ok
-        }).Count
+    $infraOrAmbiguous = $false
+    $pass = 0
+    foreach ($c in $caseList) {
+        $cok = $false
+        $cls = $null
+        if ($c -is [hashtable] -or $c -is [System.Collections.Specialized.OrderedDictionary]) {
+            $cok = [bool]$c['ok']
+            if ($c.Contains('result_class')) { $cls = [string]$c['result_class'] }
+        } else {
+            $cok = [bool]$c.ok
+            $prop = $c.PSObject.Properties['result_class']
+            if ($null -ne $prop) { $cls = [string]$prop.Value }
+        }
+        if ($cok) { $pass++ }
+        if ($cls -in @('infrastructure_failure', 'ambiguous')) {
+            $infraOrAmbiguous = $true
+        }
+    }
     $fail = $caseList.Count - $pass
     $n3Ok = $false
     $n1Ok = $false
@@ -1730,6 +2043,15 @@ function New-XinaoNegativeSuiteSealReceipt {
         -CaseCount $caseList.Count `
         -UnauthorizedDomainReachable $unauthorized `
         -DirectNoProxyEscape $directEscape
+    # Any infrastructure/ambiguous typed outcome makes receipt non-seal-eligible.
+    if ($infraOrAmbiguous -and [bool]$sealFields.suite_passed) {
+        $sealFields.suite_passed = $false
+        $sealFields.status = 'failed'
+        $sealFields.all_cases_passed = $false
+    } elseif ($infraOrAmbiguous -and [string]$sealFields.status -eq 'observed') {
+        $sealFields.status = 'failed'
+        $sealFields.suite_passed = $false
+    }
     $observedAtValue = if ([string]::IsNullOrWhiteSpace($ObservedAt)) { New-XinaoUtcNowIso } else { $ObservedAt }
     $receipt = [ordered]@{
         schema_version                   = 'xinao.provider_egress_negative_suite_receipt.v1'
@@ -1775,6 +2097,8 @@ function Test-XinaoNegativeSuiteSealReceipt {
         [Parameter(Mandatory = $true)]
         $Receipt
     )
+    # Shape-only local helper: key/field/case-id contract only. Does NOT enforce
+    # observation freshness or live posture binding (strict sealer/runtime do).
     $names = @(Get-XinaoReceiptPropertyNames -Receipt $Receipt)
     $missing = @($script:XinaoNegativeRequiredKeys | Where-Object { $names -notcontains $_ })
     if ($missing.Count -gt 0) {

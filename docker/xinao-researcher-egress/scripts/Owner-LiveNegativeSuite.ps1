@@ -57,14 +57,6 @@ $caseCatalog = @(
     [ordered]@{ id = 'N17d'; title = 'ipv6_literal'; expect = 'denied'; mode = 'proxy'; target = 'https://[::1]/' }
 )
 
-function Test-DeniedOutput {
-    param([string]$Out, [string[]]$Patterns)
-    foreach ($p in $Patterns) {
-        if ($Out -match $p) { return $true }
-    }
-    return $false
-}
-
 function Resolve-ClientImageId {
     param(
         [string]$ImageRef,
@@ -103,6 +95,7 @@ function Invoke-ClientProbe {
         [string]$Mode,
         [string]$ImageId
     )
+    # Structured probe: preserve Docker exit + stdout/stderr; never concatenate-only.
     $envArgs = @()
     if ($Mode -eq 'proxy') {
         $envArgs = @(
@@ -123,7 +116,11 @@ function Invoke-ClientProbe {
         $ImageId, 'wget', '-S', '-O', '/dev/null', '-T', '8', $Target
     )
     $result = Invoke-XinaoDocker -ArgumentList $args -AllowNonZero
-    return ($result.StdOut + "`n" + $result.StdErr)
+    return [ordered]@{
+        exit_code = [int]$result.ExitCode
+        stdout    = [string]$result.StdOut
+        stderr    = [string]$result.StdErr
+    }
 }
 
 try {
@@ -198,50 +195,50 @@ try {
 
     $pass = 0
     $fail = 0
+    $infraCount = 0
+    $ambiguousCount = 0
     $caseResults = @()
 
     foreach ($c in $caseCatalog) {
-        $ok = $false
-        $got = ''
         if ($c.mode -eq 'inspect_proxy_networks') {
             $insp = Invoke-XinaoDocker -ArgumentList @(
                 'inspect', $paths.proxy_container_name, '--format', '{{json .NetworkSettings.Networks}}'
             ) -AllowNonZero
-            $got = $insp.StdOut + $insp.StdErr
-            if ($insp.ExitCode -ne 0) {
-                $ok = $false
-                $got = "inspect_failed:$got"
-            } elseif ($got -match 'ssrf_proxy') {
-                $ok = $false
-            } else {
-                $ok = $true
-            }
+            $classified = Classify-XinaoNegativeProbeOutcome `
+                -Expect $c.expect `
+                -Mode $c.mode `
+                -ExitCode ([int]$insp.ExitCode) `
+                -StdOut ([string]$insp.StdOut) `
+                -StdErr ([string]$insp.StdErr)
         } else {
-            $out = Invoke-ClientProbe -Target $c.target -Mode $c.mode -ImageId $clientLive.image_id
-            $got = $out
-            if ($c.expect -eq 'no_route_or_timeout' -or $c.expect -eq 'no_external') {
-                $ok = Test-DeniedOutput -Out $out -Patterns @(
-                    'bad address', "can'?t connect", 'timed out', 'network is unreachable', 'no route', 'wget:'
-                )
-            } elseif ($c.expect -eq '403_or_denied' -or $c.expect -eq 'denied') {
-                $ok = Test-DeniedOutput -Out $out -Patterns @(
-                    '403', 'denied', 'Forbidden', "can'?t connect", 'bad port', 'bad address', 'invalid'
-                )
-            }
+            $probe = Invoke-ClientProbe -Target $c.target -Mode $c.mode -ImageId $clientLive.image_id
+            $classified = Classify-XinaoNegativeProbeOutcome `
+                -Expect $c.expect `
+                -Mode $c.mode `
+                -ExitCode ([int]$probe.exit_code) `
+                -StdOut ([string]$probe.stdout) `
+                -StdErr ([string]$probe.stderr)
         }
+        $ok = [bool]$classified.ok
         if ($ok) { $pass++ } else { $fail++ }
+        if ([string]$classified.result_class -eq 'infrastructure_failure') { $infraCount++ }
+        if ([string]$classified.result_class -eq 'ambiguous') { $ambiguousCount++ }
         $caseResults += [ordered]@{
-            id         = $c.id
-            title      = $c.title
-            expect     = $c.expect
-            mode       = $c.mode
-            target     = $c.target
-            ok         = [bool]$ok
-            got_signal = ($(if ($ok) { 'match_expected_fail_closed' } else { 'unexpected_or_open' }))
+            id           = $c.id
+            title        = $c.title
+            expect       = $c.expect
+            mode         = $c.mode
+            target       = $c.target
+            ok           = $ok
+            result_class = [string]$classified.result_class
+            reason       = [string]$classified.reason
+            exit_code    = [int]$classified.exit_code
+            got_signal   = [string]$classified.got_signal
         }
     }
 
-    # Pure builder emits only sealer-allowed keys for seal-eligible shape.
+    # Pure builder emits only sealer-allowed top-level keys for seal-eligible shape.
+    # Suite pass / escapes derive from all 13 typed outcomes (infra/ambiguous => non-seal).
     $receipt = New-XinaoNegativeSuiteSealReceipt -Cases $caseResults -ObjectIdentities $objectIds
     Assert-XinaoNoSecretLeak -Object $receipt
     $written = Write-XinaoJsonFile -Path $ResultsPath -Object $receipt
@@ -253,11 +250,13 @@ try {
                 all_cases_passed                 = [bool]$receipt.all_cases_passed
                 unauthorized_domain_reachable    = [bool]$receipt.unauthorized_domain_reachable
                 direct_no_proxy_escape           = [bool]$receipt.direct_no_proxy_escape
+                infrastructure_case_count        = [int]$infraCount
+                ambiguous_case_count             = [int]$ambiguousCount
                 client_image_id                  = $clientLive.image_id
                 receipt_path                     = $written
                 provider_egress_runtime_verified = $false
             }))
-    if ($fail -ne 0 -or -not $receipt.suite_passed) { exit 1 }
+    if ($fail -ne 0 -or $infraCount -gt 0 -or $ambiguousCount -gt 0 -or -not $receipt.suite_passed) { exit 1 }
     exit 0
 }
 catch {

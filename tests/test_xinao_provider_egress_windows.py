@@ -1149,14 +1149,19 @@ def test_canary_execute_label_admission_mocked_docker(tmp_path: Path) -> None:
 def test_cli_fixture_parse_matrix() -> None:
     common = (SCRIPTS / "XinaoEgressOwner.Common.ps1").as_posix()
     cases = [
-        ("ok_endturn.json", True, None),
-        ("wrong_model.json", False, "OBSERVED_BACKEND_MODEL_MISMATCH"),
-        ("zero_output_tokens.json", False, "OUTPUT_TOKENS_NOT_POSITIVE"),
-        ("incomplete_usage.json", False, "USAGE_ACCOUNTING_INCOMPLETE"),
-        ("timeout_cancelled.json", False, "STOP_REASON_NOT_ENDTURN"),
-        ("auth_path_leak.json", False, "CLI_OUTPUT_SECRET_LEAK"),
+        ("ok_endturn.json", True, None, True),
+        ("wrong_model.json", False, "OBSERVED_BACKEND_MODEL_MISMATCH", True),
+        ("zero_output_tokens.json", False, "OUTPUT_TOKENS_NOT_POSITIVE", False),
+        ("incomplete_usage.json", False, "USAGE_ACCOUNTING_INCOMPLETE", False),
+        ("timeout_cancelled.json", False, "STOP_REASON_NOT_ENDTURN", False),
+        ("auth_path_leak.json", False, "CLI_OUTPUT_SECRET_LEAK", False),
+        # W9D-B01: primary usage.output_tokens=0 must not be inflated from modelUsage.
+        ("usage_zero_output_modelusage_positive.json", False, "OUTPUT_TOKENS_NOT_POSITIVE", False),
+        ("usage_modelusage_output_mismatch.json", False, "MODELUSAGE_OUTPUT_MISMATCH", True),
+        ("usage_modelusage_input_mismatch.json", False, "MODELUSAGE_INPUT_MISMATCH", True),
+        ("missing_model_calls.json", False, "MODEL_CALLS_NOT_POSITIVE", True),
     ]
-    for name, expect_ok, expect_reason in cases:
+    for name, expect_ok, expect_reason, expect_usage_complete in cases:
         path = (FIXTURE_CLI / name).as_posix()
         cmd = textwrap.dedent(
             f"""
@@ -1181,13 +1186,301 @@ def test_cli_fixture_parse_matrix() -> None:
         assert meta["ok"] is expect_ok, name
         if expect_reason:
             assert meta["reason_code"] == expect_reason, name
+        assert meta["usage_accounting_complete"] is expect_usage_complete, name
         if expect_ok:
             assert meta["stop_reason"] == "EndTurn"
             assert meta["observed_backend_model"] == "grok-4.5-build"
             assert meta["output_tokens"] > 0
             assert meta["usage_accounting_complete"] is True
+        # W9D-B01: zero primary output must stay zero (no modelUsage backfill).
+        if name == "usage_zero_output_modelusage_positive.json":
+            assert meta["output_tokens"] == 0
+            assert meta["usage_accounting_complete"] is False
         # Never echo model text body as a field.
         assert "text" not in meta or meta.get("text_persisted") is False
+
+
+@requires_pwsh
+def test_usage_inflation_cannot_build_or_seal_canary() -> None:
+    """W9D-B01 attack: zero primary output + positive modelUsage must not seal."""
+    common = (SCRIPTS / "XinaoEgressOwner.Common.ps1").as_posix()
+    fixture = (FIXTURE_CLI / "usage_zero_output_modelusage_positive.json").as_posix()
+    cmd = textwrap.dedent(
+        f"""
+        . '{common}'
+        $meta = ConvertFrom-XinaoGrokCliJsonText -JsonText (Get-Content -LiteralPath '{fixture}' -Raw)
+        if ($meta.ok -eq $true) {{ throw 'forged zero-output meta must not be ok' }}
+        if ($meta.output_tokens -ne 0) {{ throw ('output backfilled: ' + $meta.output_tokens) }}
+        if ($meta.usage_accounting_complete -eq $true) {{ throw 'usage must be incomplete' }}
+        $postureIds = [ordered]@{{
+          internal_network_id = 'net_' + ('a' * 16)
+          proxy_container_id = 'ctr_' + ('b' * 16)
+          proxy_image_id = 'sha256:' + ('c' * 64)
+          allowlist_sha256 = ('d' * 64)
+          proxy_config_sha256 = ('e' * 64)
+        }}
+        try {{
+          $null = New-XinaoEngineeringCanarySealReceipt `
+            -Meta $meta `
+            -PostureIds $postureIds `
+            -CanaryImageId ('sha256:' + ('f' * 64)) `
+            -CanaryContainerRemoved:$true
+          throw 'builder must reject non-ok meta'
+        }} catch {{
+          if ($_.Exception.Message -notmatch 'EGRESS_CANARY_META_NOT_OK') {{
+            throw ('unexpected builder error: ' + $_.Exception.Message)
+          }}
+        }}
+        'INFLATION_BLOCKED'
+        """
+    )
+    proc = _run_pwsh_command(cmd)
+    assert proc.returncode == 0, proc.stderr + proc.stdout
+    assert "INFLATION_BLOCKED" in proc.stdout
+
+
+@requires_pwsh
+def test_canary_builder_requires_container_removed() -> None:
+    """Cleanup invariant: seal builder fails closed when container cleanup unobserved."""
+    common = (SCRIPTS / "XinaoEgressOwner.Common.ps1").as_posix()
+    fixture = (FIXTURE_CLI / "ok_endturn.json").as_posix()
+    cmd = textwrap.dedent(
+        f"""
+        . '{common}'
+        $meta = ConvertFrom-XinaoGrokCliJsonText -JsonText (Get-Content -LiteralPath '{fixture}' -Raw)
+        if ($meta.ok -ne $true) {{ throw ('meta not ok: ' + $meta.reason_code) }}
+        $postureIds = [ordered]@{{
+          internal_network_id = 'net_' + ('a' * 16)
+          proxy_container_id = 'ctr_' + ('b' * 16)
+          proxy_image_id = 'sha256:' + ('c' * 64)
+          allowlist_sha256 = ('d' * 64)
+          proxy_config_sha256 = ('e' * 64)
+        }}
+        try {{
+          $null = New-XinaoEngineeringCanarySealReceipt `
+            -Meta $meta `
+            -PostureIds $postureIds `
+            -CanaryImageId ('sha256:' + ('f' * 64)) `
+            -CanaryContainerRemoved:$false
+          throw 'builder must require container removed'
+        }} catch {{
+          if ($_.Exception.Message -notmatch 'EGRESS_CANARY_CONTAINER_NOT_REMOVED') {{
+            throw ('unexpected: ' + $_.Exception.Message)
+          }}
+        }}
+        'CLEANUP_REQUIRED_OK'
+        """
+    )
+    proc = _run_pwsh_command(cmd)
+    assert proc.returncode == 0, proc.stderr + proc.stdout
+    assert "CLEANUP_REQUIRED_OK" in proc.stdout
+
+
+@requires_pwsh
+def test_negative_probe_classifier_offline_matrix() -> None:
+    """W9D-B02: same classifier used by execute; pure offline signals."""
+    common = (SCRIPTS / "XinaoEgressOwner.Common.ps1").as_posix()
+    # expect_mode, expect, exit, stdout, stderr, want_ok, want_class
+    cases = [
+        (
+            "proxy",
+            "403_or_denied",
+            1,
+            "HTTP/1.1 403 Forbidden\n",
+            "proxy denied\n",
+            True,
+            "policy_denial",
+        ),
+        (
+            "proxy",
+            "denied",
+            1,
+            "",
+            "wget: applet not found\n",
+            False,
+            "infrastructure_failure",
+        ),
+        (
+            "proxy",
+            "denied",
+            125,
+            "",
+            "docker: invalid reference format\n",
+            False,
+            "infrastructure_failure",
+        ),
+        (
+            "proxy",
+            "denied",
+            0,
+            "HTTP/1.1 200 OK\n",
+            "",
+            False,
+            "escape_or_open",
+        ),
+        (
+            "proxy",
+            "denied",
+            1,
+            "",
+            "",
+            False,
+            "ambiguous",
+        ),
+        (
+            "proxy",
+            "denied",
+            1,
+            "",
+            "Cannot connect to the Docker daemon at unix:///var/run/docker.sock\n",
+            False,
+            "infrastructure_failure",
+        ),
+        (
+            "proxy",
+            "denied",
+            1,
+            "",
+            "can't connect to remote host: Network is unreachable\n",
+            False,
+            "ambiguous",
+        ),
+        (
+            "proxy",
+            "denied",
+            0,
+            "HTTP/1.1 403 Forbidden\n",
+            "",
+            False,
+            "ambiguous",
+        ),
+        (
+            "direct",
+            "no_route_or_timeout",
+            1,
+            "",
+            "wget: bad address 'example.com'\n",
+            True,
+            "direct_no_route",
+        ),
+        (
+            "direct",
+            "no_route_or_timeout",
+            1,
+            "",
+            "wget: applet not found\n",
+            False,
+            "infrastructure_failure",
+        ),
+        (
+            "direct",
+            "no_external",
+            1,
+            "",
+            "wget:\n",
+            False,
+            "ambiguous",
+        ),
+        (
+            "direct",
+            "no_route_or_timeout",
+            1,
+            "",
+            "Network is unreachable\n",
+            True,
+            "direct_no_route",
+        ),
+        (
+            "direct",
+            "no_route_or_timeout",
+            0,
+            "HTTP/1.1 200 OK\n",
+            "",
+            False,
+            "escape_or_open",
+        ),
+        (
+            "proxy",
+            "denied",
+            1,
+            "",
+            "Connection timed out\n",
+            False,
+            "ambiguous",
+        ),
+    ]
+    results = []
+    for mode, expect, exit_code, stdout, stderr, want_ok, want_class in cases:
+        # Escape for PowerShell single-quoted strings (double single-quotes).
+        so = stdout.replace("'", "''")
+        se = stderr.replace("'", "''")
+        cmd = textwrap.dedent(
+            f"""
+            . '{common}'
+            $c = Classify-XinaoNegativeProbeOutcome `
+              -Expect '{expect}' `
+              -Mode '{mode}' `
+              -ExitCode {exit_code} `
+              -StdOut '{so}' `
+              -StdErr '{se}'
+            [ordered]@{{
+              ok = [bool]$c.ok
+              result_class = [string]$c.result_class
+              reason = [string]$c.reason
+              exit_code = [int]$c.exit_code
+            }} | ConvertTo-Json -Compress
+            """
+        )
+        proc = _run_pwsh_command(cmd)
+        assert proc.returncode == 0, f"{mode}/{expect}: {proc.stderr}\n{proc.stdout}"
+        row = json.loads(proc.stdout.strip().splitlines()[-1])
+        assert row["ok"] is want_ok, (mode, expect, stderr, row)
+        assert row["result_class"] == want_class, (mode, expect, stderr, row)
+        results.append(row)
+
+    # Suite pass cannot hold if any case is infrastructure/ambiguous with ok=false mixed in.
+    common_path = common
+    cmd_suite = textwrap.dedent(
+        f"""
+        . '{common_path}'
+        $objectIds = [ordered]@{{
+          internal_network_id = 'net_' + ('a' * 16)
+          proxy_container_id = 'ctr_' + ('b' * 16)
+          proxy_image_id = 'sha256:' + ('c' * 64)
+          allowlist_sha256 = ('d' * 64)
+          proxy_config_sha256 = ('e' * 64)
+        }}
+        $cases = @()
+        foreach ($id in $script:XinaoRequiredNegativeCaseIds) {{
+          $ok = $true
+          $cls = 'policy_denial'
+          if ($id -eq 'N1' -or $id -eq 'N9') {{ $cls = 'direct_no_route' }}
+          if ($id -eq 'N15') {{ $cls = 'policy_isolation' }}
+          if ($id -eq 'N3') {{
+            $ok = $false
+            $cls = 'infrastructure_failure'
+          }}
+          $cases += [ordered]@{{
+            id = $id; ok = $ok; title = $id; expect = 'denied'; mode = 'proxy'
+            target = 'https://example.com/'; result_class = $cls
+            reason = 'test'; exit_code = 1; got_signal = 'test'
+          }}
+        }}
+        $neg = New-XinaoNegativeSuiteSealReceipt -Cases $cases -ObjectIdentities $objectIds
+        $check = Test-XinaoNegativeSuiteSealReceipt -Receipt $neg
+        [ordered]@{{
+          suite_passed = [bool]$neg.suite_passed
+          seal_eligible = [bool]$check.seal_eligible
+          status = [string]$neg.status
+        }} | ConvertTo-Json -Compress
+        """
+    )
+    proc2 = _run_pwsh_command(cmd_suite)
+    assert proc2.returncode == 0, proc2.stderr + proc2.stdout
+    suite = json.loads(proc2.stdout.strip().splitlines()[-1])
+    assert suite["suite_passed"] is False
+    assert suite["seal_eligible"] is False
+    assert len(results) == len(cases)
 
 
 @requires_pwsh

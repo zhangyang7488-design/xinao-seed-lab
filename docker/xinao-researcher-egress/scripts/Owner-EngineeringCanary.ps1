@@ -575,13 +575,26 @@ try {
             }
         }
         finally {
-            # Always remove only the exact disposable container.
+            # Always remove only the exact disposable container; re-inspect must prove absence.
             if (-not [string]::IsNullOrWhiteSpace($containerId)) {
                 $rm = Invoke-XinaoDocker -ArgumentList @('rm', '--force', $containerId) -AllowNonZero
                 $containerRemoved = ($rm.ExitCode -eq 0)
+                if ($containerRemoved) {
+                    $re = Invoke-XinaoDocker -ArgumentList @('inspect', $containerId, '--format', '{{.Id}}') -AllowNonZero
+                    # Absence: inspect must fail closed (nonzero or empty). If still present, fail closed.
+                    if ($re.ExitCode -eq 0 -and -not [string]::IsNullOrWhiteSpace($re.StdOut.Trim())) {
+                        $containerRemoved = $false
+                    }
+                }
             } elseif (-not [string]::IsNullOrWhiteSpace($containerName)) {
                 $rm = Invoke-XinaoDocker -ArgumentList @('rm', '--force', $containerName) -AllowNonZero
                 $containerRemoved = ($rm.ExitCode -eq 0)
+                if ($containerRemoved) {
+                    $re = Invoke-XinaoDocker -ArgumentList @('inspect', $containerName, '--format', '{{.Id}}') -AllowNonZero
+                    if ($re.ExitCode -eq 0 -and -not [string]::IsNullOrWhiteSpace($re.StdOut.Trim())) {
+                        $containerRemoved = $false
+                    }
+                }
             }
             # Always delete exact raw file when present (never a directory).
             if (Test-Path -LiteralPath $rawFile -PathType Leaf) {
@@ -599,10 +612,11 @@ try {
             $meta.stop_reason -eq 'EndTurn' -and
             $meta.observed_backend_model -eq $script:XinaoCanaryObservedBackendModel -and
             [bool]$meta.usage_accounting_complete -and
-            [int]$meta.output_tokens -gt 0
+            [int]$meta.output_tokens -gt 0 -and
+            [bool]$containerRemoved
         )
 
-        if ($effectOk -and -not $rawPersisted) {
+        if ($effectOk -and -not $rawPersisted -and $containerRemoved) {
             $sealReceipt = New-XinaoEngineeringCanarySealReceipt `
                 -Meta $meta `
                 -PostureIds $postureIds `
@@ -621,6 +635,7 @@ try {
 
         $reason = if ($null -ne $meta -and $meta.reason_code) { [string]$meta.reason_code } else { 'PROVIDER_EFFECT_NOT_VERIFIED' }
         if ($rawPersisted) { $reason = 'EGRESS_CANARY_RAW_NOT_DELETED' }
+        if (-not $containerRemoved) { $reason = 'EGRESS_CANARY_CONTAINER_NOT_REMOVED' }
         $receipt = Write-CanaryReceipt -Status 'failed' -Extra @{
             mode                       = 'execute_real_provider'
             path_class                 = 'engineering_canary'
