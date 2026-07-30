@@ -25,10 +25,18 @@ probing, mount only the run-local snapshot read-only, bind the effective provide
 to the bundle hashes, and still return candidate-only research. Never expose generic file tools
 while the provider credential is mounted in the same container.
 
+If a verified source update must replace a legacy installed bootstrap, run the source entry's
+`scripts/xinao.py bootstrap-migrate` with no release, hash, path, or generation arguments. The same
+journaled transaction must install the version-independent entry, switch the versioned pointer,
+retain rollback, and canary through the newly installed entry. Then run the installed entry's
+`inspect` in a fresh process. Do not copy the Skill before legacy capture or patch it after pointer
+activation as a separate unjournaled step.
+
 Keep the bounded online research lifecycle separate from the durable background leg. When the
-user asks to mature the ordinary research leg, finish its stable one-command install, inspect,
-parallel isolated researcher calls, freeze, shadow settlement, replay, and feedback path before
-building durable orchestration. A container image may implement that leg's execution boundary; it
+user asks to mature the ordinary research leg, finish one stable entry with one-command lifecycle
+verbs for install, inspect, parallel isolated researcher calls, freeze, shadow settlement, replay,
+and feedback before building durable orchestration. A container image may implement that leg's
+execution boundary; it
 does not authorize Temporal, a resident worker, a daemon, or another Owner. Never substitute
 platform readiness for a real researcher result.
 
