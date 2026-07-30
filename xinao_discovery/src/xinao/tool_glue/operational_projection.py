@@ -17,6 +17,7 @@ from typing import Any
 from xinao.tool_glue.canonical_paths import (
     DEFAULT_ISLAND_ROOT,
     DEFAULT_OPERATIONAL_STATE_ROOT,
+    CanonicalPathError,
     discover_canonical_updater_path,
     operational_updater_path,
 )
@@ -90,6 +91,15 @@ def _load_canonical_bytes() -> tuple[Path, bytes, str]:
     return canonical, raw, digest
 
 
+def _operational_path(*, island_root: Path) -> Path:
+    """Resolve the operational leaf with reparse-safe path helpers."""
+
+    try:
+        return operational_updater_path(island_root=island_root)
+    except CanonicalPathError as exc:
+        raise PublicationError(exc.code, str(exc)) from exc
+
+
 def install_operational_updater(
     *,
     island_root: Path = DEFAULT_ISLAND_ROOT,
@@ -102,7 +112,8 @@ def install_operational_updater(
 
     island_root = island_root.resolve()
     state_root = state_root.resolve()
-    operational = operational_updater_path(island_root=island_root)
+    # Reparse/symlink leaf rejected here before any read, journal, or replace.
+    operational = _operational_path(island_root=island_root)
     operational.parent.mkdir(parents=True, exist_ok=True)
     canonical, candidate_bytes, new_digest = _load_canonical_bytes()
 
@@ -324,7 +335,7 @@ def recover_operational_updater(
 
     island_root = island_root.resolve()
     state_root = state_root.resolve()
-    operational = operational_updater_path(island_root=island_root)
+    operational = _operational_path(island_root=island_root)
     marker_path = _marker_path(state_root).resolve()
     if not marker_path.is_file():
         return {
@@ -390,7 +401,7 @@ def rollback_operational_updater(
 
     island_root = island_root.resolve()
     state_root = state_root.resolve()
-    operational = operational_updater_path(island_root=island_root)
+    operational = _operational_path(island_root=island_root)
     journal_path = journal_path.resolve()
     marker_path = _marker_path(state_root).resolve()
     if marker_path.exists():

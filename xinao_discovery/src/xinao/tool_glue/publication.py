@@ -330,20 +330,45 @@ def _assert_file_metadata(path: Path, expected: object) -> None:
         )
 
 
+def _is_reparse_point(path: Path) -> bool:
+    """Detect symlink/Windows reparse at the literal path without following it."""
+
+    try:
+        info = path.lstat()
+    except OSError:
+        return False
+    if path.is_symlink() or stat.S_ISLNK(info.st_mode):
+        return True
+    attributes = int(getattr(info, "st_file_attributes", 0))
+    return bool(attributes & int(getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0x400)))
+
+
 def _atomic_replace_bytes(
     path: Path,
     raw: bytes,
     *,
     metadata: object | None = None,
 ) -> None:
-    """Flush a same-directory temporary and atomically replace ``path``."""
+    """Flush a same-directory temporary and atomically replace ``path``.
 
-    path = path.resolve()
+    The leaf is never resolved through a symlink/reparse point.  A reparse leaf is
+    rejected before any writable open or ``os.replace``, so a foreign target cannot
+    be mutated by following the operational name.
+    """
+
+    # Absolute lexical path only — Path.resolve() would follow a reparse leaf.
+    path = Path(os.path.abspath(str(path)))
+    if _is_reparse_point(path):
+        raise PublicationError(
+            "REPLACE_TARGET_REPARSE",
+            f"refuse to replace through symlink/reparse leaf: {path}",
+        )
     path.parent.mkdir(parents=True, exist_ok=True)
     descriptor, temporary_name = tempfile.mkstemp(
-        prefix=f".{path.name}.", suffix=".tmp", dir=path.parent
+        prefix=f".{path.name}.", suffix=".tmp", dir=str(path.parent)
     )
     temporary = Path(temporary_name)
+    # path.exists() follows; after reparse rejection a present path is a plain leaf.
     prior_metadata = _capture_file_metadata(path) if path.exists() else None
     desired_metadata = (
         _validated_file_metadata(metadata) if metadata is not None else prior_metadata

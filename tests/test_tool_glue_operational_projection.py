@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
+import stat
 import subprocess
 import sys
 import zipfile
@@ -20,6 +22,33 @@ PACKAGE_ROOT = REPO_ROOT / "xinao_discovery"
 
 def _sha256(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def _sha256_bytes(raw: bytes) -> str:
+    return hashlib.sha256(raw).hexdigest()
+
+
+def _try_symlink(link: Path, target: Path, *, target_is_directory: bool = False) -> None:
+    """Create a real symlink or skip when the environment forbids it."""
+
+    try:
+        if target_is_directory:
+            link.symlink_to(target, target_is_directory=True)
+        else:
+            link.symlink_to(target)
+    except OSError as exc:
+        pytest.skip(f"symlink unavailable in this environment: {exc}")
+
+
+def _is_reparse_leaf(path: Path) -> bool:
+    if path.is_symlink():
+        return True
+    try:
+        info = path.lstat()
+    except OSError:
+        return False
+    attributes = int(getattr(info, "st_file_attributes", 0))
+    return bool(attributes & int(getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0x400)))
 
 
 def test_canonical_updater_is_package_local_not_parents_walk() -> None:
@@ -365,3 +394,108 @@ def test_catalog_updater_fixture_still_uses_checkout_script(tmp_path: Path) -> N
     """Behavior regression: package resource and checkout script stay executable."""
     assert CHECKOUT_SCRIPT.is_file()
     assert _sha256(CHECKOUT_SCRIPT) == _sha256(canonical_paths.discover_canonical_updater_path())
+
+
+def test_install_rejects_symlink_operational_leaf_before_target_mutation(
+    tmp_path: Path,
+) -> None:
+    """Symlink/reparse operational leaf fails closed; foreign target bytes stay intact."""
+
+    island = tmp_path / "island"
+    state_root = tmp_path / "op-state"
+    scripts = island / "scripts"
+    scripts.mkdir(parents=True)
+    foreign = tmp_path / "FOREIGN_TARGET.ps1"
+    foreign_bytes = b"# FOREIGN SHOULD NOT BE MUTATED\n"
+    foreign.write_bytes(foreign_bytes)
+    foreign_digest = _sha256_bytes(foreign_bytes)
+    leaf = scripts / "Update-CodexContextCatalog.ps1"
+    _try_symlink(leaf, foreign)
+
+    assert leaf.is_symlink()
+    assert _is_reparse_leaf(leaf)
+    before_link_lstat = leaf.lstat()
+
+    with pytest.raises(publication.PublicationError) as raised:
+        operational_projection.install_operational_updater(
+            island_root=island,
+            state_root=state_root,
+            transaction_id="tx-reparse-leaf",
+        )
+    assert raised.value.code == "OPERATIONAL_UPDATER_REPARSE"
+    assert leaf.is_symlink()
+    assert _is_reparse_leaf(leaf)
+    assert leaf.readlink() == foreign or os.path.samefile(leaf.readlink(), foreign)
+    assert foreign.read_bytes() == foreign_bytes
+    assert _sha256(foreign) == foreign_digest
+    # Literal leaf identity unchanged (still a reparse; not replaced by plain file).
+    assert leaf.lstat().st_ino == before_link_lstat.st_ino or leaf.is_symlink()
+    assert not (state_root / "active_transaction.marker.json").exists()
+
+
+def test_atomic_replace_rejects_reparse_leaf_without_following(tmp_path: Path) -> None:
+    """Defense in depth: replace helper must not resolve through a reparse leaf."""
+
+    target = tmp_path / "foreign.ps1"
+    foreign_bytes = b"# replace must not touch me\n"
+    target.write_bytes(foreign_bytes)
+    link = tmp_path / "leaf.ps1"
+    _try_symlink(link, target)
+    with pytest.raises(publication.PublicationError) as raised:
+        publication._atomic_replace_bytes(link, b"# new bytes that must not land on target\n")
+    assert raised.value.code == "REPLACE_TARGET_REPARSE"
+    assert link.is_symlink()
+    assert target.read_bytes() == foreign_bytes
+    assert _sha256(target) == _sha256_bytes(foreign_bytes)
+
+
+def test_directory_reparse_scripts_escape_rejected(tmp_path: Path) -> None:
+    """Directory reparse under scripts/ must not escape island containment."""
+
+    island = tmp_path / "island"
+    island.mkdir()
+    foreign_dir = tmp_path / "foreign_scripts"
+    foreign_dir.mkdir()
+    foreign_leaf = foreign_dir / "Update-CodexContextCatalog.ps1"
+    foreign_bytes = b"# escaped foreign operational bytes\n"
+    foreign_leaf.write_bytes(foreign_bytes)
+    foreign_digest = _sha256(foreign_leaf)
+    scripts = island / "scripts"
+    _try_symlink(scripts, foreign_dir, target_is_directory=True)
+
+    with pytest.raises(publication.PublicationError) as raised:
+        operational_projection.install_operational_updater(
+            island_root=island,
+            state_root=tmp_path / "op-state",
+            transaction_id="tx-dir-reparse",
+        )
+    assert raised.value.code == "OPERATIONAL_PARENT_REPARSE"
+    assert scripts.is_symlink() or _is_reparse_leaf(scripts)
+    assert foreign_leaf.read_bytes() == foreign_bytes
+    assert _sha256(foreign_leaf) == foreign_digest
+
+
+def test_hardlink_peer_still_isolated_after_reparse_guards(tmp_path: Path) -> None:
+    """Hardlink isolation remains: replace operational name without mutating peer bytes."""
+
+    island = tmp_path / "island"
+    state_root = tmp_path / "op-state"
+    scripts = island / "scripts"
+    scripts.mkdir(parents=True)
+    operational = scripts / "Update-CodexContextCatalog.ps1"
+    peer = tmp_path / "hardlink_peer.ps1"
+    peer_bytes = b"# shared preimage hardlink\n"
+    peer.write_bytes(peer_bytes)
+    peer_digest = _sha256_bytes(peer_bytes)
+    os.link(peer, operational)
+    canonical = canonical_paths.discover_canonical_updater_path()
+    installed = operational_projection.install_operational_updater(
+        island_root=island,
+        state_root=state_root,
+        transaction_id="tx-hardlink",
+    )
+    assert installed["status"] == publication.VERIFIED
+    assert _sha256(operational) == _sha256(canonical)
+    assert peer.read_bytes() == peer_bytes
+    assert _sha256(peer) == peer_digest
+    assert not operational.is_symlink()
