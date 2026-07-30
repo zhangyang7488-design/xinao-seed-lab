@@ -11,11 +11,11 @@ import hashlib
 import json
 import os
 import re
+import time
 import uuid
+from contextlib import contextmanager
 from pathlib import Path
-from typing import Any, Sequence
-
-import portalocker
+from typing import Any, Iterator, Sequence
 
 DEFAULT_FRONTIER_ROOT = Path(
     os.environ.get(
@@ -100,6 +100,60 @@ def _binding_path(frontier_root: Path, session_id: str) -> Path:
 
 def _binding_lock_path(frontier_root: Path, session_id: str) -> Path:
     return _binding_path(frontier_root, session_id).with_suffix(".lock")
+
+
+@contextmanager
+def _exclusive_lock(
+    lock_path: Path, *, timeout_seconds: float = LOCK_TIMEOUT_SECONDS
+) -> Iterator[None]:
+    """Stdlib exclusive lock (msvcrt on Windows, fcntl on POSIX).
+
+    Mirrors the verified-agent-loop task-run lock pattern: open a durable lock
+    file, ensure one byte exists for msvcrt byte-range locking, poll non-blocking
+    exclusive acquisition until timeout, then unlock on exit.
+    """
+
+    lock_path.parent.mkdir(parents=True, exist_ok=True)
+    handle = lock_path.open("a+b")
+    acquired = False
+    try:
+        handle.seek(0, os.SEEK_END)
+        if handle.tell() == 0:
+            handle.write(b"0")
+            handle.flush()
+        deadline = time.monotonic() + timeout_seconds
+        while True:
+            try:
+                handle.seek(0)
+                if os.name == "nt":
+                    import msvcrt
+
+                    msvcrt.locking(handle.fileno(), msvcrt.LK_NBLCK, 1)
+                else:
+                    import fcntl
+
+                    fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+                acquired = True
+                break
+            except OSError as exc:
+                if time.monotonic() >= deadline:
+                    raise FrontierProjectionError("session binding is busy; retry shortly") from exc
+                time.sleep(0.05)
+        yield
+    finally:
+        try:
+            if acquired:
+                handle.seek(0)
+                if os.name == "nt":
+                    import msvcrt
+
+                    msvcrt.locking(handle.fileno(), msvcrt.LK_UNLCK, 1)
+                else:
+                    import fcntl
+
+                    fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+        finally:
+            handle.close()
 
 
 def _normalized_run_roots(allowed_run_root: Path | Sequence[Path]) -> tuple[Path, ...]:
@@ -192,13 +246,7 @@ def bind_session(
     directory, run_id, root = _validated_run(run_directory, roots)
     path = _binding_path(frontier_root, normalized)
     lock_path = _binding_lock_path(frontier_root, normalized)
-    lock_path.parent.mkdir(parents=True, exist_ok=True)
-    with portalocker.Lock(
-        str(lock_path),
-        mode="a",
-        timeout=LOCK_TIMEOUT_SECONDS,
-        flags=portalocker.LockFlags.EXCLUSIVE | portalocker.LockFlags.NON_BLOCKING,
-    ):
+    with _exclusive_lock(lock_path, timeout_seconds=LOCK_TIMEOUT_SECONDS):
         if path.exists():
             current = load_binding(
                 session_id=normalized,

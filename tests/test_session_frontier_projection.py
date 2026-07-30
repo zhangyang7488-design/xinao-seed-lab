@@ -1,15 +1,18 @@
 from __future__ import annotations
 
+import ast
 import importlib.util
 import json
 import os
 import subprocess
 import sys
+import threading
 from pathlib import Path
 from types import ModuleType
 from typing import Any
 
 import pytest
+import services.agent_runtime.session_frontier_projection as session_frontier_module
 from services.agent_runtime.session_frontier_projection import (
     DEFAULT_RENDER_CHAR_BUDGET,
     FrontierProjectionError,
@@ -495,3 +498,230 @@ def test_cli_verify_binding_distinguishes_unbound_from_live_compact_recovery(
     assert drifted.returncode == 2
     assert drifted.stdout == ""
     assert "task-run JSON roots must be objects" in drifted.stderr
+
+
+def test_session_frontier_module_uses_stdlib_only_for_lock() -> None:
+    source_path = Path(session_frontier_module.__file__).resolve()
+    tree = ast.parse(source_path.read_text(encoding="utf-8"))
+    imported: set[str] = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            imported.update(alias.name.split(".", 1)[0] for alias in node.names)
+        elif isinstance(node, ast.ImportFrom) and node.module:
+            imported.add(node.module.split(".", 1)[0])
+    assert "portalocker" not in imported
+    assert "portalocker" not in vars(session_frontier_module)
+    assert hasattr(session_frontier_module, "_exclusive_lock")
+
+
+def test_exclusive_lock_serializes_same_path_and_releases(tmp_path: Path) -> None:
+    lock_path = tmp_path / "bindings" / "session-lock.lock"
+    first_entered = threading.Event()
+    release_first = threading.Event()
+    second_entered = threading.Event()
+    second_error: list[BaseException] = []
+
+    def hold_first() -> None:
+        with session_frontier_module._exclusive_lock(lock_path, timeout_seconds=5.0):
+            first_entered.set()
+            assert release_first.wait(timeout=5)
+
+    def enter_second() -> None:
+        try:
+            with session_frontier_module._exclusive_lock(lock_path, timeout_seconds=5.0):
+                second_entered.set()
+        except BaseException as exc:  # pragma: no cover - surfaced via list
+            second_error.append(exc)
+
+    first = threading.Thread(target=hold_first)
+    second = threading.Thread(target=enter_second)
+    first.start()
+    assert first_entered.wait(timeout=5)
+    second.start()
+    assert not second_entered.wait(timeout=0.2)
+    release_first.set()
+    first.join(timeout=5)
+    second.join(timeout=5)
+
+    assert not first.is_alive()
+    assert not second.is_alive()
+    assert not second_error
+    assert second_entered.is_set()
+    assert lock_path.is_file()
+
+
+def test_exclusive_lock_timeout_fails_closed_while_held(tmp_path: Path) -> None:
+    lock_path = tmp_path / "bindings" / "session-busy.lock"
+    first_entered = threading.Event()
+    release_first = threading.Event()
+    second_error: list[BaseException] = []
+
+    def hold_first() -> None:
+        with session_frontier_module._exclusive_lock(lock_path, timeout_seconds=5.0):
+            first_entered.set()
+            assert release_first.wait(timeout=5)
+
+    def try_second() -> None:
+        try:
+            with session_frontier_module._exclusive_lock(lock_path, timeout_seconds=0.2):
+                pass
+        except BaseException as exc:
+            second_error.append(exc)
+
+    first = threading.Thread(target=hold_first)
+    second = threading.Thread(target=try_second)
+    first.start()
+    assert first_entered.wait(timeout=5)
+    second.start()
+    second.join(timeout=5)
+    release_first.set()
+    first.join(timeout=5)
+
+    assert not first.is_alive()
+    assert not second.is_alive()
+    assert len(second_error) == 1
+    assert isinstance(second_error[0], FrontierProjectionError)
+    assert "busy" in str(second_error[0])
+
+
+def test_bind_session_waits_for_lock_then_cas_rebinds(tmp_path: Path) -> None:
+    runs = tmp_path / "runs"
+    run_a = _make_run(runs, "run-a")
+    run_b = _make_run(runs, "run-b")
+    frontier_root = tmp_path / "frontiers"
+    bind_session(
+        session_id="session-wait",
+        run_directory=run_a,
+        frontier_root=frontier_root,
+        allowed_run_root=runs,
+    )
+    lock_path = frontier_root / "bindings" / "session-wait.lock"
+    first_entered = threading.Event()
+    release_first = threading.Event()
+    waiter_entered = threading.Event()
+    results: dict[str, Any] = {}
+    errors: dict[str, BaseException] = {}
+
+    def hold_lock() -> None:
+        with session_frontier_module._exclusive_lock(lock_path, timeout_seconds=5.0):
+            first_entered.set()
+            assert release_first.wait(timeout=5)
+
+    def rebind_after_wait() -> None:
+        try:
+            results["b"] = bind_session(
+                session_id="session-wait",
+                run_directory=run_b,
+                frontier_root=frontier_root,
+                allowed_run_root=runs,
+                expected_current_run_id="run-a",
+            )
+            waiter_entered.set()
+        except BaseException as exc:
+            errors["b"] = exc
+
+    holder = threading.Thread(target=hold_lock)
+    waiter = threading.Thread(target=rebind_after_wait)
+    holder.start()
+    assert first_entered.wait(timeout=5)
+    waiter.start()
+    assert not waiter_entered.wait(timeout=0.25)
+    release_first.set()
+    holder.join(timeout=5)
+    waiter.join(timeout=10)
+
+    assert not holder.is_alive()
+    assert not waiter.is_alive()
+    assert not errors
+    assert results["b"]["run_id"] == "run-b"
+    live = load_binding(
+        session_id="session-wait",
+        frontier_root=frontier_root,
+        allowed_run_root=runs,
+    )
+    assert live["run_id"] == "run-b"
+
+
+def test_bind_session_concurrent_cas_one_winner(tmp_path: Path) -> None:
+    runs = tmp_path / "runs"
+    run_a = _make_run(runs, "run-a")
+    run_b = _make_run(runs, "run-b")
+    run_c = _make_run(runs, "run-c")
+    frontier_root = tmp_path / "frontiers"
+    bind_session(
+        session_id="session-race",
+        run_directory=run_a,
+        frontier_root=frontier_root,
+        allowed_run_root=runs,
+    )
+    barrier = threading.Barrier(2)
+    results: dict[str, Any] = {}
+    errors: dict[str, BaseException] = {}
+
+    def rebind(label: str, run_directory: Path) -> None:
+        try:
+            barrier.wait(timeout=5)
+            results[label] = bind_session(
+                session_id="session-race",
+                run_directory=run_directory,
+                frontier_root=frontier_root,
+                allowed_run_root=runs,
+                expected_current_run_id="run-a",
+            )
+        except BaseException as exc:
+            errors[label] = exc
+
+    left = threading.Thread(target=rebind, args=("b", run_b))
+    right = threading.Thread(target=rebind, args=("c", run_c))
+    left.start()
+    right.start()
+    left.join(timeout=15)
+    right.join(timeout=15)
+
+    assert not left.is_alive()
+    assert not right.is_alive()
+    winners = {label for label in ("b", "c") if label in results}
+    losers = {label for label in ("b", "c") if label in errors}
+    assert winners and losers
+    assert len(winners) == 1
+    assert len(losers) == 1
+    winner_label = next(iter(winners))
+    loser_label = next(iter(losers))
+    assert results[winner_label]["run_id"] == f"run-{winner_label}"
+    assert isinstance(errors[loser_label], FrontierProjectionError)
+    assert "expected_current_run_id" in str(errors[loser_label]) or "busy" in str(
+        errors[loser_label]
+    )
+    live = load_binding(
+        session_id="session-race",
+        frontier_root=frontier_root,
+        allowed_run_root=runs,
+    )
+    assert live["run_id"] == f"run-{winner_label}"
+
+
+def test_bind_session_rejects_stale_cas_without_lock_holder(tmp_path: Path) -> None:
+    runs = tmp_path / "runs"
+    run_a = _make_run(runs, "run-a")
+    run_b = _make_run(runs, "run-b")
+    frontier_root = tmp_path / "frontiers"
+    bind_session(
+        session_id="session-stale",
+        run_directory=run_a,
+        frontier_root=frontier_root,
+        allowed_run_root=runs,
+    )
+    with pytest.raises(FrontierProjectionError, match="expected_current_run_id"):
+        bind_session(
+            session_id="session-stale",
+            run_directory=run_b,
+            frontier_root=frontier_root,
+            allowed_run_root=runs,
+            expected_current_run_id="not-run-a",
+        )
+    live = load_binding(
+        session_id="session-stale",
+        frontier_root=frontier_root,
+        allowed_run_root=runs,
+    )
+    assert live["run_id"] == "run-a"
