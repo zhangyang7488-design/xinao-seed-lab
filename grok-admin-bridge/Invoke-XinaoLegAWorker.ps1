@@ -67,7 +67,6 @@ function Get-XinaoLegAUtf8Sha256([string]$Value) {
         $algorithm.Dispose()
     }
 }
-
 function Get-XinaoLegAFileSha256([string]$Path) {
     return (Get-FileHash -LiteralPath $Path -Algorithm SHA256).Hash.ToLowerInvariant()
 }
@@ -671,10 +670,14 @@ try {
     )) {
         Throw-XinaoLegAPreflight "XINAO_LEG_A_SELECTION_TRANSPORT_REJECTED" ([string]$selection.transport_id)
     }
+    $pinnedSelectionDecisionSha256 = [string]$selection.decision_sha256
+    if ($pinnedSelectionDecisionSha256 -notmatch '^[0-9a-f]{64}$') {
+        Throw-XinaoLegAPreflight "XINAO_LEG_A_SELECTION_FIELD_MISSING" "decision_sha256"
+    }
     $resultBase.selection = [ordered]@{
         selection_path = [string]$selection.selection_path
         selection_receipt_sha256 = [string]$selection.selection_receipt_sha256
-        decision_sha256 = [string]$selection.decision_sha256
+        decision_sha256 = $pinnedSelectionDecisionSha256
         provider_id = [string]$selection.provider_id
         profile_ref = [string]$selection.profile_ref
         model_id = [string]$selection.model_id
@@ -683,6 +686,38 @@ try {
         selector_release_binding = $selection.selector_release_binding
         quota_query_performed = $selection.quota_query_performed -eq $true
         model_invocation_count = [int]$selection.model_invocation_count
+        expected_selection_decision_sha256_pinned = $false
+    }
+
+    # Fail closed if selection receipt bytes drift before common-contract call.
+    $selectionPathForPin = [string]$selection.selection_path
+    if (Test-Path -LiteralPath $selectionPathForPin -PathType Leaf) {
+        try {
+            $selectionReceiptReplay = Get-Content -LiteralPath $selectionPathForPin -Raw -Encoding UTF8 |
+                ConvertFrom-Json -ErrorAction Stop
+            $replayDecision = [string]$selectionReceiptReplay.decision_sha256
+            if ([string]::IsNullOrWhiteSpace($replayDecision) -and
+                $null -ne $selectionReceiptReplay.PSObject.Properties["decision"] -and
+                $null -ne $selectionReceiptReplay.decision) {
+                $replayDecision = [string]$selectionReceiptReplay.decision.decision_sha256
+            }
+            if (
+                -not [string]::IsNullOrWhiteSpace($replayDecision) -and
+                -not [string]::Equals(
+                    $replayDecision,
+                    $pinnedSelectionDecisionSha256,
+                    [StringComparison]::Ordinal
+                )
+            ) {
+                Throw-XinaoLegAPreflight "XINAO_LEG_A_SELECTION_STALE" (
+                    "bootstrap=$pinnedSelectionDecisionSha256 receipt=$replayDecision"
+                )
+            }
+        }
+        catch {
+            if ("$_" -match 'XINAO_LEG_A_SELECTION_STALE') { throw }
+            # Receipt shape may vary; SelectionPath pin below remains authoritative.
+        }
     }
 
     # Common-contract bounded dispatch via public launcher. Hashes come only from
@@ -708,6 +743,19 @@ try {
         CommonRulesFile = [string]$context.rules_file
         CommonRulesSha256 = [string]$context.rules_sha256
         CommonPhase = $Phase
+    }
+    # Pin selection decision when the host public dispatcher declares the parameter.
+    $dispatcherDeclaresSelectionPin = $false
+    try {
+        $dispatcherSource = Get-Content -LiteralPath $publicDispatcher -Raw -Encoding UTF8 -ErrorAction Stop
+        $dispatcherDeclaresSelectionPin = $dispatcherSource -match 'ExpectedSelectionDecisionSha256'
+    }
+    catch {
+        $dispatcherDeclaresSelectionPin = $false
+    }
+    if ($dispatcherDeclaresSelectionPin) {
+        $dispatchArgs.ExpectedSelectionDecisionSha256 = $pinnedSelectionDecisionSha256
+        $resultBase.selection.expected_selection_decision_sha256_pinned = $true
     }
     if (-not [string]::IsNullOrWhiteSpace($SupervisorRoot)) {
         $dispatchArgs.SupervisorRoot = $SupervisorRoot

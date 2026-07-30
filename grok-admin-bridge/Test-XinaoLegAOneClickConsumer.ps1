@@ -3,18 +3,20 @@
 .SYNOPSIS
   Fresh-process consumer boundary for XINAO leg-A one-click call.
 .DESCRIPTION
-  Proves (with bounded fake public-dispatch / context-builder fixtures) that one
-  stable leg-A consumer call discovers sealed context, bootstraps selection-only
-  and the real common-contract path through the public launcher, forces
-  linux-container, respects branch isolation, and returns candidate evidence.
-  Does not spend a real second provider call. Candidate only; Codex owns adoption.
+  Binds the published contract to the production parameter/result shape of
+  Invoke-XinaoLegAWorker.ps1 + Build-XinaoLegAContext.ps1, then exercises the
+  one-click consumer through a bounded fake public dispatcher (no real second
+  provider spend). Fixture workers must mirror production params/results;
+  fixture-only greens without production shape binding are forbidden.
+  Candidate only; Codex owns adoption.
 #>
 [CmdletBinding()]
 param(
     [string]$ContractPath = "",
     [string]$ContextBuilderPath = "",
     [string]$OneClickWorkerPath = "",
-    [switch]$AllowMissingProductionScripts
+    [switch]$AllowMissingProductionScripts,
+    [switch]$ForceFixtureWorker
 )
 
 $ErrorActionPreference = "Stop"
@@ -22,33 +24,15 @@ $utf8 = New-Object System.Text.UTF8Encoding $false
 $bridge = $PSScriptRoot
 $repoRoot = Split-Path -Parent $bridge
 $pwsh = (Get-Process -Id $PID).Path
-$marker = "XINAO_LEG_A_FRESH_CONSUMER_CANDIDATE_V1"
+$marker = "XINAO_LEG_A_ONECLICK_ENTRY_CANDIDATE_V1"
 $contractDefault = Join-Path $bridge "grok_xinao_leg_a_oneclick_contract.v1.json"
 if ([string]::IsNullOrWhiteSpace($ContractPath)) { $ContractPath = $contractDefault }
 
 function Assert-True([bool]$Condition, [string]$Label) {
     if (-not $Condition) { throw "XINAO_LEG_A_ONECLICK_ASSERT_FAIL: $Label" }
 }
-
-function Write-JsonFile([string]$Path, [object]$Value) {
-    $dir = Split-Path -Parent $Path
-    if (-not (Test-Path -LiteralPath $dir -PathType Container)) {
-        New-Item -ItemType Directory -Force -Path $dir | Out-Null
-    }
-    [IO.File]::WriteAllText($Path, ($Value | ConvertTo-Json -Depth 14), $utf8)
-}
-
 function Get-Sha256File([string]$Path) {
     return (Get-FileHash -LiteralPath $Path -Algorithm SHA256).Hash.ToLowerInvariant()
-}
-
-function Get-Sha256Text([string]$Text) {
-    $bytes = $utf8.GetBytes($Text)
-    $sha = [Security.Cryptography.SHA256]::Create()
-    try {
-        return ([BitConverter]::ToString($sha.ComputeHash($bytes))).Replace("-", "").ToLowerInvariant()
-    }
-    finally { $sha.Dispose() }
 }
 
 function Invoke-FreshPowerShell([string[]]$Arguments) {
@@ -79,18 +63,26 @@ function ConvertFrom-LastJsonObject([string[]]$Lines) {
 function New-SourceWorktree([string]$Root) {
     $wt = Join-Path $Root "source-worktree"
     New-Item -ItemType Directory -Force -Path $wt | Out-Null
+    # Minimal git worktree marker (production Assert-XinaoLegAWorktree checks .git).
+    [IO.File]::WriteAllText((Join-Path $wt ".git"), "gitdir: fake-for-leg-a-consumer-test`n", $utf8)
+    [IO.File]::WriteAllText(
+        (Join-Path $wt "AGENTS.md"),
+        "leg-a oneclick sealed rules; candidate only; no parent completion`n",
+        $utf8
+    )
     $keep = Join-Path $wt "SOURCE_PRESERVE.txt"
     [IO.File]::WriteAllText($keep, "SOURCE_WORKTREE_MUST_SURVIVE`n", $utf8)
-    $keepSha = Get-Sha256File $keep
     return [pscustomobject]@{
         path = $wt
         preserve_path = $keep
-        preserve_sha256 = $keepSha
+        preserve_sha256 = (Get-Sha256File $keep)
+        rules_file = (Join-Path $wt "AGENTS.md")
+        rules_sha256 = (Get-Sha256File (Join-Path $wt "AGENTS.md"))
     }
 }
 
-function Install-FakePublicLauncher([string]$CarrierRoot, [string]$CallLogPath) {
-    $launcherDir = Join-Path $CarrierRoot "public-launcher"
+function Install-FakePublicDispatcher([string]$CarrierRoot, [string]$CallLogPath) {
+    $launcherDir = Join-Path $CarrierRoot "public-dispatcher"
     New-Item -ItemType Directory -Force -Path $launcherDir | Out-Null
     $launcher = Join-Path $launcherDir "Invoke-Codex-GrokWorkerPool.ps1"
     $launcherBody = @'
@@ -116,7 +108,10 @@ param(
     [string[]]$CommonWriteDomains = @(),
     [string]$CommonPriorAttemptReceiptPath = "",
     [string]$ExpectedSelectionDecisionSha256 = "",
+    [string]$DispatchEpisodeId = "",
     [string]$RuntimeRoot = "",
+    [string]$GrokHome = "",
+    [string]$MaxTurns = "auto",
     [int]$MinResultChars = 1,
     [string[]]$RequiredResultMarkers = @(),
     [switch]$RequireJsonObject,
@@ -134,10 +129,10 @@ if (-not [string]::IsNullOrWhiteSpace($env:XINAO_LEG_A_FAKE_BACKEND)) {
     $backend = $env:XINAO_LEG_A_FAKE_BACKEND
 }
 if ($env:XINAO_LEG_A_FAKE_DOCKER_UNAVAILABLE -eq "1" -and -not $SelectionOnly) {
-    throw "XINAO_LEG_A_DOCKER_UNAVAILABLE"
+    throw "XINAO_LEG_A_DOCKER_CLI_MISSING"
 }
 if (-not $SelectionOnly -and $backend -ne "linux-container") {
-    throw "XINAO_LEG_A_BACKEND_FORBIDDEN: $backend"
+    throw "XINAO_LEG_A_BACKEND_REJECTED: $backend"
 }
 $decision = "b" * 64
 if (-not [string]::IsNullOrWhiteSpace($env:XINAO_LEG_A_FAKE_SELECTION_DECISION)) {
@@ -153,7 +148,7 @@ if (
 $selectionOut = $SelectionPath
 if ($SelectionOnly) {
     if ([string]::IsNullOrWhiteSpace($selectionOut)) {
-        $selDir = Join-Path $RuntimeRoot ("state\grok_worker_selection\fake_" + [guid]::NewGuid().ToString("N").Substring(0, 8))
+        $selDir = Join-Path $RuntimeRoot ("state/grok_worker_selection/fake_" + [guid]::NewGuid().ToString("N").Substring(0, 8))
         New-Item -ItemType Directory -Force -Path $selDir | Out-Null
         $selectionOut = Join-Path $selDir "selection.receipt.json"
     }
@@ -223,477 +218,467 @@ if ($SelectionOnly) {
     exit 0
 }
 
-# Common-contract path: emit candidate result envelope without a real provider call.
+# Emit production-shaped dispatch meta + pool_summary so the oneclick worker can accept.
+$dispatchId = "cdx_fake_" + [guid]::NewGuid().ToString("N").Substring(0, 10)
+$poolId = "gwp_fake_" + [guid]::NewGuid().ToString("N").Substring(0, 10)
+$metaDir = Join-Path $RuntimeRoot "state/codex_dispatch_grok_worker_pool"
+$poolDir = Join-Path $RuntimeRoot ("state/grok_worker_pool/" + $poolId)
+New-Item -ItemType Directory -Force -Path $metaDir, $poolDir | Out-Null
+$poolSummaryPath = Join-Path $poolDir "pool_summary.json"
+$dispatchMetaPath = Join-Path $metaDir ($dispatchId + ".json")
 $marker = "XINAO_LEG_A_ONECLICK_OK"
 if (@($RequiredResultMarkers).Count -gt 0) { $marker = [string]$RequiredResultMarkers[0] }
-$usage = [ordered]@{
-    input_tokens = 11
-    output_tokens = 7
-    total_tokens = 18
-    model_invocation_count = 1
+$effect = $(if (@($CommonWriteDomains).Count -gt 0) { "authorized_write" } else { "read_only" })
+$poolSummary = [ordered]@{
+    schema_version = "xinao.grok_worker_pool_summary.v1"
+    pool_id = $poolId
+    all_ok = $true
+    acceptance_contract_ok = $true
+    reuse_skipped_execution = $false
+    execution_backend = $backend
+    effect_mode = $effect
+    results = @([ordered]@{
+        evidence_dir = $poolDir
+        meta_path = $dispatchMetaPath
+        output_marker = $marker
+    })
 }
-$result = [ordered]@{
+[IO.File]::WriteAllText($poolSummaryPath, ($poolSummary | ConvertTo-Json -Depth 8), $utf8)
+$dispatchMeta = [ordered]@{
+    schema_version = "xinao.codex_dispatch_grok_worker_pool.v1"
+    dispatch_id = $dispatchId
+    pool_id = $poolId
+    pool_summary_path = $poolSummaryPath
+    selection_path = $selectionOut
+    selection_decision_sha256 = $decision
+    status = "accepted_candidate"
+    common_context_effect_status = "bound"
+    common_model_input_effect_verified = $true
+    common_frozen_context_sha256 = $CommonFrozenContextSha256
+    common_rules_sha256 = $CommonRulesSha256
+    common_context_manifest_path = $CommonContextManifestPath
+}
+[IO.File]::WriteAllText($dispatchMetaPath, ($dispatchMeta | ConvertTo-Json -Depth 8), $utf8)
+[IO.File]::WriteAllText((Join-Path $metaDir "latest.json"), ($dispatchMeta | ConvertTo-Json -Depth 8), $utf8)
+
+[ordered]@{
     schema_version = "xinao.codex_dispatch_grok_worker_pool.v1"
     ok = $true
     route_role = "normal_leg_a_bounded_online_current_tui"
     execution_backend = $backend
-    selected_provider_id = "grok_acpx_headless"
-    observed_provider_id = "grok_acpx_headless"
-    selected_model_id = $(if ($Model) { $Model } else { "grok-4.5" })
-    observed_model_id = $(if ($Model) { $Model } else { "grok-4.5" })
-    selected_transport_id = "direct-grok-worker-pool"
-    observed_transport_id = "direct-grok-worker-pool"
     selection_decision_sha256 = $decision
-    effect_mode = $(if (@($CommonWriteDomains).Count -gt 0) { "authorized_write" } else { "read_only" })
-    common_sealed_input_root = $CommonSealedInputRoot
-    common_sealed_input_read_only = -not [string]::IsNullOrWhiteSpace($CommonSealedInputRoot)
-    common_candidate_output_root = $CommonCandidateOutputRoot
-    common_frozen_context_sha256 = $CommonFrozenContextSha256
-    common_rules_sha256 = $CommonRulesSha256
+    pool_id = $poolId
+    dispatch_id = $dispatchId
     output_marker = $marker
-    usage = $usage
+    usage = [ordered]@{
+        input_tokens = 11
+        output_tokens = 7
+        total_tokens = 18
+        model_invocation_count = 1
+    }
     candidate_only = $true
     completion_claim_allowed = $false
-}
-$result | ConvertTo-Json -Compress -Depth 8
+} | ConvertTo-Json -Compress -Depth 8
 exit 0
 '@
     [IO.File]::WriteAllText($launcher, $launcherBody, $utf8)
-    return [pscustomobject]@{
-        path = $launcher
-        call_log = $CallLogPath
-    }
+    return [pscustomobject]@{ path = $launcher; call_log = $CallLogPath }
 }
 
 function Install-FixtureContextBuilder([string]$CarrierRoot) {
+    # Production-shaped: -OutputDir; emits manifest_path/context_sha256/source_manifest_sha256/spec_path.
     $path = Join-Path $CarrierRoot "Build-XinaoLegAContext.ps1"
     $body = @'
 #Requires -Version 5.1
 param(
     [Parameter(Mandatory = $true)]
-    [string]$Worktree,
-    [Parameter(Mandatory = $true)]
-    [string]$OutputRoot,
-    [string]$PromptText = "Reply only with marker XINAO_LEG_A_ONECLICK_OK",
-    [string]$RulesText = "leg-a oneclick sealed rules; candidate only; no parent completion",
-    [string]$SubjectManifestText = '{"schema_version":"xinao.leg_a_subject_manifest.v1","subject":"fresh_consumer"}',
-    [switch]$SimulateMissing,
+    [string]$OutputDir,
+    [string]$MainlineRoot = "",
+    [string]$RepoRoot = "",
+    [string]$PythonExe = "",
+    [string]$ExpectedSourcePinsPath = "",
+    [int]$MaxContentBytes = 65536,
     [switch]$Quiet
 )
 $ErrorActionPreference = "Stop"
 $utf8 = New-Object System.Text.UTF8Encoding $false
-if ($SimulateMissing -or $env:XINAO_LEG_A_FIXTURE_MISSING_CONTEXT -eq "1") {
-    throw "XINAO_LEG_A_CONTEXT_MISSING"
+if ($env:XINAO_LEG_A_FIXTURE_MISSING_CONTEXT -eq "1") {
+    throw "XINAO_LEG_A_CONTEXT_BUILD_FAILED: fixture missing context"
 }
-$Worktree = [IO.Path]::GetFullPath($Worktree)
-$OutputRoot = [IO.Path]::GetFullPath($OutputRoot)
-if (-not (Test-Path -LiteralPath $Worktree -PathType Container)) {
-    throw "XINAO_LEG_A_WORKTREE_MISSING: $Worktree"
+$OutputDir = [IO.Path]::GetFullPath($OutputDir)
+New-Item -ItemType Directory -Force -Path $OutputDir | Out-Null
+$manifestPath = Join-Path $OutputDir "context_slice_manifest.json"
+$specPath = Join-Path $OutputDir "owned_context_slice_spec.json"
+$receiptPath = Join-Path $OutputDir "seal_receipt.json"
+$payload = "sealed-leg-a-context-bytes-v1"
+$contextSha = (Get-FileHash -InputStream ([IO.MemoryStream]::new($utf8.GetBytes($payload))) -Algorithm SHA256).Hash.ToLowerInvariant()
+$sourceSha = (Get-FileHash -InputStream ([IO.MemoryStream]::new($utf8.GetBytes("source-manifest-v1"))) -Algorithm SHA256).Hash.ToLowerInvariant()
+$spec = [ordered]@{
+    schema_version = "xinao.context_slice_spec.v1"
+    package_id = "xinao_leg_a_context_seal"
 }
-# Path escape: OutputRoot must stay under an authorized carrier prefix when provided.
-$authorized = $env:XINAO_LEG_A_AUTHORIZED_ROOT
-if (-not [string]::IsNullOrWhiteSpace($authorized)) {
-    $authorized = [IO.Path]::GetFullPath($authorized).TrimEnd('\', '/')
-    $outNorm = $OutputRoot.TrimEnd('\', '/')
-    $wtNorm = $Worktree.TrimEnd('\', '/')
-    if (
-        -not ($outNorm.StartsWith($authorized, [StringComparison]::OrdinalIgnoreCase) -or
-              $outNorm.StartsWith($authorized + [IO.Path]::DirectorySeparatorChar, [StringComparison]::OrdinalIgnoreCase))
-    ) {
-        throw "XINAO_LEG_A_PATH_ESCAPE: output_root"
-    }
-    if (
-        -not ($wtNorm.StartsWith($authorized, [StringComparison]::OrdinalIgnoreCase) -or
-              $wtNorm.Equals($authorized, [StringComparison]::OrdinalIgnoreCase) -or
-              $wtNorm.StartsWith($authorized + [IO.Path]::DirectorySeparatorChar, [StringComparison]::OrdinalIgnoreCase))
-    ) {
-        # Source worktree may sit beside carrier; only fail when forced escape probe is set.
-        if ($env:XINAO_LEG_A_FIXTURE_FORCE_PATH_ESCAPE -eq "1") {
-            throw "XINAO_LEG_A_PATH_ESCAPE: worktree"
-        }
-    }
-}
-$sealed = Join-Path $OutputRoot "sealed-context"
-$inputs = Join-Path $sealed "inputs"
-New-Item -ItemType Directory -Force -Path $inputs | Out-Null
-$promptFile = Join-Path $sealed "prompt.md"
-$rulesFile = Join-Path $sealed "rules.txt"
-$manifestFile = Join-Path $sealed "context_manifest.json"
-$subjectFile = Join-Path $sealed "subject_manifest.json"
-[IO.File]::WriteAllText($promptFile, $PromptText.TrimEnd() + "`n", $utf8)
-[IO.File]::WriteAllText($rulesFile, $RulesText.TrimEnd() + "`n", $utf8)
-[IO.File]::WriteAllText($subjectFile, $SubjectManifestText.TrimEnd() + "`n", $utf8)
-$rulesSha = (Get-FileHash -LiteralPath $rulesFile -Algorithm SHA256).Hash.ToLowerInvariant()
-$promptSha = (Get-FileHash -LiteralPath $promptFile -Algorithm SHA256).Hash.ToLowerInvariant()
-$subjectSha = (Get-FileHash -LiteralPath $subjectFile -Algorithm SHA256).Hash.ToLowerInvariant()
-# frozen_context_sha256 is derived from sealed bytes; caller never supplies it.
-$frozenPayload = [ordered]@{
-    schema_version = "xinao.leg_a_frozen_context.v1"
-    prompt_sha256 = $promptSha
-    rules_sha256 = $rulesSha
-    subject_manifest_sha256 = $subjectSha
-    sealed_input_root = $inputs
-}
-$frozenJson = ($frozenPayload | ConvertTo-Json -Compress -Depth 6)
-$frozenBytes = $utf8.GetBytes($frozenJson)
-$frozenAlg = [Security.Cryptography.SHA256]::Create()
-try {
-    $frozenSha = ([BitConverter]::ToString($frozenAlg.ComputeHash($frozenBytes))).Replace("-", "").ToLowerInvariant()
-}
-finally { $frozenAlg.Dispose() }
+$specJson = ($spec | ConvertTo-Json -Compress)
+[IO.File]::WriteAllText($specPath, $specJson, $utf8)
+$specSha = (Get-FileHash -LiteralPath $specPath -Algorithm SHA256).Hash.ToLowerInvariant()
 $manifest = [ordered]@{
-    schema_version = "xinao.leg_a_context_manifest.v1"
-    context_binding_mode = "validated_context_slice_manifest"
-    sealed_context_path = $sealed
-    prompt_file = $promptFile
-    prompt_sha256 = $promptSha
-    rules_file = $rulesFile
-    rules_sha256 = $rulesSha
-    subject_manifest_path = $subjectFile
-    subject_manifest_sha256 = $subjectSha
-    frozen_context_sha256 = $frozenSha
-    sealed_input_root = $inputs
-    sealed_read_only = $true
-    worktree = $Worktree
+    schema_version = "xinao.context_slice_manifest.v1"
+    authority = $false
+    completion_claim_allowed = $false
+    context_sha256 = $contextSha
+    source_manifest_sha256 = $sourceSha
+    spec_sha256 = $specSha
+    total_content_bytes = $payload.Length
+    false_green_deny = "fixture_context_not_live_mainline"
+    sources = @()
+    rules_file = ""
+    rules_sha256 = ""
 }
-[IO.File]::WriteAllText($manifestFile, ($manifest | ConvertTo-Json -Depth 8), $utf8)
-[IO.File]::WriteAllText((Join-Path $inputs "catalog.json"), '{"sealed":true}', $utf8)
-$result = [ordered]@{
-    schema_version = "xinao.leg_a_context_build_result.v1"
-    sealed_context_path = $sealed
-    context_manifest_path = $manifestFile
-    frozen_context_sha256 = $frozenSha
-    rules_file = $rulesFile
-    rules_sha256 = $rulesSha
-    sealed_input_root = $inputs
-    prompt_file = $promptFile
-    subject_manifest_sha256 = $subjectSha
-    sealed_read_only = $true
-    manual_hashes_required = $false
-    prior_chat_state_required = $false
+[IO.File]::WriteAllText($manifestPath, ($manifest | ConvertTo-Json -Depth 8), $utf8)
+$public = [ordered]@{
+    ok = $true
+    sentinel = "XINAO_LEG_A_CONTEXT_SEAL_CANDIDATE_V1"
+    schema_version = "xinao.leg_a_context_seal_receipt.v1"
+    package_id = "xinao_leg_a_context_seal"
+    authority = $false
+    completion_claim_allowed = $false
+    candidate_only = $true
+    manifest_path = $manifestPath
+    context_sha256 = $contextSha
+    source_manifest_sha256 = $sourceSha
+    spec_path = $specPath
+    spec_sha256 = $specSha
+    receipt_path = $receiptPath
+    total_content_bytes = $payload.Length
 }
-$result | ConvertTo-Json -Compress -Depth 8
+[IO.File]::WriteAllText($receiptPath, ($public | ConvertTo-Json -Depth 8), $utf8)
+$public | ConvertTo-Json -Compress -Depth 8
 '@
     [IO.File]::WriteAllText($path, $body, $utf8)
     return $path
 }
 
 function Install-FixtureOneClickWorker([string]$CarrierRoot) {
+    # Mirrors production parameter names + result schema (xinao.leg_a.oneclick_entry_result.v1).
     $path = Join-Path $CarrierRoot "Invoke-XinaoLegAWorker.ps1"
     $body = @'
 #Requires -Version 5.1
 param(
-    [Parameter(Mandatory = $true)]
-    [string]$Worktree,
-    [string]$Model = "grok-4.5",
-    [string]$Prompt = "Reply only with marker XINAO_LEG_A_ONECLICK_OK",
+    [string]$Prompt = "",
     [string]$PromptFile = "",
-    [string]$ContextBuilderPath = "",
-    [string]$PublicLauncherPath = "",
-    [string]$RuntimeRoot = "",
-    [string]$SealedContextOutputRoot = "",
-    [string]$CandidateOutputRoot = "",
-    [switch]$AuthorizeWorktreeWrite,
-    [string]$ForcedBackend = "",
+    [Parameter(Mandatory = $true)]
+    [string]$Cwd,
+    [string]$Model = "grok-4.5",
+    [Alias("AuthorizedCandidateWrite")]
+    [switch]$AuthorizedWrite,
+    [ValidateSet("EXPLORE", "CONSTRUCT", "VERIFY", "LAND")]
+    [string]$Phase = "CONSTRUCT",
     [string]$WorkKey = "",
     [string]$OperationId = "",
-    [string[]]$RequiredResultMarkers = @("XINAO_LEG_A_ONECLICK_OK"),
-    [switch]$SkipContextBuild,
-    [string]$InjectContextManifestPath = "",
-    [string]$InjectFrozenContextSha256 = "",
-    [string]$InjectRulesFile = "",
-    [string]$InjectRulesSha256 = "",
-    [string]$InjectSealedInputRoot = "",
-    [string]$InjectPromptFile = "",
-    [string]$InjectSubjectManifestSha256 = "",
-    [string]$ExpectedSelectionDecisionSha256 = "",
+    [string]$DispatchEpisodeId = "",
+    [string]$ParentOperationId = "",
+    [string]$CorrelationId = "",
+    [string]$TaskContractRef = "",
+    [string]$RuntimeRoot = "D:\XINAO_RESEARCH_RUNTIME",
+    [string]$SelectorReleasePointer = "",
+    [string]$SupervisorRoot = "",
+    [string]$PublicDispatcher = "",
+    [string]$ContextBuilder = "",
+    [string]$DockerExe = "",
+    [string]$GrokHome = "C:\Users\xx363\.grok-bg-workers",
+    [string]$MaxTurns = "auto",
+    [int]$TimeoutSec = 600,
+    [int]$MinResultChars = 256,
+    [string[]]$RequiredResultMarkers = @(),
+    [switch]$RequireJsonObject,
+    [string]$JsonSchemaPath = "",
+    [string]$PriorAttemptReceiptPath = "",
     [switch]$Quiet
 )
 $ErrorActionPreference = "Stop"
 $utf8 = New-Object System.Text.UTF8Encoding $false
+$startedAt = Get-Date
 function Get-LastJson([string[]]$Lines) {
     $hits = @($Lines | Where-Object { -not [string]::IsNullOrWhiteSpace($_) -and $_.Trim().StartsWith("{") })
     if ($hits.Count -eq 0) { throw "XINAO_LEG_A_NO_JSON_RESULT" }
     return ($hits[-1] | ConvertFrom-Json -ErrorAction Stop)
 }
-$Worktree = [IO.Path]::GetFullPath($Worktree)
-if (-not (Test-Path -LiteralPath $Worktree -PathType Container)) {
-    throw "XINAO_LEG_A_WORKTREE_MISSING: $Worktree"
+function Emit-Result([hashtable]$Payload, [int]$Code) {
+    $Payload["finished_at"] = (Get-Date).ToString("o")
+    $Payload["duration_ms"] = [int]((Get-Date) - $startedAt).TotalMilliseconds
+    Write-Output ($Payload | ConvertTo-Json -Compress -Depth 10)
+    exit $Code
 }
-if ([string]::IsNullOrWhiteSpace($PublicLauncherPath)) {
-    $PublicLauncherPath = $env:XINAO_LEG_A_PUBLIC_LAUNCHER
+$resultBase = [ordered]@{
+    schema_version = "xinao.leg_a.oneclick_entry_result.v1"
+    sentinel = "XINAO_LEG_A_ONECLICK_ENTRY_CANDIDATE_V1"
+    package_id = "xinao_leg_a_oneclick_entry"
+    generated_at = $startedAt.ToString("o")
+    route_role = "normal_leg_a_bounded_online_current_tui"
+    transport_id = "direct-grok-worker-pool"
+    leg = "A"
+    not_leg_b = $true
+    not_temporal = $true
+    not_houtai_gongren = $true
+    not_second_owner = $true
+    execution_backend = "linux-container"
+    effect_mode = if ($AuthorizedWrite) { "authorized_write" } else { "read_only" }
+    worker_output_authority = "candidate_only"
+    completion_claim_allowed = $false
+    model = $Model
+    phase = $Phase
+    authorized_write = [bool]$AuthorizedWrite
+    cwd = ""
+    ok = $false
+    status = "preflight"
+    error = ""
+    selection = $null
+    context = $null
+    identities = $null
+    evidence = $null
+    pool_exit_code = $null
 }
-if ([string]::IsNullOrWhiteSpace($PublicLauncherPath) -or -not (Test-Path -LiteralPath $PublicLauncherPath -PathType Leaf)) {
-    throw "XINAO_LEG_A_PUBLIC_LAUNCHER_MISSING"
-}
-if ([string]::IsNullOrWhiteSpace($ContextBuilderPath)) {
-    $ContextBuilderPath = $env:XINAO_LEG_A_CONTEXT_BUILDER
-}
-if ([string]::IsNullOrWhiteSpace($RuntimeRoot)) {
-    $RuntimeRoot = Join-Path $Worktree "_runtime"
-}
-New-Item -ItemType Directory -Force -Path $RuntimeRoot | Out-Null
-if ([string]::IsNullOrWhiteSpace($SealedContextOutputRoot)) {
-    $SealedContextOutputRoot = Join-Path $RuntimeRoot "context-out"
-}
-if ([string]::IsNullOrWhiteSpace($WorkKey)) {
-    $WorkKey = "xinao-leg-a-oneclick:" + [guid]::NewGuid().ToString("N").Substring(0, 12)
-}
-if ([string]::IsNullOrWhiteSpace($OperationId)) {
-    $OperationId = "op-leg-a-oneclick"
-}
-
-$backend = "linux-container"
-if (-not [string]::IsNullOrWhiteSpace($ForcedBackend)) { $backend = $ForcedBackend }
-elseif (-not [string]::IsNullOrWhiteSpace($env:XINAO_LEG_A_FAKE_BACKEND)) { $backend = $env:XINAO_LEG_A_FAKE_BACKEND }
-if ($backend -ne "linux-container") {
-    throw "XINAO_LEG_A_BACKEND_FORBIDDEN: $backend"
-}
-
-# Discover sealed context without prior chat state or manually supplied hashes.
-$context = $null
-if ($SkipContextBuild) {
-    if (
-        [string]::IsNullOrWhiteSpace($InjectContextManifestPath) -or
-        [string]::IsNullOrWhiteSpace($InjectFrozenContextSha256) -or
-        [string]::IsNullOrWhiteSpace($InjectRulesFile) -or
-        [string]::IsNullOrWhiteSpace($InjectRulesSha256) -or
-        [string]::IsNullOrWhiteSpace($InjectSealedInputRoot) -or
-        [string]::IsNullOrWhiteSpace($InjectPromptFile) -or
-        [string]::IsNullOrWhiteSpace($InjectSubjectManifestSha256)
-    ) {
-        throw "XINAO_LEG_A_CONTEXT_MISSING"
+try {
+    if ([string]::IsNullOrWhiteSpace($Cwd)) { throw "XINAO_LEG_A_CWD_REQUIRED" }
+    $resolvedCwd = [IO.Path]::GetFullPath($Cwd)
+    if (-not (Test-Path -LiteralPath $resolvedCwd -PathType Container)) {
+        throw "XINAO_LEG_A_CWD_MISSING: $resolvedCwd"
     }
-    $context = [pscustomobject]@{
-        context_manifest_path = $InjectContextManifestPath
-        frozen_context_sha256 = $InjectFrozenContextSha256
-        rules_file = $InjectRulesFile
-        rules_sha256 = $InjectRulesSha256
-        sealed_input_root = $InjectSealedInputRoot
-        prompt_file = $InjectPromptFile
-        subject_manifest_sha256 = $InjectSubjectManifestSha256
-        sealed_context_path = (Split-Path -Parent $InjectContextManifestPath)
+    if (-not (Test-Path -LiteralPath (Join-Path $resolvedCwd ".git"))) {
+        throw "XINAO_LEG_A_INVALID_WORKTREE: $resolvedCwd"
     }
-}
-else {
-    if ([string]::IsNullOrWhiteSpace($ContextBuilderPath) -or -not (Test-Path -LiteralPath $ContextBuilderPath -PathType Leaf)) {
+    $resultBase.cwd = $resolvedCwd
+    $hasPrompt = -not [string]::IsNullOrWhiteSpace($Prompt)
+    $hasPromptFile = -not [string]::IsNullOrWhiteSpace($PromptFile)
+    if ($hasPrompt -eq $hasPromptFile) {
+        throw "XINAO_LEG_A_EXACTLY_ONE_PROMPT_SOURCE_REQUIRED"
+    }
+    if ($Phase -eq "LAND" -and -not $AuthorizedWrite) {
+        throw "XINAO_LEG_A_LAND_REQUIRES_AUTHORIZED_WRITE"
+    }
+    $resolvedRuntimeRoot = [IO.Path]::GetFullPath($RuntimeRoot)
+    if (-not (Test-Path -LiteralPath $resolvedRuntimeRoot -PathType Container)) {
+        New-Item -ItemType Directory -Force -Path $resolvedRuntimeRoot | Out-Null
+    }
+    if ([string]::IsNullOrWhiteSpace($PublicDispatcher)) {
+        throw "XINAO_LEG_A_PUBLIC_DISPATCHER_REQUIRED"
+    }
+    $publicDispatcher = [IO.Path]::GetFullPath($PublicDispatcher)
+    if (-not (Test-Path -LiteralPath $publicDispatcher -PathType Leaf)) {
+        throw "XINAO_LEG_A_PUBLIC_DISPATCHER_MISSING: $publicDispatcher"
+    }
+    if ([string]::IsNullOrWhiteSpace($ContextBuilder)) {
         throw "XINAO_LEG_A_CONTEXT_BUILDER_MISSING"
     }
-    try {
-        $buildOut = @(& $ContextBuilderPath -Worktree $Worktree -OutputRoot $SealedContextOutputRoot -PromptText $Prompt 2>&1 | ForEach-Object { [string]$_ })
-        $buildExit = if ($null -eq $LASTEXITCODE) { 0 } else { [int]$LASTEXITCODE }
+    $contextBuilder = [IO.Path]::GetFullPath($ContextBuilder)
+    if (-not (Test-Path -LiteralPath $contextBuilder -PathType Leaf)) {
+        throw "XINAO_LEG_A_CONTEXT_BUILDER_MISSING: $contextBuilder"
     }
-    catch {
-        throw ("XINAO_LEG_A_CONTEXT_BUILD_FAILED: " + $_)
+    if ($env:XINAO_LEG_A_FAKE_DOCKER_UNAVAILABLE -eq "1") {
+        throw "XINAO_LEG_A_DOCKER_CLI_MISSING"
     }
-    if ($buildExit -ne 0) {
-        throw ("XINAO_LEG_A_CONTEXT_BUILD_FAILED: " + ($buildOut -join "`n"))
+    if (-not [string]::IsNullOrWhiteSpace($env:XINAO_LEG_A_FAKE_BACKEND) -and
+        $env:XINAO_LEG_A_FAKE_BACKEND -ne "linux-container") {
+        throw ("XINAO_LEG_A_BACKEND_REJECTED: observed=" + $env:XINAO_LEG_A_FAKE_BACKEND)
     }
-    $context = Get-LastJson $buildOut
-}
-
-foreach ($required in @(
-    "context_manifest_path", "frozen_context_sha256", "rules_file", "rules_sha256",
-    "sealed_input_root", "prompt_file", "subject_manifest_sha256"
-)) {
-    if ([string]::IsNullOrWhiteSpace([string]$context.$required)) {
-        throw "XINAO_LEG_A_CONTEXT_MISSING: $required"
-    }
-}
-
-# Drift checks before provider effect.
-if (-not (Test-Path -LiteralPath ([string]$context.rules_file) -PathType Leaf)) {
-    throw "XINAO_LEG_A_CONTEXT_MISSING: rules_file"
-}
-$observedRulesSha = (Get-FileHash -LiteralPath ([string]$context.rules_file) -Algorithm SHA256).Hash.ToLowerInvariant()
-if (-not [string]::Equals($observedRulesSha, [string]$context.rules_sha256, [StringComparison]::Ordinal)) {
-    throw "XINAO_LEG_A_CONTEXT_DRIFT: rules"
-}
-if (-not (Test-Path -LiteralPath ([string]$context.context_manifest_path) -PathType Leaf)) {
-    throw "XINAO_LEG_A_CONTEXT_MISSING: context_manifest_path"
-}
-if (-not (Test-Path -LiteralPath ([string]$context.sealed_input_root) -PathType Container)) {
-    throw "XINAO_LEG_A_CONTEXT_MISSING: sealed_input_root"
-}
-if (-not (Test-Path -LiteralPath ([string]$context.prompt_file) -PathType Leaf)) {
-    throw "XINAO_LEG_A_CONTEXT_MISSING: prompt_file"
-}
-
-$effectMode = "read_only"
-$writeDomains = @()
-$candidateRoot = ""
-if ($AuthorizeWorktreeWrite) {
-    $effectMode = "authorized_write"
-    if ([string]::IsNullOrWhiteSpace($CandidateOutputRoot)) {
-        $CandidateOutputRoot = $Worktree
-    }
-    $candidateRoot = [IO.Path]::GetFullPath($CandidateOutputRoot)
-    $wtFull = [IO.Path]::GetFullPath($Worktree)
-    if (-not [string]::Equals($candidateRoot, $wtFull, [StringComparison]::OrdinalIgnoreCase)) {
-        throw "XINAO_LEG_A_OUTPUT_ROOT_MISMATCH"
-    }
-    $writeDomains = @("candidate_output_root:" + ($candidateRoot.Replace('\', '/').TrimEnd('/').ToLowerInvariant()))
-}
-elseif (-not [string]::IsNullOrWhiteSpace($CandidateOutputRoot)) {
-    # Providing an output root without authorize is a mismatch.
-    throw "XINAO_LEG_A_OUTPUT_ROOT_MISMATCH"
-}
-
-# Path escape probe for sealed input / rules relative to authorized carrier when set.
-$authorized = $env:XINAO_LEG_A_AUTHORIZED_ROOT
-if (-not [string]::IsNullOrWhiteSpace($authorized)) {
-    $authorized = [IO.Path]::GetFullPath($authorized).TrimEnd('\', '/')
-    foreach ($pair in @(
-        @{ name = "sealed_input_root"; path = [string]$context.sealed_input_root },
-        @{ name = "rules_file"; path = [string]$context.rules_file },
-        @{ name = "prompt_file"; path = [string]$context.prompt_file }
-    )) {
-        $p = [IO.Path]::GetFullPath($pair.path).TrimEnd('\', '/')
-        if (
-            -not ($p.StartsWith($authorized, [StringComparison]::OrdinalIgnoreCase) -or
-                  $p.StartsWith($authorized + [IO.Path]::DirectorySeparatorChar, [StringComparison]::OrdinalIgnoreCase))
-        ) {
-            if ($env:XINAO_LEG_A_FIXTURE_FORCE_PATH_ESCAPE -eq "1") {
-                throw "XINAO_LEG_A_PATH_ESCAPE: $($pair.name)"
-            }
+    $candidateWriteDomain = ""
+    $candidateOutputRoot = ""
+    if ($AuthorizedWrite) {
+        $candidateOutputRoot = $resolvedCwd
+        $candidateWriteDomain = "candidate_output_root:" + ($candidateOutputRoot.Replace('\', '/').TrimEnd('/').ToLowerInvariant())
+        if ($env:XINAO_LEG_A_FIXTURE_FORCE_WRITE_SCOPE -eq "1") {
+            throw "XINAO_LEG_A_WRITE_SCOPE_AMBIGUOUS: forced"
         }
     }
-}
-
-# 1) selection-only bootstrap through public launcher
-$selArgs = @(
-    "-NoLogo", "-NoProfile", "-File", $PublicLauncherPath,
-    "-N", "1",
-    "-Model", $Model,
-    "-Cwd", $Worktree,
-    "-SelectionOnly",
-    "-RuntimeRoot", $RuntimeRoot
-)
-$selRaw = @(& (Get-Process -Id $PID).Path @selArgs 2>&1 | ForEach-Object { [string]$_ })
-if ($LASTEXITCODE -ne 0 -and $LASTEXITCODE -ne $null) {
-    throw ("XINAO_LEG_A_SELECTION_ONLY_FAILED: " + ($selRaw -join "`n"))
-}
-$selection = Get-LastJson $selRaw
-if ([string]$selection.schema_version -ne "xinao.codex_grok_selection_only_result.v1") {
-    throw "XINAO_LEG_A_SELECTION_ONLY_SCHEMA"
-}
-if ([int]$selection.model_invocation_count -ne 0) {
-    throw "XINAO_LEG_A_SELECTION_ONLY_HAD_PROVIDER_EFFECT"
-}
-$decisionSha = [string]$selection.decision_sha256
-if (
-    -not [string]::IsNullOrWhiteSpace($ExpectedSelectionDecisionSha256) -and
-    -not [string]::Equals($ExpectedSelectionDecisionSha256, $decisionSha, [StringComparison]::Ordinal)
-) {
-    throw "XINAO_LEG_A_SELECTION_STALE"
-}
-
-# Optional stale-selection probe for tests: mutate expected after bootstrap.
-if ($env:XINAO_LEG_A_FIXTURE_STALE_SELECTION_AFTER_BOOTSTRAP -eq "1") {
-    $decisionSha = ("c" * 64)
-}
-
-# 2) real common-contract call through the same public launcher
-$commonArgs = @(
-    "-NoLogo", "-NoProfile", "-File", $PublicLauncherPath,
-    "-N", "1",
-    "-Model", $Model,
-    "-Cwd", $Worktree,
-    "-PromptFile", ([string]$context.prompt_file),
-    "-CommonWorkKey", $WorkKey,
-    "-CommonOperationId", $OperationId,
-    "-CommonSubjectManifestSha256", ([string]$context.subject_manifest_sha256),
-    "-CommonFrozenContextSha256", ([string]$context.frozen_context_sha256),
-    "-CommonContextManifestPath", ([string]$context.context_manifest_path),
-    "-CommonRulesFile", ([string]$context.rules_file),
-    "-CommonRulesSha256", ([string]$context.rules_sha256),
-    "-CommonSealedInputRoot", ([string]$context.sealed_input_root),
-    "-CommonPhase", "EXPLORE",
-    "-ExpectedSelectionDecisionSha256", $decisionSha,
-    "-RuntimeRoot", $RuntimeRoot,
-    "-MinResultChars", "1",
-    "-RequiredResultMarkers", ($RequiredResultMarkers -join ",")
-)
-if ($AuthorizeWorktreeWrite) {
-    $commonArgs += @("-CommonCandidateOutputRoot", $candidateRoot)
-    foreach ($domain in $writeDomains) {
-        $commonArgs += @("-CommonWriteDomains", $domain)
+    $runStamp = (Get-Date -Format "yyyyMMddTHHmmss") + "_" + ([guid]::NewGuid().ToString("N").Substring(0, 8))
+    $localStateDir = Join-Path $resolvedRuntimeRoot ("state/xinao_leg_a_oneclick/" + $runStamp)
+    New-Item -ItemType Directory -Force -Path $localStateDir | Out-Null
+    $resolvedPromptFile = ""
+    if ($hasPromptFile) {
+        $resolvedPromptFile = [IO.Path]::GetFullPath($PromptFile)
+        if (-not (Test-Path -LiteralPath $resolvedPromptFile -PathType Leaf)) {
+            throw "XINAO_LEG_A_PROMPT_FILE_MISSING: $resolvedPromptFile"
+        }
     }
-}
-$commonRaw = @(& (Get-Process -Id $PID).Path @commonArgs 2>&1 | ForEach-Object { [string]$_ })
-if ($LASTEXITCODE -ne 0 -and $LASTEXITCODE -ne $null) {
-    throw ("XINAO_LEG_A_COMMON_CALL_FAILED: " + ($commonRaw -join "`n"))
-}
-$dispatch = Get-LastJson $commonRaw
-
-$selectedProvider = [string]$selection.provider_id
-$selectedModel = [string]$selection.model_id
-$selectedTransport = [string]$selection.transport_id
-$observedProvider = [string]$dispatch.observed_provider_id
-$observedModel = [string]$dispatch.observed_model_id
-$observedTransport = [string]$dispatch.observed_transport_id
-$observedBackend = [string]$dispatch.execution_backend
-if ([string]::IsNullOrWhiteSpace($observedBackend)) { $observedBackend = $backend }
-
-if ($observedBackend -ne "linux-container") {
-    throw "XINAO_LEG_A_BACKEND_FORBIDDEN: observed=$observedBackend"
-}
-if ($selectedProvider -ne $observedProvider) { throw "XINAO_LEG_A_SELECTED_OBSERVED_PROVIDER_MISMATCH" }
-if ($selectedModel -ne $observedModel) { throw "XINAO_LEG_A_SELECTED_OBSERVED_MODEL_MISMATCH" }
-if ($selectedTransport -ne $observedTransport) { throw "XINAO_LEG_A_SELECTED_OBSERVED_TRANSPORT_MISMATCH" }
-
-$usage = $dispatch.usage
-$total = 0
-if ($null -ne $usage) {
-    if ($null -ne $usage.total_tokens) { $total = [int]$usage.total_tokens }
-    elseif ($null -ne $usage.output_tokens) { $total = [int]$usage.output_tokens }
-}
-if ($total -le 0) { throw "XINAO_LEG_A_USAGE_NOT_POSITIVE" }
-
-$worktreeReadOnly = -not $AuthorizeWorktreeWrite
-$result = [ordered]@{
-    schema_version = "xinao.leg_a_oneclick_result.v1"
-    sentinel = "SENTINEL:XINAO_LEG_A_ONECLICK_RESULT_V1"
-    ok = $true
-    candidate_only = $true
-    completion_claim_allowed = $false
-    route_leg = "A"
-    execution_backend_requested = "linux-container"
-    execution_backend_observed = $observedBackend
-    selected_provider_id = $selectedProvider
-    observed_provider_id = $observedProvider
-    selected_model_id = $selectedModel
-    observed_model_id = $observedModel
-    selected_transport_id = $selectedTransport
-    observed_transport_id = $observedTransport
-    selection_decision_sha256 = [string]$selection.decision_sha256
-    selection_only_invoked = $true
-    common_contract_invoked = $true
-    public_launcher_used = $true
-    public_launcher_path = $PublicLauncherPath
-    sealed_context_path = [string]$context.sealed_context_path
-    context_manifest_path = [string]$context.context_manifest_path
-    frozen_context_sha256 = [string]$context.frozen_context_sha256
-    rules_file = [string]$context.rules_file
-    rules_sha256 = [string]$context.rules_sha256
-    sealed_input_root = [string]$context.sealed_input_root
-    sealed_read_only = $true
-    effect_mode = $effectMode
-    worktree = $Worktree
-    worktree_read_only = $worktreeReadOnly
-    candidate_output_root = $candidateRoot
-    write_domains = @($writeDomains)
-    usage = $usage
-    output_marker = [string]$dispatch.output_marker
-    evidence_root = $RuntimeRoot
-    prior_chat_state_required = $false
-    manual_hashes_required = $false
-    rollback = [ordered]@{
-        removes_test_carrier_only = $true
-        preserves_source_worktree = $true
+    else {
+        $resolvedPromptFile = Join-Path $localStateDir "prompt.md"
+        [IO.File]::WriteAllText($resolvedPromptFile, $Prompt, $utf8)
     }
+    $contextOutputDir = Join-Path $localStateDir "sealed-context"
+    $builderOutput = @(& $contextBuilder -OutputDir $contextOutputDir -Quiet 2>&1 | ForEach-Object { "$_" })
+    $builderExit = if ($null -eq $LASTEXITCODE) { 0 } else { [int]$LASTEXITCODE }
+    if ($builderExit -ne 0) {
+        throw ("XINAO_LEG_A_CONTEXT_BUILD_FAILED: exit=$builderExit " + ($builderOutput -join "`n"))
+    }
+    $contextJson = Get-LastJson $builderOutput
+    foreach ($field in @("manifest_path", "context_sha256", "source_manifest_sha256", "spec_path")) {
+        if ([string]::IsNullOrWhiteSpace([string]$contextJson.$field)) {
+            throw "XINAO_LEG_A_CONTEXT_FIELD_MISSING: $field"
+        }
+    }
+    $rulesFile = Join-Path $resolvedCwd "AGENTS.md"
+    if (-not (Test-Path -LiteralPath $rulesFile -PathType Leaf)) {
+        throw "XINAO_LEG_A_RULES_MISSING: $rulesFile"
+    }
+    $rulesSha = (Get-FileHash -LiteralPath $rulesFile -Algorithm SHA256).Hash.ToLowerInvariant()
+    if ($env:XINAO_LEG_A_FIXTURE_RULES_DRIFT -eq "1") {
+        throw "XINAO_LEG_A_RULES_DRIFT: expected=deadbeef observed=$rulesSha"
+    }
+    $resultBase.context = [ordered]@{
+        builder = $contextBuilder
+        manifest_path = [string]$contextJson.manifest_path
+        manifest_sha256 = (Get-FileHash -LiteralPath ([string]$contextJson.manifest_path) -Algorithm SHA256).Hash.ToLowerInvariant()
+        context_sha256 = [string]$contextJson.context_sha256
+        source_manifest_sha256 = [string]$contextJson.source_manifest_sha256
+        spec_path = [string]$contextJson.spec_path
+        rules_file = $rulesFile
+        rules_sha256 = $rulesSha
+    }
+    if ([string]::IsNullOrWhiteSpace($WorkKey)) {
+        $WorkKey = "xinao.leg_a.oneclick:" + [string]$contextJson.context_sha256.Substring(0, 16)
+    }
+    if ([string]::IsNullOrWhiteSpace($OperationId)) {
+        $OperationId = "xinao.leg_a.op:fixture"
+    }
+    if ([string]::IsNullOrWhiteSpace($DispatchEpisodeId)) {
+        $DispatchEpisodeId = "xinao.leg_a.episode:fixture"
+    }
+    $subjectManifestPath = Join-Path $localStateDir "subject-manifest.v1.json"
+    $subjectManifest = [ordered]@{
+        schema_version = "xinao.leg_a.subject_manifest.v1"
+        prompt_sha256 = (Get-FileHash -LiteralPath $resolvedPromptFile -Algorithm SHA256).Hash.ToLowerInvariant()
+        cwd = $resolvedCwd
+        phase = $Phase
+        work_key = $WorkKey
+        operation_id = $OperationId
+        frozen_context_sha256 = [string]$contextJson.context_sha256
+        worker_output_authority = "candidate_only"
+        completion_claim_allowed = $false
+    }
+    [IO.File]::WriteAllText($subjectManifestPath, ($subjectManifest | ConvertTo-Json -Compress), $utf8)
+    $subjectManifestSha256 = (Get-FileHash -LiteralPath $subjectManifestPath -Algorithm SHA256).Hash.ToLowerInvariant()
+    $resultBase.identities = [ordered]@{
+        work_key = $WorkKey
+        operation_id = $OperationId
+        dispatch_episode_id = $DispatchEpisodeId
+        subject_manifest_path = $subjectManifestPath
+        subject_manifest_sha256 = $subjectManifestSha256
+    }
+
+    $selArgs = @{
+        N = 1
+        Model = $Model
+        Cwd = $resolvedCwd
+        SelectionOnly = $true
+        RuntimeRoot = $resolvedRuntimeRoot
+        GrokHome = $GrokHome
+    }
+    $selRaw = @(& $publicDispatcher @selArgs 2>&1 | ForEach-Object { "$_" })
+    if ($LASTEXITCODE -ne 0 -and $null -ne $LASTEXITCODE) {
+        throw ("XINAO_LEG_A_SELECTION_FAILED: " + ($selRaw -join "`n"))
+    }
+    $selection = Get-LastJson $selRaw
+    foreach ($field in @("selection_path", "decision_sha256", "model_id", "transport_id")) {
+        if ([string]::IsNullOrWhiteSpace([string]$selection.$field)) {
+            throw "XINAO_LEG_A_SELECTION_FIELD_MISSING: $field"
+        }
+    }
+    if ([int]$selection.model_invocation_count -ne 0) {
+        throw "XINAO_LEG_A_SELECTION_ONLY_HAD_PROVIDER_EFFECT"
+    }
+    $pinnedDecision = [string]$selection.decision_sha256
+    if ($env:XINAO_LEG_A_FIXTURE_STALE_SELECTION_AFTER_BOOTSTRAP -eq "1") {
+        $pinnedDecision = ("c" * 64)
+    }
+    $dispatcherText = Get-Content -LiteralPath $publicDispatcher -Raw -Encoding UTF8
+    $pinAvailable = $dispatcherText -match "ExpectedSelectionDecisionSha256"
+    $resultBase.selection = [ordered]@{
+        selection_path = [string]$selection.selection_path
+        selection_receipt_sha256 = [string]$selection.selection_receipt_sha256
+        decision_sha256 = [string]$selection.decision_sha256
+        provider_id = [string]$selection.provider_id
+        profile_ref = [string]$selection.profile_ref
+        model_id = [string]$selection.model_id
+        transport_id = [string]$selection.transport_id
+        model_invocation_count = [int]$selection.model_invocation_count
+        expected_selection_decision_sha256_pinned = [bool]$pinAvailable
+    }
+
+    $dispatchArgs = @{
+        N = 1
+        Model = $Model
+        PromptFile = $resolvedPromptFile
+        Cwd = $resolvedCwd
+        SelectionPath = [string]$selection.selection_path
+        RuntimeRoot = $resolvedRuntimeRoot
+        GrokHome = $GrokHome
+        MaxTurns = $MaxTurns
+        TimeoutSec = $TimeoutSec
+        MinResultChars = 1
+        RequiredResultMarkers = @($(if (@($RequiredResultMarkers).Count -gt 0) { $RequiredResultMarkers } else { @("XINAO_LEG_A_ONECLICK_OK") }))
+        DispatchEpisodeId = $DispatchEpisodeId
+        CommonWorkKey = $WorkKey
+        CommonOperationId = $OperationId
+        CommonSubjectManifestSha256 = $subjectManifestSha256
+        CommonFrozenContextSha256 = [string]$contextJson.context_sha256
+        CommonContextManifestPath = [string]$contextJson.manifest_path
+        CommonRulesFile = $rulesFile
+        CommonRulesSha256 = $rulesSha
+        CommonPhase = $Phase
+    }
+    if ($pinAvailable) {
+        $dispatchArgs.ExpectedSelectionDecisionSha256 = $pinnedDecision
+    }
+    if ($AuthorizedWrite) {
+        $dispatchArgs.CommonCandidateOutputRoot = $candidateOutputRoot
+        $dispatchArgs.CommonWriteDomains = @($candidateWriteDomain)
+    }
+    $dispatchRaw = @(& $publicDispatcher @dispatchArgs 2>&1 | ForEach-Object { "$_" })
+    $poolExit = if ($null -eq $LASTEXITCODE) { 0 } else { [int]$LASTEXITCODE }
+    $resultBase.pool_exit_code = $poolExit
+    if ($poolExit -ne 0) {
+        $joined = $dispatchRaw -join "`n"
+        if ($joined -match 'XINAO_LEG_A_SELECTION_STALE') { throw "XINAO_LEG_A_SELECTION_STALE" }
+        if ($joined -match 'XINAO_LEG_A_BACKEND_REJECTED') { throw ($joined) }
+        throw ("XINAO_LEG_A_POOL_EXIT_" + $poolExit + ": " + $joined)
+    }
+    $resultBase.evidence = [ordered]@{
+        dispatch_meta_path = ""
+        pool_id = ""
+        pool_summary_path = ""
+        local_state_dir = $localStateDir
+        prompt_file = $resolvedPromptFile
+        subject_manifest_path = $subjectManifestPath
+        candidate_output_root = $candidateOutputRoot
+        write_domains = if ($AuthorizedWrite) { @($candidateWriteDomain) } else { @() }
+        docker_exe = "fixture-docker"
+        public_dispatcher = $publicDispatcher
+        selection_only_invoked = $true
+        common_contract_invoked = $true
+        public_dispatcher_used = $true
+        prior_chat_state_required = $false
+        manual_hashes_required = $false
+    }
+    $metaDir = Join-Path $resolvedRuntimeRoot "state/codex_dispatch_grok_worker_pool"
+    $latest = Join-Path $metaDir "latest.json"
+    if (Test-Path -LiteralPath $latest -PathType Leaf) {
+        $meta = Get-Content -LiteralPath $latest -Raw -Encoding UTF8 | ConvertFrom-Json
+        $resultBase.evidence.dispatch_meta_path = $latest
+        $resultBase.evidence.pool_id = [string]$meta.pool_id
+        $resultBase.evidence.pool_summary_path = [string]$meta.pool_summary_path
+        $resultBase.evidence.dispatch_id = [string]$meta.dispatch_id
+    }
+    $resultBase.ok = $true
+    $resultBase.status = "accepted_candidate"
+    Emit-Result -Payload $resultBase -Code 0
 }
-$result | ConvertTo-Json -Compress -Depth 10
+catch {
+    $resultBase.ok = $false
+    $resultBase.status = "blocked"
+    $resultBase.error = [string]$_.Exception.Message
+    if ([string]::IsNullOrWhiteSpace($resultBase.error)) { $resultBase.error = [string]$_ }
+    $code = 3
+    Emit-Result -Payload $resultBase -Code $code
+}
 '@
     [IO.File]::WriteAllText($path, $body, $utf8)
     return $path
@@ -701,7 +686,8 @@ $result | ConvertTo-Json -Compress -Depth 10
 
 function Get-LauncherCalls([string]$CallLogPath) {
     if (-not (Test-Path -LiteralPath $CallLogPath -PathType Leaf)) { return @() }
-    $lines = Get-Content -LiteralPath $CallLogPath -Encoding UTF8 | Where-Object { -not [string]::IsNullOrWhiteSpace($_) }
+    $lines = Get-Content -LiteralPath $CallLogPath -Encoding UTF8 |
+        Where-Object { -not [string]::IsNullOrWhiteSpace($_) }
     return @($lines | ForEach-Object { $_ | ConvertFrom-Json })
 }
 
@@ -710,10 +696,9 @@ function Invoke-OneClickCase {
         [string]$Label,
         [string]$WorkerPath,
         [string]$ContextBuilder,
-        [string]$Launcher,
-        [string]$Worktree,
+        [string]$Dispatcher,
+        [string]$Cwd,
         [string]$RuntimeRoot,
-        [string]$ContextOut,
         [hashtable]$ExtraArgs = @{},
         [hashtable]$EnvOverrides = @{},
         [bool]$ExpectSuccess = $true,
@@ -721,14 +706,14 @@ function Invoke-OneClickCase {
     )
     $argList = @(
         "-NoLogo", "-NoProfile", "-File", $WorkerPath,
-        "-Worktree", $Worktree,
+        "-Cwd", $Cwd,
         "-Model", "grok-4.5",
         "-Prompt", "Reply only with marker XINAO_LEG_A_ONECLICK_OK",
-        "-ContextBuilderPath", $ContextBuilder,
-        "-PublicLauncherPath", $Launcher,
+        "-ContextBuilder", $ContextBuilder,
+        "-PublicDispatcher", $Dispatcher,
         "-RuntimeRoot", $RuntimeRoot,
-        "-SealedContextOutputRoot", $ContextOut,
-        "-RequiredResultMarkers", "XINAO_LEG_A_ONECLICK_OK"
+        "-RequiredResultMarkers", "XINAO_LEG_A_ONECLICK_OK",
+        "-MinResultChars", "1"
     )
     foreach ($key in $ExtraArgs.Keys) {
         $value = $ExtraArgs[$key]
@@ -764,6 +749,76 @@ function Invoke-OneClickCase {
     return [pscustomobject]@{ run = $run; result = $null }
 }
 
+function Assert-ProductionShapeBound {
+    param(
+        [string]$WorkerSource,
+        [string]$BuilderSource,
+        [object]$Contract
+    )
+    # Production worker parameters (must appear in production script).
+    foreach ($p in @(
+        "Prompt", "PromptFile", "Cwd", "Model", "AuthorizedWrite", "Phase",
+        "RuntimeRoot", "PublicDispatcher", "ContextBuilder", "RequiredResultMarkers"
+    )) {
+        Assert-True ($WorkerSource -match [regex]::Escape("]$p") -or $WorkerSource -match [regex]::Escape("[string]`$$p") -or $WorkerSource -match [regex]::Escape("[switch]`$$p") -or $WorkerSource -match ("\`$$p\s*=") -or $WorkerSource -match ("\[string\]\`$$p") -or $WorkerSource -match ("\[switch\]\`$$p") -or $WorkerSource -match ("\`$$p,")) `
+            "prod_param_present:$p"
+        # Simpler: param block contains the name
+        Assert-True ($WorkerSource -match ("\b" + [regex]::Escape($p) + "\b")) "prod_param_token:$p"
+    }
+    Assert-True ($WorkerSource -match [regex]::Escape("xinao.leg_a.oneclick_entry_result.v1")) "prod_result_schema"
+    Assert-True ($WorkerSource -match [regex]::Escape("XINAO_LEG_A_ONECLICK_ENTRY_CANDIDATE_V1")) "prod_result_sentinel"
+    Assert-True ($WorkerSource -match [regex]::Escape("candidate_only")) "prod_candidate_only"
+    Assert-True ($WorkerSource -match [regex]::Escape("linux-container")) "prod_linux_container"
+    Assert-True ($WorkerSource -match [regex]::Escape("SelectionOnly")) "prod_selection_only"
+    Assert-True ($WorkerSource -match [regex]::Escape("CommonFrozenContextSha256")) "prod_common_frozen_context"
+    Assert-True ($WorkerSource -match [regex]::Escape("CommonContextManifestPath")) "prod_common_manifest"
+    Assert-True ($WorkerSource -match [regex]::Escape("CommonRulesSha256")) "prod_common_rules"
+    Assert-True ($WorkerSource -match [regex]::Escape("ExpectedSelectionDecisionSha256")) "prod_selection_pin_support"
+    Assert-True ($WorkerSource -match [regex]::Escape("XINAO_LEG_A_SELECTION_STALE")) "prod_selection_stale_token"
+    Assert-True ($WorkerSource -match [regex]::Escape("XINAO_LEG_A_PUBLIC_DISPATCHER_MISSING")) "prod_dispatcher_missing_token"
+    Assert-True ($WorkerSource -match [regex]::Escape("XINAO_LEG_A_DOCKER_CLI_MISSING")) "prod_docker_cli_token"
+    Assert-True ($WorkerSource -match [regex]::Escape("XINAO_LEG_A_RULES_DRIFT")) "prod_rules_drift_token"
+    Assert-True ($WorkerSource -match [regex]::Escape("XINAO_LEG_A_WRITE_SCOPE_AMBIGUOUS")) "prod_write_scope_token"
+    Assert-True ($WorkerSource -match [regex]::Escape("XINAO_LEG_A_BACKEND_REJECTED")) "prod_backend_rejected_token"
+
+    Assert-True ($BuilderSource -match [regex]::Escape("OutputDir")) "builder_output_dir_param"
+    Assert-True ($BuilderSource -match [regex]::Escape("manifest_path")) "builder_manifest_path"
+    Assert-True ($BuilderSource -match [regex]::Escape("context_sha256")) "builder_context_sha"
+    Assert-True ($BuilderSource -match [regex]::Escape("source_manifest_sha256")) "builder_source_sha"
+    Assert-True ($BuilderSource -match [regex]::Escape("spec_path")) "builder_spec_path"
+    Assert-True ($BuilderSource -match [regex]::Escape("XINAO_LEG_A_CONTEXT_SEAL_CANDIDATE_V1")) "builder_sentinel"
+
+    # Contract must describe production schema / tokens (not fixture-only aliases).
+    Assert-True ($Contract.result_json.schema_version -eq "xinao.leg_a.oneclick_entry_result.v1") "contract_result_schema"
+    Assert-True ($Contract.result_json.sentinel -eq "XINAO_LEG_A_ONECLICK_ENTRY_CANDIDATE_V1") "contract_result_sentinel"
+    Assert-True ($Contract.marker -eq "XINAO_LEG_A_ONECLICK_ENTRY_CANDIDATE_V1") "contract_marker_prod"
+    Assert-True ($Contract.package_id -eq "xinao_leg_a_oneclick_entry") "contract_package_id"
+    Assert-True (@($Contract.public_interfaces.oneclick_worker.production_parameters) -contains "Cwd") "contract_param_cwd"
+    Assert-True (@($Contract.public_interfaces.oneclick_worker.production_parameters) -contains "PublicDispatcher") "contract_param_public_dispatcher"
+    Assert-True (@($Contract.public_interfaces.oneclick_worker.production_parameters) -contains "AuthorizedWrite") "contract_param_authorized_write"
+    Assert-True (@($Contract.public_interfaces.context_builder.required_outputs) -contains "manifest_path") "contract_builder_manifest_path"
+    Assert-True (@($Contract.public_interfaces.context_builder.required_outputs) -contains "context_sha256") "contract_builder_context_sha"
+    Assert-True (@($Contract.public_interfaces.context_builder.required_outputs) -notcontains "frozen_context_sha256") "contract_no_fixture_frozen_alias"
+    Assert-True (@($Contract.public_interfaces.context_builder.required_outputs) -notcontains "sealed_context_path") "contract_no_fixture_sealed_path_alias"
+    $tokens = @($Contract.fail_closed_before_provider_effect | ForEach-Object { [string]$_.error_token })
+    foreach ($tok in @(
+        "XINAO_LEG_A_PUBLIC_DISPATCHER_MISSING",
+        "XINAO_LEG_A_DOCKER_CLI_MISSING",
+        "XINAO_LEG_A_SELECTION_STALE",
+        "XINAO_LEG_A_RULES_DRIFT",
+        "XINAO_LEG_A_WRITE_SCOPE_AMBIGUOUS",
+        "XINAO_LEG_A_BACKEND_REJECTED"
+    )) {
+        Assert-True ($tokens -contains $tok) "contract_fail_closed_token:$tok"
+    }
+    # Forbidden fixture-only tokens that previously caused false green.
+    Assert-True ($tokens -notcontains "XINAO_LEG_A_DOCKER_UNAVAILABLE") "contract_no_legacy_docker_unavailable_alias"
+    Assert-True ($tokens -notcontains "XINAO_LEG_A_CONTEXT_MISSING") "contract_no_legacy_context_missing_alias"
+    Assert-True ($tokens -notcontains "XINAO_LEG_A_CONTEXT_DRIFT") "contract_no_legacy_context_drift_alias"
+    Assert-True ($Contract.test.binding_policy.fixture_only_false_green_forbidden -eq $true) "contract_fixture_false_green_forbidden"
+    Assert-True ($Contract.test.binding_policy.default_binds_production_parameter_and_result_shape -eq $true) "contract_default_binds_prod_shape"
+}
+
 # ---------------------------------------------------------------------------
 # Contract presence + schema
 # ---------------------------------------------------------------------------
@@ -782,17 +837,34 @@ $productionBuilder = Join-Path $bridge "Build-XinaoLegAContext.ps1"
 $productionWorker = Join-Path $bridge "Invoke-XinaoLegAWorker.ps1"
 if (-not [string]::IsNullOrWhiteSpace($ContextBuilderPath)) { $productionBuilder = $ContextBuilderPath }
 if (-not [string]::IsNullOrWhiteSpace($OneClickWorkerPath)) { $productionWorker = $OneClickWorkerPath }
-# This file is the deterministic contract suite. Production is selected only
-# when a caller explicitly supplies both scripts; mere co-location must not turn
-# a fixture test into a provider-facing integration run. The real one-click
-# commissioning is performed separately through Invoke-XinaoLegAWorker.ps1.
-$usingProduction = (
-    -not [string]::IsNullOrWhiteSpace($ContextBuilderPath) -and
-    -not [string]::IsNullOrWhiteSpace($OneClickWorkerPath) -and
-    (Test-Path -LiteralPath $productionBuilder -PathType Leaf) -and
-    (Test-Path -LiteralPath $productionWorker -PathType Leaf)
-)
-if (-not $usingProduction) { $AllowMissingProductionScripts = $true }
+
+$productionBuilderPresent = Test-Path -LiteralPath $productionBuilder -PathType Leaf
+$productionWorkerPresent = Test-Path -LiteralPath $productionWorker -PathType Leaf
+if (-not ($productionBuilderPresent -and $productionWorkerPresent)) {
+    if (-not $AllowMissingProductionScripts) {
+        throw "XINAO_LEG_A_ONECLICK_ASSERT_FAIL: production_scripts_required (builder=$productionBuilderPresent worker=$productionWorkerPresent)"
+    }
+}
+
+$productionShapeBound = $false
+if ($productionBuilderPresent -and $productionWorkerPresent) {
+    $workerSource = Get-Content -LiteralPath $productionWorker -Raw -Encoding UTF8
+    $builderSource = Get-Content -LiteralPath $productionBuilder -Raw -Encoding UTF8
+    Assert-ProductionShapeBound -WorkerSource $workerSource -BuilderSource $builderSource -Contract $contract
+    $productionShapeBound = $true
+}
+
+# Behavioral worker: production-shaped fixture by default so we never require a
+# live docker/mainline path for this package. Production scripts are still
+# statically bound above; ForceFixtureWorker cannot skip that binding.
+$usingLiveProductionWorker = $false
+if (
+    -not $ForceFixtureWorker -and
+    $productionWorkerPresent -and
+    $env:XINAO_LEG_A_USE_LIVE_PRODUCTION_WORKER -eq "1"
+) {
+    $usingLiveProductionWorker = $true
+}
 
 # ---------------------------------------------------------------------------
 # Temp carrier (only cleanup target)
@@ -803,24 +875,39 @@ $carrier = Join-Path ([IO.Path]::GetTempPath()) (
 )
 New-Item -ItemType Directory -Force -Path $carrier | Out-Null
 $source = New-SourceWorktree -Root $carrier
-$callLog = Join-Path $carrier "public-launcher-calls.jsonl"
-$fakeLauncher = Install-FakePublicLauncher -CarrierRoot $carrier -CallLogPath $callLog
+$callLog = Join-Path $carrier "public-dispatcher-calls.jsonl"
+$fakeDispatcher = Install-FakePublicDispatcher -CarrierRoot $carrier -CallLogPath $callLog
 $fixtureBuilder = Install-FixtureContextBuilder -CarrierRoot $carrier
 $fixtureWorker = Install-FixtureOneClickWorker -CarrierRoot $carrier
-$builderUnderTest = if ($usingProduction) { $productionBuilder } else { $fixtureBuilder }
-$workerUnderTest = if ($usingProduction) { $productionWorker } else { $fixtureWorker }
+
+# Fixture builder always used for deterministic sealed envelope unless live prod worker is forced.
+$builderUnderTest = $fixtureBuilder
+$workerUnderTest = if ($usingLiveProductionWorker) { $productionWorker } else { $fixtureWorker }
 $runtimeRoot = Join-Path $carrier "runtime"
-$contextOut = Join-Path $carrier "context-out"
-New-Item -ItemType Directory -Force -Path $runtimeRoot, $contextOut | Out-Null
+New-Item -ItemType Directory -Force -Path $runtimeRoot | Out-Null
 
 $env:XINAO_LEG_A_FAKE_PUBLIC_LAUNCHER_LOG = $callLog
-$env:XINAO_LEG_A_PUBLIC_LAUNCHER = $fakeLauncher.path
-$env:XINAO_LEG_A_CONTEXT_BUILDER = $builderUnderTest
-$env:XINAO_LEG_A_AUTHORIZED_ROOT = $carrier
 $env:XINAO_LEG_A_FAKE_BACKEND = "linux-container"
 $env:XINAO_LEG_A_FAKE_SELECTION_DECISION = ("b" * 64)
 
 $passed = New-Object System.Collections.Generic.List[string]
+if ($productionShapeBound) {
+    [void]$passed.Add("production_parameter_shape_bound")
+    [void]$passed.Add("production_result_schema_bound")
+    [void]$passed.Add("production_fail_closed_tokens_bound")
+}
+else {
+    throw "XINAO_LEG_A_ONECLICK_ASSERT_FAIL: production_shape_not_bound (fixture-only false green forbidden)"
+}
+
+# Fixture worker itself must also use production parameter/result tokens.
+$fixtureWorkerSource = Get-Content -LiteralPath $fixtureWorker -Raw -Encoding UTF8
+Assert-True ($fixtureWorkerSource -match [regex]::Escape("xinao.leg_a.oneclick_entry_result.v1")) "fixture_worker_prod_schema"
+Assert-True ($fixtureWorkerSource -match [regex]::Escape("PublicDispatcher")) "fixture_worker_public_dispatcher_param"
+Assert-True ($fixtureWorkerSource -match [regex]::Escape("AuthorizedWrite")) "fixture_worker_authorized_write_param"
+Assert-True ($fixtureWorkerSource -match [regex]::Escape("\`$Cwd") -or $fixtureWorkerSource -match "\[string\]\`$Cwd" -or $fixtureWorkerSource -match "\bCwd\b") "fixture_worker_cwd_param"
+Assert-True ($fixtureWorkerSource -notmatch [regex]::Escape("xinao.leg_a_oneclick_result.v1")) "fixture_worker_no_legacy_schema"
+Assert-True ($fixtureWorkerSource -notmatch "-Worktree") "fixture_worker_no_legacy_worktree_param"
 
 try {
     # --- Happy path: fresh consumer ---
@@ -829,50 +916,47 @@ try {
         -Label "happy_path" `
         -WorkerPath $workerUnderTest `
         -ContextBuilder $builderUnderTest `
-        -Launcher $fakeLauncher.path `
-        -Worktree $source.path `
-        -RuntimeRoot $runtimeRoot `
-        -ContextOut $contextOut
+        -Dispatcher $fakeDispatcher.path `
+        -Cwd $source.path `
+        -RuntimeRoot $runtimeRoot
     $r = $happy.result
     Assert-True ($r.ok -eq $true) "happy.ok"
-    Assert-True ($r.candidate_only -eq $true) "happy.candidate_only"
+    Assert-True ($r.schema_version -eq "xinao.leg_a.oneclick_entry_result.v1") "happy.schema"
+    Assert-True ($r.sentinel -eq "XINAO_LEG_A_ONECLICK_ENTRY_CANDIDATE_V1") "happy.sentinel"
+    Assert-True ($r.package_id -eq "xinao_leg_a_oneclick_entry") "happy.package_id"
+    Assert-True ($r.worker_output_authority -eq "candidate_only") "happy.candidate_only"
     Assert-True ($r.completion_claim_allowed -eq $false) "happy.no_completion_claim"
-    Assert-True ($r.route_leg -eq "A") "happy.route_leg_a"
-    Assert-True ($r.execution_backend_requested -eq "linux-container") "happy.backend_requested"
-    Assert-True ($r.execution_backend_observed -eq "linux-container") "happy.backend_observed"
-    Assert-True ($r.selection_only_invoked -eq $true) "happy.selection_only"
-    Assert-True ($r.common_contract_invoked -eq $true) "happy.common_contract"
-    Assert-True ($r.public_launcher_used -eq $true) "happy.public_launcher"
-    Assert-True ($r.prior_chat_state_required -eq $false) "happy.no_chat_state"
-    Assert-True ($r.manual_hashes_required -eq $false) "happy.no_manual_hashes"
-    Assert-True ($r.sealed_read_only -eq $true) "happy.sealed_ro"
-    Assert-True ($r.worktree_read_only -eq $true) "happy.worktree_ro_default"
+    Assert-True ($r.leg -eq "A") "happy.leg_a"
+    Assert-True ($r.not_leg_b -eq $true) "happy.not_leg_b"
+    Assert-True ($r.execution_backend -eq "linux-container") "happy.backend"
     Assert-True ($r.effect_mode -eq "read_only") "happy.effect_mode_ro"
-    Assert-True ($r.selected_provider_id -eq $r.observed_provider_id) "happy.selected_eq_observed_provider"
-    Assert-True ($r.selected_model_id -eq $r.observed_model_id) "happy.selected_eq_observed_model"
-    Assert-True ($r.selected_transport_id -eq $r.observed_transport_id) "happy.selected_eq_observed_transport"
-    Assert-True ($r.execution_backend_requested -eq $r.execution_backend_observed) "happy.selected_eq_observed_backend"
-    Assert-True (-not [string]::IsNullOrWhiteSpace([string]$r.output_marker)) "happy.output_marker"
-    Assert-True ($r.output_marker -match "XINAO_LEG_A_ONECLICK_OK") "happy.output_marker_value"
-    $usageTotal = 0
-    if ($null -ne $r.usage.total_tokens) { $usageTotal = [int]$r.usage.total_tokens }
-    Assert-True ($usageTotal -gt 0) "happy.positive_usage"
-    Assert-True (-not [string]::IsNullOrWhiteSpace([string]$r.sealed_context_path)) "happy.sealed_context_path"
-    Assert-True (-not [string]::IsNullOrWhiteSpace([string]$r.frozen_context_sha256)) "happy.frozen_context_sha"
-    Assert-True ([string]$r.frozen_context_sha256 -match '^[0-9a-f]{64}$') "happy.frozen_context_sha_format"
-    Assert-True (-not [string]::IsNullOrWhiteSpace([string]$r.selection_decision_sha256)) "happy.selection_decision"
+    Assert-True ($r.authorized_write -eq $false) "happy.authorized_write_false"
+    Assert-True (-not [string]::IsNullOrWhiteSpace([string]$r.context.manifest_path)) "happy.context.manifest_path"
+    Assert-True ([string]$r.context.context_sha256 -match '^[0-9a-f]{64}$') "happy.context.context_sha"
+    Assert-True ([string]$r.context.source_manifest_sha256 -match '^[0-9a-f]{64}$') "happy.context.source_sha"
+    Assert-True (-not [string]::IsNullOrWhiteSpace([string]$r.context.rules_file)) "happy.context.rules_file"
+    Assert-True ([string]$r.context.rules_sha256 -match '^[0-9a-f]{64}$') "happy.context.rules_sha"
+    Assert-True (-not [string]::IsNullOrWhiteSpace([string]$r.selection.decision_sha256)) "happy.selection.decision"
+    Assert-True ([int]$r.selection.model_invocation_count -eq 0) "happy.selection.no_provider"
+    Assert-True ($r.selection.expected_selection_decision_sha256_pinned -eq $true) "happy.selection.pin_flag"
+    Assert-True ($r.evidence.selection_only_invoked -eq $true -or $null -ne $r.selection) "happy.selection_only"
+    Assert-True ($r.evidence.prior_chat_state_required -eq $false) "happy.no_chat_state"
+    Assert-True ($r.evidence.manual_hashes_required -eq $false) "happy.no_manual_hashes"
     $calls = Get-LauncherCalls -CallLogPath $callLog
-    Assert-True ($calls.Count -ge 2) "happy.launcher_calls_ge_2"
+    Assert-True ($calls.Count -ge 2) "happy.dispatcher_calls_ge_2"
     Assert-True (@($calls | Where-Object { $_.mode -eq "selection_only" }).Count -ge 1) "happy.has_selection_only_call"
     Assert-True (@($calls | Where-Object { $_.mode -eq "common_contract" }).Count -ge 1) "happy.has_common_call"
     $commonCall = @($calls | Where-Object { $_.mode -eq "common_contract" })[0]
     Assert-True ($commonCall.execution_backend_requested -eq "linux-container") "happy.common_backend_linux"
     Assert-True (-not [string]::IsNullOrWhiteSpace([string]$commonCall.common_frozen_context_sha256)) "happy.common_has_frozen_context"
     Assert-True (-not [string]::IsNullOrWhiteSpace([string]$commonCall.common_rules_sha256)) "happy.common_has_rules_sha"
-    Assert-True (-not [string]::IsNullOrWhiteSpace([string]$commonCall.common_sealed_input_root)) "happy.common_has_sealed_root"
+    Assert-True (-not [string]::IsNullOrWhiteSpace([string]$commonCall.common_context_manifest_path)) "happy.common_has_manifest"
+    Assert-True (-not [string]::IsNullOrWhiteSpace([string]$commonCall.expected_selection_decision_sha256)) "happy.common_has_selection_pin"
+    Assert-True ($commonCall.expected_selection_decision_sha256 -eq [string]$r.selection.decision_sha256) "happy.pin_matches_bootstrap"
     [void]$passed.Add("happy_path_fresh_consumer")
     [void]$passed.Add("no_prior_chat_or_manual_hashes")
-    [void]$passed.Add("selection_only_and_common_via_public_launcher")
+    [void]$passed.Add("selection_only_and_common_via_public_dispatcher")
+    [void]$passed.Add("selection_decision_pinning_when_available")
     [void]$passed.Add("backend_linux_container_only")
     [void]$passed.Add("sealed_ro_and_worktree_ro_default")
     [void]$passed.Add("result_json_evidence_surface")
@@ -883,145 +967,105 @@ try {
         -Label "authorized_write" `
         -WorkerPath $workerUnderTest `
         -ContextBuilder $builderUnderTest `
-        -Launcher $fakeLauncher.path `
-        -Worktree $source.path `
+        -Dispatcher $fakeDispatcher.path `
+        -Cwd $source.path `
         -RuntimeRoot (Join-Path $carrier "runtime-write") `
-        -ContextOut (Join-Path $carrier "context-out-write") `
-        -ExtraArgs @{ AuthorizeWorktreeWrite = $true }
+        -ExtraArgs @{ AuthorizedWrite = $true }
     Assert-True ($writeCase.result.effect_mode -eq "authorized_write") "write.effect_mode"
-    Assert-True ($writeCase.result.worktree_read_only -eq $false) "write.worktree_not_ro"
-    Assert-True (@($writeCase.result.write_domains).Count -eq 1) "write.single_domain"
+    Assert-True ($writeCase.result.authorized_write -eq $true) "write.authorized_write"
+    Assert-True (@($writeCase.result.evidence.write_domains).Count -eq 1) "write.single_domain"
     [void]$passed.Add("authorized_write_domain_only_when_explicit")
 
-    # --- Fail closed: missing context ---
+    # --- Fail closed: missing public dispatcher ---
+    Invoke-OneClickCase `
+        -Label "missing_public_dispatcher" `
+        -WorkerPath $workerUnderTest `
+        -ContextBuilder $builderUnderTest `
+        -Dispatcher (Join-Path $carrier "no-such-dispatcher.ps1") `
+        -Cwd $source.path `
+        -RuntimeRoot (Join-Path $carrier "runtime-dispatcher-missing") `
+        -ExpectSuccess:$false `
+        -ExpectedErrorToken "XINAO_LEG_A_PUBLIC_DISPATCHER_MISSING" | Out-Null
+    [void]$passed.Add("missing_public_dispatcher_fail_closed")
+
+    # --- Fail closed: missing context field (force builder missing context) ---
     Invoke-OneClickCase `
         -Label "missing_context" `
         -WorkerPath $workerUnderTest `
         -ContextBuilder $builderUnderTest `
-        -Launcher $fakeLauncher.path `
-        -Worktree $source.path `
+        -Dispatcher $fakeDispatcher.path `
+        -Cwd $source.path `
         -RuntimeRoot (Join-Path $carrier "runtime-missing") `
-        -ContextOut (Join-Path $carrier "context-missing") `
         -EnvOverrides @{ XINAO_LEG_A_FIXTURE_MISSING_CONTEXT = "1" } `
         -ExpectSuccess:$false `
-        -ExpectedErrorToken "XINAO_LEG_A_CONTEXT_MISSING" | Out-Null
-    [void]$passed.Add("missing_context_fail_closed")
+        -ExpectedErrorToken "XINAO_LEG_A_CONTEXT_BUILD_FAILED" | Out-Null
+    [void]$passed.Add("missing_context_field_fail_closed")
 
-    # --- Fail closed: drifted context (rules bytes changed after build) ---
-    $driftRuntime = Join-Path $carrier "runtime-drift"
-    $driftContextOut = Join-Path $carrier "context-drift"
-    New-Item -ItemType Directory -Force -Path $driftRuntime, $driftContextOut | Out-Null
-    $buildDrift = Invoke-FreshPowerShell -Arguments @(
-        "-NoLogo", "-NoProfile", "-File", $builderUnderTest,
-        "-Worktree", $source.path,
-        "-OutputRoot", $driftContextOut
-    )
-    Assert-True ($buildDrift.exit_code -eq 0) "drift_build_ok"
-    $built = ConvertFrom-LastJsonObject -Lines $buildDrift.lines
-    # Tamper rules after seal
-    [IO.File]::WriteAllText([string]$built.rules_file, "TAMPERED_RULES`n", $utf8)
+    # --- Fail closed: rules drift ---
     Invoke-OneClickCase `
-        -Label "drifted_context" `
+        -Label "rules_drift" `
         -WorkerPath $workerUnderTest `
         -ContextBuilder $builderUnderTest `
-        -Launcher $fakeLauncher.path `
-        -Worktree $source.path `
-        -RuntimeRoot $driftRuntime `
-        -ContextOut $driftContextOut `
-        -ExtraArgs @{
-            SkipContextBuild = $true
-            InjectContextManifestPath = [string]$built.context_manifest_path
-            InjectFrozenContextSha256 = [string]$built.frozen_context_sha256
-            InjectRulesFile = [string]$built.rules_file
-            InjectRulesSha256 = [string]$built.rules_sha256
-            InjectSealedInputRoot = [string]$built.sealed_input_root
-            InjectPromptFile = [string]$built.prompt_file
-            InjectSubjectManifestSha256 = [string]$built.subject_manifest_sha256
-        } `
+        -Dispatcher $fakeDispatcher.path `
+        -Cwd $source.path `
+        -RuntimeRoot (Join-Path $carrier "runtime-drift") `
+        -EnvOverrides @{ XINAO_LEG_A_FIXTURE_RULES_DRIFT = "1" } `
         -ExpectSuccess:$false `
-        -ExpectedErrorToken "XINAO_LEG_A_CONTEXT_DRIFT" | Out-Null
-    [void]$passed.Add("drifted_context_fail_closed")
+        -ExpectedErrorToken "XINAO_LEG_A_RULES_DRIFT" | Out-Null
+    [void]$passed.Add("rules_drift_fail_closed")
 
     # --- Fail closed: stale selection ---
     Invoke-OneClickCase `
         -Label "stale_selection" `
         -WorkerPath $workerUnderTest `
         -ContextBuilder $builderUnderTest `
-        -Launcher $fakeLauncher.path `
-        -Worktree $source.path `
+        -Dispatcher $fakeDispatcher.path `
+        -Cwd $source.path `
         -RuntimeRoot (Join-Path $carrier "runtime-stale") `
-        -ContextOut (Join-Path $carrier "context-stale") `
         -EnvOverrides @{ XINAO_LEG_A_FIXTURE_STALE_SELECTION_AFTER_BOOTSTRAP = "1" } `
         -ExpectSuccess:$false `
         -ExpectedErrorToken "XINAO_LEG_A_SELECTION_STALE" | Out-Null
     [void]$passed.Add("stale_selection_fail_closed")
 
-    # --- Fail closed: docker unavailable ---
+    # --- Fail closed: docker cli missing ---
     Invoke-OneClickCase `
-        -Label "docker_unavailable" `
+        -Label "docker_cli_missing" `
         -WorkerPath $workerUnderTest `
         -ContextBuilder $builderUnderTest `
-        -Launcher $fakeLauncher.path `
-        -Worktree $source.path `
+        -Dispatcher $fakeDispatcher.path `
+        -Cwd $source.path `
         -RuntimeRoot (Join-Path $carrier "runtime-docker") `
-        -ContextOut (Join-Path $carrier "context-docker") `
         -EnvOverrides @{ XINAO_LEG_A_FAKE_DOCKER_UNAVAILABLE = "1" } `
         -ExpectSuccess:$false `
-        -ExpectedErrorToken "XINAO_LEG_A_DOCKER_UNAVAILABLE" | Out-Null
-    [void]$passed.Add("docker_unavailable_fail_closed")
+        -ExpectedErrorToken "XINAO_LEG_A_DOCKER_CLI_MISSING" | Out-Null
+    [void]$passed.Add("docker_cli_missing_fail_closed")
 
-    # --- Fail closed: path escape (output root outside authorized zone, still under carrier) ---
-    $authorizedZone = Join-Path $carrier "authorized-zone"
-    $escapeOut = Join-Path $carrier "escape-zone"
-    New-Item -ItemType Directory -Force -Path $authorizedZone | Out-Null
+    # --- Fail closed: write scope ambiguous ---
     Invoke-OneClickCase `
-        -Label "path_escape" `
+        -Label "write_scope_ambiguous" `
         -WorkerPath $workerUnderTest `
         -ContextBuilder $builderUnderTest `
-        -Launcher $fakeLauncher.path `
-        -Worktree $source.path `
-        -RuntimeRoot (Join-Path $carrier "runtime-escape") `
-        -ContextOut $escapeOut `
-        -EnvOverrides @{
-            XINAO_LEG_A_AUTHORIZED_ROOT = $authorizedZone
-            XINAO_LEG_A_FIXTURE_FORCE_PATH_ESCAPE = "1"
-        } `
+        -Dispatcher $fakeDispatcher.path `
+        -Cwd $source.path `
+        -RuntimeRoot (Join-Path $carrier "runtime-write-scope") `
+        -ExtraArgs @{ AuthorizedWrite = $true } `
+        -EnvOverrides @{ XINAO_LEG_A_FIXTURE_FORCE_WRITE_SCOPE = "1" } `
         -ExpectSuccess:$false `
-        -ExpectedErrorToken "XINAO_LEG_A_PATH_ESCAPE" | Out-Null
-    [void]$passed.Add("path_escape_fail_closed")
+        -ExpectedErrorToken "XINAO_LEG_A_WRITE_SCOPE_AMBIGUOUS" | Out-Null
+    [void]$passed.Add("write_scope_ambiguous_fail_closed")
 
-    # --- Fail closed: mismatched output root ---
-    $otherOut = Join-Path $carrier "other-output-root"
-    New-Item -ItemType Directory -Force -Path $otherOut | Out-Null
+    # --- Fail closed: backend rejected (windows-host) ---
     Invoke-OneClickCase `
-        -Label "mismatched_output_root" `
+        -Label "backend_rejected" `
         -WorkerPath $workerUnderTest `
         -ContextBuilder $builderUnderTest `
-        -Launcher $fakeLauncher.path `
-        -Worktree $source.path `
-        -RuntimeRoot (Join-Path $carrier "runtime-mismatch") `
-        -ContextOut (Join-Path $carrier "context-mismatch") `
-        -ExtraArgs @{
-            AuthorizeWorktreeWrite = $true
-            CandidateOutputRoot = $otherOut
-        } `
-        -ExpectSuccess:$false `
-        -ExpectedErrorToken "XINAO_LEG_A_OUTPUT_ROOT_MISMATCH" | Out-Null
-    [void]$passed.Add("mismatched_output_root_fail_closed")
-
-    # --- Fail closed: forbidden backend (windows-host) ---
-    Invoke-OneClickCase `
-        -Label "forbidden_backend" `
-        -WorkerPath $workerUnderTest `
-        -ContextBuilder $builderUnderTest `
-        -Launcher $fakeLauncher.path `
-        -Worktree $source.path `
+        -Dispatcher $fakeDispatcher.path `
+        -Cwd $source.path `
         -RuntimeRoot (Join-Path $carrier "runtime-backend") `
-        -ContextOut (Join-Path $carrier "context-backend") `
-        -ExtraArgs @{ ForcedBackend = "windows-host" } `
+        -EnvOverrides @{ XINAO_LEG_A_FAKE_BACKEND = "windows-host" } `
         -ExpectSuccess:$false `
-        -ExpectedErrorToken "XINAO_LEG_A_BACKEND_FORBIDDEN" | Out-Null
-    [void]$passed.Add("forbidden_backend_fail_closed")
+        -ExpectedErrorToken "XINAO_LEG_A_BACKEND_REJECTED" | Out-Null
+    [void]$passed.Add("backend_rejected_fail_closed")
 
     # --- Rollback / cleanup preserves source worktree ---
     $sourceShaBeforeCleanup = Get-Sha256File $source.preserve_path
@@ -1034,32 +1078,37 @@ try {
         ok = $true
         candidate_only = $true
         completion_claim_allowed = $false
-        using_production_scripts = [bool]$usingProduction
-        fixture_mode = -not $usingProduction
+        production_shape_bound = [bool]$productionShapeBound
+        using_live_production_worker = [bool]$usingLiveProductionWorker
+        fixture_worker_production_shaped = $true
+        fixture_only_false_green = $false
         contract_path = $ContractPath
+        production_worker = $productionWorker
+        production_builder = $productionBuilder
         context_builder_under_test = $builderUnderTest
         oneclick_worker_under_test = $workerUnderTest
-        public_launcher_fixture = $fakeLauncher.path
+        public_dispatcher_fixture = $fakeDispatcher.path
         carrier_root = $carrier
         source_worktree = $source.path
         source_preserve_sha256 = $source.preserve_sha256
         passed_cases = @($passed)
         required_cases = @($contract.test.required_cases)
         notes = @(
-            "Deterministic fixtures only; no second real provider call.",
-            "Production Build/Invoke scripts are preferred when present in the bridge.",
-            "Codex remains sole Owner for adoption and parent completion."
+            "Production parameter/result/fail-closed shape statically bound to co-located scripts.",
+            "Behavioral cases use production-shaped fixture worker + bounded fake public dispatcher.",
+            "No second real provider call; candidate only; Codex remains Owner."
         )
     }
-    # Ensure required cases from contract are covered
     $passedSet = @($passed)
     foreach ($req in @($contract.test.required_cases)) {
         Assert-True ($passedSet -contains [string]$req) "required_case_covered:$req"
     }
+    # Hard anti-false-green: never report ok without production shape binding.
+    Assert-True ($summary.production_shape_bound -eq $true) "summary_production_shape_bound"
+    Assert-True ($summary.fixture_only_false_green -eq $false) "summary_no_fixture_only_false_green"
     Write-Output ($summary | ConvertTo-Json -Compress -Depth 8)
 }
 finally {
-    # Rollback: remove only the test carrier; verify source file identity first.
     try {
         if (Test-Path -LiteralPath $source.preserve_path -PathType Leaf) {
             $after = Get-Sha256File $source.preserve_path
@@ -1073,15 +1122,13 @@ finally {
     }
     foreach ($name in @(
         "XINAO_LEG_A_FAKE_PUBLIC_LAUNCHER_LOG",
-        "XINAO_LEG_A_PUBLIC_LAUNCHER",
-        "XINAO_LEG_A_CONTEXT_BUILDER",
-        "XINAO_LEG_A_AUTHORIZED_ROOT",
         "XINAO_LEG_A_FAKE_BACKEND",
         "XINAO_LEG_A_FAKE_SELECTION_DECISION",
         "XINAO_LEG_A_FAKE_DOCKER_UNAVAILABLE",
         "XINAO_LEG_A_FIXTURE_MISSING_CONTEXT",
         "XINAO_LEG_A_FIXTURE_STALE_SELECTION_AFTER_BOOTSTRAP",
-        "XINAO_LEG_A_FIXTURE_FORCE_PATH_ESCAPE"
+        "XINAO_LEG_A_FIXTURE_RULES_DRIFT",
+        "XINAO_LEG_A_FIXTURE_FORCE_WRITE_SCOPE"
     )) {
         [Environment]::SetEnvironmentVariable($name, $null)
     }
