@@ -1,13 +1,14 @@
 from __future__ import annotations
 
 import hashlib
+import importlib.util
 import json
 import os
+import sys
 from pathlib import Path
 
 import pytest
 
-from scripts import promote_science_revision_chain as promotion
 from xinao.science import active_parent as active_parent_module
 from xinao.science.active_parent import (
     ScienceActiveParentError,
@@ -48,6 +49,25 @@ _V110_SOFTWARE_FOUNDATION_MARKERS = (
     "本节是该不变量的软件工程唯一正向定义",
 )
 _V110_SOFTWARE_FOUNDATION_VERSION = "版本：v3.4"  # noqa: RUF001
+
+
+def _load_repo_science_publisher():
+    """Load the one repository-level publisher only for its explicit integration test."""
+
+    module_name = "_xinao_test_promote_science_revision_chain"
+    loaded = sys.modules.get(module_name)
+    if loaded is not None:
+        return loaded
+    script_path = (
+        Path(__file__).resolve().parents[4] / "scripts" / "promote_science_revision_chain.py"
+    )
+    spec = importlib.util.spec_from_file_location(module_name, script_path)
+    if spec is None or spec.loader is None:
+        raise RuntimeError(f"cannot load repository science publisher: {script_path}")
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[module_name] = module
+    spec.loader.exec_module(module)
+    return module
 
 
 def _open_research_revision_text(version: str = "v1.9") -> str:
@@ -822,6 +842,7 @@ def test_legacy_text_with_open_research_frontier_fails_closed(tmp_path: Path) ->
 def test_publisher_and_official_loader_integrate_through_committed_marker(
     tmp_path: Path,
 ) -> None:
+    promotion = _load_repo_science_publisher()
     projection, payload = _projection(tmp_path)
     active_parent = Path(payload["active_parent"]["path"])
     predecessor_sha256 = hashlib.sha256(active_parent.read_bytes()).hexdigest()

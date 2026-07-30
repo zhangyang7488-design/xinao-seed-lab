@@ -61,9 +61,9 @@ def test_canonical_updater_is_package_local_not_parents_walk() -> None:
     source = Path(publication.__file__).read_text(encoding="utf-8")
     assert ".parents[" not in source
     # Default updater identity is the SI operational entry constant.
-    assert str(publication.DEFAULT_UPDATER_PATH).endswith(
-        str(Path("Codex_Situation_Island") / "scripts" / "Update-CodexContextCatalog.ps1")
-    )
+    from xinao.tool_glue.canonical_paths import DEFAULT_OPERATIONAL_UPDATER_PATH
+
+    assert publication.DEFAULT_UPDATER_PATH == DEFAULT_OPERATIONAL_UPDATER_PATH
 
 
 def test_checkout_scripts_alias_matches_canonical_same_byte() -> None:

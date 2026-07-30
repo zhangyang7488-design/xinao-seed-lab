@@ -24,6 +24,8 @@ from typing import Any
 
 import portalocker
 
+from xinao.tool_glue.canonical_paths import DEFAULT_OPERATIONAL_UPDATER_PATH
+
 DEFAULT_AUTHORITY_PATH = Path(
     r"C:\Users\xx363\Desktop\主线\工具胶水宪法\软件工具胶水宪法_当前有效.txt"
 )
@@ -31,10 +33,7 @@ DEFAULT_STATE_ROOT = Path(r"D:\XINAO_RESEARCH_RUNTIME\state\tool_glue_constituti
 DEFAULT_GUARD_ROOT = DEFAULT_STATE_ROOT / "guards"
 # Production/default consumer entry is the SI operational projection (map-resolved path).
 # Canonical source is the package resource; never resolve via repository-root parent walks.
-DEFAULT_UPDATER_PATH = Path(
-    r"D:\XINAO_RESEARCH_RUNTIME\state\Codex_Situation_Island\scripts"
-    r"\Update-CodexContextCatalog.ps1"
-)
+DEFAULT_UPDATER_PATH = DEFAULT_OPERATIONAL_UPDATER_PATH
 # Formally selected replacement verifier: closes software_foundation.version + same-byte
 # operational updater identity. Full SI architecture selftest remains Owner-activated.
 DEFAULT_VERIFIER_PATH = Path(__file__).resolve().parent / "projection_binding_verifier.py"
