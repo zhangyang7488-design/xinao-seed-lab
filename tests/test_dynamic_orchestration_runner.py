@@ -34,13 +34,13 @@ def _runner_text() -> str:
 
 def test_catalog_accounts_for_dynamic_orchestration_suite() -> None:
     catalog = _catalog()
-    assert catalog["declared_case_count"] == 156
+    assert catalog["declared_case_count"] == 162
     assert catalog["live_profile_case_counts"] == {
         "capability": 1,
         "smoke": 84,
-        "core": 114,
-        "deep": 120,
-        "context": 96,
+        "core": 120,
+        "deep": 126,
+        "context": 102,
         "proactive": 6,
         "reuse": 4,
         "orchestration": 13,
@@ -56,7 +56,7 @@ def test_catalog_accounts_for_dynamic_orchestration_suite() -> None:
     assert suite["runtime_claim_allowed"] is True
 
     suite_count = sum(int(item["case_count"]) for item in catalog["suites"])
-    assert suite_count == catalog["declared_case_count"] == 156
+    assert suite_count == catalog["declared_case_count"] == 162
 
 
 def test_profile_flags_select_orchestration_with_smoke_core_deep() -> None:

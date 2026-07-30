@@ -158,14 +158,14 @@ module.exports = (output, context) => {
   )
     ? context.vars.expected_global_frontier_reconciled
     : null;
-  const expectedLearningLoop = hasVar('expected_learning_loop')
-    ? context.vars.expected_learning_loop
+  const expectedLearningLoops = hasVar('expected_learning_loop')
+    ? alternatives(context.vars.expected_learning_loop)
     : null;
-  const expectedRepairTarget = hasVar('expected_repair_target')
-    ? context.vars.expected_repair_target
+  const expectedRepairTargets = hasVar('expected_repair_target')
+    ? alternatives(context.vars.expected_repair_target)
     : null;
-  const expectedClosureEvidence = hasVar('expected_closure_evidence')
-    ? context.vars.expected_closure_evidence
+  const expectedClosureEvidenceValues = hasVar('expected_closure_evidence')
+    ? alternatives(context.vars.expected_closure_evidence)
     : null;
   const expectedDecisionResponsibilities = hasVar('expected_decision_responsibility')
     ? alternatives(context.vars.expected_decision_responsibility)
@@ -354,14 +354,23 @@ module.exports = (output, context) => {
   if (expectedGlobalFrontierReconciled !== null) {
     expected.global_frontier_reconciled = expectedGlobalFrontierReconciled;
   }
-  if (expectedLearningLoop !== null) {
-    expected.learning_loop = expectedLearningLoop;
+  if (expectedLearningLoops !== null) {
+    expected.learning_loop =
+      expectedLearningLoops.length === 1
+        ? expectedLearningLoops[0]
+        : expectedLearningLoops;
   }
-  if (expectedRepairTarget !== null) {
-    expected.repair_target = expectedRepairTarget;
+  if (expectedRepairTargets !== null) {
+    expected.repair_target =
+      expectedRepairTargets.length === 1
+        ? expectedRepairTargets[0]
+        : expectedRepairTargets;
   }
-  if (expectedClosureEvidence !== null) {
-    expected.closure_evidence = expectedClosureEvidence;
+  if (expectedClosureEvidenceValues !== null) {
+    expected.closure_evidence =
+      expectedClosureEvidenceValues.length === 1
+        ? expectedClosureEvidenceValues[0]
+        : expectedClosureEvidenceValues;
   }
   if (expectedDecisionResponsibilities) {
     expected.decision_responsibility =
@@ -429,6 +438,9 @@ module.exports = (output, context) => {
     'completed_history_disposition',
     'frontier_disposition',
     'candidate_value',
+    'learning_loop',
+    'repair_target',
+    'closure_evidence',
     'decision_responsibility',
     'human_explanation_mode',
     'metacognition_disposition',
@@ -474,12 +486,12 @@ module.exports = (output, context) => {
       expectedCandidateValues.includes(parsed.candidate_value)) &&
     (expectedGlobalFrontierReconciled === null ||
       parsed.global_frontier_reconciled === expectedGlobalFrontierReconciled) &&
-    (expectedLearningLoop === null ||
-      parsed.learning_loop === expectedLearningLoop) &&
-    (expectedRepairTarget === null ||
-      parsed.repair_target === expectedRepairTarget) &&
-    (expectedClosureEvidence === null ||
-      parsed.closure_evidence === expectedClosureEvidence) &&
+    (expectedLearningLoops === null ||
+      expectedLearningLoops.includes(parsed.learning_loop)) &&
+    (expectedRepairTargets === null ||
+      expectedRepairTargets.includes(parsed.repair_target)) &&
+    (expectedClosureEvidenceValues === null ||
+      expectedClosureEvidenceValues.includes(parsed.closure_evidence)) &&
     (expectedDecisionResponsibilities === null ||
       expectedDecisionResponsibilities.includes(parsed.decision_responsibility)) &&
     (expectedHumanExplanationModes === null ||

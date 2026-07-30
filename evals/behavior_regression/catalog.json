@@ -4,13 +4,13 @@
   "runner": "scripts/run_behavior_regression.ps1",
   "candidate_intake": "scripts/New-BehaviorRegressionCandidate.ps1",
   "result_root": "D:\\XINAO_RESEARCH_RUNTIME\\state\\human-capabilities\\evals\\behavior-regression",
-  "declared_case_count": 156,
+  "declared_case_count": 162,
   "profiles": {
     "capability": "One fresh Codex app-server capability canary.",
     "smoke": "Capability canary plus 76 representative context cases and seven dynamic-orchestration smoke cases.",
-    "core": "Capability canary, 91 context cases, six proactive mature-first cases, 13 dynamic-orchestration cases, frozen mature-candidate recall, one real thin-localization trajectory, and static validation.",
-    "deep": "Core plus all 96 context cases, all 13 dynamic-orchestration cases, and one current open-world public-repository search.",
-    "context": "All 96 context and intent live cases; retained for the compatibility runner.",
+    "core": "Capability canary, 97 context cases, six proactive mature-first cases, 13 dynamic-orchestration cases, frozen mature-candidate recall, one real thin-localization trajectory, and static validation.",
+    "deep": "Core plus all 102 context cases, all 13 dynamic-orchestration cases, and one current open-world public-repository search.",
+    "context": "All 102 context and intent live cases; retained for the compatibility runner.",
     "proactive": "All six mature-first live cases; worker routing is owned by context_intent_alignment.",
     "reuse": "Only the four live open-world-reuse cases plus their deterministic contract validation.",
     "orchestration": "All 13 dynamic orchestration execution-shape live cases without metadata filtering."
@@ -18,9 +18,9 @@
   "live_profile_case_counts": {
     "capability": 1,
     "smoke": 84,
-    "core": 114,
-    "deep": 120,
-    "context": 96,
+    "core": 120,
+    "deep": 126,
+    "context": 102,
     "proactive": 6,
     "reuse": 4,
     "orchestration": 13
@@ -37,7 +37,7 @@
     {
       "id": "context_intent_alignment",
       "kind": "promptfoo_live",
-      "case_count": 96,
+      "case_count": 102,
       "config": "evals/context_intent_alignment/promptfooconfig.yaml",
       "case_source": "evals/context_intent_alignment/cases.yaml",
       "runtime_claim_allowed": true

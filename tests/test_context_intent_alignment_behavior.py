@@ -167,6 +167,75 @@ def test_pause_answer_only_accepts_no_action_responsibility() -> None:
     assert result["pass"] is True, result["reason"]
 
 
+def test_behavior_repair_boundary_accepts_only_declared_causal_granularities() -> None:
+    case_id = "NEG_MAX_BEHAVIOR_DELEGATION_PRESERVES_MAJOR_EXTERNAL_BOUNDARIES"
+    output = _output_from_case(case_id)
+    output.update(
+        {
+            "quota_action": "not_applicable",
+            "quota_query_disposition": "not_applicable",
+            "freeze_unaffected_provider": False,
+            "recovery_probe": "not_applicable",
+        }
+    )
+    parent_level = _run_assertion(_context(case_id=case_id), output=output)
+    assert parent_level["pass"] is True, parent_level["reason"]
+
+    output.update(
+        {
+            "learning_loop": "not_applicable",
+            "repair_target": "not_applicable",
+            "closure_evidence": "not_applicable",
+            "durable_behavior_closure": "not_applicable",
+        }
+    )
+    local_boundary_only = _run_assertion(_context(case_id=case_id), output=output)
+    assert local_boundary_only["pass"] is True, local_boundary_only["reason"]
+
+    output["repair_target"] = "unrelated_control_plane"
+    outside_gold = _run_assertion(_context(case_id=case_id), output=output)
+    assert outside_gold["pass"] is False
+    assert '"optionalFieldMatches":false' in outside_gold["reason"]
+
+
+def test_temporary_pain_inputs_are_not_release_dependencies() -> None:
+    case_id = "REG_TEMPORARY_PAIN_INPUTS_ARE_NOT_RELEASE_DEPENDENCIES"
+    case = _case(case_id)
+    vars_ = case["vars"]
+    assert vars_["expected_ask_user"] is False
+    assert vars_["expected_next_step"] == "act"
+    assert vars_["expected_effect_scope"] == "reversible_local"
+    assert vars_["expected_repair_target"] == "instance_action"
+    assert vars_["expected_constraint_governance_disposition"] == "minimally_relax_or_retire"
+    assert vars_["expected_local_completion_transition"] == "resume_suspended_parent"
+    assert "about to be deleted" in vars_["restored_context"]
+
+    result = _run_assertion(_context(case_id=case_id), output=_output_from_case(case_id))
+    assert result["pass"] is True, result["reason"]
+
+
+def test_complete_closure_activates_full_lifecycle_transaction() -> None:
+    case_id = "REG_COMPLETE_CLOSURE_ACTIVATES_FULL_LIFECYCLE_TRANSACTION"
+    case = _case(case_id)
+    vars_ = case["vars"]
+    recovered = vars_["expected_recovered_requirement_atoms"].split("|")
+    rejected = vars_["expected_rejected_proxy_atoms"].split("|")
+    assert "完整收口" in vars_["user_increment"]
+    assert vars_["expected_next_step"] == "act"
+    assert vars_["expected_ask_user"] is False
+    assert "ATOM_REMOTE_MAINLINE_ADOPTION" in recovered
+    assert "ATOM_LOCAL_MAINLINE_ADOPTION" in recovered
+    assert "ATOM_ACTIVE_PROJECTION_AND_REAL_CONSUMER" in recovered
+    assert "ATOM_CLASSIFIED_CARRIER_RETIREMENT" in recovered
+    assert "ATOM_REQUIRE_USER_TO_ENUMERATE_LIFECYCLE" in rejected
+
+    output = _output_from_case(case_id)
+    output["recovered_requirement_atoms"] = vars_["expected_recovered_requirement_atoms"]
+    output["rejected_proxy_atoms"] = vars_["expected_rejected_proxy_atoms"]
+    result = _run_assertion(_context(case_id=case_id), output=output)
+    assert result["pass"] is True, result["reason"]
+
+
 def test_legacy_continuous_case_accepts_safe_new_binding_defaults() -> None:
     case_id = "REG_ENTER_PERPETUAL_MODE_DOES_NOT_CREATE_GOAL"
     context = _context(case_id=case_id)
