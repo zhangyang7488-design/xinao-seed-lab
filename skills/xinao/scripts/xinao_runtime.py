@@ -3723,10 +3723,16 @@ def build_release(
             if not candidate_path.is_file():
                 raise XinaoError("RELEASE_NAMESPACE_INVALID", str(candidate))
             existing = _load_json(candidate_path)
-            if existing.get("capability_version") != capability_version:
+            if (
+                existing.get("package_version") != package_version
+                or existing.get("capability_version") != capability_version
+            ):
                 continue
             if existing.get("release_identity_sha256") != identity_sha:
-                raise XinaoError("SEMVER_CONTENT_COLLISION", capability_version)
+                raise XinaoError(
+                    "SEMVER_CONTENT_COLLISION",
+                    f"package={package_version} capability={capability_version}",
+                )
             if existing.get("release_id") != release_id:
                 raise XinaoError("RELEASE_ID_COLLISION", str(candidate_path))
         if manifest_path.exists():
