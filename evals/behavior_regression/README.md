@@ -35,6 +35,14 @@ agent platform, daemon, scheduler, or approval gate.
   fact/blast-radius axes. It helps
   map incomplete examples to parent intent and mature capabilities; it is not a score, fixed ladder,
   gate, authority source, or replacement for the live user context.
+- Maturation lifecycle regressions
+  (`REG_FRESH_WINDOW_DUAL_FRONTIER_CAPABILITY_MATURATION_PRESERVES_RESEARCH`,
+  `REG_MATURATION_VERDICT_SYMMETRY_NOT_REQUIRED_VS_UNDECIDABLE`) require pre-design local verdict,
+  post-probe reevaluation, and post-promotion refusal of silent hand-assembly regression. They reject
+  Foundation total gates, unrelated platforms, frozen research judgment, implicit Leg B / second Owner,
+  infinite pre-trigger waits, and treating text publish or Skill markdown as Skill already effective.
+  These cases are candidate regression fixtures only; they do not activate a Skill or close a live
+  publication transaction.
 
 ## Commands
 

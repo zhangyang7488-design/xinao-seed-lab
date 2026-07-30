@@ -835,11 +835,25 @@ def test_context_intent_alignment_eval_is_balanced_and_friction_bounded() -> Non
     assert dual_frontier["expected_resume_target_source"] == "not_applicable"
     assert dual_frontier["expected_local_completion_transition"] == "rederive_mainline_frontier"
     assert dual_frontier["expected_continuous_run_disposition"] == "continue"
+    assert dual_frontier["expected_create_daemon"] is False
+    assert dual_frontier["expected_create_goal"] is False
+    assert dual_frontier["expected_text_writer"] == "codex_main"
     restored_context = dual_frontier["restored_context"]
     assert "Dynamic net benefit now" in restored_context
     assert "selects only the thinnest mature implementation shape" in restored_context
     assert "theoretical" in restored_context and "repeatability" in restored_context
-    assert set(dual_frontier["expected_recovered_requirement_atoms"].split("|")) == {
+    # Pre-design verdict, post-probe reevaluation, and post-promotion no hand-craft regression.
+    assert "Before formal construction, reevaluate the local maturation verdict" in restored_context
+    assert "every bounded probe or real result, reevaluate again" in restored_context
+    assert "silently returning to temporary hand assembly is" in restored_context
+    assert "not Skill-effective" in restored_context
+    assert "infinite pre-construction wait" in restored_context
+    assert "Foundation total gate" in restored_context
+    assert "frozen" in restored_context and "research judgment" in restored_context
+    assert "second Owner" in restored_context
+    dual_recovered = set(dual_frontier["expected_recovered_requirement_atoms"].split("|"))
+    dual_rejected = set(dual_frontier["expected_rejected_proxy_atoms"].split("|"))
+    assert dual_recovered == {
         "ATOM_RESTORE_RESEARCH_FRONTIER",
         "ATOM_DERIVE_CAPABILITY_FRONTIER_FROM_LIVE_NEED",
         "ATOM_STABLE_NECESSARY_CHAIN_MATURATION_TRIGGER",
@@ -852,7 +866,7 @@ def test_context_intent_alignment_eval_is_balanced_and_friction_bounded() -> Non
         "ATOM_PRECONSTRUCTION_AND_POST_PROBE_REEVALUATION",
         "ATOM_PROMOTED_CAPABILITY_CANNOT_SILENTLY_REGRESS",
     }
-    assert set(dual_frontier["expected_rejected_proxy_atoms"].split("|")) == {
+    assert dual_rejected == {
         "ATOM_SINGLE_EXAMPLE_OR_SUMMARY_AUTO_PROMOTES_MATURATION",
         "ATOM_CAPABILITY_REPLACES_SCIENCE_PARENT",
         "ATOM_GLOBAL_CAPABILITY_GATE",
@@ -864,7 +878,22 @@ def test_context_intent_alignment_eval_is_balanced_and_friction_bounded() -> Non
         "ATOM_WORKER_OR_SUMMARY_GETS_AUTHORITY",
         "ATOM_DYNAMIC_NET_BENEFIT_CANCELS_TRIGGER",
         "ATOM_RESEARCH_JUDGMENT_FROZEN_IN_CAPABILITY",
+        "ATOM_TEXT_PUBLICATION_COUNTS_AS_SKILL_EFFECTIVE",
+        "ATOM_INFINITE_PRECONSTRUCTION_PRETRIGGER_GATE",
     }
+    # Lifecycle positives must stay recovered; expansion proxies must stay rejected.
+    assert "ATOM_PRECONSTRUCTION_AND_POST_PROBE_REEVALUATION" in dual_recovered
+    assert "ATOM_PROMOTED_CAPABILITY_CANNOT_SILENTLY_REGRESS" in dual_recovered
+    assert dual_recovered.isdisjoint(dual_rejected)
+    assert "ATOM_TEXT_PUBLICATION_COUNTS_AS_SKILL_EFFECTIVE" in dual_rejected
+    assert "ATOM_INFINITE_PRECONSTRUCTION_PRETRIGGER_GATE" in dual_rejected
+    assert "ATOM_RESTORE_G4_FULL" in dual_rejected
+    assert "ATOM_IMPLICIT_LEG_B" in dual_rejected
+    assert "ATOM_RESEARCH_JUDGMENT_FROZEN_IN_CAPABILITY" in dual_rejected
+    assert "ATOM_BUILD_NEW_CAPABILITY_PLATFORM" in dual_rejected
+    # Neutral pool must declare every recovered and rejected atom for Promptfoo scoring.
+    for atom in dual_recovered | dual_rejected:
+        assert f"{atom}=" in restored_context
 
     verdict_symmetry = cases[
         "REG_MATURATION_VERDICT_SYMMETRY_NOT_REQUIRED_VS_UNDECIDABLE"
@@ -879,7 +908,18 @@ def test_context_intent_alignment_eval_is_balanced_and_friction_bounded() -> Non
     assert verdict_symmetry["expected_degraded_scope"] == "dependency_cone_only"
     assert verdict_symmetry["expected_unaffected_frontier_action"] == "continue_recompute"
     assert verdict_symmetry["expected_continuous_run_disposition"] == "continue"
-    assert set(verdict_symmetry["expected_recovered_requirement_atoms"].split("|")) == {
+    assert verdict_symmetry["expected_preserve_parent_completion_bar"] is True
+    assert verdict_symmetry["expected_text_writer"] == "codex_main"
+    verdict_context = verdict_symmetry["restored_context"]
+    assert "NOT_REQUIRED for maturation" in verdict_context
+    assert "UNDECIDABLE" in verdict_context
+    assert "must be reevaluated" in verdict_context
+    assert "not Skill-effective" in verdict_context
+    assert "Foundation total gate" in verdict_context
+    assert "infinite pre-trigger wait" in verdict_context
+    verdict_recovered = set(verdict_symmetry["expected_recovered_requirement_atoms"].split("|"))
+    verdict_rejected = set(verdict_symmetry["expected_rejected_proxy_atoms"].split("|"))
+    assert verdict_recovered == {
         "ATOM_NOT_REQUIRED_ALLOWS_ORDINARY_BOUNDED_ACTION",
         "ATOM_UNDECIDABLE_ONLY_ALLOWS_BOUNDED_PROBE",
         "ATOM_PROBE_RESULT_REEVALUATES_MATURATION",
@@ -887,7 +927,7 @@ def test_context_intent_alignment_eval_is_balanced_and_friction_bounded() -> Non
         "ATOM_UNAFFECTED_RESEARCH_CONTINUES",
         "ATOM_CODEX_REMAINS_SCIENCE_OWNER",
     }
-    assert set(verdict_symmetry["expected_rejected_proxy_atoms"].split("|")) == {
+    assert verdict_rejected == {
         "ATOM_ALL_PRETRIGGER_ACTIONS_MUST_BE_PROBES",
         "ATOM_UNDECIDABLE_MEANS_NOT_REQUIRED",
         "ATOM_PROBE_SUCCESS_IS_MATURED_ACTIVE",
@@ -895,7 +935,15 @@ def test_context_intent_alignment_eval_is_balanced_and_friction_bounded() -> Non
         "ATOM_BUILD_MATURATION_STATE_PLATFORM",
         "ATOM_IMPLICIT_LEG_B_OR_SECOND_OWNER",
         "ATOM_DYNAMIC_NET_BENEFIT_CANCELS_REQUIRED",
+        "ATOM_TEXT_PUBLICATION_COUNTS_AS_SKILL_EFFECTIVE",
+        "ATOM_INFINITE_PRECONSTRUCTION_PRETRIGGER_GATE",
     }
+    assert verdict_recovered.isdisjoint(verdict_rejected)
+    assert "ATOM_PROBE_RESULT_REEVALUATES_MATURATION" in verdict_recovered
+    assert "ATOM_TEXT_PUBLICATION_COUNTS_AS_SKILL_EFFECTIVE" in verdict_rejected
+    assert "ATOM_INFINITE_PRECONSTRUCTION_PRETRIGGER_GATE" in verdict_rejected
+    for atom in verdict_recovered | verdict_rejected:
+        assert f"{atom}=" in verdict_context
 
     trajectory_evolution = cases["REG_FRESH_WINDOW_BOUNDED_TRAJECTORY_EVOLUTION_IS_POSITIVE_DUTY"][
         "vars"

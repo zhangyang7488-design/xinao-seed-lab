@@ -4104,16 +4104,22 @@
       repeatability, or an unnamed future need, derive a bounded CapabilityFrontier package from the
       live research need.
 
-      Before the next production call that depends on this prerequisite, the existing route must be
-      bound through one stable versioned entry, preflighted, and read back by the real consumer. Only
-      that dependency cone waits. Independent ResearchFrontier packages continue in the selected leg A.
-      After the maturation result fans into the same ResearchEpisode, Codex recomputes both
-      ResearchFrontier and CapabilityFrontier. Codex remains the sole scientific adopter, formal writer,
-      and effect verifier. The capability package is a means: it does not become the science parent,
-      global gate, whole-chain audit, new platform, new authority, implicit leg B, or legacy G4_FULL.
-      A single local example, caller modality, incident, or AI-authored summary would not establish the
-      trigger; conversely, these established trigger facts may not be left as permanent prompt, TXT,
-      command, mount, or worker-memory hand assembly.
+      Before formal construction, reevaluate the local maturation verdict from current evidence. After
+      every bounded probe or real result, reevaluate again; a probe is not a permanent path. Before the
+      next production call that depends on this prerequisite, the existing route must be bound through
+      one stable versioned entry, preflighted, and read back by the real consumer. Only that dependency
+      cone waits. Independent ResearchFrontier packages continue in the selected leg A. After the
+      maturation result fans into the same ResearchEpisode, Codex recomputes both ResearchFrontier and
+      CapabilityFrontier. Once the capability is promoted on a versioned mature path, later repair,
+      replace, or rollback stays on that path: silently returning to temporary hand assembly is
+      forbidden. Publishing or landing text, a constitution draft, a Skill markdown file, or a paused
+      candidate package is not Skill-effective and does not close real-consumer activation. Codex
+      remains the sole scientific adopter, formal writer, and effect verifier. The capability package
+      is a means: it does not become the science parent, Foundation total gate, whole-chain audit, new
+      platform, new authority, implicit leg B, second Owner, infinite pre-construction wait, frozen
+      research judgment, or legacy G4_FULL. A single local example, caller modality, incident, or
+      AI-authored summary would not establish the trigger; conversely, these established trigger facts
+      may not be left as permanent prompt, TXT, command, mount, or worker-memory hand assembly.
 
       Neutral candidate pool:
       ATOM_RESTORE_RESEARCH_FRONTIER=restore the active science parent, ResearchEpisode and live
@@ -4134,15 +4140,16 @@
       recompute ResearchFrontier and CapabilityFrontier;
       ATOM_CODEX_REMAINS_SCIENCE_OWNER=keep scientific interpretation, adoption, formal writing and
       effect verification with Codex;
-      ATOM_PRECONSTRUCTION_AND_POST_PROBE_REEVALUATION=evaluate before formal construction and again
-      after every bounded probe or real result;
-      ATOM_PROMOTED_CAPABILITY_CANNOT_SILENTLY_REGRESS=repair, replace or roll back through a versioned
-      mature path instead of silently returning to hand assembly;
+      ATOM_PRECONSTRUCTION_AND_POST_PROBE_REEVALUATION=evaluate the local maturation verdict before
+      formal construction and reevaluate after every bounded probe or real result;
+      ATOM_PROMOTED_CAPABILITY_CANNOT_SILENTLY_REGRESS=after promotion, repair, replace or roll back only
+      through a versioned mature path instead of silently returning to temporary hand assembly;
       ATOM_SINGLE_EXAMPLE_OR_SUMMARY_AUTO_PROMOTES_MATURATION=let one example, modality, incident or
       AI summary establish a global maturation mandate;
       ATOM_CAPABILITY_REPLACES_SCIENCE_PARENT=make capability construction the scientific completion
       identity;
-      ATOM_GLOBAL_CAPABILITY_GATE=block every research package on one capability frontier;
+      ATOM_GLOBAL_CAPABILITY_GATE=block every research package on one capability frontier or Foundation
+      total gate;
       ATOM_FREEZE_ALL_RESEARCH=freeze unrelated ResearchFrontier work while the dependency cone matures;
       ATOM_BUILD_NEW_CAPABILITY_PLATFORM=create an unrelated general platform instead of the thin mature
       binding;
@@ -4156,7 +4163,11 @@
       ATOM_DYNAMIC_NET_BENEFIT_CANCELS_TRIGGER=use implementation cost to make an already-triggered
       maturation obligation optional;
       ATOM_RESEARCH_JUDGMENT_FROZEN_IN_CAPABILITY=encode the research question, hypothesis, algorithm,
-      evidence interpretation or scientific answer into the deterministic mature capability.
+      evidence interpretation or scientific answer into the deterministic mature capability;
+      ATOM_TEXT_PUBLICATION_COUNTS_AS_SKILL_EFFECTIVE=treat text publish, constitution draft, Skill
+      markdown, or paused candidate landing as Skill already effective or real-consumer activation;
+      ATOM_INFINITE_PRECONSTRUCTION_PRETRIGGER_GATE=expand pre-design judgment into an infinite
+      pre-construction wait, global block, or permanent probe chain before any ordinary action.
     user_increment: 继续当前新澳研究。
     expected_target_relation: existing_object
     expected_next_step: act
@@ -4208,7 +4219,7 @@
     expected_metacognition_disposition: do_not_capture
     expected_durable_behavior_closure: land_consumer_and_cross_context_regression
     expected_recovered_requirement_atoms: ATOM_RESTORE_RESEARCH_FRONTIER|ATOM_DERIVE_CAPABILITY_FRONTIER_FROM_LIVE_NEED|ATOM_STABLE_NECESSARY_CHAIN_MATURATION_TRIGGER|ATOM_MATURE_BEFORE_NEXT_DEPENDENT_CALL|ATOM_VERIFY_REAL_CONSUMER_READBACK|ATOM_UNAFFECTED_RESEARCH_CONTINUES|ATOM_PRESERVE_SELECTED_LEG_A|ATOM_FAN_IN_RECOMPUTE_BOTH_FRONTIERS|ATOM_CODEX_REMAINS_SCIENCE_OWNER|ATOM_PRECONSTRUCTION_AND_POST_PROBE_REEVALUATION|ATOM_PROMOTED_CAPABILITY_CANNOT_SILENTLY_REGRESS
-    expected_rejected_proxy_atoms: ATOM_SINGLE_EXAMPLE_OR_SUMMARY_AUTO_PROMOTES_MATURATION|ATOM_CAPABILITY_REPLACES_SCIENCE_PARENT|ATOM_GLOBAL_CAPABILITY_GATE|ATOM_FREEZE_ALL_RESEARCH|ATOM_BUILD_NEW_CAPABILITY_PLATFORM|ATOM_IMPLICIT_LEG_B|ATOM_RESTORE_G4_FULL|ATOM_PERMANENT_HAND_ASSEMBLY_DEFAULT|ATOM_WORKER_OR_SUMMARY_GETS_AUTHORITY|ATOM_DYNAMIC_NET_BENEFIT_CANCELS_TRIGGER|ATOM_RESEARCH_JUDGMENT_FROZEN_IN_CAPABILITY
+    expected_rejected_proxy_atoms: ATOM_SINGLE_EXAMPLE_OR_SUMMARY_AUTO_PROMOTES_MATURATION|ATOM_CAPABILITY_REPLACES_SCIENCE_PARENT|ATOM_GLOBAL_CAPABILITY_GATE|ATOM_FREEZE_ALL_RESEARCH|ATOM_BUILD_NEW_CAPABILITY_PLATFORM|ATOM_IMPLICIT_LEG_B|ATOM_RESTORE_G4_FULL|ATOM_PERMANENT_HAND_ASSEMBLY_DEFAULT|ATOM_WORKER_OR_SUMMARY_GETS_AUTHORITY|ATOM_DYNAMIC_NET_BENEFIT_CANCELS_TRIGGER|ATOM_RESEARCH_JUDGMENT_FROZEN_IN_CAPABILITY|ATOM_TEXT_PUBLICATION_COUNTS_AS_SKILL_EFFECTIVE|ATOM_INFINITE_PRECONSTRUCTION_PRETRIGGER_GATE
 - description: A fresh XINAO window distinguishes a proven one-off action from an undecidable maturation probe
   metadata:
     id: REG_MATURATION_VERDICT_SYMMETRY_NOT_REQUIRED_VS_UNDECIDABLE
@@ -4240,11 +4251,16 @@
       a production call, MATURED_ACTIVE, or completion evidence merely because the probe succeeds.
 
       These verdicts are local evidence-bound evaluations, not a permanent state machine, third frontier,
-      platform, Foundation gate, Leg B, second Owner, or reason to stop unrelated research. Do not collapse
-      every pre-trigger action into a probe, and do not treat uncertainty as proof that maturation is not
-      required. If later evidence establishes MATURATION_REQUIRED, the next same-dependency production
-      call waits for the mature consumer readback; dynamic net benefit then chooses only the implementation
-      shape. Codex keeps scientific interpretation, adoption, formal writing and effect verification.
+      platform, Foundation total gate, Leg B, second Owner, infinite pre-trigger wait, or reason to stop
+      unrelated research. Pre-design judgment decides only from current evidence; after every real probe
+      result the same local maturation question must be reevaluated. Do not collapse every pre-trigger
+      action into a probe, and do not treat uncertainty as proof that maturation is not required. A
+      successful temporary probe, text publish, Skill markdown, or paused candidate package is not
+      MATURED_ACTIVE and not Skill-effective without the engineering contract and real consumer
+      readback. If later evidence establishes MATURATION_REQUIRED, the next same-dependency production
+      call waits for the mature consumer readback; dynamic net benefit then chooses only the
+      implementation shape. Codex keeps scientific interpretation, adoption, formal writing and effect
+      verification.
 
       Neutral candidate pool:
       ATOM_NOT_REQUIRED_ALLOWS_ORDINARY_BOUNDED_ACTION=let the proven one-off action proceed under its
@@ -4265,7 +4281,11 @@
       ATOM_VERDICT_CREATES_GLOBAL_WAIT=stop unrelated research on either local verdict;
       ATOM_BUILD_MATURATION_STATE_PLATFORM=create a third frontier, state platform, daemon or control plane;
       ATOM_IMPLICIT_LEG_B_OR_SECOND_OWNER=switch transport or ownership because a local verdict exists;
-      ATOM_DYNAMIC_NET_BENEFIT_CANCELS_REQUIRED=allow cost to cancel MATURATION_REQUIRED after it is proven.
+      ATOM_DYNAMIC_NET_BENEFIT_CANCELS_REQUIRED=allow cost to cancel MATURATION_REQUIRED after it is proven;
+      ATOM_TEXT_PUBLICATION_COUNTS_AS_SKILL_EFFECTIVE=treat text publish, Skill markdown, or paused
+      candidate landing as Skill already effective or MATURED_ACTIVE;
+      ATOM_INFINITE_PRECONSTRUCTION_PRETRIGGER_GATE=expand pre-design judgment into an infinite
+      pre-trigger block or permanent probe chain.
     user_increment: 继续当前新澳研究，别把一次性动作也都卡成 probe。
     expected_target_relation: existing_object
     expected_next_step: act
@@ -4317,7 +4337,7 @@
     expected_metacognition_disposition: do_not_capture
     expected_durable_behavior_closure: land_consumer_and_cross_context_regression
     expected_recovered_requirement_atoms: ATOM_NOT_REQUIRED_ALLOWS_ORDINARY_BOUNDED_ACTION|ATOM_UNDECIDABLE_ONLY_ALLOWS_BOUNDED_PROBE|ATOM_PROBE_RESULT_REEVALUATES_MATURATION|ATOM_VERDICTS_ARE_LOCAL_EVIDENCE_BOUND|ATOM_UNAFFECTED_RESEARCH_CONTINUES|ATOM_CODEX_REMAINS_SCIENCE_OWNER
-    expected_rejected_proxy_atoms: ATOM_ALL_PRETRIGGER_ACTIONS_MUST_BE_PROBES|ATOM_UNDECIDABLE_MEANS_NOT_REQUIRED|ATOM_PROBE_SUCCESS_IS_MATURED_ACTIVE|ATOM_VERDICT_CREATES_GLOBAL_WAIT|ATOM_BUILD_MATURATION_STATE_PLATFORM|ATOM_IMPLICIT_LEG_B_OR_SECOND_OWNER|ATOM_DYNAMIC_NET_BENEFIT_CANCELS_REQUIRED
+    expected_rejected_proxy_atoms: ATOM_ALL_PRETRIGGER_ACTIONS_MUST_BE_PROBES|ATOM_UNDECIDABLE_MEANS_NOT_REQUIRED|ATOM_PROBE_SUCCESS_IS_MATURED_ACTIVE|ATOM_VERDICT_CREATES_GLOBAL_WAIT|ATOM_BUILD_MATURATION_STATE_PLATFORM|ATOM_IMPLICIT_LEG_B_OR_SECOND_OWNER|ATOM_DYNAMIC_NET_BENEFIT_CANCELS_REQUIRED|ATOM_TEXT_PUBLICATION_COUNTS_AS_SKILL_EFFECTIVE|ATOM_INFINITE_PRECONSTRUCTION_PRETRIGGER_GATE
 - description: A task diagnosis does not become personal metacognition and a local exclusion does not cancel a mainline prerequisite
   metadata:
     id: REG_ACTIVE_SUBJECT_AND_OBJECT_SCOPE_BIND_BEFORE_GENERALIZATION
