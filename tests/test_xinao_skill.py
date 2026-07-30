@@ -2680,32 +2680,661 @@ def test_apply_legacy_restore_rejects_path_escape_outside_owned_root(
     monkeypatch.setattr(module, "_continue_migrate_journal", original_continue)
 
 
-def test_post_success_migrate_leaves_previous_verified_none_and_blocks_rollback(
+def test_post_success_migrate_rollback_restores_sealed_v1_world(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Explicit previous_verified=None is a one-way door for rollback_release()."""
+    """After successful MIGRATE, ordinary rollback restores sealed v1 without extra fields."""
 
     module = _module()
     world = _prepare_v1_migration_world(module, tmp_path, monkeypatch)
     monkeypatch.setattr(
         module, "_run_activation_canary", lambda value: _canary_value(module, value)
     )
-    receipt = module.bootstrap_migrate()
-    assert receipt["status"] == "MIGRATED"
+    migrated = module.bootstrap_migrate()
+    assert migrated["status"] == "MIGRATED"
     pointer = module._load_json(world["pointer_path"])
     assert pointer["previous_verified"] is None
-    journal = module._load_json(module._journal_path(receipt["txn_id"]))
-    assert journal["from"]["previous_verified"] is None
+    journal = module._load_json(module._journal_path(migrated["txn_id"]))
+    assert journal["state"] == "VERIFIED"
     assert Path(journal["from"]["legacy_restore_path"]).is_dir()
     # Ordinary thin-bootstrap fence must form over a terminal MIGRATE journal.
     fence = _install_bootstrap_fence(module, monkeypatch, ["inspect"])
-    assert fence["active_txn_id"] == receipt["txn_id"]
-    before = world["pointer_path"].read_bytes()
+    assert fence["active_txn_id"] == migrated["txn_id"]
+    # Migration activates v2 pointer/journal; installed Skill may still be the pre-capture tree.
+    # Rollback must still re-materialize the sealed capture exactly.
+    _install_bootstrap_fence(module, monkeypatch, ["rollback"])
+    receipt = module.rollback_release()
+    assert receipt["status"] == "ROLLED_BACK"
+    assert receipt["operation"] == "MIGRATE"
+    assert receipt["reason_code"] == "REQUESTED_ROLLBACK"
+    assert receipt["rollback_trigger"] == "REQUESTED"
+    assert receipt["completion_claim_allowed"] is False
+    assert receipt["legacy_pointer_sha256"] == journal["from"]["legacy_pointer_sha256"]
+    assert world["pointer_path"].read_bytes() == world["legacy_bytes"]
+    restored_pointer = module._load_json(world["pointer_path"])
+    assert restored_pointer["schema_version"] == module.LEGACY_POINTER_SCHEMA
+    assert restored_pointer == world["legacy"]
+    assert {
+        path.relative_to(world["installed"]).as_posix(): path.read_bytes()
+        for path in world["installed"].rglob("*")
+        if path.is_file()
+    } == world["installed_snapshot"]
+    # Pure v1 release directories restored (release.json only).
+    for release_id in (world["active"]["release_id"], world["previous"]["release_id"]):
+        release_dir = module._state_paths()["release_root"] / str(release_id)
+        assert sorted(path.name for path in release_dir.iterdir()) == ["release.json"]
+    sealed = module._load_json(module._journal_path(migrated["txn_id"]))
+    assert sealed["state"] == "ROLLED_BACK"
+    assert sealed["failure_reason"]["reason_code"] == "REQUESTED_ROLLBACK"
+    assert sealed["terminal_pointer_sha256"] == receipt["current_pointer_sha256"]
+
+
+def test_post_success_migrate_rollback_rejects_stale_pointer_cas(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    module = _module()
+    world = _prepare_v1_migration_world(module, tmp_path, monkeypatch)
+    monkeypatch.setattr(
+        module, "_run_activation_canary", lambda value: _canary_value(module, value)
+    )
+    migrated = module.bootstrap_migrate()
+    pointer_path = world["pointer_path"]
+    before = pointer_path.read_bytes()
+    installed_before = {
+        path.relative_to(world["installed"]).as_posix(): path.read_bytes()
+        for path in world["installed"].rglob("*")
+        if path.is_file()
+    }
+    original_verify = module._verify_legacy_restore_bundle
+
+    def verify_then_drift(restore_root, *, expected_manifest_sha256, expected_tree_sha256):
+        manifest = original_verify(
+            restore_root,
+            expected_manifest_sha256=expected_manifest_sha256,
+            expected_tree_sha256=expected_tree_sha256,
+        )
+        drifted = module._load_json(pointer_path)
+        drifted["switched_at"] = "2099-01-01T00:00:00Z"
+        module._write_json_atomic(pointer_path, drifted)
+        return manifest
+
+    monkeypatch.setattr(module, "_verify_legacy_restore_bundle", verify_then_drift)
     _install_bootstrap_fence(module, monkeypatch, ["rollback"])
     with pytest.raises(module.XinaoError) as failure:
         module.rollback_release()
-    assert failure.value.reason_code == "ROLLBACK_MATERIAL_ABSENT"
-    assert world["pointer_path"].read_bytes() == before
+    assert failure.value.reason_code == "CURRENT_POINTER_CAS_CONFLICT"
+    # Restore must not run after CAS miss; live skill tree stays post-migration.
+    assert {
+        path.relative_to(world["installed"]).as_posix(): path.read_bytes()
+        for path in world["installed"].rglob("*")
+        if path.is_file()
+    } == installed_before
+    journal = module._load_json(module._journal_path(migrated["txn_id"]))
+    assert journal["state"] == "VERIFIED"
+    assert journal["terminal_pointer_sha256"] == module._sha256_bytes(before)
+
+
+def test_post_success_migrate_rollback_rejects_stale_or_foreign_journal_binding(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    module = _module()
+    world = _prepare_v1_migration_world(module, tmp_path, monkeypatch)
+    monkeypatch.setattr(
+        module, "_run_activation_canary", lambda value: _canary_value(module, value)
+    )
+    migrated = module.bootstrap_migrate()
+    journal_path = module._journal_path(migrated["txn_id"])
+    before_pointer = world["pointer_path"].read_bytes()
+    # Fence forms against the healthy terminal MIGRATE witness first.
+    _install_bootstrap_fence(module, monkeypatch, ["rollback"])
+    journal = module._load_json(journal_path)
+    # Stale terminal hash binding: context refuses ordinary rollback mutation.
+    journal["terminal_pointer_sha256"] = "a" * 64
+    module._write_json_atomic(journal_path, journal)
+    with pytest.raises(module.XinaoError) as failure:
+        module.rollback_release()
+    assert failure.value.reason_code == "ACTIVATION_POINTER_BINDING_MISMATCH"
+    assert world["pointer_path"].read_bytes() == before_pointer
+
+
+def test_post_success_migrate_rollback_rejects_restore_tamper(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    module = _module()
+    world = _prepare_v1_migration_world(module, tmp_path, monkeypatch)
+    monkeypatch.setattr(
+        module, "_run_activation_canary", lambda value: _canary_value(module, value)
+    )
+    migrated = module.bootstrap_migrate()
+    journal = module._load_json(module._journal_path(migrated["txn_id"]))
+    restore_root = Path(journal["from"]["legacy_restore_path"])
+    skill_md = restore_root / "installed_skill" / "SKILL.md"
+    skill_md.write_bytes(skill_md.read_bytes() + b"\n# tampered-restore\n")
+    before_pointer = world["pointer_path"].read_bytes()
+    installed_before = {
+        path.relative_to(world["installed"]).as_posix(): path.read_bytes()
+        for path in world["installed"].rglob("*")
+        if path.is_file()
+    }
+    _install_bootstrap_fence(module, monkeypatch, ["rollback"])
+    with pytest.raises(module.XinaoError) as failure:
+        module.rollback_release()
+    assert failure.value.reason_code == "LEGACY_RESTORE_IDENTITY_MISMATCH"
+    assert world["pointer_path"].read_bytes() == before_pointer
+    assert {
+        path.relative_to(world["installed"]).as_posix(): path.read_bytes()
+        for path in world["installed"].rglob("*")
+        if path.is_file()
+    } == installed_before
+    assert module._load_json(module._journal_path(migrated["txn_id"]))["state"] == "VERIFIED"
+
+
+def test_post_success_migrate_rollback_rejects_foreign_restore_path(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    module = _module()
+    world = _prepare_v1_migration_world(module, tmp_path, monkeypatch)
+    monkeypatch.setattr(
+        module, "_run_activation_canary", lambda value: _canary_value(module, value)
+    )
+    migrated = module.bootstrap_migrate()
+    journal_path = module._journal_path(migrated["txn_id"])
+    journal = module._load_json(journal_path)
+    foreign = tmp_path / "foreign_restore"
+    # Copy sealed restore out of owned txn directory.
+    import shutil
+
+    shutil.copytree(journal["from"]["legacy_restore_path"], foreign)
+    journal["from"] = {
+        **journal["from"],
+        "legacy_restore_path": str(foreign),
+    }
+    module._write_json_atomic(journal_path, journal)
+    before_pointer = world["pointer_path"].read_bytes()
+    _install_bootstrap_fence(module, monkeypatch, ["rollback"])
+    with pytest.raises(module.XinaoError) as failure:
+        module.rollback_release()
+    assert failure.value.reason_code in {
+        "LEGACY_RESTORE_PATH_INVALID",
+        "ACTIVATION_SOURCE_INVALID",
+        "ACTIVATION_JOURNAL_SCHEMA_INVALID",
+        "BOOTSTRAP_FENCE_MISMATCH",
+        "RECOVERY_REQUIRED",
+    }
+    assert world["pointer_path"].read_bytes() == before_pointer
+
+
+def test_post_success_migrate_rollback_second_call_is_idempotent_fail_closed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    module = _module()
+    world = _prepare_v1_migration_world(module, tmp_path, monkeypatch)
+    monkeypatch.setattr(
+        module, "_run_activation_canary", lambda value: _canary_value(module, value)
+    )
+    migrated = module.bootstrap_migrate()
+    _install_bootstrap_fence(module, monkeypatch, ["rollback"])
+    first = module.rollback_release()
+    assert first["status"] == "ROLLED_BACK"
+    assert first["rollback_trigger"] == "REQUESTED"
+    restored_pointer = world["pointer_path"].read_bytes()
+    restored_skill = {
+        path.relative_to(world["installed"]).as_posix(): path.read_bytes()
+        for path in world["installed"].rglob("*")
+        if path.is_file()
+    }
+    journal_after = module._journal_path(migrated["txn_id"]).read_bytes()
+    # Second ordinary rollback cannot form a v2 fence over restored v1 pointer.
+    with pytest.raises(module.XinaoError) as failure:
+        module.rollback_release()
+    assert failure.value.reason_code in {
+        "BOOTSTRAP_MIGRATION_REQUIRED",
+        "BOOTSTRAP_FENCE_REQUIRED",
+        "BOOTSTRAP_FENCE_MISMATCH",
+        "CURRENT_POINTER_SCHEMA_INVALID",
+    }
+    assert world["pointer_path"].read_bytes() == restored_pointer
+    assert {
+        path.relative_to(world["installed"]).as_posix(): path.read_bytes()
+        for path in world["installed"].rglob("*")
+        if path.is_file()
+    } == restored_skill
+    assert module._journal_path(migrated["txn_id"]).read_bytes() == journal_after
+
+
+def test_post_success_migrate_rollback_preserves_legacy_installed_tree_bytes(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    module = _module()
+    world = _prepare_v1_migration_world(module, tmp_path, monkeypatch)
+    monkeypatch.setattr(
+        module, "_run_activation_canary", lambda value: _canary_value(module, value)
+    )
+    # Capture exact pre-migration installed tree including drifted files.
+    expected = dict(world["installed_snapshot"])
+    module.bootstrap_migrate()
+    # Mutation of installed tree during v2 life must not prevent sealed restore.
+    (world["installed"] / "SKILL.md").write_bytes(b"post-migrate drift\n")
+    _install_bootstrap_fence(module, monkeypatch, ["rollback"])
+    receipt = module.rollback_release()
+    assert receipt["status"] == "ROLLED_BACK"
+    assert {
+        path.relative_to(world["installed"]).as_posix(): path.read_bytes()
+        for path in world["installed"].rglob("*")
+        if path.is_file()
+    } == expected
+
+
+def test_post_success_migrate_rollback_crash_before_journal_seal_heals(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    module = _module()
+    world = _prepare_v1_migration_world(module, tmp_path, monkeypatch)
+    monkeypatch.setattr(
+        module, "_run_activation_canary", lambda value: _canary_value(module, value)
+    )
+    migrated = module.bootstrap_migrate()
+    txn_id = migrated["txn_id"]
+    original_transition = module._journal_transition
+    calls = {"count": 0}
+
+    def crash_after_restore(journal_path, journal, state, **changes):
+        calls["count"] += 1
+        if state == "ROLLED_BACK" and journal.get("operation") == "MIGRATE":
+            raise module.XinaoError("INJECTED_CRASH", "after restore before journal seal")
+        return original_transition(journal_path, journal, state, **changes)
+
+    monkeypatch.setattr(module, "_journal_transition", crash_after_restore)
+    _install_bootstrap_fence(module, monkeypatch, ["rollback"])
+    with pytest.raises(module.XinaoError) as failure:
+        module.rollback_release()
+    assert failure.value.reason_code == "INJECTED_CRASH"
+    # Live world already restored to sealed v1; journal still VERIFIED until heal.
+    assert world["pointer_path"].read_bytes() == world["legacy_bytes"]
+    assert module._load_json(module._journal_path(txn_id))["state"] == "VERIFIED"
+    monkeypatch.setattr(module, "_journal_transition", original_transition)
+    # bootstrap-migrate heals the journal seal then can re-enter migration.
+    monkeypatch.setattr(
+        module, "_run_activation_canary", lambda value: _canary_value(module, value)
+    )
+    healed = module.bootstrap_migrate()
+    assert healed["status"] == "MIGRATED"
+    assert module._load_json(module._journal_path(txn_id))["state"] == "ROLLED_BACK"
+
+
+def _assert_full_v1_preimage(module, world: dict[str, object]) -> None:
+    assert world["pointer_path"].read_bytes() == world["legacy_bytes"]
+    assert {
+        path.relative_to(world["installed"]).as_posix(): path.read_bytes()
+        for path in world["installed"].rglob("*")
+        if path.is_file()
+    } == world["installed_snapshot"]
+    for release_id in (world["active"]["release_id"], world["previous"]["release_id"]):
+        release_dir = module._state_paths()["release_root"] / str(release_id)
+        assert sorted(path.name for path in release_dir.iterdir()) == ["release.json"]
+
+
+def test_partial_restore_crash_after_skill_before_pointer_recovers_via_rollback(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Crash after installed Skill mutation, before pointer write, must reapply on next rollback."""
+
+    module = _module()
+    world = _prepare_v1_migration_world(module, tmp_path, monkeypatch)
+    monkeypatch.setattr(
+        module, "_run_activation_canary", lambda value: _canary_value(module, value)
+    )
+    migrated = module.bootstrap_migrate()
+    txn_id = migrated["txn_id"]
+    pointer_path = world["pointer_path"]
+    v2_pointer_bytes = pointer_path.read_bytes()
+    original_write = module._write_bytes_atomic
+
+    def crash_before_pointer(path, payload, *, create_new: bool = False):
+        if module._paths_equal(Path(path), pointer_path):
+            raise module.XinaoError("INJECTED_CRASH", "after skill before pointer")
+        return original_write(path, payload, create_new=create_new)
+
+    monkeypatch.setattr(module, "_write_bytes_atomic", crash_before_pointer)
+    _install_bootstrap_fence(module, monkeypatch, ["rollback"])
+    with pytest.raises(module.XinaoError) as failure:
+        module.rollback_release()
+    assert failure.value.reason_code == "INJECTED_CRASH"
+    # Pointer still v2; skill may already be legacy material; journal unsealed.
+    assert pointer_path.read_bytes() == v2_pointer_bytes
+    assert module._load_json(module._journal_path(txn_id))["state"] == "VERIFIED"
+    monkeypatch.setattr(module, "_write_bytes_atomic", original_write)
+    _install_bootstrap_fence(module, monkeypatch, ["rollback"])
+    receipt = module.rollback_release()
+    assert receipt["status"] == "ROLLED_BACK"
+    assert receipt["completion_claim_allowed"] is False
+    _assert_full_v1_preimage(module, world)
+    assert module._load_json(module._journal_path(txn_id))["state"] == "ROLLED_BACK"
+
+
+def test_partial_restore_crash_after_pointer_before_release_cleanup_heals(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Crash after pointer write, before release cleanup, must not seal on pointer alone."""
+
+    module = _module()
+    world = _prepare_v1_migration_world(module, tmp_path, monkeypatch)
+    monkeypatch.setattr(
+        module, "_run_activation_canary", lambda value: _canary_value(module, value)
+    )
+    migrated = module.bootstrap_migrate()
+    txn_id = migrated["txn_id"]
+    pointer_path = world["pointer_path"]
+    release_root = module._state_paths()["release_root"]
+    # Keep protocol-2 bundle noise under the migrated active release for impurity.
+    dirty_release = release_root / str(world["target"]["release_id"])
+    assert (dirty_release / "skill-bundle").exists() or dirty_release.is_dir()
+    original_write = module._write_bytes_atomic
+    pointer_written = {"done": False}
+
+    def crash_after_pointer_before_releases(path, payload, *, create_new: bool = False):
+        target = Path(path)
+        if module._paths_equal(target, pointer_path):
+            original_write(path, payload, create_new=create_new)
+            pointer_written["done"] = True
+            raise module.XinaoError("INJECTED_CRASH", "after pointer before releases")
+        return original_write(path, payload, create_new=create_new)
+
+    monkeypatch.setattr(module, "_write_bytes_atomic", crash_after_pointer_before_releases)
+    _install_bootstrap_fence(module, monkeypatch, ["rollback"])
+    with pytest.raises(module.XinaoError) as failure:
+        module.rollback_release()
+    assert failure.value.reason_code == "INJECTED_CRASH"
+    assert pointer_written["done"] is True
+    assert pointer_path.read_bytes() == world["legacy_bytes"]
+    assert module._load_json(module._journal_path(txn_id))["state"] == "VERIFIED"
+    # Historical pure v1 dirs may still be missing restore cleanup; target may still be v2-shaped.
+    monkeypatch.setattr(module, "_write_bytes_atomic", original_write)
+    monkeypatch.setattr(
+        module, "_run_activation_canary", lambda value: _canary_value(module, value)
+    )
+    # Heal must reapply + full preimage verify before sealing, then may continue migrate.
+    healed = module.bootstrap_migrate()
+    assert healed["status"] == "MIGRATED"
+    assert module._load_json(module._journal_path(txn_id))["state"] == "ROLLED_BACK"
+
+
+def test_partial_restore_crash_after_one_release_recovers_full_preimage(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    module = _module()
+    world = _prepare_v1_migration_world(module, tmp_path, monkeypatch)
+    monkeypatch.setattr(
+        module, "_run_activation_canary", lambda value: _canary_value(module, value)
+    )
+    migrated = module.bootstrap_migrate()
+    txn_id = migrated["txn_id"]
+    release_root = module._state_paths()["release_root"]
+    original_write = module._write_bytes_atomic
+    release_writes = {"count": 0}
+
+    def crash_after_first_release(path, payload, *, create_new: bool = False):
+        target = Path(path)
+        try:
+            target.relative_to(release_root)
+            is_live_release = target.name == "release.json"
+        except ValueError:
+            is_live_release = False
+        result = original_write(path, payload, create_new=create_new)
+        if is_live_release:
+            release_writes["count"] += 1
+            if release_writes["count"] >= 1:
+                raise module.XinaoError("INJECTED_CRASH", "after one release restored")
+        return result
+
+    monkeypatch.setattr(module, "_write_bytes_atomic", crash_after_first_release)
+    _install_bootstrap_fence(module, monkeypatch, ["rollback"])
+    with pytest.raises(module.XinaoError) as failure:
+        module.rollback_release()
+    assert failure.value.reason_code == "INJECTED_CRASH"
+    assert release_writes["count"] >= 1
+    assert world["pointer_path"].read_bytes() == world["legacy_bytes"]
+    assert module._load_json(module._journal_path(txn_id))["state"] == "VERIFIED"
+    # One release pure does not authorize ROLLED_BACK; heal must finish the other.
+    monkeypatch.setattr(module, "_write_bytes_atomic", original_write)
+    # Direct heal under lock-equivalent call: bootstrap_migrate recovery path.
+    module._heal_restored_migrate_journal_if_needed(module._sha256(world["pointer_path"]))
+    _assert_full_v1_preimage(module, world)
+    sealed = module._load_json(module._journal_path(txn_id))
+    assert sealed["state"] == "ROLLED_BACK"
+    assert sealed["failure_reason"]["reason_code"] == "REQUESTED_ROLLBACK"
+
+
+def test_heal_refuses_tampered_restore_bundle_without_false_terminal(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    module = _module()
+    world = _prepare_v1_migration_world(module, tmp_path, monkeypatch)
+    monkeypatch.setattr(
+        module, "_run_activation_canary", lambda value: _canary_value(module, value)
+    )
+    migrated = module.bootstrap_migrate()
+    txn_id = migrated["txn_id"]
+    journal = module._load_json(module._journal_path(txn_id))
+    # Simulate crash after full restore before journal seal.
+    restore_root = Path(journal["from"]["legacy_restore_path"])
+    restore_manifest = module._verify_legacy_restore_bundle(
+        restore_root,
+        expected_manifest_sha256=journal["from"]["legacy_restore_manifest_sha256"],
+        expected_tree_sha256=journal["from"]["legacy_restore_tree_sha256"],
+    )
+    module._apply_legacy_restore_bundle(restore_root, restore_manifest)
+    assert world["pointer_path"].read_bytes() == world["legacy_bytes"]
+    assert module._load_json(module._journal_path(txn_id))["state"] == "VERIFIED"
+    # Tamper sealed restore after live apply; heal must fail closed (no false ROLLED_BACK).
+    skill_md = restore_root / "installed_skill" / "SKILL.md"
+    skill_md.write_bytes(skill_md.read_bytes() + b"\n# foreign-or-tampered\n")
+    # Also dirty one live release so reapply would be required if bundle were intact.
+    dirty = module._state_paths()["release_root"] / str(world["active"]["release_id"]) / "extra.bin"
+    dirty.write_bytes(b"impure\n")
+    with pytest.raises(module.XinaoError) as failure:
+        module._heal_restored_migrate_journal_if_needed(module._sha256(world["pointer_path"]))
+    assert failure.value.reason_code in {"RECOVERY_REQUIRED", "RECOVERY_CONFLICT"}
+    assert module._load_json(module._journal_path(txn_id))["state"] == "VERIFIED"
+    # bootstrap_migrate must not start a new migration over the conflicted witness.
+    with pytest.raises(module.XinaoError) as migrate_failure:
+        module.bootstrap_migrate()
+    assert migrate_failure.value.reason_code in {"RECOVERY_REQUIRED", "RECOVERY_CONFLICT"}
+    assert module._load_json(module._journal_path(txn_id))["state"] == "VERIFIED"
+    pending = [
+        item
+        for item in module._pending_journals()
+        if item[0].get("operation") == "MIGRATE"
+    ]
+    assert pending == []
+
+
+def test_heal_ambiguous_matching_verified_migrate_journals_fail_closed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    module = _module()
+    world = _prepare_v1_migration_world(module, tmp_path, monkeypatch)
+    monkeypatch.setattr(
+        module, "_run_activation_canary", lambda value: _canary_value(module, value)
+    )
+    migrated = module.bootstrap_migrate()
+    txn_id = migrated["txn_id"]
+    journal_path = module._journal_path(txn_id)
+    journal = module._load_json(journal_path)
+    restore_root = Path(journal["from"]["legacy_restore_path"])
+    # Apply full restore without sealing journal (simulates complete apply + seal crash).
+    restore_manifest = module._verify_legacy_restore_bundle(
+        restore_root,
+        expected_manifest_sha256=journal["from"]["legacy_restore_manifest_sha256"],
+        expected_tree_sha256=journal["from"]["legacy_restore_tree_sha256"],
+    )
+    module._apply_legacy_restore_bundle(restore_root, restore_manifest)
+    # Forge a second matching VERIFIED MIGRATE witness with its own sealed restore copy.
+    import shutil
+
+    second_txn = "xra_20990101T000000_aaaaaaaaaaaaaaaa"
+    second_root = module._state_paths()["transaction_root"] / second_txn
+    second_restore = second_root / "legacy_restore"
+    shutil.copytree(restore_root, second_restore)
+    second_manifest = module._load_json(second_restore / "restore.manifest.json")
+    second_manifest["txn_id"] = second_txn
+    module._write_json_atomic(second_restore / "restore.manifest.json", second_manifest)
+    second_manifest_sha = module._sha256(second_restore / "restore.manifest.json")
+    second_journal = dict(journal)
+    second_journal["txn_id"] = second_txn
+    second_journal["from"] = {
+        **journal["from"],
+        "legacy_restore_path": str(second_restore),
+        "legacy_restore_manifest_sha256": second_manifest_sha,
+    }
+    second_journal_path = second_root / "activation.v1.json"
+    module._write_json_atomic(second_journal_path, second_journal)
+    module._validate_journal(module._load_json(second_journal_path), second_journal_path)
+    live_sha = module._sha256(world["pointer_path"])
+    with pytest.raises(module.XinaoError) as failure:
+        module._heal_restored_migrate_journal_if_needed(live_sha)
+    assert failure.value.reason_code == "RECOVERY_CONFLICT"
+    assert "multiple matching" in failure.value.detail
+    assert module._load_json(journal_path)["state"] == "VERIFIED"
+    assert module._load_json(second_journal_path)["state"] == "VERIFIED"
+    with pytest.raises(module.XinaoError) as migrate_failure:
+        module.bootstrap_migrate()
+    assert migrate_failure.value.reason_code == "RECOVERY_CONFLICT"
+
+
+def test_heal_idempotent_recovery_after_partial_live_world(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    module = _module()
+    world = _prepare_v1_migration_world(module, tmp_path, monkeypatch)
+    monkeypatch.setattr(
+        module, "_run_activation_canary", lambda value: _canary_value(module, value)
+    )
+    migrated = module.bootstrap_migrate()
+    txn_id = migrated["txn_id"]
+    journal = module._load_json(module._journal_path(txn_id))
+    restore_root = Path(journal["from"]["legacy_restore_path"])
+    restore_manifest = module._verify_legacy_restore_bundle(
+        restore_root,
+        expected_manifest_sha256=journal["from"]["legacy_restore_manifest_sha256"],
+        expected_tree_sha256=journal["from"]["legacy_restore_tree_sha256"],
+    )
+    # Partial world: skill + pointer restored; leave impurity in a captured release dir.
+    module._apply_legacy_restore_bundle(restore_root, restore_manifest)
+    impure = (
+        module._state_paths()["release_root"]
+        / str(world["previous"]["release_id"])
+        / "skill-bundle-noise"
+    )
+    impure.mkdir(parents=True, exist_ok=True)
+    (impure / "x.txt").write_bytes(b"noise\n")
+    assert module._load_json(module._journal_path(txn_id))["state"] == "VERIFIED"
+    live_sha = module._sha256(world["pointer_path"])
+    module._heal_restored_migrate_journal_if_needed(live_sha)
+    _assert_full_v1_preimage(module, world)
+    assert module._load_json(module._journal_path(txn_id))["state"] == "ROLLED_BACK"
+    # Second heal is a no-op once journal is terminal (no longer VERIFIED).
+    module._heal_restored_migrate_journal_if_needed(live_sha)
+    _assert_full_v1_preimage(module, world)
+    assert module._load_json(module._journal_path(txn_id))["state"] == "ROLLED_BACK"
+
+
+def test_failed_heal_blocks_new_migration(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    module = _module()
+    world = _prepare_v1_migration_world(module, tmp_path, monkeypatch)
+    monkeypatch.setattr(
+        module, "_run_activation_canary", lambda value: _canary_value(module, value)
+    )
+    migrated = module.bootstrap_migrate()
+    txn_id = migrated["txn_id"]
+    journal = module._load_json(module._journal_path(txn_id))
+    restore_root = Path(journal["from"]["legacy_restore_path"])
+    # Pointer restored to legacy, journal still VERIFIED, restore path retargeted foreign.
+    module._write_bytes_atomic(world["pointer_path"], world["legacy_bytes"])
+    foreign = tmp_path / "foreign_restore_bundle"
+    import shutil
+
+    shutil.copytree(journal["from"]["legacy_restore_path"], foreign)
+    journal["from"] = {
+        **journal["from"],
+        "legacy_restore_path": str(foreign),
+    }
+    module._write_json_atomic(module._journal_path(txn_id), journal)
+    before_journals = {
+        path.name
+        for path in module._state_paths()["transaction_root"].iterdir()
+        if path.is_dir()
+    }
+    with pytest.raises(module.XinaoError) as failure:
+        module.bootstrap_migrate()
+    assert failure.value.reason_code in {"RECOVERY_REQUIRED", "RECOVERY_CONFLICT"}
+    after_journals = {
+        path.name
+        for path in module._state_paths()["transaction_root"].iterdir()
+        if path.is_dir()
+    }
+    assert after_journals == before_journals
+    assert module._load_json(module._journal_path(txn_id))["state"] == "VERIFIED"
+    assert not module._pending_journals()
+
+
+def test_canary_failure_migrate_rollback_trigger_differs_from_requested(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    module = _module()
+    world = _prepare_v1_migration_world(module, tmp_path, monkeypatch)
+
+    def fail_canary(journal):
+        raise module.XinaoError("INJECTED_CANARY_FAILURE", "post-switch")
+
+    monkeypatch.setattr(module, "_run_activation_canary", fail_canary)
+    canary_receipt = module.bootstrap_migrate()
+    assert canary_receipt["status"] == "ROLLED_BACK"
+    assert canary_receipt["rollback_trigger"] == "CANARY_FAILURE"
+    assert canary_receipt["reason_code"] == "INJECTED_CANARY_FAILURE"
+    assert canary_receipt["completion_claim_allowed"] is False
+    # Re-migrate successfully, then requested rollback uses a different trigger.
+    monkeypatch.setattr(
+        module, "_run_activation_canary", lambda value: _canary_value(module, value)
+    )
+    migrated = module.bootstrap_migrate()
+    assert migrated["status"] == "MIGRATED"
+    _install_bootstrap_fence(module, monkeypatch, ["rollback"])
+    requested = module.rollback_release()
+    assert requested["rollback_trigger"] == "REQUESTED"
+    assert requested["reason_code"] == "REQUESTED_ROLLBACK"
+    assert requested["completion_claim_allowed"] is False
+
+
+def test_ordinary_v2_to_v2_rollback_still_uses_previous_verified(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Post-success migration path must not hijack ordinary previous_verified rollback."""
+
+    module = _module()
+    first, first_path = _sealed_release(module, tmp_path, monkeypatch, image_character="a")
+    _terminal_pointer(module, first, first_path)
+    second, _second_path = _sealed_release(
+        module, tmp_path, monkeypatch, image_character="b", variant=b"v2-rollback-preserve"
+    )
+    monkeypatch.setattr(
+        module, "_run_activation_canary", lambda value: _canary_value(module, value)
+    )
+    _install_bootstrap_fence(
+        module, monkeypatch, ["activate", "--release-id", str(second["release_id"])]
+    )
+    module.activate_release(str(second["release_id"]))
+    _install_bootstrap_fence(module, monkeypatch, ["rollback"])
+    receipt = module.rollback_release()
+    pointer = module._load_json(module._state_paths()["pointer"])
+    assert receipt["status"] == "ROLLED_BACK"
+    assert receipt["operation"] == "ROLLBACK"
+    assert "rollback_trigger" not in receipt
+    assert pointer["generation"] == 3
+    assert pointer["active"]["release_id"] == first["release_id"]
+    assert pointer["previous_verified"]["release_id"] == second["release_id"]
 
 
 def test_generic_worker_arguments_get_typed_rejection(

@@ -51,9 +51,14 @@ provider 已运行或科研有进展。engine 停止、image 未核验、bundle 
 日常 activate 或 rollback 的唯一可变权威对象是 D 盘 `current.json`；它在 OS 独占锁内
 按 generation 与 preimage hash 做 CAS。每次切换先写 activation journal，fresh canary
 验真后才进入 `VERIFIED`；pending 或身份漂移时普通调用和 `inspect` 都返回
-`RECOVERY_REQUIRED`。rollback 是指向完整 `previous_verified` release 的新 generation，
-不是覆盖旧指针，也不重写历史。若旧版完整 bundle 不存在，在任何 active mutation 前
-返回 `ROLLBACK_MATERIAL_ABSENT`。
+`RECOVERY_REQUIRED`。普通 protocol-2 之间的 rollback 是指向完整 `previous_verified`
+release 的新 generation，不是覆盖旧指针，也不重写历史。若 `previous_verified` 缺失但
+存在已封印的 post-success MIGRATE 回滚见证（`legacy_restore`），ordinary `rollback`
+会在 activation lock 内把 pointer、纯 v1 release 目录与已捕获的 installed Skill 恢复到
+封印预像，并只在完整 live preimage 核验通过后把 journal 封为 `ROLLED_BACK`；中途崩溃
+必须在同一锁内重放同一封印 restore 或 fail closed，不得因仅指针哈希匹配就假封印。
+若旧版完整 bundle 与封印 restore 均不可用，在任何 active mutation 前返回
+`ROLLBACK_MATERIAL_ABSENT`。
 
 Skill bundle 版本、研究员能力版本、charter/runtime 版本和 bootstrap protocol 是独立
 维度；同一完整 identity 可幂等复用，同一语义版本对应不同 bundle 则拒绝为

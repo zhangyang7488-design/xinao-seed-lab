@@ -2598,6 +2598,165 @@ def _complete_canary(
     }
 
 
+def _bound_legacy_restore_root(txn_id: str, restore_path_value: object) -> Path:
+    """Bind a MIGRATE journal restore path to this txn; reject foreign/reparse paths."""
+
+    if not isinstance(restore_path_value, str) or not restore_path_value:
+        raise XinaoError("LEGACY_RESTORE_PATH_INVALID", "legacy_restore_path")
+    restore_root = Path(restore_path_value)
+    if not restore_root.is_absolute():
+        raise XinaoError("LEGACY_RESTORE_PATH_INVALID", f"relative:{restore_root}")
+    expected = _state_paths()["transaction_root"] / txn_id / "legacy_restore"
+    if not _paths_equal(restore_root, expected):
+        raise XinaoError(
+            "LEGACY_RESTORE_PATH_INVALID",
+            f"foreign restore path sealed={restore_root} expected={expected}",
+        )
+    # Refuse reparse points on the restore root or its owned parents before any mutation.
+    for candidate in (expected, *expected.parents):
+        if _paths_equal(candidate, _state_paths()["transaction_root"].parent):
+            break
+        if os.path.lexists(candidate) and _is_reparse(candidate):
+            raise XinaoError("LEGACY_RESTORE_PATH_INVALID", f"reparse forbidden: {candidate}")
+        if _paths_equal(candidate, _state_paths()["transaction_root"]):
+            break
+    if not expected.is_dir():
+        raise XinaoError("LEGACY_RESTORE_PATH_INVALID", f"missing restore root: {expected}")
+    return expected
+
+
+def _verify_live_legacy_preimage(restore_manifest: dict[str, Any]) -> str:
+    """Require the complete live preimage to match the sealed restore inventory.
+
+    Checks installed Skill inventory, exact pointer hash/bytes identity, and every
+    captured release directory (release.json only, correct bytes). Never treats a
+    legacy pointer alone as proof of a finished restore.
+    """
+
+    inventory = restore_manifest.get("inventory")
+    if not isinstance(inventory, dict):
+        raise XinaoError("LEGACY_RESTORE_IDENTITY_MISMATCH", "inventory")
+    sealed_installed_root = Path(str(restore_manifest.get("installed_skill_root") or ""))
+    live_installed = Path(os.path.abspath(_installed_skill_root()))
+    if not _paths_equal(sealed_installed_root, live_installed):
+        raise XinaoError(
+            "LEGACY_RESTORE_IDENTITY_MISMATCH",
+            f"installed_skill_root sealed={sealed_installed_root} live={live_installed}",
+        )
+    if not live_installed.is_dir() or _is_reparse(live_installed):
+        raise XinaoError("LEGACY_RESTORE_IDENTITY_MISMATCH", f"installed_skill:{live_installed}")
+    live_rows = _capture_tree_rows(
+        live_installed, reason_code="LEGACY_RESTORE_IDENTITY_MISMATCH"
+    )
+    if _tree_inventory(live_rows) != inventory.get("installed_skill"):
+        raise XinaoError("LEGACY_RESTORE_IDENTITY_MISMATCH", "live_installed_skill")
+
+    pointer_path = _state_paths()["pointer"]
+    if not pointer_path.is_file() or _is_reparse(pointer_path):
+        raise XinaoError("LEGACY_RESTORE_IDENTITY_MISMATCH", f"live_pointer:{pointer_path}")
+    live_pointer_sha256 = _sha256(pointer_path)
+    expected_pointer_sha256 = inventory.get("pointer_sha256")
+    if live_pointer_sha256 != expected_pointer_sha256:
+        raise XinaoError("LEGACY_RESTORE_IDENTITY_MISMATCH", "live_pointer")
+    if live_pointer_sha256 != restore_manifest.get("legacy_pointer_sha256"):
+        raise XinaoError("LEGACY_RESTORE_IDENTITY_MISMATCH", "live_pointer_manifest")
+
+    releases = inventory.get("releases")
+    if not isinstance(releases, dict) or not releases:
+        raise XinaoError("LEGACY_RESTORE_IDENTITY_MISMATCH", "releases")
+    release_root = _state_paths()["release_root"]
+    for release_id, expected_sha in releases.items():
+        if RELEASE_ID_PATTERN.fullmatch(str(release_id)) is None:
+            raise XinaoError("LEGACY_RESTORE_IDENTITY_MISMATCH", f"release_id:{release_id}")
+        if not isinstance(expected_sha, str) or HEX_SHA256_PATTERN.fullmatch(expected_sha) is None:
+            raise XinaoError("LEGACY_RESTORE_IDENTITY_MISMATCH", f"release_sha:{release_id}")
+        release_dir = release_root / str(release_id)
+        if not release_dir.is_dir() or _is_reparse(release_dir):
+            raise XinaoError("LEGACY_RESTORE_IDENTITY_MISMATCH", f"release_dir:{release_id}")
+        try:
+            entries = sorted(release_dir.iterdir())
+        except OSError as exc:
+            raise XinaoError(
+                "LEGACY_RESTORE_IDENTITY_MISMATCH", f"release_dir:{release_id}:{exc}"
+            ) from exc
+        names = [entry.name for entry in entries]
+        if names != ["release.json"]:
+            raise XinaoError(
+                "LEGACY_RESTORE_IDENTITY_MISMATCH",
+                f"release_not_pure:{release_id}:{','.join(names)}",
+            )
+        manifest_path = release_dir / "release.json"
+        if _is_reparse(manifest_path) or _sha256(manifest_path) != expected_sha:
+            raise XinaoError("LEGACY_RESTORE_IDENTITY_MISMATCH", f"release:{release_id}")
+    return live_pointer_sha256
+
+
+def _verify_and_apply_legacy_restore(
+    journal: dict[str, Any],
+    *,
+    expected_manifest_sha256: str,
+    expected_tree_sha256: str,
+    expected_live_pointer_sha256: str | None = None,
+) -> tuple[Path, dict[str, Any], str]:
+    """Verify the sealed restore bundle for this MIGRATE txn, apply it, verify live preimage."""
+
+    from_value = journal["from"]
+    restore_root = _bound_legacy_restore_root(
+        str(journal["txn_id"]), from_value["legacy_restore_path"]
+    )
+    restore_manifest = _verify_legacy_restore_bundle(
+        restore_root,
+        expected_manifest_sha256=expected_manifest_sha256,
+        expected_tree_sha256=expected_tree_sha256,
+    )
+    if restore_manifest.get("txn_id") != journal["txn_id"]:
+        raise XinaoError("LEGACY_RESTORE_IDENTITY_MISMATCH", "restore_manifest.txn_id")
+    if restore_manifest.get("legacy_pointer_sha256") != from_value["legacy_pointer_sha256"]:
+        raise XinaoError("LEGACY_RESTORE_IDENTITY_MISMATCH", "restore_manifest.pointer")
+    if restore_manifest.get("tree_sha256") != expected_tree_sha256:
+        raise XinaoError("LEGACY_RESTORE_IDENTITY_MISMATCH", "restore_manifest.tree_sha256")
+    if from_value.get("legacy_restore_tree_sha256") != expected_tree_sha256:
+        raise XinaoError("LEGACY_RESTORE_IDENTITY_MISMATCH", "journal.tree_sha256")
+    pointer_path = _state_paths()["pointer"]
+    if expected_live_pointer_sha256 is not None:
+        # Final CAS immediately before the first live restore mutation.
+        if not pointer_path.is_file() or _sha256(pointer_path) != expected_live_pointer_sha256:
+            raise XinaoError("CURRENT_POINTER_CAS_CONFLICT", str(pointer_path))
+    _apply_legacy_restore_bundle(restore_root, restore_manifest)
+    restored_sha256 = _verify_live_legacy_preimage(restore_manifest)
+    if restored_sha256 != from_value["legacy_pointer_sha256"]:
+        raise XinaoError("LEGACY_RESTORE_IDENTITY_MISMATCH", str(pointer_path))
+    return restore_root, restore_manifest, restored_sha256
+
+
+def _migration_rollback_receipt(
+    journal: dict[str, Any],
+    journal_path: Path,
+    *,
+    reason_code: str,
+    detail: str,
+    rollback_trigger: str,
+    legacy_pointer_sha256: str,
+    legacy_restore_tree_sha256: str,
+    current_pointer_sha256: str,
+) -> dict[str, Any]:
+    return {
+        "schema_version": "xinao.researcher_migration_receipt.v1",
+        "status": "ROLLED_BACK",
+        "txn_id": journal["txn_id"],
+        "operation": "MIGRATE",
+        "reason_code": reason_code,
+        "detail": detail,
+        "rollback_trigger": rollback_trigger,
+        "legacy_pointer_sha256": legacy_pointer_sha256,
+        "legacy_restore_tree_sha256": legacy_restore_tree_sha256,
+        "current_pointer_sha256": current_pointer_sha256,
+        "activation_journal_path": str(journal_path),
+        "activation_journal_sha256": _sha256(journal_path),
+        "completion_claim_allowed": False,
+    }
+
+
 def _rollback_failed_migration(
     journal: dict[str, Any], journal_path: Path, failure: XinaoError
 ) -> dict[str, Any]:
@@ -2622,16 +2781,11 @@ def _rollback_failed_migration(
                 or pointer_sha256 != journal.get("switched_pointer_sha256")
             ):
                 raise XinaoError("RECOVERY_CONFLICT", str(pointer_path))
-    restore_root = Path(str(from_value["legacy_restore_path"]))
-    restore_manifest = _verify_legacy_restore_bundle(
-        restore_root,
+    _restore_root, _restore_manifest, restored_sha256 = _verify_and_apply_legacy_restore(
+        journal,
         expected_manifest_sha256=str(from_value["legacy_restore_manifest_sha256"]),
         expected_tree_sha256=str(from_value["legacy_restore_tree_sha256"]),
     )
-    _apply_legacy_restore_bundle(restore_root, restore_manifest)
-    restored_sha256 = _sha256(pointer_path)
-    if restored_sha256 != from_value["legacy_pointer_sha256"]:
-        raise XinaoError("LEGACY_RESTORE_IDENTITY_MISMATCH", str(pointer_path))
     journal = _journal_transition(
         journal_path,
         journal,
@@ -2641,20 +2795,226 @@ def _rollback_failed_migration(
         terminal_pointer_sha256=restored_sha256,
         switched_pointer_sha256=restored_sha256,
     )
-    return {
-        "schema_version": "xinao.researcher_migration_receipt.v1",
-        "status": "ROLLED_BACK",
-        "txn_id": journal["txn_id"],
-        "operation": "MIGRATE",
-        "reason_code": failure.reason_code,
-        "detail": failure.detail,
-        "legacy_pointer_sha256": from_value["legacy_pointer_sha256"],
-        "legacy_restore_tree_sha256": from_value["legacy_restore_tree_sha256"],
-        "current_pointer_sha256": restored_sha256,
-        "activation_journal_path": str(journal_path),
-        "activation_journal_sha256": _sha256(journal_path),
-        "completion_claim_allowed": False,
-    }
+    return _migration_rollback_receipt(
+        journal,
+        journal_path,
+        reason_code=failure.reason_code,
+        detail=failure.detail,
+        rollback_trigger="CANARY_FAILURE",
+        legacy_pointer_sha256=str(from_value["legacy_pointer_sha256"]),
+        legacy_restore_tree_sha256=str(from_value["legacy_restore_tree_sha256"]),
+        current_pointer_sha256=restored_sha256,
+    )
+
+
+def _rollback_successful_migration(current: dict[str, Any]) -> dict[str, Any]:
+    """Ordinary rollback after terminal protocol-2 MIGRATE: restore sealed v1 world.
+
+    Binds the active v2 pointer to its terminal MIGRATE journal and exact pointer hash,
+    re-verifies the sealed legacy restore bundle, then restores pointer/manifests/Skill
+    without requiring the user to supply internal paths or fields.
+    """
+
+    journal = current["journal"]
+    journal_path = current["journal_path"]
+    pointer = current["pointer"]
+    pointer_sha256 = current["pointer_sha256"]
+    if journal.get("operation") != "MIGRATE":
+        raise XinaoError("ROLLBACK_MATERIAL_ABSENT", str(_state_paths()["pointer"]))
+    if journal.get("state") == "ROLLED_BACK":
+        from_value = journal.get("from")
+        if (
+            isinstance(from_value, dict)
+            and journal.get("terminal_pointer_sha256") == from_value.get("legacy_pointer_sha256")
+            and pointer_sha256 == journal.get("terminal_pointer_sha256")
+        ):
+            # Idempotent: journal already sealed as requested/canary rollback while still
+            # reporting the restored terminal pointer (should not bind through v2 fence).
+            return _migration_rollback_receipt(
+                journal,
+                journal_path,
+                reason_code="ALREADY_ROLLED_BACK",
+                detail="migration already rolled back",
+                rollback_trigger=str(
+                    (journal.get("failure_reason") or {}).get("reason_code")
+                    or "ALREADY_ROLLED_BACK"
+                ),
+                legacy_pointer_sha256=str(from_value["legacy_pointer_sha256"]),
+                legacy_restore_tree_sha256=str(from_value["legacy_restore_tree_sha256"]),
+                current_pointer_sha256=pointer_sha256,
+            )
+        raise XinaoError("RECOVERY_CONFLICT", str(journal_path))
+    if journal.get("state") != "VERIFIED":
+        raise XinaoError("RECOVERY_REQUIRED", str(journal_path))
+    from_value = journal.get("from")
+    if not isinstance(from_value, dict) or set(from_value) != MIGRATE_FROM_KEYS:
+        raise XinaoError("ACTIVATION_SOURCE_INVALID", str(journal_path))
+    # Bind active v2 pointer to this exact terminal MIGRATE journal / pointer hash.
+    if journal.get("to") != pointer.get("active"):
+        raise XinaoError("ACTIVATION_TARGET_BINDING_MISMATCH", str(journal_path))
+    if journal.get("expected_generation") != pointer.get("generation"):
+        raise XinaoError("ACTIVATION_TARGET_BINDING_MISMATCH", str(journal_path))
+    if journal.get("terminal_pointer_sha256") != pointer_sha256:
+        raise XinaoError("ACTIVATION_POINTER_BINDING_MISMATCH", str(journal_path))
+    if journal.get("switched_pointer_sha256") != pointer_sha256:
+        raise XinaoError("ACTIVATION_POINTER_BINDING_MISMATCH", str(journal_path))
+    if pointer.get("previous_verified") is not None:
+        raise XinaoError("ROLLBACK_MATERIAL_INVALID", "previous_verified present")
+    if from_value.get("previous_verified") is not None:
+        raise XinaoError("ROLLBACK_MATERIAL_INVALID", "migrate.from.previous_verified")
+
+    pointer_path = _state_paths()["pointer"]
+    # Immediate pre-mutation CAS: reject stale/foreign pointer races.
+    live_sha256 = _sha256(pointer_path)
+    live_pointer = _load_json(pointer_path)
+    if live_sha256 != pointer_sha256 or live_pointer != pointer:
+        raise XinaoError("CURRENT_POINTER_CAS_CONFLICT", str(pointer_path))
+    observed_journal = _load_json(journal_path)
+    if observed_journal != journal:
+        raise XinaoError("ACTIVATION_JOURNAL_CAS_CONFLICT", str(journal_path))
+
+    _restore_root, _restore_manifest, restored_sha256 = _verify_and_apply_legacy_restore(
+        journal,
+        expected_manifest_sha256=str(from_value["legacy_restore_manifest_sha256"]),
+        expected_tree_sha256=str(from_value["legacy_restore_tree_sha256"]),
+        expected_live_pointer_sha256=pointer_sha256,
+    )
+    journal = _journal_transition(
+        journal_path,
+        journal,
+        "ROLLED_BACK",
+        failure_reason={
+            "reason_code": "REQUESTED_ROLLBACK",
+            "detail": "post-success migration rollback requested",
+        },
+        terminal_pointer_sha256=restored_sha256,
+        switched_pointer_sha256=restored_sha256,
+    )
+    return _migration_rollback_receipt(
+        journal,
+        journal_path,
+        reason_code="REQUESTED_ROLLBACK",
+        detail="post-success migration rollback requested",
+        rollback_trigger="REQUESTED",
+        legacy_pointer_sha256=str(from_value["legacy_pointer_sha256"]),
+        legacy_restore_tree_sha256=str(from_value["legacy_restore_tree_sha256"]),
+        current_pointer_sha256=restored_sha256,
+    )
+
+
+def _heal_restored_migrate_journal_if_needed(live_legacy_sha256: str) -> None:
+    """Recover a partial/complete post-success legacy restore under the activation lock.
+
+    When the live pointer already equals a sealed legacy restore preimage hash but a
+    MIGRATE journal remains VERIFIED, finish or reapply that exact sealed restore,
+    verify the complete live preimage (Skill + pointer + pure release dirs), then seal
+    ROLLED_BACK. Never seals from pointer-hash alone. Ambiguous or broken matching
+    witnesses fail closed with RECOVERY_REQUIRED/RECOVERY_CONFLICT and block a new
+    migration. Does not introduce a second control plane or unsealed recovery file.
+    """
+
+    root = _state_paths()["transaction_root"]
+    if not root.exists():
+        return
+    if _is_reparse(root) or not root.is_dir():
+        raise XinaoError("TRANSACTION_ROOT_INVALID", str(root))
+
+    candidates: list[tuple[dict[str, Any], Path, Path, dict[str, Any]]] = []
+    for entry in sorted(root.iterdir()):
+        if _is_reparse(entry) or not entry.is_dir():
+            continue
+        journal_path = entry / "activation.v1.json"
+        if not journal_path.is_file():
+            continue
+        try:
+            journal = _load_json(journal_path)
+        except (OSError, XinaoError, json.JSONDecodeError, TypeError, ValueError):
+            continue
+        if journal.get("operation") != "MIGRATE" or journal.get("state") != "VERIFIED":
+            continue
+        from_value = journal.get("from")
+        if not isinstance(from_value, dict):
+            continue
+        if from_value.get("legacy_pointer_sha256") != live_legacy_sha256:
+            continue
+        # Matching live legacy pointer hash: must not silently skip invalid witnesses.
+        try:
+            _validate_journal(journal, journal_path)
+            if set(from_value) != MIGRATE_FROM_KEYS:
+                raise XinaoError("ACTIVATION_SOURCE_INVALID", str(journal_path))
+            if journal.get("txn_id") != entry.name:
+                raise XinaoError("ACTIVATION_TRANSACTION_BINDING_MISMATCH", str(journal_path))
+            restore_root = _bound_legacy_restore_root(
+                str(journal["txn_id"]), from_value["legacy_restore_path"]
+            )
+            restore_manifest = _verify_legacy_restore_bundle(
+                restore_root,
+                expected_manifest_sha256=str(from_value["legacy_restore_manifest_sha256"]),
+                expected_tree_sha256=str(from_value["legacy_restore_tree_sha256"]),
+            )
+            if restore_manifest.get("txn_id") != journal["txn_id"]:
+                raise XinaoError("LEGACY_RESTORE_IDENTITY_MISMATCH", "restore_manifest.txn_id")
+            if restore_manifest.get("legacy_pointer_sha256") != live_legacy_sha256:
+                raise XinaoError("LEGACY_RESTORE_IDENTITY_MISMATCH", "restore_manifest.pointer")
+            if restore_manifest.get("tree_sha256") != from_value.get("legacy_restore_tree_sha256"):
+                raise XinaoError("LEGACY_RESTORE_IDENTITY_MISMATCH", "restore_manifest.tree")
+            if restore_manifest.get("legacy_pointer_sha256") != from_value.get(
+                "legacy_pointer_sha256"
+            ):
+                raise XinaoError("LEGACY_RESTORE_IDENTITY_MISMATCH", "journal.pointer_binding")
+            candidates.append((journal, journal_path, restore_root, restore_manifest))
+        except XinaoError as exc:
+            raise XinaoError(
+                "RECOVERY_CONFLICT",
+                (
+                    f"ambiguous or invalid matching MIGRATE restore witness "
+                    f"txn={journal.get('txn_id')}: {exc.reason_code}: {exc.detail}"
+                ),
+            ) from exc
+
+    if not candidates:
+        return
+    if len(candidates) != 1:
+        txn_ids = ",".join(str(item[0].get("txn_id")) for item in candidates)
+        raise XinaoError(
+            "RECOVERY_CONFLICT",
+            f"multiple matching VERIFIED MIGRATE restore witnesses: {txn_ids}",
+        )
+
+    journal, journal_path, _restore_root, restore_manifest = candidates[0]
+    from_value = journal["from"]
+    try:
+        try:
+            restored_sha256 = _verify_live_legacy_preimage(restore_manifest)
+        except XinaoError:
+            # Partial world after a mid-apply crash: reapply the same sealed bundle.
+            _restore_root, restore_manifest, restored_sha256 = _verify_and_apply_legacy_restore(
+                journal,
+                expected_manifest_sha256=str(from_value["legacy_restore_manifest_sha256"]),
+                expected_tree_sha256=str(from_value["legacy_restore_tree_sha256"]),
+                expected_live_pointer_sha256=live_legacy_sha256,
+            )
+        if restored_sha256 != live_legacy_sha256:
+            raise XinaoError("LEGACY_RESTORE_IDENTITY_MISMATCH", "live_pointer_after_recover")
+        # Seal only after the complete live preimage matches the sealed restore.
+        _journal_transition(
+            journal_path,
+            journal,
+            "ROLLED_BACK",
+            failure_reason={
+                "reason_code": "REQUESTED_ROLLBACK",
+                "detail": "post-success migration rollback recovered with full live preimage",
+            },
+            terminal_pointer_sha256=restored_sha256,
+            switched_pointer_sha256=restored_sha256,
+        )
+    except XinaoError as exc:
+        if exc.reason_code in {"RECOVERY_REQUIRED", "RECOVERY_CONFLICT"}:
+            raise
+        raise XinaoError(
+            "RECOVERY_REQUIRED",
+            f"{journal.get('txn_id')}: {exc.reason_code}: {exc.detail}",
+        ) from exc
 
 
 def _rollback_failed_activation(
@@ -2753,7 +3113,9 @@ def rollback_release() -> dict[str, Any]:
         current = _load_current_context(require_terminal=True)
         previous = current["pointer"].get("previous_verified")
         if previous is None:
-            raise XinaoError("ROLLBACK_MATERIAL_ABSENT", str(_state_paths()["pointer"]))
+            # Post-success protocol-2 migration leaves previous_verified=None but keeps a
+            # terminal MIGRATE journal + sealed legacy restore as the rollback witness.
+            return _rollback_successful_migration(current)
         previous_manifest, previous_manifest_path = _validate_release_ref(previous)
         if (previous_manifest.get("source_identity") or {}).get("source_dirty") is not False:
             raise XinaoError("ROLLBACK_MATERIAL_INVALID", previous["release_id"])
@@ -3469,6 +3831,8 @@ def bootstrap_migrate() -> dict[str, Any]:
             raise XinaoError("CURRENT_POINTER_ABSENT", str(pointer_path))
 
         legacy_sha256 = _sha256(pointer_path)
+        # Seal any post-success restore that applied before the journal transition.
+        _heal_restored_migrate_journal_if_needed(legacy_sha256)
         legacy = _validate_legacy_pointer_document(existing, pointer_path)
         if (
             not legacy.get("previous_release_id")
