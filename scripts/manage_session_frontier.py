@@ -17,18 +17,33 @@ if str(REPO_ROOT) not in sys.path:
 from services.agent_runtime.session_frontier_projection import (  # noqa: E402
     DEFAULT_FRONTIER_ROOT,
     DEFAULT_RENDER_CHAR_BUDGET,
-    DEFAULT_TASK_RUN_ROOT,
+    DEFAULT_TASK_RUN_ROOTS,
     FrontierProjectionError,
     bind_session,
     build_live_frontier,
     handle_compact_session_start,
+    load_binding,
+)
+
+# Re-export for verified-agent-loop importlib consumers that inspect this module
+# surface for current session identity before CAS rebinding.
+__all__ = (
+    "DEFAULT_FRONTIER_ROOT",
+    "DEFAULT_RENDER_CHAR_BUDGET",
+    "DEFAULT_TASK_RUN_ROOTS",
+    "FrontierProjectionError",
+    "bind_session",
+    "build_live_frontier",
+    "handle_compact_session_start",
+    "load_binding",
+    "main",
 )
 
 
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--frontier-root", type=Path, default=DEFAULT_FRONTIER_ROOT)
-    parser.add_argument("--allowed-run-root", type=Path, default=DEFAULT_TASK_RUN_ROOT)
+    parser.add_argument("--allowed-run-root", type=Path, action="append", dest="allowed_run_roots")
     commands = parser.add_subparsers(dest="command", required=True)
     bind = commands.add_parser("bind")
     bind.add_argument("--session-id")
@@ -54,6 +69,7 @@ def _hook_input() -> dict[str, Any]:
 
 def main() -> int:
     args = _parser().parse_args()
+    allowed_run_roots = tuple(args.allowed_run_roots or DEFAULT_TASK_RUN_ROOTS)
     try:
         if args.command == "bind":
             session_id = args.session_id or os.environ.get("CODEX_THREAD_ID")
@@ -61,7 +77,7 @@ def main() -> int:
                 session_id=str(session_id or ""),
                 run_directory=args.run_directory,
                 frontier_root=args.frontier_root,
-                allowed_run_root=args.allowed_run_root,
+                allowed_run_root=allowed_run_roots,
                 expected_current_run_id=args.expected_current_run_id,
             )
             print(json.dumps(result, ensure_ascii=True, indent=2, sort_keys=True))
@@ -71,7 +87,7 @@ def main() -> int:
             result = build_live_frontier(
                 session_id=str(session_id or ""),
                 frontier_root=args.frontier_root,
-                allowed_run_root=args.allowed_run_root,
+                allowed_run_root=allowed_run_roots,
                 char_budget=args.char_budget,
             )
             receipt = {
@@ -88,7 +104,7 @@ def main() -> int:
         output = handle_compact_session_start(
             hook_input,
             frontier_root=args.frontier_root,
-            allowed_run_root=args.allowed_run_root,
+            allowed_run_root=allowed_run_roots,
             char_budget=args.char_budget,
         )
         if output is not None:

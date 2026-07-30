@@ -13,7 +13,7 @@ import os
 import re
 import uuid
 from pathlib import Path
-from typing import Any
+from typing import Any, Sequence
 
 import portalocker
 
@@ -29,6 +29,13 @@ DEFAULT_TASK_RUN_ROOT = Path(
         r"D:\XINAO_RESEARCH_RUNTIME\state\Codex_Situation_Island\runs",
     )
 )
+DEFAULT_SECONDARY_TASK_RUN_ROOT = Path(
+    os.environ.get(
+        "XINAO_SECONDARY_TASK_RUN_ROOT",
+        r"D:\XINAO_RESEARCH_RUNTIME\state\codex_task_runs",
+    )
+)
+DEFAULT_TASK_RUN_ROOTS = (DEFAULT_TASK_RUN_ROOT, DEFAULT_SECONDARY_TASK_RUN_ROOT)
 BINDING_SCHEMA_VERSION = "xinao.session_run_binding.v3"
 TASK_RUN_SCHEMA_VERSION = "codex.verified-task-run.v1"
 DEFAULT_RENDER_CHAR_BUDGET = 2_600
@@ -95,16 +102,35 @@ def _binding_lock_path(frontier_root: Path, session_id: str) -> Path:
     return _binding_path(frontier_root, session_id).with_suffix(".lock")
 
 
-def _validated_run(run_directory: Path, allowed_run_root: Path) -> tuple[Path, str]:
-    root = allowed_run_root.expanduser().resolve()
+def _normalized_run_roots(allowed_run_root: Path | Sequence[Path]) -> tuple[Path, ...]:
+    candidates = (
+        [allowed_run_root]
+        if isinstance(allowed_run_root, (str, os.PathLike))
+        else list(allowed_run_root)
+    )
+    roots: list[Path] = []
+    for candidate in candidates:
+        root = Path(candidate).expanduser().resolve()
+        if root not in roots:
+            roots.append(root)
+    if not roots:
+        raise FrontierProjectionError("at least one canonical task-run root is required")
+    return tuple(roots)
+
+
+def _validated_run(
+    run_directory: Path, allowed_run_root: Path | Sequence[Path]
+) -> tuple[Path, str, Path]:
+    roots = _normalized_run_roots(allowed_run_root)
     directory = run_directory.expanduser().resolve()
-    if directory.parent != root:
+    root = next((candidate for candidate in roots if directory.parent == candidate), None)
+    if root is None:
         raise FrontierProjectionError("run directory is outside the canonical task-run root")
     run_id = directory.name
     for name in ("task.json", "state.json", "evidence.json", "events.jsonl"):
         if not (directory / name).is_file():
             raise FrontierProjectionError(f"missing required run file: {name}")
-    return directory, run_id
+    return directory, run_id, root
 
 
 def _read_json_object(path: Path) -> tuple[dict[str, Any], bytes]:
@@ -124,7 +150,7 @@ def load_binding(
     *,
     session_id: str,
     frontier_root: Path = DEFAULT_FRONTIER_ROOT,
-    allowed_run_root: Path = DEFAULT_TASK_RUN_ROOT,
+    allowed_run_root: Path | Sequence[Path] = DEFAULT_TASK_RUN_ROOTS,
 ) -> dict[str, Any]:
     normalized = _session_id(session_id)
     binding, raw = _read_json_object(_binding_path(frontier_root, normalized))
@@ -132,10 +158,15 @@ def load_binding(
         raise FrontierProjectionError("unsupported session binding schema")
     if binding.get("session_id") != normalized:
         raise FrontierProjectionError("session binding identity mismatch")
-    expected_root = allowed_run_root.expanduser().resolve()
-    if Path(str(binding.get("run_root") or "")).expanduser().resolve() != expected_root:
+    expected_roots = _normalized_run_roots(allowed_run_root)
+    binding_root = Path(str(binding.get("run_root") or "")).expanduser().resolve()
+    if binding_root not in expected_roots:
         raise FrontierProjectionError("session binding task-run root mismatch")
-    directory, run_id = _validated_run(Path(str(binding.get("run_directory") or "")), expected_root)
+    directory, run_id, selected_root = _validated_run(
+        Path(str(binding.get("run_directory") or "")), expected_roots
+    )
+    if selected_root != binding_root:
+        raise FrontierProjectionError("session binding directory/root mismatch")
     if binding.get("run_id") != run_id:
         raise FrontierProjectionError("bound run identity mismatch")
     return {
@@ -151,14 +182,14 @@ def bind_session(
     session_id: str,
     run_directory: Path,
     frontier_root: Path = DEFAULT_FRONTIER_ROOT,
-    allowed_run_root: Path = DEFAULT_TASK_RUN_ROOT,
+    allowed_run_root: Path | Sequence[Path] = DEFAULT_TASK_RUN_ROOTS,
     expected_current_run_id: str | None = None,
 ) -> dict[str, Any]:
     """Bind a session; rebinding another run requires explicit CAS identity."""
 
     normalized = _session_id(session_id)
-    root = allowed_run_root.expanduser().resolve()
-    directory, run_id = _validated_run(run_directory, root)
+    roots = _normalized_run_roots(allowed_run_root)
+    directory, run_id, root = _validated_run(run_directory, roots)
     path = _binding_path(frontier_root, normalized)
     lock_path = _binding_lock_path(frontier_root, normalized)
     lock_path.parent.mkdir(parents=True, exist_ok=True)
@@ -172,7 +203,7 @@ def bind_session(
             current = load_binding(
                 session_id=normalized,
                 frontier_root=frontier_root,
-                allowed_run_root=root,
+                allowed_run_root=roots,
             )
             current_run_id = str(current["run_id"])
             if current_run_id == run_id:
@@ -341,7 +372,7 @@ def build_live_frontier(
     *,
     session_id: str,
     frontier_root: Path = DEFAULT_FRONTIER_ROOT,
-    allowed_run_root: Path = DEFAULT_TASK_RUN_ROOT,
+    allowed_run_root: Path | Sequence[Path] = DEFAULT_TASK_RUN_ROOTS,
     char_budget: int = DEFAULT_RENDER_CHAR_BUDGET,
 ) -> dict[str, Any]:
     binding = load_binding(
@@ -366,7 +397,7 @@ def handle_compact_session_start(
     hook_input: dict[str, Any],
     *,
     frontier_root: Path = DEFAULT_FRONTIER_ROOT,
-    allowed_run_root: Path = DEFAULT_TASK_RUN_ROOT,
+    allowed_run_root: Path | Sequence[Path] = DEFAULT_TASK_RUN_ROOTS,
     char_budget: int = DEFAULT_RENDER_CHAR_BUDGET,
 ) -> dict[str, Any] | None:
     if hook_input.get("source") != "compact":
