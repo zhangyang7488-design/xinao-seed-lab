@@ -1,0 +1,19 @@
+{
+  "text": "",
+  "stopReason": "Cancelled",
+  "num_turns": 1,
+  "sessionId": "sess_timeout",
+  "requestId": "req_timeout",
+  "modelUsage": {
+    "grok-4.5-build": {
+      "inputTokens": 5,
+      "outputTokens": 0,
+      "modelCalls": 1
+    }
+  },
+  "usage": {
+    "input_tokens": 5,
+    "output_tokens": 0,
+    "total_tokens": 5
+  }
+}

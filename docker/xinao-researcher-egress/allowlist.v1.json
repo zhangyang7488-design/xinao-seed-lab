@@ -1,0 +1,21 @@
+{
+  "schema_version": "xinao.provider_egress_allowlist.v1",
+  "ports": [443],
+  "methods": ["CONNECT"],
+  "domains": ["cli-chat-proxy.grok.com"],
+  "ip_literals_allowed": [],
+  "discovery": {
+    "status": "SEALED_LOCAL_AUTHENTICATED_CLIENT_CATALOG",
+    "procedure": "Owner-confirmed authenticated Grok client catalog origin and model base URL; no credential contents are copied into this allowlist.",
+    "notes": [
+      "Allow the exact provider hostname only; do not widen to a parent-domain suffix.",
+      "Transient A and AAAA values remain excluded.",
+      "Re-discover and review if the authenticated client catalog origin changes."
+    ]
+  },
+  "forbidden_reuse": [
+    "dify_ssrf_proxy",
+    "ssrf_proxy_network",
+    "http_access_allow_client_localnet"
+  ]
+}

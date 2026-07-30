@@ -1,0 +1,22 @@
+{
+  "text": "engineering_canary_input_mismatch",
+  "stopReason": "EndTurn",
+  "num_turns": 1,
+  "sessionId": "sess_mu_in_mismatch",
+  "requestId": "req_mu_in_mismatch",
+  "modelUsage": {
+    "grok-4.5-build": {
+      "inputTokens": 999,
+      "outputTokens": 4,
+      "cacheReadInputTokens": 0,
+      "modelCalls": 1
+    }
+  },
+  "usage": {
+    "input_tokens": 12,
+    "output_tokens": 4,
+    "cache_read_input_tokens": 0,
+    "reasoning_tokens": 0,
+    "total_tokens": 16
+  }
+}

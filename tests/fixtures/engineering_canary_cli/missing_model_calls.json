@@ -1,0 +1,22 @@
+{
+  "text": "engineering_canary_no_calls",
+  "stopReason": "EndTurn",
+  "num_turns": 1,
+  "sessionId": "sess_no_calls",
+  "requestId": "req_no_calls",
+  "modelUsage": {
+    "grok-4.5-build": {
+      "inputTokens": 12,
+      "outputTokens": 4,
+      "cacheReadInputTokens": 0,
+      "modelCalls": 0
+    }
+  },
+  "usage": {
+    "input_tokens": 12,
+    "output_tokens": 4,
+    "cache_read_input_tokens": 0,
+    "reasoning_tokens": 0,
+    "total_tokens": 16
+  }
+}

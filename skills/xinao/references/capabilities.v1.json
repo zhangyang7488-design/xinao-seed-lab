@@ -1,13 +1,13 @@
 {
   "schema_version": "xinao.skill_capability_registry.v1",
   "skill_id": "xinao",
-  "skill_version": "1.0.0",
+  "skill_version": "1.2.0",
   "ordinary_worker_chain_allowed": false,
   "default_visibility": "codex_conversation",
   "capabilities": [
     {
       "capability_id": "researcher-container",
-      "version": "1.0.0",
+      "version": "1.1.0",
       "source_status": "available",
       "runtime_status_source": "D:/XINAO_RESEARCH_RUNTIME/state/xinao_skill/researcher_container/current.json"
     },

@@ -1,0 +1,17 @@
+{
+  "text": "engineering_canary_ok",
+  "stopReason": "EndTurn",
+  "num_turns": 1,
+  "sessionId": "sess_incomplete",
+  "requestId": "req_incomplete",
+  "modelUsage": {
+    "grok-4.5-build": {
+      "inputTokens": 12,
+      "outputTokens": 4,
+      "modelCalls": 1
+    }
+  },
+  "usage": {
+    "input_tokens": 12
+  }
+}

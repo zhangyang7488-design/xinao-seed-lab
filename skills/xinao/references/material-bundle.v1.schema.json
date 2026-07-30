@@ -1,0 +1,53 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "provider_disclosure_scope",
+    "materials",
+    "bundle_id"
+  ],
+  "properties": {
+    "schema_version": {"const": "xinao.material_bundle.v1"},
+    "provider_disclosure_scope": {
+      "const": "caller_supplied_for_bounded_research_episode"
+    },
+    "bundle_id": {
+      "type": "string",
+      "pattern": "^xinao-material-bundle-sha256:[0-9a-f]{64}$"
+    },
+    "materials": {
+      "type": "array",
+      "maxItems": 32,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "material_id",
+          "logical_name",
+          "relative_path",
+          "sha256",
+          "size_bytes",
+          "media_type",
+          "encoding"
+        ],
+        "properties": {
+          "material_id": {
+            "type": "string",
+            "pattern": "^sha256:[0-9a-f]{64}$"
+          },
+          "logical_name": {"type": "string", "minLength": 1, "maxLength": 512},
+          "relative_path": {
+            "type": "string",
+            "pattern": "^files/[0-9a-f]{64}\\.utf8$"
+          },
+          "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+          "size_bytes": {"type": "integer", "minimum": 1, "maximum": 262144},
+          "media_type": {"const": "text/plain"},
+          "encoding": {"const": "utf-8"}
+        }
+      }
+    }
+  }
+}

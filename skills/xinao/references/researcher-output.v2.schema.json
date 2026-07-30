@@ -1,0 +1,70 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "status",
+    "research_question",
+    "as_of",
+    "material_bundle_id",
+    "material_refs_used",
+    "summary",
+    "hypotheses",
+    "competing_explanations",
+    "methods",
+    "evidence_used",
+    "counterevidence",
+    "limitations",
+    "next_evidence"
+  ],
+  "properties": {
+    "schema_version": {"const": "xinao.research_candidate.v2"},
+    "status": {"enum": ["CANDIDATE_READY", "INSUFFICIENT_EVIDENCE"]},
+    "research_question": {"type": "string", "minLength": 1},
+    "as_of": {"type": "string", "minLength": 1},
+    "material_bundle_id": {
+      "type": "string",
+      "pattern": "^xinao-material-bundle-sha256:[0-9a-f]{64}$"
+    },
+    "material_refs_used": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["material_id", "sha256"],
+        "properties": {
+          "material_id": {
+            "type": "string",
+            "pattern": "^sha256:[0-9a-f]{64}$"
+          },
+          "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+        }
+      }
+    },
+    "summary": {"type": "string", "minLength": 1},
+    "hypotheses": {"type": "array", "items": {"type": "string"}},
+    "competing_explanations": {"type": "array", "items": {"type": "string"}},
+    "methods": {"type": "array", "items": {"type": "string"}},
+    "evidence_used": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["material_id", "finding", "locator"],
+        "properties": {
+          "material_id": {
+            "type": "string",
+            "pattern": "^sha256:[0-9a-f]{64}$"
+          },
+          "finding": {"type": "string", "minLength": 1},
+          "locator": {"type": "string", "minLength": 1}
+        }
+      }
+    },
+    "counterevidence": {"type": "array", "items": {"type": "string"}},
+    "limitations": {"type": "array", "items": {"type": "string"}},
+    "next_evidence": {"type": "array", "items": {"type": "string"}}
+  }
+}
