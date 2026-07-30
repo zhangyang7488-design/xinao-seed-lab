@@ -30,7 +30,9 @@ If a verified source update must replace a legacy installed bootstrap, run the s
 journaled transaction must install the version-independent entry, switch the versioned pointer,
 retain rollback, and canary through the newly installed entry. Then run the installed entry's
 `inspect` in a fresh process. Do not copy the Skill before legacy capture or patch it after pointer
-activation as a separate unjournaled step.
+activation as a separate unjournaled step. This is a legacy-replacement command, not a fresh-install
+fallback; if no installed root or pointer exists, require a separately implemented and verified
+fresh-install capability instead of inventing one during the call.
 
 Keep the bounded online research lifecycle separate from the durable background leg. When the
 user asks to mature the ordinary research leg, finish one stable entry with one-command lifecycle
@@ -44,8 +46,9 @@ Before making a migration, proof, or preflight artifact a live admission conditi
 to a real consumer in build, execution, recovery, settlement, or the returned evidence. If the
 artifact is only read and discarded, keep it as optional audit evidence or retire the gate; do not
 turn apparent rigor into an unbounded prerequisite. When a verified newer source capability is the
-missing live link, install it transactionally through the stable entry and verify that entry in a
-fresh process instead of continuing broader infrastructure work around an uninstalled candidate.
+missing live link, invoke its declared transactional install verb; for legacy replacement, use the
+source `bootstrap-migrate` entry above. Verify the resulting installed entry in a fresh process
+instead of continuing broader infrastructure work around an uninstalled candidate.
 
 Do not route Xinao scientific researchers through the ordinary WorkerPool, its task contracts,
 state roots, evidence roots, or completion semantics. Reuse low-level libraries only when the
