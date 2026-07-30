@@ -869,6 +869,15 @@ def _validate_bundle(
     return bundle_root, bundle_manifest
 
 
+def _is_internal_canary_handoff(argv: Sequence[str]) -> bool:
+    return (
+        len(argv) == 3
+        and argv[0] == "_canary"
+        and argv[1] == "--txn-id"
+        and TXN_ID_PATTERN.fullmatch(argv[2]) is not None
+    )
+
+
 def _runtime_entry_locked(
     argv: Sequence[str], state_root: Path
 ) -> tuple[Path, bytes, dict[str, Any]]:
@@ -910,6 +919,13 @@ def _runtime_entry_locked(
     if journal.get("to") != active:
         raise BootstrapError("ACTIVATION_TARGET_BINDING_MISMATCH", txn_id)
     command = argv[0] if argv else ""
+    if command == "_canary":
+        if not _is_internal_canary_handoff(argv):
+            raise BootstrapError("INVOCATION_ARGUMENTS_INVALID", "_canary")
+        if argv[2] != txn_id:
+            raise BootstrapError("ACTIVATION_TRANSACTION_BINDING_MISMATCH", argv[2])
+        if journal.get("state") not in {"CANARY_STARTED", "ROLLBACK_CANARY_STARTED"}:
+            raise BootstrapError("ACTIVATION_STATE_INVALID", str(journal.get("state")))
     if journal.get("state") not in TERMINAL_ACTIVATION_STATES and command not in {
         "recover",
         "_canary",
@@ -1440,26 +1456,39 @@ def _run_runtime(argv: Sequence[str]) -> int:
         if pointer.get("schema_version") == "xinao.researcher_current_pointer.v1":
             return _run_sealed_legacy_ordinary(argv, state_root)
     process: subprocess.Popen[bytes] | None = None
-    try:
-        with _activation_lock(state_root):
-            runtime_path, runtime_payload, fence = _runtime_entry_locked(argv, state_root)
-            wrapper = _runtime_wrapper(runtime_path, runtime_payload)
-            child_environment = os.environ.copy()
-            child_environment["XINAO_BOOTSTRAP_FENCE_V1"] = json.dumps(
-                fence,
-                ensure_ascii=True,
-                sort_keys=True,
-                separators=(",", ":"),
+
+    def start_verified_child() -> None:
+        nonlocal process
+        runtime_path, runtime_payload, fence = _runtime_entry_locked(argv, state_root)
+        wrapper = _runtime_wrapper(runtime_path, runtime_payload)
+        child_environment = os.environ.copy()
+        child_environment["XINAO_BOOTSTRAP_FENCE_V1"] = json.dumps(
+            fence,
+            ensure_ascii=True,
+            sort_keys=True,
+            separators=(",", ":"),
+        )
+        try:
+            process = subprocess.Popen(
+                [sys.executable, "-I", "-", *argv],
+                stdin=subprocess.PIPE,
+                env=child_environment,
             )
-            try:
-                process = subprocess.Popen(
-                    [sys.executable, "-I", "-", *argv],
-                    stdin=subprocess.PIPE,
-                    env=child_environment,
-                )
-            except OSError as exc:
-                raise BootstrapError("SKILL_RUNTIME_START_FAILED", str(exc)) from exc
-            _handoff_runtime_wrapper(process, wrapper)
+        except OSError as exc:
+            raise BootstrapError("SKILL_RUNTIME_START_FAILED", str(exc)) from exc
+        _handoff_runtime_wrapper(process, wrapper)
+
+    try:
+        if _is_internal_canary_handoff(argv):
+            # The activation runtime parent already owns .activation.lock while it
+            # invokes this exact read-only transaction-bound canary. Re-entering the
+            # same OS lock in this child deterministically self-deadlocks.
+            start_verified_child()
+        else:
+            with _activation_lock(state_root):
+                start_verified_child()
+        if process is None:  # pragma: no cover - defensive invariant
+            raise BootstrapError("SKILL_RUNTIME_START_FAILED", "child absent")
         return process.wait()
     except BaseException:
         if process is not None:

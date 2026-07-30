@@ -2740,6 +2740,61 @@ def test_real_b916_fresh_inspect_and_dual_protocol_v1_fallback(
     assert recovered["status"] == "MIGRATED"
 
 
+def test_installed_canary_handoff_runs_while_runtime_parent_holds_activation_lock(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    module = _module()
+    world = _prepare_v1_migration_world(module, tmp_path, monkeypatch)
+
+    def stop_after_canary_started(_journal):
+        raise KeyboardInterrupt("leave the real pending canary state")
+
+    monkeypatch.setattr(module, "_run_activation_canary", stop_after_canary_started)
+    with pytest.raises(KeyboardInterrupt):
+        module.bootstrap_migrate()
+    journal, _journal_path = module._pending_journals()[0]
+    assert journal["state"] == "CANARY_STARTED"
+
+    with module._activation_lock():
+        completed = _run_installed_xinao(
+            module, world, "_canary", "--txn-id", str(journal["txn_id"])
+        )
+
+    canary = _json_stdout(completed)
+    assert "ACTIVATION_LOCK_TIMEOUT" not in canary.get("reason_codes", [])
+    if completed.returncode == 0:
+        assert canary["status"] == "CANARY_READY"
+        assert canary["txn_id"] == journal["txn_id"]
+    else:
+        # The synthetic image identity may fail the real Docker activation gate;
+        # reaching that gate proves the launcher crossed the parent-held lock.
+        assert canary["status"] == "PREFLIGHT_FAILED"
+
+
+def test_thin_launcher_ordinary_command_still_acquires_activation_lock(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from contextlib import contextmanager
+
+    bootstrap = _bootstrap_module()
+    state_root = tmp_path / "state"
+    (state_root / "researcher_container").mkdir(parents=True)
+    monkeypatch.setenv("XINAO_SKILL_STATE_ROOT", str(state_root))
+    calls: list[Path] = []
+
+    @contextmanager
+    def lock_witness(observed_root: Path):
+        calls.append(observed_root)
+        raise bootstrap.BootstrapError("LOCK_WITNESS", str(observed_root))
+        yield
+
+    monkeypatch.setattr(bootstrap, "_activation_lock", lock_witness)
+    with pytest.raises(bootstrap.BootstrapError) as failure:
+        bootstrap._run_runtime(["inspect"])
+    assert failure.value.reason_code == "LOCK_WITNESS"
+    assert calls == [state_root]
+
+
 def test_bootstrap_migrate_success_from_pure_v1_and_crlf_lf_renderings(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

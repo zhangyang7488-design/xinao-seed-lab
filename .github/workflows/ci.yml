@@ -50,7 +50,7 @@ jobs:
         run: uv run python -m compileall -q services scripts tests skills/xinao/scripts docker/xinao-researcher
 
       - name: Run bounded tests
-        run: uv run pytest -q
+        run: uv run pytest -q --basetemp "${{ runner.temp }}/pytest"
 
   project-verify:
     name: project (${{ matrix.project }})
