@@ -7,7 +7,7 @@
   "capabilities": [
     {
       "capability_id": "researcher-container",
-      "version": "1.1.1",
+      "version": "1.1.2",
       "source_status": "available",
       "runtime_status_source": "D:/XINAO_RESEARCH_RUNTIME/state/xinao_skill/researcher_container/current.json"
     },

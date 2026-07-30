@@ -1,6 +1,6 @@
 {
   "schema_version": "xinao.researcher_runtime_lock.v1",
-  "runtime_version": "1.1.1",
+  "runtime_version": "1.1.2",
   "model": "grok-4.5",
   "provider_model_usage_key": "grok-4.5-build",
   "provider_model_usage_key_evidence_sha256": "db053eef4a427fbbf89fe58e7d7f53e03050e22ec3e6effeaba4c9bf73422ff4",
