@@ -782,15 +782,17 @@ $productionBuilder = Join-Path $bridge "Build-XinaoLegAContext.ps1"
 $productionWorker = Join-Path $bridge "Invoke-XinaoLegAWorker.ps1"
 if (-not [string]::IsNullOrWhiteSpace($ContextBuilderPath)) { $productionBuilder = $ContextBuilderPath }
 if (-not [string]::IsNullOrWhiteSpace($OneClickWorkerPath)) { $productionWorker = $OneClickWorkerPath }
+# This file is the deterministic contract suite. Production is selected only
+# when a caller explicitly supplies both scripts; mere co-location must not turn
+# a fixture test into a provider-facing integration run. The real one-click
+# commissioning is performed separately through Invoke-XinaoLegAWorker.ps1.
 $usingProduction = (
+    -not [string]::IsNullOrWhiteSpace($ContextBuilderPath) -and
+    -not [string]::IsNullOrWhiteSpace($OneClickWorkerPath) -and
     (Test-Path -LiteralPath $productionBuilder -PathType Leaf) -and
     (Test-Path -LiteralPath $productionWorker -PathType Leaf)
 )
-if (-not $usingProduction -and -not $AllowMissingProductionScripts) {
-    # Fixture mode is the deterministic path for this package when production
-    # scripts are owned by sibling packages and not yet present.
-    $AllowMissingProductionScripts = $true
-}
+if (-not $usingProduction) { $AllowMissingProductionScripts = $true }
 
 # ---------------------------------------------------------------------------
 # Temp carrier (only cleanup target)

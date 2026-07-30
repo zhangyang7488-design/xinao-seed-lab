@@ -548,10 +548,11 @@ try {
         )
     }
 
-    # Seal current XINAO base context (no caller-supplied hashes).
-    # Builder surface is a sibling package; pass only the stable sealed inputs.
+    # Seal current XINAO base context (no caller-supplied hashes). Keep generated
+    # bytes outside the candidate worktree so read-only calls do not dirty it.
+    $contextOutputDir = Join-Path $localStateDir "sealed-context"
     $builderOutput = @(
-        & $contextBuilder -Cwd $resolvedCwd -RuntimeRoot $resolvedRuntimeRoot 2>&1
+        & $contextBuilder -OutputDir $contextOutputDir -Quiet 2>&1
     )
     $builderExit = if ($null -eq $LASTEXITCODE) { 0 } else { [int]$LASTEXITCODE }
     if ($builderExit -ne 0) {
@@ -560,6 +561,15 @@ try {
         )
     }
     $contextJson = Get-XinaoLegALastJsonObject -Lines $builderOutput
+    $rulesFile = Join-Path $resolvedCwd "AGENTS.md"
+    if (-not (Test-Path -LiteralPath $rulesFile -PathType Leaf)) {
+        Throw-XinaoLegAPreflight "XINAO_LEG_A_RULES_MISSING" $rulesFile
+    }
+    $contextJson | Add-Member -NotePropertyName rules_file -NotePropertyValue $rulesFile -Force
+    $contextJson | Add-Member `
+        -NotePropertyName rules_sha256 `
+        -NotePropertyValue (Get-XinaoLegAFileSha256 $rulesFile) `
+        -Force
     $context = Resolve-XinaoLegAContextObject -Context $contextJson
     $resultBase.context = [ordered]@{
         builder = $contextBuilder
@@ -589,6 +599,24 @@ try {
     if ([string]::IsNullOrWhiteSpace($DispatchEpisodeId)) {
         $DispatchEpisodeId = "xinao.leg_a.episode:" + [string]$context.context_sha256.Substring(0, 24)
     }
+    $subjectManifestPath = Join-Path $localStateDir "subject-manifest.v1.json"
+    $subjectManifest = [ordered]@{
+        schema_version = "xinao.leg_a.subject_manifest.v1"
+        prompt_sha256 = Get-XinaoLegAFileSha256 $resolvedPromptFile
+        cwd = $resolvedCwd
+        phase = $Phase
+        work_key = $WorkKey
+        operation_id = $OperationId
+        frozen_context_sha256 = [string]$context.context_sha256
+        worker_output_authority = "candidate_only"
+        completion_claim_allowed = $false
+    }
+    [IO.File]::WriteAllText(
+        $subjectManifestPath,
+        ($subjectManifest | ConvertTo-Json -Compress -Depth 6),
+        [Text.UTF8Encoding]::new($false)
+    )
+    $subjectManifestSha256 = Get-XinaoLegAFileSha256 $subjectManifestPath
     $resultBase.identities = [ordered]@{
         work_key = $WorkKey
         operation_id = $OperationId
@@ -596,6 +624,8 @@ try {
         parent_operation_id = $ParentOperationId
         correlation_id = $CorrelationId
         task_contract_ref = $TaskContractRef
+        subject_manifest_path = $subjectManifestPath
+        subject_manifest_sha256 = $subjectManifestSha256
     }
 
     # Public selection bootstrap (SelectionOnly). No common-contract fields allowed here.
@@ -672,7 +702,7 @@ try {
         DispatchEpisodeId = $DispatchEpisodeId
         CommonWorkKey = $WorkKey
         CommonOperationId = $OperationId
-        CommonSubjectManifestSha256 = [string]$context.source_manifest_sha256
+        CommonSubjectManifestSha256 = $subjectManifestSha256
         CommonFrozenContextSha256 = [string]$context.context_sha256
         CommonContextManifestPath = [string]$context.manifest_path
         CommonRulesFile = [string]$context.rules_file
@@ -810,6 +840,7 @@ try {
         attempt_evidence_paths = @($attemptPaths | Select-Object -Unique)
         local_state_dir = $localStateDir
         prompt_file = $resolvedPromptFile
+        subject_manifest_path = $subjectManifestPath
         candidate_output_root = $candidateOutputRoot
         write_domains = if ($AuthorizedWrite) { @($candidateWriteDomain) } else { @() }
         docker_exe = $resolvedDocker
