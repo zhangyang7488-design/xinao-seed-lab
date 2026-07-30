@@ -575,25 +575,42 @@ try {
             }
         }
         finally {
-            # Always remove only the exact disposable container; re-inspect must prove absence.
+            # Always remove only the exact disposable container. Removal is proven only when
+            # rm succeeds AND follow-up exact inspect fails with a Docker missing-object
+            # signal bound to that same id-or-name (fail closed on empty/infra/timeout/wrong id).
+            $cleanupId = $null
             if (-not [string]::IsNullOrWhiteSpace($containerId)) {
-                $rm = Invoke-XinaoDocker -ArgumentList @('rm', '--force', $containerId) -AllowNonZero
-                $containerRemoved = ($rm.ExitCode -eq 0)
-                if ($containerRemoved) {
-                    $re = Invoke-XinaoDocker -ArgumentList @('inspect', $containerId, '--format', '{{.Id}}') -AllowNonZero
-                    # Absence: inspect must fail closed (nonzero or empty). If still present, fail closed.
-                    if ($re.ExitCode -eq 0 -and -not [string]::IsNullOrWhiteSpace($re.StdOut.Trim())) {
-                        $containerRemoved = $false
-                    }
-                }
+                $cleanupId = $containerId
             } elseif (-not [string]::IsNullOrWhiteSpace($containerName)) {
-                $rm = Invoke-XinaoDocker -ArgumentList @('rm', '--force', $containerName) -AllowNonZero
-                $containerRemoved = ($rm.ExitCode -eq 0)
-                if ($containerRemoved) {
-                    $re = Invoke-XinaoDocker -ArgumentList @('inspect', $containerName, '--format', '{{.Id}}') -AllowNonZero
-                    if ($re.ExitCode -eq 0 -and -not [string]::IsNullOrWhiteSpace($re.StdOut.Trim())) {
-                        $containerRemoved = $false
+                $cleanupId = $containerName
+            }
+            if (-not [string]::IsNullOrWhiteSpace($cleanupId)) {
+                $containerRemoved = $false
+                try {
+                    $rm = Invoke-XinaoDocker -ArgumentList @('rm', '--force', $cleanupId) -AllowNonZero
+                    $reExit = -1
+                    $reOut = ''
+                    $reErr = ''
+                    try {
+                        $re = Invoke-XinaoDocker -ArgumentList @('inspect', $cleanupId, '--format', '{{.Id}}') -AllowNonZero
+                        $reExit = [int]$re.ExitCode
+                        $reOut = [string]$re.StdOut
+                        $reErr = [string]$re.StdErr
+                    } catch {
+                        # Inspect timeout / daemon throw: unproven (do not treat as absence).
+                        $reExit = -1
+                        $reOut = ''
+                        $reErr = [string]$_.Exception.Message
                     }
+                    $obs = Get-XinaoContainerCleanupObservation `
+                        -Identifier $cleanupId `
+                        -RmExitCode ([int]$rm.ExitCode) `
+                        -InspectExitCode $reExit `
+                        -InspectStdOut $reOut `
+                        -InspectStdErr $reErr
+                    $containerRemoved = [bool]$obs.proven_removed
+                } catch {
+                    $containerRemoved = $false
                 }
             }
             # Always delete exact raw file when present (never a directory).

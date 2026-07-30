@@ -1548,7 +1548,13 @@ function Test-XinaoNegativeDirectNoRouteSignal {
         [string]$Combined
     )
     # Concrete isolation/no-route classes for direct-no-proxy cases.
-    # Deliberately excludes bare 'wget:' and tool-missing prefixes.
+    # Accept only explicit no-route / network-unreachable / DNS-resolution /
+    # contract-permitted timeout classes.
+    # Deliberately excludes:
+    #   - bare connection-refused / connection-reset (may occur after a route was reached)
+    #   - generic "can't connect" without an accepted network class above
+    #   - bare 'wget:' and tool-missing prefixes
+    #   - TLS/HTTP reachability signals (handled as escape/open or ambiguous elsewhere)
     $patterns = @(
         'Network is unreachable',
         'network is unreachable',
@@ -1563,10 +1569,6 @@ function Test-XinaoNegativeDirectNoRouteSignal {
         'connection timed out',
         'Operation timed out',
         'connect timed out',
-        'Connection refused',
-        'connection refused',
-        "can'?t connect to remote host",
-        "can'?t connect to",
         'failed: Network is unreachable',
         'failed: No route to host',
         'wget: download timed out',
@@ -1576,6 +1578,127 @@ function Test-XinaoNegativeDirectNoRouteSignal {
         if ($Combined -match $p) { return $true }
     }
     return $false
+}
+
+function Test-XinaoDockerMissingContainerSignal {
+    <#
+      .SYNOPSIS
+        Pure offline: true only when docker inspect output is a missing-object signal
+        bound to the exact container id-or-name that was inspected.
+      .DESCRIPTION
+        Exit 0 (including empty stdout) never proves absence.
+        Empty nonzero output, daemon/connectivity/timeout/permission noise, or a
+        missing-object signal naming a different identifier are all unproven.
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]
+        [AllowEmptyString()]
+        [string]$Identifier,
+        [int]$ExitCode,
+        [AllowEmptyString()]
+        [string]$StdOut = '',
+        [AllowEmptyString()]
+        [string]$StdErr = ''
+    )
+    if ([string]::IsNullOrWhiteSpace($Identifier)) { return $false }
+    # Presence or empty success: never prove removal.
+    if ($ExitCode -eq 0) { return $false }
+
+    $combined = ((([string]$StdOut) + "`n" + ([string]$StdErr)) -replace '[\r\n]+', ' ').Trim()
+    if ([string]::IsNullOrWhiteSpace($combined)) { return $false }
+
+    # Extract every No such object/container reference named in the output.
+    $missingRefs = [System.Collections.Generic.List[string]]::new()
+    foreach ($m in [regex]::Matches(
+            $combined,
+            '(?i)No such (?:object|container):\s*(\S+)'
+        )) {
+        $missingRefs.Add($m.Groups[1].Value.Trim().TrimEnd('.', ',', ';', ')', ']')) | Out-Null
+    }
+    if ($missingRefs.Count -eq 0) {
+        # Nonzero without a recognized missing-object class: infrastructure/ambiguous.
+        return $false
+    }
+
+    $want = $Identifier.Trim()
+    $exactHit = $false
+    foreach ($ref in $missingRefs) {
+        if ([string]::Equals($ref, $want, [System.StringComparison]::OrdinalIgnoreCase)) {
+            $exactHit = $true
+        } else {
+            # A missing signal for a different object does not prove our target is gone.
+            return $false
+        }
+    }
+    return $exactHit
+}
+
+function Get-XinaoContainerCleanupObservation {
+    <#
+      .SYNOPSIS
+        Pure offline oracle: container removal is proven only when rm succeeded and
+        follow-up exact inspect fails with a missing-object signal for that same id/name.
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]
+        [AllowEmptyString()]
+        [string]$Identifier,
+        [int]$RmExitCode,
+        [int]$InspectExitCode,
+        [AllowEmptyString()]
+        [string]$InspectStdOut = '',
+        [AllowEmptyString()]
+        [string]$InspectStdErr = ''
+    )
+    $result = [ordered]@{
+        proven_removed = $false
+        reason_code    = 'CLEANUP_UNPROVEN'
+        identifier     = $(if ([string]::IsNullOrWhiteSpace($Identifier)) { $null } else { $Identifier.Trim() })
+    }
+    if ([string]::IsNullOrWhiteSpace($Identifier)) {
+        $result.reason_code = 'CLEANUP_IDENTIFIER_EMPTY'
+        return $result
+    }
+    if ($RmExitCode -ne 0) {
+        $result.reason_code = 'CLEANUP_RM_FAILED'
+        return $result
+    }
+    if ($InspectExitCode -eq 0) {
+        # Exit 0 with or without body means inspect did not prove absence.
+        if ([string]::IsNullOrWhiteSpace((([string]$InspectStdOut) + ([string]$InspectStdErr)).Trim())) {
+            $result.reason_code = 'CLEANUP_INSPECT_EXIT0_EMPTY'
+        } else {
+            $result.reason_code = 'CLEANUP_INSPECT_STILL_PRESENT'
+        }
+        return $result
+    }
+    $combined = ((([string]$InspectStdOut) + "`n" + ([string]$InspectStdErr))).Trim()
+    if ([string]::IsNullOrWhiteSpace($combined)) {
+        $result.reason_code = 'CLEANUP_INSPECT_EMPTY_NONZERO'
+        return $result
+    }
+    if (Test-XinaoDockerMissingContainerSignal `
+            -Identifier $Identifier `
+            -ExitCode $InspectExitCode `
+            -StdOut $InspectStdOut `
+            -StdErr $InspectStdErr) {
+        $result.proven_removed = $true
+        $result.reason_code = 'CLEANUP_ABSENCE_PROVEN'
+        return $result
+    }
+    # Distinguish wrong-object missing signals from generic infra/timeout/permission.
+    if ($combined -match '(?i)No such (?:object|container):\s*(\S+)') {
+        $result.reason_code = 'CLEANUP_MISSING_SIGNAL_WRONG_OBJECT'
+        return $result
+    }
+    if ($combined -match '(?i)(Cannot connect to the Docker daemon|Is the docker daemon running|permission denied|context deadline exceeded|i/o timeout|Client\.Timeout|TLS handshake|connection reset)') {
+        $result.reason_code = 'CLEANUP_INSPECT_INFRA_OR_TIMEOUT'
+        return $result
+    }
+    $result.reason_code = 'CLEANUP_ABSENCE_NOT_PROVEN'
+    return $result
 }
 
 function Test-XinaoNegativeHttpSuccessSignal {

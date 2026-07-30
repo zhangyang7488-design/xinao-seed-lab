@@ -1277,6 +1277,148 @@ def test_canary_builder_requires_container_removed() -> None:
 
 
 @requires_pwsh
+def test_container_cleanup_observation_offline_matrix() -> None:
+    """W9I: pure offline matrix for exact-id cleanup observation (fail closed)."""
+    common = (SCRIPTS / "XinaoEgressOwner.Common.ps1").as_posix()
+    cid = "abc123def456"
+    cname = "xinao-researcher-eng-canary-deadbeef"
+    # identifier, rm_exit, insp_exit, insp_out, insp_err, want_proven, want_reason_prefix
+    cases = [
+        # Positive: rm ok + missing-object bound to exact id
+        (
+            cid,
+            0,
+            1,
+            "",
+            f"Error: No such object: {cid}\n",
+            True,
+            "CLEANUP_ABSENCE_PROVEN",
+        ),
+        (
+            cname,
+            0,
+            1,
+            "",
+            f"Error response from daemon: No such container: {cname}\n",
+            True,
+            "CLEANUP_ABSENCE_PROVEN",
+        ),
+        # Negative: rm failed
+        (cid, 1, 1, "", f"Error: No such object: {cid}\n", False, "CLEANUP_RM_FAILED"),
+        # Negative: inspect exit 0 empty (old fail-open path)
+        (cid, 0, 0, "", "", False, "CLEANUP_INSPECT_EXIT0_EMPTY"),
+        # Negative: inspect exit 0 with body (still present)
+        (cid, 0, 0, f"{cid}\n", "", False, "CLEANUP_INSPECT_STILL_PRESENT"),
+        # Negative: empty nonzero
+        (cid, 0, 1, "", "", False, "CLEANUP_INSPECT_EMPTY_NONZERO"),
+        # Negative: daemon / infra
+        (
+            cid,
+            0,
+            1,
+            "",
+            "Cannot connect to the Docker daemon at npipe:////./pipe/docker_engine\n",
+            False,
+            "CLEANUP_INSPECT_INFRA_OR_TIMEOUT",
+        ),
+        (
+            cid,
+            0,
+            1,
+            "",
+            "permission denied while trying to connect to the Docker daemon socket\n",
+            False,
+            "CLEANUP_INSPECT_INFRA_OR_TIMEOUT",
+        ),
+        (
+            cid,
+            0,
+            1,
+            "",
+            "context deadline exceeded\n",
+            False,
+            "CLEANUP_INSPECT_INFRA_OR_TIMEOUT",
+        ),
+        # Negative: missing signal for a different object
+        (
+            cid,
+            0,
+            1,
+            "",
+            "Error: No such object: other-container-id\n",
+            False,
+            "CLEANUP_MISSING_SIGNAL_WRONG_OBJECT",
+        ),
+        # Negative: empty identifier
+        ("", 0, 1, "", f"Error: No such object: {cid}\n", False, "CLEANUP_IDENTIFIER_EMPTY"),
+        # Negative: generic nonzero without missing class
+        (
+            cid,
+            0,
+            1,
+            "",
+            "Error response from daemon: something went wrong\n",
+            False,
+            "CLEANUP_ABSENCE_NOT_PROVEN",
+        ),
+    ]
+    for ident, rm_ex, insp_ex, insp_out, insp_err, want_proven, want_reason in cases:
+        so = insp_out.replace("'", "''")
+        se = insp_err.replace("'", "''")
+        id_ps = ident.replace("'", "''")
+        cmd = textwrap.dedent(
+            f"""
+            . '{common}'
+            $o = Get-XinaoContainerCleanupObservation `
+              -Identifier '{id_ps}' `
+              -RmExitCode {rm_ex} `
+              -InspectExitCode {insp_ex} `
+              -InspectStdOut '{so}' `
+              -InspectStdErr '{se}'
+            [ordered]@{{
+              proven_removed = [bool]$o.proven_removed
+              reason_code = [string]$o.reason_code
+            }} | ConvertTo-Json -Compress
+            """
+        )
+        proc = _run_pwsh_command(cmd)
+        assert proc.returncode == 0, f"{ident}/{want_reason}: {proc.stderr}\n{proc.stdout}"
+        row = json.loads(proc.stdout.strip().splitlines()[-1])
+        assert row["proven_removed"] is want_proven, (ident, want_reason, row)
+        assert row["reason_code"] == want_reason, (ident, want_reason, row)
+
+    # Signal helper: exact bind only
+    cmd_sig = textwrap.dedent(
+        f"""
+        . '{common}'
+        $id = '{cid}'
+        $pos = Test-XinaoDockerMissingContainerSignal -Identifier $id -ExitCode 1 -StdOut '' -StdErr "Error: No such object: $id"
+        $exit0 = Test-XinaoDockerMissingContainerSignal -Identifier $id -ExitCode 0 -StdOut '' -StdErr ''
+        $emptyNz = Test-XinaoDockerMissingContainerSignal -Identifier $id -ExitCode 1 -StdOut '' -StdErr ''
+        $wrong = Test-XinaoDockerMissingContainerSignal -Identifier $id -ExitCode 1 -StdOut '' -StdErr 'Error: No such object: otherid'
+        $daemon = Test-XinaoDockerMissingContainerSignal -Identifier $id -ExitCode 1 -StdOut '' -StdErr 'Cannot connect to the Docker daemon'
+        [ordered]@{{
+          pos = [bool]$pos
+          exit0 = [bool]$exit0
+          emptyNz = [bool]$emptyNz
+          wrong = [bool]$wrong
+          daemon = [bool]$daemon
+        }} | ConvertTo-Json -Compress
+        """
+    )
+    proc_sig = _run_pwsh_command(cmd_sig)
+    assert proc_sig.returncode == 0, proc_sig.stderr + proc_sig.stdout
+    sig = json.loads(proc_sig.stdout.strip().splitlines()[-1])
+    assert sig == {
+        "pos": True,
+        "exit0": False,
+        "emptyNz": False,
+        "wrong": False,
+        "daemon": False,
+    }
+
+
+@requires_pwsh
 def test_negative_probe_classifier_offline_matrix() -> None:
     """W9D-B02: same classifier used by execute; pure offline signals."""
     common = (SCRIPTS / "XinaoEgressOwner.Common.ps1").as_posix()
@@ -1407,6 +1549,98 @@ def test_negative_probe_classifier_offline_matrix() -> None:
             "Connection timed out\n",
             False,
             "ambiguous",
+        ),
+        # W9I: bare connection-refused / generic connect / reset / TLS are ambiguous for direct.
+        (
+            "direct",
+            "no_route_or_timeout",
+            1,
+            "",
+            "Connection refused\n",
+            False,
+            "ambiguous",
+        ),
+        (
+            "direct",
+            "no_route_or_timeout",
+            1,
+            "",
+            "connection refused\n",
+            False,
+            "ambiguous",
+        ),
+        (
+            "direct",
+            "no_route_or_timeout",
+            1,
+            "",
+            "can't connect to remote host\n",
+            False,
+            "ambiguous",
+        ),
+        (
+            "direct",
+            "no_route_or_timeout",
+            1,
+            "",
+            "can't connect to example.com:443\n",
+            False,
+            "ambiguous",
+        ),
+        (
+            "direct",
+            "no_route_or_timeout",
+            1,
+            "",
+            "Connection reset by peer\n",
+            False,
+            "ambiguous",
+        ),
+        (
+            "direct",
+            "no_route_or_timeout",
+            1,
+            "",
+            "SSL handshake failed\n",
+            False,
+            "ambiguous",
+        ),
+        (
+            "direct",
+            "no_route_or_timeout",
+            1,
+            "",
+            "TLS handshake timeout\n",
+            False,
+            "ambiguous",
+        ),
+        # Still accept explicit accepted network class even when wrapped with can't-connect text.
+        (
+            "direct",
+            "no_route_or_timeout",
+            1,
+            "",
+            "can't connect to remote host: Network is unreachable\n",
+            True,
+            "direct_no_route",
+        ),
+        (
+            "direct",
+            "no_route_or_timeout",
+            1,
+            "",
+            "Connection timed out\n",
+            True,
+            "direct_no_route",
+        ),
+        (
+            "direct",
+            "no_route_or_timeout",
+            1,
+            "",
+            "Could not resolve host: example.com\n",
+            True,
+            "direct_no_route",
         ),
     ]
     results = []

@@ -88,8 +88,10 @@ From package root `docker/xinao-researcher-egress` (or absolute paths):
    `Classify-XinaoNegativeProbeOutcome` oracle: infrastructure (missing applet, exit 125/126/127,
    invalid reference/options, daemon/image/network setup) and ambiguous outcomes never count as
    policy denial; proxy denies require concrete HTTP 403 / explicit proxy denial + nonzero client
-   exit; direct cases require concrete no-route / unreachable / connect-timeout class (not bare
-   `wget:`). Any infrastructure/ambiguous case makes the suite non-seal-eligible.
+   exit; direct cases require concrete no-route / network-unreachable / DNS-resolution /
+   connect-timeout class (not bare `wget:`, bare connection-refused/reset, TLS/HTTP reachability,
+   or generic `can't connect` without an accepted network class). Any infrastructure/ambiguous
+   case makes the suite non-seal-eligible.
    Seal-eligible negative receipt must include exact 13 case IDs, `suite_passed`/`all_cases_passed`, escape observations (`unauthorized_domain_reachable=false`, `direct_no_proxy_escape=false`), posture IDs, and only sealer-allowed keys. Never seals verified.
    Local `Test-XinaoNegativeSuiteSealReceipt` is **shape-only** (keys/flags/case IDs); it does not
    enforce observation freshness—strict sealer/runtime do.
