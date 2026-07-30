@@ -281,7 +281,7 @@ function Get-RealProviderCreateArgs {
         '-m', $script:XinaoCanaryRequestedModel,
         '--output-format', 'json',
         '--cwd', '/tmp',
-        '--max-turns', '1',
+        '--max-turns', '2',
         '--permission-mode', 'dontAsk',
         '--tools=',
         '--no-subagents',
@@ -407,7 +407,7 @@ try {
             '--mount', 'type=bind,source=<REDACTED_AUTH_HOST_PATH>,target=<CLI_AUTH_MOUNT>,readonly',
             '--entrypoint', '/usr/local/bin/grok', $imagePlan.canary_image_id,
             '--no-auto-update', '-p', '<FIXED_NON_SCIENTIFIC_PROMPT>', '-m', $script:XinaoCanaryRequestedModel,
-            '--output-format', 'json', '--cwd', '/tmp', '--max-turns', '1',
+            '--output-format', 'json', '--cwd', '/tmp', '--max-turns', '2',
             '--permission-mode', 'dontAsk', '--tools=', '--no-subagents', '--no-memory', '--disable-web-search'
         )
 

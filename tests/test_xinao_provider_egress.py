@@ -907,6 +907,8 @@ def test_windows_engineering_canary_encodes_empty_tool_set_without_empty_argv() 
     canary = (EGRESS_ROOT / "scripts" / "Owner-EngineeringCanary.ps1").read_text(encoding="utf-8")
     assert "'--tools='," in canary
     assert "'--tools', ''," not in canary
+    assert canary.count("'--max-turns', '2'") == 2
+    assert "'--max-turns', '1'" not in canary
 
 
 def test_research_result_keeps_provider_id_presence_without_raw_identifiers() -> None:
