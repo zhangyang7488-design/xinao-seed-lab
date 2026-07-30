@@ -2033,3 +2033,379 @@ lease.release()
         if holder.poll() is None:
             holder.kill()
             holder.wait(timeout=10)
+
+
+def _v110_topology_journal(
+    tmp_path: Path,
+    *,
+    projection: Path,
+    active_parent: Path,
+    projection_rollback: Path,
+    parent_rollback: Path,
+    transition_rollback: Path | None = None,
+    archive_rollback: Path | None = None,
+    transition_candidate: Path | None = None,
+    archive_candidate: Path | None = None,
+    active_parent_candidate: Path | None = None,
+    projection_candidate: Path | None = None,
+) -> dict[str, object]:
+    """Build a minimal four-object journal body for topology unit probes."""
+
+    transition = tmp_path / "topology-transition.txt"
+    archive = tmp_path / "topology-archive.json"
+    if not transition.exists():
+        transition.write_text("transition-body", encoding="utf-8")
+    if not archive.exists():
+        archive.write_text("{}", encoding="utf-8")
+    tc = transition_candidate or (tmp_path / "topology-transition.candidate.txt")
+    ac = archive_candidate or (tmp_path / "topology-archive.candidate.json")
+    if not tc.exists():
+        tc.write_text("transition-candidate", encoding="utf-8")
+    if not ac.exists():
+        ac.write_text("{}", encoding="utf-8")
+    trb = transition_rollback or (tmp_path / "rollback" / "transition.before.txt")
+    arb = archive_rollback or (tmp_path / "rollback" / "archive.before.json")
+    trb.parent.mkdir(parents=True, exist_ok=True)
+    if not trb.exists():
+        trb.write_bytes(transition.read_bytes())
+    if not arb.exists():
+        arb.write_bytes(archive.read_bytes())
+    parent_cand = active_parent_candidate or active_parent
+    proj_cand = projection_candidate or (tmp_path / "projection.candidate.json")
+    if not proj_cand.exists():
+        proj_cand.write_bytes(projection.read_bytes())
+    return {
+        "projection_path": str(projection),
+        "projection_preimage_sha256": promotion._sha256(projection_rollback),
+        "projection_rollback_copy": str(projection_rollback),
+        "projection_candidate_path": str(proj_cand),
+        "active_parent_path": str(active_parent),
+        "active_parent_preimage_sha256": promotion._sha256(active_parent),
+        "active_parent_rollback_copy": str(parent_rollback),
+        "active_parent_candidate_path": str(parent_cand),
+        "transition_path": str(transition),
+        "transition_preimage_sha256": promotion._sha256(transition),
+        "transition_candidate_sha256": promotion._sha256(tc),
+        "transition_candidate_path": str(tc),
+        "transition_rollback_copy": str(trb),
+        "archive_manifest_path": str(archive),
+        "archive_manifest_preimage_sha256": promotion._sha256(archive),
+        "archive_manifest_candidate_sha256": promotion._sha256(ac),
+        "archive_manifest_candidate_path": str(ac),
+        "archive_manifest_rollback_copy": str(arb),
+    }
+
+
+def test_topology_rejects_transition_rollback_aliasing_active_parent(
+    tmp_path: Path,
+) -> None:
+    """Transition/archive rollback carriers must not alias live parent/projection."""
+
+    projection, _evidence, projection_rollback = _fixture(tmp_path)
+    payload = json.loads(projection.read_text(encoding="utf-8"))
+    active_parent = Path(payload["active_parent"]["path"])
+    projection_rollback.parent.mkdir(parents=True, exist_ok=True)
+    projection_rollback.write_bytes(projection.read_bytes())
+    parent_rollback = tmp_path / "rollback" / "parent.before.txt"
+    parent_rollback.write_bytes(active_parent.read_bytes())
+
+    journal = _v110_topology_journal(
+        tmp_path,
+        projection=projection,
+        active_parent=active_parent,
+        projection_rollback=projection_rollback,
+        parent_rollback=parent_rollback,
+        transition_rollback=active_parent,
+    )
+    with pytest.raises(promotion.SciencePublicationError) as raised:
+        promotion._validate_journal_object_topology(journal, projection_path=projection)
+    assert raised.value.code == "CROSS_OBJECT_RESTORE"
+    assert "transition_rollback_copy" in str(raised.value)
+
+    journal_archive = _v110_topology_journal(
+        tmp_path,
+        projection=projection,
+        active_parent=active_parent,
+        projection_rollback=projection_rollback,
+        parent_rollback=parent_rollback,
+        archive_rollback=projection,
+    )
+    with pytest.raises(promotion.SciencePublicationError) as raised_archive:
+        promotion._validate_journal_object_topology(
+            journal_archive, projection_path=projection
+        )
+    assert raised_archive.value.code == "CROSS_OBJECT_RESTORE"
+    assert "archive_manifest_rollback_copy" in str(raised_archive.value)
+
+
+def test_topology_rejects_projection_rollback_aliasing_active_parent(
+    tmp_path: Path,
+) -> None:
+    projection, _evidence, _rollback = _fixture(tmp_path)
+    payload = json.loads(projection.read_text(encoding="utf-8"))
+    active_parent = Path(payload["active_parent"]["path"])
+    parent_rollback = tmp_path / "rollback" / "parent.before.txt"
+    parent_rollback.parent.mkdir(parents=True, exist_ok=True)
+    parent_rollback.write_bytes(active_parent.read_bytes())
+    journal = {
+        "projection_path": str(projection),
+        "projection_preimage_sha256": promotion._sha256(projection),
+        "projection_rollback_copy": str(active_parent),
+        "active_parent_path": str(active_parent),
+        "active_parent_preimage_sha256": promotion._sha256(active_parent),
+        "active_parent_rollback_copy": str(parent_rollback),
+    }
+    with pytest.raises(promotion.SciencePublicationError) as raised:
+        promotion._validate_journal_object_topology(journal, projection_path=projection)
+    assert raised.value.code == "CROSS_OBJECT_RESTORE"
+
+
+def test_topology_allows_in_place_candidate_equals_own_live(tmp_path: Path) -> None:
+    """candidate == its own live target remains legitimate in-place publication."""
+
+    projection, _evidence, projection_rollback = _fixture(tmp_path)
+    payload = json.loads(projection.read_text(encoding="utf-8"))
+    active_parent = Path(payload["active_parent"]["path"])
+    projection_rollback.parent.mkdir(parents=True, exist_ok=True)
+    projection_rollback.write_bytes(projection.read_bytes())
+    parent_rollback = tmp_path / "rollback" / "parent.before.txt"
+    parent_rollback.write_bytes(active_parent.read_bytes())
+    journal = _v110_topology_journal(
+        tmp_path,
+        projection=projection,
+        active_parent=active_parent,
+        projection_rollback=projection_rollback,
+        parent_rollback=parent_rollback,
+        active_parent_candidate=active_parent,
+        projection_candidate=projection,
+    )
+    promotion._validate_journal_object_topology(journal, projection_path=projection)
+
+
+def test_topology_rejects_cross_object_candidate_live_alias(tmp_path: Path) -> None:
+    projection, _evidence, projection_rollback = _fixture(tmp_path)
+    payload = json.loads(projection.read_text(encoding="utf-8"))
+    active_parent = Path(payload["active_parent"]["path"])
+    projection_rollback.parent.mkdir(parents=True, exist_ok=True)
+    projection_rollback.write_bytes(projection.read_bytes())
+    parent_rollback = tmp_path / "rollback" / "parent.before.txt"
+    parent_rollback.write_bytes(active_parent.read_bytes())
+    journal = _v110_topology_journal(
+        tmp_path,
+        projection=projection,
+        active_parent=active_parent,
+        projection_rollback=projection_rollback,
+        parent_rollback=parent_rollback,
+        # Cross-object: active-parent candidate points at the projection live path.
+        active_parent_candidate=projection,
+    )
+    with pytest.raises(promotion.SciencePublicationError) as raised:
+        promotion._validate_journal_object_topology(journal, projection_path=projection)
+    assert raised.value.code == "CROSS_OBJECT_RESTORE"
+    assert "active_parent_candidate_path" in str(raised.value)
+
+
+def test_topology_rejects_identical_content_rollback_path_alias_of_live(
+    tmp_path: Path,
+) -> None:
+    """Same-bytes rollback path that is another live authority is still rejected."""
+
+    projection, _evidence, projection_rollback = _fixture(tmp_path)
+    payload = json.loads(projection.read_text(encoding="utf-8"))
+    active_parent = Path(payload["active_parent"]["path"])
+    projection_rollback.parent.mkdir(parents=True, exist_ok=True)
+    projection_rollback.write_bytes(projection.read_bytes())
+    parent_rollback = tmp_path / "rollback" / "parent.before.txt"
+    parent_rollback.write_bytes(active_parent.read_bytes())
+    transition = tmp_path / "topology-transition.txt"
+    body = b"IDENTICAL_AUTHORITY_BODY"
+    transition.write_bytes(body)
+    # Another live authority holds identical content; using it as transition rollback
+    # would let seal strip its write bit without hardlink identity.
+    active_parent.write_bytes(body)
+    # Keep projection binding consistent with the rewritten parent bytes.
+    payload["active_parent"]["sha256"] = promotion._sha256(active_parent)
+    _write_json(projection, payload)
+    projection_rollback.write_bytes(projection.read_bytes())
+    parent_rollback.write_bytes(active_parent.read_bytes())
+
+    journal = _v110_topology_journal(
+        tmp_path,
+        projection=projection,
+        active_parent=active_parent,
+        projection_rollback=projection_rollback,
+        parent_rollback=parent_rollback,
+        transition_rollback=active_parent,
+    )
+    with pytest.raises(promotion.SciencePublicationError) as raised:
+        promotion._validate_journal_object_topology(journal, projection_path=projection)
+    assert raised.value.code == "CROSS_OBJECT_RESTORE"
+    assert "transition_rollback_copy" in str(raised.value)
+
+
+def test_topology_rejects_hardlink_rollback_to_live_authority(tmp_path: Path) -> None:
+    projection, _evidence, projection_rollback = _fixture(tmp_path)
+    payload = json.loads(projection.read_text(encoding="utf-8"))
+    active_parent = Path(payload["active_parent"]["path"])
+    projection_rollback.parent.mkdir(parents=True, exist_ok=True)
+    projection_rollback.write_bytes(projection.read_bytes())
+    parent_rollback = tmp_path / "rollback" / "parent.before.txt"
+    parent_rollback.write_bytes(active_parent.read_bytes())
+    transition_rollback = tmp_path / "rollback" / "transition.hardlink.txt"
+    transition_rollback.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        os.link(active_parent, transition_rollback)
+    except OSError:
+        pytest.skip("hardlink creation unsupported on this volume")
+    assert transition_rollback.samefile(active_parent)
+    journal = _v110_topology_journal(
+        tmp_path,
+        projection=projection,
+        active_parent=active_parent,
+        projection_rollback=projection_rollback,
+        parent_rollback=parent_rollback,
+        transition_rollback=transition_rollback,
+    )
+    with pytest.raises(promotion.SciencePublicationError) as raised:
+        promotion._validate_journal_object_topology(journal, projection_path=projection)
+    assert raised.value.code == "CROSS_OBJECT_RESTORE"
+
+
+def test_topology_rejects_hardlink_between_rollback_carriers(tmp_path: Path) -> None:
+    projection, _evidence, projection_rollback = _fixture(tmp_path)
+    payload = json.loads(projection.read_text(encoding="utf-8"))
+    active_parent = Path(payload["active_parent"]["path"])
+    projection_rollback.parent.mkdir(parents=True, exist_ok=True)
+    projection_rollback.write_bytes(projection.read_bytes())
+    parent_rollback = tmp_path / "rollback" / "parent.before.txt"
+    parent_rollback.write_bytes(active_parent.read_bytes())
+    transition_rollback = tmp_path / "rollback" / "transition.before.txt"
+    try:
+        os.link(parent_rollback, transition_rollback)
+    except OSError:
+        pytest.skip("hardlink creation unsupported on this volume")
+    journal = _v110_topology_journal(
+        tmp_path,
+        projection=projection,
+        active_parent=active_parent,
+        projection_rollback=projection_rollback,
+        parent_rollback=parent_rollback,
+        transition_rollback=transition_rollback,
+    )
+    with pytest.raises(promotion.SciencePublicationError) as raised:
+        promotion._validate_journal_object_topology(journal, projection_path=projection)
+    assert raised.value.code == "CROSS_OBJECT_RESTORE"
+
+
+def test_topology_rejects_shared_path_between_rollback_carriers(tmp_path: Path) -> None:
+    projection, _evidence, projection_rollback = _fixture(tmp_path)
+    payload = json.loads(projection.read_text(encoding="utf-8"))
+    active_parent = Path(payload["active_parent"]["path"])
+    projection_rollback.parent.mkdir(parents=True, exist_ok=True)
+    projection_rollback.write_bytes(projection.read_bytes())
+    parent_rollback = tmp_path / "rollback" / "shared.rollback.txt"
+    parent_rollback.write_bytes(active_parent.read_bytes())
+    journal = _v110_topology_journal(
+        tmp_path,
+        projection=projection,
+        active_parent=active_parent,
+        projection_rollback=projection_rollback,
+        parent_rollback=parent_rollback,
+        transition_rollback=parent_rollback,
+    )
+    with pytest.raises(promotion.SciencePublicationError) as raised:
+        promotion._validate_journal_object_topology(journal, projection_path=projection)
+    assert raised.value.code == "CROSS_OBJECT_RESTORE"
+
+
+def test_recovery_trust_boundary_rejects_inconsistent_substitution_and_documents_scope(
+    tmp_path: Path,
+) -> None:
+    """Honest recovery scope: inconsistent path substitution blocked; no crypto claim.
+
+    Existing thin anchors (projection recovery target, marker identity, sealed
+    projection preimage + topology pins) rebind the original live object graph for
+    *inconsistent* journals without a second truth. Coherent rewrite of every
+    transaction and authority file under the same-user filesystem is outside the
+    recovery adversary model (see RECOVERY_TRUST_BOUNDARY).
+    """
+
+    assert promotion.RECOVERY_TRUST_BOUNDARY == (
+        "same-user-filesystem-crash-and-inconsistent-substitution"
+    )
+    projection, _evidence, rollback = _fixture(tmp_path)
+    payload = json.loads(projection.read_text(encoding="utf-8"))
+    live_parent = Path(payload["active_parent"]["path"])
+    original_parent = live_parent.read_bytes()
+    original_projection = projection.read_bytes()
+    foreign_parent = tmp_path / "foreign-active-parent.txt"
+    foreign_parent.write_text("foreign object body", encoding="utf-8")
+    foreign_preimage = tmp_path / "rollback" / "foreign.before.txt"
+    foreign_preimage.parent.mkdir(parents=True, exist_ok=True)
+    foreign_preimage.write_bytes(b"foreign preimage that must not land")
+    rollback.parent.mkdir(parents=True, exist_ok=True)
+    # Sealed preimage still binds the *original* live parent — inconsistent with
+    # the journal's substituted foreign active_parent_path.
+    rollback.write_bytes(original_projection)
+    rollback.chmod(stat.S_IREAD)
+    candidate = tmp_path / "candidate-parent.txt"
+    candidate.write_text("candidate active parent", encoding="utf-8")
+    candidate_projection = tmp_path / "candidate-projection.json"
+    candidate_payload = json.loads(projection.read_text(encoding="utf-8"))
+    candidate_payload["active_parent"]["sha256"] = promotion._sha256(candidate)
+    _write_json(candidate_projection, candidate_payload)
+    journal_path = tmp_path / "transaction" / "transaction.v1.json"
+    lock_path = _install_bound_transaction(
+        projection=projection,
+        journal_path=journal_path,
+        journal={
+            "status": "APPLYING",
+            "projection_path": str(projection),
+            "projection_preimage_sha256": promotion._sha256(rollback),
+            "projection_candidate_sha256": promotion._sha256(candidate_projection),
+            "projection_rollback_copy": str(rollback),
+            "projection_candidate_path": str(candidate_projection),
+            "active_parent_path": str(foreign_parent),
+            "active_parent_preimage_sha256": promotion._sha256(foreign_preimage),
+            "active_parent_candidate_sha256": promotion._sha256(candidate),
+            "active_parent_rollback_copy": str(foreign_preimage),
+            "active_parent_candidate_path": str(candidate),
+            "transaction_directory": str(journal_path.parent),
+        },
+    )
+    foreign_parent.write_bytes(candidate.read_bytes())
+
+    with pytest.raises(promotion.SciencePublicationError) as raised:
+        promotion.recover_interrupted_promotion(projection)
+
+    assert raised.value.code == "CROSS_OBJECT_RESTORE"
+    assert lock_path.is_file()
+    assert live_parent.read_bytes() == original_parent
+    assert projection.read_bytes() == original_projection
+    assert foreign_parent.read_bytes() != foreign_preimage.read_bytes()
+    assert "coherent" in (promotion.recover_interrupted_promotion.__doc__ or "").lower() or (
+        "RECOVERY_TRUST_BOUNDARY" in (promotion.recover_interrupted_promotion.__doc__ or "")
+    )
+
+
+def test_seal_preimage_identical_content_independent_archive_converges(
+    tmp_path: Path,
+) -> None:
+    """Independent same-content archive remains valid crash-convergence for its live."""
+
+    live = tmp_path / "live.txt"
+    archive = tmp_path / "archive.txt"
+    body = b"IDENTICAL_BODY"
+    live.write_bytes(body)
+    archive.write_bytes(body)
+    live.chmod(stat.S_IREAD | stat.S_IWRITE)
+    archive.chmod(stat.S_IREAD | stat.S_IWRITE)
+    original_live_mode = stat.S_IMODE(live.stat().st_mode)
+    sealed = promotion._seal_preimage(live, archive)
+    assert sealed.sha256 == promotion._sha256_bytes(body)
+    assert not archive.stat().st_mode & stat.S_IWRITE
+    # Independent archive seal must not strip write from the live target.
+    assert stat.S_IMODE(live.stat().st_mode) == original_live_mode
+    assert live.stat().st_mode & stat.S_IWRITE
+    assert live.read_bytes() == body
+

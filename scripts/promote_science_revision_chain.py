@@ -52,6 +52,19 @@ ROLLED_BACK_AFTER_CRASH = "ROLLED_BACK_AFTER_CRASH"
 MARKER_PHASE_PRE_JOURNAL = "PRE_JOURNAL"
 MARKER_PHASE_JOURNAL_BOUND = "JOURNAL_BOUND"
 
+# Recovery trust boundary (honest, non-cryptographic):
+# recover_interrupted_promotion is scoped to crash / partial-corruption recovery and
+# rejection of journals that are *inconsistent* with sealed projection identity,
+# object topology, or path/hash pins under the same-user filesystem trust boundary.
+# Existing thin anchors (projection path argument, marker identity binding, sealed
+# projection preimage / journal topology pins) rebind the original live object graph
+# for those inconsistent cases without a second truth source. They do **not** resist
+# an actor that can coherently rewrite every marker, journal, rollback preimage, and
+# identity pin for that projection. No journal signing daemon or second control plane.
+RECOVERY_TRUST_BOUNDARY = (
+    "same-user-filesystem-crash-and-inconsistent-substitution"
+)
+
 # Immutable identity covers every live/rollback/candidate path and hash pin plus
 # the transaction directory and projection identity. Paths are resolved strings.
 _TRANSACTION_IDENTITY_PATH_FIELDS = (
@@ -400,6 +413,21 @@ def _paths_share_inode(left: Path, right: Path) -> bool:
         return left.exists() and right.exists() and left.samefile(right)
     except OSError:
         return False
+
+
+def _paths_alias(left: Path, right: Path) -> bool:
+    """True when paths are the same resolved name or share openable file identity.
+
+    Path equality catches reparse-free renames of the same location. samefile/
+    hardlink detection catches multi-name carriers that would let chmod/write on
+    one name mutate another authority or rollback object.
+    """
+
+    left_r = left.resolve()
+    right_r = right.resolve()
+    if left_r == right_r:
+        return True
+    return _paths_share_inode(left_r, right_r)
 
 
 def _assert_independent_ordinary_file(path: Path, *, role: str) -> os.stat_result:
@@ -1224,12 +1252,79 @@ def _validate_transaction_identity(
     return computed
 
 
+def _raise_topology_collision(
+    *,
+    message: str,
+    field: str,
+    path: Path,
+    collides_with: str,
+    collides_path: Path,
+) -> None:
+    raise SciencePublicationError(
+        "CROSS_OBJECT_RESTORE",
+        message,
+        defects=[
+            _dependency_defect(
+                "CROSS_OBJECT_RESTORE",
+                message,
+                field=field,
+                path=str(path),
+                collides_with=collides_with,
+                collides_path=str(collides_path),
+            )
+        ],
+    )
+
+
+def _journal_live_authority_set(
+    journal: Mapping[str, Any],
+    *,
+    bound_projection: Path,
+    journal_parent: Path,
+) -> dict[str, Path]:
+    """Build the full live-authority object set for topology sealing.
+
+    Always includes projection and active parent. For v1.10 journals that pin a
+    transition path, also includes transition and archive manifest — every live
+    restore target must be path- and samefile-distinct before seal/mode mutation.
+    """
+
+    live: dict[str, Path] = {
+        "projection": bound_projection,
+        "active_parent": journal_parent,
+    }
+    if journal.get("transition_path") is not None:
+        for required in (
+            "transition_rollback_copy",
+            "transition_candidate_path",
+            "archive_manifest_path",
+            "archive_manifest_rollback_copy",
+            "archive_manifest_candidate_path",
+        ):
+            if journal.get(required) is None:
+                raise SciencePublicationError(
+                    "CROSS_OBJECT_RESTORE",
+                    f"science v1.10 journal missing topology pin: {required}",
+                )
+        live["transition"] = Path(str(journal["transition_path"])).resolve()
+        live["archive_manifest"] = Path(str(journal["archive_manifest_path"])).resolve()
+    return live
+
+
 def _validate_journal_object_topology(
     journal: Mapping[str, Any],
     *,
     projection_path: Path,
 ) -> None:
-    """Reject cross-object / path-substitution journals before any restore write."""
+    """Reject cross-object / path-substitution journals before any seal or restore.
+
+    Live authorities (projection, active parent, and for v1.10 transition + archive
+    manifest) must be pairwise path-distinct and samefile/hardlink-distinct.
+    Every rollback carrier must be path- and samefile-distinct from every live
+    authority and from every other rollback carrier. Candidate paths may equal
+    *their own* live target for legitimate in-place publication, but must not
+    cross-alias another live authority or any rollback carrier.
+    """
 
     bound_projection = Path(str(journal.get("projection_path", ""))).resolve()
     if bound_projection != projection_path.resolve():
@@ -1267,55 +1362,105 @@ def _validate_journal_object_topology(
                 )
             ],
         )
-    # Rollback carriers must never alias a live authority path (hardlink/path swap).
-    # Candidate paths may equal their live target when publication is in-place.
-    for field, forbidden in (
-        ("active_parent_rollback_copy", {journal_parent, bound_projection}),
-        ("projection_rollback_copy", {journal_parent, bound_projection}),
-        ("transition_rollback_copy", set()),
-        ("archive_manifest_rollback_copy", set()),
-    ):
+
+    live_authorities = _journal_live_authority_set(
+        journal,
+        bound_projection=bound_projection,
+        journal_parent=journal_parent,
+    )
+    live_items = list(live_authorities.items())
+    for index, (name_a, path_a) in enumerate(live_items):
+        for name_b, path_b in live_items[index + 1 :]:
+            if _paths_alias(path_a, path_b):
+                _raise_topology_collision(
+                    message=(
+                        "science live restore targets are not distinct objects "
+                        f"({name_a} aliases {name_b})"
+                    ),
+                    field=name_a,
+                    path=path_a,
+                    collides_with=name_b,
+                    collides_path=path_b,
+                )
+
+    rollback_fields = (
+        ("projection_rollback_copy", "projection"),
+        ("active_parent_rollback_copy", "active_parent"),
+        ("transition_rollback_copy", "transition"),
+        ("archive_manifest_rollback_copy", "archive_manifest"),
+    )
+    rollback_paths: dict[str, Path] = {}
+    for field, _owner in rollback_fields:
         raw = journal.get(field)
         if raw is None:
             continue
-        path = Path(str(raw)).resolve()
-        blocked = set(forbidden)
-        if journal.get("transition_path") is not None:
-            blocked.add(Path(str(journal["transition_path"])).resolve())
-            blocked.add(Path(str(journal["archive_manifest_path"])).resolve())
-        if path in blocked:
-            raise SciencePublicationError(
-                "CROSS_OBJECT_RESTORE",
-                f"science journal {field} collides with a live authority path",
-                defects=[
-                    _dependency_defect(
-                        "CROSS_OBJECT_RESTORE",
-                        f"{field} must not alias a live restore target",
-                        path=str(path),
-                    )
-                ],
-            )
-    if journal.get("transition_path") is not None:
-        for required in (
-            "transition_rollback_copy",
-            "transition_candidate_path",
-            "archive_manifest_path",
-            "archive_manifest_rollback_copy",
-            "archive_manifest_candidate_path",
-        ):
-            if journal.get(required) is None:
-                raise SciencePublicationError(
-                    "CROSS_OBJECT_RESTORE",
-                    f"science v1.10 journal missing topology pin: {required}",
+        rollback_paths[field] = Path(str(raw)).resolve()
+
+    for field, rb_path in rollback_paths.items():
+        for live_name, live_path in live_authorities.items():
+            if _paths_alias(rb_path, live_path):
+                _raise_topology_collision(
+                    message=(
+                        f"science journal {field} collides with live authority {live_name}"
+                    ),
+                    field=field,
+                    path=rb_path,
+                    collides_with=live_name,
+                    collides_path=live_path,
                 )
-        transition_path = Path(str(journal["transition_path"])).resolve()
-        archive_path = Path(str(journal["archive_manifest_path"])).resolve()
-        live_paths = {bound_projection, journal_parent, transition_path, archive_path}
-        if len(live_paths) != 4:
-            raise SciencePublicationError(
-                "CROSS_OBJECT_RESTORE",
-                "science v1.10 live restore targets are not distinct objects",
-            )
+
+    rb_items = list(rollback_paths.items())
+    for index, (field_a, path_a) in enumerate(rb_items):
+        for field_b, path_b in rb_items[index + 1 :]:
+            if _paths_alias(path_a, path_b):
+                _raise_topology_collision(
+                    message=(
+                        f"science journal rollback carriers are not distinct "
+                        f"({field_a} aliases {field_b})"
+                    ),
+                    field=field_a,
+                    path=path_a,
+                    collides_with=field_b,
+                    collides_path=path_b,
+                )
+
+    # Candidate may equal its own live target (in-place publish). Cross-object
+    # candidate/live and candidate/rollback aliases are fail-closed.
+    candidate_fields = (
+        ("projection_candidate_path", "projection"),
+        ("active_parent_candidate_path", "active_parent"),
+        ("transition_candidate_path", "transition"),
+        ("archive_manifest_candidate_path", "archive_manifest"),
+    )
+    for field, own_live_key in candidate_fields:
+        raw = journal.get(field)
+        if raw is None:
+            continue
+        candidate_path = Path(str(raw)).resolve()
+        for live_name, live_path in live_authorities.items():
+            if live_name == own_live_key:
+                continue
+            if _paths_alias(candidate_path, live_path):
+                _raise_topology_collision(
+                    message=(
+                        f"science journal {field} cross-aliases live authority {live_name}"
+                    ),
+                    field=field,
+                    path=candidate_path,
+                    collides_with=live_name,
+                    collides_path=live_path,
+                )
+        for rb_field, rb_path in rollback_paths.items():
+            if _paths_alias(candidate_path, rb_path):
+                _raise_topology_collision(
+                    message=(
+                        f"science journal {field} aliases rollback carrier {rb_field}"
+                    ),
+                    field=field,
+                    path=candidate_path,
+                    collides_with=rb_field,
+                    collides_path=rb_path,
+                )
 
 
 def _prove_no_transaction_mutation(
@@ -2427,7 +2572,16 @@ def _verify_companion_semantics(
 
 
 def recover_interrupted_promotion(projection_path: Path) -> dict[str, Any]:
-    """Recover or finalize the one durable transaction bound to ``projection_path``."""
+    """Recover or finalize the one durable transaction bound to ``projection_path``.
+
+    Trust boundary (see ``RECOVERY_TRUST_BOUNDARY``): restores interrupted
+    MATERIALIZING/PREPARED/APPLYING work and clears COMMITTED markers after
+    verifying sealed identity + object topology. Rejects path-substitution and
+    topology forgeries that disagree with the sealed projection preimage /
+    identity pins. Does not claim resistance to coherent full-transaction
+    fabrication that rewrites marker, journal, and preimages together under the
+    same-user filesystem.
+    """
 
     projection_path = projection_path.resolve()
     lease = _acquire_promotion_lease(projection_path)
