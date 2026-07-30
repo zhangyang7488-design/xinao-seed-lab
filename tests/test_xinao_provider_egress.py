@@ -909,6 +909,19 @@ def test_windows_engineering_canary_encodes_empty_tool_set_without_empty_argv() 
     assert "'--tools', ''," not in canary
 
 
+def test_research_result_keeps_provider_id_presence_without_raw_identifiers() -> None:
+    entrypoint = (ROOT / "docker" / "xinao-researcher" / "entrypoint.py").read_text(
+        encoding="utf-8"
+    )
+    result_block = entrypoint.split("    result = {", maxsplit=1)[1].split("    try:", maxsplit=1)[
+        0
+    ]
+    assert '"provider_session_id_present": True' in result_block
+    assert '"provider_request_id_present": True' in result_block
+    assert '"provider_session_id":' not in result_block
+    assert '"provider_request_id":' not in result_block
+
+
 def test_egress_scripts_are_lf_only() -> None:
     for path in EGRESS_ROOT.rglob("*"):
         if not path.is_file():

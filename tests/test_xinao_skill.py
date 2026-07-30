@@ -716,7 +716,7 @@ def test_package_version_is_separate_from_researcher_versions() -> None:
         researcher["version"]
         == charter["charter_version"]
         == runtime_lock["runtime_version"]
-        == "1.1.1"
+        == "1.1.2"
     )
 
 
@@ -879,7 +879,7 @@ def test_build_is_candidate_only_and_passes_complete_image_identity(
     receipt = module.build_release(ROOT, allow_dirty=True)
     assert receipt["status"] == "CANDIDATE_BUILT"
     assert receipt["package_version"] == "1.2.0"
-    assert receipt["capability_version"] == "1.1.1"
+    assert receipt["capability_version"] == "1.1.2"
     assert receipt["source_dirty"] is True
     assert receipt["activated"] is False
     assert not module._state_paths()["pointer"].exists()
@@ -1120,7 +1120,7 @@ def test_same_semver_different_content_is_collision(
         tmp_path,
         monkeypatch,
         image_character="a",
-        capability_version="1.1.1",
+        capability_version="1.1.2",
     )
     _fake_build_environment(module, monkeypatch, dirty=False, image_character="f")
     with pytest.raises(module.XinaoError) as failure:
