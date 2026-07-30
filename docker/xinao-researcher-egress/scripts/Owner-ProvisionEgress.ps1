@@ -148,6 +148,7 @@ try {
     }
     $proxyIdResult = Invoke-XinaoDocker -ArgumentList @('inspect', $paths.proxy_container_name, '--format', '{{.Id}}')
     $proxyId = $proxyIdResult.StdOut.Trim()
+    Start-Sleep -Milliseconds 1000
     $proxyRunningResult = Invoke-XinaoDocker -ArgumentList @(
         'inspect', $paths.proxy_container_name, '--format', '{{.State.Running}}'
     ) -AllowNonZero

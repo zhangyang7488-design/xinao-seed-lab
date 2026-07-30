@@ -49,6 +49,7 @@ http_access allow provider_domains
 http_access deny all
 
 coredump_dir ${COREDUMP_DIR}
+pid_filename ${COREDUMP_DIR}/squid.pid
 
 # No SSL bump / MITM.
 # No cache_peer required for direct CONNECT tunneling of allowlisted destinations.
