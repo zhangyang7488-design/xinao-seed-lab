@@ -903,6 +903,8 @@ def main() -> int:
         "provider_num_turns": provider_effect["num_turns"],
         "provider_session_id_present": True,
         "provider_request_id_present": True,
+        "provider_session_id": provider_effect["session_id"],
+        "provider_request_id": provider_effect["request_id"],
         "provider_model_usage": provider_effect["model_usage"],
         "usage": provider_effect["usage"],
         "completion_claim_allowed": False,

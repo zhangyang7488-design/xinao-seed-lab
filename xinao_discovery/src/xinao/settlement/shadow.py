@@ -11,7 +11,9 @@ from xinao.canonical import canonical_sha256
 from xinao.decision import DecisionKind, FrozenDecision
 from xinao.ledger.accounting import JournalGroup, settlement_group
 
-from .special_number import SettlementResult, settle_special_number
+from .special_number import SPECIAL_NUMBER_RULE, SettlementResult, settle_special_number
+
+MECHANICAL_SETTLEMENT_RULE_REF = SPECIAL_NUMBER_RULE.rule_ref
 
 
 class OutcomeObservation(BaseModel):
@@ -26,15 +28,26 @@ class OutcomeObservation(BaseModel):
     supersedes_outcome_ref: str | None = None
     result_hash: str | None = None
 
-    def with_hash(self) -> OutcomeObservation:
-        if self.observed_at.tzinfo is None or self.observed_at.utcoffset() is None:
-            raise ValueError("outcome timestamp must be timezone-aware")
+    def compute_result_hash(self) -> str:
         basis = {
             "source_ref": self.source_ref,
             "target_ref": self.target_ref,
             "actual_special_number": self.actual_special_number,
         }
-        return self.model_copy(update={"result_hash": canonical_sha256(basis)})
+        return canonical_sha256(basis)
+
+    def with_hash(self) -> OutcomeObservation:
+        if self.observed_at.tzinfo is None or self.observed_at.utcoffset() is None:
+            raise ValueError("outcome timestamp must be timezone-aware")
+        return self.model_copy(update={"result_hash": self.compute_result_hash()})
+
+    def require_valid_result_hash(self) -> None:
+        """Recompute and reject stale seals after content mutation (e.g. model_copy)."""
+
+        if self.result_hash is None:
+            raise ValueError("outcome must be hash sealed")
+        if self.result_hash != self.compute_result_hash():
+            raise ValueError("outcome result_hash mismatch: mutated outcome rejected")
 
 
 class OutcomeAdmission(BaseModel):
@@ -73,8 +86,7 @@ class SettlementBundle(BaseModel):
 def admit_outcome(
     existing: tuple[OutcomeObservation, ...], candidate: OutcomeObservation
 ) -> OutcomeAdmission:
-    if candidate.result_hash is None:
-        raise ValueError("outcome must be hash sealed")
+    candidate.require_valid_result_hash()
     if not candidate.verified:
         return OutcomeAdmission(status="QUARANTINED", outcome_ref=candidate.outcome_ref)
     same_target = tuple(
@@ -103,24 +115,39 @@ def settle_frozen_decision(
     portfolio_ref: str,
     occurred_at: datetime,
 ) -> SettlementBundle:
-    if frozen.content_hash is None or outcome.result_hash is None:
+    if frozen.content_hash is None:
         raise ValueError("freeze and outcome must be hash sealed")
+    outcome.require_valid_result_hash()
     if getattr(frozen, "decision_kind", None) not in {
         DecisionKind.FROZEN_EXPERIMENTAL_SHADOW,
         DecisionKind.FROZEN_ELIGIBLE_ACTION,
     }:
         raise ValueError("only an exact frozen shadow decision kind can produce a settlement")
     frozen = FrozenDecision.model_validate(frozen.model_dump(mode="python"))
+    if frozen.content_hash != frozen.compute_content_hash():
+        raise ValueError("mutated sealed FrozenDecision rejected")
     if not outcome.verified:
         raise ValueError("unverified outcome cannot produce a settlement")
     if outcome.target_ref != frozen.target_ref:
         raise ValueError("outcome target and frozen decision disagree")
+    if frozen.rule_ref != MECHANICAL_SETTLEMENT_RULE_REF:
+        raise ValueError(
+            f"mechanical settlement only implements {MECHANICAL_SETTLEMENT_RULE_REF}; "
+            f"rejected rule_ref={frozen.rule_ref!r}"
+        )
     result = settle_special_number(
         selected_number=frozen.selected_number,
         actual_special_number=outcome.actual_special_number,
         panel=frozen.panel,
         stake=frozen.stake,
     )
+    if result.rule_ref != frozen.rule_ref:
+        raise ValueError(
+            "SettlementResult.rule_ref must match frozen rule_ref "
+            f"(frozen={frozen.rule_ref!r}, result={result.rule_ref!r})"
+        )
+    if result.rule_ref != MECHANICAL_SETTLEMENT_RULE_REF:
+        raise ValueError(f"settlement record cannot claim unsupported rule_ref={result.rule_ref!r}")
     journal = settlement_group(
         group_ref=journal_group_ref,
         portfolio_ref=portfolio_ref,
@@ -138,6 +165,8 @@ def settle_frozen_decision(
         result=result,
         journal_group_ref=journal.group_ref,
     ).with_hash()
+    if record.rule_ref != result.rule_ref:
+        raise ValueError("settlement record rule_ref must match SettlementResult.rule_ref")
     return SettlementBundle(record=record, journal_group=journal)
 
 

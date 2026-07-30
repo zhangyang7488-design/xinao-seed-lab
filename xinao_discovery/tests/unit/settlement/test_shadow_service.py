@@ -98,6 +98,23 @@ def test_duplicate_outcome_and_conflicting_outcome_are_distinct_states() -> None
     assert admit_outcome((), outcome(ref="outcome.raw", verified=False)).status == "QUARANTINED"
 
 
+def test_stale_outcome_result_hash_rejected_on_admit_and_settle() -> None:
+    sealed = outcome(special_number=1)
+    tampered = sealed.model_copy(update={"actual_special_number": 49})
+    assert tampered.result_hash == sealed.result_hash
+    with pytest.raises(ValueError, match="result_hash mismatch"):
+        admit_outcome((), tampered)
+    with pytest.raises(ValueError, match="result_hash mismatch"):
+        settle_frozen_decision(
+            frozen=frozen_shadow(),
+            outcome=tampered,
+            settlement_ref="settlement.stale",
+            journal_group_ref="journal.settlement.stale",
+            portfolio_ref="shadow.v1",
+            occurred_at=OPEN + timedelta(hours=2),
+        )
+
+
 def test_same_frozen_input_has_same_settlement_hash_and_duplicate_admission() -> None:
     kwargs = {
         "frozen": frozen_shadow(),
