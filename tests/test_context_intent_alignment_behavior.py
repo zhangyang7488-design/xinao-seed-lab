@@ -198,6 +198,22 @@ def test_behavior_repair_boundary_accepts_only_declared_causal_granularities() -
     assert '"optionalFieldMatches":false' in outside_gold["reason"]
 
 
+def test_temporary_pain_inputs_are_not_release_dependencies() -> None:
+    case_id = "REG_TEMPORARY_PAIN_INPUTS_ARE_NOT_RELEASE_DEPENDENCIES"
+    case = _case(case_id)
+    vars_ = case["vars"]
+    assert vars_["expected_ask_user"] is False
+    assert vars_["expected_next_step"] == "act"
+    assert vars_["expected_effect_scope"] == "reversible_local"
+    assert vars_["expected_repair_target"] == "instance_action"
+    assert vars_["expected_constraint_governance_disposition"] == "minimally_relax_or_retire"
+    assert vars_["expected_local_completion_transition"] == "resume_suspended_parent"
+    assert "about to be deleted" in vars_["restored_context"]
+
+    result = _run_assertion(_context(case_id=case_id), output=_output_from_case(case_id))
+    assert result["pass"] is True, result["reason"]
+
+
 def test_legacy_continuous_case_accepts_safe_new_binding_defaults() -> None:
     case_id = "REG_ENTER_PERPETUAL_MODE_DOES_NOT_CREATE_GOAL"
     context = _context(case_id=case_id)

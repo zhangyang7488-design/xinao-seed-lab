@@ -103,8 +103,8 @@ single suite (`context`, `proactive`, or `orchestration`).
 Static incident specifications remain specifications until their real environment supplies runtime
 evidence. A green JSON fixture never closes a runtime incident.
 
-Live catalog accounting (not a runtime verification claim): capability 1, smoke 84, core 118, deep 124,
-context 100, proactive 6, reuse 4, orchestration 13.
+Live catalog accounting (not a runtime verification claim): capability 1, smoke 84, core 119, deep 125,
+context 101, proactive 6, reuse 4, orchestration 13.
 
 ## Why the other installed software is not always active
 
