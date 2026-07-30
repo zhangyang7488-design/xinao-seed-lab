@@ -33,9 +33,9 @@ def _sha256_file(path: Path) -> str:
 
 
 def _canonical_json(value: object) -> bytes:
-    return (json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":")) + "\n").encode(
-        "utf-8"
-    )
+    return (
+        json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":")) + "\n"
+    ).encode("utf-8")
 
 
 def _write_bytes(path: Path, data: bytes) -> None:
@@ -145,7 +145,9 @@ def _write_json(path: Path, value: dict[str, Any]) -> None:
     _write_bytes(path, _canonical_json(value))
 
 
-def _release_manifest(release_id: str, skill_hashes: dict[str, str], *, image_char: str) -> dict[str, Any]:
+def _release_manifest(
+    release_id: str, skill_hashes: dict[str, str], *, image_char: str
+) -> dict[str, Any]:
     source_identity = {
         "source_commit": "b916f8bd22dd38b4807298a4c935f6bf2969eb13",
         "source_tree": "71f8994c8e8e8f10c09cf8aef3e21ba3635d627e",
@@ -251,7 +253,9 @@ def _build_world(tmp_path: Path) -> dict[str, Any]:
     # Candidate v2 source cone (bootstrap invoker shape) — different generation from legacy docker.
     _write_text(candidate / "skills" / "xinao" / "SKILL.md", "# candidate skill v2\n")
     _write_text(candidate / "skills" / "xinao" / "scripts" / "xinao.py", "print('candidate-v2')\n")
-    _write_text(candidate / "docker" / "xinao-researcher" / "Dockerfile", "FROM scratch\n# v2 candidate\n")
+    _write_text(
+        candidate / "docker" / "xinao-researcher" / "Dockerfile", "FROM scratch\n# v2 candidate\n"
+    )
     _write_text(candidate / "docker" / "xinao-researcher" / "entrypoint.py", "print('ok-v2')\n")
 
     approved_base.mkdir(parents=True, exist_ok=True)
@@ -427,14 +431,21 @@ def test_prepare_success_crlf_lf_relocation_and_fresh_verify(tmp_path: Path) -> 
     )
     assert pointer["release_manifest_path"] != str(world["active_path"])
     assert pointer["previous_release_manifest_path"] != str(world["previous_path"])
-    assert _sha256_file(relocated_pointer) == receipt["pointer_relocation"]["relocated_pointer_sha256"]
+    assert (
+        _sha256_file(relocated_pointer) == receipt["pointer_relocation"]["relocated_pointer_sha256"]
+    )
     assert (
         _sha256_file(Path(receipt["destination"]["original_pointer_path"]))
         == receipt["pointer_relocation"]["original_pointer_sha256"]
     )
 
-    assert Path(receipt["destination"]["active_manifest_path"]).read_bytes() == world["active_bytes"]
-    assert Path(receipt["destination"]["previous_manifest_path"]).read_bytes() == world["previous_bytes"]
+    assert (
+        Path(receipt["destination"]["active_manifest_path"]).read_bytes() == world["active_bytes"]
+    )
+    assert (
+        Path(receipt["destination"]["previous_manifest_path"]).read_bytes()
+        == world["previous_bytes"]
+    )
 
     active_staged = Path(receipt["destination"]["active_rendering_root"]) / "SKILL.md"
     previous_staged = Path(receipt["destination"]["previous_rendering_root"]) / "SKILL.md"
@@ -573,7 +584,12 @@ def test_hardlink_in_rendering_fails(tmp_path: Path) -> None:
     completed = _run_helper(_prepare_args(world))
     blob = _combined_output(completed).lower()
     assert completed.returncode != 0
-    assert "hardlink" in blob or "nlink" in blob or "ambiguity" in blob or "file_identity_invalid" in blob
+    assert (
+        "hardlink" in blob
+        or "nlink" in blob
+        or "ambiguity" in blob
+        or "file_identity_invalid" in blob
+    )
 
 
 def test_receipt_non_claims_and_inventory_contract(tmp_path: Path) -> None:
@@ -748,9 +764,9 @@ def test_early_junction_rejection(tmp_path: Path) -> None:
     completed = _run_helper(_prepare_args(world, dest=dest))
     _assert_fail_code(completed, "DESTINATION_REPARSE_FORBIDDEN")
     assert not (escape / "preparation-receipt.json").exists()
-    assert list(escape.iterdir()) == [escape / "sentinel.txt"] or (
-        escape / "sentinel.txt"
-    ).is_file()
+    assert (
+        list(escape.iterdir()) == [escape / "sentinel.txt"] or (escape / "sentinel.txt").is_file()
+    )
 
 
 def test_destination_path_topology_tamper_fails_verify(tmp_path: Path) -> None:
@@ -846,7 +862,9 @@ def _run_git(repo: Path, *args: str) -> subprocess.CompletedProcess[str]:
     )
 
 
-def test_prepared_candidate_source_satisfies_build_release_git_preconditions(tmp_path: Path) -> None:
+def test_prepared_candidate_source_satisfies_build_release_git_preconditions(
+    tmp_path: Path,
+) -> None:
     world = _build_world(tmp_path)
     completed = _run_helper(_prepare_args(world))
     assert completed.returncode == 0, completed.stderr + completed.stdout
@@ -1061,7 +1079,9 @@ def test_caller_candidate_mutation_keeps_sealed_git_verify_green(tmp_path: Path)
     # Mutate only the caller-side candidate root; sealed clone + git identity must remain valid.
     caller_docker = world["candidate"] / "docker" / "xinao-researcher" / "Dockerfile"
     caller_docker.write_text("FROM mutated-caller-again\n", encoding="utf-8")
-    (world["candidate"] / "skills" / "xinao" / "SKILL.md").write_text("# caller mutated\n", encoding="utf-8")
+    (world["candidate"] / "skills" / "xinao" / "SKILL.md").write_text(
+        "# caller mutated\n", encoding="utf-8"
+    )
 
     verified = _run_helper(_verify_args(world))
     assert verified.returncode == 0, verified.stderr + verified.stdout

@@ -49,6 +49,7 @@ def _sealer():
 def _runtime():
     return _load(SKILL_ROOT / "scripts" / "xinao_runtime.py", "xinao_runtime_windows_egress_test")
 
+
 OWNER_SCRIPTS = [
     "XinaoEgressOwner.Common.ps1",
     "Resolve-ProxyImagePin.ps1",
@@ -70,7 +71,9 @@ def _pwsh_available() -> bool:
             timeout=30,
             check=False,
         )
-        return proc.returncode == 0 and proc.stdout.strip().isdigit() and int(proc.stdout.strip()) >= 7
+        return (
+            proc.returncode == 0 and proc.stdout.strip().isdigit() and int(proc.stdout.strip()) >= 7
+        )
     except (FileNotFoundError, subprocess.TimeoutExpired, OSError):
         return False
 
@@ -78,12 +81,16 @@ def _pwsh_available() -> bool:
 requires_pwsh = pytest.mark.skipif(not _pwsh_available(), reason="PowerShell 7 (pwsh) required")
 
 
-def _run_pwsh(args: list[str], *, env: dict[str, str] | None = None, timeout: int = 120) -> subprocess.CompletedProcess[str]:
+def _run_pwsh(
+    args: list[str], *, env: dict[str, str] | None = None, timeout: int = 120
+) -> subprocess.CompletedProcess[str]:
     full_env = os.environ.copy()
     if env:
         full_env.update(env)
     # Ensure scripts cannot pick live D-state accidentally in tests.
-    full_env.setdefault("XINAO_EGRESS_STATE_ROOT", str(ROOT / ".pytest_egress_state_should_not_use"))
+    full_env.setdefault(
+        "XINAO_EGRESS_STATE_ROOT", str(ROOT / ".pytest_egress_state_should_not_use")
+    )
     return subprocess.run(
         [PWSH, "-NoProfile", "-File", *args],
         capture_output=True,
@@ -500,7 +507,9 @@ def test_null_image_pin_readback_fails_closed(tmp_path: Path) -> None:
     assert receipt_path.is_file()
     receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
     assert receipt["status"] == "failed"
-    assert receipt.get("reason_code") == "IMAGE_PIN_UNRESOLVED" or receipt.get("pin_resolved") is False
+    assert (
+        receipt.get("reason_code") == "IMAGE_PIN_UNRESOLVED" or receipt.get("pin_resolved") is False
+    )
 
 
 @requires_pwsh
@@ -529,7 +538,9 @@ def test_resolved_pin_preflight_and_null_pin_provision_fail(tmp_path: Path) -> N
     )
     assert proc.returncode != 0
     payload = _parse_last_json(proc.stdout)
-    assert payload.get("status") in {"failed", "FAILED"} or "IMAGE_PIN_UNRESOLVED" in json.dumps(payload)
+    assert payload.get("status") in {"failed", "FAILED"} or "IMAGE_PIN_UNRESOLVED" in json.dumps(
+        payload
+    )
     assert payload.get("docker_mutated") in (False, None) or payload.get("status") == "failed"
 
     # With a temp resolved pin + empty allowlist, preflight should succeed offline.
@@ -752,7 +763,9 @@ def test_fresh_process_switch_spawns_child(tmp_path: Path) -> None:
         "completion_claim_allowed": False,
         "secrets_present": False,
     }
-    (state / "negative_suite_receipt.v1.json").write_text(json.dumps(seed, indent=2) + "\n", encoding="utf-8")
+    (state / "negative_suite_receipt.v1.json").write_text(
+        json.dumps(seed, indent=2) + "\n", encoding="utf-8"
+    )
     env = {
         "XINAO_EGRESS_TEMP_ROOT": str(temp),
         "XINAO_EGRESS_STATE_ROOT": str(state),
@@ -1066,7 +1079,12 @@ def test_real_provider_rejects_floating_image_tag(tmp_path: Path) -> None:
     auth.write_text("{}\n", encoding="utf-8")
     allow = tmp_path / "allow.json"
     allow.write_text(
-        json.dumps({"schema_version": "xinao.provider_egress_allowlist.v1", "domains": ["cli-chat-proxy.grok.com"]}),
+        json.dumps(
+            {
+                "schema_version": "xinao.provider_egress_allowlist.v1",
+                "domains": ["cli-chat-proxy.grok.com"],
+            }
+        ),
         encoding="utf-8",
     )
     proc = _run_pwsh(
@@ -1184,9 +1202,7 @@ def test_canary_image_admission_rejection_matrix(tmp_path: Path) -> None:
 
     # Good v2; wrong donor in source identity.
     bad_donor_rc = tmp_path / "rc_bad_donor"
-    _write_synthetic_v2_researcher_state(
-        bad_donor_rc, donor_image_id="sha256:" + ("9" * 64)
-    )
+    _write_synthetic_v2_researcher_state(bad_donor_rc, donor_image_id="sha256:" + ("9" * 64))
     p = _run(ACTIVE_RESEARCHER_IMAGE_ID, bad_donor_rc)
     assert p.get("reason_code") == "RELEASE_SOURCE_DONOR_MISMATCH"
 
@@ -1361,9 +1377,7 @@ def test_active_researcher_state_chain_wave9h_blockers(tmp_path: Path) -> None:
 
     # F3: disagreeing terminal_pointer_sha256.
     rc_ptr_bind = tmp_path / "rc_ptr_bind"
-    _write_synthetic_v2_researcher_state(
-        rc_ptr_bind, journal_terminal_pointer_mismatch=True
-    )
+    _write_synthetic_v2_researcher_state(rc_ptr_bind, journal_terminal_pointer_mismatch=True)
     r = _admit_active_researcher(rc_ptr_bind)
     assert r.get("ok") is False, r
     assert r.get("reason_code") == "ACTIVE_RESEARCHER_ACTIVATION_POINTER_BINDING_MISMATCH"
@@ -2435,7 +2449,12 @@ def test_connect_only_preflight_never_seal_eligible(tmp_path: Path) -> None:
     state.mkdir()
     allow = tmp_path / "allow.json"
     allow.write_text(
-        json.dumps({"schema_version": "xinao.provider_egress_allowlist.v1", "domains": ["cli-chat-proxy.grok.com"]}),
+        json.dumps(
+            {
+                "schema_version": "xinao.provider_egress_allowlist.v1",
+                "domains": ["cli-chat-proxy.grok.com"],
+            }
+        ),
         encoding="utf-8",
     )
     proc = _run_pwsh(
@@ -2700,14 +2719,32 @@ def test_runbook_documents_real_provider_canary() -> None:
     assert "CanaryImageId" in runbook or "canary image" in runbook.lower()
     assert "cli-chat-proxy.grok.com" in runbook
     assert "grok-4.5-build" in runbook
-    assert "CONNECT-only" in runbook or "CONNECT only" in runbook or "not seal-eligible" in runbook.lower()
+    assert (
+        "CONNECT-only" in runbook
+        or "CONNECT only" in runbook
+        or "not seal-eligible" in runbook.lower()
+    )
     assert "usage" in runbook.lower()
-    assert "ClientImageId" in runbook or "client image" in runbook.lower() or "immutable" in runbook.lower()
-    assert "protocol-v2" in runbook or "protocol-v2" in runbook.lower() or "researcher_current_pointer.v2" in runbook
+    assert (
+        "ClientImageId" in runbook
+        or "client image" in runbook.lower()
+        or "immutable" in runbook.lower()
+    )
+    assert (
+        "protocol-v2" in runbook
+        or "protocol-v2" in runbook.lower()
+        or "researcher_current_pointer.v2" in runbook
+    )
     assert "ResearcherContainerStateRoot" in runbook
-    assert "active dedicated researcher" in runbook.lower() or "active researcher" in runbook.lower()
+    assert (
+        "active dedicated researcher" in runbook.lower() or "active researcher" in runbook.lower()
+    )
     assert "grok_donor_image_id" in runbook  # still documented as provenance
-    assert "not the unlabeled extraction donor" in runbook.lower() or "not extraction donor" in runbook.lower() or "provenance only" in runbook.lower()
+    assert (
+        "not the unlabeled extraction donor" in runbook.lower()
+        or "not extraction donor" in runbook.lower()
+        or "provenance only" in runbook.lower()
+    )
     # Must not instruct owners to pass donor as CanaryImageId.
     assert "CanaryImageId 'sha256:<pinned grok_donor_image_id>'" not in runbook
     assert "migrate" in runbook.lower() or "activate" in runbook.lower()

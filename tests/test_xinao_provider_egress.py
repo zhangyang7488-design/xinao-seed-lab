@@ -68,7 +68,9 @@ def _sample_posture(**overrides):
 def _write_json(path: Path, value: dict) -> str:
     path.parent.mkdir(parents=True, exist_ok=True)
     payload = (
-        json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"), allow_nan=False)
+        json.dumps(
+            value, ensure_ascii=False, sort_keys=True, separators=(",", ":"), allow_nan=False
+        )
         + "\n"
     ).encode("utf-8")
     path.write_bytes(payload)
@@ -302,9 +304,7 @@ def _fake_live_ok(module, posture: dict) -> None:
         "Id": posture["internal_network_id"],
         "Name": posture["internal_network_name"],
         "Internal": True,
-        "Containers": {
-            posture["proxy_container_id"]: {"Name": posture["proxy_container_name"]}
-        },
+        "Containers": {posture["proxy_container_id"]: {"Name": posture["proxy_container_name"]}},
     }
     proxy_ok = {
         "Id": posture["proxy_container_id"],
@@ -340,9 +340,7 @@ def _fake_live_ok(module, posture: dict) -> None:
 
 def test_source_defaults_keep_verified_false() -> None:
     lock = json.loads(
-        (SKILL_ROOT / "references" / "researcher-runtime-lock.v1.json").read_text(
-            encoding="utf-8"
-        )
+        (SKILL_ROOT / "references" / "researcher-runtime-lock.v1.json").read_text(encoding="utf-8")
     )
     assert lock["provider_egress_runtime_verified"] is False
     assert lock["network_profile"] == "EGRESS_BOUNDARY_REQUIRED_BEFORE_PROVIDER_CALL"
@@ -438,7 +436,10 @@ def test_compose_has_no_host_ports_and_no_dify_reuse() -> None:
     assert "xinao_researcher_internal" in compose
     assert "xinao_provider_egress_ext" in compose
     # Comments may mention Dify only as forbidden; service/network names must not be used.
-    assert "image:" not in compose or "ssrf_proxy" not in compose.split("services:")[1].split("networks:")[0]
+    assert (
+        "image:" not in compose
+        or "ssrf_proxy" not in compose.split("services:")[1].split("networks:")[0]
+    )
     assert "ssrf_proxy_network:" not in compose
     assert "container_name: ssrf_proxy" not in compose
     # No host port publish mapping block
@@ -468,9 +469,7 @@ def test_source_false_absent_seal_fails_before_docker(
     posture_path = module._egress_posture_path()
     posture_path.parent.mkdir(parents=True, exist_ok=True)
     _write_json(posture_path, _sample_posture())
-    monkeypatch.setattr(
-        module, "_docker", lambda: (_ for _ in ()).throw(AssertionError("docker"))
-    )
+    monkeypatch.setattr(module, "_docker", lambda: (_ for _ in ()).throw(AssertionError("docker")))
     with pytest.raises(module.XinaoError) as failure2:
         module._require_host_egress_boundary(lock)
     assert failure2.value.reason_code == "EGRESS_LIVE_SEAL_MISSING"
@@ -481,7 +480,9 @@ def test_posture_shape_and_secret_redaction() -> None:
     good = _sample_posture()
     assert module._validate_egress_posture_shape(good)["proxy_endpoint"].startswith("http://")
     with pytest.raises(module.XinaoError) as missing:
-        module._validate_egress_posture_shape({"schema_version": "xinao.provider_egress_posture.v1"})
+        module._validate_egress_posture_shape(
+            {"schema_version": "xinao.provider_egress_posture.v1"}
+        )
     assert missing.value.reason_code == "EGRESS_POSTURE_INCOMPLETE"
     leak = _sample_posture()
     leak["note"] = "Authorization: Bearer secret"
@@ -513,9 +514,7 @@ def test_live_compare_fail_closed_mismatches() -> None:
         "Id": posture["internal_network_id"],
         "Name": posture["internal_network_name"],
         "Internal": True,
-        "Containers": {
-            posture["proxy_container_id"]: {"Name": posture["proxy_container_name"]}
-        },
+        "Containers": {posture["proxy_container_id"]: {"Name": posture["proxy_container_name"]}},
     }
     proxy_ok = {
         "Id": posture["proxy_container_id"],
@@ -548,17 +547,13 @@ def test_live_compare_fail_closed_mismatches() -> None:
     assert observed["live_proxy_config_sha256"] == posture["proxy_config_sha256"]
 
     # Not internal
-    module._docker_json_inspect = inspect_factory(
-        network={**network_ok, "Internal": False}
-    )  # type: ignore[method-assign]
+    module._docker_json_inspect = inspect_factory(network={**network_ok, "Internal": False})  # type: ignore[method-assign]
     with pytest.raises(module.XinaoError) as err:
         module._compare_live_egress_objects("docker", posture, lock)
     assert err.value.reason_code == "EGRESS_NETWORK_NOT_INTERNAL"
 
     # Image mismatch
-    module._docker_json_inspect = inspect_factory(
-        proxy={**proxy_ok, "Image": "sha256:" + "0" * 64}
-    )  # type: ignore[method-assign]
+    module._docker_json_inspect = inspect_factory(proxy={**proxy_ok, "Image": "sha256:" + "0" * 64})  # type: ignore[method-assign]
     with pytest.raises(module.XinaoError) as err2:
         module._compare_live_egress_objects("docker", posture, lock)
     assert err2.value.reason_code == "EGRESS_PROXY_IMAGE_MISMATCH"
@@ -884,7 +879,7 @@ def test_entrypoint_writes_conf_to_tmpfs_and_guards_acl_injection() -> None:
     entry = (EGRESS_ROOT / "docker-entrypoint.sh").read_text(encoding="utf-8")
     assert "/etc/squid/squid.conf" not in entry or "SQUID_CONF=" in entry
     assert 'SQUID_CONF="${COREDUMP_DIR}/squid.conf"' in entry
-    assert "squid -f \"${SQUID_CONF}\"" in entry or 'squid -f "${SQUID_CONF}"' in entry
+    assert 'squid -f "${SQUID_CONF}"' in entry or 'squid -f "${SQUID_CONF}"' in entry
     assert "PROVIDER_DSTDOMAIN_ACL must be a single line" in entry
     assert "forbidden ACL fragments" in entry
     # Template-env injection via HTTP_PORT/COREDUMP_DIR must fail closed.
@@ -893,7 +888,7 @@ def test_entrypoint_writes_conf_to_tmpfs_and_guards_acl_injection() -> None:
     assert "http_access allow all" in entry
     assert "live_proxy_config_sha256=" in entry
     # Must not write rendered conf onto read-only rootfs path as the only path.
-    assert 'awk' in entry and 'SQUID_CONF' in entry
+    assert "awk" in entry and "SQUID_CONF" in entry
 
 
 def test_egress_scripts_are_lf_only() -> None:
@@ -967,9 +962,7 @@ def test_live_config_hash_mismatch_fails_closed() -> None:
         "Id": posture["internal_network_id"],
         "Name": posture["internal_network_name"],
         "Internal": True,
-        "Containers": {
-            posture["proxy_container_id"]: {"Name": posture["proxy_container_name"]}
-        },
+        "Containers": {posture["proxy_container_id"]: {"Name": posture["proxy_container_name"]}},
     }
     proxy_ok = {
         "Id": posture["proxy_container_id"],
@@ -1349,9 +1342,9 @@ def test_seal_schema_reference_and_sealer_script_exist() -> None:
     ):
         assert (SKILL_ROOT / "references" / name).is_file()
     neg_schema = json.loads(
-        (SKILL_ROOT / "references" / "provider-egress-negative-suite-receipt.v1.schema.json").read_text(
-            encoding="utf-8"
-        )
+        (
+            SKILL_ROOT / "references" / "provider-egress-negative-suite-receipt.v1.schema.json"
+        ).read_text(encoding="utf-8")
     )
     can_schema = json.loads(
         (
@@ -1421,9 +1414,9 @@ def test_sealer_accepts_explicit_semantic_valid_receipts() -> None:
     assert can["real_provider_call"] is True
     assert can["provider_effect_verified"] is True
     assert can["output_tokens"] > 0
-    assert can["usage"]["total_tokens"] >= can["usage"]["input_tokens"] + can["usage"][
-        "output_tokens"
-    ]
+    assert (
+        can["usage"]["total_tokens"] >= can["usage"]["input_tokens"] + can["usage"]["output_tokens"]
+    )
     sealer.validate_negative_suite_receipt(neg, posture=posture)
     sealer.validate_engineering_canary_receipt(can, posture=posture)
 
@@ -1471,9 +1464,7 @@ def test_sealer_negative_field_mutations_fail() -> None:
 
     # Missing required case.
     missing_case = _sample_negative_receipt(posture, observed_at=observed)
-    missing_case["cases"] = [
-        c for c in missing_case["cases"] if c["id"] != "N17"
-    ]
+    missing_case["cases"] = [c for c in missing_case["cases"] if c["id"] != "N17"]
     missing_case["pass_count"] = len(missing_case["cases"])
     with pytest.raises(sealer.SealError) as err:
         sealer.validate_negative_suite_receipt(missing_case, posture=posture)

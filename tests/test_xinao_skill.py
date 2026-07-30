@@ -278,7 +278,6 @@ LEGACY_XINAO_FIXTURE_B85 = (
 )
 
 
-
 def _load_module(path: Path, name: str):
     spec = importlib.util.spec_from_file_location(name, path)
     assert spec is not None and spec.loader is not None
@@ -347,9 +346,7 @@ def _sealed_release(
         "io.xinao.researcher.chain": "dedicated-xinao-science",
         "io.xinao.researcher.generic-worker-route": "forbidden",
         "io.xinao.researcher.grok-donor-image-id": source_identity["grok_donor_image_id"],
-        "io.xinao.researcher.grok-donor-binary.sha256": source_identity[
-            "grok_donor_binary_sha256"
-        ],
+        "io.xinao.researcher.grok-donor-binary.sha256": source_identity["grok_donor_binary_sha256"],
         "io.xinao.researcher.charter.sha256": hashes["charter_sha256"],
         "io.xinao.researcher.output-schema.sha256": hashes["output_schema_sha256"],
         "io.xinao.researcher.material-bundle-schema.sha256": hashes[
@@ -854,9 +851,7 @@ def test_runtime_activation_lock_detects_path_identity_replacement(
 
 def test_dockerfile_has_no_donor_from_or_raw_image_id_stage() -> None:
     """Real-failure regression: raw local image Id in FROM is unbuildable under BuildKit."""
-    dockerfile = (ROOT / "docker" / "xinao-researcher" / "Dockerfile").read_text(
-        encoding="utf-8"
-    )
+    dockerfile = (ROOT / "docker" / "xinao-researcher" / "Dockerfile").read_text(encoding="utf-8")
     assert "ARG GROK_DONOR_IMAGE=" not in dockerfile
     assert "ARG GROK_DONOR_IMAGE\n" not in dockerfile
     assert "AS grok_donor" not in dockerfile
@@ -906,9 +901,7 @@ def test_build_is_candidate_only_and_passes_complete_image_identity(
     module._validate_release_manifest(manifest, Path(receipt["release_manifest_path"]))
     assert manifest["source_identity"]["grok_donor_image_id"] == donor_id
     assert manifest["source_identity"]["grok_donor_binary_sha256"] == donor_binary_sha256
-    assert (
-        manifest["image_labels"]["io.xinao.researcher.grok-donor-image-id"] == donor_id
-    )
+    assert manifest["image_labels"]["io.xinao.researcher.grok-donor-image-id"] == donor_id
     assert (
         manifest["image_labels"]["io.xinao.researcher.grok-donor-binary.sha256"]
         == donor_binary_sha256
@@ -961,9 +954,7 @@ def test_build_extract_pins_binary_against_tag_retarget(
             FAKE_DONOR_BINARY_PAYLOAD
         )
 
-    env = _fake_build_environment(
-        module, monkeypatch, dirty=False, on_before_build=on_before_build
-    )
+    env = _fake_build_environment(module, monkeypatch, dirty=False, on_before_build=on_before_build)
     original_image = module._docker_image
 
     def retarget_aware_image(_docker: str, image: str) -> dict[str, object]:
@@ -992,9 +983,7 @@ def test_build_extract_pins_binary_against_tag_retarget(
     module._validate_release_manifest(manifest, Path(receipt["release_manifest_path"]))
     assert manifest["source_identity"]["grok_donor_image_id"] == pinned_id
     assert manifest["source_identity"]["grok_donor_binary_sha256"] == FAKE_DONOR_BINARY_SHA256
-    assert (
-        manifest["image_labels"]["io.xinao.researcher.grok-donor-image-id"] == pinned_id
-    )
+    assert manifest["image_labels"]["io.xinao.researcher.grok-donor-image-id"] == pinned_id
     assert (
         manifest["image_labels"]["io.xinao.researcher.grok-donor-binary.sha256"]
         == FAKE_DONOR_BINARY_SHA256
@@ -1109,9 +1098,7 @@ def test_build_concurrent_extract_identities_are_unique(
     assert names[0] != names[1]
     assert staging_roots[0] != staging_roots[1]
     assert all(name.startswith(module.DONOR_EXTRACT_NAME_PREFIX) for name in names)
-    assert all(
-        root.name.startswith(module.DONOR_STAGING_DIR_PREFIX) for root in staging_roots
-    )
+    assert all(root.name.startswith(module.DONOR_STAGING_DIR_PREFIX) for root in staging_roots)
     assert env["live_containers"] == {}
 
 
@@ -1171,8 +1158,7 @@ def test_build_fence_blocks_effect_or_release_seal_at_the_matching_boundary(
     assert env["live_containers"] == {}
     capability_root = module._state_paths()["capability_root"]
     assert not any(
-        path.name.startswith(module.DONOR_STAGING_DIR_PREFIX)
-        for path in capability_root.iterdir()
+        path.name.startswith(module.DONOR_STAGING_DIR_PREFIX) for path in capability_root.iterdir()
     )
 
 
@@ -1354,9 +1340,7 @@ def test_activation_canary_failure_surfaces_child_reason(
         "txn_id": txn_id,
         "to": {"release_manifest_path": str(tmp_path / "release.json")},
     }
-    child = module._error_envelope(
-        module.XinaoError("IMAGE_IDENTITY_MISMATCH", "candidate image")
-    )
+    child = module._error_envelope(module.XinaoError("IMAGE_IDENTITY_MISMATCH", "candidate image"))
     monkeypatch.setattr(
         module,
         "_run",
@@ -2454,8 +2438,9 @@ def _materialize_real_legacy_skill_tree(destination: Path, *, newline: bytes) ->
     ]
     for relative, encoded_payload in files.items():
         payload = base64.b64decode(encoded_payload, validate=True)
-        assert hashlib.sha256(payload).hexdigest() == (
-            LEGACY_XINAO_FIXTURE_MANIFEST["files"][relative]
+        assert (
+            hashlib.sha256(payload).hexdigest()
+            == (LEGACY_XINAO_FIXTURE_MANIFEST["files"][relative])
         )
         if Path(relative).suffix.lower() in {
             ".md",
@@ -2504,12 +2489,8 @@ def _legacy_skill_hashes_for_tree(module, root: Path) -> dict[str, str]:
     skill_side = {
         "skill_md_sha256": module._sha256(root / "SKILL.md"),
         "skill_invoker_sha256": module._sha256(root / "scripts" / "xinao.py"),
-        "capability_registry_sha256": module._sha256(
-            root / "references" / "capabilities.v1.json"
-        ),
-        "charter_sha256": module._sha256(
-            root / "references" / "researcher-charter.v1.json"
-        ),
+        "capability_registry_sha256": module._sha256(root / "references" / "capabilities.v1.json"),
+        "charter_sha256": module._sha256(root / "references" / "researcher-charter.v1.json"),
         "runtime_lock_sha256": module._sha256(
             root / "references" / "researcher-runtime-lock.v1.json"
         ),
@@ -2535,9 +2516,7 @@ def _write_pure_v1_release(
 ) -> tuple[dict[str, object], Path, Path]:
     state = _state(module, tmp_path, monkeypatch)
     release_id = f"researcher-1.0.0-{release_suffix}"
-    rendering = _stage_source_rendering(
-        module, release_id, newline=newline, marker=marker
-    )
+    rendering = _stage_source_rendering(module, release_id, newline=newline, marker=marker)
     skill_hashes = _legacy_skill_hashes_for_tree(module, rendering)
     source_identity = {
         "source_commit": "b916f8bd22dd38b4807298a4c935f6bf2969eb13",
@@ -2596,9 +2575,7 @@ def _install_drifted_skill(
     meta.write_bytes(meta.read_bytes() + b"\ninstalled-meta-drift\n")
     cache_root = installed / "scripts" / "__pycache__"
     cache_root.mkdir()
-    (cache_root / "xinao.cpython-312.pyc").write_bytes(
-        b"xinao-live-cache-v1\x00\x01\x02\n"
-    )
+    (cache_root / "xinao.cpython-312.pyc").write_bytes(b"xinao-live-cache-v1\x00\x01\x02\n")
     (cache_root / "empty-cache-dir").mkdir()
     monkeypatch.setenv("XINAO_INSTALLED_SKILL_ROOT", str(installed))
     monkeypatch.setattr(module, "DEFAULT_INSTALLED_SKILL_ROOT", installed)
@@ -2685,15 +2662,11 @@ def _prepare_v1_migration_world(
         "installed_snapshot": {
             relative.as_posix(): (installed / relative).read_bytes()
             for relative in [
-                path.relative_to(installed)
-                for path in installed.rglob("*")
-                if path.is_file()
+                path.relative_to(installed) for path in installed.rglob("*") if path.is_file()
             ]
         },
         "installed_directories": sorted(
-            path.relative_to(installed).as_posix()
-            for path in installed.rglob("*")
-            if path.is_dir()
+            path.relative_to(installed).as_posix() for path in installed.rglob("*") if path.is_dir()
         ),
     }
 
@@ -2704,9 +2677,7 @@ def _run_installed_xinao(
     environment = os.environ.copy()
     environment["XINAO_SKILL_STATE_ROOT"] = str(module._state_paths()["state_root"])
     environment["XINAO_INSTALLED_SKILL_ROOT"] = str(world["installed"])
-    environment["XINAO_RESEARCH_RUN_ROOT"] = str(
-        module._state_paths()["state_root"] / "test-runs"
-    )
+    environment["XINAO_RESEARCH_RUN_ROOT"] = str(module._state_paths()["state_root"] / "test-runs")
     environment["PYTHONDONTWRITEBYTECODE"] = "1"
     return subprocess.run(
         [
@@ -2779,8 +2750,9 @@ def test_bootstrap_migrate_success_from_pure_v1_and_crlf_lf_renderings(
     previous_skill_md = (world["previous_rendering"] / "SKILL.md").read_bytes()
     assert b"\r\n" in active_skill_md
     assert b"\r\n" not in previous_skill_md
-    assert world["active"]["source_identity"]["source_commit"] == (
-        world["previous"]["source_identity"]["source_commit"]
+    assert (
+        world["active"]["source_identity"]["source_commit"]
+        == (world["previous"]["source_identity"]["source_commit"])
     )
     monkeypatch.setattr(
         module, "_run_activation_canary", lambda value: _canary_value(module, value)
@@ -2795,12 +2767,16 @@ def test_bootstrap_migrate_success_from_pure_v1_and_crlf_lf_renderings(
     assert pointer["generation"] == 1
     # The active target is a real current v2 build; historical v1 images remain restore-only.
     assert pointer["active"]["release_id"] == world["target"]["release_id"]
-    assert (module._state_paths()["release_root"] / pointer["active"]["release_id"] / "skill-bundle").is_dir()
+    assert (
+        module._state_paths()["release_root"] / pointer["active"]["release_id"] / "skill-bundle"
+    ).is_dir()
     assert pointer["previous_verified"] is None
     # Original pure v1 directories remain reconstructible (only release.json).
     assert sorted(
         path.name
-        for path in (module._state_paths()["release_root"] / world["active"]["release_id"]).iterdir()
+        for path in (
+            module._state_paths()["release_root"] / world["active"]["release_id"]
+        ).iterdir()
     ) == ["release.json"]
     journal = module._load_json(module._journal_path(pointer["active"]["activation_txn_id"]))
     assert journal["operation"] == "MIGRATE"
@@ -2811,9 +2787,7 @@ def test_bootstrap_migrate_success_from_pure_v1_and_crlf_lf_renderings(
     assert (
         restore_root / "scripts" / "__pycache__" / "xinao.cpython-312.pyc"
     ).read_bytes() == b"xinao-live-cache-v1\x00\x01\x02\n"
-    assert (
-        restore_root / "scripts" / "__pycache__" / "empty-cache-dir"
-    ).is_dir()
+    assert (restore_root / "scripts" / "__pycache__" / "empty-cache-dir").is_dir()
     context = module._load_current_context(require_terminal=True)
     assert context["release"]["required_bootstrap_protocol"] == 2
 
@@ -3025,7 +2999,9 @@ def test_bootstrap_migrate_crash_after_pointer_switch_recovers_or_rolls_back(
     receipt = module.bootstrap_migrate()
     assert receipt["status"] == "ROLLED_BACK"
     assert world["pointer_path"].read_bytes() == legacy_bytes
-    assert module._load_json(world["pointer_path"])["schema_version"] == module.LEGACY_POINTER_SCHEMA
+    assert (
+        module._load_json(world["pointer_path"])["schema_version"] == module.LEGACY_POINTER_SCHEMA
+    )
     assert {
         path.relative_to(installed).as_posix(): path.read_bytes()
         for path in installed.rglob("*")
@@ -3034,7 +3010,9 @@ def test_bootstrap_migrate_crash_after_pointer_switch_recovers_or_rolls_back(
     # Pure v1 release directories restored.
     assert sorted(
         path.name
-        for path in (module._state_paths()["release_root"] / world["active"]["release_id"]).iterdir()
+        for path in (
+            module._state_paths()["release_root"] / world["active"]["release_id"]
+        ).iterdir()
     ) == ["release.json"]
 
 
@@ -3066,7 +3044,9 @@ def test_bootstrap_migrate_crash_after_pointer_switch_then_recover_finishes(
     assert len(pending) == 1
     assert pending[0][0]["operation"] == "MIGRATE"
     assert pending[0][0]["state"] == "POINTER_SWITCHED"
-    assert module._load_json(world["pointer_path"])["schema_version"] == module.CURRENT_POINTER_SCHEMA
+    assert (
+        module._load_json(world["pointer_path"])["schema_version"] == module.CURRENT_POINTER_SCHEMA
+    )
     monkeypatch.setattr(module, "_switch_migrate_pointer", original_switch)
     receipt = module.bootstrap_migrate()
     assert receipt["status"] == "MIGRATED"
@@ -3086,8 +3066,7 @@ def test_bootstrap_migrate_cli_absorbs_technical_fields(
     exit_code = module.main(["bootstrap-migrate"])
     assert exit_code == 0
     assert (
-        module._load_json(world["pointer_path"])["schema_version"]
-        == module.CURRENT_POINTER_SCHEMA
+        module._load_json(world["pointer_path"])["schema_version"] == module.CURRENT_POINTER_SCHEMA
     )
     exit_code = module.main(
         ["bootstrap-migrate", "--compat-release", str(world["active"]["release_id"])]
@@ -3225,9 +3204,7 @@ def test_bootstrap_migrate_singleflight_builds_once_and_reuses_migration_txn(
                 module._load_json(path),
                 path,
             )
-            for path in module._state_paths()["transaction_root"].glob(
-                "*/activation.v1.json"
-            )
+            for path in module._state_paths()["transaction_root"].glob("*/activation.v1.json")
         )
         if value.get("operation") == "MIGRATE"
     ]
@@ -3307,9 +3284,7 @@ def test_full_v1_preflight_fails_before_build_release(
         module.bootstrap_migrate()
     assert build_calls["count"] == 0
     transaction_root = module._state_paths()["transaction_root"]
-    assert not transaction_root.exists() or not list(
-        transaction_root.glob("*/activation.v1.json")
-    )
+    assert not transaction_root.exists() or not list(transaction_root.glob("*/activation.v1.json"))
 
 
 def test_killed_c_stage_partial_recovers_through_stable_d_entry_without_residue(
@@ -3323,10 +3298,7 @@ def test_killed_c_stage_partial_recovers_through_stable_d_entry_without_residue(
     migrated = module.bootstrap_migrate()
 
     def crash_during_stage_write(phase: str, relative: str) -> None:
-        if (
-            phase == "rollback-stage:during-partial-write"
-            and relative == "rollback-SKILL.md"
-        ):
+        if phase == "rollback-stage:during-partial-write" and relative == "rollback-SKILL.md":
             raise module.XinaoError("INJECTED_KILL", "partial C stage write")
 
     monkeypatch.setattr(module, "_projection_fault_point", crash_during_stage_write)
@@ -3362,9 +3334,7 @@ def test_killed_c_stage_partial_recovers_through_stable_d_entry_without_residue(
     assert _json_stdout(completed)["status"] == "ROLLED_BACK"
     _assert_full_v1_preimage(module, world)
     assert not stable_pointer.exists()
-    assert not module._projection_stage_root(
-        migrated["txn_id"], "forward"
-    ).exists()
+    assert not module._projection_stage_root(migrated["txn_id"], "forward").exists()
     assert not rollback_stage.exists()
     txn_root = module._journal_path(migrated["txn_id"]).parent
     assert not list(txn_root.rglob(f"{module._transaction_partial_prefix(migrated['txn_id'])}*"))
@@ -3382,10 +3352,7 @@ def test_stable_recovery_pointer_tamper_is_preserved_by_publish_and_retire(
     migrated = module.bootstrap_migrate()
 
     def stop_after_pointer_republish(phase: str, relative: str) -> None:
-        if (
-            phase == "rollback-stage:during-partial-write"
-            and relative == "rollback-SKILL.md"
-        ):
+        if phase == "rollback-stage:during-partial-write" and relative == "rollback-SKILL.md":
             raise module.XinaoError("INJECTED_STOP", "stable pointer published")
 
     monkeypatch.setattr(module, "_projection_fault_point", stop_after_pointer_republish)
@@ -3429,9 +3396,7 @@ def test_verified_hygiene_conflict_preserves_v2_projection_and_terminal_journal(
     evidence: dict[str, object] = {}
 
     def complete_then_tamper(journal, journal_path, *, terminal_state):
-        result = original_complete(
-            journal, journal_path, terminal_state=terminal_state
-        )
+        result = original_complete(journal, journal_path, terminal_state=terminal_state)
         terminal = result[0]
         assert terminal["state"] == "VERIFIED"
         _stable_launcher, stable_pointer = module._stable_recovery_paths()
@@ -3488,9 +3453,7 @@ def test_rolled_back_hygiene_conflict_preserves_v1_and_terminal_journal(
     evidence: dict[str, bytes] = {}
 
     def transition_then_tamper(journal_path, journal, state, **changes):
-        transitioned = original_transition(
-            journal_path, journal, state, **changes
-        )
+        transitioned = original_transition(journal_path, journal, state, **changes)
         if state == "ROLLED_BACK" and journal.get("operation") == "MIGRATE":
             _stable_launcher, stable_pointer = module._stable_recovery_paths()
             tampered = stable_pointer.read_bytes() + b"\nforeign"
@@ -3503,9 +3466,7 @@ def test_rolled_back_hygiene_conflict_preserves_v1_and_terminal_journal(
     with pytest.raises(module.XinaoError) as failure:
         module.rollback_release()
     assert failure.value.reason_code == "STABLE_RECOVERY_POINTER_CONFLICT"
-    assert module._load_json(module._journal_path(migrated["txn_id"]))["state"] == (
-        "ROLLED_BACK"
-    )
+    assert module._load_json(module._journal_path(migrated["txn_id"]))["state"] == ("ROLLED_BACK")
     _assert_full_v1_preimage(module, world)
     _stable_launcher, stable_pointer = module._stable_recovery_paths()
     assert stable_pointer.read_bytes() == evidence["tampered"]
@@ -3536,9 +3497,7 @@ def test_rolled_back_hygiene_conflict_preserves_v1_and_terminal_journal(
         transaction_ids_before
     )
     assert stable_pointer.read_bytes() == foreign_before
-    assert module._load_json(module._journal_path(migrated["txn_id"]))["state"] == (
-        "ROLLED_BACK"
-    )
+    assert module._load_json(module._journal_path(migrated["txn_id"]))["state"] == ("ROLLED_BACK")
     _assert_full_v1_preimage(module, world)
 
 
@@ -3566,9 +3525,7 @@ def test_terminal_hygiene_uses_pointer_txn_when_rollbacks_share_legacy_sha(
             raise module.XinaoError("INJECTED_STOP", "leave exact terminal pointer")
         return original_retire(journal)
 
-    monkeypatch.setattr(
-        module, "_retire_stable_recovery_pointer", preserve_latest_pointer
-    )
+    monkeypatch.setattr(module, "_retire_stable_recovery_pointer", preserve_latest_pointer)
     _install_bootstrap_fence(module, monkeypatch, ["rollback"])
     with pytest.raises(module.XinaoError) as stopped:
         module.rollback_release()
@@ -3580,9 +3537,7 @@ def test_terminal_hygiene_uses_pointer_txn_when_rollbacks_share_legacy_sha(
     assert first_journal["from"]["legacy_pointer_sha256"] == legacy_sha256
     assert second_journal["from"]["legacy_pointer_sha256"] == legacy_sha256
     _stable_launcher, stable_pointer = module._stable_recovery_paths()
-    assert stable_pointer.read_bytes() == module._stable_recovery_pointer_payload(
-        second_journal
-    )
+    assert stable_pointer.read_bytes() == module._stable_recovery_pointer_payload(second_journal)
 
     monkeypatch.setattr(module, "_retire_stable_recovery_pointer", original_retire)
     build_calls = 0
@@ -3631,9 +3586,7 @@ def test_killed_d_cone_partial_is_rebuilt_only_from_bound_transaction_stage(
     assert recovered["txn_id"] == txn_id
     assert not cone_stage.exists()
     assert not list(
-        module._journal_path(txn_id).parent.rglob(
-            f"{module._transaction_partial_prefix(txn_id)}*"
-        )
+        module._journal_path(txn_id).parent.rglob(f"{module._transaction_partial_prefix(txn_id)}*")
     )
 
 
@@ -3880,9 +3833,7 @@ def test_post_success_migrate_rollback_restores_sealed_v1_world(
         for path in world["installed"].rglob("*")
         if path.is_file()
     } == world["installed_snapshot"]
-    assert (
-        world["installed"] / "scripts" / "__pycache__" / "empty-cache-dir"
-    ).is_dir()
+    assert (world["installed"] / "scripts" / "__pycache__" / "empty-cache-dir").is_dir()
     # Pure v1 release directories restored (release.json only).
     for release_id in (world["active"]["release_id"], world["previous"]["release_id"]):
         release_dir = module._state_paths()["release_root"] / str(release_id)
@@ -4121,10 +4072,7 @@ def test_post_success_migrate_rollback_crash_before_journal_seal_heals(
     assert failure.value.reason_code == "INJECTED_CRASH"
     # Live world is operational v1; transaction hygiene remains explicitly pending.
     assert world["pointer_path"].read_bytes() == world["legacy_bytes"]
-    assert (
-        module._load_json(module._journal_path(txn_id))["state"]
-        == "LEGACY_RESTORE_STARTED"
-    )
+    assert module._load_json(module._journal_path(txn_id))["state"] == "LEGACY_RESTORE_STARTED"
     monkeypatch.setattr(module, "_journal_transition", original_transition)
     # bootstrap-migrate heals the journal seal then can re-enter migration.
     monkeypatch.setattr(
@@ -4144,11 +4092,14 @@ def _assert_full_v1_preimage(module, world: dict[str, object]) -> None:
         for path in world["installed"].rglob("*")
         if path.is_file()
     } == world["installed_snapshot"]
-    assert sorted(
-        path.relative_to(world["installed"]).as_posix()
-        for path in world["installed"].rglob("*")
-        if path.is_dir()
-    ) == world["installed_directories"]
+    assert (
+        sorted(
+            path.relative_to(world["installed"]).as_posix()
+            for path in world["installed"].rglob("*")
+            if path.is_dir()
+        )
+        == world["installed_directories"]
+    )
     for release_id in (world["active"]["release_id"], world["previous"]["release_id"]):
         release_dir = module._state_paths()["release_root"] / str(release_id)
         assert sorted(path.name for path in release_dir.iterdir()) == ["release.json"]
@@ -4182,10 +4133,7 @@ def test_partial_restore_crash_after_skill_before_pointer_recovers_via_rollback(
     assert failure.value.reason_code == "INJECTED_CRASH"
     # Pointer still v2; skill may already be legacy material; journal unsealed.
     assert pointer_path.read_bytes() == v2_pointer_bytes
-    assert (
-        module._load_json(module._journal_path(txn_id))["state"]
-        == "LEGACY_RESTORE_STARTED"
-    )
+    assert module._load_json(module._journal_path(txn_id))["state"] == "LEGACY_RESTORE_STARTED"
     monkeypatch.setattr(module, "_write_bytes_atomic", original_write)
     receipt = module.recover_migration_transaction(txn_id)
     assert receipt["status"] == "ROLLED_BACK"
@@ -4229,10 +4177,7 @@ def test_partial_restore_crash_after_pointer_before_release_cleanup_heals(
     assert failure.value.reason_code == "INJECTED_CRASH"
     assert pointer_written["done"] is True
     assert pointer_path.read_bytes() == world["legacy_bytes"]
-    assert (
-        module._load_json(module._journal_path(txn_id))["state"]
-        == "LEGACY_RESTORE_STARTED"
-    )
+    assert module._load_json(module._journal_path(txn_id))["state"] == "LEGACY_RESTORE_STARTED"
     # Historical pure v1 dirs may still be missing restore cleanup; target may still be v2-shaped.
     monkeypatch.setattr(module, "_write_bytes_atomic", original_write)
     monkeypatch.setattr(
@@ -4268,13 +4213,10 @@ def test_partial_restore_crash_after_old_launcher_keeps_v1_operational_and_recov
         module.rollback_release()
     assert failure.value.reason_code == "INJECTED_CRASH"
     assert world["pointer_path"].read_bytes() == world["legacy_bytes"]
-    assert (
-        module._load_json(module._journal_path(txn_id))["state"]
-        == "LEGACY_RESTORE_STARTED"
-    )
-    assert (
-        world["installed"] / "scripts" / "xinao.py"
-    ).read_bytes() == world["installed_snapshot"]["scripts/xinao.py"]
+    assert module._load_json(module._journal_path(txn_id))["state"] == "LEGACY_RESTORE_STARTED"
+    assert (world["installed"] / "scripts" / "xinao.py").read_bytes() == world[
+        "installed_snapshot"
+    ]["scripts/xinao.py"]
     assert (world["installed"] / "scripts" / "xinao_runtime.py").is_file()
     monkeypatch.setattr(module, "_projection_fault_point", original_fault)
     receipt = module.recover_migration_transaction(txn_id)
@@ -4325,11 +4267,7 @@ def test_heal_refuses_tampered_restore_bundle_without_false_terminal(
         module.bootstrap_migrate()
     assert migrate_failure.value.reason_code in {"RECOVERY_REQUIRED", "RECOVERY_CONFLICT"}
     assert module._load_json(module._journal_path(txn_id))["state"] == "VERIFIED"
-    pending = [
-        item
-        for item in module._pending_journals()
-        if item[0].get("operation") == "MIGRATE"
-    ]
+    pending = [item for item in module._pending_journals() if item[0].get("operation") == "MIGRATE"]
     assert pending == []
 
 
@@ -4421,9 +4359,7 @@ def test_heal_preserves_foreign_release_extra_and_requires_recovery(
     assert module._load_json(module._journal_path(txn_id))["state"] == "VERIFIED"
 
 
-def test_failed_heal_blocks_new_migration(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_failed_heal_blocks_new_migration(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     module = _module()
     world = _prepare_v1_migration_world(module, tmp_path, monkeypatch)
     monkeypatch.setattr(
@@ -4445,9 +4381,7 @@ def test_failed_heal_blocks_new_migration(
     }
     module._write_json_atomic(module._journal_path(txn_id), journal)
     before_journals = {
-        path.name
-        for path in module._state_paths()["transaction_root"].iterdir()
-        if path.is_dir()
+        path.name for path in module._state_paths()["transaction_root"].iterdir() if path.is_dir()
     }
     with pytest.raises(module.XinaoError) as failure:
         module.bootstrap_migrate()
@@ -4457,9 +4391,7 @@ def test_failed_heal_blocks_new_migration(
         "LEGACY_RESTORE_PATH_INVALID",
     }
     after_journals = {
-        path.name
-        for path in module._state_paths()["transaction_root"].iterdir()
-        if path.is_dir()
+        path.name for path in module._state_paths()["transaction_root"].iterdir() if path.is_dir()
     }
     assert after_journals == before_journals
     assert module._load_json(module._journal_path(txn_id))["state"] == "VERIFIED"
