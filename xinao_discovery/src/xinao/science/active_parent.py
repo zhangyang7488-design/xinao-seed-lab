@@ -19,8 +19,7 @@ SCIENCE_ACTIVE_PARENT_PROJECTION_PATH = Path(
     r"\active_parent.current.json"
 )
 
-_REQUIRED_SCIENCE_MARKERS = (
-    "CURRENT_ACTIVE_PARENT / XINAO_SCIENCE_PROTOCOL_ACTIVE",
+_COMMON_REQUIRED_SCIENCE_MARKERS = (
     "LEGACY_PARENT_G0_G8 = SUPERSEDED_AS_ACTIVE_PARENT（当前）",  # noqa: RUF001
     "XINAO_SCIENCE_EPISODE_ALLOWED",
     "ExposureInventory",
@@ -28,12 +27,49 @@ _REQUIRED_SCIENCE_MARKERS = (
     "GlobalTrialLedger",
     "knowledge_cutoff < target openTime",
 )
+_LEGACY_DEPLOYED_IDENTITY_MARKERS = ("CURRENT_ACTIVE_PARENT / XINAO_SCIENCE_PROTOCOL_ACTIVE",)
+_FORMAL_FUSION_VERSION_DECLARATION_PREFIX = "版本：正式融合稿 "  # noqa: RUF001
+_OPEN_RESEARCH_VERSION_MARKERS = (
+    "版本：正式融合稿 v1.9",  # noqa: RUF001
+    "版本：正式融合稿 v1.10",  # noqa: RUF001
+)
+_OPEN_RESEARCH_CONTENT_ROLE_MARKERS = (
+    "文档角色：XINAO_SCIENCE_PARENT_CONTENT",  # noqa: RUF001
+    "候选副本不因正文自取部署权威",
+    "CAS、外部 revision evidence 与消费者回读共同成立时",
+    "该字节实例才取得 CURRENT_ACTIVE_PARENT 身份",
+    "ParentRealityObject",
+    "APPLICABLE_PRE_PROTOCOL_SET_COMPLETE",
+)
+_OPEN_RESEARCH_VERSION_REQUIRED_MARKERS = {
+    "版本：正式融合稿 v1.10": (  # noqa: RUF001
+        "XINAO_NECESSARY_CHAIN_MATURATION_INVARIANT",
+        "MATURATION_REQUIRED",
+        "下一次同依赖生产调用",
+    ),
+}
+_V110_FORMAL_FUSION_VERSION_MARKER = "版本：正式融合稿 v1.10"  # noqa: RUF001
+_MATURATION_INVARIANT_MARKER = "XINAO_NECESSARY_CHAIN_MATURATION_INVARIANT"
+_MATURATION_ENGINEERING_ONE_HOME_MARKER = "本节是该不变量的软件工程唯一正向定义"
+_TRANSITION_ACTIVE_PARENT_LABEL = "唯一科学父目标："  # noqa: RUF001
+_TRANSITION_SHA256_PREFIX = "SHA256："  # noqa: RUF001
+_OPEN_RESEARCH_FORBIDDEN_SELF_DECLARATIONS = _LEGACY_DEPLOYED_IDENTITY_MARKERS
 _FORBIDDEN_CURRENT_MARKERS = (
     "DRAFT_FOR_OPERATOR_REVIEW",
     "XINAO_SCIENCE_PROTOCOL_CANDIDATE",
     "尚未执行 ParentScopeSwitch",
     "本次不执行",
 )
+_LEGACY_FIRST_FRONTIER = [
+    "ExposureInventory",
+    "bounded_ResearchQuestion",
+    "ProtocolPin",
+]
+_OPEN_RESEARCH_FIRST_FRONTIER = [
+    "ParentRealityObject",
+    "ObjectContact",
+    "ExplorationTrace",
+]
 
 
 class ScienceActiveParentError(ValueError):
@@ -58,6 +94,176 @@ def _required_text(value: Any, label: str) -> str:
     if not isinstance(value, str) or not value.strip():
         raise ScienceActiveParentError(f"{label} must be a non-empty string")
     return value
+
+
+def _verify_science_text_contract(science_text: str) -> bool:
+    """Verify the content-role contract and return whether this is open research."""
+
+    declared_versions = tuple(
+        line
+        for line in science_text.splitlines()
+        if _FORMAL_FUSION_VERSION_DECLARATION_PREFIX in line
+    )
+    open_research_marker_presence = tuple(
+        marker in science_text for marker in _OPEN_RESEARCH_CONTENT_ROLE_MARKERS
+    )
+    if (any(open_research_marker_presence) or declared_versions) and not all(
+        open_research_marker_presence
+    ):
+        missing_marker = next(
+            marker
+            for marker, present in zip(
+                _OPEN_RESEARCH_CONTENT_ROLE_MARKERS,
+                open_research_marker_presence,
+                strict=True,
+            )
+            if not present
+        )
+        raise ScienceActiveParentError(
+            f"incomplete open-research specification marker set; marker missing: {missing_marker}"
+        )
+    is_open_research_revision = all(open_research_marker_presence)
+    if is_open_research_revision:
+        if not declared_versions:
+            raise ScienceActiveParentError(
+                "incomplete open-research specification marker set; marker missing: "
+                "supported formal-fusion version"
+            )
+        if len(declared_versions) != 1:
+            raise ScienceActiveParentError(
+                "open-research specification has multiple formal-fusion version markers"
+            )
+        declared_version = declared_versions[0]
+        if declared_version not in _OPEN_RESEARCH_VERSION_MARKERS:
+            raise ScienceActiveParentError(f"unsupported formal-fusion version: {declared_version}")
+        for marker in _OPEN_RESEARCH_VERSION_REQUIRED_MARKERS.get(declared_version, ()):
+            if marker not in science_text:
+                raise ScienceActiveParentError(f"science specification marker missing: {marker}")
+    required_science_markers = _COMMON_REQUIRED_SCIENCE_MARKERS + (
+        _OPEN_RESEARCH_CONTENT_ROLE_MARKERS
+        if is_open_research_revision
+        else _LEGACY_DEPLOYED_IDENTITY_MARKERS
+    )
+    for marker in required_science_markers:
+        if marker not in science_text:
+            raise ScienceActiveParentError(f"science specification marker missing: {marker}")
+    for marker in _FORBIDDEN_CURRENT_MARKERS:
+        if marker in science_text:
+            raise ScienceActiveParentError(f"candidate marker remains active: {marker}")
+    if is_open_research_revision:
+        for marker in _OPEN_RESEARCH_FORBIDDEN_SELF_DECLARATIONS:
+            if marker in science_text:
+                raise ScienceActiveParentError(
+                    f"open-research content self-declares deployment identity: {marker}"
+                )
+    return is_open_research_revision
+
+
+def _verify_v110_software_foundation_contract(software_text: str) -> None:
+    """Bind v1.10 to one semantic engineering home without pinning carrier bytes."""
+
+    for label, marker in (
+        ("maturation invariant", _MATURATION_INVARIANT_MARKER),
+        ("maturation engineering one-home", _MATURATION_ENGINEERING_ONE_HOME_MARKER),
+    ):
+        marker_count = software_text.count(marker)
+        if marker_count != 1:
+            raise ScienceActiveParentError(
+                f"v1.10 software foundation must contain exactly one {label} marker; "
+                f"observed {marker_count}: {marker}"
+            )
+
+
+def _verify_software_foundation_contract(
+    software_binding: Mapping[str, Any],
+    software_text: str,
+    *,
+    requires_maturation_invariant: bool,
+) -> None:
+    required_software_markers = (
+        "科学 active-parent",
+        "LEGACY_PARENT_G0_G8",
+        "不取得当前父目标或全局启动门地位",
+    )
+    if software_binding.get(
+        "relationship"
+    ) != "REUSABLE_INSTRUMENT_FOUNDATION_NOT_PARENT_GATE" or any(
+        marker not in software_text for marker in required_software_markers
+    ):
+        raise ScienceActiveParentError("software foundation still has ambiguous parent authority")
+    if requires_maturation_invariant:
+        _verify_v110_software_foundation_contract(software_text)
+
+
+def _verify_committed_promotion_visibility(
+    projection_path: Path,
+    payload: Mapping[str, Any],
+) -> None:
+    """Fail closed while a live projection replacement is not durably committed."""
+
+    marker_path = projection_path.with_name(f"{projection_path.name}.promotion.lock")
+    if not marker_path.exists():
+        return
+    if not marker_path.is_file():
+        raise ScienceActiveParentError("science active-parent promotion marker is invalid")
+    try:
+        marker = _mapping(
+            json.loads(marker_path.read_text(encoding="utf-8")),
+            "science active-parent promotion marker",
+        )
+        journal_path = _carrier_path(
+            _required_text(marker.get("journal_path"), "promotion journal path")
+        )
+        journal = _mapping(
+            json.loads(journal_path.read_text(encoding="utf-8")),
+            "science active-parent promotion journal",
+        )
+    except (OSError, json.JSONDecodeError) as exc:
+        raise ScienceActiveParentError(
+            "science active-parent promotion marker is unresolved"
+        ) from exc
+
+    if (
+        journal.get("schema_version") != "xinao.science_revision_transaction.v1"
+        or journal.get("status") != "COMMITTED"
+    ):
+        raise ScienceActiveParentError(
+            "science active-parent promotion transaction is not committed"
+        )
+
+    journal_projection_path = _carrier_path(
+        _required_text(journal.get("projection_path"), "promotion projection path")
+    )
+    if journal_projection_path.resolve() != projection_path.resolve():
+        raise ScienceActiveParentError(
+            "science active-parent promotion journal targets another projection"
+        )
+    expected_projection_sha256 = _required_text(
+        journal.get("projection_committed_sha256"),
+        "promotion projection committed sha256",
+    ).lower()
+    if _sha256(projection_path) != expected_projection_sha256:
+        raise ScienceActiveParentError(
+            "science active-parent committed projection postimage drifted"
+        )
+
+    active_parent_path_value = journal.get("active_parent_path")
+    if active_parent_path_value is None:
+        active_parent_path_value = _mapping(payload.get("active_parent"), "active_parent").get(
+            "path"
+        )
+    active_parent_path = _carrier_path(
+        _required_text(active_parent_path_value, "promotion active-parent path")
+    )
+    expected_active_parent_sha256 = _required_text(
+        journal.get("active_parent_committed_sha256"),
+        "promotion active-parent committed sha256",
+    ).lower()
+    if (
+        not active_parent_path.is_file()
+        or _sha256(active_parent_path) != expected_active_parent_sha256
+    ):
+        raise ScienceActiveParentError("science active-parent committed source postimage drifted")
 
 
 def _carrier_path(raw: str) -> Path:
@@ -159,11 +365,10 @@ def validate_science_active_parent_projection(payload: Mapping[str, Any]) -> Non
         or gate.get("old_g6_equivalent") is not False
     ):
         raise ScienceActiveParentError("science episode gate was conflated with old G6")
-    if list(gate.get("first_frontier") or [])[:3] != [
-        "ExposureInventory",
-        "bounded_ResearchQuestion",
-        "ProtocolPin",
-    ]:
+    if list(gate.get("first_frontier") or [])[:3] not in (
+        _LEGACY_FIRST_FRONTIER,
+        _OPEN_RESEARCH_FIRST_FRONTIER,
+    ):
         raise ScienceActiveParentError("first science frontier is not pinned")
 
     switch = _mapping(payload.get("parent_scope_switch"), "parent_scope_switch")
@@ -391,6 +596,249 @@ def _verify_parent_scope_switch(
         )
 
 
+def validate_science_revision_candidate_binding(
+    payload: Mapping[str, Any],
+    *,
+    science_candidate_path: Path,
+    software_foundation_candidate_path: Path,
+) -> dict[str, Any]:
+    """Read-only preflight for candidate bytes named by a proposed projection.
+
+    Expected digests come from the proposed projection. This deliberately does
+    not pin a particular software-foundation release hash in the consumer.
+    """
+
+    validate_science_active_parent_projection(payload)
+    active = _mapping(payload.get("active_parent"), "active_parent")
+    legacy = _mapping(payload.get("legacy_parent"), "legacy_parent")
+    software_binding = _mapping(payload.get("software_foundation"), "software_foundation")
+    _verify_parent_scope_switch(payload, active, legacy)
+
+    science_candidate_path = _carrier_path(str(science_candidate_path))
+    software_foundation_candidate_path = _carrier_path(str(software_foundation_candidate_path))
+    expected_science_sha256 = _required_text(active.get("sha256"), "active_parent.sha256").lower()
+    expected_software_sha256 = _required_text(
+        software_binding.get("sha256"), "software_foundation.sha256"
+    ).lower()
+    if (
+        not science_candidate_path.is_file()
+        or _sha256(science_candidate_path) != expected_science_sha256
+    ):
+        raise ScienceActiveParentError(
+            "science candidate does not match the proposed active-parent binding"
+        )
+    if (
+        not software_foundation_candidate_path.is_file()
+        or _sha256(software_foundation_candidate_path) != expected_software_sha256
+    ):
+        raise ScienceActiveParentError(
+            "software candidate does not match the proposed foundation binding"
+        )
+
+    science_text = science_candidate_path.read_text(encoding="utf-8")
+    software_text = software_foundation_candidate_path.read_text(encoding="utf-8")
+    is_open_research_revision = _verify_science_text_contract(science_text)
+    requires_maturation_invariant = _V110_FORMAL_FUSION_VERSION_MARKER in science_text
+    expected_first_frontier = (
+        _OPEN_RESEARCH_FIRST_FRONTIER if is_open_research_revision else _LEGACY_FIRST_FRONTIER
+    )
+    gate = _mapping(payload.get("science_episode_gate"), "science_episode_gate")
+    if list(gate.get("first_frontier") or [])[:3] != expected_first_frontier:
+        raise ScienceActiveParentError("science text revision and first science frontier disagree")
+    _verify_software_foundation_contract(
+        software_binding,
+        software_text,
+        requires_maturation_invariant=requires_maturation_invariant,
+    )
+
+    declared_science_version = next(
+        (
+            line.removeprefix(_FORMAL_FUSION_VERSION_DECLARATION_PREFIX).strip()
+            for line in science_text.splitlines()
+            if line.startswith(_FORMAL_FUSION_VERSION_DECLARATION_PREFIX)
+        ),
+        None,
+    )
+    declared_software_versions = tuple(
+        line.removeprefix("版本：").strip()  # noqa: RUF001
+        for line in software_text.splitlines()
+        if line.startswith("版本：")  # noqa: RUF001
+    )
+    return {
+        "schema_version": "xinao.science_revision_candidate_binding.v1",
+        "status": "READY",
+        "science_parent_version": declared_science_version,
+        "active_parent_sha256": expected_science_sha256,
+        "software_foundation_version": (
+            declared_software_versions[0] if len(declared_software_versions) == 1 else None
+        ),
+        "software_foundation_sha256": expected_software_sha256,
+        "maturation_invariant_required": requires_maturation_invariant,
+        "completion_claim_allowed": False,
+    }
+
+
+def validate_science_transition_active_parent_binding(
+    transition_text: str,
+    *,
+    expected_active_parent_path: Path,
+    expected_active_parent_sha256: str,
+) -> dict[str, Any]:
+    """Parse and verify the transition entry's uniquely labeled parent pin."""
+
+    lines = tuple(line.strip() for line in transition_text.splitlines())
+    label_indexes = tuple(
+        index for index, line in enumerate(lines) if line == _TRANSITION_ACTIVE_PARENT_LABEL
+    )
+    if len(label_indexes) != 1:
+        raise ScienceActiveParentError(
+            "science transition entry must contain exactly one active-parent label"
+        )
+    label_index = label_indexes[0]
+    if label_index + 2 >= len(lines):
+        raise ScienceActiveParentError("science transition active-parent pin is incomplete")
+
+    raw_path = lines[label_index + 1]
+    raw_sha256 = lines[label_index + 2]
+    if len(raw_path) < 3 or not raw_path.startswith("`") or not raw_path.endswith("`"):
+        raise ScienceActiveParentError("science transition active-parent path is malformed")
+    declared_path = raw_path[1:-1]
+    if (
+        _carrier_path(declared_path).resolve()
+        != _carrier_path(str(expected_active_parent_path)).resolve()
+    ):
+        raise ScienceActiveParentError("science transition active-parent path does not match")
+
+    expected_sha256 = expected_active_parent_sha256.lower()
+    sha256_prefix = f"{_TRANSITION_SHA256_PREFIX}`"
+    if not raw_sha256.startswith(sha256_prefix) or not raw_sha256.endswith("`"):
+        raise ScienceActiveParentError("science transition active-parent SHA256 is malformed")
+    declared_sha256 = raw_sha256[len(sha256_prefix) : -1].lower()
+    if len(declared_sha256) != 64 or any(
+        character not in "0123456789abcdef" for character in declared_sha256
+    ):
+        raise ScienceActiveParentError("science transition active-parent SHA256 is malformed")
+    if declared_sha256 != expected_sha256:
+        raise ScienceActiveParentError("science transition active-parent SHA256 does not match")
+
+    return {
+        "schema_version": "xinao.science_transition_active_parent_binding.v1",
+        "status": "READY",
+        "active_parent_path": str(_carrier_path(declared_path).resolve()),
+        "active_parent_sha256": declared_sha256,
+        "completion_claim_allowed": False,
+    }
+
+
+def validate_science_archive_publication_binding(
+    archive_manifest: Mapping[str, Any],
+    *,
+    expected_active_parent_path: Path,
+    expected_active_parent_sha256: str,
+) -> dict[str, Any]:
+    """Verify the archive manifest's current publication and immutable snapshot."""
+
+    if (
+        archive_manifest.get("schema_version") != "xinao.archive-relocation-manifest.v1"
+        or archive_manifest.get("status") != "ARCHIVE_RELOCATION_VERIFIED"
+    ):
+        raise ScienceActiveParentError("science archive manifest identity is invalid")
+    publication = _mapping(
+        archive_manifest.get("current_publication"),
+        "archive_manifest.current_publication",
+    )
+    stable_spec_path = _carrier_path(
+        _required_text(
+            publication.get("stable_spec_path"),
+            "archive_manifest.current_publication.stable_spec_path",
+        )
+    )
+    expected_path = _carrier_path(str(expected_active_parent_path))
+    if stable_spec_path.resolve() != expected_path.resolve():
+        raise ScienceActiveParentError("science archive stable spec path does not match")
+
+    expected_sha256 = expected_active_parent_sha256.lower()
+    stable_spec_sha256 = _required_text(
+        publication.get("stable_spec_sha256"),
+        "archive_manifest.current_publication.stable_spec_sha256",
+    ).lower()
+    snapshot_sha256 = _required_text(
+        publication.get("versioned_snapshot_sha256"),
+        "archive_manifest.current_publication.versioned_snapshot_sha256",
+    ).lower()
+    if stable_spec_sha256 != expected_sha256 or snapshot_sha256 != expected_sha256:
+        raise ScienceActiveParentError("science archive publication SHA256 does not match")
+
+    snapshot_path = _carrier_path(
+        _required_text(
+            publication.get("versioned_snapshot_path"),
+            "archive_manifest.current_publication.versioned_snapshot_path",
+        )
+    )
+    if not snapshot_path.is_file() or _sha256(snapshot_path) != expected_sha256:
+        raise ScienceActiveParentError("science archive snapshot is missing or drifted")
+
+    return {
+        "schema_version": "xinao.science_archive_publication_binding.v1",
+        "status": "READY",
+        "stable_spec_path": str(stable_spec_path.resolve()),
+        "stable_spec_sha256": stable_spec_sha256,
+        "versioned_snapshot_path": str(snapshot_path.resolve()),
+        "versioned_snapshot_sha256": snapshot_sha256,
+        "completion_claim_allowed": False,
+    }
+
+
+def validate_science_checkpoint_active_parent_binding(
+    checkpoint: Mapping[str, Any],
+    *,
+    expected_projection_path: Path,
+    expected_active_parent_path: Path,
+    expected_active_parent_sha256: str,
+) -> dict[str, Any]:
+    """Verify the non-authoritative checkpoint against the published identities."""
+
+    if checkpoint.get("schema_version") != "xinao.codex_session_checkpoint.v2":
+        raise ScienceActiveParentError("science checkpoint schema is invalid")
+    parent_scope = _mapping(checkpoint.get("parent_scope"), "checkpoint.parent_scope")
+    if (
+        parent_scope.get("authority") is not False
+        or parent_scope.get("active_parent_id") != "XINAO_SCIENCE_PROTOCOL_ACTIVE"
+        or parent_scope.get("active_parent_status") != "CURRENT_ACTIVE_PARENT"
+        or parent_scope.get("parent_scope_switch_status") != "PERFORMED"
+    ):
+        raise ScienceActiveParentError("science checkpoint parent scope is invalid")
+    if (
+        _carrier_path(
+            _required_text(parent_scope.get("projection_path"), "checkpoint.projection_path")
+        ).resolve()
+        != _carrier_path(str(expected_projection_path)).resolve()
+    ):
+        raise ScienceActiveParentError("science checkpoint projection path does not match")
+    if (
+        _carrier_path(
+            _required_text(parent_scope.get("active_parent_path"), "checkpoint.active_parent_path")
+        ).resolve()
+        != _carrier_path(str(expected_active_parent_path)).resolve()
+    ):
+        raise ScienceActiveParentError("science checkpoint active-parent path does not match")
+    active_parent_sha256 = _required_text(
+        parent_scope.get("active_parent_sha256"),
+        "checkpoint.active_parent_sha256",
+    ).lower()
+    if active_parent_sha256 != expected_active_parent_sha256.lower():
+        raise ScienceActiveParentError("science checkpoint active-parent SHA256 does not match")
+
+    return {
+        "schema_version": "xinao.science_checkpoint_active_parent_binding.v1",
+        "status": "READY",
+        "projection_path": str(_carrier_path(str(expected_projection_path)).resolve()),
+        "active_parent_path": str(_carrier_path(str(expected_active_parent_path)).resolve()),
+        "active_parent_sha256": active_parent_sha256,
+        "completion_claim_allowed": False,
+    }
+
+
 def load_science_active_parent(
     projection_path: Path = SCIENCE_ACTIVE_PARENT_PROJECTION_PATH,
 ) -> dict[str, Any]:
@@ -398,11 +846,14 @@ def load_science_active_parent(
 
     projection_path = _carrier_path(str(projection_path))
     try:
-        payload = json.loads(projection_path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError) as exc:
+        projection_bytes = projection_path.read_bytes()
+        observed_projection_sha256 = hashlib.sha256(projection_bytes).hexdigest()
+        payload = json.loads(projection_bytes.decode("utf-8"))
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
         raise ScienceActiveParentError(
             f"cannot load science active-parent projection: {projection_path}"
         ) from exc
+    _verify_committed_promotion_visibility(projection_path, payload)
     validate_science_active_parent_projection(payload)
     _verify_parent_scope_switch(
         payload,
@@ -427,12 +878,15 @@ def load_science_active_parent(
             raise ScienceActiveParentError(f"{key} source hash drifted: {path}")
 
     science_text = _carrier_path(str(payload["active_parent"]["path"])).read_text(encoding="utf-8")
-    for marker in _REQUIRED_SCIENCE_MARKERS:
-        if marker not in science_text:
-            raise ScienceActiveParentError(f"science specification marker missing: {marker}")
-    for marker in _FORBIDDEN_CURRENT_MARKERS:
-        if marker in science_text:
-            raise ScienceActiveParentError(f"candidate marker remains active: {marker}")
+    is_open_research_revision = _verify_science_text_contract(science_text)
+    expected_first_frontier = (
+        _OPEN_RESEARCH_FIRST_FRONTIER if is_open_research_revision else _LEGACY_FIRST_FRONTIER
+    )
+    if (
+        list(payload["science_episode_gate"].get("first_frontier") or [])[:3]
+        != expected_first_frontier
+    ):
+        raise ScienceActiveParentError("science text revision and first science frontier disagree")
 
     entry_text = _carrier_path(str(payload["stable_entry"]["path"])).read_text(encoding="utf-8")
     if (
@@ -444,17 +898,17 @@ def load_science_active_parent(
     software_text = _carrier_path(str(payload["software_foundation"]["path"])).read_text(
         encoding="utf-8"
     )
-    required_software_markers = (
-        "科学 active-parent",
-        "LEGACY_PARENT_G0_G8",
-        "不取得当前父目标或全局启动门地位",
+    _verify_software_foundation_contract(
+        _mapping(payload.get("software_foundation"), "software_foundation"),
+        software_text,
+        requires_maturation_invariant=(_V110_FORMAL_FUSION_VERSION_MARKER in science_text),
     )
-    if payload["software_foundation"][
-        "relationship"
-    ] != "REUSABLE_INSTRUMENT_FOUNDATION_NOT_PARENT_GATE" or any(
-        marker not in software_text for marker in required_software_markers
-    ):
-        raise ScienceActiveParentError("software foundation still has ambiguous parent authority")
+
+    if _sha256(projection_path) != observed_projection_sha256:
+        raise ScienceActiveParentError(
+            "science active-parent projection changed while it was being loaded"
+        )
+    _verify_committed_promotion_visibility(projection_path, payload)
 
     return {
         "schema_version": "xinao.science_active_parent_resolution.v1",
@@ -475,4 +929,8 @@ __all__ = [
     "load_science_active_parent",
     "resolve_science_carrier_path",
     "validate_science_active_parent_projection",
+    "validate_science_archive_publication_binding",
+    "validate_science_checkpoint_active_parent_binding",
+    "validate_science_revision_candidate_binding",
+    "validate_science_transition_active_parent_binding",
 ]

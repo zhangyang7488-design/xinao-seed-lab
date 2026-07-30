@@ -5,7 +5,7 @@ agent platform, daemon, scheduler, or approval gate.
 
 ## Shape
 
-- `catalog.json` inventories 154 specifications across live and static suites (including 13 dynamic
+- `catalog.json` inventories 156 specifications across live and static suites (including 13 dynamic
   orchestration execution-shape cases owned under `evals/dynamic_orchestration`).
 - `context_intent_alignment/cases.yaml` is the canonical live behavior dataset. Promptfoo reads it
   directly, so expected behavior is not duplicated in the config.
@@ -35,6 +35,14 @@ agent platform, daemon, scheduler, or approval gate.
   fact/blast-radius axes. It helps
   map incomplete examples to parent intent and mature capabilities; it is not a score, fixed ladder,
   gate, authority source, or replacement for the live user context.
+- Maturation lifecycle regressions
+  (`REG_FRESH_WINDOW_DUAL_FRONTIER_CAPABILITY_MATURATION_PRESERVES_RESEARCH`,
+  `REG_MATURATION_VERDICT_SYMMETRY_NOT_REQUIRED_VS_UNDECIDABLE`) require pre-design local verdict,
+  post-probe reevaluation, and post-promotion refusal of silent hand-assembly regression. They reject
+  Foundation total gates, unrelated platforms, frozen research judgment, implicit Leg B / second Owner,
+  infinite pre-trigger waits, and treating text publish or Skill markdown as Skill already effective.
+  These cases are candidate regression fixtures only; they do not activate a Skill or close a live
+  publication transaction.
 
 ## Commands
 
@@ -95,8 +103,8 @@ single suite (`context`, `proactive`, or `orchestration`).
 Static incident specifications remain specifications until their real environment supplies runtime
 evidence. A green JSON fixture never closes a runtime incident.
 
-Live catalog accounting (not a runtime verification claim): capability 1, smoke 82, core 112, deep 118,
-context 94, proactive 6, reuse 4, orchestration 13.
+Live catalog accounting (not a runtime verification claim): capability 1, smoke 84, core 114, deep 120,
+context 96, proactive 6, reuse 4, orchestration 13.
 
 ## Why the other installed software is not always active
 

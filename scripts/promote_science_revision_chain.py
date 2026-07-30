@@ -1,9 +1,12 @@
 #!/usr/bin/env python3
-"""Atomically promote an append-only science revision chain into the live projection.
+"""CAS-publish an append-only science revision without rewriting ParentScopeSwitch.
 
-The current science text remains the human authority. This tool only updates the
-non-authoritative active-parent projection after every immutable revision evidence
-file and its task-run event already exist and pass the strict consumer.
+The science active-parent projection is non-authoritative, but it is the strict
+runtime consumer binding.  This publisher therefore keeps a durable marker and
+journal while replacing the active-parent source, projection, archive manifest,
+and transition pointer.  Tool-glue is published by its own transaction first;
+the v1.10 path consumes only its exact live postimage pin and never implements a
+second tool-glue publication engine.
 """
 
 from __future__ import annotations
@@ -12,15 +15,164 @@ import argparse
 import hashlib
 import json
 import os
-import shutil
+import stat
 import tempfile
+from collections.abc import Mapping, Sequence
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+import portalocker
 from xinao.science.active_parent import (
     SCIENCE_ACTIVE_PARENT_PROJECTION_PATH,
     load_science_active_parent,
+    validate_science_archive_publication_binding,
+    validate_science_revision_candidate_binding,
+    validate_science_transition_active_parent_binding,
 )
+
+TRANSACTION_SCHEMA = "xinao.science_revision_transaction.v1"
+MARKER_SCHEMA = "xinao.science_revision_marker.v2"
+RESULT_SCHEMA = "xinao.science_revision_publication_result.v2"
+V110_VERSION_MARKER = "版本：正式融合稿 v1.10"
+DEFAULT_TOOL_GLUE_AUTHORITY_PATH = Path(
+    r"C:\Users\xx363\Desktop\主线\工具胶水宪法\软件工具胶水宪法_当前有效.txt"
+)
+DEFAULT_TOOL_GLUE_VERSION = "v3.4"
+DEFAULT_TOOL_GLUE_V34_SHA256 = "eb6677d9cf87d152b91b119f92488e90969145c0dabfc4cb0e3b1d0437643703"
+
+MATERIALIZING = "MATERIALIZING"
+PREPARED = "PREPARED"
+APPLYING = "APPLYING"
+COMMITTED = "COMMITTED"
+ROLLING_BACK = "ROLLING_BACK"
+ROLLED_BACK = "ROLLED_BACK"
+ROLLED_BACK_AFTER_CRASH = "ROLLED_BACK_AFTER_CRASH"
+
+MARKER_PHASE_PRE_JOURNAL = "PRE_JOURNAL"
+MARKER_PHASE_JOURNAL_BOUND = "JOURNAL_BOUND"
+
+# Recovery trust boundary (honest, non-cryptographic):
+# recover_interrupted_promotion is scoped to crash / partial-corruption recovery and
+# rejection of journals that are *inconsistent* with sealed projection identity,
+# object topology, or path/hash pins under the same-user filesystem trust boundary.
+# Existing thin anchors (projection path argument, marker identity binding, sealed
+# projection preimage / journal topology pins) rebind the original live object graph
+# for those inconsistent cases without a second truth source. They do **not** resist
+# an actor that can coherently rewrite every marker, journal, rollback preimage, and
+# identity pin for that projection. No journal signing daemon or second control plane.
+RECOVERY_TRUST_BOUNDARY = "same-user-filesystem-crash-and-inconsistent-substitution"
+
+# Immutable identity covers every live/rollback/candidate path and hash pin plus
+# the transaction directory and projection identity. Paths are resolved strings.
+_TRANSACTION_IDENTITY_PATH_FIELDS = (
+    "projection_path",
+    "projection_rollback_copy",
+    "projection_candidate_path",
+    "active_parent_path",
+    "active_parent_rollback_copy",
+    "active_parent_candidate_path",
+    "transition_path",
+    "transition_rollback_copy",
+    "transition_candidate_path",
+    "archive_manifest_path",
+    "archive_manifest_rollback_copy",
+    "archive_manifest_candidate_path",
+    "archive_snapshot_path",
+)
+_TRANSACTION_IDENTITY_HASH_FIELDS = (
+    "projection_preimage_sha256",
+    "projection_candidate_sha256",
+    "active_parent_preimage_sha256",
+    "active_parent_candidate_sha256",
+    "transition_preimage_sha256",
+    "transition_candidate_sha256",
+    "archive_manifest_preimage_sha256",
+    "archive_manifest_candidate_sha256",
+    "archive_snapshot_sha256",
+)
+
+# Windows FILE_ATTRIBUTE_REPARSE_POINT; also used as a portable reparse probe bit.
+_FILE_ATTRIBUTE_REPARSE_POINT = 0x400
+
+
+class SciencePublicationError(ValueError):
+    """Fail-closed publisher error with a machine-readable receipt."""
+
+    def __init__(
+        self,
+        code: str,
+        message: str,
+        *,
+        defects: Sequence[Mapping[str, Any]] | None = None,
+        receipt: Mapping[str, Any] | None = None,
+    ) -> None:
+        super().__init__(message)
+        self.code = code
+        self.receipt = {
+            "schema_version": RESULT_SCHEMA,
+            "status": "FAILED",
+            "error_code": code,
+            "error": message,
+            "defects": [dict(defect) for defect in defects or ()],
+            **dict(receipt or {}),
+            "completion_claim_allowed": False,
+        }
+
+
+@dataclass
+class _PromotionLease:
+    handle: Any
+    path: Path
+
+    def release(self) -> None:
+        if self.handle.closed:
+            return
+        try:
+            portalocker.unlock(self.handle)
+        finally:
+            self.handle.close()
+        # The promotion guard is a durable, empty, ordinary-file lock carrier.
+        # Never unlink on release: concurrent open/lock races against delete leave
+        # TOCTOU holes, and preflight may legitimately leave a stable 0B guard.
+
+
+@dataclass(frozen=True)
+class _SealedPreimage:
+    sha256: str
+    original_mode: int
+    seal_mode: int
+    path: Path
+
+
+@dataclass(frozen=True)
+class _PreparedFileTarget:
+    path: Path
+    preimage_sha256: str
+    candidate_path: Path
+    candidate_sha256: str
+
+
+@dataclass(frozen=True)
+class _PreparedPromotion:
+    projection: dict[str, Any]
+    projection_preimage: bytes
+    projection_preimage_sha256: str
+    projection_candidate: bytes
+    projection_candidate_sha256: str
+    active_parent_path: Path
+    active_parent_preimage_sha256: str
+    active_parent_candidate_path: Path
+    active_parent_candidate_sha256: str
+    revision_count: int
+    v110: bool
+    candidate_binding: dict[str, Any] | None
+    transition: _PreparedFileTarget | None
+    transition_preimage_active_parent_sha256: str | None
+    transition_candidate_binding: dict[str, Any] | None
+    archive_manifest: _PreparedFileTarget | None
+    archive_preimage_binding: dict[str, Any] | None
+    archive_candidate_binding: dict[str, Any] | None
 
 
 def _sha256(path: Path) -> str:
@@ -31,6 +183,19 @@ def _sha256(path: Path) -> str:
     return digest.hexdigest()
 
 
+def _sha256_bytes(raw: bytes) -> str:
+    return hashlib.sha256(raw).hexdigest()
+
+
+def _normalized_sha256(value: str, field: str) -> str:
+    normalized = value.strip().lower()
+    if len(normalized) != 64 or any(
+        character not in "0123456789abcdef" for character in normalized
+    ):
+        raise SciencePublicationError("INVALID_SHA256", f"{field} must be a SHA256 hex digest")
+    return normalized
+
+
 def _load_json(path: Path) -> dict[str, Any]:
     payload = json.loads(path.read_text(encoding="utf-8"))
     if not isinstance(payload, dict):
@@ -38,7 +203,45 @@ def _load_json(path: Path) -> dict[str, Any]:
     return payload
 
 
+def _json_bytes(payload: Mapping[str, Any]) -> bytes:
+    return (json.dumps(payload, ensure_ascii=False, indent=2) + "\n").encode("utf-8")
+
+
+def _transition_nonpin_lines(text: str) -> tuple[str, ...]:
+    """Return exact transition lines with only the labeled parent pin masked."""
+
+    lines = list(text.splitlines())
+    label_indexes = [
+        index for index, line in enumerate(lines) if line.strip() == "唯一科学父目标："
+    ]
+    if len(label_indexes) != 1 or label_indexes[0] + 2 >= len(lines):
+        raise ValueError("science transition active-parent pin is incomplete")
+    label_index = label_indexes[0]
+    lines[label_index + 1] = "<ACTIVE_PARENT_PATH>"
+    lines[label_index + 2] = "<ACTIVE_PARENT_SHA256>"
+    return tuple(lines)
+
+
+def _archive_preservation_view(payload: Mapping[str, Any]) -> dict[str, Any]:
+    """Mask only the three archive fields a science revision may advance."""
+
+    view = dict(payload)
+    publication = view.get("current_publication")
+    if not isinstance(publication, Mapping):
+        raise ValueError("science archive current_publication is missing")
+    preserved_publication = dict(publication)
+    for field in (
+        "stable_spec_sha256",
+        "versioned_snapshot_path",
+        "versioned_snapshot_sha256",
+    ):
+        preserved_publication.pop(field, None)
+    view["current_publication"] = preserved_publication
+    return view
+
+
 def _revision_entry(evidence_path: Path, event_ref: str) -> dict[str, str]:
+    evidence_path = evidence_path.resolve()
     evidence = _load_json(evidence_path)
     if (
         evidence.get("schema_version") != "xinao.science_revision.v1"
@@ -47,6 +250,8 @@ def _revision_entry(evidence_path: Path, event_ref: str) -> dict[str, str]:
         or not evidence["run_id"].strip()
     ):
         raise ValueError(f"unsupported or incomplete science revision evidence: {evidence_path}")
+    if not event_ref or "#event_id=" not in event_ref:
+        raise ValueError("science revision event ref must contain an event identity")
     return {
         "status": "APPLIED",
         "run_id": evidence["run_id"],
@@ -56,82 +261,2605 @@ def _revision_entry(evidence_path: Path, event_ref: str) -> dict[str, str]:
     }
 
 
+def _target_mode(path: Path, fallback: Path | None = None) -> int:
+    if path.exists():
+        return stat.S_IMODE(path.stat().st_mode)
+    if fallback is not None and fallback.exists():
+        return stat.S_IMODE(fallback.stat().st_mode)
+    return stat.S_IREAD | stat.S_IWRITE
+
+
+def _atomic_replace_bytes(path: Path, raw: bytes, *, installed_mode: int | None = None) -> None:
+    path = path.resolve()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    effective_mode = installed_mode if installed_mode is not None else _target_mode(path)
+    descriptor, temporary_name = tempfile.mkstemp(
+        prefix=f"{path.name}.", suffix=".replace", dir=path.parent
+    )
+    temporary_path = Path(temporary_name)
+    try:
+        with os.fdopen(descriptor, "wb") as stream:
+            stream.write(raw)
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.chmod(temporary_path, effective_mode | stat.S_IWRITE)
+        if path.exists():
+            os.chmod(path, _target_mode(path) | stat.S_IWRITE)
+        os.replace(temporary_path, path)
+        os.chmod(path, effective_mode)
+    finally:
+        temporary_path.unlink(missing_ok=True)
+
+
+def _write_json_atomic(path: Path, payload: Mapping[str, Any]) -> None:
+    _atomic_replace_bytes(path, _json_bytes(payload))
+
+
+def _replace_file(source: Path, target: Path, *, installed_mode: int | None = None) -> None:
+    source = source.resolve()
+    target = target.resolve()
+    if not source.is_file():
+        raise FileNotFoundError(f"replacement source is missing: {source}")
+    effective_mode = installed_mode
+    if effective_mode is None:
+        effective_mode = _target_mode(target, source)
+    _atomic_replace_bytes(target, source.read_bytes(), installed_mode=effective_mode)
+
+
+def _unlink_temporary(path: Path) -> None:
+    """Unlink a staging file even when a readonly preimage mode was applied.
+
+    Windows refuses to delete files whose read-only attribute is set. Rollback
+    preimages are sealed without write bits, so restore staging temps must clear
+    that bit before unlink or a successful restore still fails closed.
+    """
+
+    try:
+        if path.exists():
+            os.chmod(path, stat.S_IMODE(path.stat().st_mode) | stat.S_IWRITE)
+    except OSError:
+        # Best-effort; the subsequent unlink either succeeds or surfaces the error.
+        pass
+    path.unlink(missing_ok=True)
+
+
+def _restore_file(
+    source: Path,
+    target: Path,
+    *,
+    installed_mode: int | None = None,
+) -> None:
+    source = source.resolve()
+    target = target.resolve()
+    descriptor, temporary_name = tempfile.mkstemp(
+        prefix=f"{target.name}.", suffix=".restore", dir=target.parent
+    )
+    os.close(descriptor)
+    temporary_path = Path(temporary_name)
+    # Live-target mode is independent of the readonly seal applied to rollback
+    # copies. Journal-recorded original mode wins; legacy journals fall back to
+    # the sealed archive mode.
+    if installed_mode is None:
+        installed_mode = stat.S_IMODE(source.stat().st_mode)
+    else:
+        installed_mode = stat.S_IMODE(installed_mode)
+    primary: BaseException | None = None
+    cleanup: BaseException | None = None
+    try:
+        temporary_path.write_bytes(source.read_bytes())
+        # Keep the staging temp writable for Windows unlink; only the installed
+        # target receives the restored original mode.
+        os.chmod(temporary_path, installed_mode | stat.S_IWRITE)
+        _replace_file(
+            temporary_path,
+            target,
+            installed_mode=installed_mode,
+        )
+    except BaseException as exc:  # preserve primary and cleanup failures together
+        primary = exc
+    try:
+        _unlink_temporary(temporary_path)
+    except BaseException as exc:
+        cleanup = exc
+    failures = [failure for failure in (primary, cleanup) if failure is not None]
+    if len(failures) == 1:
+        raise failures[0]
+    if failures:
+        raise ExceptionGroup("science rollback restore failed", failures)
+
+
+def _validate_preimages(
+    specs: Sequence[tuple[str, Path, Path, str, int | None]],
+) -> list[RuntimeError]:
+    errors: list[RuntimeError] = []
+    for label, source, _target, expected, _mode in specs:
+        if not source.is_file() or _sha256(source) != expected:
+            errors.append(RuntimeError(f"{label} rollback preimage is missing or drifted"))
+    return errors
+
+
+def _restore_preimages(
+    specs: Sequence[tuple[str, Path, Path, str, int | None]],
+) -> list[BaseException]:
+    errors: list[BaseException] = []
+    for label, source, target, expected, original_mode in specs:
+        if not source.is_file() or _sha256(source) != expected:
+            errors.append(RuntimeError(f"{label} rollback preimage is missing or drifted"))
+            continue
+        try:
+            _restore_file(source, target, installed_mode=original_mode)
+        except BaseException as exc:
+            errors.append(exc)
+    return errors
+
+
+def _is_reparse_path(path: Path) -> bool:
+    try:
+        st = path.lstat()
+    except OSError:
+        return False
+    if path.is_symlink():
+        return True
+    attrs = int(getattr(st, "st_file_attributes", 0) or 0)
+    return bool(attrs & _FILE_ATTRIBUTE_REPARSE_POINT)
+
+
+def _paths_share_inode(left: Path, right: Path) -> bool:
+    """True when both paths resolve to the same openable file identity."""
+
+    try:
+        return left.exists() and right.exists() and left.samefile(right)
+    except OSError:
+        return False
+
+
+def _paths_alias(left: Path, right: Path) -> bool:
+    """True when paths are the same resolved name or share openable file identity.
+
+    Path equality catches reparse-free renames of the same location. samefile/
+    hardlink detection catches multi-name carriers that would let chmod/write on
+    one name mutate another authority or rollback object.
+    """
+
+    left_r = left.resolve()
+    right_r = right.resolve()
+    if left_r == right_r:
+        return True
+    return _paths_share_inode(left_r, right_r)
+
+
+def _assert_independent_ordinary_file(path: Path, *, role: str) -> os.stat_result:
+    """Reject reparse points, non-files, and multi-link/shared-inode carriers."""
+
+    if _is_reparse_path(path):
+        raise FileExistsError(f"{role} is a reparse point: {path}")
+    try:
+        st = path.lstat()
+    except OSError as exc:
+        raise FileNotFoundError(f"{role} is unreadable: {path}") from exc
+    if not path.is_file() or stat.S_ISDIR(st.st_mode):
+        raise FileExistsError(f"{role} is not a regular file: {path}")
+    if int(st.st_nlink) != 1:
+        raise FileExistsError(f"{role} is a hardlink or shared inode: {path}")
+    return st
+
+
+def _assert_stable_guard_carrier(lease_path: Path) -> None:
+    """Require an absent path or a persistent empty ordinary-file lock carrier."""
+
+    if not lease_path.exists():
+        return
+    if _is_reparse_path(lease_path):
+        raise RuntimeError("science promotion guard is a reparse point")
+    try:
+        st = lease_path.lstat()
+    except OSError as exc:
+        raise RuntimeError("science promotion guard is unreadable") from exc
+    if not lease_path.is_file() or stat.S_ISDIR(st.st_mode):
+        raise RuntimeError("science promotion guard is not a regular file")
+    if st.st_size != 0:
+        raise RuntimeError("science promotion guard is foreign or tampered")
+    if int(st.st_nlink) != 1:
+        raise RuntimeError("science promotion guard is a hardlink or shared inode")
+
+
+def _revalidate_guard_after_open(lease_path: Path, handle: Any) -> None:
+    """Re-check ordinary/empty/single-link carrier after open and after lock."""
+
+    _assert_stable_guard_carrier(lease_path)
+    try:
+        st = os.fstat(handle.fileno())
+    except OSError as exc:
+        raise RuntimeError("science promotion guard is unreadable") from exc
+    if int(st.st_size) != 0:
+        raise RuntimeError("science promotion guard is foreign or tampered")
+    if int(st.st_nlink) != 1:
+        raise RuntimeError("science promotion guard is a hardlink or shared inode")
+    handle.seek(0, os.SEEK_END)
+    if handle.tell() != 0:
+        raise RuntimeError("science promotion guard is foreign or tampered")
+
+
+def _seal_preimage(target: Path, archive: Path) -> _SealedPreimage:
+    """Seal a readonly rollback copy; original live mode is recorded separately.
+
+    Exact-hash idempotent: an existing archive whose digest matches the live
+    target is accepted as an already-materialized preimage (crash convergence).
+
+    Seals must never share an inode with the live target or any other name:
+    chmod/write on a hardlinked archive would mutate live mode/content during
+    MATERIALIZING. Reparse points and multi-link carriers fail closed before any
+    mode or content mutation.
+    """
+
+    target = target.resolve()
+    archive = archive.resolve()
+    if not target.is_file() or _is_reparse_path(target):
+        raise FileNotFoundError(f"rollback source is missing or not a regular file: {target}")
+    original_mode = stat.S_IMODE(target.stat().st_mode)
+    seal_mode = original_mode & ~stat.S_IWRITE
+    raw = target.read_bytes()
+    digest = _sha256_bytes(raw)
+    if archive.exists():
+        _assert_independent_ordinary_file(archive, role="rollback copy")
+        if _paths_share_inode(archive, target):
+            raise FileExistsError(
+                f"rollback copy shares inode/samefile with live target: {archive}"
+            )
+        existing = _sha256(archive)
+        if existing != digest:
+            raise FileExistsError(f"rollback copy already exists with divergent content: {archive}")
+        # Converge seal mode without mutating live targets (identity already proven independent).
+        os.chmod(archive, seal_mode | stat.S_IWRITE)
+        os.chmod(archive, seal_mode)
+        _assert_independent_ordinary_file(archive, role="rollback copy")
+        if _paths_share_inode(archive, target):
+            raise FileExistsError(
+                f"rollback copy shares inode/samefile with live target: {archive}"
+            )
+        return _SealedPreimage(
+            sha256=digest,
+            original_mode=original_mode,
+            seal_mode=seal_mode,
+            path=archive,
+        )
+    archive.parent.mkdir(parents=True, exist_ok=True)
+    _atomic_replace_bytes(
+        archive,
+        raw,
+        installed_mode=seal_mode,
+    )
+    _assert_independent_ordinary_file(archive, role="rollback copy")
+    if _paths_share_inode(archive, target):
+        raise RuntimeError(f"rollback copy shares inode/samefile with live target: {archive}")
+    if _sha256(archive) != digest:
+        raise RuntimeError(f"rollback copy failed readback: {archive}")
+    return _SealedPreimage(
+        sha256=digest,
+        original_mode=original_mode,
+        seal_mode=seal_mode,
+        path=archive,
+    )
+
+
+def _promotion_marker_path(projection_path: Path) -> Path:
+    return projection_path.with_name(f"{projection_path.name}.promotion.lock")
+
+
+def _promotion_lease_path(projection_path: Path) -> Path:
+    return projection_path.with_name(f"{projection_path.name}.promotion.guard")
+
+
+def _acquire_promotion_lease(projection_path: Path) -> _PromotionLease:
+    lease_path = _promotion_lease_path(projection_path.resolve())
+    lease_path.parent.mkdir(parents=True, exist_ok=True)
+    # Persistent empty ordinary-file carrier. Non-empty / foreign / reparse / multi-link fail closed.
+    _assert_stable_guard_carrier(lease_path)
+    handle = lease_path.open("a+b")
+    try:
+        # Revalidate after open (ordinary, non-reparse, 0B, single-link) before lock.
+        _revalidate_guard_after_open(lease_path, handle)
+        portalocker.lock(handle, portalocker.LOCK_EX | portalocker.LOCK_NB)
+        # Revalidate after lock: close TOCTOU windows against hardlink/reparse swap.
+        _revalidate_guard_after_open(lease_path, handle)
+    except portalocker.exceptions.LockException as exc:
+        handle.close()
+        raise RuntimeError("science promotion lease is still owned") from exc
+    except BaseException:
+        handle.close()
+        raise
+    return _PromotionLease(handle=handle, path=lease_path)
+
+
+def _default_transaction_directory(projection_path: Path, rollback_copy: Path) -> Path:
+    return rollback_copy.parent / f"{projection_path.name}.transaction"
+
+
+def _journal_path(transaction_directory: Path) -> Path:
+    return transaction_directory.resolve() / "transaction.v1.json"
+
+
+def _assert_hash(path: Path, expected: str, label: str) -> None:
+    if not path.is_file() or _sha256(path) != expected:
+        raise RuntimeError(f"{label} target does not match prepared candidate")
+
+
+def _existing_chain(projection: Mapping[str, Any]) -> list[dict[str, Any]]:
+    raw_chain = projection.get("science_revision_chain")
+    if raw_chain in (None, []):
+        return []
+    if not isinstance(raw_chain, list) or not all(isinstance(entry, dict) for entry in raw_chain):
+        raise ValueError("live projection science revision chain is invalid")
+    return [dict(entry) for entry in raw_chain]
+
+
+def _append_revision_entries(
+    projection: dict[str, Any],
+    evidence_paths: Sequence[Path],
+    event_refs: Sequence[str],
+) -> int:
+    additions = [
+        _revision_entry(evidence_path, event_ref)
+        for evidence_path, event_ref in zip(evidence_paths, event_refs, strict=True)
+    ]
+    chain = _existing_chain(projection)
+    identities = {
+        (
+            str(entry.get("run_id")),
+            str(entry.get("event_ref")),
+            str(entry.get("revision_evidence_ref")),
+        )
+        for entry in chain
+    }
+    addition_identities = [
+        (entry["run_id"], entry["event_ref"], entry["revision_evidence_ref"]) for entry in additions
+    ]
+    if len(set(addition_identities)) != len(addition_identities) or any(
+        identity in identities for identity in addition_identities
+    ):
+        raise ValueError("science revision promotion duplicates an existing chain identity")
+    projection["science_revision_chain"] = [*chain, *additions]
+    return len(projection["science_revision_chain"])
+
+
+def _is_v110_candidate(path: Path | None) -> bool:
+    if path is None or not path.is_file():
+        return False
+    try:
+        text = path.read_text(encoding="utf-8")
+    except UnicodeDecodeError:
+        return False
+    return sum(line == V110_VERSION_MARKER for line in text.splitlines()) == 1
+
+
+def _dependency_defect(code: str, message: str, **observed: Any) -> dict[str, Any]:
+    return {"code": code, "message": message, **observed}
+
+
+def _prepare_promotion(
+    *,
+    projection_path: Path,
+    evidence_paths: Sequence[Path],
+    event_refs: Sequence[str],
+    expected_projection_sha256: str | None,
+    candidate_active_parent: Path | None,
+    expected_candidate_active_parent_sha256: str | None,
+    expected_active_parent_sha256: str | None,
+    science_episode_gate: Mapping[str, Any] | None,
+    tool_glue_authority_path: Path | None,
+    expected_tool_glue_authority_sha256: str | None,
+    expected_tool_glue_version: str,
+    transition_path: Path | None,
+    transition_candidate: Path | None,
+    expected_transition_sha256: str | None,
+    expected_transition_preimage_active_parent_sha256: str | None,
+    transition_rollback_copy: Path | None,
+    archive_manifest_path: Path | None,
+    archive_manifest_candidate: Path | None,
+    expected_archive_manifest_sha256: str | None,
+    archive_manifest_rollback_copy: Path | None,
+) -> _PreparedPromotion:
+    projection_path = projection_path.resolve()
+    projection_preimage = projection_path.read_bytes()
+    projection_preimage_sha256 = _sha256_bytes(projection_preimage)
+    if expected_projection_sha256 is not None:
+        expected_projection = _normalized_sha256(
+            expected_projection_sha256, "expected_projection_sha256"
+        )
+        if projection_preimage_sha256 != expected_projection:
+            raise ValueError("science active-parent projection changed before promotion")
+    projection = json.loads(projection_preimage.decode("utf-8"))
+    if not isinstance(projection, dict):
+        raise ValueError("science active-parent projection root must be an object")
+
+    revision_count = _append_revision_entries(
+        projection,
+        [path.resolve() for path in evidence_paths],
+        list(event_refs),
+    )
+    if science_episode_gate is not None:
+        projection["science_episode_gate"] = dict(science_episode_gate)
+
+    active_binding = projection.get("active_parent")
+    if not isinstance(active_binding, dict) or not isinstance(active_binding.get("path"), str):
+        raise ValueError("science projection active_parent binding is incomplete")
+    active_parent_path = Path(active_binding["path"]).resolve()
+    if not active_parent_path.is_file():
+        raise FileNotFoundError(f"active-parent source is missing: {active_parent_path}")
+    active_parent_preimage_sha256 = _sha256(active_parent_path)
+    if expected_active_parent_sha256 is not None:
+        expected_parent = _normalized_sha256(
+            expected_active_parent_sha256, "expected_active_parent_sha256"
+        )
+        if active_parent_preimage_sha256 != expected_parent:
+            raise ValueError("science active-parent source changed before promotion")
+
+    candidate_parent_path = (
+        candidate_active_parent.resolve()
+        if candidate_active_parent is not None
+        else active_parent_path
+    )
+    if not candidate_parent_path.is_file():
+        raise FileNotFoundError(f"science candidate is missing: {candidate_parent_path}")
+    candidate_parent_sha256 = _sha256(candidate_parent_path)
+    if expected_candidate_active_parent_sha256 is not None:
+        expected_candidate = _normalized_sha256(
+            expected_candidate_active_parent_sha256,
+            "expected_candidate_active_parent_sha256",
+        )
+        if candidate_parent_sha256 != expected_candidate:
+            raise ValueError("science candidate changed before promotion")
+    active_binding["sha256"] = candidate_parent_sha256
+
+    v110 = _is_v110_candidate(candidate_active_parent)
+    candidate_binding: dict[str, Any] | None = None
+    prepared_transition: _PreparedFileTarget | None = None
+    transition_candidate_binding: dict[str, Any] | None = None
+    transition_preimage_parent_sha256: str | None = None
+    prepared_archive: _PreparedFileTarget | None = None
+    archive_preimage_binding: dict[str, Any] | None = None
+    archive_candidate_binding: dict[str, Any] | None = None
+    if v110:
+        defects: list[dict[str, Any]] = []
+        if expected_projection_sha256 is None:
+            defects.append(
+                _dependency_defect(
+                    "SCIENCE_PROJECTION_PREIMAGE_UNBOUND",
+                    "v1.10 publication requires an exact projection preimage",
+                )
+            )
+        if expected_active_parent_sha256 is None:
+            defects.append(
+                _dependency_defect(
+                    "SCIENCE_PARENT_PREIMAGE_UNBOUND",
+                    "v1.10 publication requires the exact v1.9 preimage",
+                )
+            )
+        if expected_candidate_active_parent_sha256 is None:
+            defects.append(
+                _dependency_defect(
+                    "SCIENCE_CANDIDATE_UNBOUND",
+                    "v1.10 publication requires the exact candidate digest",
+                )
+            )
+        for value, code, message in (
+            (
+                transition_path,
+                "SCIENCE_TRANSITION_TARGET_MISSING",
+                "v1.10 publication requires the current transition target",
+            ),
+            (
+                transition_candidate,
+                "SCIENCE_TRANSITION_CANDIDATE_MISSING",
+                "v1.10 publication requires a sealed transition candidate",
+            ),
+            (
+                expected_transition_sha256,
+                "SCIENCE_TRANSITION_PREIMAGE_UNBOUND",
+                "v1.10 publication requires the exact transition preimage",
+            ),
+            (
+                expected_transition_preimage_active_parent_sha256,
+                "SCIENCE_TRANSITION_PREIMAGE_PARENT_PIN_UNBOUND",
+                "v1.10 publication must explicitly acknowledge the old transition parent pin",
+            ),
+            (
+                transition_rollback_copy,
+                "SCIENCE_TRANSITION_ROLLBACK_MISSING",
+                "v1.10 publication requires a transition rollback carrier",
+            ),
+            (
+                archive_manifest_path,
+                "SCIENCE_ARCHIVE_TARGET_MISSING",
+                "v1.10 publication requires the current archive manifest target",
+            ),
+            (
+                archive_manifest_candidate,
+                "SCIENCE_ARCHIVE_CANDIDATE_MISSING",
+                "v1.10 publication requires a sealed archive manifest candidate",
+            ),
+            (
+                expected_archive_manifest_sha256,
+                "SCIENCE_ARCHIVE_PREIMAGE_UNBOUND",
+                "v1.10 publication requires the exact archive manifest preimage",
+            ),
+            (
+                archive_manifest_rollback_copy,
+                "SCIENCE_ARCHIVE_ROLLBACK_MISSING",
+                "v1.10 publication requires an archive manifest rollback carrier",
+            ),
+        ):
+            if value is None:
+                defects.append(_dependency_defect(code, message))
+
+        software_binding = projection.get("software_foundation")
+        if not isinstance(software_binding, dict):
+            defects.append(
+                _dependency_defect(
+                    "SCIENCE_DEPENDENCY_TOOL_GLUE_BINDING_MISSING",
+                    "projection has no software_foundation binding",
+                )
+            )
+        elif tool_glue_authority_path is None or expected_tool_glue_authority_sha256 is None:
+            defects.append(
+                _dependency_defect(
+                    "SCIENCE_DEPENDENCY_TOOL_GLUE_PIN_MISSING",
+                    "v1.10 publication requires the exact live tool-glue pin",
+                )
+            )
+        else:
+            glue_path = tool_glue_authority_path.resolve()
+            expected_glue = _normalized_sha256(
+                expected_tool_glue_authority_sha256,
+                "expected_tool_glue_authority_sha256",
+            )
+            binding_path_value = software_binding.get("path")
+            try:
+                binding_path = Path(str(binding_path_value)).resolve()
+            except (OSError, ValueError):
+                binding_path = Path(".").resolve()
+            if binding_path != glue_path:
+                defects.append(
+                    _dependency_defect(
+                        "SCIENCE_DEPENDENCY_TOOL_GLUE_PATH_MISMATCH",
+                        "projection software_foundation.path does not bind the live authority",
+                        expected=str(glue_path),
+                        observed=str(binding_path_value),
+                    )
+                )
+            observed_glue = _sha256(glue_path) if glue_path.is_file() else None
+            if observed_glue != expected_glue:
+                defects.append(
+                    _dependency_defect(
+                        "SCIENCE_DEPENDENCY_TOOL_GLUE_SHA_MISMATCH",
+                        "live tool-glue authority is not the required verified postimage",
+                        expected=expected_glue,
+                        observed=observed_glue,
+                    )
+                )
+            if str(software_binding.get("sha256", "")).lower() != expected_glue:
+                defects.append(
+                    _dependency_defect(
+                        "SCIENCE_DEPENDENCY_TOOL_GLUE_PROJECTION_SHA_MISMATCH",
+                        "projection software_foundation.sha256 is not synchronized",
+                        expected=expected_glue,
+                        observed=software_binding.get("sha256"),
+                    )
+                )
+            if software_binding.get("version") != expected_tool_glue_version:
+                defects.append(
+                    _dependency_defect(
+                        "SCIENCE_DEPENDENCY_TOOL_GLUE_VERSION_MISMATCH",
+                        "projection software_foundation.version is not synchronized",
+                        expected=expected_tool_glue_version,
+                        observed=software_binding.get("version"),
+                    )
+                )
+            if not defects:
+                try:
+                    candidate_binding = validate_science_revision_candidate_binding(
+                        projection,
+                        science_candidate_path=candidate_parent_path,
+                        software_foundation_candidate_path=glue_path,
+                    )
+                except Exception as exc:
+                    defects.append(
+                        _dependency_defect(
+                            "SCIENCE_CANDIDATE_CONSUMER_REJECTED",
+                            str(exc),
+                        )
+                    )
+                else:
+                    if candidate_binding.get("science_parent_version") != "v1.10":
+                        defects.append(
+                            _dependency_defect(
+                                "SCIENCE_CANDIDATE_VERSION_MISMATCH",
+                                "candidate consumer did not resolve v1.10",
+                                observed=candidate_binding.get("science_parent_version"),
+                            )
+                        )
+                    if (
+                        candidate_binding.get("software_foundation_version")
+                        != expected_tool_glue_version
+                    ):
+                        defects.append(
+                            _dependency_defect(
+                                "SCIENCE_DEPENDENCY_TOOL_GLUE_VERSION_MISMATCH",
+                                "candidate consumer resolved another tool-glue version",
+                                expected=expected_tool_glue_version,
+                                observed=candidate_binding.get("software_foundation_version"),
+                            )
+                        )
+                    if candidate_binding.get("maturation_invariant_required") is not True:
+                        defects.append(
+                            _dependency_defect(
+                                "SCIENCE_CANDIDATE_MATURATION_INVARIANT_MISSING",
+                                "v1.10 consumer did not require the maturation invariant",
+                            )
+                        )
+
+        if (
+            transition_path is not None
+            and transition_candidate is not None
+            and expected_transition_sha256 is not None
+            and expected_transition_preimage_active_parent_sha256 is not None
+        ):
+            live_transition = transition_path.resolve()
+            candidate_transition = transition_candidate.resolve()
+            expected_transition = _normalized_sha256(
+                expected_transition_sha256,
+                "expected_transition_sha256",
+            )
+            transition_preimage_parent_sha256 = _normalized_sha256(
+                expected_transition_preimage_active_parent_sha256,
+                "expected_transition_preimage_active_parent_sha256",
+            )
+            if live_transition == candidate_transition:
+                defects.append(
+                    _dependency_defect(
+                        "SCIENCE_TRANSITION_CANDIDATE_ALIASES_TARGET",
+                        "transition candidate must be isolated from the live target",
+                    )
+                )
+            elif not live_transition.is_file() or not candidate_transition.is_file():
+                defects.append(
+                    _dependency_defect(
+                        "SCIENCE_TRANSITION_CARRIER_MISSING",
+                        "transition target or candidate is missing",
+                        target=str(live_transition),
+                        candidate=str(candidate_transition),
+                    )
+                )
+            else:
+                observed_transition = _sha256(live_transition)
+                candidate_transition_sha256 = _sha256(candidate_transition)
+                if observed_transition != expected_transition:
+                    defects.append(
+                        _dependency_defect(
+                            "SCIENCE_TRANSITION_PREIMAGE_MISMATCH",
+                            "transition target changed before promotion",
+                            expected=expected_transition,
+                            observed=observed_transition,
+                        )
+                    )
+                try:
+                    transition_preimage_text = live_transition.read_text(encoding="utf-8")
+                    transition_candidate_text = candidate_transition.read_text(encoding="utf-8")
+                    validate_science_transition_active_parent_binding(
+                        transition_preimage_text,
+                        expected_active_parent_path=active_parent_path,
+                        expected_active_parent_sha256=transition_preimage_parent_sha256,
+                    )
+                    transition_candidate_binding = (
+                        validate_science_transition_active_parent_binding(
+                            transition_candidate_text,
+                            expected_active_parent_path=active_parent_path,
+                            expected_active_parent_sha256=candidate_parent_sha256,
+                        )
+                    )
+                    if _transition_nonpin_lines(
+                        transition_preimage_text
+                    ) != _transition_nonpin_lines(transition_candidate_text):
+                        raise ValueError(
+                            "transition candidate changes content outside the labeled parent pin"
+                        )
+                except Exception as exc:
+                    defects.append(
+                        _dependency_defect(
+                            "SCIENCE_TRANSITION_CONSUMER_REJECTED",
+                            str(exc),
+                        )
+                    )
+                prepared_transition = _PreparedFileTarget(
+                    path=live_transition,
+                    preimage_sha256=observed_transition,
+                    candidate_path=candidate_transition,
+                    candidate_sha256=candidate_transition_sha256,
+                )
+
+        if (
+            archive_manifest_path is not None
+            and archive_manifest_candidate is not None
+            and expected_archive_manifest_sha256 is not None
+        ):
+            live_archive = archive_manifest_path.resolve()
+            candidate_archive = archive_manifest_candidate.resolve()
+            expected_archive = _normalized_sha256(
+                expected_archive_manifest_sha256,
+                "expected_archive_manifest_sha256",
+            )
+            if live_archive == candidate_archive:
+                defects.append(
+                    _dependency_defect(
+                        "SCIENCE_ARCHIVE_CANDIDATE_ALIASES_TARGET",
+                        "archive manifest candidate must be isolated from the live target",
+                    )
+                )
+            elif not live_archive.is_file() or not candidate_archive.is_file():
+                defects.append(
+                    _dependency_defect(
+                        "SCIENCE_ARCHIVE_CARRIER_MISSING",
+                        "archive manifest target or candidate is missing",
+                        target=str(live_archive),
+                        candidate=str(candidate_archive),
+                    )
+                )
+            else:
+                observed_archive = _sha256(live_archive)
+                candidate_archive_sha256 = _sha256(candidate_archive)
+                if observed_archive != expected_archive:
+                    defects.append(
+                        _dependency_defect(
+                            "SCIENCE_ARCHIVE_PREIMAGE_MISMATCH",
+                            "archive manifest changed before promotion",
+                            expected=expected_archive,
+                            observed=observed_archive,
+                        )
+                    )
+                try:
+                    archive_preimage = _load_json(live_archive)
+                    archive_candidate_payload = _load_json(candidate_archive)
+                    archive_preimage_binding = validate_science_archive_publication_binding(
+                        archive_preimage,
+                        expected_active_parent_path=active_parent_path,
+                        expected_active_parent_sha256=active_parent_preimage_sha256,
+                    )
+                    archive_candidate_binding = validate_science_archive_publication_binding(
+                        archive_candidate_payload,
+                        expected_active_parent_path=active_parent_path,
+                        expected_active_parent_sha256=candidate_parent_sha256,
+                    )
+                    if _archive_preservation_view(archive_preimage) != _archive_preservation_view(
+                        archive_candidate_payload
+                    ):
+                        raise ValueError(
+                            "archive candidate changes content outside the current publication pin"
+                        )
+                except Exception as exc:
+                    defects.append(
+                        _dependency_defect(
+                            "SCIENCE_ARCHIVE_CONSUMER_REJECTED",
+                            str(exc),
+                        )
+                    )
+                prepared_archive = _PreparedFileTarget(
+                    path=live_archive,
+                    preimage_sha256=observed_archive,
+                    candidate_path=candidate_archive,
+                    candidate_sha256=candidate_archive_sha256,
+                )
+        if defects:
+            dependency_mismatch = any("TOOL_GLUE" in str(defect["code"]) for defect in defects)
+            code = (
+                "SCIENCE_DEPENDENCY_TOOL_GLUE_PIN_MISMATCH"
+                if dependency_mismatch
+                else "SCIENCE_REVISION_PREFLIGHT_FAILED"
+            )
+            raise SciencePublicationError(
+                code,
+                "science v1.10 aggregate preflight rejected before mutation",
+                defects=defects,
+            )
+    else:
+        load_science_active_parent(projection_path)
+
+    projection_candidate = _json_bytes(projection)
+    return _PreparedPromotion(
+        projection=projection,
+        projection_preimage=projection_preimage,
+        projection_preimage_sha256=projection_preimage_sha256,
+        projection_candidate=projection_candidate,
+        projection_candidate_sha256=_sha256_bytes(projection_candidate),
+        active_parent_path=active_parent_path,
+        active_parent_preimage_sha256=active_parent_preimage_sha256,
+        active_parent_candidate_path=candidate_parent_path,
+        active_parent_candidate_sha256=candidate_parent_sha256,
+        revision_count=revision_count,
+        v110=v110,
+        candidate_binding=candidate_binding,
+        transition=prepared_transition,
+        transition_preimage_active_parent_sha256=transition_preimage_parent_sha256,
+        transition_candidate_binding=transition_candidate_binding,
+        archive_manifest=prepared_archive,
+        archive_preimage_binding=archive_preimage_binding,
+        archive_candidate_binding=archive_candidate_binding,
+    )
+
+
+def _resolved_path_string(value: object) -> str | None:
+    if value is None:
+        return None
+    text = str(value).strip()
+    if not text:
+        return None
+    return str(Path(text).resolve())
+
+
+def _transaction_identity_body(
+    journal: Mapping[str, Any],
+    *,
+    transaction_directory: Path,
+) -> dict[str, Any]:
+    """Build the immutable transaction identity body from journal topology pins."""
+
+    body: dict[str, Any] = {
+        "schema_version": "xinao.science_revision_transaction_identity.v1",
+        "transaction_directory": str(transaction_directory.resolve()),
+    }
+    for field in _TRANSACTION_IDENTITY_PATH_FIELDS:
+        if field in journal and journal.get(field) is not None:
+            body[field] = _resolved_path_string(journal.get(field))
+    for field in _TRANSACTION_IDENTITY_HASH_FIELDS:
+        if field in journal and journal.get(field) is not None:
+            body[field] = str(journal.get(field)).strip().lower()
+    return body
+
+
+def _transaction_identity_sha256(
+    journal: Mapping[str, Any],
+    *,
+    transaction_directory: Path,
+) -> str:
+    body = _transaction_identity_body(journal, transaction_directory=transaction_directory)
+    canonical = json.dumps(body, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    return _sha256_bytes(canonical.encode("utf-8"))
+
+
+def _marker_payload(
+    *,
+    phase: str,
+    journal_path: Path,
+    projection_path: Path,
+    transaction_directory: Path,
+    transaction_identity_sha256: str,
+) -> dict[str, Any]:
+    if phase not in {MARKER_PHASE_PRE_JOURNAL, MARKER_PHASE_JOURNAL_BOUND}:
+        raise RuntimeError(f"unsupported science promotion marker phase: {phase}")
+    return {
+        "schema_version": MARKER_SCHEMA,
+        "phase": phase,
+        "journal_path": str(journal_path.resolve()),
+        "projection_path": str(projection_path.resolve()),
+        "transaction_directory": str(transaction_directory.resolve()),
+        "transaction_identity_sha256": _normalized_sha256(
+            transaction_identity_sha256, "transaction_identity_sha256"
+        ),
+        "completion_claim_allowed": False,
+    }
+
+
+def _assert_marker_or_journal_carrier(path: Path, *, role: str) -> None:
+    """Markers and journals must be ordinary independent single-link non-reparse files."""
+
+    _assert_independent_ordinary_file(path, role=role)
+
+
+def _projection_active_parent_path(projection_payload: Mapping[str, Any]) -> Path:
+    active_binding = projection_payload.get("active_parent")
+    if not isinstance(active_binding, Mapping) or not active_binding.get("path"):
+        raise SciencePublicationError(
+            "CROSS_OBJECT_RESTORE",
+            "science projection active_parent path is missing for topology validation",
+        )
+    return Path(str(active_binding["path"])).resolve()
+
+
+def _load_projection_for_topology(
+    journal: Mapping[str, Any],
+    projection_path: Path,
+) -> dict[str, Any]:
+    """Load a projection payload that defines the sealed object topology.
+
+    Prefer the sealed projection preimage when present so mid-APPLY journals cannot
+    rebind active-parent topology through a substituted live projection.
+    """
+
+    rollback = journal.get("projection_rollback_copy")
+    if rollback is not None:
+        rollback_path = Path(str(rollback)).resolve()
+        if rollback_path.is_file():
+            expected = journal.get("projection_preimage_sha256")
+            if expected is not None and _sha256(rollback_path) != str(expected).lower():
+                raise SciencePublicationError(
+                    "CROSS_OBJECT_RESTORE",
+                    "projection rollback preimage drifted before topology validation",
+                    defects=[
+                        _dependency_defect(
+                            "SCIENCE_PROJECTION_PREIMAGE_DRIFT",
+                            "projection rollback copy does not match journal preimage",
+                            path=str(rollback_path),
+                            expected=str(expected).lower(),
+                            observed=_sha256(rollback_path),
+                        )
+                    ],
+                )
+            return _load_json(rollback_path)
+    if not projection_path.is_file():
+        raise SciencePublicationError(
+            "CROSS_OBJECT_RESTORE",
+            "science projection is missing for topology validation",
+            defects=[
+                _dependency_defect(
+                    "SCIENCE_PROJECTION_MISSING",
+                    "projection path is not a file",
+                    path=str(projection_path),
+                )
+            ],
+        )
+    return _load_json(projection_path)
+
+
+def _validate_transaction_identity(
+    journal: Mapping[str, Any],
+    *,
+    transaction_directory: Path,
+    expected_identity: str | None = None,
+) -> str:
+    computed = _transaction_identity_sha256(journal, transaction_directory=transaction_directory)
+    stored = journal.get("transaction_identity_sha256")
+    if stored is not None:
+        stored_norm = _normalized_sha256(str(stored), "journal.transaction_identity_sha256")
+        if stored_norm != computed:
+            raise SciencePublicationError(
+                "SCIENCE_TRANSACTION_IDENTITY_MISMATCH",
+                "science journal transaction identity does not match sealed topology pins",
+                defects=[
+                    _dependency_defect(
+                        "SCIENCE_TRANSACTION_IDENTITY_MISMATCH",
+                        "journal identity digest drifted from path/hash pins",
+                        expected=computed,
+                        observed=stored_norm,
+                    )
+                ],
+            )
+    if expected_identity is not None:
+        expected_norm = _normalized_sha256(expected_identity, "expected_transaction_identity")
+        if expected_norm != computed:
+            raise SciencePublicationError(
+                "SCIENCE_TRANSACTION_IDENTITY_MISMATCH",
+                "science marker/journal transaction identity binding mismatch",
+                defects=[
+                    _dependency_defect(
+                        "SCIENCE_TRANSACTION_IDENTITY_MISMATCH",
+                        "marker identity does not match recomputed journal identity",
+                        expected=expected_norm,
+                        observed=computed,
+                    )
+                ],
+            )
+    return computed
+
+
+def _raise_topology_collision(
+    *,
+    message: str,
+    field: str,
+    path: Path,
+    collides_with: str,
+    collides_path: Path,
+) -> None:
+    raise SciencePublicationError(
+        "CROSS_OBJECT_RESTORE",
+        message,
+        defects=[
+            _dependency_defect(
+                "CROSS_OBJECT_RESTORE",
+                message,
+                field=field,
+                path=str(path),
+                collides_with=collides_with,
+                collides_path=str(collides_path),
+            )
+        ],
+    )
+
+
+def _journal_live_authority_set(
+    journal: Mapping[str, Any],
+    *,
+    bound_projection: Path,
+    journal_parent: Path,
+) -> dict[str, Path]:
+    """Build the full live-authority object set for topology sealing.
+
+    Always includes projection and active parent. For v1.10 journals that pin a
+    transition path, also includes transition and archive manifest — every live
+    restore target must be path- and samefile-distinct before seal/mode mutation.
+    """
+
+    live: dict[str, Path] = {
+        "projection": bound_projection,
+        "active_parent": journal_parent,
+    }
+    if journal.get("transition_path") is not None:
+        for required in (
+            "transition_rollback_copy",
+            "transition_candidate_path",
+            "archive_manifest_path",
+            "archive_manifest_rollback_copy",
+            "archive_manifest_candidate_path",
+        ):
+            if journal.get(required) is None:
+                raise SciencePublicationError(
+                    "CROSS_OBJECT_RESTORE",
+                    f"science v1.10 journal missing topology pin: {required}",
+                )
+        live["transition"] = Path(str(journal["transition_path"])).resolve()
+        live["archive_manifest"] = Path(str(journal["archive_manifest_path"])).resolve()
+    return live
+
+
+def _validate_journal_object_topology(
+    journal: Mapping[str, Any],
+    *,
+    projection_path: Path,
+) -> None:
+    """Reject cross-object / path-substitution journals before any seal or restore.
+
+    Live authorities (projection, active parent, and for v1.10 transition + archive
+    manifest) must be pairwise path-distinct and samefile/hardlink-distinct.
+    Every rollback carrier must be path- and samefile-distinct from every live
+    authority and from every other rollback carrier. Candidate paths may equal
+    *their own* live target for legitimate in-place publication, but must not
+    cross-alias another live authority or any rollback carrier.
+    """
+
+    bound_projection = Path(str(journal.get("projection_path", ""))).resolve()
+    if bound_projection != projection_path.resolve():
+        raise SciencePublicationError(
+            "CROSS_OBJECT_RESTORE",
+            "science promotion journal does not bind recovery projection target",
+            defects=[
+                _dependency_defect(
+                    "CROSS_OBJECT_RESTORE",
+                    "journal projection_path does not match recovery target",
+                    expected=str(projection_path.resolve()),
+                    observed=str(bound_projection),
+                )
+            ],
+        )
+    if journal.get("active_parent_path") is None:
+        raise SciencePublicationError(
+            "CROSS_OBJECT_RESTORE",
+            "science journal is missing active_parent_path topology pin",
+        )
+    projection_payload = _load_projection_for_topology(journal, projection_path)
+    derived_parent = _projection_active_parent_path(projection_payload)
+    journal_parent = Path(str(journal["active_parent_path"])).resolve()
+    if derived_parent != journal_parent:
+        raise SciencePublicationError(
+            "CROSS_OBJECT_RESTORE",
+            "science journal active_parent_path is not the sealed projection object",
+            defects=[
+                _dependency_defect(
+                    "CROSS_OBJECT_RESTORE",
+                    "active-parent live path disagrees with sealed projection identity",
+                    expected=str(derived_parent),
+                    observed=str(journal_parent),
+                    path=str(projection_path),
+                )
+            ],
+        )
+
+    live_authorities = _journal_live_authority_set(
+        journal,
+        bound_projection=bound_projection,
+        journal_parent=journal_parent,
+    )
+    live_items = list(live_authorities.items())
+    for index, (name_a, path_a) in enumerate(live_items):
+        for name_b, path_b in live_items[index + 1 :]:
+            if _paths_alias(path_a, path_b):
+                _raise_topology_collision(
+                    message=(
+                        "science live restore targets are not distinct objects "
+                        f"({name_a} aliases {name_b})"
+                    ),
+                    field=name_a,
+                    path=path_a,
+                    collides_with=name_b,
+                    collides_path=path_b,
+                )
+
+    rollback_fields = (
+        ("projection_rollback_copy", "projection"),
+        ("active_parent_rollback_copy", "active_parent"),
+        ("transition_rollback_copy", "transition"),
+        ("archive_manifest_rollback_copy", "archive_manifest"),
+    )
+    rollback_paths: dict[str, Path] = {}
+    for field, _owner in rollback_fields:
+        raw = journal.get(field)
+        if raw is None:
+            continue
+        rollback_paths[field] = Path(str(raw)).resolve()
+
+    for field, rb_path in rollback_paths.items():
+        for live_name, live_path in live_authorities.items():
+            if _paths_alias(rb_path, live_path):
+                _raise_topology_collision(
+                    message=(f"science journal {field} collides with live authority {live_name}"),
+                    field=field,
+                    path=rb_path,
+                    collides_with=live_name,
+                    collides_path=live_path,
+                )
+
+    rb_items = list(rollback_paths.items())
+    for index, (field_a, path_a) in enumerate(rb_items):
+        for field_b, path_b in rb_items[index + 1 :]:
+            if _paths_alias(path_a, path_b):
+                _raise_topology_collision(
+                    message=(
+                        f"science journal rollback carriers are not distinct "
+                        f"({field_a} aliases {field_b})"
+                    ),
+                    field=field_a,
+                    path=path_a,
+                    collides_with=field_b,
+                    collides_path=path_b,
+                )
+
+    # Candidate may equal its own live target (in-place publish). Cross-object
+    # candidate/live and candidate/rollback aliases are fail-closed.
+    candidate_fields = (
+        ("projection_candidate_path", "projection"),
+        ("active_parent_candidate_path", "active_parent"),
+        ("transition_candidate_path", "transition"),
+        ("archive_manifest_candidate_path", "archive_manifest"),
+    )
+    for field, own_live_key in candidate_fields:
+        raw = journal.get(field)
+        if raw is None:
+            continue
+        candidate_path = Path(str(raw)).resolve()
+        for live_name, live_path in live_authorities.items():
+            if live_name == own_live_key:
+                continue
+            if _paths_alias(candidate_path, live_path):
+                _raise_topology_collision(
+                    message=(f"science journal {field} cross-aliases live authority {live_name}"),
+                    field=field,
+                    path=candidate_path,
+                    collides_with=live_name,
+                    collides_path=live_path,
+                )
+        for rb_field, rb_path in rollback_paths.items():
+            if _paths_alias(candidate_path, rb_path):
+                _raise_topology_collision(
+                    message=(f"science journal {field} aliases rollback carrier {rb_field}"),
+                    field=field,
+                    path=candidate_path,
+                    collides_with=rb_field,
+                    collides_path=rb_path,
+                )
+
+
+def _prove_no_transaction_mutation(
+    journal: Mapping[str, Any] | None,
+    *,
+    transaction_directory: Path,
+) -> None:
+    """PRE_JOURNAL abort is allowed only when no seal/live mutation is observable."""
+
+    if journal is None:
+        # No journal: seals cannot have been recorded. Reject unexpected residue that
+        # would indicate foreign writes under the reserved transaction directory.
+        if transaction_directory.exists():
+            residue = [
+                path
+                for path in transaction_directory.rglob("*")
+                if path.is_file() and path.name != "transaction.v1.json"
+            ]
+            if residue:
+                raise SciencePublicationError(
+                    "SCIENCE_PRE_JOURNAL_MUTATION_OBSERVED",
+                    "PRE_JOURNAL abort refused because transaction residue exists without a journal",
+                    defects=[
+                        _dependency_defect(
+                            "SCIENCE_PRE_JOURNAL_MUTATION_OBSERVED",
+                            "unexpected files under transaction directory",
+                            path=str(residue[0]),
+                        )
+                    ],
+                )
+        return
+    if str(journal.get("status")) not in {MATERIALIZING, PREPARED}:
+        raise SciencePublicationError(
+            "SCIENCE_PRE_JOURNAL_MUTATION_OBSERVED",
+            "PRE_JOURNAL abort refused because journal status indicates mutation may have begun",
+            receipt={"transaction_status": journal.get("status")},
+        )
+    for sealed_flag in (
+        "projection_sealed",
+        "active_parent_sealed",
+        "transition_sealed",
+        "archive_manifest_sealed",
+    ):
+        if journal.get(sealed_flag) is True:
+            raise SciencePublicationError(
+                "SCIENCE_PRE_JOURNAL_MUTATION_OBSERVED",
+                f"PRE_JOURNAL abort refused because {sealed_flag}=true",
+            )
+    for _label, _prefix, live, archive, expected in _materializing_seal_plan(journal):
+        if archive.exists():
+            raise SciencePublicationError(
+                "SCIENCE_PRE_JOURNAL_MUTATION_OBSERVED",
+                "PRE_JOURNAL abort refused because a rollback seal archive exists",
+                defects=[
+                    _dependency_defect(
+                        "SCIENCE_PRE_JOURNAL_MUTATION_OBSERVED",
+                        "rollback archive present before JOURNAL_BOUND",
+                        path=str(archive),
+                    )
+                ],
+            )
+        if live.is_file() and _sha256(live) != expected:
+            raise SciencePublicationError(
+                "SCIENCE_PRE_JOURNAL_MUTATION_OBSERVED",
+                "PRE_JOURNAL abort refused because a live target already drifted",
+                defects=[
+                    _dependency_defect(
+                        "SCIENCE_PRE_JOURNAL_MUTATION_OBSERVED",
+                        "live target hash does not match journal preimage",
+                        path=str(live),
+                        expected=expected,
+                        observed=_sha256(live),
+                    )
+                ],
+            )
+
+
+def _journal_receipt(journal: Mapping[str, Any], journal_path: Path) -> dict[str, Any]:
+    status = str(journal.get("status"))
+    rolled_back = status in {ROLLED_BACK, ROLLED_BACK_AFTER_CRASH}
+    receipt = {
+        "schema_version": RESULT_SCHEMA,
+        "status": "VERIFIED" if status == COMMITTED else status,
+        "transaction_status": status,
+        "projection_path": str(journal.get("projection_path")),
+        "projection_sha256": journal.get("projection_committed_sha256"),
+        "active_parent_sha256": journal.get("active_parent_committed_sha256"),
+        "rollback_copy": str(journal.get("projection_rollback_copy")),
+        "rollback_copy_sha256": journal.get("projection_preimage_sha256"),
+        "revision_count": int(journal.get("revision_count", 0)),
+        "transaction_journal": str(journal_path.resolve()),
+        "rollback_order": (
+            ["transition", "archive_manifest", "projection", "active_parent"]
+            if journal.get("transition_path") is not None
+            else ["projection", "active_parent"]
+        ),
+        "tool_glue_rollback_ready": bool(journal.get("transition_path")) and rolled_back,
+        "next_rollback_dependency": (
+            "tool-glue-v3.4" if bool(journal.get("transition_path")) and rolled_back else None
+        ),
+        "completion_claim_allowed": False,
+    }
+    if journal.get("transition_path") is not None:
+        receipt.update(
+            {
+                "transition_path": str(journal.get("transition_path")),
+                "transition_sha256": journal.get("transition_committed_sha256"),
+                "transition_preimage_active_parent_sha256": journal.get(
+                    "transition_preimage_active_parent_sha256"
+                ),
+                "transition_candidate_active_parent_sha256": journal.get(
+                    "transition_candidate_active_parent_sha256"
+                ),
+                "archive_manifest_path": str(journal.get("archive_manifest_path")),
+                "archive_manifest_sha256": journal.get("archive_manifest_committed_sha256"),
+                "archive_snapshot_path": journal.get("archive_snapshot_path"),
+                "archive_snapshot_sha256": journal.get("archive_snapshot_sha256"),
+            }
+        )
+    return receipt
+
+
+def _journal_original_mode(journal: Mapping[str, Any], field: str) -> int | None:
+    raw = journal.get(field)
+    if raw is None:
+        return None
+    try:
+        return stat.S_IMODE(int(raw))
+    except (TypeError, ValueError):
+        raise RuntimeError(f"science journal {field} is not a valid file mode") from None
+
+
+def _mode_write_bit(mode: int) -> bool:
+    return bool(stat.S_IMODE(mode) & stat.S_IWRITE)
+
+
+def _assert_restored_mode(label: str, target: Path, original_mode: int | None) -> None:
+    """Validate restored mode; Windows preserves the write bit, not full Unix modes."""
+
+    if original_mode is None:
+        return
+    observed = stat.S_IMODE(target.stat().st_mode)
+    expected = stat.S_IMODE(original_mode)
+    if observed == expected:
+        return
+    if _mode_write_bit(observed) == _mode_write_bit(expected):
+        return
+    raise RuntimeError(
+        f"{label} rollback target mode failed readback "
+        f"(expected write={_mode_write_bit(expected)}, observed write={_mode_write_bit(observed)})"
+    )
+
+
+def _preimage_specs(
+    journal: Mapping[str, Any],
+) -> list[tuple[str, Path, Path, str, int | None]]:
+    specs: list[tuple[str, Path, Path, str, int | None]] = []
+    if journal.get("transition_path") is not None:
+        specs.extend(
+            [
+                (
+                    "transition",
+                    Path(str(journal["transition_rollback_copy"])).resolve(),
+                    Path(str(journal["transition_path"])).resolve(),
+                    str(journal["transition_preimage_sha256"]),
+                    _journal_original_mode(journal, "transition_original_mode"),
+                ),
+                (
+                    "archive-manifest",
+                    Path(str(journal["archive_manifest_rollback_copy"])).resolve(),
+                    Path(str(journal["archive_manifest_path"])).resolve(),
+                    str(journal["archive_manifest_preimage_sha256"]),
+                    _journal_original_mode(journal, "archive_manifest_original_mode"),
+                ),
+            ]
+        )
+    specs.extend(
+        [
+            (
+                "projection",
+                Path(str(journal["projection_rollback_copy"])).resolve(),
+                Path(str(journal["projection_path"])).resolve(),
+                str(journal["projection_preimage_sha256"]),
+                _journal_original_mode(journal, "projection_original_mode"),
+            ),
+            (
+                "active-parent",
+                Path(str(journal["active_parent_rollback_copy"])).resolve(),
+                Path(str(journal["active_parent_path"])).resolve(),
+                str(journal["active_parent_preimage_sha256"]),
+                _journal_original_mode(journal, "active_parent_original_mode"),
+            ),
+        ]
+    )
+    return specs
+
+
+def _raise_group(message: str, failures: Sequence[BaseException]) -> None:
+    if len(failures) == 1:
+        raise failures[0]
+    raise ExceptionGroup(message, list(failures))
+
+
+def _restore_transaction_preimages(
+    journal: dict[str, Any],
+    journal_path: Path,
+    *,
+    status: str,
+) -> None:
+    specs = _preimage_specs(journal)
+    invalid = _validate_preimages(specs)
+    if invalid:
+        _raise_group("science rollback preimages are invalid", invalid)
+    errors = _restore_preimages(specs)
+    if errors:
+        _raise_group("science rollback could not restore every target", errors)
+    for label, _source, target, expected, original_mode in specs:
+        if _sha256(target) != expected:
+            raise RuntimeError(f"{label} rollback target failed readback")
+        _assert_restored_mode(label, target, original_mode)
+    journal["status"] = status
+    _write_json_atomic(journal_path, journal)
+
+
+def _record_sealed_preimage(
+    journal: dict[str, Any],
+    *,
+    prefix: str,
+    sealed: _SealedPreimage,
+) -> None:
+    journal[f"{prefix}_preimage_sha256"] = sealed.sha256
+    journal[f"{prefix}_original_mode"] = sealed.original_mode
+    journal[f"{prefix}_seal_mode"] = sealed.seal_mode
+    journal[f"{prefix}_sealed"] = True
+
+
+def _materializing_seal_plan(
+    journal: Mapping[str, Any],
+) -> list[tuple[str, str, Path, Path, str]]:
+    """Return ordered (label, journal_prefix, live, archive, expected_sha) seal steps."""
+
+    plan: list[tuple[str, str, Path, Path, str]] = [
+        (
+            "projection",
+            "projection",
+            Path(str(journal["projection_path"])).resolve(),
+            Path(str(journal["projection_rollback_copy"])).resolve(),
+            str(journal["projection_preimage_sha256"]),
+        ),
+        (
+            "active-parent",
+            "active_parent",
+            Path(str(journal["active_parent_path"])).resolve(),
+            Path(str(journal["active_parent_rollback_copy"])).resolve(),
+            str(journal["active_parent_preimage_sha256"]),
+        ),
+    ]
+    if journal.get("transition_path") is not None:
+        plan.extend(
+            [
+                (
+                    "transition",
+                    "transition",
+                    Path(str(journal["transition_path"])).resolve(),
+                    Path(str(journal["transition_rollback_copy"])).resolve(),
+                    str(journal["transition_preimage_sha256"]),
+                ),
+                (
+                    "archive-manifest",
+                    "archive_manifest",
+                    Path(str(journal["archive_manifest_path"])).resolve(),
+                    Path(str(journal["archive_manifest_rollback_copy"])).resolve(),
+                    str(journal["archive_manifest_preimage_sha256"]),
+                ),
+            ]
+        )
+    return plan
+
+
+def _recover_materializing_transaction(
+    journal: dict[str, Any],
+    journal_path: Path,
+    marker_path: Path,
+) -> dict[str, Any]:
+    """Abort an incomplete preimage materialization without mutating live targets."""
+
+    defects: list[dict[str, Any]] = []
+    for label, _prefix, live, archive, expected in _materializing_seal_plan(journal):
+        observed_live = _sha256(live) if live.is_file() else None
+        if observed_live != expected:
+            defects.append(
+                _dependency_defect(
+                    "SCIENCE_" + label.upper().replace("-", "_") + "_PREIMAGE_DRIFT",
+                    f"{label} live target drifted during MATERIALIZING",
+                    path=str(live),
+                    expected=expected,
+                    observed=observed_live,
+                )
+            )
+        if archive.exists():
+            try:
+                _assert_independent_ordinary_file(archive, role=f"{label} rollback copy")
+            except (FileExistsError, FileNotFoundError, OSError) as exc:
+                defects.append(
+                    _dependency_defect(
+                        "SCIENCE_" + label.upper().replace("-", "_") + "_ROLLBACK_INVALID",
+                        f"{label} rollback copy is not an independent regular file: {exc}",
+                        path=str(archive),
+                    )
+                )
+            else:
+                if _paths_share_inode(archive, live):
+                    defects.append(
+                        _dependency_defect(
+                            "SCIENCE_" + label.upper().replace("-", "_") + "_ROLLBACK_INVALID",
+                            f"{label} rollback copy shares inode/samefile with live target",
+                            path=str(archive),
+                        )
+                    )
+                else:
+                    observed_archive = _sha256(archive)
+                    if observed_archive != expected:
+                        defects.append(
+                            _dependency_defect(
+                                "SCIENCE_" + label.upper().replace("-", "_") + "_ROLLBACK_DRIFT",
+                                f"{label} rollback copy diverged from expected preimage",
+                                path=str(archive),
+                                expected=expected,
+                                observed=observed_archive,
+                            )
+                        )
+    if defects:
+        raise SciencePublicationError(
+            "SCIENCE_MATERIALIZING_RECOVERY_FAILED",
+            "MATERIALIZING recovery refused because live or sealed preimages drifted",
+            defects=defects,
+            receipt={
+                "transaction_status": MATERIALIZING,
+                "transaction_journal": str(journal_path),
+            },
+        )
+    journal["status"] = ROLLED_BACK_AFTER_CRASH
+    _write_json_atomic(journal_path, journal)
+    marker_path.unlink(missing_ok=True)
+    result = _journal_receipt(journal, journal_path)
+    result["status"] = ROLLED_BACK_AFTER_CRASH
+    result["materializing_aborted"] = True
+    return result
+
+
+def _promote_revision_chain_impl(
+    *,
+    projection_path: Path,
+    evidence_paths: list[Path],
+    event_refs: list[str],
+    rollback_copy: Path,
+    expected_projection_sha256: str | None,
+    candidate_active_parent: Path | None,
+    expected_candidate_active_parent_sha256: str | None,
+    expected_active_parent_sha256: str | None,
+    active_parent_rollback_copy: Path | None,
+    science_episode_gate: Mapping[str, Any] | None,
+    transaction_directory: Path | None,
+    tool_glue_authority_path: Path | None,
+    expected_tool_glue_authority_sha256: str | None,
+    expected_tool_glue_version: str,
+    transition_path: Path | None,
+    transition_candidate: Path | None,
+    expected_transition_sha256: str | None,
+    expected_transition_preimage_active_parent_sha256: str | None,
+    transition_rollback_copy: Path | None,
+    archive_manifest_path: Path | None,
+    archive_manifest_candidate: Path | None,
+    expected_archive_manifest_sha256: str | None,
+    archive_manifest_rollback_copy: Path | None,
+) -> dict[str, Any]:
+    if len(evidence_paths) != len(event_refs) or not evidence_paths:
+        raise ValueError("revision evidence and event refs must be paired and non-empty")
+    projection_path = projection_path.resolve()
+    rollback_copy = rollback_copy.resolve()
+    transaction_directory = (
+        transaction_directory.resolve()
+        if transaction_directory is not None
+        else _default_transaction_directory(projection_path, rollback_copy).resolve()
+    )
+    journal_path = _journal_path(transaction_directory)
+    marker_path = _promotion_marker_path(projection_path).resolve()
+    if marker_path.exists():
+        raise RuntimeError("an interrupted science promotion requires recovery")
+    if journal_path.exists():
+        raise FileExistsError(f"transaction journal already exists: {journal_path}")
+
+    lease = _acquire_promotion_lease(projection_path)
+    try:
+        prepared = _prepare_promotion(
+            projection_path=projection_path,
+            evidence_paths=evidence_paths,
+            event_refs=event_refs,
+            expected_projection_sha256=expected_projection_sha256,
+            candidate_active_parent=candidate_active_parent,
+            expected_candidate_active_parent_sha256=expected_candidate_active_parent_sha256,
+            expected_active_parent_sha256=expected_active_parent_sha256,
+            science_episode_gate=science_episode_gate,
+            tool_glue_authority_path=tool_glue_authority_path,
+            expected_tool_glue_authority_sha256=expected_tool_glue_authority_sha256,
+            expected_tool_glue_version=expected_tool_glue_version,
+            transition_path=transition_path,
+            transition_candidate=transition_candidate,
+            expected_transition_sha256=expected_transition_sha256,
+            expected_transition_preimage_active_parent_sha256=(
+                expected_transition_preimage_active_parent_sha256
+            ),
+            transition_rollback_copy=transition_rollback_copy,
+            archive_manifest_path=archive_manifest_path,
+            archive_manifest_candidate=archive_manifest_candidate,
+            expected_archive_manifest_sha256=expected_archive_manifest_sha256,
+            archive_manifest_rollback_copy=archive_manifest_rollback_copy,
+        )
+        # The complete read-only preflight above precedes every marker, journal,
+        # rollback archive, or authority mutation.  Recheck exact bytes while the
+        # cooperative lease is held before materializing transaction state.
+        if _sha256(projection_path) != prepared.projection_preimage_sha256:
+            raise ValueError(
+                "science active-parent projection changed before transaction materialization"
+            )
+        if _sha256(prepared.active_parent_path) != prepared.active_parent_preimage_sha256:
+            raise ValueError(
+                "science active-parent source changed before transaction materialization"
+            )
+        if (
+            _sha256(prepared.active_parent_candidate_path)
+            != prepared.active_parent_candidate_sha256
+        ):
+            raise ValueError("science candidate changed before transaction materialization")
+        if prepared.v110 and tool_glue_authority_path is not None:
+            expected_glue = _normalized_sha256(
+                str(expected_tool_glue_authority_sha256),
+                "expected_tool_glue_authority_sha256",
+            )
+            if _sha256(tool_glue_authority_path.resolve()) != expected_glue:
+                raise SciencePublicationError(
+                    "SCIENCE_DEPENDENCY_TOOL_GLUE_PIN_MISMATCH",
+                    "tool-glue authority drifted after preflight and before mutation",
+                    defects=[
+                        _dependency_defect(
+                            "SCIENCE_DEPENDENCY_TOOL_GLUE_SHA_MISMATCH",
+                            "live tool-glue authority drifted before science transaction",
+                        )
+                    ],
+                )
+            if (
+                prepared.transition is None
+                or prepared.archive_manifest is None
+                or prepared.archive_candidate_binding is None
+            ):
+                raise RuntimeError("science v1.10 coupled target preflight was incomplete")
+            for label, target in (
+                ("transition", prepared.transition),
+                ("archive manifest", prepared.archive_manifest),
+            ):
+                if _sha256(target.path) != target.preimage_sha256:
+                    raise ValueError(f"science {label} changed before transaction materialization")
+                if _sha256(target.candidate_path) != target.candidate_sha256:
+                    raise ValueError(
+                        f"science {label} candidate changed before transaction materialization"
+                    )
+            archive_snapshot_path = Path(
+                str(prepared.archive_candidate_binding["versioned_snapshot_path"])
+            ).resolve()
+            archive_snapshot_sha256 = str(
+                prepared.archive_candidate_binding["versioned_snapshot_sha256"]
+            )
+            if _sha256(archive_snapshot_path) != archive_snapshot_sha256:
+                raise ValueError(
+                    "science archive snapshot drifted before transaction materialization"
+                )
+
+        parent_rollback = (
+            active_parent_rollback_copy.resolve()
+            if active_parent_rollback_copy is not None
+            else (transaction_directory / "active-parent.preimage.txt").resolve()
+        )
+        transition_rollback: Path | None = None
+        archive_rollback: Path | None = None
+        if prepared.v110:
+            if (
+                prepared.transition is None
+                or prepared.archive_manifest is None
+                or transition_rollback_copy is None
+                or archive_manifest_rollback_copy is None
+            ):
+                raise RuntimeError("science v1.10 rollback carriers were not prepared")
+            transition_rollback = transition_rollback_copy.resolve()
+            archive_rollback = archive_manifest_rollback_copy.resolve()
+
+        candidate_projection_path = (transaction_directory / "projection.candidate.json").resolve()
+        # Enter recoverable MATERIALIZING *before* the first rollback copy so a
+        # crash mid-seal leaves a discoverable journal/marker rather than orphans.
+        journal: dict[str, Any] = {
+            "schema_version": TRANSACTION_SCHEMA,
+            "status": MATERIALIZING,
+            "transaction_directory": str(transaction_directory),
+            "projection_path": str(projection_path),
+            "projection_preimage_sha256": prepared.projection_preimage_sha256,
+            "projection_candidate_sha256": prepared.projection_candidate_sha256,
+            "projection_rollback_copy": str(rollback_copy),
+            "projection_candidate_path": str(candidate_projection_path),
+            "projection_sealed": False,
+            "active_parent_path": str(prepared.active_parent_path),
+            "active_parent_preimage_sha256": prepared.active_parent_preimage_sha256,
+            "active_parent_candidate_sha256": prepared.active_parent_candidate_sha256,
+            "active_parent_rollback_copy": str(parent_rollback),
+            "active_parent_candidate_path": str(prepared.active_parent_candidate_path),
+            "active_parent_sealed": False,
+            "revision_count": prepared.revision_count,
+            "v110_dependency_pin": (
+                {
+                    "authority_path": str(tool_glue_authority_path.resolve()),
+                    "sha256": str(expected_tool_glue_authority_sha256).lower(),
+                    "version": expected_tool_glue_version,
+                }
+                if prepared.v110 and tool_glue_authority_path is not None
+                else None
+            ),
+            "completion_claim_allowed": False,
+        }
+        if prepared.v110:
+            if (
+                prepared.transition is None
+                or prepared.archive_manifest is None
+                or prepared.transition_preimage_active_parent_sha256 is None
+                or prepared.transition_candidate_binding is None
+                or prepared.archive_candidate_binding is None
+                or transition_rollback is None
+                or archive_rollback is None
+            ):
+                raise RuntimeError("science v1.10 journal binding was incomplete")
+            journal.update(
+                {
+                    "transition_path": str(prepared.transition.path),
+                    "transition_preimage_sha256": prepared.transition.preimage_sha256,
+                    "transition_candidate_sha256": prepared.transition.candidate_sha256,
+                    "transition_candidate_path": str(prepared.transition.candidate_path),
+                    "transition_rollback_copy": str(transition_rollback),
+                    "transition_sealed": False,
+                    "transition_preimage_active_parent_sha256": (
+                        prepared.transition_preimage_active_parent_sha256
+                    ),
+                    "transition_candidate_active_parent_sha256": (
+                        prepared.active_parent_candidate_sha256
+                    ),
+                    "archive_manifest_path": str(prepared.archive_manifest.path),
+                    "archive_manifest_preimage_sha256": prepared.archive_manifest.preimage_sha256,
+                    "archive_manifest_candidate_sha256": (
+                        prepared.archive_manifest.candidate_sha256
+                    ),
+                    "archive_manifest_candidate_path": str(
+                        prepared.archive_manifest.candidate_path
+                    ),
+                    "archive_manifest_rollback_copy": str(archive_rollback),
+                    "archive_manifest_sealed": False,
+                    "archive_snapshot_path": prepared.archive_candidate_binding[
+                        "versioned_snapshot_path"
+                    ],
+                    "archive_snapshot_sha256": prepared.archive_candidate_binding[
+                        "versioned_snapshot_sha256"
+                    ],
+                    "rollback_order": [
+                        "transition",
+                        "archive_manifest",
+                        "projection",
+                        "active_parent",
+                    ],
+                }
+            )
+        # Reject path-substitution journals before any durable write.
+        _validate_journal_object_topology(journal, projection_path=projection_path)
+        transaction_identity = _transaction_identity_sha256(
+            journal, transaction_directory=transaction_directory
+        )
+        journal["transaction_identity_sha256"] = transaction_identity
+
+        # Two-phase marker protocol:
+        #   PRE_JOURNAL  -> durable discoverable intent; missing journal may abort
+        #                  only after proving no transaction mutation.
+        #   JOURNAL_BOUND -> journal is sealed into the marker; missing journal
+        #                  fails closed and retains the marker. No seal/live
+        #                  mutation may begin until JOURNAL_BOUND is durable.
+        _write_json_atomic(
+            marker_path,
+            _marker_payload(
+                phase=MARKER_PHASE_PRE_JOURNAL,
+                journal_path=journal_path,
+                projection_path=projection_path,
+                transaction_directory=transaction_directory,
+                transaction_identity_sha256=transaction_identity,
+            ),
+        )
+        _write_json_atomic(journal_path, journal)
+        _assert_marker_or_journal_carrier(journal_path, role="science promotion journal")
+        _write_json_atomic(
+            marker_path,
+            _marker_payload(
+                phase=MARKER_PHASE_JOURNAL_BOUND,
+                journal_path=journal_path,
+                projection_path=projection_path,
+                transaction_directory=transaction_directory,
+                transaction_identity_sha256=transaction_identity,
+            ),
+        )
+        _assert_marker_or_journal_carrier(marker_path, role="science promotion marker")
+
+        sealed_modes: dict[str, int] = {}
+        for _label, prefix, live, archive, expected in _materializing_seal_plan(journal):
+            sealed = _seal_preimage(live, archive)
+            if sealed.sha256 != expected:
+                raise RuntimeError(f"{_label} sealed preimage drifted from prepared digest")
+            _record_sealed_preimage(journal, prefix=prefix, sealed=sealed)
+            sealed_modes[prefix] = sealed.original_mode
+            _write_json_atomic(journal_path, journal)
+
+        _atomic_replace_bytes(
+            candidate_projection_path,
+            prepared.projection_candidate,
+            installed_mode=stat.S_IREAD,
+        )
+        journal["status"] = PREPARED
+        _write_json_atomic(journal_path, journal)
+        journal["status"] = APPLYING
+        _write_json_atomic(journal_path, journal)
+
+        try:
+            if prepared.active_parent_candidate_path != prepared.active_parent_path:
+                _replace_file(
+                    prepared.active_parent_candidate_path,
+                    prepared.active_parent_path,
+                    installed_mode=sealed_modes["active_parent"],
+                )
+            _assert_hash(
+                prepared.active_parent_path,
+                prepared.active_parent_candidate_sha256,
+                "active-parent",
+            )
+            candidate_resolution = load_science_active_parent(candidate_projection_path)
+            _replace_file(
+                candidate_projection_path,
+                projection_path,
+                installed_mode=sealed_modes["projection"],
+            )
+            _assert_hash(
+                projection_path,
+                prepared.projection_candidate_sha256,
+                "projection",
+            )
+            live_archive_binding: dict[str, Any] | None = None
+            live_transition_binding: dict[str, Any] | None = None
+            if prepared.v110:
+                if prepared.archive_manifest is None or prepared.transition is None:
+                    raise RuntimeError("science v1.10 coupled targets were not prepared")
+                if archive_rollback is None or transition_rollback is None:
+                    raise RuntimeError("science v1.10 rollback modes were not prepared")
+                _replace_file(
+                    prepared.archive_manifest.candidate_path,
+                    prepared.archive_manifest.path,
+                    installed_mode=sealed_modes["archive_manifest"],
+                )
+                _assert_hash(
+                    prepared.archive_manifest.path,
+                    prepared.archive_manifest.candidate_sha256,
+                    "archive-manifest",
+                )
+                live_archive_binding = validate_science_archive_publication_binding(
+                    _load_json(prepared.archive_manifest.path),
+                    expected_active_parent_path=prepared.active_parent_path,
+                    expected_active_parent_sha256=prepared.active_parent_candidate_sha256,
+                )
+                _replace_file(
+                    prepared.transition.candidate_path,
+                    prepared.transition.path,
+                    installed_mode=sealed_modes["transition"],
+                )
+                _assert_hash(
+                    prepared.transition.path,
+                    prepared.transition.candidate_sha256,
+                    "transition",
+                )
+                live_transition_binding = validate_science_transition_active_parent_binding(
+                    prepared.transition.path.read_text(encoding="utf-8"),
+                    expected_active_parent_path=prepared.active_parent_path,
+                    expected_active_parent_sha256=prepared.active_parent_candidate_sha256,
+                )
+            journal["projection_committed_sha256"] = prepared.projection_candidate_sha256
+            journal["active_parent_committed_sha256"] = prepared.active_parent_candidate_sha256
+            if prepared.v110:
+                journal["archive_manifest_committed_sha256"] = (
+                    prepared.archive_manifest.candidate_sha256
+                )
+                journal["transition_committed_sha256"] = prepared.transition.candidate_sha256
+            journal["status"] = COMMITTED
+            _write_json_atomic(journal_path, journal)
+            live_resolution = load_science_active_parent(projection_path)
+        except BaseException as primary:
+            # A durable COMMITTED journal is never rolled back merely because
+            # same-process post-commit consumer readback fails (including v1.10
+            # four-target mode). Marker remains for recovery; postimages stay.
+            if journal.get("status") == COMMITTED:
+                raise
+            failures: list[BaseException] = [primary]
+            try:
+                _restore_transaction_preimages(
+                    journal,
+                    journal_path,
+                    status=ROLLED_BACK,
+                )
+            except BaseException as rollback_error:
+                failures.append(rollback_error)
+            if len(failures) == 1:
+                raise primary
+            raise ExceptionGroup(
+                "science promotion and rollback both failed", failures
+            ) from primary
+
+        marker_path.unlink(missing_ok=True)
+        result = _journal_receipt(journal, journal_path)
+        result.update(
+            {
+                "candidate_resolution_status": candidate_resolution["status"],
+                "live_resolution_status": live_resolution["status"],
+                "candidate_binding": prepared.candidate_binding,
+                "transition_binding": live_transition_binding,
+                "archive_binding": live_archive_binding,
+            }
+        )
+        return result
+    finally:
+        lease.release()
+
+
 def promote_revision_chain(
     *,
     projection_path: Path,
     evidence_paths: list[Path],
     event_refs: list[str],
     rollback_copy: Path,
+    expected_projection_sha256: str | None = None,
+    candidate_active_parent: Path | None = None,
+    expected_candidate_active_parent_sha256: str | None = None,
+    expected_active_parent_sha256: str | None = None,
+    active_parent_rollback_copy: Path | None = None,
+    science_episode_gate: Mapping[str, Any] | None = None,
+    transaction_directory: Path | None = None,
+    tool_glue_authority_path: Path | None = None,
+    expected_tool_glue_authority_sha256: str | None = None,
+    expected_tool_glue_version: str = DEFAULT_TOOL_GLUE_VERSION,
+    transition_path: Path | None = None,
+    transition_candidate: Path | None = None,
+    expected_transition_sha256: str | None = None,
+    expected_transition_preimage_active_parent_sha256: str | None = None,
+    transition_rollback_copy: Path | None = None,
+    archive_manifest_path: Path | None = None,
+    archive_manifest_candidate: Path | None = None,
+    expected_archive_manifest_sha256: str | None = None,
+    archive_manifest_rollback_copy: Path | None = None,
 ) -> dict[str, Any]:
-    if len(evidence_paths) != len(event_refs) or not evidence_paths:
-        raise ValueError("revision evidence and event refs must be paired and non-empty")
-    if rollback_copy.exists():
-        raise FileExistsError(f"rollback copy already exists: {rollback_copy}")
+    """Backward-compatible entry; v1.10 automatically activates the strict pin gate."""
 
-    projection = _load_json(projection_path)
-    if projection.get("science_revision_chain") not in (None, []):
-        raise ValueError("live projection already contains a science revision chain")
-    projection["science_revision_chain"] = [
-        _revision_entry(evidence_path.resolve(), event_ref)
-        for evidence_path, event_ref in zip(evidence_paths, event_refs, strict=True)
-    ]
-
-    projection_path.parent.mkdir(parents=True, exist_ok=True)
-    descriptor, temporary_name = tempfile.mkstemp(
-        prefix=f"{projection_path.name}.", suffix=".candidate", dir=projection_path.parent
+    return _promote_revision_chain_impl(
+        projection_path=projection_path,
+        evidence_paths=evidence_paths,
+        event_refs=event_refs,
+        rollback_copy=rollback_copy,
+        expected_projection_sha256=expected_projection_sha256,
+        candidate_active_parent=candidate_active_parent,
+        expected_candidate_active_parent_sha256=expected_candidate_active_parent_sha256,
+        expected_active_parent_sha256=expected_active_parent_sha256,
+        active_parent_rollback_copy=active_parent_rollback_copy,
+        science_episode_gate=science_episode_gate,
+        transaction_directory=transaction_directory,
+        tool_glue_authority_path=tool_glue_authority_path,
+        expected_tool_glue_authority_sha256=expected_tool_glue_authority_sha256,
+        expected_tool_glue_version=expected_tool_glue_version,
+        transition_path=transition_path,
+        transition_candidate=transition_candidate,
+        expected_transition_sha256=expected_transition_sha256,
+        expected_transition_preimage_active_parent_sha256=(
+            expected_transition_preimage_active_parent_sha256
+        ),
+        transition_rollback_copy=transition_rollback_copy,
+        archive_manifest_path=archive_manifest_path,
+        archive_manifest_candidate=archive_manifest_candidate,
+        expected_archive_manifest_sha256=expected_archive_manifest_sha256,
+        archive_manifest_rollback_copy=archive_manifest_rollback_copy,
     )
-    os.close(descriptor)
-    temporary_path = Path(temporary_name)
-    try:
-        temporary_path.write_text(
-            json.dumps(projection, ensure_ascii=False, indent=2) + "\n",
-            encoding="utf-8",
-        )
-        resolution = load_science_active_parent(temporary_path)
-        rollback_copy.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(projection_path, rollback_copy)
-        os.replace(temporary_path, projection_path)
-        try:
-            live_resolution = load_science_active_parent(projection_path)
-        except Exception:
-            shutil.copy2(rollback_copy, temporary_path)
-            os.replace(temporary_path, projection_path)
-            raise
-    finally:
-        temporary_path.unlink(missing_ok=True)
 
+
+def publish_science_revision_transaction(
+    *,
+    projection_path: Path,
+    evidence_paths: list[Path],
+    event_refs: list[str],
+    rollback_copy: Path,
+    expected_projection_sha256: str,
+    candidate_active_parent: Path,
+    expected_candidate_active_parent_sha256: str,
+    expected_active_parent_sha256: str,
+    active_parent_rollback_copy: Path,
+    tool_glue_authority_path: Path,
+    expected_tool_glue_authority_sha256: str,
+    expected_tool_glue_version: str = DEFAULT_TOOL_GLUE_VERSION,
+    science_episode_gate: Mapping[str, Any] | None = None,
+    transaction_directory: Path | None = None,
+    transition_path: Path | None = None,
+    transition_candidate: Path | None = None,
+    expected_transition_sha256: str | None = None,
+    expected_transition_preimage_active_parent_sha256: str | None = None,
+    transition_rollback_copy: Path | None = None,
+    archive_manifest_path: Path | None = None,
+    archive_manifest_candidate: Path | None = None,
+    expected_archive_manifest_sha256: str | None = None,
+    archive_manifest_rollback_copy: Path | None = None,
+) -> dict[str, Any]:
+    """Publish a fully pinned v1.10 revision after tool-glue is independently live."""
+
+    if not _is_v110_candidate(candidate_active_parent):
+        raise SciencePublicationError(
+            "SCIENCE_REVISION_VERSION_MISMATCH",
+            "the strict transaction entry accepts only the v1.10 candidate",
+        )
+    return _promote_revision_chain_impl(
+        projection_path=projection_path,
+        evidence_paths=evidence_paths,
+        event_refs=event_refs,
+        rollback_copy=rollback_copy,
+        expected_projection_sha256=expected_projection_sha256,
+        candidate_active_parent=candidate_active_parent,
+        expected_candidate_active_parent_sha256=expected_candidate_active_parent_sha256,
+        expected_active_parent_sha256=expected_active_parent_sha256,
+        active_parent_rollback_copy=active_parent_rollback_copy,
+        science_episode_gate=science_episode_gate,
+        transaction_directory=transaction_directory,
+        tool_glue_authority_path=tool_glue_authority_path,
+        expected_tool_glue_authority_sha256=expected_tool_glue_authority_sha256,
+        expected_tool_glue_version=expected_tool_glue_version,
+        transition_path=transition_path,
+        transition_candidate=transition_candidate,
+        expected_transition_sha256=expected_transition_sha256,
+        expected_transition_preimage_active_parent_sha256=(
+            expected_transition_preimage_active_parent_sha256
+        ),
+        transition_rollback_copy=transition_rollback_copy,
+        archive_manifest_path=archive_manifest_path,
+        archive_manifest_candidate=archive_manifest_candidate,
+        expected_archive_manifest_sha256=expected_archive_manifest_sha256,
+        archive_manifest_rollback_copy=archive_manifest_rollback_copy,
+    )
+
+
+def _load_marker_payload(marker_path: Path) -> dict[str, Any]:
+    _assert_marker_or_journal_carrier(marker_path, role="science promotion marker")
+    marker = _load_json(marker_path)
+    if marker.get("schema_version") != MARKER_SCHEMA:
+        raise SciencePublicationError(
+            "SCIENCE_MARKER_INVALID",
+            "science promotion marker schema is invalid or foreign",
+            defects=[
+                _dependency_defect(
+                    "SCIENCE_MARKER_INVALID",
+                    "marker schema_version is not the sealed v2 marker",
+                    observed=marker.get("schema_version"),
+                    path=str(marker_path),
+                )
+            ],
+        )
+    phase = str(marker.get("phase", ""))
+    if phase not in {MARKER_PHASE_PRE_JOURNAL, MARKER_PHASE_JOURNAL_BOUND}:
+        raise SciencePublicationError(
+            "SCIENCE_MARKER_INVALID",
+            f"science promotion marker phase is invalid: {phase}",
+        )
+    if not marker.get("journal_path") or not marker.get("transaction_identity_sha256"):
+        raise SciencePublicationError(
+            "SCIENCE_MARKER_INVALID",
+            "science promotion marker is missing journal_path or transaction identity",
+        )
+    if not marker.get("transaction_directory"):
+        raise SciencePublicationError(
+            "SCIENCE_MARKER_INVALID",
+            "science promotion marker is missing transaction_directory",
+        )
+    return marker
+
+
+def _load_marker_and_journal(
+    projection_path: Path,
+) -> tuple[Path, dict[str, Any], dict[str, Any]] | None | str:
+    """Load the phase-bound journal, or signal a cleared PRE_JOURNAL anchor.
+
+    Returns:
+      - ``None`` when no marker is present
+      - ``\"PRE_MATERIALIZATION_ABORTED\"`` when a PRE_JOURNAL marker pointed at a
+        missing/incomplete journal, no mutation was proven, and the anchor cleared
+      - ``(journal_path, journal, marker)`` for a JOURNAL_BOUND durable journal
+    """
+
+    projection_path = projection_path.resolve()
+    marker_path = _promotion_marker_path(projection_path).resolve()
+    if not marker_path.exists():
+        return None
+    marker = _load_marker_payload(marker_path)
+    phase = str(marker["phase"])
+    journal_path = Path(str(marker["journal_path"])).resolve()
+    transaction_directory = Path(str(marker["transaction_directory"])).resolve()
+    marker_identity = _normalized_sha256(
+        str(marker["transaction_identity_sha256"]),
+        "marker.transaction_identity_sha256",
+    )
+    marker_projection = Path(str(marker.get("projection_path", projection_path))).resolve()
+    if marker_projection != projection_path:
+        raise SciencePublicationError(
+            "CROSS_OBJECT_RESTORE",
+            "science promotion marker does not bind recovery projection target",
+            defects=[
+                _dependency_defect(
+                    "CROSS_OBJECT_RESTORE",
+                    "marker projection_path does not match recovery target",
+                    expected=str(projection_path),
+                    observed=str(marker_projection),
+                )
+            ],
+        )
+
+    if not journal_path.is_file():
+        if phase == MARKER_PHASE_PRE_JOURNAL:
+            # Safe abort only after proving no transaction mutation under PRE_JOURNAL.
+            _prove_no_transaction_mutation(None, transaction_directory=transaction_directory)
+            marker_path.unlink(missing_ok=True)
+            return "PRE_MATERIALIZATION_ABORTED"
+        # JOURNAL_BOUND without journal: fail closed and retain the marker so a
+        # mid-apply delete race cannot false-abort and leave live half-written.
+        raise SciencePublicationError(
+            "SCIENCE_JOURNAL_BOUND_MISSING",
+            "JOURNAL_BOUND marker is missing its durable journal; refusing false abort",
+            defects=[
+                _dependency_defect(
+                    "SCIENCE_JOURNAL_BOUND_MISSING",
+                    "journal file is absent under JOURNAL_BOUND phase",
+                    path=str(journal_path),
+                    phase=phase,
+                )
+            ],
+            receipt={
+                "marker_phase": phase,
+                "transaction_identity_sha256": marker_identity,
+                "transaction_journal": str(journal_path),
+                "marker_retained": True,
+            },
+        )
+
+    _assert_marker_or_journal_carrier(journal_path, role="science promotion journal")
+    journal = _load_json(journal_path)
+    if journal.get("schema_version") != TRANSACTION_SCHEMA:
+        raise RuntimeError("science promotion journal schema is invalid")
+    _validate_journal_object_topology(journal, projection_path=projection_path)
+    _validate_transaction_identity(
+        journal,
+        transaction_directory=transaction_directory,
+        expected_identity=marker_identity,
+    )
+
+    if phase == MARKER_PHASE_PRE_JOURNAL:
+        # Journal written but JOURNAL_BOUND upgrade did not land: seals must not
+        # have started. Abort only after proving no mutation residue.
+        _prove_no_transaction_mutation(journal, transaction_directory=transaction_directory)
+        journal["status"] = ROLLED_BACK_AFTER_CRASH
+        _write_json_atomic(journal_path, journal)
+        marker_path.unlink(missing_ok=True)
+        return "PRE_MATERIALIZATION_ABORTED"
+
+    return journal_path, journal, marker
+
+
+def _journal_target_states(
+    journal: Mapping[str, Any],
+) -> list[tuple[str, Path, str, str, str | None]]:
+    active_committed = (
+        str(journal["active_parent_committed_sha256"])
+        if journal.get("active_parent_committed_sha256") is not None
+        else None
+    )
+    projection_committed = (
+        str(journal["projection_committed_sha256"])
+        if journal.get("projection_committed_sha256") is not None
+        else None
+    )
+    targets = [
+        (
+            "active-parent",
+            Path(str(journal["active_parent_path"])).resolve(),
+            str(journal.get("active_parent_preimage_sha256", active_committed or "")),
+            str(journal.get("active_parent_candidate_sha256", active_committed or "")),
+            active_committed,
+        ),
+        (
+            "projection",
+            Path(str(journal["projection_path"])).resolve(),
+            str(journal.get("projection_preimage_sha256", projection_committed or "")),
+            str(journal.get("projection_candidate_sha256", projection_committed or "")),
+            projection_committed,
+        ),
+    ]
+    if journal.get("transition_path") is not None:
+        targets.extend(
+            [
+                (
+                    "archive-manifest",
+                    Path(str(journal["archive_manifest_path"])).resolve(),
+                    str(journal["archive_manifest_preimage_sha256"]),
+                    str(journal["archive_manifest_candidate_sha256"]),
+                    (
+                        str(journal["archive_manifest_committed_sha256"])
+                        if journal.get("archive_manifest_committed_sha256") is not None
+                        else None
+                    ),
+                ),
+                (
+                    "transition",
+                    Path(str(journal["transition_path"])).resolve(),
+                    str(journal["transition_preimage_sha256"]),
+                    str(journal["transition_candidate_sha256"]),
+                    (
+                        str(journal["transition_committed_sha256"])
+                        if journal.get("transition_committed_sha256") is not None
+                        else None
+                    ),
+                ),
+            ]
+        )
+    return targets
+
+
+def _target_state_defects(
+    journal: Mapping[str, Any],
+    *,
+    committed: bool,
+) -> list[dict[str, Any]]:
+    defects: list[dict[str, Any]] = []
+    for label, path, preimage, candidate, committed_sha256 in _journal_target_states(journal):
+        observed = _sha256(path) if path.is_file() else None
+        allowed = {committed_sha256} if committed else {preimage, candidate}
+        if None in allowed or observed not in allowed:
+            defects.append(
+                _dependency_defect(
+                    "SCIENCE_" + label.upper().replace("-", "_") + "_POSTIMAGE_DRIFT",
+                    (
+                        f"{label} target does not match COMMITTED postimage"
+                        if committed
+                        else f"{label} target matches neither transaction preimage nor candidate"
+                    ),
+                    path=str(path),
+                    expected=committed_sha256 if committed else sorted(allowed - {None}),
+                    observed=observed,
+                )
+            )
+    return defects
+
+
+def _verify_target_state(
+    journal: Mapping[str, Any],
+    *,
+    committed: bool,
+) -> None:
+    defects = _target_state_defects(journal, committed=committed)
+    if defects:
+        raise RuntimeError("; ".join(str(defect["message"]) for defect in defects))
+
+
+def _verify_companion_semantics(
+    journal: Mapping[str, Any],
+    *,
+    restored: bool,
+) -> dict[str, Any]:
+    if journal.get("transition_path") is None:
+        return {}
+    active_parent_path = Path(str(journal["active_parent_path"])).resolve()
+    transition_expected = str(
+        journal[
+            "transition_preimage_active_parent_sha256"
+            if restored
+            else "transition_candidate_active_parent_sha256"
+        ]
+    )
+    archive_expected = str(
+        journal["active_parent_preimage_sha256" if restored else "active_parent_candidate_sha256"]
+    )
+    transition_binding = validate_science_transition_active_parent_binding(
+        Path(str(journal["transition_path"])).read_text(encoding="utf-8"),
+        expected_active_parent_path=active_parent_path,
+        expected_active_parent_sha256=transition_expected,
+    )
+    archive_binding = validate_science_archive_publication_binding(
+        _load_json(Path(str(journal["archive_manifest_path"]))),
+        expected_active_parent_path=active_parent_path,
+        expected_active_parent_sha256=archive_expected,
+    )
     return {
-        "schema_version": "xinao.science_revision_promotion.v1",
-        "status": "VERIFIED",
-        "projection_path": str(projection_path),
-        "projection_sha256": _sha256(projection_path),
-        "rollback_copy": str(rollback_copy),
-        "rollback_copy_sha256": _sha256(rollback_copy),
-        "revision_count": len(projection["science_revision_chain"]),
-        "candidate_resolution_status": resolution["status"],
-        "live_resolution_status": live_resolution["status"],
-        "active_parent_sha256": live_resolution["active_parent"]["sha256"],
-        "completion_claim_allowed": False,
+        "transition_binding": transition_binding,
+        "archive_binding": archive_binding,
     }
 
 
-def main() -> int:
+def recover_interrupted_promotion(projection_path: Path) -> dict[str, Any]:
+    """Recover or finalize the one durable transaction bound to ``projection_path``.
+
+    Trust boundary (see ``RECOVERY_TRUST_BOUNDARY``): restores interrupted
+    MATERIALIZING/PREPARED/APPLYING work and clears COMMITTED markers after
+    verifying sealed identity + object topology. Rejects path-substitution and
+    topology forgeries that disagree with the sealed projection preimage /
+    identity pins. Does not claim resistance to coherent full-transaction
+    fabrication that rewrites marker, journal, and preimages together under the
+    same-user filesystem.
+    """
+
+    projection_path = projection_path.resolve()
+    lease = _acquire_promotion_lease(projection_path)
+    try:
+        loaded = _load_marker_and_journal(projection_path)
+        if loaded is None:
+            return {
+                "schema_version": RESULT_SCHEMA,
+                "status": "NO_INTERRUPTED_TRANSACTION",
+                "projection_path": str(projection_path),
+                "completion_claim_allowed": False,
+            }
+        if loaded == "PRE_MATERIALIZATION_ABORTED":
+            return {
+                "schema_version": RESULT_SCHEMA,
+                "status": "PRE_MATERIALIZATION_ABORTED",
+                "projection_path": str(projection_path),
+                "pre_materialization_anchor_cleared": True,
+                "completion_claim_allowed": False,
+            }
+        journal_path, journal, marker = loaded
+        status_value = str(journal.get("status"))
+        marker_path = _promotion_marker_path(projection_path)
+        transaction_directory = Path(
+            str(
+                journal.get("transaction_directory")
+                or marker.get("transaction_directory")
+                or journal_path.parent
+            )
+        ).resolve()
+        # Revalidate identity + object topology on every recover path before writes.
+        _validate_journal_object_topology(journal, projection_path=projection_path)
+        _validate_transaction_identity(
+            journal,
+            transaction_directory=transaction_directory,
+            expected_identity=str(marker["transaction_identity_sha256"]),
+        )
+        if status_value == COMMITTED:
+            _verify_target_state(journal, committed=True)
+            companion_bindings = _verify_companion_semantics(journal, restored=False)
+            load_science_active_parent(projection_path)
+            marker_path.unlink(missing_ok=True)
+            result = _journal_receipt(journal, journal_path)
+            result["status"] = "COMMITTED_LOCK_CLEARED"
+            result.update(companion_bindings)
+            return result
+        if status_value == MATERIALIZING:
+            return _recover_materializing_transaction(journal, journal_path, marker_path)
+        if status_value in {ROLLED_BACK, ROLLED_BACK_AFTER_CRASH}:
+            specs = _preimage_specs(journal)
+            invalid = _validate_preimages(specs)
+            if invalid:
+                _raise_group("science rollback preimages are invalid", invalid)
+            for label, _source, target, expected, _mode in specs:
+                if not target.is_file() or _sha256(target) != expected:
+                    raise RuntimeError(f"{label} target does not match persisted rollback")
+            companion_bindings = _verify_companion_semantics(journal, restored=True)
+            marker_path.unlink(missing_ok=True)
+            result = _journal_receipt(journal, journal_path)
+            result.update(companion_bindings)
+            return result
+        if status_value not in {PREPARED, APPLYING, ROLLING_BACK}:
+            raise RuntimeError(f"unsupported science promotion journal state: {status_value}")
+
+        specs = _preimage_specs(journal)
+        invalid = _validate_preimages(specs)
+        if invalid:
+            _raise_group("science rollback preimages are invalid", invalid)
+        _verify_target_state(journal, committed=False)
+        errors = _restore_preimages(specs)
+        if errors:
+            _raise_group("science recovery could not restore every target", errors)
+        for label, _source, target, expected, original_mode in specs:
+            if not target.is_file() or _sha256(target) != expected:
+                raise RuntimeError(f"{label} recovery target failed readback")
+            _assert_restored_mode(label, target, original_mode)
+        companion_bindings = _verify_companion_semantics(journal, restored=True)
+        journal["status"] = ROLLED_BACK_AFTER_CRASH
+        _write_json_atomic(journal_path, journal)
+        marker_path.unlink(missing_ok=True)
+        result = _journal_receipt(journal, journal_path)
+        result.update(companion_bindings)
+        return result
+    finally:
+        lease.release()
+
+
+def rollback_science_revision_transaction(
+    *,
+    journal_path: Path,
+    projection_path: Path | None = None,
+) -> dict[str, Any]:
+    """Idempotently restore a committed science transaction's exact preimages."""
+
+    journal_path = journal_path.resolve()
+    _assert_marker_or_journal_carrier(journal_path, role="science promotion journal")
+    journal = _load_json(journal_path)
+    if journal.get("schema_version") != TRANSACTION_SCHEMA:
+        raise RuntimeError("science promotion journal schema is invalid")
+    bound_projection = Path(str(journal.get("projection_path", ""))).resolve()
+    if projection_path is not None and projection_path.resolve() != bound_projection:
+        raise RuntimeError("science promotion journal does not bind rollback target")
+    transaction_directory = Path(
+        str(journal.get("transaction_directory") or journal_path.parent)
+    ).resolve()
+    lease = _acquire_promotion_lease(bound_projection)
+    try:
+        journal = _load_json(journal_path)
+        status_value = str(journal.get("status"))
+        marker_path = _promotion_marker_path(bound_projection)
+        # Revalidate identity and object topology before any rollback mutation.
+        _validate_journal_object_topology(journal, projection_path=bound_projection)
+        identity = _validate_transaction_identity(
+            journal, transaction_directory=transaction_directory
+        )
+        if status_value in {ROLLED_BACK, ROLLED_BACK_AFTER_CRASH}:
+            specs = _preimage_specs(journal)
+            invalid = _validate_preimages(specs)
+            if invalid:
+                _raise_group("science rollback preimages are invalid", invalid)
+            for label, _source, target, expected, _mode in specs:
+                if not target.is_file() or _sha256(target) != expected:
+                    raise RuntimeError(f"{label} target does not match persisted rollback")
+            companion_bindings = _verify_companion_semantics(journal, restored=True)
+            marker_path.unlink(missing_ok=True)
+            result = _journal_receipt(journal, journal_path)
+            result.update(companion_bindings)
+            return result
+        if status_value != COMMITTED:
+            raise RuntimeError("explicit science rollback requires a COMMITTED transaction")
+        if marker_path.exists():
+            raise RuntimeError("recover the active science transaction before explicit rollback")
+        postimage_defects = _target_state_defects(journal, committed=True)
+        if postimage_defects:
+            raise SciencePublicationError(
+                "SCIENCE_ROLLBACK_POSTIMAGE_DRIFT",
+                "explicit science rollback refused because a COMMITTED postimage drifted",
+                defects=postimage_defects,
+                receipt={
+                    "transaction_status": status_value,
+                    "transaction_journal": str(journal_path),
+                },
+            )
+        try:
+            _verify_companion_semantics(journal, restored=False)
+        except Exception as exc:
+            raise SciencePublicationError(
+                "SCIENCE_ROLLBACK_POSTIMAGE_DRIFT",
+                "explicit science rollback refused because COMMITTED semantics drifted",
+                defects=[
+                    _dependency_defect(
+                        "SCIENCE_ROLLBACK_SEMANTIC_DRIFT",
+                        str(exc),
+                    )
+                ],
+                receipt={
+                    "transaction_status": status_value,
+                    "transaction_journal": str(journal_path),
+                },
+            ) from exc
+        specs = _preimage_specs(journal)
+        invalid = _validate_preimages(specs)
+        if invalid:
+            _raise_group("science rollback preimages are invalid", invalid)
+        _write_json_atomic(
+            marker_path,
+            _marker_payload(
+                phase=MARKER_PHASE_JOURNAL_BOUND,
+                journal_path=journal_path,
+                projection_path=bound_projection,
+                transaction_directory=transaction_directory,
+                transaction_identity_sha256=identity,
+            ),
+        )
+        journal["status"] = ROLLING_BACK
+        _write_json_atomic(journal_path, journal)
+        errors = _restore_preimages(specs)
+        if errors:
+            _raise_group("science rollback could not restore every target", errors)
+        for label, _source, target, expected, original_mode in specs:
+            if not target.is_file() or _sha256(target) != expected:
+                raise RuntimeError(f"{label} rollback target failed readback")
+            _assert_restored_mode(label, target, original_mode)
+        companion_bindings = _verify_companion_semantics(journal, restored=True)
+        journal["status"] = ROLLED_BACK
+        _write_json_atomic(journal_path, journal)
+        marker_path.unlink(missing_ok=True)
+        result = _journal_receipt(journal, journal_path)
+        result.update(companion_bindings)
+        return result
+    finally:
+        lease.release()
+
+
+def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser()
+    parser.add_argument("--projection", type=Path, default=SCIENCE_ACTIVE_PARENT_PROJECTION_PATH)
+    parser.add_argument("--revision-evidence", type=Path, action="append")
+    parser.add_argument("--event-ref", action="append")
+    parser.add_argument("--rollback-copy", type=Path)
+    parser.add_argument("--expected-projection-sha256")
+    parser.add_argument("--candidate-active-parent", type=Path)
+    parser.add_argument("--expected-candidate-active-parent-sha256")
+    parser.add_argument("--expected-active-parent-sha256")
+    parser.add_argument("--active-parent-rollback-copy", type=Path)
+    parser.add_argument("--transaction-directory", type=Path)
     parser.add_argument(
-        "--projection",
+        "--tool-glue-authority",
         type=Path,
-        default=SCIENCE_ACTIVE_PARENT_PROJECTION_PATH,
+        default=DEFAULT_TOOL_GLUE_AUTHORITY_PATH,
     )
-    parser.add_argument("--revision-evidence", type=Path, action="append", required=True)
-    parser.add_argument("--event-ref", action="append", required=True)
-    parser.add_argument("--rollback-copy", type=Path, required=True)
-    args = parser.parse_args()
-    result = promote_revision_chain(
-        projection_path=args.projection.resolve(),
-        evidence_paths=args.revision_evidence,
-        event_refs=args.event_ref,
-        rollback_copy=args.rollback_copy.resolve(),
+    parser.add_argument(
+        "--expected-tool-glue-authority-sha256",
+        default=DEFAULT_TOOL_GLUE_V34_SHA256,
     )
+    parser.add_argument("--expected-tool-glue-version", default=DEFAULT_TOOL_GLUE_VERSION)
+    parser.add_argument("--transition-path", type=Path)
+    parser.add_argument("--transition-candidate", type=Path)
+    parser.add_argument("--expected-transition-sha256")
+    parser.add_argument("--expected-transition-preimage-active-parent-sha256")
+    parser.add_argument("--transition-rollback-copy", type=Path)
+    parser.add_argument("--archive-manifest-path", type=Path)
+    parser.add_argument("--archive-manifest-candidate", type=Path)
+    parser.add_argument("--expected-archive-manifest-sha256")
+    parser.add_argument("--archive-manifest-rollback-copy", type=Path)
+    parser.add_argument("--recover", action="store_true")
+    parser.add_argument("--rollback-journal", type=Path)
+    return parser
+
+
+def main(argv: list[str] | None = None) -> int:
+    args = _parser().parse_args(argv)
+    try:
+        if args.recover:
+            result = recover_interrupted_promotion(args.projection)
+        elif args.rollback_journal is not None:
+            result = rollback_science_revision_transaction(
+                journal_path=args.rollback_journal,
+                projection_path=args.projection,
+            )
+        else:
+            missing = [
+                name
+                for name, value in (
+                    ("--revision-evidence", args.revision_evidence),
+                    ("--event-ref", args.event_ref),
+                    ("--rollback-copy", args.rollback_copy),
+                )
+                if not value
+            ]
+            if missing:
+                raise SciencePublicationError(
+                    "CLI_ARGUMENTS_INCOMPLETE",
+                    "publication arguments are incomplete: " + ", ".join(missing),
+                )
+            result = promote_revision_chain(
+                projection_path=args.projection,
+                evidence_paths=args.revision_evidence,
+                event_refs=args.event_ref,
+                rollback_copy=args.rollback_copy,
+                expected_projection_sha256=args.expected_projection_sha256,
+                candidate_active_parent=args.candidate_active_parent,
+                expected_candidate_active_parent_sha256=(
+                    args.expected_candidate_active_parent_sha256
+                ),
+                expected_active_parent_sha256=args.expected_active_parent_sha256,
+                active_parent_rollback_copy=args.active_parent_rollback_copy,
+                transaction_directory=args.transaction_directory,
+                tool_glue_authority_path=args.tool_glue_authority,
+                expected_tool_glue_authority_sha256=(args.expected_tool_glue_authority_sha256),
+                expected_tool_glue_version=args.expected_tool_glue_version,
+                transition_path=args.transition_path,
+                transition_candidate=args.transition_candidate,
+                expected_transition_sha256=args.expected_transition_sha256,
+                expected_transition_preimage_active_parent_sha256=(
+                    args.expected_transition_preimage_active_parent_sha256
+                ),
+                transition_rollback_copy=args.transition_rollback_copy,
+                archive_manifest_path=args.archive_manifest_path,
+                archive_manifest_candidate=args.archive_manifest_candidate,
+                expected_archive_manifest_sha256=args.expected_archive_manifest_sha256,
+                archive_manifest_rollback_copy=args.archive_manifest_rollback_copy,
+            )
+    except SciencePublicationError as exc:
+        print(json.dumps(exc.receipt, ensure_ascii=False, sort_keys=True))
+        return 2
     print(json.dumps(result, ensure_ascii=False, sort_keys=True))
     return 0
 

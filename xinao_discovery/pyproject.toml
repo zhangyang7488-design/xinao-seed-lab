@@ -52,6 +52,12 @@ dev = [
 [tool.hatch.build.targets.wheel]
 packages = ["src/xinao"]
 
+# Non-Python one-home resources must ship in the wheel so installed topology can
+# locate the canonical updater without a repository checkout or parents[N] walk.
+[tool.hatch.build.targets.wheel.force-include]
+"src/xinao/tool_glue/resources/Update-CodexContextCatalog.ps1" = "xinao/tool_glue/resources/Update-CodexContextCatalog.ps1"
+"src/xinao/tool_glue/resources/verify_tool_glue_consumer.py" = "xinao/tool_glue/resources/verify_tool_glue_consumer.py"
+
 [tool.pytest.ini_options]
 addopts = ["--import-mode=importlib"]
 pythonpath = ["src"]

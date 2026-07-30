@@ -4073,6 +4073,271 @@
     expected_starts_new_project: false
     expected_recovered_requirement_atoms: ATOM_CURRENT_BEST_BEHAVIOR_BASELINE|ATOM_BOUNDED_MINIMUM_TRAJECTORY_REVIEW|ATOM_AT_MOST_ONE_CHOICE_CHANGING_HYPOTHESIS|ATOM_MATURE_COMPARISON_ALREADY_CHANGED_DESIGN|ATOM_NO_SUPPORTED_GAIN_KEEP_BASELINE_AND_ADVANCE|ATOM_REAL_CHANGED_CONTEXT_TRAJECTORY_PROMOTION|ATOM_STANDING_SUFFICIENT_INTENT_POSITIVE_DUTY|ATOM_DECISION_SKILL_CLASSIFIES_NOT_ORIGINATES_AUTHORITY|ATOM_EXISTING_CONSUMER_NO_NEW_PLATFORM|ATOM_META_LOOP_CANNOT_REPLACE_SCIENCE|ATOM_FAILURE_TRACE_PRESERVED
     expected_rejected_proxy_atoms: ATOM_REQUIRE_CURRENT_USER_REAUTHORIZATION|ATOM_RECOVERY_BASELINE_IS_END|ATOM_FORCE_META_CHANGE_EVERY_WINDOW|ATOM_INSTALL_REASONINGBANK_PLATFORM|ATOM_SELF_REVIEW_COUNTS_AS_EFFECT|ATOM_META_LOOP_BLOCKS_SCIENCE|ATOM_FULL_TRANSCRIPT_RELOAD|ATOM_PERMISSION_NOT_DUTY
+- description: A fresh XINAO window matures a repeated necessary chain without turning capability work into the science parent
+  metadata:
+    id: REG_FRESH_WINDOW_DUAL_FRONTIER_CAPABILITY_MATURATION_PRESERVES_RESEARCH
+    domain: continuity
+    class: dual_frontier_capability_maturation_regression
+    profiles:
+    - smoke
+    - core
+    - deep
+    source_type: explicit_user_correction
+    source_ref: current-user-2026-07-30/necessary-chain-dual-frontier-maturation
+    lifecycle: regression
+    added_at: '2026-07-30'
+    not_authority: true
+  vars:
+    case_id: REG_FRESH_WINDOW_DUAL_FRONTIER_CAPABILITY_MATURATION_PRESERVES_RESEARCH
+    domain: continuity
+    restored_context: |-
+      A qualified fresh Codex window owns the active XINAO science parent, the same live
+      ResearchEpisode, and interactive leg A. Its ResearchFrontier contains several positive-value
+      packages. One package and two definite near-term consumers depend on the same researcher-call
+      prerequisite: phase, frozen data identity and permission, anti-leakage boundary, candidate root,
+      work-unit identity, and consumer contract. That prerequisite is necessary, semantically stable,
+      machine-verifiable, and has already caused repeated manual assembly, user explanation, recovery,
+      and replay burden. A current mature comparison has already pinned the mature local route and
+      thin binding, and no new comparison can change this bounded choice. Dynamic net benefit now
+      selects only the thinnest mature implementation shape and ordering; it cannot cancel the already
+      triggered maturation obligation. Those complete facts, not an invocation count, theoretical
+      repeatability, or an unnamed future need, derive a bounded CapabilityFrontier package from the
+      live research need.
+
+      Before formal construction, reevaluate the local maturation verdict from current evidence. After
+      every bounded probe or real result, reevaluate again; a probe is not a permanent path. Before the
+      next production call that depends on this prerequisite, the existing route must be bound through
+      one stable versioned entry, preflighted, and read back by the real consumer. Only that dependency
+      cone waits. Independent ResearchFrontier packages continue in the selected leg A. After the
+      maturation result fans into the same ResearchEpisode, Codex recomputes both ResearchFrontier and
+      CapabilityFrontier. Once the capability is promoted on a versioned mature path, later repair,
+      replace, or rollback stays on that path: silently returning to temporary hand assembly is
+      forbidden. Publishing or landing text, a constitution draft, a Skill markdown file, or a paused
+      candidate package is not Skill-effective and does not close real-consumer activation. Codex
+      remains the sole scientific adopter, formal writer, and effect verifier. The capability package
+      is a means: it does not become the science parent, Foundation total gate, whole-chain audit, new
+      platform, new authority, implicit leg B, second Owner, infinite pre-construction wait, frozen
+      research judgment, or legacy G4_FULL. A single local example, caller modality, incident, or
+      AI-authored summary would not establish the trigger; conversely, these established trigger facts
+      may not be left as permanent prompt, TXT, command, mount, or worker-memory hand assembly.
+
+      Neutral candidate pool:
+      ATOM_RESTORE_RESEARCH_FRONTIER=restore the active science parent, ResearchEpisode and live
+      ResearchFrontier as the completion identity;
+      ATOM_DERIVE_CAPABILITY_FRONTIER_FROM_LIVE_NEED=derive a bounded CapabilityFrontier package from
+      the proven necessary research dependency;
+      ATOM_STABLE_NECESSARY_CHAIN_MATURATION_TRIGGER=recognize a necessary-chain action with explicit,
+      machine-verifiable semantics and observed repeated or named-evidence-certain near-term reuse;
+      ATOM_MATURE_BEFORE_NEXT_DEPENDENT_CALL=complete the thin versioned binding and preflight before
+      the next production call that depends on it;
+      ATOM_VERIFY_REAL_CONSUMER_READBACK=require the original real consumer to read back the matured
+      capability before reuse credit;
+      ATOM_UNAFFECTED_RESEARCH_CONTINUES=continue positive ResearchFrontier work outside the dependency
+      cone;
+      ATOM_PRESERVE_SELECTED_LEG_A=keep the current interactive TUI as the sole leg-A Owner without an
+      implicit durable-leg switch;
+      ATOM_FAN_IN_RECOMPUTE_BOTH_FRONTIERS=fan the bounded result into the same ResearchEpisode and
+      recompute ResearchFrontier and CapabilityFrontier;
+      ATOM_CODEX_REMAINS_SCIENCE_OWNER=keep scientific interpretation, adoption, formal writing and
+      effect verification with Codex;
+      ATOM_PRECONSTRUCTION_AND_POST_PROBE_REEVALUATION=evaluate the local maturation verdict before
+      formal construction and reevaluate after every bounded probe or real result;
+      ATOM_PROMOTED_CAPABILITY_CANNOT_SILENTLY_REGRESS=after promotion, repair, replace or roll back only
+      through a versioned mature path instead of silently returning to temporary hand assembly;
+      ATOM_SINGLE_EXAMPLE_OR_SUMMARY_AUTO_PROMOTES_MATURATION=let one example, modality, incident or
+      AI summary establish a global maturation mandate;
+      ATOM_CAPABILITY_REPLACES_SCIENCE_PARENT=make capability construction the scientific completion
+      identity;
+      ATOM_GLOBAL_CAPABILITY_GATE=block every research package on one capability frontier or Foundation
+      total gate;
+      ATOM_FREEZE_ALL_RESEARCH=freeze unrelated ResearchFrontier work while the dependency cone matures;
+      ATOM_BUILD_NEW_CAPABILITY_PLATFORM=create an unrelated general platform instead of the thin mature
+      binding;
+      ATOM_IMPLICIT_LEG_B=switch to Temporal, a native Goal, daemon or second Codex Owner without current
+      authority;
+      ATOM_RESTORE_G4_FULL=restore legacy Foundation or G4_FULL as current science admission;
+      ATOM_PERMANENT_HAND_ASSEMBLY_DEFAULT=continue rebuilding the stable prerequisite from prompts, TXT,
+      commands, mounts or worker memory after the trigger is established;
+      ATOM_WORKER_OR_SUMMARY_GETS_AUTHORITY=let a worker result or AI-authored record choose the science
+      parent or declare completion;
+      ATOM_DYNAMIC_NET_BENEFIT_CANCELS_TRIGGER=use implementation cost to make an already-triggered
+      maturation obligation optional;
+      ATOM_RESEARCH_JUDGMENT_FROZEN_IN_CAPABILITY=encode the research question, hypothesis, algorithm,
+      evidence interpretation or scientific answer into the deterministic mature capability;
+      ATOM_TEXT_PUBLICATION_COUNTS_AS_SKILL_EFFECTIVE=treat text publish, constitution draft, Skill
+      markdown, or paused candidate landing as Skill already effective or real-consumer activation;
+      ATOM_INFINITE_PRECONSTRUCTION_PRETRIGGER_GATE=expand pre-design judgment into an infinite
+      pre-construction wait, global block, or permanent probe chain before any ordinary action.
+    user_increment: 继续当前新澳研究。
+    expected_target_relation: existing_object
+    expected_next_step: act
+    expected_ask_user: false
+    expected_create_repository: false
+    expected_create_daemon: false
+    expected_create_goal: false
+    expected_predecision_order: parent_frame_before_candidate_selection
+    expected_active_problem_level: parent_intent_and_harm
+    expected_problem_level_order: before_rule_skill_mode_worker_and_tool_selection
+    expected_action_binding: current_authorized_object
+    expected_object_identity_source: restored_context
+    expected_mature_comparison_triggered: false
+    expected_learning_loop: double_loop_structural
+    expected_repair_target: governing_invariant
+    expected_closure_evidence: cross_context_entry_and_negative
+    expected_constraint_governance_disposition: retain_protected_boundary
+    expected_effect_scope: reversible_local
+    expected_effect_authority: restored_task_scope
+    expected_coordination_mode: single_supervisor_worker
+    expected_worker_provider: external_worker
+    expected_worker_transport: adaptive|direct_batch
+    expected_quota_action: query_now
+    expected_quota_query_disposition: query_now_before_routing
+    expected_owner_execution_state: dynamic_supervisor
+    expected_terminal_refill: not_applicable
+    expected_worker_receipt_disposition: not_applicable
+    expected_text_writer: codex_main
+    expected_completion_claim_scope: not_applicable
+    expected_local_completion_transition: rederive_mainline_frontier
+    expected_continuous_run_disposition: continue
+    expected_active_window_role: mainline_owner
+    expected_interruption_frame_action: preserve_current_parent
+    expected_resume_target_source: not_applicable
+    expected_completed_history_disposition: keep_closed
+    expected_frontier_disposition: execute
+    expected_candidate_value: positive
+    expected_global_frontier_reconciled: false
+    expected_downstream_recovery_required: true
+    expected_freeze_unaffected_provider: false
+    expected_degraded_scope: dependency_cone_only
+    expected_preserve_parent_completion_bar: true
+    expected_unaffected_frontier_action: continue_recompute
+    expected_recovery_probe: bounded_event_driven
+    expected_preference_update: smallest_existing_artifact
+    expected_starts_new_project: false
+    expected_decision_responsibility: owner_execute_and_inform
+    expected_human_explanation_mode: technical_plain_action
+    expected_metacognition_disposition: do_not_capture
+    expected_durable_behavior_closure: land_consumer_and_cross_context_regression
+    expected_recovered_requirement_atoms: ATOM_RESTORE_RESEARCH_FRONTIER|ATOM_DERIVE_CAPABILITY_FRONTIER_FROM_LIVE_NEED|ATOM_STABLE_NECESSARY_CHAIN_MATURATION_TRIGGER|ATOM_MATURE_BEFORE_NEXT_DEPENDENT_CALL|ATOM_VERIFY_REAL_CONSUMER_READBACK|ATOM_UNAFFECTED_RESEARCH_CONTINUES|ATOM_PRESERVE_SELECTED_LEG_A|ATOM_FAN_IN_RECOMPUTE_BOTH_FRONTIERS|ATOM_CODEX_REMAINS_SCIENCE_OWNER|ATOM_PRECONSTRUCTION_AND_POST_PROBE_REEVALUATION|ATOM_PROMOTED_CAPABILITY_CANNOT_SILENTLY_REGRESS
+    expected_rejected_proxy_atoms: ATOM_SINGLE_EXAMPLE_OR_SUMMARY_AUTO_PROMOTES_MATURATION|ATOM_CAPABILITY_REPLACES_SCIENCE_PARENT|ATOM_GLOBAL_CAPABILITY_GATE|ATOM_FREEZE_ALL_RESEARCH|ATOM_BUILD_NEW_CAPABILITY_PLATFORM|ATOM_IMPLICIT_LEG_B|ATOM_RESTORE_G4_FULL|ATOM_PERMANENT_HAND_ASSEMBLY_DEFAULT|ATOM_WORKER_OR_SUMMARY_GETS_AUTHORITY|ATOM_DYNAMIC_NET_BENEFIT_CANCELS_TRIGGER|ATOM_RESEARCH_JUDGMENT_FROZEN_IN_CAPABILITY|ATOM_TEXT_PUBLICATION_COUNTS_AS_SKILL_EFFECTIVE|ATOM_INFINITE_PRECONSTRUCTION_PRETRIGGER_GATE
+- description: A fresh XINAO window distinguishes a proven one-off action from an undecidable maturation probe
+  metadata:
+    id: REG_MATURATION_VERDICT_SYMMETRY_NOT_REQUIRED_VS_UNDECIDABLE
+    domain: continuity
+    class: maturation_verdict_symmetry_regression
+    profiles:
+    - smoke
+    - core
+    - deep
+    source_type: independent_semantic_audit
+    source_ref: current-owner-2026-07-30/maturation-state-asymmetry-correction
+    lifecycle: regression
+    added_at: '2026-07-30'
+    not_authority: true
+  vars:
+    case_id: REG_MATURATION_VERDICT_SYMMETRY_NOT_REQUIRED_VS_UNDECIDABLE
+    domain: continuity
+    restored_context: |-
+      The active XINAO science parent and its unrelated ResearchFrontier packages remain live. Two
+      independent deterministic actions appear during one bounded episode. Current evidence proves
+      action A is a legal one-off action with no next same-condition production reuse; it is therefore
+      NOT_REQUIRED for maturation and may proceed as an ordinary bounded, reversible action under its
+      existing contract. It does not acquire mature-capability identity or create a capability debt.
+
+      For action B, the real consumer may recur, but its stable semantics and machine-verifiable contract
+      cannot yet be decided from current evidence. It is UNDECIDABLE, so only a named isolated
+      BOUNDED_PROBE may run. The probe binds its object, consumer, allowed effects, evidence, sunset and
+      rollback, and its real result must cause immediate reevaluation. It cannot become the default path,
+      a production call, MATURED_ACTIVE, or completion evidence merely because the probe succeeds.
+
+      These verdicts are local evidence-bound evaluations, not a permanent state machine, third frontier,
+      platform, Foundation total gate, Leg B, second Owner, infinite pre-trigger wait, or reason to stop
+      unrelated research. Pre-design judgment decides only from current evidence; after every real probe
+      result the same local maturation question must be reevaluated. Do not collapse every pre-trigger
+      action into a probe, and do not treat uncertainty as proof that maturation is not required. A
+      successful temporary probe, text publish, Skill markdown, or paused candidate package is not
+      MATURED_ACTIVE and not Skill-effective without the engineering contract and real consumer
+      readback. If later evidence establishes MATURATION_REQUIRED, the next same-dependency production
+      call waits for the mature consumer readback; dynamic net benefit then chooses only the
+      implementation shape. Codex keeps scientific interpretation, adoption, formal writing and effect
+      verification.
+
+      Neutral candidate pool:
+      ATOM_NOT_REQUIRED_ALLOWS_ORDINARY_BOUNDED_ACTION=let the proven one-off action proceed under its
+      existing bounded contract without mature identity or capability debt;
+      ATOM_UNDECIDABLE_ONLY_ALLOWS_BOUNDED_PROBE=restrict the unresolved action to a named isolated probe;
+      ATOM_PROBE_RESULT_REEVALUATES_MATURATION=use every real probe result to reevaluate the same local
+      maturation question;
+      ATOM_VERDICTS_ARE_LOCAL_EVIDENCE_BOUND=keep verdict scope on the named action and current evidence;
+      ATOM_UNAFFECTED_RESEARCH_CONTINUES=continue independent positive ResearchFrontier packages;
+      ATOM_CODEX_REMAINS_SCIENCE_OWNER=keep scientific judgment, adoption, writing and effect verification
+      with Codex;
+      ATOM_ALL_PRETRIGGER_ACTIONS_MUST_BE_PROBES=block even a proven one-off ordinary bounded action behind
+      a maturation probe;
+      ATOM_UNDECIDABLE_MEANS_NOT_REQUIRED=treat missing trigger evidence as proof that no maturation
+      obligation can arise;
+      ATOM_PROBE_SUCCESS_IS_MATURED_ACTIVE=promote a successful temporary probe without the engineering
+      contract and real consumer readback;
+      ATOM_VERDICT_CREATES_GLOBAL_WAIT=stop unrelated research on either local verdict;
+      ATOM_BUILD_MATURATION_STATE_PLATFORM=create a third frontier, state platform, daemon or control plane;
+      ATOM_IMPLICIT_LEG_B_OR_SECOND_OWNER=switch transport or ownership because a local verdict exists;
+      ATOM_DYNAMIC_NET_BENEFIT_CANCELS_REQUIRED=allow cost to cancel MATURATION_REQUIRED after it is proven;
+      ATOM_TEXT_PUBLICATION_COUNTS_AS_SKILL_EFFECTIVE=treat text publish, Skill markdown, or paused
+      candidate landing as Skill already effective or MATURED_ACTIVE;
+      ATOM_INFINITE_PRECONSTRUCTION_PRETRIGGER_GATE=expand pre-design judgment into an infinite
+      pre-trigger block or permanent probe chain.
+    user_increment: 继续当前新澳研究，别把一次性动作也都卡成 probe。
+    expected_target_relation: existing_object
+    expected_next_step: act
+    expected_ask_user: false
+    expected_create_repository: false
+    expected_create_daemon: false
+    expected_create_goal: false
+    expected_predecision_order: parent_frame_before_candidate_selection
+    expected_active_problem_level: parent_intent_and_harm
+    expected_problem_level_order: before_rule_skill_mode_worker_and_tool_selection
+    expected_action_binding: current_authorized_object
+    expected_object_identity_source: restored_context
+    expected_mature_comparison_triggered: false
+    expected_learning_loop: double_loop_structural
+    expected_repair_target: governing_invariant
+    expected_closure_evidence: cross_context_entry_and_negative
+    expected_constraint_governance_disposition: retain_protected_boundary
+    expected_effect_scope: reversible_local
+    expected_effect_authority: restored_task_scope
+    expected_coordination_mode: supervisor_only
+    expected_worker_provider: not_applicable
+    expected_worker_transport: not_applicable
+    expected_quota_action: not_applicable
+    expected_quota_query_disposition: not_applicable
+    expected_owner_execution_state: owner_direct
+    expected_terminal_refill: not_applicable
+    expected_worker_receipt_disposition: not_applicable
+    expected_text_writer: codex_main
+    expected_completion_claim_scope: not_applicable
+    expected_local_completion_transition: rederive_mainline_frontier
+    expected_continuous_run_disposition: continue
+    expected_active_window_role: mainline_owner
+    expected_interruption_frame_action: preserve_current_parent
+    expected_resume_target_source: not_applicable
+    expected_completed_history_disposition: keep_closed
+    expected_frontier_disposition: execute
+    expected_candidate_value: positive
+    expected_global_frontier_reconciled: false
+    expected_downstream_recovery_required: false
+    expected_freeze_unaffected_provider: false
+    expected_degraded_scope: dependency_cone_only
+    expected_preserve_parent_completion_bar: true
+    expected_unaffected_frontier_action: continue_recompute
+    expected_recovery_probe: bounded_event_driven
+    expected_preference_update: smallest_existing_artifact
+    expected_starts_new_project: false
+    expected_decision_responsibility: owner_execute_and_inform
+    expected_human_explanation_mode: technical_plain_action
+    expected_metacognition_disposition: do_not_capture
+    expected_durable_behavior_closure: land_consumer_and_cross_context_regression
+    expected_recovered_requirement_atoms: ATOM_NOT_REQUIRED_ALLOWS_ORDINARY_BOUNDED_ACTION|ATOM_UNDECIDABLE_ONLY_ALLOWS_BOUNDED_PROBE|ATOM_PROBE_RESULT_REEVALUATES_MATURATION|ATOM_VERDICTS_ARE_LOCAL_EVIDENCE_BOUND|ATOM_UNAFFECTED_RESEARCH_CONTINUES|ATOM_CODEX_REMAINS_SCIENCE_OWNER
+    expected_rejected_proxy_atoms: ATOM_ALL_PRETRIGGER_ACTIONS_MUST_BE_PROBES|ATOM_UNDECIDABLE_MEANS_NOT_REQUIRED|ATOM_PROBE_SUCCESS_IS_MATURED_ACTIVE|ATOM_VERDICT_CREATES_GLOBAL_WAIT|ATOM_BUILD_MATURATION_STATE_PLATFORM|ATOM_IMPLICIT_LEG_B_OR_SECOND_OWNER|ATOM_DYNAMIC_NET_BENEFIT_CANCELS_REQUIRED|ATOM_TEXT_PUBLICATION_COUNTS_AS_SKILL_EFFECTIVE|ATOM_INFINITE_PRECONSTRUCTION_PRETRIGGER_GATE
 - description: A task diagnosis does not become personal metacognition and a local exclusion does not cancel a mainline prerequisite
   metadata:
     id: REG_ACTIVE_SUBJECT_AND_OBJECT_SCOPE_BIND_BEFORE_GENERALIZATION
