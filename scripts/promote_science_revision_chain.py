@@ -61,9 +61,7 @@ MARKER_PHASE_JOURNAL_BOUND = "JOURNAL_BOUND"
 # for those inconsistent cases without a second truth source. They do **not** resist
 # an actor that can coherently rewrite every marker, journal, rollback preimage, and
 # identity pin for that projection. No journal signing daemon or second control plane.
-RECOVERY_TRUST_BOUNDARY = (
-    "same-user-filesystem-crash-and-inconsistent-substitution"
-)
+RECOVERY_TRUST_BOUNDARY = "same-user-filesystem-crash-and-inconsistent-substitution"
 
 # Immutable identity covers every live/rollback/candidate path and hash pin plus
 # the transaction directory and projection identity. Paths are resolved strings.
@@ -1400,9 +1398,7 @@ def _validate_journal_object_topology(
         for live_name, live_path in live_authorities.items():
             if _paths_alias(rb_path, live_path):
                 _raise_topology_collision(
-                    message=(
-                        f"science journal {field} collides with live authority {live_name}"
-                    ),
+                    message=(f"science journal {field} collides with live authority {live_name}"),
                     field=field,
                     path=rb_path,
                     collides_with=live_name,
@@ -1442,9 +1438,7 @@ def _validate_journal_object_topology(
                 continue
             if _paths_alias(candidate_path, live_path):
                 _raise_topology_collision(
-                    message=(
-                        f"science journal {field} cross-aliases live authority {live_name}"
-                    ),
+                    message=(f"science journal {field} cross-aliases live authority {live_name}"),
                     field=field,
                     path=candidate_path,
                     collides_with=live_name,
@@ -1453,9 +1447,7 @@ def _validate_journal_object_topology(
         for rb_field, rb_path in rollback_paths.items():
             if _paths_alias(candidate_path, rb_path):
                 _raise_topology_collision(
-                    message=(
-                        f"science journal {field} aliases rollback carrier {rb_field}"
-                    ),
+                    message=(f"science journal {field} aliases rollback carrier {rb_field}"),
                     field=field,
                     path=candidate_path,
                     collides_with=rb_field,

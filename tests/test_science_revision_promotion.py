@@ -2131,9 +2131,7 @@ def test_topology_rejects_transition_rollback_aliasing_active_parent(
         archive_rollback=projection,
     )
     with pytest.raises(promotion.SciencePublicationError) as raised_archive:
-        promotion._validate_journal_object_topology(
-            journal_archive, projection_path=projection
-        )
+        promotion._validate_journal_object_topology(journal_archive, projection_path=projection)
     assert raised_archive.value.code == "CROSS_OBJECT_RESTORE"
     assert "archive_manifest_rollback_copy" in str(raised_archive.value)
 
@@ -2408,4 +2406,3 @@ def test_seal_preimage_identical_content_independent_archive_converges(
     assert stat.S_IMODE(live.stat().st_mode) == original_live_mode
     assert live.stat().st_mode & stat.S_IWRITE
     assert live.read_bytes() == body
-
