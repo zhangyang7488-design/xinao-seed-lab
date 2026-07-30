@@ -903,6 +903,16 @@ def test_read_only_proxy_runs_mounted_entrypoint_and_provision_checks_liveness()
     assert "EGRESS_PROXY_NOT_RUNNING" in provision
 
 
+def test_read_only_proxy_runs_mounted_entrypoint_and_provision_checks_liveness() -> None:
+    compose = (EGRESS_ROOT / "docker-compose.yaml").read_text(encoding="utf-8")
+    provision = (EGRESS_ROOT / "scripts" / "Owner-ProvisionEgress.ps1").read_text(encoding="utf-8")
+    assert "read_only: true" in compose
+    assert "- /bin/bash\n      - /docker-entrypoint-mount.sh" in compose
+    assert "cp /docker-entrypoint-mount.sh" not in compose
+    assert "{{.State.Running}}" in provision
+    assert "EGRESS_PROXY_NOT_RUNNING" in provision
+
+
 def test_egress_scripts_are_lf_only() -> None:
     for path in EGRESS_ROOT.rglob("*"):
         if not path.is_file():
