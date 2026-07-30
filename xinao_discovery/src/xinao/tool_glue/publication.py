@@ -29,14 +29,15 @@ DEFAULT_AUTHORITY_PATH = Path(
 )
 DEFAULT_STATE_ROOT = Path(r"D:\XINAO_RESEARCH_RUNTIME\state\tool_glue_constitution_publication")
 DEFAULT_GUARD_ROOT = DEFAULT_STATE_ROOT / "guards"
-# Repo one-home for projection refresh; still binds Situation Island map/catalog defaults.
-DEFAULT_UPDATER_PATH = (
-    Path(__file__).resolve().parents[4] / "scripts" / "Update-CodexContextCatalog.ps1"
-)
-DEFAULT_VERIFIER_PATH = Path(
+# Production/default consumer entry is the SI operational projection (map-resolved path).
+# Canonical source is the package resource; never resolve via repository-root parent walks.
+DEFAULT_UPDATER_PATH = Path(
     r"D:\XINAO_RESEARCH_RUNTIME\state\Codex_Situation_Island\scripts"
-    r"\Test-CodexSituationIsland.ps1"
+    r"\Update-CodexContextCatalog.ps1"
 )
+# Formally selected replacement verifier: closes software_foundation.version + same-byte
+# operational updater identity. Full SI architecture selftest remains Owner-activated.
+DEFAULT_VERIFIER_PATH = Path(__file__).resolve().parent / "projection_binding_verifier.py"
 
 JOURNAL_SCHEMA = "xinao.tool_glue_constitution_transaction.v1"
 MARKER_SCHEMA = "xinao.tool_glue_constitution_marker.v1"
@@ -45,8 +46,10 @@ EXPECTED_DOCUMENT_VERSION = "v3.4"
 _VERSION_PREFIX = "\u7248\u672c\uff1a"
 _REFRESH_RECEIPT_SCHEMA = "xinao.mainline_projection_refresh.v1"
 _SELFTEST_RECEIPT_SCHEMA = "xinao.codex_situation_island_context_architecture_verification.v4"
+_BINDING_SELFTEST_RECEIPT_SCHEMA = "xinao.tool_glue_projection_binding_verification.v1"
 _CONSUMER_RECEIPT_SCHEMA = "xinao.tool_glue_constitution_consumer_readback.v1"
 _SELFTEST_READY_SENTINEL = "SENTINEL:XINAO_CODEX_SITUATION_ISLAND_CONTEXT_ARCHITECTURE_READY_V4"
+_BINDING_SELFTEST_READY_SENTINEL = "SENTINEL:XINAO_TOOL_GLUE_PROJECTION_BINDING_READY_V1"
 _MATURATION_INVARIANT_SENTINEL = "XINAO_NECESSARY_CHAIN_MATURATION_INVARIANT"
 
 PREPARED = "PREPARED"
@@ -111,8 +114,16 @@ class PublicationBindings:
         )
 
 
-def _repo_root() -> Path:
-    return Path(__file__).resolve().parents[4]
+def discover_consumer_path() -> Path:
+    """Locate the package-local tool-glue consumer (checkout or wheel)."""
+
+    candidate = Path(__file__).resolve().parent / "resources" / "verify_tool_glue_consumer.py"
+    if not candidate.is_file():
+        raise PublicationError(
+            "CONSUMER_MISSING",
+            f"package-local tool-glue consumer is missing: {candidate}",
+        )
+    return candidate
 
 
 def discover_pwsh() -> Path:
@@ -147,14 +158,31 @@ def discover_python() -> Path:
 
 
 def default_publication_bindings() -> PublicationBindings:
-    """Discover production bindings while keeping every path injectable in tests."""
+    """Discover production bindings while keeping every path injectable in tests.
+
+    The production updater entry is the SI operational path, but only after a
+    same-byte proof against the package-canonical resource.  Drift fails closed
+    and is repaired by the operational projection installer — not by manual copy.
+    """
+
+    from xinao.tool_glue.canonical_paths import (
+        CanonicalPathError,
+        discover_projection_binding_verifier_path,
+        resolve_production_updater_path,
+    )
+
+    try:
+        updater_path = resolve_production_updater_path()
+        verifier_path = discover_projection_binding_verifier_path()
+    except CanonicalPathError as exc:
+        raise PublicationError(exc.code, str(exc)) from exc
 
     return PublicationBindings(
         pwsh_path=discover_pwsh(),
-        updater_path=DEFAULT_UPDATER_PATH,
-        verifier_path=DEFAULT_VERIFIER_PATH,
+        updater_path=updater_path,
+        verifier_path=verifier_path,
         python_path=discover_python(),
-        consumer_path=_repo_root() / "scripts" / "verify_tool_glue_consumer.py",
+        consumer_path=discover_consumer_path(),
     ).resolved()
 
 
@@ -475,6 +503,19 @@ def _postflight_commands(
         "Bypass",
         "-File",
     ]
+    if bindings.verifier_path.suffix.lower() == ".py":
+        selftest_command = [
+            str(bindings.python_path),
+            str(bindings.verifier_path),
+            "--authority-path",
+            str(authority_path),
+            "--expected-sha256",
+            expected_sha256,
+            "--expected-version",
+            expected_version,
+        ]
+    else:
+        selftest_command = [*powershell_prefix, str(bindings.verifier_path)]
     return [
         (
             "projection_refresh",
@@ -487,7 +528,7 @@ def _postflight_commands(
                 expected_version,
             ],
         ),
-        ("projection_selftest", [*powershell_prefix, str(bindings.verifier_path)]),
+        ("projection_selftest", selftest_command),
         (
             "fresh_subprocess_consumer",
             _consumer_command(
@@ -543,12 +584,24 @@ def _validate_receipt_payload(
             and bool(str(bindings.get("software_foundation_path")).strip())
         )
     elif name == "projection_selftest":
-        valid = (
+        si_selftest = (
             receipt.get("schema_version") == _SELFTEST_RECEIPT_SCHEMA
             and receipt.get("ready") is True
             and receipt.get("failed") == []
             and receipt.get("sentinel") == _SELFTEST_READY_SENTINEL
         )
+        binding_selftest = (
+            receipt.get("schema_version") == _BINDING_SELFTEST_RECEIPT_SCHEMA
+            and receipt.get("ready") is True
+            and receipt.get("failed") == []
+            and receipt.get("sentinel") == _BINDING_SELFTEST_READY_SENTINEL
+            and receipt.get("status") == VERIFIED
+            and str(receipt.get("software_foundation_sha256", "")).lower() == expected_sha256
+            and receipt.get("software_foundation_version") == expected_version
+            and receipt.get("authority_sha256") == expected_sha256
+            and receipt.get("authority_version") == expected_version
+        )
+        valid = si_selftest or binding_selftest
     elif name in {
         "fresh_subprocess_candidate_preflight",
         "fresh_subprocess_consumer",
@@ -1607,6 +1660,7 @@ __all__ = [
     "PublicationBindings",
     "PublicationError",
     "default_publication_bindings",
+    "discover_consumer_path",
     "discover_pwsh",
     "discover_python",
     "publish_tool_glue_constitution",

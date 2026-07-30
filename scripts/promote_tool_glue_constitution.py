@@ -15,6 +15,7 @@ from xinao.tool_glue.publication import (
     DEFAULT_VERIFIER_PATH,
     PublicationBindings,
     PublicationError,
+    discover_consumer_path,
     discover_pwsh,
     discover_python,
     publish_tool_glue_constitution,
@@ -41,7 +42,7 @@ def _add_common_arguments(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "--consumer",
         type=Path,
-        default=Path(__file__).resolve().with_name("verify_tool_glue_consumer.py"),
+        default=discover_consumer_path(),
     )
 
 

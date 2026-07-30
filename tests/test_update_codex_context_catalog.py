@@ -11,7 +11,17 @@ from pathlib import Path
 import pytest
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-UPDATER = REPO_ROOT / "scripts" / "Update-CodexContextCatalog.ps1"
+# Checkout alias is same-byte with the package-canonical resource (enforced in
+# test_tool_glue_operational_projection). Fixture tests may use either path.
+UPDATER = (
+    REPO_ROOT
+    / "xinao_discovery"
+    / "src"
+    / "xinao"
+    / "tool_glue"
+    / "resources"
+    / "Update-CodexContextCatalog.ps1"
+)
 MODULE_SCHEMA_SRC = Path(
     r"D:\XINAO_RESEARCH_RUNTIME\state\Codex_Situation_Island\contracts"
     r"\module_operational_note.v1.schema.json"

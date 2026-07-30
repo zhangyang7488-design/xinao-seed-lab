@@ -1,5 +1,19 @@
 """Tool-glue constitution publication primitives."""
 
+from xinao.tool_glue.canonical_paths import (
+    DEFAULT_ISLAND_ROOT,
+    DEFAULT_OPERATIONAL_STATE_ROOT,
+    DEFAULT_OPERATIONAL_UPDATER_PATH,
+    discover_canonical_updater_path,
+    discover_projection_binding_verifier_path,
+    resolve_production_updater_path,
+)
+from xinao.tool_glue.operational_projection import (
+    install_operational_updater,
+    recover_operational_updater,
+    rollback_operational_updater,
+)
+from xinao.tool_glue.projection_binding_verifier import verify_projection_bindings
 from xinao.tool_glue.publication import (
     APPLYING,
     AUTHORITY_APPLIED,
@@ -27,6 +41,9 @@ __all__ = [
     "APPLYING",
     "AUTHORITY_APPLIED",
     "DEFAULT_AUTHORITY_PATH",
+    "DEFAULT_ISLAND_ROOT",
+    "DEFAULT_OPERATIONAL_STATE_ROOT",
+    "DEFAULT_OPERATIONAL_UPDATER_PATH",
     "DEFAULT_STATE_ROOT",
     "DEFAULT_UPDATER_PATH",
     "DEFAULT_VERIFIER_PATH",
@@ -37,11 +54,18 @@ __all__ = [
     "PublicationBindings",
     "PublicationError",
     "default_publication_bindings",
+    "discover_canonical_updater_path",
+    "discover_projection_binding_verifier_path",
     "discover_pwsh",
     "discover_python",
+    "install_operational_updater",
     "publish_tool_glue_constitution",
+    "recover_operational_updater",
     "recover_tool_glue_constitution",
+    "resolve_production_updater_path",
+    "rollback_operational_updater",
     "rollback_tool_glue_constitution",
     "sha256_bytes",
     "sha256_file",
+    "verify_projection_bindings",
 ]

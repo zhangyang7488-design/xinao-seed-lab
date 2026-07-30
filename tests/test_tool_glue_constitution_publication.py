@@ -136,14 +136,26 @@ def test_default_python_binding_uses_stable_base_interpreter() -> None:
     assert expected.is_file()
 
 
-def test_default_updater_is_repo_catalog_one_home() -> None:
-    expected = (
-        Path(publication.__file__).resolve().parents[4]
-        / "scripts"
-        / "Update-CodexContextCatalog.ps1"
+def test_default_updater_is_si_operational_entry_not_parents_walk() -> None:
+    from xinao.tool_glue.canonical_paths import (
+        DEFAULT_OPERATIONAL_UPDATER_PATH,
+        discover_canonical_updater_path,
     )
-    assert publication.DEFAULT_UPDATER_PATH == expected
-    assert expected.is_file()
+
+    # Production default is the SI operational consumer entry, never parents[N].
+    assert publication.DEFAULT_UPDATER_PATH == DEFAULT_OPERATIONAL_UPDATER_PATH
+    source = Path(publication.__file__).read_text(encoding="utf-8")
+    assert ".parents[" not in source
+    # Canonical source is package-local and present in this checkout.
+    canonical = discover_canonical_updater_path()
+    assert canonical.is_file()
+    assert canonical.name == "Update-CodexContextCatalog.ps1"
+    assert "tool_glue" in canonical.parts
+    assert "resources" in canonical.parts
+    # Formally selected replacement verifier is package-local.
+    assert publication.DEFAULT_VERIFIER_PATH.is_file()
+    assert publication.DEFAULT_VERIFIER_PATH.name == "projection_binding_verifier.py"
+    assert publication.discover_consumer_path().is_file()
 
 
 def test_projection_refresh_receipt_requires_software_foundation_version() -> None:
