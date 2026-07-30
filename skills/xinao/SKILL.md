@@ -25,6 +25,20 @@ probing, mount only the run-local snapshot read-only, bind the effective provide
 to the bundle hashes, and still return candidate-only research. Never expose generic file tools
 while the provider credential is mounted in the same container.
 
+Keep the bounded online research lifecycle separate from the durable background leg. When the
+user asks to mature the ordinary research leg, finish its stable one-command install, inspect,
+parallel isolated researcher calls, freeze, shadow settlement, replay, and feedback path before
+building durable orchestration. A container image may implement that leg's execution boundary; it
+does not authorize Temporal, a resident worker, a daemon, or another Owner. Never substitute
+platform readiness for a real researcher result.
+
+Before making a migration, proof, or preflight artifact a live admission condition, trace its bytes
+to a real consumer in build, execution, recovery, settlement, or the returned evidence. If the
+artifact is only read and discarded, keep it as optional audit evidence or retire the gate; do not
+turn apparent rigor into an unbounded prerequisite. When a verified newer source capability is the
+missing live link, install it transactionally through the stable entry and verify that entry in a
+fresh process instead of continuing broader infrastructure work around an uninstalled candidate.
+
 Do not route Xinao scientific researchers through the ordinary WorkerPool, its task contracts,
 state roots, evidence roots, or completion semantics. Reuse low-level libraries only when the
 scientific chain retains its own identity and tests prove the chains cannot cross.
