@@ -30,7 +30,7 @@ RELEASE_RUNTIME_RELATIVE_PATH = Path("skill-bundle") / "scripts" / "xinao_runtim
 # Bound to the co-located bootstrap-migration companion. Tampering fails before execution.
 # Update this whenever the candidate xinao_runtime.py bytes change.
 EXPECTED_COMPANION_RUNTIME_SHA256 = (
-    "4a8b8f15b4e1ad696b78512ff909e9e4ef09549c3af709a219b00e5381653023"
+    "5afc53304828d4e69d217f9518a8222dd823907568428247f6d5a5e18d237038"
 )
 RELEASE_ID_PATTERN = re.compile(r"^researcher-[0-9]+\.[0-9]+\.[0-9]+-[0-9a-f]{16}$")
 TXN_ID_PATTERN = re.compile(r"^xra_[0-9]{8}T[0-9]{6}_[0-9a-f]{16}$")
@@ -68,6 +68,15 @@ JOURNAL_KEYS = {
 MIGRATE_FROM_KEYS = {
     "legacy_pointer_sha256",
     "legacy_pointer",
+    "previous_verified",
+    "legacy_restore_path",
+    "legacy_restore_manifest_sha256",
+    "legacy_restore_tree_sha256",
+    "installed_projection_receipt_sha256",
+}
+FORWARD_UPGRADE_FROM_KEYS = {
+    "source_pointer_sha256",
+    "source_pointer",
     "previous_verified",
     "legacy_restore_path",
     "legacy_restore_manifest_sha256",
@@ -361,7 +370,13 @@ def _validate_journal_shape(
     revision = journal.get("revision")
     if type(revision) is not int or revision < 1:
         raise BootstrapError("ACTIVATION_JOURNAL_REVISION_INVALID", str(revision))
-    if journal.get("operation") not in {"ACTIVATE", "ROLLBACK", "MIGRATE", "SYNC_PROJECTION"}:
+    if journal.get("operation") not in {
+        "ACTIVATE",
+        "ROLLBACK",
+        "MIGRATE",
+        "FORWARD_UPGRADE",
+        "SYNC_PROJECTION",
+    }:
         raise BootstrapError("ACTIVATION_OPERATION_INVALID", str(journal.get("operation")))
     valid_states = PENDING_ACTIVATION_STATES | TERMINAL_ACTIVATION_STATES | {"RECOVERY_CONFLICT"}
     if journal.get("state") not in valid_states:
@@ -423,6 +438,60 @@ def _validate_journal_shape(
         receipt_sha = from_value.get("installed_projection_receipt_sha256")
         if not isinstance(receipt_sha, str) or HEX_SHA256_PATTERN.fullmatch(receipt_sha) is None:
             raise BootstrapError("ACTIVATION_SOURCE_INVALID", "installed_projection_receipt_sha256")
+    elif journal.get("operation") == "FORWARD_UPGRADE":
+        # Terminal FORWARD_UPGRADE journals are the active activation witness after a
+        # protocol-v2 source upgrade; fence formation must accept their sealed from-shape.
+        if not isinstance(from_value, dict) or set(from_value) != FORWARD_UPGRADE_FROM_KEYS:
+            raise BootstrapError("ACTIVATION_SOURCE_INVALID", txn_id)
+        source_pointer_sha256 = from_value.get("source_pointer_sha256")
+        if (
+            not isinstance(source_pointer_sha256, str)
+            or HEX_SHA256_PATTERN.fullmatch(source_pointer_sha256) is None
+        ):
+            raise BootstrapError("ACTIVATION_SOURCE_INVALID", "source_pointer_sha256")
+        source_pointer = from_value.get("source_pointer")
+        if not isinstance(source_pointer, dict) or set(source_pointer) != {
+            "schema_version",
+            "generation",
+            "active",
+            "previous_verified",
+            "switched_at",
+        }:
+            raise BootstrapError("ACTIVATION_SOURCE_INVALID", "source_pointer")
+        if source_pointer.get("schema_version") != "xinao.researcher_current_pointer.v2":
+            raise BootstrapError("ACTIVATION_SOURCE_INVALID", "source_pointer.schema_version")
+        if type(source_pointer.get("generation")) is not int or source_pointer["generation"] < 1:
+            raise BootstrapError("ACTIVATION_SOURCE_INVALID", "source_pointer.generation")
+        _validate_active_ref_shape(source_pointer.get("active"), state_root=state_root)
+        if source_pointer.get("previous_verified") is not None:
+            _validate_active_ref_shape(
+                source_pointer.get("previous_verified"), state_root=state_root
+            )
+        if from_value.get("previous_verified") is not None:
+            raise BootstrapError("ACTIVATION_SOURCE_INVALID", "forward_upgrade.previous_verified")
+        for key in (
+            "legacy_restore_path",
+            "legacy_restore_manifest_sha256",
+            "legacy_restore_tree_sha256",
+        ):
+            observed = from_value.get(key)
+            if not isinstance(observed, str) or not observed:
+                raise BootstrapError("ACTIVATION_SOURCE_INVALID", key)
+        if (
+            HEX_SHA256_PATTERN.fullmatch(str(from_value.get("legacy_restore_manifest_sha256", "")))
+            is None
+            or HEX_SHA256_PATTERN.fullmatch(str(from_value.get("legacy_restore_tree_sha256", "")))
+            is None
+        ):
+            raise BootstrapError("ACTIVATION_SOURCE_INVALID", "legacy_restore_hash")
+        restore_path = Path(str(from_value.get("legacy_restore_path", "")))
+        if not restore_path.is_absolute():
+            raise BootstrapError("ACTIVATION_SOURCE_INVALID", "legacy_restore_path")
+        receipt_sha = from_value.get("installed_projection_receipt_sha256")
+        if not isinstance(receipt_sha, str) or HEX_SHA256_PATTERN.fullmatch(receipt_sha) is None:
+            raise BootstrapError("ACTIVATION_SOURCE_INVALID", "installed_projection_receipt_sha256")
+        if generation != source_pointer["generation"] + 1:
+            raise BootstrapError("ACTIVATION_GENERATION_INVALID", "forward_upgrade_generation")
     elif journal.get("operation") == "SYNC_PROJECTION":
         if not isinstance(from_value, dict) or set(from_value) != SYNC_PROJECTION_FROM_KEYS:
             raise BootstrapError("ACTIVATION_SOURCE_INVALID", txn_id)
@@ -1417,18 +1486,23 @@ def _companion_runtime_path() -> Path:
 
 
 def _run_companion_runtime(argv: Sequence[str]) -> int:
-    """Execute the co-located runtime for protocol migration without a v2 fence.
+    """Execute the co-located runtime for protocol migration / forward-upgrade without a v2 fence.
 
     Ordinary inspect/research never take this path: they always require a verified
     protocol-2 pointer, terminal journal, and inventory-bound release runtime.
     """
 
-    if argv and argv[0] not in {"_recover-migration", "bootstrap-migrate", "recover"}:
+    if argv and argv[0] not in {
+        "_recover-migration",
+        "bootstrap-migrate",
+        "bootstrap-forward-upgrade",
+        "recover",
+    }:
         raise BootstrapError("INVOCATION_ARGUMENTS_INVALID", argv[0])
-    if argv and argv[0] == "bootstrap-migrate" and len(argv) != 1:
+    if argv and argv[0] in {"bootstrap-migrate", "bootstrap-forward-upgrade"} and len(argv) != 1:
         raise BootstrapError(
             "INVOCATION_ARGUMENTS_INVALID",
-            "bootstrap-migrate absorbs all technical fields; pass no release, hash, path, or generation",
+            f"{argv[0]} absorbs all technical fields; pass no release, hash, path, or generation",
         )
     if (
         argv
@@ -1491,12 +1565,17 @@ def _run_companion_runtime(argv: Sequence[str]) -> int:
 
 
 def _pointer_requires_migration_entry(state_root: Path, command: str) -> bool:
-    if command not in {"_recover-migration", "bootstrap-migrate", "recover"}:
+    if command not in {
+        "_recover-migration",
+        "bootstrap-migrate",
+        "bootstrap-forward-upgrade",
+        "recover",
+    }:
         return False
     if command == "_recover-migration":
         return True
     pointer_path = state_root / "researcher_container" / "current.json"
-    if command == "bootstrap-migrate":
+    if command in {"bootstrap-migrate", "bootstrap-forward-upgrade"}:
         return True
     if not pointer_path.is_file():
         return False
@@ -1508,7 +1587,8 @@ def _pointer_requires_migration_entry(state_root: Path, command: str) -> bool:
         return True
     if pointer.get("schema_version") != "xinao.researcher_current_pointer.v2":
         return False
-    # Mid-migration recover: pending MIGRATE journal while ordinary fence cannot form.
+    # Mid-migration / mid-forward-upgrade recover: pending journal while ordinary fence
+    # cannot form (historical active release fails exact current validation).
     transaction_root = state_root / "researcher_container" / "transactions"
     if not transaction_root.is_dir():
         return False
@@ -1520,7 +1600,7 @@ def _pointer_requires_migration_entry(state_root: Path, command: str) -> bool:
             journal = _load_json(journal_path)
             if (
                 isinstance(journal, dict)
-                and journal.get("operation") == "MIGRATE"
+                and journal.get("operation") in {"MIGRATE", "FORWARD_UPGRADE"}
                 and journal.get("state") not in TERMINAL_ACTIVATION_STATES
             ):
                 return True
