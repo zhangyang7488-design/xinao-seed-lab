@@ -30,12 +30,13 @@ RELEASE_RUNTIME_RELATIVE_PATH = Path("skill-bundle") / "scripts" / "xinao_runtim
 # Bound to the co-located bootstrap-migration companion. Tampering fails before execution.
 # Update this whenever the candidate xinao_runtime.py bytes change.
 EXPECTED_COMPANION_RUNTIME_SHA256 = (
-    "5aa8898be0c8dda3e82e453f289275c3d04bbad9f3835ac18ef5b0d1de9e41ad"
+    "9bf12067e1b7d26315b55568fe0905cd43695fd1b91286fc167a1a05d09a2ab6"
 )
 RELEASE_ID_PATTERN = re.compile(r"^researcher-[0-9]+\.[0-9]+\.[0-9]+-[0-9a-f]{16}$")
 TXN_ID_PATTERN = re.compile(r"^xra_[0-9]{8}T[0-9]{6}_[0-9a-f]{16}$")
 SEMVER_PATTERN = re.compile(r"^[0-9]+\.[0-9]+\.[0-9]+$")
 HEX_SHA256_PATTERN = re.compile(r"^[0-9a-f]{64}$")
+LEGACY_RESTORE_MANIFEST_SCHEMA = "xinao.researcher_legacy_restore.v1"
 ACTIVE_REF_KEYS = {
     "release_id",
     "release_manifest_path",
@@ -71,6 +72,7 @@ MIGRATE_FROM_KEYS = {
     "legacy_restore_path",
     "legacy_restore_manifest_sha256",
     "legacy_restore_tree_sha256",
+    "installed_projection_receipt_sha256",
 }
 LEGACY_POINTER_KEYS = {
     "schema_version",
@@ -89,6 +91,7 @@ PENDING_ACTIVATION_STATES = {
     "CANARY_STARTED",
     "ROLLBACK_POINTER_SWITCHED",
     "ROLLBACK_CANARY_STARTED",
+    "LEGACY_RESTORE_STARTED",
 }
 TERMINAL_ACTIVATION_STATES = {"VERIFIED", "ROLLED_BACK"}
 FORBIDDEN_RUNTIME_TOKENS = (
@@ -907,7 +910,10 @@ def _runtime_entry_locked(
     if journal.get("to") != active:
         raise BootstrapError("ACTIVATION_TARGET_BINDING_MISMATCH", txn_id)
     command = argv[0] if argv else ""
-    if journal.get("state") not in TERMINAL_ACTIVATION_STATES and command != "recover":
+    if journal.get("state") not in TERMINAL_ACTIVATION_STATES and command not in {
+        "recover",
+        "_canary",
+    }:
         raise BootstrapError("RECOVERY_REQUIRED", f"activation={txn_id}")
     if journal.get("state") in TERMINAL_ACTIVATION_STATES:
         if journal.get("terminal_pointer_sha256") != pointer_sha256:
@@ -915,7 +921,7 @@ def _runtime_entry_locked(
     pending = _pending_activation_journals(state_root)
     if len(pending) > 1:
         raise BootstrapError("RECOVERY_CONFLICT", "multiple pending activation journals")
-    if pending and command != "recover":
+    if pending and command not in {"recover", "_canary"}:
         raise BootstrapError("RECOVERY_REQUIRED", str(pending[0].get("txn_id", "")))
     runtime_ref = active
     if pending and command == "recover":
@@ -1013,6 +1019,223 @@ def _runtime_wrapper(runtime_path: Path, runtime_payload: bytes) -> bytes:
     ).encode("ascii")
 
 
+def _validate_legacy_restore_inventory_tree(
+    root: Path, inventory: object, directories_inventory: object
+) -> dict[str, tuple[int, str]]:
+    if not isinstance(inventory, list) or not inventory:
+        raise BootstrapError("LEGACY_RESTORE_IDENTITY_MISMATCH", "installed inventory")
+    expected: dict[str, tuple[int, str]] = {}
+    expected_dirs: set[str] = set()
+    for row in inventory:
+        if not isinstance(row, dict) or set(row) != {
+            "relative_path",
+            "type",
+            "size",
+            "sha256",
+        }:
+            raise BootstrapError("LEGACY_RESTORE_IDENTITY_MISMATCH", "inventory row")
+        relative = row.get("relative_path")
+        size = row.get("size")
+        digest = row.get("sha256")
+        if (
+            not isinstance(relative, str)
+            or not relative
+            or relative.startswith("/")
+            or ".." in Path(relative).parts
+            or row.get("type") != "file"
+            or type(size) is not int
+            or size < 0
+            or not isinstance(digest, str)
+            or HEX_SHA256_PATTERN.fullmatch(digest) is None
+            or os.path.normcase(relative) in {os.path.normcase(item) for item in expected}
+        ):
+            raise BootstrapError("LEGACY_RESTORE_IDENTITY_MISMATCH", str(relative))
+        expected[relative] = (size, digest)
+        parent = Path(relative).parent
+        while parent != Path("."):
+            expected_dirs.add(parent.as_posix())
+            parent = parent.parent
+    if (
+        not isinstance(directories_inventory, list)
+        or any(not isinstance(item, str) or not item for item in directories_inventory)
+        or directories_inventory != sorted(set(directories_inventory))
+    ):
+        raise BootstrapError("LEGACY_RESTORE_IDENTITY_MISMATCH", "directories")
+    expected_dirs = set(directories_inventory)
+    observed: dict[str, tuple[int, str]] = {}
+    observed_dirs: set[str] = set()
+    try:
+        root_info = os.lstat(root)
+        if _is_reparse_stat(root_info) or not stat.S_ISDIR(root_info.st_mode):
+            raise BootstrapError("LEGACY_RESTORE_IDENTITY_MISMATCH", str(root))
+        for current, directories, filenames in os.walk(root, topdown=True, followlinks=False):
+            current_path = Path(current)
+            directories.sort()
+            filenames.sort()
+            for name in directories:
+                path = current_path / name
+                info = os.lstat(path)
+                if _is_reparse_stat(info) or not stat.S_ISDIR(info.st_mode):
+                    raise BootstrapError("LEGACY_RESTORE_IDENTITY_MISMATCH", str(path))
+                observed_dirs.add(path.relative_to(root).as_posix())
+            for name in filenames:
+                path = current_path / name
+                info = os.lstat(path)
+                if (
+                    _is_reparse_stat(info)
+                    or not stat.S_ISREG(info.st_mode)
+                    or info.st_nlink != 1
+                ):
+                    raise BootstrapError("LEGACY_RESTORE_IDENTITY_MISMATCH", str(path))
+                relative = path.relative_to(root).as_posix()
+                payload = _regular_control_bytes(path, maximum=MAX_BUNDLE_FILE_BYTES)
+                observed[relative] = (len(payload), _sha256_bytes(payload))
+    except BootstrapError:
+        raise
+    except (OSError, PermissionError) as exc:
+        raise BootstrapError("LEGACY_RESTORE_IDENTITY_MISMATCH", str(exc)) from exc
+    if observed != expected or observed_dirs != expected_dirs:
+        raise BootstrapError("LEGACY_RESTORE_IDENTITY_MISMATCH", "installed tree")
+    return expected
+
+
+def _sealed_legacy_launcher_locked(
+    state_root: Path, pointer: dict[str, Any], pointer_sha256: str
+) -> tuple[Path, bytes]:
+    transaction_root = state_root / "researcher_container" / "transactions"
+    if not transaction_root.is_dir():
+        raise BootstrapError("LEGACY_FALLBACK_WITNESS_ABSENT", str(transaction_root))
+    candidates: list[tuple[dict[str, Any], Path]] = []
+    for entry in sorted(transaction_root.iterdir()):
+        journal_path = entry / "activation.v1.json"
+        if not journal_path.is_file():
+            continue
+        journal = _load_json(journal_path)
+        _validate_journal_shape(journal, journal_path=journal_path, state_root=state_root)
+        if journal.get("operation") != "MIGRATE" or journal.get("state") not in {
+            "PREPARED",
+            "LEGACY_RESTORE_STARTED",
+            "VERIFIED",
+        }:
+            continue
+        from_value = journal.get("from")
+        if (
+            isinstance(from_value, dict)
+            and from_value.get("legacy_pointer_sha256") == pointer_sha256
+            and from_value.get("legacy_pointer") == pointer
+        ):
+            candidates.append((journal, journal_path))
+    if len(candidates) != 1:
+        raise BootstrapError(
+            "LEGACY_FALLBACK_WITNESS_AMBIGUOUS",
+            ",".join(str(item[0].get("txn_id")) for item in candidates),
+        )
+    journal, journal_path = candidates[0]
+    txn_id = str(journal["txn_id"])
+    restore_root = transaction_root / txn_id / "legacy_restore"
+    sealed_restore = Path(str(journal["from"]["legacy_restore_path"]))
+    if os.path.normcase(os.path.abspath(sealed_restore)) != os.path.normcase(
+        os.path.abspath(restore_root)
+    ):
+        raise BootstrapError("LEGACY_RESTORE_PATH_INVALID", str(sealed_restore))
+    manifest_path = restore_root / "restore.manifest.json"
+    manifest, manifest_sha256 = _load_json_with_identity(manifest_path)
+    if (
+        manifest_sha256 != journal["from"]["legacy_restore_manifest_sha256"]
+        or set(manifest)
+        != {
+            "schema_version",
+            "txn_id",
+            "captured_at",
+            "installed_skill_root",
+            "legacy_pointer_sha256",
+            "tree_sha256",
+            "inventory",
+        }
+        or manifest.get("schema_version") != LEGACY_RESTORE_MANIFEST_SCHEMA
+        or manifest.get("txn_id") != txn_id
+        or manifest.get("legacy_pointer_sha256") != pointer_sha256
+        or manifest.get("tree_sha256") != journal["from"]["legacy_restore_tree_sha256"]
+    ):
+        raise BootstrapError("LEGACY_RESTORE_IDENTITY_MISMATCH", str(manifest_path))
+    inventory = manifest.get("inventory")
+    if not isinstance(inventory, dict) or set(inventory) != {
+        "installed_skill",
+        "installed_directories",
+        "pointer_sha256",
+        "releases",
+    }:
+        raise BootstrapError("LEGACY_RESTORE_IDENTITY_MISMATCH", "inventory")
+    installed_expected = _validate_legacy_restore_inventory_tree(
+        restore_root / "installed_skill",
+        inventory["installed_skill"],
+        inventory["installed_directories"],
+    )
+    pointer_restore = _regular_control_bytes(
+        restore_root / "pointer.json", maximum=MAX_MANIFEST_BYTES
+    )
+    if _sha256_bytes(pointer_restore) != inventory.get("pointer_sha256"):
+        raise BootstrapError("LEGACY_RESTORE_IDENTITY_MISMATCH", "pointer.json")
+    releases = inventory.get("releases")
+    if not isinstance(releases, dict) or not releases:
+        raise BootstrapError("LEGACY_RESTORE_IDENTITY_MISMATCH", "releases")
+    for release_id, expected_sha in releases.items():
+        release_path = restore_root / "releases" / str(release_id) / "release.json"
+        release_payload = _regular_control_bytes(release_path, maximum=MAX_MANIFEST_BYTES)
+        if _sha256_bytes(release_payload) != expected_sha:
+            raise BootstrapError("LEGACY_RESTORE_IDENTITY_MISMATCH", str(release_id))
+    recomputed = {
+        "installed_skill": inventory["installed_skill"],
+        "installed_directories": inventory["installed_directories"],
+        "pointer_sha256": inventory["pointer_sha256"],
+        "releases": releases,
+    }
+    if _sha256_bytes(_canonical_bytes(recomputed)) != manifest["tree_sha256"]:
+        raise BootstrapError("LEGACY_RESTORE_IDENTITY_MISMATCH", "tree_sha256")
+    launcher_path = restore_root / "installed_skill" / "scripts" / "xinao.py"
+    launcher_payload = _regular_control_bytes(launcher_path, maximum=MAX_BUNDLE_FILE_BYTES)
+    expected_launcher = installed_expected.get("scripts/xinao.py")
+    if expected_launcher != (len(launcher_payload), _sha256_bytes(launcher_payload)):
+        raise BootstrapError("LEGACY_RESTORE_IDENTITY_MISMATCH", "scripts/xinao.py")
+    return launcher_path, launcher_payload
+
+
+def _run_sealed_legacy_ordinary(argv: Sequence[str], state_root: Path) -> int:
+    process: subprocess.Popen[bytes] | None = None
+    try:
+        with _activation_lock(state_root):
+            pointer_path = state_root / "researcher_container" / "current.json"
+            pointer, pointer_sha256 = _load_json_with_identity(pointer_path)
+            if pointer.get("schema_version") != "xinao.researcher_current_pointer.v1":
+                raise BootstrapError("CURRENT_POINTER_SCHEMA_INVALID", str(pointer_path))
+            launcher_path, launcher_payload = _sealed_legacy_launcher_locked(
+                state_root, pointer, pointer_sha256
+            )
+            wrapper = _runtime_wrapper(launcher_path, launcher_payload)
+            child_environment = os.environ.copy()
+            child_environment.pop("XINAO_BOOTSTRAP_FENCE_V1", None)
+            try:
+                process = subprocess.Popen(
+                    [sys.executable, "-I", "-", *argv],
+                    stdin=subprocess.PIPE,
+                    env=child_environment,
+                )
+            except OSError as exc:
+                raise BootstrapError("LEGACY_FALLBACK_START_FAILED", str(exc)) from exc
+            _handoff_runtime_wrapper(process, wrapper)
+        return process.wait()
+    except BaseException:
+        if process is not None:
+            _reap_failed_runtime_child(process)
+            if process.stdin is not None:
+                try:
+                    process.stdin.close()
+                except Exception:
+                    pass
+                process.stdin = None
+        raise
+
+
 def _reap_failed_runtime_child(process: subprocess.Popen[bytes]) -> str:
     cleanup_errors: list[str] = []
     if process.poll() is None:
@@ -1102,13 +1325,17 @@ def _run_companion_runtime(argv: Sequence[str]) -> int:
     protocol-2 pointer, terminal journal, and inventory-bound release runtime.
     """
 
-    if argv and argv[0] not in {"bootstrap-migrate", "recover"}:
+    if argv and argv[0] not in {"_recover-migration", "bootstrap-migrate", "recover"}:
         raise BootstrapError("INVOCATION_ARGUMENTS_INVALID", argv[0])
     if argv and argv[0] == "bootstrap-migrate" and len(argv) != 1:
         raise BootstrapError(
             "INVOCATION_ARGUMENTS_INVALID",
             "bootstrap-migrate absorbs all technical fields; pass no release, hash, path, or generation",
         )
+    if argv and argv[0] == "_recover-migration" and (
+        len(argv) != 3 or argv[1] != "--txn-id" or TXN_ID_PATTERN.fullmatch(argv[2]) is None
+    ):
+        raise BootstrapError("INVOCATION_ARGUMENTS_INVALID", "_recover-migration")
     runtime_path = _companion_runtime_path()
     if not runtime_path.is_file():
         raise BootstrapError("BOOTSTRAP_MIGRATION_RUNTIME_ABSENT", str(runtime_path))
@@ -1164,8 +1391,10 @@ def _run_companion_runtime(argv: Sequence[str]) -> int:
 
 
 def _pointer_requires_migration_entry(state_root: Path, command: str) -> bool:
-    if command not in {"bootstrap-migrate", "recover"}:
+    if command not in {"_recover-migration", "bootstrap-migrate", "recover"}:
         return False
+    if command == "_recover-migration":
+        return True
     pointer_path = state_root / "researcher_container" / "current.json"
     if command == "bootstrap-migrate":
         return True
@@ -1207,6 +1436,11 @@ def _run_runtime(argv: Sequence[str]) -> int:
     command = argv[0] if argv else ""
     if _pointer_requires_migration_entry(state_root, command):
         return _run_companion_runtime(argv)
+    pointer_path = state_root / "researcher_container" / "current.json"
+    if pointer_path.is_file():
+        pointer, _pointer_sha256 = _load_json_with_identity(pointer_path)
+        if pointer.get("schema_version") == "xinao.researcher_current_pointer.v1":
+            return _run_sealed_legacy_ordinary(argv, state_root)
     process: subprocess.Popen[bytes] | None = None
     try:
         with _activation_lock(state_root):

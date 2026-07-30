@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 import hashlib
 import importlib.util
 import json
@@ -9,6 +10,7 @@ import subprocess
 import sys
 import threading
 import time
+import zlib
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -18,6 +20,263 @@ ROOT = Path(__file__).resolve().parents[1]
 SKILL_ROOT = ROOT / "skills" / "xinao"
 FAKE_DONOR_BINARY_PAYLOAD = b"fake-grok-donor-binary-for-sp-b-001-tests\n"
 FAKE_DONOR_BINARY_SHA256 = hashlib.sha256(FAKE_DONOR_BINARY_PAYLOAD).hexdigest()
+LEGACY_XINAO_COMMIT = "b916f8bd22dd38b4807298a4c935f6bf2969eb13"
+LEGACY_INSTALLED_LAUNCHER_SHA256 = (
+    "18ee492eec5d89c07bb9c0a0aa2b8c797bef923aaddf4eb2bfc2d7dd53e2a76b"
+)
+LEGACY_XINAO_FIXTURE_MANIFEST = {
+    "source_commit": LEGACY_XINAO_COMMIT,
+    "files": {
+        "SKILL.md": "5b5837cc012cefaf6633164f3002a206ccdd4e6745d3439e17166ba876d35960",
+        "agents/openai.yaml": "1f72c9c22b1687dc767bad4e45fb68db4ab702aac53ebac7428fa61e284779e6",
+        "references/capabilities.v1.json": "1873f056c2ebd17f0ec1cd2f665bab9695f72e36f9b1c07d5cb4fd0fc3a1483f",
+        "references/meta.md": "077a39b60c723f04157d6bffdb44aca319b900795f6efb79f445a6e1815f0cd0",
+        "references/researcher-charter.v1.json": "52ee3f88426c36e4c27ee6098157621c084812efc14232157ce5f231bbb8850f",
+        "references/researcher-output.v1.schema.json": "345d716de773495a35a63688a027f065b293e7fee0d1533c4b20180245b11dc0",
+        "references/researcher-runtime-lock.v1.json": "561b895dad2bd08225d3a45ecd5f1160913b0ff679ce736bdc96e34776513ce7",
+        "scripts/xinao.py": "5fcf87736c46e244005f4049771440c4c1f049860bb55a318151ce23c3a42e5f",
+    },
+}
+LEGACY_XINAO_FIXTURE_B85 = (
+    "c-qaqS$DG9wkY~v)@$xw6Eq}~)7pNBMii?=kV4*6ED%sW6^)*D|NHHI6fi(c{Jy!)x%(k4iNYxQ=yf&z_rJ`Z-tYfA_W$+2{"
+    "?#|7V>4FPGsk+-JL_Z?Yo}&xMDyD4GIbl$)KSxqpz%3x+n0%JM0&^Ad1fQ@93z?3G|6*DE2kZ$6X);MJhrc%qg^Jo)oNaku7"
+    "2A->TNCcnvKNo3|4+@U*@&wG>h#}Z-1TO{e#{fuIFtnm^xpH-;SdB<#}bhLzu_kd5#j{J8VvQUW32e+I3nVtR_zP<h!Gll1$"
+    "Ia{^i=2*WGcbed?VqtleJE<KeE~Y+O7TYvOh{(>A_4Jk7SodJ5ytw}XS;8SW;Iaq=&X^`tgD`HmvZFXxrF?Vc8~o$75Pn$)5"
+    "z!T>*qaV5X~70nzw^_yqh?|IhN6qsi-abb)&I!s+d!FlG}ZZxSI$*lGadsO+{$!u${VV|d2&^UPkz_)GX@T(0I*fYS~OD31b"
+    "apFYj48HTs=apHrqj?jbkFI*B0b{IiJ!jY({B4mn&&<YY9vgUumxbA=&+6U1=jtmD-T@d(crFu10oZH7yry0zL1R5@pI2~B0"
+    "3Rix=b@fGGA3DLJge*Q{Tj{#&eqk_W*{B=qg_wGyvNc0JwELRy=DY^MLej<k>75mGsp0Ia1I`v9qec0xq}nHOq!U=(QAgQNo"
+    ">Qo-3VX;@K?5Q9$N|{E%b1|a2~owaj}3OoiNokGFQ*3mGMTY4NT=1>??K6HO%Wpa6ajzW?%c?JliuH((KXzy#0dn8m(qE<p8"
+    "i-m*!phwe@LUvwHB347derkB)PW3jkZh5uKh5!MWLX^s0Ao4N(l^5&Va<tN|Whd~(Jzz;q}9P09011Mp%9w4}k=s4?LC#dn7"
+    "ifeXd`7}gQ>SG%4OtDGM0<8}bJxkdbKTqpHzGVd7Iex1Uzzij}1M(MoXK>S?kZ7-R_-2I@@oo&6-v}UcQKv#Y(lBRFTit~Z_"
+    "MSX^`*RzXqUWjuy-;RA(lRdItfWiCM5%~n{dp#5Bui5zW9s5e~YNM<^F2F<FZsNxl;N;hV;`I6ow6vSJ!yVwvp&3U&13tn!B"
+    "y<6^1>c|Nv09rtFh>CA<{AV}NS`xDl>r7g#(EZyR-Wr6UK?@10@$lSqezd+755J~e*t(LW(=qN4*bvPaT3EgzyrOv1n_7W;r"
+    "<yP6ZeCE%d^gCHFcgTjkJa*nD3dM1)TkM$mr;KWwifZ&0<v|{K>VGIqX}YEBO0wc4n>Bq^2Hc4$gP(A)ob|h>u<}Yg?3;bcX"
+    "W0(;#>XYX;mwcq<5Rz!Ur6HJ^LU&;Z&|PVnw!R<|X<mkB*Tz=>KEAusacXe07VIFBph7Qk2bfLD<9!F))QuxCZreBdv~XdX3"
+    "Av)UQf5&>Q`0EdTrhJTldGejQRo7WA(mtd?D;66NSlQWwk?R0=w)yX-X;0!mjnhbo@rufqV+JU_T+%_l+tk?#=PtLF22O0o*"
+    "0Aqb6lWiB)jI<1EiN6#oFX%Zmx5Lep&}9Vh09jF6uknn4A4tekk=_VB*8Nn(Eq2Bd;xar#@C@Kaae|D2xHAOYB5>Wn_g7dW;"
+    "eQ;40Ke0mti7?uGoAsR;rZJD=LymkIrAazBkemL$lVCf5$1{z7HfRZ>i|sxe@4DBi#>q3%=t0FYkDq#10Z97&-6yt&@wIcqw"
+    "f;D0NFFby~c2!6y6{+5w8mJ0^o@}2cBDl+z0?iQm>72<9RiX?Ha*Jl*4U1!TH$Qa{PZw)?Qmq=Jg@UxKwY!_;q`O{B~aRWWY"
+    "r@SB1bE$3odMW3&sj&G{_AR+AV%E6UJL7jPT#xXimjF1jGsK;BG%20(tKKqJ7%v<vD8K+`pt6F%=Ah}?7tZXNNA+4<Ix?|9p"
+    "gz;T9a0DSZvf0yYQZGyYKIeZTL34Ir3Rg|*tkHB-*x+vcOejsm7c-~~6REELc>?80w*uRJHi)OBU$aE-2qC6JhL}1YN558li"
+    "&DDSZ_rLz1e@$15?eXx}E?I1+!M`ulI09V_@DFga8v~6+AFCbg*#P(h4BTi5`#ySO_$-||hmYyg;nEmSYZ1U)@9E9PbqaLsY"
+    "bx;EA>eIvrhFKmH=o0&h4t&heA)1KpBAg=W04%wkGIvrNz;Yn{rUi*LY{NX&4)AEq>I=6B6vS7oL>Ai{YVy$mMj+2^~d6M`v"
+    "idh;NRir&gbqz)&aEUt$pW9a_hjCfbRWwSVIIn(0mIQOb<d{2s{w!HwBoK@jcU*eAERm!ue5tRM1V~_Ze^jcxNO5z9Fm=z^k"
+    "CS1-=1vx)|?pU7!bjoqSnMW^Us!b%qJRDnWUO<1igq0{$Ga^Vu(!i~V9dUmX6LPm}2^h=OCVIQ;u0|9f-TZQ-yMXV_S?3(R("
+    "n3~iYyzk&V&pL1b)C5NP`1>|=@Ir2d9^gCUpzny&P!5J3$21?rzHuANcI-}qtcncW7g8mzwi;aZ{PLx(14|vl`2hHa*9|IJx"
+    "5a*t6qoof_W(rERTSG-GN?n4yYTYB_HvrMT;9%%`AlTvwATR)?Hg$(dMyNPPOa&i|Qxbgop&7j4_a!0*7-$C^ccpjO?`G+_P"
+    "L%C4H!P45$s%K6dnfM)MHuT}{mmQfovnd9)4c+tgK_L75l|p}>H0;cQFuO6*4#Q%)?}59VUe{N@4J)Jiath`y0k)jY*?B(lG"
+    "aNrvOnxrG&D^0iVC7<G6f3Wr-Z2%6gUbyuE41qU^>WLq<)-Sfx!lJO%0Xrm*N-QcLB+5HSwAR$AIXya8{p#5;fc)gZGQDDBu"
+    "YgCa|V+eimCWh+u7=P1o<c19}$iFBE{0M;Hs9pTx#&yb5C%@wpa-6wbLp1;P*ZXTOx-{eOQ=TM)(_<KV#=19Q2LPi;j8W9es"
+    "H+H#>Z`ja!O1I_LGC``6KC=jC~H!>OhGB^+#L&1x53QY3rAg-GmDH+aQ$k;eeN{sIneRes5-<s5e-zBCNFOE~{AP@|_l|}f^"
+    "d8JI8_m|$2q$I&dbG6&RGu!>I&hC`V;GfSZejW9iX#k^`&%XjLh~DG4_xEa4Lm{+Uz4V*!iem1#0k8CfG5-Ief2hjj*Gy4<w"
+    "G_`h!RK$vOK?@DFH@K|QYKHE=jUb<{(o0qUe=1zY-jIGo($#r<qY39l;>DilFQ*`((Ed`G{MhcO-zWPU|YO~Pt(Qr!<lW<;F"
+    "Lb0V4Kc=rBgq-5p3{$x|r=#r@L9iaRfs1SDHOD**`7%`;WywctQbK7NU+3e{doC^fw4Z^{{Y`;YT1P=~O>H!PujHwBCPi_ud"
+    "SCpSG#;xd9}`-`jn%jKbYDij~(m>c57k?mpV~Hh{e2-TGx8?RVEW=)S}Mukq%W8?C1<{Cx$h=AHb#dHFn@^ecI1pS*52`}Zi"
+    "A)Zz2}HlCe!`~7>E_V@5Se)iWk>TO_d9nQ~5S0KnYi$%IyEJo{e>h06`El!<!vM^uLbSj<FxUqYB`g`+XDqHd_!izi)Fvh)2"
+    "Tbn0mb|Q+zVjIG~lN8||r0~8Tr3?K?;5uEcpPUrnuZJIwo&XH@1m@*A<M9b#zgg|KiPDMo)7f^{9dCclW}wAylJNDF?BfJ5T"
+    "cc(7>i~v>21+3sH~LEX6|9xn<&)q?KYaz9St~$z@H4>AUiwd?mtK3IJpZaGyJmxY)_ZCwyIQLJYAVVuZ~*TH@Ee|cIx79ROK"
+    "@@Gz;iFp0JCs|dv7*cv)XX)xqUpxD16?4_IQPJ1j8Jal^B+b>zTd;Fjif8Nl(g4t*gv_*~+YqxV=C;eto?Rlzy$POwA#om3}"
+    "ZJxSp5_;Q9pC>nTZX{o?(yl$Yu2OaDbt6bJXxY({AK5d-+5e=Iz}Z#7yto&91u+^2Y6&L`kH;4c0~{Gaw#fdBY^vY0N{h^x_"
+    "XKSksGgPd(2KA#78E(`o0_v+|WNyPtyr|`+?qy%peCmiJnXBClm9SyYomtW_798X`972xpk#SPOv;NWhAhRK!iSscqn#So2M"
+    "7h#vIpX<B5;sTD(kRIY~a@_{|Sq$G%JPigL9o7x=0(~v!+ouH#19PU%=l&_!t`=aboOiv9N9;d#%49l#bKY?t_PlG(mHn@g@"
+    "&b4<{WvQxi!<<!uHt?CQu@DU{9Sm?hclTO&G&7rY+&u<=;VC@JxOSAfeg_=UwV%>`Z5W38$!41og2Y6qy6hC+D_h9XxvWGIa"
+    "MF^#QDitPM&by7sZQr%CB0eOoCU$g%>Z@a19yH?5A&ldpfR%;NP#OPvzHToqa!h(q5+RSHx>2S=3&pzXk-4`|w+DYWU8}ES&"
+    "((hVcAX=D7H9=D*&6r@U?f=Jhb`)pyCuC!E2a!~S&Yo{)FMTYZbXA`bdX_<y$BO|H9S*NG34ejL5dV&E~`sQVY3+uO?4))t%"
+    "*(7U4nPP|6xv<J8dd=Soiwd(=g0e|C~;<YERUxn;{_kz6M1$uo0e1GE4ym*WBW!jri+6adHIoRJ5ey%973i}=^AeeEV!}nH="
+    "(tGd@u%NU*d1=Et7fRoY7Qoq~^zT?ecOAv+4Vw8{{Sf$3yoiC{Q+nAynd*ti5#;ygU%SP$u}3}*_`Z6Yy1?_&I0d|Wn)<7!x"
+    "C8jlXblY`^Yyfd{cY;}4LA$*Gra<@L_VnnAMvjZ(w(HegYNh_4nX$y{sMgJL|f%Al%GB2IXwWs=o9(a5BkbJcm^2Rc<vk~6k"
+    "nf)00#qboytxQKY$T|K{8c<7Hq=PIQ(DJv68&Z0VhxJZmjg5eBdV@;U`qi$MNf!=mQau?m@9YPN2MVf-T|a=3l_etu&XP?lC"
+    "32VEzk@#t*W8)CpG1mdPBGljeK0(OtwjJ_naq$Oq!X%LZuay4y`DU7em?#J6bk+y^Cw$hdf;z!;NxPU}nuAaI$%{`$cS@=Ya"
+    "4C1u)Mz%w8dY8$2h(x>NdF7a<Xf4%LYe!lAyel!Gn9juU!02gbF=Y!n1>^ScQ9BRXNCxBl|nWZq#R3o@NeF8eHy*1HzZQJX4"
+    "%|#kYe(kQ?ZTByf+dxOF)kxCDKqIpw>JQCErvJldgY{Ev1|LKox(PaA&{>Vn8DfmXXHS`N4oq^|O`goZwu|Y2@#)X_1J7Xbv"
+    "ioov8|3$^Juq98OF-lL33Y{d-|Iw&F3@!kz60GMc|IY3+a2^zK_|fTn;rn)={i3MUV}`)^99*~d^p$lKsVX$cF%4UO#gy$uP"
+    "}zznUbJQEkb^aFwglW20WC+16$Ak5FHP(4LaKU2KBRMBSu?r`nKomB6?9UU6Qq?zhEz~u&1QIjb8yz`X^NKiEhOCQ8dB5^rN"
+    "KT*&TZ>@+!j5g57R40ev2W27WW=;V^!(0(b=d_vrZA$8+25pF21ozzy}L_iZrQ0REkOg!U#2;5}21^B78#@sfVmoC2Tk09~a"
+    "-h9_}~pDD9N1ibm>#rt?7uz5{w@?7F*fM0WzIf|Dq;Mun#zh>wDjiY{6`#MZwZ8NRCBaLvLjd~K&OL$67xPCkzl(Ae_5oIgW"
+    "f$_W<U4uMDy*;BdE^m+~P;PP_#q=1$Z(dOz0c}k#phKBoKx+~CT)8aCbNi_dpD8GxGC2lx2(;Az8Vz3h(;n(JgzxR0KJa^+z"
+    ";-eP8Stwo%JpWt=mB3vz2tR+yoTF{?Y9+yJMaO$-B|mv20Ta$fG$^rru(Ue>(Ase@&w(SA`bz1vI1RfNIvtNxib0qRHn5F@&"
+    "Lj^LEfNU#MhRcHOOCFC(zF8X2Iyv6xW3Ot;=Z!&xPpq!LLmefUHelcPpc&u4hOSj<E(imFh{0pbqlqR|NFDd*XUG(WyZPa#F"
+    "Bq<n>3~2^Xk8$Bpob$l8*fw_h9<)BSwC*#FmjJ>4G{``>qAmE9OS_*=qQp}%Qy*A)8QE*Nuh>!RuU77WbibAR*3pUcP6RE$|"
+    "}Jd@0Inz!vVbA#pXpyk9dj#GD-ySrj71#>!&L1}6pcZ$?HnEpFh_maBK)a4xg#=vI5RNkPkK6ka*HTZl9n%5CjV8yLz60ARE"
+    "<1l|ctSxh2bpseTBr!W!2fTNf*DUTXfHkWJwwK($Z>wv+V~|+PtfnlfPdsyn1Z?iaBW{kyEOR|{4gvA^lJWZ6V7A@vbbvLwE"
+    "NXV*)z%V$MdWE#6fMnG)G?b~HFps-UUeGtCuaa+63DLSz}{E-){mx+zw@a(!ZGZw=Su6YA+3U?nY$nsmoC6hj>tTzqky^FO&"
+    "7%P+l&JJfUXSBiMG=Yb>Z2eZ92B9o0hNZTj_9TFNpr20!X)e2_Id9b3RqfKep_aY1_kZ=H8tYptWRDG56P}eYp=mAoB&94t-"
+    "GX0)W9Degd;%4K3A$`RV#K{LNiM-8Ib>P?qz$eV$Way%593c`{d4Fo~m-#K~n9aZ!j#qMOPC%Xb)MYsI{PHeIK;wIz&YxHaS"
+    "C*A#RwM*zPinxxa%-Z0#z@wCj{)Xh{8;+D>09@NE%v5i?E$1qL;7Wc83BO#xB*Esv`i0}ej|B}0tWA!pYGZ<*ft=X}M^LGk("
+    "9#pt3VecBc*EWLNFu+*h6y_DyjA}x(h^^e6chAiSY8kR(k?u%LOjD0=9#P?QnxBF0M})bAISih#wv3mcE7xrtJdE|M?zz|m*"
+    "1JoONqR)idw~DrX^{czAxyl3g|8`tTT6bYas3GXK25hUQ6Mu0-AZ9W+kOp$u%6Vv>gU1c?Kl|gr|f;k-26^-=8Sa`Cz$xa8S"
+    "vU`8wo)K0JPO1jQ5iH><h?+%vzJDE&)RB&#x93Igq%oG(Rkn>F3P4@Q#fE@r!sEQ`p0-ZtU<~SX=fvCYns!YAAk|Cj!{Z86X"
+    "Dy9abWEP21!QUj5}cEUAGWA{}pwew79YF@rPaR{=o?oQpyZnFadxhm@IYc_Kz0GzNqLT>!=-aRN+E5tz+Z@Zkc(f_2I>lfXL"
+    "wo8iM~MXix-Xs+DVMwa0bCLY=otM%0#Ns;AB%BP#zlU+Y&pm*U;<`HlN83n9)P8j3NiPAB^(gWDzeg>{obxwagM(JG3<E-b~"
+    "E+JO<JHZ6Aif6L9mcqCKUi`<#ti&tW4+th{;Wi?skbq4={P*y8BmsV0Z=NB6cnlhMRpESo#!DPWh$-BsYtB%Oa7vS4fWh71u"
+    "^8{mnIlP7q5E<!-7N0X&lME9H%xeQkso#aLM)=pL&SKW$PXw?fH~VoHrLp;8>6w@wG3-S=Cdv3=Cg6A0*-5AOS18&rAM+LsH"
+    "reu!im!2)==g|AU0+>+{xLKI7-F)7qm|^TF%}lYrhbMj|+7kQ{lfmKQR7%x;+N*;=iKZJp8AMcfBhUMbZIWY^$3oNpfR6aGQ"
+    "VkZHzRQ(XKpDy!F9$JRFD3XPL_luMUcWtZruQs5}lR@p?KKw=Sh;L%_AuJW^q9ZOd?ztzX_@V$#G3k6uj$UI1smNqExYktJa"
+    "PZH7mGV;w=3U51;t`d~BXvT6&out#NP2Fiq6qsd}ITyHlS>+*23yMBzlXfhsMCL8_gwXNsDc=9~l*x|?fq&BR1;SlIz2+G!^"
+    "reBBSmNJOF^>AZd1~nTj;0Am*famqv0G|68`x{WmvY0&3y+q>ZGNDb9s7K)!0nU7_fuDqKtqXW!Y(a4Vr2-UwO$EHuFbVGj^"
+    "jB2;V?Tm1;rU@6pRZ%Gs}X${pQi~|_L3xAQRTh$5vUW>QW|4fH4S^HjqL8bsi`K=k!4!4)~E5oi2LBc2qOOee!Y+swxr1zU@"
+    "K!XE;o?2pt#jBk!$p592{fm*L*H<4n1fB4FR1T=KCNy9{&0Yw$t6elM7G-OKn}cHBZJgJ%HkpreDH{B-Kwj@f6JYdDoj_%1^"
+    "y3k(8i%12AY9VJabeKExdZHv+Yvq%?*8TY_mHByDPnDJ7U*wh}%=Elc=+Rv+YZbcQ=0IjS%QNWp-m4qfMG@$={^tV8ylC~U?"
+    "aP?@yC^jtD8rt`7qE&S{)0aaE#>K)`dB&{g>e&i^a4mn0GjHsofUC)w^-Er#+PC)&%n{TSFkyPQGD^tvL<-ZfEd8h|Jwst*J"
+    "!IUsGL9fnL^P5puGr&|cEaly>RdXz<mi{iSO5>g=SIkpv^;Oa`EU#f(UzRHmEvAutj^)wn(`<|Y=DS`;2P{eE-(rdVMYARBu"
+    "Tr*zo-{)P)~4BG%^=VJ;rIj#-A*+Y_C~@!B+a&4@NP@9OaYejp!@z2ec70fK9|3q7w?1GKt890<6Y#yyU2`-b+2w)li{6|YU"
+    ";3uRRXZ}yOwOAIXnV5=>)!^-3C)z8;8RTZv9I!OJE8b8fF7!86n|N2a2}fJz<R%=hyt3O7eW4M@(m&W7=qtr$WOSe%iJ%f}f"
+    "=&4Rynk8?M}F*sT@97{>H8Sm(z`vWs{iNTI%?0*wN0H_5n}Wy1E~%g;d_jHO}!x5sz6B(sjWl;i8)^^8z8M`6@5S_D7rab$G"
+    "C^k3R7wGS{EBdmK|x)TX^6u2x&Yt1z#p49}Lbq>!V#}lmzfaig0Vu(jT2g$rMD!e~KZ(XF4j3was8_|>{>3oh)$|^if4Tx6t"
+    "wgVj5^(G)WFycT{-Bb-U)YCjzn>-uI0L^e#*OL#H$${Bfx~48+OiW!{_ArgMJvrzdrj?O37!gPf&}2c|X(JB=j{d$|p%&9K-"
+    ";SR_;{#1zJ|=aM3}w{bdd)C(F+C16Sl}T$m=80s4!u#~S)4OP^O>aK*ARXdo-Na$6qF>PSMd%X56_4HT>*#2JoaVcTF@w82b"
+    "cg(`^dvU5-Jtnhc7G(C-j`j%A;`Gk+TahWgH{VpqY$+f<t#b#fS?lOJMNd>0$I?hw3}fad#{!OQ6S&4U!e`ZtP0<oi;Furiy"
+    "8!!z*ei0J9#J*myx>39@73f`;T@R*Bw}p0FffzS*%XrYtQz1bPzWmI9XkeCKsWDbVUW@Nje|VoAku;*OA~1I=I-(lF{Z_5I-"
+    "e?FD{_w(JldwCgc^0a@3&49DJbvIWb;9qfFt`h6?~YIhaTCaw$~h%+3HFg94D@pCRK1BHz<;qNE?cpWX;U|E1{@PX;w&N<l;"
+    "nFshs<Xkgc^~cZT3^?2|T^lT*v}&E?-KK(gh1wNeYcmw**-RV-G{Xpfe^u;H4T#H&&C9;O*<(+%1lok}rd|gu#7;IArnZA7N"
+    "A!|4x`?J@xy>}Q6}owW9zhmF*H7EHkmmvC(NzTJ337a(!WkWi1-01)Ju_VOfbY9)p7HkvutXUPbYm9ac$n32?_^Dtu=Lu|#@"
+    "CLN-dpGvm-zl9(5heZOt!Zb+Y8bv;idif>jc)~wMR>h2u%Zz0vN5OUYo85EuT-b3-WDp`~dmPc>z4L@vvl~x&8!;46I-E0{B"
+    "nI4U;j@NelQU@>a&z!qvnbkoO*=IWh*y_lBXV?U5A?s5RJ#_3iPDy1)|Xc~P^UCv^#6+MqfV@bU?>mZ!iANI6Cuvk?{4Ind2"
+    "2oT-t3^_=|9dd5<>XIMiEJu#LIf;j|h6iacCuTVH<Fv@VdgB~?ZE6&cfK1VNst<qAankLO^ax%HB$-aPp6I}=PS_2%Dk#AL;"
+    "Ggz}bEUiQOz_C)#og+=7e8V$l_(}0(9K-ix&U4s#GgoFmmiI6|SwD%4b_S~5>B@-Pa9#=Q4Xl>~`z*}HSU8A3L^lJTucg3GN"
+    "qJdDt8CvK9>nVcdNC<8d1v}?Qz79Rw?<s;J1@}FMV+pXxb0mjUDVWTA1o%&IT8=}%+gd|eb<J+6{24c;WNUEIuckg@>vh~8v"
+    "O)I=)`&Zv3mBL=bgS?2Rg$^JUf8lu_O~&*@QyR%EYsY2tAhMA%8B0y<Vrt2L+k~J0kVALuD2NKV$RsW6XTA)7d4*6~xsE>KD"
+    "WUR3a=_#4->DBjB@`DL&Zs_!-g=1$vs$MnMZY1-;<_c)suPl8xBEJvaK^1!V6vD;Hw)+iP|~kCH(j)|%s%P4!Jp)j-!C+ZuX"
+    "<h>T!-Ib{0;JLMwCA`Eq*?Lx{E&usl+55PiXGx1;qE4mh9yV0_Z`4#wD%|;I;+8Q&2m795~c0AK}<JU$nOh;cWn^cA)E)o3Z"
+    "&v%Fy1WQL>NEsOF%<rwsfM*%E(StkO1Dypku#xb6hVQ*h7CK$D^fxHa`(f_t_cWd<GNfzd=g}6P!TCU^nrySIk`(pIqMZ4HG"
+    "a6wSb?cLG1@K|fD@XUL628(N*0H3L;)ovtkHfHIanJM};Bm0`ja*v4q1mBgk6U79^BdxQh~Ak`x42fT6^)GBaijTGR||IUMH"
+    "!iPLo0aF;QSYz5$7M`7+9usA|b7-1bVO$_s6TC^e#U)mFPfdXEcj2nPM61HIu#UJBHisDCTF&%7C)6GtU{NoF7v;`?mfx-_D"
+    "Qlei3HOTQ~yS1#GV&=zm_rw7xW>kaf?`coHE0^xx%IEce4wQuGv|ZBBGPYI~>zcN`h%U0u`!nvf4?*OkaQp-%hh9*g^7pF7v"
+    "x1#~}rwg^uSmt4mb-_L2XX25wKL65G`Puu)Eg45Iwf;=0;am`iWp?!uW+ktonq;xK%*|B;-2LZm2Anq1zo>gG9)OS;|O;;KY"
+    "Oj{kA09(^iI@F`i*U+dVzos(X!&2@r=k>WB&E~z`U*@4)XKN#Sg*m|9T6;B%{r{tGCBl)&KSJNyk&jEF49pu!|K1MIXh-VVT"
+    "(;lGQg5Vvq`~pzoXN>fS1IBpm80_uoB`8M!7g5VAP<UoHI(2yfM)nvfG$+C&;GZ18S#&Sd>Q=aIYq;f<!fmFSaL%f$;J}S%N"
+    "bc;U8Du{-4Q$JxAig`OGXbshf>cZrK1Ow*ZjL4rQ0uBN>1<$)`_Lg#v02Yxz0go2lW>`!)Ew@W^Z@&JTkXn|A}RqF8XA!!s)"
+    "UGeyd7c*Sqz<Rp21vW+dI%FG6%ktPneTxgCa{<R#3z9&D^ykCf(8-xHnloX(t4P?SGnC7M#3QTq9DygWlqC;zkRwRGMIZ^kc"
+    "G$AE6+qppc5Ge6HGz?9GRogeLXZsr?{{%o#twHi--`fg67^LfW6X-HT$I<fyFbBpO0DUVLyTLbbbB3o^=Er)wp3yq*)gh#a7"
+    "Nra)o2ORvSzb*)iaxupC5n8rajH2XgpftgKnL=xcfP5D7))NA*b|gW!1o~@7#D^kQSN49km2=!P(Z5=>yTQimfIPA=&5HV91"
+    "zFb-syNX`0hw5pA;9=nP7jQ>?$Q9s5O_>>7S_jox<$Vf(c3Hb!FBiq_>?&J)&mBn$9Y=-x6a!FsI<H`QfWDD4YMpjH|27<MY"
+    "Bg9v#EV;9NMO74VSj0nuPbtUGz_Dn9*Q^-9MJQP17=3hV}f&KE&!jjCeD@WO-jVm8v2fQlvese#LAKnufG4k9%PH`-8rNVFT"
+    "6)`}peGTC^M!drIw&Bd-B}=l%oq>r41u*JD0&(U&05JmRPrVQ-L(1`$^<^$JU+u>>94B9wWf_$<of(tgQ!0Pk?>5IIb2QP_J"
+    "ltAZh`;sqR65y!u)<YjR71$YzrUVJB9>0@a%pz^=KYn*Gt&*|)@0uuDsmWtUPdDgELJak4;SF<F$VTC|Hc6T|Fw9&`{d$<)@"
+    "j;(%-K?fMwMAvVO!Y}Q?Gh=!|&LadL5c+m#Hju4m^5X$sl|73(gIgm$yd{mjtl!O+X4);JBf1s=&bf@@@DoyO=XGq4WMzDcw"
+    "zPPd|Ku?^m=|L^G-E>@iF6C!H>}9etcb?MdfX?`#<mJwfCb<e@Rhvf1g7Rj(X4G;ajzvk$ILUEXgdzOM(~#Cj)h9vQaZ8UR?"
+    "jr@e*bxFS2L^o7_*T87RjVO2yQY)cxIfYX4xnFnWf;@DW*Yc;mnC>C0wM^RxX`E%Gy3$d910|&Qh$C-^E{7Ha@|Ie|KeHH-V"
+    "QjepAUy@19Agae;LZ924S*l=io@wTW9}txZZP&U4J7s$-m$u6rWH&phN^`QB2ngFt})oEj_o$*ODzHfQG3r7d*m9yq>dDYeK"
+    "au#FS7AE+;(=vTYvA8Xi}p^<na`ldDD4>ItI(0(6TGRQ3WKZNhX`2#qg*~umQrMPA>Jsfl%Y%g`icm}rYLLVZ3-np<0C?e0g"
+    "KBMFMWAaI}fM<M=>_J$k6-J-1-mXDEL;iOwt6Jr_boi4D&CeKgT0yoD8?^9U`MhpZp#S*%z?SQ>xI!L_m%1A8dyH3$88jWtZ"
+    "+Kw8nH`qV$x5*O#Ec#E-%|e~$OVvl_L2Mf$?wdUNLz+QEb}JMeQ2W}9Q5}%x{w$Zr5&FAGd87YFxJ$u4eQJD0<!fBc@?q&vV"
+    "q6n!(3kF**=fXnZt|79E`<(GjE>Hk>q?P^V_hT5S7>f*w)W?6biSu9G+SA7U2)HLXOK!7zceav&vWr^%<9K=<=LPB2()k{0)"
+    "pba-Mi%e0oX!+QcVTIIA1`jO7Jz{fF8yS(}?IXQDX1PJBwl$D`30QSWAM(FV!h<L6VARmgRtdnG+=O$Lmw(spCP<2J}hwoT0"
+    "I068-nqwPWPVTgD!998j;+x>8Q$}0pl^_=-e$TMpef5_Iy<PopBw3m71wZX<k|C^36S3Z8U=#aK}+)ppfgY|h<qwV4Z-H28!"
+    "Vwq9Cp3GjyI6K%qH$3llekGZ+ysRGM+k(A&vscQug*CoE#Mey2`T{ycUM4rjVFbKw2>Mq9vR<)32k_wYt_9!Oz{j#PXrs?Li"
+    "m}YWt>1}VmTckM{e>WNZ^k(ka{$<RMQo3`Z!GhRy0t<pM$RXRjBx7IM~k^|IgiYBYD%+rZT~Fh!*mWpTj)=mI+Qo(`prt<>7"
+    "?!73)LqK66*o}(3ou_zd{#%v;$POU(y{X@A_2XbF1q9bmQYIbkcz{+oCQz-$t1AOtL&hAB1b(*NM6Q{~_23pi@+o>J>7-SEO"
+    "u@w<EPxo)foZt@M_e9*x<mty0+%eV?>^b!$RP((MrSfG^*PE-VXncC&VF`_(GCP6@aHdnnuPw{XaPVug-FVE>JgezG&_NIbr"
+    "HS(Nk*E{pmV{0rMza{fYSpZb^zC0CSxS-YG3ilVM|FNXr?5xaIB#Jv>rvEbZD-W9yt-xl-5iu@hc?R-gi_E}e~8p|VV3S-3V"
+    "v$x_pm@Mb?(<`j6sqnUYg_v5AmVP*sq7B|Fy|)r&0i_|~Y;Jiwc4SJ5_?Xc~75}I5XtTS^KYwGaYTxgJV+wju5x2N6SCp?Xc"
+    "GVax4s{n!;`gQ4w950A$~rK|pUltE?#e)$p@`$T--hT+FPUzJ`79mMGVlaA!gE<bzR-+#z{3Riw8G=|Kg)=$lNj|YW6nu&Zj"
+    "1?I27is@T``?7>-fbwVS&8JKg<2%lm~a1Z<<wn=~=EOjf;A~cRZ8m8O5~_J&?yW3$c=8(HBO)GYaGBJieDAkE8N+bZ?zJCRt"
+    "c#-!0}u)Aba_BQcw@ek1tYXca*mUCFs%>^P6fu{pc6r7?Miw6@(bdykAoV%*z^;%`w;dd%-6skTMzx8dhFw3lNm8e5=y8W$E"
+    "T3)UrgWcnKCDMIY_5P-~(Xq8juPek4E*eCfcn8S)~CA%26rMVeJTuSozD=E88=FNitEt`|J=O%FCEh)n(=q8KDY}oM_bZzvp"
+    "+30(;)s_i%sbkVT({+b=PKqNZB>zRj%8ch7@O97;XjK*9Sq=6^a%gEq;aVG6Bb1LM&*alB;%v`Ee~W?n87ZlXa^H4B%sTSS-"
+    "<ii)EJ!|-t?H44d2Ds>T`r$j%5zluw2JGT>vPyz{!n2j<=q2mO~HR8h9&rH$h_Rn+G6{9Sl32~kI+`k_WzIZk?Q>WJa?1lY!"
+    "Lr(p8LUbs7W<fkl98gPMG<lsw=*@jg{pc%-dLMj#W`v<yJ`eFOi!?7~ZY$LR<;*oYPqiOVPVE&oP#;2dsof*+lpr?)#fO5A+"
+    "L?@q0Xe5#EkZe2aJHz<31cJw$geefJ2jy46!c-yBQFrP0FJLU(Cea>D?cHneWnh(^J!yl%w6pEJ0Ay2so`)bjK2I+Cyl%qLQ"
+    "@hT#HsN#QJ(W-(tWg8|9+wy)Ht5@N8n%3HSY$}*t*Zhvc^X_d3MZ?Q{fru!G<#JyN_QI>{>igD0yaap)j=eavhLEaR{;r{v@"
+    "7pOlQuLS`7Dy}{6P>Oj#N91!KG`9->KHPa0^F&G2Amx?!>=~-#;Byn;fiv`ZP`Odk1HZ3~yo1NZGY^uy4Syi&bq!MS?9-Su!"
+    "jH;HrlV&0y?65O1=xxH1VQJ<7{H_yCzM!~s{ES2ACWno>+Wk9$tu^axLyiy*%Ess$f`{XJpE&P%ye3Y^Nc?+os{I-5glMwh@"
+    "CQgE5SPed-ULy^ZWwo$aJ!DZYA(J#*aw8uT?rf)GLg&cPYLn?(ODzhpxL1Fe|?YFz8sJ+IJ-bbRjj%VFErudBe7x8~A7Ap-&"
+    "0MJWa6fX6u!C&+pD5#4CsTh*a{z`7=J^TzsLW5T|M1FY_)ugUQwg7>}@R{I+Np0^bZ(+twQJqmD<?S{qy1(vsE<#AVnEqk-Y"
+    "9TVr)?z%#f%hvR%#2K+1eYWk+ka6$$>dS2W+;P<T@uH2(wXQNy^{<Aq*4jJaFfqcQZ)7Weg{s*#v<(|oh?Kiny+nYSnYF+wJ"
+    "ise&1x=34h^g6tbhUNFZOJ5)FZ|9uvk~~bpZ#W%t-j>l*o<m9Kr1-8~&<WUhT-WG&&9biYwVnWPBDs~#HPaiojsW^I&@PP^V"
+    "m$Gv=K2GFFaPewzpSa)Z9D=S@m7Y!(Wzh2B?Nu=>?#Y|&Ie>Y*tev@yzg?`jb43${<;#6N@f?O(!bx&D$WN-UJD62FR3`EmF"
+    "z+cJ}A-GH*00}uuNx^8T@40>AGF5dpy48JWed;i{-S_t>6zg{>g8~=XI=kcbz-)upB#Mndf%>!F<~r8$<K~Wqe5N<UpR2b6-"
+    ")}cR6+bPP3e{f;?qD=cb&{D}Qi)K`&}&yx`kBPuDE@K8X#ar3-V-ahuXs8}w0==I!u0Gn#{hpP#eOFc(SGqcKMZWc0Pqx~5="
+    "#--9)oOdg>x&>nmj>k#-t@@H|s+^2|jQp}DKIx*bZlf_Q|S>7hqfml9cK__B3bQ@nmJFGN6%a3IKv|<dgEp!<Y{f%UtQdgGB"
+    "PDVnGVlj@H`v<Gy7Db=xi@4^p-l@l|W)04NLUrdtjchsA!DWY_SK>Rlj(S5AxomJV`-k?9m^f$hF5y$4lTVy^nb#HcXaRTbJ"
+    "Xi3UA^gfR=N)(>*f;Zl`MzG4X2`$OM7!lSSC-F_$(om<ZOuQw6GP&*oWRS<HpD~z3wYlswmKBMRz<XS&lX!b{>CjBC0T>KFH"
+    "%X%zdR<zaZ+8De51E^OHdJi0lS&R#Q?VoyhZS}SLD*&#%4=(f8-_+JImn$8UI#QEA(Bbv{DD6+*YZMZDh8jfcuqWar{oa=C|"
+    "K-9v)Q2Ey{RQwWbF<*;J0tcqpy&9G<a$@J>wU1}7@(oSGR9tY_O$h*ghnWE9q`dOTiS%khBvxz>Bn4HJ@=7&P#2BDZk8llUt"
+    "_UpAaoIKLGA)Ia6tjazoZl5Eh;jpaxJo1hhq@k*~p;_=>Xj#H7h-{botobJ~hSH&!a@z2HD)T?aaHA$IYPLx@oKQUQ)KgU7v"
+    "w_z>e%u%J%-h`MIt@R}Oydbl0`<;|K7!jF#=Y}0-qhq`hbX(sYE`=NguKN^x9u@g2bp55=hEl8}LSL`mLLZ4$*dO}DK_1~vL"
+    ")l&{cu*M*NipB2TbW}*a0Tp*Wr1H6a*JLc<WnzykT3KzZ=<;ig1+#59JeB;ht=s-<<I=aSc0x!{=AZ3aa?^!Z^_>I4##keN?"
+    "ge4r)obKZv`By+t)m<n#FM|$NR0=x47n?;^0;Ldn_;OPv`y-c8}(8-HB=6#2WrD^9Gb(qJOOdCrFOi_jt3}-Qdk{<?czth9#"
+    "@-V@YX)oO-vLSxohYCl&OfZ+csl-a809Dfy|U@%MOBo^!zZH3@CX|A;4*b0q}*>aHF15AsIDwTaJ)_Iv5`ay%j9Rh%cNN3dz"
+    "5d$twYmCUZ9xfOXVxoo@fJ_iZSE&2jIUj8=EYnkW!<u?_`xB0u@)V%!9%F`9DseC+7SCE%n?iBT;8@gh9FVJ~aK5TxY1?Rif"
+    "^5KEpSaB|q*ZuiCe6OWg>m5Fy2syce?#B4}-FM19-K@4k+)t6-^IVl1_!ju|V>ub-So#`_Lhap@RSWxr88+zndH&!}InRk#s"
+    "Q(q=%Je?W-7b7y#pi!-ePD->S{721Xhq|(rCB3smG^lm$o9f|MVJ-skaEwe+cCtv^?W}!HrTDMatnik?(<-+8rogm#z;CY?U"
+    "rU5l1+L!aoel}hr9SA+A!bIFj;d2?LSyIYFlVGM#j==VGcd1BYGd%L$n`1jPR>Fl1D;co>HE*8TNkE{kK^ydhtftN`HTMS(S"
+    "JAm_P9Dxt0AtkLdk3G}|*DlEe3ONB((fEj$+yeQlaVYt?OOBCDh~U+-4t{-o;*Ilq<q{dYX>MUXq(e^~Mvg*WSeP!9Ys_Km("
+    "0e7pCbVSmfpAJx@)9O8e1o{73d`wOqI*#Dqw7IK&=53*aXgna1mvtD`^C;kuMd|YAI-|dlcBhUVmy5f@dwu#WkO7vHN?QZVc"
+    "h_@K4$a?nxtd_IdB>$h+b8IU6=6%zHv*f>x0Or^~I<{7%&zQFEjzjGe-X-x@A7t3n8I)@C!8QmQYs_87{zUA0^32!R2mU(ig"
+    "e%X*x=+l@SLT^s$<EQr##^mC?1SNaVa_vNHGcuwp3E<ebarXby5vg(doh8YPx=vLxuqoMo_F<cvpQX~kzHTZ4;t3AZLR1PNY"
+    "BTt%YU=D7Jfwz%!zTj6ZWM;cuX7vZwNolx7b6^kUWyZ0J5V^_Lu6Kv4gd;dQ0@3vbtVUE0NXplDtT-t=4B--bau28ko66p9q"
+    "ThMD#WEb4fI(Z+P<1AC7ggbsf(d=vTXVO`&H%^Lb^o|7JDAEbe5Y4|#~^1N$Pm2;^!R{F}hrO(OieaLr9;a45ru-`Y%`#kDt"
+    "OcAZRC&x*Z_#v>`>J)boTYqLYU)o+qm5bMi5I_7<xkmocuB-hv-032=9=jeHZT{gb}zC>TCzAEN@jNHMI(!g;Iw0-inatW^*"
+    "u^#2JT<>Ty@^g0W{cBEFit4s+adMQ=RB}7+_Q?8)8ZyxPRj6J6-M*>G(*8<?zNm~2v$_&`ZBd8dR?h+*DDUyw5N@hz1aJlt!"
+    "Eb_hUkTD-)*B~ij0nx5e+Tgm#`WD1!tV&UctjfzXeODFx~BQ60BgKS<Rao1!&ji!>80`WZ62EaVafIg^f}CXY7sl6MRIu?mO"
+    "Rw($7qteI0^gS!uK)S`tweMtOajYEUiaE+`zrguqQLo!yCLGL53%Ve#AoUn;<h{nj=Va0D4*c)~c+5E7dXce$zM4WwjW^eiu"
+    "SdmdwsA_O%e}`SR=Lim`+2R!QEI<gr*(kMmIAmn^RNXrGILVQFK-Rxxi4^l|ll+|tIDT&!=+*D+Y}b?6<IYm?WlBfNnh8z3W"
+    "|v;GDoXM*(+!`_v8b5-oah<bi`-_>zgZWG_;CFW<F>3UdeU5dj|dp+;5Sb!1c@&L{srobzy%}&>hJ%vGLkY3`9Kf+qTmZE*|"
+    "mRT-+DOTsVfe$#(B+gbG8{wp{#P5IV|6a7&fAW2HKY`|!*r&m?lqJabp<xe4BMa+FJmA&cuF(QJ8Lyiw^|KXy#E;}n3$=Y&{"
+    ")_lt#ktZN&a7wLk9~^7+_NmV_qX~S3vtRUmk@B=Y}sRyS0fKue~YU4u+Yzi#!U|eTrT8;@jWT*Hl}iH9(_1su0!@bfep}<!f"
+    "K^?kK~8X+{7D(S{l{C<ze5nz6P#jn5N|sUkw@iv04ei51jd}zOADx*NxMBIpR0rx$sMtKa%CW_Y3ogJ}#Oc!sjt*4<>|3{`_"
+    "P0<3K-J2l$%U^8<Tu4o9}}ZVEjQMc)U{-6Hobl-4rB+kWC`i?uIEzl*w*@bAX_z5F||zJ}$raGw5io+R&C^i!_n@8y*Z^^p~"
+    "Q2>E4VKeapO@%Y*SA5u7L(BI|kHl#V`BewG%Ok&?4ee+xA*a1GMSt0fS`nF!^b|1HWR1ZS!ywFosCi=5mXE`b6`be&EeE(gW"
+    "i^{Ya*rbB*VNBx^Rz@%P<ch1E$us>+;m(6XZ>`*~PxPBB;VE3Mwz2mP^33X5e{PrdxSvL#1Afm&M$220J6`DP$=}a=KNf3V*"
+    "}H2W`@c|sh45WP@AmfkG^hPpvR(oi{kPSt-@46N&U@C9JhaMpE9h0^GaN=)9yP1`V*X75CXe|wKS5@ryhVTJ&%B57)!Y42J}"
+    "Jg8P%iFf_52wN?=&DbX=LKLc-uii|08{>AM^2JEYw1tKzaaS@0^x5W^`qOUf6QM9vN#P!N<yZ1>IE#UNUa#yq6W|dF#TuM>X"
+    "wi;H`R1c8=Q7@BP6#v5y_fwz1qO_OPWey*p<imeTBk{VC)90!Qq#<zu}IocH{iNSFttb6o^<vmV9IjE>>FWc1T5EcNXF!@Z0"
+    "{6@F~jl^dpMd!U=xfH%Xcy5AxW)NHiNu%74>@9y~yU&j2VHwkaa%X#r+i@EWB^dKKDt=qOp{ick)wbVBD3$N<WIYs*Av9(YE"
+    "{z!5%huEV5d0^qL07kET-3Higyv~&Ng-8FwTfpzh;`;3f<e4Q8RCdiR*rZ-Ek&F46;(79UoD1fvP6GFjaFEVjjyGjzmiLn?+"
+    "Eux}OJxhKqqyM%V<J0@OrLOM&bxAblk{wnRXUEQvbeXkqdhId7p(mtJuf*t+vKLybV7WWq>pZ~|7Fy5@l2SmOWvhAE|rV(jD"
+    "O}j>`mX8jIZT#qh~6_H;OuDpIuvw>(ryKIkn0D4uE!6y{3-7SM2+X_`~n|sHj29YMOp~d@i%_b9RSB#rSyl*_!)*Q(|MIonE"
+    "+~s5^IQjP?XD16YGSSfe*j0?r>jQzi0`=jh$;r;y*9=f*Vus8>>vHZ9dA@imMC7HP8N)5>wFPkKajB^PXgh0E_s$#{xj*DFh"
+    "J+XWd#?{^@2GQa?Il<Tx^0H6Jv>Ml>_bNaM+IbGQQwW>SG_;;1}nVpI?>ZCp+2K#4AujnQ|X^!*E$H4VA@|^%vYH#Q3rhK5-"
+    "!_ouT`t**1%VWJ7FkWdRZHJg!B-quFIvmR&_lb>Byn9KgV@AGCZqY>BY|isfP4Qk4yy=$Q)O*RU8s~aobNy{UC+5o{c`sal@"
+    "!cV>L*wsqnI@CF#7u!V(c3=R=d@mf^}EUPB=WV<+gIJXP3{T1y}zIsgW&yCgdB*IkLQ3f7sMe=&2Fyc{dYkYgf<zg;HPChd<"
+    "*`9^4`!_S;IPud8DSkBQMFCwzT&o#(E05Ui6L)Hij`P?o*Lxwn}=4VLwX!{Tc6IxmnM*`@=g%XrI&s^WbQlh15w9IY;R3?s_"
+    "WsM0~^~jtROd;ta|?tlMBZA;BvV{xqIax~G8RM&?&}@Oi!-X@<Q%v9B!fj~`%5amqdfej965zLwMvrd;(%T73p@=bz>Vy9($"
+    "7-urRQq}NXQ`6TP}!)>chZpZeDF$CrV)~;?%joJU%9X&ty>dD6<zOX#bchhSm>j5jy|JyxsH5+^6Vg7xQ@4p4Y+%!Jr$Y;!r"
+    "E6h)Nujca$_qSzt+u%KKa7JH)%?j*C`2DU+|7e}E@d-N8faLE`f2we!JKo_jj64VBOzZN|Z1ksA-h(&yEuJfC%+9M)te4*DR"
+    "o!c|bT5n$ZzX-n%YJ?y%l2r$5K@b12|nzboUJ=|v;Ka6AVcncg3jHrZ9{iK2OWpTz$o1<Q|?hZvTeNcs?@8O={T@Yw}!r5*c"
+    "bKLWxXZ9c5TDE1B~O4`HKCw#eCiqsWs+(a%wpob?kQ=GdXX{{H{mx|DsM~Y<g4qv}C*|*jATj_x28%Z+i5U`<u+_15yjqy>#"
+    "*3FnQ6`w~yKHU!bGg6Vi7nx8t>O=%akc-nxcuMJBtiue5iN*{oi?(BqZnjurAe(I?FFHSjrF*IkOyZ`YT3^mm{)4=cPYli;0"
+    "8YHU;B5%pf%kou8rjV`2@(8Z(mw>v!m1JaRTO{2(c+QY7meE4loV-)baW6LmKO759^C--gcJa;|&*tGC&mqM?QZ2cWlr<B#F"
+    "kbb%#XR7=|)Zd@gj?(XVe7U5vm!9SKeFRnGK6;lQi+g4GnbkLwd6eUn^z>S1_eN*;TDEB|9q{=5r$uu&@){*CCUH*J!+0B!1"
+    "EhaA&Cg)HPlf!coHtQE_Rnfmm-#pqbtr=W)vXJ%2J>rjeqYL8VSB(ll8U{Rd%e4L|1u?UxP<mybdA%@i8ej-pXI(ko_oyK%6"
+    "d$l1vq?PZ&f)S=6kyhJb%msOZ|EmZBoz|>}S6iL;NYP2G5x4&+Vv2;`W$NP~h_+iR)L~4_dsBEx#{pGpjcg+9zdw@BZn7Ua>"
+    "E3gZ6ozqR^A;kr<3~5o;m4eipmHSSRxEW_9nFzNxQzmyGY+vul^sW|s0^_w3wQ95BD@kivd;dq-Tx|0`-MdA>?jO%?W5A$Mk"
+    "0^@<|3l2!FJAXmtJx-1VVxbw_r;=Ua{>I<x@=W2{w=X>v7GoPO+p9*(ni+3T#e;;SDUGKXMpc!%><`(bf^$D-KvtJkN|IXkz"
+    "Ye%H#Qq{PFvHo0HLmEg&u!WBxQ<ci^H|4%DLT{ORL!MtM*L1l%7xyDpzSjl%2OFnm-GiY7v>e}=^MrSter&t-KIlteX98Y-r"
+    "D%it!PgaI=AW2X8cPSF%a5h6;dNfWw@w@jebbfe5PdY`<l<jop862w;sInU*k}`wA<+xWf%i5a`)%SgRR{0$^PqVTXF(=a*F"
+    "RVL0I%4aBO-PG9;s6=_N}}FKkDbZb0?$UiO$|wCb@8Z?gtrT-zg=RfgS1K<Nc&yvwfN>lh0p-c7V4Z7I$fq`v0on?FC(F;Wn"
+    "aAyoV<q9eB?#?59+azs0#TdH<i>Yqh?*R{I?T?^=)icj?4>yX<B);3YNGfmf^!<_9<k@u0$*HL38d*aK*=c{`MP%9i4GB<8i"
+    "jJUhQ_ebW~*vm?sy|AC)sh;bdfOCgh4#d`obf6jDnzIM!sJrcQ69S<dW_{)3uJ!bJXlE*>w8)&c6;=SE>YzP*sL*2Us1H<p#"
+    "to7~NdsVV{Ddu3*`8|{s_mEVtnZ^g-TaVYtmt%v`a76CgF8XH6XIt7!zGjrem3yFfG>UbLkH?Ig)pJ$IVIdDgzE?BI$I0m*p"
+    "A~ib+i{Eh;$1H3@3-SmTw9v5I>b+_+TQ)9rvl=`g~OBTHS1ZPpF(>%%(o+MyW)L7>q%`@iGxL(wRIl6za99!y=9w%-zhwgWy"
+    "F(1j)S*%p;oOcKRcQ)ob??cK1C_Hxihs{qF<s@R?JWC7v-@antyi_J8u?x|6XqI{<Y{mXYUW^F5Sv-Dm#m@>Ade;8$KHlJN#"
+    "C5aG8X6i%TGb?yS)!IyL%q=NtKzo-^K^p|CrlyI>RRaE6WBzI=tdnLPqO&^Zgdpc0p2N%VoxT*lk8JBas14>$L5s8pkM$G^n"
+    "-f>1iSPTSgY65BZcqrG}bKUYRi`p8mRc!&BJ{>OWSgqZui`Ac_C2>qYR{s7+lg2ouAJ+#^t;sq7GBue8J@31V!D}?*>*d0}~"
+    "pz(_L7~=g_2D@Jfa~>S(htwRc0lazG1%2WJbU2>(A1oh<7gy*tg*)ZoZwfD(Cq0senx!$AmSRR(JOS?;-=ZC2gB^}JU}5I-$"
+    "nMJ?Rq(r9e^`pK2yXxLyyRX6vj=;XYu!&9b5?;q;r!cFrr8dOiIX1YxA_2kFXcLWk|&_4mH9k)FF1=c=$O}VKd*<ysR<tyWO"
+    "tT-z`xIPHuAethY{ZK`w#9x5$_er#;dF&WIi<Fr(u8JudNbeQ5=VF`txDW+K}eITf#dT+zQ`U)D^C2y&2(+SJpS67{e+*1A3"
+    "VwOUdK?2M(qB$(ucVTbuWh<<#BY)$>rTW%b>>KlNJqhj&sGdRD#MwISeqO1dBGy<GV0whk?q9Yo&Ivmxg%$a;?Z=;JirS>DZ"
+    "eV+p<v+~1+H_YCl0Qn$kT6vVWT8|FzF%W@u1b-r4qZ)iQ&)DZaRnf7-p@Pw@Q+{A6P$TLA@-|T$-wn}_8A1oh=^k^e_gqe;L"
+    ";rRkwlySWw-5C$yZ;*Ue8t1m|k9V8jR5jii=<o`13~(cozS-vppBpp3P&K?j-*nUqIj1|YA7}od>b+sFYuLw`@tS-40(w;6="
+    "N*y{Uo{TTWg_<)-F|<sS9(PsII<UV$L~$vY$Xf?TJ=i#O&=_W>6`qgZ^xT&=Qm?m(fs~<9jW^Bd-+s1cLX(xJh3BvN2kCqVV"
+    "s!uGQ9Q6(x0LoUF=avV>DF8>ckhG_ZlO)1ZJV9@paH7{_<#&$6Cbsl9C-Deuw#n=c>DAZ+gH8@yCMwnDry2@7%o$p2ZA)V@w"
+    "_|DBi&?+$To$m3w!}7xkIjJ&O8iR_kBZTmMNfQQq4U>npE>4-=i`QUBuicb)klkH5L+Ow2=xh+au@aPG;CA=dXUxh_$uXMCF"
+    "rRK)|uoE+Mt^?sgG;o0h5UH9^Hep>7Oyq@abad&cdDs;C8bA2l1LoqMwhdq??WU9y9-XE*_y@p!C8Cn+r_%(|SjMvFC?1}Bb"
+    "c~QNG#0CEo_vy{*KGB^}SDAN=@9<dE-4Whf+}m7MY0dIuePdZo4yiu{IivD*@!H@bUqN3usj1ES2}F0t{<EF~+;-l0PIMOU9"
+    "WC%vZl@G_NdmuNu~uSdM=HQv1$~m(qJ{DLg6)KUG3v|4{-<`G*FTqSEOG}U`<v_ct|`Vj3*Y_le%`aZ)O+gwIQhM9bT7hPyd"
+    "Lp=plz(wus6WGZSCl1$oC8W5nBIKk$d^ED&05wyYYWkgUIInx%UR%nH7F@4QUPbH@QoY_z}u>k$68M;g#AkqPDzJyjRgK>mB"
+    "^AMAEC7_&2h<5=;F$P+kC^0=R+BM)8&OY03IF0FHy*_&=R?^1H5Kt~ssIB6Ul67YF^!N=NXw?~pv`(FE_gclo`-qzA&4^(JC"
+    "|A-p@nCi%q{ACue*I9K!g>u7Cko<BR3C*;m5de0b~6WCD(-X|aMb<Hp95aq$A*(G=Nki5q%?}G3~p35za$;Qd{ChCD<;XWDK"
+    "7v2u~u@-uS=E=Txdd$8rJ<p!Qc$-Y~v{xj4&UE-A<vr*(#C$JHwRo=Hz4d-SZq@^k=&!6F0l<Rd5Z+HjYIz<Si}Lu3Oz*8D{"
+    "#n-VU?T-Y7m4j9i{<A%_Z=N*)<9Xz&Io-a>S5OIu0c;0@+)Z%g1hh(a(RTj_tcNoy=T(%nq>F}dQBi5h5VMFFZPOfFXq<px$"
+    "o_JegQopAiWMEFV;}^P-(r*P5mTaZ<eDzbMXGaHI7*WdL0w}gw%**Y!G;I=gew%0FP;3P{ubStgF0t_biUb>drH`f_*{%X7{"
+    "k{2s|ok@A2J!OzsIJ`PiRhsSraf_`d0TG`43J{D#0QwDSbx+N3A>st}LE-Zb~;Vzg1wuaw^z0epepc_Zeb-ic=ro^w%d?wiT"
+    "`Ov`i~S#K}v=6=ynhrldle2@3Wyjfo{U)w&Ax-2?>&R^aomDnA;@8w0Wh=sBmd8%(PdN}62Id0*3t*Uny;3f1YS+o5Lxyns`"
+    "7Br9Tu{(#UTrc&{#ybyoG`^sOKyPQ@vES(h$v1xayEPt#dzP6#GFa`tTLZ(<Gu|<J1-*jg?17z^@Yv7~H9Yw|MBj<9rkM7}u"
+    "+=3y(<S;|(e87zGi_X9tQ7Ms{pOnVk-_^+nydf*?|=Qj{~xR9s#*"
+)
+
 
 
 def _load_module(path: Path, name: str):
@@ -1107,6 +1366,7 @@ def test_activation_canary_failure_surfaces_child_reason(
             stderr="",
         ),
     )
+    monkeypatch.setattr(module, "_verify_stable_installed_launcher", lambda _journal: {})
 
     with pytest.raises(module.XinaoError) as failure:
         module._run_activation_canary(journal)
@@ -2176,6 +2436,52 @@ def _copy_skill_tree(source: Path, destination: Path, *, newline: bytes | None =
         target.write_bytes(payload)
 
 
+def _materialize_real_legacy_skill_tree(destination: Path, *, newline: bytes) -> None:
+    """Materialize the true b916 v1 Skill bytes, not a projection of current source."""
+
+    encoded = zlib.decompress(base64.b85decode(LEGACY_XINAO_FIXTURE_B85)).decode("utf-8")
+    files = json.loads(encoded)
+    assert isinstance(files, dict)
+    assert sorted(files) == [
+        "SKILL.md",
+        "agents/openai.yaml",
+        "references/capabilities.v1.json",
+        "references/meta.md",
+        "references/researcher-charter.v1.json",
+        "references/researcher-output.v1.schema.json",
+        "references/researcher-runtime-lock.v1.json",
+        "scripts/xinao.py",
+    ]
+    for relative, encoded_payload in files.items():
+        payload = base64.b64decode(encoded_payload, validate=True)
+        assert hashlib.sha256(payload).hexdigest() == (
+            LEGACY_XINAO_FIXTURE_MANIFEST["files"][relative]
+        )
+        if Path(relative).suffix.lower() in {
+            ".md",
+            ".py",
+            ".json",
+            ".yaml",
+            ".yml",
+            ".txt",
+        }:
+            payload = payload.replace(b"\r\n", b"\n").replace(b"\r", b"\n")
+            if newline == b"\r\n":
+                payload = payload.replace(b"\n", b"\r\n")
+        target = destination / relative
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_bytes(payload)
+
+    launcher = destination / "scripts" / "xinao.py"
+    assert not (destination / "scripts" / "xinao_runtime.py").exists()
+    assert b"bootstrap-migrate" not in launcher.read_bytes()
+    assert b"recover" not in launcher.read_bytes()
+    if newline == b"\r\n":
+        assert hashlib.sha256(launcher.read_bytes()).hexdigest() == (
+            LEGACY_INSTALLED_LAUNCHER_SHA256
+        )
+
+
 def _stage_source_rendering(
     module,
     release_id: str,
@@ -2183,21 +2489,35 @@ def _stage_source_rendering(
     newline: bytes,
     marker: bytes | None = None,
 ) -> Path:
-    root = module._source_rendering_root(release_id)
+    root = module._state_paths()["migration_root"] / "test-only-legacy-fixture" / release_id
     if root.exists():
         import shutil
 
         shutil.rmtree(root)
-    _copy_skill_tree(SKILL_ROOT, root, newline=newline)
-    if marker is not None:
-        marker_path = root / "references" / "migration-marker.txt"
-        marker_path.parent.mkdir(parents=True, exist_ok=True)
-        marker_path.write_bytes(marker if newline == b"\n" else marker.replace(b"\n", newline))
+    _materialize_real_legacy_skill_tree(root, newline=newline)
+    # Keep the parameter for older call sites, but never fabricate non-legacy bytes.
+    del marker
     return root
 
 
 def _legacy_skill_hashes_for_tree(module, root: Path) -> dict[str, str]:
-    skill_side = module._legacy_skill_side_hashes(root)
+    skill_side = {
+        "skill_md_sha256": module._sha256(root / "SKILL.md"),
+        "skill_invoker_sha256": module._sha256(root / "scripts" / "xinao.py"),
+        "capability_registry_sha256": module._sha256(
+            root / "references" / "capabilities.v1.json"
+        ),
+        "charter_sha256": module._sha256(
+            root / "references" / "researcher-charter.v1.json"
+        ),
+        "runtime_lock_sha256": module._sha256(
+            root / "references" / "researcher-runtime-lock.v1.json"
+        ),
+        "meta_sha256": module._sha256(root / "references" / "meta.md"),
+        "output_schema_sha256": module._sha256(
+            root / "references" / "researcher-output.v1.schema.json"
+        ),
+    }
     skill_side["dockerfile_sha256"] = "1" * 64
     skill_side["entrypoint_sha256"] = "2" * 64
     return skill_side
@@ -2274,6 +2594,12 @@ def _install_drifted_skill(
     capabilities.write_bytes(capabilities.read_bytes().rstrip() + b"\n")
     meta = installed / "references" / "meta.md"
     meta.write_bytes(meta.read_bytes() + b"\ninstalled-meta-drift\n")
+    cache_root = installed / "scripts" / "__pycache__"
+    cache_root.mkdir()
+    (cache_root / "xinao.cpython-312.pyc").write_bytes(
+        b"xinao-live-cache-v1\x00\x01\x02\n"
+    )
+    (cache_root / "empty-cache-dir").mkdir()
     monkeypatch.setenv("XINAO_INSTALLED_SKILL_ROOT", str(installed))
     monkeypatch.setattr(module, "DEFAULT_INSTALLED_SKILL_ROOT", installed)
     return installed
@@ -2364,7 +2690,83 @@ def _prepare_v1_migration_world(
                 if path.is_file()
             ]
         },
+        "installed_directories": sorted(
+            path.relative_to(installed).as_posix()
+            for path in installed.rglob("*")
+            if path.is_dir()
+        ),
     }
+
+
+def _run_installed_xinao(
+    module, world: dict[str, object], *arguments: str
+) -> subprocess.CompletedProcess[bytes]:
+    environment = os.environ.copy()
+    environment["XINAO_SKILL_STATE_ROOT"] = str(module._state_paths()["state_root"])
+    environment["XINAO_INSTALLED_SKILL_ROOT"] = str(world["installed"])
+    environment["XINAO_RESEARCH_RUN_ROOT"] = str(
+        module._state_paths()["state_root"] / "test-runs"
+    )
+    environment["PYTHONDONTWRITEBYTECODE"] = "1"
+    return subprocess.run(
+        [
+            sys.executable,
+            "-I",
+            str(Path(world["installed"]) / "scripts" / "xinao.py"),
+            *arguments,
+        ],
+        env=environment,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        timeout=60,
+        check=False,
+        creationflags=int(getattr(subprocess, "CREATE_NO_WINDOW", 0)),
+    )
+
+
+def _json_stdout(completed: subprocess.CompletedProcess[bytes]) -> dict[str, object]:
+    assert completed.stdout, completed.stderr.decode("utf-8", errors="replace")
+    return json.loads(completed.stdout.decode("utf-8").strip().splitlines()[-1])
+
+
+def test_real_b916_fresh_inspect_and_dual_protocol_v1_fallback(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    module = _module()
+    world = _prepare_v1_migration_world(module, tmp_path, monkeypatch)
+    before = _run_installed_xinao(module, world, "inspect")
+    assert before.returncode == 0
+    assert before.stderr == b""
+    baseline = _json_stdout(before)
+    assert baseline["schema_version"] == "xinao.skill_inspection.v1"
+    assert baseline["runtime_status"] == "AVAILABLE"
+    assert baseline["release_id"] == "researcher-1.0.0-0a7aea3f2ed52581"
+
+    monkeypatch.setattr(
+        module, "_run_activation_canary", lambda value: _canary_value(module, value)
+    )
+
+    def crash_after_new_launcher(phase: str, relative: str) -> None:
+        if phase == "forward:after-replace" and relative == "scripts/xinao.py":
+            raise module.XinaoError("INJECTED_CRASH", "new launcher over v1 pointer")
+
+    monkeypatch.setattr(module, "_projection_fault_point", crash_after_new_launcher)
+    with pytest.raises(module.XinaoError) as failure:
+        module.bootstrap_migrate()
+    assert failure.value.reason_code == "INJECTED_CRASH"
+    journal, _journal_path = module._pending_journals()[0]
+    assert journal["state"] == "PREPARED"
+    assert module._load_json(world["pointer_path"])["schema_version"] == (
+        module.LEGACY_POINTER_SCHEMA
+    )
+    fallback = _run_installed_xinao(module, world, "inspect")
+    assert fallback.returncode == 0
+    assert fallback.stderr == b""
+    assert _json_stdout(fallback) == baseline
+
+    monkeypatch.setattr(module, "_projection_fault_point", lambda _phase, _relative: None)
+    recovered = module.recover_migration_transaction(str(journal["txn_id"]))
+    assert recovered["status"] == "MIGRATED"
 
 
 def test_bootstrap_migrate_success_from_pure_v1_and_crlf_lf_renderings(
@@ -2404,6 +2806,14 @@ def test_bootstrap_migrate_success_from_pure_v1_and_crlf_lf_renderings(
     assert journal["operation"] == "MIGRATE"
     assert journal["state"] == "VERIFIED"
     assert journal["from"]["legacy_restore_tree_sha256"] == receipt["legacy_restore_tree_sha256"]
+    assert not (world["installed"] / "scripts" / "__pycache__").exists()
+    restore_root = Path(journal["from"]["legacy_restore_path"]) / "installed_skill"
+    assert (
+        restore_root / "scripts" / "__pycache__" / "xinao.cpython-312.pyc"
+    ).read_bytes() == b"xinao-live-cache-v1\x00\x01\x02\n"
+    assert (
+        restore_root / "scripts" / "__pycache__" / "empty-cache-dir"
+    ).is_dir()
     context = module._load_current_context(require_terminal=True)
     assert context["release"]["required_bootstrap_protocol"] == 2
 
@@ -2447,34 +2857,19 @@ def test_prepare_migration_target_builds_current_release_under_legacy_pointer_fe
     assert world["pointer_path"].read_bytes() == before
 
 
-def test_bootstrap_migrate_wrong_line_ending_material_fails_before_mutation(
+def test_bootstrap_migrate_ignores_corrupt_test_only_source_rendering(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     module = _module()
     world = _prepare_v1_migration_world(module, tmp_path, monkeypatch)
-    # Replace active rendering with LF bytes while v1 skill_hashes still seal CRLF.
-    wrong = module._source_rendering_root(str(world["active"]["release_id"]))
-    import shutil
-
-    shutil.rmtree(wrong)
-    _copy_skill_tree(SKILL_ROOT, wrong, newline=b"\n")
-    marker = wrong / "references" / "migration-marker.txt"
-    marker.write_bytes(b"active-rendering\n")
-    before = world["pointer_path"].read_bytes()
-    installed_before = {
-        path.relative_to(world["installed"]).as_posix(): path.read_bytes()
-        for path in world["installed"].rglob("*")
-        if path.is_file()
-    }
-    with pytest.raises(module.XinaoError) as failure:
-        module.bootstrap_migrate()
-    assert failure.value.reason_code == "MIGRATION_SOURCE_RENDERING_HASH_MISMATCH"
-    assert world["pointer_path"].read_bytes() == before
-    assert {
-        path.relative_to(world["installed"]).as_posix(): path.read_bytes()
-        for path in world["installed"].rglob("*")
-        if path.is_file()
-    } == installed_before
+    rendering = Path(world["active_rendering"])
+    (rendering / "SKILL.md").write_bytes(b"foreign source rendering\n")
+    (rendering / "unknown-extra.bin").write_bytes(b"ignored\n")
+    monkeypatch.setattr(
+        module, "_run_activation_canary", lambda value: _canary_value(module, value)
+    )
+    result = module.bootstrap_migrate()
+    assert result["status"] == "MIGRATED"
 
 
 def test_bootstrap_migrate_captures_exact_drifted_live_tree(
@@ -2497,22 +2892,19 @@ def test_bootstrap_migrate_captures_exact_drifted_live_tree(
     ).read_bytes()
 
 
-def test_bootstrap_migrate_missing_previous_rendering_zero_mutation(
+def test_bootstrap_migrate_ignores_missing_test_only_previous_rendering(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     module = _module()
     world = _prepare_v1_migration_world(module, tmp_path, monkeypatch)
     import shutil
 
-    shutil.rmtree(module._source_rendering_root(str(world["previous"]["release_id"])))
-    before = world["pointer_path"].read_bytes()
-    with pytest.raises(module.XinaoError) as failure:
-        module.bootstrap_migrate()
-    assert failure.value.reason_code == "ROLLBACK_MATERIAL_ABSENT"
-    assert world["pointer_path"].read_bytes() == before
-    assert not any(
-        (module._state_paths()["transaction_root"]).glob("*/activation.v1.json")
-    ) if module._state_paths()["transaction_root"].exists() else True
+    shutil.rmtree(Path(world["previous_rendering"]))
+    monkeypatch.setattr(
+        module, "_run_activation_canary", lambda value: _canary_value(module, value)
+    )
+    result = module.bootstrap_migrate()
+    assert result["status"] == "MIGRATED"
 
 
 def test_bootstrap_migrate_corrupt_v1_manifest_zero_mutation(
@@ -2772,6 +3164,276 @@ def test_bootstrap_migrate_concurrent_second_lock_holder_fails_closed(
     assert receipt["status"] == "MIGRATED"
 
 
+def test_bootstrap_migrate_singleflight_builds_once_and_reuses_migration_txn(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    module = _module()
+    original_prepare = module._prepare_migration_target
+    world = _prepare_v1_migration_world(module, tmp_path, monkeypatch)
+    monkeypatch.setattr(module, "_prepare_migration_target", original_prepare)
+    monkeypatch.setattr(
+        module, "_run_activation_canary", lambda value: _canary_value(module, value)
+    )
+    build_started = threading.Event()
+    release_build = threading.Event()
+    build_calls: list[str] = []
+    build_guard = threading.Lock()
+
+    def one_build(_source_root, *, allow_dirty, migration_legacy_pointer_sha256):
+        assert allow_dirty is False
+        with build_guard:
+            build_calls.append(str(migration_legacy_pointer_sha256))
+        build_started.set()
+        assert release_build.wait(timeout=10)
+        return {
+            "release_id": world["target"]["release_id"],
+            "release_manifest_path": str(world["target_path"]),
+            "release_manifest_sha256": module._sha256(world["target_path"]),
+        }
+
+    monkeypatch.setattr(module, "build_release", one_build)
+    results: list[dict[str, object]] = []
+    failures: list[BaseException] = []
+
+    def invoke() -> None:
+        try:
+            results.append(module.bootstrap_migrate())
+        except BaseException as exc:  # pragma: no cover - asserted empty
+            failures.append(exc)
+
+    first = threading.Thread(target=invoke)
+    second = threading.Thread(target=invoke)
+    first.start()
+    assert build_started.wait(timeout=10)
+    second.start()
+    time.sleep(0.1)
+    release_build.set()
+    first.join(timeout=30)
+    second.join(timeout=30)
+    assert not first.is_alive() and not second.is_alive()
+    assert failures == []
+    assert len(build_calls) == 1
+    assert {str(result["status"]) for result in results} == {
+        "MIGRATED",
+        "ALREADY_MIGRATED",
+    }
+    assert len({str(result["txn_id"]) for result in results}) == 1
+    migrate_journals = [
+        value
+        for value, _path in (
+            (
+                module._load_json(path),
+                path,
+            )
+            for path in module._state_paths()["transaction_root"].glob(
+                "*/activation.v1.json"
+            )
+        )
+        if value.get("operation") == "MIGRATE"
+    ]
+    assert len(migrate_journals) == 1
+
+
+@pytest.mark.parametrize(
+    "mutation",
+    (
+        "hardlinked_launcher",
+        "impure_previous_release",
+        "corrupt_active_manifest",
+        "missing_previous_manifest",
+    ),
+)
+def test_full_v1_preflight_fails_before_build_release(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, mutation: str
+) -> None:
+    module = _module()
+    original_prepare = module._prepare_migration_target
+    world = _prepare_v1_migration_world(module, tmp_path, monkeypatch)
+    monkeypatch.setattr(module, "_prepare_migration_target", original_prepare)
+    if mutation == "hardlinked_launcher":
+        os.link(
+            world["installed"] / "scripts" / "xinao.py",
+            tmp_path / "launcher-hardlink.py",
+        )
+    elif mutation == "impure_previous_release":
+        previous_dir = Path(world["previous_path"]).parent
+        (previous_dir / "foreign.bin").write_bytes(b"foreign\n")
+    elif mutation == "corrupt_active_manifest":
+        Path(world["active_path"]).write_text("{not-json", encoding="utf-8")
+    else:
+        Path(world["previous_path"]).unlink()
+    build_calls = {"count": 0}
+
+    def forbidden_build(*_args, **_kwargs):
+        build_calls["count"] += 1
+        raise AssertionError("build_release must not run")
+
+    monkeypatch.setattr(module, "build_release", forbidden_build)
+    with pytest.raises(module.XinaoError):
+        module.bootstrap_migrate()
+    assert build_calls["count"] == 0
+    transaction_root = module._state_paths()["transaction_root"]
+    assert not transaction_root.exists() or not list(
+        transaction_root.glob("*/activation.v1.json")
+    )
+
+
+def test_killed_c_stage_partial_recovers_through_stable_d_entry_without_residue(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    module = _module()
+    world = _prepare_v1_migration_world(module, tmp_path, monkeypatch)
+    monkeypatch.setattr(
+        module, "_run_activation_canary", lambda value: _canary_value(module, value)
+    )
+    migrated = module.bootstrap_migrate()
+
+    def crash_during_stage_write(phase: str, relative: str) -> None:
+        if (
+            phase == "rollback-stage:during-partial-write"
+            and relative == "rollback-SKILL.md"
+        ):
+            raise module.XinaoError("INJECTED_KILL", "partial C stage write")
+
+    monkeypatch.setattr(module, "_projection_fault_point", crash_during_stage_write)
+    _install_bootstrap_fence(module, monkeypatch, ["rollback"])
+    with pytest.raises(module.XinaoError) as failure:
+        module.rollback_release()
+    assert failure.value.reason_code == "INJECTED_KILL"
+    journal = module._load_json(module._journal_path(migrated["txn_id"]))
+    assert journal["state"] == "LEGACY_RESTORE_STARTED"
+    stable_launcher, stable_pointer = module._stable_recovery_paths()
+    assert stable_launcher.is_file() and stable_pointer.is_file()
+    rollback_stage = module._projection_stage_root(migrated["txn_id"], "rollback")
+    assert any(
+        path.name.startswith(module._transaction_partial_prefix(migrated["txn_id"]))
+        for path in rollback_stage.rglob("*")
+        if path.is_file()
+    )
+
+    environment = os.environ.copy()
+    environment["XINAO_SKILL_STATE_ROOT"] = str(module._state_paths()["state_root"])
+    environment["XINAO_INSTALLED_SKILL_ROOT"] = str(world["installed"])
+    environment["PYTHONDONTWRITEBYTECODE"] = "1"
+    completed = subprocess.run(
+        [sys.executable, "-I", str(stable_launcher)],
+        env=environment,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        timeout=60,
+        check=False,
+        creationflags=int(getattr(subprocess, "CREATE_NO_WINDOW", 0)),
+    )
+    assert completed.returncode == 0, completed.stderr.decode("utf-8", errors="replace")
+    assert _json_stdout(completed)["status"] == "ROLLED_BACK"
+    _assert_full_v1_preimage(module, world)
+    assert not stable_pointer.exists()
+    assert not module._projection_stage_root(
+        migrated["txn_id"], "forward"
+    ).exists()
+    assert not rollback_stage.exists()
+    txn_root = module._journal_path(migrated["txn_id"]).parent
+    assert not list(txn_root.rglob(f"{module._transaction_partial_prefix(migrated['txn_id'])}*"))
+
+
+def test_killed_d_cone_partial_is_rebuilt_only_from_bound_transaction_stage(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    module = _module()
+    world = _prepare_v1_migration_world(module, tmp_path, monkeypatch)
+    monkeypatch.setattr(
+        module, "_run_activation_canary", lambda value: _canary_value(module, value)
+    )
+
+    def crash_during_cone_write(phase: str, _relative: str) -> None:
+        if phase == "recovery-cone:during-partial-write":
+            raise module.XinaoError("INJECTED_KILL", "partial D cone write")
+
+    monkeypatch.setattr(module, "_projection_fault_point", crash_during_cone_write)
+    with pytest.raises(module.XinaoError) as failure:
+        module.bootstrap_migrate()
+    assert failure.value.reason_code == "INJECTED_KILL"
+    journal, _path = module._pending_journals()[0]
+    txn_id = str(journal["txn_id"])
+    cone_stage = module._recovery_cone_stage_root(txn_id)
+    assert cone_stage.is_dir()
+    assert list(cone_stage.rglob(f"{module._transaction_partial_prefix(txn_id)}*"))
+
+    monkeypatch.setattr(module, "_projection_fault_point", lambda _phase, _relative: None)
+    recovered = module.bootstrap_migrate()
+    assert recovered["status"] == "MIGRATED"
+    assert recovered["txn_id"] == txn_id
+    assert not cone_stage.exists()
+    assert not list(
+        module._journal_path(txn_id).parent.rglob(
+            f"{module._transaction_partial_prefix(txn_id)}*"
+        )
+    )
+
+
+def test_foreign_installed_extra_is_preserved_and_blocks_rollback(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    module = _module()
+    world = _prepare_v1_migration_world(module, tmp_path, monkeypatch)
+    monkeypatch.setattr(
+        module, "_run_activation_canary", lambda value: _canary_value(module, value)
+    )
+    module.bootstrap_migrate()
+    foreign = world["installed"] / "scripts" / "__pycache__" / "foreign.pyc"
+    foreign.parent.mkdir(parents=True)
+    foreign.write_bytes(b"foreign-after-seal\n")
+    _install_bootstrap_fence(module, monkeypatch, ["rollback"])
+    with pytest.raises(module.XinaoError) as failure:
+        module.rollback_release()
+    assert failure.value.reason_code == "INSTALL_PROJECTION_FOREIGN_ENTRY"
+    assert foreign.read_bytes() == b"foreign-after-seal\n"
+
+
+def test_already_migrated_uses_original_projection_after_later_activate(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    module = _module()
+    world = _prepare_v1_migration_world(module, tmp_path, monkeypatch)
+    monkeypatch.setattr(
+        module, "_run_activation_canary", lambda value: _canary_value(module, value)
+    )
+    migrated = module.bootstrap_migrate()
+    installed_after_migrate = {
+        path.relative_to(world["installed"]).as_posix(): path.read_bytes()
+        for path in world["installed"].rglob("*")
+        if path.is_file()
+    }
+    later, _later_path = _sealed_release(
+        module,
+        tmp_path,
+        monkeypatch,
+        image_character="d",
+        variant=b"later-v2-activate\n",
+    )
+    _install_bootstrap_fence(
+        module,
+        monkeypatch,
+        ["activate", "--release-id", str(later["release_id"])],
+    )
+    activated = module.activate_release(str(later["release_id"]))
+    assert activated["status"] == "VERIFIED"
+    assert {
+        path.relative_to(world["installed"]).as_posix(): path.read_bytes()
+        for path in world["installed"].rglob("*")
+        if path.is_file()
+    } == installed_after_migrate
+    repeated = module.bootstrap_migrate()
+    assert repeated["status"] == "ALREADY_MIGRATED"
+    assert repeated["txn_id"] == migrated["txn_id"]
+    assert repeated["release_id"] == later["release_id"]
+    assert {
+        path.relative_to(world["installed"]).as_posix(): path.read_bytes()
+        for path in world["installed"].rglob("*")
+        if path.is_file()
+    } == installed_after_migrate
+
+
 def test_build_release_pre_docker_fence_uses_legacy_pointer_under_migration(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -2868,7 +3530,7 @@ def test_apply_legacy_restore_rejects_path_escape_outside_owned_root(
     hostile = dict(restore_manifest)
     hostile["installed_skill_root"] = str(tmp_path / "not-the-install-root" / "xinao")
     with pytest.raises(module.XinaoError) as failure:
-        module._apply_legacy_restore_bundle(restore_root, hostile)
+        module._apply_legacy_restore_bundle(journal, restore_root, hostile)
     assert failure.value.reason_code == "LEGACY_RESTORE_PATH_INVALID"
     assert world["pointer_path"].read_bytes() == world["legacy_bytes"]
     monkeypatch.setattr(module, "_continue_migrate_journal", original_continue)
@@ -2934,8 +3596,7 @@ def test_post_success_migrate_rollback_restores_sealed_v1_world(
     # Ordinary thin-bootstrap fence must form over a terminal MIGRATE journal.
     fence = _install_bootstrap_fence(module, monkeypatch, ["inspect"])
     assert fence["active_txn_id"] == migrated["txn_id"]
-    # Migration activates v2 pointer/journal; installed Skill may still be the pre-capture tree.
-    # Rollback must still re-materialize the sealed capture exactly.
+    # Migration projects the exact v2 bundle; rollback re-materializes the sealed capture.
     _install_bootstrap_fence(module, monkeypatch, ["rollback"])
     receipt = module.rollback_release()
     assert receipt["status"] == "ROLLED_BACK"
@@ -2953,6 +3614,9 @@ def test_post_success_migrate_rollback_restores_sealed_v1_world(
         for path in world["installed"].rglob("*")
         if path.is_file()
     } == world["installed_snapshot"]
+    assert (
+        world["installed"] / "scripts" / "__pycache__" / "empty-cache-dir"
+    ).is_dir()
     # Pure v1 release directories restored (release.json only).
     for release_id in (world["active"]["release_id"], world["previous"]["release_id"]):
         release_dir = module._state_paths()["release_root"] / str(release_id)
@@ -3004,8 +3668,8 @@ def test_post_success_migrate_rollback_rejects_stale_pointer_cas(
         if path.is_file()
     } == installed_before
     journal = module._load_json(module._journal_path(migrated["txn_id"]))
-    assert journal["state"] == "VERIFIED"
-    assert journal["terminal_pointer_sha256"] == module._sha256_bytes(before)
+    assert journal["state"] == "LEGACY_RESTORE_STARTED"
+    assert journal["terminal_pointer_sha256"] is None
 
 
 def test_post_success_migrate_rollback_rejects_stale_or_foreign_journal_binding(
@@ -3060,7 +3724,10 @@ def test_post_success_migrate_rollback_rejects_restore_tamper(
         for path in world["installed"].rglob("*")
         if path.is_file()
     } == installed_before
-    assert module._load_json(module._journal_path(migrated["txn_id"]))["state"] == "VERIFIED"
+    assert (
+        module._load_json(module._journal_path(migrated["txn_id"]))["state"]
+        == "LEGACY_RESTORE_STARTED"
+    )
 
 
 def test_post_success_migrate_rollback_rejects_foreign_restore_path(
@@ -3147,16 +3814,19 @@ def test_post_success_migrate_rollback_preserves_legacy_installed_tree_bytes(
     # Capture exact pre-migration installed tree including drifted files.
     expected = dict(world["installed_snapshot"])
     module.bootstrap_migrate()
-    # Mutation of installed tree during v2 life must not prevent sealed restore.
-    (world["installed"] / "SKILL.md").write_bytes(b"post-migrate drift\n")
+    # Foreign v2-life bytes are never silently overwritten by rollback.
+    foreign = b"post-migrate drift\n"
+    (world["installed"] / "SKILL.md").write_bytes(foreign)
     _install_bootstrap_fence(module, monkeypatch, ["rollback"])
-    receipt = module.rollback_release()
-    assert receipt["status"] == "ROLLED_BACK"
-    assert {
+    with pytest.raises(module.XinaoError) as failure:
+        module.rollback_release()
+    assert failure.value.reason_code == "INSTALL_PROJECTION_FOREIGN_BYTES"
+    assert (world["installed"] / "SKILL.md").read_bytes() == foreign
+    assert expected != {
         path.relative_to(world["installed"]).as_posix(): path.read_bytes()
         for path in world["installed"].rglob("*")
         if path.is_file()
-    } == expected
+    }
 
 
 def test_post_success_migrate_rollback_crash_before_journal_seal_heals(
@@ -3183,17 +3853,22 @@ def test_post_success_migrate_rollback_crash_before_journal_seal_heals(
     with pytest.raises(module.XinaoError) as failure:
         module.rollback_release()
     assert failure.value.reason_code == "INJECTED_CRASH"
-    # Live world already restored to sealed v1; journal still VERIFIED until heal.
+    # Live world is operational v1; transaction hygiene remains explicitly pending.
     assert world["pointer_path"].read_bytes() == world["legacy_bytes"]
-    assert module._load_json(module._journal_path(txn_id))["state"] == "VERIFIED"
+    assert (
+        module._load_json(module._journal_path(txn_id))["state"]
+        == "LEGACY_RESTORE_STARTED"
+    )
     monkeypatch.setattr(module, "_journal_transition", original_transition)
     # bootstrap-migrate heals the journal seal then can re-enter migration.
     monkeypatch.setattr(
         module, "_run_activation_canary", lambda value: _canary_value(module, value)
     )
     healed = module.bootstrap_migrate()
-    assert healed["status"] == "MIGRATED"
+    assert healed["status"] == "ROLLED_BACK"
     assert module._load_json(module._journal_path(txn_id))["state"] == "ROLLED_BACK"
+    remigrated = module.bootstrap_migrate()
+    assert remigrated["status"] == "MIGRATED"
 
 
 def _assert_full_v1_preimage(module, world: dict[str, object]) -> None:
@@ -3203,6 +3878,11 @@ def _assert_full_v1_preimage(module, world: dict[str, object]) -> None:
         for path in world["installed"].rglob("*")
         if path.is_file()
     } == world["installed_snapshot"]
+    assert sorted(
+        path.relative_to(world["installed"]).as_posix()
+        for path in world["installed"].rglob("*")
+        if path.is_dir()
+    ) == world["installed_directories"]
     for release_id in (world["active"]["release_id"], world["previous"]["release_id"]):
         release_dir = module._state_paths()["release_root"] / str(release_id)
         assert sorted(path.name for path in release_dir.iterdir()) == ["release.json"]
@@ -3236,10 +3916,12 @@ def test_partial_restore_crash_after_skill_before_pointer_recovers_via_rollback(
     assert failure.value.reason_code == "INJECTED_CRASH"
     # Pointer still v2; skill may already be legacy material; journal unsealed.
     assert pointer_path.read_bytes() == v2_pointer_bytes
-    assert module._load_json(module._journal_path(txn_id))["state"] == "VERIFIED"
+    assert (
+        module._load_json(module._journal_path(txn_id))["state"]
+        == "LEGACY_RESTORE_STARTED"
+    )
     monkeypatch.setattr(module, "_write_bytes_atomic", original_write)
-    _install_bootstrap_fence(module, monkeypatch, ["rollback"])
-    receipt = module.rollback_release()
+    receipt = module.recover_migration_transaction(txn_id)
     assert receipt["status"] == "ROLLED_BACK"
     assert receipt["completion_claim_allowed"] is False
     _assert_full_v1_preimage(module, world)
@@ -3281,7 +3963,10 @@ def test_partial_restore_crash_after_pointer_before_release_cleanup_heals(
     assert failure.value.reason_code == "INJECTED_CRASH"
     assert pointer_written["done"] is True
     assert pointer_path.read_bytes() == world["legacy_bytes"]
-    assert module._load_json(module._journal_path(txn_id))["state"] == "VERIFIED"
+    assert (
+        module._load_json(module._journal_path(txn_id))["state"]
+        == "LEGACY_RESTORE_STARTED"
+    )
     # Historical pure v1 dirs may still be missing restore cleanup; target may still be v2-shaped.
     monkeypatch.setattr(module, "_write_bytes_atomic", original_write)
     monkeypatch.setattr(
@@ -3289,11 +3974,13 @@ def test_partial_restore_crash_after_pointer_before_release_cleanup_heals(
     )
     # Heal must reapply + full preimage verify before sealing, then may continue migrate.
     healed = module.bootstrap_migrate()
-    assert healed["status"] == "MIGRATED"
+    assert healed["status"] == "ROLLED_BACK"
     assert module._load_json(module._journal_path(txn_id))["state"] == "ROLLED_BACK"
+    remigrated = module.bootstrap_migrate()
+    assert remigrated["status"] == "MIGRATED"
 
 
-def test_partial_restore_crash_after_one_release_recovers_full_preimage(
+def test_partial_restore_crash_after_old_launcher_keeps_v1_operational_and_recovers(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     module = _module()
@@ -3303,36 +3990,29 @@ def test_partial_restore_crash_after_one_release_recovers_full_preimage(
     )
     migrated = module.bootstrap_migrate()
     txn_id = migrated["txn_id"]
-    release_root = module._state_paths()["release_root"]
-    original_write = module._write_bytes_atomic
-    release_writes = {"count": 0}
+    original_fault = module._projection_fault_point
 
-    def crash_after_first_release(path, payload, *, create_new: bool = False):
-        target = Path(path)
-        try:
-            target.relative_to(release_root)
-            is_live_release = target.name == "release.json"
-        except ValueError:
-            is_live_release = False
-        result = original_write(path, payload, create_new=create_new)
-        if is_live_release:
-            release_writes["count"] += 1
-            if release_writes["count"] >= 1:
-                raise module.XinaoError("INJECTED_CRASH", "after one release restored")
-        return result
+    def crash_after_old_launcher(phase: str, relative: str) -> None:
+        if phase == "rollback:after-replace" and relative == "scripts/xinao.py":
+            raise module.XinaoError("INJECTED_CRASH", "after old launcher")
 
-    monkeypatch.setattr(module, "_write_bytes_atomic", crash_after_first_release)
+    monkeypatch.setattr(module, "_projection_fault_point", crash_after_old_launcher)
     _install_bootstrap_fence(module, monkeypatch, ["rollback"])
     with pytest.raises(module.XinaoError) as failure:
         module.rollback_release()
     assert failure.value.reason_code == "INJECTED_CRASH"
-    assert release_writes["count"] >= 1
     assert world["pointer_path"].read_bytes() == world["legacy_bytes"]
-    assert module._load_json(module._journal_path(txn_id))["state"] == "VERIFIED"
-    # One release pure does not authorize ROLLED_BACK; heal must finish the other.
-    monkeypatch.setattr(module, "_write_bytes_atomic", original_write)
-    # Direct heal under lock-equivalent call: bootstrap_migrate recovery path.
-    module._heal_restored_migrate_journal_if_needed(module._sha256(world["pointer_path"]))
+    assert (
+        module._load_json(module._journal_path(txn_id))["state"]
+        == "LEGACY_RESTORE_STARTED"
+    )
+    assert (
+        world["installed"] / "scripts" / "xinao.py"
+    ).read_bytes() == world["installed_snapshot"]["scripts/xinao.py"]
+    assert (world["installed"] / "scripts" / "xinao_runtime.py").is_file()
+    monkeypatch.setattr(module, "_projection_fault_point", original_fault)
+    receipt = module.recover_migration_transaction(txn_id)
+    assert receipt["status"] == "ROLLED_BACK"
     _assert_full_v1_preimage(module, world)
     sealed = module._load_json(module._journal_path(txn_id))
     assert sealed["state"] == "ROLLED_BACK"
@@ -3357,7 +4037,7 @@ def test_heal_refuses_tampered_restore_bundle_without_false_terminal(
         expected_manifest_sha256=journal["from"]["legacy_restore_manifest_sha256"],
         expected_tree_sha256=journal["from"]["legacy_restore_tree_sha256"],
     )
-    module._apply_legacy_restore_bundle(restore_root, restore_manifest)
+    module._apply_legacy_restore_bundle(journal, restore_root, restore_manifest)
     assert world["pointer_path"].read_bytes() == world["legacy_bytes"]
     assert module._load_json(module._journal_path(txn_id))["state"] == "VERIFIED"
     # Tamper sealed restore after live apply; heal must fail closed (no false ROLLED_BACK).
@@ -3406,7 +4086,7 @@ def test_heal_ambiguous_matching_verified_migrate_journals_fail_closed(
         expected_manifest_sha256=journal["from"]["legacy_restore_manifest_sha256"],
         expected_tree_sha256=journal["from"]["legacy_restore_tree_sha256"],
     )
-    module._apply_legacy_restore_bundle(restore_root, restore_manifest)
+    module._apply_legacy_restore_bundle(journal, restore_root, restore_manifest)
     # Forge a second matching VERIFIED MIGRATE witness with its own sealed restore copy.
     import shutil
 
@@ -3440,7 +4120,7 @@ def test_heal_ambiguous_matching_verified_migrate_journals_fail_closed(
     assert migrate_failure.value.reason_code == "RECOVERY_CONFLICT"
 
 
-def test_heal_idempotent_recovery_after_partial_live_world(
+def test_heal_preserves_foreign_release_extra_and_requires_recovery(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     module = _module()
@@ -3458,7 +4138,7 @@ def test_heal_idempotent_recovery_after_partial_live_world(
         expected_tree_sha256=journal["from"]["legacy_restore_tree_sha256"],
     )
     # Partial world: skill + pointer restored; leave impurity in a captured release dir.
-    module._apply_legacy_restore_bundle(restore_root, restore_manifest)
+    module._apply_legacy_restore_bundle(journal, restore_root, restore_manifest)
     impure = (
         module._state_paths()["release_root"]
         / str(world["previous"]["release_id"])
@@ -3468,13 +4148,11 @@ def test_heal_idempotent_recovery_after_partial_live_world(
     (impure / "x.txt").write_bytes(b"noise\n")
     assert module._load_json(module._journal_path(txn_id))["state"] == "VERIFIED"
     live_sha = module._sha256(world["pointer_path"])
-    module._heal_restored_migrate_journal_if_needed(live_sha)
-    _assert_full_v1_preimage(module, world)
-    assert module._load_json(module._journal_path(txn_id))["state"] == "ROLLED_BACK"
-    # Second heal is a no-op once journal is terminal (no longer VERIFIED).
-    module._heal_restored_migrate_journal_if_needed(live_sha)
-    _assert_full_v1_preimage(module, world)
-    assert module._load_json(module._journal_path(txn_id))["state"] == "ROLLED_BACK"
+    with pytest.raises(module.XinaoError) as failure:
+        module._heal_restored_migrate_journal_if_needed(live_sha)
+    assert failure.value.reason_code == "RECOVERY_REQUIRED"
+    assert (impure / "x.txt").read_bytes() == b"noise\n"
+    assert module._load_json(module._journal_path(txn_id))["state"] == "VERIFIED"
 
 
 def test_failed_heal_blocks_new_migration(
