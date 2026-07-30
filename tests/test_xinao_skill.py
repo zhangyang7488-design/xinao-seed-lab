@@ -319,6 +319,7 @@ def _sealed_release(
     image_character: str = "a",
     dirty: bool = False,
     variant: bytes | None = None,
+    capability_version: str = "1.1.0",
 ) -> tuple[dict[str, object], Path]:
     state = _state(module, tmp_path, monkeypatch)
     source_rows = module._source_bundle_files(SKILL_ROOT)
@@ -364,9 +365,9 @@ def _sealed_release(
         "release_id": "pending",
         "package_version": "1.2.0",
         "capability_id": "researcher-container",
-        "capability_version": "1.1.0",
-        "charter_version": "1.1.0",
-        "runtime_version": "1.1.0",
+        "capability_version": capability_version,
+        "charter_version": capability_version,
+        "runtime_version": capability_version,
         "release_identity_sha256": "pending",
         "source_identity": source_identity,
         "skill_bundle_path": "pending",
@@ -386,7 +387,7 @@ def _sealed_release(
     identity_sha256 = module._sha256_bytes(
         module._canonical_bytes(module._release_identity_payload(manifest))
     )
-    release_id = f"researcher-1.1.0-{identity_sha256[:16]}"
+    release_id = f"researcher-{capability_version}-{identity_sha256[:16]}"
     release_root = state / "researcher_container" / "releases" / release_id
     manifest_path = release_root / "release.json"
     manifest.update(
@@ -715,7 +716,7 @@ def test_package_version_is_separate_from_researcher_versions() -> None:
         researcher["version"]
         == charter["charter_version"]
         == runtime_lock["runtime_version"]
-        == "1.1.0"
+        == "1.1.1"
     )
 
 
@@ -878,7 +879,7 @@ def test_build_is_candidate_only_and_passes_complete_image_identity(
     receipt = module.build_release(ROOT, allow_dirty=True)
     assert receipt["status"] == "CANDIDATE_BUILT"
     assert receipt["package_version"] == "1.2.0"
-    assert receipt["capability_version"] == "1.1.0"
+    assert receipt["capability_version"] == "1.1.1"
     assert receipt["source_dirty"] is True
     assert receipt["activated"] is False
     assert not module._state_paths()["pointer"].exists()
@@ -1114,7 +1115,13 @@ def test_same_semver_different_content_is_collision(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     module = _module()
-    _sealed_release(module, tmp_path, monkeypatch, image_character="a")
+    _sealed_release(
+        module,
+        tmp_path,
+        monkeypatch,
+        image_character="a",
+        capability_version="1.1.1",
+    )
     _fake_build_environment(module, monkeypatch, dirty=False, image_character="f")
     with pytest.raises(module.XinaoError) as failure:
         module.build_release(ROOT, allow_dirty=False)
