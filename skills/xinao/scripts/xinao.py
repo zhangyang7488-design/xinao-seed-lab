@@ -30,7 +30,7 @@ RELEASE_RUNTIME_RELATIVE_PATH = Path("skill-bundle") / "scripts" / "xinao_runtim
 # Bound to the co-located bootstrap-migration companion. Tampering fails before execution.
 # Update this whenever the candidate xinao_runtime.py bytes change.
 EXPECTED_COMPANION_RUNTIME_SHA256 = (
-    "6ea33917175e720045cf2730873b7e84c97504ead191c2d2bc000aaf12a467ed"
+    "c5c4d309ca3629e41770e6c569f3d43812c69c92d6b0b000a7a8b6480056da8f"
 )
 RELEASE_ID_PATTERN = re.compile(r"^researcher-[0-9]+\.[0-9]+\.[0-9]+-[0-9a-f]{16}$")
 TXN_ID_PATTERN = re.compile(r"^xra_[0-9]{8}T[0-9]{6}_[0-9a-f]{16}$")
@@ -380,8 +380,7 @@ def _validate_journal_shape(
         if requested_to != target:
             raise BootstrapError("ACTIVATION_TARGET_BINDING_MISMATCH", txn_id)
     elif (
-        requested_to.get("activation_txn_id") != txn_id
-        or target.get("activation_txn_id") != txn_id
+        requested_to.get("activation_txn_id") != txn_id or target.get("activation_txn_id") != txn_id
     ):
         raise BootstrapError("ACTIVATION_TRANSACTION_BINDING_MISMATCH", txn_id)
     from_value = journal.get("from")

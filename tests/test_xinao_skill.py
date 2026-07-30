@@ -740,7 +740,9 @@ def test_package_version_is_separate_from_researcher_versions() -> None:
         "settlement",
         "walk-forward-replay",
     ):
-        facet = next(value for value in registry["capabilities"] if value["capability_id"] == facet_id)
+        facet = next(
+            value for value in registry["capabilities"] if value["capability_id"] == facet_id
+        )
         assert facet["source_status"] == "available"
         assert facet["implemented_by"] == "shadow-lifecycle-leg-a"
         assert facet["version"] == "0.2.0"
@@ -926,8 +928,16 @@ def test_build_is_candidate_only_and_passes_complete_image_identity(
     assert donor_tag not in joined
     assert str(ROOT) not in build[-1]
     assert (Path(build[-1]) / module.DONOR_BINARY_CONTEXT_RELATIVE).name == "grok"
-    assert (Path(build[-1]) / module.SHADOW_RUNTIME_CONTEXT_RELATIVE / "xinao" / "shadow_lifecycle" / "__main__.py").as_posix().endswith(
-        "shadow-runtime/xinao/shadow_lifecycle/__main__.py"
+    assert (
+        (
+            Path(build[-1])
+            / module.SHADOW_RUNTIME_CONTEXT_RELATIVE
+            / "xinao"
+            / "shadow_lifecycle"
+            / "__main__.py"
+        )
+        .as_posix()
+        .endswith("shadow-runtime/xinao/shadow_lifecycle/__main__.py")
     )
     # Build context is cleaned after success; prove staging happened via sealed identities.
     assert "SHADOW_RUNTIME_TREE_SHA256=" in joined
@@ -3816,9 +3826,7 @@ def test_already_migrated_uses_original_projection_after_later_activate(
     assert synced["status"] == "SYNCED"
     assert synced["release_id"] == later["release_id"]
     assert module._state_paths()["pointer"].read_bytes() == pointer_before
-    assert _installed_tree_map(Path(world["installed"])) == _active_skill_bundle_map(
-        module, later
-    )
+    assert _installed_tree_map(Path(world["installed"])) == _active_skill_bundle_map(module, later)
     assert module._installed_projection_alignment(later)["status"] == "ALIGNED"
     _install_bootstrap_fence(module, monkeypatch, ["inspect"])
     aligned_inspect = module.inspect_capability()
@@ -4918,7 +4926,10 @@ def test_shadow_command_construction_is_network_none_readonly_episode_only() -> 
     assert "no-new-privileges:true" in joined
     assert "--entrypoint" in argv and argv[argv.index("--entrypoint") + 1] == "python"
     assert ("sha256:" + "a" * 64) in argv
-    assert any(item.startswith("type=bind,source=") and "/episode" in item and "readonly" not in item for item in argv)
+    assert any(
+        item.startswith("type=bind,source=") and "/episode" in item and "readonly" not in item
+        for item in argv
+    )
     assert any(
         item.startswith("type=bind,source=") and "/input" in item and item.endswith(",readonly")
         for item in argv
@@ -4931,9 +4942,7 @@ def test_shadow_command_construction_is_network_none_readonly_episode_only() -> 
         "freeze",
         "--root",
     ] or (
-        "-m" in argv
-        and argv[argv.index("-m") + 1] == "xinao.shadow_lifecycle"
-        and "freeze" in argv
+        "-m" in argv and argv[argv.index("-m") + 1] == "xinao.shadow_lifecycle" and "freeze" in argv
     )
     # No provider egress or auth mounts.
     assert "auth.json" not in joined
@@ -4972,7 +4981,16 @@ def test_shadow_parser_and_fresh_process_accept_verbs(
     module = _module()
     parser = module._parser()
     args = parser.parse_args(
-        ["shadow", "init", "--root", str(tmp_path / "ep"), "--seat-id", "s1", "--portfolio-ref", "p1"]
+        [
+            "shadow",
+            "init",
+            "--root",
+            str(tmp_path / "ep"),
+            "--seat-id",
+            "s1",
+            "--portfolio-ref",
+            "p1",
+        ]
     )
     assert args.command == "shadow"
     assert args.shadow_command == "init"
@@ -4984,7 +5002,15 @@ def test_shadow_parser_and_fresh_process_accept_verbs(
 
     # Fresh process: parser-level reject without active pointer (bootstrap/runtime handoff path).
     completed = subprocess.run(
-        [sys.executable, "-I", str(SKILL_ROOT / "scripts" / "xinao.py"), "shadow", "inspect", "--root", str(tmp_path / "ep")],
+        [
+            sys.executable,
+            "-I",
+            str(SKILL_ROOT / "scripts" / "xinao.py"),
+            "shadow",
+            "inspect",
+            "--root",
+            str(tmp_path / "ep"),
+        ],
         cwd=str(ROOT),
         env={**os.environ, "XINAO_SKILL_STATE_ROOT": str(tmp_path / "state")},
         stdout=subprocess.PIPE,

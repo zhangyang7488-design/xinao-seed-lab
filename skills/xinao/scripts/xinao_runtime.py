@@ -1859,7 +1859,6 @@ def _prepare_donor_binary_staging(
         raise
 
 
-
 def _load_shadow_runtime_lock(root: Path = SKILL_ROOT) -> dict[str, Any]:
     lock_path = root / SHADOW_RUNTIME_LOCK_RELATIVE
     lock = _load_json(lock_path)
@@ -1869,7 +1868,10 @@ def _load_shadow_runtime_lock(root: Path = SKILL_ROOT) -> dict[str, Any]:
         raise XinaoError("GENERIC_WORKER_ROUTE_NOT_FORBIDDEN", str(lock_path))
     if lock.get("temporal_allowed") is not False or lock.get("database_allowed") is not False:
         raise XinaoError("SHADOW_RUNTIME_LOCK_BOUNDARY_INVALID", str(lock_path))
-    if lock.get("daemon_allowed") is not False or lock.get("live_money_action_allowed") is not False:
+    if (
+        lock.get("daemon_allowed") is not False
+        or lock.get("live_money_action_allowed") is not False
+    ):
         raise XinaoError("SHADOW_RUNTIME_LOCK_BOUNDARY_INVALID", str(lock_path))
     if lock.get("network_mode") != "none":
         raise XinaoError("SHADOW_RUNTIME_LOCK_NETWORK_INVALID", str(lock_path))
@@ -1940,9 +1942,7 @@ def _shadow_runtime_tree_sha256(rows: list[tuple[str, Path, bytes]]) -> str:
     return _sha256_bytes(_canonical_bytes(payload))
 
 
-def _stage_shadow_runtime(
-    build_context: Path, rows: list[tuple[str, Path, bytes]]
-) -> Path:
+def _stage_shadow_runtime(build_context: Path, rows: list[tuple[str, Path, bytes]]) -> Path:
     destination_root = build_context / SHADOW_RUNTIME_CONTEXT_RELATIVE
     if destination_root.exists():
         raise XinaoError("SHADOW_RUNTIME_STAGING_COLLISION", str(destination_root))
@@ -2010,9 +2010,7 @@ def _reference_hashes(root: Path = SKILL_ROOT) -> dict[str, str]:
             root / "references" / "material-bundle.v1.schema.json"
         ),
         "runtime_lock_sha256": _sha256(root / "references" / "researcher-runtime-lock.v1.json"),
-        "shadow_runtime_lock_sha256": _sha256(
-            root / "references" / "shadow-runtime-lock.v1.json"
-        ),
+        "shadow_runtime_lock_sha256": _sha256(root / "references" / "shadow-runtime-lock.v1.json"),
         "meta_sha256": _sha256(root / "references" / "meta.md"),
     }
 
@@ -2424,9 +2422,9 @@ def _validate_journal(journal: dict[str, Any], journal_path: Path) -> None:
         # Sync never advances pointer generation; seal the live generation only.
         if journal.get("expected_generation") != from_value.get("generation"):
             raise XinaoError("ACTIVATION_GENERATION_INVALID", "sync_projection_generation")
-        if journal.get("to") != from_value.get("active") or journal.get("requested_to") != from_value.get(
-            "active"
-        ):
+        if journal.get("to") != from_value.get("active") or journal.get(
+            "requested_to"
+        ) != from_value.get("active"):
             raise XinaoError("ACTIVATION_TARGET_BINDING_MISMATCH", "sync_projection_target")
     elif from_value is not None:
         if not isinstance(from_value, dict) or set(from_value) != {
@@ -3574,7 +3572,9 @@ def _bound_previous_installed_restore_root(txn_id: str, restore_path_value: obje
     """Bind a SYNC_PROJECTION previous-installed snapshot path to this txn only."""
 
     if not isinstance(restore_path_value, (str, os.PathLike)) or not os.fspath(restore_path_value):
-        raise XinaoError("PREVIOUS_INSTALLED_RESTORE_PATH_INVALID", "previous_installed_restore_path")
+        raise XinaoError(
+            "PREVIOUS_INSTALLED_RESTORE_PATH_INVALID", "previous_installed_restore_path"
+        )
     restore_root = Path(os.fspath(restore_path_value))
     if not restore_root.is_absolute():
         raise XinaoError("PREVIOUS_INSTALLED_RESTORE_PATH_INVALID", f"relative:{restore_root}")
@@ -5829,8 +5829,7 @@ def _project_sync_forward(journal: dict[str, Any]) -> None:
     _assert_sync_pointer_binding(journal)
     _validate_projection_mixed_tree(receipt, allow_legacy_absent=False)
     ordinary = sorted(
-        set(target)
-        - {STABLE_LAUNCHER_RELATIVE, COMPANION_RUNTIME_RELATIVE, "SKILL.md"}
+        set(target) - {STABLE_LAUNCHER_RELATIVE, COMPANION_RUNTIME_RELATIVE, "SKILL.md"}
     )
     for relative in ordinary:
         _validate_projection_mixed_tree(receipt, allow_legacy_absent=True)
@@ -8686,7 +8685,6 @@ def research(
     return receipt
 
 
-
 def _build_shadow_docker_create_argv(
     *,
     docker: str,
@@ -8768,7 +8766,10 @@ def _validate_shadow_container_inspect(
     if cap_add is not None and (not isinstance(cap_add, list) or cap_add):
         raise XinaoError("CONTAINER_CAP_ADD_INVALID", str(cap_add))
     security_opt = host.get("SecurityOpt") or []
-    if "no-new-privileges:true" not in security_opt and "no-new-privileges=true" not in security_opt:
+    if (
+        "no-new-privileges:true" not in security_opt
+        and "no-new-privileges=true" not in security_opt
+    ):
         raise XinaoError("CONTAINER_NO_NEW_PRIVILEGES_MISSING", str(security_opt))
     network_mode = str(host.get("NetworkMode") or "")
     if network_mode not in {"none", "None"}:
@@ -8880,7 +8881,9 @@ def run_shadow(
         input_root.mkdir(parents=True, exist_ok=False)
         target = input_root / "request.json"
         target.write_bytes(
-            _regular_file_bytes(request, reason_code="SHADOW_REQUEST_INVALID", maximum=MAX_JSON_FILE_BYTES)
+            _regular_file_bytes(
+                request, reason_code="SHADOW_REQUEST_INVALID", maximum=MAX_JSON_FILE_BYTES
+            )
         )
         module_argv.extend(["--request", f"{SHADOW_INPUT_CONTAINER_ROOT}/request.json"])
     elif verb == "settle":
@@ -8890,7 +8893,9 @@ def run_shadow(
         input_root.mkdir(parents=True, exist_ok=False)
         target = input_root / "outcome.json"
         target.write_bytes(
-            _regular_file_bytes(outcome, reason_code="SHADOW_OUTCOME_INVALID", maximum=MAX_JSON_FILE_BYTES)
+            _regular_file_bytes(
+                outcome, reason_code="SHADOW_OUTCOME_INVALID", maximum=MAX_JSON_FILE_BYTES
+            )
         )
         module_argv.extend(["--outcome", f"{SHADOW_INPUT_CONTAINER_ROOT}/outcome.json"])
         if settlement_ref:
