@@ -32,6 +32,7 @@ from xinao.science.active_parent import (
 )
 
 TRANSACTION_SCHEMA = "xinao.science_revision_transaction.v1"
+MARKER_SCHEMA = "xinao.science_revision_marker.v2"
 RESULT_SCHEMA = "xinao.science_revision_publication_result.v2"
 V110_VERSION_MARKER = "版本：正式融合稿 v1.10"
 DEFAULT_TOOL_GLUE_AUTHORITY_PATH = Path(
@@ -47,6 +48,38 @@ COMMITTED = "COMMITTED"
 ROLLING_BACK = "ROLLING_BACK"
 ROLLED_BACK = "ROLLED_BACK"
 ROLLED_BACK_AFTER_CRASH = "ROLLED_BACK_AFTER_CRASH"
+
+MARKER_PHASE_PRE_JOURNAL = "PRE_JOURNAL"
+MARKER_PHASE_JOURNAL_BOUND = "JOURNAL_BOUND"
+
+# Immutable identity covers every live/rollback/candidate path and hash pin plus
+# the transaction directory and projection identity. Paths are resolved strings.
+_TRANSACTION_IDENTITY_PATH_FIELDS = (
+    "projection_path",
+    "projection_rollback_copy",
+    "projection_candidate_path",
+    "active_parent_path",
+    "active_parent_rollback_copy",
+    "active_parent_candidate_path",
+    "transition_path",
+    "transition_rollback_copy",
+    "transition_candidate_path",
+    "archive_manifest_path",
+    "archive_manifest_rollback_copy",
+    "archive_manifest_candidate_path",
+    "archive_snapshot_path",
+)
+_TRANSACTION_IDENTITY_HASH_FIELDS = (
+    "projection_preimage_sha256",
+    "projection_candidate_sha256",
+    "active_parent_preimage_sha256",
+    "active_parent_candidate_sha256",
+    "transition_preimage_sha256",
+    "transition_candidate_sha256",
+    "archive_manifest_preimage_sha256",
+    "archive_manifest_candidate_sha256",
+    "archive_snapshot_sha256",
+)
 
 # Windows FILE_ATTRIBUTE_REPARSE_POINT; also used as a portable reparse probe bit.
 _FILE_ATTRIBUTE_REPARSE_POINT = 0x400
@@ -1027,12 +1060,337 @@ def _prepare_promotion(
     )
 
 
-def _marker_payload(journal_path: Path) -> dict[str, Any]:
+def _resolved_path_string(value: object) -> str | None:
+    if value is None:
+        return None
+    text = str(value).strip()
+    if not text:
+        return None
+    return str(Path(text).resolve())
+
+
+def _transaction_identity_body(
+    journal: Mapping[str, Any],
+    *,
+    transaction_directory: Path,
+) -> dict[str, Any]:
+    """Build the immutable transaction identity body from journal topology pins."""
+
+    body: dict[str, Any] = {
+        "schema_version": "xinao.science_revision_transaction_identity.v1",
+        "transaction_directory": str(transaction_directory.resolve()),
+    }
+    for field in _TRANSACTION_IDENTITY_PATH_FIELDS:
+        if field in journal and journal.get(field) is not None:
+            body[field] = _resolved_path_string(journal.get(field))
+    for field in _TRANSACTION_IDENTITY_HASH_FIELDS:
+        if field in journal and journal.get(field) is not None:
+            body[field] = str(journal.get(field)).strip().lower()
+    return body
+
+
+def _transaction_identity_sha256(
+    journal: Mapping[str, Any],
+    *,
+    transaction_directory: Path,
+) -> str:
+    body = _transaction_identity_body(journal, transaction_directory=transaction_directory)
+    canonical = json.dumps(body, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    return _sha256_bytes(canonical.encode("utf-8"))
+
+
+def _marker_payload(
+    *,
+    phase: str,
+    journal_path: Path,
+    projection_path: Path,
+    transaction_directory: Path,
+    transaction_identity_sha256: str,
+) -> dict[str, Any]:
+    if phase not in {MARKER_PHASE_PRE_JOURNAL, MARKER_PHASE_JOURNAL_BOUND}:
+        raise RuntimeError(f"unsupported science promotion marker phase: {phase}")
     return {
-        "schema_version": "xinao.science_revision_marker.v1",
+        "schema_version": MARKER_SCHEMA,
+        "phase": phase,
         "journal_path": str(journal_path.resolve()),
+        "projection_path": str(projection_path.resolve()),
+        "transaction_directory": str(transaction_directory.resolve()),
+        "transaction_identity_sha256": _normalized_sha256(
+            transaction_identity_sha256, "transaction_identity_sha256"
+        ),
         "completion_claim_allowed": False,
     }
+
+
+def _assert_marker_or_journal_carrier(path: Path, *, role: str) -> None:
+    """Markers and journals must be ordinary independent single-link non-reparse files."""
+
+    _assert_independent_ordinary_file(path, role=role)
+
+
+def _projection_active_parent_path(projection_payload: Mapping[str, Any]) -> Path:
+    active_binding = projection_payload.get("active_parent")
+    if not isinstance(active_binding, Mapping) or not active_binding.get("path"):
+        raise SciencePublicationError(
+            "CROSS_OBJECT_RESTORE",
+            "science projection active_parent path is missing for topology validation",
+        )
+    return Path(str(active_binding["path"])).resolve()
+
+
+def _load_projection_for_topology(
+    journal: Mapping[str, Any],
+    projection_path: Path,
+) -> dict[str, Any]:
+    """Load a projection payload that defines the sealed object topology.
+
+    Prefer the sealed projection preimage when present so mid-APPLY journals cannot
+    rebind active-parent topology through a substituted live projection.
+    """
+
+    rollback = journal.get("projection_rollback_copy")
+    if rollback is not None:
+        rollback_path = Path(str(rollback)).resolve()
+        if rollback_path.is_file():
+            expected = journal.get("projection_preimage_sha256")
+            if expected is not None and _sha256(rollback_path) != str(expected).lower():
+                raise SciencePublicationError(
+                    "CROSS_OBJECT_RESTORE",
+                    "projection rollback preimage drifted before topology validation",
+                    defects=[
+                        _dependency_defect(
+                            "SCIENCE_PROJECTION_PREIMAGE_DRIFT",
+                            "projection rollback copy does not match journal preimage",
+                            path=str(rollback_path),
+                            expected=str(expected).lower(),
+                            observed=_sha256(rollback_path),
+                        )
+                    ],
+                )
+            return _load_json(rollback_path)
+    if not projection_path.is_file():
+        raise SciencePublicationError(
+            "CROSS_OBJECT_RESTORE",
+            "science projection is missing for topology validation",
+            defects=[
+                _dependency_defect(
+                    "SCIENCE_PROJECTION_MISSING",
+                    "projection path is not a file",
+                    path=str(projection_path),
+                )
+            ],
+        )
+    return _load_json(projection_path)
+
+
+def _validate_transaction_identity(
+    journal: Mapping[str, Any],
+    *,
+    transaction_directory: Path,
+    expected_identity: str | None = None,
+) -> str:
+    computed = _transaction_identity_sha256(journal, transaction_directory=transaction_directory)
+    stored = journal.get("transaction_identity_sha256")
+    if stored is not None:
+        stored_norm = _normalized_sha256(str(stored), "journal.transaction_identity_sha256")
+        if stored_norm != computed:
+            raise SciencePublicationError(
+                "SCIENCE_TRANSACTION_IDENTITY_MISMATCH",
+                "science journal transaction identity does not match sealed topology pins",
+                defects=[
+                    _dependency_defect(
+                        "SCIENCE_TRANSACTION_IDENTITY_MISMATCH",
+                        "journal identity digest drifted from path/hash pins",
+                        expected=computed,
+                        observed=stored_norm,
+                    )
+                ],
+            )
+    if expected_identity is not None:
+        expected_norm = _normalized_sha256(expected_identity, "expected_transaction_identity")
+        if expected_norm != computed:
+            raise SciencePublicationError(
+                "SCIENCE_TRANSACTION_IDENTITY_MISMATCH",
+                "science marker/journal transaction identity binding mismatch",
+                defects=[
+                    _dependency_defect(
+                        "SCIENCE_TRANSACTION_IDENTITY_MISMATCH",
+                        "marker identity does not match recomputed journal identity",
+                        expected=expected_norm,
+                        observed=computed,
+                    )
+                ],
+            )
+    return computed
+
+
+def _validate_journal_object_topology(
+    journal: Mapping[str, Any],
+    *,
+    projection_path: Path,
+) -> None:
+    """Reject cross-object / path-substitution journals before any restore write."""
+
+    bound_projection = Path(str(journal.get("projection_path", ""))).resolve()
+    if bound_projection != projection_path.resolve():
+        raise SciencePublicationError(
+            "CROSS_OBJECT_RESTORE",
+            "science promotion journal does not bind recovery projection target",
+            defects=[
+                _dependency_defect(
+                    "CROSS_OBJECT_RESTORE",
+                    "journal projection_path does not match recovery target",
+                    expected=str(projection_path.resolve()),
+                    observed=str(bound_projection),
+                )
+            ],
+        )
+    if journal.get("active_parent_path") is None:
+        raise SciencePublicationError(
+            "CROSS_OBJECT_RESTORE",
+            "science journal is missing active_parent_path topology pin",
+        )
+    projection_payload = _load_projection_for_topology(journal, projection_path)
+    derived_parent = _projection_active_parent_path(projection_payload)
+    journal_parent = Path(str(journal["active_parent_path"])).resolve()
+    if derived_parent != journal_parent:
+        raise SciencePublicationError(
+            "CROSS_OBJECT_RESTORE",
+            "science journal active_parent_path is not the sealed projection object",
+            defects=[
+                _dependency_defect(
+                    "CROSS_OBJECT_RESTORE",
+                    "active-parent live path disagrees with sealed projection identity",
+                    expected=str(derived_parent),
+                    observed=str(journal_parent),
+                    path=str(projection_path),
+                )
+            ],
+        )
+    # Rollback carriers must never alias a live authority path (hardlink/path swap).
+    # Candidate paths may equal their live target when publication is in-place.
+    for field, forbidden in (
+        ("active_parent_rollback_copy", {journal_parent, bound_projection}),
+        ("projection_rollback_copy", {journal_parent, bound_projection}),
+        ("transition_rollback_copy", set()),
+        ("archive_manifest_rollback_copy", set()),
+    ):
+        raw = journal.get(field)
+        if raw is None:
+            continue
+        path = Path(str(raw)).resolve()
+        blocked = set(forbidden)
+        if journal.get("transition_path") is not None:
+            blocked.add(Path(str(journal["transition_path"])).resolve())
+            blocked.add(Path(str(journal["archive_manifest_path"])).resolve())
+        if path in blocked:
+            raise SciencePublicationError(
+                "CROSS_OBJECT_RESTORE",
+                f"science journal {field} collides with a live authority path",
+                defects=[
+                    _dependency_defect(
+                        "CROSS_OBJECT_RESTORE",
+                        f"{field} must not alias a live restore target",
+                        path=str(path),
+                    )
+                ],
+            )
+    if journal.get("transition_path") is not None:
+        for required in (
+            "transition_rollback_copy",
+            "transition_candidate_path",
+            "archive_manifest_path",
+            "archive_manifest_rollback_copy",
+            "archive_manifest_candidate_path",
+        ):
+            if journal.get(required) is None:
+                raise SciencePublicationError(
+                    "CROSS_OBJECT_RESTORE",
+                    f"science v1.10 journal missing topology pin: {required}",
+                )
+        transition_path = Path(str(journal["transition_path"])).resolve()
+        archive_path = Path(str(journal["archive_manifest_path"])).resolve()
+        live_paths = {bound_projection, journal_parent, transition_path, archive_path}
+        if len(live_paths) != 4:
+            raise SciencePublicationError(
+                "CROSS_OBJECT_RESTORE",
+                "science v1.10 live restore targets are not distinct objects",
+            )
+
+
+def _prove_no_transaction_mutation(
+    journal: Mapping[str, Any] | None,
+    *,
+    transaction_directory: Path,
+) -> None:
+    """PRE_JOURNAL abort is allowed only when no seal/live mutation is observable."""
+
+    if journal is None:
+        # No journal: seals cannot have been recorded. Reject unexpected residue that
+        # would indicate foreign writes under the reserved transaction directory.
+        if transaction_directory.exists():
+            residue = [
+                path
+                for path in transaction_directory.rglob("*")
+                if path.is_file() and path.name != "transaction.v1.json"
+            ]
+            if residue:
+                raise SciencePublicationError(
+                    "SCIENCE_PRE_JOURNAL_MUTATION_OBSERVED",
+                    "PRE_JOURNAL abort refused because transaction residue exists without a journal",
+                    defects=[
+                        _dependency_defect(
+                            "SCIENCE_PRE_JOURNAL_MUTATION_OBSERVED",
+                            "unexpected files under transaction directory",
+                            path=str(residue[0]),
+                        )
+                    ],
+                )
+        return
+    if str(journal.get("status")) not in {MATERIALIZING, PREPARED}:
+        raise SciencePublicationError(
+            "SCIENCE_PRE_JOURNAL_MUTATION_OBSERVED",
+            "PRE_JOURNAL abort refused because journal status indicates mutation may have begun",
+            receipt={"transaction_status": journal.get("status")},
+        )
+    for sealed_flag in (
+        "projection_sealed",
+        "active_parent_sealed",
+        "transition_sealed",
+        "archive_manifest_sealed",
+    ):
+        if journal.get(sealed_flag) is True:
+            raise SciencePublicationError(
+                "SCIENCE_PRE_JOURNAL_MUTATION_OBSERVED",
+                f"PRE_JOURNAL abort refused because {sealed_flag}=true",
+            )
+    for _label, _prefix, live, archive, expected in _materializing_seal_plan(journal):
+        if archive.exists():
+            raise SciencePublicationError(
+                "SCIENCE_PRE_JOURNAL_MUTATION_OBSERVED",
+                "PRE_JOURNAL abort refused because a rollback seal archive exists",
+                defects=[
+                    _dependency_defect(
+                        "SCIENCE_PRE_JOURNAL_MUTATION_OBSERVED",
+                        "rollback archive present before JOURNAL_BOUND",
+                        path=str(archive),
+                    )
+                ],
+            )
+        if live.is_file() and _sha256(live) != expected:
+            raise SciencePublicationError(
+                "SCIENCE_PRE_JOURNAL_MUTATION_OBSERVED",
+                "PRE_JOURNAL abort refused because a live target already drifted",
+                defects=[
+                    _dependency_defect(
+                        "SCIENCE_PRE_JOURNAL_MUTATION_OBSERVED",
+                        "live target hash does not match journal preimage",
+                        path=str(live),
+                        expected=expected,
+                        observed=_sha256(live),
+                    )
+                ],
+            )
 
 
 def _journal_receipt(journal: Mapping[str, Any], journal_path: Path) -> dict[str, Any]:
@@ -1459,6 +1817,7 @@ def _promote_revision_chain_impl(
         journal: dict[str, Any] = {
             "schema_version": TRANSACTION_SCHEMA,
             "status": MATERIALIZING,
+            "transaction_directory": str(transaction_directory),
             "projection_path": str(projection_path),
             "projection_preimage_sha256": prepared.projection_preimage_sha256,
             "projection_candidate_sha256": prepared.projection_candidate_sha256,
@@ -1532,12 +1891,42 @@ def _promote_revision_chain_impl(
                     ],
                 }
             )
-        # Pre-materialization anchor first: crash before journal is discoverable and
-        # recoverable without leaving an orphan journal that blocks republish.
-        # Crash after journal (still before the first rollback copy) recovers the
-        # bound MATERIALIZING journal via the same marker.
-        _write_json_atomic(marker_path, _marker_payload(journal_path))
+        # Reject path-substitution journals before any durable write.
+        _validate_journal_object_topology(journal, projection_path=projection_path)
+        transaction_identity = _transaction_identity_sha256(
+            journal, transaction_directory=transaction_directory
+        )
+        journal["transaction_identity_sha256"] = transaction_identity
+
+        # Two-phase marker protocol:
+        #   PRE_JOURNAL  -> durable discoverable intent; missing journal may abort
+        #                  only after proving no transaction mutation.
+        #   JOURNAL_BOUND -> journal is sealed into the marker; missing journal
+        #                  fails closed and retains the marker. No seal/live
+        #                  mutation may begin until JOURNAL_BOUND is durable.
+        _write_json_atomic(
+            marker_path,
+            _marker_payload(
+                phase=MARKER_PHASE_PRE_JOURNAL,
+                journal_path=journal_path,
+                projection_path=projection_path,
+                transaction_directory=transaction_directory,
+                transaction_identity_sha256=transaction_identity,
+            ),
+        )
         _write_json_atomic(journal_path, journal)
+        _assert_marker_or_journal_carrier(journal_path, role="science promotion journal")
+        _write_json_atomic(
+            marker_path,
+            _marker_payload(
+                phase=MARKER_PHASE_JOURNAL_BOUND,
+                journal_path=journal_path,
+                projection_path=projection_path,
+                transaction_directory=transaction_directory,
+                transaction_identity_sha256=transaction_identity,
+            ),
+        )
+        _assert_marker_or_journal_carrier(marker_path, role="science promotion marker")
 
         sealed_modes: dict[str, int] = {}
         for _label, prefix, live, archive, expected in _materializing_seal_plan(journal):
@@ -1784,35 +2173,128 @@ def publish_science_revision_transaction(
     )
 
 
+def _load_marker_payload(marker_path: Path) -> dict[str, Any]:
+    _assert_marker_or_journal_carrier(marker_path, role="science promotion marker")
+    marker = _load_json(marker_path)
+    if marker.get("schema_version") != MARKER_SCHEMA:
+        raise SciencePublicationError(
+            "SCIENCE_MARKER_INVALID",
+            "science promotion marker schema is invalid or foreign",
+            defects=[
+                _dependency_defect(
+                    "SCIENCE_MARKER_INVALID",
+                    "marker schema_version is not the sealed v2 marker",
+                    observed=marker.get("schema_version"),
+                    path=str(marker_path),
+                )
+            ],
+        )
+    phase = str(marker.get("phase", ""))
+    if phase not in {MARKER_PHASE_PRE_JOURNAL, MARKER_PHASE_JOURNAL_BOUND}:
+        raise SciencePublicationError(
+            "SCIENCE_MARKER_INVALID",
+            f"science promotion marker phase is invalid: {phase}",
+        )
+    if not marker.get("journal_path") or not marker.get("transaction_identity_sha256"):
+        raise SciencePublicationError(
+            "SCIENCE_MARKER_INVALID",
+            "science promotion marker is missing journal_path or transaction identity",
+        )
+    if not marker.get("transaction_directory"):
+        raise SciencePublicationError(
+            "SCIENCE_MARKER_INVALID",
+            "science promotion marker is missing transaction_directory",
+        )
+    return marker
+
+
 def _load_marker_and_journal(
     projection_path: Path,
-) -> tuple[Path, dict[str, Any]] | None | str:
-    """Load the marker-bound journal, or signal a cleared pre-materialization anchor.
+) -> tuple[Path, dict[str, Any], dict[str, Any]] | None | str:
+    """Load the phase-bound journal, or signal a cleared PRE_JOURNAL anchor.
 
     Returns:
       - ``None`` when no marker is present
-      - ``\"PRE_MATERIALIZATION_ABORTED\"`` when a marker pointed at a missing
-        journal and the discoverable anchor was cleared
-      - ``(journal_path, journal)`` for a bound durable journal
+      - ``\"PRE_MATERIALIZATION_ABORTED\"`` when a PRE_JOURNAL marker pointed at a
+        missing/incomplete journal, no mutation was proven, and the anchor cleared
+      - ``(journal_path, journal, marker)`` for a JOURNAL_BOUND durable journal
     """
 
-    marker_path = _promotion_marker_path(projection_path.resolve()).resolve()
+    projection_path = projection_path.resolve()
+    marker_path = _promotion_marker_path(projection_path).resolve()
     if not marker_path.exists():
         return None
-    marker = _load_json(marker_path)
-    journal_path = Path(str(marker.get("journal_path", ""))).resolve()
+    marker = _load_marker_payload(marker_path)
+    phase = str(marker["phase"])
+    journal_path = Path(str(marker["journal_path"])).resolve()
+    transaction_directory = Path(str(marker["transaction_directory"])).resolve()
+    marker_identity = _normalized_sha256(
+        str(marker["transaction_identity_sha256"]),
+        "marker.transaction_identity_sha256",
+    )
+    marker_projection = Path(str(marker.get("projection_path", projection_path))).resolve()
+    if marker_projection != projection_path:
+        raise SciencePublicationError(
+            "CROSS_OBJECT_RESTORE",
+            "science promotion marker does not bind recovery projection target",
+            defects=[
+                _dependency_defect(
+                    "CROSS_OBJECT_RESTORE",
+                    "marker projection_path does not match recovery target",
+                    expected=str(projection_path),
+                    observed=str(marker_projection),
+                )
+            ],
+        )
+
     if not journal_path.is_file():
-        # Crash after pre-materialization marker and before journal: clear the
-        # discoverable anchor so republish is not permanently blocked.
-        marker_path.unlink(missing_ok=True)
-        return "PRE_MATERIALIZATION_ABORTED"
+        if phase == MARKER_PHASE_PRE_JOURNAL:
+            # Safe abort only after proving no transaction mutation under PRE_JOURNAL.
+            _prove_no_transaction_mutation(None, transaction_directory=transaction_directory)
+            marker_path.unlink(missing_ok=True)
+            return "PRE_MATERIALIZATION_ABORTED"
+        # JOURNAL_BOUND without journal: fail closed and retain the marker so a
+        # mid-apply delete race cannot false-abort and leave live half-written.
+        raise SciencePublicationError(
+            "SCIENCE_JOURNAL_BOUND_MISSING",
+            "JOURNAL_BOUND marker is missing its durable journal; refusing false abort",
+            defects=[
+                _dependency_defect(
+                    "SCIENCE_JOURNAL_BOUND_MISSING",
+                    "journal file is absent under JOURNAL_BOUND phase",
+                    path=str(journal_path),
+                    phase=phase,
+                )
+            ],
+            receipt={
+                "marker_phase": phase,
+                "transaction_identity_sha256": marker_identity,
+                "transaction_journal": str(journal_path),
+                "marker_retained": True,
+            },
+        )
+
+    _assert_marker_or_journal_carrier(journal_path, role="science promotion journal")
     journal = _load_json(journal_path)
     if journal.get("schema_version") != TRANSACTION_SCHEMA:
         raise RuntimeError("science promotion journal schema is invalid")
-    bound_projection = Path(str(journal.get("projection_path", ""))).resolve()
-    if bound_projection != projection_path.resolve():
-        raise RuntimeError("science promotion journal does not bind recovery target")
-    return journal_path, journal
+    _validate_journal_object_topology(journal, projection_path=projection_path)
+    _validate_transaction_identity(
+        journal,
+        transaction_directory=transaction_directory,
+        expected_identity=marker_identity,
+    )
+
+    if phase == MARKER_PHASE_PRE_JOURNAL:
+        # Journal written but JOURNAL_BOUND upgrade did not land: seals must not
+        # have started. Abort only after proving no mutation residue.
+        _prove_no_transaction_mutation(journal, transaction_directory=transaction_directory)
+        journal["status"] = ROLLED_BACK_AFTER_CRASH
+        _write_json_atomic(journal_path, journal)
+        marker_path.unlink(missing_ok=True)
+        return "PRE_MATERIALIZATION_ABORTED"
+
+    return journal_path, journal, marker
 
 
 def _journal_target_states(
@@ -1966,9 +2448,23 @@ def recover_interrupted_promotion(projection_path: Path) -> dict[str, Any]:
                 "pre_materialization_anchor_cleared": True,
                 "completion_claim_allowed": False,
             }
-        journal_path, journal = loaded
+        journal_path, journal, marker = loaded
         status_value = str(journal.get("status"))
         marker_path = _promotion_marker_path(projection_path)
+        transaction_directory = Path(
+            str(
+                journal.get("transaction_directory")
+                or marker.get("transaction_directory")
+                or journal_path.parent
+            )
+        ).resolve()
+        # Revalidate identity + object topology on every recover path before writes.
+        _validate_journal_object_topology(journal, projection_path=projection_path)
+        _validate_transaction_identity(
+            journal,
+            transaction_directory=transaction_directory,
+            expected_identity=str(marker["transaction_identity_sha256"]),
+        )
         if status_value == COMMITTED:
             _verify_target_state(journal, committed=True)
             companion_bindings = _verify_companion_semantics(journal, restored=False)
@@ -2027,17 +2523,26 @@ def rollback_science_revision_transaction(
     """Idempotently restore a committed science transaction's exact preimages."""
 
     journal_path = journal_path.resolve()
+    _assert_marker_or_journal_carrier(journal_path, role="science promotion journal")
     journal = _load_json(journal_path)
     if journal.get("schema_version") != TRANSACTION_SCHEMA:
         raise RuntimeError("science promotion journal schema is invalid")
     bound_projection = Path(str(journal.get("projection_path", ""))).resolve()
     if projection_path is not None and projection_path.resolve() != bound_projection:
         raise RuntimeError("science promotion journal does not bind rollback target")
+    transaction_directory = Path(
+        str(journal.get("transaction_directory") or journal_path.parent)
+    ).resolve()
     lease = _acquire_promotion_lease(bound_projection)
     try:
         journal = _load_json(journal_path)
         status_value = str(journal.get("status"))
         marker_path = _promotion_marker_path(bound_projection)
+        # Revalidate identity and object topology before any rollback mutation.
+        _validate_journal_object_topology(journal, projection_path=bound_projection)
+        identity = _validate_transaction_identity(
+            journal, transaction_directory=transaction_directory
+        )
         if status_value in {ROLLED_BACK, ROLLED_BACK_AFTER_CRASH}:
             specs = _preimage_specs(journal)
             invalid = _validate_preimages(specs)
@@ -2087,7 +2592,16 @@ def rollback_science_revision_transaction(
         invalid = _validate_preimages(specs)
         if invalid:
             _raise_group("science rollback preimages are invalid", invalid)
-        _write_json_atomic(marker_path, _marker_payload(journal_path))
+        _write_json_atomic(
+            marker_path,
+            _marker_payload(
+                phase=MARKER_PHASE_JOURNAL_BOUND,
+                journal_path=journal_path,
+                projection_path=bound_projection,
+                transaction_directory=transaction_directory,
+                transaction_identity_sha256=identity,
+            ),
+        )
         journal["status"] = ROLLING_BACK
         _write_json_atomic(journal_path, journal)
         errors = _restore_preimages(specs)

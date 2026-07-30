@@ -24,6 +24,43 @@ def _write_json(path: Path, payload: dict[str, object]) -> None:
     path.write_text(json.dumps(payload), encoding="utf-8")
 
 
+def _install_bound_transaction(
+    *,
+    projection: Path,
+    journal_path: Path,
+    journal: dict[str, object],
+    phase: str = "JOURNAL_BOUND",
+) -> Path:
+    """Persist a marker+journal pair with a sealed transaction identity digest."""
+
+    transaction_directory = Path(
+        str(journal.get("transaction_directory") or journal_path.parent)
+    ).resolve()
+    journal = dict(journal)
+    journal.setdefault("schema_version", "xinao.science_revision_transaction.v1")
+    journal["transaction_directory"] = str(transaction_directory)
+    journal["projection_path"] = str(Path(str(journal["projection_path"])).resolve())
+    if journal.get("active_parent_path") is not None:
+        journal["active_parent_path"] = str(Path(str(journal["active_parent_path"])).resolve())
+    identity = promotion._transaction_identity_sha256(
+        journal, transaction_directory=transaction_directory
+    )
+    journal["transaction_identity_sha256"] = identity
+    promotion._write_json_atomic(journal_path, journal)
+    marker_path = projection.with_name(f"{projection.name}.promotion.lock")
+    promotion._write_json_atomic(
+        marker_path,
+        promotion._marker_payload(
+            phase=phase,
+            journal_path=journal_path,
+            projection_path=projection,
+            transaction_directory=transaction_directory,
+            transaction_identity_sha256=identity,
+        ),
+    )
+    return marker_path
+
+
 def _semantic_files(root: Path) -> dict[Path, bytes]:
     """Snapshot files excluding the durable empty promotion.guard carrier."""
 
@@ -766,21 +803,25 @@ def test_recovery_rejects_journal_bound_to_another_projection(tmp_path: Path) ->
     projection, _evidence, _rollback = _fixture(tmp_path)
     other_projection = tmp_path / "other-projection.json"
     other_projection.write_bytes(projection.read_bytes())
+    payload = json.loads(projection.read_text(encoding="utf-8"))
+    active_parent = Path(payload["active_parent"]["path"])
     journal_path = tmp_path / "transaction" / "transaction.v1.json"
-    lock_path = projection.with_name(f"{projection.name}.promotion.lock")
-    promotion._write_json_atomic(
-        journal_path,
-        {
-            "schema_version": "xinao.science_revision_transaction.v1",
+    lock_path = _install_bound_transaction(
+        projection=projection,
+        journal_path=journal_path,
+        journal={
             "status": "COMMITTED",
             "projection_path": str(other_projection),
+            "active_parent_path": str(active_parent),
+            "projection_committed_sha256": promotion._sha256(other_projection),
+            "active_parent_committed_sha256": promotion._sha256(active_parent),
         },
     )
-    promotion._write_json_atomic(lock_path, {"journal_path": str(journal_path)})
 
-    with pytest.raises(RuntimeError, match="does not bind recovery target"):
+    with pytest.raises(promotion.SciencePublicationError) as raised:
         promotion.recover_interrupted_promotion(projection)
 
+    assert raised.value.code == "CROSS_OBJECT_RESTORE"
     assert lock_path.is_file()
 
 
@@ -814,27 +855,25 @@ def test_recover_interrupted_promotion_restores_persisted_applying_state(
     rollback.chmod(stat.S_IREAD)
     transaction_directory = tmp_path / "transaction"
     journal_path = transaction_directory / "transaction.v1.json"
-    lock_path = projection.with_name(f"{projection.name}.promotion.lock")
-    promotion._write_json_atomic(
-        journal_path,
-        {
-            "schema_version": "xinao.science_revision_transaction.v1",
+    # Durable APPLYING cut with JOURNAL_BOUND identity before live swaps.
+    lock_path = _install_bound_transaction(
+        projection=projection,
+        journal_path=journal_path,
+        journal={
             "status": "APPLYING",
             "projection_path": str(projection),
-            "projection_preimage_sha256": promotion._sha256(projection),
+            "projection_preimage_sha256": promotion._sha256(rollback),
             "projection_candidate_sha256": candidate_projection_sha256,
             "projection_rollback_copy": str(rollback),
+            "projection_candidate_path": str(candidate_projection),
             "active_parent_path": str(active_parent),
             "active_parent_preimage_sha256": old_parent_sha256,
             "active_parent_candidate_sha256": candidate_parent_sha256,
             "active_parent_rollback_copy": str(parent_rollback),
+            "active_parent_candidate_path": str(candidate),
+            "transaction_directory": str(transaction_directory),
         },
     )
-    lock_path.write_text(
-        json.dumps({"journal_path": str(journal_path)}) + "\n",
-        encoding="utf-8",
-    )
-
     # Materialize the exact durable state left by a process death without killing
     # pytest (or its Codex tool host) as part of the regression itself.
     promotion._replace_file(candidate, active_parent)
@@ -961,23 +1000,24 @@ def test_recovery_validates_all_preimages_before_mutating_either_target(
     parent_rollback.write_bytes(b"drifted parent preimage")
     rollback.write_bytes(original_projection)
     journal_path = tmp_path / "transaction" / "transaction.v1.json"
-    lock_path = projection.with_name(f"{projection.name}.promotion.lock")
-    promotion._write_json_atomic(
-        journal_path,
-        {
-            "schema_version": "xinao.science_revision_transaction.v1",
+    lock_path = _install_bound_transaction(
+        projection=projection,
+        journal_path=journal_path,
+        journal={
             "status": "APPLYING",
             "projection_path": str(projection),
             "projection_preimage_sha256": promotion._sha256(rollback),
             "projection_candidate_sha256": candidate_projection_sha256,
             "projection_rollback_copy": str(rollback),
+            "projection_candidate_path": str(candidate_projection),
             "active_parent_path": str(active_parent),
             "active_parent_preimage_sha256": old_parent_sha256,
             "active_parent_candidate_sha256": candidate_parent_sha256,
             "active_parent_rollback_copy": str(parent_rollback),
+            "active_parent_candidate_path": str(candidate_parent),
+            "transaction_directory": str(journal_path.parent),
         },
     )
-    promotion._write_json_atomic(lock_path, {"journal_path": str(journal_path)})
     promotion._replace_file(candidate_parent, active_parent)
     promotion._replace_file(candidate_projection, projection)
 
@@ -993,24 +1033,29 @@ def test_recovery_validates_all_preimages_before_mutating_either_target(
 
 
 def test_committed_recovery_retains_marker_when_postimage_drifted(tmp_path: Path) -> None:
-    projection, _evidence, _rollback = _fixture(tmp_path)
+    projection, _evidence, rollback = _fixture(tmp_path)
     payload = json.loads(projection.read_text(encoding="utf-8"))
     active_parent = Path(payload["active_parent"]["path"])
+    original_projection = projection.read_bytes()
+    rollback.parent.mkdir(parents=True, exist_ok=True)
+    rollback.write_bytes(original_projection)
     committed_projection_sha256 = promotion._sha256(projection)
+    committed_parent_sha256 = promotion._sha256(active_parent)
     journal_path = tmp_path / "transaction" / "transaction.v1.json"
-    lock_path = projection.with_name(f"{projection.name}.promotion.lock")
-    promotion._write_json_atomic(
-        journal_path,
-        {
-            "schema_version": "xinao.science_revision_transaction.v1",
+    lock_path = _install_bound_transaction(
+        projection=projection,
+        journal_path=journal_path,
+        journal={
             "status": "COMMITTED",
             "projection_path": str(projection),
+            "projection_preimage_sha256": promotion._sha256(rollback),
+            "projection_rollback_copy": str(rollback),
             "projection_committed_sha256": committed_projection_sha256,
             "active_parent_path": str(active_parent),
-            "active_parent_committed_sha256": promotion._sha256(active_parent),
+            "active_parent_committed_sha256": committed_parent_sha256,
+            "transaction_directory": str(journal_path.parent),
         },
     )
-    promotion._write_json_atomic(lock_path, {"journal_path": str(journal_path)})
     projection.write_text("drifted after commit", encoding="utf-8")
 
     with pytest.raises(RuntimeError, match="projection target does not match COMMITTED"):
@@ -1151,9 +1196,19 @@ def test_v110_interrupted_apply_recovers_all_four_targets_in_reverse_order(
     # Durable crash cut: source/projection/archive were swapped, transition was not.
     _force_write_bytes(targets["transition"], fixture["preimages"]["transition"])
     journal["status"] = "APPLYING"
-    promotion._write_json_atomic(journal_path, journal)
-    marker_path = targets["projection"].with_name(f"{targets['projection'].name}.promotion.lock")
-    promotion._write_json_atomic(marker_path, {"journal_path": str(journal_path)})
+    # Drop committed postimage pins so recovery treats this as APPLYING, not COMMITTED.
+    for key in (
+        "projection_committed_sha256",
+        "active_parent_committed_sha256",
+        "transition_committed_sha256",
+        "archive_manifest_committed_sha256",
+    ):
+        journal.pop(key, None)
+    marker_path = _install_bound_transaction(
+        projection=targets["projection"],
+        journal_path=journal_path,
+        journal=journal,
+    )
 
     replace_targets: list[Path] = []
     original_replace = promotion._replace_file
@@ -1622,7 +1677,14 @@ def test_v110_four_target_retains_commit_on_post_commit_readback_failure(
     assert promotion._sha256(targets["projection"]) == journal["projection_committed_sha256"]
 
 
-@pytest.mark.parametrize("crash_side", ["after_marker_before_journal", "after_journal_before_seal"])
+@pytest.mark.parametrize(
+    "crash_side",
+    [
+        "after_pre_journal_before_journal",
+        "after_journal_before_journal_bound",
+        "after_journal_bound_before_seal",
+    ],
+)
 def test_pre_materialization_crash_cuts_are_recoverable(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -1634,19 +1696,28 @@ def test_pre_materialization_crash_cuts_are_recoverable(
     journal_path = Path(fixture["journal_path"])
     marker_path = targets["projection"].with_name(f"{targets['projection'].name}.promotion.lock")
     real_write = promotion._write_json_atomic
+    journal_writes = 0
 
     def crash_at_boundary(path: Path, payload: dict[str, object]) -> None:
+        nonlocal journal_writes
         resolved = path.resolve()
-        if crash_side == "after_marker_before_journal":
-            if resolved == marker_path.resolve():
-                real_write(path, payload)
-                raise RuntimeError("simulated crash after marker before journal")
+        if resolved == marker_path.resolve():
             real_write(path, payload)
+            if crash_side == "after_pre_journal_before_journal" and payload.get("phase") == (
+                "PRE_JOURNAL"
+            ):
+                raise RuntimeError("simulated crash after PRE_JOURNAL before journal")
+            if crash_side == "after_journal_bound_before_seal" and payload.get("phase") == (
+                "JOURNAL_BOUND"
+            ):
+                raise RuntimeError("simulated crash after JOURNAL_BOUND before first seal")
             return
-        # after_journal_before_seal: allow marker, write journal once, then crash
         if resolved == journal_path.resolve() and payload.get("status") == "MATERIALIZING":
+            journal_writes += 1
             real_write(path, payload)
-            raise RuntimeError("simulated crash after journal before first seal")
+            if crash_side == "after_journal_before_journal_bound" and journal_writes == 1:
+                raise RuntimeError("simulated crash after journal before JOURNAL_BOUND")
+            return
         real_write(path, payload)
 
     monkeypatch.setattr(promotion, "_write_json_atomic", crash_at_boundary)
@@ -1658,17 +1729,26 @@ def test_pre_materialization_crash_cuts_are_recoverable(
     for rollback_copy in fixture["rollback_copies"].values():
         assert not Path(str(rollback_copy)).exists()
 
-    if crash_side == "after_marker_before_journal":
+    if crash_side in {
+        "after_pre_journal_before_journal",
+        "after_journal_before_journal_bound",
+    }:
         assert marker_path.is_file()
-        assert not journal_path.exists()
+        if crash_side == "after_pre_journal_before_journal":
+            assert not journal_path.exists()
+            assert json.loads(marker_path.read_text(encoding="utf-8"))["phase"] == "PRE_JOURNAL"
+        else:
+            assert journal_path.is_file()
+            assert json.loads(marker_path.read_text(encoding="utf-8"))["phase"] == "PRE_JOURNAL"
         recovery = promotion.recover_interrupted_promotion(targets["projection"])
         assert recovery["status"] == "PRE_MATERIALIZATION_ABORTED"
         assert recovery.get("pre_materialization_anchor_cleared") is True
         assert not marker_path.exists()
-        assert not journal_path.exists()
-        # Republish must not be permanently blocked by an orphan journal.
+        # Republish must not be permanently blocked by a PRE_JOURNAL anchor.
         monkeypatch.setattr(promotion, "_write_json_atomic", real_write)
         kwargs = dict(fixture["publish_kwargs"])
+        if crash_side == "after_journal_before_journal_bound":
+            kwargs["transaction_directory"] = tmp_path / "science-transaction-retry"
         kwargs["expected_projection_sha256"] = promotion._sha256(targets["projection"])
         result = promotion.publish_science_revision_transaction(**kwargs)
         assert result["transaction_status"] == "COMMITTED"
@@ -1679,6 +1759,7 @@ def test_pre_materialization_crash_cuts_are_recoverable(
     journal = json.loads(journal_path.read_text(encoding="utf-8"))
     assert journal["status"] == "MATERIALIZING"
     assert journal.get("projection_sealed") is False
+    assert json.loads(marker_path.read_text(encoding="utf-8"))["phase"] == "JOURNAL_BOUND"
     recovery = promotion.recover_interrupted_promotion(targets["projection"])
     assert recovery["status"] == "ROLLED_BACK_AFTER_CRASH"
     assert recovery.get("materializing_aborted") is True
@@ -1694,6 +1775,198 @@ def test_pre_materialization_crash_cuts_are_recoverable(
     kwargs["expected_projection_sha256"] = promotion._sha256(targets["projection"])
     result = promotion.publish_science_revision_transaction(**kwargs)
     assert result["transaction_status"] == "COMMITTED"
+
+
+def test_cross_object_restore_rejects_foreign_active_parent_path(
+    tmp_path: Path,
+) -> None:
+    """Forged APPLYING journals may not restore a substituted active-parent object."""
+
+    projection, _evidence, rollback = _fixture(tmp_path)
+    payload = json.loads(projection.read_text(encoding="utf-8"))
+    live_parent = Path(payload["active_parent"]["path"])
+    original_parent = live_parent.read_bytes()
+    original_projection = projection.read_bytes()
+    foreign_parent = tmp_path / "foreign-active-parent.txt"
+    foreign_parent.write_text("foreign object body", encoding="utf-8")
+    foreign_original = foreign_parent.read_bytes()
+    foreign_preimage = tmp_path / "rollback" / "foreign.before.txt"
+    foreign_preimage.parent.mkdir(parents=True, exist_ok=True)
+    foreign_preimage.write_bytes(b"foreign preimage that must not land")
+    rollback.parent.mkdir(parents=True, exist_ok=True)
+    rollback.write_bytes(original_projection)
+    rollback.chmod(stat.S_IREAD)
+    parent_rollback = tmp_path / "rollback" / "live-parent.before.txt"
+    parent_rollback.write_bytes(original_parent)
+    parent_rollback.chmod(stat.S_IREAD)
+    candidate = tmp_path / "candidate-parent.txt"
+    candidate.write_text("candidate active parent", encoding="utf-8")
+    candidate_projection = tmp_path / "candidate-projection.json"
+    candidate_payload = json.loads(projection.read_text(encoding="utf-8"))
+    candidate_payload["active_parent"]["sha256"] = promotion._sha256(candidate)
+    _write_json(candidate_projection, candidate_payload)
+    journal_path = tmp_path / "transaction" / "transaction.v1.json"
+    lock_path = _install_bound_transaction(
+        projection=projection,
+        journal_path=journal_path,
+        journal={
+            "status": "APPLYING",
+            "projection_path": str(projection),
+            "projection_preimage_sha256": promotion._sha256(rollback),
+            "projection_candidate_sha256": promotion._sha256(candidate_projection),
+            "projection_rollback_copy": str(rollback),
+            "projection_candidate_path": str(candidate_projection),
+            # Cross-object substitution: journal points restore at a foreign path.
+            "active_parent_path": str(foreign_parent),
+            "active_parent_preimage_sha256": promotion._sha256(foreign_preimage),
+            "active_parent_candidate_sha256": promotion._sha256(candidate),
+            "active_parent_rollback_copy": str(foreign_preimage),
+            "active_parent_candidate_path": str(candidate),
+            "transaction_directory": str(journal_path.parent),
+        },
+    )
+    # Mid-apply look: foreign object appears mutated while live parent is untouched.
+    foreign_parent.write_bytes(candidate.read_bytes())
+
+    with pytest.raises(promotion.SciencePublicationError) as raised:
+        promotion.recover_interrupted_promotion(projection)
+
+    assert raised.value.code == "CROSS_OBJECT_RESTORE"
+    assert lock_path.is_file()
+    assert live_parent.read_bytes() == original_parent
+    assert projection.read_bytes() == original_projection
+    assert foreign_parent.read_bytes() == candidate.read_bytes()
+    assert foreign_preimage.read_bytes() == b"foreign preimage that must not land"
+    assert json.loads(journal_path.read_text(encoding="utf-8"))["status"] == "APPLYING"
+    # Foreign original body must not be restored from the forged preimage.
+    assert foreign_parent.read_bytes() != foreign_original
+    assert foreign_parent.read_bytes() != foreign_preimage.read_bytes()
+
+
+def test_delete_after_journal_bound_fails_closed_and_retains_marker(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Journal deletion under JOURNAL_BOUND must never false-abort mid-apply live state."""
+
+    fixture = _four_target_v110_fixture(tmp_path, monkeypatch)
+    targets = fixture["targets"]
+    assert isinstance(targets, dict)
+    preimages = dict(fixture["preimages"])
+    assert isinstance(preimages, dict)
+    promotion.publish_science_revision_transaction(**fixture["publish_kwargs"])
+    journal_path = Path(fixture["journal_path"])
+    journal = json.loads(journal_path.read_text(encoding="utf-8"))
+    # Simulate crash after apply began: keep postimages, re-open APPLYING under JOURNAL_BOUND.
+    for key in (
+        "projection_committed_sha256",
+        "active_parent_committed_sha256",
+        "transition_committed_sha256",
+        "archive_manifest_committed_sha256",
+    ):
+        journal.pop(key, None)
+    journal["status"] = "APPLYING"
+    marker_path = _install_bound_transaction(
+        projection=targets["projection"],
+        journal_path=journal_path,
+        journal=journal,
+    )
+    mid_apply = {label: path.read_bytes() for label, path in targets.items()}
+    assert any(mid_apply[label] != preimages[label] for label in mid_apply)
+    journal_path.unlink()
+    assert not journal_path.exists()
+    assert marker_path.is_file()
+    assert json.loads(marker_path.read_text(encoding="utf-8"))["phase"] == "JOURNAL_BOUND"
+
+    with pytest.raises(promotion.SciencePublicationError) as raised:
+        promotion.recover_interrupted_promotion(targets["projection"])
+
+    assert raised.value.code == "SCIENCE_JOURNAL_BOUND_MISSING"
+    assert raised.value.receipt.get("marker_retained") is True
+    assert marker_path.is_file()
+    assert json.loads(marker_path.read_text(encoding="utf-8"))["phase"] == "JOURNAL_BOUND"
+    for label, path in targets.items():
+        assert path.read_bytes() == mid_apply[label]
+    # Still blocked for republish while JOURNAL_BOUND marker remains without journal.
+    with pytest.raises(RuntimeError, match="interrupted science promotion requires recovery"):
+        kwargs = dict(fixture["publish_kwargs"])
+        kwargs["transaction_directory"] = tmp_path / "science-transaction-retry"
+        kwargs["expected_projection_sha256"] = promotion._sha256(targets["projection"])
+        promotion.publish_science_revision_transaction(**kwargs)
+
+
+def test_forged_identity_and_path_pins_are_rejected(tmp_path: Path) -> None:
+    projection, _evidence, rollback = _fixture(tmp_path)
+    payload = json.loads(projection.read_text(encoding="utf-8"))
+    active_parent = Path(payload["active_parent"]["path"])
+    original_parent = active_parent.read_bytes()
+    original_projection = projection.read_bytes()
+    rollback.parent.mkdir(parents=True, exist_ok=True)
+    rollback.write_bytes(original_projection)
+    parent_rollback = tmp_path / "rollback" / "parent.before.txt"
+    parent_rollback.parent.mkdir(parents=True, exist_ok=True)
+    parent_rollback.write_bytes(original_parent)
+    journal_path = tmp_path / "transaction" / "transaction.v1.json"
+    journal = {
+        "schema_version": "xinao.science_revision_transaction.v1",
+        "status": "APPLYING",
+        "projection_path": str(projection),
+        "projection_preimage_sha256": promotion._sha256(rollback),
+        "projection_candidate_sha256": "a" * 64,
+        "projection_rollback_copy": str(rollback),
+        "projection_candidate_path": str(tmp_path / "cand-projection.json"),
+        "active_parent_path": str(active_parent),
+        "active_parent_preimage_sha256": promotion._sha256(active_parent),
+        "active_parent_candidate_sha256": "b" * 64,
+        "active_parent_rollback_copy": str(parent_rollback),
+        "active_parent_candidate_path": str(tmp_path / "cand-parent.txt"),
+        "transaction_directory": str(journal_path.parent),
+    }
+    identity = promotion._transaction_identity_sha256(
+        journal, transaction_directory=journal_path.parent
+    )
+    journal["transaction_identity_sha256"] = identity
+    promotion._write_json_atomic(journal_path, journal)
+    # Marker carries a forged identity digest that does not match journal pins.
+    marker_path = projection.with_name(f"{projection.name}.promotion.lock")
+    promotion._write_json_atomic(
+        marker_path,
+        promotion._marker_payload(
+            phase="JOURNAL_BOUND",
+            journal_path=journal_path,
+            projection_path=projection,
+            transaction_directory=journal_path.parent,
+            transaction_identity_sha256="c" * 64,
+        ),
+    )
+    # Also forge a path pin after the journal was sealed into identity.
+    tampered = json.loads(journal_path.read_text(encoding="utf-8"))
+    tampered["active_parent_path"] = str(tmp_path / "substituted-parent.txt")
+    (tmp_path / "substituted-parent.txt").write_text("substituted", encoding="utf-8")
+    promotion._write_json_atomic(journal_path, tampered)
+
+    with pytest.raises(promotion.SciencePublicationError) as raised:
+        promotion.recover_interrupted_promotion(projection)
+
+    assert raised.value.code in {
+        "SCIENCE_TRANSACTION_IDENTITY_MISMATCH",
+        "CROSS_OBJECT_RESTORE",
+    }
+    assert marker_path.is_file()
+    assert active_parent.read_bytes() == original_parent
+    assert projection.read_bytes() == original_projection
+
+
+def test_foreign_marker_bytes_are_fail_closed(tmp_path: Path) -> None:
+    projection, _evidence, _rollback = _fixture(tmp_path)
+    marker_path = projection.with_name(f"{projection.name}.promotion.lock")
+    marker_path.write_bytes(b"foreign-marker-bytes-not-json")
+
+    with pytest.raises((promotion.SciencePublicationError, ValueError, json.JSONDecodeError)):
+        promotion.recover_interrupted_promotion(projection)
+
+    assert marker_path.is_file()
+    assert marker_path.read_bytes() == b"foreign-marker-bytes-not-json"
 
 
 def test_promotion_guard_rejects_hardlink_carrier(tmp_path: Path) -> None:
