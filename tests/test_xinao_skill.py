@@ -1384,14 +1384,14 @@ def test_research_revalidates_fence_before_container_create(
             module._validate_charter(),
             {
                 "network_profile": "EGRESS_BOUNDARY_REQUIRED_BEFORE_PROVIDER_CALL",
-                "provider_egress_runtime_verified": True,
+                "provider_egress_runtime_verified": False,
             },
         ),
     )
     monkeypatch.setattr(
         module,
-        "_observe_and_compare_egress_boundary",
-        lambda _lock: {
+        "_require_host_egress_boundary",
+        lambda _lock=None: {
             "internal_network_name": "xinao_researcher_internal",
             "internal_network_id": "netid",
             "proxy_endpoint": "http://xinao-researcher-egress-proxy:3128",
@@ -1399,6 +1399,13 @@ def test_research_revalidates_fence_before_container_create(
             "proxy_image_id": "sha256:" + "d" * 64,
             "allowlist_sha256": "a" * 64,
             "proxy_config_sha256": "b" * 64,
+            "live_proxy_config_sha256": "b" * 64,
+            "posture_sha256": "c" * 64,
+            "live_seal_sha256": "e" * 64,
+            "live_seal": {"expires_at": "2099-01-01T00:00:00Z"},
+            "docker_engine_observational_id": "engine|desktop",
+            "provider_egress_runtime_verified": True,
+            "completion_claim_allowed": False,
             "posture": {},
             "observed": {},
         },
@@ -1427,16 +1434,22 @@ def test_egress_boundary_fails_before_docker_or_auth_probe(
     manifest, _manifest_path = _sealed_release(module, tmp_path, monkeypatch)
     runtime_lock = module._load_json(module.RUNTIME_LOCK_PATH)
     runtime_lock["provider_egress_runtime_verified"] = False
+    monkeypatch.setenv("XINAO_SKILL_STATE_ROOT", str(tmp_path / "state"))
     monkeypatch.setattr(
         module,
         "_validate_release_source_identity",
         lambda _release: (module._validate_charter(), runtime_lock),
     )
+    # Missing live seal must fail before docker/auth.
     monkeypatch.setattr(module, "_docker", lambda: pytest.fail("Docker must not be touched"))
     monkeypatch.setattr(module, "DEFAULT_AUTH_PATH", tmp_path / "missing-auth.json")
     with pytest.raises(module.XinaoError) as failure:
         module._validate_release_for_invoke(manifest)
-    assert failure.value.reason_code == "EGRESS_BOUNDARY_UNAVAILABLE"
+    assert failure.value.reason_code in {
+        "EGRESS_BOUNDARY_UNAVAILABLE",
+        "EGRESS_POSTURE_MISSING",
+        "EGRESS_LIVE_SEAL_MISSING",
+    }
 
 
 def test_research_egress_failure_precedes_auth_snapshot_and_run_directory(
@@ -1446,6 +1459,7 @@ def test_research_egress_failure_precedes_auth_snapshot_and_run_directory(
     manifest, manifest_path = _sealed_release(module, tmp_path, monkeypatch)
     _terminal_pointer(module, manifest, manifest_path)
     _install_bootstrap_fence(module, monkeypatch, ["research", "--question", "q"])
+    monkeypatch.setenv("XINAO_SKILL_STATE_ROOT", str(tmp_path / "state"))
     monkeypatch.setattr(
         module,
         "_validate_release_source_identity",
@@ -1464,7 +1478,11 @@ def test_research_egress_failure_precedes_auth_snapshot_and_run_directory(
     )
     with pytest.raises(module.XinaoError) as failure:
         module.research("q", None, [])
-    assert failure.value.reason_code == "EGRESS_BOUNDARY_UNAVAILABLE"
+    assert failure.value.reason_code in {
+        "EGRESS_BOUNDARY_UNAVAILABLE",
+        "EGRESS_POSTURE_MISSING",
+        "EGRESS_LIVE_SEAL_MISSING",
+    }
     assert not (tmp_path / "runs").exists()
 
 

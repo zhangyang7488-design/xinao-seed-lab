@@ -64,6 +64,187 @@ EGRESS_REQUIRED_POSTURE_KEYS = frozenset(
         "proxy_config_sha256",
     }
 )
+# Live seal is D-state only; immutable source lock never claims live verification.
+EGRESS_LIVE_SEAL_SCHEMA = "xinao.provider_egress_live_seal.v1"
+EGRESS_LIVE_SEAL_FILENAME = "current_live_seal.v1.json"
+EGRESS_ENGINEERING_CANARY_SCHEMA = "xinao.provider_egress_engineering_canary_receipt.v1"
+EGRESS_NEGATIVE_SUITE_SCHEMA = "xinao.provider_egress_negative_suite_receipt.v1"
+EGRESS_SEAL_MAX_TTL_SECONDS = 24 * 60 * 60
+EGRESS_SEAL_CLOCK_SKEW_SECONDS = 5 * 60
+EGRESS_SEAL_TRUST_BOUNDARY = (
+    "host_filesystem_and_docker_cli_observation_only_no_signing_pki"
+)
+EGRESS_REQUIRED_LIVE_SEAL_KEYS = frozenset(
+    {
+        "schema_version",
+        "provider_egress_live_verified",
+        "posture_sha256",
+        "posture_relative_path",
+        "negative_suite_receipt_sha256",
+        "negative_suite_receipt_relative_path",
+        "positive_canary_receipt_sha256",
+        "positive_canary_receipt_relative_path",
+        "allowlist_sha256",
+        "proxy_config_sha256",
+        "proxy_container_id",
+        "proxy_image_id",
+        "internal_network_id",
+        "internal_network_name",
+        "external_network_name",
+        "proxy_endpoint",
+        "docker_engine_observational_id",
+        "docker_server_version",
+        "docker_ostype",
+        "sealed_at",
+        "expires_at",
+        "completion_claim_allowed",
+        "authority",
+        "science_restored",
+        "parent_complete",
+        "secrets_present",
+        "trust_boundary",
+    }
+)
+EGRESS_FORBIDDEN_SECRET_TOKENS = (
+    "authorization",
+    "api_key",
+    "auth.json",
+    "password",
+    "begin private",
+    "bearer ",
+    "client_secret",
+    "private_key",
+)
+# Strict seal-eligible evidence contracts (Wave 9b Owner rejection of semantic fakes).
+EGRESS_REQUIRED_NEGATIVE_CASE_IDS: tuple[str, ...] = (
+    "N1",
+    "N3",
+    "N4",
+    "N5",
+    "N6",
+    "N7",
+    "N8",
+    "N9",
+    "N15",
+    "N17",
+    "N17b",
+    "N17c",
+    "N17d",
+)
+EGRESS_CANARY_REQUESTED_MODEL = "grok-4.5"
+EGRESS_CANARY_OBSERVED_BACKEND_MODEL = "grok-4.5-build"
+EGRESS_CANARY_STOP_REASON = "EndTurn"
+EGRESS_CANARY_ENDPOINT_HOST = "cli-chat-proxy.grok.com"
+EGRESS_NEGATIVE_REQUIRED_KEYS = frozenset(
+    {
+        "schema_version",
+        "path_class",
+        "status",
+        "suite_passed",
+        "all_cases_passed",
+        "cases",
+        "pass_count",
+        "fail_count",
+        "internal_network_id",
+        "proxy_container_id",
+        "proxy_image_id",
+        "allowlist_sha256",
+        "proxy_config_sha256",
+        "unauthorized_domain_reachable",
+        "direct_no_proxy_escape",
+        "provider_egress_runtime_verified",
+        "provider_egress_live_verified",
+        "secrets_present",
+        "completion_claim_allowed",
+        "authority",
+        "science_restored",
+        "parent_complete",
+        "scientific_research",
+        "observed_at",
+    }
+)
+EGRESS_NEGATIVE_ALLOWED_KEYS = EGRESS_NEGATIVE_REQUIRED_KEYS | frozenset(
+    {
+        "executed_at",
+        "object_identities",
+        "mode",
+        "note",
+        "docker_mutated",
+        "carrier",
+        "wsl_used",
+        "git_bash_used",
+        "research_invoked",
+    }
+)
+EGRESS_CANARY_REQUIRED_KEYS = frozenset(
+    {
+        "schema_version",
+        "path_class",
+        "status",
+        "real_provider_call",
+        "provider_effect_verified",
+        "requested_model",
+        "observed_backend_model",
+        "stop_reason",
+        "output_tokens",
+        "usage_accounting_complete",
+        "usage",
+        "endpoint_host",
+        "internal_network_id",
+        "proxy_container_id",
+        "proxy_image_id",
+        "allowlist_sha256",
+        "proxy_config_sha256",
+        "canary_image_id",
+        "internal_network_only",
+        "auth_mounted_read_only",
+        "auth_content_persisted",
+        "raw_output_persisted",
+        "research_invoked",
+        "is_research_call",
+        "scientific_research",
+        "masquerades_as_research",
+        "scientific_adoption",
+        "science_restored",
+        "parent_complete",
+        "authority",
+        "completion_claim_allowed",
+        "secrets_present",
+        "provider_egress_runtime_verified",
+        "provider_egress_live_verified",
+        "observed_at",
+    }
+)
+EGRESS_CANARY_ALLOWED_KEYS = EGRESS_CANARY_REQUIRED_KEYS | frozenset(
+    {
+        "executed_at",
+        "object_identities",
+        "mode",
+        "note",
+        "docker_mutated",
+        "carrier",
+        "wsl_used",
+        "git_bash_used",
+        "probe_ok",
+        "probe_exit_code",
+        "connect_probe_ok",
+        "canary_container_id",
+        "canary_container_removed",
+        "endpoint_hint",
+        "model_hint",
+        "positive_token_present_observed",
+        "positive_token_value",
+        "engineering_evidence",
+        "redaction",
+        "allow_real_provider_call_requested",
+        "raw_output_sha256",
+        "reason_code",
+        "connect_only",
+        "http_only",
+    }
+)
+EGRESS_USAGE_REQUIRED_KEYS = frozenset({"input_tokens", "output_tokens", "total_tokens"})
+EGRESS_IMAGE_ID_PATTERN = re.compile(r"^sha256:[0-9a-f]{64}$")
 
 MAX_MATERIAL_FILES = 32
 MAX_MATERIAL_FILE_BYTES = 256 * 1024
@@ -1936,6 +2117,13 @@ def inspect_capability() -> dict[str, Any]:
             "EGRESS_BOUNDARY_UNAVAILABLE": "EGRESS_BOUNDARY_UNAVAILABLE",
             "EGRESS_POSTURE_MISSING": "EGRESS_BOUNDARY_UNAVAILABLE",
             "EGRESS_POSTURE_INCOMPLETE": "EGRESS_BOUNDARY_UNAVAILABLE",
+            "EGRESS_LIVE_SEAL_MISSING": "EGRESS_BOUNDARY_UNAVAILABLE",
+            "EGRESS_LIVE_SEAL_INVALID": "EGRESS_BOUNDARY_UNAVAILABLE",
+            "EGRESS_LIVE_SEAL_EXPIRED": "EGRESS_BOUNDARY_UNAVAILABLE",
+            "EGRESS_LIVE_SEAL_FUTURE": "EGRESS_BOUNDARY_UNAVAILABLE",
+            "EGRESS_LIVE_SEAL_DRIFT": "EGRESS_BOUNDARY_UNAVAILABLE",
+            "EGRESS_LIVE_SEAL_HASH_MISMATCH": "EGRESS_BOUNDARY_UNAVAILABLE",
+            "EGRESS_LIVE_CONFIG_HASH_MISMATCH": "EGRESS_BOUNDARY_UNAVAILABLE",
             "EGRESS_NETWORK_NOT_INTERNAL": "EGRESS_BOUNDARY_UNAVAILABLE",
             "EGRESS_PROXY_NOT_RUNNING": "EGRESS_BOUNDARY_UNAVAILABLE",
             "EGRESS_OBJECT_INSPECT_FAILED": "EGRESS_BOUNDARY_UNAVAILABLE",
@@ -1943,6 +2131,7 @@ def inspect_capability() -> dict[str, Any]:
             "EGRESS_FOREIGN_NETWORK_MEMBER": "EGRESS_BOUNDARY_UNAVAILABLE",
             "EGRESS_PROXY_NOT_DUAL_HOMED": "EGRESS_BOUNDARY_UNAVAILABLE",
             "EGRESS_HOST_PORT_PUBLISH_FORBIDDEN": "EGRESS_BOUNDARY_UNAVAILABLE",
+            "EGRESS_PRE_START_REOBSERVE_DRIFT": "EGRESS_BOUNDARY_UNAVAILABLE",
             "DOCKER_CLI_MISSING": "DOCKER_CLI_MISSING",
             "ENGINE_UNAVAILABLE": "ENGINE_UNAVAILABLE",
             "ENGINE_RESPONSE_INVALID": "ENGINE_UNAVAILABLE",
@@ -4043,6 +4232,99 @@ def _egress_posture_path() -> Path:
     return state_root / "researcher_container" / "egress" / "current_posture.v1.json"
 
 
+def _egress_state_dir() -> Path:
+    return _egress_posture_path().parent
+
+
+def _egress_live_seal_path() -> Path:
+    return _egress_state_dir() / EGRESS_LIVE_SEAL_FILENAME
+
+
+def _parse_utc_z(value: object, *, reason_code: str, field: str) -> dt.datetime:
+    if not isinstance(value, str) or not value or "\x00" in value:
+        raise XinaoError(reason_code, f"{field}: missing or non-string")
+    if not value.endswith("Z") or value.count("T") != 1:
+        raise XinaoError(reason_code, f"{field}: require ISO-8601 UTC ending in Z")
+    try:
+        parsed = dt.datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError as exc:
+        raise XinaoError(reason_code, f"{field}: {exc}") from exc
+    if parsed.tzinfo is None:
+        raise XinaoError(reason_code, f"{field}: timezone required")
+    return parsed.astimezone(dt.UTC)
+
+
+def _reject_secret_blob(blob: str, *, reason_code: str) -> None:
+    lowered = blob.lower()
+    for token in EGRESS_FORBIDDEN_SECRET_TOKENS:
+        if token in lowered:
+            raise XinaoError(reason_code, token)
+
+
+def _resolve_egress_relative_path(
+    relative_path: object, *, egress_root: Path, reason_code: str
+) -> Path:
+    if not isinstance(relative_path, str) or not relative_path or "\x00" in relative_path:
+        raise XinaoError(reason_code, "relative path missing")
+    if Path(relative_path).is_absolute() or "\\" in relative_path:
+        raise XinaoError(reason_code, f"absolute or backslash path forbidden: {relative_path}")
+    if any(part in {"", ".", ".."} for part in Path(relative_path).parts):
+        raise XinaoError(reason_code, f"path escape forbidden: {relative_path}")
+    try:
+        root_abs = Path(os.path.abspath(egress_root))
+        candidate = Path(os.path.abspath(root_abs / relative_path))
+    except OSError as exc:
+        raise XinaoError(reason_code, f"{relative_path}: {exc}") from exc
+    try:
+        candidate.relative_to(root_abs)
+    except ValueError as exc:
+        raise XinaoError(reason_code, f"outside egress root: {relative_path}") from exc
+    for node in (candidate, *candidate.parents):
+        if node == root_abs or node == Path(root_abs.anchor):
+            break
+        try:
+            if os.path.lexists(node) and _is_reparse(node):
+                raise XinaoError(reason_code, f"reparse forbidden: {node}")
+        except XinaoError:
+            raise
+        except OSError as exc:
+            raise XinaoError(reason_code, f"{node}: {exc}") from exc
+    return candidate
+
+
+def _docker_engine_observational_identity(docker: str) -> dict[str, str]:
+    """Host Docker engine identity for seal binding (observational; no PKI)."""
+
+    completed = _run(
+        [
+            docker,
+            "info",
+            "--format",
+            "{{.ID}}|{{.Name}}|{{.ServerVersion}}|{{.OSType}}",
+        ],
+        timeout=60,
+        check=False,
+    )
+    if completed.returncode != 0:
+        raise XinaoError(
+            "EGRESS_DOCKER_ENGINE_UNOBSERVED",
+            f"exit={completed.returncode} stderr={completed.stderr[:2000]}",
+        )
+    text = completed.stdout.strip()
+    parts = text.split("|")
+    if len(parts) != 4 or any(not part for part in parts):
+        raise XinaoError("EGRESS_DOCKER_ENGINE_UNOBSERVED", text[:500])
+    engine_id, name, server_version, ostype = parts
+    if ostype != "linux":
+        raise XinaoError("LINUX_CONTAINER_ENGINE_REQUIRED", ostype)
+    # Keep only redacted observational identity; never include swarm tokens etc.
+    return {
+        "docker_engine_observational_id": f"{engine_id}|{name}",
+        "docker_server_version": server_version,
+        "docker_ostype": ostype,
+    }
+
+
 def _proxy_env_pairs(endpoint: str) -> dict[str, str]:
     if not _plain_json_text(endpoint, nonempty=True, maximum_bytes=512):
         raise XinaoError("EGRESS_PROXY_ENDPOINT_INVALID", endpoint)
@@ -4152,20 +4434,8 @@ def _validate_egress_posture_shape(posture: dict[str, Any]) -> dict[str, Any]:
     if posture.get("tls_interception") is True:
         raise XinaoError("EGRESS_TLS_INTERCEPTION_FORBIDDEN", "tls_interception")
     # Receipt redaction: no secret-bearing keys or auth path fragments.
-    blob = _canonical_bytes(posture).decode("utf-8").lower()
-    forbidden_tokens = (
-        "authorization",
-        "api_key",
-        "auth.json",
-        "password",
-        "begin private",
-    )
-    for token in forbidden_tokens:
-        if token in blob:
-            raise XinaoError("EGRESS_POSTURE_SECRET_LEAK", token)
-    for marker in EGRESS_DIFY_FORBIDDEN_MARKERS:
-        # Names of our objects must not be confused with Dify markers in identity fields.
-        pass
+    blob = _canonical_bytes(posture).decode("utf-8")
+    _reject_secret_blob(blob, reason_code="EGRESS_POSTURE_SECRET_LEAK")
     return posture
 
 
@@ -4175,6 +4445,495 @@ def _load_egress_posture() -> dict[str, Any]:
         raise XinaoError("EGRESS_POSTURE_MISSING", str(path))
     posture = _load_json(path)
     return _validate_egress_posture_shape(posture)
+
+
+def _posture_file_sha256() -> tuple[dict[str, Any], str, Path]:
+    path = _egress_posture_path()
+    if not path.is_file():
+        raise XinaoError("EGRESS_POSTURE_MISSING", str(path))
+    raw = _regular_file_bytes(path, reason_code="EGRESS_POSTURE_MISSING", maximum=MAX_JSON_FILE_BYTES)
+    posture = _strict_json_loads(
+        raw.decode("utf-8"),
+        reason_code="JSON_READ_FAILED",
+        detail=str(path),
+    )
+    if not isinstance(posture, dict):
+        raise XinaoError("JSON_OBJECT_REQUIRED", str(path))
+    return _validate_egress_posture_shape(posture), _sha256_bytes(raw), path
+
+
+def _validate_evidence_receipt_shape(
+    receipt: dict[str, Any],
+    *,
+    expected_schema: str,
+    reason_code: str,
+    posture: dict[str, Any] | None = None,
+    now: dt.datetime | None = None,
+    max_age_seconds: int | None = None,
+    require_semantic: bool = False,
+) -> dict[str, Any]:
+    if receipt.get("schema_version") != expected_schema:
+        raise XinaoError(reason_code, str(receipt.get("schema_version")))
+    if receipt.get("completion_claim_allowed") is not False:
+        raise XinaoError(reason_code, "completion_claim_allowed")
+    if receipt.get("authority") is not False:
+        raise XinaoError(reason_code, "authority")
+    if receipt.get("science_restored") is True or receipt.get("parent_complete") is True:
+        raise XinaoError(reason_code, "science_or_parent_claim")
+    if receipt.get("scientific_research") is True:
+        raise XinaoError(reason_code, "scientific_research")
+    if receipt.get("path_class") == "scientific_research":
+        raise XinaoError(reason_code, "path_class")
+    # Engineering canary must declare itself; negative suite must not claim research.
+    if expected_schema == EGRESS_ENGINEERING_CANARY_SCHEMA:
+        if receipt.get("path_class") != "engineering_canary":
+            raise XinaoError(reason_code, "path_class")
+        if receipt.get("masquerades_as_research") is True:
+            raise XinaoError(reason_code, "masquerades_as_research")
+    if expected_schema == EGRESS_NEGATIVE_SUITE_SCHEMA:
+        if receipt.get("path_class") not in (None, "negative_suite"):
+            raise XinaoError(reason_code, "path_class")
+    _reject_secret_blob(
+        _canonical_bytes(receipt).decode("utf-8"),
+        reason_code="EGRESS_EVIDENCE_SECRET_LEAK",
+    )
+    if require_semantic or posture is not None:
+        if posture is None:
+            raise XinaoError(reason_code, "posture required for semantic evidence")
+        age = (
+            max_age_seconds
+            if max_age_seconds is not None
+            else EGRESS_SEAL_MAX_TTL_SECONDS
+        )
+        clock = now if now is not None else dt.datetime.now(dt.UTC)
+        if expected_schema == EGRESS_NEGATIVE_SUITE_SCHEMA:
+            _validate_negative_suite_receipt_semantics(
+                receipt,
+                posture=posture,
+                reason_code=reason_code,
+                now=clock,
+                max_age_seconds=age,
+            )
+        elif expected_schema == EGRESS_ENGINEERING_CANARY_SCHEMA:
+            _validate_engineering_canary_receipt_semantics(
+                receipt,
+                posture=posture,
+                reason_code=reason_code,
+                now=clock,
+                max_age_seconds=age,
+            )
+    return receipt
+
+
+def _evidence_bind_posture(
+    receipt: dict[str, Any],
+    posture: dict[str, Any],
+    *,
+    reason_code: str,
+) -> None:
+    for key in (
+        "internal_network_id",
+        "proxy_container_id",
+        "proxy_image_id",
+        "allowlist_sha256",
+        "proxy_config_sha256",
+    ):
+        if receipt.get(key) != posture.get(key):
+            raise XinaoError(
+                reason_code,
+                f"{key}:{receipt.get(key)}!={posture.get(key)}",
+            )
+    for field in ("allowlist_sha256", "proxy_config_sha256"):
+        value = receipt.get(field)
+        if not isinstance(value, str) or not HEX_SHA256_PATTERN.fullmatch(value):
+            raise XinaoError(reason_code, field)
+    image = receipt.get("proxy_image_id")
+    if not isinstance(image, str) or not EGRESS_IMAGE_ID_PATTERN.fullmatch(image):
+        raise XinaoError(reason_code, "proxy_image_id")
+
+
+def _evidence_observation_fresh(
+    observed_at: object,
+    *,
+    reason_code: str,
+    now: dt.datetime,
+    max_age_seconds: int,
+) -> None:
+    parsed = _parse_utc_z(observed_at, reason_code=reason_code, field="observed_at")
+    if parsed > now + dt.timedelta(seconds=EGRESS_SEAL_CLOCK_SKEW_SECONDS):
+        raise XinaoError(reason_code, "observed_at future")
+    age = (now - parsed).total_seconds()
+    if age > max_age_seconds:
+        raise XinaoError(reason_code, f"observed_at stale age={age}")
+
+
+def _validate_negative_suite_receipt_semantics(
+    receipt: dict[str, Any],
+    *,
+    posture: dict[str, Any],
+    reason_code: str,
+    now: dt.datetime,
+    max_age_seconds: int,
+) -> None:
+    keys = set(receipt)
+    missing = sorted(EGRESS_NEGATIVE_REQUIRED_KEYS - keys)
+    unknown = sorted(keys - EGRESS_NEGATIVE_ALLOWED_KEYS)
+    if missing:
+        raise XinaoError(reason_code, f"negative missing:{','.join(missing)}")
+    if unknown:
+        raise XinaoError(reason_code, f"negative unknown:{','.join(unknown)}")
+    if receipt.get("path_class") != "negative_suite":
+        raise XinaoError(reason_code, "path_class")
+    if receipt.get("status") != "observed":
+        raise XinaoError(reason_code, "status")
+    if receipt.get("suite_passed") is not True or receipt.get("all_cases_passed") is not True:
+        raise XinaoError(reason_code, "suite_not_passed")
+    if receipt.get("unauthorized_domain_reachable") is not False:
+        raise XinaoError(reason_code, "unauthorized_domain_reachable")
+    if receipt.get("direct_no_proxy_escape") is not False:
+        raise XinaoError(reason_code, "direct_no_proxy_escape")
+    if receipt.get("secrets_present") is not False:
+        raise XinaoError(reason_code, "secrets_present")
+    if receipt.get("provider_egress_runtime_verified") is not False:
+        raise XinaoError(reason_code, "provider_egress_runtime_verified")
+    if receipt.get("provider_egress_live_verified") is not False:
+        raise XinaoError(reason_code, "provider_egress_live_verified")
+    if type(receipt.get("pass_count")) is not int or receipt["pass_count"] < 0:
+        raise XinaoError(reason_code, "pass_count")
+    if type(receipt.get("fail_count")) is not int or receipt["fail_count"] != 0:
+        raise XinaoError(reason_code, "fail_count")
+    cases = receipt.get("cases")
+    if not isinstance(cases, list) or not cases:
+        raise XinaoError(reason_code, "cases")
+    seen: list[str] = []
+    for case in cases:
+        if not isinstance(case, dict):
+            raise XinaoError(reason_code, "case not object")
+        case_id = case.get("id") if isinstance(case.get("id"), str) else case.get("case_id")
+        if not isinstance(case_id, str) or not case_id:
+            raise XinaoError(reason_code, "case id missing")
+        if case_id in seen:
+            raise XinaoError(reason_code, f"duplicate_case:{case_id}")
+        seen.append(case_id)
+        if case.get("ok") is not True:
+            raise XinaoError(reason_code, f"case_not_ok:{case_id}")
+    required = list(EGRESS_REQUIRED_NEGATIVE_CASE_IDS)
+    missing_cases = [case_id for case_id in required if case_id not in seen]
+    if missing_cases:
+        raise XinaoError(reason_code, f"missing_case:{','.join(missing_cases)}")
+    unknown_cases = [case_id for case_id in seen if case_id not in required]
+    if unknown_cases:
+        raise XinaoError(reason_code, f"unknown_case:{','.join(unknown_cases)}")
+    if receipt["pass_count"] != len(required):
+        raise XinaoError(reason_code, "pass_count mismatch")
+    _evidence_bind_posture(receipt, posture, reason_code=reason_code)
+    _evidence_observation_fresh(
+        receipt.get("observed_at"),
+        reason_code=reason_code,
+        now=now,
+        max_age_seconds=max_age_seconds,
+    )
+
+
+def _validate_canary_usage(usage: object, *, output_tokens: int, reason_code: str) -> None:
+    if not isinstance(usage, dict):
+        raise XinaoError(reason_code, "usage not object")
+    keys = set(usage)
+    missing = sorted(EGRESS_USAGE_REQUIRED_KEYS - keys)
+    unknown = sorted(keys - EGRESS_USAGE_REQUIRED_KEYS)
+    if missing:
+        raise XinaoError(reason_code, f"usage missing:{','.join(missing)}")
+    if unknown:
+        raise XinaoError(reason_code, f"usage unknown:{','.join(unknown)}")
+    for field in ("input_tokens", "output_tokens", "total_tokens"):
+        value = usage.get(field)
+        if type(value) is not int or isinstance(value, bool) or value < 0:
+            raise XinaoError(reason_code, field)
+    if usage["output_tokens"] <= 0 or usage["output_tokens"] != output_tokens:
+        raise XinaoError(reason_code, "output_tokens")
+    if usage["total_tokens"] <= 0:
+        raise XinaoError(reason_code, "total_tokens")
+    if usage["total_tokens"] < usage["input_tokens"] + usage["output_tokens"]:
+        raise XinaoError(reason_code, "usage incomplete")
+
+
+def _validate_engineering_canary_receipt_semantics(
+    receipt: dict[str, Any],
+    *,
+    posture: dict[str, Any],
+    reason_code: str,
+    now: dt.datetime,
+    max_age_seconds: int,
+) -> None:
+    keys = set(receipt)
+    missing = sorted(EGRESS_CANARY_REQUIRED_KEYS - keys)
+    unknown = sorted(keys - EGRESS_CANARY_ALLOWED_KEYS)
+    if missing:
+        raise XinaoError(reason_code, f"canary missing:{','.join(missing)}")
+    if unknown:
+        raise XinaoError(reason_code, f"canary unknown:{','.join(unknown)}")
+    if receipt.get("path_class") != "engineering_canary":
+        raise XinaoError(reason_code, "path_class")
+    if receipt.get("status") != "observed":
+        raise XinaoError(reason_code, "status")
+    if receipt.get("real_provider_call") is not True:
+        raise XinaoError(reason_code, "real_provider_call")
+    if receipt.get("provider_effect_verified") is not True:
+        raise XinaoError(reason_code, "provider_effect_verified")
+    if receipt.get("connect_only") is True:
+        raise XinaoError(reason_code, "connect_only")
+    if receipt.get("http_only") is True:
+        raise XinaoError(reason_code, "http_only")
+    if receipt.get("requested_model") != EGRESS_CANARY_REQUESTED_MODEL:
+        raise XinaoError(reason_code, "requested_model")
+    if receipt.get("observed_backend_model") != EGRESS_CANARY_OBSERVED_BACKEND_MODEL:
+        raise XinaoError(reason_code, "observed_backend_model")
+    if receipt.get("stop_reason") != EGRESS_CANARY_STOP_REASON:
+        raise XinaoError(reason_code, "stop_reason")
+    output_tokens = receipt.get("output_tokens")
+    if type(output_tokens) is not int or isinstance(output_tokens, bool) or output_tokens <= 0:
+        raise XinaoError(reason_code, "output_tokens")
+    if receipt.get("usage_accounting_complete") is not True:
+        raise XinaoError(reason_code, "usage_accounting_complete")
+    _validate_canary_usage(
+        receipt.get("usage"), output_tokens=output_tokens, reason_code=reason_code
+    )
+    if receipt.get("endpoint_host") != EGRESS_CANARY_ENDPOINT_HOST:
+        raise XinaoError(reason_code, "endpoint_host")
+    _evidence_bind_posture(receipt, posture, reason_code=reason_code)
+    canary_image = receipt.get("canary_image_id")
+    if not isinstance(canary_image, str) or not EGRESS_IMAGE_ID_PATTERN.fullmatch(canary_image):
+        raise XinaoError(reason_code, "canary_image_id")
+    if receipt.get("internal_network_only") is not True:
+        raise XinaoError(reason_code, "internal_network_only")
+    if receipt.get("auth_mounted_read_only") is not True:
+        raise XinaoError(reason_code, "auth_mounted_read_only")
+    if receipt.get("auth_content_persisted") is not False:
+        raise XinaoError(reason_code, "auth_content_persisted")
+    if receipt.get("raw_output_persisted") is not False:
+        raise XinaoError(reason_code, "raw_output_persisted")
+    for flag in (
+        "research_invoked",
+        "is_research_call",
+        "scientific_research",
+        "masquerades_as_research",
+        "scientific_adoption",
+        "secrets_present",
+        "provider_egress_runtime_verified",
+        "provider_egress_live_verified",
+    ):
+        if receipt.get(flag) is not False:
+            raise XinaoError(reason_code, flag)
+    if "positive_token_value" in receipt and receipt.get("positive_token_value") is not None:
+        raise XinaoError(reason_code, "positive_token_value")
+    _evidence_observation_fresh(
+        receipt.get("observed_at"),
+        reason_code=reason_code,
+        now=now,
+        max_age_seconds=max_age_seconds,
+    )
+
+
+def _load_bound_evidence_receipt(
+    relative_path: object,
+    expected_sha256: object,
+    *,
+    egress_root: Path,
+    expected_schema: str,
+    reason_code: str,
+    posture: dict[str, Any] | None = None,
+    now: dt.datetime | None = None,
+    max_age_seconds: int | None = None,
+) -> dict[str, Any]:
+    if not isinstance(expected_sha256, str) or not HEX_SHA256_PATTERN.fullmatch(expected_sha256):
+        raise XinaoError(reason_code, "receipt hash invalid")
+    path = _resolve_egress_relative_path(
+        relative_path, egress_root=egress_root, reason_code=reason_code
+    )
+    if not path.is_file():
+        raise XinaoError(reason_code, f"missing receipt: {path}")
+    raw = _regular_file_bytes(path, reason_code=reason_code, maximum=MAX_JSON_FILE_BYTES)
+    digest = _sha256_bytes(raw)
+    if digest != expected_sha256:
+        raise XinaoError(
+            "EGRESS_LIVE_SEAL_HASH_MISMATCH",
+            f"receipt live={digest} seal={expected_sha256}",
+        )
+    value = _strict_json_loads(
+        raw.decode("utf-8"),
+        reason_code=reason_code,
+        detail=str(path),
+    )
+    if not isinstance(value, dict):
+        raise XinaoError(reason_code, "receipt not object")
+    return _validate_evidence_receipt_shape(
+        value,
+        expected_schema=expected_schema,
+        reason_code=reason_code,
+        posture=posture,
+        now=now,
+        max_age_seconds=max_age_seconds,
+        require_semantic=True,
+    )
+
+
+def _validate_live_seal_shape(seal: dict[str, Any]) -> dict[str, Any]:
+    if seal.get("schema_version") != EGRESS_LIVE_SEAL_SCHEMA:
+        raise XinaoError("EGRESS_LIVE_SEAL_INVALID", str(seal.get("schema_version")))
+    keys = set(seal)
+    missing = sorted(EGRESS_REQUIRED_LIVE_SEAL_KEYS - keys)
+    unknown = sorted(keys - EGRESS_REQUIRED_LIVE_SEAL_KEYS)
+    if missing:
+        raise XinaoError("EGRESS_LIVE_SEAL_INVALID", f"missing:{','.join(missing)}")
+    if unknown:
+        raise XinaoError("EGRESS_LIVE_SEAL_INVALID", f"unknown:{','.join(unknown)}")
+    if seal.get("provider_egress_live_verified") is not True:
+        raise XinaoError("EGRESS_LIVE_SEAL_INVALID", "provider_egress_live_verified")
+    for flag in (
+        "completion_claim_allowed",
+        "authority",
+        "science_restored",
+        "parent_complete",
+        "secrets_present",
+    ):
+        if seal.get(flag) is not False:
+            raise XinaoError("EGRESS_LIVE_SEAL_INVALID", flag)
+    if seal.get("trust_boundary") != EGRESS_SEAL_TRUST_BOUNDARY:
+        raise XinaoError("EGRESS_LIVE_SEAL_INVALID", "trust_boundary")
+    if seal.get("internal_network_name") != EGRESS_INTERNAL_NETWORK_NAME:
+        raise XinaoError("EGRESS_LIVE_SEAL_INVALID", "internal_network_name")
+    if seal.get("proxy_endpoint") != EGRESS_PROXY_ENDPOINT:
+        raise XinaoError("EGRESS_LIVE_SEAL_INVALID", "proxy_endpoint")
+    external = seal.get("external_network_name")
+    if not isinstance(external, str) or not external:
+        raise XinaoError("EGRESS_LIVE_SEAL_INVALID", "external_network_name")
+    image_id = seal.get("proxy_image_id")
+    if not isinstance(image_id, str) or not image_id.startswith("sha256:"):
+        raise XinaoError("EGRESS_LIVE_SEAL_INVALID", "proxy_image_id")
+    for field in (
+        "posture_sha256",
+        "negative_suite_receipt_sha256",
+        "positive_canary_receipt_sha256",
+        "allowlist_sha256",
+        "proxy_config_sha256",
+    ):
+        value = seal.get(field)
+        if not isinstance(value, str) or not HEX_SHA256_PATTERN.fullmatch(value):
+            raise XinaoError("EGRESS_LIVE_SEAL_INVALID", field)
+    for field in (
+        "proxy_container_id",
+        "internal_network_id",
+        "docker_engine_observational_id",
+        "docker_server_version",
+        "docker_ostype",
+        "posture_relative_path",
+        "negative_suite_receipt_relative_path",
+        "positive_canary_receipt_relative_path",
+    ):
+        value = seal.get(field)
+        if not isinstance(value, str) or not value or "\x00" in value:
+            raise XinaoError("EGRESS_LIVE_SEAL_INVALID", field)
+    if seal.get("docker_ostype") != "linux":
+        raise XinaoError("EGRESS_LIVE_SEAL_INVALID", "docker_ostype")
+    sealed_at = _parse_utc_z(
+        seal.get("sealed_at"), reason_code="EGRESS_LIVE_SEAL_INVALID", field="sealed_at"
+    )
+    expires_at = _parse_utc_z(
+        seal.get("expires_at"), reason_code="EGRESS_LIVE_SEAL_INVALID", field="expires_at"
+    )
+    now = dt.datetime.now(dt.UTC)
+    if sealed_at > now + dt.timedelta(seconds=EGRESS_SEAL_CLOCK_SKEW_SECONDS):
+        raise XinaoError("EGRESS_LIVE_SEAL_FUTURE", seal.get("sealed_at"))
+    if expires_at <= sealed_at:
+        raise XinaoError("EGRESS_LIVE_SEAL_INVALID", "expires_at<=sealed_at")
+    ttl = (expires_at - sealed_at).total_seconds()
+    if ttl > EGRESS_SEAL_MAX_TTL_SECONDS:
+        raise XinaoError("EGRESS_LIVE_SEAL_INVALID", f"ttl>{EGRESS_SEAL_MAX_TTL_SECONDS}")
+    if expires_at <= now:
+        raise XinaoError("EGRESS_LIVE_SEAL_EXPIRED", seal.get("expires_at"))
+    _reject_secret_blob(
+        _canonical_bytes(seal).decode("utf-8"),
+        reason_code="EGRESS_LIVE_SEAL_SECRET_LEAK",
+    )
+    return seal
+
+
+def _load_and_validate_live_seal(
+    *,
+    posture: dict[str, Any],
+    posture_sha256: str,
+) -> tuple[dict[str, Any], str, Path]:
+    path = _egress_live_seal_path()
+    if not path.is_file():
+        raise XinaoError("EGRESS_LIVE_SEAL_MISSING", str(path))
+    raw = _regular_file_bytes(
+        path, reason_code="EGRESS_LIVE_SEAL_MISSING", maximum=MAX_JSON_FILE_BYTES
+    )
+    seal_sha256 = _sha256_bytes(raw)
+    value = _strict_json_loads(
+        raw.decode("utf-8"),
+        reason_code="EGRESS_LIVE_SEAL_INVALID",
+        detail=str(path),
+    )
+    if not isinstance(value, dict):
+        raise XinaoError("EGRESS_LIVE_SEAL_INVALID", "not object")
+    seal = _validate_live_seal_shape(value)
+    if seal["posture_sha256"] != posture_sha256:
+        raise XinaoError(
+            "EGRESS_LIVE_SEAL_HASH_MISMATCH",
+            f"posture live={posture_sha256} seal={seal['posture_sha256']}",
+        )
+    if seal["posture_relative_path"] != "current_posture.v1.json":
+        raise XinaoError("EGRESS_LIVE_SEAL_INVALID", "posture_relative_path")
+    # Bind exact posture identity fields into the seal (replay/replacement resistance).
+    bindings = (
+        ("allowlist_sha256", "allowlist_sha256"),
+        ("proxy_config_sha256", "proxy_config_sha256"),
+        ("proxy_container_id", "proxy_container_id"),
+        ("proxy_image_id", "proxy_image_id"),
+        ("internal_network_id", "internal_network_id"),
+        ("internal_network_name", "internal_network_name"),
+        ("proxy_endpoint", "proxy_endpoint"),
+    )
+    for seal_key, posture_key in bindings:
+        if seal.get(seal_key) != posture.get(posture_key):
+            raise XinaoError(
+                "EGRESS_LIVE_SEAL_DRIFT",
+                f"{seal_key}:{seal.get(seal_key)}!={posture.get(posture_key)}",
+            )
+    external = posture.get("external_network_name") or EGRESS_EXTERNAL_NETWORK_NAME
+    if seal.get("external_network_name") != external:
+        raise XinaoError("EGRESS_LIVE_SEAL_DRIFT", "external_network_name")
+    egress_root = _egress_state_dir()
+    sealed_at = _parse_utc_z(
+        seal.get("sealed_at"), reason_code="EGRESS_LIVE_SEAL_INVALID", field="sealed_at"
+    )
+    expires_at = _parse_utc_z(
+        seal.get("expires_at"), reason_code="EGRESS_LIVE_SEAL_INVALID", field="expires_at"
+    )
+    seal_ttl = int((expires_at - sealed_at).total_seconds())
+    # Re-validate bound evidence against posture using the seal freshness window.
+    _load_bound_evidence_receipt(
+        seal["negative_suite_receipt_relative_path"],
+        seal["negative_suite_receipt_sha256"],
+        egress_root=egress_root,
+        expected_schema=EGRESS_NEGATIVE_SUITE_SCHEMA,
+        reason_code="EGRESS_LIVE_SEAL_INVALID",
+        posture=posture,
+        now=sealed_at,
+        max_age_seconds=max(seal_ttl, 1),
+    )
+    _load_bound_evidence_receipt(
+        seal["positive_canary_receipt_relative_path"],
+        seal["positive_canary_receipt_sha256"],
+        egress_root=egress_root,
+        expected_schema=EGRESS_ENGINEERING_CANARY_SCHEMA,
+        reason_code="EGRESS_LIVE_SEAL_INVALID",
+        posture=posture,
+        now=sealed_at,
+        max_age_seconds=max(seal_ttl, 1),
+    )
+    return seal, seal_sha256, path
 
 
 def _compare_live_egress_objects(
@@ -4302,21 +5061,111 @@ def _compare_live_egress_objects(
     }
 
 
-def _observe_and_compare_egress_boundary(runtime_lock: dict[str, Any]) -> dict[str, Any]:
-    posture = _load_egress_posture()
-    docker = _docker()
-    observed = _compare_live_egress_objects(docker, posture, runtime_lock)
+def _observation_fingerprint(bound: dict[str, Any]) -> dict[str, str]:
+    """Stable identity fields used for before/after and receipt binding."""
+
     return {
+        "internal_network_id": str(bound["internal_network_id"]),
+        "internal_network_name": str(bound["internal_network_name"]),
+        "proxy_container_id": str(bound["proxy_container_id"]),
+        "proxy_image_id": str(bound["proxy_image_id"]),
+        "proxy_endpoint": str(bound["proxy_endpoint"]),
+        "allowlist_sha256": str(bound["allowlist_sha256"]),
+        "proxy_config_sha256": str(bound["proxy_config_sha256"]),
+        "live_proxy_config_sha256": str(
+            bound.get("live_proxy_config_sha256")
+            or (bound.get("observed") or {}).get("live_proxy_config_sha256")
+            or bound["proxy_config_sha256"]
+        ),
+        "docker_engine_observational_id": str(
+            bound.get("docker_engine_observational_id") or ""
+        ),
+    }
+
+
+def _observe_and_compare_egress_boundary(
+    runtime_lock: dict[str, Any],
+    *,
+    require_live_seal: bool = True,
+) -> dict[str, Any]:
+    """
+    Direct Docker observation of proxy/network/config.
+
+    When require_live_seal is True (normal research), D-state live seal must bind posture
+    and evidence hashes. Engineering-canary/sealer may observe without a prior seal.
+    """
+
+    posture, posture_sha256, _posture_path = _posture_file_sha256()
+    seal: dict[str, Any] | None = None
+    seal_sha256: str | None = None
+    # Validate D-state seal (freshness/hash/path) before any Docker observation when required.
+    if require_live_seal:
+        seal, seal_sha256, _seal_path = _load_and_validate_live_seal(
+            posture=posture, posture_sha256=posture_sha256
+        )
+    docker = _docker()
+    engine = _docker_engine_observational_identity(docker)
+    if require_live_seal and seal is not None:
+        if seal["docker_engine_observational_id"] != engine["docker_engine_observational_id"]:
+            raise XinaoError(
+                "EGRESS_LIVE_SEAL_DRIFT",
+                "docker_engine_observational_id",
+            )
+        if seal["docker_server_version"] != engine["docker_server_version"]:
+            raise XinaoError("EGRESS_LIVE_SEAL_DRIFT", "docker_server_version")
+    observed = _compare_live_egress_objects(docker, posture, runtime_lock)
+    if require_live_seal and seal is not None:
+        if seal["proxy_container_id"] != observed["proxy_container_id"] and not (
+            str(observed["proxy_container_id"]).startswith(str(seal["proxy_container_id"]))
+            or str(seal["proxy_container_id"]).startswith(str(observed["proxy_container_id"]))
+        ):
+            raise XinaoError("EGRESS_LIVE_SEAL_DRIFT", "proxy_container_id")
+        if seal["proxy_config_sha256"] != observed["live_proxy_config_sha256"]:
+            raise XinaoError(
+                "EGRESS_LIVE_CONFIG_HASH_MISMATCH",
+                f"live={observed['live_proxy_config_sha256']} seal={seal['proxy_config_sha256']}",
+            )
+    measured_verified = bool(require_live_seal and seal is not None)
+    bound = {
         "posture": posture,
+        "posture_sha256": posture_sha256,
         "observed": observed,
         "proxy_endpoint": str(posture["proxy_endpoint"]),
         "internal_network_name": str(posture["internal_network_name"]),
         "internal_network_id": str(posture["internal_network_id"]),
         "allowlist_sha256": str(posture["allowlist_sha256"]),
         "proxy_config_sha256": str(posture["proxy_config_sha256"]),
+        "live_proxy_config_sha256": str(observed["live_proxy_config_sha256"]),
         "proxy_image_id": str(posture["proxy_image_id"]),
-        "proxy_container_id": str(posture["proxy_container_id"]),
+        "proxy_container_id": str(observed["proxy_container_id"]),
+        "docker_engine_observational_id": engine["docker_engine_observational_id"],
+        "docker_server_version": engine["docker_server_version"],
+        "docker_ostype": engine["docker_ostype"],
+        "live_seal": seal,
+        "live_seal_sha256": seal_sha256,
+        "provider_egress_runtime_verified": measured_verified,
+        "completion_claim_allowed": False,
     }
+    return bound
+
+
+def observe_egress_boundary_for_engineering_canary(
+    runtime_lock: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """
+    Distinct engineering path for sealer inputs / bounded canary evidence.
+
+    Does not require a prior live seal and must not be treated as research().
+    """
+
+    effective_lock = runtime_lock if runtime_lock is not None else _load_json(RUNTIME_LOCK_PATH)
+    if effective_lock.get("network_profile") != "EGRESS_BOUNDARY_REQUIRED_BEFORE_PROVIDER_CALL":
+        raise XinaoError("EGRESS_BOUNDARY_UNAVAILABLE", str(RUNTIME_LOCK_PATH))
+    bound = _observe_and_compare_egress_boundary(effective_lock, require_live_seal=False)
+    bound["path_class"] = "engineering_canary"
+    bound["scientific_research"] = False
+    bound["provider_egress_runtime_verified"] = False
+    return bound
 
 
 def _validate_researcher_network_and_proxy_env(
@@ -4385,15 +5234,41 @@ def _validate_researcher_network_and_proxy_env(
 def _require_host_egress_boundary(
     runtime_lock: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
+    """
+    Normal research gate: source network_profile + valid D-state live seal + direct observe.
+
+    Immutable source provider_egress_runtime_verified remains false by policy and is not
+    an admission bit. Live verification lives only in current_live_seal.v1.json.
+    """
+
     effective_lock = runtime_lock if runtime_lock is not None else _load_json(RUNTIME_LOCK_PATH)
-    if (
-        effective_lock.get("network_profile") != "EGRESS_BOUNDARY_REQUIRED_BEFORE_PROVIDER_CALL"
-        or effective_lock.get("provider_egress_runtime_verified") is not True
-    ):
-        # Source default remains false; only Owner live evidence may seal true later.
+    if effective_lock.get("network_profile") != "EGRESS_BOUNDARY_REQUIRED_BEFORE_PROVIDER_CALL":
         raise XinaoError("EGRESS_BOUNDARY_UNAVAILABLE", str(RUNTIME_LOCK_PATH))
-    # Boolean is a cache of evidence, not enforcement: observe live Docker objects.
-    return _observe_and_compare_egress_boundary(effective_lock)
+    # Source bit is policy/cache only; never require it true, never treat source as live seal.
+    if effective_lock.get("provider_egress_runtime_verified") is True:
+        # Fail closed if someone rewrites immutable source to claim live verification.
+        raise XinaoError(
+            "EGRESS_SOURCE_CLAIM_FORBIDDEN",
+            "source provider_egress_runtime_verified must remain false; use D-state live seal",
+        )
+    return _observe_and_compare_egress_boundary(effective_lock, require_live_seal=True)
+
+
+def _assert_egress_observations_bound(before: dict[str, Any], after: dict[str, Any]) -> None:
+    left = _observation_fingerprint(before)
+    right = _observation_fingerprint(after)
+    for key, value in left.items():
+        if key == "docker_engine_observational_id" and not value and not right.get(key):
+            continue
+        other = right.get(key)
+        if key in {"proxy_container_id", "internal_network_id"} and value and other:
+            if value == other or value.startswith(other) or other.startswith(value):
+                continue
+        if value != other:
+            raise XinaoError("EGRESS_PRE_START_REOBSERVE_DRIFT", f"{key}:{value}!={other}")
+    if before.get("live_seal_sha256") and after.get("live_seal_sha256"):
+        if before["live_seal_sha256"] != after["live_seal_sha256"]:
+            raise XinaoError("EGRESS_PRE_START_REOBSERVE_DRIFT", "live_seal_sha256")
 
 
 def _validate_release_for_invoke(release: dict[str, Any]) -> tuple[str, dict[str, Any]]:
@@ -4822,7 +5697,9 @@ def research(
     manifest_path = context["manifest_path"]
     pointer_sha = context["pointer_sha256"]
     _charter_preflight, runtime_lock = _validate_release_source_identity(release)
+    # Fail closed on absent/expired/drifted live seal before auth or material snapshots.
     egress_bound = _require_host_egress_boundary(runtime_lock)
+    observation_before_create = _observation_fingerprint(egress_bound)
     material_snapshots, auth_identity_witness = _snapshot_material_sources(
         tuple(material_paths or ())
     )
@@ -4922,6 +5799,8 @@ def research(
         raise XinaoError("CONTAINER_CREATE_OUTPUT_INVALID", create.stdout)
     terminal: dict[str, Any] = {}
     started_stdout = b""
+    observation_before_start = observation_before_create
+    inspected: dict[str, Any] = {}
     try:
         inspected_values = _strict_json_loads(
             _run([docker, "inspect", container_id]).stdout,
@@ -4942,6 +5821,20 @@ def research(
             internal_network_id=str(egress_bound["internal_network_id"]),
             proxy_endpoint=str(egress_bound["proxy_endpoint"]),
         )
+        # Re-observe proxy/network/config after create and immediately before start/attach.
+        try:
+            reobserved = _require_host_egress_boundary(runtime_lock)
+            _assert_egress_observations_bound(egress_bound, reobserved)
+            observation_before_start = _observation_fingerprint(reobserved)
+            egress_bound = reobserved
+        except XinaoError as reobserve_error:
+            _run([docker, "rm", "--force", container_id], timeout=60, check=False)
+            if reobserve_error.reason_code != "EGRESS_PRE_START_REOBSERVE_DRIFT":
+                raise XinaoError(
+                    "EGRESS_PRE_START_REOBSERVE_DRIFT",
+                    f"{reobserve_error.reason_code}:{reobserve_error.detail}",
+                ) from reobserve_error
+            raise
         with _activation_lock():
             _validate_research_execution_boundary(fence, auth_identity_witness)
             started = _run_container_attach_bounded(
@@ -5058,10 +5951,24 @@ def research(
             "proxy_endpoint": egress_bound["proxy_endpoint"],
             "allowlist_sha256": egress_bound["allowlist_sha256"],
             "proxy_config_sha256": egress_bound["proxy_config_sha256"],
+            "live_proxy_config_sha256": egress_bound.get("live_proxy_config_sha256"),
+            "live_seal_sha256": egress_bound.get("live_seal_sha256"),
+            "live_seal_expires_at": (egress_bound.get("live_seal") or {}).get("expires_at"),
+            "posture_sha256": egress_bound.get("posture_sha256"),
+            "docker_engine_observational_id": egress_bound.get(
+                "docker_engine_observational_id"
+            ),
+            "observation_before_create": observation_before_create,
+            "observation_before_start": observation_before_start,
             "proxy_env_is_routing_hint_only": True,
             "dify_cross_project": False,
             "tls_interception": False,
-            "provider_egress_runtime_verified": False,
+            # Measured from valid D-state live seal + direct observation; not source lock.
+            "provider_egress_runtime_verified": bool(
+                egress_bound.get("provider_egress_runtime_verified")
+            ),
+            "source_provider_egress_runtime_verified": False,
+            "completion_claim_allowed": False,
         },
         "container_removed": _run(
             [docker, "container", "inspect", container_id], timeout=30, check=False

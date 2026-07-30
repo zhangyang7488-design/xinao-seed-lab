@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import datetime as dt
 import importlib.util
 import json
 import sys
@@ -31,6 +32,13 @@ def _renderer():
     return _load(EGRESS_ROOT / "render_squid_config.py", "xinao_egress_render_test")
 
 
+def _sealer():
+    return _load(
+        EGRESS_ROOT / "scripts" / "owner_seal_live_egress.py",
+        "xinao_owner_seal_live_egress_test",
+    )
+
+
 def _sample_posture(**overrides):
     base = {
         "schema_version": "xinao.provider_egress_posture.v1",
@@ -55,6 +63,279 @@ def _sample_posture(**overrides):
     }
     base.update(overrides)
     return base
+
+
+def _write_json(path: Path, value: dict) -> str:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    payload = (
+        json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"), allow_nan=False)
+        + "\n"
+    ).encode("utf-8")
+    path.write_bytes(payload)
+    import hashlib
+
+    return hashlib.sha256(payload).hexdigest()
+
+
+REQUIRED_NEGATIVE_CASE_IDS = (
+    "N1",
+    "N3",
+    "N4",
+    "N5",
+    "N6",
+    "N7",
+    "N8",
+    "N9",
+    "N15",
+    "N17",
+    "N17b",
+    "N17c",
+    "N17d",
+)
+
+
+def _iso_z(moment: dt.datetime) -> str:
+    return moment.astimezone(dt.UTC).isoformat().replace("+00:00", "Z")
+
+
+def _sample_negative_receipt(
+    posture: dict | None = None, *, observed_at: str | None = None, **overrides
+):
+    """Every required seal-eligible semantic field is explicit (no implicit defaults)."""
+    p = posture or _sample_posture()
+    observed = observed_at or _iso_z(dt.datetime.now(dt.UTC))
+    base = {
+        "schema_version": "xinao.provider_egress_negative_suite_receipt.v1",
+        "path_class": "negative_suite",
+        "status": "observed",
+        "suite_passed": True,
+        "all_cases_passed": True,
+        "cases": [{"id": case_id, "ok": True} for case_id in REQUIRED_NEGATIVE_CASE_IDS],
+        "pass_count": len(REQUIRED_NEGATIVE_CASE_IDS),
+        "fail_count": 0,
+        "internal_network_id": p["internal_network_id"],
+        "proxy_container_id": p["proxy_container_id"],
+        "proxy_image_id": p["proxy_image_id"],
+        "allowlist_sha256": p["allowlist_sha256"],
+        "proxy_config_sha256": p["proxy_config_sha256"],
+        "unauthorized_domain_reachable": False,
+        "direct_no_proxy_escape": False,
+        "provider_egress_runtime_verified": False,
+        "provider_egress_live_verified": False,
+        "secrets_present": False,
+        "completion_claim_allowed": False,
+        "authority": False,
+        "science_restored": False,
+        "parent_complete": False,
+        "scientific_research": False,
+        "observed_at": observed,
+    }
+    base.update(overrides)
+    return base
+
+
+def _sample_canary_receipt(
+    posture: dict | None = None, *, observed_at: str | None = None, **overrides
+):
+    """Every required seal-eligible semantic field is explicit (no CONNECT-only fake)."""
+    p = posture or _sample_posture()
+    observed = observed_at or _iso_z(dt.datetime.now(dt.UTC))
+    base = {
+        "schema_version": "xinao.provider_egress_engineering_canary_receipt.v1",
+        "path_class": "engineering_canary",
+        "status": "observed",
+        "real_provider_call": True,
+        "provider_effect_verified": True,
+        "requested_model": "grok-4.5",
+        "observed_backend_model": "grok-4.5-build",
+        "stop_reason": "EndTurn",
+        "output_tokens": 12,
+        "usage_accounting_complete": True,
+        "usage": {
+            "input_tokens": 8,
+            "output_tokens": 12,
+            "total_tokens": 20,
+        },
+        "endpoint_host": "cli-chat-proxy.grok.com",
+        "internal_network_id": p["internal_network_id"],
+        "proxy_container_id": p["proxy_container_id"],
+        "proxy_image_id": p["proxy_image_id"],
+        "allowlist_sha256": p["allowlist_sha256"],
+        "proxy_config_sha256": p["proxy_config_sha256"],
+        "canary_image_id": "sha256:" + "a" * 64,
+        "internal_network_only": True,
+        "auth_mounted_read_only": True,
+        "auth_content_persisted": False,
+        "raw_output_persisted": False,
+        "research_invoked": False,
+        "is_research_call": False,
+        "scientific_research": False,
+        "masquerades_as_research": False,
+        "scientific_adoption": False,
+        "science_restored": False,
+        "parent_complete": False,
+        "authority": False,
+        "completion_claim_allowed": False,
+        "secrets_present": False,
+        "provider_egress_runtime_verified": False,
+        "provider_egress_live_verified": False,
+        "observed_at": observed,
+        "positive_token_value": None,
+        "connect_only": False,
+        "http_only": False,
+    }
+    base.update(overrides)
+    return base
+
+
+def _sample_connect_only_fake_canary(posture: dict | None = None, **overrides):
+    """Sibling CONNECT-only engineering receipt shape (must be rejected by sealer)."""
+    p = posture or _sample_posture()
+    base = {
+        "schema_version": "xinao.provider_egress_engineering_canary_receipt.v1",
+        "path_class": "engineering_canary",
+        "status": "observed",
+        "real_provider_call": False,
+        "positive_token_value": None,
+        "connect_only": True,
+        "completion_claim_allowed": False,
+        "authority": False,
+        "science_restored": False,
+        "parent_complete": False,
+        "scientific_research": False,
+        "secrets_present": False,
+        "masquerades_as_research": False,
+        "internal_network_id": p["internal_network_id"],
+        "proxy_container_id": p["proxy_container_id"],
+        "proxy_image_id": p["proxy_image_id"],
+        "allowlist_sha256": p["allowlist_sha256"],
+        "proxy_config_sha256": p["proxy_config_sha256"],
+    }
+    base.update(overrides)
+    return base
+
+
+def _install_posture_and_seal(
+    module,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    seal_overrides: dict | None = None,
+    posture_overrides: dict | None = None,
+    sealed_delta: dt.timedelta = dt.timedelta(minutes=-5),
+    ttl: dt.timedelta = dt.timedelta(hours=1),
+    write_evidence: bool = True,
+) -> dict:
+    monkeypatch.setenv("XINAO_SKILL_STATE_ROOT", str(tmp_path / "state"))
+    posture = _sample_posture(**(posture_overrides or {}))
+    posture_path = module._egress_posture_path()
+    posture_sha = _write_json(posture_path, posture)
+    neg_rel = "negative_suite_receipt.v1.json"
+    can_rel = "engineering_canary_receipt.v1.json"
+    sealed_at = dt.datetime.now(dt.UTC) + sealed_delta
+    expires_at = sealed_at + ttl
+    observed_at = _iso_z(sealed_at - dt.timedelta(seconds=30))
+    if write_evidence:
+        _write_json(
+            module._egress_state_dir() / neg_rel,
+            _sample_negative_receipt(posture, observed_at=observed_at),
+        )
+        _write_json(
+            module._egress_state_dir() / can_rel,
+            _sample_canary_receipt(posture, observed_at=observed_at),
+        )
+        neg_sha = module._sha256(module._egress_state_dir() / neg_rel)
+        can_sha = module._sha256(module._egress_state_dir() / can_rel)
+    else:
+        neg_sha = "1" * 64
+        can_sha = "2" * 64
+    seal = {
+        "schema_version": "xinao.provider_egress_live_seal.v1",
+        "provider_egress_live_verified": True,
+        "posture_sha256": posture_sha,
+        "posture_relative_path": "current_posture.v1.json",
+        "negative_suite_receipt_sha256": neg_sha,
+        "negative_suite_receipt_relative_path": neg_rel,
+        "positive_canary_receipt_sha256": can_sha,
+        "positive_canary_receipt_relative_path": can_rel,
+        "allowlist_sha256": posture["allowlist_sha256"],
+        "proxy_config_sha256": posture["proxy_config_sha256"],
+        "proxy_container_id": posture["proxy_container_id"],
+        "proxy_image_id": posture["proxy_image_id"],
+        "internal_network_id": posture["internal_network_id"],
+        "internal_network_name": posture["internal_network_name"],
+        "external_network_name": posture["external_network_name"],
+        "proxy_endpoint": posture["proxy_endpoint"],
+        "docker_engine_observational_id": "engine|desktop",
+        "docker_server_version": "29.5.3",
+        "docker_ostype": "linux",
+        "sealed_at": sealed_at.isoformat().replace("+00:00", "Z"),
+        "expires_at": expires_at.isoformat().replace("+00:00", "Z"),
+        "completion_claim_allowed": False,
+        "authority": False,
+        "science_restored": False,
+        "parent_complete": False,
+        "secrets_present": False,
+        "trust_boundary": module.EGRESS_SEAL_TRUST_BOUNDARY,
+    }
+    if seal_overrides:
+        seal.update(seal_overrides)
+    seal_path = module._egress_live_seal_path()
+    seal_sha = _write_json(seal_path, seal)
+    return {
+        "posture": posture,
+        "posture_sha256": posture_sha,
+        "seal": seal,
+        "seal_sha256": seal_sha,
+        "lock": {
+            "network_profile": "EGRESS_BOUNDARY_REQUIRED_BEFORE_PROVIDER_CALL",
+            "provider_egress_runtime_verified": False,
+            "egress_internal_network_name": "xinao_researcher_internal",
+            "egress_proxy_endpoint": "http://xinao-researcher-egress-proxy:3128",
+            "egress_host_port_publish_allowed": False,
+        },
+    }
+
+
+def _fake_live_ok(module, posture: dict) -> None:
+    network_ok = {
+        "Id": posture["internal_network_id"],
+        "Name": posture["internal_network_name"],
+        "Internal": True,
+        "Containers": {
+            posture["proxy_container_id"]: {"Name": posture["proxy_container_name"]}
+        },
+    }
+    proxy_ok = {
+        "Id": posture["proxy_container_id"],
+        "Image": posture["proxy_image_id"],
+        "State": {"Running": True, "Status": "running"},
+        "NetworkSettings": {
+            "Networks": {
+                "xinao_researcher_internal": {},
+                "xinao_provider_egress_ext": {},
+            },
+            "Ports": {},
+        },
+    }
+
+    def _inspect(docker, kind, target):
+        if kind == "network":
+            return network_ok
+        return proxy_ok
+
+    module._docker_json_inspect = _inspect  # type: ignore[method-assign]
+    module._observe_live_proxy_config_sha256 = (  # type: ignore[method-assign]
+        lambda docker, proxy_id: posture["proxy_config_sha256"]
+    )
+    module._docker_engine_observational_identity = (  # type: ignore[method-assign]
+        lambda docker: {
+            "docker_engine_observational_id": "engine|desktop",
+            "docker_server_version": "29.5.3",
+            "docker_ostype": "linux",
+        }
+    )
+    module._docker = lambda: "docker"  # type: ignore[method-assign]
 
 
 def test_source_defaults_keep_verified_false() -> None:
@@ -167,7 +448,7 @@ def test_compose_has_no_host_ports_and_no_dify_reuse() -> None:
             pytest.fail("host ports mapping present")
 
 
-def test_require_host_egress_still_fails_closed_when_unverified(
+def test_source_false_absent_seal_fails_before_docker(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     module = _runtime()
@@ -176,14 +457,23 @@ def test_require_host_egress_still_fails_closed_when_unverified(
         "network_profile": "EGRESS_BOUNDARY_REQUIRED_BEFORE_PROVIDER_CALL",
         "provider_egress_runtime_verified": False,
     }
+    # Missing posture/seal must fail closed; docker must not be required before seal/posture.
     with pytest.raises(module.XinaoError) as failure:
         module._require_host_egress_boundary(lock)
-    assert failure.value.reason_code == "EGRESS_BOUNDARY_UNAVAILABLE"
-    # Must not touch docker when unverified.
-    monkeypatch.setattr(module, "_docker", lambda: (_ for _ in ()).throw(AssertionError("docker")))
+    assert failure.value.reason_code in {
+        "EGRESS_POSTURE_MISSING",
+        "EGRESS_LIVE_SEAL_MISSING",
+        "EGRESS_BOUNDARY_UNAVAILABLE",
+    }
+    posture_path = module._egress_posture_path()
+    posture_path.parent.mkdir(parents=True, exist_ok=True)
+    _write_json(posture_path, _sample_posture())
+    monkeypatch.setattr(
+        module, "_docker", lambda: (_ for _ in ()).throw(AssertionError("docker"))
+    )
     with pytest.raises(module.XinaoError) as failure2:
         module._require_host_egress_boundary(lock)
-    assert failure2.value.reason_code == "EGRESS_BOUNDARY_UNAVAILABLE"
+    assert failure2.value.reason_code == "EGRESS_LIVE_SEAL_MISSING"
 
 
 def test_posture_shape_and_secret_redaction() -> None:
@@ -456,23 +746,13 @@ def test_container_inspect_rejects_bridge_and_missing_proxy_env(tmp_path: Path) 
     assert err5.value.reason_code == "EGRESS_DIFY_CROSS_PROJECT_FORBIDDEN"
 
 
-def test_verified_true_requires_posture_before_docker_create(
+def test_source_false_valid_live_seal_reaches_docker_observation(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     module = _runtime()
-    monkeypatch.setenv("XINAO_SKILL_STATE_ROOT", str(tmp_path / "state"))
-    lock = {
-        "network_profile": "EGRESS_BOUNDARY_REQUIRED_BEFORE_PROVIDER_CALL",
-        "provider_egress_runtime_verified": True,
-    }
-    # Missing posture file
-    with pytest.raises(module.XinaoError) as failure:
-        module._require_host_egress_boundary(lock)
-    assert failure.value.reason_code == "EGRESS_POSTURE_MISSING"
-
-    posture_path = module._egress_posture_path()
-    posture_path.parent.mkdir(parents=True, exist_ok=True)
-    posture_path.write_text(json.dumps(_sample_posture()), encoding="utf-8")
+    fixture = _install_posture_and_seal(module, tmp_path, monkeypatch)
+    lock = fixture["lock"]
+    assert lock["provider_egress_runtime_verified"] is False
 
     def fake_compare(docker, posture, runtime_lock):
         return {
@@ -484,6 +764,7 @@ def test_verified_true_requires_posture_before_docker_create(
             "proxy_endpoint": posture["proxy_endpoint"],
             "allowlist_sha256": posture["allowlist_sha256"],
             "proxy_config_sha256": posture["proxy_config_sha256"],
+            "live_proxy_config_sha256": posture["proxy_config_sha256"],
             "proxy_networks": [
                 "xinao_researcher_internal",
                 "xinao_provider_egress_ext",
@@ -493,22 +774,36 @@ def test_verified_true_requires_posture_before_docker_create(
         }
 
     monkeypatch.setattr(module, "_docker", lambda: "docker")
+    monkeypatch.setattr(
+        module,
+        "_docker_engine_observational_identity",
+        lambda docker: {
+            "docker_engine_observational_id": "engine|desktop",
+            "docker_server_version": "29.5.3",
+            "docker_ostype": "linux",
+        },
+    )
     monkeypatch.setattr(module, "_compare_live_egress_objects", fake_compare)
     bound = module._require_host_egress_boundary(lock)
     assert bound["proxy_endpoint"] == "http://xinao-researcher-egress-proxy:3128"
     assert bound["allowlist_sha256"] == "d" * 64
+    assert bound["provider_egress_runtime_verified"] is True
+    assert bound["live_seal_sha256"] == fixture["seal_sha256"]
+    assert bound["completion_claim_allowed"] is False
 
 
 def test_research_receipt_redaction_shape_for_egress_block() -> None:
-    # Static contract: receipt must never embed auth content; provider_egress flags stay honest.
+    # Static contract: receipt must never embed auth content; live seal result is measured.
     module = _runtime()
-    # Ensure helper rejects secret-looking posture blobs already covered; receipt keys fixed in source.
     source = (SKILL_ROOT / "scripts" / "xinao_runtime.py").read_text(encoding="utf-8")
     assert '"provider_egress":' in source
     assert '"proxy_env_is_routing_hint_only": True' in source
-    assert '"provider_egress_runtime_verified": False' in source
+    assert '"source_provider_egress_runtime_verified": False' in source
+    assert "live_seal_sha256" in source
+    assert "observation_before_create" in source
+    assert "observation_before_start" in source
     assert "auth_content_sha256" in source
-    assert source.count('provider_egress_runtime_verified"] = True') == 0
+    assert 'provider_egress_runtime_verified"] = True' not in source
 
 
 def test_cleanup_script_never_mentions_dify_rm() -> None:
@@ -805,3 +1100,557 @@ def test_cleanup_receipt_claims_only_observed_removals() -> None:
     assert "removed_networks_observed" in cleanup
     assert "proxy_removed_observed" in cleanup
     assert "left Dify object untouched" in cleanup
+
+
+def test_expired_and_future_seal_fail_closed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    module = _runtime()
+    fixture = _install_posture_and_seal(
+        module,
+        tmp_path,
+        monkeypatch,
+        sealed_delta=dt.timedelta(hours=-3),
+        ttl=dt.timedelta(hours=1),
+    )
+    _fake_live_ok(module, fixture["posture"])
+    with pytest.raises(module.XinaoError) as expired:
+        module._require_host_egress_boundary(fixture["lock"])
+    assert expired.value.reason_code == "EGRESS_LIVE_SEAL_EXPIRED"
+
+    fixture2 = _install_posture_and_seal(
+        module,
+        tmp_path / "future",
+        monkeypatch,
+        sealed_delta=dt.timedelta(hours=2),
+        ttl=dt.timedelta(hours=1),
+    )
+    _fake_live_ok(module, fixture2["posture"])
+    with pytest.raises(module.XinaoError) as future:
+        module._require_host_egress_boundary(fixture2["lock"])
+    assert future.value.reason_code == "EGRESS_LIVE_SEAL_FUTURE"
+
+
+def test_seal_unknown_keys_and_posture_hash_drift_fail(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    module = _runtime()
+    fixture = _install_posture_and_seal(
+        module,
+        tmp_path,
+        monkeypatch,
+        seal_overrides={"extra_unknown": True},
+    )
+    _fake_live_ok(module, fixture["posture"])
+    with pytest.raises(module.XinaoError) as unknown:
+        module._require_host_egress_boundary(fixture["lock"])
+    assert unknown.value.reason_code == "EGRESS_LIVE_SEAL_INVALID"
+    assert "unknown" in unknown.value.detail
+
+    fixture2 = _install_posture_and_seal(module, tmp_path / "drift", monkeypatch)
+    # Tamper posture bytes after seal.
+    posture_path = module._egress_posture_path()
+    tampered = _sample_posture(allowlist_sha256="f" * 64)
+    _write_json(posture_path, tampered)
+    _fake_live_ok(module, tampered)
+    with pytest.raises(module.XinaoError) as drift:
+        module._require_host_egress_boundary(fixture2["lock"])
+    assert drift.value.reason_code in {
+        "EGRESS_LIVE_SEAL_HASH_MISMATCH",
+        "EGRESS_LIVE_SEAL_DRIFT",
+    }
+
+
+def test_evidence_path_escape_and_hash_replay_fail(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    module = _runtime()
+    fixture = _install_posture_and_seal(
+        module,
+        tmp_path,
+        monkeypatch,
+        seal_overrides={
+            "negative_suite_receipt_relative_path": "../escape.json",
+        },
+    )
+    _fake_live_ok(module, fixture["posture"])
+    with pytest.raises(module.XinaoError) as escape:
+        module._require_host_egress_boundary(fixture["lock"])
+    assert escape.value.reason_code == "EGRESS_LIVE_SEAL_INVALID"
+
+    fixture2 = _install_posture_and_seal(module, tmp_path / "replay", monkeypatch)
+    # Replay: keep seal hash claim but replace evidence file content without reseal.
+    evidence = module._egress_state_dir() / "negative_suite_receipt.v1.json"
+    _write_json(evidence, _sample_negative_receipt(pass_count=0, fail_count=99))
+    _fake_live_ok(module, fixture2["posture"])
+    with pytest.raises(module.XinaoError) as replay:
+        module._require_host_egress_boundary(fixture2["lock"])
+    assert replay.value.reason_code == "EGRESS_LIVE_SEAL_HASH_MISMATCH"
+
+
+def test_live_config_mismatch_with_valid_seal_fails(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    module = _runtime()
+    fixture = _install_posture_and_seal(module, tmp_path, monkeypatch)
+    posture = fixture["posture"]
+    _fake_live_ok(module, posture)
+    module._observe_live_proxy_config_sha256 = (  # type: ignore[method-assign]
+        lambda docker, proxy_id: "0" * 64
+    )
+    with pytest.raises(module.XinaoError) as err:
+        module._require_host_egress_boundary(fixture["lock"])
+    assert err.value.reason_code == "EGRESS_LIVE_CONFIG_HASH_MISMATCH"
+
+
+def test_container_replacement_detected_against_seal(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    module = _runtime()
+    fixture = _install_posture_and_seal(module, tmp_path, monkeypatch)
+    posture = fixture["posture"]
+    network_ok = {
+        "Id": posture["internal_network_id"],
+        "Name": posture["internal_network_name"],
+        "Internal": True,
+        "Containers": {
+            "replaced": {"Name": posture["proxy_container_name"]},
+        },
+    }
+    proxy_replaced = {
+        "Id": "replaced_proxy_id_0001",
+        "Image": posture["proxy_image_id"],
+        "State": {"Running": True, "Status": "running"},
+        "NetworkSettings": {
+            "Networks": {
+                "xinao_researcher_internal": {},
+                "xinao_provider_egress_ext": {},
+            },
+            "Ports": {},
+        },
+    }
+
+    def _inspect(docker, kind, target):
+        if kind == "network":
+            return network_ok
+        return proxy_replaced
+
+    module._docker = lambda: "docker"  # type: ignore[method-assign]
+    module._docker_json_inspect = _inspect  # type: ignore[method-assign]
+    module._observe_live_proxy_config_sha256 = (  # type: ignore[method-assign]
+        lambda docker, proxy_id: posture["proxy_config_sha256"]
+    )
+    module._docker_engine_observational_identity = (  # type: ignore[method-assign]
+        lambda docker: {
+            "docker_engine_observational_id": "engine|desktop",
+            "docker_server_version": "29.5.3",
+            "docker_ostype": "linux",
+        }
+    )
+    with pytest.raises(module.XinaoError) as err:
+        module._require_host_egress_boundary(fixture["lock"])
+    assert err.value.reason_code in {
+        "EGRESS_PROXY_ID_MISMATCH",
+        "EGRESS_LIVE_SEAL_DRIFT",
+    }
+
+
+def test_pre_start_reobserve_drift_cleans_unstarted_container(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    module = _runtime()
+    before = {
+        "internal_network_id": "net1",
+        "internal_network_name": "xinao_researcher_internal",
+        "proxy_container_id": "ctr1",
+        "proxy_image_id": "sha256:" + "a" * 64,
+        "proxy_endpoint": "http://xinao-researcher-egress-proxy:3128",
+        "allowlist_sha256": "d" * 64,
+        "proxy_config_sha256": "e" * 64,
+        "live_proxy_config_sha256": "e" * 64,
+        "docker_engine_observational_id": "engine|desktop",
+        "live_seal_sha256": "9" * 64,
+    }
+    after = dict(before)
+    after["proxy_container_id"] = "ctr_replaced"
+    with pytest.raises(module.XinaoError) as err:
+        module._assert_egress_observations_bound(before, after)
+    assert err.value.reason_code == "EGRESS_PRE_START_REOBSERVE_DRIFT"
+
+
+def test_engineering_canary_path_does_not_require_prior_seal(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    module = _runtime()
+    monkeypatch.setenv("XINAO_SKILL_STATE_ROOT", str(tmp_path / "state"))
+    posture = _sample_posture()
+    _write_json(module._egress_posture_path(), posture)
+    _fake_live_ok(module, posture)
+    lock = {
+        "network_profile": "EGRESS_BOUNDARY_REQUIRED_BEFORE_PROVIDER_CALL",
+        "provider_egress_runtime_verified": False,
+    }
+    bound = module.observe_egress_boundary_for_engineering_canary(lock)
+    assert bound["path_class"] == "engineering_canary"
+    assert bound["scientific_research"] is False
+    assert bound["provider_egress_runtime_verified"] is False
+    # Normal research still requires seal.
+    with pytest.raises(module.XinaoError) as err:
+        module._require_host_egress_boundary(lock)
+    assert err.value.reason_code == "EGRESS_LIVE_SEAL_MISSING"
+
+
+def test_canary_receipt_cannot_be_scientific_research_receipt(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    module = _runtime()
+    scientific = {
+        "schema_version": "xinao.skill_research_receipt.v2",
+        "path_class": "scientific_research",
+        "scientific_research": True,
+        "completion_claim_allowed": False,
+        "authority": False,
+        "science_restored": False,
+        "parent_complete": False,
+    }
+    with pytest.raises(module.XinaoError) as err:
+        module._validate_evidence_receipt_shape(
+            scientific,
+            expected_schema=module.EGRESS_ENGINEERING_CANARY_SCHEMA,
+            reason_code="EGRESS_LIVE_SEAL_INVALID",
+        )
+    assert err.value.reason_code == "EGRESS_LIVE_SEAL_INVALID"
+
+
+def test_source_claim_true_is_forbidden_even_with_seal(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    module = _runtime()
+    fixture = _install_posture_and_seal(module, tmp_path, monkeypatch)
+    lock = dict(fixture["lock"])
+    lock["provider_egress_runtime_verified"] = True
+    with pytest.raises(module.XinaoError) as err:
+        module._require_host_egress_boundary(lock)
+    assert err.value.reason_code == "EGRESS_SOURCE_CLAIM_FORBIDDEN"
+
+
+def test_seal_schema_reference_and_sealer_script_exist() -> None:
+    schema = json.loads(
+        (SKILL_ROOT / "references" / "provider-egress-live-seal.v1.schema.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    assert schema["properties"]["provider_egress_live_verified"]["const"] is True
+    assert schema["additionalProperties"] is False
+    for name in (
+        "provider-egress-negative-suite-receipt.v1.schema.json",
+        "provider-egress-engineering-canary-receipt.v1.schema.json",
+        "provider-egress-receipt-handshake.v1.md",
+    ):
+        assert (SKILL_ROOT / "references" / name).is_file()
+    neg_schema = json.loads(
+        (SKILL_ROOT / "references" / "provider-egress-negative-suite-receipt.v1.schema.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    can_schema = json.loads(
+        (
+            SKILL_ROOT / "references" / "provider-egress-engineering-canary-receipt.v1.schema.json"
+        ).read_text(encoding="utf-8")
+    )
+    assert neg_schema["properties"]["suite_passed"]["const"] is True
+    assert can_schema["properties"]["real_provider_call"]["const"] is True
+    assert can_schema["properties"]["endpoint_host"]["const"] == "cli-chat-proxy.grok.com"
+    sealer = (EGRESS_ROOT / "scripts" / "owner_seal_live_egress.py").read_text(encoding="utf-8")
+    assert "provider_egress_live_verified" in sealer
+    assert "source_lock_mutated" in sealer
+    assert "no signing PKI" in sealer or "no_signing_pki" in sealer
+    assert "skill_research_receipt" in sealer
+    assert "CANARY_REAL_PROVIDER_CALL_REQUIRED" in sealer
+    assert "REQUIRED_NEGATIVE_CASE_IDS" in sealer
+    # LF-only for sealer script
+    raw = (EGRESS_ROOT / "scripts" / "owner_seal_live_egress.py").read_bytes()
+    assert b"\r" not in raw
+
+
+def test_sealer_rejects_scientific_receipt_as_canary(tmp_path: Path) -> None:
+    sealer = _sealer()
+    with pytest.raises(sealer.SealError) as err:
+        sealer._validate_evidence(
+            {
+                "schema_version": "xinao.skill_research_receipt.v2",
+                "path_class": "scientific_research",
+                "completion_claim_allowed": False,
+                "authority": False,
+            },
+            schema=sealer.CANARY_SCHEMA,
+            path_class="engineering_canary",
+        )
+    assert err.value.reason_code in {
+        "EVIDENCE_SCHEMA_INVALID",
+        "EVIDENCE_CLAIM_FORBIDDEN",
+        "EVIDENCE_PATH_CLASS_INVALID",
+    }
+
+
+def test_sealer_rejects_connect_only_fake_canary() -> None:
+    sealer = _sealer()
+    posture = _sample_posture()
+    fake = _sample_connect_only_fake_canary(posture)
+    with pytest.raises(sealer.SealError) as err:
+        sealer.validate_engineering_canary_receipt(fake, posture=posture)
+    assert err.value.reason_code in {
+        "CANARY_RECEIPT_MISSING_KEY",
+        "CANARY_REAL_PROVIDER_CALL_REQUIRED",
+        "CANARY_CONNECT_ONLY_REJECTED",
+        "EVIDENCE_CLAIM_FORBIDDEN",
+    }
+
+
+def test_sealer_accepts_explicit_semantic_valid_receipts() -> None:
+    sealer = _sealer()
+    posture = _sample_posture()
+    observed = _iso_z(dt.datetime.now(dt.UTC) - dt.timedelta(seconds=10))
+    neg = _sample_negative_receipt(posture, observed_at=observed)
+    can = _sample_canary_receipt(posture, observed_at=observed)
+    # Explicit: every required semantic field present and seal-eligible.
+    for field in sealer.NEGATIVE_REQUIRED_KEYS:
+        assert field in neg, field
+    for field in sealer.CANARY_REQUIRED_KEYS:
+        assert field in can, field
+    assert can["real_provider_call"] is True
+    assert can["provider_effect_verified"] is True
+    assert can["output_tokens"] > 0
+    assert can["usage"]["total_tokens"] >= can["usage"]["input_tokens"] + can["usage"][
+        "output_tokens"
+    ]
+    sealer.validate_negative_suite_receipt(neg, posture=posture)
+    sealer.validate_engineering_canary_receipt(can, posture=posture)
+
+
+def test_sealer_negative_field_mutations_fail() -> None:
+    sealer = _sealer()
+    posture = _sample_posture()
+    observed = _iso_z(dt.datetime.now(dt.UTC) - dt.timedelta(seconds=5))
+    mutations = [
+        ("status", "planned", "NEGATIVE_SUITE_STATUS_INVALID"),
+        ("status", "partial", "NEGATIVE_SUITE_STATUS_INVALID"),
+        ("suite_passed", False, "NEGATIVE_SUITE_NOT_PASSED"),
+        ("all_cases_passed", False, "NEGATIVE_SUITE_NOT_PASSED"),
+        ("unauthorized_domain_reachable", True, "NEGATIVE_SUITE_UNAUTHORIZED_DOMAIN"),
+        ("direct_no_proxy_escape", True, "NEGATIVE_SUITE_DIRECT_ESCAPE"),
+        ("fail_count", 1, "NEGATIVE_SUITE_COUNT_INVALID"),
+        ("pass_count", 12, "NEGATIVE_SUITE_COUNT_INVALID"),
+        ("internal_network_id", "replayed_net", "NEGATIVE_RECEIPT_POSTURE_MISMATCH"),
+        ("proxy_container_id", "replayed_proxy", "NEGATIVE_RECEIPT_POSTURE_MISMATCH"),
+        ("proxy_image_id", "sha256:" + "f" * 64, "NEGATIVE_RECEIPT_POSTURE_MISMATCH"),
+        ("allowlist_sha256", "0" * 64, "NEGATIVE_RECEIPT_POSTURE_MISMATCH"),
+        ("proxy_config_sha256", "1" * 64, "NEGATIVE_RECEIPT_POSTURE_MISMATCH"),
+        ("completion_claim_allowed", True, "EVIDENCE_CLAIM_FORBIDDEN"),
+        ("authority", True, "EVIDENCE_CLAIM_FORBIDDEN"),
+        ("scientific_research", True, "EVIDENCE_CLAIM_FORBIDDEN"),
+        ("provider_egress_live_verified", True, "EVIDENCE_CLAIM_FORBIDDEN"),
+        ("provider_egress_runtime_verified", True, "EVIDENCE_CLAIM_FORBIDDEN"),
+        (
+            "observed_at",
+            _iso_z(dt.datetime.now(dt.UTC) + dt.timedelta(hours=2)),
+            "EVIDENCE_OBSERVATION_FUTURE",
+        ),
+        (
+            "observed_at",
+            _iso_z(dt.datetime.now(dt.UTC) - dt.timedelta(hours=30)),
+            "EVIDENCE_OBSERVATION_STALE",
+        ),
+    ]
+    for field, value, expected_code in mutations:
+        receipt = _sample_negative_receipt(posture, observed_at=observed)
+        receipt[field] = value
+        with pytest.raises(sealer.SealError) as err:
+            sealer.validate_negative_suite_receipt(receipt, posture=posture)
+        assert err.value.reason_code == expected_code, (field, value, err.value.reason_code)
+
+    # Missing required case.
+    missing_case = _sample_negative_receipt(posture, observed_at=observed)
+    missing_case["cases"] = [
+        c for c in missing_case["cases"] if c["id"] != "N17"
+    ]
+    missing_case["pass_count"] = len(missing_case["cases"])
+    with pytest.raises(sealer.SealError) as err:
+        sealer.validate_negative_suite_receipt(missing_case, posture=posture)
+    assert err.value.reason_code == "NEGATIVE_SUITE_MISSING_CASE"
+
+    # Duplicate case.
+    dup = _sample_negative_receipt(posture, observed_at=observed)
+    dup["cases"] = list(dup["cases"]) + [{"id": "N1", "ok": True}]
+    with pytest.raises(sealer.SealError) as err:
+        sealer.validate_negative_suite_receipt(dup, posture=posture)
+    assert err.value.reason_code == "NEGATIVE_SUITE_DUPLICATE_CASE"
+
+    # Unknown case.
+    unknown = _sample_negative_receipt(posture, observed_at=observed)
+    unknown["cases"] = list(unknown["cases"]) + [{"id": "N99", "ok": True}]
+    with pytest.raises(sealer.SealError) as err:
+        sealer.validate_negative_suite_receipt(unknown, posture=posture)
+    assert err.value.reason_code == "NEGATIVE_SUITE_UNKNOWN_CASE"
+
+    # Case not ok.
+    not_ok = _sample_negative_receipt(posture, observed_at=observed)
+    not_ok["cases"] = [{"id": c["id"], "ok": (c["id"] != "N3")} for c in not_ok["cases"]]
+    with pytest.raises(sealer.SealError) as err:
+        sealer.validate_negative_suite_receipt(not_ok, posture=posture)
+    assert err.value.reason_code == "NEGATIVE_SUITE_CASE_NOT_OK"
+
+    # Unknown key.
+    extra = _sample_negative_receipt(posture, observed_at=observed, totally_unknown=True)
+    with pytest.raises(sealer.SealError) as err:
+        sealer.validate_negative_suite_receipt(extra, posture=posture)
+    assert err.value.reason_code == "NEGATIVE_RECEIPT_UNKNOWN_KEY"
+
+
+def test_sealer_canary_field_mutations_fail() -> None:
+    sealer = _sealer()
+    posture = _sample_posture()
+    observed = _iso_z(dt.datetime.now(dt.UTC) - dt.timedelta(seconds=5))
+    mutations = [
+        ("status", "planned", "CANARY_STATUS_INVALID"),
+        ("status", "partial", "CANARY_STATUS_INVALID"),
+        ("real_provider_call", False, "CANARY_REAL_PROVIDER_CALL_REQUIRED"),
+        ("provider_effect_verified", False, "CANARY_PROVIDER_EFFECT_REQUIRED"),
+        ("connect_only", True, "CANARY_CONNECT_ONLY_REJECTED"),
+        ("http_only", True, "CANARY_HTTP_ONLY_REJECTED"),
+        ("requested_model", "grok-3", "CANARY_MODEL_INVALID"),
+        ("observed_backend_model", "grok-4.5", "CANARY_BACKEND_MODEL_INVALID"),
+        ("stop_reason", "MaxTokens", "CANARY_STOP_REASON_INVALID"),
+        ("output_tokens", 0, "CANARY_OUTPUT_TOKENS_INVALID"),
+        ("output_tokens", None, "CANARY_OUTPUT_TOKENS_INVALID"),
+        ("usage_accounting_complete", False, "CANARY_USAGE_INCOMPLETE"),
+        ("endpoint_host", "api.x.ai", "CANARY_ENDPOINT_HOST_INVALID"),
+        ("canary_image_id", "busybox:1.36", "CANARY_IMAGE_ID_INVALID"),
+        ("internal_network_only", False, "CANARY_ISOLATION_INVALID"),
+        ("auth_mounted_read_only", False, "CANARY_ISOLATION_INVALID"),
+        ("auth_content_persisted", True, "CANARY_PERSISTENCE_FORBIDDEN"),
+        ("raw_output_persisted", True, "CANARY_PERSISTENCE_FORBIDDEN"),
+        ("research_invoked", True, "EVIDENCE_CLAIM_FORBIDDEN"),
+        ("is_research_call", True, "EVIDENCE_CLAIM_FORBIDDEN"),
+        ("masquerades_as_research", True, "EVIDENCE_CLAIM_FORBIDDEN"),
+        ("scientific_adoption", True, "EVIDENCE_CLAIM_FORBIDDEN"),
+        ("completion_claim_allowed", True, "EVIDENCE_CLAIM_FORBIDDEN"),
+        ("positive_token_value", "secret-token", "CANARY_TOKEN_VALUE_FORBIDDEN"),
+        ("internal_network_id", "replayed", "CANARY_RECEIPT_POSTURE_MISMATCH"),
+        ("proxy_container_id", "replayed", "CANARY_RECEIPT_POSTURE_MISMATCH"),
+        ("allowlist_sha256", "9" * 64, "CANARY_RECEIPT_POSTURE_MISMATCH"),
+        (
+            "observed_at",
+            _iso_z(dt.datetime.now(dt.UTC) + dt.timedelta(hours=3)),
+            "EVIDENCE_OBSERVATION_FUTURE",
+        ),
+        (
+            "observed_at",
+            _iso_z(dt.datetime.now(dt.UTC) - dt.timedelta(days=2)),
+            "EVIDENCE_OBSERVATION_STALE",
+        ),
+    ]
+    for field, value, expected_code in mutations:
+        receipt = _sample_canary_receipt(posture, observed_at=observed)
+        receipt[field] = value
+        with pytest.raises(sealer.SealError) as err:
+            sealer.validate_engineering_canary_receipt(receipt, posture=posture)
+        assert err.value.reason_code == expected_code, (field, value, err.value.reason_code)
+
+    # Incomplete usage accounting (total too small).
+    bad_usage = _sample_canary_receipt(
+        posture,
+        observed_at=observed,
+        usage={"input_tokens": 10, "output_tokens": 12, "total_tokens": 15},
+    )
+    with pytest.raises(sealer.SealError) as err:
+        sealer.validate_engineering_canary_receipt(bad_usage, posture=posture)
+    assert err.value.reason_code == "CANARY_USAGE_INVALID"
+
+    # Usage output mismatch vs top-level output_tokens.
+    mismatch = _sample_canary_receipt(
+        posture,
+        observed_at=observed,
+        output_tokens=12,
+        usage={"input_tokens": 1, "output_tokens": 3, "total_tokens": 4},
+    )
+    with pytest.raises(sealer.SealError) as err:
+        sealer.validate_engineering_canary_receipt(mismatch, posture=posture)
+    assert err.value.reason_code == "CANARY_USAGE_INVALID"
+
+    # Missing required semantic field.
+    missing = _sample_canary_receipt(posture, observed_at=observed)
+    del missing["provider_effect_verified"]
+    with pytest.raises(sealer.SealError) as err:
+        sealer.validate_engineering_canary_receipt(missing, posture=posture)
+    assert err.value.reason_code == "CANARY_RECEIPT_MISSING_KEY"
+
+
+def test_runtime_gate_rejects_connect_only_bound_canary(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    module = _runtime()
+    fixture = _install_posture_and_seal(module, tmp_path, monkeypatch)
+    # Replace canary bytes with CONNECT-only fake while keeping seal hash claim:
+    # first prove semantic reject on load when hash is updated to match fake.
+    fake = _sample_connect_only_fake_canary(fixture["posture"])
+    can_path = module._egress_state_dir() / "engineering_canary_receipt.v1.json"
+    can_sha = _write_json(can_path, fake)
+    seal = dict(fixture["seal"])
+    seal["positive_canary_receipt_sha256"] = can_sha
+    _write_json(module._egress_live_seal_path(), seal)
+    _fake_live_ok(module, fixture["posture"])
+    with pytest.raises(module.XinaoError) as err:
+        module._require_host_egress_boundary(fixture["lock"])
+    assert err.value.reason_code == "EGRESS_LIVE_SEAL_INVALID"
+
+
+def test_runtime_gate_rejects_negative_suite_not_passed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    module = _runtime()
+    fixture = _install_posture_and_seal(module, tmp_path, monkeypatch)
+    bad = _sample_negative_receipt(
+        fixture["posture"],
+        observed_at=_iso_z(dt.datetime.now(dt.UTC) - dt.timedelta(seconds=30)),
+        suite_passed=False,
+        all_cases_passed=False,
+        fail_count=1,
+    )
+    # Make one case fail for consistency of payload content.
+    bad["cases"] = [{"id": c["id"], "ok": (c["id"] != "N1")} for c in bad["cases"]]
+    neg_path = module._egress_state_dir() / "negative_suite_receipt.v1.json"
+    neg_sha = _write_json(neg_path, bad)
+    seal = dict(fixture["seal"])
+    seal["negative_suite_receipt_sha256"] = neg_sha
+    _write_json(module._egress_live_seal_path(), seal)
+    _fake_live_ok(module, fixture["posture"])
+    with pytest.raises(module.XinaoError) as err:
+        module._require_host_egress_boundary(fixture["lock"])
+    assert err.value.reason_code == "EGRESS_LIVE_SEAL_INVALID"
+
+
+def test_no_secrets_in_seal_or_sample_receipts(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    module = _runtime()
+    fixture = _install_posture_and_seal(module, tmp_path, monkeypatch)
+    for path in (
+        module._egress_live_seal_path(),
+        module._egress_posture_path(),
+        module._egress_state_dir() / "negative_suite_receipt.v1.json",
+        module._egress_state_dir() / "engineering_canary_receipt.v1.json",
+    ):
+        text = path.read_text(encoding="utf-8").lower()
+        for token in ("authorization", "api_key", "password", "bearer ", "private_key"):
+            assert token not in text
+    assert fixture["seal"]["secrets_present"] is False
+    assert fixture["seal"]["completion_claim_allowed"] is False
+    canary = json.loads(
+        (module._egress_state_dir() / "engineering_canary_receipt.v1.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    assert canary["real_provider_call"] is True
+    assert canary["positive_token_value"] is None
+    assert canary["output_tokens"] > 0
