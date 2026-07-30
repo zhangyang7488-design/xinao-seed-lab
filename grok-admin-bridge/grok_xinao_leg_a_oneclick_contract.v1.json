@@ -1,0 +1,252 @@
+{
+  "schema_version": "xinao.grok_xinao_leg_a_oneclick_contract.v1",
+  "sentinel": "SENTINEL:XINAO_LEG_A_ONECLICK_CONTRACT_V1",
+  "status": "candidate_fresh_consumer_boundary",
+  "package_id": "xinao_leg_a_fresh_consumer",
+  "marker": "XINAO_LEG_A_FRESH_CONSUMER_CANDIDATE_V1",
+  "purpose_cn": "新鲜进程下一次稳定腿 A 一键调用的真实消费者边界：发现封印上下文、经公共 launcher 完成 selection-only 与 common-contract 调用、强制 linux-container、分支隔离、候选证据回读。内部单测/配置/容器健康不得冒充本边界。",
+  "purpose_en": "Fresh-process one-shot XINAO leg-A consumer boundary: discover sealed context, run selection-only bootstrap and the real common-contract call through the public launcher, require linux-container, honor branch isolation, and return candidate-only evidence. Internal unit tests, config presence, or container health alone are insufficient.",
+  "authority": {
+    "worker_output": "candidate_only",
+    "completion_claim_allowed": false,
+    "owner": "Codex",
+    "not_leg_b": true,
+    "not_parent_complete": true
+  },
+  "public_interfaces": {
+    "context_builder": {
+      "script": "grok-admin-bridge/Build-XinaoLegAContext.ps1",
+      "role": "discover_or_mint_sealed_context_without_chat_state_or_manual_hashes",
+      "required_outputs": [
+        "sealed_context_path",
+        "context_manifest_path",
+        "frozen_context_sha256",
+        "rules_file",
+        "rules_sha256",
+        "sealed_input_root",
+        "prompt_file",
+        "subject_manifest_sha256"
+      ],
+      "caller_must_not_supply": [
+        "prior_chat_state",
+        "manually_invented_frozen_context_sha256",
+        "manually_invented_rules_sha256",
+        "manually_invented_selection_decision_sha256"
+      ]
+    },
+    "oneclick_worker": {
+      "script": "grok-admin-bridge/Invoke-XinaoLegAWorker.ps1",
+      "role": "stable_one_call_leg_a_consumer_over_public_launcher",
+      "combined_with": "Build-XinaoLegAContext.ps1",
+      "public_launcher_dependency": [
+        "launchers/Invoke-Codex-GrokWorkerPool.ps1",
+        "grok-admin-bridge/Invoke-CodexDispatchGrokWorkerPool.ps1"
+      ]
+    }
+  },
+  "route": {
+    "leg": "A",
+    "route_role": "normal_leg_a_bounded_online_current_tui",
+    "transport_id": "direct-grok-worker-pool",
+    "execution_contract_version": "xinao.grok.shared_execution_contract.v1",
+    "common_contract_mode": "provider_v1_then_common_adapter",
+    "required_execution_backend": "linux-container",
+    "forbidden_execution_backends": [
+      "windows-host",
+      "unbounded_host_legacy"
+    ],
+    "forbidden_routes": [
+      "leg_b",
+      "temporal-docker-langgraph",
+      "houtai-gongren_as_leg_a"
+    ]
+  },
+  "fresh_process_invariants": [
+    "no_prior_chat_state_required",
+    "no_manually_supplied_hashes_required",
+    "selection_only_bootstrap_via_public_launcher",
+    "real_common_contract_call_via_public_launcher",
+    "backend_must_be_linux_container",
+    "context_prompt_rules_sealed_read_only",
+    "exact_worktree_read_only_by_default",
+    "exact_worktree_is_only_write_domain_when_explicitly_authorized",
+    "branch_isolation_respected",
+    "result_json_exposes_selected_equals_observed_evidence",
+    "candidate_only_status",
+    "rollback_removes_only_test_carrier"
+  ],
+  "call_sequence": [
+    {
+      "step": 1,
+      "name": "discover_sealed_context",
+      "actor": "Build-XinaoLegAContext.ps1",
+      "notes": "Fresh process discovers or mints sealed context/prompt/rules under a stable output root. Hashes are computed from sealed bytes, never required as chat-side manual inputs."
+    },
+    {
+      "step": 2,
+      "name": "selection_only_bootstrap",
+      "actor": "public_launcher",
+      "mode": "SelectionOnly",
+      "provider_effect": false,
+      "required_result_schema": "xinao.codex_grok_selection_only_result.v1",
+      "notes": "Selection-only bootstrap must go through the public launcher, not a private pool shortcut."
+    },
+    {
+      "step": 3,
+      "name": "common_contract_real_call",
+      "actor": "public_launcher",
+      "mode": "common_contract",
+      "provider_effect": "bounded_fixture_or_real",
+      "required_execution_backend": "linux-container",
+      "notes": "The real common-contract call is also through the public launcher and must request linux-container."
+    }
+  ],
+  "isolation": {
+    "context_prompt_rules": {
+      "mount_policy": "sealed_read_only",
+      "mutation_forbidden": true
+    },
+    "worktree": {
+      "default_effect_mode": "read_only",
+      "authorized_effect_mode": "authorized_write",
+      "only_write_domain_when_authorized": true,
+      "path_escape_fails_closed": true
+    },
+    "branch_isolation": {
+      "source_worktree_must_be_preserved_on_rollback": true,
+      "test_carrier_is_the_only_cleanup_target": true
+    }
+  },
+  "fail_closed_before_provider_effect": [
+    {
+      "id": "missing_context",
+      "trigger": "sealed context path missing or empty",
+      "error_token": "XINAO_LEG_A_CONTEXT_MISSING"
+    },
+    {
+      "id": "drifted_context",
+      "trigger": "frozen_context_sha256 or rules_sha256 no longer matches sealed bytes",
+      "error_token": "XINAO_LEG_A_CONTEXT_DRIFT"
+    },
+    {
+      "id": "stale_selection",
+      "trigger": "selection decision_sha256 changed between bootstrap and common call",
+      "error_token": "XINAO_LEG_A_SELECTION_STALE"
+    },
+    {
+      "id": "docker_unavailable",
+      "trigger": "linux-container backend requested but Docker engine unavailable",
+      "error_token": "XINAO_LEG_A_DOCKER_UNAVAILABLE"
+    },
+    {
+      "id": "path_escape",
+      "trigger": "worktree, sealed root, or output root escapes authorized boundary",
+      "error_token": "XINAO_LEG_A_PATH_ESCAPE"
+    },
+    {
+      "id": "mismatched_output_root",
+      "trigger": "candidate output root is not the exact authorized worktree write domain",
+      "error_token": "XINAO_LEG_A_OUTPUT_ROOT_MISMATCH"
+    },
+    {
+      "id": "forbidden_backend",
+      "trigger": "requested backend is windows-host or leg B",
+      "error_token": "XINAO_LEG_A_BACKEND_FORBIDDEN"
+    }
+  ],
+  "result_json": {
+    "schema_version": "xinao.leg_a_oneclick_result.v1",
+    "required_fields": [
+      "schema_version",
+      "sentinel",
+      "ok",
+      "candidate_only",
+      "completion_claim_allowed",
+      "route_leg",
+      "execution_backend_requested",
+      "execution_backend_observed",
+      "selected_provider_id",
+      "observed_provider_id",
+      "selected_model_id",
+      "observed_model_id",
+      "selected_transport_id",
+      "observed_transport_id",
+      "selection_decision_sha256",
+      "selection_only_invoked",
+      "common_contract_invoked",
+      "public_launcher_used",
+      "sealed_context_path",
+      "frozen_context_sha256",
+      "rules_sha256",
+      "effect_mode",
+      "worktree_read_only",
+      "usage",
+      "output_marker",
+      "evidence_root",
+      "rollback"
+    ],
+    "selected_equals_observed": [
+      "provider_id",
+      "model_id",
+      "transport_id",
+      "execution_backend"
+    ],
+    "usage_requirements": {
+      "positive_total_or_output_tokens_on_real_call": true,
+      "selection_only_model_invocation_count": 0
+    },
+    "status_requirements": {
+      "candidate_only": true,
+      "completion_claim_allowed": false
+    }
+  },
+  "rollback": {
+    "removes": [
+      "test_carrier_root",
+      "fixture_public_launcher_state",
+      "temp_sealed_context_under_carrier"
+    ],
+    "preserves": [
+      "source_worktree",
+      "live_C_projections",
+      "live_D_projections_outside_test_carrier"
+    ],
+    "error_token_if_source_mutated": "XINAO_LEG_A_SOURCE_WORKTREE_MUTATED"
+  },
+  "test": {
+    "script": "grok-admin-bridge/Test-XinaoLegAOneClickConsumer.ps1",
+    "mode": "fresh_process_deterministic_fixtures",
+    "fixture_policy": {
+      "public_dispatch": "bounded_fake_no_real_provider_call",
+      "context_builder": "bounded_fake_or_real_script_under_test",
+      "second_real_provider_call_forbidden_inside_this_package": true
+    },
+    "required_cases": [
+      "happy_path_fresh_consumer",
+      "no_prior_chat_or_manual_hashes",
+      "selection_only_and_common_via_public_launcher",
+      "backend_linux_container_only",
+      "sealed_ro_and_worktree_ro_default",
+      "authorized_write_domain_only_when_explicit",
+      "missing_context_fail_closed",
+      "drifted_context_fail_closed",
+      "stale_selection_fail_closed",
+      "docker_unavailable_fail_closed",
+      "path_escape_fail_closed",
+      "mismatched_output_root_fail_closed",
+      "result_json_evidence_surface",
+      "rollback_preserves_source_worktree"
+    ]
+  },
+  "non_goals": [
+    "real_second_provider_spend_inside_this_worker_package",
+    "leg_b_temporal_handoff",
+    "owner_adoption_or_parent_completion",
+    "editing_live_C_or_D_projections",
+    "announcing_parent_complete"
+  ],
+  "evidence_roots_expected": {
+    "pool_or_dispatch": "D:\\XINAO_RESEARCH_RUNTIME\\state\\grok_worker_pool",
+    "test_carrier_only_for_this_package": true
+  }
+}
