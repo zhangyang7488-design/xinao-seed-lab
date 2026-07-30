@@ -1,18 +1,25 @@
 from __future__ import annotations
 
 import json
+import shutil
 import subprocess
 from pathlib import Path
 
+import pytest
+
 SCRIPT = Path(__file__).resolve().parents[1] / "scripts" / "predecision_intent_guard_v1.ps1"
-PWSH = Path(r"D:\XINAO_RESEARCH_RUNTIME\tools\powershell\7.6.4\pwsh.exe")
+PWSH = shutil.which("pwsh")
+
+pytestmark = pytest.mark.skipif(PWSH is None, reason="pwsh not found on PATH")
 
 
 def _invoke(payload: dict[str, object]) -> subprocess.CompletedProcess[str]:
+    assert PWSH is not None
     return subprocess.run(
-        [str(PWSH), "-NoProfile", "-File", str(SCRIPT)],
+        [PWSH, "-NoProfile", "-File", str(SCRIPT)],
         input=json.dumps(payload),
         text=True,
+        encoding="utf-8",
         capture_output=True,
         check=False,
     )
