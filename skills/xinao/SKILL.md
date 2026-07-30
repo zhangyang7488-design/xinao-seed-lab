@@ -18,6 +18,23 @@ internally. Return the bounded receipt and research result in the Codex conversa
 the user to run a command, edit a file, construct a manifest, pre-seal a material, or supply an
 internal field.
 
+The additive host-side `research-state` carrier may bind successive calls of that same one-shot
+instrument when a bounded continuity canary is useful:
+
+- `scripts/xinao.py research-state genesis --root <D-or-E-series> --question <question>`
+- `scripts/xinao.py research-state advance --root <series> --expected-head <sha256> --question <question>`
+- `scripts/xinao.py research-state inspect --root <series>`
+- `scripts/xinao.py research-state recover-partial --root <series>`
+
+`advance` copies the exact prior state, candidate, result, and sealed receipt into the next
+one-shot material bundle and commits only after sealed provider/material evidence validates. The
+expected head is a compare-and-swap boundary. `recover-partial` only removes a validated,
+uncommitted `series.json` left before the first head publish and preserves orphan CAS bytes; it is
+not research resumption. Every result keeps `research_progress_claim_allowed`, `science_restored`,
+`parent_complete`, and `completion_claim_allowed` false. This carrier proves neither multi-round
+inquiry nor researcher role fitness and must remain distinguishable from a real long-running
+ResearchEpisode.
+
 For shadow lifecycle, require `inspect` to report `shadow.runtime_status=AVAILABLE` (source
 registration, live image shadow labels, and `installed_projection.status=ALIGNED`). Then use the
 installed Skill only:
