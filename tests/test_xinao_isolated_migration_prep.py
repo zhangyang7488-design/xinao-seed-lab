@@ -584,12 +584,11 @@ def test_hardlink_in_rendering_fails(tmp_path: Path) -> None:
     completed = _run_helper(_prepare_args(world))
     blob = _combined_output(completed).lower()
     assert completed.returncode != 0
-    assert (
-        "hardlink" in blob
-        or "nlink" in blob
-        or "ambiguity" in blob
-        or "file_identity_invalid" in blob
-    )
+    # A probe failure is not evidence that the hardlink was detected. The helper
+    # must obtain the platform's real link count and reject the nlink ambiguity.
+    assert "hardlink_probe_failed" not in blob
+    assert "hardlink ambiguity" in blob
+    assert "nlink=2" in blob
 
 
 def test_receipt_non_claims_and_inventory_contract(tmp_path: Path) -> None:

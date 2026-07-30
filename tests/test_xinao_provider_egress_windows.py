@@ -2327,6 +2327,7 @@ def test_raw_cleanup_target_containment(tmp_path: Path) -> None:
     assert "REJECTED_DIR_OK" in proc.stdout
 
 
+@pytest.mark.skipif(os.name != "nt", reason="Windows junction integration")
 @requires_pwsh
 def test_raw_cleanup_rejects_reparse_junction(tmp_path: Path) -> None:
     common = (SCRIPTS / "XinaoEgressOwner.Common.ps1").as_posix()

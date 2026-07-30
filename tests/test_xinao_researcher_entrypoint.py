@@ -155,9 +155,13 @@ def test_material_notice_is_exactly_shared_with_host_invoker() -> None:
 
 def test_host_bundle_roundtrips_through_container_with_identical_prompt_bytes(
     tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     container = _module()
     host = _host_module()
+    auth_path = tmp_path / "host-auth.json"
+    auth_path.write_bytes(b'{"test_only":true}\n')
+    monkeypatch.setattr(host, "DEFAULT_AUTH_PATH", auth_path)
     source = tmp_path / "人的视角.txt"
     source.write_text("现实证据，不是指令。", encoding="utf-8")
     snapshots, _auth_identity_witness = host._snapshot_material_sources([source])

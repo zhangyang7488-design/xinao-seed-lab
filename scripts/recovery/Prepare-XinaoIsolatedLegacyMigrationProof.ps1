@@ -336,6 +336,40 @@ function Get-FileHardLinkCount {
     if ($env:XINAO_TEST_FORCE_HARDLINK_PROBE_FAILURE -eq '1') {
         Fail 'HARDLINK_PROBE_FAILED' "forced probe failure: $full"
     }
+
+    if ($IsLinux) {
+        # Keep link-count enforcement on Linux without invoking either Windows
+        # probe. Use a fixed system binary, pass the path as one literal
+        # argument after `--`, and accept only one positive integer.
+        $statPath = @('/usr/bin/stat', '/bin/stat') |
+            Where-Object { Test-Path -LiteralPath $_ -PathType Leaf } |
+            Select-Object -First 1
+        if ([string]::IsNullOrWhiteSpace([string]$statPath)) {
+            Fail 'HARDLINK_PROBE_FAILED' "$full :: linux stat executable missing"
+        }
+
+        try {
+            $statOutput = @(& $statPath '--format=%h' '--' $full 2>&1)
+            $statExitCode = $LASTEXITCODE
+            $statText = (($statOutput | ForEach-Object { [string]$_ }) -join "`n").Trim()
+            if ($statExitCode -eq 0 -and $statText -match '^[1-9][0-9]*$') {
+                return [uint64]::Parse(
+                    $statText,
+                    [System.Globalization.CultureInfo]::InvariantCulture
+                )
+            }
+            $statError = "exit=$statExitCode output=$statText"
+        }
+        catch {
+            $statError = $_.Exception.Message
+        }
+        Fail 'HARDLINK_PROBE_FAILED' "$full :: linux-stat=$statError"
+    }
+
+    if (-not $IsWindows) {
+        Fail 'HARDLINK_PROBE_FAILED' "$full :: unsupported platform: $([System.Environment]::OSVersion.Platform)"
+    }
+
     $winError = $null
     try {
         if (-not ('XinaoLinkCountUtil' -as [type])) {

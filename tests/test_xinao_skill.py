@@ -4603,6 +4603,8 @@ def test_thin_bundle_inventory_rejects_case_empty_dir_and_count_drift(
         active["skill_bundle_manifest_sha256"] = manifest["skill_bundle_manifest_sha256"]
         active["skill_bundle_tree_sha256"] = manifest["skill_bundle_tree_sha256"]
     bootstrap = _bootstrap_module()
+    if mutation == "case_collision":
+        monkeypatch.setattr(bootstrap.os.path, "normcase", lambda value: value)
     with pytest.raises(bootstrap.BootstrapError) as failure:
         bootstrap._validate_bundle(
             release_root=manifest_path.parent,
@@ -4610,11 +4612,11 @@ def test_thin_bundle_inventory_rejects_case_empty_dir_and_count_drift(
             active=active,
         )
     expected_codes = {
-        "case_collision": {"SKILL_BUNDLE_PATH_COLLISION"},
-        "extra_empty_dir": {"SKILL_BUNDLE_FILE_SET_MISMATCH"},
-        "too_many": {"SKILL_BUNDLE_INVENTORY_INVALID"},
+        "case_collision": "SKILL_BUNDLE_PATH_COLLISION",
+        "extra_empty_dir": "SKILL_BUNDLE_FILE_SET_MISMATCH",
+        "too_many": "SKILL_BUNDLE_INVENTORY_INVALID",
     }
-    assert failure.value.reason_code in expected_codes[mutation]
+    assert failure.value.reason_code == expected_codes[mutation]
 
 
 def test_thin_child_executes_the_exact_verified_runtime_bytes() -> None:

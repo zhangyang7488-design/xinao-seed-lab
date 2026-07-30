@@ -792,7 +792,9 @@ def _validate_bundle(
         expected_rows[relative] = row
     if ordered_paths != sorted(ordered_paths):
         raise BootstrapError("SKILL_BUNDLE_INVENTORY_ORDER_INVALID", str(bundle_manifest_path))
-    normalized_paths = [os.path.normcase(value) for value in ordered_paths]
+    # Bundle names have one portable identity contract: a release that would
+    # collide on a case-insensitive consumer is rejected on every host.
+    normalized_paths = [value.casefold() for value in ordered_paths]
     if len(normalized_paths) != len(set(normalized_paths)):
         raise BootstrapError("SKILL_BUNDLE_PATH_COLLISION", str(bundle_manifest_path))
     try:
