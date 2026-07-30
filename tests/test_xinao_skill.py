@@ -4949,9 +4949,7 @@ def test_build_stages_locked_shadow_runtime_into_docker_context(
     assert observed["tree"] == expected_tree
     manifest = module._load_json(Path(receipt["release_manifest_path"]))
     assert manifest["source_identity"]["shadow_runtime_tree_sha256"] == expected_tree
-    assert (
-        manifest["image_labels"]["io.xinao.researcher.shadow-runtime.sha256"] == expected_tree
-    )
+    assert manifest["image_labels"]["io.xinao.researcher.shadow-runtime.sha256"] == expected_tree
     # Build context is cleaned after success.
     assert not Path(str(observed["context"])).exists()
 
