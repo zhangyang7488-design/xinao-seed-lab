@@ -405,6 +405,16 @@ def _paths_equal(left: Path, right: Path) -> bool:
     return os.path.normcase(os.path.abspath(left)) == os.path.normcase(os.path.abspath(right))
 
 
+def _reject_crlf_source_bytes(label: str, path: Path, payload: bytes) -> None:
+    """Reject Git-clean false identity: worktree CRLF under core.autocrlf while status is clean."""
+
+    if b"\r" in payload:
+        raise XinaoError(
+            "SOURCE_CRLF_FORBIDDEN",
+            f"{label}:{path}: raw bytes contain CR; require LF materialization for hashed Linux/build assets",
+        )
+
+
 def _state_paths() -> dict[str, Path]:
     state_root, _ = _state_roots()
     capability_root = state_root / "researcher_container"
@@ -1812,6 +1822,13 @@ def _validate_journal(journal: dict[str, Any], journal_path: Path) -> None:
             raise XinaoError("ACTIVATION_SOURCE_INVALID", "legacy_pointer.schema_version")
         if from_value.get("previous_verified") is not None:
             _validate_release_ref(from_value["previous_verified"])
+        # Bind restore absolute path to this journal's transaction root only.
+        assert isinstance(txn_id, str)
+        _bound_legacy_restore_root(txn_id, from_value.get("legacy_restore_path"))
+        if HEX_SHA256_PATTERN.fullmatch(str(from_value.get("legacy_restore_manifest_sha256", ""))) is None:
+            raise XinaoError("ACTIVATION_SOURCE_INVALID", "legacy_restore_manifest_sha256")
+        if HEX_SHA256_PATTERN.fullmatch(str(from_value.get("legacy_restore_tree_sha256", ""))) is None:
+            raise XinaoError("ACTIVATION_SOURCE_INVALID", "legacy_restore_tree_sha256")
     elif from_value is not None:
         if not isinstance(from_value, dict) or set(from_value) != {
             "generation",
@@ -2039,10 +2056,18 @@ def build_release(
     source_rows = _source_bundle_files(source_skill)
     bundle_manifest = _skill_bundle_manifest(source_rows, package_version=package_version)
     hashes = _reference_hashes(source_skill)
+    dockerfile_bytes = dockerfile.read_bytes()
+    entrypoint_bytes = entrypoint.read_bytes()
+    _reject_crlf_source_bytes("dockerfile", dockerfile, dockerfile_bytes)
+    _reject_crlf_source_bytes("entrypoint", entrypoint, entrypoint_bytes)
+    invoker_path = source_skill / "scripts" / "xinao.py"
+    runtime_path = source_skill / "scripts" / "xinao_runtime.py"
+    _reject_crlf_source_bytes("skill_invoker", invoker_path, invoker_path.read_bytes())
+    _reject_crlf_source_bytes("skill_runtime", runtime_path, runtime_path.read_bytes())
     hashes.update(
         {
-            "dockerfile_sha256": _sha256(dockerfile),
-            "entrypoint_sha256": _sha256(entrypoint),
+            "dockerfile_sha256": _sha256_bytes(dockerfile_bytes),
+            "entrypoint_sha256": _sha256_bytes(entrypoint_bytes),
         }
     )
     docker = _docker()
@@ -2601,9 +2626,11 @@ def _complete_canary(
 def _bound_legacy_restore_root(txn_id: str, restore_path_value: object) -> Path:
     """Bind a MIGRATE journal restore path to this txn; reject foreign/reparse paths."""
 
-    if not isinstance(restore_path_value, str) or not restore_path_value:
+    if not isinstance(restore_path_value, (str, os.PathLike)) or not os.fspath(
+        restore_path_value
+    ):
         raise XinaoError("LEGACY_RESTORE_PATH_INVALID", "legacy_restore_path")
-    restore_root = Path(restore_path_value)
+    restore_root = Path(os.fspath(restore_path_value))
     if not restore_root.is_absolute():
         raise XinaoError("LEGACY_RESTORE_PATH_INVALID", f"relative:{restore_root}")
     expected = _state_paths()["transaction_root"] / txn_id / "legacy_restore"
@@ -3381,6 +3408,7 @@ def _capture_legacy_restore_bundle(
         restore_root,
         expected_manifest_sha256=restore_manifest_sha256,
         expected_tree_sha256=tree_sha256,
+        expected_txn_id=txn_id,
     )
     if verified["legacy_pointer_sha256"] != legacy_pointer_sha256:
         raise XinaoError("LEGACY_RESTORE_IDENTITY_MISMATCH", "pointer")
@@ -3402,7 +3430,12 @@ def _verify_legacy_restore_bundle(
     *,
     expected_manifest_sha256: str,
     expected_tree_sha256: str,
+    expected_txn_id: str | None = None,
 ) -> dict[str, Any]:
+    if expected_txn_id is not None:
+        bound = _bound_legacy_restore_root(expected_txn_id, restore_root)
+        if not _paths_equal(bound, restore_root):
+            raise XinaoError("LEGACY_RESTORE_PATH_INVALID", str(restore_root))
     manifest_path = restore_root / "restore.manifest.json"
     if not manifest_path.is_file():
         raise XinaoError("LEGACY_RESTORE_CAPTURE_FAILED", str(manifest_path))
@@ -3414,6 +3447,11 @@ def _verify_legacy_restore_bundle(
         or manifest.get("tree_sha256") != expected_tree_sha256
     ):
         raise XinaoError("LEGACY_RESTORE_IDENTITY_MISMATCH", "restore_manifest_shape")
+    if expected_txn_id is not None and manifest.get("txn_id") != expected_txn_id:
+        raise XinaoError(
+            "LEGACY_RESTORE_IDENTITY_MISMATCH",
+            f"txn_id sealed={manifest.get('txn_id')} expected={expected_txn_id}",
+        )
     inventory = manifest.get("inventory")
     if not isinstance(inventory, dict):
         raise XinaoError("LEGACY_RESTORE_IDENTITY_MISMATCH", "inventory")
@@ -3601,9 +3639,10 @@ def _switch_migrate_pointer(
         raise XinaoError("CURRENT_POINTER_CAS_CONFLICT", str(pointer_path))
     # Re-verify sealed legacy restore immediately before the first pointer mutation.
     _verify_legacy_restore_bundle(
-        Path(str(from_value["legacy_restore_path"])),
+        _bound_legacy_restore_root(str(journal["txn_id"]), from_value["legacy_restore_path"]),
         expected_manifest_sha256=str(from_value["legacy_restore_manifest_sha256"]),
         expected_tree_sha256=str(from_value["legacy_restore_tree_sha256"]),
+        expected_txn_id=str(journal["txn_id"]),
     )
     pointer = {
         "schema_version": CURRENT_POINTER_SCHEMA,
@@ -3917,6 +3956,7 @@ def bootstrap_migrate() -> dict[str, Any]:
             restore_root,
             expected_manifest_sha256=restore_manifest_sha,
             expected_tree_sha256=restore_tree_sha,
+            expected_txn_id=txn_id,
         )
         now = _utc_now()
         journal = {
@@ -4027,6 +4067,54 @@ def _docker_json_inspect(docker: str, kind: str, target: str) -> dict[str, Any]:
     if not isinstance(values, list) or len(values) != 1 or not isinstance(values[0], dict):
         raise XinaoError("EGRESS_OBJECT_INSPECT_INVALID", f"{kind}:{target}")
     return values[0]
+
+
+def _docker_exec_bytes(docker: str, container: str, *command: str) -> bytes:
+    """Exact container bytes for live-config CAS (no text decoding drift)."""
+
+    if not command:
+        raise XinaoError("EGRESS_LIVE_CONFIG_UNOBSERVED", "empty exec command")
+    try:
+        completed = subprocess.run(
+            [docker, "exec", container, *command],
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            timeout=30,
+            check=False,
+        )
+    except subprocess.TimeoutExpired as exc:
+        raise XinaoError("EGRESS_LIVE_CONFIG_UNOBSERVED", "docker exec timeout") from exc
+    except OSError as exc:
+        raise XinaoError("EGRESS_LIVE_CONFIG_UNOBSERVED", str(exc)) from exc
+    if completed.returncode != 0:
+        stderr = completed.stderr[:2000].decode("utf-8", errors="replace")
+        raise XinaoError(
+            "EGRESS_LIVE_CONFIG_UNOBSERVED",
+            f"exit={completed.returncode} stderr={stderr}",
+        )
+    return completed.stdout
+
+
+def _observe_live_proxy_config_sha256(docker: str, proxy_container_id: str) -> str:
+    """Hash the rendered conf inside the running proxy; posture alone is not enough."""
+
+    payload = _docker_exec_bytes(
+        docker,
+        proxy_container_id,
+        "/bin/cat",
+        "/var/spool/squid/squid.conf",
+    )
+    if not payload:
+        raise XinaoError("EGRESS_LIVE_CONFIG_UNOBSERVED", "empty squid.conf")
+    if b"\r" in payload:
+        raise XinaoError("EGRESS_LIVE_CONFIG_INVALID", "CR present in live squid.conf")
+    if b"http_access deny all" not in payload:
+        raise XinaoError("EGRESS_LIVE_CONFIG_INVALID", "missing deny all")
+    if b"http_access allow all" in payload.lower():
+        # Squid is case-insensitive for directives; reject any allow-all breakout.
+        raise XinaoError("EGRESS_LIVE_CONFIG_INVALID", "http_access allow all present")
+    return _sha256_bytes(payload)
 
 
 def _validate_egress_posture_shape(posture: dict[str, Any]) -> dict[str, Any]:
@@ -4176,6 +4264,14 @@ def _compare_live_egress_objects(
             if bindings:
                 raise XinaoError("EGRESS_HOST_PORT_PUBLISH_FORBIDDEN", str(ports))
 
+    # Live config CAS: offline render receipt / posture hash is not sufficient.
+    live_proxy_config_sha256 = _observe_live_proxy_config_sha256(docker, live_proxy_id)
+    if live_proxy_config_sha256 != posture["proxy_config_sha256"]:
+        raise XinaoError(
+            "EGRESS_LIVE_CONFIG_HASH_MISMATCH",
+            f"live={live_proxy_config_sha256} posture={posture['proxy_config_sha256']}",
+        )
+
     # Runtime lock name refs must agree with posture (sealed source defaults).
     if runtime_lock.get("egress_internal_network_name") not in (None, EGRESS_INTERNAL_NETWORK_NAME):
         if runtime_lock.get("egress_internal_network_name") != network_name:
@@ -4199,6 +4295,7 @@ def _compare_live_egress_objects(
         "proxy_endpoint": posture["proxy_endpoint"],
         "allowlist_sha256": posture["allowlist_sha256"],
         "proxy_config_sha256": posture["proxy_config_sha256"],
+        "live_proxy_config_sha256": live_proxy_config_sha256,
         "proxy_networks": sorted(network_keys),
         "host_port_published": False,
         "dify_cross_project": False,

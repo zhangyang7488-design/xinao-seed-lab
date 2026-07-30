@@ -19,6 +19,11 @@ services/agent_runtime/foundation_continuous_workflow_v2.py text eol=lf
 skills/xinao/scripts/xinao.py text eol=lf
 skills/xinao/scripts/xinao_runtime.py text eol=lf
 docker/xinao-researcher-egress/** text eol=lf
+# Researcher image build surfaces are content-addressed (entrypoint/dockerfile
+# sha256). Without eol=lf, Windows core.autocrlf yields raw-byte hashes that
+# diverge from Git blobs / Linux checkouts while `git status` stays clean.
+docker/xinao-researcher/entrypoint.py text eol=lf
+docker/xinao-researcher/Dockerfile text eol=lf
 scripts/verify_f4_live_canary_pack.py text eol=lf
 scripts/verify_f4_negative_companion_pack.py text eol=lf
 scripts/verify_f4_portfolio_source_canary_pack.py text eol=lf

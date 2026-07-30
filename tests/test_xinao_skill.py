@@ -2669,6 +2669,7 @@ def test_apply_legacy_restore_rejects_path_escape_outside_owned_root(
         restore_root,
         expected_manifest_sha256=journal["from"]["legacy_restore_manifest_sha256"],
         expected_tree_sha256=journal["from"]["legacy_restore_tree_sha256"],
+        expected_txn_id=str(journal["txn_id"]),
     )
     # Retarget sealed install path outside the live install root; must fail closed.
     hostile = dict(restore_manifest)
@@ -2678,6 +2679,46 @@ def test_apply_legacy_restore_rejects_path_escape_outside_owned_root(
     assert failure.value.reason_code == "LEGACY_RESTORE_PATH_INVALID"
     assert world["pointer_path"].read_bytes() == world["legacy_bytes"]
     monkeypatch.setattr(module, "_continue_migrate_journal", original_continue)
+
+
+def test_migrate_journal_rejects_foreign_absolute_restore_path(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    module = _module()
+    world = _prepare_v1_migration_world(module, tmp_path, monkeypatch)
+    monkeypatch.setattr(
+        module, "_run_activation_canary", lambda value: _canary_value(module, value)
+    )
+
+    def stop_prepared(journal, journal_path):
+        assert journal["state"] == "PREPARED"
+        raise module.XinaoError("INJECTED_STOP", "hold restore")
+
+    monkeypatch.setattr(module, "_continue_migrate_journal", stop_prepared)
+    with pytest.raises(module.XinaoError):
+        module.bootstrap_migrate()
+    journal, journal_path = module._pending_journals()[0]
+    foreign = tmp_path / "foreign_restore"
+    foreign.mkdir()
+    hostile = dict(journal)
+    hostile_from = dict(journal["from"])
+    hostile_from["legacy_restore_path"] = str(foreign)
+    hostile["from"] = hostile_from
+    with pytest.raises(module.XinaoError) as failure:
+        module._validate_journal(hostile, journal_path)
+    assert failure.value.reason_code == "LEGACY_RESTORE_PATH_INVALID"
+    assert world["pointer_path"].read_bytes() == world["legacy_bytes"]
+
+
+def test_reject_crlf_source_bytes_for_build_identity() -> None:
+    module = _module()
+    with pytest.raises(module.XinaoError) as failure:
+        module._reject_crlf_source_bytes(
+            "entrypoint",
+            Path("docker/xinao-researcher/entrypoint.py"),
+            b"print('x')\r\n",
+        )
+    assert failure.value.reason_code == "SOURCE_CRLF_FORBIDDEN"
 
 
 def test_post_success_migrate_rollback_restores_sealed_v1_world(
@@ -3134,7 +3175,11 @@ def test_heal_refuses_tampered_restore_bundle_without_false_terminal(
     dirty.write_bytes(b"impure\n")
     with pytest.raises(module.XinaoError) as failure:
         module._heal_restored_migrate_journal_if_needed(module._sha256(world["pointer_path"]))
-    assert failure.value.reason_code in {"RECOVERY_REQUIRED", "RECOVERY_CONFLICT"}
+    assert failure.value.reason_code in {
+        "RECOVERY_REQUIRED",
+        "RECOVERY_CONFLICT",
+        "LEGACY_RESTORE_PATH_INVALID",
+    }
     assert module._load_json(module._journal_path(txn_id))["state"] == "VERIFIED"
     # bootstrap_migrate must not start a new migration over the conflicted witness.
     with pytest.raises(module.XinaoError) as migrate_failure:
@@ -3269,7 +3314,11 @@ def test_failed_heal_blocks_new_migration(
     }
     with pytest.raises(module.XinaoError) as failure:
         module.bootstrap_migrate()
-    assert failure.value.reason_code in {"RECOVERY_REQUIRED", "RECOVERY_CONFLICT"}
+    assert failure.value.reason_code in {
+        "RECOVERY_REQUIRED",
+        "RECOVERY_CONFLICT",
+        "LEGACY_RESTORE_PATH_INVALID",
+    }
     after_journals = {
         path.name
         for path in module._state_paths()["transaction_root"].iterdir()
@@ -3277,7 +3326,9 @@ def test_failed_heal_blocks_new_migration(
     }
     assert after_journals == before_journals
     assert module._load_json(module._journal_path(txn_id))["state"] == "VERIFIED"
-    assert not module._pending_journals()
+    with pytest.raises(module.XinaoError) as pending_failure:
+        module._pending_journals()
+    assert pending_failure.value.reason_code == "LEGACY_RESTORE_PATH_INVALID"
 
 
 def test_canary_failure_migrate_rollback_trigger_differs_from_requested(

@@ -248,9 +248,14 @@ def test_live_compare_fail_closed_mismatches() -> None:
 
         return _inspect
 
+    # Offline tests previously passed with posture hash alone; live CAS is mandatory.
+    module._observe_live_proxy_config_sha256 = (  # type: ignore[method-assign]
+        lambda docker, proxy_id: posture["proxy_config_sha256"]
+    )
     module._docker_json_inspect = inspect_factory()  # type: ignore[method-assign]
     observed = module._compare_live_egress_objects("docker", posture, lock)
     assert observed["internal"] is True
+    assert observed["live_proxy_config_sha256"] == posture["proxy_config_sha256"]
 
     # Not internal
     module._docker_json_inspect = inspect_factory(
@@ -587,6 +592,11 @@ def test_entrypoint_writes_conf_to_tmpfs_and_guards_acl_injection() -> None:
     assert "squid -f \"${SQUID_CONF}\"" in entry or 'squid -f "${SQUID_CONF}"' in entry
     assert "PROVIDER_DSTDOMAIN_ACL must be a single line" in entry
     assert "forbidden ACL fragments" in entry
+    # Template-env injection via HTTP_PORT/COREDUMP_DIR must fail closed.
+    assert "HTTP_PORT must be a single decimal TCP port" in entry
+    assert "COREDUMP_DIR must be a single absolute path" in entry
+    assert "http_access allow all" in entry
+    assert "live_proxy_config_sha256=" in entry
     # Must not write rendered conf onto read-only rootfs path as the only path.
     assert 'awk' in entry and 'SQUID_CONF' in entry
 
@@ -640,9 +650,71 @@ def test_empty_network_membership_fails_closed() -> None:
         return proxy_ok
 
     module._docker_json_inspect = _inspect  # type: ignore[method-assign]
+    module._observe_live_proxy_config_sha256 = (  # type: ignore[method-assign]
+        lambda docker, proxy_id: posture["proxy_config_sha256"]
+    )
     with pytest.raises(module.XinaoError) as err:
         module._compare_live_egress_objects("docker", posture, lock)
     assert err.value.reason_code == "EGRESS_NETWORK_MEMBERSHIP_INVALID"
+
+
+def test_live_config_hash_mismatch_fails_closed() -> None:
+    module = _runtime()
+    posture = _sample_posture()
+    lock = {
+        "network_profile": "EGRESS_BOUNDARY_REQUIRED_BEFORE_PROVIDER_CALL",
+        "provider_egress_runtime_verified": True,
+        "egress_internal_network_name": "xinao_researcher_internal",
+        "egress_proxy_endpoint": "http://xinao-researcher-egress-proxy:3128",
+        "egress_host_port_publish_allowed": False,
+    }
+    network_ok = {
+        "Id": posture["internal_network_id"],
+        "Name": posture["internal_network_name"],
+        "Internal": True,
+        "Containers": {
+            posture["proxy_container_id"]: {"Name": posture["proxy_container_name"]}
+        },
+    }
+    proxy_ok = {
+        "Id": posture["proxy_container_id"],
+        "Image": posture["proxy_image_id"],
+        "State": {"Running": True, "Status": "running"},
+        "NetworkSettings": {
+            "Networks": {
+                "xinao_researcher_internal": {},
+                "xinao_provider_egress_ext": {},
+            },
+            "Ports": {},
+        },
+    }
+
+    def _inspect(docker, kind, target):
+        if kind == "network":
+            return network_ok
+        return proxy_ok
+
+    module._docker_json_inspect = _inspect  # type: ignore[method-assign]
+    module._observe_live_proxy_config_sha256 = (  # type: ignore[method-assign]
+        lambda docker, proxy_id: "f" * 64
+    )
+    with pytest.raises(module.XinaoError) as err:
+        module._compare_live_egress_objects("docker", posture, lock)
+    assert err.value.reason_code == "EGRESS_LIVE_CONFIG_HASH_MISMATCH"
+
+
+def test_researcher_image_sources_are_lf_and_gitattributes_pinned() -> None:
+    attrs = (ROOT / ".gitattributes").read_text(encoding="utf-8")
+    assert "docker/xinao-researcher/entrypoint.py text eol=lf" in attrs
+    assert "docker/xinao-researcher/Dockerfile text eol=lf" in attrs
+    for rel in (
+        "docker/xinao-researcher/entrypoint.py",
+        "docker/xinao-researcher/Dockerfile",
+        "skills/xinao/scripts/xinao.py",
+        "skills/xinao/scripts/xinao_runtime.py",
+    ):
+        raw = (ROOT / rel).read_bytes()
+        assert b"\r" not in raw, rel
 
 
 def test_container_rejects_no_proxy_star_and_extra_hosts(tmp_path: Path) -> None:
