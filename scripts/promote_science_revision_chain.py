@@ -360,6 +360,31 @@ def _is_reparse_path(path: Path) -> bool:
     return bool(attrs & _FILE_ATTRIBUTE_REPARSE_POINT)
 
 
+def _paths_share_inode(left: Path, right: Path) -> bool:
+    """True when both paths resolve to the same openable file identity."""
+
+    try:
+        return left.exists() and right.exists() and left.samefile(right)
+    except OSError:
+        return False
+
+
+def _assert_independent_ordinary_file(path: Path, *, role: str) -> os.stat_result:
+    """Reject reparse points, non-files, and multi-link/shared-inode carriers."""
+
+    if _is_reparse_path(path):
+        raise FileExistsError(f"{role} is a reparse point: {path}")
+    try:
+        st = path.lstat()
+    except OSError as exc:
+        raise FileNotFoundError(f"{role} is unreadable: {path}") from exc
+    if not path.is_file() or stat.S_ISDIR(st.st_mode):
+        raise FileExistsError(f"{role} is not a regular file: {path}")
+    if int(st.st_nlink) != 1:
+        raise FileExistsError(f"{role} is a hardlink or shared inode: {path}")
+    return st
+
+
 def _assert_stable_guard_carrier(lease_path: Path) -> None:
     """Require an absent path or a persistent empty ordinary-file lock carrier."""
 
@@ -375,6 +400,25 @@ def _assert_stable_guard_carrier(lease_path: Path) -> None:
         raise RuntimeError("science promotion guard is not a regular file")
     if st.st_size != 0:
         raise RuntimeError("science promotion guard is foreign or tampered")
+    if int(st.st_nlink) != 1:
+        raise RuntimeError("science promotion guard is a hardlink or shared inode")
+
+
+def _revalidate_guard_after_open(lease_path: Path, handle: Any) -> None:
+    """Re-check ordinary/empty/single-link carrier after open and after lock."""
+
+    _assert_stable_guard_carrier(lease_path)
+    try:
+        st = os.fstat(handle.fileno())
+    except OSError as exc:
+        raise RuntimeError("science promotion guard is unreadable") from exc
+    if int(st.st_size) != 0:
+        raise RuntimeError("science promotion guard is foreign or tampered")
+    if int(st.st_nlink) != 1:
+        raise RuntimeError("science promotion guard is a hardlink or shared inode")
+    handle.seek(0, os.SEEK_END)
+    if handle.tell() != 0:
+        raise RuntimeError("science promotion guard is foreign or tampered")
 
 
 def _seal_preimage(target: Path, archive: Path) -> _SealedPreimage:
@@ -382,6 +426,11 @@ def _seal_preimage(target: Path, archive: Path) -> _SealedPreimage:
 
     Exact-hash idempotent: an existing archive whose digest matches the live
     target is accepted as an already-materialized preimage (crash convergence).
+
+    Seals must never share an inode with the live target or any other name:
+    chmod/write on a hardlinked archive would mutate live mode/content during
+    MATERIALIZING. Reparse points and multi-link carriers fail closed before any
+    mode or content mutation.
     """
 
     target = target.resolve()
@@ -393,14 +442,22 @@ def _seal_preimage(target: Path, archive: Path) -> _SealedPreimage:
     raw = target.read_bytes()
     digest = _sha256_bytes(raw)
     if archive.exists():
-        if _is_reparse_path(archive) or not archive.is_file():
-            raise FileExistsError(f"rollback copy is not a regular file: {archive}")
+        _assert_independent_ordinary_file(archive, role="rollback copy")
+        if _paths_share_inode(archive, target):
+            raise FileExistsError(
+                f"rollback copy shares inode/samefile with live target: {archive}"
+            )
         existing = _sha256(archive)
         if existing != digest:
             raise FileExistsError(f"rollback copy already exists with divergent content: {archive}")
-        # Converge seal mode without mutating live targets.
+        # Converge seal mode without mutating live targets (identity already proven independent).
         os.chmod(archive, seal_mode | stat.S_IWRITE)
         os.chmod(archive, seal_mode)
+        _assert_independent_ordinary_file(archive, role="rollback copy")
+        if _paths_share_inode(archive, target):
+            raise FileExistsError(
+                f"rollback copy shares inode/samefile with live target: {archive}"
+            )
         return _SealedPreimage(
             sha256=digest,
             original_mode=original_mode,
@@ -413,6 +470,9 @@ def _seal_preimage(target: Path, archive: Path) -> _SealedPreimage:
         raw,
         installed_mode=seal_mode,
     )
+    _assert_independent_ordinary_file(archive, role="rollback copy")
+    if _paths_share_inode(archive, target):
+        raise RuntimeError(f"rollback copy shares inode/samefile with live target: {archive}")
     if _sha256(archive) != digest:
         raise RuntimeError(f"rollback copy failed readback: {archive}")
     return _SealedPreimage(
@@ -434,19 +494,21 @@ def _promotion_lease_path(projection_path: Path) -> Path:
 def _acquire_promotion_lease(projection_path: Path) -> _PromotionLease:
     lease_path = _promotion_lease_path(projection_path.resolve())
     lease_path.parent.mkdir(parents=True, exist_ok=True)
-    # Persistent empty ordinary-file carrier. Non-empty / foreign / reparse fail closed.
+    # Persistent empty ordinary-file carrier. Non-empty / foreign / reparse / multi-link fail closed.
     _assert_stable_guard_carrier(lease_path)
     handle = lease_path.open("a+b")
     try:
-        # Re-check after open: refuse if another writer expanded the carrier.
-        handle.seek(0, os.SEEK_END)
-        if handle.tell() != 0:
-            handle.close()
-            raise RuntimeError("science promotion guard is foreign or tampered")
+        # Revalidate after open (ordinary, non-reparse, 0B, single-link) before lock.
+        _revalidate_guard_after_open(lease_path, handle)
         portalocker.lock(handle, portalocker.LOCK_EX | portalocker.LOCK_NB)
+        # Revalidate after lock: close TOCTOU windows against hardlink/reparse swap.
+        _revalidate_guard_after_open(lease_path, handle)
     except portalocker.exceptions.LockException as exc:
         handle.close()
         raise RuntimeError("science promotion lease is still owned") from exc
+    except BaseException:
+        handle.close()
+        raise
     return _PromotionLease(handle=handle, path=lease_path)
 
 
@@ -1196,26 +1258,37 @@ def _recover_materializing_transaction(
                 )
             )
         if archive.exists():
-            if _is_reparse_path(archive) or not archive.is_file():
+            try:
+                _assert_independent_ordinary_file(archive, role=f"{label} rollback copy")
+            except (FileExistsError, FileNotFoundError, OSError) as exc:
                 defects.append(
                     _dependency_defect(
                         "SCIENCE_" + label.upper().replace("-", "_") + "_ROLLBACK_INVALID",
-                        f"{label} rollback copy is not a regular file",
+                        f"{label} rollback copy is not an independent regular file: {exc}",
                         path=str(archive),
                     )
                 )
             else:
-                observed_archive = _sha256(archive)
-                if observed_archive != expected:
+                if _paths_share_inode(archive, live):
                     defects.append(
                         _dependency_defect(
-                            "SCIENCE_" + label.upper().replace("-", "_") + "_ROLLBACK_DRIFT",
-                            f"{label} rollback copy diverged from expected preimage",
+                            "SCIENCE_" + label.upper().replace("-", "_") + "_ROLLBACK_INVALID",
+                            f"{label} rollback copy shares inode/samefile with live target",
                             path=str(archive),
-                            expected=expected,
-                            observed=observed_archive,
                         )
                     )
+                else:
+                    observed_archive = _sha256(archive)
+                    if observed_archive != expected:
+                        defects.append(
+                            _dependency_defect(
+                                "SCIENCE_" + label.upper().replace("-", "_") + "_ROLLBACK_DRIFT",
+                                f"{label} rollback copy diverged from expected preimage",
+                                path=str(archive),
+                                expected=expected,
+                                observed=observed_archive,
+                            )
+                        )
     if defects:
         raise SciencePublicationError(
             "SCIENCE_MATERIALIZING_RECOVERY_FAILED",
@@ -1459,8 +1532,12 @@ def _promote_revision_chain_impl(
                     ],
                 }
             )
-        _write_json_atomic(journal_path, journal)
+        # Pre-materialization anchor first: crash before journal is discoverable and
+        # recoverable without leaving an orphan journal that blocks republish.
+        # Crash after journal (still before the first rollback copy) recovers the
+        # bound MATERIALIZING journal via the same marker.
         _write_json_atomic(marker_path, _marker_payload(journal_path))
+        _write_json_atomic(journal_path, journal)
 
         sealed_modes: dict[str, int] = {}
         for _label, prefix, live, archive, expected in _materializing_seal_plan(journal):
@@ -1552,11 +1629,11 @@ def _promote_revision_chain_impl(
             _write_json_atomic(journal_path, journal)
             live_resolution = load_science_active_parent(projection_path)
         except BaseException as primary:
+            # A durable COMMITTED journal is never rolled back merely because
+            # same-process post-commit consumer readback fails (including v1.10
+            # four-target mode). Marker remains for recovery; postimages stay.
             if journal.get("status") == COMMITTED:
-                if not prepared.v110:
-                    raise
-                journal["status"] = ROLLING_BACK
-                _write_json_atomic(journal_path, journal)
+                raise
             failures: list[BaseException] = [primary]
             try:
                 _restore_transaction_preimages(
@@ -1707,14 +1784,28 @@ def publish_science_revision_transaction(
     )
 
 
-def _load_marker_and_journal(projection_path: Path) -> tuple[Path, dict[str, Any]] | None:
+def _load_marker_and_journal(
+    projection_path: Path,
+) -> tuple[Path, dict[str, Any]] | None | str:
+    """Load the marker-bound journal, or signal a cleared pre-materialization anchor.
+
+    Returns:
+      - ``None`` when no marker is present
+      - ``\"PRE_MATERIALIZATION_ABORTED\"`` when a marker pointed at a missing
+        journal and the discoverable anchor was cleared
+      - ``(journal_path, journal)`` for a bound durable journal
+    """
+
     marker_path = _promotion_marker_path(projection_path.resolve()).resolve()
     if not marker_path.exists():
         return None
     marker = _load_json(marker_path)
     journal_path = Path(str(marker.get("journal_path", ""))).resolve()
     if not journal_path.is_file():
-        raise RuntimeError("science promotion marker journal is missing")
+        # Crash after pre-materialization marker and before journal: clear the
+        # discoverable anchor so republish is not permanently blocked.
+        marker_path.unlink(missing_ok=True)
+        return "PRE_MATERIALIZATION_ABORTED"
     journal = _load_json(journal_path)
     if journal.get("schema_version") != TRANSACTION_SCHEMA:
         raise RuntimeError("science promotion journal schema is invalid")
@@ -1865,6 +1956,14 @@ def recover_interrupted_promotion(projection_path: Path) -> dict[str, Any]:
                 "schema_version": RESULT_SCHEMA,
                 "status": "NO_INTERRUPTED_TRANSACTION",
                 "projection_path": str(projection_path),
+                "completion_claim_allowed": False,
+            }
+        if loaded == "PRE_MATERIALIZATION_ABORTED":
+            return {
+                "schema_version": RESULT_SCHEMA,
+                "status": "PRE_MATERIALIZATION_ABORTED",
+                "projection_path": str(projection_path),
+                "pre_materialization_anchor_cleared": True,
                 "completion_claim_allowed": False,
             }
         journal_path, journal = loaded

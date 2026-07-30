@@ -3,7 +3,10 @@ from __future__ import annotations
 import json
 import os
 import stat
+import subprocess
+import sys
 import threading
+import time
 from pathlib import Path
 
 import pytest
@@ -1507,3 +1510,253 @@ def test_exact_hash_seal_is_idempotent_across_crash_convergence(tmp_path: Path) 
     divergent.write_text("other", encoding="utf-8")
     with pytest.raises(FileExistsError, match="divergent content"):
         promotion._seal_preimage(divergent, archive)
+
+
+def test_seal_preimage_rejects_hardlink_samefile_before_chmod(
+    tmp_path: Path,
+) -> None:
+    """Hardlinked/samefile rollback carriers must never touch live mode/content."""
+
+    live = tmp_path / "live.txt"
+    archive = tmp_path / "archive.txt"
+    live.write_text("live-payload", encoding="utf-8")
+    live.chmod(stat.S_IREAD | stat.S_IWRITE)
+    original_live_mode = stat.S_IMODE(live.stat().st_mode)
+    original_live_bytes = live.read_bytes()
+    try:
+        os.link(live, archive)
+    except OSError:
+        pytest.skip("hardlink creation unsupported on this volume")
+    assert archive.samefile(live)
+    assert archive.stat().st_nlink >= 2
+
+    with pytest.raises(FileExistsError, match="hardlink|shared inode|samefile"):
+        promotion._seal_preimage(live, archive)
+
+    assert live.read_bytes() == original_live_bytes
+    assert stat.S_IMODE(live.stat().st_mode) == original_live_mode
+    assert live.stat().st_mode & stat.S_IWRITE
+
+
+def test_seal_preimage_rejects_existing_hardlink_peer_before_chmod(
+    tmp_path: Path,
+) -> None:
+    live = tmp_path / "live.txt"
+    archive = tmp_path / "archive.txt"
+    peer = tmp_path / "peer.txt"
+    live.write_text("live-payload", encoding="utf-8")
+    live.chmod(stat.S_IREAD | stat.S_IWRITE)
+    archive.write_text("live-payload", encoding="utf-8")
+    try:
+        os.link(archive, peer)
+    except OSError:
+        pytest.skip("hardlink creation unsupported on this volume")
+    assert archive.stat().st_nlink >= 2
+    original_live_mode = stat.S_IMODE(live.stat().st_mode)
+    original_live_bytes = live.read_bytes()
+
+    with pytest.raises(FileExistsError, match="hardlink|shared inode"):
+        promotion._seal_preimage(live, archive)
+
+    assert live.read_bytes() == original_live_bytes
+    assert stat.S_IMODE(live.stat().st_mode) == original_live_mode
+
+
+def test_v110_four_target_retains_commit_on_post_commit_readback_failure(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Durable COMMITTED four-target journal is never rolled back on readback fail."""
+
+    fixture = _four_target_v110_fixture(tmp_path, monkeypatch)
+    targets = fixture["targets"]
+    assert isinstance(targets, dict)
+    preimages = fixture["preimages"]
+    assert isinstance(preimages, dict)
+    journal_path = Path(fixture["journal_path"])
+    marker_path = targets["projection"].with_name(f"{targets['projection'].name}.promotion.lock")
+    calls = 0
+
+    def fail_post_commit_readback(path: Path) -> dict[str, object]:
+        nonlocal calls
+        calls += 1
+        # Candidate projection validation uses the staged candidate once; live
+        # post-commit readback is the final load_science_active_parent call.
+        if path.resolve() == targets["projection"].resolve() and journal_path.is_file():
+            status = json.loads(journal_path.read_text(encoding="utf-8")).get("status")
+            if status == "COMMITTED":
+                raise ValueError("v1.10 post-commit consumer readback failed")
+        return _ready(path)
+
+    monkeypatch.setattr(promotion, "load_science_active_parent", fail_post_commit_readback)
+    with pytest.raises(ValueError, match="v1.10 post-commit consumer readback failed"):
+        promotion.publish_science_revision_transaction(**fixture["publish_kwargs"])
+
+    journal = json.loads(journal_path.read_text(encoding="utf-8"))
+    assert journal["status"] == "COMMITTED"
+    assert marker_path.is_file()
+    for label, path in targets.items():
+        assert path.read_bytes() != preimages[label]
+        committed_key = f"{label}_committed_sha256"
+        if committed_key in journal:
+            assert promotion._sha256(path) == journal[committed_key]
+    assert promotion._sha256(targets["active_parent"]) == journal["active_parent_committed_sha256"]
+    assert promotion._sha256(targets["projection"]) == journal["projection_committed_sha256"]
+    assert promotion._sha256(targets["transition"]) == journal["transition_committed_sha256"]
+    assert (
+        promotion._sha256(targets["archive_manifest"])
+        == journal["archive_manifest_committed_sha256"]
+    )
+
+    with pytest.raises(ValueError, match="v1.10 post-commit consumer readback failed"):
+        promotion.recover_interrupted_promotion(targets["projection"])
+    assert marker_path.is_file()
+    assert json.loads(journal_path.read_text(encoding="utf-8"))["status"] == "COMMITTED"
+
+    monkeypatch.setattr(promotion, "load_science_active_parent", _ready)
+    recovery = promotion.recover_interrupted_promotion(targets["projection"])
+    assert recovery["status"] == "COMMITTED_LOCK_CLEARED"
+    assert not marker_path.exists()
+    assert json.loads(journal_path.read_text(encoding="utf-8"))["status"] == "COMMITTED"
+    assert promotion._sha256(targets["active_parent"]) == journal["active_parent_committed_sha256"]
+    assert promotion._sha256(targets["projection"]) == journal["projection_committed_sha256"]
+
+
+@pytest.mark.parametrize("crash_side", ["after_marker_before_journal", "after_journal_before_seal"])
+def test_pre_materialization_crash_cuts_are_recoverable(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    crash_side: str,
+) -> None:
+    fixture = _four_target_v110_fixture(tmp_path, monkeypatch)
+    targets = fixture["targets"]
+    assert isinstance(targets, dict)
+    journal_path = Path(fixture["journal_path"])
+    marker_path = targets["projection"].with_name(f"{targets['projection'].name}.promotion.lock")
+    real_write = promotion._write_json_atomic
+
+    def crash_at_boundary(path: Path, payload: dict[str, object]) -> None:
+        resolved = path.resolve()
+        if crash_side == "after_marker_before_journal":
+            if resolved == marker_path.resolve():
+                real_write(path, payload)
+                raise RuntimeError("simulated crash after marker before journal")
+            real_write(path, payload)
+            return
+        # after_journal_before_seal: allow marker, write journal once, then crash
+        if resolved == journal_path.resolve() and payload.get("status") == "MATERIALIZING":
+            real_write(path, payload)
+            raise RuntimeError("simulated crash after journal before first seal")
+        real_write(path, payload)
+
+    monkeypatch.setattr(promotion, "_write_json_atomic", crash_at_boundary)
+    with pytest.raises(RuntimeError, match="simulated crash"):
+        promotion.publish_science_revision_transaction(**fixture["publish_kwargs"])
+
+    for label, path in targets.items():
+        assert path.read_bytes() == fixture["preimages"][label]
+    for rollback_copy in fixture["rollback_copies"].values():
+        assert not Path(str(rollback_copy)).exists()
+
+    if crash_side == "after_marker_before_journal":
+        assert marker_path.is_file()
+        assert not journal_path.exists()
+        recovery = promotion.recover_interrupted_promotion(targets["projection"])
+        assert recovery["status"] == "PRE_MATERIALIZATION_ABORTED"
+        assert recovery.get("pre_materialization_anchor_cleared") is True
+        assert not marker_path.exists()
+        assert not journal_path.exists()
+        # Republish must not be permanently blocked by an orphan journal.
+        monkeypatch.setattr(promotion, "_write_json_atomic", real_write)
+        kwargs = dict(fixture["publish_kwargs"])
+        kwargs["expected_projection_sha256"] = promotion._sha256(targets["projection"])
+        result = promotion.publish_science_revision_transaction(**kwargs)
+        assert result["transaction_status"] == "COMMITTED"
+        return
+
+    assert marker_path.is_file()
+    assert journal_path.is_file()
+    journal = json.loads(journal_path.read_text(encoding="utf-8"))
+    assert journal["status"] == "MATERIALIZING"
+    assert journal.get("projection_sealed") is False
+    recovery = promotion.recover_interrupted_promotion(targets["projection"])
+    assert recovery["status"] == "ROLLED_BACK_AFTER_CRASH"
+    assert recovery.get("materializing_aborted") is True
+    assert not marker_path.exists()
+    assert json.loads(journal_path.read_text(encoding="utf-8"))["status"] == (
+        "ROLLED_BACK_AFTER_CRASH"
+    )
+    for label, path in targets.items():
+        assert path.read_bytes() == fixture["preimages"][label]
+    monkeypatch.setattr(promotion, "_write_json_atomic", real_write)
+    kwargs = dict(fixture["publish_kwargs"])
+    kwargs["transaction_directory"] = tmp_path / "science-transaction-retry"
+    kwargs["expected_projection_sha256"] = promotion._sha256(targets["projection"])
+    result = promotion.publish_science_revision_transaction(**kwargs)
+    assert result["transaction_status"] == "COMMITTED"
+
+
+def test_promotion_guard_rejects_hardlink_carrier(tmp_path: Path) -> None:
+    projection, _evidence, _rollback = _fixture(tmp_path)
+    guard = promotion._promotion_lease_path(projection)
+    peer = tmp_path / "guard-peer"
+    guard.write_bytes(b"")
+    try:
+        os.link(guard, peer)
+    except OSError:
+        pytest.skip("hardlink creation unsupported on this volume")
+    assert guard.stat().st_nlink >= 2
+
+    with pytest.raises(RuntimeError, match="hardlink|shared inode"):
+        promotion._acquire_promotion_lease(projection)
+
+    assert guard.is_file()
+    assert guard.stat().st_size == 0
+
+
+def test_promotion_guard_serializes_independent_processes(tmp_path: Path) -> None:
+    """True cross-process lock serialization on the persistent empty guard."""
+
+    projection, _evidence, _rollback = _fixture(tmp_path)
+    guard = promotion._promotion_lease_path(projection)
+    ready_path = tmp_path / "holder_ready"
+    release_path = tmp_path / "holder_release"
+    holder_script = f"""
+import sys, time
+from pathlib import Path
+sys.path.insert(0, {str(Path.cwd().resolve())!r})
+from scripts import promote_science_revision_chain as promotion
+projection = Path({str(projection.resolve())!r})
+ready = Path({str(ready_path.resolve())!r})
+release = Path({str(release_path.resolve())!r})
+lease = promotion._acquire_promotion_lease(projection)
+ready.write_text("ready", encoding="utf-8")
+deadline = time.time() + 20
+while not release.exists() and time.time() < deadline:
+    time.sleep(0.05)
+lease.release()
+"""
+    holder = subprocess.Popen(
+        [sys.executable, "-c", holder_script],
+        cwd=str(Path.cwd()),
+    )
+    try:
+        deadline = time.time() + 20
+        while not ready_path.exists() and time.time() < deadline:
+            time.sleep(0.05)
+        assert ready_path.exists(), "holder process failed to acquire lease"
+        with pytest.raises(RuntimeError, match="still owned"):
+            promotion._acquire_promotion_lease(projection)
+        release_path.write_text("release", encoding="utf-8")
+        assert holder.wait(timeout=20) == 0
+        lease = promotion._acquire_promotion_lease(projection)
+        lease.release()
+        assert guard.is_file()
+        assert guard.stat().st_size == 0
+        assert not promotion._is_reparse_path(guard)
+        assert guard.stat().st_nlink == 1
+    finally:
+        release_path.write_text("release", encoding="utf-8")
+        if holder.poll() is None:
+            holder.kill()
+            holder.wait(timeout=10)
