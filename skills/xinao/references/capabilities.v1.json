@@ -1,7 +1,7 @@
 {
   "schema_version": "xinao.skill_capability_registry.v1",
   "skill_id": "xinao",
-  "skill_version": "1.2.0",
+  "skill_version": "1.2.1",
   "ordinary_worker_chain_allowed": false,
   "default_visibility": "codex_conversation",
   "capabilities": [
@@ -10,6 +10,18 @@
       "version": "1.1.2",
       "source_status": "available",
       "runtime_status_source": "D:/XINAO_RESEARCH_RUNTIME/state/xinao_skill/researcher_container/current.json"
+    },
+    {
+      "capability_id": "shadow-lifecycle-leg-a",
+      "version": "0.1.0",
+      "source_status": "available",
+      "source_path": "xinao_discovery/src/xinao/shadow_lifecycle/consumer.py",
+      "entrypoint": "python -m xinao.shadow_lifecycle",
+      "cli_group": "xinao shadow",
+      "consumer_id": "shadow_lifecycle_file_backed_leg_a",
+      "parent_completion_authority": false,
+      "completion_claim_allowed": false,
+      "notes": "File-backed leg-A one-click consumer for init/freeze/settle/status/replay. Fixture or synthetic runs cannot claim FIRST_EPISODE_VERIFIED or parent completion."
     },
     {
       "capability_id": "shadow-account",

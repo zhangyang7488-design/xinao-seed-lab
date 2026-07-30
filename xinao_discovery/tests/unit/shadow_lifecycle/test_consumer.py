@@ -1,0 +1,313 @@
+"""Focused positive/negative coverage for the file-backed shadow lifecycle consumer."""
+
+from __future__ import annotations
+
+import json
+from datetime import UTC, datetime, timedelta
+from pathlib import Path
+from typing import Any
+
+import pytest
+
+from xinao.decision import DecisionGateInput, compile_decision_plan, freeze_decision
+from xinao.shadow_lifecycle.consumer import (
+    CONSUMER_ID,
+    freeze_episode,
+    init_episode,
+    inspect_episode,
+    replay_episode,
+    settle_episode,
+)
+from xinao.shadow_lifecycle.consumer import (
+    main as consumer_main,
+)
+from xinao.shadow_lifecycle.store import EpisodePhase, StoreError, detect_phase
+
+OPEN = datetime(2026, 7, 20, 8, tzinfo=UTC)
+FREEZE_AT = OPEN - timedelta(minutes=6)
+DEADLINE = OPEN - timedelta(minutes=5)
+CUTOFF = OPEN - timedelta(minutes=10)
+
+
+def _frozen_shadow(**updates: Any):
+    values: dict[str, Any] = {
+        "candidate_ref": "candidate.signal.v1",
+        "requested_decision_kind": "FROZEN_EXPERIMENTAL_SHADOW",
+        "candidate_qualification": "SHADOW_EXPERIMENTAL",
+        "adjudicated_decision_kinds": (
+            "FROZEN_EXPERIMENTAL_SHADOW",
+            "FROZEN_ELIGIBLE_ACTION",
+            "NO_ACTION",
+        ),
+        "court_verdict_bundle_ref": "courts.signal.v1",
+        "court_verdict_bundle_content_hash": "b" * 64,
+        "protocol_pin_ref": "protocol.signal.v1",
+        "protocol_pin_sha256": "c" * 64,
+        "information_set_ref": "features.signal.v1",
+        "information_set_hash": "d" * 64,
+        "validation_report_ref": "validation.signal.v1",
+        "validation_output_hash": "a" * 64,
+        "validation_verdict": "ACTION",
+        "baseline_ref": "baseline-odds-water.v1",
+        "baseline_active": True,
+        "rule_ref": "special-number-rule.v1",
+        "rule_active": True,
+        "odds_version_ref": "odds.signal.v1",
+        "cost_version_ref": "cost.signal.v1",
+        "friction_version_ref": "friction.signal.v1",
+        "exposure_policy_ref": "shadow-exposure.minimal.v1",
+        "target_ref": "draw.20260720-001",
+        "target_window_start": OPEN,
+        "target_window_end": OPEN,
+        "target_open_time": OPEN,
+        "freeze_deadline": DEADLINE,
+        "knowledge_cutoff": CUTOFF,
+        "compiled_at": OPEN - timedelta(minutes=20),
+        "panel": "B",
+        "selected_number": 1,
+        "stake": "1.0000",
+        "lower_expected_net": "0.2000",
+        "estimated_cost": "0.0100",
+        "risk_limit": "1.0000",
+    }
+    values.update(updates)
+    plan = compile_decision_plan(
+        DecisionGateInput.model_validate(values), plan_ref="plan.shadow.v1"
+    )
+    return freeze_decision(plan, decision_ref="frozen.shadow.v1", frozen_at=FREEZE_AT)
+
+
+def _write_json(path: Path, payload: dict[str, Any]) -> Path:
+    path.write_text(
+        json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    return path
+
+
+def _action_request(path: Path, *, frozen: Any | None = None) -> Path:
+    bound = frozen if frozen is not None else _frozen_shadow()
+    body = {
+        "episode_ref": "episode.consumer.action.v1",
+        "science_decision": {
+            "science_decision_ref": "science.candidate.v1",
+            "identity": "SCIENCE_CANDIDATE",
+            "knowledge_cutoff": CUTOFF.isoformat().replace("+00:00", "Z"),
+            "rationale_ref": "rationale.science.v1",
+            "candidate_ref": "candidate.signal.v1",
+        },
+        "account_decision": {
+            "account_decision_ref": "acct.action.v1",
+            "identity": "ACTION",
+        },
+        "bound_frozen_decision": bound.model_dump(mode="json"),
+        "target_ref": bound.target_ref,
+        "target_open_time": bound.target_open_time.isoformat().replace("+00:00", "Z"),
+        "freeze_deadline": bound.freeze_deadline.isoformat().replace("+00:00", "Z"),
+        "frozen_at": FREEZE_AT.isoformat().replace("+00:00", "Z"),
+        "opening_journal_group_ref": "journal.opening.consumer.action.v1",
+        "position_journal_group_ref": "journal.position.consumer.action.v1",
+    }
+    return _write_json(path, body)
+
+
+def _no_action_request(path: Path) -> Path:
+    body = {
+        "episode_ref": "episode.consumer.no-action.v1",
+        "science_decision": {
+            "science_decision_ref": "science.candidate.v1",
+            "identity": "SCIENCE_CANDIDATE",
+            "knowledge_cutoff": CUTOFF.isoformat().replace("+00:00", "Z"),
+            "rationale_ref": "rationale.science.v1",
+            "candidate_ref": "candidate.signal.v1",
+        },
+        "account_decision": {
+            "account_decision_ref": "acct.no-action.v1",
+            "identity": "RESEARCHER_ACCOUNT_NO_ACTION",
+            "rule_ref": "special-number-rule.v1",
+            "odds_version_ref": "odds.signal.v1",
+        },
+        "target_ref": "draw.20260720-001",
+        "target_open_time": OPEN.isoformat().replace("+00:00", "Z"),
+        "freeze_deadline": DEADLINE.isoformat().replace("+00:00", "Z"),
+        "frozen_at": FREEZE_AT.isoformat().replace("+00:00", "Z"),
+    }
+    return _write_json(path, body)
+
+
+def _outcome_payload(
+    path: Path,
+    *,
+    special_number: int = 1,
+    target_ref: str = "draw.20260720-001",
+    observed_at: datetime | None = None,
+) -> Path:
+    observed = observed_at if observed_at is not None else OPEN + timedelta(hours=1)
+    body = {
+        "outcome_ref": "outcome.consumer.1",
+        "source_ref": "macaujc2",
+        "target_ref": target_ref,
+        "actual_special_number": special_number,
+        "observed_at": observed.isoformat().replace("+00:00", "Z"),
+        "verified": True,
+    }
+    return _write_json(path, body)
+
+
+def test_positive_action_closed_loop_via_file_store(tmp_path: Path) -> None:
+    root = tmp_path / "episode-action"
+    init = init_episode(
+        root=root,
+        seat_id="seat.consumer.alpha",
+        portfolio_ref="portfolio.consumer.alpha",
+    )
+    assert init["ok"] is True
+    assert init["phase"] == EpisodePhase.INIT.value
+    assert init["completion_claim_allowed"] is False
+    assert detect_phase(root) == EpisodePhase.INIT
+
+    freeze = freeze_episode(
+        root=root, request_path=_action_request(tmp_path / "freeze_request.json")
+    )
+    assert freeze["ok"] is True
+    assert freeze["phase"] == EpisodePhase.FROZEN.value
+    assert freeze["account_identity"] == "ACTION"
+    assert freeze["frozen_episode_hash"]
+
+    status = inspect_episode(root=root)
+    assert status["phase"] == EpisodePhase.FROZEN.value
+    assert status["outcome_present"] is False
+    assert status["next_action"] == "settle"
+
+    settled = settle_episode(
+        root=root,
+        outcome_path=_outcome_payload(tmp_path / "outcome.json", special_number=1),
+    )
+    assert settled["ok"] is True
+    assert settled["phase"] == EpisodePhase.SETTLED.value
+    assert settled["statement_result"] == "HIT"
+    assert settled["first_episode_verified"] is False
+    assert settled["completion_claim_allowed"] is False
+
+    replayed = replay_episode(root=root)
+    assert replayed["ok"] is True
+    assert replayed["replay_match"] is True
+    assert replayed["settled_episode_hash"] == settled["settled_episode_hash"]
+    assert replayed["first_episode_verified"] is False
+
+    final = inspect_episode(root=root)
+    assert final["phase"] == EpisodePhase.SETTLED.value
+    assert final["outcome_present"] is True
+    assert final["pnl"] == settled["pnl"]
+
+
+def test_positive_no_action_freeze_and_zero_risk_settle(tmp_path: Path) -> None:
+    root = tmp_path / "episode-no-action"
+    init_episode(
+        root=root,
+        seat_id="seat.consumer.beta",
+        portfolio_ref="portfolio.consumer.beta",
+    )
+    freeze = freeze_episode(
+        root=root, request_path=_no_action_request(tmp_path / "no_action_request.json")
+    )
+    assert freeze["account_identity"] == "RESEARCHER_ACCOUNT_NO_ACTION"
+    settled = settle_episode(
+        root=root,
+        outcome_path=_outcome_payload(tmp_path / "outcome_na.json", special_number=7),
+    )
+    assert settled["statement_result"] == "NO_EXPOSURE"
+    assert settled["pnl"] == "0.0000"
+    assert settled["closing_balance"] == "10000.0000"
+    assert replay_episode(root=root)["replay_match"] is True
+
+
+def test_negative_double_settle_rejected(tmp_path: Path) -> None:
+    root = tmp_path / "episode-double"
+    init_episode(root=root, seat_id="seat.consumer.d1", portfolio_ref="portfolio.consumer.d1")
+    freeze_episode(root=root, request_path=_action_request(tmp_path / "req1.json"))
+    settle_episode(root=root, outcome_path=_outcome_payload(tmp_path / "out1.json"))
+    with pytest.raises(StoreError, match=r"exclusive create rejected|SETTLED|already exists"):
+        settle_episode(
+            root=root,
+            outcome_path=_outcome_payload(tmp_path / "out2.json", special_number=2),
+        )
+
+
+def test_negative_freeze_rejects_outcome_peek(tmp_path: Path) -> None:
+    root = tmp_path / "episode-peek"
+    init_episode(root=root, seat_id="seat.consumer.p1", portfolio_ref="portfolio.consumer.p1")
+    request = _action_request(tmp_path / "peek_req.json")
+    body = json.loads(request.read_text(encoding="utf-8"))
+    body["outcome"] = {"actual_special_number": 1}
+    request.write_text(json.dumps(body), encoding="utf-8")
+    with pytest.raises(StoreError, match="no-peek"):
+        freeze_episode(root=root, request_path=request)
+
+
+def test_negative_double_freeze_rejected(tmp_path: Path) -> None:
+    root = tmp_path / "episode-double-freeze"
+    init_episode(root=root, seat_id="seat.consumer.f1", portfolio_ref="portfolio.consumer.f1")
+    freeze_episode(root=root, request_path=_action_request(tmp_path / "req_a.json"))
+    with pytest.raises(StoreError, match=r"INIT|exclusive create rejected|already exists"):
+        freeze_episode(root=root, request_path=_action_request(tmp_path / "req_b.json"))
+
+
+def test_negative_late_freeze_rejected(tmp_path: Path) -> None:
+    root = tmp_path / "episode-late"
+    init_episode(root=root, seat_id="seat.consumer.late", portfolio_ref="portfolio.consumer.late")
+    request = _action_request(tmp_path / "late_req.json")
+    body = json.loads(request.read_text(encoding="utf-8"))
+    body["frozen_at"] = (DEADLINE + timedelta(seconds=1)).isoformat().replace("+00:00", "Z")
+    request.write_text(json.dumps(body), encoding="utf-8")
+    with pytest.raises(ValueError, match="late or backdated freeze"):
+        freeze_episode(root=root, request_path=request)
+
+
+def test_negative_pre_open_outcome_rejected(tmp_path: Path) -> None:
+    root = tmp_path / "episode-preopen"
+    init_episode(root=root, seat_id="seat.consumer.pre", portfolio_ref="portfolio.consumer.pre")
+    freeze_episode(root=root, request_path=_action_request(tmp_path / "pre_req.json"))
+    with pytest.raises(ValueError, match="pre-open"):
+        settle_episode(
+            root=root,
+            outcome_path=_outcome_payload(
+                tmp_path / "pre_out.json",
+                observed_at=OPEN - timedelta(minutes=1),
+            ),
+        )
+
+
+def test_cli_main_init_inspect_and_capability_identity(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    root = tmp_path / "cli-root"
+    code = consumer_main(
+        [
+            "init",
+            "--root",
+            str(root),
+            "--seat-id",
+            "seat.cli",
+            "--portfolio-ref",
+            "portfolio.cli",
+        ]
+    )
+    assert code == 0
+    out = json.loads(capsys.readouterr().out)
+    assert out["ok"] is True
+    assert out["phase"] == "INIT"
+
+    code = consumer_main(["inspect", "--root", str(root)])
+    assert code == 0
+    inspected = json.loads(capsys.readouterr().out)
+    assert inspected["ok"] is True
+    assert inspected["completion_claim_allowed"] is False
+    assert CONSUMER_ID == "shadow_lifecycle_file_backed_leg_a"
+
+    # Missing root fails closed without claiming completion.
+    code = consumer_main(["inspect", "--root", str(tmp_path / "missing")])
+    assert code == 1
+    failed = json.loads(capsys.readouterr().out)
+    assert failed["ok"] is False
+    assert failed["completion_claim_allowed"] is False
