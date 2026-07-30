@@ -516,9 +516,10 @@ def test_receipt_volatility_does_not_move_policy_identity() -> None:
     moved = adapt_researcher_result_to_policy_candidate(result_bytes, volatile)
     assert moved.policy_ref == baseline.policy_ref
     assert moved.content_hash == baseline.content_hash
-    assert moved.semantic_config["receipt_content_sha256"] == baseline.semantic_config[
-        "receipt_content_sha256"
-    ]
+    assert (
+        moved.semantic_config["receipt_content_sha256"]
+        == baseline.semantic_config["receipt_content_sha256"]
+    )
     assert moved.decision_signature.probe_trace_hash == baseline.decision_signature.probe_trace_hash
 
 

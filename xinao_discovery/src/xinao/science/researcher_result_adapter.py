@@ -128,9 +128,7 @@ PRODUCTION_SUCCESS_RECEIPT_KEYS: Final[frozenset[str]] = frozenset(
 )
 
 # Transport-only keys that may appear on returned receipts but are not sealed.
-_RECEIPT_TRANSPORT_ONLY_KEYS: Final[frozenset[str]] = frozenset(
-    {"receipt_path", "receipt_sha256"}
-)
+_RECEIPT_TRANSPORT_ONLY_KEYS: Final[frozenset[str]] = frozenset({"receipt_path", "receipt_sha256"})
 
 # Observation / host-path fields that must not move policy identity.
 _RECEIPT_VOLATILE_TOP_LEVEL_KEYS: Final[frozenset[str]] = frozenset(
