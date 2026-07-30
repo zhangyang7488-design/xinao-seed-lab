@@ -375,7 +375,7 @@ try {
                 -Preflight
         } catch {
             $code = [string]$_.Exception.Message
-            if ($code -match 'EGRESS_AUTH_PATH_|CANARY_IMAGE_|EGRESS_RUNTIME_LOCK|ACTIVE_RESEARCHER_|RELEASE_SOURCE_|EGRESS_CANARY_') {
+            if ($code -match 'EGRESS_AUTH_PATH_|CANARY_IMAGE_|EGRESS_RUNTIME_LOCK|ACTIVE_RESEARCHER_|RELEASE_SOURCE_|EGRESS_CANARY_|RELEASE_IDENTITY_|ACTIVATION_|CROSS_CHAIN_|DIRTY_RELEASE_') {
                 $reason = $code
             } else {
                 $reason = 'EGRESS_AUTH_OR_IMAGE_ADMISSION_FAILED'

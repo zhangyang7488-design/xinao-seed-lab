@@ -760,9 +760,19 @@ function Get-XinaoResearcherRuntimeLock {
 }
 
 # Protocol-v2 researcher-container state (sibling of egress state; not the egress posture root).
+# Identity/journal rules mirror skills/xinao/scripts/xinao.py active-ref + runtime-entry-locked
+# (PowerShell state root IS the researcher_container directory).
 $script:XinaoResearcherCurrentPointerSchemaV2 = 'xinao.researcher_current_pointer.v2'
 $script:XinaoResearcherCurrentPointerSchemaV1 = 'xinao.researcher_current_pointer.v1'
 $script:XinaoResearcherReleaseSchemaV2 = 'xinao.researcher_release.v2'
+$script:XinaoResearcherActivationJournalSchemaV1 = 'xinao.researcher_activation_journal.v1'
+$script:XinaoResearcherReleaseIdPattern = '^researcher-[0-9]+\.[0-9]+\.[0-9]+-[0-9a-f]{16}$'
+$script:XinaoResearcherTxnIdPattern = '^xra_[0-9]{8}T[0-9]{6}_[0-9a-f]{16}$'
+$script:XinaoResearcherSemverPattern = '^[0-9]+\.[0-9]+\.[0-9]+$'
+$script:XinaoResearcherHexSha256Pattern = '^[0-9a-f]{64}$'
+$script:XinaoResearcherCapabilityId = 'researcher-container'
+$script:XinaoResearcherStateNamespace = 'xinao_skill/researcher_container'
+$script:XinaoResearcherRunNamespace = 'xinao_researcher'
 $script:XinaoResearcherLabelChain = 'io.xinao.researcher.chain'
 $script:XinaoResearcherLabelChainValue = 'dedicated-xinao-science'
 $script:XinaoResearcherLabelGenericWorkerRoute = 'io.xinao.researcher.generic-worker-route'
@@ -801,12 +811,280 @@ function Get-XinaoResearcherContainerPointerPath {
     return (Join-Path $root 'current.json')
 }
 
+function Get-XinaoNormalizedPathKey {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]
+        [AllowEmptyString()]
+        [string]$Path
+    )
+    if ([string]::IsNullOrWhiteSpace($Path)) {
+        throw 'ACTIVE_RESEARCHER_PATH_EMPTY'
+    }
+    if (-not [System.IO.Path]::IsPathRooted($Path)) {
+        throw 'ACTIVE_RESEARCHER_PATH_NOT_ABSOLUTE'
+    }
+    try {
+        $full = [System.IO.Path]::GetFullPath($Path)
+    } catch {
+        throw 'ACTIVE_RESEARCHER_PATH_INVALID'
+    }
+    if (-not [System.IO.Path]::IsPathRooted($full)) {
+        throw 'ACTIVE_RESEARCHER_PATH_NOT_ABSOLUTE'
+    }
+    # Windows path identity: normcase + fullpath (matches Python os.path.normcase(abspath)).
+    return $full.ToLowerInvariant()
+}
+
+function Test-XinaoHexSha256 {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]
+        [AllowEmptyString()]
+        [string]$Value
+    )
+    return ($Value -match $script:XinaoResearcherHexSha256Pattern)
+}
+
+function Assert-XinaoActiveResearcherRefShape {
+    <#
+      .SYNOPSIS
+        Validate protocol-v2 active ref (pointer.active / journal.to) against researcher_container root.
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]
+        $Ref,
+        [Parameter(Mandatory = $true)]
+        [string]$ResearcherContainerStateRoot,
+        [string]$ReasonCode = 'ACTIVE_RESEARCHER_POINTER_ACTIVE_INVALID'
+    )
+    if ($null -eq $Ref) {
+        throw $ReasonCode
+    }
+    $releaseId = [string]$Ref.release_id
+    $txnId = [string]$Ref.activation_txn_id
+    $manifestPathRaw = [string]$Ref.release_manifest_path
+    $manifestSha = [string]$Ref.release_manifest_sha256
+    $bundleManifestSha = [string]$Ref.skill_bundle_manifest_sha256
+    $bundleTreeSha = [string]$Ref.skill_bundle_tree_sha256
+    $capabilityVersion = [string]$Ref.capability_version
+    $packageVersion = [string]$Ref.package_version
+    $bootstrap = $Ref.required_bootstrap_protocol
+
+    if ([string]::IsNullOrWhiteSpace($releaseId) -or $releaseId -notmatch $script:XinaoResearcherReleaseIdPattern) {
+        throw 'ACTIVE_RESEARCHER_RELEASE_IDENTITY_INVALID'
+    }
+    if ([string]::IsNullOrWhiteSpace($txnId) -or $txnId -notmatch $script:XinaoResearcherTxnIdPattern) {
+        throw 'ACTIVE_RESEARCHER_ACTIVATION_TRANSACTION_ID_INVALID'
+    }
+    if ([string]::IsNullOrWhiteSpace($manifestPathRaw)) {
+        throw 'ACTIVE_RESEARCHER_RELEASE_MANIFEST_PATH_MISSING'
+    }
+    if (-not [System.IO.Path]::IsPathRooted($manifestPathRaw)) {
+        throw 'ACTIVE_RESEARCHER_RELEASE_MANIFEST_PATH_INVALID'
+    }
+    $root = [System.IO.Path]::GetFullPath($ResearcherContainerStateRoot)
+    $expectedManifest = [System.IO.Path]::GetFullPath(
+        (Join-Path $root (Join-Path 'releases' (Join-Path $releaseId 'release.json')))
+    )
+    try {
+        $declaredKey = Get-XinaoNormalizedPathKey -Path $manifestPathRaw
+        $expectedKey = Get-XinaoNormalizedPathKey -Path $expectedManifest
+    } catch {
+        throw 'ACTIVE_RESEARCHER_RELEASE_MANIFEST_PATH_INVALID'
+    }
+    if ($declaredKey -ne $expectedKey) {
+        throw 'ACTIVE_RESEARCHER_RELEASE_MANIFEST_PATH_INVALID'
+    }
+    if (-not (Test-XinaoHexSha256 -Value $manifestSha.ToLowerInvariant())) {
+        throw 'ACTIVE_RESEARCHER_RELEASE_MANIFEST_HASH_REQUIRED'
+    }
+    if (-not (Test-XinaoHexSha256 -Value $bundleManifestSha.ToLowerInvariant())) {
+        throw 'ACTIVE_RESEARCHER_POINTER_ACTIVE_INVALID'
+    }
+    if (-not (Test-XinaoHexSha256 -Value $bundleTreeSha.ToLowerInvariant())) {
+        throw 'ACTIVE_RESEARCHER_POINTER_ACTIVE_INVALID'
+    }
+    if ($capabilityVersion -notmatch $script:XinaoResearcherSemverPattern) {
+        throw 'ACTIVE_RESEARCHER_POINTER_ACTIVE_INVALID'
+    }
+    if ($packageVersion -notmatch $script:XinaoResearcherSemverPattern) {
+        throw 'ACTIVE_RESEARCHER_POINTER_ACTIVE_INVALID'
+    }
+    # Protocol release identity rule: researcher-<capability_version>-<16hex>
+    $expectedPrefix = "researcher-$capabilityVersion-"
+    if (-not $releaseId.StartsWith($expectedPrefix) -or $releaseId.Length -ne ($expectedPrefix.Length + 16)) {
+        throw 'ACTIVE_RESEARCHER_RELEASE_IDENTITY_INVALID'
+    }
+    if ($bootstrap -ne 2 -and [string]$bootstrap -ne '2') {
+        throw 'ACTIVE_RESEARCHER_RELEASE_V2_ABSENT'
+    }
+    return [ordered]@{
+        release_id                      = $releaseId
+        release_manifest_path           = $expectedManifest
+        release_manifest_sha256         = $manifestSha.ToLowerInvariant()
+        skill_bundle_manifest_sha256    = $bundleManifestSha.ToLowerInvariant()
+        skill_bundle_tree_sha256        = $bundleTreeSha.ToLowerInvariant()
+        capability_version              = $capabilityVersion
+        package_version                 = $packageVersion
+        required_bootstrap_protocol     = 2
+        activation_txn_id               = $txnId
+    }
+}
+
+function Test-XinaoActiveResearcherRefEqual {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]
+        $Left,
+        [Parameter(Mandatory = $true)]
+        $Right
+    )
+    $keys = @(
+        'release_id',
+        'release_manifest_path',
+        'release_manifest_sha256',
+        'skill_bundle_manifest_sha256',
+        'skill_bundle_tree_sha256',
+        'capability_version',
+        'package_version',
+        'required_bootstrap_protocol',
+        'activation_txn_id'
+    )
+    foreach ($k in $keys) {
+        $lv = $Left.$k
+        $rv = $Right.$k
+        if ($k -eq 'required_bootstrap_protocol') {
+            $li = 0; $ri = 0
+            try { $li = [int]$lv } catch { return $false }
+            try { $ri = [int]$rv } catch { return $false }
+            if ($li -ne $ri) { return $false }
+            continue
+        }
+        if ($k -eq 'release_manifest_path') {
+            try {
+                $lk = Get-XinaoNormalizedPathKey -Path ([string]$lv)
+                $rk = Get-XinaoNormalizedPathKey -Path ([string]$rv)
+                if ($lk -ne $rk) { return $false }
+            } catch {
+                return $false
+            }
+            continue
+        }
+        if ($k -match 'sha256$') {
+            if ([string]$lv.ToLowerInvariant() -ne [string]$rv.ToLowerInvariant()) { return $false }
+            continue
+        }
+        if ([string]$lv -ne [string]$rv) { return $false }
+    }
+    return $true
+}
+
+function Assert-XinaoActiveResearcherActivationJournal {
+    <#
+      .SYNOPSIS
+        Require the protocol activation journal bound to the active pointer (VERIFIED terminal only).
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$ResearcherContainerStateRoot,
+        [Parameter(Mandatory = $true)]
+        $ActiveRef,
+        [Parameter(Mandatory = $true)]
+        [int]$PointerGeneration,
+        [Parameter(Mandatory = $true)]
+        [string]$PointerSha256
+    )
+    $root = [System.IO.Path]::GetFullPath($ResearcherContainerStateRoot)
+    $txnId = [string]$ActiveRef.activation_txn_id
+    if ([string]::IsNullOrWhiteSpace($txnId) -or $txnId -notmatch $script:XinaoResearcherTxnIdPattern) {
+        throw 'ACTIVE_RESEARCHER_ACTIVATION_TRANSACTION_ID_INVALID'
+    }
+    $journalPath = [System.IO.Path]::GetFullPath(
+        (Join-Path $root (Join-Path 'transactions' (Join-Path $txnId 'activation.v1.json')))
+    )
+    if (Test-XinaoPathHasReparseChain -Path $journalPath) {
+        throw 'ACTIVE_RESEARCHER_STATE_REPARSE_FORBIDDEN'
+    }
+    if (-not (Test-Path -LiteralPath $journalPath -PathType Leaf)) {
+        throw 'ACTIVE_RESEARCHER_ACTIVATION_JOURNAL_ABSENT'
+    }
+    if (-not (Test-XinaoRegularNonHardlinkedFile -Path $journalPath)) {
+        throw 'ACTIVE_RESEARCHER_ACTIVATION_JOURNAL_INVALID'
+    }
+    $journal = Read-XinaoJsonFile -Path $journalPath
+    if ([string]$journal.schema_version -ne $script:XinaoResearcherActivationJournalSchemaV1) {
+        throw 'ACTIVE_RESEARCHER_ACTIVATION_JOURNAL_SCHEMA_INVALID'
+    }
+    if ([string]$journal.txn_id -ne $txnId) {
+        throw 'ACTIVE_RESEARCHER_ACTIVATION_TRANSACTION_BINDING_MISMATCH'
+    }
+    $op = [string]$journal.operation
+    if ($op -notin @('ACTIVATE', 'ROLLBACK', 'MIGRATE')) {
+        throw 'ACTIVE_RESEARCHER_ACTIVATION_OPERATION_INVALID'
+    }
+    $state = [string]$journal.state
+    # Canary admission requires verified terminal activation (not pending / rolled-back / conflict).
+    if ($state -ne 'VERIFIED') {
+        if ($state -in @('PREPARED', 'POINTER_SWITCHED', 'CANARY_STARTED', 'ROLLBACK_POINTER_SWITCHED', 'ROLLBACK_CANARY_STARTED', 'RECOVERY_CONFLICT')) {
+            throw 'ACTIVE_RESEARCHER_ACTIVATION_NOT_TERMINAL'
+        }
+        if ($state -eq 'ROLLED_BACK') {
+            throw 'ACTIVE_RESEARCHER_ACTIVATION_ROLLED_BACK'
+        }
+        throw 'ACTIVE_RESEARCHER_ACTIVATION_NOT_VERIFIED'
+    }
+    $expectedGen = Get-XinaoJsonIntField -Obj $journal -Name 'expected_generation'
+    if ($null -eq $expectedGen -or $expectedGen -ne $PointerGeneration) {
+        throw 'ACTIVE_RESEARCHER_ACTIVATION_GENERATION_BINDING_MISMATCH'
+    }
+    $toRef = $journal.to
+    if ($null -eq $toRef) {
+        throw 'ACTIVE_RESEARCHER_ACTIVATION_TARGET_BINDING_MISMATCH'
+    }
+    # Shape-check journal.to against the same canonical containment rules.
+    $toNormalized = Assert-XinaoActiveResearcherRefShape `
+        -Ref $toRef `
+        -ResearcherContainerStateRoot $root `
+        -ReasonCode 'ACTIVE_RESEARCHER_ACTIVATION_TARGET_BINDING_MISMATCH'
+    if (-not (Test-XinaoActiveResearcherRefEqual -Left $ActiveRef -Right $toNormalized)) {
+        throw 'ACTIVE_RESEARCHER_ACTIVATION_TARGET_BINDING_MISMATCH'
+    }
+    if ($null -ne $journal.requested_to) {
+        $reqNormalized = Assert-XinaoActiveResearcherRefShape `
+            -Ref $journal.requested_to `
+            -ResearcherContainerStateRoot $root `
+            -ReasonCode 'ACTIVE_RESEARCHER_ACTIVATION_TARGET_BINDING_MISMATCH'
+        if ([string]$reqNormalized.activation_txn_id -ne $txnId) {
+            throw 'ACTIVE_RESEARCHER_ACTIVATION_TRANSACTION_BINDING_MISMATCH'
+        }
+    }
+    $terminalSha = [string]$journal.terminal_pointer_sha256
+    if (-not (Test-XinaoHexSha256 -Value $terminalSha.ToLowerInvariant())) {
+        throw 'ACTIVE_RESEARCHER_ACTIVATION_POINTER_BINDING_MISMATCH'
+    }
+    if ($terminalSha.ToLowerInvariant() -ne $PointerSha256.ToLowerInvariant()) {
+        throw 'ACTIVE_RESEARCHER_ACTIVATION_POINTER_BINDING_MISMATCH'
+    }
+    return [ordered]@{
+        journal_path = $journalPath
+        txn_id       = $txnId
+        state        = $state
+        operation    = $op
+    }
+}
+
 function Get-XinaoActiveResearcherReleaseAdmission {
     <#
       .SYNOPSIS
-        Load protocol-v2 active researcher release from researcher-container state (pointer + release.json).
+        Load protocol-v2 active researcher release from researcher-container state
+        (pointer + canonical release.json + verified activation journal).
       .DESCRIPTION
-        Does not require Docker. Rejects legacy v1 pointer/release. Does not claim the donor image is executable.
+        Does not require Docker. Rejects legacy v1 pointer/release, path escape,
+        missing/non-terminal journals, and identity/namespace/source violations.
+        Does not claim the donor image is executable.
     #>
     [CmdletBinding()]
     param(
@@ -814,10 +1092,25 @@ function Get-XinaoActiveResearcherReleaseAdmission {
         [string]$ResearcherContainerStateRoot
     )
     $root = [System.IO.Path]::GetFullPath($ResearcherContainerStateRoot)
+    if (-not (Test-Path -LiteralPath $root -PathType Container)) {
+        throw 'ACTIVE_RESEARCHER_STATE_ROOT_ABSENT'
+    }
+    if (Test-XinaoPathHasReparseChain -Path $root) {
+        throw 'ACTIVE_RESEARCHER_STATE_REPARSE_FORBIDDEN'
+    }
+
     $pointerPath = Get-XinaoResearcherContainerPointerPath -ResearcherContainerStateRoot $root
+    if (Test-XinaoPathHasReparseChain -Path $pointerPath) {
+        throw 'ACTIVE_RESEARCHER_STATE_REPARSE_FORBIDDEN'
+    }
     if (-not (Test-Path -LiteralPath $pointerPath -PathType Leaf)) {
         throw 'ACTIVE_RESEARCHER_POINTER_ABSENT'
     }
+    if (-not (Test-XinaoRegularNonHardlinkedFile -Path $pointerPath)) {
+        throw 'ACTIVE_RESEARCHER_POINTER_INVALID'
+    }
+
+    $pointerSha = Get-XinaoFileSha256Hex -Path $pointerPath
     $pointer = Read-XinaoJsonFile -Path $pointerPath
     $schema = [string]$pointer.schema_version
     if ($schema -eq $script:XinaoResearcherCurrentPointerSchemaV1 -or $schema -like 'xinao.researcher_current_pointer.v1*') {
@@ -826,33 +1119,37 @@ function Get-XinaoActiveResearcherReleaseAdmission {
     if ($schema -ne $script:XinaoResearcherCurrentPointerSchemaV2) {
         throw 'ACTIVE_RESEARCHER_POINTER_SCHEMA_INVALID'
     }
+
+    $generation = Get-XinaoJsonIntField -Obj $pointer -Name 'generation'
+    if ($null -eq $generation -or $generation -lt 1) {
+        throw 'ACTIVE_RESEARCHER_POINTER_GENERATION_INVALID'
+    }
+
     $active = $pointer.active
-    if ($null -eq $active) {
-        throw 'ACTIVE_RESEARCHER_POINTER_ACTIVE_MISSING'
+    $activeRef = Assert-XinaoActiveResearcherRefShape `
+        -Ref $active `
+        -ResearcherContainerStateRoot $root `
+        -ReasonCode 'ACTIVE_RESEARCHER_POINTER_ACTIVE_INVALID'
+
+    $releaseId = [string]$activeRef.release_id
+    $manifestFull = [string]$activeRef.release_manifest_path
+    $manifestSha = [string]$activeRef.release_manifest_sha256
+
+    if (Test-XinaoPathHasReparseChain -Path $manifestFull) {
+        throw 'ACTIVE_RESEARCHER_STATE_REPARSE_FORBIDDEN'
     }
-    $releaseId = [string]$active.release_id
-    $manifestPath = [string]$active.release_manifest_path
-    $manifestSha = [string]$active.release_manifest_sha256
-    $bootstrap = $active.required_bootstrap_protocol
-    if ([string]::IsNullOrWhiteSpace($releaseId)) {
-        throw 'ACTIVE_RESEARCHER_POINTER_ACTIVE_INVALID'
-    }
-    if ([string]::IsNullOrWhiteSpace($manifestPath)) {
-        throw 'ACTIVE_RESEARCHER_RELEASE_MANIFEST_PATH_MISSING'
-    }
-    if ($bootstrap -ne 2 -and [string]$bootstrap -ne '2') {
-        throw 'ACTIVE_RESEARCHER_RELEASE_V2_ABSENT'
-    }
-    $manifestFull = [System.IO.Path]::GetFullPath($manifestPath)
     if (-not (Test-Path -LiteralPath $manifestFull -PathType Leaf)) {
         throw 'ACTIVE_RESEARCHER_RELEASE_MANIFEST_ABSENT'
     }
-    if (-not [string]::IsNullOrWhiteSpace($manifestSha)) {
-        $observedSha = Get-XinaoFileSha256Hex -Path $manifestFull
-        if ($observedSha -ne $manifestSha.ToLowerInvariant()) {
-            throw 'ACTIVE_RESEARCHER_RELEASE_MANIFEST_HASH_MISMATCH'
-        }
+    if (-not (Test-XinaoRegularNonHardlinkedFile -Path $manifestFull)) {
+        throw 'ACTIVE_RESEARCHER_RELEASE_MANIFEST_INVALID'
     }
+
+    $observedSha = Get-XinaoFileSha256Hex -Path $manifestFull
+    if ($observedSha -ne $manifestSha) {
+        throw 'ACTIVE_RESEARCHER_RELEASE_MANIFEST_HASH_MISMATCH'
+    }
+
     $manifest = Read-XinaoJsonFile -Path $manifestFull
     $releaseSchema = [string]$manifest.schema_version
     if ($releaseSchema -ne $script:XinaoResearcherReleaseSchemaV2) {
@@ -861,12 +1158,60 @@ function Get-XinaoActiveResearcherReleaseAdmission {
     if ([string]$manifest.release_id -ne $releaseId) {
         throw 'ACTIVE_RESEARCHER_RELEASE_ID_MISMATCH'
     }
+
+    # Protocol identity composition: researcher-<capability_version>-<release_identity_sha256[:16]>
+    $capabilityVersion = [string]$manifest.capability_version
+    $packageVersion = [string]$manifest.package_version
+    $charterVersion = [string]$manifest.charter_version
+    $runtimeVersion = [string]$manifest.runtime_version
+    if ($capabilityVersion -notmatch $script:XinaoResearcherSemverPattern) {
+        throw 'ACTIVE_RESEARCHER_RELEASE_IDENTITY_INVALID'
+    }
+    if ($capabilityVersion -ne $activeRef.capability_version) {
+        throw 'ACTIVE_RESEARCHER_RELEASE_POINTER_IDENTITY_MISMATCH'
+    }
+    if ($packageVersion -ne $activeRef.package_version) {
+        throw 'ACTIVE_RESEARCHER_RELEASE_POINTER_IDENTITY_MISMATCH'
+    }
+    if ($charterVersion -ne $capabilityVersion -or $runtimeVersion -ne $capabilityVersion) {
+        throw 'ACTIVE_RESEARCHER_RELEASE_IDENTITY_INVALID'
+    }
+    $identitySha = [string]$manifest.release_identity_sha256
+    if (-not (Test-XinaoHexSha256 -Value $identitySha.ToLowerInvariant())) {
+        throw 'ACTIVE_RESEARCHER_RELEASE_IDENTITY_INVALID'
+    }
+    $identitySha = $identitySha.ToLowerInvariant()
+    $expectedReleaseId = "researcher-$capabilityVersion-$($identitySha.Substring(0, 16))"
+    if ($releaseId -ne $expectedReleaseId) {
+        throw 'ACTIVE_RESEARCHER_RELEASE_IDENTITY_INVALID'
+    }
+
+    if ([string]$manifest.capability_id -ne $script:XinaoResearcherCapabilityId) {
+        throw 'ACTIVE_RESEARCHER_RELEASE_CAPABILITY_IDENTITY_INVALID'
+    }
+    if ([string]$manifest.state_namespace -ne $script:XinaoResearcherStateNamespace -or
+        [string]$manifest.run_namespace -ne $script:XinaoResearcherRunNamespace) {
+        throw 'ACTIVE_RESEARCHER_CROSS_CHAIN_NAMESPACE_FORBIDDEN'
+    }
     if ($manifest.generic_worker_route_allowed -ne $false) {
         throw 'ACTIVE_RESEARCHER_RELEASE_CHAIN_INVALID'
     }
     if ($manifest.required_bootstrap_protocol -ne 2 -and [string]$manifest.required_bootstrap_protocol -ne '2') {
         throw 'ACTIVE_RESEARCHER_RELEASE_V2_ABSENT'
     }
+
+    # Cross-object hash binding (pointer active ↔ manifest).
+    $manBundleManifestSha = [string]$manifest.skill_bundle_manifest_sha256
+    $manBundleTreeSha = [string]$manifest.skill_bundle_tree_sha256
+    if (-not (Test-XinaoHexSha256 -Value $manBundleManifestSha.ToLowerInvariant()) -or
+        -not (Test-XinaoHexSha256 -Value $manBundleTreeSha.ToLowerInvariant())) {
+        throw 'ACTIVE_RESEARCHER_RELEASE_BUNDLE_HASH_INVALID'
+    }
+    if ($manBundleManifestSha.ToLowerInvariant() -ne $activeRef.skill_bundle_manifest_sha256 -or
+        $manBundleTreeSha.ToLowerInvariant() -ne $activeRef.skill_bundle_tree_sha256) {
+        throw 'ACTIVE_RESEARCHER_RELEASE_POINTER_IDENTITY_MISMATCH'
+    }
+
     $imageIdRaw = [string]$manifest.image_id
     if (-not (Test-XinaoImmutableImageIdFormat -ImageId $imageIdRaw)) {
         throw 'ACTIVE_RESEARCHER_RELEASE_IMAGE_ID_INVALID'
@@ -876,31 +1221,51 @@ function Get-XinaoActiveResearcherReleaseAdmission {
     if ($null -eq $source) {
         throw 'ACTIVE_RESEARCHER_RELEASE_SOURCE_IDENTITY_MISSING'
     }
+    if ($source.source_dirty -ne $false) {
+        throw 'ACTIVE_RESEARCHER_DIRTY_RELEASE_FORBIDDEN'
+    }
+    $sourceCommit = [string]$source.source_commit
+    $sourceTree = [string]$source.source_tree
+    if ($sourceCommit -notmatch '^[0-9a-f]{40,64}$' -or $sourceTree -notmatch '^[0-9a-f]{40,64}$') {
+        throw 'ACTIVE_RESEARCHER_RELEASE_SOURCE_IDENTITY_INVALID'
+    }
     $sourceDonor = [string]$source.grok_donor_image_id
     $sourceBinary = [string]$source.grok_donor_binary_sha256
     if (-not (Test-XinaoImmutableImageIdFormat -ImageId $sourceDonor)) {
         throw 'ACTIVE_RESEARCHER_RELEASE_SOURCE_DONOR_INVALID'
     }
     $sourceDonorCanon = ConvertTo-XinaoCanonicalImageId -ImageId $sourceDonor
-    if ([string]::IsNullOrWhiteSpace($sourceBinary) -or $sourceBinary -notmatch '^[0-9a-fA-F]{64}$') {
+    if (-not (Test-XinaoHexSha256 -Value $sourceBinary.ToLowerInvariant())) {
         throw 'ACTIVE_RESEARCHER_RELEASE_SOURCE_BINARY_INVALID'
     }
     $sourceBinary = $sourceBinary.ToLowerInvariant()
     $labels = $manifest.image_labels
+
+    $journalInfo = Assert-XinaoActiveResearcherActivationJournal `
+        -ResearcherContainerStateRoot $root `
+        -ActiveRef $activeRef `
+        -PointerGeneration $generation `
+        -PointerSha256 $pointerSha
+
     return [ordered]@{
         researcher_container_state_root = $root
         pointer_path                    = $pointerPath
         pointer_schema_version          = $schema
+        pointer_generation              = $generation
+        pointer_sha256                  = $pointerSha
         release_id                      = $releaseId
         release_manifest_path           = $manifestFull
-        release_manifest_sha256         = $(if ($manifestSha) { $manifestSha.ToLowerInvariant() } else { $null })
+        release_manifest_sha256         = $manifestSha
         active_image_id                 = $imageId
         source_donor_image_id           = $sourceDonorCanon
         source_donor_binary_sha256      = $sourceBinary
         image_labels                    = $labels
-        capability_version              = [string]$active.capability_version
-        package_version                 = [string]$active.package_version
+        capability_version              = $capabilityVersion
+        package_version                 = $packageVersion
         required_bootstrap_protocol     = 2
+        activation_txn_id               = [string]$activeRef.activation_txn_id
+        activation_journal_path         = [string]$journalInfo.journal_path
+        activation_state                = [string]$journalInfo.state
     }
 }
 

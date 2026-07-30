@@ -126,10 +126,32 @@ def _write_synthetic_v2_researcher_state(
     release_schema: str = "xinao.researcher_release.v2",
     pointer_schema: str = "xinao.researcher_current_pointer.v2",
     corrupt_manifest_hash: bool = False,
+    capability_id: str = "researcher-container",
+    state_namespace: str = "xinao_skill/researcher_container",
+    run_namespace: str = "xinao_researcher",
+    source_dirty: bool = False,
+    include_journal: bool = True,
+    journal_state: str = "VERIFIED",
+    release_identity_sha256: str | None = None,
+    release_id_override: str | None = None,
+    manifest_path_override: Path | None = None,
+    empty_manifest_hash: bool = False,
+    omit_manifest_hash: bool = False,
+    activation_txn_id: str = "xra_20260730T000000_0123456789abcdef",
+    generation: int = 1,
+    journal_terminal_pointer_mismatch: bool = False,
 ) -> dict:
-    """Write minimal pointer+release for offline canary admission tests."""
+    """Write protocol-v2 pointer+release(+verified journal) for offline canary admission tests.
+
+    Layout matches PowerShell ResearcherContainerStateRoot:
+      <state_root>/current.json
+      <state_root>/releases/<release_id>/release.json
+      <state_root>/transactions/<txn_id>/activation.v1.json
+    """
     state_root.mkdir(parents=True, exist_ok=True)
-    release_id = "researcher-1.1.0-synth000000000001"
+    identity_sha = (release_identity_sha256 or ("a" * 64)).lower()
+    capability_version = "1.1.0"
+    release_id = release_id_override or f"researcher-{capability_version}-{identity_sha[:16]}"
     release_dir = state_root / "releases" / release_id
     release_dir.mkdir(parents=True, exist_ok=True)
     labels = {
@@ -139,19 +161,29 @@ def _write_synthetic_v2_researcher_state(
         "io.xinao.researcher.grok-donor-binary.sha256": donor_binary_sha,
         "io.xinao.researcher.requested-model": requested_model,
     }
+    skill_hashes = {
+        "skill_md_sha256": "1" * 64,
+        "skill_invoker_sha256": "2" * 64,
+        "capability_registry_sha256": "3" * 64,
+        "charter_sha256": "4" * 64,
+        "output_schema_sha256": "5" * 64,
+        "material_bundle_schema_sha256": "6" * 64,
+        "runtime_lock_sha256": "7" * 64,
+        "meta_sha256": "8" * 64,
+    }
     manifest = {
         "schema_version": release_schema,
         "release_id": release_id,
         "package_version": "1.1.0",
-        "capability_id": "researcher-container",
-        "capability_version": "1.1.0",
-        "charter_version": "1.1.0",
-        "runtime_version": "1.1.0",
-        "release_identity_sha256": "a" * 64,
+        "capability_id": capability_id,
+        "capability_version": capability_version,
+        "charter_version": capability_version,
+        "runtime_version": capability_version,
+        "release_identity_sha256": identity_sha,
         "source_identity": {
             "source_commit": "a" * 40,
             "source_tree": "b" * 40,
-            "source_dirty": False,
+            "source_dirty": source_dirty,
             "grok_donor_image_id": donor_image_id,
             "grok_donor_binary_sha256": donor_binary_sha,
         },
@@ -163,20 +195,24 @@ def _write_synthetic_v2_researcher_state(
         "image_id": image_id,
         "image_entrypoint": ["python", "-I", "/opt/xinao-researcher/entrypoint.py"],
         "image_labels": labels,
-        "skill_hashes": {},
+        "skill_hashes": skill_hashes,
         "required_bootstrap_protocol": 2,
         "generic_worker_route_allowed": False,
-        "state_namespace": "xinao_skill/researcher_container",
-        "run_namespace": "xinao_researcher",
+        "state_namespace": state_namespace,
+        "run_namespace": run_namespace,
     }
-    manifest_path = release_dir / "release.json"
+    if manifest_path_override is not None:
+        manifest_path = Path(manifest_path_override)
+        manifest_path.parent.mkdir(parents=True, exist_ok=True)
+    else:
+        manifest_path = release_dir / "release.json"
     manifest_path.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
     manifest_sha = _file_sha256_hex(manifest_path)
     if legacy_pointer:
         pointer = {
             "schema_version": "xinao.researcher_current_pointer.v1",
             "release_id": release_id,
-            "release_manifest_path": str(manifest_path),
+            "release_manifest_path": str(manifest_path.resolve()),
             "release_manifest_sha256": manifest_sha,
             "promoted_at": "2026-07-29T00:00:00.000000Z",
             "previous_pointer_sha256": "f" * 64,
@@ -184,29 +220,102 @@ def _write_synthetic_v2_researcher_state(
             "previous_release_manifest_path": None,
             "previous_release_manifest_sha256": None,
         }
-    else:
-        pointer = {
-            "schema_version": pointer_schema,
-            "generation": 1,
-            "active": {
-                "release_id": release_id,
-                "release_manifest_path": str(manifest_path),
-                "release_manifest_sha256": (
-                    ("0" * 64) if corrupt_manifest_hash else manifest_sha
-                ),
-                "skill_bundle_manifest_sha256": "d" * 64,
-                "skill_bundle_tree_sha256": "e" * 64,
-                "capability_version": "1.1.0",
-                "package_version": "1.1.0",
-                "required_bootstrap_protocol": 2,
-                "activation_txn_id": "xra_20260730T000000_0123456789abcdef",
-            },
-            "previous_verified": None,
-            "switched_at": "2026-07-30T00:00:00.000000Z",
+        (state_root / "current.json").write_text(
+            json.dumps(pointer, indent=2) + "\n", encoding="utf-8"
+        )
+        return {
+            "state_root": state_root,
+            "image_id": image_id,
+            "donor_image_id": donor_image_id,
+            "donor_binary_sha": donor_binary_sha,
+            "release_id": release_id,
+            "manifest_path": manifest_path,
+            "manifest_sha": manifest_sha,
+            "activation_txn_id": activation_txn_id,
         }
-    (state_root / "current.json").write_text(
-        json.dumps(pointer, indent=2) + "\n", encoding="utf-8"
-    )
+
+    active_manifest_sha: str | None
+    if omit_manifest_hash:
+        active_manifest_sha = None
+    elif empty_manifest_hash:
+        active_manifest_sha = ""
+    elif corrupt_manifest_hash:
+        active_manifest_sha = "0" * 64
+    else:
+        active_manifest_sha = manifest_sha
+
+    active: dict = {
+        "release_id": release_id,
+        "release_manifest_path": str(manifest_path.resolve()),
+        "skill_bundle_manifest_sha256": "d" * 64,
+        "skill_bundle_tree_sha256": "e" * 64,
+        "capability_version": capability_version,
+        "package_version": "1.1.0",
+        "required_bootstrap_protocol": 2,
+        "activation_txn_id": activation_txn_id,
+    }
+    if active_manifest_sha is not None:
+        active["release_manifest_sha256"] = active_manifest_sha
+    else:
+        # Explicit omit for negative tests (property absent).
+        pass
+
+    pointer = {
+        "schema_version": pointer_schema,
+        "generation": generation,
+        "active": active,
+        "previous_verified": None,
+        "switched_at": "2026-07-30T00:00:00.000000Z",
+    }
+    pointer_path = state_root / "current.json"
+    pointer_path.write_text(json.dumps(pointer, indent=2) + "\n", encoding="utf-8")
+    pointer_sha = _file_sha256_hex(pointer_path)
+
+    journal_path = None
+    if include_journal and not legacy_pointer:
+        txn_dir = state_root / "transactions" / activation_txn_id
+        txn_dir.mkdir(parents=True, exist_ok=True)
+        journal_path = txn_dir / "activation.v1.json"
+        canary_path = txn_dir / "canary.receipt.json"
+        canary_path.write_text(json.dumps({"status": "PASS"}) + "\n", encoding="utf-8")
+        # Journal.to must bind the same active identity (including correct manifest sha).
+        journal_active = {
+            "release_id": release_id,
+            "release_manifest_path": str(manifest_path.resolve()),
+            "release_manifest_sha256": manifest_sha,
+            "skill_bundle_manifest_sha256": "d" * 64,
+            "skill_bundle_tree_sha256": "e" * 64,
+            "capability_version": capability_version,
+            "package_version": "1.1.0",
+            "required_bootstrap_protocol": 2,
+            "activation_txn_id": activation_txn_id,
+        }
+        terminal_sha = ("0" * 64) if journal_terminal_pointer_mismatch else pointer_sha
+        journal = {
+            "schema_version": "xinao.researcher_activation_journal.v1",
+            "revision": 4,
+            "txn_id": activation_txn_id,
+            "operation": "ACTIVATE",
+            "state": journal_state,
+            "from": None,
+            "requested_to": journal_active,
+            "to": journal_active,
+            "expected_generation": generation,
+            "prepared_at": "2026-07-30T00:00:00.000000Z",
+            "updated_at": "2026-07-30T00:00:01.000000Z",
+            "switched_pointer_sha256": pointer_sha,
+            "canary": {
+                "status": "PASS",
+                "receipt_path": str(canary_path),
+                "receipt_sha256": _file_sha256_hex(canary_path),
+            },
+            "failure_reason": None,
+            "terminal_pointer_sha256": (
+                terminal_sha if journal_state in {"VERIFIED", "ROLLED_BACK"} else None
+            ),
+        }
+        journal_path.write_text(json.dumps(journal, indent=2) + "\n", encoding="utf-8")
+
     return {
         "state_root": state_root,
         "image_id": image_id,
@@ -215,6 +324,10 @@ def _write_synthetic_v2_researcher_state(
         "release_id": release_id,
         "manifest_path": manifest_path,
         "manifest_sha": manifest_sha,
+        "activation_txn_id": activation_txn_id,
+        "pointer_path": pointer_path,
+        "pointer_sha": pointer_sha,
+        "journal_path": journal_path,
     }
 
 
@@ -951,6 +1064,36 @@ def test_real_provider_rejects_floating_image_tag(tmp_path: Path) -> None:
     assert payload.get("reason_code") == "CANARY_IMAGE_ID_NOT_IMMUTABLE"
 
 
+def _admit_active_researcher(state_root: Path) -> dict:
+    """Call Get-XinaoActiveResearcherReleaseAdmission; return {ok, reason_code?, ...}."""
+    common = (SCRIPTS / "XinaoEgressOwner.Common.ps1").as_posix()
+    rc = state_root.as_posix().replace("'", "''")
+    cmd = textwrap.dedent(
+        f"""
+        . '{common}'
+        try {{
+          $r = Get-XinaoActiveResearcherReleaseAdmission -ResearcherContainerStateRoot '{rc}'
+          $obj = [ordered]@{{
+            ok = $true
+            release_id = [string]$r.release_id
+            active_image_id = [string]$r.active_image_id
+            release_manifest_path = [string]$r.release_manifest_path
+            activation_txn_id = [string]$r.activation_txn_id
+            activation_state = [string]$r.activation_state
+          }}
+          $obj | ConvertTo-Json -Compress
+        }} catch {{
+          $obj = [ordered]@{{ ok = $false; reason_code = [string]$_.Exception.Message }}
+          $obj | ConvertTo-Json -Compress
+          exit 0
+        }}
+        """
+    )
+    proc = _run_pwsh_command(cmd)
+    assert proc.returncode == 0, proc.stderr + proc.stdout
+    return json.loads(proc.stdout.strip().splitlines()[-1])
+
+
 @requires_pwsh
 def test_canary_image_admission_rejection_matrix(tmp_path: Path) -> None:
     """Decisive offline preflight rejects: donor, unrelated, mismatch, legacy, hash, floating."""
@@ -1027,6 +1170,287 @@ def test_canary_image_admission_rejection_matrix(tmp_path: Path) -> None:
     assert p.get("reason_code") == "CANARY_IMAGE_IS_DONOR_NOT_RESEARCHER"
     p = _run("sha256:" + ("a" * 64), good_rc)
     assert p.get("reason_code") == "CANARY_IMAGE_ID_NOT_ACTIVE_RELEASE"
+
+
+@requires_pwsh
+def test_active_researcher_state_chain_wave9h_blockers(tmp_path: Path) -> None:
+    """Wave 9h blockers: path escape, bad release_id, journal, namespace/hash/dirty, reparse.
+
+    Positive control: full pointer+manifest+VERIFIED journal under releases/<id>/release.json.
+    """
+    # --- Positive: migration-shaped artifacts admit ---
+    good = tmp_path / "rc_good"
+    synth = _write_synthetic_v2_researcher_state(good)
+    admitted = _admit_active_researcher(good)
+    assert admitted.get("ok") is True, admitted
+    assert admitted.get("release_id") == synth["release_id"]
+    assert admitted.get("active_image_id") == ACTIVE_RESEARCHER_IMAGE_ID
+    assert admitted.get("activation_state") == "VERIFIED"
+    expected_manifest = (good / "releases" / synth["release_id"] / "release.json").resolve()
+    assert Path(admitted["release_manifest_path"]).resolve() == expected_manifest
+
+    # Canary preflight positive with active image.
+    allow = tmp_path / "allow.json"
+    allow.write_text(
+        json.dumps(
+            {
+                "schema_version": "xinao.provider_egress_allowlist.v1",
+                "domains": ["cli-chat-proxy.grok.com"],
+            }
+        ),
+        encoding="utf-8",
+    )
+    auth = tmp_path / "auth.json"
+    auth.write_text("{}\n", encoding="utf-8")
+    egress_state = tmp_path / "egress"
+    egress_state.mkdir()
+    proc_ok = _run_pwsh(
+        [
+            str(SCRIPTS / "Owner-EngineeringCanary.ps1"),
+            "-PreflightOnly",
+            "-RealProviderCall",
+            "-AuthFilePath",
+            str(auth),
+            "-CanaryImageId",
+            ACTIVE_RESEARCHER_IMAGE_ID,
+            "-PackageRoot",
+            str(EGRESS_ROOT),
+            "-StateRoot",
+            str(egress_state),
+            "-ResearcherContainerStateRoot",
+            str(good),
+            "-AllowlistPath",
+            str(allow),
+        ]
+    )
+    assert proc_ok.returncode == 0, proc_ok.stdout + proc_ok.stderr
+    ok_payload = _parse_last_json(proc_ok.stdout)
+    assert ok_payload.get("status") == "planned"
+    assert ok_payload.get("canary_image_id") == ACTIVE_RESEARCHER_IMAGE_ID
+
+    # F1/A1: release_manifest_path escapes state root (hash matches external file).
+    outside = tmp_path / "outside_escape"
+    outside.mkdir()
+    rc1 = tmp_path / "rc1"
+    escaped = _write_synthetic_v2_researcher_state(
+        rc1,
+        manifest_path_override=outside / "release.json",
+        include_journal=True,
+    )
+    # Pointer points at outside path; admission must reject path before trusting image.
+    r = _admit_active_researcher(rc1)
+    assert r.get("ok") is False, r
+    assert r.get("reason_code") == "ACTIVE_RESEARCHER_RELEASE_MANIFEST_PATH_INVALID"
+    # Also via canary preflight (decisive consumer).
+    proc_escape = _run_pwsh(
+        [
+            str(SCRIPTS / "Owner-EngineeringCanary.ps1"),
+            "-PreflightOnly",
+            "-RealProviderCall",
+            "-AuthFilePath",
+            str(auth),
+            "-CanaryImageId",
+            ACTIVE_RESEARCHER_IMAGE_ID,
+            "-PackageRoot",
+            str(EGRESS_ROOT),
+            "-StateRoot",
+            str(egress_state),
+            "-ResearcherContainerStateRoot",
+            str(rc1),
+            "-AllowlistPath",
+            str(allow),
+        ]
+    )
+    assert proc_escape.returncode != 0
+    assert (
+        _parse_last_json(proc_escape.stdout).get("reason_code")
+        == "ACTIVE_RESEARCHER_RELEASE_MANIFEST_PATH_INVALID"
+    )
+    assert escaped["manifest_path"].is_file()
+
+    # F1/A3: manifest under state_root/not_releases/... (not releases/<id>/release.json).
+    rc_not_rel = tmp_path / "rc_not_releases"
+    alt = rc_not_rel / "not_releases" / "evil" / "release.json"
+    _write_synthetic_v2_researcher_state(rc_not_rel, manifest_path_override=alt)
+    r = _admit_active_researcher(rc_not_rel)
+    assert r.get("ok") is False, r
+    assert r.get("reason_code") == "ACTIVE_RESEARCHER_RELEASE_MANIFEST_PATH_INVALID"
+
+    # F2/A2: malicious release_id path traversal shape (self-consistent would escape).
+    rc_evil_id = tmp_path / "rc_evil_id"
+    _write_synthetic_v2_researcher_state(
+        rc_evil_id,
+        release_id_override="..\\evil",
+        release_identity_sha256="b" * 64,
+    )
+    r = _admit_active_researcher(rc_evil_id)
+    assert r.get("ok") is False, r
+    assert r.get("reason_code") == "ACTIVE_RESEARCHER_RELEASE_IDENTITY_INVALID"
+
+    # F2/A5c: release_id not matching protocol pattern.
+    rc_bad_id = tmp_path / "rc_bad_id"
+    _write_synthetic_v2_researcher_state(
+        rc_bad_id,
+        release_id_override="not-a-valid-release-id",
+        release_identity_sha256="c" * 64,
+    )
+    r = _admit_active_researcher(rc_bad_id)
+    assert r.get("ok") is False, r
+    assert r.get("reason_code") == "ACTIVE_RESEARCHER_RELEASE_IDENTITY_INVALID"
+
+    # F2: pattern-valid release_id but identity prefix disagrees with release_identity_sha256.
+    rc_id_mismatch = tmp_path / "rc_id_mismatch"
+    _write_synthetic_v2_researcher_state(
+        rc_id_mismatch,
+        release_id_override="researcher-1.1.0-ffffffffffffffff",
+        release_identity_sha256="d" * 64,  # prefix dddd... not ffff...
+    )
+    r = _admit_active_researcher(rc_id_mismatch)
+    assert r.get("ok") is False, r
+    assert r.get("reason_code") == "ACTIVE_RESEARCHER_RELEASE_IDENTITY_INVALID"
+
+    # F3/A4: journal absent.
+    rc_no_j = tmp_path / "rc_no_journal"
+    _write_synthetic_v2_researcher_state(rc_no_j, include_journal=False)
+    r = _admit_active_researcher(rc_no_j)
+    assert r.get("ok") is False, r
+    assert r.get("reason_code") == "ACTIVE_RESEARCHER_ACTIVATION_JOURNAL_ABSENT"
+
+    # F3/A4b: journal ROLLED_BACK.
+    rc_rb = tmp_path / "rc_rolled_back"
+    _write_synthetic_v2_researcher_state(rc_rb, journal_state="ROLLED_BACK")
+    r = _admit_active_researcher(rc_rb)
+    assert r.get("ok") is False, r
+    assert r.get("reason_code") == "ACTIVE_RESEARCHER_ACTIVATION_ROLLED_BACK"
+
+    # F3: non-terminal PREPARED.
+    rc_pending = tmp_path / "rc_pending"
+    _write_synthetic_v2_researcher_state(rc_pending, journal_state="PREPARED")
+    r = _admit_active_researcher(rc_pending)
+    assert r.get("ok") is False, r
+    assert r.get("reason_code") == "ACTIVE_RESEARCHER_ACTIVATION_NOT_TERMINAL"
+
+    # F3: disagreeing terminal_pointer_sha256.
+    rc_ptr_bind = tmp_path / "rc_ptr_bind"
+    _write_synthetic_v2_researcher_state(
+        rc_ptr_bind, journal_terminal_pointer_mismatch=True
+    )
+    r = _admit_active_researcher(rc_ptr_bind)
+    assert r.get("ok") is False, r
+    assert r.get("reason_code") == "ACTIVE_RESEARCHER_ACTIVATION_POINTER_BINDING_MISMATCH"
+
+    # F4/A5: wrong capability + namespaces.
+    rc_ns = tmp_path / "rc_ns"
+    _write_synthetic_v2_researcher_state(
+        rc_ns,
+        capability_id="generic-worker",
+        state_namespace="wrong/ns",
+        run_namespace="wrong_run",
+    )
+    r = _admit_active_researcher(rc_ns)
+    assert r.get("ok") is False, r
+    assert r.get("reason_code") in {
+        "ACTIVE_RESEARCHER_RELEASE_CAPABILITY_IDENTITY_INVALID",
+        "ACTIVE_RESEARCHER_CROSS_CHAIN_NAMESPACE_FORBIDDEN",
+    }
+
+    # F4/A5b: empty release_manifest_sha256 skips must fail.
+    rc_empty_hash = tmp_path / "rc_empty_hash"
+    _write_synthetic_v2_researcher_state(rc_empty_hash, empty_manifest_hash=True)
+    r = _admit_active_researcher(rc_empty_hash)
+    assert r.get("ok") is False, r
+    assert r.get("reason_code") == "ACTIVE_RESEARCHER_RELEASE_MANIFEST_HASH_REQUIRED"
+
+    # F4/A5e: source_dirty=true.
+    rc_dirty = tmp_path / "rc_dirty"
+    _write_synthetic_v2_researcher_state(rc_dirty, source_dirty=True)
+    r = _admit_active_researcher(rc_dirty)
+    assert r.get("ok") is False, r
+    assert r.get("reason_code") == "ACTIVE_RESEARCHER_DIRTY_RELEASE_FORBIDDEN"
+
+    # F5/A7: junction under releases/ when OS supports it.
+    rc_junc = tmp_path / "rc_junction"
+    external_rel = tmp_path / "external_releases"
+    identity = "e" * 64
+    release_id = f"researcher-1.1.0-{identity[:16]}"
+    external_rel.mkdir(parents=True)
+    # Build release under external tree first, then junction as releases/.
+    synth_ext = _write_synthetic_v2_researcher_state(
+        tmp_path / "rc_junc_material",
+        release_identity_sha256=identity,
+    )
+    # Copy material release tree into external_releases/<id>
+    import shutil
+
+    src_rel = synth_ext["state_root"] / "releases" / synth_ext["release_id"]
+    dst_rel = external_rel / synth_ext["release_id"]
+    shutil.copytree(src_rel, dst_rel)
+    rc_junc.mkdir(parents=True)
+    # Place pointer/journal under rc_junc but point releases via junction.
+    releases_link = rc_junc / "releases"
+    try:
+        # Directory junction (Windows). Use binary capture to avoid OEM-codepage decode noise.
+        subprocess.run(
+            ["cmd", "/c", "mklink", "/J", str(releases_link), str(external_rel)],
+            check=False,
+            capture_output=True,
+        )
+    except OSError:
+        releases_link = None
+    if releases_link is not None and releases_link.exists():
+        # Keep the logical path under rc_junc/releases/... (do NOT Path.resolve() —
+        # resolve expands the junction and would trip path-equality before reparse).
+        man_path = rc_junc / "releases" / release_id / "release.json"
+        man_path_str = str(man_path)
+        # Re-create pointer+journal only against rc_junc using existing external manifest.
+        man_sha = _file_sha256_hex(man_path)
+        txn = "xra_20260730T000000_0123456789abcdef"
+        active = {
+            "release_id": release_id,
+            "release_manifest_path": man_path_str,
+            "release_manifest_sha256": man_sha,
+            "skill_bundle_manifest_sha256": "d" * 64,
+            "skill_bundle_tree_sha256": "e" * 64,
+            "capability_version": "1.1.0",
+            "package_version": "1.1.0",
+            "required_bootstrap_protocol": 2,
+            "activation_txn_id": txn,
+        }
+        pointer = {
+            "schema_version": "xinao.researcher_current_pointer.v2",
+            "generation": 1,
+            "active": active,
+            "previous_verified": None,
+            "switched_at": "2026-07-30T00:00:00.000000Z",
+        }
+        pointer_path = rc_junc / "current.json"
+        pointer_path.write_text(json.dumps(pointer, indent=2) + "\n", encoding="utf-8")
+        pointer_sha = _file_sha256_hex(pointer_path)
+        txn_dir = rc_junc / "transactions" / txn
+        txn_dir.mkdir(parents=True, exist_ok=True)
+        journal = {
+            "schema_version": "xinao.researcher_activation_journal.v1",
+            "revision": 4,
+            "txn_id": txn,
+            "operation": "ACTIVATE",
+            "state": "VERIFIED",
+            "from": None,
+            "requested_to": active,
+            "to": active,
+            "expected_generation": 1,
+            "prepared_at": "2026-07-30T00:00:00.000000Z",
+            "updated_at": "2026-07-30T00:00:01.000000Z",
+            "switched_pointer_sha256": pointer_sha,
+            "canary": None,
+            "failure_reason": None,
+            "terminal_pointer_sha256": pointer_sha,
+        }
+        (txn_dir / "activation.v1.json").write_text(
+            json.dumps(journal, indent=2) + "\n", encoding="utf-8"
+        )
+        r = _admit_active_researcher(rc_junc)
+        assert r.get("ok") is False, r
+        assert r.get("reason_code") == "ACTIVE_RESEARCHER_STATE_REPARSE_FORBIDDEN"
 
 
 @requires_pwsh
