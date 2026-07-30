@@ -2,6 +2,7 @@
 
 from .lifecycle import (
     DEFAULT_OPENING_BALANCE,
+    MECHANICAL_SETTLEMENT_RULE_REF,
     ZERO_AMOUNT,
     AccountBranchDecision,
     AccountDecisionIdentity,
@@ -30,6 +31,7 @@ from .lifecycle import (
 
 __all__ = [
     "DEFAULT_OPENING_BALANCE",
+    "MECHANICAL_SETTLEMENT_RULE_REF",
     "ZERO_AMOUNT",
     "AccountBranchDecision",
     "AccountDecisionIdentity",

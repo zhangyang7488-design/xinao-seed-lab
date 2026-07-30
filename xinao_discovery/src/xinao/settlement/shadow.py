@@ -11,7 +11,9 @@ from xinao.canonical import canonical_sha256
 from xinao.decision import DecisionKind, FrozenDecision
 from xinao.ledger.accounting import JournalGroup, settlement_group
 
-from .special_number import SettlementResult, settle_special_number
+from .special_number import SPECIAL_NUMBER_RULE, SettlementResult, settle_special_number
+
+MECHANICAL_SETTLEMENT_RULE_REF = SPECIAL_NUMBER_RULE.rule_ref
 
 
 class OutcomeObservation(BaseModel):
@@ -128,12 +130,24 @@ def settle_frozen_decision(
         raise ValueError("unverified outcome cannot produce a settlement")
     if outcome.target_ref != frozen.target_ref:
         raise ValueError("outcome target and frozen decision disagree")
+    if frozen.rule_ref != MECHANICAL_SETTLEMENT_RULE_REF:
+        raise ValueError(
+            f"mechanical settlement only implements {MECHANICAL_SETTLEMENT_RULE_REF}; "
+            f"rejected rule_ref={frozen.rule_ref!r}"
+        )
     result = settle_special_number(
         selected_number=frozen.selected_number,
         actual_special_number=outcome.actual_special_number,
         panel=frozen.panel,
         stake=frozen.stake,
     )
+    if result.rule_ref != frozen.rule_ref:
+        raise ValueError(
+            "SettlementResult.rule_ref must match frozen rule_ref "
+            f"(frozen={frozen.rule_ref!r}, result={result.rule_ref!r})"
+        )
+    if result.rule_ref != MECHANICAL_SETTLEMENT_RULE_REF:
+        raise ValueError(f"settlement record cannot claim unsupported rule_ref={result.rule_ref!r}")
     journal = settlement_group(
         group_ref=journal_group_ref,
         portfolio_ref=portfolio_ref,
@@ -151,6 +165,8 @@ def settle_frozen_decision(
         result=result,
         journal_group_ref=journal.group_ref,
     ).with_hash()
+    if record.rule_ref != result.rule_ref:
+        raise ValueError("settlement record rule_ref must match SettlementResult.rule_ref")
     return SettlementBundle(record=record, journal_group=journal)
 
 

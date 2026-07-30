@@ -199,6 +199,7 @@ def test_action_full_closed_loop_and_deterministic_fresh_replay() -> None:
         settlement_ref="settlement.action.v1",
         settlement_journal_group_ref="journal.settlement.action.v1",
         statement_ref="statement.action.v1",
+        existing_settlements=(),
     )
 
     assert settled.statement.account_decision == AccountDecisionIdentity.ACTION
@@ -212,8 +213,13 @@ def test_action_full_closed_loop_and_deterministic_fresh_replay() -> None:
     assert settled.statement.outcome_ref == outcome.outcome_ref
     assert settled.statement.actual_special_number == outcome.actual_special_number
     assert settled.statement.observed_at == outcome.observed_at
+    assert settled.statement.selected_number == 1
+    assert settled.statement.panel == "B"
+    assert settled.statement.baseline_ref == "BO0013"
+    assert settled.statement.odds == "42.385"
     assert settled.settlement_bundle is not None
     assert len(settled.journal_groups) == 3
+    assert episode.pre_freeze_balance == episode.opening_balance == DEFAULT_OPENING_BALANCE
 
     replayed = replay_settled_episode(
         episode=episode,
@@ -241,6 +247,7 @@ def test_researcher_account_no_action_pre_outcome_freeze_and_zero_risk_statement
         episode=episode,
         outcome=outcome,
         statement_ref="statement.no-action.v1",
+        existing_settlements=(),
     )
     assert settled.settlement_bundle is None
     assert settled.journal_groups == ()
@@ -252,6 +259,10 @@ def test_researcher_account_no_action_pre_outcome_freeze_and_zero_risk_statement
     assert settled.statement.outcome_ref == outcome.outcome_ref
     assert settled.statement.actual_special_number == outcome.actual_special_number
     assert settled.statement.observed_at == outcome.observed_at
+    assert settled.statement.selected_number is None
+    assert settled.statement.panel is None
+    assert settled.statement.baseline_ref is None
+    assert settled.statement.odds is None
 
     replayed = replay_settled_episode(episode=episode, outcome=outcome, settled=settled)
     assert replayed.content_hash == settled.content_hash
@@ -344,6 +355,7 @@ def test_target_seat_portfolio_mismatch_rejected() -> None:
         settlement_ref="settlement.1",
         settlement_journal_group_ref="journal.settlement.1",
         statement_ref="statement.1",
+        existing_settlements=(),
     )
     other_seat = create_seat(seat_id="seat.other", portfolio_ref="portfolio.other")
     with pytest.raises(ValueError, match="cross-seat"):
@@ -370,6 +382,7 @@ def test_double_or_conflicting_settlement_rejected() -> None:
         settlement_ref="settlement.1",
         settlement_journal_group_ref="journal.settlement.1",
         statement_ref="statement.1",
+        existing_settlements=(),
     )
     with pytest.raises(ValueError, match=r"double|conflicting"):
         reject_conflicting_settlement(existing=first, candidate=first)
@@ -380,6 +393,7 @@ def test_double_or_conflicting_settlement_rejected() -> None:
         settlement_ref="settlement.2",
         settlement_journal_group_ref="journal.settlement.2",
         statement_ref="statement.2",
+        existing_settlements=(),
     )
     with pytest.raises(ValueError, match="conflicting"):
         reject_conflicting_settlement(existing=first, candidate=second)
@@ -406,6 +420,7 @@ def test_mutated_sealed_content_and_replay_rejected() -> None:
         settlement_ref="settlement.mut.v1",
         settlement_journal_group_ref="journal.settlement.mut.v1",
         statement_ref="statement.mut.v1",
+        existing_settlements=(),
     )
 
     mutated_episode_fields = {name: getattr(episode, name) for name in type(episode).model_fields}
@@ -479,6 +494,7 @@ def test_stale_outcome_result_hash_rejected_before_settlement() -> None:
             settlement_ref="settlement.stale-hash",
             settlement_journal_group_ref="journal.settlement.stale-hash",
             statement_ref="statement.stale-hash",
+            existing_settlements=(),
         )
 
 
@@ -496,6 +512,7 @@ def test_settlement_occurred_at_before_outcome_observed_rejected() -> None:
             settlement_journal_group_ref="journal.settlement.early",
             statement_ref="statement.early",
             occurred_at=too_early,
+            existing_settlements=(),
         )
 
 
@@ -669,12 +686,17 @@ def test_statement_result_identity_enters_hash_and_replay() -> None:
         settlement_ref="settlement.identity.v1",
         settlement_journal_group_ref="journal.settlement.identity.v1",
         statement_ref="statement.identity.v1",
+        existing_settlements=(),
     )
     canonical = settled.statement.canonical_content()
     assert canonical["target_ref"] == episode.target_ref
     assert canonical["outcome_ref"] == outcome.outcome_ref
     assert canonical["actual_special_number"] == outcome.actual_special_number
     assert "observed_at" in canonical
+    assert canonical["selected_number"] == 1
+    assert canonical["panel"] == "B"
+    assert canonical["baseline_ref"] == "BO0013"
+    assert canonical["odds"] == "42.385"
 
     mutated_fields = {
         name: getattr(settled.statement, name) for name in type(settled.statement).model_fields
@@ -687,6 +709,19 @@ def test_statement_result_identity_enters_hash_and_replay() -> None:
     with pytest.raises(ValueError, match=r"mutated sealed|actual_special_number"):
         replay_settled_episode(episode=episode, outcome=outcome, settled=mutated_settled)
 
+    odds_mutated_fields = {
+        name: getattr(settled.statement, name) for name in type(settled.statement).model_fields
+    }
+    odds_mutated_fields["odds"] = "99.999"
+    odds_mutated_statement = type(settled.statement).model_construct(**odds_mutated_fields)
+    odds_mutated_settled_fields = {
+        name: getattr(settled, name) for name in type(settled).model_fields
+    }
+    odds_mutated_settled_fields["statement"] = odds_mutated_statement
+    odds_mutated_settled = type(settled).model_construct(**odds_mutated_settled_fields)
+    with pytest.raises(ValueError, match=r"mutated sealed|odds|replay"):
+        replay_settled_episode(episode=episode, outcome=outcome, settled=odds_mutated_settled)
+
 
 def test_decision_kind_no_action_semantics_unchanged_for_settlement_binding() -> None:
     """Existing DecisionKind.NO_ACTION still cannot become an ACTION account ticket."""
@@ -694,3 +729,174 @@ def test_decision_kind_no_action_semantics_unchanged_for_settlement_binding() ->
     assert no_action.decision_kind == DecisionKind.NO_ACTION
     with pytest.raises(ValueError, match="exact frozen shadow decision kind"):
         build_account_action(account_decision_ref="acct.bad", frozen_decision=no_action)
+
+
+def test_first_period_rejects_inflated_pre_freeze_balance() -> None:
+    """Single-seat first period: bare '续期余额' cannot lift 10k seat opening to 50k."""
+    seat = _seat()
+    frozen = _frozen_shadow()
+    account = build_account_action(account_decision_ref="acct.inflate.v1", frozen_decision=frozen)
+    with pytest.raises(ValueError, match=r"pre_freeze_balance must equal sealed seat opening"):
+        freeze_shadow_episode(
+            episode_ref="episode.inflate",
+            seat=seat,
+            science_decision=_science_candidate(),
+            account_decision=account,
+            target_ref=frozen.target_ref,
+            target_open_time=frozen.target_open_time,
+            freeze_deadline=frozen.freeze_deadline,
+            frozen_at=FREEZE_AT,
+            bound_frozen_decision=frozen,
+            pre_freeze_balance="50000.0000",
+            opening_journal_group_ref="j.open.inflate",
+            position_journal_group_ref="j.pos.inflate",
+        )
+
+
+def test_action_journals_must_match_reconstructed_opening_and_position() -> None:
+    from xinao.ledger.accounting import frozen_position_group, opening_group
+
+    episode = _freeze_action()
+    assert episode.opening_journal_group is not None
+    assert episode.position_journal_group is not None
+    expected_open = opening_group(
+        group_ref=episode.opening_journal_group.group_ref,
+        portfolio_ref=episode.portfolio_ref,
+        occurred_at=episode.frozen_at,
+        amount=episode.pre_freeze_balance,
+    )
+    expected_pos = frozen_position_group(
+        group_ref=episode.position_journal_group.group_ref,
+        portfolio_ref=episode.portfolio_ref,
+        decision_ref=episode.bound_frozen_decision.decision_ref,
+        occurred_at=episode.frozen_at,
+        stake=episode.account_decision.stake,
+    )
+    assert episode.opening_journal_group == expected_open
+    assert episode.position_journal_group == expected_pos
+
+    # Fake ledger: wrong amount / time still carries OPENING type and hash, but must fail.
+    fake_open = opening_group(
+        group_ref=episode.opening_journal_group.group_ref,
+        portfolio_ref=episode.portfolio_ref,
+        occurred_at=episode.frozen_at,
+        amount="50000.0000",
+    )
+    assert fake_open.transaction_type == "OPENING"
+    assert fake_open.group_hash is not None
+    fields = {name: getattr(episode, name) for name in type(episode).model_fields}
+    fields["opening_journal_group"] = fake_open
+    fields["content_hash"] = None
+    with pytest.raises(ValueError, match=r"opening_journal_group must equal reconstructed"):
+        type(episode).model_validate(fields)
+
+    fake_pos = frozen_position_group(
+        group_ref=episode.position_journal_group.group_ref,
+        portfolio_ref=episode.portfolio_ref,
+        decision_ref=episode.bound_frozen_decision.decision_ref,
+        occurred_at=episode.frozen_at - timedelta(minutes=1),
+        stake=episode.account_decision.stake,
+    )
+    fields = {name: getattr(episode, name) for name in type(episode).model_fields}
+    fields["position_journal_group"] = fake_pos
+    fields["content_hash"] = None
+    with pytest.raises(ValueError, match=r"position_journal_group must equal reconstructed"):
+        type(episode).model_validate(fields)
+
+
+def test_unsupported_rule_ref_rejected_on_action_build_freeze_settle() -> None:
+    frozen = _frozen_shadow(rule_ref="other-rule.v1")
+    with pytest.raises(ValueError, match=r"special-number-rule\.v1|unsupported rule"):
+        build_account_action(account_decision_ref="acct.bad-rule", frozen_decision=frozen)
+
+    # Defensive episode path: rebinding a foreign rule after seal must fail closed.
+    good = _frozen_shadow()
+    account = build_account_action(account_decision_ref="acct.rule.v1", frozen_decision=good)
+    episode = _freeze_action(frozen=good, account=account)
+    foreign = good.model_copy(update={"rule_ref": "other-rule.v1", "content_hash": None})
+    foreign = foreign.with_content_hash()
+    # build_account_action already rejects foreign rules; construct a sealed account ticket.
+    foreign_account = type(account).model_construct(
+        **{
+            **account.model_dump(mode="python"),
+            "rule_ref": "other-rule.v1",
+            "frozen_decision_hash": foreign.content_hash,
+            "content_hash": None,
+        }
+    )
+    foreign_account = foreign_account.model_copy(
+        update={"content_hash": foreign_account.compute_content_hash()}
+    )
+    fields = {name: getattr(episode, name) for name in type(episode).model_fields}
+    fields["bound_frozen_decision"] = foreign
+    fields["rule_ref"] = "other-rule.v1"
+    fields["account_decision"] = foreign_account
+    fields["content_hash"] = None
+    with pytest.raises(ValueError, match=r"special-number-rule\.v1|unsupported rule|rule_ref"):
+        type(episode).model_validate(fields)
+
+
+def test_settle_frozen_decision_rejects_foreign_rule_and_matches_result_rule() -> None:
+    from xinao.settlement import settle_frozen_decision
+
+    good = _frozen_shadow()
+    bundle = settle_frozen_decision(
+        frozen=good,
+        outcome=_outcome(),
+        settlement_ref="settlement.rule-ok",
+        journal_group_ref="journal.settlement.rule-ok",
+        portfolio_ref="portfolio.shadow.alpha",
+        occurred_at=OPEN + timedelta(hours=1),
+    )
+    assert bundle.record.rule_ref == "special-number-rule.v1"
+    assert bundle.record.result.rule_ref == good.rule_ref
+
+    foreign = good.model_copy(update={"rule_ref": "phantom-rule.v1", "content_hash": None})
+    foreign = foreign.with_content_hash()
+    with pytest.raises(ValueError, match=r"special-number-rule\.v1|unsupported|rejected rule"):
+        settle_frozen_decision(
+            frozen=foreign,
+            outcome=_outcome(),
+            settlement_ref="settlement.rule-bad",
+            journal_group_ref="journal.settlement.rule-bad",
+            portfolio_ref="portfolio.shadow.alpha",
+            occurred_at=OPEN + timedelta(hours=1),
+        )
+
+
+def test_science_candidate_must_bind_action_candidate_refs() -> None:
+    frozen = _frozen_shadow()
+    science = build_science_decision(
+        science_decision_ref="science.unrelated.v1",
+        identity=ScienceDecisionIdentity.SCIENCE_CANDIDATE,
+        knowledge_cutoff=CUTOFF,
+        rationale_ref="rationale.unrelated.v1",
+        candidate_ref="candidate.unrelated.v1",
+    )
+    account = build_account_action(account_decision_ref="acct.bind.v1", frozen_decision=frozen)
+    with pytest.raises(ValueError, match=r"candidate_ref must exist in bound"):
+        freeze_shadow_episode(
+            episode_ref="episode.unrelated-science",
+            seat=_seat(),
+            science_decision=science,
+            account_decision=account,
+            target_ref=frozen.target_ref,
+            target_open_time=frozen.target_open_time,
+            freeze_deadline=frozen.freeze_deadline,
+            frozen_at=FREEZE_AT,
+            bound_frozen_decision=frozen,
+            opening_journal_group_ref="j.open.unrelated",
+            position_journal_group_ref="j.pos.unrelated",
+        )
+
+
+def test_settle_shadow_episode_requires_explicit_existing_settlements() -> None:
+    episode = _freeze_action()
+    with pytest.raises(TypeError, match=r"existing_settlements"):
+        settle_shadow_episode(  # type: ignore[call-arg]
+            episode=episode,
+            outcome=_outcome(),
+            settlement_ref="settlement.no-prior-arg",
+            settlement_journal_group_ref="journal.settlement.no-prior-arg",
+            statement_ref="statement.no-prior-arg",
+        )
