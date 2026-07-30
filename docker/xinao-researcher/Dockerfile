@@ -12,31 +12,49 @@ ARG SKILL_INVOKER_SHA256
 ARG DOCKERFILE_SHA256
 ARG ENTRYPOINT_SHA256
 ARG SOURCE_IDENTITY_SHA256
+ARG SHADOW_RUNTIME_TREE_SHA256
+ARG SHADOW_RUNTIME_LOCK_SHA256
 ARG REQUESTED_MODEL=grok-4.5
+ARG SHADOW_PYDANTIC_VERSION=2.13.4
+ARG SHADOW_RFC8785_VERSION=0.1.4
+ARG SHADOW_UUID6_VERSION=2025.0.1
 
 RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates \
     && rm -rf /var/lib/apt/lists/* \
-    && install -d -m 0555 /opt/xinao-researcher /work
+    && install -d -m 0555 /opt/xinao-researcher /opt/xinao-shadow /work
 
 # Grok binary is extracted once from the lock-pinned donor image Id via a never-started
 # temporary container into an owned host staging context. There is no donor FROM stage and
 # no mutable-tag re-resolution at build time (SP-B-001).
 COPY donor-artifacts/grok /usr/local/bin/grok
 COPY --chmod=0555 docker/xinao-researcher/entrypoint.py /opt/xinao-researcher/entrypoint.py
+# Locked leg-A shadow runtime cone (xinao_discovery subset). Host skill launches it with
+# --entrypoint python -I -m xinao.shadow_lifecycle; researcher ENTRYPOINT stays unchanged.
+COPY shadow-runtime/ /opt/xinao-shadow/
 RUN printf '%s  %s\n' "${GROK_DONOR_BINARY_SHA256}" /usr/local/bin/grok \
     | sha256sum --check --strict - \
     && printf '%s  %s\n' "${ENTRYPOINT_SHA256}" /opt/xinao-researcher/entrypoint.py \
     | sha256sum --check --strict - \
     && test "${REQUESTED_MODEL}" = "grok-4.5" \
+    && test -n "${SHADOW_RUNTIME_TREE_SHA256}" \
+    && test -n "${SHADOW_RUNTIME_LOCK_SHA256}" \
     && chmod 0555 /usr/local/bin/grok \
-    && /usr/local/bin/grok version
+    && /usr/local/bin/grok version \
+    && pip install --no-cache-dir --root-user-action=ignore \
+        "pydantic==${SHADOW_PYDANTIC_VERSION}" \
+        "rfc8785==${SHADOW_RFC8785_VERSION}" \
+        "uuid6==${SHADOW_UUID6_VERSION}" \
+    && python -c "import sysconfig; from pathlib import Path; Path(sysconfig.get_paths()['purelib'], 'xinao-shadow.pth').write_text('/opt/xinao-shadow\\n', encoding='utf-8')" \
+    && python -I -c "import xinao.shadow_lifecycle as m; assert m.CONSUMER_VERSION"
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PYTHONUTF8=1 \
     HOME=/grok-home \
     GROK_HOME=/grok-home \
-    XINAO_RESEARCHER_ENTRYPOINT_SHA256=${ENTRYPOINT_SHA256}
+    XINAO_RESEARCHER_ENTRYPOINT_SHA256=${ENTRYPOINT_SHA256} \
+    XINAO_SHADOW_RUNTIME_TREE_SHA256=${SHADOW_RUNTIME_TREE_SHA256} \
+    XINAO_SHADOW_RUNTIME_LOCK_SHA256=${SHADOW_RUNTIME_LOCK_SHA256}
 
 LABEL org.opencontainers.image.title="XINAO dedicated scientific researcher" \
       io.xinao.researcher.chain="dedicated-xinao-science" \
@@ -51,6 +69,8 @@ LABEL org.opencontainers.image.title="XINAO dedicated scientific researcher" \
       io.xinao.researcher.dockerfile.sha256="${DOCKERFILE_SHA256}" \
       io.xinao.researcher.entrypoint.sha256="${ENTRYPOINT_SHA256}" \
       io.xinao.researcher.source-identity.sha256="${SOURCE_IDENTITY_SHA256}" \
+      io.xinao.researcher.shadow-runtime.sha256="${SHADOW_RUNTIME_TREE_SHA256}" \
+      io.xinao.researcher.shadow-runtime-lock.sha256="${SHADOW_RUNTIME_LOCK_SHA256}" \
       io.xinao.researcher.requested-model="${REQUESTED_MODEL}"
 
 WORKDIR /work

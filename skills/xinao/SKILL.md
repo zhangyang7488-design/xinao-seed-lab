@@ -18,6 +18,21 @@ internally. Return the bounded receipt and research result in the Codex conversa
 the user to run a command, edit a file, construct a manifest, pre-seal a material, or supply an
 internal field.
 
+For shadow lifecycle, require `inspect` to report `shadow.runtime_status=AVAILABLE` (source
+registration, live image shadow labels, and `installed_projection.status=ALIGNED`). Then use the
+installed Skill only:
+
+- `scripts/xinao.py shadow init --root <episode> --seat-id <id> --portfolio-ref <ref>`
+- `scripts/xinao.py shadow inspect|status --root <episode>`
+- `scripts/xinao.py shadow freeze --root <episode> --request <freeze.json>`
+- `scripts/xinao.py shadow settle --root <episode> --outcome <outcome.json>`
+- `scripts/xinao.py shadow replay --root <episode>`
+
+These verbs run an ephemeral leg-A container from the active researcher image by exact image ID
+with read-only rootfs, dropped capabilities, no-new-privileges, and network none; only the episode
+state mount is writable. Do not substitute the repository CLI, host PYTHONPATH, Temporal, a daemon,
+or ordinary worker routes. Shadow results stay candidate-only and never claim parent completion.
+
 `source_status=available` means only that the implementation exists. Treat the runtime as callable
 only when `inspect` returns `RUNTIME_READY`; pointer presence, an old successful receipt, an image
 tag, or source tests are not substitutes. A call with materials must freeze them before runtime
@@ -33,6 +48,17 @@ retain rollback, and canary through the newly installed entry. Then run the inst
 activation as a separate unjournaled step. This is a legacy-replacement command, not a fresh-install
 fallback; if no installed root or pointer exists, require a separately implemented and verified
 fresh-install capability instead of inventing one during the call.
+
+Ordinary `activate` switches only the versioned current pointer; it deliberately does not rewrite the
+installed Skill tree. After a later activate, fresh `inspect` must report
+`installed_projection.status=DRIFTED` until you run the installed entry's
+`scripts/xinao.py sync-projection` (no release/hash/path arguments). That journaled transaction
+projects only `current.active`'s sealed skill-bundle onto the installed Skill root with D-disk
+receipt, previous-installed snapshot, recovery cone, foreign-entry rejection, and atomic replace;
+it never changes the current pointer. On success, `installed_projection.status=ALIGNED` and
+`shadow.runtime_status` may become `AVAILABLE` only when image labels also pass. Treat projection
+drift as fail-closed: do not treat researcher runtime as ready while the installed projection is
+drifted.
 
 Keep the bounded online research lifecycle separate from the durable background leg. When the
 user asks to mature the ordinary research leg, finish one stable entry with one-command lifecycle
@@ -67,3 +93,5 @@ account and knowledge axes; the contract is a downstream completion ruler, not a
 
 Capabilities marked `planned` are unavailable. Implement and verify them through the update
 procedure in the meta reference before calling them; never emulate them with chat glue.
+Shadow account/freeze/settlement/replay are available only as verbs of `shadow-lifecycle-leg-a`
+through the installed Skill container path above, and only when inspect proves live image capability.

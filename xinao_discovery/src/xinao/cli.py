@@ -116,6 +116,32 @@ def build_parser() -> argparse.ArgumentParser:
     foundation_verify = foundation_commands.add_parser("verify-report")
     foundation_verify.add_argument("--blueprint", type=Path, required=True)
     foundation_verify.add_argument("--report", type=Path, required=True)
+    shadow = groups.add_parser(
+        "shadow",
+        help="Leg-A file-backed shadow lifecycle consumer (init/freeze/settle/status/replay)",
+    )
+    shadow_commands = shadow.add_subparsers(dest="command", required=True)
+    shadow_init = shadow_commands.add_parser("init")
+    shadow_init.add_argument("--root", type=Path, required=True)
+    shadow_init.add_argument("--seat-id", required=True)
+    shadow_init.add_argument("--portfolio-ref", required=True)
+    shadow_init.add_argument("--opening-balance")
+    shadow_inspect = shadow_commands.add_parser("inspect")
+    shadow_inspect.add_argument("--root", type=Path, required=True)
+    shadow_status = shadow_commands.add_parser("status")
+    shadow_status.add_argument("--root", type=Path, required=True)
+    shadow_freeze = shadow_commands.add_parser("freeze")
+    shadow_freeze.add_argument("--root", type=Path, required=True)
+    shadow_freeze.add_argument("--request", type=Path, required=True)
+    shadow_settle = shadow_commands.add_parser("settle")
+    shadow_settle.add_argument("--root", type=Path, required=True)
+    shadow_settle.add_argument("--outcome", type=Path, required=True)
+    shadow_settle.add_argument("--settlement-ref")
+    shadow_settle.add_argument("--settlement-journal-group-ref")
+    shadow_settle.add_argument("--statement-ref")
+    shadow_settle.add_argument("--occurred-at")
+    shadow_replay = shadow_commands.add_parser("replay")
+    shadow_replay.add_argument("--root", type=Path, required=True)
     return parser
 
 
@@ -299,6 +325,28 @@ def main() -> int:
         )
         print(json.dumps(result, ensure_ascii=False, sort_keys=True))
         return 0 if result["ok"] else 1
+    if args.group == "shadow":
+        from xinao.shadow_lifecycle.consumer import dispatch
+
+        try:
+            result = dispatch(args)
+        except (ValueError, TypeError, KeyError) as exc:
+            print(
+                json.dumps(
+                    {
+                        "ok": False,
+                        "error": str(exc),
+                        "completion_claim_allowed": False,
+                        "first_episode_verified": False,
+                        "candidate_only": True,
+                    },
+                    ensure_ascii=False,
+                    sort_keys=True,
+                )
+            )
+            return 1
+        print(json.dumps(result, ensure_ascii=False, sort_keys=True))
+        return 0 if result.get("ok") else 1
     raise AssertionError("unreachable command")
 
 

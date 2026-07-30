@@ -1,5 +1,17 @@
 """Leg-A shadow lifecycle vertical: dual-branch freeze, settle, statement, replay."""
 
+from .consumer import (
+    CONSUMER_ID,
+    CONSUMER_VERSION,
+    freeze_episode,
+    init_episode,
+    inspect_episode,
+    replay_episode,
+    settle_episode,
+)
+from .consumer import (
+    main as consumer_main,
+)
 from .lifecycle import (
     DEFAULT_OPENING_BALANCE,
     MECHANICAL_SETTLEMENT_RULE_REF,
@@ -30,6 +42,8 @@ from .lifecycle import (
 )
 
 __all__ = [
+    "CONSUMER_ID",
+    "CONSUMER_VERSION",
     "DEFAULT_OPENING_BALANCE",
     "MECHANICAL_SETTLEMENT_RULE_REF",
     "ZERO_AMOUNT",
@@ -50,10 +64,16 @@ __all__ = [
     "build_account_action",
     "build_account_no_action",
     "build_science_decision",
+    "consumer_main",
     "create_seat",
+    "freeze_episode",
     "freeze_shadow_episode",
+    "init_episode",
+    "inspect_episode",
     "reject_conflicting_settlement",
     "reject_policy_as_account_ticket",
+    "replay_episode",
     "replay_settled_episode",
+    "settle_episode",
     "settle_shadow_episode",
 ]

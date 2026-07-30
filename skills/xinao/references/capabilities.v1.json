@@ -1,35 +1,59 @@
 {
   "schema_version": "xinao.skill_capability_registry.v1",
   "skill_id": "xinao",
-  "skill_version": "1.2.0",
+  "skill_version": "1.3.0",
   "ordinary_worker_chain_allowed": false,
   "default_visibility": "codex_conversation",
   "capabilities": [
     {
       "capability_id": "researcher-container",
-      "version": "1.1.2",
+      "version": "1.2.0",
       "source_status": "available",
       "runtime_status_source": "D:/XINAO_RESEARCH_RUNTIME/state/xinao_skill/researcher_container/current.json"
     },
     {
+      "capability_id": "shadow-lifecycle-leg-a",
+      "version": "0.2.0",
+      "source_status": "available",
+      "execution_boundary": "ephemeral_leg_a_container_in_researcher_image",
+      "entrypoint": "scripts/xinao.py shadow",
+      "skill_verbs": ["init", "inspect", "status", "freeze", "settle", "replay"],
+      "network_mode": "none",
+      "parent_completion_authority": false,
+      "completion_claim_allowed": false,
+      "notes": "Installed Skill launches an ephemeral leg-A container from the active researcher image by exact image ID. Read-only rootfs, cap-drop ALL, no-new-privileges, network none; only the episode state mount is writable. Source registration plus live image shadow labels must both pass before AVAILABLE. Fixture/synthetic runs cannot claim FIRST_EPISODE_VERIFIED or parent completion."
+    },
+    {
       "capability_id": "shadow-account",
-      "version": null,
-      "source_status": "planned"
+      "version": "0.2.0",
+      "source_status": "available",
+      "implemented_by": "shadow-lifecycle-leg-a",
+      "verb": "init",
+      "completion_claim_allowed": false
     },
     {
       "capability_id": "decision-freeze",
-      "version": null,
-      "source_status": "planned"
+      "version": "0.2.0",
+      "source_status": "available",
+      "implemented_by": "shadow-lifecycle-leg-a",
+      "verb": "freeze",
+      "completion_claim_allowed": false
     },
     {
       "capability_id": "settlement",
-      "version": null,
-      "source_status": "planned"
+      "version": "0.2.0",
+      "source_status": "available",
+      "implemented_by": "shadow-lifecycle-leg-a",
+      "verb": "settle",
+      "completion_claim_allowed": false
     },
     {
       "capability_id": "walk-forward-replay",
-      "version": null,
-      "source_status": "planned"
+      "version": "0.2.0",
+      "source_status": "available",
+      "implemented_by": "shadow-lifecycle-leg-a",
+      "verb": "replay",
+      "completion_claim_allowed": false
     }
   ]
 }

@@ -3,8 +3,10 @@
 ## 管辖范围
 
 这个 Skill 是 Codex 调用新澳专用能力的唯一稳定入口。它管理能力发现、版本选择、
-调用、结果回读和未来能力接入。目前首个能力是独立的新澳研究员容器；影子账户、
-决策冻结、结算和回放会在各自完成后接入同一入口，在实现前只登记为不可用。
+调用、结果回读和能力接入。当前已接入：独立新澳研究员容器，以及同一不可变研究员
+镜像内的腿 A 影子生命周期（init/inspect|status/freeze/settle/replay）。影子能力不经
+仓库 CLI、Temporal、数据库或常驻 daemon；由已安装 Skill 以精确 image ID 拉起短生命周期
+容器，只读根文件系统、丢弃能力、no-new-privileges、network none，且仅 episode 状态挂载可写。
 
 它不管理普通工人派遣，也不接管用户意图、科学结论或父目标完成判断。普通工人链与
 科学研究员链不得共享 launcher 模式、任务合同、运行状态、证据根或完成语义。允许
@@ -20,9 +22,12 @@ Provider 登录凭据也只是只读技术句柄：Skill 不拥有、不复制�
 
 `inspect` 必须按薄 bootstrap、activation lock/current/journal、完整 release bundle、
 Docker CLI、engine、image identity/labels/entrypoint、专用 egress 边界和只读凭据句柄的
-顺序 fail closed；全部通过才可返回 `RUNTIME_READY`。这仍只证明调用前条件，不证明
-provider 已运行或科研有进展。engine 停止、image 未核验、bundle 漂移和网络边界缺失
-是不同状态，不得统一写成 AVAILABLE 或 DRIFTED。
+顺序 fail closed；研究员路径全部通过才可返回 `RUNTIME_READY`。影子路径另有独立判定：
+注册表 source 必须为 available，且 live image/release 携带匹配的
+`io.xinao.researcher.shadow-runtime(.lock).sha256` 身份后才可返回 shadow
+`AVAILABLE`；仅有源码登记或旧镜像不得冒充可用。这仍只证明调用前条件，不证明
+provider 已运行、影子 episode 已实战或科研有进展。engine 停止、image 未核验、bundle
+漂移和网络边界缺失是不同状态，不得统一写成 AVAILABLE 或 DRIFTED。
 
 研究员容器接受开放研究问题，不接受课题白名单。416、七族、历史、规则、赔率和
 其他背景只有在当前问题确有需要时才按材料进入，也可完全不用；它们不是默认研究、
