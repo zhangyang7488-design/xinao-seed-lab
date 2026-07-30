@@ -1,0 +1,490 @@
+{
+  "schema_version": "xinao.grok_xinao_leg_a_oneclick_contract.v1",
+  "sentinel": "SENTINEL:XINAO_LEG_A_ONECLICK_CONTRACT_V1",
+  "status": "candidate_fresh_consumer_boundary",
+  "package_id": "xinao_leg_a_oneclick_entry",
+  "marker": "XINAO_LEG_A_ONECLICK_ENTRY_CANDIDATE_V1",
+  "purpose_cn": "新鲜进程下一次稳定腿 A 一键调用的真实消费者边界：经 Build-XinaoLegAContext 封印上下文、经宿主已安装公共 dispatcher 完成 selection-only 与 common-contract 调用、强制 linux-container、候选证据回读。合同与测试必须绑定生产参数/结果形状；内部单测 fixture、配置存在或容器健康不得冒充本边界。",
+  "purpose_en": "Fresh-process one-shot XINAO leg-A consumer boundary bound to production parameter/result shape: seal context via Build-XinaoLegAContext, run selection-only and common-contract through the host-installed public dispatcher, require linux-container, return candidate-only evidence. Fixture-only greens are forbidden.",
+  "authority": {
+    "worker_output": "candidate_only",
+    "completion_claim_allowed": false,
+    "owner": "Codex",
+    "not_leg_b": true,
+    "not_parent_complete": true
+  },
+  "public_interfaces": {
+    "context_builder": {
+      "script": "grok-admin-bridge/Build-XinaoLegAContext.ps1",
+      "role": "discover_or_mint_sealed_context_without_chat_state_or_manual_hashes",
+      "required_parameters": [
+        "OutputDir"
+      ],
+      "optional_parameters": [
+        "MainlineRoot",
+        "RepoRoot",
+        "PythonExe",
+        "ExpectedSourcePinsPath",
+        "MaxContentBytes",
+        "Quiet"
+      ],
+      "required_outputs": [
+        "manifest_path",
+        "context_sha256",
+        "source_manifest_sha256",
+        "spec_path"
+      ],
+      "optional_outputs_consumed_by_worker": [
+        "rules_file",
+        "rules_sha256",
+        "manifest_sha256"
+      ],
+      "caller_must_not_supply": [
+        "prior_chat_state",
+        "manually_invented_context_sha256",
+        "manually_invented_rules_sha256",
+        "manually_invented_selection_decision_sha256"
+      ]
+    },
+    "oneclick_worker": {
+      "script": "grok-admin-bridge/Invoke-XinaoLegAWorker.ps1",
+      "role": "stable_one_call_leg_a_consumer_over_host_installed_public_dispatcher",
+      "combined_with": "Build-XinaoLegAContext.ps1",
+      "required_parameters": [
+        "Cwd"
+      ],
+      "prompt_parameters": {
+        "exactly_one_of": [
+          "Prompt",
+          "PromptFile"
+        ]
+      },
+      "production_parameters": [
+        "Prompt",
+        "PromptFile",
+        "Cwd",
+        "Model",
+        "AuthorizedWrite",
+        "Phase",
+        "WorkKey",
+        "OperationId",
+        "DispatchEpisodeId",
+        "ParentOperationId",
+        "CorrelationId",
+        "TaskContractRef",
+        "RuntimeRoot",
+        "SelectorReleasePointer",
+        "SupervisorRoot",
+        "PublicDispatcher",
+        "ContextBuilder",
+        "DockerExe",
+        "GrokHome",
+        "MaxTurns",
+        "TimeoutSec",
+        "MinResultChars",
+        "RequiredResultMarkers",
+        "RequireJsonObject",
+        "JsonSchemaPath",
+        "PriorAttemptReceiptPath",
+        "Quiet"
+      ],
+      "public_dispatcher_dependency": [
+        "C:\\Users\\xx363\\CodexLaunchers\\Invoke-Codex-GrokWorkerPool.ps1",
+        "launchers/Invoke-Codex-GrokWorkerPool.ps1",
+        "grok-admin-bridge/Invoke-CodexDispatchGrokWorkerPool.ps1"
+      ],
+      "public_dispatcher_prerequisite": "host_installed_public_dispatcher_path_must_exist_as_leaf",
+      "selection_pinning": {
+        "bootstrap": "public_dispatcher_SelectionOnly",
+        "common_call_pins": [
+          "SelectionPath",
+          "ExpectedSelectionDecisionSha256_when_dispatcher_declares_parameter"
+        ],
+        "fail_closed_token_on_stale": "XINAO_LEG_A_SELECTION_STALE"
+      }
+    }
+  },
+  "route": {
+    "leg": "A",
+    "route_role": "normal_leg_a_bounded_online_current_tui",
+    "transport_id": "direct-grok-worker-pool",
+    "execution_contract_version": "xinao.grok.shared_execution_contract.v1",
+    "common_contract_mode": "provider_v1_then_common_adapter",
+    "required_execution_backend": "linux-container",
+    "forbidden_execution_backends": [
+      "windows-host",
+      "unbounded_host_legacy"
+    ],
+    "forbidden_routes": [
+      "leg_b",
+      "temporal-docker-langgraph",
+      "houtai-gongren_as_leg_a"
+    ]
+  },
+  "fresh_process_invariants": [
+    "no_prior_chat_state_required",
+    "no_manually_supplied_hashes_required",
+    "selection_only_bootstrap_via_public_dispatcher",
+    "real_common_contract_call_via_public_dispatcher",
+    "backend_must_be_linux_container",
+    "context_prompt_rules_sealed_read_only",
+    "exact_worktree_read_only_by_default",
+    "exact_worktree_is_only_write_domain_when_explicitly_authorized",
+    "branch_isolation_respected",
+    "selection_decision_pinned_when_dispatcher_supports_it",
+    "result_json_exposes_candidate_only_evidence",
+    "candidate_only_status",
+    "rollback_removes_only_test_carrier",
+    "git_identity_sealed_before_provider_effect",
+    "authorized_write_requires_self_contained_regular_clone",
+    "read_only_may_use_linked_worktree_when_host_git_resolves",
+    "post_call_git_head_ancestry_and_origin_identity_verified",
+    "no_shared_external_common_dir_rw_mount"
+  ],
+  "call_sequence": [
+    {
+      "step": 1,
+      "name": "discover_sealed_context",
+      "actor": "Build-XinaoLegAContext.ps1",
+      "notes": "Fresh process discovers or mints sealed context under OutputDir. Hashes are computed from sealed bytes; caller does not invent context_sha256."
+    },
+    {
+      "step": 2,
+      "name": "selection_only_bootstrap",
+      "actor": "host_installed_public_dispatcher",
+      "mode": "SelectionOnly",
+      "provider_effect": false,
+      "required_result_fields": [
+        "selection_path",
+        "decision_sha256",
+        "model_id",
+        "transport_id"
+      ],
+      "notes": "Selection-only bootstrap must go through PublicDispatcher, not a private pool shortcut."
+    },
+    {
+      "step": 3,
+      "name": "common_contract_real_call",
+      "actor": "host_installed_public_dispatcher",
+      "mode": "common_contract",
+      "provider_effect": "bounded_fixture_or_real",
+      "required_execution_backend": "linux-container",
+      "pins": [
+        "SelectionPath",
+        "CommonFrozenContextSha256=context.context_sha256",
+        "CommonContextManifestPath=context.manifest_path",
+        "CommonRulesFile",
+        "CommonRulesSha256",
+        "ExpectedSelectionDecisionSha256_when_available"
+      ],
+      "notes": "Common-contract call is through the same public dispatcher and must keep linux-container."
+    }
+  ],
+  "isolation": {
+    "context_prompt_rules": {
+      "mount_policy": "sealed_read_only",
+      "mutation_forbidden": true
+    },
+    "worktree": {
+      "default_effect_mode": "read_only",
+      "authorized_effect_mode": "authorized_write",
+      "only_write_domain_when_authorized": true,
+      "path_escape_fails_closed": true,
+      "authorized_write_parameter": "AuthorizedWrite",
+      "candidate_output_root_must_equal_cwd": true
+    },
+    "git_metadata": {
+      "policy_id": "XINAO_LEGA_SELFCONTAINED_GIT_WRITE_FIX_V1",
+      "host_git_identity_required": true,
+      "seal_before_provider_effect": [
+        "pre_call_head",
+        "repo_toplevel",
+        "absolute_git_dir",
+        "git_common_dir",
+        "dot_git_type",
+        "non_secret_origin_identity"
+      ],
+      "read_only": {
+        "linked_worktree_allowed_when_host_git_resolves": true,
+        "shared_external_common_dir_rw_mount_forbidden": true
+      },
+      "authorized_write": {
+        "requires_self_contained_regular_clone": true,
+        "dot_git_must_be_directory": true,
+        "absolute_git_dir_must_resolve_inside_cwd": true,
+        "git_common_dir_must_resolve_inside_cwd": true,
+        "fail_closed_before_provider_effect": true,
+        "shared_external_common_dir_rw_mount_forbidden": true,
+        "isolation_model": "per_worker_regular_clones_for_branch_commit_pr"
+      },
+      "post_call_verify": [
+        "dot_git_still_directory_when_pre_was_directory",
+        "non_secret_origin_identity_unchanged",
+        "pre_call_head_is_ancestor_of_post_call_head_or_unchanged"
+      ],
+      "reject_reinit_or_orphan_replacement": true
+    },
+    "branch_isolation": {
+      "source_worktree_must_be_preserved_on_rollback": true,
+      "test_carrier_is_the_only_cleanup_target": true
+    }
+  },
+  "fail_closed_before_provider_effect": [
+    {
+      "id": "cwd_missing",
+      "trigger": "Cwd path missing or not a directory",
+      "error_token": "XINAO_LEG_A_CWD_MISSING"
+    },
+    {
+      "id": "invalid_worktree",
+      "trigger": "Cwd is not a git worktree",
+      "error_token": "XINAO_LEG_A_INVALID_WORKTREE"
+    },
+    {
+      "id": "exactly_one_prompt_source",
+      "trigger": "neither or both of Prompt and PromptFile supplied",
+      "error_token": "XINAO_LEG_A_EXACTLY_ONE_PROMPT_SOURCE_REQUIRED"
+    },
+    {
+      "id": "public_dispatcher_missing",
+      "trigger": "host-installed PublicDispatcher leaf missing",
+      "error_token": "XINAO_LEG_A_PUBLIC_DISPATCHER_MISSING"
+    },
+    {
+      "id": "context_build_failed",
+      "trigger": "Build-XinaoLegAContext failed before sealed envelope",
+      "error_token": "XINAO_LEG_A_CONTEXT_BUILD_FAILED"
+    },
+    {
+      "id": "context_field_missing",
+      "trigger": "sealed context envelope missing required production fields",
+      "error_token": "XINAO_LEG_A_CONTEXT_FIELD_MISSING"
+    },
+    {
+      "id": "manifest_drift",
+      "trigger": "context manifest bytes no longer match sealed manifest_sha256",
+      "error_token": "XINAO_LEG_A_MANIFEST_DRIFT"
+    },
+    {
+      "id": "rules_drift",
+      "trigger": "rules_file bytes no longer match sealed rules_sha256",
+      "error_token": "XINAO_LEG_A_RULES_DRIFT"
+    },
+    {
+      "id": "stale_selection",
+      "trigger": "selection decision_sha256 changed between bootstrap and common call",
+      "error_token": "XINAO_LEG_A_SELECTION_STALE"
+    },
+    {
+      "id": "docker_cli_missing",
+      "trigger": "linux-container backend requested but docker CLI unavailable",
+      "error_token": "XINAO_LEG_A_DOCKER_CLI_MISSING"
+    },
+    {
+      "id": "docker_info_failed",
+      "trigger": "docker info failed while probing linux engine",
+      "error_token": "XINAO_LEG_A_DOCKER_INFO_FAILED"
+    },
+    {
+      "id": "linux_engine_required",
+      "trigger": "docker engine OSType is not linux",
+      "error_token": "XINAO_LEG_A_LINUX_ENGINE_REQUIRED"
+    },
+    {
+      "id": "write_scope_ambiguous",
+      "trigger": "authorized write domain empty or candidate output root != Cwd",
+      "error_token": "XINAO_LEG_A_WRITE_SCOPE_AMBIGUOUS"
+    },
+    {
+      "id": "backend_rejected",
+      "trigger": "observed backend is not linux-container (windows-host fallback forbidden)",
+      "error_token": "XINAO_LEG_A_BACKEND_REJECTED"
+    },
+    {
+      "id": "land_requires_authorized_write",
+      "trigger": "Phase=LAND without AuthorizedWrite",
+      "error_token": "XINAO_LEG_A_LAND_REQUIRES_AUTHORIZED_WRITE"
+    },
+    {
+      "id": "git_cli_missing",
+      "trigger": "host git CLI unavailable for identity resolve",
+      "error_token": "XINAO_LEG_A_GIT_CLI_MISSING"
+    },
+    {
+      "id": "git_broken_gitdir",
+      "trigger": "Cwd .git is a broken gitdir pointer or host git cannot open the repository",
+      "error_token": "XINAO_LEG_A_GIT_BROKEN_GITDIR"
+    },
+    {
+      "id": "git_identity_unresolved",
+      "trigger": "host git cannot resolve toplevel/git-dir/common-dir for Cwd",
+      "error_token": "XINAO_LEG_A_GIT_IDENTITY_UNRESOLVED"
+    },
+    {
+      "id": "git_not_selfcontained_for_authorized_write",
+      "trigger": "AuthorizedWrite on linked worktree or any Cwd whose .git/git-dir/common-dir is not fully inside Cwd",
+      "error_token": "XINAO_LEG_A_GIT_NOT_SELFCONTAINED"
+    },
+    {
+      "id": "git_postcall_dot_git_type",
+      "trigger": "after worker return, .git is no longer a directory when pre-call seal recorded directory",
+      "error_token": "XINAO_LEG_A_GIT_POSTCALL_DOT_GIT_TYPE"
+    },
+    {
+      "id": "git_origin_identity_drift",
+      "trigger": "non-secret origin identity changed across worker call",
+      "error_token": "XINAO_LEG_A_GIT_ORIGIN_IDENTITY_DRIFT"
+    },
+    {
+      "id": "git_head_ancestry_broken",
+      "trigger": "pre-call HEAD is not ancestor of post-call HEAD (reinit/orphan replacement)",
+      "error_token": "XINAO_LEG_A_GIT_HEAD_ANCESTRY_BROKEN"
+    }
+  ],
+  "result_json": {
+    "schema_version": "xinao.leg_a.oneclick_entry_result.v1",
+    "sentinel": "XINAO_LEG_A_ONECLICK_ENTRY_CANDIDATE_V1",
+    "package_id": "xinao_leg_a_oneclick_entry",
+    "required_fields": [
+      "schema_version",
+      "sentinel",
+      "package_id",
+      "ok",
+      "status",
+      "worker_output_authority",
+      "completion_claim_allowed",
+      "leg",
+      "route_role",
+      "transport_id",
+      "execution_backend",
+      "effect_mode",
+      "not_leg_b",
+      "not_temporal",
+      "not_houtai_gongren",
+      "not_second_owner",
+      "model",
+      "phase",
+      "authorized_write",
+      "cwd",
+      "context",
+      "selection",
+      "identities",
+      "evidence",
+      "error",
+      "git_seal"
+    ],
+    "status_requirements": {
+      "worker_output_authority": "candidate_only",
+      "completion_claim_allowed": false,
+      "leg": "A",
+      "not_leg_b": true
+    },
+    "context_required_fields": [
+      "manifest_path",
+      "context_sha256",
+      "source_manifest_sha256",
+      "spec_path",
+      "rules_file",
+      "rules_sha256"
+    ],
+    "selection_required_fields": [
+      "selection_path",
+      "decision_sha256",
+      "model_id",
+      "transport_id"
+    ],
+    "evidence_surface": [
+      "dispatch_meta_path",
+      "pool_id",
+      "pool_summary_path",
+      "local_state_dir",
+      "prompt_file",
+      "subject_manifest_path",
+      "write_domains",
+      "docker_exe",
+      "git_self_contained",
+      "git_dot_git_type",
+      "git_pre_head",
+      "git_post_head",
+      "git_origin_identity",
+      "git_policy"
+    ],
+    "git_seal_required_fields": [
+      "policy",
+      "repo_toplevel",
+      "git_dir",
+      "common_dir",
+      "dot_git_type",
+      "head",
+      "origin_identity",
+      "self_contained"
+    ],
+    "usage_requirements": {
+      "selection_only_model_invocation_count": 0,
+      "pool_acceptance_required_for_ok": true
+    }
+  },
+  "rollback": {
+    "removes": [
+      "test_carrier_root",
+      "fixture_public_dispatcher_state",
+      "temp_sealed_context_under_carrier"
+    ],
+    "preserves": [
+      "source_worktree",
+      "live_C_projections",
+      "live_D_projections_outside_test_carrier"
+    ],
+    "error_token_if_source_mutated": "XINAO_LEG_A_SOURCE_WORKTREE_MUTATED"
+  },
+  "test": {
+    "script": "grok-admin-bridge/Test-XinaoLegAOneClickConsumer.ps1",
+    "mode": "production_shape_bound_with_bounded_dispatcher_fixture",
+    "binding_policy": {
+      "default_binds_production_parameter_and_result_shape": true,
+      "co_located_production_scripts_must_be_statically_bound": true,
+      "fixture_only_false_green_forbidden": true,
+      "public_dispatch": "bounded_fake_no_real_provider_call",
+      "second_real_provider_call_forbidden_inside_this_package": true,
+      "allow_missing_production_scripts_only_with_explicit_switch": true
+    },
+    "required_cases": [
+      "production_parameter_shape_bound",
+      "production_result_schema_bound",
+      "production_fail_closed_tokens_bound",
+      "happy_path_fresh_consumer",
+      "no_prior_chat_or_manual_hashes",
+      "selection_only_and_common_via_public_dispatcher",
+      "selection_decision_pinning_when_available",
+      "backend_linux_container_only",
+      "sealed_ro_and_worktree_ro_default",
+      "authorized_write_domain_only_when_explicit",
+      "valid_selfcontained_clone_authorized_write",
+      "broken_gitdir_fail_closed",
+      "linked_worktree_authorized_write_fail_closed",
+      "reinit_head_ancestry_fail_closed",
+      "missing_public_dispatcher_fail_closed",
+      "missing_context_field_fail_closed",
+      "rules_drift_fail_closed",
+      "stale_selection_fail_closed",
+      "docker_cli_missing_fail_closed",
+      "write_scope_ambiguous_fail_closed",
+      "backend_rejected_fail_closed",
+      "result_json_evidence_surface",
+      "rollback_preserves_source_worktree"
+    ]
+  },
+  "non_goals": [
+    "real_second_provider_spend_inside_this_worker_package",
+    "leg_b_temporal_handoff",
+    "owner_adoption_or_parent_completion",
+    "editing_live_C_or_D_projections",
+    "announcing_parent_complete",
+    "fixture_only_green_without_production_shape_binding"
+  ],
+  "evidence_roots_expected": {
+    "pool_or_dispatch": "D:\\XINAO_RESEARCH_RUNTIME\\state\\grok_worker_pool",
+    "oneclick_local_state": "D:\\XINAO_RESEARCH_RUNTIME\\state\\xinao_leg_a_oneclick",
+    "test_carrier_only_for_this_package": true
+  }
+}
