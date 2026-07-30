@@ -34,13 +34,13 @@ def _runner_text() -> str:
 
 def test_catalog_accounts_for_dynamic_orchestration_suite() -> None:
     catalog = _catalog()
-    assert catalog["declared_case_count"] == 162
+    assert catalog["declared_case_count"] == 172
     assert catalog["live_profile_case_counts"] == {
         "capability": 1,
         "smoke": 84,
-        "core": 120,
-        "deep": 126,
-        "context": 102,
+        "core": 130,
+        "deep": 136,
+        "context": 112,
         "proactive": 6,
         "reuse": 4,
         "orchestration": 13,
@@ -56,7 +56,7 @@ def test_catalog_accounts_for_dynamic_orchestration_suite() -> None:
     assert suite["runtime_claim_allowed"] is True
 
     suite_count = sum(int(item["case_count"]) for item in catalog["suites"])
-    assert suite_count == catalog["declared_case_count"] == 162
+    assert suite_count == catalog["declared_case_count"] == 172
 
 
 def test_profile_flags_select_orchestration_with_smoke_core_deep() -> None:
@@ -178,7 +178,7 @@ def test_orchestration_failed_from_description_mismatch_is_detectable() -> None:
 def test_readme_documents_orchestration_without_runtime_claim() -> None:
     readme = (REPO_ROOT / "evals/behavior_regression/README.md").read_text(encoding="utf-8")
     assert "-Profile orchestration" in readme
-    assert "156" in readme
+    assert "172" in readme
     assert "orchestration 13" in readme
     assert "not a runtime verification claim" in readme.lower() or (
         "not a runtime verification claim" in readme

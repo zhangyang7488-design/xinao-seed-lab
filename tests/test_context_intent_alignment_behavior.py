@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import json
+import re
 import shutil
 import subprocess
+from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
@@ -14,11 +16,32 @@ ASSERTION_PATH = SUITE_ROOT / "assert_behavior.js"
 CASES_PATH = SUITE_ROOT / "cases.yaml"
 PROMPT_PATH = SUITE_ROOT / "prompt.txt"
 PAUSE_CASE_ID = "REG_PAUSE_TO_DISCUSS_BLOCKS_TASK_ACTIONS"
+PROMPT_SCENARIO_TOKEN = "CURRENT_SCENARIO"
+ATOM_EXPECTATION_KEYS = {
+    "expected_recovered_requirement_atoms",
+    "expected_rejected_proxy_atoms",
+}
+VALUE_SEMANTICS_CASE_IDS = (
+    "REG_ROLE_FIT_DERIVES_INTERACTIVE_CAPABILITY_FROM_CORE_VERBS",
+    "NEG_SAME_REVIEWER_STATIC_VISUAL_JOB_NEEDS_NO_INTERACTIVE_GATE",
+    "REG_VALUE_SEMANTICS_DERIVES_AUXILIARY_HYGIENE_WITHOUT_HINT",
+    "REG_VALUE_SEMANTICS_TRANSFERS_ACROSS_UNNAMED_SURFACE",
+    "REG_XINAO_AUTOMATION_RELIEF_DOES_NOT_SETTLE_SCIENCE",
+    "REG_XINAO_CHILD_CLOSURE_THEN_STOP_PRESERVES_SUSTAINABILITY",
+    "REG_XINAO_INCONCLUSIVE_IS_NOT_FALSIFICATION_OR_NO_ACTION",
+    "REG_XINAO_CURRENT_INFEASIBILITY_IS_SCOPED_AND_REOPENABLE",
+    "NEG_VALUE_KERNEL_SAME_TOOL_USES_CURRENT_COMPLETION_RULER",
+    "NEG_VALUE_KERNEL_DISCUSSION_STOP_PRESERVES_READ_ONLY",
+)
+
+
+@lru_cache(maxsize=1)
+def _cases() -> tuple[dict[str, Any], ...]:
+    return tuple(yaml.safe_load(CASES_PATH.read_text(encoding="utf-8")))
 
 
 def _case(case_id: str) -> dict[str, Any]:
-    cases = yaml.safe_load(CASES_PATH.read_text(encoding="utf-8"))
-    return next(case for case in cases if case["vars"]["case_id"] == case_id)
+    return next(case for case in _cases() if case["vars"]["case_id"] == case_id)
 
 
 def _pause_case() -> dict[str, Any]:
@@ -34,13 +57,15 @@ def _first_alternative(value: object) -> object:
 def _output_from_case(case_id: str) -> dict[str, object]:
     vars_ = _case(case_id)["vars"]
     output = {
-        key.removeprefix("expected_"): _first_alternative(value)
+        key.removeprefix("expected_"): (
+            value if key in ATOM_EXPECTATION_KEYS else _first_alternative(value)
+        )
         for key, value in vars_.items()
         if key.startswith("expected_")
     }
     output.update(
         {
-            "case_id": case_id,
+            "case_id": PROMPT_SCENARIO_TOKEN,
             "active_problem_level": vars_.get(
                 "expected_active_problem_level", "object_instance"
             ).split("|", 1)[0],
@@ -76,7 +101,7 @@ def _context(
         items.insert(-1, extra_item)
     command_count = sum(item.get("type") == "commandExecution" for item in items)
     return {
-        "vars": _case(case_id)["vars"],
+        "vars": dict(_case(case_id)["vars"]),
         "providerResponse": {"tokenUsage": {"prompt": 100, "completion": 50, "total": 150}},
         "metadata": {
             "codexAppServer": {
@@ -370,3 +395,114 @@ def test_known_generator_remains_a_means_under_parent_completion_identity() -> N
     output["active_problem_level"] = "shared_upstream_generator"
     result = _run_assertion(_context(case_id=case_id), output=output)
     assert result["pass"] is False
+
+
+def test_value_semantics_cases_exhaustively_partition_neutral_atom_pools() -> None:
+    for case_id in VALUE_SEMANTICS_CASE_IDS:
+        vars_ = _case(case_id)["vars"]
+        pool = set(re.findall(r"ATOM_[A-Z0-9_]+", vars_["restored_context"]))
+        recovered = set(vars_["expected_recovered_requirement_atoms"].split("|"))
+        rejected = set(vars_["expected_rejected_proxy_atoms"].split("|"))
+        assert recovered
+        assert rejected
+        assert recovered.isdisjoint(rejected), case_id
+        assert pool == recovered | rejected, case_id
+
+
+def test_value_semantics_prompt_does_not_expose_descriptive_case_ids() -> None:
+    prompt = PROMPT_PATH.read_text(encoding="utf-8")
+    assert "{{case_id}}" not in prompt
+    assert f"Scenario token: {PROMPT_SCENARIO_TOKEN}" in prompt
+    for case_id in VALUE_SEMANTICS_CASE_IDS:
+        assert case_id not in prompt
+
+
+def test_value_semantics_gold_passes_and_one_atom_omission_fails() -> None:
+    for case_id in VALUE_SEMANTICS_CASE_IDS:
+        output = _output_from_case(case_id)
+        passed = _run_assertion(_context(case_id=case_id), output=output)
+        assert passed["pass"] is True, f"{case_id}: {passed['reason']}"
+
+        atoms = str(output["recovered_requirement_atoms"]).split("|")
+        output["recovered_requirement_atoms"] = "|".join(atoms[1:])
+        omitted = _run_assertion(_context(case_id=case_id), output=output)
+        assert omitted["pass"] is False, case_id
+        assert '"atomSelectionMatches":false' in omitted["reason"]
+
+
+def test_value_semantics_rejects_semantic_field_regressions() -> None:
+    mutations = {
+        "REG_ROLE_FIT_DERIVES_INTERACTIVE_CAPABILITY_FROM_CORE_VERBS": {
+            "completion_claim_scope": "parent_mainline",
+            "degraded_scope": "none",
+        },
+        "NEG_SAME_REVIEWER_STATIC_VISUAL_JOB_NEEDS_NO_INTERACTIVE_GATE": {
+            "degraded_scope": "endpoint_candidate_only",
+            "recovery_probe": "bounded_event_driven",
+        },
+        "REG_XINAO_CHILD_CLOSURE_THEN_STOP_PRESERVES_SUSTAINABILITY": {
+            "continuous_run_disposition": "not_applicable",
+            "interruption_frame_action": "not_applicable",
+        },
+        "REG_XINAO_INCONCLUSIVE_IS_NOT_FALSIFICATION_OR_NO_ACTION": {
+            "completion_claim_scope": "parent_mainline",
+            "completed_history_disposition": "reopen_with_new_evidence",
+        },
+        "NEG_VALUE_KERNEL_SAME_TOOL_USES_CURRENT_COMPLETION_RULER": {
+            "completion_claim_scope": "parent_mainline",
+            "frontier_disposition": "not_applicable",
+        },
+        "NEG_VALUE_KERNEL_DISCUSSION_STOP_PRESERVES_READ_ONLY": {
+            "active_problem_level": "shared_upstream_generator",
+            "local_completion_transition": "finish_bounded_task",
+        },
+    }
+    for case_id, changed_fields in mutations.items():
+        output = _output_from_case(case_id)
+        baseline = _run_assertion(_context(case_id=case_id), output=output)
+        assert baseline["pass"] is True, f"{case_id}: {baseline['reason']}"
+
+        output = dict(output)
+        output.update(changed_fields)
+        result = _run_assertion(_context(case_id=case_id), output=output)
+        assert result["pass"] is False, case_id
+        for field, changed_value in changed_fields.items():
+            assert f'"{field}":"{changed_value}"' in result["reason"]
+
+
+def test_value_transfer_surface_omits_original_incident_vocabulary() -> None:
+    context = _case("REG_VALUE_SEMANTICS_TRANSFERS_ACROSS_UNNAMED_SURFACE")["vars"][
+        "restored_context"
+    ].lower()
+    for bait in (
+        "pull request",
+        "worktree",
+        "xinao",
+        "dynamic net benefit",
+        "parent intent",
+        "original incident",
+        "deliberately uses none",
+    ):
+        assert bait not in context
+
+
+def test_role_fit_pair_changes_only_job_and_consumer_not_control_facts() -> None:
+    positive = _case("REG_ROLE_FIT_DERIVES_INTERACTIVE_CAPABILITY_FROM_CORE_VERBS")[
+        "vars"
+    ]["restored_context"]
+    negative = _case("NEG_SAME_REVIEWER_STATIC_VISUAL_JOB_NEEDS_NO_INTERACTIVE_GATE")[
+        "vars"
+    ]["restored_context"]
+    assert positive.split("The current job", 1)[0] == negative.split("The current job", 1)[0]
+    for context in (positive.lower(), negative.lower()):
+        for leaked in (
+            "xinao",
+            "researcher",
+            "container",
+            "image hash",
+            "capability_not_integrated",
+            "constitutive",
+            "control predicate",
+            "role suitability",
+        ):
+            assert leaked not in context

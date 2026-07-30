@@ -321,7 +321,7 @@ def test_context_intent_alignment_eval_is_balanced_and_friction_bounded() -> Non
         (REPO_ROOT / "evals/context_intent_alignment/cases.yaml").read_text(encoding="utf-8")
     )
     cases = {case["metadata"]["id"]: case for case in loaded}
-    assert len(cases) == suite["case_count"] == 102
+    assert len(cases) == suite["case_count"] == 112
     assert len(cases) == len(loaded)
     assert all(case["metadata"]["domain"] == case["vars"]["domain"] for case in cases.values())
     for required in (
@@ -380,6 +380,16 @@ def test_context_intent_alignment_eval_is_balanced_and_friction_bounded() -> Non
         "REG_OPERATE_FOR_USER_PRE_REPORT_CROSS_WINDOW_GATE",
         "REG_TEMPORARY_PAIN_INPUTS_ARE_NOT_RELEASE_DEPENDENCIES",
         "REG_COMPLETE_CLOSURE_ACTIVATES_FULL_LIFECYCLE_TRANSACTION",
+        "REG_ROLE_FIT_DERIVES_INTERACTIVE_CAPABILITY_FROM_CORE_VERBS",
+        "NEG_SAME_REVIEWER_STATIC_VISUAL_JOB_NEEDS_NO_INTERACTIVE_GATE",
+        "REG_VALUE_SEMANTICS_DERIVES_AUXILIARY_HYGIENE_WITHOUT_HINT",
+        "REG_VALUE_SEMANTICS_TRANSFERS_ACROSS_UNNAMED_SURFACE",
+        "REG_XINAO_AUTOMATION_RELIEF_DOES_NOT_SETTLE_SCIENCE",
+        "REG_XINAO_CHILD_CLOSURE_THEN_STOP_PRESERVES_SUSTAINABILITY",
+        "REG_XINAO_INCONCLUSIVE_IS_NOT_FALSIFICATION_OR_NO_ACTION",
+        "REG_XINAO_CURRENT_INFEASIBILITY_IS_SCOPED_AND_REOPENABLE",
+        "NEG_VALUE_KERNEL_SAME_TOOL_USES_CURRENT_COMPLETION_RULER",
+        "NEG_VALUE_KERNEL_DISCUSSION_STOP_PRESERVES_READ_ONLY",
     ):
         assert required in cases
     assert cases["POS_CLEAR_REVERSIBLE_LOCAL_FIX"]["vars"]["expected_ask_user"] is False
@@ -1072,7 +1082,7 @@ def test_context_intent_alignment_eval_is_balanced_and_friction_bounded() -> Non
         transition = values.get("expected_local_completion_transition")
         continuous = values.get("expected_continuous_run_disposition")
         if transition == "finish_bounded_task":
-            assert continuous == "not_applicable"
+            assert continuous in {"not_applicable", "stop_requested"}
         elif transition == "rederive_mainline_frontier":
             assert continuous == "continue"
 
@@ -1104,8 +1114,8 @@ def test_context_intent_alignment_eval_is_balanced_and_friction_bounded() -> Non
         (REPO_ROOT / "evals/behavior_regression/catalog.json").read_text(encoding="utf-8")
     )
     context_suite = next(s for s in catalog["suites"] if s["id"] == "context_intent_alignment")
-    assert context_suite["case_count"] == 102
-    assert catalog["declared_case_count"] == 162
+    assert context_suite["case_count"] == 112
+    assert catalog["declared_case_count"] == 172
 
     decision = json.loads(
         (REPO_ROOT / "evals/context_intent_alignment/decision_model.v1.json").read_text(
@@ -1688,7 +1698,7 @@ def test_dual_self_evolution_runners_are_thin_and_claims_stay_separate() -> None
         (REPO_ROOT / "evals/behavior_regression/catalog.json").read_text(encoding="utf-8")
     )
     suite_count = sum(item["case_count"] for item in catalog["suites"])
-    assert suite_count == catalog["declared_case_count"] == 162
+    assert suite_count == catalog["declared_case_count"] == 172
     context_cases = yaml.safe_load(
         (REPO_ROOT / "evals/context_intent_alignment/cases.yaml").read_text(encoding="utf-8")
     )
