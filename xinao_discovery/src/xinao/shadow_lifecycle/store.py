@@ -35,6 +35,8 @@ class EpisodePhase(StrEnum):
     MISSING = "MISSING"
     INIT = "INIT"
     FROZEN = "FROZEN"
+    # Outcome sealed but settled missing (crash / second-write failure). Recoverable once.
+    SETTLEMENT_RECOVERY_REQUIRED = "SETTLEMENT_RECOVERY_REQUIRED"
     SETTLED = "SETTLED"
 
 
@@ -84,14 +86,44 @@ def artifact_paths(root: Path) -> dict[str, Path]:
 
 
 def detect_phase(root: Path) -> EpisodePhase:
+    """Map exclusive artifacts to phase; fail closed on corrupt combinations.
+
+    Outcome-only (frozen+outcome, no settled) is SETTLEMENT_RECOVERY_REQUIRED so an
+    identical settle retry may resume once; settled remains required for SETTLED/replay.
+    """
     paths = artifact_paths(root)
-    if paths["settled"].is_file():
+    has_settled = paths["settled"].is_file()
+    has_outcome = paths["outcome"].is_file()
+    has_frozen = paths["frozen"].is_file()
+    has_seat = paths["seat"].is_file()
+
+    if has_settled:
+        if not has_frozen:
+            raise StoreError("corrupt store: settled without frozen episode")
+        if not has_outcome:
+            raise StoreError("corrupt store: settled without outcome")
         return EpisodePhase.SETTLED
-    if paths["frozen"].is_file():
+    if has_outcome:
+        if not has_frozen:
+            raise StoreError("corrupt store: outcome without frozen episode")
+        return EpisodePhase.SETTLEMENT_RECOVERY_REQUIRED
+    if has_frozen:
         return EpisodePhase.FROZEN
-    if paths["seat"].is_file():
+    if has_seat:
         return EpisodePhase.INIT
     return EpisodePhase.MISSING
+
+
+def _sealed_outcome_jsonable(outcome: OutcomeObservation) -> dict[str, Any]:
+    outcome.require_valid_result_hash()
+    return model_to_jsonable(outcome)
+
+
+def outcomes_identical_for_recovery(
+    existing: OutcomeObservation, candidate: OutcomeObservation
+) -> bool:
+    """True iff sealed outcome content matches (byte-stable JSON dump)."""
+    return _sealed_outcome_jsonable(existing) == _sealed_outcome_jsonable(candidate)
 
 
 def load_seat(root: Path) -> ShadowSeat:
@@ -150,15 +182,38 @@ def write_outcome_and_settled_exclusive(
     outcome: OutcomeObservation,
     settled: SettledShadowEpisode,
 ) -> tuple[Path, Path]:
+    """Write once-only outcome then settled; resume outcome-only recovery fail-closed.
+
+    Normal path: exclusive create outcome, then exclusive create settled.
+    Crash after outcome leaves SETTLEMENT_RECOVERY_REQUIRED. An identical outcome
+    retry may exclusive-create settled exactly once; a conflicting outcome rejects
+    without overwriting the sealed outcome. Settled already present fails closed.
+    """
     outcome.require_valid_result_hash()
     if settled.content_hash is None:
         raise StoreError("settled episode must be hash sealed before write")
     paths = artifact_paths(root)
     if not paths["frozen"].is_file():
         raise StoreError("settle requires frozen episode")
-    # Once-only: outcome then settled; either existing fails closed.
     outcome_path = paths["outcome"]
     settled_path = paths["settled"]
+
+    # Fully sealed ledger: never overwrite outcome or settled.
+    if settled_path.is_file():
+        raise StoreError(f"exclusive create rejected; already exists: {settled_path.name}")
+
+    if outcome_path.is_file():
+        existing = load_outcome(root)
+        if not outcomes_identical_for_recovery(existing, outcome):
+            raise StoreError(
+                "conflicting settlement recovery rejected: outcome-only partial state "
+                "does not match retry outcome"
+            )
+        # Identical recovery: seal settled only; outcome remains immutable.
+        write_new_json(settled_path, model_to_jsonable(settled))
+        return outcome_path, settled_path
+
+    # Fresh settlement: outcome then settled (partial outcome is recovery-visible).
     write_new_json(outcome_path, model_to_jsonable(outcome))
     try:
         write_new_json(settled_path, model_to_jsonable(settled))

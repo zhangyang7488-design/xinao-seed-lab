@@ -10,6 +10,7 @@ from typing import Any
 import pytest
 
 from xinao.decision import DecisionGateInput, compile_decision_plan, freeze_decision
+from xinao.shadow_lifecycle import store as store_mod
 from xinao.shadow_lifecycle.consumer import (
     CONSUMER_ID,
     freeze_episode,
@@ -21,7 +22,13 @@ from xinao.shadow_lifecycle.consumer import (
 from xinao.shadow_lifecycle.consumer import (
     main as consumer_main,
 )
-from xinao.shadow_lifecycle.store import EpisodePhase, StoreError, detect_phase
+from xinao.shadow_lifecycle.store import (
+    OUTCOME_NAME,
+    SETTLED_NAME,
+    EpisodePhase,
+    StoreError,
+    detect_phase,
+)
 
 OPEN = datetime(2026, 7, 20, 8, tzinfo=UTC)
 FREEZE_AT = OPEN - timedelta(minutes=6)
@@ -276,6 +283,117 @@ def test_negative_pre_open_outcome_rejected(tmp_path: Path) -> None:
                 observed_at=OPEN - timedelta(minutes=1),
             ),
         )
+
+
+def test_crash_after_outcome_write_leaves_recovery_required(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Failure after exclusive outcome write must not look like clean FROZEN."""
+    root = tmp_path / "episode-crash-outcome"
+    init_episode(root=root, seat_id="seat.consumer.crash", portfolio_ref="portfolio.consumer.crash")
+    freeze_episode(root=root, request_path=_action_request(tmp_path / "crash_req.json"))
+    outcome_path = _outcome_payload(tmp_path / "crash_out.json", special_number=1)
+
+    original = store_mod.write_new_json
+
+    def crash_on_settled(path: Path, payload: object) -> None:
+        if path.name == SETTLED_NAME:
+            raise StoreError("injected crash after outcome write")
+        original(path, payload)
+
+    monkeypatch.setattr(store_mod, "write_new_json", crash_on_settled)
+    with pytest.raises(StoreError, match="injected crash after outcome write"):
+        settle_episode(root=root, outcome_path=outcome_path)
+
+    assert (root / OUTCOME_NAME).is_file()
+    assert not (root / SETTLED_NAME).is_file()
+    assert detect_phase(root) == EpisodePhase.SETTLEMENT_RECOVERY_REQUIRED
+
+    status = inspect_episode(root=root)
+    assert status["phase"] == EpisodePhase.SETTLEMENT_RECOVERY_REQUIRED.value
+    assert status["recovery_required"] is True
+    assert status["outcome_present"] is True
+    assert status["next_action"] == "settle"
+    # Pre-outcome no-peek preserved on pure FROZEN paths; recovery does not claim settle.
+    assert "pnl" not in status
+    assert "settled_episode_hash" not in status
+    assert status["completion_claim_allowed"] is False
+
+    with pytest.raises(StoreError, match=r"replay requires SETTLED"):
+        replay_episode(root=root)
+
+
+def test_identical_recovery_after_outcome_only_partial(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Identical settle retry may resume exactly once to sealed SETTLED."""
+    root = tmp_path / "episode-recover-identical"
+    init_episode(
+        root=root, seat_id="seat.consumer.recover", portfolio_ref="portfolio.consumer.recover"
+    )
+    freeze_episode(root=root, request_path=_action_request(tmp_path / "recover_req.json"))
+    outcome_path = _outcome_payload(tmp_path / "recover_out.json", special_number=1)
+
+    original = store_mod.write_new_json
+    fail_once = {"armed": True}
+
+    def crash_settled_once(path: Path, payload: object) -> None:
+        if path.name == SETTLED_NAME and fail_once["armed"]:
+            fail_once["armed"] = False
+            raise StoreError("injected crash after outcome write")
+        original(path, payload)
+
+    monkeypatch.setattr(store_mod, "write_new_json", crash_settled_once)
+    with pytest.raises(StoreError, match="injected crash after outcome write"):
+        settle_episode(root=root, outcome_path=outcome_path)
+    assert detect_phase(root) == EpisodePhase.SETTLEMENT_RECOVERY_REQUIRED
+
+    recovered = settle_episode(root=root, outcome_path=outcome_path)
+    assert recovered["ok"] is True
+    assert recovered["phase"] == EpisodePhase.SETTLED.value
+    assert recovered["statement_result"] == "HIT"
+    assert detect_phase(root) == EpisodePhase.SETTLED
+
+    replayed = replay_episode(root=root)
+    assert replayed["replay_match"] is True
+    assert replayed["settled_episode_hash"] == recovered["settled_episode_hash"]
+
+    with pytest.raises(StoreError, match=r"exclusive create rejected|SETTLED|already exists"):
+        settle_episode(root=root, outcome_path=outcome_path)
+
+
+def test_conflicting_recovery_after_outcome_only_partial_rejected(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Conflicting outcome on recovery must fail closed and leave partial state intact."""
+    root = tmp_path / "episode-recover-conflict"
+    init_episode(
+        root=root, seat_id="seat.consumer.conflict", portfolio_ref="portfolio.consumer.conflict"
+    )
+    freeze_episode(root=root, request_path=_action_request(tmp_path / "conflict_req.json"))
+    first_outcome = _outcome_payload(tmp_path / "conflict_out1.json", special_number=1)
+    second_outcome = _outcome_payload(tmp_path / "conflict_out2.json", special_number=2)
+
+    original = store_mod.write_new_json
+
+    def crash_on_settled(path: Path, payload: object) -> None:
+        if path.name == SETTLED_NAME:
+            raise StoreError("injected crash after outcome write")
+        original(path, payload)
+
+    monkeypatch.setattr(store_mod, "write_new_json", crash_on_settled)
+    with pytest.raises(StoreError, match="injected crash after outcome write"):
+        settle_episode(root=root, outcome_path=first_outcome)
+
+    sealed_outcome_bytes = (root / OUTCOME_NAME).read_bytes()
+    with pytest.raises(StoreError, match=r"conflicting settlement recovery rejected"):
+        settle_episode(root=root, outcome_path=second_outcome)
+
+    assert detect_phase(root) == EpisodePhase.SETTLEMENT_RECOVERY_REQUIRED
+    assert not (root / SETTLED_NAME).is_file()
+    assert (root / OUTCOME_NAME).read_bytes() == sealed_outcome_bytes
+    with pytest.raises(StoreError, match=r"replay requires SETTLED"):
+        replay_episode(root=root)
 
 
 def test_cli_main_init_inspect_and_capability_identity(

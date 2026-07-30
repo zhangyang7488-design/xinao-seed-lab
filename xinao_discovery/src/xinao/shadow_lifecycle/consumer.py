@@ -153,7 +153,11 @@ def inspect_episode(*, root: Path) -> dict[str, Any]:
         "candidate_only": True,
     }
 
-    if phase in {EpisodePhase.FROZEN, EpisodePhase.SETTLED}:
+    if phase in {
+        EpisodePhase.FROZEN,
+        EpisodePhase.SETTLEMENT_RECOVERY_REQUIRED,
+        EpisodePhase.SETTLED,
+    }:
         episode = load_frozen(base)
         result.update(
             {
@@ -164,19 +168,33 @@ def inspect_episode(*, root: Path) -> dict[str, Any]:
                 "science_identity": episode.science_decision.identity.value,
                 "pre_freeze_balance": episode.pre_freeze_balance,
                 "outcome_present": False,
+                "recovery_required": False,
             }
         )
-        # no-peek: do not surface outcome fields while only frozen
+        # no-peek: do not surface outcome fields while only frozen (pre-outcome)
         if phase == EpisodePhase.FROZEN:
             result["next_action"] = "settle"
             result["evidence_state"] = EvidenceState.IMPLEMENTATION_READY.value
 
-    if phase == EpisodePhase.SETTLED:
+    if phase == EpisodePhase.SETTLEMENT_RECOVERY_REQUIRED:
+        # Outcome sealed, settled missing: expose recovery without settlement claims.
+        outcome = load_outcome(base)
+        result.update(
+            {
+                "outcome_present": True,
+                "recovery_required": True,
+                "outcome_ref": outcome.outcome_ref,
+                "next_action": "settle",
+                "evidence_state": EvidenceState.IMPLEMENTATION_READY.value,
+            }
+        )
+    elif phase == EpisodePhase.SETTLED:
         settled = load_settled(base)
         outcome = load_outcome(base)
         result.update(
             {
                 "outcome_present": True,
+                "recovery_required": False,
                 "outcome_ref": outcome.outcome_ref,
                 "settled_episode_hash": settled.content_hash,
                 "statement_ref": settled.statement.statement_ref,
@@ -329,8 +347,13 @@ def settle_episode(
 ) -> dict[str, Any]:
     base = resolve_root(root)
     phase = detect_phase(base)
-    if phase != EpisodePhase.FROZEN:
-        raise StoreError(f"settle requires FROZEN phase, found {phase.value}")
+    if phase not in {
+        EpisodePhase.FROZEN,
+        EpisodePhase.SETTLEMENT_RECOVERY_REQUIRED,
+    }:
+        raise StoreError(
+            f"settle requires FROZEN or SETTLEMENT_RECOVERY_REQUIRED phase, found {phase.value}"
+        )
 
     episode = load_frozen(base)
     seat = load_seat(base)
@@ -366,6 +389,7 @@ def settle_episode(
             raise StoreError("account no-action must not supply settlement journal refs")
 
     settled = settle_shadow_episode(**settle_kwargs)
+    # Outcome-only partial: identical outcome resumes settled seal once; conflict rejects.
     write_outcome_and_settled_exclusive(base, outcome=outcome, settled=settled)
 
     evidence = assess_fixture_evidence(implementation_ready=True, synthetic_or_historical=True)
@@ -405,6 +429,7 @@ def settle_episode(
 def replay_episode(*, root: Path) -> dict[str, Any]:
     base = resolve_root(root)
     phase = detect_phase(base)
+    # Replay requires fully sealed settled; outcome-only recovery is not replayable.
     if phase != EpisodePhase.SETTLED:
         raise StoreError(f"replay requires SETTLED phase, found {phase.value}")
 
