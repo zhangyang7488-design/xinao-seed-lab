@@ -52,6 +52,16 @@ Receipt `status` values are honest and distinct: `planned` | `observed` | `verif
 
 From package root `docker/xinao-researcher-egress` (or absolute paths):
 
+0. **Migrate / build / activate protocol-v2 dedicated researcher image** (prerequisite for live real-provider canary)
+
+   Live egress canary does **not** run on the unlabeled extraction donor (`researcher-runtime-lock.v1.json` `grok_donor_image_id`). That donor is provenance only (binary extract source). Before real-provider canary:
+
+   - Build and activate a protocol-v2 researcher release via the skill runtime (`skills/xinao` migrate/build/activate path).
+   - Confirm researcher-container state root has `current.json` schema `xinao.researcher_current_pointer.v2` pointing at an active `xinao.researcher_release.v2` whose `image_id` is the dedicated researcher image.
+   - Default researcher-container state root: `D:\XINAO_RESEARCH_RUNTIME\state\xinao_skill\researcher_container` (from runtime-lock `state_root`; override with explicit `-ResearcherContainerStateRoot <absolute path>`). Distinct from egress evidence `-StateRoot` under `...\researcher_container\egress`.
+   - Record the active release `image_id` (`sha256:<64hex>`). Pass that ID as `-CanaryImageId`. Floating tags are rejected.
+   - If only a legacy v1 pointer exists, real-provider preflight fails with deterministic `ACTIVE_RESEARCHER_RELEASE_V2_ABSENT` (honest; never pretends the donor is a valid canary).
+
 1. **Image pin** — immutable identity only
    `pwsh -File .\scripts\Resolve-ProxyImagePin.ps1`
    Preflight/readback without pull: `-PreflightOnly` / `-ReadbackOnly`
@@ -84,31 +94,38 @@ From package root `docker/xinao-researcher-egress` (or absolute paths):
    Live CONNECT probe (requires immutable client image):
    `pwsh -File .\scripts\Owner-EngineeringCanary.ps1 -ClientImageId 'sha256:<64hex local image id>'`
 
-   **Real provider effect path** (Owner-only later; worker must **not** execute). Requires explicit absolute regular auth file (no reparse/hardlink/ADS; path never appears in receipts), pinned donor canary image matching `researcher-runtime-lock.v1.json` `grok_donor_image_id`, required provenance labels, and immutable client image for CONNECT subcheck:
+   **Real provider effect path** (Owner-only later; worker must **not** execute). Requires explicit absolute regular auth file (no reparse/hardlink/ADS; path never appears in receipts), **active dedicated researcher release image ID** (protocol-v2 pointer/manifest `image_id`, not extraction donor), live labels (donor provenance, binary SHA, requested model, dedicated chain, generic-worker-route forbidden), and immutable client image for CONNECT subcheck:
 
    ```text
    pwsh -File .\scripts\Owner-EngineeringCanary.ps1 -PreflightOnly `
      -RealProviderCall `
      -AuthFilePath 'C:\path\to\existing\auth.json' `
-     -CanaryImageId 'sha256:<pinned grok_donor_image_id>' `
+     -CanaryImageId 'sha256:<active dedicated researcher release image id>' `
      -ClientImageId 'sha256:<64hex local client image id>'
    ```
 
-   Live (Owner only, after posture + negative suite):
+   Optional absolute override of researcher-container state (tests/Owner):
+
+   ```text
+   ... -ResearcherContainerStateRoot 'D:\path\to\researcher_container'
+   ```
+
+   Live (Owner only, after v2 researcher activate + posture + negative suite):
 
    ```text
    pwsh -File .\scripts\Owner-EngineeringCanary.ps1 `
      -RealProviderCall `
      -AuthFilePath 'C:\path\to\existing\auth.json' `
-     -CanaryImageId 'sha256:<pinned grok_donor_image_id>' `
+     -CanaryImageId 'sha256:<active dedicated researcher release image id>' `
      -ClientImageId 'sha256:<64hex local client image id>'
    ```
 
    Real path facts:
 
+   - Admission binds `-CanaryImageId` to protocol-v2 active release: exact immutable ID, pointer/manifest same image, release `source_identity.grok_donor_image_id` equals runtime-lock donor, live labels match donor/binary/model/chain/generic-worker-route-forbidden; no floating tag resolution. Seal receipt `canary_image_id` is that active researcher image ID; donor remains provenance only.
    - Disposable container on `xinao_researcher_internal` only; read-only rootfs; `cap-drop ALL`; `no-new-privileges`; bounded pids/memory/cpu; tmpfs `/tmp` + `/grok-home`; auth bind-mounted read-only at `/grok-home/.grok/auth.json` (inspect RO before start); exact `HTTP(S)_PROXY`; empty `NO_PROXY`/`ALL_PROXY`; no published ports; no extra hosts.
    - Invokes packaged `/usr/local/bin/grok` headless JSON contract with fixed non-scientific tool-free prompt, requested model `grok-4.5`, max-turns 1, bounded wall time; stdout/stderr drained asynchronously under timeout (no redirected-pipe deadlock); Docker CLI exit must be 0.
-   - Seal-eligible only when receipt contains every sealer `CANARY_REQUIRED_KEYS` field (including exact `usage={input_tokens,output_tokens,total_tokens}`), only allowed keys, `status=observed`, `path_class=engineering_canary`, `real_provider_call=true`, `provider_effect_verified=true`, observed `grok-4.5-build` / `EndTurn` / positive tokens from parsed metadata (not constants), `endpoint_host=cli-chat-proxy.grok.com`, exact posture IDs + canonical `canary_image_id=sha256:<64hex>` matching pinned donor, isolation/persistence flags, all science/authority/completion flags false, UTC `observed_at`.
+   - Seal-eligible only when receipt contains every sealer `CANARY_REQUIRED_KEYS` field (including exact `usage={input_tokens,output_tokens,total_tokens}`), only allowed keys, `status=observed`, `path_class=engineering_canary`, `real_provider_call=true`, `provider_effect_verified=true`, observed `grok-4.5-build` / `EndTurn` / positive tokens from parsed metadata (not constants), `endpoint_host=cli-chat-proxy.grok.com`, exact posture IDs + canonical `canary_image_id=sha256:<64hex>` equal to the **active researcher image** (not the donor), isolation/persistence flags, all science/authority/completion flags false, UTC `observed_at`.
    - Raw CLI stdout lands only under owned D: temp as a strict child file (prefix-sibling / reparse / hardlink / directory rejected); delete that exact file only; `raw_output_persisted=false`. Cleanup fields limited to allowed keys (`canary_container_id`, `canary_container_removed`, `raw_output_sha256`, `connect_probe_ok`).
    - CONNECT subcheck remains separate transport evidence and **cannot** alone emit a seal-eligible receipt.
    - Empty allowlist cannot PASS.

@@ -745,6 +745,287 @@ function Get-XinaoResearcherRuntimeLock {
     return (Read-XinaoJsonFile -Path $path)
 }
 
+# Protocol-v2 researcher-container state (sibling of egress state; not the egress posture root).
+$script:XinaoResearcherCurrentPointerSchemaV2 = 'xinao.researcher_current_pointer.v2'
+$script:XinaoResearcherCurrentPointerSchemaV1 = 'xinao.researcher_current_pointer.v1'
+$script:XinaoResearcherReleaseSchemaV2 = 'xinao.researcher_release.v2'
+$script:XinaoResearcherLabelChain = 'io.xinao.researcher.chain'
+$script:XinaoResearcherLabelChainValue = 'dedicated-xinao-science'
+$script:XinaoResearcherLabelGenericWorkerRoute = 'io.xinao.researcher.generic-worker-route'
+$script:XinaoResearcherLabelGenericWorkerRouteValue = 'forbidden'
+$script:XinaoResearcherLabelDonorImageId = 'io.xinao.researcher.grok-donor-image-id'
+$script:XinaoResearcherLabelDonorBinarySha = 'io.xinao.researcher.grok-donor-binary.sha256'
+$script:XinaoResearcherLabelRequestedModel = 'io.xinao.researcher.requested-model'
+
+function Get-XinaoDefaultResearcherContainerStateRoot {
+    [CmdletBinding()]
+    param(
+        [string]$PackageRoot = (Get-XinaoEgressPackageRoot)
+    )
+    if (-not [string]::IsNullOrWhiteSpace($env:XINAO_RESEARCHER_CONTAINER_STATE_ROOT)) {
+        return [System.IO.Path]::GetFullPath($env:XINAO_RESEARCHER_CONTAINER_STATE_ROOT)
+    }
+    try {
+        $lock = Get-XinaoResearcherRuntimeLock -PackageRoot $PackageRoot
+        $fromLock = [string]$lock.state_root
+        if (-not [string]::IsNullOrWhiteSpace($fromLock)) {
+            return [System.IO.Path]::GetFullPath($fromLock)
+        }
+    } catch {
+        # Fall through to hard default.
+    }
+    return [System.IO.Path]::GetFullPath('D:\XINAO_RESEARCH_RUNTIME\state\xinao_skill\researcher_container')
+}
+
+function Get-XinaoResearcherContainerPointerPath {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$ResearcherContainerStateRoot
+    )
+    $root = [System.IO.Path]::GetFullPath($ResearcherContainerStateRoot)
+    return (Join-Path $root 'current.json')
+}
+
+function Get-XinaoActiveResearcherReleaseAdmission {
+    <#
+      .SYNOPSIS
+        Load protocol-v2 active researcher release from researcher-container state (pointer + release.json).
+      .DESCRIPTION
+        Does not require Docker. Rejects legacy v1 pointer/release. Does not claim the donor image is executable.
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$ResearcherContainerStateRoot
+    )
+    $root = [System.IO.Path]::GetFullPath($ResearcherContainerStateRoot)
+    $pointerPath = Get-XinaoResearcherContainerPointerPath -ResearcherContainerStateRoot $root
+    if (-not (Test-Path -LiteralPath $pointerPath -PathType Leaf)) {
+        throw 'ACTIVE_RESEARCHER_POINTER_ABSENT'
+    }
+    $pointer = Read-XinaoJsonFile -Path $pointerPath
+    $schema = [string]$pointer.schema_version
+    if ($schema -eq $script:XinaoResearcherCurrentPointerSchemaV1 -or $schema -like 'xinao.researcher_current_pointer.v1*') {
+        throw 'ACTIVE_RESEARCHER_RELEASE_V2_ABSENT'
+    }
+    if ($schema -ne $script:XinaoResearcherCurrentPointerSchemaV2) {
+        throw 'ACTIVE_RESEARCHER_POINTER_SCHEMA_INVALID'
+    }
+    $active = $pointer.active
+    if ($null -eq $active) {
+        throw 'ACTIVE_RESEARCHER_POINTER_ACTIVE_MISSING'
+    }
+    $releaseId = [string]$active.release_id
+    $manifestPath = [string]$active.release_manifest_path
+    $manifestSha = [string]$active.release_manifest_sha256
+    $bootstrap = $active.required_bootstrap_protocol
+    if ([string]::IsNullOrWhiteSpace($releaseId)) {
+        throw 'ACTIVE_RESEARCHER_POINTER_ACTIVE_INVALID'
+    }
+    if ([string]::IsNullOrWhiteSpace($manifestPath)) {
+        throw 'ACTIVE_RESEARCHER_RELEASE_MANIFEST_PATH_MISSING'
+    }
+    if ($bootstrap -ne 2 -and [string]$bootstrap -ne '2') {
+        throw 'ACTIVE_RESEARCHER_RELEASE_V2_ABSENT'
+    }
+    $manifestFull = [System.IO.Path]::GetFullPath($manifestPath)
+    if (-not (Test-Path -LiteralPath $manifestFull -PathType Leaf)) {
+        throw 'ACTIVE_RESEARCHER_RELEASE_MANIFEST_ABSENT'
+    }
+    if (-not [string]::IsNullOrWhiteSpace($manifestSha)) {
+        $observedSha = Get-XinaoFileSha256Hex -Path $manifestFull
+        if ($observedSha -ne $manifestSha.ToLowerInvariant()) {
+            throw 'ACTIVE_RESEARCHER_RELEASE_MANIFEST_HASH_MISMATCH'
+        }
+    }
+    $manifest = Read-XinaoJsonFile -Path $manifestFull
+    $releaseSchema = [string]$manifest.schema_version
+    if ($releaseSchema -ne $script:XinaoResearcherReleaseSchemaV2) {
+        throw 'ACTIVE_RESEARCHER_RELEASE_SCHEMA_INVALID'
+    }
+    if ([string]$manifest.release_id -ne $releaseId) {
+        throw 'ACTIVE_RESEARCHER_RELEASE_ID_MISMATCH'
+    }
+    if ($manifest.generic_worker_route_allowed -ne $false) {
+        throw 'ACTIVE_RESEARCHER_RELEASE_CHAIN_INVALID'
+    }
+    if ($manifest.required_bootstrap_protocol -ne 2 -and [string]$manifest.required_bootstrap_protocol -ne '2') {
+        throw 'ACTIVE_RESEARCHER_RELEASE_V2_ABSENT'
+    }
+    $imageIdRaw = [string]$manifest.image_id
+    if (-not (Test-XinaoImmutableImageIdFormat -ImageId $imageIdRaw)) {
+        throw 'ACTIVE_RESEARCHER_RELEASE_IMAGE_ID_INVALID'
+    }
+    $imageId = ConvertTo-XinaoCanonicalImageId -ImageId $imageIdRaw
+    $source = $manifest.source_identity
+    if ($null -eq $source) {
+        throw 'ACTIVE_RESEARCHER_RELEASE_SOURCE_IDENTITY_MISSING'
+    }
+    $sourceDonor = [string]$source.grok_donor_image_id
+    $sourceBinary = [string]$source.grok_donor_binary_sha256
+    if (-not (Test-XinaoImmutableImageIdFormat -ImageId $sourceDonor)) {
+        throw 'ACTIVE_RESEARCHER_RELEASE_SOURCE_DONOR_INVALID'
+    }
+    $sourceDonorCanon = ConvertTo-XinaoCanonicalImageId -ImageId $sourceDonor
+    if ([string]::IsNullOrWhiteSpace($sourceBinary) -or $sourceBinary -notmatch '^[0-9a-fA-F]{64}$') {
+        throw 'ACTIVE_RESEARCHER_RELEASE_SOURCE_BINARY_INVALID'
+    }
+    $sourceBinary = $sourceBinary.ToLowerInvariant()
+    $labels = $manifest.image_labels
+    return [ordered]@{
+        researcher_container_state_root = $root
+        pointer_path                    = $pointerPath
+        pointer_schema_version          = $schema
+        release_id                      = $releaseId
+        release_manifest_path           = $manifestFull
+        release_manifest_sha256         = $(if ($manifestSha) { $manifestSha.ToLowerInvariant() } else { $null })
+        active_image_id                 = $imageId
+        source_donor_image_id           = $sourceDonorCanon
+        source_donor_binary_sha256      = $sourceBinary
+        image_labels                    = $labels
+        capability_version              = [string]$active.capability_version
+        package_version                 = [string]$active.package_version
+        required_bootstrap_protocol     = 2
+    }
+}
+
+function Resolve-XinaoCanaryImageAgainstActiveResearcherRelease {
+    <#
+      .SYNOPSIS
+        Admit CanaryImageId as the active dedicated researcher release image (not the extraction donor).
+      .DESCRIPTION
+        Preflight: pointer + release + runtime-lock provenance only (no Docker).
+        Execute: also requires live docker image inspect labels matching release/runtime-lock.
+        canary_image_id in the result is always the active researcher image ID.
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$ImageRef,
+        [string]$PackageRoot = (Get-XinaoEgressPackageRoot),
+        [string]$ResearcherContainerStateRoot = '',
+        [switch]$Preflight
+    )
+    if ([string]::IsNullOrWhiteSpace($ImageRef)) {
+        throw 'CANARY_IMAGE_ID_REQUIRED'
+    }
+    if (-not (Test-XinaoImmutableImageIdFormat -ImageId $ImageRef)) {
+        throw 'CANARY_IMAGE_ID_NOT_IMMUTABLE'
+    }
+    $want = ConvertTo-XinaoCanonicalImageId -ImageId $ImageRef
+    $lock = Get-XinaoResearcherRuntimeLock -PackageRoot $PackageRoot
+    $pinnedDonor = ConvertTo-XinaoCanonicalImageId -ImageId ([string]$lock.grok_donor_image_id)
+    $expectedModel = [string]$lock.model
+    if ([string]::IsNullOrWhiteSpace($expectedModel)) { $expectedModel = $script:XinaoCanaryRequestedModel }
+
+    $stateRoot = if ([string]::IsNullOrWhiteSpace($ResearcherContainerStateRoot)) {
+        Get-XinaoDefaultResearcherContainerStateRoot -PackageRoot $PackageRoot
+    } else {
+        [System.IO.Path]::GetFullPath($ResearcherContainerStateRoot)
+    }
+
+    $admission = Get-XinaoActiveResearcherReleaseAdmission -ResearcherContainerStateRoot $stateRoot
+    $activeImageId = [string]$admission.active_image_id
+    $sourceDonor = [string]$admission.source_donor_image_id
+    $sourceBinary = [string]$admission.source_donor_binary_sha256
+
+    if ($sourceDonor -ne $pinnedDonor) {
+        throw 'RELEASE_SOURCE_DONOR_MISMATCH'
+    }
+    if ($want -eq $pinnedDonor -and $want -ne $activeImageId) {
+        throw 'CANARY_IMAGE_IS_DONOR_NOT_RESEARCHER'
+    }
+    if ($want -ne $activeImageId) {
+        throw 'CANARY_IMAGE_ID_NOT_ACTIVE_RELEASE'
+    }
+
+    $base = [ordered]@{
+        canary_image_id                 = $activeImageId
+        active_researcher_image_id      = $activeImageId
+        pinned_donor_image_id           = $pinnedDonor
+        source_donor_image_id           = $sourceDonor
+        source_donor_binary_sha256      = $sourceBinary
+        requested_model                 = $expectedModel
+        release_id                      = [string]$admission.release_id
+        release_manifest_path           = [string]$admission.release_manifest_path
+        researcher_container_state_root = [string]$admission.researcher_container_state_root
+        labels_verified                 = $false
+        provenance_note                 = 'canary_image_id is active dedicated researcher release image; donor is provenance only'
+    }
+
+    if ($Preflight) {
+        return $base
+    }
+
+    $insp = Invoke-XinaoDocker -ArgumentList @(
+        'image', 'inspect', $want, '--format',
+        (
+            '{{.Id}}|' +
+            '{{index .Config.Labels "' + $script:XinaoResearcherLabelDonorImageId + '"}}|' +
+            '{{index .Config.Labels "' + $script:XinaoResearcherLabelDonorBinarySha + '"}}|' +
+            '{{index .Config.Labels "' + $script:XinaoResearcherLabelRequestedModel + '"}}|' +
+            '{{index .Config.Labels "' + $script:XinaoResearcherLabelChain + '"}}|' +
+            '{{index .Config.Labels "' + $script:XinaoResearcherLabelGenericWorkerRoute + '"}}'
+        )
+    ) -AllowNonZero
+    if ($insp.ExitCode -ne 0) {
+        throw 'EGRESS_CANARY_IMAGE_INSPECT_FAILED'
+    }
+    $parts = ($insp.StdOut.Trim() -split '\|', 6)
+    $observedImageId = if ($parts.Count -gt 0 -and -not [string]::IsNullOrWhiteSpace($parts[0])) {
+        ConvertTo-XinaoCanonicalImageId -ImageId $parts[0].Trim()
+    } else { '' }
+    $donorImageLabel = if ($parts.Count -gt 1) { $parts[1].Trim() } else { '' }
+    $donorBinaryLabel = if ($parts.Count -gt 2) { $parts[2].Trim() } else { '' }
+    $requestedModelLabel = if ($parts.Count -gt 3) { $parts[3].Trim() } else { '' }
+    $chainLabel = if ($parts.Count -gt 4) { $parts[4].Trim() } else { '' }
+    $genericRouteLabel = if ($parts.Count -gt 5) { $parts[5].Trim() } else { '' }
+
+    if ([string]::IsNullOrWhiteSpace($observedImageId)) {
+        throw 'EGRESS_CANARY_IMAGE_ID_MISSING'
+    }
+    if ($observedImageId -ne $activeImageId) {
+        throw 'EGRESS_CANARY_IMAGE_ID_MISMATCH'
+    }
+    if ([string]::IsNullOrWhiteSpace($donorImageLabel)) {
+        throw 'EGRESS_CANARY_DONOR_LABEL_MISSING'
+    }
+    $donorLabelCanon = ConvertTo-XinaoCanonicalImageId -ImageId $donorImageLabel
+    if ($donorLabelCanon -ne $pinnedDonor) {
+        throw 'EGRESS_CANARY_DONOR_LABEL_MISMATCH'
+    }
+    if ([string]::IsNullOrWhiteSpace($donorBinaryLabel) -or $donorBinaryLabel -notmatch '^[0-9a-fA-F]{64}$') {
+        throw 'EGRESS_CANARY_DONOR_BINARY_LABEL_MISSING'
+    }
+    if ($donorBinaryLabel.ToLowerInvariant() -ne $sourceBinary) {
+        throw 'EGRESS_CANARY_DONOR_BINARY_LABEL_MISMATCH'
+    }
+    if ([string]::IsNullOrWhiteSpace($requestedModelLabel)) {
+        throw 'EGRESS_CANARY_MODEL_LABEL_MISSING'
+    }
+    if ($requestedModelLabel -ne $expectedModel) {
+        throw 'EGRESS_CANARY_IMAGE_MODEL_LABEL_MISMATCH'
+    }
+    if ([string]::IsNullOrWhiteSpace($chainLabel)) {
+        throw 'EGRESS_CANARY_CHAIN_LABEL_MISSING'
+    }
+    if ($chainLabel -ne $script:XinaoResearcherLabelChainValue) {
+        throw 'EGRESS_CANARY_CHAIN_LABEL_MISMATCH'
+    }
+    if ([string]::IsNullOrWhiteSpace($genericRouteLabel)) {
+        throw 'EGRESS_CANARY_GENERIC_WORKER_ROUTE_LABEL_MISSING'
+    }
+    if ($genericRouteLabel -ne $script:XinaoResearcherLabelGenericWorkerRouteValue) {
+        throw 'EGRESS_CANARY_GENERIC_WORKER_ROUTE_LABEL_MISMATCH'
+    }
+
+    $base.canary_image_id = $observedImageId
+    $base.active_researcher_image_id = $observedImageId
+    $base.labels_verified = $true
+    return $base
+}
+
 function Get-XinaoJsonIntField {
     [CmdletBinding()]
     param(

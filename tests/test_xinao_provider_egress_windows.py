@@ -24,7 +24,12 @@ SCRIPTS = EGRESS_ROOT / "scripts"
 SKILL_ROOT = ROOT / "skills" / "xinao"
 PWSH = os.environ.get("XINAO_PWSH") or "pwsh"
 RUNTIME_LOCK = SKILL_ROOT / "references" / "researcher-runtime-lock.v1.json"
-PINNED_DONOR_IMAGE_ID = json.loads(RUNTIME_LOCK.read_text(encoding="utf-8"))["grok_donor_image_id"]
+_RUNTIME_LOCK_OBJ = json.loads(RUNTIME_LOCK.read_text(encoding="utf-8"))
+PINNED_DONOR_IMAGE_ID = _RUNTIME_LOCK_OBJ["grok_donor_image_id"]
+PINNED_MODEL = _RUNTIME_LOCK_OBJ.get("model") or "grok-4.5"
+# Synthetic active researcher image (distinct from extraction donor).
+ACTIVE_RESEARCHER_IMAGE_ID = "sha256:" + ("b" * 64)
+SYNTHETIC_DONOR_BINARY_SHA = "c" * 64
 
 
 def _load(path: Path, name: str):
@@ -102,6 +107,115 @@ def _run_pwsh_command(command: str, *, timeout: int = 60) -> subprocess.Complete
         check=False,
         cwd=str(ROOT),
     )
+
+
+def _file_sha256_hex(path: Path) -> str:
+    import hashlib
+
+    return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def _write_synthetic_v2_researcher_state(
+    state_root: Path,
+    *,
+    image_id: str = ACTIVE_RESEARCHER_IMAGE_ID,
+    donor_image_id: str = PINNED_DONOR_IMAGE_ID,
+    donor_binary_sha: str = SYNTHETIC_DONOR_BINARY_SHA,
+    requested_model: str = PINNED_MODEL,
+    legacy_pointer: bool = False,
+    release_schema: str = "xinao.researcher_release.v2",
+    pointer_schema: str = "xinao.researcher_current_pointer.v2",
+    corrupt_manifest_hash: bool = False,
+) -> dict:
+    """Write minimal pointer+release for offline canary admission tests."""
+    state_root.mkdir(parents=True, exist_ok=True)
+    release_id = "researcher-1.1.0-synth000000000001"
+    release_dir = state_root / "releases" / release_id
+    release_dir.mkdir(parents=True, exist_ok=True)
+    labels = {
+        "io.xinao.researcher.chain": "dedicated-xinao-science",
+        "io.xinao.researcher.generic-worker-route": "forbidden",
+        "io.xinao.researcher.grok-donor-image-id": donor_image_id,
+        "io.xinao.researcher.grok-donor-binary.sha256": donor_binary_sha,
+        "io.xinao.researcher.requested-model": requested_model,
+    }
+    manifest = {
+        "schema_version": release_schema,
+        "release_id": release_id,
+        "package_version": "1.1.0",
+        "capability_id": "researcher-container",
+        "capability_version": "1.1.0",
+        "charter_version": "1.1.0",
+        "runtime_version": "1.1.0",
+        "release_identity_sha256": "a" * 64,
+        "source_identity": {
+            "source_commit": "a" * 40,
+            "source_tree": "b" * 40,
+            "source_dirty": False,
+            "grok_donor_image_id": donor_image_id,
+            "grok_donor_binary_sha256": donor_binary_sha,
+        },
+        "skill_bundle_path": str(release_dir / "skill-bundle"),
+        "skill_bundle_manifest_path": str(release_dir / "skill-bundle.manifest.json"),
+        "skill_bundle_manifest_sha256": "d" * 64,
+        "skill_bundle_tree_sha256": "e" * 64,
+        "image_tag_observational": f"xinao-researcher:{release_id}",
+        "image_id": image_id,
+        "image_entrypoint": ["python", "-I", "/opt/xinao-researcher/entrypoint.py"],
+        "image_labels": labels,
+        "skill_hashes": {},
+        "required_bootstrap_protocol": 2,
+        "generic_worker_route_allowed": False,
+        "state_namespace": "xinao_skill/researcher_container",
+        "run_namespace": "xinao_researcher",
+    }
+    manifest_path = release_dir / "release.json"
+    manifest_path.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
+    manifest_sha = _file_sha256_hex(manifest_path)
+    if legacy_pointer:
+        pointer = {
+            "schema_version": "xinao.researcher_current_pointer.v1",
+            "release_id": release_id,
+            "release_manifest_path": str(manifest_path),
+            "release_manifest_sha256": manifest_sha,
+            "promoted_at": "2026-07-29T00:00:00.000000Z",
+            "previous_pointer_sha256": "f" * 64,
+            "previous_release_id": None,
+            "previous_release_manifest_path": None,
+            "previous_release_manifest_sha256": None,
+        }
+    else:
+        pointer = {
+            "schema_version": pointer_schema,
+            "generation": 1,
+            "active": {
+                "release_id": release_id,
+                "release_manifest_path": str(manifest_path),
+                "release_manifest_sha256": (
+                    ("0" * 64) if corrupt_manifest_hash else manifest_sha
+                ),
+                "skill_bundle_manifest_sha256": "d" * 64,
+                "skill_bundle_tree_sha256": "e" * 64,
+                "capability_version": "1.1.0",
+                "package_version": "1.1.0",
+                "required_bootstrap_protocol": 2,
+                "activation_txn_id": "xra_20260730T000000_0123456789abcdef",
+            },
+            "previous_verified": None,
+            "switched_at": "2026-07-30T00:00:00.000000Z",
+        }
+    (state_root / "current.json").write_text(
+        json.dumps(pointer, indent=2) + "\n", encoding="utf-8"
+    )
+    return {
+        "state_root": state_root,
+        "image_id": image_id,
+        "donor_image_id": donor_image_id,
+        "donor_binary_sha": donor_binary_sha,
+        "release_id": release_id,
+        "manifest_path": manifest_path,
+        "manifest_sha": manifest_sha,
+    }
 
 
 def _parse_last_json(stdout: str) -> dict:
@@ -625,6 +739,10 @@ def test_engineering_canary_script_documents_real_provider_path() -> None:
     assert "-RealProviderCall" in text
     assert "AuthFilePath" in text
     assert "CanaryImageId" in text
+    assert "ResearcherContainerStateRoot" in text
+    assert "Resolve-XinaoCanaryImageAgainstActiveResearcherRelease" in common
+    assert "CANARY_IMAGE_IS_DONOR_NOT_RESEARCHER" in common
+    assert "ACTIVE_RESEARCHER_RELEASE_V2_ABSENT" in common
     assert "REAL_PROVIDER_CALL_NOT_IMPLEMENTED" not in text
     assert "cli-chat-proxy.grok.com" in text or "cli-chat-proxy.grok.com" in common
     assert "grok-4.5-build" in common
@@ -633,13 +751,18 @@ def test_engineering_canary_script_documents_real_provider_path() -> None:
     # CONNECT-only must not claim seal-eligible true.
     assert "execute_connect_only" in text
     assert "provider_effect_verified" in text and "$false" in text
-    assert "CANARY_IMAGE_ID_NOT_PINNED_DONOR" in text or "pinned" in text.lower()
+    # Must not re-bind canary to donor-only equality.
+    assert "CANARY_IMAGE_ID_NOT_PINNED_DONOR" not in text
+    assert "EGRESS_CANARY_IMAGE_NOT_PINNED_DONOR" not in text
+    assert "active dedicated researcher" in text.lower() or "active researcher" in text.lower()
 
 
 @requires_pwsh
 def test_real_provider_preflight_requires_auth_and_image(tmp_path: Path) -> None:
     state = tmp_path / "state"
     state.mkdir()
+    rc_state = tmp_path / "researcher_container"
+    synth = _write_synthetic_v2_researcher_state(rc_state)
     # Missing auth/image → fail without docker.
     proc = _run_pwsh(
         [
@@ -650,6 +773,8 @@ def test_real_provider_preflight_requires_auth_and_image(tmp_path: Path) -> None
             str(EGRESS_ROOT),
             "-StateRoot",
             str(state),
+            "-ResearcherContainerStateRoot",
+            str(rc_state),
             "-AllowlistPath",
             str(EGRESS_ROOT / "allowlist.v1.json"),
         ]
@@ -682,6 +807,8 @@ def test_real_provider_preflight_requires_auth_and_image(tmp_path: Path) -> None
             str(EGRESS_ROOT),
             "-StateRoot",
             str(state),
+            "-ResearcherContainerStateRoot",
+            str(rc_state),
             "-AllowlistPath",
             str(allow),
         ]
@@ -698,7 +825,7 @@ def test_real_provider_preflight_requires_auth_and_image(tmp_path: Path) -> None
 
     auth = tmp_path / "auth.json"
     auth.write_text('{"dummy":true}\n', encoding="utf-8")
-    # Arbitrary immutable image must fail pin (must match runtime-lock donor).
+    # Unrelated immutable image must fail active-release bind.
     proc_bad_pin = _run_pwsh(
         [
             str(SCRIPTS / "Owner-EngineeringCanary.ps1"),
@@ -712,15 +839,41 @@ def test_real_provider_preflight_requires_auth_and_image(tmp_path: Path) -> None
             str(EGRESS_ROOT),
             "-StateRoot",
             str(state),
+            "-ResearcherContainerStateRoot",
+            str(rc_state),
             "-AllowlistPath",
             str(allow),
         ]
     )
     assert proc_bad_pin.returncode != 0
     p_bad = _parse_last_json(proc_bad_pin.stdout)
-    assert p_bad.get("reason_code") == "CANARY_IMAGE_ID_NOT_PINNED_DONOR"
+    assert p_bad.get("reason_code") == "CANARY_IMAGE_ID_NOT_ACTIVE_RELEASE"
 
-    image = PINNED_DONOR_IMAGE_ID
+    # Extraction donor is not a valid canary when active researcher image differs.
+    proc_donor = _run_pwsh(
+        [
+            str(SCRIPTS / "Owner-EngineeringCanary.ps1"),
+            "-PreflightOnly",
+            "-RealProviderCall",
+            "-AuthFilePath",
+            str(auth),
+            "-CanaryImageId",
+            PINNED_DONOR_IMAGE_ID,
+            "-PackageRoot",
+            str(EGRESS_ROOT),
+            "-StateRoot",
+            str(state),
+            "-ResearcherContainerStateRoot",
+            str(rc_state),
+            "-AllowlistPath",
+            str(allow),
+        ]
+    )
+    assert proc_donor.returncode != 0
+    p_donor = _parse_last_json(proc_donor.stdout)
+    assert p_donor.get("reason_code") == "CANARY_IMAGE_IS_DONOR_NOT_RESEARCHER"
+
+    image = synth["image_id"]
     proc3 = _run_pwsh(
         [
             str(SCRIPTS / "Owner-EngineeringCanary.ps1"),
@@ -734,6 +887,8 @@ def test_real_provider_preflight_requires_auth_and_image(tmp_path: Path) -> None
             str(EGRESS_ROOT),
             "-StateRoot",
             str(state),
+            "-ResearcherContainerStateRoot",
+            str(rc_state),
             "-AllowlistPath",
             str(allow),
         ]
@@ -745,6 +900,10 @@ def test_real_provider_preflight_requires_auth_and_image(tmp_path: Path) -> None
     assert p3.get("real_provider_call") is False  # not executed
     assert p3.get("provider_effect_verified") is False
     assert p3.get("canary_image_id") == image
+    assert p3.get("canary_image_id") != PINNED_DONOR_IMAGE_ID
+    assert p3.get("active_researcher_image_id") == image
+    assert p3.get("pinned_donor_image_id") == PINNED_DONOR_IMAGE_ID
+    assert p3.get("labels_verified") is False
     assert p3.get("auth_content_persisted") is False
     assert p3.get("docker_mutated") is False
     blob = json.dumps(p3).lower()
@@ -759,6 +918,8 @@ def test_real_provider_preflight_requires_auth_and_image(tmp_path: Path) -> None
 def test_real_provider_rejects_floating_image_tag(tmp_path: Path) -> None:
     state = tmp_path / "state"
     state.mkdir()
+    rc_state = tmp_path / "researcher_container"
+    _write_synthetic_v2_researcher_state(rc_state)
     auth = tmp_path / "auth.json"
     auth.write_text("{}\n", encoding="utf-8")
     allow = tmp_path / "allow.json"
@@ -779,6 +940,8 @@ def test_real_provider_rejects_floating_image_tag(tmp_path: Path) -> None:
             str(EGRESS_ROOT),
             "-StateRoot",
             str(state),
+            "-ResearcherContainerStateRoot",
+            str(rc_state),
             "-AllowlistPath",
             str(allow),
         ]
@@ -786,6 +949,200 @@ def test_real_provider_rejects_floating_image_tag(tmp_path: Path) -> None:
     assert proc.returncode != 0
     payload = _parse_last_json(proc.stdout)
     assert payload.get("reason_code") == "CANARY_IMAGE_ID_NOT_IMMUTABLE"
+
+
+@requires_pwsh
+def test_canary_image_admission_rejection_matrix(tmp_path: Path) -> None:
+    """Decisive offline preflight rejects: donor, unrelated, mismatch, legacy, hash, floating."""
+    allow = tmp_path / "allow.json"
+    allow.write_text(
+        json.dumps(
+            {
+                "schema_version": "xinao.provider_egress_allowlist.v1",
+                "domains": ["cli-chat-proxy.grok.com"],
+            }
+        ),
+        encoding="utf-8",
+    )
+    auth = tmp_path / "auth.json"
+    auth.write_text("{}\n", encoding="utf-8")
+    egress_state = tmp_path / "egress"
+    egress_state.mkdir()
+
+    def _run(canary: str, rc: Path) -> dict:
+        proc = _run_pwsh(
+            [
+                str(SCRIPTS / "Owner-EngineeringCanary.ps1"),
+                "-PreflightOnly",
+                "-RealProviderCall",
+                "-AuthFilePath",
+                str(auth),
+                "-CanaryImageId",
+                canary,
+                "-PackageRoot",
+                str(EGRESS_ROOT),
+                "-StateRoot",
+                str(egress_state),
+                "-ResearcherContainerStateRoot",
+                str(rc),
+                "-AllowlistPath",
+                str(allow),
+            ]
+        )
+        assert proc.returncode != 0, proc.stdout + proc.stderr
+        return _parse_last_json(proc.stdout)
+
+    # Missing pointer entirely.
+    empty_rc = tmp_path / "rc_empty"
+    empty_rc.mkdir()
+    p = _run(ACTIVE_RESEARCHER_IMAGE_ID, empty_rc)
+    assert p.get("reason_code") == "ACTIVE_RESEARCHER_POINTER_ABSENT"
+
+    # Legacy v1 pointer: honest failed, not donor-as-canary.
+    legacy_rc = tmp_path / "rc_legacy"
+    _write_synthetic_v2_researcher_state(legacy_rc, legacy_pointer=True)
+    p = _run(ACTIVE_RESEARCHER_IMAGE_ID, legacy_rc)
+    assert p.get("reason_code") == "ACTIVE_RESEARCHER_RELEASE_V2_ABSENT"
+
+    # Manifest hash mismatch.
+    bad_hash_rc = tmp_path / "rc_bad_hash"
+    _write_synthetic_v2_researcher_state(bad_hash_rc, corrupt_manifest_hash=True)
+    p = _run(ACTIVE_RESEARCHER_IMAGE_ID, bad_hash_rc)
+    assert p.get("reason_code") == "ACTIVE_RESEARCHER_RELEASE_MANIFEST_HASH_MISMATCH"
+
+    # Good v2; wrong donor in source identity.
+    bad_donor_rc = tmp_path / "rc_bad_donor"
+    _write_synthetic_v2_researcher_state(
+        bad_donor_rc, donor_image_id="sha256:" + ("9" * 64)
+    )
+    p = _run(ACTIVE_RESEARCHER_IMAGE_ID, bad_donor_rc)
+    assert p.get("reason_code") == "RELEASE_SOURCE_DONOR_MISMATCH"
+
+    # Floating tag already covered; keep matrix self-contained.
+    good_rc = tmp_path / "rc_good"
+    _write_synthetic_v2_researcher_state(good_rc)
+    p = _run("xinao-researcher:latest", good_rc)
+    assert p.get("reason_code") == "CANARY_IMAGE_ID_NOT_IMMUTABLE"
+    p = _run(PINNED_DONOR_IMAGE_ID, good_rc)
+    assert p.get("reason_code") == "CANARY_IMAGE_IS_DONOR_NOT_RESEARCHER"
+    p = _run("sha256:" + ("a" * 64), good_rc)
+    assert p.get("reason_code") == "CANARY_IMAGE_ID_NOT_ACTIVE_RELEASE"
+
+
+@requires_pwsh
+def test_canary_execute_label_admission_mocked_docker(tmp_path: Path) -> None:
+    """Execute-path label checks via mocked Invoke-XinaoDocker (no real Docker mutation)."""
+    common = (SCRIPTS / "XinaoEgressOwner.Common.ps1").as_posix()
+    rc_state = tmp_path / "researcher_container"
+    synth = _write_synthetic_v2_researcher_state(rc_state)
+    image = synth["image_id"]
+    donor = synth["donor_image_id"]
+    binary = synth["donor_binary_sha"]
+    model = PINNED_MODEL
+    pkg = EGRESS_ROOT.as_posix()
+    rc = rc_state.as_posix()
+
+    def _case(inspect_line: str, expect_reason: str | None) -> None:
+        # Escape for single-quoted PowerShell string.
+        line = inspect_line.replace("'", "''")
+        cmd = textwrap.dedent(
+            f"""
+            . '{common}'
+            function Invoke-XinaoDocker {{
+              param([string[]]$ArgumentList, [switch]$AllowNonZero, [switch]$WhatIfPlan)
+              return [pscustomobject]@{{
+                ExitCode = 0
+                StdOut = '{line}'
+                StdErr = ''
+                Planned = @()
+              }}
+            }}
+            try {{
+              $r = Resolve-XinaoCanaryImageAgainstActiveResearcherRelease `
+                -ImageRef '{image}' `
+                -PackageRoot '{pkg}' `
+                -ResearcherContainerStateRoot '{rc}'
+              if ($null -eq $r) {{ throw 'NULL_RESULT' }}
+              $obj = [ordered]@{{
+                ok = $true
+                canary_image_id = [string]$r.canary_image_id
+                labels_verified = [bool]$r.labels_verified
+                pinned_donor_image_id = [string]$r.pinned_donor_image_id
+              }}
+              $obj | ConvertTo-Json -Compress
+            }} catch {{
+              $obj = [ordered]@{{ ok = $false; reason_code = [string]$_.Exception.Message }}
+              $obj | ConvertTo-Json -Compress
+              exit 0
+            }}
+            """
+        )
+        proc = _run_pwsh_command(cmd)
+        assert proc.returncode == 0, proc.stderr + proc.stdout
+        payload = json.loads(proc.stdout.strip().splitlines()[-1])
+        if expect_reason is None:
+            assert payload.get("ok") is True, payload
+            assert payload.get("canary_image_id") == image
+            assert payload.get("canary_image_id") != PINNED_DONOR_IMAGE_ID
+            assert payload.get("labels_verified") is True
+            assert payload.get("pinned_donor_image_id") == donor
+        else:
+            assert payload.get("ok") is False, payload
+            assert payload.get("reason_code") == expect_reason
+
+    good = f"{image}|{donor}|{binary}|{model}|dedicated-xinao-science|forbidden"
+    _case(good, None)
+    # Donor label mismatch.
+    _case(
+        f"{image}|sha256:{'9' * 64}|{binary}|{model}|dedicated-xinao-science|forbidden",
+        "EGRESS_CANARY_DONOR_LABEL_MISMATCH",
+    )
+    # Binary label mismatch.
+    _case(
+        f"{image}|{donor}|{'d' * 64}|{model}|dedicated-xinao-science|forbidden",
+        "EGRESS_CANARY_DONOR_BINARY_LABEL_MISMATCH",
+    )
+    # Missing labels (empty donor).
+    _case(
+        f"{image}|||{model}|dedicated-xinao-science|forbidden",
+        "EGRESS_CANARY_DONOR_LABEL_MISSING",
+    )
+    # Observed image id mismatch vs active release.
+    _case(
+        f"sha256:{'e' * 64}|{donor}|{binary}|{model}|dedicated-xinao-science|forbidden",
+        "EGRESS_CANARY_IMAGE_ID_MISMATCH",
+    )
+    # Chain / generic-worker-route required.
+    _case(
+        f"{image}|{donor}|{binary}|{model}||forbidden",
+        "EGRESS_CANARY_CHAIN_LABEL_MISSING",
+    )
+    _case(
+        f"{image}|{donor}|{binary}|{model}|dedicated-xinao-science|",
+        "EGRESS_CANARY_GENERIC_WORKER_ROUTE_LABEL_MISSING",
+    )
+    # Preflight still admits without docker when v2 present.
+    cmd_pre = textwrap.dedent(
+        f"""
+        . '{common}'
+        $r = Resolve-XinaoCanaryImageAgainstActiveResearcherRelease `
+          -ImageRef '{image}' `
+          -PackageRoot '{pkg}' `
+          -ResearcherContainerStateRoot '{rc}' `
+          -Preflight
+        $obj = [ordered]@{{
+          canary_image_id = [string]$r.canary_image_id
+          labels_verified = [bool]$r.labels_verified
+          release_id = [string]$r.release_id
+        }}
+        $obj | ConvertTo-Json -Compress
+        """
+    )
+    proc_pre = _run_pwsh_command(cmd_pre)
+    assert proc_pre.returncode == 0, proc_pre.stderr + proc_pre.stdout
+    pre = json.loads(proc_pre.stdout.strip().splitlines()[-1])
+    assert pre["canary_image_id"] == image
+    assert pre["labels_verified"] is False
 
 
 @requires_pwsh
@@ -1366,3 +1723,11 @@ def test_runbook_documents_real_provider_canary() -> None:
     assert "CONNECT-only" in runbook or "CONNECT only" in runbook or "not seal-eligible" in runbook.lower()
     assert "usage" in runbook.lower()
     assert "ClientImageId" in runbook or "client image" in runbook.lower() or "immutable" in runbook.lower()
+    assert "protocol-v2" in runbook or "protocol-v2" in runbook.lower() or "researcher_current_pointer.v2" in runbook
+    assert "ResearcherContainerStateRoot" in runbook
+    assert "active dedicated researcher" in runbook.lower() or "active researcher" in runbook.lower()
+    assert "grok_donor_image_id" in runbook  # still documented as provenance
+    assert "not the unlabeled extraction donor" in runbook.lower() or "not extraction donor" in runbook.lower() or "provenance only" in runbook.lower()
+    # Must not instruct owners to pass donor as CanaryImageId.
+    assert "CanaryImageId 'sha256:<pinned grok_donor_image_id>'" not in runbook
+    assert "migrate" in runbook.lower() or "activate" in runbook.lower()

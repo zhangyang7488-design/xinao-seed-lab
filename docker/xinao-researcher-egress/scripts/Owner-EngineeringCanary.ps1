@@ -11,19 +11,30 @@
     real_provider_call=false and provider_effect_verified=false.
 
   -RealProviderCall path (Owner-only; worker must not execute):
-    Requires explicit -AuthFilePath and -CanaryImageId (immutable). Creates one
-    disposable container on xinao_researcher_internal only with hardened OCI
-    posture, invokes packaged Grok CLI headless JSON contract, parses redacted
-    metadata, deletes exact temporary raw output after seal, reports observed
-    cleanup only in allowed receipt fields.
+    Requires explicit -AuthFilePath and -CanaryImageId (immutable active dedicated
+    researcher release image ID — not the unlabeled extraction donor). Binds against
+    protocol-v2 researcher-container current pointer + release manifest, validates
+    source-identity donor against runtime-lock, and on execute validates live image
+    labels. Creates one disposable container on xinao_researcher_internal only with
+    hardened OCI posture, invokes packaged Grok CLI headless JSON contract, parses
+    redacted metadata, deletes exact temporary raw output after seal, reports
+    observed cleanup only in allowed receipt fields.
 
-  -PreflightOnly validates eligibility without Docker mutation.
+  -ResearcherContainerStateRoot is the researcher-container state root that holds
+    current.json and releases/ (default from runtime-lock state_root / fixed D: path).
+    Distinct from -StateRoot (egress posture evidence root). Absolute override for
+    tests/Owner operation; never an opaque hidden field.
+
+  -PreflightOnly validates eligibility without Docker mutation. If active v2 release
+    is absent (legacy pointer / missing pointer), reports deterministic failed reason
+    and never pretends the donor image is a valid canary.
   Empty allowlist cannot produce a positive canary PASS (honest failed/partial).
-  Seal-eligible receipts match owner_seal_live_egress.py CANARY_* key sets exactly.
+  Seal-eligible receipts match owner_seal_live_egress.py CANARY_* key sets exactly;
+  canary_image_id is the active researcher image ID (donor remains provenance only).
 .EXAMPLE
   pwsh -File .\Owner-EngineeringCanary.ps1 -PreflightOnly
 .EXAMPLE
-  pwsh -File .\Owner-EngineeringCanary.ps1 -RealProviderCall -AuthFilePath 'C:\path\auth.json' -CanaryImageId 'sha256:...'
+  pwsh -File .\Owner-EngineeringCanary.ps1 -RealProviderCall -AuthFilePath 'C:\path\auth.json' -CanaryImageId 'sha256:<active researcher image id>'
 #>
 [CmdletBinding()]
 param(
@@ -41,7 +52,10 @@ param(
     [string]$EndpointHint = 'https://cli-chat-proxy.grok.com',
     [string]$ResultsPath = '',
     [string]$AuthFilePath = '',
+    # Immutable active dedicated researcher release image ID (not extraction donor).
     [string]$CanaryImageId = '',
+    # Researcher-container state root (current.json + releases/); not egress StateRoot.
+    [string]$ResearcherContainerStateRoot = '',
     [int]$ProviderTimeoutSeconds = 120,
     [switch]$PreflightOnly,
     [switch]$WhatIf,
@@ -63,6 +77,11 @@ if ([string]::IsNullOrWhiteSpace($ClientImageId) -and -not [string]::IsNullOrWhi
 if ([string]::IsNullOrWhiteSpace($PackageRoot)) { $PackageRoot = Get-XinaoEgressPackageRoot }
 if ([string]::IsNullOrWhiteSpace($StateRoot)) { $StateRoot = Get-XinaoDefaultStateRoot }
 if ([string]::IsNullOrWhiteSpace($TempRoot)) { $TempRoot = Get-XinaoDefaultTempRoot }
+if ([string]::IsNullOrWhiteSpace($ResearcherContainerStateRoot)) {
+    $ResearcherContainerStateRoot = Get-XinaoDefaultResearcherContainerStateRoot -PackageRoot $PackageRoot
+} else {
+    $ResearcherContainerStateRoot = [System.IO.Path]::GetFullPath($ResearcherContainerStateRoot)
+}
 $paths = Get-XinaoEgressPathContract -PackageRoot $PackageRoot -StateRoot $StateRoot -TempRoot $TempRoot
 if ([string]::IsNullOrWhiteSpace($AllowlistPath)) { $AllowlistPath = $paths.allowlist_path }
 if ([string]::IsNullOrWhiteSpace($InternalNetwork)) { $InternalNetwork = $paths.internal_network_name }
@@ -164,70 +183,19 @@ function Resolve-ClientImageForExecute {
 }
 
 function Resolve-CanaryImageAgainstRuntimeLock {
+    # Thin wrapper: CanaryImageId is the active dedicated researcher release image,
+    # bound to protocol-v2 pointer/manifest + runtime-lock donor provenance.
     param(
         [string]$ImageRef,
         [string]$PackageRoot,
+        [string]$ResearcherContainerStateRoot,
         [switch]$Preflight
     )
-    if ([string]::IsNullOrWhiteSpace($ImageRef)) {
-        throw 'CANARY_IMAGE_ID_REQUIRED'
-    }
-    if (-not (Test-XinaoImmutableImageIdFormat -ImageId $ImageRef)) {
-        throw 'CANARY_IMAGE_ID_NOT_IMMUTABLE'
-    }
-    $want = ConvertTo-XinaoCanonicalImageId -ImageId $ImageRef
-    $lock = Get-XinaoResearcherRuntimeLock -PackageRoot $PackageRoot
-    $pinnedDonor = ConvertTo-XinaoCanonicalImageId -ImageId ([string]$lock.grok_donor_image_id)
-    $expectedModel = [string]$lock.model
-    if ([string]::IsNullOrWhiteSpace($expectedModel)) { $expectedModel = $script:XinaoCanaryRequestedModel }
-    if ($Preflight) {
-        if ($want -ne $pinnedDonor) {
-            throw 'CANARY_IMAGE_ID_NOT_PINNED_DONOR'
-        }
-        return [ordered]@{
-            canary_image_id = $want
-            pinned_donor_image_id = $pinnedDonor
-            requested_model = $expectedModel
-            labels_verified = $false
-        }
-    }
-    $insp = Invoke-XinaoDocker -ArgumentList @(
-        'image', 'inspect', $want, '--format',
-        '{{.Id}}|{{index .Config.Labels "io.xinao.researcher.grok-donor-image-id"}}|{{index .Config.Labels "io.xinao.researcher.grok-donor-binary.sha256"}}|{{index .Config.Labels "io.xinao.researcher.requested-model"}}'
-    ) -AllowNonZero
-    if ($insp.ExitCode -ne 0) {
-        throw 'EGRESS_CANARY_IMAGE_INSPECT_FAILED'
-    }
-    $parts = ($insp.StdOut.Trim() -split '\|', 4)
-    $observedImageId = if ($parts.Count -gt 0) { ConvertTo-XinaoCanonicalImageId -ImageId $parts[0].Trim() } else { '' }
-    $donorImageLabel = if ($parts.Count -gt 1) { $parts[1].Trim() } else { '' }
-    $donorBinaryLabel = if ($parts.Count -gt 2) { $parts[2].Trim() } else { '' }
-    $requestedModelLabel = if ($parts.Count -gt 3) { $parts[3].Trim() } else { '' }
-    if ($observedImageId -ne $pinnedDonor) {
-        throw 'EGRESS_CANARY_IMAGE_NOT_PINNED_DONOR'
-    }
-    if ([string]::IsNullOrWhiteSpace($donorImageLabel)) {
-        throw 'EGRESS_CANARY_DONOR_LABEL_MISSING'
-    }
-    $donorLabelCanon = ConvertTo-XinaoCanonicalImageId -ImageId $donorImageLabel
-    if ($donorLabelCanon -ne $pinnedDonor) {
-        throw 'EGRESS_CANARY_DONOR_LABEL_MISMATCH'
-    }
-    if ([string]::IsNullOrWhiteSpace($donorBinaryLabel) -or $donorBinaryLabel -notmatch '^[0-9a-fA-F]{64}$') {
-        throw 'EGRESS_CANARY_DONOR_BINARY_LABEL_MISSING'
-    }
-    if ([string]::IsNullOrWhiteSpace($requestedModelLabel)) {
-        throw 'EGRESS_CANARY_MODEL_LABEL_MISSING'
-    }
-    if ($requestedModelLabel -ne $expectedModel) {
-        throw 'EGRESS_CANARY_IMAGE_MODEL_LABEL_MISMATCH'
-    }
-    return [ordered]@{
-        canary_image_id = $observedImageId
-        pinned_donor_image_id = $pinnedDonor
-        requested_model = $expectedModel
-        labels_verified = $true
-    }
+    return (Resolve-XinaoCanaryImageAgainstActiveResearcherRelease `
+        -ImageRef $ImageRef `
+        -PackageRoot $PackageRoot `
+        -ResearcherContainerStateRoot $ResearcherContainerStateRoot `
+        -Preflight:$Preflight)
 }
 
 function Invoke-ConnectTransportProbe {
@@ -400,10 +368,14 @@ try {
             if ([string]::IsNullOrWhiteSpace($CanaryImageId)) { throw 'CANARY_IMAGE_ID_REQUIRED' }
             if (-not (Test-XinaoImmutableImageIdFormat -ImageId $CanaryImageId)) { throw 'CANARY_IMAGE_ID_NOT_IMMUTABLE' }
             $resolvedAuth = Assert-XinaoAuthFilePathLiteral -AuthFilePath $AuthFilePath
-            $imagePlan = Resolve-CanaryImageAgainstRuntimeLock -ImageRef $CanaryImageId -PackageRoot $PackageRoot -Preflight
+            $imagePlan = Resolve-CanaryImageAgainstRuntimeLock `
+                -ImageRef $CanaryImageId `
+                -PackageRoot $PackageRoot `
+                -ResearcherContainerStateRoot $ResearcherContainerStateRoot `
+                -Preflight
         } catch {
             $code = [string]$_.Exception.Message
-            if ($code -match 'EGRESS_AUTH_PATH_|CANARY_IMAGE_|EGRESS_RUNTIME_LOCK') {
+            if ($code -match 'EGRESS_AUTH_PATH_|CANARY_IMAGE_|EGRESS_RUNTIME_LOCK|ACTIVE_RESEARCHER_|RELEASE_SOURCE_|EGRESS_CANARY_') {
                 $reason = $code
             } else {
                 $reason = 'EGRESS_AUTH_OR_IMAGE_ADMISSION_FAILED'
@@ -413,8 +385,9 @@ try {
                 reason_code              = $reason
                 real_provider_call       = $false
                 provider_effect_verified = $false
-                note                     = 'RealProviderCall requires explicit existing auth file (no path/content in receipt) and pinned donor CanaryImageId.'
+                note                     = 'RealProviderCall requires explicit existing auth file (no path/content in receipt) and CanaryImageId equal to the active protocol-v2 dedicated researcher release image (not the unlabeled extraction donor).'
                 docker_mutated           = $false
+                researcher_container_state_root = $ResearcherContainerStateRoot
             }
             Write-Output (ConvertTo-XinaoStrictJson -InputObject $receipt)
             exit 2
@@ -453,11 +426,16 @@ try {
                 provider_effect_verified           = $false
                 allow_real_provider_call_requested = $true
                 canary_image_id                    = $imagePlan.canary_image_id
+                active_researcher_image_id         = $imagePlan.active_researcher_image_id
+                pinned_donor_image_id              = $imagePlan.pinned_donor_image_id
+                release_id                         = $imagePlan.release_id
+                researcher_container_state_root    = $imagePlan.researcher_container_state_root
+                labels_verified                    = [bool]$imagePlan.labels_verified
                 auth_mounted_read_only             = $true
                 auth_content_persisted             = $false
                 endpoint_host                      = $script:XinaoCanaryEndpointHost
                 requested_model                    = $script:XinaoCanaryRequestedModel
-                note                               = 'Real provider canary preflight only. Worker must not execute. Auth host path and contents not loaded into receipt. CONNECT remains separate transport subcheck.'
+                note                               = 'Real provider canary preflight only. CanaryImageId is the active dedicated researcher release image (donor is provenance only). Worker must not execute. Auth host path and contents not loaded into receipt. CONNECT remains separate transport subcheck.'
                 docker_mutated                     = $false
                 connect_only                       = $false
             }
@@ -483,8 +461,15 @@ try {
             exit 2
         }
 
-        $imageLive = Resolve-CanaryImageAgainstRuntimeLock -ImageRef $CanaryImageId -PackageRoot $PackageRoot
+        $imageLive = Resolve-CanaryImageAgainstRuntimeLock `
+            -ImageRef $CanaryImageId `
+            -PackageRoot $PackageRoot `
+            -ResearcherContainerStateRoot $ResearcherContainerStateRoot
         $canonicalCanaryImage = [string]$imageLive.canary_image_id
+        if ($canonicalCanaryImage -eq [string]$imageLive.pinned_donor_image_id -and `
+            $canonicalCanaryImage -ne [string]$imageLive.active_researcher_image_id) {
+            throw 'CANARY_IMAGE_IS_DONOR_NOT_RESEARCHER'
+        }
 
         # CONNECT transport subcheck requires immutable local client image.
         $clientLive = Resolve-ClientImageForExecute -ImageRef $ClientImageId
@@ -679,7 +664,7 @@ try {
             provider_effect_verified = $false
             allow_real_provider_call_requested = $false
             connect_only             = $true
-            note                     = 'CONNECT transport preflight only. Not seal-eligible. Use -RealProviderCall with explicit AuthFilePath and pinned donor CanaryImageId for positive provider effect. Execute requires immutable -ClientImageId.'
+            note                     = 'CONNECT transport preflight only. Not seal-eligible. Use -RealProviderCall with explicit AuthFilePath and active dedicated researcher CanaryImageId (protocol-v2 release image, not extraction donor) for positive provider effect. Execute requires immutable -ClientImageId.'
             docker_mutated           = $false
         }
         Write-Output (ConvertTo-XinaoStrictJson -InputObject $receipt)
