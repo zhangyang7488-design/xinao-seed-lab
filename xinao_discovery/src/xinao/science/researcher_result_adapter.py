@@ -4,6 +4,17 @@ Binds verified ``xinao.research_candidate.v2`` result bytes to a matching
 ``xinao.skill_research_receipt.v2`` receipt, then mints one content-addressed
 ``PolicyCandidateVersion`` accepted by the existing science portfolio consumer.
 
+Production success result key set is pinned to the formal producer
+(``docker/xinao-researcher/entrypoint.py``) object written into
+``result.json``. After #159 that object intentionally carries both
+``provider_session_id_present`` / ``provider_request_id_present`` and the raw
+``provider_session_id`` / ``provider_request_id`` strings. The host runtime
+exact-key allowlist in ``xinao_runtime._validate_material_result_binding`` still
+lists only the ``*_present`` flags — that lagging consumer seam is outside this
+adapter's write domain. This adapter does **not** silently drop or invent a
+third key set: production success fixtures and exact-key validation follow the
+producer formal result object (with raw ids).
+
 This adapter:
 
 - does not invent a policy ``decision_map`` from research prose;
@@ -16,7 +27,9 @@ from __future__ import annotations
 
 import hashlib
 import json
-from collections.abc import Mapping
+import math
+import re
+from collections.abc import Mapping, Sequence
 from datetime import UTC, datetime
 from typing import Any, Final
 
@@ -28,8 +41,115 @@ SKILL_RESEARCH_RECEIPT_SCHEMA: Final = "xinao.skill_research_receipt.v2"
 CONTAINER_RESULT_SCHEMA: Final = "xinao.researcher_container_result.v2"
 ADAPTER_BINDING_KIND: Final = "XINAO_RESEARCHER_RESULT_ADAPTER_V1"
 ADAPTER_MARKER: Final = "XINAO_RESEARCHER_RESULT_ADAPTER_CANDIDATE_V1"
+ROUTE_CLASS_SCIENTIFIC_RESEARCHER: Final = "scientific_researcher"
 
-_HEX64 = frozenset("0123456789abcdef")
+# Producer formal success keys (entrypoint result.json). Reconciled seam: raw
+# provider_*_id fields are part of the sealed production result object.
+PRODUCTION_SUCCESS_RESULT_KEYS: Final[frozenset[str]] = frozenset(
+    {
+        "schema_version",
+        "status",
+        "reason_codes",
+        "candidate",
+        "request_sha256",
+        "prompt_sha256",
+        "output_schema_sha256",
+        "material_bundle_id",
+        "material_manifest_sha256",
+        "material_packet_sha256",
+        "effective_prompt_sha256",
+        "material_refs_available",
+        "provider",
+        "requested_model",
+        "provider_stop_reason",
+        "provider_num_turns",
+        "provider_session_id_present",
+        "provider_request_id_present",
+        "provider_session_id",
+        "provider_request_id",
+        "provider_model_usage",
+        "usage",
+        "completion_claim_allowed",
+        "science_restored",
+        "parent_complete",
+    }
+)
+
+# Sealed skill receipt keys written before transport-only path/hash fields.
+PRODUCTION_SUCCESS_RECEIPT_KEYS: Final[frozenset[str]] = frozenset(
+    {
+        "schema_version",
+        "run_id",
+        "status",
+        "candidate",
+        "reason_codes",
+        "release_id",
+        "release_manifest_path",
+        "release_manifest_sha256",
+        "execution_pointer_sha256",
+        "execution_pointer_generation",
+        "execution_activation_txn_id",
+        "skill_bundle_tree_sha256",
+        "package_version",
+        "capability_version",
+        "required_bootstrap_protocol",
+        "image_id",
+        "container_id",
+        "container_exit_code",
+        "container_terminal_attestation",
+        "container_security",
+        "provider_egress",
+        "container_removed",
+        "request_sha256",
+        "base_prompt_sha256",
+        "output_schema_sha256",
+        "material_bundle_id",
+        "material_manifest_path",
+        "material_manifest_sha256",
+        "material_packet_sha256",
+        "effective_prompt_sha256",
+        "material_source_refs",
+        "material_prompt_binding_verified",
+        "material_use_claim_bound",
+        "result_sha256",
+        "result_path",
+        "created_at",
+        "route_class",
+        "ordinary_worker_chain_used",
+        "provider_evidence",
+        "auth_handle_identity_unchanged",
+        "user_operations_required",
+        "owner_adopted",
+        "research_progress_claim_allowed",
+        "science_restored",
+        "parent_complete",
+        "completion_claim_allowed",
+    }
+)
+
+# Transport-only keys that may appear on returned receipts but are not sealed.
+_RECEIPT_TRANSPORT_ONLY_KEYS: Final[frozenset[str]] = frozenset(
+    {"receipt_path", "receipt_sha256"}
+)
+
+# Observation / host-path fields that must not move policy identity.
+_RECEIPT_VOLATILE_TOP_LEVEL_KEYS: Final[frozenset[str]] = frozenset(
+    {
+        "result_path",
+        "created_at",
+        "container_id",
+        "container_removed",
+        "release_manifest_path",
+        "material_manifest_path",
+        "material_source_refs",
+        "container_security",
+        "provider_egress",
+    }
+)
+
+_HEX_SHA256 = re.compile(r"^[0-9a-f]{64}$")
+_BUNDLE_ID = re.compile(r"^xinao-material-bundle-sha256:[0-9a-f]{64}$")
+_MATERIAL_ID = re.compile(r"^sha256:[0-9a-f]{64}$")
 _ALLOWED_STATUSES = frozenset({"CANDIDATE_READY", "INSUFFICIENT_EVIDENCE"})
 _RESEARCH_CANDIDATE_KEYS = frozenset(
     {
@@ -49,6 +169,21 @@ _RESEARCH_CANDIDATE_KEYS = frozenset(
         "next_evidence",
     }
 )
+_PROVIDER_EVIDENCE_KEYS = frozenset(
+    {
+        "stop_reason",
+        "num_turns",
+        "session_id_present",
+        "request_id_present",
+        "model_usage",
+        "usage",
+    }
+)
+_MATERIAL_REF_KEYS = frozenset({"material_id", "sha256"})
+_EVIDENCE_KEYS = frozenset({"material_id", "finding", "locator"})
+_MAX_PROVIDER_ID_BYTES = 4096
+_MAX_JSON_DEPTH = 64
+_MAX_JSON_NODES = 100_000
 
 
 class ResearcherResultAdapterError(ValueError):
@@ -73,7 +208,7 @@ def _require_mapping(value: object, reason_code: str, label: str) -> dict[str, A
 
 
 def _require_hex64(value: object, reason_code: str, label: str) -> str:
-    if not isinstance(value, str) or len(value) != 64 or any(ch not in _HEX64 for ch in value):
+    if not isinstance(value, str) or _HEX_SHA256.fullmatch(value) is None:
         raise ResearcherResultAdapterError(reason_code, f"{label} must be lowercase sha256")
     return value
 
@@ -82,6 +217,18 @@ def _require_text(value: object, reason_code: str, label: str) -> str:
     if not isinstance(value, str) or not value or "\x00" in value:
         raise ResearcherResultAdapterError(reason_code, f"{label} must be non-empty UTF-8 text")
     return value
+
+
+def _plain_json_text(
+    value: object, *, nonempty: bool = False, maximum_bytes: int | None = None
+) -> bool:
+    if not isinstance(value, str) or "\x00" in value or (nonempty and not value):
+        return False
+    try:
+        encoded = value.encode("utf-8")
+    except UnicodeEncodeError:
+        return False
+    return maximum_bytes is None or len(encoded) <= maximum_bytes
 
 
 def _parse_aware_timestamp(value: object, label: str) -> datetime:
@@ -114,7 +261,216 @@ def _forbid_progress_claims(payload: Mapping[str, Any], *, surface: str) -> None
             )
 
 
-def _validate_research_candidate(candidate: Mapping[str, Any]) -> dict[str, Any]:
+def _strict_json_int(value: str) -> int:
+    if len(value.lstrip("-")) > 128:
+        raise ValueError("JSON integer exceeds 128 digits")
+    return int(value)
+
+
+def _strict_json_float(value: str) -> float:
+    parsed = float(value)
+    if not math.isfinite(parsed):
+        raise ValueError("non-finite JSON float forbidden")
+    return parsed
+
+
+def _strict_json_object(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
+    result: dict[str, Any] = {}
+    for key, value in pairs:
+        if key in result:
+            raise ValueError(f"duplicate JSON key forbidden: {key}")
+        result[key] = value
+    return result
+
+
+def _validate_json_shape(value: Any) -> None:
+    stack: list[tuple[Any, int]] = [(value, 0)]
+    nodes = 0
+    while stack:
+        current, depth = stack.pop()
+        nodes += 1
+        if depth > _MAX_JSON_DEPTH:
+            raise ValueError(f"JSON depth exceeds {_MAX_JSON_DEPTH}")
+        if nodes > _MAX_JSON_NODES:
+            raise ValueError(f"JSON nodes exceed {_MAX_JSON_NODES}")
+        if isinstance(current, dict):
+            stack.extend((item, depth + 1) for item in current.values())
+        elif isinstance(current, list):
+            stack.extend((item, depth + 1) for item in current)
+
+
+def strict_json_loads(text: str) -> Any:
+    """Parse JSON with duplicate-key rejection and finite-number discipline."""
+
+    parsed = json.loads(
+        text,
+        parse_constant=lambda token: (_ for _ in ()).throw(
+            ValueError(f"non-finite JSON number forbidden: {token}")
+        ),
+        parse_int=_strict_json_int,
+        parse_float=_strict_json_float,
+        object_pairs_hook=_strict_json_object,
+    )
+    _validate_json_shape(parsed)
+    return parsed
+
+
+def _require_empty_reason_codes(value: object, *, surface: str) -> list[Any]:
+    if value != []:
+        raise ResearcherResultAdapterError(
+            "REASON_CODES_MUST_BE_EMPTY",
+            f"{surface}.reason_codes must be an empty list for success",
+        )
+    return []
+
+
+def _validate_text_list(value: object, *, key: str) -> list[str]:
+    if not isinstance(value, list) or any(not _plain_json_text(item) for item in value):
+        raise ResearcherResultAdapterError(
+            "RESEARCH_CANDIDATE_TEXT_LIST_INVALID",
+            key,
+        )
+    return list(value)
+
+
+def _validate_material_refs_and_evidence(
+    candidate: Mapping[str, Any],
+    *,
+    available_ids: Sequence[str] | None,
+) -> tuple[list[dict[str, str]], list[dict[str, str]]]:
+    """Exact nested material_refs_used / evidence_used validation with binding."""
+
+    available: set[str] | None
+    if available_ids is None:
+        available = None
+    else:
+        available = set()
+        for item in available_ids:
+            if not isinstance(item, str) or _MATERIAL_ID.fullmatch(item) is None:
+                raise ResearcherResultAdapterError(
+                    "RESULT_MATERIAL_REFS_AVAILABLE_INVALID",
+                    str(item),
+                )
+            if item in available:
+                raise ResearcherResultAdapterError(
+                    "RESULT_MATERIAL_REFS_AVAILABLE_DUPLICATED",
+                    item,
+                )
+            available.add(item)
+
+    refs = candidate.get("material_refs_used")
+    if not isinstance(refs, list):
+        raise ResearcherResultAdapterError(
+            "RESEARCH_CANDIDATE_MATERIAL_REFS_INVALID",
+            "list required",
+        )
+    used_ids: list[str] = []
+    normalized_refs: list[dict[str, str]] = []
+    for ref in refs:
+        if not isinstance(ref, Mapping) or set(ref) != _MATERIAL_REF_KEYS:
+            raise ResearcherResultAdapterError(
+                "RESEARCH_CANDIDATE_MATERIAL_REFS_INVALID",
+                str(ref),
+            )
+        material_id = ref.get("material_id")
+        digest = ref.get("sha256")
+        if (
+            not isinstance(material_id, str)
+            or not isinstance(digest, str)
+            or _MATERIAL_ID.fullmatch(material_id) is None
+            or _HEX_SHA256.fullmatch(digest) is None
+            or material_id != f"sha256:{digest}"
+        ):
+            raise ResearcherResultAdapterError(
+                "RESEARCH_CANDIDATE_MATERIAL_REF_PATTERN_INVALID",
+                str(material_id),
+            )
+        if available is not None and material_id not in available:
+            raise ResearcherResultAdapterError(
+                "RESEARCH_CANDIDATE_MATERIAL_REF_UNKNOWN",
+                material_id,
+            )
+        if material_id in used_ids:
+            raise ResearcherResultAdapterError(
+                "RESEARCH_CANDIDATE_MATERIAL_REF_DUPLICATED",
+                material_id,
+            )
+        used_ids.append(material_id)
+        normalized_refs.append({"material_id": material_id, "sha256": digest})
+
+    if available is not None and available and not used_ids:
+        raise ResearcherResultAdapterError(
+            "RESEARCH_CANDIDATE_MATERIAL_USE_UNBOUND",
+            str(candidate.get("material_bundle_id")),
+        )
+
+    evidence = candidate.get("evidence_used")
+    if not isinstance(evidence, list):
+        raise ResearcherResultAdapterError(
+            "RESEARCH_CANDIDATE_EVIDENCE_INVALID",
+            "list required",
+        )
+    evidence_ids: list[str] = []
+    normalized_evidence: list[dict[str, str]] = []
+    for item in evidence:
+        if not isinstance(item, Mapping) or set(item) != _EVIDENCE_KEYS:
+            raise ResearcherResultAdapterError(
+                "RESEARCH_CANDIDATE_EVIDENCE_INVALID",
+                str(item),
+            )
+        material_id = item.get("material_id")
+        finding = item.get("finding")
+        locator = item.get("locator")
+        if (
+            not isinstance(material_id, str)
+            or _MATERIAL_ID.fullmatch(material_id) is None
+            or material_id not in used_ids
+        ):
+            raise ResearcherResultAdapterError(
+                "RESEARCH_CANDIDATE_EVIDENCE_REF_UNKNOWN",
+                str(material_id),
+            )
+        if not _plain_json_text(finding, nonempty=True) or not _plain_json_text(
+            locator, nonempty=True
+        ):
+            raise ResearcherResultAdapterError(
+                "RESEARCH_CANDIDATE_EVIDENCE_INVALID",
+                material_id,
+            )
+        evidence_ids.append(material_id)
+        normalized_evidence.append(
+            {
+                "material_id": material_id,
+                "finding": str(finding),
+                "locator": str(locator),
+            }
+        )
+
+    if available is not None and available and not evidence:
+        raise ResearcherResultAdapterError(
+            "RESEARCH_CANDIDATE_EVIDENCE_USE_UNBOUND",
+            str(candidate.get("material_bundle_id")),
+        )
+    if set(evidence_ids) != set(used_ids):
+        raise ResearcherResultAdapterError(
+            "RESEARCH_CANDIDATE_EVIDENCE_BINDING_INVALID",
+            json.dumps(
+                {"evidence_ids": sorted(set(evidence_ids)), "material_refs_used": sorted(used_ids)},
+                sort_keys=True,
+            ),
+        )
+    return normalized_refs, normalized_evidence
+
+
+def _validate_research_candidate(
+    candidate: Mapping[str, Any] | object,
+    *,
+    available_ids: Sequence[str] | None = None,
+    expected_status: str | None = None,
+    expected_question: str | None = None,
+    expected_as_of: str | None = None,
+    expected_bundle_id: str | None = None,
+) -> dict[str, Any]:
     payload = _require_mapping(candidate, "RESEARCH_CANDIDATE_SCHEMA_INVALID", "candidate")
     if set(payload) != _RESEARCH_CANDIDATE_KEYS:
         raise ResearcherResultAdapterError(
@@ -129,14 +485,32 @@ def _validate_research_candidate(candidate: Mapping[str, Any]) -> dict[str, Any]
     status = payload.get("status")
     if status not in _ALLOWED_STATUSES:
         raise ResearcherResultAdapterError("RESEARCH_CANDIDATE_STATUS_INVALID", str(status))
-    _require_text(payload.get("research_question"), "RESEARCH_CANDIDATE_FIELDS_INVALID", "question")
-    _parse_aware_timestamp(payload.get("as_of"), "as_of")
-    _require_text(
-        payload.get("material_bundle_id"),
+    if expected_status is not None and status != expected_status:
+        raise ResearcherResultAdapterError(
+            "RESEARCH_CANDIDATE_STATUS_DRIFT",
+            f"candidate={status} expected={expected_status}",
+        )
+    question = _require_text(
+        payload.get("research_question"),
         "RESEARCH_CANDIDATE_FIELDS_INVALID",
-        "material_bundle_id",
+        "question",
     )
-    _require_text(payload.get("summary"), "RESEARCH_CANDIDATE_FIELDS_INVALID", "summary")
+    as_of = payload.get("as_of")
+    _parse_aware_timestamp(as_of, "as_of")
+    bundle_id = payload.get("material_bundle_id")
+    if not isinstance(bundle_id, str) or _BUNDLE_ID.fullmatch(bundle_id) is None:
+        raise ResearcherResultAdapterError(
+            "RESEARCH_CANDIDATE_BUNDLE_ID_INVALID",
+            str(bundle_id),
+        )
+    if expected_question is not None and question != expected_question:
+        raise ResearcherResultAdapterError("RESEARCH_CANDIDATE_REQUEST_DRIFT", "question")
+    if expected_as_of is not None and as_of != expected_as_of:
+        raise ResearcherResultAdapterError("RESEARCH_CANDIDATE_REQUEST_DRIFT", "as_of")
+    if expected_bundle_id is not None and bundle_id != expected_bundle_id:
+        raise ResearcherResultAdapterError("RESEARCH_CANDIDATE_BUNDLE_DRIFT", "material_bundle_id")
+    if not _plain_json_text(payload.get("summary"), nonempty=True):
+        raise ResearcherResultAdapterError("RESEARCH_CANDIDATE_SUMMARY_INVALID", "summary")
     for key in (
         "hypotheses",
         "competing_explanations",
@@ -144,26 +518,299 @@ def _validate_research_candidate(candidate: Mapping[str, Any]) -> dict[str, Any]
         "counterevidence",
         "limitations",
         "next_evidence",
-        "material_refs_used",
-        "evidence_used",
     ):
-        if not isinstance(payload.get(key), list):
-            raise ResearcherResultAdapterError(
-                "RESEARCH_CANDIDATE_FIELDS_INVALID",
-                f"{key} must be a list",
-            )
+        _validate_text_list(payload.get(key), key=key)
+    _validate_material_refs_and_evidence(payload, available_ids=available_ids)
     return payload
 
 
 def _load_result(result_bytes: bytes) -> dict[str, Any]:
     try:
-        parsed = json.loads(result_bytes.decode("utf-8"))
-    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        text = result_bytes.decode("utf-8")
+    except UnicodeDecodeError as exc:
+        raise ResearcherResultAdapterError("RESEARCH_RESULT_JSON_INVALID", str(exc)) from exc
+    try:
+        parsed = strict_json_loads(text)
+    except (json.JSONDecodeError, ValueError, RecursionError, UnicodeError) as exc:
         raise ResearcherResultAdapterError(
             "RESEARCH_RESULT_JSON_INVALID",
             str(exc),
         ) from exc
     return _require_mapping(parsed, "RESEARCH_RESULT_JSON_INVALID", "result")
+
+
+def _validate_success_result(result: Mapping[str, Any]) -> dict[str, Any]:
+    if set(result) != PRODUCTION_SUCCESS_RESULT_KEYS:
+        missing = sorted(PRODUCTION_SUCCESS_RESULT_KEYS - set(result))
+        unknown = sorted(set(result) - PRODUCTION_SUCCESS_RESULT_KEYS)
+        raise ResearcherResultAdapterError(
+            "RESULT_FIELDS_INVALID",
+            f"missing={missing}; unknown={unknown}",
+        )
+    if result.get("schema_version") != CONTAINER_RESULT_SCHEMA:
+        raise ResearcherResultAdapterError(
+            "RESULT_SCHEMA_DRIFT",
+            str(result.get("schema_version")),
+        )
+    _forbid_progress_claims(result, surface="result")
+    status = result.get("status")
+    if status not in _ALLOWED_STATUSES:
+        raise ResearcherResultAdapterError("RESULT_STATUS_INVALID", str(status))
+    _require_empty_reason_codes(result.get("reason_codes"), surface="result")
+    for key in (
+        "request_sha256",
+        "prompt_sha256",
+        "output_schema_sha256",
+        "material_manifest_sha256",
+        "material_packet_sha256",
+        "effective_prompt_sha256",
+    ):
+        _require_hex64(result.get(key), "RESULT_HASH_FIELD_INVALID", key)
+    bundle_id = result.get("material_bundle_id")
+    if not isinstance(bundle_id, str) or _BUNDLE_ID.fullmatch(bundle_id) is None:
+        raise ResearcherResultAdapterError("RESULT_BUNDLE_ID_INVALID", str(bundle_id))
+    available = result.get("material_refs_available")
+    if not isinstance(available, list):
+        raise ResearcherResultAdapterError(
+            "RESULT_MATERIAL_REFS_AVAILABLE_INVALID",
+            "list required",
+        )
+    if (
+        result.get("provider") != "grok"
+        or result.get("requested_model") != "grok-4.5"
+        or result.get("provider_stop_reason") != "EndTurn"
+        or type(result.get("provider_num_turns")) is not int
+        or result.get("provider_num_turns") != 1
+        or result.get("provider_session_id_present") is not True
+        or result.get("provider_request_id_present") is not True
+        or result.get("completion_claim_allowed") is not False
+        or result.get("science_restored") is not False
+        or result.get("parent_complete") is not False
+    ):
+        raise ResearcherResultAdapterError(
+            "RESULT_PROVIDER_BOUNDARY_INVALID",
+            "provider/model/completion fields",
+        )
+    for key in ("provider_session_id", "provider_request_id"):
+        if not _plain_json_text(
+            result.get(key),
+            nonempty=True,
+            maximum_bytes=_MAX_PROVIDER_ID_BYTES,
+        ):
+            raise ResearcherResultAdapterError("RESULT_PROVIDER_ID_INVALID", key)
+    model_usage = result.get("provider_model_usage")
+    if not isinstance(model_usage, Mapping) or set(model_usage) != {"grok-4.5-build"}:
+        raise ResearcherResultAdapterError(
+            "RESULT_PROVIDER_MODEL_USAGE_INVALID",
+            "exact grok-4.5-build key required",
+        )
+    usage = result.get("usage")
+    if not isinstance(usage, Mapping):
+        raise ResearcherResultAdapterError("RESULT_USAGE_INVALID", "object required")
+    total_tokens = usage.get("total_tokens")
+    if type(total_tokens) is not int or total_tokens <= 0:
+        raise ResearcherResultAdapterError("RESULT_USAGE_INVALID", "total_tokens")
+
+    candidate = _validate_research_candidate(
+        result.get("candidate"),
+        available_ids=available,
+        expected_status=str(status),
+        expected_bundle_id=str(bundle_id),
+    )
+    return {
+        "status": str(status),
+        "candidate": candidate,
+        "material_bundle_id": str(bundle_id),
+        "material_refs_available": list(available),
+    }
+
+
+def _stable_receipt_identity(receipt: Mapping[str, Any]) -> dict[str, Any]:
+    """Receipt pins that may enter policy identity (no volatile observations)."""
+
+    stable: dict[str, Any] = {}
+    for key, value in receipt.items():
+        if key in _RECEIPT_TRANSPORT_ONLY_KEYS or key in _RECEIPT_VOLATILE_TOP_LEVEL_KEYS:
+            continue
+        stable[key] = value
+    # Stable subset of provider_egress (pins only; no live observation fingerprints).
+    egress = receipt.get("provider_egress")
+    if isinstance(egress, Mapping):
+        stable["provider_egress_pins"] = {
+            key: egress.get(key)
+            for key in (
+                "internal_network_name",
+                "internal_network_id",
+                "proxy_image_id",
+                "proxy_endpoint",
+                "allowlist_sha256",
+                "proxy_config_sha256",
+                "proxy_env_is_routing_hint_only",
+                "dify_cross_project",
+                "tls_interception",
+                "source_provider_egress_runtime_verified",
+                "completion_claim_allowed",
+            )
+            if key in egress
+        }
+    # Stable security posture without host mount paths.
+    security = receipt.get("container_security")
+    if isinstance(security, Mapping):
+        stable["container_security_pins"] = {
+            key: security.get(key)
+            for key in (
+                "readonly_rootfs",
+                "cap_drop",
+                "security_opt",
+                "network_mode",
+                "pids_limit",
+                "memory",
+                "nano_cpus",
+                "privileged",
+                "restart_policy",
+                "tmpfs",
+            )
+            if key in security
+        }
+    return stable
+
+
+def _validate_success_receipt(
+    receipt: Mapping[str, Any],
+    *,
+    expected_status: str,
+    expected_result_sha: str,
+    expected_candidate: Mapping[str, Any],
+) -> dict[str, Any]:
+    transport = {key: receipt[key] for key in _RECEIPT_TRANSPORT_ONLY_KEYS if key in receipt}
+    core = {key: value for key, value in receipt.items() if key not in _RECEIPT_TRANSPORT_ONLY_KEYS}
+    if set(core) != PRODUCTION_SUCCESS_RECEIPT_KEYS:
+        missing = sorted(PRODUCTION_SUCCESS_RECEIPT_KEYS - set(core))
+        unknown = sorted(set(core) - PRODUCTION_SUCCESS_RECEIPT_KEYS)
+        raise ResearcherResultAdapterError(
+            "RECEIPT_FIELDS_INVALID",
+            f"missing={missing}; unknown={unknown}",
+        )
+    if core.get("schema_version") != SKILL_RESEARCH_RECEIPT_SCHEMA:
+        raise ResearcherResultAdapterError(
+            "RECEIPT_SCHEMA_DRIFT",
+            str(core.get("schema_version")),
+        )
+    _forbid_progress_claims(core, surface="receipt")
+    if core.get("status") != expected_status:
+        raise ResearcherResultAdapterError(
+            "RESULT_RECEIPT_STATUS_DRIFT",
+            f"result={expected_status} receipt={core.get('status')}",
+        )
+    _require_empty_reason_codes(core.get("reason_codes"), surface="receipt")
+    if core.get("route_class") != ROUTE_CLASS_SCIENTIFIC_RESEARCHER:
+        raise ResearcherResultAdapterError(
+            "RECEIPT_ROUTE_CLASS_INVALID",
+            str(core.get("route_class")),
+        )
+    if core.get("ordinary_worker_chain_used") is not False:
+        raise ResearcherResultAdapterError(
+            "RECEIPT_ORDINARY_WORKER_CHAIN_FORBIDDEN",
+            str(core.get("ordinary_worker_chain_used")),
+        )
+    observed_result_sha = _require_hex64(
+        core.get("result_sha256"),
+        "RECEIPT_RESULT_HASH_INVALID",
+        "result_sha256",
+    )
+    if observed_result_sha != expected_result_sha:
+        raise ResearcherResultAdapterError(
+            "RESULT_RECEIPT_HASH_DRIFT",
+            f"observed={observed_result_sha} expected={expected_result_sha}",
+        )
+    run_id = _require_text(core.get("run_id"), "RECEIPT_RUN_ID_INVALID", "run_id")
+    for key in (
+        "release_manifest_sha256",
+        "execution_pointer_sha256",
+        "skill_bundle_tree_sha256",
+        "request_sha256",
+        "base_prompt_sha256",
+        "output_schema_sha256",
+        "material_manifest_sha256",
+        "material_packet_sha256",
+        "effective_prompt_sha256",
+    ):
+        _require_hex64(core.get(key), "RECEIPT_HASH_FIELD_INVALID", key)
+    for key in (
+        "release_id",
+        "execution_activation_txn_id",
+        "package_version",
+        "capability_version",
+        "required_bootstrap_protocol",
+        "image_id",
+        "result_path",
+        "created_at",
+        "release_manifest_path",
+        "material_manifest_path",
+    ):
+        _require_text(core.get(key), "RECEIPT_PIN_INVALID", key)
+    if type(core.get("execution_pointer_generation")) is not int:
+        raise ResearcherResultAdapterError(
+            "RECEIPT_PIN_INVALID",
+            "execution_pointer_generation",
+        )
+    if type(core.get("container_exit_code")) is not int or core.get("container_exit_code") != 0:
+        raise ResearcherResultAdapterError("RECEIPT_CONTAINER_EXIT_INVALID", "exit code")
+    if core.get("material_prompt_binding_verified") is not True:
+        raise ResearcherResultAdapterError(
+            "RECEIPT_MATERIAL_BINDING_INVALID",
+            "material_prompt_binding_verified",
+        )
+    if not isinstance(core.get("material_use_claim_bound"), bool):
+        raise ResearcherResultAdapterError(
+            "RECEIPT_MATERIAL_BINDING_INVALID",
+            "material_use_claim_bound",
+        )
+    if core.get("auth_handle_identity_unchanged") is not True:
+        raise ResearcherResultAdapterError("RECEIPT_AUTH_HANDLE_INVALID", "auth handle")
+    if core.get("user_operations_required") != []:
+        raise ResearcherResultAdapterError(
+            "RECEIPT_USER_OPERATIONS_INVALID",
+            str(core.get("user_operations_required")),
+        )
+    provider_evidence = core.get("provider_evidence")
+    if (
+        not isinstance(provider_evidence, Mapping)
+        or set(provider_evidence) != _PROVIDER_EVIDENCE_KEYS
+    ):
+        raise ResearcherResultAdapterError(
+            "RECEIPT_PROVIDER_EVIDENCE_INVALID",
+            "keys are not exact",
+        )
+    if (
+        provider_evidence.get("stop_reason") != "EndTurn"
+        or provider_evidence.get("num_turns") != 1
+        or provider_evidence.get("session_id_present") is not True
+        or provider_evidence.get("request_id_present") is not True
+    ):
+        raise ResearcherResultAdapterError(
+            "RECEIPT_PROVIDER_EVIDENCE_INVALID",
+            "provider terminal evidence",
+        )
+    receipt_candidate = _validate_research_candidate(
+        core.get("candidate"),
+        expected_status=expected_status,
+        expected_bundle_id=str(expected_candidate.get("material_bundle_id")),
+        expected_question=str(expected_candidate.get("research_question")),
+        expected_as_of=str(expected_candidate.get("as_of")),
+    )
+    if canonical_sha256(expected_candidate) != canonical_sha256(receipt_candidate):
+        raise ResearcherResultAdapterError(
+            "RESULT_RECEIPT_CANDIDATE_DRIFT",
+            "candidate object bytes disagree",
+        )
+    stable = _stable_receipt_identity(core)
+    return {
+        "run_id": run_id,
+        "receipt_stable_sha256": canonical_sha256(stable),
+        "candidate": receipt_candidate,
+        "transport": transport,
+    }
 
 
 def verify_researcher_result_against_receipt(
@@ -182,19 +829,12 @@ def verify_researcher_result_against_receipt(
         raise ResearcherResultAdapterError("RESEARCH_RESULT_BYTES_INVALID", "empty result")
 
     receipt_obj = _require_mapping(receipt, "RECEIPT_SCHEMA_INVALID", "receipt")
-    if receipt_obj.get("schema_version") != SKILL_RESEARCH_RECEIPT_SCHEMA:
-        raise ResearcherResultAdapterError(
-            "RECEIPT_SCHEMA_DRIFT",
-            str(receipt_obj.get("schema_version")),
-        )
-    _forbid_progress_claims(receipt_obj, surface="receipt")
-
+    observed_result_sha = raw_sha256(raw_result)
     expected_result_sha = _require_hex64(
         receipt_obj.get("result_sha256"),
         "RECEIPT_RESULT_HASH_INVALID",
         "result_sha256",
     )
-    observed_result_sha = raw_sha256(raw_result)
     if observed_result_sha != expected_result_sha:
         raise ResearcherResultAdapterError(
             "RESULT_RECEIPT_HASH_DRIFT",
@@ -202,50 +842,23 @@ def verify_researcher_result_against_receipt(
         )
 
     result = _load_result(raw_result)
-    if result.get("schema_version") != CONTAINER_RESULT_SCHEMA:
-        raise ResearcherResultAdapterError(
-            "RESULT_SCHEMA_DRIFT",
-            str(result.get("schema_version")),
-        )
-    _forbid_progress_claims(result, surface="result")
-
-    status = result.get("status")
-    if status not in _ALLOWED_STATUSES:
-        raise ResearcherResultAdapterError("RESULT_STATUS_INVALID", str(status))
-    if receipt_obj.get("status") != status:
-        raise ResearcherResultAdapterError(
-            "RESULT_RECEIPT_STATUS_DRIFT",
-            f"result={status} receipt={receipt_obj.get('status')}",
-        )
-
-    result_candidate = _validate_research_candidate(result.get("candidate"))
-    if result_candidate.get("status") != status:
-        raise ResearcherResultAdapterError(
-            "RESEARCH_CANDIDATE_STATUS_DRIFT",
-            f"candidate={result_candidate.get('status')} result={status}",
-        )
-    receipt_candidate = _validate_research_candidate(receipt_obj.get("candidate"))
-    if canonical_sha256(result_candidate) != canonical_sha256(receipt_candidate):
-        raise ResearcherResultAdapterError(
-            "RESULT_RECEIPT_CANDIDATE_DRIFT",
-            "candidate object bytes disagree",
-        )
-
-    run_id = _require_text(receipt_obj.get("run_id"), "RECEIPT_RUN_ID_INVALID", "run_id")
-    # Receipt identity excludes transport-only return fields that are not sealed on disk.
-    sealed_receipt = {
-        key: value
-        for key, value in receipt_obj.items()
-        if key not in {"receipt_path", "receipt_sha256"}
-    }
-    receipt_content_sha256 = canonical_sha256(sealed_receipt)
+    validated_result = _validate_success_result(result)
+    validated_receipt = _validate_success_receipt(
+        receipt_obj,
+        expected_status=validated_result["status"],
+        expected_result_sha=observed_result_sha,
+        expected_candidate=validated_result["candidate"],
+    )
     return {
         "result_sha256": observed_result_sha,
-        "receipt_content_sha256": receipt_content_sha256,
-        "run_id": run_id,
-        "status": status,
-        "candidate": result_candidate,
-        "knowledge_cutoff": _parse_aware_timestamp(result_candidate["as_of"], "as_of"),
+        "receipt_content_sha256": validated_receipt["receipt_stable_sha256"],
+        "run_id": validated_receipt["run_id"],
+        "status": validated_result["status"],
+        "candidate": validated_result["candidate"],
+        "knowledge_cutoff": _parse_aware_timestamp(
+            validated_result["candidate"]["as_of"],
+            "as_of",
+        ),
     }
 
 
@@ -256,6 +869,10 @@ def mint_policy_candidate_from_verified_binding(
 
     The decision_map_ref is an explicit not-projected sentinel bound to the result
     hash. Research prose is never compiled into an action decision_map.
+
+    Policy identity (policy_ref + content_hash) binds result bytes and stable
+    receipt pins only. Volatile receipt observations (paths, timestamps,
+    container ids, live egress fingerprints, host mounts) do not move identity.
     """
 
     result_sha256 = _require_hex64(
@@ -313,6 +930,11 @@ def mint_policy_candidate_from_verified_binding(
         "active_set_admitted": False,
         "science_progress_claimed": False,
         "completion_claim_allowed": False,
+        "route_class": ROUTE_CLASS_SCIENTIFIC_RESEARCHER,
+        "provider_id_key_seam": (
+            "producer_formal_result_includes_raw_provider_session_and_request_ids;"
+            "runtime_exact_allowlist_lags_present_flags_only"
+        ),
     }
     return PolicyCandidateVersion(
         policy_ref=policy_ref,
@@ -350,11 +972,15 @@ __all__ = [
     "ADAPTER_BINDING_KIND",
     "ADAPTER_MARKER",
     "CONTAINER_RESULT_SCHEMA",
+    "PRODUCTION_SUCCESS_RECEIPT_KEYS",
+    "PRODUCTION_SUCCESS_RESULT_KEYS",
     "RESEARCH_CANDIDATE_SCHEMA",
+    "ROUTE_CLASS_SCIENTIFIC_RESEARCHER",
     "SKILL_RESEARCH_RECEIPT_SCHEMA",
     "ResearcherResultAdapterError",
     "adapt_researcher_result_to_policy_candidate",
     "mint_policy_candidate_from_verified_binding",
     "raw_sha256",
+    "strict_json_loads",
     "verify_researcher_result_against_receipt",
 ]
