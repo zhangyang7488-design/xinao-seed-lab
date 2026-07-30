@@ -64,11 +64,20 @@ class RecordingRunner:
                 ),
                 "completion_claim_allowed": False,
             }
-        script = Path(command[-1]).name
-        if script == "refresh.ps1":
+        if any(Path(part).name == "refresh.ps1" for part in command):
+            expected_sha256 = command[command.index("-ExpectedSoftwareFoundationSha256") + 1]
+            expected_version = command[command.index("-ExpectedSoftwareFoundationVersion") + 1]
             return {
                 "schema_version": "xinao.mainline_projection_refresh.v1",
                 "authority_text_mutated": False,
+                "projection_bindings": {
+                    "software_foundation_path": str(
+                        Path(r"C:\Users\xx363\Desktop\主线\工具胶水宪法")
+                        / "软件工具胶水宪法_当前有效.txt"
+                    ),
+                    "software_foundation_sha256": expected_sha256,
+                    "software_foundation_version": expected_version,
+                },
             }
         return {
             "schema_version": ("xinao.codex_situation_island_context_architecture_verification.v4"),
@@ -125,6 +134,58 @@ def test_default_python_binding_uses_stable_base_interpreter() -> None:
     expected = Path(getattr(sys, "_base_executable", None) or sys.executable).resolve()
     assert publication.discover_python() == expected
     assert expected.is_file()
+
+
+def test_default_updater_is_repo_catalog_one_home() -> None:
+    expected = (
+        Path(publication.__file__).resolve().parents[4]
+        / "scripts"
+        / "Update-CodexContextCatalog.ps1"
+    )
+    assert publication.DEFAULT_UPDATER_PATH == expected
+    assert expected.is_file()
+
+
+def test_projection_refresh_receipt_requires_software_foundation_version() -> None:
+    authority = Path(r"C:\Users\xx363\Desktop\主线\工具胶水宪法\软件工具胶水宪法_当前有效.txt")
+    with pytest.raises(publication.PublicationError) as raised:
+        publication._validate_receipt_payload(
+            name="projection_refresh",
+            receipt={
+                "schema_version": "xinao.mainline_projection_refresh.v1",
+                "authority_text_mutated": False,
+                "projection_bindings": {
+                    "software_foundation_path": str(authority),
+                    "software_foundation_sha256": "a" * 64,
+                    # version deliberately omitted — sha-only refresh is not enough
+                },
+            },
+            authority_path=authority,
+            expected_sha256="a" * 64,
+            expected_version="v3.4",
+            legacy_preimage_readback=False,
+        )
+    assert raised.value.code == "POSTFLIGHT_RECEIPT_INVALID"
+
+
+def test_projection_refresh_receipt_binds_version_with_sha() -> None:
+    authority = Path(r"C:\Users\xx363\Desktop\主线\工具胶水宪法\软件工具胶水宪法_当前有效.txt")
+    publication._validate_receipt_payload(
+        name="projection_refresh",
+        receipt={
+            "schema_version": "xinao.mainline_projection_refresh.v1",
+            "authority_text_mutated": False,
+            "projection_bindings": {
+                "software_foundation_path": str(authority),
+                "software_foundation_sha256": "b" * 64,
+                "software_foundation_version": "v3.4",
+            },
+        },
+        authority_path=authority,
+        expected_sha256="b" * 64,
+        expected_version="v3.4",
+        legacy_preimage_readback=False,
+    )
 
 
 def _materialize_transaction(

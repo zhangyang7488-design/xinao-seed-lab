@@ -29,9 +29,9 @@ DEFAULT_AUTHORITY_PATH = Path(
 )
 DEFAULT_STATE_ROOT = Path(r"D:\XINAO_RESEARCH_RUNTIME\state\tool_glue_constitution_publication")
 DEFAULT_GUARD_ROOT = DEFAULT_STATE_ROOT / "guards"
-DEFAULT_UPDATER_PATH = Path(
-    r"D:\XINAO_RESEARCH_RUNTIME\state\Codex_Situation_Island\scripts"
-    r"\Update-CodexContextCatalog.ps1"
+# Repo one-home for projection refresh; still binds Situation Island map/catalog defaults.
+DEFAULT_UPDATER_PATH = (
+    Path(__file__).resolve().parents[4] / "scripts" / "Update-CodexContextCatalog.ps1"
 )
 DEFAULT_VERIFIER_PATH = Path(
     r"D:\XINAO_RESEARCH_RUNTIME\state\Codex_Situation_Island\scripts"
@@ -476,7 +476,17 @@ def _postflight_commands(
         "-File",
     ]
     return [
-        ("projection_refresh", [*powershell_prefix, str(bindings.updater_path)]),
+        (
+            "projection_refresh",
+            [
+                *powershell_prefix,
+                str(bindings.updater_path),
+                "-ExpectedSoftwareFoundationSha256",
+                expected_sha256,
+                "-ExpectedSoftwareFoundationVersion",
+                expected_version,
+            ],
+        ),
         ("projection_selftest", [*powershell_prefix, str(bindings.verifier_path)]),
         (
             "fresh_subprocess_consumer",
@@ -521,9 +531,16 @@ def _validate_receipt_payload(
             "POSTFLIGHT_RECEIPT_INVALID", f"postflight receipt is not an object: {name}"
         )
     if name == "projection_refresh":
+        bindings = receipt.get("projection_bindings")
+        # Catalog/selector one-home must bind both version and sha from the live authority.
         valid = (
             receipt.get("schema_version") == _REFRESH_RECEIPT_SCHEMA
             and receipt.get("authority_text_mutated") is False
+            and isinstance(bindings, dict)
+            and str(bindings.get("software_foundation_sha256", "")).lower() == expected_sha256
+            and bindings.get("software_foundation_version") == expected_version
+            and isinstance(bindings.get("software_foundation_path"), str)
+            and bool(str(bindings.get("software_foundation_path")).strip())
         )
     elif name == "projection_selftest":
         valid = (
