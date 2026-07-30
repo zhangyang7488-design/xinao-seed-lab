@@ -5112,14 +5112,136 @@ def test_shadow_parser_and_fresh_process_accept_verbs(
     assert "reason_codes" in payload or payload.get("status") == "PREFLIGHT_FAILED"
 
 
+def _shadow_inventory_module_names(inventory: list[str]) -> set[str]:
+    """Map locked relative paths to importable module names."""
+    modules: set[str] = set()
+    for relative in inventory:
+        posix = relative.replace("\\", "/")
+        parts = posix.split("/")
+        if not parts or not parts[-1].endswith(".py"):
+            continue
+        if parts[-1] == "__init__.py":
+            modules.add(".".join(parts[:-1]))
+        else:
+            modules.add(".".join(parts[:-1] + [parts[-1][:-3]]))
+    return modules
+
+
+def _shadow_import_target_allowed(module_name: str, allowed: set[str]) -> bool:
+    """True when an absolute xinao.* import resolves inside the locked inventory."""
+    if module_name in allowed:
+        return True
+    # Package import is allowed when the package __init__ is inventoried.
+    return module_name in allowed
+
+
+def _collect_nested_non_inventory_xinao_imports(
+    rows: list[tuple[str, Path, bytes]], allowed_modules: set[str]
+) -> list[str]:
+    """AST-scan inventory sources for absolute xinao imports outside the lock."""
+    import ast
+
+    violations: list[str] = []
+    for relative, _path, content in rows:
+        if not relative.endswith(".py"):
+            continue
+        tree = ast.parse(content.decode("utf-8"), filename=relative)
+        for node in ast.walk(tree):
+            targets: list[str] = []
+            if isinstance(node, ast.Import):
+                targets.extend(alias.name for alias in node.names)
+            elif isinstance(node, ast.ImportFrom):
+                # Relative imports stay inside the staged package tree.
+                if node.level and node.level > 0:
+                    continue
+                if node.module:
+                    targets.append(node.module)
+            for target in targets:
+                if target != "xinao" and not target.startswith("xinao."):
+                    continue
+                if not _shadow_import_target_allowed(target, allowed_modules):
+                    violations.append(f"{relative}:{getattr(node, 'lineno', '?')}:{target}")
+    return violations
+
+
 def test_shadow_runtime_inventory_is_import_closed() -> None:
     module = _module()
     lock = module._load_shadow_runtime_lock(SKILL_ROOT)
     rows = module._collect_shadow_runtime_rows(ROOT, lock)
     assert any(rel.endswith("shadow_lifecycle/__main__.py") for rel, _p, _b in rows)
     assert not any("postgres" in rel for rel, _p, _b in rows)
+    assert not any("catalog" in rel for rel, _p, _b in rows)
+    assert not any("special_number_evidence" in rel for rel, _p, _b in rows)
     tree = module._shadow_runtime_tree_sha256(rows)
     assert re.fullmatch(r"[0-9a-f]{64}", tree)
+
+    allowed = _shadow_inventory_module_names([rel for rel, _p, _b in rows])
+    violations = _collect_nested_non_inventory_xinao_imports(rows, allowed)
+    assert violations == [], (
+        "shadow-runtime inventory must not import xinao modules outside the "
+        f"locked cone (lazy imports included): {violations}"
+    )
+
+
+def test_shadow_runtime_staged_cone_init_reaches_write_manifest(tmp_path: Path) -> None:
+    """Staged inventory alone must support init -> write_manifest without catalog."""
+    module = _module()
+    lock = module._load_shadow_runtime_lock(SKILL_ROOT)
+    rows = module._collect_shadow_runtime_rows(ROOT, lock)
+    tree = module._shadow_runtime_tree_sha256(rows)
+    build_context = tmp_path / "build-context"
+    build_context.mkdir()
+    staged = module._stage_shadow_runtime(build_context, rows)
+    module._verify_staged_shadow_runtime(build_context, rows, expected_tree_sha256=tree)
+
+    # Fresh interpreter path: only staged cone on sys.path (no full xinao_discovery/src).
+    episode = tmp_path / "episode"
+    episode.mkdir()
+    script = (
+        "import json, sys\n"
+        "from pathlib import Path\n"
+        f"sys.path.insert(0, {str(staged)!r})\n"
+        "from xinao.shadow_lifecycle.consumer import init_episode\n"
+        "from xinao.shadow_lifecycle.store import MANIFEST_NAME, detect_phase, EpisodePhase\n"
+        f"episode = Path({str(episode)!r})\n"
+        "receipt = init_episode(\n"
+        "    root=episode,\n"
+        "    seat_id='seat.cone.smoke',\n"
+        "    portfolio_ref='portfolio.cone.smoke',\n"
+        ")\n"
+        "assert receipt['ok'] is True\n"
+        "assert receipt['phase'] == EpisodePhase.INIT.value\n"
+        "manifest_path = episode / MANIFEST_NAME\n"
+        "assert manifest_path.is_file(), 'write_manifest must materialize package_manifest'\n"
+        "manifest = json.loads(manifest_path.read_text(encoding='utf-8'))\n"
+        "assert manifest.get('schema_version') == "
+        "'xinao.shadow_lifecycle.package_manifest.v1'\n"
+        "assert 'content_hash' in manifest and manifest['files']\n"
+        "assert detect_phase(episode) == EpisodePhase.INIT\n"
+        "print(json.dumps({'ok': True, 'phase': receipt['phase'], "
+        "'manifest_files': sorted(manifest['files'])}))\n"
+    )
+    # Ensure third-party pins used by the cone are importable from the test env.
+    env = dict(os.environ)
+    env.pop("PYTHONPATH", None)
+    completed = subprocess.run(
+        [sys.executable, "-I", "-c", script],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+        env=env,
+        cwd=str(tmp_path),
+    )
+    assert completed.returncode == 0, (
+        "staged-cone init/write_manifest smoke failed:\n"
+        f"stdout={completed.stdout.decode('utf-8', errors='replace')}\n"
+        f"stderr={completed.stderr.decode('utf-8', errors='replace')}"
+    )
+    payload = json.loads(completed.stdout.decode("utf-8"))
+    assert payload["ok"] is True
+    assert payload["phase"] == "INIT"
+    assert "seat.v1.json" in payload["manifest_files"]
+    assert "consumer_receipt.v1.json" in payload["manifest_files"]
 
 
 def _prepare_migrated_world_with_later_active(

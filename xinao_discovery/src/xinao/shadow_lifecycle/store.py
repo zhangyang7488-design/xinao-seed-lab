@@ -7,6 +7,7 @@ database, or network side effects. Candidate authority only.
 from __future__ import annotations
 
 import json
+import os
 from enum import StrEnum
 from pathlib import Path
 from typing import Any
@@ -60,6 +61,21 @@ def _write_new_bytes(path: Path, payload: bytes) -> None:
 def write_new_json(path: Path, payload: Any) -> None:
     body = json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True) + "\n"
     _write_new_bytes(path, body.encode("utf-8"))
+
+
+def _write_json_atomic(path: Path, payload: dict[str, Any]) -> None:
+    """Stdlib-only replace write for receipt/manifest projection (sealed cone).
+
+    Matches catalog.compiler.write_atomic: temp sibling + os.replace. Does not
+    import outside the locked shadow-runtime inventory.
+    """
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = path.with_name(f".{path.name}.{os.getpid()}.tmp")
+    temporary.write_text(
+        json.dumps(payload, ensure_ascii=False, indent=2) + "\n",
+        encoding="utf-8",
+    )
+    os.replace(temporary, path)
 
 
 def read_json(path: Path) -> Any:
@@ -365,9 +381,7 @@ def write_receipt_exclusive_or_replace(
     body["content_hash"] = canonical_sha256(body)
     if replace and path.is_file():
         # Status/receipt projection may advance after exclusive domain seals.
-        from xinao.catalog.compiler import write_atomic
-
-        write_atomic(path, body)
+        _write_json_atomic(path, body)
     else:
         write_new_json(path, body)
     return path
@@ -375,8 +389,6 @@ def write_receipt_exclusive_or_replace(
 
 def write_manifest(root: Path) -> dict[str, Any]:
     import hashlib
-
-    from xinao.catalog.compiler import write_atomic
 
     base = resolve_root(root)
     files: dict[str, str] = {}
@@ -393,7 +405,7 @@ def write_manifest(root: Path) -> dict[str, Any]:
     }
     manifest["content_hash"] = canonical_sha256(manifest)
     path = artifact_paths(root)["manifest"]
-    write_atomic(path, manifest)
+    _write_json_atomic(path, manifest)
     return manifest
 
 
