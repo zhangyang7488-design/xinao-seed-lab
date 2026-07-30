@@ -148,6 +148,15 @@ try {
     }
     $proxyIdResult = Invoke-XinaoDocker -ArgumentList @('inspect', $paths.proxy_container_name, '--format', '{{.Id}}')
     $proxyId = $proxyIdResult.StdOut.Trim()
+    $proxyRunningResult = Invoke-XinaoDocker -ArgumentList @(
+        'inspect', $paths.proxy_container_name, '--format', '{{.State.Running}}'
+    ) -AllowNonZero
+    if (
+        $proxyRunningResult.ExitCode -ne 0 -or
+        $proxyRunningResult.StdOut.Trim().ToLowerInvariant() -ne 'true'
+    ) {
+        throw 'EGRESS_PROXY_NOT_RUNNING'
+    }
     $proxyImageResult = Invoke-XinaoDocker -ArgumentList @('inspect', $paths.proxy_container_name, '--format', '{{.Image}}')
     $proxyImageId = $proxyImageResult.StdOut.Trim()
 
@@ -220,4 +229,3 @@ catch {
     }
     exit 2
 }
-
