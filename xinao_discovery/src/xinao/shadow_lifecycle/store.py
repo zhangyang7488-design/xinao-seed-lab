@@ -22,6 +22,7 @@ from xinao.shadow_lifecycle.lifecycle import (
 
 SEAT_NAME = "seat.v1.json"
 FROZEN_NAME = "frozen_episode.v1.json"
+SETTLEMENT_INTENT_NAME = "settlement_intent.v1.json"
 OUTCOME_NAME = "outcome.v1.json"
 SETTLED_NAME = "settled_episode.v1.json"
 RECEIPT_NAME = "consumer_receipt.v1.json"
@@ -29,13 +30,15 @@ MANIFEST_NAME = "package_manifest.v1.json"
 
 SCHEMA_RECEIPT = "xinao.shadow_lifecycle.consumer_receipt.v1"
 SCHEMA_MANIFEST = "xinao.shadow_lifecycle.package_manifest.v1"
+SCHEMA_SETTLEMENT_INTENT = "xinao.shadow_lifecycle.settlement_intent.v1"
 
 
 class EpisodePhase(StrEnum):
     MISSING = "MISSING"
     INIT = "INIT"
     FROZEN = "FROZEN"
-    # Outcome sealed but settled missing (crash / second-write failure). Recoverable once.
+    # Intent sealed (and optionally outcome) but settled missing. Recoverable only on
+    # exact full-intent match; outcome-only match is insufficient.
     SETTLEMENT_RECOVERY_REQUIRED = "SETTLEMENT_RECOVERY_REQUIRED"
     SETTLED = "SETTLED"
 
@@ -78,6 +81,7 @@ def artifact_paths(root: Path) -> dict[str, Path]:
     return {
         "seat": base / SEAT_NAME,
         "frozen": base / FROZEN_NAME,
+        "intent": base / SETTLEMENT_INTENT_NAME,
         "outcome": base / OUTCOME_NAME,
         "settled": base / SETTLED_NAME,
         "receipt": base / RECEIPT_NAME,
@@ -88,12 +92,15 @@ def artifact_paths(root: Path) -> dict[str, Path]:
 def detect_phase(root: Path) -> EpisodePhase:
     """Map exclusive artifacts to phase; fail closed on corrupt combinations.
 
-    Outcome-only (frozen+outcome, no settled) is SETTLEMENT_RECOVERY_REQUIRED so an
-    identical settle retry may resume once; settled remains required for SETTLED/replay.
+    Settlement is a three-step exclusive journal: intent → outcome → settled.
+    Intent-only or intent+outcome (no settled) is SETTLEMENT_RECOVERY_REQUIRED so an
+    exact full-intent retry may resume once; settled remains required for SETTLED/replay.
+    Outcome without a sealed intent is corrupt (settlement identity unbound).
     """
     paths = artifact_paths(root)
     has_settled = paths["settled"].is_file()
     has_outcome = paths["outcome"].is_file()
+    has_intent = paths["intent"].is_file()
     has_frozen = paths["frozen"].is_file()
     has_seat = paths["seat"].is_file()
 
@@ -102,10 +109,17 @@ def detect_phase(root: Path) -> EpisodePhase:
             raise StoreError("corrupt store: settled without frozen episode")
         if not has_outcome:
             raise StoreError("corrupt store: settled without outcome")
+        if not has_intent:
+            raise StoreError("corrupt store: settled without settlement intent")
+        _assert_outcome_matches_intent(root)
         return EpisodePhase.SETTLED
-    if has_outcome:
+    if has_intent or has_outcome:
+        if has_outcome and not has_intent:
+            raise StoreError("corrupt store: outcome without settlement intent")
         if not has_frozen:
-            raise StoreError("corrupt store: outcome without frozen episode")
+            raise StoreError("corrupt store: settlement intent without frozen episode")
+        if has_outcome:
+            _assert_outcome_matches_intent(root)
         return EpisodePhase.SETTLEMENT_RECOVERY_REQUIRED
     if has_frozen:
         return EpisodePhase.FROZEN
@@ -119,11 +133,95 @@ def _sealed_outcome_jsonable(outcome: OutcomeObservation) -> dict[str, Any]:
     return model_to_jsonable(outcome)
 
 
+def _sealed_settled_jsonable(settled: SettledShadowEpisode) -> dict[str, Any]:
+    if settled.content_hash is None:
+        raise StoreError("settled episode must be hash sealed before intent bind")
+    if settled.content_hash != settled.compute_content_hash():
+        raise StoreError("settled episode content seal invalid")
+    return model_to_jsonable(settled)
+
+
+def build_settlement_intent(
+    *,
+    outcome: OutcomeObservation,
+    settled: SettledShadowEpisode,
+) -> dict[str, Any]:
+    """Hash-seal complete proposed outcome + settled artifacts before any outcome write."""
+    outcome_body = _sealed_outcome_jsonable(outcome)
+    settled_body = _sealed_settled_jsonable(settled)
+    if settled_body.get("outcome") != outcome_body:
+        raise StoreError("settlement intent binds mismatched outcome and settled.outcome")
+    body: dict[str, Any] = {
+        "schema_version": SCHEMA_SETTLEMENT_INTENT,
+        "outcome": outcome_body,
+        "settled": settled_body,
+        "settled_episode_hash": settled.content_hash,
+    }
+    body["content_hash"] = canonical_sha256(
+        {key: value for key, value in body.items() if key != "content_hash"}
+    )
+    return body
+
+
+def _require_valid_intent_payload(raw: Any) -> dict[str, Any]:
+    if not isinstance(raw, dict):
+        raise StoreError("settlement intent must be a JSON object")
+    if raw.get("schema_version") != SCHEMA_SETTLEMENT_INTENT:
+        raise StoreError("settlement intent schema invalid")
+    required = ("outcome", "settled", "settled_episode_hash", "content_hash")
+    missing = [key for key in required if key not in raw]
+    if missing:
+        raise StoreError(f"settlement intent missing fields: {', '.join(missing)}")
+    body = {key: value for key, value in raw.items() if key != "content_hash"}
+    expected = canonical_sha256(body)
+    if raw.get("content_hash") != expected:
+        raise StoreError("settlement intent content seal invalid")
+    settled_body = raw["settled"]
+    if not isinstance(settled_body, dict):
+        raise StoreError("settlement intent settled payload invalid")
+    if settled_body.get("content_hash") != raw.get("settled_episode_hash"):
+        raise StoreError("settlement intent settled_episode_hash mismatch")
+    if settled_body.get("outcome") != raw.get("outcome"):
+        raise StoreError("settlement intent outcome/settled.outcome mismatch")
+    return raw
+
+
+def load_settlement_intent(root: Path) -> dict[str, Any]:
+    return _require_valid_intent_payload(read_json(artifact_paths(root)["intent"]))
+
+
+def settlement_intents_identical(existing: dict[str, Any], candidate: dict[str, Any]) -> bool:
+    """True iff sealed full intent matches (outcome + settled artifacts + intent hash)."""
+    left = _require_valid_intent_payload(existing)
+    right = _require_valid_intent_payload(candidate)
+    return left == right
+
+
+def _assert_outcome_matches_intent(root: Path) -> None:
+    intent = load_settlement_intent(root)
+    outcome = load_outcome(root)
+    if intent["outcome"] != _sealed_outcome_jsonable(outcome):
+        raise StoreError("corrupt store: outcome does not match sealed settlement intent")
+
+
 def outcomes_identical_for_recovery(
     existing: OutcomeObservation, candidate: OutcomeObservation
 ) -> bool:
     """True iff sealed outcome content matches (byte-stable JSON dump)."""
     return _sealed_outcome_jsonable(existing) == _sealed_outcome_jsonable(candidate)
+
+
+def _try_write_new_json_or_load(path: Path, payload: Any) -> tuple[bool, Any | None]:
+    """Exclusive create; on race-loss re-read existing JSON. Returns (created, existing)."""
+    try:
+        write_new_json(path, payload)
+        return True, None
+    except StoreError as exc:
+        if "already exists" not in str(exc):
+            raise
+        if not path.is_file():
+            raise
+        return False, read_json(path)
 
 
 def load_seat(root: Path) -> ShadowSeat:
@@ -169,7 +267,7 @@ def write_frozen_exclusive(root: Path, episode: FrozenShadowEpisode) -> Path:
     if episode.content_hash is None:
         raise StoreError("frozen episode must be hash sealed before write")
     paths = artifact_paths(root)
-    if paths["outcome"].is_file() or paths["settled"].is_file():
+    if paths["intent"].is_file() or paths["outcome"].is_file() or paths["settled"].is_file():
         raise StoreError("no-peek violation: cannot freeze after outcome or settlement artifacts")
     path = paths["frozen"]
     write_new_json(path, model_to_jsonable(episode))
@@ -181,46 +279,77 @@ def write_outcome_and_settled_exclusive(
     *,
     outcome: OutcomeObservation,
     settled: SettledShadowEpisode,
-) -> tuple[Path, Path]:
-    """Write once-only outcome then settled; resume outcome-only recovery fail-closed.
+) -> tuple[Path, Path, Path]:
+    """Exclusive settlement journal: intent → outcome → settled; exact-intent recovery.
 
-    Normal path: exclusive create outcome, then exclusive create settled.
-    Crash after outcome leaves SETTLEMENT_RECOVERY_REQUIRED. An identical outcome
-    retry may exclusive-create settled exactly once; a conflicting outcome rejects
-    without overwriting the sealed outcome. Settled already present fails closed.
+    Normal path: exclusive create hash-sealed settlement intent (binds full proposed
+    outcome and settled artifacts), then exclusive create outcome, then settled.
+    Crash after intent (before outcome) or after outcome (before settled) leaves
+    SETTLEMENT_RECOVERY_REQUIRED. Recovery accepts only an exact full-intent match;
+    differing settlement_ref/journal refs/statement_ref/occurred_at (or outcome)
+    fail closed with no overwrite. Fully settled remains once-only.
     """
-    outcome.require_valid_result_hash()
-    if settled.content_hash is None:
-        raise StoreError("settled episode must be hash sealed before write")
+    intent = build_settlement_intent(outcome=outcome, settled=settled)
     paths = artifact_paths(root)
     if not paths["frozen"].is_file():
         raise StoreError("settle requires frozen episode")
+    intent_path = paths["intent"]
     outcome_path = paths["outcome"]
     settled_path = paths["settled"]
+    outcome_body = intent["outcome"]
+    settled_body = intent["settled"]
 
-    # Fully sealed ledger: never overwrite outcome or settled.
+    # Fully sealed ledger: never overwrite settled.
     if settled_path.is_file():
         raise StoreError(f"exclusive create rejected; already exists: {settled_path.name}")
 
-    if outcome_path.is_file():
-        existing = load_outcome(root)
-        if not outcomes_identical_for_recovery(existing, outcome):
+    # Step 1: exclusive settlement intent (complete outcome + settled identity).
+    if intent_path.is_file():
+        existing_intent = load_settlement_intent(root)
+        if not settlement_intents_identical(existing_intent, intent):
             raise StoreError(
-                "conflicting settlement recovery rejected: outcome-only partial state "
+                "conflicting settlement recovery rejected: sealed settlement intent "
+                "does not match retry (outcome and/or settlement identity differ)"
+            )
+    else:
+        created, existing_raw = _try_write_new_json_or_load(intent_path, intent)
+        if not created:
+            existing_intent = _require_valid_intent_payload(existing_raw)
+            if not settlement_intents_identical(existing_intent, intent):
+                raise StoreError(
+                    "conflicting settlement recovery rejected: sealed settlement intent "
+                    "does not match retry (outcome and/or settlement identity differ)"
+                )
+
+    # Step 2: exclusive outcome bound by sealed intent.
+    if outcome_path.is_file():
+        existing_outcome = load_outcome(root)
+        if _sealed_outcome_jsonable(existing_outcome) != outcome_body:
+            raise StoreError("corrupt store: outcome does not match sealed settlement intent")
+        if not outcomes_identical_for_recovery(existing_outcome, outcome):
+            raise StoreError(
+                "conflicting settlement recovery rejected: sealed outcome "
                 "does not match retry outcome"
             )
-        # Identical recovery: seal settled only; outcome remains immutable.
-        write_new_json(settled_path, model_to_jsonable(settled))
-        return outcome_path, settled_path
+    else:
+        created, existing_raw = _try_write_new_json_or_load(outcome_path, outcome_body)
+        if not created:
+            existing_outcome = OutcomeObservation.model_validate(existing_raw)
+            existing_outcome.require_valid_result_hash()
+            if _sealed_outcome_jsonable(existing_outcome) != outcome_body:
+                raise StoreError("corrupt store: outcome does not match sealed settlement intent")
+            if not outcomes_identical_for_recovery(existing_outcome, outcome):
+                raise StoreError(
+                    "conflicting settlement recovery rejected: sealed outcome "
+                    "does not match retry outcome"
+                )
 
-    # Fresh settlement: outcome then settled (partial outcome is recovery-visible).
-    write_new_json(outcome_path, model_to_jsonable(outcome))
+    # Step 3: exclusive settled; leave intent/outcome in place on failure (no overwrite).
     try:
-        write_new_json(settled_path, model_to_jsonable(settled))
+        write_new_json(settled_path, settled_body)
     except StoreError:
-        # Leave outcome in place so the partial write is visible; do not overwrite.
         raise
-    return outcome_path, settled_path
+    return intent_path, outcome_path, settled_path
 
 
 def write_receipt_exclusive_or_replace(

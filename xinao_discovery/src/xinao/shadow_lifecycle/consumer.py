@@ -35,6 +35,7 @@ from xinao.shadow_lifecycle.store import (
     SCHEMA_RECEIPT,
     EpisodePhase,
     StoreError,
+    artifact_paths,
     detect_phase,
     load_frozen,
     load_outcome,
@@ -177,17 +178,20 @@ def inspect_episode(*, root: Path) -> dict[str, Any]:
             result["evidence_state"] = EvidenceState.IMPLEMENTATION_READY.value
 
     if phase == EpisodePhase.SETTLEMENT_RECOVERY_REQUIRED:
-        # Outcome sealed, settled missing: expose recovery without settlement claims.
-        outcome = load_outcome(base)
+        # Intent sealed (outcome may be absent): recovery without settlement claims.
+        paths = artifact_paths(base)
+        outcome_present = paths["outcome"].is_file()
         result.update(
             {
-                "outcome_present": True,
+                "outcome_present": outcome_present,
                 "recovery_required": True,
-                "outcome_ref": outcome.outcome_ref,
                 "next_action": "settle",
                 "evidence_state": EvidenceState.IMPLEMENTATION_READY.value,
             }
         )
+        if outcome_present:
+            outcome = load_outcome(base)
+            result["outcome_ref"] = outcome.outcome_ref
     elif phase == EpisodePhase.SETTLED:
         settled = load_settled(base)
         outcome = load_outcome(base)
@@ -389,7 +393,7 @@ def settle_episode(
             raise StoreError("account no-action must not supply settlement journal refs")
 
     settled = settle_shadow_episode(**settle_kwargs)
-    # Outcome-only partial: identical outcome resumes settled seal once; conflict rejects.
+    # Intent-first journal: exact full-intent resumes remaining seals; any identity drift rejects.
     write_outcome_and_settled_exclusive(base, outcome=outcome, settled=settled)
 
     evidence = assess_fixture_evidence(implementation_ready=True, synthetic_or_historical=True)

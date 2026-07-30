@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import threading
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
@@ -25,6 +26,7 @@ from xinao.shadow_lifecycle.consumer import (
 from xinao.shadow_lifecycle.store import (
     OUTCOME_NAME,
     SETTLED_NAME,
+    SETTLEMENT_INTENT_NAME,
     EpisodePhase,
     StoreError,
     detect_phase,
@@ -285,10 +287,60 @@ def test_negative_pre_open_outcome_rejected(tmp_path: Path) -> None:
         )
 
 
+def test_crash_after_intent_before_outcome_leaves_recovery_required(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Failure after exclusive intent write (before outcome) must require exact-intent recovery."""
+    root = tmp_path / "episode-crash-intent"
+    init_episode(
+        root=root,
+        seat_id="seat.consumer.crash-intent",
+        portfolio_ref="portfolio.consumer.crash-intent",
+    )
+    freeze_episode(root=root, request_path=_action_request(tmp_path / "crash_intent_req.json"))
+    outcome_path = _outcome_payload(tmp_path / "crash_intent_out.json", special_number=1)
+
+    original = store_mod.write_new_json
+
+    def crash_on_outcome(path: Path, payload: object) -> None:
+        if path.name == OUTCOME_NAME:
+            raise StoreError("injected crash after intent write")
+        original(path, payload)
+
+    monkeypatch.setattr(store_mod, "write_new_json", crash_on_outcome)
+    with pytest.raises(StoreError, match="injected crash after intent write"):
+        settle_episode(
+            root=root,
+            outcome_path=outcome_path,
+            settlement_ref="settlement.intent-crash.v1",
+            settlement_journal_group_ref="journal.settlement.intent-crash.v1",
+            statement_ref="statement.intent-crash.v1",
+            occurred_at=(OPEN + timedelta(hours=1)).isoformat().replace("+00:00", "Z"),
+        )
+
+    assert (root / SETTLEMENT_INTENT_NAME).is_file()
+    assert not (root / OUTCOME_NAME).is_file()
+    assert not (root / SETTLED_NAME).is_file()
+    assert detect_phase(root) == EpisodePhase.SETTLEMENT_RECOVERY_REQUIRED
+
+    status = inspect_episode(root=root)
+    assert status["phase"] == EpisodePhase.SETTLEMENT_RECOVERY_REQUIRED.value
+    assert status["recovery_required"] is True
+    assert status["outcome_present"] is False
+    assert status["next_action"] == "settle"
+    assert "pnl" not in status
+    assert "settled_episode_hash" not in status
+    assert "outcome_ref" not in status
+    assert status["completion_claim_allowed"] is False
+
+    with pytest.raises(StoreError, match=r"replay requires SETTLED"):
+        replay_episode(root=root)
+
+
 def test_crash_after_outcome_write_leaves_recovery_required(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Failure after exclusive outcome write must not look like clean FROZEN."""
+    """Failure after exclusive outcome write must not look like clean FROZEN or SETTLED."""
     root = tmp_path / "episode-crash-outcome"
     init_episode(root=root, seat_id="seat.consumer.crash", portfolio_ref="portfolio.consumer.crash")
     freeze_episode(root=root, request_path=_action_request(tmp_path / "crash_req.json"))
@@ -305,6 +357,7 @@ def test_crash_after_outcome_write_leaves_recovery_required(
     with pytest.raises(StoreError, match="injected crash after outcome write"):
         settle_episode(root=root, outcome_path=outcome_path)
 
+    assert (root / SETTLEMENT_INTENT_NAME).is_file()
     assert (root / OUTCOME_NAME).is_file()
     assert not (root / SETTLED_NAME).is_file()
     assert detect_phase(root) == EpisodePhase.SETTLEMENT_RECOVERY_REQUIRED
@@ -314,7 +367,7 @@ def test_crash_after_outcome_write_leaves_recovery_required(
     assert status["recovery_required"] is True
     assert status["outcome_present"] is True
     assert status["next_action"] == "settle"
-    # Pre-outcome no-peek preserved on pure FROZEN paths; recovery does not claim settle.
+    # Recovery does not claim settlement.
     assert "pnl" not in status
     assert "settled_episode_hash" not in status
     assert status["completion_claim_allowed"] is False
@@ -323,16 +376,76 @@ def test_crash_after_outcome_write_leaves_recovery_required(
         replay_episode(root=root)
 
 
-def test_identical_recovery_after_outcome_only_partial(
+def test_exact_recovery_after_intent_only_partial(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Identical settle retry may resume exactly once to sealed SETTLED."""
+    """Exact full-intent settle retry may resume from intent-only to sealed SETTLED."""
+    root = tmp_path / "episode-recover-intent-only"
+    init_episode(
+        root=root,
+        seat_id="seat.consumer.recover-intent",
+        portfolio_ref="portfolio.consumer.recover-intent",
+    )
+    freeze_episode(root=root, request_path=_action_request(tmp_path / "recover_intent_req.json"))
+    outcome_path = _outcome_payload(tmp_path / "recover_intent_out.json", special_number=1)
+    settle_kwargs = {
+        "root": root,
+        "outcome_path": outcome_path,
+        "settlement_ref": "settlement.recover-intent.v1",
+        "settlement_journal_group_ref": "journal.settlement.recover-intent.v1",
+        "statement_ref": "statement.recover-intent.v1",
+        "occurred_at": (OPEN + timedelta(hours=1)).isoformat().replace("+00:00", "Z"),
+    }
+
+    original = store_mod.write_new_json
+    fail_once = {"armed": True}
+
+    def crash_outcome_once(path: Path, payload: object) -> None:
+        if path.name == OUTCOME_NAME and fail_once["armed"]:
+            fail_once["armed"] = False
+            raise StoreError("injected crash after intent write")
+        original(path, payload)
+
+    monkeypatch.setattr(store_mod, "write_new_json", crash_outcome_once)
+    with pytest.raises(StoreError, match="injected crash after intent write"):
+        settle_episode(**settle_kwargs)
+    assert detect_phase(root) == EpisodePhase.SETTLEMENT_RECOVERY_REQUIRED
+    assert not (root / OUTCOME_NAME).is_file()
+
+    sealed_intent_bytes = (root / SETTLEMENT_INTENT_NAME).read_bytes()
+    recovered = settle_episode(**settle_kwargs)
+    assert recovered["ok"] is True
+    assert recovered["phase"] == EpisodePhase.SETTLED.value
+    assert recovered["statement_result"] == "HIT"
+    assert detect_phase(root) == EpisodePhase.SETTLED
+    assert (root / SETTLEMENT_INTENT_NAME).read_bytes() == sealed_intent_bytes
+
+    replayed = replay_episode(root=root)
+    assert replayed["replay_match"] is True
+    assert replayed["settled_episode_hash"] == recovered["settled_episode_hash"]
+
+    with pytest.raises(StoreError, match=r"exclusive create rejected|SETTLED|already exists"):
+        settle_episode(**settle_kwargs)
+
+
+def test_exact_recovery_after_outcome_before_settled_partial(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Exact full-intent settle retry may resume from intent+outcome to sealed SETTLED."""
     root = tmp_path / "episode-recover-identical"
     init_episode(
         root=root, seat_id="seat.consumer.recover", portfolio_ref="portfolio.consumer.recover"
     )
     freeze_episode(root=root, request_path=_action_request(tmp_path / "recover_req.json"))
     outcome_path = _outcome_payload(tmp_path / "recover_out.json", special_number=1)
+    settle_kwargs = {
+        "root": root,
+        "outcome_path": outcome_path,
+        "settlement_ref": "settlement.recover-outcome.v1",
+        "settlement_journal_group_ref": "journal.settlement.recover-outcome.v1",
+        "statement_ref": "statement.recover-outcome.v1",
+        "occurred_at": (OPEN + timedelta(hours=1)).isoformat().replace("+00:00", "Z"),
+    }
 
     original = store_mod.write_new_json
     fail_once = {"armed": True}
@@ -345,24 +458,28 @@ def test_identical_recovery_after_outcome_only_partial(
 
     monkeypatch.setattr(store_mod, "write_new_json", crash_settled_once)
     with pytest.raises(StoreError, match="injected crash after outcome write"):
-        settle_episode(root=root, outcome_path=outcome_path)
+        settle_episode(**settle_kwargs)
     assert detect_phase(root) == EpisodePhase.SETTLEMENT_RECOVERY_REQUIRED
+    sealed_intent_bytes = (root / SETTLEMENT_INTENT_NAME).read_bytes()
+    sealed_outcome_bytes = (root / OUTCOME_NAME).read_bytes()
 
-    recovered = settle_episode(root=root, outcome_path=outcome_path)
+    recovered = settle_episode(**settle_kwargs)
     assert recovered["ok"] is True
     assert recovered["phase"] == EpisodePhase.SETTLED.value
     assert recovered["statement_result"] == "HIT"
     assert detect_phase(root) == EpisodePhase.SETTLED
+    assert (root / SETTLEMENT_INTENT_NAME).read_bytes() == sealed_intent_bytes
+    assert (root / OUTCOME_NAME).read_bytes() == sealed_outcome_bytes
 
     replayed = replay_episode(root=root)
     assert replayed["replay_match"] is True
     assert replayed["settled_episode_hash"] == recovered["settled_episode_hash"]
 
     with pytest.raises(StoreError, match=r"exclusive create rejected|SETTLED|already exists"):
-        settle_episode(root=root, outcome_path=outcome_path)
+        settle_episode(**settle_kwargs)
 
 
-def test_conflicting_recovery_after_outcome_only_partial_rejected(
+def test_conflicting_outcome_recovery_rejected(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Conflicting outcome on recovery must fail closed and leave partial state intact."""
@@ -385,15 +502,186 @@ def test_conflicting_recovery_after_outcome_only_partial_rejected(
     with pytest.raises(StoreError, match="injected crash after outcome write"):
         settle_episode(root=root, outcome_path=first_outcome)
 
+    sealed_intent_bytes = (root / SETTLEMENT_INTENT_NAME).read_bytes()
     sealed_outcome_bytes = (root / OUTCOME_NAME).read_bytes()
     with pytest.raises(StoreError, match=r"conflicting settlement recovery rejected"):
         settle_episode(root=root, outcome_path=second_outcome)
 
     assert detect_phase(root) == EpisodePhase.SETTLEMENT_RECOVERY_REQUIRED
     assert not (root / SETTLED_NAME).is_file()
+    assert (root / SETTLEMENT_INTENT_NAME).read_bytes() == sealed_intent_bytes
     assert (root / OUTCOME_NAME).read_bytes() == sealed_outcome_bytes
     with pytest.raises(StoreError, match=r"replay requires SETTLED"):
         replay_episode(root=root)
+
+
+def test_differing_settlement_ref_recovery_rejected(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Same outcome with different settlement_ref must not rewrite sealed settlement identity."""
+    root = tmp_path / "episode-recover-settlement-ref"
+    init_episode(
+        root=root,
+        seat_id="seat.consumer.settle-ref",
+        portfolio_ref="portfolio.consumer.settle-ref",
+    )
+    freeze_episode(root=root, request_path=_action_request(tmp_path / "settle_ref_req.json"))
+    outcome_path = _outcome_payload(tmp_path / "settle_ref_out.json", special_number=1)
+
+    original = store_mod.write_new_json
+
+    def crash_on_outcome(path: Path, payload: object) -> None:
+        if path.name == OUTCOME_NAME:
+            raise StoreError("injected crash after intent write")
+        original(path, payload)
+
+    monkeypatch.setattr(store_mod, "write_new_json", crash_on_outcome)
+    with pytest.raises(StoreError, match="injected crash after intent write"):
+        settle_episode(
+            root=root,
+            outcome_path=outcome_path,
+            settlement_ref="settlement.first.v1",
+            settlement_journal_group_ref="journal.settlement.first.v1",
+            statement_ref="statement.first.v1",
+            occurred_at=(OPEN + timedelta(hours=1)).isoformat().replace("+00:00", "Z"),
+        )
+
+    sealed_intent_bytes = (root / SETTLEMENT_INTENT_NAME).read_bytes()
+    with pytest.raises(StoreError, match=r"conflicting settlement recovery rejected"):
+        settle_episode(
+            root=root,
+            outcome_path=outcome_path,
+            settlement_ref="settlement.second.v1",
+            settlement_journal_group_ref="journal.settlement.first.v1",
+            statement_ref="statement.first.v1",
+            occurred_at=(OPEN + timedelta(hours=1)).isoformat().replace("+00:00", "Z"),
+        )
+
+    assert detect_phase(root) == EpisodePhase.SETTLEMENT_RECOVERY_REQUIRED
+    assert not (root / OUTCOME_NAME).is_file()
+    assert not (root / SETTLED_NAME).is_file()
+    assert (root / SETTLEMENT_INTENT_NAME).read_bytes() == sealed_intent_bytes
+
+
+def test_differing_occurred_at_recovery_rejected(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Same outcome with different occurred_at must fail closed against sealed intent."""
+    root = tmp_path / "episode-recover-occurred-at"
+    init_episode(
+        root=root,
+        seat_id="seat.consumer.occurred-at",
+        portfolio_ref="portfolio.consumer.occurred-at",
+    )
+    freeze_episode(root=root, request_path=_action_request(tmp_path / "occurred_req.json"))
+    outcome_path = _outcome_payload(tmp_path / "occurred_out.json", special_number=1)
+    first_at = (OPEN + timedelta(hours=1)).isoformat().replace("+00:00", "Z")
+    second_at = (OPEN + timedelta(hours=2)).isoformat().replace("+00:00", "Z")
+
+    original = store_mod.write_new_json
+
+    def crash_on_settled(path: Path, payload: object) -> None:
+        if path.name == SETTLED_NAME:
+            raise StoreError("injected crash after outcome write")
+        original(path, payload)
+
+    monkeypatch.setattr(store_mod, "write_new_json", crash_on_settled)
+    with pytest.raises(StoreError, match="injected crash after outcome write"):
+        settle_episode(
+            root=root,
+            outcome_path=outcome_path,
+            settlement_ref="settlement.occurred.v1",
+            settlement_journal_group_ref="journal.settlement.occurred.v1",
+            statement_ref="statement.occurred.v1",
+            occurred_at=first_at,
+        )
+
+    sealed_intent_bytes = (root / SETTLEMENT_INTENT_NAME).read_bytes()
+    sealed_outcome_bytes = (root / OUTCOME_NAME).read_bytes()
+    with pytest.raises(StoreError, match=r"conflicting settlement recovery rejected"):
+        settle_episode(
+            root=root,
+            outcome_path=outcome_path,
+            settlement_ref="settlement.occurred.v1",
+            settlement_journal_group_ref="journal.settlement.occurred.v1",
+            statement_ref="statement.occurred.v1",
+            occurred_at=second_at,
+        )
+
+    assert detect_phase(root) == EpisodePhase.SETTLEMENT_RECOVERY_REQUIRED
+    assert not (root / SETTLED_NAME).is_file()
+    assert (root / SETTLEMENT_INTENT_NAME).read_bytes() == sealed_intent_bytes
+    assert (root / OUTCOME_NAME).read_bytes() == sealed_outcome_bytes
+
+
+def test_same_intent_concurrent_settle_once_only(tmp_path: Path) -> None:
+    """Bounded same-intent race: ledger seals once; concurrent loser fails closed."""
+    root = tmp_path / "episode-concurrent-same-intent"
+    init_episode(
+        root=root,
+        seat_id="seat.consumer.concurrent",
+        portfolio_ref="portfolio.consumer.concurrent",
+    )
+    freeze_episode(root=root, request_path=_action_request(tmp_path / "concurrent_req.json"))
+    outcome_path = _outcome_payload(tmp_path / "concurrent_out.json", special_number=1)
+    settle_kwargs = {
+        "root": root,
+        "outcome_path": outcome_path,
+        "settlement_ref": "settlement.concurrent.v1",
+        "settlement_journal_group_ref": "journal.settlement.concurrent.v1",
+        "statement_ref": "statement.concurrent.v1",
+        "occurred_at": (OPEN + timedelta(hours=1)).isoformat().replace("+00:00", "Z"),
+    }
+
+    barrier = threading.Barrier(2)
+    results: list[dict[str, Any]] = []
+    errors: list[BaseException] = []
+    lock = threading.Lock()
+
+    def worker() -> None:
+        barrier.wait(timeout=5)
+        try:
+            result = settle_episode(**settle_kwargs)
+            with lock:
+                results.append(result)
+        except BaseException as exc:
+            with lock:
+                errors.append(exc)
+
+    threads = [threading.Thread(target=worker) for _ in range(2)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join(timeout=30)
+
+    assert len(results) + len(errors) == 2
+    assert len(results) >= 1
+    assert all(
+        item["ok"] is True and item["phase"] == EpisodePhase.SETTLED.value for item in results
+    )
+    if len(results) == 2:
+        assert results[0]["settled_episode_hash"] == results[1]["settled_episode_hash"]
+    else:
+        assert any(
+            isinstance(exc, StoreError)
+            and (
+                "already exists" in str(exc)
+                or "exclusive create rejected" in str(exc)
+                or "SETTLED" in str(exc)
+            )
+            for exc in errors
+        )
+
+    assert detect_phase(root) == EpisodePhase.SETTLED
+    assert (root / SETTLEMENT_INTENT_NAME).is_file()
+    assert (root / OUTCOME_NAME).is_file()
+    assert (root / SETTLED_NAME).is_file()
+    replayed = replay_episode(root=root)
+    assert replayed["replay_match"] is True
+    assert replayed["settled_episode_hash"] == results[0]["settled_episode_hash"]
+
+    with pytest.raises(StoreError, match=r"exclusive create rejected|SETTLED|already exists"):
+        settle_episode(**settle_kwargs)
 
 
 def test_cli_main_init_inspect_and_capability_identity(
