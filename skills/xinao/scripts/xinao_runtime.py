@@ -2784,7 +2784,11 @@ def _prepare_migration_target() -> tuple[dict[str, Any], Path] | None:
             raise XinaoError("CURRENT_POINTER_SCHEMA_INVALID", str(pointer_path))
         # A legacy pointer may be the operational half of an older VERIFIED->rollback
         # crash. Resolve that bound witness before treating the world as a fresh v1 build.
-        _heal_restored_migrate_journal_if_needed(_sha256(pointer_path))
+        legacy_pointer_sha256 = _sha256(pointer_path)
+        _heal_restored_migrate_journal_if_needed(legacy_pointer_sha256)
+        _retire_terminal_legacy_recovery_pointer_before_build(
+            legacy_pointer_sha256
+        )
         preflight = _preflight_legacy_migration_locked()
         legacy_pointer_sha256 = str(preflight["legacy_pointer_sha256"])
 
@@ -4447,8 +4451,91 @@ def _stable_recovery_paths() -> tuple[Path, Path]:
     return root / "recover-current.py", root / "current-recovery.v1.json"
 
 
-def _publish_stable_recovery_entry(journal: dict[str, Any]) -> None:
+def _stable_recovery_pointer_payload(journal: dict[str, Any]) -> bytes:
+    """Return the one canonical byte identity used by both publish and retire."""
+
     receipt = _projection_receipt_for_journal(journal)
+    txn_id = str(journal["txn_id"])
+    cone_entry = _recovery_cone_root(txn_id) / "recover.py"
+    return _canonical_bytes(
+        {
+            "schema_version": "xinao.current_migration_recovery.v1",
+            "txn_id": journal["txn_id"],
+            "entry_path": str(cone_entry),
+            "entry_sha256": _sha256(cone_entry),
+            "cone_manifest_path": receipt["recovery_cone_manifest_path"],
+            "cone_manifest_sha256": receipt["recovery_cone_manifest_sha256"],
+            "projection_receipt_path": str(
+                _installed_projection_receipt_path(txn_id)
+            ),
+            "projection_receipt_sha256": journal["from"][
+                "installed_projection_receipt_sha256"
+            ],
+            "created_at": receipt["created_at"],
+            "completion_claim_allowed": False,
+        }
+    )
+
+
+def _retire_terminal_legacy_recovery_pointer_before_build(
+    legacy_pointer_sha256: str,
+) -> None:
+    """Resolve stale terminal hygiene before any fresh migration build."""
+
+    _launcher_path, pointer_path = _stable_recovery_paths()
+    observed = _plain_file_or_absent(
+        pointer_path, reason_code="STABLE_RECOVERY_POINTER_CONFLICT"
+    )
+    if observed is None:
+        return
+    try:
+        pointer = _strict_json_loads(
+            observed.decode("utf-8"),
+            reason_code="STABLE_RECOVERY_POINTER_CONFLICT",
+            detail=str(pointer_path),
+        )
+    except UnicodeDecodeError as exc:
+        raise XinaoError(
+            "STABLE_RECOVERY_POINTER_CONFLICT", f"UTF-8 required: {pointer_path}"
+        ) from exc
+    txn_id = pointer.get("txn_id") if isinstance(pointer, dict) else None
+    if (
+        not isinstance(txn_id, str)
+        or TXN_ID_PATTERN.fullmatch(txn_id) is None
+        or pointer.get("schema_version") != "xinao.current_migration_recovery.v1"
+    ):
+        raise XinaoError(
+            "STABLE_RECOVERY_POINTER_CONFLICT",
+            f"{pointer_path}: recovery identity invalid",
+        )
+    journal_path = _journal_path(txn_id)
+    try:
+        journal = _load_json(journal_path)
+        _validate_journal(journal, journal_path)
+    except XinaoError as exc:
+        raise XinaoError(
+            "STABLE_RECOVERY_POINTER_CONFLICT",
+            f"{pointer_path}: bound journal invalid: {exc.reason_code}",
+        ) from exc
+    from_value = journal.get("from")
+    if (
+        journal.get("operation") != "MIGRATE"
+        or journal.get("state") != "ROLLED_BACK"
+        or not isinstance(from_value, dict)
+        or from_value.get("legacy_pointer_sha256") != legacy_pointer_sha256
+        or journal.get("terminal_pointer_sha256") != legacy_pointer_sha256
+    ):
+        raise XinaoError(
+            "STABLE_RECOVERY_POINTER_CONFLICT",
+            f"{pointer_path}: bound terminal journal mismatch",
+        )
+    # The pointer-selected transaction disambiguates any number of historical
+    # rollbacks to the same legacy bytes. Exact canonical CAS then removes only
+    # the honestly stale pointer; same-txn foreign bytes remain visible.
+    _retire_stable_recovery_pointer(journal)
+
+
+def _publish_stable_recovery_entry(journal: dict[str, Any]) -> None:
     launcher_path, pointer_path = _stable_recovery_paths()
     launcher_path.parent.mkdir(parents=True, exist_ok=True)
     launcher_payload = _stable_recovery_launcher_payload()
@@ -4459,40 +4546,33 @@ def _publish_stable_recovery_entry(journal: dict[str, Any]) -> None:
         _write_bytes_atomic(launcher_path, launcher_payload, create_new=True)
     elif existing_launcher != launcher_payload:
         raise XinaoError("STABLE_RECOVERY_ENTRY_INVALID", str(launcher_path))
-    cone_entry = _recovery_cone_root(str(journal["txn_id"])) / "recover.py"
-    pointer = {
-        "schema_version": "xinao.current_migration_recovery.v1",
-        "txn_id": journal["txn_id"],
-        "entry_path": str(cone_entry),
-        "entry_sha256": _sha256(cone_entry),
-        "cone_manifest_path": receipt["recovery_cone_manifest_path"],
-        "cone_manifest_sha256": receipt["recovery_cone_manifest_sha256"],
-        "projection_receipt_path": str(_installed_projection_receipt_path(str(journal["txn_id"]))),
-        "projection_receipt_sha256": journal["from"]["installed_projection_receipt_sha256"],
-        "created_at": receipt["created_at"],
-        "completion_claim_allowed": False,
-    }
-    if pointer_path.is_file():
-        observed = _load_json(pointer_path)
-        if observed != pointer:
+    expected = _stable_recovery_pointer_payload(journal)
+    observed = _plain_file_or_absent(
+        pointer_path, reason_code="STABLE_RECOVERY_POINTER_CONFLICT"
+    )
+    if observed is not None:
+        if observed != expected:
             raise XinaoError("STABLE_RECOVERY_POINTER_CONFLICT", str(pointer_path))
     else:
-        _write_json_atomic(pointer_path, pointer, create_new=True)
+        _write_bytes_atomic(pointer_path, expected, create_new=True)
 
 
 def _retire_stable_recovery_pointer(journal: dict[str, Any]) -> None:
     _launcher_path, pointer_path = _stable_recovery_paths()
     if not os.path.lexists(pointer_path):
         return
-    observed = _load_json(pointer_path)
-    if observed.get("txn_id") != journal.get("txn_id"):
-        raise XinaoError("STABLE_RECOVERY_POINTER_CONFLICT", str(pointer_path))
-    before = _regular_file_bytes(
-        pointer_path,
-        reason_code="STABLE_RECOVERY_POINTER_CONFLICT",
-        maximum=MAX_JSON_FILE_BYTES,
+    expected = _stable_recovery_pointer_payload(journal)
+    before = _plain_file_or_absent(
+        pointer_path, reason_code="STABLE_RECOVERY_POINTER_CONFLICT"
     )
-    if _load_json(pointer_path) != observed:
+    if before is None:
+        return
+    if before != expected:
+        raise XinaoError("STABLE_RECOVERY_POINTER_CONFLICT", str(pointer_path))
+    reread = _plain_file_or_absent(
+        pointer_path, reason_code="STABLE_RECOVERY_POINTER_CONFLICT"
+    )
+    if reread != expected:
         raise XinaoError("STABLE_RECOVERY_POINTER_CONFLICT", str(pointer_path))
     try:
         pointer_path.unlink()
@@ -5004,58 +5084,6 @@ def _verify_stable_installed_launcher(journal: dict[str, Any]) -> dict[str, Any]
     return receipt
 
 
-def _require_safe_tree_destination(destination: Path, *, root: Path, reason_code: str) -> Path:
-    """Reject reparse points and destinations outside an owned absolute root before rmtree."""
-
-    try:
-        dest_abs = Path(os.path.abspath(destination))
-        root_abs = Path(os.path.abspath(root))
-    except OSError as exc:
-        raise XinaoError(reason_code, f"{destination}: {exc}") from exc
-    if not dest_abs.is_absolute() or not root_abs.is_absolute():
-        raise XinaoError(reason_code, f"absolute paths required: {destination}")
-    # Never allow deleting the owned root itself (e.g. drive or state root).
-    if _paths_equal(dest_abs, root_abs):
-        raise XinaoError(reason_code, f"refuses to remove owned root: {destination}")
-    try:
-        relative = dest_abs.relative_to(root_abs)
-    except ValueError as exc:
-        raise XinaoError(reason_code, f"outside owned root: {destination}") from exc
-    if not relative.parts or any(part in {"", ".", ".."} for part in relative.parts):
-        raise XinaoError(reason_code, f"invalid relative destination: {destination}")
-    if os.path.lexists(dest_abs) and _is_reparse(dest_abs):
-        raise XinaoError(reason_code, f"reparse forbidden: {dest_abs}")
-    # Walk parents for junction/symlink escape (Windows reparse / POSIX symlink).
-    for candidate in dest_abs.parents:
-        if candidate == dest_abs.anchor or candidate == Path(dest_abs.anchor):
-            break
-        try:
-            if os.path.lexists(candidate) and _is_reparse(candidate):
-                raise XinaoError(reason_code, f"reparse parent forbidden: {candidate}")
-        except XinaoError:
-            raise
-        except OSError as exc:
-            raise XinaoError(reason_code, f"{candidate}: {exc}") from exc
-        if _paths_equal(candidate, root_abs):
-            break
-    return dest_abs
-
-
-def _safe_remove_tree(destination: Path, *, root: Path, reason_code: str) -> None:
-    target = _require_safe_tree_destination(destination, root=root, reason_code=reason_code)
-    if not os.path.lexists(target):
-        return
-    info = os.lstat(target)
-    if _is_reparse_stat(info):
-        raise XinaoError(reason_code, f"reparse forbidden: {target}")
-    if stat.S_ISDIR(info.st_mode):
-        shutil.rmtree(target)
-    elif stat.S_ISREG(info.st_mode):
-        target.unlink()
-    else:
-        raise XinaoError(reason_code, f"unsupported entry type: {target}")
-
-
 def _apply_legacy_restore_bundle(
     journal: dict[str, Any], restore_root: Path, restore_manifest: dict[str, Any]
 ) -> None:
@@ -5323,29 +5351,32 @@ def _continue_migrate_journal(
             _journal, receipt = _complete_canary(
                 journal, journal_path, terminal_state="VERIFIED"
             )
-            _retire_stable_recovery_pointer(_journal)
-            return {
-                "schema_version": "xinao.researcher_migration_receipt.v1",
-                "status": "MIGRATED",
-                "txn_id": receipt["txn_id"],
-                "operation": "MIGRATE",
-                "release_id": receipt["release_id"],
-                "pointer_generation": receipt["pointer_generation"],
-                "current_pointer_sha256": receipt["current_pointer_sha256"],
-                "previous_verified_release_id": (
-                    None
-                    if journal["from"]["previous_verified"] is None
-                    else journal["from"]["previous_verified"]["release_id"]
-                ),
-                "legacy_restore_tree_sha256": journal["from"]["legacy_restore_tree_sha256"],
-                "activation_journal_path": receipt["activation_journal_path"],
-                "activation_journal_sha256": receipt["activation_journal_sha256"],
-                "canary_receipt_path": receipt["canary_receipt_path"],
-                "canary_receipt_sha256": receipt["canary_receipt_sha256"],
-                "completion_claim_allowed": False,
-            }
         except XinaoError as exc:
             return _rollback_failed_activation(_load_json(journal_path), journal_path, exc)
+        # Pointer retirement is terminal hygiene, not activation correctness. A foreign
+        # stable pointer must remain visible and fail honestly without rolling back the
+        # already verified v2 pointer, C projection, or terminal journal.
+        _retire_stable_recovery_pointer(_journal)
+        return {
+            "schema_version": "xinao.researcher_migration_receipt.v1",
+            "status": "MIGRATED",
+            "txn_id": receipt["txn_id"],
+            "operation": "MIGRATE",
+            "release_id": receipt["release_id"],
+            "pointer_generation": receipt["pointer_generation"],
+            "current_pointer_sha256": receipt["current_pointer_sha256"],
+            "previous_verified_release_id": (
+                None
+                if journal["from"]["previous_verified"] is None
+                else journal["from"]["previous_verified"]["release_id"]
+            ),
+            "legacy_restore_tree_sha256": journal["from"]["legacy_restore_tree_sha256"],
+            "activation_journal_path": receipt["activation_journal_path"],
+            "activation_journal_sha256": receipt["activation_journal_sha256"],
+            "canary_receipt_path": receipt["canary_receipt_path"],
+            "canary_receipt_sha256": receipt["canary_receipt_sha256"],
+            "completion_claim_allowed": False,
+        }
     if journal["state"] == "LEGACY_RESTORE_STARTED":
         return _continue_legacy_restore(journal, journal_path)
     raise XinaoError("RECOVERY_CONFLICT", str(journal_path))
@@ -5576,6 +5607,7 @@ def _bootstrap_migrate_singleflight() -> dict[str, Any]:
         # Seal any post-success restore that applied before the journal transition.
         legacy_sha256 = _sha256(pointer_path)
         _heal_restored_migrate_journal_if_needed(legacy_sha256)
+        _retire_terminal_legacy_recovery_pointer_before_build(legacy_sha256)
         preflight = _preflight_legacy_migration_locked()
         legacy_sha256 = str(preflight["legacy_pointer_sha256"])
         legacy = _validate_legacy_pointer_document(existing, pointer_path)

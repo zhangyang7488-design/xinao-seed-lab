@@ -3336,6 +3336,238 @@ def test_killed_c_stage_partial_recovers_through_stable_d_entry_without_residue(
     assert not list(txn_root.rglob(f"{module._transaction_partial_prefix(migrated['txn_id'])}*"))
 
 
+@pytest.mark.parametrize("tamper", ("same_txn_field", "format_only", "trailing_bytes"))
+def test_stable_recovery_pointer_tamper_is_preserved_by_publish_and_retire(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, tamper: str
+) -> None:
+    module = _module()
+    world = _prepare_v1_migration_world(module, tmp_path, monkeypatch)
+    monkeypatch.setattr(
+        module, "_run_activation_canary", lambda value: _canary_value(module, value)
+    )
+    migrated = module.bootstrap_migrate()
+
+    def stop_after_pointer_republish(phase: str, relative: str) -> None:
+        if (
+            phase == "rollback-stage:during-partial-write"
+            and relative == "rollback-SKILL.md"
+        ):
+            raise module.XinaoError("INJECTED_STOP", "stable pointer published")
+
+    monkeypatch.setattr(module, "_projection_fault_point", stop_after_pointer_republish)
+    _install_bootstrap_fence(module, monkeypatch, ["rollback"])
+    with pytest.raises(module.XinaoError):
+        module.rollback_release()
+    journal = module._load_json(module._journal_path(migrated["txn_id"]))
+    _stable_launcher, stable_pointer = module._stable_recovery_paths()
+    expected = stable_pointer.read_bytes()
+    value = json.loads(expected)
+    assert value["txn_id"] == migrated["txn_id"]
+    if tamper == "same_txn_field":
+        value["created_at"] = "2099-01-01T00:00:00Z"
+        tampered = module._canonical_bytes(value)
+    elif tamper == "format_only":
+        tampered = json.dumps(value, indent=2, sort_keys=True).encode("utf-8")
+    else:
+        tampered = expected + b"\nforeign"
+    assert tampered != expected
+    stable_pointer.write_bytes(tampered)
+
+    with pytest.raises(module.XinaoError) as publish_failure:
+        module._publish_stable_recovery_entry(journal)
+    assert publish_failure.value.reason_code == "STABLE_RECOVERY_POINTER_CONFLICT"
+    assert stable_pointer.read_bytes() == tampered
+    with pytest.raises(module.XinaoError) as retire_failure:
+        module._retire_stable_recovery_pointer(journal)
+    assert retire_failure.value.reason_code == "STABLE_RECOVERY_POINTER_CONFLICT"
+    assert stable_pointer.read_bytes() == tampered
+
+
+def test_verified_hygiene_conflict_preserves_v2_projection_and_terminal_journal(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    module = _module()
+    world = _prepare_v1_migration_world(module, tmp_path, monkeypatch)
+    monkeypatch.setattr(
+        module, "_run_activation_canary", lambda value: _canary_value(module, value)
+    )
+    original_complete = module._complete_canary
+    evidence: dict[str, object] = {}
+
+    def complete_then_tamper(journal, journal_path, *, terminal_state):
+        result = original_complete(
+            journal, journal_path, terminal_state=terminal_state
+        )
+        terminal = result[0]
+        assert terminal["state"] == "VERIFIED"
+        _stable_launcher, stable_pointer = module._stable_recovery_paths()
+        expected = stable_pointer.read_bytes()
+        value = json.loads(expected)
+        value["created_at"] = "2099-01-01T00:00:00Z"
+        tampered = module._canonical_bytes(value)
+        stable_pointer.write_bytes(tampered)
+        evidence.update(
+            {
+                "txn_id": terminal["txn_id"],
+                "pointer": world["pointer_path"].read_bytes(),
+                "installed": {
+                    path.relative_to(world["installed"]).as_posix(): path.read_bytes()
+                    for path in world["installed"].rglob("*")
+                    if path.is_file()
+                },
+                "tampered": tampered,
+            }
+        )
+        return result
+
+    monkeypatch.setattr(module, "_complete_canary", complete_then_tamper)
+    with pytest.raises(module.XinaoError) as failure:
+        module.bootstrap_migrate()
+    assert failure.value.reason_code == "STABLE_RECOVERY_POINTER_CONFLICT"
+    txn_id = str(evidence["txn_id"])
+    journal = module._load_json(module._journal_path(txn_id))
+    assert journal["state"] == "VERIFIED"
+    assert world["pointer_path"].read_bytes() == evidence["pointer"]
+    assert module._load_json(world["pointer_path"])["schema_version"] == (
+        module.CURRENT_POINTER_SCHEMA
+    )
+    assert {
+        path.relative_to(world["installed"]).as_posix(): path.read_bytes()
+        for path in world["installed"].rglob("*")
+        if path.is_file()
+    } == evidence["installed"]
+    _stable_launcher, stable_pointer = module._stable_recovery_paths()
+    assert stable_pointer.read_bytes() == evidence["tampered"]
+
+
+def test_rolled_back_hygiene_conflict_preserves_v1_and_terminal_journal(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    module = _module()
+    original_prepare = module._prepare_migration_target
+    world = _prepare_v1_migration_world(module, tmp_path, monkeypatch)
+    monkeypatch.setattr(
+        module, "_run_activation_canary", lambda value: _canary_value(module, value)
+    )
+    migrated = module.bootstrap_migrate()
+    original_transition = module._journal_transition
+    evidence: dict[str, bytes] = {}
+
+    def transition_then_tamper(journal_path, journal, state, **changes):
+        transitioned = original_transition(
+            journal_path, journal, state, **changes
+        )
+        if state == "ROLLED_BACK" and journal.get("operation") == "MIGRATE":
+            _stable_launcher, stable_pointer = module._stable_recovery_paths()
+            tampered = stable_pointer.read_bytes() + b"\nforeign"
+            stable_pointer.write_bytes(tampered)
+            evidence["tampered"] = tampered
+        return transitioned
+
+    monkeypatch.setattr(module, "_journal_transition", transition_then_tamper)
+    _install_bootstrap_fence(module, monkeypatch, ["rollback"])
+    with pytest.raises(module.XinaoError) as failure:
+        module.rollback_release()
+    assert failure.value.reason_code == "STABLE_RECOVERY_POINTER_CONFLICT"
+    assert module._load_json(module._journal_path(migrated["txn_id"]))["state"] == (
+        "ROLLED_BACK"
+    )
+    _assert_full_v1_preimage(module, world)
+    _stable_launcher, stable_pointer = module._stable_recovery_paths()
+    assert stable_pointer.read_bytes() == evidence["tampered"]
+
+    # A subsequent migrate attempt must resolve terminal hygiene before any
+    # release build or new transaction. Foreign same-transaction bytes remain
+    # evidence and fail closed instead of silently starting a remigration.
+    monkeypatch.setattr(module, "_journal_transition", original_transition)
+    monkeypatch.setattr(module, "_prepare_migration_target", original_prepare)
+    transaction_root = module._state_paths()["transaction_root"]
+    transaction_ids_before = sorted(
+        path.name for path in transaction_root.iterdir() if path.is_dir()
+    )
+    foreign_before = stable_pointer.read_bytes()
+    build_calls = 0
+
+    def forbidden_build(*_args, **_kwargs):
+        nonlocal build_calls
+        build_calls += 1
+        raise AssertionError("foreign terminal recovery pointer must fail before build")
+
+    monkeypatch.setattr(module, "build_release", forbidden_build)
+    with pytest.raises(module.XinaoError) as remigration_failure:
+        module.bootstrap_migrate()
+    assert remigration_failure.value.reason_code == "STABLE_RECOVERY_POINTER_CONFLICT"
+    assert build_calls == 0
+    assert sorted(path.name for path in transaction_root.iterdir() if path.is_dir()) == (
+        transaction_ids_before
+    )
+    assert stable_pointer.read_bytes() == foreign_before
+    assert module._load_json(module._journal_path(migrated["txn_id"]))["state"] == (
+        "ROLLED_BACK"
+    )
+    _assert_full_v1_preimage(module, world)
+
+
+def test_terminal_hygiene_uses_pointer_txn_when_rollbacks_share_legacy_sha(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    module = _module()
+    original_prepare = module._prepare_migration_target
+    world = _prepare_v1_migration_world(module, tmp_path, monkeypatch)
+    monkeypatch.setattr(
+        module, "_run_activation_canary", lambda value: _canary_value(module, value)
+    )
+
+    first = module.bootstrap_migrate()
+    _install_bootstrap_fence(module, monkeypatch, ["rollback"])
+    first_rollback = module.rollback_release()
+    assert first_rollback["status"] == "ROLLED_BACK"
+    legacy_sha256 = module._sha256(world["pointer_path"])
+
+    second = module.bootstrap_migrate()
+    original_retire = module._retire_stable_recovery_pointer
+
+    def preserve_latest_pointer(journal):
+        if journal.get("txn_id") == second["txn_id"]:
+            raise module.XinaoError("INJECTED_STOP", "leave exact terminal pointer")
+        return original_retire(journal)
+
+    monkeypatch.setattr(
+        module, "_retire_stable_recovery_pointer", preserve_latest_pointer
+    )
+    _install_bootstrap_fence(module, monkeypatch, ["rollback"])
+    with pytest.raises(module.XinaoError) as stopped:
+        module.rollback_release()
+    assert stopped.value.reason_code == "INJECTED_STOP"
+
+    first_journal = module._load_json(module._journal_path(first["txn_id"]))
+    second_journal = module._load_json(module._journal_path(second["txn_id"]))
+    assert first_journal["state"] == second_journal["state"] == "ROLLED_BACK"
+    assert first_journal["from"]["legacy_pointer_sha256"] == legacy_sha256
+    assert second_journal["from"]["legacy_pointer_sha256"] == legacy_sha256
+    _stable_launcher, stable_pointer = module._stable_recovery_paths()
+    assert stable_pointer.read_bytes() == module._stable_recovery_pointer_payload(
+        second_journal
+    )
+
+    monkeypatch.setattr(module, "_retire_stable_recovery_pointer", original_retire)
+    build_calls = 0
+
+    def stop_at_build(*_args, **kwargs):
+        nonlocal build_calls
+        build_calls += 1
+        assert kwargs["migration_legacy_pointer_sha256"] == legacy_sha256
+        raise module.XinaoError("INJECTED_BUILD_STOP", "terminal hygiene completed")
+
+    monkeypatch.setattr(module, "build_release", stop_at_build)
+    with pytest.raises(module.XinaoError) as build_stop:
+        original_prepare()
+    assert build_stop.value.reason_code == "INJECTED_BUILD_STOP"
+    assert build_calls == 1
+    assert not stable_pointer.exists()
+    _assert_full_v1_preimage(module, world)
+
+
 def test_killed_d_cone_partial_is_rebuilt_only_from_bound_transaction_stage(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
