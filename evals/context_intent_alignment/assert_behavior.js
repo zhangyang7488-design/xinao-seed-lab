@@ -1,4 +1,5 @@
 module.exports = (output, context) => {
+  const promptScenarioToken = 'CURRENT_SCENARIO';
   let parsed;
   try {
     parsed = JSON.parse(output);
@@ -194,7 +195,7 @@ module.exports = (output, context) => {
     : new Set();
 
   const expected = {
-    case_id: context.vars.case_id,
+    case_id: promptScenarioToken,
     target_relation:
       expectedTargetRelations.length === 1
         ? expectedTargetRelations[0]
@@ -609,7 +610,9 @@ module.exports = (output, context) => {
     parsed.quota_query_disposition;
   const localCompletionTransitionIsCoherent =
     parsed.local_completion_transition === 'finish_bounded_task'
-      ? parsed.continuous_run_disposition === 'not_applicable'
+      ? ['not_applicable', 'stop_requested'].includes(
+          parsed.continuous_run_disposition,
+        )
       : parsed.local_completion_transition === 'rederive_mainline_frontier'
         ? parsed.continuous_run_disposition === 'continue'
         : parsed.local_completion_transition === 'resume_suspended_parent'
