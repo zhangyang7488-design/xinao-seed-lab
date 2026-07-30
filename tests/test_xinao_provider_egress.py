@@ -877,6 +877,7 @@ def test_render_requires_alternate_ip_and_trailing_dot_denies() -> None:
 
 def test_entrypoint_writes_conf_to_tmpfs_and_guards_acl_injection() -> None:
     entry = (EGRESS_ROOT / "docker-entrypoint.sh").read_text(encoding="utf-8")
+    template = (EGRESS_ROOT / "squid.conf.template").read_text(encoding="utf-8")
     assert "/etc/squid/squid.conf" not in entry or "SQUID_CONF=" in entry
     assert 'SQUID_CONF="${COREDUMP_DIR}/squid.conf"' in entry
     assert 'squid -f "${SQUID_CONF}"' in entry or 'squid -f "${SQUID_CONF}"' in entry
@@ -889,6 +890,17 @@ def test_entrypoint_writes_conf_to_tmpfs_and_guards_acl_injection() -> None:
     assert "live_proxy_config_sha256=" in entry
     # Must not write rendered conf onto read-only rootfs path as the only path.
     assert "awk" in entry and "SQUID_CONF" in entry
+    assert "pid_filename ${COREDUMP_DIR}/squid.pid" in template
+
+
+def test_read_only_proxy_runs_mounted_entrypoint_and_provision_checks_liveness() -> None:
+    compose = (EGRESS_ROOT / "docker-compose.yaml").read_text(encoding="utf-8")
+    provision = (EGRESS_ROOT / "scripts" / "Owner-ProvisionEgress.ps1").read_text(encoding="utf-8")
+    assert "read_only: true" in compose
+    assert "- /bin/bash\n      - /docker-entrypoint-mount.sh" in compose
+    assert "cp /docker-entrypoint-mount.sh" not in compose
+    assert "{{.State.Running}}" in provision
+    assert "EGRESS_PROXY_NOT_RUNNING" in provision
 
 
 def test_read_only_proxy_runs_mounted_entrypoint_and_provision_checks_liveness() -> None:
