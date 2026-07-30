@@ -19,7 +19,8 @@ the user to run a command, edit a file, construct a manifest, pre-seal a materia
 internal field.
 
 For shadow lifecycle, require `inspect` to report `shadow.runtime_status=AVAILABLE` (source
-registration plus live image shadow labels). Then use the installed Skill only:
+registration, live image shadow labels, and `installed_projection.status=ALIGNED`). Then use the
+installed Skill only:
 
 - `scripts/xinao.py shadow init --root <episode> --seat-id <id> --portfolio-ref <ref>`
 - `scripts/xinao.py shadow inspect|status --root <episode>`
@@ -47,6 +48,17 @@ retain rollback, and canary through the newly installed entry. Then run the inst
 activation as a separate unjournaled step. This is a legacy-replacement command, not a fresh-install
 fallback; if no installed root or pointer exists, require a separately implemented and verified
 fresh-install capability instead of inventing one during the call.
+
+Ordinary `activate` switches only the versioned current pointer; it deliberately does not rewrite the
+installed Skill tree. After a later activate, fresh `inspect` must report
+`installed_projection.status=DRIFTED` until you run the installed entry's
+`scripts/xinao.py sync-projection` (no release/hash/path arguments). That journaled transaction
+projects only `current.active`'s sealed skill-bundle onto the installed Skill root with D-disk
+receipt, previous-installed snapshot, recovery cone, foreign-entry rejection, and atomic replace;
+it never changes the current pointer. On success, `installed_projection.status=ALIGNED` and
+`shadow.runtime_status` may become `AVAILABLE` only when image labels also pass. Treat projection
+drift as fail-closed: do not treat researcher runtime as ready while the installed projection is
+drifted.
 
 Keep the bounded online research lifecycle separate from the durable background leg. When the
 user asks to mature the ordinary research leg, finish one stable entry with one-command lifecycle

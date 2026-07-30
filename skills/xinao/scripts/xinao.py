@@ -30,7 +30,7 @@ RELEASE_RUNTIME_RELATIVE_PATH = Path("skill-bundle") / "scripts" / "xinao_runtim
 # Bound to the co-located bootstrap-migration companion. Tampering fails before execution.
 # Update this whenever the candidate xinao_runtime.py bytes change.
 EXPECTED_COMPANION_RUNTIME_SHA256 = (
-    "a567f084ca6a26a080e2834d5b916241c5167c4d7e17c790a4babdb34341bff7"
+    "6ea33917175e720045cf2730873b7e84c97504ead191c2d2bc000aaf12a467ed"
 )
 RELEASE_ID_PATTERN = re.compile(r"^researcher-[0-9]+\.[0-9]+\.[0-9]+-[0-9a-f]{16}$")
 TXN_ID_PATTERN = re.compile(r"^xra_[0-9]{8}T[0-9]{6}_[0-9a-f]{16}$")
@@ -74,6 +74,16 @@ MIGRATE_FROM_KEYS = {
     "legacy_restore_tree_sha256",
     "installed_projection_receipt_sha256",
 }
+SYNC_PROJECTION_FROM_KEYS = {
+    "generation",
+    "pointer_sha256",
+    "active",
+    "previous_verified",
+    "previous_installed_restore_path",
+    "previous_installed_restore_manifest_sha256",
+    "previous_installed_restore_tree_sha256",
+    "installed_projection_receipt_sha256",
+}
 LEGACY_POINTER_KEYS = {
     "schema_version",
     "release_id",
@@ -92,6 +102,7 @@ PENDING_ACTIVATION_STATES = {
     "ROLLBACK_POINTER_SWITCHED",
     "ROLLBACK_CANARY_STARTED",
     "LEGACY_RESTORE_STARTED",
+    "PROJECTION_RESTORE_STARTED",
 }
 TERMINAL_ACTIVATION_STATES = {"VERIFIED", "ROLLED_BACK"}
 FORBIDDEN_RUNTIME_TOKENS = (
@@ -350,7 +361,7 @@ def _validate_journal_shape(
     revision = journal.get("revision")
     if type(revision) is not int or revision < 1:
         raise BootstrapError("ACTIVATION_JOURNAL_REVISION_INVALID", str(revision))
-    if journal.get("operation") not in {"ACTIVATE", "ROLLBACK", "MIGRATE"}:
+    if journal.get("operation") not in {"ACTIVATE", "ROLLBACK", "MIGRATE", "SYNC_PROJECTION"}:
         raise BootstrapError("ACTIVATION_OPERATION_INVALID", str(journal.get("operation")))
     valid_states = PENDING_ACTIVATION_STATES | TERMINAL_ACTIVATION_STATES | {"RECOVERY_CONFLICT"}
     if journal.get("state") not in valid_states:
@@ -364,7 +375,14 @@ def _validate_journal_shape(
             raise BootstrapError("ACTIVATION_JOURNAL_SCHEMA_INVALID", key)
     requested_to = _validate_active_ref_shape(journal.get("requested_to"), state_root=state_root)
     target = _validate_active_ref_shape(journal.get("to"), state_root=state_root)
-    if requested_to.get("activation_txn_id") != txn_id or target.get("activation_txn_id") != txn_id:
+    if journal.get("operation") == "SYNC_PROJECTION":
+        # Sync seals current.active; activation_txn_id stays on the pointer's activation journal.
+        if requested_to != target:
+            raise BootstrapError("ACTIVATION_TARGET_BINDING_MISMATCH", txn_id)
+    elif (
+        requested_to.get("activation_txn_id") != txn_id
+        or target.get("activation_txn_id") != txn_id
+    ):
         raise BootstrapError("ACTIVATION_TRANSACTION_BINDING_MISMATCH", txn_id)
     from_value = journal.get("from")
     if journal.get("operation") == "MIGRATE":
@@ -403,6 +421,51 @@ def _validate_journal_shape(
         restore_path = Path(str(from_value.get("legacy_restore_path", "")))
         if not restore_path.is_absolute():
             raise BootstrapError("ACTIVATION_SOURCE_INVALID", "legacy_restore_path")
+        receipt_sha = from_value.get("installed_projection_receipt_sha256")
+        if not isinstance(receipt_sha, str) or HEX_SHA256_PATTERN.fullmatch(receipt_sha) is None:
+            raise BootstrapError("ACTIVATION_SOURCE_INVALID", "installed_projection_receipt_sha256")
+    elif journal.get("operation") == "SYNC_PROJECTION":
+        if not isinstance(from_value, dict) or set(from_value) != SYNC_PROJECTION_FROM_KEYS:
+            raise BootstrapError("ACTIVATION_SOURCE_INVALID", txn_id)
+        if type(from_value.get("generation")) is not int or from_value["generation"] < 1:
+            raise BootstrapError("ACTIVATION_SOURCE_INVALID", "generation")
+        if (
+            not isinstance(from_value.get("pointer_sha256"), str)
+            or HEX_SHA256_PATTERN.fullmatch(str(from_value.get("pointer_sha256"))) is None
+        ):
+            raise BootstrapError("ACTIVATION_SOURCE_INVALID", "pointer_sha256")
+        active_from = _validate_active_ref_shape(from_value.get("active"), state_root=state_root)
+        if active_from != target or generation != from_value.get("generation"):
+            raise BootstrapError("ACTIVATION_TARGET_BINDING_MISMATCH", txn_id)
+        if from_value.get("previous_verified") is not None:
+            _validate_active_ref_shape(from_value.get("previous_verified"), state_root=state_root)
+        for key in (
+            "previous_installed_restore_path",
+            "previous_installed_restore_manifest_sha256",
+            "previous_installed_restore_tree_sha256",
+            "installed_projection_receipt_sha256",
+        ):
+            observed = from_value.get(key)
+            if not isinstance(observed, str) or not observed:
+                raise BootstrapError("ACTIVATION_SOURCE_INVALID", key)
+        if (
+            HEX_SHA256_PATTERN.fullmatch(
+                str(from_value.get("previous_installed_restore_manifest_sha256", ""))
+            )
+            is None
+            or HEX_SHA256_PATTERN.fullmatch(
+                str(from_value.get("previous_installed_restore_tree_sha256", ""))
+            )
+            is None
+            or HEX_SHA256_PATTERN.fullmatch(
+                str(from_value.get("installed_projection_receipt_sha256", ""))
+            )
+            is None
+        ):
+            raise BootstrapError("ACTIVATION_SOURCE_INVALID", "sync_projection_hash")
+        restore_path = Path(str(from_value.get("previous_installed_restore_path", "")))
+        if not restore_path.is_absolute():
+            raise BootstrapError("ACTIVATION_SOURCE_INVALID", "previous_installed_restore_path")
     elif from_value is not None:
         if not isinstance(from_value, dict) or set(from_value) != {
             "generation",
@@ -954,13 +1017,20 @@ def _runtime_entry_locked(
     pending = _pending_activation_journals(state_root)
     if len(pending) > 1:
         raise BootstrapError("RECOVERY_CONFLICT", "multiple pending activation journals")
-    if pending and command not in {"recover", "_canary"}:
-        raise BootstrapError("RECOVERY_REQUIRED", str(pending[0].get("txn_id", "")))
+    if pending:
+        pending_operation = pending[0].get("operation")
+        if command in {"recover", "_canary"}:
+            pass
+        elif command == "sync-projection" and pending_operation == "SYNC_PROJECTION":
+            pass
+        else:
+            raise BootstrapError("RECOVERY_REQUIRED", str(pending[0].get("txn_id", "")))
     runtime_ref = active
     if pending and command == "recover":
         recovery_from = pending[0].get("from")
         if not isinstance(recovery_from, dict) or not isinstance(recovery_from.get("active"), dict):
             raise BootstrapError("RECOVERY_SOURCE_INVALID", str(pending[0].get("txn_id", "")))
+        # SYNC_PROJECTION from.active is current.active; ACTIVATE/ROLLBACK recover the source ref.
         runtime_ref = recovery_from["active"]
     selected_release_id = runtime_ref.get("release_id")
     if (

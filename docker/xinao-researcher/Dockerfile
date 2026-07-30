@@ -44,14 +44,14 @@ RUN printf '%s  %s\n' "${GROK_DONOR_BINARY_SHA256}" /usr/local/bin/grok \
         "pydantic==${SHADOW_PYDANTIC_VERSION}" \
         "rfc8785==${SHADOW_RFC8785_VERSION}" \
         "uuid6==${SHADOW_UUID6_VERSION}" \
-    && PYTHONPATH=/opt/xinao-shadow python -I -c "import xinao.shadow_lifecycle as m; assert m.CONSUMER_VERSION"
+    && python -c "import sysconfig; from pathlib import Path; Path(sysconfig.get_paths()['purelib'], 'xinao-shadow.pth').write_text('/opt/xinao-shadow\\n', encoding='utf-8')" \
+    && python -I -c "import xinao.shadow_lifecycle as m; assert m.CONSUMER_VERSION"
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PYTHONUTF8=1 \
     HOME=/grok-home \
     GROK_HOME=/grok-home \
-    PYTHONPATH=/opt/xinao-shadow \
     XINAO_RESEARCHER_ENTRYPOINT_SHA256=${ENTRYPOINT_SHA256} \
     XINAO_SHADOW_RUNTIME_TREE_SHA256=${SHADOW_RUNTIME_TREE_SHA256} \
     XINAO_SHADOW_RUNTIME_LOCK_SHA256=${SHADOW_RUNTIME_LOCK_SHA256}

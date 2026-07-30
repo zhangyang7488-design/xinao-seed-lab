@@ -1410,15 +1410,41 @@ def test_activation_canary_failure_surfaces_child_reason(
     assert "child_reason=IMAGE_IDENTITY_MISMATCH" in failure.value.detail
 
 
+def _materialize_installed_from_release(
+    module, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, manifest: dict[str, object]
+) -> Path:
+    installed = tmp_path / "installed-skill-aligned"
+    if installed.exists():
+        for path in sorted(installed.rglob("*"), reverse=True):
+            if path.is_file():
+                path.unlink()
+            elif path.is_dir():
+                path.rmdir()
+    bundle_root = Path(str(manifest["skill_bundle_path"]))
+    files, directories = module._strict_plain_tree(
+        bundle_root, reason_code="INSTALL_PROJECTION_TARGET_INVALID"
+    )
+    installed.mkdir(parents=True, exist_ok=False)
+    for relative in sorted(directories):
+        (installed / relative).mkdir(parents=True, exist_ok=True)
+    for relative, payload in files.items():
+        destination = installed / relative
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        destination.write_bytes(payload)
+    monkeypatch.setenv("XINAO_INSTALLED_SKILL_ROOT", str(installed))
+    return installed
+
+
 def test_inspect_still_reports_missing_egress_after_activation_split(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     module = _module()
     manifest, manifest_path = _sealed_release(module, tmp_path, monkeypatch)
     _terminal_pointer(module, manifest, manifest_path)
+    _materialize_installed_from_release(module, tmp_path, monkeypatch, manifest)
     _install_bootstrap_fence(module, monkeypatch, ["inspect"])
     # Image identity is validated independently so shadow can still report live
-    # capability when researcher egress is absent.
+    # capability when researcher egress is absent, provided installed projection is aligned.
     monkeypatch.setattr(module, "_validate_release_image_identity", lambda _release: "docker")
     monkeypatch.setattr(
         module,
@@ -1433,6 +1459,7 @@ def test_inspect_still_reports_missing_egress_after_activation_split(
     assert receipt["runtime_status"] == "EGRESS_BOUNDARY_UNAVAILABLE"
     assert receipt["runtime_reason_code"] == "EGRESS_LIVE_SEAL_MISSING"
     assert receipt["provider_effect_verified"] is False
+    assert receipt["installed_projection"]["status"] == "ALIGNED"
     assert receipt["shadow"]["runtime_status"] == "AVAILABLE"
     assert receipt["shadow"]["completion_claim_allowed"] is False
 
@@ -3722,6 +3749,22 @@ def test_foreign_installed_extra_is_preserved_and_blocks_rollback(
     assert foreign.read_bytes() == b"foreign-after-seal\n"
 
 
+def _installed_tree_map(root: Path) -> dict[str, bytes]:
+    return {
+        path.relative_to(root).as_posix(): path.read_bytes()
+        for path in root.rglob("*")
+        if path.is_file()
+    }
+
+
+def _active_skill_bundle_map(module, release: dict[str, object]) -> dict[str, bytes]:
+    bundle_root = Path(str(release["skill_bundle_path"]))
+    files, _directories = module._strict_plain_tree(
+        bundle_root, reason_code="INSTALL_PROJECTION_TARGET_INVALID"
+    )
+    return dict(sorted(files.items()))
+
+
 def test_already_migrated_uses_original_projection_after_later_activate(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -3731,11 +3774,7 @@ def test_already_migrated_uses_original_projection_after_later_activate(
         module, "_run_activation_canary", lambda value: _canary_value(module, value)
     )
     migrated = module.bootstrap_migrate()
-    installed_after_migrate = {
-        path.relative_to(world["installed"]).as_posix(): path.read_bytes()
-        for path in world["installed"].rglob("*")
-        if path.is_file()
-    }
+    installed_after_migrate = _installed_tree_map(Path(world["installed"]))
     later, _later_path = _sealed_release(
         module,
         tmp_path,
@@ -3750,20 +3789,45 @@ def test_already_migrated_uses_original_projection_after_later_activate(
     )
     activated = module.activate_release(str(later["release_id"]))
     assert activated["status"] == "VERIFIED"
-    assert {
-        path.relative_to(world["installed"]).as_posix(): path.read_bytes()
-        for path in world["installed"].rglob("*")
-        if path.is_file()
-    } == installed_after_migrate
+    assert _installed_tree_map(Path(world["installed"])) == installed_after_migrate
+    alignment = module._installed_projection_alignment(later)
+    assert alignment["status"] == "DRIFTED"
+    _install_bootstrap_fence(module, monkeypatch, ["inspect"])
+    monkeypatch.setattr(module, "_validate_release_image_identity", lambda _release: "docker")
+    monkeypatch.setattr(
+        module,
+        "_validate_release_for_invoke",
+        lambda _release: (_ for _ in ()).throw(
+            module.XinaoError("EGRESS_LIVE_SEAL_MISSING", "expected after activate")
+        ),
+    )
+    drifted_inspect = module.inspect_capability()
+    assert drifted_inspect["installed_projection"]["status"] == "DRIFTED"
+    assert drifted_inspect["runtime_status"] == "INSTALLED_PROJECTION_DRIFTED"
+    assert drifted_inspect["shadow"]["runtime_status"] == "PROJECTION_DRIFTED"
     repeated = module.bootstrap_migrate()
     assert repeated["status"] == "ALREADY_MIGRATED"
     assert repeated["txn_id"] == migrated["txn_id"]
     assert repeated["release_id"] == later["release_id"]
-    assert {
-        path.relative_to(world["installed"]).as_posix(): path.read_bytes()
-        for path in world["installed"].rglob("*")
-        if path.is_file()
-    } == installed_after_migrate
+    assert _installed_tree_map(Path(world["installed"])) == installed_after_migrate
+    pointer_before = module._state_paths()["pointer"].read_bytes()
+    _install_bootstrap_fence(module, monkeypatch, ["sync-projection"])
+    synced = module.sync_projection()
+    assert synced["status"] == "SYNCED"
+    assert synced["release_id"] == later["release_id"]
+    assert module._state_paths()["pointer"].read_bytes() == pointer_before
+    assert _installed_tree_map(Path(world["installed"])) == _active_skill_bundle_map(
+        module, later
+    )
+    assert module._installed_projection_alignment(later)["status"] == "ALIGNED"
+    _install_bootstrap_fence(module, monkeypatch, ["inspect"])
+    aligned_inspect = module.inspect_capability()
+    assert aligned_inspect["installed_projection"]["status"] == "ALIGNED"
+    assert aligned_inspect["shadow"]["runtime_status"] == "AVAILABLE"
+    _install_bootstrap_fence(module, monkeypatch, ["sync-projection"])
+    again = module.sync_projection()
+    assert again["status"] == "ALREADY_ALIGNED"
+    assert again["txn_id"] is None
 
 
 def test_build_release_pre_docker_fence_uses_legacy_pointer_under_migration(
@@ -4830,6 +4894,8 @@ def test_dockerfile_stages_shadow_runtime_and_preserves_researcher_entrypoint() 
     assert "io.xinao.researcher.shadow-runtime.sha256" in dockerfile
     assert 'ENTRYPOINT ["python", "-I", "/opt/xinao-researcher/entrypoint.py"]' in dockerfile
     assert "xinao.shadow_lifecycle" in dockerfile
+    assert "xinao-shadow.pth" in dockerfile
+    assert "PYTHONPATH=/opt/xinao-shadow" not in dockerfile
 
 
 def test_shadow_command_construction_is_network_none_readonly_episode_only() -> None:
@@ -4873,6 +4939,7 @@ def test_shadow_command_construction_is_network_none_readonly_episode_only() -> 
     assert "auth.json" not in joined
     assert "xinao_researcher_internal" not in joined
     assert "HTTP_PROXY" not in joined
+    assert "PYTHONPATH" not in joined
 
 
 def test_shadow_inspect_requires_source_and_live_image_labels(
@@ -4883,6 +4950,7 @@ def test_shadow_inspect_requires_source_and_live_image_labels(
     absent = module._shadow_live_status(registry, None, image_ok=False)
     assert absent["runtime_status"] == "RELEASE_ABSENT"
     manifest, _path = _sealed_release(module, tmp_path, monkeypatch, capability_version="1.2.0")
+    _materialize_installed_from_release(module, tmp_path, monkeypatch, manifest)
     ready = module._shadow_live_status(registry, manifest, image_ok=True)
     assert ready["runtime_status"] == "AVAILABLE"
     assert ready["completion_claim_allowed"] is False
@@ -4892,6 +4960,10 @@ def test_shadow_inspect_requires_source_and_live_image_labels(
     broken["image_labels"] = broken_labels
     missing = module._shadow_live_status(registry, broken, image_ok=True)
     assert missing["runtime_status"] == "IMAGE_CAPABILITY_MISSING"
+    drifted_root = tmp_path / "installed-skill-aligned"
+    (drifted_root / "SKILL.md").write_bytes(b"drifted-skill-md\n")
+    drifted = module._shadow_live_status(registry, manifest, image_ok=True)
+    assert drifted["runtime_status"] == "PROJECTION_DRIFTED"
 
 
 def test_shadow_parser_and_fresh_process_accept_verbs(
@@ -4934,3 +5006,168 @@ def test_shadow_runtime_inventory_is_import_closed() -> None:
     assert not any("postgres" in rel for rel, _p, _b in rows)
     tree = module._shadow_runtime_tree_sha256(rows)
     assert re.fullmatch(r"[0-9a-f]{64}", tree)
+
+
+def _prepare_migrated_world_with_later_active(
+    module, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> dict[str, object]:
+    world = _prepare_v1_migration_world(module, tmp_path, monkeypatch)
+    monkeypatch.setattr(
+        module, "_run_activation_canary", lambda value: _canary_value(module, value)
+    )
+    migrated = module.bootstrap_migrate()
+    later, later_path = _sealed_release(
+        module,
+        tmp_path,
+        monkeypatch,
+        image_character="e",
+        variant=b"sync-projection-later\n",
+    )
+    _install_bootstrap_fence(
+        module,
+        monkeypatch,
+        ["activate", "--release-id", str(later["release_id"])],
+    )
+    activated = module.activate_release(str(later["release_id"]))
+    assert activated["status"] == "VERIFIED"
+    world["migrated"] = migrated
+    world["later"] = later
+    world["later_path"] = later_path
+    world["installed_after_migrate"] = _installed_tree_map(Path(world["installed"]))
+    return world
+
+
+def test_sync_projection_mid_failure_auto_restores_previous_installed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    module = _module()
+    world = _prepare_migrated_world_with_later_active(module, tmp_path, monkeypatch)
+    previous = dict(world["installed_after_migrate"])
+    pointer_before = module._state_paths()["pointer"].read_bytes()
+
+    def crash_after_first_live_replace(phase: str, relative: str) -> None:
+        # SKILL.md often matches across sealed releases; crash on the first live replace
+        # that actually mutates (variant file / other drifted ordinary path).
+        if phase == "forward:after-replace":
+            raise module.XinaoError("INJECTED_SYNC_CRASH", relative)
+
+    monkeypatch.setattr(module, "_projection_fault_point", crash_after_first_live_replace)
+    _install_bootstrap_fence(module, monkeypatch, ["sync-projection"])
+    rolled = module.sync_projection()
+    assert rolled["status"] == "ROLLED_BACK"
+    assert rolled["failure_reason"]["reason_code"] == "INJECTED_SYNC_CRASH"
+    assert module._state_paths()["pointer"].read_bytes() == pointer_before
+    assert _installed_tree_map(Path(world["installed"])) == previous
+    monkeypatch.setattr(module, "_projection_fault_point", lambda _phase, _relative: None)
+    _install_bootstrap_fence(module, monkeypatch, ["sync-projection"])
+    synced = module.sync_projection()
+    assert synced["status"] == "SYNCED"
+    assert _installed_tree_map(Path(world["installed"])) == _active_skill_bundle_map(
+        module, world["later"]
+    )
+
+
+def test_sync_projection_recover_continues_prepared_after_crash(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    module = _module()
+    world = _prepare_migrated_world_with_later_active(module, tmp_path, monkeypatch)
+    previous = dict(world["installed_after_migrate"])
+
+    def crash_before_first_live_replace(phase: str, relative: str) -> None:
+        if phase == "forward:before-replace":
+            raise module.XinaoError("INJECTED_SYNC_STAGE_CRASH", relative)
+
+    monkeypatch.setattr(module, "_projection_fault_point", crash_before_first_live_replace)
+    _install_bootstrap_fence(module, monkeypatch, ["sync-projection"])
+    rolled = module.sync_projection()
+    # Crash before replace is caught and auto-restored to previous installed tree.
+    assert rolled["status"] == "ROLLED_BACK"
+    assert rolled["failure_reason"]["reason_code"] == "INJECTED_SYNC_STAGE_CRASH"
+    assert _installed_tree_map(Path(world["installed"])) == previous
+    # Explicit PREPARED journal: seal, then kill before forward project so recover can continue.
+    monkeypatch.setattr(module, "_projection_fault_point", lambda _phase, _relative: None)
+    original_continue = module._continue_sync_projection_journal
+    calls = {"n": 0}
+
+    def continue_once(journal: dict[str, object], journal_path: Path):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            module._materialize_sync_projection_contract(journal)
+            raise module.XinaoError("INJECTED_AFTER_SEAL", str(journal["txn_id"]))
+        return original_continue(journal, journal_path)
+
+    monkeypatch.setattr(module, "_continue_sync_projection_journal", continue_once)
+    _install_bootstrap_fence(module, monkeypatch, ["sync-projection"])
+    with pytest.raises(module.XinaoError) as failure:
+        module.sync_projection()
+    assert failure.value.reason_code == "INJECTED_AFTER_SEAL"
+    pending = module._pending_journals()
+    assert len(pending) == 1
+    assert pending[0][0]["operation"] == "SYNC_PROJECTION"
+    assert pending[0][0]["state"] == "PREPARED"
+    monkeypatch.setattr(module, "_continue_sync_projection_journal", original_continue)
+    _install_bootstrap_fence(module, monkeypatch, ["recover"])
+    recovered = module.recover_release(pending[0][0]["txn_id"])
+    assert recovered["status"] == "SYNCED"
+    assert _installed_tree_map(Path(world["installed"])) == _active_skill_bundle_map(
+        module, world["later"]
+    )
+
+
+def test_sync_projection_rejects_foreign_entry_and_keeps_previous(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    module = _module()
+    world = _prepare_migrated_world_with_later_active(module, tmp_path, monkeypatch)
+    previous = dict(world["installed_after_migrate"])
+    installed = Path(world["installed"])
+    pointer_before = module._state_paths()["pointer"].read_bytes()
+
+    original_materialize = module._materialize_sync_projection_contract
+
+    def inject_foreign_after_seal(journal: dict[str, object]) -> dict[str, object]:
+        receipt = original_materialize(journal)
+        (installed / "foreign-unclassified.txt").write_bytes(b"foreign-bytes\n")
+        return receipt
+
+    monkeypatch.setattr(module, "_materialize_sync_projection_contract", inject_foreign_after_seal)
+    _install_bootstrap_fence(module, monkeypatch, ["sync-projection"])
+    with pytest.raises(module.XinaoError) as failure:
+        module.sync_projection()
+    # Foreign entries are fail-closed: forward refuses them, and restore refuses to claim
+    # success while unclassified bytes remain outside previous∪target.
+    assert failure.value.reason_code in {
+        "INSTALL_PROJECTION_FOREIGN_ENTRY",
+        "RECOVERY_CONFLICT",
+    }
+    assert module._state_paths()["pointer"].read_bytes() == pointer_before
+    restored = _installed_tree_map(installed)
+    for relative, payload in previous.items():
+        assert restored.get(relative) == payload
+
+
+def test_sync_projection_fresh_installed_parser_and_inspect(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    module = _module()
+    world = _prepare_migrated_world_with_later_active(module, tmp_path, monkeypatch)
+    _install_bootstrap_fence(module, monkeypatch, ["sync-projection"])
+    synced = module.sync_projection()
+    assert synced["status"] == "SYNCED"
+    # Fresh installed entry must parse sync-projection and report ALIGNED projection.
+    completed = _run_installed_xinao(module, world, "sync-projection")
+    assert completed.returncode == 0, completed.stderr.decode("utf-8", errors="replace")
+    again = _json_stdout(completed)
+    assert again["status"] == "ALREADY_ALIGNED"
+    inspect_proc = _run_installed_xinao(module, world, "inspect")
+    # inspect may fail closed on egress/auth; still must surface projection status honestly.
+    payload = _json_stdout(inspect_proc)
+    projection = payload.get("installed_projection") or {}
+    assert projection.get("status") == "ALIGNED"
+    assert projection.get("completion_claim_allowed") is False
+    assert payload.get("shadow", {}).get("completion_claim_allowed") is False
+    # Parser accepts the verb.
+    parser = module._parser()
+    args = parser.parse_args(["sync-projection"])
+    assert args.command == "sync-projection"
