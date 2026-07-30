@@ -3234,6 +3234,40 @@ def test_bootstrap_migrate_singleflight_builds_once_and_reuses_migration_txn(
     assert len(migrate_journals) == 1
 
 
+def test_migration_bootstrap_lock_serializes_independent_process(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    module = _module()
+    state_root = _state(module, tmp_path, monkeypatch)
+    child_code = (
+        "import importlib.util,time\n"
+        f"p={str(SKILL_ROOT / 'scripts' / 'xinao_runtime.py')!r}\n"
+        "s=importlib.util.spec_from_file_location('xinao_lock_child',p)\n"
+        "m=importlib.util.module_from_spec(s);s.loader.exec_module(m)\n"
+        "with m._migration_bootstrap_lock():\n"
+        " print('READY',flush=True)\n"
+        " time.sleep(1.25)\n"
+    )
+    environment = os.environ.copy()
+    environment["XINAO_SKILL_STATE_ROOT"] = str(state_root)
+    child = subprocess.Popen(
+        [sys.executable, "-I", "-c", child_code],
+        cwd=tmp_path,
+        env=environment,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+    )
+    assert child.stdout is not None
+    assert child.stdout.readline().strip() == "READY"
+    started = time.monotonic()
+    with module._migration_bootstrap_lock():
+        elapsed = time.monotonic() - started
+    stdout, stderr = child.communicate(timeout=10)
+    assert child.returncode == 0, (stdout, stderr)
+    assert elapsed >= 0.75
+
+
 @pytest.mark.parametrize(
     "mutation",
     (
