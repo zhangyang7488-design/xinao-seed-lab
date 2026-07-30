@@ -77,6 +77,7 @@ class SciencePublicationError(ValueError):
 @dataclass
 class _PromotionLease:
     handle: Any
+    path: Path
 
     def release(self) -> None:
         if self.handle.closed:
@@ -85,6 +86,14 @@ class _PromotionLease:
             portalocker.unlock(self.handle)
         finally:
             self.handle.close()
+        # Preflight can fail after open("a+b") creates a 0B cooperative guard.
+        # Remove only empty guards so failed preflight leaves no durable residue;
+        # a non-empty guard is treated as foreign/tamper material and kept.
+        try:
+            if self.path.is_file() and self.path.stat().st_size == 0:
+                self.path.unlink(missing_ok=True)
+        except OSError:
+            pass
 
 
 @dataclass(frozen=True)
@@ -247,6 +256,19 @@ def _replace_file(source: Path, target: Path, *, installed_mode: int | None = No
 
 
 def _unlink_temporary(path: Path) -> None:
+    """Unlink a staging file even when a readonly preimage mode was applied.
+
+    Windows refuses to delete files whose read-only attribute is set. Rollback
+    preimages are sealed without write bits, so restore staging temps must clear
+    that bit before unlink or a successful restore still fails closed.
+    """
+
+    try:
+        if path.exists():
+            os.chmod(path, stat.S_IMODE(path.stat().st_mode) | stat.S_IWRITE)
+    except OSError:
+        # Best-effort; the subsequent unlink either succeeds or surfaces the error.
+        pass
     path.unlink(missing_ok=True)
 
 
@@ -258,15 +280,18 @@ def _restore_file(source: Path, target: Path) -> None:
     )
     os.close(descriptor)
     temporary_path = Path(temporary_name)
+    installed_mode = stat.S_IMODE(source.stat().st_mode)
     primary: BaseException | None = None
     cleanup: BaseException | None = None
     try:
         temporary_path.write_bytes(source.read_bytes())
-        os.chmod(temporary_path, stat.S_IMODE(source.stat().st_mode))
+        # Keep the staging temp writable for Windows unlink; only the installed
+        # target receives the sealed preimage mode (often without S_IWRITE).
+        os.chmod(temporary_path, installed_mode | stat.S_IWRITE)
         _replace_file(
             temporary_path,
             target,
-            installed_mode=stat.S_IMODE(source.stat().st_mode),
+            installed_mode=installed_mode,
         )
     except BaseException as exc:  # preserve primary and cleanup failures together
         primary = exc
@@ -335,13 +360,17 @@ def _promotion_lease_path(projection_path: Path) -> Path:
 def _acquire_promotion_lease(projection_path: Path) -> _PromotionLease:
     lease_path = _promotion_lease_path(projection_path.resolve())
     lease_path.parent.mkdir(parents=True, exist_ok=True)
+    # Refuse non-empty foreign/tampered guards before open/lock. Empty residue
+    # from a prior preflight failure is cooperative lock state and is reused.
+    if lease_path.exists() and lease_path.stat().st_size != 0:
+        raise RuntimeError("science promotion guard is foreign or tampered")
     handle = lease_path.open("a+b")
     try:
         portalocker.lock(handle, portalocker.LOCK_EX | portalocker.LOCK_NB)
     except portalocker.exceptions.LockException as exc:
         handle.close()
         raise RuntimeError("science promotion lease is still owned") from exc
-    return _PromotionLease(handle)
+    return _PromotionLease(handle=handle, path=lease_path)
 
 
 def _default_transaction_directory(projection_path: Path, rollback_copy: Path) -> Path:

@@ -1,11 +1,19 @@
 from __future__ import annotations
 
 import json
+import os
 import stat
 from pathlib import Path
 
 import pytest
 from scripts import promote_science_revision_chain as promotion
+
+
+def _force_write_bytes(path: Path, payload: bytes) -> None:
+    """Clear the Windows read-only bit before mutating a sealed postimage."""
+
+    path.chmod(stat.S_IMODE(path.stat().st_mode) | stat.S_IWRITE)
+    path.write_bytes(payload)
 
 
 def _write_json(path: Path, payload: dict[str, object]) -> None:
@@ -281,7 +289,10 @@ def test_science_v110_publication_requires_exact_live_tool_glue_pin_before_mutat
     payload = json.loads(projection.read_text(encoding="utf-8"))
     active_parent = Path(payload["active_parent"]["path"])
     candidate_active_parent = tmp_path / "science-v1.10-candidate.txt"
-    candidate_active_parent.write_text("science v1.10 candidate", encoding="utf-8")
+    candidate_active_parent.write_text(
+        "版本：正式融合稿 v1.10\nscience v1.10 candidate\n",  # noqa: RUF001
+        encoding="utf-8",
+    )
     tool_glue_authority = tmp_path / "software-tool-glue-authority.txt"
     tool_glue_authority.write_text("版本：v3.3\n", encoding="utf-8")  # noqa: RUF001
     transaction_directory = tmp_path / "science-transaction"
@@ -565,6 +576,9 @@ def test_promote_revision_chain_refuses_post_swap_candidate_digest_drift(
         real_replace(source, target, installed_mode=installed_mode)
         if target == projection and not projection_corrupted:
             projection_corrupted = True
+            # Sealed postimages install without S_IWRITE; clear it only for the
+            # deliberate post-swap corruption probe.
+            os.chmod(target, stat.S_IMODE(target.stat().st_mode) | stat.S_IWRITE)
             with target.open("a", encoding="utf-8") as stream:
                 stream.write(" ")
 
@@ -733,9 +747,12 @@ def test_promote_revision_chain_refuses_concurrent_lock(tmp_path: Path) -> None:
     assert projection.read_bytes() == original_projection
     assert not rollback.exists()
     assert not marker_path.exists()
-    assert lease_path.is_file()
+    # Cooperative 0B guards are removed on release so preflight/contention
+    # leaves no durable residue; reacquire must recreate them.
+    assert not lease_path.exists()
     reacquired_lease = promotion._acquire_promotion_lease(projection)
     reacquired_lease.release()
+    assert not lease_path.exists()
 
 
 def test_recovery_rejects_journal_bound_to_another_projection(tmp_path: Path) -> None:
@@ -1089,7 +1106,7 @@ def test_v110_clean_rollback_refuses_any_committed_postimage_drift(
     targets = fixture["targets"]
     assert isinstance(targets, dict)
     committed = {label: path.read_bytes() for label, path in targets.items()}
-    targets[drift_target].write_bytes(b"unexpected committed drift")
+    _force_write_bytes(targets[drift_target], b"unexpected committed drift")
 
     with pytest.raises(promotion.SciencePublicationError) as raised:
         promotion.rollback_science_revision_transaction(
@@ -1121,7 +1138,7 @@ def test_v110_interrupted_apply_recovers_all_four_targets_in_reverse_order(
     journal = json.loads(journal_path.read_text(encoding="utf-8"))
 
     # Durable crash cut: source/projection/archive were swapped, transition was not.
-    targets["transition"].write_bytes(fixture["preimages"]["transition"])
+    _force_write_bytes(targets["transition"], fixture["preimages"]["transition"])
     journal["status"] = "APPLYING"
     promotion._write_json_atomic(journal_path, journal)
     marker_path = targets["projection"].with_name(
@@ -1151,3 +1168,138 @@ def test_v110_interrupted_apply_recovers_all_four_targets_in_reverse_order(
     for label, path in targets.items():
         assert path.read_bytes() == fixture["preimages"][label]
     assert not marker_path.exists()
+
+
+def test_restore_file_unlinks_readonly_staging_temp_on_windows(tmp_path: Path) -> None:
+    source = tmp_path / "before.txt"
+    target = tmp_path / "target.txt"
+    source.write_text("sealed preimage", encoding="utf-8")
+    target.write_text("mutated", encoding="utf-8")
+    source.chmod(stat.S_IREAD)
+    target.chmod(stat.S_IREAD)
+
+    promotion._restore_file(source, target)
+
+    assert target.read_text(encoding="utf-8") == "sealed preimage"
+    assert not target.stat().st_mode & stat.S_IWRITE
+    leftovers = list(tmp_path.glob("*.restore"))
+    assert leftovers == []
+
+
+def test_foreign_nonempty_promotion_guard_is_fail_closed(tmp_path: Path) -> None:
+    projection, _evidence, _rollback = _fixture(tmp_path)
+    guard = promotion._promotion_lease_path(projection)
+    guard.write_bytes(b"foreign-tamper-bytes")
+
+    with pytest.raises(RuntimeError, match="foreign or tampered"):
+        promotion._acquire_promotion_lease(projection)
+
+    assert guard.read_bytes() == b"foreign-tamper-bytes"
+
+
+def test_v110_transition_preimage_parent_pin_must_be_explicitly_bound(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fixture = _four_target_v110_fixture(tmp_path, monkeypatch)
+    kwargs = dict(fixture["publish_kwargs"])
+    kwargs["expected_transition_preimage_active_parent_sha256"] = None
+    targets = fixture["targets"]
+    assert isinstance(targets, dict)
+
+    with pytest.raises(promotion.SciencePublicationError) as raised:
+        promotion.publish_science_revision_transaction(**kwargs)
+
+    assert raised.value.code == "SCIENCE_REVISION_PREFLIGHT_FAILED"
+    assert any(
+        defect["code"] == "SCIENCE_TRANSITION_PREIMAGE_PARENT_PIN_UNBOUND"
+        for defect in raised.value.receipt["defects"]
+    )
+    assert not Path(fixture["journal_path"]).exists()
+    assert not promotion._promotion_lease_path(targets["projection"]).exists()
+    for label, path in targets.items():
+        assert path.read_bytes() == fixture["preimages"][label]
+
+
+@pytest.mark.parametrize(
+    ("mutate", "expected_defect"),
+    [
+        (
+            "drop_projection_version",
+            "SCIENCE_DEPENDENCY_TOOL_GLUE_VERSION_MISMATCH",
+        ),
+        (
+            "drift_projection_version",
+            "SCIENCE_DEPENDENCY_TOOL_GLUE_VERSION_MISMATCH",
+        ),
+        (
+            "drop_authority_version_line",
+            "SCIENCE_DEPENDENCY_TOOL_GLUE_VERSION_MISMATCH",
+        ),
+        (
+            "drift_authority_version_line",
+            "SCIENCE_DEPENDENCY_TOOL_GLUE_VERSION_MISMATCH",
+        ),
+    ],
+)
+def test_v110_selector_tool_glue_version_missing_or_drift_is_stable(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    mutate: str,
+    expected_defect: str,
+) -> None:
+    fixture = _four_target_v110_fixture(tmp_path, monkeypatch)
+    kwargs = dict(fixture["publish_kwargs"])
+    targets = fixture["targets"]
+    assert isinstance(targets, dict)
+    projection = targets["projection"]
+    payload = json.loads(projection.read_text(encoding="utf-8"))
+    tool_glue = Path(str(kwargs["tool_glue_authority_path"]))
+
+    if mutate == "drop_projection_version":
+        payload["software_foundation"].pop("version", None)
+        _write_json(projection, payload)
+    elif mutate == "drift_projection_version":
+        payload["software_foundation"]["version"] = "v3.3"
+        _write_json(projection, payload)
+    elif mutate == "drop_authority_version_line":
+        tool_glue.write_text("no version line\n", encoding="utf-8")
+        payload["software_foundation"]["sha256"] = promotion._sha256(tool_glue)
+        _write_json(projection, payload)
+        kwargs["expected_tool_glue_authority_sha256"] = payload["software_foundation"]["sha256"]
+        monkeypatch.setattr(
+            promotion,
+            "validate_science_revision_candidate_binding",
+            lambda *_args, **_kwargs: {
+                "science_parent_version": "v1.10",
+                "software_foundation_version": None,
+                "maturation_invariant_required": True,
+            },
+        )
+    else:
+        tool_glue.write_text("版本：v3.3\n", encoding="utf-8")  # noqa: RUF001
+        payload["software_foundation"]["sha256"] = promotion._sha256(tool_glue)
+        payload["software_foundation"]["version"] = "v3.4"
+        _write_json(projection, payload)
+        kwargs["expected_tool_glue_authority_sha256"] = payload["software_foundation"]["sha256"]
+        monkeypatch.setattr(
+            promotion,
+            "validate_science_revision_candidate_binding",
+            lambda *_args, **_kwargs: {
+                "science_parent_version": "v1.10",
+                "software_foundation_version": "v3.3",
+                "maturation_invariant_required": True,
+            },
+        )
+
+    kwargs["expected_projection_sha256"] = promotion._sha256(projection)
+
+    with pytest.raises(promotion.SciencePublicationError) as raised:
+        promotion.publish_science_revision_transaction(**kwargs)
+
+    assert raised.value.code == "SCIENCE_DEPENDENCY_TOOL_GLUE_PIN_MISMATCH"
+    assert any(
+        defect["code"] == expected_defect for defect in raised.value.receipt["defects"]
+    )
+    assert not Path(fixture["journal_path"]).exists()
+    assert not promotion._promotion_lease_path(projection).exists()

@@ -567,6 +567,57 @@ def test_v110_candidate_preflight_returns_dynamic_science_and_software_binding(
     }
 
 
+@pytest.mark.parametrize(
+    ("version_lines", "expected_version"),
+    [
+        ((), None),
+        (("版本：v3.4",), "v3.4"),  # noqa: RUF001
+        (("版本：v3.3", "版本：v3.4"), None),  # noqa: RUF001
+        (("版本：v9.9",), "v9.9"),  # noqa: RUF001
+    ],
+)
+def test_v110_candidate_selector_glue_version_missing_or_drift_is_stable(
+    tmp_path: Path,
+    version_lines: tuple[str, ...],
+    expected_version: str | None,
+) -> None:
+    """Selector reports glue version absence/multiplicity as None; never invents one-home."""
+
+    projection, payload = _projection(tmp_path)
+    _apply_science_revision(
+        projection,
+        payload,
+        revision_text=_open_research_revision_text("v1.10"),
+    )
+    payload["science_episode_gate"]["first_frontier"] = [
+        "ParentRealityObject",
+        "ObjectContact",
+        "ExplorationTrace",
+    ]
+    software_binding = payload["software_foundation"]
+    software_path = Path(software_binding["path"])
+    body_lines = [
+        line
+        for line in software_path.read_text(encoding="utf-8").splitlines()
+        if not line.startswith("版本：")  # noqa: RUF001
+    ]
+    software_binding["sha256"] = _write(
+        software_path,
+        "\n".join((*version_lines, *body_lines)),
+    )
+    projection.write_text(json.dumps(payload), encoding="utf-8")
+
+    result = validate_science_revision_candidate_binding(
+        payload,
+        science_candidate_path=Path(payload["active_parent"]["path"]),
+        software_foundation_candidate_path=software_path,
+    )
+
+    assert result["software_foundation_version"] == expected_version
+    assert result["software_foundation_sha256"] == software_binding["sha256"]
+    assert result["maturation_invariant_required"] is True
+
+
 def test_transition_entry_parser_binds_unique_labeled_path_and_sha256(tmp_path: Path) -> None:
     active_parent = tmp_path / "active-parent.txt"
     active_parent_sha256 = _write(active_parent, "candidate active parent")
