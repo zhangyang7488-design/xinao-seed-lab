@@ -16,6 +16,7 @@ import subprocess
 import sys
 import textwrap
 from pathlib import Path
+from urllib.parse import urlsplit
 
 import pytest
 
@@ -894,7 +895,11 @@ def test_engineering_canary_script_documents_real_provider_path() -> None:
     assert "CANARY_IMAGE_IS_DONOR_NOT_RESEARCHER" in common
     assert "ACTIVE_RESEARCHER_RELEASE_V2_ABSENT" in common
     assert "REAL_PROVIDER_CALL_NOT_IMPLEMENTED" not in text
-    assert "cli-chat-proxy.grok.com" in text or "cli-chat-proxy.grok.com" in common
+    endpoint = re.search(r"(?m)^\s*\[string\]\$EndpointHint\s*=\s*'([^']+)'", text)
+    common_host = re.search(r"(?m)^\$script:XinaoCanaryEndpointHost\s*=\s*'([^']+)'$", common)
+    assert (endpoint and urlsplit(endpoint.group(1)).hostname == "cli-chat-proxy.grok.com") or (
+        common_host and common_host.group(1) == "cli-chat-proxy.grok.com"
+    )
     assert "grok-4.5-build" in common
     assert "provider_effect_verified" in text
     assert "connect_only" in text
@@ -2717,7 +2722,8 @@ def test_runbook_documents_real_provider_canary() -> None:
     runbook = (EGRESS_ROOT / "OWNER_RUNBOOK.md").read_text(encoding="utf-8")
     assert "-RealProviderCall" in runbook
     assert "CanaryImageId" in runbook or "canary image" in runbook.lower()
-    assert "cli-chat-proxy.grok.com" in runbook
+    endpoint_host = re.search(r"\bendpoint_host=([A-Za-z0-9.-]+)\b", runbook)
+    assert endpoint_host and endpoint_host.group(1) == "cli-chat-proxy.grok.com"
     assert "grok-4.5-build" in runbook
     assert (
         "CONNECT-only" in runbook

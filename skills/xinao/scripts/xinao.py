@@ -30,7 +30,7 @@ RELEASE_RUNTIME_RELATIVE_PATH = Path("skill-bundle") / "scripts" / "xinao_runtim
 # Bound to the co-located bootstrap-migration companion. Tampering fails before execution.
 # Update this whenever the candidate xinao_runtime.py bytes change.
 EXPECTED_COMPANION_RUNTIME_SHA256 = (
-    "75add4ceeb64850803da9ae64059a0437215a4e6118eb9992c360d0f4da1c215"
+    "222f8adc63780349523d639a7a37992a16eb2fc3388e374ef91a33629f90aa51"
 )
 RELEASE_ID_PATTERN = re.compile(r"^researcher-[0-9]+\.[0-9]+\.[0-9]+-[0-9a-f]{16}$")
 TXN_ID_PATTERN = re.compile(r"^xra_[0-9]{8}T[0-9]{6}_[0-9a-f]{16}$")
@@ -509,9 +509,7 @@ def _validate_release_manifest_shape(
         not isinstance(donor_binary_sha256, str)
         or HEX_SHA256_PATTERN.fullmatch(donor_binary_sha256) is None
     ):
-        raise BootstrapError(
-            "RELEASE_DONOR_BINARY_IDENTITY_MISSING", str(donor_binary_sha256)
-        )
+        raise BootstrapError("RELEASE_DONOR_BINARY_IDENTITY_MISSING", str(donor_binary_sha256))
     if (
         manifest.get("required_bootstrap_protocol") != 2
         or manifest.get("generic_worker_route_allowed") is not False
@@ -1081,11 +1079,7 @@ def _validate_legacy_restore_inventory_tree(
             for name in filenames:
                 path = current_path / name
                 info = os.lstat(path)
-                if (
-                    _is_reparse_stat(info)
-                    or not stat.S_ISREG(info.st_mode)
-                    or info.st_nlink != 1
-                ):
+                if _is_reparse_stat(info) or not stat.S_ISREG(info.st_mode) or info.st_nlink != 1:
                     raise BootstrapError("LEGACY_RESTORE_IDENTITY_MISMATCH", str(path))
                 relative = path.relative_to(root).as_posix()
                 payload = _regular_control_bytes(path, maximum=MAX_BUNDLE_FILE_BYTES)
@@ -1332,8 +1326,10 @@ def _run_companion_runtime(argv: Sequence[str]) -> int:
             "INVOCATION_ARGUMENTS_INVALID",
             "bootstrap-migrate absorbs all technical fields; pass no release, hash, path, or generation",
         )
-    if argv and argv[0] == "_recover-migration" and (
-        len(argv) != 3 or argv[1] != "--txn-id" or TXN_ID_PATTERN.fullmatch(argv[2]) is None
+    if (
+        argv
+        and argv[0] == "_recover-migration"
+        and (len(argv) != 3 or argv[1] != "--txn-id" or TXN_ID_PATTERN.fullmatch(argv[2]) is None)
     ):
         raise BootstrapError("INVOCATION_ARGUMENTS_INVALID", "_recover-migration")
     runtime_path = _companion_runtime_path()

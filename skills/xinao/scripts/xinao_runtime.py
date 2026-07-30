@@ -37,9 +37,7 @@ EGRESS_EXTERNAL_NETWORK_NAME = "xinao_provider_egress_ext"
 EGRESS_PROXY_CONTAINER_NAME = "xinao-researcher-egress-proxy"
 EGRESS_PROXY_ENDPOINT = "http://xinao-researcher-egress-proxy:3128"
 EGRESS_PROXY_LISTEN_PORT = 3128
-EGRESS_FORBIDDEN_RESEARCHER_NETWORK_MODES = frozenset(
-    {"bridge", "host", "none", "default"}
-)
+EGRESS_FORBIDDEN_RESEARCHER_NETWORK_MODES = frozenset({"bridge", "host", "none", "default"})
 EGRESS_DIFY_FORBIDDEN_MARKERS = (
     "ssrf_proxy",
     "ssrf_proxy_network",
@@ -71,9 +69,7 @@ EGRESS_ENGINEERING_CANARY_SCHEMA = "xinao.provider_egress_engineering_canary_rec
 EGRESS_NEGATIVE_SUITE_SCHEMA = "xinao.provider_egress_negative_suite_receipt.v1"
 EGRESS_SEAL_MAX_TTL_SECONDS = 24 * 60 * 60
 EGRESS_SEAL_CLOCK_SKEW_SECONDS = 5 * 60
-EGRESS_SEAL_TRUST_BOUNDARY = (
-    "host_filesystem_and_docker_cli_observation_only_no_signing_pki"
-)
+EGRESS_SEAL_TRUST_BOUNDARY = "host_filesystem_and_docker_cli_observation_only_no_signing_pki"
 EGRESS_REQUIRED_LIVE_SEAL_KEYS = frozenset(
     {
         "schema_version",
@@ -1004,9 +1000,7 @@ def _source_bundle_files(root: Path) -> list[tuple[str, Path, bytes]]:
     return rows
 
 
-def _strict_plain_tree(
-    root: Path, *, reason_code: str
-) -> tuple[dict[str, bytes], set[str]]:
+def _strict_plain_tree(root: Path, *, reason_code: str) -> tuple[dict[str, bytes], set[str]]:
     """Read every entry in a control tree; caches and unknown files are not ignored."""
 
     lexical = Path(os.path.abspath(root))
@@ -1017,9 +1011,7 @@ def _strict_plain_tree(
         files: dict[str, bytes] = {}
         directories_seen: set[str] = set()
         total = 0
-        for current, directories, filenames in os.walk(
-            lexical, topdown=True, followlinks=False
-        ):
+        for current, directories, filenames in os.walk(lexical, topdown=True, followlinks=False):
             current_path = Path(current)
             directories.sort()
             filenames.sort()
@@ -1032,11 +1024,7 @@ def _strict_plain_tree(
             for name in filenames:
                 path = current_path / name
                 info = os.lstat(path)
-                if (
-                    _is_reparse_stat(info)
-                    or not stat.S_ISREG(info.st_mode)
-                    or info.st_nlink != 1
-                ):
+                if _is_reparse_stat(info) or not stat.S_ISREG(info.st_mode) or info.st_nlink != 1:
                     raise XinaoError(reason_code, f"plain single-link file required: {path}")
                 payload = _regular_file_bytes(
                     path,
@@ -2024,9 +2012,7 @@ def _validate_release_manifest(
         not isinstance(donor_binary_sha256, str)
         or HEX_SHA256_PATTERN.fullmatch(donor_binary_sha256) is None
     ):
-        raise XinaoError(
-            "RELEASE_DONOR_BINARY_IDENTITY_MISSING", _safe_text(donor_binary_sha256)
-        )
+        raise XinaoError("RELEASE_DONOR_BINARY_IDENTITY_MISSING", _safe_text(donor_binary_sha256))
     if (
         manifest.get("required_bootstrap_protocol") != REQUIRED_BOOTSTRAP_PROTOCOL
         or manifest.get("generic_worker_route_allowed") is not False
@@ -2185,9 +2171,15 @@ def _validate_journal(journal: dict[str, Any], journal_path: Path) -> None:
         # Bind restore absolute path to this journal's transaction root only.
         assert isinstance(txn_id, str)
         _bound_legacy_restore_root(txn_id, from_value.get("legacy_restore_path"))
-        if HEX_SHA256_PATTERN.fullmatch(str(from_value.get("legacy_restore_manifest_sha256", ""))) is None:
+        if (
+            HEX_SHA256_PATTERN.fullmatch(str(from_value.get("legacy_restore_manifest_sha256", "")))
+            is None
+        ):
             raise XinaoError("ACTIVATION_SOURCE_INVALID", "legacy_restore_manifest_sha256")
-        if HEX_SHA256_PATTERN.fullmatch(str(from_value.get("legacy_restore_tree_sha256", ""))) is None:
+        if (
+            HEX_SHA256_PATTERN.fullmatch(str(from_value.get("legacy_restore_tree_sha256", "")))
+            is None
+        ):
             raise XinaoError("ACTIVATION_SOURCE_INVALID", "legacy_restore_tree_sha256")
     elif from_value is not None:
         if not isinstance(from_value, dict) or set(from_value) != {
@@ -2729,9 +2721,7 @@ def _preflight_legacy_migration_locked() -> dict[str, Any]:
     launcher = installed_files.get(STABLE_LAUNCHER_RELATIVE)
     expected_launcher = (active_v1.get("skill_hashes") or {}).get("skill_invoker_sha256")
     if launcher is None or _sha256_bytes(launcher) != expected_launcher:
-        raise XinaoError(
-            "LEGACY_INSTALLED_LAUNCHER_IDENTITY_MISMATCH", str(installed_root)
-        )
+        raise XinaoError("LEGACY_INSTALLED_LAUNCHER_IDENTITY_MISMATCH", str(installed_root))
     if COMPANION_RUNTIME_RELATIVE in installed_files:
         raise XinaoError(
             "LEGACY_INSTALLED_SKILL_INVALID", f"unexpected:{COMPANION_RUNTIME_RELATIVE}"
@@ -2745,9 +2735,7 @@ def _preflight_legacy_migration_locked() -> dict[str, Any]:
             "LEGACY_INSTALL_ROLLBACK_UNCAPTURABLE", f"{installed_root.parent}: {exc}"
         ) from exc
     if _is_reparse_stat(parent_info) or not stat.S_ISDIR(parent_info.st_mode):
-        raise XinaoError(
-            "LEGACY_INSTALL_ROLLBACK_UNCAPTURABLE", str(installed_root.parent)
-        )
+        raise XinaoError("LEGACY_INSTALL_ROLLBACK_UNCAPTURABLE", str(installed_root.parent))
     return {
         "legacy_pointer": legacy,
         "legacy_pointer_sha256": legacy_sha256,
@@ -2786,9 +2774,7 @@ def _prepare_migration_target() -> tuple[dict[str, Any], Path] | None:
         # crash. Resolve that bound witness before treating the world as a fresh v1 build.
         legacy_pointer_sha256 = _sha256(pointer_path)
         _heal_restored_migrate_journal_if_needed(legacy_pointer_sha256)
-        _retire_terminal_legacy_recovery_pointer_before_build(
-            legacy_pointer_sha256
-        )
+        _retire_terminal_legacy_recovery_pointer_before_build(legacy_pointer_sha256)
         preflight = _preflight_legacy_migration_locked()
         legacy_pointer_sha256 = str(preflight["legacy_pointer_sha256"])
 
@@ -2802,9 +2788,8 @@ def _prepare_migration_target() -> tuple[dict[str, Any], Path] | None:
     expected_path = _state_paths()["release_root"] / release_id / "release.json"
     if not _paths_equal(manifest_path, expected_path):
         raise XinaoError("MIGRATION_TARGET_PATH_INVALID", str(manifest_path))
-    if (
-        not manifest_path.is_file()
-        or receipt.get("release_manifest_sha256") != _sha256(manifest_path)
+    if not manifest_path.is_file() or receipt.get("release_manifest_sha256") != _sha256(
+        manifest_path
     ):
         raise XinaoError("MIGRATION_TARGET_IDENTITY_MISMATCH", str(manifest_path))
     manifest = _load_json(manifest_path)
@@ -3107,9 +3092,7 @@ def _complete_canary(
 def _bound_legacy_restore_root(txn_id: str, restore_path_value: object) -> Path:
     """Bind a MIGRATE journal restore path to this txn; reject foreign/reparse paths."""
 
-    if not isinstance(restore_path_value, (str, os.PathLike)) or not os.fspath(
-        restore_path_value
-    ):
+    if not isinstance(restore_path_value, (str, os.PathLike)) or not os.fspath(restore_path_value):
         raise XinaoError("LEGACY_RESTORE_PATH_INVALID", "legacy_restore_path")
     restore_root = Path(os.fspath(restore_path_value))
     if not restore_root.is_absolute():
@@ -3159,9 +3142,8 @@ def _verify_live_legacy_preimage(restore_manifest: dict[str, Any]) -> str:
     live_rows = [(relative, payload) for relative, payload in sorted(live_files.items())]
     expected_inventory = inventory.get("installed_skill")
     _inventory_map(expected_inventory, reason_code="LEGACY_RESTORE_IDENTITY_MISMATCH")
-    if (
-        _tree_inventory(live_rows) != expected_inventory
-        or sorted(live_dirs) != inventory.get("installed_directories")
+    if _tree_inventory(live_rows) != expected_inventory or sorted(live_dirs) != inventory.get(
+        "installed_directories"
     ):
         raise XinaoError("LEGACY_RESTORE_IDENTITY_MISMATCH", "live_installed_skill")
 
@@ -3271,9 +3253,7 @@ def _migration_rollback_receipt(
     }
 
 
-def _continue_legacy_restore(
-    journal: dict[str, Any], journal_path: Path
-) -> dict[str, Any]:
+def _continue_legacy_restore(journal: dict[str, Any], journal_path: Path) -> dict[str, Any]:
     if journal.get("operation") != "MIGRATE" or journal.get("state") != "LEGACY_RESTORE_STARTED":
         raise XinaoError("RECOVERY_CONFLICT", str(journal_path))
     from_value = journal.get("from")
@@ -3329,9 +3309,8 @@ def _rollback_failed_migration(
         pointer = _load_json(pointer_path)
         pointer_sha256 = _sha256(pointer_path)
         if pointer.get("schema_version") == CURRENT_POINTER_SCHEMA:
-            if (
-                pointer.get("active") != journal["to"]
-                or pointer_sha256 != journal.get("switched_pointer_sha256")
+            if pointer.get("active") != journal["to"] or pointer_sha256 != journal.get(
+                "switched_pointer_sha256"
             ):
                 raise XinaoError("RECOVERY_CONFLICT", str(pointer_path))
     journal = _journal_transition(
@@ -3665,7 +3644,9 @@ def rollback_release() -> dict[str, Any]:
             raise XinaoError("RECOVERY_CONFLICT", str(journal_path)) from exc
 
 
-def _validate_legacy_pointer_document(pointer: dict[str, Any], pointer_path: Path) -> dict[str, Any]:
+def _validate_legacy_pointer_document(
+    pointer: dict[str, Any], pointer_path: Path
+) -> dict[str, Any]:
     if set(pointer) != LEGACY_POINTER_KEYS:
         raise XinaoError("CURRENT_POINTER_SCHEMA_INVALID", str(pointer_path))
     if pointer.get("schema_version") != LEGACY_POINTER_SCHEMA:
@@ -3701,7 +3682,10 @@ def _load_v1_release_manifest(
 
     if not isinstance(release_id, str) or RELEASE_ID_PATTERN.fullmatch(release_id) is None:
         raise XinaoError(absent_reason, _safe_text(release_id))
-    if not isinstance(expected_sha256, str) or HEX_SHA256_PATTERN.fullmatch(expected_sha256) is None:
+    if (
+        not isinstance(expected_sha256, str)
+        or HEX_SHA256_PATTERN.fullmatch(expected_sha256) is None
+    ):
         raise XinaoError(absent_reason, "release_manifest_sha256")
     manifest_path = Path(str(manifest_path_value or ""))
     expected_path = _state_paths()["release_root"] / release_id / "release.json"
@@ -3723,7 +3707,10 @@ def _load_v1_release_manifest(
     except OSError as exc:
         raise XinaoError(absent_reason, f"{release_dir}: {exc}") from exc
     manifest = _load_json(manifest_path)
-    if set(manifest) != LEGACY_RELEASE_KEYS or manifest.get("schema_version") != LEGACY_RELEASE_SCHEMA:
+    if (
+        set(manifest) != LEGACY_RELEASE_KEYS
+        or manifest.get("schema_version") != LEGACY_RELEASE_SCHEMA
+    ):
         raise XinaoError("V1_RELEASE_MANIFEST_INVALID", str(manifest_path))
     if manifest.get("release_id") != release_id:
         raise XinaoError("RELEASE_IDENTITY_INVALID", release_id)
@@ -3796,13 +3783,13 @@ def _capture_legacy_restore_bundle(
 
     installed_root = _installed_skill_root()
     if not installed_root.is_dir():
-        raise XinaoError("LEGACY_RESTORE_CAPTURE_FAILED", f"installed_skill_absent:{installed_root}")
+        raise XinaoError(
+            "LEGACY_RESTORE_CAPTURE_FAILED", f"installed_skill_absent:{installed_root}"
+        )
     installed_files, installed_directories = _strict_plain_tree(
         installed_root, reason_code="LEGACY_RESTORE_CAPTURE_FAILED"
     )
-    installed_rows = [
-        (relative, payload) for relative, payload in sorted(installed_files.items())
-    ]
+    installed_rows = [(relative, payload) for relative, payload in sorted(installed_files.items())]
     pointer_payload = _canonical_bytes(legacy_pointer)
     if _sha256_bytes(pointer_payload) != legacy_pointer_sha256:
         # pointer file uses canonical write; re-read live bytes for exact capture
@@ -3873,9 +3860,7 @@ def _capture_legacy_restore_bundle(
     live_files, live_directories = _strict_plain_tree(
         installed_root, reason_code="LEGACY_RESTORE_CAPTURE_FAILED"
     )
-    live_installed = [
-        (relative, payload) for relative, payload in sorted(live_files.items())
-    ]
+    live_installed = [(relative, payload) for relative, payload in sorted(live_files.items())]
     if (
         _tree_inventory(live_installed) != inventory["installed_skill"]
         or sorted(live_directories) != inventory["installed_directories"]
@@ -3917,13 +3902,10 @@ def _verify_legacy_restore_bundle(
     installed_files, installed_directories = _strict_plain_tree(
         restore_root / "installed_skill", reason_code="LEGACY_RESTORE_IDENTITY_MISMATCH"
     )
-    installed_rows = [
-        (relative, payload) for relative, payload in sorted(installed_files.items())
-    ]
-    if (
-        _tree_inventory(installed_rows) != inventory.get("installed_skill")
-        or sorted(installed_directories) != inventory.get("installed_directories")
-    ):
+    installed_rows = [(relative, payload) for relative, payload in sorted(installed_files.items())]
+    if _tree_inventory(installed_rows) != inventory.get("installed_skill") or sorted(
+        installed_directories
+    ) != inventory.get("installed_directories"):
         raise XinaoError("LEGACY_RESTORE_IDENTITY_MISMATCH", "installed_skill")
     pointer_path = restore_root / "pointer.json"
     if _sha256(pointer_path) != inventory.get("pointer_sha256"):
@@ -4060,9 +4042,7 @@ def _projection_contract_materials(
 
 def _bound_partial_path(destination: Path, *, txn_id: str, label: str) -> Path:
     safe_label = re.sub(r"[^A-Za-z0-9_.-]", "_", label)
-    return destination.with_name(
-        f"{_transaction_partial_prefix(txn_id)}{safe_label}.partial"
-    )
+    return destination.with_name(f"{_transaction_partial_prefix(txn_id)}{safe_label}.partial")
 
 
 def _write_bound_immutable_payload(
@@ -4075,20 +4055,14 @@ def _write_bound_immutable_payload(
 ) -> None:
     """Write via one transaction-bound partial path that a retry may safely clear."""
 
-    _ensure_plain_directory(
-        destination.parent, reason_code="TRANSACTION_STAGE_PATH_INVALID"
-    )
-    existing = _plain_file_or_absent(
-        destination, reason_code="TRANSACTION_STAGE_PATH_INVALID"
-    )
+    _ensure_plain_directory(destination.parent, reason_code="TRANSACTION_STAGE_PATH_INVALID")
+    existing = _plain_file_or_absent(destination, reason_code="TRANSACTION_STAGE_PATH_INVALID")
     if existing is not None:
         if existing != payload:
             raise XinaoError("IMMUTABLE_PATH_EXISTS", str(destination))
         return
     partial = _bound_partial_path(destination, txn_id=txn_id, label=label)
-    partial_payload = _plain_file_or_absent(
-        partial, reason_code="TRANSACTION_PARTIAL_PATH_INVALID"
-    )
+    partial_payload = _plain_file_or_absent(partial, reason_code="TRANSACTION_PARTIAL_PATH_INVALID")
     if partial_payload is not None:
         try:
             partial.unlink()
@@ -4114,9 +4088,7 @@ def _write_bound_immutable_payload(
             if before_replace == payload:
                 partial.unlink()
                 return
-            raise XinaoError(
-                "TRANSACTION_STAGE_DESTINATION_CONFLICT", str(destination)
-            )
+            raise XinaoError("TRANSACTION_STAGE_DESTINATION_CONFLICT", str(destination))
         os.replace(partial, destination)
     except XinaoError:
         raise
@@ -4125,9 +4097,7 @@ def _write_bound_immutable_payload(
             "TRANSACTION_STAGE_WRITE_FAILED",
             f"{destination}: {type(exc).__name__}",
         ) from exc
-    observed = _plain_file_or_absent(
-        destination, reason_code="TRANSACTION_STAGE_PATH_INVALID"
-    )
+    observed = _plain_file_or_absent(destination, reason_code="TRANSACTION_STAGE_PATH_INVALID")
     if observed != payload:
         raise XinaoError("TRANSACTION_STAGE_WRITE_UNVERIFIED", str(destination))
 
@@ -4137,9 +4107,7 @@ def _validate_recovery_cone_partial_tree(
 ) -> None:
     if not os.path.lexists(root):
         return
-    files, directories = _strict_plain_tree(
-        root, reason_code="RECOVERY_CONE_STAGE_INVALID"
-    )
+    files, directories = _strict_plain_tree(root, reason_code="RECOVERY_CONE_STAGE_INVALID")
     allowed_files = set(expected)
     allowed_files.update(
         _bound_partial_path(root / relative, txn_id=txn_id, label=f"cone-{relative}")
@@ -4192,19 +4160,13 @@ def _materialize_projection_contract(
     cone_stage = _recovery_cone_stage_root(txn_id)
     _ensure_plain_directory(cone_stage, reason_code="RECOVERY_CONE_STAGE_INVALID")
     _ensure_plain_directory(cone_root, reason_code="RECOVERY_CONE_INVALID")
-    _validate_recovery_cone_partial_tree(
-        cone_stage, expected=cone_payloads, txn_id=txn_id
-    )
-    final_files, final_dirs = _strict_plain_tree(
-        cone_root, reason_code="RECOVERY_CONE_INVALID"
-    )
+    _validate_recovery_cone_partial_tree(cone_stage, expected=cone_payloads, txn_id=txn_id)
+    final_files, final_dirs = _strict_plain_tree(cone_root, reason_code="RECOVERY_CONE_INVALID")
     if final_dirs or set(final_files) - set(cone_payloads):
         raise XinaoError("RECOVERY_CONE_FOREIGN_ENTRY", str(cone_root))
     for relative, payload in sorted(cone_payloads.items()):
         final = cone_root / relative
-        final_payload = _plain_file_or_absent(
-            final, reason_code="RECOVERY_CONE_INVALID"
-        )
+        final_payload = _plain_file_or_absent(final, reason_code="RECOVERY_CONE_INVALID")
         if final_payload is not None:
             if final_payload != payload:
                 raise XinaoError("RECOVERY_CONE_INVALID", relative)
@@ -4217,9 +4179,7 @@ def _materialize_projection_contract(
             label=f"cone-{relative}",
             phase="recovery-cone",
         )
-        if _plain_file_or_absent(
-            final, reason_code="RECOVERY_CONE_INVALID"
-        ) is not None:
+        if _plain_file_or_absent(final, reason_code="RECOVERY_CONE_INVALID") is not None:
             raise XinaoError("RECOVERY_CONE_DESTINATION_CONFLICT", relative)
         try:
             os.replace(staged, final)
@@ -4228,9 +4188,7 @@ def _materialize_projection_contract(
                 "RECOVERY_CONE_PUBLISH_FAILED",
                 f"{relative}: {type(exc).__name__}",
             ) from exc
-    _validate_recovery_cone_partial_tree(
-        cone_stage, expected=cone_payloads, txn_id=txn_id
-    )
+    _validate_recovery_cone_partial_tree(cone_stage, expected=cone_payloads, txn_id=txn_id)
     stage_files, stage_dirs = _strict_plain_tree(
         cone_stage, reason_code="RECOVERY_CONE_STAGE_INVALID"
     )
@@ -4238,9 +4196,7 @@ def _materialize_projection_contract(
         partial = cone_stage / relative
         if not relative.startswith(_transaction_partial_prefix(txn_id)):
             raise XinaoError("RECOVERY_CONE_STAGE_FOREIGN_ENTRY", relative)
-        if _plain_file_or_absent(
-            partial, reason_code="RECOVERY_CONE_STAGE_INVALID"
-        ) is None:
+        if _plain_file_or_absent(partial, reason_code="RECOVERY_CONE_STAGE_INVALID") is None:
             continue
         partial.unlink()
     for relative in sorted(stage_dirs, key=lambda item: (-len(Path(item).parts), item)):
@@ -4301,7 +4257,10 @@ def _verify_installed_projection_receipt(
         "created_at",
         "completion_claim_allowed",
     }
-    if set(receipt) != expected_keys or receipt.get("schema_version") != INSTALLED_PROJECTION_SCHEMA:
+    if (
+        set(receipt) != expected_keys
+        or receipt.get("schema_version") != INSTALLED_PROJECTION_SCHEMA
+    ):
         raise XinaoError("INSTALL_PROJECTION_RECEIPT_INVALID", "shape")
     if (
         receipt.get("txn_id") != txn_id
@@ -4330,8 +4289,7 @@ def _verify_installed_projection_receipt(
             Path(str(receipt.get("recovery_cone_stage_root"))),
             _recovery_cone_stage_root(txn_id),
         )
-        or receipt.get("transaction_partial_prefix")
-        != _transaction_partial_prefix(txn_id)
+        or receipt.get("transaction_partial_prefix") != _transaction_partial_prefix(txn_id)
         or receipt.get("completion_claim_allowed") is not False
     ):
         raise XinaoError("INSTALL_PROJECTION_RECEIPT_INVALID", "binding")
@@ -4381,9 +4339,7 @@ def _verify_installed_projection_receipt(
         or cone_manifest.get("completion_claim_allowed") is not False
     ):
         raise XinaoError("RECOVERY_CONE_INVALID", "manifest shape")
-    cone_expected = _inventory_map(
-        cone_manifest.get("files"), reason_code="RECOVERY_CONE_INVALID"
-    )
+    cone_expected = _inventory_map(cone_manifest.get("files"), reason_code="RECOVERY_CONE_INVALID")
     cone_files, cone_dirs = _strict_plain_tree(
         _recovery_cone_root(txn_id), reason_code="RECOVERY_CONE_INVALID"
     )
@@ -4429,9 +4385,9 @@ def _stable_recovery_launcher_payload() -> bytes:
         "    if set(_value) != _keys or _value.get('schema_version') != "
         "'xinao.current_migration_recovery.v1':\n"
         "        raise ValueError('pointer shape')\n"
-        "    for _path_key, _sha_key in ((\'entry_path\',\'entry_sha256\'),"
-        "(\'cone_manifest_path\',\'cone_manifest_sha256\'),"
-        "(\'projection_receipt_path\',\'projection_receipt_sha256\')):\n"
+        "    for _path_key, _sha_key in (('entry_path','entry_sha256'),"
+        "('cone_manifest_path','cone_manifest_sha256'),"
+        "('projection_receipt_path','projection_receipt_sha256')):\n"
         "        _path = Path(_value[_path_key])\n"
         "        _payload = _path.read_bytes()\n"
         "        if hashlib.sha256(_payload).hexdigest() != _value[_sha_key]:\n"
@@ -4465,12 +4421,8 @@ def _stable_recovery_pointer_payload(journal: dict[str, Any]) -> bytes:
             "entry_sha256": _sha256(cone_entry),
             "cone_manifest_path": receipt["recovery_cone_manifest_path"],
             "cone_manifest_sha256": receipt["recovery_cone_manifest_sha256"],
-            "projection_receipt_path": str(
-                _installed_projection_receipt_path(txn_id)
-            ),
-            "projection_receipt_sha256": journal["from"][
-                "installed_projection_receipt_sha256"
-            ],
+            "projection_receipt_path": str(_installed_projection_receipt_path(txn_id)),
+            "projection_receipt_sha256": journal["from"]["installed_projection_receipt_sha256"],
             "created_at": receipt["created_at"],
             "completion_claim_allowed": False,
         }
@@ -4483,9 +4435,7 @@ def _retire_terminal_legacy_recovery_pointer_before_build(
     """Resolve stale terminal hygiene before any fresh migration build."""
 
     _launcher_path, pointer_path = _stable_recovery_paths()
-    observed = _plain_file_or_absent(
-        pointer_path, reason_code="STABLE_RECOVERY_POINTER_CONFLICT"
-    )
+    observed = _plain_file_or_absent(pointer_path, reason_code="STABLE_RECOVERY_POINTER_CONFLICT")
     if observed is None:
         return
     try:
@@ -4547,9 +4497,7 @@ def _publish_stable_recovery_entry(journal: dict[str, Any]) -> None:
     elif existing_launcher != launcher_payload:
         raise XinaoError("STABLE_RECOVERY_ENTRY_INVALID", str(launcher_path))
     expected = _stable_recovery_pointer_payload(journal)
-    observed = _plain_file_or_absent(
-        pointer_path, reason_code="STABLE_RECOVERY_POINTER_CONFLICT"
-    )
+    observed = _plain_file_or_absent(pointer_path, reason_code="STABLE_RECOVERY_POINTER_CONFLICT")
     if observed is not None:
         if observed != expected:
             raise XinaoError("STABLE_RECOVERY_POINTER_CONFLICT", str(pointer_path))
@@ -4562,26 +4510,20 @@ def _retire_stable_recovery_pointer(journal: dict[str, Any]) -> None:
     if not os.path.lexists(pointer_path):
         return
     expected = _stable_recovery_pointer_payload(journal)
-    before = _plain_file_or_absent(
-        pointer_path, reason_code="STABLE_RECOVERY_POINTER_CONFLICT"
-    )
+    before = _plain_file_or_absent(pointer_path, reason_code="STABLE_RECOVERY_POINTER_CONFLICT")
     if before is None:
         return
     if before != expected:
         raise XinaoError("STABLE_RECOVERY_POINTER_CONFLICT", str(pointer_path))
-    reread = _plain_file_or_absent(
-        pointer_path, reason_code="STABLE_RECOVERY_POINTER_CONFLICT"
-    )
+    reread = _plain_file_or_absent(pointer_path, reason_code="STABLE_RECOVERY_POINTER_CONFLICT")
     if reread != expected:
         raise XinaoError("STABLE_RECOVERY_POINTER_CONFLICT", str(pointer_path))
     try:
         pointer_path.unlink()
     except (OSError, PermissionError) as exc:
-        after = _plain_file_or_absent(
-            pointer_path, reason_code="STABLE_RECOVERY_POINTER_CONFLICT"
-        )
-        classification = "absent" if after is None else (
-            "exact-old" if after == before else "foreign"
+        after = _plain_file_or_absent(pointer_path, reason_code="STABLE_RECOVERY_POINTER_CONFLICT")
+        classification = (
+            "absent" if after is None else ("exact-old" if after == before else "foreign")
         )
         raise XinaoError(
             "STABLE_RECOVERY_POINTER_RETIRE_FAILED",
@@ -4621,18 +4563,14 @@ def _plain_file_or_absent(path: Path, *, reason_code: str) -> bytes | None:
         raise XinaoError(reason_code, f"{path}: {exc}") from exc
     if _is_reparse_stat(info) or not stat.S_ISREG(info.st_mode) or info.st_nlink != 1:
         raise XinaoError(reason_code, f"plain single-link file required: {path}")
-    return _regular_file_bytes(
-        path, reason_code=reason_code, maximum=MAX_SKILL_BUNDLE_FILE_BYTES
-    )
+    return _regular_file_bytes(path, reason_code=reason_code, maximum=MAX_SKILL_BUNDLE_FILE_BYTES)
 
 
 def _validate_projection_mixed_tree(
     receipt: dict[str, Any], *, allow_legacy_absent: bool
 ) -> dict[str, bytes]:
     installed = Path(os.path.abspath(_installed_skill_root()))
-    live, directories = _strict_plain_tree(
-        installed, reason_code="INSTALL_PROJECTION_LIVE_INVALID"
-    )
+    live, directories = _strict_plain_tree(installed, reason_code="INSTALL_PROJECTION_LIVE_INVALID")
     legacy = _inventory_map(
         receipt["legacy_inventory"], reason_code="INSTALL_PROJECTION_RECEIPT_INVALID"
     )
@@ -4642,17 +4580,12 @@ def _validate_projection_mixed_tree(
     allowed_paths = set(legacy) | set(target)
     extras = sorted(set(live) - allowed_paths)
     legacy_directories = receipt.get("legacy_directories")
-    if (
-        not isinstance(legacy_directories, list)
-        or any(not isinstance(item, str) or not item for item in legacy_directories)
+    if not isinstance(legacy_directories, list) or any(
+        not isinstance(item, str) or not item for item in legacy_directories
     ):
         raise XinaoError("INSTALL_PROJECTION_RECEIPT_INVALID", "legacy directories")
-    allowed_directories = _expected_directories(sorted(allowed_paths)) | set(
-        legacy_directories
-    )
-    extra_dirs = sorted(
-        directories - allowed_directories
-    )
+    allowed_directories = _expected_directories(sorted(allowed_paths)) | set(legacy_directories)
+    extra_dirs = sorted(directories - allowed_directories)
     if extras or extra_dirs:
         raise XinaoError(
             "INSTALL_PROJECTION_FOREIGN_ENTRY",
@@ -4672,9 +4605,7 @@ def _validate_projection_mixed_tree(
     return live
 
 
-def _ensure_stage_file(
-    *, txn_id: str, direction: str, relative: str, payload: bytes
-) -> Path:
+def _ensure_stage_file(*, txn_id: str, direction: str, relative: str, payload: bytes) -> Path:
     installed = Path(os.path.abspath(_installed_skill_root()))
     stage_root = _projection_stage_root(txn_id, direction)
     if os.stat(installed.parent).st_dev != os.stat(stage_root.parent).st_dev:
@@ -4689,9 +4620,7 @@ def _ensure_stage_file(
     for directory in reversed(chain):
         _ensure_plain_directory(directory, reason_code="INSTALL_PROJECTION_STAGE_INVALID")
     stage_file = stage_root / relative
-    existing = _plain_file_or_absent(
-        stage_file, reason_code="INSTALL_PROJECTION_STAGE_INVALID"
-    )
+    existing = _plain_file_or_absent(stage_file, reason_code="INSTALL_PROJECTION_STAGE_INVALID")
     if existing is not None and existing != payload:
         raise XinaoError("INSTALL_PROJECTION_STAGE_INVALID", f"foreign:{relative}")
     if existing is None:
@@ -4757,17 +4686,13 @@ def _replace_projection_file(
             "INSTALL_PROJECTION_REPLACE_FAILED",
             f"{relative}: {type(exc).__name__}: {classification}",
         ) from exc
-    after = _plain_file_or_absent(
-        destination, reason_code="INSTALL_PROJECTION_DESTINATION_INVALID"
-    )
+    after = _plain_file_or_absent(destination, reason_code="INSTALL_PROJECTION_DESTINATION_INVALID")
     if after != desired:
         raise XinaoError("INSTALL_PROJECTION_REPLACE_UNVERIFIED", relative)
     _projection_fault_point(f"{direction}:after-replace", relative)
 
 
-def _remove_projection_file(
-    *, direction: str, relative: str, expected: bytes
-) -> None:
+def _remove_projection_file(*, direction: str, relative: str, expected: bytes) -> None:
     destination = Path(os.path.abspath(_installed_skill_root())) / relative
     current = _plain_file_or_absent(
         destination, reason_code="INSTALL_PROJECTION_DESTINATION_INVALID"
@@ -4788,16 +4713,19 @@ def _remove_projection_file(
         after_error = _plain_file_or_absent(
             destination, reason_code="INSTALL_PROJECTION_DESTINATION_INVALID"
         )
-        classification = "absent" if after_error is None else (
-            "exact-old" if after_error == expected else "foreign"
+        classification = (
+            "absent"
+            if after_error is None
+            else ("exact-old" if after_error == expected else "foreign")
         )
         raise XinaoError(
             "INSTALL_PROJECTION_DELETE_FAILED",
             f"{relative}: {type(exc).__name__}: {classification}",
         ) from exc
-    if _plain_file_or_absent(
-        destination, reason_code="INSTALL_PROJECTION_DESTINATION_INVALID"
-    ) is not None:
+    if (
+        _plain_file_or_absent(destination, reason_code="INSTALL_PROJECTION_DESTINATION_INVALID")
+        is not None
+    ):
         raise XinaoError("INSTALL_PROJECTION_DELETE_UNVERIFIED", relative)
     _projection_fault_point(f"{direction}:after-delete", relative)
 
@@ -4805,9 +4733,7 @@ def _remove_projection_file(
 def _prune_projection_directories(
     receipt: dict[str, Any], *, desired_inventory: object, desired_directories: object = None
 ) -> None:
-    desired = _inventory_map(
-        desired_inventory, reason_code="INSTALL_PROJECTION_RECEIPT_INVALID"
-    )
+    desired = _inventory_map(desired_inventory, reason_code="INSTALL_PROJECTION_RECEIPT_INVALID")
     allowed = set(
         _inventory_map(
             receipt["legacy_inventory"], reason_code="INSTALL_PROJECTION_RECEIPT_INVALID"
@@ -4833,16 +4759,16 @@ def _prune_projection_directories(
         wanted_dirs = set(desired_directories)
     else:
         raise XinaoError("INSTALL_PROJECTION_RECEIPT_INVALID", "desired directories")
-    for relative in sorted(
-        wanted_dirs, key=lambda item: (len(Path(item).parts), item)
-    ):
+    for relative in sorted(wanted_dirs, key=lambda item: (len(Path(item).parts), item)):
         if relative not in live_dirs:
             _ensure_plain_directory(
                 installed / relative,
                 reason_code="INSTALL_PROJECTION_DIRECTORY_CREATE_FAILED",
             )
             live_dirs.add(relative)
-    for relative in sorted(live_dirs - wanted_dirs, key=lambda item: (-len(Path(item).parts), item)):
+    for relative in sorted(
+        live_dirs - wanted_dirs, key=lambda item: (-len(Path(item).parts), item)
+    ):
         path = installed / relative
         try:
             info = os.lstat(path)
@@ -4874,9 +4800,7 @@ def _retire_projection_stage(
     )
     if files:
         if allowed_payloads is None:
-            raise XinaoError(
-                "INSTALL_PROJECTION_STAGE_NOT_EMPTY", ",".join(sorted(files))
-            )
+            raise XinaoError("INSTALL_PROJECTION_STAGE_NOT_EMPTY", ",".join(sorted(files)))
         allowed_files = set(allowed_payloads)
         allowed_partials = {
             _bound_partial_path(
@@ -4909,9 +4833,7 @@ def _retire_projection_stage(
                     "INSTALL_PROJECTION_STAGE_RETIRE_FAILED",
                     f"{relative}: {type(exc).__name__}",
                 ) from exc
-    for relative in sorted(
-        directories, key=lambda item: (-len(Path(item).parts), item)
-    ):
+    for relative in sorted(directories, key=lambda item: (-len(Path(item).parts), item)):
         path = stage_root / relative
         try:
             path.rmdir()
@@ -4923,9 +4845,7 @@ def _retire_projection_stage(
     try:
         stage_root.rmdir()
     except (OSError, PermissionError) as exc:
-        raise XinaoError(
-            "INSTALL_PROJECTION_STAGE_RETIRE_FAILED", type(exc).__name__
-        ) from exc
+        raise XinaoError("INSTALL_PROJECTION_STAGE_RETIRE_FAILED", type(exc).__name__) from exc
 
 
 def _projection_target_payloads(
@@ -4989,9 +4909,8 @@ def _project_migration_post_pointer(journal: dict[str, Any]) -> None:
     target = _projection_target_payloads(journal, receipt)
     legacy = _projection_legacy_payloads(journal, receipt)
     pointer, pointer_sha256 = _load_pointer_raw()
-    if (
-        pointer.get("active") != journal.get("to")
-        or pointer_sha256 != journal.get("switched_pointer_sha256")
+    if pointer.get("active") != journal.get("to") or pointer_sha256 != journal.get(
+        "switched_pointer_sha256"
     ):
         raise XinaoError("CURRENT_POINTER_CAS_CONFLICT", str(_state_paths()["pointer"]))
     _validate_projection_mixed_tree(receipt, allow_legacy_absent=True)
@@ -5008,9 +4927,7 @@ def _project_migration_post_pointer(journal: dict[str, Any]) -> None:
         )
     for relative in sorted(set(legacy) - set(target)):
         _validate_projection_mixed_tree(receipt, allow_legacy_absent=True)
-        _remove_projection_file(
-            direction="forward", relative=relative, expected=legacy[relative]
-        )
+        _remove_projection_file(direction="forward", relative=relative, expected=legacy[relative])
     if "SKILL.md" in target:
         _validate_projection_mixed_tree(receipt, allow_legacy_absent=True)
         _replace_projection_file(
@@ -5022,9 +4939,7 @@ def _project_migration_post_pointer(journal: dict[str, Any]) -> None:
         )
     _prune_projection_directories(receipt, desired_inventory=receipt["target_inventory"])
     _verify_full_target_projection(journal, receipt=receipt)
-    _retire_projection_stage(
-        str(journal["txn_id"]), "forward", allowed_payloads=target
-    )
+    _retire_projection_stage(str(journal["txn_id"]), "forward", allowed_payloads=target)
 
 
 def _verify_full_target_projection(
@@ -5076,9 +4991,7 @@ def _verify_stable_installed_launcher(journal: dict[str, Any]) -> dict[str, Any]
     else:
         _migration_journal, receipt = _find_verified_migration_projection()
     launcher_path = Path(os.path.abspath(_installed_skill_root())) / STABLE_LAUNCHER_RELATIVE
-    launcher = _plain_file_or_absent(
-        launcher_path, reason_code="INSTALLED_LAUNCHER_INVALID"
-    )
+    launcher = _plain_file_or_absent(launcher_path, reason_code="INSTALLED_LAUNCHER_INVALID")
     if launcher is None or _sha256_bytes(launcher) != receipt.get("stable_launcher_sha256"):
         raise XinaoError("INSTALLED_LAUNCHER_IDENTITY_MISMATCH", str(launcher_path))
     return receipt
@@ -5111,10 +5024,9 @@ def _apply_legacy_restore_bundle(
         reason_code="LEGACY_RESTORE_IDENTITY_MISMATCH",
         maximum=MAX_JSON_FILE_BYTES,
     )
-    if (
-        live_pointer_payload != pointer_payload
-        and _sha256_bytes(live_pointer_payload) != journal.get("switched_pointer_sha256")
-    ):
+    if live_pointer_payload != pointer_payload and _sha256_bytes(
+        live_pointer_payload
+    ) != journal.get("switched_pointer_sha256"):
         raise XinaoError("CURRENT_POINTER_CAS_CONFLICT", str(pointer_path))
     _validate_projection_mixed_tree(receipt, allow_legacy_absent=True)
 
@@ -5137,12 +5049,8 @@ def _apply_legacy_restore_bundle(
             raise XinaoError("LEGACY_RESTORE_PATH_INVALID", str(release_dir))
         entries = sorted(item.name for item in release_dir.iterdir())
         if entries != ["release.json"]:
-            raise XinaoError(
-                "LEGACY_RESTORE_FOREIGN_ENTRY", f"{release_id}:{','.join(entries)}"
-            )
-        current = _plain_file_or_absent(
-            destination, reason_code="LEGACY_RESTORE_IDENTITY_MISMATCH"
-        )
+            raise XinaoError("LEGACY_RESTORE_FOREIGN_ENTRY", f"{release_id}:{','.join(entries)}")
+        current = _plain_file_or_absent(destination, reason_code="LEGACY_RESTORE_IDENTITY_MISMATCH")
         if current != payload:
             raise XinaoError("LEGACY_RESTORE_IDENTITY_MISMATCH", f"release:{release_id}")
 
@@ -5182,9 +5090,7 @@ def _apply_legacy_restore_bundle(
         raise XinaoError("LEGACY_RESTORE_IDENTITY_MISMATCH", "pointer")
 
     # 4. Remaining old ordinary files, then old launcher as one atomic file replace.
-    post_pointer = sorted(
-        set(legacy) - set(pre_pointer) - {STABLE_LAUNCHER_RELATIVE}
-    )
+    post_pointer = sorted(set(legacy) - set(pre_pointer) - {STABLE_LAUNCHER_RELATIVE})
     for relative in post_pointer:
         _validate_projection_mixed_tree(receipt, allow_legacy_absent=True)
         _replace_projection_file(
@@ -5206,9 +5112,7 @@ def _apply_legacy_restore_bundle(
     extras = sorted(set(target) - set(legacy) - {COMPANION_RUNTIME_RELATIVE})
     for relative in extras:
         _validate_projection_mixed_tree(receipt, allow_legacy_absent=True)
-        _remove_projection_file(
-            direction="rollback", relative=relative, expected=target[relative]
-        )
+        _remove_projection_file(direction="rollback", relative=relative, expected=target[relative])
     if COMPANION_RUNTIME_RELATIVE in target and COMPANION_RUNTIME_RELATIVE not in legacy:
         _validate_projection_mixed_tree(receipt, allow_legacy_absent=True)
         _remove_projection_file(
@@ -5232,12 +5136,8 @@ def _apply_legacy_restore_bundle(
         or sorted(live_dirs) != receipt["legacy_directories"]
     ):
         raise XinaoError("LEGACY_RESTORE_IDENTITY_MISMATCH", "final installed tree")
-    _retire_projection_stage(
-        str(journal["txn_id"]), "rollback", allowed_payloads=legacy
-    )
-    _retire_projection_stage(
-        str(journal["txn_id"]), "forward", allowed_payloads=target
-    )
+    _retire_projection_stage(str(journal["txn_id"]), "rollback", allowed_payloads=legacy)
+    _retire_projection_stage(str(journal["txn_id"]), "forward", allowed_payloads=target)
 
 
 def _construct_protocol2_release_from_legacy(
@@ -5304,9 +5204,7 @@ def _switch_migrate_pointer(
     return journal, pointer, pointer_sha256
 
 
-def _continue_migrate_journal(
-    journal: dict[str, Any], journal_path: Path
-) -> dict[str, Any]:
+def _continue_migrate_journal(journal: dict[str, Any], journal_path: Path) -> dict[str, Any]:
     if journal["operation"] != "MIGRATE":
         raise XinaoError("ACTIVATION_OPERATION_INVALID", str(journal.get("operation")))
     # The PREPARED journal binds all transaction-private stages. Recovery may rebuild
@@ -5348,9 +5246,7 @@ def _continue_migrate_journal(
             # With a pending v2 pointer ordinary calls fail RECOVERY_REQUIRED while the
             # exact target refs/metadata are projected; SKILL.md is the final semantic file.
             _project_migration_post_pointer(journal)
-            _journal, receipt = _complete_canary(
-                journal, journal_path, terminal_state="VERIFIED"
-            )
+            _journal, receipt = _complete_canary(journal, journal_path, terminal_state="VERIFIED")
         except XinaoError as exc:
             return _rollback_failed_activation(_load_json(journal_path), journal_path, exc)
         # Pointer retirement is terminal hygiene, not activation correctness. A foreign
@@ -5531,9 +5427,7 @@ def recover_migration_transaction(txn_id: str) -> dict[str, Any]:
                 "completion_claim_allowed": False,
             }
         if journal.get("state") == "ROLLED_BACK":
-            restore_root = _bound_legacy_restore_root(
-                txn_id, from_value["legacy_restore_path"]
-            )
+            restore_root = _bound_legacy_restore_root(txn_id, from_value["legacy_restore_path"])
             restore_manifest = _verify_legacy_restore_bundle(
                 restore_root,
                 expected_manifest_sha256=str(from_value["legacy_restore_manifest_sha256"]),
@@ -5653,9 +5547,7 @@ def _bootstrap_migrate_singleflight() -> dict[str, Any]:
         )
         for reserved in reserved_paths:
             if os.path.lexists(reserved):
-                raise XinaoError(
-                    "TRANSACTION_STAGE_PATH_COLLISION", str(reserved)
-                )
+                raise XinaoError("TRANSACTION_STAGE_PATH_COLLISION", str(reserved))
         # Capture + seal exact legacy restore BEFORE any live mutation.
         restore_root, restore_manifest, restore_manifest_sha, restore_tree_sha = (
             _capture_legacy_restore_bundle(
@@ -5692,19 +5584,15 @@ def _bootstrap_migrate_singleflight() -> dict[str, Any]:
             expected_txn_id=txn_id,
         )
         now = _utc_now()
-        projection_receipt, _cone_payloads, _cone_manifest = (
-            _projection_contract_materials(
-                txn_id=txn_id,
-                target_ref=active_ref,
-                restore_manifest=restore_manifest,
-                restore_manifest_sha256=restore_manifest_sha,
-                restore_tree_sha256=restore_tree_sha,
-                created_at=now,
-            )
+        projection_receipt, _cone_payloads, _cone_manifest = _projection_contract_materials(
+            txn_id=txn_id,
+            target_ref=active_ref,
+            restore_manifest=restore_manifest,
+            restore_manifest_sha256=restore_manifest_sha,
+            restore_tree_sha256=restore_tree_sha,
+            created_at=now,
         )
-        projection_receipt_sha256 = _sha256_bytes(
-            _canonical_bytes(projection_receipt)
-        )
+        projection_receipt_sha256 = _sha256_bytes(_canonical_bytes(projection_receipt))
         journal = {
             "schema_version": ACTIVATION_JOURNAL_SCHEMA,
             "revision": 1,
@@ -5790,7 +5678,6 @@ def _validate_release_source_identity(
     if expected_hashes != observed_hashes:
         raise XinaoError("INSTALLED_SKILL_DRIFT", "runtime bundle/source hash mismatch")
     return charter, runtime_lock
-
 
 
 def _egress_posture_path() -> Path:
@@ -5987,7 +5874,12 @@ def _validate_egress_posture_shape(posture: dict[str, Any]) -> dict[str, Any]:
     image_id = posture.get("proxy_image_id")
     if not isinstance(image_id, str) or not image_id.startswith("sha256:"):
         raise XinaoError("EGRESS_PROXY_IMAGE_ID_INVALID", str(image_id))
-    for field in ("allowlist_sha256", "proxy_config_sha256", "internal_network_id", "proxy_container_id"):
+    for field in (
+        "allowlist_sha256",
+        "proxy_config_sha256",
+        "internal_network_id",
+        "proxy_container_id",
+    ):
         value = posture.get(field)
         if not isinstance(value, str) or not value:
             raise XinaoError("EGRESS_POSTURE_FIELD_INVALID", field)
@@ -6017,7 +5909,9 @@ def _posture_file_sha256() -> tuple[dict[str, Any], str, Path]:
     path = _egress_posture_path()
     if not path.is_file():
         raise XinaoError("EGRESS_POSTURE_MISSING", str(path))
-    raw = _regular_file_bytes(path, reason_code="EGRESS_POSTURE_MISSING", maximum=MAX_JSON_FILE_BYTES)
+    raw = _regular_file_bytes(
+        path, reason_code="EGRESS_POSTURE_MISSING", maximum=MAX_JSON_FILE_BYTES
+    )
     posture = _strict_json_loads(
         raw.decode("utf-8"),
         reason_code="JSON_READ_FAILED",
@@ -6066,11 +5960,7 @@ def _validate_evidence_receipt_shape(
     if require_semantic or posture is not None:
         if posture is None:
             raise XinaoError(reason_code, "posture required for semantic evidence")
-        age = (
-            max_age_seconds
-            if max_age_seconds is not None
-            else EGRESS_SEAL_MAX_TTL_SECONDS
-        )
+        age = max_age_seconds if max_age_seconds is not None else EGRESS_SEAL_MAX_TTL_SECONDS
         clock = now if now is not None else dt.datetime.now(dt.UTC)
         if expected_schema == EGRESS_NEGATIVE_SUITE_SCHEMA:
             _validate_negative_suite_receipt_semantics(
@@ -6515,7 +6405,10 @@ def _compare_live_egress_objects(
         live_id = str(network.get("Id", ""))
         if not (live_id.startswith(network_id) or network_id.startswith(live_id)):
             raise XinaoError("EGRESS_NETWORK_ID_MISMATCH", live_id)
-    if network.get("Name") not in {network_name, network_id} and network.get("Name") != network_name:
+    if (
+        network.get("Name") not in {network_name, network_id}
+        and network.get("Name") != network_name
+    ):
         # Prefer exact name match when present.
         if network.get("Name") != network_name:
             raise XinaoError("EGRESS_NETWORK_NAME_MISMATCH", str(network.get("Name")))
@@ -6643,9 +6536,7 @@ def _observation_fingerprint(bound: dict[str, Any]) -> dict[str, str]:
             or (bound.get("observed") or {}).get("live_proxy_config_sha256")
             or bound["proxy_config_sha256"]
         ),
-        "docker_engine_observational_id": str(
-            bound.get("docker_engine_observational_id") or ""
-        ),
+        "docker_engine_observational_id": str(bound.get("docker_engine_observational_id") or ""),
     }
 
 
@@ -7534,9 +7425,7 @@ def research(
             "live_seal_sha256": egress_bound.get("live_seal_sha256"),
             "live_seal_expires_at": (egress_bound.get("live_seal") or {}).get("expires_at"),
             "posture_sha256": egress_bound.get("posture_sha256"),
-            "docker_engine_observational_id": egress_bound.get(
-                "docker_engine_observational_id"
-            ),
+            "docker_engine_observational_id": egress_bound.get("docker_engine_observational_id"),
             "observation_before_create": observation_before_create,
             "observation_before_start": observation_before_start,
             "proxy_env_is_routing_hint_only": True,
