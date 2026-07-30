@@ -105,6 +105,7 @@ $script:LegacyDockerHashKeys = @(
 
 $script:ReceiptTopLevelKeys = @(
     'authority',
+    'candidate_source_git_identity',
     'completion_claim_allowed',
     'destination',
     'destination_tree_sha256',
@@ -121,6 +122,58 @@ $script:ReceiptTopLevelKeys = @(
     'schema_version',
     'source',
     'verify_only'
+) | Sort-Object
+
+$script:CandidateGitIdentitySchema = 'xinao.isolated_legacy_migration_candidate_git_identity.v1'
+$script:CandidateGitProofBranch = 'proof'
+$script:CandidateGitCommitMessage = 'xinao isolated migration proof sealed candidate source'
+$script:CandidateGitAuthorName = 'xinao-isolated-migration-proof'
+$script:CandidateGitAuthorEmail = 'xinao-isolated-migration-proof@invalid'
+$script:CandidateGitAuthorDate = '2026-01-01T00:00:00 +0000'
+$script:CandidateGitCommitterName = 'xinao-isolated-migration-proof'
+$script:CandidateGitCommitterEmail = 'xinao-isolated-migration-proof@invalid'
+$script:CandidateGitCommitterDate = '2026-01-01T00:00:00 +0000'
+$script:CandidateGitEmptyHooksRelative = '.git/xinao-empty-hooks'
+
+$script:ReceiptCandidateGitIdentityKeys = @(
+    'alternates_absent',
+    'author_date',
+    'author_email',
+    'author_name',
+    'branch',
+    'commit_message',
+    'committer_date',
+    'committer_email',
+    'committer_name',
+    'config',
+    'external_gitdir_absent',
+    'git_dir_relative_path',
+    'head_commit',
+    'head_tree',
+    'hooks_path_relative',
+    'repository_kind',
+    'schema_version',
+    'status_porcelain',
+    'tracked_files'
+) | Sort-Object
+
+$script:ReceiptCandidateGitConfigKeys = @(
+    'commit.gpgsign',
+    'core.autocrlf',
+    'core.eol',
+    'core.filemode',
+    'core.hooksPath',
+    'core.symlinks',
+    'init.defaultBranch',
+    'user.email',
+    'user.name'
+) | Sort-Object
+
+$script:ReceiptCandidateGitTrackedFileKeys = @(
+    'content_sha256',
+    'git_blob_sha1',
+    'relative_path',
+    'size'
 ) | Sort-Object
 
 $script:ReceiptSourceKeys = @(
@@ -620,7 +673,8 @@ function Get-SortedRelativeInventory {
     param(
         [Parameter(Mandatory)][string]$Root,
         [Parameter(Mandatory)][string]$ReasonCode,
-        [string[]]$IgnoreNames = @()
+        [string[]]$IgnoreNames = @(),
+        [string[]]$IgnoreDirectoryNames = @()
     )
     Assert-DirectorySafe $Root $ReasonCode
     $rootFull = Get-FullLiteralPath $Root
@@ -641,6 +695,7 @@ function Get-SortedRelativeInventory {
                 Fail $ReasonCode "reparse forbidden: $path"
             }
             if ($entry.PSIsContainer) {
+                if ($name -in $IgnoreDirectoryNames) { continue }
                 $stack.Push($path)
                 continue
             }
@@ -894,6 +949,506 @@ function Copy-CandidateSourceTree {
         Fail $ReasonCode "candidate post-copy tree sha mismatch: $DestinationRoot"
     }
     return $destRows
+}
+
+function Resolve-GitExecutable {
+    $cmd = Get-Command git -ErrorAction SilentlyContinue
+    if ($null -eq $cmd -or [string]::IsNullOrWhiteSpace([string]$cmd.Source)) {
+        Fail 'GIT_EXECUTABLE_MISSING' 'git is not available on PATH'
+    }
+    return [string]$cmd.Source
+}
+
+function Get-IsolatedGitBaseEnvironment {
+    # Force local-only Git configuration; never inherit user/system identity or filters.
+    $emptyConfig = Join-Path ([System.IO.Path]::GetTempPath()) ('xinao-empty-gitconfig-{0}.cfg' -f $PID)
+    if (-not (Test-Path -LiteralPath $emptyConfig -PathType Leaf)) {
+        [System.IO.File]::WriteAllBytes($emptyConfig, [byte[]]@())
+    }
+    return [ordered]@{
+        GIT_CONFIG_NOSYSTEM   = '1'
+        GIT_CONFIG_GLOBAL     = $emptyConfig
+        GIT_TERMINAL_PROMPT   = '0'
+        GIT_OPTIONAL_LOCKS    = '0'
+        GIT_LFS_SKIP_SMUDGE    = '1'
+        GIT_CONFIG_COUNT       = '0'
+    }
+}
+
+function Invoke-SealedGit {
+    param(
+        [Parameter(Mandatory)][string]$RepoRoot,
+        [Parameter(Mandatory)][string[]]$GitArguments,
+        [hashtable]$ExtraEnv = @{},
+        [switch]$AllowNonZero
+    )
+    $git = Resolve-GitExecutable
+    $repoFull = Get-FullLiteralPath $RepoRoot
+    $baseEnv = Get-IsolatedGitBaseEnvironment
+    $saved = @{}
+    $allKeys = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
+    foreach ($key in @($baseEnv.Keys)) { [void]$allKeys.Add([string]$key) }
+    foreach ($key in @($ExtraEnv.Keys)) { [void]$allKeys.Add([string]$key) }
+    try {
+        foreach ($key in $allKeys) {
+            $saved[$key] = [System.Environment]::GetEnvironmentVariable($key, 'Process')
+            if ($ExtraEnv.ContainsKey($key)) {
+                [System.Environment]::SetEnvironmentVariable($key, [string]$ExtraEnv[$key], 'Process')
+            }
+            elseif ($baseEnv.Contains($key)) {
+                [System.Environment]::SetEnvironmentVariable($key, [string]$baseEnv[$key], 'Process')
+            }
+        }
+        $raw = & $git -C $repoFull @GitArguments 2>&1
+        $code = $LASTEXITCODE
+        $text = (($raw | ForEach-Object { [string]$_ }) -join [Environment]::NewLine).TrimEnd()
+        if (-not $AllowNonZero -and $code -ne 0) {
+            Fail 'GIT_COMMAND_FAILED' ("git {0} exit={1} :: {2}" -f ($GitArguments -join ' '), $code, $text)
+        }
+        return [ordered]@{
+            exit_code = [int]$code
+            stdout    = $text
+        }
+    }
+    finally {
+        foreach ($key in $saved.Keys) {
+            [System.Environment]::SetEnvironmentVariable($key, $saved[$key], 'Process')
+        }
+    }
+}
+
+function Assert-GitDirIsLocalRegular {
+    param(
+        [Parameter(Mandatory)][string]$CandidateRoot,
+        [Parameter(Mandatory)][string]$ReasonCode
+    )
+    $root = Get-FullLiteralPath $CandidateRoot
+    $gitPath = Join-Path $root '.git'
+    if (-not (Test-Path -LiteralPath $gitPath)) {
+        Fail $ReasonCode 'missing .git'
+    }
+    Assert-NoReparseInChain $gitPath $ReasonCode
+    $item = Get-Item -LiteralPath $gitPath -Force
+    if (-not $item.PSIsContainer) {
+        # A .git file is an external gitdir/worktree pointer — forbidden.
+        $pointerText = ''
+        try {
+            $pointerText = [System.IO.File]::ReadAllText($gitPath)
+        }
+        catch {
+            $pointerText = '<unreadable>'
+        }
+        Fail $ReasonCode "external .git pointer forbidden: $pointerText"
+    }
+    if ($item.Attributes -band [System.IO.FileAttributes]::ReparsePoint) {
+        Fail $ReasonCode "reparse forbidden on .git: $gitPath"
+    }
+    foreach ($forbidden in @(
+            (Join-Path $gitPath 'commondir'),
+            (Join-Path $gitPath 'objects\info\alternates'),
+            (Join-Path $gitPath 'worktrees')
+        )) {
+        if (Test-Path -LiteralPath $forbidden) {
+            if ((Test-Path -LiteralPath $forbidden -PathType Container)) {
+                $children = @(Get-ChildItem -LiteralPath $forbidden -Force -ErrorAction SilentlyContinue)
+                if ($children.Count -gt 0) {
+                    Fail $ReasonCode "external git topology present: $forbidden"
+                }
+            }
+            else {
+                $bytes = [System.IO.File]::ReadAllBytes($forbidden)
+                if ($bytes.LongLength -gt 0) {
+                    Fail $ReasonCode "external git topology present: $forbidden"
+                }
+            }
+        }
+    }
+    # Reject submodule / gitfile indirection under product paths is handled by inventory reparse checks.
+    return $gitPath
+}
+
+function Get-SealedCandidateTrackedGitFiles {
+    param(
+        [Parameter(Mandatory)][string]$CandidateRoot,
+        [Parameter(Mandatory)]$ExpectedInventory,
+        [Parameter(Mandatory)][string]$ReasonCode
+    )
+    $ls = Invoke-SealedGit -RepoRoot $CandidateRoot -GitArguments @('ls-files')
+    $tracked = @()
+    if (-not [string]::IsNullOrWhiteSpace($ls.stdout)) {
+        $tracked = @(
+            $ls.stdout -split "`r?`n" |
+                ForEach-Object { $_.Trim() } |
+                Where-Object { -not [string]::IsNullOrWhiteSpace($_) }
+        )
+    }
+    $expectedPaths = @($ExpectedInventory | ForEach-Object {
+            if ($_ -is [System.Collections.IDictionary]) { [string]$_['relative_path'] } else { [string]$_.relative_path }
+        })
+    $trackedSet = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::Ordinal)
+    foreach ($path in $tracked) {
+        if (-not $trackedSet.Add([string]$path)) {
+            Fail $ReasonCode "duplicate tracked path: $path"
+        }
+    }
+    $expectedSet = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::Ordinal)
+    foreach ($path in $expectedPaths) {
+        if (-not $expectedSet.Add([string]$path)) {
+            Fail $ReasonCode "duplicate expected path: $path"
+        }
+    }
+    if ($trackedSet.Count -ne $expectedSet.Count) {
+        Fail $ReasonCode "tracked set count drift: actual=$($trackedSet.Count) expected=$($expectedSet.Count)"
+    }
+    foreach ($path in $expectedSet) {
+        if (-not $trackedSet.Contains($path)) {
+            Fail $ReasonCode "tracked set missing path: $path"
+        }
+    }
+    foreach ($path in $trackedSet) {
+        if (-not $expectedSet.Contains($path)) {
+            Fail $ReasonCode "tracked set extra path: $path"
+        }
+    }
+
+    $rows = [System.Collections.Generic.List[object]]::new()
+    foreach ($row in @($ExpectedInventory)) {
+        $rel = if ($row -is [System.Collections.IDictionary]) { [string]$row['relative_path'] } else { [string]$row.relative_path }
+        $sha = if ($row -is [System.Collections.IDictionary]) { [string]$row['sha256'] } else { [string]$row.sha256 }
+        $size = if ($row -is [System.Collections.IDictionary]) { [int64]$row['size'] } else { [int64]$row.size }
+        $abs = Join-Path $CandidateRoot (($rel -split '/') -join [System.IO.Path]::DirectorySeparatorChar)
+        Assert-RegularFileSafe $abs -ReasonCode $ReasonCode
+        $bytes = [System.IO.File]::ReadAllBytes($abs)
+        if ((Get-Sha256Bytes $bytes) -ne $sha) {
+            Fail $ReasonCode "product bytes drifted before/after git seal: $rel"
+        }
+        if ([int64]$bytes.LongLength -ne $size) {
+            Fail $ReasonCode "product size drift: $rel"
+        }
+        $blob = Invoke-SealedGit -RepoRoot $CandidateRoot -GitArguments @('rev-parse', "HEAD:$rel")
+        $blobId = [string]$blob.stdout.Trim()
+        if ($blobId -notmatch '^[0-9a-f]{40,64}$') {
+            Fail $ReasonCode "invalid blob id for $rel : $blobId"
+        }
+        $cat = Invoke-SealedGit -RepoRoot $CandidateRoot -GitArguments @('cat-file', '-p', $blobId)
+        # cat-file -p returns blob bytes as string; re-read via hash-object comparison instead.
+        $hashObj = Invoke-SealedGit -RepoRoot $CandidateRoot -GitArguments @('hash-object', $abs)
+        $hashObjId = [string]$hashObj.stdout.Trim()
+        if ($hashObjId -ne $blobId) {
+            Fail $ReasonCode "blob content mismatch for $rel : index=$blobId worktree=$hashObjId"
+        }
+        $rows.Add([ordered]@{
+                relative_path  = $rel
+                size           = $size
+                content_sha256 = $sha
+                git_blob_sha1  = $blobId
+            }) | Out-Null
+    }
+    return @($rows)
+}
+
+function Initialize-SealedCandidateSourceGitIdentity {
+    param(
+        [Parameter(Mandatory)][string]$CandidateRoot,
+        [Parameter(Mandatory)]$ExpectedInventory,
+        [Parameter(Mandatory)][string]$ExpectedTreeSha256
+    )
+    $root = Get-FullLiteralPath $CandidateRoot
+    $reason = 'CANDIDATE_SOURCE_GIT_SEAL_FAILED'
+    $product = Get-CandidateSourceInventory -Root $root -ReasonCode 'CANDIDATE_SOURCE_DRIFT'
+    Assert-InventoryEqual -Left $ExpectedInventory -Right $product -ReasonCode $reason -Context 'pre-git-seal-product'
+    $productTree = Get-InventoryTreeSha256 $product
+    if ($productTree -ne $ExpectedTreeSha256) {
+        Fail $reason "product tree sha mismatch before git seal: $root"
+    }
+
+    $gitPath = Join-Path $root '.git'
+    if (Test-Path -LiteralPath $gitPath) {
+        Fail $reason "refusing to seal over existing .git: $gitPath"
+    }
+
+    $null = Invoke-SealedGit -RepoRoot $root -GitArguments @(
+        '-c', 'init.defaultBranch=proof',
+        'init',
+        '--template='
+    )
+
+    $null = Assert-GitDirIsLocalRegular -CandidateRoot $root -ReasonCode $reason
+
+    $emptyHooks = Join-Path $root (($script:CandidateGitEmptyHooksRelative -split '/') -join [System.IO.Path]::DirectorySeparatorChar)
+    if (-not (Test-Path -LiteralPath $emptyHooks -PathType Container)) {
+        New-Item -ItemType Directory -Path $emptyHooks -Force | Out-Null
+    }
+
+    # Local-only identity / line-ending / filter / hooks / signing policy.
+    $localConfigs = [ordered]@{
+        'core.autocrlf'       = 'false'
+        'core.eol'            = 'lf'
+        'core.filemode'       = 'false'
+        'core.symlinks'       = 'false'
+        'core.hooksPath'      = $script:CandidateGitEmptyHooksRelative
+        'commit.gpgsign'      = 'false'
+        'tag.gpgsign'         = 'false'
+        'init.defaultBranch'  = $script:CandidateGitProofBranch
+        'user.name'           = $script:CandidateGitAuthorName
+        'user.email'          = $script:CandidateGitAuthorEmail
+    }
+    foreach ($key in $localConfigs.Keys) {
+        $null = Invoke-SealedGit -RepoRoot $root -GitArguments @('config', '--local', $key, [string]$localConfigs[$key])
+    }
+
+    # Stage exactly the product inventory paths (no extras).
+    foreach ($row in @($ExpectedInventory)) {
+        $rel = if ($row -is [System.Collections.IDictionary]) { [string]$row['relative_path'] } else { [string]$row.relative_path }
+        $null = Invoke-SealedGit -RepoRoot $root -GitArguments @(
+            '-c', 'core.autocrlf=false',
+            '-c', 'core.eol=lf',
+            'add', '--', $rel
+        )
+    }
+
+    $commitEnv = @{
+        GIT_AUTHOR_NAME     = $script:CandidateGitAuthorName
+        GIT_AUTHOR_EMAIL    = $script:CandidateGitAuthorEmail
+        GIT_AUTHOR_DATE     = $script:CandidateGitAuthorDate
+        GIT_COMMITTER_NAME  = $script:CandidateGitCommitterName
+        GIT_COMMITTER_EMAIL = $script:CandidateGitCommitterEmail
+        GIT_COMMITTER_DATE   = $script:CandidateGitCommitterDate
+    }
+    $null = Invoke-SealedGit -RepoRoot $root -ExtraEnv $commitEnv -GitArguments @(
+        '-c', 'commit.gpgsign=false',
+        '-c', "core.hooksPath=$($script:CandidateGitEmptyHooksRelative)",
+        'commit',
+        '--no-verify',
+        '-m', $script:CandidateGitCommitMessage
+    )
+
+    # Ensure branch name is the sealed proof branch.
+    $null = Invoke-SealedGit -RepoRoot $root -GitArguments @('branch', '-M', $script:CandidateGitProofBranch)
+
+    # Product bytes must be unchanged by git add/commit (no CRLF rewrite).
+    $productAfter = Get-CandidateSourceInventory -Root $root -ReasonCode 'CANDIDATE_SOURCE_DRIFT'
+    Assert-InventoryEqual -Left $ExpectedInventory -Right $productAfter -ReasonCode $reason -Context 'post-git-seal-product'
+    if ((Get-InventoryTreeSha256 $productAfter) -ne $ExpectedTreeSha256) {
+        Fail $reason 'product tree sha mismatch after git seal'
+    }
+
+    return (Get-SealedCandidateSourceGitIdentity -CandidateRoot $root -ExpectedInventory $ExpectedInventory -ReasonCode $reason)
+}
+
+function Get-SealedCandidateSourceGitIdentity {
+    param(
+        [Parameter(Mandatory)][string]$CandidateRoot,
+        [Parameter(Mandatory)]$ExpectedInventory,
+        [Parameter(Mandatory)][string]$ReasonCode
+    )
+    $root = Get-FullLiteralPath $CandidateRoot
+    $null = Assert-GitDirIsLocalRegular -CandidateRoot $root -ReasonCode $ReasonCode
+
+    $gitDirProbe = Invoke-SealedGit -RepoRoot $root -GitArguments @('rev-parse', '--is-inside-work-tree')
+    if ([string]$gitDirProbe.stdout.Trim() -ne 'true') {
+        Fail $ReasonCode 'not inside work tree'
+    }
+    $gitDirRel = Invoke-SealedGit -RepoRoot $root -GitArguments @('rev-parse', '--git-dir')
+    $gitDirValue = [string]$gitDirRel.stdout.Trim().Replace('\', '/')
+    if ($gitDirValue -ne '.git' -and -not (Test-PathsEqual (Join-Path $root $gitDirValue) (Join-Path $root '.git'))) {
+        # Absolute git-dir must still resolve to candidate/.git
+        $absGit = Get-FullLiteralPath $gitDirValue
+        if (-not (Test-PathsEqual $absGit (Join-Path $root '.git'))) {
+            Fail $ReasonCode "git-dir not local .git: $gitDirValue"
+        }
+    }
+    $commonDir = Invoke-SealedGit -RepoRoot $root -GitArguments @('rev-parse', '--git-common-dir')
+    $commonValue = [string]$commonDir.stdout.Trim().Replace('\', '/')
+    if ($commonValue -ne '.git') {
+        $absCommon = if ([System.IO.Path]::IsPathRooted($commonValue)) {
+            Get-FullLiteralPath $commonValue
+        }
+        else {
+            Get-FullLiteralPath (Join-Path $root $commonValue)
+        }
+        if (-not (Test-PathsEqual $absCommon (Join-Path $root '.git'))) {
+            Fail $ReasonCode "git-common-dir external: $commonValue"
+        }
+    }
+
+    $head = Invoke-SealedGit -RepoRoot $root -GitArguments @('rev-parse', 'HEAD')
+    $tree = Invoke-SealedGit -RepoRoot $root -GitArguments @('rev-parse', 'HEAD^{tree}')
+    $headId = [string]$head.stdout.Trim()
+    $treeId = [string]$tree.stdout.Trim()
+    if ($headId -notmatch '^[0-9a-f]{40,64}$' -or $treeId -notmatch '^[0-9a-f]{40,64}$') {
+        Fail $ReasonCode "invalid HEAD/tree: commit=$headId tree=$treeId"
+    }
+
+    $status = Invoke-SealedGit -RepoRoot $root -GitArguments @('--no-optional-locks', 'status', '--porcelain')
+    $statusText = [string]$status.stdout
+    if (-not [string]::IsNullOrWhiteSpace($statusText)) {
+        Fail $ReasonCode "dirty or untracked files: $statusText"
+    }
+
+    $branch = Invoke-SealedGit -RepoRoot $root -GitArguments @('rev-parse', '--abbrev-ref', 'HEAD')
+    $branchName = [string]$branch.stdout.Trim()
+    if ($branchName -ne $script:CandidateGitProofBranch) {
+        Fail $ReasonCode "branch mismatch: $branchName"
+    }
+
+    $trackedFiles = Get-SealedCandidateTrackedGitFiles -CandidateRoot $root -ExpectedInventory $ExpectedInventory -ReasonCode $ReasonCode
+
+    $config = [ordered]@{}
+    foreach ($key in $script:ReceiptCandidateGitConfigKeys) {
+        $got = Invoke-SealedGit -RepoRoot $root -GitArguments @('config', '--local', '--get', $key) -AllowNonZero
+        if ([int]$got.exit_code -ne 0 -or [string]::IsNullOrWhiteSpace([string]$got.stdout)) {
+            Fail $ReasonCode "missing local config: $key"
+        }
+        $config[$key] = [string]$got.stdout.Trim()
+    }
+    if ([string]$config['core.autocrlf'] -ne 'false') { Fail $ReasonCode 'core.autocrlf' }
+    if ([string]$config['core.eol'] -ne 'lf') { Fail $ReasonCode 'core.eol' }
+    if ([string]$config['core.filemode'] -ne 'false') { Fail $ReasonCode 'core.filemode' }
+    if ([string]$config['core.symlinks'] -ne 'false') { Fail $ReasonCode 'core.symlinks' }
+    if ([string]$config['core.hooksPath'] -ne $script:CandidateGitEmptyHooksRelative) { Fail $ReasonCode 'core.hooksPath' }
+    if ([string]$config['commit.gpgsign'] -ne 'false') { Fail $ReasonCode 'commit.gpgsign' }
+    if ([string]$config['user.name'] -ne $script:CandidateGitAuthorName) { Fail $ReasonCode 'user.name' }
+    if ([string]$config['user.email'] -ne $script:CandidateGitAuthorEmail) { Fail $ReasonCode 'user.email' }
+    if ([string]$config['init.defaultBranch'] -ne $script:CandidateGitProofBranch) { Fail $ReasonCode 'init.defaultBranch' }
+
+    # Commit metadata sealed to deterministic proof identity.
+    $authorName = Invoke-SealedGit -RepoRoot $root -GitArguments @('show', '-s', '--format=%an', 'HEAD')
+    $authorEmail = Invoke-SealedGit -RepoRoot $root -GitArguments @('show', '-s', '--format=%ae', 'HEAD')
+    $authorDate = Invoke-SealedGit -RepoRoot $root -GitArguments @('show', '-s', '--format=%aI', 'HEAD')
+    $committerName = Invoke-SealedGit -RepoRoot $root -GitArguments @('show', '-s', '--format=%cn', 'HEAD')
+    $committerEmail = Invoke-SealedGit -RepoRoot $root -GitArguments @('show', '-s', '--format=%ce', 'HEAD')
+    $committerDate = Invoke-SealedGit -RepoRoot $root -GitArguments @('show', '-s', '--format=%cI', 'HEAD')
+    $subject = Invoke-SealedGit -RepoRoot $root -GitArguments @('show', '-s', '--format=%s', 'HEAD')
+    if ([string]$authorName.stdout.Trim() -ne $script:CandidateGitAuthorName) { Fail $ReasonCode 'author name' }
+    if ([string]$authorEmail.stdout.Trim() -ne $script:CandidateGitAuthorEmail) { Fail $ReasonCode 'author email' }
+    if ([string]$committerName.stdout.Trim() -ne $script:CandidateGitCommitterName) { Fail $ReasonCode 'committer name' }
+    if ([string]$committerEmail.stdout.Trim() -ne $script:CandidateGitCommitterEmail) { Fail $ReasonCode 'committer email' }
+    if ([string]$subject.stdout.Trim() -ne $script:CandidateGitCommitMessage) { Fail $ReasonCode 'commit message' }
+    # Accept both space-offset form used for env and ISO from %aI.
+    $aI = [string]$authorDate.stdout.Trim()
+    $cI = [string]$committerDate.stdout.Trim()
+    if ($aI -notmatch '^2026-01-01T00:00:00') { Fail $ReasonCode "author date: $aI" }
+    if ($cI -notmatch '^2026-01-01T00:00:00') { Fail $ReasonCode "committer date: $cI" }
+
+    # No configured remote object store / insteadOf rewrites that could pull external content.
+    $remoteCheck = Invoke-SealedGit -RepoRoot $root -GitArguments @('config', '--local', '--get-regexp', '^remote\.') -AllowNonZero
+    if ([int]$remoteCheck.exit_code -eq 0 -and -not [string]::IsNullOrWhiteSpace([string]$remoteCheck.stdout)) {
+        Fail $ReasonCode "remote config forbidden: $($remoteCheck.stdout)"
+    }
+
+    return [ordered]@{
+        schema_version         = $script:CandidateGitIdentitySchema
+        repository_kind        = 'local_regular_directory'
+        git_dir_relative_path  = '.git'
+        external_gitdir_absent = $true
+        alternates_absent      = $true
+        branch                 = $script:CandidateGitProofBranch
+        head_commit            = $headId
+        head_tree              = $treeId
+        status_porcelain       = ''
+        commit_message         = $script:CandidateGitCommitMessage
+        author_name            = $script:CandidateGitAuthorName
+        author_email           = $script:CandidateGitAuthorEmail
+        author_date            = $script:CandidateGitAuthorDate
+        committer_name         = $script:CandidateGitCommitterName
+        committer_email        = $script:CandidateGitCommitterEmail
+        committer_date         = $script:CandidateGitCommitterDate
+        hooks_path_relative    = $script:CandidateGitEmptyHooksRelative
+        config                 = $config
+        tracked_files          = @($trackedFiles)
+    }
+}
+
+function Assert-SealedCandidateSourceGitIdentity {
+    param(
+        [Parameter(Mandatory)][string]$CandidateRoot,
+        [Parameter(Mandatory)]$ExpectedIdentity,
+        [Parameter(Mandatory)]$ExpectedInventory,
+        [Parameter(Mandatory)][string]$ReasonCode
+    )
+    Assert-ExactKeySet -Object $ExpectedIdentity -ExpectedKeys $script:ReceiptCandidateGitIdentityKeys -ReasonCode 'RECEIPT_SCHEMA_INVALID' -Context 'candidate_source_git_identity'
+    if ([string]$ExpectedIdentity['schema_version'] -ne $script:CandidateGitIdentitySchema) {
+        Fail 'RECEIPT_SCHEMA_INVALID' 'candidate_source_git_identity.schema_version'
+    }
+    Assert-ExactKeySet -Object $ExpectedIdentity['config'] -ExpectedKeys $script:ReceiptCandidateGitConfigKeys -ReasonCode 'RECEIPT_SCHEMA_INVALID' -Context 'candidate_source_git_identity.config'
+    $tracked = @($ExpectedIdentity['tracked_files'])
+    if ($tracked.Count -lt 1) {
+        Fail 'RECEIPT_SCHEMA_INVALID' 'candidate_source_git_identity.tracked_files empty'
+    }
+    foreach ($row in $tracked) {
+        Assert-ExactKeySet -Object $row -ExpectedKeys $script:ReceiptCandidateGitTrackedFileKeys -ReasonCode 'RECEIPT_SCHEMA_INVALID' -Context 'candidate_source_git_identity.tracked_files.row'
+        if ([string]$row['git_blob_sha1'] -notmatch '^[0-9a-f]{40,64}$') {
+            Fail 'RECEIPT_SCHEMA_INVALID' "blob:$($row['relative_path'])"
+        }
+        if ([string]$row['content_sha256'] -notmatch $script:HexSha256Pattern) {
+            Fail 'RECEIPT_SCHEMA_INVALID' "content_sha256:$($row['relative_path'])"
+        }
+    }
+
+    $observed = Get-SealedCandidateSourceGitIdentity -CandidateRoot $CandidateRoot -ExpectedInventory $ExpectedInventory -ReasonCode $ReasonCode
+    foreach ($key in @(
+            'schema_version',
+            'repository_kind',
+            'git_dir_relative_path',
+            'branch',
+            'head_commit',
+            'head_tree',
+            'status_porcelain',
+            'commit_message',
+            'author_name',
+            'author_email',
+            'author_date',
+            'committer_name',
+            'committer_email',
+            'committer_date',
+            'hooks_path_relative'
+        )) {
+        if ([string]$observed[$key] -ne [string]$ExpectedIdentity[$key]) {
+            Fail $ReasonCode "git identity field drift: $key"
+        }
+    }
+    if ($observed['external_gitdir_absent'] -ne $true -or $ExpectedIdentity['external_gitdir_absent'] -ne $true) {
+        Fail $ReasonCode 'external_gitdir_absent'
+    }
+    if ($observed['alternates_absent'] -ne $true -or $ExpectedIdentity['alternates_absent'] -ne $true) {
+        Fail $ReasonCode 'alternates_absent'
+    }
+    foreach ($key in $script:ReceiptCandidateGitConfigKeys) {
+        if ([string]$observed['config'][$key] -ne [string]$ExpectedIdentity['config'][$key]) {
+            Fail $ReasonCode "config drift: $key"
+        }
+    }
+    $expTracked = @($ExpectedIdentity['tracked_files'])
+    $obsTracked = @($observed['tracked_files'])
+    if ($expTracked.Count -ne $obsTracked.Count) {
+        Fail $ReasonCode 'tracked_files count drift'
+    }
+    for ($i = 0; $i -lt $expTracked.Count; $i++) {
+        foreach ($field in @('relative_path', 'size', 'content_sha256', 'git_blob_sha1')) {
+            if ([string]$expTracked[$i][$field] -ne [string]$obsTracked[$i][$field]) {
+                Fail $ReasonCode "tracked_files drift: $($expTracked[$i]['relative_path']).$field"
+            }
+        }
+        # Bind tracked content hash to product inventory row.
+        $rel = [string]$expTracked[$i]['relative_path']
+        $hit = $false
+        foreach ($invRow in @($ExpectedInventory)) {
+            $invRel = if ($invRow -is [System.Collections.IDictionary]) { [string]$invRow['relative_path'] } else { [string]$invRow.relative_path }
+            $invSha = if ($invRow -is [System.Collections.IDictionary]) { [string]$invRow['sha256'] } else { [string]$invRow.sha256 }
+            $invSize = if ($invRow -is [System.Collections.IDictionary]) { [int64]$invRow['size'] } else { [int64]$invRow.size }
+            if ($invRel -eq $rel) {
+                $hit = $true
+                if ($invSha -ne [string]$expTracked[$i]['content_sha256'] -or $invSize -ne [int64]$expTracked[$i]['size']) {
+                    Fail $ReasonCode "tracked file not bound to candidate inventory: $rel"
+                }
+                break
+            }
+        }
+        if (-not $hit) {
+            Fail $ReasonCode "tracked path outside candidate inventory: $rel"
+        }
+    }
 }
 
 function Get-LegacyDockerProvenanceInventory {
@@ -1556,6 +2111,13 @@ function New-ProofCone {
         -ExpectedTreeSha256 $Preflight.candidate_source_tree_sha256 `
         -ReasonCode 'CANDIDATE_SOURCE_COPY_FAILED'
 
+    # Self-contained Git source identity for build_release consumer preconditions.
+    # Must remain entirely inside candidate-source; never point at caller worktree.
+    $candidateGitIdentity = Initialize-SealedCandidateSourceGitIdentity `
+        -CandidateRoot $candidateCloneRoot `
+        -ExpectedInventory $Preflight.candidate_source_inventory `
+        -ExpectedTreeSha256 $Preflight.candidate_source_tree_sha256
+
     # Seal legacy v1 docker/entrypoint provenance outside runtime skill rendering trees.
     $evidenceDir = Join-Path $dest 'evidence'
     New-Item -ItemType Directory -Path $evidenceDir -Force | Out-Null
@@ -1592,13 +2154,19 @@ function New-ProofCone {
     Write-Utf8NoBomFileAtomic -PathValue $layout.pointer -Text $relocatedText -CreateNew
     $relocatedPointerSha = Get-Sha256File $layout.pointer
 
-    # Inventory every sealed file except the receipt (written next). Tree hash excludes receipt.
-    $filesWithoutReceipt = Get-SortedRelativeInventory -Root $dest -ReasonCode 'PROOF_INVENTORY_INVALID'
+    # Inventory every sealed product file except the receipt (written next).
+    # .git is excluded from byte inventory and explicitly revalidated via candidate_source_git_identity
+    # (index/logs are not consumer identity; status revalidation uses --no-optional-locks).
+    $filesWithoutReceipt = Get-SortedRelativeInventory `
+        -Root $dest `
+        -ReasonCode 'PROOF_INVENTORY_INVALID' `
+        -IgnoreDirectoryNames @('.git')
     $receiptPath = Join-Path $dest $script:ReceiptFileName
 
     $receiptBody = [ordered]@{
         schema_version           = $script:SchemaVersion
         prepared_at              = (Get-Date).ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ss.fffZ')
+        candidate_source_git_identity = $candidateGitIdentity
         source                   = [ordered]@{
             live_state_root                      = $Preflight.state_root
             installed_skill_root                 = $Preflight.installed_skill_root
@@ -1741,6 +2309,7 @@ function Invoke-VerifyOnly {
     Assert-ExactKeySet -Object $receipt['pointer_relocation'] -ExpectedKeys $script:ReceiptPointerRelocationKeys -ReasonCode 'RECEIPT_SCHEMA_INVALID' -Context 'receipt.pointer_relocation'
     Assert-ExactKeySet -Object $receipt['proposed_environment'] -ExpectedKeys $script:ReceiptEnvironmentKeys -ReasonCode 'RECEIPT_SCHEMA_INVALID' -Context 'receipt.proposed_environment'
     Assert-ExactKeySet -Object $receipt['inventories'] -ExpectedKeys $script:ReceiptInventoryKeys -ReasonCode 'RECEIPT_SCHEMA_INVALID' -Context 'receipt.inventories'
+    Assert-ExactKeySet -Object $receipt['candidate_source_git_identity'] -ExpectedKeys $script:ReceiptCandidateGitIdentityKeys -ReasonCode 'RECEIPT_SCHEMA_INVALID' -Context 'receipt.candidate_source_git_identity'
 
     $inv = $receipt['inventories']
     foreach ($name in @(
@@ -1942,6 +2511,13 @@ function Invoke-VerifyOnly {
         Fail 'CANDIDATE_SOURCE_TREE_DRIFT' $candidateRoot
     }
 
+    # Revalidate self-contained Git identity required by build_release (HEAD/tree/clean status).
+    Assert-SealedCandidateSourceGitIdentity `
+        -CandidateRoot $candidateRoot `
+        -ExpectedIdentity $receipt['candidate_source_git_identity'] `
+        -ExpectedInventory $inv['candidate_source'] `
+        -ReasonCode 'CANDIDATE_SOURCE_GIT_IDENTITY_DRIFT'
+
     # Legacy docker provenance inventories + bind to release skill_hashes.
     foreach ($side in @(
             @{
@@ -1980,8 +2556,11 @@ function Invoke-VerifyOnly {
         }
     }
 
-    # Full cone inventory vs receipt.files (excluding receipt).
-    $observed = Get-SortedRelativeInventory -Root $dest -ReasonCode 'PROOF_INVENTORY_INVALID'
+    # Full cone inventory vs receipt.files (excluding receipt and .git control dir).
+    $observed = Get-SortedRelativeInventory `
+        -Root $dest `
+        -ReasonCode 'PROOF_INVENTORY_INVALID' `
+        -IgnoreDirectoryNames @('.git')
     $observedWithoutReceipt = @($observed | Where-Object {
             $rel = if ($_ -is [System.Collections.IDictionary]) { [string]$_['relative_path'] } else { [string]$_.relative_path }
             $rel -ne $script:ReceiptFileName

@@ -9,6 +9,7 @@ import hashlib
 import json
 import os
 import shutil
+import stat
 import subprocess
 import sys
 from pathlib import Path
@@ -800,3 +801,273 @@ def test_live_source_unchanged_after_success(tmp_path: Path) -> None:
     completed = _run_helper(_prepare_args(world))
     assert completed.returncode == 0, completed.stderr + completed.stdout
     _assert_live_unchanged(world)
+
+
+def _find_git() -> str:
+    path = shutil.which("git")
+    if not path:
+        pytest.skip("git is unavailable")
+    return path
+
+
+def _force_rmtree(path: Path) -> None:
+    """Remove trees that contain read-only Git object files (Windows)."""
+    if not path.exists():
+        return
+
+    def _onexc(func, p, _exc_info):  # noqa: ANN001
+        try:
+            os.chmod(p, stat.S_IWRITE)
+            func(p)
+        except OSError:
+            raise
+
+    # Python 3.12 prefers onexc; keep onerror for broader compatibility.
+    try:
+        shutil.rmtree(path, onexc=_onexc)
+    except TypeError:
+        shutil.rmtree(path, onerror=_onexc)
+
+
+def _run_git(repo: Path, *args: str) -> subprocess.CompletedProcess[str]:
+    git = _find_git()
+    env = os.environ.copy()
+    env["GIT_CONFIG_NOSYSTEM"] = "1"
+    env["GIT_TERMINAL_PROMPT"] = "0"
+    env["GIT_OPTIONAL_LOCKS"] = "0"
+    return subprocess.run(
+        [git, "-C", str(repo), *args],
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        check=False,
+        env=env,
+    )
+
+
+def test_prepared_candidate_source_satisfies_build_release_git_preconditions(tmp_path: Path) -> None:
+    world = _build_world(tmp_path)
+    completed = _run_helper(_prepare_args(world))
+    assert completed.returncode == 0, completed.stderr + completed.stdout
+
+    sealed = world["dest"] / "candidate-source"
+    receipt = json.loads((world["dest"] / "preparation-receipt.json").read_text(encoding="utf-8"))
+    identity = receipt["candidate_source_git_identity"]
+    assert identity["schema_version"] == "xinao.isolated_legacy_migration_candidate_git_identity.v1"
+    assert identity["repository_kind"] == "local_regular_directory"
+    assert identity["git_dir_relative_path"] == ".git"
+    assert identity["external_gitdir_absent"] is True
+    assert identity["alternates_absent"] is True
+    assert identity["status_porcelain"] == ""
+    assert identity["branch"] == "proof"
+    assert (sealed / ".git").is_dir()
+    assert not (sealed / ".git").is_symlink()
+    assert not (sealed / ".git").is_file()
+
+    # Actual consumer preconditions used by build_release().
+    head = _run_git(sealed, "rev-parse", "HEAD")
+    tree = _run_git(sealed, "rev-parse", "HEAD^{tree}")
+    status = _run_git(sealed, "status", "--porcelain")
+    assert head.returncode == 0, head.stderr
+    assert tree.returncode == 0, tree.stderr
+    assert status.returncode == 0, status.stderr
+    assert head.stdout.strip() == identity["head_commit"]
+    assert tree.stdout.strip() == identity["head_tree"]
+    assert status.stdout.strip() == ""
+    assert len(identity["head_commit"]) >= 40
+    assert len(identity["head_tree"]) >= 40
+
+    tracked = [row["relative_path"] for row in identity["tracked_files"]]
+    product = sorted(world["candidate_snapshot"].keys())
+    assert tracked == product
+    for row in identity["tracked_files"]:
+        abs_path = sealed / Path(row["relative_path"])
+        assert abs_path.is_file()
+        assert _sha256_file(abs_path) == row["content_sha256"]
+        assert abs_path.stat().st_size == row["size"]
+        assert world["candidate_snapshot"][row["relative_path"]] == abs_path.read_bytes()
+
+    # XINAO_MIGRATION_SOURCE_ROOT remains the sealed clone (not caller worktree).
+    env = receipt["proposed_environment"]
+    assert Path(env["XINAO_MIGRATION_SOURCE_ROOT"]) == sealed
+    assert Path(env["XINAO_MIGRATION_SOURCE_ROOT"]) != world["candidate"]
+
+    verified = _run_helper(_verify_args(world))
+    assert verified.returncode == 0, verified.stderr + verified.stdout
+
+
+def test_external_gitdir_pointer_fails_verify(tmp_path: Path) -> None:
+    world = _build_world(tmp_path)
+    prepared = _run_helper(_prepare_args(world))
+    assert prepared.returncode == 0, prepared.stderr + prepared.stdout
+
+    sealed = world["dest"] / "candidate-source"
+    git_dir = sealed / ".git"
+    _force_rmtree(git_dir)
+    # External gitdir pointer (forbidden).
+    outside = tmp_path / "outside-gitdir"
+    outside.mkdir()
+    git_dir.write_text(f"gitdir: {outside}\n", encoding="utf-8")
+    assert git_dir.is_file()
+
+    verified = _run_helper(_verify_args(world))
+    blob = _combined_output(verified)
+    assert verified.returncode != 0
+    assert "CANDIDATE_SOURCE_GIT_IDENTITY_DRIFT" in blob or "external .git pointer" in blob.lower()
+
+
+def test_alternates_fail_verify(tmp_path: Path) -> None:
+    world = _build_world(tmp_path)
+    prepared = _run_helper(_prepare_args(world))
+    assert prepared.returncode == 0, prepared.stderr + prepared.stdout
+
+    alternates = world["dest"] / "candidate-source" / ".git" / "objects" / "info" / "alternates"
+    alternates.parent.mkdir(parents=True, exist_ok=True)
+    alternates.write_text(str(tmp_path / "object-store") + "\n", encoding="utf-8")
+
+    verified = _run_helper(_verify_args(world))
+    _assert_fail_code(verified, "CANDIDATE_SOURCE_GIT_IDENTITY_DRIFT")
+
+
+def test_dirty_and_untracked_fail_verify(tmp_path: Path) -> None:
+    world = _build_world(tmp_path)
+    prepared = _run_helper(_prepare_args(world))
+    assert prepared.returncode == 0, prepared.stderr + prepared.stdout
+
+    sealed = world["dest"] / "candidate-source"
+    # Dirty tracked product file.
+    docker = sealed / "docker" / "xinao-researcher" / "Dockerfile"
+    docker.write_bytes(docker.read_bytes() + b"\n# dirty\n")
+    dirty = _run_helper(_verify_args(world))
+    blob = _combined_output(dirty)
+    assert dirty.returncode != 0
+    assert (
+        "CANDIDATE_SOURCE_GIT_IDENTITY_DRIFT" in blob
+        or "CANDIDATE_SOURCE_DRIFT" in blob
+        or "CANDIDATE_SOURCE_TREE_DRIFT" in blob
+        or "PROOF_FILE_DRIFT" in blob
+    )
+
+    # Restore product bytes for untracked case via re-prepare in fresh dest.
+    world2 = _build_world(tmp_path / "untracked-case")
+    prepared2 = _run_helper(_prepare_args(world2))
+    assert prepared2.returncode == 0, prepared2.stderr + prepared2.stdout
+    sealed2 = world2["dest"] / "candidate-source"
+    untracked = sealed2 / "skills" / "xinao" / "untracked-extra.txt"
+    untracked.write_text("untracked\n", encoding="utf-8")
+    verified = _run_helper(_verify_args(world2))
+    blob2 = _combined_output(verified)
+    assert verified.returncode != 0
+    assert (
+        "CANDIDATE_SOURCE_GIT_IDENTITY_DRIFT" in blob2
+        or "CANDIDATE_SOURCE_DRIFT" in blob2
+        or "PROOF_EXTRA_FILE" in blob2
+        or "PROOF_INVENTORY_COUNT_MISMATCH" in blob2
+        or "PROOF_TREE_SHA_MISMATCH" in blob2
+    )
+
+
+def test_tracked_set_and_head_tree_drift_fail_verify(tmp_path: Path) -> None:
+    world = _build_world(tmp_path)
+    prepared = _run_helper(_prepare_args(world))
+    assert prepared.returncode == 0, prepared.stderr + prepared.stdout
+    sealed = world["dest"] / "candidate-source"
+
+    extra = sealed / "skills" / "xinao" / "extra-tracked.txt"
+    extra.write_text("extra-tracked\n", encoding="utf-8")
+    add = _run_git(
+        sealed,
+        "-c",
+        "core.autocrlf=false",
+        "-c",
+        "core.hooksPath=.git/xinao-empty-hooks",
+        "add",
+        "--",
+        "skills/xinao/extra-tracked.txt",
+    )
+    assert add.returncode == 0, add.stderr
+    commit = _run_git(
+        sealed,
+        "-c",
+        "commit.gpgsign=false",
+        "-c",
+        "core.hooksPath=.git/xinao-empty-hooks",
+        "commit",
+        "--no-verify",
+        "-m",
+        "drift commit",
+    )
+    assert commit.returncode == 0, commit.stderr
+
+    verified = _run_helper(_verify_args(world))
+    blob = _combined_output(verified)
+    assert verified.returncode != 0
+    assert (
+        "CANDIDATE_SOURCE_GIT_IDENTITY_DRIFT" in blob
+        or "CANDIDATE_SOURCE_DRIFT" in blob
+        or "PROOF_EXTRA_FILE" in blob
+        or "PROOF_TREE_SHA_MISMATCH" in blob
+    )
+
+
+def test_blob_and_config_hooks_drift_fail_verify(tmp_path: Path) -> None:
+    world = _build_world(tmp_path)
+    prepared = _run_helper(_prepare_args(world))
+    assert prepared.returncode == 0, prepared.stderr + prepared.stdout
+    sealed = world["dest"] / "candidate-source"
+
+    # Config drift.
+    cfg = _run_git(sealed, "config", "--local", "core.autocrlf", "true")
+    assert cfg.returncode == 0, cfg.stderr
+    verified_cfg = _run_helper(_verify_args(world))
+    _assert_fail_code(verified_cfg, "CANDIDATE_SOURCE_GIT_IDENTITY_DRIFT")
+
+    # Restore autocrlf then break hooksPath.
+    world_h = _build_world(tmp_path / "hooks-case")
+    prepared_h = _run_helper(_prepare_args(world_h))
+    assert prepared_h.returncode == 0, prepared_h.stderr + prepared_h.stdout
+    sealed_h = world_h["dest"] / "candidate-source"
+    hooks = _run_git(sealed_h, "config", "--local", "core.hooksPath", ".git/hooks")
+    assert hooks.returncode == 0, hooks.stderr
+    verified_h = _run_helper(_verify_args(world_h))
+    _assert_fail_code(verified_h, "CANDIDATE_SOURCE_GIT_IDENTITY_DRIFT")
+
+    # HEAD rewrite without product inventory change attempt: update-ref to empty tree commit is hard;
+    # mutate receipt head_commit instead (schema-bound revalidation).
+    world_r = _build_world(tmp_path / "receipt-head-case")
+    prepared_r = _run_helper(_prepare_args(world_r))
+    assert prepared_r.returncode == 0, prepared_r.stderr + prepared_r.stdout
+    receipt_path = world_r["dest"] / "preparation-receipt.json"
+
+    def tamper_head(receipt: dict[str, Any]) -> None:
+        receipt["candidate_source_git_identity"]["head_commit"] = "a" * 40
+        receipt["candidate_source_git_identity"]["head_tree"] = "b" * 40
+
+    _rewrite_receipt(receipt_path, tamper_head)
+    verified_r = _run_helper(_verify_args(world_r))
+    _assert_fail_code(verified_r, "CANDIDATE_SOURCE_GIT_IDENTITY_DRIFT")
+
+
+def test_caller_candidate_mutation_keeps_sealed_git_verify_green(tmp_path: Path) -> None:
+    world = _build_world(tmp_path)
+    prepared = _run_helper(_prepare_args(world))
+    assert prepared.returncode == 0, prepared.stderr + prepared.stdout
+
+    sealed = world["dest"] / "candidate-source"
+    before_head = _run_git(sealed, "rev-parse", "HEAD").stdout.strip()
+    before_tree = _run_git(sealed, "rev-parse", "HEAD^{tree}").stdout.strip()
+
+    # Mutate only the caller-side candidate root; sealed clone + git identity must remain valid.
+    caller_docker = world["candidate"] / "docker" / "xinao-researcher" / "Dockerfile"
+    caller_docker.write_text("FROM mutated-caller-again\n", encoding="utf-8")
+    (world["candidate"] / "skills" / "xinao" / "SKILL.md").write_text("# caller mutated\n", encoding="utf-8")
+
+    verified = _run_helper(_verify_args(world))
+    assert verified.returncode == 0, verified.stderr + verified.stdout
+    assert _run_git(sealed, "rev-parse", "HEAD").stdout.strip() == before_head
+    assert _run_git(sealed, "rev-parse", "HEAD^{tree}").stdout.strip() == before_tree
+    assert _run_git(sealed, "status", "--porcelain").stdout.strip() == ""
+    assert (sealed / "docker" / "xinao-researcher" / "Dockerfile").read_bytes() == world[
+        "candidate_dockerfile_bytes"
+    ]
