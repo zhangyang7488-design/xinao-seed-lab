@@ -1022,7 +1022,9 @@ function Assert-XinaoActiveResearcherActivationJournal {
         throw 'ACTIVE_RESEARCHER_ACTIVATION_TRANSACTION_BINDING_MISMATCH'
     }
     $op = [string]$journal.operation
-    if ($op -notin @('ACTIVATE', 'ROLLBACK', 'MIGRATE')) {
+    # Terminal journals from ACTIVATE, ROLLBACK, MIGRATE, or FORWARD_UPGRADE may
+    # witness the active release. Unknown operations remain fail-closed.
+    if ($op -notin @('ACTIVATE', 'ROLLBACK', 'MIGRATE', 'FORWARD_UPGRADE')) {
         throw 'ACTIVE_RESEARCHER_ACTIVATION_OPERATION_INVALID'
     }
     $state = [string]$journal.state

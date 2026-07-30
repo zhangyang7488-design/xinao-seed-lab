@@ -141,6 +141,7 @@ def _write_synthetic_v2_researcher_state(
     source_dirty: bool = False,
     include_journal: bool = True,
     journal_state: str = "VERIFIED",
+    journal_operation: str = "ACTIVATE",
     release_identity_sha256: str | None = None,
     release_id_override: str | None = None,
     manifest_path_override: Path | None = None,
@@ -304,7 +305,7 @@ def _write_synthetic_v2_researcher_state(
             "schema_version": "xinao.researcher_activation_journal.v1",
             "revision": 4,
             "txn_id": activation_txn_id,
-            "operation": "ACTIVATE",
+            "operation": journal_operation,
             "state": journal_state,
             "from": None,
             "requested_to": journal_active,
@@ -1386,6 +1387,22 @@ def test_active_researcher_state_chain_wave9h_blockers(tmp_path: Path) -> None:
     r = _admit_active_researcher(rc_ptr_bind)
     assert r.get("ok") is False, r
     assert r.get("reason_code") == "ACTIVE_RESEARCHER_ACTIVATION_POINTER_BINDING_MISMATCH"
+
+    # F3: VERIFIED FORWARD_UPGRADE is a legitimate terminal activation witness.
+    rc_fwd = tmp_path / "rc_forward_upgrade"
+    synth_fwd = _write_synthetic_v2_researcher_state(rc_fwd, journal_operation="FORWARD_UPGRADE")
+    r = _admit_active_researcher(rc_fwd)
+    assert r.get("ok") is True, r
+    assert r.get("release_id") == synth_fwd["release_id"]
+    assert r.get("activation_state") == "VERIFIED"
+    assert r.get("active_image_id") == ACTIVE_RESEARCHER_IMAGE_ID
+
+    # F3: unknown journal operation remains fail-closed.
+    rc_bad_op = tmp_path / "rc_bad_operation"
+    _write_synthetic_v2_researcher_state(rc_bad_op, journal_operation="NOT_A_REAL_OPERATION")
+    r = _admit_active_researcher(rc_bad_op)
+    assert r.get("ok") is False, r
+    assert r.get("reason_code") == "ACTIVE_RESEARCHER_ACTIVATION_OPERATION_INVALID"
 
     # F4/A5: wrong capability + namespaces.
     rc_ns = tmp_path / "rc_ns"
