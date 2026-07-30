@@ -31,7 +31,6 @@
     "xinao/settlement/rule_source.py",
     "xinao/settlement/shadow.py",
     "xinao/settlement/special_number.py",
-    "xinao/settlement/special_number_evidence.py",
     "xinao/shadow_lifecycle/__init__.py",
     "xinao/shadow_lifecycle/__main__.py",
     "xinao/shadow_lifecycle/consumer.py",

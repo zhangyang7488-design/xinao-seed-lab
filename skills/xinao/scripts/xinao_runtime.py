@@ -1943,6 +1943,12 @@ def _shadow_runtime_tree_sha256(rows: list[tuple[str, Path, bytes]]) -> str:
 
 
 def _stage_shadow_runtime(build_context: Path, rows: list[tuple[str, Path, bytes]]) -> Path:
+    """Materialize the locked shadow runtime cone into the owned Docker build context.
+
+    The researcher Dockerfile COPYs ``shadow-runtime/`` from the minimal staging context
+    (not the full repository root). Omitting this step fails at
+    ``COPY shadow-runtime/ /opt/xinao-shadow/`` with ``not found``.
+    """
     destination_root = build_context / SHADOW_RUNTIME_CONTEXT_RELATIVE
     if destination_root.exists():
         raise XinaoError("SHADOW_RUNTIME_STAGING_COLLISION", str(destination_root))
@@ -1952,6 +1958,61 @@ def _stage_shadow_runtime(build_context: Path, rows: list[tuple[str, Path, bytes
         target.parent.mkdir(parents=True, exist_ok=True)
         _write_bytes_atomic(target, content, create_new=True)
     return destination_root
+
+
+def _verify_staged_shadow_runtime(
+    build_context: Path,
+    rows: list[tuple[str, Path, bytes]],
+    *,
+    expected_tree_sha256: str,
+) -> None:
+    """Re-read staged cone and bind it to the sealed tree hash before docker build."""
+    destination_root = build_context / SHADOW_RUNTIME_CONTEXT_RELATIVE
+    if not destination_root.is_dir() or _is_reparse(destination_root):
+        raise XinaoError("SHADOW_RUNTIME_STAGING_MISSING", str(destination_root))
+    expected = [relative for relative, _path, _content in rows]
+    if not expected:
+        raise XinaoError("SHADOW_RUNTIME_INVENTORY_INVALID", "empty")
+    observed_rows: list[tuple[str, Path, bytes]] = []
+    for relative, _source, expected_content in rows:
+        target = destination_root / relative
+        if not target.is_file() or _is_reparse(target):
+            raise XinaoError("SHADOW_RUNTIME_STAGING_MISSING", relative)
+        try:
+            target.resolve().relative_to(destination_root.resolve())
+        except ValueError as exc:
+            raise XinaoError("SHADOW_RUNTIME_STAGING_PATH_ESCAPE", relative) from exc
+        except OSError as exc:
+            raise XinaoError("SHADOW_RUNTIME_STAGING_INVALID", f"{relative}: {exc}") from exc
+        payload = _regular_file_bytes(
+            target,
+            reason_code="SHADOW_RUNTIME_STAGING_INVALID",
+            maximum=MAX_SKILL_BUNDLE_FILE_BYTES,
+        )
+        if payload != expected_content:
+            raise XinaoError(
+                "SHADOW_RUNTIME_STAGING_DRIFT",
+                f"{relative}: staged bytes drifted from locked inventory materialization",
+            )
+        observed_rows.append((relative, target, payload))
+    if [item[0] for item in observed_rows] != expected:
+        raise XinaoError("SHADOW_RUNTIME_STAGING_INVENTORY_MISMATCH", str(destination_root))
+    # Refuse unexpected extra regular files under the staged cone (no broad-copy residue).
+    extras: list[str] = []
+    for path in sorted(destination_root.rglob("*")):
+        if not path.is_file() or _is_reparse(path):
+            continue
+        relative = path.relative_to(destination_root).as_posix()
+        if relative not in expected:
+            extras.append(relative)
+    if extras:
+        raise XinaoError("SHADOW_RUNTIME_STAGING_EXTRA_FILES", ",".join(extras[:8]))
+    observed_tree = _shadow_runtime_tree_sha256(observed_rows)
+    if observed_tree != expected_tree_sha256:
+        raise XinaoError(
+            "SHADOW_RUNTIME_STAGING_HASH_MISMATCH",
+            f"expected={expected_tree_sha256} observed={observed_tree}",
+        )
 
 
 def _shadow_record(registry: dict[str, Any]) -> dict[str, Any]:
@@ -2924,7 +2985,14 @@ def build_release(
         # start it. Staging remains until build completes.
         _remove_donor_extract_container(docker, container_name)
         container_name = None
+        # Dockerfile COPYs shadow-runtime/ from this owned context; stage the locked cone
+        # only (never the full repository), then re-hash the staged bytes before build.
         _stage_shadow_runtime(build_context, shadow_rows)
+        _verify_staged_shadow_runtime(
+            build_context,
+            shadow_rows,
+            expected_tree_sha256=shadow_runtime_tree_sha256,
+        )
         source_identity = {
             "source_commit": commit,
             "source_tree": tree,
