@@ -105,6 +105,35 @@ def test_day1_compilation_is_non_vacuous_and_deterministic() -> None:
         ).requested_decision_kind
         == DecisionKind.NO_ACTION
     )
+    assert all(
+        item.decision_signature.update_policy == "FROZEN_INCUMBENT_NO_POST_CUTOFF_OUTCOME"
+        for item in first.policies
+    )
+
+
+def test_fixed_cutoff_policy_identity_survives_horizon_merge() -> None:
+    history = observations(182)
+    cutoff = history[-1].open_time + timedelta(seconds=1)
+    near = build_day1_policy_compilation(
+        history,
+        target_ref="macaujc2/expect/2026183",
+        knowledge_cutoff=cutoff,
+        horizon_draws=1,
+    )
+    far = build_day1_policy_compilation(
+        history,
+        target_ref="macaujc2/expect/2026207",
+        knowledge_cutoff=cutoff,
+        horizon_draws=25,
+    )
+
+    assert tuple(item.content_hash for item in near.policies) == tuple(
+        item.content_hash for item in far.policies
+    )
+    assert near.horizon_draws != far.horizon_draws
+    assert all(
+        item.semantic_config["campaign_cadence"] == "FROZEN_INCUMBENT" for item in far.policies
+    )
 
 
 def test_day1_gates_cover_exact_policy_bindings() -> None:

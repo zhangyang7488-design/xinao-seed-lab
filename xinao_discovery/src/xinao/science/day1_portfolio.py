@@ -70,7 +70,9 @@ class Day1PolicyCompilation(BaseModel):
 
     schema_version: Literal["xinao.day1_policy_compilation.v1"] = "xinao.day1_policy_compilation.v1"
     target_ref: str = Field(min_length=1)
-    horizon_draws: int = Field(ge=1, le=7)
+    # Continuous fixed-cutoff campaigns may schedule many draws ahead of the
+    # candidate information cutoff while still compiling one frozen policy set.
+    horizon_draws: int = Field(ge=1, le=366)
     knowledge_cutoff: datetime
     history_count: int = Field(ge=180)
     history_identity_hash: str = Field(pattern=r"^[0-9a-f]{64}$")
@@ -139,7 +141,11 @@ class MultipolicyProtocolPin(BaseModel):
     )
     protocol_pin_ref: str = Field(min_length=1)
     episode_id: str = Field(min_length=1)
-    evidence_class: Literal["EXECUTION_RECOVERY_ONLY", "PROSPECTIVE_EXPERIMENTAL"]
+    evidence_class: Literal[
+        "EXECUTION_RECOVERY_ONLY",
+        "HISTORICAL_TIME_OUT_REPLAY",
+        "PROSPECTIVE_EXPERIMENTAL",
+    ]
     active_parent_ref: str = Field(min_length=1)
     active_parent_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
     source_contract_ref: Literal["macaujc-source-authority-contract.v1"]
@@ -388,8 +394,8 @@ def build_day1_policy_compilation(
     _require_aware(knowledge_cutoff, "policy compilation knowledge_cutoff")
     if history[-1].open_time >= knowledge_cutoff:
         raise ValueError("policy compilation history is not strictly before its cutoff")
-    if not 1 <= horizon_draws <= 7:
-        raise ValueError("Day-1 target horizon must be between one and seven draws")
+    if not 1 <= horizon_draws <= 366:
+        raise ValueError("Day-1 target horizon must be between one and 366 draws")
     probe_refs, traces = _probe_traces(history)
     history_values = tuple(item.special_number for item in history)
     implementation_sha256 = sha256(Path(__file__).read_bytes()).hexdigest()
@@ -466,8 +472,11 @@ def build_day1_policy_compilation(
                 decision_signature={
                     "mechanism": mechanism,
                     "feature_visibility": features,
-                    "time_scale": f"horizon_draws={horizon_draws}",
-                    "update_policy": "FROZEN_THROUGH_TARGET",
+                    # Horizon is episode scheduling metadata, not policy identity.
+                    # Fixed-cutoff campaigns require the same policy hashes across
+                    # every post-cutoff target under one candidate information set.
+                    "time_scale": "CONTINUOUS_TARGET_STREAM",
+                    "update_policy": "FROZEN_INCUMBENT_NO_POST_CUTOFF_OUTCOME",
                     "abstention_rule": abstention,
                     "action_support": (
                         "NONE" if role == PolicyRole.NO_ACTION else "SPECIAL_NUMBER_1_TO_49"
@@ -479,7 +488,8 @@ def build_day1_policy_compilation(
                 },
                 semantic_config={
                     **config,
-                    "target_horizon_draws": horizon_draws,
+                    "campaign_cadence": "FROZEN_INCUMBENT",
+                    "post_cutoff_outcome_use": "SETTLEMENT_AND_EVALUATION_ONLY",
                     "knowledge_cutoff": knowledge_cutoff.isoformat(),
                     "outcome_access": False,
                     "implementation_ref": "src/xinao/science/day1_portfolio.py",

@@ -1,8 +1,9 @@
 """One-shot consumer for Day-1 multi-policy freeze and settle recovery.
 
 The command has no scheduler, daemon, or real-money side effect.  Synthetic
-mode proves the execution contract only.  Live mode freezes prospective shadow
-tickets and deliberately stops before outcome access.
+mode proves the execution contract only.  Historical time-out replay settles
+verified outcomes without science promotion.  Prospective freezes stop before
+outcome access.  Continuous fixed-cutoff campaigns own multi-target cadence.
 """
 
 from __future__ import annotations
@@ -19,7 +20,6 @@ from xinao.canonical import canonical_sha256
 from xinao.catalog.compiler import sha256_file
 from xinao.decision import DecisionGateInput
 from xinao.science.day1_portfolio import (
-    ASIA_SHANGHAI,
     Day1PolicyCompilation,
     MultipolicyProtocolPin,
     PolicyHashBinding,
@@ -27,7 +27,6 @@ from xinao.science.day1_portfolio import (
     build_day1_gates,
     build_day1_policy_compilation,
     observations_from_draws,
-    parse_macaujc_history_response,
 )
 from xinao.science.portfolio import (
     ActiveSet,
@@ -226,6 +225,9 @@ def _runtime_source_bindings() -> tuple[RuntimeSourceBinding, ...]:
     xinao_root = Path(__file__).resolve().parent.parent
     paths = {
         "src/xinao/decision/compiler.py": xinao_root / "decision" / "compiler.py",
+        "src/xinao/science/continuous_campaign.py": xinao_root
+        / "science"
+        / "continuous_campaign.py",
         "src/xinao/science/day1_portfolio.py": xinao_root / "science" / "day1_portfolio.py",
         "src/xinao/science/multipolicy_episode.py": xinao_root
         / "science"
@@ -261,6 +263,8 @@ def build_episode_package(
     horizon_draws: int,
     frozen_at: datetime | None = None,
     synthetic_outcome_number: int | None = None,
+    verified_outcome: OutcomeObservation | None = None,
+    policy_information_set_hash: str | None = None,
     policy_compilation: Day1PolicyCompilation | None = None,
     protocol_research_question: str | None = None,
     protocol_residual_axes: tuple[str, ...] | None = None,
@@ -275,11 +279,15 @@ def build_episode_package(
     except ValueError as exc:
         raise ValueError("source snapshot reference escapes the episode package") from exc
     _verify_file(snapshot_path, source_snapshot_sha256, "source snapshot")
-    path_kind = (
-        "SYNTHETIC_EXECUTION_RECOVERY"
-        if evidence_class == "EXECUTION_RECOVERY_ONLY"
-        else "PROSPECTIVE_EXPLORATORY_DAY1"
-    )
+    if synthetic_outcome_number is not None and verified_outcome is not None:
+        raise ValueError("an episode cannot carry both synthetic and verified outcomes")
+    path_kind = {
+        "EXECUTION_RECOVERY_ONLY": "SYNTHETIC_EXECUTION_RECOVERY",
+        "HISTORICAL_TIME_OUT_REPLAY": "HISTORICAL_TIME_OUT_REPLAY",
+        "PROSPECTIVE_EXPERIMENTAL": "PROSPECTIVE_EXPLORATORY_DAY1",
+    }.get(evidence_class)
+    if path_kind is None:
+        raise ValueError("unsupported multipolicy evidence class")
     expected_history_identity_hash = canonical_sha256(
         [
             {
@@ -364,7 +372,10 @@ def build_episode_package(
             "parent completion",
         ),
         next_move=(
-            "Admit the verified target outcome after open, settle every frozen ticket "
+            "Keep this replay at E2 maximum and continue the fixed campaign through "
+            "the next target."
+            if evidence_class == "HISTORICAL_TIME_OUT_REPLAY"
+            else "Admit the verified target outcome after open, settle every frozen ticket "
             "exactly once, then recompute ClaimGrade and the next bounded question."
         ),
     ).with_content_hash()
@@ -385,7 +396,7 @@ def build_episode_package(
         target_open_time=target_open_time,
         created_at=actual_frozen_at,
     )
-    information_set_hash = canonical_sha256(
+    information_set_hash = policy_information_set_hash or canonical_sha256(
         {
             "source_snapshot_sha256": source_snapshot_sha256,
             "history_identity_hash": compilation.history_identity_hash,
@@ -393,6 +404,10 @@ def build_episode_package(
             "outcome_access": False,
         }
     )
+    if len(information_set_hash) != 64 or any(
+        character not in "0123456789abcdef" for character in information_set_hash
+    ):
+        raise ValueError("policy information-set hash is invalid")
     gates = build_day1_gates(
         pin=pin,
         compilation=compilation,
@@ -467,12 +482,46 @@ def build_episode_package(
             terminal=True,
             path_kind=path_kind,
         )
+    elif verified_outcome is not None:
+        if evidence_class != "HISTORICAL_TIME_OUT_REPLAY":
+            raise ValueError("verified replay outcome is forbidden outside historical replay")
+        outcome = verified_outcome.with_hash()
+        if (
+            not outcome.verified
+            or outcome.target_ref != target_ref
+            or outcome.observed_at < target_open_time
+        ):
+            raise ValueError("verified replay outcome identity or timing is invalid")
+        result = settle_all(
+            freeze_set=freeze_set,
+            outcome=outcome,
+            settlement_set_ref=f"settlement-set/{episode_id}/{target_ref}",
+            portfolio_ref=f"shadow-portfolio/{episode_id}",
+            occurred_at=outcome.observed_at + timedelta(minutes=1),
+        )
+        settlement_set = result.settlement_set
+        _write_model(output_dir / "verified_outcome.v1.json", outcome)
+        _write_model(output_dir / "settlement_set.v1.json", settlement_set)
+        _write_new_json(
+            output_dir / "action_settlement_bundles.v1.json",
+            [bundle.model_dump(mode="json") for bundle in result.action_bundles],
+        )
+        final_head = _advance_trial_ledger(
+            anchor_path,
+            anchor_sha256=anchor_sha256,
+            episode_id=episode_id,
+            policies=compilation.policies,
+            phase="historical-settled",
+            terminal=True,
+            path_kind=path_kind,
+        )
 
-    state = (
-        "SYNTHETIC_SETTLE_ALL_VERIFIED"
-        if settlement_set is not None
-        else "FROZEN_AWAITING_VERIFIED_OUTCOME"
-    )
+    if evidence_class == "EXECUTION_RECOVERY_ONLY" and settlement_set is not None:
+        state = "SYNTHETIC_SETTLE_ALL_VERIFIED"
+    elif evidence_class == "HISTORICAL_TIME_OUT_REPLAY" and settlement_set is not None:
+        state = "HISTORICAL_REPLAY_SETTLED"
+    else:
+        state = "FROZEN_AWAITING_VERIFIED_OUTCOME"
     receipt = {
         "schema_version": "xinao.multipolicy_consumer_receipt.v1",
         "episode_id": episode_id,
@@ -504,8 +553,12 @@ def build_episode_package(
         },
         "claim_grade": (
             "NO_SCIENTIFIC_GRADE_FROM_SYNTHETIC"
-            if settlement_set is not None
-            else "E2_CEILING_AWAITING_PROSPECTIVE_OUTCOME"
+            if state == "SYNTHETIC_SETTLE_ALL_VERIFIED"
+            else (
+                "E2_MAX_HISTORICAL_SIMULATED_REPLAY"
+                if state == "HISTORICAL_REPLAY_SETTLED"
+                else "E2_CEILING_AWAITING_PROSPECTIVE_OUTCOME"
+            )
         ),
         "scientific_promotion": False,
         "real_money_authorized": False,
@@ -572,72 +625,10 @@ def run_live_freeze(
     source_contract_path: Path,
     source_contract_sha256: str,
 ) -> dict[str, Any]:
-    """Capture current history and freeze a live target without reading its outcome."""
+    """Reject the retired single-target path that compiled from the live result stream."""
 
-    package_dir = _create_output_dir(output_dir)
-    _verify_file(active_parent_path, active_parent_sha256, "active parent")
-    _verify_file(source_contract_path, source_contract_sha256, "source contract")
-    raw, captured_at, raw_path = _fetch_live_source(package_dir)
-    observations = parse_macaujc_history_response(raw, knowledge_cutoff=captured_at)
-    latest = observations[-1]
-    if latest.expect == target_expect or any(item.expect == target_expect for item in observations):
-        raise ValueError("live target outcome is already present in the captured source")
-    try:
-        horizon_draws = int(target_expect) - int(latest.expect)
-    except ValueError as exc:
-        raise ValueError("live target expect identity is not numeric") from exc
-    if not 1 <= horizon_draws <= 7:
-        raise ValueError("live target is outside the bounded one-to-seven-draw horizon")
-    latest_local = latest.open_time.astimezone(ASIA_SHANGHAI)
-    target_local = target_open_time.astimezone(ASIA_SHANGHAI)
-    if (
-        target_local.date() - latest_local.date()
-    ).days != horizon_draws or target_local.timetz().replace(
-        tzinfo=None
-    ) != latest_local.timetz().replace(tzinfo=None):
-        raise ValueError("live target schedule does not follow the captured daily stream identity")
-    frozen_at = _millisecond_now()
-    if frozen_at > freeze_deadline:
-        raise ValueError("live freeze deadline has already passed")
-    information_snapshot = {
-        "schema_version": "xinao.live_information_snapshot.v1",
-        "source_contract_ref": SOURCE_CONTRACT_REF,
-        "history_endpoint": HISTORY_ENDPOINT,
-        "history_raw_ref": raw_path.name,
-        "history_raw_sha256": sha256_file(raw_path),
-        "captured_at": _iso(captured_at),
-        "cutoff_safe_observation_count": len(observations),
-        "latest_observed_expect": latest.expect,
-        "latest_observed_open_time": _iso(latest.open_time),
-        "target_expect": target_expect,
-        "target_ref": f"macaujc2/expect/{target_expect}",
-        "target_open_time": _iso(target_open_time),
-        "target_schedule_basis": "DAILY_SUCCESSOR_INFERENCE_FROM_PINNED_RESULT_STREAM",
-        "target_horizon_draws": horizon_draws,
-        "target_outcome_present": False,
-        "evaluation_outcome_access": False,
-    }
-    information_snapshot["content_hash"] = canonical_sha256(information_snapshot)
-    information_path = package_dir / "live_information_snapshot.v1.json"
-    _write_new_json(information_path, information_snapshot)
-    return build_episode_package(
-        output_dir=package_dir,
-        episode_id=episode_id,
-        evidence_class="PROSPECTIVE_EXPERIMENTAL",
-        observations=observations,
-        source_snapshot_ref=information_path.name,
-        source_snapshot_sha256=sha256_file(information_path),
-        source_captured_at=captured_at,
-        active_parent_ref=str(active_parent_path),
-        active_parent_sha256=active_parent_sha256,
-        source_contract_ref=SOURCE_CONTRACT_REF,
-        source_contract_sha256=source_contract_sha256,
-        target_ref=f"macaujc2/expect/{target_expect}",
-        target_open_time=target_open_time,
-        knowledge_cutoff=captured_at,
-        freeze_deadline=freeze_deadline,
-        horizon_draws=horizon_draws,
-        frozen_at=frozen_at,
+    raise ValueError(
+        "single-target live freeze is retired; use the fixed-cutoff continuous campaign"
     )
 
 
@@ -744,14 +735,16 @@ def _verify_trial_ledger_shape(
     expected_phases = [("registered", False), ("frozen", False)]
     if state == "SYNTHETIC_SETTLE_ALL_VERIFIED":
         expected_phases.append(("synthetic-settled", True))
+    elif state == "HISTORICAL_REPLAY_SETTLED":
+        expected_phases.append(("historical-settled", True))
     expected_count = policy_count * len(expected_phases)
     if len(entries) != expected_count:
         raise ValueError("fresh readback TrialLedger phase coverage is incomplete")
-    expected_path_kind = (
-        "SYNTHETIC_EXECUTION_RECOVERY"
-        if pin.evidence_class == "EXECUTION_RECOVERY_ONLY"
-        else "PROSPECTIVE_EXPLORATORY_DAY1"
-    )
+    expected_path_kind = {
+        "EXECUTION_RECOVERY_ONLY": "SYNTHETIC_EXECUTION_RECOVERY",
+        "HISTORICAL_TIME_OUT_REPLAY": "HISTORICAL_TIME_OUT_REPLAY",
+        "PROSPECTIVE_EXPERIMENTAL": "PROSPECTIVE_EXPLORATORY_DAY1",
+    }[pin.evidence_class]
     for phase_index, (phase, terminal) in enumerate(expected_phases):
         for policy_index, policy in enumerate(compiled.policies):
             entry = entries[phase_index * policy_count + policy_index]
@@ -819,6 +812,7 @@ def verify_episode_package(
         raise ValueError("fresh readback runtime source bindings differ from ProtocolPin")
     snapshot_path = _package_file(root, pin.source_snapshot_ref, "source snapshot")
     _verify_snapshot(snapshot_path, pin.source_snapshot_sha256)
+    snapshot_payload = _read_json(snapshot_path)
 
     expected_policy_bindings = tuple(
         PolicyHashBinding(
@@ -862,7 +856,11 @@ def verify_episode_package(
         str(policy_ref): DecisionGateInput.model_validate(payload)
         for policy_ref, payload in gate_payload.items()
     }
-    information_set_hash = canonical_sha256(
+    information_set_hash = (
+        snapshot_payload.get("policy_information_set_hash")
+        if isinstance(snapshot_payload, dict)
+        else None
+    ) or canonical_sha256(
         {
             "source_snapshot_sha256": pin.source_snapshot_sha256,
             "history_identity_hash": compiled.history_identity_hash,
@@ -896,7 +894,11 @@ def verify_episode_package(
         raise ValueError("multipolicy consumer receipt content hash mismatch")
     receipt["content_hash"] = receipt_hash
     state = str(receipt.get("state"))
-    if state not in {"SYNTHETIC_SETTLE_ALL_VERIFIED", "FROZEN_AWAITING_VERIFIED_OUTCOME"}:
+    if state not in {
+        "SYNTHETIC_SETTLE_ALL_VERIFIED",
+        "HISTORICAL_REPLAY_SETTLED",
+        "FROZEN_AWAITING_VERIFIED_OUTCOME",
+    }:
         raise ValueError("multipolicy consumer receipt has an unsupported state")
     common_receipt_expectations = {
         "episode_id": pin.episode_id,
@@ -976,12 +978,47 @@ def verify_episode_package(
         if any(receipt.get(key) != value for key, value in settlement_expectations.items()):
             raise ValueError("synthetic consumer receipt does not bind settle-all closure")
         settlement_hash = settlement.content_hash
+    elif state == "HISTORICAL_REPLAY_SETTLED":
+        if pin.evidence_class != "HISTORICAL_TIME_OUT_REPLAY":
+            raise ValueError("historical settlement package has the wrong evidence class")
+        outcome = OutcomeObservation.model_validate(_read_json(root / "verified_outcome.v1.json"))
+        if outcome.with_hash() != outcome or outcome.target_ref != freeze_set.target_ref:
+            raise ValueError("historical outcome identity or hash differs from its freeze target")
+        expected_settlement = settle_all(
+            freeze_set=freeze_set,
+            outcome=outcome,
+            settlement_set_ref=f"settlement-set/{pin.episode_id}/{pin.target_ref}",
+            portfolio_ref=f"shadow-portfolio/{pin.episode_id}",
+            occurred_at=outcome.observed_at + timedelta(minutes=1),
+        )
+        settlement = SettlementSet.model_validate(_read_json(root / "settlement_set.v1.json"))
+        bundle_payload = _read_json(root / "action_settlement_bundles.v1.json")
+        if not isinstance(bundle_payload, list):
+            raise ValueError("historical action settlement bundles are not an array")
+        bundles = tuple(SettlementBundle.model_validate(item) for item in bundle_payload)
+        if (
+            settlement != expected_settlement.settlement_set
+            or bundles != expected_settlement.action_bundles
+        ):
+            raise ValueError("historical settle-all artifacts differ from fresh reconstruction")
+        settlement_expectations = {
+            "settlement_set_ref": settlement.settlement_set_ref,
+            "settlement_set_hash": settlement.content_hash,
+            "settled_exactly_once_count": 4,
+            "void_with_reason_count": 0,
+            "missing_or_duplicate_count": 0,
+            "claim_grade": "E2_MAX_HISTORICAL_SIMULATED_REPLAY",
+        }
+        if any(receipt.get(key) != value for key, value in settlement_expectations.items()):
+            raise ValueError("historical consumer receipt does not bind settle-all closure")
+        settlement_hash = settlement.content_hash
     else:
         if pin.evidence_class != "PROSPECTIVE_EXPERIMENTAL":
             raise ValueError("live freeze package has the wrong evidence class")
         forbidden_live_artifacts = (
             "settlement_set.v1.json",
             "synthetic_outcome.v1.json",
+            "verified_outcome.v1.json",
             "action_settlement_bundles.v1.json",
         )
         if any((root / name).exists() for name in forbidden_live_artifacts):
@@ -1043,10 +1080,19 @@ def build_parser() -> argparse.ArgumentParser:
     live.add_argument("--target-open-time", required=True)
     live.add_argument("--freeze-deadline", required=True)
 
+    campaign = commands.add_parser("continuous-campaign")
+    authority_arguments(campaign)
+    campaign.add_argument("--dataset", type=Path, required=True)
+    campaign.add_argument("--dataset-sha256", required=True)
+
     verify = commands.add_parser("verify")
     verify.add_argument("--package-dir", type=Path, required=True)
     verify.add_argument("--expected-manifest-sha256")
     verify.add_argument("--report-out", type=Path)
+    verify_campaign = commands.add_parser("verify-campaign")
+    verify_campaign.add_argument("--package-dir", type=Path, required=True)
+    verify_campaign.add_argument("--expected-manifest-sha256")
+    verify_campaign.add_argument("--report-out", type=Path)
     return parser
 
 
@@ -1076,6 +1122,28 @@ def main() -> int:
             source_contract_path=args.source_contract,
             source_contract_sha256=args.source_contract_sha256,
         )
+    elif args.command == "continuous-campaign":
+        from xinao.science.continuous_campaign import run_fixed_cutoff_continuous_campaign
+
+        result = run_fixed_cutoff_continuous_campaign(
+            output_dir=args.output_dir,
+            campaign_id=args.episode_id,
+            dataset_path=args.dataset,
+            dataset_sha256=args.dataset_sha256,
+            active_parent_path=args.active_parent,
+            active_parent_sha256=args.active_parent_sha256,
+            source_contract_path=args.source_contract,
+            source_contract_sha256=args.source_contract_sha256,
+        )
+    elif args.command == "verify-campaign":
+        from xinao.science.continuous_campaign import verify_continuous_campaign_package
+
+        result = verify_continuous_campaign_package(
+            args.package_dir,
+            expected_manifest_sha256=args.expected_manifest_sha256,
+        )
+        if args.report_out is not None:
+            _write_new_json(args.report_out, result)
     else:
         result = verify_episode_package(
             args.package_dir,
