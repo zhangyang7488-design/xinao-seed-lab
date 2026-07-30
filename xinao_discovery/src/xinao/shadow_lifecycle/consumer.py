@@ -51,7 +51,7 @@ from xinao.shadow_lifecycle.store import (
 )
 
 CONSUMER_ID = "shadow_lifecycle_file_backed_leg_a"
-CONSUMER_VERSION = "0.1.0"
+CONSUMER_VERSION = "0.2.0"
 
 
 def _parse_time(value: str | datetime) -> datetime:

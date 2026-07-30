@@ -30,7 +30,7 @@ RELEASE_RUNTIME_RELATIVE_PATH = Path("skill-bundle") / "scripts" / "xinao_runtim
 # Bound to the co-located bootstrap-migration companion. Tampering fails before execution.
 # Update this whenever the candidate xinao_runtime.py bytes change.
 EXPECTED_COMPANION_RUNTIME_SHA256 = (
-    "222f8adc63780349523d639a7a37992a16eb2fc3388e374ef91a33629f90aa51"
+    "a567f084ca6a26a080e2834d5b916241c5167c4d7e17c790a4babdb34341bff7"
 )
 RELEASE_ID_PATTERN = re.compile(r"^researcher-[0-9]+\.[0-9]+\.[0-9]+-[0-9a-f]{16}$")
 TXN_ID_PATTERN = re.compile(r"^xra_[0-9]{8}T[0-9]{6}_[0-9a-f]{16}$")
@@ -133,6 +133,7 @@ SKILL_HASH_PATHS = {
     "output_schema_sha256": "references/researcher-output.v2.schema.json",
     "material_bundle_schema_sha256": "references/material-bundle.v1.schema.json",
     "runtime_lock_sha256": "references/researcher-runtime-lock.v1.json",
+    "shadow_runtime_lock_sha256": "references/shadow-runtime-lock.v1.json",
     "meta_sha256": "references/meta.md",
 }
 IMAGE_LABEL_KEYS = {
@@ -148,6 +149,8 @@ IMAGE_LABEL_KEYS = {
     "io.xinao.researcher.dockerfile.sha256",
     "io.xinao.researcher.entrypoint.sha256",
     "io.xinao.researcher.source-identity.sha256",
+    "io.xinao.researcher.shadow-runtime.sha256",
+    "io.xinao.researcher.shadow-runtime-lock.sha256",
     "io.xinao.researcher.requested-model",
 }
 
@@ -444,6 +447,8 @@ def _release_identity_payload(manifest: dict[str, Any]) -> dict[str, Any]:
         "runtime_version": manifest.get("runtime_version"),
         "grok_donor_image_id": source_identity.get("grok_donor_image_id"),
         "grok_donor_binary_sha256": source_identity.get("grok_donor_binary_sha256"),
+        "shadow_runtime_tree_sha256": source_identity.get("shadow_runtime_tree_sha256"),
+        "shadow_runtime_lock_sha256": source_identity.get("shadow_runtime_lock_sha256"),
         "skill_bundle_tree_sha256": manifest.get("skill_bundle_tree_sha256"),
         "image_id": manifest.get("image_id"),
         "image_entrypoint": manifest.get("image_entrypoint"),
@@ -493,6 +498,8 @@ def _validate_release_manifest_shape(
         "source_dirty",
         "grok_donor_image_id",
         "grok_donor_binary_sha256",
+        "shadow_runtime_tree_sha256",
+        "shadow_runtime_lock_sha256",
     }:
         raise BootstrapError("RELEASE_SOURCE_IDENTITY_INVALID", str(manifest_path))
     if source_identity.get("source_dirty") is not False:
@@ -510,6 +517,12 @@ def _validate_release_manifest_shape(
         or HEX_SHA256_PATTERN.fullmatch(donor_binary_sha256) is None
     ):
         raise BootstrapError("RELEASE_DONOR_BINARY_IDENTITY_MISSING", str(donor_binary_sha256))
+    shadow_tree = source_identity.get("shadow_runtime_tree_sha256")
+    shadow_lock = source_identity.get("shadow_runtime_lock_sha256")
+    if not isinstance(shadow_tree, str) or HEX_SHA256_PATTERN.fullmatch(shadow_tree) is None:
+        raise BootstrapError("RELEASE_SHADOW_RUNTIME_TREE_INVALID", str(shadow_tree))
+    if not isinstance(shadow_lock, str) or HEX_SHA256_PATTERN.fullmatch(shadow_lock) is None:
+        raise BootstrapError("RELEASE_SHADOW_RUNTIME_LOCK_INVALID", str(shadow_lock))
     if (
         manifest.get("required_bootstrap_protocol") != 2
         or manifest.get("generic_worker_route_allowed") is not False
@@ -565,6 +578,8 @@ def _validate_release_manifest_shape(
             "io.xinao.researcher.entrypoint.sha256"
         ),
         "io.xinao.researcher.source-identity.sha256": source_identity_sha256,
+        "io.xinao.researcher.shadow-runtime.sha256": shadow_tree,
+        "io.xinao.researcher.shadow-runtime-lock.sha256": shadow_lock,
         "io.xinao.researcher.requested-model": "grok-4.5",
     }
     if labels != expected_labels:
@@ -572,6 +587,8 @@ def _validate_release_manifest_shape(
     for key in (
         "io.xinao.researcher.dockerfile.sha256",
         "io.xinao.researcher.entrypoint.sha256",
+        "io.xinao.researcher.shadow-runtime.sha256",
+        "io.xinao.researcher.shadow-runtime-lock.sha256",
     ):
         if HEX_SHA256_PATTERN.fullmatch(str(labels.get(key, ""))) is None:
             raise BootstrapError("RELEASE_IMAGE_IDENTITY_INVALID", key)

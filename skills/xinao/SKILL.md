@@ -18,6 +18,20 @@ internally. Return the bounded receipt and research result in the Codex conversa
 the user to run a command, edit a file, construct a manifest, pre-seal a material, or supply an
 internal field.
 
+For shadow lifecycle, require `inspect` to report `shadow.runtime_status=AVAILABLE` (source
+registration plus live image shadow labels). Then use the installed Skill only:
+
+- `scripts/xinao.py shadow init --root <episode> --seat-id <id> --portfolio-ref <ref>`
+- `scripts/xinao.py shadow inspect|status --root <episode>`
+- `scripts/xinao.py shadow freeze --root <episode> --request <freeze.json>`
+- `scripts/xinao.py shadow settle --root <episode> --outcome <outcome.json>`
+- `scripts/xinao.py shadow replay --root <episode>`
+
+These verbs run an ephemeral leg-A container from the active researcher image by exact image ID
+with read-only rootfs, dropped capabilities, no-new-privileges, and network none; only the episode
+state mount is writable. Do not substitute the repository CLI, host PYTHONPATH, Temporal, a daemon,
+or ordinary worker routes. Shadow results stay candidate-only and never claim parent completion.
+
 `source_status=available` means only that the implementation exists. Treat the runtime as callable
 only when `inspect` returns `RUNTIME_READY`; pointer presence, an old successful receipt, an image
 tag, or source tests are not substitutes. A call with materials must freeze them before runtime
@@ -67,3 +81,5 @@ account and knowledge axes; the contract is a downstream completion ruler, not a
 
 Capabilities marked `planned` are unavailable. Implement and verify them through the update
 procedure in the meta reference before calling them; never emulate them with chat glue.
+Shadow account/freeze/settlement/replay are available only as verbs of `shadow-lifecycle-leg-a`
+through the installed Skill container path above, and only when inspect proves live image capability.
