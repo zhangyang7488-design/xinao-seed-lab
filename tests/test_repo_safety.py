@@ -895,9 +895,7 @@ def test_context_intent_alignment_eval_is_balanced_and_friction_bounded() -> Non
     for atom in dual_recovered | dual_rejected:
         assert f"{atom}=" in restored_context
 
-    verdict_symmetry = cases[
-        "REG_MATURATION_VERDICT_SYMMETRY_NOT_REQUIRED_VS_UNDECIDABLE"
-    ]["vars"]
+    verdict_symmetry = cases["REG_MATURATION_VERDICT_SYMMETRY_NOT_REQUIRED_VS_UNDECIDABLE"]["vars"]
     assert verdict_symmetry["expected_next_step"] == "act"
     assert verdict_symmetry["expected_ask_user"] is False
     assert verdict_symmetry["expected_create_daemon"] is False
