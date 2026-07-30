@@ -38,16 +38,18 @@ DEFAULT_TOOL_GLUE_AUTHORITY_PATH = Path(
     r"C:\Users\xx363\Desktop\主线\工具胶水宪法\软件工具胶水宪法_当前有效.txt"
 )
 DEFAULT_TOOL_GLUE_VERSION = "v3.4"
-DEFAULT_TOOL_GLUE_V34_SHA256 = (
-    "eb6677d9cf87d152b91b119f92488e90969145c0dabfc4cb0e3b1d0437643703"
-)
+DEFAULT_TOOL_GLUE_V34_SHA256 = "eb6677d9cf87d152b91b119f92488e90969145c0dabfc4cb0e3b1d0437643703"
 
+MATERIALIZING = "MATERIALIZING"
 PREPARED = "PREPARED"
 APPLYING = "APPLYING"
 COMMITTED = "COMMITTED"
 ROLLING_BACK = "ROLLING_BACK"
 ROLLED_BACK = "ROLLED_BACK"
 ROLLED_BACK_AFTER_CRASH = "ROLLED_BACK_AFTER_CRASH"
+
+# Windows FILE_ATTRIBUTE_REPARSE_POINT; also used as a portable reparse probe bit.
+_FILE_ATTRIBUTE_REPARSE_POINT = 0x400
 
 
 class SciencePublicationError(ValueError):
@@ -86,14 +88,17 @@ class _PromotionLease:
             portalocker.unlock(self.handle)
         finally:
             self.handle.close()
-        # Preflight can fail after open("a+b") creates a 0B cooperative guard.
-        # Remove only empty guards so failed preflight leaves no durable residue;
-        # a non-empty guard is treated as foreign/tamper material and kept.
-        try:
-            if self.path.is_file() and self.path.stat().st_size == 0:
-                self.path.unlink(missing_ok=True)
-        except OSError:
-            pass
+        # The promotion guard is a durable, empty, ordinary-file lock carrier.
+        # Never unlink on release: concurrent open/lock races against delete leave
+        # TOCTOU holes, and preflight may legitimately leave a stable 0B guard.
+
+
+@dataclass(frozen=True)
+class _SealedPreimage:
+    sha256: str
+    original_mode: int
+    seal_mode: int
+    path: Path
 
 
 @dataclass(frozen=True)
@@ -140,7 +145,9 @@ def _sha256_bytes(raw: bytes) -> str:
 
 def _normalized_sha256(value: str, field: str) -> str:
     normalized = value.strip().lower()
-    if len(normalized) != 64 or any(character not in "0123456789abcdef" for character in normalized):
+    if len(normalized) != 64 or any(
+        character not in "0123456789abcdef" for character in normalized
+    ):
         raise SciencePublicationError("INVALID_SHA256", f"{field} must be a SHA256 hex digest")
     return normalized
 
@@ -272,7 +279,12 @@ def _unlink_temporary(path: Path) -> None:
     path.unlink(missing_ok=True)
 
 
-def _restore_file(source: Path, target: Path) -> None:
+def _restore_file(
+    source: Path,
+    target: Path,
+    *,
+    installed_mode: int | None = None,
+) -> None:
     source = source.resolve()
     target = target.resolve()
     descriptor, temporary_name = tempfile.mkstemp(
@@ -280,13 +292,19 @@ def _restore_file(source: Path, target: Path) -> None:
     )
     os.close(descriptor)
     temporary_path = Path(temporary_name)
-    installed_mode = stat.S_IMODE(source.stat().st_mode)
+    # Live-target mode is independent of the readonly seal applied to rollback
+    # copies. Journal-recorded original mode wins; legacy journals fall back to
+    # the sealed archive mode.
+    if installed_mode is None:
+        installed_mode = stat.S_IMODE(source.stat().st_mode)
+    else:
+        installed_mode = stat.S_IMODE(installed_mode)
     primary: BaseException | None = None
     cleanup: BaseException | None = None
     try:
         temporary_path.write_bytes(source.read_bytes())
         # Keep the staging temp writable for Windows unlink; only the installed
-        # target receives the sealed preimage mode (often without S_IWRITE).
+        # target receives the restored original mode.
         os.chmod(temporary_path, installed_mode | stat.S_IWRITE)
         _replace_file(
             temporary_path,
@@ -307,46 +325,102 @@ def _restore_file(source: Path, target: Path) -> None:
 
 
 def _validate_preimages(
-    specs: Sequence[tuple[str, Path, Path, str]],
+    specs: Sequence[tuple[str, Path, Path, str, int | None]],
 ) -> list[RuntimeError]:
     errors: list[RuntimeError] = []
-    for label, source, _target, expected in specs:
+    for label, source, _target, expected, _mode in specs:
         if not source.is_file() or _sha256(source) != expected:
             errors.append(RuntimeError(f"{label} rollback preimage is missing or drifted"))
     return errors
 
 
 def _restore_preimages(
-    specs: Sequence[tuple[str, Path, Path, str]],
+    specs: Sequence[tuple[str, Path, Path, str, int | None]],
 ) -> list[BaseException]:
     errors: list[BaseException] = []
-    for label, source, target, expected in specs:
+    for label, source, target, expected, original_mode in specs:
         if not source.is_file() or _sha256(source) != expected:
             errors.append(RuntimeError(f"{label} rollback preimage is missing or drifted"))
             continue
         try:
-            _restore_file(source, target)
+            _restore_file(source, target, installed_mode=original_mode)
         except BaseException as exc:
             errors.append(exc)
     return errors
 
 
-def _seal_preimage(target: Path, archive: Path) -> str:
+def _is_reparse_path(path: Path) -> bool:
+    try:
+        st = path.lstat()
+    except OSError:
+        return False
+    if path.is_symlink():
+        return True
+    attrs = int(getattr(st, "st_file_attributes", 0) or 0)
+    return bool(attrs & _FILE_ATTRIBUTE_REPARSE_POINT)
+
+
+def _assert_stable_guard_carrier(lease_path: Path) -> None:
+    """Require an absent path or a persistent empty ordinary-file lock carrier."""
+
+    if not lease_path.exists():
+        return
+    if _is_reparse_path(lease_path):
+        raise RuntimeError("science promotion guard is a reparse point")
+    try:
+        st = lease_path.lstat()
+    except OSError as exc:
+        raise RuntimeError("science promotion guard is unreadable") from exc
+    if not lease_path.is_file() or stat.S_ISDIR(st.st_mode):
+        raise RuntimeError("science promotion guard is not a regular file")
+    if st.st_size != 0:
+        raise RuntimeError("science promotion guard is foreign or tampered")
+
+
+def _seal_preimage(target: Path, archive: Path) -> _SealedPreimage:
+    """Seal a readonly rollback copy; original live mode is recorded separately.
+
+    Exact-hash idempotent: an existing archive whose digest matches the live
+    target is accepted as an already-materialized preimage (crash convergence).
+    """
+
     target = target.resolve()
     archive = archive.resolve()
-    if archive.exists():
-        raise FileExistsError(f"rollback copy already exists: {archive}")
-    archive.parent.mkdir(parents=True, exist_ok=True)
+    if not target.is_file() or _is_reparse_path(target):
+        raise FileNotFoundError(f"rollback source is missing or not a regular file: {target}")
+    original_mode = stat.S_IMODE(target.stat().st_mode)
+    seal_mode = original_mode & ~stat.S_IWRITE
     raw = target.read_bytes()
+    digest = _sha256_bytes(raw)
+    if archive.exists():
+        if _is_reparse_path(archive) or not archive.is_file():
+            raise FileExistsError(f"rollback copy is not a regular file: {archive}")
+        existing = _sha256(archive)
+        if existing != digest:
+            raise FileExistsError(f"rollback copy already exists with divergent content: {archive}")
+        # Converge seal mode without mutating live targets.
+        os.chmod(archive, seal_mode | stat.S_IWRITE)
+        os.chmod(archive, seal_mode)
+        return _SealedPreimage(
+            sha256=digest,
+            original_mode=original_mode,
+            seal_mode=seal_mode,
+            path=archive,
+        )
+    archive.parent.mkdir(parents=True, exist_ok=True)
     _atomic_replace_bytes(
         archive,
         raw,
-        installed_mode=stat.S_IMODE(target.stat().st_mode) & ~stat.S_IWRITE,
+        installed_mode=seal_mode,
     )
-    digest = _sha256_bytes(raw)
     if _sha256(archive) != digest:
         raise RuntimeError(f"rollback copy failed readback: {archive}")
-    return digest
+    return _SealedPreimage(
+        sha256=digest,
+        original_mode=original_mode,
+        seal_mode=seal_mode,
+        path=archive,
+    )
 
 
 def _promotion_marker_path(projection_path: Path) -> Path:
@@ -360,12 +434,15 @@ def _promotion_lease_path(projection_path: Path) -> Path:
 def _acquire_promotion_lease(projection_path: Path) -> _PromotionLease:
     lease_path = _promotion_lease_path(projection_path.resolve())
     lease_path.parent.mkdir(parents=True, exist_ok=True)
-    # Refuse non-empty foreign/tampered guards before open/lock. Empty residue
-    # from a prior preflight failure is cooperative lock state and is reused.
-    if lease_path.exists() and lease_path.stat().st_size != 0:
-        raise RuntimeError("science promotion guard is foreign or tampered")
+    # Persistent empty ordinary-file carrier. Non-empty / foreign / reparse fail closed.
+    _assert_stable_guard_carrier(lease_path)
     handle = lease_path.open("a+b")
     try:
+        # Re-check after open: refuse if another writer expanded the carrier.
+        handle.seek(0, os.SEEK_END)
+        if handle.tell() != 0:
+            handle.close()
+            raise RuntimeError("science promotion guard is foreign or tampered")
         portalocker.lock(handle, portalocker.LOCK_EX | portalocker.LOCK_NB)
     except portalocker.exceptions.LockException as exc:
         handle.close()
@@ -414,8 +491,7 @@ def _append_revision_entries(
         for entry in chain
     }
     addition_identities = [
-        (entry["run_id"], entry["event_ref"], entry["revision_evidence_ref"])
-        for entry in additions
+        (entry["run_id"], entry["event_ref"], entry["revision_evidence_ref"]) for entry in additions
     ]
     if len(set(addition_identities)) != len(addition_identities) or any(
         identity in identities for identity in addition_identities
@@ -832,9 +908,9 @@ def _prepare_promotion(
                         expected_active_parent_path=active_parent_path,
                         expected_active_parent_sha256=candidate_parent_sha256,
                     )
-                    if _archive_preservation_view(
-                        archive_preimage
-                    ) != _archive_preservation_view(archive_candidate_payload):
+                    if _archive_preservation_view(archive_preimage) != _archive_preservation_view(
+                        archive_candidate_payload
+                    ):
                         raise ValueError(
                             "archive candidate changes content outside the current publication pin"
                         )
@@ -934,9 +1010,7 @@ def _journal_receipt(journal: Mapping[str, Any], journal_path: Path) -> dict[str
                     "transition_candidate_active_parent_sha256"
                 ),
                 "archive_manifest_path": str(journal.get("archive_manifest_path")),
-                "archive_manifest_sha256": journal.get(
-                    "archive_manifest_committed_sha256"
-                ),
+                "archive_manifest_sha256": journal.get("archive_manifest_committed_sha256"),
                 "archive_snapshot_path": journal.get("archive_snapshot_path"),
                 "archive_snapshot_sha256": journal.get("archive_snapshot_sha256"),
             }
@@ -944,8 +1018,41 @@ def _journal_receipt(journal: Mapping[str, Any], journal_path: Path) -> dict[str
     return receipt
 
 
-def _preimage_specs(journal: Mapping[str, Any]) -> list[tuple[str, Path, Path, str]]:
-    specs: list[tuple[str, Path, Path, str]] = []
+def _journal_original_mode(journal: Mapping[str, Any], field: str) -> int | None:
+    raw = journal.get(field)
+    if raw is None:
+        return None
+    try:
+        return stat.S_IMODE(int(raw))
+    except (TypeError, ValueError):
+        raise RuntimeError(f"science journal {field} is not a valid file mode") from None
+
+
+def _mode_write_bit(mode: int) -> bool:
+    return bool(stat.S_IMODE(mode) & stat.S_IWRITE)
+
+
+def _assert_restored_mode(label: str, target: Path, original_mode: int | None) -> None:
+    """Validate restored mode; Windows preserves the write bit, not full Unix modes."""
+
+    if original_mode is None:
+        return
+    observed = stat.S_IMODE(target.stat().st_mode)
+    expected = stat.S_IMODE(original_mode)
+    if observed == expected:
+        return
+    if _mode_write_bit(observed) == _mode_write_bit(expected):
+        return
+    raise RuntimeError(
+        f"{label} rollback target mode failed readback "
+        f"(expected write={_mode_write_bit(expected)}, observed write={_mode_write_bit(observed)})"
+    )
+
+
+def _preimage_specs(
+    journal: Mapping[str, Any],
+) -> list[tuple[str, Path, Path, str, int | None]]:
+    specs: list[tuple[str, Path, Path, str, int | None]] = []
     if journal.get("transition_path") is not None:
         specs.extend(
             [
@@ -954,29 +1061,33 @@ def _preimage_specs(journal: Mapping[str, Any]) -> list[tuple[str, Path, Path, s
                     Path(str(journal["transition_rollback_copy"])).resolve(),
                     Path(str(journal["transition_path"])).resolve(),
                     str(journal["transition_preimage_sha256"]),
+                    _journal_original_mode(journal, "transition_original_mode"),
                 ),
                 (
                     "archive-manifest",
                     Path(str(journal["archive_manifest_rollback_copy"])).resolve(),
                     Path(str(journal["archive_manifest_path"])).resolve(),
                     str(journal["archive_manifest_preimage_sha256"]),
+                    _journal_original_mode(journal, "archive_manifest_original_mode"),
                 ),
             ]
         )
     specs.extend(
         [
-        (
-            "projection",
-            Path(str(journal["projection_rollback_copy"])).resolve(),
-            Path(str(journal["projection_path"])).resolve(),
-            str(journal["projection_preimage_sha256"]),
-        ),
-        (
-            "active-parent",
-            Path(str(journal["active_parent_rollback_copy"])).resolve(),
-            Path(str(journal["active_parent_path"])).resolve(),
-            str(journal["active_parent_preimage_sha256"]),
-        ),
+            (
+                "projection",
+                Path(str(journal["projection_rollback_copy"])).resolve(),
+                Path(str(journal["projection_path"])).resolve(),
+                str(journal["projection_preimage_sha256"]),
+                _journal_original_mode(journal, "projection_original_mode"),
+            ),
+            (
+                "active-parent",
+                Path(str(journal["active_parent_rollback_copy"])).resolve(),
+                Path(str(journal["active_parent_path"])).resolve(),
+                str(journal["active_parent_preimage_sha256"]),
+                _journal_original_mode(journal, "active_parent_original_mode"),
+            ),
         ]
     )
     return specs
@@ -1001,11 +1112,127 @@ def _restore_transaction_preimages(
     errors = _restore_preimages(specs)
     if errors:
         _raise_group("science rollback could not restore every target", errors)
-    for label, _source, target, expected in specs:
+    for label, _source, target, expected, original_mode in specs:
         if _sha256(target) != expected:
             raise RuntimeError(f"{label} rollback target failed readback")
+        _assert_restored_mode(label, target, original_mode)
     journal["status"] = status
     _write_json_atomic(journal_path, journal)
+
+
+def _record_sealed_preimage(
+    journal: dict[str, Any],
+    *,
+    prefix: str,
+    sealed: _SealedPreimage,
+) -> None:
+    journal[f"{prefix}_preimage_sha256"] = sealed.sha256
+    journal[f"{prefix}_original_mode"] = sealed.original_mode
+    journal[f"{prefix}_seal_mode"] = sealed.seal_mode
+    journal[f"{prefix}_sealed"] = True
+
+
+def _materializing_seal_plan(
+    journal: Mapping[str, Any],
+) -> list[tuple[str, str, Path, Path, str]]:
+    """Return ordered (label, journal_prefix, live, archive, expected_sha) seal steps."""
+
+    plan: list[tuple[str, str, Path, Path, str]] = [
+        (
+            "projection",
+            "projection",
+            Path(str(journal["projection_path"])).resolve(),
+            Path(str(journal["projection_rollback_copy"])).resolve(),
+            str(journal["projection_preimage_sha256"]),
+        ),
+        (
+            "active-parent",
+            "active_parent",
+            Path(str(journal["active_parent_path"])).resolve(),
+            Path(str(journal["active_parent_rollback_copy"])).resolve(),
+            str(journal["active_parent_preimage_sha256"]),
+        ),
+    ]
+    if journal.get("transition_path") is not None:
+        plan.extend(
+            [
+                (
+                    "transition",
+                    "transition",
+                    Path(str(journal["transition_path"])).resolve(),
+                    Path(str(journal["transition_rollback_copy"])).resolve(),
+                    str(journal["transition_preimage_sha256"]),
+                ),
+                (
+                    "archive-manifest",
+                    "archive_manifest",
+                    Path(str(journal["archive_manifest_path"])).resolve(),
+                    Path(str(journal["archive_manifest_rollback_copy"])).resolve(),
+                    str(journal["archive_manifest_preimage_sha256"]),
+                ),
+            ]
+        )
+    return plan
+
+
+def _recover_materializing_transaction(
+    journal: dict[str, Any],
+    journal_path: Path,
+    marker_path: Path,
+) -> dict[str, Any]:
+    """Abort an incomplete preimage materialization without mutating live targets."""
+
+    defects: list[dict[str, Any]] = []
+    for label, _prefix, live, archive, expected in _materializing_seal_plan(journal):
+        observed_live = _sha256(live) if live.is_file() else None
+        if observed_live != expected:
+            defects.append(
+                _dependency_defect(
+                    "SCIENCE_" + label.upper().replace("-", "_") + "_PREIMAGE_DRIFT",
+                    f"{label} live target drifted during MATERIALIZING",
+                    path=str(live),
+                    expected=expected,
+                    observed=observed_live,
+                )
+            )
+        if archive.exists():
+            if _is_reparse_path(archive) or not archive.is_file():
+                defects.append(
+                    _dependency_defect(
+                        "SCIENCE_" + label.upper().replace("-", "_") + "_ROLLBACK_INVALID",
+                        f"{label} rollback copy is not a regular file",
+                        path=str(archive),
+                    )
+                )
+            else:
+                observed_archive = _sha256(archive)
+                if observed_archive != expected:
+                    defects.append(
+                        _dependency_defect(
+                            "SCIENCE_" + label.upper().replace("-", "_") + "_ROLLBACK_DRIFT",
+                            f"{label} rollback copy diverged from expected preimage",
+                            path=str(archive),
+                            expected=expected,
+                            observed=observed_archive,
+                        )
+                    )
+    if defects:
+        raise SciencePublicationError(
+            "SCIENCE_MATERIALIZING_RECOVERY_FAILED",
+            "MATERIALIZING recovery refused because live or sealed preimages drifted",
+            defects=defects,
+            receipt={
+                "transaction_status": MATERIALIZING,
+                "transaction_journal": str(journal_path),
+            },
+        )
+    journal["status"] = ROLLED_BACK_AFTER_CRASH
+    _write_json_atomic(journal_path, journal)
+    marker_path.unlink(missing_ok=True)
+    result = _journal_receipt(journal, journal_path)
+    result["status"] = ROLLED_BACK_AFTER_CRASH
+    result["materializing_aborted"] = True
+    return result
 
 
 def _promote_revision_chain_impl(
@@ -1038,15 +1265,6 @@ def _promote_revision_chain_impl(
         raise ValueError("revision evidence and event refs must be paired and non-empty")
     projection_path = projection_path.resolve()
     rollback_copy = rollback_copy.resolve()
-    rollback_carriers = [
-        ("projection", rollback_copy),
-        ("active-parent", active_parent_rollback_copy),
-        ("transition", transition_rollback_copy),
-        ("archive-manifest", archive_manifest_rollback_copy),
-    ]
-    for label, carrier in rollback_carriers:
-        if carrier is not None and carrier.resolve().exists():
-            raise FileExistsError(f"{label} rollback copy already exists: {carrier.resolve()}")
     transaction_directory = (
         transaction_directory.resolve()
         if transaction_directory is not None
@@ -1089,9 +1307,13 @@ def _promote_revision_chain_impl(
         # rollback archive, or authority mutation.  Recheck exact bytes while the
         # cooperative lease is held before materializing transaction state.
         if _sha256(projection_path) != prepared.projection_preimage_sha256:
-            raise ValueError("science active-parent projection changed before transaction materialization")
+            raise ValueError(
+                "science active-parent projection changed before transaction materialization"
+            )
         if _sha256(prepared.active_parent_path) != prepared.active_parent_preimage_sha256:
-            raise ValueError("science active-parent source changed before transaction materialization")
+            raise ValueError(
+                "science active-parent source changed before transaction materialization"
+            )
         if (
             _sha256(prepared.active_parent_candidate_path)
             != prepared.active_parent_candidate_sha256
@@ -1126,7 +1348,9 @@ def _promote_revision_chain_impl(
                 if _sha256(target.path) != target.preimage_sha256:
                     raise ValueError(f"science {label} changed before transaction materialization")
                 if _sha256(target.candidate_path) != target.candidate_sha256:
-                    raise ValueError(f"science {label} candidate changed before transaction materialization")
+                    raise ValueError(
+                        f"science {label} candidate changed before transaction materialization"
+                    )
             archive_snapshot_path = Path(
                 str(prepared.archive_candidate_binding["versioned_snapshot_path"])
             ).resolve()
@@ -1134,21 +1358,17 @@ def _promote_revision_chain_impl(
                 prepared.archive_candidate_binding["versioned_snapshot_sha256"]
             )
             if _sha256(archive_snapshot_path) != archive_snapshot_sha256:
-                raise ValueError("science archive snapshot drifted before transaction materialization")
+                raise ValueError(
+                    "science archive snapshot drifted before transaction materialization"
+                )
 
         parent_rollback = (
             active_parent_rollback_copy.resolve()
             if active_parent_rollback_copy is not None
             else (transaction_directory / "active-parent.preimage.txt").resolve()
         )
-        projection_preimage_sha256 = _seal_preimage(projection_path, rollback_copy)
-        active_parent_preimage_sha256 = _seal_preimage(
-            prepared.active_parent_path, parent_rollback
-        )
         transition_rollback: Path | None = None
         archive_rollback: Path | None = None
-        transition_preimage_sha256: str | None = None
-        archive_preimage_sha256: str | None = None
         if prepared.v110:
             if (
                 prepared.transition is None
@@ -1159,33 +1379,25 @@ def _promote_revision_chain_impl(
                 raise RuntimeError("science v1.10 rollback carriers were not prepared")
             transition_rollback = transition_rollback_copy.resolve()
             archive_rollback = archive_manifest_rollback_copy.resolve()
-            transition_preimage_sha256 = _seal_preimage(
-                prepared.transition.path,
-                transition_rollback,
-            )
-            archive_preimage_sha256 = _seal_preimage(
-                prepared.archive_manifest.path,
-                archive_rollback,
-            )
+
         candidate_projection_path = (transaction_directory / "projection.candidate.json").resolve()
-        _atomic_replace_bytes(
-            candidate_projection_path,
-            prepared.projection_candidate,
-            installed_mode=stat.S_IREAD,
-        )
+        # Enter recoverable MATERIALIZING *before* the first rollback copy so a
+        # crash mid-seal leaves a discoverable journal/marker rather than orphans.
         journal: dict[str, Any] = {
             "schema_version": TRANSACTION_SCHEMA,
-            "status": PREPARED,
+            "status": MATERIALIZING,
             "projection_path": str(projection_path),
-            "projection_preimage_sha256": projection_preimage_sha256,
+            "projection_preimage_sha256": prepared.projection_preimage_sha256,
             "projection_candidate_sha256": prepared.projection_candidate_sha256,
             "projection_rollback_copy": str(rollback_copy),
             "projection_candidate_path": str(candidate_projection_path),
+            "projection_sealed": False,
             "active_parent_path": str(prepared.active_parent_path),
-            "active_parent_preimage_sha256": active_parent_preimage_sha256,
+            "active_parent_preimage_sha256": prepared.active_parent_preimage_sha256,
             "active_parent_candidate_sha256": prepared.active_parent_candidate_sha256,
             "active_parent_rollback_copy": str(parent_rollback),
             "active_parent_candidate_path": str(prepared.active_parent_candidate_path),
+            "active_parent_sealed": False,
             "revision_count": prepared.revision_count,
             "v110_dependency_pin": (
                 {
@@ -1212,10 +1424,11 @@ def _promote_revision_chain_impl(
             journal.update(
                 {
                     "transition_path": str(prepared.transition.path),
-                    "transition_preimage_sha256": transition_preimage_sha256,
+                    "transition_preimage_sha256": prepared.transition.preimage_sha256,
                     "transition_candidate_sha256": prepared.transition.candidate_sha256,
                     "transition_candidate_path": str(prepared.transition.candidate_path),
                     "transition_rollback_copy": str(transition_rollback),
+                    "transition_sealed": False,
                     "transition_preimage_active_parent_sha256": (
                         prepared.transition_preimage_active_parent_sha256
                     ),
@@ -1223,7 +1436,7 @@ def _promote_revision_chain_impl(
                         prepared.active_parent_candidate_sha256
                     ),
                     "archive_manifest_path": str(prepared.archive_manifest.path),
-                    "archive_manifest_preimage_sha256": archive_preimage_sha256,
+                    "archive_manifest_preimage_sha256": prepared.archive_manifest.preimage_sha256,
                     "archive_manifest_candidate_sha256": (
                         prepared.archive_manifest.candidate_sha256
                     ),
@@ -1231,6 +1444,7 @@ def _promote_revision_chain_impl(
                         prepared.archive_manifest.candidate_path
                     ),
                     "archive_manifest_rollback_copy": str(archive_rollback),
+                    "archive_manifest_sealed": False,
                     "archive_snapshot_path": prepared.archive_candidate_binding[
                         "versioned_snapshot_path"
                     ],
@@ -1247,6 +1461,23 @@ def _promote_revision_chain_impl(
             )
         _write_json_atomic(journal_path, journal)
         _write_json_atomic(marker_path, _marker_payload(journal_path))
+
+        sealed_modes: dict[str, int] = {}
+        for _label, prefix, live, archive, expected in _materializing_seal_plan(journal):
+            sealed = _seal_preimage(live, archive)
+            if sealed.sha256 != expected:
+                raise RuntimeError(f"{_label} sealed preimage drifted from prepared digest")
+            _record_sealed_preimage(journal, prefix=prefix, sealed=sealed)
+            sealed_modes[prefix] = sealed.original_mode
+            _write_json_atomic(journal_path, journal)
+
+        _atomic_replace_bytes(
+            candidate_projection_path,
+            prepared.projection_candidate,
+            installed_mode=stat.S_IREAD,
+        )
+        journal["status"] = PREPARED
+        _write_json_atomic(journal_path, journal)
         journal["status"] = APPLYING
         _write_json_atomic(journal_path, journal)
 
@@ -1255,6 +1486,7 @@ def _promote_revision_chain_impl(
                 _replace_file(
                     prepared.active_parent_candidate_path,
                     prepared.active_parent_path,
+                    installed_mode=sealed_modes["active_parent"],
                 )
             _assert_hash(
                 prepared.active_parent_path,
@@ -1265,7 +1497,7 @@ def _promote_revision_chain_impl(
             _replace_file(
                 candidate_projection_path,
                 projection_path,
-                installed_mode=stat.S_IMODE(rollback_copy.stat().st_mode),
+                installed_mode=sealed_modes["projection"],
             )
             _assert_hash(
                 projection_path,
@@ -1282,7 +1514,7 @@ def _promote_revision_chain_impl(
                 _replace_file(
                     prepared.archive_manifest.candidate_path,
                     prepared.archive_manifest.path,
-                    installed_mode=stat.S_IMODE(archive_rollback.stat().st_mode),
+                    installed_mode=sealed_modes["archive_manifest"],
                 )
                 _assert_hash(
                     prepared.archive_manifest.path,
@@ -1297,7 +1529,7 @@ def _promote_revision_chain_impl(
                 _replace_file(
                     prepared.transition.candidate_path,
                     prepared.transition.path,
-                    installed_mode=stat.S_IMODE(transition_rollback.stat().st_mode),
+                    installed_mode=sealed_modes["transition"],
                 )
                 _assert_hash(
                     prepared.transition.path,
@@ -1310,9 +1542,7 @@ def _promote_revision_chain_impl(
                     expected_active_parent_sha256=prepared.active_parent_candidate_sha256,
                 )
             journal["projection_committed_sha256"] = prepared.projection_candidate_sha256
-            journal["active_parent_committed_sha256"] = (
-                prepared.active_parent_candidate_sha256
-            )
+            journal["active_parent_committed_sha256"] = prepared.active_parent_candidate_sha256
             if prepared.v110:
                 journal["archive_manifest_committed_sha256"] = (
                     prepared.archive_manifest.candidate_sha256
@@ -1338,7 +1568,9 @@ def _promote_revision_chain_impl(
                 failures.append(rollback_error)
             if len(failures) == 1:
                 raise primary
-            raise ExceptionGroup("science promotion and rollback both failed", failures) from primary
+            raise ExceptionGroup(
+                "science promotion and rollback both failed", failures
+            ) from primary
 
         marker_path.unlink(missing_ok=True)
         result = _journal_receipt(journal, journal_path)
@@ -1603,11 +1835,7 @@ def _verify_companion_semantics(
         ]
     )
     archive_expected = str(
-        journal[
-            "active_parent_preimage_sha256"
-            if restored
-            else "active_parent_candidate_sha256"
-        ]
+        journal["active_parent_preimage_sha256" if restored else "active_parent_candidate_sha256"]
     )
     transition_binding = validate_science_transition_active_parent_binding(
         Path(str(journal["transition_path"])).read_text(encoding="utf-8"),
@@ -1651,12 +1879,14 @@ def recover_interrupted_promotion(projection_path: Path) -> dict[str, Any]:
             result["status"] = "COMMITTED_LOCK_CLEARED"
             result.update(companion_bindings)
             return result
+        if status_value == MATERIALIZING:
+            return _recover_materializing_transaction(journal, journal_path, marker_path)
         if status_value in {ROLLED_BACK, ROLLED_BACK_AFTER_CRASH}:
             specs = _preimage_specs(journal)
             invalid = _validate_preimages(specs)
             if invalid:
                 _raise_group("science rollback preimages are invalid", invalid)
-            for label, _source, target, expected in specs:
+            for label, _source, target, expected, _mode in specs:
                 if not target.is_file() or _sha256(target) != expected:
                     raise RuntimeError(f"{label} target does not match persisted rollback")
             companion_bindings = _verify_companion_semantics(journal, restored=True)
@@ -1675,9 +1905,10 @@ def recover_interrupted_promotion(projection_path: Path) -> dict[str, Any]:
         errors = _restore_preimages(specs)
         if errors:
             _raise_group("science recovery could not restore every target", errors)
-        for label, _source, target, expected in specs:
+        for label, _source, target, expected, original_mode in specs:
             if not target.is_file() or _sha256(target) != expected:
                 raise RuntimeError(f"{label} recovery target failed readback")
+            _assert_restored_mode(label, target, original_mode)
         companion_bindings = _verify_companion_semantics(journal, restored=True)
         journal["status"] = ROLLED_BACK_AFTER_CRASH
         _write_json_atomic(journal_path, journal)
@@ -1713,7 +1944,7 @@ def rollback_science_revision_transaction(
             invalid = _validate_preimages(specs)
             if invalid:
                 _raise_group("science rollback preimages are invalid", invalid)
-            for label, _source, target, expected in specs:
+            for label, _source, target, expected, _mode in specs:
                 if not target.is_file() or _sha256(target) != expected:
                     raise RuntimeError(f"{label} target does not match persisted rollback")
             companion_bindings = _verify_companion_semantics(journal, restored=True)
@@ -1763,9 +1994,10 @@ def rollback_science_revision_transaction(
         errors = _restore_preimages(specs)
         if errors:
             _raise_group("science rollback could not restore every target", errors)
-        for label, _source, target, expected in specs:
+        for label, _source, target, expected, original_mode in specs:
             if not target.is_file() or _sha256(target) != expected:
                 raise RuntimeError(f"{label} rollback target failed readback")
+            _assert_restored_mode(label, target, original_mode)
         companion_bindings = _verify_companion_semantics(journal, restored=True)
         journal["status"] = ROLLED_BACK
         _write_json_atomic(journal_path, journal)
@@ -1852,9 +2084,7 @@ def main(argv: list[str] | None = None) -> int:
                 active_parent_rollback_copy=args.active_parent_rollback_copy,
                 transaction_directory=args.transaction_directory,
                 tool_glue_authority_path=args.tool_glue_authority,
-                expected_tool_glue_authority_sha256=(
-                    args.expected_tool_glue_authority_sha256
-                ),
+                expected_tool_glue_authority_sha256=(args.expected_tool_glue_authority_sha256),
                 expected_tool_glue_version=args.expected_tool_glue_version,
                 transition_path=args.transition_path,
                 transition_candidate=args.transition_candidate,

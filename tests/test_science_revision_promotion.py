@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import os
 import stat
+import threading
 from pathlib import Path
 
 import pytest
@@ -18,6 +19,23 @@ def _force_write_bytes(path: Path, payload: bytes) -> None:
 
 def _write_json(path: Path, payload: dict[str, object]) -> None:
     path.write_text(json.dumps(payload), encoding="utf-8")
+
+
+def _semantic_files(root: Path) -> dict[Path, bytes]:
+    """Snapshot files excluding the durable empty promotion.guard carrier."""
+
+    return {
+        path.relative_to(root): path.read_bytes()
+        for path in root.rglob("*")
+        if path.is_file() and not path.name.endswith(".promotion.guard")
+    }
+
+
+def _assert_stable_empty_guard(projection: Path) -> None:
+    guard = promotion._promotion_lease_path(projection)
+    assert guard.is_file()
+    assert guard.stat().st_size == 0
+    assert not promotion._is_reparse_path(guard)
 
 
 def _fixture(tmp_path: Path) -> tuple[Path, Path, Path]:
@@ -176,9 +194,7 @@ def _four_target_v110_fixture(
         "transition_path": transition,
         "transition_candidate": transition_candidate,
         "expected_transition_sha256": promotion._sha256(transition),
-        "expected_transition_preimage_active_parent_sha256": (
-            stale_transition_parent_sha256
-        ),
+        "expected_transition_preimage_active_parent_sha256": (stale_transition_parent_sha256),
         "transition_rollback_copy": transition_rollback,
         "archive_manifest_path": archive_manifest,
         "archive_manifest_candidate": archive_candidate,
@@ -253,11 +269,7 @@ def test_dependency_preflight_failure_precedes_all_persistent_promotion_mutation
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     projection, evidence, rollback = _fixture(tmp_path)
-    before = {
-        path.relative_to(tmp_path): path.read_bytes()
-        for path in tmp_path.rglob("*")
-        if path.is_file()
-    }
+    before = _semantic_files(tmp_path)
 
     def reject_unready_tool_glue(_path: Path) -> dict[str, object]:
         raise ValueError("SCIENCE_DEPENDENCY_TOOL_GLUE_PIN_MISMATCH")
@@ -272,14 +284,12 @@ def test_dependency_preflight_failure_precedes_all_persistent_promotion_mutation
             rollback_copy=rollback,
         )
 
-    after = {
-        path.relative_to(tmp_path): path.read_bytes()
-        for path in tmp_path.rglob("*")
-        if path.is_file()
-    }
+    after = _semantic_files(tmp_path)
     assert after == before
     assert not rollback.exists()
     assert not projection.with_name(f"{projection.name}.promotion.lock").exists()
+    # Stable empty guard is a lock carrier, not semantic transaction residue.
+    _assert_stable_empty_guard(projection)
 
 
 def test_science_v110_publication_requires_exact_live_tool_glue_pin_before_mutation(
@@ -320,11 +330,7 @@ def test_science_v110_publication_requires_exact_live_tool_glue_pin_before_mutat
     expected_tool_glue_v34_sha256 = (
         "eb6677d9cf87d152b91b119f92488e90969145c0dabfc4cb0e3b1d0437643703"
     )
-    before = {
-        path.relative_to(tmp_path): path.read_bytes()
-        for path in tmp_path.rglob("*")
-        if path.is_file()
-    }
+    before = _semantic_files(tmp_path)
 
     with pytest.raises(promotion.SciencePublicationError) as raised:
         promotion.publish_science_revision_transaction(
@@ -355,11 +361,7 @@ def test_science_v110_publication_requires_exact_live_tool_glue_pin_before_mutat
         )
 
     assert raised.value.code == "SCIENCE_DEPENDENCY_TOOL_GLUE_PIN_MISMATCH"
-    after = {
-        path.relative_to(tmp_path): path.read_bytes()
-        for path in tmp_path.rglob("*")
-        if path.is_file()
-    }
+    after = _semantic_files(tmp_path)
     assert after == before
     assert not rollback.exists()
     assert not active_parent_rollback.exists()
@@ -367,6 +369,7 @@ def test_science_v110_publication_requires_exact_live_tool_glue_pin_before_mutat
     assert not archive_manifest_rollback.exists()
     assert not transaction_directory.exists()
     assert not projection.with_name(f"{projection.name}.promotion.lock").exists()
+    _assert_stable_empty_guard(projection)
 
 
 def test_promote_revision_chain_retains_commit_on_post_commit_readback_failure(
@@ -747,12 +750,13 @@ def test_promote_revision_chain_refuses_concurrent_lock(tmp_path: Path) -> None:
     assert projection.read_bytes() == original_projection
     assert not rollback.exists()
     assert not marker_path.exists()
-    # Cooperative 0B guards are removed on release so preflight/contention
-    # leaves no durable residue; reacquire must recreate them.
-    assert not lease_path.exists()
+    # Persistent empty ordinary-file guard remains after release; reacquire reuses it.
+    assert lease_path.is_file()
+    assert lease_path.stat().st_size == 0
     reacquired_lease = promotion._acquire_promotion_lease(projection)
     reacquired_lease.release()
-    assert not lease_path.exists()
+    assert lease_path.is_file()
+    assert lease_path.stat().st_size == 0
 
 
 def test_recovery_rejects_journal_bound_to_another_projection(tmp_path: Path) -> None:
@@ -875,22 +879,26 @@ def test_restore_preimages_attempts_every_target_after_one_restore_fails(
             projection_preimage,
             projection_target,
             promotion._sha256(projection_preimage),
+            None,
         ),
         (
             "active-parent",
             parent_preimage,
             parent_target,
             promotion._sha256(parent_preimage),
+            stat.S_IREAD,
         ),
     ]
     real_restore = promotion._restore_file
     attempted: list[Path] = []
 
-    def fail_projection_restore(source: Path, target: Path) -> None:
+    def fail_projection_restore(
+        source: Path, target: Path, *, installed_mode: int | None = None
+    ) -> None:
         attempted.append(target)
         if target == projection_target:
             raise PermissionError("projection rollback blocked")
-        real_restore(source, target)
+        real_restore(source, target, installed_mode=installed_mode)
 
     monkeypatch.setattr(promotion, "_restore_file", fail_projection_restore)
     errors = promotion._restore_preimages(specs)
@@ -1034,12 +1042,11 @@ def test_v110_four_target_publish_and_clean_rollback_are_dependency_ordered(
     ]
     assert result["transaction_status"] == "COMMITTED"
     assert result["tool_glue_rollback_ready"] is False
-    assert result["transition_candidate_active_parent_sha256"] == fixture[
-        "candidate_parent_sha256"
-    ]
-    assert result["transition_preimage_active_parent_sha256"] == fixture[
-        "stale_transition_parent_sha256"
-    ]
+    assert result["transition_candidate_active_parent_sha256"] == fixture["candidate_parent_sha256"]
+    assert (
+        result["transition_preimage_active_parent_sha256"]
+        == fixture["stale_transition_parent_sha256"]
+    )
 
     replace_targets.clear()
     rollback = promotion.rollback_science_revision_transaction(
@@ -1115,12 +1122,13 @@ def test_v110_clean_rollback_refuses_any_committed_postimage_drift(
         )
 
     assert raised.value.code == "SCIENCE_ROLLBACK_POSTIMAGE_DRIFT"
-    assert json.loads(Path(fixture["journal_path"]).read_text(encoding="utf-8"))[
-        "status"
-    ] == "COMMITTED"
-    assert not targets["projection"].with_name(
-        f"{targets['projection'].name}.promotion.lock"
-    ).exists()
+    assert (
+        json.loads(Path(fixture["journal_path"]).read_text(encoding="utf-8"))["status"]
+        == "COMMITTED"
+    )
+    assert (
+        not targets["projection"].with_name(f"{targets['projection'].name}.promotion.lock").exists()
+    )
     for label, path in targets.items():
         expected = b"unexpected committed drift" if label == drift_target else committed[label]
         assert path.read_bytes() == expected
@@ -1141,9 +1149,7 @@ def test_v110_interrupted_apply_recovers_all_four_targets_in_reverse_order(
     _force_write_bytes(targets["transition"], fixture["preimages"]["transition"])
     journal["status"] = "APPLYING"
     promotion._write_json_atomic(journal_path, journal)
-    marker_path = targets["projection"].with_name(
-        f"{targets['projection'].name}.promotion.lock"
-    )
+    marker_path = targets["projection"].with_name(f"{targets['projection'].name}.promotion.lock")
     promotion._write_json_atomic(marker_path, {"journal_path": str(journal_path)})
 
     replace_targets: list[Path] = []
@@ -1216,7 +1222,7 @@ def test_v110_transition_preimage_parent_pin_must_be_explicitly_bound(
         for defect in raised.value.receipt["defects"]
     )
     assert not Path(fixture["journal_path"]).exists()
-    assert not promotion._promotion_lease_path(targets["projection"]).exists()
+    _assert_stable_empty_guard(targets["projection"])
     for label, path in targets.items():
         assert path.read_bytes() == fixture["preimages"][label]
 
@@ -1298,8 +1304,206 @@ def test_v110_selector_tool_glue_version_missing_or_drift_is_stable(
         promotion.publish_science_revision_transaction(**kwargs)
 
     assert raised.value.code == "SCIENCE_DEPENDENCY_TOOL_GLUE_PIN_MISMATCH"
-    assert any(
-        defect["code"] == expected_defect for defect in raised.value.receipt["defects"]
-    )
+    assert any(defect["code"] == expected_defect for defect in raised.value.receipt["defects"])
     assert not Path(fixture["journal_path"]).exists()
-    assert not promotion._promotion_lease_path(projection).exists()
+    _assert_stable_empty_guard(projection)
+
+
+@pytest.mark.parametrize(
+    "crash_after",
+    ["projection", "active_parent", "transition", "archive_manifest"],
+)
+def test_materializing_crash_cut_is_recoverable_at_each_seal_boundary(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    crash_after: str,
+) -> None:
+    fixture = _four_target_v110_fixture(tmp_path, monkeypatch)
+    targets = fixture["targets"]
+    assert isinstance(targets, dict)
+    order = ["projection", "active_parent", "transition", "archive_manifest"]
+    stop_index = order.index(crash_after)
+    journal_path = Path(fixture["journal_path"])
+    real_write = promotion._write_json_atomic
+
+    def write_until_boundary(path: Path, payload: dict[str, object]) -> None:
+        real_write(path, payload)
+        if path.resolve() != journal_path.resolve():
+            return
+        if payload.get("status") != "MATERIALIZING":
+            return
+        sealed_count = sum(1 for label in order if payload.get(f"{label}_sealed") is True)
+        if sealed_count == stop_index + 1 and payload.get(f"{crash_after}_sealed") is True:
+            raise RuntimeError(f"simulated crash after sealing {crash_after}")
+
+    monkeypatch.setattr(promotion, "_write_json_atomic", write_until_boundary)
+    with pytest.raises(RuntimeError, match=f"simulated crash after sealing {crash_after}"):
+        promotion.publish_science_revision_transaction(**fixture["publish_kwargs"])
+
+    marker_path = targets["projection"].with_name(f"{targets['projection'].name}.promotion.lock")
+    assert journal_path.is_file()
+    assert marker_path.is_file()
+    journal = json.loads(journal_path.read_text(encoding="utf-8"))
+    assert journal["status"] == "MATERIALIZING"
+    for label in order[: stop_index + 1]:
+        assert journal[f"{label}_sealed"] is True
+        assert journal[f"{label}_original_mode"] is not None
+        assert fixture["rollback_copies"][label].is_file()
+        assert promotion._sha256(fixture["rollback_copies"][label]) == promotion._sha256_bytes(
+            fixture["preimages"][label]
+        )
+        assert not fixture["rollback_copies"][label].stat().st_mode & stat.S_IWRITE
+    for label in order[stop_index + 1 :]:
+        assert journal.get(f"{label}_sealed") is False
+    for label, path in targets.items():
+        assert path.read_bytes() == fixture["preimages"][label]
+
+    recovery = promotion.recover_interrupted_promotion(targets["projection"])
+    assert recovery["status"] == "ROLLED_BACK_AFTER_CRASH"
+    assert recovery.get("materializing_aborted") is True
+    assert not marker_path.exists()
+    assert json.loads(journal_path.read_text(encoding="utf-8"))["status"] == (
+        "ROLLED_BACK_AFTER_CRASH"
+    )
+    for label, path in targets.items():
+        assert path.read_bytes() == fixture["preimages"][label]
+
+    # Exact-hash convergence reuses already sealed rollback copies on retry.
+    kwargs = dict(fixture["publish_kwargs"])
+    kwargs["transaction_directory"] = tmp_path / "science-transaction-retry"
+    kwargs["expected_projection_sha256"] = promotion._sha256(targets["projection"])
+    result = promotion.publish_science_revision_transaction(**kwargs)
+    assert result["transaction_status"] == "COMMITTED"
+
+
+def test_promotion_guard_is_persistent_empty_carrier_under_real_concurrency(
+    tmp_path: Path,
+) -> None:
+    projection, _evidence, _rollback = _fixture(tmp_path)
+    guard = promotion._promotion_lease_path(projection)
+    holder_ready = threading.Event()
+    contender_done = threading.Event()
+    contender_error: list[str] = []
+
+    def holder() -> None:
+        lease = promotion._acquire_promotion_lease(projection)
+        holder_ready.set()
+        assert contender_done.wait(timeout=5)
+        lease.release()
+
+    def contender() -> None:
+        assert holder_ready.wait(timeout=5)
+        try:
+            promotion._acquire_promotion_lease(projection)
+            contender_error.append("unexpected acquire")
+        except RuntimeError as exc:
+            contender_error.append(str(exc))
+        finally:
+            contender_done.set()
+
+    threads = [threading.Thread(target=holder), threading.Thread(target=contender)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join(timeout=10)
+    assert contender_error == ["science promotion lease is still owned"]
+    assert guard.is_file()
+    assert guard.stat().st_size == 0
+    # Second serial acquire reuses the same durable carrier without unlink race.
+    lease = promotion._acquire_promotion_lease(projection)
+    lease.release()
+    assert guard.is_file()
+    assert guard.stat().st_size == 0
+
+
+def test_promotion_guard_rejects_reparse_and_directory_carriers(tmp_path: Path) -> None:
+    projection, _evidence, _rollback = _fixture(tmp_path)
+    guard = promotion._promotion_lease_path(projection)
+    # Directory is not an ordinary empty file carrier.
+    guard.mkdir(parents=True)
+    with pytest.raises(RuntimeError, match="not a regular file"):
+        promotion._acquire_promotion_lease(projection)
+    guard.rmdir()
+    # Symlink/reparse is fail-closed.
+    target = tmp_path / "foreign-guard-target"
+    target.write_bytes(b"")
+    try:
+        guard.symlink_to(target)
+    except OSError:
+        pytest.skip("symlink creation requires privilege on this Windows host")
+    with pytest.raises(RuntimeError, match="reparse point"):
+        promotion._acquire_promotion_lease(projection)
+
+
+def test_rollback_copy_seal_mode_is_independent_of_live_original_mode(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fixture = _four_target_v110_fixture(tmp_path, monkeypatch)
+    targets = fixture["targets"]
+    assert isinstance(targets, dict)
+    # Force writable originals so restore must reinstall write bits from journal.
+    for path in targets.values():
+        path.chmod(stat.S_IREAD | stat.S_IWRITE)
+    original_modes = {label: stat.S_IMODE(path.stat().st_mode) for label, path in targets.items()}
+    kwargs = dict(fixture["publish_kwargs"])
+    kwargs["expected_projection_sha256"] = promotion._sha256(targets["projection"])
+    kwargs["expected_active_parent_sha256"] = promotion._sha256(targets["active_parent"])
+    kwargs["expected_transition_sha256"] = promotion._sha256(targets["transition"])
+    kwargs["expected_archive_manifest_sha256"] = promotion._sha256(targets["archive_manifest"])
+
+    result = promotion.publish_science_revision_transaction(**kwargs)
+    assert result["transaction_status"] == "COMMITTED"
+    journal = json.loads(Path(fixture["journal_path"]).read_text(encoding="utf-8"))
+    for label in ("projection", "active_parent", "transition", "archive_manifest"):
+        assert journal[f"{label}_original_mode"] == original_modes[label]
+        assert not fixture["rollback_copies"][label].stat().st_mode & stat.S_IWRITE
+        # Live commit installs the original mode, not the sealed rollback mode.
+        assert targets[label].stat().st_mode & stat.S_IWRITE
+        promotion._assert_restored_mode(label, targets[label], original_modes[label])
+
+    rollback = promotion.rollback_science_revision_transaction(
+        journal_path=fixture["journal_path"],
+        projection_path=targets["projection"],
+    )
+    assert rollback["transaction_status"] == "ROLLED_BACK"
+    for label, path in targets.items():
+        assert path.read_bytes() == fixture["preimages"][label]
+        assert path.stat().st_mode & stat.S_IWRITE
+        promotion._assert_restored_mode(label, path, original_modes[label])
+
+
+def test_restore_file_uses_journal_original_mode_not_seal_mode(tmp_path: Path) -> None:
+    source = tmp_path / "before.txt"
+    target = tmp_path / "target.txt"
+    source.write_text("sealed preimage", encoding="utf-8")
+    target.write_text("mutated", encoding="utf-8")
+    source.chmod(stat.S_IREAD)
+    target.chmod(stat.S_IREAD | stat.S_IWRITE)
+    # Capture the platform-normalized writable mode, not a bare Unix constant.
+    original_mode = stat.S_IMODE(target.stat().st_mode)
+    assert original_mode & stat.S_IWRITE
+
+    promotion._restore_file(source, target, installed_mode=original_mode)
+
+    assert target.read_text(encoding="utf-8") == "sealed preimage"
+    assert target.stat().st_mode & stat.S_IWRITE
+    promotion._assert_restored_mode("target", target, original_mode)
+    leftovers = list(tmp_path.glob("*.restore"))
+    assert leftovers == []
+
+
+def test_exact_hash_seal_is_idempotent_across_crash_convergence(tmp_path: Path) -> None:
+    live = tmp_path / "live.txt"
+    archive = tmp_path / "archive.txt"
+    live.write_text("payload", encoding="utf-8")
+    live.chmod(stat.S_IREAD | stat.S_IWRITE)
+    first = promotion._seal_preimage(live, archive)
+    second = promotion._seal_preimage(live, archive)
+    assert first.sha256 == second.sha256
+    assert first.original_mode == second.original_mode
+    assert not archive.stat().st_mode & stat.S_IWRITE
+    divergent = tmp_path / "divergent.txt"
+    divergent.write_text("other", encoding="utf-8")
+    with pytest.raises(FileExistsError, match="divergent content"):
+        promotion._seal_preimage(divergent, archive)
