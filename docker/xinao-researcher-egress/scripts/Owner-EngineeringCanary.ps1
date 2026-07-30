@@ -283,7 +283,7 @@ function Get-RealProviderCreateArgs {
         '--cwd', '/tmp',
         '--max-turns', '1',
         '--permission-mode', 'dontAsk',
-        '--tools', '',
+        '--tools=',
         '--no-subagents',
         '--no-memory',
         '--disable-web-search'
@@ -408,7 +408,7 @@ try {
             '--entrypoint', '/usr/local/bin/grok', $imagePlan.canary_image_id,
             '--no-auto-update', '-p', '<FIXED_NON_SCIENTIFIC_PROMPT>', '-m', $script:XinaoCanaryRequestedModel,
             '--output-format', 'json', '--cwd', '/tmp', '--max-turns', '1',
-            '--permission-mode', 'dontAsk', '--tools', '', '--no-subagents', '--no-memory', '--disable-web-search'
+            '--permission-mode', 'dontAsk', '--tools=', '--no-subagents', '--no-memory', '--disable-web-search'
         )
 
         if ($PreflightOnly -or $WhatIf) {
