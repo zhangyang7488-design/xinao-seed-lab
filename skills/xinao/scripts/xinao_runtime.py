@@ -2693,7 +2693,7 @@ def _activation_canary(txn_id: str) -> dict[str, Any]:
         raise XinaoError("ACTIVATION_TRANSACTION_BINDING_MISMATCH", txn_id)
     if context["journal"]["state"] not in {"CANARY_STARTED", "ROLLBACK_CANARY_STARTED"}:
         raise XinaoError("ACTIVATION_STATE_INVALID", str(context["journal"]["state"]))
-    _validate_release_for_invoke(context["release"])
+    _validate_release_for_activation(context["release"])
     return {
         "schema_version": "xinao.researcher_activation_canary.v1",
         "status": "CANARY_READY",
@@ -2717,9 +2717,24 @@ def _run_activation_canary(journal: dict[str, Any]) -> dict[str, Any]:
         check=False,
     )
     if completed.returncode != 0:
+        child_reason = "UNAVAILABLE"
+        try:
+            child = json.loads(completed.stdout)
+        except (json.JSONDecodeError, TypeError):
+            child = None
+        if isinstance(child, dict):
+            reason_codes = child.get("reason_codes")
+            if (
+                isinstance(reason_codes, list)
+                and len(reason_codes) == 1
+                and isinstance(reason_codes[0], str)
+                and re.fullmatch(r"[A-Z0-9_]{1,128}", reason_codes[0])
+            ):
+                child_reason = reason_codes[0]
         raise XinaoError(
             "ACTIVATION_CANARY_FAILED",
-            f"exit={completed.returncode} stderr={completed.stderr[:2000]}",
+            f"exit={completed.returncode} child_reason={child_reason} "
+            f"stderr={completed.stderr[:2000]}",
         )
     if len(completed.stdout.encode("utf-8")) > MAX_TERMINAL_ATTESTATION_BYTES:
         raise XinaoError("ACTIVATION_CANARY_INVALID", "canary receipt too large")
@@ -5271,9 +5286,7 @@ def _assert_egress_observations_bound(before: dict[str, Any], after: dict[str, A
             raise XinaoError("EGRESS_PRE_START_REOBSERVE_DRIFT", "live_seal_sha256")
 
 
-def _validate_release_for_invoke(release: dict[str, Any]) -> tuple[str, dict[str, Any]]:
-    charter, runtime_lock = _validate_release_source_identity(release)
-    _require_host_egress_boundary(runtime_lock)
+def _validate_release_image_identity(release: dict[str, Any]) -> str:
     docker = _docker()
     _docker_engine_os(docker)
     image_id = str(release.get("image_id", ""))
@@ -5315,6 +5328,21 @@ def _validate_release_for_invoke(release: dict[str, Any]) -> tuple[str, dict[str
     expected_entrypoint = ["python", "-I", "/opt/xinao-researcher/entrypoint.py"]
     if release.get("image_entrypoint") != expected_entrypoint or entrypoint != expected_entrypoint:
         raise XinaoError("IMAGE_ENTRYPOINT_IDENTITY_MISMATCH", image_id)
+    return docker
+
+
+def _validate_release_for_activation(release: dict[str, Any]) -> tuple[str, dict[str, Any]]:
+    """Validate an installed release without requiring the later provider-call boundary."""
+
+    charter, _runtime_lock = _validate_release_source_identity(release)
+    docker = _validate_release_image_identity(release)
+    return docker, charter
+
+
+def _validate_release_for_invoke(release: dict[str, Any]) -> tuple[str, dict[str, Any]]:
+    charter, runtime_lock = _validate_release_source_identity(release)
+    _require_host_egress_boundary(runtime_lock)
+    docker = _validate_release_image_identity(release)
     if not DEFAULT_AUTH_PATH.is_file():
         raise XinaoError("GROK_AUTH_HANDLE_MISSING", str(DEFAULT_AUTH_PATH))
     return docker, charter

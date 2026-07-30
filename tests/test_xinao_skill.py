@@ -962,6 +962,181 @@ def test_dirty_candidate_never_activates_or_changes_pointer(
     assert module._pending_journals() == []
 
 
+def test_activation_release_validation_excludes_egress_and_auth(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    module = _module()
+    manifest, _manifest_path = _sealed_release(module, tmp_path, monkeypatch)
+    charter = module._validate_charter()
+    runtime_lock = module._load_json(module.RUNTIME_LOCK_PATH)
+    monkeypatch.setattr(
+        module,
+        "_validate_release_source_identity",
+        lambda _release: (charter, runtime_lock),
+    )
+    monkeypatch.setattr(
+        module,
+        "_require_host_egress_boundary",
+        lambda *_args, **_kwargs: pytest.fail("activation must not require provider egress"),
+    )
+    monkeypatch.setattr(module, "DEFAULT_AUTH_PATH", tmp_path / "missing-auth.json")
+    monkeypatch.setattr(module, "_docker", lambda: "docker")
+    monkeypatch.setattr(module, "_docker_engine_os", lambda _docker: "linux")
+    monkeypatch.setattr(
+        module,
+        "_docker_image",
+        lambda _docker, _image: {
+            "Id": manifest["image_id"],
+            "Config": {
+                "Labels": manifest["image_labels"],
+                "Entrypoint": manifest["image_entrypoint"],
+            },
+        },
+    )
+
+    docker, observed_charter = module._validate_release_for_activation(manifest)
+
+    assert docker == "docker"
+    assert observed_charter == charter
+
+
+@pytest.mark.parametrize(
+    ("field", "reason_code"),
+    (
+        ("label", "IMAGE_LABEL_IDENTITY_MISMATCH"),
+        ("entrypoint", "IMAGE_ENTRYPOINT_IDENTITY_MISMATCH"),
+    ),
+)
+def test_activation_release_validation_rejects_image_drift(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    field: str,
+    reason_code: str,
+) -> None:
+    module = _module()
+    manifest, _manifest_path = _sealed_release(module, tmp_path, monkeypatch)
+    charter = module._validate_charter()
+    runtime_lock = module._load_json(module.RUNTIME_LOCK_PATH)
+    observed_labels = dict(manifest["image_labels"])
+    observed_entrypoint = list(manifest["image_entrypoint"])
+    if field == "label":
+        observed_labels["io.xinao.researcher.chain"] = "tampered"
+    else:
+        observed_entrypoint[-1] = "/tmp/tampered.py"
+    monkeypatch.setattr(
+        module,
+        "_validate_release_source_identity",
+        lambda _release: (charter, runtime_lock),
+    )
+    monkeypatch.setattr(module, "_docker", lambda: "docker")
+    monkeypatch.setattr(module, "_docker_engine_os", lambda _docker: "linux")
+    monkeypatch.setattr(
+        module,
+        "_docker_image",
+        lambda _docker, _image: {
+            "Id": manifest["image_id"],
+            "Config": {
+                "Labels": observed_labels,
+                "Entrypoint": observed_entrypoint,
+            },
+        },
+    )
+
+    with pytest.raises(module.XinaoError) as failure:
+        module._validate_release_for_activation(manifest)
+
+    assert failure.value.reason_code == reason_code
+
+
+def test_activation_canary_uses_activation_gate_not_invoke_gate(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    module = _module()
+    txn_id = "xra_20260730T120000_" + "a" * 16
+    release = {
+        "release_id": "researcher-1.1.0-" + "b" * 16,
+        "skill_bundle_tree_sha256": "c" * 64,
+    }
+    context = {
+        "journal": {"txn_id": txn_id, "state": "CANARY_STARTED"},
+        "pointer": {
+            "generation": 2,
+            "active": {"release_manifest_sha256": "d" * 64},
+        },
+        "pointer_sha256": "e" * 64,
+        "release": release,
+    }
+    calls: list[dict[str, object]] = []
+    monkeypatch.setattr(module, "_load_current_context", lambda **_kwargs: context)
+    monkeypatch.setattr(
+        module,
+        "_validate_release_for_activation",
+        lambda value: calls.append(value) or ("docker", {}),
+    )
+    monkeypatch.setattr(
+        module,
+        "_validate_release_for_invoke",
+        lambda _value: pytest.fail("activation canary must not require invoke readiness"),
+    )
+
+    receipt = module._activation_canary(txn_id)
+
+    assert calls == [release]
+    assert receipt["status"] == "CANARY_READY"
+    assert receipt["provider_effect_verified"] is False
+
+
+def test_activation_canary_failure_surfaces_child_reason(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    module = _module()
+    txn_id = "xra_20260730T120000_" + "f" * 16
+    journal = {
+        "txn_id": txn_id,
+        "to": {"release_manifest_path": str(tmp_path / "release.json")},
+    }
+    child = module._error_envelope(
+        module.XinaoError("IMAGE_IDENTITY_MISMATCH", "candidate image")
+    )
+    monkeypatch.setattr(
+        module,
+        "_run",
+        lambda *_args, **_kwargs: SimpleNamespace(
+            returncode=2,
+            stdout=json.dumps(child),
+            stderr="",
+        ),
+    )
+
+    with pytest.raises(module.XinaoError) as failure:
+        module._run_activation_canary(journal)
+
+    assert failure.value.reason_code == "ACTIVATION_CANARY_FAILED"
+    assert "child_reason=IMAGE_IDENTITY_MISMATCH" in failure.value.detail
+
+
+def test_inspect_still_reports_missing_egress_after_activation_split(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    module = _module()
+    manifest, manifest_path = _sealed_release(module, tmp_path, monkeypatch)
+    _terminal_pointer(module, manifest, manifest_path)
+    _install_bootstrap_fence(module, monkeypatch, ["inspect"])
+    monkeypatch.setattr(
+        module,
+        "_validate_release_for_invoke",
+        lambda _release: (_ for _ in ()).throw(
+            module.XinaoError("EGRESS_LIVE_SEAL_MISSING", "expected after install")
+        ),
+    )
+
+    receipt = module.inspect_capability()
+
+    assert receipt["runtime_status"] == "EGRESS_BOUNDARY_UNAVAILABLE"
+    assert receipt["runtime_reason_code"] == "EGRESS_LIVE_SEAL_MISSING"
+    assert receipt["provider_effect_verified"] is False
+
+
 def test_activate_verifies_canary_and_keeps_full_previous_bundle(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

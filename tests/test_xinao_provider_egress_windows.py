@@ -11,6 +11,7 @@ import importlib.util
 import json
 import os
 import re
+import shutil
 import subprocess
 import sys
 import textwrap
@@ -354,6 +355,29 @@ def _parse_last_json(stdout: str) -> dict:
     return last
 
 
+def _copy_egress_package(
+    tmp_path: Path,
+    *,
+    name: str,
+    unresolved_pin: bool = False,
+    empty_allowlist: bool = False,
+) -> Path:
+    package = tmp_path / name
+    shutil.copytree(EGRESS_ROOT, package)
+    if unresolved_pin:
+        pin_path = package / "image-pin.v1.json"
+        pin = json.loads(pin_path.read_text(encoding="utf-8"))
+        pin["image_id"] = None
+        pin["image_digest"] = None
+        pin_path.write_text(json.dumps(pin, indent=2) + "\n", encoding="utf-8")
+    if empty_allowlist:
+        allowlist_path = package / "allowlist.v1.json"
+        allowlist = json.loads(allowlist_path.read_text(encoding="utf-8"))
+        allowlist["domains"] = []
+        allowlist_path.write_text(json.dumps(allowlist, indent=2) + "\n", encoding="utf-8")
+    return package
+
+
 def test_owner_scripts_exist() -> None:
     for name in OWNER_SCRIPTS:
         path = SCRIPTS / name
@@ -453,17 +477,17 @@ def test_common_quoting_and_path_spaces() -> None:
 def test_null_image_pin_readback_fails_closed(tmp_path: Path) -> None:
     state = tmp_path / "state"
     state.mkdir()
-    # Use real package pin (null ids) via -ReadbackOnly.
+    package = _copy_egress_package(tmp_path, name="unresolved-pin", unresolved_pin=True)
     proc = _run_pwsh(
         [
-            str(SCRIPTS / "Resolve-ProxyImagePin.ps1"),
+            str(package / "scripts" / "Resolve-ProxyImagePin.ps1"),
             "-ReadbackOnly",
             "-PackageRoot",
-            str(EGRESS_ROOT),
+            str(package),
             "-StateRoot",
             str(state),
             "-PinPath",
-            str(EGRESS_ROOT / "image-pin.v1.json"),
+            str(package / "image-pin.v1.json"),
         ]
     )
     assert proc.returncode != 0
@@ -485,13 +509,16 @@ def test_resolved_pin_preflight_and_null_pin_provision_fail(tmp_path: Path) -> N
     temp = tmp_path / "temp"
     state.mkdir()
     temp.mkdir()
+    unresolved_package = _copy_egress_package(
+        tmp_path, name="unresolved-provision", unresolved_pin=True
+    )
     # Provision with unresolved pin must fail without docker mutation.
     proc = _run_pwsh(
         [
-            str(SCRIPTS / "Owner-ProvisionEgress.ps1"),
+            str(unresolved_package / "scripts" / "Owner-ProvisionEgress.ps1"),
             "-PreflightOnly",
             "-PackageRoot",
-            str(EGRESS_ROOT),
+            str(unresolved_package),
             "-StateRoot",
             str(state),
             "-TempRoot",
@@ -511,14 +538,7 @@ def test_resolved_pin_preflight_and_null_pin_provision_fail(tmp_path: Path) -> N
     pin_src["image_digest"] = "ubuntu/squid@sha256:" + ("b" * 64)
     pin_src["floating_tag_as_authority"] = False
     pin_src["authority"] = "immutable_digest_or_image_id_only"
-    pkg = tmp_path / "pkg"
-    # Minimal package mirror for pin override while reusing render assets via copy of needed files.
-    import shutil
-
-    shutil.copytree(EGRESS_ROOT, pkg, ignore=shutil.ignore_patterns("scripts"))
-    (pkg / "scripts").mkdir()
-    for name in OWNER_SCRIPTS:
-        shutil.copy2(SCRIPTS / name, pkg / "scripts" / name)
+    pkg = _copy_egress_package(tmp_path, name="resolved-empty", empty_allowlist=True)
     (pkg / "image-pin.v1.json").write_text(json.dumps(pin_src, indent=2) + "\n", encoding="utf-8")
 
     proc2 = _run_pwsh(
@@ -547,16 +567,17 @@ def test_resolved_pin_preflight_and_null_pin_provision_fail(tmp_path: Path) -> N
 def test_empty_allowlist_engineering_canary_fails_honestly(tmp_path: Path) -> None:
     state = tmp_path / "state"
     state.mkdir()
+    package = _copy_egress_package(tmp_path, name="empty-allowlist", empty_allowlist=True)
     proc = _run_pwsh(
         [
-            str(SCRIPTS / "Owner-EngineeringCanary.ps1"),
+            str(package / "scripts" / "Owner-EngineeringCanary.ps1"),
             "-PreflightOnly",
             "-PackageRoot",
-            str(EGRESS_ROOT),
+            str(package),
             "-StateRoot",
             str(state),
             "-AllowlistPath",
-            str(EGRESS_ROOT / "allowlist.v1.json"),
+            str(package / "allowlist.v1.json"),
         ]
     )
     assert proc.returncode != 0
@@ -831,16 +852,19 @@ def test_scripts_do_not_claim_completion_or_verified_true_literals() -> None:
         assert "parent_complete                    = $true" not in text
 
 
-def test_image_pin_file_still_unresolved_in_source() -> None:
+def test_image_pin_source_is_resolved_and_immutable() -> None:
     pin = json.loads((EGRESS_ROOT / "image-pin.v1.json").read_text(encoding="utf-8"))
-    assert pin.get("image_id") is None
-    assert pin.get("image_digest") is None
+    assert re.fullmatch(r"sha256:[0-9a-f]{64}", str(pin.get("image_id")))
+    assert re.fullmatch(r"[^@]+@sha256:[0-9a-f]{64}", str(pin.get("image_digest")))
+    assert pin.get("authority") == "immutable_digest_or_image_id_only"
     assert pin.get("floating_tag_as_authority") is False
 
 
-def test_allowlist_empty_is_fail_closed_default() -> None:
+def test_allowlist_source_is_exact_and_narrow() -> None:
     allow = json.loads((EGRESS_ROOT / "allowlist.v1.json").read_text(encoding="utf-8"))
-    assert allow.get("domains") == []
+    assert allow.get("domains") == ["cli-chat-proxy.grok.com"]
+    assert allow.get("ports") == [443]
+    assert allow.get("methods") == ["CONNECT"]
 
 
 FIXTURE_CLI = ROOT / "tests" / "fixtures" / "engineering_canary_cli"
@@ -892,9 +916,14 @@ def test_real_provider_preflight_requires_auth_and_image(tmp_path: Path) -> None
             str(EGRESS_ROOT / "allowlist.v1.json"),
         ]
     )
-    # Empty allowlist fails first.
+    # Missing explicit image/auth must fail before any real provider effect.
     assert proc.returncode != 0
     payload = _parse_last_json(proc.stdout)
+    assert payload.get("reason_code") in {
+        "CANARY_IMAGE_ID_REQUIRED",
+        "EGRESS_AUTH_PATH_REQUIRED",
+        "EGRESS_AUTH_PATH_MISSING",
+    }
     assert payload.get("completion_claim_allowed") is False
     assert payload.get("provider_effect_verified") is False
 
