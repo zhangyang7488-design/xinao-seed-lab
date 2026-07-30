@@ -1,0 +1,1543 @@
+#Requires -Version 7.0
+<#
+.SYNOPSIS
+  Shared pure helpers for XINAO researcher egress Windows Owner carriers.
+.DESCRIPTION
+  Dot-source only. Loading this file never mutates Docker, never reads credentials,
+  and never claims completion. Safe for static import and offline tests.
+#>
+
+Set-StrictMode -Version Latest
+$ErrorActionPreference = 'Stop'
+
+$script:XinaoEgressSchemaStatuses = @('planned', 'observed', 'verified', 'partial', 'failed')
+
+$script:XinaoEgressProxyContainerName = 'xinao-researcher-egress-proxy'
+$script:XinaoEgressInternalNetworkName = 'xinao_researcher_internal'
+$script:XinaoEgressExternalNetworkName = 'xinao_provider_egress_ext'
+$script:XinaoEgressChainLabel = 'io.xinao.researcher.chain'
+$script:XinaoEgressChainLabelValue = 'dedicated-xinao-science'
+$script:XinaoEgressProjectLabel = 'io.xinao.project'
+$script:XinaoEgressProjectLabelValue = 'xinao-researcher-egress'
+
+$script:XinaoEgressForbiddenExactNames = @(
+    'ssrf_proxy',
+    'ssrf_proxy_network',
+    'docker_ssrf_proxy_network',
+    '/ssrf_proxy'
+)
+
+$script:XinaoEgressForbiddenNameSubstrings = @(
+    'ssrf_proxy',
+    'dify'
+)
+
+$script:XinaoEgressSecretTokenPatterns = @(
+    'authorization\s*[:=]',
+    'bearer\s+[A-Za-z0-9\-\._~\+/]+=*',
+    'api[_-]?key\s*[:=]',
+    'auth\.json',
+    'password\s*[:=]',
+    'sk-[A-Za-z0-9]{8,}',
+    'xai-[A-Za-z0-9]{8,}'
+)
+
+function Get-XinaoEgressScriptRoot {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $false)]
+        [string]$AnchorPath = $PSScriptRoot
+    )
+    if ([string]::IsNullOrWhiteSpace($AnchorPath)) {
+        throw 'EGRESS_SCRIPT_ROOT_UNRESOLVED'
+    }
+    return [System.IO.Path]::GetFullPath($AnchorPath)
+}
+
+function Get-XinaoEgressPackageRoot {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $false)]
+        [string]$ScriptsRoot = (Get-XinaoEgressScriptRoot)
+    )
+    return [System.IO.Path]::GetFullPath((Join-Path $ScriptsRoot '..'))
+}
+
+function Get-XinaoDefaultStateRoot {
+    [CmdletBinding()]
+    param()
+    if (-not [string]::IsNullOrWhiteSpace($env:XINAO_EGRESS_STATE_ROOT)) {
+        return [System.IO.Path]::GetFullPath($env:XINAO_EGRESS_STATE_ROOT)
+    }
+    return [System.IO.Path]::GetFullPath('D:\XINAO_RESEARCH_RUNTIME\state\xinao_skill\researcher_container\egress')
+}
+
+function Get-XinaoDefaultTempRoot {
+    [CmdletBinding()]
+    param()
+    if (-not [string]::IsNullOrWhiteSpace($env:XINAO_EGRESS_TEMP_ROOT)) {
+        return [System.IO.Path]::GetFullPath($env:XINAO_EGRESS_TEMP_ROOT)
+    }
+    return [System.IO.Path]::GetFullPath('D:\XINAO_RESEARCH_RUNTIME\tmp\xinao_egress_owner')
+}
+
+function Get-XinaoEgressPathContract {
+    [CmdletBinding()]
+    param(
+        [string]$StateRoot = (Get-XinaoDefaultStateRoot),
+        [string]$TempRoot = (Get-XinaoDefaultTempRoot),
+        [string]$PackageRoot = (Get-XinaoEgressPackageRoot)
+    )
+    $state = [System.IO.Path]::GetFullPath($StateRoot)
+    $temp = [System.IO.Path]::GetFullPath($TempRoot)
+    $pkg = [System.IO.Path]::GetFullPath($PackageRoot)
+    return [ordered]@{
+        schema_version                    = 'xinao.provider_egress_windows_path_contract.v1'
+        package_root                      = $pkg
+        state_root                        = $state
+        temp_root                         = $temp
+        image_pin_path                    = (Join-Path $pkg 'image-pin.v1.json')
+        allowlist_path                    = (Join-Path $pkg 'allowlist.v1.json')
+        template_path                     = (Join-Path $pkg 'squid.conf.template')
+        compose_path                      = (Join-Path $pkg 'docker-compose.yaml')
+        render_script_path                = (Join-Path $pkg 'render_squid_config.py')
+        posture_path                      = (Join-Path $state 'current_posture.v1.json')
+        live_seal_path                    = (Join-Path $state 'current_live_seal.v1.json')
+        negative_suite_receipt_path       = (Join-Path $state 'negative_suite_receipt.v1.json')
+        engineering_canary_receipt_path   = (Join-Path $state 'engineering_canary_receipt.v1.json')
+        cleanup_receipt_path              = (Join-Path $state 'cleanup_receipt.v1.json')
+        image_pin_readback_path           = (Join-Path $state 'image_pin_readback.v1.json')
+        provision_receipt_path            = (Join-Path $state 'provision_receipt.v1.json')
+        fresh_process_readback_path       = (Join-Path $state 'fresh_process_readback.v1.json')
+        discovery_receipt_path            = (Join-Path $state 'discovery_receipt.v1.json')
+        proxy_container_name              = $script:XinaoEgressProxyContainerName
+        internal_network_name             = $script:XinaoEgressInternalNetworkName
+        external_network_name             = $script:XinaoEgressExternalNetworkName
+        chain_label                       = $script:XinaoEgressChainLabel
+        chain_label_value                 = $script:XinaoEgressChainLabelValue
+        completion_claim_allowed          = $false
+        authority                         = $false
+        wsl_required                      = $false
+        git_bash_required                 = $false
+        platform                          = 'windows_docker_desktop_powershell7'
+    }
+}
+
+function Assert-XinaoReceiptStatus {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Status
+    )
+    if ($script:XinaoEgressSchemaStatuses -notcontains $Status) {
+        throw "EGRESS_RECEIPT_STATUS_INVALID:$Status"
+    }
+}
+
+function New-XinaoUtcNowIso {
+    [CmdletBinding()]
+    param()
+    return [DateTime]::UtcNow.ToString('yyyy-MM-ddTHH:mm:ss.fffZ')
+}
+
+function ConvertTo-XinaoStrictJson {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]
+        $InputObject,
+        [int]$Depth = 40
+    )
+    # Depth-stable, UTF-8 friendly; avoid trailing-space quirks from ConvertTo-Json -Compress alone.
+    return ($InputObject | ConvertTo-Json -Depth $Depth -Compress:$false)
+}
+
+function Write-XinaoJsonFile {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Path,
+        [Parameter(Mandatory = $true)]
+        $Object
+    )
+    $full = [System.IO.Path]::GetFullPath($Path)
+    $dir = Split-Path -Parent $full
+    if (-not (Test-Path -LiteralPath $dir -PathType Container)) {
+        New-Item -ItemType Directory -Path $dir -Force | Out-Null
+    }
+    $json = ConvertTo-XinaoStrictJson -InputObject $Object
+    # Ensure trailing newline; UTF-8 no BOM for platform-neutral validators.
+    $utf8 = New-Object System.Text.UTF8Encoding $false
+    [System.IO.File]::WriteAllText($full, ($json.TrimEnd() + [Environment]::NewLine), $utf8)
+    return $full
+}
+
+function Read-XinaoJsonFile {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Path
+    )
+    $full = [System.IO.Path]::GetFullPath($Path)
+    if (-not (Test-Path -LiteralPath $full -PathType Leaf)) {
+        throw "EGRESS_JSON_MISSING:$full"
+    }
+    $raw = [System.IO.File]::ReadAllText($full)
+    return ($raw | ConvertFrom-Json -Depth 100)
+}
+
+function Test-XinaoSecretLeakText {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]
+        [AllowEmptyString()]
+        [string]$Text
+    )
+    $lower = $Text.ToLowerInvariant()
+    foreach ($pattern in $script:XinaoEgressSecretTokenPatterns) {
+        if ([regex]::IsMatch($lower, $pattern, [System.Text.RegularExpressions.RegexOptions]::IgnoreCase)) {
+            return $true
+        }
+    }
+    return $false
+}
+
+function Assert-XinaoNoSecretLeak {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]
+        $Object
+    )
+    $blob = ConvertTo-XinaoStrictJson -InputObject $Object
+    if (Test-XinaoSecretLeakText -Text $blob) {
+        throw 'EGRESS_RECEIPT_SECRET_LEAK'
+    }
+}
+
+function Resolve-XinaoPythonInterpreter {
+    [CmdletBinding()]
+    param(
+        [string]$PackageRoot = (Get-XinaoEgressPackageRoot),
+        [string]$ExplicitPath = ''
+    )
+    if (-not [string]::IsNullOrWhiteSpace($ExplicitPath)) {
+        $candidate = [System.IO.Path]::GetFullPath($ExplicitPath)
+        if (-not (Test-Path -LiteralPath $candidate -PathType Leaf)) {
+            throw "EGRESS_PYTHON_MISSING:$candidate"
+        }
+        return $candidate
+    }
+    if (-not [string]::IsNullOrWhiteSpace($env:XINAO_PYTHON)) {
+        $envPy = [System.IO.Path]::GetFullPath($env:XINAO_PYTHON)
+        if (Test-Path -LiteralPath $envPy -PathType Leaf) {
+            return $envPy
+        }
+    }
+    # Prefer repository interpreter if present (worktree or monorepo root layouts).
+    $repoCandidates = @(
+        (Join-Path $PackageRoot '..\..\..\.venv\Scripts\python.exe'),
+        (Join-Path $PackageRoot '..\..\..\..\.venv\Scripts\python.exe'),
+        (Join-Path (Get-Location) '.venv\Scripts\python.exe')
+    )
+    foreach ($rel in $repoCandidates) {
+        try {
+            $full = [System.IO.Path]::GetFullPath($rel)
+            if (Test-Path -LiteralPath $full -PathType Leaf) {
+                return $full
+            }
+        } catch {
+            continue
+        }
+    }
+    $cmd = Get-Command python -ErrorAction SilentlyContinue
+    if ($null -ne $cmd -and -not [string]::IsNullOrWhiteSpace($cmd.Source)) {
+        return [string]$cmd.Source
+    }
+    throw 'EGRESS_PYTHON_NOT_FOUND'
+}
+
+function Invoke-XinaoNativeProcess {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$FilePath,
+        [Parameter(Mandatory = $true)]
+        [string[]]$ArgumentList,
+        [switch]$AllowNonZero,
+        [int]$TimeoutSeconds = 0
+    )
+    # System.Diagnostics.Process avoids Start-Process pipe identity issues on Windows.
+    # Always drain stdout/stderr asynchronously while waiting to avoid redirected-pipe deadlock.
+    $psi = New-Object System.Diagnostics.ProcessStartInfo
+    $psi.FileName = $FilePath
+    $psi.UseShellExecute = $false
+    $psi.RedirectStandardOutput = $true
+    $psi.RedirectStandardError = $true
+    $psi.CreateNoWindow = $true
+    foreach ($arg in $ArgumentList) {
+        [void]$psi.ArgumentList.Add([string]$arg)
+    }
+    $proc = New-Object System.Diagnostics.Process
+    $proc.StartInfo = $psi
+    [void]$proc.Start()
+    $stdoutTask = $proc.StandardOutput.ReadToEndAsync()
+    $stderrTask = $proc.StandardError.ReadToEndAsync()
+    $timedOut = $false
+    if ($TimeoutSeconds -gt 0) {
+        $exited = $proc.WaitForExit([Math]::Max(1, $TimeoutSeconds) * 1000)
+        if (-not $exited) {
+            $timedOut = $true
+            try { $proc.Kill($true) } catch { }
+            try { [void]$proc.WaitForExit(5000) } catch { }
+        }
+    } else {
+        $proc.WaitForExit()
+    }
+    $stdout = ''
+    $stderr = ''
+    try { $stdout = $stdoutTask.GetAwaiter().GetResult() } catch { $stdout = '' }
+    try { $stderr = $stderrTask.GetAwaiter().GetResult() } catch { $stderr = '' }
+    if ($timedOut) {
+        throw "EGRESS_PROCESS_TIMEOUT:file=$([System.IO.Path]::GetFileName($FilePath))"
+    }
+    $code = $proc.ExitCode
+    if (($code -ne 0) -and (-not $AllowNonZero)) {
+        throw "EGRESS_PROCESS_FAILED:exit=$code file=$([System.IO.Path]::GetFileName($FilePath))"
+    }
+    return [pscustomobject]@{
+        ExitCode = $code
+        StdOut   = $stdout
+        StdErr   = $stderr
+        Planned  = $null
+        TimedOut = $false
+    }
+}
+
+function Invoke-XinaoPythonJson {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$PythonPath,
+        [Parameter(Mandatory = $true)]
+        [string[]]$ArgumentList,
+        [switch]$AllowNonZero
+    )
+    return Invoke-XinaoNativeProcess -FilePath $PythonPath -ArgumentList $ArgumentList -AllowNonZero:$AllowNonZero
+}
+
+function Test-XinaoImagePinResolved {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]
+        $PinObject
+    )
+    if ($null -eq $PinObject) {
+        return $false
+    }
+    $digest = $PinObject.image_digest
+    $imageId = $PinObject.image_id
+    $hasDigest = -not [string]::IsNullOrWhiteSpace([string]$digest)
+    $hasId = -not [string]::IsNullOrWhiteSpace([string]$imageId)
+    return ($hasDigest -or $hasId)
+}
+
+function Get-XinaoImageAuthorityRef {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]
+        $PinObject
+    )
+    if (-not [string]::IsNullOrWhiteSpace([string]$PinObject.image_digest)) {
+        return [string]$PinObject.image_digest
+    }
+    if (-not [string]::IsNullOrWhiteSpace([string]$PinObject.image_id)) {
+        return [string]$PinObject.image_id
+    }
+    throw 'IMAGE_PIN_UNRESOLVED'
+}
+
+function Test-XinaoComposeSafetyText {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$ComposeText
+    )
+    $issues = [System.Collections.Generic.List[string]]::new()
+    foreach ($line in ($ComposeText -split "`r?`n")) {
+        $stripped = $line.Trim()
+        if ($stripped -match '^\s*ports\s*:') {
+            $issues.Add('HOST_PORT_PUBLISH_FORBIDDEN') | Out-Null
+        }
+        if ($stripped -match '^\s*container_name\s*:\s*ssrf_proxy\s*$') {
+            $issues.Add('DIFY_CONTAINER_REUSE_FORBIDDEN') | Out-Null
+        }
+        if ($stripped -match '^\s*ssrf_proxy_network\s*:') {
+            $issues.Add('DIFY_NETWORK_REUSE_FORBIDDEN') | Out-Null
+        }
+        if ($stripped -match '^\s*ssrf_proxy\s*:') {
+            $issues.Add('DIFY_SERVICE_REUSE_FORBIDDEN') | Out-Null
+        }
+    }
+    return , @($issues.ToArray())
+}
+
+function Assert-XinaoNotForbiddenDockerTarget {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]
+        [AllowEmptyString()]
+        [string]$Name,
+        [string]$Id = ''
+    )
+    $normalized = $Name.Trim()
+    if ($normalized.StartsWith('/')) {
+        $normalized = $normalized.Substring(1)
+    }
+    $lower = $normalized.ToLowerInvariant()
+    foreach ($exact in $script:XinaoEgressForbiddenExactNames) {
+        $exactNorm = $exact.TrimStart('/').ToLowerInvariant()
+        if ($lower -eq $exactNorm) {
+            throw "EGRESS_FOREIGN_OR_DIFY_TARGET_REJECTED:$normalized"
+        }
+    }
+    foreach ($sub in $script:XinaoEgressForbiddenNameSubstrings) {
+        if ($lower.Contains($sub.ToLowerInvariant())) {
+            throw "EGRESS_FOREIGN_OR_DIFY_TARGET_REJECTED:$normalized"
+        }
+    }
+    if (-not [string]::IsNullOrWhiteSpace($Id) -and $Id.ToLowerInvariant().Contains('ssrf')) {
+        throw "EGRESS_FOREIGN_OR_DIFY_TARGET_REJECTED_ID:$Id"
+    }
+    return $true
+}
+
+function Test-XinaoExactCleanupCandidate {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Name,
+        [string]$Id = '',
+        [hashtable]$Labels = @{},
+        [ValidateSet('container', 'network')]
+        [string]$Kind = 'container'
+    )
+    # Exact allowlist of removable object identities. Never broad glob selection.
+    Assert-XinaoNotForbiddenDockerTarget -Name $Name -Id $Id | Out-Null
+    $normalized = $Name.Trim().TrimStart('/')
+    $allowedContainers = @($script:XinaoEgressProxyContainerName)
+    $allowedNetworks = @(
+        $script:XinaoEgressInternalNetworkName,
+        $script:XinaoEgressExternalNetworkName
+    )
+    if ($Kind -eq 'network') {
+        if ($allowedNetworks -notcontains $normalized) {
+            return $false
+        }
+        return $true
+    }
+    if ($allowedContainers -contains $normalized) {
+        return $true
+    }
+    # Researcher chain containers: require exact chain label AND name prefix.
+    $chainOk = $false
+    if ($Labels.ContainsKey($script:XinaoEgressChainLabel)) {
+        $chainOk = [string]$Labels[$script:XinaoEgressChainLabel] -eq $script:XinaoEgressChainLabelValue
+    }
+    if ($chainOk -and ($normalized -like 'xinao-researcher-*')) {
+        return $true
+    }
+    return $false
+}
+
+function Test-XinaoCommandAvailable {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Name
+    )
+    return $null -ne (Get-Command $Name -ErrorAction SilentlyContinue)
+}
+
+function Get-XinaoDockerCli {
+    [CmdletBinding()]
+    param()
+    $cmd = Get-Command docker -ErrorAction SilentlyContinue
+    if ($null -eq $cmd) {
+        throw 'EGRESS_DOCKER_CLI_MISSING'
+    }
+    return [string]$cmd.Source
+}
+
+function Invoke-XinaoDocker {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]
+        [string[]]$ArgumentList,
+        [switch]$AllowNonZero,
+        [switch]$WhatIfPlan
+    )
+    if ($WhatIfPlan) {
+        return [pscustomobject]@{
+            ExitCode = 0
+            StdOut   = ''
+            StdErr   = ''
+            Planned  = @('docker') + $ArgumentList
+        }
+    }
+    $docker = Get-XinaoDockerCli
+    try {
+        return Invoke-XinaoNativeProcess -FilePath $docker -ArgumentList $ArgumentList -AllowNonZero:$AllowNonZero
+    } catch {
+        throw "EGRESS_DOCKER_FAILED:args=$($ArgumentList -join ' ') err=$([string]$_.Exception.Message)"
+    }
+}
+
+function New-XinaoBaseReceipt {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$SchemaVersion,
+        [Parameter(Mandatory = $true)]
+        [ValidateSet('planned', 'observed', 'verified', 'partial', 'failed')]
+        [string]$Status,
+        [hashtable]$Extra = @{}
+    )
+    Assert-XinaoReceiptStatus -Status $Status
+    $receipt = [ordered]@{
+        schema_version                     = $SchemaVersion
+        status                             = $Status
+        executed_at                        = (New-XinaoUtcNowIso)
+        provider_egress_runtime_verified   = $false
+        provider_egress_live_verified      = $false
+        secrets_present                    = $false
+        completion_claim_allowed           = $false
+        authority                          = $false
+        science_restored                   = $false
+        parent_complete                    = $false
+        scientific_research                = $false
+        research_invoked                   = $false
+        wsl_used                           = $false
+        git_bash_used                      = $false
+        carrier                            = 'windows_powershell7_docker_desktop'
+    }
+    foreach ($key in $Extra.Keys) {
+        $receipt[$key] = $Extra[$key]
+    }
+    Assert-XinaoNoSecretLeak -Object $receipt
+    return $receipt
+}
+
+function Ensure-XinaoDirectory {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Path
+    )
+    $full = [System.IO.Path]::GetFullPath($Path)
+    if (-not (Test-Path -LiteralPath $full -PathType Container)) {
+        New-Item -ItemType Directory -Path $full -Force | Out-Null
+    }
+    return $full
+}
+
+function Get-XinaoFileSha256Hex {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Path
+    )
+    $full = [System.IO.Path]::GetFullPath($Path)
+    if (-not (Test-Path -LiteralPath $full -PathType Leaf)) {
+        throw "EGRESS_HASH_TARGET_MISSING:$full"
+    }
+    return (Get-FileHash -LiteralPath $full -Algorithm SHA256).Hash.ToLowerInvariant()
+}
+
+function Format-XinaoQuotedArgument {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]
+        [AllowEmptyString()]
+        [string]$Value
+    )
+    # PowerShell-safe single-argument quoting for paths with spaces.
+    if ($Value -match '[\s"]') {
+        $escaped = $Value.Replace('"', '`"')
+        return "`"$escaped`""
+    }
+    return $Value
+}
+
+# --- Engineering canary CLI/event helpers (pure; no Docker, no auth readback) ---
+# Exact key sets mirror owner_seal_live_egress.py / xinao_runtime.py consumers.
+
+$script:XinaoCanaryRequestedModel = 'grok-4.5'
+$script:XinaoCanaryObservedBackendModel = 'grok-4.5-build'
+$script:XinaoCanaryEndpointHost = 'cli-chat-proxy.grok.com'
+$script:XinaoCanaryAuthContainerPath = '/grok-home/.grok/auth.json'
+$script:XinaoCanaryFixedPrompt = 'ENGINEERING_CANARY_NON_SCIENTIFIC: reply with exactly the token engineering_canary_ok. No tools. Not research. Not scientific adoption.'
+$script:XinaoRequiredNegativeCaseIds = @(
+    'N1', 'N3', 'N4', 'N5', 'N6', 'N7', 'N8', 'N9', 'N15', 'N17', 'N17b', 'N17c', 'N17d'
+)
+$script:XinaoCanaryRequiredKeys = @(
+    'schema_version',
+    'path_class',
+    'status',
+    'real_provider_call',
+    'provider_effect_verified',
+    'requested_model',
+    'observed_backend_model',
+    'stop_reason',
+    'output_tokens',
+    'usage_accounting_complete',
+    'usage',
+    'endpoint_host',
+    'internal_network_id',
+    'proxy_container_id',
+    'proxy_image_id',
+    'allowlist_sha256',
+    'proxy_config_sha256',
+    'canary_image_id',
+    'internal_network_only',
+    'auth_mounted_read_only',
+    'auth_content_persisted',
+    'raw_output_persisted',
+    'research_invoked',
+    'is_research_call',
+    'scientific_research',
+    'masquerades_as_research',
+    'scientific_adoption',
+    'science_restored',
+    'parent_complete',
+    'authority',
+    'completion_claim_allowed',
+    'secrets_present',
+    'provider_egress_runtime_verified',
+    'provider_egress_live_verified',
+    'observed_at'
+)
+$script:XinaoCanaryAllowedKeys = $script:XinaoCanaryRequiredKeys + @(
+    'executed_at',
+    'object_identities',
+    'mode',
+    'note',
+    'docker_mutated',
+    'carrier',
+    'wsl_used',
+    'git_bash_used',
+    'probe_ok',
+    'probe_exit_code',
+    'connect_probe_ok',
+    'canary_container_id',
+    'canary_container_removed',
+    'endpoint_hint',
+    'model_hint',
+    'positive_token_present_observed',
+    'positive_token_value',
+    'engineering_evidence',
+    'redaction',
+    'allow_real_provider_call_requested',
+    'raw_output_sha256',
+    'reason_code',
+    'connect_only',
+    'http_only'
+)
+# Back-compat alias used by older tests.
+$script:XinaoCanarySealReceiptKeys = $script:XinaoCanaryRequiredKeys
+$script:XinaoNegativeRequiredKeys = @(
+    'schema_version',
+    'path_class',
+    'status',
+    'suite_passed',
+    'all_cases_passed',
+    'cases',
+    'pass_count',
+    'fail_count',
+    'internal_network_id',
+    'proxy_container_id',
+    'proxy_image_id',
+    'allowlist_sha256',
+    'proxy_config_sha256',
+    'unauthorized_domain_reachable',
+    'direct_no_proxy_escape',
+    'provider_egress_runtime_verified',
+    'provider_egress_live_verified',
+    'secrets_present',
+    'completion_claim_allowed',
+    'authority',
+    'science_restored',
+    'parent_complete',
+    'scientific_research',
+    'observed_at'
+)
+$script:XinaoNegativeAllowedKeys = $script:XinaoNegativeRequiredKeys + @(
+    'executed_at',
+    'object_identities',
+    'mode',
+    'note',
+    'docker_mutated',
+    'carrier',
+    'wsl_used',
+    'git_bash_used',
+    'research_invoked',
+    'path_class'
+)
+
+function Test-XinaoImmutableImageIdFormat {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]
+        [AllowEmptyString()]
+        [string]$ImageId
+    )
+    if ([string]::IsNullOrWhiteSpace($ImageId)) { return $false }
+    # Accept only sha256:<64hex> or raw 64-hex; reject floating tags and digests with repo prefix.
+    if ($ImageId -match '^(sha256:)?[0-9a-fA-F]{64}$') { return $true }
+    return $false
+}
+
+function ConvertTo-XinaoCanonicalImageId {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]
+        [AllowEmptyString()]
+        [string]$ImageId
+    )
+    if (-not (Test-XinaoImmutableImageIdFormat -ImageId $ImageId)) {
+        throw 'EGRESS_IMAGE_ID_NOT_IMMUTABLE'
+    }
+    $raw = $ImageId.Trim().ToLowerInvariant()
+    if ($raw.StartsWith('sha256:')) { return $raw }
+    return "sha256:$raw"
+}
+
+function Get-XinaoResearcherRuntimeLockPath {
+    [CmdletBinding()]
+    param(
+        [string]$PackageRoot = (Get-XinaoEgressPackageRoot)
+    )
+    $pkg = [System.IO.Path]::GetFullPath($PackageRoot)
+    $candidates = @(
+        (Join-Path $pkg '..\..\skills\xinao\references\researcher-runtime-lock.v1.json'),
+        (Join-Path $pkg '..\..\..\skills\xinao\references\researcher-runtime-lock.v1.json')
+    )
+    foreach ($rel in $candidates) {
+        try {
+            $full = [System.IO.Path]::GetFullPath($rel)
+            if (Test-Path -LiteralPath $full -PathType Leaf) { return $full }
+        } catch {
+            continue
+        }
+    }
+    throw 'EGRESS_RUNTIME_LOCK_MISSING'
+}
+
+function Get-XinaoResearcherRuntimeLock {
+    [CmdletBinding()]
+    param(
+        [string]$PackageRoot = (Get-XinaoEgressPackageRoot),
+        [string]$LockPath = ''
+    )
+    $path = if ([string]::IsNullOrWhiteSpace($LockPath)) {
+        Get-XinaoResearcherRuntimeLockPath -PackageRoot $PackageRoot
+    } else {
+        [System.IO.Path]::GetFullPath($LockPath)
+    }
+    return (Read-XinaoJsonFile -Path $path)
+}
+
+function Get-XinaoJsonIntField {
+    [CmdletBinding()]
+    param(
+        $Obj,
+        [Parameter(Mandatory = $true)]
+        [string]$Name
+    )
+    if ($null -eq $Obj) { return $null }
+    $prop = $Obj.PSObject.Properties[$Name]
+    if ($null -eq $prop -or $null -eq $prop.Value) { return $null }
+    if ($prop.Value -is [bool]) { return $null }
+    try { return [int]$prop.Value } catch { return $null }
+}
+
+function Test-XinaoPathHasReparseChain {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Path
+    )
+    $current = [System.IO.Path]::GetFullPath($Path)
+    $guard = 0
+    while (-not [string]::IsNullOrWhiteSpace($current) -and $guard -lt 64) {
+        $guard++
+        if (Test-Path -LiteralPath $current) {
+            try {
+                $item = Get-Item -LiteralPath $current -Force
+                if (($item.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0) {
+                    return $true
+                }
+                $linkType = $null
+                try { $linkType = $item.LinkType } catch { $linkType = $null }
+                if ($linkType -in @('Junction', 'SymbolicLink')) {
+                    return $true
+                }
+            } catch {
+                # Missing intermediate is fine; continue walk.
+            }
+        }
+        $parent = [System.IO.Path]::GetDirectoryName($current)
+        if ([string]::IsNullOrWhiteSpace($parent) -or $parent -eq $current) { break }
+        $current = $parent
+    }
+    return $false
+}
+
+function Test-XinaoRegularNonHardlinkedFile {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Path
+    )
+    if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) { return $false }
+    $item = Get-Item -LiteralPath $Path -Force
+    if (($item.Attributes -band [System.IO.FileAttributes]::Directory) -ne 0) { return $false }
+    if (($item.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0) { return $false }
+    $linkType = $null
+    try { $linkType = $item.LinkType } catch { $linkType = $null }
+    if ($linkType -in @('HardLink', 'Junction', 'SymbolicLink')) { return $false }
+    return $true
+}
+
+function Assert-XinaoAuthFilePathLiteral {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]
+        [AllowEmptyString()]
+        [string]$AuthFilePath
+    )
+    # Never include host path text in thrown reason codes (receipt/error redaction).
+    if ([string]::IsNullOrWhiteSpace($AuthFilePath)) {
+        throw 'EGRESS_AUTH_PATH_REQUIRED'
+    }
+    $raw = [string]$AuthFilePath
+    if ($raw -match '%[^%]+%' -or $raw -match '\$env:' -or $raw -match '\$\{') {
+        throw 'EGRESS_AUTH_PATH_UNRESOLVED_VARIABLE'
+    }
+    if ($raw -match '^[\\/]{2}\.' -or $raw -match '\\\\\.\\') {
+        throw 'EGRESS_AUTH_PATH_DEVICE_FORM_FORBIDDEN'
+    }
+    # Reject ADS / stream syntax beyond drive letter (C:...).
+    if ($raw -match '^[A-Za-z]:') {
+        $afterDrive = $raw.Substring(2)
+        if ($afterDrive -match ':') { throw 'EGRESS_AUTH_PATH_ADS_FORBIDDEN' }
+    } elseif ($raw -match ':') {
+        throw 'EGRESS_AUTH_PATH_ADS_FORBIDDEN'
+    }
+    if (-not [System.IO.Path]::IsPathRooted($raw)) {
+        throw 'EGRESS_AUTH_PATH_NOT_ABSOLUTE'
+    }
+    try {
+        $full = [System.IO.Path]::GetFullPath($raw)
+    } catch {
+        throw 'EGRESS_AUTH_PATH_INVALID'
+    }
+    if (-not [System.IO.Path]::IsPathRooted($full)) {
+        throw 'EGRESS_AUTH_PATH_NOT_ABSOLUTE'
+    }
+    if (-not (Test-Path -LiteralPath $full -PathType Leaf)) {
+        throw 'EGRESS_AUTH_PATH_MISSING'
+    }
+    if (Test-XinaoPathHasReparseChain -Path $full) {
+        throw 'EGRESS_AUTH_PATH_REPARSE_FORBIDDEN'
+    }
+    if (-not (Test-XinaoRegularNonHardlinkedFile -Path $full)) {
+        throw 'EGRESS_AUTH_PATH_NOT_REGULAR_FILE'
+    }
+    # Return full path only for bind mount construction; never emit into receipts.
+    return $full
+}
+
+function Assert-XinaoRawCleanupTargetContained {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$RawPath,
+        [Parameter(Mandatory = $true)]
+        [string]$OwnedTempRoot,
+        [switch]$RequireExistingRegularFile
+    )
+    $rawFull = [System.IO.Path]::GetFullPath($RawPath)
+    $tempFull = [System.IO.Path]::GetFullPath($OwnedTempRoot).TrimEnd('\', '/')
+    # Strict child path with separator: reject prefix siblings such as D:\tmp-root-evil.
+    $prefix = $tempFull + [System.IO.Path]::DirectorySeparatorChar
+    if (-not $rawFull.StartsWith($prefix, [System.StringComparison]::OrdinalIgnoreCase)) {
+        throw 'EGRESS_RAW_CLEANUP_TARGET_OUTSIDE_OWNED_TEMP'
+    }
+    if ($rawFull.Equals($tempFull, [System.StringComparison]::OrdinalIgnoreCase)) {
+        throw 'EGRESS_RAW_CLEANUP_TARGET_IS_ROOT'
+    }
+    $leaf = Split-Path -Leaf $rawFull
+    if ([string]::IsNullOrWhiteSpace($leaf) -or $leaf -in @('.', '..')) {
+        throw 'EGRESS_RAW_CLEANUP_TARGET_INVALID'
+    }
+    # Never delete a directory; only an exact file leaf under owned temp.
+    if (Test-Path -LiteralPath $rawFull -PathType Container) {
+        throw 'EGRESS_RAW_CLEANUP_TARGET_IS_DIRECTORY'
+    }
+    if (Test-XinaoPathHasReparseChain -Path $rawFull) {
+        throw 'EGRESS_RAW_CLEANUP_REPARSE_FORBIDDEN'
+    }
+    if ($RequireExistingRegularFile -or (Test-Path -LiteralPath $rawFull -PathType Leaf)) {
+        if (-not (Test-XinaoRegularNonHardlinkedFile -Path $rawFull)) {
+            throw 'EGRESS_RAW_CLEANUP_NOT_REGULAR_FILE'
+        }
+    }
+    return $rawFull
+}
+
+function Remove-XinaoExactRawFile {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$RawPath,
+        [Parameter(Mandatory = $true)]
+        [string]$OwnedTempRoot
+    )
+    $full = Assert-XinaoRawCleanupTargetContained -RawPath $RawPath -OwnedTempRoot $OwnedTempRoot -RequireExistingRegularFile
+    if (Test-Path -LiteralPath $full -PathType Container) {
+        throw 'EGRESS_RAW_CLEANUP_TARGET_IS_DIRECTORY'
+    }
+    Remove-Item -LiteralPath $full -Force
+    if (Test-Path -LiteralPath $full) {
+        throw 'EGRESS_RAW_CLEANUP_DELETE_FAILED'
+    }
+    return $true
+}
+
+function ConvertFrom-XinaoGrokCliJsonText {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]
+        [AllowEmptyString()]
+        [string]$JsonText
+    )
+    # Parse headless Grok CLI JSON/event contract into redacted metadata only.
+    # Never returns model text body, auth, or non-aggregate secrets.
+    if ([string]::IsNullOrWhiteSpace($JsonText)) {
+        return [ordered]@{
+            ok                        = $false
+            reason_code               = 'CLI_OUTPUT_EMPTY'
+            stop_reason               = $null
+            observed_backend_model    = $null
+            output_tokens             = 0
+            input_tokens              = 0
+            total_tokens              = 0
+            usage_accounting_complete = $false
+            model_calls               = 0
+            session_id_present        = $false
+            request_id_present        = $false
+            text_chars                = 0
+            raw_sha256                = $null
+            text_persisted            = $false
+        }
+    }
+    $bytes = [System.Text.Encoding]::UTF8.GetBytes($JsonText)
+    $shaAlg = [System.Security.Cryptography.SHA256]::Create()
+    try {
+        $sha = ([BitConverter]::ToString($shaAlg.ComputeHash($bytes)) -replace '-', '').ToLowerInvariant()
+    } finally {
+        $shaAlg.Dispose()
+    }
+    if (Test-XinaoSecretLeakText -Text $JsonText) {
+        return [ordered]@{
+            ok                        = $false
+            reason_code               = 'CLI_OUTPUT_SECRET_LEAK'
+            stop_reason               = $null
+            observed_backend_model    = $null
+            output_tokens             = 0
+            input_tokens              = 0
+            total_tokens              = 0
+            usage_accounting_complete = $false
+            model_calls               = 0
+            session_id_present        = $false
+            request_id_present        = $false
+            text_chars                = 0
+            raw_sha256                = $sha
+            text_persisted            = $false
+        }
+    }
+    try {
+        $payload = $JsonText | ConvertFrom-Json -Depth 100
+    } catch {
+        return [ordered]@{
+            ok                        = $false
+            reason_code               = 'CLI_OUTPUT_JSON_INVALID'
+            stop_reason               = $null
+            observed_backend_model    = $null
+            output_tokens             = 0
+            input_tokens              = 0
+            total_tokens              = 0
+            usage_accounting_complete = $false
+            model_calls               = 0
+            session_id_present        = $false
+            request_id_present        = $false
+            text_chars                = 0
+            raw_sha256                = $sha
+            text_persisted            = $false
+        }
+    }
+    if ($null -eq $payload -or $payload -is [System.Array]) {
+        return [ordered]@{
+            ok                        = $false
+            reason_code               = 'CLI_OUTPUT_NOT_OBJECT'
+            stop_reason               = $null
+            observed_backend_model    = $null
+            output_tokens             = 0
+            input_tokens              = 0
+            total_tokens              = 0
+            usage_accounting_complete = $false
+            model_calls               = 0
+            session_id_present        = $false
+            request_id_present        = $false
+            text_chars                = 0
+            raw_sha256                = $sha
+            text_persisted            = $false
+        }
+    }
+
+    $stopReason = $null
+    if ($null -ne $payload.PSObject.Properties['stopReason']) {
+        $stopReason = [string]$payload.stopReason
+    }
+    $sessionPresent = $false
+    if ($null -ne $payload.PSObject.Properties['sessionId'] -and -not [string]::IsNullOrWhiteSpace([string]$payload.sessionId)) {
+        $sessionPresent = $true
+    }
+    $requestPresent = $false
+    if ($null -ne $payload.PSObject.Properties['requestId'] -and -not [string]::IsNullOrWhiteSpace([string]$payload.requestId)) {
+        $requestPresent = $true
+    }
+    $textChars = 0
+    if ($null -ne $payload.PSObject.Properties['text'] -and $null -ne $payload.text) {
+        $textChars = ([string]$payload.text).Length
+    }
+
+    $usage = $null
+    if ($null -ne $payload.PSObject.Properties['usage']) { $usage = $payload.usage }
+    $inputTokens = 0
+    $outputTokens = 0
+    $totalTokens = 0
+    $usageComplete = $false
+    if ($null -ne $usage) {
+        $inF = Get-XinaoJsonIntField -Obj $usage -Name 'input_tokens'
+        $outF = Get-XinaoJsonIntField -Obj $usage -Name 'output_tokens'
+        $totF = Get-XinaoJsonIntField -Obj $usage -Name 'total_tokens'
+        if ($null -ne $inF) { $inputTokens = $inF }
+        if ($null -ne $outF) { $outputTokens = $outF }
+        if ($null -ne $totF) { $totalTokens = $totF }
+        # Complete accounting: integer fields present and totals consistent.
+        $usageComplete = (
+            ($null -ne $inF) -and
+            ($null -ne $outF) -and
+            ($null -ne $totF) -and
+            ($inputTokens -ge 0) -and
+            ($outputTokens -ge 0) -and
+            ($totalTokens -gt 0) -and
+            ($totalTokens -ge ($inputTokens + $outputTokens))
+        )
+    }
+
+    $observedBackend = $null
+    $modelCalls = 0
+    $modelUsage = $null
+    if ($null -ne $payload.PSObject.Properties['modelUsage']) { $modelUsage = $payload.modelUsage }
+    if ($null -ne $modelUsage) {
+        $props = @($modelUsage.PSObject.Properties | Where-Object { $_.MemberType -eq 'NoteProperty' })
+        foreach ($p in $props) {
+            $stats = $p.Value
+            $calls = Get-XinaoJsonIntField -Obj $stats -Name 'modelCalls'
+            if ($null -eq $calls) { $calls = 0 }
+            if ($calls -gt 0) {
+                $observedBackend = [string]$p.Name
+                $modelCalls = $calls
+                $muOut = Get-XinaoJsonIntField -Obj $stats -Name 'outputTokens'
+                $muIn = Get-XinaoJsonIntField -Obj $stats -Name 'inputTokens'
+                if ($outputTokens -le 0 -and $null -ne $muOut) { $outputTokens = $muOut }
+                if ($inputTokens -le 0 -and $null -ne $muIn) { $inputTokens = $muIn }
+                break
+            }
+        }
+        if ($props.Count -eq 1 -and [string]::IsNullOrWhiteSpace($observedBackend)) {
+            $observedBackend = [string]$props[0].Name
+            $stats = $props[0].Value
+            $calls = Get-XinaoJsonIntField -Obj $stats -Name 'modelCalls'
+            if ($null -ne $calls) { $modelCalls = $calls }
+            $muOut = Get-XinaoJsonIntField -Obj $stats -Name 'outputTokens'
+            if ($outputTokens -le 0 -and $null -ne $muOut) { $outputTokens = $muOut }
+        }
+    }
+
+    $reason = $null
+    $ok = $true
+    if ($stopReason -ne 'EndTurn') {
+        $ok = $false
+        $reason = 'STOP_REASON_NOT_ENDTURN'
+    } elseif ($observedBackend -ne $script:XinaoCanaryObservedBackendModel) {
+        $ok = $false
+        $reason = 'OBSERVED_BACKEND_MODEL_MISMATCH'
+    } elseif (-not $usageComplete) {
+        $ok = $false
+        $reason = 'USAGE_ACCOUNTING_INCOMPLETE'
+    } elseif ($outputTokens -le 0) {
+        $ok = $false
+        $reason = 'OUTPUT_TOKENS_NOT_POSITIVE'
+    } elseif ($modelCalls -lt 1) {
+        $ok = $false
+        $reason = 'MODEL_CALLS_NOT_POSITIVE'
+    }
+
+    return [ordered]@{
+        ok                        = [bool]$ok
+        reason_code               = $reason
+        stop_reason               = $(if ([string]::IsNullOrWhiteSpace($stopReason)) { $null } else { $stopReason })
+        observed_backend_model    = $observedBackend
+        output_tokens             = [int]$outputTokens
+        input_tokens              = [int]$inputTokens
+        total_tokens              = [int]$totalTokens
+        usage_accounting_complete = [bool]$usageComplete
+        model_calls               = [int]$modelCalls
+        session_id_present        = [bool]$sessionPresent
+        request_id_present        = [bool]$requestPresent
+        text_chars                = [int]$textChars
+        raw_sha256                = $sha
+        # Explicitly never persist model text.
+        text_persisted            = $false
+    }
+}
+
+function Get-XinaoReceiptPropertyNames {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]
+        $Receipt
+    )
+    if ($Receipt -is [hashtable] -or $Receipt -is [System.Collections.Specialized.OrderedDictionary]) {
+        return @($Receipt.Keys | ForEach-Object { [string]$_ })
+    }
+    return @($Receipt.PSObject.Properties | ForEach-Object { $_.Name })
+}
+
+function Get-XinaoReceiptPropertyValue {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]
+        $Receipt,
+        [Parameter(Mandatory = $true)]
+        [string]$Name
+    )
+    if ($Receipt -is [hashtable] -or $Receipt -is [System.Collections.Specialized.OrderedDictionary]) {
+        if ($Receipt.Contains($Name)) { return $Receipt[$Name] }
+        return $null
+    }
+    $prop = $Receipt.PSObject.Properties[$Name]
+    if ($null -eq $prop) { return $null }
+    return $prop.Value
+}
+
+function Test-XinaoEngineeringCanarySealReceipt {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]
+        $Receipt
+    )
+    $names = @(Get-XinaoReceiptPropertyNames -Receipt $Receipt)
+    $missing = [System.Collections.Generic.List[string]]::new()
+    foreach ($k in $script:XinaoCanaryRequiredKeys) {
+        if ($names -notcontains $k) { $missing.Add($k) | Out-Null }
+    }
+    if ($missing.Count -gt 0) {
+        return [ordered]@{ seal_eligible = $false; missing_keys = @($missing.ToArray()); reason_code = 'SEAL_RECEIPT_KEYS_MISSING' }
+    }
+    $unknown = @($names | Where-Object { $script:XinaoCanaryAllowedKeys -notcontains $_ })
+    if ($unknown.Count -gt 0) {
+        return [ordered]@{ seal_eligible = $false; missing_keys = @(); unknown_keys = $unknown; reason_code = 'SEAL_RECEIPT_UNKNOWN_KEY' }
+    }
+    $checks = @(
+        @{ k = 'schema_version'; expect = 'xinao.provider_egress_engineering_canary_receipt.v1' },
+        @{ k = 'status'; expect = 'observed' },
+        @{ k = 'path_class'; expect = 'engineering_canary' },
+        @{ k = 'requested_model'; expect = $script:XinaoCanaryRequestedModel },
+        @{ k = 'observed_backend_model'; expect = $script:XinaoCanaryObservedBackendModel },
+        @{ k = 'stop_reason'; expect = 'EndTurn' },
+        @{ k = 'endpoint_host'; expect = $script:XinaoCanaryEndpointHost }
+    )
+    foreach ($c in $checks) {
+        if ([string](Get-XinaoReceiptPropertyValue -Receipt $Receipt -Name $c.k) -ne [string]$c.expect) {
+            return [ordered]@{ seal_eligible = $false; missing_keys = @(); reason_code = "SEAL_FIELD_MISMATCH:$($c.k)" }
+        }
+    }
+    $boolTrue = @(
+        'real_provider_call', 'provider_effect_verified', 'usage_accounting_complete',
+        'internal_network_only', 'auth_mounted_read_only'
+    )
+    foreach ($k in $boolTrue) {
+        if ((Get-XinaoReceiptPropertyValue -Receipt $Receipt -Name $k) -ne $true) {
+            return [ordered]@{ seal_eligible = $false; missing_keys = @(); reason_code = "SEAL_BOOL_TRUE_REQUIRED:$k" }
+        }
+    }
+    $boolFalse = @(
+        'auth_content_persisted', 'raw_output_persisted', 'research_invoked', 'is_research_call',
+        'scientific_research', 'masquerades_as_research', 'scientific_adoption', 'science_restored',
+        'parent_complete', 'authority', 'completion_claim_allowed', 'secrets_present',
+        'provider_egress_runtime_verified', 'provider_egress_live_verified'
+    )
+    foreach ($k in $boolFalse) {
+        if ((Get-XinaoReceiptPropertyValue -Receipt $Receipt -Name $k) -ne $false) {
+            return [ordered]@{ seal_eligible = $false; missing_keys = @(); reason_code = "SEAL_BOOL_FALSE_REQUIRED:$k" }
+        }
+    }
+    if ((Get-XinaoReceiptPropertyValue -Receipt $Receipt -Name 'connect_only') -eq $true) {
+        return [ordered]@{ seal_eligible = $false; missing_keys = @(); reason_code = 'SEAL_CONNECT_ONLY_REJECTED' }
+    }
+    if ((Get-XinaoReceiptPropertyValue -Receipt $Receipt -Name 'http_only') -eq $true) {
+        return [ordered]@{ seal_eligible = $false; missing_keys = @(); reason_code = 'SEAL_HTTP_ONLY_REJECTED' }
+    }
+    $ot = Get-XinaoReceiptPropertyValue -Receipt $Receipt -Name 'output_tokens'
+    if ($ot -is [bool] -or $null -eq $ot) {
+        return [ordered]@{ seal_eligible = $false; missing_keys = @(); reason_code = 'SEAL_OUTPUT_TOKENS_INVALID' }
+    }
+    try { $otInt = [int]$ot } catch {
+        return [ordered]@{ seal_eligible = $false; missing_keys = @(); reason_code = 'SEAL_OUTPUT_TOKENS_INVALID' }
+    }
+    if ($otInt -le 0) {
+        return [ordered]@{ seal_eligible = $false; missing_keys = @(); reason_code = 'SEAL_OUTPUT_TOKENS_INVALID' }
+    }
+    $usage = Get-XinaoReceiptPropertyValue -Receipt $Receipt -Name 'usage'
+    if ($null -eq $usage) {
+        return [ordered]@{ seal_eligible = $false; missing_keys = @('usage'); reason_code = 'SEAL_USAGE_MISSING' }
+    }
+    $usageNames = @(Get-XinaoReceiptPropertyNames -Receipt $usage)
+    foreach ($uk in @('input_tokens', 'output_tokens', 'total_tokens')) {
+        if ($usageNames -notcontains $uk) {
+            return [ordered]@{ seal_eligible = $false; missing_keys = @("usage.$uk"); reason_code = 'SEAL_USAGE_INCOMPLETE' }
+        }
+    }
+    $unknownUsage = @($usageNames | Where-Object { $_ -notin @('input_tokens', 'output_tokens', 'total_tokens') })
+    if ($unknownUsage.Count -gt 0) {
+        return [ordered]@{ seal_eligible = $false; missing_keys = @(); reason_code = 'SEAL_USAGE_UNKNOWN_KEY' }
+    }
+    $uOut = Get-XinaoReceiptPropertyValue -Receipt $usage -Name 'output_tokens'
+    $uIn = Get-XinaoReceiptPropertyValue -Receipt $usage -Name 'input_tokens'
+    $uTot = Get-XinaoReceiptPropertyValue -Receipt $usage -Name 'total_tokens'
+    try {
+        $uOutI = [int]$uOut; $uInI = [int]$uIn; $uTotI = [int]$uTot
+    } catch {
+        return [ordered]@{ seal_eligible = $false; missing_keys = @(); reason_code = 'SEAL_USAGE_INVALID' }
+    }
+    if ($uOutI -le 0 -or $uOutI -ne $otInt -or $uTotI -le 0 -or $uTotI -lt ($uInI + $uOutI) -or $uInI -lt 0) {
+        return [ordered]@{ seal_eligible = $false; missing_keys = @(); reason_code = 'SEAL_USAGE_INVALID' }
+    }
+    foreach ($idKey in @('internal_network_id', 'proxy_container_id', 'proxy_image_id', 'allowlist_sha256', 'proxy_config_sha256', 'canary_image_id')) {
+        if ([string]::IsNullOrWhiteSpace([string](Get-XinaoReceiptPropertyValue -Receipt $Receipt -Name $idKey))) {
+            return [ordered]@{ seal_eligible = $false; missing_keys = @($idKey); reason_code = "SEAL_IDENTITY_MISSING:$idKey" }
+        }
+    }
+    $canaryImage = [string](Get-XinaoReceiptPropertyValue -Receipt $Receipt -Name 'canary_image_id')
+    if ($canaryImage -notmatch '^sha256:[0-9a-f]{64}$') {
+        return [ordered]@{ seal_eligible = $false; missing_keys = @(); reason_code = 'SEAL_CANARY_IMAGE_ID_INVALID' }
+    }
+    if ([string]::IsNullOrWhiteSpace([string](Get-XinaoReceiptPropertyValue -Receipt $Receipt -Name 'observed_at'))) {
+        return [ordered]@{ seal_eligible = $false; missing_keys = @('observed_at'); reason_code = 'SEAL_OBSERVED_AT_MISSING' }
+    }
+    return [ordered]@{ seal_eligible = $true; missing_keys = @(); unknown_keys = @(); reason_code = $null }
+}
+
+function New-XinaoEngineeringCanarySealReceipt {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]
+        $Meta,
+        [Parameter(Mandatory = $true)]
+        $PostureIds,
+        [Parameter(Mandatory = $true)]
+        [string]$CanaryImageId,
+        [bool]$ConnectProbeOk = $false,
+        [string]$CanaryContainerId = '',
+        [bool]$CanaryContainerRemoved = $false,
+        [string]$RawOutputSha256 = '',
+        [string]$ObservedAt = '',
+        [hashtable]$ObjectIdentities = $null,
+        [string]$Note = 'Real bounded engineering provider canary. Not research(); not scientific adoption; not parent completion.'
+    )
+    if ($null -eq $Meta -or $Meta.ok -ne $true) {
+        throw 'EGRESS_CANARY_META_NOT_OK'
+    }
+    $canonicalImage = ConvertTo-XinaoCanonicalImageId -ImageId $CanaryImageId
+    $observedAtValue = if ([string]::IsNullOrWhiteSpace($ObservedAt)) { New-XinaoUtcNowIso } else { $ObservedAt }
+    $usage = [ordered]@{
+        input_tokens  = [int]$Meta.input_tokens
+        output_tokens = [int]$Meta.output_tokens
+        total_tokens  = [int]$Meta.total_tokens
+    }
+    $receipt = [ordered]@{
+        schema_version                   = 'xinao.provider_egress_engineering_canary_receipt.v1'
+        path_class                       = 'engineering_canary'
+        status                           = 'observed'
+        real_provider_call               = $true
+        provider_effect_verified         = $true
+        requested_model                  = $script:XinaoCanaryRequestedModel
+        observed_backend_model           = [string]$Meta.observed_backend_model
+        stop_reason                      = [string]$Meta.stop_reason
+        output_tokens                    = [int]$Meta.output_tokens
+        usage_accounting_complete        = [bool]$Meta.usage_accounting_complete
+        usage                            = $usage
+        endpoint_host                    = $script:XinaoCanaryEndpointHost
+        internal_network_id              = [string]$PostureIds.internal_network_id
+        proxy_container_id               = [string]$PostureIds.proxy_container_id
+        proxy_image_id                   = [string]$PostureIds.proxy_image_id
+        allowlist_sha256                 = [string]$PostureIds.allowlist_sha256
+        proxy_config_sha256              = [string]$PostureIds.proxy_config_sha256
+        canary_image_id                  = $canonicalImage
+        internal_network_only            = $true
+        auth_mounted_read_only           = $true
+        auth_content_persisted           = $false
+        raw_output_persisted             = $false
+        research_invoked                 = $false
+        is_research_call                 = $false
+        scientific_research              = $false
+        masquerades_as_research          = $false
+        scientific_adoption              = $false
+        science_restored                 = $false
+        parent_complete                  = $false
+        authority                        = $false
+        completion_claim_allowed         = $false
+        secrets_present                  = $false
+        provider_egress_runtime_verified = $false
+        provider_egress_live_verified    = $false
+        observed_at                      = $observedAtValue
+        executed_at                      = $observedAtValue
+        mode                             = 'execute_real_provider'
+        connect_probe_ok                 = [bool]$ConnectProbeOk
+        canary_container_removed         = [bool]$CanaryContainerRemoved
+        docker_mutated                   = $true
+        carrier                          = 'windows_powershell7_docker_desktop'
+        wsl_used                         = $false
+        git_bash_used                    = $false
+        note                             = $Note
+        connect_only                     = $false
+        http_only                        = $false
+        positive_token_value             = $null
+        allow_real_provider_call_requested = $true
+    }
+    if (-not [string]::IsNullOrWhiteSpace($CanaryContainerId)) {
+        $receipt.canary_container_id = [string]$CanaryContainerId
+    }
+    if (-not [string]::IsNullOrWhiteSpace($RawOutputSha256)) {
+        $receipt.raw_output_sha256 = [string]$RawOutputSha256
+    }
+    if ($null -ne $ObjectIdentities) {
+        $receipt.object_identities = $ObjectIdentities
+    }
+    # Validate observed metadata fields (never constants-only for model/stop/usage).
+    if ($receipt.observed_backend_model -ne $script:XinaoCanaryObservedBackendModel) {
+        throw 'EGRESS_CANARY_BACKEND_MODEL_MISMATCH'
+    }
+    if ($receipt.stop_reason -ne 'EndTurn') {
+        throw 'EGRESS_CANARY_STOP_REASON_INVALID'
+    }
+    if ($receipt.usage_accounting_complete -ne $true -or [int]$receipt.output_tokens -le 0) {
+        throw 'EGRESS_CANARY_USAGE_INCOMPLETE'
+    }
+    $probe = Test-XinaoEngineeringCanarySealReceipt -Receipt $receipt
+    if ($probe.seal_eligible -ne $true) {
+        throw "EGRESS_CANARY_SEAL_FIELDS_INCOMPLETE:$($probe.reason_code)"
+    }
+    return $receipt
+}
+
+function Get-XinaoNegativeSuiteSealFields {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]
+        $ObjectIdentities,
+        [Parameter(Mandatory = $true)]
+        [int]$PassCount,
+        [Parameter(Mandatory = $true)]
+        [int]$FailCount,
+        [Parameter(Mandatory = $true)]
+        [int]$CaseCount,
+        [bool]$UnauthorizedDomainReachable = $true,
+        [bool]$DirectNoProxyEscape = $true
+    )
+    $idsOk = $true
+    $required = @('internal_network_id', 'proxy_container_id', 'proxy_image_id', 'allowlist_sha256', 'proxy_config_sha256')
+    $top = [ordered]@{}
+    foreach ($k in $required) {
+        $v = $null
+        if ($ObjectIdentities -is [hashtable] -or $ObjectIdentities -is [System.Collections.Specialized.OrderedDictionary]) {
+            if ($ObjectIdentities.Contains($k)) { $v = $ObjectIdentities[$k] }
+        } else {
+            $prop = $ObjectIdentities.PSObject.Properties[$k]
+            if ($null -ne $prop) { $v = $prop.Value }
+        }
+        $top[$k] = $v
+        if ([string]::IsNullOrWhiteSpace([string]$v)) { $idsOk = $false }
+    }
+    $exactCaseCount = $script:XinaoRequiredNegativeCaseIds.Count
+    $allPassed = (
+        $FailCount -eq 0 -and
+        $PassCount -eq $CaseCount -and
+        $CaseCount -eq $exactCaseCount -and
+        $PassCount -eq $exactCaseCount
+    )
+    $escapesClosed = (-not $UnauthorizedDomainReachable) -and (-not $DirectNoProxyEscape)
+    $suitePassed = $allPassed -and $idsOk -and $escapesClosed
+    $status = if ($suitePassed) { 'observed' } elseif ($PassCount -gt 0) { 'partial' } else { 'failed' }
+    if ($allPassed -and (-not $idsOk -or -not $escapesClosed)) { $status = 'partial' }
+    return [ordered]@{
+        status                         = $status
+        suite_passed                   = [bool]$suitePassed
+        all_cases_passed               = [bool]$allPassed
+        identities_complete            = [bool]$idsOk
+        unauthorized_domain_reachable  = [bool]$UnauthorizedDomainReachable
+        direct_no_proxy_escape         = [bool]$DirectNoProxyEscape
+        internal_network_id            = $top.internal_network_id
+        proxy_container_id             = $top.proxy_container_id
+        proxy_image_id                 = $top.proxy_image_id
+        allowlist_sha256               = $top.allowlist_sha256
+        proxy_config_sha256            = $top.proxy_config_sha256
+    }
+}
+
+function New-XinaoNegativeSuiteSealReceipt {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]
+        $Cases,
+        [Parameter(Mandatory = $true)]
+        $ObjectIdentities,
+        [string]$ObservedAt = '',
+        [string]$Note = 'Negative suite receipt for strict seal consumption when suite_passed and identities complete. verified remains false.'
+    )
+    $caseList = @($Cases)
+    $pass = @($caseList | Where-Object {
+            $ok = $false
+            if ($_ -is [hashtable] -or $_ -is [System.Collections.Specialized.OrderedDictionary]) {
+                $ok = [bool]$_['ok']
+            } else {
+                $ok = [bool]$_.ok
+            }
+            $ok
+        }).Count
+    $fail = $caseList.Count - $pass
+    $n3Ok = $false
+    $n1Ok = $false
+    $n9Ok = $false
+    foreach ($c in $caseList) {
+        $cid = if ($c -is [hashtable] -or $c -is [System.Collections.Specialized.OrderedDictionary]) { [string]$c['id'] } else { [string]$c.id }
+        $cok = if ($c -is [hashtable] -or $c -is [System.Collections.Specialized.OrderedDictionary]) { [bool]$c['ok'] } else { [bool]$c.ok }
+        if ($cid -eq 'N3' -and $cok) { $n3Ok = $true }
+        if ($cid -eq 'N1' -and $cok) { $n1Ok = $true }
+        if ($cid -eq 'N9' -and $cok) { $n9Ok = $true }
+    }
+    # ok=true for deny cases means unauthorized domain / direct escape was NOT observed.
+    $unauthorized = -not $n3Ok
+    $directEscape = -not ($n1Ok -and $n9Ok)
+    $sealFields = Get-XinaoNegativeSuiteSealFields `
+        -ObjectIdentities $ObjectIdentities `
+        -PassCount $pass `
+        -FailCount $fail `
+        -CaseCount $caseList.Count `
+        -UnauthorizedDomainReachable $unauthorized `
+        -DirectNoProxyEscape $directEscape
+    $observedAtValue = if ([string]::IsNullOrWhiteSpace($ObservedAt)) { New-XinaoUtcNowIso } else { $ObservedAt }
+    $receipt = [ordered]@{
+        schema_version                   = 'xinao.provider_egress_negative_suite_receipt.v1'
+        path_class                       = 'negative_suite'
+        status                           = [string]$sealFields.status
+        suite_passed                     = [bool]$sealFields.suite_passed
+        all_cases_passed                 = [bool]$sealFields.all_cases_passed
+        cases                            = $caseList
+        pass_count                       = [int]$pass
+        fail_count                       = [int]$fail
+        internal_network_id              = $sealFields.internal_network_id
+        proxy_container_id               = $sealFields.proxy_container_id
+        proxy_image_id                   = $sealFields.proxy_image_id
+        allowlist_sha256                 = $sealFields.allowlist_sha256
+        proxy_config_sha256              = $sealFields.proxy_config_sha256
+        unauthorized_domain_reachable    = [bool]$sealFields.unauthorized_domain_reachable
+        direct_no_proxy_escape           = [bool]$sealFields.direct_no_proxy_escape
+        provider_egress_runtime_verified = $false
+        provider_egress_live_verified    = $false
+        secrets_present                  = $false
+        completion_claim_allowed         = $false
+        authority                        = $false
+        science_restored                 = $false
+        parent_complete                  = $false
+        scientific_research              = $false
+        observed_at                      = $observedAtValue
+        executed_at                      = $observedAtValue
+        object_identities                = $ObjectIdentities
+        mode                             = 'execute'
+        docker_mutated                   = $true
+        carrier                          = 'windows_powershell7_docker_desktop'
+        wsl_used                         = $false
+        git_bash_used                    = $false
+        research_invoked                 = $false
+        note                             = $Note
+    }
+    return $receipt
+}
+
+function Test-XinaoNegativeSuiteSealReceipt {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]
+        $Receipt
+    )
+    $names = @(Get-XinaoReceiptPropertyNames -Receipt $Receipt)
+    $missing = @($script:XinaoNegativeRequiredKeys | Where-Object { $names -notcontains $_ })
+    if ($missing.Count -gt 0) {
+        return [ordered]@{ seal_eligible = $false; reason_code = 'NEGATIVE_RECEIPT_MISSING_KEY'; missing_keys = $missing }
+    }
+    $unknown = @($names | Where-Object { $script:XinaoNegativeAllowedKeys -notcontains $_ })
+    if ($unknown.Count -gt 0) {
+        return [ordered]@{ seal_eligible = $false; reason_code = 'NEGATIVE_RECEIPT_UNKNOWN_KEY'; unknown_keys = $unknown }
+    }
+    if ((Get-XinaoReceiptPropertyValue -Receipt $Receipt -Name 'status') -ne 'observed') {
+        return [ordered]@{ seal_eligible = $false; reason_code = 'NEGATIVE_SUITE_STATUS_INVALID' }
+    }
+    if ((Get-XinaoReceiptPropertyValue -Receipt $Receipt -Name 'suite_passed') -ne $true) {
+        return [ordered]@{ seal_eligible = $false; reason_code = 'NEGATIVE_SUITE_NOT_PASSED' }
+    }
+    if ((Get-XinaoReceiptPropertyValue -Receipt $Receipt -Name 'unauthorized_domain_reachable') -ne $false) {
+        return [ordered]@{ seal_eligible = $false; reason_code = 'NEGATIVE_SUITE_UNAUTHORIZED_DOMAIN' }
+    }
+    if ((Get-XinaoReceiptPropertyValue -Receipt $Receipt -Name 'direct_no_proxy_escape') -ne $false) {
+        return [ordered]@{ seal_eligible = $false; reason_code = 'NEGATIVE_SUITE_DIRECT_ESCAPE' }
+    }
+    $cases = @(Get-XinaoReceiptPropertyValue -Receipt $Receipt -Name 'cases')
+    $ids = @()
+    foreach ($c in $cases) {
+        $cid = if ($c -is [hashtable] -or $c -is [System.Collections.Specialized.OrderedDictionary]) { [string]$c['id'] } else { [string]$c.id }
+        $ids += $cid
+    }
+    $required = @($script:XinaoRequiredNegativeCaseIds)
+    $missingCases = @($required | Where-Object { $ids -notcontains $_ })
+    if ($missingCases.Count -gt 0) {
+        return [ordered]@{ seal_eligible = $false; reason_code = 'NEGATIVE_SUITE_MISSING_CASE'; missing_keys = $missingCases }
+    }
+    $unknownCases = @($ids | Where-Object { $required -notcontains $_ })
+    if ($unknownCases.Count -gt 0) {
+        return [ordered]@{ seal_eligible = $false; reason_code = 'NEGATIVE_SUITE_UNKNOWN_CASE' }
+    }
+    if ([int](Get-XinaoReceiptPropertyValue -Receipt $Receipt -Name 'pass_count') -ne $required.Count) {
+        return [ordered]@{ seal_eligible = $false; reason_code = 'NEGATIVE_SUITE_COUNT_INVALID' }
+    }
+    if ([int](Get-XinaoReceiptPropertyValue -Receipt $Receipt -Name 'fail_count') -ne 0) {
+        return [ordered]@{ seal_eligible = $false; reason_code = 'NEGATIVE_SUITE_COUNT_INVALID' }
+    }
+    return [ordered]@{ seal_eligible = $true; reason_code = $null }
+}
+
+# Export-like marker for static tests (dot-sourced script, not a module).
+$script:XinaoEgressOwnerCommonLoaded = $true
