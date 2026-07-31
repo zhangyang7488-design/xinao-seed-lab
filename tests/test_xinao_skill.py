@@ -1088,9 +1088,7 @@ def test_probe_grok_binary_version_process_start_failed_elf_docker_mount(
         raise AssertionError(f"unexpected _run arguments: {values}")
 
     monkeypatch.setattr(module, "_run", fake_run)
-    text = module._probe_grok_binary_version_text(
-        binary, docker_exec_image_id=donor_image
-    )
+    text = module._probe_grok_binary_version_text(binary, docker_exec_image_id=donor_image)
     assert text.startswith("grok 0.2.117")
     assert any(len(c) == 2 and c[1] == "version" for c in calls)
     assert any("run" in c and "--entrypoint" in c for c in calls)
