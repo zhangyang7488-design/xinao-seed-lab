@@ -49,6 +49,10 @@ def test_source_bundle_seals_host_modules(module: Any) -> None:
     for name in module.HOST_MODULE_INVENTORY:
         relative = (module.HOST_MODULES_BUNDLE_RELATIVE / name).as_posix()
         assert relative in rels, relative
+    # Explicit trusted monorepo root (formal build_release shape) must seal the same inventory.
+    trusted = module._source_bundle_files(SKILL_ROOT, monorepo_source_root=ROOT)
+    module._require_host_modules_sealed_in_bundle_rows(trusted)
+    assert {relative for relative, _path, _payload in trusted} == rels
     # Bytes match monorepo source (build copy, not a second logic truth).
     src_specs = (ROOT / "docker" / "xinao-researcher" / "docker_create_specs.py").read_bytes()
     staged = next(
@@ -57,6 +61,104 @@ def test_source_bundle_seals_host_modules(module: Any) -> None:
         if relative.endswith("host_modules/docker_create_specs.py")
     )
     assert module._lf_materialize_bytes(src_specs) == staged
+
+
+def test_public_build_release_materializes_host_modules_in_release_dir(
+    module: Any, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Real public consumer shape: build_release → release dir + skill-bundle.manifest.
+
+    Exercises formal ``build_release`` (not helper-only ``_source_bundle_files``) under an
+    isolated D:-style state root via the existing fake docker harness. Never activates.
+    """
+    from tests import test_xinao_skill as skill_tests
+
+    skill_tests._state(module, tmp_path, monkeypatch)
+    skill_tests._fake_build_environment(module, monkeypatch, dirty=True)
+    receipt = module.build_release(ROOT, allow_dirty=True)
+    assert receipt["status"] == "CANDIDATE_BUILT"
+    assert receipt.get("activated") is False
+    assert not module._state_paths()["pointer"].exists()
+
+    release_dir = Path(str(receipt["release_manifest_path"])).parent
+    bundle_root = release_dir / "skill-bundle"
+    bundle_manifest_path = release_dir / "skill-bundle.manifest.json"
+    assert bundle_root.is_dir()
+    assert bundle_manifest_path.is_file()
+
+    bundle_manifest = module._load_json(bundle_manifest_path)
+    manifest_paths = {
+        row["relative_path"]
+        for row in bundle_manifest["files"]
+        if isinstance(row, dict) and isinstance(row.get("relative_path"), str)
+    }
+    expected = {
+        (module.HOST_MODULES_BUNDLE_RELATIVE / name).as_posix()
+        for name in module.HOST_MODULE_INVENTORY
+    }
+    assert expected <= manifest_paths
+    assert len(expected) == 6
+    for relative in sorted(expected):
+        path = bundle_root / Path(relative)
+        assert path.is_file(), relative
+        # Physical inventory matches manifest row identity.
+        row = next(item for item in bundle_manifest["files"] if item["relative_path"] == relative)
+        payload = path.read_bytes()
+        assert row["size"] == len(payload)
+        assert row["sha256"] == module._sha256_bytes(payload)
+
+    # Formal monorepo builds must never emit the deficient 20-file skill-only inventory.
+    assert len(bundle_manifest["files"]) >= 20 + 6
+
+
+def test_public_build_fails_closed_when_host_module_source_missing(
+    module: Any, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Missing monorepo host module fails closed; no deficient release directory is sealed."""
+    from tests import test_xinao_skill as skill_tests
+
+    skill_tests._state(module, tmp_path, monkeypatch)
+    skill_tests._fake_build_environment(module, monkeypatch, dirty=True)
+
+    def missing_host_rows(source_root: Path):
+        del source_root
+        raise module.XinaoError(
+            "HOST_MODULES_SOURCE_MISSING",
+            "docker_create_specs.py:synthetic-missing",
+        )
+
+    monkeypatch.setattr(module, "_collect_packaged_host_module_rows", missing_host_rows)
+    with pytest.raises(module.XinaoError) as failure:
+        module.build_release(ROOT, allow_dirty=True)
+    assert failure.value.reason_code == "HOST_MODULES_SOURCE_MISSING"
+    release_root = module._state_paths()["release_root"]
+    if release_root.is_dir():
+        assert list(release_root.iterdir()) == []
+
+
+def test_public_build_fails_closed_when_host_module_source_tampered(
+    module: Any, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Incomplete host-module inventory fails closed before a deficient release is sealed."""
+    from tests import test_xinao_skill as skill_tests
+
+    skill_tests._state(module, tmp_path, monkeypatch)
+    skill_tests._fake_build_environment(module, monkeypatch, dirty=True)
+    original = module._collect_packaged_host_module_rows
+
+    def tamper_then_collect(source_root: Path):
+        rows = original(source_root)
+        # Drop one inventory row so post-seal require fails closed (simulates silent omit).
+        return [row for row in rows if not row[0].endswith("native_grok_session.py")]
+
+    monkeypatch.setattr(module, "_collect_packaged_host_module_rows", tamper_then_collect)
+    with pytest.raises(module.XinaoError) as failure:
+        module.build_release(ROOT, allow_dirty=True)
+    assert failure.value.reason_code == "HOST_MODULES_BUNDLE_INCOMPLETE"
+    assert "native_grok_session.py" in failure.value.detail
+    release_root = module._state_paths()["release_root"]
+    if release_root.is_dir():
+        assert list(release_root.iterdir()) == []
 
 
 def test_staged_installed_skill_resolves_host_modules_without_monorepo(

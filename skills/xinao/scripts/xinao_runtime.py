@@ -1271,7 +1271,24 @@ def _validate_bootstrap_fence_locked(
     return fence
 
 
-def _source_bundle_files(root: Path) -> list[tuple[str, Path, bytes]]:
+def _host_module_bundle_relatives() -> tuple[str, ...]:
+    return tuple((HOST_MODULES_BUNDLE_RELATIVE / name).as_posix() for name in HOST_MODULE_INVENTORY)
+
+
+def _require_host_modules_sealed_in_bundle_rows(
+    rows: Sequence[tuple[str, Path, bytes]],
+) -> None:
+    """Fail closed when a monorepo formal build omitted any sealed host module."""
+
+    present = {relative for relative, _path, _payload in rows}
+    missing = [relative for relative in _host_module_bundle_relatives() if relative not in present]
+    if missing:
+        raise XinaoError("HOST_MODULES_BUNDLE_INCOMPLETE", ",".join(missing))
+
+
+def _source_bundle_files(
+    root: Path, *, monorepo_source_root: Path | None = None
+) -> list[tuple[str, Path, bytes]]:
     root = Path(os.path.abspath(root))
     try:
         root_info = os.lstat(root)
@@ -1328,26 +1345,41 @@ def _source_bundle_files(root: Path) -> list[tuple[str, Path, bytes]]:
     normalized = [os.path.normcase(item[0]) for item in rows]
     if len(normalized) != len(set(normalized)):
         raise XinaoError("SKILL_BUNDLE_PATH_COLLISION", str(normalized))
-    # Seal host dual-episode modules into skill-bundle when monorepo source cone is present.
-    # Installed projections already contain scripts/host_modules from a prior build.
-    source_root = _infer_monorepo_source_root_for_skill(root)
-    if source_root is not None:
-        rows = _merge_source_bundle_with_host_modules(rows, source_root)
+    # Seal host dual-episode modules into skill-bundle.
+    # Formal build_release always passes trusted monorepo_source_root (no parent guessing).
+    # Helper/authoring path may infer monorepo cone; installed projections already contain
+    # scripts/host_modules from a prior sealed build and do not re-walk monorepo parents.
+    trusted_root: Path | None
+    if monorepo_source_root is not None:
+        trusted_root = Path(os.path.abspath(monorepo_source_root))
+    else:
+        trusted_root = _infer_monorepo_source_root_for_skill(root)
+    if trusted_root is not None:
+        rows = _merge_source_bundle_with_host_modules(rows, trusted_root)
     return rows
 
 
 def _infer_monorepo_source_root_for_skill(skill_root: Path) -> Path | None:
-    """Return monorepo root when skill_root is skills/xinao with docker host modules."""
-    skill_root = Path(skill_root)
-    if skill_root.name != "xinao":
+    """Return monorepo root when skill_root is skills/xinao beside docker/xinao-researcher.
+
+    Detection is layout-based (skills/xinao + docker cone directory). Inventory completeness
+    is enforced by ``_collect_packaged_host_module_rows`` (fail closed), not by probing one
+    optional file name and silently skipping the seal.
+    """
+    skill_root = Path(os.path.abspath(skill_root))
+    if skill_root.name != "xinao" or skill_root.parent.name != "skills":
         return None
-    candidate = skill_root.parents[1] if len(skill_root.parents) >= 2 else None
-    if candidate is None:
+    if len(skill_root.parents) < 2:
         return None
-    probe = candidate / RESEARCHER_IMAGE_CONTEXT_RELATIVE / "docker_create_specs.py"
-    if probe.is_file() and not _is_reparse(probe):
-        return candidate.resolve()
-    return None
+    candidate = skill_root.parents[1]
+    package_root = candidate / RESEARCHER_IMAGE_CONTEXT_RELATIVE
+    try:
+        info = os.lstat(package_root)
+    except OSError:
+        return None
+    if _is_reparse_stat(info) or not stat.S_ISDIR(info.st_mode):
+        return None
+    return Path(os.path.abspath(candidate))
 
 
 def _collect_packaged_host_module_rows(
@@ -1355,7 +1387,7 @@ def _collect_packaged_host_module_rows(
 ) -> list[tuple[str, Path, bytes]]:
     """Copy host-needed docker/xinao-researcher modules into skill-bundle inventory."""
     package_root = (Path(source_root) / RESEARCHER_IMAGE_CONTEXT_RELATIVE).resolve()
-    if not package_root.is_dir():
+    if not package_root.is_dir() or _is_reparse(package_root):
         raise XinaoError("HOST_MODULES_SOURCE_MISSING", str(package_root))
     rows: list[tuple[str, Path, bytes]] = []
     for name in HOST_MODULE_INVENTORY:
@@ -1373,9 +1405,7 @@ def _collect_packaged_host_module_rows(
             payload = _lf_materialize_bytes(payload)
         relative = (HOST_MODULES_BUNDLE_RELATIVE / name).as_posix()
         rows.append((relative, path, payload))
-    if [item[0] for item in rows] != [
-        (HOST_MODULES_BUNDLE_RELATIVE / name).as_posix() for name in HOST_MODULE_INVENTORY
-    ]:
+    if [item[0] for item in rows] != list(_host_module_bundle_relatives()):
         raise XinaoError("HOST_MODULES_INVENTORY_MISMATCH", str(package_root))
     return rows
 
@@ -4033,7 +4063,9 @@ def _current_source_skill_bundle_identity() -> dict[str, str]:
     _registry, _charter, _runtime_lock, package_version, capability_version = _source_versions(
         source_skill
     )
-    source_rows = _source_bundle_files(source_skill)
+    # Same trusted monorepo root formal build_release seals; never parent-walk guess only.
+    source_rows = _source_bundle_files(source_skill, monorepo_source_root=source_root)
+    _require_host_modules_sealed_in_bundle_rows(source_rows)
     bundle_manifest = _skill_bundle_manifest(source_rows, package_version=package_version)
     tree_sha256 = bundle_manifest.get("tree_sha256")
     if not isinstance(tree_sha256, str) or HEX_SHA256_PATTERN.fullmatch(tree_sha256) is None:
@@ -4887,7 +4919,10 @@ def build_release(
     _registry, _charter, runtime_lock, package_version, capability_version = _source_versions(
         source_skill
     )
-    source_rows = _source_bundle_files(source_skill)
+    # Explicit trusted monorepo source_root (CLI / migration / forward-upgrade), not brittle
+    # parent-walk guessing: host modules must be sealed from docker/xinao-researcher inventory.
+    source_rows = _source_bundle_files(source_skill, monorepo_source_root=source_root)
+    _require_host_modules_sealed_in_bundle_rows(source_rows)
     bundle_manifest = _skill_bundle_manifest(source_rows, package_version=package_version)
     hashes = _reference_hashes(source_skill)
     dockerfile_bytes = dockerfile.read_bytes()
