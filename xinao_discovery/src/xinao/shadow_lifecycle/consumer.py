@@ -111,8 +111,7 @@ def _reject_flat_operation_on_continuity_context(
     if context is None or (context == "portfolio-period" and allow_internal_period):
         return
     raise StoreError(
-        f"{verb} is a legacy flat verb and cannot target a {context}; "
-        f"use portfolio-{verb}"
+        f"{verb} is a legacy flat verb and cannot target a {context}; use portfolio-{verb}"
     )
 
 
@@ -282,13 +281,8 @@ def freeze_episode(
         verb="freeze",
         allow_internal_period=_continuity_internal,
     )
-    if (
-        _continuity_internal
-        and accounting_basis != AccountingBasis.CARRIED_BALANCE_SNAPSHOT
-    ):
-        raise StoreError(
-            "continuity period freeze requires CARRIED_BALANCE_SNAPSHOT accounting"
-        )
+    if _continuity_internal and accounting_basis != AccountingBasis.CARRIED_BALANCE_SNAPSHOT:
+        raise StoreError("continuity period freeze requires CARRIED_BALANCE_SNAPSHOT accounting")
     phase = detect_phase(base)
     if phase != EpisodePhase.INIT:
         raise StoreError(f"freeze requires INIT phase, found {phase.value}")
@@ -414,15 +408,26 @@ def freeze_episode(
                 request.get("opening_journal_group_ref") or f"journal.opening.{episode_ref}"
             )
         elif request.get("opening_journal_group_ref") is not None:
-            freeze_kwargs["opening_journal_group_ref"] = str(
-                request["opening_journal_group_ref"]
-            )
+            freeze_kwargs["opening_journal_group_ref"] = str(request["opening_journal_group_ref"])
         freeze_kwargs["position_journal_group_ref"] = str(
             request.get("position_journal_group_ref") or f"journal.position.{episode_ref}"
         )
 
     episode = freeze_shadow_episode(**freeze_kwargs)
     write_frozen_exclusive(base, episode)
+    # Additive optional research-binding fields (absent on legacy freeze requests).
+    binding_fields: dict[str, Any] = {}
+    for key in (
+        "bound_result_sha256",
+        "bound_receipt_content_sha256",
+        "bound_pool_entry_content_hash",
+        "bound_owner_artifact_sha256",
+        "bound_policy_ref",
+        "trusted_time_proof",
+    ):
+        if key in request:
+            binding_fields[key] = request[key]
+    # File-backed leg-A never proves wall-clock; if caller omitted the flag, leave absent.
     receipt = _receipt_base(
         root=base,
         phase=EpisodePhase.FROZEN,
@@ -434,10 +439,11 @@ def freeze_episode(
         account_identity=episode.account_decision.identity.value,
         science_identity=episode.science_decision.identity.value,
         next_action="settle",
+        **binding_fields,
     )
     write_receipt_exclusive_or_replace(base, receipt, replace=True)
     write_manifest(base)
-    return {
+    result: dict[str, Any] = {
         "ok": True,
         "phase": EpisodePhase.FROZEN.value,
         "root": str(base),
@@ -448,6 +454,8 @@ def freeze_episode(
         "completion_claim_allowed": False,
         "next_action": "settle",
     }
+    result.update(binding_fields)
+    return result
 
 
 def settle_episode(
@@ -719,9 +727,7 @@ def settle_portfolio_period(
         PortfolioPeriodPhase.FROZEN,
         PortfolioPeriodPhase.SETTLEMENT_RECOVERY_REQUIRED,
     }:
-        raise StoreError(
-            "portfolio-settle requires a FROZEN or SETTLEMENT_RECOVERY_REQUIRED head"
-        )
+        raise StoreError("portfolio-settle requires a FROZEN or SETTLEMENT_RECOVERY_REQUIRED head")
     result = settle_episode(
         root=head.period_root,
         outcome_path=outcome_path,
