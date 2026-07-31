@@ -178,6 +178,9 @@ $base = @{
     modelUsage = @{ "grok-composer-2.5-fast" = @{ modelCalls = 1 } }
 }
 $null = Invoke-Case "valid" $base $true
+$case = Copy-Payload $base; $case.stopReason = "end_turn"
+$snakeCaseEndTurn = Invoke-Case "valid_snake_case_end_turn" $case $true
+Assert-True ([string]$snakeCaseEndTurn.stop_reason -eq "EndTurn") "valid_snake_case_end_turn:canonical_stop_reason"
 $case = Copy-Payload $base; $case.stopReason = "Cancelled"; $null = Invoke-Case "cancelled" $case $false
 $case = Copy-Payload $base; $case.modelUsage = @{ "grok-4.5" = @{ modelCalls = 1 } }; $null = Invoke-Case "wrong_model" $case $false
 $case = Copy-Payload $base; $case.usage = @{ total_tokens = 0 }; $null = Invoke-Case "zero_tokens" $case $false

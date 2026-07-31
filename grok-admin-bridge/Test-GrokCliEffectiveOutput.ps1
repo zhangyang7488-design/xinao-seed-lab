@@ -362,7 +362,9 @@ $usageAccountingComplete = (
 )
 
 if ($ProcessExitCode -ne 0) { $errors.Add("process_exit_nonzero") }
-if ($stopReason.ToLowerInvariant() -ne "endturn") { $errors.Add("stop_reason_not_endturn") }
+$stopReasonIsEndTurn = $stopReason.ToLowerInvariant() -in @("endturn", "end_turn")
+if (-not $stopReasonIsEndTurn) { $errors.Add("stop_reason_not_endturn") }
+if ($stopReasonIsEndTurn) { $stopReason = "EndTurn" }
 if ([string]::IsNullOrWhiteSpace($sessionId)) { $errors.Add("session_id_missing") }
 if (-not $backendModelIdentityOk) {
     $errors.Add("backend_model_identity_mismatch")
