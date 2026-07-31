@@ -10,7 +10,9 @@ candidate-only authority. No Docker, Temporal, database, daemon, or live account
 from __future__ import annotations
 
 import argparse
+import copy
 import json
+from collections.abc import Mapping
 from datetime import datetime
 from enum import StrEnum
 from pathlib import Path
@@ -87,6 +89,27 @@ def _load_request(path: Path) -> dict[str, Any]:
     if not isinstance(raw, dict):
         raise StoreError("request must be a JSON object")
     return raw
+
+
+def _resolve_freeze_request(
+    *,
+    request_path: Path | None,
+    request: Mapping[str, Any] | None,
+) -> dict[str, Any]:
+    """Accept exactly one authority input: path or closed in-memory mapping.
+
+    In-memory requests are deep-copied so later mutation of the caller object
+    (or of a display-only request artifact on disk) cannot change freeze input.
+    """
+
+    if (request_path is None) == (request is None):
+        raise StoreError("freeze requires exactly one of request_path or request")
+    if request is not None:
+        if not isinstance(request, Mapping):
+            raise StoreError("request must be a JSON object")
+        return copy.deepcopy(dict(request))
+    assert request_path is not None
+    return _load_request(request_path)
 
 
 def _continuity_context(root: Path) -> str | None:
@@ -269,7 +292,8 @@ def inspect_episode(*, root: Path) -> dict[str, Any]:
 def freeze_episode(
     *,
     root: Path,
-    request_path: Path,
+    request_path: Path | None = None,
+    request: Mapping[str, Any] | None = None,
     period_index: int = 1,
     prior_settled: SettledShadowEpisode | None = None,
     accounting_basis: AccountingBasis = AccountingBasis.LEGACY_OPENING_JOURNAL,
@@ -288,7 +312,7 @@ def freeze_episode(
         raise StoreError(f"freeze requires INIT phase, found {phase.value}")
 
     seat = load_seat(base)
-    request = _load_request(request_path)
+    request = _resolve_freeze_request(request_path=request_path, request=request)
 
     # Hard no-peek: refuse outcome material on freeze path.
     for forbidden in ("outcome", "actual_special_number", "settlement", "settled"):
@@ -679,12 +703,19 @@ def inspect_portfolio(*, root: Path) -> dict[str, Any]:
     }
 
 
-def freeze_portfolio_period(*, root: Path, request_path: Path) -> dict[str, Any]:
+def freeze_portfolio_period(
+    *,
+    root: Path,
+    request_path: Path | None = None,
+    request: Mapping[str, Any] | None = None,
+) -> dict[str, Any]:
+    # Capture authority input before any period-root preparation side effects.
+    closed_request = _resolve_freeze_request(request_path=request_path, request=request)
     base = resolve_root(root)
     period_root, period_index, prior_settled = prepare_next_period_root(base)
     result = freeze_episode(
         root=period_root,
-        request_path=request_path,
+        request=closed_request,
         period_index=period_index,
         prior_settled=prior_settled,
         accounting_basis=AccountingBasis.CARRIED_BALANCE_SNAPSHOT,

@@ -106,8 +106,34 @@ _TOP_LEVEL_ALLOWED: Final = frozenset(
         "account_identity",
         "executable_account_decision",
         "no_action_period_binding",
+        "portfolio_binding",
         "rationale_ref",
         "science_identity",
+    }
+)
+
+# Closed portfolio/head identity for portfolio-mode dispositions (not used in flat episode).
+_PORTFOLIO_BINDING_ALLOWED: Final = frozenset(
+    {
+        "portfolio_ref",
+        "portfolio_content_hash",
+        "seat_id",
+        "seat_content_hash",
+        "head_period_index",
+        "head_phase",
+        "prior_settled_episode_hash",
+        "prior_feedback_hash",
+        "intended_next_period_index",
+    }
+)
+_PORTFOLIO_HEAD_PHASES: Final = frozenset(
+    {
+        "INIT",
+        "MISSING",
+        "FROZEN",
+        "SETTLED",
+        "FEEDBACK_SEALED",
+        "SETTLEMENT_RECOVERY_REQUIRED",
     }
 )
 
@@ -470,6 +496,98 @@ def _validate_executable_account_decision(raw: Mapping[str, Any]) -> dict[str, A
     }
 
 
+def _optional_hex64_or_null(value: object, label: str) -> str | None:
+    if value is None:
+        return None
+    return _require_hex64(value, "PORTFOLIO_BINDING_HASH_INVALID", label)
+
+
+def validate_portfolio_binding(raw: Mapping[str, Any]) -> dict[str, Any]:
+    """Validate closed portfolio/head identity carried on a disposition."""
+
+    required = {
+        "portfolio_ref",
+        "portfolio_content_hash",
+        "seat_id",
+        "seat_content_hash",
+        "head_period_index",
+        "head_phase",
+        "prior_settled_episode_hash",
+        "prior_feedback_hash",
+        "intended_next_period_index",
+    }
+    missing = sorted(required - set(raw))
+    if missing:
+        raise OwnerDispositionError(
+            "PORTFOLIO_BINDING_INCOMPLETE",
+            f"missing={missing}",
+        )
+    _reject_unknown_keys(
+        raw,
+        _PORTFOLIO_BINDING_ALLOWED,
+        reason_code="PORTFOLIO_BINDING_UNKNOWN_FIELDS",
+    )
+    head_period_index = raw.get("head_period_index")
+    if type(head_period_index) is not int or head_period_index < 0:
+        raise OwnerDispositionError(
+            "PORTFOLIO_BINDING_HEAD_PERIOD_INVALID",
+            str(head_period_index),
+        )
+    intended = raw.get("intended_next_period_index")
+    if type(intended) is not int or intended < 1:
+        raise OwnerDispositionError(
+            "PORTFOLIO_BINDING_INTENDED_PERIOD_INVALID",
+            str(intended),
+        )
+    head_phase = raw.get("head_phase")
+    if not isinstance(head_phase, str) or head_phase not in _PORTFOLIO_HEAD_PHASES:
+        raise OwnerDispositionError(
+            "PORTFOLIO_BINDING_HEAD_PHASE_INVALID",
+            str(head_phase),
+        )
+    portfolio_ref = _require_text(
+        raw.get("portfolio_ref"),
+        "PORTFOLIO_BINDING_PORTFOLIO_REF_INVALID",
+        "portfolio_ref",
+    )
+    seat_id = _require_text(
+        raw.get("seat_id"),
+        "PORTFOLIO_BINDING_SEAT_ID_INVALID",
+        "seat_id",
+    )
+    if portfolio_ref == seat_id:
+        raise OwnerDispositionError(
+            "PORTFOLIO_BINDING_SEAT_PORTFOLIO_COLLISION",
+            "seat_id and portfolio_ref must be distinct",
+        )
+    return {
+        "portfolio_ref": portfolio_ref,
+        "portfolio_content_hash": _require_hex64(
+            raw.get("portfolio_content_hash"),
+            "PORTFOLIO_BINDING_HASH_INVALID",
+            "portfolio_content_hash",
+        ),
+        "seat_id": seat_id,
+        "seat_content_hash": _require_hex64(
+            raw.get("seat_content_hash"),
+            "PORTFOLIO_BINDING_HASH_INVALID",
+            "seat_content_hash",
+        ),
+        "head_period_index": head_period_index,
+        "head_phase": head_phase,
+        # Explicit nulls required when first-period / no prior feedback yet.
+        "prior_settled_episode_hash": _optional_hex64_or_null(
+            raw.get("prior_settled_episode_hash"),
+            "prior_settled_episode_hash",
+        ),
+        "prior_feedback_hash": _optional_hex64_or_null(
+            raw.get("prior_feedback_hash"),
+            "prior_feedback_hash",
+        ),
+        "intended_next_period_index": intended,
+    }
+
+
 def _validate_no_action_times(raw: Mapping[str, Any]) -> dict[str, Any]:
     """NO_ACTION still freezes a period; times/target come from disposition, not prose."""
 
@@ -704,6 +822,21 @@ def validate_disposition_payload(
     if not target_ref:
         raise OwnerDispositionError("DISPOSITION_TARGET_REQUIRED", "target_ref required")
 
+    portfolio_binding: dict[str, Any] | None = None
+    pb_raw = payload.get("portfolio_binding")
+    if pb_raw is not None:
+        if not isinstance(pb_raw, Mapping):
+            raise OwnerDispositionError(
+                "PORTFOLIO_BINDING_INVALID",
+                "portfolio_binding must be an object when present",
+            )
+        portfolio_binding = validate_portfolio_binding(pb_raw)
+        if int(portfolio_binding["intended_next_period_index"]) != int(period_index):
+            raise OwnerDispositionError(
+                "PORTFOLIO_BINDING_PERIOD_MISMATCH",
+                "portfolio_binding.intended_next_period_index must equal period_index",
+            )
+
     normalized: dict[str, Any] = {
         "schema_version": DISPOSITION_SCHEMA_VERSION,
         "disposition_marker": DISPOSITION_MARKER,
@@ -721,6 +854,7 @@ def validate_disposition_payload(
         "account_identity": account_identity,
         "executable_account_decision": executable,
         "no_action_period_binding": no_action_binding,
+        "portfolio_binding": portfolio_binding,
         "rationale_ref": _require_text(
             payload.get("rationale_ref") or "owner-disposition.rationale",
             "DISPOSITION_RATIONALE_INVALID",
@@ -951,5 +1085,6 @@ __all__ = [
     "require_period_account_identity",
     "resolve_owner_state_root",
     "validate_disposition_payload",
+    "validate_portfolio_binding",
     "write_owner_disposition_artifact",
 ]

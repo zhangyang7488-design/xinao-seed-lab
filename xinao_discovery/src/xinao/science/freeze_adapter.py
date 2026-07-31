@@ -20,6 +20,7 @@ Library/worker outputs never self-certify Owner authenticity.
 
 from __future__ import annotations
 
+import copy
 import hashlib
 import json
 import re
@@ -42,7 +43,11 @@ from xinao.shadow_lifecycle.store import (
     PortfolioPeriodPhase,
     StoreError,
     derive_portfolio_head,
+    load_feedback,
     load_frozen,
+    load_portfolio,
+    load_seat,
+    load_settled,
     period_directory,
     resolve_root,
 )
@@ -111,15 +116,161 @@ def encode_research_binding_bytes(body: Mapping[str, Any]) -> bytes:
     )
 
 
+def _normalized_executable_intent(disposition: Mapping[str, Any]) -> dict[str, Any]:
+    """Closed executable account intent sealed into the research binding."""
+
+    account_identity = require_period_account_identity(disposition)
+    if account_identity == ACCOUNT_ACTION:
+        executable = disposition.get("executable_account_decision")
+        if not isinstance(executable, Mapping):
+            raise FreezeAdapterError(
+                "ACTION_REQUIRES_EXECUTABLE_DECISION",
+                "cannot seal ACTION intent without structured executable decision",
+            )
+        intent: dict[str, Any] = {
+            "account_identity": ACCOUNT_ACTION,
+            "panel": executable["panel"],
+            "selected_number": executable["selected_number"],
+            "stake": str(executable["stake"]),
+            "rule_ref": str(executable["rule_ref"]),
+            "odds_version_ref": str(executable["odds_version_ref"]),
+            "baseline_ref": str(executable["baseline_ref"]),
+            "risk_policy_ref": str(executable["risk_policy_ref"]),
+            "target_ref": str(executable["target_ref"]),
+            "target_open_time": str(executable["target_open_time"]),
+            "freeze_deadline": str(executable["freeze_deadline"]),
+            "frozen_at": str(executable["frozen_at"]),
+            "knowledge_cutoff": str(executable["knowledge_cutoff"]),
+        }
+        if executable.get("ticket_ref") is not None:
+            intent["ticket_ref"] = str(executable["ticket_ref"])
+        if executable.get("information_set_ref") is not None:
+            intent["information_set_ref"] = str(executable["information_set_ref"])
+        return intent
+
+    binding = disposition.get("no_action_period_binding")
+    if not isinstance(binding, Mapping):
+        raise FreezeAdapterError(
+            "NO_ACTION_BINDING_REQUIRED",
+            "cannot seal NO_ACTION intent without no_action_period_binding",
+        )
+    return {
+        "account_identity": ACCOUNT_NO_ACTION,
+        "selected_number": None,
+        "stake": "0.0000",
+        "rule_ref": str(binding["rule_ref"]),
+        "odds_version_ref": str(binding["odds_version_ref"]),
+        "target_ref": str(binding["target_ref"]),
+        "target_open_time": str(binding["target_open_time"]),
+        "freeze_deadline": str(binding["freeze_deadline"]),
+        "frozen_at": str(binding["frozen_at"]),
+        "knowledge_cutoff": str(binding["knowledge_cutoff"]),
+    }
+
+
+def build_portfolio_binding_from_shadow(shadow_root: Path) -> dict[str, Any]:
+    """Derive closed portfolio/head identity from the live sealed shadow root."""
+
+    base = resolve_root(shadow_root)
+    try:
+        seat = load_seat(base)
+        portfolio = load_portfolio(base)
+        head = derive_portfolio_head(base)
+    except StoreError as exc:
+        raise FreezeAdapterError("PORTFOLIO_HEAD_INSPECT_FAILED", str(exc)) from exc
+
+    if head.period_index == 0:
+        intended = 1
+        prior_settled: str | None = None
+        prior_feedback: str | None = None
+    elif head.phase in {PortfolioPeriodPhase.MISSING, PortfolioPeriodPhase.INIT}:
+        intended = head.period_index
+        if intended == 1:
+            prior_settled = None
+            prior_feedback = None
+        else:
+            try:
+                prior_root = period_directory(base, intended - 1)
+                prior_settled = load_settled(prior_root).content_hash
+                prior_feedback = load_feedback(prior_root).content_hash
+            except StoreError as exc:
+                raise FreezeAdapterError(
+                    "PORTFOLIO_PRIOR_HEAD_UNAVAILABLE",
+                    str(exc),
+                ) from exc
+    elif head.phase == PortfolioPeriodPhase.FEEDBACK_SEALED:
+        intended = head.period_index + 1
+        prior_settled = head.settled_episode_hash
+        prior_feedback = head.feedback_hash
+    else:
+        raise FreezeAdapterError(
+            "FREEZE_PORTFOLIO_HEAD_NOT_READY",
+            f"portfolio cannot freeze while head is {head.phase.value}",
+        )
+
+    return {
+        "portfolio_ref": portfolio.portfolio_ref,
+        "portfolio_content_hash": portfolio.content_hash,
+        "seat_id": seat.seat_id,
+        "seat_content_hash": seat.content_hash,
+        "head_period_index": head.period_index,
+        "head_phase": head.phase.value,
+        "prior_settled_episode_hash": prior_settled,
+        "prior_feedback_hash": prior_feedback,
+        "intended_next_period_index": intended,
+    }
+
+
+def assert_portfolio_binding_matches_shadow(
+    *,
+    disposition: Mapping[str, Any],
+    shadow_root: Path,
+) -> dict[str, Any]:
+    """Require exact portfolio/head equality before any binding/request/freeze write."""
+
+    claimed = disposition.get("portfolio_binding")
+    if not isinstance(claimed, Mapping):
+        raise FreezeAdapterError(
+            "PORTFOLIO_BINDING_REQUIRED",
+            "portfolio mode disposition must carry closed portfolio_binding",
+        )
+    live = build_portfolio_binding_from_shadow(shadow_root)
+    # Exact field equality (portfolio A disposition must fail on portfolio B).
+    for key in (
+        "portfolio_ref",
+        "portfolio_content_hash",
+        "seat_id",
+        "seat_content_hash",
+        "head_period_index",
+        "head_phase",
+        "prior_settled_episode_hash",
+        "prior_feedback_hash",
+        "intended_next_period_index",
+    ):
+        if claimed.get(key) != live.get(key):
+            raise FreezeAdapterError(
+                "PORTFOLIO_HEAD_BINDING_MISMATCH",
+                f"{key}: disposition={claimed.get(key)!r} live={live.get(key)!r}",
+            )
+    if int(claimed["intended_next_period_index"]) != int(disposition["period_index"]):
+        raise FreezeAdapterError(
+            "PORTFOLIO_BINDING_PERIOD_MISMATCH",
+            "intended_next_period_index disagrees with disposition.period_index",
+        )
+    return live
+
+
 def build_research_freeze_binding(
     *,
     pool_entry: Mapping[str, Any],
     disposition: Mapping[str, Any],
     owner_artifact_sha256: str,
+    portfolio_binding: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Build the immutable research freeze binding body (no self-hash)."""
 
     owner_hash = _require_hex64(owner_artifact_sha256, "owner_artifact_sha256")
+    executable_intent = _normalized_executable_intent(disposition)
     body: dict[str, Any] = {
         "schema_version": RESEARCH_BINDING_SCHEMA,
         "binding_marker": RESEARCH_BINDING_MARKER,
@@ -135,6 +286,9 @@ def build_research_freeze_binding(
         "account_identity": str(disposition["account_identity"]),
         "science_identity": str(disposition["science_identity"]),
         "knowledge_cutoff": str(disposition["knowledge_cutoff"]),
+        "executable_account_intent": executable_intent,
+        # Flat episode mode keeps portfolio identity explicitly absent (not faked).
+        "portfolio_binding": dict(portfolio_binding) if portfolio_binding is not None else None,
         "scientific_promotion": False,
         "owner_adopted": False,
     }
@@ -411,6 +565,11 @@ def build_freeze_request_from_disposition(
 
 
 def write_freeze_request(path: Path, request: Mapping[str, Any]) -> Path:
+    """Legacy non-authoritative display write. Prefer content-addressed evidence.
+
+    Must never be the consumer's authority input for disposition-bound freezes.
+    """
+
     path = path.expanduser().resolve()
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(
@@ -418,6 +577,55 @@ def write_freeze_request(path: Path, request: Mapping[str, Any]) -> Path:
         encoding="utf-8",
     )
     return path
+
+
+def freeze_request_evidence_path(shadow_root: Path, request_content_hash: str) -> Path:
+    digest = _require_hex64(request_content_hash, "request_content_hash")
+    base = resolve_root(shadow_root)
+    return base / "objects" / "freeze_request" / "sha256" / digest[:2] / f"{digest}.json"
+
+
+def write_freeze_request_evidence_exclusive(
+    *,
+    shadow_root: Path,
+    request: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Content-addressed exclusive freeze-request evidence (display-only, not authority)."""
+
+    body = dict(request)
+    raw = (json.dumps(body, ensure_ascii=False, indent=2, sort_keys=True) + "\n").encode("utf-8")
+    digest = _raw_sha256(raw)
+    # Prefer sealed request_content_hash when present; path digest is still raw bytes.
+    content_hash = str(body.get("request_content_hash") or digest)
+    if body.get("request_content_hash") is not None:
+        _require_hex64(body["request_content_hash"], "request_content_hash")
+    path = freeze_request_evidence_path(shadow_root, digest)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        with path.open("xb") as stream:
+            stream.write(raw)
+            stream.flush()
+    except FileExistsError as exc:
+        existing = path.read_bytes()
+        if existing != raw:
+            raise FreezeAdapterError(
+                "FREEZE_REQUEST_EVIDENCE_CAS_CONFLICT",
+                f"request evidence {digest} already sealed with different bytes",
+            ) from exc
+        return {
+            "request_evidence_sha256": digest,
+            "request_content_hash": content_hash,
+            "path": str(path),
+            "bytes_written": False,
+            "authority_input": False,
+        }
+    return {
+        "request_evidence_sha256": digest,
+        "request_content_hash": content_hash,
+        "path": str(path),
+        "bytes_written": True,
+        "authority_input": False,
+    }
 
 
 def _assert_period_matches(
@@ -446,6 +654,162 @@ def _assert_period_matches(
     return expected
 
 
+def _iso_z(value: Any) -> str:
+    if hasattr(value, "isoformat"):
+        return value.isoformat().replace("+00:00", "Z")
+    text = str(value)
+    return text.replace("+00:00", "Z") if text.endswith("+00:00") else text
+
+
+def _assert_frozen_matches_disposition_and_binding(
+    *,
+    frozen: Any,
+    disposition: Mapping[str, Any],
+    binding: Mapping[str, Any],
+    portfolio_binding: Mapping[str, Any] | None,
+    mode: Literal["episode", "portfolio"],
+) -> None:
+    """Post-freeze: immutable ticket/decision must match sealed disposition + binding."""
+
+    intent = binding.get("executable_account_intent")
+    if not isinstance(intent, Mapping):
+        raise FreezeAdapterError(
+            "RESEARCH_BINDING_EXECUTABLE_MISSING",
+            "binding lacks executable_account_intent",
+        )
+    account_identity = str(disposition["account_identity"])
+    if str(frozen.account_decision.identity.value) != account_identity:
+        raise FreezeAdapterError(
+            "FROZEN_ACCOUNT_IDENTITY_MISMATCH",
+            f"frozen={frozen.account_decision.identity.value} disposition={account_identity}",
+        )
+    if str(intent.get("account_identity")) != account_identity:
+        raise FreezeAdapterError(
+            "BINDING_EXECUTABLE_IDENTITY_MISMATCH",
+            str(intent.get("account_identity")),
+        )
+    if str(frozen.target_ref) != str(disposition["target_ref"]):
+        raise FreezeAdapterError("FROZEN_TARGET_MISMATCH", str(frozen.target_ref))
+    if str(frozen.target_ref) != str(intent.get("target_ref")):
+        raise FreezeAdapterError("FROZEN_BINDING_TARGET_MISMATCH", str(intent.get("target_ref")))
+    if _iso_z(frozen.target_open_time) != str(intent.get("target_open_time")):
+        raise FreezeAdapterError("FROZEN_TARGET_OPEN_MISMATCH", _iso_z(frozen.target_open_time))
+    if _iso_z(frozen.freeze_deadline) != str(intent.get("freeze_deadline")):
+        raise FreezeAdapterError("FROZEN_DEADLINE_MISMATCH", _iso_z(frozen.freeze_deadline))
+    if _iso_z(frozen.frozen_at) != str(intent.get("frozen_at")):
+        raise FreezeAdapterError("FROZEN_AT_MISMATCH", _iso_z(frozen.frozen_at))
+    if str(frozen.rule_ref) != str(intent.get("rule_ref")):
+        raise FreezeAdapterError("FROZEN_RULE_MISMATCH", str(frozen.rule_ref))
+    if str(frozen.odds_version_ref) != str(intent.get("odds_version_ref")):
+        raise FreezeAdapterError("FROZEN_ODDS_MISMATCH", str(frozen.odds_version_ref))
+    if str(frozen.science_decision.identity.value) != str(disposition["science_identity"]):
+        raise FreezeAdapterError(
+            "FROZEN_SCIENCE_IDENTITY_MISMATCH",
+            str(frozen.science_decision.identity.value),
+        )
+    if int(frozen.period_index) != int(disposition["period_index"]):
+        raise FreezeAdapterError(
+            "FROZEN_PERIOD_MISMATCH",
+            f"frozen={frozen.period_index} disposition={disposition['period_index']}",
+        )
+
+    if account_identity == ACCOUNT_ACTION:
+        ticket = frozen.bound_account_ticket
+        if ticket is None:
+            raise FreezeAdapterError("FROZEN_TICKET_MISSING", "ACTION requires bound ticket")
+        for field in (
+            "selected_number",
+            "stake",
+            "panel",
+            "rule_ref",
+            "odds_version_ref",
+            "baseline_ref",
+            "risk_policy_ref",
+            "target_ref",
+        ):
+            if getattr(ticket, field) != intent.get(field) and str(getattr(ticket, field)) != str(
+                intent.get(field)
+            ):
+                raise FreezeAdapterError(
+                    "FROZEN_TICKET_EXECUTABLE_MISMATCH",
+                    f"{field}: ticket={getattr(ticket, field)!r} intent={intent.get(field)!r}",
+                )
+        if _iso_z(ticket.target_open_time) != str(intent.get("target_open_time")):
+            raise FreezeAdapterError("FROZEN_TICKET_OPEN_MISMATCH", _iso_z(ticket.target_open_time))
+        if _iso_z(ticket.freeze_deadline) != str(intent.get("freeze_deadline")):
+            raise FreezeAdapterError(
+                "FROZEN_TICKET_DEADLINE_MISMATCH",
+                _iso_z(ticket.freeze_deadline),
+            )
+        if _iso_z(ticket.frozen_at) != str(intent.get("frozen_at")):
+            raise FreezeAdapterError("FROZEN_TICKET_FROZEN_AT_MISMATCH", _iso_z(ticket.frozen_at))
+        if str(frozen.account_decision.stake) != str(intent.get("stake")):
+            raise FreezeAdapterError(
+                "FROZEN_ACCOUNT_STAKE_MISMATCH",
+                str(frozen.account_decision.stake),
+            )
+        executable = disposition.get("executable_account_decision")
+        if isinstance(executable, Mapping):
+            if int(ticket.selected_number) != int(executable["selected_number"]):
+                raise FreezeAdapterError(
+                    "FROZEN_TICKET_NUMBER_MISMATCH",
+                    f"ticket={ticket.selected_number} disposition={executable['selected_number']}",
+                )
+            if str(ticket.stake) != str(executable["stake"]):
+                raise FreezeAdapterError(
+                    "FROZEN_TICKET_STAKE_MISMATCH",
+                    f"ticket={ticket.stake} disposition={executable['stake']}",
+                )
+    else:
+        if frozen.bound_account_ticket is not None:
+            raise FreezeAdapterError("FROZEN_NO_ACTION_HAS_TICKET", "ticket present")
+        if str(frozen.account_decision.stake) != "0.0000":
+            raise FreezeAdapterError(
+                "FROZEN_NO_ACTION_STAKE_MISMATCH",
+                str(frozen.account_decision.stake),
+            )
+        if str(frozen.account_decision.rule_ref) != str(intent.get("rule_ref")):
+            raise FreezeAdapterError(
+                "FROZEN_NO_ACTION_RULE_MISMATCH",
+                str(frozen.account_decision.rule_ref),
+            )
+        if str(frozen.account_decision.odds_version_ref) != str(intent.get("odds_version_ref")):
+            raise FreezeAdapterError(
+                "FROZEN_NO_ACTION_ODDS_MISMATCH",
+                str(frozen.account_decision.odds_version_ref),
+            )
+
+    if mode == "portfolio":
+        if portfolio_binding is None:
+            raise FreezeAdapterError("PORTFOLIO_BINDING_REQUIRED", "missing verified binding")
+        if str(frozen.portfolio_ref) != str(portfolio_binding["portfolio_ref"]):
+            raise FreezeAdapterError(
+                "FROZEN_PORTFOLIO_REF_MISMATCH",
+                str(frozen.portfolio_ref),
+            )
+        if str(frozen.seat_id) != str(portfolio_binding["seat_id"]):
+            raise FreezeAdapterError("FROZEN_SEAT_ID_MISMATCH", str(frozen.seat_id))
+        binding_pb = binding.get("portfolio_binding")
+        if not isinstance(binding_pb, Mapping):
+            raise FreezeAdapterError(
+                "RESEARCH_BINDING_PORTFOLIO_MISSING",
+                "portfolio binding not sealed into research binding",
+            )
+        if binding_pb.get("portfolio_ref") != portfolio_binding["portfolio_ref"]:
+            raise FreezeAdapterError(
+                "RESEARCH_BINDING_PORTFOLIO_MISMATCH",
+                str(binding_pb.get("portfolio_ref")),
+            )
+    elif (
+        disposition.get("portfolio_binding") is not None
+        or binding.get("portfolio_binding") is not None
+    ):
+        raise FreezeAdapterError(
+            "EPISODE_MODE_PORTFOLIO_BINDING_FORBIDDEN",
+            "flat episode mode must not fake portfolio identity",
+        )
+
+
 def apply_freeze_from_disposition(
     *,
     pool_root: Path,
@@ -457,6 +821,10 @@ def apply_freeze_from_disposition(
     request_out: Path | None = None,
 ) -> dict[str, Any]:
     """Verify disposition + pool, seal research binding, call exclusive freeze consumer.
+
+    Authority input to the consumer is an in-memory closed request mapping — never
+    a mutable freeze_request path. Optional request evidence is content-addressed
+    and display-only.
 
     Stops at FROZEN / awaiting independent outcome. Does not settle, feedback, or
     open the next period.
@@ -480,10 +848,24 @@ def apply_freeze_from_disposition(
         shadow_root=shadow_root,
     )
 
+    # Portfolio/head exact binding BEFORE any binding/request/freeze write.
+    portfolio_binding: dict[str, Any] | None = None
+    if mode == "portfolio":
+        portfolio_binding = assert_portfolio_binding_matches_shadow(
+            disposition=disposition,
+            shadow_root=shadow_root,
+        )
+    elif disposition.get("portfolio_binding") is not None:
+        raise FreezeAdapterError(
+            "EPISODE_MODE_PORTFOLIO_BINDING_FORBIDDEN",
+            "flat episode mode must not carry portfolio_binding",
+        )
+
     binding_body = build_research_freeze_binding(
         pool_entry=pool_entry,
         disposition=disposition,
         owner_artifact_sha256=str(verified["owner_artifact_sha256"]),
+        portfolio_binding=portfolio_binding,
     )
     sealed_binding = write_research_binding_exclusive(
         shadow_root=shadow_root,
@@ -497,16 +879,34 @@ def apply_freeze_from_disposition(
         owner_artifact_sha256=str(verified["owner_artifact_sha256"]),
         research_binding_sha256=binding_hash,
     )
+    # Closed deep-copied in-memory authority mapping for the consumer.
+    # Display/evidence paths and later mutation of caller structures cannot fork it.
+    authority_request = copy.deepcopy(request)
 
+    evidence = write_freeze_request_evidence_exclusive(
+        shadow_root=shadow_root,
+        request=authority_request,
+    )
+    # Optional legacy display path; never used as consumer authority input.
     if request_out is None:
-        request_out = shadow_root.expanduser().resolve() / "generated" / "freeze_request.v1.json"
-    write_freeze_request(request_out, request)
+        request_out = (
+            shadow_root.expanduser().resolve()
+            / "generated"
+            / f"freeze_request.{evidence['request_evidence_sha256'][:16]}.v1.json"
+        )
+    write_freeze_request(request_out, authority_request)
 
     try:
         if mode == "portfolio":
-            result = freeze_portfolio_period(root=shadow_root, request_path=request_out)
+            result = freeze_portfolio_period(
+                root=shadow_root,
+                request=copy.deepcopy(authority_request),
+            )
         elif mode == "episode":
-            result = freeze_episode(root=shadow_root, request_path=request_out)
+            result = freeze_episode(
+                root=shadow_root,
+                request=copy.deepcopy(authority_request),
+            )
         else:
             raise FreezeAdapterError("FREEZE_MODE_INVALID", str(mode))
     except (StoreError, ValueError) as exc:
@@ -537,6 +937,14 @@ def apply_freeze_from_disposition(
     if int(reloaded.get("period_index", -1)) != int(disposition["period_index"]):
         raise FreezeAdapterError("RESEARCH_BINDING_PERIOD_MISMATCH", "period_index")
 
+    _assert_frozen_matches_disposition_and_binding(
+        frozen=frozen,
+        disposition=disposition,
+        binding=reloaded,
+        portfolio_binding=portfolio_binding,
+        mode=mode,
+    )
+
     return {
         "ok": bool(result.get("ok", True)),
         "adapter_marker": ADAPTER_MARKER,
@@ -546,15 +954,19 @@ def apply_freeze_from_disposition(
         "frozen_episode_hash": result.get("frozen_episode_hash") or frozen.content_hash,
         "period_index": result.get("period_index"),
         "account_identity": result.get("account_identity"),
-        "bound_result_sha256": request["bound_result_sha256"],
-        "bound_pool_entry_content_hash": request["bound_pool_entry_content_hash"],
-        "bound_owner_artifact_sha256": request["bound_owner_artifact_sha256"],
+        "bound_result_sha256": authority_request["bound_result_sha256"],
+        "bound_pool_entry_content_hash": authority_request["bound_pool_entry_content_hash"],
+        "bound_owner_artifact_sha256": authority_request["bound_owner_artifact_sha256"],
         "research_binding_sha256": binding_hash,
         "research_binding_path": sealed_binding["path"],
         "science_decision_ref": frozen.science_decision.science_decision_ref,
         "account_decision_ref": frozen.account_decision.account_decision_ref,
         "request_path": str(request_out),
-        "request_content_hash": request["request_content_hash"],
+        "request_evidence_path": evidence["path"],
+        "request_evidence_sha256": evidence["request_evidence_sha256"],
+        "request_evidence_authority_input": False,
+        "request_content_hash": authority_request["request_content_hash"],
+        "portfolio_binding": portfolio_binding,
         "trusted_time_proof": False,
         "completion_claim_allowed": False,
         "scientific_promotion": False,
@@ -599,13 +1011,17 @@ __all__ = [
     "FreezeAdapterError",
     "apply_freeze_from_disposition",
     "assert_no_control_plane_imports",
+    "assert_portfolio_binding_matches_shadow",
     "build_freeze_request_from_disposition",
+    "build_portfolio_binding_from_shadow",
     "build_research_freeze_binding",
     "expected_next_period_index",
     "extract_research_binding_hash_from_frozen",
     "extract_research_binding_hash_from_refs",
+    "freeze_request_evidence_path",
     "load_research_binding",
     "research_binding_path",
     "write_freeze_request",
+    "write_freeze_request_evidence_exclusive",
     "write_research_binding_exclusive",
 ]

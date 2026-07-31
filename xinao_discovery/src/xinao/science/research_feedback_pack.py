@@ -297,16 +297,6 @@ def _build_research_feedback_pack_body(
     return sealed
 
 
-def build_research_feedback_pack(**kwargs: Any) -> dict[str, Any]:
-    """Deprecated public alias of the private body builder.
-
-    Not a production settled proof. Prefer ``emit_research_feedback_pack``, which
-    derives priors from frozen binding + side object.
-    """
-
-    return _build_research_feedback_pack_body(**kwargs)
-
-
 def _derive_priors_from_frozen_binding(
     *,
     shadow_root: Path,
@@ -535,7 +525,6 @@ __all__ = [
     "PACK_MARKER",
     "PACK_SCHEMA_VERSION",
     "ResearchFeedbackPackError",
-    "build_research_feedback_pack",
     "emit_research_feedback_pack",
     "reject_pre_outcome_emit",
 ]
