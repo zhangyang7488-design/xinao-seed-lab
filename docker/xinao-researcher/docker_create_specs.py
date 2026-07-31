@@ -224,10 +224,14 @@ def transport_container_spec(
             "episode_entrypoint.py" in str(part) for part in resolved_entrypoint
         )
     elif use_episode_entrypoint:
+        # --hold: explicit idle-hold until Owner docker-exec attach / docker stop.
+        # Must stay running; bare episode_entrypoint without --hold exits immediately
+        # and breaks require_live_pair_ready (needs docker exec into a live transport).
         resolved_entrypoint = [
             "python",
             "-I",
             "/opt/xinao-researcher/episode_entrypoint.py",
+            "--hold",
         ]
         episode_entrypoint_selected = True
     else:
@@ -250,6 +254,8 @@ def transport_container_spec(
         "tmpfs": [f"{TOOL_TMP}:rw,nosuid,nodev,size=64m"],
         "entrypoint": resolved_entrypoint,
         "episode_entrypoint_selected": episode_entrypoint_selected,
+        "episode_idle_hold": episode_entrypoint_selected
+        and any(str(part) == "--hold" for part in resolved_entrypoint),
         "generic_file_shell_tools": False,
         "mcp_tools_via_sidecar": True,
         "mcp_server": "episode_lab",
@@ -270,9 +276,11 @@ def transport_container_spec(
         },
         "notes": (
             "Canary ENTRYPOINT remains the default image entrypoint. Dual-host "
-            "episode seats may select episode_entrypoint and attempt-local native "
-            "MCP (episode_lab lab ops via Grok built-in search_tool/use_tool). "
-            "OPEN_RESEARCH also allows web_search/web_fetch; host file/shell stay stripped."
+            "episode seats select episode_entrypoint --hold (idle until Owner "
+            "docker exec attach; no research/schedule/freeze/settle) plus "
+            "attempt-local native MCP (episode_lab lab ops via Grok built-in "
+            "search_tool/use_tool). OPEN_RESEARCH also allows web_search/web_fetch; "
+            "host file/shell stay stripped. restart policy remains no."
         ),
         "forbidden": {
             "mount_docker_sock": True,
@@ -731,7 +739,8 @@ def validate_transport_spec_invariants(spec: dict[str, Any]) -> list[str]:
     if env.get("XINAO_DUAL_CONTAINER") != "1":
         violations.append("XINAO_DUAL_CONTAINER must be 1")
     entry = spec.get("entrypoint") or []
-    joined = " ".join(str(x) for x in entry) if isinstance(entry, list) else str(entry)
+    entry_tokens = [str(x) for x in entry] if isinstance(entry, list) else [str(entry)]
+    joined = " ".join(entry_tokens)
     canary_path = "/opt/xinao-researcher/entrypoint.py"
     episode_path = "/opt/xinao-researcher/episode_entrypoint.py"
     if episode_path in joined and not spec.get("episode_entrypoint_selected"):
@@ -739,6 +748,12 @@ def validate_transport_spec_invariants(spec: dict[str, Any]) -> list[str]:
         violations.append("entrypoint!=canary")
     elif canary_path not in joined and episode_path not in joined:
         violations.append("entrypoint!=canary")
+    # Episode transport must idle-hold until Owner attach; bare exit breaks docker exec.
+    if episode_path in joined and "--self-describe" not in entry_tokens:
+        if "--hold" not in entry_tokens:
+            violations.append("episode_entrypoint_requires_hold")
+        if spec.get("episode_entrypoint_selected") and not spec.get("episode_idle_hold", True):
+            violations.append("episode_idle_hold_flag_missing")
     for bind in spec.get("binds") or []:
         host = str(bind.get("host", ""))
         container = str(bind.get("container", ""))

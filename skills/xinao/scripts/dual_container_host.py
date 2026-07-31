@@ -2231,6 +2231,7 @@ def _synthetic_transport_inspect(lease: Mapping[str, Any]) -> dict[str, Any]:
                 "python",
                 "-I",
                 "/opt/xinao-researcher/episode_entrypoint.py",
+                "--hold",
             ],
             "Env": [
                 "XINAO_DUAL_CONTAINER=1",
