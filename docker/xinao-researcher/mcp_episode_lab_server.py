@@ -438,6 +438,7 @@ def serve_stdio(
                     },
                 )
             else:
+                remapped = remap_mcp_args_to_ipc(op, arguments)
                 payload = handle_lab_op(
                     op=op,
                     episode_id=episode_id,
@@ -447,6 +448,9 @@ def serve_stdio(
                 )
                 result = _mcp_result_text(payload)
                 sidecar_event = payload.get("event_hash") if isinstance(payload, dict) else None
+                path_rel = remapped.get("path_relative")
+                if path_rel is None and op == "shell_exec":
+                    path_rel = remapped.get("cwd_relative")
                 _append_evidence(
                     evidence_path,
                     {
@@ -459,6 +463,7 @@ def serve_stdio(
                             payload.get("reason_code") if isinstance(payload, dict) else None
                         ),
                         "sidecar_event_hash": sidecar_event,
+                        "path_relative": path_rel,
                         "productive": op in PRODUCTIVE_OPS,
                         **authority_clamp_flags(),
                     },

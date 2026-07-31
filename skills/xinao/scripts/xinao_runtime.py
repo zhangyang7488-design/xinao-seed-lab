@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import datetime as dt
 import hashlib
+import importlib
 import importlib.util
 import json
 import math
@@ -129,9 +130,13 @@ EGRESS_REQUIRED_NEGATIVE_CASE_IDS: tuple[str, ...] = (
     "N17d",
 )
 EGRESS_CANARY_TOOL_NAMESPACE_SECURITY_RELATIVE = Path("security") / "tool_namespace_separation"
+# Semantic alias used by tool-namespace security root and dual-image seal helpers.
+TOOL_NAMESPACE_SECURITY_RELATIVE = EGRESS_CANARY_TOOL_NAMESPACE_SECURITY_RELATIVE
 TOOL_NAMESPACE_DENY_PROOF_EXIT = 17
 TOOL_NAMESPACE_INFRA_EXEC_EXIT_CODES = frozenset({125, 126, 127})
 REQUESTED_MODEL = "grok-4.5"
+# Canary seal pin (distinct consumer name from ordinary REQUESTED_MODEL).
+EGRESS_CANARY_REQUESTED_MODEL = "grok-4.5"
 EGRESS_CANARY_OBSERVED_BACKEND_MODEL = "grok-4.5-build"
 EGRESS_CANARY_STOP_REASON = "EndTurn"
 EGRESS_CANARY_ENDPOINT_HOST = "cli-chat-proxy.grok.com"
@@ -339,6 +344,8 @@ RELEASE_ID_PATTERN = re.compile(r"^researcher-[0-9]+\.[0-9]+\.[0-9]+-[0-9a-f]{16
 TXN_ID_PATTERN = re.compile(r"^xra_[0-9]{8}T[0-9]{6}_[0-9a-f]{16}$")
 SEMVER_PATTERN = re.compile(r"^[0-9]+\.[0-9]+\.[0-9]+$")
 HEX_SHA256_PATTERN = re.compile(r"^[0-9a-f]{64}$")
+# Aligned with bootstrap / Docker image Id format (current-generation only).
+DOCKER_IMAGE_ID_PATTERN = re.compile(r"^sha256:[0-9a-f]{64}$")
 
 RELEASE_SCHEMA = "xinao.researcher_release.v2"
 LEGACY_RELEASE_SCHEMA = "xinao.researcher_release.v1"
@@ -510,6 +517,42 @@ CURRENT_IMAGE_LABEL_KEYS = frozenset(
         "io.xinao.researcher.episode-tool-shell",
         "io.xinao.researcher.mcp-server",
         "io.xinao.researcher.mcp-tools-allowlist",
+    }
+)
+# Protocol-v2 release document top-level keys by generation.
+PRE_TOOL_IMAGE_RELEASE_KEYS = frozenset(
+    {
+        "schema_version",
+        "release_id",
+        "package_version",
+        "capability_id",
+        "capability_version",
+        "charter_version",
+        "runtime_version",
+        "release_identity_sha256",
+        "source_identity",
+        "skill_bundle_path",
+        "skill_bundle_manifest_path",
+        "skill_bundle_manifest_sha256",
+        "skill_bundle_tree_sha256",
+        "image_tag_observational",
+        "image_id",
+        "image_entrypoint",
+        "image_labels",
+        "skill_hashes",
+        "required_bootstrap_protocol",
+        "generic_worker_route_allowed",
+        "state_namespace",
+        "run_namespace",
+    }
+)
+CURRENT_RELEASE_KEYS = frozenset(
+    PRE_TOOL_IMAGE_RELEASE_KEYS
+    | {
+        "tool_image_id",
+        "tool_image_tag_observational",
+        "tool_image_entrypoint",
+        "tool_image_labels",
     }
 )
 SYNC_PROJECTION_FROM_KEYS = {
@@ -11917,6 +11960,39 @@ def _parser() -> argparse.ArgumentParser:
     re_export.add_argument("--attempt-cas-digest", required=True)
     re_export.add_argument("--expected-head", required=True)
     re_export.add_argument("--expected-provider-session", default=None)
+    re_ingest = research_episode_sub.add_parser(
+        "ingest-export",
+        help=(
+            "Owner consumer: sealed episode export + lab manifest bytes -> immutable "
+            "candidate pool entry (owner_adopted=false; never freezes)"
+        ),
+    )
+    re_ingest.add_argument("--pool-root", type=Path, required=True)
+    re_ingest.add_argument(
+        "--export",
+        type=Path,
+        required=True,
+        help="Path to sealed export JSON (candidate evidence bundle)",
+    )
+    re_ingest.add_argument(
+        "--manifest",
+        type=Path,
+        required=True,
+        help="Exact lab candidate_manifest.v1.json bytes path",
+    )
+    re_bind_fb = research_episode_sub.add_parser(
+        "bind-feedback-material",
+        help=(
+            "Owner consumer: sealed settlement feedback pack -> later ResearchEpisode "
+            "material binding only (no auto-start, no rewrite of priors)"
+        ),
+    )
+    re_bind_fb.add_argument("--portfolio-root", type=Path, required=True)
+    re_bind_fb.add_argument("--feedback-content-hash", required=True)
+    re_bind_fb.add_argument("--prior-candidate-result-sha256", default=None)
+    re_bind_fb.add_argument("--prior-candidate-version", default=None)
+    re_bind_fb.add_argument("--settled-portfolio-hash", default=None)
+    re_bind_fb.add_argument("--target-episode-version", default=None)
     # Owner one-shot host security issuer (not episode-local, not autonomous).
     sub.add_parser("issue-tool-namespace-receipt")
     return parser
@@ -11929,8 +12005,26 @@ def _parser() -> argparse.ArgumentParser:
 
 RESEARCH_EPISODE_SCHEMA = "xinao.research_episode_state.v1"
 RESEARCH_EPISODE_CHECKPOINT_SCHEMA = "xinao.research_episode_checkpoint.v1"
+# Narrow tool-namespace gate only — never scientist role fitness / completion.
 RESEARCH_EPISODE_PROFILE_STATUS = "UNAVAILABLE_AWAITING_TOOL_NAMESPACE_RECEIPT"
+RESEARCH_EPISODE_PROFILE_STATUS_VERIFIED = "TOOL_NAMESPACE_VERIFIED"
 TOOL_NAMESPACE_RECEIPT_SCHEMA = "xinao.tool_namespace_separation_receipt.v1"
+TOOL_NAMESPACE_CURRENT_POINTER_SCHEMA = "xinao.tool_namespace_separation_current.v1"
+TOOL_NAMESPACE_CURRENT_POINTER_KEYS = frozenset(
+    {
+        "schema_version",
+        "receipt_id",
+        "receipt_path",
+        "receipt_sha256",
+        "transport_image_id",
+        "tool_image_id",
+        "release_id",
+        "release_identity_sha256",
+        "sealed_at",
+        "authority",
+        "completion_claim_allowed",
+    }
+)
 GENUINE_SCIENTIST_PROFILE_ID = "genuine_scientist"
 TOOL_NAMESPACE_RECEIPT_REQUIRED_NEGATIVE_PROOF_IDS = (
     "credential_read_denied",
@@ -12127,6 +12221,36 @@ def _research_episode_append_journal(root: Path, event: dict[str, Any]) -> None:
         fh.write(json.dumps(event, ensure_ascii=False, sort_keys=True) + "\n")
 
 
+def _active_release_sealed_dual_images() -> tuple[str, str, dict[str, Any]] | None:
+    """Return (transport_image_id, tool_image_id, release) from active dual-image release.
+
+    Returns None when no terminal dual-image active release is available (fail closed at call
+    sites that require sealed binding).
+    """
+
+    try:
+        with _activation_lock():
+            context = _load_current_context(require_terminal=True)
+        release = context.get("release")
+        if not isinstance(release, dict):
+            return None
+        # Accept current dual-image key set; pre-tool-image releases cannot seal dual host.
+        if set(release) != CURRENT_RELEASE_KEYS and "tool_image_id" not in release:
+            return None
+        transport_id = release.get("image_id")
+        tool_id = release.get("tool_image_id")
+        if (
+            not isinstance(transport_id, str)
+            or DOCKER_IMAGE_ID_PATTERN.fullmatch(transport_id) is None
+            or not isinstance(tool_id, str)
+            or DOCKER_IMAGE_ID_PATTERN.fullmatch(tool_id) is None
+        ):
+            return None
+        return transport_id, tool_id, release
+    except Exception:
+        return None
+
+
 def _resolve_research_episode_dual_images() -> tuple[str, str]:
     """Default to active sealed IDs; reject env overrides whose resolved ID differs."""
 
@@ -12195,6 +12319,7 @@ def _resolve_research_episode_dual_images() -> tuple[str, str]:
                 )
             tool = sealed_tool
     return transport, tool
+
 
 def _research_episode_container_identity(
     *,
@@ -12286,6 +12411,7 @@ def _research_episode_container_identity(
         profile_status=profile_status,
         host=host,
     )
+
 
 def _research_episode_commit_checkpoint(
     root: Path,
@@ -13175,6 +13301,7 @@ def issue_tool_namespace_separation_receipt(
         "profile_status": RESEARCH_EPISODE_PROFILE_STATUS_VERIFIED,
     }
 
+
 def research_episode_start(
     *,
     root: Path | str,
@@ -13493,9 +13620,10 @@ def research_episode_attach_run(
         meta = _research_episode_read_meta(root)
         if head.get("status") in {"CANCELLED", "ABSORBED"}:
             raise XinaoError("RESEARCH_EPISODE_TERMINAL", str(head.get("status")))
-        if expected_head_sha256 is not None and head.get(
-            "head_checkpoint_sha256"
-        ) != expected_head_sha256:
+        if (
+            expected_head_sha256 is not None
+            and head.get("head_checkpoint_sha256") != expected_head_sha256
+        ):
             raise XinaoError("RESEARCH_EPISODE_STALE_HEAD", expected_head_sha256)
         profile_status = _research_episode_resolve_profile_status(root)
         if profile_status != RESEARCH_EPISODE_PROFILE_STATUS_VERIFIED:
@@ -13728,12 +13856,148 @@ def research_episode_export_candidate_evidence(
         }
 
 
+def _import_discovery_science(module_name: str) -> Any:
+    """Import xinao.science.* from monorepo discovery src (fail closed if missing)."""
+
+    repo_root = Path(__file__).resolve().parents[3]
+    discovery_src = Path(
+        os.environ.get("XINAO_DISCOVERY_SRC") or (repo_root / "xinao_discovery" / "src")
+    )
+    # module_name like episode_export_pool_adapter
+    leaf = module_name.rsplit(".", 1)[-1]
+    adapter_path = discovery_src / "xinao" / "science" / f"{leaf}.py"
+    if not discovery_src.is_dir() or not adapter_path.is_file():
+        raise XinaoError(
+            "EPISODE_POOL_ADAPTER_UNAVAILABLE",
+            f"xinao_discovery science package required at {discovery_src}",
+        )
+    src = str(discovery_src)
+    if src in sys.path:
+        sys.path.remove(src)
+    sys.path.insert(0, src)
+    # Avoid skills/xinao name collision with package `xinao`.
+    existing = sys.modules.get("xinao")
+    if existing is not None and not hasattr(existing, "science"):
+        del sys.modules["xinao"]
+        for key in list(sys.modules):
+            if key.startswith("xinao."):
+                del sys.modules[key]
+    return importlib.import_module(f"xinao.science.{leaf}")
+
+
+def research_episode_ingest_export(
+    *,
+    pool_root: Path | str,
+    export_path: Path | str,
+    manifest_path: Path | str,
+) -> dict[str, Any]:
+    """Owner-callable pool admission: sealed export + exact manifest bytes.
+
+    Never freezes, settles, adopts, or starts next tasks. Separate from Owner disposition.
+    """
+    pool_root = Path(pool_root)
+    export_path = Path(export_path)
+    manifest_path = Path(manifest_path)
+    if not export_path.is_file():
+        raise XinaoError("EPISODE_EXPORT_MISSING", str(export_path))
+    if not manifest_path.is_file():
+        raise XinaoError("CANDIDATE_MANIFEST_MISSING", str(manifest_path))
+    try:
+        adapter = _import_discovery_science("episode_export_pool_adapter")
+    except XinaoError:
+        raise
+    except Exception as exc:
+        raise XinaoError("EPISODE_POOL_ADAPTER_UNAVAILABLE", str(exc)[:2000]) from exc
+    export_raw = export_path.read_bytes()
+    manifest_raw = manifest_path.read_bytes()
+    try:
+        entry = adapter.ingest_verified_episode_export(
+            pool_root=pool_root,
+            export=export_raw,
+            manifest_bytes=manifest_raw,
+        )
+    except Exception as exc:
+        reason = getattr(exc, "reason_code", None) or "EPISODE_POOL_INGEST_FAILED"
+        detail = getattr(exc, "detail", None) or str(exc)
+        raise XinaoError(str(reason), str(detail)[:2000]) from exc
+    return {
+        **dict(entry),
+        "status": "POOL_ENTRY_READY",
+        "ingest_kind": entry.get("ingest_kind"),
+        "result_sha256": entry.get("result_sha256"),
+        "owner_adopted": False,
+        "candidate_only": True,
+        "decision_map_projected": False,
+        "freeze_written": False,
+        "settlement_written": False,
+        "disposition_written": False,
+        "next_task_created": False,
+        "completion_claim_allowed": False,
+        "science_restored": False,
+        "parent_complete": False,
+    }
+
+
+def research_episode_bind_feedback_material(
+    *,
+    portfolio_root: Path | str,
+    feedback_content_hash: str,
+    prior_candidate_result_sha256: str | None = None,
+    prior_candidate_version: str | None = None,
+    settled_portfolio_hash: str | None = None,
+    target_episode_version: str | None = None,
+) -> dict[str, Any]:
+    """Owner-callable feedback material binding for a later ResearchEpisode version.
+
+    Input-only; never auto-starts research, never rewrites prior CAS.
+    """
+    portfolio_root = Path(portfolio_root)
+    try:
+        material = _import_discovery_science("research_feedback_material")
+    except XinaoError:
+        raise
+    except Exception as exc:
+        raise XinaoError("FEEDBACK_MATERIAL_ADAPTER_UNAVAILABLE", str(exc)[:2000]) from exc
+    try:
+        binding = material.bind_feedback_pack_as_episode_material(
+            portfolio_root=portfolio_root,
+            feedback_content_hash=feedback_content_hash,
+            prior_candidate_result_sha256=prior_candidate_result_sha256,
+            prior_candidate_version=prior_candidate_version,
+            settled_portfolio_hash=settled_portfolio_hash,
+            target_episode_version=target_episode_version,
+        )
+        material.assert_feedback_cannot_rewrite_priors(binding=binding)
+    except Exception as exc:
+        reason = getattr(exc, "reason_code", None) or "FEEDBACK_MATERIAL_BIND_FAILED"
+        detail = getattr(exc, "detail", None) or str(exc)
+        raise XinaoError(str(reason), str(detail)[:2000]) from exc
+    return {
+        **dict(binding),
+        "status": "FEEDBACK_MATERIAL_BOUND",
+        "auto_start_next_research": False,
+        "next_task_created": False,
+        "freeze_written": False,
+        "settlement_written": False,
+        "disposition_written": False,
+        "owner_adopted": False,
+        "completion_claim_allowed": False,
+        "science_restored": False,
+        "parent_complete": False,
+    }
+
+
 def research_episode_absorb(
     *,
     root: Path | str,
     expected_head_sha256: str,
     candidate: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
+    """DEPRECATED placeholder outbox only — NOT candidate-pool admission.
+
+    Prefer research-episode export-candidate-evidence + ingest-export.
+    This verb must not masquerade as pool admission.
+    """
     root = Path(root)
     with _research_episode_lock(root):
         head = _research_episode_load_head(root)
@@ -13746,7 +14010,9 @@ def research_episode_absorb(
             candidate = {
                 "schema_version": "xinao.research_episode_candidate.v1",
                 "status": "CANDIDATE_FOR_CODEX_REVIEW",
-                "summary": "typed candidate placeholder",
+                "summary": "typed candidate placeholder — NOT pool admission",
+                "pool_admission": False,
+                "deprecated_placeholder": True,
                 "owner_adopted": False,
                 "scientific_grade": None,
                 "profitability_claim_allowed": False,
@@ -13806,6 +14072,9 @@ def research_episode_absorb(
             **committed,
             "status": "ABSORBED_FOR_CODEX_REVIEW",
             "codex_review_only": True,
+            "pool_admission": False,
+            "deprecated_placeholder": True,
+            "not_candidate_pool_entry": True,
             "owner_adopted": False,
             "scientific_grade": candidate.get("scientific_grade"),
             "candidate_sha256": cand_digest,
@@ -13956,6 +14225,21 @@ def main(argv: Sequence[str] | None = None) -> int:
                     attempt_cas_digest=args.attempt_cas_digest,
                     expected_head_sha256=args.expected_head,
                     expected_provider_session_uuid=args.expected_provider_session,
+                )
+            elif args.research_episode_command == "ingest-export":
+                value = research_episode_ingest_export(
+                    pool_root=args.pool_root,
+                    export_path=args.export,
+                    manifest_path=args.manifest,
+                )
+            elif args.research_episode_command == "bind-feedback-material":
+                value = research_episode_bind_feedback_material(
+                    portfolio_root=args.portfolio_root,
+                    feedback_content_hash=args.feedback_content_hash,
+                    prior_candidate_result_sha256=args.prior_candidate_result_sha256,
+                    prior_candidate_version=args.prior_candidate_version,
+                    settled_portfolio_hash=args.settled_portfolio_hash,
+                    target_episode_version=args.target_episode_version,
                 )
             else:
                 raise XinaoError(

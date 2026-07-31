@@ -21,6 +21,10 @@ TOOL_LAB_MOUNT = "/episode-lab"
 TOOL_IPC_MOUNT = "/ipc"
 TOOL_TMP = "/tmp"
 TOOL_REPLAY_STATE = f"{TOOL_IPC_MOUNT}/.xinao-replay"
+# Tool-executor-only evidence volume (NOT mounted writable on transport).
+TOOL_SIDECAR_EVIDENCE_MOUNT = "/sidecar-evidence"
+TOOL_SIDECAR_EVENTS_FILENAME = "tool_events.jsonl"
+TOOL_SIDECAR_EVENTS_PATH = f"{TOOL_SIDECAR_EVIDENCE_MOUNT}/{TOOL_SIDECAR_EVENTS_FILENAME}"
 
 # Explicitly forbidden mount sources/targets for tool executor.
 FORBIDDEN_TOOL_MOUNTS = (
@@ -86,6 +90,8 @@ ALLOWED_TRANSPORT_BIND_TARGETS = frozenset(
         "/episode-lab/.grok/config.toml",  # legacy project-scoped path
         "/episode-scratch",
         "/episode-state",
+        # Explicitly NOT including TOOL_SIDECAR_EVIDENCE_MOUNT: transport must not
+        # write tool-side sealed evidence.
     }
 )
 
@@ -286,6 +292,7 @@ def tool_executor_container_spec(
     name: str,
     episode_lab_host_path: str,
     ipc_host_dir: str,
+    sidecar_evidence_host_path: str | None = None,
     ipc_peer_uids: str | None = None,
     bwrap_mode: str = "require",
 ) -> dict[str, Any]:
@@ -296,6 +303,7 @@ def tool_executor_container_spec(
     - XINAO_IPC_PEER_REQUIRE=1 (fail-closed peer identity)
     - XINAO_REPLAY_STATE_DIR under IPC volume (durable anti-replay)
     - XINAO_IPC_PEER_UIDS set by Owner to transport container uid(s)
+    - tool-only /sidecar-evidence volume (not mounted on transport)
     """
     env: dict[str, str] = {
         "HOME": TOOL_TMP,
@@ -305,12 +313,47 @@ def tool_executor_container_spec(
         "XINAO_TOOL_EXEC_BWRAP": bwrap_mode,
         "XINAO_IPC_PEER_REQUIRE": "1",
         "XINAO_REPLAY_STATE_DIR": TOOL_REPLAY_STATE,
+        "XINAO_TOOL_SIDECAR_EVIDENCE_DIR": TOOL_SIDECAR_EVIDENCE_MOUNT,
+        "XINAO_TOOL_SIDECAR_EVENTS_PATH": TOOL_SIDECAR_EVENTS_PATH,
     }
     if ipc_peer_uids is not None:
         env["XINAO_IPC_PEER_UIDS"] = str(ipc_peer_uids)
     else:
         # Empty + require=1 → fail-closed until Owner pins transport peer uid.
         env["XINAO_IPC_PEER_UIDS"] = ""
+    binds: list[dict[str, str]] = [
+        {
+            "host": episode_lab_host_path,
+            "container": TOOL_LAB_MOUNT,
+            "mode": "rw",
+        },
+        {
+            "host": ipc_host_dir,
+            "container": TOOL_IPC_MOUNT,
+            "mode": "rw",
+        },
+    ]
+    if sidecar_evidence_host_path:
+        binds.append(
+            {
+                "host": sidecar_evidence_host_path,
+                "container": TOOL_SIDECAR_EVIDENCE_MOUNT,
+                "mode": "rw",
+            }
+        )
+    entrypoint = [
+        "python",
+        "-I",
+        "/opt/xinao-tool-executor/tool_executor.py",
+        "--lab-root",
+        TOOL_LAB_MOUNT,
+        "--socket",
+        f"{TOOL_IPC_MOUNT}/tool.sock",
+        "--replay-state-dir",
+        TOOL_REPLAY_STATE,
+        "--sidecar-evidence-dir",
+        TOOL_SIDECAR_EVIDENCE_MOUNT,
+    ]
     return {
         "schema_version": "xinao.dual_container_create_spec.v1",
         "role": "tool_executor",
@@ -326,30 +369,9 @@ def tool_executor_container_spec(
         "memory": "512m",
         "cpus": 1.0,
         "env": env,
-        "binds": [
-            {
-                "host": episode_lab_host_path,
-                "container": TOOL_LAB_MOUNT,
-                "mode": "rw",
-            },
-            {
-                "host": ipc_host_dir,
-                "container": TOOL_IPC_MOUNT,
-                "mode": "rw",
-            },
-        ],
+        "binds": binds,
         "tmpfs": [f"{TOOL_TMP}:rw,nosuid,nodev,noexec,size=64m"],
-        "entrypoint": [
-            "python",
-            "-I",
-            "/opt/xinao-tool-executor/tool_executor.py",
-            "--lab-root",
-            TOOL_LAB_MOUNT,
-            "--socket",
-            f"{TOOL_IPC_MOUNT}/tool.sock",
-            "--replay-state-dir",
-            TOOL_REPLAY_STATE,
-        ],
+        "entrypoint": entrypoint,
         "forbidden_binds": list(FORBIDDEN_TOOL_MOUNTS),
         "must_not_contain": [
             "grok binary",
@@ -372,6 +394,8 @@ def tool_executor_container_spec(
             "ipc_peer_require": True,
             "durable_replay": True,
             "replay_state_dir": TOOL_REPLAY_STATE,
+            "sidecar_evidence_mount": TOOL_SIDECAR_EVIDENCE_MOUNT,
+            "sidecar_events_path": TOOL_SIDECAR_EVENTS_PATH,
         },
         "completion_claim_allowed": False,
         "science_restored": False,
@@ -461,16 +485,14 @@ def validate_tool_spec_invariants(spec: dict[str, Any]) -> list[str]:
     replay_dir = str(env.get("XINAO_REPLAY_STATE_DIR", "")).strip()
     if not replay_dir or TOOL_IPC_MOUNT not in replay_dir:
         violations.append("durable_replay_state_not_on_ipc")
+    allowed_tool_binds = {TOOL_LAB_MOUNT, TOOL_IPC_MOUNT, TOOL_SIDECAR_EVIDENCE_MOUNT}
     for bind in spec.get("binds") or []:
         host = str(bind.get("host", ""))
         container = str(bind.get("container", ""))
         for forbidden in FORBIDDEN_TOOL_MOUNTS:
-            if forbidden in (host, container) and container not in {
-                TOOL_LAB_MOUNT,
-                TOOL_IPC_MOUNT,
-            }:
+            if forbidden in (host, container) and container not in allowed_tool_binds:
                 violations.append(f"forbidden_bind:{container}")
-        if container not in {TOOL_LAB_MOUNT, TOOL_IPC_MOUNT}:
+        if container not in allowed_tool_binds:
             violations.append(f"unexpected_bind:{container}")
         lowered = container.lower()
         if any(
@@ -519,6 +541,7 @@ def dual_container_bundle(
     output_host_path: str,
     episode_lab_host_path: str,
     ipc_host_dir: str,
+    sidecar_evidence_host_path: str | None = None,
     run_id: str = "dual-1",
     session_host_path: str | None = None,
     material_host_path: str | None = None,
@@ -553,6 +576,7 @@ def dual_container_bundle(
         name=f"xinao-tool-{run_id}",
         episode_lab_host_path=episode_lab_host_path,
         ipc_host_dir=ipc_host_dir,
+        sidecar_evidence_host_path=sidecar_evidence_host_path,
         ipc_peer_uids=ipc_peer_uids,
         bwrap_mode=bwrap_mode,
     )
@@ -766,7 +790,12 @@ def validate_tool_container_inspect(
         for marker in FORBIDDEN_MOUNT_MARKERS:
             if marker in combined:
                 violations.append(f"forbidden_mount:{dest}")
-        if dest and dest not in {TOOL_LAB_MOUNT, TOOL_IPC_MOUNT, TOOL_TMP}:
+        if dest and dest not in {
+            TOOL_LAB_MOUNT,
+            TOOL_IPC_MOUNT,
+            TOOL_TMP,
+            TOOL_SIDECAR_EVIDENCE_MOUNT,
+        }:
             # tmpfs /tmp may appear as mount
             if dest != TOOL_TMP:
                 violations.append(f"unexpected_mount:{dest}")

@@ -142,8 +142,10 @@ def _successful_attempt(
     sid = provider_session or str(uuid.uuid4())
     argv = _live_argv(native, sid, resume=resume, turns=max_turns)
     out = stdout if stdout is not None else _provider_stdout(session_id=sid, turns=5)
-    manifest = manifest_bytes if manifest_bytes is not None else _candidate_manifest_bytes(
-        episode_id=episode_id
+    manifest = (
+        manifest_bytes
+        if manifest_bytes is not None
+        else _candidate_manifest_bytes(episode_id=episode_id)
     )
     manifest_sha = hashlib.sha256(manifest).hexdigest()
     return native.build_live_attempt_record(
@@ -344,9 +346,7 @@ def test_malformed_timeout_missing_session_stop_mcp_rejected(native: Any, tmp_pa
     assert "MCP_EVENTS_MISSING" in no_mcp["failure_reasons"]
 
 
-def test_success_persist_export_idempotent_and_authority_clamp(
-    native: Any, tmp_path: Path
-) -> None:
+def test_success_persist_export_idempotent_and_authority_clamp(native: Any, tmp_path: Path) -> None:
     sid = native.new_session_uuid()
     cas_head = "a" * 64
     manifest = _candidate_manifest_bytes(episode_id="ep_live_1")
@@ -376,7 +376,9 @@ def test_success_persist_export_idempotent_and_authority_clamp(
         manifest_bytes=manifest,
     )
     native.persist_live_attempt(out, failed)
-    success_ptr = json.loads((out / "attempts" / "last_successful.json").read_text(encoding="utf-8"))
+    success_ptr = json.loads(
+        (out / "attempts" / "last_successful.json").read_text(encoding="utf-8")
+    )
     assert success_ptr["attempt_hash"] == first["attempt_hash"]
 
     bundle1 = native.export_candidate_evidence_bundle(
@@ -527,8 +529,8 @@ def test_dual_host_live_argv_shape_and_foreign_session(
     assert "--model" in argv and argv[argv.index("--model") + 1] == "grok-4.5"
     assert int(argv[argv.index("--max-turns") + 1]) >= 8
     assert argv[argv.index("--tools") + 1] == "search_tool,use_tool,web_search,web_fetch"
-    # OPEN_RESEARCH: episode-confined subagents allowed; host tools still stripped.
-    assert "--no-subagents" not in argv
+    # OPEN_RESEARCH: honest --no-subagents; host tools still stripped; multi-turn tools remain.
+    assert "--no-subagents" in argv
     assert "--always-approve" in argv
     assert "--disable-web-search" not in argv
     assert "--disallowed-tools" in argv
@@ -591,9 +593,9 @@ def test_dual_host_attach_run_with_mocked_exec_records_evidence(
     receipt["transport_container_id"] = "transportcid123"
     body = {k: v for k, v in receipt.items() if k != "pair_receipt_sha256"}
     receipt["pair_receipt_sha256"] = hashlib.sha256(
-        (
-            json.dumps(body, ensure_ascii=False, sort_keys=True, separators=(",", ":")) + "\n"
-        ).encode("utf-8")
+        (json.dumps(body, ensure_ascii=False, sort_keys=True, separators=(",", ":")) + "\n").encode(
+            "utf-8"
+        )
     ).hexdigest()
     (tmp_path / "ep" / "dual_container_pair_receipt.json").write_text(
         json.dumps(receipt, ensure_ascii=False, sort_keys=True) + "\n", encoding="utf-8"
@@ -624,6 +626,7 @@ def test_dual_host_attach_run_with_mocked_exec_records_evidence(
         manifest = _candidate_manifest_bytes(episode_id="ep_mock_exec")
         (lab / "candidate").mkdir(parents=True, exist_ok=True)
         (lab / "candidate" / "candidate_manifest.v1.json").write_bytes(manifest)
+        sidecar = "cd" * 32
         event = {
             "schema_version": "xinao.dual_container_mcp_event.v1",
             "event": "mcp_tools_call",
@@ -632,7 +635,7 @@ def test_dual_host_attach_run_with_mocked_exec_records_evidence(
             "productive": True,
             "episode_id": "ep_mock_exec",
             "server": "episode_lab",
-            "sidecar_event_hash": "cd" * 32,
+            "sidecar_event_hash": sidecar,
             "path_relative": "candidate/candidate_manifest.v1.json",
             "completion_claim_allowed": False,
             "science_restored": False,
@@ -642,14 +645,29 @@ def test_dual_host_attach_run_with_mocked_exec_records_evidence(
         body = {k: v for k, v in event.items() if k != "event_hash"}
         event_hash = hashlib.sha256(
             (
-                json.dumps(body, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
-                + "\n"
+                json.dumps(body, ensure_ascii=False, sort_keys=True, separators=(",", ":")) + "\n"
             ).encode("utf-8")
         ).hexdigest()
         with mcp_path.open("a", encoding="utf-8") as stream:
-            stream.write(
-                json.dumps({**event, "event_hash": event_hash}, sort_keys=True) + "\n"
-            )
+            stream.write(json.dumps({**event, "event_hash": event_hash}, sort_keys=True) + "\n")
+        # Tool-executor-only sealed evidence (transport cannot forge this path).
+        tool_path = tmp_path / "ep" / "sidecar_evidence" / "tool_events.jsonl"
+        tool_path.parent.mkdir(parents=True, exist_ok=True)
+        tool_rec = {
+            "schema_version": "xinao.tool_executor_sidecar_event.v1",
+            "event_hash": sidecar,
+            "op": "write_file",
+            "episode_id": "ep_mock_exec",
+            "status": "ok",
+            "path_relative": "candidate/candidate_manifest.v1.json",
+            "productive": True,
+            "completion_claim_allowed": False,
+            "science_restored": False,
+            "parent_complete": False,
+            "owner_adopted": False,
+        }
+        with tool_path.open("a", encoding="utf-8") as stream:
+            stream.write(json.dumps(tool_rec, sort_keys=True) + "\n")
         if env is not None:
             assert env.get("GROK_HOME") == "/grok-home"
         native.assert_live_research_argv(list(argv), research_profile="OPEN_RESEARCH")

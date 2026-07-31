@@ -12,6 +12,7 @@ Does not write Owner/science/account authority fields.
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import re
 import shutil
@@ -40,6 +41,13 @@ from ipc_contract import (
     sha256_bytes,
     validate_request,
 )
+
+# Tool-only sealed evidence (not mounted on transport). Host attaches/resumes
+# require productive MCP sidecar_event_hash membership in this log.
+DEFAULT_SIDECAR_EVIDENCE_DIR = "/sidecar-evidence"
+SIDECAR_EVENTS_FILENAME = "tool_events.jsonl"
+SIDECAR_EVIDENCE_SCHEMA = "xinao.tool_executor_sidecar_event.v1"
+_SIDECAR_EVIDENCE_DIR: Path | None = None
 
 # Hard denials: tool executor must not see transport secrets.
 FORBIDDEN_ENV_PREFIXES = (
@@ -608,9 +616,7 @@ def _validate_shell_argv(argv: list[str], *, lab_root: Path) -> None:
             if index == 0:
                 # Allow system interpreters OR preseeded lab-local venv binaries
                 # under /episode-lab (no live online installer).
-                if _is_allowed_bin_path(item) or _path_under_lab(
-                    item, lab_resolved=lab_resolved
-                ):
+                if _is_allowed_bin_path(item) or _path_under_lab(item, lab_resolved=lab_resolved):
                     continue
                 raise ToolExecutorError("ARGV_DENIED", f"absolute binary denied: {item[:80]}")
             # Non-binary absolute args must resolve inside the episode lab only.
@@ -706,6 +712,105 @@ def resolve_replay_state_dir(
     return None
 
 
+def configure_sidecar_evidence_dir(path: Path | str | None) -> Path | None:
+    """Set process-wide tool-only evidence directory (None disables recording)."""
+    global _SIDECAR_EVIDENCE_DIR
+    if path is None or str(path).strip() == "":
+        _SIDECAR_EVIDENCE_DIR = None
+        return None
+    resolved = Path(path)
+    resolved.mkdir(parents=True, exist_ok=True)
+    _SIDECAR_EVIDENCE_DIR = resolved
+    return resolved
+
+
+def resolve_sidecar_evidence_dir(
+    *,
+    explicit: Path | str | None = None,
+) -> Path | None:
+    if explicit is not None and str(explicit).strip():
+        return Path(explicit)
+    if _SIDECAR_EVIDENCE_DIR is not None:
+        return _SIDECAR_EVIDENCE_DIR
+    env = os.environ.get("XINAO_TOOL_SIDECAR_EVIDENCE_DIR", "").strip()
+    if env:
+        return Path(env)
+    # Default path exists only when mounted by create-spec.
+    default = Path(DEFAULT_SIDECAR_EVIDENCE_DIR)
+    if default.is_dir() or os.environ.get("XINAO_TOOL_SIDECAR_EVENTS_PATH"):
+        return default
+    return None
+
+
+def append_tool_sidecar_event(
+    response: Mapping[str, Any],
+    *,
+    request: Mapping[str, Any] | None = None,
+    path_relative: str | None = None,
+    effect_identity: str | None = None,
+    evidence_dir: Path | str | None = None,
+) -> str | None:
+    """Append sealed tool-side event record; returns event_hash or None if disabled."""
+    root = resolve_sidecar_evidence_dir(explicit=evidence_dir)
+    if root is None:
+        return None
+    event_hash = response.get("event_hash")
+    if not isinstance(event_hash, str) or len(event_hash) != 64:
+        return None
+    op = str(response.get("op") or (request or {}).get("op") or "")
+    args = (request or {}).get("args") if isinstance((request or {}).get("args"), dict) else {}
+    rel = path_relative
+    if rel is None and isinstance(args, dict):
+        for key in ("path_relative", "cwd_relative"):
+            if isinstance(args.get(key), str) and args.get(key):
+                rel = str(args[key])
+                break
+    body = {
+        "schema_version": SIDECAR_EVIDENCE_SCHEMA,
+        "event_hash": event_hash,
+        "op": op,
+        "episode_id": response.get("episode_id") or (request or {}).get("episode_id"),
+        "request_id": response.get("request_id") or (request or {}).get("request_id"),
+        "status": response.get("status"),
+        "exit_code": response.get("exit_code"),
+        "reason_code": response.get("reason_code"),
+        "path_relative": rel,
+        "effect_identity": effect_identity,
+        "productive": op in {"write_file", "shell_exec"}
+        and response.get("status") not in {"denied", "error"},
+        **authority_clamp_flags(),
+    }
+    # Seal record hash over body without nested seal field.
+    seal = sha256_bytes(canonical_bytes({k: v for k, v in body.items() if k != "record_hash"}))
+    line = {
+        **body,
+        "record_hash": seal,
+    }
+    path = root / SIDECAR_EVENTS_FILENAME
+    root.mkdir(parents=True, exist_ok=True)
+    with path.open("a", encoding="utf-8") as stream:
+        stream.write(
+            json.dumps(line, ensure_ascii=False, sort_keys=True, separators=(",", ":")) + "\n"
+        )
+    return event_hash
+
+
+def _finalize_response(
+    response: dict[str, Any],
+    *,
+    request: Mapping[str, Any] | None = None,
+    path_relative: str | None = None,
+    effect_identity: str | None = None,
+) -> dict[str, Any]:
+    append_tool_sidecar_event(
+        response,
+        request=request,
+        path_relative=path_relative,
+        effect_identity=effect_identity,
+    )
+    return response
+
+
 def execute_op(
     request: Mapping[str, Any],
     *,
@@ -721,56 +826,76 @@ def execute_op(
             replay_guard.check_and_record(str(request["episode_id"]), str(request["request_id"]))
 
         if op == "ping":
-            return make_response(
+            return _finalize_response(
+                make_response(
+                    request=request,
+                    status="ok",
+                    exit_code=0,
+                    stdout="pong",
+                    stderr="",
+                    reason_code=None,
+                ),
                 request=request,
-                status="ok",
-                exit_code=0,
-                stdout="pong",
-                stderr="",
-                reason_code=None,
             )
 
         if op == "list_dir":
             target = _resolve_under_lab(args["path_relative"], lab_root=lab_root)
             if not target.is_dir():
-                return make_response(
+                return _finalize_response(
+                    make_response(
+                        request=request,
+                        status="error",
+                        exit_code=1,
+                        stderr="not a directory",
+                        reason_code="NOT_A_DIRECTORY",
+                    ),
                     request=request,
-                    status="error",
-                    exit_code=1,
-                    stderr="not a directory",
-                    reason_code="NOT_A_DIRECTORY",
+                    path_relative=str(args.get("path_relative") or ""),
                 )
             names = sorted(p.name for p in target.iterdir())
-            return make_response(
+            return _finalize_response(
+                make_response(
+                    request=request,
+                    status="ok",
+                    exit_code=0,
+                    stdout="\n".join(names),
+                    reason_code=None,
+                ),
                 request=request,
-                status="ok",
-                exit_code=0,
-                stdout="\n".join(names),
-                reason_code=None,
+                path_relative=str(args.get("path_relative") or ""),
             )
 
         if op == "read_file":
             target = _resolve_under_lab(args["path_relative"], lab_root=lab_root)
             max_bytes = int(args["max_bytes"])
             if not target.is_file():
-                return make_response(
+                return _finalize_response(
+                    make_response(
+                        request=request,
+                        status="error",
+                        exit_code=1,
+                        stderr="file not found",
+                        reason_code="FILE_NOT_FOUND",
+                    ),
                     request=request,
-                    status="error",
-                    exit_code=1,
-                    stderr="file not found",
-                    reason_code="FILE_NOT_FOUND",
+                    path_relative=str(args.get("path_relative") or ""),
                 )
             data = target.read_bytes()
             truncated = len(data) > max_bytes
             if truncated:
                 data = data[:max_bytes]
-            return make_response(
+            return _finalize_response(
+                make_response(
+                    request=request,
+                    status="ok",
+                    exit_code=0,
+                    stdout=data.decode("utf-8", errors="replace"),
+                    stderr="truncated" if truncated else "",
+                    reason_code="TRUNCATED" if truncated else None,
+                ),
                 request=request,
-                status="ok",
-                exit_code=0,
-                stdout=data.decode("utf-8", errors="replace"),
-                stderr="truncated" if truncated else "",
-                reason_code="TRUNCATED" if truncated else None,
+                path_relative=str(args.get("path_relative") or ""),
+                effect_identity=sha256_bytes(data),
             )
 
         if op == "write_file":
@@ -782,6 +907,7 @@ def execute_op(
                     raise ToolExecutorError("HARDLINK_REFUSED", str(target))
             target.parent.mkdir(parents=True, exist_ok=True)
             content = args["content_utf8"].encode("utf-8")
+            content_sha = sha256_bytes(content)
             fd, tmp_name = tempfile.mkstemp(prefix=".xinao-tool-", dir=str(target.parent))
             try:
                 with os.fdopen(fd, "wb") as handle:
@@ -793,23 +919,33 @@ def execute_op(
                         os.unlink(tmp_name)
                     except OSError:
                         pass
-            return make_response(
+            rel = str(args.get("path_relative") or "")
+            return _finalize_response(
+                make_response(
+                    request=request,
+                    status="ok",
+                    exit_code=0,
+                    stdout=f"wrote:{len(content)}",
+                    reason_code=None,
+                ),
                 request=request,
-                status="ok",
-                exit_code=0,
-                stdout=f"wrote:{len(content)}",
-                reason_code=None,
+                path_relative=rel,
+                effect_identity=f"write:{rel}:{content_sha}",
             )
 
         if op == "shell_exec":
             cwd = _resolve_under_lab(args["cwd_relative"], lab_root=lab_root)
             if not cwd.is_dir():
-                return make_response(
+                return _finalize_response(
+                    make_response(
+                        request=request,
+                        status="error",
+                        exit_code=1,
+                        stderr="cwd not a directory",
+                        reason_code="CWD_INVALID",
+                    ),
                     request=request,
-                    status="error",
-                    exit_code=1,
-                    stderr="cwd not a directory",
-                    reason_code="CWD_INVALID",
+                    path_relative=str(args.get("cwd_relative") or ""),
                 )
             argv = list(args["argv"])
             _validate_shell_argv(argv, lab_root=lab_root)
@@ -838,55 +974,78 @@ def execute_op(
                 # Strip NULs that break response validation.
                 stdout = stdout.replace("\x00", "")
                 stderr = stderr.replace("\x00", "")
-                return make_response(
+                return _finalize_response(
+                    make_response(
+                        request=request,
+                        status="timeout",
+                        exit_code=124,
+                        stdout=stdout,
+                        stderr=stderr,
+                        reason_code="TIMEOUT",
+                    ),
                     request=request,
-                    status="timeout",
-                    exit_code=124,
-                    stdout=stdout,
-                    stderr=stderr,
-                    reason_code="TIMEOUT",
+                    path_relative=str(args.get("cwd_relative") or ""),
+                    effect_identity="shell:timeout",
                 )
             except OSError as exc:
-                return make_response(
+                return _finalize_response(
+                    make_response(
+                        request=request,
+                        status="error",
+                        exit_code=1,
+                        stderr=str(exc),
+                        reason_code="EXEC_FAILED",
+                    ),
                     request=request,
-                    status="error",
-                    exit_code=1,
-                    stderr=str(exc),
-                    reason_code="EXEC_FAILED",
+                    path_relative=str(args.get("cwd_relative") or ""),
                 )
             stdout = (completed.stdout or "").replace("\x00", "")
             stderr = (completed.stderr or "").replace("\x00", "")
-            return make_response(
+            return _finalize_response(
+                make_response(
+                    request=request,
+                    status="ok" if completed.returncode == 0 else "error",
+                    exit_code=int(completed.returncode),
+                    stdout=stdout,
+                    stderr=stderr,
+                    reason_code=None if completed.returncode == 0 else "NONZERO_EXIT",
+                ),
                 request=request,
-                status="ok" if completed.returncode == 0 else "error",
-                exit_code=int(completed.returncode),
-                stdout=stdout,
-                stderr=stderr,
-                reason_code=None if completed.returncode == 0 else "NONZERO_EXIT",
+                path_relative=str(args.get("cwd_relative") or ""),
+                effect_identity=f"shell:exit={int(completed.returncode)}",
             )
 
-        return make_response(
+        return _finalize_response(
+            make_response(
+                request=request,
+                status="denied",
+                exit_code=125,
+                stderr="unknown op",
+                reason_code="OP_UNKNOWN",
+            ),
             request=request,
-            status="denied",
-            exit_code=125,
-            stderr="unknown op",
-            reason_code="OP_UNKNOWN",
         )
     except IpcContractError as exc:
-        return make_response(
+        return _finalize_response(
+            make_response(
+                request=request,
+                status="denied",
+                exit_code=125,
+                stderr=exc.detail,
+                reason_code=exc.reason_code,
+            ),
             request=request,
-            status="denied",
-            exit_code=125,
-            stderr=exc.detail,
-            reason_code=exc.reason_code,
         )
     except ToolExecutorError as exc:
-        return make_response(
+        return _finalize_response(
+            make_response(
+                request=request,
+                status="denied",
+                exit_code=125,
+                stderr=exc.detail,
+                reason_code=exc.reason_code,
+            ),
             request=request,
-            status="denied",
-            exit_code=125,
-            stderr=exc.detail,
-            reason_code=exc.reason_code,
         )
 
 
@@ -1091,8 +1250,17 @@ def main(argv: list[str] | None = None) -> int:
         default="",
         help="Durable REQUEST_REPLAY marker dir (default: <socket-parent>/.xinao-replay)",
     )
+    parser.add_argument(
+        "--sidecar-evidence-dir",
+        default="",
+        help="Tool-only evidence dir (default /sidecar-evidence when mounted)",
+    )
     args = parser.parse_args(argv)
     lab_root = Path(args.lab_root)
+    if args.sidecar_evidence_dir:
+        configure_sidecar_evidence_dir(args.sidecar_evidence_dir)
+    else:
+        configure_sidecar_evidence_dir(resolve_sidecar_evidence_dir())
     if args.self_check:
         violations = assert_no_auth_artifacts()
         report = {

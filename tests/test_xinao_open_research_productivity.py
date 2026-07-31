@@ -80,6 +80,34 @@ def _hash_event(body: dict[str, Any]) -> str:
     return hashlib.sha256(raw).hexdigest()
 
 
+def _append_tool_sidecar_event(
+    episode_root: Path,
+    *,
+    event_hash: str,
+    episode_id: str,
+    op: str = "write_file",
+    path_relative: str = "candidate/candidate_manifest.v1.json",
+) -> None:
+    """Independently sealed tool-executor evidence (not under transport /output)."""
+    tool_path = episode_root / "sidecar_evidence" / "tool_events.jsonl"
+    tool_path.parent.mkdir(parents=True, exist_ok=True)
+    record = {
+        "schema_version": "xinao.tool_executor_sidecar_event.v1",
+        "event_hash": event_hash,
+        "op": op,
+        "episode_id": episode_id,
+        "status": "ok",
+        "path_relative": path_relative,
+        "productive": True,
+        "completion_claim_allowed": False,
+        "science_restored": False,
+        "parent_complete": False,
+        "owner_adopted": False,
+    }
+    with tool_path.open("a", encoding="utf-8") as stream:
+        stream.write(json.dumps(record, sort_keys=True, separators=(",", ":")) + "\n")
+
+
 def _append_productive_event(
     path: Path,
     *,
@@ -88,6 +116,7 @@ def _append_productive_event(
     status: str = "ok",
     path_relative: str = "candidate/candidate_manifest.v1.json",
     sidecar_event_hash: str | None = None,
+    episode_root: Path | None = None,
 ) -> str:
     sidecar = sidecar_event_hash or ("ab" * 32)
     body = {
@@ -110,10 +139,24 @@ def _append_productive_event(
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("a", encoding="utf-8") as stream:
         stream.write(json.dumps(line, sort_keys=True, separators=(",", ":")) + "\n")
+    # Prefer explicit episode_root; else infer from .../output/mcp_events.jsonl
+    root = episode_root
+    if root is None and path.name == "mcp_events.jsonl" and path.parent.name == "output":
+        root = path.parent.parent
+    if root is not None:
+        _append_tool_sidecar_event(
+            root,
+            event_hash=sidecar,
+            episode_id=episode_id,
+            op=op,
+            path_relative=path_relative,
+        )
     return event_hash
 
 
-def _write_lab_candidate_manifest(lab_root: Path, *, episode_id: str, attempt_cas: str | None = None) -> bytes:
+def _write_lab_candidate_manifest(
+    lab_root: Path, *, episode_id: str, attempt_cas: str | None = None
+) -> bytes:
     payload = {
         "schema_version": "xinao.research_episode_candidate_manifest.v1",
         "manifest_marker": "XINAO_RESEARCH_EPISODE_CANDIDATE_MANIFEST_V1",
@@ -623,7 +666,7 @@ def test_attach_run_delta_productive_mocked(
         native.assert_live_research_argv(list(argv), research_profile="OPEN_RESEARCH")
         assert "--disable-web-search" not in list(argv)
         assert "--always-approve" in list(argv)
-        assert "--no-subagents" not in list(argv)
+        assert "--no-subagents" in list(argv)
         # Productive op with sidecar hash + real lab FS effect (manifest path).
         _write_lab_candidate_manifest(tmp_path / "ep" / "lab", episode_id="ep_delta")
         _append_productive_event(
@@ -631,6 +674,7 @@ def test_attach_run_delta_productive_mocked(
             episode_id="ep_delta",
             op="write_file",
             path_relative="candidate/candidate_manifest.v1.json",
+            episode_root=tmp_path / "ep",
         )
         return subprocess.CompletedProcess(
             args=list(argv),

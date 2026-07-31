@@ -10,8 +10,10 @@ with owner_adopted=false. Owner disposition remains a separate artifact.
 from __future__ import annotations
 
 import hashlib
+import importlib.util
 import json
 import re
+import sys
 from collections.abc import Mapping
 from datetime import UTC, datetime
 from pathlib import Path
@@ -164,12 +166,45 @@ def verify_episode_export_bundle(
     return dict(obj)
 
 
+def _load_native_candidate_validator() -> Any:
+    """Load the single native validate_candidate_manifest implementation (no rule fork)."""
+    # xinao_discovery/src/xinao/science -> repo root is parents[4]
+    repo_root = Path(__file__).resolve().parents[4]
+    native_path = repo_root / "docker" / "xinao-researcher" / "native_grok_session.py"
+    if not native_path.is_file():
+        # Fallback: walk up looking for monorepo layout.
+        for parent in Path(__file__).resolve().parents:
+            candidate = parent / "docker" / "xinao-researcher" / "native_grok_session.py"
+            if candidate.is_file():
+                native_path = candidate
+                break
+    if not native_path.is_file():
+        raise EpisodeExportAdapterError(
+            "CANDIDATE_VALIDATOR_UNAVAILABLE",
+            f"native_grok_session missing at {native_path}",
+        )
+    name = "xinao_native_candidate_validator_shared"
+    if name in sys.modules:
+        return sys.modules[name]
+    spec = importlib.util.spec_from_file_location(name, native_path)
+    if spec is None or spec.loader is None:
+        raise EpisodeExportAdapterError("CANDIDATE_VALIDATOR_UNAVAILABLE", str(native_path))
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
 def load_and_verify_candidate_manifest(
     *,
     export: Mapping[str, Any],
     manifest_bytes: bytes,
 ) -> dict[str, Any]:
-    """Exact sha match of lab manifest bytes against export pin; closed schema."""
+    """Exact sha match of lab manifest bytes against export pin; closed schema.
+
+    Schema/cutoff/method/falsifier/authority rules are the **same** native
+    ``validate_candidate_manifest`` used at export time (no third rule stack).
+    """
     if not isinstance(manifest_bytes, (bytes, bytearray)) or not manifest_bytes:
         raise EpisodeExportAdapterError("CANDIDATE_MANIFEST_MISSING", "bytes required")
     raw = bytes(manifest_bytes)
@@ -184,12 +219,24 @@ def load_and_verify_candidate_manifest(
             "CANDIDATE_MANIFEST_HASH_MISMATCH",
             f"export={expected} bytes={observed}",
         )
+    native = _load_native_candidate_validator()
     try:
-        obj = json.loads(raw.decode("utf-8"))
-    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
-        raise EpisodeExportAdapterError("CANDIDATE_MANIFEST_JSON_INVALID", str(exc)) from exc
+        obj = native.validate_candidate_manifest(
+            raw,
+            expected_episode_id=(
+                str(export.get("episode_id")) if export.get("episode_id") else None
+            ),
+            expected_attempt_cas_digest=(
+                str(export.get("attempt_cas_digest")) if export.get("attempt_cas_digest") else None
+            ),
+        )
+    except Exception as exc:
+        reason = getattr(exc, "reason_code", None) or "CANDIDATE_MANIFEST_INVALID"
+        detail = getattr(exc, "detail", None) or str(exc)
+        raise EpisodeExportAdapterError(str(reason), str(detail)[:2000]) from exc
     if not isinstance(obj, Mapping):
         raise EpisodeExportAdapterError("CANDIDATE_MANIFEST_JSON_INVALID", "object required")
+    # Keep pool-side marker constants aligned with native seals.
     if obj.get("schema_version") != MANIFEST_SCHEMA:
         raise EpisodeExportAdapterError(
             "CANDIDATE_MANIFEST_SCHEMA_INVALID",
@@ -199,43 +246,6 @@ def load_and_verify_candidate_manifest(
         raise EpisodeExportAdapterError(
             "CANDIDATE_MANIFEST_MARKER_INVALID",
             str(obj.get("manifest_marker")),
-        )
-    if obj.get("owner_adopted") is not False:
-        raise EpisodeExportAdapterError("CANDIDATE_MANIFEST_OWNER_ADOPTED_FORBIDDEN", "must false")
-    if obj.get("candidate_only") is not True:
-        raise EpisodeExportAdapterError("CANDIDATE_MANIFEST_CANDIDATE_ONLY_REQUIRED", "true")
-    if obj.get("completion") is True or obj.get("completion_claim_allowed") is True:
-        raise EpisodeExportAdapterError("CANDIDATE_MANIFEST_COMPLETION_FORBIDDEN", "must false")
-    if obj.get("account_recommendation") not in ACCOUNT_RECOMMENDATIONS:
-        raise EpisodeExportAdapterError(
-            "CANDIDATE_MANIFEST_RECOMMENDATION_INVALID",
-            str(obj.get("account_recommendation")),
-        )
-    # Recommendation never freezes by itself — refuse freeze/disposition elevation keys.
-    for bad in ("frozen", "account_identity", "science_disposition", "parent_complete"):
-        if obj.get(bad) not in {None, False}:
-            raise EpisodeExportAdapterError("CANDIDATE_MANIFEST_AUTHORITY_LEAK", bad)
-    if (
-        export.get("episode_id")
-        and obj.get("episode_id") not in {None, export.get("episode_id")}
-        and obj.get("episode_id") != export.get("episode_id")
-    ):
-        raise EpisodeExportAdapterError(
-            "CANDIDATE_MANIFEST_EPISODE_MISMATCH",
-            str(obj.get("episode_id")),
-        )
-    if (
-        export.get("attempt_cas_digest")
-        and obj.get("attempt_cas_digest")
-        not in {
-            None,
-            export.get("attempt_cas_digest"),
-        }
-        and obj.get("attempt_cas_digest") != export.get("attempt_cas_digest")
-    ):
-        raise EpisodeExportAdapterError(
-            "CANDIDATE_MANIFEST_ATTEMPT_MISMATCH",
-            str(obj.get("attempt_cas_digest")),
         )
     return dict(obj)
 

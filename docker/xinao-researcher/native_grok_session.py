@@ -35,7 +35,8 @@ UUID_RE = re.compile(
     re.I,
 )
 
-# Observed on worker seat Grok Build TUI 0.2.112 (probe may re-verify).
+# Supported live CLI for ResearchEpisode dual-host path. Fail closed on mismatch.
+SUPPORTED_GROK_CLI_VERSION = "0.2.117"
 REQUIRED_CLI_FLAGS = (
     "--tools",
     "--session-id",
@@ -49,6 +50,7 @@ REQUIRED_CLI_FLAGS = (
     "--disable-web-search",
     "--permission-mode",
     "--agent",
+    "--always-approve",
 )
 MCP_SUBCOMMANDS = ("list", "add", "remove", "doctor")
 # ResearchEpisode profiles (Owner-sealed).
@@ -71,6 +73,8 @@ MAX_OUTER_TIMEOUT_SECONDS = 4 * 3600
 CANONICAL_GROK_HOME = "/grok-home"
 CANONICAL_LAB_CWD = "/episode-lab"
 CANONICAL_MCP_EVENTS = "/output/mcp_events.jsonl"
+CANONICAL_TOOL_SIDECAR_EVENTS = "/sidecar-evidence/tool_events.jsonl"
+TOOL_SIDECAR_EVENTS_FILENAME = "tool_events.jsonl"
 CANONICAL_AGENT_PROFILE = "/grok-home/agents/genuine_scientist_mcp.md"
 PRODUCTIVE_LAB_OPS = frozenset({"write_file", "shell_exec"})
 # Fixed lab path for sealed candidate body (tool path only).
@@ -103,13 +107,15 @@ STRIPPED_HOST_BUILTINS = (
     "Agent",
     "spawn_subagent",
 )
-# OPEN_RESEARCH: allow episode-confined subagents (host tools still stripped; no Owner mounts).
-# CLOSED_LAB / canary keep --no-subagents for tighter isolation.
-OPEN_RESEARCH_ALLOW_EPISODE_SUBAGENTS = True
+# Honest policy: Grok 0.2.117 can disable subagents via --no-subagents, and the only
+# named spawn tool (spawn_subagent) is denied in --disallowed-tools. Claiming
+# "episode-confined subagent role fitness" while spawn is stripped is false.
+# Keep --no-subagents on all research profiles until a real lab-only subagent path exists.
+OPEN_RESEARCH_ALLOW_EPISODE_SUBAGENTS = False
 OPEN_RESEARCH_SUBAGENT_POLICY_REASON = (
-    "OPEN_RESEARCH omits --no-subagents because host builtins and spawn_subagent are "
-    "disallowed, lab/auth isolation remains dual-container, and candidate-only clamps "
-    "forbid Owner/shadow elevation; CLOSED_LAB keeps --no-subagents."
+    "OPEN_RESEARCH keeps --no-subagents: spawn_subagent is physically denied in "
+    "--disallowed-tools, host builtins remain stripped, and no lab-only subagent "
+    "mount/agent profile is wired. Do not claim subagent role fitness."
 )
 # Default (OPEN_RESEARCH) does not strip web_search/web_fetch.
 STRIPPED_BUILTINS = STRIPPED_HOST_BUILTINS
@@ -288,7 +294,31 @@ class CliProbe:
         }
 
 
-def probe_grok_cli(*, grok_bin: str | None = None, probe_auth: bool = True) -> CliProbe:
+def parse_grok_cli_version(version_text: str | None) -> str | None:
+    """Extract x.y.z from `grok version` output."""
+    if not version_text:
+        return None
+    match = re.search(r"\b(\d+\.\d+\.\d+)\b", str(version_text))
+    return match.group(1) if match else None
+
+
+def require_supported_grok_cli_version(version_text: str | None) -> str:
+    """Fail closed when installed CLI is not the release-supported version."""
+    parsed = parse_grok_cli_version(version_text)
+    if parsed != SUPPORTED_GROK_CLI_VERSION:
+        raise NativeSessionError(
+            "GROK_CLI_VERSION_UNSUPPORTED",
+            f"required={SUPPORTED_GROK_CLI_VERSION} observed={version_text!r}",
+        )
+    return parsed
+
+
+def probe_grok_cli(
+    *,
+    grok_bin: str | None = None,
+    probe_auth: bool = True,
+    require_supported_version: bool = False,
+) -> CliProbe:
     """Inspect the worker-available Grok binary; never claim live episode success."""
     bin_path = resolve_grok_bin(grok_bin)
     probe = CliProbe(grok_bin=bin_path)
@@ -302,6 +332,12 @@ def probe_grok_cli(*, grok_bin: str | None = None, probe_auth: bool = True) -> C
     except (OSError, subprocess.TimeoutExpired) as exc:
         probe.auth_error = f"version_failed:{exc}"
         return probe
+    if require_supported_version:
+        try:
+            require_supported_grok_cli_version(probe.version)
+        except NativeSessionError as exc:
+            probe.auth_error = f"{exc.reason_code}:{exc.detail}"
+            return probe
     try:
         help_out = _run([bin_path, "--help"])
         probe.help_text = (help_out.stdout or "") + "\n" + (help_out.stderr or "")
@@ -693,30 +729,111 @@ def reject_fabricated_tool_event(
     *,
     event: Mapping[str, Any],
     trusted_event_hashes: Sequence[str],
+    hash_key: str = "event_hash",
+    verify_self_hash: bool = True,
 ) -> None:
-    """Tool-event fabrication: event_hash must match canonical body AND trusted chain.
+    """Tool-event fabrication: claimed hash must be on the trusted tool-side chain.
 
-    A self-consistent hash that was never emitted by the sidecar is still fabricated
-    for promotion purposes.
+    For tool-executor IPC responses, hash_key is ``event_hash`` and the body self-hash
+    is verified. For MCP evidence lines, pass ``hash_key="sidecar_event_hash"`` and
+    ``verify_self_hash=False`` so membership checks the tool-sealed identity, not the
+    forgeable transport JSONL self-hash alone.
     """
     if not isinstance(event, Mapping):
         raise NativeSessionError("TOOL_EVENT_INVALID", "not object")
-    claimed = event.get("event_hash")
+    claimed = event.get(hash_key)
     if not isinstance(claimed, str) or HEX_SHA256.fullmatch(claimed) is None:
-        raise NativeSessionError("TOOL_EVENT_HASH_MISSING", str(claimed))
-    body = {k: v for k, v in event.items() if k != "event_hash"}
-    observed = _sha256_bytes(_canonical_bytes(body))
+        raise NativeSessionError("TOOL_EVENT_HASH_MISSING", f"{hash_key}={claimed}")
     trusted = set(trusted_event_hashes)
-    if claimed != observed:
-        raise NativeSessionError(
-            "TOOL_EVENT_FABRICATED",
-            f"claimed={claimed} observed={observed}",
-        )
+    if verify_self_hash:
+        body = {k: v for k, v in event.items() if k != hash_key}
+        observed = _sha256_bytes(_canonical_bytes(body))
+        if claimed != observed:
+            raise NativeSessionError(
+                "TOOL_EVENT_FABRICATED",
+                f"claimed={claimed} observed={observed}",
+            )
     if claimed not in trusted:
         raise NativeSessionError(
             "TOOL_EVENT_UNTRUSTED",
-            "hash not in trusted MCP event chain",
+            f"{hash_key} not in trusted tool-side event chain",
         )
+
+
+def collect_tool_sidecar_evidence_delta(
+    path: Path | str,
+    prior_cursor: Mapping[str, Any] | None,
+    *,
+    expected_episode_id: str | None = None,
+) -> dict[str, Any]:
+    """Cursor-bounded read of tool-executor-only evidence (not transport-writable)."""
+    evidence = Path(path)
+    prior_size = int((prior_cursor or {}).get("size") or 0)
+    if not evidence.is_file():
+        return {
+            "events": [],
+            "trusted_event_hashes": [],
+            "status": "EMPTY_DELTA",
+            "prior_size": prior_size,
+            "new_size": 0,
+        }
+    raw = evidence.read_bytes()
+    new_size = len(raw)
+    if new_size < prior_size:
+        raise NativeSessionError(
+            "TOOL_SIDECAR_TRUNCATED",
+            f"prior={prior_size} now={new_size}",
+        )
+    delta = raw[prior_size:]
+    events: list[dict[str, Any]] = []
+    hashes: list[str] = []
+    if not delta:
+        return {
+            "events": [],
+            "trusted_event_hashes": [],
+            "status": "STALE_ONLY" if prior_size > 0 else "EMPTY_DELTA",
+            "prior_size": prior_size,
+            "new_size": new_size,
+        }
+    text = delta.decode("utf-8", errors="replace")
+    for line in text.splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            obj = json.loads(line)
+        except json.JSONDecodeError as exc:
+            raise NativeSessionError("TOOL_SIDECAR_JSON_INVALID", str(exc)[:200]) from exc
+        if not isinstance(obj, dict):
+            raise NativeSessionError("TOOL_SIDECAR_JSON_INVALID", "object required")
+        if expected_episode_id is not None and obj.get("episode_id") not in {
+            None,
+            expected_episode_id,
+        }:
+            if obj.get("episode_id") != expected_episode_id:
+                raise NativeSessionError(
+                    "TOOL_SIDECAR_FOREIGN_EPISODE",
+                    str(obj.get("episode_id")),
+                )
+        event_hash = obj.get("event_hash")
+        if isinstance(event_hash, str) and HEX_SHA256.fullmatch(event_hash):
+            hashes.append(event_hash)
+        events.append(obj)
+    status = "DELTA_OK" if events else "EMPTY_DELTA"
+    return {
+        "events": events,
+        "trusted_event_hashes": hashes,
+        "status": status,
+        "prior_size": prior_size,
+        "new_size": new_size,
+    }
+
+
+def capture_tool_sidecar_cursor(path: Path | str) -> dict[str, Any]:
+    evidence = Path(path)
+    if not evidence.is_file():
+        return {"size": 0, "path": str(evidence)}
+    return {"size": evidence.stat().st_size, "path": str(evidence)}
 
 
 def reject_synthetic_receipt_promotion(
@@ -1155,12 +1272,18 @@ def collect_attempt_mcp_delta(
     }
 
 
-def require_productive_lab_delta(delta: Mapping[str, Any]) -> None:
+def require_productive_lab_delta(
+    delta: Mapping[str, Any],
+    *,
+    trusted_event_hashes: Sequence[str] | None = None,
+    require_trusted_tool_chain: bool = False,
+) -> None:
     """Success requires at least one write_file/shell_exec from this attempt delta.
 
     JSONL self-hash alone is insufficient: each productive event must carry a
-    non-empty sidecar_event_hash from the tool-executor response (or equivalent
-    trusted chain). Forgeable /output appends without sidecar hashes fail closed.
+    non-empty sidecar_event_hash from the tool-executor response. When
+    ``require_trusted_tool_chain`` is true (live attach/resume), each
+    sidecar_event_hash must be a member of the tool-executor-only evidence log.
     """
     status = str(delta.get("status") or "")
     if status in {"STALE_ONLY", "EMPTY_DELTA"}:
@@ -1189,6 +1312,12 @@ def require_productive_lab_delta(delta: Mapping[str, Any]) -> None:
         ]
     if not productive_events:
         raise NativeSessionError("PRODUCTIVE_LAB_EVENT_MISSING", "no productive event bodies")
+    trusted = list(trusted_event_hashes or [])
+    if require_trusted_tool_chain and not trusted:
+        raise NativeSessionError(
+            "TOOL_EVENT_UNTRUSTED",
+            "trusted tool-side event set empty",
+        )
     for event in productive_events:
         sidecar = event.get("sidecar_event_hash")
         if not isinstance(sidecar, str) or HEX_SHA256.fullmatch(sidecar) is None:
@@ -1205,6 +1334,13 @@ def require_productive_lab_delta(delta: Mapping[str, Any]) -> None:
                     "TOOL_EVENT_FABRICATED",
                     f"claimed={claimed} observed={observed}",
                 )
+        if require_trusted_tool_chain or trusted:
+            reject_fabricated_tool_event(
+                event=event,
+                trusted_event_hashes=trusted,
+                hash_key="sidecar_event_hash",
+                verify_self_hash=False,
+            )
 
 
 def require_lab_effect_binding(
@@ -1251,11 +1387,24 @@ def require_lab_effect_binding(
     for event in productive_events:
         op = str(event.get("op") or "")
         if op == "write_file":
-            # Prefer path recorded on event; else require any lab change.
-            rel = event.get("path_relative") or event.get("path") or event.get("lab_path")
-            if isinstance(rel, str) and rel.replace("\\", "/").lstrip("./") in current_paths:
-                write_bound = True
+            # Prefer path recorded on event; require a real changed artifact, not mere presence.
+            rel_raw = event.get("path_relative") or event.get("path") or event.get("lab_path")
+            rel = (
+                str(rel_raw).replace("\\", "/").lstrip("./")
+                if isinstance(rel_raw, str) and rel_raw.strip()
+                else None
+            )
+            if rel and rel in current_paths:
+                # Path must be newly created or content-hash changed vs prior scan.
+                if prior_paths.get(rel) != current_paths.get(rel):
+                    write_bound = True
+                else:
+                    raise NativeSessionError(
+                        "LAB_EFFECT_WRITE_UNBOUND",
+                        f"write_file path present but unchanged path={rel!r}",
+                    )
             elif changed:
+                # Fallback only when event omitted path but lab FS actually changed.
                 write_bound = True
             else:
                 raise NativeSessionError(

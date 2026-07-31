@@ -54,6 +54,35 @@
       "implemented_by": "shadow-lifecycle-leg-a",
       "verb": "replay",
       "completion_claim_allowed": false
+    },
+    {
+      "capability_id": "research-episode",
+      "version": "0.1.0",
+      "source_status": "available",
+      "execution_boundary": "host_dual_container_leg_a_no_daemon",
+      "entrypoint": "scripts/xinao.py research-episode",
+      "skill_verbs": [
+        "start",
+        "status",
+        "checkpoint",
+        "resume",
+        "cancel",
+        "attach-run",
+        "resume-live",
+        "export-candidate-evidence",
+        "ingest-export",
+        "bind-feedback-material",
+        "absorb"
+      ],
+      "candidate_only": true,
+      "owner_disposition_separate": true,
+      "auto_freeze": false,
+      "auto_settle": false,
+      "auto_next_task": false,
+      "supported_grok_cli_version": "0.2.117",
+      "parent_completion_authority": false,
+      "completion_claim_allowed": false,
+      "notes": "Multi-turn ResearchEpisode host verbs. attach-run/resume-live require sealed dual images + tool-namespace receipt. export-candidate-evidence seals lab-authored candidate evidence; ingest-export admits to immutable candidate pool with owner_adopted=false (never freezes). bind-feedback-material binds sealed settlement feedback as later episode input only (no auto-start). absorb is a deprecated local outbox placeholder and is NOT pool admission. Codex alone adopts/disposes/freezes."
     }
   ]
 }

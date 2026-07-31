@@ -121,7 +121,57 @@ def test_event_forgery_without_sidecar_rejected(native: Any) -> None:
     assert exc.value.reason_code == "PRODUCTIVE_SIDECAR_HASH_MISSING"
 
 
-def test_lab_effect_binding_requires_fs_delta(native: Any) -> None:
+def test_arbitrary_hex_sidecar_without_tool_chain_rejected(native: Any) -> None:
+    """Planted /output MCP event with random hex sidecar must not pass trusted chain."""
+    body = {
+        "schema_version": "xinao.dual_container_mcp_event.v1",
+        "event": "mcp_tools_call",
+        "op": "write_file",
+        "status": "ok",
+        "productive": True,
+        "episode_id": "ep1",
+        "server": "episode_lab",
+        "path_relative": "candidate/candidate_manifest.v1.json",
+        "sidecar_event_hash": "ff" * 32,
+        "completion_claim_allowed": False,
+        "science_restored": False,
+        "parent_complete": False,
+        "owner_adopted": False,
+    }
+    event_hash = _sha(
+        (json.dumps(body, sort_keys=True, separators=(",", ":")) + "\n").encode("utf-8")
+    )
+    delta = {
+        "status": "DELTA_OK",
+        "productive_ops": ["write_file"],
+        "events": [{**body, "event_hash": event_hash}],
+    }
+    # Format-only path still requires hex sidecar (present) → OK without trusted set
+    native.require_productive_lab_delta(delta)
+    # Live attach path requires membership in tool-executor sealed set
+    with pytest.raises(native.NativeSessionError) as exc:
+        native.require_productive_lab_delta(
+            delta,
+            trusted_event_hashes=[],
+            require_trusted_tool_chain=True,
+        )
+    assert exc.value.reason_code == "TOOL_EVENT_UNTRUSTED"
+    with pytest.raises(native.NativeSessionError) as exc2:
+        native.require_productive_lab_delta(
+            delta,
+            trusted_event_hashes=["aa" * 32],
+            require_trusted_tool_chain=True,
+        )
+    assert exc2.value.reason_code == "TOOL_EVENT_UNTRUSTED"
+    # Happy path: independently sealed tool-side record matches sidecar
+    native.require_productive_lab_delta(
+        delta,
+        trusted_event_hashes=["ff" * 32],
+        require_trusted_tool_chain=True,
+    )
+
+
+def test_lab_effect_binding_requires_changed_artifact(native: Any) -> None:
     body = {
         "op": "write_file",
         "status": "ok",
@@ -139,8 +189,45 @@ def test_lab_effect_binding_requires_fs_delta(native: Any) -> None:
         "LAB_EFFECT_WRITE_UNBOUND",
         "LAB_EFFECT_MISSING",
     }
-    # With matching lab path present → bound
+    # Mere presence of a pre-existing identical hash must fail
+    planted = {
+        "artifacts": [
+            {
+                "path": "candidate/candidate_manifest.v1.json",
+                "sha256": "cc" * 32,
+            }
+        ]
+    }
+    with pytest.raises(native.NativeSessionError) as exc_same:
+        native.require_lab_effect_binding(
+            delta=delta,
+            lab_artifact_manifest=planted,
+            prior_lab_artifact_manifest=planted,
+        )
+    assert exc_same.value.reason_code == "LAB_EFFECT_WRITE_UNBOUND"
+    # Changed content vs prior → bound
     ok = native.require_lab_effect_binding(
+        delta=delta,
+        lab_artifact_manifest={
+            "artifacts": [
+                {
+                    "path": "candidate/candidate_manifest.v1.json",
+                    "sha256": "dd" * 32,
+                }
+            ]
+        },
+        prior_lab_artifact_manifest={
+            "artifacts": [
+                {
+                    "path": "candidate/candidate_manifest.v1.json",
+                    "sha256": "cc" * 32,
+                }
+            ]
+        },
+    )
+    assert ok["bound"] is True
+    # First create (prior empty) still binds
+    ok2 = native.require_lab_effect_binding(
         delta=delta,
         lab_artifact_manifest={
             "artifacts": [
@@ -152,7 +239,7 @@ def test_lab_effect_binding_requires_fs_delta(native: Any) -> None:
         },
         prior_lab_artifact_manifest={"artifacts": []},
     )
-    assert ok["bound"] is True
+    assert ok2["bound"] is True
 
 
 def test_candidate_manifest_closed_schema_and_authority(native: Any, tmp_path: Path) -> None:
@@ -211,7 +298,7 @@ def test_experiment_loop_state_transitions_and_export(native: Any, tmp_path: Pat
     sid = native.new_session_uuid()
     argv = native.build_genuine_session_argv(session_id=sid, max_turns=16, prompt="revise")
     native.assert_live_research_argv(argv, research_profile="OPEN_RESEARCH")
-    assert "--no-subagents" not in argv
+    assert "--no-subagents" in argv
     assert "--always-approve" in argv
     stdout = (
         json.dumps(
@@ -426,10 +513,9 @@ def test_feedback_material_no_rewrite_no_autostart(tmp_path: Path) -> None:
 
 
 def test_open_research_subagent_policy_documented(native: Any) -> None:
-    assert native.OPEN_RESEARCH_ALLOW_EPISODE_SUBAGENTS is True
-    assert "host builtins" in native.OPEN_RESEARCH_SUBAGENT_POLICY_REASON.lower() or (
-        "stripped" in native.OPEN_RESEARCH_SUBAGENT_POLICY_REASON.lower()
-    )
+    """Behavior-level honesty: no subagent fitness claim while spawn is denied."""
+    assert native.OPEN_RESEARCH_ALLOW_EPISODE_SUBAGENTS is False
+    assert "spawn_subagent" in native.OPEN_RESEARCH_SUBAGENT_POLICY_REASON.lower()
     sid = native.new_session_uuid()
     open_argv = native.build_genuine_session_argv(
         session_id=sid, max_turns=16, research_profile="OPEN_RESEARCH"
@@ -437,7 +523,213 @@ def test_open_research_subagent_policy_documented(native: Any) -> None:
     closed_argv = native.build_genuine_session_argv(
         session_id=sid, max_turns=16, research_profile="CLOSED_LAB"
     )
-    assert "--no-subagents" not in open_argv
+    # Both profiles keep --no-subagents (honest minimal behavior)
+    assert "--no-subagents" in open_argv
     assert "--no-subagents" in closed_argv
     denied = open_argv[open_argv.index("--disallowed-tools") + 1]
     assert "spawn_subagent" in denied
+    # CLI capability surface: supported version pin is real, not comment-only
+    assert native.SUPPORTED_GROK_CLI_VERSION == "0.2.117"
+    with pytest.raises(native.NativeSessionError) as exc:
+        native.require_supported_grok_cli_version("grok 0.2.112 (deadbeef)")
+    assert exc.value.reason_code == "GROK_CLI_VERSION_UNSUPPORTED"
+    assert native.require_supported_grok_cli_version("grok 0.2.117 (f1c0609308)") == "0.2.117"
+    # Role fitness: multi-turn + tools still present (not one-turn canary regression)
+    assert "--max-turns" in open_argv
+    assert int(open_argv[open_argv.index("--max-turns") + 1]) >= 2
+    tools = open_argv[open_argv.index("--tools") + 1]
+    assert "web_search" in tools
+    assert "use_tool" in tools
+    assert tools != ""
+
+
+def test_pool_adapter_rejects_missing_cutoff_method_falsifier(tmp_path: Path) -> None:
+    from xinao.science.episode_export_pool_adapter import (
+        EpisodeExportAdapterError,
+        ingest_verified_episode_export,
+    )
+
+    def _export_for(manifest: dict[str, Any]) -> tuple[bytes, bytes]:
+        man_bytes = (json.dumps(manifest, ensure_ascii=False, sort_keys=True) + "\n").encode(
+            "utf-8"
+        )
+        body = {
+            "schema_version": "xinao.research_episode_candidate_evidence_bundle.v1",
+            "status": "CANDIDATE_EVIDENCE_EXPORTED",
+            "episode_id": "ep_weak",
+            "attempt_id": "att1",
+            "attempt_hash": "a" * 64,
+            "attempt_cas_digest": "b" * 64,
+            "raw_session_hash": "c" * 64,
+            "tool_trace_hash": "d" * 64,
+            "artifact_manifest_hash": "e" * 64,
+            "candidate_manifest_sha256": _sha(man_bytes),
+            "pair_receipt_sha256": "11" * 32,
+            "namespace_receipt_sha256": "22" * 32,
+            "release_identity_sha256": "33" * 32,
+            "provider_session_uuid": "00000000-0000-4000-8000-000000000099",
+            "research_profile": "OPEN_RESEARCH",
+            "actual_turns": 4,
+            "candidate_only": True,
+            "owner_adopted": False,
+            "completion_claim_allowed": False,
+            "science_restored": False,
+            "parent_complete": False,
+            "shadow_write": False,
+            "next_task_created": False,
+            "disposition_written": False,
+            "freeze_written": False,
+            "settlement_written": False,
+            "portfolio_updated": False,
+        }
+        bundle_hash = _sha(
+            (
+                json.dumps(body, ensure_ascii=False, sort_keys=True, separators=(",", ":")) + "\n"
+            ).encode("utf-8")
+        )
+        export = {**body, "bundle_sha256": bundle_hash}
+        export_bytes = (
+            json.dumps(export, ensure_ascii=False, indent=2, sort_keys=True) + "\n"
+        ).encode("utf-8")
+        return export_bytes, man_bytes
+
+    cases = [
+        ("CANDIDATE_MANIFEST_CUTOFF_INVALID", lambda m: m.pop("data_cutoff", None)),
+        ("CANDIDATE_MANIFEST_METHODS_INVALID", lambda m: m.pop("method_refs", None)),
+        ("CANDIDATE_MANIFEST_LIMITATIONS_INVALID", lambda m: m.pop("falsifiers", None)),
+        (
+            "CANDIDATE_MANIFEST_CUTOFF_INVALID",
+            lambda m: m["data_cutoff"].update(
+                {"material_refs": [{"id": "x", "sha256": "not-a-hash"}]}
+            ),
+        ),
+    ]
+    for expected_reason, mutator in cases:
+        weak = _manifest(episode_id="ep_weak", attempt="b" * 64)
+        mutator(weak)
+        export_bytes, man_bytes = _export_for(weak)
+        with pytest.raises(EpisodeExportAdapterError) as exc:
+            ingest_verified_episode_export(
+                pool_root=tmp_path / f"pool_{expected_reason}",
+                export=export_bytes,
+                manifest_bytes=man_bytes,
+            )
+        assert expected_reason in exc.value.reason_code
+
+
+def test_owner_cli_ingest_export_and_bind_feedback_smoke(tmp_path: Path) -> None:
+    """Stable Skill consumer surface: runtime verbs without freeze/disposition."""
+    runtime = _load(
+        "xinao_runtime_bridge_cli", ROOT / "skills" / "xinao" / "scripts" / "xinao_runtime.py"
+    )
+    from xinao.canonical import canonical_sha256
+    from xinao.science.episode_export_pool_adapter import ingest_verified_episode_export
+
+    manifest = _manifest(episode_id="ep_cli", attempt="b" * 64)
+    man_bytes = (json.dumps(manifest, ensure_ascii=False, sort_keys=True) + "\n").encode("utf-8")
+    body = {
+        "schema_version": "xinao.research_episode_candidate_evidence_bundle.v1",
+        "status": "CANDIDATE_EVIDENCE_EXPORTED",
+        "episode_id": "ep_cli",
+        "attempt_id": "att_cli",
+        "attempt_hash": "a" * 64,
+        "attempt_cas_digest": "b" * 64,
+        "raw_session_hash": "c" * 64,
+        "tool_trace_hash": "d" * 64,
+        "artifact_manifest_hash": "e" * 64,
+        "candidate_manifest_sha256": _sha(man_bytes),
+        "pair_receipt_sha256": "11" * 32,
+        "namespace_receipt_sha256": "22" * 32,
+        "release_identity_sha256": "33" * 32,
+        "provider_session_uuid": "00000000-0000-4000-8000-0000000000aa",
+        "research_profile": "OPEN_RESEARCH",
+        "actual_turns": 5,
+        "candidate_only": True,
+        "owner_adopted": False,
+        "completion_claim_allowed": False,
+        "science_restored": False,
+        "parent_complete": False,
+        "shadow_write": False,
+        "next_task_created": False,
+        "disposition_written": False,
+        "freeze_written": False,
+        "settlement_written": False,
+        "portfolio_updated": False,
+    }
+    bundle_hash = _sha(
+        (json.dumps(body, ensure_ascii=False, sort_keys=True, separators=(",", ":")) + "\n").encode(
+            "utf-8"
+        )
+    )
+    export = {**body, "bundle_sha256": bundle_hash}
+    export_path = tmp_path / "export.json"
+    manifest_path = tmp_path / "candidate_manifest.v1.json"
+    export_path.write_text(json.dumps(export, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    manifest_path.write_bytes(man_bytes)
+    pool_root = tmp_path / "pool"
+    result = runtime.research_episode_ingest_export(
+        pool_root=pool_root,
+        export_path=export_path,
+        manifest_path=manifest_path,
+    )
+    assert result["owner_adopted"] is False
+    assert result["freeze_written"] is False
+    assert result["status"] == "POOL_ENTRY_READY"
+    # CAS conflict on byte drift
+    with pytest.raises(Exception):
+        ingest_verified_episode_export(
+            pool_root=pool_root,
+            export=export_path.read_bytes(),
+            manifest_bytes=man_bytes + b"x",
+        )
+
+    pack_body = {
+        "schema_version": "xinao.research_feedback_pack.v1",
+        "pack_marker": "XINAO_RESEARCH_FEEDBACK_PACK_V1",
+        "prior_result_sha256": "aa" * 32,
+        "prior_research_binding_sha256": "bb" * 32,
+        "auto_start_next_research": False,
+        "auto_next_period_freeze": False,
+        "scientific_promotion": False,
+        "future_outcome_access": False,
+    }
+    content_hash = canonical_sha256(pack_body)
+    sealed = {**pack_body, "content_hash": content_hash}
+    cas = (
+        tmp_path
+        / "objects"
+        / "research_feedback_pack"
+        / "sha256"
+        / content_hash[:2]
+        / f"{content_hash}.json"
+    )
+    cas.parent.mkdir(parents=True)
+    cas.write_text(json.dumps(sealed, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    binding = runtime.research_episode_bind_feedback_material(
+        portfolio_root=tmp_path,
+        feedback_content_hash=content_hash,
+        prior_candidate_result_sha256="aa" * 32,
+    )
+    assert binding["auto_start_next_research"] is False
+    assert binding["next_task_created"] is False
+    assert binding["freeze_written"] is False
+
+    # CLI help lists new verbs (parser surface)
+    parser = runtime._parser()
+    help_text = parser.format_help()
+    assert "research-episode" in help_text
+    # Subparser help
+    # ingest-export registered
+    ns = parser.parse_args(
+        [
+            "research-episode",
+            "ingest-export",
+            "--pool-root",
+            str(pool_root),
+            "--export",
+            str(export_path),
+            "--manifest",
+            str(manifest_path),
+        ]
+    )
+    assert ns.research_episode_command == "ingest-export"

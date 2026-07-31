@@ -153,6 +153,9 @@ class DualContainerHost:
             "sessions": self.episode_root / "sessions",
             "attempt": self.episode_root / "attempt",
             "ipc_bind": self.episode_root / "ipc",
+            # Tool-executor-only evidence (NOT mounted on transport).
+            "sidecar_evidence": self.episode_root / "sidecar_evidence",
+            "tool_events": self.episode_root / "sidecar_evidence" / "tool_events.jsonl",
             "lease": self.episode_root / LEASE_FILENAME,
             "session_inventory": self.episode_root / SESSION_INVENTORY_FILENAME,
             "pair_receipt": self.episode_root / PAIR_RECEIPT_FILENAME,
@@ -176,7 +179,15 @@ class DualContainerHost:
             stream.write(line + "\n")
 
     def _ensure_layout(self) -> None:
-        for key in ("lab", "inputs", "output", "sessions", "attempt", "ipc_bind"):
+        for key in (
+            "lab",
+            "inputs",
+            "output",
+            "sessions",
+            "attempt",
+            "ipc_bind",
+            "sidecar_evidence",
+        ):
             self.paths[key].mkdir(parents=True, exist_ok=True)
 
     def _load_mcp_binding(self) -> Any:
@@ -352,6 +363,7 @@ class DualContainerHost:
             output_host_path=str(self.paths["output"]),
             episode_lab_host_path=str(self.paths["lab"]),
             ipc_host_dir=ipc_for_spec,
+            sidecar_evidence_host_path=str(self.paths["sidecar_evidence"]),
             run_id=names["run_id"],
             session_host_path=str(self.paths["sessions"]),
             material_host_path=material_path,
@@ -433,6 +445,21 @@ class DualContainerHost:
             "completion_claim_allowed": False,
         }
         self._save_session_inventory(inventory)
+        # Bind supported CLI identity into pair receipt (fail closed on live probe mismatch).
+        native_mod = self._load_native_session()
+        supported_cli = getattr(native_mod, "SUPPORTED_GROK_CLI_VERSION", "0.2.117")
+        if not self.config.synthetic:
+            try:
+                probe = native_mod.probe_grok_cli(require_supported_version=True)
+                if probe.auth_error and str(probe.auth_error).startswith(
+                    "GROK_CLI_VERSION_UNSUPPORTED"
+                ):
+                    raise DualHostError("GROK_CLI_VERSION_UNSUPPORTED", probe.auth_error)
+            except DualHostError:
+                raise
+            except Exception:
+                # Host probe optional when binary unavailable offline; receipt still pins version.
+                pass
         pair_receipt = {
             "schema_version": PAIR_RECEIPT_SCHEMA,
             "episode_id": episode_id,
@@ -445,11 +472,14 @@ class DualContainerHost:
             "transport_container_name": names["transport_name"],
             "ipc_volume": ipc_volume if ipc_mount_type == "volume" else None,
             "ipc_host_dir": str(self.paths["ipc_bind"]),
+            "sidecar_evidence_host_dir": str(self.paths["sidecar_evidence"]),
+            "tool_sidecar_events_path": str(self.paths["tool_events"]),
             "socket_basename": "tool.sock",
             "mcp_server": "episode_lab",
             "mcp_config_sha256": _sha256_bytes(attempt["mcp_config"].read_bytes()),
             "mcp_binding_receipt_sha256": attempt.get("binding_receipt_sha256"),
             "generic_file_shell_tools": False,
+            "supported_grok_cli_version": supported_cli,
             "daemon": False,
             "created_at": _utc_now(),
             "completion_claim_allowed": False,
@@ -1396,6 +1426,7 @@ class DualContainerHost:
                 "parent_complete": False,
             }
         prior_cursor = self.capture_mcp_event_cursor()
+        prior_tool_cursor = native.capture_tool_sidecar_cursor(self.paths["tool_events"])
         prior_lab_manifest = self._scan_lab_artifact_manifest()
         started_at = _utc_now()
         docker_exec_failed = False
@@ -1442,10 +1473,30 @@ class DualContainerHost:
                 "productive_ops": [],
                 "status": exc.reason_code,
             }
-        lab_manifest = self._scan_lab_artifact_manifest()
-        # Fail closed on forgeable event-only productivity (sidecar + lab FS effect).
         try:
-            native.require_productive_lab_delta(delta)
+            tool_delta = native.collect_tool_sidecar_evidence_delta(
+                self.paths["tool_events"],
+                prior_tool_cursor,
+                expected_episode_id=str(lease["episode_id"]),
+            )
+            trusted_hashes = list(tool_delta.get("trusted_event_hashes") or [])
+        except native.NativeSessionError as exc:
+            tool_delta = {"trusted_event_hashes": [], "status": exc.reason_code}
+            trusted_hashes = []
+            delta = {
+                **delta,
+                "productive_ops": [],
+                "status": str(exc.reason_code),
+                "evidence_reject": str(exc.reason_code),
+            }
+        lab_manifest = self._scan_lab_artifact_manifest()
+        # Fail closed: productive MCP events must match tool-executor sealed evidence + lab FS.
+        try:
+            native.require_productive_lab_delta(
+                delta,
+                trusted_event_hashes=trusted_hashes,
+                require_trusted_tool_chain=True,
+            )
             native.require_lab_effect_binding(
                 delta=delta,
                 lab_artifact_manifest=lab_manifest,
@@ -1458,6 +1509,8 @@ class DualContainerHost:
                 "productive_ops": [],
                 "status": str(getattr(exc, "reason_code", None) or "PRODUCTIVE_EVIDENCE_REJECTED"),
                 "evidence_reject": str(getattr(exc, "reason_code", None) or exc),
+                "trusted_tool_event_count": len(trusted_hashes),
+                "tool_sidecar_status": tool_delta.get("status"),
             }
         mcp_hashes = list(delta.get("mcp_event_hashes") or [])
         productive_ops = list(delta.get("productive_ops") or [])
@@ -1641,6 +1694,7 @@ class DualContainerHost:
                 "parent_complete": False,
             }
         prior_cursor = self.capture_mcp_event_cursor()
+        prior_tool_cursor = native.capture_tool_sidecar_cursor(self.paths["tool_events"])
         prior_lab_manifest = self._scan_lab_artifact_manifest()
         started_at = _utc_now()
         docker_exec_failed = False
@@ -1687,9 +1741,29 @@ class DualContainerHost:
                 "productive_ops": [],
                 "status": exc.reason_code,
             }
+        try:
+            tool_delta = native.collect_tool_sidecar_evidence_delta(
+                self.paths["tool_events"],
+                prior_tool_cursor,
+                expected_episode_id=str(lease["episode_id"]),
+            )
+            trusted_hashes = list(tool_delta.get("trusted_event_hashes") or [])
+        except native.NativeSessionError as exc:
+            tool_delta = {"trusted_event_hashes": [], "status": exc.reason_code}
+            trusted_hashes = []
+            delta = {
+                **delta,
+                "productive_ops": [],
+                "status": str(exc.reason_code),
+                "evidence_reject": str(exc.reason_code),
+            }
         lab_manifest = self._scan_lab_artifact_manifest()
         try:
-            native.require_productive_lab_delta(delta)
+            native.require_productive_lab_delta(
+                delta,
+                trusted_event_hashes=trusted_hashes,
+                require_trusted_tool_chain=True,
+            )
             native.require_lab_effect_binding(
                 delta=delta,
                 lab_artifact_manifest=lab_manifest,
@@ -1701,6 +1775,8 @@ class DualContainerHost:
                 "productive_ops": [],
                 "status": str(getattr(exc, "reason_code", None) or "PRODUCTIVE_EVIDENCE_REJECTED"),
                 "evidence_reject": str(getattr(exc, "reason_code", None) or exc),
+                "trusted_tool_event_count": len(trusted_hashes),
+                "tool_sidecar_status": tool_delta.get("status"),
             }
         mcp_hashes = list(delta.get("mcp_event_hashes") or [])
         productive_ops = list(delta.get("productive_ops") or [])
@@ -2020,7 +2096,11 @@ def _synthetic_transport_inspect(lease: Mapping[str, Any]) -> dict[str, Any]:
             "SecurityOpt": ["no-new-privileges:true"],
         },
         "Mounts": [
-            {"Destination": "/grok-home/auth.json", "Source": "/host/auth/auth.json", "Type": "bind"},
+            {
+                "Destination": "/grok-home/auth.json",
+                "Source": "/host/auth/auth.json",
+                "Type": "bind",
+            },
             {"Destination": "/input", "Source": "/host/input", "Type": "bind"},
             {"Destination": "/output", "Source": "/host/output", "Type": "bind"},
             {"Destination": "/ipc", "Source": "/host/ipc", "Type": "bind"},
