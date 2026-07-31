@@ -348,22 +348,25 @@ def assert_owner_root_separated_from_pool(
             "OWNER_ROOT_POOL_NOT_SEPARATED",
             "owner_state_root must be path-separated from candidate pool root",
         )
+    # OwnerDispositionError subclasses ValueError — never catch it as "not nested".
     try:
         owner.relative_to(pool)
+    except ValueError:
+        pass
+    else:
         raise OwnerDispositionError(
             "OWNER_ROOT_NESTED_IN_POOL",
             "owner_state_root must not be nested under pool_root",
         )
-    except ValueError:
-        pass
     try:
         pool.relative_to(owner)
+    except ValueError:
+        pass
+    else:
         raise OwnerDispositionError(
             "POOL_NESTED_IN_OWNER_ROOT",
             "pool_root must not be nested under owner_state_root",
         )
-    except ValueError:
-        pass
 
 
 def _reject_unknown_keys(

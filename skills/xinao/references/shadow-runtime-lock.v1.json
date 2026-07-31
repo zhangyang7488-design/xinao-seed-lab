@@ -51,5 +51,5 @@
     "portfolio-feedback",
     "portfolio-replay"
   ],
-  "notes": "Locked leg-A shadow runtime cone embedded in the researcher image. Host skill launches ephemeral containers by exact image ID; only episode/portfolio state is writable. Source registration plus live image labels must both pass before AVAILABLE. Flat 0.2.0 verbs remain; portfolio-* verbs expose same-seat continuity already implemented in the consumer."
+  "notes": "Locked leg-A shadow runtime cone embedded in the researcher image. Host skill launches ephemeral containers by exact image ID; only episode/portfolio state is writable. Source registration plus live image labels must both pass before AVAILABLE. Public freeze and portfolio-freeze verbs fail closed; production freeze is prospective freeze-from-disposition. Inspect/settle/replay remain for sealed history; portfolio-* continuity verbs otherwise pass through to the same consumer."
 }

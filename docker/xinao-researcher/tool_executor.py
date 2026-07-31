@@ -12,6 +12,7 @@ Does not write Owner/science/account authority fields.
 from __future__ import annotations
 
 import argparse
+import importlib.util
 import json
 import os
 import re
@@ -24,6 +25,35 @@ import sys
 import tempfile
 from pathlib import Path
 from typing import Any, Mapping, Sequence
+
+
+def _bootstrap_sibling_module(module_name: str) -> None:
+    """Load one same-directory sibling module under python -I.
+
+    Isolated mode (-I) ignores PYTHONPATH and does not put the script directory
+    on sys.path, so bare ``import ipc_contract`` fails for the image ENTRYPOINT.
+    Only the resolved directory of this file is admitted, and only
+    ``<that-dir>/<module_name>.py`` may be loaded — no parent/cwd/env paths.
+    """
+    if module_name in sys.modules:
+        return
+    if not module_name.isidentifier() or "." in module_name:
+        raise ImportError(f"refusing non-simple sibling module name: {module_name!r}")
+    script_dir = Path(__file__).resolve().parent
+    sibling = (script_dir / f"{module_name}.py").resolve()
+    if sibling.parent != script_dir or sibling.name != f"{module_name}.py":
+        raise ImportError(f"sibling path escape denied: {sibling}")
+    if not sibling.is_file():
+        raise ImportError(f"sibling module missing: {sibling}")
+    spec = importlib.util.spec_from_file_location(module_name, sibling)
+    if spec is None or spec.loader is None:
+        raise ImportError(f"cannot load sibling module: {sibling}")
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[module_name] = module
+    spec.loader.exec_module(module)
+
+
+_bootstrap_sibling_module("ipc_contract")
 
 from ipc_contract import (
     EPISODE_LAB_ROOT,

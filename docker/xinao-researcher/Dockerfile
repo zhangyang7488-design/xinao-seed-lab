@@ -4,6 +4,7 @@ FROM ${PYTHON_BASE_IMAGE}
 
 ARG GROK_DONOR_IMAGE_ID
 ARG GROK_DONOR_BINARY_SHA256
+ARG GROK_CLI_VERSION
 ARG CHARTER_SHA256
 ARG OUTPUT_SCHEMA_SHA256
 ARG MATERIAL_BUNDLE_SCHEMA_SHA256
@@ -50,11 +51,16 @@ RUN printf '%s  %s\n' "${GROK_DONOR_BINARY_SHA256}" /usr/local/bin/grok \
     && printf '%s  %s\n' "${ENTRYPOINT_SHA256}" /opt/xinao-researcher/entrypoint.py \
     | sha256sum --check --strict - \
     && test "${REQUESTED_MODEL}" = "grok-4.5" \
+    && test -n "${GROK_CLI_VERSION}" \
     && test -n "${SHADOW_RUNTIME_TREE_SHA256}" \
     && test -n "${SHADOW_RUNTIME_LOCK_SHA256}" \
     && test -n "${RESEARCHER_IMAGE_MODULES_TREE_SHA256}" \
     && chmod 0555 /usr/local/bin/grok \
-    && /usr/local/bin/grok version \
+    && observed="$(/usr/local/bin/grok version 2>&1 | head -n1)" \
+    && echo "$observed" \
+    && parsed="$(printf '%s\n' "$observed" | sed -nE 's/.*\b([0-9]+\.[0-9]+\.[0-9]+)\b.*/\1/p' | head -n1)" \
+    && test -n "$parsed" \
+    && test "$parsed" = "${GROK_CLI_VERSION}" \
     && pip install --no-cache-dir --root-user-action=ignore \
         "pydantic==${SHADOW_PYDANTIC_VERSION}" \
         "rfc8785==${SHADOW_RFC8785_VERSION}" \

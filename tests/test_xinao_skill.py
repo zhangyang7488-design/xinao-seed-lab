@@ -690,6 +690,7 @@ def _fake_build_environment(
             assert "GROK_DONOR_IMAGE" not in args
             assert args.get("GROK_DONOR_IMAGE_ID") == donor_id
             assert args.get("GROK_DONOR_BINARY_SHA256") == donor_binary_sha256
+            assert args.get("GROK_CLI_VERSION") == str(lock["grok_cli_version"])
             context = Path(values[-1])
             binary = context / module.DONOR_BINARY_CONTEXT_RELATIVE
             assert binary.is_file()
@@ -721,6 +722,18 @@ def _fake_build_environment(
             return SimpleNamespace(stdout="", stderr="", returncode=0)
         if values[:2] == ["docker", "start"]:
             raise AssertionError(f"donor container must never start: {values}")
+        # Host-side fail-closed probe of the staged donor binary (never starts a container).
+        if len(values) == 2 and values[1] == "version":
+            binary = Path(values[0])
+            assert binary.is_file(), f"missing staged grok binary for version probe: {binary}"
+            # Always report the lock pin for unit-test donor stubs. Byte-level swaps remain
+            # fail-closed via DONOR_BINARY_TAMPERED / pre-build hash equality; mismatched
+            # real CLI versions are covered by dedicated version-mismatch tests.
+            return SimpleNamespace(
+                stdout=f"grok {lock['grok_cli_version']} (test-fake-binary)\n",
+                stderr="",
+                returncode=0,
+            )
         raise AssertionError(values)
 
     def fake_image(_docker: str, image: str) -> dict[str, object]:
@@ -1005,7 +1018,59 @@ def test_dockerfile_has_no_donor_from_or_raw_image_id_stage() -> None:
     assert "COPY donor-artifacts/grok" in dockerfile
     assert "GROK_DONOR_BINARY_SHA256" in dockerfile
     assert "ARG GROK_DONOR_IMAGE_ID" in dockerfile
+    assert "ARG GROK_CLI_VERSION" in dockerfile
+    assert 'test "$parsed" = "${GROK_CLI_VERSION}"' in dockerfile
     assert "io.xinao.researcher.grok-donor-binary.sha256" in dockerfile
+
+
+def test_require_staged_grok_cli_version_fail_closed(tmp_path: Path) -> None:
+    module = _module()
+    binary = tmp_path / "grok"
+    binary.write_bytes(b"#!/bin/sh\n")
+    binary.chmod(0o755)
+
+    def fake_run(arguments, **_kwargs):
+        values = list(arguments)
+        assert values == [str(binary), "version"]
+        return SimpleNamespace(stdout="grok 0.2.112 (deadbeef)\n", stderr="", returncode=0)
+
+    module._run = fake_run  # type: ignore[method-assign]
+    assert module._parse_grok_cli_version("grok 0.2.117 (f1c0609308)") == "0.2.117"
+    with pytest.raises(module.XinaoError) as failure:
+        module._require_staged_grok_cli_version(binary, expected_version="0.2.117")
+    assert failure.value.reason_code == "GROK_CLI_VERSION_MISMATCH"
+    assert "0.2.112" in failure.value.detail
+
+    def ok_run(arguments, **_kwargs):
+        return SimpleNamespace(stdout="grok 0.2.117 (f1c0609308)\n", stderr="", returncode=0)
+
+    module._run = ok_run  # type: ignore[method-assign]
+    assert module._require_staged_grok_cli_version(binary, expected_version="0.2.117") == "0.2.117"
+
+
+def test_build_rejects_donor_cli_version_mismatch(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    module = _module()
+    _state(module, tmp_path, monkeypatch)
+    env = _fake_build_environment(module, monkeypatch, dirty=True)
+    original_run = module._run
+
+    def mismatch_version_run(arguments, **kwargs):
+        values = list(arguments)
+        if len(values) == 2 and values[1] == "version":
+            return SimpleNamespace(
+                stdout="grok 0.2.112 (donor-mismatch)\n",
+                stderr="",
+                returncode=0,
+            )
+        return original_run(arguments, **kwargs)
+
+    monkeypatch.setattr(module, "_run", mismatch_version_run)
+    with pytest.raises(module.XinaoError) as failure:
+        module.build_release(ROOT, allow_dirty=True)
+    assert failure.value.reason_code == "GROK_CLI_VERSION_MISMATCH"
+    assert env["build_commands"] == []
 
 
 def test_build_is_candidate_only_and_passes_complete_image_identity(
@@ -1039,6 +1104,7 @@ def test_build_is_candidate_only_and_passes_complete_image_identity(
         "REQUESTED_MODEL=grok-4.5",
         f"GROK_DONOR_IMAGE_ID={donor_id}",
         f"GROK_DONOR_BINARY_SHA256={donor_binary_sha256}",
+        "GROK_CLI_VERSION=0.2.117",
     ):
         assert key in joined
     assert "GROK_DONOR_IMAGE=" not in joined
@@ -1049,6 +1115,9 @@ def test_build_is_candidate_only_and_passes_complete_image_identity(
     # time inside _fake_build_environment. Seal identities still bind the staged cone.
     assert "SHADOW_RUNTIME_TREE_SHA256=" in joined
     assert "SHADOW_RUNTIME_LOCK_SHA256=" in joined
+    assert receipt["grok_cli_version"] == "0.2.117"
+    assert receipt["grok_donor_image_id"] == donor_id
+    assert receipt["grok_donor_binary_sha256"] == donor_binary_sha256
     manifest = module._load_json(Path(receipt["release_manifest_path"]))
     module._validate_release_manifest(manifest, Path(receipt["release_manifest_path"]))
     assert manifest["source_identity"]["grok_donor_image_id"] == donor_id

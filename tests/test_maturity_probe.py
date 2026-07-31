@@ -116,7 +116,8 @@ def test_worker_image_has_fail_closed_unprivileged_bwrap_boundary() -> None:
         encoding="utf-8"
     )
     assert "bubblewrap" in dockerfile
-    assert "ARG GROK_CLI_VERSION=0.2.112" in dockerfile
+    assert "ARG GROK_CLI_VERSION=0.2.117" in dockerfile
+    assert 'test "$parsed" = "${GROK_CLI_VERSION}"' in dockerfile
     assert "mv /usr/bin/bwrap /usr/libexec/xinao/bwrap-real" in dockerfile
     assert "grok-bwrap-unprivileged-wrapper.sh /usr/bin/bwrap" in dockerfile
     assert "expected_caps=00000000000000c0" in wrapper

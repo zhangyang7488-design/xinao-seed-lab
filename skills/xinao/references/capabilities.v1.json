@@ -17,11 +17,24 @@
       "source_status": "available",
       "execution_boundary": "ephemeral_leg_a_container_in_researcher_image",
       "entrypoint": "scripts/xinao.py shadow",
-      "skill_verbs": ["init", "inspect", "status", "freeze", "settle", "replay", "portfolio-init", "portfolio-inspect", "portfolio-freeze", "portfolio-settle", "portfolio-feedback", "portfolio-replay"],
+      "skill_verbs": [
+        "init",
+        "inspect",
+        "status",
+        "freeze",
+        "settle",
+        "replay",
+        "portfolio-init",
+        "portfolio-inspect",
+        "portfolio-freeze",
+        "portfolio-settle",
+        "portfolio-feedback",
+        "portfolio-replay"
+      ],
       "network_mode": "none",
       "parent_completion_authority": false,
       "completion_claim_allowed": false,
-      "notes": "Installed Skill launches an ephemeral leg-A container from the active researcher image by exact image ID. Read-only rootfs, cap-drop ALL, no-new-privileges, network none; only the episode/portfolio state mount is writable. Source registration plus live image shadow labels must both pass before AVAILABLE. Legacy flat verbs remain; portfolio-* verbs pass through to the same consumer for multi-period continuity. Fixture/synthetic runs cannot claim FIRST_EPISODE_VERIFIED or parent completion. Account P&L never promotes scientific grade."
+      "notes": "Installed Skill launches an ephemeral leg-A container from the active researcher image by exact image ID. Read-only rootfs, cap-drop ALL, no-new-privileges, network none; only the episode/portfolio state mount is writable. Source registration plus live image shadow labels must both pass before AVAILABLE. Flat freeze and portfolio-freeze public verbs always fail closed (FLAT_FREEZE_NOT_PRODUCTION / PORTFOLIO_FREEZE_CLI_NOT_PRODUCTION); sole production freeze is xinao prospective freeze-from-disposition. Inspect/settle/replay remain for sealed historical objects. Fixture construction is tests-only. Account P&L never promotes scientific grade."
     },
     {
       "capability_id": "shadow-account",
@@ -37,7 +50,8 @@
       "source_status": "available",
       "implemented_by": "shadow-lifecycle-leg-a",
       "verb": "freeze",
-      "completion_claim_allowed": false
+      "completion_claim_allowed": false,
+      "notes": "Skill/CLI shadow freeze verb is fail-closed (FLAT_FREEZE_NOT_PRODUCTION). Production Owner freeze: packaged xinao prospective freeze-from-disposition only."
     },
     {
       "capability_id": "settlement",
@@ -57,7 +71,7 @@
     },
     {
       "capability_id": "research-episode",
-      "version": "0.1.1",
+      "version": "0.1.2",
       "source_status": "available",
       "execution_boundary": "host_dual_container_leg_a_no_daemon",
       "entrypoint": "scripts/xinao.py research-episode",
@@ -66,8 +80,13 @@
       "packaged_verbs": [
         "pool-ingest",
         "ingest-export",
+        "emit-research-feedback-pack",
         "feedback-bind",
         "bind-feedback-material"
+      ],
+      "packaged_owner_one_shot_related": [
+        "xinao prospective write-owner-disposition",
+        "xinao prospective freeze-from-disposition"
       ],
       "skill_verbs": [
         "start",
@@ -90,7 +109,7 @@
       "supported_grok_cli_version": "0.2.117",
       "parent_completion_authority": false,
       "completion_claim_allowed": false,
-      "notes": "Multi-turn ResearchEpisode. Preferred Owner pool/feedback consumers are packaged xinao-discovery console verbs (pool-ingest, feedback-bind) requiring installed package, not monorepo parents walk. Skill ingest-export/bind-feedback-material import installed xinao.science first. attach-run/resume-live require sealed dual images + tool-namespace receipt. Productive evidence is success-only (status=ok). absorb is deprecated local outbox and NOT pool admission. Codex alone adopts/disposes/freezes."
+      "notes": "Multi-turn ResearchEpisode. Preferred Owner pool/feedback consumers are packaged xinao-discovery console verbs (pool-ingest, emit-research-feedback-pack, feedback-bind) requiring installed package, not monorepo parents walk. Owner disposition write is packaged as xinao prospective write-owner-disposition (library write_owner_disposition_artifact). Compose: pool-ingest -> write-owner-disposition -> freeze-from-disposition -> settle -> emit-research-feedback-pack -> feedback-bind. Skill ingest-export/bind-feedback-material import installed xinao.science first. attach-run/resume-live require sealed dual images + tool-namespace receipt. Productive evidence is success-only (status=ok). absorb is deprecated local outbox and NOT pool admission. Codex alone adopts/disposes/freezes. Never auto-adopt/auto-freeze/auto-settle/auto-next."
     }
   ]
 }

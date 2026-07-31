@@ -1,7 +1,10 @@
-"""Owner one-shot prospective CLI surfaces (capture / reveal / freeze-from-disposition / canary).
+"""Owner one-shot prospective CLI surfaces.
 
-Packaged via ``xinao prospective …`` (project.scripts). One-shot only: no loop, poll,
-auto-freeze, auto-settle, next-period start, or daemon. Does not authenticate Codex.
+Packaged via ``xinao prospective …`` (project.scripts):
+capture / reveal / write-owner-disposition / freeze-from-disposition / canary.
+
+One-shot only: no loop, poll, auto-freeze, auto-settle, next-period start, or daemon.
+Does not authenticate Codex.
 """
 
 from __future__ import annotations
@@ -12,6 +15,12 @@ from pathlib import Path
 from typing import Any
 
 from xinao.science.freeze_adapter import FreezeAdapterError, apply_freeze_from_disposition
+from xinao.science.owner_disposition import (
+    OwnerDispositionError,
+    load_and_verify_disposition,
+    parse_disposition_json_strict,
+    write_owner_disposition_artifact,
+)
 from xinao.science.prospective_live_canary import run_live_source_canary
 from xinao.science.prospective_source_thin import (
     ProspectiveSourceError,
@@ -47,8 +56,8 @@ def add_prospective_parsers(groups: argparse._SubParsersAction[Any]) -> None:
     prospective = groups.add_parser(
         "prospective",
         help=(
-            "Owner one-shot macaujc2 capture/reveal/freeze-from-disposition "
-            "(not a daemon; does not authenticate Codex)"
+            "Owner one-shot macaujc2 capture/reveal/write-owner-disposition/"
+            "freeze-from-disposition (not a daemon; does not authenticate Codex)"
         ),
     )
     commands = prospective.add_subparsers(dest="command", required=True)
@@ -76,6 +85,43 @@ def add_prospective_parsers(groups: argparse._SubParsersAction[Any]) -> None:
         "--dry-run",
         action="store_true",
         help="Validate args only; do not fetch or write",
+    )
+
+    write_disp = commands.add_parser(
+        "write-owner-disposition",
+        help=(
+            "Write sealed Codex Owner disposition artifact under owner-state-root CAS. "
+            "Validates pool binding/hashes/role boundaries; never freezes/settles/adopts "
+            "or starts the next Episode. Does not authenticate Codex."
+        ),
+    )
+    write_disp.add_argument(
+        "--owner-state-root",
+        type=Path,
+        required=True,
+        help="Owner-selected state root for disposition CAS (must be path-separated from pool)",
+    )
+    write_disp.add_argument(
+        "--pool-root",
+        type=Path,
+        required=True,
+        help="Candidate pool root the disposition must bind",
+    )
+    write_disp.add_argument(
+        "--payload",
+        type=Path,
+        required=True,
+        help="Explicit sealed disposition payload JSON (no self-hash field)",
+    )
+    write_disp.add_argument(
+        "--expected-result-sha256",
+        default=None,
+        help="Optional caller-claimed result_sha256 that must match payload+pool entry",
+    )
+    write_disp.add_argument(
+        "--expected-pool-entry-content-hash",
+        default=None,
+        help="Optional caller-claimed pool_entry_content_hash that must match payload+pool",
     )
 
     freeze = commands.add_parser(
@@ -206,6 +252,9 @@ def dispatch_prospective(args: argparse.Namespace) -> int:
             )
             return 0 if result.get("ok") else 1
 
+        if args.command == "write-owner-disposition":
+            return _dispatch_write_owner_disposition(args)
+
         if args.command == "freeze-from-disposition":
             # Host UTC sampled inside apply_freeze_from_disposition (not CLI override).
             result = apply_freeze_from_disposition(
@@ -254,12 +303,86 @@ def dispatch_prospective(args: argparse.Namespace) -> int:
             return 0 if result.get("ok") else 1
 
         return _fail("UNKNOWN_PROSPECTIVE_COMMAND", str(args.command))
+    except OwnerDispositionError as exc:
+        return _fail(exc.reason_code, exc.detail)
     except ProspectiveSourceError as exc:
         return _fail(exc.reason_code, exc.detail)
     except FreezeAdapterError as exc:
         return _fail(exc.reason_code, exc.detail)
     except (ValueError, TypeError, KeyError, OSError) as exc:
         return _fail("PROSPECTIVE_CLI_ERROR", str(exc))
+
+
+def _dispatch_write_owner_disposition(args: argparse.Namespace) -> int:
+    """Seal disposition under Owner CAS; verify pool binding; never continue."""
+
+    payload_path = Path(args.payload)
+    if not payload_path.is_file():
+        return _fail("DISPOSITION_PAYLOAD_MISSING", str(payload_path))
+    raw = payload_path.read_bytes()
+    if not raw:
+        return _fail("DISPOSITION_PAYLOAD_EMPTY", str(payload_path))
+    payload = parse_disposition_json_strict(raw)
+
+    if args.expected_result_sha256 is not None:
+        claimed = payload.get("result_sha256")
+        if claimed != args.expected_result_sha256:
+            return _fail(
+                "DISPOSITION_RESULT_HASH_MISMATCH",
+                f"caller={args.expected_result_sha256} payload={claimed}",
+            )
+    if args.expected_pool_entry_content_hash is not None:
+        claimed_entry = payload.get("pool_entry_content_hash")
+        if claimed_entry != args.expected_pool_entry_content_hash:
+            return _fail(
+                "DISPOSITION_POOL_ENTRY_HASH_MISMATCH",
+                f"caller={args.expected_pool_entry_content_hash} payload={claimed_entry}",
+            )
+
+    written = write_owner_disposition_artifact(
+        owner_state_root=args.owner_state_root,
+        payload=payload,
+        pool_root=args.pool_root,
+    )
+    verified = load_and_verify_disposition(
+        disposition_path=Path(written["disposition_path"]),
+        owner_state_root=args.owner_state_root,
+        pool_root=args.pool_root,
+        result_sha256=args.expected_result_sha256,
+    )
+    _print(
+        {
+            "ok": True,
+            "command": "prospective write-owner-disposition",
+            "status": "OWNER_DISPOSITION_WRITTEN",
+            "disposition_path": written["disposition_path"],
+            "owner_artifact_sha256": written["owner_artifact_sha256"],
+            "owner_state_root": written["owner_state_root"],
+            "bytes_written": written["bytes_written"],
+            "result_sha256": verified["disposition"]["result_sha256"],
+            "pool_entry_content_hash": verified["disposition"]["pool_entry_content_hash"],
+            "period_index": verified["disposition"]["period_index"],
+            "science_disposition": verified["disposition"]["science_disposition"],
+            "account_identity": verified["disposition"]["account_identity"],
+            "owner_channel_authority": verified["owner_channel_authority"],
+            "owner_disposition_authentic": verified["owner_disposition_authentic"],
+            "path_separated_from_pool": verified["path_separated_from_pool"],
+            "physical_owner_write_isolation_verified": False,
+            "candidate_only": True,
+            "owner_adopted": False,
+            "freeze_written": False,
+            "settlement_written": False,
+            "auto_freeze": False,
+            "auto_settle": False,
+            "auto_next_period": False,
+            "next_task_created": False,
+            "completion_claim_allowed": False,
+            "science_restored": False,
+            "parent_complete": False,
+            "daemon": False,
+        }
+    )
+    return 0
 
 
 __all__ = ["add_prospective_parsers", "dispatch_prospective"]

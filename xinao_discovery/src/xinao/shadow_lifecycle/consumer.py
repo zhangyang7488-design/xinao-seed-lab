@@ -1439,9 +1439,25 @@ def build_parser() -> argparse.ArgumentParser:
     status_cmd = commands.add_parser("status", help="Alias of inspect")
     status_cmd.add_argument("--root", type=Path, required=True)
 
-    freeze_cmd = commands.add_parser("freeze", help="Pre-outcome freeze from request JSON")
+    _flat_freeze_help = (
+        "NON-PRODUCTION CLI surface: always returns FLAT_FREEZE_NOT_PRODUCTION "
+        "and never calls freeze_episode. Production Owner freeze: "
+        "xinao prospective freeze-from-disposition (host UTC + sealed disposition). "
+        "Inspect/settle/replay of already sealed historical episodes remain available. "
+        "Fixture construction stays under tests-only helpers."
+    )
+    freeze_cmd = commands.add_parser(
+        "freeze",
+        help=_flat_freeze_help,
+        description=_flat_freeze_help,
+    )
     freeze_cmd.add_argument("--root", type=Path, required=True)
-    freeze_cmd.add_argument("--request", type=Path, required=True)
+    freeze_cmd.add_argument(
+        "--request",
+        type=Path,
+        required=True,
+        help="Ignored: this CLI never performs production or fixture freeze",
+    )
 
     settle_cmd = commands.add_parser("settle", help="Once-only settle with explicit outcome JSON")
     settle_cmd.add_argument("--root", type=Path, required=True)
@@ -1527,7 +1543,18 @@ def dispatch(args: argparse.Namespace) -> dict[str, Any]:
     if args.command in {"inspect", "status"}:
         return inspect_episode(root=args.root)
     if args.command == "freeze":
-        return freeze_episode(root=args.root, request_path=args.request)
+        # Ordinary shadow freeze CLI is never a production freeze path and must not
+        # accept caller-authored frozen_at without Owner disposition authority.
+        # Production: prospective freeze-from-disposition (host UTC + sealed disposition).
+        # Library freeze_episode remains for tests-only fixtures and internal period writes.
+        raise StoreError(
+            "FLAT_FREEZE_NOT_PRODUCTION: "
+            "shadow freeze never accepts caller-authored frozen_at as production freeze. "
+            "Production path: xinao prospective freeze-from-disposition "
+            "(candidate pool + sealed Owner disposition + host UTC). "
+            "Historical inspect/settle/replay of sealed episodes remain available. "
+            "Fixture construction: tests-only helper under tests/."
+        )
     if args.command == "settle":
         return settle_episode(
             root=args.root,

@@ -34,16 +34,22 @@ COPY --chmod=0755 docker/houtai-gongren/grok-container-entrypoint.sh /usr/local/
 RUN /usr/local/bin/xinao-grok-entrypoint --xinao-entrypoint-probe \
     | grep -Fx 'xinao.grok_container_entrypoint.v1'
 
-# Official Grok Build CLI: exact cross-platform version, copied out of the
-# installer HOME so the runtime credential bind cannot hide the executable.
-ARG GROK_CLI_VERSION=0.2.112
+# Official Grok Build CLI: exact lock-pinned version from public x.ai/cli artifacts.
+# Auth/profile/session material is never baked; runtime mounts credentials outside layers.
+# This image is also the researcher transport donor for /usr/local/bin/grok extraction.
+ARG GROK_CLI_VERSION=0.2.117
 RUN set -eu; \
     export HOME=/opt/grok-installer GROK_BIN_DIR=/opt/grok-installer/bin; \
     mkdir -p "$HOME" "$GROK_BIN_DIR"; \
     curl -fsSL https://x.ai/cli/install.sh | bash -s "${GROK_CLI_VERSION}"; \
     install -m 0755 "$(readlink -f "$GROK_BIN_DIR/grok")" /usr/local/bin/grok; \
     rm -rf "$HOME"; \
-    /usr/local/bin/grok version
+    observed="$(/usr/local/bin/grok version 2>&1 | head -n1)"; \
+    echo "$observed"; \
+    parsed="$(printf '%s\n' "$observed" | sed -nE 's/.*\b([0-9]+\.[0-9]+\.[0-9]+)\b.*/\1/p' | head -n1)"; \
+    test -n "${GROK_CLI_VERSION}"; \
+    test -n "$parsed"; \
+    test "$parsed" = "${GROK_CLI_VERSION}"
 
 ENV OPA_VERSION=1.0.0
 RUN curl -fsSL -o /usr/local/bin/opa \

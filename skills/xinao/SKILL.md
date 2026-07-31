@@ -44,14 +44,20 @@ history. **No** auto-freeze, auto-settle, next-task, daemon, Temporal/leg-B, or 
 
 ### Packaged Owner consumers (preferred; sealed `xinao-discovery` install)
 
-Pool admission and feedback bind require the installed `xinao-discovery` package (console
-entry `xinao`), not a monorepo path walk. Fresh isolated wheel/venv is sufficient:
+Pool admission, Owner disposition write, feedback pack emit, and feedback bind require the
+installed `xinao-discovery` package (console entry `xinao`), not a monorepo path walk. Fresh
+isolated wheel/venv is sufficient. Compose one-shot only:
+
+`pool-ingest → write-owner-disposition → freeze-from-disposition → (settle) → emit-research-feedback-pack → feedback-bind`
 
 - `xinao research-episode pool-ingest --pool-root <pool> --export <export.json> --manifest <candidate_manifest.v1.json>`
+- `xinao prospective write-owner-disposition --owner-state-root <owner> --pool-root <pool> --payload <disposition.json>` — seals Owner disposition CAS; validates pool binding/hashes/role; never freezes/settles/adopts or starts next Episode
+- `xinao research-episode emit-research-feedback-pack --portfolio-root <portfolio> [--period-index N]` — emits sealed research feedback pack from settled state only; never auto-starts next research
 - `xinao research-episode feedback-bind --portfolio-root <portfolio> --feedback-content-hash <sha256>`
 
 Skill aliases (`ingest-export`, `bind-feedback-material`) resolve to the same package functions
-when the Skill runtime can import installed `xinao.science.*` first.
+when the Skill runtime can import installed `xinao.science.*` first. Disposition write and
+feedback emit remain package CLI one-shots (Codex invokes; worker/container candidate-only).
 
 ### Host Skill dual-container verbs (live attach; sealed images + tool-namespace receipt)
 
@@ -75,13 +81,13 @@ For shadow lifecycle, require `inspect` to report `shadow.runtime_status=AVAILAB
 registration, live image shadow labels, and `installed_projection.status=ALIGNED`). Then use the
 installed Skill only:
 
-Legacy flat (first-period / single-episode) verbs remain:
+Legacy flat (first-period / single-episode) consumer verbs:
 
 - `scripts/xinao.py shadow init --root <episode> --seat-id <id> --portfolio-ref <ref>`
 - `scripts/xinao.py shadow inspect|status --root <episode>`
-- `scripts/xinao.py shadow freeze --root <episode> --request <freeze.json>`
-- `scripts/xinao.py shadow settle --root <episode> --outcome <outcome.json>`
-- `scripts/xinao.py shadow replay --root <episode>`
+- `scripts/xinao.py shadow freeze --root <episode> --request <freeze.json>` — **always** `FLAT_FREEZE_NOT_PRODUCTION`; never accepts caller-authored `frozen_at` as production freeze. Not the Owner path.
+- `scripts/xinao.py shadow settle --root <episode> --outcome <outcome.json>` — settle already sealed historical/fixture freezes only
+- `scripts/xinao.py shadow replay --root <episode>` — replay already sealed historical/fixture episodes
 
 Same-seat portfolio continuity verbs (multi-period consumer surface; not scientific promotion):
 
@@ -92,18 +98,20 @@ Same-seat portfolio continuity verbs (multi-period consumer surface; not scienti
 - `scripts/xinao.py shadow portfolio-feedback --root <portfolio> --kind <FeedbackKind> [--feedback-ref <ref>] [--reason-code <code>] [--notes <text>]`
 - `scripts/xinao.py shadow portfolio-replay --root <portfolio> --period-index <n>`
 
-**Production Owner one-shot (packaged discovery CLI, not a daemon):**
+**Single production freeze path (packaged discovery CLI, not a daemon):**
 
 - `xinao prospective capture --authority-root <Owner auth root> --contract <AuthorityContract> --expected-contract-sha256 <hex>`
 - `xinao prospective reveal --authority-root <Owner auth root> --packet-content-hash <hex>`
-- `xinao prospective freeze-from-disposition --pool-root <pool> --owner-state-root <owner> --disposition <path> --portfolio-root <portfolio> --authority-root <auth>` — samples **host UTC at freeze** as authoritative freeze-action time (must be ≤ sealed packet/disposition deadline); no public `--owner-freeze-time` override
+- `xinao prospective write-owner-disposition --owner-state-root <owner> --pool-root <pool> --payload <disposition.json>` — exclusive CAS write under Owner-selected root; honest `owner_channel_authority=UNPROVEN_BY_LIBRARY`; never auto-continues
+- `xinao prospective freeze-from-disposition --pool-root <pool> --owner-state-root <owner> --disposition <path> --portfolio-root <portfolio> --authority-root <auth>` — **only** production freeze: binds candidate pool + sealed Owner disposition + samples **host UTC at freeze** as authoritative freeze-action time (must be ≤ sealed packet/disposition deadline); no public `--owner-freeze-time` override
+- `xinao research-episode emit-research-feedback-pack --portfolio-root <portfolio> [--period-index N] [--output <path>]` — post-settlement research material only
 - `xinao prospective canary --contract <…> --expected-contract-sha256 <hex> --i-accept-network-canary` (opt-in live shape probe only; no campaign state)
 
-Capture/reveal are one-shot; freeze is an explicit Codex Owner action via sealed disposition.
-Host freeze-action time is written onto FrozenEpisode/Ticket (disposition seal time kept as
-`disposition_frozen_at` on the research binding). These do **not** authenticate Codex (physical
-root isolation remains outside the library). Do not use shadow `portfolio-freeze` as production
-freeze advertising.
+Capture/reveal/disposition-write/feedback-emit are one-shot; freeze is an explicit Codex Owner
+action via sealed disposition. Host freeze-action time is written onto FrozenEpisode/Ticket
+(disposition seal time kept as `disposition_frozen_at` on the research binding). These do **not**
+authenticate Codex (physical root isolation remains outside the library). Do **not** use shadow
+`freeze` or `portfolio-freeze` as production freeze advertising; both fail closed.
 
 These shadow verbs run an ephemeral leg-A container from the active researcher image by exact image ID
 with read-only rootfs, dropped capabilities, no-new-privileges, and network none; only the episode

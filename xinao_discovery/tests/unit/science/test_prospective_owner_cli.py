@@ -25,7 +25,13 @@ def test_prospective_commands_packaged_in_xinao_parser() -> None:
     help_text = parser.format_help()
     assert "prospective" in help_text
     # Subcommands exist.
-    for cmd in ("capture", "reveal", "freeze-from-disposition", "canary"):
+    for cmd in (
+        "capture",
+        "reveal",
+        "write-owner-disposition",
+        "freeze-from-disposition",
+        "canary",
+    ):
         # Nested parse succeeds to the command level when dry-run args present.
         if cmd == "capture":
             args = parser.parse_args(
@@ -56,6 +62,20 @@ def test_prospective_commands_packaged_in_xinao_parser() -> None:
                 ]
             )
             assert args.command == "reveal"
+        elif cmd == "write-owner-disposition":
+            args = parser.parse_args(
+                [
+                    "prospective",
+                    "write-owner-disposition",
+                    "--owner-state-root",
+                    "o",
+                    "--pool-root",
+                    "p",
+                    "--payload",
+                    "d.json",
+                ]
+            )
+            assert args.command == "write-owner-disposition"
         elif cmd == "freeze-from-disposition":
             args = parser.parse_args(
                 [
@@ -139,6 +159,23 @@ def test_portfolio_freeze_cli_always_not_production(tmp_path: Path) -> None:
         shadow_dispatch(args)
 
 
+def test_flat_freeze_cli_always_not_production(tmp_path: Path) -> None:
+    """Legacy flat freeze is not a second production path (caller frozen_at rejected)."""
+
+    parser = shadow_build_parser()
+    args = parser.parse_args(
+        ["freeze", "--root", str(tmp_path), "--request", str(tmp_path / "r.json")]
+    )
+    with pytest.raises(StoreError, match="FLAT_FREEZE_NOT_PRODUCTION"):
+        shadow_dispatch(args)
+
+    # Packaged xinao shadow freeze also fails closed (exact old unsafe verb).
+    req = tmp_path / "unsafe_req.json"
+    req.write_text("{}", encoding="utf-8")
+    code = main(["shadow", "freeze", "--root", str(tmp_path / "ep"), "--request", str(req)])
+    assert code == 1
+
+
 def test_removed_public_flags_absent_from_parsers() -> None:
     """Both public CLI overrides removed: owner-freeze-time and allow-nonproduction-fixture-path."""
 
@@ -207,6 +244,7 @@ def test_fresh_process_cli_help_lists_prospective() -> None:
     )
     assert proc.returncode == 0, proc.stderr
     assert "capture" in proc.stdout
+    assert "write-owner-disposition" in proc.stdout
     assert "freeze-from-disposition" in proc.stdout
     assert "canary" in proc.stdout
 

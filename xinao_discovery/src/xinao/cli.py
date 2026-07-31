@@ -132,15 +132,24 @@ def build_parser() -> argparse.ArgumentParser:
     shadow_inspect.add_argument("--root", type=Path, required=True)
     shadow_status = shadow_commands.add_parser("status")
     shadow_status.add_argument("--root", type=Path, required=True)
+    _flat_freeze_help = (
+        "NON-PRODUCTION: always FLAT_FREEZE_NOT_PRODUCTION; never freezes. "
+        "Production Owner freeze: prospective freeze-from-disposition "
+        "(pool + sealed disposition + host UTC). "
+        "Historical inspect/settle/replay remain available."
+    )
     shadow_freeze = shadow_commands.add_parser(
         "freeze",
-        help=(
-            "Legacy flat episode freeze from request path only "
-            "(not production portfolio Owner freeze; use prospective freeze-from-disposition)"
-        ),
+        help=_flat_freeze_help,
+        description=_flat_freeze_help,
     )
     shadow_freeze.add_argument("--root", type=Path, required=True)
-    shadow_freeze.add_argument("--request", type=Path, required=True)
+    shadow_freeze.add_argument(
+        "--request",
+        type=Path,
+        required=True,
+        help="Ignored: this CLI never performs production or fixture freeze",
+    )
     shadow_settle = shadow_commands.add_parser("settle")
     shadow_settle.add_argument("--root", type=Path, required=True)
     shadow_settle.add_argument("--outcome", type=Path, required=True)
@@ -150,12 +159,13 @@ def build_parser() -> argparse.ArgumentParser:
     shadow_settle.add_argument("--occurred-at")
     shadow_replay = shadow_commands.add_parser("replay")
     shadow_replay.add_argument("--root", type=Path, required=True)
-    # Packaged Owner consumer for ResearchEpisode pool / feedback (no monorepo walk).
+    # Packaged Owner consumers for ResearchEpisode pool / feedback (no monorepo walk).
     research_episode = groups.add_parser(
         "research-episode",
         help=(
-            "Candidate-only ResearchEpisode pool ingest and feedback material bind "
-            "(installed xinao-discovery package; no Owner adopt/freeze/settle)"
+            "Candidate-only ResearchEpisode pool ingest, feedback pack emit, "
+            "and feedback material bind (installed xinao-discovery package; "
+            "no Owner adopt/freeze/settle/auto-next)"
         ),
     )
     re_commands = research_episode.add_subparsers(dest="command", required=True)
@@ -174,6 +184,36 @@ def build_parser() -> argparse.ArgumentParser:
     re_ingest_export.add_argument("--pool-root", type=Path, required=True)
     re_ingest_export.add_argument("--export", type=Path, required=True)
     re_ingest_export.add_argument("--manifest", type=Path, required=True)
+    re_emit_fb = re_commands.add_parser(
+        "emit-research-feedback-pack",
+        help=(
+            "Emit sealed research feedback pack from settled portfolio/episode "
+            "(Owner-selected root; never auto-starts next Episode or rewrites priors)"
+        ),
+    )
+    re_emit_fb.add_argument(
+        "--portfolio-root",
+        type=Path,
+        required=True,
+        help="Owner-selected portfolio/episode root with settled state",
+    )
+    re_emit_fb.add_argument(
+        "--period-index",
+        type=int,
+        default=None,
+        help="Optional settled period index (default: latest settled)",
+    )
+    re_emit_fb.add_argument(
+        "--output",
+        type=Path,
+        default=None,
+        help="Optional explicit output path (must be outside period cone; default CAS)",
+    )
+    re_emit_fb.add_argument(
+        "--require-account-feedback",
+        action="store_true",
+        help="Fail closed unless account feedback is already sealed",
+    )
     re_feedback = re_commands.add_parser(
         "feedback-bind",
         help="Bind sealed feedback pack as later episode material (input-only)",
@@ -268,6 +308,75 @@ def _cli_research_episode_feedback_bind(
     }
 
 
+def _cli_research_episode_emit_feedback_pack(
+    *,
+    portfolio_root: Path,
+    period_index: int | None = None,
+    output_path: Path | None = None,
+    require_account_feedback: bool = False,
+) -> dict[str, object]:
+    from xinao.science.research_feedback_pack import emit_research_feedback_pack
+
+    emitted = emit_research_feedback_pack(
+        portfolio_root=portfolio_root,
+        period_index=period_index,
+        output_path=output_path,
+        require_account_feedback=require_account_feedback,
+    )
+    pack = dict(emitted.get("pack") or {})
+    return {
+        "ok": True,
+        "command": "research-episode emit-research-feedback-pack",
+        "status": "RESEARCH_FEEDBACK_PACK_EMITTED",
+        "pack_ref": emitted.get("pack_ref"),
+        "content_hash": emitted.get("content_hash"),
+        "path": emitted.get("path"),
+        "period_index": emitted.get("period_index"),
+        "cas_path": emitted.get("cas_path"),
+        "period_cone_artifact": emitted.get("period_cone_artifact", False),
+        "prior_research_binding_sha256": emitted.get("prior_research_binding_sha256"),
+        "prior_result_sha256": pack.get("prior_result_sha256"),
+        "scientific_promotion": False,
+        "future_outcome_access": False,
+        "auto_start_next_research": False,
+        "auto_next_period_freeze": False,
+        "next_task_created": False,
+        "freeze_written": False,
+        "settlement_written": False,
+        "disposition_written": False,
+        "owner_adopted": False,
+        "candidate_only": True,
+        "completion_claim_allowed": False,
+        "science_restored": False,
+        "parent_complete": False,
+        "daemon": False,
+    }
+
+
+def _cli_research_episode_fail(reason: str, detail: str = "") -> int:
+    print(
+        json.dumps(
+            {
+                "ok": False,
+                "error": f"{reason}: {detail}" if detail else reason,
+                "reason_code": reason,
+                "completion_claim_allowed": False,
+                "parent_complete": False,
+                "auto_start_next_research": False,
+                "auto_next_period_freeze": False,
+                "auto_freeze": False,
+                "auto_settle": False,
+                "next_task_created": False,
+                "owner_adopted": False,
+                "daemon": False,
+            },
+            ensure_ascii=False,
+            sort_keys=True,
+        )
+    )
+    return 1
+
+
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     # wave46 packaged ResearchEpisode Owner consumers (candidate-only clamp).
@@ -280,6 +389,22 @@ def main(argv: list[str] | None = None) -> int:
             export_path=args.export,
             manifest_path=args.manifest,
         )
+        print(json.dumps(result, ensure_ascii=False, sort_keys=True, default=str))
+        return 0
+    if args.group == "research-episode" and args.command == "emit-research-feedback-pack":
+        from xinao.science.research_feedback_pack import ResearchFeedbackPackError
+
+        try:
+            result = _cli_research_episode_emit_feedback_pack(
+                portfolio_root=args.portfolio_root,
+                period_index=args.period_index,
+                output_path=args.output,
+                require_account_feedback=bool(args.require_account_feedback),
+            )
+        except ResearchFeedbackPackError as exc:
+            return _cli_research_episode_fail(exc.reason_code, exc.detail)
+        except (ValueError, TypeError, KeyError, OSError) as exc:
+            return _cli_research_episode_fail("FEEDBACK_PACK_CLI_ERROR", str(exc))
         print(json.dumps(result, ensure_ascii=False, sort_keys=True, default=str))
         return 0
     if args.group == "research-episode" and args.command in {

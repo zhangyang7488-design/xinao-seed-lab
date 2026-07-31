@@ -2153,6 +2153,45 @@ def _verify_staged_tool_executor_build(
         )
 
 
+def _parse_grok_cli_version(version_text: str | None) -> str | None:
+    """Extract x.y.z from `grok version` output (host-side seal helper)."""
+    if not version_text:
+        return None
+    match = re.search(r"\b(\d+\.\d+\.\d+)\b", str(version_text))
+    return match.group(1) if match else None
+
+
+def _require_lock_grok_cli_version(runtime_lock: dict[str, Any]) -> str:
+    """Return the lock-pinned Grok CLI version or fail closed."""
+    expected = runtime_lock.get("grok_cli_version")
+    if not isinstance(expected, str) or re.fullmatch(r"\d+\.\d+\.\d+", expected) is None:
+        raise XinaoError("RUNTIME_LOCK_GROK_CLI_VERSION_INVALID", _safe_text(expected))
+    return expected
+
+
+def _probe_grok_binary_version_text(binary_path: Path) -> str:
+    """Execute staged/built grok binary `version` without auth/network assumptions."""
+    completed = _run([str(binary_path), "version"], timeout=60)
+    combined = f"{completed.stdout or ''}{completed.stderr or ''}".strip()
+    if not combined:
+        raise XinaoError("GROK_CLI_VERSION_PROBE_EMPTY", str(binary_path))
+    return combined.splitlines()[0].strip()[:200]
+
+
+def _require_staged_grok_cli_version(binary_path: Path, *, expected_version: str) -> str:
+    """Fail closed unless staged binary reports exact lock equality."""
+    if re.fullmatch(r"\d+\.\d+\.\d+", expected_version) is None:
+        raise XinaoError("RUNTIME_LOCK_GROK_CLI_VERSION_INVALID", expected_version)
+    version_text = _probe_grok_binary_version_text(binary_path)
+    parsed = _parse_grok_cli_version(version_text)
+    if parsed != expected_version:
+        raise XinaoError(
+            "GROK_CLI_VERSION_MISMATCH",
+            f"required={expected_version} observed={version_text!r}",
+        )
+    return parsed
+
+
 def _prepare_donor_binary_staging(
     docker: str,
     *,
@@ -4156,6 +4195,14 @@ def _source_versions(
         raise XinaoError("RESEARCHER_VERSION_IDENTITY_MISMATCH", capability_version)
     if runtime_lock.get("generic_worker_route_allowed") is not False:
         raise XinaoError("GENERIC_WORKER_ROUTE_NOT_FORBIDDEN", str(runtime_lock))
+    lock_cli = _require_lock_grok_cli_version(runtime_lock)
+    researcher = _researcher_record(registry)
+    supported_cli = researcher.get("supported_grok_cli_version")
+    if supported_cli is not None and supported_cli != lock_cli:
+        raise XinaoError(
+            "GROK_CLI_VERSION_CAPABILITY_MISMATCH",
+            f"lock={lock_cli} capabilities={supported_cli!r}",
+        )
     return registry, charter, runtime_lock, package_version, capability_version
 
 
@@ -4287,6 +4334,7 @@ def build_release(
     _docker_engine_os(docker)
     donor = str(runtime_lock.get("grok_donor_image", ""))
     expected_donor_id = str(runtime_lock.get("grok_donor_image_id", ""))
+    expected_grok_cli_version = _require_lock_grok_cli_version(runtime_lock)
     # Inspect the lock's donor tag once and require the exact lock-pinned full image Id.
     # Never re-resolve that mutable tag for Dockerfile FROM (SP-B-001); raw local Id is also
     # unbuildable as FROM under BuildKit, so extract the binary via never-started create/cp.
@@ -4301,6 +4349,7 @@ def build_release(
     container_name: str | None = None
     staging_root: Path | None = None
     tool_staging_root: Path | None = None
+    observed_grok_cli_version: str | None = None
     try:
         (
             donor_binary_sha256,
@@ -4316,6 +4365,12 @@ def build_release(
         # start it. Staging remains until build completes.
         _remove_donor_extract_container(docker, container_name)
         container_name = None
+        # Fail closed on CLI version before any transport image seal/build proceeds.
+        binary_path = build_context / DONOR_BINARY_CONTEXT_RELATIVE
+        observed_grok_cli_version = _require_staged_grok_cli_version(
+            binary_path,
+            expected_version=expected_grok_cli_version,
+        )
         # Dockerfile COPYs shadow-runtime/ from this owned context; stage the locked cone
         # only (never the full repository), then re-hash the staged bytes before build.
         _stage_shadow_runtime(build_context, shadow_rows)
@@ -4389,6 +4444,11 @@ def build_release(
                 "DONOR_BINARY_TAMPERED",
                 f"expected={donor_binary_sha256} observed={pre_build_sha256}",
             )
+        # Re-probe version on the exact pre-build bytes path so seal cannot race a swap.
+        observed_grok_cli_version = _require_staged_grok_cli_version(
+            binary_path,
+            expected_version=expected_grok_cli_version,
+        )
         build_args = [
             docker,
             "build",
@@ -4400,6 +4460,8 @@ def build_release(
             f"GROK_DONOR_IMAGE_ID={observed_donor_id}",
             "--build-arg",
             f"GROK_DONOR_BINARY_SHA256={donor_binary_sha256}",
+            "--build-arg",
+            f"GROK_CLI_VERSION={expected_grok_cli_version}",
             "--build-arg",
             f"CHARTER_SHA256={hashes['charter_sha256']}",
             "--build-arg",
@@ -4632,6 +4694,11 @@ def build_release(
                     shutil.rmtree(staging)
                 raise
             _validate_release_manifest(manifest, manifest_path)
+    if observed_grok_cli_version != expected_grok_cli_version:
+        raise XinaoError(
+            "GROK_CLI_VERSION_MISMATCH",
+            f"required={expected_grok_cli_version} observed={observed_grok_cli_version!r}",
+        )
     return {
         "schema_version": "xinao.researcher_build_receipt.v2",
         "status": "CANDIDATE_BUILT",
@@ -4646,6 +4713,10 @@ def build_release(
         "source_dirty": bool(status),
         "activated": False,
         "completion_claim_allowed": False,
+        # Bind donor identity + exact CLI version observed on the staged binary.
+        "grok_donor_image_id": observed_donor_id,
+        "grok_donor_binary_sha256": donor_binary_sha256,
+        "grok_cli_version": observed_grok_cli_version,
     }
 
 
@@ -12167,6 +12238,25 @@ def run_shadow(
 ) -> dict[str, Any]:
     if verb not in SHADOW_SKILL_VERBS:
         raise XinaoError("SHADOW_VERB_INVALID", verb)
+    # Public freeze verbs are never production Owner freeze. Fail closed before Docker
+    # so Skill does not advertise a second authority-free freeze path with caller time.
+    if verb == "freeze":
+        raise XinaoError(
+            "FLAT_FREEZE_NOT_PRODUCTION",
+            "shadow freeze never accepts caller-authored frozen_at as production freeze. "
+            "Production path: xinao prospective freeze-from-disposition "
+            "(candidate pool + sealed Owner disposition + host UTC). "
+            "Historical inspect/settle/replay of sealed episodes remain available. "
+            "Fixture construction: tests-only helper under tests/.",
+        )
+    if verb == "portfolio-freeze":
+        raise XinaoError(
+            "PORTFOLIO_FREEZE_CLI_NOT_PRODUCTION",
+            "shadow portfolio-freeze never calls freeze_portfolio_period. "
+            "Production path: xinao prospective freeze-from-disposition "
+            "(authority-root + owner-state-root + disposition + portfolio-root). "
+            "Fixture construction: tests-only helper under tests/.",
+        )
     docker, release, context, fence = _require_shadow_ready()
     image_id = str(release["image_id"])
     episode_root = root.expanduser().resolve()
@@ -12190,18 +12280,6 @@ def run_shadow(
         module_argv.extend(["--seat-id", seat_id, "--portfolio-ref", portfolio_ref])
         if opening_balance is not None:
             module_argv.extend(["--opening-balance", opening_balance])
-    elif verb in {"freeze", "portfolio-freeze"}:
-        if request is None or not request.is_file():
-            raise XinaoError("SHADOW_REQUEST_MISSING", str(request))
-        input_root = work / "input"
-        input_root.mkdir(parents=True, exist_ok=False)
-        target = input_root / "request.json"
-        target.write_bytes(
-            _regular_file_bytes(
-                request, reason_code="SHADOW_REQUEST_INVALID", maximum=MAX_JSON_FILE_BYTES
-            )
-        )
-        module_argv.extend(["--request", f"{SHADOW_INPUT_CONTAINER_ROOT}/request.json"])
     elif verb in {"settle", "portfolio-settle"}:
         if outcome is None or not outcome.is_file():
             raise XinaoError("SHADOW_OUTCOME_MISSING", str(outcome))
@@ -12391,9 +12469,20 @@ def _parser() -> argparse.ArgumentParser:
     shadow_inspect.add_argument("--root", type=Path, required=True)
     shadow_status = shadow_sub.add_parser("status")
     shadow_status.add_argument("--root", type=Path, required=True)
-    shadow_freeze = shadow_sub.add_parser("freeze")
+    shadow_freeze = shadow_sub.add_parser(
+        "freeze",
+        help=(
+            "NON-PRODUCTION: always FLAT_FREEZE_NOT_PRODUCTION. "
+            "Production freeze: xinao prospective freeze-from-disposition."
+        ),
+    )
     shadow_freeze.add_argument("--root", type=Path, required=True)
-    shadow_freeze.add_argument("--request", type=Path, required=True)
+    shadow_freeze.add_argument(
+        "--request",
+        type=Path,
+        required=True,
+        help="Ignored: this Skill verb never performs production freeze",
+    )
     shadow_settle = shadow_sub.add_parser("settle")
     shadow_settle.add_argument("--root", type=Path, required=True)
     shadow_settle.add_argument("--outcome", type=Path, required=True)
@@ -12410,9 +12499,20 @@ def _parser() -> argparse.ArgumentParser:
     shadow_portfolio_init.add_argument("--opening-balance", default=None)
     shadow_portfolio_inspect = shadow_sub.add_parser("portfolio-inspect")
     shadow_portfolio_inspect.add_argument("--root", type=Path, required=True)
-    shadow_portfolio_freeze = shadow_sub.add_parser("portfolio-freeze")
+    shadow_portfolio_freeze = shadow_sub.add_parser(
+        "portfolio-freeze",
+        help=(
+            "NON-PRODUCTION: always PORTFOLIO_FREEZE_CLI_NOT_PRODUCTION. "
+            "Production freeze: xinao prospective freeze-from-disposition."
+        ),
+    )
     shadow_portfolio_freeze.add_argument("--root", type=Path, required=True)
-    shadow_portfolio_freeze.add_argument("--request", type=Path, required=True)
+    shadow_portfolio_freeze.add_argument(
+        "--request",
+        type=Path,
+        required=True,
+        help="Ignored: this Skill verb never performs production freeze",
+    )
     shadow_portfolio_settle = shadow_sub.add_parser("portfolio-settle")
     shadow_portfolio_settle.add_argument("--root", type=Path, required=True)
     shadow_portfolio_settle.add_argument("--outcome", type=Path, required=True)
