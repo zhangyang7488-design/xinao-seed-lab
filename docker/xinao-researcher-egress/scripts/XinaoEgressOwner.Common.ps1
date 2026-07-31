@@ -1575,6 +1575,29 @@ function Remove-XinaoExactRawFile {
     return $true
 }
 
+function ConvertTo-XinaoCanonicalCanaryStopReason {
+    [CmdletBinding()]
+    param(
+        [AllowEmptyString()]
+        [AllowNull()]
+        [string]$StopReason
+    )
+    # Closed, auditable EndTurn orthography only. Live Grok CLI headless JSON has
+    # been observed to emit stopReason=end_turn while fixtures/historical receipts
+    # use EndTurn; camel/lower forms are admitted as the same terminal class.
+    # Does NOT casefold-accept arbitrary strings (e.g. cancelled / max_tokens stay reject).
+    if ($null -eq $StopReason -or [string]::IsNullOrWhiteSpace($StopReason)) {
+        return $null
+    }
+    switch -Exact -CaseSensitive ($StopReason.Trim()) {
+        'EndTurn' { return 'EndTurn' }
+        'endTurn' { return 'EndTurn' }
+        'end_turn' { return 'EndTurn' }
+        'endturn' { return 'EndTurn' }
+        default { return $null }
+    }
+}
+
 function ConvertFrom-XinaoGrokCliJsonText {
     [CmdletBinding()]
     param(
@@ -1669,9 +1692,21 @@ function ConvertFrom-XinaoGrokCliJsonText {
         }
     }
 
-    $stopReason = $null
+    $stopReasonRaw = $null
     if ($null -ne $payload.PSObject.Properties['stopReason']) {
-        $stopReason = [string]$payload.stopReason
+        $stopReasonRaw = [string]$payload.stopReason
+    } elseif ($null -ne $payload.PSObject.Properties['stop_reason']) {
+        # Defensive: some event shapes use snake_case key; value still closed-mapped.
+        $stopReasonRaw = [string]$payload.stop_reason
+    }
+    $stopReasonCanonical = ConvertTo-XinaoCanonicalCanaryStopReason -StopReason $stopReasonRaw
+    # Receipt/meta expose canonical EndTurn on accept; raw non-EndTurn values stay visible on reject.
+    $stopReason = if ($null -ne $stopReasonCanonical) {
+        $stopReasonCanonical
+    } elseif ([string]::IsNullOrWhiteSpace($stopReasonRaw)) {
+        $null
+    } else {
+        $stopReasonRaw.Trim()
     }
     $sessionPresent = $false
     if ($null -ne $payload.PSObject.Properties['sessionId'] -and -not [string]::IsNullOrWhiteSpace([string]$payload.sessionId)) {
@@ -1748,7 +1783,7 @@ function ConvertFrom-XinaoGrokCliJsonText {
 
     $reason = $null
     $ok = $true
-    if ($stopReason -ne 'EndTurn') {
+    if ($stopReasonCanonical -ne 'EndTurn') {
         $ok = $false
         $reason = 'STOP_REASON_NOT_ENDTURN'
     } elseif ($observedBackend -ne $script:XinaoCanaryObservedBackendModel) {
@@ -2416,9 +2451,12 @@ function New-XinaoEngineeringCanarySealReceipt {
     if ($receipt.observed_backend_model -ne $script:XinaoCanaryObservedBackendModel) {
         throw 'EGRESS_CANARY_BACKEND_MODEL_MISMATCH'
     }
-    if ($receipt.stop_reason -ne 'EndTurn') {
+    $receiptStopCanonical = ConvertTo-XinaoCanonicalCanaryStopReason -StopReason ([string]$receipt.stop_reason)
+    if ($receiptStopCanonical -ne 'EndTurn') {
         throw 'EGRESS_CANARY_STOP_REASON_INVALID'
     }
+    # Seal receipt always carries the single canonical token for strict consumers.
+    $receipt.stop_reason = 'EndTurn'
     if ($receipt.usage_accounting_complete -ne $true -or [int]$receipt.output_tokens -le 0) {
         throw 'EGRESS_CANARY_USAGE_INCOMPLETE'
     }

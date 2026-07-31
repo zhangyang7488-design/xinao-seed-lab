@@ -1638,11 +1638,16 @@ def test_canary_execute_label_admission_mocked_docker(tmp_path: Path) -> None:
 def test_cli_fixture_parse_matrix() -> None:
     common = (SCRIPTS / "XinaoEgressOwner.Common.ps1").as_posix()
     cases = [
+        # Positives: historical PascalCase + live snake_case both canonicalize to EndTurn.
         ("ok_endturn.json", True, None, True),
+        ("ok_end_turn_snake.json", True, None, True),
         ("wrong_model.json", False, "OBSERVED_BACKEND_MODEL_MISMATCH", True),
         ("zero_output_tokens.json", False, "OUTPUT_TOKENS_NOT_POSITIVE", False),
         ("incomplete_usage.json", False, "USAGE_ACCOUNTING_INCOMPLETE", False),
+        # Reject non-EndTurn terminals even when usage/model would otherwise pass.
         ("timeout_cancelled.json", False, "STOP_REASON_NOT_ENDTURN", False),
+        ("max_tokens_stop.json", False, "STOP_REASON_NOT_ENDTURN", True),
+        ("tool_use_stop.json", False, "STOP_REASON_NOT_ENDTURN", True),
         ("auth_path_leak.json", False, "CLI_OUTPUT_SECRET_LEAK", False),
         # W9D-B01: primary usage.output_tokens=0 must not be inflated from modelUsage.
         ("usage_zero_output_modelusage_positive.json", False, "OUTPUT_TOKENS_NOT_POSITIVE", False),
@@ -1687,6 +1692,53 @@ def test_cli_fixture_parse_matrix() -> None:
             assert meta["usage_accounting_complete"] is False
         # Never echo model text body as a field.
         assert "text" not in meta or meta.get("text_persisted") is False
+
+
+@requires_pwsh
+def test_canonical_canary_stop_reason_closed_map() -> None:
+    """WAVE123A: closed EndTurn orthography only; other terminals fail closed."""
+    common = (SCRIPTS / "XinaoEgressOwner.Common.ps1").as_posix()
+    cmd = textwrap.dedent(
+        f"""
+        . '{common}'
+        $accepted = @('EndTurn', 'end_turn', 'endTurn', 'endturn')
+        $rejected = @('Cancelled', 'MaxTokens', 'tool_use', 'END_TURN', 'end-turn', 'end turn', '')
+        $out = [ordered]@{{
+          accepted = [System.Collections.Generic.List[string]]::new()
+          rejected = [System.Collections.Generic.List[string]]::new()
+        }}
+        foreach ($v in $accepted) {{
+          $c = ConvertTo-XinaoCanonicalCanaryStopReason -StopReason $v
+          if ($c -ne 'EndTurn') {{ throw ("accepted variant failed: " + $v + " -> " + $c) }}
+          $out.accepted.Add($v) | Out-Null
+        }}
+        foreach ($v in $rejected) {{
+          $c = ConvertTo-XinaoCanonicalCanaryStopReason -StopReason $v
+          if ($null -ne $c) {{ throw ("rejected variant leaked: " + $v + " -> " + $c) }}
+          $out.rejected.Add($(if ($null -eq $v) {{ '<null>' }} else {{ $v }})) | Out-Null
+        }}
+        # Live snake fixture must parse ok and emit canonical EndTurn without relaxing other gates.
+        $snake = ConvertFrom-XinaoGrokCliJsonText -JsonText (Get-Content -LiteralPath '{(FIXTURE_CLI / "ok_end_turn_snake.json").as_posix()}' -Raw)
+        if ($snake.ok -ne $true) {{ throw ('snake fixture not ok: ' + $snake.reason_code) }}
+        if ($snake.stop_reason -ne 'EndTurn') {{ throw ('snake not canonicalized: ' + $snake.stop_reason) }}
+        if ([int]$snake.output_tokens -ne 51) {{ throw ('snake tokens wrong: ' + $snake.output_tokens) }}
+        $pascal = ConvertFrom-XinaoGrokCliJsonText -JsonText (Get-Content -LiteralPath '{(FIXTURE_CLI / "ok_endturn.json").as_posix()}' -Raw)
+        if ($pascal.ok -ne $true -or $pascal.stop_reason -ne 'EndTurn') {{ throw 'pascal fixture regression' }}
+        $maxTok = ConvertFrom-XinaoGrokCliJsonText -JsonText (Get-Content -LiteralPath '{(FIXTURE_CLI / "max_tokens_stop.json").as_posix()}' -Raw)
+        if ($maxTok.ok -eq $true -or $maxTok.reason_code -ne 'STOP_REASON_NOT_ENDTURN') {{ throw 'MaxTokens must fail closed' }}
+        if ($maxTok.stop_reason -ne 'MaxTokens') {{ throw ('MaxTokens raw lost: ' + $maxTok.stop_reason) }}
+        $toolUse = ConvertFrom-XinaoGrokCliJsonText -JsonText (Get-Content -LiteralPath '{(FIXTURE_CLI / "tool_use_stop.json").as_posix()}' -Raw)
+        if ($toolUse.ok -eq $true -or $toolUse.reason_code -ne 'STOP_REASON_NOT_ENDTURN') {{ throw 'tool_use must fail closed' }}
+        $out | ConvertTo-Json -Compress
+        """
+    )
+    proc = _run_pwsh_command(cmd)
+    assert proc.returncode == 0, proc.stderr + proc.stdout
+    body = json.loads(proc.stdout.strip().splitlines()[-1])
+    assert "EndTurn" in body["accepted"]
+    assert "end_turn" in body["accepted"]
+    assert "Cancelled" in body["rejected"]
+    assert "MaxTokens" in body["rejected"]
 
 
 @requires_pwsh

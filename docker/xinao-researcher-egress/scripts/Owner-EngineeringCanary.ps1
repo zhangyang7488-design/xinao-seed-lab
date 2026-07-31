@@ -622,11 +622,17 @@ try {
             $rawPersisted = Test-Path -LiteralPath $rawFile -PathType Leaf
         }
 
+        # stop_reason: parser already closed-maps EndTurn orthography (EndTurn/end_turn/...).
+        # Re-check via the same helper so effect gate cannot drift from ConvertFrom-XinaoGrokCliJsonText.
+        $canonicalStop = $null
+        if ($null -ne $meta) {
+            $canonicalStop = ConvertTo-XinaoCanonicalCanaryStopReason -StopReason ([string]$meta.stop_reason)
+        }
         $effectOk = (
             $null -ne $meta -and
             $meta.ok -eq $true -and
             $dockerExit -eq 0 -and
-            $meta.stop_reason -eq 'EndTurn' -and
+            $canonicalStop -eq 'EndTurn' -and
             $meta.observed_backend_model -eq $script:XinaoCanaryObservedBackendModel -and
             [bool]$meta.usage_accounting_complete -and
             [int]$meta.output_tokens -gt 0 -and
