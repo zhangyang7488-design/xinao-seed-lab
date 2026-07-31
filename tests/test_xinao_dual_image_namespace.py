@@ -90,11 +90,21 @@ def _fake_tool_inspect(
     cmd: list[str] | None = None,
     extra_mounts: list[dict[str, str]] | None = None,
     env: list[str] | None = None,
+    sidecar: str | None = None,
 ) -> dict[str, Any]:
     mounts = [
         {"Destination": "/episode-lab", "Source": lab, "Type": "bind", "Mode": "rw"},
         {"Destination": "/ipc", "Source": ipc, "Type": "bind", "Mode": "rw"},
     ]
+    if sidecar:
+        mounts.append(
+            {
+                "Destination": "/sidecar-evidence",
+                "Source": sidecar,
+                "Type": "bind",
+                "Mode": "rw",
+            }
+        )
     if extra_mounts:
         mounts.extend(extra_mounts)
     if entrypoint is None:
@@ -119,6 +129,8 @@ def _fake_tool_inspect(
             "XINAO_IPC_PEER_REQUIRE=1",
             "XINAO_IPC_PEER_UIDS=",
             "XINAO_REPLAY_STATE_DIR=/ipc/.xinao-replay",
+            "XINAO_TOOL_SIDECAR_EVIDENCE_DIR=/sidecar-evidence",
+            "XINAO_TOOL_SIDECAR_EVENTS_PATH=/sidecar-evidence/tool_events.jsonl",
         ]
     return {
         "Id": cid,
@@ -137,6 +149,74 @@ def _fake_tool_inspect(
         "HostConfig": {
             "NetworkMode": "none",
             "ReadonlyRootfs": True,
+            "CapDrop": ["ALL"],
+            "SecurityOpt": ["no-new-privileges:true"],
+        },
+        "Mounts": mounts,
+    }
+
+
+def _fake_transport_inspect(
+    *,
+    image_id: str,
+    cid: str,
+    auth: str,
+    lab_input: str,
+    lab_output: str,
+    ipc: str,
+    entrypoint: list[str] | None = None,
+    cmd: list[str] | None = None,
+) -> dict[str, Any]:
+    mounts = [
+        {
+            "Destination": "/grok-home/auth.json",
+            "Source": auth,
+            "Type": "bind",
+            "Mode": "ro",
+            "RW": False,
+        },
+        {
+            "Destination": "/input",
+            "Source": lab_input,
+            "Type": "bind",
+            "Mode": "ro",
+            "RW": False,
+        },
+        {
+            "Destination": "/output",
+            "Source": lab_output,
+            "Type": "bind",
+            "Mode": "rw",
+            "RW": True,
+        },
+        {"Destination": "/ipc", "Source": ipc, "Type": "bind", "Mode": "rw", "RW": True},
+    ]
+    if entrypoint is None:
+        entrypoint = ["python", "-I", "-c"]
+    if cmd is None:
+        cmd = ["import time; time.sleep(3600)"]
+    return {
+        "Id": cid,
+        "Image": image_id,
+        "Config": {
+            "User": "",
+            "Image": image_id,
+            "Entrypoint": list(entrypoint),
+            "Cmd": list(cmd),
+            "Env": [
+                "HOME=/grok-home",
+                "GROK_HOME=/grok-home",
+                "XINAO_DUAL_CONTAINER=1",
+                "XINAO_GENERIC_FILE_SHELL_TOOLS=0",
+            ],
+            "Labels": {
+                "io.xinao.researcher.role": "transport_model",
+                "io.xinao.researcher.auth-mount": "required",
+            },
+        },
+        "HostConfig": {
+            "NetworkMode": "none",
+            "ReadonlyRootfs": False,
             "CapDrop": ["ALL"],
             "SecurityOpt": ["no-new-privileges:true"],
         },
@@ -227,20 +307,36 @@ def _install_docker_io_mock(
             # Recover bind sources from --mount flags for inspect.
             lab = "/host/lab"
             ipc = "/host/ipc"
+            sidecar = ""
+            auth = ""
+            tin = "/host/tin"
+            tout = "/host/tout"
             for i, token in enumerate(argv):
                 if token == "--mount" and i + 1 < len(argv):
                     mount = argv[i + 1]
-                    if "dst=/episode-lab" in mount or "dst=/episode-lab," in mount:
-                        for part in mount.split(","):
-                            if part.startswith("src="):
-                                lab = part[4:]
-                    if "dst=/ipc" in mount or "dst=/ipc," in mount:
-                        for part in mount.split(","):
-                            if part.startswith("src="):
-                                ipc = part[4:]
+                    src = ""
+                    dst = ""
+                    for part in mount.split(","):
+                        if part.startswith("src="):
+                            src = part[4:]
+                        if part.startswith("dst="):
+                            dst = part[4:]
+                    if dst in {"/episode-lab", "/episode-lab/"}:
+                        lab = src or lab
+                    if dst in {"/ipc", "/ipc/"}:
+                        ipc = src or ipc
+                    if dst in {"/sidecar-evidence", "/sidecar-evidence/"}:
+                        sidecar = src
+                    if dst in {"/grok-home/auth.json"} or dst.endswith("auth.json"):
+                        auth = src
+                    if dst in {"/input", "/input/"}:
+                        tin = src or tin
+                    if dst in {"/output", "/output/"}:
+                        tout = src or tout
             # Real Docker CLI: --entrypoint is a single executable token; rest is Cmd.
             entrypoint: list[str] | None = None
             cmd: list[str] | None = None
+            image_for_create = tool_image_id
             if "--entrypoint" in argv:
                 ep_idx = argv.index("--entrypoint")
                 ep = argv[ep_idx + 1]
@@ -257,10 +353,21 @@ def _install_docker_io_mock(
                 assert image_idx is not None
                 entrypoint = [ep]
                 cmd = argv[image_idx + 1 :]
+                image_tok = argv[image_idx]
+                if image_tok == transport_image_id:
+                    image_for_create = transport_image_id
+                elif image_tok == tool_image_id:
+                    image_for_create = tool_image_id
+            role = "transport" if auth or image_for_create == transport_image_id else "tool"
             state["containers"][cid] = {
-                "image": tool_image_id,
+                "role": role,
+                "image": image_for_create,
                 "lab": lab,
                 "ipc": ipc,
+                "sidecar": sidecar,
+                "auth": auth,
+                "tin": tin,
+                "tout": tout,
                 "started": False,
                 "running": False,
                 "entrypoint": entrypoint,
@@ -282,14 +389,27 @@ def _install_docker_io_mock(
                 if check:
                     raise module.XinaoError("DOCKER_INSPECT_FAILED", cid)
                 return Result(1, "", "missing")
-            doc = _fake_tool_inspect(
-                image_id=meta["image"],
-                cid=cid,
-                lab=meta["lab"],
-                ipc=meta["ipc"],
-                entrypoint=meta.get("entrypoint"),
-                cmd=meta.get("cmd"),
-            )
+            if meta.get("role") == "transport":
+                doc = _fake_transport_inspect(
+                    image_id=meta["image"],
+                    cid=cid,
+                    auth=meta.get("auth") or "/host/auth.json",
+                    lab_input=meta.get("tin") or "/host/tin",
+                    lab_output=meta.get("tout") or "/host/tout",
+                    ipc=meta["ipc"],
+                    entrypoint=meta.get("entrypoint"),
+                    cmd=meta.get("cmd"),
+                )
+            else:
+                doc = _fake_tool_inspect(
+                    image_id=meta["image"],
+                    cid=cid,
+                    lab=meta["lab"],
+                    ipc=meta["ipc"],
+                    sidecar=meta.get("sidecar") or None,
+                    entrypoint=meta.get("entrypoint"),
+                    cmd=meta.get("cmd"),
+                )
             return Result(0, json.dumps([doc]), "")
 
         if len(argv) >= 3 and argv[1] == "start":
@@ -313,6 +433,14 @@ def _install_docker_io_mock(
             if wrong_executable:
                 return Result(127, "", "executable file not found in $PATH: not-a-real-bin")
             joined = " ".join(exec_cmd)
+            meta = state["containers"].get(cid) or {}
+            # Transport positive path-identity probe (placeholder auth, no byte dump).
+            if (
+                meta.get("role") == "transport"
+                and "os.path.isfile" in joined
+                and "/grok-home/auth.json" in joined
+            ):
+                return Result(0, "", "transport_auth_path_ok")
             # Default: isolation probes return dedicated denial marker exit.
             rc = deny_exit
             if unrelated_nonzero:
@@ -417,7 +545,8 @@ def _seed_canonical_receipt(
     return receipt_path, receipt, pointer_path
 
 
-def test_semver_source_is_1_3_6_and_1_2_2(module: Any) -> None:
+def test_semver_source_is_1_3_9_and_1_2_5(module: Any) -> None:
+    """gen10 dual-image identity: Skill 1.3.9 / researcher capability 1.2.5."""
     registry = json.loads((SKILL_ROOT / "references" / "capabilities.v1.json").read_text())
     charter = json.loads((SKILL_ROOT / "references" / "researcher-charter.v1.json").read_text())
     runtime_lock = json.loads(
@@ -426,12 +555,12 @@ def test_semver_source_is_1_3_6_and_1_2_2(module: Any) -> None:
     researcher = next(
         c for c in registry["capabilities"] if c["capability_id"] == "researcher-container"
     )
-    assert registry["skill_version"] == "1.3.6"
+    assert registry["skill_version"] == "1.3.9"
     assert (
         researcher["version"]
         == charter["charter_version"]
         == runtime_lock["runtime_version"]
-        == "1.2.2"
+        == "1.2.5"
     )
     shadow = next(
         c for c in registry["capabilities"] if c["capability_id"] == "shadow-lifecycle-leg-a"
@@ -923,6 +1052,7 @@ def test_issuer_requires_complete_physical_proofs_fail_closed(
         module.issue_tool_namespace_separation_receipt()
     assert failure.value.reason_code in {
         "TOOL_NAMESPACE_PROBE_AUTH_NOT_DENIED",
+        "TOOL_NAMESPACE_PROBE_AUTH_RUNTIME_UNPROVEN",
         "TOOL_NAMESPACE_PROOF_INCOMPLETE",
     }
 
@@ -1240,11 +1370,7 @@ def test_issuer_start_failure_is_not_denial_proof(
     )
     with pytest.raises(module.XinaoError) as failure:
         module.issue_tool_namespace_separation_receipt()
-    assert failure.value.reason_code in {
-        "TOOL_NAMESPACE_PROBE_AUTH_NOT_DENIED",
-        "TOOL_NAMESPACE_PROOF_INCOMPLETE",
-        "TOOL_NAMESPACE_PROBE_BASELINE_LIVE_DRIFT",
-    }
+    assert failure.value.reason_code == "TOOL_NAMESPACE_PROBE_AUTH_RUNTIME_UNPROVEN"
     # No receipt may be issued after start failure.
     security_root = module._tool_namespace_security_root()
     assert not (security_root / "current.json").is_file()
@@ -1269,9 +1395,11 @@ def test_issuer_exec_plumbing_failure_is_not_denial_proof(
     with pytest.raises(module.XinaoError) as failure:
         module.issue_tool_namespace_separation_receipt()
     assert failure.value.reason_code in {
+        "TOOL_NAMESPACE_PROBE_AUTH_RUNTIME_UNPROVEN",
         "TOOL_NAMESPACE_PROBE_AUTH_NOT_DENIED",
         "TOOL_NAMESPACE_PROOF_INCOMPLETE",
     }
+    assert failure.value.reason_code == "TOOL_NAMESPACE_PROBE_AUTH_RUNTIME_UNPROVEN"
     assert not (module._tool_namespace_security_root() / "current.json").is_file()
 
 
@@ -1293,10 +1421,7 @@ def test_issuer_wrong_executable_is_not_denial_proof(
     )
     with pytest.raises(module.XinaoError) as failure:
         module.issue_tool_namespace_separation_receipt()
-    assert failure.value.reason_code in {
-        "TOOL_NAMESPACE_PROBE_AUTH_NOT_DENIED",
-        "TOOL_NAMESPACE_PROOF_INCOMPLETE",
-    }
+    assert failure.value.reason_code == "TOOL_NAMESPACE_PROBE_AUTH_RUNTIME_UNPROVEN"
     assert not (module._tool_namespace_security_root() / "current.json").is_file()
 
 
@@ -1318,11 +1443,101 @@ def test_issuer_unrelated_nonzero_is_not_denial_proof(
     )
     with pytest.raises(module.XinaoError) as failure:
         module.issue_tool_namespace_separation_receipt()
-    assert failure.value.reason_code in {
-        "TOOL_NAMESPACE_PROBE_AUTH_NOT_DENIED",
-        "TOOL_NAMESPACE_PROOF_INCOMPLETE",
-    }
+    # Unrelated nonzero under expect_fail is not exit-0 auth success.
+    assert failure.value.reason_code == "TOOL_NAMESPACE_PROBE_AUTH_RUNTIME_UNPROVEN"
     assert not (module._tool_namespace_security_root() / "current.json").is_file()
+
+
+def test_issuer_true_auth_read_is_not_denied_code(
+    module: Any, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """When tool open() returns 0, reason must remain AUTH_NOT_DENIED (not unproven)."""
+    from tests import test_xinao_skill as skill_tests
+
+    manifest, path = skill_tests._sealed_release(
+        module, tmp_path, monkeypatch, package_version="1.3.6", capability_version="1.2.2"
+    )
+    skill_tests._terminal_pointer(module, manifest, path)
+    _install_docker_io_mock(
+        module,
+        monkeypatch,
+        transport_image_id=manifest["image_id"],
+        tool_image_id=manifest["tool_image_id"],
+        fail_proof="credential_read_denied",
+    )
+    with pytest.raises(module.XinaoError) as failure:
+        module.issue_tool_namespace_separation_receipt()
+    assert failure.value.reason_code == "TOOL_NAMESPACE_PROBE_AUTH_NOT_DENIED"
+    assert "runtime auth read succeeded" in str(failure.value.detail)
+    assert not (module._tool_namespace_security_root() / "current.json").is_file()
+
+
+def test_physical_probe_requires_tool_sidecar_and_transport_auth_asymmetry(
+    module: Any, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, specs: Any
+) -> None:
+    """Clean tool probe must mount sidecar; transport placeholder auth is readable only there."""
+    from tests import test_xinao_skill as skill_tests
+
+    _state(module, tmp_path, monkeypatch)
+    manifest, path = skill_tests._sealed_release(
+        module, tmp_path, monkeypatch, package_version="1.3.6", capability_version="1.2.2"
+    )
+    skill_tests._terminal_pointer(module, manifest, path)
+    io_state = _install_docker_io_mock(
+        module,
+        monkeypatch,
+        transport_image_id=manifest["image_id"],
+        tool_image_id=manifest["tool_image_id"],
+    )
+    probe = module._run_tool_namespace_physical_probes(
+        transport_image_id=manifest["image_id"],
+        tool_image_id=manifest["tool_image_id"],
+    )
+    assert probe["physical_proof"] is True
+    assert "credential_read_denied" in probe["negative_proof_ids"]
+    methods = probe["details"]["proof_methods"]
+    assert methods["credential_read_denied"]
+    assert methods["transport_auth_handle_readable"]
+    assert probe["details"]["role_boundary"]["tool_auth_mount"] == "forbidden"
+    assert probe["details"]["role_boundary"]["auth_bytes_observed"] is False
+    # At least one tool create + one transport create.
+    assert io_state["creates"] >= 2
+    roles = [meta.get("role") for meta in io_state["containers"].values()]
+    assert "tool" in roles
+    assert "transport" in roles
+    # Tool create argv must include sidecar bind; transport must include auth.json RO.
+    # Reconstruct from mock container metadata.
+    tool_metas = [m for m in io_state["containers"].values() if m.get("role") == "tool"]
+    transport_metas = [m for m in io_state["containers"].values() if m.get("role") == "transport"]
+    assert tool_metas and tool_metas[0].get("sidecar")
+    assert transport_metas and transport_metas[0].get("auth")
+    # Spec-level inversion guard: tool must never admit auth bind targets.
+    tool_spec = specs.tool_executor_container_spec(
+        image=manifest["tool_image_id"],
+        name="xinao-ns-tool-inv",
+        episode_lab_host_path=str(tmp_path / "lab"),
+        ipc_host_dir=str(tmp_path / "ipc"),
+        sidecar_evidence_host_path=str(tmp_path / "side"),
+    )
+    for bind in tool_spec["binds"]:
+        dest = str(bind.get("container") or "")
+        assert "auth" not in dest
+        assert "/grok-home" not in dest
+    transport_spec = specs.transport_container_spec(
+        image=manifest["image_id"],
+        name="xinao-ns-transport-inv",
+        auth_host_path=str(tmp_path / "auth.json"),
+        input_host_path=str(tmp_path / "in"),
+        output_host_path=str(tmp_path / "out"),
+        ipc_host_dir=str(tmp_path / "ipc2"),
+    )
+    (tmp_path / "auth.json").write_bytes(b'{"probe":"placeholder"}\n')
+    (tmp_path / "in").mkdir()
+    (tmp_path / "out").mkdir()
+    (tmp_path / "ipc2").mkdir()
+    dests = {str(b.get("container")) for b in transport_spec["binds"]}
+    assert specs.TRANSPORT_AUTH_MOUNT in dests
+    assert specs.TOOL_SIDECAR_EVIDENCE_MOUNT not in dests
 
 
 def test_tool_executor_build_staging_normalizes_crlf_and_binds_digest(

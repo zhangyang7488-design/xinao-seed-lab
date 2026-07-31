@@ -13992,14 +13992,20 @@ def _run_tool_namespace_physical_probes(
     probe_root.mkdir(parents=True, exist_ok=True)
     lab = probe_root / "lab"
     ipc = probe_root / "ipc"
+    # Tool create-spec always points entrypoint/env at /sidecar-evidence. Without a
+    # writable bind, read-only rootfs makes tool_executor crash on mkdir and the
+    # container exits before any auth-denial exec can run — misreported as auth OK.
+    sidecar = probe_root / "sidecar-evidence"
     lab.mkdir(exist_ok=True)
     ipc.mkdir(exist_ok=True)
+    sidecar.mkdir(exist_ok=True)
     proven: list[str] = []
     details: dict[str, Any] = {
         "proof_methods": {},
         "runtime_attempts": [],
     }
     clean_cid: str | None = None
+    transport_cid: str | None = None
 
     def _rm(cid: str) -> None:
         _run([docker, "rm", "--force", cid], timeout=60, check=False)
@@ -14023,7 +14029,8 @@ def _run_tool_namespace_physical_probes(
         return inspected[0]
 
     # Once a clean container is marked unusable, no further attempt may contribute proof.
-    container_unusable: dict[str, bool] = {"value": False}
+    # Track usability per container id so transport positive probes do not poison tool proofs.
+    container_unusable: dict[str, bool] = {}
 
     def _runtime_attempt(cid: str, exec_argv: list[str], *, expect_fail: bool) -> bool:
         """Start + exec against a real container; fail closed for non-proof outcomes.
@@ -14041,7 +14048,7 @@ def _run_tool_namespace_physical_probes(
             "exec_argv": list(exec_argv),
             "expect_fail": expect_fail,
         }
-        if container_unusable["value"]:
+        if container_unusable.get(cid):
             attempt["status"] = "container_unusable"
             details["runtime_attempts"].append(attempt)
             return False
@@ -14052,7 +14059,7 @@ def _run_tool_namespace_physical_probes(
             if start.returncode != 0:
                 attempt["status"] = "start_failed"
                 details["runtime_attempts"].append(attempt)
-                container_unusable["value"] = True
+                container_unusable[cid] = True
                 return False
             # Confirm the container is running before claiming an exec probe.
             state_probe = _run(
@@ -14065,7 +14072,7 @@ def _run_tool_namespace_physical_probes(
             if state_probe.returncode != 0 or running not in {"true", "1"}:
                 attempt["status"] = "not_running"
                 details["runtime_attempts"].append(attempt)
-                container_unusable["value"] = True
+                container_unusable[cid] = True
                 return False
             executed = _run(
                 [docker, "exec", cid, *exec_argv],
@@ -14089,7 +14096,7 @@ def _run_tool_namespace_physical_probes(
             ):
                 attempt["status"] = "exec_plumbing_failed"
                 details["runtime_attempts"].append(attempt)
-                container_unusable["value"] = True
+                container_unusable[cid] = True
                 return False
             if expect_fail:
                 ok = executed.returncode == TOOL_NAMESPACE_DENY_PROOF_EXIT
@@ -14102,17 +14109,43 @@ def _run_tool_namespace_physical_probes(
             attempt["status"] = "error"
             attempt["error"] = str(exc)
             details["runtime_attempts"].append(attempt)
-            container_unusable["value"] = True
+            container_unusable[cid] = True
             return False
         finally:
             _run([docker, "stop", "-t", "1", cid], timeout=60, check=False)
 
+    def _last_attempt() -> dict[str, Any]:
+        attempts = details.get("runtime_attempts") or []
+        return attempts[-1] if attempts else {}
+
+    def _raise_runtime_unproven(
+        *,
+        not_denied_code: str,
+        not_denied_detail: str,
+        unproven_code: str,
+    ) -> None:
+        """Classify true isolation breach vs plumbing/unusable container failures."""
+        last = _last_attempt()
+        status = str(last.get("status") or "missing_attempt")
+        exec_rc = last.get("exec_rc")
+        # Only exit 0 under expect_fail means the protected path was actually readable.
+        if status == "unexpected_exit" and exec_rc == 0 and last.get("expect_fail") is True:
+            raise XinaoError(not_denied_code, not_denied_detail)
+        raise XinaoError(
+            unproven_code,
+            f"{status}:rc={exec_rc}:stderr={(last.get('exec_stderr') or last.get('start_stderr') or '')[:120]}",
+        )
+
     # --- Baseline: clean tool container must be real create + inspect ---
+    # Physical layout must match production tool mounts: lab + ipc + sidecar-evidence.
+    # Sidecar is tool-only (never auth); omitting it crashes the sealed entrypoint
+    # under --read-only and collapses every runtime denial into false "auth OK".
     tool_spec = specs.tool_executor_container_spec(
         image=tool_image_id,
         name=f"xinao-ns-tool-clean-{uuid.uuid4().hex[:8]}",
         episode_lab_host_path=str(lab),
         ipc_host_dir=str(ipc),
+        sidecar_evidence_host_path=str(sidecar),
     )
     clean_violations = specs.validate_tool_spec_invariants(tool_spec)
     if clean_violations:
@@ -14133,6 +14166,17 @@ def _run_tool_namespace_physical_probes(
                 "expected single-token --entrypoint before IMAGE and Cmd rest",
             )
     deny = str(TOOL_NAMESPACE_DENY_PROOF_EXIT)
+    # Flat Grok 0.2.117 layout + legacy nested path both must be unreachable from tool.
+    tool_auth_deny_snippet = (
+        "paths=('/grok-home/auth.json','/grok-home/.grok/auth.json')\n"
+        "for p in paths:\n"
+        " try:\n"
+        "  open(p,'rb').read(1)\n"
+        "  raise SystemExit(0)\n"
+        " except Exception:\n"
+        "  pass\n"
+        f"raise SystemExit({deny})"
+    )
     try:
         clean_cid = _create_only(create_argv)
         clean_inspect = _inspect(clean_cid)
@@ -14153,27 +14197,116 @@ def _run_tool_namespace_physical_probes(
         env_list = list(((clean_inspect.get("Config") or {}).get("Env")) or [])
         lowered_env = "\n".join(str(x) for x in env_list).lower()
 
-        # 1) credential_read_denied: live inspect has no auth mount + runtime open fails.
+        # 1) credential_read_denied: tool has no auth mount + runtime open fails on
+        # both flat and legacy auth paths. Do not confuse this with transport, which
+        # *must* be able to open the provider auth handle at /grok-home/auth.json.
         auth_markers = ("/grok-home", "/root/.grok", "auth.json")
         if any(any(marker in dest for marker in auth_markers) for dest in destinations):
             raise XinaoError("TOOL_NAMESPACE_PROBE_AUTH_MOUNT_PRESENT", str(sorted(destinations)))
+        if specs.TOOL_SIDECAR_EVIDENCE_MOUNT not in destinations:
+            raise XinaoError(
+                "TOOL_NAMESPACE_PROBE_SIDECAR_MOUNT_MISSING",
+                str(sorted(destinations)),
+            )
         cred_runtime = _runtime_attempt(
             clean_cid,
+            ["python", "-I", "-c", tool_auth_deny_snippet],
+            expect_fail=True,
+        )
+        if not cred_runtime:
+            _raise_runtime_unproven(
+                not_denied_code="TOOL_NAMESPACE_PROBE_AUTH_NOT_DENIED",
+                not_denied_detail="runtime auth read succeeded",
+                unproven_code="TOOL_NAMESPACE_PROBE_AUTH_RUNTIME_UNPROVEN",
+            )
+        proven.append("credential_read_denied")
+        details["proof_methods"]["credential_read_denied"] = "inspect_mounts+start_exec"
+
+        # 1b) Dual-role asymmetry with probe-local placeholder only (never host auth):
+        # transport create-spec must RO-mount flat auth and runtime open must succeed;
+        # tool must still fail (already proven above). Prevents role-inverted mounts.
+        transport_in = probe_root / "transport_in"
+        transport_out = probe_root / "transport_out"
+        transport_in.mkdir(exist_ok=True)
+        transport_out.mkdir(exist_ok=True)
+        # Placeholder identity file only — content is synthetic and not printed/returned.
+        placeholder_auth = probe_root / "auth.json"
+        placeholder_auth.write_bytes(b'{"xinao_probe":"placeholder_not_host_auth"}\n')
+        # Validate production-shaped transport create-spec (canary entrypoint + auth bind),
+        # then materialize a long-lived runtime process with the same mounts so path-identity
+        # exec can run without invoking the model canary (which may exit immediately).
+        transport_spec = specs.transport_container_spec(
+            image=transport_image_id,
+            name=f"xinao-ns-transport-auth-{uuid.uuid4().hex[:8]}",
+            auth_host_path=str(placeholder_auth),
+            input_host_path=str(transport_in),
+            output_host_path=str(transport_out),
+            ipc_host_dir=str(ipc),
+        )
+        transport_violations = specs.validate_transport_spec_invariants(transport_spec)
+        if transport_violations:
+            raise XinaoError(
+                "TOOL_NAMESPACE_PROBE_TRANSPORT_SPEC_DRIFT",
+                ",".join(transport_violations[:4]),
+            )
+        transport_runtime_spec = dict(transport_spec)
+        transport_runtime_spec["entrypoint"] = [
+            "python",
+            "-I",
+            "-c",
+            "import time; time.sleep(3600)",
+        ]
+        transport_argv = specs.docker_create_argv(transport_runtime_spec)
+        transport_cid = _create_only(transport_argv)
+        transport_inspect = _inspect(transport_cid)
+        transport_live = specs.validate_transport_container_inspect(
+            transport_inspect,
+            expected_image_id=transport_image_id,
+            require_auth_mount=True,
+            require_ipc_mount=True,
+        )
+        if transport_live:
+            raise XinaoError(
+                "TOOL_NAMESPACE_PROBE_TRANSPORT_LIVE_DRIFT",
+                ",".join(transport_live[:4]),
+            )
+        transport_dests = _inspect_mount_destinations(transport_inspect)
+        if specs.TRANSPORT_AUTH_MOUNT not in transport_dests and not any(
+            d.rstrip("/").endswith("auth.json") for d in transport_dests
+        ):
+            raise XinaoError(
+                "TOOL_NAMESPACE_PROBE_TRANSPORT_AUTH_MOUNT_MISSING",
+                str(sorted(transport_dests)),
+            )
+        details["transport_probe_container_id"] = transport_cid
+        # Positive: transport may open the provider auth path (placeholder bytes only).
+        transport_auth_ok = _runtime_attempt(
+            transport_cid,
             [
                 "python",
                 "-I",
                 "-c",
-                "try:\n"
-                " open('/grok-home/.grok/auth.json','rb').read()\n"
-                " raise SystemExit(0)\n"
-                f"except Exception:\n raise SystemExit({deny})",
+                "import os\n"
+                "p='/grok-home/auth.json'\n"
+                "raise SystemExit(0 if os.path.isfile(p) and os.access(p, os.R_OK) else 1)",
             ],
-            expect_fail=True,
+            expect_fail=False,
         )
-        if not cred_runtime:
-            raise XinaoError("TOOL_NAMESPACE_PROBE_AUTH_NOT_DENIED", "runtime auth read succeeded")
-        proven.append("credential_read_denied")
-        details["proof_methods"]["credential_read_denied"] = "inspect_mounts+start_exec"
+        if not transport_auth_ok:
+            last = _last_attempt()
+            raise XinaoError(
+                "TOOL_NAMESPACE_PROBE_TRANSPORT_AUTH_UNREACHABLE",
+                f"{last.get('status')}:rc={last.get('exec_rc')}",
+            )
+        details["proof_methods"]["transport_auth_handle_readable"] = (
+            "placeholder_mount+start_exec_path_identity"
+        )
+        details["role_boundary"] = {
+            "transport_auth_mount": specs.TRANSPORT_AUTH_MOUNT,
+            "tool_auth_mount": "forbidden",
+            "tool_sidecar_evidence_mount": specs.TOOL_SIDECAR_EVIDENCE_MOUNT,
+            "auth_bytes_observed": False,
+        }
 
         # 2) path_traversal_denied: live mounts have no ".." destinations + runtime
         # realpath outside the lab mount is treated as isolation failure (exit 0).
@@ -14188,22 +14321,29 @@ def _run_tool_namespace_physical_probes(
                 "-I",
                 "-c",
                 "try:\n"
-                " open('/episode-lab/../../../grok-home/.grok/auth.json','rb').read()\n"
+                " open('/episode-lab/../../../grok-home/auth.json','rb').read(1)\n"
                 " raise SystemExit(0)\n"
                 f"except Exception:\n raise SystemExit({deny})",
             ],
             expect_fail=True,
         )
         if not trav_runtime:
-            raise XinaoError(
-                "TOOL_NAMESPACE_PROBE_TRAVERSAL_NOT_DENIED",
-                "runtime path traversal succeeded",
+            _raise_runtime_unproven(
+                not_denied_code="TOOL_NAMESPACE_PROBE_TRAVERSAL_NOT_DENIED",
+                not_denied_detail="runtime path traversal succeeded",
+                unproven_code="TOOL_NAMESPACE_PROBE_TRAVERSAL_RUNTIME_UNPROVEN",
             )
         proven.append("path_traversal_denied")
         details["proof_methods"]["path_traversal_denied"] = "inspect_mounts+start_exec"
 
         # 3) symlink_escape_denied: no unexpected host binds; symlink to auth is denied.
-        allowed_dest = {"/episode-lab", "/ipc", "/tmp"}
+        # Production tool mounts: lab + ipc + sidecar-evidence (+ optional tmpfs /tmp).
+        allowed_dest = {
+            "/episode-lab",
+            "/ipc",
+            "/tmp",
+            specs.TOOL_SIDECAR_EVIDENCE_MOUNT,
+        }
         unexpected = {d for d in destinations if d not in allowed_dest}
         if unexpected:
             raise XinaoError(
@@ -14220,16 +14360,17 @@ def _run_tool_namespace_physical_probes(
                 "t='/episode-lab/.auth_escape'\n"
                 "os.path.exists(t) or os.symlink('/grok-home', t)\n"
                 "try:\n"
-                " open(t + '/.grok/auth.json','rb').read()\n"
+                " open(t + '/auth.json','rb').read(1)\n"
                 " raise SystemExit(0)\n"
                 f"except Exception:\n raise SystemExit({deny})",
             ],
             expect_fail=True,
         )
         if not symlink_runtime:
-            raise XinaoError(
-                "TOOL_NAMESPACE_PROBE_SYMLINK_NOT_DENIED",
-                "runtime symlink escape succeeded",
+            _raise_runtime_unproven(
+                not_denied_code="TOOL_NAMESPACE_PROBE_SYMLINK_NOT_DENIED",
+                not_denied_detail="runtime symlink escape succeeded",
+                unproven_code="TOOL_NAMESPACE_PROBE_SYMLINK_RUNTIME_UNPROVEN",
             )
         proven.append("symlink_escape_denied")
         details["proof_methods"]["symlink_escape_denied"] = "inspect_mounts+start_exec"
@@ -14257,9 +14398,10 @@ def _run_tool_namespace_physical_probes(
             expect_fail=True,
         )
         if not worktree_runtime:
-            raise XinaoError(
-                "TOOL_NAMESPACE_PROBE_WORKTREE_NOT_DENIED",
-                "runtime worktree path present",
+            _raise_runtime_unproven(
+                not_denied_code="TOOL_NAMESPACE_PROBE_WORKTREE_NOT_DENIED",
+                not_denied_detail="runtime worktree path present",
+                unproven_code="TOOL_NAMESPACE_PROBE_WORKTREE_RUNTIME_UNPROVEN",
             )
         proven.append("worktree_escape_denied")
         details["proof_methods"]["worktree_escape_denied"] = "inspect_mounts+start_exec"
@@ -14282,9 +14424,10 @@ def _run_tool_namespace_physical_probes(
             expect_fail=True,
         )
         if not ledger_runtime:
-            raise XinaoError(
-                "TOOL_NAMESPACE_PROBE_LEDGER_NOT_DENIED",
-                "runtime ledger/outcome path present",
+            _raise_runtime_unproven(
+                not_denied_code="TOOL_NAMESPACE_PROBE_LEDGER_NOT_DENIED",
+                not_denied_detail="runtime ledger/outcome path present",
+                unproven_code="TOOL_NAMESPACE_PROBE_LEDGER_RUNTIME_UNPROVEN",
             )
         proven.append("ledger_outcome_mutation_denied")
         details["proof_methods"]["ledger_outcome_mutation_denied"] = "inspect_mounts+start_exec"
@@ -14313,6 +14456,8 @@ def _run_tool_namespace_physical_probes(
     finally:
         if clean_cid:
             _rm(clean_cid)
+        if transport_cid:
+            _rm(transport_cid)
 
     missing = set(TOOL_NAMESPACE_RECEIPT_REQUIRED_NEGATIVE_PROOF_IDS) - set(proven)
     if missing:
