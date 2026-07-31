@@ -33,6 +33,12 @@ scripts/run_foundation_v2_f4_negative_companion.py text eol=lf
 evals/mature_capability_recall/** text eol=lf
 evals/thin_localization/** text eol=lf
 
+# RQ008 live immutable pair is content-addressed (raw SHA256 pins in
+# sha256_pins.json). Without eol=lf, Windows core.autocrlf converts the sealed
+# LF Owner-run blobs to CRLF working-tree bytes that diverge from the pins
+# while `git status` stays clean.
+xinao_discovery/tests/unit/science/fixtures/rq008_live/** text eol=lf
+
 # F4 authority sources are content-addressed and must retain verified LF bytes.
 docker/f4-verifier/*.json text eol=lf
 scripts/run_f4_snapshot_stage0.py text eol=lf

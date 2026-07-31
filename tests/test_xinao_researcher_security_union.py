@@ -23,6 +23,13 @@ import pytest
 ROOT = Path(__file__).resolve().parents[1]
 PKG = ROOT / "docker" / "xinao-researcher"
 SEALED_CANARY_SHA256 = "c9c1a132ac00ebde9b198db6eb12a1be456cbcfb8c66d892856997595e40c47e"
+# Unix-domain IPC + SO_PEERCRED are the production Linux/container transport.
+# Windows interpreters lack socket.AF_UNIX; do not mock peer credentials green.
+_HAS_AF_UNIX = hasattr(socket, "AF_UNIX")
+_SKIP_NO_AF_UNIX = pytest.mark.skipif(
+    not _HAS_AF_UNIX,
+    reason="Unix-domain socket transport required (socket.AF_UNIX absent)",
+)
 
 
 def _load(name: str, path: Path) -> Any:
@@ -104,6 +111,7 @@ def test_union_mcp_scrubs_and_strips_builtins(mcp_mod: Any, bind_mod: Any, tmp_p
     assert receipt["completion_claim_allowed"] is False
 
 
+@_SKIP_NO_AF_UNIX
 def test_union_durable_replay_survives_restart(
     tmp_path: Path, tool_mod: Any, broker_mod: Any, ipc: Any
 ) -> None:
@@ -179,7 +187,7 @@ def test_union_peer_require_fail_closed(
     monkeypatch.setenv("XINAO_IPC_PEER_REQUIRE", "1")
     assert tool_mod.peer_require_enabled() is True
     assert tool_mod._peer_uids_allowed() == set()
-    # Fake connection object: assert_unix_peer_allowed must deny before SO_PEERCRED.
+    # Portable: empty allowlist must deny before SO_PEERCRED (no AF_UNIX needed).
     class _Fake:
         def getsockopt(self, *a, **k):  # pragma: no cover
             raise AssertionError("should not reach SO_PEERCRED when allowlist empty")
@@ -187,6 +195,13 @@ def test_union_peer_require_fail_closed(
     with pytest.raises(tool_mod.ToolExecutorError) as exc:
         tool_mod.assert_unix_peer_allowed(_Fake())  # type: ignore[arg-type]
     assert exc.value.reason_code == "IPC_PEER_CONFIG_REQUIRED"
+
+    # Real SO_PEERCRED peer-uid denial requires Unix-domain sockets (Linux/container).
+    # Do not replace this leg with a mock that would falsely pass on Windows.
+    if not _HAS_AF_UNIX:
+        pytest.skip(
+            "Unix-domain socket + SO_PEERCRED peer-uid leg requires socket.AF_UNIX"
+        )
 
     monkeypatch.setenv("XINAO_IPC_PEER_UIDS", "0")
     # Wrong uid denied when SO_PEERCRED available via real unix pair.
