@@ -1048,6 +1048,72 @@ def test_require_staged_grok_cli_version_fail_closed(tmp_path: Path) -> None:
     assert module._require_staged_grok_cli_version(binary, expected_version="0.2.117") == "0.2.117"
 
 
+def test_probe_grok_binary_version_process_start_failed_elf_docker_mount(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Wave106/108: Windows cannot exec Linux donor ELF; fall back to Docker-mount probe.
+
+    Existing fail-closed version tests only exercise the native-success path. This test
+    executes the PROCESS_START_FAILED → ELF magic → docker_exec_image_id mount path.
+    """
+    module = _module()
+    binary = tmp_path / "grok"
+    # Minimal Linux ELF magic so _linux_elf_magic is true; body is not executed natively.
+    binary.write_bytes(b"\x7fELF" + b"\x00" * 12)
+    binary.chmod(0o755)
+    donor_image = "sha256:" + ("ab" * 32)
+    calls: list[list[str]] = []
+
+    def fake_run(arguments, **_kwargs):
+        values = [str(v) for v in arguments]
+        calls.append(values)
+        # Native probe fails like WinError 193 for any direct binary path.
+        if len(values) == 2 and values[1] == "version" and values[0].endswith("grok"):
+            raise module.XinaoError(
+                "PROCESS_START_FAILED",
+                f"command={values[0]}: [WinError 193] %1 is not a valid Win32 application",
+            )
+        # Docker-mount fallback of the same staged bytes.
+        if values[:2] == [module._docker(), "run"] and "--entrypoint" in values:
+            entry_idx = values.index("--entrypoint")
+            assert values[entry_idx + 1] == "/xinao-donor-probe/grok"
+            assert donor_image in values
+            assert any("xinao-donor-probe" in part for part in values)
+            assert values[-1] == "version"
+            return SimpleNamespace(
+                stdout="grok 0.2.117 (f1c0609308)\n",
+                stderr="",
+                returncode=0,
+            )
+        raise AssertionError(f"unexpected _run arguments: {values}")
+
+    monkeypatch.setattr(module, "_run", fake_run)
+    text = module._probe_grok_binary_version_text(
+        binary, docker_exec_image_id=donor_image
+    )
+    assert text.startswith("grok 0.2.117")
+    assert any(len(c) == 2 and c[1] == "version" for c in calls)
+    assert any("run" in c and "--entrypoint" in c for c in calls)
+    assert (
+        module._require_staged_grok_cli_version(
+            binary, expected_version="0.2.117", docker_exec_image_id=donor_image
+        )
+        == "0.2.117"
+    )
+
+    # Non-ELF + PROCESS_START_FAILED must not claim Docker mount fallback.
+    non_elf = tmp_path / "not-elf-grok"
+    non_elf.write_bytes(b"MZ-not-elf")
+    with pytest.raises(module.XinaoError) as non_elf_fail:
+        module._probe_grok_binary_version_text(non_elf, docker_exec_image_id=donor_image)
+    assert non_elf_fail.value.reason_code == "PROCESS_START_FAILED"
+
+    # ELF without docker image id stays fail-closed with host-incompatible code.
+    with pytest.raises(module.XinaoError) as no_docker:
+        module._probe_grok_binary_version_text(binary, docker_exec_image_id=None)
+    assert no_docker.value.reason_code == "GROK_CLI_VERSION_PROBE_HOST_INCOMPATIBLE"
+
+
 def test_build_rejects_donor_cli_version_mismatch(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
