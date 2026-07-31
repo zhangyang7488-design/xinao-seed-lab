@@ -62,17 +62,41 @@ feedback emit remain package CLI one-shots (Codex invokes; worker/container cand
 
 ### Host Skill dual-container verbs (live attach; sealed images + tool-namespace receipt)
 
-- `scripts/xinao.py research-episode start --root <D-episode> --question <question>`
-- `scripts/xinao.py research-episode attach-run --root <episode> --prompt <prompt> [--max-turns 16]`
-- `scripts/xinao.py research-episode resume-live --root <episode> --expected-provider-session <uuid> --expected-head <sha256>`
-- `scripts/xinao.py research-episode export-candidate-evidence --root <episode> --attempt-cas-digest <sha256> --expected-head <sha256>`
+Long ResearchEpisode public vertical (Owner one-shots only; no daemon / no self-schedule):
+
+1. `scripts/xinao.py research-episode start --root <D-episode> --question <question>`
+2. `scripts/xinao.py research-episode ensure-pair --root <episode> --expected-head <sha256> [--research-profile OPEN_RESEARCH]`
+3. `scripts/xinao.py research-episode attach-run --root <episode> --prompt <prompt> [--max-turns 16]`
+4. `scripts/xinao.py research-episode checkpoint --root <episode> --expected-head <sha256> [--lab-relative path --progress-note ...]`
+5. `scripts/xinao.py research-episode resume-live --root <episode> --expected-provider-session <uuid> --expected-head <sha256>`
+6. `scripts/xinao.py research-episode export-candidate-evidence --root <episode> --attempt-cas-digest <sha256> --expected-head <sha256>`
+7. `scripts/xinao.py research-episode cancel --root <episode>` (also best-effort `retire-pair`)
+8. `scripts/xinao.py research-episode retire-pair --root <episode>`
+
+Also available:
+
+- `scripts/xinao.py research-episode status|resume --root <episode> ...`
 - `scripts/xinao.py research-episode ingest-export --pool-root <pool> --export <export.json> --manifest <candidate_manifest.v1.json>`
 - `scripts/xinao.py research-episode bind-feedback-material --portfolio-root <portfolio> --feedback-content-hash <sha256>`
+
+`ensure-pair` is the production consumer that materializes disposable transport+tool containers
+under the durable CAS head. Without it, `attach-run` has no live lease. Pair retirement never
+creates a successor episode. Intermediate lab experiments/failures remain under the episode root.
+
+Auth handle path order (path/mount only; never secret bytes): `XINAO_AUTH_HOST_PATH` →
+`GROK_HOME/auth.json` → `~/.grok/auth.json` → fail closed. Transport uses sealed
+`xinao_researcher_internal` by default; tool remains `network=none`. Host modules
+(`docker_create_specs`, `native_grok_session`, MCP binding) ship inside the skill-bundle under
+`scripts/host_modules/` — never monorepo/`~/.codex/docker` walks at installed runtime.
 
 Boundaries:
 
 - **Candidate-only:** export and pool ingest force `owner_adopted=false`, never freeze/settle.
 - **Owner-only disposition:** adoption/freeze/settlement remain separate Codex Owner artifacts.
+- **No self-scheduling / no leg-B:** ensure-pair, attach-run, cancel, and retire-pair never create
+  the next episode, Temporal workflow, or daemon continuation.
+- **Sealed inputs / outcome isolation:** dual-pair mounts forbid shadow ledger, freeze, outcome,
+  settlement, and auth-on-tool; lab writes stay under episode lab/outbox.
 - **`absorb` is deprecated placeholder** for a local outbox review file — **not** candidate-pool
   admission. Prefer package `pool-ingest` (episode export), `pool-ingest-result` (one-shot
   result+receipt), or Skill `export-candidate-evidence` + `ingest-export`.

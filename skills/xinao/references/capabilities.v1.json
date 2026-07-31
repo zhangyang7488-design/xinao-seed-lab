@@ -71,7 +71,7 @@
     },
     {
       "capability_id": "research-episode",
-      "version": "0.1.2",
+      "version": "0.1.3",
       "source_status": "available",
       "execution_boundary": "host_dual_container_leg_a_no_daemon",
       "entrypoint": "scripts/xinao.py research-episode",
@@ -96,6 +96,8 @@
         "checkpoint",
         "resume",
         "cancel",
+        "ensure-pair",
+        "retire-pair",
         "attach-run",
         "resume-live",
         "export-candidate-evidence",
@@ -111,7 +113,7 @@
       "supported_grok_cli_version": "0.2.117",
       "parent_completion_authority": false,
       "completion_claim_allowed": false,
-      "notes": "Multi-turn ResearchEpisode plus public one-shot result+receipt pool admission. Preferred Owner pool/feedback consumers are packaged xinao-discovery console verbs (pool-ingest for episode export, pool-ingest-result/pool-ingest-oneshot for historical one-shot result.json+receipt.json, emit-research-feedback-pack, feedback-bind) requiring installed package, not monorepo parents walk. Owner disposition write is packaged as xinao prospective write-owner-disposition (library write_owner_disposition_artifact). Compose: pool-ingest|pool-ingest-result -> write-owner-disposition -> freeze-from-disposition -> settle -> emit-research-feedback-pack -> feedback-bind. One-shot admission never claims ResearchEpisode export provenance. Skill ingest-export/bind-feedback-material import installed xinao.science first. attach-run/resume-live require sealed dual images + tool-namespace receipt. Productive evidence is success-only (status=ok). absorb is deprecated local outbox and NOT pool admission. Codex alone adopts/disposes/freezes. Never auto-adopt/auto-freeze/auto-settle/auto-next."
+      "notes": "Multi-turn ResearchEpisode plus public one-shot result+receipt pool admission. Public host vertical: start -> ensure-pair -> attach-run|resume-live -> checkpoint/cancel -> export-candidate-evidence (candidate-only). ensure-pair materializes disposable dual containers under a CAS head; retire-pair/cancel never schedule a successor. Host modules sealed under skill-bundle scripts/host_modules; transport uses sealed internal network; auth via XINAO_AUTH_HOST_PATH|GROK_HOME|~/.grok. Preferred Owner pool/feedback consumers are packaged xinao-discovery console verbs requiring installed package, not monorepo parents walk. ensure-pair/attach-run/resume-live require sealed dual images + tool-namespace receipt. Productive evidence is success-only (status=ok). absorb is deprecated local outbox and NOT pool admission. Codex alone adopts/disposes/freezes. Never auto-adopt/auto-freeze/auto-settle/auto-next/leg-B."
     }
   ]
 }

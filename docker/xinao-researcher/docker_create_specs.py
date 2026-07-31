@@ -593,6 +593,8 @@ def dual_container_bundle(
     use_episode_entrypoint: bool = False,
     ipc_peer_uids: str | None = None,
     bwrap_mode: str = "require",
+    # Transport-only; tool executor create spec always forces network=none.
+    network: str = "none",
 ) -> dict[str, Any]:
     transport = transport_container_spec(
         image=transport_image,
@@ -601,6 +603,7 @@ def dual_container_bundle(
         input_host_path=input_host_path,
         output_host_path=output_host_path,
         ipc_host_dir=ipc_host_dir,
+        network=network,
         session_host_path=session_host_path,
         material_host_path=material_host_path,
         mcp_bridge_host_path=mcp_bridge_host_path,

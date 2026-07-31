@@ -30,7 +30,9 @@ SKILL_ROOT = Path(__file__).resolve().parents[1]
 REFERENCE_ROOT = SKILL_ROOT / "references"
 DEFAULT_STATE_ROOT = Path(r"D:\XINAO_RESEARCH_RUNTIME\state\xinao_skill")
 DEFAULT_RUN_ROOT = Path(r"D:\XINAO_RESEARCH_RUNTIME\runs\xinao_researcher")
-DEFAULT_AUTH_PATH = Path(r"C:\Users\xx363\.grok-bg-workers\auth.json")
+# Prefer resolve_auth_host_path() everywhere. This constant is the last-resort
+# path identity for one-shot research (never missing .grok-bg-workers pretend-ready).
+DEFAULT_AUTH_PATH = Path.home() / ".grok" / "auth.json"
 DEFAULT_INSTALLED_SKILL_ROOT = Path(r"C:\Users\xx363\.codex\skills\xinao")
 
 REGISTRY_PATH = REFERENCE_ROOT / "capabilities.v1.json"
@@ -314,6 +316,17 @@ TOOL_EXECUTOR_DOCKERFILE_RELATIVE = RESEARCHER_IMAGE_CONTEXT_RELATIVE / "Dockerf
 TOOL_EXECUTOR_MODULE_INVENTORY: tuple[str, ...] = (
     "ipc_contract.py",
     "tool_executor.py",
+)
+# Host-consumed dual-episode modules sealed into skill-bundle (build copies source bytes).
+# Runtime resolves only from scripts/host_modules under the Skill tree / installed projection.
+HOST_MODULES_BUNDLE_RELATIVE = Path("scripts") / "host_modules"
+HOST_MODULE_INVENTORY: tuple[str, ...] = (
+    "docker_create_specs.py",
+    "native_grok_session.py",
+    "episode_mcp_binding.py",
+    "mcp_episode_lab_server.py",
+    "ipc_contract.py",
+    "episode_boundary.py",
 )
 TOOL_EXECUTOR_ENTRYPOINT = [
     "python",
@@ -1315,7 +1328,132 @@ def _source_bundle_files(root: Path) -> list[tuple[str, Path, bytes]]:
     normalized = [os.path.normcase(item[0]) for item in rows]
     if len(normalized) != len(set(normalized)):
         raise XinaoError("SKILL_BUNDLE_PATH_COLLISION", str(normalized))
+    # Seal host dual-episode modules into skill-bundle when monorepo source cone is present.
+    # Installed projections already contain scripts/host_modules from a prior build.
+    source_root = _infer_monorepo_source_root_for_skill(root)
+    if source_root is not None:
+        rows = _merge_source_bundle_with_host_modules(rows, source_root)
     return rows
+
+
+def _infer_monorepo_source_root_for_skill(skill_root: Path) -> Path | None:
+    """Return monorepo root when skill_root is skills/xinao with docker host modules."""
+    skill_root = Path(skill_root)
+    if skill_root.name != "xinao":
+        return None
+    candidate = skill_root.parents[1] if len(skill_root.parents) >= 2 else None
+    if candidate is None:
+        return None
+    probe = candidate / RESEARCHER_IMAGE_CONTEXT_RELATIVE / "docker_create_specs.py"
+    if probe.is_file() and not _is_reparse(probe):
+        return candidate.resolve()
+    return None
+
+
+def _collect_packaged_host_module_rows(
+    source_root: Path,
+) -> list[tuple[str, Path, bytes]]:
+    """Copy host-needed docker/xinao-researcher modules into skill-bundle inventory."""
+    package_root = (Path(source_root) / RESEARCHER_IMAGE_CONTEXT_RELATIVE).resolve()
+    if not package_root.is_dir():
+        raise XinaoError("HOST_MODULES_SOURCE_MISSING", str(package_root))
+    rows: list[tuple[str, Path, bytes]] = []
+    for name in HOST_MODULE_INVENTORY:
+        if name.startswith("/") or "\\" in name or ".." in Path(name).parts:
+            raise XinaoError("HOST_MODULES_INVENTORY_INVALID", name)
+        path = package_root / name
+        if not path.is_file() or _is_reparse(path):
+            raise XinaoError("HOST_MODULES_SOURCE_MISSING", f"{name}:{path}")
+        payload = _regular_file_bytes(
+            path,
+            reason_code="HOST_MODULES_SOURCE_INVALID",
+            maximum=MAX_SKILL_BUNDLE_FILE_BYTES,
+        )
+        if name.endswith(".py"):
+            payload = _lf_materialize_bytes(payload)
+        relative = (HOST_MODULES_BUNDLE_RELATIVE / name).as_posix()
+        rows.append((relative, path, payload))
+    if [item[0] for item in rows] != [
+        (HOST_MODULES_BUNDLE_RELATIVE / name).as_posix() for name in HOST_MODULE_INVENTORY
+    ]:
+        raise XinaoError("HOST_MODULES_INVENTORY_MISMATCH", str(package_root))
+    return rows
+
+
+def _merge_source_bundle_with_host_modules(
+    source_rows: Sequence[tuple[str, Path, bytes]],
+    source_root: Path,
+) -> list[tuple[str, Path, bytes]]:
+    host_rows = _collect_packaged_host_module_rows(source_root)
+    host_rels = {relative for relative, _path, _payload in host_rows}
+    base = [row for row in source_rows if row[0] not in host_rels]
+    merged = list(base) + list(host_rows)
+    merged.sort(key=lambda item: item[0])
+    normalized = [os.path.normcase(item[0]) for item in merged]
+    if len(normalized) != len(set(normalized)):
+        raise XinaoError("SKILL_BUNDLE_PATH_COLLISION", "host_modules")
+    return merged
+
+
+def resolve_packaged_host_modules_dir() -> Path:
+    """Resolve sealed host modules directory under the Skill tree (no monorepo walk)."""
+    packaged = Path(__file__).resolve().parent / HOST_MODULES_BUNDLE_RELATIVE.name
+    if (packaged / "docker_create_specs.py").is_file():
+        return packaged
+    # Authoring layout only: monorepo docker cone when SKILL.md co-located.
+    skill_md = Path(__file__).resolve().parents[1] / "SKILL.md"
+    monorepo = Path(__file__).resolve().parents[3] / RESEARCHER_IMAGE_CONTEXT_RELATIVE
+    if skill_md.is_file() and (monorepo / "docker_create_specs.py").is_file():
+        return monorepo
+    return packaged
+
+
+def resolve_auth_host_path(*, allow_synthetic_missing: bool | None = None) -> Path:
+    """Unified auth handle path resolution for one-shot / episode / ensure / attach.
+
+    Order: XINAO_AUTH_HOST_PATH -> GROK_HOME/auth.json -> ~/.grok/auth.json -> fail.
+    Only path/mount selection; never reads or copies secret bytes.
+    """
+    env_auth = os.environ.get("XINAO_AUTH_HOST_PATH", "").strip()
+    if env_auth:
+        path = Path(env_auth)
+    else:
+        grok_home = os.environ.get("GROK_HOME", "").strip()
+        if grok_home:
+            path = Path(grok_home) / "auth.json"
+        else:
+            path = Path.home() / ".grok" / "auth.json"
+    if allow_synthetic_missing is None:
+        allow_synthetic_missing = os.environ.get(
+            "XINAO_DUAL_CONTAINER_SYNTHETIC", ""
+        ).strip().lower() in {"1", "true", "yes", "on"}
+    if path.is_file():
+        return path
+    if allow_synthetic_missing:
+        return path
+    raise XinaoError(
+        "GROK_AUTH_HANDLE_MISSING",
+        f"auth handle missing: {path} (set XINAO_AUTH_HOST_PATH or provide ~/.grok/auth.json)",
+    )
+
+
+def _research_episode_no_successor_flags() -> dict[str, Any]:
+    """Shared no-successor / no-claim flags for ensure/retire/cancel pair consumers."""
+    return {
+        "next_task_created": False,
+        "leg_b_scheduled": False,
+        "successor_episode_created": False,
+        "daemon": False,
+        "temporal_leg_b": False,
+        "disposition_written": False,
+        "freeze_written": False,
+        "settlement_written": False,
+        "outcome_written": False,
+        "completion_claim_allowed": False,
+        "owner_adopted": False,
+        "science_restored": False,
+        "parent_complete": False,
+    }
 
 
 def _enforce_sealed_tree_bytecode_hygiene() -> None:
@@ -11032,8 +11170,9 @@ def _validate_release_for_invoke(release: dict[str, Any]) -> tuple[str, dict[str
     charter, runtime_lock = _validate_release_source_identity(release)
     _require_host_egress_boundary(runtime_lock)
     docker = _validate_release_image_identity(release)
-    if not DEFAULT_AUTH_PATH.is_file():
-        raise XinaoError("GROK_AUTH_HANDLE_MISSING", str(DEFAULT_AUTH_PATH))
+    auth_path = resolve_auth_host_path(allow_synthetic_missing=False)
+    if not auth_path.is_file():
+        raise XinaoError("GROK_AUTH_HANDLE_MISSING", str(auth_path))
     return docker, charter
 
 
@@ -13099,6 +13238,29 @@ def _parser() -> argparse.ArgumentParser:
     re_resume.add_argument("--expected-session", default=None)
     re_cancel = research_episode_sub.add_parser("cancel")
     re_cancel.add_argument("--root", type=Path, required=True)
+    re_ensure = research_episode_sub.add_parser(
+        "ensure-pair",
+        help=(
+            "Owner one-shot: materialize dual-container transport+tool pair for an "
+            "existing ResearchEpisode head (requires tool-namespace receipt; never "
+            "starts next episode or writes outcome/ledger)"
+        ),
+    )
+    re_ensure.add_argument("--root", type=Path, required=True)
+    re_ensure.add_argument("--expected-head", required=True)
+    re_ensure.add_argument(
+        "--research-profile",
+        default="OPEN_RESEARCH",
+        help="OPEN_RESEARCH (default productive multi-turn) or CLOSED_LAB",
+    )
+    re_retire = research_episode_sub.add_parser(
+        "retire-pair",
+        help=(
+            "Owner one-shot: retire dual-container pair for episode root "
+            "(idempotent; does not schedule successor)"
+        ),
+    )
+    re_retire.add_argument("--root", type=Path, required=True)
     re_absorb = research_episode_sub.add_parser("absorb")
     re_absorb.add_argument("--root", type=Path, required=True)
     re_absorb.add_argument("--expected-head", required=True)
@@ -13551,24 +13713,23 @@ def _research_episode_container_identity(
             raise XinaoError("DUAL_CONTAINER_HOST_MISSING", str(host_path)) from exc
         raise
     transport, tool = _resolve_research_episode_dual_images()
-    auth = os.environ.get("XINAO_AUTH_HOST_PATH", "").strip()
     synthetic = os.environ.get("XINAO_DUAL_CONTAINER_SYNTHETIC", "").strip().lower() in {
         "1",
         "true",
         "yes",
         "on",
     }
-    if not auth:
-        raise XinaoError(
-            "DUAL_CONTAINER_HOST_CONFIG_REQUIRED",
-            "XINAO_AUTH_HOST_PATH required",
-        )
+    auth = resolve_auth_host_path(allow_synthetic_missing=synthetic)
+    network = os.environ.get("XINAO_TRANSPORT_NETWORK", "").strip()
+    if not network:
+        network = "none" if synthetic else EGRESS_INTERNAL_NETWORK_NAME
     host = host_mod.DualContainerHost(
         host_mod.DualHostConfig(
             transport_image=transport,
             tool_image=tool,
             auth_host_path=Path(auth),
             episode_root=Path(root),
+            network=network,
             synthetic=synthetic,
         )
     )
@@ -13722,12 +13883,7 @@ def _normalize_docker_create_argv(docker: str, create_argv: list[str]) -> list[s
 
 
 def _load_docker_create_specs_module() -> Any:
-    specs_path = (
-        Path(__file__).resolve().parents[3]
-        / "docker"
-        / "xinao-researcher"
-        / "docker_create_specs.py"
-    )
+    specs_path = resolve_packaged_host_modules_dir() / "docker_create_specs.py"
     if not specs_path.is_file():
         raise XinaoError("TOOL_NAMESPACE_SPECS_MISSING", str(specs_path))
     spec_loader = importlib.util.spec_from_file_location(
@@ -14676,6 +14832,7 @@ def research_episode_resume(
 
 def research_episode_cancel(*, root: Path | str) -> dict[str, Any]:
     root = Path(root)
+    pair_retire: dict[str, Any] | None = None
     with _research_episode_lock(root):
         head = _research_episode_load_head(root)
         if head.get("status") == "CANCELLED":
@@ -14684,6 +14841,7 @@ def research_episode_cancel(*, root: Path | str) -> dict[str, Any]:
                 "head": head,
                 "head_checkpoint_sha256": head["head_checkpoint_sha256"],
                 "completion_claim_allowed": False,
+                "next_task_created": False,
             }
         meta = _research_episode_read_meta(root)
         generation = int(head.get("generation") or 0) + 1
@@ -14705,7 +14863,30 @@ def research_episode_cancel(*, root: Path | str) -> dict[str, Any]:
             parent_sha256=head["head_checkpoint_sha256"],
             container_identity=container_identity,
         )
-        return {**committed, "status": "CANCELLED", "completion_claim_allowed": False}
+        # Best-effort dual-pair retire after durable CANCELLED head (never blocks cancel).
+        try:
+            pair_retire = research_episode_retire_pair(root=root, already_locked=True)
+        except XinaoError as exc:
+            pair_retire = {
+                "status": "PAIR_RETIRE_SKIPPED",
+                "reason_code": exc.reason_code,
+                "detail": str(exc)[:500],
+            }
+        except Exception as exc:  # noqa: BLE001 — cancel must stay durable
+            pair_retire = {
+                "status": "PAIR_RETIRE_SKIPPED",
+                "reason_code": "PAIR_RETIRE_UNEXPECTED",
+                "detail": str(exc)[:500],
+            }
+        return {
+            **committed,
+            "status": "CANCELLED",
+            "completion_claim_allowed": False,
+            "next_task_created": False,
+            "pair_retire": pair_retire,
+            "leg_b_scheduled": False,
+            "successor_episode_created": False,
+        }
 
 
 def _research_episode_load_dual_host(root: Path) -> Any:
@@ -14717,18 +14898,16 @@ def _research_episode_load_dual_host(root: Path) -> Any:
             raise XinaoError("DUAL_CONTAINER_HOST_MISSING", str(host_path)) from exc
         raise
     transport, tool = _resolve_research_episode_dual_images()
-    auth = os.environ.get("XINAO_AUTH_HOST_PATH", "").strip()
     synthetic = os.environ.get("XINAO_DUAL_CONTAINER_SYNTHETIC", "").strip().lower() in {
         "1",
         "true",
         "yes",
         "on",
     }
-    if not auth:
-        raise XinaoError(
-            "DUAL_CONTAINER_HOST_CONFIG_REQUIRED",
-            "XINAO_AUTH_HOST_PATH required",
-        )
+    auth = resolve_auth_host_path(allow_synthetic_missing=synthetic)
+    network = os.environ.get("XINAO_TRANSPORT_NETWORK", "").strip()
+    if not network:
+        network = "none" if synthetic else EGRESS_INTERNAL_NETWORK_NAME
     # Live attach/run/export refuse synthetic drivers regardless of env.
     return host_mod, host_mod.DualContainerHost(
         host_mod.DualHostConfig(
@@ -14736,9 +14915,255 @@ def _research_episode_load_dual_host(root: Path) -> Any:
             tool_image=tool,
             auth_host_path=Path(auth),
             episode_root=Path(root),
+            network=network,
             synthetic=synthetic,
         )
     )
+
+
+def research_episode_ensure_pair(
+    *,
+    root: Path | str,
+    expected_head_sha256: str,
+    research_profile: str = "OPEN_RESEARCH",
+) -> dict[str, Any]:
+    """Owner one-shot: materialize dual-container pair for an existing episode head.
+
+    Consumes canonical tool-namespace receipt only (never self-issues). Never schedules
+    a successor episode, writes outcome/ledger, freezes, settles, or claims parent completion.
+    """
+    root = Path(root)
+    _research_episode_assert_root_allowed(root)
+    profile = str(research_profile or "OPEN_RESEARCH").strip().upper()
+    if profile in {"GENUINE_SCIENTIST_EPISODE", "GENUINE", "GENUINE_SCIENTIST"}:
+        profile = "OPEN_RESEARCH"
+    if profile not in {"OPEN_RESEARCH", "CLOSED_LAB"}:
+        raise XinaoError("RESEARCH_EPISODE_UNKNOWN_PROFILE", profile)
+    no_successor = _research_episode_no_successor_flags()
+    with _research_episode_lock(root):
+        head = _research_episode_load_head(root)
+        meta = _research_episode_read_meta(root)
+        if head.get("status") in {"CANCELLED", "ABSORBED"}:
+            raise XinaoError("RESEARCH_EPISODE_TERMINAL", str(head.get("status")))
+        if head.get("head_checkpoint_sha256") != expected_head_sha256:
+            raise XinaoError("RESEARCH_EPISODE_STALE_HEAD", expected_head_sha256)
+        profile_status = _research_episode_resolve_profile_status(root)
+        if profile_status != RESEARCH_EPISODE_PROFILE_STATUS_VERIFIED:
+            raise XinaoError(
+                "RESEARCH_EPISODE_NAMESPACE_UNVERIFIED",
+                profile_status,
+            )
+        facts = _research_episode_namespace_and_release_facts()
+        _host_mod, host = _research_episode_load_dual_host(root)
+        lease = host.load_lease()
+        if lease is not None and lease.get("phase") not in {"cancelled", "retired"}:
+            if lease.get("episode_id") != meta["episode_id"]:
+                raise XinaoError(
+                    "RESEARCH_EPISODE_FOREIGN_EPISODE",
+                    str(lease.get("episode_id")),
+                )
+            if lease.get("session_id") != meta["session_id"]:
+                raise XinaoError(
+                    "RESEARCH_EPISODE_FOREIGN_SESSION",
+                    str(lease.get("session_id")),
+                )
+            if lease.get("phase") in {"running", "tool_started", "checkpointed"}:
+                ready = host.require_live_pair_ready(
+                    expected_episode_id=str(meta["episode_id"]),
+                    expected_host_session_id=str(meta["session_id"]),
+                    allow_synthetic=bool(host.config.synthetic),
+                )
+                _research_episode_append_journal(
+                    root,
+                    {
+                        "verb": "ensure-pair",
+                        "at": dt.datetime.now(dt.UTC).isoformat().replace("+00:00", "Z"),
+                        "status": "PAIR_ALREADY_READY",
+                        "phase": lease.get("phase"),
+                    },
+                )
+                return {
+                    "status": "PAIR_ALREADY_READY",
+                    "episode_id": meta["episode_id"],
+                    "session_id": meta["session_id"],
+                    "cas_head_sha256": head["head_checkpoint_sha256"],
+                    "research_profile": profile,
+                    "profile_status": profile_status,
+                    "pair_receipt_sha256": ready.get("pair_receipt_sha256"),
+                    "provider_session_uuid": ready.get("provider_session_uuid"),
+                    "phase": lease.get("phase"),
+                    "namespace_receipt_sha256": facts.get("namespace_receipt_sha256"),
+                    "release_id": facts.get("release_id"),
+                    **no_successor,
+                }
+            try:
+                started = host.start_pair()
+            except Exception as exc:
+                reason = getattr(exc, "reason_code", None) or "RESEARCH_EPISODE_ENSURE_PAIR_FAILED"
+                raise XinaoError(str(reason), str(exc)[:2000]) from exc
+            ready = host.require_live_pair_ready(
+                expected_episode_id=str(meta["episode_id"]),
+                expected_host_session_id=str(meta["session_id"]),
+                allow_synthetic=bool(host.config.synthetic),
+            )
+            _research_episode_append_journal(
+                root,
+                {
+                    "verb": "ensure-pair",
+                    "at": dt.datetime.now(dt.UTC).isoformat().replace("+00:00", "Z"),
+                    "status": "PAIR_STARTED",
+                    "phase": (host.load_lease() or {}).get("phase"),
+                },
+            )
+            return {
+                "status": "PAIR_STARTED",
+                "episode_id": meta["episode_id"],
+                "session_id": meta["session_id"],
+                "cas_head_sha256": head["head_checkpoint_sha256"],
+                "research_profile": profile,
+                "profile_status": profile_status,
+                "pair_receipt_sha256": ready.get("pair_receipt_sha256"),
+                "provider_session_uuid": ready.get("provider_session_uuid"),
+                "start_pair": {
+                    k: started.get(k)
+                    for k in ("status", "lease", "pair_receipt_sha256")
+                    if k in started
+                },
+                "namespace_receipt_sha256": facts.get("namespace_receipt_sha256"),
+                "release_id": facts.get("release_id"),
+                **no_successor,
+            }
+        try:
+            created = host.create_pair(
+                episode_id=str(meta["episode_id"]),
+                session_id=str(meta["session_id"]),
+                research_profile=profile,
+            )
+            started = host.start_pair()
+        except Exception as exc:
+            reason = getattr(exc, "reason_code", None) or "RESEARCH_EPISODE_ENSURE_PAIR_FAILED"
+            raise XinaoError(str(reason), str(exc)[:2000]) from exc
+        ready = host.require_live_pair_ready(
+            expected_episode_id=str(meta["episode_id"]),
+            expected_host_session_id=str(meta["session_id"]),
+            allow_synthetic=bool(host.config.synthetic),
+        )
+        _research_episode_append_journal(
+            root,
+            {
+                "verb": "ensure-pair",
+                "at": dt.datetime.now(dt.UTC).isoformat().replace("+00:00", "Z"),
+                "status": "PAIR_READY",
+                "research_profile": profile,
+                "pair_receipt_sha256": ready.get("pair_receipt_sha256"),
+            },
+        )
+        return {
+            "status": "PAIR_READY",
+            "episode_id": meta["episode_id"],
+            "session_id": meta["session_id"],
+            "cas_head_sha256": head["head_checkpoint_sha256"],
+            "research_profile": profile,
+            "profile_status": profile_status,
+            "pair_receipt_sha256": ready.get("pair_receipt_sha256"),
+            "provider_session_uuid": ready.get("provider_session_uuid"),
+            "create_pair": {
+                k: created.get(k)
+                for k in ("status", "tool_container_id", "transport_container_id")
+                if k in created
+            },
+            "start_pair": {
+                k: started.get(k) for k in ("status", "pair_receipt_sha256") if k in started
+            },
+            "namespace_receipt_sha256": facts.get("namespace_receipt_sha256"),
+            "release_id": facts.get("release_id"),
+            **no_successor,
+        }
+
+
+def research_episode_retire_pair(
+    *, root: Path | str, already_locked: bool = False
+) -> dict[str, Any]:
+    """Owner one-shot: retire dual-container pair (idempotent; no successor)."""
+    root = Path(root)
+    _research_episode_assert_root_allowed(root)
+    no_successor = _research_episode_no_successor_flags()
+
+    def _body() -> dict[str, Any]:
+        meta: dict[str, Any] | None = None
+        try:
+            meta = _research_episode_read_meta(root)
+        except XinaoError:
+            meta = None
+        try:
+            _host_mod, host = _research_episode_load_dual_host(root)
+        except XinaoError as exc:
+            if exc.reason_code in {
+                "DUAL_CONTAINER_HOST_MISSING",
+                "DUAL_CONTAINER_SEALED_IMAGES_REQUIRED",
+                "DUAL_CONTAINER_HOST_CONFIG_REQUIRED",
+                "GROK_AUTH_HANDLE_MISSING",
+            }:
+                return {
+                    "status": "PAIR_RETIRE_NO_HOST",
+                    "reason_code": exc.reason_code,
+                    **{
+                        k: no_successor[k]
+                        for k in (
+                            "next_task_created",
+                            "leg_b_scheduled",
+                            "successor_episode_created",
+                            "completion_claim_allowed",
+                        )
+                    },
+                }
+            raise
+        lease = host.load_lease()
+        if lease is None:
+            return {
+                "status": "PAIR_RETIRE_NO_LEASE",
+                "episode_id": (meta or {}).get("episode_id"),
+                **{
+                    k: no_successor[k]
+                    for k in (
+                        "next_task_created",
+                        "leg_b_scheduled",
+                        "successor_episode_created",
+                        "completion_claim_allowed",
+                    )
+                },
+            }
+        if meta is not None:
+            if lease.get("episode_id") not in {None, meta.get("episode_id")}:
+                raise XinaoError(
+                    "RESEARCH_EPISODE_FOREIGN_EPISODE",
+                    str(lease.get("episode_id")),
+                )
+        try:
+            retired = host.retire_pair()
+        except Exception as exc:
+            reason = getattr(exc, "reason_code", None) or "RESEARCH_EPISODE_RETIRE_PAIR_FAILED"
+            raise XinaoError(str(reason), str(exc)[:2000]) from exc
+        _research_episode_append_journal(
+            root,
+            {
+                "verb": "retire-pair",
+                "at": dt.datetime.now(dt.UTC).isoformat().replace("+00:00", "Z"),
+                "status": retired.get("status"),
+            },
+        )
+        return {
+            "status": retired.get("status") or "RETIRED",
+            "episode_id": (meta or {}).get("episode_id") or lease.get("episode_id"),
+            "session_id": (meta or {}).get("session_id") or lease.get("session_id"),
+            "lease_phase": (host.load_lease() or {}).get("phase"),
+            **no_successor,
+        }
+
+    if already_locked:
+        return _body()
+    with _research_episode_lock(root):
+        return _body()
 
 
 def _research_episode_namespace_and_release_facts() -> dict[str, Any]:
@@ -14954,13 +15379,7 @@ def research_episode_export_candidate_evidence(
         if head.get("head_checkpoint_sha256") != expected_head_sha256:
             raise XinaoError("RESEARCH_EPISODE_STALE_HEAD", expected_head_sha256)
         facts = _research_episode_namespace_and_release_facts()
-        # parents: scripts -> xinao -> skills -> repo root
-        native_path = (
-            Path(__file__).resolve().parent.parent.parent.parent
-            / "docker"
-            / "xinao-researcher"
-            / "native_grok_session.py"
-        )
+        native_path = resolve_packaged_host_modules_dir() / "native_grok_session.py"
         spec = importlib.util.spec_from_file_location(
             "xinao_native_grok_session_export", native_path
         )
@@ -15384,6 +15803,14 @@ def main(argv: Sequence[str] | None = None) -> int:
                 )
             elif args.research_episode_command == "cancel":
                 value = research_episode_cancel(root=args.root)
+            elif args.research_episode_command == "ensure-pair":
+                value = research_episode_ensure_pair(
+                    root=args.root,
+                    expected_head_sha256=args.expected_head,
+                    research_profile=args.research_profile,
+                )
+            elif args.research_episode_command == "retire-pair":
+                value = research_episode_retire_pair(root=args.root)
             elif args.research_episode_command == "absorb":
                 candidate = None
                 if args.candidate is not None:

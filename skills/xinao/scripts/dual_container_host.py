@@ -25,8 +25,35 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable, Mapping, Sequence
 
-DOCKER_PKG = Path(__file__).resolve().parents[3] / "docker" / "xinao-researcher"
+# Packaged host modules live under the Skill tree (skill-bundle / installed projection).
+# Never walk monorepo parents or ~/.codex/docker for runtime resolution.
+HOST_MODULES_DIRNAME = "host_modules"
 HEX_SHA256 = re.compile(r"^[0-9a-f]{64}$")
+DEFAULT_TRANSPORT_NETWORK = "xinao_researcher_internal"
+
+
+def host_modules_dir() -> Path:
+    """Resolve dual-host Python modules from the sealed Skill tree only.
+
+    Preferred: ``scripts/host_modules`` co-located with this file (installed /
+    skill-bundle). Source-tree unit tests may fall back to the monorepo
+    ``docker/xinao-researcher`` cone only when that co-located package is
+    absent and SKILL.md is co-located (authoring layout). Installed Skill under
+    ``~/.codex/skills/xinao`` never has a monorepo docker sibling.
+    """
+    here = Path(__file__).resolve()
+    scripts = here.parent
+    packaged = scripts / HOST_MODULES_DIRNAME
+    if (packaged / "docker_create_specs.py").is_file():
+        return packaged
+    skill_md = scripts.parent / "SKILL.md"
+    # dual_container_host.py under skills/xinao/scripts → parents[3] = monorepo root.
+    monorepo = here.parents[3] / "docker" / "xinao-researcher"
+    if skill_md.is_file() and (monorepo / "docker_create_specs.py").is_file():
+        return monorepo
+    return packaged
+
+
 PAIR_LEASE_SCHEMA = "xinao.dual_container_pair_lease.v1"
 SESSION_INVENTORY_SCHEMA = "xinao.dual_container_session_inventory.v1"
 CHECKPOINT_BIND_SCHEMA = "xinao.dual_container_checkpoint_bind.v1"
@@ -110,10 +137,13 @@ def _load_specs_module() -> Any:
     import importlib.util
     import sys
 
-    path = DOCKER_PKG / "docker_create_specs.py"
+    pkg = host_modules_dir()
+    path = pkg / "docker_create_specs.py"
     name = "xinao_docker_create_specs_host"
     if name in sys.modules:
         return sys.modules[name]
+    if not path.is_file():
+        raise DualHostError("DUAL_HOST_SPECS_MISSING", str(path))
     spec = importlib.util.spec_from_file_location(name, path)
     if spec is None or spec.loader is None:
         raise DualHostError("DUAL_HOST_SPECS_MISSING", str(path))
@@ -129,7 +159,8 @@ class DualHostConfig:
     tool_image: str
     auth_host_path: Path
     episode_root: Path
-    network: str = "none"
+    # Live default: sealed provider egress internal network (tool stays network=none).
+    network: str = DEFAULT_TRANSPORT_NETWORK
     material_host_path: Path | None = None
     docker: str = "docker"
     runner: DockerRunner | None = None
@@ -193,19 +224,20 @@ class DualContainerHost:
     def _load_mcp_binding(self) -> Any:
         import sys
 
-        path = DOCKER_PKG / "episode_mcp_binding.py"
+        docker_pkg = host_modules_dir()
+        path = docker_pkg / "episode_mcp_binding.py"
         name = "xinao_episode_mcp_binding_host"
         if name in sys.modules:
             return sys.modules[name]
-        pkg = str(DOCKER_PKG)
+        pkg = str(docker_pkg)
         if pkg not in sys.path:
             sys.path.insert(0, pkg)
         if not path.is_file():
             raise DualHostError("DUAL_HOST_MCP_BINDING_MISSING", str(path))
-        if not (DOCKER_PKG / "mcp_episode_lab_server.py").is_file():
+        if not (docker_pkg / "mcp_episode_lab_server.py").is_file():
             raise DualHostError(
                 "DUAL_HOST_MCP_SERVER_MISSING",
-                str(DOCKER_PKG / "mcp_episode_lab_server.py"),
+                str(docker_pkg / "mcp_episode_lab_server.py"),
             )
         spec = importlib.util.spec_from_file_location(name, path)
         if spec is None or spec.loader is None:
@@ -372,6 +404,8 @@ class DualContainerHost:
             attempt_agent_profile_host_path=str(attempt["agent_profile"]),
             episode_id=episode_id,
             use_episode_entrypoint=True,
+            # Tool remains network=none inside bundle; transport uses sealed internal net.
+            network=str(self.config.network or DEFAULT_TRANSPORT_NETWORK),
         )
         if bundle["tool_spec_violations"] or bundle["transport_spec_violations"]:
             raise DualHostError(
@@ -1005,13 +1039,14 @@ class DualContainerHost:
     def _load_native_session(self) -> Any:
         import sys
 
-        path = DOCKER_PKG / "native_grok_session.py"
+        docker_pkg = host_modules_dir()
+        path = docker_pkg / "native_grok_session.py"
         name = "xinao_native_grok_session_host"
         if name in sys.modules:
             return sys.modules[name]
         if not path.is_file():
             raise DualHostError("DUAL_HOST_NATIVE_SESSION_MISSING", str(path))
-        pkg = str(DOCKER_PKG)
+        pkg = str(docker_pkg)
         if pkg not in sys.path:
             sys.path.insert(0, pkg)
         spec = importlib.util.spec_from_file_location(name, path)
@@ -2271,13 +2306,16 @@ def build_host_from_env(episode_root: Path) -> DualContainerHost | None:
         "true",
         "TRUE",
     }
+    network = os.environ.get("XINAO_TRANSPORT_NETWORK", "").strip()
+    if not network:
+        network = "none" if synthetic else DEFAULT_TRANSPORT_NETWORK
     return DualContainerHost(
         DualHostConfig(
             transport_image=transport,
             tool_image=tool,
             auth_host_path=Path(auth),
             episode_root=episode_root,
-            network=os.environ.get("XINAO_TRANSPORT_NETWORK", "none"),
+            network=network,
             material_host_path=Path(os.environ["XINAO_MATERIAL_HOST_PATH"])
             if os.environ.get("XINAO_MATERIAL_HOST_PATH")
             else None,
