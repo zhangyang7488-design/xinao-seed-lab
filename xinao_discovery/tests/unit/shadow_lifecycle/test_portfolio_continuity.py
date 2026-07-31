@@ -42,9 +42,9 @@ OPEN_2 = OPEN_1 + timedelta(days=1)
 
 def _fixture_freeze_portfolio_period(**kwargs):
     """Shadow lifecycle unit fixtures only — not production authority."""
-    kwargs = dict(kwargs)
-    kwargs["allow_fixture_construction"] = True
-    return freeze_portfolio_period(**kwargs)
+    from .fixture_portfolio_freeze import freeze_portfolio_period_for_fixture
+
+    return freeze_portfolio_period_for_fixture(**kwargs)
 
 
 def _write_json(path: Path, payload: dict[str, Any]) -> Path:

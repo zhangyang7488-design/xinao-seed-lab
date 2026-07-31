@@ -450,17 +450,21 @@ def _require_and_verify_owner_freeze_authority(
     request: Mapping[str, Any],
     owner_authority: Mapping[str, Any] | None,
 ) -> dict[str, Any]:
-    """Production portfolio freeze: require disposition-bound Owner authority envelope/CAS.
+    """Validate sealed Owner disposition/research-binding evidence for portfolio freeze.
 
-    Workers with package import + shadow write access cannot mint production ACTION
-    without owner-root disposition evidence bound to the live portfolio head.
+    This is evidence validation against disposition CAS + live portfolio head, not
+    cryptographic authentication of the Codex process. Physical Owner authority is
+    host/container write-domain separation of ``owner_state_root`` (and absence of
+    that root from researcher mounts). Import of this module alone is not an Owner
+    channel.
     """
 
     if owner_authority is None:
         raise StoreError(
             "PRODUCTION_FREEZE_REQUIRES_OWNER_AUTHORITY: "
-            "freeze_portfolio_period requires disposition-bound owner_authority "
-            "envelope/CAS (use allow_fixture_construction=True only for explicit fixtures)"
+            "freeze_portfolio_period requires a sealed disposition-bound "
+            "owner_authority envelope that reloads Owner disposition CAS "
+            "and research-binding evidence"
         )
     if not isinstance(owner_authority, Mapping):
         raise StoreError("PRODUCTION_FREEZE_AUTHORITY_INVALID: owner_authority must be an object")
@@ -1208,31 +1212,28 @@ def freeze_portfolio_period(
     request_path: Path | None = None,
     request: Mapping[str, Any] | None = None,
     owner_authority: Mapping[str, Any] | None = None,
-    allow_fixture_construction: bool = False,
 ) -> dict[str, Any]:
-    """Freeze the next portfolio period.
+    """Freeze the next portfolio period from sealed Owner disposition evidence.
 
-    Production path requires a disposition-bound Owner authority envelope/CAS.
-    Fixture/unit construction must set ``allow_fixture_construction=True``
-    explicitly — module privacy is not a security boundary.
+    Always requires a disposition-bound ``owner_authority`` envelope that reloads
+    Owner disposition CAS and research-binding under the live portfolio head.
+    There is no caller-selectable production fixture bypass on this API.
+
+    Validates immutable evidence; does not authenticate that the caller process is
+    Codex. Physical Owner write isolation is a mount/FS concern outside this library.
+    Unit/fixture construction must use a test-only helper under ``tests/`` or build
+    a real sealed disposition envelope.
     """
 
     # Capture authority input before any period-root preparation side effects.
     closed_request = _resolve_freeze_request(request_path=request_path, request=request)
     base = resolve_root(root)
-    if allow_fixture_construction:
-        if owner_authority is not None:
-            raise StoreError(
-                "FIXTURE_FREEZE_MUST_NOT_MIX_OWNER_AUTHORITY: "
-                "use either production owner_authority or allow_fixture_construction"
-            )
-    else:
-        # Structural production gate: no disposition-bound envelope => no freeze write.
-        _require_and_verify_owner_freeze_authority(
-            portfolio_root=base,
-            request=closed_request,
-            owner_authority=owner_authority,
-        )
+    # Structural production gate: no disposition-bound envelope => no freeze write.
+    _require_and_verify_owner_freeze_authority(
+        portfolio_root=base,
+        request=closed_request,
+        owner_authority=owner_authority,
+    )
     period_root, period_index, prior_settled = prepare_next_period_root(base)
     result = freeze_episode(
         root=period_root,

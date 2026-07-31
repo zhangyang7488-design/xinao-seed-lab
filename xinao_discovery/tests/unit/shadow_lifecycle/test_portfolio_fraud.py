@@ -52,6 +52,8 @@ from xinao.shadow_lifecycle.store import (
     write_new_json,
 )
 
+from .fixture_portfolio_freeze import freeze_portfolio_period_for_fixture
+
 OPEN_1 = datetime(2026, 8, 1, 8, tzinfo=UTC)
 OPEN_2 = OPEN_1 + timedelta(days=1)
 OPEN_3 = OPEN_1 + timedelta(days=2)
@@ -59,9 +61,7 @@ OPEN_3 = OPEN_1 + timedelta(days=2)
 
 def _fixture_freeze_portfolio_period(**kwargs):
     """Shadow lifecycle unit fixtures only — not production authority."""
-    kwargs = dict(kwargs)
-    kwargs["allow_fixture_construction"] = True
-    return freeze_portfolio_period(**kwargs)
+    return freeze_portfolio_period_for_fixture(**kwargs)
 
 
 def _write_json(path: Path, payload: dict[str, Any]) -> Path:

@@ -1372,7 +1372,6 @@ def test_monkeypatched_request_rewrite_cannot_change_frozen_ticket(tmp_path: Pat
         request_path=None,
         request=None,
         owner_authority=None,
-        allow_fixture_construction=False,
     ):
         attack_seen["called"] = True
         attack_seen["used_path"] = request_path
@@ -1397,7 +1396,6 @@ def test_monkeypatched_request_rewrite_cannot_change_frozen_ticket(tmp_path: Pat
             request_path=request_path,
             request=request,
             owner_authority=owner_authority,
-            allow_fixture_construction=allow_fixture_construction,
         )
 
     import xinao.science.freeze_adapter as freeze_mod
@@ -1447,7 +1445,6 @@ def test_in_memory_request_mutation_cannot_poison_frozen_ledger(tmp_path: Path) 
         request_path=None,
         request=None,
         owner_authority=None,
-        allow_fixture_construction=False,
     ):
         attack_seen["called"] = True
         # Improved attack: rewrite the live in-memory mapping, not only display files.
@@ -1467,7 +1464,6 @@ def test_in_memory_request_mutation_cannot_poison_frozen_ledger(tmp_path: Path) 
             request_path=request_path,
             request=request,
             owner_authority=owner_authority,
-            allow_fixture_construction=allow_fixture_construction,
         )
 
     import xinao.science.freeze_adapter as freeze_mod
@@ -1624,12 +1620,21 @@ def test_direct_production_freeze_without_owner_disposition_rejected(tmp_path: P
     with pytest.raises(StoreError, match="PRODUCTION_FREEZE_REQUIRES_OWNER_AUTHORITY"):
         freeze_portfolio_period(root=portfolio, request_path=request_path)
     assert not (period_directory(portfolio, 1) / "frozen_episode.v1.json").exists()
-    # Explicit fixture construction remains available for unit tests only.
-    ok = freeze_portfolio_period(
-        root=portfolio,
-        request_path=request_path,
-        allow_fixture_construction=True,
+    # Public production API must not accept a fixture-bypass flag.
+    import importlib.util
+    import inspect
+
+    assert "allow_fixture_construction" not in inspect.signature(freeze_portfolio_period).parameters
+    # Test-only helper under tests/ may construct fixtures without Owner CAS.
+    helper_path = (
+        Path(__file__).resolve().parents[1] / "shadow_lifecycle" / "fixture_portfolio_freeze.py"
     )
+    spec = importlib.util.spec_from_file_location("fixture_portfolio_freeze", helper_path)
+    assert spec is not None and spec.loader is not None
+    helper = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(helper)
+
+    ok = helper.freeze_portfolio_period_for_fixture(root=portfolio, request_path=request_path)
     assert ok["ok"] is True
     frozen = load_frozen(period_directory(portfolio, 1))
     assert frozen.bound_account_ticket is not None

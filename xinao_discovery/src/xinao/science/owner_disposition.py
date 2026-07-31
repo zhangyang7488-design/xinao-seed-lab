@@ -1,16 +1,17 @@
 """Codex Owner disposition bound to a candidate pool entry.
 
-This library proves only path/content facts a filesystem caller can check:
+This library validates immutable path/content evidence a filesystem caller can check:
 
 - disposition bytes are content-addressed
 - payload binds a sealed pool entry
 - path is under the caller-supplied owner_state_root
 - owner_state_root is path-separated from the candidate pool
 
-It does **not** prove the caller is Codex. Authority flags are therefore honest:
+It does **not** authenticate that the caller process is Codex. Workers can import
+this module; that is not Owner authority. Honest flags remain:
 ``owner_channel_authority=UNPROVEN_BY_LIBRARY`` and
 ``physical_owner_write_isolation_verified=false``. Physical owner-channel
-isolation remains a host/container responsibility outside this module.
+isolation is mount/write-domain separation outside this module.
 
 Disposition artifacts are raw-SHA256 content-addressed JSON without any
 self-referential hash field. ACTION numbers/stake come only from structured
@@ -30,6 +31,11 @@ from typing import Any, Final, Literal
 
 from xinao.canonical import ACCOUNTING_DECIMAL, canonical_sha256, format_decimal
 from xinao.science.candidate_pool import CandidatePoolError, load_pool_entry, verify_pool_entry_seal
+from xinao.science.prospective_source_thin import (
+    ProspectiveSourceError,
+    is_live_macaujc2_target,
+    validate_source_authority_binding,
+)
 
 DISPOSITION_SCHEMA_VERSION: Final = "xinao.codex_owner_disposition.v1"
 DISPOSITION_MARKER: Final = "XINAO_CODEX_OWNER_DISPOSITION_V1"
@@ -107,6 +113,7 @@ _TOP_LEVEL_ALLOWED: Final = frozenset(
         "executable_account_decision",
         "no_action_period_binding",
         "portfolio_binding",
+        "source_authority_binding",
         "rationale_ref",
         "science_identity",
     }
@@ -837,6 +844,49 @@ def validate_disposition_payload(
                 "portfolio_binding.intended_next_period_index must equal period_index",
             )
 
+    source_authority_binding: dict[str, Any] | None = None
+    sab_raw = payload.get("source_authority_binding")
+    live_macaujc2 = is_live_macaujc2_target(str(target_ref))
+    if live_macaujc2 and sab_raw is None:
+        raise OwnerDispositionError(
+            "SOURCE_AUTHORITY_BINDING_REQUIRED",
+            "target_ref macaujc2/expect/* requires sealed source_authority_binding",
+        )
+    if sab_raw is not None:
+        if not isinstance(sab_raw, Mapping):
+            raise OwnerDispositionError(
+                "SOURCE_AUTHORITY_BINDING_INVALID",
+                "source_authority_binding must be an object when present",
+            )
+        try:
+            source_authority_binding = validate_source_authority_binding(sab_raw)
+        except ProspectiveSourceError as exc:
+            raise OwnerDispositionError(exc.reason_code, exc.detail) from exc
+        if source_authority_binding["target_ref"] != target_ref:
+            raise OwnerDispositionError(
+                "SOURCE_AUTHORITY_BINDING_TARGET_MISMATCH",
+                "source_authority_binding.target_ref must equal disposition target_ref",
+            )
+        branch = executable if account_identity == ACCOUNT_ACTION else no_action_binding
+        if not isinstance(branch, Mapping):
+            raise OwnerDispositionError(
+                "SOURCE_AUTHORITY_BINDING_BRANCH_MISSING",
+                "cannot bind authority without period branch times",
+            )
+        if (
+            str(branch.get("target_open_time"))
+            != source_authority_binding["target_guard_open_time"]
+        ):
+            raise OwnerDispositionError(
+                "SOURCE_AUTHORITY_BINDING_GUARD_MISMATCH",
+                "period target_open_time must equal target_guard_open_time",
+            )
+        if str(branch.get("freeze_deadline")) != source_authority_binding["freeze_deadline"]:
+            raise OwnerDispositionError(
+                "SOURCE_AUTHORITY_BINDING_DEADLINE_MISMATCH",
+                "period freeze_deadline must equal authority freeze_deadline",
+            )
+
     normalized: dict[str, Any] = {
         "schema_version": DISPOSITION_SCHEMA_VERSION,
         "disposition_marker": DISPOSITION_MARKER,
@@ -855,6 +905,7 @@ def validate_disposition_payload(
         "executable_account_decision": executable,
         "no_action_period_binding": no_action_binding,
         "portfolio_binding": portfolio_binding,
+        "source_authority_binding": source_authority_binding,
         "rationale_ref": _require_text(
             payload.get("rationale_ref") or "owner-disposition.rationale",
             "DISPOSITION_RATIONALE_INVALID",

@@ -15,7 +15,9 @@ Receipt binding fields remain display-only and are not authority.
 File-backed freeze trusts caller-supplied timestamps only:
 ``trusted_time_proof=false`` is always reported honestly for this path.
 
-Library/worker outputs never self-certify Owner authenticity.
+Evidence validation only: this module does not authenticate that the caller is
+Codex. Workers may import it; physical Owner authority is mount/write isolation
+of owner_state_root and authority CAS roots.
 """
 
 from __future__ import annotations
@@ -25,6 +27,7 @@ import hashlib
 import json
 import re
 from collections.abc import Mapping
+from datetime import datetime
 from pathlib import Path
 from typing import Any, Final, Literal
 
@@ -37,6 +40,14 @@ from xinao.science.owner_disposition import (
     disposition_information_set_hash,
     load_and_verify_disposition,
     require_period_account_identity,
+)
+from xinao.science.prospective_source_thin import (
+    ProspectiveSourceError,
+    default_clock,
+    is_live_macaujc2_target,
+    load_packet,
+    validate_source_authority_binding,
+    verify_disposition_times_against_packet,
 )
 from xinao.shadow_lifecycle.consumer import (
     OWNER_FREEZE_AUTHORITY_MARKER,
@@ -271,6 +282,7 @@ def build_research_freeze_binding(
     disposition: Mapping[str, Any],
     owner_artifact_sha256: str,
     portfolio_binding: Mapping[str, Any] | None = None,
+    source_authority_binding: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Build the immutable research freeze binding body (no self-hash)."""
 
@@ -294,6 +306,9 @@ def build_research_freeze_binding(
         "executable_account_intent": executable_intent,
         # Flat episode mode keeps portfolio identity explicitly absent (not faked).
         "portfolio_binding": dict(portfolio_binding) if portfolio_binding is not None else None,
+        "source_authority_binding": (
+            dict(source_authority_binding) if source_authority_binding is not None else None
+        ),
         "scientific_promotion": False,
         "owner_adopted": False,
     }
@@ -942,6 +957,62 @@ def _assert_frozen_matches_disposition_and_binding(
         )
 
 
+def _verify_source_authority_before_freeze(
+    *,
+    disposition: Mapping[str, Any],
+    authority_root: Path | None,
+    owner_freeze_time: datetime | None = None,
+) -> dict[str, Any] | None:
+    """Require sealed prospective packet from Owner CAS for live macaujc2 targets.
+
+    Loads packet only from Owner-controlled CAS under authority_root — never from a
+    caller-supplied in-memory packet object. Rechecks owner freeze wall time against
+    the sealed deadline when provided.
+    """
+
+    target_ref = str(disposition.get("target_ref") or "")
+    sab = disposition.get("source_authority_binding")
+    if is_live_macaujc2_target(target_ref):
+        if sab is None:
+            raise FreezeAdapterError(
+                "SOURCE_AUTHORITY_BINDING_REQUIRED",
+                "macaujc2/expect/* freeze requires sealed source_authority_binding",
+            )
+        if authority_root is None:
+            raise FreezeAdapterError(
+                "AUTHORITY_ROOT_REQUIRED",
+                "macaujc2/expect/* freeze must load packet from Owner authority CAS",
+            )
+    elif sab is None:
+        return None
+    if not isinstance(sab, Mapping):
+        raise FreezeAdapterError(
+            "SOURCE_AUTHORITY_BINDING_INVALID",
+            "source_authority_binding must be an object",
+        )
+    if authority_root is None:
+        raise FreezeAdapterError(
+            "AUTHORITY_ROOT_REQUIRED",
+            "source_authority_binding present but authority_root not provided",
+        )
+    try:
+        packet_obj = load_packet(authority_root, str(sab["packet_content_hash"]))
+        binding = validate_source_authority_binding(sab, packet=packet_obj)
+        verify_disposition_times_against_packet(
+            disposition=disposition,
+            packet=packet_obj,
+            owner_freeze_time=owner_freeze_time,
+        )
+    except ProspectiveSourceError as exc:
+        raise FreezeAdapterError(exc.reason_code, exc.detail) from exc
+    except KeyError as exc:
+        raise FreezeAdapterError(
+            "SOURCE_AUTHORITY_BINDING_INCOMPLETE",
+            "packet_content_hash required",
+        ) from exc
+    return binding
+
+
 def apply_freeze_from_disposition(
     *,
     pool_root: Path,
@@ -951,15 +1022,21 @@ def apply_freeze_from_disposition(
     mode: Literal["episode", "portfolio"] = "portfolio",
     result_sha256: str | None = None,
     request_out: Path | None = None,
+    authority_root: Path | None = None,
+    owner_freeze_time: datetime | None = None,
 ) -> dict[str, Any]:
-    """Verify disposition + pool, seal research binding, call exclusive freeze consumer.
+    """Validate disposition + pool evidence, seal research binding, exclusive freeze.
 
     Authority input to the consumer is an in-memory closed request mapping — never
     a mutable freeze_request path. Optional request evidence is content-addressed
     and display-only.
 
+    For ``macaujc2/expect/*`` targets, a sealed ``source_authority_binding`` and
+    Owner-controlled authority CAS (``authority_root``) are mandatory. Packet is
+    loaded from CAS only; caller-supplied in-memory packets are rejected.
+
     Stops at FROZEN / awaiting independent outcome. Does not settle, feedback, or
-    open the next period.
+    open the next period. Does not authenticate Codex — evidence validation only.
     """
 
     try:
@@ -980,6 +1057,14 @@ def apply_freeze_from_disposition(
         shadow_root=shadow_root,
     )
 
+    # Prospective source authority (when live macaujc2 or SAB present) BEFORE writes.
+    freeze_now = owner_freeze_time if owner_freeze_time is not None else default_clock()
+    source_authority_binding = _verify_source_authority_before_freeze(
+        disposition=disposition,
+        authority_root=authority_root,
+        owner_freeze_time=freeze_now,
+    )
+
     # Portfolio/head exact binding BEFORE any binding/request/freeze write.
     portfolio_binding: dict[str, Any] | None = None
     if mode == "portfolio":
@@ -998,6 +1083,7 @@ def apply_freeze_from_disposition(
         disposition=disposition,
         owner_artifact_sha256=str(verified["owner_artifact_sha256"]),
         portfolio_binding=portfolio_binding,
+        source_authority_binding=source_authority_binding,
     )
     sealed_binding = write_research_binding_exclusive(
         shadow_root=shadow_root,
@@ -1122,6 +1208,7 @@ def apply_freeze_from_disposition(
         "request_evidence_authority_input": False,
         "request_content_hash": authority_request["request_content_hash"],
         "portfolio_binding": portfolio_binding,
+        "source_authority_binding": source_authority_binding,
         "trusted_time_proof": False,
         "completion_claim_allowed": False,
         "scientific_promotion": False,
