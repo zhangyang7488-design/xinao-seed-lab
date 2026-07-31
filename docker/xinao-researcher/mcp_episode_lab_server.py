@@ -13,11 +13,44 @@ Scrubs inherited transport credentials at startup. Candidate only.
 from __future__ import annotations
 
 import argparse
+import importlib.util
 import json
 import os
 import sys
 from pathlib import Path
 from typing import Any, Mapping
+
+
+def _bootstrap_sibling_module(module_name: str) -> None:
+    """Load one same-directory sibling module under python -I.
+
+    Isolated mode (-I) ignores PYTHONPATH and does not put the script directory
+    on sys.path, so bare ``import ipc_contract`` / ``import transport_broker``
+    fail for the MCP child argv built by episode_mcp_binding.build_server_argv.
+    Only the resolved directory of this file is admitted, and only
+    ``<that-dir>/<module_name>.py`` may be loaded — no parent/cwd/env paths.
+    """
+    if module_name in sys.modules:
+        return
+    if not module_name.isidentifier() or "." in module_name:
+        raise ImportError(f"refusing non-simple sibling module name: {module_name!r}")
+    script_dir = Path(__file__).resolve().parent
+    sibling = (script_dir / f"{module_name}.py").resolve()
+    if sibling.parent != script_dir or sibling.name != f"{module_name}.py":
+        raise ImportError(f"sibling path escape denied: {sibling}")
+    if not sibling.is_file():
+        raise ImportError(f"sibling module missing: {sibling}")
+    spec = importlib.util.spec_from_file_location(module_name, sibling)
+    if spec is None or spec.loader is None:
+        raise ImportError(f"cannot load sibling module: {sibling}")
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[module_name] = module
+    spec.loader.exec_module(module)
+
+
+# Order matters: transport_broker bare-imports ipc_contract at module load.
+_bootstrap_sibling_module("ipc_contract")
+_bootstrap_sibling_module("transport_broker")
 
 from ipc_contract import (
     ALLOWED_OPS,
