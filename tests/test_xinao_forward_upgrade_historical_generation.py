@@ -626,7 +626,7 @@ def test_companion_runtime_seal_matches_repository_bytes() -> None:
     runtime_path = bootstrap._companion_runtime_path()
     observed = hashlib.sha256(runtime_path.read_bytes()).hexdigest()
     assert observed == bootstrap.EXPECTED_COMPANION_RUNTIME_SHA256
-    assert observed == "ccba1c6578d0369809de1946d7caa78612176610422531aa871353612235a1df"
+    assert observed == "4b195734c370ac8314c90b5a35eaf696fa5d4c4ebd393d104bb9d2d8f69160c0"
     assert len(observed) == 64
 
 
@@ -639,3 +639,607 @@ def test_wave76b_donor_lock_not_drifted() -> None:
     assert "wave68-grok02117" in str(lock.get("grok_donor_image", ""))
     assert str(lock.get("grok_donor_image_id", "")).startswith("sha256:")
     assert len(str(lock.get("grok_donor_image_id", ""))) == 71
+
+
+# ---------------------------------------------------------------------------
+# Wave90: A-only shadow_lock cross-bind + B-shape full forward-upgrade E2E
+# ---------------------------------------------------------------------------
+
+
+def _rewrite_pre_modules_release_with_si_lock(
+    module,
+    good: dict[str, object],
+    good_path: Path,
+    *,
+    forged_lock: str,
+) -> Path:
+    """Identity-recompute + path-rebind after SI/label lock replacement; skill_hashes unchanged."""
+
+    mutated = copy.deepcopy(good)
+    mutated["source_identity"]["shadow_runtime_lock_sha256"] = forged_lock
+    mutated["image_labels"]["io.xinao.researcher.shadow-runtime-lock.sha256"] = forged_lock
+    source_identity = mutated["source_identity"]
+    assert isinstance(source_identity, dict)
+    source_identity_sha256 = module._sha256_bytes(module._canonical_bytes(source_identity))
+    labels = mutated["image_labels"]
+    assert isinstance(labels, dict)
+    labels["io.xinao.researcher.source-identity.sha256"] = source_identity_sha256
+    identity = module._sha256_bytes(
+        module._canonical_bytes(
+            module._release_identity_payload(mutated, include_shadow_runtime=True)
+        )
+    )
+    capability_version = str(mutated["capability_version"])
+    new_release_id = f"researcher-{capability_version}-{identity[:16]}"
+    old_root = good_path.parent
+    new_root = old_root.parent / new_release_id
+    if new_root.exists():
+        shutil.rmtree(new_root)
+    shutil.copytree(old_root, new_root)
+    new_path = new_root / "release.json"
+    mutated["release_id"] = new_release_id
+    mutated["release_identity_sha256"] = identity
+    mutated["skill_bundle_path"] = str(new_root / "skill-bundle")
+    mutated["skill_bundle_manifest_path"] = str(new_root / "skill-bundle.manifest.json")
+    # skill_hashes remain real lock-file binding from the copied bundle.
+    module._write_json_atomic(new_path, mutated)
+    return new_path
+
+
+def test_pre_modules_rejects_si_vs_skill_hashes_shadow_lock_desync(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A-only attack: SI/label lock replaced with another format-valid hex; skill_hashes keep real lock."""
+
+    module = _module()
+    good, path = _sealed_pre_modules_v2_release(
+        module, tmp_path, monkeypatch, image_character="1", variant=b"crossbind-si\n"
+    )
+    module._validate_sealed_protocol_v2_release(good, path)
+    real_lock = good["skill_hashes"]["shadow_runtime_lock_sha256"]
+    forged_lock = "a" * 64
+    assert forged_lock != real_lock
+    assert module.HEX_SHA256_PATTERN.fullmatch(forged_lock)
+
+    new_path = _rewrite_pre_modules_release_with_si_lock(
+        module, good, path, forged_lock=forged_lock
+    )
+    mutated = json.loads(new_path.read_text(encoding="utf-8"))
+    assert mutated["skill_hashes"]["shadow_runtime_lock_sha256"] == real_lock
+    assert mutated["source_identity"]["shadow_runtime_lock_sha256"] == forged_lock
+    with pytest.raises(module.XinaoError) as failure:
+        module._validate_sealed_protocol_v2_release(mutated, new_path)
+    assert failure.value.reason_code == "RELEASE_SHADOW_RUNTIME_LOCK_INVALID"
+    assert "skill_hashes_cross_check" in failure.value.detail
+
+
+def test_pre_modules_rejects_skill_hashes_vs_si_shadow_lock_desync(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Only skill_hashes.shadow_runtime_lock_sha256 replaced with another format-valid hex."""
+
+    module = _module()
+    good, path = _sealed_pre_modules_v2_release(
+        module, tmp_path, monkeypatch, image_character="2", variant=b"crossbind-sh\n"
+    )
+    real_lock = good["source_identity"]["shadow_runtime_lock_sha256"]
+    forged_lock = "b" * 64
+    assert forged_lock != real_lock
+    assert module.HEX_SHA256_PATTERN.fullmatch(forged_lock)
+
+    mutated = copy.deepcopy(good)
+    # Keep SI + labels on real lock; only skill_hashes field desyncs.
+    mutated["skill_hashes"]["shadow_runtime_lock_sha256"] = forged_lock
+    module._write_json_atomic(path, mutated)
+    with pytest.raises(module.XinaoError) as failure:
+        module._validate_sealed_protocol_v2_release(
+            json.loads(path.read_text(encoding="utf-8")), path
+        )
+    # Either bundle hash mismatch (skill_hashes != file) or cross-check may fire first
+    # depending on check order; both are reject, never accept.
+    assert failure.value.reason_code in {
+        "RELEASE_SKILL_HASHES_MISMATCH",
+        "RELEASE_SHADOW_RUNTIME_LOCK_INVALID",
+    }
+
+
+def test_live_gen6_shadow_lock_cross_bound(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Live gen6 bytes already satisfy skill_hashes.shadow_lock == SI.shadow_lock."""
+
+    module = _module()
+    path = _copy_live_gen6_release(module, tmp_path, monkeypatch)
+    manifest = json.loads(path.read_text(encoding="utf-8"))
+    si_lock = manifest["source_identity"]["shadow_runtime_lock_sha256"]
+    sh_lock = manifest["skill_hashes"]["shadow_runtime_lock_sha256"]
+    label_lock = manifest["image_labels"]["io.xinao.researcher.shadow-runtime-lock.sha256"]
+    assert si_lock == sh_lock == label_lock
+    module._validate_sealed_protocol_v2_release(manifest, path, verify_bundle=True)
+    # Desync only SI/label after path-rebind must still fail closed via cross-check.
+    forged = "c" * 64
+    assert forged != si_lock
+    new_path = _rewrite_pre_modules_release_with_si_lock(
+        module, manifest, path, forged_lock=forged
+    )
+    with pytest.raises(module.XinaoError) as failure:
+        module._validate_sealed_protocol_v2_release(
+            json.loads(new_path.read_text(encoding="utf-8")), new_path, verify_bundle=True
+        )
+    assert failure.value.reason_code == "RELEASE_SHADOW_RUNTIME_LOCK_INVALID"
+    assert "skill_hashes_cross_check" in failure.value.detail
+
+
+def _sealed_current_dual_image_release(
+    module,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    image_character: str = "c",
+    package_version: str = "1.3.5",
+    capability_version: str = "1.2.2",
+    variant: bytes | None = None,
+) -> tuple[dict[str, object], Path]:
+    """Minimal exact-current dual-image target for isolated FU E2E (tmp state only)."""
+
+    state = _state(module, tmp_path, monkeypatch)
+    source_rows = module._source_bundle_files(SKILL_ROOT)
+    if variant is not None:
+        source_rows.append(
+            (
+                "references/test-release-variant.txt",
+                tmp_path / "unused-source-path",
+                variant,
+            )
+        )
+        source_rows.sort(key=lambda item: item[0])
+    bundle_manifest = module._skill_bundle_manifest(source_rows, package_version=package_version)
+    hashes = module._reference_hashes(SKILL_ROOT)
+    shadow_lock = module._load_shadow_runtime_lock(SKILL_ROOT)
+    shadow_rows = module._collect_shadow_runtime_rows(ROOT, shadow_lock)
+    shadow_tree = module._shadow_runtime_tree_sha256(shadow_rows)
+    shadow_lock_hash = hashes["shadow_runtime_lock_sha256"]
+    module_rows = module._collect_researcher_image_module_rows(ROOT)
+    modules_tree = module._researcher_image_modules_tree_sha256(module_rows)
+    tool_df_path = ROOT / module.TOOL_EXECUTOR_DOCKERFILE_RELATIVE
+    tool_df_sha = module._sha256_bytes(tool_df_path.read_bytes())
+    tool_rows = module._collect_tool_executor_module_rows(ROOT)
+    tool_mod_sha = module._tool_executor_modules_tree_sha256(tool_rows)
+    if image_character not in "0123456789abcdef":
+        raise AssertionError(f"image_character must be hex digit, got {image_character!r}")
+    tool_char = format((int(image_character, 16) + 7) % 16, "x")
+    source_identity = {
+        "source_commit": "c" * 40,
+        "source_tree": "d" * 40,
+        "source_dirty": False,
+        "grok_donor_image_id": "sha256:" + "b" * 64,
+        "grok_donor_binary_sha256": "a" * 64,
+        "shadow_runtime_tree_sha256": shadow_tree,
+        "shadow_runtime_lock_sha256": shadow_lock_hash,
+        "researcher_image_modules_tree_sha256": modules_tree,
+        "tool_executor_dockerfile_sha256": tool_df_sha,
+        "tool_executor_modules_tree_sha256": tool_mod_sha,
+    }
+    source_identity_sha256 = module._sha256_bytes(module._canonical_bytes(source_identity))
+    image_id = "sha256:" + image_character * 64
+    tool_image_id = "sha256:" + tool_char * 64
+    labels = {
+        "io.xinao.researcher.chain": "dedicated-xinao-science",
+        "io.xinao.researcher.generic-worker-route": "forbidden",
+        "io.xinao.researcher.grok-donor-image-id": source_identity["grok_donor_image_id"],
+        "io.xinao.researcher.grok-donor-binary.sha256": source_identity["grok_donor_binary_sha256"],
+        "io.xinao.researcher.charter.sha256": hashes["charter_sha256"],
+        "io.xinao.researcher.output-schema.sha256": hashes["output_schema_sha256"],
+        "io.xinao.researcher.material-bundle-schema.sha256": hashes[
+            "material_bundle_schema_sha256"
+        ],
+        "io.xinao.researcher.runtime-lock.sha256": hashes["runtime_lock_sha256"],
+        "io.xinao.researcher.skill-invoker.sha256": hashes["skill_invoker_sha256"],
+        "io.xinao.researcher.dockerfile.sha256": "1" * 64,
+        "io.xinao.researcher.entrypoint.sha256": "2" * 64,
+        "io.xinao.researcher.source-identity.sha256": source_identity_sha256,
+        "io.xinao.researcher.shadow-runtime.sha256": shadow_tree,
+        "io.xinao.researcher.shadow-runtime-lock.sha256": shadow_lock_hash,
+        "io.xinao.researcher.requested-model": "grok-4.5",
+        **module._dual_profile_image_labels(researcher_image_modules_tree_sha256=modules_tree),
+    }
+    tool_labels = module._tool_executor_expected_labels(
+        dockerfile_sha256=tool_df_sha, modules_tree_sha256=tool_mod_sha
+    )
+    manifest: dict[str, object] = {
+        "schema_version": module.RELEASE_SCHEMA,
+        "release_id": "pending",
+        "package_version": package_version,
+        "capability_id": "researcher-container",
+        "capability_version": capability_version,
+        "charter_version": capability_version,
+        "runtime_version": capability_version,
+        "release_identity_sha256": "pending",
+        "source_identity": source_identity,
+        "skill_bundle_path": "pending",
+        "skill_bundle_manifest_path": "pending",
+        "skill_bundle_manifest_sha256": "pending",
+        "skill_bundle_tree_sha256": bundle_manifest["tree_sha256"],
+        "image_tag_observational": "xinao-researcher:test",
+        "image_id": image_id,
+        "image_entrypoint": ["python", "-I", module.RESEARCHER_CANARY_ENTRYPOINT_IMAGE_PATH],
+        "image_labels": labels,
+        "tool_image_tag_observational": "xinao-tool-executor:test",
+        "tool_image_id": tool_image_id,
+        "tool_image_entrypoint": list(module.TOOL_EXECUTOR_ENTRYPOINT),
+        "tool_image_labels": tool_labels,
+        "skill_hashes": hashes,
+        "required_bootstrap_protocol": 2,
+        "generic_worker_route_allowed": False,
+        "state_namespace": "xinao_skill/researcher_container",
+        "run_namespace": "xinao_researcher",
+    }
+    identity_sha256 = module._sha256_bytes(
+        module._canonical_bytes(module._release_identity_payload(manifest))
+    )
+    release_id = f"researcher-{capability_version}-{identity_sha256[:16]}"
+    release_root = state / "researcher_container" / "releases" / release_id
+    manifest_path = release_root / "release.json"
+    manifest.update(
+        {
+            "release_id": release_id,
+            "release_identity_sha256": identity_sha256,
+            "skill_bundle_path": str(release_root / "skill-bundle"),
+            "skill_bundle_manifest_path": str(release_root / "skill-bundle.manifest.json"),
+            "skill_bundle_manifest_sha256": module._sha256_bytes(
+                module._canonical_bytes(bundle_manifest)
+            ),
+        }
+    )
+    module._materialize_skill_bundle(release_root / "skill-bundle", source_rows, bundle_manifest)
+    module._write_json_atomic(
+        release_root / "skill-bundle.manifest.json", bundle_manifest, create_new=True
+    )
+    module._write_json_atomic(manifest_path, manifest, create_new=True)
+    module._validate_release_manifest(manifest, manifest_path)
+    return manifest, manifest_path
+
+
+def _terminal_activate_pointer(
+    module,
+    manifest: dict[str, object],
+    manifest_path: Path,
+    *,
+    generation: int = 6,
+    txn_suffix: str = "1" * 16,
+    previous_verified: dict[str, object] | None = None,
+) -> tuple[dict[str, object], dict[str, object], Path]:
+    """Terminal ACTIVATE journal for historical active (sealed path, not PREPARED)."""
+
+    txn_id = f"xra_20260730T120000_{txn_suffix}"
+    active = module._release_ref_from_manifest(manifest, manifest_path, activation_txn_id=txn_id)
+    pointer = {
+        "schema_version": module.CURRENT_POINTER_SCHEMA,
+        "generation": generation,
+        "active": active,
+        "previous_verified": previous_verified,
+        "switched_at": "2026-07-30T12:00:00Z",
+    }
+    journal_path = module._journal_path(txn_id)
+    journal_path.parent.mkdir(parents=True, exist_ok=True)
+    canary_path = journal_path.parent / "canary.receipt.json"
+    module._write_json_atomic(canary_path, {"status": "PASS"}, create_new=True)
+    journal = {
+        "schema_version": module.ACTIVATION_JOURNAL_SCHEMA,
+        "revision": 4,
+        "txn_id": txn_id,
+        "operation": "ACTIVATE",
+        "state": "VERIFIED",
+        "from": None,
+        "requested_to": active,
+        "to": active,
+        "expected_generation": generation,
+        "prepared_at": "2026-07-30T12:00:00Z",
+        "updated_at": "2026-07-30T12:00:01Z",
+        "switched_pointer_sha256": None,
+        "canary": {
+            "status": "PASS",
+            "receipt_path": str(canary_path),
+            "receipt_sha256": module._sha256(canary_path),
+        },
+        "failure_reason": None,
+        "terminal_pointer_sha256": None,
+    }
+    module._write_json_atomic(journal_path, journal, create_new=True)
+    pointer_path = module._state_paths()["pointer"]
+    module._write_json_atomic(pointer_path, pointer)
+    pointer_sha256 = module._sha256(pointer_path)
+    journal["switched_pointer_sha256"] = pointer_sha256
+    journal["terminal_pointer_sha256"] = pointer_sha256
+    module._write_json_atomic(journal_path, journal)
+    return pointer, journal, journal_path
+
+
+def _canary_value(module, journal: dict[str, object]) -> dict[str, object]:
+    return {
+        "schema_version": "xinao.researcher_activation_canary.v1",
+        "status": "CANARY_READY",
+        "txn_id": journal["txn_id"],
+        "pointer_generation": journal["expected_generation"],
+        "pointer_sha256": journal["switched_pointer_sha256"],
+        "release_id": journal["to"]["release_id"],
+        "release_manifest_sha256": journal["to"]["release_manifest_sha256"],
+        "skill_bundle_tree_sha256": journal["to"]["skill_bundle_tree_sha256"],
+        "provider_effect_verified": False,
+        "completion_claim_allowed": False,
+    }
+
+
+def _installed_tree_map(root: Path) -> dict[str, bytes]:
+    return {
+        path.relative_to(root).as_posix(): path.read_bytes()
+        for path in root.rglob("*")
+        if path.is_file()
+    }
+
+
+def _install_bootstrap_fence(
+    module,
+    monkeypatch: pytest.MonkeyPatch,
+    command: list[str],
+) -> dict[str, object]:
+    state_root = module._state_paths()["state_root"]
+    bootstrap = _bootstrap_module()
+    _runtime_path, _runtime_payload, fence = bootstrap._runtime_entry_locked(command, state_root)
+    monkeypatch.setattr(module, "_BOOTSTRAP_FENCE_CACHE", None)
+    monkeypatch.setenv(
+        module.BOOTSTRAP_FENCE_ENVIRONMENT,
+        json.dumps(fence, ensure_ascii=True, sort_keys=True, separators=(",", ":")),
+    )
+    return fence
+
+
+def _prepare_pre_modules_forward_upgrade_world(
+    module,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> dict[str, object]:
+    """B-shape world: historical pre_modules active + exact-current dual-image target stub."""
+
+    previous, previous_path = _sealed_pre_modules_v2_release(
+        module,
+        tmp_path,
+        monkeypatch,
+        image_character="a",
+        package_version="1.3.4",
+        capability_version="1.2.1",
+        variant=b"previous-pre-modules\n",
+        shadow_tree="a" * 64,
+    )
+    active, active_path = _sealed_pre_modules_v2_release(
+        module,
+        tmp_path,
+        monkeypatch,
+        image_character="b",
+        package_version="1.3.4",
+        capability_version="1.2.1",
+        variant=b"active-pre-modules-1.3.4\n",
+        shadow_tree="b" * 64,
+    )
+    previous_ref = module._release_ref_from_manifest(
+        previous, previous_path, activation_txn_id="xra_20260730T120000_" + "c" * 16
+    )
+    pointer, journal, journal_path = _terminal_activate_pointer(
+        module,
+        active,
+        active_path,
+        generation=6,
+        txn_suffix="a" * 16,
+        previous_verified=previous_ref,
+    )
+    active_bundle = Path(str(active["skill_bundle_path"]))
+    installed = tmp_path / "installed_skill_pre_modules"
+    if installed.exists():
+        shutil.rmtree(installed)
+    shutil.copytree(active_bundle, installed)
+    (installed / "SKILL.md").write_bytes(
+        (installed / "SKILL.md").read_bytes() + b"\n# installed-pre-modules-drift\n"
+    )
+    monkeypatch.setenv("XINAO_INSTALLED_SKILL_ROOT", str(installed))
+    monkeypatch.setattr(module, "DEFAULT_INSTALLED_SKILL_ROOT", installed)
+    installed_snapshot = _installed_tree_map(installed)
+
+    # Target must match current source skill-bundle identity so post-upgrade
+    # idempotent re-entry can return ALREADY_* (no variant drift).
+    target, target_path = _sealed_current_dual_image_release(
+        module,
+        tmp_path,
+        monkeypatch,
+        image_character="c",
+        package_version="1.3.5",
+        capability_version="1.2.2",
+    )
+    monkeypatch.setattr(
+        module,
+        "_prepare_forward_upgrade_target",
+        lambda: (target, target_path),
+    )
+    return {
+        "active": active,
+        "active_path": active_path,
+        "active_manifest_bytes": active_path.read_bytes(),
+        "previous": previous,
+        "previous_path": previous_path,
+        "previous_manifest_bytes": previous_path.read_bytes(),
+        "pointer": pointer,
+        "pointer_path": module._state_paths()["pointer"],
+        "pointer_bytes": module._state_paths()["pointer"].read_bytes(),
+        "journal": journal,
+        "journal_path": journal_path,
+        "installed": installed,
+        "installed_snapshot": installed_snapshot,
+        "target": target,
+        "target_path": target_path,
+    }
+
+
+def test_bootstrap_forward_upgrade_pre_modules_to_dual_image_success(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Full prepare→journal→CAS/pointer-switch→canary green path (tmp state; build stubbed)."""
+
+    module = _module()
+    world = _prepare_pre_modules_forward_upgrade_world(module, tmp_path, monkeypatch)
+    monkeypatch.setattr(
+        module,
+        "_run_activation_canary",
+        lambda journal: _canary_value(module, journal),
+    )
+    receipt = module.bootstrap_forward_upgrade()
+    assert receipt["status"] == "UPGRADED"
+    assert receipt["operation"] == "FORWARD_UPGRADE"
+    assert receipt["release_id"] == world["target"]["release_id"]
+    assert receipt["completion_claim_allowed"] is False
+    pointer = module._load_json(module._state_paths()["pointer"])
+    assert pointer["generation"] == 7
+    assert pointer["active"]["release_id"] == world["target"]["release_id"]
+    assert pointer["previous_verified"] is None
+    # Historical release bytes never rewritten.
+    assert Path(world["active_path"]).read_bytes() == world["active_manifest_bytes"]
+    assert Path(world["previous_path"]).read_bytes() == world["previous_manifest_bytes"]
+    target_manifest = module._load_json(Path(world["target_path"]))
+    module._validate_release_manifest(target_manifest, Path(world["target_path"]))
+    assert set(target_manifest["source_identity"]) == set(module.CURRENT_SOURCE_IDENTITY_KEYS)
+    again = module.bootstrap_forward_upgrade()
+    assert again["status"] in {"ALREADY_UPGRADED", "ALREADY_CURRENT"}
+
+
+def test_bootstrap_forward_upgrade_pre_modules_crash_after_pointer_switch_recovers(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Interrupt after pointer switch → rollback restore; re-entry finishes upgrade."""
+
+    module = _module()
+    world = _prepare_pre_modules_forward_upgrade_world(module, tmp_path, monkeypatch)
+    original_post = module._project_migration_post_pointer
+    calls = {"n": 0}
+
+    def crash_once(journal: dict[str, object]) -> None:
+        calls["n"] += 1
+        if calls["n"] == 1:
+            raise module.XinaoError("INJECTED_CRASH", "after pointer switch")
+        return original_post(journal)
+
+    monkeypatch.setattr(module, "_project_migration_post_pointer", crash_once)
+    monkeypatch.setattr(
+        module,
+        "_run_activation_canary",
+        lambda journal: _canary_value(module, journal),
+    )
+    rolled = module.bootstrap_forward_upgrade()
+    assert rolled["status"] == "ROLLED_BACK"
+    assert rolled["operation"] == "FORWARD_UPGRADE"
+    assert module._state_paths()["pointer"].read_bytes() == world["pointer_bytes"]
+    assert Path(world["active_path"]).read_bytes() == world["active_manifest_bytes"]
+    monkeypatch.setattr(module, "_project_migration_post_pointer", original_post)
+    receipt = module.bootstrap_forward_upgrade()
+    assert receipt["status"] == "UPGRADED"
+    pointer = module._load_json(module._state_paths()["pointer"])
+    assert pointer["active"]["release_id"] == world["target"]["release_id"]
+
+
+def test_bootstrap_forward_upgrade_pre_modules_tamper_rejects_before_mutation(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    module = _module()
+    world = _prepare_pre_modules_forward_upgrade_world(module, tmp_path, monkeypatch)
+    active_path = Path(world["active_path"])
+    payload = json.loads(active_path.read_text(encoding="utf-8"))
+    payload["image_labels"]["io.xinao.researcher.chain"] = "tampered"
+    active_path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    with pytest.raises(module.XinaoError) as failure:
+        module.bootstrap_forward_upgrade()
+    assert failure.value.reason_code in {
+        "RELEASE_IMAGE_IDENTITY_INVALID",
+        "RELEASE_IDENTITY_MISMATCH",
+        "RELEASE_MANIFEST_IDENTITY_MISMATCH",
+        "RELEASE_POINTER_IDENTITY_MISMATCH",
+    }
+    assert module._state_paths()["pointer"].read_bytes() == world["pointer_bytes"]
+
+
+def test_forged_prepared_activate_historical_to_fail_closed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """PREPARED ACTIVATE with historical to must fail journal + switch commitment boundary."""
+
+    module = _module()
+    historical, historical_path = _sealed_pre_modules_v2_release(
+        module, tmp_path, monkeypatch, image_character="3", variant=b"forged-prepared\n"
+    )
+    current, current_path = _sealed_current_dual_image_release(
+        module,
+        tmp_path,
+        monkeypatch,
+        image_character="4",
+        package_version="1.3.5",
+        capability_version="1.2.2",
+        variant=b"current-active\n",
+    )
+    # Plant ordinary current pointer first.
+    current_ref = module._release_ref_from_manifest(
+        current, current_path, activation_txn_id="xra_20260730T120000_" + "4" * 16
+    )
+    pointer = {
+        "schema_version": module.CURRENT_POINTER_SCHEMA,
+        "generation": 7,
+        "active": current_ref,
+        "previous_verified": None,
+        "switched_at": "2026-07-30T12:00:00Z",
+    }
+    pointer_path = module._state_paths()["pointer"]
+    module._write_json_atomic(pointer_path, pointer)
+    pointer_sha256 = module._sha256(pointer_path)
+    historical_ref = module._release_ref_from_manifest(
+        historical, historical_path, activation_txn_id="xra_20260730T130000_" + "3" * 16
+    )
+    txn_id = "xra_20260730T140000_" + "f" * 16
+    journal_path = module._journal_path(txn_id)
+    journal_path.parent.mkdir(parents=True, exist_ok=True)
+    journal = {
+        "schema_version": module.ACTIVATION_JOURNAL_SCHEMA,
+        "revision": 1,
+        "txn_id": txn_id,
+        "operation": "ACTIVATE",
+        "state": "PREPARED",
+        "from": {
+            "generation": 7,
+            "pointer_sha256": pointer_sha256,
+            "active": current_ref,
+            "previous_verified": None,
+        },
+        "requested_to": historical_ref,
+        "to": historical_ref,
+        "expected_generation": 8,
+        "prepared_at": "2026-07-30T14:00:00Z",
+        "updated_at": "2026-07-30T14:00:00Z",
+        "switched_pointer_sha256": None,
+        "canary": None,
+        "failure_reason": None,
+        "terminal_pointer_sha256": None,
+    }
+    module._write_json_atomic(journal_path, journal, create_new=True)
+    with pytest.raises(module.XinaoError) as journal_fail:
+        module._validate_journal(
+            json.loads(journal_path.read_text(encoding="utf-8")), journal_path
+        )
+    assert journal_fail.value.reason_code in {
+        "RELEASE_SOURCE_IDENTITY_INVALID",
+        "RELEASE_SCHEMA_INVALID",
+    }
+    with pytest.raises(module.XinaoError) as switch_fail:
+        module._switch_prepared_pointer(
+            json.loads(journal_path.read_text(encoding="utf-8")), journal_path
+        )
+    assert switch_fail.value.reason_code in {
+        "RELEASE_SOURCE_IDENTITY_INVALID",
+        "RELEASE_SCHEMA_INVALID",
+    }
+    # Pointer never mutated.
+    assert module._state_paths()["pointer"].read_bytes() == pointer_path.read_bytes()
+    assert module._load_json(pointer_path)["active"]["release_id"] == current["release_id"]

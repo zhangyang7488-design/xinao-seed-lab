@@ -3464,6 +3464,11 @@ def _validate_pre_modules_release(
     }
     if labels != expected_labels:
         raise XinaoError("RELEASE_IMAGE_IDENTITY_INVALID", "image_labels")
+    # A-only integrity: skill_hashes.shadow_runtime_lock_sha256 must equal SI lock.
+    # Labels already bind SI lock; skill_hashes already bind real lock-file bytes.
+    # Without this cross-check a format-valid SI/label lock can desync from skill_hashes.
+    if expected_hashes.get("shadow_runtime_lock_sha256") != shadow_lock:
+        raise XinaoError("RELEASE_SHADOW_RUNTIME_LOCK_INVALID", "skill_hashes_cross_check")
     for key in (
         "io.xinao.researcher.dockerfile.sha256",
         "io.xinao.researcher.entrypoint.sha256",
@@ -3838,23 +3843,19 @@ def _validate_journal(journal: dict[str, Any], journal_path: Path) -> None:
         raise XinaoError("ACTIVATION_STATE_INVALID", _safe_text(journal.get("state")))
     if type(journal.get("expected_generation")) is not int or journal["expected_generation"] < 1:
         raise XinaoError("ACTIVATION_GENERATION_INVALID", str(journal.get("expected_generation")))
-    # Journal-bound release refs validate under the generation they actually sealed.
-    # Ordinary pointer/active load remains exact-current and fail-closed outside upgrade.
-    # Terminal FORWARD_UPGRADE journals may historically target intermediate pre_modules
-    # (live gen6 era). PREPARED/pending/switchable journals must keep exact-current dual-
-    # image to/requested_to so a historical release cannot become the CAS switch target.
-    if journal.get("operation") == "FORWARD_UPGRADE":
-        if journal.get("state") in TERMINAL_ACTIVATION_STATES | {"RECOVERY_CONFLICT"}:
-            _validate_sealed_protocol_v2_release_ref(
-                journal.get("requested_to"), verify_bundle=False
-            )
-            _validate_sealed_protocol_v2_release_ref(journal.get("to"), verify_bundle=False)
-        else:
-            _validate_release_ref(journal.get("requested_to"))
-            _validate_release_ref(journal.get("to"))
-    else:
-        _validate_sealed_protocol_v2_release_ref(journal.get("requested_to"), verify_bundle=False)
+    # Journal-bound release refs:
+    # - Terminal / recovery-conflict journals revalidate generation-aware sealed targets
+    #   so historical pre_modules FORWARD_UPGRADE history remains readable.
+    # - Nonterminal PREPARED/pending/switchable journals must bind exact-current dual-image
+    #   to/requested_to so a historical release cannot become the CAS switch target.
+    if journal.get("state") in TERMINAL_ACTIVATION_STATES | {"RECOVERY_CONFLICT"}:
+        _validate_sealed_protocol_v2_release_ref(
+            journal.get("requested_to"), verify_bundle=False
+        )
         _validate_sealed_protocol_v2_release_ref(journal.get("to"), verify_bundle=False)
+    else:
+        _validate_release_ref(journal.get("requested_to"))
+        _validate_release_ref(journal.get("to"))
     from_value = journal.get("from")
     if journal.get("operation") == "MIGRATE":
         if not isinstance(from_value, dict) or set(from_value) != MIGRATE_FROM_KEYS:
@@ -5145,6 +5146,9 @@ def _switch_prepared_pointer(
 ) -> tuple[dict[str, Any], dict[str, Any], str]:
     if journal["state"] != "PREPARED":
         raise XinaoError("ACTIVATION_STATE_INVALID", str(journal["state"]))
+    # Commitment-boundary re-read: never CAS-switch to a non-exact-current target.
+    _validate_release_ref(journal.get("requested_to"))
+    _validate_release_ref(journal.get("to"))
     current, current_sha256 = _load_pointer_raw()
     from_value = journal["from"]
     if (
@@ -8103,6 +8107,9 @@ def _switch_migrate_pointer(
 ) -> tuple[dict[str, Any], dict[str, Any], str]:
     if journal["operation"] != "MIGRATE" or journal["state"] != "PREPARED":
         raise XinaoError("ACTIVATION_STATE_INVALID", str(journal.get("state")))
+    # Commitment-boundary re-read: migrate CAS must land on exact-current dual-image only.
+    _validate_release_ref(journal.get("requested_to"))
+    _validate_release_ref(journal.get("to"))
     from_value = journal["from"]
     pointer_path = _state_paths()["pointer"]
     if not pointer_path.is_file():
