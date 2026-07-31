@@ -18,6 +18,13 @@ import uuid
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, Callable, Iterator, Mapping, Sequence
+from types import ModuleType
+
+# Sealed skill-bundle / installed projection trees are exact inventories. Formal
+# consumers must not materialize __pycache__ under those roots. Fail-closed
+# inventory still rejects unauthorized .pyc if a bypassing importer pollutes.
+sys.dont_write_bytecode = True
+os.environ["PYTHONDONTWRITEBYTECODE"] = "1"
 
 SKILL_ROOT = Path(__file__).resolve().parents[1]
 REFERENCE_ROOT = SKILL_ROOT / "references"
@@ -649,6 +656,7 @@ COMPANION_RUNTIME_RELATIVE = "scripts/xinao_runtime.py"
 HUMAN_VISIBLE_SKILL_PATHS = frozenset({"SKILL.md", "agents/openai.yaml"})
 SOURCE_BUNDLE_IGNORED_DIRECTORIES = {"__pycache__"}
 SOURCE_BUNDLE_IGNORED_SUFFIXES = {".pyc", ".pyo"}
+# Packaging ignores source-side caches only. Verified sealed trees never ignore them.
 BOOTSTRAP_FENCE_KEYS = {
     "schema_version",
     "state_root",
@@ -1308,6 +1316,44 @@ def _source_bundle_files(root: Path) -> list[tuple[str, Path, bytes]]:
     if len(normalized) != len(set(normalized)):
         raise XinaoError("SKILL_BUNDLE_PATH_COLLISION", str(normalized))
     return rows
+
+
+def _enforce_sealed_tree_bytecode_hygiene() -> None:
+    """Keep formal consumers from writing .pyc under authority skill trees."""
+
+    sys.dont_write_bytecode = True
+    os.environ["PYTHONDONTWRITEBYTECODE"] = "1"
+
+
+def _load_sealed_python_module(module_name: str, path: Path) -> Any:
+    """Load a co-located sealed .py without SourceFileLoader writing __pycache__."""
+
+    _enforce_sealed_tree_bytecode_hygiene()
+    lexical = Path(os.path.abspath(path))
+    if not lexical.is_file() or _is_reparse(lexical):
+        raise XinaoError("SEALED_MODULE_MISSING", str(lexical))
+    payload = _regular_file_bytes(
+        lexical,
+        reason_code="SEALED_MODULE_READ_FAILED",
+        maximum=MAX_SKILL_BUNDLE_FILE_BYTES,
+    )
+    try:
+        source = payload.decode("utf-8")
+    except UnicodeDecodeError as exc:
+        raise XinaoError("SEALED_MODULE_INVALID", str(lexical)) from exc
+    module = ModuleType(module_name)
+    module.__file__ = str(lexical)
+    module.__package__ = None
+    module.__cached__ = None
+    module.__loader__ = None
+    module.__spec__ = None
+    sys.modules[module_name] = module
+    try:
+        exec(compile(source, str(lexical), "exec"), module.__dict__)
+    except Exception:
+        sys.modules.pop(module_name, None)
+        raise
+    return module
 
 
 def _strict_plain_tree(root: Path, *, reason_code: str) -> tuple[dict[str, bytes], set[str]]:
@@ -6216,8 +6262,9 @@ def _recovery_cone_entry_payload(txn_id: str) -> bytes:
         "import sys\n"
         f"_txn = {txn_id!r}\n"
         "_launcher = Path(__file__).resolve().with_name('xinao.py')\n"
-        "raise SystemExit(subprocess.run([sys.executable, '-I', str(_launcher), "
-        "'_recover-migration', '--txn-id', _txn], check=False).returncode)\n"
+        "raise SystemExit(subprocess.run([sys.executable, '-I', '-B', str(_launcher), "
+        "'_recover-migration', '--txn-id', _txn], check=False,"
+        "env={**__import__('os').environ,'PYTHONDONTWRITEBYTECODE':'1'}).returncode)\n"
     ).encode("utf-8")
 
 
@@ -6683,7 +6730,8 @@ def _stable_recovery_launcher_payload() -> bytes:
         "'status':'PREFLIGHT_FAILED','reason_codes':['STABLE_RECOVERY_POINTER_INVALID'],"
         "'detail':str(_exc),'completion_claim_allowed':False},sort_keys=True))\n"
         "    raise SystemExit(2)\n"
-        "raise SystemExit(subprocess.run([sys.executable,'-I',str(_entry)],check=False).returncode)\n"
+        "raise SystemExit(subprocess.run([sys.executable,'-I','-B',str(_entry)],check=False,"
+        "env={**__import__('os').environ,'PYTHONDONTWRITEBYTECODE':'1'}).returncode)\n"
     ).encode("utf-8")
 
 
@@ -13199,12 +13247,12 @@ def _research_episode_container_identity(
             "parent_complete": False,
         }
     host_path = Path(__file__).resolve().parent / "dual_container_host.py"
-    spec = importlib.util.spec_from_file_location("xinao_dual_container_host_runtime", host_path)
-    if spec is None or spec.loader is None:
-        raise XinaoError("DUAL_CONTAINER_HOST_MISSING", str(host_path))
-    host_mod = importlib.util.module_from_spec(spec)
-    sys.modules[spec.name] = host_mod
-    spec.loader.exec_module(host_mod)
+    try:
+        host_mod = _load_sealed_python_module("xinao_dual_container_host_runtime", host_path)
+    except XinaoError as exc:
+        if exc.reason_code in {"SEALED_MODULE_MISSING", "SEALED_MODULE_READ_FAILED"}:
+            raise XinaoError("DUAL_CONTAINER_HOST_MISSING", str(host_path)) from exc
+        raise
     transport, tool = _resolve_research_episode_dual_images()
     auth = os.environ.get("XINAO_AUTH_HOST_PATH", "").strip()
     synthetic = os.environ.get("XINAO_DUAL_CONTAINER_SYNTHETIC", "").strip().lower() in {
@@ -14365,14 +14413,14 @@ def research_episode_cancel(*, root: Path | str) -> dict[str, Any]:
 
 def _research_episode_load_dual_host(root: Path) -> Any:
     host_path = Path(__file__).resolve().parent / "dual_container_host.py"
-    spec = importlib.util.spec_from_file_location(
-        "xinao_dual_container_host_runtime_live", host_path
-    )
-    if spec is None or spec.loader is None:
-        raise XinaoError("DUAL_CONTAINER_HOST_MISSING", str(host_path))
-    host_mod = importlib.util.module_from_spec(spec)
-    sys.modules[spec.name] = host_mod
-    spec.loader.exec_module(host_mod)
+    try:
+        host_mod = _load_sealed_python_module(
+            "xinao_dual_container_host_runtime_live", host_path
+        )
+    except XinaoError as exc:
+        if exc.reason_code in {"SEALED_MODULE_MISSING", "SEALED_MODULE_READ_FAILED"}:
+            raise XinaoError("DUAL_CONTAINER_HOST_MISSING", str(host_path)) from exc
+        raise
     transport, tool = _resolve_research_episode_dual_images()
     auth = os.environ.get("XINAO_AUTH_HOST_PATH", "").strip()
     synthetic = os.environ.get("XINAO_DUAL_CONTAINER_SYNTHETIC", "").strip().lower() in {

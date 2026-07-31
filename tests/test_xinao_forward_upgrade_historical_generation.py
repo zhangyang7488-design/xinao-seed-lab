@@ -626,7 +626,7 @@ def test_companion_runtime_seal_matches_repository_bytes() -> None:
     runtime_path = bootstrap._companion_runtime_path()
     observed = hashlib.sha256(runtime_path.read_bytes()).hexdigest()
     assert observed == bootstrap.EXPECTED_COMPANION_RUNTIME_SHA256
-    assert observed == "4b195734c370ac8314c90b5a35eaf696fa5d4c4ebd393d104bb9d2d8f69160c0"
+    assert observed == "7e4260cf5ae18b71139ad4e4d971ca955d97d190086b6dd731e2cc02dff1348b"
     assert len(observed) == 64
 
 

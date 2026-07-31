@@ -15,6 +15,13 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, Sequence
 
+# Sealed installed / active / release skill-bundle trees are byte-exact inventories.
+# Formal entry must never emit __pycache__/.pyc there. Keep -B as defense in depth;
+# do not rely on callers remembering it. (Raw `import xinao_runtime` still writes the
+# importer's first module cache before body runs — use formal entry or -B for audits.)
+sys.dont_write_bytecode = True
+os.environ["PYTHONDONTWRITEBYTECODE"] = "1"
+
 DEFAULT_STATE_ROOT = Path(r"D:\XINAO_RESEARCH_RUNTIME\state\xinao_skill")
 MAX_CONTROL_BYTES = 512 * 1024
 MAX_MANIFEST_BYTES = 2 * 1024 * 1024
@@ -30,7 +37,7 @@ RELEASE_RUNTIME_RELATIVE_PATH = Path("skill-bundle") / "scripts" / "xinao_runtim
 # Bound to the co-located bootstrap-migration companion. Tampering fails before execution.
 # Update this whenever the candidate xinao_runtime.py bytes change.
 EXPECTED_COMPANION_RUNTIME_SHA256 = (
-    "4b195734c370ac8314c90b5a35eaf696fa5d4c4ebd393d104bb9d2d8f69160c0"
+    "7e4260cf5ae18b71139ad4e4d971ca955d97d190086b6dd731e2cc02dff1348b"
 )
 RELEASE_ID_PATTERN = re.compile(r"^researcher-[0-9]+\.[0-9]+\.[0-9]+-[0-9a-f]{16}$")
 TXN_ID_PATTERN = re.compile(r"^xra_[0-9]{8}T[0-9]{6}_[0-9a-f]{16}$")
@@ -1289,6 +1296,10 @@ def _runtime_wrapper(runtime_path: Path, runtime_payload: bytes) -> bytes:
     source_name = ascii(str(runtime_path))
     return (
         "import base64\n"
+        "import os\n"
+        "import sys\n"
+        "sys.dont_write_bytecode = True\n"
+        "os.environ['PYTHONDONTWRITEBYTECODE'] = '1'\n"
         f"_source = base64.b64decode({encoded!r}, validate=True)\n"
         f"_name = {source_name}\n"
         "_scope = {\n"
@@ -1299,6 +1310,18 @@ def _runtime_wrapper(runtime_path: Path, runtime_payload: bytes) -> bytes:
         "}\n"
         "exec(compile(_source, _name, 'exec'), _scope, _scope)\n"
     ).encode("ascii")
+
+
+def _sealed_runtime_child_argv(argv: Sequence[str]) -> list[str]:
+    """Isolated stdin-exec child that never writes bytecode under sealed trees."""
+
+    return [sys.executable, "-I", "-B", "-", *list(argv)]
+
+
+def _sealed_runtime_child_env(base: dict[str, str] | None = None) -> dict[str, str]:
+    environment = dict(os.environ if base is None else base)
+    environment["PYTHONDONTWRITEBYTECODE"] = "1"
+    return environment
 
 
 def _validate_legacy_restore_inventory_tree(
@@ -1490,11 +1513,11 @@ def _run_sealed_legacy_ordinary(argv: Sequence[str], state_root: Path) -> int:
                 state_root, pointer, pointer_sha256
             )
             wrapper = _runtime_wrapper(launcher_path, launcher_payload)
-            child_environment = os.environ.copy()
+            child_environment = _sealed_runtime_child_env()
             child_environment.pop("XINAO_BOOTSTRAP_FENCE_V1", None)
             try:
                 process = subprocess.Popen(
-                    [sys.executable, "-I", "-", *argv],
+                    _sealed_runtime_child_argv(argv),
                     stdin=subprocess.PIPE,
                     env=child_environment,
                 )
@@ -1650,11 +1673,11 @@ def _run_companion_runtime(argv: Sequence[str]) -> int:
     process: subprocess.Popen[bytes] | None = None
     try:
         wrapper = _runtime_wrapper(runtime_path, runtime_payload)
-        child_environment = os.environ.copy()
+        child_environment = _sealed_runtime_child_env()
         child_environment.pop("XINAO_BOOTSTRAP_FENCE_V1", None)
         try:
             process = subprocess.Popen(
-                [sys.executable, "-I", "-", *argv],
+                _sealed_runtime_child_argv(argv),
                 stdin=subprocess.PIPE,
                 env=child_environment,
             )
@@ -1738,7 +1761,7 @@ def _run_runtime(argv: Sequence[str]) -> int:
         nonlocal process
         runtime_path, runtime_payload, fence = _runtime_entry_locked(argv, state_root)
         wrapper = _runtime_wrapper(runtime_path, runtime_payload)
-        child_environment = os.environ.copy()
+        child_environment = _sealed_runtime_child_env()
         child_environment["XINAO_BOOTSTRAP_FENCE_V1"] = json.dumps(
             fence,
             ensure_ascii=True,
@@ -1747,7 +1770,7 @@ def _run_runtime(argv: Sequence[str]) -> int:
         )
         try:
             process = subprocess.Popen(
-                [sys.executable, "-I", "-", *argv],
+                _sealed_runtime_child_argv(argv),
                 stdin=subprocess.PIPE,
                 env=child_environment,
             )
