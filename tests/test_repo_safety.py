@@ -1591,12 +1591,24 @@ def test_ci_root_hygiene_job_is_single_platform_and_not_duplicated_in_pytest_mat
 
     verify = jobs["verify"]
     assert verify["needs"] == "root-hygiene" or verify["needs"] == ["root-hygiene"]
-    matrix_os = {entry["os"] for entry in verify["strategy"]["matrix"]["include"]}
+    matrix_include = verify["strategy"]["matrix"]["include"]
+    matrix_os = {entry["os"] for entry in matrix_include}
     assert matrix_os == {"ubuntu-latest", "windows-latest"}
+    # Root pytest is sharded 3 ways per OS (six required jobs); full coverage is the union.
+    assert len(matrix_include) == 6
+    assert {(int(e["shard"]), int(e["shard_count"])) for e in matrix_include} == {
+        (0, 3),
+        (1, 3),
+        (2, 3),
+    }
     verify_steps = "\n".join(
         step.get("run", "") for step in verify["steps"] if isinstance(step, dict)
     )
     assert "uv run pytest -q" in verify_steps
+    assert "-p scripts.pytest_shard" in verify_steps
+    assert "--shard-count ${{ matrix.shard_count }}" in verify_steps
+    assert "--shard-index ${{ matrix.shard }}" in verify_steps
+    assert "pytest-shard-${{ matrix.shard }}" in verify_steps
     for command in ROOT_HYGIENE_COMMANDS:
         assert command not in verify_steps, f"duplicated in verify: {command}"
     assert "ruff check" not in verify_steps
