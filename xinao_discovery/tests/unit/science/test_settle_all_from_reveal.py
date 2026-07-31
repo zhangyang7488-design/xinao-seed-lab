@@ -135,114 +135,6 @@ def test_positive_settle_all_exact_once_and_idempotent_replay(tmp_path: Path) ->
     )
     assert (root / "action_settlement_bundles.v1.json").read_bytes() == bundles_bytes
     assert third["settlement_set_hash"] == first["settlement_set_hash"]
-    # Durable on-disk receipt must not embed process-local settlement_written=True
-    # (Wave99 F3 concurrent CAS noise); process return may still report True on first call.
-    disk_receipt = json.loads((root / "multipolicy_settle_all_receipt.v1.json").read_text(encoding="utf-8"))
-    assert disk_receipt.get("settlement_written") is False
-    assert disk_receipt.get("content_hash") == first["content_hash"]
-
-
-def test_post_settlement_partial_siblings_healed(tmp_path: Path) -> None:
-    """Wave99 F1: crash after settlement_set must heal missing bundles+receipt, not ok-with-hole."""
-
-    freeze_path, freeze_hash = _freeze_path(tmp_path)
-    freeze = FrozenDecisionSet.model_validate_json(freeze_path.read_text(encoding="utf-8"))
-    reveal = build_isolated_reveal_fixture(
-        target_ref=freeze.target_ref,
-        actual_special_number=3,
-        observed_at=OPEN + timedelta(minutes=1),
-    )
-    rpath = _reveal_path(tmp_path, reveal)
-    root = tmp_path / "settlement_root_partial"
-
-    first = apply_settle_all_from_reveal(
-        settlement_root=root,
-        freeze_set_path=freeze_path,
-        expected_freeze_set_hash=freeze_hash,
-        reveal_artifact=rpath,
-    )
-    assert first["ok"] is True
-    bundles_path = root / "action_settlement_bundles.v1.json"
-    receipt_path = root / "multipolicy_settle_all_receipt.v1.json"
-    assert bundles_path.is_file()
-    assert receipt_path.is_file()
-    original_bundles = bundles_path.read_bytes()
-    original_receipt = receipt_path.read_bytes()
-
-    # Simulate crash after settlement_set exclusive create: siblings gone.
-    bundles_path.unlink()
-    receipt_path.unlink()
-    assert not bundles_path.exists()
-    assert not receipt_path.exists()
-    assert (root / "settlement_set.v1.json").is_file()
-
-    healed = apply_settle_all_from_reveal(
-        settlement_root=root,
-        freeze_set_path=freeze_path,
-        expected_freeze_set_hash=freeze_hash,
-        reveal_artifact=rpath,
-    )
-    assert healed["ok"] is True
-    assert healed.get("durable_siblings_healed") is True
-    assert healed["idempotent_replay"] is True
-    assert healed["settlement_written"] is False
-    assert healed["settlement_set_hash"] == first["settlement_set_hash"]
-    assert healed["action_bundle_count"] == first["action_bundle_count"]
-    assert bundles_path.is_file()
-    assert receipt_path.is_file()
-    assert bundles_path.read_bytes() == original_bundles
-    assert receipt_path.read_bytes() == original_receipt
-
-    # Receipt-only hole also heals.
-    receipt_path.unlink()
-    healed_receipt = apply_settle_all_from_reveal(
-        settlement_root=root,
-        freeze_set_path=freeze_path,
-        expected_freeze_set_hash=freeze_hash,
-        reveal_artifact=rpath,
-    )
-    assert healed_receipt["ok"] is True
-    assert receipt_path.is_file()
-    assert receipt_path.read_bytes() == original_receipt
-
-
-def test_lying_receipt_with_settlement_present_fail_closed(tmp_path: Path) -> None:
-    """Wave99 F4 class: divergent on-disk receipt must not be silently ignored."""
-
-    freeze_path, freeze_hash = _freeze_path(tmp_path)
-    freeze = FrozenDecisionSet.model_validate_json(freeze_path.read_text(encoding="utf-8"))
-    reveal = build_isolated_reveal_fixture(
-        target_ref=freeze.target_ref,
-        actual_special_number=3,
-        observed_at=OPEN + timedelta(minutes=1),
-    )
-    rpath = _reveal_path(tmp_path, reveal)
-    root = tmp_path / "settlement_root_lie"
-
-    first = apply_settle_all_from_reveal(
-        settlement_root=root,
-        freeze_set_path=freeze_path,
-        expected_freeze_set_hash=freeze_hash,
-        reveal_artifact=rpath,
-    )
-    receipt_path = root / "multipolicy_settle_all_receipt.v1.json"
-    poisoned = json.loads(receipt_path.read_text(encoding="utf-8"))
-    poisoned["settled_exactly_once_count"] = 99
-    poisoned["content_hash"] = canonical_sha256(
-        {k: v for k, v in poisoned.items() if k not in ("content_hash", "settlement_written")}
-    )
-    receipt_path.write_text(
-        json.dumps(poisoned, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
-        encoding="utf-8",
-    )
-    with pytest.raises(SettleAllFromRevealError, match="PARTIAL_DURABLE_STATE"):
-        apply_settle_all_from_reveal(
-            settlement_root=root,
-            freeze_set_path=freeze_path,
-            expected_freeze_set_hash=freeze_hash,
-            reveal_artifact=rpath,
-        )
-    assert first["settled_exactly_once_count"] == 4
 
 
 def test_altered_freeze_hash_fail_closed(tmp_path: Path) -> None:
@@ -597,3 +489,269 @@ def test_module_self_attack_no_subset_api_surface() -> None:
             assert "verified" not in arg_names
     assert "settle_portfolio_period" not in src
     assert "OBJECT_MODEL" in src
+
+
+def _settle_once(tmp_path: Path, name: str = "s") -> tuple[Path, Path, str, Path, dict[str, Any]]:
+    freeze_path, freeze_hash = _freeze_path(tmp_path)
+    freeze = FrozenDecisionSet.model_validate_json(freeze_path.read_text(encoding="utf-8"))
+    reveal = build_isolated_reveal_fixture(
+        target_ref=freeze.target_ref,
+        actual_special_number=3,
+        observed_at=OPEN + timedelta(minutes=1),
+    )
+    rpath = _reveal_path(tmp_path, reveal)
+    root = tmp_path / name
+    receipt = apply_settle_all_from_reveal(
+        settlement_root=root,
+        freeze_set_path=freeze_path,
+        expected_freeze_set_hash=freeze_hash,
+        reveal_artifact=rpath,
+    )
+    return root, freeze_path, freeze_hash, rpath, receipt
+
+
+def test_crash_after_settlement_set_heals_missing_bundles_and_receipt(tmp_path: Path) -> None:
+    """Wave99 P7: settlement_set present, siblings absent → heal, never ok incomplete."""
+
+    root, freeze_path, freeze_hash, rpath, first = _settle_once(tmp_path, "p7")
+    settlement_bytes = (root / "settlement_set.v1.json").read_bytes()
+    (root / "action_settlement_bundles.v1.json").unlink()
+    (root / "multipolicy_settle_all_receipt.v1.json").unlink()
+    assert not (root / "action_settlement_bundles.v1.json").is_file()
+    assert not (root / "multipolicy_settle_all_receipt.v1.json").is_file()
+
+    healed = apply_settle_all_from_reveal(
+        settlement_root=root,
+        freeze_set_path=freeze_path,
+        expected_freeze_set_hash=freeze_hash,
+        reveal_artifact=rpath,
+    )
+    assert healed["ok"] is True
+    assert healed["idempotent_replay"] is True
+    assert healed["settlement_written"] is False
+    assert healed["settlement_set_hash"] == first["settlement_set_hash"]
+    assert healed["action_bundle_count"] == first["action_bundle_count"]
+    assert isinstance(healed.get("action_bundles_digest"), str)
+    assert len(healed["action_bundles_digest"]) == 64
+    assert (root / "action_settlement_bundles.v1.json").is_file()
+    assert (root / "multipolicy_settle_all_receipt.v1.json").is_file()
+    assert (root / "settlement_set.v1.json").read_bytes() == settlement_bytes
+    disk_receipt = json.loads(
+        (root / "multipolicy_settle_all_receipt.v1.json").read_text(encoding="utf-8")
+    )
+    assert disk_receipt["settlement_set_hash"] == first["settlement_set_hash"]
+    assert disk_receipt["action_bundles_digest"] == healed["action_bundles_digest"]
+    assert disk_receipt["action_bundle_count"] == healed["action_bundle_count"]
+    # Sealed disk receipt must not carry process-local settlement_written.
+    assert "settlement_written" not in disk_receipt
+    assert "idempotent_replay" not in disk_receipt
+
+
+def test_crash_receipt_only_missing_heals_receipt(tmp_path: Path) -> None:
+    """Wave99 P7b: receipt-only hole heals without rewriting bundles bytes."""
+
+    root, freeze_path, freeze_hash, rpath, first = _settle_once(tmp_path, "p7b")
+    bundles_bytes = (root / "action_settlement_bundles.v1.json").read_bytes()
+    (root / "multipolicy_settle_all_receipt.v1.json").unlink()
+
+    healed = apply_settle_all_from_reveal(
+        settlement_root=root,
+        freeze_set_path=freeze_path,
+        expected_freeze_set_hash=freeze_hash,
+        reveal_artifact=rpath,
+    )
+    assert healed["ok"] is True
+    assert healed["idempotent_replay"] is True
+    assert (root / "multipolicy_settle_all_receipt.v1.json").is_file()
+    assert (root / "action_settlement_bundles.v1.json").read_bytes() == bundles_bytes
+    assert healed["settlement_set_hash"] == first["settlement_set_hash"]
+
+
+def test_crash_at_each_file_boundary_heals_or_completes(tmp_path: Path) -> None:
+    """Simulate crash after each durable file; retry must complete the commit triad."""
+
+    freeze_path, freeze_hash = _freeze_path(tmp_path)
+    freeze = FrozenDecisionSet.model_validate_json(freeze_path.read_text(encoding="utf-8"))
+    reveal = build_isolated_reveal_fixture(
+        target_ref=freeze.target_ref,
+        actual_special_number=3,
+        observed_at=OPEN + timedelta(minutes=1),
+    )
+    rpath = _reveal_path(tmp_path, reveal)
+
+    # Full success reference for identity.
+    ref_root = tmp_path / "ref"
+    ref = apply_settle_all_from_reveal(
+        settlement_root=ref_root,
+        freeze_set_path=freeze_path,
+        expected_freeze_set_hash=freeze_hash,
+        reveal_artifact=rpath,
+    )
+    triad = (
+        "settlement_set.v1.json",
+        "action_settlement_bundles.v1.json",
+        "multipolicy_settle_all_receipt.v1.json",
+    )
+    # Boundaries after each post-settlement artifact is dropped.
+    for drop in (
+        ("action_settlement_bundles.v1.json", "multipolicy_settle_all_receipt.v1.json"),
+        ("multipolicy_settle_all_receipt.v1.json",),
+        ("action_settlement_bundles.v1.json",),
+    ):
+        root = tmp_path / f"boundary_{'_'.join(drop)}"
+        apply_settle_all_from_reveal(
+            settlement_root=root,
+            freeze_set_path=freeze_path,
+            expected_freeze_set_hash=freeze_hash,
+            reveal_artifact=rpath,
+        )
+        for name in drop:
+            (root / name).unlink()
+        out = apply_settle_all_from_reveal(
+            settlement_root=root,
+            freeze_set_path=freeze_path,
+            expected_freeze_set_hash=freeze_hash,
+            reveal_artifact=rpath,
+        )
+        assert out["ok"] is True
+        assert out["settlement_set_hash"] == ref["settlement_set_hash"]
+        for name in triad:
+            assert (root / name).is_file(), name
+
+
+def test_poisoned_bundles_fail_closed(tmp_path: Path) -> None:
+    root, freeze_path, freeze_hash, rpath, _first = _settle_once(tmp_path, "poison_b")
+    (root / "action_settlement_bundles.v1.json").unlink()
+    _write_json(root / "action_settlement_bundles.v1.json", [{"poison": True}])
+    with pytest.raises(SettleAllFromRevealError, match="BUNDLES_RECOVERY_DIVERGENT"):
+        apply_settle_all_from_reveal(
+            settlement_root=root,
+            freeze_set_path=freeze_path,
+            expected_freeze_set_hash=freeze_hash,
+            reveal_artifact=rpath,
+        )
+
+
+def test_forged_receipt_replaced_under_recovery(tmp_path: Path) -> None:
+    """Wave99 P13: unbound/forged receipt replaced only when settlement+bundles verify."""
+
+    root, freeze_path, freeze_hash, rpath, first = _settle_once(tmp_path, "p13")
+    forged = {
+        "ok": True,
+        "settled_exactly_once_count": 99,
+        "settlement_set_hash": "0" * 64,
+        "action_bundle_count": 0,
+        "schema_version": "xinao.multipolicy_settle_all_receipt.v1",
+    }
+    (root / "multipolicy_settle_all_receipt.v1.json").unlink()
+    _write_json(root / "multipolicy_settle_all_receipt.v1.json", forged)
+
+    out = apply_settle_all_from_reveal(
+        settlement_root=root,
+        freeze_set_path=freeze_path,
+        expected_freeze_set_hash=freeze_hash,
+        reveal_artifact=rpath,
+    )
+    assert out["ok"] is True
+    assert out["settled_exactly_once_count"] == 4
+    assert out["settlement_set_hash"] == first["settlement_set_hash"]
+    disk = json.loads(
+        (root / "multipolicy_settle_all_receipt.v1.json").read_text(encoding="utf-8")
+    )
+    assert disk["settled_exactly_once_count"] == 4
+    assert disk["settlement_set_hash"] == first["settlement_set_hash"]
+    assert disk["action_bundles_digest"] == out["action_bundles_digest"]
+    assert disk.get("content_hash") == out.get("content_hash")
+
+
+def test_receipt_binds_settlement_and_bundles_digest(tmp_path: Path) -> None:
+    root, _fp, _fh, _rp, receipt = _settle_once(tmp_path, "bind")
+    disk = json.loads(
+        (root / "multipolicy_settle_all_receipt.v1.json").read_text(encoding="utf-8")
+    )
+    bundles = json.loads(
+        (root / "action_settlement_bundles.v1.json").read_text(encoding="utf-8")
+    )
+    settlement = json.loads((root / "settlement_set.v1.json").read_text(encoding="utf-8"))
+    assert disk["settlement_set_hash"] == settlement["content_hash"]
+    assert disk["action_bundles_digest"] == canonical_sha256(bundles)
+    assert disk["action_bundle_count"] == len(bundles)
+    assert receipt["action_bundles_digest"] == disk["action_bundles_digest"]
+    # content_hash seals durable fields only.
+    body = {k: v for k, v in disk.items() if k != "content_hash"}
+    assert disk["content_hash"] == canonical_sha256(body)
+    assert "settlement_written" not in body
+    assert "idempotent_replay" not in body
+
+
+def test_concurrent_same_identity_stable_sealed_artifacts(tmp_path: Path) -> None:
+    """Wave99 P12: concurrent callers produce one sealed triad (stable content_hash)."""
+
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+
+    freeze_path, freeze_hash = _freeze_path(tmp_path)
+    freeze = FrozenDecisionSet.model_validate_json(freeze_path.read_text(encoding="utf-8"))
+    reveal = build_isolated_reveal_fixture(
+        target_ref=freeze.target_ref,
+        actual_special_number=3,
+        observed_at=OPEN + timedelta(minutes=1),
+    )
+    rpath = _reveal_path(tmp_path, reveal)
+    root = tmp_path / "concurrent"
+
+    def once() -> dict[str, Any] | str:
+        try:
+            return apply_settle_all_from_reveal(
+                settlement_root=root,
+                freeze_set_path=freeze_path,
+                expected_freeze_set_hash=freeze_hash,
+                reveal_artifact=rpath,
+            )
+        except Exception as exc:  # noqa: BLE001 — surface concurrent races
+            return f"{type(exc).__name__}:{exc}"
+
+    with ThreadPoolExecutor(max_workers=4) as pool:
+        futs = [pool.submit(once) for _ in range(4)]
+        outcomes = [f.result() for f in as_completed(futs)]
+    oks = [o for o in outcomes if isinstance(o, dict) and o.get("ok") is True]
+    assert len(oks) >= 1
+    hashes = {o["settlement_set_hash"] for o in oks}
+    receipt_hashes = {o["content_hash"] for o in oks}
+    assert len(hashes) == 1
+    assert len(receipt_hashes) == 1
+    assert (root / "settlement_set.v1.json").is_file()
+    assert (root / "action_settlement_bundles.v1.json").is_file()
+    assert (root / "multipolicy_settle_all_receipt.v1.json").is_file()
+    disk_receipt = json.loads(
+        (root / "multipolicy_settle_all_receipt.v1.json").read_text(encoding="utf-8")
+    )
+    assert disk_receipt["content_hash"] in receipt_hashes
+    # All successful callers share sealed receipt identity (response flags may differ).
+    for o in oks:
+        assert o["content_hash"] == disk_receipt["content_hash"]
+        assert o["action_bundles_digest"] == disk_receipt["action_bundles_digest"]
+
+
+def test_intent_only_crash_still_recovers(tmp_path: Path) -> None:
+    root, freeze_path, freeze_hash, rpath, first = _settle_once(tmp_path, "intent_only")
+    intent_bytes = (root / "settle_all_intent.v1.json").read_bytes()
+    for name in (
+        "settlement_set.v1.json",
+        "action_settlement_bundles.v1.json",
+        "multipolicy_settle_all_receipt.v1.json",
+        "derived_outcome.v1.json",
+        "sealed_reveal.v1.json",
+        "frozen_decision_set.v1.json",
+    ):
+        (root / name).unlink()
+    out = apply_settle_all_from_reveal(
+        settlement_root=root,
+        freeze_set_path=freeze_path,
+        expected_freeze_set_hash=freeze_hash,
+        reveal_artifact=rpath,
+    )
+    assert out["ok"] is True
+    assert out["settlement_set_hash"] == first["settlement_set_hash"]
+    assert (root / "settle_all_intent.v1.json").read_bytes() == intent_bytes
+    assert (root / "action_settlement_bundles.v1.json").is_file()
+    assert (root / "multipolicy_settle_all_receipt.v1.json").is_file()

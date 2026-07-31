@@ -156,6 +156,12 @@ def reject_settle_all_forbidden_kwargs(kwargs: Mapping[str, Any]) -> None:
             )
 
 
+def _json_bytes(payload: Any) -> bytes:
+    return (json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True) + "\n").encode(
+        "utf-8"
+    )
+
+
 def _write_exclusive_bytes(path: Path, payload: bytes) -> bool:
     path.parent.mkdir(parents=True, exist_ok=True)
     try:
@@ -174,14 +180,45 @@ def _write_exclusive_bytes(path: Path, payload: bytes) -> bool:
 
 
 def _write_exclusive_json(path: Path, payload: Any) -> bool:
-    body = (json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True) + "\n").encode(
-        "utf-8"
-    )
-    return _write_exclusive_bytes(path, body)
+    return _write_exclusive_bytes(path, _json_bytes(payload))
+
+
+def _atomic_replace_json(path: Path, payload: Any) -> None:
+    """Replace an existing artifact under a verified recovery transaction only."""
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    body = _json_bytes(payload)
+    tmp = path.with_name(path.name + ".heal_tmp")
+    try:
+        with tmp.open("wb") as stream:
+            stream.write(body)
+            stream.flush()
+        tmp.replace(path)
+    finally:
+        if tmp.exists():
+            try:
+                tmp.unlink()
+            except OSError:
+                pass
 
 
 def _read_json(path: Path) -> Any:
     return json.loads(path.read_text(encoding="utf-8"))
+
+
+def _bundles_digest(bundles_payload: list[Any]) -> str:
+    """Canonical digest of durable action settlement bundles payload."""
+
+    return canonical_sha256(bundles_payload)
+
+
+# Invocation-local fields must never enter sealed receipt identity / content_hash.
+_RECEIPT_RESPONSE_ONLY_KEYS: Final = frozenset(
+    {
+        "idempotent_replay",
+        "settlement_written",
+    }
+)
 
 
 def _iso(value: datetime) -> str:
@@ -457,7 +494,7 @@ def _intent_payload(
     }
 
 
-def _build_receipt(
+def _build_sealed_receipt(
     *,
     settlement_root: Path,
     freeze_set: FrozenDecisionSet,
@@ -466,9 +503,15 @@ def _build_receipt(
     outcome: OutcomeObservation,
     result: SettleAllResult,
     reveal_meta: Mapping[str, Any],
-    idempotent_replay: bool,
-    settlement_written: bool,
+    action_bundles_digest: str,
 ) -> dict[str, Any]:
+    """Build durable sealed receipt bound to settlement-set and action-bundles digests.
+
+    Invocation-local flags (``settlement_written``, ``idempotent_replay``) are
+    intentionally excluded from the sealed body / content_hash so concurrent
+    same-identity callers produce byte-stable artifacts.
+    """
+
     settlement = result.settlement_set
     conservation_ok = (
         settlement.missing_or_duplicate_count == 0
@@ -499,6 +542,8 @@ def _build_receipt(
             "FROZEN_AWAITING_VERIFIED_OUTCOME until Owner applies an authoritative "
             "non-fixture reveal; do not claim formal 2026209 settled"
         )
+    bundle_count = len(result.action_bundles)
+    digest = _require_hex64(action_bundles_digest, "action_bundles_digest")
     receipt: dict[str, Any] = {
         "ok": True,
         "schema_version": RECEIPT_SCHEMA,
@@ -530,7 +575,8 @@ def _build_receipt(
         "missing_or_duplicate_count": settlement.missing_or_duplicate_count,
         "action_settled_count": action_settled,
         "no_action_settled_count": no_action_settled,
-        "action_bundle_count": len(result.action_bundles),
+        "action_bundle_count": bundle_count,
+        "action_bundles_digest": digest,
         "conservation_ok": True,
         "equality_evidence": {
             "score_rows": len(settlement.score_rows),
@@ -541,6 +587,8 @@ def _build_receipt(
             "closed": settlement.closed,
             "freeze_set_hash_bound": settlement.freeze_set_hash == freeze_set.content_hash,
             "outcome_hash_bound": settlement.outcome_hash == outcome.result_hash,
+            "action_bundles_digest_bound": digest,
+            "action_bundle_count_bound": bundle_count,
         },
         "role_coverage": [
             {
@@ -550,11 +598,6 @@ def _build_receipt(
             }
             for item in settlement.role_coverage
         ],
-        # Durable sealed body always pins settlement_written=False. Process-local
-        # "did this call create settlement_set" is overlaid on the return value only
-        # (Wave99 F3: concurrent callers must not CAS-conflict on a process flag).
-        "idempotent_replay": idempotent_replay,
-        "settlement_written": False,
         "evidence_class": reveal_meta.get("evidence_class"),
         "fixture_isolated_mechanics": bool(reveal_meta.get("fixture_isolated_mechanics")),
         "formal_object_settled": formal_settled,
@@ -562,28 +605,278 @@ def _build_receipt(
         **_honest_flags(),
     }
     receipt["content_hash"] = canonical_sha256(
-        {
-            k: v
-            for k, v in receipt.items()
-            if k not in ("content_hash", "settlement_written")
-        }
+        {k: v for k, v in receipt.items() if k != "content_hash"}
     )
-    # Optional process overlay for this call (not re-hashed into durable identity).
-    if settlement_written:
-        receipt["settlement_written"] = True
     return receipt
+
+
+def _with_response_fields(
+    sealed_receipt: Mapping[str, Any],
+    *,
+    idempotent_replay: bool,
+    settlement_written: bool,
+) -> dict[str, Any]:
+    """Attach invocation-local fields outside sealed content_hash identity."""
+
+    response = dict(sealed_receipt)
+    response["idempotent_replay"] = bool(idempotent_replay)
+    response["settlement_written"] = bool(settlement_written)
+    return response
+
+
+def _receipt_binding_ok(
+    receipt: Mapping[str, Any],
+    *,
+    settlement_set_hash: str,
+    action_bundles_digest: str,
+    action_bundle_count: int,
+) -> bool:
+    """True only when receipt binds settlement-set identity and bundles digest/count."""
+
+    if receipt.get("settlement_set_hash") != settlement_set_hash:
+        return False
+    if receipt.get("action_bundles_digest") != action_bundles_digest:
+        return False
+    try:
+        if int(receipt.get("action_bundle_count")) != int(action_bundle_count):
+            return False
+    except (TypeError, ValueError):
+        return False
+    embedded = receipt.get("content_hash")
+    if not isinstance(embedded, str) or not embedded:
+        return False
+    body = {
+        k: v
+        for k, v in receipt.items()
+        if k != "content_hash" and k not in _RECEIPT_RESPONSE_ONLY_KEYS
+    }
+    return embedded == canonical_sha256(body)
 
 
 def _load_existing_settlement(
     settlement_root: Path,
-) -> tuple[dict[str, Any] | None, dict[str, Any] | None, dict[str, Any] | None]:
+) -> tuple[dict[str, Any] | None, dict[str, Any] | None, dict[str, Any] | None, Any | None]:
     intent_path = settlement_root / _ARTIFACT_INTENT
     settlement_path = settlement_root / _ARTIFACT_SETTLEMENT_SET
     receipt_path = settlement_root / _ARTIFACT_RECEIPT
+    bundles_path = settlement_root / _ARTIFACT_BUNDLES
     intent = _read_json(intent_path) if intent_path.is_file() else None
     settlement = _read_json(settlement_path) if settlement_path.is_file() else None
     receipt = _read_json(receipt_path) if receipt_path.is_file() else None
-    return intent, settlement, receipt
+    bundles = _read_json(bundles_path) if bundles_path.is_file() else None
+    return intent, settlement, receipt, bundles
+
+
+def _assert_durable_commit_set_present(settlement_root: Path) -> None:
+    """Fail closed if the durable commit triad is incomplete."""
+
+    missing = [
+        name
+        for name in (_ARTIFACT_SETTLEMENT_SET, _ARTIFACT_BUNDLES, _ARTIFACT_RECEIPT)
+        if not (settlement_root / name).is_file()
+    ]
+    if missing:
+        raise SettleAllFromRevealError(
+            "PARTIAL_DURABLE_STATE",
+            f"durable commit set incomplete; missing={missing}",
+        )
+
+
+def _heal_or_verify_bundles(
+    *,
+    settlement_root: Path,
+    expected_bundles: list[Any],
+    existing_bundles: Any | None,
+) -> str:
+    """Ensure action bundles match recompute; exclusive-heal if missing only."""
+
+    expected_digest = _bundles_digest(expected_bundles)
+    bundles_path = settlement_root / _ARTIFACT_BUNDLES
+    if existing_bundles is None:
+        _write_exclusive_json(bundles_path, expected_bundles)
+        # Re-read path after exclusive write (another concurrent healer may have won).
+        on_disk = _read_json(bundles_path)
+        if on_disk != expected_bundles:
+            raise SettleAllFromRevealError(
+                "BUNDLES_RECOVERY_DIVERGENT",
+                "healed/existing action bundles differ from deterministic recompute",
+            )
+        return expected_digest
+    if not isinstance(existing_bundles, list):
+        raise SettleAllFromRevealError(
+            "BUNDLES_PAYLOAD_INVALID",
+            "action_settlement_bundles.v1.json must be a JSON array",
+        )
+    if existing_bundles != expected_bundles:
+        raise SettleAllFromRevealError(
+            "BUNDLES_RECOVERY_DIVERGENT",
+            "existing action bundles differ from deterministic recompute",
+        )
+    # Byte-level seal check when file already present.
+    if bundles_path.is_file() and bundles_path.read_bytes() != _json_bytes(expected_bundles):
+        raise SettleAllFromRevealError(
+            "BUNDLES_RECOVERY_DIVERGENT",
+            "existing action bundles bytes differ from deterministic recompute",
+        )
+    return expected_digest
+
+
+def _heal_or_verify_receipt(
+    *,
+    settlement_root: Path,
+    expected_receipt: Mapping[str, Any],
+    existing_receipt: Mapping[str, Any] | None,
+    settlement_set_hash: str,
+    action_bundles_digest: str,
+    action_bundle_count: int,
+) -> dict[str, Any]:
+    """Ensure sealed receipt exists and binds settlement + bundles; heal/replace safely."""
+
+    receipt_path = settlement_root / _ARTIFACT_RECEIPT
+    expected = dict(expected_receipt)
+
+    if existing_receipt is None:
+        _write_exclusive_json(receipt_path, expected)
+        on_disk = _read_json(receipt_path)
+        # Concurrent writer may have sealed first; accept only if sealed identity matches.
+        if not _receipt_binding_ok(
+            on_disk,
+            settlement_set_hash=settlement_set_hash,
+            action_bundles_digest=action_bundles_digest,
+            action_bundle_count=action_bundle_count,
+        ):
+            raise SettleAllFromRevealError(
+                "RECEIPT_BINDING_MISMATCH",
+                "on-disk receipt after heal does not bind settlement_set + action_bundles",
+            )
+        if on_disk.get("content_hash") != expected.get("content_hash"):
+            # Same binding but different sealed body is not an identical recovery transaction.
+            raise SettleAllFromRevealError(
+                "SETTLEMENT_CAS_CONFLICT",
+                f"path={receipt_path} already sealed with different bytes",
+            )
+        return dict(on_disk)
+
+    if _receipt_binding_ok(
+        existing_receipt,
+        settlement_set_hash=settlement_set_hash,
+        action_bundles_digest=action_bundles_digest,
+        action_bundle_count=action_bundle_count,
+    ):
+        # Bound receipt: sealed body must match expected deterministic recovery payload.
+        if existing_receipt.get("content_hash") == expected.get("content_hash"):
+            return dict(existing_receipt)
+        # Bound to same digests but different sealed fields → fail closed (not silent rewrite).
+        raise SettleAllFromRevealError(
+            "SETTLEMENT_CAS_CONFLICT",
+            f"path={receipt_path} already sealed with different bytes",
+        )
+
+    # Forged / unbound / pre-binding-era receipt: replace only under proven recovery identity.
+    if expected.get("settlement_set_hash") != settlement_set_hash:
+        raise SettleAllFromRevealError(
+            "RECEIPT_RECOVERY_INCONSISTENT",
+            "expected receipt settlement_set_hash does not match sealed settlement",
+        )
+    if expected.get("action_bundles_digest") != action_bundles_digest:
+        raise SettleAllFromRevealError(
+            "RECEIPT_RECOVERY_INCONSISTENT",
+            "expected receipt action_bundles_digest does not match sealed bundles",
+        )
+    _atomic_replace_json(receipt_path, expected)
+    on_disk = _read_json(receipt_path)
+    if not _receipt_binding_ok(
+        on_disk,
+        settlement_set_hash=settlement_set_hash,
+        action_bundles_digest=action_bundles_digest,
+        action_bundle_count=action_bundle_count,
+    ):
+        raise SettleAllFromRevealError(
+            "RECEIPT_BINDING_MISMATCH",
+            "replaced receipt still fails settlement_set + action_bundles binding",
+        )
+    return dict(on_disk)
+
+
+def _recover_existing_settlement(
+    *,
+    settlement_root: Path,
+    freeze_set: FrozenDecisionSet,
+    ticket_enum: Mapping[str, Any],
+    reveal_hash: str,
+    outcome: OutcomeObservation,
+    reveal_meta: Mapping[str, Any],
+    existing_settlement: Mapping[str, Any],
+    existing_bundles: Any | None,
+    existing_receipt: Mapping[str, Any] | None,
+    set_ref: str,
+    port_ref: str,
+    occurred_at: datetime | None,
+) -> dict[str, Any]:
+    """Deterministic heal/verify of durable commit set after settlement_set exists."""
+
+    if existing_settlement.get("freeze_set_hash") != freeze_set.content_hash:
+        raise SettleAllFromRevealError(
+            "FREEZE_CHANGED_AFTER_PARTIAL",
+            f"settled freeze={existing_settlement.get('freeze_set_hash')!r}",
+        )
+    if existing_settlement.get("outcome_hash") != outcome.result_hash:
+        raise SettleAllFromRevealError(
+            "REVEAL_CHANGED_AFTER_PARTIAL",
+            f"settled outcome={existing_settlement.get('outcome_hash')!r}",
+        )
+    if int(existing_settlement.get("missing_or_duplicate_count", 1)) != 0:
+        raise SettleAllFromRevealError(
+            "EXISTING_SETTLEMENT_NOT_CONSERVED",
+            "prior settlement_set fails conservation",
+        )
+
+    from xinao.science.portfolio import SettlementSet
+
+    sealed = SettlementSet.model_validate(dict(existing_settlement))
+    recompute = settle_all(
+        freeze_set=freeze_set,
+        outcome=outcome,
+        settlement_set_ref=str(existing_settlement.get("settlement_set_ref") or set_ref),
+        portfolio_ref=port_ref,
+        occurred_at=occurred_at or outcome.observed_at,
+    )
+    if recompute.settlement_set.content_hash != sealed.content_hash:
+        raise SettleAllFromRevealError(
+            "SETTLEMENT_REPLAY_DRIFT",
+            f"disk={sealed.content_hash} recompute={recompute.settlement_set.content_hash}",
+        )
+
+    expected_bundles = [bundle.model_dump(mode="json") for bundle in recompute.action_bundles]
+    action_bundles_digest = _heal_or_verify_bundles(
+        settlement_root=settlement_root,
+        expected_bundles=expected_bundles,
+        existing_bundles=existing_bundles,
+    )
+    sealed_receipt = _build_sealed_receipt(
+        settlement_root=settlement_root,
+        freeze_set=freeze_set,
+        ticket_enum=ticket_enum,
+        reveal_content_hash=reveal_hash,
+        outcome=outcome,
+        result=recompute,
+        reveal_meta=reveal_meta,
+        action_bundles_digest=action_bundles_digest,
+    )
+    durable_receipt = _heal_or_verify_receipt(
+        settlement_root=settlement_root,
+        expected_receipt=sealed_receipt,
+        existing_receipt=existing_receipt,
+        settlement_set_hash=str(sealed.content_hash),
+        action_bundles_digest=action_bundles_digest,
+        action_bundle_count=len(recompute.action_bundles),
+    )
+    _assert_durable_commit_set_present(settlement_root)
+    return _with_response_fields(
+        durable_receipt,
+        idempotent_replay=True,
+        settlement_written=False,
+    )
 
 
 def apply_settle_all_from_reveal(
@@ -607,8 +900,11 @@ def apply_settle_all_from_reveal(
 
     Fail-closed on missing/extra/duplicate tickets, wrong target/protocol, altered
     freeze hash, partial/subset settlement attempts, caller outcome override, and
-    reveal/freeze identity change after partial progress. Deterministic replay of
-    the same identity does not double-post.
+    reveal/freeze identity change after partial progress. Durable commit set is
+    ``{settlement_set, action_settlement_bundles, multipolicy_settle_all_receipt}``;
+    crash retry after ``settlement_set`` reconstructs/verifies/heals missing
+    siblings or fails closed — never returns ``ok`` for an incomplete durable set.
+    Deterministic replay of the same identity does not double-post.
     """
 
     reject_settle_all_forbidden_kwargs(forbidden_kwargs)
@@ -682,7 +978,9 @@ def apply_settle_all_from_reveal(
         portfolio_ref=port_ref,
     )
 
-    existing_intent, existing_settlement, existing_receipt = _load_existing_settlement(root)
+    existing_intent, existing_settlement, existing_receipt, existing_bundles = (
+        _load_existing_settlement(root)
+    )
 
     if existing_intent is not None:
         for key in (
@@ -704,85 +1002,20 @@ def apply_settle_all_from_reveal(
                 )
 
     if existing_settlement is not None:
-        if existing_settlement.get("freeze_set_hash") != freeze_set.content_hash:
-            raise SettleAllFromRevealError(
-                "FREEZE_CHANGED_AFTER_PARTIAL",
-                f"settled freeze={existing_settlement.get('freeze_set_hash')!r}",
-            )
-        if existing_settlement.get("outcome_hash") != outcome.result_hash:
-            raise SettleAllFromRevealError(
-                "REVEAL_CHANGED_AFTER_PARTIAL",
-                f"settled outcome={existing_settlement.get('outcome_hash')!r}",
-            )
-        if int(existing_settlement.get("missing_or_duplicate_count", 1)) != 0:
-            raise SettleAllFromRevealError(
-                "EXISTING_SETTLEMENT_NOT_CONSERVED",
-                "prior settlement_set fails conservation",
-            )
-        # Crash-heal path (Wave99 F1): settlement_set is the commit-ish marker.
-        # Missing action_settlement_bundles / multipolicy receipt must be restored
-        # deterministically (exclusive create, same-bytes OK) or fail closed — never
-        # return ok=true while durable siblings are absent.
-        from xinao.science.portfolio import SettlementSet
-
-        sealed = SettlementSet.model_validate(existing_settlement)
-        recompute = settle_all(
-            freeze_set=freeze_set,
-            outcome=outcome,
-            settlement_set_ref=str(existing_settlement.get("settlement_set_ref") or set_ref),
-            portfolio_ref=port_ref,
-            occurred_at=occurred_at or outcome.observed_at,
-        )
-        if recompute.settlement_set.content_hash != sealed.content_hash:
-            raise SettleAllFromRevealError(
-                "SETTLEMENT_REPLAY_DRIFT",
-                f"disk={sealed.content_hash} recompute={recompute.settlement_set.content_hash}",
-            )
-
-        bundles_payload = [bundle.model_dump(mode="json") for bundle in recompute.action_bundles]
-        bundles_path = root / _ARTIFACT_BUNDLES
-        _write_exclusive_json(bundles_path, bundles_payload)
-
-        durable_receipt = _build_receipt(
+        return _recover_existing_settlement(
             settlement_root=root,
             freeze_set=freeze_set,
             ticket_enum=ticket_enum,
-            reveal_content_hash=reveal_hash,
+            reveal_hash=reveal_hash,
             outcome=outcome,
-            result=recompute,
             reveal_meta=reveal_meta,
-            idempotent_replay=False,
-            settlement_written=False,
+            existing_settlement=existing_settlement,
+            existing_bundles=existing_bundles,
+            existing_receipt=existing_receipt,
+            set_ref=set_ref,
+            port_ref=port_ref,
+            occurred_at=occurred_at,
         )
-        # Durable receipt always carries settlement_written=False (sealed identity).
-        durable_receipt["settlement_written"] = False
-
-        receipt_path = root / _ARTIFACT_RECEIPT
-        if existing_receipt is None:
-            _write_exclusive_json(receipt_path, durable_receipt)
-            healed = dict(durable_receipt)
-            healed["idempotent_replay"] = True
-            healed["settlement_written"] = False
-            healed["durable_siblings_healed"] = True
-            healed["ok"] = True
-            return healed
-
-        if existing_receipt.get("settlement_set_hash") != sealed.content_hash:
-            raise SettleAllFromRevealError(
-                "PARTIAL_DURABLE_STATE",
-                "on-disk receipt settlement_set_hash does not bind sealed settlement_set",
-            )
-        if existing_receipt.get("content_hash") != durable_receipt.get("content_hash"):
-            raise SettleAllFromRevealError(
-                "PARTIAL_DURABLE_STATE",
-                "on-disk receipt content_hash diverges from deterministic settlement receipt",
-            )
-        # Pure idempotent replay — siblings present and bound; no double-post.
-        replay = dict(existing_receipt)
-        replay["idempotent_replay"] = True
-        replay["settlement_written"] = False
-        replay["ok"] = True
-        return replay
 
     # Fresh settlement path: seal intent first (partial-progress identity).
     _write_exclusive_json(root / _ARTIFACT_INTENT, intent)
@@ -830,11 +1063,35 @@ def apply_settle_all_from_reveal(
 
     settlement_payload = result.settlement_set.model_dump(mode="json")
     bundles_payload = [bundle.model_dump(mode="json") for bundle in result.action_bundles]
+    action_bundles_digest = _bundles_digest(bundles_payload)
+
+    # Ordered durable commit: settlement_set → bundles → receipt (receipt last).
+    # Crash after settlement_set is healed by the recovery path above.
     written_settlement = _write_exclusive_json(root / _ARTIFACT_SETTLEMENT_SET, settlement_payload)
+
+    # If another concurrent caller already sealed settlement and raced ahead into
+    # recovery, fall through to load+recover so sealed artifacts stay identical.
+    if not written_settlement:
+        _, sealed_settlement, sealed_receipt, sealed_bundles = _load_existing_settlement(root)
+        if sealed_settlement is not None:
+            return _recover_existing_settlement(
+                settlement_root=root,
+                freeze_set=freeze_set,
+                ticket_enum=ticket_enum,
+                reveal_hash=reveal_hash,
+                outcome=outcome,
+                reveal_meta=reveal_meta,
+                existing_settlement=sealed_settlement,
+                existing_bundles=sealed_bundles,
+                existing_receipt=sealed_receipt,
+                set_ref=set_ref,
+                port_ref=port_ref,
+                occurred_at=occurred_at,
+            )
+
     _write_exclusive_json(root / _ARTIFACT_BUNDLES, bundles_payload)
 
-    # Durable sealed receipt never embeds process-local settlement_written=True.
-    durable_receipt = _build_receipt(
+    sealed_receipt = _build_sealed_receipt(
         settlement_root=root,
         freeze_set=freeze_set,
         ticket_enum=ticket_enum,
@@ -842,15 +1099,15 @@ def apply_settle_all_from_reveal(
         outcome=outcome,
         result=result,
         reveal_meta=reveal_meta,
-        idempotent_replay=False,
-        settlement_written=False,
+        action_bundles_digest=action_bundles_digest,
     )
-    durable_receipt["settlement_written"] = False
-    _write_exclusive_json(root / _ARTIFACT_RECEIPT, durable_receipt)
-    # Process return may report whether this call created the settlement_set marker.
-    returned = dict(durable_receipt)
-    returned["settlement_written"] = bool(written_settlement)
-    return returned
+    _write_exclusive_json(root / _ARTIFACT_RECEIPT, sealed_receipt)
+    _assert_durable_commit_set_present(root)
+    return _with_response_fields(
+        sealed_receipt,
+        idempotent_replay=False,
+        settlement_written=written_settlement,
+    )
 
 
 def build_isolated_reveal_fixture(
