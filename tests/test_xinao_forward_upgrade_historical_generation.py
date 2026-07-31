@@ -28,12 +28,11 @@ SKILL_ROOT = ROOT / "skills" / "xinao"
 
 # Live gen6 release observed by Wave84C2 (read-only source; tests copy into tmp state).
 LIVE_GEN6_RELEASE_ID = "researcher-1.2.1-a8be2b624f891038"
-LIVE_GEN6_RELEASE_DIR = Path(
-    r"D:\XINAO_RESEARCH_RUNTIME\state\xinao_skill\researcher_container\releases"
-) / LIVE_GEN6_RELEASE_ID
-LIVE_GEN6_RELEASE_JSON_SHA256 = (
-    "21b712aba72da3e1a24de5347cf7a301ba07afadc479e22d608ca1ee836a734f"
+LIVE_GEN6_RELEASE_DIR = (
+    Path(r"D:\XINAO_RESEARCH_RUNTIME\state\xinao_skill\researcher_container\releases")
+    / LIVE_GEN6_RELEASE_ID
 )
+LIVE_GEN6_RELEASE_JSON_SHA256 = "21b712aba72da3e1a24de5347cf7a301ba07afadc479e22d608ca1ee836a734f"
 LIVE_GEN6_SI_KEYS = frozenset(
     {
         "source_commit",
@@ -109,7 +108,9 @@ def _sealed_pre_modules_v2_release(
         shutil.rmtree(temp_bundle)
     module._materialize_skill_bundle(temp_bundle, source_rows, bundle_manifest)
     hashes = _pre_modules_skill_hashes(module, temp_bundle)
-    shadow_lock_hash = shadow_lock if shadow_lock is not None else hashes["shadow_runtime_lock_sha256"]
+    shadow_lock_hash = (
+        shadow_lock if shadow_lock is not None else hashes["shadow_runtime_lock_sha256"]
+    )
     if shadow_tree is not None:
         shadow_tree_hash = shadow_tree
     else:
@@ -336,9 +337,7 @@ def test_live_gen6_bytes_match_pre_modules_taxonomy() -> None:
     assert "tool_image_id" not in manifest
     assert "researcher_image_modules_tree_sha256" not in manifest["source_identity"]
     assert "tool_executor_dockerfile_sha256" not in manifest["source_identity"]
-    assert (
-        module._source_identity_generation(manifest["source_identity"]) == "pre_modules"
-    )
+    assert module._source_identity_generation(manifest["source_identity"]) == "pre_modules"
 
 
 def test_sealed_pre_modules_readable_exact_current_rejects(
@@ -418,9 +417,7 @@ def test_pre_modules_malformed_and_cross_generation_rejects(
     # Restore good and add fake modules field (cross-generation / denylist trap).
     module._write_json_atomic(good_path, good)
     path = _rewrite(
-        lambda m: m["source_identity"].__setitem__(
-            "researcher_image_modules_tree_sha256", "f" * 64
-        )
+        lambda m: m["source_identity"].__setitem__("researcher_image_modules_tree_sha256", "f" * 64)
     )
     with pytest.raises(module.XinaoError) as extra:
         module._validate_sealed_protocol_v2_release(
@@ -545,9 +542,7 @@ def test_prepared_historical_target_fail_closed(
     journal["canary"] = None
     module._write_json_atomic(journal_path, journal)
     with pytest.raises(module.XinaoError) as prepared_fail:
-        module._validate_journal(
-            json.loads(journal_path.read_text(encoding="utf-8")), journal_path
-        )
+        module._validate_journal(json.loads(journal_path.read_text(encoding="utf-8")), journal_path)
     assert prepared_fail.value.reason_code in {
         "RELEASE_SOURCE_IDENTITY_INVALID",
         "RELEASE_SCHEMA_INVALID",
@@ -634,7 +629,7 @@ def test_companion_runtime_seal_matches_repository_bytes() -> None:
     assert observed == bootstrap.EXPECTED_COMPANION_RUNTIME_SHA256
     # Wave106: Windows host cannot exec Linux donor ELF; runtime probe uses Docker-mount
     # of staged bytes. Companion pin tracks exact xinao_runtime.py seal.
-    assert observed == "ab896d42a1f59dc9ac26066e4b35572c3793b440f03fb36b49dc51af3596ffaa"
+    assert observed == "c7f4cad7e650f4c85e65ead8a602f25ff073198242fdae03d62fbc00bbffa2d5"
     assert len(observed) == 64
 
 
@@ -751,9 +746,7 @@ def test_pre_modules_rejects_skill_hashes_vs_si_shadow_lock_desync(
     }
 
 
-def test_live_gen6_shadow_lock_cross_bound(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_live_gen6_shadow_lock_cross_bound(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """Live gen6 bytes already satisfy skill_hashes.shadow_lock == SI.shadow_lock."""
 
     module = _module()
@@ -767,9 +760,7 @@ def test_live_gen6_shadow_lock_cross_bound(
     # Desync only SI/label after path-rebind must still fail closed via cross-check.
     forged = "c" * 64
     assert forged != si_lock
-    new_path = _rewrite_pre_modules_release_with_si_lock(
-        module, manifest, path, forged_lock=forged
-    )
+    new_path = _rewrite_pre_modules_release_with_si_lock(module, manifest, path, forged_lock=forged)
     with pytest.raises(module.XinaoError) as failure:
         module._validate_sealed_protocol_v2_release(
             json.loads(new_path.read_text(encoding="utf-8")), new_path, verify_bundle=True
@@ -841,9 +832,7 @@ def test_pre_modules_rejects_forged_shadow_tree_a1b(
     )
     mutated = json.loads(new_path.read_text(encoding="utf-8"))
     assert mutated["source_identity"]["shadow_runtime_tree_sha256"] == forged_tree
-    assert (
-        mutated["image_labels"]["io.xinao.researcher.shadow-runtime.sha256"] == forged_tree
-    )
+    assert mutated["image_labels"]["io.xinao.researcher.shadow-runtime.sha256"] == forged_tree
     with pytest.raises(module.XinaoError) as failure:
         module._validate_sealed_protocol_v2_release(mutated, new_path, verify_bundle=True)
     assert failure.value.reason_code == "RELEASE_SHADOW_RUNTIME_TREE_INVALID"
@@ -865,9 +854,7 @@ def test_pre_tool_rejects_si_vs_skill_hashes_shadow_lock_desync_a1d(
     source_rows.sort(key=lambda item: item[0])
     package_version = "1.3.5"
     capability_version = "1.2.2"
-    bundle_manifest = module._skill_bundle_manifest(
-        source_rows, package_version=package_version
-    )
+    bundle_manifest = module._skill_bundle_manifest(source_rows, package_version=package_version)
     temp_bundle = tmp_path / "pre-tool-bundle"
     module._materialize_skill_bundle(temp_bundle, source_rows, bundle_manifest)
     hashes = module._reference_hashes_for_keys(temp_bundle, module.CURRENT_SKILL_HASH_KEYS)
@@ -895,9 +882,7 @@ def test_pre_tool_rejects_si_vs_skill_hashes_shadow_lock_desync_a1d(
         "io.xinao.researcher.chain": "dedicated-xinao-science",
         "io.xinao.researcher.generic-worker-route": "forbidden",
         "io.xinao.researcher.grok-donor-image-id": source_identity["grok_donor_image_id"],
-        "io.xinao.researcher.grok-donor-binary.sha256": source_identity[
-            "grok_donor_binary_sha256"
-        ],
+        "io.xinao.researcher.grok-donor-binary.sha256": source_identity["grok_donor_binary_sha256"],
         "io.xinao.researcher.charter.sha256": hashes["charter_sha256"],
         "io.xinao.researcher.output-schema.sha256": hashes["output_schema_sha256"],
         "io.xinao.researcher.material-bundle-schema.sha256": hashes[
@@ -911,9 +896,7 @@ def test_pre_tool_rejects_si_vs_skill_hashes_shadow_lock_desync_a1d(
         "io.xinao.researcher.shadow-runtime.sha256": shadow_tree,
         "io.xinao.researcher.shadow-runtime-lock.sha256": forged_lock,
         "io.xinao.researcher.requested-model": "grok-4.5",
-        **module._dual_profile_image_labels(
-            researcher_image_modules_tree_sha256=modules_tree
-        ),
+        **module._dual_profile_image_labels(researcher_image_modules_tree_sha256=modules_tree),
     }
     manifest: dict[str, object] = {
         "schema_version": module.RELEASE_SCHEMA,
@@ -1075,7 +1058,10 @@ def test_cross_generation_integrity_helpers_present() -> None:
     pm_block = src[pm:pt]
     pt_block = src[pt:sealed_ref]
     cur_block = src[cur:ref]
-    assert "skill_hashes_cross_check" in pm_block or "_assert_skill_hashes_shadow_lock_cross_bound" in pm_block
+    assert (
+        "skill_hashes_cross_check" in pm_block
+        or "_assert_skill_hashes_shadow_lock_cross_bound" in pm_block
+    )
     assert "_assert_skill_hashes_shadow_lock_cross_bound" in pt_block
     assert "_assert_skill_hashes_shadow_lock_cross_bound" in cur_block
     assert "expected_labels" in pt_block
@@ -1539,9 +1525,7 @@ def test_forged_prepared_activate_historical_to_fail_closed(
     }
     module._write_json_atomic(journal_path, journal, create_new=True)
     with pytest.raises(module.XinaoError) as journal_fail:
-        module._validate_journal(
-            json.loads(journal_path.read_text(encoding="utf-8")), journal_path
-        )
+        module._validate_journal(json.loads(journal_path.read_text(encoding="utf-8")), journal_path)
     assert journal_fail.value.reason_code in {
         "RELEASE_SOURCE_IDENTITY_INVALID",
         "RELEASE_SCHEMA_INVALID",

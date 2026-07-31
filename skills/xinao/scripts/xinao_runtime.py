@@ -17,8 +17,8 @@ import time
 import uuid
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Any, Callable, Iterator, Mapping, Sequence
 from types import ModuleType
+from typing import Any, Callable, Iterator, Mapping, Sequence
 
 # Sealed skill-bundle / installed projection trees are exact inventories. Formal
 # consumers must not materialize __pycache__ under those roots. Fail-closed
@@ -3418,9 +3418,7 @@ def _validate_sealed_protocol_v2_release(
             manifest, manifest_path, verify_bundle=verify_bundle
         )
     if generation == "pre_modules":
-        return _validate_pre_modules_release(
-            manifest, manifest_path, verify_bundle=verify_bundle
-        )
+        return _validate_pre_modules_release(manifest, manifest_path, verify_bundle=verify_bundle)
     # pre_shadow generation
     source_identity = manifest["source_identity"]
     assert isinstance(source_identity, dict)
@@ -4108,9 +4106,7 @@ def _validate_journal(journal: dict[str, Any], journal_path: Path) -> None:
     # - Nonterminal PREPARED/pending/switchable journals must bind exact-current dual-image
     #   to/requested_to so a historical release cannot become the CAS switch target.
     if journal.get("state") in TERMINAL_ACTIVATION_STATES | {"RECOVERY_CONFLICT"}:
-        _validate_sealed_protocol_v2_release_ref(
-            journal.get("requested_to"), verify_bundle=False
-        )
+        _validate_sealed_protocol_v2_release_ref(journal.get("requested_to"), verify_bundle=False)
         _validate_sealed_protocol_v2_release_ref(journal.get("to"), verify_bundle=False)
     else:
         _validate_release_ref(journal.get("requested_to"))
@@ -6914,6 +6910,8 @@ def _projection_receipt_for_journal(journal: dict[str, Any]) -> dict[str, Any]:
 
 
 def _stable_recovery_launcher_payload() -> bytes:
+    """Steady-state stable recovery launcher (Wave92+ bytecode hygiene)."""
+
     return (
         "from pathlib import Path\n"
         "import hashlib\n"
@@ -6948,6 +6946,53 @@ def _stable_recovery_launcher_payload() -> bytes:
         "raise SystemExit(subprocess.run([sys.executable,'-I','-B',str(_entry)],check=False,"
         "env={**__import__('os').environ,'PYTHONDONTWRITEBYTECODE':'1'}).returncode)\n"
     ).encode("utf-8")
+
+
+def _stable_recovery_launcher_historical_payload() -> bytes:
+    """Exact pre-Wave92 stable recovery launcher bytes.
+
+    Frozen allowlisted generation only: no ``-B`` and no child
+    ``PYTHONDONTWRITEBYTECODE``. Matched by full byte identity, never by
+    substring, structural approximation, or state-supplied hash.
+    """
+
+    return (
+        "from pathlib import Path\n"
+        "import hashlib\n"
+        "import json\n"
+        "import os\n"
+        "import subprocess\n"
+        "import sys\n"
+        "_state = Path(os.environ.get('XINAO_SKILL_STATE_ROOT', "
+        "r'D:\\\\XINAO_RESEARCH_RUNTIME\\\\state\\\\xinao_skill'))\n"
+        "_pointer = _state / 'researcher_container' / 'migration' / 'current-recovery.v1.json'\n"
+        "try:\n"
+        "    _value = json.loads(_pointer.read_text(encoding='utf-8'))\n"
+        "    _keys = {'schema_version','txn_id','entry_path','entry_sha256','cone_manifest_path',"
+        "'cone_manifest_sha256','projection_receipt_path','projection_receipt_sha256',"
+        "'created_at','completion_claim_allowed'}\n"
+        "    if set(_value) != _keys or _value.get('schema_version') != "
+        "'xinao.current_migration_recovery.v1':\n"
+        "        raise ValueError('pointer shape')\n"
+        "    for _path_key, _sha_key in (('entry_path','entry_sha256'),"
+        "('cone_manifest_path','cone_manifest_sha256'),"
+        "('projection_receipt_path','projection_receipt_sha256')):\n"
+        "        _path = Path(_value[_path_key])\n"
+        "        _payload = _path.read_bytes()\n"
+        "        if hashlib.sha256(_payload).hexdigest() != _value[_sha_key]:\n"
+        "            raise ValueError(_path_key)\n"
+        "    _entry = Path(_value['entry_path'])\n"
+        "except Exception as _exc:\n"
+        "    print(json.dumps({'schema_version':'xinao.recovery_entry_error.v1',"
+        "'status':'PREFLIGHT_FAILED','reason_codes':['STABLE_RECOVERY_POINTER_INVALID'],"
+        "'detail':str(_exc),'completion_claim_allowed':False},sort_keys=True))\n"
+        "    raise SystemExit(2)\n"
+        "raise SystemExit(subprocess.run([sys.executable,'-I',str(_entry)],check=False).returncode)\n"
+    ).encode("utf-8")
+
+
+def _stable_recovery_generation_bridge_fault_point(_phase: str) -> None:
+    """Test seam around historical launcher upgrade CAS; production is a no-op."""
 
 
 def _stable_recovery_paths() -> tuple[Path, Path]:
@@ -7034,15 +7079,52 @@ def _retire_terminal_legacy_recovery_pointer_before_build(
 
 
 def _publish_stable_recovery_entry(journal: dict[str, Any]) -> None:
+    """Publish stable recovery launcher + pointer with one generation bridge.
+
+    Steady-state launcher is the current payload only. The single allowlisted
+    pre-Wave92 historical launcher may be CAS-upgraded to current when the
+    recovery pointer is absent; any other launcher bytes, and historical
+    launcher with any existing recovery pointer, fail closed without mutation.
+
+    Commitment boundary: re-read exact historical launcher bytes and re-check
+    pointer absence immediately before atomic replacement so a concurrent
+    pointer appearance cannot leave a partially mutated old-launcher state.
+    """
+
     launcher_path, pointer_path = _stable_recovery_paths()
     launcher_path.parent.mkdir(parents=True, exist_ok=True)
     launcher_payload = _stable_recovery_launcher_payload()
+    historical_payload = _stable_recovery_launcher_historical_payload()
     existing_launcher = _plain_file_or_absent(
         launcher_path, reason_code="STABLE_RECOVERY_ENTRY_INVALID"
     )
     if existing_launcher is None:
         _write_bytes_atomic(launcher_path, launcher_payload, create_new=True)
-    elif existing_launcher != launcher_payload:
+    elif existing_launcher == launcher_payload:
+        pass
+    elif existing_launcher == historical_payload:
+        # Generation bridge: upgrade exact historical bytes only with no pointer.
+        observed_pointer = _plain_file_or_absent(
+            pointer_path, reason_code="STABLE_RECOVERY_POINTER_CONFLICT"
+        )
+        if observed_pointer is not None:
+            raise XinaoError("STABLE_RECOVERY_ENTRY_INVALID", str(launcher_path))
+        _stable_recovery_generation_bridge_fault_point("before-replace-reread")
+        reread = _plain_file_or_absent(launcher_path, reason_code="STABLE_RECOVERY_ENTRY_INVALID")
+        if reread != historical_payload:
+            raise XinaoError("STABLE_RECOVERY_ENTRY_INVALID", str(launcher_path))
+        # Commitment-boundary pointer recheck (closes Wave115 TOCTOU gap).
+        observed_pointer = _plain_file_or_absent(
+            pointer_path, reason_code="STABLE_RECOVERY_POINTER_CONFLICT"
+        )
+        if observed_pointer is not None:
+            raise XinaoError("STABLE_RECOVERY_ENTRY_INVALID", str(launcher_path))
+        _write_bytes_atomic(launcher_path, launcher_payload, create_new=False)
+        after = _plain_file_or_absent(launcher_path, reason_code="STABLE_RECOVERY_ENTRY_INVALID")
+        if after != launcher_payload:
+            raise XinaoError("STABLE_RECOVERY_ENTRY_INVALID", str(launcher_path))
+        _stable_recovery_generation_bridge_fault_point("after-launcher-replace")
+    else:
         raise XinaoError("STABLE_RECOVERY_ENTRY_INVALID", str(launcher_path))
     expected = _stable_recovery_pointer_payload(journal)
     observed = _plain_file_or_absent(pointer_path, reason_code="STABLE_RECOVERY_POINTER_CONFLICT")
@@ -14629,9 +14711,7 @@ def research_episode_cancel(*, root: Path | str) -> dict[str, Any]:
 def _research_episode_load_dual_host(root: Path) -> Any:
     host_path = Path(__file__).resolve().parent / "dual_container_host.py"
     try:
-        host_mod = _load_sealed_python_module(
-            "xinao_dual_container_host_runtime_live", host_path
-        )
+        host_mod = _load_sealed_python_module("xinao_dual_container_host_runtime_live", host_path)
     except XinaoError as exc:
         if exc.reason_code in {"SEALED_MODULE_MISSING", "SEALED_MODULE_READ_FAILED"}:
             raise XinaoError("DUAL_CONTAINER_HOST_MISSING", str(host_path)) from exc
