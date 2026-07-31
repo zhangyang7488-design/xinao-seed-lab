@@ -163,15 +163,15 @@ def build_parser() -> argparse.ArgumentParser:
     research_episode = groups.add_parser(
         "research-episode",
         help=(
-            "Candidate-only ResearchEpisode pool ingest, feedback pack emit, "
-            "and feedback material bind (installed xinao-discovery package; "
+            "Candidate-only pool admission (episode export OR one-shot result+receipt), "
+            "feedback pack emit, and feedback material bind (installed xinao-discovery; "
             "no Owner adopt/freeze/settle/auto-next)"
         ),
     )
     re_commands = research_episode.add_subparsers(dest="command", required=True)
     re_pool_ingest = re_commands.add_parser(
         "pool-ingest",
-        help="Ingest sealed export + exact candidate manifest into candidate pool",
+        help="Ingest sealed ResearchEpisode export + exact candidate manifest into candidate pool",
     )
     re_pool_ingest.add_argument("--pool-root", type=Path, required=True)
     re_pool_ingest.add_argument("--export", type=Path, required=True)
@@ -179,11 +179,45 @@ def build_parser() -> argparse.ArgumentParser:
     # Alias matching Skill verb name for discovery parity.
     re_ingest_export = re_commands.add_parser(
         "ingest-export",
-        help="Alias of pool-ingest (Skill verb parity)",
+        help="Alias of pool-ingest (Skill verb parity; episode export only)",
     )
     re_ingest_export.add_argument("--pool-root", type=Path, required=True)
     re_ingest_export.add_argument("--export", type=Path, required=True)
     re_ingest_export.add_argument("--manifest", type=Path, required=True)
+    # One-shot historical/public producer shape: raw result.json + receipt.json.
+    # Does not replace episode export pool-ingest; both share the sealed pool.
+    re_pool_ingest_result = re_commands.add_parser(
+        "pool-ingest-result",
+        help=(
+            "Ingest verified one-shot researcher result.json + receipt.json into "
+            "the sealed candidate pool (not ResearchEpisode export; owner_adopted=false)"
+        ),
+    )
+    re_pool_ingest_result.add_argument(
+        "--pool-root",
+        type=Path,
+        required=True,
+        help="Owner-selected candidate pool root (CAS exclusive create)",
+    )
+    re_pool_ingest_result.add_argument(
+        "--result",
+        type=Path,
+        required=True,
+        help="Path to raw one-shot result.json (xinao.researcher_container_result.v2)",
+    )
+    re_pool_ingest_result.add_argument(
+        "--receipt",
+        type=Path,
+        required=True,
+        help="Path to matching skill research receipt.json (xinao.skill_research_receipt.v2)",
+    )
+    re_pool_ingest_oneshot = re_commands.add_parser(
+        "pool-ingest-oneshot",
+        help="Alias of pool-ingest-result (one-shot result+receipt public seam)",
+    )
+    re_pool_ingest_oneshot.add_argument("--pool-root", type=Path, required=True)
+    re_pool_ingest_oneshot.add_argument("--result", type=Path, required=True)
+    re_pool_ingest_oneshot.add_argument("--receipt", type=Path, required=True)
     re_emit_fb = re_commands.add_parser(
         "emit-research-feedback-pack",
         help=(
@@ -256,10 +290,14 @@ def _cli_research_episode_pool_ingest(
     )
     return {
         **dict(entry),
+        "ok": True,
+        "command": "research-episode pool-ingest",
         "status": "POOL_ENTRY_READY",
+        "admission_shape": "episode_export",
         "owner_adopted": False,
         "candidate_only": True,
         "decision_map_projected": False,
+        "action_support": entry.get("action_support", "NOT_PROJECTED"),
         "freeze_written": False,
         "settlement_written": False,
         "disposition_written": False,
@@ -267,6 +305,69 @@ def _cli_research_episode_pool_ingest(
         "completion_claim_allowed": False,
         "science_restored": False,
         "parent_complete": False,
+        "daemon": False,
+    }
+
+
+def _cli_research_episode_pool_ingest_result(
+    *,
+    pool_root: Path,
+    result_path: Path,
+    receipt_path: Path,
+) -> dict[str, object]:
+    """Public one-shot result+receipt admission into the sealed candidate pool.
+
+    Thin wrapper over ``ingest_verified_research_result``. Never adopts, freezes,
+    settles, projects a decision map, or claims episode-export provenance.
+    """
+
+    from xinao.science.candidate_pool import ingest_verified_research_result
+    from xinao.science.researcher_result_adapter import raw_sha256
+
+    if not result_path.is_file():
+        raise FileNotFoundError(f"result missing: {result_path}")
+    if not receipt_path.is_file():
+        raise FileNotFoundError(f"receipt missing: {receipt_path}")
+
+    result_bytes = result_path.read_bytes()
+    if not result_bytes:
+        raise ValueError("result bytes empty")
+    receipt_raw = receipt_path.read_bytes()
+    if not receipt_raw:
+        raise ValueError("receipt bytes empty")
+    try:
+        receipt_obj = json.loads(receipt_raw.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise ValueError(f"receipt is not UTF-8 JSON: {exc}") from exc
+    if not isinstance(receipt_obj, dict):
+        raise ValueError("receipt must be a JSON object")
+
+    entry = ingest_verified_research_result(
+        pool_root=pool_root,
+        result_bytes=result_bytes,
+        receipt=receipt_obj,
+    )
+    return {
+        **dict(entry),
+        "ok": True,
+        "command": "research-episode pool-ingest-result",
+        "status": "POOL_ENTRY_READY",
+        "admission_shape": "oneshot_result_receipt",
+        "result_path": str(result_path.expanduser().resolve()),
+        "receipt_path": str(receipt_path.expanduser().resolve()),
+        "result_bytes_sha256": raw_sha256(result_bytes),
+        "owner_adopted": False,
+        "candidate_only": True,
+        "decision_map_projected": False,
+        "action_support": entry.get("action_support", "NOT_PROJECTED"),
+        "freeze_written": False,
+        "settlement_written": False,
+        "disposition_written": False,
+        "next_task_created": False,
+        "completion_claim_allowed": False,
+        "science_restored": False,
+        "parent_complete": False,
+        "daemon": False,
     }
 
 
@@ -384,11 +485,37 @@ def main(argv: list[str] | None = None) -> int:
         "pool-ingest",
         "ingest-export",
     }:
-        result = _cli_research_episode_pool_ingest(
-            pool_root=args.pool_root,
-            export_path=args.export,
-            manifest_path=args.manifest,
-        )
+        from xinao.science.candidate_pool import CandidatePoolError
+        from xinao.science.episode_export_pool_adapter import EpisodeExportAdapterError
+
+        try:
+            result = _cli_research_episode_pool_ingest(
+                pool_root=args.pool_root,
+                export_path=args.export,
+                manifest_path=args.manifest,
+            )
+        except (CandidatePoolError, EpisodeExportAdapterError) as exc:
+            return _cli_research_episode_fail(exc.reason_code, getattr(exc, "detail", "") or "")
+        except (ValueError, TypeError, KeyError, OSError, FileNotFoundError) as exc:
+            return _cli_research_episode_fail("POOL_INGEST_CLI_ERROR", str(exc))
+        print(json.dumps(result, ensure_ascii=False, sort_keys=True, default=str))
+        return 0
+    if args.group == "research-episode" and args.command in {
+        "pool-ingest-result",
+        "pool-ingest-oneshot",
+    }:
+        from xinao.science.candidate_pool import CandidatePoolError
+
+        try:
+            result = _cli_research_episode_pool_ingest_result(
+                pool_root=args.pool_root,
+                result_path=args.result,
+                receipt_path=args.receipt,
+            )
+        except CandidatePoolError as exc:
+            return _cli_research_episode_fail(exc.reason_code, exc.detail)
+        except (ValueError, TypeError, KeyError, OSError, FileNotFoundError) as exc:
+            return _cli_research_episode_fail("POOL_INGEST_RESULT_CLI_ERROR", str(exc))
         print(json.dumps(result, ensure_ascii=False, sort_keys=True, default=str))
         return 0
     if args.group == "research-episode" and args.command == "emit-research-feedback-pack":

@@ -48,9 +48,10 @@ Pool admission, Owner disposition write, feedback pack emit, and feedback bind r
 installed `xinao-discovery` package (console entry `xinao`), not a monorepo path walk. Fresh
 isolated wheel/venv is sufficient. Compose one-shot only:
 
-`pool-ingest → write-owner-disposition → freeze-from-disposition → (settle) → emit-research-feedback-pack → feedback-bind`
+`pool-ingest | pool-ingest-result → write-owner-disposition → freeze-from-disposition → (settle) → emit-research-feedback-pack → feedback-bind`
 
-- `xinao research-episode pool-ingest --pool-root <pool> --export <export.json> --manifest <candidate_manifest.v1.json>`
+- `xinao research-episode pool-ingest --pool-root <pool> --export <export.json> --manifest <candidate_manifest.v1.json>` — ResearchEpisode sealed export + candidate manifest only
+- `xinao research-episode pool-ingest-result --pool-root <pool> --result <result.json> --receipt <receipt.json>` — **one-shot** researcher result+receipt public admission (historical `xrr_*` shape); alias `pool-ingest-oneshot`; never pretends episode-export provenance; forces `owner_adopted=false`
 - `xinao prospective write-owner-disposition --owner-state-root <owner> --pool-root <pool> --payload <disposition.json>` — seals Owner disposition CAS; validates pool binding/hashes/role; never freezes/settles/adopts or starts next Episode
 - `xinao research-episode emit-research-feedback-pack --portfolio-root <portfolio> [--period-index N]` — emits sealed research feedback pack from settled state only; never auto-starts next research
 - `xinao research-episode feedback-bind --portfolio-root <portfolio> --feedback-content-hash <sha256>`
@@ -73,7 +74,8 @@ Boundaries:
 - **Candidate-only:** export and pool ingest force `owner_adopted=false`, never freeze/settle.
 - **Owner-only disposition:** adoption/freeze/settlement remain separate Codex Owner artifacts.
 - **`absorb` is deprecated placeholder** for a local outbox review file — **not** candidate-pool
-  admission. Prefer package `pool-ingest` / Skill `export-candidate-evidence` + `ingest-export`.
+  admission. Prefer package `pool-ingest` (episode export), `pool-ingest-result` (one-shot
+  result+receipt), or Skill `export-candidate-evidence` + `ingest-export`.
 - Productive lab evidence requires **successful** tool-executor sealed event hashes (`status=ok`
   only; denied/error/timeout never count even with a real sidecar hash or planted lab file).
 

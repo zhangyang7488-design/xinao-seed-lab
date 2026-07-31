@@ -147,6 +147,8 @@ def test_fresh_help_lists_owner_surface_commands() -> None:
     assert p2.returncode == 0, p2.stderr
     assert "emit-research-feedback-pack" in p2.stdout
     assert "pool-ingest" in p2.stdout
+    assert "pool-ingest-result" in p2.stdout
+    assert "pool-ingest-oneshot" in p2.stdout
     assert "feedback-bind" in p2.stdout
 
 
