@@ -51,6 +51,10 @@ def test_user_prompt_submit_injects_predecision_guard() -> None:
     assert "只读 fail-open" in context
     assert "薄记忆" in context
     assert "自动派工/续跑" in context
+    assert (
+        "XINAO_ATTENTION_LIVE_DELTA_V1" in context
+        or "LIVE_DELTA_UNAVAILABLE" in context
+    )
 
 
 def test_compact_session_start_reinjects_same_guard() -> None:
@@ -70,6 +74,10 @@ def test_compact_session_start_reinjects_same_guard() -> None:
     assert "XINAO_PREDECISION_INTENT_GUARD_V1" in context
     assert "XINAO_GLOBAL_ATTENTION_RECONSIDERATION_V1" in context
     assert "子意图生存裁决、父效果差分、前沿重算和 disposition" in context
+    assert (
+        "XINAO_ATTENTION_LIVE_DELTA_V1" in context
+        or "LIVE_DELTA_UNAVAILABLE" in context
+    )
 
 
 def test_non_compact_session_start_emits_nothing() -> None:
