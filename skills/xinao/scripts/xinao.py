@@ -30,7 +30,7 @@ RELEASE_RUNTIME_RELATIVE_PATH = Path("skill-bundle") / "scripts" / "xinao_runtim
 # Bound to the co-located bootstrap-migration companion. Tampering fails before execution.
 # Update this whenever the candidate xinao_runtime.py bytes change.
 EXPECTED_COMPANION_RUNTIME_SHA256 = (
-    "5eeccaec4f02e28664acbef4681da84b87ac95feba6e8df976c7de5afe377e8b"
+    "b0c4c2b7522ccdade43f214988d769ed22125ad7f124818f597dca16ba8bd8a8"
 )
 RELEASE_ID_PATTERN = re.compile(r"^researcher-[0-9]+\.[0-9]+\.[0-9]+-[0-9a-f]{16}$")
 TXN_ID_PATTERN = re.compile(r"^xra_[0-9]{8}T[0-9]{6}_[0-9a-f]{16}$")
@@ -121,7 +121,7 @@ FORBIDDEN_RUNTIME_TOKENS = (
     "common_contract",
     "integrated_bus",
 )
-RELEASE_KEYS = {
+PRE_TOOL_IMAGE_RELEASE_KEYS = {
     "schema_version",
     "release_id",
     "package_version",
@@ -144,6 +144,46 @@ RELEASE_KEYS = {
     "generic_worker_route_allowed",
     "state_namespace",
     "run_namespace",
+}
+RELEASE_KEYS = set(PRE_TOOL_IMAGE_RELEASE_KEYS) | {
+    "tool_image_id",
+    "tool_image_tag_observational",
+    "tool_image_entrypoint",
+    "tool_image_labels",
+}
+TOOL_EXECUTOR_ENTRYPOINT = [
+    "python",
+    "-I",
+    "/opt/xinao-tool-executor/tool_executor.py",
+    "--lab-root",
+    "/episode-lab",
+    "--socket",
+    "/ipc/tool.sock",
+]
+TOOL_IMAGE_LABEL_KEYS = {
+    "org.opencontainers.image.title",
+    "io.xinao.researcher.role",
+    "io.xinao.researcher.dual-container",
+    "io.xinao.researcher.generic-worker-route",
+    "io.xinao.researcher.auth-mount",
+    "io.xinao.researcher.network-default",
+    "io.xinao.researcher.shell-isolation",
+    "io.xinao.tool.dockerfile.sha256",
+    "io.xinao.tool.modules.sha256",
+}
+PRE_TOOL_IMAGE_SOURCE_IDENTITY_KEYS = {
+    "source_commit",
+    "source_tree",
+    "source_dirty",
+    "grok_donor_image_id",
+    "grok_donor_binary_sha256",
+    "shadow_runtime_tree_sha256",
+    "shadow_runtime_lock_sha256",
+    "researcher_image_modules_tree_sha256",
+}
+CURRENT_SOURCE_IDENTITY_KEYS = set(PRE_TOOL_IMAGE_SOURCE_IDENTITY_KEYS) | {
+    "tool_executor_dockerfile_sha256",
+    "tool_executor_modules_tree_sha256",
 }
 SKILL_HASH_PATHS = {
     "skill_md_sha256": "SKILL.md",
@@ -578,7 +618,7 @@ def _validate_journal_shape(
 
 def _release_identity_payload(manifest: dict[str, Any]) -> dict[str, Any]:
     source_identity = manifest.get("source_identity") or {}
-    return {
+    payload = {
         "package_version": manifest.get("package_version"),
         "capability_id": manifest.get("capability_id"),
         "capability_version": manifest.get("capability_version"),
@@ -600,6 +640,19 @@ def _release_identity_payload(manifest: dict[str, Any]) -> dict[str, Any]:
         "state_namespace": manifest.get("state_namespace"),
         "run_namespace": manifest.get("run_namespace"),
     }
+    if "tool_executor_dockerfile_sha256" in source_identity:
+        payload["tool_executor_dockerfile_sha256"] = source_identity.get(
+            "tool_executor_dockerfile_sha256"
+        )
+    if "tool_executor_modules_tree_sha256" in source_identity:
+        payload["tool_executor_modules_tree_sha256"] = source_identity.get(
+            "tool_executor_modules_tree_sha256"
+        )
+    if "tool_image_id" in manifest:
+        payload["tool_image_id"] = manifest.get("tool_image_id")
+        payload["tool_image_entrypoint"] = manifest.get("tool_image_entrypoint")
+        payload["tool_image_labels"] = manifest.get("tool_image_labels")
+    return payload
 
 
 def _validate_release_manifest_shape(
@@ -608,11 +661,14 @@ def _validate_release_manifest_shape(
     manifest_path: Path,
     state_root: Path,
 ) -> None:
-    if (
-        set(manifest) != RELEASE_KEYS
-        or manifest.get("schema_version") != "xinao.researcher_release.v2"
-    ):
+    keys = set(manifest)
+    if manifest.get("schema_version") != "xinao.researcher_release.v2":
         raise BootstrapError("RELEASE_SCHEMA_INVALID", str(manifest_path))
+    current_keys = frozenset(RELEASE_KEYS)
+    pre_tool_keys = frozenset(PRE_TOOL_IMAGE_RELEASE_KEYS)
+    if keys not in {current_keys, pre_tool_keys}:
+        raise BootstrapError("RELEASE_SCHEMA_INVALID", str(manifest_path))
+    dual_image = keys == current_keys
     package_version = manifest.get("package_version")
     capability_version = manifest.get("capability_version")
     charter_version = manifest.get("charter_version")
@@ -634,16 +690,10 @@ def _validate_release_manifest_shape(
             "RELEASE_CAPABILITY_IDENTITY_INVALID", str(manifest.get("capability_id"))
         )
     source_identity = manifest.get("source_identity")
-    if not isinstance(source_identity, dict) or set(source_identity) != {
-        "source_commit",
-        "source_tree",
-        "source_dirty",
-        "grok_donor_image_id",
-        "grok_donor_binary_sha256",
-        "shadow_runtime_tree_sha256",
-        "shadow_runtime_lock_sha256",
-        "researcher_image_modules_tree_sha256",
-    }:
+    expected_si = (
+        CURRENT_SOURCE_IDENTITY_KEYS if dual_image else PRE_TOOL_IMAGE_SOURCE_IDENTITY_KEYS
+    )
+    if not isinstance(source_identity, dict) or set(source_identity) != expected_si:
         raise BootstrapError("RELEASE_SOURCE_IDENTITY_INVALID", str(manifest_path))
     if source_identity.get("source_dirty") is not False:
         raise BootstrapError("DIRTY_RELEASE_ACTIVATION_FORBIDDEN", str(manifest_path))
@@ -669,6 +719,13 @@ def _validate_release_manifest_shape(
         raise BootstrapError("RELEASE_SHADOW_RUNTIME_LOCK_INVALID", str(shadow_lock))
     if not isinstance(modules_tree, str) or HEX_SHA256_PATTERN.fullmatch(modules_tree) is None:
         raise BootstrapError("RELEASE_RESEARCHER_IMAGE_MODULES_TREE_INVALID", str(modules_tree))
+    tool_df = source_identity.get("tool_executor_dockerfile_sha256")
+    tool_mod = source_identity.get("tool_executor_modules_tree_sha256")
+    if dual_image:
+        if not isinstance(tool_df, str) or HEX_SHA256_PATTERN.fullmatch(tool_df) is None:
+            raise BootstrapError("RELEASE_TOOL_DOCKERFILE_IDENTITY_INVALID", str(tool_df))
+        if not isinstance(tool_mod, str) or HEX_SHA256_PATTERN.fullmatch(tool_mod) is None:
+            raise BootstrapError("RELEASE_TOOL_MODULES_IDENTITY_INVALID", str(tool_mod))
     if (
         manifest.get("required_bootstrap_protocol") != 2
         or manifest.get("generic_worker_route_allowed") is not False
@@ -698,6 +755,36 @@ def _validate_release_manifest_shape(
     labels = manifest.get("image_labels")
     if not isinstance(labels, dict) or set(labels) != IMAGE_LABEL_KEYS:
         raise BootstrapError("RELEASE_IMAGE_IDENTITY_INVALID", "image_labels")
+    if dual_image:
+        tool_image_id = manifest.get("tool_image_id")
+        tool_tag = manifest.get("tool_image_tag_observational")
+        tool_labels = manifest.get("tool_image_labels")
+        if (
+            not isinstance(tool_image_id, str)
+            or re.fullmatch(r"sha256:[0-9a-f]{64}", tool_image_id) is None
+            or not isinstance(tool_tag, str)
+            or not tool_tag
+            or len(tool_tag) > 256
+            or manifest.get("tool_image_entrypoint") != TOOL_EXECUTOR_ENTRYPOINT
+            or not isinstance(tool_labels, dict)
+            or set(tool_labels) != TOOL_IMAGE_LABEL_KEYS
+        ):
+            raise BootstrapError("RELEASE_TOOL_IMAGE_IDENTITY_INVALID", str(manifest_path))
+        expected_tool_labels = {
+            "org.opencontainers.image.title": (
+                "XINAO researcher tool executor (dual-container fallback)"
+            ),
+            "io.xinao.researcher.role": "tool_executor",
+            "io.xinao.researcher.dual-container": "true",
+            "io.xinao.researcher.generic-worker-route": "forbidden",
+            "io.xinao.researcher.auth-mount": "forbidden",
+            "io.xinao.researcher.network-default": "none",
+            "io.xinao.researcher.shell-isolation": "bubblewrap-require",
+            "io.xinao.tool.dockerfile.sha256": tool_df,
+            "io.xinao.tool.modules.sha256": tool_mod,
+        }
+        if tool_labels != expected_tool_labels:
+            raise BootstrapError("RELEASE_TOOL_IMAGE_IDENTITY_INVALID", "tool_image_labels")
     hashes = manifest.get("skill_hashes")
     if not isinstance(hashes, dict) or set(hashes) != set(SKILL_HASH_PATHS):
         raise BootstrapError("RELEASE_SKILL_HASHES_MISMATCH", str(manifest_path))

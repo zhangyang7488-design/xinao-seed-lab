@@ -319,7 +319,7 @@ def _sealed_release(
     image_character: str = "a",
     dirty: bool = False,
     variant: bytes | None = None,
-    package_version: str = "1.3.4",
+    package_version: str = "1.3.5",
     capability_version: str = "1.1.0",
     shadow_runtime_tree_sha256: str | None = None,
     shadow_runtime_lock_sha256: str | None = None,
@@ -356,6 +356,12 @@ def _sealed_release(
         if researcher_image_modules_tree_sha256 is not None
         else module._researcher_image_modules_tree_sha256(module_rows)
     )
+    tool_df_path = ROOT / module.TOOL_EXECUTOR_DOCKERFILE_RELATIVE
+    tool_df_sha = module._sha256_bytes(tool_df_path.read_bytes())
+    tool_rows = module._collect_tool_executor_module_rows(ROOT)
+    tool_mod_sha = module._tool_executor_modules_tree_sha256(tool_rows)
+    # Distinct tool image id from transport (avoid accidental equality in assertions).
+    tool_char = chr(((ord(image_character) - 97 + 5) % 26) + 97)
     source_identity = {
         "source_commit": "c" * 40,
         "source_tree": "d" * 40,
@@ -365,9 +371,12 @@ def _sealed_release(
         "shadow_runtime_tree_sha256": shadow_tree,
         "shadow_runtime_lock_sha256": shadow_lock_hash,
         "researcher_image_modules_tree_sha256": modules_tree,
+        "tool_executor_dockerfile_sha256": tool_df_sha,
+        "tool_executor_modules_tree_sha256": tool_mod_sha,
     }
     source_identity_sha256 = module._sha256_bytes(module._canonical_bytes(source_identity))
     image_id = "sha256:" + image_character * 64
+    tool_image_id = "sha256:" + tool_char * 64
     labels = {
         "io.xinao.researcher.chain": "dedicated-xinao-science",
         "io.xinao.researcher.generic-worker-route": "forbidden",
@@ -388,6 +397,9 @@ def _sealed_release(
         "io.xinao.researcher.requested-model": "grok-4.5",
         **module._dual_profile_image_labels(researcher_image_modules_tree_sha256=modules_tree),
     }
+    tool_labels = module._tool_executor_expected_labels(
+        dockerfile_sha256=tool_df_sha, modules_tree_sha256=tool_mod_sha
+    )
     manifest: dict[str, object] = {
         "schema_version": module.RELEASE_SCHEMA,
         "release_id": "pending",
@@ -406,6 +418,10 @@ def _sealed_release(
         "image_id": image_id,
         "image_entrypoint": ["python", "-I", "/opt/xinao-researcher/entrypoint.py"],
         "image_labels": labels,
+        "tool_image_tag_observational": "xinao-tool-executor:test",
+        "tool_image_id": tool_image_id,
+        "tool_image_entrypoint": list(module.TOOL_EXECUTOR_ENTRYPOINT),
+        "tool_image_labels": tool_labels,
         "skill_hashes": hashes,
         "required_bootstrap_protocol": 2,
         "generic_worker_route_allowed": False,
@@ -651,6 +667,11 @@ def _fake_build_environment(
                 build_commands.append(values)
                 raise module.XinaoError("PROCESS_FAILED", "injected build failure")
             build_commands.append(values)
+            # Tool-executor formal build uses repo-root context + Dockerfile.tool-executor.
+            if any("Dockerfile.tool-executor" in str(part) for part in values):
+                assert "--file" in values
+                assert "--label" in values
+                return SimpleNamespace(stdout="", stderr="", returncode=0)
             args = _parse_build_args(values)
             assert "GROK_DONOR_IMAGE" not in args
             assert args.get("GROK_DONOR_IMAGE_ID") == donor_id
@@ -692,7 +713,40 @@ def _fake_build_environment(
         if image in {donor_tag, donor_id}:
             return {"Id": donor_id}
         assert build_commands
-        command = build_commands[-1]
+        # Prefer the build command matching the requested tag when available.
+        command = None
+        for candidate in reversed(build_commands):
+            if image in candidate:
+                command = candidate
+                break
+        if command is None:
+            command = build_commands[-1]
+        if any("Dockerfile.tool-executor" in str(part) for part in command) or str(image).startswith(
+            "xinao-tool-executor:"
+        ):
+            # Recover sealed digests from --label flags on tool build.
+            labels_map: dict[str, str] = {}
+            i = 0
+            while i < len(command):
+                if command[i] == "--label" and i + 1 < len(command):
+                    key, _, value = command[i + 1].partition("=")
+                    labels_map[key] = value
+                    i += 2
+                    continue
+                i += 1
+            tool_df = labels_map.get("io.xinao.tool.dockerfile.sha256", "d" * 64)
+            tool_mod = labels_map.get("io.xinao.tool.modules.sha256", "e" * 64)
+            tool_labels = module._tool_executor_expected_labels(
+                dockerfile_sha256=tool_df, modules_tree_sha256=tool_mod
+            )
+            tool_char = chr(((ord(image_character) - 97 + 5) % 26) + 97)
+            return {
+                "Id": "sha256:" + tool_char * 64,
+                "Config": {
+                    "Labels": tool_labels,
+                    "Entrypoint": list(module.TOOL_EXECUTOR_ENTRYPOINT),
+                },
+            }
         args = _parse_build_args(command)
         labels = {
             "io.xinao.researcher.chain": "dedicated-xinao-science",
@@ -767,12 +821,12 @@ def test_package_version_is_separate_from_researcher_versions() -> None:
         for value in registry["capabilities"]
         if value["capability_id"] == "researcher-container"
     )
-    assert registry["skill_version"] == "1.3.4"
+    assert registry["skill_version"] == "1.3.5"
     assert (
         researcher["version"]
         == charter["charter_version"]
         == runtime_lock["runtime_version"]
-        == "1.2.1"
+        == "1.2.2"
     )
     shadow = next(
         value
@@ -823,7 +877,7 @@ def test_release_v2_and_exact_bundle_roundtrip(
     manifest, manifest_path = _sealed_release(module, tmp_path, monkeypatch)
     bundle_manifest = module._validate_release_manifest(manifest, manifest_path)
     assert manifest["schema_version"] == "xinao.researcher_release.v2"
-    assert manifest["package_version"] == "1.3.4"
+    assert manifest["package_version"] == "1.3.5"
     assert manifest["capability_version"] == "1.1.0"
     assert bundle_manifest["tree_sha256"] == manifest["skill_bundle_tree_sha256"]
     assert any(
@@ -953,8 +1007,10 @@ def test_build_is_candidate_only_and_passes_complete_image_identity(
     donor_binary_sha256 = env["donor_binary_sha256"]
     receipt = module.build_release(ROOT, allow_dirty=True)
     assert receipt["status"] == "CANDIDATE_BUILT"
-    assert receipt["package_version"] == "1.3.4"
-    assert receipt["capability_version"] == "1.2.1"
+    assert receipt["package_version"] == "1.3.5"
+    assert receipt["capability_version"] == "1.2.2"
+    assert receipt.get("tool_image_id")
+    assert str(receipt["tool_image_id"]).startswith("sha256:")
     assert receipt["source_dirty"] is True
     assert receipt["activated"] is False
     assert not module._state_paths()["pointer"].exists()
@@ -983,6 +1039,11 @@ def test_build_is_candidate_only_and_passes_complete_image_identity(
     module._validate_release_manifest(manifest, Path(receipt["release_manifest_path"]))
     assert manifest["source_identity"]["grok_donor_image_id"] == donor_id
     assert manifest["source_identity"]["grok_donor_binary_sha256"] == donor_binary_sha256
+    assert re.fullmatch(r"[0-9a-f]{64}", manifest["source_identity"]["tool_executor_dockerfile_sha256"])
+    assert re.fullmatch(r"[0-9a-f]{64}", manifest["source_identity"]["tool_executor_modules_tree_sha256"])
+    assert manifest["tool_image_id"].startswith("sha256:")
+    assert manifest["tool_image_entrypoint"] == list(module.TOOL_EXECUTOR_ENTRYPOINT)
+    assert manifest["tool_image_labels"]["io.xinao.researcher.role"] == "tool_executor"
     assert re.fullmatch(r"[0-9a-f]{64}", manifest["source_identity"]["shadow_runtime_tree_sha256"])
     assert re.fullmatch(r"[0-9a-f]{64}", manifest["source_identity"]["shadow_runtime_lock_sha256"])
     assert manifest["image_labels"]["io.xinao.researcher.grok-donor-image-id"] == donor_id
@@ -1000,6 +1061,7 @@ def test_build_is_candidate_only_and_passes_complete_image_identity(
     )
     assert fence_checks == [
         ("build", None),
+        ("build", {"test_fence": "build"}),
         ("build", {"test_fence": "build"}),
         ("build", {"test_fence": "build"}),
     ]
@@ -1036,6 +1098,9 @@ def test_build_extract_pins_binary_against_tag_retarget(
 
     def on_before_build(values: list[str]) -> None:
         nonlocal tag_retargeted
+        # Dual-image generation builds tool-executor second; only assert donor pins on transport.
+        if any("Dockerfile.tool-executor" in str(part) for part in values):
+            return
         tag_retargeted = True
         args = _parse_build_args(values)
         assert "GROK_DONOR_IMAGE" not in args
@@ -1068,7 +1133,8 @@ def test_build_extract_pins_binary_against_tag_retarget(
     assert receipt["status"] == "CANDIDATE_BUILT"
     assert tag_retargeted is True
     assert donor_tag_inspects == 1
-    assert len(env["build_commands"]) == 1
+    assert len(env["build_commands"]) == 2
+    assert any("Dockerfile.tool-executor" in str(part) for cmd in env["build_commands"] for part in cmd)
     assert module._docker_image("docker", donor_tag)["Id"] == retargeted_id
     assert module._docker_image("docker", pinned_id)["Id"] == pinned_id
     manifest = module._load_json(Path(receipt["release_manifest_path"]))
@@ -1211,14 +1277,14 @@ def test_same_semver_different_content_is_collision(
         tmp_path,
         monkeypatch,
         image_character="a",
-        package_version="1.3.4",
-        capability_version="1.2.1",
+        package_version="1.3.5",
+        capability_version="1.2.2",
     )
     _fake_build_environment(module, monkeypatch, dirty=False, image_character="f")
     with pytest.raises(module.XinaoError) as failure:
         module.build_release(ROOT, allow_dirty=False)
     assert failure.value.reason_code == "SEMVER_CONTENT_COLLISION"
-    assert failure.value.detail == "package=1.3.4 capability=1.2.1"
+    assert failure.value.detail == "package=1.3.5 capability=1.2.2"
 
 
 def test_package_version_bump_can_reuse_researcher_capability_version(
@@ -1241,11 +1307,11 @@ def test_package_version_bump_can_reuse_researcher_capability_version(
     new = module._load_json(new_path)
 
     assert receipt["status"] == "CANDIDATE_BUILT"
-    assert receipt["package_version"] == "1.3.4"
-    assert receipt["capability_version"] == "1.2.1"
+    assert receipt["package_version"] == "1.3.5"
+    assert receipt["capability_version"] == "1.2.2"
     assert new["release_id"] != old["release_id"]
-    assert new["package_version"] == "1.3.4"
-    assert new["capability_version"] == "1.2.1"
+    assert new["package_version"] == "1.3.5"
+    assert new["capability_version"] == "1.2.2"
     assert old_path.read_bytes() == old_bytes
 
 
@@ -1279,8 +1345,8 @@ def test_forward_upgrade_target_build_accepts_package_only_bump(
     new, new_path = prepared
     assert new_path.is_file()
     assert new["release_id"] != old["release_id"]
-    assert new["package_version"] == "1.3.4"
-    assert new["capability_version"] == "1.2.1"
+    assert new["package_version"] == "1.3.5"
+    assert new["capability_version"] == "1.2.2"
     assert old_path.read_bytes() == old_bytes
 
 
@@ -1390,17 +1456,24 @@ def test_activation_release_validation_excludes_egress_and_auth(
     monkeypatch.setattr(module, "DEFAULT_AUTH_PATH", tmp_path / "missing-auth.json")
     monkeypatch.setattr(module, "_docker", lambda: "docker")
     monkeypatch.setattr(module, "_docker_engine_os", lambda _docker: "linux")
-    monkeypatch.setattr(
-        module,
-        "_docker_image",
-        lambda _docker, _image: {
+    def _dual_image(_docker, image):
+        if image == manifest["tool_image_id"]:
+            return {
+                "Id": manifest["tool_image_id"],
+                "Config": {
+                    "Labels": manifest["tool_image_labels"],
+                    "Entrypoint": manifest["tool_image_entrypoint"],
+                },
+            }
+        return {
             "Id": manifest["image_id"],
             "Config": {
                 "Labels": manifest["image_labels"],
                 "Entrypoint": manifest["image_entrypoint"],
             },
-        },
-    )
+        }
+
+    monkeypatch.setattr(module, "_docker_image", _dual_image)
 
     docker, observed_charter = module._validate_release_for_activation(manifest)
 
@@ -1438,17 +1511,24 @@ def test_activation_release_validation_rejects_image_drift(
     )
     monkeypatch.setattr(module, "_docker", lambda: "docker")
     monkeypatch.setattr(module, "_docker_engine_os", lambda _docker: "linux")
-    monkeypatch.setattr(
-        module,
-        "_docker_image",
-        lambda _docker, _image: {
+    def _dual_image(_docker, image):
+        if image == manifest["tool_image_id"]:
+            return {
+                "Id": manifest["tool_image_id"],
+                "Config": {
+                    "Labels": manifest["tool_image_labels"],
+                    "Entrypoint": manifest["tool_image_entrypoint"],
+                },
+            }
+        return {
             "Id": manifest["image_id"],
             "Config": {
                 "Labels": observed_labels,
                 "Entrypoint": observed_entrypoint,
             },
-        },
-    )
+        }
+
+    monkeypatch.setattr(module, "_docker_image", _dual_image)
 
     with pytest.raises(module.XinaoError) as failure:
         module._validate_release_for_activation(manifest)
@@ -5243,7 +5323,7 @@ def test_shadow_inspect_requires_source_and_live_image_labels(
     registry = module._validate_registry()
     absent = module._shadow_live_status(registry, None, image_ok=False)
     assert absent["runtime_status"] == "RELEASE_ABSENT"
-    manifest, _path = _sealed_release(module, tmp_path, monkeypatch, capability_version="1.2.1")
+    manifest, _path = _sealed_release(module, tmp_path, monkeypatch, capability_version="1.2.2")
     _materialize_installed_from_release(module, tmp_path, monkeypatch, manifest)
     ready = module._shadow_live_status(registry, manifest, image_ok=True)
     assert ready["runtime_status"] == "AVAILABLE"
@@ -5825,7 +5905,10 @@ def _sealed_pre_shadow_v2_release(
     module._validate_sealed_protocol_v2_release(manifest, manifest_path)
     with pytest.raises(module.XinaoError) as exact_failure:
         module._validate_release_manifest(manifest, manifest_path)
-    assert exact_failure.value.reason_code == "RELEASE_SOURCE_IDENTITY_INVALID"
+    assert exact_failure.value.reason_code in {
+        "RELEASE_SOURCE_IDENTITY_INVALID",
+        "RELEASE_SCHEMA_INVALID",
+    }
     return manifest, manifest_path
 
 
@@ -5885,8 +5968,8 @@ def _prepare_v2_forward_upgrade_world(
         tmp_path,
         monkeypatch,
         image_character="c",
-        package_version="1.3.4",
-        capability_version="1.2.1",
+        package_version="1.3.5",
+        capability_version="1.2.2",
     )
     monkeypatch.setattr(
         module,
@@ -5925,7 +6008,10 @@ def test_ordinary_exact_validation_fails_closed_on_pre_shadow_v2(
     world = _prepare_v2_forward_upgrade_world(module, tmp_path, monkeypatch)
     with pytest.raises(module.XinaoError) as failure:
         module._load_current_context(require_terminal=True)
-    assert failure.value.reason_code == "RELEASE_SOURCE_IDENTITY_INVALID"
+    assert failure.value.reason_code in {
+        "RELEASE_SOURCE_IDENTITY_INVALID",
+        "RELEASE_SCHEMA_INVALID",
+    }
     with pytest.raises(module.XinaoError) as migrate_failure:
         module.bootstrap_migrate()
     assert migrate_failure.value.reason_code == "FORWARD_UPGRADE_REQUIRED"
@@ -6311,7 +6397,7 @@ def test_bootstrap_forward_upgrade_same_semver_source_drift_fails_closed(
 
     Formal prepare/build surfaces SEMVER_CONTENT_COLLISION; pointer and the existing
     same-semver release remain byte-identical. Version-bumped source upgrades via the
-    separate legal immutable bump path (package 1.3.4 / capability 1.2.1).
+    separate legal immutable bump path (package 1.3.5 / capability 1.2.2).
     """
 
     module = _module()

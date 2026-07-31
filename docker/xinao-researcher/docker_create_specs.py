@@ -11,6 +11,7 @@ network denied; uid/gid 65532; zero caps; NNP; no host socket/root/ledger/outcom
 
 from __future__ import annotations
 
+import json
 from typing import Any
 
 TOOL_UID = 65532
@@ -355,8 +356,26 @@ def tool_executor_container_spec(
     }
 
 
+def docker_create_process_argv(spec: dict[str, Any]) -> list[str]:
+    """Return the intended container process argv (Entrypoint-only form)."""
+    entry = spec.get("entrypoint") or []
+    if isinstance(entry, str):
+        return [entry]
+    if isinstance(entry, list):
+        return [str(x) for x in entry]
+    return []
+
+
 def docker_create_argv(spec: dict[str, Any]) -> list[str]:
-    """Materialize a `docker create` argv list from a create spec."""
+    """Materialize a `docker create` argv list from a create spec.
+
+    Real Docker CLI shape for multi-arg process identity:
+    - Prefer JSON-array ``--entrypoint`` so ``Config.Entrypoint`` holds the full
+      process argv and ``Config.Cmd`` is empty/null after create.
+    - Do **not** use ``--entrypoint first image rest...`` which yields
+      ``Entrypoint=[first]`` + ``Cmd=rest`` and disagrees with sealed image
+      ENTRYPOINT JSON form and live inspect validators.
+    """
     argv = ["docker", "create", "--name", spec["name"]]
     if spec.get("user"):
         argv.extend(["--user", str(spec["user"])])
@@ -385,16 +404,36 @@ def docker_create_argv(spec: dict[str, Any]) -> list[str]:
     for tmp in spec.get("tmpfs") or []:
         # docker create --tmpfs /tmp:opts
         argv.extend(["--tmpfs", tmp])
-    entry = spec.get("entrypoint")
+    entry = docker_create_process_argv(spec)
     if entry:
-        # docker create --entrypoint is single string; use shell form via JSON not available
-        # here — callers should set image ENTRYPOINT. We still return the intended argv.
-        argv.extend(["--entrypoint", entry[0]])
+        # Docker CLI accepts a JSON array for --entrypoint (exec form).
+        argv.extend(["--entrypoint", json.dumps(entry)])
         argv.append(spec["image"])
-        argv.extend(entry[1:])
+        # No trailing Cmd tokens: full process is entrypoint-only.
     else:
         argv.append(spec["image"])
     return argv
+
+
+def process_argv_from_inspect(inspect_doc: dict[str, Any]) -> list[str]:
+    """Reconstruct process argv from live inspect Entrypoint+Cmd (real Docker shapes).
+
+    Accepted shapes:
+    1. JSON ENTRYPOINT override: Entrypoint=full list, Cmd=null/[]
+    2. Legacy ``--entrypoint first image rest``: Entrypoint=[first], Cmd=rest
+    """
+    cfg = _config(inspect_doc)
+    entrypoint = cfg.get("Entrypoint") or []
+    cmd = cfg.get("Cmd") or []
+    if isinstance(entrypoint, str):
+        entrypoint = [entrypoint]
+    if isinstance(cmd, str):
+        cmd = [cmd]
+    if not isinstance(entrypoint, list):
+        entrypoint = []
+    if not isinstance(cmd, list):
+        cmd = []
+    return [str(x) for x in entrypoint] + [str(x) for x in cmd]
 
 
 def validate_tool_spec_invariants(spec: dict[str, Any]) -> list[str]:
@@ -690,13 +729,28 @@ def validate_tool_container_inspect(
     security_opt = [str(x).lower() for x in (hc.get("SecurityOpt") or [])]
     if not any("no-new-privileges" in x for x in security_opt):
         violations.append("missing no-new-privileges")
-    entrypoint = cfg.get("Entrypoint") or []
-    if isinstance(entrypoint, list):
-        joined = " ".join(str(x) for x in entrypoint)
-    else:
-        joined = str(entrypoint)
+    # Real Docker may place process tokens in Entrypoint only (JSON form) or
+    # split across Entrypoint+Cmd (legacy --entrypoint first + args).
+    process_argv = process_argv_from_inspect(inspect_doc)
+    joined = " ".join(process_argv)
     if "tool_executor.py" not in joined:
         violations.append(f"entrypoint_unexpected:{joined}")
+    # Prefer sealed JSON Entrypoint form: if Cmd is non-empty while Entrypoint is
+    # only the interpreter, flag shape drift so create argv / inspect stay aligned.
+    raw_ep = cfg.get("Entrypoint") or []
+    raw_cmd = cfg.get("Cmd") or []
+    if isinstance(raw_ep, str):
+        raw_ep = [raw_ep]
+    if isinstance(raw_cmd, str):
+        raw_cmd = [raw_cmd]
+    if (
+        isinstance(raw_ep, list)
+        and isinstance(raw_cmd, list)
+        and raw_cmd
+        and len(raw_ep) == 1
+        and "tool_executor.py" not in " ".join(str(x) for x in raw_ep)
+    ):
+        violations.append("entrypoint_cmd_split_shape")
     env_map: dict[str, str] = {}
     for item in cfg.get("Env") or []:
         if isinstance(item, str) and "=" in item:
