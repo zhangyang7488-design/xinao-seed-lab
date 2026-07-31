@@ -27,6 +27,8 @@ from typing import Any, Mapping, Sequence
 SCHEMA = "xinao.native_grok_session_contract.v1"
 PROBE_SCHEMA = "xinao.native_grok_cli_probe.v1"
 DRIVER_SCHEMA = "xinao.native_episode_session_driver.v1"
+ATTEMPT_EVIDENCE_SCHEMA = "xinao.research_episode_live_attempt.v1"
+CANDIDATE_EXPORT_SCHEMA = "xinao.research_episode_candidate_evidence_bundle.v1"
 HEX_SHA256 = re.compile(r"^[0-9a-f]{64}$")
 UUID_RE = re.compile(
     r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
@@ -51,6 +53,12 @@ REQUIRED_CLI_FLAGS = (
 MCP_SUBCOMMANDS = ("list", "add", "remove", "doctor")
 GENUINE_TOOLS_ALLOWLIST = "search_tool,use_tool"
 CANARY_TOOLS_ALLOWLIST = ""
+# Live research path: multi-turn budget must exceed canary one-shot.
+MIN_LIVE_MAX_TURNS = 8
+DEFAULT_LIVE_MAX_TURNS = 16
+DEFAULT_LIVE_MODEL = "grok-4.5"
+DEFAULT_OUTER_TIMEOUT_SECONDS = 3600
+MAX_OUTER_TIMEOUT_SECONDS = 4 * 3600
 STRIPPED_BUILTINS = (
     "run_terminal_cmd",
     "read_file",
@@ -67,6 +75,21 @@ STRIPPED_BUILTINS = (
     "memory_get",
     "lsp",
     "Agent",
+)
+# Status vocabulary for Owner one-shot attach/run/export.
+STATUS_PLANNED = "PLANNED"
+STATUS_ATTEMPT_FAILED = "ATTEMPT_FAILED"
+STATUS_LIVE_ATTEMPT_RECORDED = "LIVE_ATTEMPT_RECORDED"
+STATUS_CANDIDATE_EVIDENCE_EXPORTED = "CANDIDATE_EVIDENCE_EXPORTED"
+SECRET_ARGV_MARKERS = (
+    "api_key",
+    "apikey",
+    "authorization",
+    "password",
+    "secret",
+    "token",
+    "xai_api_key",
+    "grok_api_key",
 )
 
 
@@ -350,6 +373,7 @@ def build_genuine_session_argv(
         "json",
         "--no-subagents",
         "--no-memory",
+        "--disable-web-search",
         "--max-turns",
         str(int(max_turns)),
         "--permission-mode",
@@ -396,6 +420,34 @@ def assert_argv_is_genuine_not_canary(argv: Sequence[str]) -> None:
     # Must not look like canary empty tools.
     if tools_val == "":
         raise NativeSessionError("CANARY_ARGV_ON_GENUINE_PATH", "empty tools")
+    if "--no-subagents" not in joined:
+        raise NativeSessionError("GENUINE_ARGV_SUBAGENTS_NOT_DISABLED", "missing --no-subagents")
+
+
+def assert_live_research_argv(argv: Sequence[str], *, min_turns: int = MIN_LIVE_MAX_TURNS) -> None:
+    """Fail closed for empty tools, canary one-turn, host-bypass builtins, low budget."""
+    assert_argv_is_genuine_not_canary(argv)
+    joined = list(argv)
+    if "--max-turns" not in joined:
+        raise NativeSessionError("LIVE_MAX_TURNS_MISSING", "no --max-turns")
+    mt = int(joined[joined.index("--max-turns") + 1])
+    if mt < int(min_turns):
+        raise NativeSessionError(
+            "LIVE_MAX_TURNS_TOO_LOW",
+            f"max_turns={mt} < required={min_turns}",
+        )
+    if "--model" in joined:
+        model = joined[joined.index("--model") + 1]
+        if model != DEFAULT_LIVE_MODEL:
+            raise NativeSessionError("LIVE_MODEL_MISMATCH", model)
+    if "--disable-web-search" not in joined:
+        raise NativeSessionError("LIVE_WEB_BYPASS_NOT_DISABLED", "missing --disable-web-search")
+    if "--disallowed-tools" not in joined:
+        raise NativeSessionError("LIVE_BUILTINS_NOT_STRIPPED", "missing --disallowed-tools")
+    denied = joined[joined.index("--disallowed-tools") + 1]
+    for required in ("run_terminal_cmd", "web_search", "read_file"):
+        if required not in denied:
+            raise NativeSessionError("LIVE_BUILTIN_STRIP_INCOMPLETE", required)
 
 
 def assert_argv_is_canary(argv: Sequence[str]) -> None:
@@ -735,6 +787,692 @@ class NativeEpisodeSessionDriver:
         }
 
 
+def redact_argv(argv: Sequence[str]) -> list[str]:
+    """Return argv copy with secret-looking tokens redacted for digests/logs.
+
+    Only flag-shaped tokens (leading ``-`` or ``KEY=value``) are treated as
+    secret carriers so values that merely contain substrings like ``secret``
+    are not misclassified as flags.
+    """
+    out: list[str] = []
+    skip_value = False
+    for item in argv:
+        text = str(item)
+        lower = text.lower()
+        if skip_value:
+            out.append("<redacted>")
+            skip_value = False
+            continue
+        is_flag = text.startswith("-")
+        is_assign = (not text.startswith("-")) and ("=" in text)
+        if is_flag or is_assign:
+            key_part = lower.split("=", 1)[0]
+            # Normalize --api-key / --xai-api-key style flags to underscore form.
+            key_norm = key_part.lstrip("-").replace("-", "_")
+            if any(
+                marker in key_part or marker in key_norm for marker in SECRET_ARGV_MARKERS
+            ):
+                if "=" in text:
+                    key, _sep, _val = text.partition("=")
+                    out.append(f"{key}=<redacted>")
+                else:
+                    out.append(text)
+                    skip_value = True
+                continue
+        out.append(text)
+    return out
+
+
+def argv_digest(argv: Sequence[str]) -> str:
+    return _sha256_bytes(_canonical_bytes(redact_argv(argv)))
+
+
+def clamp_outer_timeout(timeout_seconds: float | int | None) -> float:
+    if timeout_seconds is None:
+        return float(DEFAULT_OUTER_TIMEOUT_SECONDS)
+    value = float(timeout_seconds)
+    if value <= 0:
+        raise NativeSessionError("OUTER_TIMEOUT_INVALID", str(timeout_seconds))
+    if value > float(MAX_OUTER_TIMEOUT_SECONDS):
+        raise NativeSessionError(
+            "OUTER_TIMEOUT_TOO_LARGE",
+            f"{value} > {MAX_OUTER_TIMEOUT_SECONDS}",
+        )
+    return value
+
+
+def clamp_live_max_turns(max_turns: int | None) -> int:
+    value = int(DEFAULT_LIVE_MAX_TURNS if max_turns is None else max_turns)
+    if value < MIN_LIVE_MAX_TURNS:
+        raise NativeSessionError(
+            "LIVE_MAX_TURNS_TOO_LOW",
+            f"max_turns={value} < required={MIN_LIVE_MAX_TURNS}",
+        )
+    return value
+
+
+def _b64encode(payload: bytes) -> str:
+    import base64
+
+    return base64.b64encode(payload).decode("ascii")
+
+
+def _b64decode(payload: str) -> bytes:
+    import base64
+
+    return base64.b64decode(payload.encode("ascii"), validate=True)
+
+
+def write_cas_blob(root: Path, kind: str, payload: bytes) -> str:
+    """Atomic content-addressed write under root/<kind>/sha256/ab/<digest>."""
+    digest = _sha256_bytes(payload)
+    dest_dir = Path(root) / kind / "sha256" / digest[:2]
+    dest_dir.mkdir(parents=True, exist_ok=True)
+    dest = dest_dir / digest
+    if dest.is_file():
+        existing = dest.read_bytes()
+        if existing != payload:
+            raise NativeSessionError("CAS_IMMUTABLE_COLLISION", f"{kind}:{digest}")
+        return digest
+    temporary = dest.with_name(f".{dest.name}.{os.getpid()}.{uuid.uuid4().hex}.tmp")
+    temporary.write_bytes(payload)
+    os.replace(temporary, dest)
+    return digest
+
+
+def load_cas_blob(root: Path, kind: str, digest: str) -> bytes:
+    if HEX_SHA256.fullmatch(str(digest)) is None:
+        raise NativeSessionError("CAS_DIGEST_INVALID", digest)
+    path = Path(root) / kind / "sha256" / digest[:2] / digest
+    if not path.is_file():
+        raise NativeSessionError("CAS_BLOB_MISSING", f"{kind}:{digest}")
+    payload = path.read_bytes()
+    if _sha256_bytes(payload) != digest:
+        raise NativeSessionError("CAS_BLOB_HASH_MISMATCH", digest)
+    return payload
+
+
+def append_attempt_index(root: Path, entry: Mapping[str, Any]) -> None:
+    index_path = Path(root) / "attempts" / "index.jsonl"
+    index_path.parent.mkdir(parents=True, exist_ok=True)
+    line = json.dumps(dict(entry), ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    with index_path.open("a", encoding="utf-8") as stream:
+        stream.write(line + "\n")
+
+
+def parse_provider_machine_output(
+    stdout: bytes | str,
+    stderr: bytes | str = b"",
+) -> dict[str, Any]:
+    """Parse JSON/JSONL provider CLI output for session UUID, stop reason, turns."""
+    if isinstance(stdout, str):
+        stdout_b = stdout.encode("utf-8", errors="replace")
+        stdout_text = stdout
+    else:
+        stdout_b = stdout
+        stdout_text = stdout.decode("utf-8", errors="replace")
+    if isinstance(stderr, str):
+        stderr_text = stderr
+    else:
+        stderr_text = stderr.decode("utf-8", errors="replace")
+    combined = stdout_text + "\n" + stderr_text
+    records: list[dict[str, Any]] = []
+    # Prefer line-delimited JSON then whole-document JSON.
+    for line in stdout_text.splitlines():
+        text = line.strip()
+        if not text or text[0] not in "{[":
+            continue
+        try:
+            value = json.loads(text)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(value, dict):
+            records.append(value)
+        elif isinstance(value, list):
+            records.extend(item for item in value if isinstance(item, dict))
+    if not records:
+        stripped = stdout_text.strip()
+        if stripped.startswith("{") or stripped.startswith("["):
+            try:
+                value = json.loads(stripped)
+            except json.JSONDecodeError as exc:
+                raise NativeSessionError("PROVIDER_OUTPUT_MALFORMED", str(exc)[:300]) from exc
+            if isinstance(value, dict):
+                records = [value]
+            elif isinstance(value, list):
+                records = [item for item in value if isinstance(item, dict)]
+    if not records:
+        raise NativeSessionError("PROVIDER_OUTPUT_EMPTY", "no JSON/JSONL records")
+
+    def _pick(keys: Sequence[str]) -> Any:
+        for record in reversed(records):
+            for key in keys:
+                if key in record and record[key] not in (None, ""):
+                    return record[key]
+                nested = record.get("result") if isinstance(record.get("result"), dict) else None
+                if nested and key in nested and nested[key] not in (None, ""):
+                    return nested[key]
+                meta = record.get("metadata") if isinstance(record.get("metadata"), dict) else None
+                if meta and key in meta and meta[key] not in (None, ""):
+                    return meta[key]
+        return None
+
+    session_raw = _pick(
+        ("session_id", "sessionId", "session_uuid", "conversation_id", "id")
+    )
+    stop_reason = _pick(("stop_reason", "stopReason", "finish_reason", "end_reason", "status"))
+    model = _pick(("model", "model_id", "modelId"))
+    turns_raw = _pick(("turn_count", "turns", "actual_turns", "num_turns", "message_count"))
+    error = _pick(("error", "error_message", "message"))
+    if session_raw is not None and not is_uuid(str(session_raw)):
+        # Some CLIs nest session objects.
+        if isinstance(session_raw, dict):
+            session_raw = session_raw.get("id") or session_raw.get("session_id")
+    session_uuid = str(session_raw).strip() if session_raw is not None else ""
+    actual_turns: int | None = None
+    if turns_raw is not None:
+        try:
+            actual_turns = int(turns_raw)
+        except (TypeError, ValueError):
+            actual_turns = None
+    provider_error = None
+    if isinstance(error, str) and error.strip():
+        provider_error = error.strip()[:500]
+    elif any(str(r.get("type") or "").lower() == "error" for r in records):
+        provider_error = "provider_error_record"
+    lower_combined = combined.lower()
+    if "not signed in" in lower_combined or "xai_api_key" in lower_combined:
+        provider_error = provider_error or "NOT_SIGNED_IN"
+    return {
+        "records": records,
+        "session_uuid": session_uuid,
+        "stop_reason": str(stop_reason).strip() if stop_reason is not None else "",
+        "model": str(model).strip() if model is not None else "",
+        "actual_turns": actual_turns,
+        "provider_error": provider_error,
+        "stdout_sha256": _sha256_bytes(stdout_b),
+        "record_count": len(records),
+    }
+
+
+def reject_non_live_driver(
+    *,
+    synthetic: bool,
+    driver: str | None,
+    planned_only: bool,
+    host_fallback: bool = False,
+) -> None:
+    if synthetic:
+        raise NativeSessionError("SYNTHETIC_DRIVER_REFUSED", "synthetic=true")
+    if planned_only:
+        raise NativeSessionError("PLANNED_ARGV_NOT_LIVE", "planned output is not live evidence")
+    if host_fallback:
+        raise NativeSessionError("HOST_GROK_FALLBACK_REFUSED", "must docker exec transport")
+    driver_text = str(driver or "").strip().lower()
+    forbidden = (
+        "mock",
+        "fixture",
+        "synthetic",
+        "planned",
+        "host_side",
+        "host_fallback",
+        "canary",
+    )
+    if any(token in driver_text for token in forbidden):
+        raise NativeSessionError("MOCK_DRIVER_REFUSED", driver_text)
+
+
+def build_live_attempt_record(
+    *,
+    episode_id: str,
+    host_session_id: str,
+    provider_session_uuid: str,
+    attempt_id: str,
+    argv: Sequence[str],
+    stdout: bytes,
+    stderr: bytes,
+    exit_code: int,
+    model: str,
+    max_turns: int,
+    timeout_seconds: float,
+    started_at: str,
+    finished_at: str,
+    transport_container_id: str,
+    tool_container_id: str,
+    transport_image_id: str,
+    tool_image_id: str,
+    pair_receipt_sha256: str,
+    namespace_receipt_sha256: str | None,
+    release_id: str | None,
+    release_identity_sha256: str | None,
+    cas_head_sha256: str | None,
+    mcp_event_hashes: Sequence[str],
+    lab_artifact_manifest: Mapping[str, Any] | None,
+    prior_attempt_hash: str | None,
+    resume: bool,
+    live_executed: bool,
+    driver: str,
+    synthetic: bool,
+    timed_out: bool = False,
+    docker_exec_failed: bool = False,
+) -> dict[str, Any]:
+    """Assemble attempt evidence. Does not claim success if provider/plumbing failed."""
+    reject_non_live_driver(
+        synthetic=synthetic,
+        driver=driver,
+        planned_only=not live_executed,
+        host_fallback="host" in driver.lower() and "docker" not in driver.lower(),
+    )
+    assert_live_research_argv(list(argv))
+    redacted = redact_argv(argv)
+    stdout_sha = _sha256_bytes(stdout)
+    stderr_sha = _sha256_bytes(stderr)
+    tool_trace_sha = _sha256_bytes(
+        _canonical_bytes({"mcp_event_hashes": list(mcp_event_hashes)})
+    )
+    artifact_manifest = dict(lab_artifact_manifest or {"artifacts": []})
+    artifact_manifest_sha = _sha256_bytes(_canonical_bytes(artifact_manifest))
+    parsed: dict[str, Any] | None = None
+    parse_error = ""
+    try:
+        parsed = parse_provider_machine_output(stdout, stderr)
+    except NativeSessionError as exc:
+        parse_error = exc.reason_code
+    status = STATUS_ATTEMPT_FAILED
+    success_gates_ok = True
+    failure_reasons: list[str] = []
+    if not live_executed:
+        success_gates_ok = False
+        failure_reasons.append("NOT_LIVE_EXECUTED")
+    if docker_exec_failed:
+        success_gates_ok = False
+        failure_reasons.append("DOCKER_EXEC_FAILED")
+    if timed_out:
+        success_gates_ok = False
+        failure_reasons.append("OUTER_TIMEOUT")
+    if exit_code != 0:
+        success_gates_ok = False
+        failure_reasons.append(f"NONZERO_EXIT:{exit_code}")
+    if parsed is None:
+        success_gates_ok = False
+        failure_reasons.append(parse_error or "PROVIDER_OUTPUT_MALFORMED")
+    else:
+        if parsed.get("provider_error"):
+            success_gates_ok = False
+            failure_reasons.append(f"PROVIDER_ERROR:{parsed['provider_error']}")
+        if not parsed.get("session_uuid") or not is_uuid(str(parsed["session_uuid"])):
+            success_gates_ok = False
+            failure_reasons.append("SESSION_UUID_MISSING")
+        if not parsed.get("stop_reason"):
+            success_gates_ok = False
+            failure_reasons.append("STOP_REASON_MISSING")
+        if not stdout:
+            success_gates_ok = False
+            failure_reasons.append("RAW_STDOUT_EMPTY")
+        if not list(mcp_event_hashes):
+            # Tool namespace is required; empty MCP chain is not live multi-tool research.
+            # Allow zero only when explicit single-turn empty tools — which we already reject.
+            success_gates_ok = False
+            failure_reasons.append("MCP_EVENTS_MISSING")
+        if provider_session_uuid and parsed.get("session_uuid"):
+            if str(parsed["session_uuid"]).lower() != str(provider_session_uuid).lower():
+                # For new session, provider returns the session; allow binding either way
+                # only when caller left empty expected. Mismatch on resume is fatal.
+                if resume:
+                    success_gates_ok = False
+                    failure_reasons.append("SESSION_UUID_MISMATCH")
+    bound_session = provider_session_uuid
+    if parsed and parsed.get("session_uuid") and is_uuid(str(parsed["session_uuid"])):
+        if not resume or not provider_session_uuid:
+            bound_session = str(parsed["session_uuid"])
+        elif str(parsed["session_uuid"]).lower() == str(provider_session_uuid).lower():
+            bound_session = str(parsed["session_uuid"])
+    if success_gates_ok:
+        status = STATUS_LIVE_ATTEMPT_RECORDED
+    record: dict[str, Any] = {
+        "schema_version": ATTEMPT_EVIDENCE_SCHEMA,
+        "attempt_id": attempt_id,
+        "episode_id": episode_id,
+        "host_session_id": host_session_id,
+        "provider_session_uuid": bound_session,
+        "status": status,
+        "live_executed": bool(live_executed),
+        "synthetic": bool(synthetic),
+        "driver": driver,
+        "resume": bool(resume),
+        "model": model,
+        "max_turns": int(max_turns),
+        "actual_turns": (parsed or {}).get("actual_turns"),
+        "exit_code": int(exit_code),
+        "stop_reason": (parsed or {}).get("stop_reason") or "",
+        "timed_out": bool(timed_out),
+        "docker_exec_failed": bool(docker_exec_failed),
+        "failure_reasons": failure_reasons,
+        "argv_digest": argv_digest(argv),
+        "argv_redacted": redacted,
+        "raw_stdout_sha256": stdout_sha,
+        "raw_stderr_sha256": stderr_sha,
+        "raw_stdout_b64": _b64encode(stdout),
+        "raw_stderr_b64": _b64encode(stderr),
+        "tool_trace_sha256": tool_trace_sha,
+        "mcp_event_hashes": list(mcp_event_hashes),
+        "artifact_manifest": artifact_manifest,
+        "artifact_manifest_sha256": artifact_manifest_sha,
+        "pair_receipt_sha256": pair_receipt_sha256,
+        "namespace_receipt_sha256": namespace_receipt_sha256,
+        "transport_container_id": transport_container_id,
+        "tool_container_id": tool_container_id,
+        "transport_image_id": transport_image_id,
+        "tool_image_id": tool_image_id,
+        "release_id": release_id,
+        "release_identity_sha256": release_identity_sha256,
+        "cas_head_sha256": cas_head_sha256,
+        "prior_attempt_hash": prior_attempt_hash,
+        "timeout_seconds": float(timeout_seconds),
+        "started_at": started_at,
+        "finished_at": finished_at,
+        "parse_error": parse_error or None,
+        "provider_record_count": (parsed or {}).get("record_count") or 0,
+        **authority_clamp(),
+    }
+    # Strip large b64 from hash body? Keep full record hash including raw payloads.
+    body_for_hash = {k: v for k, v in record.items() if k != "attempt_hash"}
+    record["attempt_hash"] = _sha256_bytes(_canonical_bytes(body_for_hash))
+    return record
+
+
+def persist_live_attempt(episode_output_root: Path, attempt: Mapping[str, Any]) -> dict[str, Any]:
+    """Write attempt + raw blobs under episode output with append-only index."""
+    if attempt.get("schema_version") != ATTEMPT_EVIDENCE_SCHEMA:
+        raise NativeSessionError("ATTEMPT_SCHEMA_INVALID", str(attempt.get("schema_version")))
+    root = Path(episode_output_root)
+    raw_stdout = _b64decode(str(attempt["raw_stdout_b64"]))
+    raw_stderr = _b64decode(str(attempt["raw_stderr_b64"]))
+    if _sha256_bytes(raw_stdout) != attempt.get("raw_stdout_sha256"):
+        raise NativeSessionError("RAW_STDOUT_HASH_MISMATCH", "truncated or forged")
+    if _sha256_bytes(raw_stderr) != attempt.get("raw_stderr_sha256"):
+        raise NativeSessionError("RAW_STDERR_HASH_MISMATCH", "truncated or forged")
+    stdout_digest = write_cas_blob(root, "raw", raw_stdout)
+    stderr_digest = write_cas_blob(root, "raw", raw_stderr)
+    # Store attempt without embedded b64 (pointers only) for durable CAS object.
+    durable = dict(attempt)
+    durable["raw_stdout_cas"] = stdout_digest
+    durable["raw_stderr_cas"] = stderr_digest
+    durable.pop("raw_stdout_b64", None)
+    durable.pop("raw_stderr_b64", None)
+    body = {k: v for k, v in durable.items() if k != "attempt_hash"}
+    durable["attempt_hash"] = _sha256_bytes(_canonical_bytes(body))
+    attempt_digest = write_cas_blob(root, "attempts", _canonical_bytes(durable))
+    if attempt_digest != durable["attempt_hash"]:
+        # CAS path uses content hash of durable bytes; keep both identities explicit.
+        durable["attempt_cas_digest"] = attempt_digest
+    else:
+        durable["attempt_cas_digest"] = attempt_digest
+    # Re-write if hash field changed identity of bytes — ensure single canonical object.
+    final_bytes = _canonical_bytes(durable)
+    final_digest = write_cas_blob(root, "attempts", final_bytes)
+    append_attempt_index(
+        root,
+        {
+            "attempt_id": durable.get("attempt_id"),
+            "attempt_cas_digest": final_digest,
+            "attempt_hash": durable.get("attempt_hash"),
+            "status": durable.get("status"),
+            "episode_id": durable.get("episode_id"),
+            "provider_session_uuid": durable.get("provider_session_uuid"),
+            "recorded_at": durable.get("finished_at"),
+            "prior_attempt_hash": durable.get("prior_attempt_hash"),
+        },
+    )
+    # Preserve successful attempt pointer; failed must not overwrite success.
+    success_ptr = root / "attempts" / "last_successful.json"
+    latest_ptr = root / "attempts" / "last_recorded.json"
+    pointer = {
+        "attempt_cas_digest": final_digest,
+        "attempt_hash": durable.get("attempt_hash"),
+        "status": durable.get("status"),
+        "episode_id": durable.get("episode_id"),
+        "provider_session_uuid": durable.get("provider_session_uuid"),
+    }
+    _write_json_atomic(latest_ptr, pointer)
+    if durable.get("status") == STATUS_LIVE_ATTEMPT_RECORDED:
+        _write_json_atomic(success_ptr, pointer)
+    elif success_ptr.is_file():
+        # leave prior success intact
+        pass
+    return {
+        "status": durable.get("status"),
+        "attempt_cas_digest": final_digest,
+        "attempt_hash": durable.get("attempt_hash"),
+        "raw_stdout_cas": stdout_digest,
+        "raw_stderr_cas": stderr_digest,
+        "provider_session_uuid": durable.get("provider_session_uuid"),
+        "attempt": durable,
+        **authority_clamp(),
+    }
+
+
+def _write_json_atomic(path: Path, value: Mapping[str, Any]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = path.with_name(f".{path.name}.{os.getpid()}.{uuid.uuid4().hex}.tmp")
+    temporary.write_bytes(_canonical_bytes(dict(value)))
+    os.replace(temporary, path)
+
+
+def load_attempt_cas(episode_output_root: Path, attempt_cas_digest: str) -> dict[str, Any]:
+    payload = load_cas_blob(Path(episode_output_root), "attempts", attempt_cas_digest)
+    value = json.loads(payload.decode("utf-8"))
+    if not isinstance(value, dict):
+        raise NativeSessionError("ATTEMPT_CAS_INVALID", attempt_cas_digest)
+    return value
+
+
+def validate_attempt_exportable(attempt: Mapping[str, Any]) -> None:
+    """Fail closed: only LIVE_ATTEMPT_RECORDED with complete evidence may export."""
+    if attempt.get("schema_version") != ATTEMPT_EVIDENCE_SCHEMA:
+        raise NativeSessionError("ATTEMPT_SCHEMA_INVALID", str(attempt.get("schema_version")))
+    if attempt.get("status") != STATUS_LIVE_ATTEMPT_RECORDED:
+        raise NativeSessionError("ATTEMPT_NOT_EXPORTABLE", str(attempt.get("status")))
+    if attempt.get("live_executed") is not True:
+        raise NativeSessionError("PLANNED_ARGV_NOT_LIVE", "live_executed!=true")
+    if attempt.get("synthetic") is True:
+        raise NativeSessionError("SYNTHETIC_DRIVER_REFUSED", "synthetic attempt")
+    reject_non_live_driver(
+        synthetic=bool(attempt.get("synthetic")),
+        driver=str(attempt.get("driver") or ""),
+        planned_only=attempt.get("live_executed") is not True,
+    )
+    exit_code = attempt.get("exit_code")
+    if exit_code is None or int(exit_code) != 0:
+        raise NativeSessionError("NONZERO_EXIT_NOT_EXPORTABLE", str(exit_code))
+    if attempt.get("timed_out") is True:
+        raise NativeSessionError("TIMEOUT_NOT_EXPORTABLE", "timed_out")
+    if attempt.get("docker_exec_failed") is True:
+        raise NativeSessionError("DOCKER_FAILURE_NOT_EXPORTABLE", "docker_exec_failed")
+    if attempt.get("failure_reasons"):
+        raise NativeSessionError(
+            "ATTEMPT_FAILURE_REASONS_PRESENT",
+            ",".join(str(x) for x in attempt.get("failure_reasons") or []),
+        )
+    session = str(attempt.get("provider_session_uuid") or "")
+    if not is_uuid(session):
+        raise NativeSessionError("SESSION_UUID_MISSING", session)
+    if not attempt.get("stop_reason"):
+        raise NativeSessionError("STOP_REASON_MISSING", "empty")
+    if not attempt.get("raw_stdout_sha256") or HEX_SHA256.fullmatch(
+        str(attempt.get("raw_stdout_sha256"))
+    ) is None:
+        raise NativeSessionError("RAW_STDOUT_MISSING", "hash")
+    if not attempt.get("mcp_event_hashes"):
+        raise NativeSessionError("MCP_EVENTS_MISSING", "empty tool trace")
+    if not attempt.get("pair_receipt_sha256"):
+        raise NativeSessionError("PAIR_RECEIPT_MISSING", "export")
+    for key in (
+        "transport_image_id",
+        "tool_image_id",
+        "transport_container_id",
+        "tool_container_id",
+        "argv_digest",
+        "tool_trace_sha256",
+        "artifact_manifest_sha256",
+    ):
+        if not attempt.get(key):
+            raise NativeSessionError("ATTEMPT_FIELD_MISSING", key)
+    # Authority theater hard reject.
+    for bad in ("owner_adopted", "science_restored", "parent_complete", "completion_claim_allowed"):
+        if attempt.get(bad) is True:
+            raise NativeSessionError("AUTHORITY_CLAIM_FORBIDDEN", bad)
+
+
+def export_candidate_evidence_bundle(
+    *,
+    episode_output_root: Path,
+    attempt_cas_digest: str,
+    episode_id: str,
+    cas_head_sha256: str,
+    expected_provider_session_uuid: str | None = None,
+    expected_pair_receipt_sha256: str | None = None,
+    expected_namespace_receipt_sha256: str | None = None,
+    expected_transport_image_id: str | None = None,
+    expected_tool_image_id: str | None = None,
+    package_release_id: str | None = None,
+    package_release_identity_sha256: str | None = None,
+    prompt_material_cutoff: Mapping[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Export closed-schema candidate-only bundle from canonical attempt CAS.
+
+    Derives identities from stored attempt evidence; rejects forged caller hashes.
+    Idempotent for identical inputs; never writes shadow/adoption/freeze state.
+    """
+    root = Path(episode_output_root)
+    attempt = load_attempt_cas(root, attempt_cas_digest)
+    validate_attempt_exportable(attempt)
+    if attempt.get("episode_id") != episode_id:
+        raise NativeSessionError(
+            "EPISODE_MISMATCH",
+            f"attempt={attempt.get('episode_id')} expected={episode_id}",
+        )
+    if cas_head_sha256 and attempt.get("cas_head_sha256") not in {None, cas_head_sha256}:
+        if attempt.get("cas_head_sha256") != cas_head_sha256:
+            raise NativeSessionError(
+                "CHECKPOINT_HEAD_DRIFT",
+                f"attempt={attempt.get('cas_head_sha256')} expected={cas_head_sha256}",
+            )
+    if expected_provider_session_uuid and (
+        str(attempt.get("provider_session_uuid") or "").lower()
+        != str(expected_provider_session_uuid).lower()
+    ):
+        raise NativeSessionError(
+            "SESSION_UUID_MISMATCH",
+            f"attempt={attempt.get('provider_session_uuid')} expected={expected_provider_session_uuid}",
+        )
+    if expected_pair_receipt_sha256 and attempt.get("pair_receipt_sha256") != expected_pair_receipt_sha256:
+        raise NativeSessionError("PAIR_RECEIPT_MISMATCH", "export")
+    if expected_namespace_receipt_sha256 and attempt.get(
+        "namespace_receipt_sha256"
+    ) != expected_namespace_receipt_sha256:
+        raise NativeSessionError("NAMESPACE_RECEIPT_MISMATCH", "export")
+    if expected_transport_image_id and attempt.get("transport_image_id") != expected_transport_image_id:
+        raise NativeSessionError("TRANSPORT_IMAGE_MISMATCH", "export")
+    if expected_tool_image_id and attempt.get("tool_image_id") != expected_tool_image_id:
+        raise NativeSessionError("TOOL_IMAGE_MISMATCH", "export")
+    # Caller package identity must not override attempt-sealed identity when present.
+    release_id = attempt.get("release_id") or package_release_id
+    release_identity = attempt.get("release_identity_sha256") or package_release_identity_sha256
+    if package_release_id and attempt.get("release_id") and package_release_id != attempt.get(
+        "release_id"
+    ):
+        raise NativeSessionError("RELEASE_ID_MISMATCH", "export")
+    if (
+        package_release_identity_sha256
+        and attempt.get("release_identity_sha256")
+        and package_release_identity_sha256 != attempt.get("release_identity_sha256")
+    ):
+        raise NativeSessionError("RELEASE_IDENTITY_MISMATCH", "export")
+    # Reconstruct raw session hash from CAS when available.
+    raw_session_hash = str(attempt.get("raw_stdout_sha256"))
+    if attempt.get("raw_stdout_cas"):
+        raw_bytes = load_cas_blob(root, "raw", str(attempt["raw_stdout_cas"]))
+        if _sha256_bytes(raw_bytes) != raw_session_hash:
+            raise NativeSessionError("RAW_STDOUT_HASH_MISMATCH", "cas drift")
+    bundle_body = {
+        "schema_version": CANDIDATE_EXPORT_SCHEMA,
+        "status": STATUS_CANDIDATE_EVIDENCE_EXPORTED,
+        "episode_id": episode_id,
+        "cas_head_sha256": cas_head_sha256 or attempt.get("cas_head_sha256"),
+        "attempt_id": attempt.get("attempt_id"),
+        "attempt_hash": attempt.get("attempt_hash"),
+        "attempt_cas_digest": attempt_cas_digest,
+        "raw_session_hash": raw_session_hash,
+        "tool_trace_hash": attempt.get("tool_trace_sha256"),
+        "artifact_manifest_hash": attempt.get("artifact_manifest_sha256"),
+        "pair_receipt_sha256": attempt.get("pair_receipt_sha256"),
+        "namespace_receipt_sha256": attempt.get("namespace_receipt_sha256"),
+        "release_id": release_id,
+        "release_identity_sha256": release_identity,
+        "transport_image_id": attempt.get("transport_image_id"),
+        "tool_image_id": attempt.get("tool_image_id"),
+        "transport_container_id": attempt.get("transport_container_id"),
+        "tool_container_id": attempt.get("tool_container_id"),
+        "model": attempt.get("model"),
+        "provider_session_uuid": attempt.get("provider_session_uuid"),
+        "max_turns": attempt.get("max_turns"),
+        "actual_turns": attempt.get("actual_turns"),
+        "stop_reason": attempt.get("stop_reason"),
+        "argv_digest": attempt.get("argv_digest"),
+        "mcp_event_hashes": list(attempt.get("mcp_event_hashes") or []),
+        "prompt_material_cutoff": dict(prompt_material_cutoff or {}),
+        "candidate_only": True,
+        "shadow_write": False,
+        "next_task_created": False,
+        "disposition_written": False,
+        "freeze_written": False,
+        "settlement_written": False,
+        "portfolio_updated": False,
+        **authority_clamp(),
+    }
+    bundle_hash = _sha256_bytes(_canonical_bytes(bundle_body))
+    bundle = dict(bundle_body)
+    bundle["bundle_sha256"] = bundle_hash
+    export_digest = write_cas_blob(root, "exports", _canonical_bytes(bundle))
+    export_ptr = root / "exports" / "last_export.json"
+    pointer = {
+        "bundle_sha256": bundle_hash,
+        "export_cas_digest": export_digest,
+        "attempt_cas_digest": attempt_cas_digest,
+        "episode_id": episode_id,
+        "status": STATUS_CANDIDATE_EVIDENCE_EXPORTED,
+    }
+    # Idempotent: identical pointer content is fine; conflicting partial fails closed.
+    if export_ptr.is_file():
+        prior = json.loads(export_ptr.read_text(encoding="utf-8"))
+        if (
+            prior.get("attempt_cas_digest") == attempt_cas_digest
+            and prior.get("bundle_sha256") not in {None, bundle_hash}
+        ):
+            raise NativeSessionError(
+                "EXPORT_CONFLICT",
+                f"prior={prior.get('bundle_sha256')} new={bundle_hash}",
+            )
+        if (
+            prior.get("attempt_cas_digest") == attempt_cas_digest
+            and prior.get("bundle_sha256") == bundle_hash
+        ):
+            return {
+                **bundle,
+                "export_cas_digest": export_digest,
+                "idempotent": True,
+                **authority_clamp(),
+            }
+    _write_json_atomic(export_ptr, pointer)
+    return {
+        **bundle,
+        "export_cas_digest": export_digest,
+        "idempotent": False,
+        **authority_clamp(),
+    }
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     import argparse
 
@@ -774,3 +1512,4 @@ def main(argv: Sequence[str] | None = None) -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
+

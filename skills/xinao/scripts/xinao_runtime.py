@@ -128,7 +128,10 @@ EGRESS_REQUIRED_NEGATIVE_CASE_IDS: tuple[str, ...] = (
     "N17c",
     "N17d",
 )
-EGRESS_CANARY_REQUESTED_MODEL = "grok-4.5"
+EGRESS_CANARY_TOOL_NAMESPACE_SECURITY_RELATIVE = Path("security") / "tool_namespace_separation"
+TOOL_NAMESPACE_DENY_PROOF_EXIT = 17
+TOOL_NAMESPACE_INFRA_EXEC_EXIT_CODES = frozenset({125, 126, 127})
+REQUESTED_MODEL = "grok-4.5"
 EGRESS_CANARY_OBSERVED_BACKEND_MODEL = "grok-4.5-build"
 EGRESS_CANARY_STOP_REASON = "EndTurn"
 EGRESS_CANARY_ENDPOINT_HOST = "cli-chat-proxy.grok.com"
@@ -11887,6 +11890,35 @@ def _parser() -> argparse.ArgumentParser:
     re_absorb.add_argument("--root", type=Path, required=True)
     re_absorb.add_argument("--expected-head", required=True)
     re_absorb.add_argument("--candidate", type=Path, default=None)
+    # Owner one-shot live provider attach/run (docker exec; not plan-only theater).
+    re_attach = research_episode_sub.add_parser("attach-run")
+    re_attach.add_argument("--root", type=Path, required=True)
+    re_attach.add_argument("--prompt", required=True)
+    re_attach.add_argument("--expected-head", default=None)
+    re_attach.add_argument("--max-turns", type=int, default=None)
+    re_attach.add_argument("--timeout-seconds", type=float, default=None)
+    re_attach.add_argument(
+        "--plan-only",
+        action="store_true",
+        help="Emit planned argv only; never records LIVE_ATTEMPT_RECORDED evidence",
+    )
+    re_resume_live = research_episode_sub.add_parser("resume-live")
+    re_resume_live.add_argument("--root", type=Path, required=True)
+    re_resume_live.add_argument("--expected-provider-session", required=True)
+    re_resume_live.add_argument("--expected-head", required=True)
+    re_resume_live.add_argument("--expected-session", default=None)
+    re_resume_live.add_argument("--prior-attempt-hash", default=None)
+    re_resume_live.add_argument("--prompt", default=None)
+    re_resume_live.add_argument("--max-turns", type=int, default=None)
+    re_resume_live.add_argument("--timeout-seconds", type=float, default=None)
+    re_resume_live.add_argument("--plan-only", action="store_true")
+    re_export = research_episode_sub.add_parser("export-candidate-evidence")
+    re_export.add_argument("--root", type=Path, required=True)
+    re_export.add_argument("--attempt-cas-digest", required=True)
+    re_export.add_argument("--expected-head", required=True)
+    re_export.add_argument("--expected-provider-session", default=None)
+    # Owner one-shot host security issuer (not episode-local, not autonomous).
+    sub.add_parser("issue-tool-namespace-receipt")
     return parser
 
 
@@ -12095,6 +12127,75 @@ def _research_episode_append_journal(root: Path, event: dict[str, Any]) -> None:
         fh.write(json.dumps(event, ensure_ascii=False, sort_keys=True) + "\n")
 
 
+def _resolve_research_episode_dual_images() -> tuple[str, str]:
+    """Default to active sealed IDs; reject env overrides whose resolved ID differs."""
+
+    sealed = _active_release_sealed_dual_images()
+    env_transport = os.environ.get("XINAO_TRANSPORT_IMAGE", "").strip()
+    env_tool = os.environ.get("XINAO_TOOL_EXECUTOR_IMAGE", "").strip()
+    synthetic = os.environ.get("XINAO_DUAL_CONTAINER_SYNTHETIC", "").strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
+    if sealed is None:
+        if not env_transport or not env_tool:
+            raise XinaoError(
+                "DUAL_CONTAINER_SEALED_IMAGES_REQUIRED",
+                "active dual-image release or sealed image IDs required",
+            )
+        # Without a sealed active dual-image release, only synthetic unit paths may proceed
+        # with explicit env refs (never as live namespace proof).
+        if not synthetic:
+            raise XinaoError(
+                "DUAL_CONTAINER_SEALED_IMAGES_REQUIRED",
+                "live dual-host requires active release with tool_image_id",
+            )
+        return env_transport, env_tool
+    sealed_transport, sealed_tool, _release = sealed
+    transport = sealed_transport
+    tool = sealed_tool
+    if env_transport:
+        if synthetic:
+            if env_transport != sealed_transport and not env_transport.startswith("sha256:"):
+                # Synthetic may use tags only when they are forced equal after resolve mock.
+                transport = env_transport
+            elif env_transport != sealed_transport:
+                raise XinaoError(
+                    "DUAL_CONTAINER_TRANSPORT_IMAGE_OVERRIDE_REJECTED",
+                    f"sealed={sealed_transport} override={env_transport}",
+                )
+        else:
+            # Live: resolve env ref and require exact sealed ID match.
+            docker = _docker()
+            observed = str(_docker_image(docker, env_transport).get("Id", ""))
+            if observed != sealed_transport:
+                raise XinaoError(
+                    "DUAL_CONTAINER_TRANSPORT_IMAGE_OVERRIDE_REJECTED",
+                    f"sealed={sealed_transport} resolved={observed}",
+                )
+            transport = sealed_transport
+    if env_tool:
+        if synthetic:
+            if env_tool != sealed_tool and not env_tool.startswith("sha256:"):
+                tool = env_tool
+            elif env_tool != sealed_tool:
+                raise XinaoError(
+                    "DUAL_CONTAINER_TOOL_IMAGE_OVERRIDE_REJECTED",
+                    f"sealed={sealed_tool} override={env_tool}",
+                )
+        else:
+            docker = _docker()
+            observed = str(_docker_image(docker, env_tool).get("Id", ""))
+            if observed != sealed_tool:
+                raise XinaoError(
+                    "DUAL_CONTAINER_TOOL_IMAGE_OVERRIDE_REJECTED",
+                    f"sealed={sealed_tool} resolved={observed}",
+                )
+            tool = sealed_tool
+    return transport, tool
+
 def _research_episode_container_identity(
     *,
     verb: str,
@@ -12104,7 +12205,8 @@ def _research_episode_container_identity(
     lab_root: Path,
     root: Path,
 ) -> dict[str, Any]:
-    profile_status = RESEARCH_EPISODE_PROFILE_STATUS
+    # Same live receipt judgment as start/status/resume — never hardcode AVAILABLE.
+    profile_status = _research_episode_resolve_profile_status(root)
     dual = os.environ.get("XINAO_DUAL_CONTAINER_HOST", "").strip().lower() in {
         "1",
         "true",
@@ -12142,6 +12244,9 @@ def _research_episode_container_identity(
             "generic_file_shell_tools": False,
             "lab_root": str(lab_root),
             "completion_claim_allowed": False,
+            "owner_adopted": False,
+            "science_restored": False,
+            "parent_complete": False,
         }
     host_path = Path(__file__).resolve().parent / "dual_container_host.py"
     spec = importlib.util.spec_from_file_location("xinao_dual_container_host_runtime", host_path)
@@ -12150,8 +12255,7 @@ def _research_episode_container_identity(
     host_mod = importlib.util.module_from_spec(spec)
     sys.modules[spec.name] = host_mod
     spec.loader.exec_module(host_mod)
-    transport = os.environ.get("XINAO_TRANSPORT_IMAGE", "").strip()
-    tool = os.environ.get("XINAO_TOOL_EXECUTOR_IMAGE", "").strip()
+    transport, tool = _resolve_research_episode_dual_images()
     auth = os.environ.get("XINAO_AUTH_HOST_PATH", "").strip()
     synthetic = os.environ.get("XINAO_DUAL_CONTAINER_SYNTHETIC", "").strip().lower() in {
         "1",
@@ -12159,10 +12263,10 @@ def _research_episode_container_identity(
         "yes",
         "on",
     }
-    if not transport or not tool or not auth:
+    if not auth:
         raise XinaoError(
             "DUAL_CONTAINER_HOST_CONFIG_REQUIRED",
-            "XINAO_TRANSPORT_IMAGE, XINAO_TOOL_EXECUTOR_IMAGE, XINAO_AUTH_HOST_PATH required",
+            "XINAO_AUTH_HOST_PATH required",
         )
     host = host_mod.DualContainerHost(
         host_mod.DualHostConfig(
@@ -12182,7 +12286,6 @@ def _research_episode_container_identity(
         profile_status=profile_status,
         host=host,
     )
-
 
 def _research_episode_commit_checkpoint(
     root: Path,
@@ -12274,63 +12377,803 @@ def _research_episode_commit_checkpoint(
     }
 
 
-def _research_episode_resolve_profile_status(root: Path) -> str:
-    """Host-sealed tool-namespace receipt may elevate; episode-local self-issue never does."""
-    env_path = (os.environ.get("XINAO_TOOL_NAMESPACE_SEPARATION_RECEIPT") or "").strip()
-    if not env_path:
-        return RESEARCH_EPISODE_PROFILE_STATUS
-    path = Path(env_path)
+def _tool_namespace_security_root() -> Path:
+    return _state_paths()["capability_root"] / TOOL_NAMESPACE_SECURITY_RELATIVE
+
+
+def _tool_namespace_canonical_path(path: Path) -> Path:
+    """Resolve a path without following reparse points on intermediate roots."""
+    resolved = path.resolve(strict=False)
+    if _is_reparse(resolved) if os.path.lexists(resolved) else False:
+        raise XinaoError("TOOL_NAMESPACE_RECEIPT_REPARSE_FORBIDDEN", str(path))
+    return resolved
+
+
+def _tool_namespace_paths_equal(left: Path, right: Path) -> bool:
     try:
-        if not path.is_file():
-            return RESEARCH_EPISODE_PROFILE_STATUS
-        # Episode-local self-issue is not host-sealed.
+        return os.path.normcase(str(_tool_namespace_canonical_path(left))) == os.path.normcase(
+            str(_tool_namespace_canonical_path(right))
+        )
+    except XinaoError:
+        return False
+
+
+def _refuse_synthetic_namespace_evidence(*, allow_live: bool) -> None:
+    """Never promote synthetic/harness/fixture evidence as live kernel namespace proof."""
+
+    markers = (
+        os.environ.get("XINAO_TOOL_NAMESPACE_SYNTHETIC", ""),
+        os.environ.get("XINAO_DUAL_CONTAINER_SYNTHETIC", ""),
+        os.environ.get("XINAO_ACCEPT_FIXTURE_NAMESPACE_RECEIPT", ""),
+    )
+    if any(str(m).strip().lower() in {"1", "true", "yes", "on"} for m in markers):
+        raise XinaoError(
+            "TOOL_NAMESPACE_SYNTHETIC_EVIDENCE_REFUSED",
+            "synthetic/fixture/harness evidence cannot mint live host_security_evidence",
+        )
+    if not allow_live:
+        raise XinaoError(
+            "TOOL_NAMESPACE_LIVE_PROOF_REQUIRED",
+            "physical dual-container probes required for live receipt",
+        )
+
+
+def _normalize_docker_create_argv(docker: str, create_argv: list[str]) -> list[str]:
+    """docker_create_argv starts with 'docker'; bind to the resolved docker binary."""
+    if create_argv and Path(str(create_argv[0])).name.lower() in {"docker", "docker.exe"}:
+        return [docker, *create_argv[1:]]
+    return [docker, *create_argv]
+
+
+def _load_docker_create_specs_module() -> Any:
+    specs_path = (
+        Path(__file__).resolve().parents[3]
+        / "docker"
+        / "xinao-researcher"
+        / "docker_create_specs.py"
+    )
+    if not specs_path.is_file():
+        raise XinaoError("TOOL_NAMESPACE_SPECS_MISSING", str(specs_path))
+    spec_loader = importlib.util.spec_from_file_location(
+        "xinao_docker_create_specs_namespace", specs_path
+    )
+    if spec_loader is None or spec_loader.loader is None:
+        raise XinaoError("TOOL_NAMESPACE_SPECS_MISSING", str(specs_path))
+    specs = importlib.util.module_from_spec(spec_loader)
+    sys.modules[spec_loader.name] = specs
+    spec_loader.loader.exec_module(specs)
+    return specs
+
+
+def _inspect_mount_destinations(inspect_doc: dict[str, Any]) -> set[str]:
+    mounts = inspect_doc.get("Mounts") or inspect_doc.get("mounts") or []
+    destinations: set[str] = set()
+    if not isinstance(mounts, list):
+        return destinations
+    for mount in mounts:
+        if not isinstance(mount, dict):
+            continue
+        dest = str(mount.get("Destination") or mount.get("Target") or "")
+        if dest:
+            destinations.add(dest)
+    return destinations
+
+
+def _run_tool_namespace_physical_probes(
+    *,
+    transport_image_id: str,
+    tool_image_id: str,
+) -> dict[str, Any]:
+    """Execute live physical negative probes against sealed image IDs.
+
+    Fail closed when Docker is unavailable or any required proof cannot be
+    demonstrated via real container create/inspect/start/exec (or a sealed-image
+    runtime attempt). Host-side create-spec validators alone and hand-edited
+    inspect JSON are not live evidence.
+
+    Production path intentionally ignores any
+    ``_TOOL_NAMESPACE_PHYSICAL_PROBE_IMPL`` global. Tests may monkeypatch narrow
+    I/O (``_run``, ``_docker_image``, ``_docker``) only.
+    """
+
+    if os.environ.get("XINAO_TOOL_NAMESPACE_PROBE_MODE", "").strip().lower() in {
+        "synthetic",
+        "static",
+        "fixture",
+        "harness",
+    }:
+        raise XinaoError(
+            "TOOL_NAMESPACE_SYNTHETIC_EVIDENCE_REFUSED",
+            "probe mode is not live physical",
+        )
+    # Refuse production-path global injector (even if a test left it set).
+    if callable(globals().get("_TOOL_NAMESPACE_PHYSICAL_PROBE_IMPL")):
+        # Do not short-circuit to forged proof; continue with real Docker I/O.
+        pass
+
+    docker = _docker()
+    _docker_engine_os(docker)
+    transport_image = _docker_image(docker, transport_image_id)
+    tool_image = _docker_image(docker, tool_image_id)
+    if transport_image.get("Id") != transport_image_id:
+        raise XinaoError("TOOL_NAMESPACE_TRANSPORT_IMAGE_MISMATCH", transport_image_id)
+    if tool_image.get("Id") != tool_image_id:
+        raise XinaoError("TOOL_NAMESPACE_TOOL_IMAGE_MISMATCH", tool_image_id)
+
+    specs = _load_docker_create_specs_module()
+    probe_root = _tool_namespace_security_root() / ".probe_work"
+    probe_root.mkdir(parents=True, exist_ok=True)
+    lab = probe_root / "lab"
+    ipc = probe_root / "ipc"
+    lab.mkdir(exist_ok=True)
+    ipc.mkdir(exist_ok=True)
+    proven: list[str] = []
+    details: dict[str, Any] = {
+        "proof_methods": {},
+        "runtime_attempts": [],
+    }
+    clean_cid: str | None = None
+
+    def _rm(cid: str) -> None:
+        _run([docker, "rm", "--force", cid], timeout=60, check=False)
+
+    def _create_only(create_argv: list[str]) -> str:
+        full = _normalize_docker_create_argv(docker, create_argv)
+        created = _run(full, timeout=120)
+        cid = (created.stdout or "").strip()
+        if not cid:
+            raise XinaoError("TOOL_NAMESPACE_PROBE_CREATE_EMPTY", " ".join(full[:6]))
+        return cid
+
+    def _inspect(cid: str) -> dict[str, Any]:
+        inspected = _strict_json_loads(
+            _run([docker, "inspect", cid], timeout=60).stdout,
+            reason_code="TOOL_NAMESPACE_PROBE_INSPECT_INVALID",
+            detail=cid,
+        )
+        if not isinstance(inspected, list) or not inspected or not isinstance(inspected[0], dict):
+            raise XinaoError("TOOL_NAMESPACE_PROBE_INSPECT_INVALID", cid)
+        return inspected[0]
+
+    # Once a clean container is marked unusable, no further attempt may contribute proof.
+    container_unusable: dict[str, bool] = {"value": False}
+
+    def _runtime_attempt(cid: str, exec_argv: list[str], *, expect_fail: bool) -> bool:
+        """Start + exec against a real container; fail closed for non-proof outcomes.
+
+        Proof rules:
+        - ``docker start`` must succeed and the container must remain exec-capable.
+        - ``docker exec`` must actually run the probe process.
+        - Expected denial only counts when exit code is ``TOOL_NAMESPACE_DENY_PROOF_EXIT``.
+        - Start failure, plumbing failure (125/126/127), timeout, wrong executable,
+          unrelated nonzero, and exceptions never count as isolation proof.
+        - After any unusable event, the same container cannot later mint proof.
+        """
+        attempt: dict[str, Any] = {
+            "container_id": cid,
+            "exec_argv": list(exec_argv),
+            "expect_fail": expect_fail,
+        }
+        if container_unusable["value"]:
+            attempt["status"] = "container_unusable"
+            details["runtime_attempts"].append(attempt)
+            return False
         try:
-            if path.resolve().is_relative_to(Path(root).resolve()):
-                return RESEARCH_EPISODE_PROFILE_STATUS
-        except Exception:
-            if str(path.resolve()).startswith(str(Path(root).resolve())):
-                return RESEARCH_EPISODE_PROFILE_STATUS
-        receipt = json.loads(path.read_text(encoding="utf-8"))
-        if receipt.get("schema_version") != TOOL_NAMESPACE_RECEIPT_SCHEMA:
-            return RESEARCH_EPISODE_PROFILE_STATUS
-        if receipt.get("profile_id") != GENUINE_SCIENTIST_PROFILE_ID:
-            return RESEARCH_EPISODE_PROFILE_STATUS
-        if receipt.get("tool_namespace_isolated") is not True:
-            return RESEARCH_EPISODE_PROFILE_STATUS
-        if receipt.get("auth_reachable_from_model_tools") is not False:
-            return RESEARCH_EPISODE_PROFILE_STATUS
-        if receipt.get("ledger_writable_from_model_tools") is not False:
-            return RESEARCH_EPISODE_PROFILE_STATUS
-        if receipt.get("freeze_writable_from_model_tools") is not False:
-            return RESEARCH_EPISODE_PROFILE_STATUS
-        if receipt.get("outcome_writable_from_model_tools") is not False:
-            return RESEARCH_EPISODE_PROFILE_STATUS
-        if receipt.get("same_container_file_tools_allowed") is not False:
-            return RESEARCH_EPISODE_PROFILE_STATUS
-        if receipt.get("completion_claim_allowed") is not False:
-            return RESEARCH_EPISODE_PROFILE_STATUS
-        if receipt.get("authority") is not False:
-            return RESEARCH_EPISODE_PROFILE_STATUS
-        if receipt.get("issuer") != "host_security_evidence":
-            return RESEARCH_EPISODE_PROFILE_STATUS
-        sealed_at = receipt.get("sealed_at")
-        if not isinstance(sealed_at, str):
-            return RESEARCH_EPISODE_PROFILE_STATUS
-        try:
-            sealed_dt = dt.datetime.fromisoformat(sealed_at.replace("Z", "+00:00"))
-        except ValueError:
-            return RESEARCH_EPISODE_PROFILE_STATUS
-        age = (dt.datetime.now(dt.UTC) - sealed_dt.astimezone(dt.UTC)).total_seconds()
-        if age < 0 or age > TOOL_NAMESPACE_RECEIPT_MAX_AGE_SECONDS:
-            return RESEARCH_EPISODE_PROFILE_STATUS
-        proofs = receipt.get("negative_proof_ids") or []
-        required = set(TOOL_NAMESPACE_RECEIPT_REQUIRED_NEGATIVE_PROOF_IDS)
-        if not required.issubset(set(proofs)):
-            return RESEARCH_EPISODE_PROFILE_STATUS
-        return "AVAILABLE"
+            start = _run([docker, "start", cid], timeout=60, check=False)
+            attempt["start_rc"] = start.returncode
+            attempt["start_stderr"] = (start.stderr or "")[:200]
+            if start.returncode != 0:
+                attempt["status"] = "start_failed"
+                details["runtime_attempts"].append(attempt)
+                container_unusable["value"] = True
+                return False
+            # Confirm the container is running before claiming an exec probe.
+            state_probe = _run(
+                [docker, "inspect", "-f", "{{.State.Running}}", cid],
+                timeout=30,
+                check=False,
+            )
+            running = (state_probe.stdout or "").strip().lower()
+            attempt["running"] = running
+            if state_probe.returncode != 0 or running not in {"true", "1"}:
+                attempt["status"] = "not_running"
+                details["runtime_attempts"].append(attempt)
+                container_unusable["value"] = True
+                return False
+            executed = _run(
+                [docker, "exec", cid, *exec_argv],
+                timeout=60,
+                check=False,
+            )
+            attempt["exec_rc"] = executed.returncode
+            attempt["exec_stdout"] = (executed.stdout or "")[:200]
+            attempt["exec_stderr"] = (executed.stderr or "")[:200]
+            stderr_l = (executed.stderr or "").lower()
+            plumbing_markers = (
+                "executable file not found",
+                "oci runtime",
+                "container is not running",
+                "is not running",
+                "cannot exec in a stopped state",
+                "cannot exec",
+            )
+            if executed.returncode in TOOL_NAMESPACE_INFRA_EXEC_EXIT_CODES or any(
+                marker in stderr_l for marker in plumbing_markers
+            ):
+                attempt["status"] = "exec_plumbing_failed"
+                details["runtime_attempts"].append(attempt)
+                container_unusable["value"] = True
+                return False
+            if expect_fail:
+                ok = executed.returncode == TOOL_NAMESPACE_DENY_PROOF_EXIT
+            else:
+                ok = executed.returncode == 0
+            attempt["status"] = "ok" if ok else "unexpected_exit"
+            details["runtime_attempts"].append(attempt)
+            return ok
+        except Exception as exc:
+            attempt["status"] = "error"
+            attempt["error"] = str(exc)
+            details["runtime_attempts"].append(attempt)
+            container_unusable["value"] = True
+            return False
+        finally:
+            _run([docker, "stop", "-t", "1", cid], timeout=60, check=False)
+
+    # --- Baseline: clean tool container must be real create + inspect ---
+    tool_spec = specs.tool_executor_container_spec(
+        image=tool_image_id,
+        name=f"xinao-ns-tool-clean-{uuid.uuid4().hex[:8]}",
+        episode_lab_host_path=str(lab),
+        ipc_host_dir=str(ipc),
+    )
+    clean_violations = specs.validate_tool_spec_invariants(tool_spec)
+    if clean_violations:
+        raise XinaoError("TOOL_NAMESPACE_PROBE_BASELINE_DRIFT", ",".join(clean_violations[:4]))
+    create_argv = specs.docker_create_argv(tool_spec)
+    # Real Docker CLI: --entrypoint must be a single executable token, not JSON text.
+    if "--entrypoint" in create_argv:
+        ep_idx = create_argv.index("--entrypoint")
+        ep_token = create_argv[ep_idx + 1] if ep_idx + 1 < len(create_argv) else ""
+        if str(ep_token).lstrip().startswith("["):
+            raise XinaoError(
+                "TOOL_NAMESPACE_DOCKER_ARGV_ENTRYPOINT_SHAPE",
+                "JSON-text --entrypoint is not real Docker CLI semantics",
+            )
+        if not str(ep_token) or " " in str(ep_token):
+            raise XinaoError(
+                "TOOL_NAMESPACE_DOCKER_ARGV_ENTRYPOINT_SHAPE",
+                "expected single-token --entrypoint before IMAGE and Cmd rest",
+            )
+    deny = str(TOOL_NAMESPACE_DENY_PROOF_EXIT)
+    try:
+        clean_cid = _create_only(create_argv)
+        clean_inspect = _inspect(clean_cid)
+        clean_live = specs.validate_tool_container_inspect(
+            clean_inspect,
+            expected_image_id=tool_image_id,
+            expected_episode_lab=str(lab),
+            expected_ipc=str(ipc),
+        )
+        if clean_live:
+            raise XinaoError(
+                "TOOL_NAMESPACE_PROBE_BASELINE_LIVE_DRIFT",
+                ",".join(clean_live[:4]),
+            )
+        details["clean_tool_container_id"] = clean_cid
+        details["clean_tool_inspect_id"] = clean_inspect.get("Id")
+        destinations = _inspect_mount_destinations(clean_inspect)
+        env_list = list(((clean_inspect.get("Config") or {}).get("Env")) or [])
+        lowered_env = "\n".join(str(x) for x in env_list).lower()
+
+        # 1) credential_read_denied: live inspect has no auth mount + runtime open fails.
+        auth_markers = ("/grok-home", "/root/.grok", "auth.json")
+        if any(any(marker in dest for marker in auth_markers) for dest in destinations):
+            raise XinaoError("TOOL_NAMESPACE_PROBE_AUTH_MOUNT_PRESENT", str(sorted(destinations)))
+        cred_runtime = _runtime_attempt(
+            clean_cid,
+            [
+                "python",
+                "-I",
+                "-c",
+                "try:\n"
+                " open('/grok-home/.grok/auth.json','rb').read()\n"
+                " raise SystemExit(0)\n"
+                f"except Exception:\n raise SystemExit({deny})",
+            ],
+            expect_fail=True,
+        )
+        if not cred_runtime:
+            raise XinaoError("TOOL_NAMESPACE_PROBE_AUTH_NOT_DENIED", "runtime auth read succeeded")
+        proven.append("credential_read_denied")
+        details["proof_methods"]["credential_read_denied"] = "inspect_mounts+start_exec"
+
+        # 2) path_traversal_denied: live mounts have no ".." destinations + runtime
+        # realpath outside the lab mount is treated as isolation failure (exit 0).
+        if any(".." in dest for dest in destinations):
+            raise XinaoError(
+                "TOOL_NAMESPACE_PROBE_TRAVERSAL_MOUNT_PRESENT", str(sorted(destinations))
+            )
+        trav_runtime = _runtime_attempt(
+            clean_cid,
+            [
+                "python",
+                "-I",
+                "-c",
+                "try:\n"
+                " open('/episode-lab/../../../grok-home/.grok/auth.json','rb').read()\n"
+                " raise SystemExit(0)\n"
+                f"except Exception:\n raise SystemExit({deny})",
+            ],
+            expect_fail=True,
+        )
+        if not trav_runtime:
+            raise XinaoError(
+                "TOOL_NAMESPACE_PROBE_TRAVERSAL_NOT_DENIED",
+                "runtime path traversal succeeded",
+            )
+        proven.append("path_traversal_denied")
+        details["proof_methods"]["path_traversal_denied"] = "inspect_mounts+start_exec"
+
+        # 3) symlink_escape_denied: no unexpected host binds; symlink to auth is denied.
+        allowed_dest = {"/episode-lab", "/ipc", "/tmp"}
+        unexpected = {d for d in destinations if d not in allowed_dest}
+        if unexpected:
+            raise XinaoError(
+                "TOOL_NAMESPACE_PROBE_SYMLINK_UNEXPECTED_MOUNTS",
+                str(sorted(unexpected)),
+            )
+        symlink_runtime = _runtime_attempt(
+            clean_cid,
+            [
+                "python",
+                "-I",
+                "-c",
+                "import os\n"
+                "t='/episode-lab/.auth_escape'\n"
+                "os.path.exists(t) or os.symlink('/grok-home', t)\n"
+                "try:\n"
+                " open(t + '/.grok/auth.json','rb').read()\n"
+                " raise SystemExit(0)\n"
+                f"except Exception:\n raise SystemExit({deny})",
+            ],
+            expect_fail=True,
+        )
+        if not symlink_runtime:
+            raise XinaoError(
+                "TOOL_NAMESPACE_PROBE_SYMLINK_NOT_DENIED",
+                "runtime symlink escape succeeded",
+            )
+        proven.append("symlink_escape_denied")
+        details["proof_methods"]["symlink_escape_denied"] = "inspect_mounts+start_exec"
+
+        # 4) proc_env_leak_denied: live inspect Env from real create.
+        for token in ("xai_api_key", "grok_auth", "authorization=", "openai_api_key"):
+            if token in lowered_env:
+                raise XinaoError("TOOL_NAMESPACE_PROBE_ENV_LEAK", token)
+        proven.append("proc_env_leak_denied")
+        details["proof_methods"]["proc_env_leak_denied"] = "inspect_env"
+
+        # 5) worktree_escape_denied: live mounts exclude workspace.
+        if any(dest == "/workspace" or dest.endswith("/workspace") for dest in destinations):
+            raise XinaoError(
+                "TOOL_NAMESPACE_PROBE_WORKTREE_MOUNT_PRESENT", str(sorted(destinations))
+            )
+        worktree_runtime = _runtime_attempt(
+            clean_cid,
+            [
+                "python",
+                "-I",
+                "-c",
+                f"import os\nraise SystemExit(0 if os.path.isdir('/workspace') else {deny})",
+            ],
+            expect_fail=True,
+        )
+        if not worktree_runtime:
+            raise XinaoError(
+                "TOOL_NAMESPACE_PROBE_WORKTREE_NOT_DENIED",
+                "runtime worktree path present",
+            )
+        proven.append("worktree_escape_denied")
+        details["proof_methods"]["worktree_escape_denied"] = "inspect_mounts+start_exec"
+
+        # 6) ledger_outcome_mutation_denied: live mounts exclude ledger/outcome/freeze.
+        forbidden_tokens = ("/ledger", "/outcome", "/outcomes", "/freeze", "/settlement", "/shadow")
+        if any(any(tok in dest for tok in forbidden_tokens) for dest in destinations):
+            raise XinaoError("TOOL_NAMESPACE_PROBE_LEDGER_MOUNT_PRESENT", str(sorted(destinations)))
+        ledger_runtime = _runtime_attempt(
+            clean_cid,
+            [
+                "python",
+                "-I",
+                "-c",
+                "import os\n"
+                "present=any(os.path.isdir(p) for p in "
+                "('/ledger','/outcome','/outcomes','/freeze'))\n"
+                f"raise SystemExit(0 if present else {deny})",
+            ],
+            expect_fail=True,
+        )
+        if not ledger_runtime:
+            raise XinaoError(
+                "TOOL_NAMESPACE_PROBE_LEDGER_NOT_DENIED",
+                "runtime ledger/outcome path present",
+            )
+        proven.append("ledger_outcome_mutation_denied")
+        details["proof_methods"]["ledger_outcome_mutation_denied"] = "inspect_mounts+start_exec"
+
+        # 7) capability_drift_denied: sealed image labels from live image inspect.
+        tool_labels = (tool_image.get("Config") or {}).get("Labels") or {}
+        if tool_labels.get("io.xinao.researcher.role") != "tool_executor":
+            raise XinaoError(
+                "TOOL_NAMESPACE_PROBE_ROLE_DRIFT",
+                str(tool_labels.get("io.xinao.researcher.role")),
+            )
+        if tool_labels.get("io.xinao.researcher.auth-mount") != "forbidden":
+            raise XinaoError("TOOL_NAMESPACE_PROBE_AUTH_MOUNT_DRIFT", "auth-mount")
+        transport_labels = (transport_image.get("Config") or {}).get("Labels") or {}
+        if transport_labels.get("io.xinao.researcher.role") == "tool_executor":
+            raise XinaoError("TOOL_NAMESPACE_PROBE_TRANSPORT_ROLE_DRIFT", "transport role")
+        # Process argv shape on live inspect must agree with create-spec entrypoint.
+        process_argv = specs.process_argv_from_inspect(clean_inspect)
+        if "tool_executor.py" not in " ".join(process_argv):
+            raise XinaoError(
+                "TOOL_NAMESPACE_PROBE_ENTRYPOINT_SHAPE",
+                str(process_argv),
+            )
+        proven.append("capability_drift_denied")
+        details["proof_methods"]["capability_drift_denied"] = "image_labels+inspect_entrypoint"
+    finally:
+        if clean_cid:
+            _rm(clean_cid)
+
+    missing = set(TOOL_NAMESPACE_RECEIPT_REQUIRED_NEGATIVE_PROOF_IDS) - set(proven)
+    if missing:
+        raise XinaoError("TOOL_NAMESPACE_PROOF_INCOMPLETE", ",".join(sorted(missing)))
+    # Only emit required ids that were actually proven — never pad.
+    return {
+        "physical_proof": True,
+        "negative_proof_ids": list(proven),
+        "transport_image_id": transport_image_id,
+        "tool_image_id": tool_image_id,
+        "details": details,
+        "evidence_class": "live_physical_host",
+        "synthetic": False,
+    }
+
+
+def _validate_tool_namespace_receipt_payload(
+    receipt: dict[str, Any],
+    *,
+    release: dict[str, Any],
+    transport_image_id: str,
+    tool_image_id: str,
+) -> None:
+    """Raise XinaoError when receipt fields fail the canonical live contract."""
+
+    if receipt.get("schema_version") != TOOL_NAMESPACE_RECEIPT_SCHEMA:
+        raise XinaoError(
+            "TOOL_NAMESPACE_RECEIPT_SCHEMA_INVALID", str(receipt.get("schema_version"))
+        )
+    if receipt.get("issuer") != "host_security_evidence":
+        raise XinaoError("TOOL_NAMESPACE_RECEIPT_ISSUER_INVALID", str(receipt.get("issuer")))
+    if receipt.get("profile_id") != GENUINE_SCIENTIST_PROFILE_ID:
+        raise XinaoError("TOOL_NAMESPACE_RECEIPT_PROFILE_INVALID", str(receipt.get("profile_id")))
+    if receipt.get("tool_namespace_isolated") is not True:
+        raise XinaoError("TOOL_NAMESPACE_RECEIPT_ISOLATION_INVALID", "tool_namespace_isolated")
+    for key in (
+        "auth_reachable_from_model_tools",
+        "ledger_writable_from_model_tools",
+        "freeze_writable_from_model_tools",
+        "outcome_writable_from_model_tools",
+        "same_container_file_tools_allowed",
+    ):
+        if receipt.get(key) is not False:
+            raise XinaoError("TOOL_NAMESPACE_RECEIPT_FIELD_INVALID", key)
+    for key in (
+        "completion_claim_allowed",
+        "authority",
+        "owner_adopted",
+        "science_restored",
+        "parent_complete",
+    ):
+        if receipt.get(key) is not False:
+            raise XinaoError("TOOL_NAMESPACE_RECEIPT_AUTHORITY_INVALID", key)
+    if receipt.get("synthetic") is not False:
+        raise XinaoError("TOOL_NAMESPACE_RECEIPT_SYNTHETIC", str(receipt.get("synthetic")))
+    if receipt.get("evidence_class") != "live_physical_host":
+        raise XinaoError(
+            "TOOL_NAMESPACE_RECEIPT_EVIDENCE_CLASS_INVALID",
+            str(receipt.get("evidence_class")),
+        )
+    if receipt.get("physical_proof") is not True:
+        raise XinaoError("TOOL_NAMESPACE_RECEIPT_PHYSICAL_PROOF_INVALID", "physical_proof")
+    if receipt.get("release_id") != release.get("release_id"):
+        raise XinaoError(
+            "TOOL_NAMESPACE_RECEIPT_RELEASE_MISMATCH",
+            f"{receipt.get('release_id')}!={release.get('release_id')}",
+        )
+    if receipt.get("release_identity_sha256") != release.get("release_identity_sha256"):
+        raise XinaoError(
+            "TOOL_NAMESPACE_RECEIPT_RELEASE_IDENTITY_MISMATCH",
+            str(receipt.get("release_identity_sha256")),
+        )
+    if receipt.get("transport_image_id") != transport_image_id:
+        raise XinaoError(
+            "TOOL_NAMESPACE_RECEIPT_TRANSPORT_IMAGE_MISMATCH",
+            str(receipt.get("transport_image_id")),
+        )
+    if receipt.get("tool_image_id") != tool_image_id:
+        raise XinaoError(
+            "TOOL_NAMESPACE_RECEIPT_TOOL_IMAGE_MISMATCH",
+            str(receipt.get("tool_image_id")),
+        )
+    sealed_at = receipt.get("sealed_at")
+    if not isinstance(sealed_at, str):
+        raise XinaoError("TOOL_NAMESPACE_RECEIPT_SEALED_AT_INVALID", "sealed_at")
+    try:
+        sealed_dt = dt.datetime.fromisoformat(sealed_at.replace("Z", "+00:00"))
+    except ValueError as exc:
+        raise XinaoError("TOOL_NAMESPACE_RECEIPT_SEALED_AT_INVALID", sealed_at) from exc
+    age = (dt.datetime.now(dt.UTC) - sealed_dt.astimezone(dt.UTC)).total_seconds()
+    if age < 0 or age > TOOL_NAMESPACE_RECEIPT_MAX_AGE_SECONDS:
+        raise XinaoError("TOOL_NAMESPACE_RECEIPT_STALE", sealed_at)
+    proofs = receipt.get("negative_proof_ids") or []
+    if not isinstance(proofs, list):
+        raise XinaoError("TOOL_NAMESPACE_RECEIPT_PROOFS_INVALID", "negative_proof_ids")
+    required = set(TOOL_NAMESPACE_RECEIPT_REQUIRED_NEGATIVE_PROOF_IDS)
+    if not required.issubset(set(proofs)):
+        raise XinaoError(
+            "TOOL_NAMESPACE_RECEIPT_PROOF_INCOMPLETE",
+            ",".join(sorted(required - set(proofs))),
+        )
+
+
+def _load_canonical_tool_namespace_receipt() -> dict[str, Any] | None:
+    """Load receipt only via canonical security-root current.json pointer.
+
+    Never trusts arbitrary env paths as authorization. Env may only equal the
+    canonical pointer receipt_path exactly.
+    """
+
+    sealed = _active_release_sealed_dual_images()
+    if sealed is None:
+        return None
+    transport_image_id, tool_image_id, release = sealed
+    security_root = _tool_namespace_security_root()
+    pointer_path = security_root / "current.json"
+    if not pointer_path.is_file():
+        return None
+    if _is_reparse(pointer_path):
+        raise XinaoError("TOOL_NAMESPACE_POINTER_REPARSE_FORBIDDEN", str(pointer_path))
+    pointer = json.loads(pointer_path.read_text(encoding="utf-8"))
+    if not isinstance(pointer, dict):
+        raise XinaoError("TOOL_NAMESPACE_POINTER_INVALID", "not_object")
+    if set(pointer.keys()) != TOOL_NAMESPACE_CURRENT_POINTER_KEYS:
+        raise XinaoError(
+            "TOOL_NAMESPACE_POINTER_SHAPE_INVALID",
+            ",".join(sorted(set(pointer.keys()) ^ TOOL_NAMESPACE_CURRENT_POINTER_KEYS)),
+        )
+    if pointer.get("schema_version") != TOOL_NAMESPACE_CURRENT_POINTER_SCHEMA:
+        raise XinaoError(
+            "TOOL_NAMESPACE_POINTER_SCHEMA_INVALID",
+            str(pointer.get("schema_version")),
+        )
+    if pointer.get("authority") is not False:
+        raise XinaoError("TOOL_NAMESPACE_POINTER_AUTHORITY_INVALID", "authority")
+    if pointer.get("completion_claim_allowed") is not False:
+        raise XinaoError("TOOL_NAMESPACE_POINTER_COMPLETION_INVALID", "completion_claim_allowed")
+    if pointer.get("transport_image_id") != transport_image_id:
+        raise XinaoError(
+            "TOOL_NAMESPACE_POINTER_TRANSPORT_MISMATCH",
+            str(pointer.get("transport_image_id")),
+        )
+    if pointer.get("tool_image_id") != tool_image_id:
+        raise XinaoError(
+            "TOOL_NAMESPACE_POINTER_TOOL_MISMATCH",
+            str(pointer.get("tool_image_id")),
+        )
+    if pointer.get("release_id") != release.get("release_id"):
+        raise XinaoError(
+            "TOOL_NAMESPACE_POINTER_RELEASE_MISMATCH",
+            str(pointer.get("release_id")),
+        )
+    if pointer.get("release_identity_sha256") != release.get("release_identity_sha256"):
+        raise XinaoError(
+            "TOOL_NAMESPACE_POINTER_RELEASE_IDENTITY_MISMATCH",
+            str(pointer.get("release_identity_sha256")),
+        )
+    receipt_path_raw = pointer.get("receipt_path")
+    if not isinstance(receipt_path_raw, str) or not receipt_path_raw:
+        raise XinaoError("TOOL_NAMESPACE_POINTER_RECEIPT_PATH_INVALID", "receipt_path")
+    receipt_path = Path(receipt_path_raw)
+    if not receipt_path.is_file():
+        raise XinaoError("TOOL_NAMESPACE_RECEIPT_MISSING", receipt_path_raw)
+    if _is_reparse(receipt_path):
+        raise XinaoError("TOOL_NAMESPACE_RECEIPT_REPARSE_FORBIDDEN", receipt_path_raw)
+    # Receipt must live under the canonical security root (no off-root copies).
+    try:
+        receipt_resolved = _tool_namespace_canonical_path(receipt_path)
+        root_resolved = _tool_namespace_canonical_path(security_root)
+        if (
+            not str(receipt_resolved).startswith(str(root_resolved) + os.sep)
+            and receipt_resolved != root_resolved
+        ):
+            # Windows: allow prefix with case-normalized compare.
+            if not os.path.normcase(str(receipt_resolved)).startswith(
+                os.path.normcase(str(root_resolved)) + os.sep
+            ):
+                raise XinaoError(
+                    "TOOL_NAMESPACE_RECEIPT_OFF_ROOT",
+                    receipt_path_raw,
+                )
+    except XinaoError:
+        raise
+    expected_sha = pointer.get("receipt_sha256")
+    if not isinstance(expected_sha, str) or len(expected_sha) != 64:
+        raise XinaoError("TOOL_NAMESPACE_POINTER_SHA_INVALID", str(expected_sha))
+    observed_sha = _sha256(receipt_path)
+    if observed_sha != expected_sha:
+        raise XinaoError(
+            "TOOL_NAMESPACE_RECEIPT_HASH_DRIFT",
+            f"expected={expected_sha} observed={observed_sha}",
+        )
+    # Optional env may only equal the canonical pointer path (not authorize others).
+    env_path = (os.environ.get("XINAO_TOOL_NAMESPACE_SEPARATION_RECEIPT") or "").strip()
+    if env_path:
+        if not _tool_namespace_paths_equal(Path(env_path), receipt_path):
+            raise XinaoError(
+                "TOOL_NAMESPACE_ENV_PATH_NOT_CANONICAL",
+                env_path,
+            )
+    receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
+    if not isinstance(receipt, dict):
+        raise XinaoError("TOOL_NAMESPACE_RECEIPT_INVALID", "not_object")
+    if receipt.get("receipt_id") != pointer.get("receipt_id"):
+        raise XinaoError(
+            "TOOL_NAMESPACE_RECEIPT_ID_MISMATCH",
+            str(receipt.get("receipt_id")),
+        )
+    _validate_tool_namespace_receipt_payload(
+        receipt,
+        release=release,
+        transport_image_id=transport_image_id,
+        tool_image_id=tool_image_id,
+    )
+    return receipt
+
+
+def _research_episode_resolve_profile_status(root: Path) -> str:
+    """Resolve narrow TOOL_NAMESPACE_VERIFIED status from canonical host receipt.
+
+    Never elevates scientist role fitness. Episode-local / off-root / env-only
+    forged JSON never grants TOOL_NAMESPACE_VERIFIED.
+    """
+    del root  # episode root must not authorize; kept for call-site symmetry
+    try:
+        receipt = _load_canonical_tool_namespace_receipt()
+    except XinaoError:
+        return RESEARCH_EPISODE_PROFILE_STATUS
     except Exception:
         return RESEARCH_EPISODE_PROFILE_STATUS
+    if receipt is None:
+        return RESEARCH_EPISODE_PROFILE_STATUS
+    return RESEARCH_EPISODE_PROFILE_STATUS_VERIFIED
 
+
+def issue_tool_namespace_separation_receipt(
+    *,
+    episode_root: Path | str | None = None,
+) -> dict[str, Any]:
+    """Owner one-shot host issuer for tool-namespace separation receipt.
+
+    Writes only under D-state security namespace. Episodes/workers cannot self-issue.
+    Never autonomous: must be invoked by Owner CLI. completion_claim_allowed=false.
+    Production path always runs real physical probes (no global injector short-circuit).
+    """
+
+    if episode_root is not None:
+        raise XinaoError(
+            "TOOL_NAMESPACE_EPISODE_LOCAL_ISSUE_FORBIDDEN",
+            str(episode_root),
+        )
+    _refuse_synthetic_namespace_evidence(allow_live=True)
+    sealed = _active_release_sealed_dual_images()
+    if sealed is None:
+        raise XinaoError(
+            "TOOL_NAMESPACE_SEALED_IMAGES_REQUIRED",
+            "active dual-image release with transport+tool image IDs required",
+        )
+    transport_image_id, tool_image_id, release = sealed
+    release_id = release.get("release_id")
+    release_identity_sha256 = release.get("release_identity_sha256")
+    if not isinstance(release_id, str) or not release_id:
+        raise XinaoError("TOOL_NAMESPACE_SEALED_IMAGES_REQUIRED", "release_id")
+    if not isinstance(release_identity_sha256, str) or len(release_identity_sha256) != 64:
+        raise XinaoError("TOOL_NAMESPACE_SEALED_IMAGES_REQUIRED", "release_identity_sha256")
+    _validate_release_image_identity(release)
+    probe = _run_tool_namespace_physical_probes(
+        transport_image_id=transport_image_id,
+        tool_image_id=tool_image_id,
+    )
+    if probe.get("physical_proof") is not True or probe.get("synthetic") is not False:
+        raise XinaoError("TOOL_NAMESPACE_PHYSICAL_PROOF_FAILED", "physical_proof")
+    proofs = probe.get("negative_proof_ids") or []
+    if set(TOOL_NAMESPACE_RECEIPT_REQUIRED_NEGATIVE_PROOF_IDS) - set(proofs):
+        raise XinaoError("TOOL_NAMESPACE_PROOF_INCOMPLETE", str(proofs))
+    now = dt.datetime.now(dt.UTC).isoformat().replace("+00:00", "Z")
+    receipt_id = f"tnsr_{dt.datetime.now(dt.UTC).strftime('%Y%m%dT%H%M%S')}_{uuid.uuid4().hex[:12]}"
+    security_root = _tool_namespace_security_root()
+    security_root.mkdir(parents=True, exist_ok=True)
+    receipt = {
+        "schema_version": TOOL_NAMESPACE_RECEIPT_SCHEMA,
+        "receipt_id": receipt_id,
+        "issuer": "host_security_evidence",
+        "profile_id": GENUINE_SCIENTIST_PROFILE_ID,
+        "tool_namespace_isolated": True,
+        "auth_reachable_from_model_tools": False,
+        "ledger_writable_from_model_tools": False,
+        "freeze_writable_from_model_tools": False,
+        "outcome_writable_from_model_tools": False,
+        "same_container_file_tools_allowed": False,
+        "negative_proof_ids": list(proofs),
+        "transport_image_id": transport_image_id,
+        "tool_image_id": tool_image_id,
+        "release_id": release_id,
+        "release_identity_sha256": release_identity_sha256,
+        "sealed_at": now,
+        "physical_proof": True,
+        "evidence_class": "live_physical_host",
+        "synthetic": False,
+        "authority": False,
+        "completion_claim_allowed": False,
+        "science_restored": False,
+        "parent_complete": False,
+        "owner_adopted": False,
+        "probe_details": {
+            "clean_tool_container_id": (probe.get("details") or {}).get("clean_tool_container_id"),
+            "proof_methods": (probe.get("details") or {}).get("proof_methods"),
+        },
+    }
+    receipt_path = security_root / f"{receipt_id}.json"
+    _write_json_atomic(receipt_path, receipt, create_new=True)
+    pointer = {
+        "schema_version": TOOL_NAMESPACE_CURRENT_POINTER_SCHEMA,
+        "receipt_id": receipt_id,
+        "receipt_path": str(receipt_path),
+        "receipt_sha256": _sha256(receipt_path),
+        "transport_image_id": transport_image_id,
+        "tool_image_id": tool_image_id,
+        "release_id": release_id,
+        "release_identity_sha256": release_identity_sha256,
+        "sealed_at": now,
+        "authority": False,
+        "completion_claim_allowed": False,
+    }
+    if set(pointer.keys()) != TOOL_NAMESPACE_CURRENT_POINTER_KEYS:
+        raise XinaoError("TOOL_NAMESPACE_POINTER_SHAPE_INVALID", "issuer_pointer")
+    _write_json_atomic(security_root / "current.json", pointer)
+    return {
+        "schema_version": "xinao.tool_namespace_separation_issue_receipt.v1",
+        "status": "ISSUED",
+        "receipt_path": str(receipt_path),
+        "receipt_sha256": _sha256(receipt_path),
+        "receipt_id": receipt_id,
+        "transport_image_id": transport_image_id,
+        "tool_image_id": tool_image_id,
+        "release_id": release_id,
+        "release_identity_sha256": release_identity_sha256,
+        "negative_proof_ids": list(proofs),
+        "issuer": "host_security_evidence",
+        "authority": False,
+        "completion_claim_allowed": False,
+        "owner_adopted": False,
+        "science_restored": False,
+        "parent_complete": False,
+        "autonomous": False,
+        "episode_local": False,
+        "profile_status": RESEARCH_EPISODE_PROFILE_STATUS_VERIFIED,
+    }
 
 def research_episode_start(
     *,
@@ -12560,6 +13403,330 @@ def research_episode_cancel(*, root: Path | str) -> dict[str, Any]:
         return {**committed, "status": "CANCELLED", "completion_claim_allowed": False}
 
 
+def _research_episode_load_dual_host(root: Path) -> Any:
+    host_path = Path(__file__).resolve().parent / "dual_container_host.py"
+    spec = importlib.util.spec_from_file_location(
+        "xinao_dual_container_host_runtime_live", host_path
+    )
+    if spec is None or spec.loader is None:
+        raise XinaoError("DUAL_CONTAINER_HOST_MISSING", str(host_path))
+    host_mod = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = host_mod
+    spec.loader.exec_module(host_mod)
+    transport, tool = _resolve_research_episode_dual_images()
+    auth = os.environ.get("XINAO_AUTH_HOST_PATH", "").strip()
+    synthetic = os.environ.get("XINAO_DUAL_CONTAINER_SYNTHETIC", "").strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
+    if not auth:
+        raise XinaoError(
+            "DUAL_CONTAINER_HOST_CONFIG_REQUIRED",
+            "XINAO_AUTH_HOST_PATH required",
+        )
+    # Live attach/run/export refuse synthetic drivers regardless of env.
+    return host_mod, host_mod.DualContainerHost(
+        host_mod.DualHostConfig(
+            transport_image=transport,
+            tool_image=tool,
+            auth_host_path=Path(auth),
+            episode_root=Path(root),
+            synthetic=synthetic,
+        )
+    )
+
+
+def _research_episode_namespace_and_release_facts() -> dict[str, Any]:
+    """Bind export/attach to canonical namespace receipt + active release when present."""
+    facts: dict[str, Any] = {
+        "namespace_receipt_sha256": None,
+        "release_id": None,
+        "release_identity_sha256": None,
+        "profile_status": _research_episode_resolve_profile_status(Path(".")),
+    }
+    try:
+        receipt = _load_canonical_tool_namespace_receipt()
+    except XinaoError:
+        receipt = None
+    except Exception:
+        receipt = None
+    if receipt is not None:
+        # Pointer carries sealed receipt hash when available.
+        pointer_path = _tool_namespace_security_root() / "current.json"
+        if pointer_path.is_file():
+            try:
+                pointer = json.loads(pointer_path.read_text(encoding="utf-8"))
+                facts["namespace_receipt_sha256"] = pointer.get("receipt_sha256")
+                facts["release_id"] = pointer.get("release_id") or receipt.get("release_id")
+                facts["release_identity_sha256"] = pointer.get(
+                    "release_identity_sha256"
+                ) or receipt.get("release_identity_sha256")
+            except (OSError, json.JSONDecodeError):
+                facts["release_id"] = receipt.get("release_id")
+                facts["release_identity_sha256"] = receipt.get("release_identity_sha256")
+        else:
+            facts["release_id"] = receipt.get("release_id")
+            facts["release_identity_sha256"] = receipt.get("release_identity_sha256")
+    return facts
+
+
+def research_episode_attach_run(
+    *,
+    root: Path | str,
+    prompt: str,
+    expected_head_sha256: str | None = None,
+    max_turns: int | None = None,
+    timeout_seconds: float | None = None,
+    plan_only: bool = False,
+) -> dict[str, Any]:
+    """Owner one-shot live Grok attach/run inside transport container.
+
+    Never creates next task, freezes, settles, or claims parent completion.
+    Status vocabulary: PLANNED | ATTEMPT_FAILED | LIVE_ATTEMPT_RECORDED.
+    """
+    root = Path(root)
+    _research_episode_assert_root_allowed(root)
+    with _research_episode_lock(root):
+        head = _research_episode_load_head(root)
+        meta = _research_episode_read_meta(root)
+        if head.get("status") in {"CANCELLED", "ABSORBED"}:
+            raise XinaoError("RESEARCH_EPISODE_TERMINAL", str(head.get("status")))
+        if expected_head_sha256 is not None and head.get(
+            "head_checkpoint_sha256"
+        ) != expected_head_sha256:
+            raise XinaoError("RESEARCH_EPISODE_STALE_HEAD", expected_head_sha256)
+        profile_status = _research_episode_resolve_profile_status(root)
+        if profile_status != RESEARCH_EPISODE_PROFILE_STATUS_VERIFIED:
+            raise XinaoError(
+                "RESEARCH_EPISODE_NAMESPACE_UNVERIFIED",
+                profile_status,
+            )
+        facts = _research_episode_namespace_and_release_facts()
+        _host_mod, host = _research_episode_load_dual_host(root)
+        try:
+            result = host.attach_run_live(
+                prompt=prompt,
+                max_turns=max_turns,
+                timeout_seconds=timeout_seconds,
+                expected_episode_id=str(meta["episode_id"]),
+                expected_host_session_id=str(meta["session_id"]),
+                cas_head_sha256=str(head["head_checkpoint_sha256"]),
+                namespace_receipt_sha256=facts.get("namespace_receipt_sha256"),
+                release_id=facts.get("release_id"),
+                release_identity_sha256=facts.get("release_identity_sha256"),
+                plan_only=plan_only,
+            )
+        except Exception as exc:
+            # DualHostError / NativeSessionError map to XinaoError reason codes.
+            reason = getattr(exc, "reason_code", None) or "RESEARCH_EPISODE_ATTACH_FAILED"
+            raise XinaoError(str(reason), str(exc)[:2000]) from exc
+        _research_episode_append_journal(
+            root,
+            {
+                "verb": "attach-run",
+                "at": dt.datetime.now(dt.UTC).isoformat().replace("+00:00", "Z"),
+                "status": result.get("status"),
+                "attempt_cas_digest": result.get("attempt_cas_digest"),
+                "attempt_hash": result.get("attempt_hash"),
+                "plan_only": bool(plan_only),
+            },
+        )
+        return {
+            **result,
+            "episode_id": meta["episode_id"],
+            "host_session_id": meta["session_id"],
+            "cas_head_sha256": head["head_checkpoint_sha256"],
+            "profile_status": profile_status,
+            "next_task_created": False,
+            "disposition_written": False,
+            "freeze_written": False,
+            "settlement_written": False,
+            "portfolio_updated": False,
+            "completion_claim_allowed": False,
+            "owner_adopted": False,
+            "science_restored": False,
+            "parent_complete": False,
+        }
+
+
+def research_episode_resume_live(
+    *,
+    root: Path | str,
+    expected_provider_session_uuid: str,
+    expected_head_sha256: str,
+    expected_session_id: str | None = None,
+    prior_attempt_hash: str | None = None,
+    prompt: str | None = None,
+    max_turns: int | None = None,
+    timeout_seconds: float | None = None,
+    plan_only: bool = False,
+) -> dict[str, Any]:
+    """Owner one-shot provider-session resume via real --resume docker exec."""
+    root = Path(root)
+    _research_episode_assert_root_allowed(root)
+    with _research_episode_lock(root):
+        head = _research_episode_load_head(root)
+        meta = _research_episode_read_meta(root)
+        if head.get("status") in {"CANCELLED", "ABSORBED"}:
+            raise XinaoError("RESEARCH_EPISODE_TERMINAL", str(head.get("status")))
+        if head.get("head_checkpoint_sha256") != expected_head_sha256:
+            raise XinaoError("RESEARCH_EPISODE_STALE_HEAD", expected_head_sha256)
+        if expected_session_id is not None and expected_session_id != meta["session_id"]:
+            raise XinaoError("RESEARCH_EPISODE_FOREIGN_SESSION", expected_session_id)
+        profile_status = _research_episode_resolve_profile_status(root)
+        if profile_status != RESEARCH_EPISODE_PROFILE_STATUS_VERIFIED:
+            raise XinaoError(
+                "RESEARCH_EPISODE_NAMESPACE_UNVERIFIED",
+                profile_status,
+            )
+        facts = _research_episode_namespace_and_release_facts()
+        _host_mod, host = _research_episode_load_dual_host(root)
+        try:
+            result = host.resume_live(
+                expected_provider_session_uuid=expected_provider_session_uuid,
+                expected_host_session_id=str(meta["session_id"]),
+                expected_episode_id=str(meta["episode_id"]),
+                expected_cas_head_sha256=expected_head_sha256,
+                prior_attempt_hash=prior_attempt_hash,
+                prompt=prompt,
+                max_turns=max_turns,
+                timeout_seconds=timeout_seconds,
+                namespace_receipt_sha256=facts.get("namespace_receipt_sha256"),
+                release_id=facts.get("release_id"),
+                release_identity_sha256=facts.get("release_identity_sha256"),
+                plan_only=plan_only,
+            )
+        except Exception as exc:
+            reason = getattr(exc, "reason_code", None) or "RESEARCH_EPISODE_RESUME_LIVE_FAILED"
+            raise XinaoError(str(reason), str(exc)[:2000]) from exc
+        _research_episode_append_journal(
+            root,
+            {
+                "verb": "resume-live",
+                "at": dt.datetime.now(dt.UTC).isoformat().replace("+00:00", "Z"),
+                "status": result.get("status"),
+                "provider_session_uuid": expected_provider_session_uuid,
+                "attempt_cas_digest": result.get("attempt_cas_digest"),
+                "plan_only": bool(plan_only),
+            },
+        )
+        return {
+            **result,
+            "episode_id": meta["episode_id"],
+            "host_session_id": meta["session_id"],
+            "cas_head_sha256": head["head_checkpoint_sha256"],
+            "profile_status": profile_status,
+            "next_task_created": False,
+            "disposition_written": False,
+            "freeze_written": False,
+            "settlement_written": False,
+            "portfolio_updated": False,
+            "completion_claim_allowed": False,
+            "owner_adopted": False,
+            "science_restored": False,
+            "parent_complete": False,
+        }
+
+
+def research_episode_export_candidate_evidence(
+    *,
+    root: Path | str,
+    attempt_cas_digest: str,
+    expected_head_sha256: str,
+    expected_provider_session_uuid: str | None = None,
+) -> dict[str, Any]:
+    """Owner one-shot export of candidate-only evidence bundle from attempt CAS.
+
+    Identities are derived from sealed attempt evidence + episode head. Does not
+    require containers still running. Never writes shadow/adoption/freeze state.
+    """
+    root = Path(root)
+    _research_episode_assert_root_allowed(root)
+    with _research_episode_lock(root):
+        head = _research_episode_load_head(root)
+        meta = _research_episode_read_meta(root)
+        if head.get("head_checkpoint_sha256") != expected_head_sha256:
+            raise XinaoError("RESEARCH_EPISODE_STALE_HEAD", expected_head_sha256)
+        facts = _research_episode_namespace_and_release_facts()
+        # parents: scripts -> xinao -> skills -> repo root
+        native_path = (
+            Path(__file__).resolve().parent.parent.parent.parent
+            / "docker"
+            / "xinao-researcher"
+            / "native_grok_session.py"
+        )
+        spec = importlib.util.spec_from_file_location(
+            "xinao_native_grok_session_export", native_path
+        )
+        if spec is None or spec.loader is None:
+            raise XinaoError("NATIVE_GROK_SESSION_MISSING", str(native_path))
+        native = importlib.util.module_from_spec(spec)
+        sys.modules[spec.name] = native
+        spec.loader.exec_module(native)
+        # Optional pair receipt identity from episode root when still present.
+        pair_path = root / "dual_container_pair_receipt.json"
+        pair_sha = None
+        transport_image = None
+        tool_image = None
+        if pair_path.is_file():
+            try:
+                receipt = json.loads(pair_path.read_text(encoding="utf-8"))
+                body = {k: v for k, v in receipt.items() if k != "pair_receipt_sha256"}
+                pair_sha = _sha256_bytes(_canonical_bytes(body))
+                transport_image = receipt.get("transport_image_id")
+                tool_image = receipt.get("tool_image_id")
+            except (OSError, json.JSONDecodeError, TypeError):
+                pair_sha = None
+        try:
+            result = native.export_candidate_evidence_bundle(
+                episode_output_root=root / "output",
+                attempt_cas_digest=attempt_cas_digest,
+                episode_id=str(meta["episode_id"]),
+                cas_head_sha256=expected_head_sha256,
+                expected_provider_session_uuid=expected_provider_session_uuid,
+                expected_pair_receipt_sha256=pair_sha,
+                expected_namespace_receipt_sha256=facts.get("namespace_receipt_sha256"),
+                expected_transport_image_id=transport_image,
+                expected_tool_image_id=tool_image,
+                package_release_id=facts.get("release_id"),
+                package_release_identity_sha256=facts.get("release_identity_sha256"),
+                prompt_material_cutoff={
+                    "question": meta.get("question"),
+                    "episode_id": meta.get("episode_id"),
+                },
+            )
+        except Exception as exc:
+            reason = getattr(exc, "reason_code", None) or "RESEARCH_EPISODE_EXPORT_FAILED"
+            raise XinaoError(str(reason), str(exc)[:2000]) from exc
+        _research_episode_append_journal(
+            root,
+            {
+                "verb": "export-candidate-evidence",
+                "at": dt.datetime.now(dt.UTC).isoformat().replace("+00:00", "Z"),
+                "status": result.get("status"),
+                "attempt_cas_digest": attempt_cas_digest,
+                "bundle_sha256": result.get("bundle_sha256"),
+            },
+        )
+        return {
+            **result,
+            "episode_id": meta["episode_id"],
+            "host_session_id": meta["session_id"],
+            "cas_head_sha256": head["head_checkpoint_sha256"],
+            "next_task_created": False,
+            "disposition_written": False,
+            "freeze_written": False,
+            "settlement_written": False,
+            "portfolio_updated": False,
+            "completion_claim_allowed": False,
+            "owner_adopted": False,
+            "science_restored": False,
+            "parent_complete": False,
+        }
+
+
 def research_episode_absorb(
     *,
     root: Path | str,
@@ -12657,6 +13824,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             "bootstrap-forward-upgrade",
             "recover",
             "research-episode",
+            "issue-tool-namespace-receipt",
         }:
             with _activation_lock():
                 _validate_bootstrap_fence_locked(args.command)
@@ -12760,11 +13928,41 @@ def main(argv: Sequence[str] | None = None) -> int:
                     expected_head_sha256=args.expected_head,
                     candidate=candidate,
                 )
+            elif args.research_episode_command == "attach-run":
+                value = research_episode_attach_run(
+                    root=args.root,
+                    prompt=args.prompt,
+                    expected_head_sha256=args.expected_head,
+                    max_turns=args.max_turns,
+                    timeout_seconds=args.timeout_seconds,
+                    plan_only=bool(args.plan_only),
+                )
+            elif args.research_episode_command == "resume-live":
+                value = research_episode_resume_live(
+                    root=args.root,
+                    expected_provider_session_uuid=args.expected_provider_session,
+                    expected_head_sha256=args.expected_head,
+                    expected_session_id=args.expected_session,
+                    prior_attempt_hash=args.prior_attempt_hash,
+                    prompt=args.prompt,
+                    max_turns=args.max_turns,
+                    timeout_seconds=args.timeout_seconds,
+                    plan_only=bool(args.plan_only),
+                )
+            elif args.research_episode_command == "export-candidate-evidence":
+                value = research_episode_export_candidate_evidence(
+                    root=args.root,
+                    attempt_cas_digest=args.attempt_cas_digest,
+                    expected_head_sha256=args.expected_head,
+                    expected_provider_session_uuid=args.expected_provider_session,
+                )
             else:
                 raise XinaoError(
                     "INVOCATION_ARGUMENTS_INVALID",
                     f"unknown research-episode command: {args.research_episode_command}",
                 )
+        elif args.command == "issue-tool-namespace-receipt":
+            value = issue_tool_namespace_separation_receipt()
         elif args.command == "research":
             value = research(args.question, args.as_of, args.material)
         else:
