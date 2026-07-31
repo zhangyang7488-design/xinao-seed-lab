@@ -25,9 +25,7 @@ def _load_harness():
     discovery_src = Path(__file__).resolve().parents[1] / "xinao_discovery" / "src"
     if discovery_src.is_dir() and str(discovery_src) not in sys.path:
         sys.path.insert(0, str(discovery_src))
-    spec = importlib.util.spec_from_file_location(
-        "xinao_role_fitness_acceptance", _HARNESS_PATH
-    )
+    spec = importlib.util.spec_from_file_location("xinao_role_fitness_acceptance", _HARNESS_PATH)
     assert spec is not None and spec.loader is not None
     module = importlib.util.module_from_spec(spec)
     sys.modules["xinao_role_fitness_acceptance"] = module
@@ -258,10 +256,7 @@ def test_integrated_acceptance_receipt_axes(tmp_path: Path) -> None:
     assert "content_hash" in receipt
     assert "first_live_episode_command" in receipt
     # Synthetic HIT must not imply parent completion.
-    assert (
-        receipt["details"]["shadow_consumer"]["period_1"]["settled"]["statement_result"]
-        == "HIT"
-    )
+    assert receipt["details"]["shadow_consumer"]["period_1"]["settled"]["statement_result"] == "HIT"
     assert receipt["details"]["shadow_consumer"]["parent_completion"] is False
 
 
@@ -299,7 +294,9 @@ def test_integrated_rejects_unbound_multi_turn_assertions(tmp_path: Path) -> Non
     assert receipt["scientist_evidence_shape_ok"] is False
     assert receipt["role_fitness"] is False
     assert receipt["status"] == "FAIL"
-    assert any("event_chain" in f.lower() or "cryptographic" in f.lower() for f in receipt["failures"])
+    assert any(
+        "event_chain" in f.lower() or "cryptographic" in f.lower() for f in receipt["failures"]
+    )
 
 
 def test_integrated_rejects_transcript_without_raw_session_mcp(tmp_path: Path) -> None:
@@ -313,7 +310,10 @@ def test_integrated_rejects_transcript_without_raw_session_mcp(tmp_path: Path) -
     assert receipt["scientist_evidence_shape_ok"] is False
     assert receipt["role_fitness"] is False
     assert receipt["status"] == "FAIL"
-    assert any("raw" in f.lower() or "session" in f.lower() or "mcp" in f.lower() for f in receipt["failures"])
+    assert any(
+        "raw" in f.lower() or "session" in f.lower() or "mcp" in f.lower()
+        for f in receipt["failures"]
+    )
 
 
 def test_owner_vertical_pre_outcome_and_continuation(tmp_path: Path) -> None:
@@ -476,7 +476,9 @@ def test_consume_native_receipt_refuses_fixture_glue(tmp_path: Path) -> None:
     mcp = tmp_path / "mcp-events.jsonl"
     session.write_text(fixture["raw_session_artifact"]["content_utf8"], encoding="utf-8")
     mcp.write_text(fixture["raw_mcp_artifacts"][0]["content_utf8"], encoding="utf-8")
-    with pytest.raises(harness.RoleFitnessAcceptanceError, match="scientist-evidence|fixture|refusing"):
+    with pytest.raises(
+        harness.RoleFitnessAcceptanceError, match="scientist-evidence|fixture|refusing"
+    ):
         harness.consume_native_episode_receipt(
             session_artifact=session,
             mcp_events=mcp,
@@ -494,7 +496,9 @@ def test_consume_native_receipt_binds_paths(tmp_path: Path) -> None:
     session.write_text(fixture["raw_session_artifact"]["content_utf8"], encoding="utf-8")
     mcp.write_text(fixture["raw_mcp_artifacts"][0]["content_utf8"], encoding="utf-8")
     # Strip inline raw bytes; native paths must re-bind.
-    structured = {k: v for k, v in fixture.items() if k not in {"raw_session_artifact", "raw_mcp_artifacts"}}
+    structured = {
+        k: v for k, v in fixture.items() if k not in {"raw_session_artifact", "raw_mcp_artifacts"}
+    }
     evidence_path.write_text(json.dumps(structured, sort_keys=True), encoding="utf-8")
     bound = harness.consume_native_episode_receipt(
         session_artifact=session,

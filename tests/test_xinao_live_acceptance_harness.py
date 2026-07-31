@@ -49,9 +49,7 @@ def test_canary_entrypoint_byte_identity_preserved() -> None:
     assert digest == SEALED_CANARY_SHA256
 
 
-def test_synthetic_harness_all_control_axes_partial_ok(
-    harness_mod: Any, tmp_path: Path
-) -> None:
+def test_synthetic_harness_all_control_axes_partial_ok(harness_mod: Any, tmp_path: Path) -> None:
     cfg = harness_mod.HarnessConfig(
         work_root=tmp_path / "work",
         repo_root=ROOT,
@@ -103,9 +101,7 @@ def test_plan_mode_emits_exact_host_commands(harness_mod: Any, tmp_path: Path) -
     assert result["rollback"]["completion_claim_allowed"] is False
 
 
-def test_failed_pointer_marks_capability_unavailable(
-    harness_mod: Any, tmp_path: Path
-) -> None:
+def test_failed_pointer_marks_capability_unavailable(harness_mod: Any, tmp_path: Path) -> None:
     # Live mode without pointer path fails pointer axis.
     cfg = harness_mod.HarnessConfig(
         work_root=tmp_path / "live-fail",
@@ -123,9 +119,7 @@ def test_failed_pointer_marks_capability_unavailable(
     assert result["completion_claim_allowed"] is False
 
 
-def test_invoke_live_model_forbidden_in_harness_seat(
-    harness_mod: Any, tmp_path: Path
-) -> None:
+def test_invoke_live_model_forbidden_in_harness_seat(harness_mod: Any, tmp_path: Path) -> None:
     cfg = harness_mod.HarnessConfig(
         work_root=tmp_path / "model-forbid",
         repo_root=ROOT,

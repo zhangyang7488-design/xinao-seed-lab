@@ -487,12 +487,12 @@ def test_value_transfer_surface_omits_original_incident_vocabulary() -> None:
 
 
 def test_role_fit_pair_changes_only_job_and_consumer_not_control_facts() -> None:
-    positive = _case("REG_ROLE_FIT_DERIVES_INTERACTIVE_CAPABILITY_FROM_CORE_VERBS")[
-        "vars"
-    ]["restored_context"]
-    negative = _case("NEG_SAME_REVIEWER_STATIC_VISUAL_JOB_NEEDS_NO_INTERACTIVE_GATE")[
-        "vars"
-    ]["restored_context"]
+    positive = _case("REG_ROLE_FIT_DERIVES_INTERACTIVE_CAPABILITY_FROM_CORE_VERBS")["vars"][
+        "restored_context"
+    ]
+    negative = _case("NEG_SAME_REVIEWER_STATIC_VISUAL_JOB_NEEDS_NO_INTERACTIVE_GATE")["vars"][
+        "restored_context"
+    ]
     assert positive.split("The current job", 1)[0] == negative.split("The current job", 1)[0]
     for context in (positive.lower(), negative.lower()):
         for leaked in (

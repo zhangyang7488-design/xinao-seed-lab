@@ -90,7 +90,9 @@ class HarnessError(RuntimeError):
 
 def _canonical_bytes(value: object) -> bytes:
     return (
-        json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"), allow_nan=False)
+        json.dumps(
+            value, ensure_ascii=False, sort_keys=True, separators=(",", ":"), allow_nan=False
+        )
         + "\n"
     ).encode("utf-8")
 
@@ -418,7 +420,10 @@ class LiveAcceptanceHarness:
                 reason_code="IMAGE_ID_INVALID",
                 detail=f"transport={transport_id} tool={tool_id}",
             )
-        if self.config.expected_transport_image_id and transport_id != self.config.expected_transport_image_id:
+        if (
+            self.config.expected_transport_image_id
+            and transport_id != self.config.expected_transport_image_id
+        ):
             return self._set_axis(
                 "image_identity",
                 "failed",
@@ -491,7 +496,10 @@ class LiveAcceptanceHarness:
                 reason_code="EGRESS_LIVE_SEAL_INVALID",
                 detail=str(exc),
             )
-        if not isinstance(doc, dict) or doc.get("schema_version") != "xinao.provider_egress_live_seal.v1":
+        if (
+            not isinstance(doc, dict)
+            or doc.get("schema_version") != "xinao.provider_egress_live_seal.v1"
+        ):
             return self._set_axis(
                 "egress_seal",
                 "failed",
@@ -591,7 +599,9 @@ class LiveAcceptanceHarness:
             if not path.is_file():
                 raise HarnessError("CANDIDATE_BUILD_LOCK_MISSING_MODULE", relative)
             payload = path.read_bytes()
-            if relative.endswith((".py", ".sh", ".json", ".md", ".txt", ".toml", ".gitkeep", ".keep")):
+            if relative.endswith(
+                (".py", ".sh", ".json", ".md", ".txt", ".toml", ".gitkeep", ".keep")
+            ):
                 payload = _lf_bytes(payload)
             rows.append({"relative_path": relative, "sha256": _sha256_bytes(payload)})
         tree = _sha256_bytes(_canonical_bytes(rows))
@@ -723,7 +733,9 @@ class LiveAcceptanceHarness:
         host = self._make_host()
         stamp = _utc_now().replace(":", "").replace("-", "")[:15]
         episode_id = self.episode_meta.get("episode_id") or f"xre_{stamp}_{uuid.uuid4().hex[:12]}"
-        session_id = self.episode_meta.get("session_id") or f"xrsess_{stamp}_{uuid.uuid4().hex[:12]}"
+        session_id = (
+            self.episode_meta.get("session_id") or f"xrsess_{stamp}_{uuid.uuid4().hex[:12]}"
+        )
         self.episode_meta["episode_id"] = episode_id
         self.episode_meta["session_id"] = session_id
         try:
@@ -982,7 +994,9 @@ class LiveAcceptanceHarness:
                 reason_code=str(reason),
                 detail=str(exc),
             )
-        self.export_hashes["checkpoint_bind_sha256"] = str(bound.get("checkpoint_bind_sha256") or "")
+        self.export_hashes["checkpoint_bind_sha256"] = str(
+            bound.get("checkpoint_bind_sha256") or ""
+        )
         return self._set_axis(
             "interrupt_resume_fresh_process",
             "passed",
@@ -1104,7 +1118,9 @@ class LiveAcceptanceHarness:
         net = dict(tool)
         net["network"] = "bridge"
         net_v = self.specs.validate_tool_spec_invariants(net)
-        _case("tool_rejects_bridge_network", any("network" in v for v in net_v), ",".join(net_v[:4]))
+        _case(
+            "tool_rejects_bridge_network", any("network" in v for v in net_v), ",".join(net_v[:4])
+        )
 
         # Path traversal markers in forbidden list.
         _case(

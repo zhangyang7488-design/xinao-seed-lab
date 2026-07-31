@@ -62,7 +62,9 @@ DockerRunner = Callable[[Sequence[str]], subprocess.CompletedProcess[str]]
 
 def _canonical_bytes(value: object) -> bytes:
     return (
-        json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"), allow_nan=False)
+        json.dumps(
+            value, ensure_ascii=False, sort_keys=True, separators=(",", ":"), allow_nan=False
+        )
         + "\n"
     ).encode("utf-8")
 
@@ -296,10 +298,8 @@ class DualContainerHost:
                     [self.config.docker, "volume", "create", ipc_volume],
                     reason="DUAL_HOST_VOLUME_CREATE_FAILED",
                 )
-            ipc_mount_source = ipc_volume
             ipc_mount_type = "volume"
         else:
-            ipc_mount_source = str(self.paths["ipc_bind"])
             ipc_mount_type = "bind"
 
         material_path = (
@@ -1035,9 +1035,7 @@ class DualContainerHost:
                 # Restart both if needed (idempotent docker start).
                 if not self.config.synthetic:
                     self.runner([self.config.docker, "start", str(lease["tool_container_id"])])
-                    self.runner(
-                        [self.config.docker, "start", str(lease["transport_container_id"])]
-                    )
+                    self.runner([self.config.docker, "start", str(lease["transport_container_id"])])
                 lease["phase"] = "running"
                 lease["updated_at"] = _utc_now()
                 self._save_lease(lease)
@@ -1125,7 +1123,11 @@ class DualContainerHost:
         cancelled = self.cancel_pair()
         lease = self.load_lease()
         if lease is None:
-            return {"status": "RETIRE_NO_LEASE", "cancel": cancelled, "completion_claim_allowed": False}
+            return {
+                "status": "RETIRE_NO_LEASE",
+                "cancel": cancelled,
+                "completion_claim_allowed": False,
+            }
         lease["phase"] = "retired"
         lease["updated_at"] = _utc_now()
         self._save_lease(lease)

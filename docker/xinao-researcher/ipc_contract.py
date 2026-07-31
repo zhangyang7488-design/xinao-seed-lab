@@ -53,7 +53,9 @@ def sha256_bytes(payload: bytes) -> str:
 
 def canonical_bytes(value: object) -> bytes:
     return (
-        json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"), allow_nan=False)
+        json.dumps(
+            value, ensure_ascii=False, sort_keys=True, separators=(",", ":"), allow_nan=False
+        )
         + "\n"
     ).encode("utf-8")
 
@@ -99,7 +101,9 @@ def encode_frame(message: Mapping[str, Any]) -> bytes:
     return struct.pack("!Q", len(body)) + body
 
 
-def decode_frame(buffer: bytes, *, maximum: int = MAX_REQUEST_BYTES) -> tuple[dict[str, Any], bytes]:
+def decode_frame(
+    buffer: bytes, *, maximum: int = MAX_REQUEST_BYTES
+) -> tuple[dict[str, Any], bytes]:
     if len(buffer) < 8:
         raise IpcContractError("FRAME_INCOMPLETE", str(len(buffer)))
     (length,) = struct.unpack("!Q", buffer[:8])

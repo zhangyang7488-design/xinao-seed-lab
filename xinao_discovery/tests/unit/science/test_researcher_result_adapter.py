@@ -608,9 +608,7 @@ def test_rq008_live_immutable_pair_replays_with_bootstrap_int_2_portable() -> No
     assert policy.semantic_config["decision_map_projected"] is False
     assert policy.semantic_config["active_set_admitted"] is False
     assert policy.semantic_config["route_class"] == "scientific_researcher"
-    assert policy.decision_signature.abstention_rule == (
-        "NO_ACTION_MAP_UNTIL_EXPLICIT_PROJECTION"
-    )
+    assert policy.decision_signature.abstention_rule == ("NO_ACTION_MAP_UNTIL_EXPLICIT_PROJECTION")
     assert policy.decision_signature.action_support == "NOT_PROJECTED"
     # RQ008 retrospective inventory: NO_ACTION text, not a Ticket/Settlement episode.
     candidate = receipt["candidate"]

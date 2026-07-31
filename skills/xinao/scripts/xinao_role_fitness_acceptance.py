@@ -61,7 +61,6 @@ from xinao.shadow_lifecycle.store import (  # noqa: E402
     StoreError,
     load_frozen,
     load_seat,
-    load_settled,
     period_directory,
 )
 
@@ -92,33 +91,33 @@ PROOF_OWNER_VERTICAL = "OWNER_INVOKED_ROLE_FITNESS_VERTICAL"
 FIRST_LIVE_EPISODE_COMMAND = (
     "python -I skills/xinao/scripts/xinao_role_fitness_acceptance.py "
     "owner-vertical "
-    "--work-root \"$XINAO_RF_WORK_ROOT\" "
+    '--work-root "$XINAO_RF_WORK_ROOT" '
     "--mode pre_outcome "
     "--require-live-research "
-    "--protocol-pin-path \"$PROTOCOL_PIN_PATH\" "
-    "--protocol-pin-sha256 \"$PROTOCOL_PIN_SHA256\" "
-    "--active-parent-sha256 \"$ACTIVE_PARENT_SHA256\" "
-    "--session-artifact \"$GROK_SESSION_JSON\" "
-    "--mcp-events \"$MCP_EVENTS_JSONL\" "
-    "--scientist-evidence \"$SCIENTIST_EVIDENCE_JSON\" "
-    "--codex-disposition \"$CODEX_DISPOSITION_JSON\" "
-    "--research-question \"$UNEXPOSED_TARGET_QUESTION\" "
-    "--receipt-out \"$XINAO_RF_WORK_ROOT/pre_outcome_receipt.json\""
+    '--protocol-pin-path "$PROTOCOL_PIN_PATH" '
+    '--protocol-pin-sha256 "$PROTOCOL_PIN_SHA256" '
+    '--active-parent-sha256 "$ACTIVE_PARENT_SHA256" '
+    '--session-artifact "$GROK_SESSION_JSON" '
+    '--mcp-events "$MCP_EVENTS_JSONL" '
+    '--scientist-evidence "$SCIENTIST_EVIDENCE_JSON" '
+    '--codex-disposition "$CODEX_DISPOSITION_JSON" '
+    '--research-question "$UNEXPOSED_TARGET_QUESTION" '
+    '--receipt-out "$XINAO_RF_WORK_ROOT/pre_outcome_receipt.json"'
 )
 FIRST_LIVE_EPISODE_CONTINUATION_COMMAND = (
     "python -I skills/xinao/scripts/xinao_role_fitness_acceptance.py "
     "owner-vertical "
-    "--work-root \"$XINAO_RF_WORK_ROOT\" "
+    '--work-root "$XINAO_RF_WORK_ROOT" '
     "--mode continue_outcome "
-    "--pre-outcome-receipt \"$XINAO_RF_WORK_ROOT/pre_outcome_receipt.json\" "
-    "--external-outcome \"$INDEPENDENT_OUTCOME_JSON\" "
-    "--receipt-out \"$XINAO_RF_WORK_ROOT/continuation_receipt.json\""
+    '--pre-outcome-receipt "$XINAO_RF_WORK_ROOT/pre_outcome_receipt.json" '
+    '--external-outcome "$INDEPENDENT_OUTCOME_JSON" '
+    '--receipt-out "$XINAO_RF_WORK_ROOT/continuation_receipt.json"'
 )
 # Host ResearchEpisode start (leg-A durable home; separate from canary research invoke).
 FIRST_LIVE_RESEARCH_EPISODE_HOST_COMMAND = (
     "python -I skills/xinao/scripts/xinao.py research-episode start "
-    "--root \"$XINAO_EPISODE_HOME\" "
-    "--question \"$UNEXPOSED_TARGET_QUESTION\" "
+    '--root "$XINAO_EPISODE_HOME" '
+    '--question "$UNEXPOSED_TARGET_QUESTION" '
     "--lease-seconds 3600"
 )
 
@@ -169,8 +168,7 @@ def self_audit_hidden_human_burden() -> dict[str, Any]:
             {
                 "item": "formal_protocol_pin_admission",
                 "owner_step": (
-                    "Admit unexposed ProtocolPin via science episode admission "
-                    "before pre_outcome"
+                    "Admit unexposed ProtocolPin via science episode admission before pre_outcome"
                 ),
                 "runner_does_not": "Mint or choose a target; only consumes admission/shape",
             },
@@ -350,9 +348,7 @@ def _validate_event_chain(
         pred = event.get("predecessor_hash")
         if index == 0:
             if pred is not None:
-                raise RoleFitnessAcceptanceError(
-                    "event_chain[0].predecessor_hash must be null"
-                )
+                raise RoleFitnessAcceptanceError("event_chain[0].predecessor_hash must be null")
             pred_norm: str | None = None
         else:
             pred_norm = _require_hash(pred, f"event_chain[{index}].predecessor_hash")
@@ -423,9 +419,7 @@ def validate_prospective_protocol_pin_shape(pin: Mapping[str, Any]) -> dict[str,
     episode_id = _require_text(pin.get("episode_id"), "protocol_pin.episode_id")
     protocol_pin_id = _require_text(pin.get("protocol_pin_id"), "protocol_pin.protocol_pin_id")
     frozen_at = _require_aware(pin.get("frozen_at"), "protocol_pin.frozen_at")
-    target_open_time = _require_aware(
-        pin.get("target_open_time"), "protocol_pin.target_open_time"
-    )
+    target_open_time = _require_aware(pin.get("target_open_time"), "protocol_pin.target_open_time")
     exposure = _require_text(pin.get("exposure_status"), "protocol_pin.exposure_status").upper()
     if exposure != "UNEXPOSED":
         raise RoleFitnessAcceptanceError(
@@ -485,9 +479,7 @@ def validate_formal_protocol_pin_admission(
             verify_science_episode_admission_file,
         )
     except ImportError as exc:
-        raise RoleFitnessAcceptanceError(
-            f"science episode admission import failed: {exc}"
-        ) from exc
+        raise RoleFitnessAcceptanceError(f"science episode admission import failed: {exc}") from exc
 
     try:
         admitted = verify_science_episode_admission_file(
@@ -496,9 +488,7 @@ def validate_formal_protocol_pin_admission(
             expected_active_parent_sha256=expected_active_parent_sha256,
         )
     except ScienceEpisodeAdmissionError as exc:
-        raise RoleFitnessAcceptanceError(
-            f"formal ProtocolPin admission rejected: {exc}"
-        ) from exc
+        raise RoleFitnessAcceptanceError(f"formal ProtocolPin admission rejected: {exc}") from exc
     except (OSError, ValueError, TypeError, KeyError) as exc:
         raise RoleFitnessAcceptanceError(
             f"formal ProtocolPin admission failed closed: {exc}"
@@ -649,9 +639,7 @@ def consume_native_episode_receipt(
     try:
         body = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
-        raise RoleFitnessAcceptanceError(
-            f"scientist_evidence unreadable JSON: {exc}"
-        ) from exc
+        raise RoleFitnessAcceptanceError(f"scientist_evidence unreadable JSON: {exc}") from exc
     if not isinstance(body, dict):
         raise RoleFitnessAcceptanceError("scientist_evidence must be a JSON object")
     # Fixture markers stay synthetic/false for role fitness.
@@ -726,9 +714,7 @@ def validate_native_session_mcp_artifacts(
         try:
             text = payload.decode("utf-8")
         except UnicodeDecodeError as exc:
-            raise RoleFitnessAcceptanceError(
-                f"raw_mcp_artifacts[{index}] must be UTF-8"
-            ) from exc
+            raise RoleFitnessAcceptanceError(f"raw_mcp_artifacts[{index}] must be UTF-8") from exc
         # Accept single JSON object or JSONL of MCP/IPC events.
         events: list[dict[str, Any]] = []
         if "\n" in text.strip() and not text.strip().startswith("["):
@@ -768,17 +754,21 @@ def validate_native_session_mcp_artifacts(
             event_hash = event.get("event_hash")
             if event_hash is not None:
                 mcp_event_hashes.append(_require_hash(event_hash, "mcp.event_hash"))
-            if op in {
-                "shell_exec",
-                "read_file",
-                "write_file",
-                "list_dir",
-                "tool_call",
-                "tool_result",
-                "Bash",
-                "python",
-                "code",
-            } or event.get("tool_call") is True:
+            if (
+                op
+                in {
+                    "shell_exec",
+                    "read_file",
+                    "write_file",
+                    "list_dir",
+                    "tool_call",
+                    "tool_result",
+                    "Bash",
+                    "python",
+                    "code",
+                }
+                or event.get("tool_call") is True
+            ):
                 if status in {None, "ok", "success", "executed"} or event.get("executed") is True:
                     real_mcp_tool_calls += 1
             # episode_events.py tool_call / tool_result
@@ -831,17 +821,11 @@ def validate_scientist_episode_evidence(evidence: Mapping[str, Any]) -> dict[str
         evidence, episode_id=episode_id, session_id=session_id
     )
 
-    chain_info = _validate_event_chain(
-        evidence, episode_id=episode_id, session_id=session_id
-    )
+    chain_info = _validate_event_chain(evidence, episode_id=episode_id, session_id=session_id)
     tool_event_hashes = set(chain_info["event_hashes_by_type"].get("tool_action") or [])
     fail_event_hashes = set(chain_info["event_hashes_by_type"].get("experiment_failed") or [])
-    revise_event_hashes = set(
-        chain_info["event_hashes_by_type"].get("experiment_revised") or []
-    )
-    ckpt_event_hashes = set(
-        chain_info["event_hashes_by_type"].get("interrupt_checkpoint") or []
-    )
+    revise_event_hashes = set(chain_info["event_hashes_by_type"].get("experiment_revised") or [])
+    ckpt_event_hashes = set(chain_info["event_hashes_by_type"].get("interrupt_checkpoint") or [])
     resume_event_hashes = set(chain_info["event_hashes_by_type"].get("resume") or [])
 
     tool_actions = evidence.get("bounded_tool_actions") or evidence.get("tool_actions")
@@ -915,9 +899,7 @@ def validate_scientist_episode_evidence(evidence: Mapping[str, Any]) -> dict[str
     interruption = _require_mapping(evidence.get("interruption"), "scientist_episode.interruption")
     if interruption.get("interrupted") is not True:
         raise RoleFitnessAcceptanceError("scientist episode requires an interruption")
-    checkpoint_id = _require_text(
-        interruption.get("checkpoint_id"), "interruption.checkpoint_id"
-    )
+    checkpoint_id = _require_text(interruption.get("checkpoint_id"), "interruption.checkpoint_id")
     checkpoint_hash = _require_hash(
         interruption.get("checkpoint_content_hash") or interruption.get("content_hash"),
         "interruption.checkpoint_content_hash",
@@ -950,9 +932,7 @@ def validate_scientist_episode_evidence(evidence: Mapping[str, Any]) -> dict[str
         "resume.checkpoint_content_hash",
     )
     if resume_ckpt_hash != checkpoint_hash:
-        raise RoleFitnessAcceptanceError(
-            "forged resume rejected: checkpoint_content_hash mismatch"
-        )
+        raise RoleFitnessAcceptanceError("forged resume rejected: checkpoint_content_hash mismatch")
     predecessor = _require_hash(resume.get("predecessor_hash"), "resume.predecessor_hash")
     if predecessor != checkpoint_hash and predecessor != chain_info["head_hash"]:
         # Allow binding either sealed checkpoint content or chain head after resume event prep.
@@ -965,9 +945,7 @@ def validate_scientist_episode_evidence(evidence: Mapping[str, Any]) -> dict[str
         "resume.event_hash",
     )
     if resume_event not in resume_event_hashes:
-        raise RoleFitnessAcceptanceError(
-            "resume event_hash not bound in event_chain resume"
-        )
+        raise RoleFitnessAcceptanceError("resume event_hash not bound in event_chain resume")
 
     proof_class = str(evidence.get("proof_class") or PROOF_NATIVE_SESSION_MCP).strip()
     if proof_class == PROOF_DI_SCIENTIST_SEAM:
@@ -1027,7 +1005,9 @@ def validate_candidate_and_owner_disposition(bundle: Mapping[str, Any]) -> dict[
         science.get("science_decision_ref"), "science_decision.science_decision_ref"
     )
     if identity == "SCIENCE_CANDIDATE":
-        candidate_ref = _require_text(science.get("candidate_ref"), "science_decision.candidate_ref")
+        candidate_ref = _require_text(
+            science.get("candidate_ref"), "science_decision.candidate_ref"
+        )
         if science.get("immutable") is not True:
             raise RoleFitnessAcceptanceError("SCIENCE_CANDIDATE must be marked immutable")
         candidate_hash = _require_hash(
@@ -1041,11 +1021,11 @@ def validate_candidate_and_owner_disposition(bundle: Mapping[str, Any]) -> dict[
             raise RoleFitnessAcceptanceError("POLICY_NO_ACTION must not carry candidate_ref")
 
     disposition = _require_mapping(bundle.get("owner_disposition"), "owner_disposition")
-    owner_role = _require_text(disposition.get("owner_role"), "owner_disposition.owner_role").lower()
+    owner_role = _require_text(
+        disposition.get("owner_role"), "owner_disposition.owner_role"
+    ).lower()
     if owner_role != OWNER_ROLE:
-        raise RoleFitnessAcceptanceError(
-            "owner disposition must be Codex-only (owner_role=codex)"
-        )
+        raise RoleFitnessAcceptanceError("owner disposition must be Codex-only (owner_role=codex)")
     decision = _require_text(disposition.get("decision"), "owner_disposition.decision").upper()
     if decision not in ALLOWED_OWNER_DISPOSITIONS:
         raise RoleFitnessAcceptanceError(f"unsupported owner disposition: {decision}")
@@ -1057,11 +1037,15 @@ def validate_candidate_and_owner_disposition(bundle: Mapping[str, Any]) -> dict[
         raise RoleFitnessAcceptanceError(
             "Codex disposition represented by worker-controlled fields is rejected"
         )
-    source = str(
-        disposition.get("disposition_source")
-        or disposition.get("authority_source")
-        or "worker_fixture"
-    ).strip().lower()
+    source = (
+        str(
+            disposition.get("disposition_source")
+            or disposition.get("authority_source")
+            or "worker_fixture"
+        )
+        .strip()
+        .lower()
+    )
     owner_disposition_authentic = False
     disposition_proof_class = PROOF_OWNER_DISPOSITION_STRUCTURE
     if source in WORKER_DISPOSITION_SOURCES or source == "":
@@ -1094,20 +1078,14 @@ def validate_candidate_and_owner_disposition(bundle: Mapping[str, Any]) -> dict[
             "owner_disposition.owner_artifact_sha256",
         )
         if observed != expected:
-            raise RoleFitnessAcceptanceError(
-                "owner disposition artifact hash mismatch"
-            )
+            raise RoleFitnessAcceptanceError("owner disposition artifact hash mismatch")
         owner_disposition_authentic = True
         disposition_proof_class = PROOF_OWNER_DISPOSITION_CHANNEL
     else:
-        raise RoleFitnessAcceptanceError(
-            f"unsupported owner disposition_source: {source}"
-        )
+        raise RoleFitnessAcceptanceError(f"unsupported owner disposition_source: {source}")
 
     account = _require_mapping(bundle.get("account_decision"), "account_decision")
-    account_identity = _require_text(
-        account.get("identity"), "account_decision.identity"
-    ).upper()
+    account_identity = _require_text(account.get("identity"), "account_decision.identity").upper()
     # Science POLICY_NO_ACTION must never substitute for an account decision.
     if account_identity == "POLICY_NO_ACTION":
         raise RoleFitnessAcceptanceError(
@@ -1130,10 +1108,13 @@ def validate_candidate_and_owner_disposition(bundle: Mapping[str, Any]) -> dict[
         raise RoleFitnessAcceptanceError(
             "science/account cross-green: P&L must never promote science"
         )
-    if (
-        account_identity == "ACTION"
-        and decision not in {"ADOPT", "DEFER", "REJECT", "NO_ACTION", "ABSORB_NO_ACTION"}
-    ):
+    if account_identity == "ACTION" and decision not in {
+        "ADOPT",
+        "DEFER",
+        "REJECT",
+        "NO_ACTION",
+        "ABSORB_NO_ACTION",
+    }:
         raise RoleFitnessAcceptanceError("owner disposition missing for account ACTION path")
     science_adopted = decision == "ADOPT"
     account_action = account_identity == "ACTION"
@@ -1172,12 +1153,11 @@ def reject_rq008_retrospective_backfill(evidence: Mapping[str, Any]) -> None:
     """RQ008 retrospective inventory is ineligible for Ticket/Settlement backfill."""
 
     evidence = _require_mapping(evidence, "rq008_evidence")
-    source = str(
-        evidence.get("source")
-        or evidence.get("adapter")
-        or evidence.get("source_class")
-        or ""
-    ).strip().lower()
+    source = (
+        str(evidence.get("source") or evidence.get("adapter") or evidence.get("source_class") or "")
+        .strip()
+        .lower()
+    )
     retro_markers = {"rq008", "retrospective", "backfill", "e1_retrospective", "e1"}
     is_rq008 = (
         "rq008" in source
@@ -1226,9 +1206,7 @@ def reject_synthetic_outcome_as_live(outcome: Mapping[str, Any]) -> None:
     if outcome.get("verified") is not True:
         raise RoleFitnessAcceptanceError("live outcome observation must be verified=true")
     if not source or source in {"", "unknown"}:
-        raise RoleFitnessAcceptanceError(
-            "live outcome requires non-empty independent source_ref"
-        )
+        raise RoleFitnessAcceptanceError("live outcome requires non-empty independent source_ref")
 
 
 # ---------------------------------------------------------------------------
@@ -1369,9 +1347,7 @@ def run_two_period_shadow_consumer(
         outcome_number_1 = 1
         expected_result_1 = "HIT"
     elif p1_mode == "NO_ACTION":
-        req1 = build_no_action_freeze_request(
-            work_dir / "p1-freeze.json", open_at=open_1, period=1
-        )
+        req1 = build_no_action_freeze_request(work_dir / "p1-freeze.json", open_at=open_1, period=1)
         outcome_number_1 = 7
         expected_result_1 = "NO_EXPOSURE"
     else:
@@ -1406,9 +1382,7 @@ def run_two_period_shadow_consumer(
 
     p1_close = str(settled_1["closing_balance"])
     if p2_mode == "NO_ACTION":
-        req2 = build_no_action_freeze_request(
-            work_dir / "p2-freeze.json", open_at=open_2, period=2
-        )
+        req2 = build_no_action_freeze_request(work_dir / "p2-freeze.json", open_at=open_2, period=2)
         outcome_number_2 = 49
         expected_result_2 = "NO_EXPOSURE"
     elif p2_mode == "ACTION_HIT":
@@ -1592,9 +1566,7 @@ def negative_unbound_transcript_assertions() -> None:
         if "event_chain" in str(exc).lower() or "cryptographic" in str(exc).lower():
             return
         raise
-    raise RoleFitnessAcceptanceError(
-        "unbound transcript assertions were incorrectly accepted"
-    )
+    raise RoleFitnessAcceptanceError("unbound transcript assertions were incorrectly accepted")
 
 
 def negative_mock_protocol_pin_as_formal() -> None:
@@ -1619,9 +1591,7 @@ def negative_worker_controlled_disposition() -> None:
         if "worker-controlled" in str(exc).lower():
             return
         raise
-    raise RoleFitnessAcceptanceError(
-        "worker-controlled Codex disposition was incorrectly accepted"
-    )
+    raise RoleFitnessAcceptanceError("worker-controlled Codex disposition was incorrectly accepted")
 
 
 def negative_selective_settlement(portfolio_root: Path, work_dir: Path) -> None:
@@ -2132,9 +2102,7 @@ def _evaluate_scientist_block(
             details["live_research_required"] = True
             return False
         if is_fixture_scientist_evidence(scientist_evidence):
-            failures.append(
-                "live research required: fixture/synthetic scientist evidence rejected"
-            )
+            failures.append("live research required: fixture/synthetic scientist evidence rejected")
             details["scientist_episode"] = {
                 "allowed": False,
                 "error": "fixture scientist evidence rejected for live path",
@@ -2166,9 +2134,7 @@ def _evaluate_scientist_block(
             failures.append("harness incorrectly claimed genuine_role_fitness")
             scientist_shape_ok = False
         if require_live_research and is_fixture_scientist_evidence(sci):
-            failures.append(
-                "live research required: fixture/synthetic scientist evidence rejected"
-            )
+            failures.append("live research required: fixture/synthetic scientist evidence rejected")
             scientist_shape_ok = False
     except RoleFitnessAcceptanceError as exc:
         failures.append(f"scientist_episode: {exc}")
@@ -2177,9 +2143,10 @@ def _evaluate_scientist_block(
     details["scientist_evidence_shape_ok"] = scientist_shape_ok
     details["genuine_role_fitness"] = False
     details["live_research_required"] = require_live_research
-    details["fixture_scientist_used"] = is_fixture_scientist_evidence(
-        scientist_evidence if scientist_evidence is not None else sci
-    ) and scientist_evidence is None
+    details["fixture_scientist_used"] = (
+        is_fixture_scientist_evidence(scientist_evidence if scientist_evidence is not None else sci)
+        and scientist_evidence is None
+    )
     return scientist_shape_ok
 
 
@@ -2439,9 +2406,7 @@ def negative_fixture_glued_to_live_paths(tmp_root: Path) -> None:
     fixture = _minimal_scientist_evidence()
     session_path = tmp_root / "grok-session.json"
     mcp_path = tmp_root / "mcp-events.jsonl"
-    session_path.write_text(
-        fixture["raw_session_artifact"]["content_utf8"], encoding="utf-8"
-    )
+    session_path.write_text(fixture["raw_session_artifact"]["content_utf8"], encoding="utf-8")
     mcp_path.write_text(fixture["raw_mcp_artifacts"][0]["content_utf8"], encoding="utf-8")
     try:
         consume_native_episode_receipt(
@@ -2730,7 +2695,8 @@ def run_owner_invoked_vertical_pre_outcome(
         and details.get("pre_outcome_freeze", {}).get("ok") is True
         and details.get("rq008_ineligible_for_backfill") is True
         and not failures
-        and details.get("candidate_disposition", {}).get("scientific_promotion_from_pnl") is not True
+        and details.get("candidate_disposition", {}).get("scientific_promotion_from_pnl")
+        is not True
     )
     receipt: dict[str, Any] = {
         "schema_version": PRE_OUTCOME_RECEIPT_SCHEMA,
@@ -2794,7 +2760,10 @@ def run_owner_invoked_vertical_continue_outcome(
             raise RoleFitnessAcceptanceError("pre_outcome receipt missing for continuation")
         pre_outcome_receipt = json.loads(path.read_text(encoding="utf-8"))
     pre = _require_mapping(pre_outcome_receipt, "pre_outcome_receipt")
-    if pre.get("phase") != "pre_outcome" and pre.get("schema_version") != PRE_OUTCOME_RECEIPT_SCHEMA:
+    if (
+        pre.get("phase") != "pre_outcome"
+        and pre.get("schema_version") != PRE_OUTCOME_RECEIPT_SCHEMA
+    ):
         # Allow either field binding.
         if pre.get("schema_version") != PRE_OUTCOME_RECEIPT_SCHEMA:
             raise RoleFitnessAcceptanceError("invalid pre_outcome receipt schema")
@@ -2888,7 +2857,9 @@ def run_owner_invoked_vertical_continue_outcome(
                 )
             seat_after = load_seat(portfolio_root)
             if seat_after.seat_id != seat_before.seat_id:
-                raise RoleFitnessAcceptanceError("cross-seat bankroll reset rejected after settlement")
+                raise RoleFitnessAcceptanceError(
+                    "cross-seat bankroll reset rejected after settlement"
+                )
             if seat_after.opening_balance != seat_before.opening_balance:
                 raise RoleFitnessAcceptanceError(
                     "cross-seat bankroll reset rejected: seat opening_balance mutated"
@@ -2906,7 +2877,9 @@ def run_owner_invoked_vertical_continue_outcome(
             details["period_2"] = None
             details["replay_match"] = {"period_1": True}
             details["inspect"] = final
-            details["closing_balance_carried"] = str(final.get("closing_balance") or p1_close) == p1_close
+            details["closing_balance_carried"] = (
+                str(final.get("closing_balance") or p1_close) == p1_close
+            )
             details["same_seat"] = True
             details["bankroll_carried_to_next_period_head"] = True
             details["next_period_ready"] = True
@@ -2979,10 +2952,15 @@ def run_owner_invoked_vertical_continue_outcome(
         details["error"] = str(exc)
         account_ok = False
 
-    honest_pass = account_ok and not failures and pre.get("status") in {
-        "PRE_OUTCOME_PASS",
-        "PASS",
-    }
+    honest_pass = (
+        account_ok
+        and not failures
+        and pre.get("status")
+        in {
+            "PRE_OUTCOME_PASS",
+            "PASS",
+        }
+    )
     receipt: dict[str, Any] = {
         "schema_version": CONTINUATION_RECEIPT_SCHEMA,
         "vertical_schema_version": VERTICAL_RECEIPT_SCHEMA,
@@ -3040,23 +3018,26 @@ def run_owner_invoked_vertical(
                 "full_synthetic forbidden when require_live_research=true "
                 "(no silent fixture production path)"
             )
-        pre = run_owner_invoked_vertical_pre_outcome(work_root=work_root, **{
-            k: v
-            for k, v in kwargs.items()
-            if k
-            in {
-                "research_question",
-                "protocol_pin",
-                "scientist_evidence",
-                "codex_disposition",
-                "formal_protocol_pin_path",
-                "formal_protocol_pin_sha256",
-                "formal_active_parent_sha256",
-                "p1_account_mode",
-                "canary_route_preserved",
-                "require_live_research",
-            }
-        })
+        pre = run_owner_invoked_vertical_pre_outcome(
+            work_root=work_root,
+            **{
+                k: v
+                for k, v in kwargs.items()
+                if k
+                in {
+                    "research_question",
+                    "protocol_pin",
+                    "scientist_evidence",
+                    "codex_disposition",
+                    "formal_protocol_pin_path",
+                    "formal_protocol_pin_sha256",
+                    "formal_active_parent_sha256",
+                    "p1_account_mode",
+                    "canary_route_preserved",
+                    "require_live_research",
+                }
+            },
+        )
         cont = run_owner_invoked_vertical_continue_outcome(
             work_root=work_root,
             pre_outcome_receipt=pre,
@@ -3086,8 +3067,7 @@ def run_owner_invoked_vertical(
             "owner": OWNER_ROLE,
         }
     raise RoleFitnessAcceptanceError(
-        f"unsupported owner-vertical mode: {mode} "
-        f"(use pre_outcome|continue_outcome|full_synthetic)"
+        f"unsupported owner-vertical mode: {mode} (use pre_outcome|continue_outcome|full_synthetic)"
     )
 
 
@@ -3155,7 +3135,10 @@ def run_negatives_suite(work_root: Path) -> dict[str, Any]:
         except Exception as exc:  # noqa: BLE001
             results[name] = f"FAIL:{exc}"
 
-    _run("future_peek", lambda: negative_future_peek_freeze(work_root / "neg-peek", work_root / "neg-peek-w"))
+    _run(
+        "future_peek",
+        lambda: negative_future_peek_freeze(work_root / "neg-peek", work_root / "neg-peek-w"),
+    )
     _run("late_freeze", negative_late_freeze_protocol_pin)
     _run("missing_tool_evidence", negative_missing_tool_evidence)
     _run("no_revise_after_failure", negative_no_revise_after_failure)
@@ -3342,9 +3325,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 )
             if getattr(args, "require_live_research", False):
                 kwargs["require_live_research"] = True
-            output = run_owner_invoked_vertical(
-                work_root=work, mode=vertical_mode, **kwargs
-            )
+            output = run_owner_invoked_vertical(work_root=work, mode=vertical_mode, **kwargs)
         else:
             pre = None
             if args.pre_outcome_receipt is not None:

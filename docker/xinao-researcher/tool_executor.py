@@ -212,9 +212,7 @@ class RequestReplayGuard:
             except ToolExecutorError:
                 raise
             except OSError as exc:
-                raise ToolExecutorError(
-                    "REPLAY_STATE_FAILED", str(exc)
-                ) from exc
+                raise ToolExecutorError("REPLAY_STATE_FAILED", str(exc)) from exc
         self._seen.add(key)
 
 
@@ -609,23 +607,17 @@ def _validate_shell_argv(argv: list[str], *, lab_root: Path) -> None:
         if item.startswith("/") or item.startswith("~"):
             if index == 0:
                 if not _is_allowed_bin_path(item):
-                    raise ToolExecutorError(
-                        "ARGV_DENIED", f"absolute binary denied: {item[:80]}"
-                    )
+                    raise ToolExecutorError("ARGV_DENIED", f"absolute binary denied: {item[:80]}")
                 continue
             # Non-binary absolute args must resolve inside the episode lab only.
             if not _path_under_lab(item, lab_resolved=lab_resolved):
-                raise ToolExecutorError(
-                    "ARGV_DENIED", f"absolute path outside lab: {item[:80]}"
-                )
+                raise ToolExecutorError("ARGV_DENIED", f"absolute path outside lab: {item[:80]}")
             continue
         # Relative binary name at argv[0] must not be a shell either.
         if index == 0 and (
             item in DENIED_SHELL_BINARIES or Path(item).name in DENIED_SHELL_BINARIES
         ):
-            raise ToolExecutorError(
-                "ARGV_DENIED", f"shell interpreter denied: {item[:80]}"
-            )
+            raise ToolExecutorError("ARGV_DENIED", f"shell interpreter denied: {item[:80]}")
         # Free-form args (python -c '...', shell snippets): reject embedded host paths.
         for match in _EMBEDDED_ABS_PATH.finditer(item):
             token = match.group(1).rstrip("/")
@@ -722,9 +714,7 @@ def execute_op(
 
     try:
         if replay_guard is not None:
-            replay_guard.check_and_record(
-                str(request["episode_id"]), str(request["request_id"])
-            )
+            replay_guard.check_and_record(str(request["episode_id"]), str(request["request_id"]))
 
         if op == "ping":
             return make_response(
@@ -1025,9 +1015,7 @@ def serve_unix(
                 except ToolExecutorError as exc:
                     _send_response_frame(
                         conn.sendall,
-                        _denial_response(
-                            reason_code=exc.reason_code, detail=exc.detail
-                        ),
+                        _denial_response(reason_code=exc.reason_code, detail=exc.detail),
                     )
                     if oneshot:
                         return 0
@@ -1050,9 +1038,7 @@ def serve_unix(
                                 break
                             _send_response_frame(
                                 conn.sendall,
-                                _denial_response(
-                                    reason_code=exc.reason_code, detail=exc.detail
-                                ),
+                                _denial_response(reason_code=exc.reason_code, detail=exc.detail),
                             )
                             buffer = b""
                             break

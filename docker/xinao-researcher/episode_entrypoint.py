@@ -38,9 +38,7 @@ def self_describe() -> dict[str, object]:
         "tools_allowlist": ["search_tool", "use_tool"],
         "generic_file_shell_tools": False,
         "dual_container_required": True,
-        "network_policy": os.environ.get(
-            "XINAO_EPISODE_NETWORK_POLICY", "DENY_ALL_FAIL_CLOSED"
-        ),
+        "network_policy": os.environ.get("XINAO_EPISODE_NETWORK_POLICY", "DENY_ALL_FAIL_CLOSED"),
         "ipc_socket": os.environ.get("XINAO_TOOL_IPC_SOCKET", "/ipc/tool.sock"),
         **_authority_clamp(),
     }
@@ -57,7 +55,9 @@ def main(argv: list[str] | None = None) -> int:
     # Host dual-container orchestration attaches Grok with attempt-local MCP config.
     # When invoked bare (no host attach), emit a fail-closed receipt rather than
     # pretending canary research completed.
-    out = Path(os.environ.get("XINAO_EPISODE_RECEIPT_PATH", "/output/episode_entrypoint_receipt.json"))
+    out = Path(
+        os.environ.get("XINAO_EPISODE_RECEIPT_PATH", "/output/episode_entrypoint_receipt.json")
+    )
     try:
         out.parent.mkdir(parents=True, exist_ok=True)
         receipt = {

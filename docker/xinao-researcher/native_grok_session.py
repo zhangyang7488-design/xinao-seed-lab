@@ -87,7 +87,9 @@ def authority_clamp() -> dict[str, bool]:
 
 def _canonical_bytes(value: object) -> bytes:
     return (
-        json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"), allow_nan=False)
+        json.dumps(
+            value, ensure_ascii=False, sort_keys=True, separators=(",", ":"), allow_nan=False
+        )
         + "\n"
     ).encode("utf-8")
 
@@ -177,9 +179,7 @@ def probe_grok_cli(*, grok_bin: str | None = None, probe_auth: bool = True) -> C
     bin_path = resolve_grok_bin(grok_bin)
     probe = CliProbe(grok_bin=bin_path)
     probe.docker_available = shutil.which("docker") is not None
-    probe.bwrap_available = shutil.which("bwrap") is not None or Path(
-        "/usr/bin/bwrap"
-    ).is_file()
+    probe.bwrap_available = shutil.which("bwrap") is not None or Path("/usr/bin/bwrap").is_file()
     if not bin_path:
         return probe
     try:

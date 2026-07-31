@@ -276,11 +276,7 @@ def materialize_attempt_local_binding(
 
 
 def dual_container_socket_available(socket_path: str | None = None) -> bool:
-    path = Path(
-        socket_path
-        or os.environ.get("XINAO_TOOL_IPC_SOCKET")
-        or DEFAULT_SOCKET_PATH
-    )
+    path = Path(socket_path or os.environ.get("XINAO_TOOL_IPC_SOCKET") or DEFAULT_SOCKET_PATH)
     # Socket may not exist yet at planning time; presence of dual-container env is enough
     # for command assembly. Live call still requires the socket.
     if os.environ.get("XINAO_DUAL_CONTAINER") == "1":

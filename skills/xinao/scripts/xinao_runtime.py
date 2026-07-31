@@ -1,10 +1,9 @@
 from __future__ import annotations
 
-import importlib.util
-
 import argparse
 import datetime as dt
 import hashlib
+import importlib.util
 import json
 import math
 import os
@@ -2244,9 +2243,9 @@ def _collect_researcher_image_module_rows(
             reason_code="RESEARCHER_IMAGE_MODULES_SOURCE_INVALID",
             maximum=MAX_SKILL_BUNDLE_FILE_BYTES,
         )
-        if relative.endswith((".py", ".sh", ".json", ".md", ".txt", ".toml", ".keep")) or relative.endswith(
-            ".gitkeep"
-        ):
+        if relative.endswith(
+            (".py", ".sh", ".json", ".md", ".txt", ".toml", ".keep")
+        ) or relative.endswith(".gitkeep"):
             payload = _lf_materialize_bytes(payload)
         if relative == "entrypoint.py":
             _assert_canary_entrypoint_invariants(payload)
@@ -2351,9 +2350,7 @@ def _verify_staged_researcher_image_modules(
         if relative not in expected:
             extras.append(relative)
     if extras:
-        raise XinaoError(
-            "RESEARCHER_IMAGE_MODULES_STAGING_EXTRA_FILES", ",".join(extras[:8])
-        )
+        raise XinaoError("RESEARCHER_IMAGE_MODULES_STAGING_EXTRA_FILES", ",".join(extras[:8]))
     observed_tree = _researcher_image_modules_tree_sha256(observed_rows)
     if observed_tree != expected_tree_sha256:
         raise XinaoError(
@@ -2405,7 +2402,10 @@ def _inspect_dual_profile_image_labels(labels: Mapping[str, Any] | dict[str, Any
         if labels.get(key) != value:
             raise XinaoError("IMAGE_DUAL_PROFILE_LABEL_MISMATCH", key)
     entrypoint_label = labels.get("io.xinao.researcher.entrypoint.sha256")
-    if not isinstance(entrypoint_label, str) or HEX_SHA256_PATTERN.fullmatch(entrypoint_label) is None:
+    if (
+        not isinstance(entrypoint_label, str)
+        or HEX_SHA256_PATTERN.fullmatch(entrypoint_label) is None
+    ):
         raise XinaoError("IMAGE_DUAL_PROFILE_LABEL_MISMATCH", "entrypoint.sha256")
 
 
@@ -2679,9 +2679,7 @@ def _validate_release_manifest(
     if not isinstance(shadow_lock, str) or HEX_SHA256_PATTERN.fullmatch(shadow_lock) is None:
         raise XinaoError("RELEASE_SHADOW_RUNTIME_LOCK_INVALID", _safe_text(shadow_lock))
     if not isinstance(modules_tree, str) or HEX_SHA256_PATTERN.fullmatch(modules_tree) is None:
-        raise XinaoError(
-            "RELEASE_RESEARCHER_IMAGE_MODULES_TREE_INVALID", _safe_text(modules_tree)
-        )
+        raise XinaoError("RELEASE_RESEARCHER_IMAGE_MODULES_TREE_INVALID", _safe_text(modules_tree))
     if (
         manifest.get("required_bootstrap_protocol") != REQUIRED_BOOTSTRAP_PROTOCOL
         or manifest.get("generic_worker_route_allowed") is not False
@@ -2703,7 +2701,10 @@ def _validate_release_manifest(
         raise XinaoError("RELEASE_IMAGE_IDENTITY_INVALID", "default-profile")
     if labels.get("io.xinao.researcher.episode-profile") != RESEARCHER_EPISODE_PROFILE:
         raise XinaoError("RELEASE_IMAGE_IDENTITY_INVALID", "episode-profile")
-    if labels.get("io.xinao.researcher.episode-entrypoint") != RESEARCHER_EPISODE_ENTRYPOINT_IMAGE_PATH:
+    if (
+        labels.get("io.xinao.researcher.episode-entrypoint")
+        != RESEARCHER_EPISODE_ENTRYPOINT_IMAGE_PATH
+    ):
         raise XinaoError("RELEASE_IMAGE_IDENTITY_INVALID", "episode-entrypoint")
     for value in (manifest.get("state_namespace"), manifest.get("run_namespace")):
         normalized = str(value).lower().replace("-", "_")
@@ -11888,6 +11889,7 @@ def _parser() -> argparse.ArgumentParser:
     re_absorb.add_argument("--candidate", type=Path, default=None)
     return parser
 
+
 # ---------------------------------------------------------------------------
 # Local leg-A ResearchEpisode lifecycle (host-side; no daemon/Goal/Temporal)
 # Candidate-only. Capability remains UNAVAILABLE until live tool-namespace receipt.
@@ -11940,7 +11942,11 @@ def _research_episode_assert_root_allowed(root: Path) -> None:
     """Reject C: drive roots under Windows semantics (no implicit C growth)."""
     text = str(root)
     # Normalize drive forms: C:\ C:/ c: and /mnt/c
-    if re.match(r"(?i)^[cC]:([\\/]|$)", text) or text.lower().startswith("/mnt/c/") or text.lower().startswith("/c/"):
+    if (
+        re.match(r"(?i)^[cC]:([\\/]|$)", text)
+        or text.lower().startswith("/mnt/c/")
+        or text.lower().startswith("/c/")
+    ):
         raise XinaoError("RESEARCH_EPISODE_ROOT_C_DRIVE_FORBIDDEN", text)
 
 
@@ -12016,9 +12022,11 @@ def _research_episode_put_bytes(root: Path, kind: str, payload: bytes) -> str:
         existing = dest.read_bytes()
         if existing != payload:
             raise XinaoError(
-            "RESEARCH_EPISODE_IMMUTABLE_COLLISION" if kind == "artifacts" else "RESEARCH_EPISODE_OBJECT_HASH_MISMATCH",
-            f"cas collision {digest}",
-        )
+                "RESEARCH_EPISODE_IMMUTABLE_COLLISION"
+                if kind == "artifacts"
+                else "RESEARCH_EPISODE_OBJECT_HASH_MISMATCH",
+                f"cas collision {digest}",
+            )
         return digest
     tmp = dest.with_suffix(dest.suffix + ".tmp")
     tmp.write_bytes(payload)
@@ -12036,7 +12044,9 @@ def _research_episode_load_bytes(root: Path, kind: str, digest: str) -> bytes:
     payload = path.read_bytes()
     if _sha256_bytes(payload) != digest:
         raise XinaoError(
-            "RESEARCH_EPISODE_ARTIFACT_HASH_MISMATCH" if kind == "artifacts" else "RESEARCH_EPISODE_OBJECT_HASH_MISMATCH",
+            "RESEARCH_EPISODE_ARTIFACT_HASH_MISMATCH"
+            if kind == "artifacts"
+            else "RESEARCH_EPISODE_OBJECT_HASH_MISMATCH",
             digest,
         )
     return payload
@@ -12264,7 +12274,6 @@ def _research_episode_commit_checkpoint(
     }
 
 
-
 def _research_episode_resolve_profile_status(root: Path) -> str:
     """Host-sealed tool-namespace receipt may elevate; episode-local self-issue never does."""
     env_path = (os.environ.get("XINAO_TOOL_NAMESPACE_SEPARATION_RECEIPT") or "").strip()
@@ -12321,6 +12330,7 @@ def _research_episode_resolve_profile_status(root: Path) -> str:
         return "AVAILABLE"
     except Exception:
         return RESEARCH_EPISODE_PROFILE_STATUS
+
 
 def research_episode_start(
     *,
@@ -12581,7 +12591,9 @@ def research_episode_absorb(
         if candidate.get("owner_adopted") is True:
             raise XinaoError("RESEARCH_EPISODE_ABSORB_ADOPTION_FORBIDDEN", "owner_adopted")
         if candidate.get("completion_claim_allowed") is True:
-            raise XinaoError("RESEARCH_EPISODE_COMPLETION_CLAIM_FORBIDDEN", "completion_claim_allowed")
+            raise XinaoError(
+                "RESEARCH_EPISODE_COMPLETION_CLAIM_FORBIDDEN", "completion_claim_allowed"
+            )
         if candidate.get("science_restored") is True:
             raise XinaoError("RESEARCH_EPISODE_SCIENCE_RESTORED_FORBIDDEN", "science_restored")
         if candidate.get("parent_complete") is True:
@@ -12719,7 +12731,6 @@ def main(argv: Sequence[str] | None = None) -> int:
             elif args.research_episode_command == "checkpoint":
                 lab_bytes = None
                 if args.lab_relative is not None:
-                    lab_path = Path(args.root) / "lab" / args.lab_relative
                     # checkpoint may create lab path; accept optional pre-read only when exists
                     # Prefer explicit empty bytes when relative given without prior file — caller
                     # uses progress_note; lab materialization optional via env path not used here.

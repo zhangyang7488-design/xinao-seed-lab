@@ -57,7 +57,7 @@ def test_canary_entrypoint_byte_exact() -> None:
     assert digest == SEALED_CANARY_SHA256
     text = (PKG / "entrypoint.py").read_text(encoding="utf-8")
     assert "GENUINE_SCIENTIST_EPISODE" not in text
-    assert ' "--tools",' in text or "\"--tools\"" in text
+    assert ' "--tools",' in text or '"--tools"' in text
 
 
 def test_cli_probe_and_fail_closed_contract(native: Any) -> None:
@@ -253,9 +253,7 @@ def test_mcp_binding_only_search_tool_use_tool(bind_mod: Any, tmp_path: Path) ->
     assert "run_terminal_cmd" in profile  # denied list
 
 
-def test_dual_host_resume_argv_uses_native_mcp_tools(
-    host_mod: Any, tmp_path: Path
-) -> None:
+def test_dual_host_resume_argv_uses_native_mcp_tools(host_mod: Any, tmp_path: Path) -> None:
     cfg = host_mod.DualHostConfig(
         transport_image="transport:candidate",
         tool_image="tool:candidate",

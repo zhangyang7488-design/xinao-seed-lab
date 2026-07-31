@@ -668,9 +668,7 @@ def _validate_release_manifest_shape(
     if not isinstance(shadow_lock, str) or HEX_SHA256_PATTERN.fullmatch(shadow_lock) is None:
         raise BootstrapError("RELEASE_SHADOW_RUNTIME_LOCK_INVALID", str(shadow_lock))
     if not isinstance(modules_tree, str) or HEX_SHA256_PATTERN.fullmatch(modules_tree) is None:
-        raise BootstrapError(
-            "RELEASE_RESEARCHER_IMAGE_MODULES_TREE_INVALID", str(modules_tree)
-        )
+        raise BootstrapError("RELEASE_RESEARCHER_IMAGE_MODULES_TREE_INVALID", str(modules_tree))
     if (
         manifest.get("required_bootstrap_protocol") != 2
         or manifest.get("generic_worker_route_allowed") is not False

@@ -386,9 +386,7 @@ def _sealed_release(
         "io.xinao.researcher.shadow-runtime.sha256": shadow_tree,
         "io.xinao.researcher.shadow-runtime-lock.sha256": shadow_lock_hash,
         "io.xinao.researcher.requested-model": "grok-4.5",
-        **module._dual_profile_image_labels(
-            researcher_image_modules_tree_sha256=modules_tree
-        ),
+        **module._dual_profile_image_labels(researcher_image_modules_tree_sha256=modules_tree),
     }
     manifest: dict[str, object] = {
         "schema_version": module.RELEASE_SCHEMA,

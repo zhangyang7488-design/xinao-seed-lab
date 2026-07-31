@@ -70,8 +70,7 @@ def scrub_inherited_transport_env() -> list[str]:
                 continue
             # Scrub API key style and session tokens under provider prefixes.
             if any(
-                token in upper
-                for token in ("API", "TOKEN", "SECRET", "PASSWORD", "AUTH", "KEY")
+                token in upper for token in ("API", "TOKEN", "SECRET", "PASSWORD", "AUTH", "KEY")
             ):
                 os.environ.pop(key, None)
                 removed.append(key)
@@ -146,7 +145,11 @@ def handle_use_tool(
     args = dict(arguments or {})
     op = str(args.get("op") or "ping")
     op_args = args.get("args") if isinstance(args.get("args"), dict) else {}
-    if "timeout_ms" in args and type(args["timeout_ms"]) is int and not isinstance(args["timeout_ms"], bool):
+    if (
+        "timeout_ms" in args
+        and type(args["timeout_ms"]) is int
+        and not isinstance(args["timeout_ms"], bool)
+    ):
         timeout_ms = int(args["timeout_ms"])
     request = build_request(
         op=op,
@@ -170,7 +173,10 @@ def handle_use_tool(
 
 def _mcp_result_text(payload: Mapping[str, Any]) -> dict[str, Any]:
     text = json.dumps(dict(payload), ensure_ascii=False, sort_keys=True)
-    return {"content": [{"type": "text", "text": text}], "isError": payload.get("status") == "error"}
+    return {
+        "content": [{"type": "text", "text": text}],
+        "isError": payload.get("status") == "error",
+    }
 
 
 def serve_stdio(
@@ -275,7 +281,9 @@ def serve_stdio(
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="XINAO episode_lab MCP stdio server")
-    parser.add_argument("--socket", default=os.environ.get("XINAO_TOOL_IPC_SOCKET", "/ipc/tool.sock"))
+    parser.add_argument(
+        "--socket", default=os.environ.get("XINAO_TOOL_IPC_SOCKET", "/ipc/tool.sock")
+    )
     parser.add_argument("--episode-id", default=os.environ.get("XINAO_EPISODE_ID", "episode-local"))
     parser.add_argument(
         "--evidence-path",

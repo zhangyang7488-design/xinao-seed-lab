@@ -137,9 +137,7 @@ def test_union_durable_replay_survives_restart(
         time.sleep(0.02)
     assert sock.exists()
     broker = broker_mod.UnixSocketBroker(sock)
-    req = ipc.build_request(
-        op="ping", episode_id="ep-durable", request_id="fixed-across-restart"
-    )
+    req = ipc.build_request(op="ping", episode_id="ep-durable", request_id="fixed-across-restart")
     assert broker.call(req)["status"] == "ok"
     # Simulate tool-executor restart: new process/thread, same durable state dir.
     # Stop by unlinking is hard; spawn second server on new sock sharing state.
@@ -187,6 +185,7 @@ def test_union_peer_require_fail_closed(
     monkeypatch.setenv("XINAO_IPC_PEER_REQUIRE", "1")
     assert tool_mod.peer_require_enabled() is True
     assert tool_mod._peer_uids_allowed() == set()
+
     # Portable: empty allowlist must deny before SO_PEERCRED (no AF_UNIX needed).
     class _Fake:
         def getsockopt(self, *a, **k):  # pragma: no cover
@@ -199,9 +198,7 @@ def test_union_peer_require_fail_closed(
     # Real SO_PEERCRED peer-uid denial requires Unix-domain sockets (Linux/container).
     # Do not replace this leg with a mock that would falsely pass on Windows.
     if not _HAS_AF_UNIX:
-        pytest.skip(
-            "Unix-domain socket + SO_PEERCRED peer-uid leg requires socket.AF_UNIX"
-        )
+        pytest.skip("Unix-domain socket + SO_PEERCRED peer-uid leg requires socket.AF_UNIX")
 
     monkeypatch.setenv("XINAO_IPC_PEER_UIDS", "0")
     # Wrong uid denied when SO_PEERCRED available via real unix pair.

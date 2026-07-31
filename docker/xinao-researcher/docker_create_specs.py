@@ -48,9 +48,7 @@ TRANSPORT_MCP_BRIDGE_MOUNT = "/opt/xinao-attempt/mcp_tool_bridge.py"  # legacy b
 TRANSPORT_MCP_IPC_CONTRACT_MOUNT = "/opt/xinao-attempt/ipc_contract.py"
 # Native attempt-local Grok user config (preferred over project-scoped lab config).
 TRANSPORT_ATTEMPT_GROK_CONFIG_MOUNT = "/grok-home/config.toml"
-TRANSPORT_ATTEMPT_AGENT_PROFILE_MOUNT = (
-    "/grok-home/agents/genuine_scientist_mcp.md"
-)
+TRANSPORT_ATTEMPT_AGENT_PROFILE_MOUNT = "/grok-home/agents/genuine_scientist_mcp.md"
 TRANSPORT_MCP_SERVER_IMAGE_PATH = "/opt/xinao-researcher/mcp_episode_lab_server.py"
 TRANSPORT_MCP_EVENT_LOG = "/output/mcp_events.jsonl"
 TRANSPORT_MCP_EVIDENCE_MOUNT = "/output/mcp-evidence.jsonl"
@@ -625,8 +623,10 @@ def validate_transport_spec_invariants(spec: dict[str, Any]) -> list[str]:
                 violations.append(f"forbidden_bind:{container}")
         if container not in ALLOWED_TRANSPORT_BIND_TARGETS:
             violations.append(f"unexpected_bind:{container}")
-        if container == "/workspace" or host.rstrip("/").endswith("/workspace") or container.endswith(
-            "/workspace"
+        if (
+            container == "/workspace"
+            or host.rstrip("/").endswith("/workspace")
+            or container.endswith("/workspace")
         ):
             violations.append(f"unexpected_bind_workspace:{container}")
     for field in (
@@ -672,7 +672,8 @@ def validate_tool_container_inspect(
     if expected_image_id and expected_image_id not in image and image != expected_image_id:
         # Accept prefix match when inspect returns short id.
         if not (
-            expected_image_id.startswith(image) or image.startswith(expected_image_id.removeprefix("sha256:"))
+            expected_image_id.startswith(image)
+            or image.startswith(expected_image_id.removeprefix("sha256:"))
         ):
             violations.append(f"image_id_mismatch:{image}")
     user = str(cfg.get("User") or "")
@@ -933,4 +934,3 @@ def minimal_integrator_interface() -> dict[str, Any]:
         "network": "tool network=none by create spec",
         "completion_claim_allowed": False,
     }
-
