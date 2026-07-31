@@ -30,6 +30,7 @@ def test_prospective_commands_packaged_in_xinao_parser() -> None:
         "reveal",
         "write-owner-disposition",
         "freeze-from-disposition",
+        "settle-from-reveal",
         "canary",
     ):
         # Nested parse succeeds to the command level when dry-run args present.
@@ -95,6 +96,23 @@ def test_prospective_commands_packaged_in_xinao_parser() -> None:
             )
             assert args.command == "freeze-from-disposition"
             assert not hasattr(args, "owner_freeze_time")
+        elif cmd == "settle-from-reveal":
+            args = parser.parse_args(
+                [
+                    "prospective",
+                    "settle-from-reveal",
+                    "--authority-root",
+                    "a",
+                    "--portfolio-root",
+                    "p",
+                    "--packet-content-hash",
+                    "0" * 64,
+                    "--dry-run",
+                ]
+            )
+            assert args.command == "settle-from-reveal"
+            assert not hasattr(args, "actual_special_number")
+            assert not hasattr(args, "outcome")
         elif cmd == "canary":
             args = parser.parse_args(
                 [
@@ -246,6 +264,7 @@ def test_fresh_process_cli_help_lists_prospective() -> None:
     assert "capture" in proc.stdout
     assert "write-owner-disposition" in proc.stdout
     assert "freeze-from-disposition" in proc.stdout
+    assert "settle-from-reveal" in proc.stdout
     assert "canary" in proc.stdout
 
 
@@ -289,3 +308,84 @@ def test_foreign_authority_path_load_rejected(tmp_path: Path) -> None:
 
     with pytest.raises(ProspectiveSourceError, match=r"PACKET_MISSING|PACKET_HASH"):
         load_packet(tmp_path / "foreign", "f" * 64)
+
+
+def test_write_owner_disposition_still_parses_and_dispatches_missing_payload(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Wave59 packaging retained: write-owner-disposition still routes and fails closed."""
+
+    code = main(
+        [
+            "prospective",
+            "write-owner-disposition",
+            "--owner-state-root",
+            str(tmp_path / "owner"),
+            "--pool-root",
+            str(tmp_path / "pool"),
+            "--payload",
+            str(tmp_path / "missing_disp.json"),
+        ]
+    )
+    assert code == 1
+    err = json.loads(capsys.readouterr().out)
+    assert err["ok"] is False
+    assert err["reason_code"] == "DISPOSITION_PAYLOAD_MISSING"
+    assert err["completion_claim_allowed"] is False
+
+
+def test_nested_owner_pool_roots_rejected_by_wave59_owner_disposition(tmp_path: Path) -> None:
+    """Trusted Wave59 owner_disposition rejects true nested owner/pool roots."""
+
+    from xinao.science.owner_disposition import (
+        OwnerDispositionError,
+        assert_owner_root_separated_from_pool,
+    )
+
+    pool = tmp_path / "pool"
+    pool.mkdir()
+    nested_owner = pool / "owner_nested"
+    nested_owner.mkdir()
+    with pytest.raises(OwnerDispositionError, match=r"OWNER_ROOT_NESTED_IN_POOL|NESTED"):
+        assert_owner_root_separated_from_pool(owner_state_root=nested_owner, pool_root=pool)
+
+    owner = tmp_path / "owner"
+    owner.mkdir()
+    nested_pool = owner / "pool_nested"
+    nested_pool.mkdir()
+    with pytest.raises(OwnerDispositionError, match=r"POOL_NESTED_IN_OWNER_ROOT|NESTED"):
+        assert_owner_root_separated_from_pool(owner_state_root=owner, pool_root=nested_pool)
+
+
+def test_settle_from_reveal_parser_rejects_caller_outcome_override() -> None:
+    parser = build_parser()
+    with pytest.raises(SystemExit):
+        parser.parse_args(
+            [
+                "prospective",
+                "settle-from-reveal",
+                "--authority-root",
+                "a",
+                "--portfolio-root",
+                "p",
+                "--packet-content-hash",
+                "0" * 64,
+                "--actual-special-number",
+                "12",
+            ]
+        )
+    with pytest.raises(SystemExit):
+        parser.parse_args(
+            [
+                "prospective",
+                "settle-from-reveal",
+                "--authority-root",
+                "a",
+                "--portfolio-root",
+                "p",
+                "--packet-content-hash",
+                "0" * 64,
+                "--outcome",
+                "x.json",
+            ]
+        )

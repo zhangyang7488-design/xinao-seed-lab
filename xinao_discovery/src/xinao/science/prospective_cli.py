@@ -1,7 +1,8 @@
 """Owner one-shot prospective CLI surfaces.
 
 Packaged via ``xinao prospective …`` (project.scripts):
-capture / reveal / write-owner-disposition / freeze-from-disposition / canary.
+capture / reveal / write-owner-disposition / freeze-from-disposition /
+settle-from-reveal / canary.
 
 One-shot only: no loop, poll, auto-freeze, auto-settle, next-period start, or daemon.
 Does not authenticate Codex.
@@ -28,6 +29,10 @@ from xinao.science.prospective_source_thin import (
     capture_prospective_target_authority,
     default_clock,
 )
+from xinao.science.settle_from_reveal_adapter import (
+    SettleFromRevealError,
+    apply_settle_from_reveal,
+)
 
 
 def _print(payload: dict[str, Any]) -> None:
@@ -44,7 +49,11 @@ def _fail(reason: str, detail: str = "") -> int:
             "parent_complete": False,
             "auto_freeze": False,
             "auto_settle": False,
+            "auto_feedback": False,
+            "auto_next_period": False,
+            "auto_next_research": False,
             "daemon": False,
+            "caller_outcome_override_accepted": False,
             "owner_channel_authority": "UNPROVEN_BY_LIBRARY",
             "physical_owner_write_isolation_verified": False,
         }
@@ -57,7 +66,8 @@ def add_prospective_parsers(groups: argparse._SubParsersAction[Any]) -> None:
         "prospective",
         help=(
             "Owner one-shot macaujc2 capture/reveal/write-owner-disposition/"
-            "freeze-from-disposition (not a daemon; does not authenticate Codex)"
+            "freeze-from-disposition/settle-from-reveal "
+            "(not a daemon; does not authenticate Codex)"
         ),
     )
     commands = prospective.add_subparsers(dest="command", required=True)
@@ -150,6 +160,51 @@ def add_prospective_parsers(groups: argparse._SubParsersAction[Any]) -> None:
     freeze.add_argument("--mode", choices=("portfolio", "episode"), default="portfolio")
     freeze.add_argument("--request-out", type=Path)
     freeze.add_argument("--result-sha256")
+
+    settle = commands.add_parser(
+        "settle-from-reveal",
+        help=(
+            "One-shot mechanical portfolio settlement from sealed prospective reveal. "
+            "Outcome number/source/time are derived only from Owner authority CAS; "
+            "no public --outcome / --actual-special-number override. Does not "
+            "feedback, freeze next period, or start research."
+        ),
+    )
+    settle.add_argument(
+        "--authority-root",
+        type=Path,
+        required=True,
+        help="Owner authority CAS root holding sealed packet + reveal",
+    )
+    settle.add_argument(
+        "--portfolio-root",
+        type=Path,
+        required=True,
+        help="Live portfolio/shadow root with already-frozen period head",
+    )
+    settle.add_argument(
+        "--packet-content-hash",
+        required=True,
+        help="Exact sealed packet content hash (authority identity pin)",
+    )
+    settle.add_argument(
+        "--reveal-content-hash",
+        help="Optional exact reveal content hash pin (must match durable reveal index)",
+    )
+    settle.add_argument(
+        "--expected-frozen-episode-hash",
+        help="Optional exact frozen episode content hash (stale head fail-closed)",
+    )
+    settle.add_argument(
+        "--period-index",
+        type=int,
+        help="Optional exact portfolio period index pin",
+    )
+    settle.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Validate args only; do not settle",
+    )
 
     canary = commands.add_parser(
         "canary",
@@ -288,6 +343,41 @@ def dispatch_prospective(args: argparse.Namespace) -> int:
             )
             return 0 if result.get("ok") else 1
 
+        if args.command == "settle-from-reveal":
+            if args.dry_run:
+                _print(
+                    {
+                        "ok": True,
+                        "dry_run": True,
+                        "command": "prospective settle-from-reveal",
+                        "authority_root": str(args.authority_root),
+                        "portfolio_root": str(args.portfolio_root),
+                        "packet_content_hash": args.packet_content_hash,
+                        "reveal_content_hash": args.reveal_content_hash,
+                        "expected_frozen_episode_hash": args.expected_frozen_episode_hash,
+                        "period_index": args.period_index,
+                        "writes": False,
+                        "settlement_written": False,
+                        "caller_outcome_override_accepted": False,
+                        "auto_feedback": False,
+                        "auto_next_period": False,
+                        "auto_next_research": False,
+                        "daemon": False,
+                        "completion_claim_allowed": False,
+                    }
+                )
+                return 0
+            result = apply_settle_from_reveal(
+                authority_root=args.authority_root,
+                portfolio_root=args.portfolio_root,
+                packet_content_hash=args.packet_content_hash,
+                reveal_content_hash=args.reveal_content_hash,
+                expected_frozen_episode_hash=args.expected_frozen_episode_hash,
+                period_index=args.period_index,
+            )
+            _print(result)
+            return 0 if result.get("ok") else 1
+
         if args.command == "canary":
             if not args.i_accept_network_canary:
                 return _fail(
@@ -308,6 +398,8 @@ def dispatch_prospective(args: argparse.Namespace) -> int:
     except ProspectiveSourceError as exc:
         return _fail(exc.reason_code, exc.detail)
     except FreezeAdapterError as exc:
+        return _fail(exc.reason_code, exc.detail)
+    except SettleFromRevealError as exc:
         return _fail(exc.reason_code, exc.detail)
     except (ValueError, TypeError, KeyError, OSError) as exc:
         return _fail("PROSPECTIVE_CLI_ERROR", str(exc))

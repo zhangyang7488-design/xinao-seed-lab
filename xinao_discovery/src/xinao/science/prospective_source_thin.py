@@ -233,8 +233,66 @@ def reveal_object_path(root: Path, digest: str) -> Path:
     return _cas_path(root, "reveal", digest, ".json")
 
 
+def reveal_index_path(root: Path, expect: str) -> Path:
+    return resolve_authority_root(root) / "index" / "reveal" / f"{expect}.json"
+
+
 def target_index_path(root: Path, expect: str) -> Path:
     return resolve_authority_root(root) / "index" / "target" / f"{expect}.json"
+
+
+def reveal_content_hash(reveal: Mapping[str, Any]) -> str:
+    body = {k: v for k, v in reveal.items() if k != "content_hash"}
+    return canonical_sha256(body)
+
+
+def load_reveal_index(root: Path, target_expect: str) -> dict[str, Any]:
+    """Load durable reveal index for a target expect (Owner CAS only)."""
+
+    expect = str(target_expect)
+    path = reveal_index_path(root, expect)
+    if not path.is_file() or path.is_symlink():
+        raise ProspectiveSourceError("REVEAL_MISSING", f"index absent for expect={expect}")
+    raw = path.read_bytes()
+    payload = parse_json_strict(raw, reason="REVEAL_INDEX_JSON_INVALID")
+    if not isinstance(payload, dict):
+        raise ProspectiveSourceError("REVEAL_INDEX_JSON_INVALID", "object required")
+    if str(payload.get("target_expect")) != expect:
+        raise ProspectiveSourceError(
+            "REVEAL_INDEX_TARGET_MISMATCH",
+            f"index={payload.get('target_expect')!r} expected={expect!r}",
+        )
+    digest = _require_hex64(
+        payload.get("reveal_content_hash"),
+        "REVEAL_HASH_INVALID",
+        "reveal_content_hash",
+    )
+    return {
+        "target_expect": expect,
+        "reveal_content_hash": digest,
+        "outcome_ref": payload.get("outcome_ref"),
+        "result_hash": payload.get("result_hash"),
+        "admission_status": payload.get("admission_status"),
+        "path": str(path),
+    }
+
+
+def load_reveal(root: Path, reveal_content_hash_value: str) -> dict[str, Any]:
+    """Load sealed reveal from Owner-controlled CAS; reject tampered bytes."""
+
+    digest = _require_hex64(reveal_content_hash_value, "REVEAL_HASH_INVALID", "reveal_content_hash")
+    path = reveal_object_path(root, digest)
+    if not path.is_file() or path.is_symlink():
+        raise ProspectiveSourceError("REVEAL_MISSING", str(path))
+    if path.name != f"{digest}.json" or path.parent.name != digest[:2]:
+        raise ProspectiveSourceError("REVEAL_PATH_MISMATCH", str(path))
+    raw = path.read_bytes()
+    payload = parse_json_strict(raw, reason="REVEAL_JSON_INVALID")
+    if not isinstance(payload, dict):
+        raise ProspectiveSourceError("REVEAL_JSON_INVALID", "object required")
+    if payload.get("content_hash") != digest or reveal_content_hash(payload) != digest:
+        raise ProspectiveSourceError("REVEAL_BYTES_TAMPERED", digest)
+    return payload
 
 
 def _honest_library_flags() -> dict[str, Any]:
@@ -1334,6 +1392,8 @@ __all__ = [
     "is_leap_year",
     "is_live_macaujc2_target",
     "load_packet",
+    "load_reveal",
+    "load_reveal_index",
     "next_expect_after",
     "parse_expect",
     "parse_history_max_expect",
@@ -1344,6 +1404,9 @@ __all__ = [
     "raw_sha256",
     "reject_outcome_material",
     "reject_unsupported_latest_authority",
+    "reveal_content_hash",
+    "reveal_index_path",
+    "reveal_object_path",
     "validate_expect_matches_open_date",
     "validate_source_authority_binding",
     "verify_disposition_times_against_packet",
