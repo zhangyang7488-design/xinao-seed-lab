@@ -466,7 +466,7 @@ FORWARD_UPGRADE_FROM_KEYS = {
     "legacy_restore_tree_sha256",
     "installed_projection_receipt_sha256",
 }
-# Pre-shadow protocol-v2 (e.g. installed 1.2.0) sealed field sets. Historical manifests keep
+# Pre-shadow protocol-v2 (e.g. installed 1.1.x) sealed field sets. Historical manifests keep
 # these exact shapes; never rewrite them to pretend they had target shadow fields.
 PRE_SHADOW_SOURCE_IDENTITY_KEYS = frozenset(
     {
@@ -477,7 +477,21 @@ PRE_SHADOW_SOURCE_IDENTITY_KEYS = frozenset(
         "grok_donor_binary_sha256",
     }
 )
-# Pre-tool-image generation (researcher 1.2.1 era): shadow+modules, transport image only.
+# Pre-modules intermediate (live gen6 / researcher 1.2.x shadow-only era): shadow runtime
+# sealed, researcher image modules + tool executor not yet present. Distinct from both
+# pre_shadow (no shadow) and pre_tool_image (shadow+modules, no tool image).
+PRE_MODULES_SOURCE_IDENTITY_KEYS = frozenset(
+    {
+        "source_commit",
+        "source_tree",
+        "source_dirty",
+        "grok_donor_image_id",
+        "grok_donor_binary_sha256",
+        "shadow_runtime_tree_sha256",
+        "shadow_runtime_lock_sha256",
+    }
+)
+# Pre-tool-image generation (modules era): shadow+modules, transport image only.
 PRE_TOOL_IMAGE_SOURCE_IDENTITY_KEYS = frozenset(
     {
         "source_commit",
@@ -530,6 +544,8 @@ CURRENT_SKILL_HASH_KEYS = frozenset(
         "meta_sha256",
     }
 )
+# Shadow-era skill hashes (pre_modules and later): include sealed shadow-runtime lock pin.
+PRE_MODULES_SKILL_HASH_KEYS = CURRENT_SKILL_HASH_KEYS
 PRE_SHADOW_IMAGE_LABEL_KEYS = frozenset(
     {
         "io.xinao.researcher.chain",
@@ -545,6 +561,14 @@ PRE_SHADOW_IMAGE_LABEL_KEYS = frozenset(
         "io.xinao.researcher.entrypoint.sha256",
         "io.xinao.researcher.source-identity.sha256",
         "io.xinao.researcher.requested-model",
+    }
+)
+# Pre-modules labels: pre-shadow set + sealed shadow tree/lock, without modules/episode/mcp.
+PRE_MODULES_IMAGE_LABEL_KEYS = frozenset(
+    PRE_SHADOW_IMAGE_LABEL_KEYS
+    | {
+        "io.xinao.researcher.shadow-runtime.sha256",
+        "io.xinao.researcher.shadow-runtime-lock.sha256",
     }
 )
 CURRENT_IMAGE_LABEL_KEYS = frozenset(
@@ -2949,6 +2973,8 @@ def _source_identity_generation(source_identity: object) -> str:
         return "current"
     if keys == PRE_TOOL_IMAGE_SOURCE_IDENTITY_KEYS:
         return "pre_tool_image"
+    if keys == PRE_MODULES_SOURCE_IDENTITY_KEYS:
+        return "pre_modules"
     if keys == PRE_SHADOW_SOURCE_IDENTITY_KEYS:
         return "pre_shadow"
     raise XinaoError("RELEASE_SOURCE_IDENTITY_INVALID", ",".join(sorted(keys)))
@@ -3148,8 +3174,8 @@ def _validate_sealed_protocol_v2_release(
     """Validate an installed protocol-v2 release under the schema generation it actually has.
 
     Ordinary activate/inspect keep using ``_validate_release_manifest`` (exact current dual-image).
-    Forward-upgrade preflight seals historical pre-shadow and pre-tool-image releases without
-    rewriting them or weakening current validation.
+    Forward-upgrade preflight seals historical pre-shadow, pre_modules, and pre-tool-image
+    releases without rewriting them or weakening current validation.
     """
 
     keys = set(manifest)
@@ -3169,6 +3195,10 @@ def _validate_sealed_protocol_v2_release(
         )
     if generation == "pre_tool_image":
         return _validate_pre_tool_image_release(
+            manifest, manifest_path, verify_bundle=verify_bundle
+        )
+    if generation == "pre_modules":
+        return _validate_pre_modules_release(
             manifest, manifest_path, verify_bundle=verify_bundle
         )
     # pre_shadow generation
@@ -3288,6 +3318,157 @@ def _validate_sealed_protocol_v2_release(
     for key in (
         "io.xinao.researcher.dockerfile.sha256",
         "io.xinao.researcher.entrypoint.sha256",
+    ):
+        if HEX_SHA256_PATTERN.fullmatch(str(labels.get(key, ""))) is None:
+            raise XinaoError("RELEASE_IMAGE_IDENTITY_INVALID", key)
+    return bundle_manifest
+
+
+def _validate_pre_modules_release(
+    manifest: dict[str, Any],
+    manifest_path: Path,
+    *,
+    verify_bundle: bool = True,
+) -> dict[str, Any]:
+    """Historical shadow-only transport release (no modules, no tool image).
+
+    Matches the live intermediate generation (e.g. researcher-1.2.1-a8be2b624f891038)
+    where shadow runtime is sealed but researcher image modules and tool executor
+    digests are absent. Readable for previous_verified / upgrade preflight and
+    terminal FORWARD_UPGRADE journal revalidation. Must never be treated as
+    exact-current dual-image generation.
+    """
+
+    source_identity = manifest.get("source_identity")
+    if (
+        not isinstance(source_identity, dict)
+        or set(source_identity) != PRE_MODULES_SOURCE_IDENTITY_KEYS
+    ):
+        raise XinaoError("RELEASE_SOURCE_IDENTITY_INVALID", str(manifest_path))
+    package_version = str(manifest.get("package_version", ""))
+    capability_version = str(manifest.get("capability_version", ""))
+    charter_version = str(manifest.get("charter_version", ""))
+    runtime_version = str(manifest.get("runtime_version", ""))
+    if SEMVER_PATTERN.fullmatch(package_version) is None:
+        raise XinaoError("SKILL_VERSION_INVALID", package_version)
+    if (
+        SEMVER_PATTERN.fullmatch(capability_version) is None
+        or capability_version != charter_version
+        or capability_version != runtime_version
+    ):
+        raise XinaoError(
+            "RESEARCHER_VERSION_IDENTITY_MISMATCH",
+            f"capability={capability_version} charter={charter_version} runtime={runtime_version}",
+        )
+    if manifest.get("capability_id") != "researcher-container":
+        raise XinaoError("RELEASE_CAPABILITY_IDENTITY_INVALID", str(manifest.get("capability_id")))
+    if type(source_identity.get("source_dirty")) is not bool:
+        raise XinaoError("RELEASE_SOURCE_IDENTITY_INVALID", "source_dirty")
+    if re.fullmatch(r"[0-9a-f]{40,64}", str(source_identity.get("source_commit", ""))) is None:
+        raise XinaoError("RELEASE_SOURCE_IDENTITY_INVALID", "source_commit")
+    if re.fullmatch(r"[0-9a-f]{40,64}", str(source_identity.get("source_tree", ""))) is None:
+        raise XinaoError("RELEASE_SOURCE_IDENTITY_INVALID", "source_tree")
+    donor_id = source_identity.get("grok_donor_image_id")
+    if not isinstance(donor_id, str) or not donor_id.startswith("sha256:") or len(donor_id) != 71:
+        raise XinaoError("RELEASE_DONOR_IDENTITY_MISSING", _safe_text(donor_id))
+    donor_binary_sha256 = source_identity.get("grok_donor_binary_sha256")
+    if (
+        not isinstance(donor_binary_sha256, str)
+        or HEX_SHA256_PATTERN.fullmatch(donor_binary_sha256) is None
+    ):
+        raise XinaoError("RELEASE_DONOR_BINARY_IDENTITY_MISSING", _safe_text(donor_binary_sha256))
+    shadow_tree = source_identity.get("shadow_runtime_tree_sha256")
+    shadow_lock = source_identity.get("shadow_runtime_lock_sha256")
+    if not isinstance(shadow_tree, str) or HEX_SHA256_PATTERN.fullmatch(shadow_tree) is None:
+        raise XinaoError("RELEASE_SHADOW_RUNTIME_TREE_INVALID", _safe_text(shadow_tree))
+    if not isinstance(shadow_lock, str) or HEX_SHA256_PATTERN.fullmatch(shadow_lock) is None:
+        raise XinaoError("RELEASE_SHADOW_RUNTIME_LOCK_INVALID", _safe_text(shadow_lock))
+    if (
+        manifest.get("required_bootstrap_protocol") != REQUIRED_BOOTSTRAP_PROTOCOL
+        or manifest.get("generic_worker_route_allowed") is not False
+    ):
+        raise XinaoError("RELEASE_CHAIN_CLASS_INVALID", str(manifest_path))
+    labels = manifest.get("image_labels")
+    if (
+        not isinstance(manifest.get("image_id"), str)
+        or not str(manifest["image_id"]).startswith("sha256:")
+        or not isinstance(labels, dict)
+        or set(labels) != PRE_MODULES_IMAGE_LABEL_KEYS
+        or manifest.get("image_entrypoint")
+        != ["python", "-I", RESEARCHER_CANARY_ENTRYPOINT_IMAGE_PATH]
+    ):
+        raise XinaoError("RELEASE_IMAGE_IDENTITY_INVALID", str(manifest_path))
+    for value in (manifest.get("state_namespace"), manifest.get("run_namespace")):
+        normalized = str(value).lower().replace("-", "_")
+        if any(token in normalized for token in FORBIDDEN_RUNTIME_TOKENS):
+            raise XinaoError("CROSS_CHAIN_NAMESPACE_FORBIDDEN", str(value))
+    identity_sha256 = _sha256_bytes(
+        _canonical_bytes(_release_identity_payload(manifest, include_shadow_runtime=True))
+    )
+    if manifest.get("release_identity_sha256") != identity_sha256:
+        raise XinaoError("RELEASE_IDENTITY_MISMATCH", str(manifest_path))
+    expected_release_id = f"researcher-{capability_version}-{identity_sha256[:16]}"
+    if manifest.get("release_id") != expected_release_id:
+        raise XinaoError("RELEASE_IDENTITY_INVALID", str(manifest.get("release_id")))
+    paths = _state_paths()
+    expected_manifest_path = paths["release_root"] / expected_release_id / "release.json"
+    if not _paths_equal(manifest_path, expected_manifest_path):
+        raise XinaoError("RELEASE_MANIFEST_PATH_INVALID", str(manifest_path))
+    release_dir = manifest_path.parent
+    bundle_root = Path(str(manifest.get("skill_bundle_path", "")))
+    bundle_manifest_path = Path(str(manifest.get("skill_bundle_manifest_path", "")))
+    if not _paths_equal(bundle_root, release_dir / "skill-bundle"):
+        raise XinaoError("SKILL_BUNDLE_PATH_INVALID", str(bundle_root))
+    if not _paths_equal(bundle_manifest_path, release_dir / "skill-bundle.manifest.json"):
+        raise XinaoError("SKILL_BUNDLE_MANIFEST_PATH_INVALID", str(bundle_manifest_path))
+    bundle_manifest = _load_json(bundle_manifest_path)
+    if _sha256(bundle_manifest_path) != manifest.get("skill_bundle_manifest_sha256"):
+        raise XinaoError("SKILL_BUNDLE_MANIFEST_IDENTITY_MISMATCH", str(bundle_manifest_path))
+    _validate_bundle_manifest_shape(bundle_manifest)
+    if bundle_manifest.get("package_version") != package_version or bundle_manifest.get(
+        "tree_sha256"
+    ) != manifest.get("skill_bundle_tree_sha256"):
+        raise XinaoError("SKILL_BUNDLE_TREE_IDENTITY_MISMATCH", str(bundle_manifest_path))
+    if verify_bundle:
+        _verify_skill_bundle(bundle_root, bundle_manifest)
+    expected_hashes = manifest.get("skill_hashes")
+    if (
+        not isinstance(expected_hashes, dict)
+        or set(expected_hashes) != PRE_MODULES_SKILL_HASH_KEYS
+        or expected_hashes != _reference_hashes_for_keys(bundle_root, PRE_MODULES_SKILL_HASH_KEYS)
+    ):
+        raise XinaoError("RELEASE_SKILL_HASHES_MISMATCH", str(manifest_path))
+    source_identity_sha256 = _sha256_bytes(_canonical_bytes(source_identity))
+    expected_labels = {
+        "io.xinao.researcher.chain": "dedicated-xinao-science",
+        "io.xinao.researcher.generic-worker-route": "forbidden",
+        "io.xinao.researcher.grok-donor-image-id": donor_id,
+        "io.xinao.researcher.grok-donor-binary.sha256": donor_binary_sha256,
+        "io.xinao.researcher.charter.sha256": expected_hashes["charter_sha256"],
+        "io.xinao.researcher.output-schema.sha256": expected_hashes["output_schema_sha256"],
+        "io.xinao.researcher.material-bundle-schema.sha256": expected_hashes[
+            "material_bundle_schema_sha256"
+        ],
+        "io.xinao.researcher.runtime-lock.sha256": expected_hashes["runtime_lock_sha256"],
+        "io.xinao.researcher.skill-invoker.sha256": expected_hashes["skill_invoker_sha256"],
+        "io.xinao.researcher.dockerfile.sha256": labels.get(
+            "io.xinao.researcher.dockerfile.sha256"
+        ),
+        "io.xinao.researcher.entrypoint.sha256": labels.get(
+            "io.xinao.researcher.entrypoint.sha256"
+        ),
+        "io.xinao.researcher.source-identity.sha256": source_identity_sha256,
+        "io.xinao.researcher.shadow-runtime.sha256": shadow_tree,
+        "io.xinao.researcher.shadow-runtime-lock.sha256": shadow_lock,
+        "io.xinao.researcher.requested-model": REQUESTED_MODEL,
+    }
+    if labels != expected_labels:
+        raise XinaoError("RELEASE_IMAGE_IDENTITY_INVALID", "image_labels")
+    for key in (
+        "io.xinao.researcher.dockerfile.sha256",
+        "io.xinao.researcher.entrypoint.sha256",
+        "io.xinao.researcher.shadow-runtime.sha256",
+        "io.xinao.researcher.shadow-runtime-lock.sha256",
     ):
         if HEX_SHA256_PATTERN.fullmatch(str(labels.get(key, ""))) is None:
             raise XinaoError("RELEASE_IMAGE_IDENTITY_INVALID", key)
@@ -3514,7 +3695,7 @@ def _active_release_requires_forward_upgrade(manifest: dict[str, Any]) -> bool:
         generation = _source_identity_generation(manifest.get("source_identity"))
     except XinaoError:
         return True
-    if generation in {"pre_shadow", "pre_tool_image"}:
+    if generation in {"pre_shadow", "pre_modules", "pre_tool_image"}:
         return True
     if set(manifest) != CURRENT_RELEASE_KEYS:
         return True
@@ -3659,9 +3840,18 @@ def _validate_journal(journal: dict[str, Any], journal_path: Path) -> None:
         raise XinaoError("ACTIVATION_GENERATION_INVALID", str(journal.get("expected_generation")))
     # Journal-bound release refs validate under the generation they actually sealed.
     # Ordinary pointer/active load remains exact-current and fail-closed outside upgrade.
+    # Terminal FORWARD_UPGRADE journals may historically target intermediate pre_modules
+    # (live gen6 era). PREPARED/pending/switchable journals must keep exact-current dual-
+    # image to/requested_to so a historical release cannot become the CAS switch target.
     if journal.get("operation") == "FORWARD_UPGRADE":
-        _validate_release_ref(journal.get("requested_to"))
-        _validate_release_ref(journal.get("to"))
+        if journal.get("state") in TERMINAL_ACTIVATION_STATES | {"RECOVERY_CONFLICT"}:
+            _validate_sealed_protocol_v2_release_ref(
+                journal.get("requested_to"), verify_bundle=False
+            )
+            _validate_sealed_protocol_v2_release_ref(journal.get("to"), verify_bundle=False)
+        else:
+            _validate_release_ref(journal.get("requested_to"))
+            _validate_release_ref(journal.get("to"))
     else:
         _validate_sealed_protocol_v2_release_ref(journal.get("requested_to"), verify_bundle=False)
         _validate_sealed_protocol_v2_release_ref(journal.get("to"), verify_bundle=False)
@@ -8922,6 +9112,11 @@ def _switch_forward_upgrade_pointer(
     if journal["operation"] != "FORWARD_UPGRADE" or journal["state"] != "PREPARED":
         raise XinaoError("ACTIVATION_STATE_INVALID", str(journal.get("state")))
     from_value = journal["from"]
+    # CAS fence: never switch the active pointer to a non-exact-current target.
+    # Sealed historical generations remain readable for terminal journals / preflight,
+    # but prepare/build/pointer-switch targets must stay dual-image exact-current.
+    _validate_release_ref(journal.get("requested_to"))
+    _validate_release_ref(journal.get("to"))
     pointer_path = _state_paths()["pointer"]
     if not pointer_path.is_file():
         raise XinaoError("CURRENT_POINTER_CAS_CONFLICT", str(pointer_path))
