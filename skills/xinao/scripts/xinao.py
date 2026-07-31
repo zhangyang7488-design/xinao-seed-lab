@@ -30,7 +30,7 @@ RELEASE_RUNTIME_RELATIVE_PATH = Path("skill-bundle") / "scripts" / "xinao_runtim
 # Bound to the co-located bootstrap-migration companion. Tampering fails before execution.
 # Update this whenever the candidate xinao_runtime.py bytes change.
 EXPECTED_COMPANION_RUNTIME_SHA256 = (
-    "dc0596eada9d9a71b513eacb690ea0f773c78002680d0855618cb1e661910fb1"
+    "b1d12f3081c4f530bbc6c793d929b5ba50cddd301284d760f69d3681bc60d8b0"
 )
 RELEASE_ID_PATTERN = re.compile(r"^researcher-[0-9]+\.[0-9]+\.[0-9]+-[0-9a-f]{16}$")
 TXN_ID_PATTERN = re.compile(r"^xra_[0-9]{8}T[0-9]{6}_[0-9a-f]{16}$")
@@ -171,7 +171,15 @@ IMAGE_LABEL_KEYS = {
     "io.xinao.researcher.source-identity.sha256",
     "io.xinao.researcher.shadow-runtime.sha256",
     "io.xinao.researcher.shadow-runtime-lock.sha256",
+    "io.xinao.researcher.image-modules.sha256",
     "io.xinao.researcher.requested-model",
+    "io.xinao.researcher.default-profile",
+    "io.xinao.researcher.episode-profile",
+    "io.xinao.researcher.episode-entrypoint",
+    "io.xinao.researcher.episode-network-policy",
+    "io.xinao.researcher.episode-tool-shell",
+    "io.xinao.researcher.mcp-server",
+    "io.xinao.researcher.mcp-tools-allowlist",
 }
 
 
@@ -580,6 +588,9 @@ def _release_identity_payload(manifest: dict[str, Any]) -> dict[str, Any]:
         "grok_donor_binary_sha256": source_identity.get("grok_donor_binary_sha256"),
         "shadow_runtime_tree_sha256": source_identity.get("shadow_runtime_tree_sha256"),
         "shadow_runtime_lock_sha256": source_identity.get("shadow_runtime_lock_sha256"),
+        "researcher_image_modules_tree_sha256": source_identity.get(
+            "researcher_image_modules_tree_sha256"
+        ),
         "skill_bundle_tree_sha256": manifest.get("skill_bundle_tree_sha256"),
         "image_id": manifest.get("image_id"),
         "image_entrypoint": manifest.get("image_entrypoint"),
@@ -631,6 +642,7 @@ def _validate_release_manifest_shape(
         "grok_donor_binary_sha256",
         "shadow_runtime_tree_sha256",
         "shadow_runtime_lock_sha256",
+        "researcher_image_modules_tree_sha256",
     }:
         raise BootstrapError("RELEASE_SOURCE_IDENTITY_INVALID", str(manifest_path))
     if source_identity.get("source_dirty") is not False:
@@ -650,10 +662,15 @@ def _validate_release_manifest_shape(
         raise BootstrapError("RELEASE_DONOR_BINARY_IDENTITY_MISSING", str(donor_binary_sha256))
     shadow_tree = source_identity.get("shadow_runtime_tree_sha256")
     shadow_lock = source_identity.get("shadow_runtime_lock_sha256")
+    modules_tree = source_identity.get("researcher_image_modules_tree_sha256")
     if not isinstance(shadow_tree, str) or HEX_SHA256_PATTERN.fullmatch(shadow_tree) is None:
         raise BootstrapError("RELEASE_SHADOW_RUNTIME_TREE_INVALID", str(shadow_tree))
     if not isinstance(shadow_lock, str) or HEX_SHA256_PATTERN.fullmatch(shadow_lock) is None:
         raise BootstrapError("RELEASE_SHADOW_RUNTIME_LOCK_INVALID", str(shadow_lock))
+    if not isinstance(modules_tree, str) or HEX_SHA256_PATTERN.fullmatch(modules_tree) is None:
+        raise BootstrapError(
+            "RELEASE_RESEARCHER_IMAGE_MODULES_TREE_INVALID", str(modules_tree)
+        )
     if (
         manifest.get("required_bootstrap_protocol") != 2
         or manifest.get("generic_worker_route_allowed") is not False
@@ -711,7 +728,15 @@ def _validate_release_manifest_shape(
         "io.xinao.researcher.source-identity.sha256": source_identity_sha256,
         "io.xinao.researcher.shadow-runtime.sha256": shadow_tree,
         "io.xinao.researcher.shadow-runtime-lock.sha256": shadow_lock,
+        "io.xinao.researcher.image-modules.sha256": modules_tree,
         "io.xinao.researcher.requested-model": "grok-4.5",
+        "io.xinao.researcher.default-profile": "INSTRUMENT_CANARY",
+        "io.xinao.researcher.episode-profile": "GENUINE_SCIENTIST_EPISODE",
+        "io.xinao.researcher.episode-entrypoint": "/opt/xinao-researcher/episode_entrypoint.py",
+        "io.xinao.researcher.episode-network-policy": "DENY_ALL_FAIL_CLOSED",
+        "io.xinao.researcher.episode-tool-shell": "/usr/libexec/xinao/episode-tool-shell-wrapper",
+        "io.xinao.researcher.mcp-server": "/opt/xinao-researcher/mcp_episode_lab_server.py",
+        "io.xinao.researcher.mcp-tools-allowlist": "search_tool,use_tool",
     }
     if labels != expected_labels:
         raise BootstrapError("RELEASE_IMAGE_IDENTITY_INVALID", "image_labels")
@@ -720,6 +745,7 @@ def _validate_release_manifest_shape(
         "io.xinao.researcher.entrypoint.sha256",
         "io.xinao.researcher.shadow-runtime.sha256",
         "io.xinao.researcher.shadow-runtime-lock.sha256",
+        "io.xinao.researcher.image-modules.sha256",
     ):
         if HEX_SHA256_PATTERN.fullmatch(str(labels.get(key, ""))) is None:
             raise BootstrapError("RELEASE_IMAGE_IDENTITY_INVALID", key)

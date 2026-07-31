@@ -739,7 +739,6 @@ def _validate_success_receipt(
         "execution_activation_txn_id",
         "package_version",
         "capability_version",
-        "required_bootstrap_protocol",
         "image_id",
         "result_path",
         "created_at",
@@ -747,6 +746,16 @@ def _validate_success_receipt(
         "material_manifest_path",
     ):
         _require_text(core.get(key), "RECEIPT_PIN_INVALID", key)
+    # Producer seal: REQUIRED_BOOTSTRAP_PROTOCOL = 2 (JSON integer). Reject bool/float/str.
+    bootstrap_protocol = core.get("required_bootstrap_protocol")
+    if type(bootstrap_protocol) is not int or bootstrap_protocol != 2:
+        raise ResearcherResultAdapterError(
+            "RECEIPT_BOOTSTRAP_PROTOCOL_INVALID",
+            (
+                "required_bootstrap_protocol must be exact JSON integer 2; "
+                f"got {type(bootstrap_protocol).__name__} {bootstrap_protocol!r}"
+            ),
+        )
     if type(core.get("execution_pointer_generation")) is not int:
         raise ResearcherResultAdapterError(
             "RECEIPT_PIN_INVALID",

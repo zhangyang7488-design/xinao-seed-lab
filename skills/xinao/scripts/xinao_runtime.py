@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import importlib.util
+
 import argparse
 import datetime as dt
 import hashlib
@@ -15,7 +17,7 @@ import time
 import uuid
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Any, Callable, Iterator, Sequence
+from typing import Any, Callable, Iterator, Mapping, Sequence
 
 SKILL_ROOT = Path(__file__).resolve().parents[1]
 REFERENCE_ROOT = SKILL_ROOT / "references"
@@ -264,6 +266,36 @@ SHADOW_RUNTIME_CONTEXT_RELATIVE = Path("shadow-runtime")
 SHADOW_RUNTIME_LOCK_RELATIVE = Path("references") / "shadow-runtime-lock.v1.json"
 SHADOW_RUNTIME_LOCK_PATH = REFERENCE_ROOT / "shadow-runtime-lock.v1.json"
 SHADOW_RUNTIME_IMAGE_ROOT = "/opt/xinao-shadow"
+# Dual-profile researcher image modules staged under the owned Docker build context.
+# Paths are relative to docker/xinao-researcher/ and must match Dockerfile COPY sources.
+RESEARCHER_IMAGE_CONTEXT_RELATIVE = Path("docker") / "xinao-researcher"
+RESEARCHER_IMAGE_MODULE_INVENTORY: tuple[str, ...] = (
+    "entrypoint.py",
+    "episode_entrypoint.py",
+    "episode_boundary.py",
+    "episode_events.py",
+    "ipc_contract.py",
+    "transport_broker.py",
+    "episode_mcp_binding.py",
+    "mcp_episode_lab_server.py",
+    "empty-grok-profile/.gitkeep",
+    "grok-bwrap-unprivileged-wrapper.sh",
+    "episode-tool-shell-wrapper.sh",
+)
+RESEARCHER_CANARY_ENTRYPOINT_IMAGE_PATH = "/opt/xinao-researcher/entrypoint.py"
+RESEARCHER_EPISODE_ENTRYPOINT_IMAGE_PATH = "/opt/xinao-researcher/episode_entrypoint.py"
+RESEARCHER_DEFAULT_PROFILE = "INSTRUMENT_CANARY"
+RESEARCHER_EPISODE_PROFILE = "GENUINE_SCIENTIST_EPISODE"
+RESEARCHER_MCP_TOOLS_ALLOWLIST = "search_tool,use_tool"
+# Canary command markers that must never drift (max-turns 1, empty tools, no web).
+CANARY_FORBIDDEN_TOOL_TOKENS: tuple[str, ...] = (
+    "web_search",
+    "web_fetch",
+    "run_terminal_cmd",
+    "read_file",
+    "search_replace",
+    "browser",
+)
 SHADOW_EPISODE_CONTAINER_ROOT = "/episode"
 SHADOW_INPUT_CONTAINER_ROOT = "/input"
 SHADOW_CAPABILITY_ID = "shadow-lifecycle-leg-a"
@@ -406,6 +438,7 @@ CURRENT_SOURCE_IDENTITY_KEYS = frozenset(
         "grok_donor_binary_sha256",
         "shadow_runtime_tree_sha256",
         "shadow_runtime_lock_sha256",
+        "researcher_image_modules_tree_sha256",
     }
 )
 PRE_SHADOW_SKILL_HASH_KEYS = frozenset(
@@ -466,7 +499,15 @@ CURRENT_IMAGE_LABEL_KEYS = frozenset(
         "io.xinao.researcher.source-identity.sha256",
         "io.xinao.researcher.shadow-runtime.sha256",
         "io.xinao.researcher.shadow-runtime-lock.sha256",
+        "io.xinao.researcher.image-modules.sha256",
         "io.xinao.researcher.requested-model",
+        "io.xinao.researcher.default-profile",
+        "io.xinao.researcher.episode-profile",
+        "io.xinao.researcher.episode-entrypoint",
+        "io.xinao.researcher.episode-network-policy",
+        "io.xinao.researcher.episode-tool-shell",
+        "io.xinao.researcher.mcp-server",
+        "io.xinao.researcher.mcp-tools-allowlist",
     }
 )
 SYNC_PROJECTION_FROM_KEYS = {
@@ -2138,6 +2179,236 @@ def _shadow_record(registry: dict[str, Any]) -> dict[str, Any]:
     return matches[0]
 
 
+def _lf_materialize_bytes(payload: bytes) -> bytes:
+    """Materialize LF-only bytes for Linux image/shell assets.
+
+    Windows worktrees may store CRLF while Git status is clean; the owned Docker
+    build context must carry reproducible LF content rather than one dirty worktree's
+    physical bytes.
+    """
+
+    return payload.replace(b"\r\n", b"\n").replace(b"\r", b"\n")
+
+
+def _assert_canary_entrypoint_invariants(payload: bytes) -> None:
+    """Fail closed if INSTRUMENT_CANARY one-shot/tool-free/no-web markers drift."""
+
+    if b"\r" in payload:
+        raise XinaoError("CANARY_ENTRYPOINT_CRLF_FORBIDDEN", "entrypoint must be LF-only")
+    text = payload.decode("utf-8")
+    if "GENUINE_SCIENTIST_EPISODE" in text or "episode_entrypoint" in text:
+        raise XinaoError(
+            "CANARY_ENTRYPOINT_PROFILE_DRIFT",
+            "default entrypoint must not embed episode profile routing",
+        )
+    if "--max-turns" not in text:
+        raise XinaoError("CANARY_MAX_TURNS_MARKER_MISSING", "--max-turns")
+    # Empty tools string and single-turn budget remain literal in command assembly.
+    if '"--max-turns", "1"' not in text and "'--max-turns', '1'" not in text:
+        # Tolerate split-list forms that still pin turn budget to one.
+        if not re.search(r"""["']--max-turns["']\s*,\s*["']1["']""", text):
+            raise XinaoError("CANARY_MAX_TURNS_DRIFT", "max-turns must remain 1")
+    if '"--tools", ""' not in text and "'--tools', ''" not in text:
+        if not re.search(r"""["']--tools["']\s*,\s*["']{2}""", text):
+            raise XinaoError("CANARY_TOOLS_DRIFT", "tools must remain empty string")
+    if "--disable-web-search" not in text:
+        raise XinaoError("CANARY_WEB_DRIFT", "must keep --disable-web-search")
+    # Reject enabling web/search tools; allow the disable flag only.
+    if re.search(r"""["']--tools["']\s*,\s*["'][^"']*web_search""", text):
+        raise XinaoError("CANARY_WEB_DRIFT", "web_search must not appear in --tools")
+    if re.search(r"""["']--enable-web-search["']""", text):
+        raise XinaoError("CANARY_WEB_DRIFT", "enable-web-search forbidden")
+    for token in CANARY_FORBIDDEN_TOOL_TOKENS:
+        # Require token as a standalone tools-list element, not a disable flag substring.
+        if re.search(rf"""["']{re.escape(token)}["']""", text):
+            raise XinaoError("CANARY_UNINTENDED_TOOL_TOKEN", token)
+
+
+def _collect_researcher_image_module_rows(
+    source_root: Path,
+) -> list[tuple[str, Path, bytes]]:
+    """Collect dual-profile image modules with LF materialization for shell/text assets."""
+
+    package_root = (source_root / RESEARCHER_IMAGE_CONTEXT_RELATIVE).resolve()
+    if not package_root.is_dir():
+        raise XinaoError("RESEARCHER_IMAGE_MODULES_SOURCE_MISSING", str(package_root))
+    rows: list[tuple[str, Path, bytes]] = []
+    for relative in RESEARCHER_IMAGE_MODULE_INVENTORY:
+        if relative.startswith("/") or "\\" in relative or ".." in Path(relative).parts:
+            raise XinaoError("RESEARCHER_IMAGE_MODULES_INVENTORY_INVALID", relative)
+        path = package_root / relative
+        if not path.is_file() or _is_reparse(path):
+            raise XinaoError("RESEARCHER_IMAGE_MODULES_SOURCE_MISSING", relative)
+        payload = _regular_file_bytes(
+            path,
+            reason_code="RESEARCHER_IMAGE_MODULES_SOURCE_INVALID",
+            maximum=MAX_SKILL_BUNDLE_FILE_BYTES,
+        )
+        if relative.endswith((".py", ".sh", ".json", ".md", ".txt", ".toml", ".keep")) or relative.endswith(
+            ".gitkeep"
+        ):
+            payload = _lf_materialize_bytes(payload)
+        if relative == "entrypoint.py":
+            _assert_canary_entrypoint_invariants(payload)
+        if relative.endswith(".sh"):
+            if b"\r" in payload:
+                raise XinaoError("RESEARCHER_SHELL_CRLF_FORBIDDEN", relative)
+            if not payload.startswith(b"#!/bin/sh\n") and not payload.startswith(b"#!/usr/bin/env"):
+                raise XinaoError("RESEARCHER_SHELL_SHEBANG_INVALID", relative)
+        rows.append((relative, path, payload))
+    if [item[0] for item in rows] != list(RESEARCHER_IMAGE_MODULE_INVENTORY):
+        raise XinaoError("RESEARCHER_IMAGE_MODULES_INVENTORY_MISMATCH", str(package_root))
+    return rows
+
+
+def _researcher_image_modules_tree_sha256(rows: list[tuple[str, Path, bytes]]) -> str:
+    payload = [
+        {"relative_path": relative, "sha256": _sha256_bytes(content)}
+        for relative, _path, content in rows
+    ]
+    return _sha256_bytes(_canonical_bytes(payload))
+
+
+def _stage_researcher_image_modules(
+    build_context: Path, rows: list[tuple[str, Path, bytes]]
+) -> Path:
+    """Materialize dual-profile modules into the owned Docker build context.
+
+    The researcher Dockerfile COPYs ``docker/xinao-researcher/*`` from the minimal
+    staging context (not the full repository root). Omitting episode/MCP/shell
+    modules fails at ``COPY`` with ``not found``. Entrypoint may already exist from
+    donor staging; staged bytes must match canary identity.
+    """
+
+    destination_root = build_context / RESEARCHER_IMAGE_CONTEXT_RELATIVE
+    destination_root.mkdir(parents=True, exist_ok=True)
+    for relative, _source, content in rows:
+        target = destination_root / relative
+        target.parent.mkdir(parents=True, exist_ok=True)
+        if target.exists():
+            existing = _regular_file_bytes(
+                target,
+                reason_code="RESEARCHER_IMAGE_MODULES_STAGING_INVALID",
+                maximum=MAX_SKILL_BUNDLE_FILE_BYTES,
+            )
+            if existing != content:
+                raise XinaoError(
+                    "RESEARCHER_IMAGE_MODULES_STAGING_DRIFT",
+                    f"{relative}: pre-staged bytes differ from locked materialization",
+                )
+            continue
+        _write_bytes_atomic(target, content, create_new=True)
+    return destination_root
+
+
+def _verify_staged_researcher_image_modules(
+    build_context: Path,
+    rows: list[tuple[str, Path, bytes]],
+    *,
+    expected_tree_sha256: str,
+) -> None:
+    """Re-read staged dual-profile modules and bind them to the sealed tree hash."""
+
+    destination_root = build_context / RESEARCHER_IMAGE_CONTEXT_RELATIVE
+    if not destination_root.is_dir() or _is_reparse(destination_root):
+        raise XinaoError("RESEARCHER_IMAGE_MODULES_STAGING_MISSING", str(destination_root))
+    expected = [relative for relative, _path, _content in rows]
+    if not expected:
+        raise XinaoError("RESEARCHER_IMAGE_MODULES_INVENTORY_INVALID", "empty")
+    observed_rows: list[tuple[str, Path, bytes]] = []
+    for relative, _source, expected_content in rows:
+        target = destination_root / relative
+        if not target.is_file() or _is_reparse(target):
+            raise XinaoError("RESEARCHER_IMAGE_MODULES_STAGING_MISSING", relative)
+        try:
+            target.resolve().relative_to(destination_root.resolve())
+        except ValueError as exc:
+            raise XinaoError("RESEARCHER_IMAGE_MODULES_STAGING_PATH_ESCAPE", relative) from exc
+        except OSError as exc:
+            raise XinaoError(
+                "RESEARCHER_IMAGE_MODULES_STAGING_INVALID", f"{relative}: {exc}"
+            ) from exc
+        payload = _regular_file_bytes(
+            target,
+            reason_code="RESEARCHER_IMAGE_MODULES_STAGING_INVALID",
+            maximum=MAX_SKILL_BUNDLE_FILE_BYTES,
+        )
+        if payload != expected_content:
+            raise XinaoError(
+                "RESEARCHER_IMAGE_MODULES_STAGING_DRIFT",
+                f"{relative}: staged bytes drifted from locked inventory materialization",
+            )
+        observed_rows.append((relative, target, payload))
+    if [item[0] for item in observed_rows] != expected:
+        raise XinaoError(
+            "RESEARCHER_IMAGE_MODULES_STAGING_INVENTORY_MISMATCH", str(destination_root)
+        )
+    extras: list[str] = []
+    for path in sorted(destination_root.rglob("*")):
+        if not path.is_file() or _is_reparse(path):
+            continue
+        relative = path.relative_to(destination_root).as_posix()
+        if relative not in expected:
+            extras.append(relative)
+    if extras:
+        raise XinaoError(
+            "RESEARCHER_IMAGE_MODULES_STAGING_EXTRA_FILES", ",".join(extras[:8])
+        )
+    observed_tree = _researcher_image_modules_tree_sha256(observed_rows)
+    if observed_tree != expected_tree_sha256:
+        raise XinaoError(
+            "RESEARCHER_IMAGE_MODULES_STAGING_HASH_MISMATCH",
+            f"expected={expected_tree_sha256} observed={observed_tree}",
+        )
+    # Explicit dual-profile surface checks the host consumer will re-assert on image labels.
+    canary = destination_root / "entrypoint.py"
+    episode = destination_root / "episode_entrypoint.py"
+    if not canary.is_file() or not episode.is_file():
+        raise XinaoError(
+            "RESEARCHER_IMAGE_MODULES_STAGING_MISSING",
+            "entrypoint.py+episode_entrypoint.py required for dual profile",
+        )
+    _assert_canary_entrypoint_invariants(canary.read_bytes())
+
+
+def _dual_profile_image_labels(
+    *,
+    researcher_image_modules_tree_sha256: str,
+) -> dict[str, str]:
+    """Static dual-profile labels sealed into release expected_labels / image inspect."""
+
+    if HEX_SHA256_PATTERN.fullmatch(researcher_image_modules_tree_sha256) is None:
+        raise XinaoError(
+            "RESEARCHER_IMAGE_MODULES_TREE_INVALID", researcher_image_modules_tree_sha256
+        )
+    return {
+        "io.xinao.researcher.image-modules.sha256": researcher_image_modules_tree_sha256,
+        "io.xinao.researcher.default-profile": RESEARCHER_DEFAULT_PROFILE,
+        "io.xinao.researcher.episode-profile": RESEARCHER_EPISODE_PROFILE,
+        "io.xinao.researcher.episode-entrypoint": RESEARCHER_EPISODE_ENTRYPOINT_IMAGE_PATH,
+        "io.xinao.researcher.episode-network-policy": "DENY_ALL_FAIL_CLOSED",
+        "io.xinao.researcher.episode-tool-shell": "/usr/libexec/xinao/episode-tool-shell-wrapper",
+        "io.xinao.researcher.mcp-server": "/opt/xinao-researcher/mcp_episode_lab_server.py",
+        "io.xinao.researcher.mcp-tools-allowlist": RESEARCHER_MCP_TOOLS_ALLOWLIST,
+    }
+
+
+def _inspect_dual_profile_image_labels(labels: Mapping[str, Any] | dict[str, Any]) -> None:
+    """Host-consumer inspect of dual-profile labels on a live or release image."""
+
+    required = _dual_profile_image_labels(
+        researcher_image_modules_tree_sha256=str(
+            labels.get("io.xinao.researcher.image-modules.sha256", "")
+        )
+    )
+    for key, value in required.items():
+        if labels.get(key) != value:
+            raise XinaoError("IMAGE_DUAL_PROFILE_LABEL_MISMATCH", key)
+    entrypoint_label = labels.get("io.xinao.researcher.entrypoint.sha256")
+    if not isinstance(entrypoint_label, str) or HEX_SHA256_PATTERN.fullmatch(entrypoint_label) is None:
+        raise XinaoError("IMAGE_DUAL_PROFILE_LABEL_MISMATCH", "entrypoint.sha256")
+
+
 def _validate_shadow_registry(registry: dict[str, Any]) -> dict[str, Any]:
     shadow = _shadow_record(registry)
     if shadow.get("source_status") != "available":
@@ -2314,6 +2585,11 @@ def _release_identity_payload(
     if include_shadow_runtime:
         payload["shadow_runtime_tree_sha256"] = source_identity.get("shadow_runtime_tree_sha256")
         payload["shadow_runtime_lock_sha256"] = source_identity.get("shadow_runtime_lock_sha256")
+        # Dual-profile modules tree is current-generation only (absent on pre-shadow).
+        if "researcher_image_modules_tree_sha256" in source_identity:
+            payload["researcher_image_modules_tree_sha256"] = source_identity.get(
+                "researcher_image_modules_tree_sha256"
+            )
     return payload
 
 
@@ -2397,10 +2673,15 @@ def _validate_release_manifest(
         raise XinaoError("RELEASE_DONOR_BINARY_IDENTITY_MISSING", _safe_text(donor_binary_sha256))
     shadow_tree = source_identity.get("shadow_runtime_tree_sha256")
     shadow_lock = source_identity.get("shadow_runtime_lock_sha256")
+    modules_tree = source_identity.get("researcher_image_modules_tree_sha256")
     if not isinstance(shadow_tree, str) or HEX_SHA256_PATTERN.fullmatch(shadow_tree) is None:
         raise XinaoError("RELEASE_SHADOW_RUNTIME_TREE_INVALID", _safe_text(shadow_tree))
     if not isinstance(shadow_lock, str) or HEX_SHA256_PATTERN.fullmatch(shadow_lock) is None:
         raise XinaoError("RELEASE_SHADOW_RUNTIME_LOCK_INVALID", _safe_text(shadow_lock))
+    if not isinstance(modules_tree, str) or HEX_SHA256_PATTERN.fullmatch(modules_tree) is None:
+        raise XinaoError(
+            "RELEASE_RESEARCHER_IMAGE_MODULES_TREE_INVALID", _safe_text(modules_tree)
+        )
     if (
         manifest.get("required_bootstrap_protocol") != REQUIRED_BOOTSTRAP_PROTOCOL
         or manifest.get("generic_worker_route_allowed") is not False
@@ -2413,9 +2694,17 @@ def _validate_release_manifest(
         or not isinstance(labels, dict)
         or set(labels) != CURRENT_IMAGE_LABEL_KEYS
         or manifest.get("image_entrypoint")
-        != ["python", "-I", "/opt/xinao-researcher/entrypoint.py"]
+        != ["python", "-I", RESEARCHER_CANARY_ENTRYPOINT_IMAGE_PATH]
     ):
         raise XinaoError("RELEASE_IMAGE_IDENTITY_INVALID", str(manifest_path))
+    if labels.get("io.xinao.researcher.image-modules.sha256") != modules_tree:
+        raise XinaoError("RELEASE_IMAGE_IDENTITY_INVALID", "image-modules.sha256")
+    if labels.get("io.xinao.researcher.default-profile") != RESEARCHER_DEFAULT_PROFILE:
+        raise XinaoError("RELEASE_IMAGE_IDENTITY_INVALID", "default-profile")
+    if labels.get("io.xinao.researcher.episode-profile") != RESEARCHER_EPISODE_PROFILE:
+        raise XinaoError("RELEASE_IMAGE_IDENTITY_INVALID", "episode-profile")
+    if labels.get("io.xinao.researcher.episode-entrypoint") != RESEARCHER_EPISODE_ENTRYPOINT_IMAGE_PATH:
+        raise XinaoError("RELEASE_IMAGE_IDENTITY_INVALID", "episode-entrypoint")
     for value in (manifest.get("state_namespace"), manifest.get("run_namespace")):
         normalized = str(value).lower().replace("-", "_")
         if any(token in normalized for token in FORBIDDEN_RUNTIME_TOKENS):
@@ -2708,12 +2997,19 @@ def _current_source_skill_bundle_identity() -> dict[str, str]:
     shadow_runtime_tree_sha256 = _shadow_runtime_tree_sha256(shadow_rows)
     if HEX_SHA256_PATTERN.fullmatch(shadow_runtime_tree_sha256) is None:
         raise XinaoError("SHADOW_RUNTIME_TREE_INVALID", shadow_runtime_tree_sha256)
+    module_rows = _collect_researcher_image_module_rows(source_root)
+    researcher_image_modules_tree_sha256 = _researcher_image_modules_tree_sha256(module_rows)
+    if HEX_SHA256_PATTERN.fullmatch(researcher_image_modules_tree_sha256) is None:
+        raise XinaoError(
+            "RESEARCHER_IMAGE_MODULES_TREE_INVALID", researcher_image_modules_tree_sha256
+        )
     return {
         "package_version": package_version,
         "capability_version": capability_version,
         "skill_bundle_tree_sha256": tree_sha256,
         "shadow_runtime_tree_sha256": shadow_runtime_tree_sha256,
         "shadow_runtime_lock_sha256": shadow_runtime_lock_sha256,
+        "researcher_image_modules_tree_sha256": researcher_image_modules_tree_sha256,
     }
 
 
@@ -2758,6 +3054,11 @@ def _active_release_requires_forward_upgrade(manifest: dict[str, Any]) -> bool:
     if source_identity.get("shadow_runtime_tree_sha256") != source["shadow_runtime_tree_sha256"]:
         return True
     if source_identity.get("shadow_runtime_lock_sha256") != source["shadow_runtime_lock_sha256"]:
+        return True
+    if (
+        source_identity.get("researcher_image_modules_tree_sha256")
+        != source["researcher_image_modules_tree_sha256"]
+    ):
         return True
     return False
 
@@ -3550,6 +3851,15 @@ def build_release(
             shadow_rows,
             expected_tree_sha256=shadow_runtime_tree_sha256,
         )
+        # Dual-profile modules (canary + episode/MCP/shell) must be staged with LF bytes.
+        module_rows = _collect_researcher_image_module_rows(source_root)
+        researcher_image_modules_tree_sha256 = _researcher_image_modules_tree_sha256(module_rows)
+        _stage_researcher_image_modules(build_context, module_rows)
+        _verify_staged_researcher_image_modules(
+            build_context,
+            module_rows,
+            expected_tree_sha256=researcher_image_modules_tree_sha256,
+        )
         source_identity = {
             "source_commit": commit,
             "source_tree": tree,
@@ -3558,6 +3868,7 @@ def build_release(
             "grok_donor_binary_sha256": donor_binary_sha256,
             "shadow_runtime_tree_sha256": shadow_runtime_tree_sha256,
             "shadow_runtime_lock_sha256": shadow_runtime_lock_sha256,
+            "researcher_image_modules_tree_sha256": researcher_image_modules_tree_sha256,
         }
         source_identity_sha256 = _sha256_bytes(_canonical_bytes(source_identity))
         provisional = {
@@ -3571,10 +3882,11 @@ def build_release(
                 "grok_donor_binary_sha256": donor_binary_sha256,
                 "shadow_runtime_tree_sha256": shadow_runtime_tree_sha256,
                 "shadow_runtime_lock_sha256": shadow_runtime_lock_sha256,
+                "researcher_image_modules_tree_sha256": researcher_image_modules_tree_sha256,
             },
             "skill_bundle_tree_sha256": bundle_manifest["tree_sha256"],
             "image_id": "pending",
-            "image_entrypoint": ["python", "-I", "/opt/xinao-researcher/entrypoint.py"],
+            "image_entrypoint": ["python", "-I", RESEARCHER_CANARY_ENTRYPOINT_IMAGE_PATH],
             "image_labels": {},
             "required_bootstrap_protocol": REQUIRED_BOOTSTRAP_PROTOCOL,
             "generic_worker_route_allowed": False,
@@ -3629,6 +3941,8 @@ def build_release(
             "--build-arg",
             f"SHADOW_RUNTIME_LOCK_SHA256={shadow_runtime_lock_sha256}",
             "--build-arg",
+            f"RESEARCHER_IMAGE_MODULES_TREE_SHA256={researcher_image_modules_tree_sha256}",
+            "--build-arg",
             f"SHADOW_PYDANTIC_VERSION={shadow_pins['pydantic']}",
             "--build-arg",
             f"SHADOW_RFC8785_VERSION={shadow_pins['rfc8785']}",
@@ -3672,9 +3986,16 @@ def build_release(
             "io.xinao.researcher.shadow-runtime.sha256": shadow_runtime_tree_sha256,
             "io.xinao.researcher.shadow-runtime-lock.sha256": shadow_runtime_lock_sha256,
             "io.xinao.researcher.requested-model": REQUESTED_MODEL,
+            **_dual_profile_image_labels(
+                researcher_image_modules_tree_sha256=researcher_image_modules_tree_sha256
+            ),
         }
         if any(labels.get(key) != value for key, value in expected_labels.items()):
             raise XinaoError("IMAGE_LABEL_IDENTITY_MISMATCH", image_id)
+        _inspect_dual_profile_image_labels(labels)
+        entrypoint = (image.get("Config") or {}).get("Entrypoint")
+        if entrypoint != ["python", "-I", RESEARCHER_CANARY_ENTRYPOINT_IMAGE_PATH]:
+            raise XinaoError("IMAGE_ENTRYPOINT_IDENTITY_MISMATCH", image_id)
     finally:
         _remove_donor_extract_container(docker, container_name)
         _remove_donor_staging_root(staging_root)
@@ -9470,6 +9791,9 @@ def _validate_release_image_identity(release: dict[str, Any]) -> str:
         raise XinaoError("IMAGE_LABEL_IDENTITY_MISSING", image_id)
     donor_image_id = release["source_identity"]["grok_donor_image_id"]
     donor_binary_sha256 = release["source_identity"]["grok_donor_binary_sha256"]
+    modules_tree = release["source_identity"].get("researcher_image_modules_tree_sha256")
+    if not isinstance(modules_tree, str) or HEX_SHA256_PATTERN.fullmatch(modules_tree) is None:
+        raise XinaoError("IMAGE_LABEL_IDENTITY_MISMATCH", "researcher_image_modules_tree_sha256")
     required_labels = {
         "io.xinao.researcher.chain": "dedicated-xinao-science",
         "io.xinao.researcher.generic-worker-route": "forbidden",
@@ -9492,6 +9816,7 @@ def _validate_release_image_identity(release: dict[str, Any]) -> str:
             "shadow_runtime_lock_sha256"
         ],
         "io.xinao.researcher.requested-model": REQUESTED_MODEL,
+        **_dual_profile_image_labels(researcher_image_modules_tree_sha256=modules_tree),
     }
     for key, value in required_labels.items():
         if expected_labels.get(key) != value or labels.get(key) != value:
@@ -9499,8 +9824,9 @@ def _validate_release_image_identity(release: dict[str, Any]) -> str:
     for key, value in expected_labels.items():
         if labels.get(key) != value:
             raise XinaoError("IMAGE_LABEL_IDENTITY_MISMATCH", key)
+    _inspect_dual_profile_image_labels(labels)
     entrypoint = (image.get("Config") or {}).get("Entrypoint")
-    expected_entrypoint = ["python", "-I", "/opt/xinao-researcher/entrypoint.py"]
+    expected_entrypoint = ["python", "-I", RESEARCHER_CANARY_ENTRYPOINT_IMAGE_PATH]
     if release.get("image_entrypoint") != expected_entrypoint or entrypoint != expected_entrypoint:
         raise XinaoError("IMAGE_ENTRYPOINT_IDENTITY_MISMATCH", image_id)
     return docker
@@ -11533,7 +11859,778 @@ def _parser() -> argparse.ArgumentParser:
     shadow_portfolio_replay = shadow_sub.add_parser("portfolio-replay")
     shadow_portfolio_replay.add_argument("--root", type=Path, required=True)
     shadow_portfolio_replay.add_argument("--period-index", type=int, required=True)
+    # Local leg-A ResearchEpisode verbs (additive; does not alter INSTRUMENT_CANARY research).
+    research_episode = sub.add_parser("research-episode")
+    research_episode_sub = research_episode.add_subparsers(
+        dest="research_episode_command", required=True
+    )
+    re_start = research_episode_sub.add_parser("start")
+    re_start.add_argument("--root", type=Path, required=True)
+    re_start.add_argument("--question", required=True)
+    re_start.add_argument("--lease-seconds", type=int, default=3600)
+    re_status = research_episode_sub.add_parser("status")
+    re_status.add_argument("--root", type=Path, required=True)
+    re_checkpoint = research_episode_sub.add_parser("checkpoint")
+    re_checkpoint.add_argument("--root", type=Path, required=True)
+    re_checkpoint.add_argument("--expected-head", required=True)
+    re_checkpoint.add_argument("--progress-note", default="")
+    re_checkpoint.add_argument("--lab-relative", default=None)
+    re_checkpoint.add_argument("--mark-interrupted", action="store_true")
+    re_resume = research_episode_sub.add_parser("resume")
+    re_resume.add_argument("--root", type=Path, required=True)
+    re_resume.add_argument("--expected-head", required=True)
+    re_resume.add_argument("--expected-session", default=None)
+    re_cancel = research_episode_sub.add_parser("cancel")
+    re_cancel.add_argument("--root", type=Path, required=True)
+    re_absorb = research_episode_sub.add_parser("absorb")
+    re_absorb.add_argument("--root", type=Path, required=True)
+    re_absorb.add_argument("--expected-head", required=True)
+    re_absorb.add_argument("--candidate", type=Path, default=None)
     return parser
+
+# ---------------------------------------------------------------------------
+# Local leg-A ResearchEpisode lifecycle (host-side; no daemon/Goal/Temporal)
+# Candidate-only. Capability remains UNAVAILABLE until live tool-namespace receipt.
+# ---------------------------------------------------------------------------
+
+RESEARCH_EPISODE_SCHEMA = "xinao.research_episode_state.v1"
+RESEARCH_EPISODE_CHECKPOINT_SCHEMA = "xinao.research_episode_checkpoint.v1"
+RESEARCH_EPISODE_PROFILE_STATUS = "UNAVAILABLE_AWAITING_TOOL_NAMESPACE_RECEIPT"
+TOOL_NAMESPACE_RECEIPT_SCHEMA = "xinao.tool_namespace_separation_receipt.v1"
+GENUINE_SCIENTIST_PROFILE_ID = "genuine_scientist"
+TOOL_NAMESPACE_RECEIPT_REQUIRED_NEGATIVE_PROOF_IDS = (
+    "credential_read_denied",
+    "path_traversal_denied",
+    "symlink_escape_denied",
+    "proc_env_leak_denied",
+    "worktree_escape_denied",
+    "ledger_outcome_mutation_denied",
+    "capability_drift_denied",
+)
+TOOL_NAMESPACE_RECEIPT_MAX_AGE_SECONDS = 7 * 24 * 3600
+RESEARCH_EPISODE_LEASE_WAIT_SECONDS = 5.0
+RESEARCH_EPISODE_LOCK_NAME = "episode.lease.lock"
+
+
+def _research_episode_now() -> str:
+    return dt.datetime.now(dt.UTC).strftime("%Y%m%dT%H%M%S")
+
+
+def _research_episode_id(prefix: str) -> str:
+    return f"{prefix}_{_research_episode_now()}_{uuid.uuid4().hex[:12]}"
+
+
+def _research_episode_paths(root: Path) -> dict[str, Path]:
+    root = Path(root)
+    return {
+        "root": root,
+        "lab": root / "lab",
+        "outbox": root / "outbox",
+        "objects": root / "objects" / "sha256",
+        "artifacts": root / "artifacts" / "sha256",
+        "head": root / "head.json",
+        "meta": root / "episode_meta.json",
+        "lock": root / RESEARCH_EPISODE_LOCK_NAME,
+        "journal": root / "invocation_journal.jsonl",
+        "dual_lease": root / "dual_container_pair_lease.json",
+    }
+
+
+def _research_episode_assert_root_allowed(root: Path) -> None:
+    """Reject C: drive roots under Windows semantics (no implicit C growth)."""
+    text = str(root)
+    # Normalize drive forms: C:\ C:/ c: and /mnt/c
+    if re.match(r"(?i)^[cC]:([\\/]|$)", text) or text.lower().startswith("/mnt/c/") or text.lower().startswith("/c/"):
+        raise XinaoError("RESEARCH_EPISODE_ROOT_C_DRIVE_FORBIDDEN", text)
+
+
+@contextmanager
+def _research_episode_lock(root: Path):
+    paths = _research_episode_paths(root)
+    paths["root"].mkdir(parents=True, exist_ok=True)
+    lock_path = paths["lock"]
+    fh = open(lock_path, "a+b")
+    deadline = time.time() + RESEARCH_EPISODE_LEASE_WAIT_SECONDS
+    locked = False
+    try:
+        while True:
+            try:
+                if os.name == "nt":
+                    import msvcrt  # type: ignore
+
+                    try:
+                        msvcrt.locking(fh.fileno(), msvcrt.LK_NBLCK, 1)
+                        locked = True
+                        break
+                    except OSError:
+                        pass
+                else:
+                    import fcntl
+
+                    try:
+                        fcntl.flock(fh.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+                        locked = True
+                        break
+                    except BlockingIOError:
+                        pass
+            except Exception:
+                pass
+            if time.time() >= deadline:
+                raise XinaoError(
+                    "RESEARCH_EPISODE_LEASE_HELD",
+                    f"exclusive lease held: {lock_path}",
+                )
+            time.sleep(0.05)
+        yield
+    finally:
+        try:
+            if locked:
+                if os.name == "nt":
+                    import msvcrt  # type: ignore
+
+                    try:
+                        fh.seek(0)
+                        msvcrt.locking(fh.fileno(), msvcrt.LK_UNLCK, 1)
+                    except OSError:
+                        pass
+                else:
+                    import fcntl
+
+                    fcntl.flock(fh.fileno(), fcntl.LOCK_UN)
+        finally:
+            fh.close()
+
+
+def _research_episode_put_bytes(root: Path, kind: str, payload: bytes) -> str:
+    digest = _sha256_bytes(payload)
+    if kind == "objects":
+        dest_dir = _research_episode_paths(root)["objects"] / digest[:2]
+        dest = dest_dir / f"{digest}.json"
+    elif kind == "artifacts":
+        dest_dir = _research_episode_paths(root)["artifacts"] / digest[:2]
+        dest = dest_dir / f"{digest}.json"
+    else:
+        raise XinaoError("RESEARCH_EPISODE_OBJECT_KIND_INVALID", kind)
+    dest_dir.mkdir(parents=True, exist_ok=True)
+    if dest.exists():
+        existing = dest.read_bytes()
+        if existing != payload:
+            raise XinaoError(
+            "RESEARCH_EPISODE_IMMUTABLE_COLLISION" if kind == "artifacts" else "RESEARCH_EPISODE_OBJECT_HASH_MISMATCH",
+            f"cas collision {digest}",
+        )
+        return digest
+    tmp = dest.with_suffix(dest.suffix + ".tmp")
+    tmp.write_bytes(payload)
+    os.replace(tmp, dest)
+    return digest
+
+
+def _research_episode_load_bytes(root: Path, kind: str, digest: str) -> bytes:
+    if kind == "objects":
+        path = _research_episode_paths(root)["objects"] / digest[:2] / f"{digest}.json"
+    else:
+        path = _research_episode_paths(root)["artifacts"] / digest[:2] / f"{digest}.json"
+    if not path.is_file():
+        raise XinaoError("RESEARCH_EPISODE_OBJECT_MISSING", digest)
+    payload = path.read_bytes()
+    if _sha256_bytes(payload) != digest:
+        raise XinaoError(
+            "RESEARCH_EPISODE_ARTIFACT_HASH_MISMATCH" if kind == "artifacts" else "RESEARCH_EPISODE_OBJECT_HASH_MISMATCH",
+            digest,
+        )
+    return payload
+
+
+def _research_episode_write_head(root: Path, head: dict[str, Any]) -> None:
+    paths = _research_episode_paths(root)
+    tmp = paths["head"].with_suffix(".tmp")
+    tmp.write_bytes(_canonical_bytes(head))
+    os.replace(tmp, paths["head"])
+
+
+def _research_episode_read_meta(root: Path) -> dict[str, Any]:
+    paths = _research_episode_paths(root)
+    if not paths["meta"].is_file():
+        raise XinaoError("RESEARCH_EPISODE_META_MISSING", str(paths["meta"]))
+    return json.loads(paths["meta"].read_text(encoding="utf-8"))
+
+
+def _research_episode_load_head(root: Path) -> dict[str, Any]:
+    paths = _research_episode_paths(root)
+    if not paths["head"].is_file():
+        raise XinaoError("RESEARCH_EPISODE_HEAD_MISSING", str(paths["head"]))
+    head = json.loads(paths["head"].read_text(encoding="utf-8"))
+    meta = _research_episode_read_meta(root)
+    if head.get("episode_id") != meta.get("episode_id"):
+        raise XinaoError("RESEARCH_EPISODE_FOREIGN_EPISODE", str(head.get("episode_id")))
+    if "provider_session_identity" in head:
+        raise XinaoError(
+            "RESEARCH_EPISODE_PROVIDER_SESSION_NOT_AUTHORITY",
+            "provider_session_identity",
+        )
+    digest = head.get("head_checkpoint_sha256")
+    if not isinstance(digest, str) or len(digest) != 64:
+        raise XinaoError("RESEARCH_EPISODE_HEAD_INVALID", "head_checkpoint_sha256")
+    payload = _research_episode_load_bytes(root, "objects", digest)
+    checkpoint = json.loads(payload.decode("utf-8"))
+    checkpoint["checkpoint_sha256"] = digest
+    head["checkpoint"] = checkpoint
+    return head
+
+
+def _research_episode_append_journal(root: Path, event: dict[str, Any]) -> None:
+    paths = _research_episode_paths(root)
+    with open(paths["journal"], "a", encoding="utf-8") as fh:
+        fh.write(json.dumps(event, ensure_ascii=False, sort_keys=True) + "\n")
+
+
+def _research_episode_container_identity(
+    *,
+    verb: str,
+    episode_id: str,
+    session_id: str,
+    generation: int,
+    lab_root: Path,
+    root: Path,
+) -> dict[str, Any]:
+    profile_status = RESEARCH_EPISODE_PROFILE_STATUS
+    dual = os.environ.get("XINAO_DUAL_CONTAINER_HOST", "").strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
+    if not dual:
+        return {
+            "schema_version": "xinao.research_episode_container_contract.v1",
+            "driver": "mock_host_side_until_sibling_container",
+            "verb": verb,
+            "episode_id": episode_id,
+            "session_id": session_id,
+            "generation": generation,
+            "container_id": None,
+            "tool_container_id": None,
+            "transport_container_id": None,
+            "image_id": None,
+            "profile_status": profile_status,
+            "writable_mounts": ["episode_lab", "outbox_candidates"],
+            "forbidden_mounts": [
+                "shadow_ledger",
+                "freeze_store",
+                "outcome_store",
+                "settlement",
+                "auth_secrets_on_tool",
+                "owner_adoption",
+                "docker_socket",
+            ],
+            "network_mode": "none",
+            "restart_policy": "no",
+            "daemon": False,
+            "goal": False,
+            "temporal_leg_b": False,
+            "generic_file_shell_tools": False,
+            "lab_root": str(lab_root),
+            "completion_claim_allowed": False,
+        }
+    host_path = Path(__file__).resolve().parent / "dual_container_host.py"
+    spec = importlib.util.spec_from_file_location("xinao_dual_container_host_runtime", host_path)
+    if spec is None or spec.loader is None:
+        raise XinaoError("DUAL_CONTAINER_HOST_MISSING", str(host_path))
+    host_mod = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = host_mod
+    spec.loader.exec_module(host_mod)
+    transport = os.environ.get("XINAO_TRANSPORT_IMAGE", "").strip()
+    tool = os.environ.get("XINAO_TOOL_EXECUTOR_IMAGE", "").strip()
+    auth = os.environ.get("XINAO_AUTH_HOST_PATH", "").strip()
+    synthetic = os.environ.get("XINAO_DUAL_CONTAINER_SYNTHETIC", "").strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
+    if not transport or not tool or not auth:
+        raise XinaoError(
+            "DUAL_CONTAINER_HOST_CONFIG_REQUIRED",
+            "XINAO_TRANSPORT_IMAGE, XINAO_TOOL_EXECUTOR_IMAGE, XINAO_AUTH_HOST_PATH required",
+        )
+    host = host_mod.DualContainerHost(
+        host_mod.DualHostConfig(
+            transport_image=transport,
+            tool_image=tool,
+            auth_host_path=Path(auth),
+            episode_root=Path(root),
+            synthetic=synthetic,
+        )
+    )
+    return host_mod.research_episode_dual_container_driver(
+        verb=verb,
+        episode_id=episode_id,
+        session_id=session_id,
+        generation=generation,
+        lab_root=lab_root,
+        profile_status=profile_status,
+        host=host,
+    )
+
+
+def _research_episode_commit_checkpoint(
+    root: Path,
+    *,
+    episode_id: str,
+    session_id: str,
+    generation: int,
+    status: str,
+    progress_note: str,
+    parent_sha256: str | None,
+    container_identity: dict[str, Any],
+    lab_relative: str | None = None,
+    lab_bytes: bytes | None = None,
+    candidate_sha256: str | None = None,
+) -> dict[str, Any]:
+    paths = _research_episode_paths(root)
+    if lab_relative is not None and lab_bytes is not None:
+        rel = Path(lab_relative)
+        if ".." in rel.parts or rel.is_absolute():
+            raise XinaoError("RESEARCH_EPISODE_LAB_PATH_INVALID", lab_relative)
+        lowered = lab_relative.replace("\\", "/").lower()
+        for token in ("ledger", "freeze", "outcome", "settlement", "shadow", "auth"):
+            if token in lowered.split("/"):
+                raise XinaoError("RESEARCH_EPISODE_UNAUTHORIZED_LEDGER_PATH", lab_relative)
+        if any(part.startswith("..") for part in rel.parts):
+            raise XinaoError("RESEARCH_EPISODE_LAB_PATH_INVALID", lab_relative)
+        target = paths["lab"] / lab_relative
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_bytes(lab_bytes)
+    body = {
+        "schema_version": RESEARCH_EPISODE_CHECKPOINT_SCHEMA,
+        "episode_id": episode_id,
+        "session_id": session_id,
+        "generation": generation,
+        "status": status,
+        "progress_note": progress_note,
+        "parent_checkpoint_sha256": parent_sha256,
+        "container_identity": container_identity,
+        "lab_relative": lab_relative,
+        "lab_bytes_sha256": _sha256_bytes(lab_bytes) if lab_bytes is not None else None,
+        "candidate_sha256": candidate_sha256,
+        "created_at": dt.datetime.now(dt.UTC).isoformat().replace("+00:00", "Z"),
+        "completion_claim_allowed": False,
+        "owner_adopted": False,
+        "science_restored": False,
+        "parent_complete": False,
+    }
+    sealed_bytes = _canonical_bytes(body)
+    digest = _sha256_bytes(sealed_bytes)
+    body_with_digest = dict(body)
+    body_with_digest["checkpoint_sha256"] = digest
+    _research_episode_put_bytes(root, "objects", sealed_bytes)
+    head = {
+        "schema_version": RESEARCH_EPISODE_SCHEMA,
+        "episode_id": episode_id,
+        "session_id": session_id,
+        "generation": generation,
+        "status": status,
+        "head_checkpoint_sha256": digest,
+        "updated_at": body["created_at"],
+        "completion_claim_allowed": False,
+    }
+    _research_episode_write_head(root, head)
+    _research_episode_append_journal(
+        root,
+        {
+            "event": "checkpoint",
+            "status": status,
+            "generation": generation,
+            "head_checkpoint_sha256": digest,
+        },
+    )
+    out_status = status
+    if status == "INTERRUPTED":
+        out_status = "INTERRUPTED_CHECKPOINT"
+    elif status == "RUNNING":
+        out_status = "CHECKPOINT_COMMITTED"
+    elif status not in {"ABSORBED", "CANCELLED", "STARTED", "RESUMED"}:
+        out_status = "CHECKPOINT_COMMITTED"
+    return {
+        "status": out_status,
+        "head": head,
+        "head_checkpoint_sha256": digest,
+        "checkpoint": body_with_digest,
+        "generation": generation,
+        "session_id": session_id,
+        "episode_id": episode_id,
+        "completion_claim_allowed": False,
+    }
+
+
+
+def _research_episode_resolve_profile_status(root: Path) -> str:
+    """Host-sealed tool-namespace receipt may elevate; episode-local self-issue never does."""
+    env_path = (os.environ.get("XINAO_TOOL_NAMESPACE_SEPARATION_RECEIPT") or "").strip()
+    if not env_path:
+        return RESEARCH_EPISODE_PROFILE_STATUS
+    path = Path(env_path)
+    try:
+        if not path.is_file():
+            return RESEARCH_EPISODE_PROFILE_STATUS
+        # Episode-local self-issue is not host-sealed.
+        try:
+            if path.resolve().is_relative_to(Path(root).resolve()):
+                return RESEARCH_EPISODE_PROFILE_STATUS
+        except Exception:
+            if str(path.resolve()).startswith(str(Path(root).resolve())):
+                return RESEARCH_EPISODE_PROFILE_STATUS
+        receipt = json.loads(path.read_text(encoding="utf-8"))
+        if receipt.get("schema_version") != TOOL_NAMESPACE_RECEIPT_SCHEMA:
+            return RESEARCH_EPISODE_PROFILE_STATUS
+        if receipt.get("profile_id") != GENUINE_SCIENTIST_PROFILE_ID:
+            return RESEARCH_EPISODE_PROFILE_STATUS
+        if receipt.get("tool_namespace_isolated") is not True:
+            return RESEARCH_EPISODE_PROFILE_STATUS
+        if receipt.get("auth_reachable_from_model_tools") is not False:
+            return RESEARCH_EPISODE_PROFILE_STATUS
+        if receipt.get("ledger_writable_from_model_tools") is not False:
+            return RESEARCH_EPISODE_PROFILE_STATUS
+        if receipt.get("freeze_writable_from_model_tools") is not False:
+            return RESEARCH_EPISODE_PROFILE_STATUS
+        if receipt.get("outcome_writable_from_model_tools") is not False:
+            return RESEARCH_EPISODE_PROFILE_STATUS
+        if receipt.get("same_container_file_tools_allowed") is not False:
+            return RESEARCH_EPISODE_PROFILE_STATUS
+        if receipt.get("completion_claim_allowed") is not False:
+            return RESEARCH_EPISODE_PROFILE_STATUS
+        if receipt.get("authority") is not False:
+            return RESEARCH_EPISODE_PROFILE_STATUS
+        if receipt.get("issuer") != "host_security_evidence":
+            return RESEARCH_EPISODE_PROFILE_STATUS
+        sealed_at = receipt.get("sealed_at")
+        if not isinstance(sealed_at, str):
+            return RESEARCH_EPISODE_PROFILE_STATUS
+        try:
+            sealed_dt = dt.datetime.fromisoformat(sealed_at.replace("Z", "+00:00"))
+        except ValueError:
+            return RESEARCH_EPISODE_PROFILE_STATUS
+        age = (dt.datetime.now(dt.UTC) - sealed_dt.astimezone(dt.UTC)).total_seconds()
+        if age < 0 or age > TOOL_NAMESPACE_RECEIPT_MAX_AGE_SECONDS:
+            return RESEARCH_EPISODE_PROFILE_STATUS
+        proofs = receipt.get("negative_proof_ids") or []
+        required = set(TOOL_NAMESPACE_RECEIPT_REQUIRED_NEGATIVE_PROOF_IDS)
+        if not required.issubset(set(proofs)):
+            return RESEARCH_EPISODE_PROFILE_STATUS
+        return "AVAILABLE"
+    except Exception:
+        return RESEARCH_EPISODE_PROFILE_STATUS
+
+def research_episode_start(
+    *,
+    root: Path | str,
+    question: str,
+    lease_seconds: int = 3600,
+) -> dict[str, Any]:
+    del lease_seconds
+    root = Path(root)
+    _research_episode_assert_root_allowed(root)
+    with _research_episode_lock(root):
+        paths = _research_episode_paths(root)
+        if paths["meta"].is_file():
+            raise XinaoError("RESEARCH_EPISODE_EXISTS", str(root))
+        for key in ("lab", "outbox", "objects", "artifacts"):
+            paths[key].mkdir(parents=True, exist_ok=True)
+        episode_id = _research_episode_id("xre")
+        session_id = _research_episode_id("xrsess")
+        profile_status = _research_episode_resolve_profile_status(root)
+        meta = {
+            "schema_version": RESEARCH_EPISODE_SCHEMA,
+            "episode_id": episode_id,
+            "session_id": session_id,
+            "question": question,
+            "created_at": dt.datetime.now(dt.UTC).isoformat().replace("+00:00", "Z"),
+            "instrument_canary_route_preserved": True,
+            "profile_status": profile_status,
+            "dual_container_fallback": {
+                "strategy": "dual_container_ipc",
+                "same_container_file_tools_allowed": False,
+                "auth_and_tools_co_located_allowed": False,
+            },
+            "completion_claim_allowed": False,
+            "owner_adopted": False,
+            "science_restored": False,
+            "parent_complete": False,
+        }
+        paths["meta"].write_bytes(_canonical_bytes(meta))
+        container_identity = _research_episode_container_identity(
+            verb="start",
+            episode_id=episode_id,
+            session_id=session_id,
+            generation=1,
+            lab_root=paths["lab"],
+            root=root,
+        )
+        committed = _research_episode_commit_checkpoint(
+            root,
+            episode_id=episode_id,
+            session_id=session_id,
+            generation=1,
+            status="STARTED",
+            progress_note=f"start: {question[:200]}",
+            parent_sha256=None,
+            container_identity=container_identity,
+        )
+        return {
+            "status": "STARTED",
+            "episode": meta,
+            "episode_id": episode_id,
+            "session_id": session_id,
+            "head_checkpoint_sha256": committed["head_checkpoint_sha256"],
+            "head": committed["head"],
+            "container_identity": container_identity,
+            "profile_status": profile_status,
+            "instrument_canary_route_preserved": True,
+            "completion_claim_allowed": False,
+            "owner_adopted": False,
+            "science_restored": False,
+            "parent_complete": False,
+        }
+
+
+def research_episode_status(*, root: Path | str) -> dict[str, Any]:
+    root = Path(root)
+    with _research_episode_lock(root):
+        head = _research_episode_load_head(root)
+        meta = _research_episode_read_meta(root)
+        chain_length = 0
+        cursor = head.get("head_checkpoint_sha256")
+        seen: set[str] = set()
+        while isinstance(cursor, str) and cursor not in seen:
+            seen.add(cursor)
+            payload = _research_episode_load_bytes(root, "objects", cursor)
+            ckpt = json.loads(payload.decode("utf-8"))
+            chain_length += 1
+            cursor = ckpt.get("parent_checkpoint_sha256")
+        return {
+            "status": "STATUS",
+            "episode_id": meta["episode_id"],
+            "session_id": meta["session_id"],
+            "head": head,
+            "head_checkpoint_sha256": head["head_checkpoint_sha256"],
+            "chain_length": chain_length,
+            "replayable": True,
+            "profile_status": RESEARCH_EPISODE_PROFILE_STATUS,
+            "completion_claim_allowed": False,
+        }
+
+
+def research_episode_checkpoint(
+    *,
+    root: Path | str,
+    expected_head_sha256: str,
+    progress_note: str = "",
+    lab_relative: str | None = None,
+    lab_bytes: bytes | None = None,
+    mark_interrupted: bool = False,
+) -> dict[str, Any]:
+    root = Path(root)
+    with _research_episode_lock(root):
+        head = _research_episode_load_head(root)
+        if head.get("status") == "CANCELLED":
+            raise XinaoError("RESEARCH_EPISODE_CANCELLED", "checkpoint after cancel")
+        if head.get("status") == "ABSORBED":
+            raise XinaoError("RESEARCH_EPISODE_ABSORBED", "checkpoint after absorb")
+        if head.get("head_checkpoint_sha256") != expected_head_sha256:
+            raise XinaoError("RESEARCH_EPISODE_STALE_HEAD", expected_head_sha256)
+        meta = _research_episode_read_meta(root)
+        generation = int(head.get("generation") or 0) + 1
+        container_identity = _research_episode_container_identity(
+            verb="checkpoint",
+            episode_id=meta["episode_id"],
+            session_id=meta["session_id"],
+            generation=generation,
+            lab_root=_research_episode_paths(root)["lab"],
+            root=root,
+        )
+        status = "INTERRUPTED" if mark_interrupted else "RUNNING"
+        return _research_episode_commit_checkpoint(
+            root,
+            episode_id=meta["episode_id"],
+            session_id=meta["session_id"],
+            generation=generation,
+            status=status,
+            progress_note=progress_note,
+            parent_sha256=expected_head_sha256,
+            container_identity=container_identity,
+            lab_relative=lab_relative,
+            lab_bytes=lab_bytes,
+        )
+
+
+def research_episode_resume(
+    *,
+    root: Path | str,
+    expected_head_sha256: str,
+    expected_session_id: str | None = None,
+    provider_session_store: Path | str | None = None,
+) -> dict[str, Any]:
+    root = Path(root)
+    if provider_session_store is not None:
+        raise XinaoError(
+            "RESEARCH_EPISODE_PROVIDER_SESSION_NOT_AUTHORITY",
+            str(provider_session_store),
+        )
+    with _research_episode_lock(root):
+        head = _research_episode_load_head(root)
+        if head.get("status") == "CANCELLED":
+            raise XinaoError("RESEARCH_EPISODE_CANCELLED", "resume after cancel")
+        if head.get("head_checkpoint_sha256") != expected_head_sha256:
+            raise XinaoError("RESEARCH_EPISODE_STALE_HEAD", expected_head_sha256)
+        meta = _research_episode_read_meta(root)
+        if expected_session_id is not None and expected_session_id != meta["session_id"]:
+            raise XinaoError("RESEARCH_EPISODE_FOREIGN_SESSION", expected_session_id)
+        generation = int(head.get("generation") or 0) + 1
+        container_identity = _research_episode_container_identity(
+            verb="resume",
+            episode_id=meta["episode_id"],
+            session_id=meta["session_id"],
+            generation=generation,
+            lab_root=_research_episode_paths(root)["lab"],
+            root=root,
+        )
+        committed = _research_episode_commit_checkpoint(
+            root,
+            episode_id=meta["episode_id"],
+            session_id=meta["session_id"],
+            generation=generation,
+            status="RESUMED",
+            progress_note="resume exact session",
+            parent_sha256=expected_head_sha256,
+            container_identity=container_identity,
+        )
+        return {
+            **committed,
+            "status": "RESUMED",
+            "exact_session_bound": True,
+            "session_id": meta["session_id"],
+            "container_identity": container_identity,
+            "profile_status": RESEARCH_EPISODE_PROFILE_STATUS,
+            "completion_claim_allowed": False,
+        }
+
+
+def research_episode_cancel(*, root: Path | str) -> dict[str, Any]:
+    root = Path(root)
+    with _research_episode_lock(root):
+        head = _research_episode_load_head(root)
+        if head.get("status") == "CANCELLED":
+            return {
+                "status": "CANCEL_IDEMPOTENT",
+                "head": head,
+                "head_checkpoint_sha256": head["head_checkpoint_sha256"],
+                "completion_claim_allowed": False,
+            }
+        meta = _research_episode_read_meta(root)
+        generation = int(head.get("generation") or 0) + 1
+        container_identity = _research_episode_container_identity(
+            verb="cancel",
+            episode_id=meta["episode_id"],
+            session_id=meta["session_id"],
+            generation=generation,
+            lab_root=_research_episode_paths(root)["lab"],
+            root=root,
+        )
+        committed = _research_episode_commit_checkpoint(
+            root,
+            episode_id=meta["episode_id"],
+            session_id=meta["session_id"],
+            generation=generation,
+            status="CANCELLED",
+            progress_note="cancel",
+            parent_sha256=head["head_checkpoint_sha256"],
+            container_identity=container_identity,
+        )
+        return {**committed, "status": "CANCELLED", "completion_claim_allowed": False}
+
+
+def research_episode_absorb(
+    *,
+    root: Path | str,
+    expected_head_sha256: str,
+    candidate: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    root = Path(root)
+    with _research_episode_lock(root):
+        head = _research_episode_load_head(root)
+        if head.get("head_checkpoint_sha256") != expected_head_sha256:
+            raise XinaoError("RESEARCH_EPISODE_STALE_HEAD", expected_head_sha256)
+        if head.get("status") == "CANCELLED":
+            raise XinaoError("RESEARCH_EPISODE_CANCELLED", "absorb after cancel")
+        meta = _research_episode_read_meta(root)
+        if candidate is None:
+            candidate = {
+                "schema_version": "xinao.research_episode_candidate.v1",
+                "status": "CANDIDATE_FOR_CODEX_REVIEW",
+                "summary": "typed candidate placeholder",
+                "owner_adopted": False,
+                "scientific_grade": None,
+                "profitability_claim_allowed": False,
+                "science_restored": False,
+                "parent_complete": False,
+                "completion_claim_allowed": False,
+            }
+        candidate = dict(candidate)
+        # Reject authority elevation in absorb inputs.
+        if candidate.get("owner_adopted") is True:
+            raise XinaoError("RESEARCH_EPISODE_ABSORB_ADOPTION_FORBIDDEN", "owner_adopted")
+        if candidate.get("completion_claim_allowed") is True:
+            raise XinaoError("RESEARCH_EPISODE_COMPLETION_CLAIM_FORBIDDEN", "completion_claim_allowed")
+        if candidate.get("science_restored") is True:
+            raise XinaoError("RESEARCH_EPISODE_SCIENCE_RESTORED_FORBIDDEN", "science_restored")
+        if candidate.get("parent_complete") is True:
+            raise XinaoError("RESEARCH_EPISODE_PARENT_COMPLETE_FORBIDDEN", "parent_complete")
+        if candidate.get("scientific_grade") not in {None, "CANDIDATE_ONLY", "UNGRADED"}:
+            # Allow null only for host absorb; non-null grades are Codex Owner only.
+            if candidate.get("scientific_grade") is not None:
+                raise XinaoError(
+                    "RESEARCH_EPISODE_SCIENTIFIC_GRADE_FORBIDDEN",
+                    str(candidate.get("scientific_grade")),
+                )
+        candidate["owner_adopted"] = False
+        candidate["completion_claim_allowed"] = False
+        candidate["science_restored"] = False
+        candidate["parent_complete"] = False
+        candidate.setdefault("profitability_claim_allowed", False)
+        cand_bytes = _canonical_bytes(candidate)
+        cand_digest = _research_episode_put_bytes(root, "artifacts", cand_bytes)
+        outbox = _research_episode_paths(root)["outbox"] / "candidate.json"
+        outbox.write_bytes(cand_bytes)
+        generation = int(head.get("generation") or 0) + 1
+        container_identity = _research_episode_container_identity(
+            verb="absorb",
+            episode_id=meta["episode_id"],
+            session_id=meta["session_id"],
+            generation=generation,
+            lab_root=_research_episode_paths(root)["lab"],
+            root=root,
+        )
+        committed = _research_episode_commit_checkpoint(
+            root,
+            episode_id=meta["episode_id"],
+            session_id=meta["session_id"],
+            generation=generation,
+            status="ABSORBED",
+            progress_note="absorb for Codex review only",
+            parent_sha256=expected_head_sha256,
+            container_identity=container_identity,
+            candidate_sha256=cand_digest,
+        )
+        return {
+            **committed,
+            "status": "ABSORBED_FOR_CODEX_REVIEW",
+            "codex_review_only": True,
+            "owner_adopted": False,
+            "scientific_grade": candidate.get("scientific_grade"),
+            "candidate_sha256": cand_digest,
+            "completion_claim_allowed": False,
+        }
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -11547,6 +12644,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             "bootstrap-migrate",
             "bootstrap-forward-upgrade",
             "recover",
+            "research-episode",
         }:
             with _activation_lock():
                 _validate_bootstrap_fence_locked(args.command)
@@ -11609,8 +12707,57 @@ def main(argv: Sequence[str] | None = None) -> int:
                 notes=getattr(args, "notes", None),
                 period_index=getattr(args, "period_index", None),
             )
-        else:
+        elif args.command == "research-episode":
+            if args.research_episode_command == "start":
+                value = research_episode_start(
+                    root=args.root,
+                    question=args.question,
+                    lease_seconds=args.lease_seconds,
+                )
+            elif args.research_episode_command == "status":
+                value = research_episode_status(root=args.root)
+            elif args.research_episode_command == "checkpoint":
+                lab_bytes = None
+                if args.lab_relative is not None:
+                    lab_path = Path(args.root) / "lab" / args.lab_relative
+                    # checkpoint may create lab path; accept optional pre-read only when exists
+                    # Prefer explicit empty bytes when relative given without prior file — caller
+                    # uses progress_note; lab materialization optional via env path not used here.
+                    lab_bytes = b""
+                value = research_episode_checkpoint(
+                    root=args.root,
+                    expected_head_sha256=args.expected_head,
+                    progress_note=args.progress_note,
+                    lab_relative=args.lab_relative,
+                    lab_bytes=lab_bytes if args.lab_relative is not None else None,
+                    mark_interrupted=args.mark_interrupted,
+                )
+            elif args.research_episode_command == "resume":
+                value = research_episode_resume(
+                    root=args.root,
+                    expected_head_sha256=args.expected_head,
+                    expected_session_id=args.expected_session,
+                )
+            elif args.research_episode_command == "cancel":
+                value = research_episode_cancel(root=args.root)
+            elif args.research_episode_command == "absorb":
+                candidate = None
+                if args.candidate is not None:
+                    candidate = json.loads(Path(args.candidate).read_text(encoding="utf-8"))
+                value = research_episode_absorb(
+                    root=args.root,
+                    expected_head_sha256=args.expected_head,
+                    candidate=candidate,
+                )
+            else:
+                raise XinaoError(
+                    "INVOCATION_ARGUMENTS_INVALID",
+                    f"unknown research-episode command: {args.research_episode_command}",
+                )
+        elif args.command == "research":
             value = research(args.question, args.as_of, args.material)
+        else:
+            raise XinaoError("INVOCATION_ARGUMENTS_INVALID", f"unknown command: {args.command}")
     except XinaoError as error:
         print(json.dumps(_error_envelope(error), ensure_ascii=False, sort_keys=True))
         return 2

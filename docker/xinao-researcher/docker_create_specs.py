@@ -1,0 +1,936 @@
+"""Docker create/mount/network specifications for dual-container fallback.
+
+No Compose, Kubernetes, daemon, Temporal, scheduler, or resident service.
+These are pure data + helpers that Owner/Codex may pass to `docker create`
+or equivalent one-shot runners.
+
+Transport container: may hold Grok auth; exposes no generic file/shell tool.
+Tool executor: no auth/config/provider session; episode lab + private tmp only;
+network denied; uid/gid 65532; zero caps; NNP; no host socket/root/ledger/outcome.
+"""
+
+from __future__ import annotations
+
+from typing import Any
+
+TOOL_UID = 65532
+TOOL_GID = 65532
+
+# Paths inside tool-executor container.
+TOOL_LAB_MOUNT = "/episode-lab"
+TOOL_IPC_MOUNT = "/ipc"
+TOOL_TMP = "/tmp"
+TOOL_REPLAY_STATE = f"{TOOL_IPC_MOUNT}/.xinao-replay"
+
+# Explicitly forbidden mount sources/targets for tool executor.
+FORBIDDEN_TOOL_MOUNTS = (
+    "/var/run/docker.sock",
+    "/run/docker.sock",
+    "/var/run/podman/podman.sock",
+    "/grok-home",
+    "/root/.grok",
+    "/ledger",
+    "/outcomes",
+    "/freeze",
+    "/settlement",
+    "/shadow",
+    "/",  # host root
+)
+
+
+# Transport container internal mounts for dual-host orchestration.
+TRANSPORT_AUTH_MOUNT = "/grok-home/.grok"
+TRANSPORT_INPUT_MOUNT = "/input"
+TRANSPORT_OUTPUT_MOUNT = "/output"
+TRANSPORT_SESSION_MOUNT = "/grok-home/.grok/sessions"
+TRANSPORT_MATERIAL_MOUNT = "/material"
+TRANSPORT_MCP_BRIDGE_MOUNT = "/opt/xinao-attempt/mcp_tool_bridge.py"  # legacy bridge (optional)
+TRANSPORT_MCP_IPC_CONTRACT_MOUNT = "/opt/xinao-attempt/ipc_contract.py"
+# Native attempt-local Grok user config (preferred over project-scoped lab config).
+TRANSPORT_ATTEMPT_GROK_CONFIG_MOUNT = "/grok-home/config.toml"
+TRANSPORT_ATTEMPT_AGENT_PROFILE_MOUNT = (
+    "/grok-home/agents/genuine_scientist_mcp.md"
+)
+TRANSPORT_MCP_SERVER_IMAGE_PATH = "/opt/xinao-researcher/mcp_episode_lab_server.py"
+TRANSPORT_MCP_EVENT_LOG = "/output/mcp_events.jsonl"
+TRANSPORT_MCP_EVIDENCE_MOUNT = "/output/mcp-evidence.jsonl"
+
+# Mount targets that must never appear on either container.
+FORBIDDEN_MOUNT_MARKERS = (
+    "docker.sock",
+    "podman.sock",
+    "/ledger",
+    "/outcomes",
+    "/outcome",
+    "/freeze",
+    "/settlement",
+    "/shadow",
+    "shadow_ledger",
+)
+
+ALLOWED_TRANSPORT_BIND_TARGETS = frozenset(
+    {
+        TRANSPORT_AUTH_MOUNT,
+        TRANSPORT_INPUT_MOUNT,
+        TRANSPORT_OUTPUT_MOUNT,
+        TOOL_IPC_MOUNT,
+        TRANSPORT_SESSION_MOUNT,
+        TRANSPORT_MATERIAL_MOUNT,
+        TRANSPORT_MCP_BRIDGE_MOUNT,
+        TRANSPORT_MCP_IPC_CONTRACT_MOUNT,
+        TRANSPORT_ATTEMPT_GROK_CONFIG_MOUNT,
+        TRANSPORT_ATTEMPT_AGENT_PROFILE_MOUNT,
+        "/episode-lab",
+        "/episode-lab/.grok/config.toml",  # legacy project-scoped path
+        "/episode-scratch",
+        "/episode-state",
+    }
+)
+
+
+class ToolSpecDriftError(RuntimeError):
+    def __init__(self, reason_code: str, violations: list[str]) -> None:
+        super().__init__(f"{reason_code}: {violations}")
+        self.reason_code = reason_code
+        self.violations = list(violations)
+
+
+def transport_container_spec(
+    *,
+    image: str,
+    name: str,
+    auth_host_path: str,
+    input_host_path: str,
+    output_host_path: str,
+    ipc_host_dir: str,
+    network: str = "none",
+    session_host_path: str | None = None,
+    material_host_path: str | None = None,
+    mcp_bridge_host_path: str | None = None,
+    ipc_contract_host_path: str | None = None,
+    attempt_grok_config_host_path: str | None = None,
+    attempt_agent_profile_host_path: str | None = None,
+    episode_lab_host_path: str | None = None,
+    episode_id: str | None = None,
+    use_episode_entrypoint: bool = False,
+    entrypoint: list[str] | None = None,
+) -> dict[str, Any]:
+    """Spec for the model/transport container.
+
+    Network may be switched by Owner to a provider egress network when live
+    model calls are required. Default is none for offline/fake-client seats.
+    Generic file/shell tools must remain disabled in the model invocation;
+    tools reach the sidecar only via attempt-local native MCP config.
+    """
+    binds: list[dict[str, str]] = [
+        {"host": auth_host_path, "container": TRANSPORT_AUTH_MOUNT, "mode": "ro"},
+        {"host": input_host_path, "container": TRANSPORT_INPUT_MOUNT, "mode": "ro"},
+        {"host": output_host_path, "container": TRANSPORT_OUTPUT_MOUNT, "mode": "rw"},
+        {"host": ipc_host_dir, "container": TOOL_IPC_MOUNT, "mode": "rw"},
+    ]
+    if session_host_path:
+        binds.append(
+            {
+                "host": session_host_path,
+                "container": TRANSPORT_SESSION_MOUNT,
+                "mode": "rw",
+            }
+        )
+    if material_host_path:
+        binds.append(
+            {
+                "host": material_host_path,
+                "container": TRANSPORT_MATERIAL_MOUNT,
+                "mode": "ro",
+            }
+        )
+    # Legacy optional bridge mount (native MCP uses image-baked server instead).
+    if mcp_bridge_host_path:
+        binds.append(
+            {
+                "host": mcp_bridge_host_path,
+                "container": TRANSPORT_MCP_BRIDGE_MOUNT,
+                "mode": "ro",
+            }
+        )
+    if ipc_contract_host_path:
+        binds.append(
+            {
+                "host": ipc_contract_host_path,
+                "container": TRANSPORT_MCP_IPC_CONTRACT_MOUNT,
+                "mode": "ro",
+            }
+        )
+    if attempt_grok_config_host_path:
+        binds.append(
+            {
+                "host": attempt_grok_config_host_path,
+                "container": TRANSPORT_ATTEMPT_GROK_CONFIG_MOUNT,
+                "mode": "ro",
+            }
+        )
+    if attempt_agent_profile_host_path:
+        binds.append(
+            {
+                "host": attempt_agent_profile_host_path,
+                "container": TRANSPORT_ATTEMPT_AGENT_PROFILE_MOUNT,
+                "mode": "ro",
+            }
+        )
+    if episode_lab_host_path:
+        binds.append(
+            {
+                "host": episode_lab_host_path,
+                "container": "/episode-lab",
+                "mode": "rw",
+            }
+        )
+    env: dict[str, str] = {
+        # Auth material is file-mounted, not injected as raw secret env by default.
+        "HOME": "/grok-home",
+        "GROK_HOME": "/grok-home",
+        "XINAO_DUAL_CONTAINER": "1",
+        "XINAO_TOOL_IPC_SOCKET": f"{TOOL_IPC_MOUNT}/tool.sock",
+        "XINAO_GENERIC_FILE_SHELL_TOOLS": "0",
+        "XINAO_MCP_EVENT_LOG": TRANSPORT_MCP_EVENT_LOG,
+        "XINAO_MCP_BINDING": "1",
+        "XINAO_MCP_SERVER": "episode_lab",
+    }
+    if episode_id:
+        env["XINAO_EPISODE_ID"] = episode_id
+    if entrypoint is not None:
+        resolved_entrypoint = list(entrypoint)
+        episode_entrypoint_selected = any(
+            "episode_entrypoint.py" in str(part) for part in resolved_entrypoint
+        )
+    elif use_episode_entrypoint:
+        resolved_entrypoint = [
+            "python",
+            "-I",
+            "/opt/xinao-researcher/episode_entrypoint.py",
+        ]
+        episode_entrypoint_selected = True
+    else:
+        # Default canary ENTRYPOINT identity preserved for non-episode seats.
+        resolved_entrypoint = ["python", "-I", "/opt/xinao-researcher/entrypoint.py"]
+        episode_entrypoint_selected = False
+    return {
+        "schema_version": "xinao.dual_container_create_spec.v1",
+        "role": "transport_model",
+        "image": image,
+        "name": name,
+        "user": None,  # transport may run as image default for grok CLI
+        "network": network,
+        "read_only_rootfs": False,
+        "cap_drop": ["ALL"],
+        "cap_add": [],  # Owner may add minimal set for model binary only under separate proof
+        "security_opt": ["no-new-privileges:true"],
+        "env": env,
+        "binds": binds,
+        "tmpfs": [f"{TOOL_TMP}:rw,nosuid,nodev,size=64m"],
+        "entrypoint": resolved_entrypoint,
+        "episode_entrypoint_selected": episode_entrypoint_selected,
+        "generic_file_shell_tools": False,
+        "mcp_tools_via_sidecar": True,
+        "mcp_server": "episode_lab",
+        "mcp_server_image_path": TRANSPORT_MCP_SERVER_IMAGE_PATH,
+        "mcp_binding": {
+            "server": "episode_lab",
+            "tools_allowlist": ["search_tool", "use_tool"],
+            "global_config_modified": False,
+            "host_config_mounted": False,
+        },
+        "notes": (
+            "Canary ENTRYPOINT remains the default image entrypoint. Dual-host "
+            "episode seats may select episode_entrypoint and attempt-local native "
+            "MCP (episode_lab → Unix IPC sidecar). Built-in generic file/shell "
+            "tools stay disabled; genuine profile allowlists search_tool,use_tool only."
+        ),
+        "forbidden": {
+            "mount_docker_sock": True,
+            "mount_ledger_outcome": True,
+            "write_owner_science_account_authority": True,
+        },
+        "completion_claim_allowed": False,
+        "science_restored": False,
+        "parent_complete": False,
+        "owner_adopted": False,
+    }
+
+
+def tool_executor_container_spec(
+    *,
+    image: str,
+    name: str,
+    episode_lab_host_path: str,
+    ipc_host_dir: str,
+    ipc_peer_uids: str | None = None,
+    bwrap_mode: str = "require",
+) -> dict[str, Any]:
+    """Spec for the tool executor container (physical separation).
+
+    Genuine dual-container defaults:
+    - XINAO_TOOL_EXEC_BWRAP=require (bubblewrap shell confinement)
+    - XINAO_IPC_PEER_REQUIRE=1 (fail-closed peer identity)
+    - XINAO_REPLAY_STATE_DIR under IPC volume (durable anti-replay)
+    - XINAO_IPC_PEER_UIDS set by Owner to transport container uid(s)
+    """
+    env: dict[str, str] = {
+        "HOME": TOOL_TMP,
+        "TMPDIR": TOOL_TMP,
+        "PATH": "/usr/local/bin:/usr/bin:/bin",
+        "LANG": "C.UTF-8",
+        "XINAO_TOOL_EXEC_BWRAP": bwrap_mode,
+        "XINAO_IPC_PEER_REQUIRE": "1",
+        "XINAO_REPLAY_STATE_DIR": TOOL_REPLAY_STATE,
+    }
+    if ipc_peer_uids is not None:
+        env["XINAO_IPC_PEER_UIDS"] = str(ipc_peer_uids)
+    else:
+        # Empty + require=1 → fail-closed until Owner pins transport peer uid.
+        env["XINAO_IPC_PEER_UIDS"] = ""
+    return {
+        "schema_version": "xinao.dual_container_create_spec.v1",
+        "role": "tool_executor",
+        "image": image,
+        "name": name,
+        "user": f"{TOOL_UID}:{TOOL_GID}",
+        "network": "none",
+        "read_only_rootfs": True,
+        "cap_drop": ["ALL"],
+        "cap_add": [],
+        "security_opt": ["no-new-privileges:true"],
+        "pids_limit": 256,
+        "memory": "512m",
+        "cpus": 1.0,
+        "env": env,
+        "binds": [
+            {
+                "host": episode_lab_host_path,
+                "container": TOOL_LAB_MOUNT,
+                "mode": "rw",
+            },
+            {
+                "host": ipc_host_dir,
+                "container": TOOL_IPC_MOUNT,
+                "mode": "rw",
+            },
+        ],
+        "tmpfs": [f"{TOOL_TMP}:rw,nosuid,nodev,noexec,size=64m"],
+        "entrypoint": [
+            "python",
+            "-I",
+            "/opt/xinao-tool-executor/tool_executor.py",
+            "--lab-root",
+            TOOL_LAB_MOUNT,
+            "--socket",
+            f"{TOOL_IPC_MOUNT}/tool.sock",
+            "--replay-state-dir",
+            TOOL_REPLAY_STATE,
+        ],
+        "forbidden_binds": list(FORBIDDEN_TOOL_MOUNTS),
+        "must_not_contain": [
+            "grok binary",
+            "auth.json",
+            "provider session files",
+            "ledger mounts",
+            "outcome mounts",
+            "freeze mounts",
+            "host root mount",
+            "docker/podman sockets",
+        ],
+        "response_bounds": {
+            "max_request_bytes": 65536,
+            "max_response_bytes": 262144,
+            "max_timeout_ms": 30000,
+        },
+        "security_profile": {
+            "shell_bwrap": bwrap_mode,
+            "ipc_peer_require": True,
+            "durable_replay": True,
+            "replay_state_dir": TOOL_REPLAY_STATE,
+        },
+        "completion_claim_allowed": False,
+        "science_restored": False,
+        "parent_complete": False,
+        "owner_adopted": False,
+    }
+
+
+def docker_create_argv(spec: dict[str, Any]) -> list[str]:
+    """Materialize a `docker create` argv list from a create spec."""
+    argv = ["docker", "create", "--name", spec["name"]]
+    if spec.get("user"):
+        argv.extend(["--user", str(spec["user"])])
+    network = spec.get("network")
+    if network is not None:
+        argv.extend(["--network", str(network)])
+    if spec.get("read_only_rootfs"):
+        argv.append("--read-only")
+    for cap in spec.get("cap_drop") or []:
+        argv.extend(["--cap-drop", cap])
+    for cap in spec.get("cap_add") or []:
+        argv.extend(["--cap-add", cap])
+    for opt in spec.get("security_opt") or []:
+        argv.extend(["--security-opt", opt])
+    if spec.get("pids_limit") is not None:
+        argv.extend(["--pids-limit", str(spec["pids_limit"])])
+    if spec.get("memory"):
+        argv.extend(["--memory", str(spec["memory"])])
+    if spec.get("cpus") is not None:
+        argv.extend(["--cpus", str(spec["cpus"])])
+    for key, value in (spec.get("env") or {}).items():
+        argv.extend(["--env", f"{key}={value}"])
+    for bind in spec.get("binds") or []:
+        mode = bind.get("mode", "rw")
+        argv.extend(["--mount", f"type=bind,src={bind['host']},dst={bind['container']},{mode}"])
+    for tmp in spec.get("tmpfs") or []:
+        # docker create --tmpfs /tmp:opts
+        argv.extend(["--tmpfs", tmp])
+    entry = spec.get("entrypoint")
+    if entry:
+        # docker create --entrypoint is single string; use shell form via JSON not available
+        # here — callers should set image ENTRYPOINT. We still return the intended argv.
+        argv.extend(["--entrypoint", entry[0]])
+        argv.append(spec["image"])
+        argv.extend(entry[1:])
+    else:
+        argv.append(spec["image"])
+    return argv
+
+
+def validate_tool_spec_invariants(spec: dict[str, Any]) -> list[str]:
+    """Return violation strings if tool executor spec drifts.
+
+    Axes must match validate_tool_container_inspect (live receipt agreement).
+    """
+    violations: list[str] = []
+    if spec.get("role") != "tool_executor":
+        violations.append("role!=tool_executor")
+    if spec.get("network") != "none":
+        violations.append("network!=none")
+    if spec.get("user") != f"{TOOL_UID}:{TOOL_GID}":
+        violations.append("user!=65532:65532")
+    if "ALL" not in (spec.get("cap_drop") or []):
+        violations.append("cap_drop missing ALL")
+    if list(spec.get("cap_add") or []):
+        violations.append("cap_add must be empty")
+    if "no-new-privileges:true" not in (spec.get("security_opt") or []):
+        violations.append("missing no-new-privileges")
+    if not spec.get("read_only_rootfs"):
+        violations.append("read_only_rootfs required")
+    env = spec.get("env") or {}
+    for key in env:
+        upper = str(key).upper()
+        if upper.startswith(("GROK_", "XAI_")) or upper in {
+            "GROK_HOME",
+            "GROK_API_KEY",
+            "XAI_API_KEY",
+            "DOCKER_HOST",
+            "SSH_AUTH_SOCK",
+        }:
+            violations.append(f"forbidden_env:{key}")
+    bwrap = str(env.get("XINAO_TOOL_EXEC_BWRAP", "")).strip().lower()
+    if bwrap not in {"auto", "require", "1", "on", "true", "yes"}:
+        violations.append("bwrap_env_missing_or_off")
+    if str(env.get("XINAO_IPC_PEER_REQUIRE", "")).strip() not in {"1", "true", "yes"}:
+        violations.append("ipc_peer_require_missing")
+    replay_dir = str(env.get("XINAO_REPLAY_STATE_DIR", "")).strip()
+    if not replay_dir or TOOL_IPC_MOUNT not in replay_dir:
+        violations.append("durable_replay_state_not_on_ipc")
+    for bind in spec.get("binds") or []:
+        host = str(bind.get("host", ""))
+        container = str(bind.get("container", ""))
+        for forbidden in FORBIDDEN_TOOL_MOUNTS:
+            if forbidden in (host, container) and container not in {
+                TOOL_LAB_MOUNT,
+                TOOL_IPC_MOUNT,
+            }:
+                violations.append(f"forbidden_bind:{container}")
+        if container not in {TOOL_LAB_MOUNT, TOOL_IPC_MOUNT}:
+            violations.append(f"unexpected_bind:{container}")
+        lowered = container.lower()
+        if any(
+            token in lowered
+            for token in (
+                "docker.sock",
+                "podman.sock",
+                "grok-home",
+                "/ledger",
+                "/outcome",
+                "/freeze",
+                "/settlement",
+                "/shadow",
+            )
+        ):
+            violations.append(f"forbidden_bind:{container}")
+    for field in (
+        "completion_claim_allowed",
+        "science_restored",
+        "parent_complete",
+        "owner_adopted",
+    ):
+        if spec.get(field) is not False:
+            violations.append(f"authority_field:{field}")
+    return violations
+
+
+def assert_tool_spec_fail_closed(spec: dict[str, Any]) -> None:
+    violations = validate_tool_spec_invariants(spec)
+    if violations:
+        raise ToolSpecDriftError("TOOL_SPEC_DRIFT", violations)
+
+
+def assert_transport_spec_fail_closed(spec: dict[str, Any]) -> None:
+    violations = validate_transport_spec_invariants(spec)
+    if violations:
+        raise ToolSpecDriftError("TRANSPORT_SPEC_DRIFT", violations)
+
+
+def dual_container_bundle(
+    *,
+    transport_image: str,
+    tool_image: str,
+    auth_host_path: str,
+    input_host_path: str,
+    output_host_path: str,
+    episode_lab_host_path: str,
+    ipc_host_dir: str,
+    run_id: str = "dual-1",
+    session_host_path: str | None = None,
+    material_host_path: str | None = None,
+    mcp_bridge_host_path: str | None = None,
+    ipc_contract_host_path: str | None = None,
+    attempt_grok_config_host_path: str | None = None,
+    attempt_agent_profile_host_path: str | None = None,
+    episode_id: str | None = None,
+    use_episode_entrypoint: bool = False,
+    ipc_peer_uids: str | None = None,
+    bwrap_mode: str = "require",
+) -> dict[str, Any]:
+    transport = transport_container_spec(
+        image=transport_image,
+        name=f"xinao-transport-{run_id}",
+        auth_host_path=auth_host_path,
+        input_host_path=input_host_path,
+        output_host_path=output_host_path,
+        ipc_host_dir=ipc_host_dir,
+        session_host_path=session_host_path,
+        material_host_path=material_host_path,
+        mcp_bridge_host_path=mcp_bridge_host_path,
+        ipc_contract_host_path=ipc_contract_host_path,
+        attempt_grok_config_host_path=attempt_grok_config_host_path,
+        attempt_agent_profile_host_path=attempt_agent_profile_host_path,
+        episode_lab_host_path=episode_lab_host_path,
+        episode_id=episode_id,
+        use_episode_entrypoint=use_episode_entrypoint,
+    )
+    tool = tool_executor_container_spec(
+        image=tool_image,
+        name=f"xinao-tool-{run_id}",
+        episode_lab_host_path=episode_lab_host_path,
+        ipc_host_dir=ipc_host_dir,
+        ipc_peer_uids=ipc_peer_uids,
+        bwrap_mode=bwrap_mode,
+    )
+    tool_violations = validate_tool_spec_invariants(tool)
+    transport_violations = validate_transport_spec_invariants(transport)
+    return {
+        "schema_version": "xinao.dual_container_bundle.v1",
+        "transport": transport,
+        "tool_executor": tool,
+        "transport_docker_create_argv": docker_create_argv(transport),
+        "tool_docker_create_argv": docker_create_argv(tool),
+        "tool_spec_violations": tool_violations,
+        "transport_spec_violations": transport_violations,
+        "fail_closed_before_provider": not tool_violations and not transport_violations,
+        "ipc": {
+            "transport": "unix_socket_or_stdio",
+            "socket_container_path": f"{TOOL_IPC_MOUNT}/tool.sock",
+            "contract": "xinao.dual_container_ipc.v1",
+            "mcp_server_name": "episode_lab",
+            "mcp_server_image_path": TRANSPORT_MCP_SERVER_IMAGE_PATH,
+            "peer_require": True,
+            "durable_replay_dir": TOOL_REPLAY_STATE,
+        },
+        "minimal_integrator_interface": {
+            "tool_env_required": [
+                "XINAO_TOOL_EXEC_BWRAP=require",
+                "XINAO_IPC_PEER_REQUIRE=1",
+                "XINAO_IPC_PEER_UIDS=<transport_uid>",
+                f"XINAO_REPLAY_STATE_DIR={TOOL_REPLAY_STATE}",
+            ],
+            "transport_mcp": {
+                "tools_allowlist": ["search_tool", "use_tool"],
+                "server": "episode_lab",
+                "generic_file_shell_tools": False,
+            },
+            "validators": {
+                "create_tool": "assert_tool_spec_fail_closed",
+                "create_transport": "assert_transport_spec_fail_closed",
+                "live_tool": "validate_tool_container_inspect",
+                "live_transport": "validate_transport_container_inspect",
+                "agreement": "create_spec_matches_inspect",
+            },
+        },
+        "start_order": ["tool_executor", "transport_model"],
+        "delta_vs_same_container": {
+            "credential_co_location": "split: auth only in transport",
+            "tool_namespace": "separate container; no shared PID/user/mount with auth",
+            "network": "tool network=none by create spec",
+            "writable_surface": "tool: episode-lab + private tmp only",
+            "same_container_bwrap": "tool path uses bubblewrap require inside tool container",
+            "ipc_peer": "XINAO_IPC_PEER_REQUIRE=1 + SO_PEERCRED allowlist (genuine)",
+            "durable_replay_dir": TOOL_REPLAY_STATE,
+            "model_tools": "attempt-local native MCP episode_lab → sidecar; no built-in generic file/shell",
+        },
+        "completion_claim_allowed": False,
+        "science_restored": False,
+        "parent_complete": False,
+        "owner_adopted": False,
+    }
+
+
+def validate_transport_spec_invariants(spec: dict[str, Any]) -> list[str]:
+    """Return violation strings if transport create spec drifts."""
+    violations: list[str] = []
+    if spec.get("role") != "transport_model":
+        violations.append("role!=transport_model")
+    if "ALL" not in (spec.get("cap_drop") or []):
+        violations.append("cap_drop missing ALL")
+    if "no-new-privileges:true" not in (spec.get("security_opt") or []):
+        violations.append("missing no-new-privileges")
+    if spec.get("generic_file_shell_tools") is not False:
+        violations.append("generic_file_shell_tools must be false")
+    env = spec.get("env") or {}
+    if env.get("XINAO_GENERIC_FILE_SHELL_TOOLS") != "0":
+        violations.append("XINAO_GENERIC_FILE_SHELL_TOOLS must be 0")
+    if env.get("XINAO_DUAL_CONTAINER") != "1":
+        violations.append("XINAO_DUAL_CONTAINER must be 1")
+    entry = spec.get("entrypoint") or []
+    joined = " ".join(str(x) for x in entry) if isinstance(entry, list) else str(entry)
+    canary_path = "/opt/xinao-researcher/entrypoint.py"
+    episode_path = "/opt/xinao-researcher/episode_entrypoint.py"
+    if episode_path in joined and not spec.get("episode_entrypoint_selected"):
+        # Poisoned swap of canary→episode without explicit dual-host selection.
+        violations.append("entrypoint!=canary")
+    elif canary_path not in joined and episode_path not in joined:
+        violations.append("entrypoint!=canary")
+    for bind in spec.get("binds") or []:
+        host = str(bind.get("host", ""))
+        container = str(bind.get("container", ""))
+        lowered = f"{host}|{container}".lower()
+        for marker in FORBIDDEN_MOUNT_MARKERS:
+            if marker in lowered:
+                violations.append(f"forbidden_bind:{container}")
+        if container not in ALLOWED_TRANSPORT_BIND_TARGETS:
+            violations.append(f"unexpected_bind:{container}")
+        if container == "/workspace" or host.rstrip("/").endswith("/workspace") or container.endswith(
+            "/workspace"
+        ):
+            violations.append(f"unexpected_bind_workspace:{container}")
+    for field in (
+        "completion_claim_allowed",
+        "science_restored",
+        "parent_complete",
+        "owner_adopted",
+    ):
+        if spec.get(field) is not False:
+            violations.append(f"authority_field:{field}")
+    return violations
+
+
+def _mounts_from_inspect(inspect_doc: dict[str, Any]) -> list[dict[str, Any]]:
+    mounts = inspect_doc.get("Mounts") or inspect_doc.get("mounts") or []
+    if not isinstance(mounts, list):
+        return []
+    return [m for m in mounts if isinstance(m, dict)]
+
+
+def _host_config(inspect_doc: dict[str, Any]) -> dict[str, Any]:
+    hc = inspect_doc.get("HostConfig") or inspect_doc.get("host_config") or {}
+    return hc if isinstance(hc, dict) else {}
+
+
+def _config(inspect_doc: dict[str, Any]) -> dict[str, Any]:
+    cfg = inspect_doc.get("Config") or inspect_doc.get("config") or {}
+    return cfg if isinstance(cfg, dict) else {}
+
+
+def validate_tool_container_inspect(
+    inspect_doc: dict[str, Any],
+    *,
+    expected_image_id: str | None = None,
+    expected_episode_lab: str | None = None,
+    expected_ipc: str | None = None,
+) -> list[str]:
+    """Prove live tool-executor container identity and isolation invariants."""
+    violations: list[str] = []
+    cfg = _config(inspect_doc)
+    hc = _host_config(inspect_doc)
+    image = str(inspect_doc.get("Image") or cfg.get("Image") or "")
+    if expected_image_id and expected_image_id not in image and image != expected_image_id:
+        # Accept prefix match when inspect returns short id.
+        if not (
+            expected_image_id.startswith(image) or image.startswith(expected_image_id.removeprefix("sha256:"))
+        ):
+            violations.append(f"image_id_mismatch:{image}")
+    user = str(cfg.get("User") or "")
+    if user not in {f"{TOOL_UID}:{TOOL_GID}", str(TOOL_UID), f"{TOOL_UID}:{TOOL_UID}"}:
+        violations.append(f"user!={TOOL_UID}:{TOOL_GID}:{user}")
+    network_mode = str(hc.get("NetworkMode") or "")
+    if network_mode not in {"none", "None"}:
+        violations.append(f"network!={network_mode}")
+    if hc.get("ReadonlyRootfs") is not True:
+        violations.append("read_only_rootfs required")
+    cap_drop = {str(x).upper() for x in (hc.get("CapDrop") or [])}
+    if "ALL" not in cap_drop:
+        violations.append("cap_drop missing ALL")
+    security_opt = [str(x).lower() for x in (hc.get("SecurityOpt") or [])]
+    if not any("no-new-privileges" in x for x in security_opt):
+        violations.append("missing no-new-privileges")
+    entrypoint = cfg.get("Entrypoint") or []
+    if isinstance(entrypoint, list):
+        joined = " ".join(str(x) for x in entrypoint)
+    else:
+        joined = str(entrypoint)
+    if "tool_executor.py" not in joined:
+        violations.append(f"entrypoint_unexpected:{joined}")
+    env_map: dict[str, str] = {}
+    for item in cfg.get("Env") or []:
+        if isinstance(item, str) and "=" in item:
+            k, v = item.split("=", 1)
+            env_map[k] = v
+    for key in env_map:
+        upper = key.upper()
+        if upper.startswith(("GROK_", "XAI_")) or upper in {
+            "GROK_HOME",
+            "GROK_API_KEY",
+            "XAI_API_KEY",
+            "DOCKER_HOST",
+            "SSH_AUTH_SOCK",
+        }:
+            violations.append(f"forbidden_env:{key}")
+    bwrap = str(env_map.get("XINAO_TOOL_EXEC_BWRAP", "")).strip().lower()
+    if bwrap not in {"auto", "require", "1", "on", "true", "yes"}:
+        violations.append("bwrap_env_missing_or_off")
+    if str(env_map.get("XINAO_IPC_PEER_REQUIRE", "")).strip() not in {
+        "1",
+        "true",
+        "yes",
+    }:
+        violations.append("ipc_peer_require_missing")
+    replay_dir = str(env_map.get("XINAO_REPLAY_STATE_DIR", "")).strip()
+    if not replay_dir or TOOL_IPC_MOUNT not in replay_dir:
+        violations.append("durable_replay_state_not_on_ipc")
+    destinations: set[str] = set()
+    for mount in _mounts_from_inspect(inspect_doc):
+        dest = str(mount.get("Destination") or mount.get("Target") or "")
+        source = str(mount.get("Source") or mount.get("source") or "")
+        destinations.add(dest)
+        combined = f"{source}|{dest}".lower()
+        for marker in FORBIDDEN_MOUNT_MARKERS:
+            if marker in combined:
+                violations.append(f"forbidden_mount:{dest}")
+        if dest and dest not in {TOOL_LAB_MOUNT, TOOL_IPC_MOUNT, TOOL_TMP}:
+            # tmpfs /tmp may appear as mount
+            if dest != TOOL_TMP:
+                violations.append(f"unexpected_mount:{dest}")
+    if expected_episode_lab and TOOL_LAB_MOUNT not in destinations:
+        violations.append("missing_lab_mount")
+    if expected_ipc and TOOL_IPC_MOUNT not in destinations:
+        violations.append("missing_ipc_mount")
+    return violations
+
+
+def validate_transport_container_inspect(
+    inspect_doc: dict[str, Any],
+    *,
+    expected_image_id: str | None = None,
+    require_auth_mount: bool = True,
+    require_ipc_mount: bool = True,
+) -> list[str]:
+    """Prove live transport container has exact mounts and no socket/ledger roots."""
+    violations: list[str] = []
+    cfg = _config(inspect_doc)
+    hc = _host_config(inspect_doc)
+    image = str(inspect_doc.get("Image") or cfg.get("Image") or "")
+    if expected_image_id and expected_image_id not in image and image != expected_image_id:
+        if not (
+            expected_image_id.startswith(image)
+            or image.startswith(expected_image_id.removeprefix("sha256:"))
+        ):
+            violations.append(f"image_id_mismatch:{image}")
+    cap_drop = {str(x).upper() for x in (hc.get("CapDrop") or [])}
+    if "ALL" not in cap_drop:
+        violations.append("cap_drop missing ALL")
+    security_opt = [str(x).lower() for x in (hc.get("SecurityOpt") or [])]
+    if not any("no-new-privileges" in x for x in security_opt):
+        violations.append("missing no-new-privileges")
+    env_list = cfg.get("Env") or []
+    env_map: dict[str, str] = {}
+    for item in env_list:
+        if isinstance(item, str) and "=" in item:
+            key, value = item.split("=", 1)
+            env_map[key] = value
+    if env_map.get("XINAO_GENERIC_FILE_SHELL_TOOLS") not in {None, "0"}:
+        if env_map.get("XINAO_GENERIC_FILE_SHELL_TOOLS") != "0":
+            violations.append("generic_file_shell_tools_env")
+    destinations: set[str] = set()
+    for mount in _mounts_from_inspect(inspect_doc):
+        dest = str(mount.get("Destination") or mount.get("Target") or "")
+        source = str(mount.get("Source") or mount.get("source") or "")
+        destinations.add(dest)
+        combined = f"{source}|{dest}".lower()
+        for marker in FORBIDDEN_MOUNT_MARKERS:
+            if marker in combined:
+                violations.append(f"forbidden_mount:{dest}")
+        if dest == "/var/run/docker.sock" or dest.endswith("docker.sock"):
+            violations.append("docker_socket_mounted")
+    if require_auth_mount and TRANSPORT_AUTH_MOUNT not in destinations:
+        # Auth may be mounted as parent /grok-home/.grok
+        if not any(d.rstrip("/").endswith(".grok") for d in destinations):
+            violations.append("missing_auth_mount")
+    if require_ipc_mount and TOOL_IPC_MOUNT not in destinations:
+        violations.append("missing_ipc_mount")
+    return violations
+
+
+def ipc_volume_name(episode_id: str) -> str:
+    """Stable docker volume name for one episode lease (no daemon)."""
+    safe = "".join(ch if ch.isalnum() or ch in "-_" else "-" for ch in episode_id)
+    return f"xinao-ipc-{safe}"[:120]
+
+
+def attempt_local_mcp_config_toml(
+    *,
+    episode_id: str,
+    bridge_command: str = "python",
+    bridge_args: list[str] | None = None,
+    socket_path: str = f"{TOOL_IPC_MOUNT}/tool.sock",
+) -> str:
+    """Materialize attempt-local GROK_HOME config.toml for native episode_lab MCP.
+
+    Prefer episode_mcp_binding.materialize_attempt_local_binding for full receipts.
+    Built-in generic file/shell tools remain disabled separately via tools allowlist.
+    """
+    args = bridge_args or [
+        "-I",
+        TRANSPORT_MCP_SERVER_IMAGE_PATH,
+        "--socket",
+        socket_path,
+        "--episode-id",
+        episode_id,
+        "--evidence-path",
+        "/output/mcp-evidence.jsonl",
+        "--timeout-ms",
+        "5000",
+    ]
+    # TOML array of quoted strings.
+    args_toml = ", ".join(f'"{a}"' for a in args)
+    return (
+        f"# Attempt-local dual-container native MCP (episode {episode_id})\n"
+        f"[mcp_servers.episode_lab]\n"
+        f'command = "{bridge_command}"\n'
+        f"args = [{args_toml}]\n"
+        f"enabled = true\n"
+        f"startup_timeout_sec = 15\n"
+        f"tool_timeout_sec = 30\n"
+        f'env = {{ PYTHONPATH = "/opt/xinao-researcher", PYTHONUNBUFFERED = "1", '
+        f'PYTHONUTF8 = "1", XINAO_EPISODE_ID = "{episode_id}", '
+        f'XINAO_TOOL_IPC_SOCKET = "{socket_path}", '
+        f'XINAO_MCP_EVIDENCE_PATH = "/output/mcp-evidence.jsonl" }}\n'
+        f"\n"
+        f"[features]\n"
+        f"lsp_tools = false\n"
+        f"\n"
+        f"[subagents]\n"
+        f"enabled = false\n"
+        f"\n"
+        f"[memory]\n"
+        f"enabled = false\n"
+    )
+
+
+def pair_resource_names(episode_id: str) -> dict[str, str]:
+    """Canonical names for containers/volumes owned by one episode lease."""
+    safe = "".join(ch if ch.isalnum() or ch in "-_" else "-" for ch in episode_id)
+    short = safe[:80]
+    return {
+        "tool_name": f"xinao-tool-{short}",
+        "transport_name": f"xinao-transport-{short}",
+        "ipc_volume": ipc_volume_name(episode_id),
+        "run_id": short,
+    }
+
+
+def create_spec_matches_inspect(
+    create_spec: dict[str, Any],
+    inspect_doc: dict[str, Any],
+    *,
+    role: str = "tool_executor",
+) -> list[str]:
+    """Return axes where create-spec validation and live inspect disagree.
+
+    Empty list means create-spec fail-closed gates and inspect validators agree.
+    """
+    disagreements: list[str] = []
+    if role == "tool_executor":
+        create_v = set(validate_tool_spec_invariants(create_spec))
+        live_v = set(validate_tool_container_inspect(inspect_doc))
+        # Compare shared security axes present in either set.
+        shared = {
+            "network!=none",
+            "user!=65532:65532",
+            "cap_drop missing ALL",
+            "cap_add must be empty",
+            "missing no-new-privileges",
+            "read_only_rootfs required",
+            "bwrap_env_missing_or_off",
+            "ipc_peer_require_missing",
+            "durable_replay_state_not_on_ipc",
+        }
+        for axis in sorted(shared):
+            in_create = any(axis in v or v == axis for v in create_v)
+            in_live = any(axis in v or v == axis for v in live_v)
+            # Also match prefix-style violations
+            in_create = in_create or axis in create_v
+            in_live = in_live or axis in live_v
+            if (axis in create_v) != (axis in live_v):
+                disagreements.append(axis)
+        # forbidden_env axes
+        create_forbidden = {v for v in create_v if v.startswith("forbidden_env:")}
+        live_forbidden = {v for v in live_v if v.startswith("forbidden_env:")}
+        if create_forbidden != live_forbidden:
+            disagreements.append("forbidden_env")
+    else:
+        create_v = validate_transport_spec_invariants(create_spec)
+        live_v = validate_transport_container_inspect(inspect_doc)
+        if bool(create_v) != bool(live_v):
+            disagreements.append("transport_fail_closed_disagreement")
+    return disagreements
+
+
+def minimal_integrator_interface() -> dict[str, Any]:
+    """Document the minimal dual-container security integrator surface."""
+    return {
+        "schema_version": "xinao.dual_container_security_interface.v1",
+        "tool_env_required": [
+            "XINAO_TOOL_EXEC_BWRAP=require",
+            "XINAO_IPC_PEER_REQUIRE=1",
+            "XINAO_IPC_PEER_UIDS=<transport_uid>",
+            f"XINAO_REPLAY_STATE_DIR={TOOL_REPLAY_STATE}",
+        ],
+        "durable_replay_dir": TOOL_REPLAY_STATE,
+        "create_validators": {
+            "create_tool": "assert_tool_spec_fail_closed",
+            "create_transport": "assert_transport_spec_fail_closed",
+            "inspect_tool": "validate_tool_container_inspect",
+            "inspect_transport": "validate_transport_container_inspect",
+            "agreement": "create_spec_matches_inspect",
+        },
+        "ipc_peer": "XINAO_IPC_PEER_REQUIRE=1 + SO_PEERCRED allowlist (genuine)",
+        "network": "tool network=none by create spec",
+        "completion_claim_allowed": False,
+    }
+

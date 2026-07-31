@@ -323,6 +323,7 @@ def _sealed_release(
     capability_version: str = "1.1.0",
     shadow_runtime_tree_sha256: str | None = None,
     shadow_runtime_lock_sha256: str | None = None,
+    researcher_image_modules_tree_sha256: str | None = None,
 ) -> tuple[dict[str, object], Path]:
     state = _state(module, tmp_path, monkeypatch)
     source_rows = module._source_bundle_files(SKILL_ROOT)
@@ -349,6 +350,12 @@ def _sealed_release(
         if shadow_runtime_lock_sha256 is not None
         else hashes["shadow_runtime_lock_sha256"]
     )
+    module_rows = module._collect_researcher_image_module_rows(ROOT)
+    modules_tree = (
+        researcher_image_modules_tree_sha256
+        if researcher_image_modules_tree_sha256 is not None
+        else module._researcher_image_modules_tree_sha256(module_rows)
+    )
     source_identity = {
         "source_commit": "c" * 40,
         "source_tree": "d" * 40,
@@ -357,6 +364,7 @@ def _sealed_release(
         "grok_donor_binary_sha256": "a" * 64,
         "shadow_runtime_tree_sha256": shadow_tree,
         "shadow_runtime_lock_sha256": shadow_lock_hash,
+        "researcher_image_modules_tree_sha256": modules_tree,
     }
     source_identity_sha256 = module._sha256_bytes(module._canonical_bytes(source_identity))
     image_id = "sha256:" + image_character * 64
@@ -378,6 +386,9 @@ def _sealed_release(
         "io.xinao.researcher.shadow-runtime.sha256": shadow_tree,
         "io.xinao.researcher.shadow-runtime-lock.sha256": shadow_lock_hash,
         "io.xinao.researcher.requested-model": "grok-4.5",
+        **module._dual_profile_image_labels(
+            researcher_image_modules_tree_sha256=modules_tree
+        ),
     }
     manifest: dict[str, object] = {
         "schema_version": module.RELEASE_SCHEMA,
@@ -658,6 +669,17 @@ def _fake_build_environment(
             assert shadow_main.is_file(), f"missing staged shadow entrypoint in {context}"
             assert re.fullmatch(r"[0-9a-f]{64}", args.get("SHADOW_RUNTIME_TREE_SHA256", ""))
             assert re.fullmatch(r"[0-9a-f]{64}", args.get("SHADOW_RUNTIME_LOCK_SHA256", ""))
+            assert re.fullmatch(
+                r"[0-9a-f]{64}", args.get("RESEARCHER_IMAGE_MODULES_TREE_SHA256", "")
+            )
+            # Dual-profile modules must be staged (canary + episode/MCP/shell).
+            modules_root = context / module.RESEARCHER_IMAGE_CONTEXT_RELATIVE
+            assert modules_root.is_dir(), f"missing staged researcher modules in {context}"
+            for relative in module.RESEARCHER_IMAGE_MODULE_INVENTORY:
+                staged = modules_root / relative
+                assert staged.is_file(), f"missing staged module {relative}"
+                if relative.endswith(".sh"):
+                    assert b"\r" not in staged.read_bytes(), f"CRLF in staged {relative}"
             assert not any(part == "start" for part in values)
             # No broad repository copy into the docker context.
             assert not (context / "xinao_discovery").exists()
@@ -692,6 +714,9 @@ def _fake_build_environment(
             "io.xinao.researcher.shadow-runtime.sha256": args["SHADOW_RUNTIME_TREE_SHA256"],
             "io.xinao.researcher.shadow-runtime-lock.sha256": args["SHADOW_RUNTIME_LOCK_SHA256"],
             "io.xinao.researcher.requested-model": args["REQUESTED_MODEL"],
+            **module._dual_profile_image_labels(
+                researcher_image_modules_tree_sha256=args["RESEARCHER_IMAGE_MODULES_TREE_SHA256"]
+            ),
         }
         return {
             "Id": "sha256:" + image_character * 64,
