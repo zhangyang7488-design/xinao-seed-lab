@@ -60,6 +60,24 @@ def test_canary_entrypoint_byte_exact() -> None:
     assert ' "--tools",' in text or '"--tools"' in text
 
 
+def test_dual_host_provider_egress_proxy_env_for_attach(host_mod: Any) -> None:
+    """Attach/exec must inject sealed proxy on live network; none offline.
+
+    Mirrors live gen14 failure: transport Config.Env lacked HTTP(S)_PROXY while
+    on xinao_researcher_internal, so grok -p reqwest could not reach
+    cli-chat-proxy.grok.com until docker exec -e injected the endpoint.
+    """
+    live = host_mod.provider_egress_proxy_env(network=host_mod.DEFAULT_TRANSPORT_NETWORK)
+    assert live
+    for key in host_mod.EGRESS_PROXY_ENV_KEYS:
+        assert live[key] == host_mod.EGRESS_PROXY_ENDPOINT
+    assert host_mod.provider_egress_proxy_env(network="none") == {}
+    assert host_mod.provider_egress_proxy_env(network="") == {}
+    # Endpoint identity must stay the dedicated researcher egress, not Dify SSRF.
+    assert "xinao-researcher-egress-proxy" in host_mod.EGRESS_PROXY_ENDPOINT
+    assert "ssrf" not in host_mod.EGRESS_PROXY_ENDPOINT.lower()
+
+
 def test_cli_probe_and_fail_closed_contract(native: Any) -> None:
     probe = native.probe_grok_cli(probe_auth=True)
     doc = probe.as_dict()

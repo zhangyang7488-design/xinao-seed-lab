@@ -1847,3 +1847,100 @@ def test_require_live_research_still_fail_closed(tmp_path: Path) -> None:
     except ModuleNotFoundError as exc:
         pytest.skip(f"owner live commissioning deps unavailable: {exc}")
     live.test_require_live_research_pre_outcome_fails_without_evidence(tmp_path)
+
+
+def test_transport_spec_injects_proxy_env_on_egress_network_only(
+    specs: Any, tmp_path: Path
+) -> None:
+    """Live internal-net transport must carry sealed HTTP(S)_PROXY; offline none must not.
+
+    Negative: stripping proxy env on egress network fails transport invariants
+    (real failure mode: reqwest cannot resolve/CONNECT cli-chat-proxy.grok.com).
+    """
+    auth = tmp_path / "auth.json"
+    auth.write_text("{}", encoding="utf-8")
+    common = dict(
+        image="sha256:" + "a" * 64,
+        name="xinao-transport-proxy-probe",
+        auth_host_path=str(auth),
+        input_host_path=str(tmp_path / "in"),
+        output_host_path=str(tmp_path / "out"),
+        ipc_host_dir=str(tmp_path / "ipc"),
+    )
+    (tmp_path / "in").mkdir()
+    (tmp_path / "out").mkdir()
+    (tmp_path / "ipc").mkdir()
+
+    offline = specs.transport_container_spec(**common, network="none")
+    assert offline["network"] == "none"
+    for key in specs.PROVIDER_EGRESS_PROXY_ENV_KEYS:
+        assert key not in offline["env"]
+    assert specs.validate_transport_spec_invariants(offline) == []
+
+    live = specs.transport_container_spec(
+        **common, network=specs.DEFAULT_PROVIDER_EGRESS_NETWORK
+    )
+    assert live["network"] == specs.DEFAULT_PROVIDER_EGRESS_NETWORK
+    for key in specs.PROVIDER_EGRESS_PROXY_ENV_KEYS:
+        assert live["env"][key] == specs.DEFAULT_PROVIDER_EGRESS_PROXY_ENDPOINT
+    assert specs.validate_transport_spec_invariants(live) == []
+
+    # Create argv must materialize proxy env for docker create.
+    argv = specs.docker_create_argv(live)
+    joined = " ".join(argv)
+    assert f"HTTP_PROXY={specs.DEFAULT_PROVIDER_EGRESS_PROXY_ENDPOINT}" in joined
+    assert f"HTTPS_PROXY={specs.DEFAULT_PROVIDER_EGRESS_PROXY_ENDPOINT}" in joined
+
+    stripped = dict(live)
+    stripped_env = dict(live["env"])
+    for key in specs.PROVIDER_EGRESS_PROXY_ENV_KEYS:
+        stripped_env.pop(key, None)
+    stripped["env"] = stripped_env
+    violations = specs.validate_transport_spec_invariants(stripped)
+    assert any(v.startswith("proxy_env_missing_or_wrong:") for v in violations), violations
+
+    wrong = dict(live)
+    wrong_env = dict(live["env"])
+    wrong_env["HTTPS_PROXY"] = "http://evil-proxy.example:9999"
+    wrong["env"] = wrong_env
+    bad = specs.validate_transport_spec_invariants(wrong)
+    assert "proxy_env_missing_or_wrong:HTTPS_PROXY" in bad
+
+    # Offline must not silently carry proxy (escape/confusion).
+    poisoned = dict(offline)
+    poisoned_env = dict(offline["env"])
+    poisoned_env["HTTP_PROXY"] = specs.DEFAULT_PROVIDER_EGRESS_PROXY_ENDPOINT
+    poisoned["env"] = poisoned_env
+    offline_bad = specs.validate_transport_spec_invariants(poisoned)
+    assert any(v.startswith("proxy_env_unexpected_on_offline_network:") for v in offline_bad)
+
+
+def test_dual_bundle_live_network_propagates_proxy_env(specs: Any, tmp_path: Path) -> None:
+    auth = tmp_path / "auth.json"
+    auth.write_text("{}", encoding="utf-8")
+    (tmp_path / "lab").mkdir()
+    (tmp_path / "ipc").mkdir()
+    (tmp_path / "in").mkdir()
+    (tmp_path / "out").mkdir()
+    (tmp_path / "side").mkdir()
+    bundle = specs.dual_container_bundle(
+        transport_image="sha256:" + "b" * 64,
+        tool_image="sha256:" + "c" * 64,
+        auth_host_path=str(auth),
+        input_host_path=str(tmp_path / "in"),
+        output_host_path=str(tmp_path / "out"),
+        episode_lab_host_path=str(tmp_path / "lab"),
+        ipc_host_dir=str(tmp_path / "ipc"),
+        sidecar_evidence_host_path=str(tmp_path / "side"),
+        network=specs.DEFAULT_PROVIDER_EGRESS_NETWORK,
+        use_episode_entrypoint=True,
+        episode_id="xre_proxy_env_probe",
+    )
+    assert bundle["transport_spec_violations"] == []
+    transport = bundle["transport"]
+    for key in specs.PROVIDER_EGRESS_PROXY_ENV_KEYS:
+        assert transport["env"][key] == specs.DEFAULT_PROVIDER_EGRESS_PROXY_ENDPOINT
+    # Tool remains network=none and must never receive proxy routing env.
+    tool_env = bundle["tool_executor"]["env"]
+    for key in specs.PROVIDER_EGRESS_PROXY_ENV_KEYS:
+        assert key not in tool_env

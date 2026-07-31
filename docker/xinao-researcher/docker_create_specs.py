@@ -61,6 +61,38 @@ TRANSPORT_MCP_EVENT_LOG = "/output/mcp_events.jsonl"
 # Canonical only — do not use fragmented aliases (mcp-evidence.jsonl / attempt/...).
 TRANSPORT_MCP_EVIDENCE_MOUNT = TRANSPORT_MCP_EVENT_LOG
 
+# Provider egress routing (must match skills/xinao/scripts/xinao_runtime.py).
+# Internal-network transport has no default route/DNS for provider hosts; Grok CLI
+# (reqwest) reaches cli-chat-proxy.grok.com only via this dedicated Squid CONNECT
+# proxy. Offline network=none seats must not inject these keys.
+DEFAULT_PROVIDER_EGRESS_NETWORK = "xinao_researcher_internal"
+DEFAULT_PROVIDER_EGRESS_PROXY_ENDPOINT = "http://xinao-researcher-egress-proxy:3128"
+PROVIDER_EGRESS_PROXY_ENV_KEYS = (
+    "HTTP_PROXY",
+    "HTTPS_PROXY",
+    "http_proxy",
+    "https_proxy",
+)
+
+
+def provider_egress_proxy_env(
+    *,
+    network: str | None,
+    endpoint: str = DEFAULT_PROVIDER_EGRESS_PROXY_ENDPOINT,
+) -> dict[str, str]:
+    """Return proxy routing env when transport is on the sealed internal net.
+
+    Empty when network is none/empty so offline/fake-client seats stay offline.
+    """
+    net = str(network or "").strip().lower()
+    if net in {"", "none"}:
+        return {}
+    ep = str(endpoint or "").strip()
+    if not ep:
+        return {}
+    return {key: ep for key in PROVIDER_EGRESS_PROXY_ENV_KEYS}
+
+
 # Mount targets that must never appear on either container.
 FORBIDDEN_MOUNT_MARKERS = (
     "docker.sock",
@@ -216,6 +248,10 @@ def transport_container_spec(
         "XINAO_MCP_BINDING": "1",
         "XINAO_MCP_SERVER": "episode_lab",
     }
+    # Live provider path: dual-host puts transport on xinao_researcher_internal.
+    # Without HTTP(S)_PROXY, Grok cannot resolve/CONNECT cli-chat-proxy.grok.com
+    # and fails with reqwest "error sending request" after -p headless attach.
+    env.update(provider_egress_proxy_env(network=network))
     if episode_id:
         env["XINAO_EPISODE_ID"] = episode_id
     if entrypoint is not None:
@@ -738,6 +774,16 @@ def validate_transport_spec_invariants(spec: dict[str, Any]) -> list[str]:
         violations.append("XINAO_GENERIC_FILE_SHELL_TOOLS must be 0")
     if env.get("XINAO_DUAL_CONTAINER") != "1":
         violations.append("XINAO_DUAL_CONTAINER must be 1")
+    network = str(spec.get("network") or "none")
+    expected_proxy = provider_egress_proxy_env(network=network)
+    if expected_proxy:
+        for key, value in expected_proxy.items():
+            if env.get(key) != value:
+                violations.append(f"proxy_env_missing_or_wrong:{key}")
+    else:
+        for key in PROVIDER_EGRESS_PROXY_ENV_KEYS:
+            if env.get(key):
+                violations.append(f"proxy_env_unexpected_on_offline_network:{key}")
     entry = spec.get("entrypoint") or []
     entry_tokens = [str(x) for x in entry] if isinstance(entry, list) else [str(entry)]
     joined = " ".join(entry_tokens)
@@ -934,6 +980,10 @@ def validate_transport_container_inspect(
     if env_map.get("XINAO_GENERIC_FILE_SHELL_TOOLS") not in {None, "0"}:
         if env_map.get("XINAO_GENERIC_FILE_SHELL_TOOLS") != "0":
             violations.append("generic_file_shell_tools_env")
+    # Proxy env is enforced on create-spec (validate_transport_spec_invariants) and
+    # on docker-exec attach (dual_container_host). Do not hard-fail live inspect when
+    # Config.Env lacks proxy: pre-fix pairs can still recover via exec -e without
+    # stop/recreate, while create path stays fail-closed for new transports.
     destinations: set[str] = set()
     for mount in _mounts_from_inspect(inspect_doc):
         dest = str(mount.get("Destination") or mount.get("Target") or "")

@@ -30,6 +30,14 @@ from typing import Any, Callable, Mapping, Sequence
 HOST_MODULES_DIRNAME = "host_modules"
 HEX_SHA256 = re.compile(r"^[0-9a-f]{64}$")
 DEFAULT_TRANSPORT_NETWORK = "xinao_researcher_internal"
+# Must match docker_create_specs / xinao_runtime sealed egress endpoint.
+EGRESS_PROXY_ENDPOINT = "http://xinao-researcher-egress-proxy:3128"
+EGRESS_PROXY_ENV_KEYS = (
+    "HTTP_PROXY",
+    "HTTPS_PROXY",
+    "http_proxy",
+    "https_proxy",
+)
 
 
 def host_modules_dir() -> Path:
@@ -90,6 +98,19 @@ class DualHostError(RuntimeError):
 
 
 DockerRunner = Callable[[Sequence[str]], subprocess.CompletedProcess[str]]
+
+
+def provider_egress_proxy_env(*, network: str | None = None) -> dict[str, str]:
+    """Proxy routing env for live transport on the sealed internal network.
+
+    Offline network=none returns empty. Used by create-time env (via specs) and
+    every docker-exec attach so already-running pairs without Config.Env proxy
+    still reach cli-chat-proxy.grok.com through Squid CONNECT.
+    """
+    net = str(network if network is not None else DEFAULT_TRANSPORT_NETWORK).strip().lower()
+    if net in {"", "none"}:
+        return {}
+    return {key: EGRESS_PROXY_ENDPOINT for key in EGRESS_PROXY_ENV_KEYS}
 
 
 def _canonical_bytes(value: object) -> bytes:
@@ -1476,6 +1497,14 @@ class DualContainerHost:
         env_map.setdefault("GROK_HOME", CANONICAL_GROK_HOME)
         env_map.setdefault("XINAO_MCP_EVENT_LOG", CANONICAL_MCP_EVENTS)
         env_map.setdefault("XINAO_MCP_EVIDENCE_PATH", CANONICAL_MCP_EVENTS)
+        # Live dual transport sits on internal net without default DNS/route to
+        # provider hosts. Inject sealed HTTP(S)_PROXY on every exec so headless
+        # grok -p can CONNECT via xinao-researcher-egress-proxy even when the
+        # container was created without proxy Config.Env (pre-fix pairs).
+        for key, value in provider_egress_proxy_env(
+            network=str(self.config.network or DEFAULT_TRANSPORT_NETWORK)
+        ).items():
+            env_map.setdefault(key, value)
         for key, value in env_map.items():
             docker_argv.extend(["-e", f"{key}={value}"])
         docker_argv.append(transport_id)
