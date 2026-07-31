@@ -10,12 +10,17 @@ candidate-only authority. No Docker, Temporal, database, daemon, or live account
 from __future__ import annotations
 
 import argparse
+import copy
+import hashlib
 import json
+import re
+from collections.abc import Mapping
 from datetime import datetime
 from enum import StrEnum
 from pathlib import Path
-from typing import Any
+from typing import Any, Final
 
+from xinao.canonical import canonical_sha256
 from xinao.decision import FrozenDecision
 from xinao.settlement import OutcomeObservation
 from xinao.shadow_lifecycle.lifecycle import (
@@ -48,6 +53,7 @@ from xinao.shadow_lifecycle.store import (
     artifact_paths,
     derive_portfolio_head,
     detect_phase,
+    load_feedback,
     load_frozen,
     load_outcome,
     load_portfolio,
@@ -71,6 +77,17 @@ from xinao.shadow_lifecycle.store import (
 CONSUMER_ID = "shadow_lifecycle_file_backed_leg_a"
 CONSUMER_VERSION = "0.3.0"
 
+# Production portfolio freeze requires a disposition-bound owner authority envelope.
+# Labels / private underscores are not security boundaries — this is a structural gate.
+OWNER_FREEZE_AUTHORITY_SCHEMA: Final = "xinao.owner_freeze_authority.v1"
+OWNER_FREEZE_AUTHORITY_MARKER: Final = "XINAO_OWNER_FREEZE_AUTHORITY_V1"
+RESEARCH_BINDING_REF_PREFIX: Final = "research-binding.sha256:"
+_HEX_SHA256 = re.compile(r"^[0-9a-f]{64}$")
+_BINDING_REF_RE = re.compile(rf"{re.escape(RESEARCH_BINDING_REF_PREFIX)}([0-9a-f]{{64}})")
+_CODEX_OWNER_CHANNEL_SOURCE: Final = "codex_owner_channel"
+_ACCOUNT_ACTION: Final = "ACTION"
+_ACCOUNT_NO_ACTION: Final = "RESEARCHER_ACCOUNT_NO_ACTION"
+
 
 def _parse_time(value: str | datetime) -> datetime:
     if isinstance(value, datetime):
@@ -87,6 +104,530 @@ def _load_request(path: Path) -> dict[str, Any]:
     if not isinstance(raw, dict):
         raise StoreError("request must be a JSON object")
     return raw
+
+
+def _resolve_freeze_request(
+    *,
+    request_path: Path | None,
+    request: Mapping[str, Any] | None,
+) -> dict[str, Any]:
+    """Accept exactly one authority input: path or closed in-memory mapping.
+
+    In-memory requests are deep-copied so later mutation of the caller object
+    (or of a display-only request artifact on disk) cannot change freeze input.
+    """
+
+    if (request_path is None) == (request is None):
+        raise StoreError("freeze requires exactly one of request_path or request")
+    if request is not None:
+        if not isinstance(request, Mapping):
+            raise StoreError("request must be a JSON object")
+        return copy.deepcopy(dict(request))
+    assert request_path is not None
+    return _load_request(request_path)
+
+
+def _require_hex64(value: object, label: str) -> str:
+    if not isinstance(value, str) or _HEX_SHA256.fullmatch(value) is None:
+        raise StoreError(f"FREEZE_AUTHORITY_HASH_INVALID: {label} must be lowercase sha256")
+    return value
+
+
+def _raw_sha256(data: bytes) -> str:
+    return hashlib.sha256(data).hexdigest()
+
+
+def _iso_z(value: Any) -> str:
+    if hasattr(value, "isoformat"):
+        return value.isoformat().replace("+00:00", "Z")
+    text = str(value)
+    return text.replace("+00:00", "Z") if text.endswith("+00:00") else text
+
+
+def _research_binding_path(shadow_root: Path, binding_sha256: str) -> Path:
+    digest = _require_hex64(binding_sha256, "research_binding_sha256")
+    base = resolve_root(shadow_root)
+    return base / "objects" / "research_binding" / "sha256" / digest[:2] / f"{digest}.json"
+
+
+def _disposition_cas_path(owner_state_root: Path, artifact_sha256: str) -> Path:
+    digest = _require_hex64(artifact_sha256, "owner_disposition_sha256")
+    root = owner_state_root.expanduser().resolve()
+    return root / "objects" / "sha256" / digest[:2] / f"{digest}.json"
+
+
+def _binding_shadow_root_for_episode(base: Path) -> Path:
+    """Research bindings live on portfolio root (or flat episode root)."""
+
+    context = _continuity_context(base)
+    if context == "portfolio-period":
+        return base.parent.parent
+    return base
+
+
+def _extract_binding_hash_from_request(request: Mapping[str, Any]) -> str | None:
+    claimed = request.get("bound_research_binding_sha256")
+    sci = request.get("science_decision") or {}
+    acc = request.get("account_decision") or {}
+    sci_ref = str(sci.get("science_decision_ref") or "") if isinstance(sci, Mapping) else ""
+    acc_ref = str(acc.get("account_decision_ref") or "") if isinstance(acc, Mapping) else ""
+    sci_m = _BINDING_REF_RE.search(sci_ref)
+    acc_m = _BINDING_REF_RE.search(acc_ref)
+    if claimed is not None:
+        digest = _require_hex64(claimed, "bound_research_binding_sha256")
+        if sci_m is not None and sci_m.group(1) != digest:
+            raise StoreError(
+                "FREEZE_AUTHORITY_BINDING_REF_MISMATCH: "
+                "science_decision_ref disagrees with bound_research_binding_sha256"
+            )
+        if acc_m is not None and acc_m.group(1) != digest:
+            raise StoreError(
+                "FREEZE_AUTHORITY_BINDING_REF_MISMATCH: "
+                "account_decision_ref disagrees with bound_research_binding_sha256"
+            )
+        return digest
+    if sci_m is None and acc_m is None:
+        return None
+    if sci_m is None or acc_m is None or sci_m.group(1) != acc_m.group(1):
+        raise StoreError(
+            "FREEZE_AUTHORITY_BINDING_REF_MISMATCH: "
+            "science/account decision refs disagree on research binding hash"
+        )
+    return sci_m.group(1)
+
+
+def _load_research_binding(shadow_root: Path, binding_sha256: str) -> dict[str, Any]:
+    digest = _require_hex64(binding_sha256, "research_binding_sha256")
+    path = _research_binding_path(shadow_root, digest)
+    if not path.is_file():
+        raise StoreError(f"FREEZE_AUTHORITY_BINDING_MISSING: {digest}")
+    raw = path.read_bytes()
+    if _raw_sha256(raw) != digest:
+        raise StoreError(f"FREEZE_AUTHORITY_BINDING_BYTES_TAMPERED: {digest}")
+    if path.name != f"{digest}.json" or path.parent.name != digest[:2]:
+        raise StoreError(f"FREEZE_AUTHORITY_BINDING_PATH_MISMATCH: {path}")
+    try:
+        payload = json.loads(raw.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise StoreError(f"FREEZE_AUTHORITY_BINDING_JSON_INVALID: {exc}") from exc
+    if not isinstance(payload, dict):
+        raise StoreError("FREEZE_AUTHORITY_BINDING_JSON_INVALID: object required")
+    return payload
+
+
+def _request_content_hash(request: Mapping[str, Any]) -> str:
+    body = {k: v for k, v in request.items() if k != "request_content_hash"}
+    return canonical_sha256(body)
+
+
+def _assert_request_content_hash(request: Mapping[str, Any]) -> str:
+    recomputed = _request_content_hash(request)
+    claimed = request.get("request_content_hash")
+    if claimed is not None:
+        claimed_hex = _require_hex64(claimed, "request_content_hash")
+        if claimed_hex != recomputed:
+            raise StoreError(
+                "FREEZE_AUTHORITY_REQUEST_HASH_MISMATCH: "
+                f"claimed={claimed_hex} recomputed={recomputed}"
+            )
+    return recomputed
+
+
+def _assert_episode_matches_binding_intent(
+    *,
+    episode: Any,
+    binding: Mapping[str, Any],
+) -> None:
+    """Compare the pre-write episode object to sealed research-binding intent."""
+
+    intent = binding.get("executable_account_intent")
+    if not isinstance(intent, Mapping):
+        raise StoreError(
+            "FREEZE_AUTHORITY_BINDING_EXECUTABLE_MISSING: "
+            "research binding lacks executable_account_intent"
+        )
+    account_identity = str(binding.get("account_identity") or "")
+    if str(episode.account_decision.identity.value) != account_identity:
+        raise StoreError(
+            "FREEZE_AUTHORITY_ACCOUNT_IDENTITY_MISMATCH: "
+            f"episode={episode.account_decision.identity.value} binding={account_identity}"
+        )
+    if str(episode.target_ref) != str(intent.get("target_ref")):
+        raise StoreError(
+            f"FREEZE_AUTHORITY_TARGET_MISMATCH: episode={episode.target_ref} "
+            f"intent={intent.get('target_ref')}"
+        )
+    if _iso_z(episode.target_open_time) != str(intent.get("target_open_time")):
+        raise StoreError("FREEZE_AUTHORITY_TARGET_OPEN_MISMATCH")
+    if _iso_z(episode.freeze_deadline) != str(intent.get("freeze_deadline")):
+        raise StoreError("FREEZE_AUTHORITY_DEADLINE_MISMATCH")
+    if _iso_z(episode.frozen_at) != str(intent.get("frozen_at")):
+        raise StoreError("FREEZE_AUTHORITY_FROZEN_AT_MISMATCH")
+    if str(episode.rule_ref) != str(intent.get("rule_ref")):
+        raise StoreError("FREEZE_AUTHORITY_RULE_MISMATCH")
+    if str(episode.odds_version_ref) != str(intent.get("odds_version_ref")):
+        raise StoreError("FREEZE_AUTHORITY_ODDS_MISMATCH")
+    if int(episode.period_index) != int(binding.get("period_index", -1)):
+        raise StoreError(
+            "FREEZE_AUTHORITY_PERIOD_MISMATCH: "
+            f"episode={episode.period_index} binding={binding.get('period_index')}"
+        )
+
+    if account_identity == _ACCOUNT_ACTION:
+        ticket = episode.bound_account_ticket
+        if ticket is None:
+            raise StoreError("FREEZE_AUTHORITY_TICKET_MISSING: ACTION requires bound ticket")
+        for field in (
+            "selected_number",
+            "stake",
+            "panel",
+            "rule_ref",
+            "odds_version_ref",
+            "baseline_ref",
+            "risk_policy_ref",
+            "target_ref",
+        ):
+            ticket_val = getattr(ticket, field)
+            intent_val = intent.get(field)
+            if ticket_val != intent_val and str(ticket_val) != str(intent_val):
+                raise StoreError(
+                    "FREEZE_AUTHORITY_TICKET_MISMATCH: "
+                    f"{field}: ticket={ticket_val!r} intent={intent_val!r}"
+                )
+        if str(episode.account_decision.stake) != str(intent.get("stake")):
+            raise StoreError(
+                f"FREEZE_AUTHORITY_ACCOUNT_STAKE_MISMATCH: {episode.account_decision.stake}"
+            )
+    elif account_identity == _ACCOUNT_NO_ACTION:
+        if episode.bound_account_ticket is not None:
+            raise StoreError("FREEZE_AUTHORITY_NO_ACTION_HAS_TICKET")
+        if str(episode.account_decision.stake) != "0.0000":
+            raise StoreError(
+                f"FREEZE_AUTHORITY_NO_ACTION_STAKE_MISMATCH: {episode.account_decision.stake}"
+            )
+    else:
+        raise StoreError(f"FREEZE_AUTHORITY_ACCOUNT_IDENTITY_INVALID: {account_identity}")
+
+
+def _assert_pre_write_research_binding_authority(
+    *,
+    root: Path,
+    request: Mapping[str, Any],
+    episode: Any,
+) -> None:
+    """Authority comparison BEFORE irreversible freeze write when binding is present.
+
+    A failed check must leave no frozen ticket on the ledger.
+    """
+
+    binding_hash = _extract_binding_hash_from_request(request)
+    if binding_hash is None:
+        return
+    shadow_root = _binding_shadow_root_for_episode(resolve_root(root))
+    binding = _load_research_binding(shadow_root, binding_hash)
+    # Decision refs on the sealed episode must embed the same binding hash.
+    try:
+        sci_ref = str(episode.science_decision.science_decision_ref)
+        acc_ref = str(episode.account_decision.account_decision_ref)
+    except Exception as exc:  # pragma: no cover - defensive
+        raise StoreError(f"FREEZE_AUTHORITY_DECISION_REF_UNREADABLE: {exc}") from exc
+    sci_m = _BINDING_REF_RE.search(sci_ref)
+    acc_m = _BINDING_REF_RE.search(acc_ref)
+    if (
+        sci_m is None
+        or acc_m is None
+        or sci_m.group(1) != binding_hash
+        or acc_m.group(1) != binding_hash
+    ):
+        raise StoreError(
+            "FREEZE_AUTHORITY_EPISODE_BINDING_REF_MISMATCH: "
+            "frozen decision refs must embed the sealed research binding hash"
+        )
+    _assert_episode_matches_binding_intent(episode=episode, binding=binding)
+
+
+def _live_portfolio_binding(portfolio_root: Path) -> dict[str, Any]:
+    """Derive closed portfolio/head identity for authority envelope checks."""
+
+    base = resolve_root(portfolio_root)
+    seat = load_seat(base)
+    portfolio = load_portfolio(base)
+    head = derive_portfolio_head(base)
+    if head.period_index == 0:
+        intended = 1
+        prior_settled: str | None = None
+        prior_feedback: str | None = None
+    elif head.phase in {PortfolioPeriodPhase.MISSING, PortfolioPeriodPhase.INIT}:
+        intended = head.period_index
+        if intended == 1:
+            prior_settled = None
+            prior_feedback = None
+        else:
+            prior_root = period_directory(base, intended - 1)
+            prior_settled = load_settled(prior_root).content_hash
+            prior_feedback = load_feedback(prior_root).content_hash
+    elif head.phase == PortfolioPeriodPhase.FEEDBACK_SEALED:
+        intended = head.period_index + 1
+        prior_settled = head.settled_episode_hash
+        prior_feedback = head.feedback_hash
+    else:
+        raise StoreError(
+            "FREEZE_PORTFOLIO_HEAD_NOT_READY: "
+            f"portfolio cannot freeze while head is {head.phase.value}"
+        )
+    return {
+        "portfolio_ref": portfolio.portfolio_ref,
+        "portfolio_content_hash": portfolio.content_hash,
+        "seat_id": seat.seat_id,
+        "seat_content_hash": seat.content_hash,
+        "head_period_index": head.period_index,
+        "head_phase": head.phase.value,
+        "prior_settled_episode_hash": prior_settled,
+        "prior_feedback_hash": prior_feedback,
+        "intended_next_period_index": intended,
+    }
+
+
+def _assert_disposition_intent_matches_request(
+    *,
+    disposition: Mapping[str, Any],
+    request: Mapping[str, Any],
+) -> None:
+    account_identity = str(disposition.get("account_identity") or "")
+    req_account = request.get("account_decision") or {}
+    if not isinstance(req_account, Mapping):
+        raise StoreError("FREEZE_AUTHORITY_REQUEST_ACCOUNT_MISSING")
+    if str(req_account.get("identity")) != account_identity:
+        raise StoreError(
+            "FREEZE_AUTHORITY_DISPOSITION_ACCOUNT_MISMATCH: "
+            f"request={req_account.get('identity')} disposition={account_identity}"
+        )
+    if account_identity == _ACCOUNT_ACTION:
+        executable = disposition.get("executable_account_decision")
+        ticket = request.get("bound_account_ticket")
+        if not isinstance(executable, Mapping) or not isinstance(ticket, Mapping):
+            raise StoreError("FREEZE_AUTHORITY_ACTION_EXECUTABLE_REQUIRED")
+        for field in (
+            "selected_number",
+            "stake",
+            "panel",
+            "rule_ref",
+            "odds_version_ref",
+            "baseline_ref",
+            "risk_policy_ref",
+            "target_ref",
+        ):
+            t_val = ticket.get(field)
+            e_val = executable.get(field)
+            if t_val != e_val and str(t_val) != str(e_val):
+                raise StoreError(
+                    "FREEZE_AUTHORITY_DISPOSITION_TICKET_MISMATCH: "
+                    f"{field}: ticket={t_val!r} disposition={e_val!r}"
+                )
+        # Period bind: open/deadline/cutoff must match sealed disposition.
+        # frozen_at on the ticket is host freeze-action time (authoritative), not
+        # the disposition seal label — do not accept backdated equality as proof.
+        for time_field in ("target_open_time", "freeze_deadline", "knowledge_cutoff"):
+            if str(ticket.get(time_field)) != str(executable.get(time_field)):
+                raise StoreError(f"FREEZE_AUTHORITY_DISPOSITION_TICKET_MISMATCH: {time_field}")
+        try:
+            ticket_frozen = _parse_time(ticket.get("frozen_at"))
+            disp_frozen = _parse_time(executable.get("frozen_at"))
+            deadline = _parse_time(executable.get("freeze_deadline"))
+        except (TypeError, ValueError) as exc:
+            raise StoreError(
+                f"FREEZE_AUTHORITY_DISPOSITION_TICKET_MISMATCH: frozen_at parse: {exc}"
+            ) from exc
+        if ticket_frozen > deadline:
+            raise StoreError(
+                "FREEZE_AUTHORITY_HOST_FREEZE_AFTER_DEADLINE: "
+                f"ticket_frozen_at={ticket.get('frozen_at')} "
+                f"deadline={executable.get('freeze_deadline')}"
+            )
+        if ticket_frozen < disp_frozen:
+            raise StoreError(
+                "FREEZE_AUTHORITY_HOST_FREEZE_BEFORE_DISPOSITION: "
+                f"ticket_frozen_at={ticket.get('frozen_at')} "
+                f"disposition_frozen_at={executable.get('frozen_at')}"
+            )
+    elif account_identity == _ACCOUNT_NO_ACTION:
+        if (
+            request.get("bound_account_ticket") is not None
+            or request.get("bound_frozen_decision") is not None
+        ):
+            raise StoreError("FREEZE_AUTHORITY_NO_ACTION_MUST_NOT_BIND_TICKET")
+        binding = disposition.get("no_action_period_binding")
+        if not isinstance(binding, Mapping):
+            raise StoreError("FREEZE_AUTHORITY_NO_ACTION_BINDING_REQUIRED")
+        if str(req_account.get("rule_ref")) != str(binding.get("rule_ref")):
+            raise StoreError("FREEZE_AUTHORITY_NO_ACTION_RULE_MISMATCH")
+        if str(req_account.get("odds_version_ref")) != str(binding.get("odds_version_ref")):
+            raise StoreError("FREEZE_AUTHORITY_NO_ACTION_ODDS_MISMATCH")
+    else:
+        raise StoreError(f"FREEZE_AUTHORITY_DISPOSITION_ACCOUNT_INVALID: {account_identity}")
+
+
+def _require_and_verify_owner_freeze_authority(
+    *,
+    portfolio_root: Path,
+    request: Mapping[str, Any],
+    owner_authority: Mapping[str, Any] | None,
+) -> dict[str, Any]:
+    """Validate sealed Owner disposition/research-binding evidence for portfolio freeze.
+
+    This is evidence validation against disposition CAS + live portfolio head, not
+    cryptographic authentication of the Codex process. Physical Owner authority is
+    host/container write-domain separation of ``owner_state_root`` (and absence of
+    that root from researcher mounts). Import of this module alone is not an Owner
+    channel.
+    """
+
+    if owner_authority is None:
+        raise StoreError(
+            "PRODUCTION_FREEZE_REQUIRES_OWNER_AUTHORITY: "
+            "freeze_portfolio_period requires a sealed disposition-bound "
+            "owner_authority envelope that reloads Owner disposition CAS "
+            "and research-binding evidence"
+        )
+    if not isinstance(owner_authority, Mapping):
+        raise StoreError("PRODUCTION_FREEZE_AUTHORITY_INVALID: owner_authority must be an object")
+
+    if owner_authority.get("schema_version") != OWNER_FREEZE_AUTHORITY_SCHEMA:
+        raise StoreError(
+            f"PRODUCTION_FREEZE_AUTHORITY_SCHEMA_DRIFT: {owner_authority.get('schema_version')}"
+        )
+    if owner_authority.get("authority_marker") != OWNER_FREEZE_AUTHORITY_MARKER:
+        raise StoreError(
+            f"PRODUCTION_FREEZE_AUTHORITY_MARKER_INVALID: {owner_authority.get('authority_marker')}"
+        )
+
+    owner_state_root = Path(str(owner_authority["owner_state_root"])).expanduser().resolve()
+    disposition_sha = _require_hex64(
+        owner_authority.get("owner_disposition_sha256"),
+        "owner_disposition_sha256",
+    )
+    binding_sha = _require_hex64(
+        owner_authority.get("research_binding_sha256"),
+        "research_binding_sha256",
+    )
+    envelope_request_hash = _require_hex64(
+        owner_authority.get("request_content_hash"),
+        "request_content_hash",
+    )
+
+    # Bind exactly the closed request that will be written.
+    recomputed = _assert_request_content_hash(request)
+    if recomputed != envelope_request_hash:
+        raise StoreError(
+            "PRODUCTION_FREEZE_REQUEST_ENVELOPE_MISMATCH: "
+            f"envelope={envelope_request_hash} request={recomputed}"
+        )
+
+    request_binding = _extract_binding_hash_from_request(request)
+    if request_binding is None:
+        raise StoreError(
+            "PRODUCTION_FREEZE_REQUIRES_RESEARCH_BINDING: "
+            "production freeze request must embed research-binding authority"
+        )
+    if request_binding != binding_sha:
+        raise StoreError(
+            "PRODUCTION_FREEZE_BINDING_ENVELOPE_MISMATCH: "
+            f"envelope={binding_sha} request={request_binding}"
+        )
+
+    # Disposition CAS under owner root (path + bytes).
+    if not owner_state_root.is_dir():
+        raise StoreError(f"OWNER_STATE_ROOT_MISSING: {owner_state_root}")
+    disp_path = _disposition_cas_path(owner_state_root, disposition_sha)
+    if not disp_path.is_file():
+        raise StoreError(f"OWNER_DISPOSITION_CAS_MISSING: {disp_path}")
+    raw = disp_path.read_bytes()
+    if _raw_sha256(raw) != disposition_sha:
+        raise StoreError(f"OWNER_DISPOSITION_BYTES_TAMPERED: {disposition_sha}")
+    if disp_path.name != f"{disposition_sha}.json" or disp_path.parent.name != disposition_sha[:2]:
+        raise StoreError(f"OWNER_DISPOSITION_CAS_PATH_MISMATCH: {disp_path}")
+    try:
+        disposition = json.loads(raw.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise StoreError(f"OWNER_DISPOSITION_JSON_INVALID: {exc}") from exc
+    if not isinstance(disposition, dict):
+        raise StoreError("OWNER_DISPOSITION_JSON_INVALID: object required")
+    if disposition.get("disposition_source") != _CODEX_OWNER_CHANNEL_SOURCE:
+        raise StoreError(
+            f"OWNER_DISPOSITION_SOURCE_NOT_OWNER_CHANNEL: {disposition.get('disposition_source')}"
+        )
+    if disposition.get("worker_controlled") is True:
+        raise StoreError("OWNER_DISPOSITION_WORKER_CONTROLLED")
+
+    # Portfolio head exact binding before any freeze write.
+    claimed_pb = disposition.get("portfolio_binding")
+    if not isinstance(claimed_pb, Mapping):
+        raise StoreError(
+            "PRODUCTION_FREEZE_PORTFOLIO_BINDING_REQUIRED: "
+            "owner disposition must carry closed portfolio_binding"
+        )
+    live_pb = _live_portfolio_binding(portfolio_root)
+    for key in (
+        "portfolio_ref",
+        "portfolio_content_hash",
+        "seat_id",
+        "seat_content_hash",
+        "head_period_index",
+        "head_phase",
+        "prior_settled_episode_hash",
+        "prior_feedback_hash",
+        "intended_next_period_index",
+    ):
+        if claimed_pb.get(key) != live_pb.get(key):
+            raise StoreError(
+                "PRODUCTION_FREEZE_PORTFOLIO_HEAD_MISMATCH: "
+                f"{key}: disposition={claimed_pb.get(key)!r} live={live_pb.get(key)!r}"
+            )
+    if int(claimed_pb["intended_next_period_index"]) != int(disposition["period_index"]):
+        raise StoreError("PRODUCTION_FREEZE_PORTFOLIO_PERIOD_MISMATCH")
+
+    # Disposition executable intent must match the freeze request ticket/branch.
+    _assert_disposition_intent_matches_request(disposition=disposition, request=request)
+
+    # Research binding CAS under portfolio root must exist and agree with disposition.
+    binding = _load_research_binding(resolve_root(portfolio_root), binding_sha)
+    if int(binding.get("period_index", -1)) != int(disposition["period_index"]):
+        raise StoreError("PRODUCTION_FREEZE_BINDING_PERIOD_MISMATCH")
+    if str(binding.get("account_identity")) != str(disposition.get("account_identity")):
+        raise StoreError("PRODUCTION_FREEZE_BINDING_ACCOUNT_MISMATCH")
+    if str(binding.get("owner_artifact_sha256")) != disposition_sha:
+        raise StoreError(
+            "PRODUCTION_FREEZE_BINDING_OWNER_MISMATCH: "
+            "research binding must seal the same owner disposition hash"
+        )
+    intent = binding.get("executable_account_intent")
+    if not isinstance(intent, Mapping):
+        raise StoreError("PRODUCTION_FREEZE_BINDING_EXECUTABLE_MISSING")
+    if str(disposition.get("account_identity")) == _ACCOUNT_ACTION:
+        executable = disposition.get("executable_account_decision")
+        if not isinstance(executable, Mapping):
+            raise StoreError("PRODUCTION_FREEZE_ACTION_EXECUTABLE_REQUIRED")
+        if int(intent.get("selected_number")) != int(executable["selected_number"]):
+            raise StoreError("PRODUCTION_FREEZE_BINDING_NUMBER_MISMATCH")
+        if str(intent.get("stake")) != str(executable["stake"]):
+            raise StoreError("PRODUCTION_FREEZE_BINDING_STAKE_MISMATCH")
+
+    # Bound owner artifact on request must match disposition CAS.
+    bound_owner = request.get("bound_owner_artifact_sha256")
+    if bound_owner is not None and str(bound_owner) != disposition_sha:
+        raise StoreError(
+            "PRODUCTION_FREEZE_REQUEST_OWNER_MISMATCH: "
+            f"request={bound_owner} disposition={disposition_sha}"
+        )
+
+    return {
+        "owner_state_root": str(owner_state_root),
+        "owner_disposition_sha256": disposition_sha,
+        "research_binding_sha256": binding_sha,
+        "request_content_hash": envelope_request_hash,
+        "disposition": disposition,
+        "portfolio_binding": live_pb,
+    }
 
 
 def _continuity_context(root: Path) -> str | None:
@@ -111,8 +652,7 @@ def _reject_flat_operation_on_continuity_context(
     if context is None or (context == "portfolio-period" and allow_internal_period):
         return
     raise StoreError(
-        f"{verb} is a legacy flat verb and cannot target a {context}; "
-        f"use portfolio-{verb}"
+        f"{verb} is a legacy flat verb and cannot target a {context}; use portfolio-{verb}"
     )
 
 
@@ -270,7 +810,8 @@ def inspect_episode(*, root: Path) -> dict[str, Any]:
 def freeze_episode(
     *,
     root: Path,
-    request_path: Path,
+    request_path: Path | None = None,
+    request: Mapping[str, Any] | None = None,
     period_index: int = 1,
     prior_settled: SettledShadowEpisode | None = None,
     accounting_basis: AccountingBasis = AccountingBasis.LEGACY_OPENING_JOURNAL,
@@ -282,19 +823,14 @@ def freeze_episode(
         verb="freeze",
         allow_internal_period=_continuity_internal,
     )
-    if (
-        _continuity_internal
-        and accounting_basis != AccountingBasis.CARRIED_BALANCE_SNAPSHOT
-    ):
-        raise StoreError(
-            "continuity period freeze requires CARRIED_BALANCE_SNAPSHOT accounting"
-        )
+    if _continuity_internal and accounting_basis != AccountingBasis.CARRIED_BALANCE_SNAPSHOT:
+        raise StoreError("continuity period freeze requires CARRIED_BALANCE_SNAPSHOT accounting")
     phase = detect_phase(base)
     if phase != EpisodePhase.INIT:
         raise StoreError(f"freeze requires INIT phase, found {phase.value}")
 
     seat = load_seat(base)
-    request = _load_request(request_path)
+    request = _resolve_freeze_request(request_path=request_path, request=request)
 
     # Hard no-peek: refuse outcome material on freeze path.
     for forbidden in ("outcome", "actual_special_number", "settlement", "settled"):
@@ -414,15 +950,34 @@ def freeze_episode(
                 request.get("opening_journal_group_ref") or f"journal.opening.{episode_ref}"
             )
         elif request.get("opening_journal_group_ref") is not None:
-            freeze_kwargs["opening_journal_group_ref"] = str(
-                request["opening_journal_group_ref"]
-            )
+            freeze_kwargs["opening_journal_group_ref"] = str(request["opening_journal_group_ref"])
         freeze_kwargs["position_journal_group_ref"] = str(
             request.get("position_journal_group_ref") or f"journal.position.{episode_ref}"
         )
 
     episode = freeze_shadow_episode(**freeze_kwargs)
+    # Authority comparison BEFORE irreversible exclusive freeze write.
+    # Mutated in-memory tickets cannot leave a poisoned FROZEN ledger.
+    _assert_pre_write_research_binding_authority(
+        root=base,
+        request=request,
+        episode=episode,
+    )
     write_frozen_exclusive(base, episode)
+    # Additive optional research-binding fields (absent on legacy freeze requests).
+    binding_fields: dict[str, Any] = {}
+    for key in (
+        "bound_result_sha256",
+        "bound_receipt_content_sha256",
+        "bound_pool_entry_content_hash",
+        "bound_owner_artifact_sha256",
+        "bound_policy_ref",
+        "bound_research_binding_sha256",
+        "trusted_time_proof",
+    ):
+        if key in request:
+            binding_fields[key] = request[key]
+    # File-backed leg-A never proves wall-clock; if caller omitted the flag, leave absent.
     receipt = _receipt_base(
         root=base,
         phase=EpisodePhase.FROZEN,
@@ -434,10 +989,11 @@ def freeze_episode(
         account_identity=episode.account_decision.identity.value,
         science_identity=episode.science_decision.identity.value,
         next_action="settle",
+        **binding_fields,
     )
     write_receipt_exclusive_or_replace(base, receipt, replace=True)
     write_manifest(base)
-    return {
+    result: dict[str, Any] = {
         "ok": True,
         "phase": EpisodePhase.FROZEN.value,
         "root": str(base),
@@ -448,6 +1004,8 @@ def freeze_episode(
         "completion_claim_allowed": False,
         "next_action": "settle",
     }
+    result.update(binding_fields)
+    return result
 
 
 def settle_episode(
@@ -671,12 +1229,38 @@ def inspect_portfolio(*, root: Path) -> dict[str, Any]:
     }
 
 
-def freeze_portfolio_period(*, root: Path, request_path: Path) -> dict[str, Any]:
+def freeze_portfolio_period(
+    *,
+    root: Path,
+    request_path: Path | None = None,
+    request: Mapping[str, Any] | None = None,
+    owner_authority: Mapping[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Freeze the next portfolio period from sealed Owner disposition evidence.
+
+    Always requires a disposition-bound ``owner_authority`` envelope that reloads
+    Owner disposition CAS and research-binding under the live portfolio head.
+    There is no caller-selectable production fixture bypass on this API.
+
+    Validates immutable evidence; does not authenticate that the caller process is
+    Codex. Physical Owner write isolation is a mount/FS concern outside this library.
+    Unit/fixture construction must use a test-only helper under ``tests/`` or build
+    a real sealed disposition envelope.
+    """
+
+    # Capture authority input before any period-root preparation side effects.
+    closed_request = _resolve_freeze_request(request_path=request_path, request=request)
     base = resolve_root(root)
+    # Structural production gate: no disposition-bound envelope => no freeze write.
+    _require_and_verify_owner_freeze_authority(
+        portfolio_root=base,
+        request=closed_request,
+        owner_authority=owner_authority,
+    )
     period_root, period_index, prior_settled = prepare_next_period_root(base)
     result = freeze_episode(
         root=period_root,
-        request_path=request_path,
+        request=closed_request,
         period_index=period_index,
         prior_settled=prior_settled,
         accounting_basis=AccountingBasis.CARRIED_BALANCE_SNAPSHOT,
@@ -719,9 +1303,7 @@ def settle_portfolio_period(
         PortfolioPeriodPhase.FROZEN,
         PortfolioPeriodPhase.SETTLEMENT_RECOVERY_REQUIRED,
     }:
-        raise StoreError(
-            "portfolio-settle requires a FROZEN or SETTLEMENT_RECOVERY_REQUIRED head"
-        )
+        raise StoreError("portfolio-settle requires a FROZEN or SETTLEMENT_RECOVERY_REQUIRED head")
     result = settle_episode(
         root=head.period_root,
         outcome_path=outcome_path,
@@ -886,10 +1468,21 @@ def build_parser() -> argparse.ArgumentParser:
     portfolio_inspect_cmd.add_argument("--root", type=Path, required=True)
 
     portfolio_freeze_cmd = commands.add_parser(
-        "portfolio-freeze", help="Freeze the only legal next prospective period"
+        "portfolio-freeze",
+        help=(
+            "NON-PRODUCTION CLI surface: always returns PORTFOLIO_FREEZE_CLI_NOT_PRODUCTION "
+            "and never calls freeze_portfolio_period. Production Owner freeze: "
+            "xinao prospective freeze-from-disposition (apply_freeze_from_disposition). "
+            "Fixture construction stays under tests-only helpers."
+        ),
     )
     portfolio_freeze_cmd.add_argument("--root", type=Path, required=True)
-    portfolio_freeze_cmd.add_argument("--request", type=Path, required=True)
+    portfolio_freeze_cmd.add_argument(
+        "--request",
+        type=Path,
+        required=True,
+        help="Ignored: this CLI never performs production or fixture freeze",
+    )
 
     portfolio_settle_cmd = commands.add_parser(
         "portfolio-settle", help="Settle the current period with an explicit outcome"
@@ -956,7 +1549,15 @@ def dispatch(args: argparse.Namespace) -> dict[str, Any]:
     if args.command == "portfolio-inspect":
         return inspect_portfolio(root=args.root)
     if args.command == "portfolio-freeze":
-        return freeze_portfolio_period(root=args.root, request_path=args.request)
+        # Ordinary shadow portfolio-freeze CLI is never a production freeze path and
+        # must not call freeze_portfolio_period. Production: prospective freeze-from-disposition.
+        raise StoreError(
+            "PORTFOLIO_FREEZE_CLI_NOT_PRODUCTION: "
+            "shadow portfolio-freeze never calls freeze_portfolio_period. "
+            "Production path: xinao prospective freeze-from-disposition "
+            "(authority-root + owner-state-root + disposition + portfolio-root). "
+            "Fixture construction: tests-only helper under tests/."
+        )
     if args.command == "portfolio-settle":
         return settle_portfolio_period(
             root=args.root,

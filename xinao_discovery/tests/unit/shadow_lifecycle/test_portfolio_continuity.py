@@ -40,6 +40,13 @@ OPEN_1 = datetime(2026, 8, 1, 8, tzinfo=UTC)
 OPEN_2 = OPEN_1 + timedelta(days=1)
 
 
+def _fixture_freeze_portfolio_period(**kwargs):
+    """Shadow lifecycle unit fixtures only — not production authority."""
+    from .fixture_portfolio_freeze import freeze_portfolio_period_for_fixture
+
+    return freeze_portfolio_period_for_fixture(**kwargs)
+
+
 def _write_json(path: Path, payload: dict[str, Any]) -> Path:
     path.write_text(
         json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
@@ -149,7 +156,7 @@ def test_two_period_ticket_action_then_no_action_same_seat(tmp_path: Path) -> No
     genesis_seat = load_seat(root)
     assert initialized["opening_balance"] == "10000.0000"
 
-    frozen_1 = freeze_portfolio_period(
+    frozen_1 = _fixture_freeze_portfolio_period(
         root=root,
         request_path=_ticket_action_request(tmp_path / "p1-freeze.json", open_at=OPEN_1, period=1),
     )
@@ -162,7 +169,7 @@ def test_two_period_ticket_action_then_no_action_same_seat(tmp_path: Path) -> No
     assert episode_1.prior_close_binding is None
 
     with pytest.raises(StoreError, match="cannot open a new period"):
-        freeze_portfolio_period(
+        _fixture_freeze_portfolio_period(
             root=root,
             request_path=_no_action_request(tmp_path / "early-p2.json", open_at=OPEN_2, period=2),
         )
@@ -181,7 +188,7 @@ def test_two_period_ticket_action_then_no_action_same_seat(tmp_path: Path) -> No
     )
     assert feedback_1["scientific_promotion"] is False
 
-    frozen_2 = freeze_portfolio_period(
+    frozen_2 = _fixture_freeze_portfolio_period(
         root=root,
         request_path=_no_action_request(tmp_path / "p2-freeze.json", open_at=OPEN_2, period=2),
     )
@@ -225,13 +232,13 @@ def test_account_ticket_rejects_scientific_gate_fields(tmp_path: Path) -> None:
     payload["bound_account_ticket"]["court_verdict_bundle_ref"] = "must-not-enter-account-gate"
     _write_json(request, payload)
     with pytest.raises(ValueError, match="Extra inputs are not permitted"):
-        freeze_portfolio_period(root=root, request_path=request)
+        _fixture_freeze_portfolio_period(root=root, request_path=request)
 
 
 def test_feedback_is_exclusive_and_second_genesis_is_rejected(tmp_path: Path) -> None:
     root = tmp_path / "portfolio-exclusive"
     init_portfolio(root=root, seat_id="seat.exclusive", portfolio_ref="portfolio.exclusive")
-    freeze_portfolio_period(
+    _fixture_freeze_portfolio_period(
         root=root,
         request_path=_ticket_action_request(tmp_path / "freeze.json", open_at=OPEN_1, period=1),
     )
@@ -327,14 +334,14 @@ def test_account_ticket_wrong_panel_baseline_fails_before_freeze(tmp_path: Path)
     payload["bound_account_ticket"]["baseline_ref"] = "BO0001"
     _write_json(request, payload)
     with pytest.raises(ValueError, match="ACCOUNT_TICKET_BASELINE_INVALID"):
-        freeze_portfolio_period(root=root, request_path=request)
+        _fixture_freeze_portfolio_period(root=root, request_path=request)
     assert not (period_directory(root, 1) / "frozen_episode.v1.json").exists()
 
 
 def test_pure_period_three_rejects_period_one_as_direct_predecessor(tmp_path: Path) -> None:
     root = tmp_path / "portfolio-prior-generation"
     init_portfolio(root=root, seat_id="seat.prior", portfolio_ref="portfolio.prior")
-    freeze_portfolio_period(
+    _fixture_freeze_portfolio_period(
         root=root,
         request_path=_ticket_action_request(
             tmp_path / "prior-freeze.json", open_at=OPEN_1, period=1
