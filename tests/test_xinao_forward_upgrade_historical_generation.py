@@ -852,7 +852,7 @@ def test_pre_tool_rejects_si_vs_skill_hashes_shadow_lock_desync_a1d(
         ("references/test-release-variant.txt", tmp_path / "unused", b"pre-tool-desync\n")
     )
     source_rows.sort(key=lambda item: item[0])
-    package_version = "1.3.5"
+    package_version = "1.3.6"
     capability_version = "1.2.2"
     bundle_manifest = module._skill_bundle_manifest(source_rows, package_version=package_version)
     temp_bundle = tmp_path / "pre-tool-bundle"
@@ -1078,7 +1078,7 @@ def _sealed_current_dual_image_release(
     monkeypatch: pytest.MonkeyPatch,
     *,
     image_character: str = "c",
-    package_version: str = "1.3.5",
+    package_version: str = "1.3.6",
     capability_version: str = "1.2.2",
     variant: bytes | None = None,
 ) -> tuple[dict[str, object], Path]:
@@ -1351,7 +1351,7 @@ def _prepare_pre_modules_forward_upgrade_world(
         tmp_path,
         monkeypatch,
         image_character="c",
-        package_version="1.3.5",
+        package_version="1.3.6",
         capability_version="1.2.2",
     )
     monkeypatch.setattr(
@@ -1477,7 +1477,7 @@ def test_forged_prepared_activate_historical_to_fail_closed(
         tmp_path,
         monkeypatch,
         image_character="4",
-        package_version="1.3.5",
+        package_version="1.3.6",
         capability_version="1.2.2",
         variant=b"current-active\n",
     )

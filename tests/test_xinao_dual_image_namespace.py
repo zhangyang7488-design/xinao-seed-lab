@@ -75,7 +75,7 @@ def _make_dual_manifest(
         module,
         tmp_path,
         monkeypatch,
-        package_version="1.3.5",
+        package_version="1.3.6",
         capability_version="1.2.2",
     )
 
@@ -417,7 +417,7 @@ def _seed_canonical_receipt(
     return receipt_path, receipt, pointer_path
 
 
-def test_semver_source_is_1_3_5_and_1_2_2(module: Any) -> None:
+def test_semver_source_is_1_3_6_and_1_2_2(module: Any) -> None:
     registry = json.loads((SKILL_ROOT / "references" / "capabilities.v1.json").read_text())
     charter = json.loads((SKILL_ROOT / "references" / "researcher-charter.v1.json").read_text())
     runtime_lock = json.loads(
@@ -426,7 +426,7 @@ def test_semver_source_is_1_3_5_and_1_2_2(module: Any) -> None:
     researcher = next(
         c for c in registry["capabilities"] if c["capability_id"] == "researcher-container"
     )
-    assert registry["skill_version"] == "1.3.5"
+    assert registry["skill_version"] == "1.3.6"
     assert (
         researcher["version"]
         == charter["charter_version"]
@@ -559,7 +559,7 @@ def test_sealed_id_override_rejected(
     from tests import test_xinao_skill as skill_tests
 
     manifest, path = skill_tests._sealed_release(
-        module, tmp_path, monkeypatch, package_version="1.3.5", capability_version="1.2.2"
+        module, tmp_path, monkeypatch, package_version="1.3.6", capability_version="1.2.2"
     )
     skill_tests._terminal_pointer(module, manifest, path)
     monkeypatch.delenv("XINAO_DUAL_CONTAINER_SYNTHETIC", raising=False)
@@ -667,7 +667,7 @@ def test_production_issuer_ignores_global_probe_injector(
     from tests import test_xinao_skill as skill_tests
 
     manifest, path = skill_tests._sealed_release(
-        module, tmp_path, monkeypatch, package_version="1.3.5", capability_version="1.2.2"
+        module, tmp_path, monkeypatch, package_version="1.3.6", capability_version="1.2.2"
     )
     skill_tests._terminal_pointer(module, manifest, path)
 
@@ -705,7 +705,7 @@ def test_issuer_requires_complete_physical_proofs_fail_closed(
     from tests import test_xinao_skill as skill_tests
 
     manifest, path = skill_tests._sealed_release(
-        module, tmp_path, monkeypatch, package_version="1.3.5", capability_version="1.2.2"
+        module, tmp_path, monkeypatch, package_version="1.3.6", capability_version="1.2.2"
     )
     skill_tests._terminal_pointer(module, manifest, path)
     _install_docker_io_mock(
@@ -729,7 +729,7 @@ def test_issuer_writes_canonical_receipt_via_real_docker_io_mock(
     from tests import test_xinao_skill as skill_tests
 
     manifest, path = skill_tests._sealed_release(
-        module, tmp_path, monkeypatch, package_version="1.3.5", capability_version="1.2.2"
+        module, tmp_path, monkeypatch, package_version="1.3.6", capability_version="1.2.2"
     )
     skill_tests._terminal_pointer(module, manifest, path)
     io_state = _install_docker_io_mock(
@@ -780,7 +780,7 @@ def test_consumer_rejects_off_root_forged_json(
     from tests import test_xinao_skill as skill_tests
 
     manifest, path = skill_tests._sealed_release(
-        module, tmp_path, monkeypatch, package_version="1.3.5", capability_version="1.2.2"
+        module, tmp_path, monkeypatch, package_version="1.3.6", capability_version="1.2.2"
     )
     skill_tests._terminal_pointer(module, manifest, path)
     episode = tmp_path / "episode"
@@ -829,7 +829,7 @@ def test_consumer_rejects_hash_drift_and_tamper(
     from tests import test_xinao_skill as skill_tests
 
     manifest, path = skill_tests._sealed_release(
-        module, tmp_path, monkeypatch, package_version="1.3.5", capability_version="1.2.2"
+        module, tmp_path, monkeypatch, package_version="1.3.6", capability_version="1.2.2"
     )
     skill_tests._terminal_pointer(module, manifest, path)
     receipt_path, _receipt, pointer_path = _seed_canonical_receipt(
@@ -871,7 +871,7 @@ def test_consumer_rejects_stale_wrong_release_wrong_image(
     from tests import test_xinao_skill as skill_tests
 
     manifest, path = skill_tests._sealed_release(
-        module, tmp_path, monkeypatch, package_version="1.3.5", capability_version="1.2.2"
+        module, tmp_path, monkeypatch, package_version="1.3.6", capability_version="1.2.2"
     )
     skill_tests._terminal_pointer(module, manifest, path)
 
@@ -928,7 +928,7 @@ def test_consumer_rejects_episode_local_and_env_only_path(
     from tests import test_xinao_skill as skill_tests
 
     manifest, path = skill_tests._sealed_release(
-        module, tmp_path, monkeypatch, package_version="1.3.5", capability_version="1.2.2"
+        module, tmp_path, monkeypatch, package_version="1.3.6", capability_version="1.2.2"
     )
     skill_tests._terminal_pointer(module, manifest, path)
     episode = tmp_path / "episode"
@@ -965,7 +965,7 @@ def test_profile_status_consistent_across_identity_start_status_resume(
     from tests import test_xinao_skill as skill_tests
 
     manifest, path = skill_tests._sealed_release(
-        module, tmp_path, monkeypatch, package_version="1.3.5", capability_version="1.2.2"
+        module, tmp_path, monkeypatch, package_version="1.3.6", capability_version="1.2.2"
     )
     skill_tests._terminal_pointer(module, manifest, path)
     episode = tmp_path / "episode_root"
@@ -1024,7 +1024,7 @@ def test_issuer_start_failure_is_not_denial_proof(
     from tests import test_xinao_skill as skill_tests
 
     manifest, path = skill_tests._sealed_release(
-        module, tmp_path, monkeypatch, package_version="1.3.5", capability_version="1.2.2"
+        module, tmp_path, monkeypatch, package_version="1.3.6", capability_version="1.2.2"
     )
     skill_tests._terminal_pointer(module, manifest, path)
     _install_docker_io_mock(
@@ -1052,7 +1052,7 @@ def test_issuer_exec_plumbing_failure_is_not_denial_proof(
     from tests import test_xinao_skill as skill_tests
 
     manifest, path = skill_tests._sealed_release(
-        module, tmp_path, monkeypatch, package_version="1.3.5", capability_version="1.2.2"
+        module, tmp_path, monkeypatch, package_version="1.3.6", capability_version="1.2.2"
     )
     skill_tests._terminal_pointer(module, manifest, path)
     _install_docker_io_mock(
@@ -1077,7 +1077,7 @@ def test_issuer_wrong_executable_is_not_denial_proof(
     from tests import test_xinao_skill as skill_tests
 
     manifest, path = skill_tests._sealed_release(
-        module, tmp_path, monkeypatch, package_version="1.3.5", capability_version="1.2.2"
+        module, tmp_path, monkeypatch, package_version="1.3.6", capability_version="1.2.2"
     )
     skill_tests._terminal_pointer(module, manifest, path)
     _install_docker_io_mock(
@@ -1102,7 +1102,7 @@ def test_issuer_unrelated_nonzero_is_not_denial_proof(
     from tests import test_xinao_skill as skill_tests
 
     manifest, path = skill_tests._sealed_release(
-        module, tmp_path, monkeypatch, package_version="1.3.5", capability_version="1.2.2"
+        module, tmp_path, monkeypatch, package_version="1.3.6", capability_version="1.2.2"
     )
     skill_tests._terminal_pointer(module, manifest, path)
     _install_docker_io_mock(
