@@ -545,8 +545,8 @@ def _seed_canonical_receipt(
     return receipt_path, receipt, pointer_path
 
 
-def test_semver_source_is_1_3_9_and_1_2_5(module: Any) -> None:
-    """gen10 dual-image identity: Skill 1.3.9 / researcher capability 1.2.5."""
+def test_semver_source_is_1_3_11_and_1_2_7(module: Any) -> None:
+    """Current dual-image identity: Skill 1.3.11 / researcher capability 1.2.7."""
     registry = json.loads((SKILL_ROOT / "references" / "capabilities.v1.json").read_text())
     charter = json.loads((SKILL_ROOT / "references" / "researcher-charter.v1.json").read_text())
     runtime_lock = json.loads(
@@ -555,12 +555,12 @@ def test_semver_source_is_1_3_9_and_1_2_5(module: Any) -> None:
     researcher = next(
         c for c in registry["capabilities"] if c["capability_id"] == "researcher-container"
     )
-    assert registry["skill_version"] == "1.3.9"
+    assert registry["skill_version"] == "1.3.11"
     assert (
         researcher["version"]
         == charter["charter_version"]
         == runtime_lock["runtime_version"]
-        == "1.2.5"
+        == "1.2.7"
     )
     shadow = next(
         c for c in registry["capabilities"] if c["capability_id"] == "shadow-lifecycle-leg-a"

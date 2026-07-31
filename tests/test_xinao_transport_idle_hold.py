@@ -45,7 +45,9 @@ def specs() -> Any:
     return _load("xinao_docker_create_specs_idle_hold", SPECS_PATH)
 
 
-def test_self_describe_unchanged_and_exits(episode: Any, capsys: pytest.CaptureFixture[str]) -> None:
+def test_self_describe_unchanged_and_exits(
+    episode: Any, capsys: pytest.CaptureFixture[str]
+) -> None:
     rc = episode.main(["--self-describe"])
     assert rc == 0
     out = json.loads(capsys.readouterr().out)
@@ -57,7 +59,10 @@ def test_self_describe_unchanged_and_exits(episode: Any, capsys: pytest.CaptureF
 
 
 def test_bare_without_hold_writes_receipt_and_exits(
-    episode: Any, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    episode: Any,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
 ) -> None:
     receipt = tmp_path / "receipt.json"
     monkeypatch.setenv("XINAO_EPISODE_RECEIPT_PATH", str(receipt))
@@ -74,7 +79,10 @@ def test_bare_without_hold_writes_receipt_and_exits(
 
 
 def test_hold_writes_receipt_blocks_until_hook(
-    episode: Any, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    episode: Any,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
 ) -> None:
     receipt = tmp_path / "receipt.json"
     monkeypatch.setenv("XINAO_EPISODE_RECEIPT_PATH", str(receipt))
