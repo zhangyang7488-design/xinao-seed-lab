@@ -632,7 +632,9 @@ def test_companion_runtime_seal_matches_repository_bytes() -> None:
     runtime_path = bootstrap._companion_runtime_path()
     observed = hashlib.sha256(runtime_path.read_bytes()).hexdigest()
     assert observed == bootstrap.EXPECTED_COMPANION_RUNTIME_SHA256
-    assert observed == "ce36be4e60028bf09e40516c3660c92cd2e6a4dab8c696e95a8fe7b292eb2706"
+    # Wave106: Windows host cannot exec Linux donor ELF; runtime probe uses Docker-mount
+    # of staged bytes. Companion pin tracks exact xinao_runtime.py seal.
+    assert observed == "ab896d42a1f59dc9ac26066e4b35572c3793b440f03fb36b49dc51af3596ffaa"
     assert len(observed) == 64
 
 

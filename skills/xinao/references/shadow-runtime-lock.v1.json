@@ -24,6 +24,7 @@
     "xinao/canonical/identifiers.py",
     "xinao/canonical/jcs.py",
     "xinao/canonical/time_profile.py",
+    "xinao/cli_json.py",
     "xinao/decision/__init__.py",
     "xinao/decision/compiler.py",
     "xinao/ledger/accounting.py",

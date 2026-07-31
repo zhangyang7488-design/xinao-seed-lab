@@ -2239,20 +2239,105 @@ def _require_lock_grok_cli_version(runtime_lock: dict[str, Any]) -> str:
     return expected
 
 
-def _probe_grok_binary_version_text(binary_path: Path) -> str:
-    """Execute staged/built grok binary `version` without auth/network assumptions."""
-    completed = _run([str(binary_path), "version"], timeout=60)
+def _linux_elf_magic(path: Path) -> bool:
+    """True when path begins with Linux ELF magic (donor CLI is Linux-only)."""
+
+    try:
+        with path.open("rb") as handle:
+            return handle.read(4) == b"\x7fELF"
+    except OSError:
+        return False
+
+
+def _probe_grok_binary_version_via_docker_mount(
+    binary_path: Path, *, docker_image_id: str
+) -> subprocess.CompletedProcess[str]:
+    """Run staged Linux ELF ``grok version`` by mounting exact bytes into Docker.
+
+    Used on Windows hosts that cannot natively exec the donor ELF. The image id is only
+    the execution kernel; entrypoint is the staged binary path so tag retargeting cannot
+    substitute a different ``/usr/local/bin/grok``.
+    """
+
+    if re.fullmatch(r"sha256:[0-9a-f]{64}", docker_image_id) is None:
+        raise XinaoError("GROK_DONOR_IMAGE_IDENTITY_INVALID", docker_image_id)
+    binary_path = Path(os.path.abspath(binary_path))
+    if not binary_path.is_file() or _is_reparse(binary_path):
+        raise XinaoError("DONOR_BINARY_INVALID", str(binary_path))
+    parent = binary_path.parent
+    name = binary_path.name
+    if name != "grok" and "/" in name.replace("\\", "/"):
+        raise XinaoError("DONOR_BINARY_INVALID", str(binary_path))
+    docker = _docker()
+    # Mount only the parent directory that owns the staged binary (exact host bytes).
+    mount_spec = f"{parent}:/xinao-donor-probe:ro"
+    return _run(
+        [
+            docker,
+            "run",
+            "--rm",
+            "--network",
+            "none",
+            "-v",
+            mount_spec,
+            "--entrypoint",
+            f"/xinao-donor-probe/{name}",
+            docker_image_id,
+            "version",
+        ],
+        timeout=120,
+    )
+
+
+def _probe_grok_binary_version_text(
+    binary_path: Path, *, docker_exec_image_id: str | None = None
+) -> str:
+    """Execute staged/built grok binary `version` without auth/network assumptions.
+
+    Prefer native exec (Linux hosts). On PROCESS_START_FAILED for a Linux ELF (Windows
+    host building Linux researcher images), fall back to Docker-mount probe of the same
+    staged bytes using the lock-pinned donor image id as the execution kernel only.
+    """
+    binary_path = Path(binary_path)
+    try:
+        completed = _run([str(binary_path), "version"], timeout=60)
+    except XinaoError as exc:
+        if exc.reason_code != "PROCESS_START_FAILED":
+            raise
+        if not _linux_elf_magic(binary_path):
+            raise
+        if (
+            docker_exec_image_id is None
+            or re.fullmatch(r"sha256:[0-9a-f]{64}", docker_exec_image_id) is None
+        ):
+            raise XinaoError(
+                "GROK_CLI_VERSION_PROBE_HOST_INCOMPATIBLE",
+                (
+                    f"linux ELF cannot exec on this host and no docker image id for "
+                    f"staged-byte probe: {binary_path}"
+                ),
+            ) from exc
+        completed = _probe_grok_binary_version_via_docker_mount(
+            binary_path, docker_image_id=docker_exec_image_id
+        )
     combined = f"{completed.stdout or ''}{completed.stderr or ''}".strip()
     if not combined:
         raise XinaoError("GROK_CLI_VERSION_PROBE_EMPTY", str(binary_path))
     return combined.splitlines()[0].strip()[:200]
 
 
-def _require_staged_grok_cli_version(binary_path: Path, *, expected_version: str) -> str:
+def _require_staged_grok_cli_version(
+    binary_path: Path,
+    *,
+    expected_version: str,
+    docker_exec_image_id: str | None = None,
+) -> str:
     """Fail closed unless staged binary reports exact lock equality."""
     if re.fullmatch(r"\d+\.\d+\.\d+", expected_version) is None:
         raise XinaoError("RUNTIME_LOCK_GROK_CLI_VERSION_INVALID", expected_version)
-    version_text = _probe_grok_binary_version_text(binary_path)
+    version_text = _probe_grok_binary_version_text(
+        binary_path, docker_exec_image_id=docker_exec_image_id
+    )
     parsed = _parse_grok_cli_version(version_text)
     if parsed != expected_version:
         raise XinaoError(
@@ -4735,6 +4820,7 @@ def build_release(
         observed_grok_cli_version = _require_staged_grok_cli_version(
             binary_path,
             expected_version=expected_grok_cli_version,
+            docker_exec_image_id=observed_donor_id,
         )
         # Dockerfile COPYs shadow-runtime/ from this owned context; stage the locked cone
         # only (never the full repository), then re-hash the staged bytes before build.
@@ -4813,6 +4899,7 @@ def build_release(
         observed_grok_cli_version = _require_staged_grok_cli_version(
             binary_path,
             expected_version=expected_grok_cli_version,
+            docker_exec_image_id=observed_donor_id,
         )
         build_args = [
             docker,
