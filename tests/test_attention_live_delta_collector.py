@@ -223,7 +223,9 @@ def test_hook_fail_open_injects_delta_or_unavailable_and_stays_fast() -> None:
         assert marker not in context
 
 
-def test_hook_missing_collector_marker_is_fail_open(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_hook_missing_collector_marker_is_fail_open(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     # Static contract: missing collector path yields LIVE_DELTA_UNAVAILABLE without blocking.
     hook_text = HOOK.read_text(encoding="utf-8")
     assert "LIVE_DELTA_UNAVAILABLE:collector_missing" in hook_text
