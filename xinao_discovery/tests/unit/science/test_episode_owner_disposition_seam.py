@@ -1,9 +1,10 @@
 """Episode export pool entry → Owner disposition seam (Wave124).
 
 Consumer-shaped: ResearchEpisode export → pool-ingest → write-owner-disposition
-for ADOPT / REJECT / RETAIN_FOR_SHADOW. Pool stays immutable (owner_adopted=false);
-no freeze/settle/next-task. One-shot loader alone remains fail-closed on episode
-entries; one-shot disposition path still works.
+(→ freeze-from-disposition) for ADOPT / REJECT / RETAIN_FOR_SHADOW.
+Pool stays immutable (owner_adopted=false); no auto-settle/next-task.
+One-shot loader alone remains fail-closed on episode entries; one-shot
+disposition path still works. Attack regressions force remint identity rebind.
 """
 
 from __future__ import annotations
@@ -17,18 +18,24 @@ from typing import Any
 
 import pytest
 
+from xinao.canonical import canonical_sha256
 from xinao.cli import main
 from xinao.science.candidate_pool import (
     CandidatePoolError,
     ingest_verified_research_result,
     load_pool_entry,
     pool_entry_path,
+    pool_receipt_path,
+    pool_result_bytes_path,
 )
 from xinao.science.episode_export_pool_adapter import (
     INGEST_KIND,
+    EpisodeExportAdapterError,
     ingest_verified_episode_export,
     load_episode_pool_entry,
+    remint_episode_pool_entry_from_raw,
 )
+from xinao.science.freeze_adapter import apply_freeze_from_disposition
 from xinao.science.owner_disposition import (
     CODEX_OWNER_CHANNEL_SOURCE,
     DISPOSITION_MARKER,
@@ -45,6 +52,8 @@ from xinao.science.owner_disposition import (
     write_owner_disposition_artifact,
 )
 from xinao.science.researcher_result_adapter import raw_sha256 as oneshot_raw_sha256
+from xinao.shadow_lifecycle import init_episode
+from xinao.shadow_lifecycle.store import load_frozen
 
 ROOT = Path(__file__).resolve().parents[3]
 FIXTURE_DIR = ROOT / "tests" / "fixtures" / "oneshot_xrr_20260730T201916_20001f0913"
@@ -242,6 +251,21 @@ def _assert_no_freeze_artifacts(root: Path) -> None:
             and any(token in path.name.lower() for token in ("freeze", "settle"))
         ):
             raise AssertionError(f"unexpected freeze-ish file: {path}")
+
+
+def _reseal_pool_entry(entry: dict[str, Any]) -> dict[str, Any]:
+    """Attack helper: recompute content_hash after field rewrite (entry-only forge)."""
+
+    body = {k: v for k, v in entry.items() if k != "content_hash"}
+    return {**body, "content_hash": canonical_sha256(body)}
+
+
+def _overwrite_pool_entry(pool: Path, entry: dict[str, Any]) -> None:
+    path = pool_entry_path(pool, str(entry["result_sha256"]))
+    path.write_text(
+        json.dumps(entry, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
 
 
 # --- Positive: consumer-shaped episode disposition ---------------------------
@@ -653,3 +677,217 @@ def test_missing_pool_entry_fails_closed(tmp_path: Path) -> None:
     with pytest.raises(OwnerDispositionError) as exc:
         load_verified_pool_entry_for_disposition(tmp_path / "empty_pool", "aa" * 32)
     assert exc.value.reason_code == "POOL_ENTRY_MISSING"
+
+
+# --- Attack: entry-only rewrite / receipt forge / policy remint forge --------
+
+
+def test_entry_only_candidate_rewrite_reseal_fails_load(tmp_path: Path) -> None:
+    """Attack: rewrite candidate (+ policy) on entry, reseal content_hash; CAS intact.
+
+    Pre-harden load only checked entry seal + export/manifest pin, so Owner
+    disposition could bind a forged identity. Remint from CAS must fail closed.
+    """
+
+    pool = tmp_path / "pool"
+    owner = tmp_path / "owner"
+    owner.mkdir()
+    honest = _ingest_episode(pool, episode_id="ep_entry_only_forge")
+    honest_before = _pool_snapshot(pool, honest["result_sha256"])
+
+    forged = copy.deepcopy(honest)
+    forged["candidate"] = {
+        **dict(forged["candidate"]),
+        "candidate_id": "attacker_smuggled_candidate",
+        "research_question": "forged research question for owner smuggle",
+        "proposed": {"numbers": [49], "stake": "999.00"},
+    }
+    forged["policy_ref"] = "science.research_episode_export.v1.sha256:" + ("0" * 64)
+    forged["policy_content_hash"] = "11" * 32
+    forged = _reseal_pool_entry(forged)
+    assert forged["content_hash"] != honest["content_hash"]
+    _overwrite_pool_entry(pool, forged)
+
+    with pytest.raises(EpisodeExportAdapterError) as load_exc:
+        load_episode_pool_entry(pool, honest["result_sha256"])
+    assert load_exc.value.reason_code == "POOL_ENTRY_IDENTITY_MISMATCH"
+
+    with pytest.raises(OwnerDispositionError) as disp_exc:
+        load_verified_pool_entry_for_disposition(pool, honest["result_sha256"])
+    assert disp_exc.value.reason_code == "POOL_ENTRY_IDENTITY_MISMATCH"
+
+    # Disposition that pins the forged entry hash must also fail on verify.
+    payload = _no_action_disposition(
+        forged,
+        science_disposition=SCIENCE_ADOPT,
+    )
+    written = write_owner_disposition_artifact(
+        owner_state_root=owner,
+        payload=payload,
+        pool_root=pool,
+    )
+    with pytest.raises(OwnerDispositionError) as verify_exc:
+        load_and_verify_disposition(
+            disposition_path=Path(written["disposition_path"]),
+            owner_state_root=owner,
+            pool_root=pool,
+            result_sha256=honest["result_sha256"],
+        )
+    assert verify_exc.value.reason_code == "POOL_ENTRY_IDENTITY_MISMATCH"
+    # CAS blobs (result/receipt) unchanged; only entry JSON was rewritten.
+    assert pool_result_bytes_path(pool, honest["result_sha256"]).is_file()
+    assert pool_receipt_path(pool, honest["result_sha256"]).is_file()
+    assert honest_before["entry_sha256"] != _sha(
+        pool_entry_path(pool, honest["result_sha256"]).read_bytes()
+    )
+
+
+def test_entry_receipt_field_forge_reseal_fails_load(tmp_path: Path) -> None:
+    """Attack: forge receipt_content/raw/candidate_manifest hashes on entry only."""
+
+    pool = tmp_path / "pool"
+    honest = _ingest_episode(pool, episode_id="ep_receipt_forge")
+    forged_hash = "dd" * 32
+    forged = copy.deepcopy(honest)
+    forged["receipt_content_sha256"] = forged_hash
+    forged["receipt_raw_sha256"] = forged_hash
+    forged["candidate_manifest_sha256"] = forged_hash
+    forged = _reseal_pool_entry(forged)
+    _overwrite_pool_entry(pool, forged)
+
+    with pytest.raises(EpisodeExportAdapterError) as exc:
+        load_episode_pool_entry(pool, honest["result_sha256"])
+    assert exc.value.reason_code == "POOL_ENTRY_RECEIPT_HASH_MISMATCH"
+
+    with pytest.raises(OwnerDispositionError) as od_exc:
+        load_verified_pool_entry_for_disposition(pool, honest["result_sha256"])
+    assert od_exc.value.reason_code == "POOL_ENTRY_RECEIPT_HASH_MISMATCH"
+
+
+def test_policy_remint_forge_fails_when_entry_diverges(tmp_path: Path) -> None:
+    """Attack: keep receipt hashes honest but swap policy_ref/content_hash + reseal."""
+
+    pool = tmp_path / "pool"
+    export_bytes, man_bytes, _ = _build_episode_export(episode_id="ep_policy_forge")
+    honest = ingest_verified_episode_export(
+        pool_root=pool,
+        export=export_bytes,
+        manifest_bytes=man_bytes,
+    )
+    reminted = remint_episode_pool_entry_from_raw(
+        export_raw=export_bytes,
+        manifest_raw=man_bytes,
+    )
+    assert reminted["expected_entry"] == honest
+
+    forged = copy.deepcopy(honest)
+    forged["policy_ref"] = "science.forged.policy.v1.sha256:" + ("ab" * 32)
+    forged["policy_content_hash"] = "ef" * 32
+    forged["decision_map_ref"] = "xinao.not_projected.forged.v1:" + ("cd" * 32)
+    forged = _reseal_pool_entry(forged)
+    _overwrite_pool_entry(pool, forged)
+
+    with pytest.raises(EpisodeExportAdapterError) as exc:
+        load_episode_pool_entry(pool, honest["result_sha256"])
+    assert exc.value.reason_code == "POOL_ENTRY_IDENTITY_MISMATCH"
+    # Remint ground truth unchanged (attack only touched entry JSON).
+    remint_again = remint_episode_pool_entry_from_raw(
+        export_raw=pool_result_bytes_path(pool, honest["result_sha256"]).read_bytes(),
+        manifest_raw=pool_receipt_path(pool, honest["result_sha256"]).read_bytes(),
+    )
+    assert remint_again["expected_entry"]["policy_ref"] == honest["policy_ref"]
+    assert remint_again["expected_entry"]["policy_content_hash"] == honest["policy_content_hash"]
+
+
+def test_missing_result_or_receipt_maps_to_pool_cas_partial_state(tmp_path: Path) -> None:
+    """Missing CAS blobs must not surface bare FileNotFoundError/OSError."""
+
+    # Drop result blob only.
+    pool_result = tmp_path / "pool_result"
+    entry_result = _ingest_episode(pool_result, episode_id="ep_partial_result")
+    digest_result = entry_result["result_sha256"]
+    pool_result_bytes_path(pool_result, digest_result).unlink()
+    with pytest.raises(EpisodeExportAdapterError) as miss_result:
+        load_episode_pool_entry(pool_result, digest_result)
+    assert miss_result.value.reason_code == "POOL_CAS_PARTIAL_STATE"
+    with pytest.raises(OwnerDispositionError) as od_result:
+        load_verified_pool_entry_for_disposition(pool_result, digest_result)
+    assert od_result.value.reason_code == "POOL_CAS_PARTIAL_STATE"
+
+    # Drop receipt/manifest blob only.
+    pool_receipt = tmp_path / "pool_receipt"
+    entry_receipt = _ingest_episode(pool_receipt, episode_id="ep_partial_receipt")
+    digest_receipt = entry_receipt["result_sha256"]
+    pool_receipt_path(pool_receipt, digest_receipt).unlink()
+    with pytest.raises(EpisodeExportAdapterError) as miss_receipt:
+        load_episode_pool_entry(pool_receipt, digest_receipt)
+    assert miss_receipt.value.reason_code == "POOL_CAS_PARTIAL_STATE"
+    with pytest.raises(OwnerDispositionError) as od_receipt:
+        load_verified_pool_entry_for_disposition(pool_receipt, digest_receipt)
+    assert od_receipt.value.reason_code == "POOL_CAS_PARTIAL_STATE"
+
+
+# --- Full consumer: export → pool → disposition → freeze-from-disposition ----
+
+
+def test_episode_export_disposition_freeze_consumer_no_auto_settle(
+    tmp_path: Path,
+) -> None:
+    """Real consumer-shaped chain stops at freeze; pool immutable; no auto-settle/next."""
+
+    pool = tmp_path / "pool"
+    owner = tmp_path / "owner"
+    owner.mkdir()
+    episode_root = tmp_path / "episode_shadow"
+    init_episode(
+        root=episode_root,
+        seat_id="seat.episode.owner.disp",
+        portfolio_ref="portfolio.episode.owner.disp",
+    )
+    entry = _ingest_episode(pool, episode_id="ep_freeze_consumer")
+    before = _pool_snapshot(pool, entry["result_sha256"])
+
+    payload = _no_action_disposition(entry, science_disposition=SCIENCE_ADOPT)
+    written = write_owner_disposition_artifact(
+        owner_state_root=owner,
+        payload=payload,
+        pool_root=pool,
+    )
+    verified = load_and_verify_disposition(
+        disposition_path=Path(written["disposition_path"]),
+        owner_state_root=owner,
+        pool_root=pool,
+        result_sha256=entry["result_sha256"],
+    )
+    assert verified["pool_entry"]["ingest_kind"] == INGEST_KIND
+    assert verified["pool_entry"]["content_hash"] == entry["content_hash"]
+    assert verified["pool_entry"]["policy_ref"] == entry["policy_ref"]
+    assert verified["pool_entry"]["policy_content_hash"] == entry["policy_content_hash"]
+
+    freeze = apply_freeze_from_disposition(
+        pool_root=pool,
+        owner_state_root=owner,
+        disposition_path=Path(written["disposition_path"]),
+        shadow_root=episode_root,
+        mode="episode",
+        result_sha256=entry["result_sha256"],
+        clock=lambda: FROZEN_AT,
+    )
+    assert freeze.get("ok", True) is True
+    assert freeze["mode"] == "episode"
+    assert freeze["auto_settle"] is False
+    assert freeze["auto_next_period"] is False
+    assert freeze["completion_claim_allowed"] is False
+    assert freeze["bound_result_sha256"] == entry["result_sha256"]
+    assert freeze["bound_pool_entry_content_hash"] == entry["content_hash"]
+    assert freeze["frozen_episode_hash"]
+    frozen = load_frozen(episode_root)
+    assert frozen.content_hash == freeze["frozen_episode_hash"]
+
+    after = _pool_snapshot(pool, entry["result_sha256"])
+    assert after["entry_bytes"] == before["entry_bytes"]
+    assert after["entry"]["owner_adopted"] is False
+    assert after["entry"]["content_hash"] == before["entry"]["content_hash"]
+    reloaded = load_episode_pool_entry(pool, entry["result_sha256"])
+    assert reloaded["owner_adopted"] is False
+    assert reloaded == entry

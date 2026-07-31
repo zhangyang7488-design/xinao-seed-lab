@@ -374,6 +374,114 @@ def _build_episode_pool_entry(
     return {**body, "content_hash": content_hash}
 
 
+def remint_episode_pool_entry_from_raw(
+    *,
+    export_raw: bytes,
+    manifest_raw: bytes,
+) -> dict[str, Any]:
+    """Shared ingest/load remint: export+manifest raw bytes → expected sealed entry.
+
+    Reuses the same production verify/mint/build path as ingest so load cannot
+    drift onto a second identity algorithm. Returns reminted objects plus the
+    sealed expected pool entry.
+    """
+
+    if not isinstance(export_raw, (bytes, bytearray)) or not export_raw:
+        raise EpisodeExportAdapterError("POOL_CAS_PARTIAL_STATE", "export bytes required")
+    if not isinstance(manifest_raw, (bytes, bytearray)) or not manifest_raw:
+        raise EpisodeExportAdapterError("POOL_CAS_PARTIAL_STATE", "manifest bytes required")
+    export_bytes = bytes(export_raw)
+    manifest_bytes = bytes(manifest_raw)
+    export_sha = raw_sha256(export_bytes)
+    export_obj = verify_episode_export_bundle(export_bytes)
+    manifest = load_and_verify_candidate_manifest(
+        export=export_obj,
+        manifest_bytes=manifest_bytes,
+    )
+    manifest_sha = raw_sha256(manifest_bytes)
+    # Export pin already enforced inside load_and_verify; keep explicit triple-bind.
+    export_pin = export_obj.get("candidate_manifest_sha256")
+    if export_pin != manifest_sha:
+        raise EpisodeExportAdapterError(
+            "CANDIDATE_MANIFEST_HASH_MISMATCH",
+            f"export={export_pin} bytes={manifest_sha}",
+        )
+    policy = mint_policy_candidate_from_episode_export(
+        export=export_obj,
+        manifest=manifest,
+        export_bytes_sha256=export_sha,
+        manifest_bytes_sha256=manifest_sha,
+    )
+    expected_entry = _build_episode_pool_entry(
+        export=export_obj,
+        manifest=manifest,
+        policy=policy,
+        export_sha256=export_sha,
+        manifest_sha256=manifest_sha,
+    )
+    return {
+        "export_obj": export_obj,
+        "manifest": manifest,
+        "export_sha256": export_sha,
+        "manifest_sha256": manifest_sha,
+        "policy": policy,
+        "expected_entry": expected_entry,
+    }
+
+
+def _assert_entry_matches_remint(
+    entry: Mapping[str, Any],
+    *,
+    reminted: Mapping[str, Any],
+) -> None:
+    """Force actual entry identity to equal remint from CAS raw bytes.
+
+    Seal alone is not enough: an attacker can rewrite candidate / policy_ref /
+    policy_content_hash / receipt fields and recompute content_hash. Remint from
+    export+manifest CAS is the ground truth.
+    """
+
+    manifest_sha = reminted["manifest_sha256"]
+    expected = reminted["expected_entry"]
+    if not isinstance(expected, Mapping):
+        raise EpisodeExportAdapterError("POOL_ENTRY_IDENTITY_MISMATCH", "remint entry invalid")
+
+    for field in (
+        "receipt_content_sha256",
+        "receipt_raw_sha256",
+        "candidate_manifest_sha256",
+    ):
+        observed = entry.get(field)
+        if observed != manifest_sha:
+            raise EpisodeExportAdapterError(
+                "POOL_ENTRY_RECEIPT_HASH_MISMATCH",
+                f"{field} entry={observed} remint={manifest_sha}",
+            )
+
+    for field in (
+        "policy_ref",
+        "policy_content_hash",
+        "decision_map_ref",
+        "candidate",
+        "result_sha256",
+        "export_bundle_sha256",
+        "content_hash",
+    ):
+        if entry.get(field) != expected.get(field):
+            raise EpisodeExportAdapterError(
+                "POOL_ENTRY_IDENTITY_MISMATCH",
+                f"{field} entry={entry.get(field)!r} remint={expected.get(field)!r}",
+            )
+
+    # Full sealed body must match remint (lab_provenance, cutoff, flags, ...).
+    if dict(entry) != dict(expected):
+        diverged = sorted(k for k in set(entry) | set(expected) if entry.get(k) != expected.get(k))
+        raise EpisodeExportAdapterError(
+            "POOL_ENTRY_IDENTITY_MISMATCH",
+            f"entry != remint fields={diverged}",
+        )
+
+
 def ingest_verified_episode_export(
     *,
     pool_root: Path,
@@ -381,33 +489,22 @@ def ingest_verified_episode_export(
     manifest_bytes: bytes,
 ) -> dict[str, Any]:
     """Verify export+manifest, mint not-projected identity, exclusive-create pool entry."""
-    export_obj = verify_episode_export_bundle(export)
+    # Normalize export to durable raw bytes first (CAS identity = raw sha256).
     if isinstance(export, (bytes, bytearray)):
         export_raw = bytes(export)
     else:
+        # Verify structure before durable re-serialize so invalid mappings fail closed.
+        export_obj_preview = verify_episode_export_bundle(export)
         export_raw = (
-            json.dumps(dict(export_obj), ensure_ascii=False, indent=2, sort_keys=True) + "\n"
+            json.dumps(dict(export_obj_preview), ensure_ascii=False, indent=2, sort_keys=True)
+            + "\n"
         ).encode("utf-8")
-    export_sha = raw_sha256(export_raw)
-    # Prefer sealed bundle hash as identity when present and matches recomputation path.
-    if isinstance(export_obj.get("bundle_sha256"), str):
-        # Identity key stays content-addressed on export raw bytes for CAS layout.
-        pass
-    manifest = load_and_verify_candidate_manifest(export=export_obj, manifest_bytes=manifest_bytes)
-    manifest_sha = raw_sha256(bytes(manifest_bytes))
-    policy = mint_policy_candidate_from_episode_export(
-        export=export_obj,
-        manifest=manifest,
-        export_bytes_sha256=export_sha,
-        manifest_bytes_sha256=manifest_sha,
+    reminted = remint_episode_pool_entry_from_raw(
+        export_raw=export_raw,
+        manifest_raw=bytes(manifest_bytes),
     )
-    entry = _build_episode_pool_entry(
-        export=export_obj,
-        manifest=manifest,
-        policy=policy,
-        export_sha256=export_sha,
-        manifest_sha256=manifest_sha,
-    )
+    entry = reminted["expected_entry"]
+    export_sha = reminted["export_sha256"]
     entry_path = pool_entry_path(pool_root, export_sha)
     result_path = pool_result_bytes_path(pool_root, export_sha)
     receipt_path = pool_receipt_path(pool_root, export_sha)
@@ -426,6 +523,8 @@ def ingest_verified_episode_export(
             verify_pool_entry_seal(existing)
         except CandidatePoolError as exc:
             raise EpisodeExportAdapterError(exc.reason_code, exc.detail) from exc
+        # Existing sealed entry must still rebind to remint (no stale forge left on disk).
+        _assert_entry_matches_remint(existing, reminted=reminted)
         return dict(existing)
     if not result_exists:
         _write_new_bytes(result_path, export_raw)
@@ -437,14 +536,20 @@ def ingest_verified_episode_export(
 
 
 def load_episode_pool_entry(pool_root: Path, result_sha256: str) -> dict[str, Any]:
-    """Load pool entry; for episode ingest re-verify without one-shot adapter."""
+    """Load pool entry; remint identity from CAS raw bytes (same path as ingest)."""
     digest = _require_hex64(result_sha256, "POOL_RESULT_HASH_INVALID", "result_sha256")
     entry_path = pool_entry_path(pool_root, digest)
     result_path = pool_result_bytes_path(pool_root, digest)
     receipt_path = pool_receipt_path(pool_root, digest)
     if not entry_path.is_file():
         raise EpisodeExportAdapterError("POOL_ENTRY_MISSING", digest)
-    entry = json.loads(entry_path.read_text(encoding="utf-8"))
+    try:
+        entry_obj = json.loads(entry_path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise EpisodeExportAdapterError("POOL_ENTRY_INVALID", str(exc)) from exc
+    if not isinstance(entry_obj, Mapping):
+        raise EpisodeExportAdapterError("POOL_ENTRY_INVALID", "JSON object required")
+    entry = dict(entry_obj)
     if entry.get("ingest_kind") != INGEST_KIND:
         # Fall back to one-shot loader for old entries.
         try:
@@ -457,12 +562,32 @@ def load_episode_pool_entry(pool_root: Path, result_sha256: str) -> dict[str, An
         raise EpisodeExportAdapterError(exc.reason_code, exc.detail) from exc
     if entry.get("owner_adopted") is not False:
         raise EpisodeExportAdapterError("POOL_OWNER_ADOPTED_FORBIDDEN", "must false")
-    export_raw = result_path.read_bytes()
+    if entry.get("result_sha256") != digest:
+        raise EpisodeExportAdapterError(
+            "POOL_ENTRY_HASH_MISMATCH",
+            f"path={digest} body={entry.get('result_sha256')}",
+        )
+    # Missing/partial CAS must not surface bare FileNotFoundError/OSError.
+    if not result_path.is_file() or not receipt_path.is_file():
+        raise EpisodeExportAdapterError("POOL_CAS_PARTIAL_STATE", digest)
+    try:
+        export_raw = result_path.read_bytes()
+        manifest_raw = receipt_path.read_bytes()
+    except OSError as exc:
+        raise EpisodeExportAdapterError("POOL_CAS_PARTIAL_STATE", f"{digest}: {exc}") from exc
     if raw_sha256(export_raw) != digest:
         raise EpisodeExportAdapterError("POOL_RESULT_BYTES_TAMPERED", digest)
-    manifest_raw = receipt_path.read_bytes()
-    export_obj = verify_episode_export_bundle(export_raw)
-    load_and_verify_candidate_manifest(export=export_obj, manifest_bytes=manifest_raw)
+
+    reminted = remint_episode_pool_entry_from_raw(
+        export_raw=export_raw,
+        manifest_raw=manifest_raw,
+    )
+    if reminted["export_sha256"] != digest:
+        raise EpisodeExportAdapterError(
+            "POOL_RESULT_HASH_DRIFT",
+            f"path={digest} remint={reminted['export_sha256']}",
+        )
+    _assert_entry_matches_remint(entry, reminted=reminted)
     return dict(entry)
 
 
@@ -479,5 +604,6 @@ __all__ = [
     "load_episode_pool_entry",
     "mint_policy_candidate_from_episode_export",
     "raw_sha256",
+    "remint_episode_pool_entry_from_raw",
     "verify_episode_export_bundle",
 ]
