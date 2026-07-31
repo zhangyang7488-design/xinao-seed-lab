@@ -2,7 +2,10 @@
 
 Packaged via ``xinao prospective …`` (project.scripts):
 capture / reveal / write-owner-disposition / freeze-from-disposition /
-settle-from-reveal / canary.
+settle-from-reveal / settle-all-from-reveal / canary.
+
+``settle-from-reveal`` = single-seat shadow portfolio head only.
+``settle-all-from-reveal`` = multipolicy FrozenDecisionSet (every ticket once).
 
 One-shot only: no loop, poll, auto-freeze, auto-settle, next-period start, or daemon.
 Does not authenticate Codex.
@@ -28,6 +31,10 @@ from xinao.science.prospective_source_thin import (
     capture_prospective_reveal,
     capture_prospective_target_authority,
     default_clock,
+)
+from xinao.science.settle_all_from_reveal_adapter import (
+    SettleAllFromRevealError,
+    apply_settle_all_from_reveal,
 )
 from xinao.science.settle_from_reveal_adapter import (
     SettleFromRevealError,
@@ -66,7 +73,7 @@ def add_prospective_parsers(groups: argparse._SubParsersAction[Any]) -> None:
         "prospective",
         help=(
             "Owner one-shot macaujc2 capture/reveal/write-owner-disposition/"
-            "freeze-from-disposition/settle-from-reveal "
+            "freeze-from-disposition/settle-from-reveal/settle-all-from-reveal "
             "(not a daemon; does not authenticate Codex)"
         ),
     )
@@ -204,6 +211,70 @@ def add_prospective_parsers(groups: argparse._SubParsersAction[Any]) -> None:
         "--dry-run",
         action="store_true",
         help="Validate args only; do not settle",
+    )
+
+    settle_all = commands.add_parser(
+        "settle-all-from-reveal",
+        help=(
+            "Multipolicy settle-all: every FrozenDecisionSet ticket exactly once "
+            "from one sealed reveal (authority CAS or independently authored "
+            "reveal artifact). Not single-seat portfolio settle-from-reveal. "
+            "No public --outcome / --actual-special-number / ticket subset. "
+            "Does not claim scientific promotion or formal campaign completion."
+        ),
+    )
+    settle_all.add_argument(
+        "--settlement-root",
+        type=Path,
+        required=True,
+        help="Isolated multipolicy settlement write root (not formal commission root)",
+    )
+    settle_all.add_argument(
+        "--freeze-set",
+        type=Path,
+        required=True,
+        help="Path to sealed FrozenDecisionSet JSON",
+    )
+    settle_all.add_argument(
+        "--expected-freeze-set-hash",
+        required=True,
+        help="Exact FrozenDecisionSet content_hash pin (fail-closed on drift)",
+    )
+    settle_all.add_argument(
+        "--reveal-artifact",
+        type=Path,
+        default=None,
+        help=(
+            "Independently authored sealed reveal JSON (authority envelope or "
+            "explicitly labeled isolated fixture). Mutually exclusive with "
+            "authority-root+reveal-content-hash."
+        ),
+    )
+    settle_all.add_argument(
+        "--authority-root",
+        type=Path,
+        default=None,
+        help="Owner authority CAS root holding sealed prospective reveal",
+    )
+    settle_all.add_argument(
+        "--reveal-content-hash",
+        default=None,
+        help="Exact reveal content hash pin under authority-root",
+    )
+    settle_all.add_argument(
+        "--settlement-set-ref",
+        default=None,
+        help="Optional settlement_set_ref identity (deterministic default if omitted)",
+    )
+    settle_all.add_argument(
+        "--portfolio-ref",
+        default=None,
+        help="Optional multipolicy portfolio_ref for ACTION accounting bundles",
+    )
+    settle_all.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Validate args only; do not settle or write settlement-root",
     )
 
     canary = commands.add_parser(
@@ -378,6 +449,49 @@ def dispatch_prospective(args: argparse.Namespace) -> int:
             _print(result)
             return 0 if result.get("ok") else 1
 
+        if args.command == "settle-all-from-reveal":
+            if args.dry_run:
+                _print(
+                    {
+                        "ok": True,
+                        "dry_run": True,
+                        "command": "prospective settle-all-from-reveal",
+                        "object_model": "multipolicy_FrozenDecisionSet",
+                        "not_single_seat_shadow_portfolio": True,
+                        "settlement_root": str(args.settlement_root),
+                        "freeze_set": str(args.freeze_set),
+                        "expected_freeze_set_hash": args.expected_freeze_set_hash,
+                        "reveal_artifact": (
+                            str(args.reveal_artifact) if args.reveal_artifact else None
+                        ),
+                        "authority_root": (
+                            str(args.authority_root) if args.authority_root else None
+                        ),
+                        "reveal_content_hash": args.reveal_content_hash,
+                        "writes": False,
+                        "settlement_written": False,
+                        "caller_outcome_override_accepted": False,
+                        "caller_ticket_subset_accepted": False,
+                        "scientific_promotion": False,
+                        "completion_claim_allowed": False,
+                        "auto_feedback": False,
+                        "daemon": False,
+                    }
+                )
+                return 0
+            result = apply_settle_all_from_reveal(
+                settlement_root=args.settlement_root,
+                freeze_set_path=args.freeze_set,
+                expected_freeze_set_hash=args.expected_freeze_set_hash,
+                reveal_artifact=args.reveal_artifact,
+                authority_root=args.authority_root,
+                reveal_content_hash=args.reveal_content_hash,
+                settlement_set_ref=args.settlement_set_ref,
+                portfolio_ref=args.portfolio_ref,
+            )
+            _print(result)
+            return 0 if result.get("ok") else 1
+
         if args.command == "canary":
             if not args.i_accept_network_canary:
                 return _fail(
@@ -400,6 +514,8 @@ def dispatch_prospective(args: argparse.Namespace) -> int:
     except FreezeAdapterError as exc:
         return _fail(exc.reason_code, exc.detail)
     except SettleFromRevealError as exc:
+        return _fail(exc.reason_code, exc.detail)
+    except SettleAllFromRevealError as exc:
         return _fail(exc.reason_code, exc.detail)
     except (ValueError, TypeError, KeyError, OSError) as exc:
         return _fail("PROSPECTIVE_CLI_ERROR", str(exc))
