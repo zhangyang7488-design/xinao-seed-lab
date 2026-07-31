@@ -424,9 +424,32 @@ def _assert_disposition_intent_matches_request(
                     "FREEZE_AUTHORITY_DISPOSITION_TICKET_MISMATCH: "
                     f"{field}: ticket={t_val!r} disposition={e_val!r}"
                 )
-        for time_field in ("target_open_time", "freeze_deadline", "frozen_at", "knowledge_cutoff"):
+        # Period bind: open/deadline/cutoff must match sealed disposition.
+        # frozen_at on the ticket is host freeze-action time (authoritative), not
+        # the disposition seal label — do not accept backdated equality as proof.
+        for time_field in ("target_open_time", "freeze_deadline", "knowledge_cutoff"):
             if str(ticket.get(time_field)) != str(executable.get(time_field)):
                 raise StoreError(f"FREEZE_AUTHORITY_DISPOSITION_TICKET_MISMATCH: {time_field}")
+        try:
+            ticket_frozen = _parse_time(ticket.get("frozen_at"))
+            disp_frozen = _parse_time(executable.get("frozen_at"))
+            deadline = _parse_time(executable.get("freeze_deadline"))
+        except (TypeError, ValueError) as exc:
+            raise StoreError(
+                f"FREEZE_AUTHORITY_DISPOSITION_TICKET_MISMATCH: frozen_at parse: {exc}"
+            ) from exc
+        if ticket_frozen > deadline:
+            raise StoreError(
+                "FREEZE_AUTHORITY_HOST_FREEZE_AFTER_DEADLINE: "
+                f"ticket_frozen_at={ticket.get('frozen_at')} "
+                f"deadline={executable.get('freeze_deadline')}"
+            )
+        if ticket_frozen < disp_frozen:
+            raise StoreError(
+                "FREEZE_AUTHORITY_HOST_FREEZE_BEFORE_DISPOSITION: "
+                f"ticket_frozen_at={ticket.get('frozen_at')} "
+                f"disposition_frozen_at={executable.get('frozen_at')}"
+            )
     elif account_identity == _ACCOUNT_NO_ACTION:
         if (
             request.get("bound_account_ticket") is not None
@@ -1447,10 +1470,10 @@ def build_parser() -> argparse.ArgumentParser:
     portfolio_freeze_cmd = commands.add_parser(
         "portfolio-freeze",
         help=(
-            "NON-PRODUCTION request-path portfolio freeze. Cannot supply owner_authority "
-            "envelope; always rejects with PRODUCTION_FREEZE_REQUIRES_OWNER_AUTHORITY. "
-            "Production Owner freeze: xinao prospective freeze-from-disposition "
-            "(apply_freeze_from_disposition). Fixture construction: tests-only helper."
+            "NON-PRODUCTION CLI surface: always returns PORTFOLIO_FREEZE_CLI_NOT_PRODUCTION "
+            "and never calls freeze_portfolio_period. Production Owner freeze: "
+            "xinao prospective freeze-from-disposition (apply_freeze_from_disposition). "
+            "Fixture construction stays under tests-only helpers."
         ),
     )
     portfolio_freeze_cmd.add_argument("--root", type=Path, required=True)
@@ -1458,15 +1481,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--request",
         type=Path,
         required=True,
-        help="Freeze request path only (insufficient for production without owner_authority)",
-    )
-    portfolio_freeze_cmd.add_argument(
-        "--allow-nonproduction-fixture-path",
-        action="store_true",
-        help=(
-            "Acknowledge this CLI cannot perform production Owner freeze; "
-            "still fails closed without owner_authority (no fixture bypass)"
-        ),
+        help="Ignored: this CLI never performs production or fixture freeze",
     )
 
     portfolio_settle_cmd = commands.add_parser(
@@ -1534,18 +1549,15 @@ def dispatch(args: argparse.Namespace) -> dict[str, Any]:
     if args.command == "portfolio-inspect":
         return inspect_portfolio(root=args.root)
     if args.command == "portfolio-freeze":
-        # This CLI surface cannot pass owner_authority. Production Owner freeze must
-        # use xinao prospective freeze-from-disposition → apply_freeze_from_disposition.
-        if not getattr(args, "allow_nonproduction_fixture_path", False):
-            raise StoreError(
-                "PORTFOLIO_FREEZE_CLI_NOT_PRODUCTION: "
-                "shadow portfolio-freeze cannot supply owner_authority. "
-                "Production path: xinao prospective freeze-from-disposition "
-                "(authority-root + owner-state-root + disposition + portfolio-root). "
-                "Pass --allow-nonproduction-fixture-path only to exercise the "
-                "non-production request-path probe (still requires owner envelope; no bypass)."
-            )
-        return freeze_portfolio_period(root=args.root, request_path=args.request)
+        # Ordinary shadow portfolio-freeze CLI is never a production freeze path and
+        # must not call freeze_portfolio_period. Production: prospective freeze-from-disposition.
+        raise StoreError(
+            "PORTFOLIO_FREEZE_CLI_NOT_PRODUCTION: "
+            "shadow portfolio-freeze never calls freeze_portfolio_period. "
+            "Production path: xinao prospective freeze-from-disposition "
+            "(authority-root + owner-state-root + disposition + portfolio-root). "
+            "Fixture construction: tests-only helper under tests/."
+        )
     if args.command == "portfolio-settle":
         return settle_portfolio_period(
             root=args.root,

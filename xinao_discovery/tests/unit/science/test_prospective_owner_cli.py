@@ -71,11 +71,10 @@ def test_prospective_commands_packaged_in_xinao_parser() -> None:
                     "s",
                     "--authority-root",
                     "a",
-                    "--owner-freeze-time",
-                    "2026-07-31T12:00:00Z",
                 ]
             )
             assert args.command == "freeze-from-disposition"
+            assert not hasattr(args, "owner_freeze_time")
         elif cmd == "canary":
             args = parser.parse_args(
                 [
@@ -131,7 +130,7 @@ def test_capture_dry_run_and_missing_contract(
     assert "CONTRACT" in err["reason_code"]
 
 
-def test_portfolio_freeze_cli_not_production_without_flag(tmp_path: Path) -> None:
+def test_portfolio_freeze_cli_always_not_production(tmp_path: Path) -> None:
     parser = shadow_build_parser()
     args = parser.parse_args(
         ["portfolio-freeze", "--root", str(tmp_path), "--request", str(tmp_path / "r.json")]
@@ -140,27 +139,61 @@ def test_portfolio_freeze_cli_not_production_without_flag(tmp_path: Path) -> Non
         shadow_dispatch(args)
 
 
-def test_portfolio_freeze_cli_still_requires_owner_envelope(tmp_path: Path) -> None:
-    """Even with non-production flag, no owner_authority => production gate reject."""
+def test_removed_public_flags_absent_from_parsers() -> None:
+    """Both public CLI overrides removed: owner-freeze-time and allow-nonproduction-fixture-path."""
 
-    from xinao.shadow_lifecycle.consumer import init_portfolio
-
-    init_portfolio(root=tmp_path, seat_id="seat-1", portfolio_ref="pf-1", opening_balance="1000")
-    req = tmp_path / "req.json"
-    req.write_text("{}", encoding="utf-8")
-    parser = shadow_build_parser()
-    args = parser.parse_args(
-        [
-            "portfolio-freeze",
-            "--root",
-            str(tmp_path),
-            "--request",
-            str(req),
-            "--allow-nonproduction-fixture-path",
-        ]
+    main_parser = build_parser()
+    main_help = main_parser.format_help()
+    assert "--owner-freeze-time" not in main_help
+    # Nested freeze-from-disposition help.
+    freeze_help = subprocess.run(
+        [sys.executable, "-m", "xinao.cli", "prospective", "freeze-from-disposition", "--help"],
+        cwd=str(ROOT),
+        env={
+            **dict(**{k: v for k, v in __import__("os").environ.items()}),
+            "PYTHONPATH": str(SRC),
+        },
+        capture_output=True,
+        text=True,
+        check=False,
     )
-    with pytest.raises(StoreError, match="PRODUCTION_FREEZE_REQUIRES_OWNER_AUTHORITY"):
-        shadow_dispatch(args)
+    assert freeze_help.returncode == 0, freeze_help.stderr
+    assert "--owner-freeze-time" not in freeze_help.stdout
+
+    shadow_parser = shadow_build_parser()
+    shadow_help = shadow_parser.format_help()
+    assert "--allow-nonproduction-fixture-path" not in shadow_help
+    # Unknown flag must not parse.
+    with pytest.raises(SystemExit):
+        shadow_parser.parse_args(
+            [
+                "portfolio-freeze",
+                "--root",
+                "r",
+                "--request",
+                "q",
+                "--allow-nonproduction-fixture-path",
+            ]
+        )
+    with pytest.raises(SystemExit):
+        main_parser.parse_args(
+            [
+                "prospective",
+                "freeze-from-disposition",
+                "--pool-root",
+                "p",
+                "--owner-state-root",
+                "o",
+                "--disposition",
+                "d",
+                "--portfolio-root",
+                "s",
+                "--authority-root",
+                "a",
+                "--owner-freeze-time",
+                "2026-07-31T12:00:00Z",
+            ]
+        )
 
 
 def test_fresh_process_cli_help_lists_prospective() -> None:

@@ -885,8 +885,14 @@ def verify_disposition_times_against_packet(
     *,
     disposition: Mapping[str, Any],
     packet: Mapping[str, Any],
-    owner_freeze_time: datetime | None = None,
+    host_now: datetime | None = None,
 ) -> None:
+    """Recheck disposition period branch against sealed packet times.
+
+    ``host_now`` is the authoritative freeze-action wall clock when provided.
+    A caller-supplied label time must not be substituted for it at the adapter.
+    """
+
     if disposition.get("target_ref") != packet["target_ref"]:
         raise ProspectiveSourceError(
             "DISPOSITION_TARGET_PACKET_MISMATCH",
@@ -920,14 +926,17 @@ def verify_disposition_times_against_packet(
     if frozen_at > deadline:
         raise ProspectiveSourceError(
             "OWNER_FREEZE_AFTER_DEADLINE",
-            f"frozen_at={_iso_z(frozen_at)} deadline={deadline_iso}",
+            f"disposition_frozen_at={_iso_z(frozen_at)} deadline={deadline_iso}",
         )
-    if owner_freeze_time is not None:
-        oft = owner_freeze_time.astimezone(UTC)
-        if oft > deadline:
+    # Authoritative freeze-action time is host_now (sampled at the freeze op).
+    if host_now is not None:
+        if host_now.tzinfo is None or host_now.utcoffset() is None:
+            raise ProspectiveSourceError("HOST_TIME_NOT_AWARE", "host_now must be timezone-aware")
+        hn = host_now.astimezone(UTC)
+        if hn > deadline:
             raise ProspectiveSourceError(
                 "OWNER_FREEZE_AFTER_DEADLINE",
-                f"owner_freeze_time={_iso_z(oft)} deadline={deadline_iso}",
+                f"host_now={_iso_z(hn)} deadline={deadline_iso}",
             )
 
 

@@ -145,7 +145,11 @@ def test_direct_production_freeze_without_envelope(tmp_path: Path) -> None:
     assert not (period_directory(root, 1) / "frozen_episode.v1.json").exists()
 
 
-def test_action_freeze_with_sab_binding(tmp_path: Path) -> None:
+def _macaujc2_action_disposition(
+    tmp_path: Path,
+    *,
+    selected_number: int = 7,
+) -> tuple[Path, Path, Path, Path, Path, dict[str, Any], str]:
     capture = _capture_auth(tmp_path)
     sab = capture["source_authority_binding"]
     target_ref = sab["target_ref"]
@@ -153,12 +157,11 @@ def test_action_freeze_with_sab_binding(tmp_path: Path) -> None:
     owner = tmp_path / "owner"
     owner.mkdir()
     portfolio = _seam._init_portfolio(tmp_path / "port")
-
     kc = "2026-07-30T08:00:00Z"
     frozen_at = "2026-07-30T10:00:00Z"
     body = _seam._disposition_body(
         entry,
-        selected_number=7,
+        selected_number=selected_number,
         target_ref=target_ref,
         source_authority_binding=sab,
         knowledge_cutoff=kc,
@@ -171,7 +174,13 @@ def test_action_freeze_with_sab_binding(tmp_path: Path) -> None:
     body["executable_account_decision"]["knowledge_cutoff"] = kc
     body = _seam._attach_portfolio_binding(body, portfolio)
     path = _seam._write_disposition(owner, body)
+    return pool, owner, path, portfolio, tmp_path / "authority", sab, target_ref
 
+
+def test_action_freeze_with_sab_binding(tmp_path: Path) -> None:
+    pool, owner, path, portfolio, authority, _sab, target_ref = _macaujc2_action_disposition(
+        tmp_path
+    )
     freeze_now = datetime(2026, 7, 30, 10, 0, tzinfo=UTC)
     result = apply_freeze_from_disposition(
         pool_root=pool,
@@ -179,16 +188,21 @@ def test_action_freeze_with_sab_binding(tmp_path: Path) -> None:
         disposition_path=path,
         shadow_root=portfolio,
         mode="portfolio",
-        authority_root=tmp_path / "authority",
-        owner_freeze_time=freeze_now,
+        authority_root=authority,
+        clock=lambda: freeze_now,
     )
     assert result["ok"] is True
     assert result["source_authority_binding"] is not None
     assert result["source_authority_binding"]["target_ref"] == target_ref
+    assert result["freeze_action_time"] == _iso(freeze_now)
+    assert result["disposition_frozen_at"] == "2026-07-30T10:00:00Z"
     frozen = load_frozen(period_directory(portfolio, 1))
     assert frozen.bound_account_ticket is not None
     assert frozen.bound_account_ticket.selected_number == 7
     assert frozen.target_ref == target_ref
+    # Host freeze-action time is what the episode/ticket record.
+    assert _iso(frozen.frozen_at) == _iso(freeze_now)
+    assert _iso(frozen.bound_account_ticket.frozen_at) == _iso(freeze_now)
 
 
 def test_no_action_freeze_with_sab_binding(tmp_path: Path) -> None:
@@ -220,6 +234,7 @@ def test_no_action_freeze_with_sab_binding(tmp_path: Path) -> None:
     body = _seam._attach_portfolio_binding(body, portfolio)
     path = _seam._write_disposition(owner, body)
 
+    freeze_now = datetime(2026, 7, 30, 10, 0, tzinfo=UTC)
     result = apply_freeze_from_disposition(
         pool_root=pool,
         owner_state_root=owner,
@@ -227,39 +242,17 @@ def test_no_action_freeze_with_sab_binding(tmp_path: Path) -> None:
         shadow_root=portfolio,
         mode="portfolio",
         authority_root=tmp_path / "authority",
-        owner_freeze_time=datetime(2026, 7, 30, 10, 0, tzinfo=UTC),
+        clock=lambda: freeze_now,
     )
     assert result["ok"] is True
     frozen = load_frozen(period_directory(portfolio, 1))
     assert frozen.bound_account_ticket is None
     assert frozen.account_decision.identity.value == "RESEARCHER_ACCOUNT_NO_ACTION"
+    assert _iso(frozen.frozen_at) == _iso(freeze_now)
 
 
 def test_macaujc2_freeze_without_authority_root_rejected(tmp_path: Path) -> None:
-    capture = _capture_auth(tmp_path)
-    sab = capture["source_authority_binding"]
-    target_ref = sab["target_ref"]
-    pool, entry, _, _ = _seam._ingest(tmp_path / "pool")
-    owner = tmp_path / "owner"
-    owner.mkdir()
-    portfolio = _seam._init_portfolio(tmp_path / "port")
-    kc = "2026-07-30T08:00:00Z"
-    frozen_at = "2026-07-30T10:00:00Z"
-    body = _seam._disposition_body(
-        entry,
-        selected_number=7,
-        target_ref=target_ref,
-        source_authority_binding=sab,
-        knowledge_cutoff=kc,
-    )
-    body["executable_account_decision"] = dict(body["executable_account_decision"])
-    body["executable_account_decision"]["target_ref"] = target_ref
-    body["executable_account_decision"]["target_open_time"] = sab["target_guard_open_time"]
-    body["executable_account_decision"]["freeze_deadline"] = sab["freeze_deadline"]
-    body["executable_account_decision"]["frozen_at"] = frozen_at
-    body["executable_account_decision"]["knowledge_cutoff"] = kc
-    body = _seam._attach_portfolio_binding(body, portfolio)
-    path = _seam._write_disposition(owner, body)
+    pool, owner, path, portfolio, _, _, _ = _macaujc2_action_disposition(tmp_path)
     with pytest.raises(FreezeAdapterError, match=r"AUTHORITY_ROOT_REQUIRED|SOURCE_AUTHORITY"):
         apply_freeze_from_disposition(
             pool_root=pool,
@@ -267,35 +260,13 @@ def test_macaujc2_freeze_without_authority_root_rejected(tmp_path: Path) -> None
             disposition_path=path,
             shadow_root=portfolio,
             mode="portfolio",
+            clock=lambda: datetime(2026, 7, 30, 10, 0, tzinfo=UTC),
             # missing authority_root
         )
 
 
-def test_after_deadline_owner_freeze_time_rejected(tmp_path: Path) -> None:
-    capture = _capture_auth(tmp_path)
-    sab = capture["source_authority_binding"]
-    target_ref = sab["target_ref"]
-    pool, entry, _, _ = _seam._ingest(tmp_path / "pool")
-    owner = tmp_path / "owner"
-    owner.mkdir()
-    portfolio = _seam._init_portfolio(tmp_path / "port")
-    kc = "2026-07-30T08:00:00Z"
-    frozen_at = "2026-07-30T10:00:00Z"
-    body = _seam._disposition_body(
-        entry,
-        selected_number=7,
-        target_ref=target_ref,
-        source_authority_binding=sab,
-        knowledge_cutoff=kc,
-    )
-    body["executable_account_decision"] = dict(body["executable_account_decision"])
-    body["executable_account_decision"]["target_ref"] = target_ref
-    body["executable_account_decision"]["target_open_time"] = sab["target_guard_open_time"]
-    body["executable_account_decision"]["freeze_deadline"] = sab["freeze_deadline"]
-    body["executable_account_decision"]["frozen_at"] = frozen_at
-    body["executable_account_decision"]["knowledge_cutoff"] = kc
-    body = _seam._attach_portfolio_binding(body, portfolio)
-    path = _seam._write_disposition(owner, body)
+def test_after_deadline_host_freeze_rejected(tmp_path: Path) -> None:
+    pool, owner, path, portfolio, authority, _, _ = _macaujc2_action_disposition(tmp_path)
     late = datetime(2026, 7, 31, 14, 0, tzinfo=UTC)
     with pytest.raises(FreezeAdapterError, match="OWNER_FREEZE_AFTER_DEADLINE"):
         apply_freeze_from_disposition(
@@ -304,6 +275,61 @@ def test_after_deadline_owner_freeze_time_rejected(tmp_path: Path) -> None:
             disposition_path=path,
             shadow_root=portfolio,
             mode="portfolio",
-            authority_root=tmp_path / "authority",
-            owner_freeze_time=late,
+            authority_root=authority,
+            clock=lambda: late,
+        )
+
+
+def test_backdated_owner_freeze_rejected_when_host_after_deadline(tmp_path: Path) -> None:
+    """Pre-deadline disposition + backdated audit stamp cannot pass post-deadline host."""
+
+    pool, owner, path, portfolio, authority, _, _ = _macaujc2_action_disposition(tmp_path)
+    host_after = datetime(2026, 7, 31, 14, 0, tzinfo=UTC)
+    backdated = datetime(2026, 7, 30, 10, 0, tzinfo=UTC)
+    with pytest.raises(
+        FreezeAdapterError,
+        match=r"OWNER_FREEZE_AFTER_DEADLINE|OWNER_FREEZE_TIME_HOST_SKEW",
+    ):
+        apply_freeze_from_disposition(
+            pool_root=pool,
+            owner_state_root=owner,
+            disposition_path=path,
+            shadow_root=portfolio,
+            mode="portfolio",
+            authority_root=authority,
+            clock=lambda: host_after,
+            owner_freeze_time=backdated,
+        )
+
+
+def test_predeadline_disposition_applied_after_deadline_host_rejected(tmp_path: Path) -> None:
+    """Disposition sealed before deadline but freeze host after deadline must fail."""
+
+    pool, owner, path, portfolio, authority, _, _ = _macaujc2_action_disposition(tmp_path)
+    with pytest.raises(FreezeAdapterError, match="OWNER_FREEZE_AFTER_DEADLINE"):
+        apply_freeze_from_disposition(
+            pool_root=pool,
+            owner_state_root=owner,
+            disposition_path=path,
+            shadow_root=portfolio,
+            mode="portfolio",
+            authority_root=authority,
+            clock=lambda: datetime(2026, 7, 31, 13, 30, 1, tzinfo=UTC),
+        )
+
+
+def test_owner_freeze_time_skew_vs_host_rejected(tmp_path: Path) -> None:
+    pool, owner, path, portfolio, authority, _, _ = _macaujc2_action_disposition(tmp_path)
+    host = datetime(2026, 7, 30, 10, 0, tzinfo=UTC)
+    skewed = datetime(2026, 7, 30, 10, 30, tzinfo=UTC)  # 30m > 5m MAX_HOST_HTTP_SKEW
+    with pytest.raises(FreezeAdapterError, match="OWNER_FREEZE_TIME_HOST_SKEW"):
+        apply_freeze_from_disposition(
+            pool_root=pool,
+            owner_state_root=owner,
+            disposition_path=path,
+            shadow_root=portfolio,
+            mode="portfolio",
+            authority_root=authority,
+            clock=lambda: host,
+            owner_freeze_time=skewed,
         )

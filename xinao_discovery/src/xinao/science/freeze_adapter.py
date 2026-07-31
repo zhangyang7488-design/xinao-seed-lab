@@ -12,8 +12,12 @@ immutable ``science_decision_ref`` / ``account_decision_ref`` (and ACTION
 ``information_set_hash``) so it participates in ``frozen.content_hash``.
 Receipt binding fields remain display-only and are not authority.
 
-File-backed freeze trusts caller-supplied timestamps only:
-``trusted_time_proof=false`` is always reported honestly for this path.
+Production freeze samples one aware host UTC time at the freeze operation; that
+host sample is the authoritative freeze-action wall clock and must be at or
+before the sealed disposition/packet deadline. An optional internal audit
+``owner_freeze_time`` may only be checked for small host skew and never chooses
+the deadline decision. Injectable ``clock`` is a Python test seam only (not a
+public CLI override). ``trusted_time_proof=false`` remains honest.
 
 Evidence validation only: this module does not authenticate that the caller is
 Codex. Workers may import it; physical Owner authority is mount/write isolation
@@ -26,8 +30,8 @@ import copy
 import hashlib
 import json
 import re
-from collections.abc import Mapping
-from datetime import datetime
+from collections.abc import Callable, Mapping
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Final, Literal
 
@@ -42,6 +46,8 @@ from xinao.science.owner_disposition import (
     require_period_account_identity,
 )
 from xinao.science.prospective_source_thin import (
+    MAX_HOST_HTTP_SKEW,
+    Clock,
     ProspectiveSourceError,
     default_clock,
     is_live_macaujc2_target,
@@ -132,8 +138,23 @@ def encode_research_binding_bytes(body: Mapping[str, Any]) -> bytes:
     )
 
 
-def _normalized_executable_intent(disposition: Mapping[str, Any]) -> dict[str, Any]:
-    """Closed executable account intent sealed into the research binding."""
+def _iso_freeze_action_time(value: datetime) -> str:
+    if value.tzinfo is None or value.utcoffset() is None:
+        raise FreezeAdapterError("HOST_TIME_NOT_AWARE", "freeze action time must be timezone-aware")
+    return value.astimezone(UTC).isoformat().replace("+00:00", "Z")
+
+
+def _normalized_executable_intent(
+    disposition: Mapping[str, Any],
+    *,
+    freeze_action_time: datetime | None = None,
+) -> dict[str, Any]:
+    """Closed executable account intent sealed into the research binding.
+
+    When ``freeze_action_time`` is provided (host sample at freeze), it becomes
+    the authoritative ``frozen_at`` recorded on the binding/ticket/episode.
+    Disposition seal time is preserved as ``disposition_frozen_at``.
+    """
 
     account_identity = require_period_account_identity(disposition)
     if account_identity == ACCOUNT_ACTION:
@@ -143,6 +164,12 @@ def _normalized_executable_intent(disposition: Mapping[str, Any]) -> dict[str, A
                 "ACTION_REQUIRES_EXECUTABLE_DECISION",
                 "cannot seal ACTION intent without structured executable decision",
             )
+        disposition_frozen_at = str(executable["frozen_at"])
+        frozen_at = (
+            _iso_freeze_action_time(freeze_action_time)
+            if freeze_action_time is not None
+            else disposition_frozen_at
+        )
         intent: dict[str, Any] = {
             "account_identity": ACCOUNT_ACTION,
             "panel": executable["panel"],
@@ -155,7 +182,8 @@ def _normalized_executable_intent(disposition: Mapping[str, Any]) -> dict[str, A
             "target_ref": str(executable["target_ref"]),
             "target_open_time": str(executable["target_open_time"]),
             "freeze_deadline": str(executable["freeze_deadline"]),
-            "frozen_at": str(executable["frozen_at"]),
+            "frozen_at": frozen_at,
+            "disposition_frozen_at": disposition_frozen_at,
             "knowledge_cutoff": str(executable["knowledge_cutoff"]),
         }
         if executable.get("ticket_ref") is not None:
@@ -170,6 +198,12 @@ def _normalized_executable_intent(disposition: Mapping[str, Any]) -> dict[str, A
             "NO_ACTION_BINDING_REQUIRED",
             "cannot seal NO_ACTION intent without no_action_period_binding",
         )
+    disposition_frozen_at = str(binding["frozen_at"])
+    frozen_at = (
+        _iso_freeze_action_time(freeze_action_time)
+        if freeze_action_time is not None
+        else disposition_frozen_at
+    )
     return {
         "account_identity": ACCOUNT_NO_ACTION,
         "selected_number": None,
@@ -179,7 +213,8 @@ def _normalized_executable_intent(disposition: Mapping[str, Any]) -> dict[str, A
         "target_ref": str(binding["target_ref"]),
         "target_open_time": str(binding["target_open_time"]),
         "freeze_deadline": str(binding["freeze_deadline"]),
-        "frozen_at": str(binding["frozen_at"]),
+        "frozen_at": frozen_at,
+        "disposition_frozen_at": disposition_frozen_at,
         "knowledge_cutoff": str(binding["knowledge_cutoff"]),
     }
 
@@ -283,11 +318,15 @@ def build_research_freeze_binding(
     owner_artifact_sha256: str,
     portfolio_binding: Mapping[str, Any] | None = None,
     source_authority_binding: Mapping[str, Any] | None = None,
+    freeze_action_time: datetime | None = None,
 ) -> dict[str, Any]:
     """Build the immutable research freeze binding body (no self-hash)."""
 
     owner_hash = _require_hex64(owner_artifact_sha256, "owner_artifact_sha256")
-    executable_intent = _normalized_executable_intent(disposition)
+    executable_intent = _normalized_executable_intent(
+        disposition,
+        freeze_action_time=freeze_action_time,
+    )
     body: dict[str, Any] = {
         "schema_version": RESEARCH_BINDING_SCHEMA,
         "binding_marker": RESEARCH_BINDING_MARKER,
@@ -455,6 +494,7 @@ def _build_action_ticket(
     disposition: Mapping[str, Any],
     pool_entry: Mapping[str, Any],
     research_binding_sha256: str,
+    freeze_action_time: datetime | None = None,
 ) -> dict[str, Any]:
     executable = disposition.get("executable_account_decision")
     if not isinstance(executable, Mapping):
@@ -476,13 +516,20 @@ def _build_action_ticket(
         executable.get("information_set_ref")
         or f"information.result.{result_sha256[:16]}.{target_ref}"
     )
+    disposition_frozen_at = str(executable["frozen_at"])
+    frozen_at = (
+        _iso_freeze_action_time(freeze_action_time)
+        if freeze_action_time is not None
+        else disposition_frozen_at
+    )
+    # AccountRiskTicket forbids extras: disposition seal time lives on research binding.
     return {
         "ticket_ref": str(ticket_ref),
         "target_ref": target_ref,
         "target_open_time": str(executable["target_open_time"]),
         "freeze_deadline": str(executable["freeze_deadline"]),
         "knowledge_cutoff": str(executable["knowledge_cutoff"]),
-        "frozen_at": str(executable["frozen_at"]),
+        "frozen_at": frozen_at,
         "panel": executable["panel"],
         "selected_number": executable["selected_number"],
         "stake": str(executable["stake"]),
@@ -501,6 +548,7 @@ def build_freeze_request_from_disposition(
     disposition: Mapping[str, Any],
     owner_artifact_sha256: str,
     research_binding_sha256: str,
+    freeze_action_time: datetime | None = None,
 ) -> dict[str, Any]:
     """Build a shadow consumer freeze request dict (AccountRiskTicket path for ACTION)."""
 
@@ -552,6 +600,7 @@ def build_freeze_request_from_disposition(
             disposition=disposition,
             pool_entry=pool_entry,
             research_binding_sha256=binding_hash,
+            freeze_action_time=freeze_action_time,
         )
         request["bound_account_ticket"] = ticket
         request["target_ref"] = ticket["target_ref"]
@@ -566,12 +615,19 @@ def build_freeze_request_from_disposition(
                 "NO_ACTION_BINDING_REQUIRED",
                 "missing no_action_period_binding",
             )
+        disposition_frozen_at = str(binding["frozen_at"])
+        frozen_at = (
+            _iso_freeze_action_time(freeze_action_time)
+            if freeze_action_time is not None
+            else disposition_frozen_at
+        )
         request["account_decision"]["rule_ref"] = str(binding["rule_ref"])
         request["account_decision"]["odds_version_ref"] = str(binding["odds_version_ref"])
         request["target_ref"] = str(binding["target_ref"])
         request["target_open_time"] = str(binding["target_open_time"])
         request["freeze_deadline"] = str(binding["freeze_deadline"])
-        request["frozen_at"] = str(binding["frozen_at"])
+        request["frozen_at"] = frozen_at
+        request["disposition_frozen_at"] = disposition_frozen_at
         if "bound_account_ticket" in request or "bound_frozen_decision" in request:
             raise FreezeAdapterError("NO_ACTION_MUST_NOT_BIND_TICKET", "ticket present")
     else:
@@ -957,17 +1013,94 @@ def _assert_frozen_matches_disposition_and_binding(
         )
 
 
+def _disposition_period_branch(disposition: Mapping[str, Any]) -> Mapping[str, Any]:
+    account = require_period_account_identity(disposition)
+    if account == ACCOUNT_ACTION:
+        branch = disposition.get("executable_account_decision")
+    else:
+        branch = disposition.get("no_action_period_binding")
+    if not isinstance(branch, Mapping):
+        raise FreezeAdapterError("DISPOSITION_PERIOD_BRANCH_MISSING", str(account))
+    return branch
+
+
+def _parse_aware_utc(value: Any, field: str) -> datetime:
+    text = str(value).strip().replace("Z", "+00:00")
+    try:
+        parsed = datetime.fromisoformat(text)
+    except ValueError as exc:
+        raise FreezeAdapterError("FREEZE_TIME_INVALID", f"{field}: {exc}") from exc
+    if parsed.tzinfo is None or parsed.utcoffset() is None:
+        raise FreezeAdapterError("FREEZE_TIME_NOT_AWARE", field)
+    return parsed.astimezone(UTC)
+
+
+def _sample_host_freeze_time(
+    *,
+    clock: Clock | None,
+    owner_freeze_time: datetime | None,
+) -> datetime:
+    """Sample authoritative host freeze-action time; audit stamp is skew-only."""
+
+    now_fn: Callable[[], datetime] = clock or default_clock
+    host_now = now_fn()
+    if host_now.tzinfo is None or host_now.utcoffset() is None:
+        raise FreezeAdapterError("HOST_TIME_NOT_AWARE", "clock must return timezone-aware UTC")
+    host_utc = host_now.astimezone(UTC)
+    if owner_freeze_time is not None:
+        if owner_freeze_time.tzinfo is None or owner_freeze_time.utcoffset() is None:
+            raise FreezeAdapterError(
+                "OWNER_FREEZE_TIME_NOT_AWARE",
+                "optional audit owner_freeze_time must be timezone-aware",
+            )
+        oft = owner_freeze_time.astimezone(UTC)
+        if abs(oft - host_utc) > MAX_HOST_HTTP_SKEW:
+            raise FreezeAdapterError(
+                "OWNER_FREEZE_TIME_HOST_SKEW",
+                f"owner_freeze_time={_iso_z(oft)} host={_iso_z(host_utc)} "
+                f"max_skew_s={int(MAX_HOST_HTTP_SKEW.total_seconds())}",
+            )
+    return host_utc
+
+
+def _verify_host_freeze_against_disposition(
+    *,
+    disposition: Mapping[str, Any],
+    host_now: datetime,
+) -> None:
+    """Host freeze-action time must be on/before sealed deadline and not before disposition seal."""
+
+    branch = _disposition_period_branch(disposition)
+    deadline = _parse_aware_utc(branch.get("freeze_deadline"), "freeze_deadline")
+    disposition_frozen_at = _parse_aware_utc(branch.get("frozen_at"), "frozen_at")
+    if disposition_frozen_at > deadline:
+        raise FreezeAdapterError(
+            "OWNER_FREEZE_AFTER_DEADLINE",
+            f"disposition_frozen_at={_iso_z(disposition_frozen_at)} deadline={_iso_z(deadline)}",
+        )
+    if host_now > deadline:
+        raise FreezeAdapterError(
+            "OWNER_FREEZE_AFTER_DEADLINE",
+            f"host_now={_iso_z(host_now)} deadline={_iso_z(deadline)}",
+        )
+    if host_now < disposition_frozen_at:
+        raise FreezeAdapterError(
+            "HOST_FREEZE_BEFORE_DISPOSITION",
+            f"host_now={_iso_z(host_now)} disposition_frozen_at={_iso_z(disposition_frozen_at)}",
+        )
+
+
 def _verify_source_authority_before_freeze(
     *,
     disposition: Mapping[str, Any],
     authority_root: Path | None,
-    owner_freeze_time: datetime | None = None,
+    host_now: datetime | None = None,
 ) -> dict[str, Any] | None:
     """Require sealed prospective packet from Owner CAS for live macaujc2 targets.
 
     Loads packet only from Owner-controlled CAS under authority_root — never from a
-    caller-supplied in-memory packet object. Rechecks owner freeze wall time against
-    the sealed deadline when provided.
+    caller-supplied in-memory packet object. Rechecks host freeze wall time against
+    the sealed packet deadline when provided.
     """
 
     target_ref = str(disposition.get("target_ref") or "")
@@ -1001,7 +1134,7 @@ def _verify_source_authority_before_freeze(
         verify_disposition_times_against_packet(
             disposition=disposition,
             packet=packet_obj,
-            owner_freeze_time=owner_freeze_time,
+            host_now=host_now,
         )
     except ProspectiveSourceError as exc:
         raise FreezeAdapterError(exc.reason_code, exc.detail) from exc
@@ -1024,6 +1157,7 @@ def apply_freeze_from_disposition(
     request_out: Path | None = None,
     authority_root: Path | None = None,
     owner_freeze_time: datetime | None = None,
+    clock: Clock | None = None,
 ) -> dict[str, Any]:
     """Validate disposition + pool evidence, seal research binding, exclusive freeze.
 
@@ -1034,6 +1168,10 @@ def apply_freeze_from_disposition(
     For ``macaujc2/expect/*`` targets, a sealed ``source_authority_binding`` and
     Owner-controlled authority CAS (``authority_root``) are mandatory. Packet is
     loaded from CAS only; caller-supplied in-memory packets are rejected.
+
+    Host UTC sampled at this call (``clock`` test seam or ``default_clock``) is the
+    authoritative freeze-action time written onto FrozenEpisode/Ticket. Optional
+    ``owner_freeze_time`` is audit-only (host skew bound) and never substitutes.
 
     Stops at FROZEN / awaiting independent outcome. Does not settle, feedback, or
     open the next period. Does not authenticate Codex — evidence validation only.
@@ -1057,12 +1195,15 @@ def apply_freeze_from_disposition(
         shadow_root=shadow_root,
     )
 
+    # Authoritative host freeze-action time (never a caller deadline substitute).
+    host_now = _sample_host_freeze_time(clock=clock, owner_freeze_time=owner_freeze_time)
+    _verify_host_freeze_against_disposition(disposition=disposition, host_now=host_now)
+
     # Prospective source authority (when live macaujc2 or SAB present) BEFORE writes.
-    freeze_now = owner_freeze_time if owner_freeze_time is not None else default_clock()
     source_authority_binding = _verify_source_authority_before_freeze(
         disposition=disposition,
         authority_root=authority_root,
-        owner_freeze_time=freeze_now,
+        host_now=host_now,
     )
 
     # Portfolio/head exact binding BEFORE any binding/request/freeze write.
@@ -1084,6 +1225,7 @@ def apply_freeze_from_disposition(
         owner_artifact_sha256=str(verified["owner_artifact_sha256"]),
         portfolio_binding=portfolio_binding,
         source_authority_binding=source_authority_binding,
+        freeze_action_time=host_now,
     )
     sealed_binding = write_research_binding_exclusive(
         shadow_root=shadow_root,
@@ -1096,6 +1238,7 @@ def apply_freeze_from_disposition(
         disposition=disposition,
         owner_artifact_sha256=str(verified["owner_artifact_sha256"]),
         research_binding_sha256=binding_hash,
+        freeze_action_time=host_now,
     )
     # Closed deep-copied in-memory authority mapping for the consumer.
     # Display/evidence paths and later mutation of caller structures cannot fork it.
@@ -1186,6 +1329,7 @@ def apply_freeze_from_disposition(
         mode=mode,
     )
 
+    disposition_branch = _disposition_period_branch(disposition)
     return {
         "ok": bool(result.get("ok", True)),
         "adapter_marker": ADAPTER_MARKER,
@@ -1209,6 +1353,9 @@ def apply_freeze_from_disposition(
         "request_content_hash": authority_request["request_content_hash"],
         "portfolio_binding": portfolio_binding,
         "source_authority_binding": source_authority_binding,
+        # Host-sampled freeze-action time is authoritative on FrozenEpisode/Ticket.
+        "freeze_action_time": _iso_z(host_now),
+        "disposition_frozen_at": str(disposition_branch.get("frozen_at")),
         "trusted_time_proof": False,
         "completion_claim_allowed": False,
         "scientific_promotion": False,

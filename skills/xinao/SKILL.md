@@ -51,7 +51,7 @@ Same-seat portfolio continuity verbs (multi-period consumer surface; not scienti
 
 - `scripts/xinao.py shadow portfolio-init --root <portfolio> --seat-id <id> --portfolio-ref <ref>`
 - `scripts/xinao.py shadow portfolio-inspect --root <portfolio>`
-- `scripts/xinao.py shadow portfolio-freeze --root <portfolio> --request <freeze.json>` — **non-production** request-path only; cannot supply `owner_authority` and is not the production Owner freeze path
+- `scripts/xinao.py shadow portfolio-freeze --root <portfolio> --request <freeze.json>` — **always** `PORTFOLIO_FREEZE_CLI_NOT_PRODUCTION`; never calls production freeze. Not the Owner path.
 - `scripts/xinao.py shadow portfolio-settle --root <portfolio> --outcome <outcome.json>`
 - `scripts/xinao.py shadow portfolio-feedback --root <portfolio> --kind <FeedbackKind> [--feedback-ref <ref>] [--reason-code <code>] [--notes <text>]`
 - `scripts/xinao.py shadow portfolio-replay --root <portfolio> --period-index <n>`
@@ -60,12 +60,14 @@ Same-seat portfolio continuity verbs (multi-period consumer surface; not scienti
 
 - `xinao prospective capture --authority-root <Owner auth root> --contract <AuthorityContract> --expected-contract-sha256 <hex>`
 - `xinao prospective reveal --authority-root <Owner auth root> --packet-content-hash <hex>`
-- `xinao prospective freeze-from-disposition --pool-root <pool> --owner-state-root <owner> --disposition <path> --portfolio-root <portfolio> --authority-root <auth> --owner-freeze-time <aware ISO>`
+- `xinao prospective freeze-from-disposition --pool-root <pool> --owner-state-root <owner> --disposition <path> --portfolio-root <portfolio> --authority-root <auth>` — samples **host UTC at freeze** as authoritative freeze-action time (must be ≤ sealed packet/disposition deadline); no public `--owner-freeze-time` override
 - `xinao prospective canary --contract <…> --expected-contract-sha256 <hex> --i-accept-network-canary` (opt-in live shape probe only; no campaign state)
 
 Capture/reveal are one-shot; freeze is an explicit Codex Owner action via sealed disposition.
-These do **not** authenticate Codex (physical root isolation remains outside the library). Do not
-use shadow `portfolio-freeze` as production freeze advertising.
+Host freeze-action time is written onto FrozenEpisode/Ticket (disposition seal time kept as
+`disposition_frozen_at` on the research binding). These do **not** authenticate Codex (physical
+root isolation remains outside the library). Do not use shadow `portfolio-freeze` as production
+freeze advertising.
 
 These shadow verbs run an ephemeral leg-A container from the active researcher image by exact image ID
 with read-only rootfs, dropped capabilities, no-new-privileges, and network none; only the episode

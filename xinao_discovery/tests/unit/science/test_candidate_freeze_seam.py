@@ -91,6 +91,13 @@ FROZEN_AT = OPEN_AT - timedelta(minutes=6)
 DEADLINE = OPEN_AT - timedelta(minutes=5)
 
 
+def _apply_freeze(**kwargs: Any) -> dict[str, Any]:
+    """apply_freeze_from_disposition with host-time test seam (pre-deadline)."""
+
+    kwargs.setdefault("clock", lambda: FROZEN_AT)
+    return apply_freeze_from_disposition(**kwargs)
+
+
 def _candidate(**overrides: Any) -> dict[str, Any]:
     payload = {
         "schema_version": RESEARCH_CANDIDATE_SCHEMA,
@@ -745,7 +752,7 @@ def test_decision_freeze_calls_real_shadow_store(tmp_path: Path) -> None:
     portfolio = _init_portfolio(tmp_path)
     path = _write_portfolio_disposition(owner, entry, portfolio, selected_number=7)
 
-    result = apply_freeze_from_disposition(
+    result = _apply_freeze(
         pool_root=pool,
         owner_state_root=owner,
         disposition_path=path,
@@ -809,7 +816,7 @@ def test_period_99_cannot_freeze_portfolio_period_1(tmp_path: Path) -> None:
         FreezeAdapterError,
         match=r"FREEZE_PERIOD_MISMATCH|PORTFOLIO_HEAD_BINDING_MISMATCH",
     ):
-        apply_freeze_from_disposition(
+        _apply_freeze(
             pool_root=pool,
             owner_state_root=owner,
             disposition_path=path,
@@ -838,7 +845,7 @@ def test_no_prose_to_selected_number(tmp_path: Path) -> None:
     )
     path = _write_disposition(owner, body)
     with pytest.raises(FreezeAdapterError, match="ACTION_REQUIRES_EXECUTABLE"):
-        apply_freeze_from_disposition(
+        _apply_freeze(
             pool_root=pool,
             owner_state_root=owner,
             disposition_path=path,
@@ -880,7 +887,7 @@ def test_no_action_freeze_zero_stake(tmp_path: Path) -> None:
         portfolio,
         account_identity="RESEARCHER_ACCOUNT_NO_ACTION",
     )
-    result = apply_freeze_from_disposition(
+    result = _apply_freeze(
         pool_root=pool,
         owner_state_root=owner,
         disposition_path=path,
@@ -909,7 +916,7 @@ def test_retain_for_shadow_action_freezes(tmp_path: Path) -> None:
         account_identity="ACTION",
         selected_number=9,
     )
-    result = apply_freeze_from_disposition(
+    result = _apply_freeze(
         pool_root=pool,
         owner_state_root=owner,
         disposition_path=path,
@@ -950,7 +957,7 @@ def test_file_freeze_trusted_time_proof_false(tmp_path: Path) -> None:
     owner.mkdir()
     portfolio = _init_portfolio(tmp_path)
     path = _write_portfolio_disposition(owner, entry, portfolio)
-    result = apply_freeze_from_disposition(
+    result = _apply_freeze(
         pool_root=pool,
         owner_state_root=owner,
         disposition_path=path,
@@ -970,7 +977,7 @@ def _freeze_settle_feedback(tmp_path: Path) -> tuple[Path, dict[str, Any], dict[
     owner.mkdir()
     portfolio = _init_portfolio(tmp_path)
     path = _write_portfolio_disposition(owner, entry, portfolio, selected_number=1)
-    freeze = apply_freeze_from_disposition(
+    freeze = _apply_freeze(
         pool_root=pool,
         owner_state_root=owner,
         disposition_path=path,
@@ -1069,7 +1076,7 @@ def test_feedback_pack_absent_pre_outcome(tmp_path: Path) -> None:
     owner.mkdir()
     portfolio = _init_portfolio(tmp_path)
     path = _write_portfolio_disposition(owner, entry, portfolio)
-    apply_freeze_from_disposition(
+    _apply_freeze(
         pool_root=pool,
         owner_state_root=owner,
         disposition_path=path,
@@ -1106,7 +1113,7 @@ def test_happy_path_no_action_then_feedback(tmp_path: Path) -> None:
         portfolio,
         account_identity="RESEARCHER_ACCOUNT_NO_ACTION",
     )
-    freeze = apply_freeze_from_disposition(
+    freeze = _apply_freeze(
         pool_root=pool,
         owner_state_root=owner,
         disposition_path=path,
@@ -1151,7 +1158,7 @@ def test_action_information_set_includes_binding_hash(tmp_path: Path) -> None:
     owner.mkdir()
     portfolio = _init_portfolio(tmp_path)
     path = _write_portfolio_disposition(owner, entry, portfolio, selected_number=3)
-    result = apply_freeze_from_disposition(
+    result = _apply_freeze(
         pool_root=pool,
         owner_state_root=owner,
         disposition_path=path,
@@ -1222,7 +1229,7 @@ def test_cross_portfolio_disposition_rejected_before_write(tmp_path: Path) -> No
     # No period dirs / binding objects may exist under B before rejection.
     assert not (portfolio_b / "periods").exists() or not any((portfolio_b / "periods").iterdir())
     with pytest.raises(FreezeAdapterError, match="PORTFOLIO_HEAD_BINDING_MISMATCH"):
-        apply_freeze_from_disposition(
+        _apply_freeze(
             pool_root=pool,
             owner_state_root=owner,
             disposition_path=path,
@@ -1264,7 +1271,7 @@ def test_stale_head_prior_seat_portfolio_hash_each_reject(tmp_path: Path) -> Non
     for overrides in cases:
         path = _write_mutated(**overrides)
         with pytest.raises(FreezeAdapterError, match="PORTFOLIO_HEAD_BINDING_MISMATCH"):
-            apply_freeze_from_disposition(
+            _apply_freeze(
                 pool_root=pool,
                 owner_state_root=owner,
                 disposition_path=path,
@@ -1283,7 +1290,7 @@ def test_full_action_intent_in_binding_agrees_with_frozen_ticket(tmp_path: Path)
     owner.mkdir()
     portfolio = _init_portfolio(tmp_path)
     path = _write_portfolio_disposition(owner, entry, portfolio, selected_number=7)
-    result = apply_freeze_from_disposition(
+    result = _apply_freeze(
         pool_root=pool,
         owner_state_root=owner,
         disposition_path=path,
@@ -1328,7 +1335,7 @@ def test_full_no_action_intent_in_binding_agrees_with_frozen_branch(tmp_path: Pa
         portfolio,
         account_identity="RESEARCHER_ACCOUNT_NO_ACTION",
     )
-    result = apply_freeze_from_disposition(
+    result = _apply_freeze(
         pool_root=pool,
         owner_state_root=owner,
         disposition_path=path,
@@ -1403,7 +1410,7 @@ def test_monkeypatched_request_rewrite_cannot_change_frozen_ticket(tmp_path: Pat
     monkey = pytest.MonkeyPatch()
     monkey.setattr(freeze_mod, "freeze_portfolio_period", _attacking_freeze)
     try:
-        result = apply_freeze_from_disposition(
+        result = _apply_freeze(
             pool_root=pool,
             owner_state_root=owner,
             disposition_path=path,
@@ -1478,7 +1485,7 @@ def test_in_memory_request_mutation_cannot_poison_frozen_ledger(tmp_path: Path) 
                 r"FREEZE_CONSUMER_REJECTED|TICKET_MISMATCH|REQUEST_ENVELOPE"
             ),
         ):
-            apply_freeze_from_disposition(
+            _apply_freeze(
                 pool_root=pool,
                 owner_state_root=owner,
                 disposition_path=path,
@@ -1495,7 +1502,7 @@ def test_in_memory_request_mutation_cannot_poison_frozen_ledger(tmp_path: Path) 
     head = derive_portfolio_head(portfolio)
     assert head.phase.value in {"INIT", "MISSING"}
     # Honest retry with unmutated path still works (head not stuck FROZEN).
-    result = apply_freeze_from_disposition(
+    result = _apply_freeze(
         pool_root=pool,
         owner_state_root=owner,
         disposition_path=path,
@@ -1555,7 +1562,7 @@ def test_default_research_feedback_pack_outside_period_cone_and_next_period(
         period_index=2,
         episode_ref="episode.disp.p2",
     )
-    result = apply_freeze_from_disposition(
+    result = _apply_freeze(
         pool_root=pool,
         owner_state_root=owner,
         disposition_path=path,
@@ -1647,7 +1654,7 @@ def test_content_addressed_request_evidence_display_only_no_overwrite(tmp_path: 
     owner.mkdir()
     portfolio = _init_portfolio(tmp_path)
     path = _write_portfolio_disposition(owner, entry, portfolio, selected_number=7)
-    result = apply_freeze_from_disposition(
+    result = _apply_freeze(
         pool_root=pool,
         owner_state_root=owner,
         disposition_path=path,
@@ -1750,7 +1757,7 @@ def test_later_period_feedback_sealed_head_binding(tmp_path: Path) -> None:
         period_index=2,
         episode_ref="episode.disp.p2",
     )
-    result = apply_freeze_from_disposition(
+    result = _apply_freeze(
         pool_root=pool,
         owner_state_root=owner,
         disposition_path=path,
@@ -1786,7 +1793,7 @@ def test_flat_episode_mode_has_no_portfolio_identity(tmp_path: Path) -> None:
     body = _disposition_body(entry, period_index=1, selected_number=5)
     assert "portfolio_binding" not in body or body.get("portfolio_binding") is None
     path = _write_disposition(owner, body)
-    result = apply_freeze_from_disposition(
+    result = _apply_freeze(
         pool_root=pool,
         owner_state_root=owner,
         disposition_path=path,
@@ -1809,7 +1816,7 @@ def test_exact_retry_same_disposition_fails_closed_after_freeze(tmp_path: Path) 
     owner.mkdir()
     portfolio = _init_portfolio(tmp_path)
     path = _write_portfolio_disposition(owner, entry, portfolio, selected_number=7)
-    first = apply_freeze_from_disposition(
+    first = _apply_freeze(
         pool_root=pool,
         owner_state_root=owner,
         disposition_path=path,
@@ -1822,7 +1829,7 @@ def test_exact_retry_same_disposition_fails_closed_after_freeze(tmp_path: Path) 
         FreezeAdapterError,
         match=r"FREEZE_PORTFOLIO_HEAD_NOT_READY|PORTFOLIO_HEAD",
     ):
-        apply_freeze_from_disposition(
+        _apply_freeze(
             pool_root=pool,
             owner_state_root=owner,
             disposition_path=path,

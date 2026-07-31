@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import argparse
 import json
-from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -42,19 +41,6 @@ def _fail(reason: str, detail: str = "") -> int:
         }
     )
     return 1
-
-
-def _parse_owner_time(value: str | None) -> datetime | None:
-    if value is None:
-        return None
-    text = value.strip()
-    try:
-        parsed = datetime.fromisoformat(text.replace("Z", "+00:00"))
-    except ValueError as exc:
-        raise ProspectiveSourceError("OWNER_TIME_INVALID", str(exc)) from exc
-    if parsed.tzinfo is None or parsed.utcoffset() is None:
-        raise ProspectiveSourceError("OWNER_TIME_INVALID", "must be timezone-aware")
-    return parsed.astimezone(UTC)
 
 
 def add_prospective_parsers(groups: argparse._SubParsersAction[Any]) -> None:
@@ -95,8 +81,9 @@ def add_prospective_parsers(groups: argparse._SubParsersAction[Any]) -> None:
     freeze = commands.add_parser(
         "freeze-from-disposition",
         help=(
-            "Production Owner freeze from sealed disposition via apply_freeze_from_disposition "
-            "(requires authority/owner/portfolio roots + owner freeze time)"
+            "Production Owner freeze from sealed disposition via apply_freeze_from_disposition. "
+            "Host UTC is sampled at freeze (authoritative action time <= sealed deadline); "
+            "no public --owner-freeze-time override."
         ),
     )
     freeze.add_argument("--pool-root", type=Path, required=True)
@@ -113,11 +100,6 @@ def add_prospective_parsers(groups: argparse._SubParsersAction[Any]) -> None:
         type=Path,
         required=True,
         help="Owner authority CAS root holding the sealed packet",
-    )
-    freeze.add_argument(
-        "--owner-freeze-time",
-        required=True,
-        help="Timezone-aware Owner freeze wall time (ISO-8601); rechecked vs sealed deadline",
     )
     freeze.add_argument("--mode", choices=("portfolio", "episode"), default="portfolio")
     freeze.add_argument("--request-out", type=Path)
@@ -225,8 +207,7 @@ def dispatch_prospective(args: argparse.Namespace) -> int:
             return 0 if result.get("ok") else 1
 
         if args.command == "freeze-from-disposition":
-            owner_time = _parse_owner_time(args.owner_freeze_time)
-            assert owner_time is not None
+            # Host UTC sampled inside apply_freeze_from_disposition (not CLI override).
             result = apply_freeze_from_disposition(
                 pool_root=args.pool_root,
                 owner_state_root=args.owner_state_root,
@@ -236,7 +217,6 @@ def dispatch_prospective(args: argparse.Namespace) -> int:
                 result_sha256=args.result_sha256,
                 request_out=args.request_out,
                 authority_root=args.authority_root,
-                owner_freeze_time=owner_time,
             )
             _print(
                 {
@@ -247,6 +227,8 @@ def dispatch_prospective(args: argparse.Namespace) -> int:
                     "frozen_episode_hash": result.get("frozen_episode_hash"),
                     "research_binding_sha256": result.get("research_binding_sha256"),
                     "request_content_hash": result.get("request_content_hash"),
+                    "freeze_action_time": result.get("freeze_action_time"),
+                    "disposition_frozen_at": result.get("disposition_frozen_at"),
                     "owner_channel_authority": result.get("owner_channel_authority"),
                     "physical_owner_write_isolation_verified": False,
                     "completion_claim_allowed": False,
