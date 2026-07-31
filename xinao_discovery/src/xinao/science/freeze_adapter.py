@@ -38,7 +38,12 @@ from xinao.science.owner_disposition import (
     load_and_verify_disposition,
     require_period_account_identity,
 )
-from xinao.shadow_lifecycle.consumer import freeze_episode, freeze_portfolio_period
+from xinao.shadow_lifecycle.consumer import (
+    OWNER_FREEZE_AUTHORITY_MARKER,
+    OWNER_FREEZE_AUTHORITY_SCHEMA,
+    freeze_episode,
+    freeze_portfolio_period,
+)
 from xinao.shadow_lifecycle.store import (
     PortfolioPeriodPhase,
     StoreError,
@@ -661,6 +666,133 @@ def _iso_z(value: Any) -> str:
     return text.replace("+00:00", "Z") if text.endswith("+00:00") else text
 
 
+def _assert_request_matches_disposition_and_binding(
+    *,
+    request: Mapping[str, Any],
+    disposition: Mapping[str, Any],
+    binding: Mapping[str, Any],
+    research_binding_sha256: str,
+    portfolio_binding: Mapping[str, Any] | None,
+    mode: Literal["episode", "portfolio"],
+) -> None:
+    """Pre-freeze: closed request must match sealed disposition + binding evidence.
+
+    Runs before the irreversible exclusive freeze write so a failed authority
+    check cannot leave a poisoned FROZEN ledger.
+    """
+
+    binding_hash = _require_hex64(research_binding_sha256, "research_binding_sha256")
+    if request.get("bound_research_binding_sha256") != binding_hash:
+        raise FreezeAdapterError(
+            "FREEZE_REQUEST_BINDING_MISMATCH",
+            f"request={request.get('bound_research_binding_sha256')} binding={binding_hash}",
+        )
+    intent = binding.get("executable_account_intent")
+    if not isinstance(intent, Mapping):
+        raise FreezeAdapterError(
+            "RESEARCH_BINDING_EXECUTABLE_MISSING",
+            "binding lacks executable_account_intent",
+        )
+    account_identity = require_period_account_identity(disposition)
+    account_raw = request.get("account_decision")
+    if not isinstance(account_raw, Mapping):
+        raise FreezeAdapterError("FREEZE_REQUEST_ACCOUNT_MISSING", "account_decision required")
+    if str(account_raw.get("identity")) != account_identity:
+        raise FreezeAdapterError(
+            "FREEZE_REQUEST_ACCOUNT_IDENTITY_MISMATCH",
+            f"request={account_raw.get('identity')} disposition={account_identity}",
+        )
+    sci_raw = request.get("science_decision")
+    if not isinstance(sci_raw, Mapping):
+        raise FreezeAdapterError("FREEZE_REQUEST_SCIENCE_MISSING", "science_decision required")
+    token = f"{RESEARCH_BINDING_REF_PREFIX}{binding_hash}"
+    if str(sci_raw.get("science_decision_ref")) != token:
+        raise FreezeAdapterError(
+            "FREEZE_REQUEST_SCIENCE_REF_MISMATCH", str(sci_raw.get("science_decision_ref"))
+        )
+    if str(account_raw.get("account_decision_ref")) != token:
+        raise FreezeAdapterError(
+            "FREEZE_REQUEST_ACCOUNT_REF_MISMATCH",
+            str(account_raw.get("account_decision_ref")),
+        )
+
+    if account_identity == ACCOUNT_ACTION:
+        ticket = request.get("bound_account_ticket")
+        if not isinstance(ticket, Mapping):
+            raise FreezeAdapterError("FREEZE_REQUEST_TICKET_MISSING", "ACTION requires ticket")
+        for field in (
+            "selected_number",
+            "stake",
+            "panel",
+            "rule_ref",
+            "odds_version_ref",
+            "baseline_ref",
+            "risk_policy_ref",
+            "target_ref",
+        ):
+            if ticket.get(field) != intent.get(field) and str(ticket.get(field)) != str(
+                intent.get(field)
+            ):
+                raise FreezeAdapterError(
+                    "FREEZE_REQUEST_TICKET_MISMATCH",
+                    f"{field}: ticket={ticket.get(field)!r} intent={intent.get(field)!r}",
+                )
+        executable = disposition.get("executable_account_decision")
+        if isinstance(executable, Mapping):
+            if int(ticket["selected_number"]) != int(executable["selected_number"]):
+                raise FreezeAdapterError(
+                    "FREEZE_REQUEST_NUMBER_MISMATCH",
+                    f"ticket={ticket['selected_number']} "
+                    f"disposition={executable['selected_number']}",
+                )
+            if str(ticket["stake"]) != str(executable["stake"]):
+                raise FreezeAdapterError(
+                    "FREEZE_REQUEST_STAKE_MISMATCH",
+                    f"ticket={ticket['stake']} disposition={executable['stake']}",
+                )
+    else:
+        if (
+            request.get("bound_account_ticket") is not None
+            or request.get("bound_frozen_decision") is not None
+        ):
+            raise FreezeAdapterError("FREEZE_REQUEST_NO_ACTION_HAS_TICKET", "ticket present")
+        if str(account_raw.get("rule_ref")) != str(intent.get("rule_ref")):
+            raise FreezeAdapterError(
+                "FREEZE_REQUEST_NO_ACTION_RULE_MISMATCH", str(account_raw.get("rule_ref"))
+            )
+        if str(account_raw.get("odds_version_ref")) != str(intent.get("odds_version_ref")):
+            raise FreezeAdapterError(
+                "FREEZE_REQUEST_NO_ACTION_ODDS_MISMATCH",
+                str(account_raw.get("odds_version_ref")),
+            )
+
+    if mode == "portfolio":
+        if portfolio_binding is None:
+            raise FreezeAdapterError("PORTFOLIO_BINDING_REQUIRED", "missing verified binding")
+        sealed_pb = binding.get("portfolio_binding")
+        if not isinstance(sealed_pb, Mapping):
+            raise FreezeAdapterError(
+                "RESEARCH_BINDING_PORTFOLIO_MISSING",
+                "portfolio binding not sealed into research binding",
+            )
+        for key in (
+            "portfolio_ref",
+            "portfolio_content_hash",
+            "seat_id",
+            "seat_content_hash",
+            "head_period_index",
+            "head_phase",
+            "prior_settled_episode_hash",
+            "prior_feedback_hash",
+            "intended_next_period_index",
+        ):
+            if sealed_pb.get(key) != portfolio_binding.get(key):
+                raise FreezeAdapterError(
+                    "RESEARCH_BINDING_PORTFOLIO_MISMATCH",
+                    f"{key}: binding={sealed_pb.get(key)!r} live={portfolio_binding.get(key)!r}",
+                )
+
+
 def _assert_frozen_matches_disposition_and_binding(
     *,
     frozen: Any,
@@ -883,6 +1015,17 @@ def apply_freeze_from_disposition(
     # Display/evidence paths and later mutation of caller structures cannot fork it.
     authority_request = copy.deepcopy(request)
 
+    # Pre-write authority: sealed disposition/binding intent must match the request
+    # that will be handed to the consumer (before any exclusive freeze write).
+    _assert_request_matches_disposition_and_binding(
+        request=authority_request,
+        disposition=disposition,
+        binding=binding_body,
+        research_binding_sha256=binding_hash,
+        portfolio_binding=portfolio_binding,
+        mode=mode,
+    )
+
     evidence = write_freeze_request_evidence_exclusive(
         shadow_root=shadow_root,
         request=authority_request,
@@ -896,11 +1039,23 @@ def apply_freeze_from_disposition(
         )
     write_freeze_request(request_out, authority_request)
 
+    owner_authority: dict[str, Any] | None = None
+    if mode == "portfolio":
+        owner_authority = {
+            "schema_version": OWNER_FREEZE_AUTHORITY_SCHEMA,
+            "authority_marker": OWNER_FREEZE_AUTHORITY_MARKER,
+            "owner_state_root": str(Path(owner_state_root).expanduser().resolve()),
+            "owner_disposition_sha256": str(verified["owner_artifact_sha256"]),
+            "research_binding_sha256": binding_hash,
+            "request_content_hash": str(authority_request["request_content_hash"]),
+        }
+
     try:
         if mode == "portfolio":
             result = freeze_portfolio_period(
                 root=shadow_root,
                 request=copy.deepcopy(authority_request),
+                owner_authority=copy.deepcopy(owner_authority),
             )
         elif mode == "episode":
             result = freeze_episode(

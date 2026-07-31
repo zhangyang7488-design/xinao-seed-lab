@@ -61,6 +61,34 @@ def _require_hex64(value: object, label: str) -> str:
     return value
 
 
+def research_feedback_pack_cas_path(root: Path, content_hash: str) -> Path:
+    """Immutable out-of-cone CAS path — never under a period directory.
+
+    Portfolio head traversal rejects foreign files inside ``periods/NNNNNN/``.
+    Default research feedback packs must not poison that cone.
+    """
+
+    digest = _require_hex64(content_hash, "content_hash")
+    base = resolve_root(root)
+    return base / "objects" / "research_feedback_pack" / "sha256" / digest[:2] / f"{digest}.json"
+
+
+def _assert_output_path_outside_period_cone(*, root: Path, output_path: Path) -> None:
+    """Refuse writes that would land inside a portfolio period directory."""
+
+    base = resolve_root(root)
+    resolved = output_path.expanduser().resolve()
+    periods = (base / "periods").resolve()
+    try:
+        resolved.relative_to(periods)
+    except ValueError:
+        return
+    raise ResearchFeedbackPackError(
+        "FEEDBACK_PACK_PERIOD_CONE_FORBIDDEN",
+        f"research feedback pack must not write under period cone: {resolved}",
+    )
+
+
 def _write_new_json(path: Path, payload: Mapping[str, Any]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     body = json.dumps(dict(payload), ensure_ascii=False, indent=2, sort_keys=True) + "\n"
@@ -69,6 +97,10 @@ def _write_new_json(path: Path, payload: Mapping[str, Any]) -> None:
             stream.write(body.encode("utf-8"))
             stream.flush()
     except FileExistsError as exc:
+        existing = path.read_bytes()
+        if existing == body.encode("utf-8"):
+            # Idempotent CAS: same bytes already sealed is not a failure.
+            return
         raise ResearchFeedbackPackError(
             "FEEDBACK_PACK_EXCLUSIVE_CREATE_REJECTED",
             f"already exists: {path.name}",
@@ -468,11 +500,19 @@ def emit_research_feedback_pack(
         },
     )
 
+    # Default: immutable out-of-cone CAS under portfolio/episode root objects/.
+    # Never under periods/NNNNNN/ — that poisons head traversal (FOREIGN_PERIOD_ARTIFACT).
     if output_path is None:
-        if bundle["mode"] == "portfolio":
-            output_path = Path(bundle["period_root"]) / "research_feedback_pack.v1.json"
-        else:
-            output_path = Path(bundle["root"]) / "research_feedback_pack.v1.json"
+        output_path = research_feedback_pack_cas_path(
+            Path(bundle["root"]),
+            str(pack["content_hash"]),
+        )
+    else:
+        output_path = Path(output_path)
+        _assert_output_path_outside_period_cone(
+            root=Path(bundle["root"]),
+            output_path=output_path,
+        )
     _write_new_json(output_path, pack)
 
     return {
@@ -481,6 +521,8 @@ def emit_research_feedback_pack(
         "content_hash": pack["content_hash"],
         "path": str(output_path),
         "period_index": pack["period_index"],
+        "cas_path": True,
+        "period_cone_artifact": False,
         "scientific_promotion": False,
         "future_outcome_access": False,
         "auto_start_next_research": False,
@@ -527,4 +569,5 @@ __all__ = [
     "ResearchFeedbackPackError",
     "emit_research_feedback_pack",
     "reject_pre_outcome_emit",
+    "research_feedback_pack_cas_path",
 ]

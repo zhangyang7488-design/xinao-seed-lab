@@ -1355,7 +1355,7 @@ def test_full_no_action_intent_in_binding_agrees_with_frozen_branch(tmp_path: Pa
 
 
 def test_monkeypatched_request_rewrite_cannot_change_frozen_ticket(tmp_path: Path) -> None:
-    """Exact 7/1.0000 → 49/99.0000 TOCTOU attack: in-memory consumer authority wins."""
+    """Display-file TOCTOU: poisoning freeze_request*.json cannot change the ticket."""
 
     pool, entry, _, _ = _ingest(tmp_path)
     owner = tmp_path / "owner"
@@ -1366,7 +1366,14 @@ def test_monkeypatched_request_rewrite_cannot_change_frozen_ticket(tmp_path: Pat
     original = freeze_portfolio_period
     attack_seen = {"called": False, "used_path": None, "used_request": None}
 
-    def _attacking_freeze(*, root: Path, request_path=None, request=None):  # type: ignore[no-untyped-def]
+    def _attacking_freeze(  # type: ignore[no-untyped-def]
+        *,
+        root: Path,
+        request_path=None,
+        request=None,
+        owner_authority=None,
+        allow_fixture_construction=False,
+    ):
         attack_seen["called"] = True
         attack_seen["used_path"] = request_path
         attack_seen["used_request"] = request is not None
@@ -1385,7 +1392,13 @@ def test_monkeypatched_request_rewrite_cannot_change_frozen_ticket(tmp_path: Pat
                     )
         # If adapter still handed a path, force-read that poisoned path (old TOCTOU).
         # Correct repair: only in-memory request is authority.
-        return original(root=root, request_path=request_path, request=request)
+        return original(
+            root=root,
+            request_path=request_path,
+            request=request,
+            owner_authority=owner_authority,
+            allow_fixture_construction=allow_fixture_construction,
+        )
 
     import xinao.science.freeze_adapter as freeze_mod
 
@@ -1412,6 +1425,215 @@ def test_monkeypatched_request_rewrite_cannot_change_frozen_ticket(tmp_path: Pat
     side = load_research_binding(portfolio, result["research_binding_sha256"])
     assert side["executable_account_intent"]["selected_number"] == 7
     assert side["executable_account_intent"]["stake"] == "1.0000"
+
+
+def test_in_memory_request_mutation_cannot_poison_frozen_ledger(tmp_path: Path) -> None:
+    """R1: mutate the actual in-memory request at consumer handoff — no forged FROZEN."""
+
+    from xinao.shadow_lifecycle.store import StoreError, derive_portfolio_head
+
+    pool, entry, _, _ = _ingest(tmp_path)
+    owner = tmp_path / "owner"
+    owner.mkdir()
+    portfolio = _init_portfolio(tmp_path)
+    path = _write_portfolio_disposition(owner, entry, portfolio, selected_number=7)
+
+    original = freeze_portfolio_period
+    attack_seen = {"called": False}
+
+    def _mutate_then_freeze(  # type: ignore[no-untyped-def]
+        *,
+        root: Path,
+        request_path=None,
+        request=None,
+        owner_authority=None,
+        allow_fixture_construction=False,
+    ):
+        attack_seen["called"] = True
+        # Improved attack: rewrite the live in-memory mapping, not only display files.
+        if isinstance(request, dict) and isinstance(request.get("bound_account_ticket"), dict):
+            request = copy.deepcopy(dict(request))
+            request["bound_account_ticket"] = dict(request["bound_account_ticket"])
+            request["bound_account_ticket"]["selected_number"] = 49
+            request["bound_account_ticket"]["stake"] = "99.0000"
+            # Attacker may also try to re-seal request_content_hash.
+            from xinao.canonical import canonical_sha256
+
+            request["request_content_hash"] = canonical_sha256(
+                {k: v for k, v in request.items() if k != "request_content_hash"}
+            )
+        return original(
+            root=root,
+            request_path=request_path,
+            request=request,
+            owner_authority=owner_authority,
+            allow_fixture_construction=allow_fixture_construction,
+        )
+
+    import xinao.science.freeze_adapter as freeze_mod
+
+    monkey = pytest.MonkeyPatch()
+    monkey.setattr(freeze_mod, "freeze_portfolio_period", _mutate_then_freeze)
+    try:
+        with pytest.raises(
+            (FreezeAdapterError, StoreError),
+            match=(
+                r"FREEZE_AUTHORITY_|PRODUCTION_FREEZE_|FREEZE_REQUEST_|"
+                r"FREEZE_CONSUMER_REJECTED|TICKET_MISMATCH|REQUEST_ENVELOPE"
+            ),
+        ):
+            apply_freeze_from_disposition(
+                pool_root=pool,
+                owner_state_root=owner,
+                disposition_path=path,
+                shadow_root=portfolio,
+                mode="portfolio",
+            )
+    finally:
+        monkey.undo()
+
+    assert attack_seen["called"] is True
+    # Failed authority check must leave no frozen ticket / poisoned FROZEN head.
+    period_root = period_directory(portfolio, 1)
+    assert not (period_root / "frozen_episode.v1.json").exists()
+    head = derive_portfolio_head(portfolio)
+    assert head.phase.value in {"INIT", "MISSING"}
+    # Honest retry with unmutated path still works (head not stuck FROZEN).
+    result = apply_freeze_from_disposition(
+        pool_root=pool,
+        owner_state_root=owner,
+        disposition_path=path,
+        shadow_root=portfolio,
+        mode="portfolio",
+    )
+    assert result["ok"] is True
+    frozen = load_frozen(period_directory(portfolio, 1))
+    assert frozen.bound_account_ticket is not None
+    assert frozen.bound_account_ticket.selected_number == 7
+    assert frozen.bound_account_ticket.stake == "1.0000"
+
+
+def test_default_research_feedback_pack_outside_period_cone_and_next_period(
+    tmp_path: Path,
+) -> None:
+    """R2: settle→account feedback→default emit→next-period head/disposition/freeze."""
+
+    from xinao.shadow_lifecycle.store import derive_portfolio_head
+
+    portfolio, entry, freeze = _freeze_settle_feedback(tmp_path)
+    head_before = derive_portfolio_head(portfolio)
+    assert head_before.phase.value == "FEEDBACK_SEALED"
+    emitted = emit_research_feedback_pack(portfolio_root=portfolio, period_index=1)
+    pack_path = Path(emitted["path"])
+    period_root = period_directory(portfolio, 1)
+    assert pack_path.is_file()
+    assert not str(pack_path.resolve()).startswith(str(period_root.resolve()) + "\\")
+    assert not str(pack_path.resolve()).startswith(str(period_root.resolve()) + "/")
+    assert "objects" in pack_path.parts
+    assert "research_feedback_pack" in pack_path.parts
+    assert emitted.get("period_cone_artifact") is False
+    # Explicit period-cone write is rejected.
+    with pytest.raises(ResearchFeedbackPackError, match="FEEDBACK_PACK_PERIOD_CONE_FORBIDDEN"):
+        emit_research_feedback_pack(
+            portfolio_root=portfolio,
+            period_index=1,
+            output_path=period_root / "research_feedback_pack.v1.json",
+        )
+    # Head remains usable after default emit.
+    head_after = derive_portfolio_head(portfolio)
+    assert head_after.phase.value == "FEEDBACK_SEALED"
+    assert head_after.period_index == 1
+    live = build_portfolio_binding_from_shadow(portfolio)
+    assert live["intended_next_period_index"] == 2
+    assert live["prior_settled_episode_hash"] is not None
+    assert live["prior_feedback_hash"] is not None
+    # Period-2 disposition freeze still works with later prior hashes.
+    owner = tmp_path / "owner_p2"
+    owner.mkdir()
+    pool, entry2, _, _ = _ingest(tmp_path / "pool2")
+    path = _write_portfolio_disposition(
+        owner,
+        entry2,
+        portfolio,
+        selected_number=11,
+        period_index=2,
+        episode_ref="episode.disp.p2",
+    )
+    result = apply_freeze_from_disposition(
+        pool_root=pool,
+        owner_state_root=owner,
+        disposition_path=path,
+        shadow_root=portfolio,
+        mode="portfolio",
+    )
+    assert result["period_index"] == 2
+    frozen = load_frozen(period_directory(portfolio, 2))
+    assert frozen.bound_account_ticket is not None
+    assert frozen.bound_account_ticket.selected_number == 11
+    # Feedback pack priors still echo period-1 binding, not rewritable history.
+    assert emitted["pack"]["prior_research_binding_sha256"] == freeze["research_binding_sha256"]
+    assert emitted["pack"]["prior_result_sha256"] == entry["result_sha256"]
+
+
+def test_direct_production_freeze_without_owner_disposition_rejected(tmp_path: Path) -> None:
+    """R3: freeze_portfolio_period(request_path=forged) cannot mint production ACTION."""
+
+    from xinao.shadow_lifecycle.store import StoreError
+
+    portfolio = _init_portfolio(tmp_path)
+    forged = {
+        "episode_ref": "episode.forged.worker",
+        "science_decision": {
+            "science_decision_ref": "sci.forged",
+            "identity": "SCIENCE_CANDIDATE",
+            "knowledge_cutoff": _iso(CUTOFF),
+            "rationale_ref": "rationale.forged",
+            "candidate_ref": "policy.forged",
+        },
+        "account_decision": {
+            "account_decision_ref": "acct.forged",
+            "identity": "ACTION",
+        },
+        "bound_account_ticket": {
+            "ticket_ref": "ticket.forged",
+            "target_ref": "draw.20260801-001",
+            "target_open_time": _iso(OPEN_AT),
+            "freeze_deadline": _iso(DEADLINE),
+            "knowledge_cutoff": _iso(CUTOFF),
+            "frozen_at": _iso(FROZEN_AT),
+            "panel": "B",
+            "selected_number": 49,
+            "stake": "5.0000",
+            "rule_ref": "special-number-rule.v1",
+            "odds_version_ref": "odds.special-number.20260731.v1",
+            "baseline_ref": "BO0013",
+            "risk_policy_ref": "shadow-risk.max-one-unit.v1",
+            "information_set_ref": "info.forged",
+            "information_set_hash": "a" * 64,
+        },
+        "target_ref": "draw.20260801-001",
+        "target_open_time": _iso(OPEN_AT),
+        "freeze_deadline": _iso(DEADLINE),
+        "frozen_at": _iso(FROZEN_AT),
+    }
+    request_path = tmp_path / "forged_freeze_request.json"
+    request_path.write_text(
+        json.dumps(forged, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    with pytest.raises(StoreError, match="PRODUCTION_FREEZE_REQUIRES_OWNER_AUTHORITY"):
+        freeze_portfolio_period(root=portfolio, request_path=request_path)
+    assert not (period_directory(portfolio, 1) / "frozen_episode.v1.json").exists()
+    # Explicit fixture construction remains available for unit tests only.
+    ok = freeze_portfolio_period(
+        root=portfolio,
+        request_path=request_path,
+        allow_fixture_construction=True,
+    )
+    assert ok["ok"] is True
+    frozen = load_frozen(period_directory(portfolio, 1))
+    assert frozen.bound_account_ticket is not None
+    assert frozen.bound_account_ticket.selected_number == 49
 
 
 def test_content_addressed_request_evidence_display_only_no_overwrite(tmp_path: Path) -> None:

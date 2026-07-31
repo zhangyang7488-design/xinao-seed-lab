@@ -57,6 +57,13 @@ OPEN_2 = OPEN_1 + timedelta(days=1)
 OPEN_3 = OPEN_1 + timedelta(days=2)
 
 
+def _fixture_freeze_portfolio_period(**kwargs):
+    """Shadow lifecycle unit fixtures only — not production authority."""
+    kwargs = dict(kwargs)
+    kwargs["allow_fixture_construction"] = True
+    return freeze_portfolio_period(**kwargs)
+
+
 def _write_json(path: Path, payload: dict[str, Any]) -> Path:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(
@@ -177,7 +184,7 @@ def _init(root: Path, *, suffix: str = "alpha") -> dict[str, Any]:
 
 
 def _p1_action_hit_and_feedback(tmp_path: Path, root: Path) -> dict[str, Any]:
-    frozen = freeze_portfolio_period(
+    frozen = _fixture_freeze_portfolio_period(
         root=root,
         request_path=_ticket_action_request(tmp_path / "p1.json", open_at=OPEN_1, period=1),
     )
@@ -202,7 +209,7 @@ def test_positive_two_period_ticket_hit_then_no_action_replay(tmp_path: Path) ->
     assert initialized["opening_balance"] == "10000.0000"
     genesis_seat = load_seat(root)
 
-    freeze_portfolio_period(
+    _fixture_freeze_portfolio_period(
         root=root,
         request_path=_ticket_action_request(
             tmp_path / "pos-p1.json", open_at=OPEN_1, period=1, number=1, panel="B"
@@ -222,7 +229,7 @@ def test_positive_two_period_ticket_hit_then_no_action_replay(tmp_path: Path) ->
         reason_code="CONTINUE_TO_NEXT_PROSPECTIVE_PERIOD",
     )
 
-    freeze_portfolio_period(
+    _fixture_freeze_portfolio_period(
         root=root,
         request_path=_no_action_request(tmp_path / "pos-p2.json", open_at=OPEN_2, period=2),
     )
@@ -273,7 +280,7 @@ def test_outcome_unavailable_and_peek_before_freeze_rejected(tmp_path: Path) -> 
     body["actual_special_number"] = 1
     _write_json(request, body)
     with pytest.raises(StoreError, match="no-peek"):
-        freeze_portfolio_period(root=root, request_path=request)
+        _fixture_freeze_portfolio_period(root=root, request_path=request)
     assert not (period_directory(root, 1) / FROZEN_NAME).exists()
 
 
@@ -374,7 +381,7 @@ def test_concurrent_double_freeze_exactly_one_wins(tmp_path: Path) -> None:
     def worker(path: Path) -> None:
         barrier.wait(timeout=5)
         try:
-            result = freeze_portfolio_period(root=root, request_path=path)
+            result = _fixture_freeze_portfolio_period(root=root, request_path=path)
             with lock:
                 results.append(result)
         except BaseException as exc:
@@ -400,15 +407,16 @@ def test_concurrent_double_freeze_exactly_one_wins(tmp_path: Path) -> None:
     assert results[0]["period_index"] == 1
     assert any(isinstance(exc, (StoreError, ValueError)) for exc in errors)
     assert (period_directory(root, 1) / FROZEN_NAME).is_file()
-    assert not period_directory(root, 2).exists() or not (
-        period_directory(root, 2) / FROZEN_NAME
-    ).exists()
+    assert (
+        not period_directory(root, 2).exists()
+        or not (period_directory(root, 2) / FROZEN_NAME).exists()
+    )
 
 
 def test_double_settle_portfolio_period_rejected(tmp_path: Path) -> None:
     root = tmp_path / "portfolio-double-settle"
     _init(root, suffix="double-settle")
-    freeze_portfolio_period(
+    _fixture_freeze_portfolio_period(
         root=root,
         request_path=_ticket_action_request(tmp_path / "ds-req.json", open_at=OPEN_1, period=1),
     )
@@ -451,7 +459,7 @@ def test_double_settle_portfolio_period_rejected(tmp_path: Path) -> None:
 def test_feedback_bind_mismatch_and_rewrite_rejected(tmp_path: Path) -> None:
     root = tmp_path / "portfolio-feedback"
     _init(root, suffix="feedback")
-    freeze_portfolio_period(
+    _fixture_freeze_portfolio_period(
         root=root,
         request_path=_ticket_action_request(tmp_path / "fb-req.json", open_at=OPEN_1, period=1),
     )
@@ -523,7 +531,7 @@ def test_feedback_bind_mismatch_and_rewrite_rejected(tmp_path: Path) -> None:
 def test_foreign_root_and_period_artifact_rejected(tmp_path: Path) -> None:
     root = tmp_path / "portfolio-foreign"
     _init(root, suffix="foreign")
-    freeze_portfolio_period(
+    _fixture_freeze_portfolio_period(
         root=root,
         request_path=_ticket_action_request(tmp_path / "fr-req.json", open_at=OPEN_1, period=1),
     )
@@ -554,7 +562,7 @@ def test_foreign_root_and_period_artifact_rejected(tmp_path: Path) -> None:
     seat_path.unlink()
     write_new_json(seat_path, foreign_seat)
     with pytest.raises(StoreError, match=r"FOREIGN_PORTFOLIO|period seat"):
-        freeze_portfolio_period(
+        _fixture_freeze_portfolio_period(
             root=root,
             request_path=_no_action_request(tmp_path / "fr-p2.json", open_at=OPEN_2, period=2),
         )
@@ -640,7 +648,7 @@ def test_wrong_panel_baseline_rejected_before_freeze(tmp_path: Path) -> None:
         baseline_ref="BO0001",
     )
     with pytest.raises(ValueError, match="ACCOUNT_TICKET_BASELINE_INVALID"):
-        freeze_portfolio_period(root=root, request_path=request)
+        _fixture_freeze_portfolio_period(root=root, request_path=request)
     assert not (period_directory(root, 1) / FROZEN_NAME).exists()
     cutoff, frozen_at, deadline = _times(OPEN_1)
     with pytest.raises(ValueError, match="ACCOUNT_TICKET_BASELINE_INVALID"):
@@ -685,7 +693,7 @@ def test_legacy_canonical_hash_omits_null_additive_fields(tmp_path: Path) -> Non
     """0.2.0 hash projection must not be polluted by additive null 0.3.0 fields."""
     root = tmp_path / "portfolio-hash"
     _init(root, suffix="hash")
-    freeze_portfolio_period(
+    _fixture_freeze_portfolio_period(
         root=root,
         request_path=_no_action_request(tmp_path / "hash-p1.json", open_at=OPEN_1, period=1),
     )
@@ -716,7 +724,7 @@ def test_zero_opening_zero_balance_and_double_opening_post_rejected(tmp_path: Pa
         portfolio_ref="portfolio.fraud.carry",
         opening_balance="1.0000",
     )
-    freeze_portfolio_period(
+    _fixture_freeze_portfolio_period(
         root=root,
         request_path=_ticket_action_request(
             tmp_path / "carry-p1.json",
@@ -738,7 +746,7 @@ def test_zero_opening_zero_balance_and_double_opening_post_rejected(tmp_path: Pa
         reason_code="ZERO_CARRY",
     )
 
-    freeze_portfolio_period(
+    _fixture_freeze_portfolio_period(
         root=root,
         request_path=_no_action_request(tmp_path / "carry-p2.json", open_at=OPEN_2, period=2),
     )
@@ -837,5 +845,5 @@ def test_carried_period_rejects_second_opening_via_consumer_request(tmp_path: Pa
     body["opening_journal_group_ref"] = "journal.opening.p2.illegal"
     _write_json(request, body)
     with pytest.raises(ValueError, match=r"OPENING journal|opening_journal"):
-        freeze_portfolio_period(root=root, request_path=request)
+        _fixture_freeze_portfolio_period(root=root, request_path=request)
     assert not (period_directory(root, 2) / FROZEN_NAME).exists()
