@@ -51,7 +51,16 @@ REQUIRED_CLI_FLAGS = (
     "--agent",
 )
 MCP_SUBCOMMANDS = ("list", "add", "remove", "doctor")
-GENUINE_TOOLS_ALLOWLIST = "search_tool,use_tool"
+# ResearchEpisode profiles (Owner-sealed).
+PROFILE_OPEN_RESEARCH = "OPEN_RESEARCH"
+PROFILE_CLOSED_LAB = "CLOSED_LAB"
+PROFILE_INSTRUMENT_CANARY = "INSTRUMENT_CANARY"
+DEFAULT_RESEARCH_PROFILE = PROFILE_OPEN_RESEARCH
+# Grok 0.2.117: built-in meta-tools + web on OPEN_RESEARCH.
+OPEN_RESEARCH_TOOLS_ALLOWLIST = "search_tool,use_tool,web_search,web_fetch"
+CLOSED_LAB_TOOLS_ALLOWLIST = "search_tool,use_tool"
+# Backward-compatible alias: default genuine = OPEN_RESEARCH.
+GENUINE_TOOLS_ALLOWLIST = OPEN_RESEARCH_TOOLS_ALLOWLIST
 CANARY_TOOLS_ALLOWLIST = ""
 # Live research path: multi-turn budget must exceed canary one-shot.
 MIN_LIVE_MAX_TURNS = 8
@@ -59,14 +68,18 @@ DEFAULT_LIVE_MAX_TURNS = 16
 DEFAULT_LIVE_MODEL = "grok-4.5"
 DEFAULT_OUTER_TIMEOUT_SECONDS = 3600
 MAX_OUTER_TIMEOUT_SECONDS = 4 * 3600
-STRIPPED_BUILTINS = (
+CANONICAL_GROK_HOME = "/grok-home"
+CANONICAL_LAB_CWD = "/episode-lab"
+CANONICAL_MCP_EVENTS = "/output/mcp_events.jsonl"
+CANONICAL_AGENT_PROFILE = "/grok-home/agents/genuine_scientist_mcp.md"
+PRODUCTIVE_LAB_OPS = frozenset({"write_file", "shell_exec"})
+# Host control builtins stripped on all research profiles (web stripped only on CLOSED_LAB).
+STRIPPED_HOST_BUILTINS = (
     "run_terminal_cmd",
     "read_file",
     "search_replace",
     "grep",
     "list_dir",
-    "web_search",
-    "web_fetch",
     "todo_write",
     "task",
     "kill_task",
@@ -75,6 +88,12 @@ STRIPPED_BUILTINS = (
     "memory_get",
     "lsp",
     "Agent",
+)
+# Default (OPEN_RESEARCH) does not strip web_search/web_fetch.
+STRIPPED_BUILTINS = STRIPPED_HOST_BUILTINS
+STRIPPED_BUILTINS_CLOSED_LAB = STRIPPED_HOST_BUILTINS + (
+    "web_search",
+    "web_fetch",
 )
 # Status vocabulary for Owner one-shot attach/run/export.
 STATUS_PLANNED = "PLANNED"
@@ -107,6 +126,37 @@ def authority_clamp() -> dict[str, bool]:
         "parent_complete": False,
         "owner_adopted": False,
     }
+
+
+def normalize_research_profile(profile: str | None) -> str:
+    if not profile:
+        return DEFAULT_RESEARCH_PROFILE
+    name = str(profile).strip().upper()
+    if name in {"GENUINE_SCIENTIST_EPISODE", "GENUINE", "GENUINE_SCIENTIST"}:
+        return PROFILE_OPEN_RESEARCH
+    if name in {PROFILE_OPEN_RESEARCH, PROFILE_CLOSED_LAB, PROFILE_INSTRUMENT_CANARY}:
+        return name
+    raise NativeSessionError("UNKNOWN_RESEARCH_PROFILE", str(profile)[:80])
+
+
+def tools_allowlist_csv(profile: str | None = None) -> str:
+    name = normalize_research_profile(profile)
+    if name == PROFILE_CLOSED_LAB:
+        return CLOSED_LAB_TOOLS_ALLOWLIST
+    if name == PROFILE_INSTRUMENT_CANARY:
+        return CANARY_TOOLS_ALLOWLIST
+    return OPEN_RESEARCH_TOOLS_ALLOWLIST
+
+
+def stripped_builtins_csv(profile: str | None = None) -> str:
+    name = normalize_research_profile(profile)
+    if name == PROFILE_CLOSED_LAB:
+        return ",".join(STRIPPED_BUILTINS_CLOSED_LAB)
+    return ",".join(STRIPPED_BUILTINS)
+
+
+def web_enabled_for_profile(profile: str | None = None) -> bool:
+    return normalize_research_profile(profile) == PROFILE_OPEN_RESEARCH
 
 
 def _canonical_bytes(value: object) -> bytes:
@@ -329,25 +379,33 @@ def build_genuine_session_argv(
     permission_mode: str = "dontAsk",
     cwd: str | None = None,
     include_disallowed_builtins: bool = True,
+    research_profile: str | None = None,
     extra: Sequence[str] | None = None,
 ) -> list[str]:
-    """Exact native Grok argv for genuine dual-container multi-turn MCP episode.
+    """Exact native Grok argv for dual-container multi-turn MCP ResearchEpisode.
 
-    Session rules (CLI 0.2.112):
+    Session rules (CLI 0.2.117):
     - New conversation: --session-id <UUID> (must not already exist).
     - Resume exact session: --resume <SESSION_ID_OR_TITLE>.
     - Continue most recent in cwd: --continue (mutually exclusive with new id).
-    - MCP tools arrive via GROK_HOME config.toml [mcp_servers.episode_lab];
-      --tools search_tool,use_tool allowlists MCP discovery surface only.
-    - Built-in host tools are stripped via --disallowed-tools and agent profile.
+    - MCP lab ops arrive via GROK_HOME config.toml [mcp_servers.episode_lab];
+      --tools allowlists Grok built-in meta-tools (+ web on OPEN_RESEARCH).
+    - Host file/shell builtins stripped via --disallowed-tools and agent profile.
+    - OPEN_RESEARCH: no --disable-web-search; CLOSED_LAB: disable web.
+    - --cwd defaults to mounted lab path /episode-lab.
     """
+    profile = normalize_research_profile(research_profile)
+    if profile == PROFILE_INSTRUMENT_CANARY:
+        raise NativeSessionError(
+            "CANARY_ON_GENUINE_PATH",
+            "use build_canary_argv for INSTRUMENT_CANARY",
+        )
     if continue_latest and resume:
         raise NativeSessionError(
             "ARGV_CONFLICT",
             "--continue and --resume are mutually exclusive with explicit dual use",
         )
     if continue_latest and session_id:
-        # continue ignores explicit session-id for identity; reject to avoid silent drift
         raise NativeSessionError(
             "ARGV_CONFLICT",
             "--continue cannot bind an exact session_id; use --resume for exact identity",
@@ -355,7 +413,6 @@ def build_genuine_session_argv(
     if not continue_latest and not session_id:
         raise NativeSessionError("SESSION_ID_REQUIRED", "session_id empty")
     if not resume and not continue_latest and not is_uuid(session_id):
-        # CLI requires UUID for --session-id on new conversations.
         raise NativeSessionError(
             "SESSION_ID_NOT_UUID",
             f"--session-id requires UUID, got {session_id[:64]!r}",
@@ -365,6 +422,7 @@ def build_genuine_session_argv(
             "MAX_TURNS_TOO_LOW",
             "genuine multi-turn episode requires max_turns >= 2 (canary uses 1)",
         )
+    tools_csv = tools_allowlist_csv(profile)
     argv: list[str] = [
         grok_bin,
         "--model",
@@ -373,20 +431,24 @@ def build_genuine_session_argv(
         "json",
         "--no-subagents",
         "--no-memory",
-        "--disable-web-search",
         "--max-turns",
         str(int(max_turns)),
         "--permission-mode",
         permission_mode,
         "--tools",
-        GENUINE_TOOLS_ALLOWLIST,
+        tools_csv,
     ]
+    # CLOSED_LAB / non-open profiles hard-disable web; OPEN_RESEARCH must not.
+    if not web_enabled_for_profile(profile):
+        argv.append("--disable-web-search")
     if include_disallowed_builtins:
-        argv.extend(["--disallowed-tools", ",".join(STRIPPED_BUILTINS)])
-    if agent_profile:
-        argv.extend(["--agent", str(agent_profile)])
-    if cwd:
-        argv.extend(["--cwd", str(cwd)])
+        argv.extend(["--disallowed-tools", stripped_builtins_csv(profile)])
+    resolved_agent = agent_profile if agent_profile is not None else CANONICAL_AGENT_PROFILE
+    if resolved_agent:
+        argv.extend(["--agent", str(resolved_agent)])
+    resolved_cwd = cwd if cwd is not None else CANONICAL_LAB_CWD
+    if resolved_cwd:
+        argv.extend(["--cwd", str(resolved_cwd)])
     if prompt_file:
         argv.extend(["--prompt-file", str(prompt_file)])
     if resume:
@@ -396,37 +458,51 @@ def build_genuine_session_argv(
     else:
         argv.extend(["--session-id", session_id])
     if prompt and not prompt_file:
-        # positional prompt after options is valid; prefer trailing for headless
         argv.append(prompt)
     if extra:
         argv.extend(list(extra))
     return argv
 
 
-def assert_argv_is_genuine_not_canary(argv: Sequence[str]) -> None:
+def assert_argv_is_genuine_not_canary(
+    argv: Sequence[str],
+    *,
+    research_profile: str | None = None,
+) -> None:
     joined = list(argv)
+    profile = normalize_research_profile(research_profile)
     if "--tools" not in joined:
         raise NativeSessionError("GENUINE_ARGV_MISSING_TOOLS", "no --tools")
     tools_val = joined[joined.index("--tools") + 1]
-    if tools_val != GENUINE_TOOLS_ALLOWLIST:
+    expected = tools_allowlist_csv(profile)
+    if tools_val != expected:
         raise NativeSessionError(
             "GENUINE_TOOLS_MISMATCH",
-            f"expected {GENUINE_TOOLS_ALLOWLIST!r} got {tools_val!r}",
+            f"profile={profile} expected {expected!r} got {tools_val!r}",
         )
     if "--max-turns" in joined:
         mt = int(joined[joined.index("--max-turns") + 1])
         if mt < 2:
             raise NativeSessionError("GENUINE_MAX_TURNS_CANARY_SHAPED", str(mt))
-    # Must not look like canary empty tools.
     if tools_val == "":
         raise NativeSessionError("CANARY_ARGV_ON_GENUINE_PATH", "empty tools")
     if "--no-subagents" not in joined:
         raise NativeSessionError("GENUINE_ARGV_SUBAGENTS_NOT_DISABLED", "missing --no-subagents")
 
 
-def assert_live_research_argv(argv: Sequence[str], *, min_turns: int = MIN_LIVE_MAX_TURNS) -> None:
-    """Fail closed for empty tools, canary one-turn, host-bypass builtins, low budget."""
-    assert_argv_is_genuine_not_canary(argv)
+def assert_live_research_argv(
+    argv: Sequence[str],
+    *,
+    min_turns: int = MIN_LIVE_MAX_TURNS,
+    research_profile: str | None = None,
+) -> None:
+    """Fail closed for empty tools, canary one-turn, host-bypass builtins, low budget.
+
+    OPEN_RESEARCH must NOT pass --disable-web-search and must allow web builtins.
+    CLOSED_LAB must disable web and strip web builtins.
+    """
+    profile = normalize_research_profile(research_profile)
+    assert_argv_is_genuine_not_canary(argv, research_profile=profile)
     joined = list(argv)
     if "--max-turns" not in joined:
         raise NativeSessionError("LIVE_MAX_TURNS_MISSING", "no --max-turns")
@@ -440,14 +516,42 @@ def assert_live_research_argv(argv: Sequence[str], *, min_turns: int = MIN_LIVE_
         model = joined[joined.index("--model") + 1]
         if model != DEFAULT_LIVE_MODEL:
             raise NativeSessionError("LIVE_MODEL_MISMATCH", model)
-    if "--disable-web-search" not in joined:
-        raise NativeSessionError("LIVE_WEB_BYPASS_NOT_DISABLED", "missing --disable-web-search")
+    if web_enabled_for_profile(profile):
+        if "--disable-web-search" in joined:
+            raise NativeSessionError(
+                "OPEN_RESEARCH_WEB_DISABLED",
+                "OPEN_RESEARCH must not pass --disable-web-search",
+            )
+    else:
+        if "--disable-web-search" not in joined:
+            raise NativeSessionError(
+                "LIVE_WEB_BYPASS_NOT_DISABLED",
+                "CLOSED_LAB missing --disable-web-search",
+            )
     if "--disallowed-tools" not in joined:
         raise NativeSessionError("LIVE_BUILTINS_NOT_STRIPPED", "missing --disallowed-tools")
     denied = joined[joined.index("--disallowed-tools") + 1]
-    for required in ("run_terminal_cmd", "web_search", "read_file"):
+    for required in ("run_terminal_cmd", "read_file"):
         if required not in denied:
             raise NativeSessionError("LIVE_BUILTIN_STRIP_INCOMPLETE", required)
+    if web_enabled_for_profile(profile):
+        if "web_search" in denied or "web_fetch" in denied:
+            raise NativeSessionError(
+                "OPEN_RESEARCH_WEB_STRIPPED",
+                "OPEN_RESEARCH must not deny web_search/web_fetch",
+            )
+        tools_val = joined[joined.index("--tools") + 1]
+        for need in ("search_tool", "use_tool", "web_search", "web_fetch"):
+            if need not in tools_val:
+                raise NativeSessionError("OPEN_RESEARCH_TOOLS_INCOMPLETE", need)
+    else:
+        for required in ("web_search", "web_fetch"):
+            if required not in denied:
+                raise NativeSessionError("CLOSED_LAB_WEB_STRIP_INCOMPLETE", required)
+    if "--cwd" in joined:
+        cwd = joined[joined.index("--cwd") + 1]
+        if str(cwd).replace("\\", "/").rstrip("/") != CANONICAL_LAB_CWD:
+            raise NativeSessionError("LIVE_CWD_MISALIGNED", cwd)
 
 
 def assert_argv_is_canary(argv: Sequence[str]) -> None:
@@ -667,7 +771,8 @@ def fail_closed_live_invoke(
         "genuine_new_session_argv": genuine_argv,
         "genuine_resume_argv": resume_argv,
         "mcp_server": "episode_lab",
-        "mcp_tools_allowlist": GENUINE_TOOLS_ALLOWLIST,
+        "mcp_tools_allowlist": OPEN_RESEARCH_TOOLS_ALLOWLIST,
+        "research_profile_default": DEFAULT_RESEARCH_PROFILE,
         "stripped_builtins": list(STRIPPED_BUILTINS),
         "session_id_example": session,
         "exact_host_commands": [
@@ -741,6 +846,9 @@ class NativeEpisodeSessionDriver:
 
     def plan_new(self, *, prompt: str) -> dict[str, Any]:
         binding = self.materialize_binding()
+        profile = normalize_research_profile(
+            str(binding.get("research_profile") or DEFAULT_RESEARCH_PROFILE)
+        )
         argv = build_genuine_session_argv(
             grok_bin=self.grok_bin,
             session_id=self.session_id,
@@ -748,7 +856,9 @@ class NativeEpisodeSessionDriver:
             model=self.model,
             max_turns=self.max_turns,
             prompt=prompt,
-            agent_profile=str(binding.get("agent_profile") or ""),
+            agent_profile=CANONICAL_AGENT_PROFILE,
+            research_profile=profile,
+            cwd=CANONICAL_LAB_CWD,
         )
         assert_argv_is_genuine_not_canary(argv)
         return {
@@ -759,11 +869,14 @@ class NativeEpisodeSessionDriver:
             "argv": argv,
             "binding_receipt_sha256": binding.get("receipt_sha256"),
             "grok_home": str(self.grok_home),
+            "research_profile": profile,
             "env": {
-                "GROK_HOME": str(self.grok_home),
+                "GROK_HOME": CANONICAL_GROK_HOME,
                 "XINAO_MCP_BINDING": "1",
                 "XINAO_MCP_SERVER": "episode_lab",
-                "XINAO_MCP_TOOLS": GENUINE_TOOLS_ALLOWLIST,
+                "XINAO_MCP_TOOLS": tools_allowlist_csv(profile),
+                "XINAO_MCP_EVENT_LOG": CANONICAL_MCP_EVENTS,
+                "XINAO_RESEARCH_PROFILE": profile,
             },
             **authority_clamp(),
         }
@@ -775,6 +888,8 @@ class NativeEpisodeSessionDriver:
             resume=True,
             model=self.model,
             max_turns=self.max_turns,
+            research_profile=DEFAULT_RESEARCH_PROFILE,
+            cwd=CANONICAL_LAB_CWD,
         )
         assert_argv_is_genuine_not_canary(argv)
         return {
@@ -809,9 +924,7 @@ def redact_argv(argv: Sequence[str]) -> list[str]:
             key_part = lower.split("=", 1)[0]
             # Normalize --api-key / --xai-api-key style flags to underscore form.
             key_norm = key_part.lstrip("-").replace("-", "_")
-            if any(
-                marker in key_part or marker in key_norm for marker in SECRET_ARGV_MARKERS
-            ):
+            if any(marker in key_part or marker in key_norm for marker in SECRET_ARGV_MARKERS):
                 if "=" in text:
                     key, _sep, _val = text.partition("=")
                     out.append(f"{key}=<redacted>")
@@ -861,6 +974,175 @@ def _b64decode(payload: str) -> bytes:
     import base64
 
     return base64.b64decode(payload.encode("ascii"), validate=True)
+
+
+def capture_mcp_event_cursor(path: Path) -> dict[str, Any]:
+    """Capture size/head of MCP event file before attach/resume."""
+    p = Path(path)
+    if not p.is_file():
+        return {
+            "path": str(p),
+            "exists": False,
+            "size": 0,
+            "line_count": 0,
+            "head_sha256": None,
+            "tail_sha256": None,
+        }
+    raw = p.read_bytes()
+    lines = [ln for ln in raw.splitlines() if ln.strip()]
+    head = raw[:64] if raw else b""
+    tail = raw[-64:] if raw else b""
+    return {
+        "path": str(p),
+        "exists": True,
+        "size": len(raw),
+        "line_count": len(lines),
+        "head_sha256": _sha256_bytes(head) if head else None,
+        "tail_sha256": _sha256_bytes(tail) if tail else None,
+        "full_sha256": _sha256_bytes(raw),
+    }
+
+
+def collect_attempt_mcp_delta(
+    path: Path,
+    prior_cursor: Mapping[str, Any] | None,
+    *,
+    expected_episode_id: str | None = None,
+) -> dict[str, Any]:
+    """Bind only appended MCP event delta from this attempt; reject truncation/stale."""
+    p = Path(path)
+    prior = dict(prior_cursor or {})
+    prior_size = int(prior.get("size") or 0)
+    prior_head = prior.get("head_sha256")
+    prior_full = prior.get("full_sha256")
+    if not p.is_file():
+        if prior_size > 0:
+            raise NativeSessionError("MCP_EVENT_FILE_MISSING", str(p))
+        return {
+            "events": [],
+            "mcp_event_hashes": [],
+            "productive_ops": [],
+            "delta_bytes": 0,
+            "status": "EMPTY_DELTA",
+        }
+    raw = p.read_bytes()
+    if prior_size > 0:
+        if len(raw) < prior_size:
+            raise NativeSessionError(
+                "MCP_EVENT_TRUNCATED",
+                f"size {len(raw)} < prior {prior_size}",
+            )
+        head = raw[:64] if raw else b""
+        if prior_head and _sha256_bytes(head) != prior_head:
+            raise NativeSessionError("MCP_EVENT_REWRITTEN", "head sha256 mismatch")
+        if prior_full and len(raw) == prior_size and _sha256_bytes(raw) == prior_full:
+            return {
+                "events": [],
+                "mcp_event_hashes": [],
+                "productive_ops": [],
+                "delta_bytes": 0,
+                "status": "STALE_ONLY",
+            }
+        delta = raw[prior_size:]
+    else:
+        delta = raw
+    events: list[dict[str, Any]] = []
+    hashes: list[str] = []
+    productive: list[str] = []
+    for line in delta.splitlines():
+        text = line.decode("utf-8", errors="replace").strip()
+        if not text:
+            continue
+        try:
+            event = json.loads(text)
+        except json.JSONDecodeError as exc:
+            raise NativeSessionError("MCP_EVENT_MALFORMED", str(exc)[:200]) from exc
+        if not isinstance(event, dict):
+            raise NativeSessionError("MCP_EVENT_MALFORMED", "not object")
+        if expected_episode_id is not None:
+            eid = event.get("episode_id")
+            if eid is not None and str(eid) != str(expected_episode_id):
+                raise NativeSessionError(
+                    "MCP_EVENT_FOREIGN_EPISODE",
+                    f"event={eid} expected={expected_episode_id}",
+                )
+        claimed = event.get("event_hash")
+        body = {k: v for k, v in event.items() if k != "event_hash"}
+        observed = _sha256_bytes(_canonical_bytes(body))
+        if isinstance(claimed, str) and HEX_SHA256.fullmatch(claimed):
+            if claimed != observed:
+                raise NativeSessionError(
+                    "MCP_EVENT_HASH_MISMATCH",
+                    f"claimed={claimed} observed={observed}",
+                )
+            hashes.append(claimed)
+        else:
+            hashes.append(observed)
+            event = {**event, "event_hash": observed}
+        op = str(event.get("op") or "")
+        if op in PRODUCTIVE_LAB_OPS and event.get("status") not in {"denied", "error"}:
+            productive.append(op)
+        elif event.get("productive") is True and op:
+            productive.append(op)
+        events.append(event)
+    status = "DELTA_OK" if events else "EMPTY_DELTA"
+    if prior_size > 0 and not events:
+        status = "STALE_ONLY"
+    return {
+        "events": events,
+        "mcp_event_hashes": hashes,
+        "productive_ops": productive,
+        "delta_bytes": len(delta),
+        "status": status,
+        "prior_size": prior_size,
+        "new_size": len(raw),
+    }
+
+
+def require_productive_lab_delta(delta: Mapping[str, Any]) -> None:
+    """Success requires at least one write_file/shell_exec from this attempt delta."""
+    status = str(delta.get("status") or "")
+    if status in {"STALE_ONLY", "EMPTY_DELTA"}:
+        raise NativeSessionError("MCP_DELTA_STALE_OR_EMPTY", status)
+    productive = list(delta.get("productive_ops") or [])
+    if not productive:
+        events = list(delta.get("events") or [])
+        kinds = [str(e.get("event") or e.get("op") or "") for e in events if isinstance(e, dict)]
+        raise NativeSessionError(
+            "PRODUCTIVE_LAB_OP_MISSING",
+            f"events={kinds[:12]}",
+        )
+
+
+def extract_web_use_trace(parsed: Mapping[str, Any] | None) -> dict[str, Any]:
+    """Best-effort web-use trace from provider machine output; never fabricate."""
+    if not parsed:
+        return {"web_use_observed": None, "web_search_requests": None, "actual_turns": None}
+    actual_turns = parsed.get("actual_turns")
+    web_search_requests = None
+    web_use_observed = None
+    for record in parsed.get("records") or []:
+        if not isinstance(record, dict):
+            continue
+        usage = record.get("usage") if isinstance(record.get("usage"), dict) else {}
+        stu = usage.get("server_tool_use") if isinstance(usage.get("server_tool_use"), dict) else {}
+        if "web_search_requests" in stu:
+            try:
+                web_search_requests = int(stu["web_search_requests"])
+                web_use_observed = web_search_requests > 0
+            except (TypeError, ValueError):
+                pass
+        message = record.get("message") if isinstance(record.get("message"), dict) else {}
+        content = message.get("content") if isinstance(message, dict) else None
+        if isinstance(content, list):
+            for block in content:
+                if isinstance(block, dict) and block.get("name") == "web_search":
+                    web_use_observed = True
+    return {
+        "web_use_observed": web_use_observed,
+        "web_search_requests": web_search_requests,
+        "actual_turns": actual_turns,
+    }
 
 
 def write_cas_blob(root: Path, kind: str, payload: bytes) -> str:
@@ -957,9 +1239,7 @@ def parse_provider_machine_output(
                     return meta[key]
         return None
 
-    session_raw = _pick(
-        ("session_id", "sessionId", "session_uuid", "conversation_id", "id")
-    )
+    session_raw = _pick(("session_id", "sessionId", "session_uuid", "conversation_id", "id"))
     stop_reason = _pick(("stop_reason", "stopReason", "finish_reason", "end_reason", "status"))
     model = _pick(("model", "model_id", "modelId"))
     turns_raw = _pick(("turn_count", "turns", "actual_turns", "num_turns", "message_count"))
@@ -1055,21 +1335,25 @@ def build_live_attempt_record(
     synthetic: bool,
     timed_out: bool = False,
     docker_exec_failed: bool = False,
+    research_profile: str | None = None,
+    productive_lab_ops: Sequence[str] | None = None,
+    mcp_delta_status: str | None = None,
+    web_use_trace: Mapping[str, Any] | None = None,
+    require_productive_lab_op: bool = True,
 ) -> dict[str, Any]:
     """Assemble attempt evidence. Does not claim success if provider/plumbing failed."""
+    profile = normalize_research_profile(research_profile)
     reject_non_live_driver(
         synthetic=synthetic,
         driver=driver,
         planned_only=not live_executed,
         host_fallback="host" in driver.lower() and "docker" not in driver.lower(),
     )
-    assert_live_research_argv(list(argv))
+    assert_live_research_argv(list(argv), research_profile=profile)
     redacted = redact_argv(argv)
     stdout_sha = _sha256_bytes(stdout)
     stderr_sha = _sha256_bytes(stderr)
-    tool_trace_sha = _sha256_bytes(
-        _canonical_bytes({"mcp_event_hashes": list(mcp_event_hashes)})
-    )
+    tool_trace_sha = _sha256_bytes(_canonical_bytes({"mcp_event_hashes": list(mcp_event_hashes)}))
     artifact_manifest = dict(lab_artifact_manifest or {"artifacts": []})
     artifact_manifest_sha = _sha256_bytes(_canonical_bytes(artifact_manifest))
     parsed: dict[str, Any] | None = None
@@ -1111,9 +1395,18 @@ def build_live_attempt_record(
             failure_reasons.append("RAW_STDOUT_EMPTY")
         if not list(mcp_event_hashes):
             # Tool namespace is required; empty MCP chain is not live multi-tool research.
-            # Allow zero only when explicit single-turn empty tools — which we already reject.
             success_gates_ok = False
             failure_reasons.append("MCP_EVENTS_MISSING")
+        if require_productive_lab_op:
+            productive = [
+                str(x) for x in (productive_lab_ops or []) if str(x) in PRODUCTIVE_LAB_OPS
+            ]
+            if not productive:
+                success_gates_ok = False
+                failure_reasons.append("PRODUCTIVE_LAB_OP_MISSING")
+            if mcp_delta_status in {"STALE_ONLY", "EMPTY_DELTA"}:
+                success_gates_ok = False
+                failure_reasons.append(f"MCP_DELTA_{mcp_delta_status}")
         if provider_session_uuid and parsed.get("session_uuid"):
             if str(parsed["session_uuid"]).lower() != str(provider_session_uuid).lower():
                 # For new session, provider returns the session; allow binding either way
@@ -1156,6 +1449,11 @@ def build_live_attempt_record(
         "raw_stderr_b64": _b64encode(stderr),
         "tool_trace_sha256": tool_trace_sha,
         "mcp_event_hashes": list(mcp_event_hashes),
+        "research_profile": profile,
+        "web_enabled": web_enabled_for_profile(profile),
+        "productive_lab_ops": list(productive_lab_ops or []),
+        "mcp_delta_status": mcp_delta_status,
+        "web_use_trace": dict(web_use_trace or extract_web_use_trace(parsed)),
         "artifact_manifest": artifact_manifest,
         "artifact_manifest_sha256": artifact_manifest_sha,
         "pair_receipt_sha256": pair_receipt_sha256,
@@ -1299,12 +1597,18 @@ def validate_attempt_exportable(attempt: Mapping[str, Any]) -> None:
         raise NativeSessionError("SESSION_UUID_MISSING", session)
     if not attempt.get("stop_reason"):
         raise NativeSessionError("STOP_REASON_MISSING", "empty")
-    if not attempt.get("raw_stdout_sha256") or HEX_SHA256.fullmatch(
-        str(attempt.get("raw_stdout_sha256"))
-    ) is None:
+    if (
+        not attempt.get("raw_stdout_sha256")
+        or HEX_SHA256.fullmatch(str(attempt.get("raw_stdout_sha256"))) is None
+    ):
         raise NativeSessionError("RAW_STDOUT_MISSING", "hash")
     if not attempt.get("mcp_event_hashes"):
         raise NativeSessionError("MCP_EVENTS_MISSING", "empty tool trace")
+    productive = [
+        str(x) for x in (attempt.get("productive_lab_ops") or []) if str(x) in PRODUCTIVE_LAB_OPS
+    ]
+    if not productive:
+        raise NativeSessionError("PRODUCTIVE_LAB_OP_MISSING", "export")
     if not attempt.get("pair_receipt_sha256"):
         raise NativeSessionError("PAIR_RECEIPT_MISSING", "export")
     for key in (
@@ -1366,21 +1670,30 @@ def export_candidate_evidence_bundle(
             "SESSION_UUID_MISMATCH",
             f"attempt={attempt.get('provider_session_uuid')} expected={expected_provider_session_uuid}",
         )
-    if expected_pair_receipt_sha256 and attempt.get("pair_receipt_sha256") != expected_pair_receipt_sha256:
+    if (
+        expected_pair_receipt_sha256
+        and attempt.get("pair_receipt_sha256") != expected_pair_receipt_sha256
+    ):
         raise NativeSessionError("PAIR_RECEIPT_MISMATCH", "export")
-    if expected_namespace_receipt_sha256 and attempt.get(
-        "namespace_receipt_sha256"
-    ) != expected_namespace_receipt_sha256:
+    if (
+        expected_namespace_receipt_sha256
+        and attempt.get("namespace_receipt_sha256") != expected_namespace_receipt_sha256
+    ):
         raise NativeSessionError("NAMESPACE_RECEIPT_MISMATCH", "export")
-    if expected_transport_image_id and attempt.get("transport_image_id") != expected_transport_image_id:
+    if (
+        expected_transport_image_id
+        and attempt.get("transport_image_id") != expected_transport_image_id
+    ):
         raise NativeSessionError("TRANSPORT_IMAGE_MISMATCH", "export")
     if expected_tool_image_id and attempt.get("tool_image_id") != expected_tool_image_id:
         raise NativeSessionError("TOOL_IMAGE_MISMATCH", "export")
     # Caller package identity must not override attempt-sealed identity when present.
     release_id = attempt.get("release_id") or package_release_id
     release_identity = attempt.get("release_identity_sha256") or package_release_identity_sha256
-    if package_release_id and attempt.get("release_id") and package_release_id != attempt.get(
-        "release_id"
+    if (
+        package_release_id
+        and attempt.get("release_id")
+        and package_release_id != attempt.get("release_id")
     ):
         raise NativeSessionError("RELEASE_ID_MISMATCH", "export")
     if (
@@ -1421,6 +1734,10 @@ def export_candidate_evidence_bundle(
         "stop_reason": attempt.get("stop_reason"),
         "argv_digest": attempt.get("argv_digest"),
         "mcp_event_hashes": list(attempt.get("mcp_event_hashes") or []),
+        "research_profile": attempt.get("research_profile"),
+        "web_enabled": attempt.get("web_enabled"),
+        "productive_lab_ops": list(attempt.get("productive_lab_ops") or []),
+        "web_use_trace": dict(attempt.get("web_use_trace") or {}),
         "prompt_material_cutoff": dict(prompt_material_cutoff or {}),
         "candidate_only": True,
         "shadow_write": False,
@@ -1446,10 +1763,9 @@ def export_candidate_evidence_bundle(
     # Idempotent: identical pointer content is fine; conflicting partial fails closed.
     if export_ptr.is_file():
         prior = json.loads(export_ptr.read_text(encoding="utf-8"))
-        if (
-            prior.get("attempt_cas_digest") == attempt_cas_digest
-            and prior.get("bundle_sha256") not in {None, bundle_hash}
-        ):
+        if prior.get("attempt_cas_digest") == attempt_cas_digest and prior.get(
+            "bundle_sha256"
+        ) not in {None, bundle_hash}:
             raise NativeSessionError(
                 "EXPORT_CONFLICT",
                 f"prior={prior.get('bundle_sha256')} new={bundle_hash}",
@@ -1512,4 +1828,3 @@ def main(argv: Sequence[str] | None = None) -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

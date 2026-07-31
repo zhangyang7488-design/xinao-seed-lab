@@ -97,7 +97,7 @@ def test_cli_probe_and_fail_closed_contract(native: Any) -> None:
     # Resume uses --resume not --session-id
     resume = contract["genuine_resume_argv"]
     assert "--resume" in resume
-    assert resume[resume.index("--tools") + 1] == "search_tool,use_tool"
+    assert resume[resume.index("--tools") + 1] == "search_tool,use_tool,web_search,web_fetch"
     assert int(resume[resume.index("--max-turns") + 1]) >= 2
 
 
@@ -127,7 +127,7 @@ def test_canary_and_genuine_argv_divergence(native: Any) -> None:
     native.assert_argv_is_canary(canary)
     native.assert_argv_is_genuine_not_canary(genuine)
     assert canary[canary.index("--tools") + 1] == ""
-    assert genuine[genuine.index("--tools") + 1] == "search_tool,use_tool"
+    assert genuine[genuine.index("--tools") + 1] == "search_tool,use_tool,web_search,web_fetch"
     with pytest.raises(native.NativeSessionError) as exc:
         native.build_genuine_session_argv(session_id=sid, max_turns=1)
     assert exc.value.reason_code == "MAX_TURNS_TOO_LOW"
@@ -269,14 +269,29 @@ def test_mcp_binding_only_search_tool_use_tool(bind_mod: Any, tmp_path: Path) ->
         server_path=str(PKG / "mcp_episode_lab_server.py"),
         pythonpath=str(PKG),
     )
-    assert receipt["tools_allowlist"] == ["search_tool", "use_tool"]
+    assert receipt["tools_allowlist"] == [
+        "search_tool",
+        "use_tool",
+        "web_search",
+        "web_fetch",
+    ]
+    assert receipt["mcp_lab_ops"] == [
+        "ping",
+        "list_dir",
+        "read_file",
+        "write_file",
+        "shell_exec",
+    ]
+    assert receipt["evidence_path"] == "/output/mcp_events.jsonl"
     assert receipt["completion_claim_allowed"] is False
     assert receipt["global_config_modified"] is False
     cfg = Path(receipt["config_toml"]).read_text(encoding="utf-8")
     assert "mcp_servers.episode_lab" in cfg
     assert "mcp_episode_lab_server.py" in cfg
+    assert "/output/mcp_events.jsonl" in cfg
     profile = Path(receipt["agent_profile"]).read_text(encoding="utf-8")
     assert "search_tool" in profile
+    assert "web_search" in profile
     assert "run_terminal_cmd" in profile  # denied list
 
 
@@ -303,7 +318,7 @@ def test_dual_host_resume_argv_uses_native_mcp_tools(host_mod: Any, tmp_path: Pa
     resumed = host.resume_pair(expected_session_id=host_session)
     argv = resumed["planned_grok_argv"]
     assert "--resume" in argv
-    assert argv[argv.index("--tools") + 1] == "search_tool,use_tool"
+    assert argv[argv.index("--tools") + 1] == "search_tool,use_tool,web_search,web_fetch"
     assert int(argv[argv.index("--max-turns") + 1]) >= 2
     # Foreign session rejected
     with pytest.raises(host_mod.DualHostError) as exc:

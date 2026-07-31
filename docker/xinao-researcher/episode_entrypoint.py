@@ -35,7 +35,14 @@ def self_describe() -> dict[str, object]:
         "profile": PROFILE,
         "default_image_entrypoint_profile": CANARY_PROFILE,
         "mcp_server": "episode_lab",
-        "tools_allowlist": ["search_tool", "use_tool"],
+        "research_profile_default": "OPEN_RESEARCH",
+        "tools_allowlist": [
+            "search_tool",
+            "use_tool",
+            "web_search",
+            "web_fetch",
+        ],
+        "mcp_lab_ops": ["ping", "list_dir", "read_file", "write_file", "shell_exec"],
         "generic_file_shell_tools": False,
         "dual_container_required": True,
         "network_policy": os.environ.get("XINAO_EPISODE_NETWORK_POLICY", "DENY_ALL_FAIL_CLOSED"),
@@ -66,7 +73,8 @@ def main(argv: list[str] | None = None) -> int:
             "profile": PROFILE,
             "note": (
                 "episode_entrypoint is host-selected only; Owner attaches Grok with "
-                "search_tool,use_tool MCP binding. Not INSTRUMENT_CANARY."
+                "OPEN_RESEARCH (search_tool,use_tool,web_search,web_fetch) against "
+                "episode_lab lab ops. Not INSTRUMENT_CANARY."
             ),
             "argv": args[:32],
             **_authority_clamp(),

@@ -51,7 +51,8 @@ TRANSPORT_ATTEMPT_GROK_CONFIG_MOUNT = "/grok-home/config.toml"
 TRANSPORT_ATTEMPT_AGENT_PROFILE_MOUNT = "/grok-home/agents/genuine_scientist_mcp.md"
 TRANSPORT_MCP_SERVER_IMAGE_PATH = "/opt/xinao-researcher/mcp_episode_lab_server.py"
 TRANSPORT_MCP_EVENT_LOG = "/output/mcp_events.jsonl"
-TRANSPORT_MCP_EVIDENCE_MOUNT = "/output/mcp-evidence.jsonl"
+# Canonical only — do not use fragmented aliases (mcp-evidence.jsonl / attempt/...).
+TRANSPORT_MCP_EVIDENCE_MOUNT = TRANSPORT_MCP_EVENT_LOG
 
 # Mount targets that must never appear on either container.
 FORBIDDEN_MOUNT_MARKERS = (
@@ -234,15 +235,23 @@ def transport_container_spec(
         "mcp_server_image_path": TRANSPORT_MCP_SERVER_IMAGE_PATH,
         "mcp_binding": {
             "server": "episode_lab",
-            "tools_allowlist": ["search_tool", "use_tool"],
+            "lab_ops": ["ping", "list_dir", "read_file", "write_file", "shell_exec"],
+            "tools_allowlist": [
+                "search_tool",
+                "use_tool",
+                "web_search",
+                "web_fetch",
+            ],
+            "research_profile_default": "OPEN_RESEARCH",
+            "mcp_events_path": TRANSPORT_MCP_EVENT_LOG,
             "global_config_modified": False,
             "host_config_mounted": False,
         },
         "notes": (
             "Canary ENTRYPOINT remains the default image entrypoint. Dual-host "
             "episode seats may select episode_entrypoint and attempt-local native "
-            "MCP (episode_lab → Unix IPC sidecar). Built-in generic file/shell "
-            "tools stay disabled; genuine profile allowlists search_tool,use_tool only."
+            "MCP (episode_lab lab ops via Grok built-in search_tool/use_tool). "
+            "OPEN_RESEARCH also allows web_search/web_fetch; host file/shell stay stripped."
         ),
         "forbidden": {
             "mount_docker_sock": True,
@@ -340,7 +349,8 @@ def tool_executor_container_spec(
         "response_bounds": {
             "max_request_bytes": 65536,
             "max_response_bytes": 262144,
-            "max_timeout_ms": 30000,
+            "default_timeout_ms": 600000,
+            "max_timeout_ms": 3600000,
         },
         "security_profile": {
             "shell_bwrap": bwrap_mode,
@@ -559,8 +569,16 @@ def dual_container_bundle(
                 f"XINAO_REPLAY_STATE_DIR={TOOL_REPLAY_STATE}",
             ],
             "transport_mcp": {
-                "tools_allowlist": ["search_tool", "use_tool"],
+                "tools_allowlist": [
+                    "search_tool",
+                    "use_tool",
+                    "web_search",
+                    "web_fetch",
+                ],
+                "lab_ops": ["ping", "list_dir", "read_file", "write_file", "shell_exec"],
                 "server": "episode_lab",
+                "mcp_events_path": TRANSPORT_MCP_EVENT_LOG,
+                "research_profile_default": "OPEN_RESEARCH",
                 "generic_file_shell_tools": False,
             },
             "validators": {
@@ -823,9 +841,9 @@ def attempt_local_mcp_config_toml(
         "--episode-id",
         episode_id,
         "--evidence-path",
-        "/output/mcp-evidence.jsonl",
+        TRANSPORT_MCP_EVENT_LOG,
         "--timeout-ms",
-        "5000",
+        "600000",
     ]
     # TOML array of quoted strings.
     args_toml = ", ".join(f'"{a}"' for a in args)
@@ -836,11 +854,12 @@ def attempt_local_mcp_config_toml(
         f"args = [{args_toml}]\n"
         f"enabled = true\n"
         f"startup_timeout_sec = 15\n"
-        f"tool_timeout_sec = 30\n"
+        f"tool_timeout_sec = 600\n"
         f'env = {{ PYTHONPATH = "/opt/xinao-researcher", PYTHONUNBUFFERED = "1", '
         f'PYTHONUTF8 = "1", XINAO_EPISODE_ID = "{episode_id}", '
         f'XINAO_TOOL_IPC_SOCKET = "{socket_path}", '
-        f'XINAO_MCP_EVIDENCE_PATH = "/output/mcp-evidence.jsonl" }}\n'
+        f'XINAO_MCP_EVIDENCE_PATH = "{TRANSPORT_MCP_EVENT_LOG}", '
+        f'XINAO_MCP_EVENT_LOG = "{TRANSPORT_MCP_EVENT_LOG}" }}\n'
         f"\n"
         f"[features]\n"
         f"lsp_tools = false\n"

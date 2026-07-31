@@ -606,9 +606,13 @@ def _validate_shell_argv(argv: list[str], *, lab_root: Path) -> None:
             raise ToolExecutorError("ARGV_DENIED", "argv path traversal")
         if item.startswith("/") or item.startswith("~"):
             if index == 0:
-                if not _is_allowed_bin_path(item):
-                    raise ToolExecutorError("ARGV_DENIED", f"absolute binary denied: {item[:80]}")
-                continue
+                # Allow system interpreters OR preseeded lab-local venv binaries
+                # under /episode-lab (no live online installer).
+                if _is_allowed_bin_path(item) or _path_under_lab(
+                    item, lab_resolved=lab_resolved
+                ):
+                    continue
+                raise ToolExecutorError("ARGV_DENIED", f"absolute binary denied: {item[:80]}")
             # Non-binary absolute args must resolve inside the episode lab only.
             if not _path_under_lab(item, lab_resolved=lab_resolved):
                 raise ToolExecutorError("ARGV_DENIED", f"absolute path outside lab: {item[:80]}")

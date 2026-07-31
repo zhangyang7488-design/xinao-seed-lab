@@ -104,10 +104,26 @@ def test_union_mcp_scrubs_and_strips_builtins(mcp_mod: Any, bind_mod: Any, tmp_p
         server_path=str(PKG / "mcp_episode_lab_server.py"),
         pythonpath=str(PKG),
     )
-    assert receipt["tools_allowlist"] == ["search_tool", "use_tool"]
+    assert receipt["tools_allowlist"] == [
+        "search_tool",
+        "use_tool",
+        "web_search",
+        "web_fetch",
+    ]
     assert "run_terminal_cmd" in receipt["stripped_builtins"]
-    assert "web_search" in receipt["stripped_builtins"]
     assert "read_file" in receipt["stripped_builtins"]
+    # OPEN_RESEARCH keeps web builtins available; CLOSED_LAB strips them.
+    assert "web_search" not in receipt["stripped_builtins"]
+    closed = bind_mod.materialize_attempt_local_binding(
+        root=tmp_path / "bind-closed",
+        episode_id="ep-union-closed",
+        socket_path="/ipc/tool.sock",
+        server_path=str(PKG / "mcp_episode_lab_server.py"),
+        pythonpath=str(PKG),
+        research_profile="CLOSED_LAB",
+    )
+    assert "web_search" in closed["stripped_builtins"]
+    assert closed["tools_allowlist"] == ["search_tool", "use_tool"]
     assert receipt["completion_claim_allowed"] is False
 
 
@@ -355,7 +371,12 @@ def test_union_create_spec_and_inspect_agree(specs: Any) -> None:
     assert bundle["tool_spec_violations"] == []
     mi = bundle["minimal_integrator_interface"]
     assert "assert_tool_spec_fail_closed" in mi["validators"].values()
-    assert mi["transport_mcp"]["tools_allowlist"] == ["search_tool", "use_tool"]
+    assert mi["transport_mcp"]["tools_allowlist"] == [
+        "search_tool",
+        "use_tool",
+        "web_search",
+        "web_fetch",
+    ]
     assert "XINAO_IPC_PEER_REQUIRE=1" in mi["tool_env_required"][1] or any(
         "PEER_REQUIRE" in x for x in mi["tool_env_required"]
     )

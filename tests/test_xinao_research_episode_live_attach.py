@@ -66,7 +66,13 @@ def _provider_stdout(
 
 
 def _mcp_hashes() -> list[str]:
-    body = {"event": "tools/call", "name": "search_tool", "n": 1}
+    body = {
+        "event": "mcp_tools_call",
+        "op": "write_file",
+        "status": "ok",
+        "productive": True,
+        "n": 1,
+    }
     digest = hashlib.sha256(
         (json.dumps(body, sort_keys=True, separators=(",", ":")) + "\n").encode("utf-8")
     ).hexdigest()
@@ -139,6 +145,10 @@ def _successful_attempt(
         synthetic=synthetic,
         timed_out=timed_out,
         docker_exec_failed=docker_exec_failed,
+        research_profile="OPEN_RESEARCH",
+        productive_lab_ops=["write_file"],
+        mcp_delta_status="DELTA_OK",
+        require_productive_lab_op=True,
     )
 
 
@@ -159,11 +169,11 @@ def test_live_argv_rejects_empty_tools_one_turn_and_host_bypass(native: Any) -> 
     with pytest.raises(native.NativeSessionError) as exc2:
         native.assert_live_research_argv(low)
     assert exc2.value.reason_code == "LIVE_MAX_TURNS_TOO_LOW"
-    # Strip disable-web-search
-    stripped = [x for x in good if x != "--disable-web-search"]
+    # OPEN_RESEARCH must not carry --disable-web-search; injecting it fails closed.
+    poisoned = list(good) + ["--disable-web-search"]
     with pytest.raises(native.NativeSessionError) as exc3:
-        native.assert_live_research_argv(stripped)
-    assert exc3.value.reason_code == "LIVE_WEB_BYPASS_NOT_DISABLED"
+        native.assert_live_research_argv(poisoned)
+    assert exc3.value.reason_code == "OPEN_RESEARCH_WEB_DISABLED"
 
 
 def test_planned_and_synthetic_cannot_export(native: Any, tmp_path: Path) -> None:
@@ -464,12 +474,12 @@ def test_dual_host_live_argv_shape_and_foreign_session(
     native.assert_live_research_argv(argv)
     assert "--model" in argv and argv[argv.index("--model") + 1] == "grok-4.5"
     assert int(argv[argv.index("--max-turns") + 1]) >= 8
-    assert argv[argv.index("--tools") + 1] == "search_tool,use_tool"
+    assert argv[argv.index("--tools") + 1] == "search_tool,use_tool,web_search,web_fetch"
     assert "--no-subagents" in argv
-    assert "--disable-web-search" in argv
+    assert "--disable-web-search" not in argv
     assert "--disallowed-tools" in argv
     denied = argv[argv.index("--disallowed-tools") + 1]
-    assert "run_terminal_cmd" in denied and "web_search" in denied
+    assert "run_terminal_cmd" in denied and "web_search" not in denied
 
     host.start_pair()
     host.interrupt_pair()
@@ -551,17 +561,37 @@ def test_dual_host_attach_run_with_mocked_exec_records_evidence(
         }
 
     def fake_exec(argv: Any, *, timeout_seconds: float, env: Any = None) -> Any:
-        # Write MCP event so live success can bind tool trace.
+        # Append productive lab op event so live success can bind attempt delta.
         mcp_path = tmp_path / "ep" / "output" / "mcp_events.jsonl"
         mcp_path.parent.mkdir(parents=True, exist_ok=True)
-        event = {"event": "tools/call", "name": "search_tool", "ok": True}
-        line = json.dumps(event, sort_keys=True, separators=(",", ":"))
-        event_hash = hashlib.sha256((line + "\n").encode("utf-8")).hexdigest()
-        mcp_path.write_text(
-            json.dumps({**event, "event_hash": event_hash}, sort_keys=True) + "\n",
-            encoding="utf-8",
-        )
-        native.assert_live_research_argv(list(argv))
+        event = {
+            "schema_version": "xinao.dual_container_mcp_event.v1",
+            "event": "mcp_tools_call",
+            "op": "write_file",
+            "status": "ok",
+            "productive": True,
+            "episode_id": "ep_mock_exec",
+            "server": "episode_lab",
+            "completion_claim_allowed": False,
+            "science_restored": False,
+            "parent_complete": False,
+            "owner_adopted": False,
+        }
+        body = {k: v for k, v in event.items() if k != "event_hash"}
+        event_hash = hashlib.sha256(
+            (
+                json.dumps(body, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+                + "\n"
+            ).encode("utf-8")
+        ).hexdigest()
+        with mcp_path.open("a", encoding="utf-8") as stream:
+            stream.write(
+                json.dumps({**event, "event_hash": event_hash}, sort_keys=True) + "\n"
+            )
+        if env is not None:
+            assert env.get("GROK_HOME") == "/grok-home"
+        native.assert_live_research_argv(list(argv), research_profile="OPEN_RESEARCH")
+        assert "--disable-web-search" not in list(argv)
         assert timeout_seconds >= 8
         return subprocess.CompletedProcess(
             args=list(argv),
