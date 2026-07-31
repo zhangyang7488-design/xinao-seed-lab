@@ -160,6 +160,13 @@ jobs:
             os: ubuntu-latest
             pytest_args: -q tests/unit/assurance
             ruff_paths: src/xinao/assurance tests/unit/assurance
+          # Shadow lifecycle product cone: continuous portfolios changed this path
+          # but no project-verify row previously scheduled unit coverage.
+          - project: discovery-shadow-lifecycle
+            path: xinao_discovery
+            os: ubuntu-latest
+            pytest_args: -q tests/unit/shadow_lifecycle
+            ruff_paths: src/xinao/shadow_lifecycle tests/unit/shadow_lifecycle
     defaults:
       run:
         working-directory: ${{ matrix.path }}
