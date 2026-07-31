@@ -1,9 +1,12 @@
-"""Attack-focused tests for candidate pool → disposition → freeze → feedback seam."""
+"""Attack-focused tests for candidate pool → disposition → freeze → feedback seam.
+
+Includes counterexamples that must fail against the pre-fix authority theater
+(sibling authentic, outcome smuggle, forged priors, partial CAS poison, etc.).
+"""
 
 from __future__ import annotations
 
 import copy
-import hashlib
 import json
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -16,21 +19,32 @@ from xinao.science.candidate_pool import (
     ingest_verified_research_result,
     load_pool_entry,
     pool_entry_path,
+    pool_receipt_path,
     pool_result_bytes_path,
 )
 from xinao.science.freeze_adapter import (
+    RESEARCH_BINDING_REF_PREFIX,
     FreezeAdapterError,
     apply_freeze_from_disposition,
     assert_no_control_plane_imports,
     build_freeze_request_from_disposition,
+    extract_research_binding_hash_from_frozen,
+    load_research_binding,
 )
 from xinao.science.owner_disposition import (
-    AUTHENTIC_DISPOSITION_SOURCE,
+    CODEX_OWNER_CHANNEL_SOURCE,
     DISPOSITION_MARKER,
     DISPOSITION_SCHEMA_VERSION,
+    OWNER_CHANNEL_AUTHORITY_UNPROVEN,
+    SCIENCE_RETAIN_FOR_SHADOW,
     OwnerDispositionError,
+    disposition_cas_path,
+    encode_disposition_bytes,
     load_and_verify_disposition,
+    parse_disposition_json_strict,
+    raw_sha256,
     validate_disposition_payload,
+    write_owner_disposition_artifact,
 )
 from xinao.science.research_feedback_pack import (
     ResearchFeedbackPackError,
@@ -42,7 +56,9 @@ from xinao.science.researcher_result_adapter import (
     PRODUCTION_SUCCESS_RECEIPT_KEYS,
     PRODUCTION_SUCCESS_RESULT_KEYS,
     RESEARCH_CANDIDATE_SCHEMA,
-    raw_sha256,
+)
+from xinao.science.researcher_result_adapter import (
+    raw_sha256 as result_raw_sha256,
 )
 from xinao.shadow_lifecycle import (
     FeedbackKind,
@@ -263,7 +279,7 @@ def _result_and_receipt(
     receipt = _production_receipt(
         candidate=cand,
         status=status,
-        result_sha256=raw_sha256(result_bytes),
+        result_sha256=result_raw_sha256(result_bytes),
     )
     assert set(receipt) == PRODUCTION_SUCCESS_RECEIPT_KEYS
     return result_bytes, receipt
@@ -288,9 +304,11 @@ def _disposition_body(
     entry: dict[str, Any],
     *,
     account_identity: str = "ACTION",
-    disposition_source: str = AUTHENTIC_DISPOSITION_SOURCE,
+    disposition_source: str = CODEX_OWNER_CHANNEL_SOURCE,
     selected_number: int | None = 7,
     include_executable: bool = True,
+    science_disposition: str = "ADOPT",
+    period_index: int = 1,
     **overrides: Any,
 ) -> dict[str, Any]:
     body: dict[str, Any] = {
@@ -302,11 +320,11 @@ def _disposition_body(
         "result_sha256": entry["result_sha256"],
         "receipt_content_sha256": entry["receipt_content_sha256"],
         "pool_entry_content_hash": entry["content_hash"],
-        "period_index": 1,
+        "period_index": period_index,
         "episode_ref": "episode.disp.p1",
         "target_ref": "draw.20260801-001",
         "knowledge_cutoff": _iso(CUTOFF),
-        "science_disposition": "ADOPT",
+        "science_disposition": science_disposition,
         "account_identity": account_identity,
         "rationale_ref": "owner-reviewed-candidate",
     }
@@ -339,20 +357,14 @@ def _disposition_body(
     return body
 
 
-def _write_disposition(owner_root: Path, body: dict[str, Any], name: str = "disp.json") -> Path:
-    # Seal body without hash, then attach body hash as owner_artifact_sha256.
-    body_without = {k: v for k, v in body.items() if k != "owner_artifact_sha256"}
-    raw = (json.dumps(body_without, ensure_ascii=False, indent=2, sort_keys=True) + "\n").encode(
-        "utf-8"
+def _write_disposition(owner_root: Path, body: dict[str, Any]) -> Path:
+    """Content-addressed exclusive write; no self-hash field."""
+
+    written = write_owner_disposition_artifact(
+        owner_state_root=owner_root,
+        payload=body,
     )
-    body_without["owner_artifact_sha256"] = hashlib.sha256(raw).hexdigest()
-    path = owner_root / name
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(
-        json.dumps(body_without, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
-        encoding="utf-8",
-    )
-    return path
+    return Path(written["disposition_path"])
 
 
 def _init_portfolio(tmp_path: Path) -> Path:
@@ -442,36 +454,103 @@ def test_pool_idempotent_same_bytes(tmp_path: Path) -> None:
     assert again == entry
 
 
+def test_pool_cas_partial_same_bytes_recovers(tmp_path: Path) -> None:
+    pool = tmp_path / "pool"
+    result_bytes, receipt = _result_and_receipt()
+    # First compute what the full ingest would write, then simulate crash after result blob.
+    entry = ingest_verified_research_result(
+        pool_root=pool,
+        result_bytes=result_bytes,
+        receipt=receipt,
+    )
+    # Tear down to partial: keep only result blob.
+    pool_entry_path(pool, entry["result_sha256"]).unlink()
+    pool_receipt_path(pool, entry["result_sha256"]).unlink()
+    assert pool_result_bytes_path(pool, entry["result_sha256"]).is_file()
+    assert not pool_entry_path(pool, entry["result_sha256"]).is_file()
+
+    recovered = ingest_verified_research_result(
+        pool_root=pool,
+        result_bytes=result_bytes,
+        receipt=receipt,
+    )
+    assert recovered == entry
+    assert pool_entry_path(pool, entry["result_sha256"]).is_file()
+    assert pool_receipt_path(pool, entry["result_sha256"]).is_file()
+
+
+def test_pool_cas_partial_conflict_fails_closed(tmp_path: Path) -> None:
+    pool = tmp_path / "pool"
+    result_bytes, receipt = _result_and_receipt()
+    entry = ingest_verified_research_result(
+        pool_root=pool,
+        result_bytes=result_bytes,
+        receipt=receipt,
+    )
+    # Leave only a conflicting result blob with same path but different bytes is impossible
+    # for same hash; simulate partial with different receipt bytes for same result hash path.
+    pool_entry_path(pool, entry["result_sha256"]).unlink()
+    receipt_path = pool_receipt_path(pool, entry["result_sha256"])
+    # Poison receipt with different bytes while keeping path (same result_sha256 identity).
+    receipt_path.write_bytes(b'{"poison": true}\n')
+
+    with pytest.raises(CandidatePoolError, match="POOL_CAS_CONTENT_CONFLICT"):
+        ingest_verified_research_result(
+            pool_root=pool,
+            result_bytes=result_bytes,
+            receipt=receipt,
+        )
+    # Unknown partial not deleted.
+    assert receipt_path.is_file()
+    assert receipt_path.read_bytes() == b'{"poison": true}\n'
+
+
 # --- Disposition tests --------------------------------------------------------
 
 
 def test_disposition_worker_fields_not_authentic(tmp_path: Path) -> None:
-    pool, entry, _, _ = _ingest(tmp_path)
+    _pool, entry, _, _ = _ingest(tmp_path)
     owner = tmp_path / "owner"
     owner.mkdir()
     body = _disposition_body(entry, disposition_source="worker_fixture")
-    path = _write_disposition(owner, body)
-    with pytest.raises(OwnerDispositionError, match="DISPOSITION_SOURCE_NOT_AUTHENTIC"):
-        load_and_verify_disposition(
-            disposition_path=path,
-            owner_state_root=owner,
-            pool_root=pool,
-        )
+    with pytest.raises(OwnerDispositionError, match="DISPOSITION_SOURCE_NOT_OWNER_CHANNEL"):
+        write_owner_disposition_artifact(owner_state_root=owner, payload=body)
 
 
 def test_disposition_owner_role_codex_text_not_sufficient(tmp_path: Path) -> None:
-    pool, entry, _, _ = _ingest(tmp_path)
+    _pool, entry, _, _ = _ingest(tmp_path)
     owner = tmp_path / "owner"
     owner.mkdir()
     body = _disposition_body(entry, disposition_source="mock")
     body["owner_role"] = "codex"
-    path = _write_disposition(owner, body)
-    with pytest.raises(OwnerDispositionError, match="DISPOSITION_SOURCE_NOT_AUTHENTIC"):
-        load_and_verify_disposition(
-            disposition_path=path,
-            owner_state_root=owner,
-            pool_root=pool,
-        )
+    with pytest.raises(OwnerDispositionError, match="DISPOSITION_SOURCE_NOT_OWNER_CHANNEL"):
+        write_owner_disposition_artifact(owner_state_root=owner, payload=body)
+
+
+def test_sibling_worker_dirs_do_not_self_certify_authentic(tmp_path: Path) -> None:
+    """CE1: any sibling paths + codex_owner_channel must NOT mint authentic=True."""
+
+    worker_ws = tmp_path / "worker_ws"
+    pool = worker_ws / "pool"
+    owner = worker_ws / "owner_state_root"
+    owner.mkdir(parents=True)
+    result_bytes, receipt = _result_and_receipt()
+    entry = ingest_verified_research_result(
+        pool_root=pool,
+        result_bytes=result_bytes,
+        receipt=receipt,
+    )
+    path = _write_disposition(owner, _disposition_body(entry))
+    verified = load_and_verify_disposition(
+        disposition_path=path,
+        owner_state_root=owner,
+        pool_root=pool,
+    )
+    assert verified["owner_disposition_authentic"] is False
+    assert verified["owner_channel_authority"] == OWNER_CHANNEL_AUTHORITY_UNPROVEN
+    assert verified["path_separated_from_pool"] is True
+    assert verified["physical_owner_write_isolation_verified"] is False
+    assert verified.get("physical_owner_write_isolation") in (None, False)
 
 
 def test_disposition_not_under_owner_root(tmp_path: Path) -> None:
@@ -493,21 +572,104 @@ def test_disposition_not_under_owner_root(tmp_path: Path) -> None:
 def test_disposition_owner_root_must_separate_from_pool(tmp_path: Path) -> None:
     pool, entry, _, _ = _ingest(tmp_path)
     body = _disposition_body(entry)
-    path = _write_disposition(pool, body, name="bad_disp.json")
     with pytest.raises(
         OwnerDispositionError,
         match=r"OWNER_ROOT_POOL_NOT_SEPARATED|NESTED",
     ):
-        load_and_verify_disposition(
-            disposition_path=path,
+        write_owner_disposition_artifact(
             owner_state_root=pool,
+            payload=body,
             pool_root=pool,
         )
 
 
+def test_disposition_single_raw_hash_mode_no_self_field(tmp_path: Path) -> None:
+    pool, entry, _, _ = _ingest(tmp_path)
+    owner = tmp_path / "owner"
+    owner.mkdir()
+    body = _disposition_body(entry)
+    body["owner_artifact_sha256"] = "a" * 64
+    with pytest.raises(OwnerDispositionError, match="DISPOSITION_SELF_HASH_FORBIDDEN"):
+        write_owner_disposition_artifact(owner_state_root=owner, payload=body)
+
+    path = _write_disposition(owner, _disposition_body(entry))
+    verified = load_and_verify_disposition(
+        disposition_path=path,
+        owner_state_root=owner,
+        pool_root=pool,
+    )
+    expected = raw_sha256(path.read_bytes())
+    assert verified["owner_artifact_sha256"] == expected
+    assert path == disposition_cas_path(owner, expected)
+    assert "owner_artifact_sha256" not in json.loads(path.read_text(encoding="utf-8"))
+
+
+def test_disposition_duplicate_json_keys_rejected(tmp_path: Path) -> None:
+    raw = b'{"a": 1, "a": 2}\n'
+    with pytest.raises(OwnerDispositionError, match="DISPOSITION_JSON_DUPLICATE_KEY"):
+        parse_disposition_json_strict(raw)
+
+
+def test_disposition_outcome_and_unknown_fields_rejected(tmp_path: Path) -> None:
+    _, entry, _, _ = _ingest(tmp_path)
+    body = _disposition_body(entry)
+    body["outcome"] = {"actual_special_number": 1}
+    with pytest.raises(OwnerDispositionError, match=r"DISPOSITION_UNKNOWN_FIELDS|OUTCOME"):
+        validate_disposition_payload(body, pool_entry=entry)
+
+    body2 = _disposition_body(entry)
+    body2["executable_account_decision"]["actual_special_number"] = 7
+    with pytest.raises(
+        OwnerDispositionError,
+        match=r"EXECUTABLE_DECISION_UNKNOWN_FIELDS|OUTCOME",
+    ):
+        validate_disposition_payload(body2, pool_entry=entry)
+
+    body3 = _disposition_body(entry, account_identity="RESEARCHER_ACCOUNT_NO_ACTION")
+    body3["no_action_period_binding"]["settlement"] = {"pnl": "1.0000"}
+    with pytest.raises(
+        OwnerDispositionError,
+        match=r"NO_ACTION_BINDING_UNKNOWN_FIELDS|OUTCOME",
+    ):
+        validate_disposition_payload(body3, pool_entry=entry)
+
+    # Nested outcome in rationale-shaped unknown prose bag still fails closed.
+    body4 = _disposition_body(entry)
+    body4["future_outcome"] = {"peeked_special_number": 3}
+    with pytest.raises(OwnerDispositionError, match=r"DISPOSITION_UNKNOWN_FIELDS|OUTCOME"):
+        validate_disposition_payload(body4, pool_entry=entry)
+
+
+def test_stake_nan_inf_exponent_scale_rejected(tmp_path: Path) -> None:
+    _, entry, _, _ = _ingest(tmp_path)
+    for bad in ("NaN", "Infinity", "inf", "1e10", "1.00001", "-1.0000", "0.0000"):
+        body = _disposition_body(entry)
+        body["executable_account_decision"]["stake"] = bad
+        with pytest.raises(OwnerDispositionError, match="EXECUTABLE_STAKE_INVALID"):
+            validate_disposition_payload(body, pool_entry=entry)
+
+
+def test_reject_plus_action_matrix_and_retain_for_shadow(tmp_path: Path) -> None:
+    _, entry, _, _ = _ingest(tmp_path)
+    for science in ("REJECT", "ABSORB_NO_ACTION", "DEFER"):
+        body = _disposition_body(entry, science_disposition=science, account_identity="ACTION")
+        with pytest.raises(OwnerDispositionError, match="SCIENCE_ACCOUNT_MATRIX_VIOLATION"):
+            validate_disposition_payload(body, pool_entry=entry)
+
+    # Positive: RETAIN_FOR_SHADOW + ACTION is explicit shadow production without science adopt.
+    ok = _disposition_body(
+        entry,
+        science_disposition=SCIENCE_RETAIN_FOR_SHADOW,
+        account_identity="ACTION",
+    )
+    normalized = validate_disposition_payload(ok, pool_entry=entry)
+    assert normalized["science_disposition"] == SCIENCE_RETAIN_FOR_SHADOW
+    assert normalized["account_identity"] == "ACTION"
+    assert normalized["science_identity"] == "SCIENCE_CANDIDATE"
+
+
 def test_action_requires_executable_not_prose(tmp_path: Path) -> None:
     _pool, entry, _, _ = _ingest(tmp_path)
-    # Prose in summary mentions 17; disposition ACTION without executable must fail.
     body = _disposition_body(entry, account_identity="ACTION", include_executable=False)
     with pytest.raises(OwnerDispositionError, match="ACTION_REQUIRES_EXECUTABLE_DECISION"):
         validate_disposition_payload(body, pool_entry=entry)
@@ -565,6 +727,9 @@ def test_decision_freeze_calls_real_shadow_store(tmp_path: Path) -> None:
     assert result["auto_next_period"] is False
     assert result["auto_settle"] is False
     assert result["bound_result_sha256"] == entry["result_sha256"]
+    assert result["owner_disposition_authentic"] is False
+    assert result["owner_channel_authority"] == OWNER_CHANNEL_AUTHORITY_UNPROVEN
+    assert result["physical_owner_write_isolation_verified"] is False
 
     period_root = period_directory(portfolio, 1)
     assert detect_phase(period_root).value == "FROZEN"
@@ -573,18 +738,36 @@ def test_decision_freeze_calls_real_shadow_store(tmp_path: Path) -> None:
     assert frozen.bound_account_ticket is not None
     assert frozen.bound_account_ticket.selected_number == 7
     assert frozen.science_decision.candidate_ref == entry["policy_ref"]
+    binding_hash = extract_research_binding_hash_from_frozen(frozen)
+    assert frozen.science_decision.science_decision_ref == (
+        f"{RESEARCH_BINDING_REF_PREFIX}{binding_hash}"
+    )
+    assert frozen.account_decision.account_decision_ref == (
+        f"{RESEARCH_BINDING_REF_PREFIX}{binding_hash}"
+    )
+    # Binding token is inside fields covered by frozen.content_hash.
+    canonical = frozen.canonical_content()
+    assert (
+        f"{RESEARCH_BINDING_REF_PREFIX}{binding_hash}"
+        == canonical["science_decision"]["science_decision_ref"]
+    )
+    assert (
+        f"{RESEARCH_BINDING_REF_PREFIX}{binding_hash}"
+        == canonical["account_decision"]["account_decision_ref"]
+    )
+    assert frozen.content_hash == frozen.compute_content_hash()
+    side = load_research_binding(portfolio, binding_hash)
+    assert side["result_sha256"] == entry["result_sha256"]
+    assert side["owner_artifact_sha256"] == result["bound_owner_artifact_sha256"]
 
 
-def test_freeze_adapter_rejects_worker_disposition(tmp_path: Path) -> None:
+def test_period_99_cannot_freeze_portfolio_period_1(tmp_path: Path) -> None:
     pool, entry, _, _ = _ingest(tmp_path)
     owner = tmp_path / "owner"
     owner.mkdir()
-    path = _write_disposition(
-        owner,
-        _disposition_body(entry, disposition_source="worker"),
-    )
+    path = _write_disposition(owner, _disposition_body(entry, period_index=99))
     portfolio = _init_portfolio(tmp_path)
-    with pytest.raises(FreezeAdapterError, match="DISPOSITION_SOURCE_NOT_AUTHENTIC"):
+    with pytest.raises(FreezeAdapterError, match="FREEZE_PERIOD_MISMATCH"):
         apply_freeze_from_disposition(
             pool_root=pool,
             owner_state_root=owner,
@@ -594,9 +777,17 @@ def test_freeze_adapter_rejects_worker_disposition(tmp_path: Path) -> None:
         )
 
 
+def test_freeze_adapter_rejects_worker_disposition(tmp_path: Path) -> None:
+    _pool, entry, _, _ = _ingest(tmp_path)
+    owner = tmp_path / "owner"
+    owner.mkdir()
+    # write_owner rejects non-channel source at write time for closed schema.
+    with pytest.raises(OwnerDispositionError, match="DISPOSITION_SOURCE_NOT_OWNER_CHANNEL"):
+        _write_disposition(owner, _disposition_body(entry, disposition_source="worker"))
+
+
 def test_no_prose_to_selected_number(tmp_path: Path) -> None:
     pool, entry, _, _ = _ingest(tmp_path)
-    # Summary contains "buy 17"; ACTION without executable must not freeze.
     body = _disposition_body(entry, include_executable=False)
     owner = tmp_path / "owner"
     owner.mkdir()
@@ -625,6 +816,7 @@ def test_freeze_request_with_outcome_rejected(tmp_path: Path) -> None:
         pool_entry=verified["pool_entry"],
         disposition=verified["disposition"],
         owner_artifact_sha256=str(verified["owner_artifact_sha256"]),
+        research_binding_sha256="ab" * 32,
     )
     request["outcome"] = {"actual_special_number": 1}
     with pytest.raises(FreezeAdapterError, match="FREEZE_NO_PEEK"):
@@ -653,10 +845,43 @@ def test_no_action_freeze_zero_stake(tmp_path: Path) -> None:
     frozen = load_frozen(period_directory(portfolio, 1))
     assert frozen.bound_account_ticket is None
     assert frozen.account_decision.stake == "0.0000"
+    # NO_ACTION also seals binding into both decision refs.
+    binding_hash = extract_research_binding_hash_from_frozen(frozen)
+    assert binding_hash == result["research_binding_sha256"]
+
+
+def test_retain_for_shadow_action_freezes(tmp_path: Path) -> None:
+    pool, entry, _, _ = _ingest(tmp_path)
+    owner = tmp_path / "owner"
+    owner.mkdir()
+    path = _write_disposition(
+        owner,
+        _disposition_body(
+            entry,
+            science_disposition=SCIENCE_RETAIN_FOR_SHADOW,
+            account_identity="ACTION",
+            selected_number=9,
+        ),
+    )
+    portfolio = _init_portfolio(tmp_path)
+    result = apply_freeze_from_disposition(
+        pool_root=pool,
+        owner_state_root=owner,
+        disposition_path=path,
+        shadow_root=portfolio,
+        mode="portfolio",
+    )
+    assert result["ok"] is True
+    frozen = load_frozen(period_directory(portfolio, 1))
+    assert frozen.bound_account_ticket is not None
+    assert frozen.bound_account_ticket.selected_number == 9
+    assert frozen.science_decision.identity.value == "SCIENCE_CANDIDATE"
+    side = load_research_binding(portfolio, result["research_binding_sha256"])
+    assert side["science_disposition"] == SCIENCE_RETAIN_FOR_SHADOW
+    assert side["scientific_promotion"] is False
 
 
 def test_no_temporal_goal_in_freeze_adapter() -> None:
-    # AST import graph only: denylist string literals may document forbidden packages.
     assert_no_control_plane_imports()
     import ast
 
@@ -694,7 +919,7 @@ def test_file_freeze_trusted_time_proof_false(tmp_path: Path) -> None:
 # --- Feedback pack tests ------------------------------------------------------
 
 
-def _freeze_settle_feedback(tmp_path: Path) -> tuple[Path, dict[str, Any], Path]:
+def _freeze_settle_feedback(tmp_path: Path) -> tuple[Path, dict[str, Any], dict[str, Any]]:
     pool, entry, _, _ = _ingest(tmp_path)
     owner = tmp_path / "owner"
     owner.mkdir()
@@ -730,17 +955,13 @@ def _freeze_settle_feedback(tmp_path: Path) -> tuple[Path, dict[str, Any], Path]
         kind=FeedbackKind.NO_CHANGE_WITH_REASON,
         reason_code="CONTINUE_TO_NEXT_PROSPECTIVE_PERIOD",
     )
-    return portfolio, entry, Path(freeze["request_path"])
+    return portfolio, entry, freeze
 
 
 def test_feedback_pack_scientific_promotion_false(tmp_path: Path) -> None:
-    portfolio, entry, _ = _freeze_settle_feedback(tmp_path)
+    portfolio, entry, freeze = _freeze_settle_feedback(tmp_path)
     emitted = emit_research_feedback_pack(
         portfolio_root=portfolio,
-        prior_result_sha256=entry["result_sha256"],
-        prior_receipt_content_sha256=entry["receipt_content_sha256"],
-        prior_pool_entry_content_hash=entry["content_hash"],
-        prior_policy_ref=entry["policy_ref"],
         period_index=1,
     )
     assert emitted["scientific_promotion"] is False
@@ -750,6 +971,51 @@ def test_feedback_pack_scientific_promotion_false(tmp_path: Path) -> None:
     assert emitted["auto_next_period_freeze"] is False
     assert emitted["pack"]["public_outcome"]["actual_special_number"] == 1
     assert emitted["pack"]["prior_result_sha256"] == entry["result_sha256"]
+    assert emitted["pack"]["prior_research_binding_sha256"] == freeze["research_binding_sha256"]
+
+
+def test_binding_survives_feedback_via_frozen_and_side_object(tmp_path: Path) -> None:
+    portfolio, entry, freeze = _freeze_settle_feedback(tmp_path)
+    # After account feedback, period receipt bindings may be wiped; frozen must still hold.
+    period_root = period_directory(portfolio, 1)
+    frozen = load_frozen(period_root)
+    binding_hash = extract_research_binding_hash_from_frozen(frozen)
+    assert binding_hash == freeze["research_binding_sha256"]
+    side = load_research_binding(portfolio, binding_hash)
+    assert side["result_sha256"] == entry["result_sha256"]
+    assert side["pool_entry_content_hash"] == entry["content_hash"]
+    assert side["period_index"] == 1
+    # content_hash of frozen covers the decision refs that embed the binding.
+    dumped = frozen.model_dump(mode="json")
+    assert (
+        f"{RESEARCH_BINDING_REF_PREFIX}{binding_hash}"
+        in (dumped["science_decision"]["science_decision_ref"])
+    )
+    assert (
+        f"{RESEARCH_BINDING_REF_PREFIX}{binding_hash}"
+        in (dumped["account_decision"]["account_decision_ref"])
+    )
+    assert frozen.content_hash == frozen.compute_content_hash()
+    emitted = emit_research_feedback_pack(portfolio_root=portfolio, period_index=1)
+    assert emitted["prior_research_binding_sha256"] == binding_hash
+    assert emitted["pack"]["prior_owner_artifact_sha256"] == freeze["bound_owner_artifact_sha256"]
+
+
+def test_forged_prior_hashes_cannot_emit_via_public_api(tmp_path: Path) -> None:
+    portfolio, _entry, _freeze = _freeze_settle_feedback(tmp_path)
+    # Public emit accepts no free prior_*; kwargs must not open a forgery channel.
+    with pytest.raises(TypeError):
+        emit_research_feedback_pack(  # type: ignore[call-arg]
+            portfolio_root=portfolio,
+            prior_result_sha256="a" * 64,
+            prior_receipt_content_sha256="b" * 64,
+            prior_pool_entry_content_hash="c" * 64,
+            prior_policy_ref="forged.policy",
+            period_index=1,
+        )
+    # Honest emit still works from frozen binding.
+    emitted = emit_research_feedback_pack(portfolio_root=portfolio, period_index=1)
+    assert emitted["pack"]["prior_result_sha256"] != "a" * 64
 
 
 def test_feedback_pack_absent_pre_outcome(tmp_path: Path) -> None:
@@ -770,27 +1036,17 @@ def test_feedback_pack_absent_pre_outcome(tmp_path: Path) -> None:
     with pytest.raises(ResearchFeedbackPackError, match="FEEDBACK_PACK_REQUIRES_SETTLED"):
         emit_research_feedback_pack(
             portfolio_root=portfolio,
-            prior_result_sha256=entry["result_sha256"],
-            prior_receipt_content_sha256=entry["receipt_content_sha256"],
-            prior_pool_entry_content_hash=entry["content_hash"],
-            prior_policy_ref=entry["policy_ref"],
             period_index=1,
         )
 
 
 def test_no_auto_freeze_without_new_disposition(tmp_path: Path) -> None:
-    portfolio, entry, _ = _freeze_settle_feedback(tmp_path)
+    portfolio, _entry, _ = _freeze_settle_feedback(tmp_path)
     emitted = emit_research_feedback_pack(
         portfolio_root=portfolio,
-        prior_result_sha256=entry["result_sha256"],
-        prior_receipt_content_sha256=entry["receipt_content_sha256"],
-        prior_pool_entry_content_hash=entry["content_hash"],
-        prior_policy_ref=entry["policy_ref"],
         period_index=1,
     )
     assert emitted["auto_next_period_freeze"] is False
-    # Head is FEEDBACK_SEALED; next freeze still requires a new disposition + apply call.
-    # Period 2 directory must not exist yet.
     assert not period_directory(portfolio, 2).exists()
 
 
@@ -803,7 +1059,7 @@ def test_happy_path_no_action_then_feedback(tmp_path: Path) -> None:
         _disposition_body(entry, account_identity="RESEARCHER_ACCOUNT_NO_ACTION"),
     )
     portfolio = _init_portfolio(tmp_path)
-    apply_freeze_from_disposition(
+    freeze = apply_freeze_from_disposition(
         pool_root=pool,
         owner_state_root=owner,
         disposition_path=path,
@@ -835,11 +1091,60 @@ def test_happy_path_no_action_then_feedback(tmp_path: Path) -> None:
     )
     pack = emit_research_feedback_pack(
         portfolio_root=portfolio,
-        prior_result_sha256=entry["result_sha256"],
-        prior_receipt_content_sha256=entry["receipt_content_sha256"],
-        prior_pool_entry_content_hash=entry["content_hash"],
-        prior_policy_ref=entry["policy_ref"],
         period_index=1,
     )
     assert pack["pack"]["statement_result"] == "NO_EXPOSURE"
     assert pack["pack"]["scientific_promotion"] is False
+    assert pack["prior_research_binding_sha256"] == freeze["research_binding_sha256"]
+
+
+def test_action_information_set_includes_binding_hash(tmp_path: Path) -> None:
+    pool, entry, _, _ = _ingest(tmp_path)
+    owner = tmp_path / "owner"
+    owner.mkdir()
+    path = _write_disposition(owner, _disposition_body(entry, selected_number=3))
+    portfolio = _init_portfolio(tmp_path)
+    result = apply_freeze_from_disposition(
+        pool_root=pool,
+        owner_state_root=owner,
+        disposition_path=path,
+        shadow_root=portfolio,
+        mode="portfolio",
+    )
+    frozen = load_frozen(period_directory(portfolio, 1))
+    assert frozen.bound_account_ticket is not None
+    binding_hash = result["research_binding_sha256"]
+    # Recompute expected information_set_hash components via public helper.
+    from xinao.science.owner_disposition import disposition_information_set_hash
+
+    expected = disposition_information_set_hash(
+        result_sha256=entry["result_sha256"],
+        receipt_content_sha256=entry["receipt_content_sha256"],
+        target_ref="draw.20260801-001",
+        research_binding_sha256=binding_hash,
+    )
+    assert frozen.bound_account_ticket.information_set_hash == expected
+
+
+def test_encode_disposition_bytes_stable_and_cas_conflict(tmp_path: Path) -> None:
+    pool, entry, _, _ = _ingest(tmp_path)
+    owner = tmp_path / "owner"
+    owner.mkdir()
+    body = _disposition_body(entry)
+    first = write_owner_disposition_artifact(owner_state_root=owner, payload=body)
+    second = write_owner_disposition_artifact(owner_state_root=owner, payload=body)
+    assert first["owner_artifact_sha256"] == second["owner_artifact_sha256"]
+    assert second["bytes_written"] is False
+    # Same path different bytes: craft by writing raw to CAS path is blocked on re-write helper
+    # when payload differs → different hash path; force conflict via open path reuse.
+    path = Path(first["disposition_path"])
+    other_body = _disposition_body(entry, selected_number=8)
+    other_raw = encode_disposition_bytes(other_body)
+    # Force-write different bytes under the first digest path.
+    path.write_bytes(other_raw)
+    with pytest.raises(OwnerDispositionError, match="DISPOSITION_CAS_PATH_MISMATCH"):
+        load_and_verify_disposition(
+            disposition_path=path,
+            owner_state_root=owner,
+            pool_root=pool,
+        )

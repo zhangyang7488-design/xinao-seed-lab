@@ -1,12 +1,20 @@
 """Codex Owner disposition bound to a candidate pool entry.
 
-Physical owner-write isolation is a host/container mount responsibility: this
-module requires the disposition artifact to live under a caller-supplied
-``owner_state_root`` that is path-separated from the candidate pool, and binds
-the disposition to the raw file bytes via content hash.
+This library proves only path/content facts a filesystem caller can check:
 
-A lone ``owner_role=codex`` text field is never sufficient. Worker / fixture /
-mock / self sources are rejected. No cryptographic identity is forged here.
+- disposition bytes are content-addressed
+- payload binds a sealed pool entry
+- path is under the caller-supplied owner_state_root
+- owner_state_root is path-separated from the candidate pool
+
+It does **not** prove the caller is Codex. Authority flags are therefore honest:
+``owner_channel_authority=UNPROVEN_BY_LIBRARY`` and
+``physical_owner_write_isolation_verified=false``. Physical owner-channel
+isolation remains a host/container responsibility outside this module.
+
+Disposition artifacts are raw-SHA256 content-addressed JSON without any
+self-referential hash field. ACTION numbers/stake come only from structured
+executable decisions (never research prose).
 """
 
 from __future__ import annotations
@@ -16,10 +24,11 @@ import json
 import re
 from collections.abc import Mapping
 from datetime import UTC, datetime
+from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from typing import Any, Final, Literal
 
-from xinao.canonical import canonical_sha256
+from xinao.canonical import ACCOUNTING_DECIMAL, canonical_sha256, format_decimal
 from xinao.science.candidate_pool import CandidatePoolError, load_pool_entry, verify_pool_entry_seal
 
 DISPOSITION_SCHEMA_VERSION: Final = "xinao.codex_owner_disposition.v1"
@@ -33,16 +42,33 @@ SCIENCE_ADOPT: Final = "ADOPT"
 SCIENCE_REJECT: Final = "REJECT"
 SCIENCE_DEFER: Final = "DEFER"
 SCIENCE_ABSORB_NO_ACTION: Final = "ABSORB_NO_ACTION"
+SCIENCE_RETAIN_FOR_SHADOW: Final = "RETAIN_FOR_SHADOW"
 _SCIENCE_DISPOSITIONS: Final = frozenset(
     {
         SCIENCE_ADOPT,
         SCIENCE_REJECT,
         SCIENCE_DEFER,
         SCIENCE_ABSORB_NO_ACTION,
+        SCIENCE_RETAIN_FOR_SHADOW,
+    }
+)
+# Science grades that forbid placing stake (must not be smuggled into ACTION).
+_SCIENCE_FORBIDS_ACTION: Final = frozenset(
+    {
+        SCIENCE_REJECT,
+        SCIENCE_ABSORB_NO_ACTION,
+        SCIENCE_DEFER,
     }
 )
 
-AUTHENTIC_DISPOSITION_SOURCE: Final = "codex_owner_channel"
+# Historical string still required on the disposition payload so live Codex calls
+# remain explicit. It is **not** treated as cryptographic owner proof.
+CODEX_OWNER_CHANNEL_SOURCE: Final = "codex_owner_channel"
+# Backward-compatible alias used by older call sites / tests.
+AUTHENTIC_DISPOSITION_SOURCE: Final = CODEX_OWNER_CHANNEL_SOURCE
+
+OWNER_CHANNEL_AUTHORITY_UNPROVEN: Final = "UNPROVEN_BY_LIBRARY"
+
 _FORBIDDEN_SOURCES: Final = frozenset(
     {
         "worker",
@@ -60,6 +86,83 @@ _FORBIDDEN_SOURCES: Final = frozenset(
 _HEX_SHA256 = re.compile(r"^[0-9a-f]{64}$")
 _SPECIAL_NUMBER_RULE: Final = "special-number-rule.v1"
 _PANEL_BASELINE: Final = {"A": "BO0001", "B": "BO0013"}
+
+# Closed top-level allowlist (no self-hash field, no prose smuggle keys).
+_TOP_LEVEL_ALLOWED: Final = frozenset(
+    {
+        "schema_version",
+        "disposition_marker",
+        "disposition_source",
+        "owner_role",
+        "worker_controlled",
+        "result_sha256",
+        "receipt_content_sha256",
+        "pool_entry_content_hash",
+        "period_index",
+        "episode_ref",
+        "target_ref",
+        "knowledge_cutoff",
+        "science_disposition",
+        "account_identity",
+        "executable_account_decision",
+        "no_action_period_binding",
+        "rationale_ref",
+        "science_identity",
+    }
+)
+
+_EXECUTABLE_ALLOWED: Final = frozenset(
+    {
+        "panel",
+        "selected_number",
+        "stake",
+        "target_ref",
+        "target_open_time",
+        "freeze_deadline",
+        "frozen_at",
+        "knowledge_cutoff",
+        "odds_version_ref",
+        "baseline_ref",
+        "risk_policy_ref",
+        "rule_ref",
+        "ticket_ref",
+        "information_set_ref",
+    }
+)
+
+_NO_ACTION_BINDING_ALLOWED: Final = frozenset(
+    {
+        "target_ref",
+        "target_open_time",
+        "freeze_deadline",
+        "frozen_at",
+        "knowledge_cutoff",
+        "rule_ref",
+        "odds_version_ref",
+    }
+)
+
+# Current/future result material forbidden anywhere in the raw disposition tree.
+_FORBIDDEN_OUTCOME_KEYS: Final = frozenset(
+    {
+        "outcome",
+        "settlement",
+        "settled",
+        "actual_special_number",
+        "future_outcome",
+        "future_settlement",
+        "next_period_outcome",
+        "unrevealed_outcome",
+        "peeked_outcome",
+        "peeked_settlement",
+        "peeked_result",
+        "peeked_special_number",
+        "public_outcome",
+        "settled_episode",
+        "account_pnl",
+        "realized_pnl",
+    }
+)
 
 
 class OwnerDispositionError(ValueError):
@@ -94,8 +197,84 @@ def _parse_aware(value: object, label: str) -> datetime:
     return parsed.astimezone(UTC)
 
 
-def _raw_sha256(data: bytes) -> str:
+def raw_sha256(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
+
+
+def encode_disposition_bytes(payload: Mapping[str, Any]) -> bytes:
+    """Canonical disposition file bytes (no self-hash field)."""
+
+    if "owner_artifact_sha256" in payload:
+        raise OwnerDispositionError(
+            "DISPOSITION_SELF_HASH_FORBIDDEN",
+            "disposition body must not embed owner_artifact_sha256",
+        )
+    return (json.dumps(dict(payload), ensure_ascii=False, indent=2, sort_keys=True) + "\n").encode(
+        "utf-8"
+    )
+
+
+def disposition_cas_path(owner_state_root: Path, artifact_sha256: str) -> Path:
+    digest = _require_hex64(
+        artifact_sha256,
+        "DISPOSITION_ARTIFACT_HASH_INVALID",
+        "owner_artifact_sha256",
+    )
+    root = resolve_owner_state_root(owner_state_root)
+    return root / "objects" / "sha256" / digest[:2] / f"{digest}.json"
+
+
+def _object_pairs_hook_no_duplicates(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
+    out: dict[str, Any] = {}
+    for key, value in pairs:
+        if key in out:
+            raise OwnerDispositionError(
+                "DISPOSITION_JSON_DUPLICATE_KEY",
+                f"duplicate key {key!r}",
+            )
+        out[key] = value
+    return out
+
+
+def parse_disposition_json_strict(raw: bytes) -> dict[str, Any]:
+    """Strict JSON object parse; rejects duplicate keys and non-objects."""
+
+    try:
+        text = raw.decode("utf-8")
+    except UnicodeDecodeError as exc:
+        raise OwnerDispositionError("DISPOSITION_JSON_INVALID", str(exc)) from exc
+    try:
+        payload = json.loads(text, object_pairs_hook=_object_pairs_hook_no_duplicates)
+    except OwnerDispositionError:
+        raise
+    except json.JSONDecodeError as exc:
+        raise OwnerDispositionError("DISPOSITION_JSON_INVALID", str(exc)) from exc
+    if not isinstance(payload, dict):
+        raise OwnerDispositionError("DISPOSITION_JSON_INVALID", "object required")
+    return payload
+
+
+def reject_forbidden_outcome_material(node: object, *, path: str = "$") -> None:
+    """Recursively reject current/future outcome material on the raw tree."""
+
+    if isinstance(node, Mapping):
+        for key, value in node.items():
+            key_text = str(key)
+            key_lower = key_text.lower()
+            if key_text in _FORBIDDEN_OUTCOME_KEYS or key_lower in _FORBIDDEN_OUTCOME_KEYS:
+                raise OwnerDispositionError(
+                    "DISPOSITION_OUTCOME_MATERIAL_FORBIDDEN",
+                    f"{path}.{key_text}",
+                )
+            if key_lower.startswith("peeked_") or key_lower.startswith("future_"):
+                raise OwnerDispositionError(
+                    "DISPOSITION_OUTCOME_MATERIAL_FORBIDDEN",
+                    f"{path}.{key_text}",
+                )
+            reject_forbidden_outcome_material(value, path=f"{path}.{key_text}")
+    elif isinstance(node, list):
+        for index, item in enumerate(node):
+            reject_forbidden_outcome_material(item, path=f"{path}[{index}]")
 
 
 def resolve_owner_state_root(owner_state_root: Path) -> Path:
@@ -154,6 +333,49 @@ def assert_owner_root_separated_from_pool(
         pass
 
 
+def _reject_unknown_keys(
+    raw: Mapping[str, Any],
+    allowed: frozenset[str],
+    *,
+    reason_code: str,
+) -> None:
+    unknown = sorted(set(raw) - allowed)
+    if unknown:
+        raise OwnerDispositionError(reason_code, f"unknown={unknown}")
+
+
+def _validate_accounting_stake(stake: object) -> str:
+    """Reuse ledger ACCOUNTING_DECIMAL contract; reject non-canonical money strings."""
+
+    if not isinstance(stake, str) or not stake:
+        raise OwnerDispositionError(
+            "EXECUTABLE_STAKE_INVALID",
+            "stake must be a canonical accounting decimal string",
+        )
+    # Explicit string rejects before Decimal (exponents / IEEE-ish tokens).
+    lowered = stake.strip().lower()
+    if any(token in lowered for token in ("nan", "inf", "infinity")):
+        raise OwnerDispositionError("EXECUTABLE_STAKE_INVALID", "NaN/Infinity forbidden")
+    if "e" in lowered:
+        raise OwnerDispositionError(
+            "EXECUTABLE_STAKE_INVALID",
+            "scientific notation / exponent form forbidden",
+        )
+    try:
+        canonical = format_decimal(stake, ACCOUNTING_DECIMAL)
+    except (ValueError, TypeError, InvalidOperation) as exc:
+        raise OwnerDispositionError("EXECUTABLE_STAKE_INVALID", str(exc)) from exc
+    if stake != canonical:
+        raise OwnerDispositionError(
+            "EXECUTABLE_STAKE_INVALID",
+            f"non-canonical stake {stake!r}; require {canonical!r}",
+        )
+    amount = Decimal(canonical)
+    if amount <= 0:
+        raise OwnerDispositionError("EXECUTABLE_STAKE_INVALID", "ACTION stake must be positive")
+    return canonical
+
+
 def _validate_executable_account_decision(raw: Mapping[str, Any]) -> dict[str, Any]:
     required = {
         "panel",
@@ -175,14 +397,11 @@ def _validate_executable_account_decision(raw: Mapping[str, Any]) -> dict[str, A
             "EXECUTABLE_DECISION_INCOMPLETE",
             f"missing={missing}",
         )
-    # Reject unknown keys that could smuggle prose-derived defaults.
-    allowed = required | {"ticket_ref", "information_set_ref"}
-    unknown = sorted(set(raw) - allowed)
-    if unknown:
-        raise OwnerDispositionError(
-            "EXECUTABLE_DECISION_UNKNOWN_FIELDS",
-            f"unknown={unknown}",
-        )
+    _reject_unknown_keys(
+        raw,
+        _EXECUTABLE_ALLOWED,
+        reason_code="EXECUTABLE_DECISION_UNKNOWN_FIELDS",
+    )
 
     panel = raw.get("panel")
     if panel not in ("A", "B"):
@@ -190,16 +409,7 @@ def _validate_executable_account_decision(raw: Mapping[str, Any]) -> dict[str, A
     selected = raw.get("selected_number")
     if type(selected) is not int or not (1 <= selected <= 49):
         raise OwnerDispositionError("EXECUTABLE_NUMBER_INVALID", str(selected))
-    stake = raw.get("stake")
-    if not isinstance(stake, str) or not stake:
-        raise OwnerDispositionError("EXECUTABLE_STAKE_INVALID", "stake must be decimal string")
-    # Positive stake for ACTION; exact scale checked by AccountRiskTicket later.
-    try:
-        stake_value = float(stake)
-    except ValueError as exc:
-        raise OwnerDispositionError("EXECUTABLE_STAKE_INVALID", str(stake)) from exc
-    if stake_value <= 0:
-        raise OwnerDispositionError("EXECUTABLE_STAKE_INVALID", "ACTION stake must be positive")
+    stake = _validate_accounting_stake(raw.get("stake"))
 
     rule_ref = _require_text(raw.get("rule_ref"), "EXECUTABLE_RULE_INVALID", "rule_ref")
     if rule_ref != _SPECIAL_NUMBER_RULE:
@@ -278,20 +488,11 @@ def _validate_no_action_times(raw: Mapping[str, Any]) -> dict[str, Any]:
             "NO_ACTION_BINDING_INCOMPLETE",
             f"missing={missing}",
         )
-    forbidden_ticket_fields = {
-        "panel",
-        "selected_number",
-        "stake",
-        "baseline_ref",
-        "risk_policy_ref",
-        "ticket_ref",
-    }
-    present_ticket = sorted(forbidden_ticket_fields & set(raw))
-    if present_ticket:
-        raise OwnerDispositionError(
-            "NO_ACTION_MUST_NOT_CARRY_TICKET",
-            f"fields={present_ticket}",
-        )
+    _reject_unknown_keys(
+        raw,
+        _NO_ACTION_BINDING_ALLOWED,
+        reason_code="NO_ACTION_BINDING_UNKNOWN_FIELDS",
+    )
     target_open = _parse_aware(raw.get("target_open_time"), "target_open_time")
     freeze_deadline = _parse_aware(raw.get("freeze_deadline"), "freeze_deadline")
     frozen_at = _parse_aware(raw.get("frozen_at"), "frozen_at")
@@ -335,6 +536,14 @@ def validate_disposition_payload(
 ) -> dict[str, Any]:
     """Validate disposition JSON structure against a sealed pool entry."""
 
+    # Closed top-level allowlist + recursive no-peek before any soft defaults.
+    _reject_unknown_keys(
+        payload,
+        _TOP_LEVEL_ALLOWED,
+        reason_code="DISPOSITION_UNKNOWN_FIELDS",
+    )
+    reject_forbidden_outcome_material(payload)
+
     if payload.get("schema_version") != DISPOSITION_SCHEMA_VERSION:
         raise OwnerDispositionError(
             "DISPOSITION_SCHEMA_DRIFT",
@@ -352,13 +561,13 @@ def validate_disposition_payload(
     source_normalized = source.strip().lower()
     if source_normalized in _FORBIDDEN_SOURCES or "worker" in source_normalized:
         raise OwnerDispositionError(
-            "DISPOSITION_SOURCE_NOT_AUTHENTIC",
-            f"disposition_source={source!r} is not owner-authentic",
+            "DISPOSITION_SOURCE_NOT_OWNER_CHANNEL",
+            f"disposition_source={source!r} is not the codex_owner_channel label",
         )
-    if source != AUTHENTIC_DISPOSITION_SOURCE:
+    if source != CODEX_OWNER_CHANNEL_SOURCE:
         raise OwnerDispositionError(
-            "DISPOSITION_SOURCE_NOT_AUTHENTIC",
-            f"require {AUTHENTIC_DISPOSITION_SOURCE!r}, got {source!r}",
+            "DISPOSITION_SOURCE_NOT_OWNER_CHANNEL",
+            f"require {CODEX_OWNER_CHANNEL_SOURCE!r}, got {source!r}",
         )
     if payload.get("worker_controlled") is True:
         raise OwnerDispositionError(
@@ -418,6 +627,12 @@ def validate_disposition_payload(
         raise OwnerDispositionError(
             "SCIENCE_DISPOSITION_INVALID",
             str(science_disposition),
+        )
+    if science_disposition in _SCIENCE_FORBIDS_ACTION and account_identity == ACCOUNT_ACTION:
+        raise OwnerDispositionError(
+            "SCIENCE_ACCOUNT_MATRIX_VIOLATION",
+            f"{science_disposition} must not carry account_identity=ACTION; "
+            f"use {SCIENCE_RETAIN_FOR_SHADOW} for shadow production ACTION without science adopt",
         )
 
     episode_ref = _require_text(
@@ -492,7 +707,7 @@ def validate_disposition_payload(
     normalized: dict[str, Any] = {
         "schema_version": DISPOSITION_SCHEMA_VERSION,
         "disposition_marker": DISPOSITION_MARKER,
-        "disposition_source": AUTHENTIC_DISPOSITION_SOURCE,
+        "disposition_source": CODEX_OWNER_CHANNEL_SOURCE,
         "owner_role": "codex",
         "worker_controlled": False,
         "result_sha256": result_sha256,
@@ -519,13 +734,93 @@ def validate_disposition_payload(
             raise OwnerDispositionError("SCIENCE_IDENTITY_INVALID", str(science_identity))
         normalized["science_identity"] = science_identity
     else:
-        # Default: ADOPT/DEFER keep candidate identity; REJECT/ABSORB_NO_ACTION → policy no-action.
-        if science_disposition in (SCIENCE_ADOPT, SCIENCE_DEFER):
+        # ADOPT / RETAIN_FOR_SHADOW keep candidate identity; others → policy no-action.
+        if science_disposition in (SCIENCE_ADOPT, SCIENCE_RETAIN_FOR_SHADOW):
             normalized["science_identity"] = "SCIENCE_CANDIDATE"
         else:
             normalized["science_identity"] = "POLICY_NO_ACTION"
 
     return normalized
+
+
+def write_owner_disposition_artifact(
+    *,
+    owner_state_root: Path,
+    payload: Mapping[str, Any],
+    pool_root: Path | None = None,
+) -> dict[str, Any]:
+    """Write disposition as raw-SHA256 content-addressed exclusive JSON (no self-hash).
+
+    Returns path + raw artifact hash. Same hash with different bytes fails closed.
+    """
+
+    if pool_root is not None:
+        assert_owner_root_separated_from_pool(
+            owner_state_root=owner_state_root,
+            pool_root=pool_root,
+        )
+    root = resolve_owner_state_root(owner_state_root)
+    root.mkdir(parents=True, exist_ok=True)
+    if "owner_artifact_sha256" in payload:
+        raise OwnerDispositionError(
+            "DISPOSITION_SELF_HASH_FORBIDDEN",
+            "do not embed owner_artifact_sha256; path is the content address",
+        )
+    # Structural pre-check only: forbid outcome smuggle, unknown top-level keys,
+    # and non-owner-channel source labels before bytes are sealed. Full pool
+    # binding still happens on load/verify.
+    _reject_unknown_keys(
+        payload,
+        _TOP_LEVEL_ALLOWED,
+        reason_code="DISPOSITION_UNKNOWN_FIELDS",
+    )
+    reject_forbidden_outcome_material(payload)
+    source = payload.get("disposition_source")
+    if not isinstance(source, str) or not source:
+        raise OwnerDispositionError("DISPOSITION_SOURCE_MISSING", "disposition_source required")
+    source_normalized = source.strip().lower()
+    if source_normalized in _FORBIDDEN_SOURCES or "worker" in source_normalized:
+        raise OwnerDispositionError(
+            "DISPOSITION_SOURCE_NOT_OWNER_CHANNEL",
+            f"disposition_source={source!r} is not the codex_owner_channel label",
+        )
+    if source != CODEX_OWNER_CHANNEL_SOURCE:
+        raise OwnerDispositionError(
+            "DISPOSITION_SOURCE_NOT_OWNER_CHANNEL",
+            f"require {CODEX_OWNER_CHANNEL_SOURCE!r}, got {source!r}",
+        )
+    if payload.get("worker_controlled") is True:
+        raise OwnerDispositionError(
+            "DISPOSITION_WORKER_CONTROLLED",
+            "worker_controlled=true rejected",
+        )
+    raw = encode_disposition_bytes(payload)
+    digest = raw_sha256(raw)
+    path = disposition_cas_path(root, digest)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        with path.open("xb") as stream:
+            stream.write(raw)
+            stream.flush()
+    except FileExistsError as exc:
+        existing = path.read_bytes()
+        if existing != raw:
+            raise OwnerDispositionError(
+                "DISPOSITION_CAS_CONTENT_CONFLICT",
+                f"owner_artifact_sha256={digest} already sealed with different bytes",
+            ) from exc
+        return {
+            "disposition_path": str(path),
+            "owner_artifact_sha256": digest,
+            "owner_state_root": str(root),
+            "bytes_written": False,
+        }
+    return {
+        "disposition_path": str(path),
+        "owner_artifact_sha256": digest,
+        "owner_state_root": str(root),
+        "bytes_written": True,
+    }
 
 
 def load_and_verify_disposition(
@@ -535,9 +830,10 @@ def load_and_verify_disposition(
     pool_root: Path,
     result_sha256: str | None = None,
 ) -> dict[str, Any]:
-    """Load disposition from owner root, bind bytes hash, verify against pool entry.
+    """Load disposition under owner root, bind raw bytes hash, verify pool entry.
 
-    Returns a verified package including raw artifact hash and normalized body.
+    Library authority claims are intentionally non-authenticating: path separation
+    and content addressing only.
     """
 
     assert_owner_root_separated_from_pool(owner_state_root=owner_state_root, pool_root=pool_root)
@@ -545,41 +841,25 @@ def load_and_verify_disposition(
     raw = path.read_bytes()
     if not raw:
         raise OwnerDispositionError("DISPOSITION_ARTIFACT_EMPTY", str(path))
-    artifact_sha256 = _raw_sha256(raw)
-    try:
-        payload = json.loads(raw.decode("utf-8"))
-    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
-        raise OwnerDispositionError("DISPOSITION_JSON_INVALID", str(exc)) from exc
-    if not isinstance(payload, Mapping):
-        raise OwnerDispositionError("DISPOSITION_JSON_INVALID", "object required")
-
-    declared_hash = payload.get("owner_artifact_sha256")
-    if declared_hash is not None:
-        declared = _require_hex64(
-            declared_hash,
-            "DISPOSITION_ARTIFACT_HASH_INVALID",
-            "owner_artifact_sha256",
-        )
-        # Hash of payload without the self-hash field, OR raw file hash of the
-        # sealed file that includes a precomputed hash of the body. We accept
-        # only: declared hash equals raw file bytes hash of a body file that
-        # does not embed the hash (caller may supply hash out-of-band), OR the
-        # declared field equals sha256 of the JSON body excluding this field.
-        body_without_hash = {k: v for k, v in payload.items() if k != "owner_artifact_sha256"}
-        body_bytes = (
-            json.dumps(body_without_hash, ensure_ascii=False, indent=2, sort_keys=True) + "\n"
-        ).encode("utf-8")
-        body_hash = _raw_sha256(body_bytes)
-        if declared not in {artifact_sha256, body_hash}:
-            raise OwnerDispositionError(
-                "DISPOSITION_ARTIFACT_HASH_MISMATCH",
-                "owner_artifact_sha256 does not bind disposition file bytes",
-            )
-    else:
-        # Require the field so live path cannot skip artifact binding.
+    artifact_sha256 = raw_sha256(raw)
+    # Path digest must equal raw bytes hash (single content-address mode).
+    if path.name != f"{artifact_sha256}.json" or path.parent.name != artifact_sha256[:2]:
         raise OwnerDispositionError(
-            "DISPOSITION_ARTIFACT_HASH_REQUIRED",
-            "owner_artifact_sha256 must bind the disposition artifact",
+            "DISPOSITION_CAS_PATH_MISMATCH",
+            f"path digest must equal raw sha256; path={path.name} raw={artifact_sha256}",
+        )
+    expected_path = disposition_cas_path(owner_state_root, artifact_sha256)
+    if path.resolve() != expected_path.resolve():
+        raise OwnerDispositionError(
+            "DISPOSITION_CAS_PATH_MISMATCH",
+            f"require {expected_path}, got {path}",
+        )
+
+    payload = parse_disposition_json_strict(raw)
+    if "owner_artifact_sha256" in payload:
+        raise OwnerDispositionError(
+            "DISPOSITION_SELF_HASH_FORBIDDEN",
+            "self-referential owner_artifact_sha256 is not allowed",
         )
 
     claimed_result = payload.get("result_sha256")
@@ -599,12 +879,13 @@ def load_and_verify_disposition(
         "disposition_path": str(path),
         "owner_state_root": str(resolve_owner_state_root(owner_state_root)),
         "owner_artifact_sha256": artifact_sha256,
-        "declared_owner_artifact_sha256": str(payload.get("owner_artifact_sha256")),
         "pool_entry": pool_entry,
         "disposition": normalized,
-        "owner_disposition_authentic": True,
-        # Physical write isolation is mount/host enforced; not crypto identity.
-        "physical_owner_write_isolation": "host_or_container_mount_boundary",
+        # Honest library surface: never self-certify Codex identity.
+        "owner_channel_authority": OWNER_CHANNEL_AUTHORITY_UNPROVEN,
+        "path_separated_from_pool": True,
+        "physical_owner_write_isolation_verified": False,
+        "owner_disposition_authentic": False,
         "cryptographic_identity_forged": False,
     }
 
@@ -629,6 +910,7 @@ def disposition_information_set_hash(
     result_sha256: str,
     receipt_content_sha256: str,
     target_ref: str,
+    research_binding_sha256: str,
 ) -> str:
     """Canonical information-set hash for AccountRiskTicket binding."""
 
@@ -638,6 +920,7 @@ def disposition_information_set_hash(
             "result_sha256": result_sha256,
             "receipt_content_sha256": receipt_content_sha256,
             "target_ref": target_ref,
+            "research_binding_sha256": research_binding_sha256,
         }
     )
 
@@ -646,14 +929,27 @@ __all__ = [
     "ACCOUNT_ACTION",
     "ACCOUNT_NO_ACTION",
     "AUTHENTIC_DISPOSITION_SOURCE",
+    "CODEX_OWNER_CHANNEL_SOURCE",
     "DISPOSITION_MARKER",
     "DISPOSITION_SCHEMA_VERSION",
+    "OWNER_CHANNEL_AUTHORITY_UNPROVEN",
+    "SCIENCE_ABSORB_NO_ACTION",
+    "SCIENCE_ADOPT",
+    "SCIENCE_DEFER",
+    "SCIENCE_REJECT",
+    "SCIENCE_RETAIN_FOR_SHADOW",
     "OwnerDispositionError",
     "assert_owner_root_separated_from_pool",
     "assert_path_under_owner_root",
+    "disposition_cas_path",
     "disposition_information_set_hash",
+    "encode_disposition_bytes",
     "load_and_verify_disposition",
+    "parse_disposition_json_strict",
+    "raw_sha256",
+    "reject_forbidden_outcome_material",
     "require_period_account_identity",
     "resolve_owner_state_root",
     "validate_disposition_payload",
+    "write_owner_disposition_artifact",
 ]

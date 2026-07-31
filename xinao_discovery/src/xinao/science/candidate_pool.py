@@ -231,48 +231,68 @@ def ingest_verified_research_result(
     result_path = pool_result_bytes_path(pool_root, result_sha256)
     receipt_path = pool_receipt_path(pool_root, result_sha256)
 
-    if entry_path.is_file() or result_path.is_file() or receipt_path.is_file():
-        # Same-hash idempotent success only when all artifacts match exactly.
-        if not (entry_path.is_file() and result_path.is_file() and receipt_path.is_file()):
-            raise CandidatePoolError(
-                "POOL_CAS_PARTIAL_STATE",
-                "incomplete prior CAS objects for this result_sha256",
-            )
-        existing_entry = _read_json(entry_path)
+    result_exists = result_path.is_file()
+    receipt_exists = receipt_path.is_file()
+    entry_exists = entry_path.is_file()
+
+    # Any existing object must match byte-for-byte; conflicts fail closed.
+    # Partial crash recovery: identical bytes may complete missing siblings.
+    # Entry remains the last commit marker (written only after result+receipt).
+    if result_exists:
         existing_result = result_path.read_bytes()
-        existing_receipt_bytes = receipt_path.read_bytes()
-        if (
-            existing_result != raw_result
-            or existing_receipt_bytes != receipt_bytes
-            or existing_entry != entry
-        ):
+        if existing_result != raw_result:
             raise CandidatePoolError(
                 "POOL_CAS_CONTENT_CONFLICT",
-                f"result_sha256={result_sha256} already sealed with different content",
+                f"result_sha256={result_sha256} result blob differs",
+            )
+    if receipt_exists:
+        existing_receipt_bytes = receipt_path.read_bytes()
+        if existing_receipt_bytes != receipt_bytes:
+            raise CandidatePoolError(
+                "POOL_CAS_CONTENT_CONFLICT",
+                f"result_sha256={result_sha256} receipt blob differs",
+            )
+    if entry_exists:
+        existing_entry = _read_json(entry_path)
+        if existing_entry != entry:
+            raise CandidatePoolError(
+                "POOL_CAS_CONTENT_CONFLICT",
+                f"result_sha256={result_sha256} entry seal differs",
             )
         verify_pool_entry_seal(existing_entry)
-        return dict(existing_entry)
 
-    # Exclusive create in order: result bytes → receipt → sealed entry.
-    _write_new_bytes(result_path, raw_result)
-    try:
-        _write_new_bytes(receipt_path, receipt_bytes)
-    except CandidatePoolError:
-        # Best-effort: leave result blob; loaders require all three.
-        raise
-    try:
-        _write_new_json(entry_path, entry)
-    except CandidatePoolError as exc:
-        if exc.reason_code == "POOL_CAS_EXCLUSIVE_CREATE_REJECTED":
-            # Race: another writer sealed; require exact match.
-            existing = _read_json(entry_path)
-            if existing != entry:
-                raise CandidatePoolError(
-                    "POOL_CAS_CONTENT_CONFLICT",
-                    f"result_sha256={result_sha256} race conflict",
-                ) from exc
-            return dict(existing)
-        raise
+    if result_exists and receipt_exists and entry_exists:
+        return dict(entry)
+
+    # Do not delete unknown partials; only fill missing objects with exact bytes.
+    if not result_exists:
+        _write_new_bytes(result_path, raw_result)
+    if not receipt_exists:
+        try:
+            _write_new_bytes(receipt_path, receipt_bytes)
+        except CandidatePoolError as exc:
+            if exc.reason_code == "POOL_CAS_EXCLUSIVE_CREATE_REJECTED":
+                if receipt_path.read_bytes() != receipt_bytes:
+                    raise CandidatePoolError(
+                        "POOL_CAS_CONTENT_CONFLICT",
+                        f"result_sha256={result_sha256} receipt race conflict",
+                    ) from exc
+            else:
+                raise
+    if not entry_exists:
+        try:
+            _write_new_json(entry_path, entry)
+        except CandidatePoolError as exc:
+            if exc.reason_code == "POOL_CAS_EXCLUSIVE_CREATE_REJECTED":
+                existing = _read_json(entry_path)
+                if existing != entry:
+                    raise CandidatePoolError(
+                        "POOL_CAS_CONTENT_CONFLICT",
+                        f"result_sha256={result_sha256} entry race conflict",
+                    ) from exc
+                verify_pool_entry_seal(existing)
+                return dict(existing)
+            raise
     return entry
 
 

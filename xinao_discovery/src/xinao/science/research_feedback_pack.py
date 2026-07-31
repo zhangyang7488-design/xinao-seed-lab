@@ -1,9 +1,12 @@
 """Post-settlement research feedback pack for next research material only.
 
-Emits only after real settled state exists. Binds prior candidate / disposition
-/ freeze / settlement / portfolio. Never grants scientific promotion. Public
-settled outcomes may enter; any future unrevealed outcome must not. Generating
-a pack does not auto-start the next research episode or freeze the next period.
+Emits only after real settled state exists. Prior research identities are
+derived from the frozen episode's immutable research-binding refs + side
+object — never from free caller-supplied prior hashes.
+
+Never grants scientific promotion. Public settled outcomes may enter; any
+future unrevealed outcome must not. Generating a pack does not auto-start the
+next research episode or freeze the next period.
 """
 
 from __future__ import annotations
@@ -15,6 +18,11 @@ from pathlib import Path
 from typing import Any, Final
 
 from xinao.canonical import canonical_sha256
+from xinao.science.freeze_adapter import (
+    FreezeAdapterError,
+    extract_research_binding_hash_from_frozen,
+    load_research_binding,
+)
 from xinao.shadow_lifecycle.store import (
     FEEDBACK_NAME,
     EpisodePhase,
@@ -184,13 +192,14 @@ def _reject_future_outcomes(payload: Mapping[str, Any]) -> None:
             )
 
 
-def build_research_feedback_pack(
+def _build_research_feedback_pack_body(
     *,
     prior_result_sha256: str,
     prior_receipt_content_sha256: str,
     prior_pool_entry_content_hash: str,
     prior_policy_ref: str,
     prior_owner_artifact_sha256: str | None,
+    prior_research_binding_sha256: str,
     portfolio_ref: str,
     period_index: int,
     settled_episode_hash: str,
@@ -202,11 +211,17 @@ def build_research_feedback_pack(
     public_outcome: Mapping[str, Any],
     next_research_material_hints: list[str] | None = None,
 ) -> dict[str, Any]:
-    """Build a sealed research feedback pack body (scientific_promotion=false)."""
+    """Private pure builder. Not a production settled proof by itself.
+
+    Callers must obtain prior identities from frozen binding + side object.
+    This function does not claim settled authority and must not be used to mint
+    a feedback pack from free-form forged prior hashes in production paths.
+    """
 
     _require_hex64(prior_result_sha256, "prior_result_sha256")
     _require_hex64(prior_receipt_content_sha256, "prior_receipt_content_sha256")
     _require_hex64(prior_pool_entry_content_hash, "prior_pool_entry_content_hash")
+    _require_hex64(prior_research_binding_sha256, "prior_research_binding_sha256")
     _require_hex64(settled_episode_hash, "settled_episode_hash")
     _require_hex64(frozen_episode_hash, "frozen_episode_hash")
     if type(period_index) is not int or period_index < 1:
@@ -241,6 +256,7 @@ def build_research_feedback_pack(
         "prior_pool_entry_content_hash": prior_pool_entry_content_hash,
         "prior_policy_ref": prior_policy_ref,
         "prior_owner_artifact_sha256": prior_owner_artifact_sha256,
+        "prior_research_binding_sha256": prior_research_binding_sha256,
         "portfolio_ref": portfolio_ref,
         "period_index": period_index,
         "settled_episode_hash": settled_episode_hash,
@@ -281,19 +297,111 @@ def build_research_feedback_pack(
     return sealed
 
 
+def build_research_feedback_pack(**kwargs: Any) -> dict[str, Any]:
+    """Deprecated public alias of the private body builder.
+
+    Not a production settled proof. Prefer ``emit_research_feedback_pack``, which
+    derives priors from frozen binding + side object.
+    """
+
+    return _build_research_feedback_pack_body(**kwargs)
+
+
+def _derive_priors_from_frozen_binding(
+    *,
+    shadow_root: Path,
+    frozen: Any,
+    settled: Any,
+    outcome: Any,
+    portfolio_ref: str,
+    period_index: int,
+) -> dict[str, Any]:
+    """Load prior identities from frozen decision refs → binding side object."""
+
+    try:
+        binding_hash = extract_research_binding_hash_from_frozen(frozen)
+        binding = load_research_binding(shadow_root, binding_hash)
+    except FreezeAdapterError as exc:
+        raise ResearchFeedbackPackError(exc.reason_code, exc.detail) from exc
+
+    # Verify binding against settled/frozen/outcome/portfolio facts.
+    if int(binding.get("period_index", -1)) != int(period_index):
+        raise ResearchFeedbackPackError(
+            "FEEDBACK_PACK_BINDING_PERIOD_MISMATCH",
+            f"binding={binding.get('period_index')} period={period_index}",
+        )
+    if int(frozen.period_index) != int(period_index):
+        raise ResearchFeedbackPackError(
+            "FEEDBACK_PACK_FROZEN_PERIOD_MISMATCH",
+            f"frozen={frozen.period_index} period={period_index}",
+        )
+    if str(binding.get("target_ref")) != str(frozen.target_ref):
+        raise ResearchFeedbackPackError(
+            "FEEDBACK_PACK_BINDING_TARGET_MISMATCH",
+            "binding target_ref disagrees with frozen episode",
+        )
+    if str(outcome.target_ref) != str(frozen.target_ref):
+        raise ResearchFeedbackPackError(
+            "FEEDBACK_PACK_OUTCOME_TARGET_MISMATCH",
+            "public outcome target_ref disagrees with frozen episode",
+        )
+    if str(settled.portfolio_ref) != str(portfolio_ref):
+        raise ResearchFeedbackPackError(
+            "FEEDBACK_PACK_PORTFOLIO_MISMATCH",
+            "settled portfolio_ref disagrees",
+        )
+    if str(binding.get("account_identity")) != str(frozen.account_decision.identity.value):
+        raise ResearchFeedbackPackError(
+            "FEEDBACK_PACK_BINDING_ACCOUNT_MISMATCH",
+            "binding account_identity disagrees with frozen account decision",
+        )
+    if str(binding.get("science_identity")) != str(frozen.science_decision.identity.value):
+        raise ResearchFeedbackPackError(
+            "FEEDBACK_PACK_BINDING_SCIENCE_MISMATCH",
+            "binding science_identity disagrees with frozen science decision",
+        )
+    if frozen.content_hash is None or settled.content_hash is None:
+        raise ResearchFeedbackPackError("FEEDBACK_PACK_SEAL_MISSING", "settled/frozen unsealed")
+    if settled.frozen_episode_hash != frozen.content_hash:
+        raise ResearchFeedbackPackError(
+            "FEEDBACK_PACK_SETTLED_FROZEN_MISMATCH",
+            "settled.frozen_episode_hash disagrees with loaded frozen",
+        )
+
+    return {
+        "prior_result_sha256": _require_hex64(binding.get("result_sha256"), "result_sha256"),
+        "prior_receipt_content_sha256": _require_hex64(
+            binding.get("receipt_content_sha256"),
+            "receipt_content_sha256",
+        ),
+        "prior_pool_entry_content_hash": _require_hex64(
+            binding.get("pool_entry_content_hash"),
+            "pool_entry_content_hash",
+        ),
+        "prior_policy_ref": str(binding.get("policy_ref") or ""),
+        "prior_owner_artifact_sha256": (
+            _require_hex64(binding.get("owner_artifact_sha256"), "owner_artifact_sha256")
+            if binding.get("owner_artifact_sha256") is not None
+            else None
+        ),
+        "prior_research_binding_sha256": binding_hash,
+        "science_disposition": binding.get("science_disposition"),
+        "account_identity": binding.get("account_identity"),
+    }
+
+
 def emit_research_feedback_pack(
     *,
     portfolio_root: Path,
-    prior_result_sha256: str,
-    prior_receipt_content_sha256: str,
-    prior_pool_entry_content_hash: str,
-    prior_policy_ref: str,
-    prior_owner_artifact_sha256: str | None = None,
     period_index: int | None = None,
     output_path: Path | None = None,
     require_account_feedback: bool = False,
 ) -> dict[str, Any]:
-    """Read settled state and emit one research feedback pack (no next research start)."""
+    """Read settled state, derive priors from frozen binding, emit one pack.
+
+    Does **not** accept free caller ``prior_*`` hashes. Forged priors cannot be
+    mixed with real P&L to mint a sealed research feedback pack.
+    """
 
     bundle = _load_period_settled_bundle(
         portfolio_root=portfolio_root,
@@ -303,6 +411,7 @@ def emit_research_feedback_pack(
     outcome = bundle["outcome"]
     frozen = bundle["frozen"]
     feedback = bundle["feedback"]
+    shadow_root = Path(bundle["root"])
 
     if require_account_feedback and feedback is None:
         raise ResearchFeedbackPackError(
@@ -310,11 +419,9 @@ def emit_research_feedback_pack(
             "account feedback not sealed yet",
         )
 
-    # Pre-outcome / unfrozen must never reach here; double-check no open freeze-only.
     if settled.content_hash is None or frozen.content_hash is None:
         raise ResearchFeedbackPackError("FEEDBACK_PACK_SEAL_MISSING", "settled/frozen unsealed")
 
-    # Outcome must match settled public result and be verified.
     if not outcome.verified:
         raise ResearchFeedbackPackError(
             "FEEDBACK_PACK_OUTCOME_NOT_VERIFIED",
@@ -323,6 +430,15 @@ def emit_research_feedback_pack(
     outcome.require_valid_result_hash()
     if outcome.result_hash is None:
         raise ResearchFeedbackPackError("FEEDBACK_PACK_OUTCOME_HASH_MISSING", "result_hash")
+
+    priors = _derive_priors_from_frozen_binding(
+        shadow_root=shadow_root,
+        frozen=frozen,
+        settled=settled,
+        outcome=outcome,
+        portfolio_ref=str(bundle["portfolio_ref"]),
+        period_index=int(bundle["period_index"]),
+    )
 
     account_feedback_hash = None
     if feedback is not None:
@@ -337,12 +453,13 @@ def emit_research_feedback_pack(
         if account_feedback_hash is not None:
             _require_hex64(account_feedback_hash, "account_feedback_hash")
 
-    pack = build_research_feedback_pack(
-        prior_result_sha256=prior_result_sha256,
-        prior_receipt_content_sha256=prior_receipt_content_sha256,
-        prior_pool_entry_content_hash=prior_pool_entry_content_hash,
-        prior_policy_ref=prior_policy_ref,
-        prior_owner_artifact_sha256=prior_owner_artifact_sha256,
+    pack = _build_research_feedback_pack_body(
+        prior_result_sha256=priors["prior_result_sha256"],
+        prior_receipt_content_sha256=priors["prior_receipt_content_sha256"],
+        prior_pool_entry_content_hash=priors["prior_pool_entry_content_hash"],
+        prior_policy_ref=priors["prior_policy_ref"],
+        prior_owner_artifact_sha256=priors["prior_owner_artifact_sha256"],
+        prior_research_binding_sha256=priors["prior_research_binding_sha256"],
         portfolio_ref=str(bundle["portfolio_ref"]),
         period_index=int(bundle["period_index"]),
         settled_episode_hash=str(settled.content_hash),
@@ -378,6 +495,7 @@ def emit_research_feedback_pack(
         "future_outcome_access": False,
         "auto_start_next_research": False,
         "auto_next_period_freeze": False,
+        "prior_research_binding_sha256": priors["prior_research_binding_sha256"],
         "pack": pack,
     }
 
