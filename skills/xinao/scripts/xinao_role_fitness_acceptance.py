@@ -94,6 +94,7 @@ FIRST_LIVE_EPISODE_COMMAND = (
     "owner-vertical "
     "--work-root \"$XINAO_RF_WORK_ROOT\" "
     "--mode pre_outcome "
+    "--require-live-research "
     "--protocol-pin-path \"$PROTOCOL_PIN_PATH\" "
     "--protocol-pin-sha256 \"$PROTOCOL_PIN_SHA256\" "
     "--active-parent-sha256 \"$ACTIVE_PARENT_SHA256\" "
@@ -2070,14 +2071,78 @@ def _evaluate_protocol_pin_block(
     return formal_admission
 
 
+def is_fixture_scientist_evidence(evidence: Mapping[str, Any] | None) -> bool:
+    """True when evidence is synthetic/fixture-shaped (not live long research)."""
+
+    if evidence is None:
+        return True
+    evidence = _require_mapping(evidence, "scientist_evidence")
+    session = evidence.get("raw_session_artifact") or {}
+    if isinstance(session, Mapping):
+        schema = str(session.get("schema_version") or "")
+        if "fixture" in schema.lower():
+            return True
+        raw = session.get("utf8") or session.get("text") or ""
+        if isinstance(raw, str) and "fixture" in raw.lower() and "schema_version" in raw:
+            return True
+    for key in ("source_class", "evidence_class", "proof_label", "route"):
+        value = str(evidence.get(key) or "").lower()
+        if any(marker in value for marker in _SYNTHETIC_OUTCOME_MARKERS):
+            return True
+        if value == INSTRUMENT_CANARY_ROUTE.lower():
+            return True
+    if evidence.get("fixture_labeled") is True or evidence.get("synthetic_fixture") is True:
+        return True
+    # Demo episode ids used by the unit fixture helper.
+    episode_id = str(evidence.get("episode_id") or "")
+    session_id = str(evidence.get("session_id") or "")
+    if episode_id.endswith(".demo") or session_id.endswith(".demo"):
+        return True
+    if episode_id == "ep.scientist.demo" or session_id == "sess.scientist.demo":
+        return True
+    return False
+
+
 def _evaluate_scientist_block(
     *,
     scientist_evidence: Mapping[str, Any] | None,
     details: dict[str, Any],
     failures: list[str],
     require_full_shape: bool = False,
+    require_live_research: bool = False,
 ) -> bool:
-    """Shared scientist validator; synthetic fixtures stay role_fitness false."""
+    """Shared scientist validator; synthetic fixtures stay role_fitness false.
+
+    When ``require_live_research`` is true (Owner live commissioning), missing or
+    fixture-shaped evidence fails closed — never silent demo fallback.
+    """
+
+    if require_live_research:
+        if scientist_evidence is None:
+            failures.append(
+                "live research required: refuse silent fixture scientist fallback "
+                "(supply native session+MCP+structured multi-turn/tool/fail-revise/resume)"
+            )
+            details["scientist_episode"] = {
+                "allowed": False,
+                "error": "missing live scientist evidence",
+            }
+            details["scientist_evidence_shape_ok"] = False
+            details["genuine_role_fitness"] = False
+            details["live_research_required"] = True
+            return False
+        if is_fixture_scientist_evidence(scientist_evidence):
+            failures.append(
+                "live research required: fixture/synthetic scientist evidence rejected"
+            )
+            details["scientist_episode"] = {
+                "allowed": False,
+                "error": "fixture scientist evidence rejected for live path",
+            }
+            details["scientist_evidence_shape_ok"] = False
+            details["genuine_role_fitness"] = False
+            details["live_research_required"] = True
+            return False
 
     sci = scientist_evidence or _minimal_scientist_evidence()
     scientist_shape_ok = False
@@ -2100,12 +2165,21 @@ def _evaluate_scientist_block(
         if details["scientist_episode"].get("genuine_role_fitness") is True:
             failures.append("harness incorrectly claimed genuine_role_fitness")
             scientist_shape_ok = False
+        if require_live_research and is_fixture_scientist_evidence(sci):
+            failures.append(
+                "live research required: fixture/synthetic scientist evidence rejected"
+            )
+            scientist_shape_ok = False
     except RoleFitnessAcceptanceError as exc:
         failures.append(f"scientist_episode: {exc}")
         details["scientist_episode"] = {"allowed": False, "error": str(exc)}
         scientist_shape_ok = False
     details["scientist_evidence_shape_ok"] = scientist_shape_ok
     details["genuine_role_fitness"] = False
+    details["live_research_required"] = require_live_research
+    details["fixture_scientist_used"] = is_fixture_scientist_evidence(
+        scientist_evidence if scientist_evidence is not None else sci
+    ) and scientist_evidence is None
     return scientist_shape_ok
 
 
@@ -2475,12 +2549,16 @@ def run_owner_invoked_vertical_pre_outcome(
     formal_active_parent_sha256: str | None = None,
     p1_account_mode: str = "ACTION",
     canary_route_preserved: bool = True,
+    require_live_research: bool = False,
 ) -> dict[str, Any]:
     """Bounded Owner vertical through pre-outcome freeze (future outcome unavailable).
 
     Order: unexposed target/ProtocolPin → scientist episode (native session/MCP) →
     immutable candidate or typed NO_ACTION → Codex disposition → independent science
     and account decisions → pre-outcome freeze. Does not settle; parent_completion false.
+
+    ``require_live_research=True`` (commissioning live path) refuses silent fixture
+    scientist fallback and keeps completion_claim_allowed false.
     """
 
     work_root = work_root.resolve()
@@ -2493,6 +2571,7 @@ def run_owner_invoked_vertical_pre_outcome(
         "first_live_episode_command": FIRST_LIVE_EPISODE_COMMAND,
         "first_live_research_episode_host_command": FIRST_LIVE_RESEARCH_EPISODE_HOST_COMMAND,
         "continuation_command": FIRST_LIVE_EPISODE_CONTINUATION_COMMAND,
+        "require_live_research": require_live_research,
     }
 
     # 0) Canary preserved
@@ -2511,13 +2590,55 @@ def run_owner_invoked_vertical_pre_outcome(
         failures=failures,
     )
 
-    # 2) Scientist episode — shared native session/MCP validator (fixture only when none supplied)
+    # 2) Scientist episode — live path refuses fixture fallback; tests may supply fixtures.
     scientist_ok = _evaluate_scientist_block(
         scientist_evidence=scientist_evidence,
         details=details,
         failures=failures,
         require_full_shape=True,
+        require_live_research=require_live_research,
     )
+
+    # Live commissioning fail-closed: no account freeze without real research evidence.
+    # Harness/test paths (require_live_research=False) may still exercise freeze with fixtures.
+    if require_live_research and not scientist_ok:
+        receipt: dict[str, Any] = {
+            "schema_version": PRE_OUTCOME_RECEIPT_SCHEMA,
+            "vertical_schema_version": VERTICAL_RECEIPT_SCHEMA,
+            "status": "FAIL",
+            "phase": "pre_outcome",
+            "carrier_control": canary_route_preserved,
+            "role_fitness": False,
+            "genuine_role_fitness": False,
+            "formal_protocol_pin_admitted": formal_admission,
+            "scientist_evidence_shape_ok": False,
+            "candidate_sealed_for_codex_review": False,
+            "pre_outcome_freeze_ok": False,
+            "awaiting_external_outcome": False,
+            "account_continuity": False,
+            "parent_completion": False,
+            "completion_claim_allowed": False,
+            "scientific_promotion": False,
+            "instrument_canary_preserved": canary_route_preserved,
+            "second_ledger_created": False,
+            "rq008_retrospective_backfill_eligible": False,
+            "require_live_research": True,
+            "proof_classes": details.get("proof_classes", {}),
+            "details": details,
+            "failures": failures,
+            "candidate_only": True,
+            "owner": OWNER_ROLE,
+            "next_action": "supply_native_live_research_then_retry_pre_outcome",
+            "first_live_episode_command": FIRST_LIVE_EPISODE_COMMAND,
+            "first_live_research_episode_host_command": FIRST_LIVE_RESEARCH_EPISODE_HOST_COMMAND,
+            "continuation_command": FIRST_LIVE_EPISODE_CONTINUATION_COMMAND,
+            "proof_class": PROOF_OWNER_VERTICAL,
+        }
+        receipt["content_hash"] = _canonical_sha256(
+            {k: v for k, v in receipt.items() if k != "content_hash"}
+        )
+        _write_json(work_root / "pre_outcome_receipt.json", receipt)
+        return receipt
 
     # 3) Seal immutable candidate or typed NO_ACTION (Codex review only)
     science_identity = "SCIENCE_CANDIDATE"
@@ -2913,6 +3034,12 @@ def run_owner_invoked_vertical(
         return run_owner_invoked_vertical_continue_outcome(work_root=work_root, **kwargs)
     if mode == "full_synthetic":
         # Test/dev only: pre-outcome then synthetic outcome continuation (labeled).
+        # Live commissioning must never use this mode as a production green path.
+        if kwargs.get("require_live_research") is True:
+            raise RoleFitnessAcceptanceError(
+                "full_synthetic forbidden when require_live_research=true "
+                "(no silent fixture production path)"
+            )
         pre = run_owner_invoked_vertical_pre_outcome(work_root=work_root, **{
             k: v
             for k, v in kwargs.items()
@@ -2927,6 +3054,7 @@ def run_owner_invoked_vertical(
                 "formal_active_parent_sha256",
                 "p1_account_mode",
                 "canary_route_preserved",
+                "require_live_research",
             }
         })
         cont = run_owner_invoked_vertical_continue_outcome(
@@ -3148,9 +3276,20 @@ def main(argv: Sequence[str] | None = None) -> int:
     ov.add_argument("--codex-disposition", type=Path, default=None)
     ov.add_argument("--pre-outcome-receipt", type=Path, default=None)
     ov.add_argument("--external-outcome", type=Path, default=None)
+    ov.add_argument(
+        "--require-live-research",
+        action="store_true",
+        help="Refuse silent fixture scientist fallback (Owner live commissioning)",
+    )
 
     schema_cmd = sub.add_parser("print-schema", help="Print acceptance receipt schema JSON")
     schema_cmd.add_argument("--receipt-out", type=Path, default=None)
+
+    parser.add_argument(
+        "--require-live-research",
+        action="store_true",
+        help="Refuse silent fixture scientist fallback (Owner live commissioning)",
+    )
 
     args = parser.parse_args(list(argv) if argv is not None else None)
 
@@ -3201,6 +3340,8 @@ def main(argv: Sequence[str] | None = None) -> int:
                 kwargs["codex_disposition"] = json.loads(
                     args.codex_disposition.read_text(encoding="utf-8")
                 )
+            if getattr(args, "require_live_research", False):
+                kwargs["require_live_research"] = True
             output = run_owner_invoked_vertical(
                 work_root=work, mode=vertical_mode, **kwargs
             )
