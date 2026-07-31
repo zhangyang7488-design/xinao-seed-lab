@@ -73,9 +73,22 @@ CANONICAL_LAB_CWD = "/episode-lab"
 CANONICAL_MCP_EVENTS = "/output/mcp_events.jsonl"
 CANONICAL_AGENT_PROFILE = "/grok-home/agents/genuine_scientist_mcp.md"
 PRODUCTIVE_LAB_OPS = frozenset({"write_file", "shell_exec"})
+# Fixed lab path for sealed candidate body (tool path only).
+CANDIDATE_MANIFEST_RELATIVE = "candidate/candidate_manifest.v1.json"
+CANDIDATE_MANIFEST_SCHEMA = "xinao.research_episode_candidate_manifest.v1"
+CANDIDATE_MANIFEST_MARKER = "XINAO_RESEARCH_EPISODE_CANDIDATE_MANIFEST_V1"
+ACCOUNT_RECOMMENDATION_VALUES = frozenset(
+    {
+        "ACTION_CANDIDATE",
+        "NO_ACTION_CANDIDATE",
+        "NO_RECOMMENDATION",
+    }
+)
 # Host control builtins stripped on all research profiles (web stripped only on CLOSED_LAB).
+# Include live 0.2.117 ids (run_terminal_command, spawn_subagent) plus legacy aliases.
 STRIPPED_HOST_BUILTINS = (
     "run_terminal_cmd",
+    "run_terminal_command",
     "read_file",
     "search_replace",
     "grep",
@@ -88,6 +101,15 @@ STRIPPED_HOST_BUILTINS = (
     "memory_get",
     "lsp",
     "Agent",
+    "spawn_subagent",
+)
+# OPEN_RESEARCH: allow episode-confined subagents (host tools still stripped; no Owner mounts).
+# CLOSED_LAB / canary keep --no-subagents for tighter isolation.
+OPEN_RESEARCH_ALLOW_EPISODE_SUBAGENTS = True
+OPEN_RESEARCH_SUBAGENT_POLICY_REASON = (
+    "OPEN_RESEARCH omits --no-subagents because host builtins and spawn_subagent are "
+    "disallowed, lab/auth isolation remains dual-container, and candidate-only clamps "
+    "forbid Owner/shadow elevation; CLOSED_LAB keeps --no-subagents."
 )
 # Default (OPEN_RESEARCH) does not strip web_search/web_fetch.
 STRIPPED_BUILTINS = STRIPPED_HOST_BUILTINS
@@ -423,21 +445,27 @@ def build_genuine_session_argv(
             "genuine multi-turn episode requires max_turns >= 2 (canary uses 1)",
         )
     tools_csv = tools_allowlist_csv(profile)
+    # Headless MCP productivity: always-approve lab tools while host builtins stay denied.
+    # dontAsk alone auto-denies non-readonly MCP writes under 0.2.117.
+    effective_permission = permission_mode
     argv: list[str] = [
         grok_bin,
         "--model",
         model,
         "--output-format",
         "json",
-        "--no-subagents",
         "--no-memory",
         "--max-turns",
         str(int(max_turns)),
         "--permission-mode",
-        permission_mode,
+        effective_permission,
+        "--always-approve",
         "--tools",
         tools_csv,
     ]
+    # CLOSED_LAB keeps --no-subagents; OPEN_RESEARCH allows confined episode subagents.
+    if profile != PROFILE_OPEN_RESEARCH or not OPEN_RESEARCH_ALLOW_EPISODE_SUBAGENTS:
+        argv.insert(argv.index("--no-memory"), "--no-subagents")
     # CLOSED_LAB / non-open profiles hard-disable web; OPEN_RESEARCH must not.
     if not web_enabled_for_profile(profile):
         argv.append("--disable-web-search")
@@ -486,8 +514,14 @@ def assert_argv_is_genuine_not_canary(
             raise NativeSessionError("GENUINE_MAX_TURNS_CANARY_SHAPED", str(mt))
     if tools_val == "":
         raise NativeSessionError("CANARY_ARGV_ON_GENUINE_PATH", "empty tools")
-    if "--no-subagents" not in joined:
-        raise NativeSessionError("GENUINE_ARGV_SUBAGENTS_NOT_DISABLED", "missing --no-subagents")
+    # OPEN_RESEARCH may omit --no-subagents (episode-confined; host tools stripped).
+    # CLOSED_LAB / non-open profiles must keep --no-subagents.
+    if profile != PROFILE_OPEN_RESEARCH or not OPEN_RESEARCH_ALLOW_EPISODE_SUBAGENTS:
+        if "--no-subagents" not in joined:
+            raise NativeSessionError(
+                "GENUINE_ARGV_SUBAGENTS_NOT_DISABLED",
+                "missing --no-subagents",
+            )
 
 
 def assert_live_research_argv(
@@ -500,6 +534,7 @@ def assert_live_research_argv(
 
     OPEN_RESEARCH must NOT pass --disable-web-search and must allow web builtins.
     CLOSED_LAB must disable web and strip web builtins.
+    OPEN_RESEARCH may omit --no-subagents when episode-confined subagents are allowed.
     """
     profile = normalize_research_profile(research_profile)
     assert_argv_is_genuine_not_canary(argv, research_profile=profile)
@@ -516,22 +551,43 @@ def assert_live_research_argv(
         model = joined[joined.index("--model") + 1]
         if model != DEFAULT_LIVE_MODEL:
             raise NativeSessionError("LIVE_MODEL_MISMATCH", model)
+    if "--always-approve" not in joined:
+        raise NativeSessionError(
+            "LIVE_ALWAYS_APPROVE_MISSING",
+            "headless MCP productivity requires --always-approve",
+        )
     if web_enabled_for_profile(profile):
         if "--disable-web-search" in joined:
             raise NativeSessionError(
                 "OPEN_RESEARCH_WEB_DISABLED",
                 "OPEN_RESEARCH must not pass --disable-web-search",
             )
+        if profile == PROFILE_OPEN_RESEARCH and OPEN_RESEARCH_ALLOW_EPISODE_SUBAGENTS:
+            if "--no-subagents" in joined:
+                raise NativeSessionError(
+                    "OPEN_RESEARCH_SUBAGENTS_HARD_DISABLED",
+                    OPEN_RESEARCH_SUBAGENT_POLICY_REASON,
+                )
     else:
         if "--disable-web-search" not in joined:
             raise NativeSessionError(
                 "LIVE_WEB_BYPASS_NOT_DISABLED",
                 "CLOSED_LAB missing --disable-web-search",
             )
+        if "--no-subagents" not in joined:
+            raise NativeSessionError(
+                "GENUINE_ARGV_SUBAGENTS_NOT_DISABLED",
+                "CLOSED_LAB missing --no-subagents",
+            )
     if "--disallowed-tools" not in joined:
         raise NativeSessionError("LIVE_BUILTINS_NOT_STRIPPED", "missing --disallowed-tools")
     denied = joined[joined.index("--disallowed-tools") + 1]
-    for required in ("run_terminal_cmd", "read_file"):
+    for required in (
+        "run_terminal_cmd",
+        "run_terminal_command",
+        "read_file",
+        "spawn_subagent",
+    ):
         if required not in denied:
             raise NativeSessionError("LIVE_BUILTIN_STRIP_INCOMPLETE", required)
     if web_enabled_for_profile(profile):
@@ -1100,7 +1156,12 @@ def collect_attempt_mcp_delta(
 
 
 def require_productive_lab_delta(delta: Mapping[str, Any]) -> None:
-    """Success requires at least one write_file/shell_exec from this attempt delta."""
+    """Success requires at least one write_file/shell_exec from this attempt delta.
+
+    JSONL self-hash alone is insufficient: each productive event must carry a
+    non-empty sidecar_event_hash from the tool-executor response (or equivalent
+    trusted chain). Forgeable /output appends without sidecar hashes fail closed.
+    """
     status = str(delta.get("status") or "")
     if status in {"STALE_ONLY", "EMPTY_DELTA"}:
         raise NativeSessionError("MCP_DELTA_STALE_OR_EMPTY", status)
@@ -1112,6 +1173,116 @@ def require_productive_lab_delta(delta: Mapping[str, Any]) -> None:
             "PRODUCTIVE_LAB_OP_MISSING",
             f"events={kinds[:12]}",
         )
+    events = [e for e in (delta.get("events") or []) if isinstance(e, dict)]
+    productive_events = [
+        e
+        for e in events
+        if str(e.get("op") or "") in PRODUCTIVE_LAB_OPS
+        and e.get("status") not in {"denied", "error"}
+    ]
+    if not productive_events:
+        # productive_ops may be precomputed; still require matching event bodies.
+        productive_events = [
+            e
+            for e in events
+            if (e.get("productive") is True and str(e.get("op") or "") in PRODUCTIVE_LAB_OPS)
+        ]
+    if not productive_events:
+        raise NativeSessionError("PRODUCTIVE_LAB_EVENT_MISSING", "no productive event bodies")
+    for event in productive_events:
+        sidecar = event.get("sidecar_event_hash")
+        if not isinstance(sidecar, str) or HEX_SHA256.fullmatch(sidecar) is None:
+            raise NativeSessionError(
+                "PRODUCTIVE_SIDECAR_HASH_MISSING",
+                f"op={event.get('op')} missing tool-sidecar event_hash",
+            )
+        claimed = event.get("event_hash")
+        if isinstance(claimed, str) and HEX_SHA256.fullmatch(claimed):
+            body = {k: v for k, v in event.items() if k != "event_hash"}
+            observed = _sha256_bytes(_canonical_bytes(body))
+            if claimed != observed:
+                raise NativeSessionError(
+                    "TOOL_EVENT_FABRICATED",
+                    f"claimed={claimed} observed={observed}",
+                )
+
+
+def require_lab_effect_binding(
+    *,
+    delta: Mapping[str, Any],
+    lab_artifact_manifest: Mapping[str, Any] | None,
+    prior_lab_artifact_manifest: Mapping[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Bind productive MCP ops to real lab filesystem effects (not event-file theater).
+
+    write_file must change or create a lab path present in the artifact manifest.
+    shell_exec requires either a lab artifact delta vs prior scan or an explicit
+    non-empty lab effect marker recorded on the event.
+    """
+    artifacts = list((lab_artifact_manifest or {}).get("artifacts") or [])
+    current_paths = {
+        str(a.get("path")): str(a.get("sha256") or "")
+        for a in artifacts
+        if isinstance(a, Mapping) and a.get("path")
+    }
+    prior_paths = {
+        str(a.get("path")): str(a.get("sha256") or "")
+        for a in list((prior_lab_artifact_manifest or {}).get("artifacts") or [])
+        if isinstance(a, Mapping) and a.get("path")
+    }
+    changed = sorted(p for p, digest in current_paths.items() if prior_paths.get(p) != digest)
+    events = [e for e in (delta.get("events") or []) if isinstance(e, dict)]
+    productive_events = [
+        e
+        for e in events
+        if str(e.get("op") or "") in PRODUCTIVE_LAB_OPS
+        and e.get("status") not in {"denied", "error"}
+    ]
+    if not productive_events and list(delta.get("productive_ops") or []):
+        # Fall back: any productive ops require at least one lab change.
+        if not changed and not current_paths:
+            raise NativeSessionError(
+                "LAB_EFFECT_MISSING",
+                "productive ops claimed without lab filesystem artifacts",
+            )
+        return {"changed_paths": changed, "bound": True}
+    write_bound = False
+    shell_bound = False
+    for event in productive_events:
+        op = str(event.get("op") or "")
+        if op == "write_file":
+            # Prefer path recorded on event; else require any lab change.
+            rel = event.get("path_relative") or event.get("path") or event.get("lab_path")
+            if isinstance(rel, str) and rel.replace("\\", "/").lstrip("./") in current_paths:
+                write_bound = True
+            elif changed:
+                write_bound = True
+            else:
+                raise NativeSessionError(
+                    "LAB_EFFECT_WRITE_UNBOUND",
+                    f"write_file event without lab file effect path={rel!r}",
+                )
+        elif op == "shell_exec":
+            if event.get("lab_effect") is True or event.get("exit_code") == 0 and changed:
+                shell_bound = True
+            elif changed:
+                shell_bound = True
+            elif current_paths and not prior_paths:
+                # First attempt may only create via shell; allow non-empty lab.
+                shell_bound = True
+            else:
+                raise NativeSessionError(
+                    "LAB_EFFECT_SHELL_UNBOUND",
+                    "shell_exec without lab artifact delta or effect marker",
+                )
+    if not write_bound and not shell_bound and productive_events:
+        raise NativeSessionError("LAB_EFFECT_MISSING", "no bound lab effect")
+    return {
+        "changed_paths": changed,
+        "bound": True,
+        "write_bound": write_bound,
+        "shell_bound": shell_bound,
+    }
 
 
 def extract_web_use_trace(parsed: Mapping[str, Any] | None) -> dict[str, Any]:
@@ -1628,6 +1799,167 @@ def validate_attempt_exportable(attempt: Mapping[str, Any]) -> None:
             raise NativeSessionError("AUTHORITY_CLAIM_FORBIDDEN", bad)
 
 
+def _is_reparse_or_symlink(path: Path) -> bool:
+    try:
+        if path.is_symlink():
+            return True
+    except OSError:
+        return True
+    try:
+        import stat as _stat
+
+        st = path.lstat()
+        # Windows reparse point bit (IO_REPARSE_TAG) surfaces as FILE_ATTRIBUTE_REPARSE_POINT.
+        if getattr(st, "st_file_attributes", 0) & 0x400:
+            return True
+        if _stat.S_ISLNK(st.st_mode):
+            return True
+    except OSError:
+        return True
+    return False
+
+
+def load_lab_candidate_manifest_bytes(
+    *,
+    lab_root: Path,
+    relative_path: str = CANDIDATE_MANIFEST_RELATIVE,
+) -> bytes:
+    """Read exact lab bytes for the sealed candidate manifest; refuse aliases/symlinks."""
+    root = Path(lab_root).resolve()
+    rel = str(relative_path or CANDIDATE_MANIFEST_RELATIVE).replace("\\", "/").lstrip("/")
+    if rel != CANDIDATE_MANIFEST_RELATIVE:
+        raise NativeSessionError(
+            "CANDIDATE_MANIFEST_PATH_FORBIDDEN",
+            f"only fixed path {CANDIDATE_MANIFEST_RELATIVE} accepted, got {rel}",
+        )
+    path = (root / rel).resolve()
+    try:
+        path.relative_to(root)
+    except ValueError as exc:
+        raise NativeSessionError("CANDIDATE_MANIFEST_ESCAPE", str(path)) from exc
+    if _is_reparse_or_symlink(path) or any(
+        _is_reparse_or_symlink(parent)
+        for parent in path.parents
+        if str(parent).startswith(str(root))
+    ):
+        raise NativeSessionError("CANDIDATE_MANIFEST_SYMLINK_REFUSED", str(path))
+    if not path.is_file():
+        raise NativeSessionError("CANDIDATE_MANIFEST_MISSING", str(path))
+    return path.read_bytes()
+
+
+def validate_candidate_manifest(
+    payload: Mapping[str, Any] | bytes,
+    *,
+    expected_episode_id: str | None = None,
+    expected_attempt_cas_digest: str | None = None,
+) -> dict[str, Any]:
+    """Validate closed lab-authored candidate manifest schema (candidate-only)."""
+    if isinstance(payload, (bytes, bytearray)):
+        try:
+            obj = json.loads(bytes(payload).decode("utf-8"))
+        except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+            raise NativeSessionError("CANDIDATE_MANIFEST_JSON_INVALID", str(exc)) from exc
+    else:
+        obj = dict(payload)
+    if not isinstance(obj, dict):
+        raise NativeSessionError("CANDIDATE_MANIFEST_JSON_INVALID", "object required")
+    if obj.get("schema_version") != CANDIDATE_MANIFEST_SCHEMA:
+        raise NativeSessionError(
+            "CANDIDATE_MANIFEST_SCHEMA_INVALID",
+            str(obj.get("schema_version")),
+        )
+    if obj.get("manifest_marker") != CANDIDATE_MANIFEST_MARKER:
+        raise NativeSessionError(
+            "CANDIDATE_MANIFEST_MARKER_INVALID",
+            str(obj.get("manifest_marker")),
+        )
+    for key in (
+        "candidate_id",
+        "candidate_version",
+        "research_question",
+        "research_object",
+        "account_recommendation",
+    ):
+        if not isinstance(obj.get(key), str) or not str(obj.get(key)).strip():
+            raise NativeSessionError("CANDIDATE_MANIFEST_FIELD_INVALID", key)
+    if obj.get("account_recommendation") not in ACCOUNT_RECOMMENDATION_VALUES:
+        raise NativeSessionError(
+            "CANDIDATE_MANIFEST_RECOMMENDATION_INVALID",
+            str(obj.get("account_recommendation")),
+        )
+    data_cutoff = obj.get("data_cutoff")
+    if not isinstance(data_cutoff, Mapping):
+        raise NativeSessionError("CANDIDATE_MANIFEST_CUTOFF_INVALID", "data_cutoff object required")
+    if not isinstance(data_cutoff.get("as_of"), str) or not str(data_cutoff.get("as_of")).strip():
+        raise NativeSessionError("CANDIDATE_MANIFEST_CUTOFF_INVALID", "as_of required")
+    material_refs = data_cutoff.get("material_refs") or []
+    if not isinstance(material_refs, list):
+        raise NativeSessionError("CANDIDATE_MANIFEST_CUTOFF_INVALID", "material_refs list")
+    for ref in material_refs:
+        if not isinstance(ref, Mapping):
+            raise NativeSessionError("CANDIDATE_MANIFEST_CUTOFF_INVALID", "material_ref object")
+        digest = ref.get("sha256")
+        if not isinstance(digest, str) or HEX_SHA256.fullmatch(digest) is None:
+            raise NativeSessionError("CANDIDATE_MANIFEST_CUTOFF_INVALID", "material_ref.sha256")
+    methods = obj.get("method_refs") or obj.get("methods")
+    if methods is None:
+        raise NativeSessionError("CANDIDATE_MANIFEST_METHODS_INVALID", "method_refs required")
+    # Wild / overfit / black-box methods are allowed; only type-check structure.
+    if not isinstance(methods, (list, Mapping, str)):
+        raise NativeSessionError("CANDIDATE_MANIFEST_METHODS_INVALID", type(methods).__name__)
+    falsifiers = obj.get("falsifiers") or obj.get("limitations")
+    if falsifiers is None:
+        raise NativeSessionError("CANDIDATE_MANIFEST_LIMITATIONS_INVALID", "falsifiers/limitations")
+    if not isinstance(falsifiers, list):
+        raise NativeSessionError("CANDIDATE_MANIFEST_LIMITATIONS_INVALID", "list required")
+    # Candidate-only authority clamps (never Owner disposition / completion).
+    if obj.get("owner_adopted") is not False:
+        raise NativeSessionError("CANDIDATE_MANIFEST_OWNER_ADOPTED_FORBIDDEN", "must be false")
+    if obj.get("completion") is not False and obj.get("completion_claim_allowed") is not False:
+        # Accept either key; both must be false when present. Require at least completion=false.
+        if "completion" not in obj and "completion_claim_allowed" not in obj:
+            raise NativeSessionError("CANDIDATE_MANIFEST_COMPLETION_MISSING", "completion=false")
+        if obj.get("completion") is True or obj.get("completion_claim_allowed") is True:
+            raise NativeSessionError("CANDIDATE_MANIFEST_COMPLETION_FORBIDDEN", "must be false")
+    if obj.get("candidate_only") is not True:
+        raise NativeSessionError(
+            "CANDIDATE_MANIFEST_CANDIDATE_ONLY_REQUIRED", "candidate_only=true"
+        )
+    for forbidden, reason in (
+        ("account_identity", "ACCOUNT_IDENTITY_FORBIDDEN"),
+        ("science_disposition", "SCIENCE_DISPOSITION_FORBIDDEN"),
+        ("frozen", "FREEZE_CLAIM_FORBIDDEN"),
+        ("parent_complete", "PARENT_COMPLETE_FORBIDDEN"),
+        ("science_restored", "SCIENCE_RESTORED_FORBIDDEN"),
+    ):
+        if obj.get(forbidden) not in {None, False}:
+            raise NativeSessionError(f"CANDIDATE_MANIFEST_{reason}", forbidden)
+    if expected_episode_id is not None and obj.get("episode_id") not in {
+        None,
+        expected_episode_id,
+    }:
+        if obj.get("episode_id") != expected_episode_id:
+            raise NativeSessionError(
+                "CANDIDATE_MANIFEST_EPISODE_MISMATCH",
+                f"{obj.get('episode_id')}!={expected_episode_id}",
+            )
+    if expected_attempt_cas_digest is not None and obj.get("attempt_cas_digest") not in {
+        None,
+        expected_attempt_cas_digest,
+    }:
+        if obj.get("attempt_cas_digest") != expected_attempt_cas_digest:
+            raise NativeSessionError(
+                "CANDIDATE_MANIFEST_ATTEMPT_MISMATCH",
+                f"{obj.get('attempt_cas_digest')}!={expected_attempt_cas_digest}",
+            )
+    # proposed numbers/stake only as candidate content (optional).
+    proposed = obj.get("proposed") or obj.get("proposed_numbers")
+    if proposed is not None and not isinstance(proposed, (Mapping, list)):
+        raise NativeSessionError("CANDIDATE_MANIFEST_PROPOSED_INVALID", type(proposed).__name__)
+    return obj
+
+
 def export_candidate_evidence_bundle(
     *,
     episode_output_root: Path,
@@ -1642,11 +1974,15 @@ def export_candidate_evidence_bundle(
     package_release_id: str | None = None,
     package_release_identity_sha256: str | None = None,
     prompt_material_cutoff: Mapping[str, Any] | None = None,
+    lab_root: Path | None = None,
+    candidate_manifest_bytes: bytes | None = None,
 ) -> dict[str, Any]:
     """Export closed-schema candidate-only bundle from canonical attempt CAS.
 
     Derives identities from stored attempt evidence; rejects forged caller hashes.
-    Idempotent for identical inputs; never writes shadow/adoption/freeze state.
+    Requires lab-authored candidate manifest bytes (exact lab path or pre-read
+    bytes that must match lab). Idempotent for identical inputs; never writes
+    shadow/adoption/freeze state.
     """
     root = Path(episode_output_root)
     attempt = load_attempt_cas(root, attempt_cas_digest)
@@ -1708,6 +2044,64 @@ def export_candidate_evidence_bundle(
         raw_bytes = load_cas_blob(root, "raw", str(attempt["raw_stdout_cas"]))
         if _sha256_bytes(raw_bytes) != raw_session_hash:
             raise NativeSessionError("RAW_STDOUT_HASH_MISMATCH", "cas drift")
+    # Candidate manifest: exact lab bytes after productive attempt (not host-forged).
+    if lab_root is None and candidate_manifest_bytes is None:
+        raise NativeSessionError(
+            "CANDIDATE_MANIFEST_MISSING",
+            "lab_root or candidate_manifest_bytes required",
+        )
+    if lab_root is not None:
+        lab_bytes = load_lab_candidate_manifest_bytes(lab_root=Path(lab_root))
+        if candidate_manifest_bytes is not None and bytes(candidate_manifest_bytes) != lab_bytes:
+            raise NativeSessionError(
+                "CANDIDATE_MANIFEST_DRIFT",
+                "caller bytes != lab candidate/candidate_manifest.v1.json",
+            )
+        manifest_bytes = lab_bytes
+    else:
+        manifest_bytes = bytes(candidate_manifest_bytes or b"")
+    if not manifest_bytes:
+        raise NativeSessionError("CANDIDATE_MANIFEST_MISSING", "empty bytes")
+    manifest_obj = validate_candidate_manifest(
+        manifest_bytes,
+        expected_episode_id=episode_id,
+        expected_attempt_cas_digest=attempt_cas_digest,
+    )
+    # Manifest must appear in the sealed lab artifact manifest from the attempt.
+    artifact_manifest = attempt.get("artifact_manifest") or {}
+    artifact_paths = {
+        str(a.get("path")).replace("\\", "/")
+        for a in list(artifact_manifest.get("artifacts") or [])
+        if isinstance(a, Mapping)
+    }
+    if CANDIDATE_MANIFEST_RELATIVE not in artifact_paths:
+        raise NativeSessionError(
+            "CANDIDATE_MANIFEST_NOT_IN_ARTIFACTS",
+            f"{CANDIDATE_MANIFEST_RELATIVE} missing from attempt lab artifact manifest",
+        )
+    # Hash in artifact list must match exact lab bytes.
+    for entry in list(artifact_manifest.get("artifacts") or []):
+        if not isinstance(entry, Mapping):
+            continue
+        if str(entry.get("path")).replace("\\", "/") == CANDIDATE_MANIFEST_RELATIVE:
+            expected_digest = str(entry.get("sha256") or "")
+            observed_digest = _sha256_bytes(manifest_bytes)
+            if expected_digest != observed_digest:
+                raise NativeSessionError(
+                    "CANDIDATE_MANIFEST_HASH_MISMATCH",
+                    f"artifact={expected_digest} bytes={observed_digest}",
+                )
+            break
+    manifest_sha256 = _sha256_bytes(manifest_bytes)
+    manifest_cas = write_cas_blob(root, "manifests", manifest_bytes)
+    if (
+        manifest_obj.get("attempt_cas_digest")
+        and manifest_obj.get("attempt_cas_digest") != attempt_cas_digest
+    ):
+        raise NativeSessionError(
+            "CANDIDATE_MANIFEST_STALE_ATTEMPT",
+            str(manifest_obj.get("attempt_cas_digest")),
+        )
     bundle_body = {
         "schema_version": CANDIDATE_EXPORT_SCHEMA,
         "status": STATUS_CANDIDATE_EVIDENCE_EXPORTED,
@@ -1719,6 +2113,9 @@ def export_candidate_evidence_bundle(
         "raw_session_hash": raw_session_hash,
         "tool_trace_hash": attempt.get("tool_trace_sha256"),
         "artifact_manifest_hash": attempt.get("artifact_manifest_sha256"),
+        "candidate_manifest_sha256": manifest_sha256,
+        "candidate_manifest_cas_digest": manifest_cas,
+        "candidate_manifest_path": CANDIDATE_MANIFEST_RELATIVE,
         "pair_receipt_sha256": attempt.get("pair_receipt_sha256"),
         "namespace_receipt_sha256": attempt.get("namespace_receipt_sha256"),
         "release_id": release_id,

@@ -51,8 +51,16 @@ CANONICAL_LAB_CWD: Final = "/episode-lab"
 CANONICAL_MCP_EVENTS: Final = "/output/mcp_events.jsonl"
 CANONICAL_AGENT_PROFILE: Final = f"{CANONICAL_GROK_HOME}/agents/genuine_scientist_mcp.md"
 CANONICAL_CONFIG_TOML: Final = f"{CANONICAL_GROK_HOME}/config.toml"
-CANONICAL_AUTH_MOUNT: Final = f"{CANONICAL_GROK_HOME}/.grok"
+# Grok 0.2.117 stores auth.json + sessions directly under GROK_HOME (flat).
+CANONICAL_AUTH_MOUNT: Final = f"{CANONICAL_GROK_HOME}/auth.json"
+CANONICAL_SESSIONS_MOUNT: Final = f"{CANONICAL_GROK_HOME}/sessions"
+# Legacy nested path retained only for negative/compat checks (not live mounts).
+LEGACY_NESTED_GROK_AUTH_MOUNT: Final = f"{CANONICAL_GROK_HOME}/.grok"
 CANONICAL_IPC_SOCKET: Final = "/ipc/tool.sock"
+# Lab-authored sealed candidate body (tool path only; not host-forged evidence).
+CANDIDATE_MANIFEST_RELATIVE: Final = "candidate/candidate_manifest.v1.json"
+CANDIDATE_MANIFEST_SCHEMA: Final = "xinao.research_episode_candidate_manifest.v1"
+CANDIDATE_MANIFEST_MARKER: Final = "XINAO_RESEARCH_EPISODE_CANDIDATE_MANIFEST_V1"
 
 # Writable surfaces inside the tool/lab namespace only.
 ALLOWED_WRITABLE_SURFACES: Final = (
@@ -75,8 +83,10 @@ FORBIDDEN_TOOL_SURFACES: Final = (
 
 # Host generic file/shell/task/memory builtins stripped on all research profiles.
 # OPEN_RESEARCH does NOT strip web_search/web_fetch; CLOSED_LAB does.
+# Include both legacy and live 0.2.117 tool ids (run_terminal_command, spawn_subagent).
 HOST_CONTROL_BUILTINS: Final = (
     "run_terminal_cmd",
+    "run_terminal_command",
     "read_file",
     "search_replace",
     "grep",
@@ -89,6 +99,7 @@ HOST_CONTROL_BUILTINS: Final = (
     "memory_get",
     "lsp",
     "Agent",
+    "spawn_subagent",
 )
 
 

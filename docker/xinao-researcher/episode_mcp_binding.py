@@ -64,6 +64,7 @@ except ImportError:  # pragma: no cover - same-dir import fallback
     CLOSED_LAB_TOOLS_ALLOWLIST = MCP_META_TOOLS
     HOST_CONTROL_BUILTINS = (
         "run_terminal_cmd",
+        "run_terminal_command",
         "read_file",
         "search_replace",
         "grep",
@@ -76,6 +77,7 @@ except ImportError:  # pragma: no cover - same-dir import fallback
         "memory_get",
         "lsp",
         "Agent",
+        "spawn_subagent",
     )
     PROFILE_OPEN_RESEARCH = "OPEN_RESEARCH"
     PROFILE_CLOSED_LAB = "CLOSED_LAB"
@@ -138,9 +140,14 @@ def render_config_toml(
     startup_timeout_sec: int = 15,
     tool_timeout_sec: int | None = None,
     server_name: str = MCP_SERVER_NAME,
+    research_profile: str | None = None,
 ) -> str:
     if tool_timeout_sec is None:
         tool_timeout_sec = max(1, min(DEFAULT_TIMEOUT_MS // 1000, MAX_TIMEOUT_MS // 1000))
+    profile = normalize_research_profile(research_profile)
+    # OPEN_RESEARCH: allow episode-confined subagents (host tools remain stripped).
+    # CLOSED_LAB: keep subagents disabled for tighter isolation.
+    subagents_enabled = profile == PROFILE_OPEN_RESEARCH
     lines = [
         f"[mcp_servers.{server_name}]",
         f'command = "{_toml_escape(server_command)}"',
@@ -161,7 +168,7 @@ def render_config_toml(
             "lsp_tools = false",
             "",
             "[subagents]",
-            "enabled = false",
+            f"enabled = {'true' if subagents_enabled else 'false'}",
             "",
             "[memory]",
             "enabled = false",
@@ -353,6 +360,7 @@ def materialize_attempt_local_binding(
         server_args=args,
         env=env,
         tool_timeout_sec=max(1, min(timeout_ms // 1000, MAX_TIMEOUT_MS // 1000)),
+        research_profile=profile,
     )
     profile_text = render_agent_profile_md(profile=profile)
     paths["config_toml"].write_text(config_text, encoding="utf-8")

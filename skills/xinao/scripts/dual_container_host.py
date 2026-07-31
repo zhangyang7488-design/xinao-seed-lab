@@ -1396,6 +1396,7 @@ class DualContainerHost:
                 "parent_complete": False,
             }
         prior_cursor = self.capture_mcp_event_cursor()
+        prior_lab_manifest = self._scan_lab_artifact_manifest()
         started_at = _utc_now()
         docker_exec_failed = False
         timed_out = False
@@ -1441,6 +1442,23 @@ class DualContainerHost:
                 "productive_ops": [],
                 "status": exc.reason_code,
             }
+        lab_manifest = self._scan_lab_artifact_manifest()
+        # Fail closed on forgeable event-only productivity (sidecar + lab FS effect).
+        try:
+            native.require_productive_lab_delta(delta)
+            native.require_lab_effect_binding(
+                delta=delta,
+                lab_artifact_manifest=lab_manifest,
+                prior_lab_artifact_manifest=prior_lab_manifest,
+            )
+        except native.NativeSessionError as exc:
+            # Record failed productivity gate into attempt failure path below via empty ops.
+            delta = {
+                **delta,
+                "productive_ops": [],
+                "status": str(getattr(exc, "reason_code", None) or "PRODUCTIVE_EVIDENCE_REJECTED"),
+                "evidence_reject": str(getattr(exc, "reason_code", None) or exc),
+            }
         mcp_hashes = list(delta.get("mcp_event_hashes") or [])
         productive_ops = list(delta.get("productive_ops") or [])
         attempt_id = f"att_{uuid.uuid4().hex}"
@@ -1483,7 +1501,7 @@ class DualContainerHost:
             release_identity_sha256=release_identity_sha256,
             cas_head_sha256=cas_head_sha256,
             mcp_event_hashes=mcp_hashes,
-            lab_artifact_manifest=self._scan_lab_artifact_manifest(),
+            lab_artifact_manifest=lab_manifest,
             prior_attempt_hash=prior_success,
             resume=False,
             live_executed=True,
@@ -1623,6 +1641,7 @@ class DualContainerHost:
                 "parent_complete": False,
             }
         prior_cursor = self.capture_mcp_event_cursor()
+        prior_lab_manifest = self._scan_lab_artifact_manifest()
         started_at = _utc_now()
         docker_exec_failed = False
         timed_out = False
@@ -1668,6 +1687,21 @@ class DualContainerHost:
                 "productive_ops": [],
                 "status": exc.reason_code,
             }
+        lab_manifest = self._scan_lab_artifact_manifest()
+        try:
+            native.require_productive_lab_delta(delta)
+            native.require_lab_effect_binding(
+                delta=delta,
+                lab_artifact_manifest=lab_manifest,
+                prior_lab_artifact_manifest=prior_lab_manifest,
+            )
+        except native.NativeSessionError as exc:
+            delta = {
+                **delta,
+                "productive_ops": [],
+                "status": str(getattr(exc, "reason_code", None) or "PRODUCTIVE_EVIDENCE_REJECTED"),
+                "evidence_reject": str(getattr(exc, "reason_code", None) or exc),
+            }
         mcp_hashes = list(delta.get("mcp_event_hashes") or [])
         productive_ops = list(delta.get("productive_ops") or [])
         attempt_id = f"att_{uuid.uuid4().hex}"
@@ -1701,7 +1735,7 @@ class DualContainerHost:
             release_identity_sha256=release_identity_sha256,
             cas_head_sha256=expected_cas_head_sha256,
             mcp_event_hashes=mcp_hashes,
-            lab_artifact_manifest=self._scan_lab_artifact_manifest(),
+            lab_artifact_manifest=lab_manifest,
             prior_attempt_hash=prior_attempt_hash,
             resume=True,
             live_executed=True,
@@ -1797,6 +1831,7 @@ class DualContainerHost:
             package_release_id=release_id,
             package_release_identity_sha256=release_identity_sha256,
             prompt_material_cutoff=prompt_material_cutoff,
+            lab_root=self.paths["lab"],
         )
 
     def cancel_pair(self) -> dict[str, Any]:
@@ -1985,12 +2020,12 @@ def _synthetic_transport_inspect(lease: Mapping[str, Any]) -> dict[str, Any]:
             "SecurityOpt": ["no-new-privileges:true"],
         },
         "Mounts": [
-            {"Destination": "/grok-home/.grok", "Source": "/host/auth", "Type": "bind"},
+            {"Destination": "/grok-home/auth.json", "Source": "/host/auth/auth.json", "Type": "bind"},
             {"Destination": "/input", "Source": "/host/input", "Type": "bind"},
             {"Destination": "/output", "Source": "/host/output", "Type": "bind"},
             {"Destination": "/ipc", "Source": "/host/ipc", "Type": "bind"},
             {
-                "Destination": "/grok-home/.grok/sessions",
+                "Destination": "/grok-home/sessions",
                 "Source": "/host/sessions",
                 "Type": "bind",
             },

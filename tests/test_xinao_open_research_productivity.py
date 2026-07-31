@@ -81,8 +81,15 @@ def _hash_event(body: dict[str, Any]) -> str:
 
 
 def _append_productive_event(
-    path: Path, *, episode_id: str, op: str = "write_file", status: str = "ok"
+    path: Path,
+    *,
+    episode_id: str,
+    op: str = "write_file",
+    status: str = "ok",
+    path_relative: str = "candidate/candidate_manifest.v1.json",
+    sidecar_event_hash: str | None = None,
 ) -> str:
+    sidecar = sidecar_event_hash or ("ab" * 32)
     body = {
         "schema_version": "xinao.dual_container_mcp_event.v1",
         "event": "mcp_tools_call",
@@ -91,6 +98,8 @@ def _append_productive_event(
         "status": status,
         "productive": op in {"write_file", "shell_exec"},
         "server": "episode_lab",
+        "sidecar_event_hash": sidecar,
+        "path_relative": path_relative,
         "completion_claim_allowed": False,
         "science_restored": False,
         "parent_complete": False,
@@ -102,6 +111,35 @@ def _append_productive_event(
     with path.open("a", encoding="utf-8") as stream:
         stream.write(json.dumps(line, sort_keys=True, separators=(",", ":")) + "\n")
     return event_hash
+
+
+def _write_lab_candidate_manifest(lab_root: Path, *, episode_id: str, attempt_cas: str | None = None) -> bytes:
+    payload = {
+        "schema_version": "xinao.research_episode_candidate_manifest.v1",
+        "manifest_marker": "XINAO_RESEARCH_EPISODE_CANDIDATE_MANIFEST_V1",
+        "candidate_id": "cand_open_research_1",
+        "candidate_version": "v1",
+        "episode_id": episode_id,
+        "attempt_cas_digest": attempt_cas,
+        "research_question": "what survives a failed experiment then revise?",
+        "research_object": "bounded OPEN_RESEARCH episode candidate",
+        "data_cutoff": {
+            "as_of": "2026-07-31T00:00:00Z",
+            "material_refs": [{"id": "mat1", "sha256": "11" * 32}],
+        },
+        "method_refs": ["shell_experiment", "black_box_ok"],
+        "falsifiers": ["failed first shell"],
+        "account_recommendation": "NO_RECOMMENDATION",
+        "proposed": None,
+        "candidate_only": True,
+        "owner_adopted": False,
+        "completion": False,
+    }
+    raw = (json.dumps(payload, ensure_ascii=False, sort_keys=True) + "\n").encode("utf-8")
+    dest = lab_root / "candidate" / "candidate_manifest.v1.json"
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    dest.write_bytes(raw)
+    return raw
 
 
 def test_open_research_argv_has_meta_web_no_disable(native: Any) -> None:
@@ -584,8 +622,16 @@ def test_attach_run_delta_productive_mocked(
         assert "/attempt/" not in env["GROK_HOME"]
         native.assert_live_research_argv(list(argv), research_profile="OPEN_RESEARCH")
         assert "--disable-web-search" not in list(argv)
-        # Append productive op only (delta vs stale start)
-        _append_productive_event(mcp_path, episode_id="ep_delta", op="write_file")
+        assert "--always-approve" in list(argv)
+        assert "--no-subagents" not in list(argv)
+        # Productive op with sidecar hash + real lab FS effect (manifest path).
+        _write_lab_candidate_manifest(tmp_path / "ep" / "lab", episode_id="ep_delta")
+        _append_productive_event(
+            mcp_path,
+            episode_id="ep_delta",
+            op="write_file",
+            path_relative="candidate/candidate_manifest.v1.json",
+        )
         return subprocess.CompletedProcess(
             args=list(argv),
             returncode=0,

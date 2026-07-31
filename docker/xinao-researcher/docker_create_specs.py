@@ -39,11 +39,14 @@ FORBIDDEN_TOOL_MOUNTS = (
 
 
 # Transport container internal mounts for dual-host orchestration.
-TRANSPORT_AUTH_MOUNT = "/grok-home/.grok"
+# Grok 0.2.117: auth.json + sessions live flat under GROK_HOME (not nested .grok/).
+TRANSPORT_AUTH_MOUNT = "/grok-home/auth.json"
 TRANSPORT_INPUT_MOUNT = "/input"
 TRANSPORT_OUTPUT_MOUNT = "/output"
-TRANSPORT_SESSION_MOUNT = "/grok-home/.grok/sessions"
+TRANSPORT_SESSION_MOUNT = "/grok-home/sessions"
 TRANSPORT_MATERIAL_MOUNT = "/material"
+LEGACY_NESTED_AUTH_MOUNT = "/grok-home/.grok"
+LEGACY_NESTED_SESSION_MOUNT = "/grok-home/.grok/sessions"
 TRANSPORT_MCP_BRIDGE_MOUNT = "/opt/xinao-attempt/mcp_tool_bridge.py"  # legacy bridge (optional)
 TRANSPORT_MCP_IPC_CONTRACT_MOUNT = "/opt/xinao-attempt/ipc_contract.py"
 # Native attempt-local Grok user config (preferred over project-scoped lab config).
@@ -120,9 +123,21 @@ def transport_container_spec(
     model calls are required. Default is none for offline/fake-client seats.
     Generic file/shell tools must remain disabled in the model invocation;
     tools reach the sidecar only via attempt-local native MCP config.
+
+    Auth host path may be either the auth.json file or a directory containing
+    auth.json; both bind flat to /grok-home/auth.json (Grok 0.2.117 layout).
     """
+    from pathlib import Path as _Path
+
+    auth_src = str(auth_host_path)
+    auth_p = _Path(auth_src)
+    if auth_p.is_dir() or auth_src.rstrip("\\/").endswith((".grok", "auth", "credentials")):
+        # Prefer directory/auth.json when caller still passes legacy auth dir.
+        candidate = auth_p / "auth.json"
+        if candidate.is_file() or not auth_p.is_file():
+            auth_src = str(candidate)
     binds: list[dict[str, str]] = [
-        {"host": auth_host_path, "container": TRANSPORT_AUTH_MOUNT, "mode": "ro"},
+        {"host": auth_src, "container": TRANSPORT_AUTH_MOUNT, "mode": "ro"},
         {"host": input_host_path, "container": TRANSPORT_INPUT_MOUNT, "mode": "ro"},
         {"host": output_host_path, "container": TRANSPORT_OUTPUT_MOUNT, "mode": "rw"},
         {"host": ipc_host_dir, "container": TOOL_IPC_MOUNT, "mode": "rw"},
@@ -807,8 +822,13 @@ def validate_transport_container_inspect(
         if dest == "/var/run/docker.sock" or dest.endswith("docker.sock"):
             violations.append("docker_socket_mounted")
     if require_auth_mount and TRANSPORT_AUTH_MOUNT not in destinations:
-        # Auth may be mounted as parent /grok-home/.grok
-        if not any(d.rstrip("/").endswith(".grok") for d in destinations):
+        # Accept flat auth.json or legacy nested .grok dir during transition.
+        if not any(
+            d in {TRANSPORT_AUTH_MOUNT, LEGACY_NESTED_AUTH_MOUNT}
+            or d.rstrip("/").endswith("auth.json")
+            or d.rstrip("/").endswith(".grok")
+            for d in destinations
+        ):
             violations.append("missing_auth_mount")
     if require_ipc_mount and TOOL_IPC_MOUNT not in destinations:
         violations.append("missing_ipc_mount")

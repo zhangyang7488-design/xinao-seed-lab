@@ -209,6 +209,41 @@ def _append_evidence(path: Path | None, event: Mapping[str, Any]) -> str | None:
     return event_hash
 
 
+def remap_mcp_args_to_ipc(op: str, arguments: Mapping[str, Any] | None) -> dict[str, Any]:
+    """Map published MCP schema args onto IPC contract field names.
+
+    MCP advertises path/content/cwd; IPC requires path_relative/content_utf8/cwd_relative.
+    Accept either shape so schema-native model calls succeed without host-forged aliases.
+    Never invent host absolute paths; never default cwd_relative to \".\".
+    """
+    raw = dict(arguments or {})
+    args = dict(raw)
+    # Prefer explicit IPC names when both are present.
+    if "path_relative" not in args and "path" in args:
+        args["path_relative"] = args.pop("path")
+    elif "path" in args and "path_relative" in args:
+        args.pop("path", None)
+    if "content_utf8" not in args and "content" in args:
+        args["content_utf8"] = args.pop("content")
+    elif "content" in args and "content_utf8" in args:
+        args.pop("content", None)
+    if op == "shell_exec":
+        if "cwd_relative" not in args:
+            if "cwd" in args and str(args.get("cwd") or "").strip() not in {"", "."}:
+                args["cwd_relative"] = args.pop("cwd")
+            else:
+                # Lab root token for shell ops when model omits cwd (never ".").
+                args["cwd_relative"] = "work"
+                args.pop("cwd", None)
+        else:
+            args.pop("cwd", None)
+        if str(args.get("cwd_relative") or "").strip() in {"", "."}:
+            args["cwd_relative"] = "work"
+    else:
+        args.pop("cwd", None)
+    return args
+
+
 def handle_lab_op(
     *,
     op: str,
@@ -225,7 +260,7 @@ def handle_lab_op(
             "contract_id": CONTRACT_ID,
             **authority_clamp_flags(),
         }
-    args = dict(arguments or {})
+    args = remap_mcp_args_to_ipc(op, arguments)
     # Do not allow callers to smuggle authority or host paths via args keys.
     for forbidden in (
         "completion_claim_allowed",

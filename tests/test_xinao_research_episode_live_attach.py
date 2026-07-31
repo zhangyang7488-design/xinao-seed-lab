@@ -89,6 +89,34 @@ def _live_argv(native: Any, session: str, *, resume: bool = False, turns: int = 
     )
 
 
+def _candidate_manifest_bytes(
+    *,
+    episode_id: str = "ep_live_1",
+    attempt_cas_digest: str | None = None,
+) -> bytes:
+    payload = {
+        "schema_version": "xinao.research_episode_candidate_manifest.v1",
+        "manifest_marker": "XINAO_RESEARCH_EPISODE_CANDIDATE_MANIFEST_V1",
+        "candidate_id": "cand_live_1",
+        "candidate_version": "v1",
+        "episode_id": episode_id,
+        "attempt_cas_digest": attempt_cas_digest,
+        "research_question": "bounded OPEN_RESEARCH question",
+        "research_object": "lab candidate body",
+        "data_cutoff": {
+            "as_of": "2026-07-31T00:00:00Z",
+            "material_refs": [{"id": "m1", "sha256": "22" * 32}],
+        },
+        "method_refs": ["experiment_loop"],
+        "falsifiers": ["first shell failed"],
+        "account_recommendation": "NO_RECOMMENDATION",
+        "candidate_only": True,
+        "owner_adopted": False,
+        "completion": False,
+    }
+    return (json.dumps(payload, ensure_ascii=False, sort_keys=True) + "\n").encode("utf-8")
+
+
 def _successful_attempt(
     native: Any,
     *,
@@ -109,10 +137,15 @@ def _successful_attempt(
     pair_receipt: str = "b" * 64,
     namespace_receipt: str = "c" * 64,
     max_turns: int = 16,
+    manifest_bytes: bytes | None = None,
 ) -> dict[str, Any]:
     sid = provider_session or str(uuid.uuid4())
     argv = _live_argv(native, sid, resume=resume, turns=max_turns)
     out = stdout if stdout is not None else _provider_stdout(session_id=sid, turns=5)
+    manifest = manifest_bytes if manifest_bytes is not None else _candidate_manifest_bytes(
+        episode_id=episode_id
+    )
+    manifest_sha = hashlib.sha256(manifest).hexdigest()
     return native.build_live_attempt_record(
         episode_id=episode_id,
         host_session_id=host_session,
@@ -137,7 +170,16 @@ def _successful_attempt(
         release_identity_sha256="d" * 64,
         cas_head_sha256=cas_head,
         mcp_event_hashes=mcp if mcp is not None else _mcp_hashes(),
-        lab_artifact_manifest={"artifacts": [{"path": "notes.md", "sha256": "e" * 64}]},
+        lab_artifact_manifest={
+            "artifacts": [
+                {"path": "notes.md", "sha256": "e" * 64},
+                {
+                    "path": "candidate/candidate_manifest.v1.json",
+                    "sha256": manifest_sha,
+                    "size": str(len(manifest)),
+                },
+            ]
+        },
         prior_attempt_hash=None,
         resume=resume,
         live_executed=live_executed,
@@ -307,13 +349,19 @@ def test_success_persist_export_idempotent_and_authority_clamp(
 ) -> None:
     sid = native.new_session_uuid()
     cas_head = "a" * 64
-    attempt = _successful_attempt(native, provider_session=sid, cas_head=cas_head)
+    manifest = _candidate_manifest_bytes(episode_id="ep_live_1")
+    attempt = _successful_attempt(
+        native, provider_session=sid, cas_head=cas_head, manifest_bytes=manifest
+    )
     assert attempt["status"] == native.STATUS_LIVE_ATTEMPT_RECORDED
     assert attempt["completion_claim_allowed"] is False
     assert attempt["owner_adopted"] is False
     assert attempt["science_restored"] is False
     assert attempt["parent_complete"] is False
     out = tmp_path / "output"
+    lab = tmp_path / "lab"
+    (lab / "candidate").mkdir(parents=True, exist_ok=True)
+    (lab / "candidate" / "candidate_manifest.v1.json").write_bytes(manifest)
     first = native.persist_live_attempt(out, attempt)
     assert first["status"] == native.STATUS_LIVE_ATTEMPT_RECORDED
     assert (out / "attempts" / "last_successful.json").is_file()
@@ -325,6 +373,7 @@ def test_success_persist_export_idempotent_and_authority_clamp(
         exit_code=1,
         cas_head=cas_head,
         stdout=_provider_stdout(session_id=sid, error="late fail"),
+        manifest_bytes=manifest,
     )
     native.persist_live_attempt(out, failed)
     success_ptr = json.loads((out / "attempts" / "last_successful.json").read_text(encoding="utf-8"))
@@ -336,6 +385,7 @@ def test_success_persist_export_idempotent_and_authority_clamp(
         episode_id="ep_live_1",
         cas_head_sha256=cas_head,
         expected_provider_session_uuid=sid,
+        lab_root=lab,
     )
     assert bundle1["status"] == native.STATUS_CANDIDATE_EVIDENCE_EXPORTED
     assert bundle1["completion_claim_allowed"] is False
@@ -347,6 +397,7 @@ def test_success_persist_export_idempotent_and_authority_clamp(
     assert bundle1["freeze_written"] is False
     assert bundle1["settlement_written"] is False
     assert bundle1["portfolio_updated"] is False
+    assert bundle1.get("candidate_manifest_sha256")
 
     bundle2 = native.export_candidate_evidence_bundle(
         episode_output_root=out,
@@ -354,6 +405,7 @@ def test_success_persist_export_idempotent_and_authority_clamp(
         episode_id="ep_live_1",
         cas_head_sha256=cas_head,
         expected_provider_session_uuid=sid,
+        lab_root=lab,
     )
     assert bundle2["idempotent"] is True
     assert bundle2["bundle_sha256"] == bundle1["bundle_sha256"]
@@ -475,11 +527,15 @@ def test_dual_host_live_argv_shape_and_foreign_session(
     assert "--model" in argv and argv[argv.index("--model") + 1] == "grok-4.5"
     assert int(argv[argv.index("--max-turns") + 1]) >= 8
     assert argv[argv.index("--tools") + 1] == "search_tool,use_tool,web_search,web_fetch"
-    assert "--no-subagents" in argv
+    # OPEN_RESEARCH: episode-confined subagents allowed; host tools still stripped.
+    assert "--no-subagents" not in argv
+    assert "--always-approve" in argv
     assert "--disable-web-search" not in argv
     assert "--disallowed-tools" in argv
     denied = argv[argv.index("--disallowed-tools") + 1]
-    assert "run_terminal_cmd" in denied and "web_search" not in denied
+    assert "run_terminal_cmd" in denied and "run_terminal_command" in denied
+    assert "spawn_subagent" in denied
+    assert "web_search" not in denied
 
     host.start_pair()
     host.interrupt_pair()
@@ -561,9 +617,13 @@ def test_dual_host_attach_run_with_mocked_exec_records_evidence(
         }
 
     def fake_exec(argv: Any, *, timeout_seconds: float, env: Any = None) -> Any:
-        # Append productive lab op event so live success can bind attempt delta.
+        # Append productive lab op event + lab FS effect (sidecar + manifest).
         mcp_path = tmp_path / "ep" / "output" / "mcp_events.jsonl"
         mcp_path.parent.mkdir(parents=True, exist_ok=True)
+        lab = tmp_path / "ep" / "lab"
+        manifest = _candidate_manifest_bytes(episode_id="ep_mock_exec")
+        (lab / "candidate").mkdir(parents=True, exist_ok=True)
+        (lab / "candidate" / "candidate_manifest.v1.json").write_bytes(manifest)
         event = {
             "schema_version": "xinao.dual_container_mcp_event.v1",
             "event": "mcp_tools_call",
@@ -572,6 +632,8 @@ def test_dual_host_attach_run_with_mocked_exec_records_evidence(
             "productive": True,
             "episode_id": "ep_mock_exec",
             "server": "episode_lab",
+            "sidecar_event_hash": "cd" * 32,
+            "path_relative": "candidate/candidate_manifest.v1.json",
             "completion_claim_allowed": False,
             "science_restored": False,
             "parent_complete": False,
@@ -592,6 +654,7 @@ def test_dual_host_attach_run_with_mocked_exec_records_evidence(
             assert env.get("GROK_HOME") == "/grok-home"
         native.assert_live_research_argv(list(argv), research_profile="OPEN_RESEARCH")
         assert "--disable-web-search" not in list(argv)
+        assert "--always-approve" in list(argv)
         assert timeout_seconds >= 8
         return subprocess.CompletedProcess(
             args=list(argv),

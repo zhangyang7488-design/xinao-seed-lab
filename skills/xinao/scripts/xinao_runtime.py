@@ -13696,6 +13696,7 @@ def research_episode_export_candidate_evidence(
                     "question": meta.get("question"),
                     "episode_id": meta.get("episode_id"),
                 },
+                lab_root=root / "lab",
             )
         except Exception as exc:
             reason = getattr(exc, "reason_code", None) or "RESEARCH_EPISODE_EXPORT_FAILED"
