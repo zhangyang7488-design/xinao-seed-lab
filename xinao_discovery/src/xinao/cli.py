@@ -150,11 +150,152 @@ def build_parser() -> argparse.ArgumentParser:
     shadow_settle.add_argument("--occurred-at")
     shadow_replay = shadow_commands.add_parser("replay")
     shadow_replay.add_argument("--root", type=Path, required=True)
+    # Packaged Owner consumer for ResearchEpisode pool / feedback (no monorepo walk).
+    research_episode = groups.add_parser(
+        "research-episode",
+        help=(
+            "Candidate-only ResearchEpisode pool ingest and feedback material bind "
+            "(installed xinao-discovery package; no Owner adopt/freeze/settle)"
+        ),
+    )
+    re_commands = research_episode.add_subparsers(dest="command", required=True)
+    re_pool_ingest = re_commands.add_parser(
+        "pool-ingest",
+        help="Ingest sealed export + exact candidate manifest into candidate pool",
+    )
+    re_pool_ingest.add_argument("--pool-root", type=Path, required=True)
+    re_pool_ingest.add_argument("--export", type=Path, required=True)
+    re_pool_ingest.add_argument("--manifest", type=Path, required=True)
+    # Alias matching Skill verb name for discovery parity.
+    re_ingest_export = re_commands.add_parser(
+        "ingest-export",
+        help="Alias of pool-ingest (Skill verb parity)",
+    )
+    re_ingest_export.add_argument("--pool-root", type=Path, required=True)
+    re_ingest_export.add_argument("--export", type=Path, required=True)
+    re_ingest_export.add_argument("--manifest", type=Path, required=True)
+    re_feedback = re_commands.add_parser(
+        "feedback-bind",
+        help="Bind sealed feedback pack as later episode material (input-only)",
+    )
+    re_feedback.add_argument("--portfolio-root", type=Path, required=True)
+    re_feedback.add_argument("--feedback-content-hash", required=True)
+    re_feedback.add_argument("--prior-candidate-result-sha256")
+    re_feedback.add_argument("--prior-candidate-version")
+    re_feedback.add_argument("--settled-portfolio-hash")
+    re_feedback.add_argument("--target-episode-version")
+    re_bind_fb = re_commands.add_parser(
+        "bind-feedback-material",
+        help="Alias of feedback-bind (Skill verb parity)",
+    )
+    re_bind_fb.add_argument("--portfolio-root", type=Path, required=True)
+    re_bind_fb.add_argument("--feedback-content-hash", required=True)
+    re_bind_fb.add_argument("--prior-candidate-result-sha256")
+    re_bind_fb.add_argument("--prior-candidate-version")
+    re_bind_fb.add_argument("--settled-portfolio-hash")
+    re_bind_fb.add_argument("--target-episode-version")
     return parser
+
+
+def _cli_research_episode_pool_ingest(
+    *,
+    pool_root: Path,
+    export_path: Path,
+    manifest_path: Path,
+) -> dict[str, object]:
+    from xinao.science.episode_export_pool_adapter import ingest_verified_episode_export
+
+    if not export_path.is_file():
+        raise FileNotFoundError(f"export missing: {export_path}")
+    if not manifest_path.is_file():
+        raise FileNotFoundError(f"manifest missing: {manifest_path}")
+    entry = ingest_verified_episode_export(
+        pool_root=pool_root,
+        export=export_path.read_bytes(),
+        manifest_bytes=manifest_path.read_bytes(),
+    )
+    return {
+        **dict(entry),
+        "status": "POOL_ENTRY_READY",
+        "owner_adopted": False,
+        "candidate_only": True,
+        "decision_map_projected": False,
+        "freeze_written": False,
+        "settlement_written": False,
+        "disposition_written": False,
+        "next_task_created": False,
+        "completion_claim_allowed": False,
+        "science_restored": False,
+        "parent_complete": False,
+    }
+
+
+def _cli_research_episode_feedback_bind(
+    *,
+    portfolio_root: Path,
+    feedback_content_hash: str,
+    prior_candidate_result_sha256: str | None = None,
+    prior_candidate_version: str | None = None,
+    settled_portfolio_hash: str | None = None,
+    target_episode_version: str | None = None,
+) -> dict[str, object]:
+    from xinao.science.research_feedback_material import (
+        assert_feedback_cannot_rewrite_priors,
+        bind_feedback_pack_as_episode_material,
+    )
+
+    binding = bind_feedback_pack_as_episode_material(
+        portfolio_root=portfolio_root,
+        feedback_content_hash=feedback_content_hash,
+        prior_candidate_result_sha256=prior_candidate_result_sha256,
+        prior_candidate_version=prior_candidate_version,
+        settled_portfolio_hash=settled_portfolio_hash,
+        target_episode_version=target_episode_version,
+    )
+    assert_feedback_cannot_rewrite_priors(binding=binding)
+    return {
+        **dict(binding),
+        "status": "FEEDBACK_MATERIAL_BOUND",
+        "auto_start_next_research": False,
+        "next_task_created": False,
+        "freeze_written": False,
+        "settlement_written": False,
+        "disposition_written": False,
+        "owner_adopted": False,
+        "completion_claim_allowed": False,
+        "science_restored": False,
+        "parent_complete": False,
+    }
 
 
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
+    # wave46 packaged ResearchEpisode Owner consumers (candidate-only clamp).
+    if args.group == "research-episode" and args.command in {
+        "pool-ingest",
+        "ingest-export",
+    }:
+        result = _cli_research_episode_pool_ingest(
+            pool_root=args.pool_root,
+            export_path=args.export,
+            manifest_path=args.manifest,
+        )
+        print(json.dumps(result, ensure_ascii=False, sort_keys=True, default=str))
+        return 0
+    if args.group == "research-episode" and args.command in {
+        "feedback-bind",
+        "bind-feedback-material",
+    }:
+        result = _cli_research_episode_feedback_bind(
+            portfolio_root=args.portfolio_root,
+            feedback_content_hash=args.feedback_content_hash,
+            prior_candidate_result_sha256=getattr(args, "prior_candidate_result_sha256", None),
+            prior_candidate_version=getattr(args, "prior_candidate_version", None),
+            settled_portfolio_hash=getattr(args, "settled_portfolio_hash", None),
+            target_episode_version=getattr(args, "target_episode_version", None),
+        )
+        print(json.dumps(result, ensure_ascii=False, sort_keys=True, default=str))
+        return 0
     if args.group == "catalog" and args.command == "compile":
         kwargs = {"baseline_ref": args.baseline, "output_path": args.out}
         if args.input is not None:

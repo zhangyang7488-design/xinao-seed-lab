@@ -21,6 +21,10 @@ TOOL_LAB_MOUNT = "/episode-lab"
 TOOL_IPC_MOUNT = "/ipc"
 TOOL_TMP = "/tmp"
 TOOL_REPLAY_STATE = f"{TOOL_IPC_MOUNT}/.xinao-replay"
+# Tool-executor-only evidence volume (NOT mounted writable on transport).
+TOOL_SIDECAR_EVIDENCE_MOUNT = "/sidecar-evidence"
+TOOL_SIDECAR_EVENTS_FILENAME = "tool_events.jsonl"
+TOOL_SIDECAR_EVENTS_PATH = f"{TOOL_SIDECAR_EVIDENCE_MOUNT}/{TOOL_SIDECAR_EVENTS_FILENAME}"
 
 # Explicitly forbidden mount sources/targets for tool executor.
 FORBIDDEN_TOOL_MOUNTS = (
@@ -39,11 +43,14 @@ FORBIDDEN_TOOL_MOUNTS = (
 
 
 # Transport container internal mounts for dual-host orchestration.
-TRANSPORT_AUTH_MOUNT = "/grok-home/.grok"
+# Grok 0.2.117: auth.json + sessions live flat under GROK_HOME (not nested .grok/).
+TRANSPORT_AUTH_MOUNT = "/grok-home/auth.json"
 TRANSPORT_INPUT_MOUNT = "/input"
 TRANSPORT_OUTPUT_MOUNT = "/output"
-TRANSPORT_SESSION_MOUNT = "/grok-home/.grok/sessions"
+TRANSPORT_SESSION_MOUNT = "/grok-home/sessions"
 TRANSPORT_MATERIAL_MOUNT = "/material"
+LEGACY_NESTED_AUTH_MOUNT = "/grok-home/.grok"
+LEGACY_NESTED_SESSION_MOUNT = "/grok-home/.grok/sessions"
 TRANSPORT_MCP_BRIDGE_MOUNT = "/opt/xinao-attempt/mcp_tool_bridge.py"  # legacy bridge (optional)
 TRANSPORT_MCP_IPC_CONTRACT_MOUNT = "/opt/xinao-attempt/ipc_contract.py"
 # Native attempt-local Grok user config (preferred over project-scoped lab config).
@@ -51,7 +58,8 @@ TRANSPORT_ATTEMPT_GROK_CONFIG_MOUNT = "/grok-home/config.toml"
 TRANSPORT_ATTEMPT_AGENT_PROFILE_MOUNT = "/grok-home/agents/genuine_scientist_mcp.md"
 TRANSPORT_MCP_SERVER_IMAGE_PATH = "/opt/xinao-researcher/mcp_episode_lab_server.py"
 TRANSPORT_MCP_EVENT_LOG = "/output/mcp_events.jsonl"
-TRANSPORT_MCP_EVIDENCE_MOUNT = "/output/mcp-evidence.jsonl"
+# Canonical only — do not use fragmented aliases (mcp-evidence.jsonl / attempt/...).
+TRANSPORT_MCP_EVIDENCE_MOUNT = TRANSPORT_MCP_EVENT_LOG
 
 # Mount targets that must never appear on either container.
 FORBIDDEN_MOUNT_MARKERS = (
@@ -82,6 +90,8 @@ ALLOWED_TRANSPORT_BIND_TARGETS = frozenset(
         "/episode-lab/.grok/config.toml",  # legacy project-scoped path
         "/episode-scratch",
         "/episode-state",
+        # Explicitly NOT including TOOL_SIDECAR_EVIDENCE_MOUNT: transport must not
+        # write tool-side sealed evidence.
     }
 )
 
@@ -119,9 +129,21 @@ def transport_container_spec(
     model calls are required. Default is none for offline/fake-client seats.
     Generic file/shell tools must remain disabled in the model invocation;
     tools reach the sidecar only via attempt-local native MCP config.
+
+    Auth host path may be either the auth.json file or a directory containing
+    auth.json; both bind flat to /grok-home/auth.json (Grok 0.2.117 layout).
     """
+    from pathlib import Path as _Path
+
+    auth_src = str(auth_host_path)
+    auth_p = _Path(auth_src)
+    if auth_p.is_dir() or auth_src.rstrip("\\/").endswith((".grok", "auth", "credentials")):
+        # Prefer directory/auth.json when caller still passes legacy auth dir.
+        candidate = auth_p / "auth.json"
+        if candidate.is_file() or not auth_p.is_file():
+            auth_src = str(candidate)
     binds: list[dict[str, str]] = [
-        {"host": auth_host_path, "container": TRANSPORT_AUTH_MOUNT, "mode": "ro"},
+        {"host": auth_src, "container": TRANSPORT_AUTH_MOUNT, "mode": "ro"},
         {"host": input_host_path, "container": TRANSPORT_INPUT_MOUNT, "mode": "ro"},
         {"host": output_host_path, "container": TRANSPORT_OUTPUT_MOUNT, "mode": "rw"},
         {"host": ipc_host_dir, "container": TOOL_IPC_MOUNT, "mode": "rw"},
@@ -234,15 +256,23 @@ def transport_container_spec(
         "mcp_server_image_path": TRANSPORT_MCP_SERVER_IMAGE_PATH,
         "mcp_binding": {
             "server": "episode_lab",
-            "tools_allowlist": ["search_tool", "use_tool"],
+            "lab_ops": ["ping", "list_dir", "read_file", "write_file", "shell_exec"],
+            "tools_allowlist": [
+                "search_tool",
+                "use_tool",
+                "web_search",
+                "web_fetch",
+            ],
+            "research_profile_default": "OPEN_RESEARCH",
+            "mcp_events_path": TRANSPORT_MCP_EVENT_LOG,
             "global_config_modified": False,
             "host_config_mounted": False,
         },
         "notes": (
             "Canary ENTRYPOINT remains the default image entrypoint. Dual-host "
             "episode seats may select episode_entrypoint and attempt-local native "
-            "MCP (episode_lab → Unix IPC sidecar). Built-in generic file/shell "
-            "tools stay disabled; genuine profile allowlists search_tool,use_tool only."
+            "MCP (episode_lab lab ops via Grok built-in search_tool/use_tool). "
+            "OPEN_RESEARCH also allows web_search/web_fetch; host file/shell stay stripped."
         ),
         "forbidden": {
             "mount_docker_sock": True,
@@ -262,6 +292,7 @@ def tool_executor_container_spec(
     name: str,
     episode_lab_host_path: str,
     ipc_host_dir: str,
+    sidecar_evidence_host_path: str | None = None,
     ipc_peer_uids: str | None = None,
     bwrap_mode: str = "require",
 ) -> dict[str, Any]:
@@ -272,6 +303,7 @@ def tool_executor_container_spec(
     - XINAO_IPC_PEER_REQUIRE=1 (fail-closed peer identity)
     - XINAO_REPLAY_STATE_DIR under IPC volume (durable anti-replay)
     - XINAO_IPC_PEER_UIDS set by Owner to transport container uid(s)
+    - tool-only /sidecar-evidence volume (not mounted on transport)
     """
     env: dict[str, str] = {
         "HOME": TOOL_TMP,
@@ -281,12 +313,47 @@ def tool_executor_container_spec(
         "XINAO_TOOL_EXEC_BWRAP": bwrap_mode,
         "XINAO_IPC_PEER_REQUIRE": "1",
         "XINAO_REPLAY_STATE_DIR": TOOL_REPLAY_STATE,
+        "XINAO_TOOL_SIDECAR_EVIDENCE_DIR": TOOL_SIDECAR_EVIDENCE_MOUNT,
+        "XINAO_TOOL_SIDECAR_EVENTS_PATH": TOOL_SIDECAR_EVENTS_PATH,
     }
     if ipc_peer_uids is not None:
         env["XINAO_IPC_PEER_UIDS"] = str(ipc_peer_uids)
     else:
         # Empty + require=1 → fail-closed until Owner pins transport peer uid.
         env["XINAO_IPC_PEER_UIDS"] = ""
+    binds: list[dict[str, str]] = [
+        {
+            "host": episode_lab_host_path,
+            "container": TOOL_LAB_MOUNT,
+            "mode": "rw",
+        },
+        {
+            "host": ipc_host_dir,
+            "container": TOOL_IPC_MOUNT,
+            "mode": "rw",
+        },
+    ]
+    if sidecar_evidence_host_path:
+        binds.append(
+            {
+                "host": sidecar_evidence_host_path,
+                "container": TOOL_SIDECAR_EVIDENCE_MOUNT,
+                "mode": "rw",
+            }
+        )
+    entrypoint = [
+        "python",
+        "-I",
+        "/opt/xinao-tool-executor/tool_executor.py",
+        "--lab-root",
+        TOOL_LAB_MOUNT,
+        "--socket",
+        f"{TOOL_IPC_MOUNT}/tool.sock",
+        "--replay-state-dir",
+        TOOL_REPLAY_STATE,
+        "--sidecar-evidence-dir",
+        TOOL_SIDECAR_EVIDENCE_MOUNT,
+    ]
     return {
         "schema_version": "xinao.dual_container_create_spec.v1",
         "role": "tool_executor",
@@ -302,30 +369,9 @@ def tool_executor_container_spec(
         "memory": "512m",
         "cpus": 1.0,
         "env": env,
-        "binds": [
-            {
-                "host": episode_lab_host_path,
-                "container": TOOL_LAB_MOUNT,
-                "mode": "rw",
-            },
-            {
-                "host": ipc_host_dir,
-                "container": TOOL_IPC_MOUNT,
-                "mode": "rw",
-            },
-        ],
+        "binds": binds,
         "tmpfs": [f"{TOOL_TMP}:rw,nosuid,nodev,noexec,size=64m"],
-        "entrypoint": [
-            "python",
-            "-I",
-            "/opt/xinao-tool-executor/tool_executor.py",
-            "--lab-root",
-            TOOL_LAB_MOUNT,
-            "--socket",
-            f"{TOOL_IPC_MOUNT}/tool.sock",
-            "--replay-state-dir",
-            TOOL_REPLAY_STATE,
-        ],
+        "entrypoint": entrypoint,
         "forbidden_binds": list(FORBIDDEN_TOOL_MOUNTS),
         "must_not_contain": [
             "grok binary",
@@ -340,13 +386,16 @@ def tool_executor_container_spec(
         "response_bounds": {
             "max_request_bytes": 65536,
             "max_response_bytes": 262144,
-            "max_timeout_ms": 30000,
+            "default_timeout_ms": 600000,
+            "max_timeout_ms": 3600000,
         },
         "security_profile": {
             "shell_bwrap": bwrap_mode,
             "ipc_peer_require": True,
             "durable_replay": True,
             "replay_state_dir": TOOL_REPLAY_STATE,
+            "sidecar_evidence_mount": TOOL_SIDECAR_EVIDENCE_MOUNT,
+            "sidecar_events_path": TOOL_SIDECAR_EVENTS_PATH,
         },
         "completion_claim_allowed": False,
         "science_restored": False,
@@ -476,16 +525,14 @@ def validate_tool_spec_invariants(spec: dict[str, Any]) -> list[str]:
     replay_dir = str(env.get("XINAO_REPLAY_STATE_DIR", "")).strip()
     if not replay_dir or TOOL_IPC_MOUNT not in replay_dir:
         violations.append("durable_replay_state_not_on_ipc")
+    allowed_tool_binds = {TOOL_LAB_MOUNT, TOOL_IPC_MOUNT, TOOL_SIDECAR_EVIDENCE_MOUNT}
     for bind in spec.get("binds") or []:
         host = str(bind.get("host", ""))
         container = str(bind.get("container", ""))
         for forbidden in FORBIDDEN_TOOL_MOUNTS:
-            if forbidden in (host, container) and container not in {
-                TOOL_LAB_MOUNT,
-                TOOL_IPC_MOUNT,
-            }:
+            if forbidden in (host, container) and container not in allowed_tool_binds:
                 violations.append(f"forbidden_bind:{container}")
-        if container not in {TOOL_LAB_MOUNT, TOOL_IPC_MOUNT}:
+        if container not in allowed_tool_binds:
             violations.append(f"unexpected_bind:{container}")
         lowered = container.lower()
         if any(
@@ -534,6 +581,7 @@ def dual_container_bundle(
     output_host_path: str,
     episode_lab_host_path: str,
     ipc_host_dir: str,
+    sidecar_evidence_host_path: str | None = None,
     run_id: str = "dual-1",
     session_host_path: str | None = None,
     material_host_path: str | None = None,
@@ -568,6 +616,7 @@ def dual_container_bundle(
         name=f"xinao-tool-{run_id}",
         episode_lab_host_path=episode_lab_host_path,
         ipc_host_dir=ipc_host_dir,
+        sidecar_evidence_host_path=sidecar_evidence_host_path,
         ipc_peer_uids=ipc_peer_uids,
         bwrap_mode=bwrap_mode,
     )
@@ -599,8 +648,16 @@ def dual_container_bundle(
                 f"XINAO_REPLAY_STATE_DIR={TOOL_REPLAY_STATE}",
             ],
             "transport_mcp": {
-                "tools_allowlist": ["search_tool", "use_tool"],
+                "tools_allowlist": [
+                    "search_tool",
+                    "use_tool",
+                    "web_search",
+                    "web_fetch",
+                ],
+                "lab_ops": ["ping", "list_dir", "read_file", "write_file", "shell_exec"],
                 "server": "episode_lab",
+                "mcp_events_path": TRANSPORT_MCP_EVENT_LOG,
+                "research_profile_default": "OPEN_RESEARCH",
                 "generic_file_shell_tools": False,
             },
             "validators": {
@@ -785,7 +842,12 @@ def validate_tool_container_inspect(
         for marker in FORBIDDEN_MOUNT_MARKERS:
             if marker in combined:
                 violations.append(f"forbidden_mount:{dest}")
-        if dest and dest not in {TOOL_LAB_MOUNT, TOOL_IPC_MOUNT, TOOL_TMP}:
+        if dest and dest not in {
+            TOOL_LAB_MOUNT,
+            TOOL_IPC_MOUNT,
+            TOOL_TMP,
+            TOOL_SIDECAR_EVIDENCE_MOUNT,
+        }:
             # tmpfs /tmp may appear as mount
             if dest != TOOL_TMP:
                 violations.append(f"unexpected_mount:{dest}")
@@ -841,8 +903,13 @@ def validate_transport_container_inspect(
         if dest == "/var/run/docker.sock" or dest.endswith("docker.sock"):
             violations.append("docker_socket_mounted")
     if require_auth_mount and TRANSPORT_AUTH_MOUNT not in destinations:
-        # Auth may be mounted as parent /grok-home/.grok
-        if not any(d.rstrip("/").endswith(".grok") for d in destinations):
+        # Accept flat auth.json or legacy nested .grok dir during transition.
+        if not any(
+            d in {TRANSPORT_AUTH_MOUNT, LEGACY_NESTED_AUTH_MOUNT}
+            or d.rstrip("/").endswith("auth.json")
+            or d.rstrip("/").endswith(".grok")
+            for d in destinations
+        ):
             violations.append("missing_auth_mount")
     if require_ipc_mount and TOOL_IPC_MOUNT not in destinations:
         violations.append("missing_ipc_mount")
@@ -875,9 +942,9 @@ def attempt_local_mcp_config_toml(
         "--episode-id",
         episode_id,
         "--evidence-path",
-        "/output/mcp-evidence.jsonl",
+        TRANSPORT_MCP_EVENT_LOG,
         "--timeout-ms",
-        "5000",
+        "600000",
     ]
     # TOML array of quoted strings.
     args_toml = ", ".join(f'"{a}"' for a in args)
@@ -888,11 +955,12 @@ def attempt_local_mcp_config_toml(
         f"args = [{args_toml}]\n"
         f"enabled = true\n"
         f"startup_timeout_sec = 15\n"
-        f"tool_timeout_sec = 30\n"
+        f"tool_timeout_sec = 600\n"
         f'env = {{ PYTHONPATH = "/opt/xinao-researcher", PYTHONUNBUFFERED = "1", '
         f'PYTHONUTF8 = "1", XINAO_EPISODE_ID = "{episode_id}", '
         f'XINAO_TOOL_IPC_SOCKET = "{socket_path}", '
-        f'XINAO_MCP_EVIDENCE_PATH = "/output/mcp-evidence.jsonl" }}\n'
+        f'XINAO_MCP_EVIDENCE_PATH = "{TRANSPORT_MCP_EVENT_LOG}", '
+        f'XINAO_MCP_EVENT_LOG = "{TRANSPORT_MCP_EVENT_LOG}" }}\n'
         f"\n"
         f"[features]\n"
         f"lsp_tools = false\n"

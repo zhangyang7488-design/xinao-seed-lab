@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import datetime as dt
 import hashlib
+import importlib
 import importlib.util
 import json
 import math
@@ -128,6 +129,13 @@ EGRESS_REQUIRED_NEGATIVE_CASE_IDS: tuple[str, ...] = (
     "N17c",
     "N17d",
 )
+EGRESS_CANARY_TOOL_NAMESPACE_SECURITY_RELATIVE = Path("security") / "tool_namespace_separation"
+# Semantic alias used by tool-namespace security root and dual-image seal helpers.
+TOOL_NAMESPACE_SECURITY_RELATIVE = EGRESS_CANARY_TOOL_NAMESPACE_SECURITY_RELATIVE
+TOOL_NAMESPACE_DENY_PROOF_EXIT = 17
+TOOL_NAMESPACE_INFRA_EXEC_EXIT_CODES = frozenset({125, 126, 127})
+REQUESTED_MODEL = "grok-4.5"
+# Canary seal pin (distinct consumer name from ordinary REQUESTED_MODEL).
 EGRESS_CANARY_REQUESTED_MODEL = "grok-4.5"
 EGRESS_CANARY_OBSERVED_BACKEND_MODEL = "grok-4.5-build"
 EGRESS_CANARY_STOP_REASON = "EndTurn"
@@ -278,10 +286,17 @@ RESEARCHER_IMAGE_MODULE_INVENTORY: tuple[str, ...] = (
     "transport_broker.py",
     "episode_mcp_binding.py",
     "mcp_episode_lab_server.py",
+    # Package-owned pure validator staged from xinao_discovery (exact same bytes).
+    "research_episode_candidate_manifest.py",
     "empty-grok-profile/.gitkeep",
     "grok-bwrap-unprivileged-wrapper.sh",
     "episode-tool-shell-wrapper.sh",
 )
+# Canonical package path for the pure candidate-manifest validator (no hand-copied body).
+CANDIDATE_MANIFEST_VALIDATOR_PACKAGE_RELATIVE = (
+    Path("xinao_discovery") / "src" / "xinao" / "science" / "research_episode_candidate_manifest.py"
+)
+CANDIDATE_MANIFEST_VALIDATOR_IMAGE_RELATIVE = "research_episode_candidate_manifest.py"
 RESEARCHER_CANARY_ENTRYPOINT_IMAGE_PATH = "/opt/xinao-researcher/entrypoint.py"
 RESEARCHER_EPISODE_ENTRYPOINT_IMAGE_PATH = "/opt/xinao-researcher/episode_entrypoint.py"
 RESEARCHER_DEFAULT_PROFILE = "INSTRUMENT_CANARY"
@@ -368,9 +383,8 @@ SEMVER_PATTERN = re.compile(r"^[0-9]+\.[0-9]+\.[0-9]+$")
 HEX_SHA256_PATTERN = re.compile(r"^[0-9a-f]{64}$")
 # Aligned with bootstrap / Docker image Id format (current-generation only).
 DOCKER_IMAGE_ID_PATTERN = re.compile(r"^sha256:[0-9a-f]{64}$")
-# Physical isolation denial proof exit code (must not collide with docker/exec infra).
-TOOL_NAMESPACE_DENY_PROOF_EXIT = 17
-TOOL_NAMESPACE_INFRA_EXEC_EXIT_CODES = frozenset({125, 126, 127})
+# TOOL_NAMESPACE_DENY_PROOF_EXIT / TOOL_NAMESPACE_INFRA_EXEC_EXIT_CODES defined
+# earlier with tool-namespace security aliases (Owner fail-closed + wave46 host).
 
 RELEASE_SCHEMA = "xinao.researcher_release.v2"
 LEGACY_RELEASE_SCHEMA = "xinao.researcher_release.v1"
@@ -2458,7 +2472,11 @@ def _collect_researcher_image_module_rows(
     for relative in RESEARCHER_IMAGE_MODULE_INVENTORY:
         if relative.startswith("/") or "\\" in relative or ".." in Path(relative).parts:
             raise XinaoError("RESEARCHER_IMAGE_MODULES_INVENTORY_INVALID", relative)
-        path = package_root / relative
+        # Pure candidate-manifest validator: stage exact package-owned source bytes.
+        if relative == CANDIDATE_MANIFEST_VALIDATOR_IMAGE_RELATIVE:
+            path = (source_root / CANDIDATE_MANIFEST_VALIDATOR_PACKAGE_RELATIVE).resolve()
+        else:
+            path = package_root / relative
         if not path.is_file() or _is_reparse(path):
             raise XinaoError("RESEARCHER_IMAGE_MODULES_SOURCE_MISSING", relative)
         payload = _regular_file_bytes(
@@ -12438,6 +12456,66 @@ def _parser() -> argparse.ArgumentParser:
     re_absorb.add_argument("--root", type=Path, required=True)
     re_absorb.add_argument("--expected-head", required=True)
     re_absorb.add_argument("--candidate", type=Path, default=None)
+    # Owner one-shot live provider attach/run (docker exec; not plan-only theater).
+    re_attach = research_episode_sub.add_parser("attach-run")
+    re_attach.add_argument("--root", type=Path, required=True)
+    re_attach.add_argument("--prompt", required=True)
+    re_attach.add_argument("--expected-head", default=None)
+    re_attach.add_argument("--max-turns", type=int, default=None)
+    re_attach.add_argument("--timeout-seconds", type=float, default=None)
+    re_attach.add_argument(
+        "--plan-only",
+        action="store_true",
+        help="Emit planned argv only; never records LIVE_ATTEMPT_RECORDED evidence",
+    )
+    re_resume_live = research_episode_sub.add_parser("resume-live")
+    re_resume_live.add_argument("--root", type=Path, required=True)
+    re_resume_live.add_argument("--expected-provider-session", required=True)
+    re_resume_live.add_argument("--expected-head", required=True)
+    re_resume_live.add_argument("--expected-session", default=None)
+    re_resume_live.add_argument("--prior-attempt-hash", default=None)
+    re_resume_live.add_argument("--prompt", default=None)
+    re_resume_live.add_argument("--max-turns", type=int, default=None)
+    re_resume_live.add_argument("--timeout-seconds", type=float, default=None)
+    re_resume_live.add_argument("--plan-only", action="store_true")
+    re_export = research_episode_sub.add_parser("export-candidate-evidence")
+    re_export.add_argument("--root", type=Path, required=True)
+    re_export.add_argument("--attempt-cas-digest", required=True)
+    re_export.add_argument("--expected-head", required=True)
+    re_export.add_argument("--expected-provider-session", default=None)
+    re_ingest = research_episode_sub.add_parser(
+        "ingest-export",
+        help=(
+            "Owner consumer: sealed episode export + lab manifest bytes -> immutable "
+            "candidate pool entry (owner_adopted=false; never freezes)"
+        ),
+    )
+    re_ingest.add_argument("--pool-root", type=Path, required=True)
+    re_ingest.add_argument(
+        "--export",
+        type=Path,
+        required=True,
+        help="Path to sealed export JSON (candidate evidence bundle)",
+    )
+    re_ingest.add_argument(
+        "--manifest",
+        type=Path,
+        required=True,
+        help="Exact lab candidate_manifest.v1.json bytes path",
+    )
+    re_bind_fb = research_episode_sub.add_parser(
+        "bind-feedback-material",
+        help=(
+            "Owner consumer: sealed settlement feedback pack -> later ResearchEpisode "
+            "material binding only (no auto-start, no rewrite of priors)"
+        ),
+    )
+    re_bind_fb.add_argument("--portfolio-root", type=Path, required=True)
+    re_bind_fb.add_argument("--feedback-content-hash", required=True)
+    re_bind_fb.add_argument("--prior-candidate-result-sha256", default=None)
+    re_bind_fb.add_argument("--prior-candidate-version", default=None)
+    re_bind_fb.add_argument("--settled-portfolio-hash", default=None)
+    re_bind_fb.add_argument("--target-episode-version", default=None)
     # Owner one-shot host security issuer (not episode-local, not autonomous).
     sub.add_parser("issue-tool-namespace-receipt")
     return parser
@@ -12679,6 +12757,7 @@ def _active_release_sealed_dual_images() -> tuple[str, str, dict[str, Any]] | No
         release = context.get("release")
         if not isinstance(release, dict):
             return None
+        # Owner fail-closed: exact current dual-image release key set only.
         if set(release) != CURRENT_RELEASE_KEYS:
             return None
         transport_id = release.get("image_id")
@@ -13982,12 +14061,493 @@ def research_episode_cancel(*, root: Path | str) -> dict[str, Any]:
         return {**committed, "status": "CANCELLED", "completion_claim_allowed": False}
 
 
+def _research_episode_load_dual_host(root: Path) -> Any:
+    host_path = Path(__file__).resolve().parent / "dual_container_host.py"
+    spec = importlib.util.spec_from_file_location(
+        "xinao_dual_container_host_runtime_live", host_path
+    )
+    if spec is None or spec.loader is None:
+        raise XinaoError("DUAL_CONTAINER_HOST_MISSING", str(host_path))
+    host_mod = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = host_mod
+    spec.loader.exec_module(host_mod)
+    transport, tool = _resolve_research_episode_dual_images()
+    auth = os.environ.get("XINAO_AUTH_HOST_PATH", "").strip()
+    synthetic = os.environ.get("XINAO_DUAL_CONTAINER_SYNTHETIC", "").strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
+    if not auth:
+        raise XinaoError(
+            "DUAL_CONTAINER_HOST_CONFIG_REQUIRED",
+            "XINAO_AUTH_HOST_PATH required",
+        )
+    # Live attach/run/export refuse synthetic drivers regardless of env.
+    return host_mod, host_mod.DualContainerHost(
+        host_mod.DualHostConfig(
+            transport_image=transport,
+            tool_image=tool,
+            auth_host_path=Path(auth),
+            episode_root=Path(root),
+            synthetic=synthetic,
+        )
+    )
+
+
+def _research_episode_namespace_and_release_facts() -> dict[str, Any]:
+    """Bind export/attach to canonical namespace receipt + active release when present."""
+    facts: dict[str, Any] = {
+        "namespace_receipt_sha256": None,
+        "release_id": None,
+        "release_identity_sha256": None,
+        "profile_status": _research_episode_resolve_profile_status(Path(".")),
+    }
+    try:
+        receipt = _load_canonical_tool_namespace_receipt()
+    except XinaoError:
+        receipt = None
+    except Exception:
+        receipt = None
+    if receipt is not None:
+        # Pointer carries sealed receipt hash when available.
+        pointer_path = _tool_namespace_security_root() / "current.json"
+        if pointer_path.is_file():
+            try:
+                pointer = json.loads(pointer_path.read_text(encoding="utf-8"))
+                facts["namespace_receipt_sha256"] = pointer.get("receipt_sha256")
+                facts["release_id"] = pointer.get("release_id") or receipt.get("release_id")
+                facts["release_identity_sha256"] = pointer.get(
+                    "release_identity_sha256"
+                ) or receipt.get("release_identity_sha256")
+            except (OSError, json.JSONDecodeError):
+                facts["release_id"] = receipt.get("release_id")
+                facts["release_identity_sha256"] = receipt.get("release_identity_sha256")
+        else:
+            facts["release_id"] = receipt.get("release_id")
+            facts["release_identity_sha256"] = receipt.get("release_identity_sha256")
+    return facts
+
+
+def research_episode_attach_run(
+    *,
+    root: Path | str,
+    prompt: str,
+    expected_head_sha256: str | None = None,
+    max_turns: int | None = None,
+    timeout_seconds: float | None = None,
+    plan_only: bool = False,
+) -> dict[str, Any]:
+    """Owner one-shot live Grok attach/run inside transport container.
+
+    Never creates next task, freezes, settles, or claims parent completion.
+    Status vocabulary: PLANNED | ATTEMPT_FAILED | LIVE_ATTEMPT_RECORDED.
+    """
+    root = Path(root)
+    _research_episode_assert_root_allowed(root)
+    with _research_episode_lock(root):
+        head = _research_episode_load_head(root)
+        meta = _research_episode_read_meta(root)
+        if head.get("status") in {"CANCELLED", "ABSORBED"}:
+            raise XinaoError("RESEARCH_EPISODE_TERMINAL", str(head.get("status")))
+        if (
+            expected_head_sha256 is not None
+            and head.get("head_checkpoint_sha256") != expected_head_sha256
+        ):
+            raise XinaoError("RESEARCH_EPISODE_STALE_HEAD", expected_head_sha256)
+        profile_status = _research_episode_resolve_profile_status(root)
+        if profile_status != RESEARCH_EPISODE_PROFILE_STATUS_VERIFIED:
+            raise XinaoError(
+                "RESEARCH_EPISODE_NAMESPACE_UNVERIFIED",
+                profile_status,
+            )
+        facts = _research_episode_namespace_and_release_facts()
+        _host_mod, host = _research_episode_load_dual_host(root)
+        try:
+            result = host.attach_run_live(
+                prompt=prompt,
+                max_turns=max_turns,
+                timeout_seconds=timeout_seconds,
+                expected_episode_id=str(meta["episode_id"]),
+                expected_host_session_id=str(meta["session_id"]),
+                cas_head_sha256=str(head["head_checkpoint_sha256"]),
+                namespace_receipt_sha256=facts.get("namespace_receipt_sha256"),
+                release_id=facts.get("release_id"),
+                release_identity_sha256=facts.get("release_identity_sha256"),
+                plan_only=plan_only,
+            )
+        except Exception as exc:
+            # DualHostError / NativeSessionError map to XinaoError reason codes.
+            reason = getattr(exc, "reason_code", None) or "RESEARCH_EPISODE_ATTACH_FAILED"
+            raise XinaoError(str(reason), str(exc)[:2000]) from exc
+        _research_episode_append_journal(
+            root,
+            {
+                "verb": "attach-run",
+                "at": dt.datetime.now(dt.UTC).isoformat().replace("+00:00", "Z"),
+                "status": result.get("status"),
+                "attempt_cas_digest": result.get("attempt_cas_digest"),
+                "attempt_hash": result.get("attempt_hash"),
+                "plan_only": bool(plan_only),
+            },
+        )
+        return {
+            **result,
+            "episode_id": meta["episode_id"],
+            "host_session_id": meta["session_id"],
+            "cas_head_sha256": head["head_checkpoint_sha256"],
+            "profile_status": profile_status,
+            "next_task_created": False,
+            "disposition_written": False,
+            "freeze_written": False,
+            "settlement_written": False,
+            "portfolio_updated": False,
+            "completion_claim_allowed": False,
+            "owner_adopted": False,
+            "science_restored": False,
+            "parent_complete": False,
+        }
+
+
+def research_episode_resume_live(
+    *,
+    root: Path | str,
+    expected_provider_session_uuid: str,
+    expected_head_sha256: str,
+    expected_session_id: str | None = None,
+    prior_attempt_hash: str | None = None,
+    prompt: str | None = None,
+    max_turns: int | None = None,
+    timeout_seconds: float | None = None,
+    plan_only: bool = False,
+) -> dict[str, Any]:
+    """Owner one-shot provider-session resume via real --resume docker exec."""
+    root = Path(root)
+    _research_episode_assert_root_allowed(root)
+    with _research_episode_lock(root):
+        head = _research_episode_load_head(root)
+        meta = _research_episode_read_meta(root)
+        if head.get("status") in {"CANCELLED", "ABSORBED"}:
+            raise XinaoError("RESEARCH_EPISODE_TERMINAL", str(head.get("status")))
+        if head.get("head_checkpoint_sha256") != expected_head_sha256:
+            raise XinaoError("RESEARCH_EPISODE_STALE_HEAD", expected_head_sha256)
+        if expected_session_id is not None and expected_session_id != meta["session_id"]:
+            raise XinaoError("RESEARCH_EPISODE_FOREIGN_SESSION", expected_session_id)
+        profile_status = _research_episode_resolve_profile_status(root)
+        if profile_status != RESEARCH_EPISODE_PROFILE_STATUS_VERIFIED:
+            raise XinaoError(
+                "RESEARCH_EPISODE_NAMESPACE_UNVERIFIED",
+                profile_status,
+            )
+        facts = _research_episode_namespace_and_release_facts()
+        _host_mod, host = _research_episode_load_dual_host(root)
+        try:
+            result = host.resume_live(
+                expected_provider_session_uuid=expected_provider_session_uuid,
+                expected_host_session_id=str(meta["session_id"]),
+                expected_episode_id=str(meta["episode_id"]),
+                expected_cas_head_sha256=expected_head_sha256,
+                prior_attempt_hash=prior_attempt_hash,
+                prompt=prompt,
+                max_turns=max_turns,
+                timeout_seconds=timeout_seconds,
+                namespace_receipt_sha256=facts.get("namespace_receipt_sha256"),
+                release_id=facts.get("release_id"),
+                release_identity_sha256=facts.get("release_identity_sha256"),
+                plan_only=plan_only,
+            )
+        except Exception as exc:
+            reason = getattr(exc, "reason_code", None) or "RESEARCH_EPISODE_RESUME_LIVE_FAILED"
+            raise XinaoError(str(reason), str(exc)[:2000]) from exc
+        _research_episode_append_journal(
+            root,
+            {
+                "verb": "resume-live",
+                "at": dt.datetime.now(dt.UTC).isoformat().replace("+00:00", "Z"),
+                "status": result.get("status"),
+                "provider_session_uuid": expected_provider_session_uuid,
+                "attempt_cas_digest": result.get("attempt_cas_digest"),
+                "plan_only": bool(plan_only),
+            },
+        )
+        return {
+            **result,
+            "episode_id": meta["episode_id"],
+            "host_session_id": meta["session_id"],
+            "cas_head_sha256": head["head_checkpoint_sha256"],
+            "profile_status": profile_status,
+            "next_task_created": False,
+            "disposition_written": False,
+            "freeze_written": False,
+            "settlement_written": False,
+            "portfolio_updated": False,
+            "completion_claim_allowed": False,
+            "owner_adopted": False,
+            "science_restored": False,
+            "parent_complete": False,
+        }
+
+
+def research_episode_export_candidate_evidence(
+    *,
+    root: Path | str,
+    attempt_cas_digest: str,
+    expected_head_sha256: str,
+    expected_provider_session_uuid: str | None = None,
+) -> dict[str, Any]:
+    """Owner one-shot export of candidate-only evidence bundle from attempt CAS.
+
+    Identities are derived from sealed attempt evidence + episode head. Does not
+    require containers still running. Never writes shadow/adoption/freeze state.
+    """
+    root = Path(root)
+    _research_episode_assert_root_allowed(root)
+    with _research_episode_lock(root):
+        head = _research_episode_load_head(root)
+        meta = _research_episode_read_meta(root)
+        if head.get("head_checkpoint_sha256") != expected_head_sha256:
+            raise XinaoError("RESEARCH_EPISODE_STALE_HEAD", expected_head_sha256)
+        facts = _research_episode_namespace_and_release_facts()
+        # parents: scripts -> xinao -> skills -> repo root
+        native_path = (
+            Path(__file__).resolve().parent.parent.parent.parent
+            / "docker"
+            / "xinao-researcher"
+            / "native_grok_session.py"
+        )
+        spec = importlib.util.spec_from_file_location(
+            "xinao_native_grok_session_export", native_path
+        )
+        if spec is None or spec.loader is None:
+            raise XinaoError("NATIVE_GROK_SESSION_MISSING", str(native_path))
+        native = importlib.util.module_from_spec(spec)
+        sys.modules[spec.name] = native
+        spec.loader.exec_module(native)
+        # Optional pair receipt identity from episode root when still present.
+        pair_path = root / "dual_container_pair_receipt.json"
+        pair_sha = None
+        transport_image = None
+        tool_image = None
+        if pair_path.is_file():
+            try:
+                receipt = json.loads(pair_path.read_text(encoding="utf-8"))
+                body = {k: v for k, v in receipt.items() if k != "pair_receipt_sha256"}
+                pair_sha = _sha256_bytes(_canonical_bytes(body))
+                transport_image = receipt.get("transport_image_id")
+                tool_image = receipt.get("tool_image_id")
+            except (OSError, json.JSONDecodeError, TypeError):
+                pair_sha = None
+        try:
+            result = native.export_candidate_evidence_bundle(
+                episode_output_root=root / "output",
+                attempt_cas_digest=attempt_cas_digest,
+                episode_id=str(meta["episode_id"]),
+                cas_head_sha256=expected_head_sha256,
+                expected_provider_session_uuid=expected_provider_session_uuid,
+                expected_pair_receipt_sha256=pair_sha,
+                expected_namespace_receipt_sha256=facts.get("namespace_receipt_sha256"),
+                expected_transport_image_id=transport_image,
+                expected_tool_image_id=tool_image,
+                package_release_id=facts.get("release_id"),
+                package_release_identity_sha256=facts.get("release_identity_sha256"),
+                prompt_material_cutoff={
+                    "question": meta.get("question"),
+                    "episode_id": meta.get("episode_id"),
+                },
+                lab_root=root / "lab",
+            )
+        except Exception as exc:
+            reason = getattr(exc, "reason_code", None) or "RESEARCH_EPISODE_EXPORT_FAILED"
+            raise XinaoError(str(reason), str(exc)[:2000]) from exc
+        _research_episode_append_journal(
+            root,
+            {
+                "verb": "export-candidate-evidence",
+                "at": dt.datetime.now(dt.UTC).isoformat().replace("+00:00", "Z"),
+                "status": result.get("status"),
+                "attempt_cas_digest": attempt_cas_digest,
+                "bundle_sha256": result.get("bundle_sha256"),
+            },
+        )
+        return {
+            **result,
+            "episode_id": meta["episode_id"],
+            "host_session_id": meta["session_id"],
+            "cas_head_sha256": head["head_checkpoint_sha256"],
+            "next_task_created": False,
+            "disposition_written": False,
+            "freeze_written": False,
+            "settlement_written": False,
+            "portfolio_updated": False,
+            "completion_claim_allowed": False,
+            "owner_adopted": False,
+            "science_restored": False,
+            "parent_complete": False,
+        }
+
+
+def _import_discovery_science(module_name: str) -> Any:
+    """Import xinao.science.* preferring installed package, then monorepo src.
+
+    Installed Skill under ``~/.codex/skills/xinao`` has parents[3] outside the
+    monorepo; monorepo-only path walk must not be the primary consumer route.
+    Prefer sealed ``xinao-discovery`` package import first.
+    """
+
+    leaf = module_name.rsplit(".", 1)[-1]
+    # 1) Installed / site-packages package (fresh wheel or sealed env).
+    try:
+        return importlib.import_module(f"xinao.science.{leaf}")
+    except ImportError:
+        pass
+    # 2) Explicit override or monorepo discovery src (dev / worktree only).
+    repo_root = Path(__file__).resolve().parents[3]
+    discovery_src = Path(
+        os.environ.get("XINAO_DISCOVERY_SRC") or (repo_root / "xinao_discovery" / "src")
+    )
+    adapter_path = discovery_src / "xinao" / "science" / f"{leaf}.py"
+    if not discovery_src.is_dir() or not adapter_path.is_file():
+        raise XinaoError(
+            "EPISODE_POOL_ADAPTER_UNAVAILABLE",
+            (
+                f"installed xinao.science.{leaf} missing and monorepo src not found "
+                f"at {discovery_src}; install xinao-discovery or set XINAO_DISCOVERY_SRC"
+            ),
+        )
+    src = str(discovery_src)
+    if src in sys.path:
+        sys.path.remove(src)
+    sys.path.insert(0, src)
+    # Avoid skills/xinao name collision with package `xinao`.
+    existing = sys.modules.get("xinao")
+    if existing is not None and not hasattr(existing, "science"):
+        del sys.modules["xinao"]
+        for key in list(sys.modules):
+            if key.startswith("xinao."):
+                del sys.modules[key]
+    try:
+        return importlib.import_module(f"xinao.science.{leaf}")
+    except ImportError as exc:
+        raise XinaoError(
+            "EPISODE_POOL_ADAPTER_UNAVAILABLE",
+            f"xinao.science.{leaf} import failed: {exc}",
+        ) from exc
+
+
+def research_episode_ingest_export(
+    *,
+    pool_root: Path | str,
+    export_path: Path | str,
+    manifest_path: Path | str,
+) -> dict[str, Any]:
+    """Owner-callable pool admission: sealed export + exact manifest bytes.
+
+    Never freezes, settles, adopts, or starts next tasks. Separate from Owner disposition.
+    """
+    pool_root = Path(pool_root)
+    export_path = Path(export_path)
+    manifest_path = Path(manifest_path)
+    if not export_path.is_file():
+        raise XinaoError("EPISODE_EXPORT_MISSING", str(export_path))
+    if not manifest_path.is_file():
+        raise XinaoError("CANDIDATE_MANIFEST_MISSING", str(manifest_path))
+    try:
+        adapter = _import_discovery_science("episode_export_pool_adapter")
+    except XinaoError:
+        raise
+    except Exception as exc:
+        raise XinaoError("EPISODE_POOL_ADAPTER_UNAVAILABLE", str(exc)[:2000]) from exc
+    export_raw = export_path.read_bytes()
+    manifest_raw = manifest_path.read_bytes()
+    try:
+        entry = adapter.ingest_verified_episode_export(
+            pool_root=pool_root,
+            export=export_raw,
+            manifest_bytes=manifest_raw,
+        )
+    except Exception as exc:
+        reason = getattr(exc, "reason_code", None) or "EPISODE_POOL_INGEST_FAILED"
+        detail = getattr(exc, "detail", None) or str(exc)
+        raise XinaoError(str(reason), str(detail)[:2000]) from exc
+    return {
+        **dict(entry),
+        "status": "POOL_ENTRY_READY",
+        "ingest_kind": entry.get("ingest_kind"),
+        "result_sha256": entry.get("result_sha256"),
+        "owner_adopted": False,
+        "candidate_only": True,
+        "decision_map_projected": False,
+        "freeze_written": False,
+        "settlement_written": False,
+        "disposition_written": False,
+        "next_task_created": False,
+        "completion_claim_allowed": False,
+        "science_restored": False,
+        "parent_complete": False,
+    }
+
+
+def research_episode_bind_feedback_material(
+    *,
+    portfolio_root: Path | str,
+    feedback_content_hash: str,
+    prior_candidate_result_sha256: str | None = None,
+    prior_candidate_version: str | None = None,
+    settled_portfolio_hash: str | None = None,
+    target_episode_version: str | None = None,
+) -> dict[str, Any]:
+    """Owner-callable feedback material binding for a later ResearchEpisode version.
+
+    Input-only; never auto-starts research, never rewrites prior CAS.
+    """
+    portfolio_root = Path(portfolio_root)
+    try:
+        material = _import_discovery_science("research_feedback_material")
+    except XinaoError:
+        raise
+    except Exception as exc:
+        raise XinaoError("FEEDBACK_MATERIAL_ADAPTER_UNAVAILABLE", str(exc)[:2000]) from exc
+    try:
+        binding = material.bind_feedback_pack_as_episode_material(
+            portfolio_root=portfolio_root,
+            feedback_content_hash=feedback_content_hash,
+            prior_candidate_result_sha256=prior_candidate_result_sha256,
+            prior_candidate_version=prior_candidate_version,
+            settled_portfolio_hash=settled_portfolio_hash,
+            target_episode_version=target_episode_version,
+        )
+        material.assert_feedback_cannot_rewrite_priors(binding=binding)
+    except Exception as exc:
+        reason = getattr(exc, "reason_code", None) or "FEEDBACK_MATERIAL_BIND_FAILED"
+        detail = getattr(exc, "detail", None) or str(exc)
+        raise XinaoError(str(reason), str(detail)[:2000]) from exc
+    return {
+        **dict(binding),
+        "status": "FEEDBACK_MATERIAL_BOUND",
+        "auto_start_next_research": False,
+        "next_task_created": False,
+        "freeze_written": False,
+        "settlement_written": False,
+        "disposition_written": False,
+        "owner_adopted": False,
+        "completion_claim_allowed": False,
+        "science_restored": False,
+        "parent_complete": False,
+    }
+
+
 def research_episode_absorb(
     *,
     root: Path | str,
     expected_head_sha256: str,
     candidate: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
+    """DEPRECATED placeholder outbox only — NOT candidate-pool admission.
+
+    Prefer research-episode export-candidate-evidence + ingest-export.
+    This verb must not masquerade as pool admission.
+    """
     root = Path(root)
     with _research_episode_lock(root):
         head = _research_episode_load_head(root)
@@ -14000,7 +14560,9 @@ def research_episode_absorb(
             candidate = {
                 "schema_version": "xinao.research_episode_candidate.v1",
                 "status": "CANDIDATE_FOR_CODEX_REVIEW",
-                "summary": "typed candidate placeholder",
+                "summary": "typed candidate placeholder — NOT pool admission",
+                "pool_admission": False,
+                "deprecated_placeholder": True,
                 "owner_adopted": False,
                 "scientific_grade": None,
                 "profitability_claim_allowed": False,
@@ -14060,6 +14622,9 @@ def research_episode_absorb(
             **committed,
             "status": "ABSORBED_FOR_CODEX_REVIEW",
             "codex_review_only": True,
+            "pool_admission": False,
+            "deprecated_placeholder": True,
+            "not_candidate_pool_entry": True,
             "owner_adopted": False,
             "scientific_grade": candidate.get("scientific_grade"),
             "candidate_sha256": cand_digest,
@@ -14182,6 +14747,49 @@ def main(argv: Sequence[str] | None = None) -> int:
                     root=args.root,
                     expected_head_sha256=args.expected_head,
                     candidate=candidate,
+                )
+            elif args.research_episode_command == "attach-run":
+                value = research_episode_attach_run(
+                    root=args.root,
+                    prompt=args.prompt,
+                    expected_head_sha256=args.expected_head,
+                    max_turns=args.max_turns,
+                    timeout_seconds=args.timeout_seconds,
+                    plan_only=bool(args.plan_only),
+                )
+            elif args.research_episode_command == "resume-live":
+                value = research_episode_resume_live(
+                    root=args.root,
+                    expected_provider_session_uuid=args.expected_provider_session,
+                    expected_head_sha256=args.expected_head,
+                    expected_session_id=args.expected_session,
+                    prior_attempt_hash=args.prior_attempt_hash,
+                    prompt=args.prompt,
+                    max_turns=args.max_turns,
+                    timeout_seconds=args.timeout_seconds,
+                    plan_only=bool(args.plan_only),
+                )
+            elif args.research_episode_command == "export-candidate-evidence":
+                value = research_episode_export_candidate_evidence(
+                    root=args.root,
+                    attempt_cas_digest=args.attempt_cas_digest,
+                    expected_head_sha256=args.expected_head,
+                    expected_provider_session_uuid=args.expected_provider_session,
+                )
+            elif args.research_episode_command == "ingest-export":
+                value = research_episode_ingest_export(
+                    pool_root=args.pool_root,
+                    export_path=args.export,
+                    manifest_path=args.manifest,
+                )
+            elif args.research_episode_command == "bind-feedback-material":
+                value = research_episode_bind_feedback_material(
+                    portfolio_root=args.portfolio_root,
+                    feedback_content_hash=args.feedback_content_hash,
+                    prior_candidate_result_sha256=args.prior_candidate_result_sha256,
+                    prior_candidate_version=args.prior_candidate_version,
+                    settled_portfolio_hash=args.settled_portfolio_hash,
+                    target_episode_version=args.target_episode_version,
                 )
             else:
                 raise XinaoError(

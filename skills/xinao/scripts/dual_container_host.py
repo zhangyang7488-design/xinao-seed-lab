@@ -35,6 +35,11 @@ LEASE_FILENAME = "dual_container_pair_lease.json"
 SESSION_INVENTORY_FILENAME = "session_inventory.json"
 PAIR_RECEIPT_FILENAME = "dual_container_pair_receipt.json"
 MCP_EVENTS_FILENAME = "mcp_events.jsonl"
+CANONICAL_GROK_HOME = "/grok-home"
+CANONICAL_LAB_CWD = "/episode-lab"
+CANONICAL_MCP_EVENTS = "/output/mcp_events.jsonl"
+CANONICAL_AGENT_PROFILE = "/grok-home/agents/genuine_scientist_mcp.md"
+DEFAULT_RESEARCH_PROFILE = "OPEN_RESEARCH"
 PAIR_PHASES = frozenset(
     {
         "created",
@@ -148,6 +153,9 @@ class DualContainerHost:
             "sessions": self.episode_root / "sessions",
             "attempt": self.episode_root / "attempt",
             "ipc_bind": self.episode_root / "ipc",
+            # Tool-executor-only evidence (NOT mounted on transport).
+            "sidecar_evidence": self.episode_root / "sidecar_evidence",
+            "tool_events": self.episode_root / "sidecar_evidence" / "tool_events.jsonl",
             "lease": self.episode_root / LEASE_FILENAME,
             "session_inventory": self.episode_root / SESSION_INVENTORY_FILENAME,
             "pair_receipt": self.episode_root / PAIR_RECEIPT_FILENAME,
@@ -171,7 +179,15 @@ class DualContainerHost:
             stream.write(line + "\n")
 
     def _ensure_layout(self) -> None:
-        for key in ("lab", "inputs", "output", "sessions", "attempt", "ipc_bind"):
+        for key in (
+            "lab",
+            "inputs",
+            "output",
+            "sessions",
+            "attempt",
+            "ipc_bind",
+            "sidecar_evidence",
+        ):
             self.paths[key].mkdir(parents=True, exist_ok=True)
 
     def _load_mcp_binding(self) -> Any:
@@ -199,11 +215,19 @@ class DualContainerHost:
         spec.loader.exec_module(module)
         return module
 
-    def _materialize_attempt_mcp(self, episode_id: str) -> dict[str, Any]:
+    def _materialize_attempt_mcp(
+        self,
+        episode_id: str,
+        *,
+        research_profile: str = DEFAULT_RESEARCH_PROFILE,
+    ) -> dict[str, Any]:
         """Materialize attempt-local native Grok MCP (episode_lab only; no fake bridge)."""
         bind_mod = self._load_mcp_binding()
+        # Host files are bind-mounted onto /grok-home/*; container GROK_HOME must be /grok-home.
         grok_home = self.paths["attempt"] / "grok-home"
         grok_home.mkdir(parents=True, exist_ok=True)
+        host_evidence = self.paths["mcp_events"]
+        host_evidence.parent.mkdir(parents=True, exist_ok=True)
         receipt = bind_mod.materialize_attempt_local_binding(
             root=self.paths["attempt"],
             episode_id=episode_id,
@@ -211,26 +235,34 @@ class DualContainerHost:
             server_path="/opt/xinao-researcher/mcp_episode_lab_server.py",
             pythonpath="/opt/xinao-researcher",
             grok_home=grok_home,
+            research_profile=research_profile,
+            evidence_path=CANONICAL_MCP_EVENTS,
+            host_evidence_mirror=host_evidence,
         )
         config_path = Path(receipt["config_toml"])
         profile_path = Path(receipt["agent_profile"])
-        if "mcp_servers.episode_lab" not in config_path.read_text(encoding="utf-8"):
+        cfg_text = config_path.read_text(encoding="utf-8")
+        if "mcp_servers.episode_lab" not in cfg_text:
             raise DualHostError("DUAL_HOST_MCP_CONFIG_INVALID", "episode_lab missing")
-        if "mcp_episode_lab_server.py" not in config_path.read_text(encoding="utf-8"):
+        if "mcp_episode_lab_server.py" not in cfg_text:
             raise DualHostError("DUAL_HOST_MCP_CONFIG_INVALID", "native server missing")
-        # Keep a lab-local mirror for hosts that still scan project-scoped .grok.
+        if CANONICAL_MCP_EVENTS not in cfg_text:
+            raise DualHostError("DUAL_HOST_MCP_EVIDENCE_PATH", "canonical events path missing")
+        for bad in ("/output/mcp-evidence.jsonl", "/attempt/mcp-evidence.jsonl"):
+            if bad in cfg_text:
+                raise DualHostError("DUAL_HOST_MCP_EVIDENCE_FRAGMENT", bad)
         lab_grok = self.paths["lab"] / ".grok"
         lab_grok.mkdir(parents=True, exist_ok=True)
-        (lab_grok / "config.toml").write_text(
-            config_path.read_text(encoding="utf-8"), encoding="utf-8"
-        )
+        (lab_grok / "config.toml").write_text(cfg_text, encoding="utf-8")
         return {
             "mcp_config": config_path,
             "agent_profile": profile_path,
             "grok_home": grok_home,
             "binding_receipt": receipt,
             "binding_receipt_sha256": str(receipt.get("receipt_sha256") or ""),
-            "evidence_path": Path(receipt["evidence_path"]),
+            "evidence_path": host_evidence,
+            "canonical_evidence_path": CANONICAL_MCP_EVENTS,
+            "research_profile": receipt.get("research_profile") or research_profile,
         }
 
     def load_lease(self) -> dict[str, Any] | None:
@@ -275,6 +307,7 @@ class DualContainerHost:
         session_id: str,
         resume_session_id: str | None = None,
         new_session_id: str | None = None,
+        research_profile: str = DEFAULT_RESEARCH_PROFILE,
     ) -> dict[str, Any]:
         """Create IPC volume, materialize attempt MCP, create both containers (not start)."""
         if not episode_id or not session_id:
@@ -283,7 +316,12 @@ class DualContainerHost:
         if existing and existing.get("phase") not in {"cancelled", "retired"}:
             raise DualHostError("DUAL_HOST_LEASE_EXISTS", str(self.paths["lease"]))
         self._ensure_layout()
-        attempt = self._materialize_attempt_mcp(episode_id)
+        profile = str(research_profile or DEFAULT_RESEARCH_PROFILE).strip().upper()
+        if profile in {"GENUINE_SCIENTIST_EPISODE", "GENUINE", "GENUINE_SCIENTIST"}:
+            profile = DEFAULT_RESEARCH_PROFILE
+        if profile not in {"OPEN_RESEARCH", "CLOSED_LAB"}:
+            raise DualHostError("DUAL_HOST_UNKNOWN_PROFILE", profile)
+        attempt = self._materialize_attempt_mcp(episode_id, research_profile=profile)
         names = self.specs.pair_resource_names(episode_id)
         transport_image_id = self.resolve_image_id(self.config.transport_image)
         tool_image_id = self.resolve_image_id(self.config.tool_image)
@@ -325,6 +363,7 @@ class DualContainerHost:
             output_host_path=str(self.paths["output"]),
             episode_lab_host_path=str(self.paths["lab"]),
             ipc_host_dir=ipc_for_spec,
+            sidecar_evidence_host_path=str(self.paths["sidecar_evidence"]),
             run_id=names["run_id"],
             session_host_path=str(self.paths["sessions"]),
             material_host_path=material_path,
@@ -402,9 +441,25 @@ class DualContainerHost:
             "tool_container_id": tool_id,
             "durable_session_dir": str(self.paths["sessions"]),
             "authority": "host_episode_head_not_provider_memory",
+            "research_profile": profile,
             "completion_claim_allowed": False,
         }
         self._save_session_inventory(inventory)
+        # Bind supported CLI identity into pair receipt (fail closed on live probe mismatch).
+        native_mod = self._load_native_session()
+        supported_cli = getattr(native_mod, "SUPPORTED_GROK_CLI_VERSION", "0.2.117")
+        if not self.config.synthetic:
+            try:
+                probe = native_mod.probe_grok_cli(require_supported_version=True)
+                if probe.auth_error and str(probe.auth_error).startswith(
+                    "GROK_CLI_VERSION_UNSUPPORTED"
+                ):
+                    raise DualHostError("GROK_CLI_VERSION_UNSUPPORTED", probe.auth_error)
+            except DualHostError:
+                raise
+            except Exception:
+                # Host probe optional when binary unavailable offline; receipt still pins version.
+                pass
         pair_receipt = {
             "schema_version": PAIR_RECEIPT_SCHEMA,
             "episode_id": episode_id,
@@ -417,11 +472,14 @@ class DualContainerHost:
             "transport_container_name": names["transport_name"],
             "ipc_volume": ipc_volume if ipc_mount_type == "volume" else None,
             "ipc_host_dir": str(self.paths["ipc_bind"]),
+            "sidecar_evidence_host_dir": str(self.paths["sidecar_evidence"]),
+            "tool_sidecar_events_path": str(self.paths["tool_events"]),
             "socket_basename": "tool.sock",
             "mcp_server": "episode_lab",
             "mcp_config_sha256": _sha256_bytes(attempt["mcp_config"].read_bytes()),
             "mcp_binding_receipt_sha256": attempt.get("binding_receipt_sha256"),
             "generic_file_shell_tools": False,
+            "supported_grok_cli_version": supported_cli,
             "daemon": False,
             "created_at": _utc_now(),
             "completion_claim_allowed": False,
@@ -458,6 +516,7 @@ class DualContainerHost:
             "mcp_binding_receipt_sha256": attempt.get("binding_receipt_sha256"),
             "pair_receipt_sha256": pair_receipt_sha256,
             "mcp_server": "episode_lab",
+            "research_profile": profile,
             "generic_file_shell_tools": False,
             "daemon": False,
             "created_at": _utc_now(),
@@ -841,6 +900,34 @@ class DualContainerHost:
                 hashes.append(_sha256_bytes(line.encode("utf-8")))
         return hashes
 
+    def capture_mcp_event_cursor(self) -> dict[str, Any]:
+        native = self._load_native_session()
+        return native.capture_mcp_event_cursor(self.paths["mcp_events"])
+
+    def collect_attempt_mcp_delta(
+        self,
+        prior_cursor: Mapping[str, Any] | None,
+        *,
+        expected_episode_id: str | None = None,
+    ) -> dict[str, Any]:
+        native = self._load_native_session()
+        try:
+            return native.collect_attempt_mcp_delta(
+                self.paths["mcp_events"],
+                prior_cursor,
+                expected_episode_id=expected_episode_id,
+            )
+        except native.NativeSessionError as exc:
+            raise DualHostError(exc.reason_code, exc.detail) from exc
+
+    def sealed_research_profile(self) -> str:
+        lease = self.load_lease() or {}
+        inv = self.load_session_inventory() or {}
+        profile = (
+            lease.get("research_profile") or inv.get("research_profile") or DEFAULT_RESEARCH_PROFILE
+        )
+        return str(profile).strip().upper()
+
     def checkpoint_bind(
         self,
         *,
@@ -915,37 +1002,72 @@ class DualContainerHost:
             "completion_claim_allowed": False,
         }
 
+    def _load_native_session(self) -> Any:
+        import sys
+
+        path = DOCKER_PKG / "native_grok_session.py"
+        name = "xinao_native_grok_session_host"
+        if name in sys.modules:
+            return sys.modules[name]
+        if not path.is_file():
+            raise DualHostError("DUAL_HOST_NATIVE_SESSION_MISSING", str(path))
+        pkg = str(DOCKER_PKG)
+        if pkg not in sys.path:
+            sys.path.insert(0, pkg)
+        spec = importlib.util.spec_from_file_location(name, path)
+        if spec is None or spec.loader is None:
+            raise DualHostError("DUAL_HOST_NATIVE_SESSION_LOAD_FAILED", str(path))
+        module = importlib.util.module_from_spec(spec)
+        sys.modules[name] = module
+        spec.loader.exec_module(module)
+        return module
+
     def build_grok_session_argv(
         self,
         *,
         resume: bool,
         session_id: str,
         extra: Sequence[str] | None = None,
-        tools: str = "search_tool,use_tool",
+        tools: str | None = None,
+        max_turns: int | None = None,
+        model: str | None = None,
+        prompt: str | None = None,
+        prompt_file: str | None = None,
+        agent_profile: str | None = None,
+        research_profile: str | None = None,
     ) -> list[str]:
-        """Real Grok headless session rules: --session-id / --resume + MCP discovery tools.
+        """Real Grok headless session rules: --session-id / --resume + MCP meta (+ web).
 
-        Dual-container genuine path allowlists only search_tool,use_tool (native MCP).
+        OPEN_RESEARCH (default): search_tool,use_tool,web_search,web_fetch; no --disable-web-search.
+        CLOSED_LAB: search_tool,use_tool; --disable-web-search; web stripped.
         Canary remains separate with --tools '' on its own entrypoint.
+        --cwd is the mounted lab path; --agent is the mounted profile path.
         """
-        argv = [
-            "/usr/local/bin/grok",
-            "--output-format",
-            "json",
-            "--tools",
-            tools,
-            "--max-turns",
-            "16",
-            "--no-subagents",
-            "--no-memory",
-            "--disable-web-search",
-        ]
-        if resume:
-            argv.extend(["--resume", session_id])
-        else:
-            argv.extend(["--session-id", session_id])
-        if extra:
-            argv.extend(list(extra))
+        native = self._load_native_session()
+        profile = native.normalize_research_profile(
+            research_profile or self.sealed_research_profile()
+        )
+        expected_tools = native.tools_allowlist_csv(profile)
+        if tools is not None and tools != expected_tools:
+            raise DualHostError("DUAL_HOST_TOOLS_NOT_GENUINE", f"{tools}!={expected_tools}")
+        turns = native.clamp_live_max_turns(max_turns)
+        model_name = model or native.DEFAULT_LIVE_MODEL
+        agent = agent_profile if agent_profile is not None else CANONICAL_AGENT_PROFILE
+        argv = native.build_genuine_session_argv(
+            grok_bin="/usr/local/bin/grok",
+            session_id=session_id,
+            resume=resume,
+            model=model_name,
+            max_turns=turns,
+            prompt=prompt,
+            prompt_file=prompt_file,
+            agent_profile=agent,
+            cwd=CANONICAL_LAB_CWD,
+            include_disallowed_builtins=True,
+            research_profile=profile,
+            extra=extra,
+        )
+        native.assert_live_research_argv(argv, research_profile=profile)
         return argv
 
     def interrupt_pair(self) -> dict[str, Any]:
@@ -1044,7 +1166,8 @@ class DualContainerHost:
         inventory["updated_at"] = _utc_now()
         inventory["last_resume_argv_markers"] = {
             "resume": grok_session,
-            "tools": "",
+            "tools": "profile_sealed",
+            "research_profile": self.sealed_research_profile(),
             "generic_file_shell_tools": False,
         }
         self._save_session_inventory(inventory)
@@ -1065,6 +1188,727 @@ class DualContainerHost:
             "exact_session_bound": True,
             "completion_claim_allowed": False,
         }
+
+    def require_live_pair_ready(
+        self,
+        *,
+        expected_episode_id: str | None = None,
+        expected_host_session_id: str | None = None,
+        expected_provider_session_uuid: str | None = None,
+        expected_pair_receipt_sha256: str | None = None,
+        expected_transport_image_id: str | None = None,
+        expected_tool_image_id: str | None = None,
+        allow_synthetic: bool = False,
+    ) -> dict[str, Any]:
+        """Fail closed before any live docker exec attach/run/resume."""
+        if self.config.synthetic and not allow_synthetic:
+            raise DualHostError("DUAL_HOST_SYNTHETIC_LIVE_REFUSED", "synthetic=true")
+        lease = self.load_lease()
+        if lease is None:
+            raise DualHostError("DUAL_HOST_LEASE_MISSING", "live_ready")
+        inventory = self.load_session_inventory()
+        if inventory is None:
+            raise DualHostError("DUAL_HOST_SESSION_INVENTORY_MISSING", "live_ready")
+        receipt = self.load_pair_receipt()
+        if receipt is None:
+            raise DualHostError("DUAL_HOST_PAIR_RECEIPT_MISSING", "live_ready")
+        if lease.get("phase") in {"cancelled", "retired", "failed_retire_pending"}:
+            raise DualHostError("DUAL_HOST_LEASE_TERMINAL", str(lease.get("phase")))
+        if expected_episode_id and lease.get("episode_id") != expected_episode_id:
+            raise DualHostError("DUAL_HOST_FOREIGN_EPISODE", str(lease.get("episode_id")))
+        if expected_host_session_id and lease.get("session_id") != expected_host_session_id:
+            raise DualHostError("DUAL_HOST_FOREIGN_SESSION", str(lease.get("session_id")))
+        if inventory.get("episode_id") != lease.get("episode_id"):
+            raise DualHostError("DUAL_HOST_EPISODE_DRIFT", "inventory/lease")
+        if inventory.get("host_session_id") != lease.get("session_id"):
+            raise DualHostError("DUAL_HOST_SESSION_DRIFT", "inventory/lease")
+        if receipt.get("episode_id") != lease.get("episode_id"):
+            raise DualHostError("DUAL_HOST_PAIR_RECEIPT_MISMATCH", "episode_id")
+        if receipt.get("session_id") != lease.get("session_id"):
+            raise DualHostError("DUAL_HOST_PAIR_RECEIPT_MISMATCH", "session_id")
+        for key in (
+            "tool_container_id",
+            "transport_container_id",
+            "tool_image_id",
+            "transport_image_id",
+        ):
+            if receipt.get(key) != lease.get(key):
+                raise DualHostError("DUAL_HOST_PAIR_RECEIPT_MISMATCH", key)
+        body = {k: v for k, v in receipt.items() if k != "pair_receipt_sha256"}
+        observed_receipt = _sha256_bytes(_canonical_bytes(body))
+        if lease.get("pair_receipt_sha256") and observed_receipt != lease.get(
+            "pair_receipt_sha256"
+        ):
+            raise DualHostError("DUAL_HOST_PAIR_RECEIPT_STALE", observed_receipt)
+        if expected_pair_receipt_sha256 and observed_receipt != expected_pair_receipt_sha256:
+            raise DualHostError("DUAL_HOST_PAIR_RECEIPT_MISMATCH", "caller hash")
+        if (
+            expected_transport_image_id
+            and lease.get("transport_image_id") != expected_transport_image_id
+        ):
+            raise DualHostError("DUAL_HOST_WRONG_IMAGE", "transport")
+        if expected_tool_image_id and lease.get("tool_image_id") != expected_tool_image_id:
+            raise DualHostError("DUAL_HOST_WRONG_IMAGE", "tool")
+        grok_session = str(inventory.get("grok_session_id") or "")
+        if expected_provider_session_uuid:
+            if (
+                not grok_session
+                or grok_session.lower() != str(expected_provider_session_uuid).lower()
+            ):
+                raise DualHostError(
+                    "DUAL_HOST_PROVIDER_SESSION_MISMATCH",
+                    f"inventory={grok_session} expected={expected_provider_session_uuid}",
+                )
+        # Live path must not expose auth to tool sidecar (inspect mounts).
+        if not self.config.synthetic:
+            tool_inspect = self._docker_inspect(str(lease["tool_container_id"]))
+            transport_inspect = self._docker_inspect(str(lease["transport_container_id"]))
+            tool_mounts = [
+                str(m.get("Destination") or m.get("Target") or "").lower()
+                for m in (tool_inspect.get("Mounts") or [])
+                if isinstance(m, dict)
+            ]
+            for bad in ("/grok-home", "auth.json", "docker.sock"):
+                if any(bad in m for m in tool_mounts):
+                    raise DualHostError("DUAL_HOST_AUTH_ON_TOOL", bad)
+            for role, doc, expected_image in (
+                ("tool", tool_inspect, lease.get("tool_image_id")),
+                ("transport", transport_inspect, lease.get("transport_image_id")),
+            ):
+                image = doc.get("Image") or (doc.get("Config") or {}).get("Image")
+                if expected_image and image and image != expected_image:
+                    # Docker may report short ids; still require exact sealed match when present.
+                    if not str(image).startswith(str(expected_image)) and not str(
+                        expected_image
+                    ).startswith(str(image)):
+                        raise DualHostError("DUAL_HOST_WRONG_IMAGE", f"{role}:{image}")
+                state = doc.get("State") or {}
+                running = state.get("Running")
+                if running is False:
+                    raise DualHostError("DUAL_HOST_CONTAINER_STOPPED", role)
+        return {
+            "status": "LIVE_PAIR_READY",
+            "lease": lease,
+            "session_inventory": inventory,
+            "pair_receipt": receipt,
+            "pair_receipt_sha256": observed_receipt,
+            "provider_session_uuid": grok_session,
+            "completion_claim_allowed": False,
+        }
+
+    def exec_transport_grok(
+        self,
+        argv: Sequence[str],
+        *,
+        timeout_seconds: float,
+        env: Mapping[str, str] | None = None,
+    ) -> subprocess.CompletedProcess[bytes]:
+        """Real docker exec into transport container; never host Grok fallback."""
+        if self.config.synthetic:
+            raise DualHostError("DUAL_HOST_SYNTHETIC_LIVE_REFUSED", "exec")
+        lease = self.load_lease()
+        if lease is None:
+            raise DualHostError("DUAL_HOST_LEASE_MISSING", "exec")
+        transport_id = str(lease.get("transport_container_id") or "")
+        if not transport_id or transport_id.startswith("synthetic-"):
+            raise DualHostError("DUAL_HOST_TRANSPORT_INVALID", transport_id)
+        native = self._load_native_session()
+        # Profile is sealed into argv; assert without forcing a mismatched profile.
+        native.assert_live_research_argv(
+            list(argv), research_profile=self.sealed_research_profile()
+        )
+        docker_argv: list[str] = [self.config.docker, "exec", "-i"]
+        env_map = dict(env or {})
+        if env_map.get("GROK_HOME", CANONICAL_GROK_HOME) != CANONICAL_GROK_HOME:
+            raise DualHostError(
+                "DUAL_HOST_GROK_HOME_MISALIGNED",
+                str(env_map.get("GROK_HOME")),
+            )
+        env_map.setdefault("GROK_HOME", CANONICAL_GROK_HOME)
+        env_map.setdefault("XINAO_MCP_EVENT_LOG", CANONICAL_MCP_EVENTS)
+        env_map.setdefault("XINAO_MCP_EVIDENCE_PATH", CANONICAL_MCP_EVENTS)
+        for key, value in env_map.items():
+            docker_argv.extend(["-e", f"{key}={value}"])
+        docker_argv.append(transport_id)
+        docker_argv.extend(list(argv))
+        try:
+            return subprocess.run(
+                docker_argv,
+                check=False,
+                stdin=subprocess.DEVNULL,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                timeout=float(timeout_seconds),
+            )
+        except subprocess.TimeoutExpired as exc:
+            stdout = exc.stdout or b""
+            stderr = exc.stderr or b""
+            if isinstance(stdout, str):
+                stdout = stdout.encode("utf-8", errors="replace")
+            if isinstance(stderr, str):
+                stderr = stderr.encode("utf-8", errors="replace")
+            return subprocess.CompletedProcess(
+                args=list(docker_argv),
+                returncode=124,
+                stdout=stdout,
+                stderr=stderr + b"\nDUAL_HOST_OUTER_TIMEOUT\n",
+            )
+        except OSError as exc:
+            raise DualHostError("DUAL_HOST_DOCKER_EXEC_FAILED", str(exc)) from exc
+
+    def _scan_lab_artifact_manifest(self) -> dict[str, Any]:
+        lab = self.paths["lab"]
+        artifacts: list[dict[str, str]] = []
+        if lab.is_dir():
+            for path in sorted(lab.rglob("*")):
+                if not path.is_file():
+                    continue
+                rel = str(path.relative_to(lab)).replace("\\", "/")
+                if rel.startswith("."):
+                    continue
+                payload = path.read_bytes()
+                artifacts.append(
+                    {
+                        "path": rel,
+                        "sha256": _sha256_bytes(payload),
+                        "size": str(len(payload)),
+                    }
+                )
+        return {"artifacts": artifacts}
+
+    def attach_run_live(
+        self,
+        *,
+        prompt: str,
+        max_turns: int | None = None,
+        timeout_seconds: float | None = None,
+        expected_episode_id: str | None = None,
+        expected_host_session_id: str | None = None,
+        cas_head_sha256: str | None = None,
+        namespace_receipt_sha256: str | None = None,
+        release_id: str | None = None,
+        release_identity_sha256: str | None = None,
+        plan_only: bool = False,
+    ) -> dict[str, Any]:
+        """Owner one-shot: validate live pair and docker-exec multi-turn Grok in transport."""
+        native = self._load_native_session()
+        ready = self.require_live_pair_ready(
+            expected_episode_id=expected_episode_id,
+            expected_host_session_id=expected_host_session_id,
+            allow_synthetic=False,
+        )
+        lease = ready["lease"]
+        inventory = ready["session_inventory"]
+        grok_session = str(inventory.get("grok_session_id") or "")
+        if not native.is_uuid(grok_session):
+            raise DualHostError("DUAL_HOST_PROVIDER_SESSION_NOT_UUID", grok_session)
+        research_profile = self.sealed_research_profile()
+        turns = native.clamp_live_max_turns(max_turns)
+        timeout = native.clamp_outer_timeout(timeout_seconds)
+        argv = self.build_grok_session_argv(
+            resume=False,
+            session_id=grok_session,
+            max_turns=turns,
+            prompt=prompt,
+            agent_profile=CANONICAL_AGENT_PROFILE,
+            research_profile=research_profile,
+        )
+        if plan_only:
+            return {
+                "status": native.STATUS_PLANNED,
+                "planned_grok_argv": argv,
+                "provider_session_uuid": grok_session,
+                "research_profile": research_profile,
+                "live_executed": False,
+                "completion_claim_allowed": False,
+                "science_restored": False,
+                "owner_adopted": False,
+                "parent_complete": False,
+            }
+        prior_cursor = self.capture_mcp_event_cursor()
+        prior_tool_cursor = native.capture_tool_sidecar_cursor(self.paths["tool_events"])
+        prior_lab_manifest = self._scan_lab_artifact_manifest()
+        started_at = _utc_now()
+        docker_exec_failed = False
+        timed_out = False
+        try:
+            completed = self.exec_transport_grok(
+                argv,
+                timeout_seconds=timeout,
+                env={
+                    "GROK_HOME": CANONICAL_GROK_HOME,
+                    "XINAO_MCP_BINDING": "1",
+                    "XINAO_MCP_SERVER": "episode_lab",
+                    "XINAO_MCP_TOOLS": native.tools_allowlist_csv(research_profile),
+                    "XINAO_MCP_EVENT_LOG": CANONICAL_MCP_EVENTS,
+                    "XINAO_MCP_EVIDENCE_PATH": CANONICAL_MCP_EVENTS,
+                    "XINAO_RESEARCH_PROFILE": research_profile,
+                },
+            )
+        except DualHostError:
+            docker_exec_failed = True
+            completed = subprocess.CompletedProcess(
+                args=list(argv),
+                returncode=125,
+                stdout=b"",
+                stderr=b"DUAL_HOST_DOCKER_EXEC_FAILED",
+            )
+        finished_at = _utc_now()
+        if completed.returncode == 124 and b"DUAL_HOST_OUTER_TIMEOUT" in (completed.stderr or b""):
+            timed_out = True
+        stdout = completed.stdout or b""
+        stderr = completed.stderr or b""
+        if isinstance(stdout, str):
+            stdout = stdout.encode("utf-8", errors="replace")
+        if isinstance(stderr, str):
+            stderr = stderr.encode("utf-8", errors="replace")
+        try:
+            delta = self.collect_attempt_mcp_delta(
+                prior_cursor, expected_episode_id=str(lease["episode_id"])
+            )
+        except DualHostError as exc:
+            delta = {
+                "events": [],
+                "mcp_event_hashes": [],
+                "productive_ops": [],
+                "status": exc.reason_code,
+            }
+        try:
+            tool_delta = native.collect_tool_sidecar_evidence_delta(
+                self.paths["tool_events"],
+                prior_tool_cursor,
+                expected_episode_id=str(lease["episode_id"]),
+            )
+            trusted_hashes = list(tool_delta.get("trusted_event_hashes") or [])
+        except native.NativeSessionError as exc:
+            tool_delta = {"trusted_event_hashes": [], "status": exc.reason_code}
+            trusted_hashes = []
+            delta = {
+                **delta,
+                "productive_ops": [],
+                "status": str(exc.reason_code),
+                "evidence_reject": str(exc.reason_code),
+            }
+        lab_manifest = self._scan_lab_artifact_manifest()
+        # Fail closed: productive MCP events must match tool-executor sealed evidence + lab FS.
+        try:
+            native.require_productive_lab_delta(
+                delta,
+                trusted_event_hashes=trusted_hashes,
+                require_trusted_tool_chain=True,
+            )
+            native.require_lab_effect_binding(
+                delta=delta,
+                lab_artifact_manifest=lab_manifest,
+                prior_lab_artifact_manifest=prior_lab_manifest,
+            )
+        except native.NativeSessionError as exc:
+            # Record failed productivity gate into attempt failure path below via empty ops.
+            delta = {
+                **delta,
+                "productive_ops": [],
+                "status": str(getattr(exc, "reason_code", None) or "PRODUCTIVE_EVIDENCE_REJECTED"),
+                "evidence_reject": str(getattr(exc, "reason_code", None) or exc),
+                "trusted_tool_event_count": len(trusted_hashes),
+                "tool_sidecar_status": tool_delta.get("status"),
+            }
+        mcp_hashes = list(delta.get("mcp_event_hashes") or [])
+        productive_ops = list(delta.get("productive_ops") or [])
+        attempt_id = f"att_{uuid.uuid4().hex}"
+        prior_success = None
+        success_ptr = self.paths["output"] / "attempts" / "last_successful.json"
+        if success_ptr.is_file():
+            try:
+                prior_success = json.loads(success_ptr.read_text(encoding="utf-8")).get(
+                    "attempt_hash"
+                )
+            except (OSError, json.JSONDecodeError):
+                prior_success = None
+        web_trace = None
+        try:
+            parsed = native.parse_provider_machine_output(stdout, stderr)
+            web_trace = native.extract_web_use_trace(parsed)
+        except native.NativeSessionError:
+            web_trace = None
+        attempt = native.build_live_attempt_record(
+            episode_id=str(lease["episode_id"]),
+            host_session_id=str(lease["session_id"]),
+            provider_session_uuid=grok_session,
+            attempt_id=attempt_id,
+            argv=argv,
+            stdout=stdout,
+            stderr=stderr,
+            exit_code=int(completed.returncode),
+            model=native.DEFAULT_LIVE_MODEL,
+            max_turns=turns,
+            timeout_seconds=timeout,
+            started_at=started_at,
+            finished_at=finished_at,
+            transport_container_id=str(lease["transport_container_id"]),
+            tool_container_id=str(lease["tool_container_id"]),
+            transport_image_id=str(lease["transport_image_id"]),
+            tool_image_id=str(lease["tool_image_id"]),
+            pair_receipt_sha256=str(ready["pair_receipt_sha256"]),
+            namespace_receipt_sha256=namespace_receipt_sha256,
+            release_id=release_id,
+            release_identity_sha256=release_identity_sha256,
+            cas_head_sha256=cas_head_sha256,
+            mcp_event_hashes=mcp_hashes,
+            lab_artifact_manifest=lab_manifest,
+            prior_attempt_hash=prior_success,
+            resume=False,
+            live_executed=True,
+            driver="dual_container_host_docker_exec",
+            synthetic=False,
+            timed_out=timed_out,
+            docker_exec_failed=docker_exec_failed,
+            research_profile=research_profile,
+            productive_lab_ops=productive_ops,
+            mcp_delta_status=str(delta.get("status") or ""),
+            web_use_trace=web_trace,
+            require_productive_lab_op=True,
+        )
+        persisted = native.persist_live_attempt(self.paths["output"], attempt)
+        # Persist provider session UUID from successful attempt only.
+        if persisted.get("status") == native.STATUS_LIVE_ATTEMPT_RECORDED:
+            bound = str(persisted.get("provider_session_uuid") or grok_session)
+            inventory = dict(inventory)
+            inventory["grok_session_id"] = bound
+            inventory["last_live_attempt_hash"] = persisted.get("attempt_hash")
+            inventory["last_live_attempt_cas"] = persisted.get("attempt_cas_digest")
+            inventory["updated_at"] = _utc_now()
+            self._save_session_inventory(inventory)
+        self._append_journal(
+            {
+                "verb": "attach_run_live",
+                "at": finished_at,
+                "status": persisted.get("status"),
+                "attempt_cas_digest": persisted.get("attempt_cas_digest"),
+                "attempt_hash": persisted.get("attempt_hash"),
+                "exit_code": int(completed.returncode),
+            }
+        )
+        return {
+            "status": persisted.get("status"),
+            "live_executed": True,
+            "attempt_cas_digest": persisted.get("attempt_cas_digest"),
+            "attempt_hash": persisted.get("attempt_hash"),
+            "provider_session_uuid": persisted.get("provider_session_uuid"),
+            "exit_code": int(completed.returncode),
+            "argv_digest": attempt.get("argv_digest"),
+            "failure_reasons": attempt.get("failure_reasons") or [],
+            "pair_receipt_sha256": ready["pair_receipt_sha256"],
+            "mcp_event_count": len(mcp_hashes),
+            "productive_lab_ops": productive_ops,
+            "research_profile": research_profile,
+            "mcp_delta_status": delta.get("status"),
+            "completion_claim_allowed": False,
+            "science_restored": False,
+            "owner_adopted": False,
+            "parent_complete": False,
+        }
+
+    def resume_live(
+        self,
+        *,
+        expected_provider_session_uuid: str,
+        expected_host_session_id: str | None = None,
+        expected_episode_id: str | None = None,
+        expected_cas_head_sha256: str | None = None,
+        prior_attempt_hash: str | None = None,
+        prompt: str | None = None,
+        max_turns: int | None = None,
+        timeout_seconds: float | None = None,
+        namespace_receipt_sha256: str | None = None,
+        release_id: str | None = None,
+        release_identity_sha256: str | None = None,
+        plan_only: bool = False,
+    ) -> dict[str, Any]:
+        """Owner one-shot resume: bind exact provider session UUID and docker-exec --resume."""
+        native = self._load_native_session()
+        if not native.is_uuid(expected_provider_session_uuid):
+            raise DualHostError(
+                "DUAL_HOST_PROVIDER_SESSION_NOT_UUID", expected_provider_session_uuid
+            )
+        # Ensure pair is running with exact host session binding first.
+        if expected_host_session_id:
+            pair = self.resume_pair(expected_session_id=expected_host_session_id)
+        else:
+            lease0 = self.load_lease()
+            if lease0 is None:
+                raise DualHostError("DUAL_HOST_LEASE_MISSING", "resume_live")
+            pair = self.resume_pair(expected_session_id=str(lease0["session_id"]))
+        ready = self.require_live_pair_ready(
+            expected_episode_id=expected_episode_id,
+            expected_host_session_id=expected_host_session_id,
+            expected_provider_session_uuid=expected_provider_session_uuid,
+            allow_synthetic=False,
+        )
+        lease = ready["lease"]
+        inventory = ready["session_inventory"]
+        # Prior successful attempt binding (when provided).
+        if prior_attempt_hash:
+            success_ptr = self.paths["output"] / "attempts" / "last_successful.json"
+            if not success_ptr.is_file():
+                raise DualHostError("DUAL_HOST_PRIOR_ATTEMPT_MISSING", prior_attempt_hash)
+            prior = json.loads(success_ptr.read_text(encoding="utf-8"))
+            if prior.get("attempt_hash") != prior_attempt_hash:
+                raise DualHostError(
+                    "DUAL_HOST_PRIOR_ATTEMPT_MISMATCH",
+                    f"last={prior.get('attempt_hash')} expected={prior_attempt_hash}",
+                )
+            if (
+                str(prior.get("provider_session_uuid") or "").lower()
+                != str(expected_provider_session_uuid).lower()
+            ):
+                raise DualHostError("DUAL_HOST_PROVIDER_SESSION_MISMATCH", "prior attempt")
+        research_profile = self.sealed_research_profile()
+        inv_profile = (
+            str((inventory or {}).get("research_profile") or research_profile).strip().upper()
+        )
+        if inv_profile not in {research_profile, "GENUINE_SCIENTIST_EPISODE", "GENUINE"}:
+            if inv_profile != research_profile:
+                raise DualHostError("DUAL_HOST_PROFILE_DRIFT", inv_profile)
+        turns = native.clamp_live_max_turns(max_turns)
+        timeout = native.clamp_outer_timeout(timeout_seconds)
+        argv = self.build_grok_session_argv(
+            resume=True,
+            session_id=expected_provider_session_uuid,
+            max_turns=turns,
+            prompt=prompt,
+            agent_profile=CANONICAL_AGENT_PROFILE,
+            research_profile=research_profile,
+        )
+        if plan_only:
+            return {
+                "status": native.STATUS_PLANNED,
+                "planned_grok_argv": argv,
+                "provider_session_uuid": expected_provider_session_uuid,
+                "exact_session_bound": True,
+                "pair_resume": pair,
+                "research_profile": research_profile,
+                "live_executed": False,
+                "completion_claim_allowed": False,
+                "science_restored": False,
+                "owner_adopted": False,
+                "parent_complete": False,
+            }
+        prior_cursor = self.capture_mcp_event_cursor()
+        prior_tool_cursor = native.capture_tool_sidecar_cursor(self.paths["tool_events"])
+        prior_lab_manifest = self._scan_lab_artifact_manifest()
+        started_at = _utc_now()
+        docker_exec_failed = False
+        timed_out = False
+        try:
+            completed = self.exec_transport_grok(
+                argv,
+                timeout_seconds=timeout,
+                env={
+                    "GROK_HOME": CANONICAL_GROK_HOME,
+                    "XINAO_MCP_BINDING": "1",
+                    "XINAO_MCP_SERVER": "episode_lab",
+                    "XINAO_MCP_TOOLS": native.tools_allowlist_csv(research_profile),
+                    "XINAO_MCP_EVENT_LOG": CANONICAL_MCP_EVENTS,
+                    "XINAO_MCP_EVIDENCE_PATH": CANONICAL_MCP_EVENTS,
+                    "XINAO_RESEARCH_PROFILE": research_profile,
+                },
+            )
+        except DualHostError:
+            docker_exec_failed = True
+            completed = subprocess.CompletedProcess(
+                args=list(argv),
+                returncode=125,
+                stdout=b"",
+                stderr=b"DUAL_HOST_DOCKER_EXEC_FAILED",
+            )
+        finished_at = _utc_now()
+        if completed.returncode == 124 and b"DUAL_HOST_OUTER_TIMEOUT" in (completed.stderr or b""):
+            timed_out = True
+        stdout = completed.stdout or b""
+        stderr = completed.stderr or b""
+        if isinstance(stdout, str):
+            stdout = stdout.encode("utf-8", errors="replace")
+        if isinstance(stderr, str):
+            stderr = stderr.encode("utf-8", errors="replace")
+        try:
+            delta = self.collect_attempt_mcp_delta(
+                prior_cursor, expected_episode_id=str(lease["episode_id"])
+            )
+        except DualHostError as exc:
+            delta = {
+                "events": [],
+                "mcp_event_hashes": [],
+                "productive_ops": [],
+                "status": exc.reason_code,
+            }
+        try:
+            tool_delta = native.collect_tool_sidecar_evidence_delta(
+                self.paths["tool_events"],
+                prior_tool_cursor,
+                expected_episode_id=str(lease["episode_id"]),
+            )
+            trusted_hashes = list(tool_delta.get("trusted_event_hashes") or [])
+        except native.NativeSessionError as exc:
+            tool_delta = {"trusted_event_hashes": [], "status": exc.reason_code}
+            trusted_hashes = []
+            delta = {
+                **delta,
+                "productive_ops": [],
+                "status": str(exc.reason_code),
+                "evidence_reject": str(exc.reason_code),
+            }
+        lab_manifest = self._scan_lab_artifact_manifest()
+        try:
+            native.require_productive_lab_delta(
+                delta,
+                trusted_event_hashes=trusted_hashes,
+                require_trusted_tool_chain=True,
+            )
+            native.require_lab_effect_binding(
+                delta=delta,
+                lab_artifact_manifest=lab_manifest,
+                prior_lab_artifact_manifest=prior_lab_manifest,
+            )
+        except native.NativeSessionError as exc:
+            delta = {
+                **delta,
+                "productive_ops": [],
+                "status": str(getattr(exc, "reason_code", None) or "PRODUCTIVE_EVIDENCE_REJECTED"),
+                "evidence_reject": str(getattr(exc, "reason_code", None) or exc),
+                "trusted_tool_event_count": len(trusted_hashes),
+                "tool_sidecar_status": tool_delta.get("status"),
+            }
+        mcp_hashes = list(delta.get("mcp_event_hashes") or [])
+        productive_ops = list(delta.get("productive_ops") or [])
+        attempt_id = f"att_{uuid.uuid4().hex}"
+        web_trace = None
+        try:
+            parsed = native.parse_provider_machine_output(stdout, stderr)
+            web_trace = native.extract_web_use_trace(parsed)
+        except native.NativeSessionError:
+            web_trace = None
+        attempt = native.build_live_attempt_record(
+            episode_id=str(lease["episode_id"]),
+            host_session_id=str(lease["session_id"]),
+            provider_session_uuid=expected_provider_session_uuid,
+            attempt_id=attempt_id,
+            argv=argv,
+            stdout=stdout,
+            stderr=stderr,
+            exit_code=int(completed.returncode),
+            model=native.DEFAULT_LIVE_MODEL,
+            max_turns=turns,
+            timeout_seconds=timeout,
+            started_at=started_at,
+            finished_at=finished_at,
+            transport_container_id=str(lease["transport_container_id"]),
+            tool_container_id=str(lease["tool_container_id"]),
+            transport_image_id=str(lease["transport_image_id"]),
+            tool_image_id=str(lease["tool_image_id"]),
+            pair_receipt_sha256=str(ready["pair_receipt_sha256"]),
+            namespace_receipt_sha256=namespace_receipt_sha256,
+            release_id=release_id,
+            release_identity_sha256=release_identity_sha256,
+            cas_head_sha256=expected_cas_head_sha256,
+            mcp_event_hashes=mcp_hashes,
+            lab_artifact_manifest=lab_manifest,
+            prior_attempt_hash=prior_attempt_hash,
+            resume=True,
+            live_executed=True,
+            driver="dual_container_host_docker_exec",
+            synthetic=False,
+            timed_out=timed_out,
+            docker_exec_failed=docker_exec_failed,
+            research_profile=research_profile,
+            productive_lab_ops=productive_ops,
+            mcp_delta_status=str(delta.get("status") or ""),
+            web_use_trace=web_trace,
+            require_productive_lab_op=True,
+        )
+        persisted = native.persist_live_attempt(self.paths["output"], attempt)
+        # Failed resume must not overwrite successful provider session binding.
+        if persisted.get("status") == native.STATUS_LIVE_ATTEMPT_RECORDED:
+            inventory = dict(inventory)
+            inventory["grok_session_id"] = expected_provider_session_uuid
+            inventory["last_live_attempt_hash"] = persisted.get("attempt_hash")
+            inventory["last_live_attempt_cas"] = persisted.get("attempt_cas_digest")
+            inventory["updated_at"] = _utc_now()
+            self._save_session_inventory(inventory)
+        self._append_journal(
+            {
+                "verb": "resume_live",
+                "at": finished_at,
+                "status": persisted.get("status"),
+                "attempt_cas_digest": persisted.get("attempt_cas_digest"),
+                "provider_session_uuid": expected_provider_session_uuid,
+                "exit_code": int(completed.returncode),
+            }
+        )
+        return {
+            "status": persisted.get("status"),
+            "live_executed": True,
+            "exact_session_bound": True,
+            "attempt_cas_digest": persisted.get("attempt_cas_digest"),
+            "attempt_hash": persisted.get("attempt_hash"),
+            "provider_session_uuid": expected_provider_session_uuid,
+            "exit_code": int(completed.returncode),
+            "argv_digest": attempt.get("argv_digest"),
+            "failure_reasons": attempt.get("failure_reasons") or [],
+            "pair_receipt_sha256": ready["pair_receipt_sha256"],
+            "mcp_event_count": len(mcp_hashes),
+            "productive_lab_ops": productive_ops,
+            "research_profile": research_profile,
+            "mcp_delta_status": delta.get("status"),
+            "completion_claim_allowed": False,
+            "science_restored": False,
+            "owner_adopted": False,
+            "parent_complete": False,
+        }
+
+    def export_candidate_evidence(
+        self,
+        *,
+        attempt_cas_digest: str,
+        episode_id: str,
+        cas_head_sha256: str,
+        expected_provider_session_uuid: str | None = None,
+        namespace_receipt_sha256: str | None = None,
+        release_id: str | None = None,
+        release_identity_sha256: str | None = None,
+        prompt_material_cutoff: Mapping[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        """Export candidate-only evidence bundle from recorded live attempt CAS."""
+        native = self._load_native_session()
+        receipt = self.load_pair_receipt()
+        lease = self.load_lease()
+        pair_sha = None
+        transport_image = None
+        tool_image = None
+        if receipt is not None:
+            body = {k: v for k, v in receipt.items() if k != "pair_receipt_sha256"}
+            pair_sha = _sha256_bytes(_canonical_bytes(body))
+            transport_image = receipt.get("transport_image_id")
+            tool_image = receipt.get("tool_image_id")
+        if lease is not None:
+            if episode_id and lease.get("episode_id") != episode_id:
+                raise DualHostError("DUAL_HOST_FOREIGN_EPISODE", str(lease.get("episode_id")))
+            transport_image = transport_image or lease.get("transport_image_id")
+            tool_image = tool_image or lease.get("tool_image_id")
+        return native.export_candidate_evidence_bundle(
+            episode_output_root=self.paths["output"],
+            attempt_cas_digest=attempt_cas_digest,
+            episode_id=episode_id,
+            cas_head_sha256=cas_head_sha256,
+            expected_provider_session_uuid=expected_provider_session_uuid,
+            expected_pair_receipt_sha256=pair_sha,
+            expected_namespace_receipt_sha256=namespace_receipt_sha256,
+            expected_transport_image_id=transport_image,
+            expected_tool_image_id=tool_image,
+            package_release_id=release_id,
+            package_release_identity_sha256=release_identity_sha256,
+            prompt_material_cutoff=prompt_material_cutoff,
+            lab_root=self.paths["lab"],
+        )
 
     def cancel_pair(self) -> dict[str, Any]:
         """Idempotent stop/rm of only lease-owned containers/volumes."""
@@ -1252,12 +2096,16 @@ def _synthetic_transport_inspect(lease: Mapping[str, Any]) -> dict[str, Any]:
             "SecurityOpt": ["no-new-privileges:true"],
         },
         "Mounts": [
-            {"Destination": "/grok-home/.grok", "Source": "/host/auth", "Type": "bind"},
+            {
+                "Destination": "/grok-home/auth.json",
+                "Source": "/host/auth/auth.json",
+                "Type": "bind",
+            },
             {"Destination": "/input", "Source": "/host/input", "Type": "bind"},
             {"Destination": "/output", "Source": "/host/output", "Type": "bind"},
             {"Destination": "/ipc", "Source": "/host/ipc", "Type": "bind"},
             {
-                "Destination": "/grok-home/.grok/sessions",
+                "Destination": "/grok-home/sessions",
                 "Source": "/host/sessions",
                 "Type": "bind",
             },

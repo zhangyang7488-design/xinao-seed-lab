@@ -37,6 +37,8 @@ COPY --chmod=0444 docker/xinao-researcher/ipc_contract.py /opt/xinao-researcher/
 COPY --chmod=0444 docker/xinao-researcher/transport_broker.py /opt/xinao-researcher/transport_broker.py
 COPY --chmod=0444 docker/xinao-researcher/episode_mcp_binding.py /opt/xinao-researcher/episode_mcp_binding.py
 COPY --chmod=0555 docker/xinao-researcher/mcp_episode_lab_server.py /opt/xinao-researcher/mcp_episode_lab_server.py
+# Package-owned pure candidate-manifest validator (exact xinao-discovery source bytes staged).
+COPY --chmod=0444 docker/xinao-researcher/research_episode_candidate_manifest.py /opt/xinao-researcher/research_episode_candidate_manifest.py
 COPY --chmod=0555 docker/xinao-researcher/grok-bwrap-unprivileged-wrapper.sh /usr/libexec/xinao/grok-bwrap-unprivileged-wrapper
 COPY --chmod=0555 docker/xinao-researcher/episode-tool-shell-wrapper.sh /usr/libexec/xinao/episode-tool-shell-wrapper
 COPY docker/xinao-researcher/empty-grok-profile/ /opt/xinao-researcher/empty-grok-profile/

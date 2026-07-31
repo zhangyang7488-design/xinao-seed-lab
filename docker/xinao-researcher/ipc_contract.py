@@ -23,7 +23,10 @@ PRIVATE_TMP_ROOT = "/tmp"
 MAX_REQUEST_BYTES = 65_536
 MAX_RESPONSE_BYTES = 262_144
 MAX_STDOUT_BYTES = 65_536
-MAX_TIMEOUT_MS = 30_000
+# Owner-clamped finite ceiling for productive lab experiments.
+# Compatible with outer max 4h; default binding uses DEFAULT_TIMEOUT_MS.
+DEFAULT_TIMEOUT_MS = 600_000  # 10 minutes
+MAX_TIMEOUT_MS = 3_600_000  # 1 hour hard ceiling for a single IPC call
 MIN_TIMEOUT_MS = 50
 
 ALLOWED_OPS = frozenset({"ping", "list_dir", "read_file", "write_file", "shell_exec"})
