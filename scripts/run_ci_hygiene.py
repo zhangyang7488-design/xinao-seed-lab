@@ -89,6 +89,11 @@ PROJECT_CONES: tuple[tuple[str, str, tuple[str, ...]], ...] = (
         "xinao_discovery",
         ("src/xinao/assurance", "tests/unit/assurance"),
     ),
+    (
+        "discovery-shadow-lifecycle",
+        "xinao_discovery",
+        ("src/xinao/shadow_lifecycle", "tests/unit/shadow_lifecycle"),
+    ),
 )
 
 CommandRunner = Callable[..., subprocess.CompletedProcess[str]]
