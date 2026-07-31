@@ -97,7 +97,9 @@ def test_dumps_cli_json_is_ascii_and_roundtrips() -> None:
     assert recovered["marker"] == NON_CODEPAGE_CHAR
 
 
-def test_print_cli_json_survives_gbk_stdout(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_print_cli_json_survives_gbk_stdout(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """Direct emitter smoke: print must not raise when stdout codec is gbk."""
 
     import io
@@ -117,9 +119,7 @@ def test_print_cli_json_survives_gbk_stdout(tmp_path: Path, monkeypatch: pytest.
         "pool-ingest-oneshot",
     ],
 )
-def test_public_oneshot_verbs_roundtrip_non_codepage_unicode(
-    tmp_path: Path, verb: str
-) -> None:
+def test_public_oneshot_verbs_roundtrip_non_codepage_unicode(tmp_path: Path, verb: str) -> None:
     pool = tmp_path / f"pool_{verb}"
     proc = _run_cli_bytes(
         [

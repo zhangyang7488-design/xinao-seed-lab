@@ -80,8 +80,9 @@ def _mini_bundle(tmp_path: Path) -> tuple[Path, dict[str, object]]:
             }
         )
     tree_sha256 = hashlib.sha256(
-        (json.dumps(inventory, ensure_ascii=False, sort_keys=True, separators=(",", ":")) + "\n")
-        .encode("utf-8")
+        (
+            json.dumps(inventory, ensure_ascii=False, sort_keys=True, separators=(",", ":")) + "\n"
+        ).encode("utf-8")
     ).hexdigest()
     manifest = {
         "schema_version": "xinao.skill_bundle_manifest.v1",
@@ -216,7 +217,9 @@ def test_sealed_module_loader_and_formal_wrapper_leave_tree_unchanged(
     assert completed.returncode == 0, completed.stderr.decode("utf-8", errors="replace")
     assert completed.stdout.strip() == b"ok"
     assert _tree_file_map(sealed) == before_child
-    assert not any(path.name == "__pycache__" or path.suffix == ".pyc" for path in sealed.rglob("*"))
+    assert not any(
+        path.name == "__pycache__" or path.suffix == ".pyc" for path in sealed.rglob("*")
+    )
 
 
 def test_fresh_process_importlib_without_product_hygiene_would_pollute_but_formal_does_not(

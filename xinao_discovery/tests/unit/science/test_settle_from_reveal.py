@@ -339,7 +339,7 @@ def test_reveal_missing_and_mismatches(tmp_path: Path) -> None:
     reveal = _reveal(tmp_path, capture)
 
     # Wrong packet pin.
-    with pytest.raises(SettleFromRevealError, match="PACKET_MISSING|PACKET_HASH"):
+    with pytest.raises(SettleFromRevealError, match=r"PACKET_MISSING|PACKET_HASH"):
         apply_settle_from_reveal(
             authority_root=authority,
             portfolio_root=portfolio,
@@ -449,7 +449,7 @@ def test_target_source_authority_mismatch(tmp_path: Path) -> None:
     capture_b = _capture_auth(b_root, completed="2026212")
     with pytest.raises(
         SettleFromRevealError,
-        match="REVEAL_MISSING|AUTHORITY_HEAD_MISMATCH|REVEAL_PACKET|PACKET",
+        match=r"REVEAL_MISSING|AUTHORITY_HEAD_MISMATCH|REVEAL_PACKET|PACKET",
     ):
         apply_settle_from_reveal(
             authority_root=b_root / "authority",
@@ -473,7 +473,7 @@ def test_duplicate_settle_exact_and_conflicting(tmp_path: Path) -> None:
     settled_hash = first["settled_episode_hash"]
 
     # Duplicate settle fails closed (already settled head).
-    with pytest.raises(SettleFromRevealError, match="ALREADY_SETTLED|PORTFOLIO_HEAD_NOT_FROZEN"):
+    with pytest.raises(SettleFromRevealError, match=r"ALREADY_SETTLED|PORTFOLIO_HEAD_NOT_FROZEN"):
         apply_settle_from_reveal(
             authority_root=authority,
             portfolio_root=portfolio,
@@ -504,8 +504,8 @@ def test_pre_open_observation_rejected(tmp_path: Path) -> None:
 
     # Write derived outcome path and call settle consumer through adapter path by
     # planting a reveal with early observed_at under a new content hash + index.
-    from xinao.science.prospective_source_thin import reveal_index_path
     from xinao.canonical import canonical_sha256
+    from xinao.science.prospective_source_thin import reveal_index_path
 
     body = dict(fake_reveal)
     body["admission_status"] = "ACCEPTED"
@@ -530,7 +530,7 @@ def test_pre_open_observation_rejected(tmp_path: Path) -> None:
         + "\n",
         encoding="utf-8",
     )
-    with pytest.raises(SettleFromRevealError, match="PRE_OPEN_OBSERVATION|SETTLE_CONSUMER"):
+    with pytest.raises(SettleFromRevealError, match=r"PRE_OPEN_OBSERVATION|SETTLE_CONSUMER"):
         apply_settle_from_reveal(
             authority_root=authority,
             portfolio_root=portfolio,
@@ -589,9 +589,10 @@ def test_no_auto_loop_feedback_or_next_freeze_invoked(tmp_path: Path) -> None:
     # Head remains SETTLED — no auto feedback advance.
     assert derive_portfolio_head(portfolio).phase == PortfolioPeriodPhase.SETTLED
     # No period-2 freeze created.
-    assert not period_directory(portfolio, 2).exists() or not (
-        period_directory(portfolio, 2) / "frozen_episode.v1.json"
-    ).exists()
+    assert (
+        not period_directory(portfolio, 2).exists()
+        or not (period_directory(portfolio, 2) / "frozen_episode.v1.json").exists()
+    )
 
 
 def test_replay_hash_stability(tmp_path: Path) -> None:

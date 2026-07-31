@@ -473,9 +473,7 @@ def test_emit_pre_outcome_after_freeze_only_rejected(
     assert err["auto_start_next_research"] is False
 
 
-def test_emit_output_overwrite_rejected(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str]
-) -> None:
+def test_emit_output_overwrite_rejected(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
     pool, entry, _, _ = _ingest(tmp_path)
     owner = tmp_path / "owner"
     owner.mkdir()

@@ -11,6 +11,8 @@ from typing import Any
 
 import pytest
 
+# Reuse synthetic freeze builders from portfolio unit tests (same package).
+from tests.unit.science.test_portfolio import OPEN, frozen_set  # type: ignore
 from xinao.canonical import canonical_sha256
 from xinao.cli import build_parser, main
 from xinao.science.portfolio import FrozenDecisionSet
@@ -26,9 +28,6 @@ from xinao.science.settle_all_from_reveal_adapter import (
     load_sealed_freeze_set,
     reject_settle_all_forbidden_kwargs,
 )
-
-# Reuse synthetic freeze builders from portfolio unit tests (same package).
-from tests.unit.science.test_portfolio import OPEN, frozen_set  # type: ignore
 
 FORMAL_2026209_COPY = Path(
     r"D:\XINAO_RESEARCH_RUNTIME\audit_scratch\wave84\g\formal_2026209_copy"
@@ -70,7 +69,7 @@ def test_reject_caller_outcome_and_subset_kwargs() -> None:
         reject_settle_all_forbidden_kwargs({"actual_special_number": 7})
     with pytest.raises(
         SettleAllFromRevealError,
-        match="CALLER_SETTLE_ALL_OVERRIDE_FORBIDDEN|CALLER_OUTCOME_OVERRIDE_FORBIDDEN",
+        match=r"CALLER_SETTLE_ALL_OVERRIDE_FORBIDDEN|CALLER_OUTCOME_OVERRIDE_FORBIDDEN",
     ):
         reject_settle_all_forbidden_kwargs({"verified": True})
     with pytest.raises(SettleAllFromRevealError, match="CALLER_SETTLE_ALL_OVERRIDE_FORBIDDEN"):
@@ -159,7 +158,7 @@ def test_altered_freeze_hash_fail_closed(tmp_path: Path) -> None:
     freeze_path.write_text(json.dumps(raw), encoding="utf-8")
     with pytest.raises(
         SettleAllFromRevealError,
-        match="FREEZE_SET_HASH_ALTERED|FREEZE_SET_INVALID|role coverage|min_length",
+        match=r"FREEZE_SET_HASH_ALTERED|FREEZE_SET_INVALID|role coverage|min_length",
     ):
         apply_settle_all_from_reveal(
             settlement_root=tmp_path / "s2",
@@ -251,14 +250,18 @@ def test_changed_freeze_set_after_partial_fail_closed(tmp_path: Path) -> None:
         reveal_artifact=_reveal_path(tmp_path, reveal),
     )
     # Different freeze identity (new freeze_set_ref → new hash) against same root.
-    other = frozen_set().model_copy(
-        update={"freeze_set_ref": "freeze-set.synthetic.OTHER.v1", "content_hash": None}
-    ).with_content_hash()
+    other = (
+        frozen_set()
+        .model_copy(
+            update={"freeze_set_ref": "freeze-set.synthetic.OTHER.v1", "content_hash": None}
+        )
+        .with_content_hash()
+    )
     other_path = tmp_path / "other_freeze.json"
     _write_json(other_path, other.model_dump(mode="json"))
     with pytest.raises(
         SettleAllFromRevealError,
-        match="FREEZE_CHANGED_AFTER_PARTIAL|TICKET_SET_CHANGED_AFTER_PARTIAL",
+        match=r"FREEZE_CHANGED_AFTER_PARTIAL|TICKET_SET_CHANGED_AFTER_PARTIAL",
     ):
         apply_settle_all_from_reveal(
             settlement_root=root,
@@ -331,11 +334,16 @@ def test_cli_settle_all_parser_and_dry_run(tmp_path: Path) -> None:
             "--expected-freeze-set-hash",
             freeze_hash,
             "--reveal-artifact",
-            str(_reveal_path(tmp_path, build_isolated_reveal_fixture(
-                target_ref="draw.synthetic.1",
-                actual_special_number=3,
-                observed_at=OPEN + timedelta(minutes=1),
-            ))),
+            str(
+                _reveal_path(
+                    tmp_path,
+                    build_isolated_reveal_fixture(
+                        target_ref="draw.synthetic.1",
+                        actual_special_number=3,
+                        observed_at=OPEN + timedelta(minutes=1),
+                    ),
+                )
+            ),
             "--dry-run",
         ]
     )
@@ -425,9 +433,10 @@ def test_formal_2026209_copy_consumer_shape_with_isolated_fixture(tmp_path: Path
     assert receipt["fixture_isolated_mechanics"] is True
     assert receipt["formal_object_settled"] is False
     assert receipt["evidence_class"] == "ISOLATED_REVEAL_FIXTURE_MECHANICS"
-    assert "formal" in receipt["next_true_consumer"].lower() or "FIXTURE" in receipt[
-        "next_true_consumer"
-    ]
+    assert (
+        "formal" in receipt["next_true_consumer"].lower()
+        or "FIXTURE" in receipt["next_true_consumer"]
+    )
     assert receipt["scientific_promotion"] is False
     # Isolated audit_scratch copy only — never write formal commission episode root.
     assert receipt["settlement_root"] == str(root)
@@ -475,8 +484,7 @@ def test_single_seat_settle_from_reveal_verb_still_present() -> None:
 
 def test_module_self_attack_no_subset_api_surface() -> None:
     path = (
-        Path(__file__).resolve().parents[3]
-        / "src/xinao/science/settle_all_from_reveal_adapter.py"
+        Path(__file__).resolve().parents[3] / "src/xinao/science/settle_all_from_reveal_adapter.py"
     )
     src = path.read_text(encoding="utf-8")
     tree = ast.parse(src)
@@ -655,9 +663,7 @@ def test_forged_receipt_replaced_under_recovery(tmp_path: Path) -> None:
     assert out["ok"] is True
     assert out["settled_exactly_once_count"] == 4
     assert out["settlement_set_hash"] == first["settlement_set_hash"]
-    disk = json.loads(
-        (root / "multipolicy_settle_all_receipt.v1.json").read_text(encoding="utf-8")
-    )
+    disk = json.loads((root / "multipolicy_settle_all_receipt.v1.json").read_text(encoding="utf-8"))
     assert disk["settled_exactly_once_count"] == 4
     assert disk["settlement_set_hash"] == first["settlement_set_hash"]
     assert disk["action_bundles_digest"] == out["action_bundles_digest"]
@@ -666,12 +672,8 @@ def test_forged_receipt_replaced_under_recovery(tmp_path: Path) -> None:
 
 def test_receipt_binds_settlement_and_bundles_digest(tmp_path: Path) -> None:
     root, _fp, _fh, _rp, receipt = _settle_once(tmp_path, "bind")
-    disk = json.loads(
-        (root / "multipolicy_settle_all_receipt.v1.json").read_text(encoding="utf-8")
-    )
-    bundles = json.loads(
-        (root / "action_settlement_bundles.v1.json").read_text(encoding="utf-8")
-    )
+    disk = json.loads((root / "multipolicy_settle_all_receipt.v1.json").read_text(encoding="utf-8"))
+    bundles = json.loads((root / "action_settlement_bundles.v1.json").read_text(encoding="utf-8"))
     settlement = json.loads((root / "settlement_set.v1.json").read_text(encoding="utf-8"))
     assert disk["settlement_set_hash"] == settlement["content_hash"]
     assert disk["action_bundles_digest"] == canonical_sha256(bundles)
@@ -707,7 +709,7 @@ def test_concurrent_same_identity_stable_sealed_artifacts(tmp_path: Path) -> Non
                 expected_freeze_set_hash=freeze_hash,
                 reveal_artifact=rpath,
             )
-        except Exception as exc:  # noqa: BLE001 — surface concurrent races
+        except Exception as exc:
             return f"{type(exc).__name__}:{exc}"
 
     with ThreadPoolExecutor(max_workers=4) as pool:

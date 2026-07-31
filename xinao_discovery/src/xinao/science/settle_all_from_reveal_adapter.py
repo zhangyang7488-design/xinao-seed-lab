@@ -13,6 +13,7 @@ portfolio verbs.
 from __future__ import annotations
 
 import ast
+import contextlib
 import json
 import re
 from collections.abc import Mapping
@@ -22,14 +23,13 @@ from typing import Any, Final
 
 from xinao.canonical import canonical_sha256
 from xinao.science.portfolio import (
+    REQUIRED_RESEARCH_ROLES,
     FrozenDecisionSet,
     PolicyRole,
-    REQUIRED_RESEARCH_ROLES,
     SettleAllResult,
     settle_all,
 )
 from xinao.science.prospective_source_thin import (
-    SOURCE_ID,
     ProspectiveSourceError,
     load_reveal,
     resolve_authority_root,
@@ -104,7 +104,10 @@ class SettleAllFromRevealError(ValueError):
 
 def _require_hex64(value: object, label: str) -> str:
     if not isinstance(value, str) or _HEX_SHA256.fullmatch(value) is None:
-        raise SettleAllFromRevealError("SETTLE_ALL_HASH_INVALID", f"{label} must be lowercase sha256")
+        raise SettleAllFromRevealError(
+            "SETTLE_ALL_HASH_INVALID",
+            f"{label} must be lowercase sha256",
+        )
     return value
 
 
@@ -169,13 +172,13 @@ def _write_exclusive_bytes(path: Path, payload: bytes) -> bool:
             stream.write(payload)
             stream.flush()
         return True
-    except FileExistsError:
+    except FileExistsError as exc:
         existing = path.read_bytes()
         if existing != payload:
             raise SettleAllFromRevealError(
                 "SETTLEMENT_CAS_CONFLICT",
                 f"path={path} already sealed with different bytes",
-            )
+            ) from exc
         return False
 
 
@@ -196,10 +199,8 @@ def _atomic_replace_json(path: Path, payload: Any) -> None:
         tmp.replace(path)
     finally:
         if tmp.exists():
-            try:
+            with contextlib.suppress(OSError):
                 tmp.unlink()
-            except OSError:
-                pass
 
 
 def _read_json(path: Path) -> Any:
@@ -243,7 +244,10 @@ def load_sealed_freeze_set(
     except Exception as exc:
         raise SettleAllFromRevealError("FREEZE_SET_INVALID", str(exc)) from exc
     if freeze_set.content_hash is None:
-        raise SettleAllFromRevealError("FREEZE_SET_UNSEALED", "FrozenDecisionSet lacks content_hash")
+        raise SettleAllFromRevealError(
+            "FREEZE_SET_UNSEALED",
+            "FrozenDecisionSet lacks content_hash",
+        )
     recomputed = freeze_set.compute_content_hash()
     if freeze_set.content_hash != recomputed:
         raise SettleAllFromRevealError(
@@ -314,9 +318,7 @@ def _reveal_is_fixture(reveal: Mapping[str, Any]) -> bool:
         return True
     if reveal.get("fixture_isolated_mechanics") is True:
         return True
-    if reveal.get("evidence_class") == "ISOLATED_REVEAL_FIXTURE_MECHANICS":
-        return True
-    return False
+    return reveal.get("evidence_class") == "ISOLATED_REVEAL_FIXTURE_MECHANICS"
 
 
 def load_reveal_artifact(path: Path) -> dict[str, Any]:
@@ -425,9 +427,10 @@ def _outcome_from_fixture_reveal(reveal: Mapping[str, Any]) -> OutcomeObservatio
             "REVEAL_NOT_ACCEPTED",
             f"fixture admission_status={admission!r}",
         )
-    if reveal.get("fixture_isolated_mechanics") is not True and str(
-        reveal.get("schema_version")
-    ) != FIXTURE_REVEAL_SCHEMA:
+    if (
+        reveal.get("fixture_isolated_mechanics") is not True
+        and str(reveal.get("schema_version")) != FIXTURE_REVEAL_SCHEMA
+    ):
         raise SettleAllFromRevealError(
             "FIXTURE_MARKER_REQUIRED",
             "isolated fixture reveal must set fixture_isolated_mechanics=true "
@@ -914,13 +917,12 @@ def apply_settle_all_from_reveal(
             f"unknown={sorted(forbidden_kwargs)}",
         )
 
-    if (reveal_artifact is None) == (authority_root is None and reveal_content_hash is None):
-        # Exactly one reveal channel: artifact XOR authority pin.
-        if reveal_artifact is None and authority_root is None:
-            raise SettleAllFromRevealError(
-                "REVEAL_SOURCE_REQUIRED",
-                "provide --reveal-artifact or (--authority-root and --reveal-content-hash)",
-            )
+    # Exactly one reveal channel: artifact XOR authority pin.
+    if reveal_artifact is None and authority_root is None and reveal_content_hash is None:
+        raise SettleAllFromRevealError(
+            "REVEAL_SOURCE_REQUIRED",
+            "provide --reveal-artifact or (--authority-root and --reveal-content-hash)",
+        )
     if reveal_artifact is not None and (
         authority_root is not None or reveal_content_hash is not None
     ):
@@ -1057,9 +1059,15 @@ def apply_settle_all_from_reveal(
             f"expected={ticket_enum['decision_refs']} settled={settled_refs}",
         )
     if result.settlement_set.missing_or_duplicate_count != 0:
-        raise SettleAllFromRevealError("MISSING_OR_DUPLICATE_TICKETS", "library conservation failed")
+        raise SettleAllFromRevealError(
+            "MISSING_OR_DUPLICATE_TICKETS",
+            "library conservation failed",
+        )
     if result.settlement_set.eligible_frozen_count != freeze_set.eligible_frozen_count:
-        raise SettleAllFromRevealError("PARTIAL_SET_SETTLEMENT", "row count != eligible frozen")
+        raise SettleAllFromRevealError(
+            "PARTIAL_SET_SETTLEMENT",
+            "row count != eligible frozen",
+        )
 
     settlement_payload = result.settlement_set.model_dump(mode="json")
     bundles_payload = [bundle.model_dump(mode="json") for bundle in result.action_bundles]

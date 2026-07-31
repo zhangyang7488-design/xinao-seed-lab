@@ -35,7 +35,6 @@ from xinao.science.owner_disposition import (
     OWNER_CHANNEL_AUTHORITY_UNPROVEN,
     SCIENCE_RETAIN_FOR_SHADOW,
     load_and_verify_disposition,
-    write_owner_disposition_artifact,
 )
 from xinao.science.researcher_result_adapter import raw_sha256
 
@@ -49,9 +48,7 @@ EXPECTED_RESULT_SHA256 = "12a53a6ff51a52fa6e2635df4508185a967210966fc44fcda101e2
 EXPECTED_RECEIPT_RAW_SHA256 = "3234e57f7423cc4f4d4725f2eca9700a38c4976690a1d776357856cfa6ba98d1"
 EXPECTED_RUN_ID = "xrr_20260730T201916_20001f0913"
 # WAVE48 / Wave94 isolated adapt content_hash for this exact result.
-EXPECTED_POLICY_CONTENT_HASH = (
-    "81f619b4ee0fadc9449776f6e261e04be7ea41442e3bf577f706ae34ebb36f80"
-)
+EXPECTED_POLICY_CONTENT_HASH = "81f619b4ee0fadc9449776f6e261e04be7ea41442e3bf577f706ae34ebb36f80"
 
 OPEN_AT = datetime(2026, 8, 1, 8, tzinfo=UTC)
 CUTOFF = OPEN_AT - timedelta(minutes=10)
@@ -354,7 +351,7 @@ def test_owner_disposition_after_public_oneshot_ingest(
 
 
 def test_mutated_result_bytes_rejected(tmp_path: Path) -> None:
-    result_bytes, receipt = _load_real_pair()
+    result_bytes, _receipt = _load_real_pair()
     # Mutate payload but keep filename; hash will not match receipt.result_sha256.
     mutated = bytearray(result_bytes)
     # Flip a byte in the middle of the JSON body.
@@ -447,9 +444,9 @@ def test_cross_pair_receipt_result_rejected(tmp_path: Path) -> None:
         "science_restored": False,
         "parent_complete": False,
     }
-    foreign_bytes = (
-        json.dumps(foreign, ensure_ascii=False, separators=(",", ":")) + "\n"
-    ).encode("utf-8")
+    foreign_bytes = (json.dumps(foreign, ensure_ascii=False, separators=(",", ":")) + "\n").encode(
+        "utf-8"
+    )
     assert raw_sha256(foreign_bytes) != EXPECTED_RESULT_SHA256
     foreign_path = tmp_path / "foreign_result.json"
     foreign_path.write_bytes(foreign_bytes)
@@ -471,9 +468,13 @@ def test_cross_pair_receipt_result_rejected(tmp_path: Path) -> None:
     err = json.loads(proc.stdout)
     assert err["ok"] is False
     assert err["owner_adopted"] is False
-    assert "RESULT" in err["reason_code"] or "HASH" in err["reason_code"] or "RECEIPT" in err[
-        "reason_code"
-    ] or "BINDING" in err["reason_code"] or "MISMATCH" in err["reason_code"]
+    assert (
+        "RESULT" in err["reason_code"]
+        or "HASH" in err["reason_code"]
+        or "RECEIPT" in err["reason_code"]
+        or "BINDING" in err["reason_code"]
+        or "MISMATCH" in err["reason_code"]
+    )
 
 
 def test_cas_content_conflict_on_same_hash_different_bytes(tmp_path: Path) -> None:
@@ -489,15 +490,12 @@ def test_cas_content_conflict_on_same_hash_different_bytes(tmp_path: Path) -> No
     # Replace with different content while keeping path (simulates silent overwrite attempt).
     # Direct path rewrite is outside API; re-ingest different bytes claiming same identity
     # is done by planting a different result with forged receipt.result_sha256=real hash.
-    forged_receipt = copy.deepcopy(receipt)
     # Build alternate payload whose raw hash differs, but plant under CAS key by
     # writing conflicting blob then calling load / second ingest of real pair after poison.
     poison = b'{"poison":true}\n'
     result_path.write_bytes(poison)
     with pytest.raises(CandidatePoolError) as excinfo:
-        ingest_verified_research_result(
-            pool_root=pool, result_bytes=result_bytes, receipt=receipt
-        )
+        ingest_verified_research_result(pool_root=pool, result_bytes=result_bytes, receipt=receipt)
     assert excinfo.value.reason_code == "POOL_CAS_CONTENT_CONFLICT"
 
 

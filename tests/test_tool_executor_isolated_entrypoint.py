@@ -113,10 +113,9 @@ def test_tool_executor_python_isolated_self_check_empty_cwd(tmp_path: Path) -> N
         capture_output=True,
         timeout=30,
     )
-    assert completed.returncode == 0, (
-        completed.stdout.decode("utf-8", errors="replace")
-        + completed.stderr.decode("utf-8", errors="replace")
-    )
+    assert completed.returncode == 0, completed.stdout.decode(
+        "utf-8", errors="replace"
+    ) + completed.stderr.decode("utf-8", errors="replace")
     report = json.loads(completed.stdout.decode("utf-8"))
     assert report["schema_version"] == "xinao.tool_executor_self_check.v1"
     assert report["ok"] is True

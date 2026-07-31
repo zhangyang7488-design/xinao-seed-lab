@@ -224,12 +224,7 @@ def write_derived_outcome_evidence(
     digest = _raw_sha256(raw)
     base = resolve_root(portfolio_root)
     path = (
-        base
-        / "objects"
-        / "settle_from_reveal_outcome"
-        / "sha256"
-        / digest[:2]
-        / f"{digest}.json"
+        base / "objects" / "settle_from_reveal_outcome" / "sha256" / digest[:2] / f"{digest}.json"
     )
     path.parent.mkdir(parents=True, exist_ok=True)
     try:
@@ -237,19 +232,17 @@ def write_derived_outcome_evidence(
             stream.write(raw)
             stream.flush()
         written = True
-    except FileExistsError:
+    except FileExistsError as exc:
         existing = path.read_bytes()
         if existing != raw:
             raise SettleFromRevealError(
                 "OUTCOME_EVIDENCE_CAS_CONFLICT",
                 f"path={path} already sealed with different bytes",
-            )
+            ) from exc
         written = False
     # Consumer-facing outcome path is the pure OutcomeObservation JSON (existing schema).
     consumer_path = (
-        base
-        / "generated"
-        / f"settle_from_reveal.outcome.{outcome.result_hash[:16]}.v1.json"
+        base / "generated" / f"settle_from_reveal.outcome.{outcome.result_hash[:16]}.v1.json"
     )
     consumer_body = (
         json.dumps(outcome.model_dump(mode="json"), ensure_ascii=False, indent=2, sort_keys=True)
@@ -282,8 +275,7 @@ def _bind_reveal_to_packet(
     if str(reveal.get("packet_content_hash")) != packet_content_hash:
         raise SettleFromRevealError(
             "REVEAL_PACKET_MISMATCH",
-            f"reveal.packet={reveal.get('packet_content_hash')!r} "
-            f"expected={packet_content_hash!r}",
+            f"reveal.packet={reveal.get('packet_content_hash')!r} expected={packet_content_hash!r}",
         )
     if str(reveal.get("target_ref")) != str(packet.get("target_ref")):
         raise SettleFromRevealError(
@@ -296,9 +288,7 @@ def _bind_reveal_to_packet(
             f"reveal.expect={reveal.get('target_expect')!r} "
             f"packet.expect={packet.get('target_expect')!r}",
         )
-    if str(packet.get("contract", {}).get("contract_sha256")) != str(
-        reveal.get("contract_sha256")
-    ):
+    if str(packet.get("contract", {}).get("contract_sha256")) != str(reveal.get("contract_sha256")):
         raise SettleFromRevealError(
             "REVEAL_CONTRACT_MISMATCH",
             f"reveal.contract={reveal.get('contract_sha256')!r}",
@@ -345,8 +335,7 @@ def _bind_frozen_to_authority(
     if str(sab.get("packet_content_hash")) != packet_content_hash:
         raise SettleFromRevealError(
             "AUTHORITY_HEAD_MISMATCH",
-            f"binding.packet={sab.get('packet_content_hash')!r} "
-            f"cli.packet={packet_content_hash!r}",
+            f"binding.packet={sab.get('packet_content_hash')!r} cli.packet={packet_content_hash!r}",
         )
     if str(sab.get("target_ref")) != str(frozen.target_ref):
         raise SettleFromRevealError(
