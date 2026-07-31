@@ -1,6 +1,6 @@
 {
   "schema_version": "xinao.researcher_charter.v1",
-  "charter_version": "1.2.8",
+  "charter_version": "1.2.9",
   "research_space": "open",
   "research_admission": "any_bounded_xinao_research_question",
   "provider_research_contract": {
