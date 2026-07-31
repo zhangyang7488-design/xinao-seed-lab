@@ -25,6 +25,9 @@ docker/xinao-researcher-egress/** text eol=lf
 docker/xinao-researcher/** text eol=lf
 docker/xinao-researcher/entrypoint.py text eol=lf
 docker/xinao-researcher/Dockerfile text eol=lf
+# Grok donor (houtai-gongren) shell/Dockerfile surfaces must stay LF so Windows
+# worktree docker build does not inject CRLF into Linux RUN scripts.
+docker/houtai-gongren/** text eol=lf
 scripts/verify_f4_live_canary_pack.py text eol=lf
 scripts/verify_f4_negative_companion_pack.py text eol=lf
 scripts/verify_f4_portfolio_source_canary_pack.py text eol=lf

@@ -118,6 +118,11 @@ def test_worker_image_has_fail_closed_unprivileged_bwrap_boundary() -> None:
     assert "bubblewrap" in dockerfile
     assert "ARG GROK_CLI_VERSION=0.2.117" in dockerfile
     assert 'test "$parsed" = "${GROK_CLI_VERSION}"' in dockerfile
+    # Version probe may recreate installer-home residue; final image must scrub it.
+    assert "rm -rf /opt/grok-installer" in dockerfile
+    probe_idx = dockerfile.index('test "$parsed" = "${GROK_CLI_VERSION}"')
+    scrub_idx = dockerfile.index("rm -rf /opt/grok-installer", probe_idx)
+    assert scrub_idx > probe_idx
     assert "mv /usr/bin/bwrap /usr/libexec/xinao/bwrap-real" in dockerfile
     assert "grok-bwrap-unprivileged-wrapper.sh /usr/bin/bwrap" in dockerfile
     assert "expected_caps=00000000000000c0" in wrapper
@@ -138,3 +143,17 @@ def test_worker_image_has_fail_closed_unprivileged_bwrap_boundary() -> None:
     assert '--ro-bind "$empty_profile" "$grok_home"' in tool_shell
     assert "--bind /workspace /workspace" in tool_shell
     assert '--reuid="$tool_uid"' in tool_shell
+
+
+def test_houtai_gongren_build_surfaces_are_lf_and_gitattributes_pinned() -> None:
+    """Windows donor rebuild requires LF materialization of houtai-gongren build surfaces."""
+    attrs = (REPO / ".gitattributes").read_text(encoding="utf-8")
+    assert "docker/houtai-gongren/** text eol=lf" in attrs
+    for rel in (
+        "docker/houtai-gongren/Dockerfile",
+        "docker/houtai-gongren/grok-bwrap-unprivileged-wrapper.sh",
+        "docker/houtai-gongren/grok-container-entrypoint.sh",
+        "docker/houtai-gongren/grok-tool-shell-wrapper.sh",
+    ):
+        raw = (REPO / rel).read_bytes()
+        assert b"\r" not in raw, rel

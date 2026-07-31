@@ -49,7 +49,9 @@ RUN set -eu; \
     parsed="$(printf '%s\n' "$observed" | sed -nE 's/.*\b([0-9]+\.[0-9]+\.[0-9]+)\b.*/\1/p' | head -n1)"; \
     test -n "${GROK_CLI_VERSION}"; \
     test -n "$parsed"; \
-    test "$parsed" = "${GROK_CLI_VERSION}"
+    test "$parsed" = "${GROK_CLI_VERSION}"; \
+    # Version probe may recreate guides/sessions under HOME; scrub installer home again.
+    rm -rf /opt/grok-installer
 
 ENV OPA_VERSION=1.0.0
 RUN curl -fsSL -o /usr/local/bin/opa \
