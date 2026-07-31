@@ -30,7 +30,19 @@ from pathlib import Path
 from typing import Any, Final, Literal
 
 from xinao.canonical import ACCOUNTING_DECIMAL, canonical_sha256, format_decimal
-from xinao.science.candidate_pool import CandidatePoolError, load_pool_entry, verify_pool_entry_seal
+from xinao.science.candidate_pool import (
+    CandidatePoolError,
+    load_pool_entry,
+    pool_entry_path,
+    verify_pool_entry_seal,
+)
+from xinao.science.episode_export_pool_adapter import (
+    INGEST_KIND as EPISODE_EXPORT_INGEST_KIND,
+)
+from xinao.science.episode_export_pool_adapter import (
+    EpisodeExportAdapterError,
+    load_episode_pool_entry,
+)
 from xinao.science.prospective_source_thin import (
     ProspectiveSourceError,
     is_live_macaujc2_target,
@@ -1011,6 +1023,47 @@ def write_owner_disposition_artifact(
     }
 
 
+def load_verified_pool_entry_for_disposition(
+    pool_root: Path,
+    result_sha256: str,
+) -> dict[str, Any]:
+    """Load a sealed pool entry with ingest_kind-aware verifier dispatch.
+
+    - ``EPISODE_EXPORT_MANIFEST`` → ``load_episode_pool_entry`` (episode export CAS)
+    - all other / missing kinds → ``load_pool_entry`` (one-shot result/receipt)
+
+    Does not invent a second seal/verification rule set; only chooses the loader
+    that already owns each admission shape. Pool remains immutable; this path
+    never sets owner_adopted or writes freeze.
+    """
+
+    digest = _require_hex64(
+        result_sha256,
+        "DISPOSITION_RESULT_HASH_INVALID",
+        "result_sha256",
+    )
+    entry_path = pool_entry_path(pool_root, digest)
+    if not entry_path.is_file():
+        raise OwnerDispositionError("POOL_ENTRY_MISSING", digest)
+    try:
+        peek = json.loads(entry_path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise OwnerDispositionError("POOL_ENTRY_INVALID", str(exc)) from exc
+    if not isinstance(peek, Mapping):
+        raise OwnerDispositionError("POOL_ENTRY_INVALID", "JSON object required")
+
+    if peek.get("ingest_kind") == EPISODE_EXPORT_INGEST_KIND:
+        try:
+            return load_episode_pool_entry(pool_root, digest)
+        except EpisodeExportAdapterError as exc:
+            raise OwnerDispositionError(exc.reason_code, exc.detail) from exc
+
+    try:
+        return load_pool_entry(pool_root, digest)
+    except CandidatePoolError as exc:
+        raise OwnerDispositionError(exc.reason_code, exc.detail) from exc
+
+
 def load_and_verify_disposition(
     *,
     disposition_path: Path,
@@ -1057,10 +1110,7 @@ def load_and_verify_disposition(
             f"caller={result_sha256} disposition={claimed_result}",
         )
     digest = _require_hex64(claimed_result, "DISPOSITION_RESULT_HASH_INVALID", "result_sha256")
-    try:
-        pool_entry = load_pool_entry(pool_root, digest)
-    except CandidatePoolError as exc:
-        raise OwnerDispositionError(exc.reason_code, exc.detail) from exc
+    pool_entry = load_verified_pool_entry_for_disposition(pool_root, digest)
 
     normalized = validate_disposition_payload(payload, pool_entry=pool_entry)
     return {
@@ -1133,6 +1183,7 @@ __all__ = [
     "disposition_information_set_hash",
     "encode_disposition_bytes",
     "load_and_verify_disposition",
+    "load_verified_pool_entry_for_disposition",
     "parse_disposition_json_strict",
     "raw_sha256",
     "reject_forbidden_outcome_material",
