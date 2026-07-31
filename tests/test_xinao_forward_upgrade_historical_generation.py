@@ -110,7 +110,13 @@ def _sealed_pre_modules_v2_release(
     module._materialize_skill_bundle(temp_bundle, source_rows, bundle_manifest)
     hashes = _pre_modules_skill_hashes(module, temp_bundle)
     shadow_lock_hash = shadow_lock if shadow_lock is not None else hashes["shadow_runtime_lock_sha256"]
-    shadow_tree_hash = shadow_tree if shadow_tree is not None else ("e" * 64)
+    if shadow_tree is not None:
+        shadow_tree_hash = shadow_tree
+    else:
+        # Default: real shadow tree from source package rows (Wave91 A1b requires this).
+        lock_obj = module._load_shadow_runtime_lock(SKILL_ROOT)
+        shadow_rows = module._collect_shadow_runtime_rows(ROOT, lock_obj)
+        shadow_tree_hash = module._shadow_runtime_tree_sha256(shadow_rows)
     source_identity = {
         "source_commit": "c" * 40,
         "source_tree": "d" * 40,
@@ -626,7 +632,7 @@ def test_companion_runtime_seal_matches_repository_bytes() -> None:
     runtime_path = bootstrap._companion_runtime_path()
     observed = hashlib.sha256(runtime_path.read_bytes()).hexdigest()
     assert observed == bootstrap.EXPECTED_COMPANION_RUNTIME_SHA256
-    assert observed == "7e4260cf5ae18b71139ad4e4d971ca955d97d190086b6dd731e2cc02dff1348b"
+    assert observed == "ce36be4e60028bf09e40516c3660c92cd2e6a4dab8c696e95a8fe7b292eb2706"
     assert len(observed) == 64
 
 
@@ -768,6 +774,314 @@ def test_live_gen6_shadow_lock_cross_bound(
         )
     assert failure.value.reason_code == "RELEASE_SHADOW_RUNTIME_LOCK_INVALID"
     assert "skill_hashes_cross_check" in failure.value.detail
+
+
+# ---------------------------------------------------------------------------
+# Wave95 / Wave91: A1b tree recompute + A1c/A1d/A1e cross-generation lock bind
+# ---------------------------------------------------------------------------
+
+
+def _rewrite_pre_modules_release_with_si_tree(
+    module,
+    good: dict[str, object],
+    good_path: Path,
+    *,
+    forged_tree: str,
+) -> Path:
+    """Identity-recompute after SI/label shadow_tree replacement; lock/skill_hashes unchanged."""
+
+    mutated = copy.deepcopy(good)
+    mutated["source_identity"]["shadow_runtime_tree_sha256"] = forged_tree
+    mutated["image_labels"]["io.xinao.researcher.shadow-runtime.sha256"] = forged_tree
+    source_identity = mutated["source_identity"]
+    assert isinstance(source_identity, dict)
+    source_identity_sha256 = module._sha256_bytes(module._canonical_bytes(source_identity))
+    labels = mutated["image_labels"]
+    assert isinstance(labels, dict)
+    labels["io.xinao.researcher.source-identity.sha256"] = source_identity_sha256
+    identity = module._sha256_bytes(
+        module._canonical_bytes(
+            module._release_identity_payload(mutated, include_shadow_runtime=True)
+        )
+    )
+    capability_version = str(mutated["capability_version"])
+    new_release_id = f"researcher-{capability_version}-{identity[:16]}"
+    old_root = good_path.parent
+    new_root = old_root.parent / new_release_id
+    if new_root.exists():
+        shutil.rmtree(new_root)
+    shutil.copytree(old_root, new_root)
+    new_path = new_root / "release.json"
+    mutated["release_id"] = new_release_id
+    mutated["release_identity_sha256"] = identity
+    mutated["skill_bundle_path"] = str(new_root / "skill-bundle")
+    mutated["skill_bundle_manifest_path"] = str(new_root / "skill-bundle.manifest.json")
+    module._write_json_atomic(new_path, mutated)
+    return new_path
+
+
+def test_pre_modules_rejects_forged_shadow_tree_a1b(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Wave91 A1b: arbitrary SI/label shadow_tree must fail when lock matches source cone."""
+
+    module = _module()
+    good, path = _sealed_pre_modules_v2_release(
+        module, tmp_path, monkeypatch, image_character="3", variant=b"a1b-tree\n"
+    )
+    module._validate_sealed_protocol_v2_release(good, path, verify_bundle=True)
+    real_tree = good["source_identity"]["shadow_runtime_tree_sha256"]
+    forged_tree = "f" * 64
+    assert forged_tree != real_tree
+    assert module.HEX_SHA256_PATTERN.fullmatch(forged_tree)
+    new_path = _rewrite_pre_modules_release_with_si_tree(
+        module, good, path, forged_tree=forged_tree
+    )
+    mutated = json.loads(new_path.read_text(encoding="utf-8"))
+    assert mutated["source_identity"]["shadow_runtime_tree_sha256"] == forged_tree
+    assert (
+        mutated["image_labels"]["io.xinao.researcher.shadow-runtime.sha256"] == forged_tree
+    )
+    with pytest.raises(module.XinaoError) as failure:
+        module._validate_sealed_protocol_v2_release(mutated, new_path, verify_bundle=True)
+    assert failure.value.reason_code == "RELEASE_SHADOW_RUNTIME_TREE_INVALID"
+    assert "tree_cross_check" in failure.value.detail
+
+
+def test_pre_tool_rejects_si_vs_skill_hashes_shadow_lock_desync_a1d(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Wave91 A1d: pre_tool_image must enforce skill_hashes_cross_check like pre_modules."""
+
+    module = _module()
+    # Build a pre_tool_image-shaped release (modules tree present, no tool image fields).
+    state = _state(module, tmp_path, monkeypatch)
+    source_rows = module._source_bundle_files(SKILL_ROOT)
+    source_rows.append(
+        ("references/test-release-variant.txt", tmp_path / "unused", b"pre-tool-desync\n")
+    )
+    source_rows.sort(key=lambda item: item[0])
+    package_version = "1.3.5"
+    capability_version = "1.2.2"
+    bundle_manifest = module._skill_bundle_manifest(
+        source_rows, package_version=package_version
+    )
+    temp_bundle = tmp_path / "pre-tool-bundle"
+    module._materialize_skill_bundle(temp_bundle, source_rows, bundle_manifest)
+    hashes = module._reference_hashes_for_keys(temp_bundle, module.CURRENT_SKILL_HASH_KEYS)
+    lock_obj = module._load_shadow_runtime_lock(SKILL_ROOT)
+    shadow_rows = module._collect_shadow_runtime_rows(ROOT, lock_obj)
+    shadow_tree = module._shadow_runtime_tree_sha256(shadow_rows)
+    shadow_lock = hashes["shadow_runtime_lock_sha256"]
+    module_rows = module._collect_researcher_image_module_rows(ROOT)
+    modules_tree = module._researcher_image_modules_tree_sha256(module_rows)
+    forged_lock = "a" * 64
+    assert forged_lock != shadow_lock
+    source_identity = {
+        "source_commit": "c" * 40,
+        "source_tree": "d" * 40,
+        "source_dirty": False,
+        "grok_donor_image_id": "sha256:" + "b" * 64,
+        "grok_donor_binary_sha256": "a" * 64,
+        "shadow_runtime_tree_sha256": shadow_tree,
+        "shadow_runtime_lock_sha256": forged_lock,
+        "researcher_image_modules_tree_sha256": modules_tree,
+    }
+    assert set(source_identity) == set(module.PRE_TOOL_IMAGE_SOURCE_IDENTITY_KEYS)
+    si_sha = module._sha256_bytes(module._canonical_bytes(source_identity))
+    labels = {
+        "io.xinao.researcher.chain": "dedicated-xinao-science",
+        "io.xinao.researcher.generic-worker-route": "forbidden",
+        "io.xinao.researcher.grok-donor-image-id": source_identity["grok_donor_image_id"],
+        "io.xinao.researcher.grok-donor-binary.sha256": source_identity[
+            "grok_donor_binary_sha256"
+        ],
+        "io.xinao.researcher.charter.sha256": hashes["charter_sha256"],
+        "io.xinao.researcher.output-schema.sha256": hashes["output_schema_sha256"],
+        "io.xinao.researcher.material-bundle-schema.sha256": hashes[
+            "material_bundle_schema_sha256"
+        ],
+        "io.xinao.researcher.runtime-lock.sha256": hashes["runtime_lock_sha256"],
+        "io.xinao.researcher.skill-invoker.sha256": hashes["skill_invoker_sha256"],
+        "io.xinao.researcher.dockerfile.sha256": "1" * 64,
+        "io.xinao.researcher.entrypoint.sha256": "2" * 64,
+        "io.xinao.researcher.source-identity.sha256": si_sha,
+        "io.xinao.researcher.shadow-runtime.sha256": shadow_tree,
+        "io.xinao.researcher.shadow-runtime-lock.sha256": forged_lock,
+        "io.xinao.researcher.requested-model": "grok-4.5",
+        **module._dual_profile_image_labels(
+            researcher_image_modules_tree_sha256=modules_tree
+        ),
+    }
+    manifest: dict[str, object] = {
+        "schema_version": module.RELEASE_SCHEMA,
+        "release_id": "pending",
+        "package_version": package_version,
+        "capability_id": "researcher-container",
+        "capability_version": capability_version,
+        "charter_version": capability_version,
+        "runtime_version": capability_version,
+        "release_identity_sha256": "pending",
+        "source_identity": source_identity,
+        "skill_bundle_path": "pending",
+        "skill_bundle_manifest_path": "pending",
+        "skill_bundle_manifest_sha256": "pending",
+        "skill_bundle_tree_sha256": bundle_manifest["tree_sha256"],
+        "image_tag_observational": "xinao-researcher:pre-tool-test",
+        "image_id": "sha256:" + "4" * 64,
+        "image_entrypoint": ["python", "-I", module.RESEARCHER_CANARY_ENTRYPOINT_IMAGE_PATH],
+        "image_labels": labels,
+        "skill_hashes": hashes,
+        "required_bootstrap_protocol": 2,
+        "generic_worker_route_allowed": False,
+        "state_namespace": "xinao_skill/researcher_container",
+        "run_namespace": "xinao_researcher",
+    }
+    assert set(manifest) == set(module.PRE_TOOL_IMAGE_RELEASE_KEYS)
+    identity = module._sha256_bytes(
+        module._canonical_bytes(
+            module._release_identity_payload(manifest, include_shadow_runtime=True)
+        )
+    )
+    release_id = f"researcher-{capability_version}-{identity[:16]}"
+    release_root = state / "researcher_container" / "releases" / release_id
+    manifest_path = release_root / "release.json"
+    manifest.update(
+        {
+            "release_id": release_id,
+            "release_identity_sha256": identity,
+            "skill_bundle_path": str(release_root / "skill-bundle"),
+            "skill_bundle_manifest_path": str(release_root / "skill-bundle.manifest.json"),
+            "skill_bundle_manifest_sha256": module._sha256_bytes(
+                module._canonical_bytes(bundle_manifest)
+            ),
+        }
+    )
+    module._materialize_skill_bundle(release_root / "skill-bundle", source_rows, bundle_manifest)
+    module._write_json_atomic(
+        release_root / "skill-bundle.manifest.json", bundle_manifest, create_new=True
+    )
+    module._write_json_atomic(manifest_path, manifest, create_new=True)
+    with pytest.raises(module.XinaoError) as failure:
+        module._validate_sealed_protocol_v2_release(
+            json.loads(manifest_path.read_text(encoding="utf-8")),
+            manifest_path,
+            verify_bundle=True,
+        )
+    assert failure.value.reason_code == "RELEASE_SHADOW_RUNTIME_LOCK_INVALID"
+    assert "skill_hashes_cross_check" in failure.value.detail
+
+
+def test_exact_current_rejects_si_vs_skill_hashes_shadow_lock_desync_a1e(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Wave91 A1e: exact-current production gate must reject SI/label lock desync."""
+
+    module = _module()
+    good, path = _sealed_current_dual_image_release(
+        module, tmp_path, monkeypatch, image_character="c", variant=b"a1e-desync\n"
+    )
+    module._validate_release_manifest(good, path, verify_bundle=True)
+    real_lock = good["skill_hashes"]["shadow_runtime_lock_sha256"]
+    forged_lock = "d" * 64
+    assert forged_lock != real_lock
+    mutated = copy.deepcopy(good)
+    mutated["source_identity"]["shadow_runtime_lock_sha256"] = forged_lock
+    mutated["image_labels"]["io.xinao.researcher.shadow-runtime-lock.sha256"] = forged_lock
+    source_identity = mutated["source_identity"]
+    assert isinstance(source_identity, dict)
+    si_sha = module._sha256_bytes(module._canonical_bytes(source_identity))
+    mutated["image_labels"]["io.xinao.researcher.source-identity.sha256"] = si_sha
+    identity = module._sha256_bytes(
+        module._canonical_bytes(module._release_identity_payload(mutated))
+    )
+    capability_version = str(mutated["capability_version"])
+    new_release_id = f"researcher-{capability_version}-{identity[:16]}"
+    old_root = path.parent
+    new_root = old_root.parent / new_release_id
+    if new_root.exists():
+        shutil.rmtree(new_root)
+    shutil.copytree(old_root, new_root)
+    new_path = new_root / "release.json"
+    mutated["release_id"] = new_release_id
+    mutated["release_identity_sha256"] = identity
+    mutated["skill_bundle_path"] = str(new_root / "skill-bundle")
+    mutated["skill_bundle_manifest_path"] = str(new_root / "skill-bundle.manifest.json")
+    module._write_json_atomic(new_path, mutated)
+    loaded = json.loads(new_path.read_text(encoding="utf-8"))
+    assert loaded["skill_hashes"]["shadow_runtime_lock_sha256"] == real_lock
+    assert loaded["source_identity"]["shadow_runtime_lock_sha256"] == forged_lock
+    with pytest.raises(module.XinaoError) as failure:
+        module._validate_release_manifest(loaded, new_path, verify_bundle=True)
+    assert failure.value.reason_code == "RELEASE_SHADOW_RUNTIME_LOCK_INVALID"
+    assert "skill_hashes_cross_check" in failure.value.detail
+
+
+def test_exact_current_rejects_forged_shadow_tree(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Exact-current must reject SI/label shadow_tree forged away from source package rows."""
+
+    module = _module()
+    good, path = _sealed_current_dual_image_release(
+        module, tmp_path, monkeypatch, image_character="e", variant=b"cur-tree\n"
+    )
+    real_tree = good["source_identity"]["shadow_runtime_tree_sha256"]
+    forged_tree = "f" * 64
+    assert forged_tree != real_tree
+    mutated = copy.deepcopy(good)
+    mutated["source_identity"]["shadow_runtime_tree_sha256"] = forged_tree
+    mutated["image_labels"]["io.xinao.researcher.shadow-runtime.sha256"] = forged_tree
+    source_identity = mutated["source_identity"]
+    assert isinstance(source_identity, dict)
+    si_sha = module._sha256_bytes(module._canonical_bytes(source_identity))
+    mutated["image_labels"]["io.xinao.researcher.source-identity.sha256"] = si_sha
+    identity = module._sha256_bytes(
+        module._canonical_bytes(module._release_identity_payload(mutated))
+    )
+    capability_version = str(mutated["capability_version"])
+    new_release_id = f"researcher-{capability_version}-{identity[:16]}"
+    old_root = path.parent
+    new_root = old_root.parent / new_release_id
+    if new_root.exists():
+        shutil.rmtree(new_root)
+    shutil.copytree(old_root, new_root)
+    new_path = new_root / "release.json"
+    mutated["release_id"] = new_release_id
+    mutated["release_identity_sha256"] = identity
+    mutated["skill_bundle_path"] = str(new_root / "skill-bundle")
+    mutated["skill_bundle_manifest_path"] = str(new_root / "skill-bundle.manifest.json")
+    module._write_json_atomic(new_path, mutated)
+    with pytest.raises(module.XinaoError) as failure:
+        module._validate_release_manifest(
+            json.loads(new_path.read_text(encoding="utf-8")), new_path, verify_bundle=True
+        )
+    assert failure.value.reason_code == "RELEASE_SHADOW_RUNTIME_TREE_INVALID"
+    assert "tree_cross_check" in failure.value.detail
+
+
+def test_cross_generation_integrity_helpers_present() -> None:
+    """Wave91 A1c: pre_modules, pre_tool, and exact-current all carry cross-binds."""
+
+    src = (SKILL_ROOT / "scripts" / "xinao_runtime.py").read_text(encoding="utf-8")
+    pm = src.find("def _validate_pre_modules_release")
+    pt = src.find("def _validate_pre_tool_image_release")
+    cur = src.find("def _validate_release_manifest")
+    ref = src.find("def _reference_hashes_for_keys")
+    sealed_ref = src.find("def _validate_sealed_protocol_v2_release_ref")
+    assert pm != -1 and pt != -1 and cur != -1
+    pm_block = src[pm:pt]
+    pt_block = src[pt:sealed_ref]
+    cur_block = src[cur:ref]
+    assert "skill_hashes_cross_check" in pm_block or "_assert_skill_hashes_shadow_lock_cross_bound" in pm_block
+    assert "_assert_skill_hashes_shadow_lock_cross_bound" in pt_block
+    assert "_assert_skill_hashes_shadow_lock_cross_bound" in cur_block
+    assert "expected_labels" in pt_block
+    assert "expected_labels" in cur_block
+    assert "shadow-runtime-lock" in cur_block
+    assert "_verify_shadow_runtime_tree_from_source_bundle" in pm_block
+    assert "_verify_shadow_runtime_tree_from_source_bundle" in pt_block
+    assert "_verify_shadow_runtime_tree_from_source_bundle" in cur_block
 
 
 def _sealed_current_dual_image_release(
@@ -1009,7 +1323,6 @@ def _prepare_pre_modules_forward_upgrade_world(
         package_version="1.3.4",
         capability_version="1.2.1",
         variant=b"previous-pre-modules\n",
-        shadow_tree="a" * 64,
     )
     active, active_path = _sealed_pre_modules_v2_release(
         module,
@@ -1019,7 +1332,6 @@ def _prepare_pre_modules_forward_upgrade_world(
         package_version="1.3.4",
         capability_version="1.2.1",
         variant=b"active-pre-modules-1.3.4\n",
-        shadow_tree="b" * 64,
     )
     previous_ref = module._release_ref_from_manifest(
         previous, previous_path, activation_txn_id="xra_20260730T120000_" + "c" * 16

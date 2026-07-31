@@ -6450,7 +6450,12 @@ def test_same_version_skill_bundle_drift_requires_forward_upgrade(
 def test_shadow_only_source_drift_requires_forward_upgrade(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Shadow-only drift must not look current even when skill tree/versions match."""
+    """Shadow-only drift must not look current even when skill tree/versions match.
+
+    Active remains a fully sealed valid release (real tree/lock). Drift is modeled by
+    advancing the migration-source shadow tree identity, not by forging SI tree hex
+    (Wave91/95 tree recompute rejects forged trees under verify_bundle=True).
+    """
 
     module = _module()
     source = module._current_source_skill_bundle_identity()
@@ -6465,23 +6470,18 @@ def test_shadow_only_source_drift_requires_forward_upgrade(
     assert matching["skill_bundle_tree_sha256"] == source["skill_bundle_tree_sha256"]
     assert module._active_release_requires_forward_upgrade(matching) is False
 
-    shadow_drifted, _shadow_path = _sealed_release(
-        module,
-        tmp_path,
-        monkeypatch,
-        image_character="c",
-        package_version=source["package_version"],
-        capability_version=source["capability_version"],
-        shadow_runtime_tree_sha256="f" * 64,
-    )
-    assert shadow_drifted["skill_bundle_tree_sha256"] == source["skill_bundle_tree_sha256"]
-    assert shadow_drifted["package_version"] == source["package_version"]
-    assert shadow_drifted["capability_version"] == source["capability_version"]
+    drifted_source = dict(source)
+    drifted_source["shadow_runtime_tree_sha256"] = "f" * 64
+    assert drifted_source["shadow_runtime_tree_sha256"] != source["shadow_runtime_tree_sha256"]
+    monkeypatch.setattr(module, "_current_source_skill_bundle_identity", lambda: drifted_source)
+    assert matching["skill_bundle_tree_sha256"] == drifted_source["skill_bundle_tree_sha256"]
+    assert matching["package_version"] == drifted_source["package_version"]
+    assert matching["capability_version"] == drifted_source["capability_version"]
     assert (
-        shadow_drifted["source_identity"]["shadow_runtime_tree_sha256"]
-        != source["shadow_runtime_tree_sha256"]
+        matching["source_identity"]["shadow_runtime_tree_sha256"]
+        != drifted_source["shadow_runtime_tree_sha256"]
     )
-    assert module._active_release_requires_forward_upgrade(shadow_drifted) is True
+    assert module._active_release_requires_forward_upgrade(matching) is True
 
 
 def test_bootstrap_forward_upgrade_same_semver_source_drift_fails_closed(
@@ -6550,26 +6550,58 @@ def test_bootstrap_forward_upgrade_same_version_drift_never_claims_already(
 def test_bootstrap_forward_upgrade_shadow_only_drift_never_claims_already(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Shadow-only source drift must not return ALREADY_* without pointer mutation."""
+    """Shadow-only source drift must not return ALREADY_* without pointer mutation.
+
+    Seals a valid active (real shadow tree + matching skill tree), then advances only the
+    migration-source shadow tree so skill-bundle still matches while shadow-only drift
+    forces upgrade. Forged SI tree hex is no longer a legal sealed fixture (Wave91 A1b).
+    """
 
     module = _module()
-    world = _prepare_current_schema_source_drift_world(
+    source_identity = module._current_source_skill_bundle_identity()
+    package_version = source_identity["package_version"]
+    capability_version = source_identity["capability_version"]
+    active, active_path = _sealed_release(
         module,
         tmp_path,
         monkeypatch,
+        image_character="d",
+        package_version=package_version,
+        capability_version=capability_version,
         variant=None,
-        shadow_runtime_tree_sha256="e" * 64,
     )
+    assert active["skill_bundle_tree_sha256"] == source_identity["skill_bundle_tree_sha256"]
+    assert module._active_release_requires_forward_upgrade(active) is False
+    pointer, journal, journal_path = _terminal_pointer(
+        module,
+        active,
+        active_path,
+        generation=3,
+        txn_suffix="b" * 16,
+        previous_verified=None,
+    )
+    import shutil
+
+    installed = tmp_path / "installed_skill_shadow_drift"
+    if installed.exists():
+        shutil.rmtree(installed)
+    shutil.copytree(Path(str(active["skill_bundle_path"])), installed)
+    monkeypatch.setenv("XINAO_INSTALLED_SKILL_ROOT", str(installed))
+    monkeypatch.setattr(module, "DEFAULT_INSTALLED_SKILL_ROOT", installed)
+    pointer_path = module._state_paths()["pointer"]
+    pointer_bytes = pointer_path.read_bytes()
+
+    drifted_source = dict(source_identity)
+    drifted_source["shadow_runtime_tree_sha256"] = "e" * 64
     assert (
-        world["active"]["skill_bundle_tree_sha256"]
-        == world["source_identity"]["skill_bundle_tree_sha256"]
+        active["source_identity"]["shadow_runtime_tree_sha256"]
+        != drifted_source["shadow_runtime_tree_sha256"]
     )
-    assert (
-        world["active"]["source_identity"]["shadow_runtime_tree_sha256"]
-        != world["source_identity"]["shadow_runtime_tree_sha256"]
-    )
+    monkeypatch.setattr(module, "_current_source_skill_bundle_identity", lambda: drifted_source)
+    assert module._active_release_requires_forward_upgrade(active) is True
     monkeypatch.setattr(module, "_prepare_forward_upgrade_target", lambda: None)
     with pytest.raises(module.XinaoError) as failure:
         module.bootstrap_forward_upgrade()
     assert failure.value.reason_code == "FORWARD_UPGRADE_TARGET_ABSENT"
-    assert world["pointer_path"].read_bytes() == world["pointer_bytes"]
+    assert pointer_path.read_bytes() == pointer_bytes
+    del journal, journal_path  # constructed for realistic terminal pointer world

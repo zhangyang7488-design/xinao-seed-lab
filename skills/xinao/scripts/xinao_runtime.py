@@ -2437,6 +2437,65 @@ def _shadow_runtime_tree_sha256(rows: list[tuple[str, Path, bytes]]) -> str:
     return _sha256_bytes(_canonical_bytes(payload))
 
 
+def _assert_skill_hashes_shadow_lock_cross_bound(
+    expected_hashes: Mapping[str, Any], shadow_lock: str
+) -> None:
+    """Require skill_hashes.shadow_runtime_lock_sha256 == SI/label shadow lock.
+
+    skill_hashes already bind the sealed lock-file bytes under the skill-bundle.
+    Without this cross-check a format-valid SI/label lock can desync from those bytes.
+    """
+
+    if expected_hashes.get("shadow_runtime_lock_sha256") != shadow_lock:
+        raise XinaoError("RELEASE_SHADOW_RUNTIME_LOCK_INVALID", "skill_hashes_cross_check")
+
+
+def _verify_shadow_runtime_tree_from_source_bundle(
+    bundle_root: Path,
+    expected_tree: str,
+    *,
+    verify_bundle: bool,
+) -> None:
+    """Recompute shadow tree from package source rows when the sealed lock matches.
+
+    When ``verify_bundle`` is true and the skill-bundle lock bytes equal the migration
+    source skill lock, recompute the tree from the same inventory rows ``build_release``
+    uses and require equality with SI/label ``shadow_runtime_tree_sha256``. This rejects
+    forged arbitrary trees on current-lock seals (Wave91 A1b) without forcing evolved
+    ambient package bytes onto historical gen6 seals whose lock no longer matches.
+
+    When the migration source cone is absent or the lock generation differs, tree byte
+    recompute is skipped; skill_hashes lock cross-bind and label equality still apply.
+    """
+
+    if not verify_bundle:
+        return
+    if not isinstance(expected_tree, str) or HEX_SHA256_PATTERN.fullmatch(expected_tree) is None:
+        raise XinaoError("RELEASE_SHADOW_RUNTIME_TREE_INVALID", _safe_text(expected_tree))
+    bundle_lock_path = bundle_root / SHADOW_RUNTIME_LOCK_RELATIVE
+    if not bundle_lock_path.is_file() or _is_reparse(bundle_lock_path):
+        raise XinaoError("RELEASE_SHADOW_RUNTIME_TREE_INVALID", "bundle_lock_missing")
+    try:
+        source_root = _migration_source_root()
+    except XinaoError:
+        # Offline / no full source cone: cannot independently recompute package rows.
+        return
+    source_lock_path = source_root / "skills" / "xinao" / SHADOW_RUNTIME_LOCK_RELATIVE
+    if not source_lock_path.is_file() or _is_reparse(source_lock_path):
+        return
+    if _sha256(bundle_lock_path) != _sha256(source_lock_path):
+        # Historical sealed lock generation; package under ambient cone may have evolved.
+        return
+    lock = _load_shadow_runtime_lock(bundle_root)
+    rows = _collect_shadow_runtime_rows(source_root, lock)
+    observed = _shadow_runtime_tree_sha256(rows)
+    if observed != expected_tree:
+        raise XinaoError(
+            "RELEASE_SHADOW_RUNTIME_TREE_INVALID",
+            f"tree_cross_check:expected={expected_tree} observed={observed}",
+        )
+
+
 def _stage_shadow_runtime(build_context: Path, rows: list[tuple[str, Path, bytes]]) -> Path:
     """Materialize the locked shadow runtime cone into the owned Docker build context.
 
@@ -3129,17 +3188,6 @@ def _validate_release_manifest(
     }
     if tool_labels != expected_tool_labels:
         raise XinaoError("RELEASE_TOOL_IMAGE_IDENTITY_INVALID", "tool_image_labels")
-    if labels.get("io.xinao.researcher.image-modules.sha256") != modules_tree:
-        raise XinaoError("RELEASE_IMAGE_IDENTITY_INVALID", "image-modules.sha256")
-    if labels.get("io.xinao.researcher.default-profile") != RESEARCHER_DEFAULT_PROFILE:
-        raise XinaoError("RELEASE_IMAGE_IDENTITY_INVALID", "default-profile")
-    if labels.get("io.xinao.researcher.episode-profile") != RESEARCHER_EPISODE_PROFILE:
-        raise XinaoError("RELEASE_IMAGE_IDENTITY_INVALID", "episode-profile")
-    if (
-        labels.get("io.xinao.researcher.episode-entrypoint")
-        != RESEARCHER_EPISODE_ENTRYPOINT_IMAGE_PATH
-    ):
-        raise XinaoError("RELEASE_IMAGE_IDENTITY_INVALID", "episode-entrypoint")
     for value in (manifest.get("state_namespace"), manifest.get("run_namespace")):
         normalized = str(value).lower().replace("-", "_")
         if any(token in normalized for token in FORBIDDEN_RUNTIME_TOKENS):
@@ -3180,6 +3228,47 @@ def _validate_release_manifest(
         or expected_hashes != _reference_hashes(bundle_root)
     ):
         raise XinaoError("RELEASE_SKILL_HASHES_MISMATCH", str(manifest_path))
+    # Exact-current integrity: full expected_labels equality + lock/tree cross-binds
+    # (same strength as pre_modules; Wave91 A1c/A1d/A1e).
+    source_identity_sha256 = _sha256_bytes(_canonical_bytes(source_identity))
+    expected_labels = {
+        "io.xinao.researcher.chain": "dedicated-xinao-science",
+        "io.xinao.researcher.generic-worker-route": "forbidden",
+        "io.xinao.researcher.grok-donor-image-id": donor_id,
+        "io.xinao.researcher.grok-donor-binary.sha256": donor_binary_sha256,
+        "io.xinao.researcher.charter.sha256": expected_hashes["charter_sha256"],
+        "io.xinao.researcher.output-schema.sha256": expected_hashes["output_schema_sha256"],
+        "io.xinao.researcher.material-bundle-schema.sha256": expected_hashes[
+            "material_bundle_schema_sha256"
+        ],
+        "io.xinao.researcher.runtime-lock.sha256": expected_hashes["runtime_lock_sha256"],
+        "io.xinao.researcher.skill-invoker.sha256": expected_hashes["skill_invoker_sha256"],
+        "io.xinao.researcher.dockerfile.sha256": labels.get(
+            "io.xinao.researcher.dockerfile.sha256"
+        ),
+        "io.xinao.researcher.entrypoint.sha256": labels.get(
+            "io.xinao.researcher.entrypoint.sha256"
+        ),
+        "io.xinao.researcher.source-identity.sha256": source_identity_sha256,
+        "io.xinao.researcher.shadow-runtime.sha256": shadow_tree,
+        "io.xinao.researcher.shadow-runtime-lock.sha256": shadow_lock,
+        "io.xinao.researcher.requested-model": REQUESTED_MODEL,
+        **_dual_profile_image_labels(researcher_image_modules_tree_sha256=modules_tree),
+    }
+    if labels != expected_labels:
+        raise XinaoError("RELEASE_IMAGE_IDENTITY_INVALID", "image_labels")
+    _assert_skill_hashes_shadow_lock_cross_bound(expected_hashes, shadow_lock)
+    _verify_shadow_runtime_tree_from_source_bundle(
+        bundle_root, shadow_tree, verify_bundle=verify_bundle
+    )
+    for key in (
+        "io.xinao.researcher.dockerfile.sha256",
+        "io.xinao.researcher.entrypoint.sha256",
+        "io.xinao.researcher.shadow-runtime.sha256",
+        "io.xinao.researcher.shadow-runtime-lock.sha256",
+    ):
+        if HEX_SHA256_PATTERN.fullmatch(str(labels.get(key, ""))) is None:
+            raise XinaoError("RELEASE_IMAGE_IDENTITY_INVALID", key)
     return bundle_manifest
 
 
@@ -3510,11 +3599,12 @@ def _validate_pre_modules_release(
     }
     if labels != expected_labels:
         raise XinaoError("RELEASE_IMAGE_IDENTITY_INVALID", "image_labels")
-    # A-only integrity: skill_hashes.shadow_runtime_lock_sha256 must equal SI lock.
-    # Labels already bind SI lock; skill_hashes already bind real lock-file bytes.
-    # Without this cross-check a format-valid SI/label lock can desync from skill_hashes.
-    if expected_hashes.get("shadow_runtime_lock_sha256") != shadow_lock:
-        raise XinaoError("RELEASE_SHADOW_RUNTIME_LOCK_INVALID", "skill_hashes_cross_check")
+    # skill_hashes.shadow_runtime_lock_sha256 must equal SI lock (labels already bind SI).
+    _assert_skill_hashes_shadow_lock_cross_bound(expected_hashes, shadow_lock)
+    # When sealed lock matches migration source lock, recompute tree from package rows.
+    _verify_shadow_runtime_tree_from_source_bundle(
+        bundle_root, shadow_tree, verify_bundle=verify_bundle
+    )
     for key in (
         "io.xinao.researcher.dockerfile.sha256",
         "io.xinao.researcher.entrypoint.sha256",
@@ -3600,8 +3690,6 @@ def _validate_pre_tool_image_release(
         != ["python", "-I", RESEARCHER_CANARY_ENTRYPOINT_IMAGE_PATH]
     ):
         raise XinaoError("RELEASE_IMAGE_IDENTITY_INVALID", str(manifest_path))
-    if labels.get("io.xinao.researcher.image-modules.sha256") != modules_tree:
-        raise XinaoError("RELEASE_IMAGE_IDENTITY_INVALID", "image-modules.sha256")
     for value in (manifest.get("state_namespace"), manifest.get("run_namespace")):
         normalized = str(value).lower().replace("-", "_")
         if any(token in normalized for token in FORBIDDEN_RUNTIME_TOKENS):
@@ -3642,6 +3730,46 @@ def _validate_pre_tool_image_release(
         or expected_hashes != _reference_hashes_for_keys(bundle_root, CURRENT_SKILL_HASH_KEYS)
     ):
         raise XinaoError("RELEASE_SKILL_HASHES_MISMATCH", str(manifest_path))
+    # Port pre_modules integrity to pre_tool: full expected_labels + lock/tree cross-binds.
+    source_identity_sha256 = _sha256_bytes(_canonical_bytes(source_identity))
+    expected_labels = {
+        "io.xinao.researcher.chain": "dedicated-xinao-science",
+        "io.xinao.researcher.generic-worker-route": "forbidden",
+        "io.xinao.researcher.grok-donor-image-id": donor_id,
+        "io.xinao.researcher.grok-donor-binary.sha256": donor_binary_sha256,
+        "io.xinao.researcher.charter.sha256": expected_hashes["charter_sha256"],
+        "io.xinao.researcher.output-schema.sha256": expected_hashes["output_schema_sha256"],
+        "io.xinao.researcher.material-bundle-schema.sha256": expected_hashes[
+            "material_bundle_schema_sha256"
+        ],
+        "io.xinao.researcher.runtime-lock.sha256": expected_hashes["runtime_lock_sha256"],
+        "io.xinao.researcher.skill-invoker.sha256": expected_hashes["skill_invoker_sha256"],
+        "io.xinao.researcher.dockerfile.sha256": labels.get(
+            "io.xinao.researcher.dockerfile.sha256"
+        ),
+        "io.xinao.researcher.entrypoint.sha256": labels.get(
+            "io.xinao.researcher.entrypoint.sha256"
+        ),
+        "io.xinao.researcher.source-identity.sha256": source_identity_sha256,
+        "io.xinao.researcher.shadow-runtime.sha256": shadow_tree,
+        "io.xinao.researcher.shadow-runtime-lock.sha256": shadow_lock,
+        "io.xinao.researcher.requested-model": REQUESTED_MODEL,
+        **_dual_profile_image_labels(researcher_image_modules_tree_sha256=modules_tree),
+    }
+    if labels != expected_labels:
+        raise XinaoError("RELEASE_IMAGE_IDENTITY_INVALID", "image_labels")
+    _assert_skill_hashes_shadow_lock_cross_bound(expected_hashes, shadow_lock)
+    _verify_shadow_runtime_tree_from_source_bundle(
+        bundle_root, shadow_tree, verify_bundle=verify_bundle
+    )
+    for key in (
+        "io.xinao.researcher.dockerfile.sha256",
+        "io.xinao.researcher.entrypoint.sha256",
+        "io.xinao.researcher.shadow-runtime.sha256",
+        "io.xinao.researcher.shadow-runtime-lock.sha256",
+    ):
+        if HEX_SHA256_PATTERN.fullmatch(str(labels.get(key, ""))) is None:
+            raise XinaoError("RELEASE_IMAGE_IDENTITY_INVALID", key)
     return bundle_manifest
 
 
