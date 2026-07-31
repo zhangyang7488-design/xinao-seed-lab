@@ -203,6 +203,51 @@ class DualContainerHost:
             )
         return completed
 
+    def _best_effort_cleanup_create_partial(
+        self,
+        *,
+        tool_id: str,
+        transport_id: str,
+        tool_name: str,
+        transport_name: str,
+        ipc_volume: str | None,
+    ) -> list[str]:
+        """Remove only containers/volume created in this create_pair attempt.
+
+        Uses exact IDs when known, else exact lease-canonical names from this call.
+        Never rm foreign resources. Idempotent when targets are already gone.
+        """
+        errors: list[str] = []
+        if self.config.synthetic:
+            return errors
+        seen: set[str] = set()
+        # Prefer concrete container IDs; fall back to this-call names only.
+        targets: list[str] = []
+        for value in (tool_id, transport_id):
+            token = str(value or "").strip()
+            if token:
+                targets.append(token)
+        if not tool_id and tool_name:
+            targets.append(str(tool_name))
+        if not transport_id and transport_name:
+            targets.append(str(transport_name))
+        for target in targets:
+            if not target or target in seen:
+                continue
+            seen.add(target)
+            completed = self.runner([self.config.docker, "rm", "-f", target])
+            if completed.returncode != 0:
+                err = (completed.stderr or "").lower()
+                if "no such container" not in err and "not found" not in err:
+                    errors.append(f"rm:{target}:{completed.stderr}")
+        if ipc_volume:
+            vol = self.runner([self.config.docker, "volume", "rm", "-f", str(ipc_volume)])
+            if vol.returncode != 0:
+                err = (vol.stderr or "").lower()
+                if "no such volume" not in err and "not found" not in err:
+                    errors.append(f"volume:{ipc_volume}:{vol.stderr}")
+        return errors
+
     def _append_journal(self, entry: Mapping[str, Any]) -> None:
         self.paths["journal"].parent.mkdir(parents=True, exist_ok=True)
         line = json.dumps(dict(entry), ensure_ascii=False, sort_keys=True, separators=(",", ":"))
@@ -360,14 +405,16 @@ class DualContainerHost:
 
         # IPC: prefer named volume; also keep bind dir for host-side socket observation.
         ipc_volume = names["ipc_volume"]
+        volume_created_this_call = False
         if not self.config.synthetic:
-            # Idempotent volume create.
+            # Idempotent volume create; track ownership so partial fail only rm ours.
             probe = self.runner([self.config.docker, "volume", "inspect", ipc_volume])
             if probe.returncode != 0:
                 self._run(
                     [self.config.docker, "volume", "create", ipc_volume],
                     reason="DUAL_HOST_VOLUME_CREATE_FAILED",
                 )
+                volume_created_this_call = True
             ipc_mount_type = "volume"
         else:
             ipc_mount_type = "bind"
@@ -431,21 +478,43 @@ class DualContainerHost:
             tool_id = f"synthetic-tool-{_sha256_bytes(episode_id.encode())[:12]}"
             transport_id = f"synthetic-transport-{_sha256_bytes(session_id.encode())[:12]}"
         else:
-            # Remove leftovers with exact names only if prior lease retired (best-effort).
-            tool_id = self._run(tool_argv, reason="DUAL_HOST_TOOL_CREATE_FAILED").stdout.strip()
-            transport_id = self._run(
-                transport_argv, reason="DUAL_HOST_TRANSPORT_CREATE_FAILED"
-            ).stdout.strip()
-            if not tool_id or not transport_id:
-                # Partial create: mark fail and attempt retire of what exists.
+            tool_id = ""
+            transport_id = ""
+            try:
+                tool_id = self._run(
+                    tool_argv, reason="DUAL_HOST_TOOL_CREATE_FAILED"
+                ).stdout.strip()
+                transport_id = self._run(
+                    transport_argv, reason="DUAL_HOST_TRANSPORT_CREATE_FAILED"
+                ).stdout.strip()
+                if not tool_id or not transport_id:
+                    raise DualHostError(
+                        "DUAL_HOST_CREATE_INCOMPLETE", f"{tool_id}/{transport_id}"
+                    )
+            except DualHostError as exc:
+                # Best-effort cleanup of only this call's containers/volume (name/ID).
+                # Never touch foreign resources; preserve original failure reason.
+                cleanup_errors = self._best_effort_cleanup_create_partial(
+                    tool_id=tool_id,
+                    transport_id=transport_id,
+                    tool_name=names["tool_name"],
+                    transport_name=names["transport_name"],
+                    ipc_volume=ipc_volume if volume_created_this_call else None,
+                )
                 self._append_journal(
                     {
                         "verb": "create_pair_partial_fail",
                         "tool_id": tool_id,
                         "transport_id": transport_id,
+                        "tool_name": names["tool_name"],
+                        "transport_name": names["transport_name"],
+                        "ipc_volume": ipc_volume if volume_created_this_call else None,
+                        "reason_code": exc.reason_code,
+                        "detail": exc.detail,
+                        "cleanup_errors": cleanup_errors,
                     }
                 )
-                raise DualHostError("DUAL_HOST_CREATE_INCOMPLETE", f"{tool_id}/{transport_id}")
+                raise DualHostError(exc.reason_code, exc.detail) from exc
 
         # Host ResearchEpisode session ids may be non-UUID tokens (xrsess_*).
         # Grok headless --session-id/--resume requires a UUID; keep both identities.
@@ -728,37 +797,60 @@ class DualContainerHost:
         lease = self.load_lease()
         if lease is None:
             raise DualHostError("DUAL_HOST_LEASE_MISSING", "start")
-        if lease.get("phase") in {"cancelled", "retired"}:
+        if lease.get("phase") in {"cancelled", "retired", "failed_retire_pending"}:
             raise DualHostError("DUAL_HOST_LEASE_TERMINAL", str(lease.get("phase")))
-        if lease.get("phase") in {"running", "transport_started"}:
+        if lease.get("phase") == "running":
             return {
                 "status": "START_IDEMPOTENT",
                 "lease": lease,
+                "completion_claim_allowed": False,
+            }
+        # Mid-crash after transport start but before phase=running was sealed:
+        # both containers should already be up — advance lease only (idempotent).
+        if lease.get("phase") == "transport_started":
+            lease["phase"] = "running"
+            lease["updated_at"] = _utc_now()
+            self._save_lease(lease)
+            self._append_journal(
+                {
+                    "verb": "start_pair",
+                    "at": _utc_now(),
+                    "phase": "running",
+                    "recovered_from": "transport_started",
+                    "tool_container_id": lease["tool_container_id"],
+                    "transport_container_id": lease["transport_container_id"],
+                }
+            )
+            return {
+                "status": "PAIR_STARTED",
+                "lease": lease,
+                "start_order": ["tool_executor", "transport_model"],
                 "completion_claim_allowed": False,
             }
 
         # Validate sealed pair receipt + inspect before any start.
         self.validate_before_start()
 
-        # Phase: tool first.
+        # Phase: tool first. tool_started resumes by starting transport only.
         try:
-            if not self.config.synthetic:
-                if lease.get("phase") == "created":
-                    self._run(
-                        [self.config.docker, "start", str(lease["tool_container_id"])],
-                        reason="DUAL_HOST_TOOL_START_FAILED",
-                    )
-            lease["phase"] = "tool_started"
-            lease["updated_at"] = _utc_now()
-            self._save_lease(lease)
-            self._append_journal(
-                {
-                    "verb": "start_tool",
-                    "at": _utc_now(),
-                    "tool_container_id": lease["tool_container_id"],
-                    "phase": "tool_started",
-                }
-            )
+            if lease.get("phase") != "tool_started":
+                if not self.config.synthetic:
+                    if lease.get("phase") == "created":
+                        self._run(
+                            [self.config.docker, "start", str(lease["tool_container_id"])],
+                            reason="DUAL_HOST_TOOL_START_FAILED",
+                        )
+                lease["phase"] = "tool_started"
+                lease["updated_at"] = _utc_now()
+                self._save_lease(lease)
+                self._append_journal(
+                    {
+                        "verb": "start_tool",
+                        "at": _utc_now(),
+                        "tool_container_id": lease["tool_container_id"],
+                        "phase": "tool_started",
+                    }
+                )
             if not self.config.synthetic:
                 self._run(
                     [self.config.docker, "start", str(lease["transport_container_id"])],
@@ -1295,6 +1387,7 @@ class DualContainerHost:
                     f"inventory={grok_session} expected={expected_provider_session_uuid}",
                 )
         # Live path must not expose auth to tool sidecar (inspect mounts).
+        # Synthetic never pretends to satisfy live network/running proofs.
         if not self.config.synthetic:
             tool_inspect = self._docker_inspect(str(lease["tool_container_id"]))
             transport_inspect = self._docker_inspect(str(lease["transport_container_id"]))
@@ -1306,6 +1399,38 @@ class DualContainerHost:
             for bad in ("/grok-home", "auth.json", "docker.sock"):
                 if any(bad in m for m in tool_mounts):
                     raise DualHostError("DUAL_HOST_AUTH_ON_TOOL", bad)
+            # Network fail-closed: tool must stay none; transport must match config.
+            tool_hc = tool_inspect.get("HostConfig") or {}
+            transport_hc = transport_inspect.get("HostConfig") or {}
+            tool_network = str(tool_hc.get("NetworkMode") or "")
+            if tool_network not in {"none", "None"}:
+                raise DualHostError("DUAL_HOST_TOOL_NETWORK_NOT_NONE", tool_network)
+            expected_transport_network = str(
+                self.config.network or DEFAULT_TRANSPORT_NETWORK
+            ).strip()
+            transport_network = str(transport_hc.get("NetworkMode") or "")
+            transport_networks = (
+                (transport_inspect.get("NetworkSettings") or {}).get("Networks") or {}
+            )
+            if not expected_transport_network or expected_transport_network in {
+                "none",
+                "None",
+            }:
+                # Mis-set XINAO_TRANSPORT_NETWORK=none (or empty) must not go live offline.
+                raise DualHostError(
+                    "DUAL_HOST_TRANSPORT_NETWORK_MISMATCH",
+                    f"expected_live_network invalid={expected_transport_network!r} "
+                    f"observed={transport_network!r}",
+                )
+            network_ok = transport_network == expected_transport_network or (
+                isinstance(transport_networks, dict)
+                and expected_transport_network in transport_networks
+            )
+            if not network_ok:
+                raise DualHostError(
+                    "DUAL_HOST_TRANSPORT_NETWORK_MISMATCH",
+                    f"expected={expected_transport_network} observed={transport_network}",
+                )
             for role, doc, expected_image in (
                 ("tool", tool_inspect, lease.get("tool_image_id")),
                 ("transport", transport_inspect, lease.get("transport_image_id")),

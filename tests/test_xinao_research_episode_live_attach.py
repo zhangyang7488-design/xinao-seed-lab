@@ -483,6 +483,249 @@ def test_argv_digest_redacts_secrets(native: Any) -> None:
     assert "super-secret" not in digest
 
 
+def test_create_pair_partial_fail_best_effort_cleanup(
+    host_mod: Any, tmp_path: Path
+) -> None:
+    """Partial create must rm owned container IDs/names and preserve original reason."""
+    auth = tmp_path / "auth"
+    auth.mkdir()
+    (auth / "auth.json").write_text("{}", encoding="utf-8")
+    rm_targets: list[str] = []
+    volume_ops: list[str] = []
+    create_calls = {"tool": 0, "transport": 0}
+
+    def runner(argv: list[str]) -> subprocess.CompletedProcess[str]:
+        # argv is Sequence; normalize
+        args = list(argv)
+        if len(args) >= 2 and args[1] == "volume":
+            if args[2] == "inspect":
+                # Force create path for ownership tracking.
+                return subprocess.CompletedProcess(args, 1, "", "not found")
+            if args[2] == "create":
+                volume_ops.append(f"create:{args[3]}")
+                return subprocess.CompletedProcess(args, 0, args[3], "")
+            if args[2] == "rm":
+                volume_ops.append(f"rm:{args[-1]}")
+                return subprocess.CompletedProcess(args, 0, "", "")
+        if len(args) >= 2 and args[1] == "create":
+            # First container create succeeds; second fails.
+            name = ""
+            if "--name" in args:
+                name = args[args.index("--name") + 1]
+            if "tool" in name or create_calls["tool"] == 0 and create_calls["transport"] == 0:
+                # Identify by name tokens from pair_resource_names.
+                if "xinao-tool-" in name or (
+                    create_calls["tool"] == 0 and "xinao-transport-" not in name
+                ):
+                    create_calls["tool"] += 1
+                    return subprocess.CompletedProcess(args, 0, "cid-tool-partial\n", "")
+            create_calls["transport"] += 1
+            return subprocess.CompletedProcess(
+                args, 1, "", "simulated transport create failure"
+            )
+        if len(args) >= 2 and args[1] == "rm":
+            rm_targets.append(args[-1])
+            return subprocess.CompletedProcess(args, 0, "", "")
+        if len(args) >= 2 and args[1] == "image":
+            return subprocess.CompletedProcess(args, 0, "sha256:" + "a" * 64 + "\n", "")
+        if len(args) >= 2 and args[1] == "inspect":
+            # image id resolve may use inspect
+            return subprocess.CompletedProcess(
+                args,
+                0,
+                json.dumps([{"Id": "sha256:" + "a" * 64, "RepoDigests": []}]),
+                "",
+            )
+        return subprocess.CompletedProcess(args, 0, "", "")
+
+    cfg = host_mod.DualHostConfig(
+        transport_image="sha256:" + "a" * 64,
+        tool_image="sha256:" + "b" * 64,
+        auth_host_path=auth / "auth.json",
+        episode_root=tmp_path / "ep_partial",
+        network="xinao_researcher_internal",
+        synthetic=False,
+        runner=runner,
+    )
+    host = host_mod.DualContainerHost(cfg)
+    with pytest.raises(host_mod.DualHostError) as exc:
+        host.create_pair(episode_id="ep_partial_1", session_id="xrsess_partial01")
+    # Original failure preserved (not swallowed into a generic cleanup error).
+    assert exc.value.reason_code in {
+        "DUAL_HOST_TRANSPORT_CREATE_FAILED",
+        "DUAL_HOST_CREATE_INCOMPLETE",
+        "DUAL_HOST_TOOL_CREATE_FAILED",
+    }
+    assert "cid-tool-partial" in rm_targets or any("xinao-tool-" in t for t in rm_targets)
+    # Volume created in this call should be best-effort removed.
+    assert any(op.startswith("rm:") for op in volume_ops) or any(
+        op.startswith("create:") for op in volume_ops
+    )
+    journal = (tmp_path / "ep_partial" / "dual_host_journal.jsonl").read_text(encoding="utf-8")
+    assert "create_pair_partial_fail" in journal
+
+
+def test_require_live_transport_network_mismatch_fail_closed(
+    host_mod: Any, tmp_path: Path
+) -> None:
+    """Live require_live must verify transport NetworkMode vs config; tool stays none."""
+    auth = tmp_path / "auth"
+    auth.mkdir()
+    (auth / "auth.json").write_text("{}", encoding="utf-8")
+    # Plant synthetic pair then flip to live inspect via custom runner.
+    syn = host_mod.DualContainerHost(
+        host_mod.DualHostConfig(
+            transport_image="transport:candidate",
+            tool_image="tool:candidate",
+            auth_host_path=auth / "auth.json",
+            episode_root=tmp_path / "ep_net",
+            synthetic=True,
+            network="xinao_researcher_internal",
+        )
+    )
+    host_session = f"xrsess_{uuid.uuid4().hex[:8]}"
+    syn.create_pair(episode_id="ep_net", session_id=host_session)
+    syn.start_pair()
+    lease = syn.load_lease()
+    assert lease is not None
+    lease["tool_container_id"] = "toolcid_net"
+    lease["transport_container_id"] = "transportcid_net"
+    lease["phase"] = "running"
+    syn._save_lease(lease)
+    inv = syn.load_session_inventory()
+    assert inv is not None
+    inv["tool_container_id"] = "toolcid_net"
+    inv["transport_container_id"] = "transportcid_net"
+    syn._save_session_inventory(inv)
+    receipt = syn.load_pair_receipt()
+    assert receipt is not None
+    receipt["tool_container_id"] = "toolcid_net"
+    receipt["transport_container_id"] = "transportcid_net"
+    body = {k: v for k, v in receipt.items() if k != "pair_receipt_sha256"}
+    receipt["pair_receipt_sha256"] = hashlib.sha256(
+        (json.dumps(body, ensure_ascii=False, sort_keys=True, separators=(",", ":")) + "\n").encode(
+            "utf-8"
+        )
+    ).hexdigest()
+    (tmp_path / "ep_net" / "dual_container_pair_receipt.json").write_text(
+        json.dumps(receipt, ensure_ascii=False, sort_keys=True) + "\n", encoding="utf-8"
+    )
+    lease["pair_receipt_sha256"] = receipt["pair_receipt_sha256"]
+    syn._save_lease(lease)
+
+    def _inspect_doc(*, network_mode: str, role: str) -> dict[str, Any]:
+        mounts = (
+            [
+                {"Destination": "/episode-lab", "Source": "/h/lab", "Type": "bind"},
+                {"Destination": "/ipc", "Source": "/h/ipc", "Type": "bind"},
+            ]
+            if role == "tool"
+            else [
+                {
+                    "Destination": "/grok-home/auth.json",
+                    "Source": "/h/auth.json",
+                    "Type": "bind",
+                },
+                {"Destination": "/ipc", "Source": "/h/ipc", "Type": "bind"},
+            ]
+        )
+        return {
+            "Id": f"{role}cid_net",
+            "Image": lease.get(f"{role}_image_id")
+            if role == "tool"
+            else lease.get("transport_image_id"),
+            "Config": {
+                "Image": lease.get("tool_image_id")
+                if role == "tool"
+                else lease.get("transport_image_id"),
+                "User": "65532:65532" if role == "tool" else "",
+                "Env": [],
+            },
+            "HostConfig": {"NetworkMode": network_mode},
+            "NetworkSettings": {"Networks": {network_mode: {}} if network_mode != "none" else {}},
+            "State": {"Running": True},
+            "Mounts": mounts,
+        }
+
+    def runner_bad_transport(argv: list[str]) -> subprocess.CompletedProcess[str]:
+        args = list(argv)
+        if "inspect" in args:
+            target = args[-1]
+            if target == "toolcid_net":
+                doc = _inspect_doc(network_mode="none", role="tool")
+            else:
+                # Misconfigured: transport on none while config expects internal.
+                doc = _inspect_doc(network_mode="none", role="transport")
+            return subprocess.CompletedProcess(args, 0, json.dumps([doc]), "")
+        return subprocess.CompletedProcess(args, 0, "", "")
+
+    live = host_mod.DualContainerHost(
+        host_mod.DualHostConfig(
+            transport_image="transport:candidate",
+            tool_image="tool:candidate",
+            auth_host_path=auth / "auth.json",
+            episode_root=tmp_path / "ep_net",
+            synthetic=False,
+            network="xinao_researcher_internal",
+            runner=runner_bad_transport,
+        )
+    )
+    with pytest.raises(host_mod.DualHostError) as mismatch:
+        live.require_live_pair_ready(
+            expected_episode_id="ep_net",
+            expected_host_session_id=host_session,
+        )
+    assert mismatch.value.reason_code == "DUAL_HOST_TRANSPORT_NETWORK_MISMATCH"
+
+    # config.network=none must also fail closed for live (no silent offline).
+    live_none = host_mod.DualContainerHost(
+        host_mod.DualHostConfig(
+            transport_image="transport:candidate",
+            tool_image="tool:candidate",
+            auth_host_path=auth / "auth.json",
+            episode_root=tmp_path / "ep_net",
+            synthetic=False,
+            network="none",
+            runner=runner_bad_transport,
+        )
+    )
+    with pytest.raises(host_mod.DualHostError) as none_cfg:
+        live_none.require_live_pair_ready(
+            expected_episode_id="ep_net",
+            expected_host_session_id=host_session,
+        )
+    assert none_cfg.value.reason_code == "DUAL_HOST_TRANSPORT_NETWORK_MISMATCH"
+
+    def runner_tool_bridged(argv: list[str]) -> subprocess.CompletedProcess[str]:
+        args = list(argv)
+        if "inspect" in args:
+            target = args[-1]
+            if target == "toolcid_net":
+                doc = _inspect_doc(network_mode="bridge", role="tool")
+            else:
+                doc = _inspect_doc(network_mode="xinao_researcher_internal", role="transport")
+            return subprocess.CompletedProcess(args, 0, json.dumps([doc]), "")
+        return subprocess.CompletedProcess(args, 0, "", "")
+
+    live_tool = host_mod.DualContainerHost(
+        host_mod.DualHostConfig(
+            transport_image="transport:candidate",
+            tool_image="tool:candidate",
+            auth_host_path=auth / "auth.json",
+            episode_root=tmp_path / "ep_net",
+            synthetic=False,
+            network="xinao_researcher_internal",
+            runner=runner_tool_bridged,
+        )
+    )
+    with pytest.raises(host_mod.DualHostError) as tool_net:
+        live_tool.require_live_pair_ready(
+            expected_episode_id="ep_net",
+            expected_host_session_id=host_session,
+        )
+    assert tool_net.value.reason_code == "DUAL_HOST_TOOL_NETWORK_NOT_NONE"
+
+
 def test_dual_host_synthetic_live_refused(host_mod: Any, tmp_path: Path) -> None:
     cfg = host_mod.DualHostConfig(
         transport_image="transport:candidate",

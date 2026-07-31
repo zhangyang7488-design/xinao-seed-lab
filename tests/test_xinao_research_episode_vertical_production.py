@@ -453,3 +453,157 @@ def test_attach_run_without_pair_fails_closed(
         )
     assert failure3.value.reason_code == "RESEARCH_EPISODE_STALE_HEAD"
     assert ckpt["completion_claim_allowed"] is False
+
+
+def _load_dual_host_mod() -> Any:
+    path = SKILL_ROOT / "scripts" / "dual_container_host.py"
+    return _load("xinao_dual_host_wave124x_recovery", path)
+
+
+def test_ensure_pair_tool_started_not_already_ready(
+    module: Any, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """tool_started is intermediate: ensure must advance via start, not PAIR_ALREADY_READY."""
+    _mod, episode, started, _manifest = _prepare_episode(module, tmp_path, monkeypatch)
+    ready = module.research_episode_ensure_pair(
+        root=episode, expected_head_sha256=started["head_checkpoint_sha256"]
+    )
+    assert ready["status"] in {"PAIR_READY", "PAIR_STARTED"}
+    host_mod = _load_dual_host_mod()
+    host = host_mod.DualContainerHost(
+        host_mod.DualHostConfig(
+            transport_image="transport:t",
+            tool_image="tool:t",
+            auth_host_path=tmp_path / "auth.json",
+            episode_root=episode,
+            synthetic=True,
+        )
+    )
+    lease = host.load_lease()
+    assert lease is not None
+    lease["phase"] = "tool_started"
+    host._save_lease(lease)
+    again = module.research_episode_ensure_pair(
+        root=episode, expected_head_sha256=started["head_checkpoint_sha256"]
+    )
+    assert again["status"] == "PAIR_STARTED"
+    assert again["status"] != "PAIR_ALREADY_READY"
+    final_lease = host.load_lease()
+    assert final_lease is not None
+    assert final_lease["phase"] == "running"
+
+
+def test_ensure_pair_failed_retire_pending_recovers_then_recreates(
+    module: Any, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """failed_retire_pending must recover/retire (not blind start) then recreate."""
+    _mod, episode, started, _manifest = _prepare_episode(module, tmp_path, monkeypatch)
+    first = module.research_episode_ensure_pair(
+        root=episode, expected_head_sha256=started["head_checkpoint_sha256"]
+    )
+    assert first["status"] in {"PAIR_READY", "PAIR_STARTED"}
+    host_mod = _load_dual_host_mod()
+    host = host_mod.DualContainerHost(
+        host_mod.DualHostConfig(
+            transport_image="transport:t",
+            tool_image="tool:t",
+            auth_host_path=tmp_path / "auth.json",
+            episode_root=episode,
+            synthetic=True,
+        )
+    )
+    lease = host.load_lease()
+    assert lease is not None
+    old_tool = lease.get("tool_container_id")
+    lease["phase"] = "failed_retire_pending"
+    lease["failure_reason"] = "DUAL_HOST_TRANSPORT_START_FAILED"
+    host._save_lease(lease)
+    # Spy: start_pair must not be called while still failed_retire_pending.
+    calls: list[str] = []
+    original_start = host_mod.DualContainerHost.start_pair
+    original_recover = host_mod.DualContainerHost.recover_or_retire_after_crash
+
+    def wrapped_start(self: Any) -> Any:
+        phase = (self.load_lease() or {}).get("phase")
+        calls.append(f"start:{phase}")
+        assert phase != "failed_retire_pending"
+        return original_start(self)
+
+    def wrapped_recover(self: Any) -> Any:
+        calls.append(f"recover:{(self.load_lease() or {}).get('phase')}")
+        return original_recover(self)
+
+    monkeypatch.setattr(host_mod.DualContainerHost, "start_pair", wrapped_start)
+    monkeypatch.setattr(
+        host_mod.DualContainerHost, "recover_or_retire_after_crash", wrapped_recover
+    )
+    # research_episode_ensure_pair re-imports dual host via load; patch the module it loads.
+    import sys
+
+    sys.modules["xinao_dual_host_wave124x_recovery"] = host_mod
+    # Ensure runtime uses our host_mod instance path: patch _research_episode_load_dual_host.
+    def fake_load(root: Path) -> tuple[Any, Any]:
+        cfg = host_mod.DualHostConfig(
+            transport_image="transport:t",
+            tool_image="tool:t",
+            auth_host_path=tmp_path / "auth.json",
+            episode_root=Path(root),
+            synthetic=True,
+        )
+        return host_mod, host_mod.DualContainerHost(cfg)
+
+    monkeypatch.setattr(module, "_research_episode_load_dual_host", fake_load)
+    recovered = module.research_episode_ensure_pair(
+        root=episode, expected_head_sha256=started["head_checkpoint_sha256"]
+    )
+    assert recovered["status"] == "PAIR_READY"
+    assert any(c.startswith("recover:") for c in calls)
+    assert not any(c == "start:failed_retire_pending" for c in calls)
+    new_lease = host_mod.DualContainerHost(
+        host_mod.DualHostConfig(
+            transport_image="transport:t",
+            tool_image="tool:t",
+            auth_host_path=tmp_path / "auth.json",
+            episode_root=episode,
+            synthetic=True,
+        )
+    ).load_lease()
+    assert new_lease is not None
+    assert new_lease["phase"] == "running"
+    assert new_lease["phase"] != "failed_retire_pending"
+    assert old_tool is not None
+
+
+def test_ensure_pair_already_ready_dual_host_error_maps_xinao(
+    module: Any, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """running already-ready path must map DualHostError → XinaoError reason (no swallow)."""
+    _mod, episode, started, _manifest = _prepare_episode(module, tmp_path, monkeypatch)
+    ready = module.research_episode_ensure_pair(
+        root=episode, expected_head_sha256=started["head_checkpoint_sha256"]
+    )
+    assert ready["status"] in {"PAIR_READY", "PAIR_STARTED", "PAIR_ALREADY_READY"}
+    host_mod = _load_dual_host_mod()
+
+    def boom(self: Any, **kwargs: Any) -> dict[str, Any]:
+        raise host_mod.DualHostError("DUAL_HOST_CONTAINER_STOPPED", "transport")
+
+    monkeypatch.setattr(host_mod.DualContainerHost, "require_live_pair_ready", boom)
+
+    def fake_load(root: Path) -> tuple[Any, Any]:
+        cfg = host_mod.DualHostConfig(
+            transport_image="transport:t",
+            tool_image="tool:t",
+            auth_host_path=tmp_path / "auth.json",
+            episode_root=Path(root),
+            synthetic=True,
+        )
+        return host_mod, host_mod.DualContainerHost(cfg)
+
+    monkeypatch.setattr(module, "_research_episode_load_dual_host", fake_load)
+    with pytest.raises(module.XinaoError) as failure:
+        module.research_episode_ensure_pair(
+            root=episode, expected_head_sha256=started["head_checkpoint_sha256"]
+        )
+    assert failure.value.reason_code == "DUAL_HOST_CONTAINER_STOPPED"
+    assert "transport" in failure.value.detail

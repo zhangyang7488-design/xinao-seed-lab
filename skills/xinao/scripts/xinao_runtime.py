@@ -14955,6 +14955,67 @@ def research_episode_ensure_pair(
             )
         facts = _research_episode_namespace_and_release_facts()
         _host_mod, host = _research_episode_load_dual_host(root)
+
+        def _map_dual_host_exc(exc: BaseException) -> XinaoError:
+            reason = getattr(exc, "reason_code", None) or "RESEARCH_EPISODE_ENSURE_PAIR_FAILED"
+            detail = getattr(exc, "detail", None)
+            if detail is None:
+                detail = str(exc)
+            return XinaoError(str(reason), str(detail)[:2000])
+
+        def _require_ready() -> dict[str, Any]:
+            try:
+                return host.require_live_pair_ready(
+                    expected_episode_id=str(meta["episode_id"]),
+                    expected_host_session_id=str(meta["session_id"]),
+                    allow_synthetic=bool(host.config.synthetic),
+                )
+            except Exception as exc:
+                # DualHostError and any other host failure map to stable XinaoError.
+                if type(exc).__name__ == "DualHostError" or hasattr(exc, "reason_code"):
+                    mapped = _map_dual_host_exc(exc)
+                    raise mapped from exc
+                raise XinaoError(
+                    "RESEARCH_EPISODE_ENSURE_PAIR_FAILED", str(exc)[:2000]
+                ) from exc
+
+        def _ensure_payload(
+            *,
+            status: str,
+            ready: dict[str, Any],
+            phase: str | None = None,
+            started: dict[str, Any] | None = None,
+            created: dict[str, Any] | None = None,
+        ) -> dict[str, Any]:
+            payload: dict[str, Any] = {
+                "status": status,
+                "episode_id": meta["episode_id"],
+                "session_id": meta["session_id"],
+                "cas_head_sha256": head["head_checkpoint_sha256"],
+                "research_profile": profile,
+                "profile_status": profile_status,
+                "pair_receipt_sha256": ready.get("pair_receipt_sha256"),
+                "provider_session_uuid": ready.get("provider_session_uuid"),
+                "namespace_receipt_sha256": facts.get("namespace_receipt_sha256"),
+                "release_id": facts.get("release_id"),
+                **no_successor,
+            }
+            if phase is not None:
+                payload["phase"] = phase
+            if started is not None:
+                payload["start_pair"] = {
+                    k: started.get(k)
+                    for k in ("status", "lease", "pair_receipt_sha256")
+                    if k in started
+                }
+            if created is not None:
+                payload["create_pair"] = {
+                    k: created.get(k)
+                    for k in ("status", "tool_container_id", "transport_container_id")
+                    if k in created
+                }
+            return payload
+
         lease = host.load_lease()
         if lease is not None and lease.get("phase") not in {"cancelled", "retired"}:
             if lease.get("episode_id") != meta["episode_id"]:
@@ -14967,72 +15028,78 @@ def research_episode_ensure_pair(
                     "RESEARCH_EPISODE_FOREIGN_SESSION",
                     str(lease.get("session_id")),
                 )
-            if lease.get("phase") in {"running", "tool_started", "checkpointed"}:
-                ready = host.require_live_pair_ready(
-                    expected_episode_id=str(meta["episode_id"]),
-                    expected_host_session_id=str(meta["session_id"]),
-                    allow_synthetic=bool(host.config.synthetic),
-                )
+            phase = str(lease.get("phase") or "")
+            # PAIR_ALREADY_READY only when lease is in a truly ready phase AND
+            # require_live proves dual containers Running (not intermediate start).
+            if phase in {"running", "checkpointed"}:
+                ready = _require_ready()
                 _research_episode_append_journal(
                     root,
                     {
                         "verb": "ensure-pair",
                         "at": dt.datetime.now(dt.UTC).isoformat().replace("+00:00", "Z"),
                         "status": "PAIR_ALREADY_READY",
-                        "phase": lease.get("phase"),
+                        "phase": phase,
                     },
                 )
-                return {
-                    "status": "PAIR_ALREADY_READY",
-                    "episode_id": meta["episode_id"],
-                    "session_id": meta["session_id"],
-                    "cas_head_sha256": head["head_checkpoint_sha256"],
-                    "research_profile": profile,
-                    "profile_status": profile_status,
-                    "pair_receipt_sha256": ready.get("pair_receipt_sha256"),
-                    "provider_session_uuid": ready.get("provider_session_uuid"),
-                    "phase": lease.get("phase"),
-                    "namespace_receipt_sha256": facts.get("namespace_receipt_sha256"),
-                    "release_id": facts.get("release_id"),
-                    **no_successor,
-                }
-            try:
-                started = host.start_pair()
-            except Exception as exc:
-                reason = getattr(exc, "reason_code", None) or "RESEARCH_EPISODE_ENSURE_PAIR_FAILED"
-                raise XinaoError(str(reason), str(exc)[:2000]) from exc
-            ready = host.require_live_pair_ready(
-                expected_episode_id=str(meta["episode_id"]),
-                expected_host_session_id=str(meta["session_id"]),
-                allow_synthetic=bool(host.config.synthetic),
-            )
-            _research_episode_append_journal(
-                root,
-                {
-                    "verb": "ensure-pair",
-                    "at": dt.datetime.now(dt.UTC).isoformat().replace("+00:00", "Z"),
-                    "status": "PAIR_STARTED",
-                    "phase": (host.load_lease() or {}).get("phase"),
-                },
-            )
-            return {
-                "status": "PAIR_STARTED",
-                "episode_id": meta["episode_id"],
-                "session_id": meta["session_id"],
-                "cas_head_sha256": head["head_checkpoint_sha256"],
-                "research_profile": profile,
-                "profile_status": profile_status,
-                "pair_receipt_sha256": ready.get("pair_receipt_sha256"),
-                "provider_session_uuid": ready.get("provider_session_uuid"),
-                "start_pair": {
-                    k: started.get(k)
-                    for k in ("status", "lease", "pair_receipt_sha256")
-                    if k in started
-                },
-                "namespace_receipt_sha256": facts.get("namespace_receipt_sha256"),
-                "release_id": facts.get("release_id"),
-                **no_successor,
-            }
+                return _ensure_payload(
+                    status="PAIR_ALREADY_READY",
+                    ready=ready,
+                    phase=(host.load_lease() or {}).get("phase") or phase,
+                )
+
+            # Crash mid-start / failed start: never blind start_pair.
+            # recover_or_retire_after_crash retires failed_retire_pending (idempotent).
+            if phase == "failed_retire_pending":
+                try:
+                    recovered = host.recover_or_retire_after_crash()
+                except Exception as exc:
+                    if type(exc).__name__ == "DualHostError" or hasattr(exc, "reason_code"):
+                        raise _map_dual_host_exc(exc) from exc
+                    raise XinaoError(
+                        "RESEARCH_EPISODE_ENSURE_PAIR_FAILED", str(exc)[:2000]
+                    ) from exc
+                lease_after = host.load_lease()
+                after_phase = str((lease_after or {}).get("phase") or "")
+                if after_phase not in {"cancelled", "retired", ""}:
+                    raise XinaoError(
+                        "RESEARCH_EPISODE_ENSURE_PAIR_FAILED",
+                        f"recover left phase={after_phase} status={recovered.get('status')}",
+                    )
+                # Fall through to create_pair + start_pair under retired/missing lease.
+            elif phase in {"created", "tool_started", "transport_started", "interrupted"}:
+                # Intermediate phases: reuse start_pair / recover semantics (not already-ready).
+                # tool_started → continue transport start; transport_started → seal running.
+                try:
+                    started = host.start_pair()
+                except Exception as exc:
+                    if type(exc).__name__ == "DualHostError" or hasattr(exc, "reason_code"):
+                        raise _map_dual_host_exc(exc) from exc
+                    raise XinaoError(
+                        "RESEARCH_EPISODE_ENSURE_PAIR_FAILED", str(exc)[:2000]
+                    ) from exc
+                ready = _require_ready()
+                _research_episode_append_journal(
+                    root,
+                    {
+                        "verb": "ensure-pair",
+                        "at": dt.datetime.now(dt.UTC).isoformat().replace("+00:00", "Z"),
+                        "status": "PAIR_STARTED",
+                        "phase": (host.load_lease() or {}).get("phase"),
+                    },
+                )
+                return _ensure_payload(
+                    status="PAIR_STARTED",
+                    ready=ready,
+                    phase=(host.load_lease() or {}).get("phase"),
+                    started=started,
+                )
+            elif phase not in {"failed_retire_pending"}:
+                raise XinaoError(
+                    "RESEARCH_EPISODE_ENSURE_PAIR_FAILED",
+                    f"unsupported lease phase={phase}",
+                )
+
         try:
             created = host.create_pair(
                 episode_id=str(meta["episode_id"]),
@@ -15041,13 +15108,12 @@ def research_episode_ensure_pair(
             )
             started = host.start_pair()
         except Exception as exc:
-            reason = getattr(exc, "reason_code", None) or "RESEARCH_EPISODE_ENSURE_PAIR_FAILED"
-            raise XinaoError(str(reason), str(exc)[:2000]) from exc
-        ready = host.require_live_pair_ready(
-            expected_episode_id=str(meta["episode_id"]),
-            expected_host_session_id=str(meta["session_id"]),
-            allow_synthetic=bool(host.config.synthetic),
-        )
+            if type(exc).__name__ == "DualHostError" or hasattr(exc, "reason_code"):
+                raise _map_dual_host_exc(exc) from exc
+            raise XinaoError(
+                "RESEARCH_EPISODE_ENSURE_PAIR_FAILED", str(exc)[:2000]
+            ) from exc
+        ready = _require_ready()
         _research_episode_append_journal(
             root,
             {
@@ -15058,27 +15124,13 @@ def research_episode_ensure_pair(
                 "pair_receipt_sha256": ready.get("pair_receipt_sha256"),
             },
         )
-        return {
-            "status": "PAIR_READY",
-            "episode_id": meta["episode_id"],
-            "session_id": meta["session_id"],
-            "cas_head_sha256": head["head_checkpoint_sha256"],
-            "research_profile": profile,
-            "profile_status": profile_status,
-            "pair_receipt_sha256": ready.get("pair_receipt_sha256"),
-            "provider_session_uuid": ready.get("provider_session_uuid"),
-            "create_pair": {
-                k: created.get(k)
-                for k in ("status", "tool_container_id", "transport_container_id")
-                if k in created
-            },
-            "start_pair": {
-                k: started.get(k) for k in ("status", "pair_receipt_sha256") if k in started
-            },
-            "namespace_receipt_sha256": facts.get("namespace_receipt_sha256"),
-            "release_id": facts.get("release_id"),
-            **no_successor,
-        }
+        return _ensure_payload(
+            status="PAIR_READY",
+            ready=ready,
+            phase=(host.load_lease() or {}).get("phase"),
+            started=started,
+            created=created,
+        )
 
 
 def research_episode_retire_pair(
