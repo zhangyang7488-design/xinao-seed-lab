@@ -42,7 +42,18 @@ lab-authored immutable candidate. Supported Grok CLI pin: **0.2.117** (fail clos
 Codex alone adopts/disposes/freezes. Feedback may inform a later version but never rewrites prior
 history. **No** auto-freeze, auto-settle, next-task, daemon, Temporal/leg-B, or second Owner.
 
-Owner call chain (host Skill; requires sealed dual images + tool-namespace receipt for live attach):
+### Packaged Owner consumers (preferred; sealed `xinao-discovery` install)
+
+Pool admission and feedback bind require the installed `xinao-discovery` package (console
+entry `xinao`), not a monorepo path walk. Fresh isolated wheel/venv is sufficient:
+
+- `xinao research-episode pool-ingest --pool-root <pool> --export <export.json> --manifest <candidate_manifest.v1.json>`
+- `xinao research-episode feedback-bind --portfolio-root <portfolio> --feedback-content-hash <sha256>`
+
+Skill aliases (`ingest-export`, `bind-feedback-material`) resolve to the same package functions
+when the Skill runtime can import installed `xinao.science.*` first.
+
+### Host Skill dual-container verbs (live attach; sealed images + tool-namespace receipt)
 
 - `scripts/xinao.py research-episode start --root <D-episode> --question <question>`
 - `scripts/xinao.py research-episode attach-run --root <episode> --prompt <prompt> [--max-turns 16]`
@@ -56,8 +67,9 @@ Boundaries:
 - **Candidate-only:** export and pool ingest force `owner_adopted=false`, never freeze/settle.
 - **Owner-only disposition:** adoption/freeze/settlement remain separate Codex Owner artifacts.
 - **`absorb` is deprecated placeholder** for a local outbox review file — **not** candidate-pool
-  admission. Prefer `export-candidate-evidence` + `ingest-export`.
-- Productive lab evidence requires tool-executor sealed event hashes (not forgeable `/output` alone).
+  admission. Prefer package `pool-ingest` / Skill `export-candidate-evidence` + `ingest-export`.
+- Productive lab evidence requires **successful** tool-executor sealed event hashes (`status=ok`
+  only; denied/error/timeout never count even with a real sidecar hash or planted lab file).
 
 For shadow lifecycle, require `inspect` to report `shadow.runtime_status=AVAILABLE` (source
 registration, live image shadow labels, and `installed_projection.status=ALIGNED`). Then use the

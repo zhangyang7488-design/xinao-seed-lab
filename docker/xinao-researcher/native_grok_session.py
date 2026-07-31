@@ -77,7 +77,11 @@ CANONICAL_TOOL_SIDECAR_EVENTS = "/sidecar-evidence/tool_events.jsonl"
 TOOL_SIDECAR_EVENTS_FILENAME = "tool_events.jsonl"
 CANONICAL_AGENT_PROFILE = "/grok-home/agents/genuine_scientist_mcp.md"
 PRODUCTIVE_LAB_OPS = frozenset({"write_file", "shell_exec"})
+# Tool-executor / MCP success vocabulary (only status==ok is a successful productive op).
+TOOL_STATUS_OK = "ok"
+TOOL_STATUS_NON_SUCCESS = frozenset({"denied", "error", "timeout", "malformed", "unknown"})
 # Fixed lab path for sealed candidate body (tool path only).
+# Schema/constants/validator body: package-owned research_episode_candidate_manifest.
 CANDIDATE_MANIFEST_RELATIVE = "candidate/candidate_manifest.v1.json"
 CANDIDATE_MANIFEST_SCHEMA = "xinao.research_episode_candidate_manifest.v1"
 CANDIDATE_MANIFEST_MARKER = "XINAO_RESEARCH_EPISODE_CANDIDATE_MANIFEST_V1"
@@ -88,6 +92,27 @@ ACCOUNT_RECOMMENDATION_VALUES = frozenset(
         "NO_RECOMMENDATION",
     }
 )
+
+
+def is_successful_productive_status(status: object) -> bool:
+    """Only an actually successful tool/MCP status may count as productive evidence."""
+    if not isinstance(status, str):
+        return False
+    if status in TOOL_STATUS_NON_SUCCESS:
+        return False
+    return status == TOOL_STATUS_OK
+
+
+def is_successful_productive_event(event: Mapping[str, Any]) -> bool:
+    """Productive op AND successful status; never trust productive flag alone."""
+    if not isinstance(event, Mapping):
+        return False
+    op = str(event.get("op") or "")
+    if op not in PRODUCTIVE_LAB_OPS:
+        return False
+    return is_successful_productive_status(event.get("status"))
+
+
 # Host control builtins stripped on all research profiles (web stripped only on CLOSED_LAB).
 # Include live 0.2.117 ids (run_terminal_command, spawn_subagent) plus legacy aliases.
 STRIPPED_HOST_BUILTINS = (
@@ -499,7 +524,7 @@ def build_genuine_session_argv(
         "--tools",
         tools_csv,
     ]
-    # CLOSED_LAB keeps --no-subagents; OPEN_RESEARCH allows confined episode subagents.
+    # Honest policy: keep --no-subagents on all research profiles (including OPEN_RESEARCH).
     if profile != PROFILE_OPEN_RESEARCH or not OPEN_RESEARCH_ALLOW_EPISODE_SUBAGENTS:
         argv.insert(argv.index("--no-memory"), "--no-subagents")
     # CLOSED_LAB / non-open profiles hard-disable web; OPEN_RESEARCH must not.
@@ -766,13 +791,20 @@ def collect_tool_sidecar_evidence_delta(
     *,
     expected_episode_id: str | None = None,
 ) -> dict[str, Any]:
-    """Cursor-bounded read of tool-executor-only evidence (not transport-writable)."""
+    """Cursor-bounded read of tool-executor-only evidence (not transport-writable).
+
+    ``events`` retains the full audit delta. ``trusted_event_hashes`` /
+    ``successful_productive_event_hashes`` are success-only productive membership
+    sets used by live attach/resume gates (denied/error/timeout never enter).
+    """
     evidence = Path(path)
     prior_size = int((prior_cursor or {}).get("size") or 0)
     if not evidence.is_file():
         return {
             "events": [],
             "trusted_event_hashes": [],
+            "successful_productive_event_hashes": [],
+            "all_event_hashes": [],
             "status": "EMPTY_DELTA",
             "prior_size": prior_size,
             "new_size": 0,
@@ -786,11 +818,14 @@ def collect_tool_sidecar_evidence_delta(
         )
     delta = raw[prior_size:]
     events: list[dict[str, Any]] = []
-    hashes: list[str] = []
+    all_hashes: list[str] = []
+    productive_hashes: list[str] = []
     if not delta:
         return {
             "events": [],
             "trusted_event_hashes": [],
+            "successful_productive_event_hashes": [],
+            "all_event_hashes": [],
             "status": "STALE_ONLY" if prior_size > 0 else "EMPTY_DELTA",
             "prior_size": prior_size,
             "new_size": new_size,
@@ -817,12 +852,17 @@ def collect_tool_sidecar_evidence_delta(
                 )
         event_hash = obj.get("event_hash")
         if isinstance(event_hash, str) and HEX_SHA256.fullmatch(event_hash):
-            hashes.append(event_hash)
+            all_hashes.append(event_hash)
+            # Trusted productivity set is success-only; audit retains all events.
+            if is_successful_productive_event(obj):
+                productive_hashes.append(event_hash)
         events.append(obj)
     status = "DELTA_OK" if events else "EMPTY_DELTA"
     return {
         "events": events,
-        "trusted_event_hashes": hashes,
+        "trusted_event_hashes": list(productive_hashes),
+        "successful_productive_event_hashes": list(productive_hashes),
+        "all_event_hashes": list(all_hashes),
         "status": status,
         "prior_size": prior_size,
         "new_size": new_size,
@@ -1252,11 +1292,10 @@ def collect_attempt_mcp_delta(
         else:
             hashes.append(observed)
             event = {**event, "event_hash": observed}
-        op = str(event.get("op") or "")
-        if op in PRODUCTIVE_LAB_OPS and event.get("status") not in {"denied", "error"}:
-            productive.append(op)
-        elif event.get("productive") is True and op:
-            productive.append(op)
+        # Success-only: never count denied/error/timeout/malformed/unknown, even if
+        # event.productive is True or a lab file was planted.
+        if is_successful_productive_event(event):
+            productive.append(str(event.get("op") or ""))
         events.append(event)
     status = "DELTA_OK" if events else "EMPTY_DELTA"
     if prior_size > 0 and not events:
@@ -1297,19 +1336,8 @@ def require_productive_lab_delta(
             f"events={kinds[:12]}",
         )
     events = [e for e in (delta.get("events") or []) if isinstance(e, dict)]
-    productive_events = [
-        e
-        for e in events
-        if str(e.get("op") or "") in PRODUCTIVE_LAB_OPS
-        and e.get("status") not in {"denied", "error"}
-    ]
-    if not productive_events:
-        # productive_ops may be precomputed; still require matching event bodies.
-        productive_events = [
-            e
-            for e in events
-            if (e.get("productive") is True and str(e.get("op") or "") in PRODUCTIVE_LAB_OPS)
-        ]
+    # Success-only bodies; never accept productive=True with failed/denied/timeout status.
+    productive_events = [e for e in events if is_successful_productive_event(e)]
     if not productive_events:
         raise NativeSessionError("PRODUCTIVE_LAB_EVENT_MISSING", "no productive event bodies")
     trusted = list(trusted_event_hashes or [])
@@ -1343,76 +1371,108 @@ def require_productive_lab_delta(
             )
 
 
+def _normalize_lab_rel_path(rel_raw: object) -> str | None:
+    if not isinstance(rel_raw, str) or not rel_raw.strip():
+        return None
+    return str(rel_raw).replace("\\", "/").lstrip("./")
+
+
+def _content_digest_from_effect_identity(effect_identity: object) -> str | None:
+    """Extract content sha256 from tool effect_identity forms when present."""
+    if not isinstance(effect_identity, str) or not effect_identity.strip():
+        return None
+    text = effect_identity.strip()
+    # write_file form: write:{rel}:{content_sha}
+    if text.startswith("write:"):
+        parts = text.split(":")
+        if len(parts) >= 3:
+            digest = parts[-1]
+            if HEX_SHA256.fullmatch(digest):
+                return digest
+    if HEX_SHA256.fullmatch(text):
+        return text
+    return None
+
+
 def require_lab_effect_binding(
     *,
     delta: Mapping[str, Any],
     lab_artifact_manifest: Mapping[str, Any] | None,
     prior_lab_artifact_manifest: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
-    """Bind productive MCP ops to real lab filesystem effects (not event-file theater).
+    """Bind successful productive MCP ops to real lab filesystem effects.
 
-    write_file must change or create a lab path present in the artifact manifest.
-    shell_exec requires either a lab artifact delta vs prior scan or an explicit
-    non-empty lab effect marker recorded on the event.
+    write_file with a path-bearing event must bind the exact normalized path (and
+    content/effect hash when recorded). Broad “any changed path” is not accepted
+    for path-bearing write events. shell_exec requires successful status and
+    honest lab effect evidence; timeout is never productive.
     """
     artifacts = list((lab_artifact_manifest or {}).get("artifacts") or [])
     current_paths = {
-        str(a.get("path")): str(a.get("sha256") or "")
+        str(a.get("path")).replace("\\", "/").lstrip("./"): str(a.get("sha256") or "")
         for a in artifacts
         if isinstance(a, Mapping) and a.get("path")
     }
     prior_paths = {
-        str(a.get("path")): str(a.get("sha256") or "")
+        str(a.get("path")).replace("\\", "/").lstrip("./"): str(a.get("sha256") or "")
         for a in list((prior_lab_artifact_manifest or {}).get("artifacts") or [])
         if isinstance(a, Mapping) and a.get("path")
     }
     changed = sorted(p for p, digest in current_paths.items() if prior_paths.get(p) != digest)
     events = [e for e in (delta.get("events") or []) if isinstance(e, dict)]
-    productive_events = [
-        e
-        for e in events
-        if str(e.get("op") or "") in PRODUCTIVE_LAB_OPS
-        and e.get("status") not in {"denied", "error"}
-    ]
-    if not productive_events and list(delta.get("productive_ops") or []):
-        # Fall back: any productive ops require at least one lab change.
-        if not changed and not current_paths:
+    productive_events = [e for e in events if is_successful_productive_event(e)]
+    if not productive_events:
+        if list(delta.get("productive_ops") or []):
             raise NativeSessionError(
                 "LAB_EFFECT_MISSING",
-                "productive ops claimed without lab filesystem artifacts",
+                "productive ops claimed without successful productive event bodies",
             )
-        return {"changed_paths": changed, "bound": True}
+        return {
+            "changed_paths": changed,
+            "bound": False,
+            "write_bound": False,
+            "shell_bound": False,
+        }
     write_bound = False
     shell_bound = False
     for event in productive_events:
         op = str(event.get("op") or "")
         if op == "write_file":
-            # Prefer path recorded on event; require a real changed artifact, not mere presence.
-            rel_raw = event.get("path_relative") or event.get("path") or event.get("lab_path")
-            rel = (
-                str(rel_raw).replace("\\", "/").lstrip("./")
-                if isinstance(rel_raw, str) and rel_raw.strip()
-                else None
+            rel = _normalize_lab_rel_path(
+                event.get("path_relative") or event.get("path") or event.get("lab_path")
             )
-            if rel and rel in current_paths:
-                # Path must be newly created or content-hash changed vs prior scan.
-                if prior_paths.get(rel) != current_paths.get(rel):
-                    write_bound = True
-                else:
-                    raise NativeSessionError(
-                        "LAB_EFFECT_WRITE_UNBOUND",
-                        f"write_file path present but unchanged path={rel!r}",
-                    )
-            elif changed:
-                # Fallback only when event omitted path but lab FS actually changed.
-                write_bound = True
-            else:
+            if not rel:
                 raise NativeSessionError(
                     "LAB_EFFECT_WRITE_UNBOUND",
-                    f"write_file event without lab file effect path={rel!r}",
+                    "write_file event missing path_relative; refuse any-changed fallback",
                 )
+            if rel not in current_paths:
+                raise NativeSessionError(
+                    "LAB_EFFECT_WRITE_UNBOUND",
+                    f"write_file path not in lab artifacts path={rel!r}",
+                )
+            current_digest = current_paths.get(rel) or ""
+            if prior_paths.get(rel) == current_digest:
+                raise NativeSessionError(
+                    "LAB_EFFECT_WRITE_UNBOUND",
+                    f"write_file path present but unchanged path={rel!r}",
+                )
+            expected_content = _content_digest_from_effect_identity(
+                event.get("effect_identity") or event.get("content_sha256")
+            )
+            if (
+                expected_content is not None
+                and current_digest
+                and current_digest != expected_content
+            ):
+                raise NativeSessionError(
+                    "LAB_EFFECT_WRITE_HASH_MISMATCH",
+                    f"path={rel!r} lab={current_digest} event={expected_content}",
+                )
+            write_bound = True
         elif op == "shell_exec":
-            if event.get("lab_effect") is True or event.get("exit_code") == 0 and changed:
+            # Only successful shell_exec reaches here (status==ok). Timeout/error excluded.
+            if event.get("lab_effect") is True:
                 shell_bound = True
             elif changed:
                 shell_bound = True
@@ -1997,116 +2057,72 @@ def load_lab_candidate_manifest_bytes(
     return path.read_bytes()
 
 
+def _load_package_candidate_manifest_module() -> Any:
+    """Load package-owned pure validator (exact source of truth; no rule fork)."""
+    # 1) Normal installed / PYTHONPATH package import.
+    try:
+        import xinao.science.research_episode_candidate_manifest as package_mod
+
+        return package_mod
+    except ImportError:
+        pass
+    # 2) Image sibling COPY of the same package file next to this module.
+    sibling = Path(__file__).resolve().parent / "research_episode_candidate_manifest.py"
+    if sibling.is_file():
+        name = "xinao_research_episode_candidate_manifest_image"
+        if name in sys.modules:
+            return sys.modules[name]
+        import importlib.util
+
+        spec = importlib.util.spec_from_file_location(name, sibling)
+        if spec is not None and spec.loader is not None:
+            module = importlib.util.module_from_spec(spec)
+            sys.modules[name] = module
+            spec.loader.exec_module(module)
+            return module
+    # 3) Monorepo layout: docker/... -> repo/xinao_discovery/src
+    for parent in Path(__file__).resolve().parents:
+        candidate = (
+            parent
+            / "xinao_discovery"
+            / "src"
+            / "xinao"
+            / "science"
+            / "research_episode_candidate_manifest.py"
+        )
+        if candidate.is_file():
+            src_root = str(candidate.parents[2])  # .../xinao_discovery/src
+            if src_root not in sys.path:
+                sys.path.insert(0, src_root)
+            import xinao.science.research_episode_candidate_manifest as package_mod
+
+            return package_mod
+    raise NativeSessionError(
+        "CANDIDATE_VALIDATOR_UNAVAILABLE",
+        "package research_episode_candidate_manifest not importable",
+    )
+
+
 def validate_candidate_manifest(
     payload: Mapping[str, Any] | bytes,
     *,
     expected_episode_id: str | None = None,
     expected_attempt_cas_digest: str | None = None,
 ) -> dict[str, Any]:
-    """Validate closed lab-authored candidate manifest schema (candidate-only)."""
-    if isinstance(payload, (bytes, bytearray)):
-        try:
-            obj = json.loads(bytes(payload).decode("utf-8"))
-        except (UnicodeDecodeError, json.JSONDecodeError) as exc:
-            raise NativeSessionError("CANDIDATE_MANIFEST_JSON_INVALID", str(exc)) from exc
-    else:
-        obj = dict(payload)
-    if not isinstance(obj, dict):
-        raise NativeSessionError("CANDIDATE_MANIFEST_JSON_INVALID", "object required")
-    if obj.get("schema_version") != CANDIDATE_MANIFEST_SCHEMA:
-        raise NativeSessionError(
-            "CANDIDATE_MANIFEST_SCHEMA_INVALID",
-            str(obj.get("schema_version")),
+    """Thin re-export of package-owned pure validator (no second rule body)."""
+    package_mod = _load_package_candidate_manifest_module()
+    try:
+        return package_mod.validate_candidate_manifest(
+            payload,
+            expected_episode_id=expected_episode_id,
+            expected_attempt_cas_digest=expected_attempt_cas_digest,
         )
-    if obj.get("manifest_marker") != CANDIDATE_MANIFEST_MARKER:
-        raise NativeSessionError(
-            "CANDIDATE_MANIFEST_MARKER_INVALID",
-            str(obj.get("manifest_marker")),
-        )
-    for key in (
-        "candidate_id",
-        "candidate_version",
-        "research_question",
-        "research_object",
-        "account_recommendation",
-    ):
-        if not isinstance(obj.get(key), str) or not str(obj.get(key)).strip():
-            raise NativeSessionError("CANDIDATE_MANIFEST_FIELD_INVALID", key)
-    if obj.get("account_recommendation") not in ACCOUNT_RECOMMENDATION_VALUES:
-        raise NativeSessionError(
-            "CANDIDATE_MANIFEST_RECOMMENDATION_INVALID",
-            str(obj.get("account_recommendation")),
-        )
-    data_cutoff = obj.get("data_cutoff")
-    if not isinstance(data_cutoff, Mapping):
-        raise NativeSessionError("CANDIDATE_MANIFEST_CUTOFF_INVALID", "data_cutoff object required")
-    if not isinstance(data_cutoff.get("as_of"), str) or not str(data_cutoff.get("as_of")).strip():
-        raise NativeSessionError("CANDIDATE_MANIFEST_CUTOFF_INVALID", "as_of required")
-    material_refs = data_cutoff.get("material_refs") or []
-    if not isinstance(material_refs, list):
-        raise NativeSessionError("CANDIDATE_MANIFEST_CUTOFF_INVALID", "material_refs list")
-    for ref in material_refs:
-        if not isinstance(ref, Mapping):
-            raise NativeSessionError("CANDIDATE_MANIFEST_CUTOFF_INVALID", "material_ref object")
-        digest = ref.get("sha256")
-        if not isinstance(digest, str) or HEX_SHA256.fullmatch(digest) is None:
-            raise NativeSessionError("CANDIDATE_MANIFEST_CUTOFF_INVALID", "material_ref.sha256")
-    methods = obj.get("method_refs") or obj.get("methods")
-    if methods is None:
-        raise NativeSessionError("CANDIDATE_MANIFEST_METHODS_INVALID", "method_refs required")
-    # Wild / overfit / black-box methods are allowed; only type-check structure.
-    if not isinstance(methods, (list, Mapping, str)):
-        raise NativeSessionError("CANDIDATE_MANIFEST_METHODS_INVALID", type(methods).__name__)
-    falsifiers = obj.get("falsifiers") or obj.get("limitations")
-    if falsifiers is None:
-        raise NativeSessionError("CANDIDATE_MANIFEST_LIMITATIONS_INVALID", "falsifiers/limitations")
-    if not isinstance(falsifiers, list):
-        raise NativeSessionError("CANDIDATE_MANIFEST_LIMITATIONS_INVALID", "list required")
-    # Candidate-only authority clamps (never Owner disposition / completion).
-    if obj.get("owner_adopted") is not False:
-        raise NativeSessionError("CANDIDATE_MANIFEST_OWNER_ADOPTED_FORBIDDEN", "must be false")
-    if obj.get("completion") is not False and obj.get("completion_claim_allowed") is not False:
-        # Accept either key; both must be false when present. Require at least completion=false.
-        if "completion" not in obj and "completion_claim_allowed" not in obj:
-            raise NativeSessionError("CANDIDATE_MANIFEST_COMPLETION_MISSING", "completion=false")
-        if obj.get("completion") is True or obj.get("completion_claim_allowed") is True:
-            raise NativeSessionError("CANDIDATE_MANIFEST_COMPLETION_FORBIDDEN", "must be false")
-    if obj.get("candidate_only") is not True:
-        raise NativeSessionError(
-            "CANDIDATE_MANIFEST_CANDIDATE_ONLY_REQUIRED", "candidate_only=true"
-        )
-    for forbidden, reason in (
-        ("account_identity", "ACCOUNT_IDENTITY_FORBIDDEN"),
-        ("science_disposition", "SCIENCE_DISPOSITION_FORBIDDEN"),
-        ("frozen", "FREEZE_CLAIM_FORBIDDEN"),
-        ("parent_complete", "PARENT_COMPLETE_FORBIDDEN"),
-        ("science_restored", "SCIENCE_RESTORED_FORBIDDEN"),
-    ):
-        if obj.get(forbidden) not in {None, False}:
-            raise NativeSessionError(f"CANDIDATE_MANIFEST_{reason}", forbidden)
-    if expected_episode_id is not None and obj.get("episode_id") not in {
-        None,
-        expected_episode_id,
-    }:
-        if obj.get("episode_id") != expected_episode_id:
-            raise NativeSessionError(
-                "CANDIDATE_MANIFEST_EPISODE_MISMATCH",
-                f"{obj.get('episode_id')}!={expected_episode_id}",
-            )
-    if expected_attempt_cas_digest is not None and obj.get("attempt_cas_digest") not in {
-        None,
-        expected_attempt_cas_digest,
-    }:
-        if obj.get("attempt_cas_digest") != expected_attempt_cas_digest:
-            raise NativeSessionError(
-                "CANDIDATE_MANIFEST_ATTEMPT_MISMATCH",
-                f"{obj.get('attempt_cas_digest')}!={expected_attempt_cas_digest}",
-            )
-    # proposed numbers/stake only as candidate content (optional).
-    proposed = obj.get("proposed") or obj.get("proposed_numbers")
-    if proposed is not None and not isinstance(proposed, (Mapping, list)):
-        raise NativeSessionError("CANDIDATE_MANIFEST_PROPOSED_INVALID", type(proposed).__name__)
-    return obj
+    except Exception as exc:
+        reason = getattr(exc, "reason_code", None)
+        detail = getattr(exc, "detail", None)
+        if isinstance(reason, str) and reason:
+            raise NativeSessionError(reason, str(detail or exc)[:2000]) from exc
+        raise NativeSessionError("CANDIDATE_MANIFEST_INVALID", str(exc)[:2000]) from exc
 
 
 def export_candidate_evidence_bundle(

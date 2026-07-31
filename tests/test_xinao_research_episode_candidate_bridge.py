@@ -733,3 +733,457 @@ def test_owner_cli_ingest_export_and_bind_feedback_smoke(tmp_path: Path) -> None
         ]
     )
     assert ns.research_episode_command == "ingest-export"
+
+
+def test_denied_error_timeout_never_count_as_productive(native: Any, tmp_path: Path) -> None:
+    """Success-only productive evidence: failed statuses never enter productive gates."""
+    episode_id = "ep_denied_prod"
+    events_path = tmp_path / "output" / "mcp_events.jsonl"
+    sidecar_path = tmp_path / "sidecar_evidence" / "tool_events.jsonl"
+    events_path.parent.mkdir(parents=True)
+    sidecar_path.parent.mkdir(parents=True)
+    lab = tmp_path / "lab"
+    planted = lab / "candidate" / "candidate_manifest.v1.json"
+    planted.parent.mkdir(parents=True)
+    planted.write_text('{"planted":true}\n', encoding="utf-8")
+    planted_digest = _sha(planted.read_bytes())
+
+    def _mcp_line(
+        *,
+        status: str,
+        sidecar: str,
+        productive_flag: bool,
+        path_relative: str = "candidate/candidate_manifest.v1.json",
+    ) -> dict[str, Any]:
+        body = {
+            "schema_version": "xinao.dual_container_mcp_event.v1",
+            "event": "mcp_tools_call",
+            "episode_id": episode_id,
+            "op": "write_file",
+            "status": status,
+            "productive": productive_flag,
+            "server": "episode_lab",
+            "sidecar_event_hash": sidecar,
+            "path_relative": path_relative,
+            "completion_claim_allowed": False,
+            "science_restored": False,
+            "parent_complete": False,
+            "owner_adopted": False,
+        }
+        eh = _sha((json.dumps(body, sort_keys=True, separators=(",", ":")) + "\n").encode("utf-8"))
+        return {**body, "event_hash": eh}
+
+    def _sidecar_line(*, event_hash: str, status: str, productive: bool) -> dict[str, Any]:
+        return {
+            "schema_version": "xinao.tool_executor_sidecar_event.v1",
+            "event_hash": event_hash,
+            "op": "write_file",
+            "episode_id": episode_id,
+            "status": status,
+            "path_relative": "candidate/candidate_manifest.v1.json",
+            "productive": productive,
+            "completion_claim_allowed": False,
+            "science_restored": False,
+            "parent_complete": False,
+            "owner_adopted": False,
+        }
+
+    for bad_status in ("denied", "error", "timeout"):
+        sidecar_hash = _sha(f"tool-{bad_status}".encode())
+        # Real sidecar hash present but non-success status.
+        with sidecar_path.open("w", encoding="utf-8") as stream:
+            stream.write(
+                json.dumps(
+                    _sidecar_line(
+                        event_hash=sidecar_hash,
+                        status=bad_status,
+                        productive=True,  # forged productive flag
+                    ),
+                    sort_keys=True,
+                    separators=(",", ":"),
+                )
+                + "\n"
+            )
+        with events_path.open("w", encoding="utf-8") as stream:
+            stream.write(
+                json.dumps(
+                    _mcp_line(
+                        status=bad_status,
+                        sidecar=sidecar_hash,
+                        productive_flag=True,
+                    ),
+                    sort_keys=True,
+                    separators=(",", ":"),
+                )
+                + "\n"
+            )
+        tool_delta = native.collect_tool_sidecar_evidence_delta(
+            sidecar_path, None, expected_episode_id=episode_id
+        )
+        assert sidecar_hash not in (tool_delta.get("trusted_event_hashes") or [])
+        assert sidecar_hash not in (tool_delta.get("successful_productive_event_hashes") or [])
+        # Audit may retain the event body / all hashes, but not trusted productivity set.
+        assert any(e.get("event_hash") == sidecar_hash for e in (tool_delta.get("events") or []))
+        mcp_delta = native.collect_attempt_mcp_delta(
+            events_path, None, expected_episode_id=episode_id
+        )
+        assert mcp_delta.get("productive_ops") == []
+        with pytest.raises(native.NativeSessionError) as exc:
+            native.require_productive_lab_delta(
+                mcp_delta,
+                trusted_event_hashes=list(tool_delta.get("trusted_event_hashes") or []),
+                require_trusted_tool_chain=True,
+            )
+        assert exc.value.reason_code in {
+            "PRODUCTIVE_LAB_OP_MISSING",
+            "PRODUCTIVE_LAB_EVENT_MISSING",
+            "TOOL_EVENT_UNTRUSTED",
+        }
+        # Planted lab file + denied hash must not bind as productive write.
+        with pytest.raises(native.NativeSessionError):
+            native.require_lab_effect_binding(
+                delta={
+                    "status": "DELTA_OK",
+                    "productive_ops": ["write_file"],
+                    "events": [
+                        {
+                            "op": "write_file",
+                            "status": bad_status,
+                            "productive": True,
+                            "path_relative": "candidate/candidate_manifest.v1.json",
+                            "sidecar_event_hash": sidecar_hash,
+                        }
+                    ],
+                },
+                lab_artifact_manifest={
+                    "artifacts": [
+                        {
+                            "path": "candidate/candidate_manifest.v1.json",
+                            "sha256": planted_digest,
+                        }
+                    ]
+                },
+                prior_lab_artifact_manifest={"artifacts": []},
+            )
+
+    # Wrong path / wrong hash on successful status still fails exact bind.
+    ok_sidecar = "ab" * 32
+    ok_event = {
+        "op": "write_file",
+        "status": "ok",
+        "path_relative": "candidate/candidate_manifest.v1.json",
+        "effect_identity": f"write:candidate/candidate_manifest.v1.json:{'ee' * 32}",
+        "sidecar_event_hash": ok_sidecar,
+    }
+    with pytest.raises(native.NativeSessionError) as exc_hash:
+        native.require_lab_effect_binding(
+            delta={
+                "status": "DELTA_OK",
+                "productive_ops": ["write_file"],
+                "events": [ok_event],
+            },
+            lab_artifact_manifest={
+                "artifacts": [
+                    {
+                        "path": "candidate/candidate_manifest.v1.json",
+                        "sha256": "ff" * 32,
+                    }
+                ]
+            },
+            prior_lab_artifact_manifest={"artifacts": []},
+        )
+    assert exc_hash.value.reason_code == "LAB_EFFECT_WRITE_HASH_MISMATCH"
+    with pytest.raises(native.NativeSessionError) as exc_path:
+        native.require_lab_effect_binding(
+            delta={
+                "status": "DELTA_OK",
+                "productive_ops": ["write_file"],
+                "events": [
+                    {
+                        "op": "write_file",
+                        "status": "ok",
+                        "path_relative": "other/wrong.json",
+                        "sidecar_event_hash": ok_sidecar,
+                    }
+                ],
+            },
+            lab_artifact_manifest={
+                "artifacts": [
+                    {
+                        "path": "candidate/candidate_manifest.v1.json",
+                        "sha256": "dd" * 32,
+                    }
+                ]
+            },
+            prior_lab_artifact_manifest={"artifacts": []},
+        )
+    assert exc_path.value.reason_code == "LAB_EFFECT_WRITE_UNBOUND"
+
+    # Positive: successful write with matching path + digest binds.
+    good_digest = "11" * 32
+    ok = native.require_lab_effect_binding(
+        delta={
+            "status": "DELTA_OK",
+            "productive_ops": ["write_file"],
+            "events": [
+                {
+                    "op": "write_file",
+                    "status": "ok",
+                    "path_relative": "candidate/candidate_manifest.v1.json",
+                    "effect_identity": f"write:candidate/candidate_manifest.v1.json:{good_digest}",
+                    "sidecar_event_hash": ok_sidecar,
+                }
+            ],
+        },
+        lab_artifact_manifest={
+            "artifacts": [
+                {
+                    "path": "candidate/candidate_manifest.v1.json",
+                    "sha256": good_digest,
+                }
+            ]
+        },
+        prior_lab_artifact_manifest={"artifacts": []},
+    )
+    assert ok["bound"] is True and ok["write_bound"] is True
+
+    # Positive shell success with lab delta binds; timeout body does not enter productive_events.
+    shell_ok = native.require_lab_effect_binding(
+        delta={
+            "status": "DELTA_OK",
+            "productive_ops": ["shell_exec"],
+            "events": [
+                {
+                    "op": "shell_exec",
+                    "status": "ok",
+                    "exit_code": 0,
+                    "sidecar_event_hash": "cd" * 32,
+                    "lab_effect": True,
+                }
+            ],
+        },
+        lab_artifact_manifest={"artifacts": [{"path": "work/out.txt", "sha256": "22" * 32}]},
+        prior_lab_artifact_manifest={"artifacts": []},
+    )
+    assert shell_ok["shell_bound"] is True
+
+
+def test_package_validator_without_docker_tree(tmp_path: Path) -> None:
+    """Isolated site-packages-style load: validator works with monorepo docker tree absent."""
+    import subprocess
+    import textwrap
+
+    science_src = ROOT / "xinao_discovery" / "src"
+    script = textwrap.dedent(
+        f"""
+        import json
+        import sys
+        from pathlib import Path
+
+        # site-packages-only: only discovery src on path (no docker tree).
+        sys.path[:] = [{str(science_src)!r}] + [
+            p for p in sys.path if "docker" not in p.replace("\\\\", "/").lower()
+        ]
+        from xinao.science.research_episode_candidate_manifest import (
+            validate_candidate_manifest,
+            module_source_sha256,
+            CandidateManifestError,
+        )
+        from xinao.science.episode_export_pool_adapter import (
+            EpisodeExportAdapterError,
+            ingest_verified_episode_export,
+            load_and_verify_candidate_manifest,
+        )
+
+        # Prove no monorepo docker walk is required for adapter import/use.
+        assert "native_grok_session" not in sys.modules
+        good = {{
+            "schema_version": "xinao.research_episode_candidate_manifest.v1",
+            "manifest_marker": "XINAO_RESEARCH_EPISODE_CANDIDATE_MANIFEST_V1",
+            "candidate_id": "c1",
+            "candidate_version": "v1",
+            "research_question": "q",
+            "research_object": "o",
+            "data_cutoff": {{
+                "as_of": "2026-07-31T00:00:00Z",
+                "material_refs": [{{"id": "m", "sha256": "{"aa" * 32}"}}],
+            }},
+            "method_refs": ["m1"],
+            "falsifiers": ["f1"],
+            "account_recommendation": "NO_RECOMMENDATION",
+            "candidate_only": True,
+            "owner_adopted": False,
+            "completion": False,
+        }}
+        validate_candidate_manifest(good)
+        seal = module_source_sha256()
+        assert len(seal) == 64
+        bad = dict(good)
+        del bad["method_refs"]
+        try:
+            validate_candidate_manifest(bad)
+            raise SystemExit("expected methods rejection")
+        except CandidateManifestError as exc:
+            assert "METHODS" in exc.reason_code
+        print(json.dumps({{"ok": True, "module_sha256": seal}}))
+        """
+    )
+    proc = subprocess.run(
+        [sys.executable, "-c", script],
+        check=False,
+        capture_output=True,
+        text=True,
+        cwd=str(tmp_path),
+    )
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+    payload = json.loads(proc.stdout.strip().splitlines()[-1])
+    assert payload["ok"] is True
+    assert len(payload["module_sha256"]) == 64
+
+
+def test_packaged_cli_pool_ingest_and_feedback_bind_smoke(tmp_path: Path) -> None:
+    """Fresh package CLI path: help + smoke ingest/bind with temp roots."""
+    import subprocess
+
+    science_src = ROOT / "xinao_discovery" / "src"
+    env = {**dict(**__import__("os").environ), "PYTHONPATH": str(science_src)}
+    help_proc = subprocess.run(
+        [sys.executable, "-m", "xinao.cli", "research-episode", "-h"],
+        check=False,
+        capture_output=True,
+        text=True,
+        env=env,
+        cwd=str(ROOT / "xinao_discovery"),
+    )
+    assert help_proc.returncode == 0, help_proc.stderr
+    assert "pool-ingest" in help_proc.stdout or "pool-ingest" in help_proc.stderr
+    assert "feedback-bind" in help_proc.stdout or "feedback-bind" in help_proc.stderr
+
+    manifest = _manifest(episode_id="ep_pkg_cli", attempt="b" * 64)
+    man_bytes = (json.dumps(manifest, ensure_ascii=False, sort_keys=True) + "\n").encode("utf-8")
+    body = {
+        "schema_version": "xinao.research_episode_candidate_evidence_bundle.v1",
+        "status": "CANDIDATE_EVIDENCE_EXPORTED",
+        "episode_id": "ep_pkg_cli",
+        "attempt_id": "att_pkg",
+        "attempt_hash": "a" * 64,
+        "attempt_cas_digest": "b" * 64,
+        "raw_session_hash": "c" * 64,
+        "tool_trace_hash": "d" * 64,
+        "artifact_manifest_hash": "e" * 64,
+        "candidate_manifest_sha256": _sha(man_bytes),
+        "pair_receipt_sha256": "11" * 32,
+        "namespace_receipt_sha256": "22" * 32,
+        "release_identity_sha256": "33" * 32,
+        "provider_session_uuid": "00000000-0000-4000-8000-0000000000bb",
+        "research_profile": "OPEN_RESEARCH",
+        "actual_turns": 6,
+        "candidate_only": True,
+        "owner_adopted": False,
+        "completion_claim_allowed": False,
+        "science_restored": False,
+        "parent_complete": False,
+        "shadow_write": False,
+        "next_task_created": False,
+        "disposition_written": False,
+        "freeze_written": False,
+        "settlement_written": False,
+        "portfolio_updated": False,
+    }
+    bundle_hash = _sha(
+        (json.dumps(body, ensure_ascii=False, sort_keys=True, separators=(",", ":")) + "\n").encode(
+            "utf-8"
+        )
+    )
+    export = {**body, "bundle_sha256": bundle_hash}
+    export_path = tmp_path / "export.json"
+    manifest_path = tmp_path / "candidate_manifest.v1.json"
+    export_path.write_text(json.dumps(export, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    manifest_path.write_bytes(man_bytes)
+    pool_root = tmp_path / "pool"
+    ingest = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "xinao.cli",
+            "research-episode",
+            "pool-ingest",
+            "--pool-root",
+            str(pool_root),
+            "--export",
+            str(export_path),
+            "--manifest",
+            str(manifest_path),
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+        env=env,
+        cwd=str(ROOT / "xinao_discovery"),
+    )
+    assert ingest.returncode == 0, ingest.stdout + ingest.stderr
+    result = json.loads(ingest.stdout)
+    assert result["owner_adopted"] is False
+    assert result["freeze_written"] is False
+    assert result["status"] == "POOL_ENTRY_READY"
+
+    from xinao.canonical import canonical_sha256
+
+    pack_body = {
+        "schema_version": "xinao.research_feedback_pack.v1",
+        "pack_marker": "XINAO_RESEARCH_FEEDBACK_PACK_V1",
+        "prior_result_sha256": "aa" * 32,
+        "prior_research_binding_sha256": "bb" * 32,
+        "auto_start_next_research": False,
+        "auto_next_period_freeze": False,
+        "scientific_promotion": False,
+        "future_outcome_access": False,
+    }
+    content_hash = canonical_sha256(pack_body)
+    sealed = {**pack_body, "content_hash": content_hash}
+    cas = (
+        tmp_path
+        / "objects"
+        / "research_feedback_pack"
+        / "sha256"
+        / content_hash[:2]
+        / f"{content_hash}.json"
+    )
+    cas.parent.mkdir(parents=True)
+    cas.write_text(json.dumps(sealed, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    bind = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "xinao.cli",
+            "research-episode",
+            "feedback-bind",
+            "--portfolio-root",
+            str(tmp_path),
+            "--feedback-content-hash",
+            content_hash,
+            "--prior-candidate-result-sha256",
+            "aa" * 32,
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+        env=env,
+        cwd=str(ROOT / "xinao_discovery"),
+    )
+    assert bind.returncode == 0, bind.stdout + bind.stderr
+    binding = json.loads(bind.stdout)
+    assert binding["auto_start_next_research"] is False
+    assert binding["owner_adopted"] is False
+
+
+def test_mcp_binding_subagents_disabled_for_open_research(tmp_path: Path) -> None:
+    bind_mod = _load("xinao_episode_mcp_binding_policy", DOCKER / "episode_mcp_binding.py")
+    toml = bind_mod.render_config_toml(
+        server_command="python",
+        server_args=["-m", "mcp"],
+        research_profile="OPEN_RESEARCH",
+    )
+    assert "[subagents]" in toml
+    assert "enabled = false" in toml
+    assert "enabled = true" not in toml.split("[subagents]")[1].split("[")[0]

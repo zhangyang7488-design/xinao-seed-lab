@@ -318,7 +318,9 @@ def handle_lab_op(
     if isinstance(response, dict):
         response = dict(response)
         response.setdefault("op", op)
-        response.setdefault("productive", op in PRODUCTIVE_OPS)
+        status = response.get("status")
+        # Productive only when op is productive AND tool status is successful (ok).
+        response["productive"] = op in PRODUCTIVE_OPS and status == "ok"
     return response
 
 
@@ -451,6 +453,9 @@ def serve_stdio(
                 path_rel = remapped.get("path_relative")
                 if path_rel is None and op == "shell_exec":
                     path_rel = remapped.get("cwd_relative")
+                status = payload.get("status") if isinstance(payload, dict) else None
+                # Derive productive from op AND successful status; never trust flag alone.
+                productive = op in PRODUCTIVE_OPS and status == "ok"
                 _append_evidence(
                     evidence_path,
                     {
@@ -458,13 +463,16 @@ def serve_stdio(
                         "tool": raw_name,
                         "op": op,
                         "episode_id": episode_id,
-                        "status": payload.get("status") if isinstance(payload, dict) else None,
+                        "status": status,
                         "reason_code": (
                             payload.get("reason_code") if isinstance(payload, dict) else None
                         ),
                         "sidecar_event_hash": sidecar_event,
                         "path_relative": path_rel,
-                        "productive": op in PRODUCTIVE_OPS,
+                        "effect_identity": (
+                            payload.get("effect_identity") if isinstance(payload, dict) else None
+                        ),
+                        "productive": productive,
                         **authority_clamp_flags(),
                     },
                 )

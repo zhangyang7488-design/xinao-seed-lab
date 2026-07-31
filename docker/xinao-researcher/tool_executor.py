@@ -776,8 +776,8 @@ def append_tool_sidecar_event(
         "reason_code": response.get("reason_code"),
         "path_relative": rel,
         "effect_identity": effect_identity,
-        "productive": op in {"write_file", "shell_exec"}
-        and response.get("status") not in {"denied", "error"},
+        # Success-only: status must be exactly ok (timeout/error/denied never productive).
+        "productive": op in {"write_file", "shell_exec"} and response.get("status") == "ok",
         **authority_clamp_flags(),
     }
     # Seal record hash over body without nested seal field.

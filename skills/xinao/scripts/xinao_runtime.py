@@ -285,10 +285,17 @@ RESEARCHER_IMAGE_MODULE_INVENTORY: tuple[str, ...] = (
     "transport_broker.py",
     "episode_mcp_binding.py",
     "mcp_episode_lab_server.py",
+    # Package-owned pure validator staged from xinao_discovery (exact same bytes).
+    "research_episode_candidate_manifest.py",
     "empty-grok-profile/.gitkeep",
     "grok-bwrap-unprivileged-wrapper.sh",
     "episode-tool-shell-wrapper.sh",
 )
+# Canonical package path for the pure candidate-manifest validator (no hand-copied body).
+CANDIDATE_MANIFEST_VALIDATOR_PACKAGE_RELATIVE = (
+    Path("xinao_discovery") / "src" / "xinao" / "science" / "research_episode_candidate_manifest.py"
+)
+CANDIDATE_MANIFEST_VALIDATOR_IMAGE_RELATIVE = "research_episode_candidate_manifest.py"
 RESEARCHER_CANARY_ENTRYPOINT_IMAGE_PATH = "/opt/xinao-researcher/entrypoint.py"
 RESEARCHER_EPISODE_ENTRYPOINT_IMAGE_PATH = "/opt/xinao-researcher/episode_entrypoint.py"
 RESEARCHER_DEFAULT_PROFILE = "INSTRUMENT_CANARY"
@@ -2281,7 +2288,11 @@ def _collect_researcher_image_module_rows(
     for relative in RESEARCHER_IMAGE_MODULE_INVENTORY:
         if relative.startswith("/") or "\\" in relative or ".." in Path(relative).parts:
             raise XinaoError("RESEARCHER_IMAGE_MODULES_INVENTORY_INVALID", relative)
-        path = package_root / relative
+        # Pure candidate-manifest validator: stage exact package-owned source bytes.
+        if relative == CANDIDATE_MANIFEST_VALIDATOR_IMAGE_RELATIVE:
+            path = (source_root / CANDIDATE_MANIFEST_VALIDATOR_PACKAGE_RELATIVE).resolve()
+        else:
+            path = package_root / relative
         if not path.is_file() or _is_reparse(path):
             raise XinaoError("RESEARCHER_IMAGE_MODULES_SOURCE_MISSING", relative)
         payload = _regular_file_bytes(
@@ -13857,19 +13868,32 @@ def research_episode_export_candidate_evidence(
 
 
 def _import_discovery_science(module_name: str) -> Any:
-    """Import xinao.science.* from monorepo discovery src (fail closed if missing)."""
+    """Import xinao.science.* preferring installed package, then monorepo src.
 
+    Installed Skill under ``~/.codex/skills/xinao`` has parents[3] outside the
+    monorepo; monorepo-only path walk must not be the primary consumer route.
+    Prefer sealed ``xinao-discovery`` package import first.
+    """
+
+    leaf = module_name.rsplit(".", 1)[-1]
+    # 1) Installed / site-packages package (fresh wheel or sealed env).
+    try:
+        return importlib.import_module(f"xinao.science.{leaf}")
+    except ImportError:
+        pass
+    # 2) Explicit override or monorepo discovery src (dev / worktree only).
     repo_root = Path(__file__).resolve().parents[3]
     discovery_src = Path(
         os.environ.get("XINAO_DISCOVERY_SRC") or (repo_root / "xinao_discovery" / "src")
     )
-    # module_name like episode_export_pool_adapter
-    leaf = module_name.rsplit(".", 1)[-1]
     adapter_path = discovery_src / "xinao" / "science" / f"{leaf}.py"
     if not discovery_src.is_dir() or not adapter_path.is_file():
         raise XinaoError(
             "EPISODE_POOL_ADAPTER_UNAVAILABLE",
-            f"xinao_discovery science package required at {discovery_src}",
+            (
+                f"installed xinao.science.{leaf} missing and monorepo src not found "
+                f"at {discovery_src}; install xinao-discovery or set XINAO_DISCOVERY_SRC"
+            ),
         )
     src = str(discovery_src)
     if src in sys.path:
@@ -13882,7 +13906,13 @@ def _import_discovery_science(module_name: str) -> Any:
         for key in list(sys.modules):
             if key.startswith("xinao."):
                 del sys.modules[key]
-    return importlib.import_module(f"xinao.science.{leaf}")
+    try:
+        return importlib.import_module(f"xinao.science.{leaf}")
+    except ImportError as exc:
+        raise XinaoError(
+            "EPISODE_POOL_ADAPTER_UNAVAILABLE",
+            f"xinao.science.{leaf} import failed: {exc}",
+        ) from exc
 
 
 def research_episode_ingest_export(

@@ -144,10 +144,12 @@ def render_config_toml(
 ) -> str:
     if tool_timeout_sec is None:
         tool_timeout_sec = max(1, min(DEFAULT_TIMEOUT_MS // 1000, MAX_TIMEOUT_MS // 1000))
-    profile = normalize_research_profile(research_profile)
-    # OPEN_RESEARCH: allow episode-confined subagents (host tools remain stripped).
-    # CLOSED_LAB: keep subagents disabled for tighter isolation.
-    subagents_enabled = profile == PROFILE_OPEN_RESEARCH
+    # Honest policy matches argv --no-subagents: keep TOML subagents disabled on
+    # every research profile (including OPEN_RESEARCH). Do not claim enabled=true
+    # while the live driver forces --no-subagents and strips spawn_subagent.
+    # normalize_research_profile kept for call-site validation / future gates.
+    normalize_research_profile(research_profile)
+    subagents_enabled = False
     lines = [
         f"[mcp_servers.{server_name}]",
         f'command = "{_toml_escape(server_command)}"',
