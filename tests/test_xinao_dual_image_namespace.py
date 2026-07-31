@@ -10,7 +10,9 @@ from __future__ import annotations
 import hashlib
 import importlib.util
 import json
+import os
 import sys
+import threading
 import uuid
 from pathlib import Path
 from typing import Any
@@ -1538,6 +1540,244 @@ def test_physical_probe_requires_tool_sidecar_and_transport_auth_asymmetry(
     dests = {str(b.get("container")) for b in transport_spec["binds"]}
     assert specs.TRANSPORT_AUTH_MOUNT in dests
     assert specs.TOOL_SIDECAR_EVIDENCE_MOUNT not in dests
+
+
+def test_probe_invocation_roots_unique_and_cleaned_on_success(
+    module: Any, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Two successive successful issues use distinct inv_* roots; each cleans its own."""
+    from tests import test_xinao_skill as skill_tests
+
+    manifest, path = skill_tests._sealed_release(
+        module, tmp_path, monkeypatch, package_version="1.3.6", capability_version="1.2.2"
+    )
+    skill_tests._terminal_pointer(module, manifest, path)
+    _install_docker_io_mock(
+        module,
+        monkeypatch,
+        transport_image_id=manifest["image_id"],
+        tool_image_id=manifest["tool_image_id"],
+    )
+    first = module.issue_tool_namespace_separation_receipt()
+    second = module.issue_tool_namespace_separation_receipt()
+    assert first["status"] == "ISSUED"
+    assert second["status"] == "ISSUED"
+    r1 = json.loads(Path(first["receipt_path"]).read_text(encoding="utf-8"))
+    r2 = json.loads(Path(second["receipt_path"]).read_text(encoding="utf-8"))
+    inv1 = r1["probe_details"]["probe_invocation_id"]
+    inv2 = r2["probe_details"]["probe_invocation_id"]
+    assert inv1 and inv2
+    assert inv1 != inv2
+    assert inv1.startswith(module.TOOL_NAMESPACE_PROBE_INVOCATION_PREFIX)
+    assert inv2.startswith(module.TOOL_NAMESPACE_PROBE_INVOCATION_PREFIX)
+    cleanup1 = r1["probe_details"]["probe_cleanup"]
+    cleanup2 = r2["probe_details"]["probe_cleanup"]
+    assert cleanup1["owned"] is True and cleanup1["cleaned"] is True
+    assert cleanup2["owned"] is True and cleanup2["cleaned"] is True
+    work = module._tool_namespace_probe_work_parent()
+    assert not (work / inv1).exists()
+    assert not (work / inv2).exists()
+    # Must never bind to the legacy fixed `.probe_work/lab` path.
+    for receipt in (r1, r2):
+        root = str(receipt["probe_details"]["probe_root"])
+        assert (
+            f"{module.TOOL_NAMESPACE_PROBE_WORK_DIRNAME}{os.sep}{module.TOOL_NAMESPACE_PROBE_INVOCATION_PREFIX}"
+            in root.replace("/", os.sep)
+            or f"/{module.TOOL_NAMESPACE_PROBE_INVOCATION_PREFIX}" in root.replace("\\", "/")
+        )
+
+
+def test_probe_failure_residue_does_not_block_next_issue(
+    module: Any, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """First mid-run failure retains inv_* evidence; second issue still starts cleanly.
+
+    Also plants legacy fixed-path auth_escape residue (the production pollution mode)
+    to prove the new exclusive root is immune.
+    """
+    from tests import test_xinao_skill as skill_tests
+
+    manifest, path = skill_tests._sealed_release(
+        module, tmp_path, monkeypatch, package_version="1.3.6", capability_version="1.2.2"
+    )
+    skill_tests._terminal_pointer(module, manifest, path)
+    _install_docker_io_mock(
+        module,
+        monkeypatch,
+        transport_image_id=manifest["image_id"],
+        tool_image_id=manifest["tool_image_id"],
+        fail_proof="credential_read_denied",
+    )
+    with pytest.raises(module.XinaoError) as failure:
+        module.issue_tool_namespace_separation_receipt()
+    assert failure.value.reason_code == "TOOL_NAMESPACE_PROBE_AUTH_NOT_DENIED"
+    work = module._tool_namespace_probe_work_parent()
+    retained = sorted(
+        p
+        for p in work.iterdir()
+        if p.is_dir() and p.name.startswith(module.TOOL_NAMESPACE_PROBE_INVOCATION_PREFIX)
+    )
+    assert retained, "failed probe must retain its exact inv_* root for evidence"
+    # Simulate Windows reparse/symlink residue under the retained lab + legacy fixed path.
+    for lab in (retained[0] / "lab", work / "lab"):
+        lab.mkdir(parents=True, exist_ok=True)
+        escape = lab / ".auth_escape"
+        if escape.exists() or escape.is_symlink():
+            continue
+        try:
+            escape.symlink_to(tmp_path / "outside_target", target_is_directory=True)
+        except OSError:
+            escape.write_text("auth_escape_residue", encoding="utf-8")
+    (tmp_path / "outside_target").mkdir(exist_ok=True)
+    # Fresh mock for the second successful attempt (same sealed images).
+    _install_docker_io_mock(
+        module,
+        monkeypatch,
+        transport_image_id=manifest["image_id"],
+        tool_image_id=manifest["tool_image_id"],
+    )
+    issued = module.issue_tool_namespace_separation_receipt()
+    assert issued["status"] == "ISSUED"
+    receipt = json.loads(Path(issued["receipt_path"]).read_text(encoding="utf-8"))
+    second_inv = receipt["probe_details"]["probe_invocation_id"]
+    assert second_inv != retained[0].name
+    assert receipt["probe_details"]["probe_cleanup"]["cleaned"] is True
+    assert not (work / second_inv).exists()
+    # Prior failure evidence still present (not swept by success cleanup).
+    assert retained[0].is_dir()
+
+
+def test_probe_roots_concurrent_allocate_isolated(
+    module: Any, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Concurrent allocate calls never share or stomp inv_* roots."""
+
+    _state(module, tmp_path, monkeypatch)
+    barrier = threading.Barrier(6)
+    results: list[tuple[str, str]] = []
+    lock = threading.Lock()
+    errors: list[BaseException] = []
+
+    def _worker() -> None:
+        try:
+            barrier.wait(timeout=10)
+            inv, root = module._allocate_tool_namespace_probe_root()
+            (root / "lab").mkdir()
+            (root / "lab" / "marker").write_text(inv, encoding="utf-8")
+            with lock:
+                results.append((inv, str(root)))
+        except BaseException as exc:  # noqa: BLE001 — collect for assertion
+            with lock:
+                errors.append(exc)
+
+    threads = [threading.Thread(target=_worker) for _ in range(6)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join(timeout=30)
+    assert not errors, errors
+    assert len(results) == 6
+    invs = [r[0] for r in results]
+    paths = [r[1] for r in results]
+    assert len(set(invs)) == 6
+    assert len(set(paths)) == 6
+    for inv, path_s in results:
+        root = Path(path_s)
+        assert root.name == inv
+        assert (root / "lab" / "marker").read_text(encoding="utf-8") == inv
+        assert module._tool_namespace_probe_root_is_owned(root, invocation_id=inv)
+
+
+def test_probe_cleanup_refuses_foreign_and_does_not_follow_reparse(
+    module: Any, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Success cleanup deletes only the owned inv_* root; never foreign or reparse targets."""
+
+    _state(module, tmp_path, monkeypatch)
+    inv, root = module._allocate_tool_namespace_probe_root()
+    lab = root / "lab"
+    lab.mkdir()
+    outside = tmp_path / "must_survive_outside"
+    outside.mkdir()
+    secret = outside / "secret.txt"
+    secret.write_text("do-not-delete", encoding="utf-8")
+    escape = lab / ".auth_escape"
+    try:
+        escape.symlink_to(outside, target_is_directory=True)
+        reparse_planted = True
+    except OSError:
+        escape.write_text("reparse_sim", encoding="utf-8")
+        reparse_planted = False
+
+    foreign = module._tool_namespace_probe_work_parent() / "foreign_not_inv"
+    foreign.mkdir()
+    foreign_marker = foreign / "keep.txt"
+    foreign_marker.write_text("foreign", encoding="utf-8")
+
+    # Wrong invocation id → refuse.
+    refused = module._cleanup_tool_namespace_probe_root(
+        root, invocation_id=f"{module.TOOL_NAMESPACE_PROBE_INVOCATION_PREFIX}notmine", success=True
+    )
+    assert refused["owned"] is False
+    assert root.is_dir()
+
+    # Foreign directory name that is not inv_* → refuse even if under .probe_work.
+    foreign_clean = module._cleanup_tool_namespace_probe_root(
+        foreign, invocation_id=foreign.name, success=True
+    )
+    assert foreign_clean["owned"] is False
+    assert foreign_marker.is_file()
+
+    # Exact owned success cleanup.
+    cleaned = module._cleanup_tool_namespace_probe_root(root, invocation_id=inv, success=True)
+    assert cleaned["owned"] is True
+    assert cleaned["cleaned"] is True
+    assert not root.exists()
+    assert secret.is_file(), "cleanup must not follow reparse/symlink into outside target"
+    assert foreign_marker.is_file()
+    if reparse_planted:
+        assert not escape.exists() and not escape.is_symlink()
+
+    # Failure path retains owned root.
+    inv2, root2 = module._allocate_tool_namespace_probe_root()
+    (root2 / "lab").mkdir()
+    retained = module._cleanup_tool_namespace_probe_root(root2, invocation_id=inv2, success=False)
+    assert retained["retained"] is True
+    assert retained["cleaned"] is False
+    assert root2.is_dir()
+
+
+def test_repeated_physical_probes_isolated_under_docker_io_mock(
+    module: Any, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Direct physical probe runs also isolate roots (issuer is not the only caller)."""
+    from tests import test_xinao_skill as skill_tests
+
+    _state(module, tmp_path, monkeypatch)
+    manifest, path = skill_tests._sealed_release(
+        module, tmp_path, monkeypatch, package_version="1.3.6", capability_version="1.2.2"
+    )
+    skill_tests._terminal_pointer(module, manifest, path)
+    _install_docker_io_mock(
+        module,
+        monkeypatch,
+        transport_image_id=manifest["image_id"],
+        tool_image_id=manifest["tool_image_id"],
+    )
+    p1 = module._run_tool_namespace_physical_probes(
+        transport_image_id=manifest["image_id"],
+        tool_image_id=manifest["tool_image_id"],
+    )
+    p2 = module._run_tool_namespace_physical_probes(
+        transport_image_id=manifest["image_id"],
+        tool_image_id=manifest["tool_image_id"],
+    )
+    assert p1["probe_invocation_id"] != p2["probe_invocation_id"]
+    assert p1["details"]["probe_cleanup"]["cleaned"] is True
+    assert p2["details"]["probe_cleanup"]["cleaned"] is True
+    assert p1["details"]["probe_root"] != p2["details"]["probe_root"]
+    assert module.TOOL_NAMESPACE_PROBE_INVOCATION_PREFIX in p1["details"]["probe_root"]
+    assert module.TOOL_NAMESPACE_PROBE_INVOCATION_PREFIX in p2["details"]["probe_root"]
 
 
 def test_tool_executor_build_staging_normalizes_crlf_and_binds_digest(

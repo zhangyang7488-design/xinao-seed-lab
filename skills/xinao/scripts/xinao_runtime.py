@@ -13403,6 +13403,11 @@ TOOL_NAMESPACE_RECEIPT_REQUIRED_NEGATIVE_PROOF_IDS = (
     "capability_drift_denied",
 )
 TOOL_NAMESPACE_RECEIPT_MAX_AGE_SECONDS = 7 * 24 * 3600
+# Each physical probe run owns an exclusive child under security/.probe_work.
+# Fixed `.probe_work/lab/.auth_escape` reuse left Windows reparse residue that
+# blocked the next receipt issue; invocation roots isolate + enable exact cleanup.
+TOOL_NAMESPACE_PROBE_WORK_DIRNAME = ".probe_work"
+TOOL_NAMESPACE_PROBE_INVOCATION_PREFIX = "inv_"
 RESEARCH_EPISODE_LEASE_WAIT_SECONDS = 5.0
 RESEARCH_EPISODE_LOCK_NAME = "episode.lease.lock"
 
@@ -13946,6 +13951,178 @@ def _inspect_mount_destinations(inspect_doc: dict[str, Any]) -> set[str]:
     return destinations
 
 
+def _tool_namespace_probe_work_parent() -> Path:
+    return _tool_namespace_security_root() / TOOL_NAMESPACE_PROBE_WORK_DIRNAME
+
+
+def _tool_namespace_probe_invocation_id() -> str:
+    return (
+        f"{TOOL_NAMESPACE_PROBE_INVOCATION_PREFIX}"
+        f"{dt.datetime.now(dt.UTC).strftime('%Y%m%dT%H%M%S')}_"
+        f"{uuid.uuid4().hex[:12]}"
+    )
+
+
+def _rmtree_no_follow_reparse(root: Path) -> None:
+    """Remove a directory tree without following reparse points or symlinks.
+
+    Reparse/symlink nodes are unlinked as leaves (target content is never walked).
+    Best-effort: OSError on individual entries is swallowed so partial residue
+    cannot abort an already-proven probe path.
+    """
+
+    try:
+        st = os.lstat(root)
+    except FileNotFoundError:
+        return
+    except OSError:
+        return
+    if stat.S_ISLNK(st.st_mode) or _is_reparse_stat(st):
+        try:
+            os.unlink(root)
+        except OSError:
+            pass
+        return
+    if not stat.S_ISDIR(st.st_mode):
+        try:
+            os.unlink(root)
+        except OSError:
+            pass
+        return
+    try:
+        with os.scandir(root) as iterator:
+            entries = list(iterator)
+    except OSError:
+        entries = []
+    for entry in entries:
+        child = Path(entry.path)
+        try:
+            est = entry.stat(follow_symlinks=False)
+        except OSError:
+            continue
+        if stat.S_ISLNK(est.st_mode) or _is_reparse_stat(est):
+            try:
+                os.unlink(child)
+            except OSError:
+                pass
+            continue
+        if stat.S_ISDIR(est.st_mode):
+            _rmtree_no_follow_reparse(child)
+        else:
+            try:
+                os.unlink(child)
+            except OSError:
+                pass
+    try:
+        os.rmdir(root)
+    except OSError:
+        pass
+
+
+def _tool_namespace_probe_root_is_owned(probe_root: Path, *, invocation_id: str) -> bool:
+    """Lexical ownership only: exact inv_* child of security .probe_work; no resolve."""
+
+    if not invocation_id or not invocation_id.startswith(TOOL_NAMESPACE_PROBE_INVOCATION_PREFIX):
+        return False
+    if probe_root.name != invocation_id:
+        return False
+    expected_parent = _tool_namespace_probe_work_parent()
+    try:
+        left = os.path.normcase(os.path.normpath(str(probe_root.parent)))
+        right = os.path.normcase(os.path.normpath(str(expected_parent)))
+    except OSError:
+        return False
+    return left == right
+
+
+def _allocate_tool_namespace_probe_root() -> tuple[str, Path]:
+    """Create an exclusive invocation-local probe work root under security namespace.
+
+    Never reuses a fixed ``.probe_work/lab`` path. Concurrent callers each get a
+    unique ``inv_*`` directory so symlink-escape residue cannot block the next run.
+    """
+
+    security_root = _tool_namespace_security_root()
+    security_root.mkdir(parents=True, exist_ok=True)
+    if os.path.lexists(security_root) and _is_reparse(security_root):
+        raise XinaoError("TOOL_NAMESPACE_PROBE_ROOT_REPARSE", str(security_root))
+    work_parent = _tool_namespace_probe_work_parent()
+    work_parent.mkdir(parents=False, exist_ok=True)
+    try:
+        parent_st = os.lstat(work_parent)
+    except OSError as exc:
+        raise XinaoError("TOOL_NAMESPACE_PROBE_ROOT_INVALID", str(work_parent)) from exc
+    if not stat.S_ISDIR(parent_st.st_mode) or _is_reparse_stat(parent_st):
+        raise XinaoError("TOOL_NAMESPACE_PROBE_ROOT_REPARSE", str(work_parent))
+    invocation_id = _tool_namespace_probe_invocation_id()
+    probe_root = work_parent / invocation_id
+    try:
+        probe_root.mkdir(parents=False, exist_ok=False)
+    except FileExistsError as exc:
+        raise XinaoError("TOOL_NAMESPACE_PROBE_ROOT_COLLISION", str(probe_root)) from exc
+    try:
+        root_st = os.lstat(probe_root)
+    except OSError as exc:
+        raise XinaoError("TOOL_NAMESPACE_PROBE_ROOT_INVALID", str(probe_root)) from exc
+    if not stat.S_ISDIR(root_st.st_mode) or _is_reparse_stat(root_st):
+        raise XinaoError("TOOL_NAMESPACE_PROBE_ROOT_REPARSE", str(probe_root))
+    return invocation_id, probe_root
+
+
+def _cleanup_tool_namespace_probe_root(
+    probe_root: Path,
+    *,
+    invocation_id: str,
+    success: bool,
+) -> dict[str, Any]:
+    """Success: remove only this exact owned root. Failure: retain for evidence.
+
+    Never deletes foreign directories, never follows reparse targets, never touches
+    paths outside ``security/tool_namespace_separation/.probe_work/inv_*``.
+    """
+
+    meta: dict[str, Any] = {
+        "invocation_id": invocation_id,
+        "probe_root": str(probe_root),
+        "success": success,
+        "cleaned": False,
+        "retained": False,
+        "owned": False,
+        "reason": "",
+    }
+    if not _tool_namespace_probe_root_is_owned(probe_root, invocation_id=invocation_id):
+        meta["reason"] = "not_owned"
+        return meta
+    meta["owned"] = True
+    if not success:
+        # Unique path already isolates the next call; keep residue for diagnosis.
+        meta["retained"] = True
+        meta["reason"] = "failure_evidence_retained"
+        return meta
+    if not os.path.lexists(probe_root):
+        meta["cleaned"] = True
+        meta["reason"] = "already_absent"
+        return meta
+    # Refuse to walk if the owned root itself flipped into a reparse after create.
+    try:
+        root_st = os.lstat(probe_root)
+    except OSError as exc:
+        meta["reason"] = f"lstat_failed:{exc}"
+        return meta
+    if _is_reparse_stat(root_st) or stat.S_ISLNK(root_st.st_mode):
+        try:
+            os.unlink(probe_root)
+            meta["cleaned"] = not os.path.lexists(probe_root)
+            meta["reason"] = "unlinked_reparse_root"
+        except OSError as exc:
+            meta["reason"] = f"reparse_unlink_failed:{exc}"
+        return meta
+    _rmtree_no_follow_reparse(probe_root)
+    meta["cleaned"] = not os.path.lexists(probe_root)
+    meta["reason"] = "removed_owned_root" if meta["cleaned"] else "remove_incomplete"
+    return meta
+
+
 def _run_tool_namespace_physical_probes(
     *,
     transport_image_id: str,
@@ -13988,24 +14165,19 @@ def _run_tool_namespace_physical_probes(
         raise XinaoError("TOOL_NAMESPACE_TOOL_IMAGE_MISMATCH", tool_image_id)
 
     specs = _load_docker_create_specs_module()
-    probe_root = _tool_namespace_security_root() / ".probe_work"
-    probe_root.mkdir(parents=True, exist_ok=True)
-    lab = probe_root / "lab"
-    ipc = probe_root / "ipc"
-    # Tool create-spec always points entrypoint/env at /sidecar-evidence. Without a
-    # writable bind, read-only rootfs makes tool_executor crash on mkdir and the
-    # container exits before any auth-denial exec can run — misreported as auth OK.
-    sidecar = probe_root / "sidecar-evidence"
-    lab.mkdir(exist_ok=True)
-    ipc.mkdir(exist_ok=True)
-    sidecar.mkdir(exist_ok=True)
+    # Exclusive per-invocation root: never reuse fixed `.probe_work/lab` (auth_escape
+    # reparse residue from a prior run must not block the next receipt issue).
+    invocation_id, probe_root = _allocate_tool_namespace_probe_root()
     proven: list[str] = []
     details: dict[str, Any] = {
         "proof_methods": {},
         "runtime_attempts": [],
+        "probe_invocation_id": invocation_id,
+        "probe_root": str(probe_root),
     }
     clean_cid: str | None = None
     transport_cid: str | None = None
+    probe_success = False
 
     def _rm(cid: str) -> None:
         _run([docker, "rm", "--force", cid], timeout=60, check=False)
@@ -14136,48 +14308,58 @@ def _run_tool_namespace_physical_probes(
             f"{status}:rc={exec_rc}:stderr={(last.get('exec_stderr') or last.get('start_stderr') or '')[:120]}",
         )
 
-    # --- Baseline: clean tool container must be real create + inspect ---
-    # Physical layout must match production tool mounts: lab + ipc + sidecar-evidence.
-    # Sidecar is tool-only (never auth); omitting it crashes the sealed entrypoint
-    # under --read-only and collapses every runtime denial into false "auth OK".
-    tool_spec = specs.tool_executor_container_spec(
-        image=tool_image_id,
-        name=f"xinao-ns-tool-clean-{uuid.uuid4().hex[:8]}",
-        episode_lab_host_path=str(lab),
-        ipc_host_dir=str(ipc),
-        sidecar_evidence_host_path=str(sidecar),
-    )
-    clean_violations = specs.validate_tool_spec_invariants(tool_spec)
-    if clean_violations:
-        raise XinaoError("TOOL_NAMESPACE_PROBE_BASELINE_DRIFT", ",".join(clean_violations[:4]))
-    create_argv = specs.docker_create_argv(tool_spec)
-    # Real Docker CLI: --entrypoint must be a single executable token, not JSON text.
-    if "--entrypoint" in create_argv:
-        ep_idx = create_argv.index("--entrypoint")
-        ep_token = create_argv[ep_idx + 1] if ep_idx + 1 < len(create_argv) else ""
-        if str(ep_token).lstrip().startswith("["):
-            raise XinaoError(
-                "TOOL_NAMESPACE_DOCKER_ARGV_ENTRYPOINT_SHAPE",
-                "JSON-text --entrypoint is not real Docker CLI semantics",
-            )
-        if not str(ep_token) or " " in str(ep_token):
-            raise XinaoError(
-                "TOOL_NAMESPACE_DOCKER_ARGV_ENTRYPOINT_SHAPE",
-                "expected single-token --entrypoint before IMAGE and Cmd rest",
-            )
-    deny = str(TOOL_NAMESPACE_DENY_PROOF_EXIT)
-    # Flat Grok 0.2.117 layout + legacy nested path both must be unreachable from tool.
-    tool_auth_deny_snippet = (
-        "paths=('/grok-home/auth.json','/grok-home/.grok/auth.json')\n"
-        "for p in paths:\n"
-        " try:\n"
-        "  open(p,'rb').read(1)\n"
-        "  raise SystemExit(0)\n"
-        " except Exception:\n"
-        "  pass\n"
-        f"raise SystemExit({deny})"
-    )
     try:
+        lab = probe_root / "lab"
+        ipc = probe_root / "ipc"
+        # Tool create-spec always points entrypoint/env at /sidecar-evidence. Without a
+        # writable bind, read-only rootfs makes tool_executor crash on mkdir and the
+        # container exits before any auth-denial exec can run — misreported as auth OK.
+        sidecar = probe_root / "sidecar-evidence"
+        lab.mkdir(exist_ok=False)
+        ipc.mkdir(exist_ok=False)
+        sidecar.mkdir(exist_ok=False)
+
+        # --- Baseline: clean tool container must be real create + inspect ---
+        # Physical layout must match production tool mounts: lab + ipc + sidecar-evidence.
+        # Sidecar is tool-only (never auth); omitting it crashes the sealed entrypoint
+        # under --read-only and collapses every runtime denial into false "auth OK".
+        tool_spec = specs.tool_executor_container_spec(
+            image=tool_image_id,
+            name=f"xinao-ns-tool-clean-{uuid.uuid4().hex[:8]}",
+            episode_lab_host_path=str(lab),
+            ipc_host_dir=str(ipc),
+            sidecar_evidence_host_path=str(sidecar),
+        )
+        clean_violations = specs.validate_tool_spec_invariants(tool_spec)
+        if clean_violations:
+            raise XinaoError("TOOL_NAMESPACE_PROBE_BASELINE_DRIFT", ",".join(clean_violations[:4]))
+        create_argv = specs.docker_create_argv(tool_spec)
+        # Real Docker CLI: --entrypoint must be a single executable token, not JSON text.
+        if "--entrypoint" in create_argv:
+            ep_idx = create_argv.index("--entrypoint")
+            ep_token = create_argv[ep_idx + 1] if ep_idx + 1 < len(create_argv) else ""
+            if str(ep_token).lstrip().startswith("["):
+                raise XinaoError(
+                    "TOOL_NAMESPACE_DOCKER_ARGV_ENTRYPOINT_SHAPE",
+                    "JSON-text --entrypoint is not real Docker CLI semantics",
+                )
+            if not str(ep_token) or " " in str(ep_token):
+                raise XinaoError(
+                    "TOOL_NAMESPACE_DOCKER_ARGV_ENTRYPOINT_SHAPE",
+                    "expected single-token --entrypoint before IMAGE and Cmd rest",
+                )
+        deny = str(TOOL_NAMESPACE_DENY_PROOF_EXIT)
+        # Flat Grok 0.2.117 layout + legacy nested path both must be unreachable from tool.
+        tool_auth_deny_snippet = (
+            "paths=('/grok-home/auth.json','/grok-home/.grok/auth.json')\n"
+            "for p in paths:\n"
+            " try:\n"
+            "  open(p,'rb').read(1)\n"
+            "  raise SystemExit(0)\n"
+            " except Exception:\n"
+            "  pass\n"
+            f"raise SystemExit({deny})"
+        )
         clean_cid = _create_only(create_argv)
         clean_inspect = _inspect(clean_cid)
         clean_live = specs.validate_tool_container_inspect(
@@ -14453,25 +14635,34 @@ def _run_tool_namespace_physical_probes(
             )
         proven.append("capability_drift_denied")
         details["proof_methods"]["capability_drift_denied"] = "image_labels+inspect_entrypoint"
+
+        missing = set(TOOL_NAMESPACE_RECEIPT_REQUIRED_NEGATIVE_PROOF_IDS) - set(proven)
+        if missing:
+            raise XinaoError("TOOL_NAMESPACE_PROOF_INCOMPLETE", ",".join(sorted(missing)))
+        # Only emit required ids that were actually proven — never pad.
+        probe_success = True
+        return {
+            "physical_proof": True,
+            "negative_proof_ids": list(proven),
+            "transport_image_id": transport_image_id,
+            "tool_image_id": tool_image_id,
+            "details": details,
+            "evidence_class": "live_physical_host",
+            "synthetic": False,
+            "probe_invocation_id": invocation_id,
+        }
     finally:
         if clean_cid:
             _rm(clean_cid)
         if transport_cid:
             _rm(transport_cid)
-
-    missing = set(TOOL_NAMESPACE_RECEIPT_REQUIRED_NEGATIVE_PROOF_IDS) - set(proven)
-    if missing:
-        raise XinaoError("TOOL_NAMESPACE_PROOF_INCOMPLETE", ",".join(sorted(missing)))
-    # Only emit required ids that were actually proven — never pad.
-    return {
-        "physical_proof": True,
-        "negative_proof_ids": list(proven),
-        "transport_image_id": transport_image_id,
-        "tool_image_id": tool_image_id,
-        "details": details,
-        "evidence_class": "live_physical_host",
-        "synthetic": False,
-    }
+        # Success: delete only this exact inv_* root. Failure: retain for evidence;
+        # unique path already prevents pollution of the next invocation.
+        details["probe_cleanup"] = _cleanup_tool_namespace_probe_root(
+            probe_root,
+            invocation_id=invocation_id,
+            success=probe_success,
+        )
 
 
 def _validate_tool_namespace_receipt_payload(
@@ -14765,6 +14956,10 @@ def issue_tool_namespace_separation_receipt(
         "probe_details": {
             "clean_tool_container_id": (probe.get("details") or {}).get("clean_tool_container_id"),
             "proof_methods": (probe.get("details") or {}).get("proof_methods"),
+            "probe_invocation_id": (probe.get("details") or {}).get("probe_invocation_id")
+            or probe.get("probe_invocation_id"),
+            "probe_root": (probe.get("details") or {}).get("probe_root"),
+            "probe_cleanup": (probe.get("details") or {}).get("probe_cleanup"),
         },
     }
     receipt_path = security_root / f"{receipt_id}.json"
