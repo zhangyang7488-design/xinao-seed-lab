@@ -12,6 +12,7 @@ from xinao.catalog.compiler import (
     DEFAULT_COVERAGE_PATH,
     DEFAULT_FAMILY_REGISTRY_PATH,
 )
+from xinao.cli_json import print_cli_json
 from xinao.foundation import (
     assess_foundation,
     derive_foundation_closure_report,
@@ -455,25 +456,21 @@ def _cli_research_episode_emit_feedback_pack(
 
 
 def _cli_research_episode_fail(reason: str, detail: str = "") -> int:
-    print(
-        json.dumps(
-            {
-                "ok": False,
-                "error": f"{reason}: {detail}" if detail else reason,
-                "reason_code": reason,
-                "completion_claim_allowed": False,
-                "parent_complete": False,
-                "auto_start_next_research": False,
-                "auto_next_period_freeze": False,
-                "auto_freeze": False,
-                "auto_settle": False,
-                "next_task_created": False,
-                "owner_adopted": False,
-                "daemon": False,
-            },
-            ensure_ascii=False,
-            sort_keys=True,
-        )
+    print_cli_json(
+        {
+            "ok": False,
+            "error": f"{reason}: {detail}" if detail else reason,
+            "reason_code": reason,
+            "completion_claim_allowed": False,
+            "parent_complete": False,
+            "auto_start_next_research": False,
+            "auto_next_period_freeze": False,
+            "auto_freeze": False,
+            "auto_settle": False,
+            "next_task_created": False,
+            "owner_adopted": False,
+            "daemon": False,
+        }
     )
     return 1
 
@@ -498,7 +495,7 @@ def main(argv: list[str] | None = None) -> int:
             return _cli_research_episode_fail(exc.reason_code, getattr(exc, "detail", "") or "")
         except (ValueError, TypeError, KeyError, OSError, FileNotFoundError) as exc:
             return _cli_research_episode_fail("POOL_INGEST_CLI_ERROR", str(exc))
-        print(json.dumps(result, ensure_ascii=False, sort_keys=True, default=str))
+        print_cli_json(result, default=str)
         return 0
     if args.group == "research-episode" and args.command in {
         "pool-ingest-result",
@@ -516,7 +513,7 @@ def main(argv: list[str] | None = None) -> int:
             return _cli_research_episode_fail(exc.reason_code, exc.detail)
         except (ValueError, TypeError, KeyError, OSError, FileNotFoundError) as exc:
             return _cli_research_episode_fail("POOL_INGEST_RESULT_CLI_ERROR", str(exc))
-        print(json.dumps(result, ensure_ascii=False, sort_keys=True, default=str))
+        print_cli_json(result, default=str)
         return 0
     if args.group == "research-episode" and args.command == "emit-research-feedback-pack":
         from xinao.science.research_feedback_pack import ResearchFeedbackPackError
@@ -532,7 +529,7 @@ def main(argv: list[str] | None = None) -> int:
             return _cli_research_episode_fail(exc.reason_code, exc.detail)
         except (ValueError, TypeError, KeyError, OSError) as exc:
             return _cli_research_episode_fail("FEEDBACK_PACK_CLI_ERROR", str(exc))
-        print(json.dumps(result, ensure_ascii=False, sort_keys=True, default=str))
+        print_cli_json(result, default=str)
         return 0
     if args.group == "research-episode" and args.command in {
         "feedback-bind",
@@ -546,47 +543,39 @@ def main(argv: list[str] | None = None) -> int:
             settled_portfolio_hash=getattr(args, "settled_portfolio_hash", None),
             target_episode_version=getattr(args, "target_episode_version", None),
         )
-        print(json.dumps(result, ensure_ascii=False, sort_keys=True, default=str))
+        print_cli_json(result, default=str)
         return 0
     if args.group == "catalog" and args.command == "compile":
         kwargs = {"baseline_ref": args.baseline, "output_path": args.out}
         if args.input is not None:
             kwargs["input_path"] = args.input
         catalog = compile_catalog(**kwargs)
-        print(
-            json.dumps(
-                {
-                    "ok": True,
-                    "catalog_ref": catalog["catalog_ref"],
-                    "entry_count": catalog["entry_count"],
-                    "content_hash": catalog["content_hash"],
-                    "output": str(args.out),
-                },
-                ensure_ascii=False,
-                sort_keys=True,
-            )
+        print_cli_json(
+            {
+                "ok": True,
+                "catalog_ref": catalog["catalog_ref"],
+                "entry_count": catalog["entry_count"],
+                "content_hash": catalog["content_hash"],
+                "output": str(args.out),
+            }
         )
         return 0
     if args.group == "catalog" and args.command == "coverage":
         report = coverage_report(_load_json(args.catalog), output_path=args.out)
-        print(json.dumps(report, ensure_ascii=False, sort_keys=True))
+        print_cli_json(report)
         if args.fail_on_unclassified and report["unclassified_count"]:
             return 1
         return 0 if report["ok"] else 1
     if args.group == "catalog" and args.command == "families":
         registry = family_registry(_load_json(args.catalog), output_path=args.out)
-        print(
-            json.dumps(
-                {
-                    "identity_complete": registry["identity_complete"],
-                    "foundation_compilation_complete": registry["foundation_compilation_complete"],
-                    "family_count": registry["family_count"],
-                    "content_hash": registry["content_hash"],
-                    "output": str(args.out),
-                },
-                ensure_ascii=False,
-                sort_keys=True,
-            )
+        print_cli_json(
+            {
+                "identity_complete": registry["identity_complete"],
+                "foundation_compilation_complete": registry["foundation_compilation_complete"],
+                "family_count": registry["family_count"],
+                "content_hash": registry["content_hash"],
+                "output": str(args.out),
+            }
         )
         return 0 if registry["identity_complete"] else 1
     if args.group == "world" and args.command == "build":
@@ -602,18 +591,14 @@ def main(argv: list[str] | None = None) -> int:
             protocol_pin_sha256=args.protocol_pin_sha256,
         )
         snapshot = result["event_matrix_snapshot"]
-        print(
-            json.dumps(
-                {
-                    "ok": result["ok"],
-                    "matrix_sha256": snapshot["matrix_sha256"],
-                    "row_count": snapshot["row_count"],
-                    "nnz": snapshot["nnz"],
-                    "output": str(result["output_root"]),
-                },
-                ensure_ascii=False,
-                sort_keys=True,
-            )
+        print_cli_json(
+            {
+                "ok": result["ok"],
+                "matrix_sha256": snapshot["matrix_sha256"],
+                "row_count": snapshot["row_count"],
+                "nnz": snapshot["nnz"],
+                "output": str(result["output_root"]),
+            }
         )
         return 0
     if args.group == "world" and args.command == "build-legacy":
@@ -627,17 +612,13 @@ def main(argv: list[str] | None = None) -> int:
             run_id=args.run_id,
         )
         snapshot = result["event_matrix_snapshot"]
-        print(
-            json.dumps(
-                {
-                    "ok": result["ok"],
-                    "authority_scope": "LEGACY_PARENT_G0_G8",
-                    "matrix_sha256": snapshot["matrix_sha256"],
-                    "output": str(args.out),
-                },
-                ensure_ascii=False,
-                sort_keys=True,
-            )
+        print_cli_json(
+            {
+                "ok": result["ok"],
+                "authority_scope": "LEGACY_PARENT_G0_G8",
+                "matrix_sha256": snapshot["matrix_sha256"],
+                "output": str(args.out),
+            }
         )
         return 0
     if args.group == "world" and args.command == "replay":
@@ -649,13 +630,13 @@ def main(argv: list[str] | None = None) -> int:
             protocol_pin_sha256=args.protocol_pin_sha256,
             report_path=args.report,
         )
-        print(json.dumps(result, ensure_ascii=False, sort_keys=True))
+        print_cli_json(result)
         return 0 if result["ok"] else 1
     if args.group == "world" and args.command == "replay-legacy":
         if not args.verify_hash:
             raise ValueError("legacy world replay requires --verify-hash")
         result = replay_world(args.out, report_path=args.report)
-        print(json.dumps(result, ensure_ascii=False, sort_keys=True))
+        print_cli_json(result)
         return 0 if result["ok"] else 1
     if args.group == "workflow" and args.command == "status":
         description = describe_temporal_workflow(
@@ -670,13 +651,13 @@ def main(argv: list[str] | None = None) -> int:
             runtime_root=args.runtime_root,
         )
         if args.format == "json":
-            print(json.dumps(projection, ensure_ascii=False, sort_keys=True))
+            print_cli_json(projection)
         else:
             print(render_tui(projection))
         return 0 if projection["evidence"]["ok"] else 1
     if args.group == "evidence" and args.command == "verify":
         result = verify_evidence_report(args.report, runtime_root=args.runtime_root)
-        print(json.dumps(result, ensure_ascii=False, sort_keys=True))
+        print_cli_json(result)
         return 0 if result["ok"] else 1
     if args.group == "foundation" and args.command == "legacy-gap":
         result = assess_foundation(
@@ -686,19 +667,15 @@ def main(argv: list[str] | None = None) -> int:
             operation_id=args.operation_id,
             output_path=args.out,
         )
-        print(
-            json.dumps(
-                {
-                    "legacy_diagnostic_only": result["legacy_diagnostic_only"],
-                    "legacy_all_gates_verified": result["legacy_all_gates_verified"],
-                    "foundation_closed": False,
-                    "gates": {name: gate["status"] for name, gate in result["gates"].items()},
-                    "content_hash": result["content_hash"],
-                    "output": str(args.out),
-                },
-                ensure_ascii=False,
-                sort_keys=True,
-            )
+        print_cli_json(
+            {
+                "legacy_diagnostic_only": result["legacy_diagnostic_only"],
+                "legacy_all_gates_verified": result["legacy_all_gates_verified"],
+                "foundation_closed": False,
+                "gates": {name: gate["status"] for name, gate in result["gates"].items()},
+                "content_hash": result["content_hash"],
+                "output": str(args.out),
+            }
         )
         return 0
     if args.group == "foundation" and args.command == "derive-report":
@@ -706,25 +683,21 @@ def main(argv: list[str] | None = None) -> int:
             _load_json(args.input), blueprint_path=args.blueprint
         )
         write_json_atomic(args.out, result)
-        print(
-            json.dumps(
-                {
-                    "foundation_closed": result["foundation_closed"],
-                    "formal_research_gate": result["formal_research_gate"],
-                    "status": result["status"],
-                    "artifact_hash": result["artifact_hash"],
-                    "output": str(args.out),
-                },
-                ensure_ascii=False,
-                sort_keys=True,
-            )
+        print_cli_json(
+            {
+                "foundation_closed": result["foundation_closed"],
+                "formal_research_gate": result["formal_research_gate"],
+                "status": result["status"],
+                "artifact_hash": result["artifact_hash"],
+                "output": str(args.out),
+            }
         )
         return 0 if result["foundation_closed"] else 2
     if args.group == "foundation" and args.command == "verify-report":
         result = verify_foundation_closure_report(
             _load_json(args.report), blueprint_path=args.blueprint
         )
-        print(json.dumps(result, ensure_ascii=False, sort_keys=True))
+        print_cli_json(result)
         return 0 if result["ok"] else 1
     if args.group == "prospective":
         return dispatch_prospective(args)
@@ -735,22 +708,18 @@ def main(argv: list[str] | None = None) -> int:
         try:
             result = dispatch(args)
         except (StoreError, ValueError, TypeError, KeyError) as exc:
-            print(
-                json.dumps(
-                    {
-                        "ok": False,
-                        "error": str(exc),
-                        "completion_claim_allowed": False,
-                        "first_episode_verified": False,
-                        "candidate_only": True,
-                        "production_owner_path": False,
-                    },
-                    ensure_ascii=False,
-                    sort_keys=True,
-                )
+            print_cli_json(
+                {
+                    "ok": False,
+                    "error": str(exc),
+                    "completion_claim_allowed": False,
+                    "first_episode_verified": False,
+                    "candidate_only": True,
+                    "production_owner_path": False,
+                }
             )
             return 1
-        print(json.dumps(result, ensure_ascii=False, sort_keys=True))
+        print_cli_json(result)
         return 0 if result.get("ok") else 1
     raise AssertionError("unreachable command")
 

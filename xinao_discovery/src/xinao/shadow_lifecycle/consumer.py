@@ -21,6 +21,7 @@ from pathlib import Path
 from typing import Any, Final
 
 from xinao.canonical import canonical_sha256
+from xinao.cli_json import print_cli_json
 from xinao.decision import FrozenDecision
 from xinao.settlement import OutcomeObservation
 from xinao.shadow_lifecycle.lifecycle import (
@@ -1620,9 +1621,9 @@ def main(argv: list[str] | None = None) -> int:
             "first_episode_verified": False,
             "candidate_only": True,
         }
-        print(json.dumps(err, ensure_ascii=False, sort_keys=True))
+        print_cli_json(err)
         return 1
-    print(json.dumps(result, ensure_ascii=False, sort_keys=True))
+    print_cli_json(result)
     return 0 if result.get("ok") else 1
 
 

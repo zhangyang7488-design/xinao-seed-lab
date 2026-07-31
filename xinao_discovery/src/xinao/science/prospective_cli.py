@@ -14,10 +14,10 @@ Does not authenticate Codex.
 from __future__ import annotations
 
 import argparse
-import json
 from pathlib import Path
 from typing import Any
 
+from xinao.cli_json import print_cli_json
 from xinao.science.freeze_adapter import FreezeAdapterError, apply_freeze_from_disposition
 from xinao.science.owner_disposition import (
     OwnerDispositionError,
@@ -43,7 +43,8 @@ from xinao.science.settle_from_reveal_adapter import (
 
 
 def _print(payload: dict[str, Any]) -> None:
-    print(json.dumps(payload, ensure_ascii=False, sort_keys=True, default=str))
+    # ASCII-safe wire form: Windows redirected stdout is often cp936/GBK.
+    print_cli_json(payload, default=str)
 
 
 def _fail(reason: str, detail: str = "") -> int:
