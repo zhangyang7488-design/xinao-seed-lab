@@ -11,7 +11,6 @@ network denied; uid/gid 65532; zero caps; NNP; no host socket/root/ledger/outcom
 
 from __future__ import annotations
 
-import json
 from typing import Any
 
 TOOL_UID = 65532
@@ -369,12 +368,13 @@ def docker_create_process_argv(spec: dict[str, Any]) -> list[str]:
 def docker_create_argv(spec: dict[str, Any]) -> list[str]:
     """Materialize a `docker create` argv list from a create spec.
 
-    Real Docker CLI shape for multi-arg process identity:
-    - Prefer JSON-array ``--entrypoint`` so ``Config.Entrypoint`` holds the full
-      process argv and ``Config.Cmd`` is empty/null after create.
-    - Do **not** use ``--entrypoint first image rest...`` which yields
-      ``Entrypoint=[first]`` + ``Cmd=rest`` and disagrees with sealed image
-      ENTRYPOINT JSON form and live inspect validators.
+    Real Docker CLI semantics for multi-arg process identity:
+    - ``--entrypoint <first-token> IMAGE <rest-as-Cmd>`` yields
+      ``Config.Entrypoint=[first]`` + ``Config.Cmd=rest`` (executable form).
+    - Docker CLI does **not** parse a JSON-array string as ``--entrypoint``;
+      a token like ``'["python",...]'`` is treated as a single executable path
+      and fails with OCI ``executable file not found``.
+    - Omitting ``--entrypoint`` keeps the image's sealed ENTRYPOINT (also valid).
     """
     argv = ["docker", "create", "--name", spec["name"]]
     if spec.get("user"):
@@ -406,10 +406,10 @@ def docker_create_argv(spec: dict[str, Any]) -> list[str]:
         argv.extend(["--tmpfs", tmp])
     entry = docker_create_process_argv(spec)
     if entry:
-        # Docker CLI accepts a JSON array for --entrypoint (exec form).
-        argv.extend(["--entrypoint", json.dumps(entry)])
+        # Real CLI: first token is Entrypoint; remaining tokens become Cmd.
+        argv.extend(["--entrypoint", entry[0]])
         argv.append(spec["image"])
-        # No trailing Cmd tokens: full process is entrypoint-only.
+        argv.extend(entry[1:])
     else:
         argv.append(spec["image"])
     return argv
@@ -418,9 +418,10 @@ def docker_create_argv(spec: dict[str, Any]) -> list[str]:
 def process_argv_from_inspect(inspect_doc: dict[str, Any]) -> list[str]:
     """Reconstruct process argv from live inspect Entrypoint+Cmd (real Docker shapes).
 
-    Accepted shapes:
-    1. JSON ENTRYPOINT override: Entrypoint=full list, Cmd=null/[]
-    2. Legacy ``--entrypoint first image rest``: Entrypoint=[first], Cmd=rest
+    Accepted shapes (neither is drift by itself):
+    1. Image sealed ENTRYPOINT: Entrypoint=full list, Cmd=null/[]
+    2. CLI override ``--entrypoint first IMAGE rest``: Entrypoint=[first], Cmd=rest
+    3. Single-string Entrypoint/Cmd tokens (Docker may emit either form)
     """
     cfg = _config(inspect_doc)
     entrypoint = cfg.get("Entrypoint") or []
@@ -729,28 +730,25 @@ def validate_tool_container_inspect(
     security_opt = [str(x).lower() for x in (hc.get("SecurityOpt") or [])]
     if not any("no-new-privileges" in x for x in security_opt):
         violations.append("missing no-new-privileges")
-    # Real Docker may place process tokens in Entrypoint only (JSON form) or
-    # split across Entrypoint+Cmd (legacy --entrypoint first + args).
+    # Real Docker may place process tokens in Entrypoint only (image ENTRYPOINT)
+    # or split across Entrypoint+Cmd (CLI --entrypoint first + args). Both are
+    # valid; reconstruct via process_argv_from_inspect and never flag split as drift.
     process_argv = process_argv_from_inspect(inspect_doc)
     joined = " ".join(process_argv)
     if "tool_executor.py" not in joined:
         violations.append(f"entrypoint_unexpected:{joined}")
-    # Prefer sealed JSON Entrypoint form: if Cmd is non-empty while Entrypoint is
-    # only the interpreter, flag shape drift so create argv / inspect stay aligned.
+    # Reject the non-executable JSON-text shape that Docker CLI stores when a
+    # caller passes a JSON array string as --entrypoint (physical start fails).
     raw_ep = cfg.get("Entrypoint") or []
-    raw_cmd = cfg.get("Cmd") or []
-    if isinstance(raw_ep, str):
-        raw_ep = [raw_ep]
-    if isinstance(raw_cmd, str):
-        raw_cmd = [raw_cmd]
-    if (
+    if isinstance(raw_ep, str) and raw_ep.lstrip().startswith("["):
+        violations.append("entrypoint_json_text_not_executable")
+    elif (
         isinstance(raw_ep, list)
-        and isinstance(raw_cmd, list)
-        and raw_cmd
         and len(raw_ep) == 1
-        and "tool_executor.py" not in " ".join(str(x) for x in raw_ep)
+        and isinstance(raw_ep[0], str)
+        and raw_ep[0].lstrip().startswith("[")
     ):
-        violations.append("entrypoint_cmd_split_shape")
+        violations.append("entrypoint_json_text_not_executable")
     env_map: dict[str, str] = {}
     for item in cfg.get("Env") or []:
         if isinstance(item, str) and "=" in item:

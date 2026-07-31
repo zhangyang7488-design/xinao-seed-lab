@@ -260,6 +260,7 @@ MAX_DONOR_BINARY_BYTES = 512 * 1024 * 1024
 MAX_PROVIDER_ID_BYTES = 4096
 DONOR_EXTRACT_NAME_PREFIX = "xinao-donor-extract-"
 DONOR_STAGING_DIR_PREFIX = ".donor-extract-"
+TOOL_BUILD_STAGING_DIR_PREFIX = ".tool-build-staging-"
 DONOR_BINARY_CONTEXT_RELATIVE = Path("donor-artifacts") / "grok"
 SHADOW_RUNTIME_CONTEXT_RELATIVE = Path("shadow-runtime")
 SHADOW_RUNTIME_LOCK_RELATIVE = Path("references") / "shadow-runtime-lock.v1.json"
@@ -365,6 +366,11 @@ RELEASE_ID_PATTERN = re.compile(r"^researcher-[0-9]+\.[0-9]+\.[0-9]+-[0-9a-f]{16
 TXN_ID_PATTERN = re.compile(r"^xra_[0-9]{8}T[0-9]{6}_[0-9a-f]{16}$")
 SEMVER_PATTERN = re.compile(r"^[0-9]+\.[0-9]+\.[0-9]+$")
 HEX_SHA256_PATTERN = re.compile(r"^[0-9a-f]{64}$")
+# Aligned with bootstrap / Docker image Id format (current-generation only).
+DOCKER_IMAGE_ID_PATTERN = re.compile(r"^sha256:[0-9a-f]{64}$")
+# Physical isolation denial proof exit code (must not collide with docker/exec infra).
+TOOL_NAMESPACE_DENY_PROOF_EXIT = 17
+TOOL_NAMESPACE_INFRA_EXEC_EXIT_CODES = frozenset({125, 126, 127})
 
 RELEASE_SCHEMA = "xinao.researcher_release.v2"
 LEGACY_RELEASE_SCHEMA = "xinao.researcher_release.v1"
@@ -1997,6 +2003,142 @@ def _remove_donor_staging_root(staging_root: Path | None) -> None:
     shutil.rmtree(resolved, ignore_errors=True)
 
 
+def _remove_tool_build_staging_root(staging_root: Path | None) -> None:
+    """Remove owned tool-executor build staging root only (exact prefix under capability)."""
+
+    if staging_root is None:
+        return
+    try:
+        if not staging_root.exists():
+            return
+    except OSError:
+        return
+    capability_root = _state_paths()["capability_root"]
+    try:
+        resolved = staging_root.resolve()
+        parent = resolved.parent
+        if parent != capability_root.resolve():
+            return
+        if not resolved.name.startswith(TOOL_BUILD_STAGING_DIR_PREFIX):
+            return
+    except OSError:
+        return
+    shutil.rmtree(resolved, ignore_errors=True)
+
+
+def _prepare_tool_executor_build_staging(
+    *,
+    tool_dockerfile_bytes: bytes,
+    tool_module_rows: list[tuple[str, Path, bytes]],
+) -> Path:
+    """Materialize LF-sealed tool Dockerfile + COPY modules into an owned build context.
+
+    Docker build must read only this staged context so Windows CRLF source bytes
+    cannot diverge from the sealed digests used for labels/identity.
+    """
+
+    capability_root = _state_paths()["capability_root"]
+    capability_root.mkdir(parents=True, exist_ok=True)
+    token = uuid.uuid4().hex
+    staging_root = capability_root / f"{TOOL_BUILD_STAGING_DIR_PREFIX}{token}"
+    if staging_root.exists():
+        raise XinaoError("TOOL_BUILD_STAGING_IDENTITY_COLLISION", str(staging_root))
+    staging_root.mkdir(parents=False, exist_ok=False)
+    try:
+        dockerfile_payload = _lf_materialize_bytes(tool_dockerfile_bytes)
+        if b"\r" in dockerfile_payload:
+            raise XinaoError(
+                "TOOL_EXECUTOR_DOCKERFILE_CRLF_FORBIDDEN",
+                "staged Dockerfile.tool-executor must be LF-only",
+            )
+        df_path = staging_root / "Dockerfile.tool-executor"
+        _write_bytes_atomic(df_path, dockerfile_payload, create_new=True)
+        modules_root = staging_root / RESEARCHER_IMAGE_CONTEXT_RELATIVE
+        modules_root.mkdir(parents=True, exist_ok=False)
+        for relative, _source, content in tool_module_rows:
+            if relative.startswith("/") or "\\" in relative or ".." in Path(relative).parts:
+                raise XinaoError("TOOL_EXECUTOR_MODULES_INVENTORY_INVALID", relative)
+            payload = bytes(content)
+            if relative.endswith((".py", ".sh", ".json", ".md", ".txt", ".toml")):
+                payload = _lf_materialize_bytes(payload)
+            if b"\r" in payload:
+                raise XinaoError("TOOL_EXECUTOR_MODULES_CRLF_FORBIDDEN", relative)
+            target = modules_root / relative
+            target.parent.mkdir(parents=True, exist_ok=True)
+            _write_bytes_atomic(target, payload, create_new=True)
+        return staging_root
+    except Exception:
+        _remove_tool_build_staging_root(staging_root)
+        raise
+
+
+def _verify_staged_tool_executor_build(
+    staging_root: Path,
+    *,
+    expected_dockerfile_sha256: str,
+    expected_modules_tree_sha256: str,
+    tool_module_rows: list[tuple[str, Path, bytes]],
+) -> None:
+    """Re-read staged tool build bytes and bind digests before docker build."""
+
+    if not staging_root.is_dir() or _is_reparse(staging_root):
+        raise XinaoError("TOOL_BUILD_STAGING_MISSING", str(staging_root))
+    df_path = staging_root / "Dockerfile.tool-executor"
+    if not df_path.is_file() or _is_reparse(df_path):
+        raise XinaoError("TOOL_BUILD_STAGING_MISSING", "Dockerfile.tool-executor")
+    df_payload = _regular_file_bytes(
+        df_path,
+        reason_code="TOOL_BUILD_STAGING_INVALID",
+        maximum=MAX_SKILL_BUNDLE_FILE_BYTES,
+    )
+    if b"\r" in df_payload:
+        raise XinaoError("TOOL_EXECUTOR_DOCKERFILE_CRLF_FORBIDDEN", "staged")
+    observed_df = _sha256_bytes(df_payload)
+    if observed_df != expected_dockerfile_sha256:
+        raise XinaoError(
+            "TOOL_BUILD_STAGING_DOCKERFILE_HASH_MISMATCH",
+            f"expected={expected_dockerfile_sha256} observed={observed_df}",
+        )
+    modules_root = staging_root / RESEARCHER_IMAGE_CONTEXT_RELATIVE
+    if not modules_root.is_dir() or _is_reparse(modules_root):
+        raise XinaoError("TOOL_BUILD_STAGING_MISSING", str(modules_root))
+    expected = [relative for relative, _path, _content in tool_module_rows]
+    if not expected:
+        raise XinaoError("TOOL_EXECUTOR_MODULES_INVENTORY_INVALID", "empty")
+    observed_rows: list[tuple[str, Path, bytes]] = []
+    for relative, _source, expected_content in tool_module_rows:
+        target = modules_root / relative
+        if not target.is_file() or _is_reparse(target):
+            raise XinaoError("TOOL_BUILD_STAGING_MISSING", relative)
+        try:
+            target.resolve().relative_to(modules_root.resolve())
+        except ValueError as exc:
+            raise XinaoError("TOOL_BUILD_STAGING_PATH_ESCAPE", relative) from exc
+        except OSError as exc:
+            raise XinaoError("TOOL_BUILD_STAGING_INVALID", f"{relative}: {exc}") from exc
+        payload = _regular_file_bytes(
+            target,
+            reason_code="TOOL_BUILD_STAGING_INVALID",
+            maximum=MAX_SKILL_BUNDLE_FILE_BYTES,
+        )
+        if b"\r" in payload:
+            raise XinaoError("TOOL_EXECUTOR_MODULES_CRLF_FORBIDDEN", relative)
+        if payload != expected_content:
+            raise XinaoError(
+                "TOOL_BUILD_STAGING_MODULE_DRIFT",
+                f"{relative}: staged bytes drifted from sealed LF materialization",
+            )
+        observed_rows.append((relative, target, payload))
+    if [item[0] for item in observed_rows] != expected:
+        raise XinaoError("TOOL_BUILD_STAGING_INVENTORY_MISMATCH", str(modules_root))
+    observed_tree = _tool_executor_modules_tree_sha256(observed_rows)
+    if observed_tree != expected_modules_tree_sha256:
+        raise XinaoError(
+            "TOOL_BUILD_STAGING_MODULES_HASH_MISMATCH",
+            f"expected={expected_modules_tree_sha256} observed={observed_tree}",
+        )
+
+
 def _prepare_donor_binary_staging(
     docker: str,
     *,
@@ -2822,7 +2964,7 @@ def _validate_release_manifest(
     labels = manifest.get("image_labels")
     if (
         not isinstance(manifest.get("image_id"), str)
-        or not str(manifest["image_id"]).startswith("sha256:")
+        or DOCKER_IMAGE_ID_PATTERN.fullmatch(str(manifest["image_id"])) is None
         or not isinstance(labels, dict)
         or set(labels) != CURRENT_IMAGE_LABEL_KEYS
         or manifest.get("image_entrypoint")
@@ -2834,8 +2976,7 @@ def _validate_release_manifest(
     tool_tag = manifest.get("tool_image_tag_observational")
     if (
         not isinstance(tool_image_id, str)
-        or not tool_image_id.startswith("sha256:")
-        or len(tool_image_id) != 71
+        or DOCKER_IMAGE_ID_PATTERN.fullmatch(tool_image_id) is None
         or not isinstance(tool_tag, str)
         or not tool_tag
         or len(tool_tag) > 256
@@ -4141,6 +4282,7 @@ def build_release(
         )
     container_name: str | None = None
     staging_root: Path | None = None
+    tool_staging_root: Path | None = None
     try:
         (
             donor_binary_sha256,
@@ -4285,7 +4427,7 @@ def build_release(
         _run(build_args, cwd=source_root, timeout=1800)
         image = _docker_image(docker, image_tag)
         image_id = str(image.get("Id", ""))
-        if not image_id.startswith("sha256:"):
+        if DOCKER_IMAGE_ID_PATTERN.fullmatch(image_id) is None:
             raise XinaoError("IMAGE_IDENTITY_MISSING", image_id)
         labels = (image.get("Config") or {}).get("Labels") or {}
         expected_labels = {
@@ -4317,6 +4459,7 @@ def build_release(
         if entrypoint != ["python", "-I", RESEARCHER_CANARY_ENTRYPOINT_IMAGE_PATH]:
             raise XinaoError("IMAGE_ENTRYPOINT_IDENTITY_MISMATCH", image_id)
         # Formal dual-image generation: also build and seal the tool-executor image.
+        # Build only from owned LF staging context (never raw Windows worktree source_root).
         tool_image_tag = (
             f"xinao-tool-executor:candidate-{capability_version}-{provisional_sha[:16]}"
         )
@@ -4324,18 +4467,29 @@ def build_release(
             dockerfile_sha256=tool_executor_dockerfile_sha256,
             modules_tree_sha256=tool_executor_modules_tree_sha256,
         )
+        tool_staging_root = _prepare_tool_executor_build_staging(
+            tool_dockerfile_bytes=tool_dockerfile_bytes,
+            tool_module_rows=tool_module_rows,
+        )
+        _verify_staged_tool_executor_build(
+            tool_staging_root,
+            expected_dockerfile_sha256=tool_executor_dockerfile_sha256,
+            expected_modules_tree_sha256=tool_executor_modules_tree_sha256,
+            tool_module_rows=tool_module_rows,
+        )
+        staged_tool_dockerfile = tool_staging_root / "Dockerfile.tool-executor"
         tool_build_args = [
             docker,
             "build",
             "--file",
-            str(tool_dockerfile),
+            str(staged_tool_dockerfile),
             "--tag",
             tool_image_tag,
             "--label",
             f"io.xinao.tool.dockerfile.sha256={tool_executor_dockerfile_sha256}",
             "--label",
             f"io.xinao.tool.modules.sha256={tool_executor_modules_tree_sha256}",
-            str(source_root),
+            str(tool_staging_root),
         ]
         with _activation_lock():
             if migration_legacy_pointer_sha256 is None and forward_upgrade_pointer_sha256 is None:
@@ -4345,10 +4499,10 @@ def build_release(
             else:
                 assert forward_upgrade_pointer_sha256 is not None
                 _validate_forward_upgrade_build_fence_locked(forward_upgrade_pointer_sha256)
-        _run(tool_build_args, cwd=source_root, timeout=1800)
+        _run(tool_build_args, cwd=tool_staging_root, timeout=1800)
         tool_image = _docker_image(docker, tool_image_tag)
         tool_image_id = str(tool_image.get("Id", ""))
-        if not tool_image_id.startswith("sha256:") or len(tool_image_id) != 71:
+        if DOCKER_IMAGE_ID_PATTERN.fullmatch(tool_image_id) is None:
             raise XinaoError("TOOL_IMAGE_IDENTITY_MISSING", tool_image_id)
         tool_labels_obs = (tool_image.get("Config") or {}).get("Labels") or {}
         for key, value in expected_tool_labels.items():
@@ -4360,6 +4514,7 @@ def build_release(
     finally:
         _remove_donor_extract_container(docker, container_name)
         _remove_donor_staging_root(staging_root)
+        _remove_tool_build_staging_root(tool_staging_root)
     manifest: dict[str, Any] = {
         "schema_version": RELEASE_SCHEMA,
         "release_id": "pending",
@@ -10146,7 +10301,7 @@ def _validate_release_image_identity(release: dict[str, Any]) -> str:
     docker = _docker()
     _docker_engine_os(docker)
     image_id = str(release.get("image_id", ""))
-    if not image_id.startswith("sha256:"):
+    if DOCKER_IMAGE_ID_PATTERN.fullmatch(image_id) is None:
         raise XinaoError("IMAGE_IDENTITY_MISSING", image_id)
     image = _docker_image(docker, image_id)
     if image.get("Id") != image_id:
@@ -10201,7 +10356,7 @@ def _validate_release_image_identity(release: dict[str, Any]) -> str:
         if generation != "current" or set(release) != CURRENT_RELEASE_KEYS:
             raise XinaoError("RELEASE_TOOL_IMAGE_IDENTITY_INVALID", "generation")
         tool_image_id = str(release.get("tool_image_id", ""))
-        if not tool_image_id.startswith("sha256:") or len(tool_image_id) != 71:
+        if DOCKER_IMAGE_ID_PATTERN.fullmatch(tool_image_id) is None:
             raise XinaoError("TOOL_IMAGE_IDENTITY_MISSING", tool_image_id)
         tool_image = _docker_image(docker, tool_image_id)
         if tool_image.get("Id") != tool_image_id:
@@ -12530,11 +12685,9 @@ def _active_release_sealed_dual_images() -> tuple[str, str, dict[str, Any]] | No
         tool_id = release.get("tool_image_id")
         if (
             not isinstance(transport_id, str)
-            or not transport_id.startswith("sha256:")
-            or len(transport_id) != 71
+            or DOCKER_IMAGE_ID_PATTERN.fullmatch(transport_id) is None
             or not isinstance(tool_id, str)
-            or not tool_id.startswith("sha256:")
-            or len(tool_id) != 71
+            or DOCKER_IMAGE_ID_PATTERN.fullmatch(tool_id) is None
         ):
             return None
         return transport_id, tool_id, release
@@ -12952,22 +13105,51 @@ def _run_tool_namespace_physical_probes(
             raise XinaoError("TOOL_NAMESPACE_PROBE_INSPECT_INVALID", cid)
         return inspected[0]
 
+    # Once a clean container is marked unusable, no further attempt may contribute proof.
+    container_unusable: dict[str, bool] = {"value": False}
+
     def _runtime_attempt(cid: str, exec_argv: list[str], *, expect_fail: bool) -> bool:
-        """Start + exec against a real container; record sealed-image runtime attempt."""
+        """Start + exec against a real container; fail closed for non-proof outcomes.
+
+        Proof rules:
+        - ``docker start`` must succeed and the container must remain exec-capable.
+        - ``docker exec`` must actually run the probe process.
+        - Expected denial only counts when exit code is ``TOOL_NAMESPACE_DENY_PROOF_EXIT``.
+        - Start failure, plumbing failure (125/126/127), timeout, wrong executable,
+          unrelated nonzero, and exceptions never count as isolation proof.
+        - After any unusable event, the same container cannot later mint proof.
+        """
         attempt: dict[str, Any] = {
             "container_id": cid,
             "exec_argv": list(exec_argv),
             "expect_fail": expect_fail,
         }
+        if container_unusable["value"]:
+            attempt["status"] = "container_unusable"
+            details["runtime_attempts"].append(attempt)
+            return False
         try:
             start = _run([docker, "start", cid], timeout=60, check=False)
             attempt["start_rc"] = start.returncode
+            attempt["start_stderr"] = (start.stderr or "")[:200]
             if start.returncode != 0:
-                # Sealed tool image may refuse to stay up without IPC peer — still a
-                # runtime attempt; treat non-zero start as fail for expect_fail proofs.
                 attempt["status"] = "start_failed"
                 details["runtime_attempts"].append(attempt)
-                return expect_fail
+                container_unusable["value"] = True
+                return False
+            # Confirm the container is running before claiming an exec probe.
+            state_probe = _run(
+                [docker, "inspect", "-f", "{{.State.Running}}", cid],
+                timeout=30,
+                check=False,
+            )
+            running = (state_probe.stdout or "").strip().lower()
+            attempt["running"] = running
+            if state_probe.returncode != 0 or running not in {"true", "1"}:
+                attempt["status"] = "not_running"
+                details["runtime_attempts"].append(attempt)
+                container_unusable["value"] = True
+                return False
             executed = _run(
                 [docker, "exec", cid, *exec_argv],
                 timeout=60,
@@ -12976,15 +13158,35 @@ def _run_tool_namespace_physical_probes(
             attempt["exec_rc"] = executed.returncode
             attempt["exec_stdout"] = (executed.stdout or "")[:200]
             attempt["exec_stderr"] = (executed.stderr or "")[:200]
-            ok = (executed.returncode != 0) if expect_fail else (executed.returncode == 0)
-            attempt["status"] = "ok" if ok else "unexpected"
+            stderr_l = (executed.stderr or "").lower()
+            plumbing_markers = (
+                "executable file not found",
+                "oci runtime",
+                "container is not running",
+                "is not running",
+                "cannot exec in a stopped state",
+                "cannot exec",
+            )
+            if executed.returncode in TOOL_NAMESPACE_INFRA_EXEC_EXIT_CODES or any(
+                marker in stderr_l for marker in plumbing_markers
+            ):
+                attempt["status"] = "exec_plumbing_failed"
+                details["runtime_attempts"].append(attempt)
+                container_unusable["value"] = True
+                return False
+            if expect_fail:
+                ok = executed.returncode == TOOL_NAMESPACE_DENY_PROOF_EXIT
+            else:
+                ok = executed.returncode == 0
+            attempt["status"] = "ok" if ok else "unexpected_exit"
             details["runtime_attempts"].append(attempt)
             return ok
-        except XinaoError as exc:
+        except Exception as exc:
             attempt["status"] = "error"
             attempt["error"] = str(exc)
             details["runtime_attempts"].append(attempt)
-            return expect_fail
+            container_unusable["value"] = True
+            return False
         finally:
             _run([docker, "stop", "-t", "1", cid], timeout=60, check=False)
 
@@ -12999,15 +13201,21 @@ def _run_tool_namespace_physical_probes(
     if clean_violations:
         raise XinaoError("TOOL_NAMESPACE_PROBE_BASELINE_DRIFT", ",".join(clean_violations[:4]))
     create_argv = specs.docker_create_argv(tool_spec)
-    # Entrypoint must be JSON form (not first-token + Cmd rest).
+    # Real Docker CLI: --entrypoint must be a single executable token, not JSON text.
     if "--entrypoint" in create_argv:
         ep_idx = create_argv.index("--entrypoint")
         ep_token = create_argv[ep_idx + 1] if ep_idx + 1 < len(create_argv) else ""
-        if not str(ep_token).startswith("["):
+        if str(ep_token).lstrip().startswith("["):
             raise XinaoError(
                 "TOOL_NAMESPACE_DOCKER_ARGV_ENTRYPOINT_SHAPE",
-                "expected JSON-array --entrypoint",
+                "JSON-text --entrypoint is not real Docker CLI semantics",
             )
+        if not str(ep_token) or " " in str(ep_token):
+            raise XinaoError(
+                "TOOL_NAMESPACE_DOCKER_ARGV_ENTRYPOINT_SHAPE",
+                "expected single-token --entrypoint before IMAGE and Cmd rest",
+            )
+    deny = str(TOOL_NAMESPACE_DENY_PROOF_EXIT)
     try:
         clean_cid = _create_only(create_argv)
         clean_inspect = _inspect(clean_cid)
@@ -13034,7 +13242,15 @@ def _run_tool_namespace_physical_probes(
             raise XinaoError("TOOL_NAMESPACE_PROBE_AUTH_MOUNT_PRESENT", str(sorted(destinations)))
         cred_runtime = _runtime_attempt(
             clean_cid,
-            ["python", "-I", "-c", "open('/grok-home/.grok/auth.json','rb').read()"],
+            [
+                "python",
+                "-I",
+                "-c",
+                "try:\n"
+                " open('/grok-home/.grok/auth.json','rb').read()\n"
+                " raise SystemExit(0)\n"
+                f"except Exception:\n raise SystemExit({deny})",
+            ],
             expect_fail=True,
         )
         if not cred_runtime:
@@ -13042,7 +13258,8 @@ def _run_tool_namespace_physical_probes(
         proven.append("credential_read_denied")
         details["proof_methods"]["credential_read_denied"] = "inspect_mounts+start_exec"
 
-        # 2) path_traversal_denied: live mounts have no ".." destinations + runtime escape fails.
+        # 2) path_traversal_denied: live mounts have no ".." destinations + runtime
+        # realpath outside the lab mount is treated as isolation failure (exit 0).
         if any(".." in dest for dest in destinations):
             raise XinaoError(
                 "TOOL_NAMESPACE_PROBE_TRAVERSAL_MOUNT_PRESENT", str(sorted(destinations))
@@ -13053,8 +13270,10 @@ def _run_tool_namespace_physical_probes(
                 "python",
                 "-I",
                 "-c",
-                "import os; p=os.path.realpath('/episode-lab/../etc/passwd'); "
-                "raise SystemExit(0 if p.startswith('/episode-lab') else 1)",
+                "try:\n"
+                " open('/episode-lab/../../../grok-home/.grok/auth.json','rb').read()\n"
+                " raise SystemExit(0)\n"
+                f"except Exception:\n raise SystemExit({deny})",
             ],
             expect_fail=True,
         )
@@ -13066,7 +13285,7 @@ def _run_tool_namespace_physical_probes(
         proven.append("path_traversal_denied")
         details["proof_methods"]["path_traversal_denied"] = "inspect_mounts+start_exec"
 
-        # 3) symlink_escape_denied: no unexpected host binds; runtime realpath escape fails.
+        # 3) symlink_escape_denied: no unexpected host binds; symlink to auth is denied.
         allowed_dest = {"/episode-lab", "/ipc", "/tmp"}
         unexpected = {d for d in destinations if d not in allowed_dest}
         if unexpected:
@@ -13080,10 +13299,13 @@ def _run_tool_namespace_physical_probes(
                 "python",
                 "-I",
                 "-c",
-                "import os; "
-                "os.symlink('/etc','/episode-lab/.escape_link') if not os.path.exists('/episode-lab/.escape_link') else None; "
-                "p=os.path.realpath('/episode-lab/.escape_link'); "
-                "raise SystemExit(0 if p.startswith('/episode-lab') else 1)",
+                "import os\n"
+                "t='/episode-lab/.auth_escape'\n"
+                "os.path.exists(t) or os.symlink('/grok-home', t)\n"
+                "try:\n"
+                " open(t + '/.grok/auth.json','rb').read()\n"
+                " raise SystemExit(0)\n"
+                f"except Exception:\n raise SystemExit({deny})",
             ],
             expect_fail=True,
         )
@@ -13113,7 +13335,7 @@ def _run_tool_namespace_physical_probes(
                 "python",
                 "-I",
                 "-c",
-                "import os; raise SystemExit(0 if os.path.isdir('/workspace') else 1)",
+                f"import os\nraise SystemExit(0 if os.path.isdir('/workspace') else {deny})",
             ],
             expect_fail=True,
         )
@@ -13135,9 +13357,10 @@ def _run_tool_namespace_physical_probes(
                 "python",
                 "-I",
                 "-c",
-                "import os; "
-                "raise SystemExit(0 if any(os.path.isdir(p) for p in "
-                "('/ledger','/outcome','/outcomes','/freeze')) else 1)",
+                "import os\n"
+                "present=any(os.path.isdir(p) for p in "
+                "('/ledger','/outcome','/outcomes','/freeze'))\n"
+                f"raise SystemExit(0 if present else {deny})",
             ],
             expect_fail=True,
         )

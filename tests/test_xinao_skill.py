@@ -360,8 +360,10 @@ def _sealed_release(
     tool_df_sha = module._sha256_bytes(tool_df_path.read_bytes())
     tool_rows = module._collect_tool_executor_module_rows(ROOT)
     tool_mod_sha = module._tool_executor_modules_tree_sha256(tool_rows)
-    # Distinct tool image id from transport (avoid accidental equality in assertions).
-    tool_char = chr(((ord(image_character) - 97 + 5) % 26) + 97)
+    # Distinct tool image id from transport; both must be hex-only Docker image IDs.
+    if image_character not in "0123456789abcdef":
+        raise AssertionError(f"image_character must be hex digit, got {image_character!r}")
+    tool_char = format((int(image_character, 16) + 7) % 16, "x")
     source_identity = {
         "source_commit": "c" * 40,
         "source_tree": "d" * 40,
@@ -667,10 +669,22 @@ def _fake_build_environment(
                 build_commands.append(values)
                 raise module.XinaoError("PROCESS_FAILED", "injected build failure")
             build_commands.append(values)
-            # Tool-executor formal build uses repo-root context + Dockerfile.tool-executor.
+            # Tool-executor formal build uses owned LF staging context (not source_root).
             if any("Dockerfile.tool-executor" in str(part) for part in values):
                 assert "--file" in values
                 assert "--label" in values
+                context = Path(values[-1])
+                assert context.is_dir(), f"tool build context missing: {context}"
+                assert not (context / "skills").exists()
+                assert not (context / ".git").exists()
+                staged_df = context / "Dockerfile.tool-executor"
+                assert staged_df.is_file()
+                assert b"\r" not in staged_df.read_bytes()
+                modules_root = context / module.RESEARCHER_IMAGE_CONTEXT_RELATIVE
+                for relative in module.TOOL_EXECUTOR_MODULE_INVENTORY:
+                    staged = modules_root / relative
+                    assert staged.is_file(), f"missing staged tool module {relative}"
+                    assert b"\r" not in staged.read_bytes(), f"CRLF in staged {relative}"
                 return SimpleNamespace(stdout="", stderr="", returncode=0)
             args = _parse_build_args(values)
             assert "GROK_DONOR_IMAGE" not in args
@@ -721,9 +735,9 @@ def _fake_build_environment(
                 break
         if command is None:
             command = build_commands[-1]
-        if any("Dockerfile.tool-executor" in str(part) for part in command) or str(image).startswith(
-            "xinao-tool-executor:"
-        ):
+        if any("Dockerfile.tool-executor" in str(part) for part in command) or str(
+            image
+        ).startswith("xinao-tool-executor:"):
             # Recover sealed digests from --label flags on tool build.
             labels_map: dict[str, str] = {}
             i = 0
@@ -739,7 +753,7 @@ def _fake_build_environment(
             tool_labels = module._tool_executor_expected_labels(
                 dockerfile_sha256=tool_df, modules_tree_sha256=tool_mod
             )
-            tool_char = chr(((ord(image_character) - 97 + 5) % 26) + 97)
+            tool_char = format((int(image_character, 16) + 7) % 16, "x")
             return {
                 "Id": "sha256:" + tool_char * 64,
                 "Config": {
@@ -1039,8 +1053,12 @@ def test_build_is_candidate_only_and_passes_complete_image_identity(
     module._validate_release_manifest(manifest, Path(receipt["release_manifest_path"]))
     assert manifest["source_identity"]["grok_donor_image_id"] == donor_id
     assert manifest["source_identity"]["grok_donor_binary_sha256"] == donor_binary_sha256
-    assert re.fullmatch(r"[0-9a-f]{64}", manifest["source_identity"]["tool_executor_dockerfile_sha256"])
-    assert re.fullmatch(r"[0-9a-f]{64}", manifest["source_identity"]["tool_executor_modules_tree_sha256"])
+    assert re.fullmatch(
+        r"[0-9a-f]{64}", manifest["source_identity"]["tool_executor_dockerfile_sha256"]
+    )
+    assert re.fullmatch(
+        r"[0-9a-f]{64}", manifest["source_identity"]["tool_executor_modules_tree_sha256"]
+    )
     assert manifest["tool_image_id"].startswith("sha256:")
     assert manifest["tool_image_entrypoint"] == list(module.TOOL_EXECUTOR_ENTRYPOINT)
     assert manifest["tool_image_labels"]["io.xinao.researcher.role"] == "tool_executor"
@@ -1134,7 +1152,9 @@ def test_build_extract_pins_binary_against_tag_retarget(
     assert tag_retargeted is True
     assert donor_tag_inspects == 1
     assert len(env["build_commands"]) == 2
-    assert any("Dockerfile.tool-executor" in str(part) for cmd in env["build_commands"] for part in cmd)
+    assert any(
+        "Dockerfile.tool-executor" in str(part) for cmd in env["build_commands"] for part in cmd
+    )
     assert module._docker_image("docker", donor_tag)["Id"] == retargeted_id
     assert module._docker_image("docker", pinned_id)["Id"] == pinned_id
     manifest = module._load_json(Path(receipt["release_manifest_path"]))
@@ -1456,6 +1476,7 @@ def test_activation_release_validation_excludes_egress_and_auth(
     monkeypatch.setattr(module, "DEFAULT_AUTH_PATH", tmp_path / "missing-auth.json")
     monkeypatch.setattr(module, "_docker", lambda: "docker")
     monkeypatch.setattr(module, "_docker_engine_os", lambda _docker: "linux")
+
     def _dual_image(_docker, image):
         if image == manifest["tool_image_id"]:
             return {
@@ -1511,6 +1532,7 @@ def test_activation_release_validation_rejects_image_drift(
     )
     monkeypatch.setattr(module, "_docker", lambda: "docker")
     monkeypatch.setattr(module, "_docker_engine_os", lambda _docker: "linux")
+
     def _dual_image(_docker, image):
         if image == manifest["tool_image_id"]:
             return {

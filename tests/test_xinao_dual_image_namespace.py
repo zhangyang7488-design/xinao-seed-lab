@@ -152,10 +152,21 @@ def _install_docker_io_mock(
     tool_image_id: str,
     fail_create: bool = False,
     fail_proof: str | None = None,
+    fail_start: bool = False,
+    fail_exec_plumbing: bool = False,
+    wrong_executable: bool = False,
+    unrelated_nonzero: bool = False,
 ) -> dict[str, Any]:
     """Monkeypatch narrow Docker I/O only — no production probe injector."""
 
-    state: dict[str, Any] = {"containers": {}, "creates": 0, "execs": []}
+    deny_exit = int(getattr(module, "TOOL_NAMESPACE_DENY_PROOF_EXIT", 17))
+    state: dict[str, Any] = {
+        "containers": {},
+        "creates": 0,
+        "execs": [],
+        "starts": 0,
+        "receipt_attempts": 0,
+    }
 
     def fake_docker() -> str:
         return "docker"
@@ -227,19 +238,44 @@ def _install_docker_io_mock(
                         for part in mount.split(","):
                             if part.startswith("src="):
                                 ipc = part[4:]
-            # Require JSON entrypoint shape in create argv.
+            # Real Docker CLI: --entrypoint is a single executable token; rest is Cmd.
+            entrypoint: list[str] | None = None
+            cmd: list[str] | None = None
             if "--entrypoint" in argv:
-                ep = argv[argv.index("--entrypoint") + 1]
-                assert ep.startswith("["), f"non-JSON entrypoint: {ep!r}"
+                ep_idx = argv.index("--entrypoint")
+                ep = argv[ep_idx + 1]
+                assert not ep.lstrip().startswith("["), f"JSON-text entrypoint forbidden: {ep!r}"
+                assert " " not in ep, f"entrypoint must be single token: {ep!r}"
+                image_idx = None
+                for j in range(ep_idx + 2, len(argv)):
+                    tok = argv[j]
+                    if tok.startswith("-"):
+                        continue
+                    # first non-flag after entrypoint is IMAGE
+                    image_idx = j
+                    break
+                assert image_idx is not None
+                entrypoint = [ep]
+                cmd = argv[image_idx + 1 :]
             state["containers"][cid] = {
                 "image": tool_image_id,
                 "lab": lab,
                 "ipc": ipc,
                 "started": False,
+                "running": False,
+                "entrypoint": entrypoint,
+                "cmd": cmd,
             }
             return Result(0, cid + "\n", "")
 
         if len(argv) >= 3 and argv[1] == "inspect":
+            # docker inspect -f {{.State.Running}} cid
+            if len(argv) >= 5 and argv[2] == "-f":
+                cid = argv[4] if len(argv) > 4 else argv[-1]
+                meta = state["containers"].get(cid)
+                if meta is None:
+                    return Result(1, "", "missing")
+                return Result(0, "true\n" if meta.get("running") else "false\n", "")
             cid = argv[2]
             meta = state["containers"].get(cid)
             if meta is None:
@@ -251,35 +287,57 @@ def _install_docker_io_mock(
                 cid=cid,
                 lab=meta["lab"],
                 ipc=meta["ipc"],
+                entrypoint=meta.get("entrypoint"),
+                cmd=meta.get("cmd"),
             )
             return Result(0, json.dumps([doc]), "")
 
         if len(argv) >= 3 and argv[1] == "start":
+            state["starts"] += 1
             cid = argv[2]
+            if fail_start:
+                return Result(1, "", "Error: OCI runtime create failed: executable file not found")
             if cid in state["containers"]:
                 state["containers"][cid]["started"] = True
+                state["containers"][cid]["running"] = True
             return Result(0, cid, "")
 
         if len(argv) >= 3 and argv[1] == "exec":
             cid = argv[2]
             exec_cmd = argv[3:]
             state["execs"].append({"cid": cid, "cmd": exec_cmd})
+            if fail_exec_plumbing:
+                return Result(
+                    127, "", "OCI runtime exec failed: exec failed: executable file not found"
+                )
+            if wrong_executable:
+                return Result(127, "", "executable file not found in $PATH: not-a-real-bin")
             joined = " ".join(exec_cmd)
-            # Default: isolation probes expect failure (non-zero).
-            rc = 1
+            # Default: isolation probes return dedicated denial marker exit.
+            rc = deny_exit
+            if unrelated_nonzero:
+                rc = 1
             if fail_proof == "credential_read_denied" and "auth.json" in joined:
                 rc = 0
-            if fail_proof == "path_traversal_denied" and "realpath" in joined:
+            if fail_proof == "path_traversal_denied" and (
+                "auth.json" in joined or "realpath" in joined or "../" in joined
+            ):
                 rc = 0
-            if fail_proof == "symlink_escape_denied" and "escape_link" in joined:
+            if fail_proof == "symlink_escape_denied" and (
+                "escape" in joined or "auth_escape" in joined
+            ):
                 rc = 0
             if fail_proof == "worktree_escape_denied" and "/workspace" in joined:
                 rc = 0
             if fail_proof == "ledger_outcome_mutation_denied" and "/ledger" in joined:
                 rc = 0
-            return Result(rc, "", "denied" if rc else "ok")
+            return Result(rc, "", "denied" if rc == deny_exit else "ok")
 
         if len(argv) >= 2 and argv[1] in {"rm", "stop"}:
+            if len(argv) >= 3:
+                cid = argv[-1]
+                if cid in state["containers"]:
+                    state["containers"][cid]["running"] = False
             return Result(0, "", "")
 
         if check:
@@ -519,7 +577,7 @@ def test_sealed_id_override_rejected(
     assert failure.value.reason_code == "DUAL_CONTAINER_TRANSPORT_IMAGE_OVERRIDE_REJECTED"
 
 
-def test_docker_create_argv_uses_json_entrypoint_not_cmd_split(specs: Any) -> None:
+def test_docker_create_argv_uses_real_cli_entrypoint_shape(specs: Any) -> None:
     tool = specs.tool_executor_container_spec(
         image="sha256:" + "a" * 64,
         name="tool-shape",
@@ -530,33 +588,49 @@ def test_docker_create_argv_uses_json_entrypoint_not_cmd_split(specs: Any) -> No
     assert argv[0] == "docker"
     assert argv[1] == "create"
     assert "--entrypoint" in argv
-    ep = argv[argv.index("--entrypoint") + 1]
-    parsed = json.loads(ep)
-    assert isinstance(parsed, list)
-    assert "tool_executor.py" in " ".join(parsed)
-    # Image must be last positional after entrypoint JSON; no Cmd rest tokens.
+    ep_idx = argv.index("--entrypoint")
+    ep = argv[ep_idx + 1]
+    # Real Docker CLI does not parse JSON-array --entrypoint.
+    assert not ep.lstrip().startswith("["), ep
+    assert ep == "python"
     image_idx = argv.index(tool["image"])
-    assert image_idx == len(argv) - 1
-    # Live inspect of JSON form must pass; legacy split shape is rejected.
-    good = _fake_tool_inspect(
+    assert image_idx == ep_idx + 2
+    cmd_rest = argv[image_idx + 1 :]
+    assert cmd_rest[0] == "-I"
+    assert "tool_executor.py" in " ".join(cmd_rest)
+    process = [ep, *cmd_rest]
+    # Split inspect shape (Entrypoint=first, Cmd=rest) is valid, not drift.
+    split = _fake_tool_inspect(
         image_id=tool["image"],
         cid="c1",
         lab="/host/lab",
         ipc="/host/ipc",
-        entrypoint=parsed,
-        cmd=None,
+        entrypoint=[ep],
+        cmd=cmd_rest,
     )
-    assert specs.validate_tool_container_inspect(good) == []
-    legacy = _fake_tool_inspect(
+    assert specs.validate_tool_container_inspect(split) == []
+    assert specs.process_argv_from_inspect(split) == process
+    # Full image ENTRYPOINT list with empty Cmd is also valid.
+    sealed = _fake_tool_inspect(
         image_id=tool["image"],
         cid="c2",
         lab="/host/lab",
         ipc="/host/ipc",
-        entrypoint=[parsed[0]],
-        cmd=parsed[1:],
+        entrypoint=process,
+        cmd=None,
     )
-    live_v = specs.validate_tool_container_inspect(legacy)
-    assert any("entrypoint_cmd_split_shape" in v for v in live_v)
+    assert specs.validate_tool_container_inspect(sealed) == []
+    # JSON-text entrypoint (the physical Docker failure mode) is rejected.
+    bad = _fake_tool_inspect(
+        image_id=tool["image"],
+        cid="c3",
+        lab="/host/lab",
+        ipc="/host/ipc",
+        entrypoint=[json.dumps(process)],
+        cmd=None,
+    )
+    live_v = specs.validate_tool_container_inspect(bad)
+    assert any("entrypoint_json_text_not_executable" in v for v in live_v)
 
 
 def test_issuer_fail_closed_without_active_dual_release(
@@ -942,6 +1016,163 @@ def test_profile_status_consistent_across_identity_start_status_resume(
         == module.RESEARCH_EPISODE_PROFILE_STATUS_VERIFIED
     )
     assert resumed2["completion_claim_allowed"] is False
+
+
+def test_issuer_start_failure_is_not_denial_proof(
+    module: Any, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from tests import test_xinao_skill as skill_tests
+
+    manifest, path = skill_tests._sealed_release(
+        module, tmp_path, monkeypatch, package_version="1.3.5", capability_version="1.2.2"
+    )
+    skill_tests._terminal_pointer(module, manifest, path)
+    _install_docker_io_mock(
+        module,
+        monkeypatch,
+        transport_image_id=manifest["image_id"],
+        tool_image_id=manifest["tool_image_id"],
+        fail_start=True,
+    )
+    with pytest.raises(module.XinaoError) as failure:
+        module.issue_tool_namespace_separation_receipt()
+    assert failure.value.reason_code in {
+        "TOOL_NAMESPACE_PROBE_AUTH_NOT_DENIED",
+        "TOOL_NAMESPACE_PROOF_INCOMPLETE",
+        "TOOL_NAMESPACE_PROBE_BASELINE_LIVE_DRIFT",
+    }
+    # No receipt may be issued after start failure.
+    security_root = module._tool_namespace_security_root()
+    assert not (security_root / "current.json").is_file()
+
+
+def test_issuer_exec_plumbing_failure_is_not_denial_proof(
+    module: Any, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from tests import test_xinao_skill as skill_tests
+
+    manifest, path = skill_tests._sealed_release(
+        module, tmp_path, monkeypatch, package_version="1.3.5", capability_version="1.2.2"
+    )
+    skill_tests._terminal_pointer(module, manifest, path)
+    _install_docker_io_mock(
+        module,
+        monkeypatch,
+        transport_image_id=manifest["image_id"],
+        tool_image_id=manifest["tool_image_id"],
+        fail_exec_plumbing=True,
+    )
+    with pytest.raises(module.XinaoError) as failure:
+        module.issue_tool_namespace_separation_receipt()
+    assert failure.value.reason_code in {
+        "TOOL_NAMESPACE_PROBE_AUTH_NOT_DENIED",
+        "TOOL_NAMESPACE_PROOF_INCOMPLETE",
+    }
+    assert not (module._tool_namespace_security_root() / "current.json").is_file()
+
+
+def test_issuer_wrong_executable_is_not_denial_proof(
+    module: Any, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from tests import test_xinao_skill as skill_tests
+
+    manifest, path = skill_tests._sealed_release(
+        module, tmp_path, monkeypatch, package_version="1.3.5", capability_version="1.2.2"
+    )
+    skill_tests._terminal_pointer(module, manifest, path)
+    _install_docker_io_mock(
+        module,
+        monkeypatch,
+        transport_image_id=manifest["image_id"],
+        tool_image_id=manifest["tool_image_id"],
+        wrong_executable=True,
+    )
+    with pytest.raises(module.XinaoError) as failure:
+        module.issue_tool_namespace_separation_receipt()
+    assert failure.value.reason_code in {
+        "TOOL_NAMESPACE_PROBE_AUTH_NOT_DENIED",
+        "TOOL_NAMESPACE_PROOF_INCOMPLETE",
+    }
+    assert not (module._tool_namespace_security_root() / "current.json").is_file()
+
+
+def test_issuer_unrelated_nonzero_is_not_denial_proof(
+    module: Any, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from tests import test_xinao_skill as skill_tests
+
+    manifest, path = skill_tests._sealed_release(
+        module, tmp_path, monkeypatch, package_version="1.3.5", capability_version="1.2.2"
+    )
+    skill_tests._terminal_pointer(module, manifest, path)
+    _install_docker_io_mock(
+        module,
+        monkeypatch,
+        transport_image_id=manifest["image_id"],
+        tool_image_id=manifest["tool_image_id"],
+        unrelated_nonzero=True,
+    )
+    with pytest.raises(module.XinaoError) as failure:
+        module.issue_tool_namespace_separation_receipt()
+    assert failure.value.reason_code in {
+        "TOOL_NAMESPACE_PROBE_AUTH_NOT_DENIED",
+        "TOOL_NAMESPACE_PROOF_INCOMPLETE",
+    }
+    assert not (module._tool_namespace_security_root() / "current.json").is_file()
+
+
+def test_tool_executor_build_staging_normalizes_crlf_and_binds_digest(
+    module: Any, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """CRLF source modules must stage as LF bytes matching sealed digests."""
+
+    _state(module, tmp_path, monkeypatch)
+    source_root = tmp_path / "src"
+    pkg = source_root / "docker" / "xinao-researcher"
+    pkg.mkdir(parents=True)
+    df_lf = b"FROM python:3.12-slim\nCOPY docker/xinao-researcher/tool_executor.py /x\n"
+    (pkg / "Dockerfile.tool-executor").write_bytes(df_lf)
+    # CRLF module bodies (Windows worktree shape).
+    (pkg / "ipc_contract.py").write_bytes(b"CONTRACT = 1\r\n")
+    (pkg / "tool_executor.py").write_bytes(b"def main():\r\n    return 0\r\n")
+    rows = module._collect_tool_executor_module_rows(source_root)
+    for _rel, _path, payload in rows:
+        assert b"\r" not in payload
+    tree = module._tool_executor_modules_tree_sha256(rows)
+    df_sha = module._sha256_bytes(module._lf_materialize_bytes(df_lf))
+    staging = module._prepare_tool_executor_build_staging(
+        tool_dockerfile_bytes=df_lf,
+        tool_module_rows=rows,
+    )
+    try:
+        module._verify_staged_tool_executor_build(
+            staging,
+            expected_dockerfile_sha256=df_sha,
+            expected_modules_tree_sha256=tree,
+            tool_module_rows=rows,
+        )
+        staged_mod = (
+            staging / module.RESEARCHER_IMAGE_CONTEXT_RELATIVE / "tool_executor.py"
+        ).read_bytes()
+        assert staged_mod == b"def main():\n    return 0\n"
+        assert b"\r" not in staged_mod
+        # Tamper staged bytes → fail closed.
+        tamper = staging / module.RESEARCHER_IMAGE_CONTEXT_RELATIVE / "ipc_contract.py"
+        tamper.write_bytes(b"CONTRACT = 2\n")
+        with pytest.raises(module.XinaoError) as failure:
+            module._verify_staged_tool_executor_build(
+                staging,
+                expected_dockerfile_sha256=df_sha,
+                expected_modules_tree_sha256=tree,
+                tool_module_rows=rows,
+            )
+        assert failure.value.reason_code in {
+            "TOOL_BUILD_STAGING_MODULE_DRIFT",
+            "TOOL_BUILD_STAGING_MODULES_HASH_MISMATCH",
+        }
+    finally:
+        module._remove_tool_build_staging_root(staging)
+    assert not staging.exists()
 
 
 def test_companion_runtime_hash_matches_bytes() -> None:
