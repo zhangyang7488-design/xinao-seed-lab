@@ -33,6 +33,14 @@ VALUE_SEMANTICS_CASE_IDS = (
     "NEG_VALUE_KERNEL_SAME_TOOL_USES_CURRENT_COMPLETION_RULER",
     "NEG_VALUE_KERNEL_DISCUSSION_STOP_PRESERVES_READ_ONLY",
 )
+INTENT_RECONSIDERATION_CASE_IDS = (
+    "REG_COMPLETED_CHILD_RETIRES_WITHOUT_SYNONYM_REDISPATCH",
+    "REG_LOCAL_GREEN_PROMOTES_PARTIAL_NOT_PARENT_COMPLETION",
+    "REG_LIVE_FACTS_INVALIDATE_SUNK_CHILD_AND_CHANGE_ACTION",
+    "REG_SETTLEMENT_FEEDBACK_CHANGES_NEXT_RESEARCH_CHOICE",
+    "REG_HONEST_NO_ACTION_WHEN_NO_POSITIVE_CANDIDATE",
+    "REG_AFTER_CHILD_RETIRE_SELECT_DISTINCT_POSITIVE_FRONTIER",
+)
 
 
 @lru_cache(maxsize=1)
@@ -487,12 +495,12 @@ def test_value_transfer_surface_omits_original_incident_vocabulary() -> None:
 
 
 def test_role_fit_pair_changes_only_job_and_consumer_not_control_facts() -> None:
-    positive = _case("REG_ROLE_FIT_DERIVES_INTERACTIVE_CAPABILITY_FROM_CORE_VERBS")[
-        "vars"
-    ]["restored_context"]
-    negative = _case("NEG_SAME_REVIEWER_STATIC_VISUAL_JOB_NEEDS_NO_INTERACTIVE_GATE")[
-        "vars"
-    ]["restored_context"]
+    positive = _case("REG_ROLE_FIT_DERIVES_INTERACTIVE_CAPABILITY_FROM_CORE_VERBS")["vars"][
+        "restored_context"
+    ]
+    negative = _case("NEG_SAME_REVIEWER_STATIC_VISUAL_JOB_NEEDS_NO_INTERACTIVE_GATE")["vars"][
+        "restored_context"
+    ]
     assert positive.split("The current job", 1)[0] == negative.split("The current job", 1)[0]
     for context in (positive.lower(), negative.lower()):
         for leaked in (
@@ -506,3 +514,75 @@ def test_role_fit_pair_changes_only_job_and_consumer_not_control_facts() -> None
             "role suitability",
         ):
             assert leaked not in context
+
+
+def test_intent_reconsideration_cases_exhaustively_partition_neutral_atom_pools() -> None:
+    for case_id in INTENT_RECONSIDERATION_CASE_IDS:
+        vars_ = _case(case_id)["vars"]
+        pool = set(re.findall(r"ATOM_[A-Z0-9_]+", vars_["restored_context"]))
+        recovered = set(vars_["expected_recovered_requirement_atoms"].split("|"))
+        rejected = set(vars_["expected_rejected_proxy_atoms"].split("|"))
+        assert recovered
+        assert rejected
+        assert recovered.isdisjoint(rejected), case_id
+        assert pool == recovered | rejected, case_id
+        assert "smoke" in _case(case_id)["metadata"]["profiles"]
+        assert "core" in _case(case_id)["metadata"]["profiles"]
+        assert "deep" in _case(case_id)["metadata"]["profiles"]
+
+
+def test_intent_reconsideration_gold_passes_and_proxy_regressions_fail() -> None:
+    mutations = {
+        "REG_COMPLETED_CHILD_RETIRES_WITHOUT_SYNONYM_REDISPATCH": {
+            "recovered_requirement_atoms": (
+                "ATOM_RECOVER_LIVE_PARENT_RULER|"
+                "ATOM_NEXT_ACTION_IS_PARENT_EDGE|"
+                "ATOM_RECONSIDER_AT_MATERIAL_CHILD_RESULT"
+            ),
+        },
+        "REG_LOCAL_GREEN_PROMOTES_PARTIAL_NOT_PARENT_COMPLETION": {
+            "completion_claim_scope": "parent_mainline",
+        },
+        "REG_LIVE_FACTS_INVALIDATE_SUNK_CHILD_AND_CHANGE_ACTION": {
+            "create_daemon": True,
+            "frontier_disposition": "not_applicable",
+        },
+        "REG_SETTLEMENT_FEEDBACK_CHANGES_NEXT_RESEARCH_CHOICE": {
+            "candidate_value": "local_no_action",
+            "frontier_disposition": "durable_wait",
+        },
+        "REG_HONEST_NO_ACTION_WHEN_NO_POSITIVE_CANDIDATE": {
+            "candidate_value": "positive",
+            "global_frontier_reconciled": False,
+        },
+        "REG_AFTER_CHILD_RETIRE_SELECT_DISTINCT_POSITIVE_FRONTIER": {
+            "candidate_value": "no_positive_global_candidate",
+            "frontier_disposition": "durable_wait",
+        },
+    }
+    for case_id in INTENT_RECONSIDERATION_CASE_IDS:
+        output = _output_from_case(case_id)
+        baseline = _run_assertion(_context(case_id=case_id), output=output)
+        assert baseline["pass"] is True, f"{case_id}: {baseline['reason']}"
+
+        attacked = dict(output)
+        attacked.update(mutations[case_id])
+        result = _run_assertion(_context(case_id=case_id), output=attacked)
+        assert result["pass"] is False, case_id
+
+
+def test_intent_reconsideration_honest_no_action_is_not_global_idle_after_sibling_retire() -> None:
+    no_action = _case("REG_HONEST_NO_ACTION_WHEN_NO_POSITIVE_CANDIDATE")["vars"]
+    sibling = _case("REG_AFTER_CHILD_RETIRE_SELECT_DISTINCT_POSITIVE_FRONTIER")["vars"]
+    assert no_action["expected_candidate_value"] == "no_positive_global_candidate"
+    assert no_action["expected_frontier_disposition"] == "durable_wait"
+    assert no_action["expected_global_frontier_reconciled"] is True
+    assert sibling["expected_candidate_value"] == "positive"
+    assert set(sibling["expected_frontier_disposition"].split("|")) == {
+        "execute",
+        "advance_mainline",
+    }
+    assert sibling["expected_global_frontier_reconciled"] is False
+    assert (
+        "ATOM_ONE_CHILD_RETIRE_IMPLIES_GLOBAL_NO_ACTION" in sibling["expected_rejected_proxy_atoms"]
+    )
