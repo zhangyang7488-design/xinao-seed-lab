@@ -5220,6 +5220,9 @@ def test_build_stages_locked_shadow_runtime_into_docker_context(
     observed: dict[str, object] = {}
 
     def on_before_build(values: list[str]) -> None:
+        dockerfile = Path(values[values.index("--file") + 1])
+        if dockerfile.name == "Dockerfile.tool-executor":
+            return
         context = Path(values[-1])
         shadow_root = context / module.SHADOW_RUNTIME_CONTEXT_RELATIVE
         staged = sorted(
