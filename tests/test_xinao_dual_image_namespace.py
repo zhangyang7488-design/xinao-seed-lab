@@ -645,13 +645,21 @@ def test_bind_mount_cli_value_uses_docker_mount_semantics(specs: Any) -> None:
     """Writable omits mode; readonly uses ``readonly``; bare ``rw`` never emitted."""
     assert (
         specs.bind_mount_cli_value(
-            {"host": r"D:\XINAO_RESEARCH_RUNTIME\state\lab", "container": "/episode-lab", "mode": "rw"}
+            {
+                "host": r"D:\XINAO_RESEARCH_RUNTIME\state\lab",
+                "container": "/episode-lab",
+                "mode": "rw",
+            }
         )
         == r"type=bind,src=D:\XINAO_RESEARCH_RUNTIME\state\lab,dst=/episode-lab"
     )
     assert (
         specs.bind_mount_cli_value(
-            {"host": r"D:\path with spaces\auth.json", "container": "/grok-home/auth.json", "mode": "ro"}
+            {
+                "host": r"D:\path with spaces\auth.json",
+                "container": "/grok-home/auth.json",
+                "mode": "ro",
+            }
         )
         == r"type=bind,src=D:\path with spaces\auth.json,dst=/grok-home/auth.json,readonly"
     )
@@ -661,9 +669,7 @@ def test_bind_mount_cli_value_uses_docker_mount_semantics(specs: Any) -> None:
         == "type=bind,src=/h/lab,dst=/episode-lab"
     )
     with pytest.raises(ValueError, match="unsupported bind mode"):
-        specs.bind_mount_cli_value(
-            {"host": "/h", "container": "/c", "mode": "private"}
-        )
+        specs.bind_mount_cli_value({"host": "/h", "container": "/c", "mode": "private"})
 
 
 def test_docker_create_argv_mounts_omit_bare_rw_and_keep_readonly(specs: Any) -> None:
@@ -708,7 +714,9 @@ def test_docker_create_argv_mounts_omit_bare_rw_and_keep_readonly(specs: Any) ->
         assert ",dst=" in mount
     # Writable lab/ipc must not carry readonly.
     tool_mounts = _mount_values(tool_argv)
-    lab_mount = next(m for m in tool_mounts if "dst=/episode-lab" in m or m.endswith("dst=/episode-lab"))
+    lab_mount = next(
+        m for m in tool_mounts if "dst=/episode-lab" in m or m.endswith("dst=/episode-lab")
+    )
     ipc_mount = next(m for m in tool_mounts if "dst=/ipc" in m or m.endswith("dst=/ipc"))
     assert lab_mount == f"type=bind,src={win_lab},dst=/episode-lab"
     assert ipc_mount == f"type=bind,src={win_ipc},dst=/ipc"
@@ -790,8 +798,7 @@ def test_docker_create_argv_mounts_accepted_by_real_docker_parser(
             # Drop heavy security opts that are unrelated to mount parsing so a
             # missing image still surfaces as image-not-found rather than mount.
             assert all(
-                not (argv[i] == "--mount" and ",rw" in argv[i + 1])
-                for i in range(len(argv) - 1)
+                not (argv[i] == "--mount" and ",rw" in argv[i + 1]) for i in range(len(argv) - 1)
             )
             completed = subprocess.run(
                 argv,
@@ -803,9 +810,9 @@ def test_docker_create_argv_mounts_accepted_by_real_docker_parser(
             stderr = (completed.stderr or "") + (completed.stdout or "")
             # Exact live failure from gen9 probe (Docker 29.x --mount parser).
             assert "invalid field 'rw'" not in stderr, stderr
-            assert not (
-                "invalid field" in stderr.lower() and "key=value pair" in stderr.lower()
-            ), stderr
+            assert not ("invalid field" in stderr.lower() and "key=value pair" in stderr.lower()), (
+                stderr
+            )
             if completed.returncode == 0:
                 cid = (completed.stdout or "").strip()
                 if cid:
