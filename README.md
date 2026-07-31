@@ -69,10 +69,17 @@ This lets independent Codex agents share one D-drive embedded store without a bo
 ```powershell
 uv sync --extra dev --extra human-capabilities --extra workflow
 uv lock --check
-uv run ruff check services scripts tests
-uv run ruff format --check services scripts tests
+# Root CI hygiene cone (services, scripts, tests, skills/xinao/scripts, docker/xinao-researcher):
+uv run python scripts/run_ci_hygiene.py
+# Full remote hygiene parity (root + every project-local Ruff cone in its own lock/config):
+uv run python scripts/run_ci_hygiene.py --all
 uv run pytest -q
 ```
+
+Do not treat a partial `ruff check services scripts tests` alone as sufficient: remote root CI
+also gates `skills/xinao/scripts` and `docker/xinao-researcher`, and project jobs keep their own
+Ruff cones under each project's working directory. Prefer `scripts/run_ci_hygiene.py` for the
+exact local hygiene entry.
 
 Tests in this repository are bounded and must not run `git add`, `git commit`, start legacy
 workflows, or mutate the real worktree outside their temporary directories.

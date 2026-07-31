@@ -1546,6 +1546,153 @@ def test_ci_verifies_each_consolidated_project_in_its_locked_environment() -> No
         assert required in workflow, required
 
 
+ROOT_CI_HYGIENE_PATHS = (
+    "services",
+    "scripts",
+    "tests",
+    "skills/xinao/scripts",
+    "docker/xinao-researcher",
+)
+ROOT_HYGIENE_COMMANDS = (
+    "uv run ruff check services scripts tests skills/xinao/scripts docker/xinao-researcher",
+    "uv run ruff format --check services scripts tests skills/xinao/scripts docker/xinao-researcher",
+    "uv run python -m compileall -q services scripts tests skills/xinao/scripts docker/xinao-researcher",
+)
+
+
+def test_ci_root_hygiene_job_is_single_platform_and_not_duplicated_in_pytest_matrix() -> None:
+    """Root Ruff/format/compileall run once; OS matrix keeps pytest only."""
+    workflow_text = (REPO_ROOT / ".github/workflows/ci.yml").read_text(encoding="utf-8")
+    workflow = yaml.safe_load(workflow_text)
+    jobs = workflow["jobs"]
+    assert "root-hygiene" in jobs
+    assert "verify" in jobs
+    assert "project-verify" in jobs
+
+    root = jobs["root-hygiene"]
+    assert root["runs-on"] == "ubuntu-latest"
+    root_steps = "\n".join(step.get("run", "") for step in root["steps"] if isinstance(step, dict))
+    for command in ROOT_HYGIENE_COMMANDS:
+        assert command in root_steps, command
+    assert "pytest" not in root_steps
+    assert "continue-on-error:" not in workflow_text
+    assert "paths-filter" not in workflow_text
+    assert "dorny/paths-filter" not in workflow_text
+    assert "lint_rc" in root_steps and "format_rc" in root_steps
+    assert "set +e" in root_steps
+
+    verify = jobs["verify"]
+    assert verify["needs"] == "root-hygiene" or verify["needs"] == ["root-hygiene"]
+    matrix_os = {entry["os"] for entry in verify["strategy"]["matrix"]["include"]}
+    assert matrix_os == {"ubuntu-latest", "windows-latest"}
+    verify_steps = "\n".join(
+        step.get("run", "") for step in verify["steps"] if isinstance(step, dict)
+    )
+    assert "uv run pytest -q" in verify_steps
+    for command in ROOT_HYGIENE_COMMANDS:
+        assert command not in verify_steps, f"duplicated in verify: {command}"
+    assert "ruff check" not in verify_steps
+    assert "ruff format" not in verify_steps
+    assert "compileall" not in verify_steps
+
+    project = jobs["project-verify"]
+    assert "needs" not in project or project.get("needs") in (None, [])
+    project_steps = "\n".join(
+        step.get("run", "") for step in project["steps"] if isinstance(step, dict)
+    )
+    assert "uv run ruff check ${{ matrix.ruff_paths }}" in project_steps
+    assert "uv run ruff format --check ${{ matrix.ruff_paths }}" in project_steps
+
+
+def test_local_ci_hygiene_script_matches_root_and_project_cones() -> None:
+    """Local entry path inventory must stay locked to workflow cones."""
+    from scripts import run_ci_hygiene as hygiene
+
+    assert hygiene.ROOT_PATHS == ROOT_CI_HYGIENE_PATHS
+
+    workflow = yaml.safe_load((REPO_ROOT / ".github/workflows/ci.yml").read_text(encoding="utf-8"))
+    matrix = workflow["jobs"]["project-verify"]["strategy"]["matrix"]["include"]
+    expected = []
+    for entry in matrix:
+        raw = entry["ruff_paths"]
+        if isinstance(raw, str):
+            paths = tuple(part for part in raw.replace("\n", " ").split() if part)
+        else:
+            paths = tuple(raw)
+        expected.append((entry["project"], entry["path"], paths))
+    assert list(hygiene.PROJECT_CONES) == expected
+
+    readme = (REPO_ROOT / "README.md").read_text(encoding="utf-8")
+    assert "uv run python scripts/run_ci_hygiene.py" in readme
+    assert "uv run python scripts/run_ci_hygiene.py --all" in readme
+    assert "full remote hygiene parity" in readme.lower() or "Full remote hygiene parity" in readme
+    assert "uv run ruff check services scripts tests\n" not in readme
+    assert "uv run ruff format --check services scripts tests\n" not in readme
+    for path in ROOT_CI_HYGIENE_PATHS:
+        assert path in readme, path
+
+
+def test_local_ci_hygiene_runs_lint_and_format_even_if_one_fails() -> None:
+    """Control-flow: a lint failure must not skip format (no real network/install)."""
+    from scripts import run_ci_hygiene as hygiene
+
+    calls: list[tuple[tuple[str, ...], str | None]] = []
+
+    def fake_runner(argv, *, cwd=None):  # type: ignore[no-untyped-def]
+        seq = tuple(argv)
+        calls.append((seq, str(cwd) if cwd is not None else None))
+        if seq[:4] == ("uv", "run", "ruff", "check") and "--fix" not in seq:
+            return subprocess_completed(1)
+        return subprocess_completed(0)
+
+    def subprocess_completed(code: int):
+        class _Proc:
+            returncode = code
+
+        return _Proc()
+
+    results = hygiene.run_root_hygiene(
+        repo_root=REPO_ROOT,
+        fix=False,
+        runner=fake_runner,
+    )
+    labels = [item.label for item in results]
+    assert labels == ["root ruff check", "root ruff format", "root compileall"]
+    assert results[0].returncode == 1
+    assert results[1].returncode == 0
+    assert results[2].returncode == 0
+    assert hygiene.aggregate_returncode(results) == 1
+
+    argv_bodies = [call[0] for call in calls]
+    assert any(a[:4] == ("uv", "run", "ruff", "check") for a in argv_bodies)
+    assert any(a[:5] == ("uv", "run", "ruff", "format", "--check") for a in argv_bodies)
+    assert any("compileall" in a for a in argv_bodies)
+    assert len(calls) == 3
+
+    project_calls: list[tuple[str, ...]] = []
+
+    def project_runner(argv, *, cwd=None):  # type: ignore[no-untyped-def]
+        seq = tuple(argv)
+        project_calls.append(seq)
+        if seq[:4] == ("uv", "run", "ruff", "check") and "--fix" not in seq:
+            return subprocess_completed(2)
+        return subprocess_completed(0)
+
+    project_results = hygiene.run_project_hygiene(
+        repo_root=REPO_ROOT,
+        fix=False,
+        runner=project_runner,
+    )
+    assert project_results
+    assert len(project_results) == len(hygiene.PROJECT_CONES) * 2
+    lint_steps = [r for r in project_results if r.label.endswith("ruff check")]
+    format_steps = [r for r in project_results if r.label.endswith("ruff format")]
+    assert len(lint_steps) == len(format_steps) == len(hygiene.PROJECT_CONES)
+    assert all(step.returncode == 2 for step in lint_steps)
+    assert all(step.returncode == 0 for step in format_steps)
+    assert hygiene.aggregate_returncode(project_results) == 2
+
+
 def test_gitleaks_import_allowlist_is_exact_fingerprint_only() -> None:
     entries = [
         line

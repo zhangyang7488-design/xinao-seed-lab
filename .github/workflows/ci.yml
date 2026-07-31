@@ -14,8 +14,44 @@ permissions:
   contents: read
 
 jobs:
+  # Single-platform root hygiene: identical Ruff/format/compileall need not
+  # run twice on Ubuntu and Windows. Root OS matrix below keeps pytest coverage.
+  root-hygiene:
+    name: root hygiene
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Install bounded test environment
+        run: uv sync --frozen --extra dev --extra workflow
+
+      # Lint and format both always run so one failure cannot hide the other.
+      # Aggregate a non-zero exit after both exact root commands finish.
+      - name: Ruff lint and format check
+        run: |
+          set +e
+          uv run ruff check services scripts tests skills/xinao/scripts docker/xinao-researcher
+          lint_rc=$?
+          uv run ruff format --check services scripts tests skills/xinao/scripts docker/xinao-researcher
+          format_rc=$?
+          if [ "$lint_rc" -ne 0 ]; then exit "$lint_rc"; fi
+          exit "$format_rc"
+
+      - name: Compile retained Python
+        run: uv run python -m compileall -q services scripts tests skills/xinao/scripts docker/xinao-researcher
+
   verify:
     name: verify (${{ matrix.os }}, py${{ matrix.python-version }})
+    needs: root-hygiene
     runs-on: ${{ matrix.os }}
     timeout-minutes: 25
     strategy:
@@ -39,15 +75,6 @@ jobs:
 
       - name: Install bounded test environment
         run: uv sync --frozen --extra dev --extra workflow
-
-      - name: Ruff lint
-        run: uv run ruff check services scripts tests skills/xinao/scripts docker/xinao-researcher
-
-      - name: Ruff format check
-        run: uv run ruff format --check services scripts tests skills/xinao/scripts docker/xinao-researcher
-
-      - name: Compile retained Python
-        run: uv run python -m compileall -q services scripts tests skills/xinao/scripts docker/xinao-researcher
 
       - name: Run bounded tests
         run: uv run pytest -q --basetemp "${{ runner.temp }}/pytest"
