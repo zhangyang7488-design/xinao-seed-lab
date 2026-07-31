@@ -306,9 +306,7 @@ class AccountRiskTicket(BaseModel):
             else SPECIAL_NUMBER_FUNCTION.b_baseline_ref
         )
         if self.baseline_ref != expected_baseline:
-            raise ValueError(
-                "ACCOUNT_TICKET_BASELINE_INVALID: baseline_ref must match the panel"
-            )
+            raise ValueError("ACCOUNT_TICKET_BASELINE_INVALID: baseline_ref must match the panel")
         if self.content_hash is not None and self.content_hash != self.compute_content_hash():
             raise ValueError("content_hash does not match the canonical account risk ticket")
         return self
@@ -1087,9 +1085,7 @@ def freeze_shadow_episode(
         _require_content_seal(prior_settled, label="prior settled episode")
         _require_content_seal(prior_settled.statement, label="prior statement")
         if prior_settled.period_index != period_index - 1:
-            raise ValueError(
-                "HISTORY_GAP: prior settled period must be exactly period_index - 1"
-            )
+            raise ValueError("HISTORY_GAP: prior settled period must be exactly period_index - 1")
         if (
             prior_settled.seat_id != seat.seat_id
             or prior_settled.portfolio_ref != seat.portfolio_ref
@@ -1117,8 +1113,7 @@ def freeze_shadow_episode(
     if account_decision.identity == AccountDecisionIdentity.ACTION:
         if (bound_frozen_decision is None) == (bound_account_ticket is None):
             raise ValueError(
-                "ACTION freeze requires exactly one bound_frozen_decision or "
-                "bound_account_ticket"
+                "ACTION freeze requires exactly one bound_frozen_decision or bound_account_ticket"
             )
         _require_mechanical_rule_ref(account_decision.rule_ref, boundary="ACTION freeze")
         source_ref: str

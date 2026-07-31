@@ -469,10 +469,7 @@ def period_artifact_paths(root: Path, period_index: int) -> dict[str, Path]:
 def load_portfolio(root: Path) -> ShadowPortfolio:
     raw = read_json(portfolio_artifact_paths(root)["portfolio"])
     portfolio = ShadowPortfolio.model_validate(raw)
-    if (
-        portfolio.content_hash is None
-        or portfolio.content_hash != portfolio.compute_content_hash()
-    ):
+    if portfolio.content_hash is None or portfolio.content_hash != portfolio.compute_content_hash():
         raise StoreError("portfolio content seal invalid")
     return portfolio
 
@@ -632,8 +629,7 @@ def derive_portfolio_head(root: Path) -> PortfolioHead:
                     or binding.prior_episode_ref != prior_settled.episode_ref
                     or binding.prior_settled_episode_hash != prior_settled.content_hash
                     or binding.prior_statement_hash != prior_settled.statement.content_hash
-                    or binding.prior_closing_balance
-                    != prior_settled.statement.closing_balance
+                    or binding.prior_closing_balance != prior_settled.statement.closing_balance
                 ):
                     raise StoreError("PRIOR_SETTLED_HASH_MISMATCH: successor binding is stale")
 
@@ -701,14 +697,10 @@ def prepare_next_period_root(
     elif head.phase == PortfolioPeriodPhase.FEEDBACK_SEALED:
         period_index = head.period_index + 1
     else:
-        raise StoreError(
-            f"portfolio cannot open a new period while head is {head.phase.value}"
-        )
+        raise StoreError(f"portfolio cannot open a new period while head is {head.phase.value}")
 
     prior_settled = (
-        load_settled(period_directory(base, period_index - 1))
-        if period_index > 1
-        else None
+        load_settled(period_directory(base, period_index - 1)) if period_index > 1 else None
     )
     periods = portfolio_artifact_paths(base)["periods"]
     periods.mkdir(parents=True, exist_ok=True)

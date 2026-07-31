@@ -17,7 +17,6 @@ from xinao.shadow_lifecycle import (
     build_science_decision,
     feedback_portfolio_period,
     freeze_episode,
-    freeze_portfolio_period,
     freeze_shadow_episode,
     init_episode,
     init_portfolio,

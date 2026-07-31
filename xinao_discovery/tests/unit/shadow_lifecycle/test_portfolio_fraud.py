@@ -25,7 +25,6 @@ from xinao.shadow_lifecycle import (
     create_seat,
     feedback_portfolio_period,
     freeze_episode,
-    freeze_portfolio_period,
     freeze_shadow_episode,
     init_portfolio,
     inspect_episode,
