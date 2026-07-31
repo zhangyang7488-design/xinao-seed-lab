@@ -476,6 +476,10 @@ def build_genuine_session_argv(
     - Host file/shell builtins stripped via --disallowed-tools and agent profile.
     - OPEN_RESEARCH: no --disable-web-search; CLOSED_LAB: disable web.
     - --cwd defaults to mounted lab path /episode-lab.
+    - Headless trigger (CLI 0.2.117): prompt must use -p/--single or
+      --prompt-file/--prompt-json. A bare positional PROMPT starts the
+      interactive TUI, which opens /dev/tty and fails under no-TTY docker exec
+      with ``Error: No such device or address (os error 6)``.
     """
     profile = normalize_research_profile(research_profile)
     if profile == PROFILE_INSTRUMENT_CANARY:
@@ -547,7 +551,8 @@ def build_genuine_session_argv(
     else:
         argv.extend(["--session-id", session_id])
     if prompt and not prompt_file:
-        argv.append(prompt)
+        # Must be -p/--single (headless). Positional PROMPT is TUI-only.
+        argv.extend(["-p", prompt])
     if extra:
         argv.extend(list(extra))
     return argv
@@ -669,6 +674,41 @@ def assert_live_research_argv(
         cwd = joined[joined.index("--cwd") + 1]
         if str(cwd).replace("\\", "/").rstrip("/") != CANONICAL_LAB_CWD:
             raise NativeSessionError("LIVE_CWD_MISALIGNED", cwd)
+    # Live attach under docker exec has no controlling TTY. Grok 0.2.117 headless
+    # mode is entered only via -p/--single/--prompt-file/--prompt-json. A bare
+    # positional PROMPT opens interactive TUI → ENXIO on /dev/tty (os error 6).
+    value_taking_flags = {
+        "--model",
+        "--max-turns",
+        "--tools",
+        "--disallowed-tools",
+        "--agent",
+        "--cwd",
+        "--session-id",
+        "--resume",
+        "--permission-mode",
+        "--output-format",
+        "--prompt-file",
+        "--prompt-json",
+        "-p",
+        "--single",
+        "--json-schema",
+        "--rules",
+        "--system-prompt-override",
+        "--debug-file",
+        "--allow",
+        "--deny",
+    }
+    if joined:
+        last = str(joined[-1])
+        if last and not last.startswith("-"):
+            prev = str(joined[-2]) if len(joined) >= 2 else ""
+            if prev not in value_taking_flags:
+                raise NativeSessionError(
+                    "LIVE_TUI_POSITIONAL_PROMPT",
+                    "bare positional PROMPT is interactive TUI; use -p/--single "
+                    "or --prompt-file/--prompt-json for no-TTY docker exec",
+                )
 
 
 def assert_argv_is_canary(argv: Sequence[str]) -> None:

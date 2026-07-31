@@ -200,6 +200,9 @@ def test_live_argv_rejects_empty_tools_one_turn_and_host_bypass(native: Any) -> 
     sid = native.new_session_uuid()
     good = _live_argv(native, sid, turns=16)
     native.assert_live_research_argv(good)
+    # Headless attach must use -p/--single (not bare positional TUI prompt).
+    assert "-p" in good
+    assert good[good.index("-p") + 1] == "revise hypothesis after failed experiment"
     canary = native.build_canary_argv()
     with pytest.raises(native.NativeSessionError) as exc:
         native.assert_live_research_argv(canary)
@@ -218,6 +221,12 @@ def test_live_argv_rejects_empty_tools_one_turn_and_host_bypass(native: Any) -> 
     with pytest.raises(native.NativeSessionError) as exc3:
         native.assert_live_research_argv(poisoned)
     assert exc3.value.reason_code == "OPEN_RESEARCH_WEB_DISABLED"
+    # Bare positional PROMPT is interactive TUI and fails no-TTY docker exec (os error 6).
+    tui_shaped = [x for x in good if x not in {"-p", good[good.index("-p") + 1]}]
+    tui_shaped.append("revise hypothesis after failed experiment")
+    with pytest.raises(native.NativeSessionError) as exc4:
+        native.assert_live_research_argv(tui_shaped)
+    assert exc4.value.reason_code == "LIVE_TUI_POSITIONAL_PROMPT"
 
 
 def test_planned_and_synthetic_cannot_export(native: Any, tmp_path: Path) -> None:
@@ -842,6 +851,9 @@ def test_dual_host_live_argv_shape_and_foreign_session(
     assert "--model" in argv and argv[argv.index("--model") + 1] == "grok-4.5"
     assert int(argv[argv.index("--max-turns") + 1]) >= 8
     assert argv[argv.index("--tools") + 1] == "search_tool,use_tool,web_search,web_fetch"
+    # Headless prompt trigger required for no-TTY docker exec attach-run.
+    assert "-p" in argv and argv[argv.index("-p") + 1] == "lab"
+    assert argv[-1] == "lab" and argv[-2] == "-p"
     # OPEN_RESEARCH: honest --no-subagents; host tools still stripped; multi-turn tools remain.
     assert "--no-subagents" in argv
     assert "--always-approve" in argv
