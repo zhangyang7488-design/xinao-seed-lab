@@ -268,18 +268,49 @@ def scrub_environment(env: Mapping[str, str] | None = None) -> dict[str, str]:
     }
 
 
-def assert_no_auth_artifacts() -> list[str]:
-    """Probe common auth/config paths; return list of violations if present."""
+def _map_probe_path(path: Path | str, *, fs_root: Path | None) -> Path:
+    """Resolve a container-style absolute path for self-check probes.
+
+    When ``fs_root`` is set (host unit only), container-view candidates such as
+    ``/var/run/docker.sock`` are mapped under that synthetic root so the CI
+    runner's own socket cannot poison a pure-Python isolation check. Production
+    container self-check leaves ``fs_root`` unset and probes real absolute paths.
+
+    Note: on Windows, ``Path('/var/...')`` is not ``is_absolute()`` (no drive),
+    so mapping must strip leading slashes via POSIX-style text, not pathlib
+    absolute/relative join rules.
+    """
+    if fs_root is None:
+        return Path(path)
+    root = Path(fs_root).resolve()
+    text = str(path).replace("\\", "/").lstrip("/")
+    if not text:
+        return root
+    return (root / text).resolve()
+
+
+def assert_no_auth_artifacts(*, fs_root: Path | str | None = None) -> list[str]:
+    """Probe common auth/config paths; return list of violations if present.
+
+    ``fs_root`` is optional and intended for host-side unit tests that must not
+    treat the CI runner's own Docker socket as a tool-container violation.
+    Default (None) probes real absolute paths — required inside the real tool
+    container self-check.
+    """
+    root = Path(fs_root) if fs_root is not None and str(fs_root).strip() else None
     violations: list[str] = []
-    candidates = [
+    # Container-view absolute paths. Home probe still follows scrubbed env
+    # (Path.home()) so host units can isolate USERPROFILE/HOME without fs_root.
+    absolute_candidates = [
         Path("/grok-home/.grok/auth.json"),
         Path("/grok-home/.grok/config.json"),
-        Path.home() / ".grok" / "auth.json",
         Path("/root/.grok/auth.json"),
         Path("/var/run/docker.sock"),
         Path("/run/docker.sock"),
         Path("/var/run/podman/podman.sock"),
     ]
+    candidates = [_map_probe_path(p, fs_root=root) for p in absolute_candidates]
+    candidates.append(Path.home() / ".grok" / "auth.json")
     for path in candidates:
         try:
             if path.exists() or path.is_symlink():
@@ -1276,6 +1307,16 @@ def main(argv: list[str] | None = None) -> int:
         help="Print auth-artifact probe and exit",
     )
     parser.add_argument(
+        "--self-check-fs-root",
+        default="",
+        help=(
+            "Optional synthetic root for filesystem probes during --self-check. "
+            "Host unit tests use an empty tmp tree so runner-host docker.sock "
+            "cannot masquerade as a tool-container violation. Leave empty in "
+            "the real tool container (probe absolute /var/run/docker.sock etc.)."
+        ),
+    )
+    parser.add_argument(
         "--replay-state-dir",
         default="",
         help="Durable REQUEST_REPLAY marker dir (default: <socket-parent>/.xinao-replay)",
@@ -1292,12 +1333,14 @@ def main(argv: list[str] | None = None) -> int:
     else:
         configure_sidecar_evidence_dir(resolve_sidecar_evidence_dir())
     if args.self_check:
-        violations = assert_no_auth_artifacts()
+        fs_root = args.self_check_fs_root.strip() or None
+        violations = assert_no_auth_artifacts(fs_root=fs_root)
         report = {
             "schema_version": "xinao.tool_executor_self_check.v1",
             "lab_root": str(lab_root),
             "violations": violations,
             "ok": not violations,
+            "fs_root": fs_root,
             "bwrap_mode": bwrap_mode(),
             "bwrap_bin": resolve_bwrap_bin(),
             "peer_require": peer_require_enabled(),
