@@ -141,6 +141,7 @@ def test_packaged_commands_present_in_parser() -> None:
 def test_fresh_help_lists_owner_surface_commands() -> None:
     p1 = _run_cli(["prospective", "--help"])
     assert p1.returncode == 0, p1.stderr
+    assert "draft-owner-disposition" in p1.stdout
     assert "write-owner-disposition" in p1.stdout
     assert "freeze-from-disposition" in p1.stdout
     p2 = _run_cli(["research-episode", "--help"])

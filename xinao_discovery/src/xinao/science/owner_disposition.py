@@ -45,12 +45,19 @@ from xinao.science.episode_export_pool_adapter import (
 )
 from xinao.science.prospective_source_thin import (
     ProspectiveSourceError,
+    build_source_authority_binding,
     is_live_macaujc2_target,
+    load_packet,
     validate_source_authority_binding,
 )
 
 DISPOSITION_SCHEMA_VERSION: Final = "xinao.codex_owner_disposition.v1"
 DISPOSITION_MARKER: Final = "XINAO_CODEX_OWNER_DISPOSITION_V1"
+
+# Draft assembly only — never Owner adoption / never a validator-passable disposition.
+DRAFT_STATUS: Final = "DRAFT_NOT_OWNER_ADOPTED"
+DRAFT_SOURCE: Final = "tool_generated"
+REQUIRED_OWNER_INPUT: Final = "REQUIRED_OWNER_INPUT"
 
 ACCOUNT_ACTION: Final = "ACTION"
 ACCOUNT_NO_ACTION: Final = "RESEARCHER_ACCOUNT_NO_ACTION"
@@ -943,6 +950,281 @@ def validate_disposition_payload(
     return normalized
 
 
+def _suggest_episode_ref_from_pool(pool_entry: Mapping[str, Any]) -> str:
+    """Mechanical episode_ref hint from sealed pool provenance (not science judgment)."""
+
+    lab = pool_entry.get("lab_provenance")
+    if isinstance(lab, Mapping):
+        episode_id = lab.get("episode_id")
+        if isinstance(episode_id, str) and episode_id and "\x00" not in episode_id:
+            return f"episode.{episode_id}.owner-draft"
+    run_id = pool_entry.get("run_id")
+    if isinstance(run_id, str) and run_id and "\x00" not in run_id:
+        return f"episode.pool.{run_id}.owner-draft"
+    return REQUIRED_OWNER_INPUT
+
+
+def _period_branch_template(
+    *,
+    target_ref: object,
+    target_open_time: object,
+    freeze_deadline: object,
+    knowledge_cutoff: object,
+    for_action: bool,
+) -> dict[str, Any]:
+    """Mechanical times/target only; Owner judgment fields stay REQUIRED_OWNER_INPUT."""
+
+    common = {
+        "target_ref": target_ref,
+        "target_open_time": target_open_time,
+        "freeze_deadline": freeze_deadline,
+        "frozen_at": REQUIRED_OWNER_INPUT,
+        "knowledge_cutoff": knowledge_cutoff,
+        "rule_ref": _SPECIAL_NUMBER_RULE,
+        "odds_version_ref": REQUIRED_OWNER_INPUT,
+    }
+    if not for_action:
+        return common
+    return {
+        "panel": REQUIRED_OWNER_INPUT,
+        "selected_number": REQUIRED_OWNER_INPUT,
+        "stake": REQUIRED_OWNER_INPUT,
+        **common,
+        "baseline_ref": REQUIRED_OWNER_INPUT,
+        "risk_policy_ref": REQUIRED_OWNER_INPUT,
+    }
+
+
+def draft_owner_disposition(
+    *,
+    pool_root: Path,
+    result_sha256: str,
+    authority_root: Path | None = None,
+    packet_content_hash: str | None = None,
+    portfolio_root: Path | None = None,
+) -> dict[str, Any]:
+    """Assemble a non-authoritative Owner disposition draft from sealed consumers.
+
+    Mechanical fields only (pool hashes, authority binding/times, optional portfolio
+    head). Never chooses ACTION/NO_ACTION, science_disposition, selected_number,
+    stake, or any manifest recommendation. Never writes owner CAS / freeze /
+    portfolio / authority / pool.
+
+    The returned ``payload_draft`` is intentionally **not** a validator-passable
+    disposition: judgment fields are ``REQUIRED_OWNER_INPUT`` placeholders.
+    Codex must fill them, then call write-owner-disposition.
+    """
+
+    pool_entry = load_verified_pool_entry_for_disposition(pool_root, result_sha256)
+    verify_pool_entry_seal(pool_entry)
+    # Never project research prose / recommendation into account or science choice.
+
+    source_authority_binding: dict[str, Any] | None = None
+    target_ref: object = REQUIRED_OWNER_INPUT
+    target_open_time: object = REQUIRED_OWNER_INPUT
+    freeze_deadline: object = REQUIRED_OWNER_INPUT
+    authority_meta: dict[str, Any] | None = None
+
+    has_authority = authority_root is not None or packet_content_hash is not None
+    if has_authority:
+        if authority_root is None or packet_content_hash is None:
+            raise OwnerDispositionError(
+                "DRAFT_AUTHORITY_ARGS_INCOMPLETE",
+                "authority-root and packet-content-hash must be provided together",
+            )
+        try:
+            packet = load_packet(authority_root, packet_content_hash)
+            source_authority_binding = build_source_authority_binding(packet)
+            # Re-run the same validator freeze consumers use (packet equality).
+            source_authority_binding = validate_source_authority_binding(
+                source_authority_binding,
+                packet=packet,
+            )
+        except ProspectiveSourceError as exc:
+            raise OwnerDispositionError(exc.reason_code, exc.detail) from exc
+        target_ref = source_authority_binding["target_ref"]
+        target_open_time = source_authority_binding["target_guard_open_time"]
+        freeze_deadline = source_authority_binding["freeze_deadline"]
+        authority_meta = {
+            "authority_root": str(authority_root.expanduser().resolve()),
+            "packet_content_hash": source_authority_binding["packet_content_hash"],
+        }
+
+    portfolio_binding: dict[str, Any] | None = None
+    period_index: object = REQUIRED_OWNER_INPUT
+    portfolio_meta: dict[str, Any] | None = None
+    if portfolio_root is not None:
+        # Lazy import: freeze_adapter imports this module.
+        from xinao.science.freeze_adapter import (
+            FreezeAdapterError,
+            build_portfolio_binding_from_shadow,
+        )
+
+        try:
+            portfolio_binding = build_portfolio_binding_from_shadow(portfolio_root)
+        except FreezeAdapterError as exc:
+            raise OwnerDispositionError(exc.reason_code, exc.detail) from exc
+        # Closed binding already validated by live inspect consumer shape; re-check.
+        portfolio_binding = validate_portfolio_binding(portfolio_binding)
+        period_index = int(portfolio_binding["intended_next_period_index"])
+        portfolio_meta = {
+            "portfolio_root": str(portfolio_root.expanduser().resolve()),
+        }
+
+    knowledge_cutoff = pool_entry.get("knowledge_cutoff")
+    if not isinstance(knowledge_cutoff, str) or not knowledge_cutoff:
+        knowledge_cutoff = REQUIRED_OWNER_INPUT
+
+    episode_ref = _suggest_episode_ref_from_pool(pool_entry)
+
+    # Mechanical pool/authority/portfolio fields only. Protocol authority labels
+    # and judgment remain REQUIRED_OWNER_INPUT so a raw draft cannot pass
+    # write-owner-disposition (no CAS pollution, no forged Owner channel).
+    # Outer envelope stays tool_generated / owner_adopted=false.
+    payload_draft: dict[str, Any] = {
+        "schema_version": DISPOSITION_SCHEMA_VERSION,
+        "disposition_marker": DISPOSITION_MARKER,
+        # Owner must explicitly set codex_owner_channel — tool does not forge it.
+        "disposition_source": REQUIRED_OWNER_INPUT,
+        "owner_role": REQUIRED_OWNER_INPUT,
+        # Owner must explicitly set false; tool never stamps Owner authority.
+        "worker_controlled": REQUIRED_OWNER_INPUT,
+        "result_sha256": pool_entry["result_sha256"],
+        "receipt_content_sha256": pool_entry["receipt_content_sha256"],
+        "pool_entry_content_hash": pool_entry["content_hash"],
+        "period_index": period_index,
+        "episode_ref": episode_ref,
+        "target_ref": target_ref,
+        "knowledge_cutoff": knowledge_cutoff,
+        # Judgment — never auto-selected from pool/manifest.
+        "science_disposition": REQUIRED_OWNER_INPUT,
+        "account_identity": REQUIRED_OWNER_INPUT,
+        "rationale_ref": REQUIRED_OWNER_INPUT,
+    }
+    if source_authority_binding is not None:
+        payload_draft["source_authority_binding"] = dict(source_authority_binding)
+    if portfolio_binding is not None:
+        payload_draft["portfolio_binding"] = dict(portfolio_binding)
+
+    action_branch = _period_branch_template(
+        target_ref=target_ref,
+        target_open_time=target_open_time,
+        freeze_deadline=freeze_deadline,
+        knowledge_cutoff=knowledge_cutoff,
+        for_action=True,
+    )
+    no_action_branch = _period_branch_template(
+        target_ref=target_ref,
+        target_open_time=target_open_time,
+        freeze_deadline=freeze_deadline,
+        knowledge_cutoff=knowledge_cutoff,
+        for_action=False,
+    )
+
+    required_owner_inputs = [
+        "disposition_source(=codex_owner_channel)",
+        "owner_role(=codex)",
+        "worker_controlled(=false)",
+        "science_disposition",
+        "account_identity",
+        "rationale_ref",
+        "frozen_at",
+        "odds_version_ref",
+        "choose_exactly_one_of: ACTION.executable_account_decision | "
+        "RESEARCHER_ACCOUNT_NO_ACTION.no_action_period_binding",
+    ]
+    if period_index == REQUIRED_OWNER_INPUT:
+        required_owner_inputs.append("period_index")
+    if target_ref == REQUIRED_OWNER_INPUT:
+        required_owner_inputs.append("target_ref")
+    if target_open_time == REQUIRED_OWNER_INPUT:
+        required_owner_inputs.append("target_open_time")
+    if freeze_deadline == REQUIRED_OWNER_INPUT:
+        required_owner_inputs.append("freeze_deadline")
+    if knowledge_cutoff == REQUIRED_OWNER_INPUT:
+        required_owner_inputs.append("knowledge_cutoff")
+    if episode_ref == REQUIRED_OWNER_INPUT:
+        required_owner_inputs.append("episode_ref")
+    # ACTION-only Owner judgment (never filled here).
+    required_owner_inputs.extend(
+        [
+            "ACTION.panel",
+            "ACTION.selected_number",
+            "ACTION.stake",
+            "ACTION.baseline_ref",
+            "ACTION.risk_policy_ref",
+        ]
+    )
+
+    return {
+        "ok": True,
+        "status": DRAFT_STATUS,
+        "draft_marker": DRAFT_STATUS,
+        "draft_source": DRAFT_SOURCE,
+        "tool_generated": True,
+        "owner_adopted": False,
+        "owner_channel_authority": OWNER_CHANNEL_AUTHORITY_UNPROVEN,
+        "owner_disposition_authentic": False,
+        "physical_owner_write_isolation_verified": False,
+        "candidate_only": True,
+        "completion_claim_allowed": False,
+        "science_restored": False,
+        "parent_complete": False,
+        "freeze_written": False,
+        "settlement_written": False,
+        "auto_freeze": False,
+        "auto_settle": False,
+        "auto_next_period": False,
+        "next_task_created": False,
+        "daemon": False,
+        "account_identity_selected": False,
+        "science_disposition_selected": False,
+        "selected_number_selected": False,
+        "stake_selected": False,
+        "manifest_recommendation_projected": False,
+        "required_owner_inputs": required_owner_inputs,
+        "mechanical_sources": {
+            "pool_root": str(pool_root.expanduser().resolve()),
+            "result_sha256": pool_entry["result_sha256"],
+            "pool_entry_content_hash": pool_entry["content_hash"],
+            "pool_action_support": pool_entry.get("action_support", "NOT_PROJECTED"),
+            "authority": authority_meta,
+            "portfolio": portfolio_meta,
+        },
+        "payload_draft": payload_draft,
+        "branch_templates": {
+            # Both branches offered; tool never chooses. Owner copies one into payload.
+            ACCOUNT_ACTION: {
+                "account_identity": ACCOUNT_ACTION,
+                "executable_account_decision": action_branch,
+                "no_action_period_binding": None,
+            },
+            ACCOUNT_NO_ACTION: {
+                "account_identity": ACCOUNT_NO_ACTION,
+                "executable_account_decision": None,
+                "no_action_period_binding": no_action_branch,
+            },
+        },
+        "owner_fill_instructions": (
+            "Codex is the only Owner. Explicitly set disposition_source="
+            f"{CODEX_OWNER_CHANNEL_SOURCE!r}, owner_role='codex', "
+            "worker_controlled=false, science_disposition, account_identity, "
+            "rationale_ref, frozen_at, odds_version_ref, and exactly one branch "
+            "template. Never submit this draft envelope to write-owner-disposition; "
+            "submit only a completed payload_draft after Owner judgment. "
+            f"draft_source={DRAFT_SOURCE}; owner_adopted=false; "
+            "worker_controlled is not forged by this tool."
+        ),
+        "protocol_constants_for_owner": {
+            "disposition_source": CODEX_OWNER_CHANNEL_SOURCE,
+            "owner_role": "codex",
+            "worker_controlled": False,
+            "schema_version": DISPOSITION_SCHEMA_VERSION,
+            "disposition_marker": DISPOSITION_MARKER,
+        },
+    }
+
+
 def write_owner_disposition_artifact(
     *,
     owner_state_root: Path,
@@ -1170,7 +1452,10 @@ __all__ = [
     "CODEX_OWNER_CHANNEL_SOURCE",
     "DISPOSITION_MARKER",
     "DISPOSITION_SCHEMA_VERSION",
+    "DRAFT_SOURCE",
+    "DRAFT_STATUS",
     "OWNER_CHANNEL_AUTHORITY_UNPROVEN",
+    "REQUIRED_OWNER_INPUT",
     "SCIENCE_ABSORB_NO_ACTION",
     "SCIENCE_ADOPT",
     "SCIENCE_DEFER",
@@ -1181,6 +1466,7 @@ __all__ = [
     "assert_path_under_owner_root",
     "disposition_cas_path",
     "disposition_information_set_hash",
+    "draft_owner_disposition",
     "encode_disposition_bytes",
     "load_and_verify_disposition",
     "load_verified_pool_entry_for_disposition",

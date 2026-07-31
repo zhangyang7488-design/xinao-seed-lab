@@ -1,8 +1,8 @@
 """Owner one-shot prospective CLI surfaces.
 
 Packaged via ``xinao prospective …`` (project.scripts):
-capture / reveal / write-owner-disposition / freeze-from-disposition /
-settle-from-reveal / settle-all-from-reveal / canary.
+capture / reveal / draft-owner-disposition / write-owner-disposition /
+freeze-from-disposition / settle-from-reveal / settle-all-from-reveal / canary.
 
 ``settle-from-reveal`` = single-seat shadow portfolio head only.
 ``settle-all-from-reveal`` = multipolicy FrozenDecisionSet (every ticket once).
@@ -14,6 +14,7 @@ Does not authenticate Codex.
 from __future__ import annotations
 
 import argparse
+import json
 from pathlib import Path
 from typing import Any
 
@@ -21,6 +22,7 @@ from xinao.cli_json import print_cli_json
 from xinao.science.freeze_adapter import FreezeAdapterError, apply_freeze_from_disposition
 from xinao.science.owner_disposition import (
     OwnerDispositionError,
+    draft_owner_disposition,
     load_and_verify_disposition,
     parse_disposition_json_strict,
     write_owner_disposition_artifact,
@@ -73,9 +75,9 @@ def add_prospective_parsers(groups: argparse._SubParsersAction[Any]) -> None:
     prospective = groups.add_parser(
         "prospective",
         help=(
-            "Owner one-shot macaujc2 capture/reveal/write-owner-disposition/"
-            "freeze-from-disposition/settle-from-reveal/settle-all-from-reveal "
-            "(not a daemon; does not authenticate Codex)"
+            "Owner one-shot macaujc2 capture/reveal/draft-owner-disposition/"
+            "write-owner-disposition/freeze-from-disposition/settle-from-reveal/"
+            "settle-all-from-reveal (not a daemon; does not authenticate Codex)"
         ),
     )
     commands = prospective.add_subparsers(dest="command", required=True)
@@ -103,6 +105,54 @@ def add_prospective_parsers(groups: argparse._SubParsersAction[Any]) -> None:
         "--dry-run",
         action="store_true",
         help="Validate args only; do not fetch or write",
+    )
+
+    draft_disp = commands.add_parser(
+        "draft-owner-disposition",
+        help=(
+            "Assemble a non-authoritative DRAFT_NOT_OWNER_ADOPTED disposition payload "
+            "from sealed pool entry + optional authority packet + optional portfolio head. "
+            "Fills mechanical hashes/bindings/times only; never chooses ACTION/NO_ACTION, "
+            "selected_number, stake, or science_disposition. Does not write owner CAS, "
+            "freeze, portfolio, authority, or pool. Does not authenticate Codex."
+        ),
+    )
+    draft_disp.add_argument(
+        "--pool-root",
+        type=Path,
+        required=True,
+        help="Candidate pool root holding the sealed entry to bind",
+    )
+    draft_disp.add_argument(
+        "--result-sha256",
+        required=True,
+        help="Sealed pool entry result_sha256 identity pin",
+    )
+    draft_disp.add_argument(
+        "--authority-root",
+        type=Path,
+        default=None,
+        help="Optional Owner authority CAS root (must pair with --packet-content-hash)",
+    )
+    draft_disp.add_argument(
+        "--packet-content-hash",
+        default=None,
+        help="Optional sealed packet content hash under authority-root",
+    )
+    draft_disp.add_argument(
+        "--portfolio-root",
+        type=Path,
+        default=None,
+        help="Optional live portfolio/shadow root for closed portfolio_binding",
+    )
+    draft_disp.add_argument(
+        "--output",
+        type=Path,
+        default=None,
+        help=(
+            "Optional caller-chosen candidate path for the draft JSON. "
+            "Non-authoritative only; never owner CAS. Default: stdout only."
+        ),
     )
 
     write_disp = commands.add_parser(
@@ -379,6 +429,9 @@ def dispatch_prospective(args: argparse.Namespace) -> int:
             )
             return 0 if result.get("ok") else 1
 
+        if args.command == "draft-owner-disposition":
+            return _dispatch_draft_owner_disposition(args)
+
         if args.command == "write-owner-disposition":
             return _dispatch_write_owner_disposition(args)
 
@@ -520,6 +573,38 @@ def dispatch_prospective(args: argparse.Namespace) -> int:
         return _fail(exc.reason_code, exc.detail)
     except (ValueError, TypeError, KeyError, OSError) as exc:
         return _fail("PROSPECTIVE_CLI_ERROR", str(exc))
+
+
+def _dispatch_draft_owner_disposition(args: argparse.Namespace) -> int:
+    """Assemble mechanical draft only; never write owner CAS or choose judgment."""
+
+    draft = draft_owner_disposition(
+        pool_root=args.pool_root,
+        result_sha256=args.result_sha256,
+        authority_root=args.authority_root,
+        packet_content_hash=args.packet_content_hash,
+        portfolio_root=args.portfolio_root,
+    )
+    output_path: str | None = None
+    if args.output is not None:
+        out = Path(args.output).expanduser()
+        # Candidate path only — never under a hard-coded owner CAS layout.
+        out.parent.mkdir(parents=True, exist_ok=True)
+        raw = (json.dumps(draft, ensure_ascii=False, indent=2, sort_keys=True) + "\n").encode(
+            "utf-8"
+        )
+        out.write_bytes(raw)
+        output_path = str(out.resolve())
+    _print(
+        {
+            "command": "prospective draft-owner-disposition",
+            **draft,
+            "output_path": output_path,
+            "output_authoritative": False,
+            "output_is_owner_cas": False,
+        }
+    )
+    return 0
 
 
 def _dispatch_write_owner_disposition(args: argparse.Namespace) -> int:
