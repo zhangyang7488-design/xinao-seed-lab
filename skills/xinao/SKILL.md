@@ -51,17 +51,28 @@ Same-seat portfolio continuity verbs (multi-period consumer surface; not scienti
 
 - `scripts/xinao.py shadow portfolio-init --root <portfolio> --seat-id <id> --portfolio-ref <ref>`
 - `scripts/xinao.py shadow portfolio-inspect --root <portfolio>`
-- `scripts/xinao.py shadow portfolio-freeze --root <portfolio> --request <freeze.json>`
+- `scripts/xinao.py shadow portfolio-freeze --root <portfolio> --request <freeze.json>` — **non-production** request-path only; cannot supply `owner_authority` and is not the production Owner freeze path
 - `scripts/xinao.py shadow portfolio-settle --root <portfolio> --outcome <outcome.json>`
 - `scripts/xinao.py shadow portfolio-feedback --root <portfolio> --kind <FeedbackKind> [--feedback-ref <ref>] [--reason-code <code>] [--notes <text>]`
 - `scripts/xinao.py shadow portfolio-replay --root <portfolio> --period-index <n>`
 
-These verbs run an ephemeral leg-A container from the active researcher image by exact image ID
+**Production Owner one-shot (packaged discovery CLI, not a daemon):**
+
+- `xinao prospective capture --authority-root <Owner auth root> --contract <AuthorityContract> --expected-contract-sha256 <hex>`
+- `xinao prospective reveal --authority-root <Owner auth root> --packet-content-hash <hex>`
+- `xinao prospective freeze-from-disposition --pool-root <pool> --owner-state-root <owner> --disposition <path> --portfolio-root <portfolio> --authority-root <auth> --owner-freeze-time <aware ISO>`
+- `xinao prospective canary --contract <…> --expected-contract-sha256 <hex> --i-accept-network-canary` (opt-in live shape probe only; no campaign state)
+
+Capture/reveal are one-shot; freeze is an explicit Codex Owner action via sealed disposition.
+These do **not** authenticate Codex (physical root isolation remains outside the library). Do not
+use shadow `portfolio-freeze` as production freeze advertising.
+
+These shadow verbs run an ephemeral leg-A container from the active researcher image by exact image ID
 with read-only rootfs, dropped capabilities, no-new-privileges, and network none; only the episode
 or portfolio state mount is writable. Host Skill passes consumer arguments honestly and does not
-reinterpret account P&L as scientific grade. Do not substitute the repository CLI, host
-PYTHONPATH, Temporal, a daemon, or ordinary worker routes. Shadow results stay candidate-only and
-never claim parent completion. Portfolio continuity does not invent long-research availability.
+reinterpret account P&L as scientific grade. Do not substitute Temporal, a daemon, or ordinary
+worker routes for Owner freeze. Shadow results stay candidate-only and never claim parent completion.
+Portfolio continuity does not invent long-research availability.
 
 `source_status=available` means only that the implementation exists. Treat the runtime as callable
 only when `inspect` returns `RUNTIME_READY`; pointer presence, an old successful receipt, an image

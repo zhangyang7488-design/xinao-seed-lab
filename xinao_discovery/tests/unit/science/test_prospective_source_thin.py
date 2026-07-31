@@ -14,16 +14,17 @@ import pytest
 from xinao.science.prospective_source_thin import (
     CANONICAL_SITE,
     HISTORY_YEAR_TEMPLATE,
-    PINNED_LATEST_URL,
     POINT_TEMPLATE,
     ProspectiveSourceError,
     capture_prospective_reveal,
     capture_prospective_target_authority,
     expect_to_local_date,
+    extract_product_schedule,
     is_live_macaujc2_target,
     load_packet,
     next_expect_after,
     parse_json_strict,
+    reject_unsupported_latest_authority,
     validate_expect_matches_open_date,
     validate_source_authority_binding,
 )
@@ -54,10 +55,28 @@ def _contract_bytes() -> bytes:
 
 
 def _app_js() -> bytes:
+    """Prior valid schedule form (array liveTime)."""
+
     return (
         "/* product */ 新澳门六合彩 "
         "closeTime:'21:30:00' liveTime:['21:32:00','21:35:00'] "
+        "historyUrl:'/history/macaujc2/y/' "
         "expect+1 nextExpect\n"
+    ).encode()
+
+
+def _app_js_live_shape() -> bytes:
+    """Current live app.js product block shape (no sensitive values).
+
+    Matches production form:
+    title:\"新澳門六合彩\", closeTime:x(\"HH:MM:SS\"),
+    liveTime:x(\"HH:MM:SS\")+\"-\"+x(\"HH:MM:SS\"), historyUrl:\"/history/macaujc2/y/\"
+    """
+
+    return (
+        'title:"新澳門六合彩",closeTime:x("21:25:00"),'
+        'liveTime:x("21:30:00")+"-"+x("21:38:00"),'
+        'historyUrl:"/history/macaujc2/y/"\n'
     ).encode()
 
 
@@ -126,7 +145,6 @@ def _base_map(
     *,
     completed: str = "2026211",
     host_now: datetime | None = None,
-    include_latest: bool = False,
     point_body: bytes | None = None,
     history_body: bytes | None = None,
     site_html: bytes | None = None,
@@ -144,9 +162,6 @@ def _base_map(
         history_url: (200, history_body or _history_body([completed]), hd),
         point_url: (200, point_body if point_body is not None else _point_null(), hd),
     }
-    if include_latest:
-        latest_body = json.dumps(_history_row(completed)).encode("utf-8")
-        mapping[PINNED_LATEST_URL] = (200, latest_body, hd)
     if drift_history_url is not None:
         mapping[drift_history_url] = mapping.pop(history_url)
     return mapping, now, target
@@ -227,21 +242,59 @@ def test_source_host_path_drift_rejected(tmp_path: Path) -> None:
         )
 
 
-def test_frontier_disagreement_with_pinned_latest(tmp_path: Path) -> None:
+def test_live_shaped_app_js_schedule_and_capture(tmp_path: Path) -> None:
+    """Regression: live x(\"HH:MM:SS\") + concat liveTime form must parse and capture."""
+
+    schedule = extract_product_schedule(
+        _app_js_live_shape(),
+        app_js_url="https://macaujc.com/js/app.livefixture.js",
+    )
+    assert schedule["close_time_local"] == "21:25:00"
+    assert schedule["live_window_start_local"] == "21:30:00"
+    assert schedule["live_window_end_local"] == "21:38:00"
+    assert schedule["schedule_form"] == "x_concat"
+    assert "/history/macaujc2/" in schedule["history_url"]
+
+    # Prior array form still accepted.
+    prior = extract_product_schedule(
+        _app_js(),
+        app_js_url="https://macaujc.com/js/app.abc123.js",
+    )
+    assert prior["close_time_local"] == "21:30:00"
+    assert prior["schedule_form"] == "array_literal"
+
     contract = tmp_path / "contract.txt"
     contract.write_bytes(_contract_bytes())
-    mapping, now, _ = _base_map(completed="2026211", include_latest=True)
-    # Latest claims a different frontier.
-    bad_latest = json.dumps(_history_row("2026210")).encode("utf-8")
-    mapping[PINNED_LATEST_URL] = (200, bad_latest, {"Date": _http_date(now)})
-    with pytest.raises(ProspectiveSourceError, match="FRONTIER_DISAGREEMENT"):
-        capture_prospective_target_authority(
-            authority_root=tmp_path / "auth",
-            contract_path=contract,
-            expected_contract_sha256=_sha(_contract_bytes()),
-            fetcher=FakeFetcher(mapping),
-            clock=lambda: now,
-            use_pinned_latest=True,
+    mapping, now, target = _base_map(completed="2026211", app_js=_app_js_live_shape())
+    result = capture_prospective_target_authority(
+        authority_root=tmp_path / "auth",
+        contract_path=contract,
+        expected_contract_sha256=_sha(_contract_bytes()),
+        fetcher=FakeFetcher(mapping),
+        clock=lambda: now,
+    )
+    assert result["ok"] is True
+    assert result["packet"]["target_expect"] == target
+    assert result["packet"]["schedule"]["close_time_local"] == "21:25:00"
+    # Deadline from sealed JS closeTime on target day (not hardcoded).
+    assert "13:25:00" in result["packet"]["freeze_deadline"] or result["packet"][
+        "freeze_deadline"
+    ].endswith("T13:25:00Z")
+
+
+def test_wrong_product_history_and_unsupported_latest_rejected() -> None:
+    foreign = (
+        'title:"香港六合彩",closeTime:x("21:25:00"),'
+        'liveTime:x("21:30:00")+"-"+x("21:38:00"),'
+        'historyUrl:"/history/marksix/y/"\n'
+        'title:"新澳門六合彩" without times\n'
+    ).encode()
+    with pytest.raises(ProspectiveSourceError, match="PRODUCT_SCHEDULE_NOT_FOUND"):
+        extract_product_schedule(foreign, app_js_url="https://macaujc.com/js/app.x.js")
+
+    with pytest.raises(ProspectiveSourceError, match="LATEST_NOT_AUTHORIZED"):
+        reject_unsupported_latest_authority(
+            "https://history.macaumarksix.com/history/macaujc2/latest"
         )
 
 

@@ -1445,10 +1445,29 @@ def build_parser() -> argparse.ArgumentParser:
     portfolio_inspect_cmd.add_argument("--root", type=Path, required=True)
 
     portfolio_freeze_cmd = commands.add_parser(
-        "portfolio-freeze", help="Freeze the only legal next prospective period"
+        "portfolio-freeze",
+        help=(
+            "NON-PRODUCTION request-path portfolio freeze. Cannot supply owner_authority "
+            "envelope; always rejects with PRODUCTION_FREEZE_REQUIRES_OWNER_AUTHORITY. "
+            "Production Owner freeze: xinao prospective freeze-from-disposition "
+            "(apply_freeze_from_disposition). Fixture construction: tests-only helper."
+        ),
     )
     portfolio_freeze_cmd.add_argument("--root", type=Path, required=True)
-    portfolio_freeze_cmd.add_argument("--request", type=Path, required=True)
+    portfolio_freeze_cmd.add_argument(
+        "--request",
+        type=Path,
+        required=True,
+        help="Freeze request path only (insufficient for production without owner_authority)",
+    )
+    portfolio_freeze_cmd.add_argument(
+        "--allow-nonproduction-fixture-path",
+        action="store_true",
+        help=(
+            "Acknowledge this CLI cannot perform production Owner freeze; "
+            "still fails closed without owner_authority (no fixture bypass)"
+        ),
+    )
 
     portfolio_settle_cmd = commands.add_parser(
         "portfolio-settle", help="Settle the current period with an explicit outcome"
@@ -1515,6 +1534,17 @@ def dispatch(args: argparse.Namespace) -> dict[str, Any]:
     if args.command == "portfolio-inspect":
         return inspect_portfolio(root=args.root)
     if args.command == "portfolio-freeze":
+        # This CLI surface cannot pass owner_authority. Production Owner freeze must
+        # use xinao prospective freeze-from-disposition → apply_freeze_from_disposition.
+        if not getattr(args, "allow_nonproduction_fixture_path", False):
+            raise StoreError(
+                "PORTFOLIO_FREEZE_CLI_NOT_PRODUCTION: "
+                "shadow portfolio-freeze cannot supply owner_authority. "
+                "Production path: xinao prospective freeze-from-disposition "
+                "(authority-root + owner-state-root + disposition + portfolio-root). "
+                "Pass --allow-nonproduction-fixture-path only to exercise the "
+                "non-production request-path probe (still requires owner envelope; no bypass)."
+            )
         return freeze_portfolio_period(root=args.root, request_path=args.request)
     if args.command == "portfolio-settle":
         return settle_portfolio_period(

@@ -25,25 +25,36 @@ from dataclasses import dataclass
 from datetime import UTC, date, datetime, time, timedelta
 from email.utils import parsedate_to_datetime
 from pathlib import Path
-from typing import Any, Final, Literal
+from typing import Any, Final, Literal, get_args
 from urllib.parse import urlparse
 from zoneinfo import ZoneInfo
 
 from xinao.canonical import canonical_sha256
+from xinao.contracts.objects import AuthorityContract
 from xinao.settlement.shadow import OutcomeObservation, admit_outcome
 
-# --- pinned contract constants (match AuthorityContract / domain fixture) ---
-SOURCE_ID: Final = "macaujc2"
-CONTRACT_REF: Final = "macaujc-source-authority-contract.v1"
-PRODUCT_IDENTITY_CN: Final = "新澳门六合彩"
-PRODUCT_IDENTITY_TW: Final = "新澳門六合彩"
-CANONICAL_SITE: Final = "https://macaujc.com/"
-CANONICAL_HOST: Final = "macaujc.com"
-HISTORY_HOST: Final = "history.macaumarksix.com"
-HISTORY_YEAR_TEMPLATE: Final = "https://history.macaumarksix.com/history/macaujc2/y/{year}"
-POINT_TEMPLATE: Final = "https://history.macaumarksix.com/history/macaujc2/expect/{expect}"
-# Optional same-host latest path; when used, must strictly agree with history frontier.
-PINNED_LATEST_URL: Final = "https://history.macaumarksix.com/history/macaujc2/latest"
+
+def _authority_literal(field: str) -> str:
+    """Compose pin values from AuthorityContract field Literals (single contract source)."""
+
+    args = get_args(AuthorityContract.model_fields[field].annotation)
+    if not args or not isinstance(args[0], str):
+        raise RuntimeError(f"AuthorityContract.{field} is not a string Literal pin")
+    return args[0]
+
+
+# --- pins composed from AuthorityContract (not redeclared free-form) ---
+SOURCE_ID: Final = _authority_literal("source_id")
+CONTRACT_REF: Final = _authority_literal("contract_ref")
+PRODUCT_IDENTITY_CN: Final = _authority_literal("product_identity")
+PRODUCT_IDENTITY_TW: Final = "新澳門六合彩"  # live site traditional form of product_identity
+CANONICAL_SITE: Final = _authority_literal("canonical_site")
+CANONICAL_HOST: Final = urlparse(CANONICAL_SITE).hostname or "macaujc.com"
+HISTORY_YEAR_TEMPLATE: Final = _authority_literal("history_endpoint_template")
+POINT_TEMPLATE: Final = _authority_literal("point_endpoint_template")
+HISTORY_HOST: Final = urlparse(HISTORY_YEAR_TEMPLATE).hostname or "history.macaumarksix.com"
+# /latest is NOT in AuthorityContract and is not an authorized parent capture path.
+UNSUPPORTED_LATEST_PATH: Final = "/history/macaujc2/latest"
 
 SCHEMA_PACKET: Final = "xinao.prospective_target_authority_packet.v1"
 PACKET_MARKER: Final = "XINAO_PROSPECTIVE_TARGET_AUTHORITY_V1"
@@ -52,6 +63,7 @@ CLOCK_TRUST_GRADE: Final = "OPERATIONAL_HOST_AND_HTTP_DATE"
 MAX_HOST_HTTP_SKEW: Final = timedelta(minutes=5)
 DEFAULT_FETCH_TIMEOUT_S: Final = 20
 ASIA_SHANGHAI: Final = ZoneInfo("Asia/Shanghai")
+MACAUJC2_HISTORY_MARKER: Final = "/history/macaujc2/"
 
 _HEX_SHA256 = re.compile(r"^[0-9a-f]{64}$")
 _EXPECT_RE = re.compile(r"^\d{7}$")
@@ -60,16 +72,27 @@ _APP_JS_REL_RE = re.compile(
     r"""(?:src|href)\s*=\s*["'](/js/app\.[^"'/]+\.js)["']""",
     re.IGNORECASE,
 )
-_PRODUCT_BLOCK_RE = re.compile(
-    r"(?:新澳門六合彩|新澳门六合彩)"
-    r".{0,2400}?"
-    r"closeTime\s*[:=]\s*['\"](\d{2}:\d{2}:\d{2})['\"]"
-    r".{0,800}?"
-    r"liveTime\s*[:=]\s*(?:\[)?\s*['\"](\d{2}:\d{2}:\d{2})['\"]"
-    r".{0,120}?"
-    r"['\"](\d{2}:\d{2}:\d{2})['\"]",
-    re.DOTALL,
+# closeTime may be bare quoted or live x("HH:MM:SS") wrapper.
+_CLOSE_TIME_RE = re.compile(
+    r"""closeTime\s*[:=]\s*(?:x\s*\(\s*)?['"](\d{2}:\d{2}:\d{2})['"]\s*\)?""",
+    re.IGNORECASE,
 )
+# Prior valid form: liveTime:['HH:MM:SS','HH:MM:SS']
+_LIVE_ARRAY_RE = re.compile(
+    r"""liveTime\s*[:=]\s*\[\s*['"](\d{2}:\d{2}:\d{2})['"]\s*,\s*['"](\d{2}:\d{2}:\d{2})['"]\s*\]""",
+    re.IGNORECASE,
+)
+# Live app form: liveTime:x("HH:MM:SS")+"-"+x("HH:MM:SS")
+_LIVE_CONCAT_RE = re.compile(
+    r"""liveTime\s*[:=]\s*(?:x\s*\(\s*)?['"](\d{2}:\d{2}:\d{2})['"]\s*\)?"""
+    r"""\s*\+\s*['"]-['"]\s*\+\s*(?:x\s*\(\s*)?['"](\d{2}:\d{2}:\d{2})['"]\s*\)?""",
+    re.IGNORECASE,
+)
+_HISTORY_URL_RE = re.compile(
+    r"""historyUrl\s*[:=]\s*['"]([^'"]+)['"]""",
+    re.IGNORECASE,
+)
+_PRODUCT_IDENTITY_RE = re.compile(r"新澳門六合彩|新澳门六合彩")
 _FORBIDDEN_OUTCOME_KEYS: Final = frozenset(
     {
         "outcome",
@@ -193,36 +216,42 @@ def resolve_authority_root(root: Path) -> Path:
     return root.expanduser().resolve()
 
 
+def _cas_path(root: Path, kind: str, digest: str, ext: str) -> Path:
+    base = resolve_authority_root(root) / "objects" / kind / "sha256" / digest[:2]
+    return base / f"{digest}{ext}"
+
+
 def raw_object_path(root: Path, digest: str) -> Path:
-    return (
-        resolve_authority_root(root) / "objects" / "raw" / "sha256" / digest[:2] / f"{digest}.bin"
-    )
+    return _cas_path(root, "raw", digest, ".bin")
 
 
 def packet_object_path(root: Path, digest: str) -> Path:
-    return (
-        resolve_authority_root(root)
-        / "objects"
-        / "packet"
-        / "sha256"
-        / digest[:2]
-        / f"{digest}.json"
-    )
+    return _cas_path(root, "packet", digest, ".json")
 
 
 def reveal_object_path(root: Path, digest: str) -> Path:
-    return (
-        resolve_authority_root(root)
-        / "objects"
-        / "reveal"
-        / "sha256"
-        / digest[:2]
-        / f"{digest}.json"
-    )
+    return _cas_path(root, "reveal", digest, ".json")
 
 
 def target_index_path(root: Path, expect: str) -> Path:
     return resolve_authority_root(root) / "index" / "target" / f"{expect}.json"
+
+
+def _honest_library_flags() -> dict[str, Any]:
+    """Shared fail-closed honesty surface — library never authenticates Codex."""
+
+    return {
+        "completion_claim_allowed": False,
+        "real_money_authorized": False,
+        "parent_complete": False,
+        "auto_freeze": False,
+        "auto_settle": False,
+        "daemon": False,
+        "temporal": False,
+        "trusted_time_proof": False,
+        "owner_channel_authority": "UNPROVEN_BY_LIBRARY",
+        "physical_owner_write_isolation_verified": False,
+    }
 
 
 def _write_exclusive_bytes(path: Path, payload: bytes) -> bool:
@@ -426,31 +455,91 @@ def discover_same_origin_app_js(site_html: bytes, *, canonical_site: str = CANON
 
 
 def extract_product_schedule(app_js: bytes, *, app_js_url: str) -> dict[str, str]:
+    """Extract macaujc2 product close/live times from same-origin app JS.
+
+    Supports:
+    - live form: ``closeTime:x("HH:MM:SS"), liveTime:x("HH:MM:SS")+"-"+x("HH:MM:SS")``
+    - prior form: ``closeTime:'HH:MM:SS' liveTime:['HH:MM:SS','HH:MM:SS']``
+
+    Times always come from sealed JS (never hardcoded calendar day). Binds to
+    macaujc2 product/history identity; rejects ambiguous or wrong-product blocks.
+    """
+
     text = app_js.decode("utf-8", errors="ignore")
-    if PRODUCT_IDENTITY_TW not in text and PRODUCT_IDENTITY_CN not in text:
-        raise ProspectiveSourceError("PRODUCT_BLOCK_MISSING", "product identity absent")
-    match = _PRODUCT_BLOCK_RE.search(text)
-    if match is None:
-        raise ProspectiveSourceError(
-            "PRODUCT_SCHEDULE_NOT_FOUND",
-            "closeTime/liveTime missing for product block",
-        )
-    close_time, live_start, live_end = match.group(1), match.group(2), match.group(3)
-    if live_start >= live_end:
-        raise ProspectiveSourceError("LIVE_WINDOW_INVALID", f"{live_start}..{live_end}")
-    if close_time >= live_start:
-        raise ProspectiveSourceError("CLOSE_AFTER_LIVE_START", f"close={close_time}")
     _assert_pinned_url(
         app_js_url, allowed_hosts={CANONICAL_HOST, f"www.{CANONICAL_HOST}"}, role="app_js"
     )
-    product = PRODUCT_IDENTITY_TW if PRODUCT_IDENTITY_TW in text else PRODUCT_IDENTITY_CN
+    identity_hits = list(_PRODUCT_IDENTITY_RE.finditer(text))
+    if not identity_hits:
+        raise ProspectiveSourceError("PRODUCT_BLOCK_MISSING", "product identity absent")
+
+    candidates: list[dict[str, str]] = []
+    for hit in identity_hits:
+        window = text[hit.start() : hit.start() + 4000]
+        product = hit.group(0)
+        history_m = _HISTORY_URL_RE.search(window)
+        if history_m is not None:
+            history_url = history_m.group(1)
+            if MACAUJC2_HISTORY_MARKER not in history_url and SOURCE_ID not in history_url:
+                # Wrong product block (e.g. foreign lottery with different historyUrl).
+                continue
+        close_m = _CLOSE_TIME_RE.search(window)
+        if close_m is None:
+            continue
+        live_arr = _LIVE_ARRAY_RE.search(window)
+        live_concat = _LIVE_CONCAT_RE.search(window)
+        if live_arr is not None:
+            live_start, live_end = live_arr.group(1), live_arr.group(2)
+            schedule_form = "array_literal"
+        elif live_concat is not None:
+            live_start, live_end = live_concat.group(1), live_concat.group(2)
+            schedule_form = "x_concat"
+        else:
+            continue
+        close_time = close_m.group(1)
+        if live_start >= live_end:
+            raise ProspectiveSourceError("LIVE_WINDOW_INVALID", f"{live_start}..{live_end}")
+        if close_time >= live_start:
+            raise ProspectiveSourceError("CLOSE_AFTER_LIVE_START", f"close={close_time}")
+        candidates.append(
+            {
+                "product_identity": product,
+                "close_time_local": close_time,
+                "live_window_start_local": live_start,
+                "live_window_end_local": live_end,
+                "schedule_form": schedule_form,
+                "history_url": history_m.group(1) if history_m is not None else "",
+            }
+        )
+
+    if not candidates:
+        raise ProspectiveSourceError(
+            "PRODUCT_SCHEDULE_NOT_FOUND",
+            "closeTime/liveTime missing for macaujc2 product block",
+        )
+    # Prefer blocks explicitly bound to macaujc2 historyUrl when present.
+    bound = [c for c in candidates if MACAUJC2_HISTORY_MARKER in c.get("history_url", "")]
+    pool = bound if bound else candidates
+    unique_schedules = {
+        (c["close_time_local"], c["live_window_start_local"], c["live_window_end_local"])
+        for c in pool
+    }
+    if len(unique_schedules) != 1:
+        raise ProspectiveSourceError(
+            "PRODUCT_SCHEDULE_AMBIGUOUS",
+            f"multiple macaujc2 schedule candidates={len(pool)}",
+        )
+    chosen = pool[0]
     return {
-        "product_identity": product,
-        "close_time_local": close_time,
-        "live_window_start_local": live_start,
-        "live_window_end_local": live_end,
+        "product_identity": chosen["product_identity"],
+        "close_time_local": chosen["close_time_local"],
+        "live_window_start_local": chosen["live_window_start_local"],
+        "live_window_end_local": chosen["live_window_end_local"],
+        "schedule_form": chosen["schedule_form"],
+        "history_url": chosen["history_url"],
         "app_js_url": app_js_url,
         "schedule_source_sha256": raw_sha256(app_js),
+        "source_id": SOURCE_ID,
     }
 
 
@@ -505,33 +594,15 @@ def parse_history_max_expect(raw: bytes) -> tuple[str, datetime, set[str]]:
     return max_expect, max_open, expects
 
 
-def parse_latest_payload(raw: bytes) -> ResultRow:
-    payload = parse_json_strict(raw, reason="LATEST_JSON_INVALID")
-    row: Any
-    if isinstance(payload, dict) and "expect" in payload and "openCode" in payload:
-        row = payload
-    elif isinstance(payload, dict) and payload.get("result") is True and payload.get("code") == 200:
-        data = payload.get("data")
-        if isinstance(data, list) and data:
-            row = data[0]
-        elif isinstance(data, dict):
-            row = data
-        else:
-            raise ProspectiveSourceError("LATEST_DATA_EMPTY", "no result-bearing data")
-    else:
-        raise ProspectiveSourceError("LATEST_ENVELOPE_INVALID", "unrecognized latest shape")
-    if not isinstance(row, dict):
-        raise ProspectiveSourceError("LATEST_ROW_INVALID", type(row).__name__)
-    expect = str(row.get("expect", ""))
-    if _EXPECT_RE.fullmatch(expect) is None:
-        raise ProspectiveSourceError("LATEST_EXPECT_INVALID", expect)
-    if row.get("openCode") in (None, "", "null"):
-        raise ProspectiveSourceError("LATEST_NOT_RESULT_BEARING", expect)
-    open_time = _parse_open_time(row.get("openTime"))
-    validate_expect_matches_open_date(expect, open_time)
-    return ResultRow(
-        expect=expect, open_time=open_time, open_code=_parse_open_code(row.get("openCode"))
-    )
+def reject_unsupported_latest_authority(url: str) -> None:
+    """Parent capture must never treat /latest as authority (not in AuthorityContract)."""
+
+    path = urlparse(url).path or ""
+    if path.rstrip("/") == UNSUPPORTED_LATEST_PATH.rstrip("/") or path.endswith("/macaujc2/latest"):
+        raise ProspectiveSourceError(
+            "LATEST_NOT_AUTHORIZED",
+            "history+point+same-origin schedule only; /latest is not AuthorityContract",
+        )
 
 
 def parse_point_payload(raw: bytes) -> dict[str, Any]:
@@ -619,11 +690,6 @@ def _capture_ref(*, role: str, response: FetchResponse, cas: Mapping[str, Any]) 
         "sha256": str(cas["sha256"]),
         "content_addressed_path": str(cas["path"]),
     }
-
-
-def encode_packet_bytes(packet: Mapping[str, Any]) -> bytes:
-    body = {k: v for k, v in packet.items() if k != "content_hash"}
-    return (json.dumps(body, ensure_ascii=False, indent=2, sort_keys=True) + "\n").encode("utf-8")
 
 
 def packet_content_hash(packet: Mapping[str, Any]) -> str:
@@ -872,11 +938,11 @@ def capture_prospective_target_authority(
     expected_contract_sha256: str,
     fetcher: Fetcher | None = None,
     clock: Clock | None = None,
-    use_pinned_latest: bool = False,
 ) -> dict[str, Any]:
     """Owner one-shot prospective capture. Seals packet exclusively under authority_root.
 
-    Validates contract bytes and pinned hosts/templates. Does not prove the caller is
+    Authority inputs: active AuthorityContract pins + history year + point-next +
+    same-origin schedule only. Does not use /latest. Does not prove the caller is
     Codex — physical isolation of authority_root is required outside this library.
     """
 
@@ -905,6 +971,7 @@ def capture_prospective_target_authority(
     _assert_exact_url(site_resp.url, CANONICAL_SITE, "site_html")
     site_cas = write_raw_bytes_cas(root, site_resp.body)
     app_js_url = discover_same_origin_app_js(site_resp.body, canonical_site=CANONICAL_SITE)
+    reject_unsupported_latest_authority(app_js_url)
 
     # 2) App JS → product schedule times only (not frontier authority).
     app_resp = fetch(app_js_url)
@@ -913,17 +980,19 @@ def capture_prospective_target_authority(
     app_cas = write_raw_bytes_cas(root, app_resp.body)
     schedule = extract_product_schedule(app_resp.body, app_js_url=app_js_url)
 
-    # 3) History frontier (result authority).
+    # 3) History frontier (result authority). No /latest path.
     year_guess = host_now.astimezone(ASIA_SHANGHAI).year
     history_url = HISTORY_YEAR_TEMPLATE.format(year=year_guess)
+    reject_unsupported_latest_authority(history_url)
     history_resp = fetch(history_url)
     _require_http_ok(history_resp, "history_year")
     _assert_exact_url(history_resp.url, history_url, "history_year")
     history_cas = write_raw_bytes_cas(root, history_resp.body)
     hist_max, hist_open, hist_expects = parse_history_max_expect(history_resp.body)
 
-    # Near year boundary, also consider previous year max if current year sparse.
-    if int(hist_max[4:]) <= 2 and year_guess > 2000:
+    # Near year boundary (low day-of-year), also consider previous year max.
+    _completed_year, completed_doy = parse_expect(hist_max)
+    if completed_doy <= 2 and year_guess > 2000:
         prev_url = HISTORY_YEAR_TEMPLATE.format(year=year_guess - 1)
         prev_resp = fetch(prev_url)
         if prev_resp.status == 200:
@@ -932,6 +1001,7 @@ def capture_prospective_target_authority(
                 if int(prev_max) > int(hist_max):
                     hist_max, hist_open = prev_max, prev_open
                     hist_expects |= prev_expects
+                    _completed_year, completed_doy = parse_expect(hist_max)
             except ProspectiveSourceError:
                 pass
 
@@ -952,27 +1022,12 @@ def capture_prospective_target_authority(
         _capture_ref(role="app_js", response=app_resp, cas=app_cas),
         _capture_ref(role="history_year", response=history_resp, cas=history_cas),
     ]
-
-    # Optional pinned latest must strictly agree with history frontier.
-    if use_pinned_latest:
-        latest_resp = fetch(PINNED_LATEST_URL)
-        _require_http_ok(latest_resp, "latest")
-        _assert_exact_url(latest_resp.url, PINNED_LATEST_URL, "latest")
-        latest_cas = write_raw_bytes_cas(root, latest_resp.body)
-        latest_row = parse_latest_payload(latest_resp.body)
-        if latest_row.expect != completed_expect:
-            raise ProspectiveSourceError(
-                "FRONTIER_DISAGREEMENT",
-                f"history={completed_expect} latest={latest_row.expect}",
-            )
-        raw_captures.append(_capture_ref(role="latest", response=latest_resp, cas=latest_cas))
-        relevant_responses = [site_resp, app_resp, history_resp, latest_resp]
-    else:
-        relevant_responses = [site_resp, app_resp, history_resp]
+    relevant_responses = [site_resp, app_resp, history_resp]
 
     target_expect = next_expect_after(completed_expect)
     target_ref = f"macaujc2/expect/{target_expect}"
     point_url = POINT_TEMPLATE.format(expect=target_expect)
+    reject_unsupported_latest_authority(point_url)
 
     # 4) Point-next must be null / unopened; must not appear in history.
     point_resp = fetch(point_url)
@@ -980,13 +1035,11 @@ def capture_prospective_target_authority(
     _assert_exact_url(point_resp.url, point_url, "point_next")
     point_cas = write_raw_bytes_cas(root, point_resp.body)
     point_payload = parse_point_payload(point_resp.body)
-    # Reject hidden result-bearing material anywhere in point payload when null expected.
     if not point_is_null(point_payload):
         raise ProspectiveSourceError(
             "TARGET_ALREADY_PUBLISHED",
             f"point {target_expect} is result-bearing",
         )
-    # Still reject smuggled openCode etc. on envelope even when data is null.
     reject_outcome_material(
         {k: v for k, v in point_payload.items() if k != "data"},
         path="$.point",
@@ -994,8 +1047,17 @@ def capture_prospective_target_authority(
     if target_expect in hist_expects:
         raise ProspectiveSourceError("TARGET_PRESENT_IN_HISTORY", target_expect)
 
-    # Schedule day from next expect day-of-year (not openTime+1 alone).
+    # Schedule day from next expect day-of-year (YYYYDDD via next_expect_after).
+    # Adjacency uses real calendar dates from DOY (year/leap-safe); never day-of-month.
+    completed_day = expect_to_local_date(completed_expect)
     target_day = expect_to_local_date(target_expect)
+    if target_day != completed_day + timedelta(days=1):
+        raise ProspectiveSourceError(
+            "MISSED_DRAW_SCHEDULE",
+            f"completed={completed_day} doy={completed_doy} target={target_day} "
+            f"(expect YYYYDDD adjacency via next_expect_after)",
+        )
+
     freeze_deadline = _parse_local_wall(schedule["close_time_local"], target_day)
     target_guard_open = _parse_local_wall(schedule["live_window_start_local"], target_day)
     if freeze_deadline >= target_guard_open:
@@ -1003,21 +1065,6 @@ def capture_prospective_target_authority(
             "SCHEDULE_TEMPORAL_INVALID",
             "closeTime must precede live window start",
         )
-    # Missed-draw / schedule drift: completed open date must match its own day-of-year
-    # (already checked) and target day must be exactly next day-of-year after completed.
-    completed_day = expect_to_local_date(completed_expect)
-    if target_day != completed_day + timedelta(days=1) and not (
-        completed_day.month == 12
-        and completed_day.day in (365, 366)
-        and target_day == date(completed_day.year + 1, 1, 1)
-    ):
-        # next_expect_after already encodes day-of-year+1; recheck calendar adjacency.
-        expected_next = expect_to_local_date(next_expect_after(completed_expect))
-        if target_day != expected_next:
-            raise ProspectiveSourceError(
-                "MISSED_DRAW_SCHEDULE",
-                f"completed={completed_day} target={target_day} expected={expected_next}",
-            )
 
     relevant_responses.append(point_resp)
     raw_captures.append(_capture_ref(role="point_next", response=point_resp, cas=point_cas))
@@ -1070,7 +1117,7 @@ def capture_prospective_target_authority(
             "history_max_expect": completed_expect,
             "point_next_data_null": True,
             "absent_from_history": True,
-            "frontier_source": "history_year" + ("+pinned_latest" if use_pinned_latest else ""),
+            "frontier_source": "history_year+point_next",
         },
         "clock": clock_ev,
         "raw_captures": raw_captures,
@@ -1090,16 +1137,7 @@ def capture_prospective_target_authority(
         "packet_path": sealed["path"],
         "source_authority_binding": build_source_authority_binding(sealed_packet),
         "bytes_written": sealed["bytes_written"],
-        "completion_claim_allowed": False,
-        "real_money_authorized": False,
-        "parent_complete": False,
-        "auto_freeze": False,
-        "auto_settle": False,
-        "daemon": False,
-        "temporal": False,
-        "trusted_time_proof": False,
-        "owner_channel_authority": "UNPROVEN_BY_LIBRARY",
-        "physical_owner_write_isolation_verified": False,
+        **_honest_library_flags(),
     }
 
 
@@ -1240,14 +1278,8 @@ def capture_prospective_reveal(
             ),
             "bytes_written": written,
             "settlement_written": False,
-            "completion_claim_allowed": False,
-            "real_money_authorized": False,
-            "parent_complete": False,
-            "auto_settle": False,
-            "owner_channel_authority": "UNPROVEN_BY_LIBRARY",
-            "physical_owner_write_isolation_verified": False,
-            "trusted_time_proof": False,
             "reveal_index_reused": True,
+            **_honest_library_flags(),
         }
     idx_body = (
         json.dumps(idx_payload, ensure_ascii=False, indent=2, sort_keys=True) + "\n"
@@ -1263,26 +1295,23 @@ def capture_prospective_reveal(
         "admission_status": admission_status,
         "bytes_written": written,
         "settlement_written": False,
-        "completion_claim_allowed": False,
-        "real_money_authorized": False,
-        "parent_complete": False,
-        "auto_settle": False,
-        "owner_channel_authority": "UNPROVEN_BY_LIBRARY",
-        "physical_owner_write_isolation_verified": False,
-        "trusted_time_proof": False,
+        **_honest_library_flags(),
     }
 
 
 __all__ = [
+    "ASIA_SHANGHAI",
     "BINDING_SCHEMA",
     "CANONICAL_SITE",
     "CLOCK_TRUST_GRADE",
     "HISTORY_YEAR_TEMPLATE",
     "PACKET_MARKER",
-    "PINNED_LATEST_URL",
     "POINT_TEMPLATE",
     "SOURCE_ID",
+    "UNSUPPORTED_LATEST_PATH",
+    "Clock",
     "FetchResponse",
+    "Fetcher",
     "ProspectiveSourceError",
     "ResultRow",
     "build_source_authority_binding",
@@ -1292,6 +1321,7 @@ __all__ = [
     "default_fetcher",
     "discover_same_origin_app_js",
     "expect_to_local_date",
+    "extract_product_schedule",
     "is_leap_year",
     "is_live_macaujc2_target",
     "load_packet",
@@ -1299,12 +1329,12 @@ __all__ = [
     "parse_expect",
     "parse_history_max_expect",
     "parse_json_strict",
-    "parse_latest_payload",
     "parse_point_payload",
     "point_is_null",
     "point_result_row",
     "raw_sha256",
     "reject_outcome_material",
+    "reject_unsupported_latest_authority",
     "validate_expect_matches_open_date",
     "validate_source_authority_binding",
     "verify_disposition_times_against_packet",

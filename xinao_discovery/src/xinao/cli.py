@@ -24,6 +24,7 @@ from xinao.projection import (
     render_tui,
     verify_evidence_report,
 )
+from xinao.science.prospective_cli import add_prospective_parsers, dispatch_prospective
 from xinao.world import (
     build_science_episode_world,
     build_world,
@@ -43,6 +44,7 @@ def _load_json(path: Path) -> dict[str, object]:
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="xinao")
     groups = parser.add_subparsers(dest="group", required=True)
+    add_prospective_parsers(groups)
     catalog = groups.add_parser("catalog")
     commands = catalog.add_subparsers(dest="command", required=True)
     compile_command = commands.add_parser("compile")
@@ -130,7 +132,13 @@ def build_parser() -> argparse.ArgumentParser:
     shadow_inspect.add_argument("--root", type=Path, required=True)
     shadow_status = shadow_commands.add_parser("status")
     shadow_status.add_argument("--root", type=Path, required=True)
-    shadow_freeze = shadow_commands.add_parser("freeze")
+    shadow_freeze = shadow_commands.add_parser(
+        "freeze",
+        help=(
+            "Legacy flat episode freeze from request path only "
+            "(not production portfolio Owner freeze; use prospective freeze-from-disposition)"
+        ),
+    )
     shadow_freeze.add_argument("--root", type=Path, required=True)
     shadow_freeze.add_argument("--request", type=Path, required=True)
     shadow_settle = shadow_commands.add_parser("settle")
@@ -145,8 +153,8 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def main() -> int:
-    args = build_parser().parse_args()
+def main(argv: list[str] | None = None) -> int:
+    args = build_parser().parse_args(argv)
     if args.group == "catalog" and args.command == "compile":
         kwargs = {"baseline_ref": args.baseline, "output_path": args.out}
         if args.input is not None:
@@ -325,12 +333,15 @@ def main() -> int:
         )
         print(json.dumps(result, ensure_ascii=False, sort_keys=True))
         return 0 if result["ok"] else 1
+    if args.group == "prospective":
+        return dispatch_prospective(args)
     if args.group == "shadow":
         from xinao.shadow_lifecycle.consumer import dispatch
+        from xinao.shadow_lifecycle.store import StoreError
 
         try:
             result = dispatch(args)
-        except (ValueError, TypeError, KeyError) as exc:
+        except (StoreError, ValueError, TypeError, KeyError) as exc:
             print(
                 json.dumps(
                     {
@@ -339,6 +350,7 @@ def main() -> int:
                         "completion_claim_allowed": False,
                         "first_episode_verified": False,
                         "candidate_only": True,
+                        "production_owner_path": False,
                     },
                     ensure_ascii=False,
                     sort_keys=True,
