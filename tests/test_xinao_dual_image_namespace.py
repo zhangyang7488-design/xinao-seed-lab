@@ -633,6 +633,203 @@ def test_docker_create_argv_uses_real_cli_entrypoint_shape(specs: Any) -> None:
     assert any("entrypoint_json_text_not_executable" in v for v in live_v)
 
 
+def _mount_values(argv: list[str]) -> list[str]:
+    out: list[str] = []
+    for i, token in enumerate(argv):
+        if token == "--mount" and i + 1 < len(argv):
+            out.append(argv[i + 1])
+    return out
+
+
+def test_bind_mount_cli_value_uses_docker_mount_semantics(specs: Any) -> None:
+    """Writable omits mode; readonly uses ``readonly``; bare ``rw`` never emitted."""
+    assert (
+        specs.bind_mount_cli_value(
+            {"host": r"D:\XINAO_RESEARCH_RUNTIME\state\lab", "container": "/episode-lab", "mode": "rw"}
+        )
+        == r"type=bind,src=D:\XINAO_RESEARCH_RUNTIME\state\lab,dst=/episode-lab"
+    )
+    assert (
+        specs.bind_mount_cli_value(
+            {"host": r"D:\path with spaces\auth.json", "container": "/grok-home/auth.json", "mode": "ro"}
+        )
+        == r"type=bind,src=D:\path with spaces\auth.json,dst=/grok-home/auth.json,readonly"
+    )
+    # Default is writable (omit mode).
+    assert (
+        specs.bind_mount_cli_value({"host": "/h/lab", "container": "/episode-lab"})
+        == "type=bind,src=/h/lab,dst=/episode-lab"
+    )
+    with pytest.raises(ValueError, match="unsupported bind mode"):
+        specs.bind_mount_cli_value(
+            {"host": "/h", "container": "/c", "mode": "private"}
+        )
+
+
+def test_docker_create_argv_mounts_omit_bare_rw_and_keep_readonly(specs: Any) -> None:
+    """Shared create-argv generator must not invent bare ``rw`` for --mount.
+
+    Live failure (Docker 29.x): ``invalid field 'rw' must be a key=value pair``.
+    Spec data may still record mode=rw/ro (inspect-style); CLI materializes only.
+    """
+    win_lab = r"D:\XINAO_RESEARCH_RUNTIME\state\xinao_skill\researcher_container\security\tool_namespace_separation\.probe_work\lab"
+    win_ipc = r"D:\XINAO_RESEARCH_RUNTIME\state\xinao_skill\researcher_container\security\tool_namespace_separation\.probe_work\ipc"
+    win_auth = r"D:\path with spaces\credentials\auth.json"
+    tool = specs.tool_executor_container_spec(
+        image="sha256:" + "b" * 64,
+        name="tool-mount-shape",
+        episode_lab_host_path=win_lab,
+        ipc_host_dir=win_ipc,
+        sidecar_evidence_host_path=r"D:\XINAO_RESEARCH_RUNTIME\state\sidecar",
+    )
+    transport = specs.transport_container_spec(
+        image="sha256:" + "c" * 64,
+        name="transport-mount-shape",
+        auth_host_path=win_auth,
+        input_host_path=r"D:\input dir",
+        output_host_path=r"D:\output dir",
+        ipc_host_dir=win_ipc,
+        episode_lab_host_path=win_lab,
+    )
+    tool_argv = specs.docker_create_argv(tool)
+    transport_argv = specs.docker_create_argv(transport)
+    mounts = _mount_values(tool_argv) + _mount_values(transport_argv)
+    assert mounts, "expected bind --mount flags"
+    for mount in mounts:
+        # Bare volume-mode tokens are invalid for --mount.
+        parts = mount.split(",")
+        for part in parts:
+            assert part not in {"rw", "ro"}, f"bare mode token in mount: {mount}"
+            if "=" not in part:
+                assert part in {"readonly"}, f"unexpected bare field: {part} in {mount}"
+        assert not mount.endswith(",rw"), mount
+        assert ",rw," not in mount
+        assert mount.startswith("type=bind,src=")
+        assert ",dst=" in mount
+    # Writable lab/ipc must not carry readonly.
+    tool_mounts = _mount_values(tool_argv)
+    lab_mount = next(m for m in tool_mounts if "dst=/episode-lab" in m or m.endswith("dst=/episode-lab"))
+    ipc_mount = next(m for m in tool_mounts if "dst=/ipc" in m or m.endswith("dst=/ipc"))
+    assert lab_mount == f"type=bind,src={win_lab},dst=/episode-lab"
+    assert ipc_mount == f"type=bind,src={win_ipc},dst=/ipc"
+    assert "readonly" not in lab_mount
+    assert "readonly" not in ipc_mount
+    # Transport auth/input stay readonly via mature --mount flag.
+    t_mounts = _mount_values(transport_argv)
+    auth_mount = next(m for m in t_mounts if "dst=/grok-home/auth.json" in m)
+    input_mount = next(m for m in t_mounts if "dst=/input" in m)
+    assert auth_mount.endswith(",readonly")
+    assert input_mount.endswith(",readonly")
+    assert "auth.json" in auth_mount
+    # Forbidden surfaces stay out of tool argv.
+    joined = " ".join(tool_argv)
+    assert "docker.sock" not in joined
+    assert "/ledger" not in joined
+    assert "/outcomes" not in joined
+    assert "auth.json" not in joined
+    # Spec still records inspect-style modes for consumers of create-spec JSON.
+    assert all(b.get("mode") in {"rw", "ro"} for b in tool["binds"])
+    assert any(b.get("mode") == "ro" for b in transport["binds"])
+    assert any(b.get("mode") == "rw" for b in transport["binds"])
+
+
+def test_docker_create_argv_mounts_accepted_by_real_docker_parser(
+    specs: Any, tmp_path: Path
+) -> None:
+    """Optional isolated real-CLI parse: create+rm only; no formal state / receipt."""
+    import shutil
+    import subprocess
+
+    if shutil.which("docker") is None:
+        pytest.skip("docker binary not on PATH")
+    try:
+        info = subprocess.run(
+            ["docker", "info", "--format", "{{.OSType}}"],
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        pytest.skip(f"docker info unavailable: {exc}")
+    if info.returncode != 0:
+        pytest.skip(f"docker info rc={info.returncode}")
+
+    # Prefer a local tag already present; fall back to hello-world only if needed.
+    image = "hello-world:latest"
+    lab = tmp_path / "lab with spaces"
+    ipc = tmp_path / "ipc"
+    auth = tmp_path / "auth dir"
+    auth.mkdir()
+    (auth / "auth.json").write_text("{}", encoding="utf-8")
+    lab.mkdir()
+    ipc.mkdir()
+    # Windows drive-letter paths as probe issuer uses (str(Path)).
+    tool = specs.tool_executor_container_spec(
+        image=image,
+        name=f"xinao-mnt-probe-tool-{uuid.uuid4().hex[:10]}",
+        episode_lab_host_path=str(lab),
+        ipc_host_dir=str(ipc),
+    )
+    transport = specs.transport_container_spec(
+        image=image,
+        name=f"xinao-mnt-probe-tr-{uuid.uuid4().hex[:10]}",
+        auth_host_path=str(auth / "auth.json"),
+        input_host_path=str(tmp_path / "input"),
+        output_host_path=str(tmp_path / "output"),
+        ipc_host_dir=str(ipc),
+        episode_lab_host_path=str(lab),
+    )
+    (tmp_path / "input").mkdir()
+    (tmp_path / "output").mkdir()
+
+    created: list[str] = []
+    try:
+        for argv in (specs.docker_create_argv(tool), specs.docker_create_argv(transport)):
+            # Parser acceptance only: --mount must not fail before image resolve.
+            # Drop heavy security opts that are unrelated to mount parsing so a
+            # missing image still surfaces as image-not-found rather than mount.
+            assert all(
+                not (argv[i] == "--mount" and ",rw" in argv[i + 1])
+                for i in range(len(argv) - 1)
+            )
+            completed = subprocess.run(
+                argv,
+                check=False,
+                capture_output=True,
+                text=True,
+                timeout=120,
+            )
+            stderr = (completed.stderr or "") + (completed.stdout or "")
+            # Exact live failure from gen9 probe (Docker 29.x --mount parser).
+            assert "invalid field 'rw'" not in stderr, stderr
+            assert not (
+                "invalid field" in stderr.lower() and "key=value pair" in stderr.lower()
+            ), stderr
+            if completed.returncode == 0:
+                cid = (completed.stdout or "").strip()
+                if cid:
+                    created.append(cid)
+            else:
+                # Image may be absent or platform mismatch; still prove mount parse OK.
+                lower = stderr.lower()
+                mount_parse_fail = (
+                    "invalid field" in lower
+                    or "invalid mount" in lower
+                    or ("invalid argument" in lower and "--mount" in lower)
+                )
+                assert not mount_parse_fail, stderr
+    finally:
+        for cid in created:
+            subprocess.run(
+                ["docker", "rm", "--force", cid],
+                check=False,
+                capture_output=True,
+                text=True,
+                timeout=60,
+            )
+
+
 def test_issuer_fail_closed_without_active_dual_release(
     module: Any, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

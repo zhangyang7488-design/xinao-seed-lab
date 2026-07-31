@@ -414,6 +414,29 @@ def docker_create_process_argv(spec: dict[str, Any]) -> list[str]:
     return []
 
 
+def bind_mount_cli_value(bind: dict[str, Any]) -> str:
+    """Materialize one Docker CLI ``--mount`` value for a bind.
+
+    Docker ``--mount`` accepts key=value fields (and a few bare flags such as
+    ``readonly`` / ``ro``). Writable is the default: omit the mode field.
+    Bare ``rw`` is **not** valid for ``--mount`` (it is a ``-v`` volume-mode
+    token) and fails on current Docker CLI with
+    ``invalid field 'rw' must be a key=value pair``.
+
+    Spec data may still use inspect-style ``mode`` tokens ``rw`` / ``ro``;
+    only CLI materialization normalizes them.
+    """
+    host = bind["host"]
+    container = bind["container"]
+    mode = str(bind.get("mode") or "rw").strip().lower()
+    base = f"type=bind,src={host},dst={container}"
+    if mode in {"", "rw", "readwrite", "read-write", "read_write"}:
+        return base
+    if mode in {"ro", "readonly", "read-only", "read_only"}:
+        return f"{base},readonly"
+    raise ValueError(f"unsupported bind mode for docker --mount: {mode!r}")
+
+
 def docker_create_argv(spec: dict[str, Any]) -> list[str]:
     """Materialize a `docker create` argv list from a create spec.
 
@@ -424,6 +447,9 @@ def docker_create_argv(spec: dict[str, Any]) -> list[str]:
       a token like ``'["python",...]'`` is treated as a single executable path
       and fails with OCI ``executable file not found``.
     - Omitting ``--entrypoint`` keeps the image's sealed ENTRYPOINT (also valid).
+
+    Bind mounts use :func:`bind_mount_cli_value` (writable omits mode; readonly
+    uses ``,readonly`` — never bare ``,rw``).
     """
     argv = ["docker", "create", "--name", spec["name"]]
     if spec.get("user"):
@@ -448,8 +474,7 @@ def docker_create_argv(spec: dict[str, Any]) -> list[str]:
     for key, value in (spec.get("env") or {}).items():
         argv.extend(["--env", f"{key}={value}"])
     for bind in spec.get("binds") or []:
-        mode = bind.get("mode", "rw")
-        argv.extend(["--mount", f"type=bind,src={bind['host']},dst={bind['container']},{mode}"])
+        argv.extend(["--mount", bind_mount_cli_value(bind)])
     for tmp in spec.get("tmpfs") or []:
         # docker create --tmpfs /tmp:opts
         argv.extend(["--tmpfs", tmp])
