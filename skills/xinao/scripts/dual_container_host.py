@@ -208,30 +208,23 @@ class DualContainerHost:
         *,
         tool_id: str,
         transport_id: str,
-        tool_name: str,
-        transport_name: str,
         ipc_volume: str | None,
     ) -> list[str]:
         """Remove only containers/volume created in this create_pair attempt.
 
-        Uses exact IDs when known, else exact lease-canonical names from this call.
-        Never rm foreign resources. Idempotent when targets are already gone.
+        Container rm requires a non-empty ID returned by a successful create in this
+        call. Expected names are never delete authority (name conflict must not rm a
+        pre-existing foreign container). Volume rm is allowed only when the caller
+        proves this call created the volume (inspect-miss then create). Idempotent
+        when targets are already gone.
         """
         errors: list[str] = []
         if self.config.synthetic:
             return errors
         seen: set[str] = set()
-        # Prefer concrete container IDs; fall back to this-call names only.
-        targets: list[str] = []
+        # Ownership = concrete create stdout IDs only; never name fallback.
         for value in (tool_id, transport_id):
-            token = str(value or "").strip()
-            if token:
-                targets.append(token)
-        if not tool_id and tool_name:
-            targets.append(str(tool_name))
-        if not transport_id and transport_name:
-            targets.append(str(transport_name))
-        for target in targets:
+            target = str(value or "").strip()
             if not target or target in seen:
                 continue
             seen.add(target)
@@ -492,13 +485,12 @@ class DualContainerHost:
                         "DUAL_HOST_CREATE_INCOMPLETE", f"{tool_id}/{transport_id}"
                     )
             except DualHostError as exc:
-                # Best-effort cleanup of only this call's containers/volume (name/ID).
+                # Best-effort cleanup of only this call's owned containers/volume.
+                # Container ownership = create-returned IDs only (names are journal-only).
                 # Never touch foreign resources; preserve original failure reason.
                 cleanup_errors = self._best_effort_cleanup_create_partial(
                     tool_id=tool_id,
                     transport_id=transport_id,
-                    tool_name=names["tool_name"],
-                    transport_name=names["transport_name"],
                     ipc_volume=ipc_volume if volume_created_this_call else None,
                 )
                 self._append_journal(
@@ -506,6 +498,7 @@ class DualContainerHost:
                         "verb": "create_pair_partial_fail",
                         "tool_id": tool_id,
                         "transport_id": transport_id,
+                        # Names recorded for diagnosis only — not delete authority.
                         "tool_name": names["tool_name"],
                         "transport_name": names["transport_name"],
                         "ipc_volume": ipc_volume if volume_created_this_call else None,

@@ -486,7 +486,7 @@ def test_argv_digest_redacts_secrets(native: Any) -> None:
 def test_create_pair_partial_fail_best_effort_cleanup(
     host_mod: Any, tmp_path: Path
 ) -> None:
-    """Partial create must rm owned container IDs/names and preserve original reason."""
+    """Tool ID success + transport fail: rm only that tool ID; keep owned volume cleanup."""
     auth = tmp_path / "auth"
     auth.mkdir()
     (auth / "auth.json").write_text("{}", encoding="utf-8")
@@ -524,7 +524,8 @@ def test_create_pair_partial_fail_best_effort_cleanup(
                 args, 1, "", "simulated transport create failure"
             )
         if len(args) >= 2 and args[1] == "rm":
-            rm_targets.append(args[-1])
+            # Capture full rm argv targets (not only last token).
+            rm_targets.extend(args[3:] if len(args) > 3 else args[2:])
             return subprocess.CompletedProcess(args, 0, "", "")
         if len(args) >= 2 and args[1] == "image":
             return subprocess.CompletedProcess(args, 0, "sha256:" + "a" * 64 + "\n", "")
@@ -556,13 +557,90 @@ def test_create_pair_partial_fail_best_effort_cleanup(
         "DUAL_HOST_CREATE_INCOMPLETE",
         "DUAL_HOST_TOOL_CREATE_FAILED",
     }
-    assert "cid-tool-partial" in rm_targets or any("xinao-tool-" in t for t in rm_targets)
+    # Ownership: only the successful tool create ID; never name-based rm.
+    assert rm_targets == ["cid-tool-partial"]
+    assert not any("xinao-tool-" in t or "xinao-transport-" in t for t in rm_targets)
     # Volume created in this call should be best-effort removed.
-    assert any(op.startswith("rm:") for op in volume_ops) or any(
-        op.startswith("create:") for op in volume_ops
-    )
+    assert any(op.startswith("create:") for op in volume_ops)
+    assert any(op.startswith("rm:") for op in volume_ops)
     journal = (tmp_path / "ep_partial" / "dual_host_journal.jsonl").read_text(encoding="utf-8")
     assert "create_pair_partial_fail" in journal
+    assert "xinao-tool-" in journal  # names may be journaled for diagnosis
+    assert "cid-tool-partial" in journal
+
+
+def test_create_pair_tool_name_conflict_no_name_rm(
+    host_mod: Any, tmp_path: Path
+) -> None:
+    """Tool create name-conflict (no ID): must not docker rm by expected name."""
+    auth = tmp_path / "auth"
+    auth.mkdir()
+    (auth / "auth.json").write_text("{}", encoding="utf-8")
+    rm_targets: list[str] = []
+    volume_ops: list[str] = []
+    create_names: list[str] = []
+
+    def runner(argv: list[str]) -> subprocess.CompletedProcess[str]:
+        args = list(argv)
+        if len(args) >= 2 and args[1] == "volume":
+            if args[2] == "inspect":
+                return subprocess.CompletedProcess(args, 1, "", "not found")
+            if args[2] == "create":
+                volume_ops.append(f"create:{args[3]}")
+                return subprocess.CompletedProcess(args, 0, args[3], "")
+            if args[2] == "rm":
+                volume_ops.append(f"rm:{args[-1]}")
+                return subprocess.CompletedProcess(args, 0, "", "")
+        if len(args) >= 2 and args[1] == "create":
+            name = ""
+            if "--name" in args:
+                name = args[args.index("--name") + 1]
+            create_names.append(name)
+            # Name conflict: create fails with no container ID (foreign holder keeps name).
+            return subprocess.CompletedProcess(
+                args,
+                1,
+                "",
+                f'Error: Conflict. The container name "/{name}" is already in use',
+            )
+        if len(args) >= 2 and args[1] == "rm":
+            rm_targets.extend(args[3:] if len(args) > 3 else args[2:])
+            return subprocess.CompletedProcess(args, 0, "", "")
+        if len(args) >= 2 and args[1] == "image":
+            return subprocess.CompletedProcess(args, 0, "sha256:" + "a" * 64 + "\n", "")
+        if len(args) >= 2 and args[1] == "inspect":
+            return subprocess.CompletedProcess(
+                args,
+                0,
+                json.dumps([{"Id": "sha256:" + "a" * 64, "RepoDigests": []}]),
+                "",
+            )
+        return subprocess.CompletedProcess(args, 0, "", "")
+
+    cfg = host_mod.DualHostConfig(
+        transport_image="sha256:" + "a" * 64,
+        tool_image="sha256:" + "b" * 64,
+        auth_host_path=auth / "auth.json",
+        episode_root=tmp_path / "ep_name_conflict",
+        network="xinao_researcher_internal",
+        synthetic=False,
+        runner=runner,
+    )
+    host = host_mod.DualContainerHost(cfg)
+    with pytest.raises(host_mod.DualHostError) as exc:
+        host.create_pair(episode_id="ep_name_conflict_1", session_id="xrsess_nameconf01")
+    assert exc.value.reason_code == "DUAL_HOST_TOOL_CREATE_FAILED"
+    # Critical: no container rm by name (would delete foreign owner of the name).
+    assert rm_targets == []
+    assert any(op.startswith("create:") for op in volume_ops)
+    assert any(op.startswith("rm:") for op in volume_ops)
+    journal = (tmp_path / "ep_name_conflict" / "dual_host_journal.jsonl").read_text(
+        encoding="utf-8"
+    )
+    assert "create_pair_partial_fail" in journal
+    # Journal may record intended names for diagnosis without granting delete power.
+    assert any("xinao-tool-" in n for n in create_names)
+    assert "xinao-tool-" in journal
 
 
 def test_require_live_transport_network_mismatch_fail_closed(
