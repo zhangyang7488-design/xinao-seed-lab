@@ -14975,9 +14975,7 @@ def research_episode_ensure_pair(
                 if type(exc).__name__ == "DualHostError" or hasattr(exc, "reason_code"):
                     mapped = _map_dual_host_exc(exc)
                     raise mapped from exc
-                raise XinaoError(
-                    "RESEARCH_EPISODE_ENSURE_PAIR_FAILED", str(exc)[:2000]
-                ) from exc
+                raise XinaoError("RESEARCH_EPISODE_ENSURE_PAIR_FAILED", str(exc)[:2000]) from exc
 
         def _ensure_payload(
             *,
@@ -15110,9 +15108,7 @@ def research_episode_ensure_pair(
         except Exception as exc:
             if type(exc).__name__ == "DualHostError" or hasattr(exc, "reason_code"):
                 raise _map_dual_host_exc(exc) from exc
-            raise XinaoError(
-                "RESEARCH_EPISODE_ENSURE_PAIR_FAILED", str(exc)[:2000]
-            ) from exc
+            raise XinaoError("RESEARCH_EPISODE_ENSURE_PAIR_FAILED", str(exc)[:2000]) from exc
         ready = _require_ready()
         _research_episode_append_journal(
             root,

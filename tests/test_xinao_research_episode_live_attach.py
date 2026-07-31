@@ -483,9 +483,7 @@ def test_argv_digest_redacts_secrets(native: Any) -> None:
     assert "super-secret" not in digest
 
 
-def test_create_pair_partial_fail_best_effort_cleanup(
-    host_mod: Any, tmp_path: Path
-) -> None:
+def test_create_pair_partial_fail_best_effort_cleanup(host_mod: Any, tmp_path: Path) -> None:
     """Tool ID success + transport fail: rm only that tool ID; keep owned volume cleanup."""
     auth = tmp_path / "auth"
     auth.mkdir()
@@ -520,9 +518,7 @@ def test_create_pair_partial_fail_best_effort_cleanup(
                     create_calls["tool"] += 1
                     return subprocess.CompletedProcess(args, 0, "cid-tool-partial\n", "")
             create_calls["transport"] += 1
-            return subprocess.CompletedProcess(
-                args, 1, "", "simulated transport create failure"
-            )
+            return subprocess.CompletedProcess(args, 1, "", "simulated transport create failure")
         if len(args) >= 2 and args[1] == "rm":
             # Capture full rm argv targets (not only last token).
             rm_targets.extend(args[3:] if len(args) > 3 else args[2:])
@@ -569,9 +565,7 @@ def test_create_pair_partial_fail_best_effort_cleanup(
     assert "cid-tool-partial" in journal
 
 
-def test_create_pair_tool_name_conflict_no_name_rm(
-    host_mod: Any, tmp_path: Path
-) -> None:
+def test_create_pair_tool_name_conflict_no_name_rm(host_mod: Any, tmp_path: Path) -> None:
     """Tool create name-conflict (no ID): must not docker rm by expected name."""
     auth = tmp_path / "auth"
     auth.mkdir()
@@ -643,9 +637,7 @@ def test_create_pair_tool_name_conflict_no_name_rm(
     assert "xinao-tool-" in journal
 
 
-def test_require_live_transport_network_mismatch_fail_closed(
-    host_mod: Any, tmp_path: Path
-) -> None:
+def test_require_live_transport_network_mismatch_fail_closed(host_mod: Any, tmp_path: Path) -> None:
     """Live require_live must verify transport NetworkMode vs config; tool stays none."""
     auth = tmp_path / "auth"
     auth.mkdir()

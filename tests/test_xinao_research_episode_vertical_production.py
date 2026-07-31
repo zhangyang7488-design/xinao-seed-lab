@@ -541,6 +541,7 @@ def test_ensure_pair_failed_retire_pending_recovers_then_recreates(
     import sys
 
     sys.modules["xinao_dual_host_wave124x_recovery"] = host_mod
+
     # Ensure runtime uses our host_mod instance path: patch _research_episode_load_dual_host.
     def fake_load(root: Path) -> tuple[Any, Any]:
         cfg = host_mod.DualHostConfig(

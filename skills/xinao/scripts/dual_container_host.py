@@ -474,16 +474,12 @@ class DualContainerHost:
             tool_id = ""
             transport_id = ""
             try:
-                tool_id = self._run(
-                    tool_argv, reason="DUAL_HOST_TOOL_CREATE_FAILED"
-                ).stdout.strip()
+                tool_id = self._run(tool_argv, reason="DUAL_HOST_TOOL_CREATE_FAILED").stdout.strip()
                 transport_id = self._run(
                     transport_argv, reason="DUAL_HOST_TRANSPORT_CREATE_FAILED"
                 ).stdout.strip()
                 if not tool_id or not transport_id:
-                    raise DualHostError(
-                        "DUAL_HOST_CREATE_INCOMPLETE", f"{tool_id}/{transport_id}"
-                    )
+                    raise DualHostError("DUAL_HOST_CREATE_INCOMPLETE", f"{tool_id}/{transport_id}")
             except DualHostError as exc:
                 # Best-effort cleanup of only this call's owned containers/volume.
                 # Container ownership = create-returned IDs only (names are journal-only).
@@ -1402,9 +1398,9 @@ class DualContainerHost:
                 self.config.network or DEFAULT_TRANSPORT_NETWORK
             ).strip()
             transport_network = str(transport_hc.get("NetworkMode") or "")
-            transport_networks = (
-                (transport_inspect.get("NetworkSettings") or {}).get("Networks") or {}
-            )
+            transport_networks = (transport_inspect.get("NetworkSettings") or {}).get(
+                "Networks"
+            ) or {}
             if not expected_transport_network or expected_transport_network in {
                 "none",
                 "None",
