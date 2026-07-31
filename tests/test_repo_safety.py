@@ -321,7 +321,7 @@ def test_context_intent_alignment_eval_is_balanced_and_friction_bounded() -> Non
         (REPO_ROOT / "evals/context_intent_alignment/cases.yaml").read_text(encoding="utf-8")
     )
     cases = {case["metadata"]["id"]: case for case in loaded}
-    assert len(cases) == suite["case_count"] == 112
+    assert len(cases) == suite["case_count"] == 118
     assert len(cases) == len(loaded)
     assert all(case["metadata"]["domain"] == case["vars"]["domain"] for case in cases.values())
     for required in (
@@ -390,8 +390,16 @@ def test_context_intent_alignment_eval_is_balanced_and_friction_bounded() -> Non
         "REG_XINAO_CURRENT_INFEASIBILITY_IS_SCOPED_AND_REOPENABLE",
         "NEG_VALUE_KERNEL_SAME_TOOL_USES_CURRENT_COMPLETION_RULER",
         "NEG_VALUE_KERNEL_DISCUSSION_STOP_PRESERVES_READ_ONLY",
+        "REG_COMPLETED_CHILD_RETIRES_WITHOUT_SYNONYM_REDISPATCH",
+        "REG_LOCAL_GREEN_PROMOTES_PARTIAL_NOT_PARENT_COMPLETION",
+        "REG_LIVE_FACTS_INVALIDATE_SUNK_CHILD_AND_CHANGE_ACTION",
+        "REG_SETTLEMENT_FEEDBACK_CHANGES_NEXT_RESEARCH_CHOICE",
+        "REG_HONEST_NO_ACTION_WHEN_NO_POSITIVE_CANDIDATE",
+        "REG_AFTER_CHILD_RETIRE_SELECT_DISTINCT_POSITIVE_FRONTIER",
     ):
         assert required in cases
+    completed_child = cases["REG_COMPLETED_CHILD_RETIRES_WITHOUT_SYNONYM_REDISPATCH"]["vars"]
+    assert completed_child["expected_effect_authority"] == "restored_task_scope"
     assert cases["POS_CLEAR_REVERSIBLE_LOCAL_FIX"]["vars"]["expected_ask_user"] is False
     assert cases["POS_EXPLICIT_REPOSITORY_CREATE"]["vars"]["expected_create_repository"] is True
     assert cases["NEG_AMBIGUOUS_PUBLICATION_OBJECT"]["vars"]["expected_ask_user"] is True
@@ -1114,8 +1122,8 @@ def test_context_intent_alignment_eval_is_balanced_and_friction_bounded() -> Non
         (REPO_ROOT / "evals/behavior_regression/catalog.json").read_text(encoding="utf-8")
     )
     context_suite = next(s for s in catalog["suites"] if s["id"] == "context_intent_alignment")
-    assert context_suite["case_count"] == 112
-    assert catalog["declared_case_count"] == 172
+    assert context_suite["case_count"] == 118
+    assert catalog["declared_case_count"] == 178
 
     decision = json.loads(
         (REPO_ROOT / "evals/context_intent_alignment/decision_model.v1.json").read_text(
@@ -1698,7 +1706,7 @@ def test_dual_self_evolution_runners_are_thin_and_claims_stay_separate() -> None
         (REPO_ROOT / "evals/behavior_regression/catalog.json").read_text(encoding="utf-8")
     )
     suite_count = sum(item["case_count"] for item in catalog["suites"])
-    assert suite_count == catalog["declared_case_count"] == 172
+    assert suite_count == catalog["declared_case_count"] == 178
     context_cases = yaml.safe_load(
         (REPO_ROOT / "evals/context_intent_alignment/cases.yaml").read_text(encoding="utf-8")
     )
