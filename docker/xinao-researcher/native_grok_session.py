@@ -18,6 +18,7 @@ import os
 import re
 import shutil
 import subprocess
+import sys
 import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -92,6 +93,24 @@ def _canonical_bytes(value: object) -> bytes:
         )
         + "\n"
     ).encode("utf-8")
+
+
+def _emit_json_stdout(value: object) -> None:
+    """Emit machine-readable JSON on stdout as UTF-8 bytes.
+
+    Text-mode print() uses the console code page (often cp1252 on Windows
+    GitHub runners) and raises UnicodeEncodeError on characters such as U+2192.
+    Writing encoded bytes to the binary buffer preserves Unicode value semantics
+    for any consumer that decodes UTF-8 and does not depend on the console page.
+    """
+    payload = (json.dumps(value, ensure_ascii=False, sort_keys=True) + "\n").encode("utf-8")
+    buffer = getattr(sys.stdout, "buffer", None)
+    if buffer is not None:
+        buffer.write(payload)
+        buffer.flush()
+        return
+    sys.stdout.write(payload.decode("utf-8"))
+    sys.stdout.flush()
 
 
 def _sha256_bytes(payload: bytes) -> str:
@@ -734,7 +753,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = parser.parse_args(list(argv) if argv is not None else None)
     if args.cmd == "probe":
         contract = fail_closed_live_invoke()
-        print(json.dumps(contract, ensure_ascii=False, sort_keys=True))
+        _emit_json_stdout(contract)
         return 0
     session_id = getattr(args, "session_id", None) or new_session_uuid()
     driver = NativeEpisodeSessionDriver(
@@ -745,10 +764,10 @@ def main(argv: Sequence[str] | None = None) -> int:
         grok_bin=resolve_grok_bin() or "/usr/local/bin/grok",
     )
     if args.cmd == "plan-new":
-        print(json.dumps(driver.plan_new(prompt=args.prompt), ensure_ascii=False, sort_keys=True))
+        _emit_json_stdout(driver.plan_new(prompt=args.prompt))
         return 0
     if args.cmd == "plan-resume":
-        print(json.dumps(driver.plan_resume(), ensure_ascii=False, sort_keys=True))
+        _emit_json_stdout(driver.plan_resume())
         return 0
     return 2
 

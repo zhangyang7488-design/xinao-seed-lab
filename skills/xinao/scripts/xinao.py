@@ -30,7 +30,7 @@ RELEASE_RUNTIME_RELATIVE_PATH = Path("skill-bundle") / "scripts" / "xinao_runtim
 # Bound to the co-located bootstrap-migration companion. Tampering fails before execution.
 # Update this whenever the candidate xinao_runtime.py bytes change.
 EXPECTED_COMPANION_RUNTIME_SHA256 = (
-    "b1d12f3081c4f530bbc6c793d929b5ba50cddd301284d760f69d3681bc60d8b0"
+    "5eeccaec4f02e28664acbef4681da84b87ac95feba6e8df976c7de5afe377e8b"
 )
 RELEASE_ID_PATTERN = re.compile(r"^researcher-[0-9]+\.[0-9]+\.[0-9]+-[0-9a-f]{16}$")
 TXN_ID_PATTERN = re.compile(r"^xra_[0-9]{8}T[0-9]{6}_[0-9a-f]{16}$")

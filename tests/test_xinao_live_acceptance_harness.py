@@ -199,10 +199,9 @@ def test_cli_run_synthetic_exit_zero(tmp_path: Path) -> None:
         check=False,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
-        text=True,
     )
-    assert completed.returncode == 0, completed.stderr
-    payload = json.loads(completed.stdout)
+    assert completed.returncode == 0, completed.stderr.decode("utf-8", errors="replace")
+    payload = json.loads(completed.stdout.decode("utf-8"))
     assert payload["status"] == "HARNESS_PARTIAL_OK"
     assert payload["completion_claim_allowed"] is False
 
@@ -220,12 +219,47 @@ def test_cli_plan_lists_rollback(tmp_path: Path) -> None:
         check=False,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
-        text=True,
     )
-    assert completed.returncode == 0, completed.stderr
-    payload = json.loads(completed.stdout)
+    assert completed.returncode == 0, completed.stderr.decode("utf-8", errors="replace")
+    payload = json.loads(completed.stdout.decode("utf-8"))
     assert payload["status"] == "PLAN_ONLY"
     assert "Unset dual-host" in " ".join(payload["rollback"]["steps"])
+    titles = [
+        str(step.get("title", ""))
+        for step in payload["exact_host_commands"]
+        if isinstance(step, dict)
+    ]
+    assert any("\u2192" in title for title in titles)
+
+
+def test_emit_json_stdout_survives_cp1252_text_console(harness_mod: Any) -> None:
+    """Windows console cp1252 must not break Unicode JSON emission."""
+    import io
+
+    payload = {
+        "status": "PLAN_ONLY",
+        "title": "Interrupt \u2192 remove attempt containers \u2192 fresh-process resume",
+        "completion_claim_allowed": False,
+    }
+    buffer = io.BytesIO()
+    text = io.TextIOWrapper(buffer, encoding="cp1252", errors="strict", line_buffering=True)
+    original = sys.stdout
+    try:
+        sys.stdout = text
+        harness_mod._emit_json_stdout(payload)
+        text.flush()
+    finally:
+        sys.stdout = original
+        try:
+            text.detach()
+        except Exception:
+            pass
+    raw = buffer.getvalue()
+    assert raw.endswith(b"\n")
+    decoded = json.loads(raw.decode("utf-8"))
+    assert decoded["title"] == payload["title"]
+    assert "\u2192" in decoded["title"]
+    assert b"\xe2\x86\x92" in raw
 
 
 def test_no_daemon_or_temporal_in_harness_source() -> None:

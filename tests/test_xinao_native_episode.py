@@ -65,8 +65,20 @@ def test_cli_probe_and_fail_closed_contract(native: Any) -> None:
     doc = probe.as_dict()
     assert doc["schema_version"] == native.PROBE_SCHEMA
     assert doc["completion_claim_allowed"] is False
-    # Worker seat has grok binary.
-    assert probe.grok_bin
+    contract = native.fail_closed_live_invoke(probe=probe)
+    assert contract["live_model_invoked"] is False
+    assert contract["role_fitness_claimed"] is False
+    assert contract["completion_claim_allowed"] is False
+    if probe.grok_bin is None:
+        assert doc["grok_bin"] is None
+        assert doc["native_session_contract_ready"] is False
+        assert doc["live_model_callable"] is False
+        assert contract["status"] == "FAIL_CLOSED_LIVE_UNAVAILABLE"
+        assert "GROK_BIN_ABSENT" in contract["reasons"]
+        assert contract["cli_probe"]["grok_bin"] is None
+        native.assert_argv_is_genuine_not_canary(contract["genuine_new_session_argv"])
+        native.assert_argv_is_canary(contract["canary_argv"])
+        return
     for flag in (
         "--tools",
         "--session-id",
@@ -77,10 +89,6 @@ def test_cli_probe_and_fail_closed_contract(native: Any) -> None:
     ):
         assert probe.flags_present.get(flag) is True, flag
     assert probe.mcp_available is True
-    contract = native.fail_closed_live_invoke(probe=probe)
-    assert contract["live_model_invoked"] is False
-    assert contract["role_fitness_claimed"] is False
-    assert contract["completion_claim_allowed"] is False
     if not probe.live_model_callable or not probe.docker_available:
         assert contract["status"] == "FAIL_CLOSED_LIVE_UNAVAILABLE"
         assert contract["reasons"]
@@ -91,6 +99,25 @@ def test_cli_probe_and_fail_closed_contract(native: Any) -> None:
     assert "--resume" in resume
     assert resume[resume.index("--tools") + 1] == "search_tool,use_tool"
     assert int(resume[resume.index("--max-turns") + 1]) >= 2
+
+
+def test_probe_absent_grok_bin_is_honest_fail_closed(
+    native: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Generic runners without Grok must not claim a live-ready native contract."""
+    monkeypatch.setattr(native, "resolve_grok_bin", lambda explicit=None: None)
+    probe = native.probe_grok_cli(probe_auth=True)
+    assert probe.grok_bin is None
+    doc = probe.as_dict()
+    assert doc["native_session_contract_ready"] is False
+    assert doc["live_model_callable"] is False
+    assert doc["completion_claim_allowed"] is False
+    contract = native.fail_closed_live_invoke(probe=probe)
+    assert contract["status"] == "FAIL_CLOSED_LIVE_UNAVAILABLE"
+    assert "GROK_BIN_ABSENT" in contract["reasons"]
+    assert contract["live_model_invoked"] is False
+    assert contract["role_fitness_claimed"] is False
+    assert contract["completion_claim_allowed"] is False
 
 
 def test_canary_and_genuine_argv_divergence(native: Any) -> None:
@@ -318,10 +345,43 @@ def test_cli_probe_subcommand_exit_zero() -> None:
         check=False,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
-        text=True,
     )
-    assert completed.returncode == 0, completed.stderr
-    payload = json.loads(completed.stdout)
+    assert completed.returncode == 0, completed.stderr.decode("utf-8", errors="replace")
+    payload = json.loads(completed.stdout.decode("utf-8"))
     assert payload["completion_claim_allowed"] is False
     assert payload["live_model_invoked"] is False
     assert "genuine_new_session_argv" in payload
+    notes = " ".join(
+        str(step.get("note", ""))
+        for step in payload.get("exact_host_commands", [])
+        if isinstance(step, dict)
+    )
+    assert "\u2192" in notes
+
+
+def test_emit_json_stdout_survives_cp1252_text_console(native: Any) -> None:
+    """Windows console cp1252 must not break Unicode JSON emission."""
+    import io
+
+    payload = {
+        "note": "episode_mcp_binding.materialize_attempt_local_binding \u2192 GROK_HOME",
+        "completion_claim_allowed": False,
+    }
+    buffer = io.BytesIO()
+    text = io.TextIOWrapper(buffer, encoding="cp1252", errors="strict", line_buffering=True)
+    original = sys.stdout
+    try:
+        sys.stdout = text
+        native._emit_json_stdout(payload)
+        text.flush()
+    finally:
+        sys.stdout = original
+        try:
+            text.detach()
+        except Exception:
+            pass
+    raw = buffer.getvalue()
+    decoded = json.loads(raw.decode("utf-8"))
+    assert decoded["note"] == payload["note"]
+    assert "\u2192" in decoded["note"]
+    assert b"\xe2\x86\x92" in raw

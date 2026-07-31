@@ -97,6 +97,24 @@ def _canonical_bytes(value: object) -> bytes:
     ).encode("utf-8")
 
 
+def _emit_json_stdout(value: object) -> None:
+    """Emit machine-readable JSON on stdout as UTF-8 bytes.
+
+    Text-mode print() uses the console code page (often cp1252 on Windows
+    GitHub runners) and raises UnicodeEncodeError on characters such as U+2192.
+    Writing encoded bytes to the binary buffer preserves Unicode value semantics
+    for any consumer that decodes UTF-8 and does not depend on the console page.
+    """
+    payload = (json.dumps(value, ensure_ascii=False, sort_keys=True) + "\n").encode("utf-8")
+    buffer = getattr(sys.stdout, "buffer", None)
+    if buffer is not None:
+        buffer.write(payload)
+        buffer.flush()
+        return
+    sys.stdout.write(payload.decode("utf-8"))
+    sys.stdout.flush()
+
+
 def _sha256_bytes(payload: bytes) -> str:
     return hashlib.sha256(payload).hexdigest()
 
@@ -1478,7 +1496,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     if args.command == "plan":
         cfg = HarnessConfig(work_root=args.work_root, mode="plan")
         result = LiveAcceptanceHarness(cfg).run()
-        print(json.dumps(result, ensure_ascii=False, sort_keys=True))
+        _emit_json_stdout(result)
         return 0
     if args.command == "run-synthetic":
         cfg = HarnessConfig(
@@ -1521,11 +1539,11 @@ def main(argv: Sequence[str] | None = None) -> int:
             invoke_live_model=False,
         )
     else:
-        print(json.dumps({"error": "unknown command", "completion_claim_allowed": False}))
+        _emit_json_stdout({"error": "unknown command", "completion_claim_allowed": False})
         return 2
     harness = LiveAcceptanceHarness(cfg)
     result = harness.run()
-    print(json.dumps(result, ensure_ascii=False, sort_keys=True))
+    _emit_json_stdout(result)
     return 0 if result.get("status") in {"HARNESS_PARTIAL_OK", "PLAN_ONLY"} else 1
 
 
