@@ -550,8 +550,11 @@ def _build_receipt(
             }
             for item in settlement.role_coverage
         ],
+        # Durable sealed body always pins settlement_written=False. Process-local
+        # "did this call create settlement_set" is overlaid on the return value only
+        # (Wave99 F3: concurrent callers must not CAS-conflict on a process flag).
         "idempotent_replay": idempotent_replay,
-        "settlement_written": settlement_written,
+        "settlement_written": False,
         "evidence_class": reveal_meta.get("evidence_class"),
         "fixture_isolated_mechanics": bool(reveal_meta.get("fixture_isolated_mechanics")),
         "formal_object_settled": formal_settled,
@@ -559,8 +562,15 @@ def _build_receipt(
         **_honest_flags(),
     }
     receipt["content_hash"] = canonical_sha256(
-        {k: v for k, v in receipt.items() if k != "content_hash"}
+        {
+            k: v
+            for k, v in receipt.items()
+            if k not in ("content_hash", "settlement_written")
+        }
     )
+    # Optional process overlay for this call (not re-hashed into durable identity).
+    if settlement_written:
+        receipt["settlement_written"] = True
     return receipt
 
 
@@ -709,20 +719,13 @@ def apply_settle_all_from_reveal(
                 "EXISTING_SETTLEMENT_NOT_CONSERVED",
                 "prior settlement_set fails conservation",
             )
-        if existing_receipt is not None and existing_receipt.get("settlement_set_hash") == (
-            existing_settlement.get("content_hash")
-        ):
-            # Pure idempotent replay — no double-post.
-            replay = dict(existing_receipt)
-            replay["idempotent_replay"] = True
-            replay["settlement_written"] = False
-            replay["ok"] = True
-            return replay
-        # Reconstruct receipt from sealed settlement without re-running ACTION bundles.
+        # Crash-heal path (Wave99 F1): settlement_set is the commit-ish marker.
+        # Missing action_settlement_bundles / multipolicy receipt must be restored
+        # deterministically (exclusive create, same-bytes OK) or fail closed — never
+        # return ok=true while durable siblings are absent.
         from xinao.science.portfolio import SettlementSet
 
         sealed = SettlementSet.model_validate(existing_settlement)
-        # Re-run settle_all purely for deterministic equality (no write of action ledgers if same).
         recompute = settle_all(
             freeze_set=freeze_set,
             outcome=outcome,
@@ -735,7 +738,12 @@ def apply_settle_all_from_reveal(
                 "SETTLEMENT_REPLAY_DRIFT",
                 f"disk={sealed.content_hash} recompute={recompute.settlement_set.content_hash}",
             )
-        receipt = _build_receipt(
+
+        bundles_payload = [bundle.model_dump(mode="json") for bundle in recompute.action_bundles]
+        bundles_path = root / _ARTIFACT_BUNDLES
+        _write_exclusive_json(bundles_path, bundles_payload)
+
+        durable_receipt = _build_receipt(
             settlement_root=root,
             freeze_set=freeze_set,
             ticket_enum=ticket_enum,
@@ -743,10 +751,38 @@ def apply_settle_all_from_reveal(
             outcome=outcome,
             result=recompute,
             reveal_meta=reveal_meta,
-            idempotent_replay=True,
+            idempotent_replay=False,
             settlement_written=False,
         )
-        return receipt
+        # Durable receipt always carries settlement_written=False (sealed identity).
+        durable_receipt["settlement_written"] = False
+
+        receipt_path = root / _ARTIFACT_RECEIPT
+        if existing_receipt is None:
+            _write_exclusive_json(receipt_path, durable_receipt)
+            healed = dict(durable_receipt)
+            healed["idempotent_replay"] = True
+            healed["settlement_written"] = False
+            healed["durable_siblings_healed"] = True
+            healed["ok"] = True
+            return healed
+
+        if existing_receipt.get("settlement_set_hash") != sealed.content_hash:
+            raise SettleAllFromRevealError(
+                "PARTIAL_DURABLE_STATE",
+                "on-disk receipt settlement_set_hash does not bind sealed settlement_set",
+            )
+        if existing_receipt.get("content_hash") != durable_receipt.get("content_hash"):
+            raise SettleAllFromRevealError(
+                "PARTIAL_DURABLE_STATE",
+                "on-disk receipt content_hash diverges from deterministic settlement receipt",
+            )
+        # Pure idempotent replay — siblings present and bound; no double-post.
+        replay = dict(existing_receipt)
+        replay["idempotent_replay"] = True
+        replay["settlement_written"] = False
+        replay["ok"] = True
+        return replay
 
     # Fresh settlement path: seal intent first (partial-progress identity).
     _write_exclusive_json(root / _ARTIFACT_INTENT, intent)
@@ -797,7 +833,8 @@ def apply_settle_all_from_reveal(
     written_settlement = _write_exclusive_json(root / _ARTIFACT_SETTLEMENT_SET, settlement_payload)
     _write_exclusive_json(root / _ARTIFACT_BUNDLES, bundles_payload)
 
-    receipt = _build_receipt(
+    # Durable sealed receipt never embeds process-local settlement_written=True.
+    durable_receipt = _build_receipt(
         settlement_root=root,
         freeze_set=freeze_set,
         ticket_enum=ticket_enum,
@@ -806,10 +843,14 @@ def apply_settle_all_from_reveal(
         result=result,
         reveal_meta=reveal_meta,
         idempotent_replay=False,
-        settlement_written=written_settlement,
+        settlement_written=False,
     )
-    _write_exclusive_json(root / _ARTIFACT_RECEIPT, receipt)
-    return receipt
+    durable_receipt["settlement_written"] = False
+    _write_exclusive_json(root / _ARTIFACT_RECEIPT, durable_receipt)
+    # Process return may report whether this call created the settlement_set marker.
+    returned = dict(durable_receipt)
+    returned["settlement_written"] = bool(written_settlement)
+    return returned
 
 
 def build_isolated_reveal_fixture(
