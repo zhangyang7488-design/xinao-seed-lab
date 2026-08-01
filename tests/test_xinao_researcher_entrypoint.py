@@ -104,7 +104,56 @@ def _bundle(
     return request, manifest, packet_materials
 
 
-def _candidate(request: dict[str, Any], materials: list[dict[str, Any]]) -> dict[str, object]:
+def _action_core() -> dict[str, object]:
+    return {
+        "panel": "B",
+        "selected_number": 17,
+        "stake": "125.0000",
+        "target_ref": "draw.20260731-001",
+        "target_open_time": "2026-07-31T01:00:00Z",
+        "freeze_deadline": "2026-07-31T00:00:00Z",
+        "knowledge_cutoff": "2026-07-30T00:00:00Z",
+        "odds_version_ref": "odds.special-number.test.v1",
+        "baseline_ref": "BO0013",
+        "risk_policy_ref": "researcher-authored.behavior.v1",
+        "rule_ref": "special-number-rule.v1",
+    }
+
+
+def _no_action_core() -> dict[str, object]:
+    return {
+        "target_ref": "draw.20260731-001",
+        "target_open_time": "2026-07-31T01:00:00Z",
+        "freeze_deadline": "2026-07-31T00:00:00Z",
+        "knowledge_cutoff": "2026-07-30T00:00:00Z",
+        "odds_version_ref": "odds.special-number.test.v1",
+        "rule_ref": "special-number-rule.v1",
+    }
+
+
+def _actor_intent(*, decision_kind: str = "ACTION") -> dict[str, object]:
+    intent: dict[str, object] = {
+        "schema_version": "xinao.actor_authored_behavior_intent.v1",
+        "authored_at": "2026-07-30T12:00:00Z",
+        "decision_kind": decision_kind,
+        "stake": "125.0000" if decision_kind == "ACTION" else "0.0000",
+        "research_rationale": "I chose this behavior from the evidence I inspected.",
+        "after_hit_response": "Recheck the same evidence after a hit.",
+        "after_miss_response": "Investigate why the judgment failed.",
+        "next_round_or_stop_response": "Read the settled balance before choosing again.",
+    }
+    if decision_kind == "ACTION":
+        intent["panel"] = "B"
+        intent["selected_number"] = 17
+    return intent
+
+
+def _candidate(
+    request: dict[str, Any],
+    materials: list[dict[str, Any]],
+    *,
+    decision_kind: str = "ACTION",
+) -> dict[str, object]:
     refs = [{"material_id": item["material_id"], "sha256": item["sha256"]} for item in materials]
     evidence = [
         {
@@ -114,7 +163,7 @@ def _candidate(request: dict[str, Any], materials: list[dict[str, Any]]) -> dict
         }
         for item in materials
     ]
-    return {
+    candidate: dict[str, object] = {
         "schema_version": "xinao.research_candidate.v2",
         "status": "CANDIDATE_READY",
         "research_question": request["research_question"],
@@ -130,6 +179,17 @@ def _candidate(request: dict[str, Any], materials: list[dict[str, Any]]) -> dict
         "limitations": ["candidate evidence only"],
         "next_evidence": ["independent observation"],
     }
+    if decision_kind == "ACTION":
+        candidate["account_identity"] = "ACTION"
+        candidate["executable_account_decision"] = _action_core()
+    elif decision_kind == "NO_ACTION":
+        candidate["account_identity"] = "RESEARCHER_ACCOUNT_NO_ACTION"
+        candidate["no_action_intent"] = _no_action_core()
+    elif decision_kind == "INSUFFICIENT_EVIDENCE":
+        candidate["status"] = "INSUFFICIENT_EVIDENCE"
+    else:  # pragma: no cover - test-helper misuse
+        raise ValueError(decision_kind)
+    return candidate
 
 
 def _provider_envelope(candidate: dict[str, object]) -> dict[str, object]:
@@ -493,12 +553,112 @@ def test_bundle_rejects_nul_and_non_utf8_material(tmp_path: Path, payload: bytes
     assert failure.value.reason_code == "MATERIAL_TEXT_INVALID"
 
 
-def test_candidate_accepts_exact_research_only_v2_output(tmp_path: Path) -> None:
+@pytest.mark.parametrize("decision_kind", ["ACTION", "NO_ACTION"])
+def test_candidate_accepts_exact_complete_actor_v2_output(
+    tmp_path: Path,
+    decision_kind: str,
+) -> None:
     module = _module()
     request, _manifest, expected_materials = _bundle(module, tmp_path / "materials")
-    candidate = _candidate(request, expected_materials)
+    candidate = _candidate(request, expected_materials, decision_kind=decision_kind)
 
     assert module._valid_candidate(candidate, request=request, materials=expected_materials) is True
+
+
+def test_candidate_schema_and_container_require_one_matching_ready_branch(
+    tmp_path: Path,
+) -> None:
+    module = _module()
+    request, _manifest, expected_materials = _bundle(module, tmp_path / "materials")
+    schema_value = json.loads(
+        (
+            ROOT / "skills" / "xinao" / "references" / "researcher-output.v2.schema.json"
+        ).read_text(encoding="utf-8")
+    )
+    validator = Draft202012Validator(schema_value)
+
+    action = _candidate(request, expected_materials)
+    assert validator.is_valid(action)
+    no_action = _candidate(request, expected_materials, decision_kind="NO_ACTION")
+    assert validator.is_valid(no_action)
+    insufficient = _candidate(
+        request, expected_materials, decision_kind="INSUFFICIENT_EVIDENCE"
+    )
+    assert validator.is_valid(insufficient)
+
+    signal_only = dict(action)
+    signal_only.pop("account_identity")
+    signal_only.pop("executable_account_decision")
+    assert validator.is_valid(signal_only)
+    assert module._valid_candidate(
+        signal_only,
+        request=request,
+        materials=expected_materials,
+    )
+    identity_without_branch = dict(signal_only)
+    identity_without_branch["account_identity"] = "ACTION"
+    both = dict(action)
+    both["no_action_intent"] = _no_action_core()
+    mismatched_identity = dict(action)
+    mismatched_identity["account_identity"] = "RESEARCHER_ACCOUNT_NO_ACTION"
+    insufficient_with_action = dict(insufficient)
+    insufficient_with_action["executable_account_decision"] = _action_core()
+
+    for invalid in (
+        identity_without_branch,
+        both,
+        mismatched_identity,
+        insufficient_with_action,
+    ):
+        assert not validator.is_valid(invalid)
+        assert not module._valid_candidate(
+            invalid,
+            request=request,
+            materials=expected_materials,
+        )
+
+
+def test_model_can_author_actor_only_intent_without_platform_reality_fields(
+    tmp_path: Path,
+) -> None:
+    module = _module()
+    request, _manifest, expected_materials = _bundle(module, tmp_path / "materials")
+    schema_value = json.loads(
+        (
+            ROOT / "skills" / "xinao" / "references" / "researcher-output.v2.schema.json"
+        ).read_text(encoding="utf-8")
+    )
+    candidate = _candidate(request, expected_materials)
+    candidate.pop("account_identity")
+    candidate.pop("executable_account_decision")
+    candidate["complete_actor_behavior_intent"] = _actor_intent()
+    assert Draft202012Validator(schema_value).is_valid(candidate)
+    assert module._valid_candidate(
+        candidate,
+        request=request,
+        materials=expected_materials,
+    )
+    intent = candidate["complete_actor_behavior_intent"]
+    assert isinstance(intent, dict)
+    for platform_reality in (
+        "target_ref",
+        "freeze_deadline",
+        "rule_ref",
+        "odds_version_ref",
+        "current_balance",
+        "information_set_ref",
+    ):
+        assert platform_reality not in intent
+
+    mismatched = _candidate(request, expected_materials)
+    mismatched["complete_actor_behavior_intent"] = _actor_intent(
+        decision_kind="NO_ACTION"
+    )
+    assert not module._valid_candidate(
+        mismatched,
+        request=request,
+        materials=expected_materials,
+    )
 
 
 @pytest.mark.parametrize(
@@ -511,6 +671,9 @@ def test_candidate_rejects_hidden_effect_or_action_fields(
     module = _module()
     request, _manifest, expected_materials = _bundle(module, tmp_path / "materials")
     candidate = _candidate(request, expected_materials)
+    candidate.pop("account_identity")
+    candidate.pop("executable_account_decision")
+    candidate["complete_actor_behavior_intent"] = _actor_intent()
     candidate[forbidden_field] = {"forbidden": True}
 
     assert (
@@ -567,8 +730,9 @@ def test_candidate_rejects_unknown_or_unclaimed_evidence_reference(tmp_path: Pat
 def test_empty_bundle_requires_empty_material_and_evidence_refs(tmp_path: Path) -> None:
     module = _module()
     request, _manifest, expected_materials = _bundle(module, tmp_path / "materials", payloads=())
-    candidate = _candidate(request, expected_materials)
-    candidate["status"] = "INSUFFICIENT_EVIDENCE"
+    candidate = _candidate(
+        request, expected_materials, decision_kind="INSUFFICIENT_EVIDENCE"
+    )
 
     assert module._valid_candidate(candidate, request=request, materials=expected_materials) is True
 
@@ -596,6 +760,9 @@ def test_main_writes_bound_v2_result_and_keeps_model_tool_free(
     (input_root / "prompt.md").write_bytes(base_prompt)
     (input_root / "output.schema.json").write_bytes(schema)
     candidate = _candidate(request, expected_materials)
+    candidate.pop("account_identity")
+    candidate.pop("executable_account_decision")
+    candidate["complete_actor_behavior_intent"] = _actor_intent()
     Draft202012Validator(schema_value).validate(candidate)
     provider = _provider_envelope(candidate)
     observed_commands: list[list[str]] = []

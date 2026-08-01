@@ -43,7 +43,6 @@ from xinao.science.owner_disposition import (
     DISPOSITION_MARKER,
     DISPOSITION_SCHEMA_VERSION,
     OWNER_CHANNEL_AUTHORITY_UNPROVEN,
-    SCIENCE_RETAIN_FOR_SHADOW,
     OwnerDispositionError,
     disposition_cas_path,
     encode_disposition_bytes,
@@ -127,10 +126,27 @@ def _researcher_executable_core(
     return core
 
 
+def _researcher_no_action_core(
+    *,
+    overrides: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    core = {
+        "target_ref": "draw.20260801-001",
+        "target_open_time": _iso(OPEN_AT),
+        "freeze_deadline": _iso(DEADLINE),
+        "knowledge_cutoff": _iso(CUTOFF),
+        "odds_version_ref": "odds.special-number.20260731.v1",
+        "rule_ref": "special-number-rule.v1",
+    }
+    core.update(overrides or {})
+    return core
+
+
 def _candidate(
     *,
     researcher_selected_number: int = 7,
     include_researcher_executable: bool = True,
+    decision_kind: str = "ACTION",
     researcher_executable_overrides: dict[str, Any] | None = None,
     **overrides: Any,
 ) -> dict[str, Any]:
@@ -156,9 +172,13 @@ def _candidate(
         "limitations": ["candidate evidence only"],
         "next_evidence": ["independent observation"],
     }
-    if include_researcher_executable:
+    if include_researcher_executable and decision_kind == "ACTION":
         payload["executable_account_decision"] = _researcher_executable_core(
             selected_number=researcher_selected_number,
+            overrides=researcher_executable_overrides,
+        )
+    elif decision_kind == "NO_ACTION":
+        payload["no_action_intent"] = _researcher_no_action_core(
             overrides=researcher_executable_overrides,
         )
     payload.update(overrides)
@@ -349,6 +369,7 @@ def _ingest(
     *,
     selected_number: int = 7,
     include_researcher_executable: bool = True,
+    decision_kind: str = "ACTION",
     researcher_executable_overrides: dict[str, Any] | None = None,
 ) -> tuple[Path, dict[str, Any], bytes, dict[str, Any]]:
     pool = tmp_path / "pool"
@@ -356,6 +377,7 @@ def _ingest(
         candidate=_candidate(
             researcher_selected_number=selected_number,
             include_researcher_executable=include_researcher_executable,
+            decision_kind=decision_kind,
             researcher_executable_overrides=researcher_executable_overrides,
         )
     )
@@ -501,9 +523,11 @@ def _manual_production_authority_chain(
     )
     researcher_binding = {
         "schema_version": "xinao.researcher_action_binding.v1",
+        "account_identity": "ACTION",
         "source_kind": "ONESHOT_RESEARCH_RESULT",
         "source_artifact_sha256": entry["result_sha256"],
         "source_json_path": "$.candidate.executable_account_decision",
+        "decision_content_hash": canonical_sha256(researcher_core),
         "executable_content_hash": canonical_sha256(researcher_core),
         "result_sha256": entry["result_sha256"],
         "pool_entry_content_hash": entry["content_hash"],
@@ -548,6 +572,30 @@ def test_pool_ingest_owner_adopted_false(tmp_path: Path) -> None:
     assert entry["completion_claim_allowed"] is False
     loaded = load_pool_entry(pool, entry["result_sha256"])
     assert loaded["content_hash"] == entry["content_hash"]
+
+
+def test_legacy_oneshot_cannot_be_replayed_as_live_actor_episode(tmp_path: Path) -> None:
+    """Explicit Episode roots select the actor path; one-shot bytes cannot enter it."""
+
+    pool, entry, _, _ = _ingest(tmp_path)
+    owner = tmp_path / "owner"
+    portfolio = _init_portfolio(tmp_path)
+    disposition_path = _write_portfolio_disposition(
+        owner,
+        pool,
+        entry,
+        portfolio,
+    )
+    with pytest.raises(OwnerDispositionError) as exc:
+        load_and_verify_disposition(
+            disposition_path=disposition_path,
+            owner_state_root=owner,
+            pool_root=pool,
+            episode_root=tmp_path / "episode-reality",
+            portfolio_root=portfolio,
+            authority_root=tmp_path / "source-authority",
+        )
+    assert exc.value.reason_code == "PRODUCTION_ACTOR_EPISODE_SOURCE_KIND_REQUIRED"
 
 
 def test_pool_rejects_receipt_result_hash_mismatch(tmp_path: Path) -> None:
@@ -885,23 +933,55 @@ def test_stake_nan_inf_exponent_scale_rejected(tmp_path: Path) -> None:
             validate_disposition_payload(body, pool_entry=entry)
 
 
-def test_reject_plus_action_matrix_and_retain_for_shadow(tmp_path: Path) -> None:
+def test_owner_verdict_never_rewrites_researcher_action_as_no_action(tmp_path: Path) -> None:
     _, entry, _, _ = _ingest(tmp_path)
-    for science in ("REJECT", "ABSORB_NO_ACTION", "DEFER"):
+    for science in ("REJECT", "DEFER"):
         body = _disposition_body(entry, science_disposition=science, account_identity="ACTION")
-        with pytest.raises(OwnerDispositionError, match="SCIENCE_ACCOUNT_MATRIX_VIOLATION"):
-            validate_disposition_payload(body, pool_entry=entry)
+        normalized = validate_disposition_payload(body, pool_entry=entry)
+        assert normalized["science_disposition"] == science
+        assert normalized["account_identity"] == "ACTION"
+        assert normalized["science_identity"] == "SCIENCE_CANDIDATE"
 
-    # Positive: RETAIN_FOR_SHADOW + ACTION is explicit shadow production without science adopt.
-    ok = _disposition_body(
-        entry,
-        science_disposition=SCIENCE_RETAIN_FOR_SHADOW,
-        account_identity="ACTION",
+    retained = validate_disposition_payload(
+        _disposition_body(entry, science_disposition="RETAIN_FOR_SHADOW"),
+        pool_entry=entry,
     )
-    normalized = validate_disposition_payload(ok, pool_entry=entry)
-    assert normalized["science_disposition"] == SCIENCE_RETAIN_FOR_SHADOW
-    assert normalized["account_identity"] == "ACTION"
-    assert normalized["science_identity"] == "SCIENCE_CANDIDATE"
+    assert retained["account_identity"] == "ACTION"
+    assert retained["science_identity"] == "SCIENCE_CANDIDATE"
+
+    with pytest.raises(OwnerDispositionError, match="SCIENCE_DISPOSITION_INVALID"):
+        validate_disposition_payload(
+            _disposition_body(entry, science_disposition="ABSORB_NO_ACTION"),
+            pool_entry=entry,
+        )
+
+
+@pytest.mark.parametrize("science_disposition", ["REJECT", "DEFER"])
+def test_reject_or_defer_records_verdict_but_cannot_freeze_actor_action(
+    tmp_path: Path,
+    science_disposition: str,
+) -> None:
+    pool, entry, _, _ = _ingest(tmp_path, selected_number=9)
+    owner = tmp_path / "owner-veto"
+    portfolio = _init_portfolio(tmp_path, name="portfolio-veto")
+    path = _write_portfolio_disposition(
+        owner,
+        pool,
+        entry,
+        portfolio,
+        science_disposition=science_disposition,
+        account_identity="ACTION",
+        selected_number=9,
+    )
+    with pytest.raises(FreezeAdapterError, match="OWNER_DISPOSITION_NOT_ADOPTED"):
+        _apply_freeze(
+            pool_root=pool,
+            owner_state_root=owner,
+            disposition_path=path,
+            shadow_root=portfolio,
+            mode="portfolio",
+        )
+    assert not (period_directory(portfolio, 1) / "frozen_episode.v1.json").exists()
 
 
 def test_action_requires_executable_not_prose(tmp_path: Path) -> None:
@@ -1068,7 +1148,7 @@ def test_freeze_request_with_outcome_rejected(tmp_path: Path) -> None:
 
 
 def test_no_action_freeze_zero_stake(tmp_path: Path) -> None:
-    pool, entry, _, _ = _ingest(tmp_path)
+    pool, entry, _, _ = _ingest(tmp_path, decision_kind="NO_ACTION")
     owner = tmp_path / "owner"
     owner.mkdir()
     portfolio = _init_portfolio(tmp_path)
@@ -1095,7 +1175,11 @@ def test_no_action_freeze_zero_stake(tmp_path: Path) -> None:
     assert binding_hash == result["research_binding_sha256"]
 
 
-def test_retain_for_shadow_action_freezes(tmp_path: Path) -> None:
+@pytest.mark.parametrize("science_disposition", ["ADOPT", "RETAIN_FOR_SHADOW"])
+def test_owner_authorized_researcher_action_freezes(
+    tmp_path: Path,
+    science_disposition: str,
+) -> None:
     pool, entry, _, _ = _ingest(tmp_path, selected_number=9)
     owner = tmp_path / "owner"
     owner.mkdir()
@@ -1105,7 +1189,7 @@ def test_retain_for_shadow_action_freezes(tmp_path: Path) -> None:
         pool,
         entry,
         portfolio,
-        science_disposition=SCIENCE_RETAIN_FOR_SHADOW,
+        science_disposition=science_disposition,
         account_identity="ACTION",
         selected_number=9,
     )
@@ -1122,7 +1206,7 @@ def test_retain_for_shadow_action_freezes(tmp_path: Path) -> None:
     assert frozen.bound_account_ticket.selected_number == 9
     assert frozen.science_decision.identity.value == "SCIENCE_CANDIDATE"
     side = load_research_binding(portfolio, result["research_binding_sha256"])
-    assert side["science_disposition"] == SCIENCE_RETAIN_FOR_SHADOW
+    assert side["science_disposition"] == science_disposition
     assert side["scientific_promotion"] is False
 
 
@@ -1296,7 +1380,7 @@ def test_no_auto_freeze_without_new_disposition(tmp_path: Path) -> None:
 
 
 def test_happy_path_no_action_then_feedback(tmp_path: Path) -> None:
-    pool, entry, _, _ = _ingest(tmp_path)
+    pool, entry, _, _ = _ingest(tmp_path, decision_kind="NO_ACTION")
     owner = tmp_path / "owner"
     owner.mkdir()
     portfolio = _init_portfolio(tmp_path)
@@ -1519,7 +1603,7 @@ def test_full_action_intent_in_binding_agrees_with_frozen_ticket(tmp_path: Path)
 
 
 def test_full_no_action_intent_in_binding_agrees_with_frozen_branch(tmp_path: Path) -> None:
-    pool, entry, _, _ = _ingest(tmp_path)
+    pool, entry, _, _ = _ingest(tmp_path, decision_kind="NO_ACTION")
     owner = tmp_path / "owner"
     owner.mkdir()
     portfolio = _init_portfolio(tmp_path)
@@ -1873,9 +1957,11 @@ def test_direct_production_freeze_rechecks_researcher_source_not_self_consistent
     researcher_core = {key: value for key, value in executable.items() if key != "frozen_at"}
     forged_researcher_binding = {
         "schema_version": "xinao.researcher_action_binding.v1",
+        "account_identity": "ACTION",
         "source_kind": "ONESHOT_RESEARCH_RESULT",
         "source_artifact_sha256": entry["result_sha256"],
         "source_json_path": "$.candidate.executable_account_decision",
+        "decision_content_hash": canonical_sha256(researcher_core),
         "executable_content_hash": canonical_sha256(researcher_core),
         "result_sha256": entry["result_sha256"],
         "pool_entry_content_hash": entry["content_hash"],

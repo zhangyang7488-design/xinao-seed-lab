@@ -31,6 +31,7 @@ import math
 import re
 from collections.abc import Mapping, Sequence
 from datetime import UTC, datetime
+from decimal import Decimal, InvalidOperation
 from typing import Any, Final
 
 from xinao.canonical import canonical_sha256
@@ -167,7 +168,14 @@ _RESEARCH_CANDIDATE_REQUIRED_KEYS = frozenset(
         "next_evidence",
     }
 )
-_RESEARCH_CANDIDATE_OPTIONAL_KEYS = frozenset({"executable_account_decision"})
+_RESEARCH_CANDIDATE_OPTIONAL_KEYS = frozenset(
+    {
+        "account_identity",
+        "complete_actor_behavior_intent",
+        "executable_account_decision",
+        "no_action_intent",
+    }
+)
 _RESEARCHER_EXECUTABLE_CORE_KEYS = frozenset(
     {
         "panel",
@@ -183,6 +191,36 @@ _RESEARCHER_EXECUTABLE_CORE_KEYS = frozenset(
         "rule_ref",
     }
 )
+_RESEARCHER_NO_ACTION_CORE_KEYS = frozenset(
+    {
+        "target_ref",
+        "target_open_time",
+        "freeze_deadline",
+        "knowledge_cutoff",
+        "odds_version_ref",
+        "rule_ref",
+    }
+)
+_ACTOR_INTENT_REQUIRED_KEYS = frozenset(
+    {
+        "schema_version",
+        "authored_at",
+        "decision_kind",
+        "stake",
+        "research_rationale",
+    }
+)
+_ACTOR_INTENT_OPTIONAL_KEYS = frozenset(
+    {
+        "panel",
+        "selected_number",
+        "after_hit_response",
+        "after_miss_response",
+        "next_round_or_stop_response",
+        "content_hash",
+    }
+)
+_CANONICAL_STAKE = re.compile(r"^(?:0|[1-9][0-9]*)\.[0-9]{4}$")
 _PROVIDER_EVIDENCE_KEYS = frozenset(
     {
         "stop_reason",
@@ -258,6 +296,111 @@ def _parse_aware_timestamp(value: object, label: str) -> datetime:
             "RESEARCH_CANDIDATE_AS_OF_INVALID", f"{label} must be timezone-aware"
         )
     return parsed.astimezone(UTC)
+
+
+def _validate_actor_behavior_intent(value: object) -> dict[str, Any]:
+    intent = _require_mapping(
+        value,
+        "RESEARCH_CANDIDATE_ACTOR_INTENT_INVALID",
+        "complete_actor_behavior_intent",
+    )
+    observed = set(intent)
+    if (
+        not _ACTOR_INTENT_REQUIRED_KEYS.issubset(observed)
+        or observed - _ACTOR_INTENT_REQUIRED_KEYS - _ACTOR_INTENT_OPTIONAL_KEYS
+    ):
+        raise ResearcherResultAdapterError(
+            "RESEARCH_CANDIDATE_ACTOR_INTENT_INVALID",
+            "intent required/optional keys are invalid",
+        )
+    if intent.get("schema_version") != "xinao.actor_authored_behavior_intent.v1":
+        raise ResearcherResultAdapterError(
+            "RESEARCH_CANDIDATE_ACTOR_INTENT_INVALID", "schema_version"
+        )
+    authored_text = _require_text(
+        intent.get("authored_at"),
+        "RESEARCH_CANDIDATE_ACTOR_INTENT_INVALID",
+        "authored_at",
+    )
+    _parse_aware_timestamp(authored_text, "actor intent authored_at")
+    # Preserve a non-UTC offset exactly as the Pydantic intent model does while
+    # still normalizing UTC ``+00:00`` to ``Z`` for its JSON hash form.
+    authored_at = datetime.fromisoformat(authored_text.replace("Z", "+00:00"))
+    _require_text(
+        intent.get("research_rationale"),
+        "RESEARCH_CANDIDATE_ACTOR_INTENT_INVALID",
+        "research_rationale",
+    )
+    for field in (
+        "after_hit_response",
+        "after_miss_response",
+        "next_round_or_stop_response",
+    ):
+        response = intent.get(field)
+        if response is not None and not _plain_json_text(response, nonempty=True):
+            raise ResearcherResultAdapterError(
+                "RESEARCH_CANDIDATE_ACTOR_INTENT_INVALID", field
+            )
+    stake = intent.get("stake")
+    if not isinstance(stake, str) or _CANONICAL_STAKE.fullmatch(stake) is None:
+        raise ResearcherResultAdapterError(
+            "RESEARCH_CANDIDATE_ACTOR_INTENT_INVALID", "stake"
+        )
+    try:
+        amount = Decimal(stake)
+    except InvalidOperation as exc:
+        raise ResearcherResultAdapterError(
+            "RESEARCH_CANDIDATE_ACTOR_INTENT_INVALID", "stake"
+        ) from exc
+    kind = intent.get("decision_kind")
+    if kind == "ACTION":
+        number = intent.get("selected_number")
+        if (
+            amount <= 0
+            or intent.get("panel") not in {"A", "B"}
+            or type(number) is not int
+            or not 1 <= number <= 49
+        ):
+            raise ResearcherResultAdapterError(
+                "RESEARCH_CANDIDATE_ACTOR_INTENT_INVALID", "ACTION fields"
+            )
+    elif kind == "NO_ACTION":
+        if (
+            amount != 0
+            or intent.get("panel") is not None
+            or intent.get("selected_number") is not None
+        ):
+            raise ResearcherResultAdapterError(
+                "RESEARCH_CANDIDATE_ACTOR_INTENT_INVALID", "NO_ACTION fields"
+            )
+    else:
+        raise ResearcherResultAdapterError(
+            "RESEARCH_CANDIDATE_ACTOR_INTENT_INVALID", "decision_kind"
+        )
+    content_hash = intent.get("content_hash")
+    if content_hash is not None:
+        _require_hex64(
+            content_hash,
+            "RESEARCH_CANDIDATE_ACTOR_INTENT_INVALID",
+            "content_hash",
+        )
+        body = {
+            "schema_version": intent.get("schema_version"),
+            "authored_at": authored_at.isoformat().replace("+00:00", "Z"),
+            "decision_kind": intent.get("decision_kind"),
+            "panel": intent.get("panel"),
+            "selected_number": intent.get("selected_number"),
+            "stake": intent.get("stake"),
+            "research_rationale": intent.get("research_rationale"),
+            "after_hit_response": intent.get("after_hit_response"),
+            "after_miss_response": intent.get("after_miss_response"),
+            "next_round_or_stop_response": intent.get("next_round_or_stop_response"),
+        }
+        if content_hash != canonical_sha256(body):
+            raise ResearcherResultAdapterError(
+                "RESEARCH_CANDIDATE_ACTOR_INTENT_INVALID", "content_hash mismatch"
+            )
+    return intent
 
 
 def _forbid_progress_claims(payload: Mapping[str, Any], *, surface: str) -> None:
@@ -528,6 +671,38 @@ def _validate_research_candidate(
     if expected_bundle_id is not None and bundle_id != expected_bundle_id:
         raise ResearcherResultAdapterError("RESEARCH_CANDIDATE_BUNDLE_DRIFT", "material_bundle_id")
     executable = payload.get("executable_account_decision")
+    no_action_intent = payload.get("no_action_intent")
+    has_action = executable is not None
+    has_no_action = no_action_intent is not None
+    if has_action and has_no_action:
+        raise ResearcherResultAdapterError(
+            "RESEARCH_CANDIDATE_DECISION_BRANCH_CONFLICT",
+            "candidate cannot author both ACTION and NO_ACTION",
+        )
+    if status == "INSUFFICIENT_EVIDENCE" and (has_action or has_no_action):
+        raise ResearcherResultAdapterError(
+            "RESEARCH_CANDIDATE_DECISION_STATUS_INVALID",
+            "INSUFFICIENT_EVIDENCE cannot author an account decision",
+        )
+    declared_identity = payload.get("account_identity")
+    if status == "INSUFFICIENT_EVIDENCE" and declared_identity is not None:
+        raise ResearcherResultAdapterError(
+            "RESEARCH_CANDIDATE_ACCOUNT_IDENTITY_INVALID",
+            "INSUFFICIENT_EVIDENCE cannot declare account_identity",
+        )
+    expected_identity = (
+        "ACTION" if has_action else "RESEARCHER_ACCOUNT_NO_ACTION" if has_no_action else None
+    )
+    if declared_identity is not None and expected_identity is None:
+        raise ResearcherResultAdapterError(
+            "RESEARCH_CANDIDATE_DECISION_BRANCH_INVALID",
+            "account_identity requires one authored account decision branch",
+        )
+    if declared_identity is not None and declared_identity != expected_identity:
+        raise ResearcherResultAdapterError(
+            "RESEARCH_CANDIDATE_ACCOUNT_IDENTITY_INVALID",
+            f"declared={declared_identity!r} branch={expected_identity!r}",
+        )
     if executable is not None:
         executable_map = _require_mapping(
             executable,
@@ -543,6 +718,46 @@ def _validate_research_candidate(
             raise ResearcherResultAdapterError(
                 "RESEARCH_CANDIDATE_EXECUTABLE_STATUS_INVALID",
                 str(status),
+            )
+    if no_action_intent is not None:
+        no_action_map = _require_mapping(
+            no_action_intent,
+            "RESEARCH_CANDIDATE_NO_ACTION_INVALID",
+            "no_action_intent",
+        )
+        if set(no_action_map) != _RESEARCHER_NO_ACTION_CORE_KEYS:
+            raise ResearcherResultAdapterError(
+                "RESEARCH_CANDIDATE_NO_ACTION_INVALID",
+                "no_action_intent keys are not exact",
+            )
+        if status != "CANDIDATE_READY":
+            raise ResearcherResultAdapterError(
+                "RESEARCH_CANDIDATE_NO_ACTION_STATUS_INVALID",
+                str(status),
+            )
+    actor_intent_raw = payload.get("complete_actor_behavior_intent")
+    actor_intent = (
+        _validate_actor_behavior_intent(actor_intent_raw)
+        if actor_intent_raw is not None
+        else None
+    )
+    if status == "INSUFFICIENT_EVIDENCE" and actor_intent is not None:
+        raise ResearcherResultAdapterError(
+            "RESEARCH_CANDIDATE_ACTOR_INTENT_STATUS_INVALID", str(status)
+        )
+    if actor_intent is not None and (has_action or has_no_action):
+        projected_kind = "ACTION" if has_action else "NO_ACTION"
+        if actor_intent["decision_kind"] != projected_kind:
+            raise ResearcherResultAdapterError(
+                "RESEARCH_CANDIDATE_ACTOR_INTENT_BRANCH_MISMATCH", "decision_kind"
+            )
+        if has_action and (
+            actor_intent.get("panel") != executable_map.get("panel")
+            or actor_intent.get("selected_number") != executable_map.get("selected_number")
+            or actor_intent.get("stake") != executable_map.get("stake")
+        ):
+            raise ResearcherResultAdapterError(
+                "RESEARCH_CANDIDATE_ACTOR_INTENT_BRANCH_MISMATCH", "ACTION choice"
             )
     if not _plain_json_text(payload.get("summary"), nonempty=True):
         raise ResearcherResultAdapterError("RESEARCH_CANDIDATE_SUMMARY_INVALID", "summary")

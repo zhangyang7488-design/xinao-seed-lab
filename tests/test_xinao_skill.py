@@ -2746,6 +2746,7 @@ def _production_shaped_material_result_binding(
 ) -> tuple[object, dict[str, object], dict[str, object], dict[str, str]]:
     """Build a production-shaped container result accepted by host material binding."""
 
+    tmp_path.mkdir(parents=True, exist_ok=True)
     module = _module()
     _auth(module, tmp_path, monkeypatch)
     source = tmp_path / "material.txt"
@@ -2778,6 +2779,15 @@ def _production_shaped_material_result_binding(
         "counterevidence": [],
         "limitations": ["candidate evidence only"],
         "next_evidence": ["independent observation"],
+        "no_action_intent": {
+            "target_ref": "draw.20260730-001",
+            "target_open_time": "2026-07-30T01:00:00Z",
+            "freeze_deadline": "2026-07-30T00:59:00Z",
+            "knowledge_cutoff": "2026-07-30T00:00:00Z",
+            "odds_version_ref": "odds.special-number.test.v1",
+            "rule_ref": "special-number-rule.v1",
+        },
+        "account_identity": "RESEARCHER_ACCOUNT_NO_ACTION",
     }
     request_sha = "1" * 64
     prompt_sha = "2" * 64
@@ -2829,6 +2839,207 @@ def test_material_result_binding_requires_real_supplied_reference(
     with pytest.raises(module.XinaoError) as unbound:
         module._validate_material_result_binding(result, manifest=manifest, **binding)
     assert unbound.value.reason_code == "RESEARCH_CANDIDATE_MATERIAL_USE_UNBOUND"
+
+
+def _researcher_action_core() -> dict[str, object]:
+    return {
+        "panel": "A",
+        "selected_number": 7,
+        "stake": "1.0000",
+        "target_ref": "draw.20260730-001",
+        "target_open_time": "2026-07-30T01:00:00Z",
+        "freeze_deadline": "2026-07-30T00:59:00Z",
+        "knowledge_cutoff": "2026-07-30T00:00:00Z",
+        "odds_version_ref": "odds.special-number.test.v1",
+        "baseline_ref": "BO0001",
+        "risk_policy_ref": "risk.test.v1",
+        "rule_ref": "special-number-rule.v1",
+    }
+
+
+def test_material_result_binding_accepts_exact_action_or_no_action(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    module, result, manifest, binding = _production_shaped_material_result_binding(
+        tmp_path, monkeypatch
+    )
+    module._validate_material_result_binding(result, manifest=manifest, **binding)
+
+    candidate = result["candidate"]
+    assert isinstance(candidate, dict)
+    candidate.pop("no_action_intent")
+    candidate.pop("account_identity")
+    # A generic research signal does not become account behavior merely because
+    # its evidence is ready for Owner review.
+    module._validate_material_result_binding(result, manifest=manifest, **binding)
+
+    candidate["no_action_intent"] = {
+        "target_ref": "draw.20260730-001",
+        "target_open_time": "2026-07-30T01:00:00Z",
+        "freeze_deadline": "2026-07-30T00:59:00Z",
+        "knowledge_cutoff": "2026-07-30T00:00:00Z",
+        "odds_version_ref": "odds.special-number.test.v1",
+        "rule_ref": "special-number-rule.v1",
+    }
+    candidate["account_identity"] = "RESEARCHER_ACCOUNT_NO_ACTION"
+    module._validate_material_result_binding(result, manifest=manifest, **binding)
+
+    candidate.pop("no_action_intent")
+    candidate["executable_account_decision"] = _researcher_action_core()
+    candidate["account_identity"] = "ACTION"
+    module._validate_material_result_binding(result, manifest=manifest, **binding)
+
+    # account_identity is an optional redundant readback, never a branch selector.
+    candidate.pop("account_identity")
+    module._validate_material_result_binding(result, manifest=manifest, **binding)
+
+    insufficient_module, insufficient, insufficient_manifest, insufficient_binding = (
+        _production_shaped_material_result_binding(tmp_path / "insufficient", monkeypatch)
+    )
+    insufficient_candidate = insufficient["candidate"]
+    assert isinstance(insufficient_candidate, dict)
+    insufficient["status"] = "INSUFFICIENT_EVIDENCE"
+    insufficient_candidate["status"] = "INSUFFICIENT_EVIDENCE"
+    insufficient_candidate.pop("no_action_intent")
+    insufficient_candidate.pop("account_identity")
+    insufficient_module._validate_material_result_binding(
+        insufficient,
+        manifest=insufficient_manifest,
+        **insufficient_binding,
+    )
+
+
+def test_material_result_binding_accepts_actor_only_intent_and_normalized_seal(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    module, result, manifest, binding = _production_shaped_material_result_binding(
+        tmp_path, monkeypatch
+    )
+    candidate = result["candidate"]
+    assert isinstance(candidate, dict)
+    candidate.pop("no_action_intent")
+    candidate.pop("account_identity")
+    intent = {
+        "schema_version": "xinao.actor_authored_behavior_intent.v1",
+        "authored_at": "2026-07-30T00:30:00+00:00",
+        "decision_kind": "ACTION",
+        "panel": "B",
+        "selected_number": 49,
+        "stake": "3.2500",
+        "research_rationale": "The live evidence supports this exposure.",
+    }
+    candidate["complete_actor_behavior_intent"] = intent
+    module._validate_material_result_binding(result, manifest=manifest, **binding)
+
+    normalized = {
+        **intent,
+        "authored_at": "2026-07-30T00:30:00Z",
+        "after_hit_response": None,
+        "after_miss_response": None,
+        "next_round_or_stop_response": None,
+    }
+    intent["content_hash"] = module._sha256_bytes(
+        json.dumps(
+            normalized,
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+            allow_nan=False,
+        ).encode("utf-8")
+    )
+    module._validate_material_result_binding(result, manifest=manifest, **binding)
+
+    intent["content_hash"] = "0" * 64
+    with pytest.raises(module.XinaoError) as forged:
+        module._validate_material_result_binding(result, manifest=manifest, **binding)
+    assert forged.value.reason_code == "RESEARCH_CANDIDATE_ACTOR_INTENT_INVALID"
+
+
+def test_material_result_binding_rejects_actor_intent_status_or_legacy_choice_drift(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    module, result, manifest, binding = _production_shaped_material_result_binding(
+        tmp_path, monkeypatch
+    )
+    candidate = result["candidate"]
+    assert isinstance(candidate, dict)
+    candidate["complete_actor_behavior_intent"] = {
+        "schema_version": "xinao.actor_authored_behavior_intent.v1",
+        "authored_at": "2026-07-30T00:30:00Z",
+        "decision_kind": "ACTION",
+        "panel": "A",
+        "selected_number": 7,
+        "stake": "2.0000",
+        "research_rationale": "actor-authored choice",
+    }
+    with pytest.raises(module.XinaoError) as mismatch:
+        module._validate_material_result_binding(result, manifest=manifest, **binding)
+    assert mismatch.value.reason_code == (
+        "RESEARCH_CANDIDATE_ACTOR_INTENT_BRANCH_MISMATCH"
+    )
+
+    candidate.pop("no_action_intent")
+    candidate.pop("account_identity")
+    result["status"] = "INSUFFICIENT_EVIDENCE"
+    candidate["status"] = "INSUFFICIENT_EVIDENCE"
+    with pytest.raises(module.XinaoError) as insufficient:
+        module._validate_material_result_binding(result, manifest=manifest, **binding)
+    assert insufficient.value.reason_code == (
+        "RESEARCH_CANDIDATE_ACTOR_INTENT_STATUS_INVALID"
+    )
+
+
+@pytest.mark.parametrize(
+    ("mutation", "reason_code"),
+    [
+        ("identity_without_branch", "RESEARCH_CANDIDATE_DECISION_BRANCH_REQUIRED"),
+        (
+            "both_branches",
+            "RESEARCH_CANDIDATE_DECISION_BRANCH_CONFLICT",
+        ),
+        (
+            "identity_mismatch",
+            "RESEARCH_CANDIDATE_ACCOUNT_IDENTITY_INVALID",
+        ),
+        (
+            "no_action_shape",
+            "RESEARCH_CANDIDATE_NO_ACTION_INVALID",
+        ),
+        (
+            "insufficient_with_branch",
+            "RESEARCH_CANDIDATE_DECISION_BRANCH_STATUS_INVALID",
+        ),
+    ],
+)
+def test_material_result_binding_rejects_decision_branch_drift(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    mutation: str,
+    reason_code: str,
+) -> None:
+    module, result, manifest, binding = _production_shaped_material_result_binding(
+        tmp_path, monkeypatch
+    )
+    candidate = result["candidate"]
+    assert isinstance(candidate, dict)
+    if mutation == "identity_without_branch":
+        candidate.pop("no_action_intent")
+    elif mutation == "both_branches":
+        candidate["executable_account_decision"] = _researcher_action_core()
+    elif mutation == "identity_mismatch":
+        candidate["account_identity"] = "ACTION"
+    elif mutation == "no_action_shape":
+        no_action = candidate["no_action_intent"]
+        assert isinstance(no_action, dict)
+        no_action.pop("knowledge_cutoff")
+    elif mutation == "insufficient_with_branch":
+        result["status"] = "INSUFFICIENT_EVIDENCE"
+        candidate["status"] = "INSUFFICIENT_EVIDENCE"
+    else:  # pragma: no cover - exhaustive parametrization guard
+        raise AssertionError(mutation)
+    with pytest.raises(module.XinaoError) as failure:
+        module._validate_material_result_binding(result, manifest=manifest, **binding)
+    assert failure.value.reason_code == reason_code
 
 
 def test_material_result_binding_admits_producer_raw_provider_ids(

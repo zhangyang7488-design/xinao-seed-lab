@@ -110,26 +110,16 @@ def _run_cli(argv: list[str]) -> subprocess.CompletedProcess[str]:
 
 
 def _owner_fill_action(payload_draft: dict[str, Any], branch: dict[str, Any]) -> dict[str, Any]:
-    """Codex-shaped minimal judgment fill for ACTION (tests only)."""
+    """Codex fills only its verdict/rationale plus host-observed seal time."""
 
     body = copy.deepcopy(payload_draft)
     body["disposition_source"] = CODEX_OWNER_CHANNEL_SOURCE
     body["owner_role"] = "codex"
     body["worker_controlled"] = False
     body["science_disposition"] = "ADOPT"
-    body["account_identity"] = ACCOUNT_ACTION
     body["rationale_ref"] = "owner-filled-from-draft.test"
     exec_dec = dict(branch["executable_account_decision"])
-    exec_dec["panel"] = "B"
-    exec_dec["selected_number"] = 17
-    exec_dec["stake"] = "1.0000"
-    exec_dec["baseline_ref"] = "BO0013"
-    exec_dec["risk_policy_ref"] = "shadow-risk.max-one-unit.v1"
-    exec_dec["odds_version_ref"] = "odds.special-number.20260731.v1"
     exec_dec["frozen_at"] = "2026-07-30T10:00:00Z"
-    # Owner confirms cutoff <= frozen_at (pool as_of may be later than freeze action).
-    exec_dec["knowledge_cutoff"] = "2026-07-30T08:00:00Z"
-    body["knowledge_cutoff"] = exec_dec["knowledge_cutoff"]
     body["executable_account_decision"] = exec_dec
     body.pop("no_action_period_binding", None)
     return body
@@ -154,19 +144,32 @@ def _ingest_owner_action_candidate(
     )
 
 
+def _ingest_owner_no_action_candidate(
+    tmp_path: Path,
+    capture: dict[str, Any],
+) -> tuple[Path, dict[str, Any], bytes, dict[str, Any]]:
+    authority = capture["source_authority_binding"]
+    return _seam._ingest(
+        tmp_path / "pool-no-action",
+        decision_kind="NO_ACTION",
+        researcher_executable_overrides={
+            "target_ref": authority["target_ref"],
+            "target_open_time": authority["target_guard_open_time"],
+            "freeze_deadline": authority["freeze_deadline"],
+            "knowledge_cutoff": "2026-07-30T08:00:00Z",
+        },
+    )
+
+
 def _owner_fill_no_action(payload_draft: dict[str, Any], branch: dict[str, Any]) -> dict[str, Any]:
     body = copy.deepcopy(payload_draft)
     body["disposition_source"] = CODEX_OWNER_CHANNEL_SOURCE
     body["owner_role"] = "codex"
     body["worker_controlled"] = False
-    body["science_disposition"] = "ABSORB_NO_ACTION"
-    body["account_identity"] = ACCOUNT_NO_ACTION
+    body["science_disposition"] = "ADOPT"
     body["rationale_ref"] = "owner-filled-no-action-from-draft.test"
     na = dict(branch["no_action_period_binding"])
-    na["odds_version_ref"] = "odds.special-number.20260731.v1"
     na["frozen_at"] = "2026-07-30T10:00:00Z"
-    na["knowledge_cutoff"] = "2026-07-30T08:00:00Z"
-    body["knowledge_cutoff"] = na["knowledge_cutoff"]
     body["no_action_period_binding"] = na
     body.pop("executable_account_decision", None)
     return body
@@ -178,7 +181,7 @@ def _owner_fill_no_action(payload_draft: dict[str, Any], branch: dict[str, Any])
 def test_draft_assembles_mechanical_fields_deterministically(tmp_path: Path) -> None:
     capture = _capture_auth(tmp_path)
     sab = capture["source_authority_binding"]
-    pool, entry, _, _ = _seam._ingest(tmp_path / "pool")
+    pool, entry, _, _ = _ingest_owner_action_candidate(tmp_path, capture)
     portfolio = tmp_path / "portfolio"
     init_portfolio(
         root=portfolio,
@@ -221,7 +224,7 @@ def test_draft_assembles_mechanical_fields_deterministically(tmp_path: Path) -> 
     assert pd["period_index"] == 1
     assert pd["target_ref"] == sab["target_ref"]
     assert pd["science_disposition"] == REQUIRED_OWNER_INPUT
-    assert pd["account_identity"] == REQUIRED_OWNER_INPUT
+    assert pd["account_identity"] == ACCOUNT_ACTION
     assert pd["disposition_source"] == REQUIRED_OWNER_INPUT
     assert pd["owner_role"] == REQUIRED_OWNER_INPUT
     assert pd["worker_controlled"] == REQUIRED_OWNER_INPUT
@@ -236,33 +239,32 @@ def test_draft_assembles_mechanical_fields_deterministically(tmp_path: Path) -> 
     assert first["branch_templates"] == second["branch_templates"]
     assert first["required_owner_inputs"] == second["required_owner_inputs"]
 
-    # Both branches offered; neither pre-selected.
-    assert set(first["branch_templates"]) == {ACCOUNT_ACTION, ACCOUNT_NO_ACTION}
+    # The one sealed researcher branch is copied exactly; Owner cannot switch it.
+    assert first["account_identity_from_sealed_researcher"] is True
+    assert set(first["branch_templates"]) == {ACCOUNT_ACTION}
     action_exec = first["branch_templates"][ACCOUNT_ACTION]["executable_account_decision"]
-    assert action_exec["selected_number"] == REQUIRED_OWNER_INPUT
-    assert action_exec["stake"] == REQUIRED_OWNER_INPUT
-    assert action_exec["panel"] == REQUIRED_OWNER_INPUT
+    assert action_exec["selected_number"] == 17
+    assert action_exec["stake"] == "1.0000"
+    assert action_exec["panel"] == "B"
     assert action_exec["target_ref"] == sab["target_ref"]
     assert action_exec["target_open_time"] == sab["target_guard_open_time"]
     assert action_exec["freeze_deadline"] == sab["freeze_deadline"]
-    na = first["branch_templates"][ACCOUNT_NO_ACTION]["no_action_period_binding"]
-    assert na["target_ref"] == sab["target_ref"]
-    assert na["frozen_at"] == REQUIRED_OWNER_INPUT
+    assert action_exec["frozen_at"] == REQUIRED_OWNER_INPUT
 
 
 def test_draft_never_projects_manifest_recommendation(tmp_path: Path) -> None:
-    """Even if research candidate prose exists, judgment stays REQUIRED_OWNER_INPUT."""
+    """Candidate prose cannot replace the sealed structured actor decision."""
 
     pool, entry, _, _ = _seam._ingest(tmp_path)
     # Candidate summary historically contains "buy 17" prose; must not leak.
     draft = draft_owner_disposition(pool_root=pool, result_sha256=entry["result_sha256"])
     blob = json.dumps(draft, sort_keys=True)
-    assert draft["payload_draft"]["account_identity"] == REQUIRED_OWNER_INPUT
+    assert draft["payload_draft"]["account_identity"] == ACCOUNT_ACTION
     assert draft["payload_draft"]["science_disposition"] == REQUIRED_OWNER_INPUT
     assert '"selected_number": 17' not in blob
     assert (
         draft["branch_templates"][ACCOUNT_ACTION]["executable_account_decision"]["selected_number"]
-        == REQUIRED_OWNER_INPUT
+        == 7
     )
 
 
@@ -270,7 +272,7 @@ def test_raw_payload_draft_fails_validate_and_write_cli(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     capture = _capture_auth(tmp_path)
-    pool, entry, _, _ = _seam._ingest(tmp_path / "pool")
+    pool, entry, _, _ = _ingest_owner_action_candidate(tmp_path, capture)
     portfolio = tmp_path / "portfolio"
     init_portfolio(root=portfolio, seat_id="seat.fail", portfolio_ref="portfolio.fail")
     draft = draft_owner_disposition(
@@ -319,36 +321,92 @@ def test_raw_payload_draft_fails_validate_and_write_cli(
     assert not any(owner.rglob("*.json"))
 
 
-def test_owner_filled_action_and_no_action_both_validate(tmp_path: Path) -> None:
+def test_each_sealed_researcher_branch_validates_but_owner_cannot_switch_it(
+    tmp_path: Path,
+) -> None:
     capture = _capture_auth(tmp_path)
-    pool, entry, _, _ = _seam._ingest(tmp_path / "pool")
-    portfolio = tmp_path / "portfolio"
-    init_portfolio(root=portfolio, seat_id="seat.fill", portfolio_ref="portfolio.fill")
-    draft = draft_owner_disposition(
-        pool_root=pool,
-        result_sha256=entry["result_sha256"],
+    action_pool, action_entry, _, _ = _ingest_owner_action_candidate(
+        tmp_path / "action", capture
+    )
+    action_portfolio = tmp_path / "portfolio-action"
+    init_portfolio(
+        root=action_portfolio,
+        seat_id="seat.fill.action",
+        portfolio_ref="portfolio.fill.action",
+    )
+    action_draft = draft_owner_disposition(
+        pool_root=action_pool,
+        result_sha256=action_entry["result_sha256"],
         authority_root=tmp_path / "authority",
         packet_content_hash=capture["packet_content_hash"],
-        portfolio_root=portfolio,
+        portfolio_root=action_portfolio,
     )
     action_body = _owner_fill_action(
-        draft["payload_draft"],
-        draft["branch_templates"][ACCOUNT_ACTION],
+        action_draft["payload_draft"],
+        action_draft["branch_templates"][ACCOUNT_ACTION],
     )
-    normalized_action = validate_disposition_payload(action_body, pool_entry=entry)
+    normalized_action = validate_disposition_payload(
+        action_body, pool_entry=action_entry
+    )
     assert normalized_action["account_identity"] == ACCOUNT_ACTION
     assert normalized_action["executable_account_decision"]["selected_number"] == 17
 
-    no_action_body = _owner_fill_no_action(
-        draft["payload_draft"],
-        draft["branch_templates"][ACCOUNT_NO_ACTION],
+    no_action_pool, no_action_entry, _, _ = _ingest_owner_no_action_candidate(
+        tmp_path / "no-action", capture
     )
-    normalized_na = validate_disposition_payload(no_action_body, pool_entry=entry)
+    no_action_portfolio = tmp_path / "portfolio-no-action"
+    init_portfolio(
+        root=no_action_portfolio,
+        seat_id="seat.fill.no-action",
+        portfolio_ref="portfolio.fill.no-action",
+    )
+    no_action_draft = draft_owner_disposition(
+        pool_root=no_action_pool,
+        result_sha256=no_action_entry["result_sha256"],
+        authority_root=tmp_path / "authority",
+        packet_content_hash=capture["packet_content_hash"],
+        portfolio_root=no_action_portfolio,
+    )
+    no_action_body = _owner_fill_no_action(
+        no_action_draft["payload_draft"],
+        no_action_draft["branch_templates"][ACCOUNT_NO_ACTION],
+    )
+    normalized_na = validate_disposition_payload(
+        no_action_body, pool_entry=no_action_entry
+    )
     assert normalized_na["account_identity"] == ACCOUNT_NO_ACTION
     assert normalized_na["executable_account_decision"] is None
 
-    # Neither path was auto-chosen by draft itself.
-    assert draft["payload_draft"]["account_identity"] == REQUIRED_OWNER_INPUT
+    assert set(action_draft["branch_templates"]) == {ACCOUNT_ACTION}
+    assert set(no_action_draft["branch_templates"]) == {ACCOUNT_NO_ACTION}
+
+    # A structurally valid Owner-authored branch switch still fails against the
+    # exact sealed producer bytes before any Owner CAS object is created.
+    forged = copy.deepcopy(action_body)
+    executable = forged.pop("executable_account_decision")
+    forged["account_identity"] = ACCOUNT_NO_ACTION
+    forged["no_action_period_binding"] = {
+        key: executable[key]
+        for key in (
+            "target_ref",
+            "target_open_time",
+            "freeze_deadline",
+            "frozen_at",
+            "knowledge_cutoff",
+            "odds_version_ref",
+            "rule_ref",
+        )
+    }
+    owner = tmp_path / "forged-owner"
+    with pytest.raises(
+        OwnerDispositionError, match="RESEARCHER_DECISION_IDENTITY_MISMATCH"
+    ):
+        write_owner_disposition_artifact(
+            owner_state_root=owner,
+            payload=forged,
+            pool_root=action_pool,
+        )
+    assert not any(owner.rglob("*.json"))
 
 
 def test_owner_filled_write_owner_disposition_accepts(tmp_path: Path) -> None:
@@ -500,7 +558,7 @@ def test_parser_lists_draft_owner_disposition() -> None:
 
 def test_cli_draft_stdout_and_optional_output(tmp_path: Path) -> None:
     capture = _capture_auth(tmp_path)
-    pool, entry, _, _ = _seam._ingest(tmp_path / "pool")
+    pool, entry, _, _ = _ingest_owner_action_candidate(tmp_path, capture)
     portfolio = tmp_path / "portfolio"
     init_portfolio(root=portfolio, seat_id="seat.cli", portfolio_ref="portfolio.cli")
     out_path = tmp_path / "candidate" / "draft.json"

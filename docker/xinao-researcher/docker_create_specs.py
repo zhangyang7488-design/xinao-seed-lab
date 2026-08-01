@@ -13,6 +13,9 @@ from __future__ import annotations
 
 import hashlib
 import json
+import ntpath
+import os
+import re
 from pathlib import Path
 from typing import Any
 
@@ -59,6 +62,11 @@ TRANSPORT_INPUT_MOUNT = "/input"
 TRANSPORT_OUTPUT_MOUNT = "/output"
 TRANSPORT_SESSION_MOUNT = "/grok-home/sessions"
 TRANSPORT_MATERIAL_MOUNT = "/material"
+# Attempt-bound, content-addressed evidence selected by the Owner.  Keep this
+# distinct from both the legacy /material compatibility mount and the writable
+# /episode-lab tree (which may itself contain a researcher-created materials/
+# directory).  The transport may read this mount; the tool sidecar never gets it.
+TRANSPORT_ACTIVE_MATERIAL_MOUNT = "/active-materials"
 LEGACY_NESTED_AUTH_MOUNT = "/grok-home/.grok"
 LEGACY_NESTED_SESSION_MOUNT = "/grok-home/.grok/sessions"
 TRANSPORT_MCP_BRIDGE_MOUNT = "/opt/xinao-attempt/mcp_tool_bridge.py"  # legacy bridge (optional)
@@ -138,6 +146,7 @@ ALLOWED_TRANSPORT_BIND_TARGETS = frozenset(
         TOOL_IPC_MOUNT,
         TRANSPORT_SESSION_MOUNT,
         TRANSPORT_MATERIAL_MOUNT,
+        TRANSPORT_ACTIVE_MATERIAL_MOUNT,
         TRANSPORT_MCP_BRIDGE_MOUNT,
         TRANSPORT_MCP_IPC_CONTRACT_MOUNT,
         TRANSPORT_ATTEMPT_GROK_CONFIG_MOUNT,
@@ -150,6 +159,31 @@ ALLOWED_TRANSPORT_BIND_TARGETS = frozenset(
         # write tool-side sealed evidence.
     }
 )
+
+
+def canonical_host_bind_source(value: str) -> str:
+    """Normalize one Docker bind source across Windows/Desktop inspect forms.
+
+    Docker Desktop may report a bind created from ``D:\\...`` as either that
+    Windows path or ``/run/desktop/mnt/host/d/...`` (and has historically also
+    used ``/host_mnt/d/...``).  They are the same physical source; treating the
+    Linux projection as a relative Windows path creates a false drift failure.
+    """
+
+    text = str(value or "").strip().replace("\\", "/")
+    projected = re.fullmatch(
+        r"/(?:run/desktop/mnt/host|host_mnt|mnt)/([A-Za-z])(?:/(.*))?",
+        text,
+    )
+    if projected:
+        text = f"{projected.group(1)}:/{projected.group(2) or ''}"
+    if re.match(r"^[A-Za-z]:/", text):
+        return ntpath.normcase(ntpath.normpath(text))
+    return os.path.normcase(os.path.abspath(text))
+
+
+def host_bind_sources_equal(first: str, second: str) -> bool:
+    return canonical_host_bind_source(first) == canonical_host_bind_source(second)
 
 
 class ToolSpecDriftError(RuntimeError):
@@ -228,6 +262,7 @@ def transport_container_spec(
     network: str = "none",
     session_host_path: str | None = None,
     material_host_path: str | None = None,
+    active_material_host_path: str | None = None,
     mcp_bridge_host_path: str | None = None,
     ipc_contract_host_path: str | None = None,
     attempt_grok_config_host_path: str | None = None,
@@ -276,6 +311,14 @@ def transport_container_spec(
             {
                 "host": material_host_path,
                 "container": TRANSPORT_MATERIAL_MOUNT,
+                "mode": "ro",
+            }
+        )
+    if active_material_host_path:
+        binds.append(
+            {
+                "host": active_material_host_path,
+                "container": TRANSPORT_ACTIVE_MATERIAL_MOUNT,
                 "mode": "ro",
             }
         )
@@ -753,6 +796,7 @@ def dual_container_bundle(
     run_id: str = "dual-1",
     session_host_path: str | None = None,
     material_host_path: str | None = None,
+    active_material_host_path: str | None = None,
     mcp_bridge_host_path: str | None = None,
     ipc_contract_host_path: str | None = None,
     attempt_grok_config_host_path: str | None = None,
@@ -775,6 +819,7 @@ def dual_container_bundle(
         network=network,
         session_host_path=session_host_path,
         material_host_path=material_host_path,
+        active_material_host_path=active_material_host_path,
         mcp_bridge_host_path=mcp_bridge_host_path,
         ipc_contract_host_path=ipc_contract_host_path,
         attempt_grok_config_host_path=attempt_grok_config_host_path,
@@ -923,6 +968,10 @@ def validate_transport_spec_invariants(spec: dict[str, Any]) -> list[str]:
                 violations.append(f"forbidden_bind:{container}")
         if container not in ALLOWED_TRANSPORT_BIND_TARGETS:
             violations.append(f"unexpected_bind:{container}")
+        if container == TRANSPORT_ACTIVE_MATERIAL_MOUNT and str(
+            bind.get("mode") or ""
+        ).strip().lower() not in {"ro", "readonly", "read-only", "read_only"}:
+            violations.append("active_material_mount_must_be_readonly")
         if (
             container == "/workspace"
             or host.rstrip("/").endswith("/workspace")
@@ -1074,6 +1123,7 @@ def validate_transport_container_inspect(
     expected_image_id: str | None = None,
     require_auth_mount: bool = True,
     require_ipc_mount: bool = True,
+    expected_active_materials: str | None = None,
 ) -> list[str]:
     """Prove live transport container has exact mounts and no socket/ledger roots."""
     violations: list[str] = []
@@ -1118,10 +1168,13 @@ def validate_transport_container_inspect(
             if env_map.get(key) != value:
                 violations.append(f"provider_egress_env:{key}")
     destinations: set[str] = set()
+    active_material_mounts: list[dict[str, Any]] = []
     for mount in _mounts_from_inspect(inspect_doc):
         dest = str(mount.get("Destination") or mount.get("Target") or "")
         source = str(mount.get("Source") or mount.get("source") or "")
         destinations.add(dest)
+        if dest == TRANSPORT_ACTIVE_MATERIAL_MOUNT:
+            active_material_mounts.append(mount)
         combined = f"{source}|{dest}".lower()
         for marker in FORBIDDEN_MOUNT_MARKERS:
             if marker in combined:
@@ -1139,6 +1192,20 @@ def validate_transport_container_inspect(
             violations.append("missing_auth_mount")
     if require_ipc_mount and TOOL_IPC_MOUNT not in destinations:
         violations.append("missing_ipc_mount")
+    if expected_active_materials is not None:
+        if len(active_material_mounts) != 1:
+            violations.append(
+                f"active_material_mount_count:{len(active_material_mounts)}"
+            )
+        else:
+            active_mount = active_material_mounts[0]
+            observed_source = str(
+                active_mount.get("Source") or active_mount.get("source") or ""
+            )
+            if not host_bind_sources_equal(observed_source, expected_active_materials):
+                violations.append("active_material_mount_source_mismatch")
+            if active_mount.get("RW") is not False:
+                violations.append("active_material_mount_not_readonly")
     return violations
 
 

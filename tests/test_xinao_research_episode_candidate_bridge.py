@@ -359,6 +359,7 @@ def test_experiment_loop_state_transitions_and_export(native: Any, tmp_path: Pat
         lab_root=lab,
     )
     assert bundle["candidate_manifest_sha256"] == _sha(raw2)
+    assert bundle["host_session_id"] == "hs_loop"
     assert bundle["owner_adopted"] is False
     assert bundle["freeze_written"] is False
     # Drift: mutate lab after artifact seal on attempt should fail export
@@ -966,6 +967,50 @@ def test_denied_error_timeout_never_count_as_productive(native: Any, tmp_path: P
         prior_lab_artifact_manifest={"artifacts": []},
     )
     assert shell_ok["shell_bound"] is True
+
+    # A read/compute-only shell is still a real productive operation. It must
+    # bind to the cursor-bounded tool-executor sidecar from this attempt rather
+    # than being forced to create a dummy file merely to satisfy the classifier.
+    read_only_sidecar = "ef" * 32
+    read_only_ok = native.require_lab_effect_binding(
+        delta={
+            "status": "DELTA_OK",
+            "productive_ops": ["shell_exec"],
+            "events": [
+                {
+                    "op": "shell_exec",
+                    "status": "ok",
+                    "exit_code": 0,
+                    "sidecar_event_hash": read_only_sidecar,
+                }
+            ],
+        },
+        lab_artifact_manifest={"artifacts": []},
+        prior_lab_artifact_manifest={"artifacts": []},
+        trusted_event_hashes=[read_only_sidecar],
+    )
+    assert read_only_ok["shell_bound"] is True
+    assert read_only_ok["read_only_shell_bound"] is True
+
+    with pytest.raises(native.NativeSessionError) as untrusted_read_only:
+        native.require_lab_effect_binding(
+            delta={
+                "status": "DELTA_OK",
+                "productive_ops": ["shell_exec"],
+                "events": [
+                    {
+                        "op": "shell_exec",
+                        "status": "ok",
+                        "exit_code": 0,
+                        "sidecar_event_hash": read_only_sidecar,
+                    }
+                ],
+            },
+            lab_artifact_manifest={"artifacts": []},
+            prior_lab_artifact_manifest={"artifacts": []},
+            trusted_event_hashes=["ab" * 32],
+        )
+    assert untrusted_read_only.value.reason_code == "LAB_EFFECT_SHELL_UNBOUND"
 
 
 def test_package_validator_without_docker_tree(tmp_path: Path) -> None:

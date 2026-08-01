@@ -399,6 +399,7 @@ def test_success_persist_export_idempotent_and_authority_clamp(native: Any, tmp_
         lab_root=lab,
     )
     assert bundle1["status"] == native.STATUS_CANDIDATE_EVIDENCE_EXPORTED
+    assert bundle1["host_session_id"] == "xrsess_live_1"
     assert bundle1["completion_claim_allowed"] is False
     assert bundle1["owner_adopted"] is False
     assert bundle1["science_restored"] is False

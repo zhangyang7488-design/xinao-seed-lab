@@ -180,17 +180,26 @@ def _no_action_freeze(
 ) -> tuple[Path, Path, dict[str, Any]]:
     sab = capture["source_authority_binding"]
     target_ref = sab["target_ref"]
-    pool, entry, _, _ = _seam._ingest(tmp_path / "pool")
+    kc = "2026-07-30T08:00:00Z"
+    pool, entry, _, _ = _seam._ingest(
+        tmp_path / "pool",
+        decision_kind="NO_ACTION",
+        researcher_executable_overrides={
+            "target_ref": target_ref,
+            "target_open_time": sab["target_guard_open_time"],
+            "freeze_deadline": sab["freeze_deadline"],
+            "knowledge_cutoff": kc,
+        },
+    )
     owner = tmp_path / "owner"
     owner.mkdir(exist_ok=True)
     portfolio = _seam._init_portfolio(tmp_path / "port")
-    kc = "2026-07-30T08:00:00Z"
     frozen_at = "2026-07-30T10:00:00Z"
     body = _seam._disposition_body(
         entry,
         account_identity="RESEARCHER_ACCOUNT_NO_ACTION",
         include_executable=False,
-        science_disposition="ABSORB_NO_ACTION",
+        science_disposition="ADOPT",
         target_ref=target_ref,
         source_authority_binding=sab,
         knowledge_cutoff=kc,

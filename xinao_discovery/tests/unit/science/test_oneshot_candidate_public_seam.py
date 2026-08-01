@@ -38,17 +38,15 @@ from xinao.science.owner_disposition import (
     CODEX_OWNER_CHANNEL_SOURCE,
     DISPOSITION_MARKER,
     DISPOSITION_SCHEMA_VERSION,
-    OWNER_CHANNEL_AUTHORITY_UNPROVEN,
     SCIENCE_RETAIN_FOR_SHADOW,
     OwnerDispositionError,
     disposition_cas_path,
     encode_disposition_bytes,
-    load_and_verify_disposition,
     write_owner_disposition_artifact,
 )
 from xinao.science.researcher_result_adapter import raw_sha256
 from xinao.shadow_lifecycle import init_portfolio
-from xinao.shadow_lifecycle.store import load_frozen, period_directory
+from xinao.shadow_lifecycle.store import period_directory
 
 ROOT = Path(__file__).resolve().parents[3]
 SRC = ROOT / "src"
@@ -319,7 +317,7 @@ def test_duplicate_identical_ingest_is_idempotent(tmp_path: Path) -> None:
     assert a["result_sha256"] == b["result_sha256"]
 
 
-def test_owner_disposition_after_public_oneshot_ingest(
+def test_public_signal_only_oneshot_cannot_be_rewritten_as_owner_no_action(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     pool = tmp_path / "pool"
@@ -358,29 +356,18 @@ def test_owner_disposition_after_public_oneshot_ingest(
             entry["content_hash"],
         ]
     )
-    assert code == 0
-    written = json.loads(capsys.readouterr().out)
-    assert written["ok"] is True
-    assert written["status"] == "OWNER_DISPOSITION_WRITTEN"
-    assert written["owner_adopted"] is False
-    assert written["freeze_written"] is False
-    assert written["owner_channel_authority"] == OWNER_CHANNEL_AUTHORITY_UNPROVEN
-    assert written["account_identity"] == "RESEARCHER_ACCOUNT_NO_ACTION"
-    assert written["result_sha256"] == EXPECTED_RESULT_SHA256
-    verified = load_and_verify_disposition(
-        disposition_path=Path(written["disposition_path"]),
-        owner_state_root=owner,
-        pool_root=pool,
-        result_sha256=EXPECTED_RESULT_SHA256,
-    )
-    assert verified["disposition"]["account_identity"] == "RESEARCHER_ACCOUNT_NO_ACTION"
+    assert code == 1
+    rejected = json.loads(capsys.readouterr().out)
+    assert rejected["ok"] is False
+    assert rejected["reason_code"] == "RESEARCHER_DECISION_SOURCE_ABSENT"
+    assert not any(owner.rglob("*.json"))
     # Pool entry still not owner-adopted after disposition write.
     reloaded = load_pool_entry(pool, EXPECTED_RESULT_SHA256)
     assert reloaded["owner_adopted"] is False
 
 
-def test_real_oneshot_no_action_reaches_production_portfolio_freeze(tmp_path: Path) -> None:
-    """Old real researcher bytes remain usable for an explicit Owner NO_ACTION."""
+def test_real_signal_only_oneshot_cannot_be_disguised_as_no_action(tmp_path: Path) -> None:
+    """Missing actor behavior is a signal-only result, never researcher NO_ACTION."""
 
     pool = tmp_path / "pool"
     owner = tmp_path / "owner"
@@ -398,24 +385,15 @@ def test_real_oneshot_no_action_reaches_production_portfolio_freeze(tmp_path: Pa
     )
     body = _no_action_disposition(entry)
     body["portfolio_binding"] = build_portfolio_binding_from_shadow(portfolio)
-    written = write_owner_disposition_artifact(
-        owner_state_root=owner,
-        payload=body,
-        pool_root=pool,
-    )
-    frozen_result = apply_freeze_from_disposition(
-        pool_root=pool,
-        owner_state_root=owner,
-        disposition_path=Path(written["disposition_path"]),
-        shadow_root=portfolio,
-        mode="portfolio",
-        clock=lambda: FROZEN_AT,
-    )
-    assert frozen_result["ok"] is True
-    assert frozen_result["researcher_action_binding"] is None
-    frozen = load_frozen(period_directory(portfolio, 1))
-    assert frozen.account_decision.identity.value == "RESEARCHER_ACCOUNT_NO_ACTION"
-    assert frozen.bound_account_ticket is None
+    with pytest.raises(OwnerDispositionError) as exc:
+        write_owner_disposition_artifact(
+            owner_state_root=owner,
+            payload=body,
+            pool_root=pool,
+        )
+    assert exc.value.reason_code == "RESEARCHER_DECISION_SOURCE_ABSENT"
+    assert not any(owner.rglob("*.json"))
+    assert not (period_directory(portfolio, 1) / "frozen_episode.v1.json").exists()
 
 
 def test_real_oneshot_manual_action_rejected_before_owner_cas(tmp_path: Path) -> None:
@@ -435,7 +413,7 @@ def test_real_oneshot_manual_action_rejected_before_owner_cas(tmp_path: Path) ->
             payload=_manual_action_disposition(entry),
             pool_root=pool,
         )
-    assert exc.value.reason_code == "RESEARCHER_EXECUTABLE_DECISION_ABSENT"
+    assert exc.value.reason_code == "RESEARCHER_DECISION_SOURCE_ABSENT"
     assert not owner.exists() or list(owner.rglob("*.json")) == []
 
 
@@ -467,7 +445,7 @@ def test_freeze_rechecks_real_oneshot_action_after_writer_bypass(tmp_path: Path)
             mode="episode",
             clock=lambda: FROZEN_AT,
         )
-    assert exc.value.reason_code == "RESEARCHER_EXECUTABLE_DECISION_ABSENT"
+    assert exc.value.reason_code == "RESEARCHER_DECISION_SOURCE_ABSENT"
     assert not shadow.exists() or list(shadow.rglob("*.json")) == []
 
 

@@ -10,6 +10,8 @@ import hashlib
 import json
 import re
 from collections.abc import Mapping
+from datetime import datetime
+from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from typing import Any, Final
 
@@ -24,6 +26,26 @@ ACCOUNT_RECOMMENDATION_VALUES: Final = frozenset(
     }
 )
 _HEX_SHA256 = re.compile(r"^[0-9a-f]{64}$")
+_CANONICAL_STAKE = re.compile(r"^(?:0|[1-9][0-9]*)\.[0-9]{4}$")
+_ACTOR_INTENT_REQUIRED = frozenset(
+    {
+        "schema_version",
+        "authored_at",
+        "decision_kind",
+        "stake",
+        "research_rationale",
+    }
+)
+_ACTOR_INTENT_OPTIONAL = frozenset(
+    {
+        "panel",
+        "selected_number",
+        "after_hit_response",
+        "after_miss_response",
+        "next_round_or_stop_response",
+        "content_hash",
+    }
+)
 
 
 class CandidateManifestError(ValueError):
@@ -43,6 +65,137 @@ def module_source_path() -> Path:
 def module_source_sha256() -> str:
     """Seal of these exact source bytes (release/image evidence pin)."""
     return hashlib.sha256(module_source_path().read_bytes()).hexdigest()
+
+
+def _normalized_actor_intent_content(intent: Mapping[str, Any]) -> dict[str, Any]:
+    """Normalize exactly as ``ActorAuthoredBehaviorIntent.canonical_content``.
+
+    This module is copied into the researcher image as a dependency-light
+    validator, so it cannot import the lifecycle Pydantic model there.  The
+    intent contains only JSON primitives; this normalizer mirrors the model's
+    datetime JSON form and explicit ``null`` defaults before hashing.
+    """
+
+    authored = str(intent["authored_at"])
+    try:
+        parsed = datetime.fromisoformat(authored.replace("Z", "+00:00"))
+    except ValueError as exc:
+        raise CandidateManifestError(
+            "CANDIDATE_MANIFEST_ACTOR_INTENT_INVALID", "authored_at"
+        ) from exc
+    if parsed.tzinfo is None or parsed.utcoffset() is None:
+        raise CandidateManifestError(
+            "CANDIDATE_MANIFEST_ACTOR_INTENT_INVALID", "authored_at aware required"
+        )
+    authored_json = parsed.isoformat().replace("+00:00", "Z")
+    return {
+        "schema_version": intent["schema_version"],
+        "authored_at": authored_json,
+        "decision_kind": intent["decision_kind"],
+        "panel": intent.get("panel"),
+        "selected_number": intent.get("selected_number"),
+        "stake": intent["stake"],
+        "research_rationale": intent["research_rationale"],
+        "after_hit_response": intent.get("after_hit_response"),
+        "after_miss_response": intent.get("after_miss_response"),
+        "next_round_or_stop_response": intent.get("next_round_or_stop_response"),
+    }
+
+
+def actor_intent_content_hash(intent: Mapping[str, Any]) -> str:
+    normalized = _normalized_actor_intent_content(intent)
+    raw = json.dumps(
+        normalized,
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+        allow_nan=False,
+    ).encode("utf-8")
+    return hashlib.sha256(raw).hexdigest()
+
+
+def validate_actor_authored_behavior_intent(payload: Mapping[str, Any]) -> dict[str, Any]:
+    """Validate the only behavior payload a ResearchEpisode actor authors.
+
+    Identity, bankroll, target/timing, objective odds/rule, and information-set
+    provenance are intentionally forbidden here.  Those reality fields are
+    mechanically joined later from the exact live attempt and portfolio.
+    """
+
+    intent = dict(payload)
+    observed = set(intent)
+    if (
+        not _ACTOR_INTENT_REQUIRED.issubset(observed)
+        or observed - _ACTOR_INTENT_REQUIRED - _ACTOR_INTENT_OPTIONAL
+    ):
+        raise CandidateManifestError(
+            "CANDIDATE_MANIFEST_ACTOR_INTENT_INVALID",
+            "required/optional keys are invalid",
+        )
+    if intent.get("schema_version") != "xinao.actor_authored_behavior_intent.v1":
+        raise CandidateManifestError(
+            "CANDIDATE_MANIFEST_ACTOR_INTENT_INVALID", "schema_version"
+        )
+    _normalized_actor_intent_content(intent)
+    rationale = intent.get("research_rationale")
+    if not isinstance(rationale, str) or not rationale.strip():
+        raise CandidateManifestError(
+            "CANDIDATE_MANIFEST_ACTOR_INTENT_INVALID", "research_rationale"
+        )
+    for field in (
+        "after_hit_response",
+        "after_miss_response",
+        "next_round_or_stop_response",
+    ):
+        response = intent.get(field)
+        if response is not None and (not isinstance(response, str) or not response.strip()):
+            raise CandidateManifestError(
+                "CANDIDATE_MANIFEST_ACTOR_INTENT_INVALID", field
+            )
+    stake = intent.get("stake")
+    if not isinstance(stake, str) or _CANONICAL_STAKE.fullmatch(stake) is None:
+        raise CandidateManifestError("CANDIDATE_MANIFEST_ACTOR_INTENT_INVALID", "stake")
+    try:
+        amount = Decimal(stake)
+    except InvalidOperation as exc:
+        raise CandidateManifestError(
+            "CANDIDATE_MANIFEST_ACTOR_INTENT_INVALID", "stake"
+        ) from exc
+    decision_kind = intent.get("decision_kind")
+    if decision_kind == "ACTION":
+        selected = intent.get("selected_number")
+        if (
+            amount <= 0
+            or intent.get("panel") not in {"A", "B"}
+            or type(selected) is not int
+            or not 1 <= selected <= 49
+        ):
+            raise CandidateManifestError(
+                "CANDIDATE_MANIFEST_ACTOR_INTENT_INVALID", "ACTION fields"
+            )
+    elif decision_kind == "NO_ACTION":
+        if (
+            amount != 0
+            or intent.get("panel") is not None
+            or intent.get("selected_number") is not None
+        ):
+            raise CandidateManifestError(
+                "CANDIDATE_MANIFEST_ACTOR_INTENT_INVALID", "NO_ACTION fields"
+            )
+    else:
+        raise CandidateManifestError(
+            "CANDIDATE_MANIFEST_ACTOR_INTENT_INVALID", "decision_kind"
+        )
+    claimed = intent.get("content_hash")
+    if claimed is not None and (
+        not isinstance(claimed, str)
+        or _HEX_SHA256.fullmatch(claimed) is None
+        or claimed != actor_intent_content_hash(intent)
+    ):
+        raise CandidateManifestError(
+            "CANDIDATE_MANIFEST_ACTOR_INTENT_INVALID", "content_hash"
+        )
+    return intent
 
 
 def validate_candidate_manifest(
@@ -156,10 +309,25 @@ def validate_candidate_manifest(
             "CANDIDATE_MANIFEST_ATTEMPT_MISMATCH",
             f"{obj.get('attempt_cas_digest')}!={expected_attempt_cas_digest}",
         )
-    # proposed numbers/stake only as candidate content (optional).
+    # For an account-branch claim, ``proposed`` is the actor's sealed choice,
+    # never a platform-authored full account decision.  NO_RECOMMENDATION stays
+    # a legal signal-only candidate and need not carry any behavior intent.
     proposed = obj.get("proposed") or obj.get("proposed_numbers")
     if proposed is not None and not isinstance(proposed, (Mapping, list)):
         raise CandidateManifestError("CANDIDATE_MANIFEST_PROPOSED_INVALID", type(proposed).__name__)
+    recommendation = str(obj["account_recommendation"])
+    if recommendation in {"ACTION_CANDIDATE", "NO_ACTION_CANDIDATE"}:
+        if not isinstance(proposed, Mapping):
+            raise CandidateManifestError(
+                "CANDIDATE_MANIFEST_ACTOR_INTENT_REQUIRED", recommendation
+            )
+        intent = validate_actor_authored_behavior_intent(proposed)
+        expected_kind = "ACTION" if recommendation == "ACTION_CANDIDATE" else "NO_ACTION"
+        if intent.get("decision_kind") != expected_kind:
+            raise CandidateManifestError(
+                "CANDIDATE_MANIFEST_ACTOR_INTENT_BRANCH_MISMATCH",
+                f"recommendation={recommendation} intent={intent.get('decision_kind')}",
+            )
     return obj
 
 
@@ -169,7 +337,9 @@ __all__ = [
     "CANDIDATE_MANIFEST_RELATIVE",
     "CANDIDATE_MANIFEST_SCHEMA",
     "CandidateManifestError",
+    "actor_intent_content_hash",
     "module_source_path",
     "module_source_sha256",
+    "validate_actor_authored_behavior_intent",
     "validate_candidate_manifest",
 ]

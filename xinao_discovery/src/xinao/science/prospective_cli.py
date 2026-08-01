@@ -146,6 +146,12 @@ def add_prospective_parsers(groups: argparse._SubParsersAction[Any]) -> None:
         help="Optional live portfolio/shadow root for closed portfolio_binding",
     )
     draft_disp.add_argument(
+        "--episode-root",
+        type=Path,
+        default=None,
+        help="Live ResearchEpisode root required for an episode actor-intent candidate",
+    )
+    draft_disp.add_argument(
         "--output",
         type=Path,
         default=None,
@@ -191,6 +197,9 @@ def add_prospective_parsers(groups: argparse._SubParsersAction[Any]) -> None:
         default=None,
         help="Optional caller-claimed pool_entry_content_hash that must match payload+pool",
     )
+    write_disp.add_argument("--episode-root", type=Path, default=None)
+    write_disp.add_argument("--portfolio-root", type=Path, default=None)
+    write_disp.add_argument("--authority-root", type=Path, default=None)
 
     freeze = commands.add_parser(
         "freeze-from-disposition",
@@ -218,6 +227,12 @@ def add_prospective_parsers(groups: argparse._SubParsersAction[Any]) -> None:
     freeze.add_argument("--mode", choices=("portfolio", "episode"), default="portfolio")
     freeze.add_argument("--request-out", type=Path)
     freeze.add_argument("--result-sha256")
+    freeze.add_argument(
+        "--episode-root",
+        type=Path,
+        default=None,
+        help="Live ResearchEpisode root for fresh actor projection at freeze",
+    )
 
     settle = commands.add_parser(
         "settle-from-reveal",
@@ -446,6 +461,7 @@ def dispatch_prospective(args: argparse.Namespace) -> int:
                 result_sha256=args.result_sha256,
                 request_out=args.request_out,
                 authority_root=args.authority_root,
+                episode_root=args.episode_root,
             )
             _print(
                 {
@@ -584,6 +600,7 @@ def _dispatch_draft_owner_disposition(args: argparse.Namespace) -> int:
         authority_root=args.authority_root,
         packet_content_hash=args.packet_content_hash,
         portfolio_root=args.portfolio_root,
+        episode_root=args.episode_root,
     )
     output_path: str | None = None
     if args.output is not None:
@@ -637,12 +654,18 @@ def _dispatch_write_owner_disposition(args: argparse.Namespace) -> int:
         owner_state_root=args.owner_state_root,
         payload=payload,
         pool_root=args.pool_root,
+        episode_root=args.episode_root,
+        portfolio_root=args.portfolio_root,
+        authority_root=args.authority_root,
     )
     verified = load_and_verify_disposition(
         disposition_path=Path(written["disposition_path"]),
         owner_state_root=args.owner_state_root,
         pool_root=args.pool_root,
         result_sha256=args.expected_result_sha256,
+        episode_root=args.episode_root,
+        portfolio_root=args.portfolio_root,
+        authority_root=args.authority_root,
     )
     _print(
         {

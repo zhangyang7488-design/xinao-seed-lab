@@ -94,6 +94,9 @@ _OWNER_FREEZE_AUTHORITY_FIELDS: Final = frozenset(
         "request_content_hash",
     }
 )
+_OWNER_FREEZE_ACTOR_AUTHORITY_FIELDS: Final = _OWNER_FREEZE_AUTHORITY_FIELDS | frozenset(
+    {"research_episode_root", "source_authority_root"}
+)
 _RESEARCH_BINDING_SCHEMA: Final = "xinao.research_freeze_binding.v1"
 _RESEARCH_BINDING_MARKER: Final = "XINAO_RESEARCH_FREEZE_BINDING_V1"
 _DISPOSITION_SCHEMA: Final = "xinao.codex_owner_disposition.v1"
@@ -104,10 +107,11 @@ _EPISODE_EXPORT_INGEST_KIND: Final = "EPISODE_EXPORT_MANIFEST"
 _EPISODE_MANIFEST_SCHEMA: Final = "xinao.research_episode_candidate_manifest.v1"
 _EPISODE_MANIFEST_MARKER: Final = "XINAO_RESEARCH_EPISODE_CANDIDATE_MANIFEST_V1"
 _RESEARCHER_ACTION_BINDING_SCHEMA: Final = "xinao.researcher_action_binding.v1"
+_RESEARCHER_NO_ACTION_BINDING_SCHEMA: Final = "xinao.researcher_no_action_binding.v1"
 _SCIENCE_DISPOSITIONS: Final = frozenset(
-    {"ADOPT", "REJECT", "DEFER", "ABSORB_NO_ACTION", "RETAIN_FOR_SHADOW"}
+    {"ADOPT", "RETAIN_FOR_SHADOW", "REJECT", "DEFER"}
 )
-_SCIENCE_ACTION_ALLOWED: Final = frozenset({"ADOPT", "RETAIN_FOR_SHADOW"})
+_FREEZE_AUTHORIZING_DISPOSITIONS: Final = frozenset({"ADOPT", "RETAIN_FOR_SHADOW"})
 _DISPOSITION_ALLOWED_FIELDS: Final = frozenset(
     {
         "schema_version",
@@ -165,6 +169,16 @@ _RESEARCHER_EXECUTABLE_CORE: Final = frozenset(
         "baseline_ref",
         "risk_policy_ref",
         "rule_ref",
+    }
+)
+_RESEARCHER_NO_ACTION_CORE: Final = frozenset(
+    {
+        "target_ref",
+        "target_open_time",
+        "freeze_deadline",
+        "knowledge_cutoff",
+        "rule_ref",
+        "odds_version_ref",
     }
 )
 _OWNER_EXECUTABLE_ALLOWED: Final = frozenset(
@@ -464,6 +478,22 @@ def _validate_no_action_binding(raw: Mapping[str, Any]) -> dict[str, Any]:
     }
 
 
+def _normalized_researcher_no_action_core(
+    raw: Mapping[str, Any], *, label: str
+) -> dict[str, Any]:
+    """Validate the researcher-authored NO_ACTION core before host frozen_at."""
+
+    if set(raw) != _RESEARCHER_NO_ACTION_CORE:
+        missing = sorted(_RESEARCHER_NO_ACTION_CORE - set(raw))
+        unknown = sorted(set(raw) - _RESEARCHER_NO_ACTION_CORE)
+        raise StoreError(
+            "PRODUCTION_FREEZE_RESEARCHER_NO_ACTION_INVALID: "
+            f"{label}; missing={missing}; unknown={unknown}"
+        )
+    normalized = _validate_no_action_binding({**dict(raw), "frozen_at": raw["freeze_deadline"]})
+    return {key: normalized[key] for key in sorted(_RESEARCHER_NO_ACTION_CORE)}
+
+
 def _validate_source_authority_binding_local(raw: Mapping[str, Any]) -> dict[str, Any]:
     missing = sorted(_SOURCE_AUTHORITY_BINDING_FIELDS - set(raw))
     unknown = sorted(set(raw) - _SOURCE_AUTHORITY_BINDING_FIELDS)
@@ -509,7 +539,7 @@ def _load_pool_and_research_source(
     *,
     research_pool_root: Path,
     result_sha256: str,
-) -> tuple[dict[str, Any], dict[str, Any] | None, dict[str, str]]:
+) -> tuple[dict[str, Any], str, dict[str, Any], dict[str, str]]:
     """Independently read pool CAS and the producer bytes needed by freeze.
 
     This intentionally lives in the import-closed shadow runtime cone. It does
@@ -584,15 +614,21 @@ def _load_pool_and_research_source(
                 raise StoreError(f"PRODUCTION_FREEZE_EPISODE_MANIFEST_HASH_MISMATCH: {field}")
         if export.get("candidate_manifest_sha256") != manifest_hash:
             raise StoreError("PRODUCTION_FREEZE_EPISODE_EXPORT_MANIFEST_MISMATCH")
-        proposed = manifest.get("proposed")
-        authored = (
-            proposed.get("executable_account_decision") if isinstance(proposed, Mapping) else None
+        recommendation = manifest.get("account_recommendation")
+        if recommendation == "NO_RECOMMENDATION":
+            raise StoreError(
+                "PRODUCTION_FREEZE_RESEARCHER_DECISION_SOURCE_ABSENT: signal-only candidate"
+            )
+        if recommendation in {"ACTION_CANDIDATE", "NO_ACTION_CANDIDATE"}:
+            raise StoreError(
+                "PRODUCTION_FREEZE_ACTOR_REALITY_ROOTS_REQUIRED: "
+                "ResearchEpisode proposed is actor-only intent and must be "
+                "projected from live reality"
+            )
+        raise StoreError(
+            "PRODUCTION_FREEZE_EPISODE_RECOMMENDATION_INVALID: "
+            f"{recommendation!r}"
         )
-        source = {
-            "source_kind": "EPISODE_CANDIDATE_MANIFEST",
-            "source_artifact_sha256": manifest_hash,
-            "source_json_path": "$.proposed.executable_account_decision",
-        }
     else:
         result = _strict_json_object(
             result_raw,
@@ -614,19 +650,51 @@ def _load_pool_and_research_source(
             raise StoreError("PRODUCTION_FREEZE_POOL_CANDIDATE_MISMATCH")
         if result.get("status") != entry.get("status"):
             raise StoreError("PRODUCTION_FREEZE_POOL_STATUS_MISMATCH")
-        authored = candidate.get("executable_account_decision")
+        producer = candidate
         source = {
             "source_kind": "ONESHOT_RESEARCH_RESULT",
             "source_artifact_sha256": digest,
-            "source_json_path": "$.candidate.executable_account_decision",
         }
 
-    authored_core = (
-        _normalized_researcher_core(authored, label=source["source_json_path"])
-        if isinstance(authored, Mapping)
-        else None
-    )
-    return entry, authored_core, source
+    if not isinstance(producer, Mapping):
+        raise StoreError("PRODUCTION_FREEZE_RESEARCHER_DECISION_SOURCE_ABSENT")
+    authored_action = producer.get("executable_account_decision")
+    authored_no_action = producer.get("no_action_intent")
+    has_action = isinstance(authored_action, Mapping)
+    has_no_action = isinstance(authored_no_action, Mapping)
+    if not has_action and not has_no_action:
+        raise StoreError(
+            "PRODUCTION_FREEZE_RESEARCHER_DECISION_SOURCE_ABSENT: signal-only candidate"
+        )
+    if has_action and has_no_action:
+        raise StoreError(
+            "PRODUCTION_FREEZE_RESEARCHER_DECISION_BRANCH_INVALID: "
+            "exactly one executable_account_decision or no_action_intent required"
+        )
+    account_identity = _ACCOUNT_ACTION if has_action else _ACCOUNT_NO_ACTION
+    declared_identity = producer.get("account_identity")
+    if declared_identity is not None and declared_identity != account_identity:
+        raise StoreError(
+            "PRODUCTION_FREEZE_RESEARCHER_DECISION_IDENTITY_CONFLICT: "
+            f"declared={declared_identity!r} branch={account_identity!r}"
+        )
+    if has_action:
+        source["source_json_path"] = "$.proposed.executable_account_decision" if entry.get(
+            "ingest_kind"
+        ) == _EPISODE_EXPORT_INGEST_KIND else "$.candidate.executable_account_decision"
+        assert isinstance(authored_action, Mapping)
+        authored_core = _normalized_researcher_core(
+            authored_action, label=source["source_json_path"]
+        )
+    else:
+        source["source_json_path"] = "$.proposed.no_action_intent" if entry.get(
+            "ingest_kind"
+        ) == _EPISODE_EXPORT_INGEST_KIND else "$.candidate.no_action_intent"
+        assert isinstance(authored_no_action, Mapping)
+        authored_core = _normalized_researcher_no_action_core(
+            authored_no_action, label=source["source_json_path"]
+        )
+    return entry, account_identity, authored_core, source
 
 
 def _load_verified_disposition_for_freeze(
@@ -635,6 +703,9 @@ def _load_verified_disposition_for_freeze(
     owner_state_root: Path,
     research_pool_root: Path,
     disposition_sha256: str,
+    research_episode_root: Path | None = None,
+    portfolio_root: Path | None = None,
+    source_authority_root: Path | None = None,
 ) -> dict[str, Any]:
     digest = _require_hex64(disposition_sha256, "owner_disposition_sha256")
     owner_root = owner_state_root.expanduser().resolve()
@@ -645,6 +716,47 @@ def _load_verified_disposition_for_freeze(
         or pool_root.is_relative_to(owner_root)
     ):
         raise StoreError("PRODUCTION_FREEZE_OWNER_POOL_ROOTS_NOT_SEPARATED")
+    # ``portfolio_root`` is always supplied by the portfolio consumer, including
+    # the historical one-shot path.  Only the two explicit Episode-reality roots
+    # select the fresh actor-projection verifier.
+    actor_roots_supplied = any(
+        value is not None for value in (research_episode_root, source_authority_root)
+    )
+    if actor_roots_supplied:
+        if (
+            research_episode_root is None
+            or portfolio_root is None
+            or source_authority_root is None
+        ):
+            raise StoreError("PRODUCTION_ACTOR_REALITY_ROOTS_INCOMPLETE")
+        # Reuse the Owner verifier, but invoke it again inside the final consumer
+        # so current attempt/material/portfolio/authority are freshly re-read at
+        # the actual freeze boundary.
+        try:
+            from xinao.science.owner_disposition import (
+                OwnerDispositionError,
+                load_and_verify_disposition,
+            )
+
+            verified = load_and_verify_disposition(
+                disposition_path=disposition_path,
+                owner_state_root=owner_root,
+                pool_root=pool_root,
+                result_sha256=None,
+                episode_root=research_episode_root,
+                portfolio_root=portfolio_root,
+                authority_root=source_authority_root,
+            )
+        except (OwnerDispositionError, OSError, ValueError) as exc:
+            raise StoreError(f"PRODUCTION_FREEZE_ACTOR_PROJECTION_REJECTED: {exc}") from exc
+        disposition = verified["disposition"]
+        if disposition.get("science_disposition") not in _FREEZE_AUTHORIZING_DISPOSITIONS:
+            raise StoreError("OWNER_DISPOSITION_NOT_ADOPTED")
+        return {
+            "disposition": disposition,
+            "pool_entry": verified["pool_entry"],
+            "researcher_decision_binding": verified["researcher_decision_binding"],
+        }
     expected_path = _disposition_cas_path(owner_root, digest)
     path = disposition_path.expanduser().resolve()
     if path != expected_path or not path.is_file():
@@ -671,7 +783,7 @@ def _load_verified_disposition_for_freeze(
         raise StoreError("SCIENCE_IDENTITY_CALLER_OVERRIDE_FORBIDDEN")
 
     result_sha = _require_hex64(disposition.get("result_sha256"), "result_sha256")
-    pool_entry, authored_core, source = _load_pool_and_research_source(
+    pool_entry, researcher_identity, authored_core, source = _load_pool_and_research_source(
         research_pool_root=pool_root,
         result_sha256=result_sha,
     )
@@ -686,11 +798,16 @@ def _load_verified_disposition_for_freeze(
     science_disposition = disposition.get("science_disposition")
     if science_disposition not in _SCIENCE_DISPOSITIONS:
         raise StoreError("OWNER_DISPOSITION_SCIENCE_DISPOSITION_INVALID")
+    if science_disposition not in _FREEZE_AUTHORIZING_DISPOSITIONS:
+        raise StoreError("OWNER_DISPOSITION_NOT_ADOPTED")
     account_identity = disposition.get("account_identity")
     if account_identity not in {_ACCOUNT_ACTION, _ACCOUNT_NO_ACTION}:
         raise StoreError("OWNER_DISPOSITION_ACCOUNT_IDENTITY_INVALID")
-    if account_identity == _ACCOUNT_ACTION and science_disposition not in _SCIENCE_ACTION_ALLOWED:
-        raise StoreError("OWNER_DISPOSITION_SCIENCE_ACCOUNT_MATRIX_VIOLATION")
+    if account_identity != researcher_identity:
+        raise StoreError(
+            "RESEARCHER_DECISION_IDENTITY_MISMATCH: "
+            f"producer={researcher_identity} disposition={account_identity}"
+        )
     period_index = disposition.get("period_index")
     if type(period_index) is not int or period_index < 1:
         raise StoreError("OWNER_DISPOSITION_PERIOD_INVALID")
@@ -709,12 +826,9 @@ def _load_verified_disposition_for_freeze(
     normalized["episode_ref"] = episode_ref
     normalized["knowledge_cutoff"] = _iso_z(outer_cutoff)
     normalized["science_identity"] = (
-        "SCIENCE_CANDIDATE"
-        if science_disposition in _SCIENCE_ACTION_ALLOWED
-        else "POLICY_NO_ACTION"
+        "SCIENCE_CANDIDATE" if account_identity == _ACCOUNT_ACTION else "POLICY_NO_ACTION"
     )
 
-    verified_researcher_action: dict[str, Any] | None = None
     if account_identity == _ACCOUNT_ACTION:
         if pool_entry.get("status") != "CANDIDATE_READY":
             raise StoreError("PRODUCTION_FREEZE_RESEARCHER_EXECUTABLE_STATUS_NOT_READY")
@@ -732,8 +846,6 @@ def _load_verified_disposition_for_freeze(
         normalized["target_ref"] = normalized_executable["target_ref"]
         normalized["executable_account_decision"] = normalized_executable
         normalized["no_action_period_binding"] = None
-        if authored_core is None:
-            raise StoreError(f"RESEARCHER_EXECUTABLE_DECISION_ABSENT: {source['source_json_path']}")
         if authored_core != disposition_core:
             diverged = sorted(
                 key
@@ -741,13 +853,6 @@ def _load_verified_disposition_for_freeze(
                 if authored_core.get(key) != disposition_core.get(key)
             )
             raise StoreError(f"RESEARCHER_EXECUTABLE_DECISION_MISMATCH: fields={diverged}")
-        verified_researcher_action = {
-            "schema_version": _RESEARCHER_ACTION_BINDING_SCHEMA,
-            **source,
-            "executable_content_hash": canonical_sha256(authored_core),
-            "result_sha256": result_sha,
-            "pool_entry_content_hash": str(pool_entry["content_hash"]),
-        }
     else:
         if disposition.get("executable_account_decision") is not None:
             raise StoreError("OWNER_DISPOSITION_NO_ACTION_HAS_EXECUTABLE")
@@ -762,6 +867,33 @@ def _load_verified_disposition_for_freeze(
         normalized["target_ref"] = no_action["target_ref"]
         normalized["executable_account_decision"] = None
         normalized["no_action_period_binding"] = no_action
+        disposition_core = {
+            key: no_action[key] for key in sorted(_RESEARCHER_NO_ACTION_CORE)
+        }
+        if authored_core != disposition_core:
+            diverged = sorted(
+                key
+                for key in _RESEARCHER_NO_ACTION_CORE
+                if authored_core.get(key) != disposition_core.get(key)
+            )
+            raise StoreError(f"RESEARCHER_NO_ACTION_INTENT_MISMATCH: fields={diverged}")
+
+    decision_hash = canonical_sha256(authored_core)
+    if account_identity == _ACCOUNT_ACTION:
+        decision_schema = _RESEARCHER_ACTION_BINDING_SCHEMA
+        decision_hash_key = "executable_content_hash"
+    else:
+        decision_schema = _RESEARCHER_NO_ACTION_BINDING_SCHEMA
+        decision_hash_key = "no_action_content_hash"
+    verified_researcher_decision = {
+        "schema_version": decision_schema,
+        "account_identity": account_identity,
+        **source,
+        "decision_content_hash": decision_hash,
+        decision_hash_key: decision_hash,
+        "result_sha256": result_sha,
+        "pool_entry_content_hash": str(pool_entry["content_hash"]),
+    }
 
     portfolio_binding = disposition.get("portfolio_binding")
     if portfolio_binding is not None:
@@ -812,7 +944,10 @@ def _load_verified_disposition_for_freeze(
     return {
         "disposition": normalized,
         "pool_entry": pool_entry,
-        "researcher_action_binding": verified_researcher_action,
+        "researcher_decision_binding": verified_researcher_decision,
+        "researcher_action_binding": (
+            verified_researcher_decision if account_identity == _ACCOUNT_ACTION else None
+        ),
     }
 
 
@@ -1237,9 +1372,18 @@ def _require_and_verify_owner_freeze_authority(
     if not isinstance(owner_authority, Mapping):
         raise StoreError("PRODUCTION_FREEZE_AUTHORITY_INVALID: owner_authority must be an object")
     authority = copy.deepcopy(dict(owner_authority))
-    if set(authority) != _OWNER_FREEZE_AUTHORITY_FIELDS:
-        missing = sorted(_OWNER_FREEZE_AUTHORITY_FIELDS - set(authority))
-        unknown = sorted(set(authority) - _OWNER_FREEZE_AUTHORITY_FIELDS)
+    authority_fields = set(authority)
+    if (
+        authority_fields != _OWNER_FREEZE_AUTHORITY_FIELDS
+        and authority_fields != _OWNER_FREEZE_ACTOR_AUTHORITY_FIELDS
+    ):
+        expected = (
+            _OWNER_FREEZE_ACTOR_AUTHORITY_FIELDS
+            if authority_fields & {"research_episode_root", "source_authority_root"}
+            else _OWNER_FREEZE_AUTHORITY_FIELDS
+        )
+        missing = sorted(expected - authority_fields)
+        unknown = sorted(authority_fields - expected)
         raise StoreError(
             f"PRODUCTION_FREEZE_AUTHORITY_FIELDS_INVALID: missing={missing}; unknown={unknown}"
         )
@@ -1255,6 +1399,17 @@ def _require_and_verify_owner_freeze_authority(
 
     owner_state_root = Path(str(authority["owner_state_root"])).expanduser().resolve()
     research_pool_root = Path(str(authority["research_pool_root"])).expanduser().resolve()
+    actor_authority = authority_fields == _OWNER_FREEZE_ACTOR_AUTHORITY_FIELDS
+    research_episode_root = (
+        Path(str(authority["research_episode_root"])).expanduser().resolve()
+        if actor_authority
+        else None
+    )
+    source_authority_root = (
+        Path(str(authority["source_authority_root"])).expanduser().resolve()
+        if actor_authority
+        else None
+    )
     disposition_sha = _require_hex64(
         authority.get("owner_disposition_sha256"),
         "owner_disposition_sha256",
@@ -1300,12 +1455,15 @@ def _require_and_verify_owner_freeze_authority(
             owner_state_root=owner_state_root,
             research_pool_root=research_pool_root,
             disposition_sha256=disposition_sha,
+            research_episode_root=research_episode_root,
+            portfolio_root=portfolio_root,
+            source_authority_root=source_authority_root,
         )
     except (StoreError, OSError, ValueError) as exc:
         raise StoreError(f"PRODUCTION_FREEZE_DISPOSITION_REJECTED: {exc}") from exc
     disposition = verified_disposition["disposition"]
     pool_entry = verified_disposition["pool_entry"]
-    verified_researcher_action = verified_disposition["researcher_action_binding"]
+    verified_researcher_decision = verified_disposition["researcher_decision_binding"]
 
     # Portfolio head exact binding before any freeze write.
     claimed_pb = disposition.get("portfolio_binding")
@@ -1358,7 +1516,9 @@ def _require_and_verify_owner_freeze_authority(
             disposition=disposition,
             request=request,
         ),
-        "researcher_action_binding": verified_researcher_action,
+        # Transitional field name in the sealed binding; its value is symmetric
+        # producer evidence for either ACTION or NO_ACTION.
+        "researcher_action_binding": verified_researcher_decision,
         "portfolio_binding": live_pb,
         "source_authority_binding": disposition.get("source_authority_binding"),
         "scientific_promotion": False,
