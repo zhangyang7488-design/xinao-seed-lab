@@ -1385,9 +1385,7 @@ def _load_xinao_runtime_module() -> Any:
         candidates.append(Path(override))
     source_parents = Path(__file__).resolve().parents
     if len(source_parents) > 4:
-        candidates.append(
-            source_parents[4] / "skills/xinao/scripts/xinao_runtime.py"
-        )
+        candidates.append(source_parents[4] / "skills/xinao/scripts/xinao_runtime.py")
     candidates.append(Path.home() / ".codex/skills/xinao/scripts/xinao_runtime.py")
     runtime_path = next((path.resolve() for path in candidates if path.is_file()), None)
     if runtime_path is None:
@@ -1451,9 +1449,7 @@ def _project_episode_actor_intent(
     )
     provenance = pool_entry.get("lab_provenance")
     if not isinstance(provenance, Mapping):
-        raise OwnerDispositionError(
-            "RESEARCH_EPISODE_PROVENANCE_REQUIRED", "pool lab_provenance"
-        )
+        raise OwnerDispositionError("RESEARCH_EPISODE_PROVENANCE_REQUIRED", "pool lab_provenance")
     episode_id = _require_text(
         provenance.get("episode_id"), "RESEARCH_EPISODE_PROVENANCE_INVALID", "episode_id"
     )
@@ -1590,9 +1586,7 @@ def _researcher_no_action_core(
             "RESEARCHER_NO_ACTION_INTENT_UNKNOWN_FIELDS",
             f"unknown={unknown}",
         )
-    normalized = _validate_no_action_times(
-        {**dict(raw), "frozen_at": disposition_frozen_at}
-    )
+    normalized = _validate_no_action_times({**dict(raw), "frozen_at": disposition_frozen_at})
     return {key: normalized[key] for key in sorted(_RESEARCHER_NO_ACTION_CORE)}
 
 
@@ -1641,9 +1635,7 @@ def _load_sealed_researcher_decision(
             actor_projection_evidence = None
         else:
             if recommendation not in {"ACTION_CANDIDATE", "NO_ACTION_CANDIDATE"}:
-                raise OwnerDispositionError(
-                    "RESEARCHER_DECISION_SOURCE_ABSENT", "$.proposed"
-                )
+                raise OwnerDispositionError("RESEARCHER_DECISION_SOURCE_ABSENT", "$.proposed")
             if not isinstance(proposed, Mapping):
                 raise OwnerDispositionError("RESEARCHER_ACTOR_INTENT_REQUIRED", "$.proposed")
             try:
@@ -1796,9 +1788,7 @@ def verify_researcher_authored_decision(
             authored,
             disposition_frozen_at=executable.get("frozen_at"),
         )
-        disposition_core = {
-            key: executable[key] for key in sorted(_RESEARCHER_EXECUTABLE_CORE)
-        }
+        disposition_core = {key: executable[key] for key in sorted(_RESEARCHER_EXECUTABLE_CORE)}
         schema_version = RESEARCHER_ACTION_BINDING_SCHEMA
         mismatch_code = "RESEARCHER_EXECUTABLE_DECISION_MISMATCH"
         hash_key = "executable_content_hash"
@@ -1822,9 +1812,7 @@ def verify_researcher_authored_decision(
 
     if source_core != disposition_core:
         diverged = sorted(
-            key
-            for key in source_core
-            if source_core.get(key) != disposition_core.get(key)
+            key for key in source_core if source_core.get(key) != disposition_core.get(key)
         )
         raise OwnerDispositionError(
             mismatch_code,
@@ -1886,13 +1874,9 @@ def verify_researcher_authored_decision(
     ):
         value = projection_map.get(key)
         if not isinstance(value, str) or not value:
-            raise OwnerDispositionError(
-                "RESEARCH_EPISODE_ACTOR_PROJECTION_INCOMPLETE", key
-            )
+            raise OwnerDispositionError("RESEARCH_EPISODE_ACTOR_PROJECTION_INCOMPLETE", key)
         binding[key] = value
-    if binding["actor_authored_intent_hash"] != actor_evidence.get(
-        "actor_intent_content_hash"
-    ):
+    if binding["actor_authored_intent_hash"] != actor_evidence.get("actor_intent_content_hash"):
         raise OwnerDispositionError(
             "RESEARCH_EPISODE_ACTOR_INTENT_HASH_MISMATCH", "projection vs manifest intent"
         )

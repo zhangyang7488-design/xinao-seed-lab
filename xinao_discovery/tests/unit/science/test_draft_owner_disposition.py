@@ -325,9 +325,7 @@ def test_each_sealed_researcher_branch_validates_but_owner_cannot_switch_it(
     tmp_path: Path,
 ) -> None:
     capture = _capture_auth(tmp_path)
-    action_pool, action_entry, _, _ = _ingest_owner_action_candidate(
-        tmp_path / "action", capture
-    )
+    action_pool, action_entry, _, _ = _ingest_owner_action_candidate(tmp_path / "action", capture)
     action_portfolio = tmp_path / "portfolio-action"
     init_portfolio(
         root=action_portfolio,
@@ -345,9 +343,7 @@ def test_each_sealed_researcher_branch_validates_but_owner_cannot_switch_it(
         action_draft["payload_draft"],
         action_draft["branch_templates"][ACCOUNT_ACTION],
     )
-    normalized_action = validate_disposition_payload(
-        action_body, pool_entry=action_entry
-    )
+    normalized_action = validate_disposition_payload(action_body, pool_entry=action_entry)
     assert normalized_action["account_identity"] == ACCOUNT_ACTION
     assert normalized_action["executable_account_decision"]["selected_number"] == 17
 
@@ -371,9 +367,7 @@ def test_each_sealed_researcher_branch_validates_but_owner_cannot_switch_it(
         no_action_draft["payload_draft"],
         no_action_draft["branch_templates"][ACCOUNT_NO_ACTION],
     )
-    normalized_na = validate_disposition_payload(
-        no_action_body, pool_entry=no_action_entry
-    )
+    normalized_na = validate_disposition_payload(no_action_body, pool_entry=no_action_entry)
     assert normalized_na["account_identity"] == ACCOUNT_NO_ACTION
     assert normalized_na["executable_account_decision"] is None
 
@@ -398,9 +392,7 @@ def test_each_sealed_researcher_branch_validates_but_owner_cannot_switch_it(
         )
     }
     owner = tmp_path / "forged-owner"
-    with pytest.raises(
-        OwnerDispositionError, match="RESEARCHER_DECISION_IDENTITY_MISMATCH"
-    ):
+    with pytest.raises(OwnerDispositionError, match="RESEARCHER_DECISION_IDENTITY_MISMATCH"):
         write_owner_disposition_artifact(
             owner_state_root=owner,
             payload=forged,

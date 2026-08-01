@@ -125,9 +125,7 @@ _EPISODE_MANIFEST_SCHEMA: Final = "xinao.research_episode_candidate_manifest.v1"
 _EPISODE_MANIFEST_MARKER: Final = "XINAO_RESEARCH_EPISODE_CANDIDATE_MANIFEST_V1"
 _RESEARCHER_ACTION_BINDING_SCHEMA: Final = "xinao.researcher_action_binding.v1"
 _RESEARCHER_NO_ACTION_BINDING_SCHEMA: Final = "xinao.researcher_no_action_binding.v1"
-_SCIENCE_DISPOSITIONS: Final = frozenset(
-    {"ADOPT", "RETAIN_FOR_SHADOW", "REJECT", "DEFER"}
-)
+_SCIENCE_DISPOSITIONS: Final = frozenset({"ADOPT", "RETAIN_FOR_SHADOW", "REJECT", "DEFER"})
 _FREEZE_AUTHORIZING_DISPOSITIONS: Final = frozenset({"ADOPT", "RETAIN_FOR_SHADOW"})
 _DISPOSITION_ALLOWED_FIELDS: Final = frozenset(
     {
@@ -495,9 +493,7 @@ def _validate_no_action_binding(raw: Mapping[str, Any]) -> dict[str, Any]:
     }
 
 
-def _normalized_researcher_no_action_core(
-    raw: Mapping[str, Any], *, label: str
-) -> dict[str, Any]:
+def _normalized_researcher_no_action_core(raw: Mapping[str, Any], *, label: str) -> dict[str, Any]:
     """Validate the researcher-authored NO_ACTION core before host frozen_at."""
 
     if set(raw) != _RESEARCHER_NO_ACTION_CORE:
@@ -662,9 +658,7 @@ def _load_pool_and_research_source(
             if not isinstance(projection, Mapping):
                 raise StoreError("PRODUCTION_FREEZE_ACTOR_PROJECTION_MISSING")
             expected_identity = (
-                _ACCOUNT_ACTION
-                if recommendation == "ACTION_CANDIDATE"
-                else _ACCOUNT_NO_ACTION
+                _ACCOUNT_ACTION if recommendation == "ACTION_CANDIDATE" else _ACCOUNT_NO_ACTION
             )
             if projection.get("account_identity") != expected_identity:
                 raise StoreError("PRODUCTION_FREEZE_ACTOR_PROJECTION_BRANCH_MISMATCH")
@@ -682,8 +676,7 @@ def _load_pool_and_research_source(
             ):
                 if projection.get(field) != provenance.get(field):
                     raise StoreError(
-                        "PRODUCTION_FREEZE_ACTOR_PROJECTION_PROVENANCE_MISMATCH: "
-                        f"{field}"
+                        f"PRODUCTION_FREEZE_ACTOR_PROJECTION_PROVENANCE_MISMATCH: {field}"
                     )
             producer = projection
             source = {
@@ -693,8 +686,7 @@ def _load_pool_and_research_source(
             actor_projected = True
         else:
             raise StoreError(
-                "PRODUCTION_FREEZE_EPISODE_RECOMMENDATION_INVALID: "
-                f"{recommendation!r}"
+                f"PRODUCTION_FREEZE_EPISODE_RECOMMENDATION_INVALID: {recommendation!r}"
             )
     else:
         result = _strict_json_object(
@@ -858,11 +850,7 @@ def _load_verified_disposition_for_freeze(
     actor_verification: dict[str, Any] | None = None
     actor_projection_binding: Mapping[str, Any] | None = None
     if actor_roots_supplied:
-        if (
-            research_episode_root is None
-            or portfolio_root is None
-            or source_authority_root is None
-        ):
+        if research_episode_root is None or portfolio_root is None or source_authority_root is None:
             raise StoreError("PRODUCTION_ACTOR_REALITY_ROOTS_INCOMPLETE")
         actor_verification = _validate_actor_projection_verification(
             actor_projection_verification,
@@ -987,9 +975,7 @@ def _load_verified_disposition_for_freeze(
         normalized["target_ref"] = no_action["target_ref"]
         normalized["executable_account_decision"] = None
         normalized["no_action_period_binding"] = no_action
-        disposition_core = {
-            key: no_action[key] for key in sorted(_RESEARCHER_NO_ACTION_CORE)
-        }
+        disposition_core = {key: no_action[key] for key in sorted(_RESEARCHER_NO_ACTION_CORE)}
         if authored_core != disposition_core:
             diverged = sorted(
                 key
@@ -1017,10 +1003,7 @@ def _load_verified_disposition_for_freeze(
     if actor_projection_binding is not None:
         for key, value in verified_researcher_decision.items():
             if actor_projection_binding.get(key) != value:
-                raise StoreError(
-                    "PRODUCTION_ACTOR_PROJECTION_BINDING_MISMATCH: "
-                    f"{key}"
-                )
+                raise StoreError(f"PRODUCTION_ACTOR_PROJECTION_BINDING_MISMATCH: {key}")
         projection = actor_projection_binding.get("actor_projection")
         if not isinstance(projection, Mapping):
             raise StoreError("PRODUCTION_ACTOR_PROJECTION_MISSING")

@@ -80,7 +80,7 @@
       "packaged_dependency": "xinao-discovery",
       "packaged_dependency_version": "0.1.3",
       "packaged_dependency_tree_schema": "xinao.package_tree.v1",
-      "packaged_dependency_tree_sha256": "74518b594ebf20cc187f1d6867bfbc05f78c2a81e681a8e45f89c77cbb8956af",
+      "packaged_dependency_tree_sha256": "32069cbe24f694ee19dfd88e21dcd17cca49f4e4fb457ead84f4b4500138c421",
       "packaged_verbs": [
         "pool-ingest",
         "ingest-export",

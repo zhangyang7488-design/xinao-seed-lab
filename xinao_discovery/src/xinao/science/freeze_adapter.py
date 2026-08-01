@@ -634,9 +634,10 @@ def _build_action_ticket(
     information_set_ref = researcher_decision_binding.get("information_set_ref")
     information_set_hash = researcher_decision_binding.get("information_set_hash")
     if information_set_ref is None or information_set_hash is None:
-        if episode_candidate or researcher_decision_binding.get(
-            "source_kind"
-        ) == "EPISODE_CANDIDATE_MANIFEST":
+        if (
+            episode_candidate
+            or researcher_decision_binding.get("source_kind") == "EPISODE_CANDIDATE_MANIFEST"
+        ):
             raise FreezeAdapterError(
                 "ACTOR_INFORMATION_SET_BINDING_REQUIRED",
                 "ResearchEpisode ACTION requires the exact active material projection",
@@ -660,9 +661,7 @@ def _build_action_ticket(
             or not information_set_ref.startswith("xinao-material-bundle-sha256:")
             or len(information_set_ref.rsplit(":", 1)[-1]) != 64
         ):
-            raise FreezeAdapterError(
-                "ACTOR_INFORMATION_SET_BINDING_INVALID", "information_set_ref"
-            )
+            raise FreezeAdapterError("ACTOR_INFORMATION_SET_BINDING_INVALID", "information_set_ref")
         info_hash = _require_hex64(information_set_hash, "information_set_hash")
     ticket_ref = executable.get("ticket_ref") or f"account-ticket.{disposition['episode_ref']}"
     disposition_frozen_at = str(executable["frozen_at"])
@@ -1482,9 +1481,7 @@ def apply_freeze_from_disposition(
                 "schema_version": ACTOR_PROJECTION_VERIFICATION_SCHEMA,
                 "verification_marker": ACTOR_PROJECTION_VERIFICATION_MARKER,
                 "owner_artifact_sha256": str(final_verified["owner_artifact_sha256"]),
-                "pool_entry_content_hash": str(
-                    final_verified["pool_entry"]["content_hash"]
-                ),
+                "pool_entry_content_hash": str(final_verified["pool_entry"]["content_hash"]),
                 "result_sha256": str(final_verified["pool_entry"]["result_sha256"]),
                 "researcher_decision_binding": copy.deepcopy(
                     final_verified["researcher_decision_binding"]

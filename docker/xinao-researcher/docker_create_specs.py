@@ -1194,14 +1194,10 @@ def validate_transport_container_inspect(
         violations.append("missing_ipc_mount")
     if expected_active_materials is not None:
         if len(active_material_mounts) != 1:
-            violations.append(
-                f"active_material_mount_count:{len(active_material_mounts)}"
-            )
+            violations.append(f"active_material_mount_count:{len(active_material_mounts)}")
         else:
             active_mount = active_material_mounts[0]
-            observed_source = str(
-                active_mount.get("Source") or active_mount.get("source") or ""
-            )
+            observed_source = str(active_mount.get("Source") or active_mount.get("source") or "")
             if not host_bind_sources_equal(observed_source, expected_active_materials):
                 violations.append("active_material_mount_source_mismatch")
             if active_mount.get("RW") is not False:

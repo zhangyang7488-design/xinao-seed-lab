@@ -338,14 +338,10 @@ def _validate_actor_behavior_intent(value: object) -> dict[str, Any]:
     ):
         response = intent.get(field)
         if response is not None and not _plain_json_text(response, nonempty=True):
-            raise ResearcherResultAdapterError(
-                "RESEARCH_CANDIDATE_ACTOR_INTENT_INVALID", field
-            )
+            raise ResearcherResultAdapterError("RESEARCH_CANDIDATE_ACTOR_INTENT_INVALID", field)
     stake = intent.get("stake")
     if not isinstance(stake, str) or _CANONICAL_STAKE.fullmatch(stake) is None:
-        raise ResearcherResultAdapterError(
-            "RESEARCH_CANDIDATE_ACTOR_INTENT_INVALID", "stake"
-        )
+        raise ResearcherResultAdapterError("RESEARCH_CANDIDATE_ACTOR_INTENT_INVALID", "stake")
     try:
         amount = Decimal(stake)
     except InvalidOperation as exc:
@@ -737,9 +733,7 @@ def _validate_research_candidate(
             )
     actor_intent_raw = payload.get("complete_actor_behavior_intent")
     actor_intent = (
-        _validate_actor_behavior_intent(actor_intent_raw)
-        if actor_intent_raw is not None
-        else None
+        _validate_actor_behavior_intent(actor_intent_raw) if actor_intent_raw is not None else None
     )
     if status == "INSUFFICIENT_EVIDENCE" and actor_intent is not None:
         raise ResearcherResultAdapterError(

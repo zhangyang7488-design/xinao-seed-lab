@@ -571,9 +571,9 @@ def test_candidate_schema_and_container_require_one_matching_ready_branch(
     module = _module()
     request, _manifest, expected_materials = _bundle(module, tmp_path / "materials")
     schema_value = json.loads(
-        (
-            ROOT / "skills" / "xinao" / "references" / "researcher-output.v2.schema.json"
-        ).read_text(encoding="utf-8")
+        (ROOT / "skills" / "xinao" / "references" / "researcher-output.v2.schema.json").read_text(
+            encoding="utf-8"
+        )
     )
     validator = Draft202012Validator(schema_value)
 
@@ -581,9 +581,7 @@ def test_candidate_schema_and_container_require_one_matching_ready_branch(
     assert validator.is_valid(action)
     no_action = _candidate(request, expected_materials, decision_kind="NO_ACTION")
     assert validator.is_valid(no_action)
-    insufficient = _candidate(
-        request, expected_materials, decision_kind="INSUFFICIENT_EVIDENCE"
-    )
+    insufficient = _candidate(request, expected_materials, decision_kind="INSUFFICIENT_EVIDENCE")
     assert validator.is_valid(insufficient)
 
     signal_only = dict(action)
@@ -624,9 +622,9 @@ def test_model_can_author_actor_only_intent_without_platform_reality_fields(
     module = _module()
     request, _manifest, expected_materials = _bundle(module, tmp_path / "materials")
     schema_value = json.loads(
-        (
-            ROOT / "skills" / "xinao" / "references" / "researcher-output.v2.schema.json"
-        ).read_text(encoding="utf-8")
+        (ROOT / "skills" / "xinao" / "references" / "researcher-output.v2.schema.json").read_text(
+            encoding="utf-8"
+        )
     )
     candidate = _candidate(request, expected_materials)
     candidate.pop("account_identity")
@@ -651,9 +649,7 @@ def test_model_can_author_actor_only_intent_without_platform_reality_fields(
         assert platform_reality not in intent
 
     mismatched = _candidate(request, expected_materials)
-    mismatched["complete_actor_behavior_intent"] = _actor_intent(
-        decision_kind="NO_ACTION"
-    )
+    mismatched["complete_actor_behavior_intent"] = _actor_intent(decision_kind="NO_ACTION")
     assert not module._valid_candidate(
         mismatched,
         request=request,
@@ -730,9 +726,7 @@ def test_candidate_rejects_unknown_or_unclaimed_evidence_reference(tmp_path: Pat
 def test_empty_bundle_requires_empty_material_and_evidence_refs(tmp_path: Path) -> None:
     module = _module()
     request, _manifest, expected_materials = _bundle(module, tmp_path / "materials", payloads=())
-    candidate = _candidate(
-        request, expected_materials, decision_kind="INSUFFICIENT_EVIDENCE"
-    )
+    candidate = _candidate(request, expected_materials, decision_kind="INSUFFICIENT_EVIDENCE")
 
     assert module._valid_candidate(candidate, request=request, materials=expected_materials) is True
 

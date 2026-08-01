@@ -647,9 +647,11 @@ def _validate_actor_intent(value: object) -> dict[str, Any]:
         except InvalidOperation as exc:
             raise InputValidationError("CANDIDATE_ACTOR_INTENT_INVALID", "ACTION stake") from exc
     elif kind == "NO_ACTION":
-        if Decimal(stake) != 0 or value.get("panel") is not None or value.get(
-            "selected_number"
-        ) is not None:
+        if (
+            Decimal(stake) != 0
+            or value.get("panel") is not None
+            or value.get("selected_number") is not None
+        ):
             raise InputValidationError("CANDIDATE_ACTOR_INTENT_INVALID", "NO_ACTION fields")
     else:
         raise InputValidationError("CANDIDATE_ACTOR_INTENT_INVALID", "decision_kind")
@@ -758,17 +760,13 @@ def _validate_candidate(
     if actor_intent is not None and (has_action or has_no_action):
         projected_kind = _ACCOUNT_ACTION if has_action else "NO_ACTION"
         if actor_intent["decision_kind"] != projected_kind:
-            raise InputValidationError(
-                "CANDIDATE_ACTOR_INTENT_BRANCH_MISMATCH", "decision_kind"
-            )
+            raise InputValidationError("CANDIDATE_ACTOR_INTENT_BRANCH_MISMATCH", "decision_kind")
         if has_action and (
             actor_intent.get("panel") != authored_action.get("panel")
             or actor_intent.get("selected_number") != authored_action.get("selected_number")
             or actor_intent.get("stake") != authored_action.get("stake")
         ):
-            raise InputValidationError(
-                "CANDIDATE_ACTOR_INTENT_BRANCH_MISMATCH", "ACTION choice"
-            )
+            raise InputValidationError("CANDIDATE_ACTOR_INTENT_BRANCH_MISMATCH", "ACTION choice")
     if (
         value.get("research_question") != request["research_question"]
         or value.get("as_of") != request["as_of"]

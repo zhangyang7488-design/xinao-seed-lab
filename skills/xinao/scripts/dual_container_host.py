@@ -1627,13 +1627,9 @@ class DualContainerHost:
                 if receipt.get(key) != lease.get(key):
                     raise DualHostError("DUAL_HOST_PAIR_RECEIPT_MISMATCH", key)
             if lease.get("active_material_container_dir") != CANONICAL_ACTIVE_MATERIALS:
-                raise DualHostError(
-                    "DUAL_HOST_ACTIVE_MATERIAL_MOUNT_MISSING", "lease target"
-                )
+                raise DualHostError("DUAL_HOST_ACTIVE_MATERIAL_MOUNT_MISSING", "lease target")
             if lease.get("active_material_readonly") is not True:
-                raise DualHostError(
-                    "DUAL_HOST_ACTIVE_MATERIAL_MOUNT_WRITABLE", "lease"
-                )
+                raise DualHostError("DUAL_HOST_ACTIVE_MATERIAL_MOUNT_WRITABLE", "lease")
         body = {k: v for k, v in receipt.items() if k != "pair_receipt_sha256"}
         observed_receipt = _sha256_bytes(_canonical_bytes(body))
         if lease.get("pair_receipt_sha256") and observed_receipt != lease.get(
@@ -1668,9 +1664,7 @@ class DualContainerHost:
             if require_active_material_mount:
                 active_source = str(lease.get("active_material_host_dir") or "")
                 if not active_source:
-                    raise DualHostError(
-                        "DUAL_HOST_ACTIVE_MATERIAL_MOUNT_MISSING", "lease source"
-                    )
+                    raise DualHostError("DUAL_HOST_ACTIVE_MATERIAL_MOUNT_MISSING", "lease source")
                 active_material_mount = self._require_active_material_mount(
                     transport_inspect, expected_source=active_source
                 )
@@ -1891,16 +1885,12 @@ class DualContainerHost:
             return None
         value = dict(binding)
         if value.get("schema_version") != ACTIVE_MATERIAL_BINDING_SCHEMA:
-            raise DualHostError(
-                "DUAL_HOST_ACTIVE_MATERIAL_BINDING_INVALID", "schema_version"
-            )
+            raise DualHostError("DUAL_HOST_ACTIVE_MATERIAL_BINDING_INVALID", "schema_version")
         snapshot_at = value.get("material_snapshot_at")
         try:
             import datetime as dt
 
-            parsed_snapshot_at = dt.datetime.fromisoformat(
-                str(snapshot_at).replace("Z", "+00:00")
-            )
+            parsed_snapshot_at = dt.datetime.fromisoformat(str(snapshot_at).replace("Z", "+00:00"))
         except (TypeError, ValueError) as exc:
             raise DualHostError(
                 "DUAL_HOST_ACTIVE_MATERIAL_BINDING_INVALID", "material_snapshot_at"
@@ -1910,9 +1900,7 @@ class DualContainerHost:
             or not snapshot_at.endswith("Z")
             or parsed_snapshot_at.tzinfo is None
         ):
-            raise DualHostError(
-                "DUAL_HOST_ACTIVE_MATERIAL_BINDING_INVALID", "material_snapshot_at"
-            )
+            raise DualHostError("DUAL_HOST_ACTIVE_MATERIAL_BINDING_INVALID", "material_snapshot_at")
         for key in (
             "material_manifest_sha256",
             "material_packet_sha256",
@@ -1920,16 +1908,13 @@ class DualContainerHost:
             "base_prompt_sha256",
         ):
             if HEX_SHA256.fullmatch(str(value.get(key) or "")) is None:
-                raise DualHostError(
-                    "DUAL_HOST_ACTIVE_MATERIAL_BINDING_INVALID", key
-                )
+                raise DualHostError("DUAL_HOST_ACTIVE_MATERIAL_BINDING_INVALID", key)
         bundle_id = str(value.get("material_bundle_id") or "")
-        if not bundle_id.startswith("xinao-material-bundle-sha256:") or HEX_SHA256.fullmatch(
-            bundle_id.split(":", 1)[1] if ":" in bundle_id else ""
-        ) is None:
-            raise DualHostError(
-                "DUAL_HOST_ACTIVE_MATERIAL_BINDING_INVALID", "material_bundle_id"
-            )
+        if (
+            not bundle_id.startswith("xinao-material-bundle-sha256:")
+            or HEX_SHA256.fullmatch(bundle_id.split(":", 1)[1] if ":" in bundle_id else "") is None
+        ):
+            raise DualHostError("DUAL_HOST_ACTIVE_MATERIAL_BINDING_INVALID", "material_bundle_id")
 
         active_root = self.paths["active_materials"].resolve()
 
@@ -1937,24 +1922,18 @@ class DualContainerHost:
             raw = str(value.get(relative_key) or "").replace("\\", "/")
             rel = Path(raw)
             if not raw or rel.is_absolute() or ".." in rel.parts or rel.as_posix() != raw:
-                raise DualHostError(
-                    "DUAL_HOST_ACTIVE_MATERIAL_PATH_INVALID", relative_key
-                )
+                raise DualHostError("DUAL_HOST_ACTIVE_MATERIAL_PATH_INVALID", relative_key)
             path = active_root / rel
             try:
                 resolved = path.resolve(strict=True)
             except OSError as exc:
-                raise DualHostError(
-                    "DUAL_HOST_ACTIVE_MATERIAL_MISSING", raw
-                ) from exc
+                raise DualHostError("DUAL_HOST_ACTIVE_MATERIAL_MISSING", raw) from exc
             if (
                 active_root not in resolved.parents
                 or not resolved.is_file()
                 or resolved.is_symlink()
             ):
-                raise DualHostError(
-                    "DUAL_HOST_ACTIVE_MATERIAL_PATH_INVALID", raw
-                )
+                raise DualHostError("DUAL_HOST_ACTIVE_MATERIAL_PATH_INVALID", raw)
             observed = _sha256_bytes(resolved.read_bytes())
             if observed != value.get(expected_sha_key):
                 raise DualHostError(
@@ -1963,12 +1942,8 @@ class DualContainerHost:
                 )
             return resolved
 
-        manifest_path = _bound_file(
-            "material_manifest_relative_path", "material_manifest_sha256"
-        )
-        prompt_path = _bound_file(
-            "effective_prompt_relative_path", "effective_prompt_sha256"
-        )
+        manifest_path = _bound_file("material_manifest_relative_path", "material_manifest_sha256")
+        prompt_path = _bound_file("effective_prompt_relative_path", "effective_prompt_sha256")
         try:
             manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
         except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
@@ -1976,30 +1951,21 @@ class DualContainerHost:
                 "DUAL_HOST_ACTIVE_MATERIAL_MANIFEST_INVALID", str(manifest_path)
             ) from exc
         if not isinstance(manifest, dict) or manifest.get("bundle_id") != bundle_id:
-            raise DualHostError(
-                "DUAL_HOST_ACTIVE_MATERIAL_MANIFEST_INVALID", "bundle_id"
-            )
+            raise DualHostError("DUAL_HOST_ACTIVE_MATERIAL_MANIFEST_INVALID", "bundle_id")
         if value.get("material_manifest") != manifest:
-            raise DualHostError(
-                "DUAL_HOST_ACTIVE_MATERIAL_MANIFEST_INVALID", "sealed manifest"
-            )
+            raise DualHostError("DUAL_HOST_ACTIVE_MATERIAL_MANIFEST_INVALID", "sealed manifest")
         materials = list(manifest.get("materials") or [])
         if not materials or not all(isinstance(item, Mapping) for item in materials):
-            raise DualHostError(
-                "DUAL_HOST_ACTIVE_MATERIAL_MANIFEST_INVALID", "materials"
-            )
+            raise DualHostError("DUAL_HOST_ACTIVE_MATERIAL_MANIFEST_INVALID", "materials")
         manifest_identity = {
             "schema_version": "xinao.material_bundle.v1",
             "provider_disclosure_scope": "caller_supplied_for_bounded_research_episode",
             "materials": materials,
         }
         if set(manifest) != {*manifest_identity, "bundle_id"} or bundle_id != (
-            "xinao-material-bundle-sha256:"
-            + _sha256_bytes(_canonical_bytes(manifest_identity))
+            "xinao-material-bundle-sha256:" + _sha256_bytes(_canonical_bytes(manifest_identity))
         ):
-            raise DualHostError(
-                "DUAL_HOST_ACTIVE_MATERIAL_MANIFEST_INVALID", "content address"
-            )
+            raise DualHostError("DUAL_HOST_ACTIVE_MATERIAL_MANIFEST_INVALID", "content address")
         manifest_refs = {
             str(item.get("material_id")): (
                 str(item.get("sha256")),
@@ -2028,9 +1994,7 @@ class DualContainerHost:
             or len(source_ref_map) != len(source_refs)
             or int(value.get("material_count") or 0) != len(manifest_refs)
         ):
-            raise DualHostError(
-                "DUAL_HOST_ACTIVE_MATERIAL_BINDING_INVALID", "material_source_refs"
-            )
+            raise DualHostError("DUAL_HOST_ACTIVE_MATERIAL_BINDING_INVALID", "material_source_refs")
         source_ref_keys = {
             "path",
             "path_identity_sha256",
@@ -2051,48 +2015,30 @@ class DualContainerHost:
             source_path = str(item.get("path") or "")
             if (
                 not Path(source_path).is_absolute()
-                or HEX_SHA256.fullmatch(str(item.get("path_identity_sha256") or ""))
-                is None
+                or HEX_SHA256.fullmatch(str(item.get("path_identity_sha256") or "")) is None
                 or item.get("path_identity_sha256")
                 != _sha256_bytes(
-                    _canonical_bytes(
-                        {"path": os.path.normcase(os.path.abspath(source_path))}
-                    )
+                    _canonical_bytes({"path": os.path.normcase(os.path.abspath(source_path))})
                 )
                 or int(item.get("st_size") or -1) != int(item.get("size_bytes") or -2)
             ):
-                raise DualHostError(
-                    "DUAL_HOST_ACTIVE_MATERIAL_BINDING_INVALID", "source identity"
-                )
+                raise DualHostError("DUAL_HOST_ACTIVE_MATERIAL_BINDING_INVALID", "source identity")
         if value.get("container_material_root") != CANONICAL_ACTIVE_MATERIALS:
             raise DualHostError(
                 "DUAL_HOST_ACTIVE_MATERIAL_BINDING_INVALID", "container_material_root"
             )
-        expected_bundle = (
-            f"{CANONICAL_ACTIVE_MATERIALS}/bundles/{bundle_id.split(':', 1)[1]}"
-        )
+        expected_bundle = f"{CANONICAL_ACTIVE_MATERIALS}/bundles/{bundle_id.split(':', 1)[1]}"
         if value.get("container_bundle_path") != expected_bundle:
             raise DualHostError(
                 "DUAL_HOST_ACTIVE_MATERIAL_BINDING_INVALID", "container_bundle_path"
             )
-        expected_manifest_relative = (
-            f"bundles/{bundle_id.split(':', 1)[1]}/manifest.json"
-        )
+        expected_manifest_relative = f"bundles/{bundle_id.split(':', 1)[1]}/manifest.json"
         if value.get("material_manifest_relative_path") != expected_manifest_relative:
-            raise DualHostError(
-                "DUAL_HOST_ACTIVE_MATERIAL_BINDING_INVALID", "manifest path"
-            )
-        prompt_relative = str(value["effective_prompt_relative_path"]).replace(
-            "\\", "/"
-        )
+            raise DualHostError("DUAL_HOST_ACTIVE_MATERIAL_BINDING_INVALID", "manifest path")
+        prompt_relative = str(value["effective_prompt_relative_path"]).replace("\\", "/")
         if prompt_relative != f"prompts/{value['effective_prompt_sha256']}.utf8":
-            raise DualHostError(
-                "DUAL_HOST_ACTIVE_MATERIAL_BINDING_INVALID", "prompt path"
-            )
-        expected_prompt = (
-            f"{CANONICAL_ACTIVE_MATERIALS}/"
-            f"{prompt_relative}"
-        )
+            raise DualHostError("DUAL_HOST_ACTIVE_MATERIAL_BINDING_INVALID", "prompt path")
+        expected_prompt = f"{CANONICAL_ACTIVE_MATERIALS}/{prompt_relative}"
         if value.get("container_effective_prompt_path") != expected_prompt:
             raise DualHostError(
                 "DUAL_HOST_ACTIVE_MATERIAL_BINDING_INVALID",
@@ -2111,18 +2057,14 @@ class DualContainerHost:
                 or item.get("encoding") != "utf-8"
                 or HEX_SHA256.fullmatch(str(item.get("sha256") or "")) is None
             ):
-                raise DualHostError(
-                    "DUAL_HOST_ACTIVE_MATERIAL_MANIFEST_INVALID", "material entry"
-                )
+                raise DualHostError("DUAL_HOST_ACTIVE_MATERIAL_MANIFEST_INVALID", "material entry")
             source_file = bundle_root / relative
             try:
                 source_info = os.lstat(source_file)
                 payload = source_file.read_bytes()
                 text = payload.decode("utf-8")
             except (OSError, UnicodeDecodeError) as exc:
-                raise DualHostError(
-                    "DUAL_HOST_ACTIVE_MATERIAL_DRIFT", relative
-                ) from exc
+                raise DualHostError("DUAL_HOST_ACTIVE_MATERIAL_DRIFT", relative) from exc
             if (
                 source_file.is_symlink()
                 or not source_file.is_file()
@@ -2146,9 +2088,7 @@ class DualContainerHost:
             if path.is_file()
         }
         if observed_files != expected_files:
-            raise DualHostError(
-                "DUAL_HOST_ACTIVE_MATERIAL_DRIFT", "bundle file set"
-            )
+            raise DualHostError("DUAL_HOST_ACTIVE_MATERIAL_DRIFT", "bundle file set")
         packet = _canonical_bytes(
             {
                 "schema_version": "xinao.model_material_packet.v1",
@@ -2157,16 +2097,12 @@ class DualContainerHost:
             }
         )
         if _sha256_bytes(packet) != value.get("material_packet_sha256"):
-            raise DualHostError(
-                "DUAL_HOST_ACTIVE_MATERIAL_BINDING_INVALID", "material packet"
-            )
+            raise DualHostError("DUAL_HOST_ACTIVE_MATERIAL_BINDING_INVALID", "material packet")
         prompt_bytes = prompt_path.read_bytes()
         suffix = ACTIVE_MATERIAL_PACKET_NOTICE.encode("utf-8") + packet
-        if (
-            not prompt_bytes.endswith(suffix)
-            or _sha256_bytes(prompt_bytes[: -len(suffix)])
-            != value.get("base_prompt_sha256")
-        ):
+        if not prompt_bytes.endswith(suffix) or _sha256_bytes(
+            prompt_bytes[: -len(suffix)]
+        ) != value.get("base_prompt_sha256"):
             raise DualHostError(
                 "DUAL_HOST_ACTIVE_MATERIAL_BINDING_INVALID", "effective prompt binding"
             )
@@ -2255,17 +2191,13 @@ class DualContainerHost:
             == CANONICAL_ACTIVE_MATERIALS
         ]
         if len(mounts) != 1:
-            raise DualHostError(
-                "DUAL_HOST_ACTIVE_MATERIAL_MOUNT_MISSING", f"count={len(mounts)}"
-            )
+            raise DualHostError("DUAL_HOST_ACTIVE_MATERIAL_MOUNT_MISSING", f"count={len(mounts)}")
         mount = mounts[0]
         observed_source = str(mount.get("Source") or mount.get("source") or "")
         self._require_canonical_active_material_source(expected_source, label="lease")
         self._require_canonical_active_material_source(observed_source, label="docker_inspect")
         if not self.specs.host_bind_sources_equal(observed_source, expected_source):
-            raise DualHostError(
-                "DUAL_HOST_ACTIVE_MATERIAL_MOUNT_SOURCE_DRIFT", observed_source
-            )
+            raise DualHostError("DUAL_HOST_ACTIVE_MATERIAL_MOUNT_SOURCE_DRIFT", observed_source)
         mount_type = str(mount.get("Type") or mount.get("type") or "").lower()
         if mount_type != "bind":
             raise DualHostError(
@@ -2298,9 +2230,7 @@ class DualContainerHost:
             "material_packet_sha256": binding.get("material_packet_sha256"),
             "material_snapshot_at": binding.get("material_snapshot_at"),
             "effective_prompt_sha256": binding.get("effective_prompt_sha256"),
-            "container_effective_prompt_path": binding.get(
-                "container_effective_prompt_path"
-            ),
+            "container_effective_prompt_path": binding.get("container_effective_prompt_path"),
         }
 
     def attach_run_live(
@@ -2515,18 +2445,10 @@ class DualContainerHost:
             attempt["active_material_binding"] = material_binding
             attempt["active_material_mount"] = ready["active_material_mount"]
             attempt["material_bundle_id"] = material_binding["material_bundle_id"]
-            attempt["material_manifest_sha256"] = material_binding[
-                "material_manifest_sha256"
-            ]
-            attempt["material_packet_sha256"] = material_binding[
-                "material_packet_sha256"
-            ]
-            attempt["material_snapshot_at"] = material_binding[
-                "material_snapshot_at"
-            ]
-            attempt["effective_prompt_sha256"] = material_binding[
-                "effective_prompt_sha256"
-            ]
+            attempt["material_manifest_sha256"] = material_binding["material_manifest_sha256"]
+            attempt["material_packet_sha256"] = material_binding["material_packet_sha256"]
+            attempt["material_snapshot_at"] = material_binding["material_snapshot_at"]
+            attempt["effective_prompt_sha256"] = material_binding["effective_prompt_sha256"]
         if material_drift_reason is not None:
             attempt["status"] = native.STATUS_ATTEMPT_FAILED
             attempt["failure_reasons"] = [
@@ -2811,18 +2733,10 @@ class DualContainerHost:
             attempt["active_material_binding"] = material_binding
             attempt["active_material_mount"] = ready["active_material_mount"]
             attempt["material_bundle_id"] = material_binding["material_bundle_id"]
-            attempt["material_manifest_sha256"] = material_binding[
-                "material_manifest_sha256"
-            ]
-            attempt["material_packet_sha256"] = material_binding[
-                "material_packet_sha256"
-            ]
-            attempt["material_snapshot_at"] = material_binding[
-                "material_snapshot_at"
-            ]
-            attempt["effective_prompt_sha256"] = material_binding[
-                "effective_prompt_sha256"
-            ]
+            attempt["material_manifest_sha256"] = material_binding["material_manifest_sha256"]
+            attempt["material_packet_sha256"] = material_binding["material_packet_sha256"]
+            attempt["material_snapshot_at"] = material_binding["material_snapshot_at"]
+            attempt["effective_prompt_sha256"] = material_binding["effective_prompt_sha256"]
         if material_drift_reason is not None:
             attempt["status"] = native.STATUS_ATTEMPT_FAILED
             attempt["failure_reasons"] = [
@@ -3188,8 +3102,7 @@ def _synthetic_transport_inspect(lease: Mapping[str, Any]) -> dict[str, Any]:
             {"Destination": "/episode-lab", "Source": "/host/lab", "Type": "bind"},
             {
                 "Destination": CANONICAL_ACTIVE_MATERIALS,
-                "Source": lease.get("active_material_host_dir")
-                or "/host/active-materials",
+                "Source": lease.get("active_material_host_dir") or "/host/active-materials",
                 "Type": "bind",
                 "RW": False,
             },

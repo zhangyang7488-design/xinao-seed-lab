@@ -1275,9 +1275,7 @@ def _settle_bound_portfolio_fixture(*, portfolio: Path, outcome_path: Path) -> N
     }
     if frozen.account_decision.identity == AccountDecisionIdentity.ACTION:
         kwargs["settlement_ref"] = f"settlement.fixture.{frozen.episode_ref}"
-        kwargs["settlement_journal_group_ref"] = (
-            f"journal.settlement.fixture.{frozen.episode_ref}"
-        )
+        kwargs["settlement_journal_group_ref"] = f"journal.settlement.fixture.{frozen.episode_ref}"
     settled = settle_shadow_episode(**kwargs)
     write_outcome_and_settled_exclusive(
         head.period_root,
@@ -2584,8 +2582,7 @@ def test_settled_portfolio_feedback_reaches_explicit_next_episode_consumer(
         with pytest.raises(runtime.XinaoError) as redirected_failure:
             invoke()
         assert (
-            redirected_failure.value.reason_code
-            == "RESEARCH_EPISODE_FEEDBACK_CHECKPOINT_MISMATCH"
+            redirected_failure.value.reason_code == "RESEARCH_EPISODE_FEEDBACK_CHECKPOINT_MISMATCH"
         )
     meta_path.write_bytes(original_meta)
     head_path.write_bytes(original_head)
