@@ -272,6 +272,7 @@ MAX_JSON_DEPTH = 64
 MAX_JSON_NODES = 100000
 MAX_JSON_FILE_BYTES = 2 * 1024 * 1024
 MAX_RESULT_BYTES = 4 * 1024 * 1024
+MAX_RESEARCH_EPISODE_LAB_FILE_BYTES = MAX_RESULT_BYTES
 MAX_TERMINAL_ATTESTATION_BYTES = 16 * 1024
 MAX_BOOTSTRAP_FENCE_BYTES = 16 * 1024
 MAX_SKILL_BUNDLE_FILE_BYTES = 16 * 1024 * 1024
@@ -328,6 +329,9 @@ HOST_MODULES_BUNDLE_RELATIVE = Path("scripts") / "host_modules"
 HOST_MODULE_INVENTORY: tuple[str, ...] = (
     "docker_create_specs.py",
     "native_grok_session.py",
+    # Native host export imports this sibling when the full discovery wheel is
+    # intentionally absent from the installed Skill process.
+    "research_episode_candidate_manifest.py",
     "episode_mcp_binding.py",
     "mcp_episode_lab_server.py",
     "ipc_contract.py",
@@ -1391,7 +1395,7 @@ def _infer_monorepo_source_root_for_skill(skill_root: Path) -> Path | None:
 def _collect_packaged_host_module_rows(
     source_root: Path,
 ) -> list[tuple[str, Path, bytes]]:
-    """Copy host-needed docker/xinao-researcher modules into skill-bundle inventory."""
+    """Copy the closed host consumer cone into the skill-bundle inventory."""
     package_root = (Path(source_root) / RESEARCHER_IMAGE_CONTEXT_RELATIVE).resolve()
     if not package_root.is_dir() or _is_reparse(package_root):
         raise XinaoError("HOST_MODULES_SOURCE_MISSING", str(package_root))
@@ -1399,7 +1403,13 @@ def _collect_packaged_host_module_rows(
     for name in HOST_MODULE_INVENTORY:
         if name.startswith("/") or "\\" in name or ".." in Path(name).parts:
             raise XinaoError("HOST_MODULES_INVENTORY_INVALID", name)
-        path = package_root / name
+        # The candidate-manifest validator has one package-owned truth. Stage
+        # those exact bytes beside native_grok_session for installed/fresh
+        # processes instead of maintaining a second host copy.
+        if name == CANDIDATE_MANIFEST_VALIDATOR_IMAGE_RELATIVE:
+            path = (Path(source_root) / CANDIDATE_MANIFEST_VALIDATOR_PACKAGE_RELATIVE).resolve()
+        else:
+            path = package_root / name
         if not path.is_file() or _is_reparse(path):
             raise XinaoError("HOST_MODULES_SOURCE_MISSING", f"{name}:{path}")
         payload = _regular_file_bytes(
@@ -13698,6 +13708,90 @@ def _research_episode_paths(root: Path) -> dict[str, Path]:
     }
 
 
+def _research_episode_lab_target(root: Path, lab_relative: str) -> tuple[Path, Path]:
+    """Return a lexical lab target without following any caller-supplied path."""
+
+    if not isinstance(lab_relative, str) or not lab_relative or "\x00" in lab_relative:
+        raise XinaoError("RESEARCH_EPISODE_LAB_PATH_INVALID", str(lab_relative))
+    normalized = lab_relative.replace("\\", "/")
+    rel = Path(normalized)
+    if (
+        rel.is_absolute()
+        or rel.drive
+        or rel.root
+        or re.match(r"(?i)^[a-z]:", normalized)
+        or not rel.parts
+        or any(
+            part in {"", ".", ".."} or part.startswith("..") or ":" in part
+            for part in rel.parts
+        )
+    ):
+        raise XinaoError("RESEARCH_EPISODE_LAB_PATH_INVALID", lab_relative)
+    for token in ("ledger", "freeze", "outcome", "settlement", "shadow", "auth"):
+        if token in {part.casefold() for part in rel.parts}:
+            raise XinaoError("RESEARCH_EPISODE_UNAUTHORIZED_LEDGER_PATH", lab_relative)
+    lab_root = Path(os.path.abspath(_research_episode_paths(root)["lab"]))
+    target = Path(os.path.abspath(lab_root / rel))
+    try:
+        common = os.path.commonpath((str(lab_root), str(target)))
+    except (OSError, ValueError) as exc:
+        raise XinaoError("RESEARCH_EPISODE_LAB_PATH_INVALID", lab_relative) from exc
+    if os.path.normcase(common) != os.path.normcase(str(lab_root)) or _paths_equal(
+        target, lab_root
+    ):
+        raise XinaoError("RESEARCH_EPISODE_LAB_PATH_INVALID", lab_relative)
+    return lab_root, target
+
+
+def _research_episode_existing_lab_bytes(root: Path, lab_relative: str) -> bytes:
+    """Read one existing lab artifact stably; never create or rewrite it."""
+
+    lab_root, target = _research_episode_lab_target(root, lab_relative)
+    try:
+        root_info = os.lstat(lab_root)
+        if _is_reparse_stat(root_info) or not stat.S_ISDIR(root_info.st_mode):
+            raise XinaoError(
+                "RESEARCH_EPISODE_LAB_FILE_INVALID", f"lab root invalid: {lab_root}"
+            )
+        relative = target.relative_to(lab_root)
+        current = lab_root
+        for part in relative.parts[:-1]:
+            current /= part
+            info = os.lstat(current)
+            if _is_reparse_stat(info) or not stat.S_ISDIR(info.st_mode):
+                raise XinaoError(
+                    "RESEARCH_EPISODE_LAB_FILE_INVALID",
+                    f"ordinary directory required: {current}",
+                )
+        leaf_info = os.lstat(target)
+        if (
+            _is_reparse_stat(leaf_info)
+            or not stat.S_ISREG(leaf_info.st_mode)
+            or leaf_info.st_nlink != 1
+        ):
+            raise XinaoError(
+                "RESEARCH_EPISODE_LAB_FILE_INVALID",
+                f"ordinary file required: {target}",
+            )
+        resolved_root = lab_root.resolve(strict=True)
+        resolved_target = target.resolve(strict=True)
+        resolved_common = os.path.commonpath((str(resolved_root), str(resolved_target)))
+        if os.path.normcase(resolved_common) != os.path.normcase(str(resolved_root)):
+            raise XinaoError(
+                "RESEARCH_EPISODE_LAB_FILE_INVALID",
+                f"resolved path escaped lab root: {target}",
+            )
+    except XinaoError:
+        raise
+    except (OSError, ValueError) as exc:
+        raise XinaoError("RESEARCH_EPISODE_LAB_FILE_INVALID", f"{target}: {exc}") from exc
+    return _regular_file_bytes(
+        target,
+        reason_code="RESEARCH_EPISODE_LAB_FILE_INVALID",
+        maximum=MAX_RESEARCH_EPISODE_LAB_FILE_BYTES,
+    )
+
+
 def _research_episode_assert_root_allowed(root: Path) -> None:
     """Reject C: drive roots under Windows semantics (no implicit C growth)."""
     text = str(root)
@@ -14089,19 +14183,15 @@ def _research_episode_commit_checkpoint(
         if not isinstance(meta, dict):
             raise XinaoError("RESEARCH_EPISODE_META_INVALID", str(paths["meta"]))
         feedback_inventory_hash = meta.get("feedback_inventory_hash")
+    if (lab_relative is None) != (lab_bytes is None):
+        raise XinaoError(
+            "RESEARCH_EPISODE_LAB_FILE_INVALID",
+            "checkpoint lab binding requires one existing path snapshot",
+        )
     if lab_relative is not None and lab_bytes is not None:
-        rel = Path(lab_relative)
-        if ".." in rel.parts or rel.is_absolute():
-            raise XinaoError("RESEARCH_EPISODE_LAB_PATH_INVALID", lab_relative)
-        lowered = lab_relative.replace("\\", "/").lower()
-        for token in ("ledger", "freeze", "outcome", "settlement", "shadow", "auth"):
-            if token in lowered.split("/"):
-                raise XinaoError("RESEARCH_EPISODE_UNAUTHORIZED_LEDGER_PATH", lab_relative)
-        if any(part.startswith("..") for part in rel.parts):
-            raise XinaoError("RESEARCH_EPISODE_LAB_PATH_INVALID", lab_relative)
-        target = paths["lab"] / lab_relative
-        target.parent.mkdir(parents=True, exist_ok=True)
-        target.write_bytes(lab_bytes)
+        _research_episode_lab_target(root, lab_relative)
+        # `lab_bytes` is the single stable pre-container snapshot. Checkpoint is
+        # a read-only binding operation and never materializes or rewrites lab.
     body = {
         "schema_version": RESEARCH_EPISODE_CHECKPOINT_SCHEMA,
         "episode_id": episode_id,
@@ -15538,6 +15628,21 @@ def research_episode_checkpoint(
             raise XinaoError("RESEARCH_EPISODE_ABSORBED", "checkpoint after absorb")
         if head.get("head_checkpoint_sha256") != expected_head_sha256:
             raise XinaoError("RESEARCH_EPISODE_STALE_HEAD", expected_head_sha256)
+        if lab_relative is not None:
+            # Preflight before the dual-container checkpoint driver: invalid lab input
+            # must not advance container leases, journals, CAS, or the Episode head.
+            observed_lab_bytes = _research_episode_existing_lab_bytes(root, lab_relative)
+            if lab_bytes is not None and lab_bytes != observed_lab_bytes:
+                raise XinaoError(
+                    "RESEARCH_EPISODE_LAB_FILE_CHANGED",
+                    "caller bytes do not match the existing lab artifact",
+                )
+            lab_bytes = observed_lab_bytes
+        elif lab_bytes is not None:
+            raise XinaoError(
+                "RESEARCH_EPISODE_LAB_FILE_INVALID",
+                "lab bytes require an existing lab-relative path",
+            )
         meta = _research_episode_read_meta(root)
         generation = int(head.get("generation") or 0) + 1
         container_identity = _research_episode_container_identity(
@@ -17184,18 +17289,11 @@ def main(argv: Sequence[str] | None = None) -> int:
             elif args.research_episode_command == "status":
                 value = research_episode_status(root=args.root)
             elif args.research_episode_command == "checkpoint":
-                lab_bytes = None
-                if args.lab_relative is not None:
-                    # checkpoint may create lab path; accept optional pre-read only when exists
-                    # Prefer explicit empty bytes when relative given without prior file — caller
-                    # uses progress_note; lab materialization optional via env path not used here.
-                    lab_bytes = b""
                 value = research_episode_checkpoint(
                     root=args.root,
                     expected_head_sha256=args.expected_head,
                     progress_note=args.progress_note,
                     lab_relative=args.lab_relative,
-                    lab_bytes=lab_bytes if args.lab_relative is not None else None,
                     mark_interrupted=args.mark_interrupted,
                 )
             elif args.research_episode_command == "resume":

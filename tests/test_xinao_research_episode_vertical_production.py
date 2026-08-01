@@ -11,6 +11,7 @@ import base64
 import hashlib
 import importlib.util
 import json
+import os
 import shutil
 import subprocess
 import sys
@@ -137,6 +138,21 @@ def _prepare_episode(
         root=episode, question="bounded multi-round open research"
     )
     return module, episode, started, manifest
+
+
+def _episode_tree_snapshot(root: Path) -> dict[str, tuple[str, bytes | str | None]]:
+    snapshot: dict[str, tuple[str, bytes | str | None]] = {}
+    for path in sorted(root.rglob("*"), key=lambda item: item.as_posix()):
+        relative = path.relative_to(root).as_posix()
+        if path.is_symlink():
+            snapshot[relative] = ("symlink", os.readlink(path))
+        elif path.is_file():
+            snapshot[relative] = ("file", path.read_bytes())
+        elif path.is_dir():
+            snapshot[relative] = ("dir", None)
+        else:
+            snapshot[relative] = ("other", None)
+    return snapshot
 
 
 def test_public_cli_exposes_ensure_and_retire_pair() -> None:
@@ -344,6 +360,9 @@ def test_ensure_pair_stale_cas_rejected(
         )
     assert failure.value.reason_code == "RESEARCH_EPISODE_STALE_HEAD"
     # Honest checkpoint then ensure under new head.
+    failed_experiment = episode / "lab" / "experiments" / "fail1.txt"
+    failed_experiment.parent.mkdir(parents=True, exist_ok=True)
+    failed_experiment.write_bytes(b"experiment failed: exit 1\n")
     ckpt = module.research_episode_checkpoint(
         root=episode,
         expected_head_sha256=started["head_checkpoint_sha256"],
@@ -373,6 +392,189 @@ def test_ensure_pair_stale_cas_rejected(
     assert ready["parent_complete"] is False
     # Intermediate failure retained after pair ensure.
     assert (episode / "lab" / "experiments" / "fail1.txt").is_file()
+
+
+def test_checkpoint_cli_binds_existing_lab_bytes_without_rewrite(
+    module: Any,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    _mod, episode, started, _manifest = _prepare_episode(module, tmp_path, monkeypatch)
+    lab_file = episode / "lab" / "lab_notes" / "wild_search_result.md"
+    lab_file.parent.mkdir(parents=True, exist_ok=True)
+    exact = b"# exact experiment bytes\r\n\x00negative retained\n"
+    lab_file.write_bytes(exact)
+    before = os.lstat(lab_file)
+
+    exit_code = module.main(
+        [
+            "research-episode",
+            "checkpoint",
+            "--root",
+            str(episode),
+            "--expected-head",
+            started["head_checkpoint_sha256"],
+            "--progress-note",
+            "bind existing result",
+            "--lab-relative",
+            "lab_notes/wild_search_result.md",
+        ]
+    )
+    output = capsys.readouterr().out.strip().splitlines()
+    assert exit_code == 0
+    payload = json.loads(output[-1])
+    after = os.lstat(lab_file)
+    assert lab_file.read_bytes() == exact
+    assert (after.st_dev, after.st_ino, after.st_size, after.st_mtime_ns) == (
+        before.st_dev,
+        before.st_ino,
+        before.st_size,
+        before.st_mtime_ns,
+    )
+    assert payload["checkpoint"]["lab_bytes_sha256"] == hashlib.sha256(exact).hexdigest()
+    assert payload["checkpoint"]["lab_relative"] == "lab_notes/wild_search_result.md"
+
+
+def test_checkpoint_python_api_cannot_materialize_or_overwrite_lab(
+    module: Any,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _mod, episode, started, _manifest = _prepare_episode(module, tmp_path, monkeypatch)
+    lab_file = episode / "lab" / "lab_notes" / "result.md"
+    lab_file.parent.mkdir(parents=True, exist_ok=True)
+    exact = b"provider-authored experiment result\n"
+    lab_file.write_bytes(exact)
+    before = _episode_tree_snapshot(episode)
+
+    def forbidden_container_action(**_kwargs: Any) -> dict[str, Any]:
+        pytest.fail("mismatched caller bytes must fail before the container checkpoint driver")
+
+    monkeypatch.setattr(module, "_research_episode_container_identity", forbidden_container_action)
+    with pytest.raises(module.XinaoError) as failure:
+        module.research_episode_checkpoint(
+            root=episode,
+            expected_head_sha256=started["head_checkpoint_sha256"],
+            lab_relative="lab_notes/result.md",
+            lab_bytes=b"caller replacement bytes\n",
+        )
+    assert failure.value.reason_code == "RESEARCH_EPISODE_LAB_FILE_CHANGED"
+    assert _episode_tree_snapshot(episode) == before
+
+    with pytest.raises(module.XinaoError) as missing_failure:
+        module.research_episode_checkpoint(
+            root=episode,
+            expected_head_sha256=started["head_checkpoint_sha256"],
+            lab_relative="lab_notes/new.md",
+            lab_bytes=b"must not create\n",
+        )
+    assert missing_failure.value.reason_code == "RESEARCH_EPISODE_LAB_FILE_INVALID"
+    assert _episode_tree_snapshot(episode) == before
+
+
+@pytest.mark.parametrize("case", ["missing", "escape", "ads", "directory", "too_large"])
+def test_checkpoint_cli_invalid_existing_lab_has_no_episode_side_effect(
+    module: Any,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    case: str,
+) -> None:
+    _mod, episode, started, _manifest = _prepare_episode(module, tmp_path, monkeypatch)
+    if case == "missing":
+        relative = "lab_notes/missing.md"
+    elif case == "escape":
+        relative = "../outside.md"
+    elif case == "ads":
+        relative = "lab_notes/result.md:alternate"
+    elif case == "directory":
+        relative = "lab_notes/not_a_file"
+        (episode / "lab" / relative).mkdir(parents=True)
+    else:
+        relative = "lab_notes/oversized.bin"
+        target = episode / "lab" / relative
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_bytes(b"x" * (module.MAX_RESEARCH_EPISODE_LAB_FILE_BYTES + 1))
+    before = _episode_tree_snapshot(episode)
+
+    def forbidden_container_action(**_kwargs: Any) -> dict[str, Any]:
+        pytest.fail("invalid lab input must fail before the container checkpoint driver")
+
+    monkeypatch.setattr(module, "_research_episode_container_identity", forbidden_container_action)
+    exit_code = module.main(
+        [
+            "research-episode",
+            "checkpoint",
+            "--root",
+            str(episode),
+            "--expected-head",
+            started["head_checkpoint_sha256"],
+            "--lab-relative",
+            relative,
+        ]
+    )
+    output = capsys.readouterr().out.strip().splitlines()
+    assert exit_code == 2
+    error = json.loads(output[-1])
+    assert error["reason_codes"][0] in {
+        "RESEARCH_EPISODE_LAB_PATH_INVALID",
+        "RESEARCH_EPISODE_LAB_FILE_INVALID",
+    }
+    assert _episode_tree_snapshot(episode) == before
+
+
+@pytest.mark.parametrize("reparse_kind", ["leaf", "ancestor"])
+def test_checkpoint_cli_reparse_lab_file_has_no_episode_side_effect(
+    module: Any,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    reparse_kind: str,
+) -> None:
+    _mod, episode, started, _manifest = _prepare_episode(module, tmp_path, monkeypatch)
+    if reparse_kind == "leaf":
+        target = episode / "outside_target.md"
+        target.write_bytes(b"must not be consumed through an alias")
+        link = episode / "lab" / "lab_notes" / "alias.md"
+        link.parent.mkdir(parents=True, exist_ok=True)
+        relative = "lab_notes/alias.md"
+        is_directory = False
+    else:
+        target = episode / "outside_lab_notes"
+        target.mkdir()
+        (target / "result.md").write_bytes(b"must not cross an ancestor alias")
+        link = episode / "lab" / "lab_notes"
+        relative = "lab_notes/result.md"
+        is_directory = True
+    try:
+        link.symlink_to(target, target_is_directory=is_directory)
+    except OSError as exc:
+        pytest.skip(f"symlink unavailable: {exc}")
+    before = _episode_tree_snapshot(episode)
+
+    def forbidden_container_action(**_kwargs: Any) -> dict[str, Any]:
+        pytest.fail("reparse lab input must fail before the container checkpoint driver")
+
+    monkeypatch.setattr(module, "_research_episode_container_identity", forbidden_container_action)
+    exit_code = module.main(
+        [
+            "research-episode",
+            "checkpoint",
+            "--root",
+            str(episode),
+            "--expected-head",
+            started["head_checkpoint_sha256"],
+            "--lab-relative",
+            relative,
+        ]
+    )
+    output = capsys.readouterr().out.strip().splitlines()
+    assert exit_code == 2
+    assert json.loads(output[-1])["reason_codes"] == [
+        "RESEARCH_EPISODE_LAB_FILE_INVALID"
+    ]
+    assert _episode_tree_snapshot(episode) == before
 
 
 def test_unauthorized_lab_roots_and_hidden_outcome_isolation(

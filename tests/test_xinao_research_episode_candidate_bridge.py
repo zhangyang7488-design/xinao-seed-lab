@@ -50,6 +50,19 @@ def _sha(payload: bytes) -> str:
     return hashlib.sha256(payload).hexdigest()
 
 
+REAL_PRIMARY_AFFINE_MANIFEST = (
+    ROOT
+    / "tests"
+    / "fixtures"
+    / "real_research_episode"
+    / "xre_20260731T214242_15d5292ebc9a"
+    / "candidate_manifest.primary_affine.official.v1.json"
+)
+REAL_PRIMARY_AFFINE_MANIFEST_SHA256 = (
+    "f4c19e21fad994948824f8c4f8ff7c77969366d1e478da5aac23b2bfe29cb5f0"
+)
+
+
 def _manifest(
     *,
     episode_id: str = "ep_bridge",
@@ -84,6 +97,28 @@ def _manifest(
     if extra:
         body.update(extra)
     return body
+
+
+def test_real_primary_affine_owner_shape_is_official_candidate_only(native: Any) -> None:
+    """Hash-pinned real Episode repair shape is consumable but grants no authority."""
+
+    raw = REAL_PRIMARY_AFFINE_MANIFEST.read_bytes()
+    assert _sha(raw) == REAL_PRIMARY_AFFINE_MANIFEST_SHA256
+    obj = native.validate_candidate_manifest(
+        raw,
+        expected_episode_id="xre_20260731T214242_15d5292ebc9a",
+    )
+    assert obj["candidate_id"] == "AFFINE_MOD|k=1|a=-1,b=1,c=7,lags=2"
+    assert obj["account_recommendation"] == "ACTION_CANDIDATE"
+    assert obj["source_provenance"]["source_manifest_sha256"] == (
+        "7e16251ec7c37466b0577f48497280dac5dea0f6d9b32b5e78bcd390b317e1bb"
+    )
+    assert obj["candidate_only"] is True
+    assert obj["owner_adopted"] is False
+    assert obj["formal_action"] is False
+    assert obj["frozen"] is False
+    assert obj["settled"] is False
+    assert obj["completion"] is False
 
 
 def test_mcp_arg_remap_path_content_cwd(mcp_server: Any) -> None:
