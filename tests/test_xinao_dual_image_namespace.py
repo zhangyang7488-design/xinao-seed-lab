@@ -894,6 +894,9 @@ def test_docker_create_argv_mounts_accepted_by_real_docker_parser(
     else:
         if info.returncode != 0:
             pytest.skip(f"docker info rc={info.returncode}")
+        engine_os = info.stdout.strip().lower()
+        if engine_os != "linux":
+            pytest.skip(f"Linux-container Docker engine required, observed OSType={engine_os!r}")
 
     # Prefer a local tag already present; fall back to hello-world only if needed.
     image = "hello-world:latest"
