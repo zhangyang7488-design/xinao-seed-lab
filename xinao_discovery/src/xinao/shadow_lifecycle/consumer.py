@@ -77,12 +77,14 @@ from xinao.shadow_lifecycle.store import (
 )
 
 CONSUMER_ID = "shadow_lifecycle_file_backed_leg_a"
-CONSUMER_VERSION = "0.3.1"
+CONSUMER_VERSION = "0.3.2"
 
 # Production portfolio freeze requires a disposition-bound owner authority envelope.
 # Labels / private underscores are not security boundaries — this is a structural gate.
 OWNER_FREEZE_AUTHORITY_SCHEMA: Final = "xinao.owner_freeze_authority.v1"
 OWNER_FREEZE_AUTHORITY_MARKER: Final = "XINAO_OWNER_FREEZE_AUTHORITY_V1"
+ACTOR_PROJECTION_VERIFICATION_SCHEMA: Final = "xinao.actor_projection_verification.v1"
+ACTOR_PROJECTION_VERIFICATION_MARKER: Final = "XINAO_ACTOR_PROJECTION_VERIFICATION_V1"
 _OWNER_FREEZE_AUTHORITY_FIELDS: Final = frozenset(
     {
         "schema_version",
@@ -95,7 +97,22 @@ _OWNER_FREEZE_AUTHORITY_FIELDS: Final = frozenset(
     }
 )
 _OWNER_FREEZE_ACTOR_AUTHORITY_FIELDS: Final = _OWNER_FREEZE_AUTHORITY_FIELDS | frozenset(
-    {"research_episode_root", "source_authority_root"}
+    {
+        "research_episode_root",
+        "source_authority_root",
+        "actor_projection_verification",
+    }
+)
+_ACTOR_PROJECTION_VERIFICATION_FIELDS: Final = frozenset(
+    {
+        "schema_version",
+        "verification_marker",
+        "owner_artifact_sha256",
+        "pool_entry_content_hash",
+        "result_sha256",
+        "researcher_decision_binding",
+        "content_hash",
+    }
 )
 _RESEARCH_BINDING_SCHEMA: Final = "xinao.research_freeze_binding.v1"
 _RESEARCH_BINDING_MARKER: Final = "XINAO_RESEARCH_FREEZE_BINDING_V1"
@@ -539,6 +556,7 @@ def _load_pool_and_research_source(
     *,
     research_pool_root: Path,
     result_sha256: str,
+    actor_projection_binding: Mapping[str, Any] | None = None,
 ) -> tuple[dict[str, Any], str, dict[str, Any], dict[str, str]]:
     """Independently read pool CAS and the producer bytes needed by freeze.
 
@@ -590,6 +608,7 @@ def _load_pool_and_research_source(
     if receipt_raw_hash != entry.get("receipt_raw_sha256"):
         raise StoreError("PRODUCTION_FREEZE_POOL_RECEIPT_BYTES_TAMPERED")
 
+    actor_projected = False
     if entry.get("ingest_kind") == _EPISODE_EXPORT_INGEST_KIND:
         export = _strict_json_object(
             result_raw,
@@ -620,15 +639,63 @@ def _load_pool_and_research_source(
                 "PRODUCTION_FREEZE_RESEARCHER_DECISION_SOURCE_ABSENT: signal-only candidate"
             )
         if recommendation in {"ACTION_CANDIDATE", "NO_ACTION_CANDIDATE"}:
-            raise StoreError(
-                "PRODUCTION_FREEZE_ACTOR_REALITY_ROOTS_REQUIRED: "
-                "ResearchEpisode proposed is actor-only intent and must be "
-                "projected from live reality"
+            if actor_projection_binding is None:
+                raise StoreError(
+                    "PRODUCTION_FREEZE_ACTOR_REALITY_ROOTS_REQUIRED: "
+                    "ResearchEpisode proposed is actor-only intent and must be "
+                    "projected from live reality"
+                )
+            proposed = manifest.get("proposed")
+            if not isinstance(proposed, Mapping):
+                raise StoreError("PRODUCTION_FREEZE_RESEARCHER_ACTOR_INTENT_REQUIRED")
+            intent_hash = _require_hex64(
+                proposed.get("content_hash"),
+                "actor_authored_intent_hash",
             )
-        raise StoreError(
-            "PRODUCTION_FREEZE_EPISODE_RECOMMENDATION_INVALID: "
-            f"{recommendation!r}"
-        )
+            intent_body = dict(proposed)
+            intent_body.pop("content_hash", None)
+            if canonical_sha256(intent_body) != intent_hash:
+                raise StoreError("PRODUCTION_FREEZE_ACTOR_INTENT_SEAL_INVALID")
+            if actor_projection_binding.get("actor_authored_intent_hash") != intent_hash:
+                raise StoreError("PRODUCTION_FREEZE_ACTOR_INTENT_HASH_MISMATCH")
+            projection = actor_projection_binding.get("actor_projection")
+            if not isinstance(projection, Mapping):
+                raise StoreError("PRODUCTION_FREEZE_ACTOR_PROJECTION_MISSING")
+            expected_identity = (
+                _ACCOUNT_ACTION
+                if recommendation == "ACTION_CANDIDATE"
+                else _ACCOUNT_NO_ACTION
+            )
+            if projection.get("account_identity") != expected_identity:
+                raise StoreError("PRODUCTION_FREEZE_ACTOR_PROJECTION_BRANCH_MISMATCH")
+            if projection.get("actor_authored_intent_hash") != intent_hash:
+                raise StoreError("PRODUCTION_FREEZE_ACTOR_PROJECTION_INTENT_MISMATCH")
+            provenance = entry.get("lab_provenance")
+            if not isinstance(provenance, Mapping):
+                raise StoreError("PRODUCTION_FREEZE_EPISODE_PROVENANCE_REQUIRED")
+            for field in (
+                "episode_id",
+                "attempt_cas_digest",
+                "attempt_hash",
+                "cas_head_sha256",
+                "provider_session_uuid",
+            ):
+                if projection.get(field) != provenance.get(field):
+                    raise StoreError(
+                        "PRODUCTION_FREEZE_ACTOR_PROJECTION_PROVENANCE_MISMATCH: "
+                        f"{field}"
+                    )
+            producer = projection
+            source = {
+                "source_kind": "EPISODE_CANDIDATE_MANIFEST",
+                "source_artifact_sha256": manifest_hash,
+            }
+            actor_projected = True
+        else:
+            raise StoreError(
+                "PRODUCTION_FREEZE_EPISODE_RECOMMENDATION_INVALID: "
+                f"{recommendation!r}"
+            )
     else:
         result = _strict_json_object(
             result_raw,
@@ -679,22 +746,87 @@ def _load_pool_and_research_source(
             f"declared={declared_identity!r} branch={account_identity!r}"
         )
     if has_action:
-        source["source_json_path"] = "$.proposed.executable_account_decision" if entry.get(
-            "ingest_kind"
-        ) == _EPISODE_EXPORT_INGEST_KIND else "$.candidate.executable_account_decision"
+        source["source_json_path"] = (
+            "$.proposed"
+            if actor_projected
+            else (
+                "$.proposed.executable_account_decision"
+                if entry.get("ingest_kind") == _EPISODE_EXPORT_INGEST_KIND
+                else "$.candidate.executable_account_decision"
+            )
+        )
         assert isinstance(authored_action, Mapping)
         authored_core = _normalized_researcher_core(
             authored_action, label=source["source_json_path"]
         )
     else:
-        source["source_json_path"] = "$.proposed.no_action_intent" if entry.get(
-            "ingest_kind"
-        ) == _EPISODE_EXPORT_INGEST_KIND else "$.candidate.no_action_intent"
+        source["source_json_path"] = (
+            "$.proposed"
+            if actor_projected
+            else (
+                "$.proposed.no_action_intent"
+                if entry.get("ingest_kind") == _EPISODE_EXPORT_INGEST_KIND
+                else "$.candidate.no_action_intent"
+            )
+        )
         assert isinstance(authored_no_action, Mapping)
         authored_core = _normalized_researcher_no_action_core(
             authored_no_action, label=source["source_json_path"]
         )
     return entry, account_identity, authored_core, source
+
+
+def _validate_actor_projection_verification(
+    raw: Mapping[str, Any] | None,
+    *,
+    disposition_sha256: str,
+) -> dict[str, Any]:
+    """Validate a content-addressed result from the host-only actor verifier.
+
+    This envelope is integrity evidence, not process authentication.  The final
+    consumer still re-opens disposition, pool, manifest, portfolio, and binding
+    bytes; the host verifier alone owns the live ResearchEpisode/material join.
+    """
+
+    if not isinstance(raw, Mapping):
+        raise StoreError("PRODUCTION_ACTOR_PROJECTION_VERIFICATION_REQUIRED")
+    envelope = copy.deepcopy(dict(raw))
+    missing = sorted(_ACTOR_PROJECTION_VERIFICATION_FIELDS - set(envelope))
+    unknown = sorted(set(envelope) - _ACTOR_PROJECTION_VERIFICATION_FIELDS)
+    if missing or unknown:
+        raise StoreError(
+            "PRODUCTION_ACTOR_PROJECTION_VERIFICATION_FIELDS_INVALID: "
+            f"missing={missing}; unknown={unknown}"
+        )
+    if envelope.get("schema_version") != ACTOR_PROJECTION_VERIFICATION_SCHEMA:
+        raise StoreError("PRODUCTION_ACTOR_PROJECTION_VERIFICATION_SCHEMA_DRIFT")
+    if envelope.get("verification_marker") != ACTOR_PROJECTION_VERIFICATION_MARKER:
+        raise StoreError("PRODUCTION_ACTOR_PROJECTION_VERIFICATION_MARKER_INVALID")
+    content_hash = _require_hex64(
+        envelope.get("content_hash"),
+        "actor_projection_verification.content_hash",
+    )
+    body = dict(envelope)
+    body.pop("content_hash", None)
+    if canonical_sha256(body) != content_hash:
+        raise StoreError("PRODUCTION_ACTOR_PROJECTION_VERIFICATION_SEAL_INVALID")
+    owner_hash = _require_hex64(
+        envelope.get("owner_artifact_sha256"),
+        "actor_projection_verification.owner_artifact_sha256",
+    )
+    if owner_hash != disposition_sha256:
+        raise StoreError("PRODUCTION_ACTOR_PROJECTION_DISPOSITION_MISMATCH")
+    _require_hex64(
+        envelope.get("pool_entry_content_hash"),
+        "actor_projection_verification.pool_entry_content_hash",
+    )
+    _require_hex64(
+        envelope.get("result_sha256"),
+        "actor_projection_verification.result_sha256",
+    )
+    if not isinstance(envelope.get("researcher_decision_binding"), Mapping):
+        raise StoreError("PRODUCTION_ACTOR_PROJECTION_BINDING_INVALID")
+    return envelope
 
 
 def _load_verified_disposition_for_freeze(
@@ -706,6 +838,7 @@ def _load_verified_disposition_for_freeze(
     research_episode_root: Path | None = None,
     portfolio_root: Path | None = None,
     source_authority_root: Path | None = None,
+    actor_projection_verification: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     digest = _require_hex64(disposition_sha256, "owner_disposition_sha256")
     owner_root = owner_state_root.expanduser().resolve()
@@ -722,6 +855,8 @@ def _load_verified_disposition_for_freeze(
     actor_roots_supplied = any(
         value is not None for value in (research_episode_root, source_authority_root)
     )
+    actor_verification: dict[str, Any] | None = None
+    actor_projection_binding: Mapping[str, Any] | None = None
     if actor_roots_supplied:
         if (
             research_episode_root is None
@@ -729,34 +864,13 @@ def _load_verified_disposition_for_freeze(
             or source_authority_root is None
         ):
             raise StoreError("PRODUCTION_ACTOR_REALITY_ROOTS_INCOMPLETE")
-        # Reuse the Owner verifier, but invoke it again inside the final consumer
-        # so current attempt/material/portfolio/authority are freshly re-read at
-        # the actual freeze boundary.
-        try:
-            from xinao.science.owner_disposition import (
-                OwnerDispositionError,
-                load_and_verify_disposition,
-            )
-
-            verified = load_and_verify_disposition(
-                disposition_path=disposition_path,
-                owner_state_root=owner_root,
-                pool_root=pool_root,
-                result_sha256=None,
-                episode_root=research_episode_root,
-                portfolio_root=portfolio_root,
-                authority_root=source_authority_root,
-            )
-        except (OwnerDispositionError, OSError, ValueError) as exc:
-            raise StoreError(f"PRODUCTION_FREEZE_ACTOR_PROJECTION_REJECTED: {exc}") from exc
-        disposition = verified["disposition"]
-        if disposition.get("science_disposition") not in _FREEZE_AUTHORIZING_DISPOSITIONS:
-            raise StoreError("OWNER_DISPOSITION_NOT_ADOPTED")
-        return {
-            "disposition": disposition,
-            "pool_entry": verified["pool_entry"],
-            "researcher_decision_binding": verified["researcher_decision_binding"],
-        }
+        actor_verification = _validate_actor_projection_verification(
+            actor_projection_verification,
+            disposition_sha256=digest,
+        )
+        actor_projection_binding = actor_verification["researcher_decision_binding"]
+    elif actor_projection_verification is not None:
+        raise StoreError("PRODUCTION_ACTOR_PROJECTION_VERIFICATION_WITHOUT_ROOTS")
     expected_path = _disposition_cas_path(owner_root, digest)
     path = disposition_path.expanduser().resolve()
     if path != expected_path or not path.is_file():
@@ -786,7 +900,13 @@ def _load_verified_disposition_for_freeze(
     pool_entry, researcher_identity, authored_core, source = _load_pool_and_research_source(
         research_pool_root=pool_root,
         result_sha256=result_sha,
+        actor_projection_binding=actor_projection_binding,
     )
+    if actor_verification is not None:
+        if actor_verification["result_sha256"] != result_sha:
+            raise StoreError("PRODUCTION_ACTOR_PROJECTION_RESULT_MISMATCH")
+        if actor_verification["pool_entry_content_hash"] != pool_entry.get("content_hash"):
+            raise StoreError("PRODUCTION_ACTOR_PROJECTION_POOL_ENTRY_MISMATCH")
     for field, entry_field in (
         ("result_sha256", "result_sha256"),
         ("receipt_content_sha256", "receipt_content_sha256"),
@@ -894,6 +1014,17 @@ def _load_verified_disposition_for_freeze(
         "result_sha256": result_sha,
         "pool_entry_content_hash": str(pool_entry["content_hash"]),
     }
+    if actor_projection_binding is not None:
+        for key, value in verified_researcher_decision.items():
+            if actor_projection_binding.get(key) != value:
+                raise StoreError(
+                    "PRODUCTION_ACTOR_PROJECTION_BINDING_MISMATCH: "
+                    f"{key}"
+                )
+        projection = actor_projection_binding.get("actor_projection")
+        if not isinstance(projection, Mapping):
+            raise StoreError("PRODUCTION_ACTOR_PROJECTION_MISSING")
+        verified_researcher_decision = copy.deepcopy(dict(actor_projection_binding))
 
     portfolio_binding = disposition.get("portfolio_binding")
     if portfolio_binding is not None:
@@ -1410,6 +1541,9 @@ def _require_and_verify_owner_freeze_authority(
         if actor_authority
         else None
     )
+    actor_projection_verification = (
+        authority["actor_projection_verification"] if actor_authority else None
+    )
     disposition_sha = _require_hex64(
         authority.get("owner_disposition_sha256"),
         "owner_disposition_sha256",
@@ -1458,6 +1592,7 @@ def _require_and_verify_owner_freeze_authority(
             research_episode_root=research_episode_root,
             portfolio_root=portfolio_root,
             source_authority_root=source_authority_root,
+            actor_projection_verification=actor_projection_verification,
         )
     except (StoreError, OSError, ValueError) as exc:
         raise StoreError(f"PRODUCTION_FREEZE_DISPOSITION_REJECTED: {exc}") from exc
@@ -1930,12 +2065,16 @@ def freeze_episode(
 def settle_episode(
     *,
     root: Path,
-    outcome_path: Path,
+    outcome_path: Path | None = None,
     settlement_ref: str | None = None,
     settlement_journal_group_ref: str | None = None,
     statement_ref: str | None = None,
     occurred_at: str | None = None,
     _continuity_internal: bool = False,
+    source_authority_root: Path | None = None,
+    source_packet_content_hash: str | None = None,
+    source_reveal_content_hash: str | None = None,
+    _production_observed_outcome: OutcomeObservation | None = None,
 ) -> dict[str, Any]:
     base = resolve_root(root)
     _reject_flat_operation_on_continuity_context(
@@ -1953,18 +2092,71 @@ def settle_episode(
         )
 
     episode = load_frozen(base)
+    science_match = _BINDING_REF_RE.search(str(episode.science_decision.science_decision_ref))
+    account_match = _BINDING_REF_RE.search(str(episode.account_decision.account_decision_ref))
+    if science_match is not None or account_match is not None:
+        if (
+            science_match is None
+            or account_match is None
+            or science_match.group(1) != account_match.group(1)
+        ):
+            raise StoreError(
+                "PRODUCTION_SETTLEMENT_BINDING_INVALID: "
+                "science/account research-binding refs disagree"
+            )
+        if outcome_path is not None:
+            raise StoreError(
+                "PRODUCTION_SETTLEMENT_CALLER_OUTCOME_FORBIDDEN: "
+                "disposition-bound freeze ignores no caller outcome path"
+            )
+        if _production_observed_outcome is None:
+            raise StoreError(
+                "PRODUCTION_SETTLEMENT_REQUIRES_SOURCE_CONSUMER: "
+                "use the packaged reveal consumer; source fields alone cannot commit"
+            )
+        # Package-internal continuation after the packaged consumer has reparsed raw
+        # source CAS and bound the frozen ticket.  This parameter is not an auth token:
+        # formal API routing plus the ledger write-domain remain the security boundary.
+        if any(
+            value is not None
+            for value in (
+                source_authority_root,
+                source_packet_content_hash,
+                source_reveal_content_hash,
+            )
+        ):
+            raise StoreError(
+                "PRODUCTION_SETTLEMENT_SOURCE_FIELDS_NOT_ADMISSION: "
+                "the packaged reveal consumer supplies the observed outcome internally"
+            )
+        outcome = _production_observed_outcome
+        outcome.require_valid_result_hash()
+    else:
+        if _production_observed_outcome is not None or any(
+            value is not None
+            for value in (
+                source_authority_root,
+                source_packet_content_hash,
+                source_reveal_content_hash,
+            )
+        ):
+            raise StoreError(
+                "SOURCE_SETTLEMENT_FOR_LEGACY_FORBIDDEN: "
+                "source admission fields require a disposition-bound freeze"
+            )
+        if outcome_path is None:
+            raise StoreError("settle requires an explicit historical/fixture outcome path")
+        outcome_raw = _load_request(outcome_path)
+        if "outcome" in outcome_raw and isinstance(outcome_raw["outcome"], dict):
+            outcome_raw = outcome_raw["outcome"]
+        outcome = OutcomeObservation.model_validate(outcome_raw)
+        if outcome.result_hash is None:
+            outcome = outcome.with_hash()
+        else:
+            outcome.require_valid_result_hash()
     seat = load_seat(base)
     if seat.seat_id != episode.seat_id or seat.portfolio_ref != episode.portfolio_ref:
         raise StoreError("seat/portfolio mismatch between store and frozen episode")
-
-    outcome_raw = _load_request(outcome_path)
-    if "outcome" in outcome_raw and isinstance(outcome_raw["outcome"], dict):
-        outcome_raw = outcome_raw["outcome"]
-    outcome = OutcomeObservation.model_validate(outcome_raw)
-    if outcome.result_hash is None:
-        outcome = outcome.with_hash()
-    else:
-        outcome.require_valid_result_hash()
 
     stmt_ref = statement_ref or f"statement.{episode.episode_ref}"
     settle_kwargs: dict[str, Any] = {
@@ -2210,11 +2402,15 @@ def freeze_portfolio_period(
 def settle_portfolio_period(
     *,
     root: Path,
-    outcome_path: Path,
+    outcome_path: Path | None = None,
     settlement_ref: str | None = None,
     settlement_journal_group_ref: str | None = None,
     statement_ref: str | None = None,
     occurred_at: str | None = None,
+    source_authority_root: Path | None = None,
+    source_packet_content_hash: str | None = None,
+    source_reveal_content_hash: str | None = None,
+    _production_observed_outcome: OutcomeObservation | None = None,
 ) -> dict[str, Any]:
     base = resolve_root(root)
     head = derive_portfolio_head(base)
@@ -2231,6 +2427,10 @@ def settle_portfolio_period(
         statement_ref=statement_ref,
         occurred_at=occurred_at,
         _continuity_internal=True,
+        source_authority_root=source_authority_root,
+        source_packet_content_hash=source_packet_content_hash,
+        source_reveal_content_hash=source_reveal_content_hash,
+        _production_observed_outcome=_production_observed_outcome,
     )
     receipt = _receipt_base(
         root=base,

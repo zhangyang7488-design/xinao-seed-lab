@@ -50,6 +50,19 @@ def _sha(payload: bytes) -> str:
     return hashlib.sha256(payload).hexdigest()
 
 
+REAL_PRIMARY_AFFINE_MANIFEST = (
+    ROOT
+    / "tests"
+    / "fixtures"
+    / "real_research_episode"
+    / "xre_20260731T214242_15d5292ebc9a"
+    / "candidate_manifest.primary_affine.official.v1.json"
+)
+REAL_PRIMARY_AFFINE_MANIFEST_SHA256 = (
+    "f4c19e21fad994948824f8c4f8ff7c77969366d1e478da5aac23b2bfe29cb5f0"
+)
+
+
 def _manifest(
     *,
     episode_id: str = "ep_bridge",
@@ -84,6 +97,19 @@ def _manifest(
     if extra:
         body.update(extra)
     return body
+
+
+def test_real_primary_affine_legacy_shape_is_not_actor_behavior(native: Any) -> None:
+    """A hash-pinned signal-policy fixture cannot impersonate actor behavior."""
+
+    raw = REAL_PRIMARY_AFFINE_MANIFEST.read_bytes()
+    assert _sha(raw) == REAL_PRIMARY_AFFINE_MANIFEST_SHA256
+    with pytest.raises(native.NativeSessionError) as exc:
+        native.validate_candidate_manifest(
+            raw,
+            expected_episode_id="xre_20260731T214242_15d5292ebc9a",
+        )
+    assert exc.value.reason_code == "CANDIDATE_MANIFEST_ACTOR_INTENT_INVALID"
 
 
 def test_mcp_arg_remap_path_content_cwd(mcp_server: Any) -> None:

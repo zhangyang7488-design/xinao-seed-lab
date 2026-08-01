@@ -893,7 +893,7 @@ def test_missing_result_or_receipt_maps_to_pool_cas_partial_state(tmp_path: Path
 def test_legacy_episode_branch_cannot_reach_freeze_consumer(
     tmp_path: Path,
 ) -> None:
-    """Real consumer-shaped chain stops at freeze; pool immutable; no auto-settle/next."""
+    """Flat production freeze is unavailable until it has a source-bound settle path."""
 
     pool = tmp_path / "pool"
     owner = tmp_path / "owner"

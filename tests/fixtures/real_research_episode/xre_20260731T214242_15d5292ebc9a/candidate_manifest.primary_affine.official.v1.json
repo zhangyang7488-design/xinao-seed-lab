@@ -1,0 +1,70 @@
+{
+  "schema_version": "xinao.research_episode_candidate_manifest.v1",
+  "manifest_marker": "XINAO_RESEARCH_EPISODE_CANDIDATE_MANIFEST_V1",
+  "candidate_id": "AFFINE_MOD|k=1|a=-1,b=1,c=7,lags=2",
+  "candidate_version": "20260801_frozen_affine_v1.1.0",
+  "episode_id": "xre_20260731T214242_15d5292ebc9a",
+  "research_question": "Does the frozen prefix-only affine candidate remain eligible for prospective shadow evaluation under its documented cutoff and risk gates?",
+  "research_object": "A single-number deterministic affine policy: pred = ((-1*s[-1] + 1*s[-2] + 7) % 49) + 1, using only the sealed draw prefix.",
+  "data_cutoff": {
+    "as_of": "2026-07-01T23:59:59+08:00",
+    "source_date_inclusive": "2026-07-01",
+    "material_refs": [
+      {
+        "id": "xinao_draws_authoritative_2024-01-01_to_2026-07-01",
+        "sha256": "57f9fc68f48416fd38610da1cf0bba3476537318514f0093fcb86af3a94ab2c6"
+      },
+      {
+        "id": "xinao_baseline_odds_v1",
+        "sha256": "634c50219fb4450332d79b232275854adf648d4c5614eaabf5a961eb9f7bfbf1"
+      }
+    ]
+  },
+  "method_refs": [
+    "lab_notes/exp_wild_nested_select_v1.py",
+    "lab_notes/exp_frozen_affine_path_stress_v1.py",
+    "lab_notes/exp_frozen_affine_candidate_package_v1.py",
+    "prefix_only_formula:pred=((-1*s[-1]+1*s[-2]+7)%49)+1"
+  ],
+  "falsifiers": [
+    "Any post-cutoff outcome used to select, revise, or execute this candidate invalidates it.",
+    "The documented scaled cumulative expected value reaching -20 or below triggers the hard stop.",
+    "A miss streak of 50 or more triggers the documented risk gate.",
+    "A negative rolling mean expected value over 80 observations places the candidate on NO_ACTION hold."
+  ],
+  "account_recommendation": "ACTION_CANDIDATE",
+  "proposed": {
+    "kind": "DETERMINISTIC_POLICY_CANDIDATE_NOT_PROJECTED",
+    "family": "AFFINE_MOD",
+    "output_count": 1,
+    "parameters": {
+      "a": -1,
+      "b": 1,
+      "c": 7,
+      "lags": 2
+    },
+    "stake_unit": 0.25,
+    "odds_value": 47.285,
+    "target": null,
+    "numbers": null
+  },
+  "source_provenance": {
+    "source_schema": "xinao.candidate_manifest.v1",
+    "source_manifest_path": "candidate/candidate_manifest.v1.json",
+    "source_manifest_sha256": "7e16251ec7c37466b0577f48497280dac5dea0f6d9b32b5e78bcd390b317e1bb",
+    "source_bundle_id": "CRB_FROZEN_AFFINE_V1",
+    "source_bundle_version": "20260801_frozen_affine_v1.1.0",
+    "source_bundle_sha256": "caed9b26f7f0d4328ac456ca5a6cd12b57c0ecacb7a87c991f224175901b1bc5",
+    "source_attempt_id": "att_19e4aa773e5944f9a7a7e2135376c70a",
+    "source_attempt_artifact_manifest_sha256": "5662e3d05684c5efd0f28a3aa7b0b96b2bfff4f8e8bea7148079e1662a73af63"
+  },
+  "candidate_only": true,
+  "owner_adopted": false,
+  "completion": false,
+  "completion_claim_allowed": false,
+  "formal_action": false,
+  "frozen": false,
+  "settled": false,
+  "science_restored": false,
+  "parent_complete": false
+}

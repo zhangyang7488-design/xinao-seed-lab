@@ -7,12 +7,16 @@ write roots, stale checkpoint/CAS, cancel/resume. No live provider call.
 
 from __future__ import annotations
 
+import base64
 import hashlib
 import importlib.util
 import json
+import os
+import shutil
 import subprocess
 import sys
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
@@ -21,6 +25,46 @@ ROOT = Path(__file__).resolve().parents[1]
 SKILL_ROOT = ROOT / "skills" / "xinao"
 RUNTIME_PATH = SKILL_ROOT / "scripts" / "xinao_runtime.py"
 BOOTSTRAP_PATH = SKILL_ROOT / "scripts" / "xinao.py"
+
+
+class _FakeRecordPath:
+    def __init__(self, relative: str, *, size: int, sha256: str) -> None:
+        self.relative = relative
+        self.size = size
+        self.hash = SimpleNamespace(
+            mode="sha256",
+            value=base64.urlsafe_b64encode(bytes.fromhex(sha256))
+            .rstrip(b"=")
+            .decode("ascii"),
+        )
+
+    def __str__(self) -> str:
+        return self.relative
+
+
+def _fake_distribution(module: Any, package_root: Path, *, version: str = "0.1.2") -> Any:
+    files = [
+        _FakeRecordPath(
+            f"xinao/{row['relative_path']}",
+            size=int(row["size"]),
+            sha256=str(row["sha256"]),
+        )
+        for row in module._discovery_package_inventory(package_root)
+    ]
+    record = "\n".join(
+        f"{item.relative},sha256={item.hash.value},{item.size}" for item in files
+    ) + "\n"
+    return SimpleNamespace(
+        metadata={"Name": "xinao-discovery"},
+        version=version,
+        files=files,
+        locate_file=lambda relative: package_root.parent / relative,
+        read_text=lambda name: record if name == "RECORD" else None,
+    )
+
+
+def _fake_module(path: Path) -> Any:
+    return SimpleNamespace(__file__=str(path), __spec__=SimpleNamespace(origin=str(path)))
 
 
 def _load(name: str, path: Path) -> Any:
@@ -96,6 +140,21 @@ def _prepare_episode(
     return module, episode, started, manifest
 
 
+def _episode_tree_snapshot(root: Path) -> dict[str, tuple[str, bytes | str | None]]:
+    snapshot: dict[str, tuple[str, bytes | str | None]] = {}
+    for path in sorted(root.rglob("*"), key=lambda item: item.as_posix()):
+        relative = path.relative_to(root).as_posix()
+        if path.is_symlink():
+            snapshot[relative] = ("symlink", os.readlink(path))
+        elif path.is_file():
+            snapshot[relative] = ("file", path.read_bytes())
+        elif path.is_dir():
+            snapshot[relative] = ("dir", None)
+        else:
+            snapshot[relative] = ("other", None)
+    return snapshot
+
+
 def test_public_cli_exposes_ensure_and_retire_pair() -> None:
     # Candidate source runtime is the public Skill entry after Owner build/activate.
     # Ordinary `xinao.py` help binds the *live sealed release* runtime until adoption.
@@ -128,12 +187,152 @@ def test_capabilities_registry_lists_ensure_pair(module: Any) -> None:
         (SKILL_ROOT / "references" / "capabilities.v1.json").read_text(encoding="utf-8")
     )
     episode = next(c for c in caps["capabilities"] if c["capability_id"] == "research-episode")
-    assert episode["version"] == "0.1.3"
+    assert episode["version"] == "0.1.4"
+    assert episode["packaged_dependency"] == "xinao-discovery"
+    assert episode["packaged_dependency_version"] == "0.1.2"
+    assert episode["packaged_dependency_tree_schema"] == "xinao.package_tree.v1"
+    assert episode["packaged_dependency_tree_sha256"] == module._discovery_package_tree_sha256(
+        ROOT / "xinao_discovery" / "src" / "xinao"
+    )
     assert "ensure-pair" in episode["skill_verbs"]
     assert "retire-pair" in episode["skill_verbs"]
     assert episode["auto_next_task"] is False
     assert episode["candidate_only"] is True
     assert episode["completion_claim_allowed"] is False
+
+
+def test_discovery_consumer_import_rejects_stale_installed_package(
+    module: Any,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    package_root = ROOT / "xinao_discovery" / "src" / "xinao"
+    distribution = _fake_distribution(module, package_root, version="0.1.0")
+    monkeypatch.setattr(
+        module.importlib_metadata, "distributions", lambda **_kwargs: [distribution]
+    )
+    with pytest.raises(module.XinaoError) as failure:
+        module._import_discovery_science("research_feedback_material")
+    assert failure.value.reason_code == "DISCOVERY_PACKAGE_VERSION_MISMATCH"
+
+
+def test_discovery_consumer_import_accepts_exact_installed_package(
+    module: Any,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    package_root = ROOT / "xinao_discovery" / "src" / "xinao"
+    candidate = _fake_module(package_root / "science" / "research_feedback_material.py")
+    distribution = _fake_distribution(module, package_root)
+    monkeypatch.setattr(module.importlib, "import_module", lambda _name: candidate)
+    monkeypatch.setattr(
+        module.importlib_metadata, "distributions", lambda **_kwargs: [distribution]
+    )
+    assert module._import_discovery_science("research_feedback_material") is candidate
+
+
+def test_discovery_consumer_rejects_same_version_ambient_shadow_module(
+    module: Any,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    package_root = ROOT / "xinao_discovery" / "src" / "xinao"
+    ambient = tmp_path / "ambient" / "xinao" / "science" / "research_feedback_material.py"
+    ambient.parent.mkdir(parents=True)
+    ambient.write_text("AMBIENT = True\n", encoding="utf-8")
+    candidate = _fake_module(ambient)
+    distribution = _fake_distribution(module, package_root)
+    monkeypatch.setattr(module.importlib, "import_module", lambda _name: candidate)
+    monkeypatch.setattr(
+        module.importlib_metadata, "distributions", lambda **_kwargs: [distribution]
+    )
+    with pytest.raises(module.XinaoError) as failure:
+        module._import_discovery_science("research_feedback_material")
+    assert failure.value.reason_code == "DISCOVERY_PACKAGE_ORIGIN_MISMATCH"
+
+
+def test_discovery_consumer_rejects_same_version_changed_package_tree(
+    module: Any,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    source_root = ROOT / "xinao_discovery" / "src" / "xinao"
+    package_root = tmp_path / "site-packages" / "xinao"
+    shutil.copytree(source_root, package_root, ignore=shutil.ignore_patterns("__pycache__", "*.pyc"))
+    module_path = package_root / "science" / "research_feedback_material.py"
+    module_path.write_bytes(module_path.read_bytes() + b"\nTAMPERED = True\n")
+    candidate = _fake_module(module_path)
+    distribution = _fake_distribution(module, package_root)
+    monkeypatch.setattr(module.importlib, "import_module", lambda _name: candidate)
+    monkeypatch.setattr(
+        module.importlib_metadata, "distributions", lambda **_kwargs: [distribution]
+    )
+    with pytest.raises(module.XinaoError) as failure:
+        module._import_discovery_science("research_feedback_material")
+    assert failure.value.reason_code == "DISCOVERY_PACKAGE_TREE_MISMATCH"
+
+
+def test_discovery_consumer_rejects_ambiguous_same_name_distributions(
+    module: Any,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    package_root = ROOT / "xinao_discovery" / "src" / "xinao"
+    distribution = _fake_distribution(module, package_root)
+    monkeypatch.setattr(
+        module.importlib_metadata,
+        "distributions",
+        lambda **_kwargs: [distribution, distribution],
+    )
+    with pytest.raises(module.XinaoError) as failure:
+        module._import_discovery_science("research_feedback_material")
+    assert failure.value.reason_code == "DISCOVERY_PACKAGE_DISTRIBUTION_AMBIGUOUS"
+
+
+def test_discovery_consumer_rejects_recorded_file_removed_from_disk(
+    module: Any,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    source_root = ROOT / "xinao_discovery" / "src" / "xinao"
+    package_root = tmp_path / "site-packages" / "xinao"
+    shutil.copytree(source_root, package_root, ignore=shutil.ignore_patterns("__pycache__", "*.pyc"))
+    distribution = _fake_distribution(module, package_root)
+    (package_root / "science" / "research_feedback_material.py").unlink()
+    monkeypatch.setattr(
+        module.importlib_metadata, "distributions", lambda **_kwargs: [distribution]
+    )
+    with pytest.raises(module.XinaoError) as failure:
+        module._import_discovery_science("research_feedback_material")
+    assert failure.value.reason_code == "DISCOVERY_PACKAGE_RECORD_MISMATCH"
+
+
+def test_formal_runtime_rejects_editable_install_and_source_override(
+    module: Any,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    package_root = ROOT / "xinao_discovery" / "src" / "xinao"
+    distribution = SimpleNamespace(
+        metadata={"Name": "xinao-discovery"},
+        version="0.1.2",
+        files=[],
+        locate_file=lambda relative: package_root.parent / relative,
+        read_text=lambda name: (
+            json.dumps({"dir_info": {"editable": True}})
+            if name == "direct_url.json"
+            else None
+        ),
+    )
+    monkeypatch.setattr(module, "_discovery_runtime_is_formal", lambda: True)
+    monkeypatch.setattr(
+        module.importlib_metadata, "distributions", lambda **_kwargs: [distribution]
+    )
+    with pytest.raises(module.XinaoError) as failure:
+        module._import_discovery_science("research_feedback_material")
+    assert failure.value.reason_code == "DISCOVERY_EDITABLE_INSTALL_FORBIDDEN"
+
+    monkeypatch.setenv("XINAO_DISCOVERY_SRC", str(tmp_path / "unsealed-source"))
+    with pytest.raises(module.XinaoError) as override_failure:
+        module._import_discovery_science("research_feedback_material")
+    assert override_failure.value.reason_code == "DISCOVERY_SOURCE_OVERRIDE_FORBIDDEN"
 
 
 def test_ensure_pair_requires_namespace_receipt(
@@ -161,6 +360,9 @@ def test_ensure_pair_stale_cas_rejected(
         )
     assert failure.value.reason_code == "RESEARCH_EPISODE_STALE_HEAD"
     # Honest checkpoint then ensure under new head.
+    failed_experiment = episode / "lab" / "experiments" / "fail1.txt"
+    failed_experiment.parent.mkdir(parents=True, exist_ok=True)
+    failed_experiment.write_bytes(b"experiment failed: exit 1\n")
     ckpt = module.research_episode_checkpoint(
         root=episode,
         expected_head_sha256=started["head_checkpoint_sha256"],
@@ -190,6 +392,189 @@ def test_ensure_pair_stale_cas_rejected(
     assert ready["parent_complete"] is False
     # Intermediate failure retained after pair ensure.
     assert (episode / "lab" / "experiments" / "fail1.txt").is_file()
+
+
+def test_checkpoint_cli_binds_existing_lab_bytes_without_rewrite(
+    module: Any,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    _mod, episode, started, _manifest = _prepare_episode(module, tmp_path, monkeypatch)
+    lab_file = episode / "lab" / "lab_notes" / "wild_search_result.md"
+    lab_file.parent.mkdir(parents=True, exist_ok=True)
+    exact = b"# exact experiment bytes\r\n\x00negative retained\n"
+    lab_file.write_bytes(exact)
+    before = os.lstat(lab_file)
+
+    exit_code = module.main(
+        [
+            "research-episode",
+            "checkpoint",
+            "--root",
+            str(episode),
+            "--expected-head",
+            started["head_checkpoint_sha256"],
+            "--progress-note",
+            "bind existing result",
+            "--lab-relative",
+            "lab_notes/wild_search_result.md",
+        ]
+    )
+    output = capsys.readouterr().out.strip().splitlines()
+    assert exit_code == 0
+    payload = json.loads(output[-1])
+    after = os.lstat(lab_file)
+    assert lab_file.read_bytes() == exact
+    assert (after.st_dev, after.st_ino, after.st_size, after.st_mtime_ns) == (
+        before.st_dev,
+        before.st_ino,
+        before.st_size,
+        before.st_mtime_ns,
+    )
+    assert payload["checkpoint"]["lab_bytes_sha256"] == hashlib.sha256(exact).hexdigest()
+    assert payload["checkpoint"]["lab_relative"] == "lab_notes/wild_search_result.md"
+
+
+def test_checkpoint_python_api_cannot_materialize_or_overwrite_lab(
+    module: Any,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _mod, episode, started, _manifest = _prepare_episode(module, tmp_path, monkeypatch)
+    lab_file = episode / "lab" / "lab_notes" / "result.md"
+    lab_file.parent.mkdir(parents=True, exist_ok=True)
+    exact = b"provider-authored experiment result\n"
+    lab_file.write_bytes(exact)
+    before = _episode_tree_snapshot(episode)
+
+    def forbidden_container_action(**_kwargs: Any) -> dict[str, Any]:
+        pytest.fail("mismatched caller bytes must fail before the container checkpoint driver")
+
+    monkeypatch.setattr(module, "_research_episode_container_identity", forbidden_container_action)
+    with pytest.raises(module.XinaoError) as failure:
+        module.research_episode_checkpoint(
+            root=episode,
+            expected_head_sha256=started["head_checkpoint_sha256"],
+            lab_relative="lab_notes/result.md",
+            lab_bytes=b"caller replacement bytes\n",
+        )
+    assert failure.value.reason_code == "RESEARCH_EPISODE_LAB_FILE_CHANGED"
+    assert _episode_tree_snapshot(episode) == before
+
+    with pytest.raises(module.XinaoError) as missing_failure:
+        module.research_episode_checkpoint(
+            root=episode,
+            expected_head_sha256=started["head_checkpoint_sha256"],
+            lab_relative="lab_notes/new.md",
+            lab_bytes=b"must not create\n",
+        )
+    assert missing_failure.value.reason_code == "RESEARCH_EPISODE_LAB_FILE_INVALID"
+    assert _episode_tree_snapshot(episode) == before
+
+
+@pytest.mark.parametrize("case", ["missing", "escape", "ads", "directory", "too_large"])
+def test_checkpoint_cli_invalid_existing_lab_has_no_episode_side_effect(
+    module: Any,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    case: str,
+) -> None:
+    _mod, episode, started, _manifest = _prepare_episode(module, tmp_path, monkeypatch)
+    if case == "missing":
+        relative = "lab_notes/missing.md"
+    elif case == "escape":
+        relative = "../outside.md"
+    elif case == "ads":
+        relative = "lab_notes/result.md:alternate"
+    elif case == "directory":
+        relative = "lab_notes/not_a_file"
+        (episode / "lab" / relative).mkdir(parents=True)
+    else:
+        relative = "lab_notes/oversized.bin"
+        target = episode / "lab" / relative
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_bytes(b"x" * (module.MAX_RESEARCH_EPISODE_LAB_FILE_BYTES + 1))
+    before = _episode_tree_snapshot(episode)
+
+    def forbidden_container_action(**_kwargs: Any) -> dict[str, Any]:
+        pytest.fail("invalid lab input must fail before the container checkpoint driver")
+
+    monkeypatch.setattr(module, "_research_episode_container_identity", forbidden_container_action)
+    exit_code = module.main(
+        [
+            "research-episode",
+            "checkpoint",
+            "--root",
+            str(episode),
+            "--expected-head",
+            started["head_checkpoint_sha256"],
+            "--lab-relative",
+            relative,
+        ]
+    )
+    output = capsys.readouterr().out.strip().splitlines()
+    assert exit_code == 2
+    error = json.loads(output[-1])
+    assert error["reason_codes"][0] in {
+        "RESEARCH_EPISODE_LAB_PATH_INVALID",
+        "RESEARCH_EPISODE_LAB_FILE_INVALID",
+    }
+    assert _episode_tree_snapshot(episode) == before
+
+
+@pytest.mark.parametrize("reparse_kind", ["leaf", "ancestor"])
+def test_checkpoint_cli_reparse_lab_file_has_no_episode_side_effect(
+    module: Any,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    reparse_kind: str,
+) -> None:
+    _mod, episode, started, _manifest = _prepare_episode(module, tmp_path, monkeypatch)
+    if reparse_kind == "leaf":
+        target = episode / "outside_target.md"
+        target.write_bytes(b"must not be consumed through an alias")
+        link = episode / "lab" / "lab_notes" / "alias.md"
+        link.parent.mkdir(parents=True, exist_ok=True)
+        relative = "lab_notes/alias.md"
+        is_directory = False
+    else:
+        target = episode / "outside_lab_notes"
+        target.mkdir()
+        (target / "result.md").write_bytes(b"must not cross an ancestor alias")
+        link = episode / "lab" / "lab_notes"
+        relative = "lab_notes/result.md"
+        is_directory = True
+    try:
+        link.symlink_to(target, target_is_directory=is_directory)
+    except OSError as exc:
+        pytest.skip(f"symlink unavailable: {exc}")
+    before = _episode_tree_snapshot(episode)
+
+    def forbidden_container_action(**_kwargs: Any) -> dict[str, Any]:
+        pytest.fail("reparse lab input must fail before the container checkpoint driver")
+
+    monkeypatch.setattr(module, "_research_episode_container_identity", forbidden_container_action)
+    exit_code = module.main(
+        [
+            "research-episode",
+            "checkpoint",
+            "--root",
+            str(episode),
+            "--expected-head",
+            started["head_checkpoint_sha256"],
+            "--lab-relative",
+            relative,
+        ]
+    )
+    output = capsys.readouterr().out.strip().splitlines()
+    assert exit_code == 2
+    assert json.loads(output[-1])["reason_codes"] == [
+        "RESEARCH_EPISODE_LAB_FILE_INVALID"
+    ]
+    assert _episode_tree_snapshot(episode) == before
 
 
 def test_unauthorized_lab_roots_and_hidden_outcome_isolation(

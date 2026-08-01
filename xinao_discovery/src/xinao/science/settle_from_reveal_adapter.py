@@ -440,7 +440,24 @@ def apply_settle_from_reveal(
             f"index.admission_status={idx.get('admission_status')!r}",
         )
 
-    outcome = outcome_from_sealed_reveal(reveal)
+    # Keep the compatibility single-head verb, but make it consume the same
+    # source-proved outcome event as production settle-all.  The local import
+    # avoids a module cycle because the production consumer reuses this
+    # module's frozen-authority binding helper.
+    from xinao.science.portfolio_settle_all_from_reveal import (
+        PortfolioSettleAllError,
+        load_verified_outcome_event,
+    )
+
+    try:
+        verified_event = load_verified_outcome_event(
+            authority_root=auth,
+            packet_content_hash=packet_hash,
+            reveal_content_hash=reveal_hash,
+        )
+    except PortfolioSettleAllError as exc:
+        raise SettleFromRevealError(exc.reason_code, exc.detail) from exc
+    outcome = OutcomeObservation.model_validate(verified_event["outcome"])
 
     portfolio = resolve_root(portfolio_root)
     head = derive_portfolio_head(portfolio)
@@ -486,7 +503,7 @@ def apply_settle_from_reveal(
     try:
         settle_result = settle_portfolio_period(
             root=portfolio,
-            outcome_path=Path(evidence["outcome_path"]),
+            _production_observed_outcome=outcome,
         )
     except StoreError as exc:
         msg = str(exc)
@@ -559,6 +576,8 @@ def apply_settle_from_reveal(
         "outcome_ref": outcome.outcome_ref,
         "outcome_result_hash": outcome.result_hash,
         "actual_special_number": outcome.actual_special_number,
+        "source_raw_reparsed": True,
+        "caller_verified_flag_trusted": False,
         "source_ref": outcome.source_ref,
         "statement_result": settle_result.get("statement_result"),
         "pnl": settle_result.get("pnl"),

@@ -23,6 +23,11 @@ from xinao.science.freeze_adapter import (
     extract_research_binding_hash_from_frozen,
     load_research_binding,
 )
+from xinao.science.portfolio import (
+    COST_ACCOUNTING_UNPROVEN,
+    compile_settled_portfolio_feedback_state,
+    settled_portfolio_feedback_state_cas_path,
+)
 from xinao.shadow_lifecycle.store import (
     FEEDBACK_NAME,
     EpisodePhase,
@@ -242,6 +247,7 @@ def _build_research_feedback_pack_body(
     account_feedback_hash: str | None,
     public_outcome: Mapping[str, Any],
     next_research_material_hints: list[str] | None = None,
+    portfolio_feedback_state: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Private pure builder. Not a production settled proof by itself.
 
@@ -280,6 +286,27 @@ def _build_research_feedback_pack_body(
         )
     _require_hex64(public_outcome.get("outcome_result_hash"), "outcome_result_hash")
 
+    feedback_state: dict[str, Any] | None = None
+    feedback_state_hash: str | None = None
+    if portfolio_feedback_state is not None:
+        if not isinstance(portfolio_feedback_state, Mapping):
+            raise ResearchFeedbackPackError(
+                "FEEDBACK_PACK_PORTFOLIO_STATE_INVALID",
+                "object required",
+            )
+        feedback_state = dict(portfolio_feedback_state)
+        feedback_state_hash = _require_hex64(
+            feedback_state.get("content_hash"),
+            "portfolio_feedback_state.content_hash",
+        )
+        state_body = dict(feedback_state)
+        state_body.pop("content_hash", None)
+        if canonical_sha256(state_body) != feedback_state_hash:
+            raise ResearchFeedbackPackError(
+                "FEEDBACK_PACK_PORTFOLIO_STATE_TAMPERED",
+                feedback_state_hash,
+            )
+
     body: dict[str, Any] = {
         "schema_version": PACK_SCHEMA_VERSION,
         "pack_marker": PACK_MARKER,
@@ -297,6 +324,33 @@ def _build_research_feedback_pack_body(
         "account_pnl_echo": account_pnl_echo,
         "closing_balance": closing_balance,
         "account_feedback_hash": account_feedback_hash,
+        "portfolio_feedback_state_hash": feedback_state_hash,
+        "portfolio_feedback_state_summary": (
+            {
+                "through_period_index": feedback_state.get("through_period_index"),
+                "current_balance": feedback_state.get("account_axis", {}).get("current_balance"),
+                "recorded_pnl": feedback_state.get("account_axis", {}).get("recorded_pnl"),
+                "high_water_balance": feedback_state.get("account_axis", {}).get(
+                    "high_water_balance"
+                ),
+                "max_drawdown_amount": feedback_state.get("account_axis", {}).get(
+                    "max_drawdown_amount"
+                ),
+                "cost_accounting_status": feedback_state.get("account_axis", {}).get(
+                    "cost_accounting_status"
+                ),
+                "after_cost_profit_claim_allowed": False,
+                "scientific_promotion": False,
+            }
+            if feedback_state is not None
+            else None
+        ),
+        "cost_accounting_status": (
+            feedback_state.get("account_axis", {}).get("cost_accounting_status")
+            if feedback_state is not None
+            else COST_ACCOUNTING_UNPROVEN
+        ),
+        "after_cost_profit_claim_allowed": False,
         "public_outcome": {
             "target_ref": str(public_outcome["target_ref"]),
             "actual_special_number": number,
@@ -475,6 +529,22 @@ def emit_research_feedback_pack(
         if account_feedback_hash is not None:
             _require_hex64(account_feedback_hash, "account_feedback_hash")
 
+    portfolio_feedback_state = (
+        compile_settled_portfolio_feedback_state(
+            portfolio_root=Path(bundle["root"]),
+            through_period_index=int(bundle["period_index"]),
+        )
+        if bundle["mode"] == "portfolio"
+        else None
+    )
+    portfolio_feedback_state_path: Path | None = None
+    if portfolio_feedback_state is not None:
+        portfolio_feedback_state_path = settled_portfolio_feedback_state_cas_path(
+            portfolio_root=Path(bundle["root"]),
+            content_hash=str(portfolio_feedback_state["content_hash"]),
+        )
+        _write_new_json(portfolio_feedback_state_path, portfolio_feedback_state)
+
     pack = _build_research_feedback_pack_body(
         prior_result_sha256=priors["prior_result_sha256"],
         prior_receipt_content_sha256=priors["prior_receipt_content_sha256"],
@@ -498,6 +568,7 @@ def emit_research_feedback_pack(
             if hasattr(outcome.observed_at, "isoformat")
             else str(outcome.observed_at),
         },
+        portfolio_feedback_state=portfolio_feedback_state,
     )
 
     # Default: immutable out-of-cone CAS under portfolio/episode root objects/.
@@ -528,6 +599,14 @@ def emit_research_feedback_pack(
         "auto_start_next_research": False,
         "auto_next_period_freeze": False,
         "prior_research_binding_sha256": priors["prior_research_binding_sha256"],
+        "portfolio_feedback_state_hash": pack["portfolio_feedback_state_hash"],
+        "portfolio_feedback_state_path": (
+            str(portfolio_feedback_state_path)
+            if portfolio_feedback_state_path is not None
+            else None
+        ),
+        "cost_accounting_status": pack["cost_accounting_status"],
+        "after_cost_profit_claim_allowed": False,
         "pack": pack,
     }
 

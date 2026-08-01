@@ -99,7 +99,7 @@ def test_source_shadow_seal_generation_advances_past_live_gen17() -> None:
     lock = module._load_shadow_runtime_lock(SKILL_ROOT)
     rows = module._collect_shadow_runtime_rows(ROOT, lock)
 
-    assert lock["shadow_runtime_version"] == shadow["version"] == "0.3.1"
+    assert lock["shadow_runtime_version"] == shadow["version"] == "0.3.2"
     assert module._sha256(lock_path) != LIVE_GEN17_SHADOW_RUNTIME_LOCK_SHA256
     assert module._shadow_runtime_tree_sha256(rows) != LIVE_GEN17_SHADOW_RUNTIME_TREE_SHA256
 
@@ -671,7 +671,7 @@ def test_companion_runtime_seal_matches_repository_bytes() -> None:
     assert observed == bootstrap.EXPECTED_COMPANION_RUNTIME_SHA256
     # Wave106: Windows host cannot exec Linux donor ELF; runtime probe uses Docker-mount
     # of staged bytes. Companion pin tracks exact xinao_runtime.py seal.
-    assert observed == "2eb2675ad5ca07cc2b253837f3270962c0705bf47ca695f13a1152b7c79d51b3"
+    assert observed == "31b439373ae72f438f335a10ba8702bbf266161311c0aaa284ed2b0f5cd240d5"
     assert len(observed) == 64
 
 
@@ -1521,8 +1521,8 @@ def test_bootstrap_forward_upgrade_live_gen17_shadow_generation_to_current(
     pointer = module._load_json(module._state_paths()["pointer"])
     assert pointer["generation"] == 18
     assert pointer["active"]["release_id"] == world["target"]["release_id"]
-    assert pointer["active"]["package_version"] == "1.3.17"
-    assert pointer["active"]["capability_version"] == "1.2.13"
+    assert pointer["active"]["package_version"] == "1.3.19"
+    assert pointer["active"]["capability_version"] == "1.2.15"
     assert Path(world["active_path"]).read_bytes() == world["active_manifest_bytes"]
 
 

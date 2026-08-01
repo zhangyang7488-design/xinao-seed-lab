@@ -60,6 +60,8 @@ from xinao.science.prospective_source_thin import (
     verify_disposition_times_against_packet,
 )
 from xinao.shadow_lifecycle.consumer import (
+    ACTOR_PROJECTION_VERIFICATION_MARKER,
+    ACTOR_PROJECTION_VERIFICATION_SCHEMA,
     OWNER_FREEZE_AUTHORITY_MARKER,
     OWNER_FREEZE_AUTHORITY_SCHEMA,
     freeze_episode,
@@ -1342,6 +1344,11 @@ def apply_freeze_from_disposition(
 
     pool_entry = verified["pool_entry"]
     disposition = verified["disposition"]
+    if mode != "portfolio":
+        raise FreezeAdapterError(
+            "PRODUCTION_FREEZE_PORTFOLIO_REQUIRED",
+            "flat disposition-bound freeze has no source-bound production settlement route",
+        )
     expected_period = _assert_period_matches(
         disposition=disposition,
         mode=mode,
@@ -1445,6 +1452,48 @@ def apply_freeze_from_disposition(
             owner_authority["source_authority_root"] = str(
                 Path(authority_root).expanduser().resolve()
             )
+            # Re-enter the host-only verifier at the final consumer boundary.
+            # The minimal shadow cone can re-open immutable CAS evidence but
+            # deliberately does not import the full ResearchEpisode runtime.
+            try:
+                final_verified = load_and_verify_disposition(
+                    disposition_path=disposition_path,
+                    owner_state_root=owner_state_root,
+                    pool_root=pool_root,
+                    result_sha256=result_sha256,
+                    episode_root=episode_root,
+                    portfolio_root=shadow_root,
+                    authority_root=authority_root,
+                )
+            except OwnerDispositionError as exc:
+                raise FreezeAdapterError(exc.reason_code, exc.detail) from exc
+            for field in (
+                "owner_artifact_sha256",
+                "pool_entry",
+                "disposition",
+                "researcher_decision_binding",
+            ):
+                if final_verified[field] != verified[field]:
+                    raise FreezeAdapterError(
+                        "ACTOR_PROJECTION_CHANGED_BEFORE_FREEZE",
+                        field,
+                    )
+            actor_verification_body = {
+                "schema_version": ACTOR_PROJECTION_VERIFICATION_SCHEMA,
+                "verification_marker": ACTOR_PROJECTION_VERIFICATION_MARKER,
+                "owner_artifact_sha256": str(final_verified["owner_artifact_sha256"]),
+                "pool_entry_content_hash": str(
+                    final_verified["pool_entry"]["content_hash"]
+                ),
+                "result_sha256": str(final_verified["pool_entry"]["result_sha256"]),
+                "researcher_decision_binding": copy.deepcopy(
+                    final_verified["researcher_decision_binding"]
+                ),
+            }
+            owner_authority["actor_projection_verification"] = {
+                **actor_verification_body,
+                "content_hash": canonical_sha256(actor_verification_body),
+            }
 
     try:
         if mode == "portfolio":

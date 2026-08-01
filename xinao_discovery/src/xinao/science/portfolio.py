@@ -7,15 +7,18 @@ schedule work, or authorize real-money action.
 
 from __future__ import annotations
 
+import re
 from collections import Counter
 from collections.abc import Mapping
 from datetime import datetime
+from decimal import Decimal
 from enum import StrEnum
+from pathlib import Path
 from typing import Any, Literal, Self
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from xinao.canonical import canonical_sha256
+from xinao.canonical import ACCOUNTING_DECIMAL, canonical_sha256, format_decimal
 from xinao.decision import (
     DecisionGateInput,
     DecisionKind,
@@ -28,6 +31,257 @@ from xinao.settlement import (
     SettlementBundle,
     settle_frozen_decision,
 )
+from xinao.shadow_lifecycle.store import (
+    FEEDBACK_NAME,
+    derive_portfolio_head,
+    load_feedback,
+    load_frozen,
+    load_portfolio,
+    load_settled,
+    period_directory,
+    resolve_root,
+)
+
+PORTFOLIO_FEEDBACK_STATE_SCHEMA = "xinao.settled_portfolio_feedback_state.v1"
+PORTFOLIO_FEEDBACK_STATE_MARKER = "XINAO_SETTLED_PORTFOLIO_FEEDBACK_STATE_V1"
+COST_ACCOUNTING_UNPROVEN = "UNPROVEN_NOT_RECORDED"
+_HEX_SHA256 = re.compile(r"^[0-9a-f]{64}$")
+
+
+class PortfolioFeedbackStateError(ValueError):
+    """A settled Portfolio cannot be compiled into a truthful feedback state."""
+
+    def __init__(self, reason_code: str, detail: str = "") -> None:
+        self.reason_code = reason_code
+        self.detail = detail
+        super().__init__(f"{reason_code}: {detail}" if detail else reason_code)
+
+
+def _account_amount(value: Decimal | str | int) -> str:
+    return format_decimal(value, ACCOUNTING_DECIMAL)
+
+
+def _drawdown_fraction(*, high_water: Decimal, closing: Decimal) -> str:
+    if high_water <= 0:
+        return "0.000000"
+    value = max(Decimal("0"), high_water - closing) / high_water
+    return format(value.quantize(Decimal("0.000001")), "f")
+
+
+def settled_portfolio_feedback_state_cas_path(
+    *,
+    portfolio_root: Path,
+    content_hash: str,
+) -> Path:
+    if _HEX_SHA256.fullmatch(content_hash) is None:
+        raise PortfolioFeedbackStateError(
+            "PORTFOLIO_FEEDBACK_STATE_HASH_INVALID",
+            content_hash,
+        )
+    base = resolve_root(portfolio_root)
+    return (
+        base
+        / "objects"
+        / "settled_portfolio_feedback_state"
+        / "sha256"
+        / content_hash[:2]
+        / f"{content_hash}.json"
+    )
+
+
+def compile_settled_portfolio_feedback_state(
+    *,
+    portfolio_root: Path,
+    through_period_index: int | None = None,
+) -> dict[str, Any]:
+    """Recompute cross-period account facts from the sealed Portfolio store.
+
+    This is a read-only projection.  It never fills absent fees with zero and
+    never lets account performance promote a scientific claim.
+    """
+
+    base = resolve_root(portfolio_root)
+    portfolio = load_portfolio(base)
+    head = derive_portfolio_head(base)
+    through = head.period_index if through_period_index is None else through_period_index
+    if type(through) is not int or through < 1:
+        raise PortfolioFeedbackStateError(
+            "PORTFOLIO_FEEDBACK_REQUIRES_SETTLED_PERIOD",
+            str(through),
+        )
+    if through > head.period_index:
+        raise PortfolioFeedbackStateError(
+            "PORTFOLIO_FEEDBACK_PERIOD_BEYOND_HEAD",
+            f"through={through} head={head.period_index}",
+        )
+
+    genesis = Decimal(portfolio.genesis_opening_balance)
+    high_water = genesis
+    max_drawdown = Decimal("0")
+    max_drawdown_fraction = Decimal("0")
+    total_pnl = Decimal("0")
+    total_stake = Decimal("0")
+    action_count = 0
+    no_action_count = 0
+    science_candidate_count = 0
+    science_no_action_count = 0
+    missing_cost_periods: list[int] = []
+    periods: list[dict[str, Any]] = []
+    prior_close = genesis
+
+    for index in range(1, through + 1):
+        period_root = period_directory(base, index)
+        try:
+            frozen = load_frozen(period_root)
+            settled = load_settled(period_root)
+        except Exception as exc:
+            raise PortfolioFeedbackStateError(
+                "PORTFOLIO_FEEDBACK_PERIOD_NOT_SETTLED",
+                f"period={index}: {exc}",
+            ) from exc
+        if frozen.content_hash is None or settled.content_hash is None:
+            raise PortfolioFeedbackStateError(
+                "PORTFOLIO_FEEDBACK_PERIOD_SEAL_MISSING",
+                f"period={index}",
+            )
+        if settled.frozen_episode_hash != frozen.content_hash:
+            raise PortfolioFeedbackStateError(
+                "PORTFOLIO_FEEDBACK_FROZEN_SETTLED_MISMATCH",
+                f"period={index}",
+            )
+        statement = settled.statement
+        if statement.content_hash is None:
+            raise PortfolioFeedbackStateError(
+                "PORTFOLIO_FEEDBACK_STATEMENT_SEAL_MISSING",
+                f"period={index}",
+            )
+        opening = Decimal(statement.opening_balance)
+        closing = Decimal(statement.closing_balance)
+        pnl = Decimal(statement.pnl)
+        stake = Decimal(statement.risk_stake)
+        if opening != prior_close:
+            raise PortfolioFeedbackStateError(
+                "PORTFOLIO_FEEDBACK_BALANCE_DISCONTINUITY",
+                f"period={index} opening={opening} prior_close={prior_close}",
+            )
+
+        high_water = max(high_water, closing)
+        drawdown = max(Decimal("0"), high_water - closing)
+        drawdown_fraction_text = _drawdown_fraction(high_water=high_water, closing=closing)
+        max_drawdown = max(max_drawdown, drawdown)
+        max_drawdown_fraction = max(max_drawdown_fraction, Decimal(drawdown_fraction_text))
+        total_pnl += pnl
+        total_stake += stake
+        prior_close = closing
+
+        account_identity = frozen.account_decision.identity.value
+        if account_identity == "ACTION":
+            action_count += 1
+        else:
+            no_action_count += 1
+        science_identity = frozen.science_decision.identity.value
+        if science_identity == "SCIENCE_CANDIDATE":
+            science_candidate_count += 1
+        else:
+            science_no_action_count += 1
+
+        legacy_ticket = frozen.bound_frozen_decision
+        account_ticket = frozen.bound_account_ticket
+        cost_version_ref = (
+            getattr(legacy_ticket, "cost_version_ref", None) if legacy_ticket is not None else None
+        )
+        friction_version_ref = (
+            getattr(legacy_ticket, "friction_version_ref", None)
+            if legacy_ticket is not None
+            else None
+        )
+        # Neither production AccountRiskTicket nor AccountStatement records an
+        # actual fee amount.  A version ref, when present on a legacy ticket,
+        # is not evidence that a cost was posted.
+        missing_cost_periods.append(index)
+        feedback_hash: str | None = None
+        if (period_root / FEEDBACK_NAME).is_file():
+            feedback = load_feedback(period_root)
+            feedback_hash = feedback.content_hash
+
+        period_body: dict[str, Any] = {
+            "period_index": index,
+            "episode_ref": frozen.episode_ref,
+            "target_ref": frozen.target_ref,
+            "frozen_episode_hash": frozen.content_hash,
+            "settled_episode_hash": settled.content_hash,
+            "statement_hash": statement.content_hash,
+            "account_feedback_hash": feedback_hash,
+            "account_axis": {
+                "identity": account_identity,
+                "opening_balance": statement.opening_balance,
+                "risk_stake": statement.risk_stake,
+                "risk_policy_ref": (
+                    account_ticket.risk_policy_ref if account_ticket is not None else None
+                ),
+                "rule_ref": statement.rule_ref,
+                "odds_version_ref": statement.odds_version_ref,
+                "odds": statement.odds,
+                "result": statement.result.value,
+                "recorded_pnl": statement.pnl,
+                "closing_balance": statement.closing_balance,
+                "high_water_balance": _account_amount(high_water),
+                "drawdown_amount": _account_amount(drawdown),
+                "drawdown_fraction": drawdown_fraction_text,
+                "cost_version_ref": cost_version_ref,
+                "friction_version_ref": friction_version_ref,
+                "recorded_cost_amount": None,
+                "cost_accounting_status": COST_ACCOUNTING_UNPROVEN,
+                "after_cost_profit_claim_allowed": False,
+            },
+            "science_axis": {
+                "identity": science_identity,
+                "candidate_ref": frozen.science_decision.candidate_ref,
+                "science_decision_ref": frozen.science_decision.science_decision_ref,
+                "science_decision_hash": frozen.science_decision.content_hash,
+                "scientific_promotion": False,
+            },
+        }
+        periods.append({**period_body, "content_hash": canonical_sha256(period_body)})
+
+    state_body: dict[str, Any] = {
+        "schema_version": PORTFOLIO_FEEDBACK_STATE_SCHEMA,
+        "state_marker": PORTFOLIO_FEEDBACK_STATE_MARKER,
+        "portfolio_ref": portfolio.portfolio_ref,
+        "portfolio_content_hash": portfolio.content_hash,
+        "seat_id": portfolio.seat_id,
+        "genesis_opening_balance": portfolio.genesis_opening_balance,
+        "through_period_index": through,
+        "periods": periods,
+        "account_axis": {
+            "current_balance": _account_amount(prior_close),
+            "recorded_pnl": _account_amount(total_pnl),
+            "total_risk_stake": _account_amount(total_stake),
+            "high_water_balance": _account_amount(high_water),
+            "max_drawdown_amount": _account_amount(max_drawdown),
+            "max_drawdown_fraction": format(
+                max_drawdown_fraction.quantize(Decimal("0.000001")),
+                "f",
+            ),
+            "action_count": action_count,
+            "no_action_count": no_action_count,
+            "cost_accounting_status": COST_ACCOUNTING_UNPROVEN,
+            "periods_missing_recorded_cost_amount": missing_cost_periods,
+            "recorded_cost_total": None,
+            "after_cost_profit_claim_allowed": False,
+        },
+        "science_axis": {
+            "science_candidate_count": science_candidate_count,
+            "science_no_action_count": science_no_action_count,
+            "scientific_promotion": False,
+            "account_performance_is_scientific_proof": False,
+        },
+        "future_outcome_access": False,
+        "auto_start_next_research": False,
+        "auto_next_period_freeze": False,
+        "completion_claim_allowed": False,
+    }
+    return {**state_body, "content_hash": canonical_sha256(state_body)}
 
 
 class PolicyRole(StrEnum):
@@ -817,6 +1071,9 @@ def settle_all(
 
 
 __all__ = [
+    "COST_ACCOUNTING_UNPROVEN",
+    "PORTFOLIO_FEEDBACK_STATE_MARKER",
+    "PORTFOLIO_FEEDBACK_STATE_SCHEMA",
     "REQUIRED_RESEARCH_ROLES",
     "ActiveSet",
     "DecisionSignature",
@@ -825,6 +1082,7 @@ __all__ = [
     "FrozenPolicyTicket",
     "PolicyCandidateVersion",
     "PolicyRole",
+    "PortfolioFeedbackStateError",
     "RoleCoverage",
     "RoleSettlementCoverage",
     "ScoreRow",
@@ -832,6 +1090,8 @@ __all__ = [
     "SettlementSet",
     "admit_active_set",
     "admit_eligible_set",
+    "compile_settled_portfolio_feedback_state",
     "freeze_all",
     "settle_all",
+    "settled_portfolio_feedback_state_cas_path",
 ]
