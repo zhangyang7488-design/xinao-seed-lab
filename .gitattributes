@@ -37,6 +37,9 @@ scripts/run_foundation_v2_f4_negative_companion.py text eol=lf
 evals/mature_capability_recall/** text eol=lf
 evals/thin_localization/** text eol=lf
 
+# Historical generation recovery pins this fixture by its raw LF-byte SHA-256.
+tests/fixtures/xinao/live_gen17_shadow_runtime_lock.v1.json text eol=lf
+
 # RQ008 live immutable pair is content-addressed (raw SHA256 pins in
 # sha256_pins.json). Without eol=lf, Windows core.autocrlf converts the sealed
 # LF Owner-run blobs to CRLF working-tree bytes that diverge from the pins
