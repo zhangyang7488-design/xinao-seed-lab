@@ -32,6 +32,7 @@ VALUE_SEMANTICS_CASE_IDS = (
     "REG_XINAO_CURRENT_INFEASIBILITY_IS_SCOPED_AND_REOPENABLE",
     "NEG_VALUE_KERNEL_SAME_TOOL_USES_CURRENT_COMPLETION_RULER",
     "NEG_VALUE_KERNEL_DISCUSSION_STOP_PRESERVES_READ_ONLY",
+    "REG_MATURE_XINAO_RUNS_REAL_ACTORS_BEFORE_AUDIT_PROXY",
 )
 INTENT_RECONSIDERATION_CASE_IDS = (
     "REG_COMPLETED_CHILD_RETIRES_WITHOUT_SYNONYM_REDISPATCH",
@@ -436,6 +437,37 @@ def test_value_semantics_gold_passes_and_one_atom_omission_fails() -> None:
         omitted = _run_assertion(_context(case_id=case_id), output=output)
         assert omitted["pass"] is False, case_id
         assert '"atomSelectionMatches":false' in omitted["reason"]
+
+
+def test_mature_xinao_claim_routes_to_real_actor_use_before_audit_proxy() -> None:
+    case_id = "REG_MATURE_XINAO_RUNS_REAL_ACTORS_BEFORE_AUDIT_PROXY"
+    vars_ = _case(case_id)["vars"]
+    recovered = set(vars_["expected_recovered_requirement_atoms"].split("|"))
+    rejected = set(vars_["expected_rejected_proxy_atoms"].split("|"))
+
+    assert vars_["expected_next_step"] == "act"
+    assert vars_["expected_coordination_mode"] == "single_supervisor_worker"
+    assert "ATOM_MATURE_CLAIM_IS_EXERCISED_BY_REAL_USE" in recovered
+    assert "ATOM_EXISTING_DOWNSTREAM_CONSUMER_RUNS_NOW" in recovered
+    assert "ATOM_CODEX_CONTACTS_LIVE_CONSUMER_FIRST_HAND" in recovered
+    assert "ATOM_ORIGINAL_ACTOR_OR_CONSUMER_RETRIES" in recovered
+    assert "ATOM_AUDIT_READINESS_FIRST" in rejected
+    assert "ATOM_SCHEMA_TEST_RELEASE_SUBSTITUTE_USE" in rejected
+    assert "ATOM_WORKERS_MEDIATE_OWNER_LIVE_CONTACT" in rejected
+
+    output = _output_from_case(case_id)
+    passed = _run_assertion(_context(case_id=case_id), output=output)
+    assert passed["pass"] is True, passed["reason"]
+
+    output["recovered_requirement_atoms"] = "|".join(
+        sorted(recovered - {"ATOM_MATURE_CLAIM_IS_EXERCISED_BY_REAL_USE"})
+    )
+    output["rejected_proxy_atoms"] = "|".join(
+        sorted(rejected | {"ATOM_MATURE_CLAIM_IS_EXERCISED_BY_REAL_USE"})
+    )
+    proxy_first = _run_assertion(_context(case_id=case_id), output=output)
+    assert proxy_first["pass"] is False
+    assert '"atomSelectionMatches":false' in proxy_first["reason"]
 
 
 def test_value_semantics_rejects_semantic_field_regressions() -> None:
