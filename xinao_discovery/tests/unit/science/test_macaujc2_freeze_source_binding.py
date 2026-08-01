@@ -153,12 +153,21 @@ def _macaujc2_action_disposition(
     capture = _capture_auth(tmp_path)
     sab = capture["source_authority_binding"]
     target_ref = sab["target_ref"]
-    pool, entry, _, _ = _seam._ingest(tmp_path / "pool")
+    kc = "2026-07-30T08:00:00Z"
+    frozen_at = "2026-07-30T10:00:00Z"
+    pool, entry, _, _ = _seam._ingest(
+        tmp_path / "pool",
+        selected_number=selected_number,
+        researcher_executable_overrides={
+            "target_ref": target_ref,
+            "target_open_time": sab["target_guard_open_time"],
+            "freeze_deadline": sab["freeze_deadline"],
+            "knowledge_cutoff": kc,
+        },
+    )
     owner = tmp_path / "owner"
     owner.mkdir()
     portfolio = _seam._init_portfolio(tmp_path / "port")
-    kc = "2026-07-30T08:00:00Z"
-    frozen_at = "2026-07-30T10:00:00Z"
     body = _seam._disposition_body(
         entry,
         selected_number=selected_number,
@@ -173,7 +182,7 @@ def _macaujc2_action_disposition(
     body["executable_account_decision"]["frozen_at"] = frozen_at
     body["executable_account_decision"]["knowledge_cutoff"] = kc
     body = _seam._attach_portfolio_binding(body, portfolio)
-    path = _seam._write_disposition(owner, body)
+    path = _seam._write_disposition(owner, pool, body)
     return pool, owner, path, portfolio, tmp_path / "authority", sab, target_ref
 
 
@@ -232,7 +241,7 @@ def test_no_action_freeze_with_sab_binding(tmp_path: Path) -> None:
     body["no_action_period_binding"]["frozen_at"] = frozen_at
     body["no_action_period_binding"]["knowledge_cutoff"] = kc
     body = _seam._attach_portfolio_binding(body, portfolio)
-    path = _seam._write_disposition(owner, body)
+    path = _seam._write_disposition(owner, pool, body)
 
     freeze_now = datetime(2026, 7, 30, 10, 0, tzinfo=UTC)
     result = apply_freeze_from_disposition(

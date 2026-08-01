@@ -658,6 +658,7 @@ def _dispatch_write_owner_disposition(args: argparse.Namespace) -> int:
             "period_index": verified["disposition"]["period_index"],
             "science_disposition": verified["disposition"]["science_disposition"],
             "account_identity": verified["disposition"]["account_identity"],
+            "researcher_action_binding": verified["researcher_action_binding"],
             "owner_channel_authority": verified["owner_channel_authority"],
             "owner_disposition_authentic": verified["owner_disposition_authentic"],
             "path_separated_from_pool": verified["path_separated_from_pool"],

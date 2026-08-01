@@ -40,6 +40,7 @@ from xinao.science.owner_disposition import (
     ACCOUNT_ACTION,
     ACCOUNT_NO_ACTION,
     OWNER_CHANNEL_AUTHORITY_UNPROVEN,
+    RESEARCHER_ACTION_BINDING_SCHEMA,
     OwnerDispositionError,
     disposition_information_set_hash,
     load_and_verify_disposition,
@@ -316,6 +317,7 @@ def build_research_freeze_binding(
     pool_entry: Mapping[str, Any],
     disposition: Mapping[str, Any],
     owner_artifact_sha256: str,
+    researcher_action_binding: Mapping[str, Any] | None = None,
     portfolio_binding: Mapping[str, Any] | None = None,
     source_authority_binding: Mapping[str, Any] | None = None,
     freeze_action_time: datetime | None = None,
@@ -327,6 +329,63 @@ def build_research_freeze_binding(
         disposition,
         freeze_action_time=freeze_action_time,
     )
+    account_identity = require_period_account_identity(disposition)
+    sealed_action_binding: dict[str, Any] | None = None
+    if account_identity == ACCOUNT_ACTION:
+        if not isinstance(researcher_action_binding, Mapping):
+            raise FreezeAdapterError(
+                "RESEARCHER_ACTION_BINDING_REQUIRED",
+                "ACTION freeze requires a verified sealed researcher execution core",
+            )
+        sealed_action_binding = dict(researcher_action_binding)
+        if sealed_action_binding.get("schema_version") != RESEARCHER_ACTION_BINDING_SCHEMA:
+            raise FreezeAdapterError(
+                "RESEARCHER_ACTION_BINDING_SCHEMA_INVALID",
+                str(sealed_action_binding.get("schema_version")),
+            )
+        for key, expected in (
+            ("result_sha256", pool_entry.get("result_sha256")),
+            ("pool_entry_content_hash", pool_entry.get("content_hash")),
+        ):
+            if sealed_action_binding.get(key) != expected:
+                raise FreezeAdapterError(
+                    "RESEARCHER_ACTION_BINDING_POOL_MISMATCH",
+                    key,
+                )
+        executable = disposition.get("executable_account_decision")
+        if not isinstance(executable, Mapping):
+            raise FreezeAdapterError(
+                "ACTION_REQUIRES_EXECUTABLE_DECISION",
+                "normalized ACTION executable missing",
+            )
+        researcher_core = {
+            key: executable[key]
+            for key in (
+                "baseline_ref",
+                "freeze_deadline",
+                "knowledge_cutoff",
+                "odds_version_ref",
+                "panel",
+                "risk_policy_ref",
+                "rule_ref",
+                "selected_number",
+                "stake",
+                "target_open_time",
+                "target_ref",
+            )
+        }
+        if sealed_action_binding.get("executable_content_hash") != canonical_sha256(
+            researcher_core
+        ):
+            raise FreezeAdapterError(
+                "RESEARCHER_ACTION_BINDING_EXECUTABLE_MISMATCH",
+                "sealed researcher execution core disagrees with disposition",
+            )
+    elif researcher_action_binding is not None:
+        raise FreezeAdapterError(
+            "NO_ACTION_RESEARCHER_ACTION_BINDING_FORBIDDEN",
+            "NO_ACTION must not carry an ACTION producer binding",
+        )
     body: dict[str, Any] = {
         "schema_version": RESEARCH_BINDING_SCHEMA,
         "binding_marker": RESEARCH_BINDING_MARKER,
@@ -343,6 +402,7 @@ def build_research_freeze_binding(
         "science_identity": str(disposition["science_identity"]),
         "knowledge_cutoff": str(disposition["knowledge_cutoff"]),
         "executable_account_intent": executable_intent,
+        "researcher_action_binding": sealed_action_binding,
         # Flat episode mode keeps portfolio identity explicitly absent (not faked).
         "portfolio_binding": dict(portfolio_binding) if portfolio_binding is not None else None,
         "source_authority_binding": (
@@ -1223,6 +1283,7 @@ def apply_freeze_from_disposition(
         pool_entry=pool_entry,
         disposition=disposition,
         owner_artifact_sha256=str(verified["owner_artifact_sha256"]),
+        researcher_action_binding=verified["researcher_action_binding"],
         portfolio_binding=portfolio_binding,
         source_authority_binding=source_authority_binding,
         freeze_action_time=host_now,
@@ -1274,6 +1335,7 @@ def apply_freeze_from_disposition(
             "schema_version": OWNER_FREEZE_AUTHORITY_SCHEMA,
             "authority_marker": OWNER_FREEZE_AUTHORITY_MARKER,
             "owner_state_root": str(Path(owner_state_root).expanduser().resolve()),
+            "research_pool_root": str(Path(pool_root).expanduser().resolve()),
             "owner_disposition_sha256": str(verified["owner_artifact_sha256"]),
             "research_binding_sha256": binding_hash,
             "request_content_hash": str(authority_request["request_content_hash"]),
@@ -1320,6 +1382,11 @@ def apply_freeze_from_disposition(
         raise FreezeAdapterError("RESEARCH_BINDING_OWNER_MISMATCH", "owner_artifact_sha256")
     if int(reloaded.get("period_index", -1)) != int(disposition["period_index"]):
         raise FreezeAdapterError("RESEARCH_BINDING_PERIOD_MISMATCH", "period_index")
+    if reloaded.get("researcher_action_binding") != verified["researcher_action_binding"]:
+        raise FreezeAdapterError(
+            "RESEARCHER_ACTION_BINDING_RELOAD_MISMATCH",
+            "freeze binding did not preserve verified producer evidence",
+        )
 
     _assert_frozen_matches_disposition_and_binding(
         frozen=frozen,
@@ -1353,6 +1420,7 @@ def apply_freeze_from_disposition(
         "request_content_hash": authority_request["request_content_hash"],
         "portfolio_binding": portfolio_binding,
         "source_authority_binding": source_authority_binding,
+        "researcher_action_binding": verified["researcher_action_binding"],
         # Host-sampled freeze-action time is authoritative on FrozenEpisode/Ticket.
         "freeze_action_time": _iso_z(host_now),
         "disposition_frozen_at": str(disposition_branch.get("frozen_at")),

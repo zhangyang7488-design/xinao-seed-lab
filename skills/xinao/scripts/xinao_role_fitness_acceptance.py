@@ -65,6 +65,7 @@ from xinao.science.owner_disposition import (  # noqa: E402
     SCIENCE_ABSORB_NO_ACTION,
     SCIENCE_RETAIN_FOR_SHADOW,
     OwnerDispositionError,
+    load_and_verify_disposition,
     write_owner_disposition_artifact,
 )
 from xinao.shadow_lifecycle import (  # noqa: E402
@@ -318,6 +319,31 @@ def _iso_z(value: datetime) -> str:
     return value.isoformat().replace("+00:00", "Z")
 
 
+def _harness_action_core(
+    *,
+    target_ref: str,
+    open_at: datetime,
+    selected_number: int,
+    panel: str,
+    stake: str,
+) -> dict[str, Any]:
+    cutoff, _frozen_at, deadline = _times(open_at)
+    baseline = "BO0013" if panel == "B" else "BO0001"
+    return {
+        "panel": panel,
+        "selected_number": selected_number,
+        "stake": stake,
+        "target_ref": target_ref,
+        "target_open_time": _iso_z(open_at),
+        "freeze_deadline": _iso_z(deadline),
+        "knowledge_cutoff": _iso_z(cutoff),
+        "odds_version_ref": ODDS_VERSION_REF,
+        "baseline_ref": baseline,
+        "risk_policy_ref": "shadow-risk.max-one-unit.v1",
+        "rule_ref": MECHANICAL_RULE_REF,
+    }
+
+
 # Sealed production-shaped research evidence used only to construct formal pool
 # entries for the acceptance harness (not a freeze-gate bypass).
 _HARNESS_RESEARCH_FIXTURE_DIR = (
@@ -325,7 +351,11 @@ _HARNESS_RESEARCH_FIXTURE_DIR = (
 )
 
 
-def ensure_harness_research_pool(pool_root: Path) -> dict[str, Any]:
+def ensure_harness_research_pool(
+    pool_root: Path,
+    *,
+    executable_account_decision: Mapping[str, Any] | None = None,
+) -> dict[str, Any]:
     """Ingest formal verified research into a harness pool (content-addressed).
 
     Returns the sealed pool entry. Reuses the same CAS root across periods so
@@ -343,6 +373,24 @@ def ensure_harness_research_pool(pool_root: Path) -> dict[str, Any]:
     receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
     if not isinstance(receipt, dict):
         raise RoleFitnessAcceptanceError("harness research receipt must be a JSON object")
+    if executable_account_decision is not None:
+        # Acceptance-only derived fixture: producer bytes and receipt both carry
+        # the same explicit execution core, then receive a new content identity.
+        result = json.loads(result_bytes.decode("utf-8"))
+        candidate = result.get("candidate") if isinstance(result, dict) else None
+        if not isinstance(candidate, dict):
+            raise RoleFitnessAcceptanceError("harness research candidate missing")
+        candidate["executable_account_decision"] = dict(executable_account_decision)
+        receipt["candidate"] = json.loads(json.dumps(candidate))
+        result_bytes = (
+            json.dumps(result, ensure_ascii=False, sort_keys=True, separators=(",", ":")) + "\n"
+        ).encode("utf-8")
+        result_sha256 = hashlib.sha256(result_bytes).hexdigest()
+        receipt["result_sha256"] = result_sha256
+        terminal = receipt.get("container_terminal_attestation")
+        if not isinstance(terminal, dict):
+            raise RoleFitnessAcceptanceError("harness terminal attestation missing")
+        terminal["result_sha256"] = result_sha256
     try:
         return ingest_verified_research_result(
             pool_root=pool_root,
@@ -382,8 +430,6 @@ def write_harness_owner_disposition_for_portfolio_freeze(
     science_disposition = (
         SCIENCE_RETAIN_FOR_SHADOW if account_identity == "ACTION" else SCIENCE_ABSORB_NO_ACTION
     )
-    # RETAIN_FOR_SHADOW / ADOPT → SCIENCE_CANDIDATE; absorb/reject/defer → POLICY_NO_ACTION.
-    science_identity = "SCIENCE_CANDIDATE" if account_identity == "ACTION" else "POLICY_NO_ACTION"
     body: dict[str, Any] = {
         "schema_version": DISPOSITION_SCHEMA_VERSION,
         "disposition_marker": DISPOSITION_MARKER,
@@ -398,26 +444,20 @@ def write_harness_owner_disposition_for_portfolio_freeze(
         "target_ref": target_ref,
         "knowledge_cutoff": _iso_z(cutoff),
         "science_disposition": science_disposition,
-        "science_identity": science_identity,
         "account_identity": account_identity,
         "portfolio_binding": portfolio_binding,
         "rationale_ref": "role-fitness-acceptance-harness-owner-disposition",
     }
     if account_identity == "ACTION":
-        baseline = "BO0013" if panel == "B" else "BO0001"
         body["executable_account_decision"] = {
-            "panel": panel,
-            "selected_number": selected_number,
-            "stake": stake,
-            "target_ref": target_ref,
-            "target_open_time": _iso_z(open_at),
-            "freeze_deadline": _iso_z(deadline),
+            **_harness_action_core(
+                target_ref=target_ref,
+                open_at=open_at,
+                selected_number=selected_number,
+                panel=panel,
+                stake=stake,
+            ),
             "frozen_at": _iso_z(frozen_at),
-            "knowledge_cutoff": _iso_z(cutoff),
-            "odds_version_ref": ODDS_VERSION_REF,
-            "baseline_ref": baseline,
-            "risk_policy_ref": "shadow-risk.max-one-unit.v1",
-            "rule_ref": MECHANICAL_RULE_REF,
         }
     else:
         body["no_action_period_binding"] = {
@@ -482,7 +522,25 @@ def freeze_portfolio_period_with_formal_owner_authority(
     pool_root = (pool_root or (work_dir / "research-pool")).expanduser().resolve()
     owner_state_root = (owner_state_root or (work_dir / "owner-state")).expanduser().resolve()
     owner_state_root.mkdir(parents=True, exist_ok=True)
-    entry = dict(pool_entry) if pool_entry is not None else ensure_harness_research_pool(pool_root)
+    if pool_entry is not None:
+        entry = dict(pool_entry)
+    elif account_identity == "ACTION":
+        intended = int(
+            build_portfolio_binding_from_shadow(portfolio_root)["intended_next_period_index"]
+        )
+        target_ref = f"draw.role-fitness.p{intended:02d}"
+        entry = ensure_harness_research_pool(
+            pool_root,
+            executable_account_decision=_harness_action_core(
+                target_ref=target_ref,
+                open_at=open_at,
+                selected_number=selected_number,
+                panel=panel,
+                stake=stake,
+            ),
+        )
+    else:
+        entry = ensure_harness_research_pool(pool_root)
 
     written = write_harness_owner_disposition_for_portfolio_freeze(
         owner_state_root=owner_state_root,
@@ -553,7 +611,25 @@ def build_formal_freeze_request_and_owner_authority(
     pool_root = (pool_root or (work_dir / "research-pool")).expanduser().resolve()
     owner_state_root = (owner_state_root or (work_dir / "owner-state")).expanduser().resolve()
     owner_state_root.mkdir(parents=True, exist_ok=True)
-    entry = dict(pool_entry) if pool_entry is not None else ensure_harness_research_pool(pool_root)
+    if pool_entry is not None:
+        entry = dict(pool_entry)
+    elif account_identity == "ACTION":
+        intended = int(
+            build_portfolio_binding_from_shadow(portfolio_root)["intended_next_period_index"]
+        )
+        target_ref = f"draw.role-fitness.p{intended:02d}"
+        entry = ensure_harness_research_pool(
+            pool_root,
+            executable_account_decision=_harness_action_core(
+                target_ref=target_ref,
+                open_at=open_at,
+                selected_number=selected_number,
+                panel="B",
+                stake="1.0000",
+            ),
+        )
+    else:
+        entry = ensure_harness_research_pool(pool_root)
     written = write_harness_owner_disposition_for_portfolio_freeze(
         owner_state_root=owner_state_root,
         pool_root=pool_root,
@@ -564,13 +640,20 @@ def build_formal_freeze_request_and_owner_authority(
         selected_number=selected_number,
         episode_prefix=episode_prefix,
     )
-    disposition = json.loads(Path(str(written["disposition_path"])).read_text(encoding="utf-8"))
+    verified = load_and_verify_disposition(
+        disposition_path=Path(str(written["disposition_path"])),
+        owner_state_root=owner_state_root,
+        pool_root=pool_root,
+        result_sha256=str(entry["result_sha256"]),
+    )
+    disposition = verified["disposition"]
     frozen_at = written["frozen_at"]
     assert isinstance(frozen_at, datetime)
     binding_body = build_research_freeze_binding(
         pool_entry=entry,
         disposition=disposition,
         owner_artifact_sha256=str(written["owner_artifact_sha256"]),
+        researcher_action_binding=verified["researcher_action_binding"],
         portfolio_binding=written["portfolio_binding"],
         freeze_action_time=frozen_at,
     )
@@ -587,6 +670,7 @@ def build_formal_freeze_request_and_owner_authority(
         "schema_version": OWNER_FREEZE_AUTHORITY_SCHEMA,
         "authority_marker": OWNER_FREEZE_AUTHORITY_MARKER,
         "owner_state_root": str(Path(str(written["owner_state_root"])).expanduser().resolve()),
+        "research_pool_root": str(pool_root),
         "owner_disposition_sha256": str(written["owner_artifact_sha256"]),
         "research_binding_sha256": binding_hash,
         "request_content_hash": str(request["request_content_hash"]),
@@ -1681,7 +1765,7 @@ def run_two_period_shadow_consumer(
         selected_number=selected_1,
         pool_root=pool_root,
         owner_state_root=owner_state_root,
-        pool_entry=pool_entry,
+        pool_entry=None if p1_account_mode == "ACTION" else pool_entry,
     )
     if frozen_1.get("ok") is not True:
         raise RoleFitnessAcceptanceError("period-1 freeze failed")
@@ -1731,7 +1815,7 @@ def run_two_period_shadow_consumer(
         selected_number=selected_2,
         pool_root=pool_root,
         owner_state_root=owner_state_root,
-        pool_entry=pool_entry,
+        pool_entry=None if p2_account_mode == "ACTION" else pool_entry,
     )
     episode_2 = load_frozen(period_directory(portfolio_root, 2))
     if episode_2.pre_freeze_balance != p1_close:
@@ -2018,7 +2102,7 @@ def negative_stale_portfolio_head(portfolio_root: Path, work_dir: Path) -> None:
         selected_number=1,
         pool_root=pool_root,
         owner_state_root=owner_state_root,
-        pool_entry=pool_entry,
+        pool_entry=None,
     )
     try:
         freeze_portfolio_period_with_formal_owner_authority(

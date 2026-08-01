@@ -36,7 +36,10 @@ process.stdout.write(JSON.stringify(result));
         check=True,
         capture_output=True,
         text=True,
-        timeout=20,
+        # Hosted Windows runners can delay a newly spawned Node process while
+        # parallel shards are busy. Keep the harness bounded without treating a
+        # scheduler stall as an assertion failure.
+        timeout=60,
     )
     return json.loads(completed.stdout)
 

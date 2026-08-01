@@ -34,6 +34,8 @@ from xinao.science.candidate_pool import (
     CandidatePoolError,
     load_pool_entry,
     pool_entry_path,
+    pool_receipt_path,
+    pool_result_bytes_path,
     verify_pool_entry_seal,
 )
 from xinao.science.episode_export_pool_adapter import (
@@ -93,6 +95,7 @@ CODEX_OWNER_CHANNEL_SOURCE: Final = "codex_owner_channel"
 AUTHENTIC_DISPOSITION_SOURCE: Final = CODEX_OWNER_CHANNEL_SOURCE
 
 OWNER_CHANNEL_AUTHORITY_UNPROVEN: Final = "UNPROVEN_BY_LIBRARY"
+RESEARCHER_ACTION_BINDING_SCHEMA: Final = "xinao.researcher_action_binding.v1"
 
 _FORBIDDEN_SOURCES: Final = frozenset(
     {
@@ -179,6 +182,26 @@ _EXECUTABLE_ALLOWED: Final = frozenset(
         "rule_ref",
         "ticket_ref",
         "information_set_ref",
+    }
+)
+
+# A researcher authors the execution core before Owner disposition. ``frozen_at``
+# is deliberately absent: it is an Owner/host observation added when the
+# disposition is sealed and sampled again by the freeze adapter. Ticket and
+# information-set references are likewise downstream identities.
+_RESEARCHER_EXECUTABLE_CORE: Final = frozenset(
+    {
+        "panel",
+        "selected_number",
+        "stake",
+        "target_ref",
+        "target_open_time",
+        "freeze_deadline",
+        "knowledge_cutoff",
+        "odds_version_ref",
+        "baseline_ref",
+        "risk_policy_ref",
+        "rule_ref",
     }
 )
 
@@ -716,15 +739,19 @@ def validate_disposition_payload(
             "DISPOSITION_SOURCE_NOT_OWNER_CHANNEL",
             f"require {CODEX_OWNER_CHANNEL_SOURCE!r}, got {source!r}",
         )
-    if payload.get("worker_controlled") is True:
+    if payload.get("worker_controlled") is not False:
         raise OwnerDispositionError(
             "DISPOSITION_WORKER_CONTROLLED",
-            "worker_controlled=true rejected",
+            "worker_controlled must be explicitly false",
         )
-    # owner_role alone is never sufficient; still record if present.
     owner_role = payload.get("owner_role")
-    if owner_role is not None and owner_role != "codex":
+    if owner_role != "codex":
         raise OwnerDispositionError("DISPOSITION_OWNER_ROLE_INVALID", str(owner_role))
+    if "science_identity" in payload:
+        raise OwnerDispositionError(
+            "SCIENCE_IDENTITY_CALLER_OVERRIDE_FORBIDDEN",
+            "science_identity is derived only from science_disposition",
+        )
 
     verify_pool_entry_seal(pool_entry)
     result_sha256 = _require_hex64(
@@ -934,18 +961,11 @@ def validate_disposition_payload(
             "rationale_ref",
         ),
     }
-    # Optional science identity override for freeze science branch.
-    science_identity = payload.get("science_identity")
-    if science_identity is not None:
-        if science_identity not in ("SCIENCE_CANDIDATE", "POLICY_NO_ACTION"):
-            raise OwnerDispositionError("SCIENCE_IDENTITY_INVALID", str(science_identity))
-        normalized["science_identity"] = science_identity
+    # Science identity is a derived projection, never a caller override.
+    if science_disposition in (SCIENCE_ADOPT, SCIENCE_RETAIN_FOR_SHADOW):
+        normalized["science_identity"] = "SCIENCE_CANDIDATE"
     else:
-        # ADOPT / RETAIN_FOR_SHADOW keep candidate identity; others → policy no-action.
-        if science_disposition in (SCIENCE_ADOPT, SCIENCE_RETAIN_FOR_SHADOW):
-            normalized["science_identity"] = "SCIENCE_CANDIDATE"
-        else:
-            normalized["science_identity"] = "POLICY_NO_ACTION"
+        normalized["science_identity"] = "POLICY_NO_ACTION"
 
     return normalized
 
@@ -1229,54 +1249,43 @@ def write_owner_disposition_artifact(
     *,
     owner_state_root: Path,
     payload: Mapping[str, Any],
-    pool_root: Path | None = None,
+    pool_root: Path,
 ) -> dict[str, Any]:
-    """Write disposition as raw-SHA256 content-addressed exclusive JSON (no self-hash).
+    """Validate against sealed research bytes, then write Owner CAS exclusively.
 
-    Returns path + raw artifact hash. Same hash with different bytes fails closed.
+    No artifact is created until pool/result binding, Owner claim fields, science
+    projection, and any ACTION researcher-execution binding have all passed.
     """
 
-    if pool_root is not None:
-        assert_owner_root_separated_from_pool(
-            owner_state_root=owner_state_root,
-            pool_root=pool_root,
-        )
-    root = resolve_owner_state_root(owner_state_root)
-    root.mkdir(parents=True, exist_ok=True)
-    if "owner_artifact_sha256" in payload:
+    assert_owner_root_separated_from_pool(
+        owner_state_root=owner_state_root,
+        pool_root=pool_root,
+    )
+    # Encode once, parse that exact byte snapshot strictly, validate it, and
+    # write the same bytes.  A mutable/custom Mapping therefore cannot change
+    # between validation and CAS creation.
+    raw = encode_disposition_bytes(payload)
+    payload_snapshot = parse_disposition_json_strict(raw)
+    if "owner_artifact_sha256" in payload_snapshot:
         raise OwnerDispositionError(
             "DISPOSITION_SELF_HASH_FORBIDDEN",
             "do not embed owner_artifact_sha256; path is the content address",
         )
-    # Structural pre-check only: forbid outcome smuggle, unknown top-level keys,
-    # and non-owner-channel source labels before bytes are sealed. Full pool
-    # binding still happens on load/verify.
-    _reject_unknown_keys(
-        payload,
-        _TOP_LEVEL_ALLOWED,
-        reason_code="DISPOSITION_UNKNOWN_FIELDS",
+    claimed_result = _require_hex64(
+        payload_snapshot.get("result_sha256"),
+        "DISPOSITION_RESULT_HASH_INVALID",
+        "result_sha256",
     )
-    reject_forbidden_outcome_material(payload)
-    source = payload.get("disposition_source")
-    if not isinstance(source, str) or not source:
-        raise OwnerDispositionError("DISPOSITION_SOURCE_MISSING", "disposition_source required")
-    source_normalized = source.strip().lower()
-    if source_normalized in _FORBIDDEN_SOURCES or "worker" in source_normalized:
-        raise OwnerDispositionError(
-            "DISPOSITION_SOURCE_NOT_OWNER_CHANNEL",
-            f"disposition_source={source!r} is not the codex_owner_channel label",
-        )
-    if source != CODEX_OWNER_CHANNEL_SOURCE:
-        raise OwnerDispositionError(
-            "DISPOSITION_SOURCE_NOT_OWNER_CHANNEL",
-            f"require {CODEX_OWNER_CHANNEL_SOURCE!r}, got {source!r}",
-        )
-    if payload.get("worker_controlled") is True:
-        raise OwnerDispositionError(
-            "DISPOSITION_WORKER_CONTROLLED",
-            "worker_controlled=true rejected",
-        )
-    raw = encode_disposition_bytes(payload)
+    pool_entry = load_verified_pool_entry_for_disposition(pool_root, claimed_result)
+    normalized = validate_disposition_payload(payload_snapshot, pool_entry=pool_entry)
+    researcher_action_binding = verify_researcher_authored_action(
+        pool_root=pool_root,
+        pool_entry=pool_entry,
+        disposition=normalized,
+    )
+
+    root = resolve_owner_state_root(owner_state_root)
+    root.mkdir(parents=True, exist_ok=True)
     digest = raw_sha256(raw)
     path = disposition_cas_path(root, digest)
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -1296,12 +1305,14 @@ def write_owner_disposition_artifact(
             "owner_artifact_sha256": digest,
             "owner_state_root": str(root),
             "bytes_written": False,
+            "researcher_action_binding": researcher_action_binding,
         }
     return {
         "disposition_path": str(path),
         "owner_artifact_sha256": digest,
         "owner_state_root": str(root),
         "bytes_written": True,
+        "researcher_action_binding": researcher_action_binding,
     }
 
 
@@ -1344,6 +1355,144 @@ def load_verified_pool_entry_for_disposition(
         return load_pool_entry(pool_root, digest)
     except CandidatePoolError as exc:
         raise OwnerDispositionError(exc.reason_code, exc.detail) from exc
+
+
+def _parse_sealed_json_object(raw: bytes, *, reason_code: str) -> dict[str, Any]:
+    try:
+        payload = json.loads(raw.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise OwnerDispositionError(reason_code, str(exc)) from exc
+    if not isinstance(payload, dict):
+        raise OwnerDispositionError(reason_code, "object required")
+    return payload
+
+
+def _researcher_executable_core(
+    raw: Mapping[str, Any],
+    *,
+    disposition_frozen_at: object,
+) -> dict[str, Any]:
+    missing = sorted(_RESEARCHER_EXECUTABLE_CORE - set(raw))
+    unknown = sorted(set(raw) - _RESEARCHER_EXECUTABLE_CORE)
+    if missing:
+        raise OwnerDispositionError(
+            "RESEARCHER_EXECUTABLE_DECISION_INCOMPLETE",
+            f"missing={missing}",
+        )
+    if unknown:
+        raise OwnerDispositionError(
+            "RESEARCHER_EXECUTABLE_DECISION_UNKNOWN_FIELDS",
+            f"unknown={unknown}",
+        )
+    # Reuse the production executable validator. The Owner-controlled seal time
+    # participates only in temporal validation; it is not attributed to research.
+    normalized = _validate_executable_account_decision(
+        {**dict(raw), "frozen_at": disposition_frozen_at}
+    )
+    return {key: normalized[key] for key in sorted(_RESEARCHER_EXECUTABLE_CORE)}
+
+
+def verify_researcher_authored_action(
+    *,
+    pool_root: Path,
+    pool_entry: Mapping[str, Any],
+    disposition: Mapping[str, Any],
+) -> dict[str, Any] | None:
+    """Re-read sealed producer bytes and bind ACTION to an explicit research core.
+
+    Prose, pool projections, and Owner payload fields are never treated as the
+    producer source. NO_ACTION intentionally needs no executable research core.
+    """
+
+    if disposition.get("account_identity") != ACCOUNT_ACTION:
+        return None
+    if pool_entry.get("status") != "CANDIDATE_READY":
+        raise OwnerDispositionError(
+            "RESEARCHER_EXECUTABLE_STATUS_NOT_READY",
+            str(pool_entry.get("status")),
+        )
+    executable = disposition.get("executable_account_decision")
+    if not isinstance(executable, Mapping):
+        raise OwnerDispositionError(
+            "ACTION_REQUIRES_EXECUTABLE_DECISION",
+            "normalized ACTION executable missing",
+        )
+
+    result_sha = _require_hex64(
+        pool_entry.get("result_sha256"),
+        "POOL_RESULT_HASH_INVALID",
+        "result_sha256",
+    )
+    if pool_entry.get("ingest_kind") == EPISODE_EXPORT_INGEST_KIND:
+        source_path = pool_receipt_path(pool_root, result_sha)
+        source_raw = source_path.read_bytes()
+        source_artifact_sha = raw_sha256(source_raw)
+        expected_source_sha = _require_hex64(
+            pool_entry.get("receipt_content_sha256"),
+            "DISPOSITION_RECEIPT_HASH_INVALID",
+            "receipt_content_sha256",
+        )
+        source = _parse_sealed_json_object(
+            source_raw,
+            reason_code="RESEARCHER_EXECUTABLE_SOURCE_INVALID",
+        )
+        proposed = source.get("proposed")
+        authored = (
+            proposed.get("executable_account_decision") if isinstance(proposed, Mapping) else None
+        )
+        source_kind = "EPISODE_CANDIDATE_MANIFEST"
+        source_json_path = "$.proposed.executable_account_decision"
+    else:
+        source_path = pool_result_bytes_path(pool_root, result_sha)
+        source_raw = source_path.read_bytes()
+        source_artifact_sha = raw_sha256(source_raw)
+        expected_source_sha = result_sha
+        source = _parse_sealed_json_object(
+            source_raw,
+            reason_code="RESEARCHER_EXECUTABLE_SOURCE_INVALID",
+        )
+        candidate = source.get("candidate")
+        authored = (
+            candidate.get("executable_account_decision") if isinstance(candidate, Mapping) else None
+        )
+        source_kind = "ONESHOT_RESEARCH_RESULT"
+        source_json_path = "$.candidate.executable_account_decision"
+    if source_artifact_sha != expected_source_sha:
+        raise OwnerDispositionError(
+            "RESEARCHER_EXECUTABLE_SOURCE_HASH_MISMATCH",
+            f"source={source_artifact_sha} expected={expected_source_sha}",
+        )
+    if not isinstance(authored, Mapping):
+        raise OwnerDispositionError(
+            "RESEARCHER_EXECUTABLE_DECISION_ABSENT",
+            source_json_path,
+        )
+
+    source_core = _researcher_executable_core(
+        authored,
+        disposition_frozen_at=executable.get("frozen_at"),
+    )
+    disposition_core = {key: executable[key] for key in sorted(_RESEARCHER_EXECUTABLE_CORE)}
+    if source_core != disposition_core:
+        diverged = sorted(
+            key
+            for key in _RESEARCHER_EXECUTABLE_CORE
+            if source_core.get(key) != disposition_core.get(key)
+        )
+        raise OwnerDispositionError(
+            "RESEARCHER_EXECUTABLE_DECISION_MISMATCH",
+            f"fields={diverged}",
+        )
+    executable_hash = canonical_sha256(source_core)
+    return {
+        "schema_version": RESEARCHER_ACTION_BINDING_SCHEMA,
+        "source_kind": source_kind,
+        "source_artifact_sha256": source_artifact_sha,
+        "source_json_path": source_json_path,
+        "executable_content_hash": executable_hash,
+        "result_sha256": result_sha,
+        "pool_entry_content_hash": str(pool_entry["content_hash"]),
+    }
 
 
 def load_and_verify_disposition(
@@ -1395,12 +1544,18 @@ def load_and_verify_disposition(
     pool_entry = load_verified_pool_entry_for_disposition(pool_root, digest)
 
     normalized = validate_disposition_payload(payload, pool_entry=pool_entry)
+    researcher_action_binding = verify_researcher_authored_action(
+        pool_root=pool_root,
+        pool_entry=pool_entry,
+        disposition=normalized,
+    )
     return {
         "disposition_path": str(path),
         "owner_state_root": str(resolve_owner_state_root(owner_state_root)),
         "owner_artifact_sha256": artifact_sha256,
         "pool_entry": pool_entry,
         "disposition": normalized,
+        "researcher_action_binding": researcher_action_binding,
         # Honest library surface: never self-certify Codex identity.
         "owner_channel_authority": OWNER_CHANNEL_AUTHORITY_UNPROVEN,
         "path_separated_from_pool": True,
@@ -1456,6 +1611,7 @@ __all__ = [
     "DRAFT_STATUS",
     "OWNER_CHANNEL_AUTHORITY_UNPROVEN",
     "REQUIRED_OWNER_INPUT",
+    "RESEARCHER_ACTION_BINDING_SCHEMA",
     "SCIENCE_ABSORB_NO_ACTION",
     "SCIENCE_ADOPT",
     "SCIENCE_DEFER",

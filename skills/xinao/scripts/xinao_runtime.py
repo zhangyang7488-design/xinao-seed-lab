@@ -11720,7 +11720,7 @@ def _validate_material_result_binding(
     candidate = result.get("candidate")
     if not isinstance(candidate, dict):
         raise XinaoError("RESEARCH_CANDIDATE_MISSING", "candidate")
-    expected_candidate_keys = {
+    required_candidate_keys = {
         "schema_version",
         "status",
         "research_question",
@@ -11736,8 +11736,16 @@ def _validate_material_result_binding(
         "limitations",
         "next_evidence",
     }
-    if set(candidate) != expected_candidate_keys:
-        raise XinaoError("RESEARCH_CANDIDATE_FIELDS_INVALID", "candidate keys are not exact")
+    optional_candidate_keys = {"executable_account_decision"}
+    observed_candidate_keys = set(candidate)
+    if (
+        not required_candidate_keys.issubset(observed_candidate_keys)
+        or observed_candidate_keys - required_candidate_keys - optional_candidate_keys
+    ):
+        raise XinaoError(
+            "RESEARCH_CANDIDATE_FIELDS_INVALID",
+            "candidate required/optional keys are invalid",
+        )
     if candidate.get("schema_version") != "xinao.research_candidate.v2":
         raise XinaoError("RESEARCH_CANDIDATE_SCHEMA_INVALID", "schema_version")
     if candidate.get("status") != result["status"]:
@@ -11746,6 +11754,31 @@ def _validate_material_result_binding(
         raise XinaoError("RESEARCH_CANDIDATE_REQUEST_DRIFT", "question/as_of")
     if candidate.get("material_bundle_id") != manifest["bundle_id"]:
         raise XinaoError("RESEARCH_CANDIDATE_BUNDLE_DRIFT", "material_bundle_id")
+    executable = candidate.get("executable_account_decision")
+    if executable is not None:
+        executable_keys = {
+            "panel",
+            "selected_number",
+            "stake",
+            "target_ref",
+            "target_open_time",
+            "freeze_deadline",
+            "knowledge_cutoff",
+            "odds_version_ref",
+            "baseline_ref",
+            "risk_policy_ref",
+            "rule_ref",
+        }
+        if not isinstance(executable, dict) or set(executable) != executable_keys:
+            raise XinaoError(
+                "RESEARCH_CANDIDATE_EXECUTABLE_INVALID",
+                "executable_account_decision keys are not exact",
+            )
+        if candidate.get("status") != "CANDIDATE_READY":
+            raise XinaoError(
+                "RESEARCH_CANDIDATE_EXECUTABLE_STATUS_INVALID",
+                str(candidate.get("status")),
+            )
     if not _plain_json_text(candidate.get("summary"), nonempty=True):
         raise XinaoError("RESEARCH_CANDIDATE_SUMMARY_INVALID", "summary")
     for key in (

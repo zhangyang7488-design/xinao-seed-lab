@@ -629,7 +629,7 @@ def test_companion_runtime_seal_matches_repository_bytes() -> None:
     assert observed == bootstrap.EXPECTED_COMPANION_RUNTIME_SHA256
     # Wave106: Windows host cannot exec Linux donor ELF; runtime probe uses Docker-mount
     # of staged bytes. Companion pin tracks exact xinao_runtime.py seal.
-    assert observed == "c7f4cad7e650f4c85e65ead8a602f25ff073198242fdae03d62fbc00bbffa2d5"
+    assert observed == "e212d3f43ecbbb6f1f66a83e19e088c3d951b36298a3799cedea6fba0238b4aa"
     assert len(observed) == 64
 
 
@@ -1346,13 +1346,14 @@ def _prepare_pre_modules_forward_upgrade_world(
 
     # Target must match current source skill-bundle identity so post-upgrade
     # idempotent re-entry can return ALREADY_* (no variant drift).
+    current_source = module._current_source_skill_bundle_identity()
     target, target_path = _sealed_current_dual_image_release(
         module,
         tmp_path,
         monkeypatch,
         image_character="c",
-        package_version="1.3.6",
-        capability_version="1.2.2",
+        package_version=str(current_source["package_version"]),
+        capability_version=str(current_source["capability_version"]),
     )
     monkeypatch.setattr(
         module,

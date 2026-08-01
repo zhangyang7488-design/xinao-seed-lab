@@ -130,12 +130,21 @@ def _action_freeze(
 ) -> tuple[Path, Path, dict[str, Any]]:
     sab = capture["source_authority_binding"]
     target_ref = sab["target_ref"]
-    pool, entry, _, _ = _seam._ingest(tmp_path / "pool")
+    kc = "2026-07-30T08:00:00Z"
+    frozen_at = "2026-07-30T10:00:00Z"
+    pool, entry, _, _ = _seam._ingest(
+        tmp_path / "pool",
+        selected_number=selected_number,
+        researcher_executable_overrides={
+            "target_ref": target_ref,
+            "target_open_time": sab["target_guard_open_time"],
+            "freeze_deadline": sab["freeze_deadline"],
+            "knowledge_cutoff": kc,
+        },
+    )
     owner = tmp_path / "owner"
     owner.mkdir(exist_ok=True)
     portfolio = _seam._init_portfolio(tmp_path / "port")
-    kc = "2026-07-30T08:00:00Z"
-    frozen_at = "2026-07-30T10:00:00Z"
     body = _seam._disposition_body(
         entry,
         selected_number=selected_number,
@@ -150,7 +159,7 @@ def _action_freeze(
     body["executable_account_decision"]["frozen_at"] = frozen_at
     body["executable_account_decision"]["knowledge_cutoff"] = kc
     body = _seam._attach_portfolio_binding(body, portfolio)
-    path = _seam._write_disposition(owner, body)
+    path = _seam._write_disposition(owner, pool, body)
     freeze_now = datetime(2026, 7, 30, 10, 0, tzinfo=UTC)
     result = apply_freeze_from_disposition(
         pool_root=pool,
@@ -193,7 +202,7 @@ def _no_action_freeze(
     body["no_action_period_binding"]["frozen_at"] = frozen_at
     body["no_action_period_binding"]["knowledge_cutoff"] = kc
     body = _seam._attach_portfolio_binding(body, portfolio)
-    path = _seam._write_disposition(owner, body)
+    path = _seam._write_disposition(owner, pool, body)
     freeze_now = datetime(2026, 7, 30, 10, 0, tzinfo=UTC)
     result = apply_freeze_from_disposition(
         pool_root=pool,

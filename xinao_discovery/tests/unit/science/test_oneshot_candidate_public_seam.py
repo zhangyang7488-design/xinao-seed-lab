@@ -2,7 +2,8 @@
 
 Uses the real historical pair from xrr_20260730T201916_20001f0913 (copied fixtures).
 Proves public CLI admission, CAS/no-overwrite, hash binding, non-Owner rejection,
-and coexistence with episode-export pool-ingest. Never freezes, installs, or adopts.
+real NO_ACTION freeze, and coexistence with episode-export pool-ingest. Never
+installs or adopts.
 """
 
 from __future__ import annotations
@@ -28,15 +29,26 @@ from xinao.science.candidate_pool import (
     pool_receipt_path,
     pool_result_bytes_path,
 )
+from xinao.science.freeze_adapter import (
+    FreezeAdapterError,
+    apply_freeze_from_disposition,
+    build_portfolio_binding_from_shadow,
+)
 from xinao.science.owner_disposition import (
     CODEX_OWNER_CHANNEL_SOURCE,
     DISPOSITION_MARKER,
     DISPOSITION_SCHEMA_VERSION,
     OWNER_CHANNEL_AUTHORITY_UNPROVEN,
     SCIENCE_RETAIN_FOR_SHADOW,
+    OwnerDispositionError,
+    disposition_cas_path,
+    encode_disposition_bytes,
     load_and_verify_disposition,
+    write_owner_disposition_artifact,
 )
 from xinao.science.researcher_result_adapter import raw_sha256
+from xinao.shadow_lifecycle import init_portfolio
+from xinao.shadow_lifecycle.store import load_frozen, period_directory
 
 ROOT = Path(__file__).resolve().parents[3]
 SRC = ROOT / "src"
@@ -118,6 +130,26 @@ def _no_action_disposition(entry: dict[str, Any], **overrides: Any) -> dict[str,
         },
     }
     body.update(overrides)
+    return body
+
+
+def _manual_action_disposition(entry: dict[str, Any]) -> dict[str, Any]:
+    body = _no_action_disposition(entry, account_identity="ACTION")
+    body.pop("no_action_period_binding", None)
+    body["executable_account_decision"] = {
+        "panel": "B",
+        "selected_number": 7,
+        "stake": "1.0000",
+        "target_ref": "draw.20260801-001",
+        "target_open_time": _iso(OPEN_AT),
+        "freeze_deadline": _iso(DEADLINE),
+        "frozen_at": _iso(FROZEN_AT),
+        "knowledge_cutoff": _iso(CUTOFF),
+        "odds_version_ref": "odds.special-number.20260731.v1",
+        "baseline_ref": "BO0013",
+        "risk_policy_ref": "shadow-risk.max-one-unit.v1",
+        "rule_ref": "special-number-rule.v1",
+    }
     return body
 
 
@@ -345,6 +377,98 @@ def test_owner_disposition_after_public_oneshot_ingest(
     # Pool entry still not owner-adopted after disposition write.
     reloaded = load_pool_entry(pool, EXPECTED_RESULT_SHA256)
     assert reloaded["owner_adopted"] is False
+
+
+def test_real_oneshot_no_action_reaches_production_portfolio_freeze(tmp_path: Path) -> None:
+    """Old real researcher bytes remain usable for an explicit Owner NO_ACTION."""
+
+    pool = tmp_path / "pool"
+    owner = tmp_path / "owner"
+    portfolio = tmp_path / "portfolio"
+    result_bytes, receipt = _load_real_pair()
+    entry = ingest_verified_research_result(
+        pool_root=pool,
+        result_bytes=result_bytes,
+        receipt=receipt,
+    )
+    init_portfolio(
+        root=portfolio,
+        seat_id="seat.wave96.real.no-action",
+        portfolio_ref="portfolio.wave96.real.no-action",
+    )
+    body = _no_action_disposition(entry)
+    body["portfolio_binding"] = build_portfolio_binding_from_shadow(portfolio)
+    written = write_owner_disposition_artifact(
+        owner_state_root=owner,
+        payload=body,
+        pool_root=pool,
+    )
+    frozen_result = apply_freeze_from_disposition(
+        pool_root=pool,
+        owner_state_root=owner,
+        disposition_path=Path(written["disposition_path"]),
+        shadow_root=portfolio,
+        mode="portfolio",
+        clock=lambda: FROZEN_AT,
+    )
+    assert frozen_result["ok"] is True
+    assert frozen_result["researcher_action_binding"] is None
+    frozen = load_frozen(period_directory(portfolio, 1))
+    assert frozen.account_decision.identity.value == "RESEARCHER_ACCOUNT_NO_ACTION"
+    assert frozen.bound_account_ticket is None
+
+
+def test_real_oneshot_manual_action_rejected_before_owner_cas(tmp_path: Path) -> None:
+    """The real xrr fixture has research prose, not a researcher-authored ticket core."""
+
+    pool = tmp_path / "pool"
+    owner = tmp_path / "owner"
+    result_bytes, receipt = _load_real_pair()
+    entry = ingest_verified_research_result(
+        pool_root=pool,
+        result_bytes=result_bytes,
+        receipt=receipt,
+    )
+    with pytest.raises(OwnerDispositionError) as exc:
+        write_owner_disposition_artifact(
+            owner_state_root=owner,
+            payload=_manual_action_disposition(entry),
+            pool_root=pool,
+        )
+    assert exc.value.reason_code == "RESEARCHER_EXECUTABLE_DECISION_ABSENT"
+    assert not owner.exists() or list(owner.rglob("*.json")) == []
+
+
+def test_freeze_rechecks_real_oneshot_action_after_writer_bypass(tmp_path: Path) -> None:
+    """Hand-sealing caller JSON cannot bypass the freeze-time producer re-read."""
+
+    pool = tmp_path / "pool"
+    owner = tmp_path / "owner"
+    shadow = tmp_path / "shadow"
+    result_bytes, receipt = _load_real_pair()
+    entry = ingest_verified_research_result(
+        pool_root=pool,
+        result_bytes=result_bytes,
+        receipt=receipt,
+    )
+    body = _manual_action_disposition(entry)
+    raw = encode_disposition_bytes(body)
+    digest = hashlib.sha256(raw).hexdigest()
+    path = disposition_cas_path(owner, digest)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(raw)  # deliberate direct-filesystem bypass of formal writer
+
+    with pytest.raises(FreezeAdapterError) as exc:
+        apply_freeze_from_disposition(
+            pool_root=pool,
+            owner_state_root=owner,
+            disposition_path=path,
+            shadow_root=shadow,
+            mode="episode",
+            clock=lambda: FROZEN_AT,
+        )
+    assert exc.value.reason_code == "RESEARCHER_EXECUTABLE_DECISION_ABSENT"
+    assert not shadow.exists() or list(shadow.rglob("*.json")) == []
 
 
 # --- Negatives: mutation / cross-pair / conflict / non-Owner -----------------
