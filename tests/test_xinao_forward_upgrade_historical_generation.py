@@ -33,6 +33,15 @@ LIVE_GEN6_RELEASE_DIR = (
     / LIVE_GEN6_RELEASE_ID
 )
 LIVE_GEN6_RELEASE_JSON_SHA256 = "21b712aba72da3e1a24de5347cf7a301ba07afadc479e22d608ca1ee836a734f"
+LIVE_GEN17_SHADOW_RUNTIME_LOCK_SHA256 = (
+    "0919d1275322f87919e94418428cbf8bb824e64434235e766f84ecb9387eb235"
+)
+LIVE_GEN17_SHADOW_RUNTIME_TREE_SHA256 = (
+    "da94969e338e6105074be9c5b6c47fb6a99db2d7192b7d8756f24960bd75fa19"
+)
+LIVE_GEN17_SHADOW_RUNTIME_LOCK_FIXTURE = (
+    ROOT / "tests" / "fixtures" / "xinao" / "live_gen17_shadow_runtime_lock.v1.json"
+)
 LIVE_GEN6_SI_KEYS = frozenset(
     {
         "source_commit",
@@ -60,6 +69,39 @@ def _module():
 
 def _bootstrap_module():
     return _load_module(SKILL_ROOT / "scripts" / "xinao.py", "xinao_bootstrap_hist_gen")
+
+
+def _live_gen17_shadow_lock_payload() -> bytes:
+    payload = LIVE_GEN17_SHADOW_RUNTIME_LOCK_FIXTURE.read_bytes()
+    assert hashlib.sha256(payload).hexdigest() == LIVE_GEN17_SHADOW_RUNTIME_LOCK_SHA256
+    return payload
+
+
+def test_source_shadow_seal_generation_advances_past_live_gen17() -> None:
+    """Changed shadow-runtime bytes must mint a new lock/version generation.
+
+    Live generation 17 sealed the pre-integration runtime tree above.  If the
+    source inventory changes while the lock bytes stay identical, historical
+    validation mistakes the current source rows for the old release generation
+    and rejects the real release before forward-upgrade can build its successor.
+    """
+
+    module = _module()
+    registry = json.loads(
+        (SKILL_ROOT / "references" / "capabilities.v1.json").read_text(encoding="utf-8")
+    )
+    shadow = next(
+        item
+        for item in registry["capabilities"]
+        if item["capability_id"] == "shadow-lifecycle-leg-a"
+    )
+    lock_path = SKILL_ROOT / "references" / "shadow-runtime-lock.v1.json"
+    lock = module._load_shadow_runtime_lock(SKILL_ROOT)
+    rows = module._collect_shadow_runtime_rows(ROOT, lock)
+
+    assert lock["shadow_runtime_version"] == shadow["version"] == "0.3.1"
+    assert module._sha256(lock_path) != LIVE_GEN17_SHADOW_RUNTIME_LOCK_SHA256
+    assert module._shadow_runtime_tree_sha256(rows) != LIVE_GEN17_SHADOW_RUNTIME_TREE_SHA256
 
 
 def _state(module, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
@@ -1081,11 +1123,26 @@ def _sealed_current_dual_image_release(
     package_version: str = "1.3.6",
     capability_version: str = "1.2.2",
     variant: bytes | None = None,
+    shadow_runtime_lock_payload: bytes | None = None,
+    shadow_runtime_tree_sha256: str | None = None,
 ) -> tuple[dict[str, object], Path]:
     """Minimal exact-current dual-image target for isolated FU E2E (tmp state only)."""
 
     state = _state(module, tmp_path, monkeypatch)
     source_rows = module._source_bundle_files(SKILL_ROOT)
+    if shadow_runtime_lock_payload is not None:
+        source_rows = [
+            (
+                relative,
+                source_path,
+                (
+                    shadow_runtime_lock_payload
+                    if relative == "references/shadow-runtime-lock.v1.json"
+                    else payload
+                ),
+            )
+            for relative, source_path, payload in source_rows
+        ]
     if variant is not None:
         source_rows.append(
             (
@@ -1097,9 +1154,17 @@ def _sealed_current_dual_image_release(
         source_rows.sort(key=lambda item: item[0])
     bundle_manifest = module._skill_bundle_manifest(source_rows, package_version=package_version)
     hashes = module._reference_hashes(SKILL_ROOT)
+    if shadow_runtime_lock_payload is not None:
+        hashes["shadow_runtime_lock_sha256"] = module._sha256_bytes(
+            shadow_runtime_lock_payload
+        )
     shadow_lock = module._load_shadow_runtime_lock(SKILL_ROOT)
     shadow_rows = module._collect_shadow_runtime_rows(ROOT, shadow_lock)
-    shadow_tree = module._shadow_runtime_tree_sha256(shadow_rows)
+    shadow_tree = (
+        shadow_runtime_tree_sha256
+        if shadow_runtime_tree_sha256 is not None
+        else module._shadow_runtime_tree_sha256(shadow_rows)
+    )
     shadow_lock_hash = hashes["shadow_runtime_lock_sha256"]
     module_rows = module._collect_researcher_image_module_rows(ROOT)
     modules_tree = module._researcher_image_modules_tree_sha256(module_rows)
@@ -1377,6 +1442,92 @@ def _prepare_pre_modules_forward_upgrade_world(
         "target": target,
         "target_path": target_path,
     }
+
+
+def _prepare_gen17_shadow_generation_forward_upgrade_world(
+    module,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> dict[str, object]:
+    active, active_path = _sealed_current_dual_image_release(
+        module,
+        tmp_path,
+        monkeypatch,
+        image_character="d",
+        package_version="1.3.15",
+        capability_version="1.2.11",
+        variant=b"live-gen17-shadow-generation\n",
+        shadow_runtime_lock_payload=_live_gen17_shadow_lock_payload(),
+        shadow_runtime_tree_sha256=LIVE_GEN17_SHADOW_RUNTIME_TREE_SHA256,
+    )
+    pointer, journal, journal_path = _terminal_activate_pointer(
+        module,
+        active,
+        active_path,
+        generation=17,
+        txn_suffix="d" * 16,
+        previous_verified=None,
+    )
+    installed = tmp_path / "installed_skill_gen17"
+    shutil.copytree(Path(str(active["skill_bundle_path"])), installed)
+    monkeypatch.setenv("XINAO_INSTALLED_SKILL_ROOT", str(installed))
+    monkeypatch.setattr(module, "DEFAULT_INSTALLED_SKILL_ROOT", installed)
+
+    source = module._current_source_skill_bundle_identity()
+    target, target_path = _sealed_current_dual_image_release(
+        module,
+        tmp_path,
+        monkeypatch,
+        image_character="e",
+        package_version=str(source["package_version"]),
+        capability_version=str(source["capability_version"]),
+    )
+    monkeypatch.setattr(
+        module,
+        "_prepare_forward_upgrade_target",
+        lambda: (target, target_path),
+    )
+    return {
+        "active": active,
+        "active_path": active_path,
+        "active_manifest_bytes": active_path.read_bytes(),
+        "pointer": pointer,
+        "pointer_path": module._state_paths()["pointer"],
+        "journal": journal,
+        "journal_path": journal_path,
+        "installed": installed,
+        "target": target,
+        "target_path": target_path,
+    }
+
+
+def test_bootstrap_forward_upgrade_live_gen17_shadow_generation_to_current(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Real gen17 lock/tree identity reaches the versioned current target in tmp state."""
+
+    module = _module()
+    world = _prepare_gen17_shadow_generation_forward_upgrade_world(
+        module, tmp_path, monkeypatch
+    )
+    active = module._load_json(Path(world["active_path"]))
+    module._validate_release_manifest(active, Path(world["active_path"]), verify_bundle=True)
+    assert module._active_release_requires_forward_upgrade(active) is True
+    monkeypatch.setattr(
+        module,
+        "_run_activation_canary",
+        lambda journal: _canary_value(module, journal),
+    )
+
+    receipt = module.bootstrap_forward_upgrade()
+
+    assert receipt["status"] == "UPGRADED"
+    pointer = module._load_json(module._state_paths()["pointer"])
+    assert pointer["generation"] == 18
+    assert pointer["active"]["release_id"] == world["target"]["release_id"]
+    assert pointer["active"]["package_version"] == "1.3.16"
+    assert pointer["active"]["capability_version"] == "1.2.12"
+    assert Path(world["active_path"]).read_bytes() == world["active_manifest_bytes"]
 
 
 def test_bootstrap_forward_upgrade_pre_modules_to_dual_image_success(
