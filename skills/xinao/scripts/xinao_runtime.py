@@ -7806,6 +7806,106 @@ def _find_latest_verified_sync_projection() -> tuple[dict[str, Any], dict[str, A
     return latest
 
 
+def _find_installed_projection_witness(
+    journal: dict[str, Any],
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    """Select a sealed projection witness from real installed bytes and transaction lineage.
+
+    Ordinary ACTIVATE/ROLLBACK do not rewrite the installed Skill tree.  The valid
+    launcher witness is therefore the last *actually installed* sealed projection,
+    which may be a MIGRATE, FORWARD_UPGRADE, or SYNC_PROJECTION transaction.  Directory
+    order or operation class alone cannot establish that identity.
+    """
+
+    root = _state_paths()["transaction_root"]
+    if not root.is_dir() or _is_reparse(root):
+        raise XinaoError("INSTALL_PROJECTION_RECEIPT_ABSENT", str(root))
+    installed_root = Path(os.path.abspath(_installed_skill_root()))
+    live, directories = _strict_plain_tree(
+        installed_root,
+        reason_code="INSTALL_PROJECTION_LIVE_INVALID",
+    )
+    observed = {
+        relative: (len(payload), _sha256_bytes(payload))
+        for relative, payload in sorted(live.items())
+    }
+    launcher = live.get(STABLE_LAUNCHER_RELATIVE)
+    if launcher is None:
+        raise XinaoError(
+            "INSTALLED_LAUNCHER_IDENTITY_MISMATCH",
+            str(installed_root / STABLE_LAUNCHER_RELATIVE),
+        )
+    launcher_sha256 = _sha256_bytes(launcher)
+    current_prepared = _parse_utc_z(
+        journal.get("prepared_at"),
+        reason_code="ACTIVATION_JOURNAL_SCHEMA_INVALID",
+        field="prepared_at",
+    )
+    from_value = journal.get("from")
+    from_active = from_value.get("active") if isinstance(from_value, dict) else None
+    candidates: list[
+        tuple[bool, dt.datetime, dt.datetime, str, dict[str, Any], dict[str, Any]]
+    ] = []
+    for entry in root.iterdir():
+        journal_path = entry / "activation.v1.json"
+        if not journal_path.is_file():
+            continue
+        candidate = _load_json(journal_path)
+        _validate_journal(candidate, journal_path)
+        if (
+            candidate.get("operation") not in {"MIGRATE", "FORWARD_UPGRADE", "SYNC_PROJECTION"}
+            or candidate.get("state") != "VERIFIED"
+            or candidate.get("txn_id") == journal.get("txn_id")
+        ):
+            continue
+        prepared = _parse_utc_z(
+            candidate.get("prepared_at"),
+            reason_code="ACTIVATION_JOURNAL_SCHEMA_INVALID",
+            field="prepared_at",
+        )
+        if prepared > current_prepared:
+            continue
+        updated = _parse_utc_z(
+            candidate.get("updated_at"),
+            reason_code="ACTIVATION_JOURNAL_SCHEMA_INVALID",
+            field="updated_at",
+        )
+        # A transaction prepared earlier but verified after this ACTIVATE began is not
+        # part of its observable projection lineage.
+        if updated > current_prepared:
+            continue
+        receipt = _projection_receipt_for_journal(candidate)
+        target = _inventory_map(
+            receipt.get("target_inventory"),
+            reason_code="INSTALL_PROJECTION_RECEIPT_INVALID",
+        )
+        if (
+            target != observed
+            or directories != _expected_directories(sorted(target))
+            or receipt.get("stable_launcher_sha256") != launcher_sha256
+        ):
+            continue
+        candidates.append(
+            (
+                isinstance(from_active, dict) and candidate.get("to") == from_active,
+                prepared,
+                updated,
+                str(candidate.get("txn_id")),
+                candidate,
+                receipt,
+            )
+        )
+    if not candidates:
+        raise XinaoError(
+            "INSTALLED_LAUNCHER_IDENTITY_MISMATCH",
+            str(installed_root / STABLE_LAUNCHER_RELATIVE),
+        )
+    # Prefer an exact from.active transaction binding.  Parsed journal time and the
+    # sealed transaction ID provide deterministic lineage ordering; filesystem names do not.
+    selected = max(candidates, key=lambda item: item[:4])
+    return selected[4], selected[5]
+
+
 def _installed_projection_alignment(release: dict[str, Any] | None) -> dict[str, Any]:
     """Compare the live installed Skill tree to the sealed active skill-bundle inventory."""
 
@@ -8438,14 +8538,7 @@ def _verify_stable_installed_launcher(journal: dict[str, Any]) -> dict[str, Any]
     if journal.get("operation") in {"MIGRATE", "FORWARD_UPGRADE", "SYNC_PROJECTION"}:
         receipt = _projection_receipt_for_journal(journal)
     else:
-        sync = _find_latest_verified_sync_projection()
-        if sync is not None:
-            _sync_journal, receipt = sync
-        else:
-            try:
-                _migration_journal, receipt = _find_verified_migration_projection()
-            except XinaoError:
-                _upgrade_journal, receipt = _find_verified_forward_upgrade_projection()
+        _witness_journal, receipt = _find_installed_projection_witness(journal)
     launcher_path = Path(os.path.abspath(_installed_skill_root())) / STABLE_LAUNCHER_RELATIVE
     launcher = _plain_file_or_absent(launcher_path, reason_code="INSTALLED_LAUNCHER_INVALID")
     if launcher is None or _sha256_bytes(launcher) != receipt.get("stable_launcher_sha256"):
@@ -8737,8 +8830,103 @@ def _continue_migrate_journal(journal: dict[str, Any], journal_path: Path) -> di
     raise XinaoError("RECOVERY_CONFLICT", str(journal_path))
 
 
+def _recover_exact_rolled_back_activation_conflict(
+    journal: dict[str, Any], journal_path: Path
+) -> dict[str, Any]:
+    """Seal one exact ACTIVATE rollback that the historical launcher selector rejected.
+
+    This is deliberately not a generic RECOVERY_CONFLICT escape hatch.  The rollback
+    pointer, transaction lineage, installed bytes, and original failure must all prove
+    the known false-negative shape before the rollback canary is retried.
+    """
+
+    failure = journal.get("failure_reason")
+    from_value = journal.get("from")
+    requested_to = journal.get("requested_to")
+    txn_id = str(journal.get("txn_id", ""))
+    if (
+        journal.get("operation") != "ACTIVATE"
+        or journal.get("state") not in {"RECOVERY_CONFLICT", "ROLLBACK_CANARY_STARTED"}
+        or not isinstance(failure, dict)
+        or failure.get("reason_code") != "INSTALLED_LAUNCHER_IDENTITY_MISMATCH"
+        or not isinstance(from_value, dict)
+        or not isinstance(from_value.get("active"), dict)
+        or not isinstance(requested_to, dict)
+        or requested_to.get("activation_txn_id") != txn_id
+    ):
+        raise XinaoError("RECOVERY_CONFLICT", str(journal_path))
+
+    rollback_ref = dict(from_value["active"])
+    rollback_ref["activation_txn_id"] = txn_id
+    if (
+        journal.get("to") != rollback_ref
+        or requested_to == rollback_ref
+        or journal.get("expected_generation") != from_value.get("generation", 0) + 2
+        or journal.get("canary") is not None
+        or journal.get("terminal_pointer_sha256") is not None
+    ):
+        raise XinaoError("RECOVERY_CONFLICT", str(journal_path))
+
+    # Explicit recovery must not choose one conflict while another transaction is live.
+    transaction_root = _state_paths()["transaction_root"]
+    for entry in transaction_root.iterdir():
+        other_path = entry / "activation.v1.json"
+        if not other_path.is_file() or other_path == journal_path:
+            continue
+        other = _load_json(other_path)
+        _validate_journal(other, other_path)
+        if other.get("state") not in TERMINAL_ACTIVATION_STATES:
+            raise XinaoError("RECOVERY_CONFLICT", "multiple nonterminal activation journals")
+
+    pointer, pointer_sha256 = _load_pointer_raw()
+    if (
+        pointer.get("generation") != journal["expected_generation"]
+        or pointer.get("active") != rollback_ref
+        or pointer.get("previous_verified") != from_value.get("previous_verified")
+        or pointer_sha256 != journal.get("switched_pointer_sha256")
+    ):
+        raise XinaoError("RECOVERY_CONFLICT", str(_state_paths()["pointer"]))
+
+    rollback_manifest, _rollback_manifest_path = _validate_release_ref(rollback_ref)
+    alignment = _installed_projection_alignment(rollback_manifest)
+    if alignment.get("status") != "ALIGNED":
+        raise XinaoError(
+            "RECOVERY_CONFLICT",
+            f"installed projection is not the rolled-back release: {alignment.get('reason_code')}",
+        )
+    _verify_stable_installed_launcher(journal)
+
+    # Both the journal transition and _complete_canary re-read their CAS-bound inputs.
+    if journal["state"] == "RECOVERY_CONFLICT":
+        journal = _journal_transition(journal_path, journal, "ROLLBACK_CANARY_STARTED")
+    try:
+        _journal, receipt = _complete_canary(journal, journal_path, terminal_state="ROLLED_BACK")
+    except XinaoError as exc:
+        _journal_transition(
+            journal_path,
+            _load_json(journal_path),
+            "RECOVERY_CONFLICT",
+            failure_reason={"reason_code": exc.reason_code, "detail": exc.detail},
+        )
+        raise XinaoError("RECOVERY_CONFLICT", str(journal_path)) from exc
+    return {
+        **receipt,
+        "schema_version": "xinao.researcher_recovery_receipt.v2",
+        "recovered_from": "RECOVERY_CONFLICT",
+    }
+
+
 def recover_release(txn_id: str | None = None) -> dict[str, Any]:
     with _activation_lock():
+        # A conflict is intentionally excluded from _pending_journals().  Only an
+        # explicit transaction ID may enter the narrowly proven rollback repair above.
+        if txn_id is not None:
+            explicit_path = _journal_path(txn_id)
+            if explicit_path.is_file():
+                explicit = _load_json(explicit_path)
+                _validate_journal(explicit, explicit_path)
+                if explicit.get("state") in {"RECOVERY_CONFLICT", "ROLLBACK_CANARY_STARTED"}:
+                    return _recover_exact_rolled_back_activation_conflict(explicit, explicit_path)
         pending = _pending_journals()
         if txn_id is not None:
             matches = [(journal, path) for journal, path in pending if journal["txn_id"] == txn_id]

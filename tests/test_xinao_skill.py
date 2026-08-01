@@ -324,9 +324,19 @@ def _sealed_release(
     shadow_runtime_tree_sha256: str | None = None,
     shadow_runtime_lock_sha256: str | None = None,
     researcher_image_modules_tree_sha256: str | None = None,
+    launcher_payload: bytes | None = None,
 ) -> tuple[dict[str, object], Path]:
     state = _state(module, tmp_path, monkeypatch)
     source_rows = module._source_bundle_files(SKILL_ROOT)
+    if launcher_payload is not None:
+        source_rows = [
+            (
+                relative,
+                source_path,
+                launcher_payload if relative == "scripts/xinao.py" else payload,
+            )
+            for relative, source_path, payload in source_rows
+        ]
     if variant is not None:
         source_rows.append(
             (
@@ -338,6 +348,8 @@ def _sealed_release(
         source_rows.sort(key=lambda item: item[0])
     bundle_manifest = module._skill_bundle_manifest(source_rows, package_version=package_version)
     hashes = module._reference_hashes(SKILL_ROOT)
+    if launcher_payload is not None:
+        hashes["skill_invoker_sha256"] = module._sha256_bytes(launcher_payload)
     shadow_lock = module._load_shadow_runtime_lock(SKILL_ROOT)
     shadow_rows = module._collect_shadow_runtime_rows(ROOT, shadow_lock)
     shadow_tree = (
@@ -848,12 +860,12 @@ def test_package_version_is_separate_from_researcher_versions() -> None:
         for value in registry["capabilities"]
         if value["capability_id"] == "researcher-container"
     )
-    assert registry["skill_version"] == "1.3.6"
+    assert registry["skill_version"] == "1.3.15"
     assert (
         researcher["version"]
         == charter["charter_version"]
         == runtime_lock["runtime_version"]
-        == "1.2.2"
+        == "1.2.11"
     )
     shadow = next(
         value
@@ -1150,8 +1162,8 @@ def test_build_is_candidate_only_and_passes_complete_image_identity(
     donor_binary_sha256 = env["donor_binary_sha256"]
     receipt = module.build_release(ROOT, allow_dirty=True)
     assert receipt["status"] == "CANDIDATE_BUILT"
-    assert receipt["package_version"] == "1.3.6"
-    assert receipt["capability_version"] == "1.2.2"
+    assert receipt["package_version"] == "1.3.15"
+    assert receipt["capability_version"] == "1.2.11"
     assert receipt.get("tool_image_id")
     assert str(receipt["tool_image_id"]).startswith("sha256:")
     assert receipt["source_dirty"] is True
@@ -1430,14 +1442,14 @@ def test_same_semver_different_content_is_collision(
         tmp_path,
         monkeypatch,
         image_character="a",
-        package_version="1.3.6",
-        capability_version="1.2.2",
+        package_version="1.3.15",
+        capability_version="1.2.11",
     )
     _fake_build_environment(module, monkeypatch, dirty=False, image_character="f")
     with pytest.raises(module.XinaoError) as failure:
         module.build_release(ROOT, allow_dirty=False)
     assert failure.value.reason_code == "SEMVER_CONTENT_COLLISION"
-    assert failure.value.detail == "package=1.3.6 capability=1.2.2"
+    assert failure.value.detail == "package=1.3.15 capability=1.2.11"
 
 
 def test_package_version_bump_can_reuse_researcher_capability_version(
@@ -1460,11 +1472,11 @@ def test_package_version_bump_can_reuse_researcher_capability_version(
     new = module._load_json(new_path)
 
     assert receipt["status"] == "CANDIDATE_BUILT"
-    assert receipt["package_version"] == "1.3.6"
-    assert receipt["capability_version"] == "1.2.2"
+    assert receipt["package_version"] == "1.3.15"
+    assert receipt["capability_version"] == "1.2.11"
     assert new["release_id"] != old["release_id"]
-    assert new["package_version"] == "1.3.6"
-    assert new["capability_version"] == "1.2.2"
+    assert new["package_version"] == "1.3.15"
+    assert new["capability_version"] == "1.2.11"
     assert old_path.read_bytes() == old_bytes
 
 
@@ -1498,8 +1510,8 @@ def test_forward_upgrade_target_build_accepts_package_only_bump(
     new, new_path = prepared
     assert new_path.is_file()
     assert new["release_id"] != old["release_id"]
-    assert new["package_version"] == "1.3.6"
-    assert new["capability_version"] == "1.2.2"
+    assert new["package_version"] == "1.3.15"
+    assert new["capability_version"] == "1.2.11"
     assert old_path.read_bytes() == old_bytes
 
 
@@ -5933,6 +5945,265 @@ def test_sync_projection_fresh_installed_parser_and_inspect(
     assert args.command == "sync-projection"
 
 
+def _prepare_synced_projection_world(
+    module,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    launcher_payload: bytes | None = None,
+) -> dict[str, object]:
+    active, active_path = _sealed_release(
+        module,
+        tmp_path,
+        monkeypatch,
+        image_character="1",
+        package_version="1.3.1",
+        capability_version="1.2.1",
+        launcher_payload=launcher_payload,
+    )
+    pointer, journal, journal_path = _terminal_pointer(
+        module,
+        active,
+        active_path,
+        generation=3,
+        txn_suffix="3" * 16,
+    )
+    import shutil
+
+    installed = tmp_path / "installed_skill"
+    shutil.copytree(Path(str(active["skill_bundle_path"])), installed)
+    (installed / "SKILL.md").write_bytes(
+        (installed / "SKILL.md").read_bytes() + b"\n# force-real-sync\n"
+    )
+    monkeypatch.setenv("XINAO_INSTALLED_SKILL_ROOT", str(installed))
+    monkeypatch.setattr(module, "DEFAULT_INSTALLED_SKILL_ROOT", installed)
+    monkeypatch.setattr(
+        module,
+        "_run_activation_canary",
+        lambda value: _canary_value(module, value),
+    )
+    _install_bootstrap_fence(module, monkeypatch, ["sync-projection"])
+    synced = module.sync_projection()
+    assert synced["status"] == "SYNCED"
+    assert _installed_tree_map(installed) == _active_skill_bundle_map(module, active)
+    return {
+        "active": active,
+        "active_path": active_path,
+        "pointer": pointer,
+        "journal": journal,
+        "journal_path": journal_path,
+        "installed": installed,
+        "sync": synced,
+    }
+
+
+def _lineage_canary(module, journal: dict[str, object]) -> dict[str, object]:
+    module._verify_stable_installed_launcher(journal)
+    return _canary_value(module, journal)
+
+
+def test_activate_selects_real_installed_projection_after_old_sync_and_forward_upgrades(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    module = _module()
+    old_launcher = b"from __future__ import annotations\n# sealed-old-launcher\n"
+    world = _prepare_synced_projection_world(
+        module,
+        tmp_path,
+        monkeypatch,
+        launcher_payload=old_launcher,
+    )
+    old_sync = module._find_latest_verified_sync_projection()
+    assert old_sync is not None
+    assert old_sync[1]["stable_launcher_sha256"] == module._sha256_bytes(old_launcher)
+
+    monkeypatch.setattr(
+        module,
+        "_run_activation_canary",
+        lambda value: _lineage_canary(module, value),
+    )
+    for index, image_character in enumerate(("4", "5"), start=1):
+        target, target_path = _sealed_release(
+            module,
+            tmp_path,
+            monkeypatch,
+            image_character=image_character,
+            package_version=f"1.3.{index + 1}",
+            capability_version=f"1.2.{index + 1}",
+        )
+        monkeypatch.setattr(
+            module,
+            "_prepare_forward_upgrade_target",
+            lambda target=target, target_path=target_path: (target, target_path),
+        )
+        upgraded = module.bootstrap_forward_upgrade()
+        assert upgraded["status"] == "UPGRADED"
+        world[f"forward_{index}"] = upgraded
+        world[f"forward_release_{index}"] = target
+
+    latest_forward = module._find_verified_forward_upgrade_projection()
+    installed_launcher = Path(world["installed"]) / "scripts" / "xinao.py"
+    assert latest_forward[1]["stable_launcher_sha256"] == module._sha256(installed_launcher)
+    assert old_sync[1]["stable_launcher_sha256"] != module._sha256(installed_launcher)
+
+    candidate, candidate_path = _sealed_release(
+        module,
+        tmp_path,
+        monkeypatch,
+        image_character="6",
+        package_version="1.3.9",
+        capability_version="1.2.9",
+        variant=b"ordinary-activate-after-forward-lineage\n",
+    )
+    _install_bootstrap_fence(
+        module,
+        monkeypatch,
+        ["activate", "--release-id", str(candidate["release_id"])],
+    )
+    activated = module.activate_release(str(candidate["release_id"]))
+    assert activated["status"] == "VERIFIED"
+    assert activated["release_id"] == candidate["release_id"]
+    activation_journal = module._load_json(module._journal_path(activated["txn_id"]))
+    assert activation_journal["state"] == "VERIFIED"
+
+    # A matching exact-from witness that becomes VERIFIED only after this ACTIVATE's
+    # prepared boundary must not retroactively enter its lineage.  The prior matching
+    # forward projection remains a valid fallback for the same installed bytes.
+    future_path = module._journal_path(str(world["forward_2"]["txn_id"]))
+    future = module._load_json(future_path)
+    future["updated_at"] = "2999-01-01T00:00:00Z"
+    module._write_json_atomic(future_path, future)
+    selected, _receipt = module._find_installed_projection_witness(activation_journal)
+    assert selected["txn_id"] == world["forward_1"]["txn_id"]
+
+
+def _prepare_rolled_back_activation_conflict(
+    module,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> dict[str, object]:
+    world = _prepare_synced_projection_world(module, tmp_path, monkeypatch)
+    candidate, candidate_path = _sealed_release(
+        module,
+        tmp_path,
+        monkeypatch,
+        image_character="7",
+        package_version="1.3.7",
+        capability_version="1.2.7",
+        variant=b"conflict-target\n",
+    )
+
+    def fail_launcher(_journal: dict[str, object]) -> dict[str, object]:
+        raise module.XinaoError(
+            "INSTALLED_LAUNCHER_IDENTITY_MISMATCH",
+            str(Path(world["installed"]) / "scripts" / "xinao.py"),
+        )
+
+    monkeypatch.setattr(module, "_run_activation_canary", fail_launcher)
+    _install_bootstrap_fence(
+        module,
+        monkeypatch,
+        ["activate", "--release-id", str(candidate["release_id"])],
+    )
+    with pytest.raises(module.XinaoError) as failure:
+        module.activate_release(str(candidate["release_id"]))
+    assert failure.value.reason_code == "RECOVERY_CONFLICT"
+    pointer = module._load_json(module._state_paths()["pointer"])
+    txn_id = str(pointer["active"]["activation_txn_id"])
+    conflict = module._load_json(module._journal_path(txn_id))
+    assert conflict["state"] == "RECOVERY_CONFLICT"
+    assert conflict["operation"] == "ACTIVATE"
+    assert conflict["failure_reason"]["reason_code"] == "INSTALLED_LAUNCHER_IDENTITY_MISMATCH"
+    world.update(
+        {
+            "candidate": candidate,
+            "candidate_path": candidate_path,
+            "conflict": conflict,
+            "txn_id": txn_id,
+        }
+    )
+    return world
+
+
+def test_explicit_conflict_recovery_seals_exact_rolled_back_pointer(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    module = _module()
+    world = _prepare_rolled_back_activation_conflict(module, tmp_path, monkeypatch)
+    txn_id = str(world["txn_id"])
+    monkeypatch.setattr(
+        module,
+        "_run_activation_canary",
+        lambda value: _lineage_canary(module, value),
+    )
+
+    bootstrap = _bootstrap_module()
+    state_root = module._state_paths()["state_root"]
+    assert bootstrap._pointer_requires_migration_entry(
+        state_root, ["recover", "--txn-id", txn_id]
+    )
+    assert not bootstrap._pointer_requires_migration_entry(state_root, ["recover"])
+    routed: list[list[str]] = []
+    monkeypatch.setattr(
+        bootstrap,
+        "_run_companion_runtime",
+        lambda argv: routed.append(list(argv)) or 0,
+    )
+    assert bootstrap._run_runtime(["recover", "--txn-id", txn_id]) == 0
+    assert routed == [["recover", "--txn-id", txn_id]]
+
+    recovered = module.recover_release(txn_id)
+    assert recovered["status"] == "ROLLED_BACK"
+    assert recovered["recovered_from"] == "RECOVERY_CONFLICT"
+    sealed = module._load_json(module._journal_path(txn_id))
+    pointer_sha256 = module._sha256(module._state_paths()["pointer"])
+    assert sealed["state"] == "ROLLED_BACK"
+    assert sealed["terminal_pointer_sha256"] == pointer_sha256
+    assert sealed["switched_pointer_sha256"] == pointer_sha256
+
+
+@pytest.mark.parametrize(
+    "mutation", ("pointer_generation", "installed_tree", "different_conflict_reason")
+)
+def test_explicit_conflict_recovery_rejects_unbound_state(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    mutation: str,
+) -> None:
+    module = _module()
+    world = _prepare_rolled_back_activation_conflict(module, tmp_path, monkeypatch)
+    txn_id = str(world["txn_id"])
+    monkeypatch.setattr(
+        module,
+        "_run_activation_canary",
+        lambda value: _lineage_canary(module, value),
+    )
+    if mutation == "pointer_generation":
+        pointer_path = module._state_paths()["pointer"]
+        pointer = module._load_json(pointer_path)
+        pointer["generation"] += 1
+        module._write_json_atomic(pointer_path, pointer)
+    elif mutation == "installed_tree":
+        skill_md = Path(world["installed"]) / "SKILL.md"
+        skill_md.write_bytes(skill_md.read_bytes() + b"\n# tampered-after-conflict\n")
+    else:
+        journal_path = module._journal_path(txn_id)
+        conflict = module._load_json(journal_path)
+        conflict["failure_reason"] = {
+            "reason_code": "UNRELATED_RECOVERY_FAILURE",
+            "detail": "must not enter the selector-specific recovery cone",
+        }
+        module._write_json_atomic(journal_path, conflict)
+
+    with pytest.raises(module.XinaoError) as failure:
+        module.recover_release(txn_id)
+    assert failure.value.reason_code in {
+        "RECOVERY_CONFLICT",
+        "INSTALL_PROJECTION_TARGET_INCOMPLETE",
+    }
+    assert module._load_json(module._journal_path(txn_id))["state"] == "RECOVERY_CONFLICT"
+
+
 # ---------------------------------------------------------------------------
 # Protocol-v2 forward upgrade: installed 1.2.0 pre-shadow → 1.3.0 target
 # ---------------------------------------------------------------------------
@@ -6126,8 +6397,8 @@ def _prepare_v2_forward_upgrade_world(
         tmp_path,
         monkeypatch,
         image_character="c",
-        package_version="1.3.6",
-        capability_version="1.2.2",
+        package_version="1.3.15",
+        capability_version="1.2.11",
     )
     monkeypatch.setattr(
         module,

@@ -37,7 +37,7 @@ RELEASE_RUNTIME_RELATIVE_PATH = Path("skill-bundle") / "scripts" / "xinao_runtim
 # Bound to the co-located bootstrap-migration companion. Tampering fails before execution.
 # Update this whenever the candidate xinao_runtime.py bytes change.
 EXPECTED_COMPANION_RUNTIME_SHA256 = (
-    "310d00da3fb0eb097329c7567a7102b0f21d0023884dfe5a4aa73b146f160105"
+    "76c7e2ec783c1f6766d66e5ea917d79f5e8ed33e35f267933e2e07d07c42e0bc"
 )
 RELEASE_ID_PATTERN = re.compile(r"^researcher-[0-9]+\.[0-9]+\.[0-9]+-[0-9a-f]{16}$")
 TXN_ID_PATTERN = re.compile(r"^xra_[0-9]{8}T[0-9]{6}_[0-9a-f]{16}$")
@@ -1620,7 +1620,7 @@ def _companion_runtime_path() -> Path:
 
 
 def _run_companion_runtime(argv: Sequence[str]) -> int:
-    """Execute the co-located runtime for protocol migration / forward-upgrade without a v2 fence.
+    """Execute the co-located runtime for bootstrap operations or exact conflict recovery.
 
     Ordinary inspect/research never take this path: they always require a verified
     protocol-2 pointer, terminal journal, and inventory-bound release runtime.
@@ -1644,6 +1644,15 @@ def _run_companion_runtime(argv: Sequence[str]) -> int:
         and (len(argv) != 3 or argv[1] != "--txn-id" or TXN_ID_PATTERN.fullmatch(argv[2]) is None)
     ):
         raise BootstrapError("INVOCATION_ARGUMENTS_INVALID", "_recover-migration")
+    if argv and argv[0] == "recover" and not (
+        len(argv) == 1
+        or (
+            len(argv) == 3
+            and argv[1] == "--txn-id"
+            and TXN_ID_PATTERN.fullmatch(argv[2]) is not None
+        )
+    ):
+        raise BootstrapError("INVOCATION_ARGUMENTS_INVALID", "recover")
     runtime_path = _companion_runtime_path()
     if not runtime_path.is_file():
         raise BootstrapError("BOOTSTRAP_MIGRATION_RUNTIME_ABSENT", str(runtime_path))
@@ -1698,7 +1707,57 @@ def _run_companion_runtime(argv: Sequence[str]) -> int:
         raise
 
 
-def _pointer_requires_migration_entry(state_root: Path, command: str) -> bool:
+def _exact_activation_conflict_recovery_entry(
+    state_root: Path, argv: Sequence[str], pointer: dict[str, Any], pointer_sha256: str
+) -> bool:
+    if not (
+        len(argv) == 3
+        and argv[0] == "recover"
+        and argv[1] == "--txn-id"
+        and TXN_ID_PATTERN.fullmatch(argv[2]) is not None
+    ):
+        return False
+    txn_id = argv[2]
+    journal_path = (
+        state_root / "researcher_container" / "transactions" / txn_id / "activation.v1.json"
+    )
+    try:
+        journal = _load_json(journal_path)
+        _validate_journal_shape(journal, journal_path=journal_path, state_root=state_root)
+        failure = journal.get("failure_reason")
+        from_value = journal.get("from")
+        requested_to = journal.get("requested_to")
+        if (
+            journal.get("txn_id") != txn_id
+            or journal.get("operation") != "ACTIVATE"
+            or journal.get("state") not in {"RECOVERY_CONFLICT", "ROLLBACK_CANARY_STARTED"}
+            or not isinstance(failure, dict)
+            or failure.get("reason_code") != "INSTALLED_LAUNCHER_IDENTITY_MISMATCH"
+            or not isinstance(from_value, dict)
+            or not isinstance(from_value.get("active"), dict)
+            or not isinstance(requested_to, dict)
+            or requested_to.get("activation_txn_id") != txn_id
+        ):
+            return False
+        rollback_ref = dict(from_value["active"])
+        rollback_ref["activation_txn_id"] = txn_id
+        return bool(
+            journal.get("to") == rollback_ref
+            and requested_to != rollback_ref
+            and journal.get("expected_generation") == from_value.get("generation", 0) + 2
+            and journal.get("switched_pointer_sha256") == pointer_sha256
+            and journal.get("canary") is None
+            and journal.get("terminal_pointer_sha256") is None
+            and pointer.get("generation") == journal.get("expected_generation")
+            and pointer.get("active") == rollback_ref
+            and pointer.get("previous_verified") == from_value.get("previous_verified")
+        )
+    except (BootstrapError, OSError, TypeError, ValueError):
+        return False
+
+
+def _pointer_requires_migration_entry(state_root: Path, argv: Sequence[str]) -> bool:
+    command = argv[0] if argv else ""
     if command not in {
         "_recover-migration",
         "bootstrap-migrate",
@@ -1714,13 +1773,15 @@ def _pointer_requires_migration_entry(state_root: Path, command: str) -> bool:
     if not pointer_path.is_file():
         return False
     try:
-        pointer, _sha = _load_json_with_identity(pointer_path)
+        pointer, pointer_sha256 = _load_json_with_identity(pointer_path)
     except BootstrapError:
         return False
     if pointer.get("schema_version") == "xinao.researcher_current_pointer.v1":
         return True
     if pointer.get("schema_version") != "xinao.researcher_current_pointer.v2":
         return False
+    if _exact_activation_conflict_recovery_entry(state_root, argv, pointer, pointer_sha256):
+        return True
     # Mid-migration / mid-forward-upgrade recover: pending journal while ordinary fence
     # cannot form (historical active release fails exact current validation).
     transaction_root = state_root / "researcher_container" / "transactions"
@@ -1747,8 +1808,7 @@ def _run_runtime(argv: Sequence[str]) -> int:
     state_root = Path(os.environ.get("XINAO_SKILL_STATE_ROOT", str(DEFAULT_STATE_ROOT)))
     if not state_root.is_absolute():
         raise BootstrapError("STATE_ROOT_INVALID", str(state_root))
-    command = argv[0] if argv else ""
-    if _pointer_requires_migration_entry(state_root, command):
+    if _pointer_requires_migration_entry(state_root, argv):
         return _run_companion_runtime(argv)
     pointer_path = state_root / "researcher_container" / "current.json"
     if pointer_path.is_file():
