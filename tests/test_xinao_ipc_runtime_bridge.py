@@ -315,7 +315,7 @@ def test_start_pair_waits_for_tool_socket_before_transport(
 
 
 def test_require_live_pair_ready_rechecks_volume_and_socket(
-    host: Any, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    host: Any, specs: Any, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     volume = "xinao-ipc-ep-live"
     source = f"/var/lib/docker/volumes/{volume}/_data"
@@ -368,7 +368,15 @@ def test_require_live_pair_ready_rechecks_volume_and_socket(
     tool_doc = {
         "Image": "sha256:tool",
         "Config": {"User": "65532:65532"},
-        "HostConfig": {"NetworkMode": "none"},
+        "HostConfig": {
+            "NetworkMode": "none",
+            "ReadonlyRootfs": True,
+            "CapDrop": ["ALL"],
+            "SecurityOpt": [
+                "no-new-privileges:true",
+                specs.tool_bwrap_seccomp_inspect_opt(),
+            ],
+        },
         "State": {"Running": True},
         "Mounts": [ipc_mount],
     }

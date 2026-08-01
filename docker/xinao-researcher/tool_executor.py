@@ -12,9 +12,12 @@ Does not write Owner/science/account authority fields.
 from __future__ import annotations
 
 import argparse
+import ctypes
+import errno
 import importlib.util
 import json
 import os
+import platform
 import re
 import shutil
 import socket
@@ -156,6 +159,22 @@ SHELL_DENIED_SUBSTRINGS = (
 # auto: use bwrap when binary exists; 1/require: deny shell_exec if missing; 0: argv-only.
 BWRAP_MODE_ENV = "XINAO_TOOL_EXEC_BWRAP"
 BWRAP_BIN_ENV = "XINAO_TOOL_BWRAP_BIN"
+LIBSECCOMP_SONAME = "libseccomp.so.2"
+SCMP_ACT_ALLOW = 0x7FFF0000
+SCMP_ACT_ERRNO_BASE = 0x00050000
+SCMP_CMP_EQ = 4
+SCMP_CMP_MASKED_EQ = 7
+AF_ALG = 38
+# Namespace flags that a payload must never create after bwrap finishes setup.
+CLONE_NAMESPACE_FLAGS = (
+    0x00020000,  # CLONE_NEWNS
+    0x02000000,  # CLONE_NEWCGROUP
+    0x04000000,  # CLONE_NEWUTS
+    0x08000000,  # CLONE_NEWIPC
+    0x10000000,  # CLONE_NEWUSER
+    0x20000000,  # CLONE_NEWPID
+    0x40000000,  # CLONE_NEWNET
+)
 # Unix peer uid allowlist (comma-separated). Empty + require=0 → no SO_PEERCRED gate.
 IPC_PEER_UID_ENV = "XINAO_IPC_PEER_UIDS"
 # Genuine dual-container profile: require=1 fail-closes when allowlist empty or peer mismatch.
@@ -180,6 +199,15 @@ class ToolExecutorError(RuntimeError):
         super().__init__(detail)
         self.reason_code = reason_code
         self.detail = detail
+
+
+class _ScmpArgCmp(ctypes.Structure):
+    _fields_ = [
+        ("arg", ctypes.c_uint),
+        ("op", ctypes.c_uint),
+        ("datum_a", ctypes.c_uint64),
+        ("datum_b", ctypes.c_uint64),
+    ]
 
 
 def _safe_replay_token(value: str, *, maximum: int = 128) -> str:
@@ -523,6 +551,7 @@ def build_bwrap_command(
     *,
     lab_root: Path,
     cwd: Path,
+    payload_seccomp_fd: int,
 ) -> list[str]:
     """Build bubblewrap argv that confines shell_exec to lab + system libs.
 
@@ -546,6 +575,8 @@ def build_bwrap_command(
         bwrap,
         "--die-with-parent",
         "--new-session",
+        "--unshare-user",
+        "--unshare-ipc",
         "--unshare-net",
         "--unshare-pid",
         "--cap-drop",
@@ -593,8 +624,40 @@ def build_bwrap_command(
         "/run",
         "--proc",
         "/proc",
-        "--dev",
+        # Do not use bwrap --dev: its devpts setup requires a second user
+        # namespace and leaves the payload able to repeat namespace creation.
+        # Bind only the device nodes non-interactive research processes need.
+        "--dir",
         "/dev",
+        "--dev-bind",
+        "/dev/null",
+        "/dev/null",
+        "--dev-bind",
+        "/dev/zero",
+        "/dev/zero",
+        "--dev-bind",
+        "/dev/random",
+        "/dev/random",
+        "--dev-bind",
+        "/dev/urandom",
+        "/dev/urandom",
+        "--dev-bind-try",
+        "/dev/full",
+        "/dev/full",
+        "--symlink",
+        "/proc/self/fd",
+        "/dev/fd",
+        "--symlink",
+        "/proc/self/fd/0",
+        "/dev/stdin",
+        "--symlink",
+        "/proc/self/fd/1",
+        "/dev/stdout",
+        "--symlink",
+        "/proc/self/fd/2",
+        "/dev/stderr",
+        "--tmpfs",
+        "/dev/shm",
     ]
     # Bind venv / interpreter trees that live outside /usr (e.g. /workspace/.venv,
     # /tmp/.cache/uv/... ephemeral envs). Applied after tmpfs so /tmp trees remain visible.
@@ -641,6 +704,11 @@ def build_bwrap_command(
             "--setenv",
             "PYTHONDONTWRITEBYTECODE",
             "1",
+            # Applied by bwrap only after namespace/mount setup. This stacked
+            # payload filter closes the exact namespace clone permission that
+            # the outer Docker profile must temporarily grant to bwrap.
+            "--seccomp",
+            str(payload_seccomp_fd),
             "--",
         ]
     )
@@ -648,11 +716,141 @@ def build_bwrap_command(
     return cmd
 
 
-def wrap_shell_argv(argv: list[str], *, lab_root: Path, cwd: Path) -> list[str]:
-    """Apply bwrap confinement according to XINAO_TOOL_EXEC_BWRAP policy."""
+def _load_libseccomp() -> Any:
+    try:
+        lib = ctypes.CDLL(LIBSECCOMP_SONAME)
+    except OSError as exc:
+        raise ToolExecutorError("BWRAP_SECCOMP_UNAVAILABLE", str(exc)) from exc
+    lib.seccomp_init.argtypes = [ctypes.c_uint32]
+    lib.seccomp_init.restype = ctypes.c_void_p
+    lib.seccomp_release.argtypes = [ctypes.c_void_p]
+    lib.seccomp_release.restype = None
+    lib.seccomp_syscall_resolve_name.argtypes = [ctypes.c_char_p]
+    lib.seccomp_syscall_resolve_name.restype = ctypes.c_int
+    lib.seccomp_rule_add_array.argtypes = [
+        ctypes.c_void_p,
+        ctypes.c_uint32,
+        ctypes.c_int,
+        ctypes.c_uint,
+        ctypes.POINTER(_ScmpArgCmp),
+    ]
+    lib.seccomp_rule_add_array.restype = ctypes.c_int
+    lib.seccomp_export_bpf.argtypes = [ctypes.c_void_p, ctypes.c_int]
+    lib.seccomp_export_bpf.restype = ctypes.c_int
+    return lib
+
+
+def _seccomp_errno_action(value: int) -> int:
+    return SCMP_ACT_ERRNO_BASE | (int(value) & 0xFFFF)
+
+
+def clone_flags_argument_index(machine: str | None = None) -> int:
+    """Return Linux clone(2)'s flags argument index for the native ABI."""
+    architecture = (machine or platform.machine()).strip().lower()
+    return 1 if architecture in {"s390", "s390x"} else 0
+
+
+def payload_clone_namespace_comparisons(
+    machine: str | None = None,
+) -> tuple[_ScmpArgCmp, ...]:
+    index = clone_flags_argument_index(machine)
+    return tuple(
+        _ScmpArgCmp(index, SCMP_CMP_MASKED_EQ, flag, flag)
+        for flag in CLONE_NAMESPACE_FLAGS
+    )
+
+
+def _add_payload_seccomp_rule(
+    lib: Any,
+    ctx: int,
+    *,
+    syscall_name: str,
+    action: int,
+    comparison: _ScmpArgCmp | None = None,
+) -> None:
+    syscall_number = int(lib.seccomp_syscall_resolve_name(syscall_name.encode("ascii")))
+    if syscall_number == -1:
+        raise ToolExecutorError("BWRAP_SECCOMP_SYSCALL_UNKNOWN", syscall_name)
+    if comparison is None:
+        result = int(lib.seccomp_rule_add_array(ctx, action, syscall_number, 0, None))
+    else:
+        comparisons = (_ScmpArgCmp * 1)(comparison)
+        result = int(lib.seccomp_rule_add_array(ctx, action, syscall_number, 1, comparisons))
+    if result != 0:
+        raise ToolExecutorError(
+            "BWRAP_SECCOMP_RULE_FAILED",
+            f"{syscall_name}:rc={result}",
+        )
+
+
+def create_payload_seccomp_fd() -> int:
+    """Create bwrap's post-setup payload filter in a sealed anonymous fd.
+
+    Docker's outer filter must admit one exact namespace-bearing clone so
+    bubblewrap can construct the sandbox. This stacked inner filter is loaded
+    by bubblewrap only after setup and prevents model code from repeating any
+    namespace operation. It also blocks AF_ALG through direct socket and the
+    32-bit socketcall multiplexer.
+    """
+    if not hasattr(os, "memfd_create"):
+        raise ToolExecutorError("BWRAP_SECCOMP_UNAVAILABLE", "memfd_create")
+    lib = _load_libseccomp()
+    ctx = lib.seccomp_init(SCMP_ACT_ALLOW)
+    if not ctx:
+        raise ToolExecutorError("BWRAP_SECCOMP_INIT_FAILED", "seccomp_init")
+    fd = -1
+    try:
+        deny = _seccomp_errno_action(errno.EPERM)
+        enosys = _seccomp_errno_action(errno.ENOSYS)
+        for syscall_name in ("unshare", "setns", "socketcall"):
+            _add_payload_seccomp_rule(
+                lib,
+                ctx,
+                syscall_name=syscall_name,
+                action=deny,
+            )
+        _add_payload_seccomp_rule(
+            lib,
+            ctx,
+            syscall_name="clone3",
+            action=enosys,
+        )
+        for comparison in payload_clone_namespace_comparisons():
+            _add_payload_seccomp_rule(
+                lib,
+                ctx,
+                syscall_name="clone",
+                action=deny,
+                comparison=comparison,
+            )
+        _add_payload_seccomp_rule(
+            lib,
+            ctx,
+            syscall_name="socket",
+            action=deny,
+            comparison=_ScmpArgCmp(0, SCMP_CMP_EQ, AF_ALG, 0),
+        )
+        fd = os.memfd_create("xinao-bwrap-payload-seccomp", os.MFD_CLOEXEC)
+        result = int(lib.seccomp_export_bpf(ctx, fd))
+        if result != 0:
+            raise ToolExecutorError("BWRAP_SECCOMP_EXPORT_FAILED", f"rc={result}")
+        os.lseek(fd, 0, os.SEEK_SET)
+        return fd
+    except Exception:
+        if fd >= 0:
+            os.close(fd)
+        raise
+    finally:
+        lib.seccomp_release(ctx)
+
+
+def prepare_shell_argv(
+    argv: list[str], *, lab_root: Path, cwd: Path
+) -> tuple[list[str], tuple[int, ...]]:
+    """Apply bwrap confinement and return inherited policy fds to close."""
     mode = bwrap_mode()
     if mode == "off":
-        return list(argv)
+        return list(argv), ()
     bwrap = resolve_bwrap_bin()
     if bwrap is None:
         if mode == "require":
@@ -660,8 +858,19 @@ def wrap_shell_argv(argv: list[str], *, lab_root: Path, cwd: Path) -> list[str]:
                 "BWRAP_REQUIRED",
                 f"{BWRAP_MODE_ENV}=require but bwrap is unavailable",
             )
-        return list(argv)
-    return build_bwrap_command(argv, lab_root=lab_root, cwd=cwd)
+        return list(argv), ()
+    payload_seccomp_fd = create_payload_seccomp_fd()
+    try:
+        command = build_bwrap_command(
+            argv,
+            lab_root=lab_root,
+            cwd=cwd,
+            payload_seccomp_fd=payload_seccomp_fd,
+        )
+    except Exception:
+        os.close(payload_seccomp_fd)
+        raise
+    return command, (payload_seccomp_fd,)
 
 
 def _validate_shell_argv(argv: list[str], *, lab_root: Path) -> None:
@@ -1126,7 +1335,7 @@ def execute_op(
             _validate_shell_argv(argv, lab_root=lab_root)
             # Outer namespace confinement: private net + lab-only writable bind.
             # Argv filters alone are insufficient against interpreter path construction.
-            run_argv = wrap_shell_argv(argv, lab_root=lab_root, cwd=cwd)
+            run_argv, policy_fds = prepare_shell_argv(argv, lab_root=lab_root, cwd=cwd)
             env = scrub_environment()
             try:
                 completed = subprocess.run(
@@ -1142,6 +1351,7 @@ def execute_op(
                     encoding="utf-8",
                     errors="replace",
                     timeout=timeout_s,
+                    pass_fds=policy_fds,
                 )
             except subprocess.TimeoutExpired as exc:
                 stdout = (exc.stdout or "") if isinstance(exc.stdout, str) else ""
@@ -1174,6 +1384,9 @@ def execute_op(
                     request=request,
                     path_relative=str(args.get("cwd_relative") or ""),
                 )
+            finally:
+                for policy_fd in policy_fds:
+                    os.close(policy_fd)
             stdout = (completed.stdout or "").replace("\x00", "")
             stderr = (completed.stderr or "").replace("\x00", "")
             return _finalize_response(

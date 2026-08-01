@@ -26,6 +26,12 @@ BOOTSTRAP_PATH = SKILL_ROOT / "scripts" / "xinao.py"
 SPECS_PATH = ROOT / "docker" / "xinao-researcher" / "docker_create_specs.py"
 
 
+def _tool_security_opt() -> list[str]:
+    profile = json.loads((SPECS_PATH.parent / "seccomp.bwrap.json").read_text(encoding="utf-8"))
+    encoded = json.dumps(profile, separators=(",", ":"))
+    return ["no-new-privileges:true", f"seccomp={encoded}"]
+
+
 def _load(name: str, path: Path) -> Any:
     if name in sys.modules:
         del sys.modules[name]
@@ -152,7 +158,7 @@ def _fake_tool_inspect(
             "NetworkMode": "none",
             "ReadonlyRootfs": True,
             "CapDrop": ["ALL"],
-            "SecurityOpt": ["no-new-privileges:true"],
+            "SecurityOpt": _tool_security_opt(),
         },
         "Mounts": mounts,
     }

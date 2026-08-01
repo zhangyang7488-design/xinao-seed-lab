@@ -97,7 +97,7 @@ def test_public_build_release_materializes_host_modules_in_release_dir(
         for name in module.HOST_MODULE_INVENTORY
     }
     assert expected <= manifest_paths
-    assert len(expected) == 6
+    assert len(expected) == len(module.HOST_MODULE_INVENTORY)
     for relative in sorted(expected):
         path = bundle_root / Path(relative)
         assert path.is_file(), relative
@@ -108,7 +108,7 @@ def test_public_build_release_materializes_host_modules_in_release_dir(
         assert row["sha256"] == module._sha256_bytes(payload)
 
     # Formal monorepo builds must never emit the deficient 20-file skill-only inventory.
-    assert len(bundle_manifest["files"]) >= 20 + 6
+    assert len(bundle_manifest["files"]) >= 20 + len(module.HOST_MODULE_INVENTORY)
 
 
 def test_public_build_fails_closed_when_host_module_source_missing(
@@ -178,6 +178,7 @@ def test_staged_installed_skill_resolves_host_modules_without_monorepo(
     host_dir = bundle / "scripts" / "host_modules"
     assert (host_dir / "docker_create_specs.py").is_file()
     assert (host_dir / "native_grok_session.py").is_file()
+    assert (host_dir / "seccomp.bwrap.json").is_file()
 
     # Fresh process: only staged skill tree on sys.path/cwd; no monorepo PYTHONPATH.
     staged_runtime = bundle / "scripts" / "xinao_runtime.py"
