@@ -37,7 +37,7 @@ RELEASE_RUNTIME_RELATIVE_PATH = Path("skill-bundle") / "scripts" / "xinao_runtim
 # Bound to the co-located bootstrap-migration companion. Tampering fails before execution.
 # Update this whenever the candidate xinao_runtime.py bytes change.
 EXPECTED_COMPANION_RUNTIME_SHA256 = (
-    "76c7e2ec783c1f6766d66e5ea917d79f5e8ed33e35f267933e2e07d07c42e0bc"
+    "884e63ed0317b526ddf9a8d8b2e7991eb6f24cf698406e76ed1bf87a8f8e2565"
 )
 RELEASE_ID_PATTERN = re.compile(r"^researcher-[0-9]+\.[0-9]+\.[0-9]+-[0-9a-f]{16}$")
 TXN_ID_PATTERN = re.compile(r"^xra_[0-9]{8}T[0-9]{6}_[0-9a-f]{16}$")
@@ -1644,12 +1644,16 @@ def _run_companion_runtime(argv: Sequence[str]) -> int:
         and (len(argv) != 3 or argv[1] != "--txn-id" or TXN_ID_PATTERN.fullmatch(argv[2]) is None)
     ):
         raise BootstrapError("INVOCATION_ARGUMENTS_INVALID", "_recover-migration")
-    if argv and argv[0] == "recover" and not (
-        len(argv) == 1
-        or (
-            len(argv) == 3
-            and argv[1] == "--txn-id"
-            and TXN_ID_PATTERN.fullmatch(argv[2]) is not None
+    if (
+        argv
+        and argv[0] == "recover"
+        and not (
+            len(argv) == 1
+            or (
+                len(argv) == 3
+                and argv[1] == "--txn-id"
+                and TXN_ID_PATTERN.fullmatch(argv[2]) is not None
+            )
         )
     ):
         raise BootstrapError("INVOCATION_ARGUMENTS_INVALID", "recover")

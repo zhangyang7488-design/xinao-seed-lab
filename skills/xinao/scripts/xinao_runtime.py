@@ -11012,9 +11012,7 @@ def _compare_live_egress_objects(
                 raise XinaoError("EGRESS_DIFY_CROSS_PROJECT_FORBIDDEN", name)
         member_id = str(_cid).strip().lower()
         exact_episode_transport = any(
-            member_id == allowed
-            or member_id.startswith(allowed)
-            or allowed.startswith(member_id)
+            member_id == allowed or member_id.startswith(allowed) or allowed.startswith(member_id)
             for allowed in allowed_ids
         )
         # One-shot researcher names remain admitted. Persistent Episode transports
@@ -15521,9 +15519,7 @@ def _research_episode_load_dual_host(root: Path) -> Any:
     network = os.environ.get("XINAO_TRANSPORT_NETWORK", "").strip()
     if not network:
         network = (
-            "none"
-            if synthetic
-            else str((egress_bound or {}).get("internal_network_name") or "")
+            "none" if synthetic else str((egress_bound or {}).get("internal_network_name") or "")
         )
     if not synthetic and network != str((egress_bound or {}).get("internal_network_name") or ""):
         raise XinaoError("EGRESS_TRANSPORT_NETWORK_MISMATCH", network)

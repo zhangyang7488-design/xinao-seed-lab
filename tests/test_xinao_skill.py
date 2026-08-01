@@ -6139,9 +6139,7 @@ def test_explicit_conflict_recovery_seals_exact_rolled_back_pointer(
 
     bootstrap = _bootstrap_module()
     state_root = module._state_paths()["state_root"]
-    assert bootstrap._pointer_requires_migration_entry(
-        state_root, ["recover", "--txn-id", txn_id]
-    )
+    assert bootstrap._pointer_requires_migration_entry(state_root, ["recover", "--txn-id", txn_id])
     assert not bootstrap._pointer_requires_migration_entry(state_root, ["recover"])
     routed: list[list[str]] = []
     monkeypatch.setattr(
