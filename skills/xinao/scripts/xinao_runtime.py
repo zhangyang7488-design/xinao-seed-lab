@@ -14190,6 +14190,15 @@ def _load_docker_create_specs_module() -> Any:
     return specs
 
 
+def _load_dual_container_host_module_for_namespace_probe() -> Any:
+    """Load the packaged host module that owns the production IPC volume seam."""
+
+    host_path = Path(__file__).resolve().parent / "dual_container_host.py"
+    if not host_path.is_file():
+        raise XinaoError("TOOL_NAMESPACE_HOST_MODULE_MISSING", str(host_path))
+    return _load_sealed_python_module("xinao_dual_container_host_namespace_probe", host_path)
+
+
 def _inspect_mount_destinations(inspect_doc: dict[str, Any]) -> set[str]:
     mounts = inspect_doc.get("Mounts") or inspect_doc.get("mounts") or []
     destinations: set[str] = set()
@@ -14430,6 +14439,8 @@ def _run_tool_namespace_physical_probes(
     }
     clean_cid: str | None = None
     transport_cid: str | None = None
+    ipc_volume: str | None = None
+    ipc_volume_created = False
     probe_success = False
 
     def _rm(cid: str) -> None:
@@ -14572,6 +14583,32 @@ def _run_tool_namespace_physical_probes(
         ipc.mkdir(exist_ok=False)
         sidecar.mkdir(exist_ok=False)
 
+        # Production ResearchEpisode pairs use a fresh named volume at /ipc so
+        # Docker copies the tool image's sealed 65532:65532, 0711 directory into
+        # the volume.  A Windows host bind presents as root:root in the Linux VM;
+        # the peer-gated tool correctly rejects that foreign owner and may exit
+        # between start/inspect/exec (the exec then surfaces only rc=137).  The
+        # live namespace probe must exercise the same IPC carrier as production,
+        # not a host-bind shape that the production host already replaced.
+        probe_host = _load_dual_container_host_module_for_namespace_probe()
+        ipc_volume = f"xinao-ns-ipc-{uuid.uuid4().hex[:20]}"
+        collision = _run(
+            [docker, "volume", "inspect", ipc_volume],
+            timeout=60,
+            check=False,
+        )
+        if collision.returncode == 0:
+            raise XinaoError("TOOL_NAMESPACE_PROBE_IPC_VOLUME_COLLISION", ipc_volume)
+        created_volume = _run(
+            [docker, "volume", "create", ipc_volume],
+            timeout=60,
+        )
+        ipc_volume_created = True
+        if (created_volume.stdout or "").strip() != ipc_volume:
+            raise XinaoError("TOOL_NAMESPACE_PROBE_IPC_VOLUME_CREATE_INVALID", ipc_volume)
+        details["ipc_mount_type"] = "volume"
+        details["ipc_volume"] = ipc_volume
+
         # --- Baseline: clean tool container must be real create + inspect ---
         # Physical layout must match production tool mounts: lab + ipc + sidecar-evidence.
         # Sidecar is tool-only (never auth); omitting it crashes the sealed entrypoint
@@ -14587,6 +14624,10 @@ def _run_tool_namespace_physical_probes(
         if clean_violations:
             raise XinaoError("TOOL_NAMESPACE_PROBE_BASELINE_DRIFT", ",".join(clean_violations[:4]))
         create_argv = specs.docker_create_argv(tool_spec)
+        try:
+            create_argv = probe_host._replace_ipc_bind_with_volume(create_argv, ipc_volume)
+        except Exception as exc:
+            raise XinaoError("TOOL_NAMESPACE_PROBE_IPC_VOLUME_REWRITE_FAILED", str(exc)) from exc
         # Real Docker CLI: --entrypoint must be a single executable token, not JSON text.
         if "--entrypoint" in create_argv:
             ep_idx = create_argv.index("--entrypoint")
@@ -14615,6 +14656,14 @@ def _run_tool_namespace_physical_probes(
         )
         clean_cid = _create_only(create_argv)
         clean_inspect = _inspect(clean_cid)
+        try:
+            probe_host._exact_ipc_volume_mount(
+                clean_inspect,
+                role="tool",
+                expected_volume=ipc_volume,
+            )
+        except Exception as exc:
+            raise XinaoError("TOOL_NAMESPACE_PROBE_IPC_VOLUME_MISMATCH", str(exc)) from exc
         clean_live = specs.validate_tool_container_inspect(
             clean_inspect,
             expected_image_id=tool_image_id,
@@ -14692,8 +14741,20 @@ def _run_tool_namespace_physical_probes(
             "import time; time.sleep(3600)",
         ]
         transport_argv = specs.docker_create_argv(transport_runtime_spec)
+        try:
+            transport_argv = probe_host._replace_ipc_bind_with_volume(transport_argv, ipc_volume)
+        except Exception as exc:
+            raise XinaoError("TOOL_NAMESPACE_PROBE_IPC_VOLUME_REWRITE_FAILED", str(exc)) from exc
         transport_cid = _create_only(transport_argv)
         transport_inspect = _inspect(transport_cid)
+        try:
+            details["ipc_volume_source"] = probe_host._require_exact_ipc_volume_mounts(
+                tool_inspect=clean_inspect,
+                transport_inspect=transport_inspect,
+                expected_volume=ipc_volume,
+            )
+        except Exception as exc:
+            raise XinaoError("TOOL_NAMESPACE_PROBE_IPC_VOLUME_MISMATCH", str(exc)) from exc
         transport_live = specs.validate_transport_container_inspect(
             transport_inspect,
             expected_image_id=transport_image_id,
@@ -14909,6 +14970,17 @@ def _run_tool_namespace_physical_probes(
             _rm(clean_cid)
         if transport_cid:
             _rm(transport_cid)
+        if ipc_volume_created and ipc_volume:
+            removed_volume = _run(
+                [docker, "volume", "rm", "--force", ipc_volume],
+                timeout=60,
+                check=False,
+            )
+            details["ipc_volume_cleanup"] = {
+                "name": ipc_volume,
+                "removed": removed_volume.returncode == 0,
+                "returncode": removed_volume.returncode,
+            }
         # Success: delete only this exact inv_* root. Failure: retain for evidence;
         # unique path already prevents pollution of the next invocation.
         details["probe_cleanup"] = _cleanup_tool_namespace_probe_root(

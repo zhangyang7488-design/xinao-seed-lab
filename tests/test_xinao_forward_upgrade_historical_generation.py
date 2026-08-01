@@ -671,7 +671,7 @@ def test_companion_runtime_seal_matches_repository_bytes() -> None:
     assert observed == bootstrap.EXPECTED_COMPANION_RUNTIME_SHA256
     # Wave106: Windows host cannot exec Linux donor ELF; runtime probe uses Docker-mount
     # of staged bytes. Companion pin tracks exact xinao_runtime.py seal.
-    assert observed == "e212d3f43ecbbb6f1f66a83e19e088c3d951b36298a3799cedea6fba0238b4aa"
+    assert observed == "2eb2675ad5ca07cc2b253837f3270962c0705bf47ca695f13a1152b7c79d51b3"
     assert len(observed) == 64
 
 
@@ -1521,8 +1521,8 @@ def test_bootstrap_forward_upgrade_live_gen17_shadow_generation_to_current(
     pointer = module._load_json(module._state_paths()["pointer"])
     assert pointer["generation"] == 18
     assert pointer["active"]["release_id"] == world["target"]["release_id"]
-    assert pointer["active"]["package_version"] == "1.3.16"
-    assert pointer["active"]["capability_version"] == "1.2.12"
+    assert pointer["active"]["package_version"] == "1.3.17"
+    assert pointer["active"]["capability_version"] == "1.2.13"
     assert Path(world["active_path"]).read_bytes() == world["active_manifest_bytes"]
 
 

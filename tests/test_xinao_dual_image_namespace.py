@@ -250,6 +250,8 @@ def _install_docker_io_mock(
     deny_exit = int(getattr(module, "TOOL_NAMESPACE_DENY_PROOF_EXIT", 17))
     state: dict[str, Any] = {
         "containers": {},
+        "volumes": set(),
+        "volume_commands": [],
         "creates": 0,
         "execs": [],
         "starts": 0,
@@ -305,6 +307,21 @@ def _install_docker_io_mock(
                 self.stdout = stdout
                 self.stderr = stderr
 
+        if len(argv) >= 3 and argv[1] == "volume":
+            action = argv[2]
+            name = argv[-1]
+            state["volume_commands"].append(list(argv[2:]))
+            if action == "inspect":
+                if name in state["volumes"]:
+                    return Result(0, json.dumps([{"Name": name}]), "")
+                return Result(1, "", "no such volume")
+            if action == "create":
+                state["volumes"].add(name)
+                return Result(0, name + "\n", "")
+            if action == "rm":
+                state["volumes"].discard(name)
+                return Result(0, name + "\n", "")
+
         if len(argv) >= 2 and argv[1] == "create":
             state["creates"] += 1
             if fail_create:
@@ -315,6 +332,8 @@ def _install_docker_io_mock(
             # Recover bind sources from --mount flags for inspect.
             lab = "/host/lab"
             ipc = "/host/ipc"
+            ipc_type = "bind"
+            ipc_name = ""
             sidecar = ""
             auth = ""
             tin = "/host/tin"
@@ -324,7 +343,10 @@ def _install_docker_io_mock(
                     mount = argv[i + 1]
                     src = ""
                     dst = ""
+                    kind = ""
                     for part in mount.split(","):
+                        if part.startswith("type="):
+                            kind = part[5:]
                         if part.startswith("src="):
                             src = part[4:]
                         if part.startswith("dst="):
@@ -333,6 +355,8 @@ def _install_docker_io_mock(
                         lab = src or lab
                     if dst in {"/ipc", "/ipc/"}:
                         ipc = src or ipc
+                        ipc_type = kind or "bind"
+                        ipc_name = src if ipc_type == "volume" else ""
                     if dst in {"/sidecar-evidence", "/sidecar-evidence/"}:
                         sidecar = src
                     if dst in {"/grok-home/auth.json"} or dst.endswith("auth.json"):
@@ -372,6 +396,8 @@ def _install_docker_io_mock(
                 "image": image_for_create,
                 "lab": lab,
                 "ipc": ipc,
+                "ipc_type": ipc_type,
+                "ipc_name": ipc_name,
                 "sidecar": sidecar,
                 "auth": auth,
                 "tin": tin,
@@ -418,6 +444,18 @@ def _install_docker_io_mock(
                     entrypoint=meta.get("entrypoint"),
                     cmd=meta.get("cmd"),
                 )
+            if meta.get("ipc_type") == "volume":
+                for mount in doc["Mounts"]:
+                    if mount.get("Destination") == "/ipc":
+                        name = str(meta.get("ipc_name") or "")
+                        mount.update(
+                            {
+                                "Type": "volume",
+                                "Name": name,
+                                "Source": f"/var/lib/docker/volumes/{name}/_data",
+                                "RW": True,
+                            }
+                        )
             return Result(0, json.dumps([doc]), "")
 
         if len(argv) >= 3 and argv[1] == "start":
@@ -553,8 +591,8 @@ def _seed_canonical_receipt(
     return receipt_path, receipt, pointer_path
 
 
-def test_semver_source_is_1_3_16_and_1_2_12(module: Any) -> None:
-    """Current dual-image identity: Skill 1.3.16 / researcher capability 1.2.12."""
+def test_semver_source_is_1_3_17_and_1_2_13(module: Any) -> None:
+    """Current dual-image identity: Skill 1.3.17 / researcher capability 1.2.13."""
     registry = json.loads((SKILL_ROOT / "references" / "capabilities.v1.json").read_text())
     charter = json.loads((SKILL_ROOT / "references" / "researcher-charter.v1.json").read_text())
     runtime_lock = json.loads(
@@ -563,12 +601,12 @@ def test_semver_source_is_1_3_16_and_1_2_12(module: Any) -> None:
     researcher = next(
         c for c in registry["capabilities"] if c["capability_id"] == "researcher-container"
     )
-    assert registry["skill_version"] == "1.3.16"
+    assert registry["skill_version"] == "1.3.17"
     assert (
         researcher["version"]
         == charter["charter_version"]
         == runtime_lock["runtime_version"]
-        == "1.2.12"
+        == "1.2.13"
     )
     shadow = next(
         c for c in registry["capabilities"] if c["capability_id"] == "shadow-lifecycle-leg-a"
@@ -1053,7 +1091,7 @@ def test_issuer_requires_complete_physical_proofs_fail_closed(
         module, tmp_path, monkeypatch, package_version="1.3.6", capability_version="1.2.2"
     )
     skill_tests._terminal_pointer(module, manifest, path)
-    _install_docker_io_mock(
+    io_state = _install_docker_io_mock(
         module,
         monkeypatch,
         transport_image_id=manifest["image_id"],
@@ -1067,6 +1105,8 @@ def test_issuer_requires_complete_physical_proofs_fail_closed(
         "TOOL_NAMESPACE_PROBE_AUTH_RUNTIME_UNPROVEN",
         "TOOL_NAMESPACE_PROOF_INCOMPLETE",
     }
+    assert not io_state["volumes"]
+    assert any(command[0] == "rm" for command in io_state["volume_commands"])
 
 
 def test_issuer_writes_canonical_receipt_via_real_docker_io_mock(
@@ -1512,11 +1552,18 @@ def test_physical_probe_requires_tool_sidecar_and_transport_auth_asymmetry(
     assert methods["transport_auth_handle_readable"]
     assert probe["details"]["role_boundary"]["tool_auth_mount"] == "forbidden"
     assert probe["details"]["role_boundary"]["auth_bytes_observed"] is False
+    assert probe["details"]["ipc_mount_type"] == "volume"
+    assert probe["details"]["ipc_volume_source"].startswith("/var/lib/docker/volumes/")
+    assert probe["details"]["ipc_volume_cleanup"]["removed"] is True
+    assert not io_state["volumes"]
+    assert any(command[0] == "create" for command in io_state["volume_commands"])
+    assert any(command[0] == "rm" for command in io_state["volume_commands"])
     # At least one tool create + one transport create.
     assert io_state["creates"] >= 2
     roles = [meta.get("role") for meta in io_state["containers"].values()]
     assert "tool" in roles
     assert "transport" in roles
+    assert all(meta.get("ipc_type") == "volume" for meta in io_state["containers"].values())
     # Tool create argv must include sidecar bind; transport must include auth.json RO.
     # Reconstruct from mock container metadata.
     tool_metas = [m for m in io_state["containers"].values() if m.get("role") == "tool"]
