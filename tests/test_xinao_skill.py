@@ -860,7 +860,7 @@ def test_package_version_is_separate_from_researcher_versions() -> None:
         for value in registry["capabilities"]
         if value["capability_id"] == "researcher-container"
     )
-    assert registry["skill_version"] == "1.3.19"
+    assert registry["skill_version"] == "1.3.20"
     assert (
         researcher["version"]
         == charter["charter_version"]
@@ -1162,7 +1162,7 @@ def test_build_is_candidate_only_and_passes_complete_image_identity(
     donor_binary_sha256 = env["donor_binary_sha256"]
     receipt = module.build_release(ROOT, allow_dirty=True)
     assert receipt["status"] == "CANDIDATE_BUILT"
-    assert receipt["package_version"] == "1.3.19"
+    assert receipt["package_version"] == "1.3.20"
     assert receipt["capability_version"] == "1.2.15"
     assert receipt.get("tool_image_id")
     assert str(receipt["tool_image_id"]).startswith("sha256:")
@@ -1442,14 +1442,14 @@ def test_same_semver_different_content_is_collision(
         tmp_path,
         monkeypatch,
         image_character="a",
-        package_version="1.3.19",
+        package_version="1.3.20",
         capability_version="1.2.15",
     )
     _fake_build_environment(module, monkeypatch, dirty=False, image_character="f")
     with pytest.raises(module.XinaoError) as failure:
         module.build_release(ROOT, allow_dirty=False)
     assert failure.value.reason_code == "SEMVER_CONTENT_COLLISION"
-    assert failure.value.detail == "package=1.3.19 capability=1.2.15"
+    assert failure.value.detail == "package=1.3.20 capability=1.2.15"
 
 
 def test_package_version_bump_can_reuse_researcher_capability_version(
@@ -1472,10 +1472,10 @@ def test_package_version_bump_can_reuse_researcher_capability_version(
     new = module._load_json(new_path)
 
     assert receipt["status"] == "CANDIDATE_BUILT"
-    assert receipt["package_version"] == "1.3.19"
+    assert receipt["package_version"] == "1.3.20"
     assert receipt["capability_version"] == "1.2.15"
     assert new["release_id"] != old["release_id"]
-    assert new["package_version"] == "1.3.19"
+    assert new["package_version"] == "1.3.20"
     assert new["capability_version"] == "1.2.15"
     assert old_path.read_bytes() == old_bytes
 
@@ -1510,7 +1510,7 @@ def test_forward_upgrade_target_build_accepts_package_only_bump(
     new, new_path = prepared
     assert new_path.is_file()
     assert new["release_id"] != old["release_id"]
-    assert new["package_version"] == "1.3.19"
+    assert new["package_version"] == "1.3.20"
     assert new["capability_version"] == "1.2.15"
     assert old_path.read_bytes() == old_bytes
 
@@ -6606,7 +6606,7 @@ def _prepare_v2_forward_upgrade_world(
         tmp_path,
         monkeypatch,
         image_character="c",
-        package_version="1.3.19",
+        package_version="1.3.20",
         capability_version="1.2.15",
     )
     monkeypatch.setattr(

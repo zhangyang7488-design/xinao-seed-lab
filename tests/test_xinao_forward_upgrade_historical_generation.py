@@ -1521,7 +1521,7 @@ def test_bootstrap_forward_upgrade_live_gen17_shadow_generation_to_current(
     pointer = module._load_json(module._state_paths()["pointer"])
     assert pointer["generation"] == 18
     assert pointer["active"]["release_id"] == world["target"]["release_id"]
-    assert pointer["active"]["package_version"] == "1.3.19"
+    assert pointer["active"]["package_version"] == "1.3.20"
     assert pointer["active"]["capability_version"] == "1.2.15"
     assert Path(world["active_path"]).read_bytes() == world["active_manifest_bytes"]
 

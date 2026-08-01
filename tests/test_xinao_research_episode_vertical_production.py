@@ -187,7 +187,7 @@ def test_capabilities_registry_lists_ensure_pair(module: Any) -> None:
         (SKILL_ROOT / "references" / "capabilities.v1.json").read_text(encoding="utf-8")
     )
     episode = next(c for c in caps["capabilities"] if c["capability_id"] == "research-episode")
-    assert episode["version"] == "0.1.4"
+    assert episode["version"] == "0.1.5"
     assert episode["packaged_dependency"] == "xinao-discovery"
     assert episode["packaged_dependency_version"] == "0.1.2"
     assert episode["packaged_dependency_tree_schema"] == "xinao.package_tree.v1"

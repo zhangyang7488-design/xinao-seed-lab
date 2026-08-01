@@ -454,6 +454,41 @@ class DualContainerHost:
             raise DualHostError("DUAL_HOST_IMAGE_ID_INVALID", image_id)
         return image_id
 
+    def require_transport_grok_cli_version(self, transport_image_id: str) -> str:
+        """Probe the exact sealed transport image, never a mutable host PATH binary."""
+        native_mod = self._load_native_session()
+        supported_cli = getattr(native_mod, "SUPPORTED_GROK_CLI_VERSION", "0.2.117")
+        if self.config.synthetic:
+            return str(supported_cli)
+        completed = self._run(
+            [
+                self.config.docker,
+                "run",
+                "--rm",
+                "--network",
+                "none",
+                "--read-only",
+                "--cap-drop",
+                "ALL",
+                "--security-opt",
+                "no-new-privileges",
+                "--entrypoint",
+                "/usr/local/bin/grok",
+                transport_image_id,
+                "--no-auto-update",
+                "version",
+            ],
+            reason="GROK_CLI_VERSION_PROBE_FAILED",
+        )
+        version_text = (completed.stdout or completed.stderr or "").strip().splitlines()
+        observed = version_text[0][:200] if version_text else ""
+        try:
+            return str(native_mod.require_supported_grok_cli_version(observed))
+        except Exception as exc:
+            reason = getattr(exc, "reason_code", None) or "GROK_CLI_VERSION_UNSUPPORTED"
+            detail = getattr(exc, "detail", None) or str(exc)
+            raise DualHostError(str(reason), str(detail)) from exc
+
     def create_pair(
         self,
         *,
@@ -479,6 +514,7 @@ class DualContainerHost:
         names = self.specs.pair_resource_names(episode_id)
         transport_image_id = self.resolve_image_id(self.config.transport_image)
         tool_image_id = self.resolve_image_id(self.config.tool_image)
+        supported_cli = self.require_transport_grok_cli_version(transport_image_id)
 
         # IPC: prefer named volume; also keep bind dir for host-side socket observation.
         ipc_volume = names["ipc_volume"]
@@ -639,21 +675,8 @@ class DualContainerHost:
             "completion_claim_allowed": False,
         }
         self._save_session_inventory(inventory)
-        # Bind supported CLI identity into pair receipt (fail closed on live probe mismatch).
-        native_mod = self._load_native_session()
-        supported_cli = getattr(native_mod, "SUPPORTED_GROK_CLI_VERSION", "0.2.117")
-        if not self.config.synthetic:
-            try:
-                probe = native_mod.probe_grok_cli(require_supported_version=True)
-                if probe.auth_error and str(probe.auth_error).startswith(
-                    "GROK_CLI_VERSION_UNSUPPORTED"
-                ):
-                    raise DualHostError("GROK_CLI_VERSION_UNSUPPORTED", probe.auth_error)
-            except DualHostError:
-                raise
-            except Exception:
-                # Host probe optional when binary unavailable offline; receipt still pins version.
-                pass
+        # Bind the exact transport-image CLI identity into the pair receipt. The host
+        # CLI may update independently and is not part of this ResearchEpisode runtime.
         pair_receipt = {
             "schema_version": PAIR_RECEIPT_SCHEMA,
             "episode_id": episode_id,
