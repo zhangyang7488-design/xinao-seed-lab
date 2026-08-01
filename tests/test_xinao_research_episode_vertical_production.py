@@ -33,9 +33,7 @@ class _FakeRecordPath:
         self.size = size
         self.hash = SimpleNamespace(
             mode="sha256",
-            value=base64.urlsafe_b64encode(bytes.fromhex(sha256))
-            .rstrip(b"=")
-            .decode("ascii"),
+            value=base64.urlsafe_b64encode(bytes.fromhex(sha256)).rstrip(b"=").decode("ascii"),
         )
 
     def __str__(self) -> str:
@@ -51,9 +49,9 @@ def _fake_distribution(module: Any, package_root: Path, *, version: str = "0.1.3
         )
         for row in module._discovery_package_inventory(package_root)
     ]
-    record = "\n".join(
-        f"{item.relative},sha256={item.hash.value},{item.size}" for item in files
-    ) + "\n"
+    record = (
+        "\n".join(f"{item.relative},sha256={item.hash.value},{item.size}" for item in files) + "\n"
+    )
     return SimpleNamespace(
         metadata={"Name": "xinao-discovery"},
         version=version,
@@ -257,7 +255,9 @@ def test_discovery_consumer_rejects_same_version_changed_package_tree(
 ) -> None:
     source_root = ROOT / "xinao_discovery" / "src" / "xinao"
     package_root = tmp_path / "site-packages" / "xinao"
-    shutil.copytree(source_root, package_root, ignore=shutil.ignore_patterns("__pycache__", "*.pyc"))
+    shutil.copytree(
+        source_root, package_root, ignore=shutil.ignore_patterns("__pycache__", "*.pyc")
+    )
     module_path = package_root / "science" / "research_feedback_material.py"
     module_path.write_bytes(module_path.read_bytes() + b"\nTAMPERED = True\n")
     candidate = _fake_module(module_path)
@@ -294,7 +294,9 @@ def test_discovery_consumer_rejects_recorded_file_removed_from_disk(
 ) -> None:
     source_root = ROOT / "xinao_discovery" / "src" / "xinao"
     package_root = tmp_path / "site-packages" / "xinao"
-    shutil.copytree(source_root, package_root, ignore=shutil.ignore_patterns("__pycache__", "*.pyc"))
+    shutil.copytree(
+        source_root, package_root, ignore=shutil.ignore_patterns("__pycache__", "*.pyc")
+    )
     distribution = _fake_distribution(module, package_root)
     (package_root / "science" / "research_feedback_material.py").unlink()
     monkeypatch.setattr(
@@ -317,9 +319,7 @@ def test_formal_runtime_rejects_editable_install_and_source_override(
         files=[],
         locate_file=lambda relative: package_root.parent / relative,
         read_text=lambda name: (
-            json.dumps({"dir_info": {"editable": True}})
-            if name == "direct_url.json"
-            else None
+            json.dumps({"dir_info": {"editable": True}}) if name == "direct_url.json" else None
         ),
     )
     monkeypatch.setattr(module, "_discovery_runtime_is_formal", lambda: True)
@@ -572,9 +572,7 @@ def test_checkpoint_cli_reparse_lab_file_has_no_episode_side_effect(
     )
     output = capsys.readouterr().out.strip().splitlines()
     assert exit_code == 2
-    assert json.loads(output[-1])["reason_codes"] == [
-        "RESEARCH_EPISODE_LAB_FILE_INVALID"
-    ]
+    assert json.loads(output[-1])["reason_codes"] == ["RESEARCH_EPISODE_LAB_FILE_INVALID"]
     assert _episode_tree_snapshot(episode) == before
 
 

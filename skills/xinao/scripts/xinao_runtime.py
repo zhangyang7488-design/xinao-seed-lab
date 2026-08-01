@@ -421,15 +421,9 @@ RESEARCH_EPISODE_ACTIVE_MATERIAL_CONTAINER_ROOT = "/active-materials"
 RESEARCH_EPISODE_VERIFIED_MATERIAL_REALITY_SCHEMA = (
     "xinao.research_episode_verified_material_reality.v1"
 )
-RESEARCH_EPISODE_PROSPECTIVE_PACKET_SCHEMA = (
-    "xinao.prospective_target_authority_packet.v1"
-)
-RESEARCH_EPISODE_PROSPECTIVE_PACKET_MARKER = (
-    "XINAO_PROSPECTIVE_TARGET_AUTHORITY_V1"
-)
-RESEARCH_EPISODE_PROSPECTIVE_SOURCE_BINDING_SCHEMA = (
-    "xinao.source_authority_binding.v1"
-)
+RESEARCH_EPISODE_PROSPECTIVE_PACKET_SCHEMA = "xinao.prospective_target_authority_packet.v1"
+RESEARCH_EPISODE_PROSPECTIVE_PACKET_MARKER = "XINAO_PROSPECTIVE_TARGET_AUTHORITY_V1"
+RESEARCH_EPISODE_PROSPECTIVE_SOURCE_BINDING_SCHEMA = "xinao.source_authority_binding.v1"
 RESEARCH_EPISODE_PROSPECTIVE_SOURCE_ID = "macaujc2"
 RESEARCH_EPISODE_OBJECTIVE_TERMS_SCHEMA = "xinao.actor_objective_terms.v1"
 RESEARCH_EPISODE_OBJECTIVE_TERMS_SOURCE_KIND = "PINNED_SETTLEMENT_RULE_SNAPSHOT"
@@ -440,12 +434,8 @@ RESEARCH_EPISODE_PORTFOLIO_REALITY_SCHEMA = "xinao.actor_portfolio_reality.v1"
 RESEARCH_EPISODE_PORTFOLIO_REALITY_MARKER = "XINAO_ACTOR_PORTFOLIO_REALITY_V1"
 RESEARCH_EPISODE_FEEDBACK_PACK_SCHEMA = "xinao.research_feedback_pack.v1"
 RESEARCH_EPISODE_FEEDBACK_PACK_MARKER = "XINAO_RESEARCH_FEEDBACK_PACK_V1"
-RESEARCH_EPISODE_PRIOR_EXPORT_SCHEMA = (
-    "xinao.research_episode_candidate_evidence_bundle.v1"
-)
-RESEARCH_EPISODE_PRIOR_MANIFEST_SCHEMA = (
-    "xinao.research_episode_candidate_manifest.v1"
-)
+RESEARCH_EPISODE_PRIOR_EXPORT_SCHEMA = "xinao.research_episode_candidate_evidence_bundle.v1"
+RESEARCH_EPISODE_PRIOR_MANIFEST_SCHEMA = "xinao.research_episode_candidate_manifest.v1"
 RESEARCH_EPISODE_ACTOR_MATERIAL_PREPARATION_SCHEMA = (
     "xinao.research_episode_actor_material_preparation.v1"
 )
@@ -460,9 +450,7 @@ RESEARCH_EPISODE_ACTOR_MATERIAL_LONGITUDINAL_OUTPUTS = (
     ("prior_candidate_export", "prior-candidate-export.json"),
     ("prior_candidate_manifest", "prior-candidate-manifest.json"),
 )
-RESEARCH_EPISODE_PRIOR_MANIFEST_MARKER = (
-    "XINAO_RESEARCH_EPISODE_CANDIDATE_MANIFEST_V1"
-)
+RESEARCH_EPISODE_PRIOR_MANIFEST_MARKER = "XINAO_RESEARCH_EPISODE_CANDIDATE_MANIFEST_V1"
 
 FORBIDDEN_RUNTIME_TOKENS = (
     "grok_worker_pool",
@@ -2070,9 +2058,7 @@ def _snapshot_material_sources(
                     "source_identity": {
                         "path": str(source),
                         "path_identity_sha256": _sha256_bytes(
-                            _canonical_bytes(
-                                {"path": os.path.normcase(os.path.abspath(source))}
-                            )
+                            _canonical_bytes({"path": os.path.normcase(os.path.abspath(source))})
                         ),
                         "st_dev": after.st_dev,
                         "st_ino": after.st_ino,
@@ -2209,9 +2195,7 @@ def _research_episode_material_paths_allowed(paths: Sequence[Path]) -> None:
             forbidden_directory_names.intersection(lowered_parts[:-1])
             or lexical.name.lower() in forbidden_file_names
         ):
-            raise XinaoError(
-                "RESEARCH_EPISODE_MATERIAL_AUTHORITY_PATH_FORBIDDEN", str(lexical)
-            )
+            raise XinaoError("RESEARCH_EPISODE_MATERIAL_AUTHORITY_PATH_FORBIDDEN", str(lexical))
 
 
 def _validate_existing_episode_material_bundle(
@@ -2230,44 +2214,32 @@ def _validate_existing_episode_material_bundle(
     try:
         observed_manifest = _load_json(manifest_path, maximum_bytes=MAX_MATERIAL_TOTAL_BYTES)
     except XinaoError as exc:
-        raise XinaoError(
-            "RESEARCH_EPISODE_MATERIAL_BUNDLE_DRIFT", str(manifest_path)
-        ) from exc
+        raise XinaoError("RESEARCH_EPISODE_MATERIAL_BUNDLE_DRIFT", str(manifest_path)) from exc
     if observed_manifest != manifest:
-        raise XinaoError(
-            "RESEARCH_EPISODE_MATERIAL_BUNDLE_DRIFT", "manifest identity"
-        )
+        raise XinaoError("RESEARCH_EPISODE_MATERIAL_BUNDLE_DRIFT", "manifest identity")
     expected_files = {"manifest.json"}
     for entry in list(manifest.get("materials") or []):
         if not isinstance(entry, dict):
-            raise XinaoError(
-                "RESEARCH_EPISODE_MATERIAL_BUNDLE_DRIFT", "manifest materials"
-            )
+            raise XinaoError("RESEARCH_EPISODE_MATERIAL_BUNDLE_DRIFT", "manifest materials")
         relative = str(entry.get("relative_path") or "")
         path = root / relative
         expected_files.add(relative)
         try:
             info = os.lstat(path)
         except OSError as exc:
-            raise XinaoError(
-                "RESEARCH_EPISODE_MATERIAL_BUNDLE_DRIFT", relative
-            ) from exc
+            raise XinaoError("RESEARCH_EPISODE_MATERIAL_BUNDLE_DRIFT", relative) from exc
         if (
             _is_reparse(path)
             or not stat.S_ISREG(info.st_mode)
             or info.st_size != entry.get("size_bytes")
             or _sha256(path) != entry.get("sha256")
         ):
-            raise XinaoError(
-                "RESEARCH_EPISODE_MATERIAL_BUNDLE_DRIFT", relative
-            )
+            raise XinaoError("RESEARCH_EPISODE_MATERIAL_BUNDLE_DRIFT", relative)
     observed_files = {
         path.relative_to(root).as_posix() for path in root.rglob("*") if path.is_file()
     }
     if observed_files != expected_files:
-        raise XinaoError(
-            "RESEARCH_EPISODE_MATERIAL_BUNDLE_DRIFT", "bundle file set"
-        )
+        raise XinaoError("RESEARCH_EPISODE_MATERIAL_BUNDLE_DRIFT", "bundle file set")
     return manifest_path
 
 
@@ -2280,13 +2252,9 @@ def _materialize_research_episode_active_binding(
 ) -> tuple[dict[str, Any], dict[str, Any]]:
     """Freeze active materials and the exact prompt-file consumed by one attempt."""
     if not material_paths:
-        raise XinaoError(
-            "RESEARCH_EPISODE_MATERIAL_BINDING_EMPTY", "material paths required"
-        )
+        raise XinaoError("RESEARCH_EPISODE_MATERIAL_BINDING_EMPTY", "material paths required")
     _research_episode_material_paths_allowed(material_paths)
-    snapshots, auth_witness = _snapshot_material_sources(
-        tuple(material_paths), auth_path=auth_path
-    )
+    snapshots, auth_witness = _snapshot_material_sources(tuple(material_paths), auth_path=auth_path)
     # Host time sampled only after every source byte and the auth identity have
     # survived the same snapshot window.  Downstream actor reality may use this
     # as knowledge_cutoff instead of accepting a caller-authored timestamp.
@@ -2300,13 +2268,9 @@ def _materialize_research_episode_active_binding(
     prompts_root.mkdir(parents=True, exist_ok=True)
     bundle_root = bundles_root / bundle_digest
     if bundle_root.exists():
-        manifest_path = _validate_existing_episode_material_bundle(
-            bundle_root, manifest=manifest
-        )
+        manifest_path = _validate_existing_episode_material_bundle(bundle_root, manifest=manifest)
     else:
-        _observed_manifest, manifest_path = _materialize_material_bundle(
-            bundle_root, snapshots
-        )
+        _observed_manifest, manifest_path = _materialize_material_bundle(bundle_root, snapshots)
     manifest_sha256 = _sha256(manifest_path)
     packet = _material_packet_bytes(manifest, snapshots)
     effective_prompt = (
@@ -2320,9 +2284,7 @@ def _materialize_research_episode_active_binding(
         if _is_reparse(effective_prompt_path) or _sha256(effective_prompt_path) != (
             effective_prompt_sha256
         ):
-            raise XinaoError(
-                "RESEARCH_EPISODE_EFFECTIVE_PROMPT_DRIFT", str(effective_prompt_path)
-            )
+            raise XinaoError("RESEARCH_EPISODE_EFFECTIVE_PROMPT_DRIFT", str(effective_prompt_path))
     else:
         _write_bytes_atomic(effective_prompt_path, effective_prompt, create_new=True)
     manifest_relative = manifest_path.relative_to(active_root).as_posix()
@@ -2366,9 +2328,7 @@ def _validate_research_episode_active_binding_files(
 ) -> dict[str, Any]:
     value = dict(binding)
     if value.get("schema_version") != RESEARCH_EPISODE_ACTIVE_MATERIAL_BINDING_SCHEMA:
-        raise XinaoError(
-            "RESEARCH_EPISODE_MATERIAL_BINDING_INVALID", "schema_version"
-        )
+        raise XinaoError("RESEARCH_EPISODE_MATERIAL_BINDING_INVALID", "schema_version")
     _parse_utc_z(
         value.get("material_snapshot_at"),
         reason_code="RESEARCH_EPISODE_MATERIAL_BINDING_INVALID",
@@ -2384,35 +2344,23 @@ def _validate_research_episode_active_binding_files(
             raise XinaoError("RESEARCH_EPISODE_MATERIAL_BINDING_INVALID", key)
     bundle_id = str(value.get("material_bundle_id") or "")
     if not bundle_id.startswith("xinao-material-bundle-sha256:"):
-        raise XinaoError(
-            "RESEARCH_EPISODE_MATERIAL_BINDING_INVALID", "material_bundle_id"
-        )
+        raise XinaoError("RESEARCH_EPISODE_MATERIAL_BINDING_INVALID", "material_bundle_id")
     bundle_digest = bundle_id.split(":", 1)[1]
     if HEX_SHA256_PATTERN.fullmatch(bundle_digest) is None:
-        raise XinaoError(
-            "RESEARCH_EPISODE_MATERIAL_BINDING_INVALID", "material_bundle_id"
-        )
+        raise XinaoError("RESEARCH_EPISODE_MATERIAL_BINDING_INVALID", "material_bundle_id")
     active_root = (Path(episode_root) / "active_materials").resolve()
     expected_manifest_relative = f"bundles/{bundle_digest}/manifest.json"
     expected_prompt_relative = f"prompts/{value['effective_prompt_sha256']}.utf8"
     if value.get("material_manifest_relative_path") != expected_manifest_relative:
-        raise XinaoError(
-            "RESEARCH_EPISODE_MATERIAL_BINDING_INVALID", "manifest path"
-        )
+        raise XinaoError("RESEARCH_EPISODE_MATERIAL_BINDING_INVALID", "manifest path")
     if value.get("effective_prompt_relative_path") != expected_prompt_relative:
-        raise XinaoError(
-            "RESEARCH_EPISODE_MATERIAL_BINDING_INVALID", "prompt path"
-        )
+        raise XinaoError("RESEARCH_EPISODE_MATERIAL_BINDING_INVALID", "prompt path")
     if value.get("container_material_root") != RESEARCH_EPISODE_ACTIVE_MATERIAL_CONTAINER_ROOT:
-        raise XinaoError(
-            "RESEARCH_EPISODE_MATERIAL_BINDING_INVALID", "container_material_root"
-        )
+        raise XinaoError("RESEARCH_EPISODE_MATERIAL_BINDING_INVALID", "container_material_root")
     if value.get("container_bundle_path") != (
         f"{RESEARCH_EPISODE_ACTIVE_MATERIAL_CONTAINER_ROOT}/bundles/{bundle_digest}"
     ):
-        raise XinaoError(
-            "RESEARCH_EPISODE_MATERIAL_BINDING_INVALID", "container_bundle_path"
-        )
+        raise XinaoError("RESEARCH_EPISODE_MATERIAL_BINDING_INVALID", "container_bundle_path")
     if value.get("container_effective_prompt_path") != (
         f"{RESEARCH_EPISODE_ACTIVE_MATERIAL_CONTAINER_ROOT}/{expected_prompt_relative}"
     ):
@@ -2429,35 +2377,23 @@ def _validate_research_episode_active_binding_files(
         try:
             resolved = path.resolve(strict=True)
         except OSError as exc:
-            raise XinaoError(
-                "RESEARCH_EPISODE_MATERIAL_BINDING_DRIFT", str(path)
-            ) from exc
+            raise XinaoError("RESEARCH_EPISODE_MATERIAL_BINDING_DRIFT", str(path)) from exc
         if (
             active_root not in resolved.parents
             or _is_reparse(path)
             or not path.is_file()
             or _sha256(path) != expected_sha
         ):
-            raise XinaoError(
-                "RESEARCH_EPISODE_MATERIAL_BINDING_DRIFT", str(path)
-            )
+            raise XinaoError("RESEARCH_EPISODE_MATERIAL_BINDING_DRIFT", str(path))
     manifest = _load_json(manifest_path, maximum_bytes=MAX_MATERIAL_TOTAL_BYTES)
     if value.get("material_manifest") != manifest:
-        raise XinaoError(
-            "RESEARCH_EPISODE_MATERIAL_BINDING_DRIFT", "material_manifest"
-        )
+        raise XinaoError("RESEARCH_EPISODE_MATERIAL_BINDING_DRIFT", "material_manifest")
     materials = list(manifest.get("materials") or [])
     if not materials or not all(isinstance(item, dict) for item in materials):
-        raise XinaoError(
-            "RESEARCH_EPISODE_MATERIAL_BINDING_INVALID", "manifest materials"
-        )
-    rebuilt_manifest = _material_bundle_manifest(
-        [{"entry": dict(item)} for item in materials]
-    )
+        raise XinaoError("RESEARCH_EPISODE_MATERIAL_BINDING_INVALID", "manifest materials")
+    rebuilt_manifest = _material_bundle_manifest([{"entry": dict(item)} for item in materials])
     if rebuilt_manifest != manifest or rebuilt_manifest["bundle_id"] != bundle_id:
-        raise XinaoError(
-            "RESEARCH_EPISODE_MATERIAL_BINDING_INVALID", "manifest content address"
-        )
+        raise XinaoError("RESEARCH_EPISODE_MATERIAL_BINDING_INVALID", "manifest content address")
     bundle_root = active_root / "bundles" / bundle_digest
     _validate_existing_episode_material_bundle(bundle_root, manifest=manifest)
     snapshots: list[dict[str, Any]] = []
@@ -2470,33 +2406,24 @@ def _validate_research_episode_active_binding_files(
             or entry.get("encoding") != "utf-8"
             or HEX_SHA256_PATTERN.fullmatch(str(entry.get("sha256") or "")) is None
         ):
-            raise XinaoError(
-                "RESEARCH_EPISODE_MATERIAL_BINDING_INVALID", "material entry"
-            )
+            raise XinaoError("RESEARCH_EPISODE_MATERIAL_BINDING_INVALID", "material entry")
         path = bundle_root / relative
         try:
             # Decode exact frozen bytes; text-mode newline translation would
             # change the provider packet identity on Windows.
             text = path.read_bytes().decode("utf-8")
         except (OSError, UnicodeDecodeError) as exc:
-            raise XinaoError(
-                "RESEARCH_EPISODE_MATERIAL_BINDING_DRIFT", relative
-            ) from exc
+            raise XinaoError("RESEARCH_EPISODE_MATERIAL_BINDING_DRIFT", relative) from exc
         snapshots.append({"entry": entry, "text": text})
     packet = _material_packet_bytes(manifest, snapshots)
     if _sha256_bytes(packet) != value.get("material_packet_sha256"):
-        raise XinaoError(
-            "RESEARCH_EPISODE_MATERIAL_BINDING_INVALID", "material packet"
-        )
+        raise XinaoError("RESEARCH_EPISODE_MATERIAL_BINDING_INVALID", "material packet")
     prompt_bytes = prompt_path.read_bytes()
     suffix = RESEARCH_EPISODE_MATERIAL_PACKET_NOTICE.encode("utf-8") + packet
-    if (
-        not prompt_bytes.endswith(suffix)
-        or _sha256_bytes(prompt_bytes[: -len(suffix)]) != value.get("base_prompt_sha256")
-    ):
-        raise XinaoError(
-            "RESEARCH_EPISODE_MATERIAL_BINDING_INVALID", "effective prompt binding"
-        )
+    if not prompt_bytes.endswith(suffix) or _sha256_bytes(
+        prompt_bytes[: -len(suffix)]
+    ) != value.get("base_prompt_sha256"):
+        raise XinaoError("RESEARCH_EPISODE_MATERIAL_BINDING_INVALID", "effective prompt binding")
     source_refs = list(value.get("material_source_refs") or [])
     source_ref_keys = {
         "path",
@@ -2521,23 +2448,17 @@ def _validate_research_episode_active_binding_files(
     observed_refs: dict[str, tuple[str, int, str]] = {}
     for item in source_refs:
         if not isinstance(item, Mapping) or set(item) != source_ref_keys:
-            raise XinaoError(
-                "RESEARCH_EPISODE_MATERIAL_BINDING_INVALID", "source identity shape"
-            )
+            raise XinaoError("RESEARCH_EPISODE_MATERIAL_BINDING_INVALID", "source identity shape")
         source_path = str(item.get("path") or "")
         if (
             not Path(source_path).is_absolute()
             or item.get("path_identity_sha256")
             != _sha256_bytes(
-                _canonical_bytes(
-                    {"path": os.path.normcase(os.path.abspath(source_path))}
-                )
+                _canonical_bytes({"path": os.path.normcase(os.path.abspath(source_path))})
             )
             or int(item.get("st_size") or -1) != int(item.get("size_bytes") or -2)
         ):
-            raise XinaoError(
-                "RESEARCH_EPISODE_MATERIAL_BINDING_INVALID", "source identity"
-            )
+            raise XinaoError("RESEARCH_EPISODE_MATERIAL_BINDING_INVALID", "source identity")
         material_id = str(item.get("material_id") or "")
         if material_id in observed_refs:
             raise XinaoError(
@@ -2548,13 +2469,10 @@ def _validate_research_episode_active_binding_files(
             int(item.get("size_bytes") or -1),
             str(item.get("logical_name") or ""),
         )
-    if (
-        observed_refs != expected_refs
-        or int(value.get("material_count") or 0) != len(expected_refs)
+    if observed_refs != expected_refs or int(value.get("material_count") or 0) != len(
+        expected_refs
     ):
-        raise XinaoError(
-            "RESEARCH_EPISODE_MATERIAL_BINDING_INVALID", "material_source_refs"
-        )
+        raise XinaoError("RESEARCH_EPISODE_MATERIAL_BINDING_INVALID", "material_source_refs")
     return value
 
 
@@ -12116,9 +12034,7 @@ def _actor_intent_datetime_json(value: object) -> str:
     try:
         parsed = dt.datetime.fromisoformat(value.replace("Z", "+00:00"))
     except ValueError as exc:
-        raise XinaoError(
-            "RESEARCH_CANDIDATE_ACTOR_INTENT_INVALID", "authored_at"
-        ) from exc
+        raise XinaoError("RESEARCH_CANDIDATE_ACTOR_INTENT_INVALID", "authored_at") from exc
     if parsed.tzinfo is None or parsed.utcoffset() is None:
         raise XinaoError("RESEARCH_CANDIDATE_ACTOR_INTENT_INVALID", "authored_at")
     normalized = parsed.isoformat()
@@ -12131,9 +12047,7 @@ def _validate_actor_authored_behavior_intent(value: object) -> dict[str, Any]:
     """Validate the researcher-only choice without accepting caller reality fields."""
 
     if not isinstance(value, dict):
-        raise XinaoError(
-            "RESEARCH_CANDIDATE_ACTOR_INTENT_INVALID", "object required"
-        )
+        raise XinaoError("RESEARCH_CANDIDATE_ACTOR_INTENT_INVALID", "object required")
     required = {
         "schema_version",
         "authored_at",
@@ -12155,15 +12069,11 @@ def _validate_actor_authored_behavior_intent(value: object) -> dict[str, Any]:
             "required/optional keys are invalid",
         )
     if value.get("schema_version") != "xinao.actor_authored_behavior_intent.v1":
-        raise XinaoError(
-            "RESEARCH_CANDIDATE_ACTOR_INTENT_INVALID", "schema_version"
-        )
+        raise XinaoError("RESEARCH_CANDIDATE_ACTOR_INTENT_INVALID", "schema_version")
     authored_at = _actor_intent_datetime_json(value.get("authored_at"))
     rationale = value.get("research_rationale")
     if not _plain_json_text(rationale, nonempty=True) or not str(rationale).strip():
-        raise XinaoError(
-            "RESEARCH_CANDIDATE_ACTOR_INTENT_INVALID", "research_rationale"
-        )
+        raise XinaoError("RESEARCH_CANDIDATE_ACTOR_INTENT_INVALID", "research_rationale")
     responses: dict[str, str | None] = {}
     for field in (
         "after_hit_response",
@@ -12184,9 +12094,7 @@ def _validate_actor_authored_behavior_intent(value: object) -> dict[str, Any]:
     try:
         amount = Decimal(stake)
     except InvalidOperation as exc:
-        raise XinaoError(
-            "RESEARCH_CANDIDATE_ACTOR_INTENT_INVALID", "stake"
-        ) from exc
+        raise XinaoError("RESEARCH_CANDIDATE_ACTOR_INTENT_INVALID", "stake") from exc
     kind = value.get("decision_kind")
     panel = value.get("panel")
     selected_number = value.get("selected_number")
@@ -12197,18 +12105,12 @@ def _validate_actor_authored_behavior_intent(value: object) -> dict[str, Any]:
             or type(selected_number) is not int
             or not 1 <= selected_number <= 49
         ):
-            raise XinaoError(
-                "RESEARCH_CANDIDATE_ACTOR_INTENT_INVALID", "ACTION choice"
-            )
+            raise XinaoError("RESEARCH_CANDIDATE_ACTOR_INTENT_INVALID", "ACTION choice")
     elif kind == "NO_ACTION":
         if amount != 0 or stake != "0.0000" or panel is not None or selected_number is not None:
-            raise XinaoError(
-                "RESEARCH_CANDIDATE_ACTOR_INTENT_INVALID", "NO_ACTION choice"
-            )
+            raise XinaoError("RESEARCH_CANDIDATE_ACTOR_INTENT_INVALID", "NO_ACTION choice")
     else:
-        raise XinaoError(
-            "RESEARCH_CANDIDATE_ACTOR_INTENT_INVALID", "decision_kind"
-        )
+        raise XinaoError("RESEARCH_CANDIDATE_ACTOR_INTENT_INVALID", "decision_kind")
     normalized = {
         "schema_version": "xinao.actor_authored_behavior_intent.v1",
         "authored_at": authored_at,
@@ -12229,18 +12131,14 @@ def _validate_actor_authored_behavior_intent(value: object) -> dict[str, Any]:
             allow_nan=False,
         ).encode("utf-8")
     except (TypeError, ValueError, UnicodeEncodeError) as exc:
-        raise XinaoError(
-            "RESEARCH_CANDIDATE_ACTOR_INTENT_INVALID", "canonical content"
-        ) from exc
+        raise XinaoError("RESEARCH_CANDIDATE_ACTOR_INTENT_INVALID", "canonical content") from exc
     expected_hash = _sha256_bytes(normalized_bytes)
     if claimed_hash is not None and (
         not isinstance(claimed_hash, str)
         or HEX_SHA256_PATTERN.fullmatch(claimed_hash) is None
         or claimed_hash != expected_hash
     ):
-        raise XinaoError(
-            "RESEARCH_CANDIDATE_ACTOR_INTENT_INVALID", "content_hash"
-        )
+        raise XinaoError("RESEARCH_CANDIDATE_ACTOR_INTENT_INVALID", "content_hash")
     return {**normalized, "content_hash": claimed_hash or expected_hash}
 
 
@@ -12442,10 +12340,10 @@ def _validate_material_result_binding(
                 "RESEARCH_CANDIDATE_NO_ACTION_INVALID",
                 "no_action_intent keys are not exact",
             )
-        if any(
-            not _plain_json_text(no_action.get(key), nonempty=True)
-            for key in no_action_keys
-        ) or no_action.get("rule_ref") != "special-number-rule.v1":
+        if (
+            any(not _plain_json_text(no_action.get(key), nonempty=True) for key in no_action_keys)
+            or no_action.get("rule_ref") != "special-number-rule.v1"
+        ):
             raise XinaoError(
                 "RESEARCH_CANDIDATE_NO_ACTION_INVALID",
                 "no_action_intent identities are invalid",
@@ -14481,8 +14379,7 @@ def _research_episode_lab_target(root: Path, lab_relative: str) -> tuple[Path, P
         or re.match(r"(?i)^[a-z]:", normalized)
         or not rel.parts
         or any(
-            part in {"", ".", ".."} or part.startswith("..") or ":" in part
-            for part in rel.parts
+            part in {"", ".", ".."} or part.startswith("..") or ":" in part for part in rel.parts
         )
     ):
         raise XinaoError("RESEARCH_EPISODE_LAB_PATH_INVALID", lab_relative)
@@ -14509,9 +14406,7 @@ def _research_episode_existing_lab_bytes(root: Path, lab_relative: str) -> bytes
     try:
         root_info = os.lstat(lab_root)
         if _is_reparse_stat(root_info) or not stat.S_ISDIR(root_info.st_mode):
-            raise XinaoError(
-                "RESEARCH_EPISODE_LAB_FILE_INVALID", f"lab root invalid: {lab_root}"
-            )
+            raise XinaoError("RESEARCH_EPISODE_LAB_FILE_INVALID", f"lab root invalid: {lab_root}")
         relative = target.relative_to(lab_root)
         current = lab_root
         for part in relative.parts[:-1]:
@@ -16652,21 +16547,18 @@ def _research_episode_material_role_identities(
             continue
         if (
             value.get("schema_version") == RESEARCH_EPISODE_PROSPECTIVE_PACKET_SCHEMA
-            and value.get("packet_marker")
-            == RESEARCH_EPISODE_PROSPECTIVE_PACKET_MARKER
+            and value.get("packet_marker") == RESEARCH_EPISODE_PROSPECTIVE_PACKET_MARKER
         ):
             prospective.append((dict(entry), value))
         if (
             value.get("schema_version") == RESEARCH_EPISODE_OBJECTIVE_TERMS_SCHEMA
-            and value.get("source_kind")
-            == RESEARCH_EPISODE_OBJECTIVE_TERMS_SOURCE_KIND
+            and value.get("source_kind") == RESEARCH_EPISODE_OBJECTIVE_TERMS_SOURCE_KIND
             and value.get("source_ref") == RESEARCH_EPISODE_OBJECTIVE_TERMS_SOURCE_REF
         ):
             objective_terms.append((dict(entry), value))
         if (
             value.get("schema_version") == RESEARCH_EPISODE_PORTFOLIO_REALITY_SCHEMA
-            and value.get("packet_marker")
-            == RESEARCH_EPISODE_PORTFOLIO_REALITY_MARKER
+            and value.get("packet_marker") == RESEARCH_EPISODE_PORTFOLIO_REALITY_MARKER
         ):
             portfolio_reality.append((dict(entry), value))
         if (
@@ -16678,8 +16570,7 @@ def _research_episode_material_role_identities(
             prior_exports.append((dict(entry), value))
         if (
             value.get("schema_version") == RESEARCH_EPISODE_PRIOR_MANIFEST_SCHEMA
-            and value.get("manifest_marker")
-            == RESEARCH_EPISODE_PRIOR_MANIFEST_MARKER
+            and value.get("manifest_marker") == RESEARCH_EPISODE_PRIOR_MANIFEST_MARKER
         ):
             prior_manifests.append((dict(entry), value))
     if len(prospective) != 1:
@@ -16702,14 +16593,10 @@ def _research_episode_material_role_identities(
     portfolio_entry, portfolio_value = portfolio_reality[0]
     period_index = portfolio_value.get("period_index")
     if type(period_index) is not int or period_index < 1:
-        raise XinaoError(
-            "RESEARCH_EPISODE_PORTFOLIO_REALITY_MATERIAL_INVALID", "period_index"
-        )
+        raise XinaoError("RESEARCH_EPISODE_PORTFOLIO_REALITY_MATERIAL_INVALID", "period_index")
     prospective_contract = prospective_value.get("contract")
     if not isinstance(prospective_contract, Mapping):
-        raise XinaoError(
-            "RESEARCH_EPISODE_PROSPECTIVE_MATERIAL_INVALID", "contract"
-        )
+        raise XinaoError("RESEARCH_EPISODE_PROSPECTIVE_MATERIAL_INVALID", "contract")
     source_contract_sha256 = str(prospective_contract.get("contract_sha256") or "")
     source_capture_sha256 = str(prospective_value.get("capture_sha256") or "")
     prospective_content_hash = str(prospective_value.get("content_hash") or "")
@@ -16719,23 +16606,17 @@ def _research_episode_material_role_identities(
         ("capture_sha256", source_capture_sha256),
     ):
         if HEX_SHA256_PATTERN.fullmatch(value) is None:
-            raise XinaoError(
-                "RESEARCH_EPISODE_PROSPECTIVE_MATERIAL_INVALID", field
-            )
+            raise XinaoError("RESEARCH_EPISODE_PROSPECTIVE_MATERIAL_INVALID", field)
     target_ref = str(prospective_value.get("target_ref") or "")
     target_expect = str(prospective_value.get("target_expect") or "")
-    latest_completed_expect = str(
-        prospective_value.get("latest_completed_expect") or ""
-    )
+    latest_completed_expect = str(prospective_value.get("latest_completed_expect") or "")
     if (
         not target_ref
         or not target_expect
         or target_ref != f"macaujc2/expect/{target_expect}"
         or not latest_completed_expect
     ):
-        raise XinaoError(
-            "RESEARCH_EPISODE_PROSPECTIVE_MATERIAL_INVALID", "target identity"
-        )
+        raise XinaoError("RESEARCH_EPISODE_PROSPECTIVE_MATERIAL_INVALID", "target identity")
     guard = _parse_utc_z(
         prospective_value.get("target_guard_open_time"),
         reason_code="RESEARCH_EPISODE_PROSPECTIVE_MATERIAL_INVALID",
@@ -16747,9 +16628,7 @@ def _research_episode_material_role_identities(
         field="freeze_deadline",
     )
     if deadline >= guard:
-        raise XinaoError(
-            "RESEARCH_EPISODE_PROSPECTIVE_MATERIAL_INVALID", "temporal identity"
-        )
+        raise XinaoError("RESEARCH_EPISODE_PROSPECTIVE_MATERIAL_INVALID", "temporal identity")
     prospective_source_binding = {
         "schema_version": RESEARCH_EPISODE_PROSPECTIVE_SOURCE_BINDING_SCHEMA,
         "packet_content_hash": prospective_content_hash,
@@ -16877,18 +16756,14 @@ def research_episode_load_verified_material_reality(
             "provider_session_uuid",
         }
         if set(pointer) != pointer_keys:
-            raise XinaoError(
-                "RESEARCH_EPISODE_SUCCESS_POINTER_INVALID", "keys are not exact"
-            )
+            raise XinaoError("RESEARCH_EPISODE_SUCCESS_POINTER_INVALID", "keys are not exact")
         selected_hash = str(pointer.get("attempt_hash") or "")
         selected_cas = str(pointer.get("attempt_cas_digest") or "")
         if (
             HEX_SHA256_PATTERN.fullmatch(selected_hash) is None
             or HEX_SHA256_PATTERN.fullmatch(selected_cas) is None
         ):
-            raise XinaoError(
-                "RESEARCH_EPISODE_SUCCESS_POINTER_INVALID", "attempt identity"
-            )
+            raise XinaoError("RESEARCH_EPISODE_SUCCESS_POINTER_INVALID", "attempt identity")
         if attempt_hash is not None and attempt_hash != selected_hash:
             raise XinaoError(
                 "RESEARCH_EPISODE_ATTEMPT_HASH_NOT_CURRENT_SUCCESS",
@@ -16900,16 +16775,13 @@ def research_episode_load_verified_material_reality(
                 f"expected={attempt_cas_digest} current={selected_cas}",
             )
         if head.get("head_checkpoint_sha256") != expected_head_sha256:
-            raise XinaoError(
-                "RESEARCH_EPISODE_STALE_HEAD", expected_head_sha256
-            )
+            raise XinaoError("RESEARCH_EPISODE_STALE_HEAD", expected_head_sha256)
         if meta.get("session_id") != expected_host_session_id:
-            raise XinaoError(
-                "RESEARCH_EPISODE_HOST_SESSION_MISMATCH", expected_host_session_id
-            )
-        if str(pointer.get("provider_session_uuid") or "").lower() != str(
-            expected_provider_session_uuid
-        ).lower():
+            raise XinaoError("RESEARCH_EPISODE_HOST_SESSION_MISMATCH", expected_host_session_id)
+        if (
+            str(pointer.get("provider_session_uuid") or "").lower()
+            != str(expected_provider_session_uuid).lower()
+        ):
             raise XinaoError(
                 "RESEARCH_EPISODE_PROVIDER_SESSION_MISMATCH",
                 expected_provider_session_uuid,
@@ -16920,9 +16792,7 @@ def research_episode_load_verified_material_reality(
             attempt = native.load_attempt_cas(output_root, selected_cas)
             native.validate_attempt_exportable(attempt)
         except Exception as exc:
-            reason = getattr(exc, "reason_code", None) or (
-                "RESEARCH_EPISODE_ATTEMPT_LOAD_FAILED"
-            )
+            reason = getattr(exc, "reason_code", None) or ("RESEARCH_EPISODE_ATTEMPT_LOAD_FAILED")
             raise XinaoError(str(reason), str(exc)[:2000]) from exc
 
         attempt_hash_body = {
@@ -16934,9 +16804,7 @@ def research_episode_load_verified_material_reality(
             attempt.get("attempt_hash") != selected_hash
             or _sha256_bytes(_canonical_bytes(attempt_hash_body)) != selected_hash
         ):
-            raise XinaoError(
-                "RESEARCH_EPISODE_ATTEMPT_HASH_MISMATCH", selected_hash
-            )
+            raise XinaoError("RESEARCH_EPISODE_ATTEMPT_HASH_MISMATCH", selected_hash)
         internal_cas = str(attempt.get("attempt_cas_digest") or "")
         pre_final_attempt = dict(attempt)
         pre_final_attempt.pop("attempt_cas_digest", None)
@@ -16945,14 +16813,10 @@ def research_episode_load_verified_material_reality(
             HEX_SHA256_PATTERN.fullmatch(internal_cas) is None
             or _sha256_bytes(pre_final_bytes) != internal_cas
         ):
-            raise XinaoError(
-                "RESEARCH_EPISODE_ATTEMPT_INTERNAL_CAS_MISMATCH", internal_cas
-            )
+            raise XinaoError("RESEARCH_EPISODE_ATTEMPT_INTERNAL_CAS_MISMATCH", internal_cas)
         try:
             if native.load_cas_blob(output_root, "attempts", internal_cas) != pre_final_bytes:
-                raise XinaoError(
-                    "RESEARCH_EPISODE_ATTEMPT_INTERNAL_CAS_MISMATCH", internal_cas
-                )
+                raise XinaoError("RESEARCH_EPISODE_ATTEMPT_INTERNAL_CAS_MISMATCH", internal_cas)
             stdout = native.load_cas_blob(
                 output_root, "raw", str(attempt.get("raw_stdout_cas") or "")
             )
@@ -16964,10 +16828,9 @@ def research_episode_load_verified_material_reality(
         except Exception as exc:
             reason = getattr(exc, "reason_code", None) or "RESEARCH_EPISODE_RAW_CAS_INVALID"
             raise XinaoError(str(reason), str(exc)[:2000]) from exc
-        if (
-            _sha256_bytes(stdout) != attempt.get("raw_stdout_sha256")
-            or _sha256_bytes(stderr) != attempt.get("raw_stderr_sha256")
-        ):
+        if _sha256_bytes(stdout) != attempt.get("raw_stdout_sha256") or _sha256_bytes(
+            stderr
+        ) != attempt.get("raw_stderr_sha256"):
             raise XinaoError("RESEARCH_EPISODE_RAW_CAS_INVALID", "raw hash mismatch")
         try:
             provider_output = native.parse_provider_machine_output(stdout, stderr)
@@ -16978,15 +16841,11 @@ def research_episode_load_verified_material_reality(
         provider_session = str(attempt.get("provider_session_uuid") or "")
         if (
             not native.is_uuid(provider_session)
-            or str(provider_output.get("session_uuid") or "").lower()
-            != provider_session.lower()
-            or str(pointer.get("provider_session_uuid") or "").lower()
-            != provider_session.lower()
+            or str(provider_output.get("session_uuid") or "").lower() != provider_session.lower()
+            or str(pointer.get("provider_session_uuid") or "").lower() != provider_session.lower()
             or provider_session.lower() != expected_provider_session_uuid.lower()
         ):
-            raise XinaoError(
-                "RESEARCH_EPISODE_PROVIDER_SESSION_MISMATCH", provider_session
-            )
+            raise XinaoError("RESEARCH_EPISODE_PROVIDER_SESSION_MISMATCH", provider_session)
         if (
             pointer.get("status") != native.STATUS_LIVE_ATTEMPT_RECORDED
             or pointer.get("episode_id") != attempt.get("episode_id")
@@ -16994,9 +16853,7 @@ def research_episode_load_verified_material_reality(
             or attempt.get("host_session_id") != meta.get("session_id")
             or attempt.get("cas_head_sha256") != head.get("head_checkpoint_sha256")
         ):
-            raise XinaoError(
-                "RESEARCH_EPISODE_ATTEMPT_EPISODE_MISMATCH", selected_hash
-            )
+            raise XinaoError("RESEARCH_EPISODE_ATTEMPT_EPISODE_MISMATCH", selected_hash)
 
         index_path = output_root / "attempts" / "index.jsonl"
         index_payload = _regular_file_bytes(
@@ -17017,9 +16874,7 @@ def research_episode_load_verified_material_reality(
                 if isinstance(row, dict) and row.get("attempt_hash") == selected_hash:
                     matching_index_rows.append(row)
         except UnicodeDecodeError as exc:
-            raise XinaoError(
-                "RESEARCH_EPISODE_ATTEMPT_INDEX_INVALID", "UTF-8 required"
-            ) from exc
+            raise XinaoError("RESEARCH_EPISODE_ATTEMPT_INDEX_INVALID", "UTF-8 required") from exc
         expected_index_row = {
             "attempt_id": attempt.get("attempt_id"),
             "attempt_cas_digest": selected_cas,
@@ -17030,18 +16885,12 @@ def research_episode_load_verified_material_reality(
             "recorded_at": attempt.get("finished_at"),
             "prior_attempt_hash": attempt.get("prior_attempt_hash"),
         }
-        if not matching_index_rows or any(
-            row != expected_index_row for row in matching_index_rows
-        ):
-            raise XinaoError(
-                "RESEARCH_EPISODE_ATTEMPT_INDEX_MISMATCH", selected_hash
-            )
+        if not matching_index_rows or any(row != expected_index_row for row in matching_index_rows):
+            raise XinaoError("RESEARCH_EPISODE_ATTEMPT_INDEX_MISMATCH", selected_hash)
 
         binding = attempt.get("active_material_binding")
         if not isinstance(binding, Mapping):
-            raise XinaoError(
-                "RESEARCH_EPISODE_MATERIAL_BINDING_INVALID", "attempt field missing"
-            )
+            raise XinaoError("RESEARCH_EPISODE_MATERIAL_BINDING_INVALID", "attempt field missing")
         validated_binding = _validate_research_episode_active_binding_files(root, binding)
         for field in (
             "material_bundle_id",
@@ -17051,9 +16900,7 @@ def research_episode_load_verified_material_reality(
             "effective_prompt_sha256",
         ):
             if attempt.get(field) != validated_binding.get(field):
-                raise XinaoError(
-                    "RESEARCH_EPISODE_MATERIAL_BINDING_INVALID", f"attempt {field}"
-                )
+                raise XinaoError("RESEARCH_EPISODE_MATERIAL_BINDING_INVALID", f"attempt {field}")
         argv = list(attempt.get("argv_redacted") or [])
         if (
             argv.count("--prompt-file") != 1
@@ -17061,9 +16908,7 @@ def research_episode_load_verified_material_reality(
             or argv[argv.index("--prompt-file") + 1 : argv.index("--prompt-file") + 2]
             != [validated_binding["container_effective_prompt_path"]]
         ):
-            raise XinaoError(
-                "RESEARCH_EPISODE_EFFECTIVE_PROMPT_NOT_CONSUMED", selected_hash
-            )
+            raise XinaoError("RESEARCH_EPISODE_EFFECTIVE_PROMPT_NOT_CONSUMED", selected_hash)
 
         _host_mod, host = _research_episode_load_dual_host(root)
         try:
@@ -17082,9 +16927,7 @@ def research_episode_load_verified_material_reality(
         attempt_mount = attempt.get("active_material_mount")
         live_mount = ready.get("active_material_mount")
         mount_keys = {"container_path", "host_path", "mount_type", "readonly", "rw"}
-        canonical_active_material_root = str(
-            (root / "active_materials").resolve(strict=True)
-        )
+        canonical_active_material_root = str((root / "active_materials").resolve(strict=True))
         if (
             not isinstance(attempt_mount, Mapping)
             or not isinstance(live_mount, Mapping)
@@ -17092,8 +16935,7 @@ def research_episode_load_verified_material_reality(
             or set(live_mount) != mount_keys
             or attempt_mount.get("container_path")
             != RESEARCH_EPISODE_ACTIVE_MATERIAL_CONTAINER_ROOT
-            or live_mount.get("container_path")
-            != RESEARCH_EPISODE_ACTIVE_MATERIAL_CONTAINER_ROOT
+            or live_mount.get("container_path") != RESEARCH_EPISODE_ACTIVE_MATERIAL_CONTAINER_ROOT
             or attempt_mount.get("readonly") is not True
             or live_mount.get("readonly") is not True
             or attempt_mount.get("rw") is not False
@@ -17114,9 +16956,7 @@ def research_episode_load_verified_material_reality(
                 str(live_mount.get("host_path") or ""),
             )
         ):
-            raise XinaoError(
-                "RESEARCH_EPISODE_ACTIVE_MATERIAL_MOUNT_MISMATCH", selected_hash
-            )
+            raise XinaoError("RESEARCH_EPISODE_ACTIVE_MATERIAL_MOUNT_MISMATCH", selected_hash)
         lease = ready.get("lease") or {}
         for attempt_field, lease_field in (
             ("transport_container_id", "transport_container_id"),
@@ -17125,18 +16965,13 @@ def research_episode_load_verified_material_reality(
             ("tool_image_id", "tool_image_id"),
         ):
             if attempt.get(attempt_field) != lease.get(lease_field):
-                raise XinaoError(
-                    "RESEARCH_EPISODE_ATTEMPT_PAIR_MISMATCH", attempt_field
-                )
+                raise XinaoError("RESEARCH_EPISODE_ATTEMPT_PAIR_MISMATCH", attempt_field)
         if ready.get("pair_receipt_sha256") != attempt.get("pair_receipt_sha256"):
-            raise XinaoError(
-                "RESEARCH_EPISODE_ATTEMPT_PAIR_MISMATCH", "pair_receipt_sha256"
-            )
+            raise XinaoError("RESEARCH_EPISODE_ATTEMPT_PAIR_MISMATCH", "pair_receipt_sha256")
 
         roles = _research_episode_material_role_identities(root, validated_binding)
         material_ids = [
-            str(item["material_id"])
-            for item in validated_binding["material_manifest"]["materials"]
+            str(item["material_id"]) for item in validated_binding["material_manifest"]["materials"]
         ]
         return {
             "schema_version": RESEARCH_EPISODE_VERIFIED_MATERIAL_REALITY_SCHEMA,
@@ -17157,12 +16992,8 @@ def research_episode_load_verified_material_reality(
                 "raw_stdout_cas": attempt.get("raw_stdout_cas"),
                 "raw_stderr_cas": attempt.get("raw_stderr_cas"),
                 "effective_prompt_sha256": validated_binding["effective_prompt_sha256"],
-                "material_manifest_sha256": validated_binding[
-                    "material_manifest_sha256"
-                ],
-                "material_packet_sha256": validated_binding[
-                    "material_packet_sha256"
-                ],
+                "material_manifest_sha256": validated_binding["material_manifest_sha256"],
+                "material_packet_sha256": validated_binding["material_packet_sha256"],
                 "bundle_file_sha256": {
                     str(item["material_id"]): str(item["sha256"])
                     for item in validated_binding["material_manifest"]["materials"]
@@ -17235,9 +17066,7 @@ def _import_xinao_science_module(module_name: str) -> Any:
     try:
         return importlib.import_module(module_name)
     except ImportError as exc:
-        raise XinaoError(
-            "XINAO_SCIENCE_PACKAGE_UNAVAILABLE", f"{module_name}: {exc}"
-        ) from exc
+        raise XinaoError("XINAO_SCIENCE_PACKAGE_UNAVAILABLE", f"{module_name}: {exc}") from exc
 
 
 def _load_longitudinal_actor_material_payloads(
@@ -17251,22 +17080,12 @@ def _load_longitudinal_actor_material_payloads(
     period_index = int(portfolio_packet.period_index)
     if period_index <= 1:
         return {}
-    feedback_hash = str(
-        getattr(portfolio_packet, "live_head_feedback_hash", None) or ""
-    )
+    feedback_hash = str(getattr(portfolio_packet, "live_head_feedback_hash", None) or "")
     if HEX_SHA256_PATTERN.fullmatch(feedback_hash) is None:
-        raise XinaoError(
-            "ACTOR_MATERIAL_PRIOR_FEEDBACK_IDENTITY_MISSING", feedback_hash
-        )
-    feedback_material = _import_xinao_science_module(
-        "xinao.science.research_feedback_material"
-    )
-    feedback_pack_module = _import_xinao_science_module(
-        "xinao.science.research_feedback_pack"
-    )
-    episode_pool = _import_xinao_science_module(
-        "xinao.science.episode_export_pool_adapter"
-    )
+        raise XinaoError("ACTOR_MATERIAL_PRIOR_FEEDBACK_IDENTITY_MISSING", feedback_hash)
+    feedback_material = _import_xinao_science_module("xinao.science.research_feedback_material")
+    feedback_pack_module = _import_xinao_science_module("xinao.science.research_feedback_pack")
+    episode_pool = _import_xinao_science_module("xinao.science.episode_export_pool_adapter")
     candidate_pool = _import_xinao_science_module("xinao.science.candidate_pool")
     try:
         feedback_pack = feedback_material.load_sealed_feedback_pack(
@@ -17284,21 +17103,15 @@ def _load_longitudinal_actor_material_payloads(
         expected_feedback_reality = {
             "portfolio_ref": getattr(portfolio_packet, "portfolio_ref", None),
             "period_index": period_index - 1,
-            "settled_episode_hash": getattr(
-                portfolio_packet, "prior_settled_episode_hash", None
-            ),
+            "settled_episode_hash": getattr(portfolio_packet, "prior_settled_episode_hash", None),
             "account_feedback_hash": feedback_hash,
             "closing_balance": getattr(portfolio_packet, "current_balance", None),
         }
         for field, expected in expected_feedback_reality.items():
             if feedback_pack.get(field) != expected:
-                raise XinaoError(
-                    "ACTOR_MATERIAL_PRIOR_FEEDBACK_PORTFOLIO_MISMATCH", field
-                )
+                raise XinaoError("ACTOR_MATERIAL_PRIOR_FEEDBACK_PORTFOLIO_MISMATCH", field)
         result_hash = str(feedback_pack.get("prior_result_sha256") or "")
-        receipt_hash = str(
-            feedback_pack.get("prior_receipt_content_sha256") or ""
-        )
+        receipt_hash = str(feedback_pack.get("prior_receipt_content_sha256") or "")
         if (
             HEX_SHA256_PATTERN.fullmatch(result_hash) is None
             or HEX_SHA256_PATTERN.fullmatch(receipt_hash) is None
@@ -17312,9 +17125,7 @@ def _load_longitudinal_actor_material_payloads(
             entry.get("result_sha256") != result_hash
             or entry.get("receipt_content_sha256") != receipt_hash
         ):
-            raise XinaoError(
-                "ACTOR_MATERIAL_PRIOR_POOL_IDENTITY_MISMATCH", result_hash
-            )
+            raise XinaoError("ACTOR_MATERIAL_PRIOR_POOL_IDENTITY_MISMATCH", result_hash)
         result_path = candidate_pool.pool_result_bytes_path(pool_root, result_hash)
         receipt_path = candidate_pool.pool_receipt_path(pool_root, result_hash)
         result_raw = _regular_file_bytes(
@@ -17327,13 +17138,8 @@ def _load_longitudinal_actor_material_payloads(
             reason_code="ACTOR_MATERIAL_PRIOR_MANIFEST_CAS_INVALID",
             maximum=MAX_MATERIAL_FILE_BYTES,
         )
-        if (
-            _sha256_bytes(result_raw) != result_hash
-            or _sha256_bytes(receipt_raw) != receipt_hash
-        ):
-            raise XinaoError(
-                "ACTOR_MATERIAL_PRIOR_POOL_RAW_HASH_MISMATCH", result_hash
-            )
+        if _sha256_bytes(result_raw) != result_hash or _sha256_bytes(receipt_raw) != receipt_hash:
+            raise XinaoError("ACTOR_MATERIAL_PRIOR_POOL_RAW_HASH_MISMATCH", result_hash)
         prior_export = episode_pool.verify_episode_export_bundle(result_raw)
         episode_pool.load_and_verify_candidate_manifest(
             export=prior_export,
@@ -17358,21 +17164,15 @@ def _assert_explicit_actor_material_output_root(output_root: Path | str) -> Path
 
     raw = Path(output_root)
     if not raw.is_absolute():
-        raise XinaoError(
-            "ACTOR_MATERIAL_OUTPUT_ROOT_INVALID", "absolute D:/E: path required"
-        )
+        raise XinaoError("ACTOR_MATERIAL_OUTPUT_ROOT_INVALID", "absolute D:/E: path required")
     root = Path(os.path.abspath(raw))
     if os.name == "nt":
         if root.drive.upper() not in {"D:", "E:"}:
-            raise XinaoError(
-                "ACTOR_MATERIAL_OUTPUT_ROOT_NOT_DATA_DRIVE", str(root)
-            )
+            raise XinaoError("ACTOR_MATERIAL_OUTPUT_ROOT_NOT_DATA_DRIVE", str(root))
     else:  # WSL/portable execution of the Windows data-drive contract.
         normalized = root.as_posix().lower().rstrip("/")
         if not normalized.startswith(("/mnt/d/", "/mnt/e/", "/d/", "/e/")):
-            raise XinaoError(
-                "ACTOR_MATERIAL_OUTPUT_ROOT_NOT_DATA_DRIVE", str(root)
-            )
+            raise XinaoError("ACTOR_MATERIAL_OUTPUT_ROOT_NOT_DATA_DRIVE", str(root))
     for candidate in reversed((root, *root.parents)):
         if os.path.lexists(candidate) and _is_reparse(candidate):
             raise XinaoError(
@@ -17451,12 +17251,8 @@ def research_episode_prepare_actor_materials(
     actor_module = _import_actor_reality_contract_module()
     prospective_module = _import_prospective_source_module()
     try:
-        prospective_packet = prospective_module.load_packet(
-            Path(authority_root), packet_digest
-        )
-        authority_path = prospective_module.packet_object_path(
-            Path(authority_root), packet_digest
-        )
+        prospective_packet = prospective_module.load_packet(Path(authority_root), packet_digest)
+        authority_path = prospective_module.packet_object_path(Path(authority_root), packet_digest)
         prospective_raw = _regular_file_bytes(
             Path(authority_path),
             reason_code="ACTOR_MATERIAL_AUTHORITY_CAS_INVALID",
@@ -17468,21 +17264,13 @@ def research_episode_prepare_actor_materials(
             detail=str(authority_path),
         )
         if prospective_parsed != prospective_packet:
-            raise XinaoError(
-                "ACTOR_MATERIAL_AUTHORITY_CAS_INVALID", "parsed packet mismatch"
-            )
+            raise XinaoError("ACTOR_MATERIAL_AUTHORITY_CAS_INVALID", "parsed packet mismatch")
         objective_packet = (
             actor_module.ActorObjectiveTermsPacket.from_settlement_rule().with_content_hash()
         )
-        objective_raw = actor_module.actor_objective_terms_packet_bytes(
-            objective_packet
-        )
-        portfolio_packet = actor_module.build_actor_portfolio_reality_packet(
-            Path(portfolio_root)
-        )
-        portfolio_raw = actor_module.actor_portfolio_reality_packet_bytes(
-            portfolio_packet
-        )
+        objective_raw = actor_module.actor_objective_terms_packet_bytes(objective_packet)
+        portfolio_packet = actor_module.build_actor_portfolio_reality_packet(Path(portfolio_root))
+        portfolio_raw = actor_module.actor_portfolio_reality_packet_bytes(portfolio_packet)
     except XinaoError:
         raise
     except Exception as exc:
@@ -17511,9 +17299,7 @@ def research_episode_prepare_actor_materials(
         if set(longitudinal) != {
             role for role, _filename in RESEARCH_EPISODE_ACTOR_MATERIAL_LONGITUDINAL_OUTPUTS
         }:
-            raise XinaoError(
-                "ACTOR_MATERIAL_LONGITUDINAL_SET_INCOMPLETE", str(period_index)
-            )
+            raise XinaoError("ACTOR_MATERIAL_LONGITUDINAL_SET_INCOMPLETE", str(period_index))
         role_payloads.update(longitudinal)
         outputs.extend(RESEARCH_EPISODE_ACTOR_MATERIAL_LONGITUDINAL_OUTPUTS)
     if any(not isinstance(raw, bytes) or not raw for raw, _hash in role_payloads.values()):
@@ -17530,9 +17316,7 @@ def research_episode_prepare_actor_materials(
     existing_names = {item.name for item in destination.iterdir()}
     unexpected = existing_names - expected_names
     if unexpected:
-        raise XinaoError(
-            "ACTOR_MATERIAL_OUTPUT_FILE_SET_CONFLICT", ",".join(sorted(unexpected))
-        )
+        raise XinaoError("ACTOR_MATERIAL_OUTPUT_FILE_SET_CONFLICT", ",".join(sorted(unexpected)))
 
     material_files: list[dict[str, Any]] = []
     writes = 0
@@ -17556,9 +17340,7 @@ def research_episode_prepare_actor_materials(
         item.name for item in destination.iterdir() if item.is_file() and not item.is_symlink()
     }
     if observed_names != expected_names or len(list(destination.iterdir())) != len(outputs):
-        raise XinaoError(
-            "ACTOR_MATERIAL_OUTPUT_FILE_SET_CONFLICT", str(destination)
-        )
+        raise XinaoError("ACTOR_MATERIAL_OUTPUT_FILE_SET_CONFLICT", str(destination))
     for item in material_files:
         observed = _regular_file_bytes(
             Path(item["path"]),
@@ -17644,9 +17426,7 @@ def _validate_prepared_actor_material_payloads(
             "first-principles-core.utf8: UTF-8 required",
         ) from exc
 
-    actor_module, portfolio = _prepared_actor_portfolio_packet(
-        payloads["portfolio-reality.json"]
-    )
+    actor_module, portfolio = _prepared_actor_portfolio_packet(payloads["portfolio-reality.json"])
     prospective = _prepared_actor_material_json(
         payloads["prospective-authority-packet.json"],
         filename="prospective-authority-packet.json",
@@ -17657,17 +17437,16 @@ def _validate_prepared_actor_material_payloads(
     )
     try:
         objective_packet = actor_module.ActorObjectiveTermsPacket.model_validate(objective)
-        if HEX_SHA256_PATTERN.fullmatch(
-            str(getattr(objective_packet, "content_hash", None) or "")
-        ) is None:
+        if (
+            HEX_SHA256_PATTERN.fullmatch(str(getattr(objective_packet, "content_hash", None) or ""))
+            is None
+        ):
             raise ValueError("sealed content_hash required")
 
         prospective_module = _import_prospective_source_module()
         if (
-            prospective.get("schema_version")
-            != RESEARCH_EPISODE_PROSPECTIVE_PACKET_SCHEMA
-            or prospective.get("packet_marker")
-            != RESEARCH_EPISODE_PROSPECTIVE_PACKET_MARKER
+            prospective.get("schema_version") != RESEARCH_EPISODE_PROSPECTIVE_PACKET_SCHEMA
+            or prospective.get("packet_marker") != RESEARCH_EPISODE_PROSPECTIVE_PACKET_MARKER
         ):
             raise ValueError("prospective packet schema/marker mismatch")
         prospective_hash = str(prospective.get("content_hash") or "")
@@ -17721,20 +17500,15 @@ def _validate_prepared_actor_material_payloads(
         if (
             feedback.get("portfolio_ref") != portfolio.portfolio_ref
             or feedback.get("period_index") != period_index - 1
-            or feedback.get("settled_episode_hash")
-            != portfolio.prior_settled_episode_hash
-            or feedback.get("account_feedback_hash")
-            != portfolio.live_head_feedback_hash
+            or feedback.get("settled_episode_hash") != portfolio.prior_settled_episode_hash
+            or feedback.get("account_feedback_hash") != portfolio.live_head_feedback_hash
             or feedback.get("closing_balance") != portfolio.current_balance
             or feedback.get("prior_result_sha256") != _sha256_bytes(prior_export_raw)
-            or feedback.get("prior_receipt_content_sha256")
-            != _sha256_bytes(prior_manifest_raw)
+            or feedback.get("prior_receipt_content_sha256") != _sha256_bytes(prior_manifest_raw)
         ):
             raise ValueError("prior feedback/portfolio lineage mismatch")
 
-        episode_pool = _import_xinao_science_module(
-            "xinao.science.episode_export_pool_adapter"
-        )
+        episode_pool = _import_xinao_science_module("xinao.science.episode_export_pool_adapter")
         prior_export = episode_pool.verify_episode_export_bundle(prior_export_raw)
         episode_pool.load_and_verify_candidate_manifest(
             export=prior_export,
@@ -17759,9 +17533,7 @@ def _resolve_research_episode_actor_material_selection(
     try:
         root_info = os.lstat(root)
     except OSError as exc:
-        raise XinaoError(
-            "RESEARCH_EPISODE_ACTOR_MATERIAL_ROOT_INVALID", str(root)
-        ) from exc
+        raise XinaoError("RESEARCH_EPISODE_ACTOR_MATERIAL_ROOT_INVALID", str(root)) from exc
     if _is_reparse_stat(root_info) or not stat.S_ISDIR(root_info.st_mode):
         raise XinaoError("RESEARCH_EPISODE_ACTOR_MATERIAL_ROOT_INVALID", str(root))
 
@@ -17786,9 +17558,7 @@ def _resolve_research_episode_actor_material_selection(
         )
         for name in observed_names
     }
-    _actor_module, portfolio = _prepared_actor_portfolio_packet(
-        payloads["portfolio-reality.json"]
-    )
+    _actor_module, portfolio = _prepared_actor_portfolio_packet(payloads["portfolio-reality.json"])
     period_index = int(portfolio.period_index)
     ordered_names = base_names + (longitudinal_names if period_index > 1 else ())
     expected_names = set(ordered_names)
@@ -17799,9 +17569,7 @@ def _resolve_research_episode_actor_material_selection(
             f"observed={','.join(sorted(observed_names))}",
         )
     if _validate_prepared_actor_material_payloads(payloads) != period_index:
-        raise XinaoError(
-            "RESEARCH_EPISODE_ACTOR_MATERIAL_PERIOD_MISMATCH", str(period_index)
-        )
+        raise XinaoError("RESEARCH_EPISODE_ACTOR_MATERIAL_PERIOD_MISMATCH", str(period_index))
 
     if {entry.name for entry in root.iterdir()} != expected_names:
         raise XinaoError(
@@ -17884,8 +17652,7 @@ def _research_episode_actor_candidate_authoring_prompt(
         not isinstance(contract, Mapping)
         or contract.get("schema_version")
         != "xinao.research_episode_candidate_manifest_authoring_contract.v1"
-        or contract.get("candidate_manifest_schema")
-        != RESEARCH_EPISODE_PRIOR_MANIFEST_SCHEMA
+        or contract.get("candidate_manifest_schema") != RESEARCH_EPISODE_PRIOR_MANIFEST_SCHEMA
         or contract.get("actor_choice_fields_supplied_by_contract") != []
     ):
         raise XinaoError(
@@ -17894,9 +17661,7 @@ def _research_episode_actor_candidate_authoring_prompt(
         )
     contract_text = _canonical_bytes(dict(contract)).decode("utf-8")
     return (
-        str(owner_prompt or "")
-        + RESEARCH_EPISODE_ACTOR_AUTHORING_CONTRACT_NOTICE
-        + contract_text
+        str(owner_prompt or "") + RESEARCH_EPISODE_ACTOR_AUTHORING_CONTRACT_NOTICE + contract_text
     )
 
 
@@ -17949,18 +17714,10 @@ def research_episode_build_actor_reality(
             _canonical_bytes(verified["active_material_binding"])
         ),
         "material_bundle_id": verified["active_material_binding"]["material_bundle_id"],
-        "material_manifest_sha256": verified["active_material_binding"][
-            "material_manifest_sha256"
-        ],
-        "material_packet_sha256": verified["active_material_binding"][
-            "material_packet_sha256"
-        ],
-        "base_prompt_sha256": verified["active_material_binding"][
-            "base_prompt_sha256"
-        ],
-        "effective_prompt_sha256": verified["active_material_binding"][
-            "effective_prompt_sha256"
-        ],
+        "material_manifest_sha256": verified["active_material_binding"]["material_manifest_sha256"],
+        "material_packet_sha256": verified["active_material_binding"]["material_packet_sha256"],
+        "base_prompt_sha256": verified["active_material_binding"]["base_prompt_sha256"],
+        "effective_prompt_sha256": verified["active_material_binding"]["effective_prompt_sha256"],
         "material_manifest_relative_path": verified["active_material_binding"][
             "material_manifest_relative_path"
         ],
@@ -17968,37 +17725,19 @@ def research_episode_build_actor_reality(
             "effective_prompt_relative_path"
         ],
         "portfolio_reality_material_id": verified["portfolio_reality_material_id"],
-        "portfolio_reality_material_sha256": verified[
-            "portfolio_reality_material_sha256"
-        ],
+        "portfolio_reality_material_sha256": verified["portfolio_reality_material_sha256"],
         "prospective_packet_material_id": verified["prospective_packet_material_id"],
-        "prospective_packet_material_sha256": verified[
-            "prospective_packet_material_sha256"
-        ],
-        "prospective_packet_content_hash": verified[
-            "prospective_packet_content_hash"
-        ],
+        "prospective_packet_material_sha256": verified["prospective_packet_material_sha256"],
+        "prospective_packet_content_hash": verified["prospective_packet_content_hash"],
         "objective_terms_material_id": verified["objective_terms_material_id"],
-        "objective_terms_material_sha256": verified[
-            "objective_terms_material_sha256"
-        ],
+        "objective_terms_material_sha256": verified["objective_terms_material_sha256"],
         "prior_feedback_material_id": verified["prior_feedback_material_id"],
-        "prior_feedback_material_sha256": verified[
-            "prior_feedback_material_sha256"
-        ],
+        "prior_feedback_material_sha256": verified["prior_feedback_material_sha256"],
         "prior_feedback_content_hash": verified["prior_feedback_content_hash"],
-        "prior_candidate_export_material_id": verified[
-            "prior_candidate_export_material_id"
-        ],
-        "prior_candidate_export_sha256": verified[
-            "prior_candidate_export_sha256"
-        ],
-        "prior_candidate_manifest_material_id": verified[
-            "prior_candidate_manifest_material_id"
-        ],
-        "prior_candidate_manifest_sha256": verified[
-            "prior_candidate_manifest_sha256"
-        ],
+        "prior_candidate_export_material_id": verified["prior_candidate_export_material_id"],
+        "prior_candidate_export_sha256": verified["prior_candidate_export_sha256"],
+        "prior_candidate_manifest_material_id": verified["prior_candidate_manifest_material_id"],
+        "prior_candidate_manifest_sha256": verified["prior_candidate_manifest_sha256"],
     }
     for field, expected in expected_identities.items():
         if getattr(materials, field, None) != expected:
@@ -18019,9 +17758,7 @@ def research_episode_build_actor_reality(
             detail="objective_terms",
         )
     except (KeyError, UnicodeDecodeError) as exc:
-        raise XinaoError(
-            "ACTOR_REALITY_VERIFIED_MATERIAL_MISMATCH", "material bytes"
-        ) from exc
+        raise XinaoError("ACTOR_REALITY_VERIFIED_MATERIAL_MISMATCH", "material bytes") from exc
     if (
         not isinstance(portfolio_packet, dict)
         or not isinstance(objective_packet, dict)
@@ -18030,10 +17767,8 @@ def research_episode_build_actor_reality(
         or materials.portfolio_reality.model_dump(mode="json") != portfolio_packet
         or materials.objective_terms.model_dump(mode="json") != objective_packet
         or materials.source_id != verified["prospective_source_id"]
-        or materials.source_contract_sha256
-        != verified["prospective_source_contract_sha256"]
-        or materials.source_capture_sha256
-        != verified["prospective_source_capture_sha256"]
+        or materials.source_contract_sha256 != verified["prospective_source_contract_sha256"]
+        or materials.source_capture_sha256 != verified["prospective_source_capture_sha256"]
         or materials.source_authority_binding_hash
         != verified["prospective_source_authority_binding_hash"]
         or materials.target_ref != verified["prospective_target_ref"]
@@ -18053,9 +17788,7 @@ def research_episode_build_actor_reality(
         or getattr(contract, "content_hash", None) is None
         or contract.compute_content_hash() != contract.content_hash
     ):
-        raise XinaoError(
-            "ACTOR_REALITY_VERIFIED_MATERIAL_MISMATCH", "content_hash"
-        )
+        raise XinaoError("ACTOR_REALITY_VERIFIED_MATERIAL_MISMATCH", "content_hash")
     verified_fresh = research_episode_load_verified_material_reality(
         root=root,
         attempt_cas_digest=verified["attempt_cas_digest"],
@@ -18438,9 +18171,7 @@ def _research_episode_feedback_prompt(
         raise XinaoError("RESEARCH_EPISODE_HEAD_INVALID", "checkpoint")
     inventory_hash = checkpoint.get("feedback_inventory_hash")
     if not (
-        meta.get("feedback_inventory_hash")
-        == head.get("feedback_inventory_hash")
-        == inventory_hash
+        meta.get("feedback_inventory_hash") == head.get("feedback_inventory_hash") == inventory_hash
     ):
         raise XinaoError(
             "RESEARCH_EPISODE_FEEDBACK_CHECKPOINT_MISMATCH",
@@ -18485,11 +18216,9 @@ def research_episode_attach_run(
     Never creates next task, freezes, settles, or claims parent completion.
     Status vocabulary: PLANNED | ATTEMPT_FAILED | LIVE_ATTEMPT_RECORDED.
     """
-    selected_material_paths, actor_material_selection = (
-        _select_research_episode_material_paths(
-            material_paths=material_paths,
-            actor_material_root=actor_material_root,
-        )
+    selected_material_paths, actor_material_selection = _select_research_episode_material_paths(
+        material_paths=material_paths,
+        actor_material_root=actor_material_root,
     )
     root = Path(root)
     _research_episode_assert_root_allowed(root)
@@ -18571,15 +18300,9 @@ def research_episode_attach_run(
                 "material_manifest_sha256": (material_binding or {}).get(
                     "material_manifest_sha256"
                 ),
-                "material_packet_sha256": (material_binding or {}).get(
-                    "material_packet_sha256"
-                ),
-                "material_snapshot_at": (material_binding or {}).get(
-                    "material_snapshot_at"
-                ),
-                "effective_prompt_sha256": (material_binding or {}).get(
-                    "effective_prompt_sha256"
-                ),
+                "material_packet_sha256": (material_binding or {}).get("material_packet_sha256"),
+                "material_snapshot_at": (material_binding or {}).get("material_snapshot_at"),
+                "effective_prompt_sha256": (material_binding or {}).get("effective_prompt_sha256"),
                 "plan_only": bool(plan_only),
                 "feedback_inventory_hash": feedback_prompt["feedback_inventory_hash"],
                 "feedback_prompt_bound": feedback_prompt["feedback_prompt_bound"],
@@ -18620,11 +18343,9 @@ def research_episode_resume_live(
     plan_only: bool = False,
 ) -> dict[str, Any]:
     """Owner one-shot provider-session resume via real --resume docker exec."""
-    selected_material_paths, actor_material_selection = (
-        _select_research_episode_material_paths(
-            material_paths=material_paths,
-            actor_material_root=actor_material_root,
-        )
+    selected_material_paths, actor_material_selection = _select_research_episode_material_paths(
+        material_paths=material_paths,
+        actor_material_root=actor_material_root,
     )
     root = Path(root)
     _research_episode_assert_root_allowed(root)
@@ -18706,15 +18427,9 @@ def research_episode_resume_live(
                 "material_manifest_sha256": (material_binding or {}).get(
                     "material_manifest_sha256"
                 ),
-                "material_packet_sha256": (material_binding or {}).get(
-                    "material_packet_sha256"
-                ),
-                "material_snapshot_at": (material_binding or {}).get(
-                    "material_snapshot_at"
-                ),
-                "effective_prompt_sha256": (material_binding or {}).get(
-                    "effective_prompt_sha256"
-                ),
+                "material_packet_sha256": (material_binding or {}).get("material_packet_sha256"),
+                "material_snapshot_at": (material_binding or {}).get("material_snapshot_at"),
+                "effective_prompt_sha256": (material_binding or {}).get("effective_prompt_sha256"),
                 "plan_only": bool(plan_only),
                 "feedback_inventory_hash": feedback_prompt["feedback_inventory_hash"],
                 "feedback_prompt_bound": feedback_prompt["feedback_prompt_bound"],
@@ -18781,9 +18496,7 @@ def research_episode_export_candidate_evidence(
         active_material_binding = attempt.get("active_material_binding")
         if active_material_binding is not None:
             if not isinstance(active_material_binding, Mapping):
-                raise XinaoError(
-                    "RESEARCH_EPISODE_MATERIAL_BINDING_INVALID", "attempt field"
-                )
+                raise XinaoError("RESEARCH_EPISODE_MATERIAL_BINDING_INVALID", "attempt field")
             validated_binding = _validate_research_episode_active_binding_files(
                 root, active_material_binding
             )
@@ -18810,9 +18523,7 @@ def research_episode_export_candidate_evidence(
                 "effective_prompt_sha256",
             )
         ):
-            raise XinaoError(
-                "RESEARCH_EPISODE_MATERIAL_BINDING_INVALID", "partial attempt binding"
-            )
+            raise XinaoError("RESEARCH_EPISODE_MATERIAL_BINDING_INVALID", "partial attempt binding")
         # Optional pair receipt identity from episode root when still present.
         pair_path = root / "dual_container_pair_receipt.json"
         pair_sha = None
@@ -18886,10 +18597,13 @@ def _expected_discovery_package_identity() -> tuple[str, str, str, str]:
     version = records[0].get("packaged_dependency_version")
     tree_schema = records[0].get("packaged_dependency_tree_schema")
     tree_sha256 = records[0].get("packaged_dependency_tree_sha256")
-    if name != "xinao-discovery" or not isinstance(version, str) or (
-        SEMVER_PATTERN.fullmatch(version) is None
-    ) or tree_schema != "xinao.package_tree.v1" or not isinstance(tree_sha256, str) or (
-        HEX_SHA256_PATTERN.fullmatch(tree_sha256) is None
+    if (
+        name != "xinao-discovery"
+        or not isinstance(version, str)
+        or (SEMVER_PATTERN.fullmatch(version) is None)
+        or tree_schema != "xinao.package_tree.v1"
+        or not isinstance(tree_sha256, str)
+        or (HEX_SHA256_PATTERN.fullmatch(tree_sha256) is None)
     ):
         raise XinaoError(
             "DISCOVERY_PACKAGE_IDENTITY_INVALID",
@@ -19090,9 +18804,11 @@ def _verify_discovery_package_root(
             record = distribution_files[relative]
             record_size = getattr(record, "size", None)
             record_hash = getattr(record, "hash", None)
-            expected_record_hash = base64.urlsafe_b64encode(
-                bytes.fromhex(str(row["sha256"]))
-            ).rstrip(b"=").decode("ascii")
+            expected_record_hash = (
+                base64.urlsafe_b64encode(bytes.fromhex(str(row["sha256"])))
+                .rstrip(b"=")
+                .decode("ascii")
+            )
             raw_size, raw_hash = distribution_record[relative]
             if (
                 record_size != row["size"]
@@ -19329,9 +19045,7 @@ def _import_discovery_science(module_name: str) -> Any:
     if not adapter_path.is_file():
         raise XinaoError(
             "EPISODE_POOL_ADAPTER_UNAVAILABLE",
-            (
-                f"verified xinao.science.{leaf} missing at {adapter_path}"
-            ),
+            (f"verified xinao.science.{leaf} missing at {adapter_path}"),
         )
     _verify_discovery_import_specs(package_root, leaf)
     _prepare_discovery_import_root(package_root)

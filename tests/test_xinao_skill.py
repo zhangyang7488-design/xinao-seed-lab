@@ -2974,9 +2974,7 @@ def test_material_result_binding_rejects_actor_intent_status_or_legacy_choice_dr
     }
     with pytest.raises(module.XinaoError) as mismatch:
         module._validate_material_result_binding(result, manifest=manifest, **binding)
-    assert mismatch.value.reason_code == (
-        "RESEARCH_CANDIDATE_ACTOR_INTENT_BRANCH_MISMATCH"
-    )
+    assert mismatch.value.reason_code == ("RESEARCH_CANDIDATE_ACTOR_INTENT_BRANCH_MISMATCH")
 
     candidate.pop("no_action_intent")
     candidate.pop("account_identity")
@@ -2984,9 +2982,7 @@ def test_material_result_binding_rejects_actor_intent_status_or_legacy_choice_dr
     candidate["status"] = "INSUFFICIENT_EVIDENCE"
     with pytest.raises(module.XinaoError) as insufficient:
         module._validate_material_result_binding(result, manifest=manifest, **binding)
-    assert insufficient.value.reason_code == (
-        "RESEARCH_CANDIDATE_ACTOR_INTENT_STATUS_INVALID"
-    )
+    assert insufficient.value.reason_code == ("RESEARCH_CANDIDATE_ACTOR_INTENT_STATUS_INVALID")
 
 
 @pytest.mark.parametrize(

@@ -92,16 +92,10 @@ def test_active_binding_reuses_content_identity_and_preserves_source_identity(
     runtime: Any, tmp_path: Path
 ) -> None:
     prompt = "Investigate the live object without a prescribed method."
-    binding, witness, episode, account, target = _binding(
-        runtime, tmp_path, prompt=prompt
-    )
-    assert binding["schema_version"] == (
-        "xinao.research_episode_active_material_binding.v1"
-    )
+    binding, witness, episode, account, target = _binding(runtime, tmp_path, prompt=prompt)
+    assert binding["schema_version"] == ("xinao.research_episode_active_material_binding.v1")
     assert binding["material_count"] == 2
-    snapshot_at = dt.datetime.fromisoformat(
-        binding["material_snapshot_at"].replace("Z", "+00:00")
-    )
+    snapshot_at = dt.datetime.fromisoformat(binding["material_snapshot_at"].replace("Z", "+00:00"))
     assert snapshot_at.tzinfo is not None
     assert witness["path"].endswith("provider_handle.json")
 
@@ -111,11 +105,8 @@ def test_active_binding_reuses_content_identity_and_preserves_source_identity(
         str(target.resolve()),
     }
     assert all(len(item["path_identity_sha256"]) == 64 for item in refs)
-    assert {
-        (item["material_id"], item["sha256"]) for item in refs
-    } == {
-        (item["material_id"], item["sha256"])
-        for item in binding["material_manifest"]["materials"]
+    assert {(item["material_id"], item["sha256"]) for item in refs} == {
+        (item["material_id"], item["sha256"]) for item in binding["material_manifest"]["materials"]
     }
 
     active_root = episode / "active_materials"
@@ -126,9 +117,9 @@ def test_active_binding_reuses_content_identity_and_preserves_source_identity(
         runtime._sha256(bundle_root / item["relative_path"])
         for item in binding["material_manifest"]["materials"]
     } == {runtime._sha256(account), runtime._sha256(target)}
-    effective = (
-        active_root / binding["effective_prompt_relative_path"]
-    ).read_text(encoding="utf-8")
+    effective = (active_root / binding["effective_prompt_relative_path"]).read_text(
+        encoding="utf-8"
+    )
     assert effective.startswith(prompt)
     assert "available_balance" in effective
     assert "prospective event" in effective
@@ -194,24 +185,14 @@ def test_active_binding_rejects_direct_authority_or_secret_paths(
             material_paths=[material],
             auth_path=_auth(tmp_path),
         )
-    assert failure.value.reason_code == (
-        "RESEARCH_EPISODE_MATERIAL_AUTHORITY_PATH_FORBIDDEN"
-    )
+    assert failure.value.reason_code == ("RESEARCH_EPISODE_MATERIAL_AUTHORITY_PATH_FORBIDDEN")
 
 
-def test_active_binding_rejects_frozen_bundle_content_drift(
-    runtime: Any, tmp_path: Path
-) -> None:
+def test_active_binding_rejects_frozen_bundle_content_drift(runtime: Any, tmp_path: Path) -> None:
     binding, _witness, episode, account, target = _binding(runtime, tmp_path)
     bundle_digest = binding["material_bundle_id"].split(":", 1)[1]
     entry = binding["material_manifest"]["materials"][0]
-    frozen_file = (
-        episode
-        / "active_materials"
-        / "bundles"
-        / bundle_digest
-        / entry["relative_path"]
-    )
+    frozen_file = episode / "active_materials" / "bundles" / bundle_digest / entry["relative_path"]
     frozen_file.write_text("tampered after snapshot\n", encoding="utf-8")
     with pytest.raises(runtime.XinaoError) as export_failure:
         runtime._validate_research_episode_active_binding_files(episode, binding)
@@ -229,9 +210,7 @@ def test_active_binding_rejects_frozen_bundle_content_drift(
     assert failure.value.reason_code == "RESEARCH_EPISODE_MATERIAL_BUNDLE_DRIFT"
 
 
-def test_writable_lab_copy_cannot_impersonate_active_material(
-    runtime: Any, tmp_path: Path
-) -> None:
+def test_writable_lab_copy_cannot_impersonate_active_material(runtime: Any, tmp_path: Path) -> None:
     binding, _witness, episode, _account, _target = _binding(runtime, tmp_path)
     lab_copy = episode / "lab" / "materials" / "manifest.json"
     lab_copy.parent.mkdir(parents=True, exist_ok=True)
@@ -262,13 +241,7 @@ def test_host_rejects_active_bundle_drift_before_provider_use(
     assert host._validate_active_material_binding(binding) == binding
     bundle_digest = binding["material_bundle_id"].split(":", 1)[1]
     entry = binding["material_manifest"]["materials"][0]
-    source = (
-        episode
-        / "active_materials"
-        / "bundles"
-        / bundle_digest
-        / entry["relative_path"]
-    )
+    source = episode / "active_materials" / "bundles" / bundle_digest / entry["relative_path"]
     source.write_text("host-visible drift\n", encoding="utf-8")
     with pytest.raises(host_mod.DualHostError) as failure:
         host._validate_active_material_binding(binding)
@@ -293,17 +266,14 @@ def test_active_material_mount_is_transport_only_and_readonly(
         active_material_host_path=str(active),
     )
     transport_binds = bundle["transport"]["binds"]
-    active_bind = next(
-        item for item in transport_binds if item["container"] == "/active-materials"
-    )
+    active_bind = next(item for item in transport_binds if item["container"] == "/active-materials")
     assert active_bind == {
         "host": str(active),
         "container": "/active-materials",
         "mode": "ro",
     }
     assert any(
-        item["container"] == "/material" and item["mode"] == "ro"
-        for item in transport_binds
+        item["container"] == "/material" and item["mode"] == "ro" for item in transport_binds
     )
     assert all(
         item["container"] not in {"/active-materials", "/material"}
@@ -312,9 +282,9 @@ def test_active_material_mount_is_transport_only_and_readonly(
     assert bundle["transport_spec_violations"] == []
 
     writable = copy.deepcopy(bundle["transport"])
-    next(
-        item for item in writable["binds"] if item["container"] == "/active-materials"
-    )["mode"] = "rw"
+    next(item for item in writable["binds"] if item["container"] == "/active-materials")["mode"] = (
+        "rw"
+    )
     assert "active_material_mount_must_be_readonly" in (
         specs.validate_transport_spec_invariants(writable)
     )
@@ -343,9 +313,7 @@ def test_active_material_mount_is_transport_only_and_readonly(
         )
     )
     desktop_projection = (
-        "/run/desktop/mnt/host/"
-        + active.drive.rstrip(":").lower()
-        + active.as_posix()[2:]
+        "/run/desktop/mnt/host/" + active.drive.rstrip(":").lower() + active.as_posix()[2:]
         if active.drive
         else str(active)
     )
@@ -359,9 +327,7 @@ def test_active_material_mount_is_transport_only_and_readonly(
             synthetic=True,
         )
     )
-    mount_readback = host._require_active_material_mount(
-        inspect_doc, expected_source=str(active)
-    )
+    mount_readback = host._require_active_material_mount(inspect_doc, expected_source=str(active))
     assert mount_readback == {
         "container_path": "/active-materials",
         "host_path": str(active),
@@ -374,12 +340,8 @@ def test_active_material_mount_is_transport_only_and_readonly(
     foreign_inspect = copy.deepcopy(inspect_doc)
     foreign_inspect["Mounts"][-1]["Source"] = str(foreign)
     with pytest.raises(host_mod.DualHostError) as foreign_failure:
-        host._require_active_material_mount(
-            foreign_inspect, expected_source=str(foreign)
-        )
-    assert foreign_failure.value.reason_code == (
-        "DUAL_HOST_ACTIVE_MATERIAL_MOUNT_SOURCE_DRIFT"
-    )
+        host._require_active_material_mount(foreign_inspect, expected_source=str(foreign))
+    assert foreign_failure.value.reason_code == ("DUAL_HOST_ACTIVE_MATERIAL_MOUNT_SOURCE_DRIFT")
     inspect_doc["Mounts"][-1]["RW"] = True
     assert "active_material_mount_not_readonly" in (
         specs.validate_transport_container_inspect(
@@ -395,9 +357,7 @@ def test_attach_and_resume_use_exact_prompt_file_while_no_material_keeps_p(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     base_prompt = "Explore the target."
-    binding, _witness, episode, _account, _target = _binding(
-        runtime, tmp_path, prompt=base_prompt
-    )
+    binding, _witness, episode, _account, _target = _binding(runtime, tmp_path, prompt=base_prompt)
     assert host_mod.ACTIVE_MATERIAL_PACKET_NOTICE == (
         runtime.RESEARCH_EPISODE_MATERIAL_PACKET_NOTICE
     )
@@ -425,9 +385,7 @@ def test_attach_and_resume_use_exact_prompt_file_while_no_material_keeps_p(
     }
     monkeypatch.setattr(host, "require_live_pair_ready", lambda **_kwargs: ready)
     monkeypatch.setattr(host, "sealed_research_profile", lambda: "OPEN_RESEARCH")
-    monkeypatch.setattr(
-        host, "resume_pair", lambda **_kwargs: {"status": "PAIR_RESUMED"}
-    )
+    monkeypatch.setattr(host, "resume_pair", lambda **_kwargs: {"status": "PAIR_RESUMED"})
 
     attached = host.attach_run_live(
         prompt=base_prompt,
@@ -436,8 +394,9 @@ def test_attach_and_resume_use_exact_prompt_file_while_no_material_keeps_p(
     )
     attach_argv = attached["planned_grok_argv"]
     assert "--prompt-file" in attach_argv
-    assert attach_argv[attach_argv.index("--prompt-file") + 1] == (
-        binding["container_effective_prompt_path"]
+    assert (
+        attach_argv[attach_argv.index("--prompt-file") + 1]
+        == (binding["container_effective_prompt_path"])
     )
     assert "-p" not in attach_argv
     assert base_prompt not in attach_argv
@@ -455,11 +414,12 @@ def test_attach_and_resume_use_exact_prompt_file_while_no_material_keeps_p(
     )
     resume_argv = resumed["planned_grok_argv"]
     assert resume_argv[resume_argv.index("--resume") + 1] == provider_session
-    assert resume_argv[resume_argv.index("--prompt-file") + 1] == (
-        binding["container_effective_prompt_path"]
+    assert (
+        resume_argv[resume_argv.index("--prompt-file") + 1]
+        == (binding["container_effective_prompt_path"])
     )
-    assert resumed["active_material_binding"]["material_bundle_id"] == (
-        binding["material_bundle_id"]
+    assert (
+        resumed["active_material_binding"]["material_bundle_id"] == (binding["material_bundle_id"])
     )
 
     old_shape = host.attach_run_live(prompt=base_prompt, plan_only=True)
@@ -582,9 +542,7 @@ def export_candidate_evidence_bundle(**kwargs):
     )
     head_sha = "a" * 64
     monkeypatch.setattr(runtime, "_research_episode_assert_root_allowed", lambda _root: None)
-    monkeypatch.setattr(
-        runtime, "_research_episode_lock", lambda _root: contextlib.nullcontext()
-    )
+    monkeypatch.setattr(runtime, "_research_episode_lock", lambda _root: contextlib.nullcontext())
     monkeypatch.setattr(
         runtime,
         "_research_episode_load_head",
@@ -601,9 +559,7 @@ def export_candidate_evidence_bundle(**kwargs):
     )
     monkeypatch.setattr(runtime, "_research_episode_namespace_and_release_facts", dict)
     monkeypatch.setattr(runtime, "_research_episode_append_journal", lambda *_a, **_k: None)
-    monkeypatch.setattr(
-        runtime, "resolve_packaged_host_modules_dir", lambda: fake_modules
-    )
+    monkeypatch.setattr(runtime, "resolve_packaged_host_modules_dir", lambda: fake_modules)
 
     exported = runtime.research_episode_export_candidate_evidence(
         root=episode,
@@ -664,9 +620,7 @@ def test_verified_material_reality_comes_only_from_current_attempt_cas(
             {
                 "schema_version": "xinao.actor_objective_terms.v1",
                 "source_kind": "PINNED_SETTLEMENT_RULE_SNAPSHOT",
-                "source_ref": (
-                    "xinao.settlement.special_number.SPECIAL_NUMBER_FUNCTION"
-                ),
+                "source_ref": ("xinao.settlement.special_number.SPECIAL_NUMBER_FUNCTION"),
                 "content_hash": "2" * 64,
             },
             sort_keys=True,
@@ -830,9 +784,7 @@ def test_verified_material_reality_comes_only_from_current_attempt_cas(
             return copy.deepcopy(ready)
 
     monkeypatch.setattr(runtime, "_research_episode_assert_root_allowed", lambda _root: None)
-    monkeypatch.setattr(
-        runtime, "_research_episode_lock", lambda _root: contextlib.nullcontext()
-    )
+    monkeypatch.setattr(runtime, "_research_episode_lock", lambda _root: contextlib.nullcontext())
     monkeypatch.setattr(
         runtime,
         "_research_episode_read_meta",
@@ -844,7 +796,9 @@ def test_verified_material_reality_comes_only_from_current_attempt_cas(
         lambda _root: {"head_checkpoint_sha256": head_sha},
     )
     monkeypatch.setattr(runtime, "_research_episode_load_native_session", FakeNative)
-    monkeypatch.setattr(runtime, "_research_episode_load_dual_host", lambda _root: (None, FakeHost()))
+    monkeypatch.setattr(
+        runtime, "_research_episode_load_dual_host", lambda _root: (None, FakeHost())
+    )
 
     verified = runtime.research_episode_load_verified_material_reality(
         root=episode,
@@ -961,6 +915,7 @@ def test_actor_reality_production_wrapper_accepts_only_verified_episode_identiti
         lambda **_kwargs: verified,
     )
     observed_factory: dict[str, Any] = {}
+
     class Packet:
         def __init__(self, payload: dict[str, Any]) -> None:
             self.payload = payload
@@ -985,9 +940,7 @@ def test_actor_reality_production_wrapper_accepts_only_verified_episode_identiti
         attempt_internal_cas_digest=internal_cas,
         attempt_hash=attempt_hash,
         provider_session_uuid=provider_session_uuid,
-        active_material_binding_hash=runtime._sha256_bytes(
-            runtime._canonical_bytes(binding)
-        ),
+        active_material_binding_hash=runtime._sha256_bytes(runtime._canonical_bytes(binding)),
         material_bundle_id=binding["material_bundle_id"],
         material_manifest=Manifest(),
         material_manifest_sha256=binding["material_manifest_sha256"],
@@ -998,27 +951,19 @@ def test_actor_reality_production_wrapper_accepts_only_verified_episode_identiti
         effective_prompt_relative_path=binding["effective_prompt_relative_path"],
         material_snapshot_at=dt.datetime.fromisoformat("2026-08-01T00:00:00+00:00"),
         portfolio_reality_material_id=verified["portfolio_reality_material_id"],
-        portfolio_reality_material_sha256=verified[
-            "portfolio_reality_material_sha256"
-        ],
+        portfolio_reality_material_sha256=verified["portfolio_reality_material_sha256"],
         portfolio_reality=Packet(portfolio_payload),
         prospective_packet_material_id=verified["prospective_packet_material_id"],
-        prospective_packet_material_sha256=verified[
-            "prospective_packet_material_sha256"
-        ],
+        prospective_packet_material_sha256=verified["prospective_packet_material_sha256"],
         prospective_packet_content_hash=verified["prospective_packet_content_hash"],
         source_id=verified["prospective_source_id"],
         source_contract_sha256=verified["prospective_source_contract_sha256"],
         source_capture_sha256=verified["prospective_source_capture_sha256"],
-        source_authority_binding_hash=verified[
-            "prospective_source_authority_binding_hash"
-        ],
+        source_authority_binding_hash=verified["prospective_source_authority_binding_hash"],
         target_expect=verified["prospective_target_expect"],
         target_ref=verified["prospective_target_ref"],
         objective_terms_material_id=verified["objective_terms_material_id"],
-        objective_terms_material_sha256=verified[
-            "objective_terms_material_sha256"
-        ],
+        objective_terms_material_sha256=verified["objective_terms_material_sha256"],
         objective_terms=Packet(objective_payload),
         prior_feedback_material_id=None,
         prior_feedback_material_sha256=None,
@@ -1089,9 +1034,7 @@ def test_actor_reality_production_wrapper_accepts_only_verified_episode_identiti
             return verified
         return {**verified, "attempt_hash": "0" * 64}
 
-    monkeypatch.setattr(
-        runtime, "research_episode_load_verified_material_reality", drifting_loader
-    )
+    monkeypatch.setattr(runtime, "research_episode_load_verified_material_reality", drifting_loader)
     with pytest.raises(runtime.XinaoError) as changed:
         runtime.research_episode_build_actor_reality(
             root=episode,
@@ -1102,9 +1045,7 @@ def test_actor_reality_production_wrapper_accepts_only_verified_episode_identiti
             expected_provider_session_uuid=provider_session_uuid,
             expected_host_session_id=host_session_id,
         )
-    assert changed.value.reason_code == (
-        "ACTOR_REALITY_CURRENT_SUCCESS_CHANGED_DURING_BUILD"
-    )
+    assert changed.value.reason_code == ("ACTOR_REALITY_CURRENT_SUCCESS_CHANGED_DURING_BUILD")
 
 
 def test_material_role_loader_requires_declared_longitudinal_provenance_after_genesis(
@@ -1162,9 +1103,7 @@ def test_material_role_loader_requires_declared_longitudinal_provenance_after_ge
         material_paths=paths,
         auth_path=_auth(tmp_path),
     )
-    roles = runtime._research_episode_material_role_identities(
-        tmp_path / "episode", binding
-    )
+    roles = runtime._research_episode_material_role_identities(tmp_path / "episode", binding)
     assert roles["portfolio_reality_period_index"] == 2
     assert roles["prior_feedback_content_hash"] == "4" * 64
     assert roles["prior_candidate_export_material_id"].startswith("sha256:")
@@ -1235,9 +1174,7 @@ def test_prepare_actor_materials_reads_live_objects_and_is_idempotent(
             portfolio_raw if packet is portfolio_packet else b""
         ),
     )
-    monkeypatch.setattr(
-        runtime, "_import_actor_reality_contract_module", lambda: fake_actor
-    )
+    monkeypatch.setattr(runtime, "_import_actor_reality_contract_module", lambda: fake_actor)
     monkeypatch.setattr(
         runtime,
         "_assert_explicit_actor_material_output_root",
@@ -1270,10 +1207,7 @@ def test_prepare_actor_materials_reads_live_objects_and_is_idempotent(
     assert prepared["longitudinal_materials_included"] is False
     by_role = {item["role"]: item for item in prepared["material_files"]}
     assert Path(by_role["first_principles_core"]["path"]).read_bytes() == core.read_bytes()
-    assert (
-        Path(by_role["prospective_authority_packet"]["path"]).read_bytes()
-        == authority_raw
-    )
+    assert Path(by_role["prospective_authority_packet"]["path"]).read_bytes() == authority_raw
     assert by_role["prospective_authority_packet"]["content_hash"] == packet_hash
     assert Path(by_role["objective_terms"]["path"]).read_bytes() == objective_raw
     assert Path(by_role["portfolio_reality"]["path"]).read_bytes() == portfolio_raw
@@ -1354,9 +1288,7 @@ def test_prepare_actor_materials_cli_has_only_identity_and_root_inputs(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     with pytest.raises(SystemExit) as help_exit:
-        runtime._parser().parse_args(
-            ["research-episode", "prepare-actor-materials", "--help"]
-        )
+        runtime._parser().parse_args(["research-episode", "prepare-actor-materials", "--help"])
     assert help_exit.value.code == 0
     help_text = capsys.readouterr().out
     for required in (
@@ -1489,17 +1421,11 @@ def _install_fake_actor_material_validators(
         ) -> dict[str, Any]:
             del export
             value = json.loads(manifest_bytes.decode("utf-8"))
-            assert value["manifest_marker"] == (
-                "XINAO_RESEARCH_EPISODE_CANDIDATE_MANIFEST_V1"
-            )
+            assert value["manifest_marker"] == ("XINAO_RESEARCH_EPISODE_CANDIDATE_MANIFEST_V1")
             return value
 
-    monkeypatch.setattr(
-        runtime, "_import_actor_reality_contract_module", lambda: fake_actor
-    )
-    monkeypatch.setattr(
-        runtime, "_import_prospective_source_module", lambda: FakeProspective
-    )
+    monkeypatch.setattr(runtime, "_import_actor_reality_contract_module", lambda: fake_actor)
+    monkeypatch.setattr(runtime, "_import_prospective_source_module", lambda: FakeProspective)
     monkeypatch.setattr(
         runtime,
         "_import_xinao_science_module",
@@ -1573,9 +1499,7 @@ def test_actor_material_root_requires_exact_period_appropriate_prepare_set(
     extra.write_text('{"stake":"platform-picked"}\n', encoding="utf-8")
     with pytest.raises(runtime.XinaoError) as supplemented:
         runtime._resolve_research_episode_actor_material_selection(root)
-    assert supplemented.value.reason_code == (
-        "RESEARCH_EPISODE_ACTOR_MATERIAL_FILE_SET_INVALID"
-    )
+    assert supplemented.value.reason_code == ("RESEARCH_EPISODE_ACTOR_MATERIAL_FILE_SET_INVALID")
     extra.unlink()
 
     for _role, name in runtime.RESEARCH_EPISODE_ACTOR_MATERIAL_LONGITUDINAL_OUTPUTS:
@@ -1602,17 +1526,11 @@ def test_actor_material_root_requires_exact_period_appropriate_prepare_set(
     )
     with pytest.raises(runtime.XinaoError) as missing_priors:
         runtime._resolve_research_episode_actor_material_selection(root)
-    assert missing_priors.value.reason_code == (
-        "RESEARCH_EPISODE_ACTOR_MATERIAL_FILE_SET_INVALID"
-    )
+    assert missing_priors.value.reason_code == ("RESEARCH_EPISODE_ACTOR_MATERIAL_FILE_SET_INVALID")
 
     prior_export_raw = (
         json.dumps(
-            {
-                "schema_version": (
-                    "xinao.research_episode_candidate_evidence_bundle.v1"
-                )
-            },
+            {"schema_version": ("xinao.research_episode_candidate_evidence_bundle.v1")},
             sort_keys=True,
         )
         + "\n"
@@ -1653,9 +1571,7 @@ def test_actor_material_root_requires_exact_period_appropriate_prepare_set(
     (root / "prior-candidate-manifest.json").unlink()
     with pytest.raises(runtime.XinaoError) as incomplete:
         runtime._resolve_research_episode_actor_material_selection(root)
-    assert incomplete.value.reason_code == (
-        "RESEARCH_EPISODE_ACTOR_MATERIAL_FILE_SET_INVALID"
-    )
+    assert incomplete.value.reason_code == ("RESEARCH_EPISODE_ACTOR_MATERIAL_FILE_SET_INVALID")
 
 
 def test_attach_and_resume_route_actor_root_to_original_material_producer(
@@ -1708,9 +1624,7 @@ def test_attach_and_resume_route_actor_root_to_original_material_producer(
         lambda prompt: str(prompt or "") + "\nACTOR_AUTHORING_CONTRACT",
     )
     monkeypatch.setattr(runtime, "_research_episode_assert_root_allowed", lambda _root: None)
-    monkeypatch.setattr(
-        runtime, "_research_episode_lock", lambda _root: contextlib.nullcontext()
-    )
+    monkeypatch.setattr(runtime, "_research_episode_lock", lambda _root: contextlib.nullcontext())
     monkeypatch.setattr(
         runtime,
         "_research_episode_load_head",
@@ -1727,12 +1641,8 @@ def test_attach_and_resume_route_actor_root_to_original_material_producer(
         lambda _root: runtime.RESEARCH_EPISODE_PROFILE_STATUS_VERIFIED,
     )
     monkeypatch.setattr(runtime, "_research_episode_namespace_and_release_facts", dict)
-    monkeypatch.setattr(
-        runtime, "resolve_auth_host_path", lambda **_kwargs: tmp_path / "auth.json"
-    )
-    monkeypatch.setattr(
-        runtime, "_materialize_research_episode_active_binding", fake_materialize
-    )
+    monkeypatch.setattr(runtime, "resolve_auth_host_path", lambda **_kwargs: tmp_path / "auth.json")
+    monkeypatch.setattr(runtime, "_materialize_research_episode_active_binding", fake_materialize)
     monkeypatch.setattr(
         runtime,
         "_assert_actor_material_selection_bound",
@@ -1814,9 +1724,7 @@ def test_actor_material_root_cannot_mix_with_generic_materials_before_host_use(
             material_paths=[tmp_path / "generic.txt"],
             actor_material_root=tmp_path / "prepared",
         )
-    assert attach_conflict.value.reason_code == (
-        "RESEARCH_EPISODE_ACTOR_MATERIAL_MODE_CONFLICT"
-    )
+    assert attach_conflict.value.reason_code == ("RESEARCH_EPISODE_ACTOR_MATERIAL_MODE_CONFLICT")
     with pytest.raises(runtime.XinaoError) as resume_conflict:
         runtime.research_episode_resume_live(
             root=tmp_path / "episode",
@@ -1825,9 +1733,7 @@ def test_actor_material_root_cannot_mix_with_generic_materials_before_host_use(
             material_paths=[tmp_path / "generic.txt"],
             actor_material_root=tmp_path / "prepared",
         )
-    assert resume_conflict.value.reason_code == (
-        "RESEARCH_EPISODE_ACTOR_MATERIAL_MODE_CONFLICT"
-    )
+    assert resume_conflict.value.reason_code == ("RESEARCH_EPISODE_ACTOR_MATERIAL_MODE_CONFLICT")
     assert host_called is False
 
 
@@ -1861,9 +1767,7 @@ def test_actor_authoring_contract_exposes_canonical_no_action_shape_not_a_choice
         prompt.split(runtime.RESEARCH_EPISODE_ACTOR_AUTHORING_CONTRACT_NOTICE, 1)[1]
     )
     assert contract["account_branch_mapping"]["NO_ACTION"] == "NO_ACTION_CANDIDATE"
-    assert contract["actor_intent"]["schema_version"] == (
-        "xinao.actor_authored_behavior_intent.v1"
-    )
+    assert contract["actor_intent"]["schema_version"] == ("xinao.actor_authored_behavior_intent.v1")
     assert contract["actor_intent"]["required_fields"] == [
         "authored_at",
         "decision_kind",

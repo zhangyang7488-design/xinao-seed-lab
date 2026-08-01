@@ -1058,9 +1058,7 @@ class ActorMaterialReality(BaseModel):
             prospective_packet_material_id=prospective_entry.material_id,
             prospective_packet_material_sha256=prospective_entry.sha256,
             prospective_packet_content_hash=packet_hash,
-            source_authority_binding_hash=_sha256_bytes(
-                _runtime_canonical_bytes(source_binding)
-            ),
+            source_authority_binding_hash=_sha256_bytes(_runtime_canonical_bytes(source_binding)),
             source_id=str(source_binding["source_id"]),
             source_contract_sha256=str(source_binding["contract_sha256"]),
             source_capture_sha256=str(source_binding["capture_sha256"]),

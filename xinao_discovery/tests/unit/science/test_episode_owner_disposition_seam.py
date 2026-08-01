@@ -344,9 +344,7 @@ def test_pool_ingest_accepts_native_seal_with_windows_provenance_integers(
 ) -> None:
     """Opaque Windows file identity may exceed RFC 8785's integer domain."""
 
-    export_bytes, manifest_bytes, export = _build_episode_export(
-        episode_id="ep_windows_provenance"
-    )
+    export_bytes, manifest_bytes, export = _build_episode_export(episode_id="ep_windows_provenance")
     del export_bytes
     export["prompt_material_cutoff"] = {
         "active_material_binding": {
@@ -361,10 +359,9 @@ def test_pool_ingest_accepts_native_seal_with_windows_provenance_integers(
     }
     body = {key: value for key, value in export.items() if key != "bundle_sha256"}
     export["bundle_sha256"] = _sha(
-        (
-            json.dumps(body, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
-            + "\n"
-        ).encode("utf-8")
+        (json.dumps(body, ensure_ascii=False, sort_keys=True, separators=(",", ":")) + "\n").encode(
+            "utf-8"
+        )
     )
     sealed_export = (
         json.dumps(export, ensure_ascii=False, indent=2, sort_keys=True) + "\n"
@@ -458,9 +455,9 @@ def test_freeze_consumer_rejects_unknown_episode_recommendation_explicitly(
     export = json.loads(export_raw)
     manifest = json.loads(manifest_raw)
     manifest["account_recommendation"] = "UNKNOWN_BRANCH"
-    forged_manifest_raw = (
-        json.dumps(manifest, ensure_ascii=False, sort_keys=True) + "\n"
-    ).encode("utf-8")
+    forged_manifest_raw = (json.dumps(manifest, ensure_ascii=False, sort_keys=True) + "\n").encode(
+        "utf-8"
+    )
     manifest_sha = _sha(forged_manifest_raw)
     export["candidate_manifest_sha256"] = manifest_sha
     export_body = {key: value for key, value in export.items() if key != "bundle_sha256"}
@@ -991,8 +988,8 @@ def test_current_episode_actor_intent_projects_and_reaches_portfolio_consumer(
     # objective terms, active material bundle, and prompt identities all agree.
     from xinao.shadow_lifecycle.actor_reality import ActorRealityContract
 
-    actor_fixture_path = Path(__file__).resolve().parents[1] / "shadow_lifecycle" / (
-        "test_actor_reality.py"
+    actor_fixture_path = (
+        Path(__file__).resolve().parents[1] / "shadow_lifecycle" / ("test_actor_reality.py")
     )
     actor_fixture_spec = importlib.util.spec_from_file_location(
         "_actor_reality_test_fixture",

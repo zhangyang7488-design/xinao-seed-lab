@@ -607,12 +607,10 @@ def test_active_binding_hash_binds_windows_provenance_outside_jcs_integer_domain
     tmp_path: Path,
 ) -> None:
     portfolio_root = _portfolio_root(tmp_path)
-    episode_root, authority_root, verified, _prospective_id, _terms_id = (
-        _active_material_fixture(
-            tmp_path,
-            open_at=P1_OPEN,
-            portfolio_root=portfolio_root,
-        )
+    episode_root, authority_root, verified, _prospective_id, _terms_id = _active_material_fixture(
+        tmp_path,
+        open_at=P1_OPEN,
+        portfolio_root=portfolio_root,
     )
     binding = verified["active_material_binding"]
     assert isinstance(binding, dict)
@@ -638,10 +636,7 @@ def test_active_binding_hash_binds_windows_provenance_outside_jcs_integer_domain
     expected_source_binding_hash = _sha256(
         _runtime_canonical(build_source_authority_binding(packet))
     )
-    assert (
-        contract.material_reality.source_authority_binding_hash
-        == expected_source_binding_hash
-    )
+    assert contract.material_reality.source_authority_binding_hash == expected_source_binding_hash
     binding["material_source_refs"][0]["st_ino"] += 1
     changed = ActorRealityContract._from_verified_material_reality(
         portfolio_root=portfolio_root,

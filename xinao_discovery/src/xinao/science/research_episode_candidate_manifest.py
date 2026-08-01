@@ -18,9 +18,7 @@ from typing import Any, Final
 CANDIDATE_MANIFEST_SCHEMA: Final = "xinao.research_episode_candidate_manifest.v1"
 CANDIDATE_MANIFEST_MARKER: Final = "XINAO_RESEARCH_EPISODE_CANDIDATE_MANIFEST_V1"
 CANDIDATE_MANIFEST_RELATIVE: Final = "candidate/candidate_manifest.v1.json"
-AUTHORING_CONTRACT_SCHEMA: Final = (
-    "xinao.research_episode_candidate_manifest_authoring_contract.v1"
-)
+AUTHORING_CONTRACT_SCHEMA: Final = "xinao.research_episode_candidate_manifest_authoring_contract.v1"
 ACCOUNT_RECOMMENDATION_VALUES: Final = frozenset(
     {
         "ACTION_CANDIDATE",
@@ -218,9 +216,7 @@ def validate_actor_authored_behavior_intent(payload: Mapping[str, Any]) -> dict[
             "required/optional keys are invalid",
         )
     if intent.get("schema_version") != "xinao.actor_authored_behavior_intent.v1":
-        raise CandidateManifestError(
-            "CANDIDATE_MANIFEST_ACTOR_INTENT_INVALID", "schema_version"
-        )
+        raise CandidateManifestError("CANDIDATE_MANIFEST_ACTOR_INTENT_INVALID", "schema_version")
     _normalized_actor_intent_content(intent)
     rationale = intent.get("research_rationale")
     if not isinstance(rationale, str) or not rationale.strip():
@@ -234,18 +230,14 @@ def validate_actor_authored_behavior_intent(payload: Mapping[str, Any]) -> dict[
     ):
         response = intent.get(field)
         if response is not None and (not isinstance(response, str) or not response.strip()):
-            raise CandidateManifestError(
-                "CANDIDATE_MANIFEST_ACTOR_INTENT_INVALID", field
-            )
+            raise CandidateManifestError("CANDIDATE_MANIFEST_ACTOR_INTENT_INVALID", field)
     stake = intent.get("stake")
     if not isinstance(stake, str) or _CANONICAL_STAKE.fullmatch(stake) is None:
         raise CandidateManifestError("CANDIDATE_MANIFEST_ACTOR_INTENT_INVALID", "stake")
     try:
         amount = Decimal(stake)
     except InvalidOperation as exc:
-        raise CandidateManifestError(
-            "CANDIDATE_MANIFEST_ACTOR_INTENT_INVALID", "stake"
-        ) from exc
+        raise CandidateManifestError("CANDIDATE_MANIFEST_ACTOR_INTENT_INVALID", "stake") from exc
     decision_kind = intent.get("decision_kind")
     if decision_kind == "ACTION":
         selected = intent.get("selected_number")
@@ -255,9 +247,7 @@ def validate_actor_authored_behavior_intent(payload: Mapping[str, Any]) -> dict[
             or type(selected) is not int
             or not 1 <= selected <= 49
         ):
-            raise CandidateManifestError(
-                "CANDIDATE_MANIFEST_ACTOR_INTENT_INVALID", "ACTION fields"
-            )
+            raise CandidateManifestError("CANDIDATE_MANIFEST_ACTOR_INTENT_INVALID", "ACTION fields")
     elif decision_kind == "NO_ACTION":
         if (
             amount != 0
@@ -268,18 +258,14 @@ def validate_actor_authored_behavior_intent(payload: Mapping[str, Any]) -> dict[
                 "CANDIDATE_MANIFEST_ACTOR_INTENT_INVALID", "NO_ACTION fields"
             )
     else:
-        raise CandidateManifestError(
-            "CANDIDATE_MANIFEST_ACTOR_INTENT_INVALID", "decision_kind"
-        )
+        raise CandidateManifestError("CANDIDATE_MANIFEST_ACTOR_INTENT_INVALID", "decision_kind")
     claimed = intent.get("content_hash")
     if claimed is not None and (
         not isinstance(claimed, str)
         or _HEX_SHA256.fullmatch(claimed) is None
         or claimed != actor_intent_content_hash(intent)
     ):
-        raise CandidateManifestError(
-            "CANDIDATE_MANIFEST_ACTOR_INTENT_INVALID", "content_hash"
-        )
+        raise CandidateManifestError("CANDIDATE_MANIFEST_ACTOR_INTENT_INVALID", "content_hash")
     return intent
 
 
@@ -403,9 +389,7 @@ def validate_candidate_manifest(
     recommendation = str(obj["account_recommendation"])
     if recommendation in {"ACTION_CANDIDATE", "NO_ACTION_CANDIDATE"}:
         if not isinstance(proposed, Mapping):
-            raise CandidateManifestError(
-                "CANDIDATE_MANIFEST_ACTOR_INTENT_REQUIRED", recommendation
-            )
+            raise CandidateManifestError("CANDIDATE_MANIFEST_ACTOR_INTENT_REQUIRED", recommendation)
         intent = validate_actor_authored_behavior_intent(proposed)
         expected_kind = "ACTION" if recommendation == "ACTION_CANDIDATE" else "NO_ACTION"
         if intent.get("decision_kind") != expected_kind:
