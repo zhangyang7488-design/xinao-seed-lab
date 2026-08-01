@@ -66,12 +66,13 @@ Long ResearchEpisode public vertical (Owner one-shots only; no daemon / no self-
 
 1. `scripts/xinao.py research-episode start --root <D-episode> --question <question>`
 2. `scripts/xinao.py research-episode ensure-pair --root <episode> --expected-head <sha256> [--research-profile OPEN_RESEARCH]`
-3. `scripts/xinao.py research-episode attach-run --root <episode> --prompt <prompt> [--max-turns 16]`
-4. `scripts/xinao.py research-episode checkpoint --root <episode> --expected-head <sha256> [--lab-relative path --progress-note ...]`
-5. `scripts/xinao.py research-episode resume-live --root <episode> --expected-provider-session <uuid> --expected-head <sha256>`
-6. `scripts/xinao.py research-episode export-candidate-evidence --root <episode> --attempt-cas-digest <sha256> --expected-head <sha256>`
-7. `scripts/xinao.py research-episode cancel --root <episode>` (also best-effort `retire-pair`)
-8. `scripts/xinao.py research-episode retire-pair --root <episode>`
+3. `scripts/xinao.py research-episode prepare-actor-materials --core <first-principles> --core-sha256 <sha256> --authority-root <authority> --packet-content-hash <sha256> --portfolio-root <portfolio> [--pool-root <pool>] --output-root <D-or-E-root>`
+4. `scripts/xinao.py research-episode attach-run --root <episode> --prompt <prompt> --actor-material-root <prepared-root> [--max-turns 16]`
+5. `scripts/xinao.py research-episode checkpoint --root <episode> --expected-head <sha256> [--lab-relative path --progress-note ...]`
+6. `scripts/xinao.py research-episode resume-live --root <episode> --expected-provider-session <uuid> --expected-head <sha256> --actor-material-root <prepared-root>`
+7. `scripts/xinao.py research-episode export-candidate-evidence --root <episode> --attempt-cas-digest <sha256> --expected-head <sha256>`
+8. `scripts/xinao.py research-episode cancel --root <episode>` (also best-effort `retire-pair`)
+9. `scripts/xinao.py research-episode retire-pair --root <episode>`
 
 Also available:
 
@@ -92,6 +93,7 @@ Auth handle path order (path/mount only; never secret bytes): `XINAO_AUTH_HOST_P
 Boundaries:
 
 - **Candidate-only:** export and pool ingest force `owner_adopted=false`, never freeze/settle.
+- **Complete actor producer:** `prepare-actor-materials` only derives live inputs; explicit attach/resume with `--actor-material-root` consumes the complete 4/7-file set and canonical manifest syntax. It never supplies the actor's branch, number, stake, rationale, method, or stop policy, and cannot mix with generic `--material`.
 - **Owner-only disposition:** adoption/freeze/settlement remain separate Codex Owner artifacts.
 - **No self-scheduling / no leg-B:** ensure-pair, attach-run, cancel, and retire-pair never create
   the next episode, Temporal workflow, or daemon continuation.

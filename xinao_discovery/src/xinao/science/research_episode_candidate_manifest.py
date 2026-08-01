@@ -18,6 +18,9 @@ from typing import Any, Final
 CANDIDATE_MANIFEST_SCHEMA: Final = "xinao.research_episode_candidate_manifest.v1"
 CANDIDATE_MANIFEST_MARKER: Final = "XINAO_RESEARCH_EPISODE_CANDIDATE_MANIFEST_V1"
 CANDIDATE_MANIFEST_RELATIVE: Final = "candidate/candidate_manifest.v1.json"
+AUTHORING_CONTRACT_SCHEMA: Final = (
+    "xinao.research_episode_candidate_manifest_authoring_contract.v1"
+)
 ACCOUNT_RECOMMENDATION_VALUES: Final = frozenset(
     {
         "ACTION_CANDIDATE",
@@ -65,6 +68,88 @@ def module_source_path() -> Path:
 def module_source_sha256() -> str:
     """Seal of these exact source bytes (release/image evidence pin)."""
     return hashlib.sha256(module_source_path().read_bytes()).hexdigest()
+
+
+def candidate_manifest_authoring_contract() -> dict[str, Any]:
+    """Return the syntax contract shown to a complete actor before lab authoring.
+
+    This describes how to serialize the actor's own choice.  It deliberately
+    supplies no decision, number, stake, rationale, method, or stop policy.
+    """
+
+    return {
+        "schema_version": AUTHORING_CONTRACT_SCHEMA,
+        "purpose": "SERIALIZE_ACTOR_AUTHORED_CHOICE_ONLY",
+        "candidate_manifest_path": CANDIDATE_MANIFEST_RELATIVE,
+        "candidate_manifest_schema": CANDIDATE_MANIFEST_SCHEMA,
+        "candidate_manifest_marker": CANDIDATE_MANIFEST_MARKER,
+        "required_top_level_fields": [
+            "schema_version",
+            "manifest_marker",
+            "candidate_id",
+            "candidate_version",
+            "research_question",
+            "research_object",
+            "data_cutoff",
+            "account_recommendation",
+            "candidate_only",
+            "owner_adopted",
+        ],
+        "required_top_level_one_of": [
+            ["method_refs", "methods"],
+            ["falsifiers", "limitations"],
+            ["completion", "completion_claim_allowed"],
+        ],
+        "account_recommendation_values": sorted(ACCOUNT_RECOMMENDATION_VALUES),
+        "complete_actor_recommendation_values": [
+            "ACTION_CANDIDATE",
+            "NO_ACTION_CANDIDATE",
+        ],
+        "account_branch_mapping": {
+            "ACTION": "ACTION_CANDIDATE",
+            "NO_ACTION": "NO_ACTION_CANDIDATE",
+            "SIGNAL_ONLY_WITHOUT_ACCOUNT_CHOICE": "NO_RECOMMENDATION",
+        },
+        "actor_intent": {
+            "location": "proposed",
+            "schema_version": "xinao.actor_authored_behavior_intent.v1",
+            "required_fields": sorted(_ACTOR_INTENT_REQUIRED),
+            "optional_fields": sorted(_ACTOR_INTENT_OPTIONAL),
+            "authored_at": "timezone-aware ISO-8601 time when the actor authored this choice",
+            "research_rationale": "non-empty actor-authored rationale",
+            "stake_format": "canonical decimal string with exactly four fractional digits",
+            "ACTION": {
+                "decision_kind": "ACTION",
+                "stake": "strictly positive",
+                "panel": "A or B",
+                "selected_number": "integer 1..49",
+            },
+            "NO_ACTION": {
+                "decision_kind": "NO_ACTION",
+                "stake": "0.0000",
+                "panel": None,
+                "selected_number": None,
+            },
+            "content_hash": "optional; omit unless computed exactly by the canonical validator",
+        },
+        "candidate_authority": {
+            "candidate_only": True,
+            "owner_adopted": False,
+            "completion": False,
+            "forbidden_claims": [
+                "account_identity",
+                "science_disposition",
+                "frozen",
+                "parent_complete",
+                "science_restored",
+            ],
+        },
+        "legacy_aliases_forbidden": {
+            "account_recommendation": ["ACTION", "RESEARCHER_ACCOUNT_NO_ACTION"],
+            "actor_intent_fields": ["decision", "selection", "reasoning_one_line"],
+        },
+        "actor_choice_fields_supplied_by_contract": [],
+    }
 
 
 def _normalized_actor_intent_content(intent: Mapping[str, Any]) -> dict[str, Any]:
@@ -333,11 +418,13 @@ def validate_candidate_manifest(
 
 __all__ = [
     "ACCOUNT_RECOMMENDATION_VALUES",
+    "AUTHORING_CONTRACT_SCHEMA",
     "CANDIDATE_MANIFEST_MARKER",
     "CANDIDATE_MANIFEST_RELATIVE",
     "CANDIDATE_MANIFEST_SCHEMA",
     "CandidateManifestError",
     "actor_intent_content_hash",
+    "candidate_manifest_authoring_contract",
     "module_source_path",
     "module_source_sha256",
     "validate_actor_authored_behavior_intent",

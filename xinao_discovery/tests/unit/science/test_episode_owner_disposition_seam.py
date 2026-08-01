@@ -339,6 +339,61 @@ def _overwrite_pool_entry(pool: Path, entry: dict[str, Any]) -> None:
     )
 
 
+def test_pool_ingest_accepts_native_seal_with_windows_provenance_integers(
+    tmp_path: Path,
+) -> None:
+    """Opaque Windows file identity may exceed RFC 8785's integer domain."""
+
+    export_bytes, manifest_bytes, export = _build_episode_export(
+        episode_id="ep_windows_provenance"
+    )
+    del export_bytes
+    export["prompt_material_cutoff"] = {
+        "active_material_binding": {
+            "material_source_refs": [
+                {
+                    "st_dev": 13599825006036549566,
+                    "st_ino": 9007199254864121,
+                    "st_mtime_ns": 1785573664473036700,
+                }
+            ]
+        }
+    }
+    body = {key: value for key, value in export.items() if key != "bundle_sha256"}
+    export["bundle_sha256"] = _sha(
+        (
+            json.dumps(body, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+            + "\n"
+        ).encode("utf-8")
+    )
+    sealed_export = (
+        json.dumps(export, ensure_ascii=False, indent=2, sort_keys=True) + "\n"
+    ).encode("utf-8")
+
+    pool = tmp_path / "pool"
+    entry = ingest_verified_episode_export(
+        pool_root=pool,
+        export=sealed_export,
+        manifest_bytes=manifest_bytes,
+    )
+
+    assert pool_result_bytes_path(pool, entry["result_sha256"]).read_bytes() == sealed_export
+    assert load_episode_pool_entry(pool, entry["result_sha256"]) == entry
+
+    tampered = {**export, "bundle_sha256": "0" * 64}
+    tampered_export = (
+        json.dumps(tampered, ensure_ascii=False, indent=2, sort_keys=True) + "\n"
+    ).encode("utf-8")
+    with pytest.raises(EpisodeExportAdapterError) as exc:
+        ingest_verified_episode_export(
+            pool_root=tmp_path / "tampered_pool",
+            export=tampered_export,
+            manifest_bytes=manifest_bytes,
+        )
+    assert exc.value.reason_code == "EPISODE_EXPORT_BUNDLE_HASH_MISMATCH"
+    assert not (tmp_path / "tampered_pool").exists()
+
+
 # --- Positive: consumer-shaped episode disposition ---------------------------
 
 

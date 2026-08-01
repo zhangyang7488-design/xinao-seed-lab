@@ -469,7 +469,7 @@ def test_attach_and_resume_use_exact_prompt_file_while_no_material_keeps_p(
     assert old_shape["active_material_binding"] is None
 
 
-def test_cli_accepts_repeatable_material_for_attach_and_resume(
+def test_cli_accepts_generic_or_actor_material_mode_for_attach_and_resume(
     runtime: Any, tmp_path: Path
 ) -> None:
     first, second = _materials(tmp_path)
@@ -489,6 +489,7 @@ def test_cli_accepts_repeatable_material_for_attach_and_resume(
         ]
     )
     assert attach.material == [first, second]
+    assert attach.actor_material_root is None
     resume = runtime._parser().parse_args(
         [
             "research-episode",
@@ -504,6 +505,39 @@ def test_cli_accepts_repeatable_material_for_attach_and_resume(
         ]
     )
     assert resume.material == [first]
+    assert resume.actor_material_root is None
+
+    prepared = tmp_path / "prepared-actor-materials"
+    actor_attach = runtime._parser().parse_args(
+        [
+            "research-episode",
+            "attach-run",
+            "--root",
+            str(tmp_path / "episode"),
+            "--prompt",
+            "q",
+            "--actor-material-root",
+            str(prepared),
+        ]
+    )
+    assert actor_attach.material == []
+    assert actor_attach.actor_material_root == prepared
+    actor_resume = runtime._parser().parse_args(
+        [
+            "research-episode",
+            "resume-live",
+            "--root",
+            str(tmp_path / "episode"),
+            "--expected-provider-session",
+            str(uuid.uuid4()),
+            "--expected-head",
+            "a" * 64,
+            "--actor-material-root",
+            str(prepared),
+        ]
+    )
+    assert actor_resume.material == []
+    assert actor_resume.actor_material_root == prepared
 
 
 def test_export_seals_active_binding_into_prompt_material_cutoff(
@@ -1377,3 +1411,514 @@ def test_prepare_actor_materials_cli_has_only_identity_and_root_inputs(
         with pytest.raises(runtime.XinaoError) as c_drive:
             runtime._assert_explicit_actor_material_output_root(Path("C:/xinao-materials"))
         assert c_drive.value.reason_code == "ACTOR_MATERIAL_OUTPUT_ROOT_NOT_DATA_DRIVE"
+
+
+def _install_fake_actor_material_validators(
+    runtime: Any,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class PortfolioContract:
+        @staticmethod
+        def model_validate(value: dict[str, Any]) -> SimpleNamespace:
+            if (
+                value.get("schema_version") != "xinao.actor_portfolio_reality.v1"
+                or value.get("packet_marker") != "XINAO_ACTOR_PORTFOLIO_REALITY_V1"
+                or not isinstance(value.get("period_index"), int)
+                or value.get("period_index", 0) < 1
+            ):
+                raise ValueError("invalid portfolio packet")
+            return SimpleNamespace(
+                period_index=value["period_index"],
+                content_hash=value.get("content_hash"),
+                portfolio_ref=value.get("portfolio_ref", "portfolio-live"),
+                prior_settled_episode_hash=value.get("prior_settled_episode_hash"),
+                live_head_feedback_hash=value.get("live_head_feedback_hash"),
+                current_balance=value.get("current_balance", "10000"),
+            )
+
+    class ObjectiveContract:
+        @staticmethod
+        def model_validate(value: dict[str, Any]) -> SimpleNamespace:
+            if (
+                value.get("schema_version") != "xinao.actor_objective_terms.v1"
+                or value.get("source_kind") != "PINNED_SETTLEMENT_RULE_SNAPSHOT"
+                or value.get("source_ref")
+                != "xinao.settlement.special_number.SPECIAL_NUMBER_FUNCTION"
+            ):
+                raise ValueError("invalid objective packet")
+            return SimpleNamespace(content_hash=value.get("content_hash"))
+
+    fake_actor = SimpleNamespace(
+        ActorPortfolioRealityPacket=PortfolioContract,
+        ActorObjectiveTermsPacket=ObjectiveContract,
+        canonical_sha256=lambda _value: "f" * 64,
+    )
+
+    class FakeProspective:
+        @staticmethod
+        def packet_content_hash(packet: dict[str, Any]) -> str:
+            return str(packet.get("content_hash") or "")
+
+        @staticmethod
+        def reject_outcome_material(_packet: dict[str, Any]) -> None:
+            return None
+
+        @staticmethod
+        def build_source_authority_binding(packet: dict[str, Any]) -> dict[str, Any]:
+            return {"packet_content_hash": packet["content_hash"]}
+
+        @staticmethod
+        def validate_source_authority_binding(
+            binding: dict[str, Any], *, packet: dict[str, Any]
+        ) -> dict[str, Any]:
+            assert binding["packet_content_hash"] == packet["content_hash"]
+            return binding
+
+    class FakeEpisodePool:
+        @staticmethod
+        def verify_episode_export_bundle(raw: bytes) -> dict[str, Any]:
+            value = json.loads(raw.decode("utf-8"))
+            assert value["schema_version"] == (
+                "xinao.research_episode_candidate_evidence_bundle.v1"
+            )
+            return value
+
+        @staticmethod
+        def load_and_verify_candidate_manifest(
+            *, export: dict[str, Any], manifest_bytes: bytes
+        ) -> dict[str, Any]:
+            del export
+            value = json.loads(manifest_bytes.decode("utf-8"))
+            assert value["manifest_marker"] == (
+                "XINAO_RESEARCH_EPISODE_CANDIDATE_MANIFEST_V1"
+            )
+            return value
+
+    monkeypatch.setattr(
+        runtime, "_import_actor_reality_contract_module", lambda: fake_actor
+    )
+    monkeypatch.setattr(
+        runtime, "_import_prospective_source_module", lambda: FakeProspective
+    )
+    monkeypatch.setattr(
+        runtime,
+        "_import_xinao_science_module",
+        lambda name: (
+            FakeEpisodePool
+            if name == "xinao.science.episode_export_pool_adapter"
+            else (_ for _ in ()).throw(AssertionError(name))
+        ),
+    )
+
+
+def test_actor_material_root_requires_exact_period_appropriate_prepare_set(
+    runtime: Any,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _install_fake_actor_material_validators(runtime, monkeypatch)
+    monkeypatch.setattr(
+        runtime,
+        "_assert_explicit_actor_material_output_root",
+        lambda path: Path(path),
+    )
+    root = tmp_path / "prepared"
+    root.mkdir()
+    (root / "first-principles-core.utf8").write_text(
+        "行动者自主研究、行动并承担结果。\n", encoding="utf-8"
+    )
+    prospective = {
+        "schema_version": "xinao.prospective_target_authority_packet.v1",
+        "packet_marker": "XINAO_PROSPECTIVE_TARGET_AUTHORITY_V1",
+        "content_hash": "1" * 64,
+        "contract": {"contract_sha256": "a" * 64},
+        "target_ref": "macaujc2/expect/2026214",
+        "target_expect": "2026214",
+        "target_guard_open_time": "2026-08-02T01:00:00Z",
+        "freeze_deadline": "2026-08-02T00:59:00Z",
+        "latest_completed_expect": "2026213",
+        "capture_sha256": "b" * 64,
+    }
+    objective = {
+        "schema_version": "xinao.actor_objective_terms.v1",
+        "source_kind": "PINNED_SETTLEMENT_RULE_SNAPSHOT",
+        "source_ref": "xinao.settlement.special_number.SPECIAL_NUMBER_FUNCTION",
+        "content_hash": "2" * 64,
+    }
+    portfolio = {
+        "schema_version": "xinao.actor_portfolio_reality.v1",
+        "packet_marker": "XINAO_ACTOR_PORTFOLIO_REALITY_V1",
+        "period_index": 1,
+        "portfolio_ref": "portfolio-live",
+        "current_balance": "10000",
+        "content_hash": "3" * 64,
+    }
+    for name, value in (
+        ("prospective-authority-packet.json", prospective),
+        ("objective-terms.json", objective),
+        ("portfolio-reality.json", portfolio),
+    ):
+        (root / name).write_text(
+            json.dumps(value, ensure_ascii=False, sort_keys=True) + "\n",
+            encoding="utf-8",
+        )
+
+    genesis = runtime._resolve_research_episode_actor_material_selection(root)
+    assert genesis["period_index"] == 1
+    assert [path.name for path in genesis["paths"]] == [
+        name for _role, name in runtime.RESEARCH_EPISODE_ACTOR_MATERIAL_BASE_OUTPUTS
+    ]
+
+    extra = root / "platform-supplement.json"
+    extra.write_text('{"stake":"platform-picked"}\n', encoding="utf-8")
+    with pytest.raises(runtime.XinaoError) as supplemented:
+        runtime._resolve_research_episode_actor_material_selection(root)
+    assert supplemented.value.reason_code == (
+        "RESEARCH_EPISODE_ACTOR_MATERIAL_FILE_SET_INVALID"
+    )
+    extra.unlink()
+
+    for _role, name in runtime.RESEARCH_EPISODE_ACTOR_MATERIAL_LONGITUDINAL_OUTPUTS:
+        (root / name).write_text("{}\n", encoding="utf-8")
+    with pytest.raises(runtime.XinaoError) as genesis_with_priors:
+        runtime._resolve_research_episode_actor_material_selection(root)
+    assert genesis_with_priors.value.reason_code == (
+        "RESEARCH_EPISODE_ACTOR_MATERIAL_FILE_SET_INVALID"
+    )
+    for _role, name in runtime.RESEARCH_EPISODE_ACTOR_MATERIAL_LONGITUDINAL_OUTPUTS:
+        (root / name).unlink()
+
+    portfolio.update(
+        {
+            "period_index": 2,
+            "prior_settled_episode_hash": "4" * 64,
+            "live_head_feedback_hash": "5" * 64,
+            "current_balance": "9600",
+            "content_hash": "6" * 64,
+        }
+    )
+    (root / "portfolio-reality.json").write_text(
+        json.dumps(portfolio, sort_keys=True) + "\n", encoding="utf-8"
+    )
+    with pytest.raises(runtime.XinaoError) as missing_priors:
+        runtime._resolve_research_episode_actor_material_selection(root)
+    assert missing_priors.value.reason_code == (
+        "RESEARCH_EPISODE_ACTOR_MATERIAL_FILE_SET_INVALID"
+    )
+
+    prior_export_raw = (
+        json.dumps(
+            {
+                "schema_version": (
+                    "xinao.research_episode_candidate_evidence_bundle.v1"
+                )
+            },
+            sort_keys=True,
+        )
+        + "\n"
+    ).encode("utf-8")
+    prior_manifest_raw = (
+        json.dumps(
+            {
+                "schema_version": "xinao.research_episode_candidate_manifest.v1",
+                "manifest_marker": "XINAO_RESEARCH_EPISODE_CANDIDATE_MANIFEST_V1",
+            },
+            sort_keys=True,
+        )
+        + "\n"
+    ).encode("utf-8")
+    feedback = {
+        "schema_version": "xinao.research_feedback_pack.v1",
+        "pack_marker": "XINAO_RESEARCH_FEEDBACK_PACK_V1",
+        "content_hash": "f" * 64,
+        "auto_start_next_research": False,
+        "scientific_promotion": False,
+        "portfolio_ref": "portfolio-live",
+        "period_index": 1,
+        "settled_episode_hash": "4" * 64,
+        "account_feedback_hash": "5" * 64,
+        "closing_balance": "9600",
+        "prior_result_sha256": runtime._sha256_bytes(prior_export_raw),
+        "prior_receipt_content_sha256": runtime._sha256_bytes(prior_manifest_raw),
+    }
+    (root / "prior-feedback-pack.json").write_text(
+        json.dumps(feedback, sort_keys=True) + "\n", encoding="utf-8"
+    )
+    (root / "prior-candidate-export.json").write_bytes(prior_export_raw)
+    (root / "prior-candidate-manifest.json").write_bytes(prior_manifest_raw)
+    longitudinal = runtime._resolve_research_episode_actor_material_selection(root)
+    assert longitudinal["period_index"] == 2
+    assert len(longitudinal["paths"]) == 7
+
+    (root / "prior-candidate-manifest.json").unlink()
+    with pytest.raises(runtime.XinaoError) as incomplete:
+        runtime._resolve_research_episode_actor_material_selection(root)
+    assert incomplete.value.reason_code == (
+        "RESEARCH_EPISODE_ACTOR_MATERIAL_FILE_SET_INVALID"
+    )
+
+
+def test_attach_and_resume_route_actor_root_to_original_material_producer(
+    runtime: Any,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    episode = tmp_path / "episode"
+    head_sha = "a" * 64
+    actor_paths = tuple(tmp_path / "prepared" / f"actor-{index}.utf8" for index in range(4))
+    selection = {
+        "root": tmp_path / "prepared",
+        "paths": actor_paths,
+        "period_index": 1,
+        "source_sha256_by_path": {
+            str(path): str(index) * 64 for index, path in enumerate(actor_paths, start=1)
+        },
+    }
+    materialized: list[dict[str, Any]] = []
+    actor_bound: list[dict[str, Any]] = []
+
+    def fake_materialize(**kwargs: Any) -> tuple[dict[str, Any], dict[str, Any]]:
+        materialized.append(kwargs)
+        return (
+            {
+                "material_bundle_id": "xinao-material-bundle-sha256:" + "b" * 64,
+                "material_count": len(kwargs["material_paths"]),
+                "material_source_refs": [],
+            },
+            {"path": str(tmp_path / "auth.json")},
+        )
+
+    class FakeHost:
+        @staticmethod
+        def attach_run_live(**_kwargs: Any) -> dict[str, Any]:
+            return {"status": "PLANNED"}
+
+        @staticmethod
+        def resume_live(**_kwargs: Any) -> dict[str, Any]:
+            return {"status": "PLANNED"}
+
+    monkeypatch.setattr(
+        runtime,
+        "_resolve_research_episode_actor_material_selection",
+        lambda root: selection if Path(root) == selection["root"] else None,
+    )
+    monkeypatch.setattr(
+        runtime,
+        "_research_episode_actor_candidate_authoring_prompt",
+        lambda prompt: str(prompt or "") + "\nACTOR_AUTHORING_CONTRACT",
+    )
+    monkeypatch.setattr(runtime, "_research_episode_assert_root_allowed", lambda _root: None)
+    monkeypatch.setattr(
+        runtime, "_research_episode_lock", lambda _root: contextlib.nullcontext()
+    )
+    monkeypatch.setattr(
+        runtime,
+        "_research_episode_load_head",
+        lambda _root: {"head_checkpoint_sha256": head_sha, "status": "RUNNING"},
+    )
+    monkeypatch.setattr(
+        runtime,
+        "_research_episode_read_meta",
+        lambda _root: {"episode_id": "ep", "session_id": "host"},
+    )
+    monkeypatch.setattr(
+        runtime,
+        "_research_episode_resolve_profile_status",
+        lambda _root: runtime.RESEARCH_EPISODE_PROFILE_STATUS_VERIFIED,
+    )
+    monkeypatch.setattr(runtime, "_research_episode_namespace_and_release_facts", dict)
+    monkeypatch.setattr(
+        runtime, "resolve_auth_host_path", lambda **_kwargs: tmp_path / "auth.json"
+    )
+    monkeypatch.setattr(
+        runtime, "_materialize_research_episode_active_binding", fake_materialize
+    )
+    monkeypatch.setattr(
+        runtime,
+        "_assert_actor_material_selection_bound",
+        lambda **kwargs: actor_bound.append(kwargs),
+    )
+    monkeypatch.setattr(runtime, "_validate_auth_identity_witness", lambda *_a, **_k: None)
+    monkeypatch.setattr(
+        runtime, "_research_episode_load_dual_host", lambda _root: (None, FakeHost())
+    )
+    monkeypatch.setattr(
+        runtime,
+        "_research_episode_feedback_prompt",
+        lambda **kwargs: {
+            "prompt": str(kwargs["owner_prompt"] or "") + "\nSEALED_FEEDBACK_PROMPT",
+            "feedback_inventory_read": True,
+            "feedback_prompt_bound": True,
+            "feedback_inventory_hash": "c" * 64,
+            "feedback_packet_sha256": "d" * 64,
+            "model_learned_claim_allowed": False,
+        },
+    )
+    monkeypatch.setattr(runtime, "_research_episode_append_journal", lambda *_a, **_k: None)
+
+    attached = runtime.research_episode_attach_run(
+        root=episode,
+        prompt="actor attach",
+        expected_head_sha256=head_sha,
+        actor_material_root=selection["root"],
+        plan_only=True,
+    )
+    resumed = runtime.research_episode_resume_live(
+        root=episode,
+        expected_provider_session_uuid=str(uuid.uuid4()),
+        expected_head_sha256=head_sha,
+        prompt="actor resume",
+        actor_material_root=selection["root"],
+        plan_only=True,
+    )
+    generic = tmp_path / "generic.txt"
+    generic_attach = runtime.research_episode_attach_run(
+        root=episode,
+        prompt="legacy generic",
+        expected_head_sha256=head_sha,
+        material_paths=[generic],
+        plan_only=True,
+    )
+    assert attached["status"] == resumed["status"] == generic_attach["status"] == "PLANNED"
+    assert [call["material_paths"] for call in materialized] == [
+        actor_paths,
+        actor_paths,
+        (generic,),
+    ]
+    assert [call["base_prompt"] for call in materialized] == [
+        "actor attach\nACTOR_AUTHORING_CONTRACT\nSEALED_FEEDBACK_PROMPT",
+        "actor resume\nACTOR_AUTHORING_CONTRACT\nSEALED_FEEDBACK_PROMPT",
+        "legacy generic\nSEALED_FEEDBACK_PROMPT",
+    ]
+    assert len(actor_bound) == 2
+    assert all(call["selection"] == selection for call in actor_bound)
+
+
+def test_actor_material_root_cannot_mix_with_generic_materials_before_host_use(
+    runtime: Any,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    host_called = False
+
+    def forbidden_host(_root: Path) -> None:
+        nonlocal host_called
+        host_called = True
+        raise AssertionError("host must not be loaded")
+
+    monkeypatch.setattr(runtime, "_research_episode_load_dual_host", forbidden_host)
+    with pytest.raises(runtime.XinaoError) as attach_conflict:
+        runtime.research_episode_attach_run(
+            root=tmp_path / "episode",
+            prompt="q",
+            material_paths=[tmp_path / "generic.txt"],
+            actor_material_root=tmp_path / "prepared",
+        )
+    assert attach_conflict.value.reason_code == (
+        "RESEARCH_EPISODE_ACTOR_MATERIAL_MODE_CONFLICT"
+    )
+    with pytest.raises(runtime.XinaoError) as resume_conflict:
+        runtime.research_episode_resume_live(
+            root=tmp_path / "episode",
+            expected_provider_session_uuid=str(uuid.uuid4()),
+            expected_head_sha256="a" * 64,
+            material_paths=[tmp_path / "generic.txt"],
+            actor_material_root=tmp_path / "prepared",
+        )
+    assert resume_conflict.value.reason_code == (
+        "RESEARCH_EPISODE_ACTOR_MATERIAL_MODE_CONFLICT"
+    )
+    assert host_called is False
+
+
+def test_actor_authoring_contract_exposes_canonical_no_action_shape_not_a_choice(
+    runtime: Any,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    manifest_module = _load(
+        "xinao_candidate_manifest_authoring_contract_test",
+        ROOT
+        / "xinao_discovery"
+        / "src"
+        / "xinao"
+        / "science"
+        / "research_episode_candidate_manifest.py",
+    )
+    monkeypatch.setattr(
+        runtime,
+        "_import_xinao_science_module",
+        lambda name: (
+            manifest_module
+            if name == "xinao.science.research_episode_candidate_manifest"
+            else (_ for _ in ()).throw(AssertionError(name))
+        ),
+    )
+    prompt = runtime._research_episode_actor_candidate_authoring_prompt(
+        "Continue the investigation and preserve your own account choice."
+    )
+    assert prompt.startswith("Continue the investigation")
+    contract = json.loads(
+        prompt.split(runtime.RESEARCH_EPISODE_ACTOR_AUTHORING_CONTRACT_NOTICE, 1)[1]
+    )
+    assert contract["account_branch_mapping"]["NO_ACTION"] == "NO_ACTION_CANDIDATE"
+    assert contract["actor_intent"]["schema_version"] == (
+        "xinao.actor_authored_behavior_intent.v1"
+    )
+    assert contract["actor_intent"]["required_fields"] == [
+        "authored_at",
+        "decision_kind",
+        "research_rationale",
+        "schema_version",
+        "stake",
+    ]
+    assert contract["legacy_aliases_forbidden"] == {
+        "account_recommendation": ["ACTION", "RESEARCHER_ACCOUNT_NO_ACTION"],
+        "actor_intent_fields": ["decision", "selection", "reasoning_one_line"],
+    }
+    assert contract["actor_choice_fields_supplied_by_contract"] == []
+
+    base = {
+        "schema_version": "xinao.research_episode_candidate_manifest.v1",
+        "manifest_marker": "XINAO_RESEARCH_EPISODE_CANDIDATE_MANIFEST_V1",
+        "candidate_id": "actor-no-action",
+        "candidate_version": "v1",
+        "research_question": "What should this actor do now?",
+        "research_object": "live prospective period",
+        "data_cutoff": {"as_of": "2026-08-01T00:00:00Z", "material_refs": []},
+        "method_refs": ["actor-selected inquiry"],
+        "falsifiers": ["future outcomes may falsify the rationale"],
+        "candidate_only": True,
+        "owner_adopted": False,
+        "completion": False,
+    }
+    old_live_shape = {
+        **base,
+        "account_recommendation": "RESEARCHER_ACCOUNT_NO_ACTION",
+        "proposed": {
+            "decision": "NO_ACTION",
+            "selection": None,
+            "stake": "0.0000",
+            "reasoning_one_line": "actor declined exposure",
+        },
+    }
+    with pytest.raises(manifest_module.CandidateManifestError) as old_rejected:
+        manifest_module.validate_candidate_manifest(old_live_shape)
+    assert old_rejected.value.reason_code == "CANDIDATE_MANIFEST_RECOMMENDATION_INVALID"
+
+    corrected_same_choice = {
+        **base,
+        "account_recommendation": "NO_ACTION_CANDIDATE",
+        "proposed": {
+            "schema_version": "xinao.actor_authored_behavior_intent.v1",
+            "authored_at": "2026-08-01T00:00:00Z",
+            "decision_kind": "NO_ACTION",
+            "panel": None,
+            "selected_number": None,
+            "stake": "0.0000",
+            "research_rationale": "actor declined exposure",
+        },
+    }
+    validated = manifest_module.validate_candidate_manifest(corrected_same_choice)
+    assert validated["account_recommendation"] == "NO_ACTION_CANDIDATE"
+    assert validated["proposed"]["decision_kind"] == "NO_ACTION"
+    assert validated["proposed"]["stake"] == "0.0000"

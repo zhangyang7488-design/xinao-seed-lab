@@ -407,6 +407,13 @@ RESEARCH_EPISODE_MATERIAL_PACKET_NOTICE = (
     "or a prescribed research method. Decide freely what to investigate and cite the "
     "material identities for any bytes actually used.\n"
 )
+RESEARCH_EPISODE_ACTOR_AUTHORING_CONTRACT_NOTICE = (
+    "\n\nXINAO_RESEARCH_EPISODE_ACTOR_AUTHORING_CONTRACT_V1\n"
+    "The JSON contract below fixes only the candidate-manifest serialization consumed "
+    "by export-candidate-evidence. It does not choose ACTION/NO_ACTION, number, stake, "
+    "rationale, method, or stopping behavior. Preserve your own choice exactly; do not "
+    "translate downstream account identity names into account_recommendation.\n"
+)
 RESEARCH_EPISODE_ACTIVE_MATERIAL_BINDING_SCHEMA = (
     "xinao.research_episode_active_material_binding.v1"
 )
@@ -14279,6 +14286,16 @@ def _parser() -> argparse.ArgumentParser:
         ),
     )
     re_attach.add_argument(
+        "--actor-material-root",
+        type=Path,
+        default=None,
+        help=(
+            "Exact 4/7-file directory emitted by prepare-actor-materials. Cannot be "
+            "combined with --material; the complete period-appropriate set is frozen "
+            "into this attach attempt."
+        ),
+    )
+    re_attach.add_argument(
         "--plan-only",
         action="store_true",
         help="Emit planned argv only; never records LIVE_ATTEMPT_RECORDED evidence",
@@ -14298,6 +14315,16 @@ def _parser() -> argparse.ArgumentParser:
         action="append",
         default=[],
         help="Repeatable Owner-selected UTF-8 evidence for this exact resume attempt",
+    )
+    re_resume_live.add_argument(
+        "--actor-material-root",
+        type=Path,
+        default=None,
+        help=(
+            "Exact 4/7-file directory emitted by prepare-actor-materials. Cannot be "
+            "combined with --material; the complete period-appropriate set is frozen "
+            "into this resume attempt."
+        ),
     )
     re_resume_live.add_argument("--plan-only", action="store_true")
     re_prepare_actor = research_episode_sub.add_parser(
@@ -17559,6 +17586,320 @@ def research_episode_prepare_actor_materials(
     }
 
 
+def _prepared_actor_material_json(raw: bytes, *, filename: str) -> dict[str, Any]:
+    try:
+        text = raw.decode("utf-8")
+    except UnicodeDecodeError as exc:
+        raise XinaoError(
+            "RESEARCH_EPISODE_ACTOR_MATERIAL_JSON_INVALID",
+            f"{filename}: UTF-8 required",
+        ) from exc
+    value = _strict_json_loads(
+        text,
+        reason_code="RESEARCH_EPISODE_ACTOR_MATERIAL_JSON_INVALID",
+        detail=filename,
+    )
+    if not isinstance(value, dict):
+        raise XinaoError(
+            "RESEARCH_EPISODE_ACTOR_MATERIAL_JSON_INVALID",
+            f"{filename}: object required",
+        )
+    return value
+
+
+def _prepared_actor_portfolio_packet(raw: bytes) -> tuple[Any, Any]:
+    actor_module = _import_actor_reality_contract_module()
+    value = _prepared_actor_material_json(raw, filename="portfolio-reality.json")
+    try:
+        packet = actor_module.ActorPortfolioRealityPacket.model_validate(value)
+    except Exception as exc:
+        raise XinaoError(
+            "RESEARCH_EPISODE_ACTOR_MATERIAL_CONTENT_INVALID",
+            f"portfolio-reality.json: {str(exc)[:2000]}",
+        ) from exc
+    if HEX_SHA256_PATTERN.fullmatch(str(getattr(packet, "content_hash", None) or "")) is None:
+        raise XinaoError(
+            "RESEARCH_EPISODE_ACTOR_MATERIAL_CONTENT_INVALID",
+            "portfolio-reality.json: sealed content_hash required",
+        )
+    return actor_module, packet
+
+
+def _validate_prepared_actor_material_payloads(
+    payloads: Mapping[str, bytes],
+) -> int:
+    """Validate the exact prepare output bytes before they can reach a provider."""
+
+    core = payloads.get("first-principles-core.utf8")
+    if not isinstance(core, bytes) or not core or b"\x00" in core:
+        raise XinaoError(
+            "RESEARCH_EPISODE_ACTOR_MATERIAL_CONTENT_INVALID",
+            "first-principles-core.utf8: non-empty UTF-8 without NUL required",
+        )
+    try:
+        core.decode("utf-8")
+    except UnicodeDecodeError as exc:
+        raise XinaoError(
+            "RESEARCH_EPISODE_ACTOR_MATERIAL_CONTENT_INVALID",
+            "first-principles-core.utf8: UTF-8 required",
+        ) from exc
+
+    actor_module, portfolio = _prepared_actor_portfolio_packet(
+        payloads["portfolio-reality.json"]
+    )
+    prospective = _prepared_actor_material_json(
+        payloads["prospective-authority-packet.json"],
+        filename="prospective-authority-packet.json",
+    )
+    objective = _prepared_actor_material_json(
+        payloads["objective-terms.json"],
+        filename="objective-terms.json",
+    )
+    try:
+        objective_packet = actor_module.ActorObjectiveTermsPacket.model_validate(objective)
+        if HEX_SHA256_PATTERN.fullmatch(
+            str(getattr(objective_packet, "content_hash", None) or "")
+        ) is None:
+            raise ValueError("sealed content_hash required")
+
+        prospective_module = _import_prospective_source_module()
+        if (
+            prospective.get("schema_version")
+            != RESEARCH_EPISODE_PROSPECTIVE_PACKET_SCHEMA
+            or prospective.get("packet_marker")
+            != RESEARCH_EPISODE_PROSPECTIVE_PACKET_MARKER
+        ):
+            raise ValueError("prospective packet schema/marker mismatch")
+        prospective_hash = str(prospective.get("content_hash") or "")
+        if (
+            HEX_SHA256_PATTERN.fullmatch(prospective_hash) is None
+            or prospective_module.packet_content_hash(prospective) != prospective_hash
+        ):
+            raise ValueError("prospective packet content_hash mismatch")
+        prospective_module.reject_outcome_material(prospective)
+        prospective_binding = prospective_module.build_source_authority_binding(prospective)
+        prospective_module.validate_source_authority_binding(
+            prospective_binding,
+            packet=prospective,
+        )
+    except XinaoError:
+        raise
+    except Exception as exc:
+        reason = getattr(exc, "reason_code", None) or (
+            "RESEARCH_EPISODE_ACTOR_MATERIAL_CONTENT_INVALID"
+        )
+        raise XinaoError(str(reason), str(exc)[:2000]) from exc
+
+    period_index = int(portfolio.period_index)
+    if period_index == 1:
+        return period_index
+
+    feedback_raw = payloads["prior-feedback-pack.json"]
+    prior_export_raw = payloads["prior-candidate-export.json"]
+    prior_manifest_raw = payloads["prior-candidate-manifest.json"]
+    feedback = _prepared_actor_material_json(
+        feedback_raw,
+        filename="prior-feedback-pack.json",
+    )
+    try:
+        feedback_hash = str(feedback.get("content_hash") or "")
+        feedback_body = {key: value for key, value in feedback.items() if key != "content_hash"}
+        canonical_sha256 = getattr(actor_module, "canonical_sha256", None)
+        if (
+            feedback.get("schema_version") != RESEARCH_EPISODE_FEEDBACK_PACK_SCHEMA
+            or feedback.get("pack_marker") != RESEARCH_EPISODE_FEEDBACK_PACK_MARKER
+            or not callable(canonical_sha256)
+            or HEX_SHA256_PATTERN.fullmatch(feedback_hash) is None
+            or canonical_sha256(feedback_body) != feedback_hash
+        ):
+            raise ValueError("prior feedback pack seal mismatch")
+        if (
+            feedback.get("auto_start_next_research") is not False
+            or feedback.get("scientific_promotion") is not False
+        ):
+            raise ValueError("prior feedback authority claim forbidden")
+        if (
+            feedback.get("portfolio_ref") != portfolio.portfolio_ref
+            or feedback.get("period_index") != period_index - 1
+            or feedback.get("settled_episode_hash")
+            != portfolio.prior_settled_episode_hash
+            or feedback.get("account_feedback_hash")
+            != portfolio.live_head_feedback_hash
+            or feedback.get("closing_balance") != portfolio.current_balance
+            or feedback.get("prior_result_sha256") != _sha256_bytes(prior_export_raw)
+            or feedback.get("prior_receipt_content_sha256")
+            != _sha256_bytes(prior_manifest_raw)
+        ):
+            raise ValueError("prior feedback/portfolio lineage mismatch")
+
+        episode_pool = _import_xinao_science_module(
+            "xinao.science.episode_export_pool_adapter"
+        )
+        prior_export = episode_pool.verify_episode_export_bundle(prior_export_raw)
+        episode_pool.load_and_verify_candidate_manifest(
+            export=prior_export,
+            manifest_bytes=prior_manifest_raw,
+        )
+    except XinaoError:
+        raise
+    except Exception as exc:
+        reason = getattr(exc, "reason_code", None) or (
+            "RESEARCH_EPISODE_ACTOR_MATERIAL_CONTENT_INVALID"
+        )
+        raise XinaoError(str(reason), str(exc)[:2000]) from exc
+    return period_index
+
+
+def _resolve_research_episode_actor_material_selection(
+    actor_material_root: Path | str,
+) -> dict[str, Any]:
+    """Resolve exactly one complete 4/7-file prepare output, never a partial list."""
+
+    root = _assert_explicit_actor_material_output_root(actor_material_root)
+    try:
+        root_info = os.lstat(root)
+    except OSError as exc:
+        raise XinaoError(
+            "RESEARCH_EPISODE_ACTOR_MATERIAL_ROOT_INVALID", str(root)
+        ) from exc
+    if _is_reparse_stat(root_info) or not stat.S_ISDIR(root_info.st_mode):
+        raise XinaoError("RESEARCH_EPISODE_ACTOR_MATERIAL_ROOT_INVALID", str(root))
+
+    base_names = tuple(name for _role, name in RESEARCH_EPISODE_ACTOR_MATERIAL_BASE_OUTPUTS)
+    longitudinal_names = tuple(
+        name for _role, name in RESEARCH_EPISODE_ACTOR_MATERIAL_LONGITUDINAL_OUTPUTS
+    )
+    allowed_names = {*base_names, *longitudinal_names}
+    observed_entries = list(root.iterdir())
+    observed_names = {entry.name for entry in observed_entries}
+    if not set(base_names).issubset(observed_names) or observed_names - allowed_names:
+        raise XinaoError(
+            "RESEARCH_EPISODE_ACTOR_MATERIAL_FILE_SET_INVALID",
+            f"observed={','.join(sorted(observed_names))}",
+        )
+
+    payloads = {
+        name: _regular_file_bytes(
+            root / name,
+            reason_code="RESEARCH_EPISODE_ACTOR_MATERIAL_FILE_INVALID",
+            maximum=MAX_MATERIAL_FILE_BYTES,
+        )
+        for name in observed_names
+    }
+    _actor_module, portfolio = _prepared_actor_portfolio_packet(
+        payloads["portfolio-reality.json"]
+    )
+    period_index = int(portfolio.period_index)
+    ordered_names = base_names + (longitudinal_names if period_index > 1 else ())
+    expected_names = set(ordered_names)
+    if observed_names != expected_names or len(observed_entries) != len(ordered_names):
+        raise XinaoError(
+            "RESEARCH_EPISODE_ACTOR_MATERIAL_FILE_SET_INVALID",
+            f"period_index={period_index} expected={','.join(sorted(expected_names))} "
+            f"observed={','.join(sorted(observed_names))}",
+        )
+    if _validate_prepared_actor_material_payloads(payloads) != period_index:
+        raise XinaoError(
+            "RESEARCH_EPISODE_ACTOR_MATERIAL_PERIOD_MISMATCH", str(period_index)
+        )
+
+    if {entry.name for entry in root.iterdir()} != expected_names:
+        raise XinaoError(
+            "RESEARCH_EPISODE_ACTOR_MATERIAL_FILE_SET_INVALID",
+            "file set changed during validation",
+        )
+    paths = tuple(root / name for name in ordered_names)
+    return {
+        "root": root,
+        "paths": paths,
+        "period_index": period_index,
+        "source_sha256_by_path": {
+            os.path.normcase(os.path.abspath(path)): _sha256_bytes(payloads[path.name])
+            for path in paths
+        },
+    }
+
+
+def _select_research_episode_material_paths(
+    *,
+    material_paths: Sequence[Path] | None,
+    actor_material_root: Path | str | None,
+) -> tuple[tuple[Path, ...], dict[str, Any] | None]:
+    if actor_material_root is not None and material_paths:
+        raise XinaoError(
+            "RESEARCH_EPISODE_ACTOR_MATERIAL_MODE_CONFLICT",
+            "--actor-material-root cannot be combined with --material",
+        )
+    if actor_material_root is None:
+        return tuple(material_paths or ()), None
+    selection = _resolve_research_episode_actor_material_selection(actor_material_root)
+    return tuple(selection["paths"]), selection
+
+
+def _assert_actor_material_selection_bound(
+    *,
+    episode_root: Path,
+    selection: Mapping[str, Any],
+    binding: Mapping[str, Any],
+) -> None:
+    expected = dict(selection["source_sha256_by_path"])
+    observed = {
+        os.path.normcase(os.path.abspath(str(item.get("path") or ""))): str(
+            item.get("sha256") or ""
+        )
+        for item in list(binding.get("material_source_refs") or [])
+        if isinstance(item, Mapping)
+    }
+    if observed != expected or binding.get("material_count") != len(expected):
+        raise XinaoError(
+            "RESEARCH_EPISODE_ACTOR_MATERIAL_SOURCE_CHANGED",
+            "prepared source bytes changed before active snapshot",
+        )
+    roles = _research_episode_material_role_identities(episode_root, binding)
+    if roles.get("portfolio_reality_period_index") != selection.get("period_index"):
+        raise XinaoError(
+            "RESEARCH_EPISODE_ACTOR_MATERIAL_PERIOD_MISMATCH",
+            str(selection.get("period_index")),
+        )
+
+
+def _research_episode_actor_candidate_authoring_prompt(
+    owner_prompt: str | None,
+) -> str:
+    """Bind canonical output syntax without supplying any actor behavior value."""
+
+    try:
+        manifest_module = _import_xinao_science_module(
+            "xinao.science.research_episode_candidate_manifest"
+        )
+        contract = manifest_module.candidate_manifest_authoring_contract()
+    except XinaoError:
+        raise
+    except Exception as exc:
+        reason = getattr(exc, "reason_code", None) or (
+            "RESEARCH_EPISODE_ACTOR_AUTHORING_CONTRACT_UNAVAILABLE"
+        )
+        raise XinaoError(str(reason), str(exc)[:2000]) from exc
+    if (
+        not isinstance(contract, Mapping)
+        or contract.get("schema_version")
+        != "xinao.research_episode_candidate_manifest_authoring_contract.v1"
+        or contract.get("candidate_manifest_schema")
+        != RESEARCH_EPISODE_PRIOR_MANIFEST_SCHEMA
+        or contract.get("actor_choice_fields_supplied_by_contract") != []
+    ):
+        raise XinaoError(
+            "RESEARCH_EPISODE_ACTOR_AUTHORING_CONTRACT_INVALID",
+            "canonical authoring contract identity/agency clamp",
+        )
+    contract_text = _canonical_bytes(dict(contract)).decode("utf-8")
+    return (
+        str(owner_prompt or "")
+        + RESEARCH_EPISODE_ACTOR_AUTHORING_CONTRACT_NOTICE
+        + contract_text
+    )
+
+
 def research_episode_build_actor_reality(
     *,
     root: Path | str,
@@ -18136,6 +18477,7 @@ def research_episode_attach_run(
     max_turns: int | None = None,
     timeout_seconds: float | None = None,
     material_paths: Sequence[Path] | None = None,
+    actor_material_root: Path | str | None = None,
     plan_only: bool = False,
 ) -> dict[str, Any]:
     """Owner one-shot live Grok attach/run inside transport container.
@@ -18143,6 +18485,12 @@ def research_episode_attach_run(
     Never creates next task, freezes, settles, or claims parent completion.
     Status vocabulary: PLANNED | ATTEMPT_FAILED | LIVE_ATTEMPT_RECORDED.
     """
+    selected_material_paths, actor_material_selection = (
+        _select_research_episode_material_paths(
+            material_paths=material_paths,
+            actor_material_root=actor_material_root,
+        )
+    )
     root = Path(root)
     _research_episode_assert_root_allowed(root)
     with _research_episode_lock(root):
@@ -18162,26 +18510,37 @@ def research_episode_attach_run(
                 profile_status,
             )
         facts = _research_episode_namespace_and_release_facts()
-        material_binding: dict[str, Any] | None = None
-        auth_witness: dict[str, Any] | None = None
-        auth_path: Path | None = None
-        if material_paths:
-            auth_path = resolve_auth_host_path(allow_synthetic_missing=False)
-            material_binding, auth_witness = _materialize_research_episode_active_binding(
-                episode_root=root,
-                base_prompt=prompt,
-                material_paths=tuple(material_paths),
-                auth_path=auth_path,
-            )
-        _host_mod, host = _research_episode_load_dual_host(root)
-        if auth_witness is not None and auth_path is not None:
-            _validate_auth_identity_witness(auth_witness, auth_path=auth_path)
+        producer_prompt = (
+            _research_episode_actor_candidate_authoring_prompt(prompt)
+            if actor_material_selection is not None
+            else prompt
+        )
         feedback_prompt = _research_episode_feedback_prompt(
             root=root,
             meta=meta,
             head=head,
-            owner_prompt=prompt,
+            owner_prompt=producer_prompt,
         )
+        material_binding: dict[str, Any] | None = None
+        auth_witness: dict[str, Any] | None = None
+        auth_path: Path | None = None
+        if selected_material_paths:
+            auth_path = resolve_auth_host_path(allow_synthetic_missing=False)
+            material_binding, auth_witness = _materialize_research_episode_active_binding(
+                episode_root=root,
+                base_prompt=str(feedback_prompt["prompt"] or ""),
+                material_paths=selected_material_paths,
+                auth_path=auth_path,
+            )
+            if actor_material_selection is not None:
+                _assert_actor_material_selection_bound(
+                    episode_root=root,
+                    selection=actor_material_selection,
+                    binding=material_binding,
+                )
+        _host_mod, host = _research_episode_load_dual_host(root)
+        if auth_witness is not None and auth_path is not None:
+            _validate_auth_identity_witness(auth_witness, auth_path=auth_path)
         try:
             result = host.attach_run_live(
                 prompt=feedback_prompt["prompt"],
@@ -18257,9 +18616,16 @@ def research_episode_resume_live(
     max_turns: int | None = None,
     timeout_seconds: float | None = None,
     material_paths: Sequence[Path] | None = None,
+    actor_material_root: Path | str | None = None,
     plan_only: bool = False,
 ) -> dict[str, Any]:
     """Owner one-shot provider-session resume via real --resume docker exec."""
+    selected_material_paths, actor_material_selection = (
+        _select_research_episode_material_paths(
+            material_paths=material_paths,
+            actor_material_root=actor_material_root,
+        )
+    )
     root = Path(root)
     _research_episode_assert_root_allowed(root)
     with _research_episode_lock(root):
@@ -18278,26 +18644,37 @@ def research_episode_resume_live(
                 profile_status,
             )
         facts = _research_episode_namespace_and_release_facts()
-        material_binding: dict[str, Any] | None = None
-        auth_witness: dict[str, Any] | None = None
-        auth_path: Path | None = None
-        if material_paths:
-            auth_path = resolve_auth_host_path(allow_synthetic_missing=False)
-            material_binding, auth_witness = _materialize_research_episode_active_binding(
-                episode_root=root,
-                base_prompt=prompt or "",
-                material_paths=tuple(material_paths),
-                auth_path=auth_path,
-            )
-        _host_mod, host = _research_episode_load_dual_host(root)
-        if auth_witness is not None and auth_path is not None:
-            _validate_auth_identity_witness(auth_witness, auth_path=auth_path)
+        producer_prompt = (
+            _research_episode_actor_candidate_authoring_prompt(prompt)
+            if actor_material_selection is not None
+            else prompt
+        )
         feedback_prompt = _research_episode_feedback_prompt(
             root=root,
             meta=meta,
             head=head,
-            owner_prompt=prompt,
+            owner_prompt=producer_prompt,
         )
+        material_binding: dict[str, Any] | None = None
+        auth_witness: dict[str, Any] | None = None
+        auth_path: Path | None = None
+        if selected_material_paths:
+            auth_path = resolve_auth_host_path(allow_synthetic_missing=False)
+            material_binding, auth_witness = _materialize_research_episode_active_binding(
+                episode_root=root,
+                base_prompt=str(feedback_prompt["prompt"] or ""),
+                material_paths=selected_material_paths,
+                auth_path=auth_path,
+            )
+            if actor_material_selection is not None:
+                _assert_actor_material_selection_bound(
+                    episode_root=root,
+                    selection=actor_material_selection,
+                    binding=material_binding,
+                )
+        _host_mod, host = _research_episode_load_dual_host(root)
+        if auth_witness is not None and auth_path is not None:
+            _validate_auth_identity_witness(auth_witness, auth_path=auth_path)
         try:
             result = host.resume_live(
                 expected_provider_session_uuid=expected_provider_session_uuid,
@@ -19315,6 +19692,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                     max_turns=args.max_turns,
                     timeout_seconds=args.timeout_seconds,
                     material_paths=args.material,
+                    actor_material_root=args.actor_material_root,
                     plan_only=bool(args.plan_only),
                 )
             elif args.research_episode_command == "resume-live":
@@ -19328,6 +19706,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                     max_turns=args.max_turns,
                     timeout_seconds=args.timeout_seconds,
                     material_paths=args.material,
+                    actor_material_root=args.actor_material_root,
                     plan_only=bool(args.plan_only),
                 )
             elif args.research_episode_command == "prepare-actor-materials":

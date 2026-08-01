@@ -17,6 +17,7 @@ from xinao.science.episode_export_pool_adapter import EXPORT_SCHEMA
 from xinao.science.prospective_source_thin import (
     PACKET_MARKER,
     SCHEMA_PACKET,
+    build_source_authority_binding,
     packet_content_hash,
     write_packet_exclusive,
 )
@@ -600,6 +601,55 @@ def test_reality_contract_reads_sealed_genesis_and_objective_terms(
 
     with pytest.raises(ValidationError, match="frozen"):
         contract.current_balance = "99999.0000"  # type: ignore[misc]
+
+
+def test_active_binding_hash_binds_windows_provenance_outside_jcs_integer_domain(
+    tmp_path: Path,
+) -> None:
+    portfolio_root = _portfolio_root(tmp_path)
+    episode_root, authority_root, verified, _prospective_id, _terms_id = (
+        _active_material_fixture(
+            tmp_path,
+            open_at=P1_OPEN,
+            portfolio_root=portfolio_root,
+        )
+    )
+    binding = verified["active_material_binding"]
+    assert isinstance(binding, dict)
+    binding["material_source_refs"] = [
+        {
+            "st_dev": 13599825006036549566,
+            "st_ino": 9007199254864121,
+            "st_mtime_ns": 1785573664473036700,
+        }
+    ]
+    expected = _sha256(_runtime_canonical(binding))
+
+    contract = ActorRealityContract._from_verified_material_reality(
+        portfolio_root=portfolio_root,
+        episode_root=episode_root,
+        authority_root=authority_root,
+        verified_material_reality=verified,
+    )
+
+    assert contract.material_reality.active_material_binding_hash == expected
+    packet_path = next((authority_root / "objects" / "packet" / "sha256").rglob("*.json"))
+    packet = json.loads(packet_path.read_text(encoding="utf-8"))
+    expected_source_binding_hash = _sha256(
+        _runtime_canonical(build_source_authority_binding(packet))
+    )
+    assert (
+        contract.material_reality.source_authority_binding_hash
+        == expected_source_binding_hash
+    )
+    binding["material_source_refs"][0]["st_ino"] += 1
+    changed = ActorRealityContract._from_verified_material_reality(
+        portfolio_root=portfolio_root,
+        episode_root=episode_root,
+        authority_root=authority_root,
+        verified_material_reality=verified,
+    )
+    assert changed.material_reality.active_material_binding_hash != expected
 
 
 def test_reality_contract_carries_exact_live_head_close_without_version_reset(

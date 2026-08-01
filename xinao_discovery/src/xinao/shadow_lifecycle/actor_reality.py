@@ -1039,7 +1039,10 @@ class ActorMaterialReality(BaseModel):
             attempt_internal_cas_digest=str(verified["attempt_internal_cas_digest"]),
             attempt_hash=str(verified["attempt_hash"]),
             provider_session_uuid=str(verified["provider_session_uuid"]),
-            active_material_binding_hash=canonical_sha256(binding),
+            # Match the host runtime's active-binding identity profile exactly.
+            # Opaque Windows provenance integers are valid JSON and remain bound
+            # byte-for-byte even when they exceed RFC 8785's float-safe domain.
+            active_material_binding_hash=_sha256_bytes(_runtime_canonical_bytes(binding)),
             material_bundle_id=manifest.bundle_id,
             material_manifest=manifest,
             material_manifest_sha256=str(binding["material_manifest_sha256"]),
@@ -1055,7 +1058,9 @@ class ActorMaterialReality(BaseModel):
             prospective_packet_material_id=prospective_entry.material_id,
             prospective_packet_material_sha256=prospective_entry.sha256,
             prospective_packet_content_hash=packet_hash,
-            source_authority_binding_hash=canonical_sha256(source_binding),
+            source_authority_binding_hash=_sha256_bytes(
+                _runtime_canonical_bytes(source_binding)
+            ),
             source_id=str(source_binding["source_id"]),
             source_contract_sha256=str(source_binding["contract_sha256"]),
             source_capture_sha256=str(source_binding["capture_sha256"]),

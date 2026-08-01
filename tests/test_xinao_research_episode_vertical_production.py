@@ -42,7 +42,7 @@ class _FakeRecordPath:
         return self.relative
 
 
-def _fake_distribution(module: Any, package_root: Path, *, version: str = "0.1.2") -> Any:
+def _fake_distribution(module: Any, package_root: Path, *, version: str = "0.1.3") -> Any:
     files = [
         _FakeRecordPath(
             f"xinao/{row['relative_path']}",
@@ -187,15 +187,16 @@ def test_capabilities_registry_lists_ensure_pair(module: Any) -> None:
         (SKILL_ROOT / "references" / "capabilities.v1.json").read_text(encoding="utf-8")
     )
     episode = next(c for c in caps["capabilities"] if c["capability_id"] == "research-episode")
-    assert episode["version"] == "0.1.5"
+    assert episode["version"] == "0.1.6"
     assert episode["packaged_dependency"] == "xinao-discovery"
-    assert episode["packaged_dependency_version"] == "0.1.2"
+    assert episode["packaged_dependency_version"] == "0.1.3"
     assert episode["packaged_dependency_tree_schema"] == "xinao.package_tree.v1"
     assert episode["packaged_dependency_tree_sha256"] == module._discovery_package_tree_sha256(
         ROOT / "xinao_discovery" / "src" / "xinao"
     )
     assert "ensure-pair" in episode["skill_verbs"]
     assert "retire-pair" in episode["skill_verbs"]
+    assert "prepare-actor-materials" in episode["skill_verbs"]
     assert episode["auto_next_task"] is False
     assert episode["candidate_only"] is True
     assert episode["completion_claim_allowed"] is False
@@ -312,7 +313,7 @@ def test_formal_runtime_rejects_editable_install_and_source_override(
     package_root = ROOT / "xinao_discovery" / "src" / "xinao"
     distribution = SimpleNamespace(
         metadata={"Name": "xinao-discovery"},
-        version="0.1.2",
+        version="0.1.3",
         files=[],
         locate_file=lambda relative: package_root.parent / relative,
         read_text=lambda name: (

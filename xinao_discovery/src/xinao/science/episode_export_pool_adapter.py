@@ -165,7 +165,16 @@ def verify_episode_export_bundle(
                 json.dumps(body, ensure_ascii=False, sort_keys=True, separators=(",", ":")) + "\n"
             ).encode("utf-8")
         ).hexdigest()
-        alt = canonical_sha256(body)
+        alt: str | None = None
+        if claimed != recomputed:
+            try:
+                alt = canonical_sha256(body)
+            except (TypeError, ValueError):
+                # Native exports bind opaque host provenance (for example
+                # Windows st_dev/st_ino/st_mtime_ns) with sorted JSON bytes.
+                # Those integers may be outside RFC 8785's float-safe domain;
+                # that must not invalidate an already matching native seal.
+                alt = None
         if claimed not in {recomputed, alt}:
             raise EpisodeExportAdapterError(
                 "EPISODE_EXPORT_BUNDLE_HASH_MISMATCH",
