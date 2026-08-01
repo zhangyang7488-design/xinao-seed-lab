@@ -755,8 +755,7 @@ def payload_clone_namespace_comparisons(
 ) -> tuple[_ScmpArgCmp, ...]:
     index = clone_flags_argument_index(machine)
     return tuple(
-        _ScmpArgCmp(index, SCMP_CMP_MASKED_EQ, flag, flag)
-        for flag in CLONE_NAMESPACE_FLAGS
+        _ScmpArgCmp(index, SCMP_CMP_MASKED_EQ, flag, flag) for flag in CLONE_NAMESPACE_FLAGS
     )
 
 
@@ -1020,8 +1019,7 @@ def prepare_peer_gated_socket_directory(socket_path: Path) -> dict[str, Any] | N
         if before.st_uid != expected_uid or before.st_gid != expected_gid:
             raise ToolExecutorError(
                 "IPC_SOCKET_DIRECTORY_IDENTITY_FAILED",
-                f"owner={before.st_uid}:{before.st_gid}:"
-                f"expected={expected_uid}:{expected_gid}",
+                f"owner={before.st_uid}:{before.st_gid}:expected={expected_uid}:{expected_gid}",
             )
         os.chmod(parent, IPC_DIRECTORY_PEER_GATED_MODE)
         after = os.lstat(parent)

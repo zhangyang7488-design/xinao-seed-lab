@@ -408,8 +408,7 @@ def _validate_owner_executable(raw: Mapping[str, Any]) -> dict[str, Any]:
     unknown = sorted(set(raw) - _OWNER_EXECUTABLE_ALLOWED)
     if missing or unknown:
         raise StoreError(
-            "OWNER_DISPOSITION_EXECUTABLE_INVALID: "
-            f"missing={missing}; unknown={unknown}"
+            f"OWNER_DISPOSITION_EXECUTABLE_INVALID: missing={missing}; unknown={unknown}"
         )
     core = _normalized_researcher_core(
         {key: raw[key] for key in _RESEARCHER_EXECUTABLE_CORE},
@@ -438,8 +437,7 @@ def _validate_no_action_binding(raw: Mapping[str, Any]) -> dict[str, Any]:
     unknown = sorted(set(raw) - _NO_ACTION_BINDING_ALLOWED)
     if missing or unknown:
         raise StoreError(
-            "OWNER_DISPOSITION_NO_ACTION_BINDING_INVALID: "
-            f"missing={missing}; unknown={unknown}"
+            f"OWNER_DISPOSITION_NO_ACTION_BINDING_INVALID: missing={missing}; unknown={unknown}"
         )
     for key in ("target_ref", "rule_ref", "odds_version_ref"):
         if not isinstance(raw.get(key), str) or not str(raw[key]).strip():
@@ -470,10 +468,7 @@ def _validate_source_authority_binding_local(raw: Mapping[str, Any]) -> dict[str
     missing = sorted(_SOURCE_AUTHORITY_BINDING_FIELDS - set(raw))
     unknown = sorted(set(raw) - _SOURCE_AUTHORITY_BINDING_FIELDS)
     if missing or unknown:
-        raise StoreError(
-            "SOURCE_AUTHORITY_BINDING_INVALID: "
-            f"missing={missing}; unknown={unknown}"
-        )
+        raise StoreError(f"SOURCE_AUTHORITY_BINDING_INVALID: missing={missing}; unknown={unknown}")
     if raw.get("schema_version") != "xinao.source_authority_binding.v1":
         raise StoreError("SOURCE_AUTHORITY_BINDING_SCHEMA_DRIFT")
     if raw.get("source_id") != "macaujc2":
@@ -707,9 +702,7 @@ def _load_verified_disposition_for_freeze(
     except (TypeError, ValueError, StoreError) as exc:
         raise StoreError(f"OWNER_DISPOSITION_KNOWLEDGE_CUTOFF_INVALID: {exc}") from exc
     outer_target = disposition.get("target_ref")
-    if outer_target is not None and (
-        not isinstance(outer_target, str) or not outer_target.strip()
-    ):
+    if outer_target is not None and (not isinstance(outer_target, str) or not outer_target.strip()):
         raise StoreError("OWNER_DISPOSITION_TARGET_INVALID")
     normalized = copy.deepcopy(disposition)
     normalized["period_index"] = period_index
@@ -878,8 +871,7 @@ def _load_research_binding(shadow_root: Path, binding_sha256: str) -> dict[str, 
         missing = sorted(_RESEARCH_BINDING_FIELDS - set(payload))
         unknown = sorted(set(payload) - _RESEARCH_BINDING_FIELDS)
         raise StoreError(
-            "FREEZE_AUTHORITY_BINDING_FIELDS_INVALID: "
-            f"missing={missing}; unknown={unknown}"
+            f"FREEZE_AUTHORITY_BINDING_FIELDS_INVALID: missing={missing}; unknown={unknown}"
         )
     _reject_disposition_outcome_material(payload)
     if payload.get("schema_version") != _RESEARCH_BINDING_SCHEMA:
@@ -1374,14 +1366,9 @@ def _require_and_verify_owner_freeze_authority(
     }
     if binding != expected_binding:
         diverged = sorted(
-            key
-            for key in _RESEARCH_BINDING_FIELDS
-            if binding.get(key) != expected_binding.get(key)
+            key for key in _RESEARCH_BINDING_FIELDS if binding.get(key) != expected_binding.get(key)
         )
-        raise StoreError(
-            "PRODUCTION_FREEZE_BINDING_EVIDENCE_MISMATCH: "
-            f"fields={diverged}"
-        )
+        raise StoreError(f"PRODUCTION_FREEZE_BINDING_EVIDENCE_MISMATCH: fields={diverged}")
 
     # Bound owner artifact on request must match disposition CAS.
     bound_owner = request.get("bound_owner_artifact_sha256")
