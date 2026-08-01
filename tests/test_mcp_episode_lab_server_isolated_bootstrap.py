@@ -130,9 +130,7 @@ def test_mcp_server_python_isolated_stdio_initialize_boundary(tmp_path: Path) ->
         text=True,
         timeout=30,
     )
-    assert completed.returncode == 0, (
-        f"stdout={completed.stdout!r}\nstderr={completed.stderr!r}"
-    )
+    assert completed.returncode == 0, f"stdout={completed.stdout!r}\nstderr={completed.stderr!r}"
     assert "ModuleNotFoundError" not in completed.stderr
     lines = [ln for ln in completed.stdout.splitlines() if ln.strip()]
     assert lines, f"expected JSON-RPC response, got {completed.stdout!r}"

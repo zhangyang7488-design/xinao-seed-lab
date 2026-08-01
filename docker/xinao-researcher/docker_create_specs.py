@@ -777,9 +777,7 @@ def dual_container_bundle(
             "network": "tool network=none by create spec",
             "writable_surface": "tool: episode-lab + private tmp only",
             "same_container_bwrap": "tool path uses bubblewrap require inside tool container",
-            "ipc_peer": (
-                f"XINAO_IPC_PEER_REQUIRE=1 + exact SO_PEERCRED uid={TRANSPORT_UID}"
-            ),
+            "ipc_peer": (f"XINAO_IPC_PEER_REQUIRE=1 + exact SO_PEERCRED uid={TRANSPORT_UID}"),
             "durable_replay_dir": TOOL_REPLAY_STATE,
             "model_tools": "attempt-local native MCP episode_lab → sidecar; no built-in generic file/shell",
         },

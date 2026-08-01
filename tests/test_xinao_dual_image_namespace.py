@@ -891,8 +891,9 @@ def test_docker_create_argv_mounts_accepted_by_real_docker_parser(
         )
     except (OSError, subprocess.TimeoutExpired) as exc:
         pytest.skip(f"docker info unavailable: {exc}")
-    if info.returncode != 0:
-        pytest.skip(f"docker info rc={info.returncode}")
+    else:
+        if info.returncode != 0:
+            pytest.skip(f"docker info rc={info.returncode}")
 
     # Prefer a local tag already present; fall back to hello-world only if needed.
     image = "hello-world:latest"
@@ -1877,9 +1878,7 @@ def test_transport_spec_injects_proxy_env_on_egress_network_only(
         assert key not in offline["env"]
     assert specs.validate_transport_spec_invariants(offline) == []
 
-    live = specs.transport_container_spec(
-        **common, network=specs.DEFAULT_PROVIDER_EGRESS_NETWORK
-    )
+    live = specs.transport_container_spec(**common, network=specs.DEFAULT_PROVIDER_EGRESS_NETWORK)
     assert live["network"] == specs.DEFAULT_PROVIDER_EGRESS_NETWORK
     for key in specs.PROVIDER_EGRESS_PROXY_URL_ENV_KEYS:
         assert live["env"][key] == specs.DEFAULT_PROVIDER_EGRESS_PROXY_ENDPOINT

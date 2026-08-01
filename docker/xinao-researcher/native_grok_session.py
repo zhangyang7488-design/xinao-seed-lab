@@ -634,9 +634,7 @@ def assert_live_research_argv(
             "project-scoped episode_lab MCP requires exact episode cwd trust",
         )
     allow_rules = [
-        str(joined[index + 1])
-        for index, value in enumerate(joined[:-1])
-        if value == "--allow"
+        str(joined[index + 1]) for index, value in enumerate(joined[:-1]) if value == "--allow"
     ]
     if EPISODE_LAB_MCP_ALLOW_RULE not in allow_rules:
         raise NativeSessionError(

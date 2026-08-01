@@ -932,9 +932,7 @@ class DualContainerHost:
             try:
                 self.validate_before_start()
                 if not self.config.synthetic:
-                    socket_ready = self._wait_for_tool_socket_ready(
-                        str(lease["tool_container_id"])
-                    )
+                    socket_ready = self._wait_for_tool_socket_ready(str(lease["tool_container_id"]))
                     lease["tool_socket_ready"] = {
                         **socket_ready,
                         "observed_at": _utc_now(),
@@ -998,9 +996,7 @@ class DualContainerHost:
                     }
                 )
             if not self.config.synthetic:
-                socket_ready = self._wait_for_tool_socket_ready(
-                    str(lease["tool_container_id"])
-                )
+                socket_ready = self._wait_for_tool_socket_ready(str(lease["tool_container_id"]))
                 lease["tool_socket_ready"] = {
                     **socket_ready,
                     "observed_at": _utc_now(),
@@ -1124,9 +1120,7 @@ class DualContainerHost:
             raise DualHostError("DUAL_HOST_PHASE_INVALID", str(lease.get("phase")))
         self.validate_before_start()
         if not self.config.synthetic:
-            socket_ready = self._wait_for_tool_socket_ready(
-                str(lease["tool_container_id"])
-            )
+            socket_ready = self._wait_for_tool_socket_ready(str(lease["tool_container_id"]))
             lease["tool_socket_ready"] = {
                 **socket_ready,
                 "observed_at": _utc_now(),
@@ -1470,9 +1464,7 @@ class DualContainerHost:
                 # Restart both if needed (idempotent docker start).
                 if not self.config.synthetic:
                     self.runner([self.config.docker, "start", str(lease["tool_container_id"])])
-                    socket_ready = self._wait_for_tool_socket_ready(
-                        str(lease["tool_container_id"])
-                    )
+                    socket_ready = self._wait_for_tool_socket_ready(str(lease["tool_container_id"]))
                     lease["tool_socket_ready"] = {
                         **socket_ready,
                         "observed_at": _utc_now(),
@@ -1670,9 +1662,7 @@ class DualContainerHost:
                         "DUAL_HOST_CONTAINER_STOPPED",
                         f"{role}:running={running!r}",
                     )
-            socket_ready = self._wait_for_tool_socket_ready(
-                str(lease["tool_container_id"])
-            )
+            socket_ready = self._wait_for_tool_socket_ready(str(lease["tool_container_id"]))
         else:
             socket_ready = None
         return {
@@ -2475,9 +2465,7 @@ def _require_exact_ipc_volume_mounts(
     transport_inspect: Mapping[str, Any],
     expected_volume: str,
 ) -> str:
-    tool = _exact_ipc_volume_mount(
-        tool_inspect, role="tool", expected_volume=expected_volume
-    )
+    tool = _exact_ipc_volume_mount(tool_inspect, role="tool", expected_volume=expected_volume)
     transport = _exact_ipc_volume_mount(
         transport_inspect, role="transport", expected_volume=expected_volume
     )

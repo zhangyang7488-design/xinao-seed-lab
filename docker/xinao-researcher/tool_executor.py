@@ -163,12 +163,7 @@ IPC_PEER_REQUIRE_ENV = "XINAO_IPC_PEER_REQUIRE"
 IPC_EXPECTED_TRANSPORT_UID = 0
 IPC_SOCKET_OWNER_ONLY_MODE = stat.S_IRUSR | stat.S_IWUSR
 IPC_SOCKET_PEER_GATED_MODE = (
-    stat.S_IRUSR
-    | stat.S_IWUSR
-    | stat.S_IRGRP
-    | stat.S_IWGRP
-    | stat.S_IROTH
-    | stat.S_IWOTH
+    stat.S_IRUSR | stat.S_IWUSR | stat.S_IRGRP | stat.S_IWGRP | stat.S_IROTH | stat.S_IWOTH
 )
 # Durable (episode-scoped) replay markers live under IPC mount, never under lab RW.
 REPLAY_STATE_DIR_ENV = "XINAO_REPLAY_STATE_DIR"

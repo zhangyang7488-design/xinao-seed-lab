@@ -34,7 +34,6 @@ import os
 import re
 import shutil
 import subprocess
-import sys
 import uuid
 from pathlib import Path
 from typing import Any
@@ -194,9 +193,7 @@ CANARY_ALLOWED_KEYS: frozenset[str] = CANARY_REQUIRED_KEYS | frozenset(
     }
 )
 
-USAGE_REQUIRED_KEYS: frozenset[str] = frozenset(
-    {"input_tokens", "output_tokens", "total_tokens"}
-)
+USAGE_REQUIRED_KEYS: frozenset[str] = frozenset({"input_tokens", "output_tokens", "total_tokens"})
 
 
 class SealError(RuntimeError):
@@ -212,7 +209,9 @@ def _sha256_bytes(payload: bytes) -> str:
 
 def _canonical_bytes(value: object) -> bytes:
     return (
-        json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"), allow_nan=False)
+        json.dumps(
+            value, ensure_ascii=False, sort_keys=True, separators=(",", ":"), allow_nan=False
+        )
         + "\n"
     ).encode("utf-8")
 
@@ -465,9 +464,7 @@ def validate_negative_suite_receipt(
             "NEGATIVE_SUITE_COUNT_INVALID",
             f"pass_count={receipt['pass_count']} expected={len(required)}",
         )
-    _bind_posture_identities(
-        receipt, posture, reason="NEGATIVE_RECEIPT_POSTURE_MISMATCH"
-    )
+    _bind_posture_identities(receipt, posture, reason="NEGATIVE_RECEIPT_POSTURE_MISMATCH")
     clock = now or dt.datetime.now(dt.UTC)
     _validate_observation_freshness(
         receipt.get("observed_at"),
@@ -550,9 +547,7 @@ def validate_engineering_canary_receipt(
     if receipt.get("requested_model") != REQUESTED_MODEL:
         raise SealError("CANARY_MODEL_INVALID", str(receipt.get("requested_model")))
     if receipt.get("observed_backend_model") != OBSERVED_BACKEND_MODEL:
-        raise SealError(
-            "CANARY_BACKEND_MODEL_INVALID", str(receipt.get("observed_backend_model"))
-        )
+        raise SealError("CANARY_BACKEND_MODEL_INVALID", str(receipt.get("observed_backend_model")))
     if receipt.get("stop_reason") != STOP_REASON:
         raise SealError("CANARY_STOP_REASON_INVALID", str(receipt.get("stop_reason")))
     output_tokens = receipt.get("output_tokens")
@@ -613,7 +608,9 @@ def validate_engineering_canary_receipt(
     return receipt
 
 
-def _validate_evidence_legacy_shape(receipt: dict[str, Any], *, schema: str, path_class: str | None) -> None:
+def _validate_evidence_legacy_shape(
+    receipt: dict[str, Any], *, schema: str, path_class: str | None
+) -> None:
     """Minimal non-claim / schema shape retained for unit helpers and reject paths."""
     if receipt.get("schema_version") != schema:
         raise SealError("EVIDENCE_SCHEMA_INVALID", str(receipt.get("schema_version")))
@@ -757,13 +754,9 @@ def build_seal(
         "posture_sha256": _sha256_bytes(posture_raw),
         "posture_relative_path": "current_posture.v1.json",
         "negative_suite_receipt_sha256": _sha256_bytes(negative_raw),
-        "negative_suite_receipt_relative_path": _relative_under(
-            egress_root, negative_receipt_path
-        ),
+        "negative_suite_receipt_relative_path": _relative_under(egress_root, negative_receipt_path),
         "positive_canary_receipt_sha256": _sha256_bytes(canary_raw),
-        "positive_canary_receipt_relative_path": _relative_under(
-            egress_root, canary_receipt_path
-        ),
+        "positive_canary_receipt_relative_path": _relative_under(egress_root, canary_receipt_path),
         "allowlist_sha256": posture["allowlist_sha256"],
         "proxy_config_sha256": posture["proxy_config_sha256"],
         "proxy_container_id": str(proxy.get("Id") or posture["proxy_container_id"]),

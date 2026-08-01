@@ -591,9 +591,7 @@ def test_retire_recreate_preserves_provider_session_uuid(
     recreated = module.research_episode_ensure_pair(
         root=episode, expected_head_sha256=started["head_checkpoint_sha256"]
     )
-    recreated_inventory = json.loads(
-        (episode / "session_inventory.json").read_text("utf-8")
-    )
+    recreated_inventory = json.loads((episode / "session_inventory.json").read_text("utf-8"))
 
     assert recreated["status"] in {"PAIR_READY", "PAIR_STARTED"}
     assert recreated["episode_id"] == started["episode_id"]
