@@ -6,6 +6,7 @@ import datetime as dt
 import importlib.util
 import json
 import sys
+import types
 from pathlib import Path
 
 import pytest
@@ -639,6 +640,14 @@ def test_live_compare_fail_closed_mismatches() -> None:
         allowed_researcher_container_ids={episode_transport_id},
     )
     assert observed["proxy_container_id"] == posture["proxy_container_id"]
+    with pytest.raises(module.XinaoError) as short_id_err:
+        module._compare_live_egress_objects(
+            "docker",
+            posture,
+            lock,
+            allowed_researcher_container_ids={episode_transport_id[:12]},
+        )
+    assert short_id_err.value.reason_code == "EGRESS_FOREIGN_NETWORK_MEMBER"
 
     # Containers populated but proxy absent
     no_proxy_members = {
@@ -649,6 +658,163 @@ def test_live_compare_fail_closed_mismatches() -> None:
     with pytest.raises(module.XinaoError) as err8:
         module._compare_live_egress_objects("docker", posture, lock)
     assert err8.value.reason_code == "EGRESS_NETWORK_MEMBERSHIP_INVALID"
+
+
+def test_managed_episode_transport_discovery_requires_exact_live_lease_identity(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    module = _runtime()
+    posture = _sample_posture()
+    episode_root = tmp_path / "episode-a"
+    (episode_root / "output").mkdir(parents=True)
+    episode_id = "xre_peer_a"
+    session_id = "xrsess_peer_a"
+    transport_id = "a" * 64
+    tool_id = "b" * 64
+    transport_name = "xinao-transport-xre_peer_a"
+    transport_image = "sha256:" + "c" * 64
+    tool_image = "sha256:" + "d" * 64
+    _write_json(
+        episode_root / "episode_meta.json",
+        {
+            "schema_version": "xinao.research_episode_state.v1",
+            "episode_id": episode_id,
+            "session_id": session_id,
+        },
+    )
+    lease = {
+        "schema_version": "xinao.dual_container_pair_lease.v1",
+        "episode_id": episode_id,
+        "session_id": session_id,
+        "phase": "running",
+        "transport_container_id": transport_id,
+        "transport_container_name": transport_name,
+        "transport_image_id": transport_image,
+        "tool_container_id": tool_id,
+        "tool_image_id": tool_image,
+    }
+    _write_json(episode_root / "dual_container_pair_lease.json", lease)
+    _write_json(
+        episode_root / "session_inventory.json",
+        {
+            "schema_version": "xinao.dual_container_session_inventory.v1",
+            "episode_id": episode_id,
+            "host_session_id": session_id,
+            "transport_container_id": transport_id,
+        },
+    )
+    _write_json(
+        episode_root / "dual_container_pair_receipt.json",
+        {
+            "schema_version": "xinao.dual_container_pair_receipt.v1",
+            "episode_id": episode_id,
+            "session_id": session_id,
+            "transport_container_id": transport_id,
+            "transport_container_name": transport_name,
+            "transport_image_id": transport_image,
+        },
+    )
+    proxy_env = module._proxy_env_pairs(posture["proxy_endpoint"])
+    inspect = {
+        "Id": transport_id,
+        "Name": "/" + transport_name,
+        "Image": transport_image,
+        "Config": {
+            "Labels": {
+                "io.xinao.researcher.chain": "dedicated-xinao-science",
+                "io.xinao.researcher.generic-worker-route": "forbidden",
+                "io.xinao.researcher.episode-profile": "GENUINE_SCIENTIST_EPISODE",
+            },
+            "Env": [
+                f"{key}={value}" for key, value in proxy_env.items()
+            ]
+            + [
+                f"XINAO_EPISODE_ID={episode_id}",
+                "XINAO_DUAL_CONTAINER=1",
+                "XINAO_GENERIC_FILE_SHELL_TOOLS=0",
+            ],
+        },
+        "HostConfig": {
+            "NetworkMode": posture["internal_network_name"],
+            "Privileged": False,
+            "PublishAllPorts": False,
+            "PortBindings": {},
+            "CapDrop": ["ALL"],
+            "SecurityOpt": ["no-new-privileges:true"],
+            "RestartPolicy": {"Name": "no"},
+        },
+        "NetworkSettings": {
+            "Networks": {posture["internal_network_name"]: {}},
+            "Ports": {},
+        },
+        "Mounts": [
+            {
+                "Type": "bind",
+                "Source": str(episode_root / "output"),
+                "Destination": "/output",
+                "RW": True,
+            }
+        ],
+    }
+    monkeypatch.setattr(
+        module,
+        "_docker_json_inspect",
+        lambda _docker, kind, _target: inspect if kind == "container" else {},
+    )
+
+    class FakeConfig:
+        def __init__(self, **kwargs):
+            self.episode_root = Path(kwargs["episode_root"])
+
+    class FakeHost:
+        def __init__(self, config):
+            self.config = config
+
+        def validate_before_start(self):
+            return {
+                "lease": json.loads(
+                    (self.config.episode_root / "dual_container_pair_lease.json").read_text(
+                        encoding="utf-8"
+                    )
+                )
+            }
+
+    monkeypatch.setattr(
+        module,
+        "_research_episode_load_dual_host_module",
+        lambda: types.SimpleNamespace(DualHostConfig=FakeConfig, DualContainerHost=FakeHost),
+    )
+    assert module._managed_episode_transport_root(
+        "docker",
+        member_id=transport_id,
+        member_name=transport_name,
+        posture=posture,
+    ) == episode_root
+
+    assert (
+        module._managed_episode_transport_root(
+            "docker",
+            member_id=transport_id[:12],
+            member_name=transport_name,
+            posture=posture,
+        )
+        is None
+    )
+
+    # A name/label-compatible member with a swapped lease ID is not admitted.
+    _write_json(
+        episode_root / "dual_container_pair_lease.json",
+        {**lease, "transport_container_id": "e" * 64},
+    )
+    assert (
+        module._managed_episode_transport_root(
+            "docker",
+            member_id=transport_id,
+            member_name=transport_name,
+            posture=posture,
+        )
+        is None
+    )
 
 
 def test_container_inspect_rejects_bridge_and_missing_proxy_env(tmp_path: Path) -> None:

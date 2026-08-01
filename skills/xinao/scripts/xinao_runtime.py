@@ -11417,10 +11417,10 @@ def _compare_live_egress_objects(
             if marker in lowered:
                 raise XinaoError("EGRESS_DIFY_CROSS_PROJECT_FORBIDDEN", name)
         member_id = str(_cid).strip().lower()
-        exact_episode_transport = any(
-            member_id == allowed or member_id.startswith(allowed) or allowed.startswith(member_id)
-            for allowed in allowed_ids
-        )
+        # Episode leases store Docker's full 64-hex container ID.  Short-ID or
+        # bidirectional-prefix matching would turn a partial token into admission
+        # authority; only full exact IDs enter this set.
+        exact_episode_transport = member_id in allowed_ids
         # One-shot researcher names remain admitted. Persistent Episode transports
         # are admitted only by their exact lease-bound ID, never a broad name prefix.
         if (
@@ -11509,6 +11509,213 @@ def _compare_live_egress_objects(
         "host_port_published": False,
         "dify_cross_project": False,
     }
+
+
+def _managed_episode_transport_root(
+    docker: str,
+    *,
+    member_id: str,
+    member_name: str,
+    posture: Mapping[str, Any],
+) -> Path | None:
+    """Return the lease-backed Episode root for one live transport member.
+
+    A container name or image label is never admission authority.  The member
+    must bind an ordinary Episode ``/output`` directory whose meta, lease,
+    inventory, pair receipt, and live pair inspect agree on the exact IDs.
+    ``None`` means the member is not a valid managed Episode transport; the
+    caller leaves it out of the exact-ID allow set so the ordinary network
+    comparison rejects it as foreign.
+    """
+
+    try:
+        inspect = _docker_json_inspect(docker, "container", member_id)
+        live_id = str(inspect.get("Id") or "").strip().lower()
+        expected_id = str(member_id or "").strip().lower()
+        if (
+            HEX_SHA256_PATTERN.fullmatch(live_id) is None
+            or HEX_SHA256_PATTERN.fullmatch(expected_id) is None
+            or live_id != expected_id
+        ):
+            return None
+        live_name = str(inspect.get("Name") or "").lstrip("/")
+        if not live_name or live_name != str(member_name or "").lstrip("/"):
+            return None
+
+        config = inspect.get("Config") or {}
+        labels = config.get("Labels") or {}
+        if not isinstance(labels, Mapping) or any(
+            labels.get(key) != value
+            for key, value in {
+                "io.xinao.researcher.chain": "dedicated-xinao-science",
+                "io.xinao.researcher.generic-worker-route": "forbidden",
+                "io.xinao.researcher.episode-profile": "GENUINE_SCIENTIST_EPISODE",
+            }.items()
+        ):
+            return None
+        env_map: dict[str, str] = {}
+        for item in config.get("Env") or []:
+            if isinstance(item, str) and "=" in item:
+                key, value = item.split("=", 1)
+                env_map[key] = value
+        episode_id = str(env_map.get("XINAO_EPISODE_ID") or "").strip()
+        if (
+            not episode_id
+            or env_map.get("XINAO_DUAL_CONTAINER") != "1"
+            or env_map.get("XINAO_GENERIC_FILE_SHELL_TOOLS") != "0"
+        ):
+            return None
+        _validate_researcher_network_and_proxy_env(
+            inspect,
+            internal_network_name=str(posture["internal_network_name"]),
+            internal_network_id=str(posture["internal_network_id"]),
+            proxy_endpoint=str(posture["proxy_endpoint"]),
+        )
+        host = inspect.get("HostConfig") or {}
+        if (
+            host.get("Privileged") is True
+            or host.get("PublishAllPorts") is True
+            or (host.get("PortBindings") or {})
+            or "ALL" not in (host.get("CapDrop") or [])
+            or "no-new-privileges:true" not in (host.get("SecurityOpt") or [])
+            or str((host.get("RestartPolicy") or {}).get("Name") or "") != "no"
+        ):
+            return None
+        ports = ((inspect.get("NetworkSettings") or {}).get("Ports")) or {}
+        if not isinstance(ports, dict) or any(bindings for bindings in ports.values()):
+            return None
+
+        output_mounts = [
+            mount
+            for mount in inspect.get("Mounts") or []
+            if isinstance(mount, Mapping)
+            and str(mount.get("Destination") or mount.get("Target") or "") == "/output"
+        ]
+        if len(output_mounts) != 1:
+            return None
+        output_mount = output_mounts[0]
+        if (
+            str(output_mount.get("Type") or "") != "bind"
+            or output_mount.get("RW") is not True
+        ):
+            return None
+        output_source = str(output_mount.get("Source") or "").strip()
+        if not output_source or re.match(r"(?i)^[a-z]:[\\/]", output_source) is None:
+            return None
+        episode_root = Path(output_source).parent
+        _research_episode_assert_root_allowed(episode_root)
+        if not _paths_equal(Path(output_source), episode_root / "output"):
+            return None
+
+        def _load_peer_json(filename: str) -> dict[str, Any]:
+            path = episode_root / filename
+            raw = _regular_file_bytes(
+                path,
+                reason_code="EGRESS_MANAGED_EPISODE_IDENTITY_INVALID",
+                maximum=MAX_JSON_FILE_BYTES,
+            )
+            value = _strict_json_loads(
+                raw.decode("utf-8"),
+                reason_code="EGRESS_MANAGED_EPISODE_IDENTITY_INVALID",
+                detail=str(path),
+            )
+            if not isinstance(value, dict):
+                raise XinaoError("EGRESS_MANAGED_EPISODE_IDENTITY_INVALID", str(path))
+            return value
+
+        meta = _load_peer_json("episode_meta.json")
+        lease = _load_peer_json("dual_container_pair_lease.json")
+        inventory = _load_peer_json("session_inventory.json")
+        receipt = _load_peer_json("dual_container_pair_receipt.json")
+        if (
+            meta.get("schema_version") != "xinao.research_episode_state.v1"
+            or lease.get("schema_version") != "xinao.dual_container_pair_lease.v1"
+            or inventory.get("schema_version")
+            != "xinao.dual_container_session_inventory.v1"
+            or receipt.get("schema_version") != "xinao.dual_container_pair_receipt.v1"
+        ):
+            return None
+        if lease.get("phase") in {"cancelled", "retired", "failed_retire_pending"}:
+            return None
+        session_id = str(meta.get("session_id") or "")
+        if not session_id or any(
+            value != expected
+            for value, expected in (
+                (lease.get("episode_id"), episode_id),
+                (inventory.get("episode_id"), episode_id),
+                (receipt.get("episode_id"), episode_id),
+                (meta.get("episode_id"), episode_id),
+                (lease.get("session_id"), session_id),
+                (inventory.get("host_session_id"), session_id),
+                (receipt.get("session_id"), session_id),
+            )
+        ):
+            return None
+        if any(
+            value != expected
+            for value, expected in (
+                (lease.get("transport_container_id"), live_id),
+                (inventory.get("transport_container_id"), live_id),
+                (receipt.get("transport_container_id"), live_id),
+                (lease.get("transport_container_name"), live_name),
+                (receipt.get("transport_container_name"), live_name),
+                (lease.get("transport_image_id"), inspect.get("Image")),
+                (receipt.get("transport_image_id"), inspect.get("Image")),
+            )
+        ):
+            return None
+
+        host_mod = _research_episode_load_dual_host_module()
+        peer_host = host_mod.DualContainerHost(
+            host_mod.DualHostConfig(
+                transport_image=str(lease["transport_image_id"]),
+                tool_image=str(lease["tool_image_id"]),
+                auth_host_path=Path("unused-peer-validation-auth-handle"),
+                episode_root=episode_root,
+                network=str(posture["internal_network_name"]),
+                egress_proxy_endpoint=str(posture["proxy_endpoint"]),
+                synthetic=False,
+            )
+        )
+        validated = peer_host.validate_before_start()
+        validated_lease = validated.get("lease") or {}
+        if str(validated_lease.get("transport_container_id") or "").lower() != live_id:
+            return None
+        return episode_root
+    except Exception:
+        # Invalid peers remain unadmitted and are rejected by the outer exact-ID
+        # comparison.  Do not let a forged member turn its own rejection into an
+        # alternate admission path.
+        return None
+
+
+def _discover_managed_episode_transport_ids(
+    docker: str,
+    posture: Mapping[str, Any],
+) -> set[str]:
+    """Discover every currently attached, fully lease-validated Episode transport."""
+
+    network = _docker_json_inspect(docker, "network", str(posture["internal_network_id"]))
+    containers = network.get("Containers") or {}
+    if not isinstance(containers, dict):
+        return set()
+    proxy_name = str(posture["proxy_container_name"])
+    allowed: set[str] = set()
+    for member_id, meta in containers.items():
+        if not isinstance(meta, Mapping):
+            continue
+        name = str(meta.get("Name") or "").lstrip("/")
+        if name == proxy_name or name.startswith("xinao-researcher-"):
+            continue
+        root = _managed_episode_transport_root(
+            docker,
+            member_id=str(member_id),
+            member_name=name,
+            posture=posture,
+        )
+        if root is not None:
+            allowed.add(str(member_id).strip().lower())
+    return allowed
 
 
 def _observation_fingerprint(bound: dict[str, Any]) -> dict[str, str]:
@@ -16437,7 +16644,7 @@ def research_episode_cancel(*, root: Path | str) -> dict[str, Any]:
         }
 
 
-def _research_episode_load_dual_host(root: Path) -> Any:
+def _research_episode_load_dual_host_module() -> Any:
     host_path = Path(__file__).resolve().parent / "dual_container_host.py"
     try:
         host_mod = _load_sealed_python_module("xinao_dual_container_host_runtime_live", host_path)
@@ -16445,6 +16652,11 @@ def _research_episode_load_dual_host(root: Path) -> Any:
         if exc.reason_code in {"SEALED_MODULE_MISSING", "SEALED_MODULE_READ_FAILED"}:
             raise XinaoError("DUAL_CONTAINER_HOST_MISSING", str(host_path)) from exc
         raise
+    return host_mod
+
+
+def _research_episode_load_dual_host(root: Path) -> Any:
+    host_mod = _research_episode_load_dual_host_module()
     transport, tool = _resolve_research_episode_dual_images()
     synthetic = os.environ.get("XINAO_DUAL_CONTAINER_SYNTHETIC", "").strip().lower() in {
         "1",
@@ -16457,8 +16669,10 @@ def _research_episode_load_dual_host(root: Path) -> Any:
     if not synthetic:
         # ResearchEpisode provider calls consume the same current live-seal gate as
         # the one-shot researcher path; names/constants alone are not authority.
-        # A running persistent transport is admitted only by the exact ID already
-        # bound in this Episode's lease.
+        # Running persistent transports are admitted only by exact IDs whose
+        # Episode meta/lease/receipt and live pair inspect all agree.  This keeps
+        # the foreign-member boundary while allowing multiple legitimate Episodes
+        # to share the dedicated internal egress network.
         allowed_pair_ids: set[str] = set()
         lease_path = Path(root) / "dual_container_pair_lease.json"
         if lease_path.is_file():
@@ -16467,6 +16681,10 @@ def _research_episode_load_dual_host(root: Path) -> Any:
             if HEX_SHA256_PATTERN.fullmatch(transport_id) is None:
                 raise XinaoError("DUAL_HOST_TRANSPORT_INVALID", transport_id)
             allowed_pair_ids.add(transport_id)
+        posture, _posture_sha256, _posture_path = _posture_file_sha256()
+        allowed_pair_ids.update(
+            _discover_managed_episode_transport_ids(_docker(), posture)
+        )
         egress_bound = _require_host_egress_boundary(
             allowed_researcher_container_ids=allowed_pair_ids
         )
