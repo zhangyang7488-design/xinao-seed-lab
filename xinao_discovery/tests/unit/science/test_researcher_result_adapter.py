@@ -66,6 +66,33 @@ def _candidate(**overrides: Any) -> dict[str, Any]:
     return payload
 
 
+def _action_core() -> dict[str, Any]:
+    return {
+        "panel": "B",
+        "selected_number": 17,
+        "stake": "125.0000",
+        "target_ref": "draw.20260731-001",
+        "target_open_time": "2026-07-31T01:00:00Z",
+        "freeze_deadline": "2026-07-31T00:00:00Z",
+        "knowledge_cutoff": AS_OF,
+        "odds_version_ref": "odds.special-number.test.v1",
+        "baseline_ref": "BO0013",
+        "risk_policy_ref": "researcher-authored.behavior.v1",
+        "rule_ref": "special-number-rule.v1",
+    }
+
+
+def _no_action_core() -> dict[str, Any]:
+    return {
+        "target_ref": "draw.20260731-001",
+        "target_open_time": "2026-07-31T01:00:00Z",
+        "freeze_deadline": "2026-07-31T00:00:00Z",
+        "knowledge_cutoff": AS_OF,
+        "odds_version_ref": "odds.special-number.test.v1",
+        "rule_ref": "special-number-rule.v1",
+    }
+
+
 def _production_result(*, candidate: dict[str, Any], status: str) -> dict[str, Any]:
     """Production-shaped formal producer result object (entrypoint #159 key set)."""
 
@@ -255,6 +282,81 @@ def test_production_fixture_key_sets_include_reconciled_provider_ids() -> None:
     assert receipt["ordinary_worker_chain_used"] is False
     assert receipt["reason_codes"] == []
     assert result["reason_codes"] == []
+
+
+@pytest.mark.parametrize(
+    "candidate",
+    [
+        _candidate(
+            account_identity="ACTION",
+            executable_account_decision=_action_core(),
+        ),
+        _candidate(
+            account_identity="RESEARCHER_ACCOUNT_NO_ACTION",
+            no_action_intent=_no_action_core(),
+        ),
+    ],
+)
+def test_complete_actor_branch_is_sealed_but_pool_stays_candidate_only(
+    candidate: dict[str, Any],
+) -> None:
+    result_bytes, receipt = _result_and_receipt(candidate=candidate)
+    policy = adapt_researcher_result_to_policy_candidate(result_bytes, receipt)
+    assert policy.semantic_config["decision_map_projected"] is False
+    assert policy.decision_signature.action_support == "NOT_PROJECTED"
+
+
+def test_signal_only_ready_remains_legal_but_cannot_claim_account_identity() -> None:
+    # The legacy/default fixture has no account branch and remains a valid
+    # research signal. Absence is not silently converted into NO_ACTION.
+    result_bytes, receipt = _result_and_receipt(candidate=_candidate())
+    binding = verify_researcher_result_against_receipt(result_bytes, receipt)
+    assert "executable_account_decision" not in binding["candidate"]
+    assert "no_action_intent" not in binding["candidate"]
+    assert "account_identity" not in binding["candidate"]
+
+    invalid = _candidate(account_identity="ACTION")
+    bad_bytes, bad_receipt = _result_and_receipt(candidate=invalid)
+    with pytest.raises(ResearcherResultAdapterError) as exc_info:
+        verify_researcher_result_against_receipt(bad_bytes, bad_receipt)
+    assert exc_info.value.reason_code == "RESEARCH_CANDIDATE_DECISION_BRANCH_INVALID"
+
+
+@pytest.mark.parametrize(
+    ("candidate", "reason_code"),
+    [
+        (
+            _candidate(
+                executable_account_decision=_action_core(),
+                no_action_intent=_no_action_core(),
+            ),
+            "RESEARCH_CANDIDATE_DECISION_BRANCH_CONFLICT",
+        ),
+        (
+            _candidate(
+                account_identity="RESEARCHER_ACCOUNT_NO_ACTION",
+                executable_account_decision=_action_core(),
+            ),
+            "RESEARCH_CANDIDATE_ACCOUNT_IDENTITY_INVALID",
+        ),
+        (
+            _candidate(
+                status="INSUFFICIENT_EVIDENCE",
+                executable_account_decision=_action_core(),
+            ),
+            "RESEARCH_CANDIDATE_DECISION_STATUS_INVALID",
+        ),
+    ],
+)
+def test_candidate_branch_conflict_identity_drift_and_status_drift_are_rejected(
+    candidate: dict[str, Any],
+    reason_code: str,
+) -> None:
+    status = str(candidate["status"])
+    result_bytes, receipt = _result_and_receipt(candidate=candidate, status=status)
+    with pytest.raises(ResearcherResultAdapterError) as exc_info:
+        verify_researcher_result_against_receipt(result_bytes, receipt)
+    assert exc_info.value.reason_code == reason_code
 
 
 def test_golden_verify_and_mint_is_deterministic_and_content_addressed() -> None:

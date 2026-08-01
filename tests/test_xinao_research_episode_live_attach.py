@@ -399,6 +399,7 @@ def test_success_persist_export_idempotent_and_authority_clamp(native: Any, tmp_
         lab_root=lab,
     )
     assert bundle1["status"] == native.STATUS_CANDIDATE_EVIDENCE_EXPORTED
+    assert bundle1["host_session_id"] == "xrsess_live_1"
     assert bundle1["completion_claim_allowed"] is False
     assert bundle1["owner_adopted"] is False
     assert bundle1["science_restored"] is False
@@ -534,6 +535,8 @@ def test_create_pair_partial_fail_best_effort_cleanup(host_mod: Any, tmp_path: P
             return subprocess.CompletedProcess(args, 0, "", "")
         if len(args) >= 2 and args[1] == "image":
             return subprocess.CompletedProcess(args, 0, "sha256:" + "a" * 64 + "\n", "")
+        if len(args) >= 2 and args[1] == "run":
+            return subprocess.CompletedProcess(args, 0, "grok 0.2.117 (sealed-test)\n", "")
         if len(args) >= 2 and args[1] == "inspect":
             # image id resolve may use inspect
             return subprocess.CompletedProcess(
@@ -576,6 +579,94 @@ def test_create_pair_partial_fail_best_effort_cleanup(host_mod: Any, tmp_path: P
     assert "cid-tool-partial" in journal
 
 
+def test_create_pair_versions_exact_transport_image_before_resource_mutation(
+    host_mod: Any, tmp_path: Path
+) -> None:
+    """Host PATH drift must not decide the sealed transport image version gate."""
+    auth = tmp_path / "auth"
+    auth.mkdir()
+    (auth / "auth.json").write_text("{}", encoding="utf-8")
+    transport_image = "sha256:" + "a" * 64
+    tool_image = "sha256:" + "b" * 64
+    version_argv: list[str] = []
+    resource_mutations: list[list[str]] = []
+
+    def runner(argv: list[str]) -> subprocess.CompletedProcess[str]:
+        args = list(argv)
+        if len(args) >= 3 and args[1:3] == ["image", "inspect"]:
+            image_ref = args[-1]
+            return subprocess.CompletedProcess(args, 0, image_ref + "\n", "")
+        if len(args) >= 2 and args[1] == "run":
+            version_argv.extend(args)
+            return subprocess.CompletedProcess(
+                args,
+                0,
+                "grok 0.2.118 (host-drift-must-not-be-accepted)\n",
+                "",
+            )
+        if len(args) >= 2 and args[1] in {"volume", "create", "start"}:
+            resource_mutations.append(args)
+            return subprocess.CompletedProcess(args, 1, "", "unexpected resource mutation")
+        return subprocess.CompletedProcess(args, 1, "", "unexpected docker operation")
+
+    host = host_mod.DualContainerHost(
+        host_mod.DualHostConfig(
+            transport_image=transport_image,
+            tool_image=tool_image,
+            auth_host_path=auth / "auth.json",
+            episode_root=tmp_path / "ep_version_gate",
+            network="xinao_researcher_internal",
+            egress_proxy_endpoint="http://xinao-researcher-egress-proxy:3128",
+            egress_live_seal_sha256="a" * 64,
+            synthetic=False,
+            runner=runner,
+        )
+    )
+    with pytest.raises(host_mod.DualHostError) as exc:
+        host.create_pair(episode_id="ep_version_gate", session_id="xrsess_version_gate")
+
+    assert exc.value.reason_code == "GROK_CLI_VERSION_UNSUPPORTED"
+    assert resource_mutations == []
+    assert "--network" in version_argv
+    assert version_argv[version_argv.index("--network") + 1] == "none"
+    assert "--read-only" in version_argv
+    assert version_argv[version_argv.index("--cap-drop") + 1] == "ALL"
+    assert "no-new-privileges" in version_argv
+    assert version_argv[-3:] == [transport_image, "--no-auto-update", "version"]
+
+
+def test_transport_version_gate_ignores_poisoned_host_probe(
+    host_mod: Any, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    transport_image = "sha256:" + "c" * 64
+    commands: list[list[str]] = []
+
+    def runner(argv: list[str]) -> subprocess.CompletedProcess[str]:
+        args = list(argv)
+        commands.append(args)
+        return subprocess.CompletedProcess(args, 0, "grok 0.2.117 (sealed-image)\n", "")
+
+    host = host_mod.DualContainerHost(
+        host_mod.DualHostConfig(
+            transport_image=transport_image,
+            tool_image="sha256:" + "d" * 64,
+            auth_host_path=tmp_path / "auth.json",
+            episode_root=tmp_path / "ep_host_drift",
+            synthetic=False,
+            runner=runner,
+        )
+    )
+    native_mod = host._load_native_session()
+
+    def forbidden_host_probe(*args: Any, **kwargs: Any) -> Any:
+        raise AssertionError("mutable host Grok CLI must not be probed")
+
+    monkeypatch.setattr(native_mod, "probe_grok_cli", forbidden_host_probe)
+    assert host.require_transport_grok_cli_version(transport_image) == "0.2.117"
+    assert len(commands) == 1
+    assert commands[0][-3:] == [transport_image, "--no-auto-update", "version"]
+
+
 def test_create_pair_tool_name_conflict_no_name_rm(host_mod: Any, tmp_path: Path) -> None:
     """Tool create name-conflict (no ID): must not docker rm by expected name."""
     auth = tmp_path / "auth"
@@ -613,6 +704,8 @@ def test_create_pair_tool_name_conflict_no_name_rm(host_mod: Any, tmp_path: Path
             return subprocess.CompletedProcess(args, 0, "", "")
         if len(args) >= 2 and args[1] == "image":
             return subprocess.CompletedProcess(args, 0, "sha256:" + "a" * 64 + "\n", "")
+        if len(args) >= 2 and args[1] == "run":
+            return subprocess.CompletedProcess(args, 0, "grok 0.2.117 (sealed-test)\n", "")
         if len(args) >= 2 and args[1] == "inspect":
             return subprocess.CompletedProcess(
                 args,

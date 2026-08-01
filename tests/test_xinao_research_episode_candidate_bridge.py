@@ -50,6 +50,19 @@ def _sha(payload: bytes) -> str:
     return hashlib.sha256(payload).hexdigest()
 
 
+REAL_PRIMARY_AFFINE_MANIFEST = (
+    ROOT
+    / "tests"
+    / "fixtures"
+    / "real_research_episode"
+    / "xre_20260731T214242_15d5292ebc9a"
+    / "candidate_manifest.primary_affine.official.v1.json"
+)
+REAL_PRIMARY_AFFINE_MANIFEST_SHA256 = (
+    "f4c19e21fad994948824f8c4f8ff7c77969366d1e478da5aac23b2bfe29cb5f0"
+)
+
+
 def _manifest(
     *,
     episode_id: str = "ep_bridge",
@@ -84,6 +97,19 @@ def _manifest(
     if extra:
         body.update(extra)
     return body
+
+
+def test_real_primary_affine_legacy_shape_is_not_actor_behavior(native: Any) -> None:
+    """A hash-pinned signal-policy fixture cannot impersonate actor behavior."""
+
+    raw = REAL_PRIMARY_AFFINE_MANIFEST.read_bytes()
+    assert _sha(raw) == REAL_PRIMARY_AFFINE_MANIFEST_SHA256
+    with pytest.raises(native.NativeSessionError) as exc:
+        native.validate_candidate_manifest(
+            raw,
+            expected_episode_id="xre_20260731T214242_15d5292ebc9a",
+        )
+    assert exc.value.reason_code == "CANDIDATE_MANIFEST_ACTOR_INTENT_INVALID"
 
 
 def test_mcp_arg_remap_path_content_cwd(mcp_server: Any) -> None:
@@ -359,6 +385,7 @@ def test_experiment_loop_state_transitions_and_export(native: Any, tmp_path: Pat
         lab_root=lab,
     )
     assert bundle["candidate_manifest_sha256"] == _sha(raw2)
+    assert bundle["host_session_id"] == "hs_loop"
     assert bundle["owner_adopted"] is False
     assert bundle["freeze_written"] is False
     # Drift: mutate lab after artifact seal on attempt should fail export
@@ -966,6 +993,50 @@ def test_denied_error_timeout_never_count_as_productive(native: Any, tmp_path: P
         prior_lab_artifact_manifest={"artifacts": []},
     )
     assert shell_ok["shell_bound"] is True
+
+    # A read/compute-only shell is still a real productive operation. It must
+    # bind to the cursor-bounded tool-executor sidecar from this attempt rather
+    # than being forced to create a dummy file merely to satisfy the classifier.
+    read_only_sidecar = "ef" * 32
+    read_only_ok = native.require_lab_effect_binding(
+        delta={
+            "status": "DELTA_OK",
+            "productive_ops": ["shell_exec"],
+            "events": [
+                {
+                    "op": "shell_exec",
+                    "status": "ok",
+                    "exit_code": 0,
+                    "sidecar_event_hash": read_only_sidecar,
+                }
+            ],
+        },
+        lab_artifact_manifest={"artifacts": []},
+        prior_lab_artifact_manifest={"artifacts": []},
+        trusted_event_hashes=[read_only_sidecar],
+    )
+    assert read_only_ok["shell_bound"] is True
+    assert read_only_ok["read_only_shell_bound"] is True
+
+    with pytest.raises(native.NativeSessionError) as untrusted_read_only:
+        native.require_lab_effect_binding(
+            delta={
+                "status": "DELTA_OK",
+                "productive_ops": ["shell_exec"],
+                "events": [
+                    {
+                        "op": "shell_exec",
+                        "status": "ok",
+                        "exit_code": 0,
+                        "sidecar_event_hash": read_only_sidecar,
+                    }
+                ],
+            },
+            lab_artifact_manifest={"artifacts": []},
+            prior_lab_artifact_manifest={"artifacts": []},
+            trusted_event_hashes=["ab" * 32],
+        )
+    assert untrusted_read_only.value.reason_code == "LAB_EFFECT_SHELL_UNBOUND"
 
 
 def test_package_validator_without_docker_tree(tmp_path: Path) -> None:

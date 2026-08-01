@@ -1458,13 +1458,17 @@ def require_lab_effect_binding(
     delta: Mapping[str, Any],
     lab_artifact_manifest: Mapping[str, Any] | None,
     prior_lab_artifact_manifest: Mapping[str, Any] | None = None,
+    trusted_event_hashes: Sequence[str] | None = None,
 ) -> dict[str, Any]:
-    """Bind successful productive MCP ops to real lab filesystem effects.
+    """Bind successful productive MCP ops to real lab effects.
 
     write_file with a path-bearing event must bind the exact normalized path (and
     content/effect hash when recorded). Broad “any changed path” is not accepted
-    for path-bearing write events. shell_exec requires successful status and
-    honest lab effect evidence; timeout is never productive.
+    for path-bearing write events. A successful shell_exec may either mutate the
+    lab or perform real read/compute work without a filesystem delta. The latter
+    is bound to a tool-executor-only sidecar event from this attempt; forcing a
+    dummy write would turn an audit proxy into the researcher's behavior.
+    Timeout/error events are never productive.
     """
     artifacts = list((lab_artifact_manifest or {}).get("artifacts") or [])
     current_paths = {
@@ -1494,6 +1498,8 @@ def require_lab_effect_binding(
         }
     write_bound = False
     shell_bound = False
+    read_only_shell_bound = False
+    trusted = set(str(item) for item in (trusted_event_hashes or []))
     for event in productive_events:
         op = str(event.get("op") or "")
         if op == "write_file":
@@ -1538,10 +1544,22 @@ def require_lab_effect_binding(
             elif current_paths and not prior_paths:
                 # First attempt may only create via shell; allow non-empty lab.
                 shell_bound = True
+            elif (
+                isinstance(event.get("sidecar_event_hash"), str)
+                and HEX_SHA256.fullmatch(str(event["sidecar_event_hash"])) is not None
+                and str(event["sidecar_event_hash"]) in trusted
+            ):
+                # Reading sealed materials and computing over them are real lab
+                # operations even when the lab filesystem remains unchanged.
+                # Cursor-bounded sidecar membership proves this shell actually
+                # executed in the current attempt; semantic value remains for the
+                # real consumer/Owner to judge rather than this mutation proxy.
+                shell_bound = True
+                read_only_shell_bound = True
             else:
                 raise NativeSessionError(
                     "LAB_EFFECT_SHELL_UNBOUND",
-                    "shell_exec without lab artifact delta or effect marker",
+                    "shell_exec without lab delta, effect marker, or current trusted sidecar",
                 )
     if not write_bound and not shell_bound and productive_events:
         raise NativeSessionError("LAB_EFFECT_MISSING", "no bound lab effect")
@@ -1550,6 +1568,7 @@ def require_lab_effect_binding(
         "bound": True,
         "write_bound": write_bound,
         "shell_bound": shell_bound,
+        "read_only_shell_bound": read_only_shell_bound,
     }
 
 
@@ -2330,6 +2349,7 @@ def export_candidate_evidence_bundle(
         "schema_version": CANDIDATE_EXPORT_SCHEMA,
         "status": STATUS_CANDIDATE_EVIDENCE_EXPORTED,
         "episode_id": episode_id,
+        "host_session_id": attempt.get("host_session_id"),
         "cas_head_sha256": cas_head_sha256 or attempt.get("cas_head_sha256"),
         "attempt_id": attempt.get("attempt_id"),
         "attempt_hash": attempt.get("attempt_hash"),

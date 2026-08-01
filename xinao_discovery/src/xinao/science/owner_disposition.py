@@ -14,15 +14,19 @@ this module; that is not Owner authority. Honest flags remain:
 isolation is mount/write-domain separation outside this module.
 
 Disposition artifacts are raw-SHA256 content-addressed JSON without any
-self-referential hash field. ACTION numbers/stake come only from structured
-executable decisions (never research prose).
+self-referential hash field. ACTION and NO_ACTION are both copied from sealed
+researcher decision bytes. The Owner may adopt, reject, or defer that decision;
+the Owner never authors or rewrites its branch, selection, or stake.
 """
 
 from __future__ import annotations
 
 import hashlib
+import importlib.util
 import json
+import os
 import re
+import sys
 from collections.abc import Mapping
 from datetime import UTC, datetime
 from decimal import Decimal, InvalidOperation
@@ -52,6 +56,10 @@ from xinao.science.prospective_source_thin import (
     load_packet,
     validate_source_authority_binding,
 )
+from xinao.science.research_episode_candidate_manifest import (
+    CandidateManifestError,
+    validate_actor_authored_behavior_intent,
+)
 
 DISPOSITION_SCHEMA_VERSION: Final = "xinao.codex_owner_disposition.v1"
 DISPOSITION_MARKER: Final = "XINAO_CODEX_OWNER_DISPOSITION_V1"
@@ -73,17 +81,8 @@ SCIENCE_RETAIN_FOR_SHADOW: Final = "RETAIN_FOR_SHADOW"
 _SCIENCE_DISPOSITIONS: Final = frozenset(
     {
         SCIENCE_ADOPT,
-        SCIENCE_REJECT,
-        SCIENCE_DEFER,
-        SCIENCE_ABSORB_NO_ACTION,
         SCIENCE_RETAIN_FOR_SHADOW,
-    }
-)
-# Science grades that forbid placing stake (must not be smuggled into ACTION).
-_SCIENCE_FORBIDS_ACTION: Final = frozenset(
-    {
         SCIENCE_REJECT,
-        SCIENCE_ABSORB_NO_ACTION,
         SCIENCE_DEFER,
     }
 )
@@ -96,6 +95,7 @@ AUTHENTIC_DISPOSITION_SOURCE: Final = CODEX_OWNER_CHANNEL_SOURCE
 
 OWNER_CHANNEL_AUTHORITY_UNPROVEN: Final = "UNPROVEN_BY_LIBRARY"
 RESEARCHER_ACTION_BINDING_SCHEMA: Final = "xinao.researcher_action_binding.v1"
+RESEARCHER_NO_ACTION_BINDING_SCHEMA: Final = "xinao.researcher_no_action_binding.v1"
 
 _FORBIDDEN_SOURCES: Final = frozenset(
     {
@@ -211,6 +211,17 @@ _NO_ACTION_BINDING_ALLOWED: Final = frozenset(
         "target_open_time",
         "freeze_deadline",
         "frozen_at",
+        "knowledge_cutoff",
+        "rule_ref",
+        "odds_version_ref",
+    }
+)
+
+_RESEARCHER_NO_ACTION_CORE: Final = frozenset(
+    {
+        "target_ref",
+        "target_open_time",
+        "freeze_deadline",
         "knowledge_cutoff",
         "rule_ref",
         "odds_version_ref",
@@ -750,7 +761,7 @@ def validate_disposition_payload(
     if "science_identity" in payload:
         raise OwnerDispositionError(
             "SCIENCE_IDENTITY_CALLER_OVERRIDE_FORBIDDEN",
-            "science_identity is derived only from science_disposition",
+            "science_identity is derived from the sealed researcher account branch",
         )
 
     verify_pool_entry_seal(pool_entry)
@@ -802,13 +813,6 @@ def validate_disposition_payload(
             "SCIENCE_DISPOSITION_INVALID",
             str(science_disposition),
         )
-    if science_disposition in _SCIENCE_FORBIDS_ACTION and account_identity == ACCOUNT_ACTION:
-        raise OwnerDispositionError(
-            "SCIENCE_ACCOUNT_MATRIX_VIOLATION",
-            f"{science_disposition} must not carry account_identity=ACTION; "
-            f"use {SCIENCE_RETAIN_FOR_SHADOW} for shadow production ACTION without science adopt",
-        )
-
     episode_ref = _require_text(
         payload.get("episode_ref"),
         "DISPOSITION_EPISODE_INVALID",
@@ -961,11 +965,12 @@ def validate_disposition_payload(
             "rationale_ref",
         ),
     }
-    # Science identity is a derived projection, never a caller override.
-    if science_disposition in (SCIENCE_ADOPT, SCIENCE_RETAIN_FOR_SHADOW):
-        normalized["science_identity"] = "SCIENCE_CANDIDATE"
-    else:
-        normalized["science_identity"] = "POLICY_NO_ACTION"
+    # A veto/defer is Owner disposition, never a fabricated researcher
+    # NO_ACTION. Preserve the producer branch identity independently of Owner
+    # judgment so rejection cannot rewrite what the actor actually chose.
+    normalized["science_identity"] = (
+        "SCIENCE_CANDIDATE" if account_identity == ACCOUNT_ACTION else "POLICY_NO_ACTION"
+    )
 
     return normalized
 
@@ -984,37 +989,6 @@ def _suggest_episode_ref_from_pool(pool_entry: Mapping[str, Any]) -> str:
     return REQUIRED_OWNER_INPUT
 
 
-def _period_branch_template(
-    *,
-    target_ref: object,
-    target_open_time: object,
-    freeze_deadline: object,
-    knowledge_cutoff: object,
-    for_action: bool,
-) -> dict[str, Any]:
-    """Mechanical times/target only; Owner judgment fields stay REQUIRED_OWNER_INPUT."""
-
-    common = {
-        "target_ref": target_ref,
-        "target_open_time": target_open_time,
-        "freeze_deadline": freeze_deadline,
-        "frozen_at": REQUIRED_OWNER_INPUT,
-        "knowledge_cutoff": knowledge_cutoff,
-        "rule_ref": _SPECIAL_NUMBER_RULE,
-        "odds_version_ref": REQUIRED_OWNER_INPUT,
-    }
-    if not for_action:
-        return common
-    return {
-        "panel": REQUIRED_OWNER_INPUT,
-        "selected_number": REQUIRED_OWNER_INPUT,
-        "stake": REQUIRED_OWNER_INPUT,
-        **common,
-        "baseline_ref": REQUIRED_OWNER_INPUT,
-        "risk_policy_ref": REQUIRED_OWNER_INPUT,
-    }
-
-
 def draft_owner_disposition(
     *,
     pool_root: Path,
@@ -1022,13 +996,15 @@ def draft_owner_disposition(
     authority_root: Path | None = None,
     packet_content_hash: str | None = None,
     portfolio_root: Path | None = None,
+    episode_root: Path | None = None,
 ) -> dict[str, Any]:
     """Assemble a non-authoritative Owner disposition draft from sealed consumers.
 
-    Mechanical fields only (pool hashes, authority binding/times, optional portfolio
-    head). Never chooses ACTION/NO_ACTION, science_disposition, selected_number,
-    stake, or any manifest recommendation. Never writes owner CAS / freeze /
-    portfolio / authority / pool.
+    Mechanical fields only (sealed researcher branch, pool hashes, authority
+    binding/times, optional portfolio head). ACTION/NO_ACTION, selection, and
+    stake come from producer bytes; only science disposition and rationale stay
+    for Owner judgment. Never writes owner CAS / freeze / portfolio / authority /
+    pool.
 
     The returned ``payload_draft`` is intentionally **not** a validator-passable
     disposition: judgment fields are ``REQUIRED_OWNER_INPUT`` placeholders.
@@ -1037,12 +1013,38 @@ def draft_owner_disposition(
 
     pool_entry = load_verified_pool_entry_for_disposition(pool_root, result_sha256)
     verify_pool_entry_seal(pool_entry)
-    # Never project research prose / recommendation into account or science choice.
+    producer_decision = _load_sealed_researcher_decision(
+        pool_root=pool_root,
+        pool_entry=pool_entry,
+        episode_root=episode_root,
+        portfolio_root=portfolio_root,
+        authority_root=authority_root,
+    )
+    producer_identity = str(producer_decision["account_identity"])
+    producer_core_raw = producer_decision.get("authored")
+    if not isinstance(producer_core_raw, Mapping):
+        raise OwnerDispositionError(
+            "RESEARCHER_DECISION_SOURCE_ABSENT",
+            str(producer_decision.get("source_json_path")),
+        )
+    producer_deadline = producer_core_raw.get("freeze_deadline")
+    if producer_identity == ACCOUNT_ACTION:
+        producer_core = _researcher_executable_core(
+            producer_core_raw,
+            disposition_frozen_at=producer_deadline,
+        )
+    else:
+        producer_core = _researcher_no_action_core(
+            producer_core_raw,
+            disposition_frozen_at=producer_deadline,
+        )
+    # Never project research prose / recommendation into science judgment. The
+    # period branch itself is not judgment: it is the actor's sealed choice.
 
     source_authority_binding: dict[str, Any] | None = None
-    target_ref: object = REQUIRED_OWNER_INPUT
-    target_open_time: object = REQUIRED_OWNER_INPUT
-    freeze_deadline: object = REQUIRED_OWNER_INPUT
+    target_ref: object = producer_core.get("target_ref")
+    target_open_time: object = producer_core.get("target_open_time")
+    freeze_deadline: object = producer_core.get("freeze_deadline")
     authority_meta: dict[str, Any] | None = None
 
     has_authority = authority_root is not None or packet_content_hash is not None
@@ -1062,9 +1064,20 @@ def draft_owner_disposition(
             )
         except ProspectiveSourceError as exc:
             raise OwnerDispositionError(exc.reason_code, exc.detail) from exc
-        target_ref = source_authority_binding["target_ref"]
-        target_open_time = source_authority_binding["target_guard_open_time"]
-        freeze_deadline = source_authority_binding["freeze_deadline"]
+        for label, produced, authoritative in (
+            ("target_ref", target_ref, source_authority_binding["target_ref"]),
+            (
+                "target_open_time",
+                target_open_time,
+                source_authority_binding["target_guard_open_time"],
+            ),
+            ("freeze_deadline", freeze_deadline, source_authority_binding["freeze_deadline"]),
+        ):
+            if produced != authoritative:
+                raise OwnerDispositionError(
+                    "DRAFT_RESEARCHER_AUTHORITY_MISMATCH",
+                    f"{label}: producer={produced!r} authority={authoritative!r}",
+                )
         authority_meta = {
             "authority_root": str(authority_root.expanduser().resolve()),
             "packet_content_hash": source_authority_binding["packet_content_hash"],
@@ -1091,9 +1104,7 @@ def draft_owner_disposition(
             "portfolio_root": str(portfolio_root.expanduser().resolve()),
         }
 
-    knowledge_cutoff = pool_entry.get("knowledge_cutoff")
-    if not isinstance(knowledge_cutoff, str) or not knowledge_cutoff:
-        knowledge_cutoff = REQUIRED_OWNER_INPUT
+    knowledge_cutoff = producer_core.get("knowledge_cutoff")
 
     episode_ref = _suggest_episode_ref_from_pool(pool_entry)
 
@@ -1116,9 +1127,10 @@ def draft_owner_disposition(
         "episode_ref": episode_ref,
         "target_ref": target_ref,
         "knowledge_cutoff": knowledge_cutoff,
-        # Judgment — never auto-selected from pool/manifest.
+        # Owner judgment — never auto-selected from pool/manifest.
         "science_disposition": REQUIRED_OWNER_INPUT,
-        "account_identity": REQUIRED_OWNER_INPUT,
+        # Actor behavior — copied from exact sealed producer bytes, never Owner input.
+        "account_identity": producer_identity,
         "rationale_ref": REQUIRED_OWNER_INPUT,
     }
     if source_authority_binding is not None:
@@ -1126,55 +1138,37 @@ def draft_owner_disposition(
     if portfolio_binding is not None:
         payload_draft["portfolio_binding"] = dict(portfolio_binding)
 
-    action_branch = _period_branch_template(
-        target_ref=target_ref,
-        target_open_time=target_open_time,
-        freeze_deadline=freeze_deadline,
-        knowledge_cutoff=knowledge_cutoff,
-        for_action=True,
-    )
-    no_action_branch = _period_branch_template(
-        target_ref=target_ref,
-        target_open_time=target_open_time,
-        freeze_deadline=freeze_deadline,
-        knowledge_cutoff=knowledge_cutoff,
-        for_action=False,
-    )
+    if producer_identity == ACCOUNT_ACTION:
+        produced_branch = {
+            "account_identity": ACCOUNT_ACTION,
+            "executable_account_decision": {
+                **producer_core,
+                "frozen_at": REQUIRED_OWNER_INPUT,
+            },
+            "no_action_period_binding": None,
+        }
+    else:
+        produced_branch = {
+            "account_identity": ACCOUNT_NO_ACTION,
+            "executable_account_decision": None,
+            "no_action_period_binding": {
+                **producer_core,
+                "frozen_at": REQUIRED_OWNER_INPUT,
+            },
+        }
 
     required_owner_inputs = [
         "disposition_source(=codex_owner_channel)",
         "owner_role(=codex)",
         "worker_controlled(=false)",
-        "science_disposition",
-        "account_identity",
+        "science_disposition(ADOPT|RETAIN_FOR_SHADOW|REJECT|DEFER)",
         "rationale_ref",
         "frozen_at",
-        "odds_version_ref",
-        "choose_exactly_one_of: ACTION.executable_account_decision | "
-        "RESEARCHER_ACCOUNT_NO_ACTION.no_action_period_binding",
     ]
     if period_index == REQUIRED_OWNER_INPUT:
         required_owner_inputs.append("period_index")
-    if target_ref == REQUIRED_OWNER_INPUT:
-        required_owner_inputs.append("target_ref")
-    if target_open_time == REQUIRED_OWNER_INPUT:
-        required_owner_inputs.append("target_open_time")
-    if freeze_deadline == REQUIRED_OWNER_INPUT:
-        required_owner_inputs.append("freeze_deadline")
-    if knowledge_cutoff == REQUIRED_OWNER_INPUT:
-        required_owner_inputs.append("knowledge_cutoff")
     if episode_ref == REQUIRED_OWNER_INPUT:
         required_owner_inputs.append("episode_ref")
-    # ACTION-only Owner judgment (never filled here).
-    required_owner_inputs.extend(
-        [
-            "ACTION.panel",
-            "ACTION.selected_number",
-            "ACTION.stake",
-            "ACTION.baseline_ref",
-            "ACTION.risk_policy_ref",
-        ]
-    )
 
     return {
         "ok": True,
@@ -1198,6 +1192,7 @@ def draft_owner_disposition(
         "next_task_created": False,
         "daemon": False,
         "account_identity_selected": False,
+        "account_identity_from_sealed_researcher": True,
         "science_disposition_selected": False,
         "selected_number_selected": False,
         "stake_selected": False,
@@ -1212,25 +1207,19 @@ def draft_owner_disposition(
             "portfolio": portfolio_meta,
         },
         "payload_draft": payload_draft,
-        "branch_templates": {
-            # Both branches offered; tool never chooses. Owner copies one into payload.
-            ACCOUNT_ACTION: {
-                "account_identity": ACCOUNT_ACTION,
-                "executable_account_decision": action_branch,
-                "no_action_period_binding": None,
-            },
-            ACCOUNT_NO_ACTION: {
-                "account_identity": ACCOUNT_NO_ACTION,
-                "executable_account_decision": None,
-                "no_action_period_binding": no_action_branch,
-            },
+        "sealed_researcher_decision": {
+            key: value for key, value in producer_decision.items() if key != "authored"
         },
+        # Exactly one producer branch is returned. Owner adds only frozen_at and
+        # must copy these bytes unchanged into payload_draft.
+        "branch_templates": {producer_identity: produced_branch},
         "owner_fill_instructions": (
             "Codex is the only Owner. Explicitly set disposition_source="
             f"{CODEX_OWNER_CHANNEL_SOURCE!r}, owner_role='codex', "
-            "worker_controlled=false, science_disposition, account_identity, "
-            "rationale_ref, frozen_at, odds_version_ref, and exactly one branch "
-            "template. Never submit this draft envelope to write-owner-disposition; "
+            "worker_controlled=false, science_disposition, rationale_ref, and "
+            "frozen_at. Copy the single sealed researcher branch unchanged; never "
+            "change ACTION/NO_ACTION, selection, stake, target, rule, odds, or cutoff. "
+            "Never submit this draft envelope to write-owner-disposition; "
             "submit only a completed payload_draft after Owner judgment. "
             f"draft_source={DRAFT_SOURCE}; owner_adopted=false; "
             "worker_controlled is not forged by this tool."
@@ -1250,6 +1239,9 @@ def write_owner_disposition_artifact(
     owner_state_root: Path,
     payload: Mapping[str, Any],
     pool_root: Path,
+    episode_root: Path | None = None,
+    portfolio_root: Path | None = None,
+    authority_root: Path | None = None,
 ) -> dict[str, Any]:
     """Validate against sealed research bytes, then write Owner CAS exclusively.
 
@@ -1278,10 +1270,18 @@ def write_owner_disposition_artifact(
     )
     pool_entry = load_verified_pool_entry_for_disposition(pool_root, claimed_result)
     normalized = validate_disposition_payload(payload_snapshot, pool_entry=pool_entry)
-    researcher_action_binding = verify_researcher_authored_action(
+    researcher_decision_binding = verify_researcher_authored_decision(
         pool_root=pool_root,
         pool_entry=pool_entry,
         disposition=normalized,
+        episode_root=episode_root,
+        portfolio_root=portfolio_root,
+        authority_root=authority_root,
+    )
+    researcher_action_binding = (
+        researcher_decision_binding
+        if researcher_decision_binding["account_identity"] == ACCOUNT_ACTION
+        else None
     )
 
     root = resolve_owner_state_root(owner_state_root)
@@ -1305,6 +1305,7 @@ def write_owner_disposition_artifact(
             "owner_artifact_sha256": digest,
             "owner_state_root": str(root),
             "bytes_written": False,
+            "researcher_decision_binding": researcher_decision_binding,
             "researcher_action_binding": researcher_action_binding,
         }
     return {
@@ -1312,6 +1313,7 @@ def write_owner_disposition_artifact(
         "owner_artifact_sha256": digest,
         "owner_state_root": str(root),
         "bytes_written": True,
+        "researcher_decision_binding": researcher_decision_binding,
         "researcher_action_binding": researcher_action_binding,
     }
 
@@ -1367,6 +1369,181 @@ def _parse_sealed_json_object(raw: bytes, *, reason_code: str) -> dict[str, Any]
     return payload
 
 
+def _load_xinao_runtime_module() -> Any:
+    """Load the canonical Skill runtime that owns live attempt verification.
+
+    The discovery wheel deliberately does not duplicate ResearchEpisode CAS,
+    current-success pointer, provider-session, active-mount, or effective-prompt
+    verification.  Production actor projection therefore calls the existing
+    runtime verifier.  A repository checkout is preferred for candidate tests;
+    an installed Skill is the packaged fallback.
+    """
+
+    candidates: list[Path] = []
+    override = os.environ.get("XINAO_RUNTIME_SCRIPT")
+    if override:
+        candidates.append(Path(override))
+    source_parents = Path(__file__).resolve().parents
+    if len(source_parents) > 4:
+        candidates.append(source_parents[4] / "skills/xinao/scripts/xinao_runtime.py")
+    candidates.append(Path.home() / ".codex/skills/xinao/scripts/xinao_runtime.py")
+    runtime_path = next((path.resolve() for path in candidates if path.is_file()), None)
+    if runtime_path is None:
+        raise OwnerDispositionError(
+            "RESEARCH_EPISODE_RUNTIME_UNAVAILABLE",
+            "xinao_runtime.py not found; set XINAO_RUNTIME_SCRIPT or install the XINAO Skill",
+        )
+    path_hash = hashlib.sha256(str(runtime_path).encode()).hexdigest()[:16]
+    module_name = f"xinao_owner_runtime_{path_hash}"
+    existing = sys.modules.get(module_name)
+    if existing is not None:
+        return existing
+    spec = importlib.util.spec_from_file_location(module_name, runtime_path)
+    if spec is None or spec.loader is None:
+        raise OwnerDispositionError("RESEARCH_EPISODE_RUNTIME_UNAVAILABLE", str(runtime_path))
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[module_name] = module
+    try:
+        spec.loader.exec_module(module)
+    except Exception as exc:
+        sys.modules.pop(module_name, None)
+        raise OwnerDispositionError(
+            "RESEARCH_EPISODE_RUNTIME_UNAVAILABLE", str(exc)[:2000]
+        ) from exc
+    return module
+
+
+def _require_episode_actor_roots(
+    *,
+    episode_root: Path | None,
+    portfolio_root: Path | None,
+    authority_root: Path | None,
+) -> tuple[Path, Path, Path]:
+    if episode_root is None or portfolio_root is None or authority_root is None:
+        raise OwnerDispositionError(
+            "RESEARCH_EPISODE_ACTOR_REALITY_ROOTS_REQUIRED",
+            "episode_root, portfolio_root, and authority_root are required "
+            "for production projection",
+        )
+    return (
+        episode_root.expanduser().resolve(),
+        portfolio_root.expanduser().resolve(),
+        authority_root.expanduser().resolve(),
+    )
+
+
+def _project_episode_actor_intent(
+    *,
+    pool_entry: Mapping[str, Any],
+    actor_intent_raw: Mapping[str, Any],
+    episode_root: Path | None,
+    portfolio_root: Path | None,
+    authority_root: Path | None,
+) -> dict[str, Any]:
+    """Freshly join exact Episode intent to current live reality, without choices."""
+
+    episode, portfolio, authority = _require_episode_actor_roots(
+        episode_root=episode_root,
+        portfolio_root=portfolio_root,
+        authority_root=authority_root,
+    )
+    provenance = pool_entry.get("lab_provenance")
+    if not isinstance(provenance, Mapping):
+        raise OwnerDispositionError("RESEARCH_EPISODE_PROVENANCE_REQUIRED", "pool lab_provenance")
+    episode_id = _require_text(
+        provenance.get("episode_id"), "RESEARCH_EPISODE_PROVENANCE_INVALID", "episode_id"
+    )
+    attempt_cas_digest = _require_hex64(
+        provenance.get("attempt_cas_digest"),
+        "RESEARCH_EPISODE_PROVENANCE_INVALID",
+        "attempt_cas_digest",
+    )
+    attempt_hash = _require_hex64(
+        provenance.get("attempt_hash"),
+        "RESEARCH_EPISODE_PROVENANCE_INVALID",
+        "attempt_hash",
+    )
+    cas_head_sha256 = _require_hex64(
+        provenance.get("cas_head_sha256"),
+        "RESEARCH_EPISODE_PROVENANCE_INVALID",
+        "cas_head_sha256",
+    )
+    provider_session_uuid = _require_text(
+        provenance.get("provider_session_uuid"),
+        "RESEARCH_EPISODE_PROVENANCE_INVALID",
+        "provider_session_uuid",
+    )
+    host_session_id = _require_text(
+        provenance.get("host_session_id"),
+        "RESEARCH_EPISODE_PROVENANCE_INVALID",
+        "host_session_id",
+    )
+    runtime = _load_xinao_runtime_module()
+    try:
+        reality = runtime.research_episode_build_actor_reality(
+            root=episode,
+            portfolio_root=portfolio,
+            authority_root=authority,
+            attempt_cas_digest=attempt_cas_digest,
+            expected_head_sha256=cas_head_sha256,
+            expected_provider_session_uuid=provider_session_uuid,
+            expected_host_session_id=host_session_id,
+            attempt_hash=attempt_hash,
+        )
+        from xinao.shadow_lifecycle.actor_reality import (
+            ActorAuthoredBehaviorIntent,
+            build_complete_actor_behavior,
+            build_shadow_freeze_input_candidate,
+        )
+
+        intent = ActorAuthoredBehaviorIntent.model_validate(dict(actor_intent_raw))
+        if intent.content_hash is None:
+            intent = intent.with_content_hash()
+        behavior = build_complete_actor_behavior(
+            reality,
+            intent,
+            candidate_ref=str(pool_entry["policy_ref"]),
+        )
+        projection = build_shadow_freeze_input_candidate(
+            behavior,
+            live_reality=reality,
+        )
+    except OwnerDispositionError:
+        raise
+    except Exception as exc:
+        reason = getattr(exc, "reason_code", None) or "RESEARCH_EPISODE_ACTOR_PROJECTION_FAILED"
+        detail = getattr(exc, "detail", None) or str(exc)
+        raise OwnerDispositionError(str(reason), str(detail)[:2000]) from exc
+
+    material_reality = reality.material_reality
+    for label, observed, expected in (
+        ("episode_id", material_reality.episode_id, episode_id),
+        ("attempt_cas_digest", material_reality.attempt_cas_digest, attempt_cas_digest),
+        ("attempt_hash", material_reality.attempt_hash, attempt_hash),
+        ("cas_head_sha256", material_reality.cas_head_sha256, cas_head_sha256),
+        ("provider_session_uuid", material_reality.provider_session_uuid, provider_session_uuid),
+        ("host_session_id", material_reality.host_session_id, host_session_id),
+    ):
+        if observed != expected:
+            raise OwnerDispositionError(
+                "RESEARCH_EPISODE_ACTOR_PROJECTION_PROVENANCE_MISMATCH", label
+            )
+    projection_payload = projection.model_dump(mode="json")
+    return {
+        "projection": projection_payload,
+        "actor_intent_content_hash": str(intent.content_hash),
+        "actor_behavior_content_hash": str(behavior.content_hash),
+        "actor_reality_contract_hash": str(reality.content_hash),
+        "research_lineage_ref": str(behavior.research_lineage_ref),
+        "episode_id": episode_id,
+        "attempt_cas_digest": attempt_cas_digest,
+        "attempt_hash": attempt_hash,
+        "cas_head_sha256": cas_head_sha256,
+        "provider_session_uuid": provider_session_uuid,
+        "host_session_id": host_session_id,
+    }
+
+
 def _researcher_executable_core(
     raw: Mapping[str, Any],
     *,
@@ -1392,30 +1569,41 @@ def _researcher_executable_core(
     return {key: normalized[key] for key in sorted(_RESEARCHER_EXECUTABLE_CORE)}
 
 
-def verify_researcher_authored_action(
+def _researcher_no_action_core(
+    raw: Mapping[str, Any],
+    *,
+    disposition_frozen_at: object,
+) -> dict[str, Any]:
+    missing = sorted(_RESEARCHER_NO_ACTION_CORE - set(raw))
+    unknown = sorted(set(raw) - _RESEARCHER_NO_ACTION_CORE)
+    if missing:
+        raise OwnerDispositionError(
+            "RESEARCHER_NO_ACTION_INTENT_INCOMPLETE",
+            f"missing={missing}",
+        )
+    if unknown:
+        raise OwnerDispositionError(
+            "RESEARCHER_NO_ACTION_INTENT_UNKNOWN_FIELDS",
+            f"unknown={unknown}",
+        )
+    normalized = _validate_no_action_times({**dict(raw), "frozen_at": disposition_frozen_at})
+    return {key: normalized[key] for key in sorted(_RESEARCHER_NO_ACTION_CORE)}
+
+
+def _load_sealed_researcher_decision(
     *,
     pool_root: Path,
     pool_entry: Mapping[str, Any],
-    disposition: Mapping[str, Any],
-) -> dict[str, Any] | None:
-    """Re-read sealed producer bytes and bind ACTION to an explicit research core.
+    episode_root: Path | None = None,
+    portfolio_root: Path | None = None,
+    authority_root: Path | None = None,
+) -> dict[str, Any]:
+    """Return one actor branch; Episode intent is freshly joined to live reality."""
 
-    Prose, pool projections, and Owner payload fields are never treated as the
-    producer source. NO_ACTION intentionally needs no executable research core.
-    """
-
-    if disposition.get("account_identity") != ACCOUNT_ACTION:
-        return None
     if pool_entry.get("status") != "CANDIDATE_READY":
         raise OwnerDispositionError(
-            "RESEARCHER_EXECUTABLE_STATUS_NOT_READY",
+            "RESEARCHER_DECISION_STATUS_NOT_READY",
             str(pool_entry.get("status")),
-        )
-    executable = disposition.get("executable_account_decision")
-    if not isinstance(executable, Mapping):
-        raise OwnerDispositionError(
-            "ACTION_REQUIRES_EXECUTABLE_DECISION",
-            "normalized ACTION executable missing",
         )
 
     result_sha = _require_hex64(
@@ -1436,13 +1624,53 @@ def verify_researcher_authored_action(
             source_raw,
             reason_code="RESEARCHER_EXECUTABLE_SOURCE_INVALID",
         )
+        recommendation = source.get("account_recommendation")
         proposed = source.get("proposed")
-        authored = (
-            proposed.get("executable_account_decision") if isinstance(proposed, Mapping) else None
-        )
+        if recommendation == "NO_RECOMMENDATION":
+            # Historical/read-only compatibility: an old manifest may contain a
+            # full branch despite claiming no recommendation. Draft/audit can
+            # still inspect it; formal Episode disposition rejects it later for
+            # lacking actor_projection_evidence.
+            producer = proposed if isinstance(proposed, Mapping) else None
+            actor_projection_evidence = None
+        else:
+            if recommendation not in {"ACTION_CANDIDATE", "NO_ACTION_CANDIDATE"}:
+                raise OwnerDispositionError("RESEARCHER_DECISION_SOURCE_ABSENT", "$.proposed")
+            if not isinstance(proposed, Mapping):
+                raise OwnerDispositionError("RESEARCHER_ACTOR_INTENT_REQUIRED", "$.proposed")
+            try:
+                actor_intent = validate_actor_authored_behavior_intent(proposed)
+            except CandidateManifestError as exc:
+                raise OwnerDispositionError(
+                    "RESEARCHER_ACTOR_INTENT_REQUIRED", str(exc.detail)[:2000]
+                ) from exc
+            expected_kind = "ACTION" if recommendation == "ACTION_CANDIDATE" else "NO_ACTION"
+            if actor_intent.get("decision_kind") != expected_kind:
+                raise OwnerDispositionError(
+                    "RESEARCHER_ACTOR_INTENT_BRANCH_MISMATCH",
+                    f"recommendation={recommendation} intent={actor_intent.get('decision_kind')}",
+                )
+            actor_projection_evidence = _project_episode_actor_intent(
+                pool_entry=pool_entry,
+                actor_intent_raw=actor_intent,
+                episode_root=episode_root,
+                portfolio_root=portfolio_root,
+                authority_root=authority_root,
+            )
+            projection = actor_projection_evidence["projection"]
+            if not isinstance(projection, Mapping):
+                raise OwnerDispositionError(
+                    "RESEARCH_EPISODE_ACTOR_PROJECTION_FAILED", "projection object required"
+                )
+            producer = projection
         source_kind = "EPISODE_CANDIDATE_MANIFEST"
-        source_json_path = "$.proposed.executable_account_decision"
+        source_json_root = "$.proposed"
     else:
+        if episode_root is not None:
+            raise OwnerDispositionError(
+                "PRODUCTION_ACTOR_EPISODE_SOURCE_KIND_REQUIRED",
+                "actor Episode reality roots cannot authorize a legacy one-shot producer",
+            )
         source_path = pool_result_bytes_path(pool_root, result_sha)
         source_raw = source_path.read_bytes()
         source_artifact_sha = raw_sha256(source_raw)
@@ -1452,47 +1680,230 @@ def verify_researcher_authored_action(
             reason_code="RESEARCHER_EXECUTABLE_SOURCE_INVALID",
         )
         candidate = source.get("candidate")
-        authored = (
-            candidate.get("executable_account_decision") if isinstance(candidate, Mapping) else None
-        )
+        producer = candidate if isinstance(candidate, Mapping) else None
+        actor_projection_evidence = None
         source_kind = "ONESHOT_RESEARCH_RESULT"
-        source_json_path = "$.candidate.executable_account_decision"
+        source_json_root = "$.candidate"
     if source_artifact_sha != expected_source_sha:
         raise OwnerDispositionError(
             "RESEARCHER_EXECUTABLE_SOURCE_HASH_MISMATCH",
             f"source={source_artifact_sha} expected={expected_source_sha}",
         )
-    if not isinstance(authored, Mapping):
+    if not isinstance(producer, Mapping):
         raise OwnerDispositionError(
-            "RESEARCHER_EXECUTABLE_DECISION_ABSENT",
-            source_json_path,
+            "RESEARCHER_DECISION_SOURCE_ABSENT",
+            source_json_root,
         )
 
-    source_core = _researcher_executable_core(
-        authored,
-        disposition_frozen_at=executable.get("frozen_at"),
-    )
-    disposition_core = {key: executable[key] for key in sorted(_RESEARCHER_EXECUTABLE_CORE)}
-    if source_core != disposition_core:
-        diverged = sorted(
-            key
-            for key in _RESEARCHER_EXECUTABLE_CORE
-            if source_core.get(key) != disposition_core.get(key)
-        )
+    authored_action = producer.get("executable_account_decision")
+    authored_no_action = producer.get("no_action_intent")
+    has_action = isinstance(authored_action, Mapping)
+    has_no_action = isinstance(authored_no_action, Mapping)
+    if not has_action and not has_no_action:
         raise OwnerDispositionError(
-            "RESEARCHER_EXECUTABLE_DECISION_MISMATCH",
-            f"fields={diverged}",
+            "RESEARCHER_DECISION_SOURCE_ABSENT",
+            f"{source_json_root}: signal-only candidate has no account decision",
         )
-    executable_hash = canonical_sha256(source_core)
-    return {
-        "schema_version": RESEARCHER_ACTION_BINDING_SCHEMA,
+    if has_action and has_no_action:
+        raise OwnerDispositionError(
+            "RESEARCHER_DECISION_BRANCH_INVALID",
+            "sealed producer must carry exactly one "
+            "executable_account_decision or no_action_intent",
+        )
+
+    account_identity = ACCOUNT_ACTION if has_action else ACCOUNT_NO_ACTION
+    declared_identity = producer.get("account_identity")
+    if declared_identity is not None and declared_identity != account_identity:
+        raise OwnerDispositionError(
+            "RESEARCHER_DECISION_IDENTITY_CONFLICT",
+            f"declared={declared_identity!r} branch={account_identity!r}",
+        )
+    source_json_path = (
+        source_json_root
+        if actor_projection_evidence is not None
+        else (
+            f"{source_json_root}.executable_account_decision"
+            if has_action
+            else f"{source_json_root}.no_action_intent"
+        )
+    )
+    result = {
+        "account_identity": account_identity,
+        "authored": authored_action if has_action else authored_no_action,
         "source_kind": source_kind,
         "source_artifact_sha256": source_artifact_sha,
         "source_json_path": source_json_path,
-        "executable_content_hash": executable_hash,
         "result_sha256": result_sha,
         "pool_entry_content_hash": str(pool_entry["content_hash"]),
     }
+    if actor_projection_evidence is not None:
+        result["actor_projection_evidence"] = actor_projection_evidence
+    return result
+
+
+def verify_researcher_authored_decision(
+    *,
+    pool_root: Path,
+    pool_entry: Mapping[str, Any],
+    disposition: Mapping[str, Any],
+    episode_root: Path | None = None,
+    portfolio_root: Path | None = None,
+    authority_root: Path | None = None,
+) -> dict[str, Any]:
+    """Bind the Owner disposition to the exact sealed researcher branch.
+
+    Both ACTION and NO_ACTION must be present in producer bytes. The Owner may
+    only dispose that branch; changing its identity, selection, stake, target,
+    rule, odds, or cutoff is rejected before Owner CAS creation or freeze.
+    """
+
+    producer = _load_sealed_researcher_decision(
+        pool_root=pool_root,
+        pool_entry=pool_entry,
+        episode_root=episode_root,
+        portfolio_root=portfolio_root,
+        authority_root=authority_root,
+    )
+    account_identity = disposition.get("account_identity")
+    if account_identity != producer["account_identity"]:
+        raise OwnerDispositionError(
+            "RESEARCHER_DECISION_IDENTITY_MISMATCH",
+            f"producer={producer['account_identity']} disposition={account_identity}",
+        )
+    authored = producer["authored"]
+    if not isinstance(authored, Mapping):
+        raise OwnerDispositionError(
+            "RESEARCHER_DECISION_SOURCE_ABSENT",
+            str(producer["source_json_path"]),
+        )
+
+    if account_identity == ACCOUNT_ACTION:
+        executable = disposition.get("executable_account_decision")
+        if not isinstance(executable, Mapping):
+            raise OwnerDispositionError(
+                "ACTION_REQUIRES_EXECUTABLE_DECISION",
+                "normalized ACTION executable missing",
+            )
+        source_core = _researcher_executable_core(
+            authored,
+            disposition_frozen_at=executable.get("frozen_at"),
+        )
+        disposition_core = {key: executable[key] for key in sorted(_RESEARCHER_EXECUTABLE_CORE)}
+        schema_version = RESEARCHER_ACTION_BINDING_SCHEMA
+        mismatch_code = "RESEARCHER_EXECUTABLE_DECISION_MISMATCH"
+        hash_key = "executable_content_hash"
+    else:
+        no_action_binding = disposition.get("no_action_period_binding")
+        if not isinstance(no_action_binding, Mapping):
+            raise OwnerDispositionError(
+                "NO_ACTION_BINDING_REQUIRED",
+                "normalized NO_ACTION binding missing",
+            )
+        source_core = _researcher_no_action_core(
+            authored,
+            disposition_frozen_at=no_action_binding.get("frozen_at"),
+        )
+        disposition_core = {
+            key: no_action_binding[key] for key in sorted(_RESEARCHER_NO_ACTION_CORE)
+        }
+        schema_version = RESEARCHER_NO_ACTION_BINDING_SCHEMA
+        mismatch_code = "RESEARCHER_NO_ACTION_INTENT_MISMATCH"
+        hash_key = "no_action_content_hash"
+
+    if source_core != disposition_core:
+        diverged = sorted(
+            key for key in source_core if source_core.get(key) != disposition_core.get(key)
+        )
+        raise OwnerDispositionError(
+            mismatch_code,
+            f"fields={diverged}",
+        )
+    decision_hash = canonical_sha256(source_core)
+    binding: dict[str, Any] = {
+        "schema_version": schema_version,
+        "account_identity": account_identity,
+        "source_kind": producer["source_kind"],
+        "source_artifact_sha256": producer["source_artifact_sha256"],
+        "source_json_path": producer["source_json_path"],
+        "decision_content_hash": decision_hash,
+        hash_key: decision_hash,
+        "result_sha256": producer["result_sha256"],
+        "pool_entry_content_hash": producer["pool_entry_content_hash"],
+    }
+    actor_evidence = producer.get("actor_projection_evidence")
+    if not isinstance(actor_evidence, Mapping):
+        if pool_entry.get("ingest_kind") == EPISODE_EXPORT_INGEST_KIND:
+            raise OwnerDispositionError(
+                "PRODUCTION_ACTOR_INTENT_REQUIRED",
+                "ResearchEpisode production requires exact actor intent plus "
+                "live reality projection",
+            )
+        # Existing one-shot/history consumers remain compatibility-shaped. They
+        # are not evidence that the multi-turn ResearchEpisode actor path is
+        # projected or complete.
+        return binding
+    projection = actor_evidence.get("projection")
+    if not isinstance(projection, Mapping):
+        raise OwnerDispositionError(
+            "RESEARCH_EPISODE_ACTOR_PROJECTION_FAILED", "projection evidence missing"
+        )
+    projection_map = dict(projection)
+    if projection_map.get("account_identity") != account_identity:
+        raise OwnerDispositionError(
+            "RESEARCH_EPISODE_ACTOR_PROJECTION_BRANCH_MISMATCH", str(account_identity)
+        )
+    for key in (
+        "actor_id",
+        "research_lineage_ref",
+        "actor_reality_contract_hash",
+        "actor_behavior_content_hash",
+        "actor_authored_intent_hash",
+        "episode_id",
+        "cas_head_sha256",
+        "attempt_cas_digest",
+        "attempt_hash",
+        "provider_session_uuid",
+        "active_material_binding_hash",
+        "information_set_ref",
+        "information_set_hash",
+        "material_packet_sha256",
+        "effective_prompt_sha256",
+        "prospective_packet_content_hash",
+        "source_authority_binding_hash",
+        "objective_terms_content_hash",
+    ):
+        value = projection_map.get(key)
+        if not isinstance(value, str) or not value:
+            raise OwnerDispositionError("RESEARCH_EPISODE_ACTOR_PROJECTION_INCOMPLETE", key)
+        binding[key] = value
+    if binding["actor_authored_intent_hash"] != actor_evidence.get("actor_intent_content_hash"):
+        raise OwnerDispositionError(
+            "RESEARCH_EPISODE_ACTOR_INTENT_HASH_MISMATCH", "projection vs manifest intent"
+        )
+    binding["actor_projection"] = projection_map
+    return binding
+
+
+def verify_researcher_authored_action(
+    *,
+    pool_root: Path,
+    pool_entry: Mapping[str, Any],
+    disposition: Mapping[str, Any],
+    episode_root: Path | None = None,
+    portfolio_root: Path | None = None,
+    authority_root: Path | None = None,
+) -> dict[str, Any] | None:
+    """Backward-compatible ACTION-only view over the symmetric verifier."""
+
+    binding = verify_researcher_authored_decision(
+        pool_root=pool_root,
+        pool_entry=pool_entry,
+        disposition=disposition,
+        episode_root=episode_root,
+        portfolio_root=portfolio_root,
+        authority_root=authority_root,
+    )
+    return binding if binding["account_identity"] == ACCOUNT_ACTION else None
 
 
 def load_and_verify_disposition(
@@ -1501,6 +1912,9 @@ def load_and_verify_disposition(
     owner_state_root: Path,
     pool_root: Path,
     result_sha256: str | None = None,
+    episode_root: Path | None = None,
+    portfolio_root: Path | None = None,
+    authority_root: Path | None = None,
 ) -> dict[str, Any]:
     """Load disposition under owner root, bind raw bytes hash, verify pool entry.
 
@@ -1544,10 +1958,18 @@ def load_and_verify_disposition(
     pool_entry = load_verified_pool_entry_for_disposition(pool_root, digest)
 
     normalized = validate_disposition_payload(payload, pool_entry=pool_entry)
-    researcher_action_binding = verify_researcher_authored_action(
+    researcher_decision_binding = verify_researcher_authored_decision(
         pool_root=pool_root,
         pool_entry=pool_entry,
         disposition=normalized,
+        episode_root=episode_root,
+        portfolio_root=portfolio_root,
+        authority_root=authority_root,
+    )
+    researcher_action_binding = (
+        researcher_decision_binding
+        if researcher_decision_binding["account_identity"] == ACCOUNT_ACTION
+        else None
     )
     return {
         "disposition_path": str(path),
@@ -1555,6 +1977,7 @@ def load_and_verify_disposition(
         "owner_artifact_sha256": artifact_sha256,
         "pool_entry": pool_entry,
         "disposition": normalized,
+        "researcher_decision_binding": researcher_decision_binding,
         "researcher_action_binding": researcher_action_binding,
         # Honest library surface: never self-certify Codex identity.
         "owner_channel_authority": OWNER_CHANNEL_AUTHORITY_UNPROVEN,
@@ -1612,6 +2035,7 @@ __all__ = [
     "OWNER_CHANNEL_AUTHORITY_UNPROVEN",
     "REQUIRED_OWNER_INPUT",
     "RESEARCHER_ACTION_BINDING_SCHEMA",
+    "RESEARCHER_NO_ACTION_BINDING_SCHEMA",
     "SCIENCE_ABSORB_NO_ACTION",
     "SCIENCE_ADOPT",
     "SCIENCE_DEFER",
@@ -1633,5 +2057,6 @@ __all__ = [
     "resolve_owner_state_root",
     "validate_disposition_payload",
     "validate_portfolio_binding",
+    "verify_researcher_authored_decision",
     "write_owner_disposition_artifact",
 ]

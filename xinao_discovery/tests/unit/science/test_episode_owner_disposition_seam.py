@@ -1,7 +1,7 @@
 """Episode export pool entry → Owner disposition seam (Wave124).
 
 Consumer-shaped: ResearchEpisode export → pool-ingest → write-owner-disposition
-(→ freeze-from-disposition) for ADOPT / REJECT / RETAIN_FOR_SHADOW.
+(→ freeze-from-disposition only after ADOPT) for ADOPT / REJECT / DEFER.
 Pool stays immutable (owner_adopted=false); no auto-settle/next-task.
 One-shot loader alone remains fail-closed on episode entries; one-shot
 disposition path still works. Attack regressions force remint identity rebind.
@@ -11,15 +11,18 @@ from __future__ import annotations
 
 import copy
 import hashlib
+import importlib.util
 import json
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
 
 from xinao.canonical import canonical_sha256
 from xinao.cli import main
+from xinao.science import owner_disposition as owner_disposition_module
 from xinao.science.candidate_pool import (
     CandidatePoolError,
     ingest_verified_research_result,
@@ -35,28 +38,24 @@ from xinao.science.episode_export_pool_adapter import (
     load_episode_pool_entry,
     remint_episode_pool_entry_from_raw,
 )
-from xinao.science.freeze_adapter import (
-    apply_freeze_from_disposition,
-    build_portfolio_binding_from_shadow,
-)
+from xinao.science.freeze_adapter import apply_freeze_from_disposition
 from xinao.science.owner_disposition import (
     CODEX_OWNER_CHANNEL_SOURCE,
     DISPOSITION_MARKER,
     DISPOSITION_SCHEMA_VERSION,
-    OWNER_CHANNEL_AUTHORITY_UNPROVEN,
     SCIENCE_ADOPT,
+    SCIENCE_DEFER,
     SCIENCE_REJECT,
-    SCIENCE_RETAIN_FOR_SHADOW,
     OwnerDispositionError,
-    encode_disposition_bytes,
+    draft_owner_disposition,
     load_and_verify_disposition,
     load_verified_pool_entry_for_disposition,
-    raw_sha256,
     write_owner_disposition_artifact,
 )
 from xinao.science.researcher_result_adapter import raw_sha256 as oneshot_raw_sha256
-from xinao.shadow_lifecycle import init_episode, init_portfolio
-from xinao.shadow_lifecycle.store import load_frozen, period_directory
+from xinao.shadow_lifecycle import consumer as shadow_consumer
+from xinao.shadow_lifecycle import init_episode
+from xinao.shadow_lifecycle.store import StoreError, load_frozen, period_directory
 
 ROOT = Path(__file__).resolve().parents[3]
 FIXTURE_DIR = ROOT / "tests" / "fixtures" / "oneshot_xrr_20260730T201916_20001f0913"
@@ -78,12 +77,25 @@ def _iso(value: datetime) -> str:
     return value.isoformat().replace("+00:00", "Z")
 
 
+def _researcher_no_action_core() -> dict[str, Any]:
+    return {
+        "target_ref": "draw.20260801-001",
+        "target_open_time": _iso(OPEN_AT),
+        "freeze_deadline": _iso(DEADLINE),
+        "knowledge_cutoff": _iso(CUTOFF),
+        "rule_ref": "special-number-rule.v1",
+        "odds_version_ref": "odds.special-number.20260731.v1",
+    }
+
+
 def _manifest(
     *,
     episode_id: str = "ep_owner_disp",
     attempt: str | None = None,
     recommendation: str = "NO_RECOMMENDATION",
     executable: dict[str, Any] | None = None,
+    actor_intent: dict[str, Any] | None = None,
+    data_cutoff_as_of: datetime = CUTOFF,
 ) -> dict[str, Any]:
     return {
         "schema_version": "xinao.research_episode_candidate_manifest.v1",
@@ -95,16 +107,20 @@ def _manifest(
         "research_question": "can Codex dispose a real episode export pool entry?",
         "research_object": "episode export → pool → owner disposition",
         "data_cutoff": {
-            "as_of": _iso(CUTOFF),
+            "as_of": _iso(data_cutoff_as_of),
             "material_refs": [{"id": "seed", "sha256": "aa" * 32}],
         },
         "method_refs": ["wild_multi_turn_export", "lab_manifest"],
         "falsifiers": ["missing export seal", "one-shot loader path"],
         "account_recommendation": recommendation,
         "proposed": (
-            {"executable_account_decision": executable}
-            if executable is not None
-            else {"numbers": [17], "stake": "1.00"}
+            actor_intent
+            if actor_intent is not None
+            else (
+                {"executable_account_decision": executable}
+                if executable is not None
+                else {"no_action_intent": _researcher_no_action_core()}
+            )
         ),
         "candidate_only": True,
         "owner_adopted": False,
@@ -118,15 +134,24 @@ def _build_episode_export(
     actual_turns: int = 9,
     recommendation: str = "NO_RECOMMENDATION",
     executable: dict[str, Any] | None = None,
+    actor_intent: dict[str, Any] | None = None,
+    attempt_cas_digest: str = "b" * 64,
+    attempt_hash: str = "a" * 64,
+    cas_head_sha256: str = "f" * 64,
+    host_session_id: str = "host.owner-disposition-fixture",
+    provider_session_uuid: str = "00000000-0000-4000-8000-000000000099",
+    data_cutoff_as_of: datetime = CUTOFF,
 ) -> tuple[bytes, bytes, dict[str, Any]]:
     """Return (export_bytes, manifest_bytes, export_obj) sealed like native export."""
 
-    attempt = "b" * 64
+    attempt = attempt_cas_digest
     manifest = _manifest(
         episode_id=episode_id,
         attempt=attempt,
         recommendation=recommendation,
         executable=executable,
+        actor_intent=actor_intent,
+        data_cutoff_as_of=data_cutoff_as_of,
     )
     man_bytes = (json.dumps(manifest, ensure_ascii=False, sort_keys=True) + "\n").encode("utf-8")
     body: dict[str, Any] = {
@@ -134,8 +159,10 @@ def _build_episode_export(
         "status": "CANDIDATE_EVIDENCE_EXPORTED",
         "episode_id": episode_id,
         "attempt_id": "att_owner_disp_1",
-        "attempt_hash": "a" * 64,
+        "attempt_hash": attempt_hash,
         "attempt_cas_digest": attempt,
+        "cas_head_sha256": cas_head_sha256,
+        "host_session_id": host_session_id,
         "raw_session_hash": "c" * 64,
         "tool_trace_hash": "d" * 64,
         "artifact_manifest_hash": "e" * 64,
@@ -143,7 +170,7 @@ def _build_episode_export(
         "pair_receipt_sha256": "11" * 32,
         "namespace_receipt_sha256": "22" * 32,
         "release_identity_sha256": "33" * 32,
-        "provider_session_uuid": "00000000-0000-4000-8000-000000000099",
+        "provider_session_uuid": provider_session_uuid,
         "research_profile": "OPEN_RESEARCH",
         "actual_turns": actual_turns,
         "max_turns": 16,
@@ -244,7 +271,7 @@ def _action_disposition(
 ) -> dict[str, Any]:
     body = _no_action_disposition(
         entry,
-        science_disposition=SCIENCE_RETAIN_FOR_SHADOW,
+        science_disposition=SCIENCE_ADOPT,
         account_identity="ACTION",
     )
     body.pop("no_action_period_binding", None)
@@ -312,21 +339,68 @@ def _overwrite_pool_entry(pool: Path, entry: dict[str, Any]) -> None:
     )
 
 
+def test_pool_ingest_accepts_native_seal_with_windows_provenance_integers(
+    tmp_path: Path,
+) -> None:
+    """Opaque Windows file identity may exceed RFC 8785's integer domain."""
+
+    export_bytes, manifest_bytes, export = _build_episode_export(episode_id="ep_windows_provenance")
+    del export_bytes
+    export["prompt_material_cutoff"] = {
+        "active_material_binding": {
+            "material_source_refs": [
+                {
+                    "st_dev": 13599825006036549566,
+                    "st_ino": 9007199254864121,
+                    "st_mtime_ns": 1785573664473036700,
+                }
+            ]
+        }
+    }
+    body = {key: value for key, value in export.items() if key != "bundle_sha256"}
+    export["bundle_sha256"] = _sha(
+        (json.dumps(body, ensure_ascii=False, sort_keys=True, separators=(",", ":")) + "\n").encode(
+            "utf-8"
+        )
+    )
+    sealed_export = (
+        json.dumps(export, ensure_ascii=False, indent=2, sort_keys=True) + "\n"
+    ).encode("utf-8")
+
+    pool = tmp_path / "pool"
+    entry = ingest_verified_episode_export(
+        pool_root=pool,
+        export=sealed_export,
+        manifest_bytes=manifest_bytes,
+    )
+
+    assert pool_result_bytes_path(pool, entry["result_sha256"]).read_bytes() == sealed_export
+    assert load_episode_pool_entry(pool, entry["result_sha256"]) == entry
+
+    tampered = {**export, "bundle_sha256": "0" * 64}
+    tampered_export = (
+        json.dumps(tampered, ensure_ascii=False, indent=2, sort_keys=True) + "\n"
+    ).encode("utf-8")
+    with pytest.raises(EpisodeExportAdapterError) as exc:
+        ingest_verified_episode_export(
+            pool_root=tmp_path / "tampered_pool",
+            export=tampered_export,
+            manifest_bytes=manifest_bytes,
+        )
+    assert exc.value.reason_code == "EPISODE_EXPORT_BUNDLE_HASH_MISMATCH"
+    assert not (tmp_path / "tampered_pool").exists()
+
+
 # --- Positive: consumer-shaped episode disposition ---------------------------
 
 
 @pytest.mark.parametrize(
-    ("science_disposition", "expected_science_identity"),
-    [
-        (SCIENCE_ADOPT, "SCIENCE_CANDIDATE"),
-        (SCIENCE_REJECT, "POLICY_NO_ACTION"),
-        (SCIENCE_RETAIN_FOR_SHADOW, "SCIENCE_CANDIDATE"),
-    ],
+    "science_disposition",
+    [SCIENCE_ADOPT, SCIENCE_REJECT],
 )
-def test_episode_export_write_owner_disposition_library(
+def test_legacy_episode_branch_cannot_become_new_formal_disposition(
     tmp_path: Path,
     science_disposition: str,
-    expected_science_identity: str,
 ) -> None:
     pool = tmp_path / "pool"
     owner = tmp_path / "owner"
@@ -335,92 +409,106 @@ def test_episode_export_write_owner_disposition_library(
     before = _pool_snapshot(pool, entry["result_sha256"])
 
     payload = _no_action_disposition(entry, science_disposition=science_disposition)
-    written = write_owner_disposition_artifact(
-        owner_state_root=owner,
-        payload=payload,
-        pool_root=pool,
-    )
-    assert written["bytes_written"] is True
-    digest = written["owner_artifact_sha256"]
-    assert digest == raw_sha256(encode_disposition_bytes(payload))
-    disp_path = Path(written["disposition_path"])
-    assert disp_path.is_file()
-    assert disp_path.name == f"{digest}.json"
-    assert digest[:2] in disp_path.parts
-
-    verified = load_and_verify_disposition(
-        disposition_path=disp_path,
-        owner_state_root=owner,
-        pool_root=pool,
-        result_sha256=entry["result_sha256"],
-    )
-    assert verified["owner_artifact_sha256"] == digest
-    assert verified["owner_channel_authority"] == OWNER_CHANNEL_AUTHORITY_UNPROVEN
-    assert verified["owner_disposition_authentic"] is False
-    assert verified["path_separated_from_pool"] is True
-    disposition = verified["disposition"]
-    assert disposition["science_disposition"] == science_disposition
-    assert disposition["science_identity"] == expected_science_identity
-    assert disposition["result_sha256"] == entry["result_sha256"]
-    assert disposition["pool_entry_content_hash"] == entry["content_hash"]
-    assert disposition["receipt_content_sha256"] == entry["receipt_content_sha256"]
-    assert disposition["account_identity"] == "RESEARCHER_ACCOUNT_NO_ACTION"
-    assert verified["pool_entry"]["ingest_kind"] == INGEST_KIND
-    assert verified["pool_entry"]["owner_adopted"] is False
-    assert verified["pool_entry"]["content_hash"] == entry["content_hash"]
+    with pytest.raises(OwnerDispositionError) as exc:
+        write_owner_disposition_artifact(
+            owner_state_root=owner,
+            payload=payload,
+            pool_root=pool,
+        )
+    assert exc.value.reason_code == "PRODUCTION_ACTOR_INTENT_REQUIRED"
+    assert list(owner.rglob("*.json")) == []
 
     after = _pool_snapshot(pool, entry["result_sha256"])
     assert after["entry_bytes"] == before["entry_bytes"]
     assert after["entry"]["owner_adopted"] is False
     assert after["entry"]["content_hash"] == before["entry"]["content_hash"]
-    # Episode loader still seals; one-shot loader alone must not be required.
+    # History stays readable, but it cannot masquerade as a new actor Episode.
     reloaded = load_episode_pool_entry(pool, entry["result_sha256"])
     assert reloaded["owner_adopted"] is False
     _assert_no_freeze_artifacts(owner)
     _assert_no_freeze_artifacts(pool)
 
 
-def test_episode_action_requires_exact_manifest_authored_execution_core(tmp_path: Path) -> None:
+def test_episode_action_rejects_legacy_platform_completed_execution_core(tmp_path: Path) -> None:
     pool = tmp_path / "pool"
-    owner = tmp_path / "owner"
     core = _researcher_action_core(selected_number=17)
-    entry = _ingest_episode(
-        pool,
-        episode_id="ep_manifest_action",
-        recommendation="ACTION_CANDIDATE",
-        executable=core,
-    )
-    written = write_owner_disposition_artifact(
-        owner_state_root=owner,
-        payload=_action_disposition(entry, selected_number=17),
-        pool_root=pool,
-    )
-    binding = written["researcher_action_binding"]
-    assert binding["source_kind"] == "EPISODE_CANDIDATE_MANIFEST"
-    assert binding["source_artifact_sha256"] == entry["receipt_content_sha256"]
-    verified = load_and_verify_disposition(
-        disposition_path=Path(written["disposition_path"]),
-        owner_state_root=owner,
-        pool_root=pool,
-    )
-    assert verified["researcher_action_binding"] == binding
-
-    rejected_owner = tmp_path / "rejected-owner"
-    with pytest.raises(OwnerDispositionError) as exc:
-        write_owner_disposition_artifact(
-            owner_state_root=rejected_owner,
-            payload=_action_disposition(entry, selected_number=18),
-            pool_root=pool,
+    with pytest.raises(EpisodeExportAdapterError) as exc:
+        _ingest_episode(
+            pool,
+            episode_id="ep_manifest_action",
+            recommendation="ACTION_CANDIDATE",
+            executable=core,
         )
-    assert exc.value.reason_code == "RESEARCHER_EXECUTABLE_DECISION_MISMATCH"
-    assert not rejected_owner.exists()
+    assert exc.value.reason_code == "CANDIDATE_MANIFEST_ACTOR_INTENT_INVALID"
+    assert not pool.exists()
+
+
+def test_freeze_consumer_rejects_unknown_episode_recommendation_explicitly(
+    tmp_path: Path,
+) -> None:
+    """An unknown value can never fall through and make ``proposed`` a producer."""
+
+    pool = tmp_path / "pool_unknown_recommendation"
+    valid_entry = _ingest_episode(pool, episode_id="ep_unknown_recommendation")
+    export_raw = pool_result_bytes_path(pool, valid_entry["result_sha256"]).read_bytes()
+    manifest_raw = pool_receipt_path(pool, valid_entry["result_sha256"]).read_bytes()
+    export = json.loads(export_raw)
+    manifest = json.loads(manifest_raw)
+    manifest["account_recommendation"] = "UNKNOWN_BRANCH"
+    forged_manifest_raw = (json.dumps(manifest, ensure_ascii=False, sort_keys=True) + "\n").encode(
+        "utf-8"
+    )
+    manifest_sha = _sha(forged_manifest_raw)
+    export["candidate_manifest_sha256"] = manifest_sha
+    export_body = {key: value for key, value in export.items() if key != "bundle_sha256"}
+    export["bundle_sha256"] = _sha(
+        (
+            json.dumps(
+                export_body,
+                ensure_ascii=False,
+                sort_keys=True,
+                separators=(",", ":"),
+            )
+            + "\n"
+        ).encode("utf-8")
+    )
+    forged_export_raw = (
+        json.dumps(export, ensure_ascii=False, indent=2, sort_keys=True) + "\n"
+    ).encode("utf-8")
+    result_sha = _sha(forged_export_raw)
+    forged_entry = copy.deepcopy(valid_entry)
+    forged_entry.update(
+        {
+            "result_sha256": result_sha,
+            "receipt_content_sha256": manifest_sha,
+            "receipt_raw_sha256": manifest_sha,
+            "export_bundle_sha256": result_sha,
+            "candidate_manifest_sha256": manifest_sha,
+        }
+    )
+    forged_entry["content_hash"] = canonical_sha256(
+        {key: value for key, value in forged_entry.items() if key != "content_hash"}
+    )
+    for path, raw in (
+        (pool_entry_path(pool, result_sha), json.dumps(forged_entry, sort_keys=True).encode()),
+        (pool_result_bytes_path(pool, result_sha), forged_export_raw),
+        (pool_receipt_path(pool, result_sha), forged_manifest_raw),
+    ):
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(raw)
+
+    with pytest.raises(StoreError, match="PRODUCTION_FREEZE_EPISODE_RECOMMENDATION_INVALID"):
+        shadow_consumer._load_pool_and_research_source(
+            research_pool_root=pool,
+            result_sha256=result_sha,
+        )
 
 
 @pytest.mark.parametrize(
     "science_disposition",
-    [SCIENCE_ADOPT, SCIENCE_REJECT, SCIENCE_RETAIN_FOR_SHADOW],
+    [SCIENCE_ADOPT, SCIENCE_REJECT, SCIENCE_DEFER],
 )
-def test_episode_export_write_owner_disposition_cli(
+def test_cli_rejects_legacy_episode_branch_as_new_formal_disposition(
     tmp_path: Path,
     capsys: pytest.CaptureFixture[str],
     science_disposition: str,
@@ -450,31 +538,11 @@ def test_episode_export_write_owner_disposition_cli(
             entry["content_hash"],
         ]
     )
-    assert code == 0
+    assert code == 1
     out = json.loads(capsys.readouterr().out)
-    assert out["ok"] is True
-    assert out["status"] == "OWNER_DISPOSITION_WRITTEN"
-    assert out["science_disposition"] == science_disposition
-    assert out["result_sha256"] == entry["result_sha256"]
-    assert out["pool_entry_content_hash"] == entry["content_hash"]
-    assert out["owner_adopted"] is False
-    assert out["freeze_written"] is False
-    assert out["settlement_written"] is False
-    assert out["auto_freeze"] is False
-    assert out["auto_settle"] is False
-    assert out["auto_next_period"] is False
-    assert out["next_task_created"] is False
-    assert out["completion_claim_allowed"] is False
-    assert out["owner_channel_authority"] == OWNER_CHANNEL_AUTHORITY_UNPROVEN
-
-    verified = load_and_verify_disposition(
-        disposition_path=Path(out["disposition_path"]),
-        owner_state_root=owner,
-        pool_root=pool,
-        result_sha256=entry["result_sha256"],
-    )
-    assert verified["disposition"]["science_disposition"] == science_disposition
-    assert verified["pool_entry"]["ingest_kind"] == INGEST_KIND
+    assert out["ok"] is False
+    assert out["reason_code"] == "PRODUCTION_ACTOR_INTENT_REQUIRED"
+    assert list(owner.rglob("*.json")) == []
     assert _pool_snapshot(pool, entry["result_sha256"])["entry_bytes"] == before["entry_bytes"]
 
 
@@ -580,7 +648,7 @@ def test_result_sha256_hash_drift_rejected(tmp_path: Path) -> None:
     foreign = "ab" * 32
     payload = _no_action_disposition(
         entry,
-        science_disposition=SCIENCE_RETAIN_FOR_SHADOW,
+        science_disposition=SCIENCE_ADOPT,
         result_sha256=foreign,
     )
     with pytest.raises(OwnerDispositionError) as exc:
@@ -650,7 +718,7 @@ def test_tampered_export_blob_fails_closed_on_verify(tmp_path: Path) -> None:
 # --- One-shot regression -----------------------------------------------------
 
 
-def test_oneshot_disposition_path_still_works(tmp_path: Path) -> None:
+def test_legacy_oneshot_without_researcher_decision_cannot_be_disposed(tmp_path: Path) -> None:
     assert REAL_RESULT_PATH.is_file(), f"missing fixture: {REAL_RESULT_PATH}"
     assert REAL_RECEIPT_PATH.is_file(), f"missing fixture: {REAL_RECEIPT_PATH}"
     pool = tmp_path / "pool"
@@ -674,21 +742,15 @@ def test_oneshot_disposition_path_still_works(tmp_path: Path) -> None:
         == entry["content_hash"]
     )
 
-    payload = _no_action_disposition(entry, science_disposition=SCIENCE_RETAIN_FOR_SHADOW)
-    written = write_owner_disposition_artifact(
-        owner_state_root=owner,
-        payload=payload,
-        pool_root=pool,
-    )
-    verified = load_and_verify_disposition(
-        disposition_path=Path(written["disposition_path"]),
-        owner_state_root=owner,
-        pool_root=pool,
-        result_sha256=EXPECTED_ONESHOT_RESULT_SHA256,
-    )
-    assert verified["disposition"]["science_disposition"] == SCIENCE_RETAIN_FOR_SHADOW
-    assert verified["disposition"]["science_identity"] == "SCIENCE_CANDIDATE"
-    assert verified["pool_entry"]["owner_adopted"] is False
+    payload = _no_action_disposition(entry, science_disposition=SCIENCE_ADOPT)
+    with pytest.raises(OwnerDispositionError) as exc:
+        write_owner_disposition_artifact(
+            owner_state_root=owner,
+            payload=payload,
+            pool_root=pool,
+        )
+    assert exc.value.reason_code == "RESEARCHER_DECISION_SOURCE_ABSENT"
+    assert list(owner.rglob("*.json")) == []
     reloaded = load_pool_entry(pool, EXPECTED_ONESHOT_RESULT_SHA256)
     assert reloaded["owner_adopted"] is False
     assert reloaded["content_hash"] == entry["content_hash"]
@@ -708,27 +770,21 @@ def test_episode_and_oneshot_coexist_under_same_pool(tmp_path: Path) -> None:
     )
     assert episode_entry["result_sha256"] != oneshot_entry["result_sha256"]
 
-    for entry, science in (
-        (episode_entry, SCIENCE_ADOPT),
-        (oneshot_entry, SCIENCE_REJECT),
-    ):
-        payload = _no_action_disposition(entry, science_disposition=science)
-        # Distinct payloads → distinct CAS digests under the same owner root.
-        payload = copy.deepcopy(payload)
-        payload["rationale_ref"] = f"coexist.{entry['result_sha256'][:8]}"
-        written = write_owner_disposition_artifact(
+    with pytest.raises(OwnerDispositionError) as episode_exc:
+        write_owner_disposition_artifact(
             owner_state_root=owner,
-            payload=payload,
+            payload=_no_action_disposition(episode_entry, science_disposition=SCIENCE_ADOPT),
             pool_root=pool,
         )
-        verified = load_and_verify_disposition(
-            disposition_path=Path(written["disposition_path"]),
+    assert episode_exc.value.reason_code == "PRODUCTION_ACTOR_INTENT_REQUIRED"
+
+    with pytest.raises(OwnerDispositionError) as exc:
+        write_owner_disposition_artifact(
             owner_state_root=owner,
+            payload=_no_action_disposition(oneshot_entry, science_disposition=SCIENCE_REJECT),
             pool_root=pool,
-            result_sha256=entry["result_sha256"],
         )
-        assert verified["disposition"]["science_disposition"] == science
-        assert verified["pool_entry"]["owner_adopted"] is False
+    assert exc.value.reason_code == "RESEARCHER_DECISION_SOURCE_ABSENT"
 
     assert load_episode_pool_entry(pool, episode_entry["result_sha256"])["owner_adopted"] is False
     assert load_pool_entry(pool, oneshot_entry["result_sha256"])["owner_adopted"] is False
@@ -886,10 +942,10 @@ def test_missing_result_or_receipt_maps_to_pool_cas_partial_state(tmp_path: Path
 # --- Full consumer: export → pool → disposition → freeze-from-disposition ----
 
 
-def test_episode_export_disposition_freeze_consumer_no_auto_settle(
+def test_legacy_episode_branch_cannot_reach_freeze_consumer(
     tmp_path: Path,
 ) -> None:
-    """Real consumer-shaped chain stops at freeze; pool immutable; no auto-settle/next."""
+    """Flat production freeze is unavailable until it has a source-bound settle path."""
 
     pool = tmp_path / "pool"
     owner = tmp_path / "owner"
@@ -904,41 +960,14 @@ def test_episode_export_disposition_freeze_consumer_no_auto_settle(
     before = _pool_snapshot(pool, entry["result_sha256"])
 
     payload = _no_action_disposition(entry, science_disposition=SCIENCE_ADOPT)
-    written = write_owner_disposition_artifact(
-        owner_state_root=owner,
-        payload=payload,
-        pool_root=pool,
-    )
-    verified = load_and_verify_disposition(
-        disposition_path=Path(written["disposition_path"]),
-        owner_state_root=owner,
-        pool_root=pool,
-        result_sha256=entry["result_sha256"],
-    )
-    assert verified["pool_entry"]["ingest_kind"] == INGEST_KIND
-    assert verified["pool_entry"]["content_hash"] == entry["content_hash"]
-    assert verified["pool_entry"]["policy_ref"] == entry["policy_ref"]
-    assert verified["pool_entry"]["policy_content_hash"] == entry["policy_content_hash"]
-
-    freeze = apply_freeze_from_disposition(
-        pool_root=pool,
-        owner_state_root=owner,
-        disposition_path=Path(written["disposition_path"]),
-        shadow_root=episode_root,
-        mode="episode",
-        result_sha256=entry["result_sha256"],
-        clock=lambda: FROZEN_AT,
-    )
-    assert freeze.get("ok", True) is True
-    assert freeze["mode"] == "episode"
-    assert freeze["auto_settle"] is False
-    assert freeze["auto_next_period"] is False
-    assert freeze["completion_claim_allowed"] is False
-    assert freeze["bound_result_sha256"] == entry["result_sha256"]
-    assert freeze["bound_pool_entry_content_hash"] == entry["content_hash"]
-    assert freeze["frozen_episode_hash"]
-    frozen = load_frozen(episode_root)
-    assert frozen.content_hash == freeze["frozen_episode_hash"]
+    with pytest.raises(OwnerDispositionError) as exc:
+        write_owner_disposition_artifact(
+            owner_state_root=owner,
+            payload=payload,
+            pool_root=pool,
+        )
+    assert exc.value.reason_code == "PRODUCTION_ACTOR_INTENT_REQUIRED"
+    assert not (episode_root / "frozen.json").exists()
 
     after = _pool_snapshot(pool, entry["result_sha256"])
     assert after["entry_bytes"] == before["entry_bytes"]
@@ -949,41 +978,148 @@ def test_episode_export_disposition_freeze_consumer_no_auto_settle(
     assert reloaded == entry
 
 
-def test_episode_export_action_reaches_production_portfolio_consumer(tmp_path: Path) -> None:
-    """Portfolio consumer independently re-reads the Episode manifest action core."""
+def test_current_episode_actor_intent_projects_and_reaches_portfolio_consumer(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Exact actor intent joins fresh runtime reality and survives final re-read."""
+
+    # Reuse the real actor/reality fixture so target, account, authority packet,
+    # objective terms, active material bundle, and prompt identities all agree.
+    from xinao.shadow_lifecycle.actor_reality import ActorRealityContract
+
+    actor_fixture_path = (
+        Path(__file__).resolve().parents[1] / "shadow_lifecycle" / ("test_actor_reality.py")
+    )
+    actor_fixture_spec = importlib.util.spec_from_file_location(
+        "_actor_reality_test_fixture",
+        actor_fixture_path,
+    )
+    assert actor_fixture_spec is not None and actor_fixture_spec.loader is not None
+    actor_fixture = importlib.util.module_from_spec(actor_fixture_spec)
+    actor_fixture_spec.loader.exec_module(actor_fixture)
 
     pool = tmp_path / "pool_episode_action"
     owner = tmp_path / "owner_episode_action"
-    portfolio = tmp_path / "portfolio_episode_action"
-    core = _researcher_action_core(selected_number=17)
+    portfolio = actor_fixture._portfolio_root(tmp_path, suffix="episode-action")
+    episode_root, authority_root, verified_material, _packet_id, _terms_id = (
+        actor_fixture._active_material_fixture(
+            tmp_path,
+            open_at=actor_fixture.P1_OPEN,
+            portfolio_root=portfolio,
+        )
+    )
+    reality = ActorRealityContract._from_verified_material_reality(
+        portfolio_root=portfolio,
+        episode_root=episode_root,
+        authority_root=authority_root,
+        verified_material_reality=verified_material,
+    )
+    intent = actor_fixture._intent(reality, selected_number=17, stake="100.0000")
+    intent_payload = intent.model_dump(mode="json")
+    # A producer may serialize the same UTC instant with an explicit offset.
+    # The intent seal is over the normalized model, not the transport spelling.
+    assert str(intent_payload["authored_at"]).endswith("Z")
+    intent_payload["authored_at"] = str(intent_payload["authored_at"]).replace("Z", "+00:00")
+    material = reality.material_reality
+    cutoff, authored_at, _deadline = actor_fixture._times(actor_fixture.P1_OPEN)
     entry = _ingest_episode(
         pool,
-        episode_id="ep_portfolio_action",
+        episode_id=material.episode_id,
         recommendation="ACTION_CANDIDATE",
-        executable=core,
+        actor_intent=intent_payload,
+        attempt_cas_digest=material.attempt_cas_digest,
+        attempt_hash=material.attempt_hash,
+        cas_head_sha256=material.cas_head_sha256,
+        host_session_id=material.host_session_id,
+        provider_session_uuid=material.provider_session_uuid,
+        data_cutoff_as_of=cutoff,
     )
-    init_portfolio(
-        root=portfolio,
-        seat_id="seat.episode.action",
-        portfolio_ref="portfolio.episode.action",
+
+    runtime_calls: list[dict[str, Any]] = []
+
+    def build_live_reality(**kwargs: Any) -> ActorRealityContract:
+        runtime_calls.append(dict(kwargs))
+        assert kwargs == {
+            "root": episode_root.resolve(),
+            "portfolio_root": portfolio.resolve(),
+            "authority_root": authority_root.resolve(),
+            "attempt_cas_digest": material.attempt_cas_digest,
+            "expected_head_sha256": material.cas_head_sha256,
+            "expected_provider_session_uuid": material.provider_session_uuid,
+            "expected_host_session_id": material.host_session_id,
+            "attempt_hash": material.attempt_hash,
+        }
+        return reality
+
+    monkeypatch.setattr(
+        owner_disposition_module,
+        "_load_xinao_runtime_module",
+        lambda: SimpleNamespace(research_episode_build_actor_reality=build_live_reality),
     )
-    payload = _action_disposition(entry, selected_number=17)
-    payload["portfolio_binding"] = build_portfolio_binding_from_shadow(portfolio)
+
+    draft = draft_owner_disposition(
+        pool_root=pool,
+        result_sha256=entry["result_sha256"],
+        episode_root=episode_root,
+        portfolio_root=portfolio,
+        authority_root=authority_root,
+        packet_content_hash=material.prospective_packet_content_hash,
+    )
+    payload = copy.deepcopy(draft["payload_draft"])
+    payload.update(
+        {
+            "disposition_source": CODEX_OWNER_CHANNEL_SOURCE,
+            "owner_role": "codex",
+            "worker_controlled": False,
+            "science_disposition": SCIENCE_ADOPT,
+            "rationale_ref": "owner.current-episode.actor-intent.accepted",
+        }
+    )
+    branch = copy.deepcopy(draft["branch_templates"]["ACTION"])
+    branch["executable_account_decision"]["frozen_at"] = _iso(authored_at)
+    payload.update(branch)
+
     written = write_owner_disposition_artifact(
         owner_state_root=owner,
         payload=payload,
         pool_root=pool,
+        episode_root=episode_root,
+        portfolio_root=portfolio,
+        authority_root=authority_root,
     )
+    verified = load_and_verify_disposition(
+        disposition_path=Path(written["disposition_path"]),
+        owner_state_root=owner,
+        pool_root=pool,
+        episode_root=episode_root,
+        portfolio_root=portfolio,
+        authority_root=authority_root,
+    )
+    binding = verified["researcher_action_binding"]
+    assert binding["actor_authored_intent_hash"] == intent.content_hash
+    assert binding["episode_id"] == material.episode_id
+    assert binding["attempt_cas_digest"] == material.attempt_cas_digest
+    assert binding["information_set_ref"] == material.material_bundle_id
+    assert binding["effective_prompt_sha256"] == material.effective_prompt_sha256
+
     freeze = apply_freeze_from_disposition(
         pool_root=pool,
         owner_state_root=owner,
         disposition_path=Path(written["disposition_path"]),
         shadow_root=portfolio,
         mode="portfolio",
-        clock=lambda: FROZEN_AT,
+        episode_root=episode_root,
+        authority_root=authority_root,
+        clock=lambda: authored_at,
     )
     assert freeze["ok"] is True
-    assert freeze["researcher_action_binding"]["source_kind"] == ("EPISODE_CANDIDATE_MANIFEST")
+    assert freeze["researcher_action_binding"] == binding
     frozen = load_frozen(period_directory(portfolio, 1))
     assert frozen.bound_account_ticket is not None
     assert frozen.bound_account_ticket.selected_number == 17
+    assert str(frozen.bound_account_ticket.stake) == "100.0000"
+    assert frozen.bound_account_ticket.information_set_ref == material.material_bundle_id
+    # draft, formal write, explicit readback, freeze adapter, and the independent
+    # portfolio consumer each re-enter the exact runtime producer identity.
+    assert len(runtime_calls) >= 5

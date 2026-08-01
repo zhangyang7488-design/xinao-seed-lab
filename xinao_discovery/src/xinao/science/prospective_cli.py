@@ -27,6 +27,10 @@ from xinao.science.owner_disposition import (
     parse_disposition_json_strict,
     write_owner_disposition_artifact,
 )
+from xinao.science.portfolio_settle_all_from_reveal import (
+    PortfolioSettleAllError,
+    apply_portfolio_settle_all_from_reveal,
+)
 from xinao.science.prospective_live_canary import run_live_source_canary
 from xinao.science.prospective_source_thin import (
     ProspectiveSourceError,
@@ -146,6 +150,12 @@ def add_prospective_parsers(groups: argparse._SubParsersAction[Any]) -> None:
         help="Optional live portfolio/shadow root for closed portfolio_binding",
     )
     draft_disp.add_argument(
+        "--episode-root",
+        type=Path,
+        default=None,
+        help="Live ResearchEpisode root required for an episode actor-intent candidate",
+    )
+    draft_disp.add_argument(
         "--output",
         type=Path,
         default=None,
@@ -191,6 +201,9 @@ def add_prospective_parsers(groups: argparse._SubParsersAction[Any]) -> None:
         default=None,
         help="Optional caller-claimed pool_entry_content_hash that must match payload+pool",
     )
+    write_disp.add_argument("--episode-root", type=Path, default=None)
+    write_disp.add_argument("--portfolio-root", type=Path, default=None)
+    write_disp.add_argument("--authority-root", type=Path, default=None)
 
     freeze = commands.add_parser(
         "freeze-from-disposition",
@@ -215,9 +228,15 @@ def add_prospective_parsers(groups: argparse._SubParsersAction[Any]) -> None:
         required=True,
         help="Owner authority CAS root holding the sealed packet",
     )
-    freeze.add_argument("--mode", choices=("portfolio", "episode"), default="portfolio")
+    freeze.add_argument("--mode", choices=("portfolio",), default="portfolio")
     freeze.add_argument("--request-out", type=Path)
     freeze.add_argument("--result-sha256")
+    freeze.add_argument(
+        "--episode-root",
+        type=Path,
+        default=None,
+        help="Live ResearchEpisode root for fresh actor projection at freeze",
+    )
 
     settle = commands.add_parser(
         "settle-from-reveal",
@@ -262,6 +281,24 @@ def add_prospective_parsers(groups: argparse._SubParsersAction[Any]) -> None:
         "--dry-run",
         action="store_true",
         help="Validate args only; do not settle",
+    )
+
+    portfolio_settle_all = commands.add_parser(
+        "portfolio-settle-all-from-reveal",
+        help=(
+            "Enumerate the complete production ShadowPortfolio freeze store, "
+            "reparse the sealed reveal's pinned raw source bytes, and settle every "
+            "due FrozenShadowEpisode. No caller outcome, verified flag, or ticket subset."
+        ),
+    )
+    portfolio_settle_all.add_argument("--authority-root", type=Path, required=True)
+    portfolio_settle_all.add_argument("--portfolio-root", type=Path, required=True)
+    portfolio_settle_all.add_argument("--packet-content-hash", required=True)
+    portfolio_settle_all.add_argument("--reveal-content-hash")
+    portfolio_settle_all.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Validate the CLI shape only; do not read or write portfolio state",
     )
 
     settle_all = commands.add_parser(
@@ -446,6 +483,7 @@ def dispatch_prospective(args: argparse.Namespace) -> int:
                 result_sha256=args.result_sha256,
                 request_out=args.request_out,
                 authority_root=args.authority_root,
+                episode_root=args.episode_root,
             )
             _print(
                 {
@@ -499,6 +537,40 @@ def dispatch_prospective(args: argparse.Namespace) -> int:
                 reveal_content_hash=args.reveal_content_hash,
                 expected_frozen_episode_hash=args.expected_frozen_episode_hash,
                 period_index=args.period_index,
+            )
+            _print(result)
+            return 0 if result.get("ok") else 1
+
+        if args.command == "portfolio-settle-all-from-reveal":
+            if args.dry_run:
+                _print(
+                    {
+                        "ok": True,
+                        "dry_run": True,
+                        "command": "prospective portfolio-settle-all-from-reveal",
+                        "formal_object_model": "production_FrozenShadowEpisode",
+                        "authority_root": str(args.authority_root),
+                        "portfolio_root": str(args.portfolio_root),
+                        "packet_content_hash": args.packet_content_hash,
+                        "reveal_content_hash": args.reveal_content_hash,
+                        "enumerates_complete_portfolio_store": True,
+                        "caller_outcome_override_accepted": False,
+                        "caller_verified_flag_trusted": False,
+                        "caller_ticket_subset_accepted": False,
+                        "writes": False,
+                        "auto_feedback": False,
+                        "auto_next_period": False,
+                        "auto_next_research": False,
+                        "daemon": False,
+                        "completion_claim_allowed": False,
+                    }
+                )
+                return 0
+            result = apply_portfolio_settle_all_from_reveal(
+                authority_root=args.authority_root,
+                portfolio_root=args.portfolio_root,
+                packet_content_hash=args.packet_content_hash,
+                reveal_content_hash=args.reveal_content_hash,
             )
             _print(result)
             return 0 if result.get("ok") else 1
@@ -571,6 +643,8 @@ def dispatch_prospective(args: argparse.Namespace) -> int:
         return _fail(exc.reason_code, exc.detail)
     except SettleAllFromRevealError as exc:
         return _fail(exc.reason_code, exc.detail)
+    except PortfolioSettleAllError as exc:
+        return _fail(exc.reason_code, exc.detail)
     except (ValueError, TypeError, KeyError, OSError) as exc:
         return _fail("PROSPECTIVE_CLI_ERROR", str(exc))
 
@@ -584,6 +658,7 @@ def _dispatch_draft_owner_disposition(args: argparse.Namespace) -> int:
         authority_root=args.authority_root,
         packet_content_hash=args.packet_content_hash,
         portfolio_root=args.portfolio_root,
+        episode_root=args.episode_root,
     )
     output_path: str | None = None
     if args.output is not None:
@@ -637,12 +712,18 @@ def _dispatch_write_owner_disposition(args: argparse.Namespace) -> int:
         owner_state_root=args.owner_state_root,
         payload=payload,
         pool_root=args.pool_root,
+        episode_root=args.episode_root,
+        portfolio_root=args.portfolio_root,
+        authority_root=args.authority_root,
     )
     verified = load_and_verify_disposition(
         disposition_path=Path(written["disposition_path"]),
         owner_state_root=args.owner_state_root,
         pool_root=args.pool_root,
         result_sha256=args.expected_result_sha256,
+        episode_root=args.episode_root,
+        portfolio_root=args.portfolio_root,
+        authority_root=args.authority_root,
     )
     _print(
         {

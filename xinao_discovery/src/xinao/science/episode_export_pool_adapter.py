@@ -165,7 +165,16 @@ def verify_episode_export_bundle(
                 json.dumps(body, ensure_ascii=False, sort_keys=True, separators=(",", ":")) + "\n"
             ).encode("utf-8")
         ).hexdigest()
-        alt = canonical_sha256(body)
+        alt: str | None = None
+        if claimed != recomputed:
+            try:
+                alt = canonical_sha256(body)
+            except (TypeError, ValueError):
+                # Native exports bind opaque host provenance (for example
+                # Windows st_dev/st_ino/st_mtime_ns) with sorted JSON bytes.
+                # Those integers may be outside RFC 8785's float-safe domain;
+                # that must not invalidate an already matching native seal.
+                alt = None
         if claimed not in {recomputed, alt}:
             raise EpisodeExportAdapterError(
                 "EPISODE_EXPORT_BUNDLE_HASH_MISMATCH",
@@ -278,7 +287,10 @@ def mint_policy_candidate_from_episode_export(
         "export_sha256": export_sha,
         "manifest_sha256": manifest_sha,
         "episode_id": export.get("episode_id"),
+        "attempt_hash": export.get("attempt_hash"),
         "attempt_cas_digest": export.get("attempt_cas_digest"),
+        "cas_head_sha256": export.get("cas_head_sha256"),
+        "host_session_id": export.get("host_session_id"),
         "provider_session_uuid": export.get("provider_session_uuid"),
         "research_profile": export.get("research_profile"),
         "actual_turns": export.get("actual_turns"),
@@ -360,7 +372,10 @@ def _build_episode_pool_entry(
         },
         "lab_provenance": {
             "episode_id": export.get("episode_id"),
+            "attempt_hash": export.get("attempt_hash"),
             "attempt_cas_digest": export.get("attempt_cas_digest"),
+            "cas_head_sha256": export.get("cas_head_sha256"),
+            "host_session_id": export.get("host_session_id"),
             "provider_session_uuid": export.get("provider_session_uuid"),
             "research_profile": export.get("research_profile"),
             "namespace_receipt_sha256": export.get("namespace_receipt_sha256"),

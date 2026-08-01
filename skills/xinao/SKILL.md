@@ -66,12 +66,13 @@ Long ResearchEpisode public vertical (Owner one-shots only; no daemon / no self-
 
 1. `scripts/xinao.py research-episode start --root <D-episode> --question <question>`
 2. `scripts/xinao.py research-episode ensure-pair --root <episode> --expected-head <sha256> [--research-profile OPEN_RESEARCH]`
-3. `scripts/xinao.py research-episode attach-run --root <episode> --prompt <prompt> [--max-turns 16]`
-4. `scripts/xinao.py research-episode checkpoint --root <episode> --expected-head <sha256> [--lab-relative path --progress-note ...]`
-5. `scripts/xinao.py research-episode resume-live --root <episode> --expected-provider-session <uuid> --expected-head <sha256>`
-6. `scripts/xinao.py research-episode export-candidate-evidence --root <episode> --attempt-cas-digest <sha256> --expected-head <sha256>`
-7. `scripts/xinao.py research-episode cancel --root <episode>` (also best-effort `retire-pair`)
-8. `scripts/xinao.py research-episode retire-pair --root <episode>`
+3. `scripts/xinao.py research-episode prepare-actor-materials --core <first-principles> --core-sha256 <sha256> --authority-root <authority> --packet-content-hash <sha256> --portfolio-root <portfolio> [--pool-root <pool>] --output-root <D-or-E-root>`
+4. `scripts/xinao.py research-episode attach-run --root <episode> --prompt <prompt> --actor-material-root <prepared-root> [--max-turns 16]`
+5. `scripts/xinao.py research-episode checkpoint --root <episode> --expected-head <sha256> [--lab-relative path --progress-note ...]`
+6. `scripts/xinao.py research-episode resume-live --root <episode> --expected-provider-session <uuid> --expected-head <sha256> --actor-material-root <prepared-root>`
+7. `scripts/xinao.py research-episode export-candidate-evidence --root <episode> --attempt-cas-digest <sha256> --expected-head <sha256>`
+8. `scripts/xinao.py research-episode cancel --root <episode>` (also best-effort `retire-pair`)
+9. `scripts/xinao.py research-episode retire-pair --root <episode>`
 
 Also available:
 
@@ -92,6 +93,7 @@ Auth handle path order (path/mount only; never secret bytes): `XINAO_AUTH_HOST_P
 Boundaries:
 
 - **Candidate-only:** export and pool ingest force `owner_adopted=false`, never freeze/settle.
+- **Complete actor producer:** `prepare-actor-materials` only derives live inputs; explicit attach/resume with `--actor-material-root` consumes the complete 4/7-file set and canonical manifest syntax. It never supplies the actor's branch, number, stake, rationale, method, or stop policy, and cannot mix with generic `--material`.
 - **Owner-only disposition:** adoption/freeze/settlement remain separate Codex Owner artifacts.
 - **No self-scheduling / no leg-B:** ensure-pair, attach-run, cancel, and retire-pair never create
   the next episode, Temporal workflow, or daemon continuation.
@@ -120,7 +122,7 @@ Same-seat portfolio continuity verbs (multi-period consumer surface; not scienti
 - `scripts/xinao.py shadow portfolio-init --root <portfolio> --seat-id <id> --portfolio-ref <ref>`
 - `scripts/xinao.py shadow portfolio-inspect --root <portfolio>`
 - `scripts/xinao.py shadow portfolio-freeze --root <portfolio> --request <freeze.json>` — **always** `PORTFOLIO_FREEZE_CLI_NOT_PRODUCTION`; never calls production freeze. Not the Owner path.
-- `scripts/xinao.py shadow portfolio-settle --root <portfolio> --outcome <outcome.json>`
+- `scripts/xinao.py shadow portfolio-settle --root <portfolio> --outcome <outcome.json>` — sealed historical/fixture objects only; caller-authored outcome files are not the production settlement path
 - `scripts/xinao.py shadow portfolio-feedback --root <portfolio> --kind <FeedbackKind> [--feedback-ref <ref>] [--reason-code <code>] [--notes <text>]`
 - `scripts/xinao.py shadow portfolio-replay --root <portfolio> --period-index <n>`
 
@@ -129,12 +131,14 @@ Same-seat portfolio continuity verbs (multi-period consumer surface; not scienti
 - `xinao prospective capture --authority-root <Owner auth root> --contract <AuthorityContract> --expected-contract-sha256 <hex>`
 - `xinao prospective reveal --authority-root <Owner auth root> --packet-content-hash <hex>`
 - `xinao prospective write-owner-disposition --owner-state-root <owner> --pool-root <pool> --payload <disposition.json>` — exclusive CAS write under Owner-selected root; honest `owner_channel_authority=UNPROVEN_BY_LIBRARY`; never auto-continues
-- `xinao prospective freeze-from-disposition --pool-root <pool> --owner-state-root <owner> --disposition <path> --portfolio-root <portfolio> --authority-root <auth>` — **only** production freeze: binds candidate pool + sealed Owner disposition + samples **host UTC at freeze** as authoritative freeze-action time (must be ≤ sealed packet/disposition deadline); no public `--owner-freeze-time` override
+- `xinao prospective freeze-from-disposition --pool-root <pool> --owner-state-root <owner> --disposition <path> --portfolio-root <portfolio> --authority-root <auth>` — **only** production freeze and Portfolio-only: binds candidate pool + sealed Owner disposition + samples **host UTC at freeze** as authoritative freeze-action time (must be ≤ sealed packet/disposition deadline); flat `episode` mode is rejected until it has an equally source-bound settlement path; no public `--owner-freeze-time` override
+- `xinao prospective portfolio-settle-all-from-reveal --authority-root <auth> --portfolio-root <portfolio> --packet-content-hash <hex> [--reveal-content-hash <hex>]` — production Portfolio settlement: the committing consumer reparses the fixed-source raw CAS, distrusts caller `verified`, enumerates the complete one-seat due store, and settles every legally due frozen head; caller-outcome shadow settle rejects the same disposition-bound freeze; no ticket subset or outcome override
 - `xinao research-episode emit-research-feedback-pack --portfolio-root <portfolio> [--period-index N] [--output <path>]` — post-settlement research material only
+- `scripts/xinao.py research-episode start --root <new-episode> --question <question> --feedback-portfolio-root <portfolio> --feedback-content-hash <hex>` — explicit Owner start that stages the sealed Portfolio state and feedback pack into the new Episode input CAS; attach/resume binds those bytes into the provider prompt, without claiming model learning or starting any successor
 - `xinao prospective canary --contract <…> --expected-contract-sha256 <hex> --i-accept-network-canary` (opt-in live shape probe only; no campaign state)
 
-Capture/reveal/disposition-write/feedback-emit are one-shot; freeze is an explicit Codex Owner
-action via sealed disposition. Host freeze-action time is written onto FrozenEpisode/Ticket
+Capture/reveal/disposition-write/settle-all/feedback-emit are one-shot; freeze and starting a
+feedback-bearing next Episode are explicit Codex Owner actions. Host freeze-action time is written onto FrozenEpisode/Ticket
 (disposition seal time kept as `disposition_frozen_at` on the research binding). These do **not**
 authenticate Codex (physical root isolation remains outside the library). Do **not** use shadow
 `freeze` or `portfolio-freeze` as production freeze advertising; both fail closed.

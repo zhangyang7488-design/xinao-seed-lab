@@ -61,6 +61,20 @@ def test_source_bundle_seals_host_modules(module: Any) -> None:
         if relative.endswith("host_modules/docker_create_specs.py")
     )
     assert module._lf_materialize_bytes(src_specs) == staged
+    package_validator = (
+        ROOT
+        / "xinao_discovery"
+        / "src"
+        / "xinao"
+        / "science"
+        / "research_episode_candidate_manifest.py"
+    ).read_bytes()
+    staged_validator = next(
+        payload
+        for relative, _path, payload in rows
+        if relative.endswith("host_modules/research_episode_candidate_manifest.py")
+    )
+    assert module._lf_materialize_bytes(package_validator) == staged_validator
 
 
 def test_public_build_release_materializes_host_modules_in_release_dir(
@@ -178,6 +192,7 @@ def test_staged_installed_skill_resolves_host_modules_without_monorepo(
     host_dir = bundle / "scripts" / "host_modules"
     assert (host_dir / "docker_create_specs.py").is_file()
     assert (host_dir / "native_grok_session.py").is_file()
+    assert (host_dir / "research_episode_candidate_manifest.py").is_file()
     assert (host_dir / "seccomp.bwrap.json").is_file()
 
     # Fresh process: only staged skill tree on sys.path/cwd; no monorepo PYTHONPATH.
@@ -199,10 +214,33 @@ mod = importlib.util.module_from_spec(spec)
 sys.modules[spec.name] = mod
 spec.loader.exec_module(mod)
 host = mod.resolve_packaged_host_modules_dir()
+native_path = host / "native_grok_session.py"
+native_spec = importlib.util.spec_from_file_location("staged_native", native_path)
+native = importlib.util.module_from_spec(native_spec)
+sys.modules[native_spec.name] = native
+native_spec.loader.exec_module(native)
+candidate = {
+    "schema_version": "xinao.research_episode_candidate_manifest.v1",
+    "manifest_marker": "XINAO_RESEARCH_EPISODE_CANDIDATE_MANIFEST_V1",
+    "candidate_id": "staged-candidate",
+    "candidate_version": "v1",
+    "research_question": "can installed host export validate candidate bytes?",
+    "research_object": "fresh staged host validator",
+    "data_cutoff": {"as_of": "2026-08-01T00:00:00Z", "material_refs": []},
+    "method_refs": ["fresh-process"],
+    "falsifiers": ["validator unavailable"],
+    "account_recommendation": "NO_RECOMMENDATION",
+    "candidate_only": True,
+    "owner_adopted": False,
+    "completion": False,
+}
+validated = native.validate_candidate_manifest(candidate)
 print(json.dumps({
     "host_dir": str(host),
     "specs": (host / "docker_create_specs.py").is_file(),
     "native": (host / "native_grok_session.py").is_file(),
+    "validator": (host / "research_episode_candidate_manifest.py").is_file(),
+    "candidate_id": validated["candidate_id"],
     "under_bundle": str(host).replace("\\\\", "/").endswith("scripts/host_modules")
       or str(host).replace("\\", "/").endswith("scripts/host_modules"),
 }))
@@ -222,6 +260,8 @@ print(json.dumps({
     payload = json.loads(completed.stdout.strip().splitlines()[-1])
     assert payload["specs"] is True
     assert payload["native"] is True
+    assert payload["validator"] is True
+    assert payload["candidate_id"] == "staged-candidate"
     assert payload["under_bundle"] is True
 
 
