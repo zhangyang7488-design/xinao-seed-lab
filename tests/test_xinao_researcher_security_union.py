@@ -269,7 +269,7 @@ def test_union_shell_bwrap_no_path_walk(
     lab.mkdir()
     (lab / "work").mkdir()
     code = (
-        "import pathlib\n"
+        "import ctypes, errno, os, pathlib, socket\n"
         "p=pathlib.Path('.').resolve()\n"
         "for _ in range(12):\n"
         "    p=p.parent\n"
@@ -278,6 +278,17 @@ def test_union_shell_bwrap_no_path_walk(
         "        print('LEAK'); break\n"
         "else:\n"
         "    print('NOLEAK')\n"
+        "libc=ctypes.CDLL(None, use_errno=True)\n"
+        "assert libc.unshare(0x10000000) == -1\n"
+        "assert ctypes.get_errno() == errno.EPERM\n"
+        "print('USERNS_DENIED')\n"
+        "try:\n"
+        "    socket.socket(socket.AF_ALG, socket.SOCK_SEQPACKET, 0)\n"
+        "except PermissionError as exc:\n"
+        "    assert exc.errno == errno.EPERM\n"
+        "    print('AF_ALG_DENIED')\n"
+        "else:\n"
+        "    raise AssertionError('AF_ALG unexpectedly admitted')\n"
     )
     resp = tool_mod.execute_op(
         ipc.build_request(
@@ -292,6 +303,8 @@ def test_union_shell_bwrap_no_path_walk(
     assert resp["status"] == "ok", resp
     stdout = (resp.get("stdout") or "").strip()
     assert "NOLEAK" in stdout
+    assert "USERNS_DENIED" in stdout
+    assert "AF_ALG_DENIED" in stdout
     assert not stdout.startswith("LEAK")
     assert "LEAK " not in stdout
     # Shell interpreters still denied at argv layer.
@@ -339,7 +352,10 @@ def test_union_create_spec_and_inspect_agree(specs: Any) -> None:
             "NetworkMode": "none",
             "ReadonlyRootfs": True,
             "CapDrop": ["ALL"],
-            "SecurityOpt": ["no-new-privileges:true"],
+            "SecurityOpt": [
+                "no-new-privileges:true",
+                specs.tool_bwrap_seccomp_inspect_opt(),
+            ],
         },
         "Mounts": [
             {"Destination": "/episode-lab", "Source": "/host/lab"},
@@ -380,6 +396,80 @@ def test_union_create_spec_and_inspect_agree(specs: Any) -> None:
     assert "XINAO_IPC_PEER_REQUIRE=1" in mi["tool_env_required"][1] or any(
         "PEER_REQUIRE" in x for x in mi["tool_env_required"]
     )
+
+
+def test_union_bwrap_seccomp_is_default_deny_and_narrow(specs: Any) -> None:
+    path, profile = specs.load_tool_bwrap_seccomp_profile()
+    assert path.name == "seccomp.bwrap.json"
+    assert profile["defaultAction"] == "SCMP_ACT_ERRNO"
+    setup_rule = profile["syscalls"][0]
+    assert setup_rule == {
+        "names": ["mount", "pivot_root", "umount2"],
+        "action": "SCMP_ACT_ALLOW",
+    }
+    clone_rule = profile["syscalls"][1]
+    assert clone_rule["names"] == ["clone"]
+    assert clone_rule["args"] == [
+        {
+            "index": 0,
+            "value": 0x7E020000,
+            "valueTwo": 0x78020000,
+            "op": "SCMP_CMP_MASKED_EQ",
+        }
+    ]
+    assert any(
+        rule.get("names") == ["clone3"]
+        and rule.get("action") == "SCMP_ACT_ERRNO"
+        and rule.get("errnoRet") == 38
+        for rule in profile["syscalls"]
+    )
+    # Moby 29.4.2 hardening: the 32-bit socket multiplexer must not survive
+    # as an unconditional compatibility bypass around direct AF_ALG denial.
+    socketcall_rules = [
+        rule for rule in profile["syscalls"] if "socketcall" in rule.get("names", [])
+    ]
+    assert socketcall_rules == [
+        {"names": ["socketcall"], "action": "SCMP_ACT_ERRNO", "errnoRet": 38}
+    ]
+    assert socketcall_rules[0]["errnoRet"] != profile["defaultErrnoRet"]
+    assert "seccomp=unconfined" not in specs.tool_bwrap_seccomp_create_opt().lower()
+
+
+def test_union_bwrap_command_stacks_payload_filter_without_devpts(
+    tool_mod: Any, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    lab = tmp_path / "lab"
+    lab.mkdir()
+    monkeypatch.setattr(tool_mod, "resolve_bwrap_bin", lambda: "/usr/bin/bwrap")
+    monkeypatch.setattr(tool_mod, "_interpreter_ro_bind_targets", lambda: [])
+    command = tool_mod.build_bwrap_command(
+        ["/usr/local/bin/python", "work.py"],
+        lab_root=lab,
+        cwd=lab,
+        payload_seccomp_fd=91,
+    )
+    assert command[command.index("--seccomp") + 1] == "91"
+    assert "--unshare-user" in command
+    assert "--unshare-ipc" in command
+    assert "--unshare-net" in command
+    assert "--unshare-pid" in command
+    assert "--dev" not in command
+    assert "--dev-bind" in command
+    assert "/dev/null" in command
+    assert "/dev/urandom" in command
+    assert "/dev/shm" in command
+
+
+def test_union_payload_clone_filter_uses_native_abi_argument(tool_mod: Any) -> None:
+    common = tool_mod.payload_clone_namespace_comparisons("x86_64")
+    s390 = tool_mod.payload_clone_namespace_comparisons("s390x")
+    assert len(common) == len(tool_mod.CLONE_NAMESPACE_FLAGS)
+    assert len(s390) == len(tool_mod.CLONE_NAMESPACE_FLAGS)
+    assert {row.arg for row in common} == {0}
+    assert {row.arg for row in s390} == {1}
+    assert {row.datum_a for row in common} == set(tool_mod.CLONE_NAMESPACE_FLAGS)
+    assert {row.datum_a for row in s390} == set(tool_mod.CLONE_NAMESPACE_FLAGS)
+    assert all(row.op == tool_mod.SCMP_CMP_MASKED_EQ for row in common + s390)
 
 
 def test_union_dockerfile_installs_bwrap() -> None:

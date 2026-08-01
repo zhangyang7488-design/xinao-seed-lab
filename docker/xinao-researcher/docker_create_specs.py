@@ -11,6 +11,9 @@ network denied; uid/gid 65532; zero caps; NNP; no host socket/root/ledger/outcom
 
 from __future__ import annotations
 
+import hashlib
+import json
+from pathlib import Path
 from typing import Any
 
 TOOL_UID = 65532
@@ -18,6 +21,10 @@ TOOL_GID = 65532
 TRANSPORT_UID = 0
 TRANSPORT_GID = 0
 TRANSPORT_USER = f"{TRANSPORT_UID}:{TRANSPORT_GID}"
+TOOL_BWRAP_SECCOMP_PROFILE_FILENAME = "seccomp.bwrap.json"
+TOOL_BWRAP_SECCOMP_PROFILE_SHA256 = (
+    "e25af138916a2459ed396eb7787d4a71c8c0ecd6daad6a5b57d103a3271fefc9"
+)
 
 # Paths inside tool-executor container.
 TOOL_LAB_MOUNT = "/episode-lab"
@@ -150,6 +157,64 @@ class ToolSpecDriftError(RuntimeError):
         super().__init__(f"{reason_code}: {violations}")
         self.reason_code = reason_code
         self.violations = list(violations)
+
+
+def load_tool_bwrap_seccomp_profile() -> tuple[Path, dict[str, Any]]:
+    """Load the sealed Docker profile that permits only bwrap setup namespaces.
+
+    The profile preserves Moby seccomp/v0.2.2's hardened default-deny shape and
+    adds one bounded bubblewrap setup allowance: one exact combined namespace
+    clone, mount, pivot_root and umount2. It keeps clone3 forced to ENOSYS and
+    closes both direct AF_ALG sockets and the 32-bit socketcall multiplexer,
+    alongside bpf, perf and the other default-denied syscalls.
+    """
+    path = Path(__file__).resolve().with_name(TOOL_BWRAP_SECCOMP_PROFILE_FILENAME)
+    try:
+        payload = path.read_bytes()
+    except OSError as exc:
+        raise ToolSpecDriftError("TOOL_SECCOMP_PROFILE_MISSING", [str(path)]) from exc
+    observed_sha256 = hashlib.sha256(payload).hexdigest()
+    if observed_sha256 != TOOL_BWRAP_SECCOMP_PROFILE_SHA256:
+        raise ToolSpecDriftError(
+            "TOOL_SECCOMP_PROFILE_DRIFT",
+            [f"sha256={observed_sha256}"],
+        )
+    try:
+        profile = json.loads(payload)
+    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise ToolSpecDriftError("TOOL_SECCOMP_PROFILE_INVALID", [str(exc)]) from exc
+    if not isinstance(profile, dict) or profile.get("defaultAction") != "SCMP_ACT_ERRNO":
+        raise ToolSpecDriftError("TOOL_SECCOMP_PROFILE_INVALID", ["defaultAction"])
+    return path, profile
+
+
+def tool_bwrap_seccomp_create_opt() -> str:
+    path, _profile = load_tool_bwrap_seccomp_profile()
+    return f"seccomp={path}"
+
+
+def tool_bwrap_seccomp_inspect_opt() -> str:
+    """Return Docker inspect's embedded-json representation for tests/readback."""
+    _path, profile = load_tool_bwrap_seccomp_profile()
+    return "seccomp=" + json.dumps(profile, sort_keys=False, separators=(",", ":"))
+
+
+def inspect_uses_tool_bwrap_seccomp_profile(security_opt: list[Any]) -> bool:
+    """Match semantic profile bytes after Docker replaces its path with JSON."""
+    _path, expected = load_tool_bwrap_seccomp_profile()
+    for raw in security_opt:
+        value = str(raw)
+        if not value.lower().startswith("seccomp="):
+            continue
+        encoded = value.split("=", 1)[1].strip()
+        if encoded.lower() == "unconfined":
+            return False
+        try:
+            observed = json.loads(encoded)
+        except json.JSONDecodeError:
+            return False
+        return observed == expected
+    return False
 
 
 def transport_container_spec(
@@ -434,7 +499,7 @@ def tool_executor_container_spec(
         "read_only_rootfs": True,
         "cap_drop": ["ALL"],
         "cap_add": [],
-        "security_opt": ["no-new-privileges:true"],
+        "security_opt": ["no-new-privileges:true", tool_bwrap_seccomp_create_opt()],
         "pids_limit": 256,
         "memory": "512m",
         "cpus": 1.0,
@@ -599,6 +664,12 @@ def validate_tool_spec_invariants(spec: dict[str, Any]) -> list[str]:
         violations.append("cap_add must be empty")
     if "no-new-privileges:true" not in (spec.get("security_opt") or []):
         violations.append("missing no-new-privileges")
+    try:
+        expected_seccomp = tool_bwrap_seccomp_create_opt()
+    except ToolSpecDriftError:
+        expected_seccomp = ""
+    if not expected_seccomp or expected_seccomp not in (spec.get("security_opt") or []):
+        violations.append("bwrap_seccomp_profile_missing_or_wrong")
     if not spec.get("read_only_rootfs"):
         violations.append("read_only_rootfs required")
     env = spec.get("env") or {}
@@ -916,9 +987,14 @@ def validate_tool_container_inspect(
     cap_drop = {str(x).upper() for x in (hc.get("CapDrop") or [])}
     if "ALL" not in cap_drop:
         violations.append("cap_drop missing ALL")
-    security_opt = [str(x).lower() for x in (hc.get("SecurityOpt") or [])]
-    if not any("no-new-privileges" in x for x in security_opt):
+    security_opt = [str(x) for x in (hc.get("SecurityOpt") or [])]
+    if not any("no-new-privileges" in x.lower() for x in security_opt):
         violations.append("missing no-new-privileges")
+    try:
+        if not inspect_uses_tool_bwrap_seccomp_profile(security_opt):
+            violations.append("bwrap_seccomp_profile_missing_or_wrong")
+    except ToolSpecDriftError:
+        violations.append("bwrap_seccomp_profile_missing_or_wrong")
     # Real Docker may place process tokens in Entrypoint only (image ENTRYPOINT)
     # or split across Entrypoint+Cmd (CLI --entrypoint first + args). Both are
     # valid; reconstruct via process_argv_from_inspect and never flag split as drift.
@@ -1156,6 +1232,7 @@ def create_spec_matches_inspect(
             "cap_drop missing ALL",
             "cap_add must be empty",
             "missing no-new-privileges",
+            "bwrap_seccomp_profile_missing_or_wrong",
             "read_only_rootfs required",
             "bwrap_env_missing_or_off",
             "ipc_peer_require_missing",

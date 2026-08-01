@@ -741,7 +741,10 @@ class DualContainerHost:
         if lease is None:
             raise DualHostError("DUAL_HOST_LEASE_MISSING", str(self.paths["lease"]))
         if self.config.synthetic:
-            tool_inspect = _synthetic_tool_inspect(lease)
+            tool_inspect = _synthetic_tool_inspect(
+                lease,
+                seccomp_inspect_opt=self.specs.tool_bwrap_seccomp_inspect_opt(),
+            )
             transport_inspect = _synthetic_transport_inspect(lease)
         else:
             tool_inspect = self._docker_inspect(str(lease["tool_container_id"]))
@@ -2503,7 +2506,9 @@ def _inspect_summary(doc: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def _synthetic_tool_inspect(lease: Mapping[str, Any]) -> dict[str, Any]:
+def _synthetic_tool_inspect(
+    lease: Mapping[str, Any], *, seccomp_inspect_opt: str
+) -> dict[str, Any]:
     return {
         "Id": lease.get("tool_container_id"),
         "Image": lease.get("tool_image_id"),
@@ -2532,7 +2537,7 @@ def _synthetic_tool_inspect(lease: Mapping[str, Any]) -> dict[str, Any]:
             "NetworkMode": "none",
             "ReadonlyRootfs": True,
             "CapDrop": ["ALL"],
-            "SecurityOpt": ["no-new-privileges:true"],
+            "SecurityOpt": ["no-new-privileges:true", seccomp_inspect_opt],
         },
         "Mounts": [
             {"Destination": "/episode-lab", "Source": "/host/lab", "Type": "bind"},

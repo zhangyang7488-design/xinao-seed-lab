@@ -327,6 +327,7 @@ HOST_MODULE_INVENTORY: tuple[str, ...] = (
     "mcp_episode_lab_server.py",
     "ipc_contract.py",
     "episode_boundary.py",
+    "seccomp.bwrap.json",
 )
 TOOL_EXECUTOR_ENTRYPOINT = [
     "python",
