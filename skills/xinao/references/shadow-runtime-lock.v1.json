@@ -1,6 +1,6 @@
 {
   "schema_version": "xinao.shadow_runtime_lock.v1",
-  "shadow_runtime_version": "0.3.2",
+  "shadow_runtime_version": "0.3.3",
   "execution_boundary": "ephemeral_leg_a_container_in_researcher_image",
   "network_mode": "none",
   "generic_worker_route_allowed": false,
