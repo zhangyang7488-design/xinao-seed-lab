@@ -34,6 +34,7 @@ DEFAULT_TRANSPORT_NETWORK = "xinao_researcher_internal"
 TOOL_SOCKET_READY_TIMEOUT_SECONDS = 10.0
 TOOL_SOCKET_READY_POLL_SECONDS = 0.05
 TOOL_SOCKET_EXPECTED_MODE = 0o666
+TOOL_IPC_DIRECTORY_EXPECTED_MODE = 0o711
 
 
 def host_modules_dir() -> Path:
@@ -222,10 +223,12 @@ class DualContainerHost:
         expected_mode = TOOL_SOCKET_EXPECTED_MODE
         probe = (
             "import json,os,stat;"
-            "s=os.lstat('/ipc/tool.sock');"
+            "d=os.lstat('/ipc');s=os.lstat('/ipc/tool.sock');"
             "print(json.dumps({'uid':s.st_uid,'gid':s.st_gid,"
-            "'mode':stat.S_IMODE(s.st_mode),'is_socket':stat.S_ISSOCK(s.st_mode)},"
-            "sort_keys=True))"
+            "'mode':stat.S_IMODE(s.st_mode),'is_socket':stat.S_ISSOCK(s.st_mode),"
+            "'directory_uid':d.st_uid,'directory_gid':d.st_gid,"
+            "'directory_mode':stat.S_IMODE(d.st_mode),"
+            "'directory_is_dir':stat.S_ISDIR(d.st_mode)},sort_keys=True))"
         )
         argv = [
             self.config.docker,
@@ -251,13 +254,12 @@ class DualContainerHost:
                         "gid": expected_gid,
                         "mode": expected_mode,
                         "is_socket": True,
+                        "directory_uid": expected_uid,
+                        "directory_gid": expected_gid,
+                        "directory_mode": TOOL_IPC_DIRECTORY_EXPECTED_MODE,
+                        "directory_is_dir": True,
                     }
-                    normalized = {
-                        "uid": observed.get("uid"),
-                        "gid": observed.get("gid"),
-                        "mode": observed.get("mode"),
-                        "is_socket": observed.get("is_socket"),
-                    }
+                    normalized = {key: observed.get(key) for key in exact}
                     if normalized == exact:
                         return normalized
                     last_detail = f"socket stat mismatch:{normalized!r}"

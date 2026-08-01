@@ -4,9 +4,11 @@ from __future__ import annotations
 
 import hashlib
 import importlib.util
+import stat
 import subprocess
 import sys
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
@@ -78,6 +80,71 @@ def test_peer_gate_refuses_platform_without_linux_peer_credentials(
     with pytest.raises(tool.ToolExecutorError) as unavailable:
         tool.assert_unix_peer_allowed(FakeConnection())
     assert unavailable.value.reason_code == "IPC_PEER_CRED_UNAVAILABLE"
+
+
+def test_exact_peer_gate_heals_stale_ipc_directory_for_capless_transport(
+    tool: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    state = {"mode": 0o770, "device": 7, "inode": 11}
+
+    def observed() -> SimpleNamespace:
+        return SimpleNamespace(
+            st_mode=stat.S_IFDIR | state["mode"],
+            st_uid=65532,
+            st_gid=65532,
+            st_dev=state["device"],
+            st_ino=state["inode"],
+        )
+
+    monkeypatch.setenv("XINAO_IPC_PEER_REQUIRE", "1")
+    monkeypatch.setenv("XINAO_IPC_PEER_UIDS", "0")
+    monkeypatch.setattr(tool.os, "getuid", lambda: 65532, raising=False)
+    monkeypatch.setattr(tool.os, "getgid", lambda: 65532, raising=False)
+    monkeypatch.setattr(tool.os, "lstat", lambda _path: observed())
+    monkeypatch.setattr(tool.os, "chmod", lambda _path, mode: state.update(mode=mode))
+
+    evidence = tool.prepare_peer_gated_socket_directory(Path("/ipc/tool.sock"))
+    assert evidence == {
+        "uid": 65532,
+        "gid": 65532,
+        "mode": 0o711,
+        "is_directory": True,
+    }
+    assert state["mode"] == 0o711
+    assert state["mode"] & 0o006 == 0
+
+
+def test_socket_directory_is_not_widened_without_required_peer_gate(
+    tool: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.delenv("XINAO_IPC_PEER_REQUIRE", raising=False)
+    monkeypatch.delenv("XINAO_IPC_PEER_UIDS", raising=False)
+    monkeypatch.setattr(
+        tool.os,
+        "chmod",
+        lambda *_args: pytest.fail("standalone mode must not chmod the socket directory"),
+    )
+    assert tool.prepare_peer_gated_socket_directory(Path("/ipc/tool.sock")) is None
+
+
+def test_socket_directory_refuses_foreign_owner_or_replaced_object(
+    tool: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("XINAO_IPC_PEER_REQUIRE", "1")
+    monkeypatch.setenv("XINAO_IPC_PEER_UIDS", "0")
+    monkeypatch.setattr(tool.os, "getuid", lambda: 65532, raising=False)
+    monkeypatch.setattr(tool.os, "getgid", lambda: 65532, raising=False)
+    foreign = SimpleNamespace(
+        st_mode=stat.S_IFDIR | 0o770,
+        st_uid=0,
+        st_gid=0,
+        st_dev=7,
+        st_ino=11,
+    )
+    monkeypatch.setattr(tool.os, "lstat", lambda _path: foreign)
+    with pytest.raises(tool.ToolExecutorError) as denied:
+        tool.prepare_peer_gated_socket_directory(Path("/ipc/tool.sock"))
+    assert denied.value.reason_code == "IPC_SOCKET_DIRECTORY_IDENTITY_FAILED"
 
 
 def test_canonical_specs_pin_transport_root_and_tool_peer_uid(specs: Any) -> None:
@@ -175,7 +242,9 @@ def test_tool_socket_start_canary_accepts_only_expected_owner_mode(
         return subprocess.CompletedProcess(
             args,
             0,
-            '{"gid":65532,"is_socket":true,"mode":438,"uid":65532}\n',
+            '{"directory_gid":65532,"directory_is_dir":true,'
+            '"directory_mode":457,"directory_uid":65532,'
+            '"gid":65532,"is_socket":true,"mode":438,"uid":65532}\n',
             "",
         )
 
@@ -188,7 +257,16 @@ def test_tool_socket_start_canary_accepts_only_expected_owner_mode(
     )
     guardian = host.DualContainerHost(cfg)
     evidence = guardian._wait_for_tool_socket_ready("tool-container", timeout_seconds=0.1)
-    assert evidence == {"gid": 65532, "is_socket": True, "mode": 0o666, "uid": 65532}
+    assert evidence == {
+        "uid": 65532,
+        "gid": 65532,
+        "mode": 0o666,
+        "is_socket": True,
+        "directory_uid": 65532,
+        "directory_gid": 65532,
+        "directory_mode": 0o711,
+        "directory_is_dir": True,
+    }
     assert calls and calls[0][:3] == ["docker", "exec", "tool-container"]
     assert "/ipc/tool.sock" in " ".join(calls[0])
     assert "os.lstat" in " ".join(calls[0])

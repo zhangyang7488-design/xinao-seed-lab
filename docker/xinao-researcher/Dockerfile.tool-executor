@@ -11,7 +11,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates
     && rm -rf /var/lib/apt/lists/* \
     && install -d -m 0555 /opt/xinao-tool-executor \
     && install -d -m 0770 /episode-lab \
-    && install -d -m 0770 /ipc \
+    && install -d -m 0711 /ipc \
     && groupadd --gid 65532 nonroot \
     && useradd --uid 65532 --gid 65532 --home-dir /tmp --shell /usr/sbin/nologin nonroot \
     && chown 65532:65532 /episode-lab /ipc
