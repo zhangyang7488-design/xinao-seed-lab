@@ -1,10 +1,15 @@
 from __future__ import annotations
 
 import argparse
+import base64
+import csv
 import datetime as dt
 import hashlib
 import importlib
+import importlib.machinery
+import importlib.metadata as importlib_metadata
 import importlib.util
+import io
 import json
 import math
 import os
@@ -13512,6 +13517,8 @@ def _parser() -> argparse.ArgumentParser:
     re_start.add_argument("--root", type=Path, required=True)
     re_start.add_argument("--question", required=True)
     re_start.add_argument("--lease-seconds", type=int, default=3600)
+    re_start.add_argument("--feedback-portfolio-root", type=Path, default=None)
+    re_start.add_argument("--feedback-content-hash", default=None)
     re_status = research_episode_sub.add_parser("status")
     re_status.add_argument("--root", type=Path, required=True)
     re_checkpoint = research_episode_sub.add_parser("checkpoint")
@@ -13612,6 +13619,7 @@ def _parser() -> argparse.ArgumentParser:
     re_bind_fb.add_argument("--prior-candidate-result-sha256", default=None)
     re_bind_fb.add_argument("--prior-candidate-version", default=None)
     re_bind_fb.add_argument("--settled-portfolio-hash", default=None)
+    re_bind_fb.add_argument("--portfolio-feedback-state-hash", default=None)
     re_bind_fb.add_argument("--target-episode-version", default=None)
     # Owner one-shot host security issuer (not episode-local, not autonomous).
     sub.add_parser("issue-tool-namespace-receipt")
@@ -13678,6 +13686,7 @@ def _research_episode_paths(root: Path) -> dict[str, Path]:
     return {
         "root": root,
         "lab": root / "lab",
+        "inputs": root / "inputs",
         "outbox": root / "outbox",
         "objects": root / "objects" / "sha256",
         "artifacts": root / "artifacts" / "sha256",
@@ -13835,6 +13844,22 @@ def _research_episode_load_head(root: Path) -> dict[str, Any]:
         raise XinaoError("RESEARCH_EPISODE_HEAD_INVALID", "head_checkpoint_sha256")
     payload = _research_episode_load_bytes(root, "objects", digest)
     checkpoint = json.loads(payload.decode("utf-8"))
+    meta_feedback = meta.get("feedback_inventory_hash")
+    head_feedback = head.get("feedback_inventory_hash")
+    checkpoint_feedback = checkpoint.get("feedback_inventory_hash")
+    if not (meta_feedback == head_feedback == checkpoint_feedback):
+        raise XinaoError(
+            "RESEARCH_EPISODE_FEEDBACK_CHECKPOINT_MISMATCH",
+            "meta, head, and checkpoint feedback identities differ",
+        )
+    if checkpoint_feedback is not None and (
+        not isinstance(checkpoint_feedback, str)
+        or re.fullmatch(r"[0-9a-f]{64}", checkpoint_feedback) is None
+    ):
+        raise XinaoError(
+            "RESEARCH_EPISODE_FEEDBACK_INVENTORY_HASH_INVALID",
+            str(checkpoint_feedback),
+        )
     checkpoint["checkpoint_sha256"] = digest
     head["checkpoint"] = checkpoint
     return head
@@ -14050,8 +14075,20 @@ def _research_episode_commit_checkpoint(
     lab_relative: str | None = None,
     lab_bytes: bytes | None = None,
     candidate_sha256: str | None = None,
+    feedback_inventory_hash: str | None = None,
 ) -> dict[str, Any]:
     paths = _research_episode_paths(root)
+    if feedback_inventory_hash is None and paths["meta"].is_file():
+        try:
+            meta = json.loads(paths["meta"].read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as exc:
+            raise XinaoError(
+                "RESEARCH_EPISODE_META_INVALID",
+                str(paths["meta"]),
+            ) from exc
+        if not isinstance(meta, dict):
+            raise XinaoError("RESEARCH_EPISODE_META_INVALID", str(paths["meta"]))
+        feedback_inventory_hash = meta.get("feedback_inventory_hash")
     if lab_relative is not None and lab_bytes is not None:
         rel = Path(lab_relative)
         if ".." in rel.parts or rel.is_absolute():
@@ -14083,6 +14120,13 @@ def _research_episode_commit_checkpoint(
         "science_restored": False,
         "parent_complete": False,
     }
+    if feedback_inventory_hash is not None:
+        if re.fullmatch(r"[0-9a-f]{64}", str(feedback_inventory_hash)) is None:
+            raise XinaoError(
+                "RESEARCH_EPISODE_FEEDBACK_INVENTORY_HASH_INVALID",
+                str(feedback_inventory_hash),
+            )
+        body["feedback_inventory_hash"] = feedback_inventory_hash
     sealed_bytes = _canonical_bytes(body)
     digest = _sha256_bytes(sealed_bytes)
     body_with_digest = dict(body)
@@ -14098,6 +14142,8 @@ def _research_episode_commit_checkpoint(
         "updated_at": body["created_at"],
         "completion_claim_allowed": False,
     }
+    if feedback_inventory_hash is not None:
+        head["feedback_inventory_hash"] = feedback_inventory_hash
     _research_episode_write_head(root, head)
     _research_episode_append_journal(
         root,
@@ -15333,19 +15379,42 @@ def research_episode_start(
     root: Path | str,
     question: str,
     lease_seconds: int = 3600,
+    feedback_portfolio_root: Path | str | None = None,
+    feedback_content_hash: str | None = None,
 ) -> dict[str, Any]:
     del lease_seconds
     root = Path(root)
     _research_episode_assert_root_allowed(root)
+    if (feedback_portfolio_root is None) != (feedback_content_hash is None):
+        raise XinaoError(
+            "RESEARCH_EPISODE_FEEDBACK_BINDING_INCOMPLETE",
+            "feedback_portfolio_root and feedback_content_hash must be supplied together",
+        )
     with _research_episode_lock(root):
         paths = _research_episode_paths(root)
         if paths["meta"].is_file():
             raise XinaoError("RESEARCH_EPISODE_EXISTS", str(root))
-        for key in ("lab", "outbox", "objects", "artifacts"):
+        for key in ("lab", "inputs", "outbox", "objects", "artifacts"):
             paths[key].mkdir(parents=True, exist_ok=True)
         episode_id = _research_episode_id("xre")
         session_id = _research_episode_id("xrsess")
         profile_status = _research_episode_resolve_profile_status(root)
+        feedback_stage: dict[str, Any] | None = None
+        if feedback_portfolio_root is not None and feedback_content_hash is not None:
+            try:
+                material = _import_discovery_science("research_feedback_material")
+                feedback_stage = material.stage_feedback_pack_for_episode(
+                    episode_root=root,
+                    episode_id=episode_id,
+                    portfolio_root=Path(feedback_portfolio_root),
+                    feedback_content_hash=feedback_content_hash,
+                )
+            except Exception as exc:
+                reason = getattr(exc, "reason_code", None) or (
+                    "RESEARCH_EPISODE_FEEDBACK_STAGE_FAILED"
+                )
+                detail = getattr(exc, "detail", None) or str(exc)
+                raise XinaoError(str(reason), str(detail)[:2000]) from exc
         meta = {
             "schema_version": RESEARCH_EPISODE_SCHEMA,
             "episode_id": episode_id,
@@ -15364,6 +15433,17 @@ def research_episode_start(
             "science_restored": False,
             "parent_complete": False,
         }
+        if feedback_stage is not None:
+            meta.update(
+                {
+                    "feedback_inventory_hash": feedback_stage["inventory_hash"],
+                    "feedback_content_hash": feedback_stage["feedback_content_hash"],
+                    "portfolio_feedback_state_hash": feedback_stage[
+                        "portfolio_feedback_state_hash"
+                    ],
+                    "feedback_material_status": "SEALED_INPUT_STAGED",
+                }
+            )
         paths["meta"].write_bytes(_canonical_bytes(meta))
         container_identity = _research_episode_container_identity(
             verb="start",
@@ -15382,6 +15462,9 @@ def research_episode_start(
             progress_note=f"start: {question[:200]}",
             parent_sha256=None,
             container_identity=container_identity,
+            feedback_inventory_hash=(
+                feedback_stage["inventory_hash"] if feedback_stage is not None else None
+            ),
         )
         return {
             "status": "STARTED",
@@ -15393,6 +15476,12 @@ def research_episode_start(
             "container_identity": container_identity,
             "profile_status": profile_status,
             "instrument_canary_route_preserved": True,
+            "feedback_inventory_hash": (
+                feedback_stage["inventory_hash"] if feedback_stage is not None else None
+            ),
+            "feedback_material_staged": feedback_stage is not None,
+            "feedback_prompt_bound": False,
+            "auto_start_next_research": False,
             "completion_claim_allowed": False,
             "owner_adopted": False,
             "science_restored": False,
@@ -16002,6 +16091,49 @@ def _research_episode_namespace_and_release_facts() -> dict[str, Any]:
     return facts
 
 
+def _research_episode_feedback_prompt(
+    *,
+    root: Path,
+    meta: Mapping[str, Any],
+    head: Mapping[str, Any],
+    owner_prompt: str | None,
+) -> dict[str, Any]:
+    checkpoint = head.get("checkpoint")
+    if not isinstance(checkpoint, Mapping):
+        raise XinaoError("RESEARCH_EPISODE_HEAD_INVALID", "checkpoint")
+    inventory_hash = checkpoint.get("feedback_inventory_hash")
+    if not (
+        meta.get("feedback_inventory_hash")
+        == head.get("feedback_inventory_hash")
+        == inventory_hash
+    ):
+        raise XinaoError(
+            "RESEARCH_EPISODE_FEEDBACK_CHECKPOINT_MISMATCH",
+            "meta, head, and checkpoint feedback identities differ",
+        )
+    if inventory_hash is None:
+        return {
+            "prompt": owner_prompt,
+            "feedback_inventory_read": False,
+            "feedback_prompt_bound": False,
+            "feedback_inventory_hash": None,
+            "feedback_packet_sha256": None,
+            "model_learned_claim_allowed": False,
+        }
+    try:
+        material = _import_discovery_science("research_feedback_material")
+        bound = material.compose_feedback_bound_provider_prompt(
+            episode_root=root,
+            inventory_hash=str(inventory_hash),
+            owner_prompt=owner_prompt,
+        )
+    except Exception as exc:
+        reason = getattr(exc, "reason_code", None) or "RESEARCH_EPISODE_FEEDBACK_READ_FAILED"
+        detail = getattr(exc, "detail", None) or str(exc)
+        raise XinaoError(str(reason), str(detail)[:2000]) from exc
+    return dict(bound)
+
+
 def research_episode_attach_run(
     *,
     root: Path | str,
@@ -16036,9 +16168,15 @@ def research_episode_attach_run(
             )
         facts = _research_episode_namespace_and_release_facts()
         _host_mod, host = _research_episode_load_dual_host(root)
+        feedback_prompt = _research_episode_feedback_prompt(
+            root=root,
+            meta=meta,
+            head=head,
+            owner_prompt=prompt,
+        )
         try:
             result = host.attach_run_live(
-                prompt=prompt,
+                prompt=feedback_prompt["prompt"],
                 max_turns=max_turns,
                 timeout_seconds=timeout_seconds,
                 expected_episode_id=str(meta["episode_id"]),
@@ -16062,10 +16200,13 @@ def research_episode_attach_run(
                 "attempt_cas_digest": result.get("attempt_cas_digest"),
                 "attempt_hash": result.get("attempt_hash"),
                 "plan_only": bool(plan_only),
+                "feedback_inventory_hash": feedback_prompt["feedback_inventory_hash"],
+                "feedback_prompt_bound": feedback_prompt["feedback_prompt_bound"],
             },
         )
         return {
             **result,
+            **{key: value for key, value in feedback_prompt.items() if key != "prompt"},
             "episode_id": meta["episode_id"],
             "host_session_id": meta["session_id"],
             "cas_head_sha256": head["head_checkpoint_sha256"],
@@ -16075,6 +16216,7 @@ def research_episode_attach_run(
             "freeze_written": False,
             "settlement_written": False,
             "portfolio_updated": False,
+            "auto_start_next_research": False,
             "completion_claim_allowed": False,
             "owner_adopted": False,
             "science_restored": False,
@@ -16114,6 +16256,12 @@ def research_episode_resume_live(
             )
         facts = _research_episode_namespace_and_release_facts()
         _host_mod, host = _research_episode_load_dual_host(root)
+        feedback_prompt = _research_episode_feedback_prompt(
+            root=root,
+            meta=meta,
+            head=head,
+            owner_prompt=prompt,
+        )
         try:
             result = host.resume_live(
                 expected_provider_session_uuid=expected_provider_session_uuid,
@@ -16121,7 +16269,7 @@ def research_episode_resume_live(
                 expected_episode_id=str(meta["episode_id"]),
                 expected_cas_head_sha256=expected_head_sha256,
                 prior_attempt_hash=prior_attempt_hash,
-                prompt=prompt,
+                prompt=feedback_prompt["prompt"],
                 max_turns=max_turns,
                 timeout_seconds=timeout_seconds,
                 namespace_receipt_sha256=facts.get("namespace_receipt_sha256"),
@@ -16141,10 +16289,13 @@ def research_episode_resume_live(
                 "provider_session_uuid": expected_provider_session_uuid,
                 "attempt_cas_digest": result.get("attempt_cas_digest"),
                 "plan_only": bool(plan_only),
+                "feedback_inventory_hash": feedback_prompt["feedback_inventory_hash"],
+                "feedback_prompt_bound": feedback_prompt["feedback_prompt_bound"],
             },
         )
         return {
             **result,
+            **{key: value for key, value in feedback_prompt.items() if key != "prompt"},
             "episode_id": meta["episode_id"],
             "host_session_id": meta["session_id"],
             "cas_head_sha256": head["head_checkpoint_sha256"],
@@ -16154,6 +16305,7 @@ def research_episode_resume_live(
             "freeze_written": False,
             "settlement_written": False,
             "portfolio_updated": False,
+            "auto_start_next_research": False,
             "completion_claim_allowed": False,
             "owner_adopted": False,
             "science_restored": False,
@@ -16253,6 +16405,343 @@ def research_episode_export_candidate_evidence(
         }
 
 
+def _expected_discovery_package_identity() -> tuple[str, str, str, str]:
+    registry = _validate_registry()
+    records = [
+        item
+        for item in registry.get("capabilities", [])
+        if isinstance(item, dict) and item.get("capability_id") == "research-episode"
+    ]
+    if len(records) != 1:
+        raise XinaoError("DISCOVERY_PACKAGE_IDENTITY_INVALID", "research-episode")
+    name = records[0].get("packaged_dependency")
+    version = records[0].get("packaged_dependency_version")
+    tree_schema = records[0].get("packaged_dependency_tree_schema")
+    tree_sha256 = records[0].get("packaged_dependency_tree_sha256")
+    if name != "xinao-discovery" or not isinstance(version, str) or (
+        SEMVER_PATTERN.fullmatch(version) is None
+    ) or tree_schema != "xinao.package_tree.v1" or not isinstance(tree_sha256, str) or (
+        HEX_SHA256_PATTERN.fullmatch(tree_sha256) is None
+    ):
+        raise XinaoError(
+            "DISCOVERY_PACKAGE_IDENTITY_INVALID",
+            (
+                f"name={name!r} version={version!r} tree_schema={tree_schema!r} "
+                f"tree_sha256={tree_sha256!r}"
+            ),
+        )
+    return name, version, tree_schema, tree_sha256
+
+
+def _discovery_package_inventory(package_root: Path) -> list[dict[str, Any]]:
+    """Return the exact non-cache package inventory used by source and wheel installs."""
+
+    try:
+        root = package_root.resolve(strict=True)
+    except OSError as exc:
+        raise XinaoError("DISCOVERY_PACKAGE_IDENTITY_UNPROVEN", str(package_root)) from exc
+    try:
+        root_info = os.lstat(root)
+    except OSError as exc:
+        raise XinaoError("DISCOVERY_PACKAGE_IDENTITY_UNPROVEN", str(root)) from exc
+    if _is_reparse_stat(root_info) or not stat.S_ISDIR(root_info.st_mode):
+        raise XinaoError("DISCOVERY_PACKAGE_IDENTITY_UNPROVEN", f"package root: {root}")
+
+    rows: list[dict[str, Any]] = []
+    total = 0
+    try:
+        for current, directories, filenames in os.walk(root, topdown=True, followlinks=False):
+            current_path = Path(current)
+            retained_directories: list[str] = []
+            for name in sorted(directories):
+                candidate = current_path / name
+                if name == "__pycache__":
+                    continue
+                info = os.lstat(candidate)
+                if _is_reparse_stat(info) or not stat.S_ISDIR(info.st_mode):
+                    raise XinaoError(
+                        "DISCOVERY_PACKAGE_IDENTITY_UNPROVEN",
+                        f"package directory: {candidate}",
+                    )
+                retained_directories.append(name)
+            directories[:] = retained_directories
+            for name in sorted(filenames):
+                candidate = current_path / name
+                if candidate.suffix.lower() in {".pyc", ".pyo"}:
+                    continue
+                relative = candidate.relative_to(root).as_posix()
+                payload = _regular_file_bytes(
+                    candidate,
+                    reason_code="DISCOVERY_PACKAGE_IDENTITY_UNPROVEN",
+                    maximum=MAX_SKILL_BUNDLE_TOTAL_BYTES,
+                )
+                total += len(payload)
+                if total > MAX_SKILL_BUNDLE_TOTAL_BYTES:
+                    raise XinaoError(
+                        "DISCOVERY_PACKAGE_IDENTITY_UNPROVEN",
+                        f"package bytes>{MAX_SKILL_BUNDLE_TOTAL_BYTES}",
+                    )
+                rows.append(
+                    {
+                        "relative_path": relative,
+                        "type": "file",
+                        "size": len(payload),
+                        "sha256": _sha256_bytes(payload),
+                    }
+                )
+                if len(rows) > MAX_SKILL_BUNDLE_FILES:
+                    raise XinaoError(
+                        "DISCOVERY_PACKAGE_IDENTITY_UNPROVEN",
+                        f"package files>{MAX_SKILL_BUNDLE_FILES}",
+                    )
+    except XinaoError:
+        raise
+    except OSError as exc:
+        raise XinaoError("DISCOVERY_PACKAGE_IDENTITY_UNPROVEN", str(root)) from exc
+    if not rows:
+        raise XinaoError("DISCOVERY_PACKAGE_IDENTITY_UNPROVEN", f"empty package: {root}")
+    rows.sort(key=lambda row: str(row["relative_path"]))
+    return rows
+
+
+def _discovery_package_tree_sha256(package_root: Path) -> str:
+    return _sha256_bytes(_canonical_bytes(_discovery_package_inventory(package_root)))
+
+
+def _discovery_runtime_is_formal() -> bool:
+    """Identify installed/current release topology; source worktrees remain a dev route."""
+
+    skill_root = Path(os.path.abspath(SKILL_ROOT))
+    installed_root = Path(os.path.abspath(_installed_skill_root()))
+    release_root = Path(os.path.abspath(_state_paths()["release_root"]))
+    return _paths_equal(skill_root, installed_root) or skill_root.is_relative_to(release_root)
+
+
+def _discovery_runtime_is_dev(repo_root: Path) -> bool:
+    return bool(
+        not _discovery_runtime_is_formal()
+        and (repo_root / ".git").exists()
+        and (repo_root / "xinao_discovery" / "pyproject.toml").is_file()
+        and (repo_root / "xinao_discovery" / "src" / "xinao" / "__init__.py").is_file()
+    )
+
+
+def _distribution_is_editable(distribution: Any) -> bool:
+    try:
+        raw = distribution.read_text("direct_url.json")
+    except (AttributeError, OSError):
+        raw = None
+    if raw is None:
+        return False
+    try:
+        payload = json.loads(raw)
+    except (json.JSONDecodeError, TypeError, ValueError) as exc:
+        raise XinaoError("DISCOVERY_PACKAGE_IDENTITY_UNPROVEN", "direct_url.json") from exc
+    return bool(
+        isinstance(payload, dict)
+        and isinstance(payload.get("dir_info"), dict)
+        and payload["dir_info"].get("editable") is True
+    )
+
+
+def _normalized_distribution_name(value: object) -> str:
+    return re.sub(r"[-_.]+", "-", str(value or "")).lower()
+
+
+def _raw_distribution_package_record(distribution: Any) -> dict[str, tuple[int, str]]:
+    try:
+        raw = distribution.read_text("RECORD")
+    except (AttributeError, OSError) as exc:
+        raise XinaoError("DISCOVERY_PACKAGE_RECORD_MISSING", "RECORD") from exc
+    if not isinstance(raw, str) or not raw:
+        raise XinaoError("DISCOVERY_PACKAGE_RECORD_MISSING", "RECORD")
+    output: dict[str, tuple[int, str]] = {}
+    try:
+        rows = csv.reader(io.StringIO(raw, newline=""))
+        for row in rows:
+            if len(row) != 3:
+                raise ValueError("RECORD row must have three fields")
+            relative, hash_field, size_field = row
+            normalized = Path(relative).as_posix()
+            if not normalized.startswith("xinao/"):
+                continue
+            if (
+                normalized != relative
+                or relative.startswith(("/", "\\"))
+                or ".." in Path(relative).parts
+                or relative in output
+                or not hash_field.startswith("sha256=")
+                or not size_field.isdigit()
+            ):
+                raise ValueError(f"invalid package RECORD row: {relative}")
+            digest = hash_field.removeprefix("sha256=")
+            try:
+                decoded = base64.urlsafe_b64decode(digest + "=" * (-len(digest) % 4))
+            except (ValueError, UnicodeError) as exc:
+                raise ValueError(f"invalid RECORD digest: {relative}") from exc
+            if len(decoded) != 32:
+                raise ValueError(f"invalid RECORD digest: {relative}")
+            output[relative] = (int(size_field), digest)
+    except (csv.Error, ValueError) as exc:
+        raise XinaoError("DISCOVERY_PACKAGE_RECORD_MISMATCH", str(exc)) from exc
+    if not output:
+        raise XinaoError("DISCOVERY_PACKAGE_RECORD_MISSING", "xinao package rows")
+    return output
+
+
+def _verify_discovery_package_root(
+    *,
+    package_root: Path,
+    expected_tree_sha256: str,
+    distribution_files: dict[str, Any] | None,
+    distribution_record: dict[str, tuple[int, str]] | None,
+) -> Path:
+    try:
+        root = package_root.resolve(strict=True)
+    except OSError as exc:
+        raise XinaoError("DISCOVERY_PACKAGE_IDENTITY_UNPROVEN", str(package_root)) from exc
+    rows = _discovery_package_inventory(root)
+    observed_files = {f"xinao/{row['relative_path']}": row for row in rows}
+    if (distribution_files is None) != (distribution_record is None):
+        raise XinaoError("DISCOVERY_PACKAGE_RECORD_MISSING", "incomplete RECORD binding")
+    if distribution_files is not None and distribution_record is not None:
+        file_set = set(distribution_files)
+        record_set = set(distribution_record)
+        observed_set = set(observed_files)
+        if file_set != record_set or record_set != observed_set:
+            raise XinaoError(
+                "DISCOVERY_PACKAGE_RECORD_MISMATCH",
+                (
+                    f"dist_files_only={sorted(file_set - record_set)[:4]} "
+                    f"record_only={sorted(record_set - file_set)[:4]} "
+                    f"record_not_physical={sorted(record_set - observed_set)[:4]} "
+                    f"physical_not_record={sorted(observed_set - record_set)[:4]}"
+                ),
+            )
+        for relative, row in observed_files.items():
+            record = distribution_files[relative]
+            record_size = getattr(record, "size", None)
+            record_hash = getattr(record, "hash", None)
+            expected_record_hash = base64.urlsafe_b64encode(
+                bytes.fromhex(str(row["sha256"]))
+            ).rstrip(b"=").decode("ascii")
+            raw_size, raw_hash = distribution_record[relative]
+            if (
+                record_size != row["size"]
+                or getattr(record_hash, "mode", None) != "sha256"
+                or getattr(record_hash, "value", None) != expected_record_hash
+                or raw_size != row["size"]
+                or raw_hash != expected_record_hash
+            ):
+                raise XinaoError(
+                    "DISCOVERY_PACKAGE_RECORD_MISMATCH",
+                    relative,
+                )
+    observed_tree_sha256 = _sha256_bytes(_canonical_bytes(rows))
+    if observed_tree_sha256 != expected_tree_sha256:
+        raise XinaoError(
+            "DISCOVERY_PACKAGE_TREE_MISMATCH",
+            f"expected={expected_tree_sha256} observed={observed_tree_sha256}",
+        )
+    return root
+
+
+def _module_origin_under_package(module: Any, package_root: Path) -> bool:
+    raw = getattr(module, "__file__", None)
+    if not isinstance(raw, str) or not raw:
+        return False
+    try:
+        return Path(raw).resolve(strict=True).is_relative_to(package_root)
+    except OSError:
+        return False
+
+
+def _reject_discovery_bytecode_cache(package_root: Path) -> None:
+    try:
+        for current, directories, filenames in os.walk(
+            package_root, topdown=True, followlinks=False
+        ):
+            if "__pycache__" in directories or any(
+                Path(name).suffix.lower() in {".pyc", ".pyo"} for name in filenames
+            ):
+                raise XinaoError(
+                    "DISCOVERY_PACKAGE_BYTECODE_FORBIDDEN",
+                    str(current),
+                )
+    except XinaoError:
+        raise
+    except OSError as exc:
+        raise XinaoError("DISCOVERY_PACKAGE_IDENTITY_UNPROVEN", str(package_root)) from exc
+
+
+def _verify_discovery_import_specs(package_root: Path, leaf: str) -> None:
+    expected = (
+        ("xinao", [str(package_root.parent)], package_root / "__init__.py"),
+        ("xinao.science", [str(package_root)], package_root / "science" / "__init__.py"),
+        (
+            f"xinao.science.{leaf}",
+            [str(package_root / "science")],
+            package_root / "science" / f"{leaf}.py",
+        ),
+    )
+    for fullname, search_path, expected_origin in expected:
+        spec = importlib.machinery.PathFinder.find_spec(fullname, search_path)
+        origin = getattr(spec, "origin", None)
+        if not isinstance(origin, str) or not _paths_equal(Path(origin), expected_origin):
+            raise XinaoError(
+                "DISCOVERY_PACKAGE_ORIGIN_MISMATCH",
+                f"module={fullname} expected={expected_origin} observed={origin}",
+            )
+
+
+def _prepare_discovery_import_root(package_root: Path) -> None:
+    foreign_loaded = any(
+        not _module_origin_under_package(module, package_root)
+        for name, module in tuple(sys.modules.items())
+        if name == "xinao" or name.startswith("xinao.")
+    )
+    if foreign_loaded:
+        for name in tuple(sys.modules):
+            if name == "xinao" or name.startswith("xinao."):
+                del sys.modules[name]
+    import_root = str(package_root.parent)
+    while import_root in sys.path:
+        sys.path.remove(import_root)
+    sys.path.insert(0, import_root)
+
+
+def _verify_loaded_discovery_modules(package_root: Path) -> None:
+    foreign: list[str] = []
+    for name, module in tuple(sys.modules.items()):
+        if name != "xinao" and not name.startswith("xinao."):
+            continue
+        if not _module_origin_under_package(module, package_root):
+            foreign.append(name)
+            continue
+        spec_origin = getattr(getattr(module, "__spec__", None), "origin", None)
+        if not isinstance(spec_origin, str) or not Path(spec_origin).resolve().is_relative_to(
+            package_root
+        ):
+            foreign.append(name)
+            continue
+        module_paths = getattr(module, "__path__", None)
+        if module_paths is not None:
+            try:
+                if any(
+                    not Path(item).resolve(strict=True).is_relative_to(package_root)
+                    for item in module_paths
+                ):
+                    foreign.append(name)
+            except OSError:
+                foreign.append(name)
+    foreign.sort()
+    if foreign:
+        raise XinaoError(
+            "DISCOVERY_PACKAGE_ORIGIN_MISMATCH",
+            ",".join(foreign[:8]),
+        )
+
+
 def _import_discovery_science(module_name: str) -> Any:
     """Import xinao.science.* preferring installed package, then monorepo src.
 
@@ -16262,43 +16751,151 @@ def _import_discovery_science(module_name: str) -> Any:
     """
 
     leaf = module_name.rsplit(".", 1)[-1]
-    # 1) Installed / site-packages package (fresh wheel or sealed env).
-    try:
-        return importlib.import_module(f"xinao.science.{leaf}")
-    except ImportError:
-        pass
-    # 2) Explicit override or monorepo discovery src (dev / worktree only).
-    repo_root = Path(__file__).resolve().parents[3]
-    discovery_src = Path(
-        os.environ.get("XINAO_DISCOVERY_SRC") or (repo_root / "xinao_discovery" / "src")
+    expected_distribution, expected_version, _tree_schema, expected_tree_sha256 = (
+        _expected_discovery_package_identity()
     )
-    adapter_path = discovery_src / "xinao" / "science" / f"{leaf}.py"
-    if not discovery_src.is_dir() or not adapter_path.is_file():
+    repo_root = Path(__file__).resolve().parents[3]
+    default_discovery_src = repo_root / "xinao_discovery" / "src"
+    configured_discovery_src = os.environ.get("XINAO_DISCOVERY_SRC")
+    formal_runtime = _discovery_runtime_is_formal()
+    dev_runtime = _discovery_runtime_is_dev(repo_root)
+    production_identity_required = formal_runtime or not dev_runtime
+    if production_identity_required and configured_discovery_src:
+        raise XinaoError(
+            "DISCOVERY_SOURCE_OVERRIDE_FORBIDDEN",
+            "XINAO_DISCOVERY_SRC is dev-only",
+        )
+    discovery_src = Path(configured_discovery_src or default_discovery_src).resolve()
+    if configured_discovery_src and not discovery_src.is_relative_to(repo_root):
+        raise XinaoError(
+            "DISCOVERY_SOURCE_OVERRIDE_FORBIDDEN",
+            f"outside worktree: {discovery_src}",
+        )
+
+    # Resolve and verify the selected distribution/source tree before executing package code.
+    try:
+        discovered = list(importlib_metadata.distributions(name=expected_distribution))
+    except importlib_metadata.PackageNotFoundError:
+        discovered = []
+    matching_distributions = []
+    for candidate_distribution in discovered:
+        metadata = getattr(candidate_distribution, "metadata", None)
+        observed_name = metadata.get("Name") if hasattr(metadata, "get") else None
+        if _normalized_distribution_name(observed_name) == expected_distribution:
+            matching_distributions.append(candidate_distribution)
+    if len(matching_distributions) > 1:
+        raise XinaoError(
+            "DISCOVERY_PACKAGE_DISTRIBUTION_AMBIGUOUS",
+            f"matches={len(matching_distributions)}",
+        )
+    distribution = matching_distributions[0] if matching_distributions else None
+    distribution_files: dict[str, Any] | None = None
+    distribution_record: dict[str, tuple[int, str]] | None = None
+    if distribution is None:
+        if production_identity_required:
+            raise XinaoError(
+                "DISCOVERY_INSTALLED_PACKAGE_REQUIRED",
+                expected_distribution,
+            )
+        package_root = discovery_src / "xinao"
+    else:
+        metadata = getattr(distribution, "metadata", None)
+        observed_name = metadata.get("Name") if hasattr(metadata, "get") else None
+        normalized_name = _normalized_distribution_name(observed_name)
+        if normalized_name != expected_distribution:
+            raise XinaoError(
+                "DISCOVERY_PACKAGE_IDENTITY_UNPROVEN",
+                f"expected={expected_distribution} observed={observed_name!r}",
+            )
+        installed_version = str(getattr(distribution, "version", ""))
+        if installed_version != expected_version:
+            raise XinaoError(
+                "DISCOVERY_PACKAGE_VERSION_MISMATCH",
+                f"expected={expected_version} observed={installed_version}",
+            )
+        editable = _distribution_is_editable(distribution)
+        if production_identity_required and editable:
+            raise XinaoError(
+                "DISCOVERY_EDITABLE_INSTALL_FORBIDDEN",
+                expected_distribution,
+            )
+        if editable:
+            package_root = discovery_src / "xinao"
+        else:
+            try:
+                distribution_root = Path(distribution.locate_file("")).resolve(strict=True)
+                package_root = Path(distribution.locate_file("xinao")).resolve(strict=True)
+            except (AttributeError, OSError) as exc:
+                raise XinaoError(
+                    "DISCOVERY_PACKAGE_IDENTITY_UNPROVEN",
+                    expected_distribution,
+                ) from exc
+            if not package_root.is_relative_to(distribution_root) or not _paths_equal(
+                package_root, distribution_root / "xinao"
+            ):
+                raise XinaoError(
+                    "DISCOVERY_PACKAGE_ORIGIN_MISMATCH",
+                    f"distribution_root={distribution_root} package_root={package_root}",
+                )
+            raw_files = getattr(distribution, "files", None)
+            if raw_files is None:
+                raise XinaoError(
+                    "DISCOVERY_PACKAGE_RECORD_MISSING",
+                    expected_distribution,
+                )
+            distribution_files = {
+                Path(str(item)).as_posix(): item
+                for item in raw_files
+                if Path(str(item)).as_posix().startswith("xinao/")
+            }
+            distribution_record = _raw_distribution_package_record(distribution)
+    package_root = _verify_discovery_package_root(
+        package_root=package_root,
+        expected_tree_sha256=expected_tree_sha256,
+        distribution_files=distribution_files,
+        distribution_record=distribution_record,
+    )
+    if production_identity_required:
+        _reject_discovery_bytecode_cache(package_root)
+    adapter_path = package_root / "science" / f"{leaf}.py"
+    if not adapter_path.is_file():
         raise XinaoError(
             "EPISODE_POOL_ADAPTER_UNAVAILABLE",
             (
-                f"installed xinao.science.{leaf} missing and monorepo src not found "
-                f"at {discovery_src}; install xinao-discovery or set XINAO_DISCOVERY_SRC"
+                f"verified xinao.science.{leaf} missing at {adapter_path}"
             ),
         )
-    src = str(discovery_src)
-    if src in sys.path:
-        sys.path.remove(src)
-    sys.path.insert(0, src)
-    # Avoid skills/xinao name collision with package `xinao`.
-    existing = sys.modules.get("xinao")
-    if existing is not None and not hasattr(existing, "science"):
-        del sys.modules["xinao"]
-        for key in list(sys.modules):
-            if key.startswith("xinao."):
-                del sys.modules[key]
+    _verify_discovery_import_specs(package_root, leaf)
+    _prepare_discovery_import_root(package_root)
     try:
-        return importlib.import_module(f"xinao.science.{leaf}")
+        imported = importlib.import_module(f"xinao.science.{leaf}")
     except ImportError as exc:
         raise XinaoError(
             "EPISODE_POOL_ADAPTER_UNAVAILABLE",
             f"xinao.science.{leaf} import failed: {exc}",
         ) from exc
+    expected_origin = package_root / "science" / f"{leaf}.py"
+    imported_spec_origin = getattr(getattr(imported, "__spec__", None), "origin", None)
+    if (
+        not _module_origin_under_package(imported, package_root)
+        or not _paths_equal(Path(str(getattr(imported, "__file__", ""))), expected_origin)
+        or not isinstance(imported_spec_origin, str)
+        or not _paths_equal(Path(imported_spec_origin), expected_origin)
+    ):
+        raise XinaoError(
+            "DISCOVERY_PACKAGE_ORIGIN_MISMATCH",
+            str(getattr(imported, "__file__", None)),
+        )
+    _verify_loaded_discovery_modules(package_root)
+    _verify_discovery_package_root(
+        package_root=package_root,
+        expected_tree_sha256=expected_tree_sha256,
+        distribution_files=distribution_files,
+        distribution_record=distribution_record,
+    )
+    if production_identity_required:
+        _reject_discovery_bytecode_cache(package_root)
+    return imported
 
 
 def research_episode_ingest_export(
@@ -16361,6 +16958,7 @@ def research_episode_bind_feedback_material(
     prior_candidate_result_sha256: str | None = None,
     prior_candidate_version: str | None = None,
     settled_portfolio_hash: str | None = None,
+    portfolio_feedback_state_hash: str | None = None,
     target_episode_version: str | None = None,
 ) -> dict[str, Any]:
     """Owner-callable feedback material binding for a later ResearchEpisode version.
@@ -16381,6 +16979,7 @@ def research_episode_bind_feedback_material(
             prior_candidate_result_sha256=prior_candidate_result_sha256,
             prior_candidate_version=prior_candidate_version,
             settled_portfolio_hash=settled_portfolio_hash,
+            portfolio_feedback_state_hash=portfolio_feedback_state_hash,
             target_episode_version=target_episode_version,
         )
         material.assert_feedback_cannot_rewrite_priors(binding=binding)
@@ -16579,6 +17178,8 @@ def main(argv: Sequence[str] | None = None) -> int:
                     root=args.root,
                     question=args.question,
                     lease_seconds=args.lease_seconds,
+                    feedback_portfolio_root=args.feedback_portfolio_root,
+                    feedback_content_hash=args.feedback_content_hash,
                 )
             elif args.research_episode_command == "status":
                 value = research_episode_status(root=args.root)
@@ -16663,6 +17264,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                     prior_candidate_result_sha256=args.prior_candidate_result_sha256,
                     prior_candidate_version=args.prior_candidate_version,
                     settled_portfolio_hash=args.settled_portfolio_hash,
+                    portfolio_feedback_state_hash=args.portfolio_feedback_state_hash,
                     target_episode_version=args.target_episode_version,
                 )
             else:

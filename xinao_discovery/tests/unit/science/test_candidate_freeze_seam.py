@@ -67,18 +67,29 @@ from xinao.science.researcher_result_adapter import (
 from xinao.science.researcher_result_adapter import (
     raw_sha256 as result_raw_sha256,
 )
+from xinao.settlement import OutcomeObservation
 from xinao.shadow_lifecycle import (
+    AccountDecisionIdentity,
     FeedbackKind,
     feedback_portfolio_period,
     freeze_portfolio_period,
     init_portfolio,
     settle_portfolio_period,
+    settle_shadow_episode,
 )
 from xinao.shadow_lifecycle.consumer import (
     OWNER_FREEZE_AUTHORITY_MARKER,
     OWNER_FREEZE_AUTHORITY_SCHEMA,
 )
-from xinao.shadow_lifecycle.store import detect_phase, load_frozen, period_directory
+from xinao.shadow_lifecycle.store import (
+    StoreError,
+    derive_portfolio_head,
+    detect_phase,
+    load_frozen,
+    period_directory,
+    write_outcome_and_settled_exclusive,
+    write_portfolio_manifest,
+)
 
 AS_OF = "2026-07-30T12:00:00.000Z"
 MATERIAL_DIGEST = "cd" * 32
@@ -1164,6 +1175,34 @@ def test_file_freeze_trusted_time_proof_false(tmp_path: Path) -> None:
 # --- Feedback pack tests ------------------------------------------------------
 
 
+def _settle_bound_portfolio_fixture(*, portfolio: Path, outcome_path: Path) -> None:
+    """Tests-only state setup; this is not a production source admission seam."""
+
+    head = derive_portfolio_head(portfolio)
+    assert head.period_root is not None
+    frozen = load_frozen(head.period_root)
+    outcome_raw = json.loads(outcome_path.read_text(encoding="utf-8"))
+    outcome = OutcomeObservation.model_validate(outcome_raw).with_hash()
+    kwargs: dict[str, Any] = {
+        "episode": frozen,
+        "outcome": outcome,
+        "statement_ref": f"statement.fixture.{frozen.episode_ref}",
+        "existing_settlements": (),
+    }
+    if frozen.account_decision.identity == AccountDecisionIdentity.ACTION:
+        kwargs["settlement_ref"] = f"settlement.fixture.{frozen.episode_ref}"
+        kwargs["settlement_journal_group_ref"] = (
+            f"journal.settlement.fixture.{frozen.episode_ref}"
+        )
+    settled = settle_shadow_episode(**kwargs)
+    write_outcome_and_settled_exclusive(
+        head.period_root,
+        outcome=outcome,
+        settled=settled,
+    )
+    write_portfolio_manifest(portfolio)
+
+
 def _freeze_settle_feedback(tmp_path: Path) -> tuple[Path, dict[str, Any], dict[str, Any]]:
     pool, entry, _, _ = _ingest(tmp_path, selected_number=1)
     owner = tmp_path / "owner"
@@ -1194,7 +1233,21 @@ def _freeze_settle_feedback(tmp_path: Path) -> tuple[Path, dict[str, Any], dict[
         + "\n",
         encoding="utf-8",
     )
-    settle_portfolio_period(root=portfolio, outcome_path=outcome_path)
+    with pytest.raises(
+        StoreError,
+        match="PRODUCTION_SETTLEMENT_CALLER_OUTCOME_FORBIDDEN",
+    ):
+        settle_portfolio_period(root=portfolio, outcome_path=outcome_path)
+    assert detect_phase(period_directory(portfolio, 1)).value == "FROZEN"
+    with pytest.raises(StoreError):
+        settle_portfolio_period(
+            root=portfolio,
+            source_authority_root=tmp_path / "missing-authority",
+            source_packet_content_hash="a" * 64,
+            source_reveal_content_hash="b" * 64,
+        )
+    assert detect_phase(period_directory(portfolio, 1)).value == "FROZEN"
+    _settle_bound_portfolio_fixture(portfolio=portfolio, outcome_path=outcome_path)
     feedback_portfolio_period(
         root=portfolio,
         kind=FeedbackKind.NO_CHANGE_WITH_REASON,
@@ -1331,7 +1384,7 @@ def test_happy_path_no_action_then_feedback(tmp_path: Path) -> None:
         + "\n",
         encoding="utf-8",
     )
-    settle_portfolio_period(root=portfolio, outcome_path=outcome_path)
+    _settle_bound_portfolio_fixture(portfolio=portfolio, outcome_path=outcome_path)
     feedback_portfolio_period(
         root=portfolio,
         kind=FeedbackKind.NO_CHANGE_WITH_REASON,
@@ -2180,7 +2233,7 @@ def test_later_period_feedback_sealed_head_binding(tmp_path: Path) -> None:
     assert frozen.bound_account_ticket.selected_number == 11
 
 
-def test_flat_episode_mode_has_no_portfolio_identity(tmp_path: Path) -> None:
+def test_flat_episode_mode_is_rejected_before_production_freeze(tmp_path: Path) -> None:
     from xinao.shadow_lifecycle import init_episode
 
     pool, entry, _, _ = _ingest(tmp_path, selected_number=5)
@@ -2196,21 +2249,28 @@ def test_flat_episode_mode_has_no_portfolio_identity(tmp_path: Path) -> None:
     body = _disposition_body(entry, period_index=1, selected_number=5)
     assert "portfolio_binding" not in body or body.get("portfolio_binding") is None
     path = _write_disposition(owner, pool, body)
-    result = _apply_freeze(
-        pool_root=pool,
-        owner_state_root=owner,
-        disposition_path=path,
-        shadow_root=episode_root,
-        mode="episode",
-    )
-    assert result["mode"] == "episode"
-    assert result["portfolio_binding"] is None
-    side = load_research_binding(episode_root, result["research_binding_sha256"])
-    assert side["portfolio_binding"] is None
-    assert side["executable_account_intent"]["selected_number"] == 5
-    frozen = load_frozen(episode_root)
-    assert frozen.bound_account_ticket is not None
-    assert frozen.bound_account_ticket.selected_number == 5
+    before = {
+        item.relative_to(episode_root): item.read_bytes()
+        for item in episode_root.rglob("*")
+        if item.is_file()
+    }
+    with pytest.raises(
+        FreezeAdapterError,
+        match="PRODUCTION_FREEZE_PORTFOLIO_REQUIRED",
+    ):
+        _apply_freeze(
+            pool_root=pool,
+            owner_state_root=owner,
+            disposition_path=path,
+            shadow_root=episode_root,
+            mode="episode",
+        )
+    after = {
+        item.relative_to(episode_root): item.read_bytes()
+        for item in episode_root.rglob("*")
+        if item.is_file()
+    }
+    assert after == before
 
 
 def test_exact_retry_same_disposition_fails_closed_after_freeze(tmp_path: Path) -> None:
@@ -2255,3 +2315,338 @@ def test_no_autonomous_control_surface_in_adapter() -> None:
     assert "settle_portfolio_period" not in source
     assert "feedback_portfolio_period" not in source
     assert "prepare_next_period_root" not in source
+
+
+def test_settled_portfolio_feedback_reaches_explicit_next_episode_consumer(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """File-backed synthetic replay bytes must reach the prompt, not stop at binding JSON."""
+
+    import importlib.util
+    import sys
+
+    from xinao.science.portfolio import compile_settled_portfolio_feedback_state
+    from xinao.science.research_feedback_material import load_episode_feedback_inventory
+
+    portfolio, _entry_1, _freeze_1 = _freeze_settle_feedback(tmp_path)
+
+    # Close a second real file-backed period so feedback is a cross-period account state.
+    owner_2 = tmp_path / "owner_p2"
+    owner_2.mkdir()
+    pool_2, entry_2, _, _ = _ingest(tmp_path / "pool2", selected_number=11)
+    disposition_2 = _write_portfolio_disposition(
+        owner_2,
+        pool_2,
+        entry_2,
+        portfolio,
+        selected_number=11,
+        period_index=2,
+        episode_ref="episode.disp.p2",
+    )
+    _apply_freeze(
+        pool_root=pool_2,
+        owner_state_root=owner_2,
+        disposition_path=disposition_2,
+        shadow_root=portfolio,
+        mode="portfolio",
+    )
+    outcome_2 = tmp_path / "outcome-p2.json"
+    outcome_2.write_text(
+        json.dumps(
+            {
+                "outcome_ref": "outcome.portfolio.p2",
+                "source_ref": "synthetic-test-fixture-only",
+                "target_ref": "draw.20260801-001",
+                "actual_special_number": 49,
+                "observed_at": (OPEN_AT + timedelta(hours=1)).isoformat(),
+                "verified": True,
+            },
+            indent=2,
+            sort_keys=True,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    _settle_bound_portfolio_fixture(portfolio=portfolio, outcome_path=outcome_2)
+    feedback_portfolio_period(
+        root=portfolio,
+        kind=FeedbackKind.NO_CHANGE_WITH_REASON,
+        reason_code="CONTINUE_TO_NEXT_PROSPECTIVE_PERIOD",
+    )
+
+    state = compile_settled_portfolio_feedback_state(
+        portfolio_root=portfolio,
+        through_period_index=2,
+    )
+    assert state["through_period_index"] == 2
+    assert len(state["periods"]) == 2
+    assert state["account_axis"]["current_balance"] == "10040.3850"
+    assert state["account_axis"]["recorded_pnl"] == "40.3850"
+    assert state["account_axis"]["max_drawdown_amount"] == "1.0000"
+    assert state["account_axis"]["cost_accounting_status"] == "UNPROVEN_NOT_RECORDED"
+    assert state["account_axis"]["after_cost_profit_claim_allowed"] is False
+    assert state["science_axis"]["scientific_promotion"] is False
+    assert state["content_hash"] == canonical_sha256(
+        {key: value for key, value in state.items() if key != "content_hash"}
+    )
+
+    emitted = emit_research_feedback_pack(portfolio_root=portfolio, period_index=2)
+    assert emitted["pack"]["portfolio_feedback_state_hash"] == state["content_hash"]
+    assert "portfolio_feedback_state" not in emitted["pack"]
+    assert Path(emitted["portfolio_feedback_state_path"]).is_file()
+    assert (
+        emitted["pack"]["portfolio_feedback_state_summary"]["current_balance"]
+        == (state["account_axis"]["current_balance"])
+    )
+
+    runtime_path = (
+        Path(__file__).resolve().parents[4] / "skills" / "xinao" / "scripts" / "xinao_runtime.py"
+    )
+    spec = importlib.util.spec_from_file_location("xinao_runtime_feedback_consumer", runtime_path)
+    assert spec is not None and spec.loader is not None
+    runtime = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = runtime
+    spec.loader.exec_module(runtime)
+    monkeypatch.setattr(runtime, "_research_episode_assert_root_allowed", lambda _root: None)
+    monkeypatch.setattr(
+        runtime,
+        "_research_episode_resolve_profile_status",
+        lambda _root: runtime.RESEARCH_EPISODE_PROFILE_STATUS_VERIFIED,
+    )
+    monkeypatch.setattr(
+        runtime,
+        "_research_episode_container_identity",
+        lambda **_kwargs: {"test_identity": True},
+    )
+
+    next_episode = tmp_path / "next-research-episode"
+    started = runtime.research_episode_start(
+        root=next_episode,
+        question="Use settled evidence to revise or retain the research candidate.",
+        feedback_portfolio_root=portfolio,
+        feedback_content_hash=emitted["content_hash"],
+    )
+    inventory_hash = started["feedback_inventory_hash"]
+    inventory = load_episode_feedback_inventory(
+        episode_root=next_episode,
+        inventory_hash=inventory_hash,
+    )
+    assert inventory["feedback_content_hash"] == emitted["content_hash"]
+    assert inventory["portfolio_feedback_state_hash"] == state["content_hash"]
+    assert started["head"]["feedback_inventory_hash"] == inventory_hash
+    assert started["auto_start_next_research"] is False
+
+    observed: dict[str, Any] = {}
+
+    class _Host:
+        def attach_run_live(self, **kwargs: Any) -> dict[str, Any]:
+            observed.update(kwargs)
+            return {"status": "PLANNED", "plan_only": True}
+
+    monkeypatch.setattr(runtime, "_research_episode_load_dual_host", lambda _root: (None, _Host()))
+    monkeypatch.setattr(runtime, "_research_episode_namespace_and_release_facts", lambda: {})
+    consumed = runtime.research_episode_attach_run(
+        root=next_episode,
+        prompt="Continue the bounded research.",
+        expected_head_sha256=started["head_checkpoint_sha256"],
+        plan_only=True,
+    )
+    assert inventory_hash in observed["prompt"]
+    assert "XINAO_SEALED_SETTLEMENT_FEEDBACK_INPUT_V1" in observed["prompt"]
+    assert emitted["pack"]["prior_result_sha256"] in observed["prompt"]
+    assert emitted["pack"]["prior_research_binding_sha256"] in observed["prompt"]
+    assert "Continue the bounded research." in observed["prompt"]
+    assert consumed["feedback_inventory_read"] is True
+    assert consumed["feedback_prompt_bound"] is True
+    assert consumed["feedback_inventory_hash"] == inventory_hash
+    assert consumed["model_learned_claim_allowed"] is False
+    assert consumed["auto_start_next_research"] is False
+
+    # Mutable metadata cannot redirect the feedback while retaining the same CAS head.
+    meta_path = next_episode / "episode_meta.json"
+    head_path = next_episode / "head.json"
+    original_meta = meta_path.read_bytes()
+    original_head = head_path.read_bytes()
+    redirected = "a" * 64
+    meta_payload = json.loads(original_meta)
+    head_payload = json.loads(original_head)
+    meta_payload["feedback_inventory_hash"] = redirected
+    head_payload["feedback_inventory_hash"] = redirected
+    meta_path.write_text(json.dumps(meta_payload), encoding="utf-8")
+    head_path.write_text(json.dumps(head_payload), encoding="utf-8")
+    monkeypatch.setattr(
+        runtime,
+        "_research_episode_load_dual_host",
+        lambda _root: pytest.fail("host must not run after feedback checkpoint drift"),
+    )
+    for invoke in (
+        lambda: runtime.research_episode_attach_run(
+            root=next_episode,
+            prompt="must fail before host",
+            expected_head_sha256=started["head_checkpoint_sha256"],
+            plan_only=True,
+        ),
+        lambda: runtime.research_episode_resume_live(
+            root=next_episode,
+            expected_provider_session_uuid="00000000-0000-0000-0000-000000000000",
+            expected_head_sha256=started["head_checkpoint_sha256"],
+            prompt="must fail before host",
+            plan_only=True,
+        ),
+    ):
+        with pytest.raises(runtime.XinaoError) as redirected_failure:
+            invoke()
+        assert (
+            redirected_failure.value.reason_code
+            == "RESEARCH_EPISODE_FEEDBACK_CHECKPOINT_MISMATCH"
+        )
+    meta_path.write_bytes(original_meta)
+    head_path.write_bytes(original_head)
+    monkeypatch.setattr(
+        runtime,
+        "_research_episode_load_dual_host",
+        lambda _root: (None, _Host()),
+    )
+
+    # Byte drift after start is detected by the same runtime consumer.
+    state_member = Path(inventory["members"]["portfolio_feedback_state"])
+    staged_inventory = next(
+        (next_episode / "inputs" / "research_feedback" / "sha256").rglob("inventory.json")
+    )
+    state_path = staged_inventory.parent / state_member
+    state_payload = json.loads(state_path.read_text(encoding="utf-8"))
+    state_payload["account_axis"]["current_balance"] = "99999.0000"
+    state_path.write_text(json.dumps(state_payload), encoding="utf-8")
+    with pytest.raises(runtime.XinaoError) as tampered:
+        runtime.research_episode_attach_run(
+            root=next_episode,
+            prompt="must fail before host",
+            expected_head_sha256=started["head_checkpoint_sha256"],
+            plan_only=True,
+        )
+    assert tampered.value.reason_code == "FEEDBACK_EPISODE_INPUT_TAMPERED"
+
+
+def test_feedback_episode_start_rejects_half_binding_before_meta(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A hash without its source root cannot mint a misleading started episode."""
+
+    import importlib.util
+    import sys
+
+    runtime_path = (
+        Path(__file__).resolve().parents[4] / "skills" / "xinao" / "scripts" / "xinao_runtime.py"
+    )
+    spec = importlib.util.spec_from_file_location("xinao_runtime_feedback_negative", runtime_path)
+    assert spec is not None and spec.loader is not None
+    runtime = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = runtime
+    spec.loader.exec_module(runtime)
+    monkeypatch.setattr(runtime, "_research_episode_assert_root_allowed", lambda _root: None)
+    root = tmp_path / "half-bound-episode"
+    with pytest.raises(runtime.XinaoError) as failure:
+        runtime.research_episode_start(
+            root=root,
+            question="q",
+            feedback_content_hash="a" * 64,
+        )
+    assert failure.value.reason_code == "RESEARCH_EPISODE_FEEDBACK_BINDING_INCOMPLETE"
+    assert not (root / "episode_meta.json").exists()
+
+
+def test_episode_feedback_input_rejects_preseeded_link(
+    tmp_path: Path,
+) -> None:
+    from xinao.science.research_feedback_material import (
+        ResearchFeedbackMaterialError,
+        _assert_episode_input_path_safe,
+    )
+
+    root = tmp_path / "episode-link-negative"
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    root.mkdir()
+    try:
+        (root / "inputs").symlink_to(outside, target_is_directory=True)
+    except OSError:
+        pytest.skip("host does not permit symlink creation")
+    with pytest.raises(
+        ResearchFeedbackMaterialError,
+        match="FEEDBACK_EPISODE_INPUT_REPARSE_FORBIDDEN",
+    ):
+        _assert_episode_input_path_safe(
+            episode_root=root,
+            target=root / "inputs" / "research_feedback" / "inventory.json",
+        )
+
+
+def test_episode_feedback_reader_rejects_post_stage_member_link(
+    tmp_path: Path,
+) -> None:
+    """Exact copied bytes outside the Episode cannot replace a sealed member path."""
+
+    from xinao.science.research_feedback_material import (
+        INVENTORY_MARKER,
+        INVENTORY_SCHEMA,
+        ResearchFeedbackMaterialError,
+        episode_feedback_inventory_path,
+        load_episode_feedback_inventory,
+    )
+
+    state_body = {"kind": "test-state"}
+    state_hash = canonical_sha256(state_body)
+    state = {**state_body, "content_hash": state_hash}
+    pack_body = {"portfolio_feedback_state_hash": state_hash}
+    pack_hash = canonical_sha256(pack_body)
+    pack = {**pack_body, "content_hash": pack_hash}
+    binding_body = {"feedback_content_hash": pack_hash}
+    binding_hash = canonical_sha256(binding_body)
+    binding = {**binding_body, "content_hash": binding_hash}
+    inventory_body = {
+        "schema_version": INVENTORY_SCHEMA,
+        "inventory_marker": INVENTORY_MARKER,
+        "feedback_content_hash": pack_hash,
+        "material_binding_hash": binding_hash,
+        "portfolio_feedback_state_hash": state_hash,
+        "members": {
+            "feedback_pack": "feedback_pack.json",
+            "material_binding": "material_binding.json",
+            "portfolio_feedback_state": "portfolio_feedback_state.json",
+        },
+    }
+    inventory_hash = canonical_sha256(inventory_body)
+    inventory = {**inventory_body, "content_hash": inventory_hash}
+    root = tmp_path / "episode-post-stage-link-negative"
+    inventory_path = episode_feedback_inventory_path(
+        episode_root=root,
+        inventory_hash=inventory_hash,
+    )
+    directory = inventory_path.parent
+    directory.mkdir(parents=True)
+    for path, payload in (
+        (inventory_path, inventory),
+        (directory / "feedback_pack.json", pack),
+        (directory / "material_binding.json", binding),
+        (directory / "portfolio_feedback_state.json", state),
+    ):
+        path.write_text(json.dumps(payload), encoding="utf-8")
+
+    member = directory / "feedback_pack.json"
+    external = tmp_path / "outside-feedback-pack.json"
+    external.write_bytes(member.read_bytes())
+    member.unlink()
+    try:
+        member.symlink_to(external)
+    except OSError:
+        pytest.skip("host does not permit file symlink creation")
+    with pytest.raises(
+        ResearchFeedbackMaterialError,
+        match="FEEDBACK_EPISODE_INPUT_REPARSE_FORBIDDEN",
+    ):
+        load_episode_feedback_inventory(
+            episode_root=root,
+            inventory_hash=inventory_hash,
+        )

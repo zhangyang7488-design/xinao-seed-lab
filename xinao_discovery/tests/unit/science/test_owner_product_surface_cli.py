@@ -22,6 +22,7 @@ from tests.unit.science.test_candidate_freeze_seam import (
     OPEN_AT,
     _disposition_body,
     _ingest,
+    _settle_bound_portfolio_fixture,
 )
 from xinao.cli import build_parser, main
 from xinao.science.freeze_adapter import (
@@ -39,7 +40,6 @@ from xinao.shadow_lifecycle import (
     FeedbackKind,
     feedback_portfolio_period,
     init_portfolio,
-    settle_portfolio_period,
 )
 from xinao.shadow_lifecycle.store import period_directory
 
@@ -270,7 +270,7 @@ def test_emit_feedback_pack_cli_and_feedback_bind_compose(
         + "\n",
         encoding="utf-8",
     )
-    settle_portfolio_period(root=portfolio, outcome_path=outcome_path)
+    _settle_bound_portfolio_fixture(portfolio=portfolio, outcome_path=outcome_path)
     feedback_portfolio_period(
         root=portfolio,
         kind=FeedbackKind.NO_CHANGE_WITH_REASON,
@@ -508,7 +508,7 @@ def test_emit_output_overwrite_rejected(tmp_path: Path, capsys: pytest.CaptureFi
         + "\n",
         encoding="utf-8",
     )
-    settle_portfolio_period(root=portfolio, outcome_path=outcome_path)
+    _settle_bound_portfolio_fixture(portfolio=portfolio, outcome_path=outcome_path)
     out_path = tmp_path / "custom_pack.json"
     out_path.write_text('{"already":"there"}\n', encoding="utf-8")
     code = main(

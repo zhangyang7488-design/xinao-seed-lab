@@ -7,12 +7,15 @@ write roots, stale checkpoint/CAS, cancel/resume. No live provider call.
 
 from __future__ import annotations
 
+import base64
 import hashlib
 import importlib.util
 import json
+import shutil
 import subprocess
 import sys
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
@@ -21,6 +24,46 @@ ROOT = Path(__file__).resolve().parents[1]
 SKILL_ROOT = ROOT / "skills" / "xinao"
 RUNTIME_PATH = SKILL_ROOT / "scripts" / "xinao_runtime.py"
 BOOTSTRAP_PATH = SKILL_ROOT / "scripts" / "xinao.py"
+
+
+class _FakeRecordPath:
+    def __init__(self, relative: str, *, size: int, sha256: str) -> None:
+        self.relative = relative
+        self.size = size
+        self.hash = SimpleNamespace(
+            mode="sha256",
+            value=base64.urlsafe_b64encode(bytes.fromhex(sha256))
+            .rstrip(b"=")
+            .decode("ascii"),
+        )
+
+    def __str__(self) -> str:
+        return self.relative
+
+
+def _fake_distribution(module: Any, package_root: Path, *, version: str = "0.1.1") -> Any:
+    files = [
+        _FakeRecordPath(
+            f"xinao/{row['relative_path']}",
+            size=int(row["size"]),
+            sha256=str(row["sha256"]),
+        )
+        for row in module._discovery_package_inventory(package_root)
+    ]
+    record = "\n".join(
+        f"{item.relative},sha256={item.hash.value},{item.size}" for item in files
+    ) + "\n"
+    return SimpleNamespace(
+        metadata={"Name": "xinao-discovery"},
+        version=version,
+        files=files,
+        locate_file=lambda relative: package_root.parent / relative,
+        read_text=lambda name: record if name == "RECORD" else None,
+    )
+
+
+def _fake_module(path: Path) -> Any:
+    return SimpleNamespace(__file__=str(path), __spec__=SimpleNamespace(origin=str(path)))
 
 
 def _load(name: str, path: Path) -> Any:
@@ -128,12 +171,152 @@ def test_capabilities_registry_lists_ensure_pair(module: Any) -> None:
         (SKILL_ROOT / "references" / "capabilities.v1.json").read_text(encoding="utf-8")
     )
     episode = next(c for c in caps["capabilities"] if c["capability_id"] == "research-episode")
-    assert episode["version"] == "0.1.3"
+    assert episode["version"] == "0.1.4"
+    assert episode["packaged_dependency"] == "xinao-discovery"
+    assert episode["packaged_dependency_version"] == "0.1.1"
+    assert episode["packaged_dependency_tree_schema"] == "xinao.package_tree.v1"
+    assert episode["packaged_dependency_tree_sha256"] == module._discovery_package_tree_sha256(
+        ROOT / "xinao_discovery" / "src" / "xinao"
+    )
     assert "ensure-pair" in episode["skill_verbs"]
     assert "retire-pair" in episode["skill_verbs"]
     assert episode["auto_next_task"] is False
     assert episode["candidate_only"] is True
     assert episode["completion_claim_allowed"] is False
+
+
+def test_discovery_consumer_import_rejects_stale_installed_package(
+    module: Any,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    package_root = ROOT / "xinao_discovery" / "src" / "xinao"
+    distribution = _fake_distribution(module, package_root, version="0.1.0")
+    monkeypatch.setattr(
+        module.importlib_metadata, "distributions", lambda **_kwargs: [distribution]
+    )
+    with pytest.raises(module.XinaoError) as failure:
+        module._import_discovery_science("research_feedback_material")
+    assert failure.value.reason_code == "DISCOVERY_PACKAGE_VERSION_MISMATCH"
+
+
+def test_discovery_consumer_import_accepts_exact_installed_package(
+    module: Any,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    package_root = ROOT / "xinao_discovery" / "src" / "xinao"
+    candidate = _fake_module(package_root / "science" / "research_feedback_material.py")
+    distribution = _fake_distribution(module, package_root)
+    monkeypatch.setattr(module.importlib, "import_module", lambda _name: candidate)
+    monkeypatch.setattr(
+        module.importlib_metadata, "distributions", lambda **_kwargs: [distribution]
+    )
+    assert module._import_discovery_science("research_feedback_material") is candidate
+
+
+def test_discovery_consumer_rejects_same_version_ambient_shadow_module(
+    module: Any,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    package_root = ROOT / "xinao_discovery" / "src" / "xinao"
+    ambient = tmp_path / "ambient" / "xinao" / "science" / "research_feedback_material.py"
+    ambient.parent.mkdir(parents=True)
+    ambient.write_text("AMBIENT = True\n", encoding="utf-8")
+    candidate = _fake_module(ambient)
+    distribution = _fake_distribution(module, package_root)
+    monkeypatch.setattr(module.importlib, "import_module", lambda _name: candidate)
+    monkeypatch.setattr(
+        module.importlib_metadata, "distributions", lambda **_kwargs: [distribution]
+    )
+    with pytest.raises(module.XinaoError) as failure:
+        module._import_discovery_science("research_feedback_material")
+    assert failure.value.reason_code == "DISCOVERY_PACKAGE_ORIGIN_MISMATCH"
+
+
+def test_discovery_consumer_rejects_same_version_changed_package_tree(
+    module: Any,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    source_root = ROOT / "xinao_discovery" / "src" / "xinao"
+    package_root = tmp_path / "site-packages" / "xinao"
+    shutil.copytree(source_root, package_root, ignore=shutil.ignore_patterns("__pycache__", "*.pyc"))
+    module_path = package_root / "science" / "research_feedback_material.py"
+    module_path.write_bytes(module_path.read_bytes() + b"\nTAMPERED = True\n")
+    candidate = _fake_module(module_path)
+    distribution = _fake_distribution(module, package_root)
+    monkeypatch.setattr(module.importlib, "import_module", lambda _name: candidate)
+    monkeypatch.setattr(
+        module.importlib_metadata, "distributions", lambda **_kwargs: [distribution]
+    )
+    with pytest.raises(module.XinaoError) as failure:
+        module._import_discovery_science("research_feedback_material")
+    assert failure.value.reason_code == "DISCOVERY_PACKAGE_TREE_MISMATCH"
+
+
+def test_discovery_consumer_rejects_ambiguous_same_name_distributions(
+    module: Any,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    package_root = ROOT / "xinao_discovery" / "src" / "xinao"
+    distribution = _fake_distribution(module, package_root)
+    monkeypatch.setattr(
+        module.importlib_metadata,
+        "distributions",
+        lambda **_kwargs: [distribution, distribution],
+    )
+    with pytest.raises(module.XinaoError) as failure:
+        module._import_discovery_science("research_feedback_material")
+    assert failure.value.reason_code == "DISCOVERY_PACKAGE_DISTRIBUTION_AMBIGUOUS"
+
+
+def test_discovery_consumer_rejects_recorded_file_removed_from_disk(
+    module: Any,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    source_root = ROOT / "xinao_discovery" / "src" / "xinao"
+    package_root = tmp_path / "site-packages" / "xinao"
+    shutil.copytree(source_root, package_root, ignore=shutil.ignore_patterns("__pycache__", "*.pyc"))
+    distribution = _fake_distribution(module, package_root)
+    (package_root / "science" / "research_feedback_material.py").unlink()
+    monkeypatch.setattr(
+        module.importlib_metadata, "distributions", lambda **_kwargs: [distribution]
+    )
+    with pytest.raises(module.XinaoError) as failure:
+        module._import_discovery_science("research_feedback_material")
+    assert failure.value.reason_code == "DISCOVERY_PACKAGE_RECORD_MISMATCH"
+
+
+def test_formal_runtime_rejects_editable_install_and_source_override(
+    module: Any,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    package_root = ROOT / "xinao_discovery" / "src" / "xinao"
+    distribution = SimpleNamespace(
+        metadata={"Name": "xinao-discovery"},
+        version="0.1.1",
+        files=[],
+        locate_file=lambda relative: package_root.parent / relative,
+        read_text=lambda name: (
+            json.dumps({"dir_info": {"editable": True}})
+            if name == "direct_url.json"
+            else None
+        ),
+    )
+    monkeypatch.setattr(module, "_discovery_runtime_is_formal", lambda: True)
+    monkeypatch.setattr(
+        module.importlib_metadata, "distributions", lambda **_kwargs: [distribution]
+    )
+    with pytest.raises(module.XinaoError) as failure:
+        module._import_discovery_science("research_feedback_material")
+    assert failure.value.reason_code == "DISCOVERY_EDITABLE_INSTALL_FORBIDDEN"
+
+    monkeypatch.setenv("XINAO_DISCOVERY_SRC", str(tmp_path / "unsealed-source"))
+    with pytest.raises(module.XinaoError) as override_failure:
+        module._import_discovery_science("research_feedback_material")
+    assert override_failure.value.reason_code == "DISCOVERY_SOURCE_OVERRIDE_FORBIDDEN"
 
 
 def test_ensure_pair_requires_namespace_receipt(

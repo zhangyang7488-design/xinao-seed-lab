@@ -77,7 +77,7 @@ from xinao.shadow_lifecycle.store import (
 )
 
 CONSUMER_ID = "shadow_lifecycle_file_backed_leg_a"
-CONSUMER_VERSION = "0.3.1"
+CONSUMER_VERSION = "0.3.2"
 
 # Production portfolio freeze requires a disposition-bound owner authority envelope.
 # Labels / private underscores are not security boundaries — this is a structural gate.
@@ -1770,12 +1770,16 @@ def freeze_episode(
 def settle_episode(
     *,
     root: Path,
-    outcome_path: Path,
+    outcome_path: Path | None = None,
     settlement_ref: str | None = None,
     settlement_journal_group_ref: str | None = None,
     statement_ref: str | None = None,
     occurred_at: str | None = None,
     _continuity_internal: bool = False,
+    source_authority_root: Path | None = None,
+    source_packet_content_hash: str | None = None,
+    source_reveal_content_hash: str | None = None,
+    _production_observed_outcome: OutcomeObservation | None = None,
 ) -> dict[str, Any]:
     base = resolve_root(root)
     _reject_flat_operation_on_continuity_context(
@@ -1793,18 +1797,71 @@ def settle_episode(
         )
 
     episode = load_frozen(base)
+    science_match = _BINDING_REF_RE.search(str(episode.science_decision.science_decision_ref))
+    account_match = _BINDING_REF_RE.search(str(episode.account_decision.account_decision_ref))
+    if science_match is not None or account_match is not None:
+        if (
+            science_match is None
+            or account_match is None
+            or science_match.group(1) != account_match.group(1)
+        ):
+            raise StoreError(
+                "PRODUCTION_SETTLEMENT_BINDING_INVALID: "
+                "science/account research-binding refs disagree"
+            )
+        if outcome_path is not None:
+            raise StoreError(
+                "PRODUCTION_SETTLEMENT_CALLER_OUTCOME_FORBIDDEN: "
+                "disposition-bound freeze ignores no caller outcome path"
+            )
+        if _production_observed_outcome is None:
+            raise StoreError(
+                "PRODUCTION_SETTLEMENT_REQUIRES_SOURCE_CONSUMER: "
+                "use the packaged reveal consumer; source fields alone cannot commit"
+            )
+        # Package-internal continuation after the packaged consumer has reparsed raw
+        # source CAS and bound the frozen ticket.  This parameter is not an auth token:
+        # formal API routing plus the ledger write-domain remain the security boundary.
+        if any(
+            value is not None
+            for value in (
+                source_authority_root,
+                source_packet_content_hash,
+                source_reveal_content_hash,
+            )
+        ):
+            raise StoreError(
+                "PRODUCTION_SETTLEMENT_SOURCE_FIELDS_NOT_ADMISSION: "
+                "the packaged reveal consumer supplies the observed outcome internally"
+            )
+        outcome = _production_observed_outcome
+        outcome.require_valid_result_hash()
+    else:
+        if _production_observed_outcome is not None or any(
+            value is not None
+            for value in (
+                source_authority_root,
+                source_packet_content_hash,
+                source_reveal_content_hash,
+            )
+        ):
+            raise StoreError(
+                "SOURCE_SETTLEMENT_FOR_LEGACY_FORBIDDEN: "
+                "source admission fields require a disposition-bound freeze"
+            )
+        if outcome_path is None:
+            raise StoreError("settle requires an explicit historical/fixture outcome path")
+        outcome_raw = _load_request(outcome_path)
+        if "outcome" in outcome_raw and isinstance(outcome_raw["outcome"], dict):
+            outcome_raw = outcome_raw["outcome"]
+        outcome = OutcomeObservation.model_validate(outcome_raw)
+        if outcome.result_hash is None:
+            outcome = outcome.with_hash()
+        else:
+            outcome.require_valid_result_hash()
     seat = load_seat(base)
     if seat.seat_id != episode.seat_id or seat.portfolio_ref != episode.portfolio_ref:
         raise StoreError("seat/portfolio mismatch between store and frozen episode")
-
-    outcome_raw = _load_request(outcome_path)
-    if "outcome" in outcome_raw and isinstance(outcome_raw["outcome"], dict):
-        outcome_raw = outcome_raw["outcome"]
-    outcome = OutcomeObservation.model_validate(outcome_raw)
-    if outcome.result_hash is None:
-        outcome = outcome.with_hash()
-    else:
-        outcome.require_valid_result_hash()
 
     stmt_ref = statement_ref or f"statement.{episode.episode_ref}"
     settle_kwargs: dict[str, Any] = {
@@ -2050,11 +2107,15 @@ def freeze_portfolio_period(
 def settle_portfolio_period(
     *,
     root: Path,
-    outcome_path: Path,
+    outcome_path: Path | None = None,
     settlement_ref: str | None = None,
     settlement_journal_group_ref: str | None = None,
     statement_ref: str | None = None,
     occurred_at: str | None = None,
+    source_authority_root: Path | None = None,
+    source_packet_content_hash: str | None = None,
+    source_reveal_content_hash: str | None = None,
+    _production_observed_outcome: OutcomeObservation | None = None,
 ) -> dict[str, Any]:
     base = resolve_root(root)
     head = derive_portfolio_head(base)
@@ -2071,6 +2132,10 @@ def settle_portfolio_period(
         statement_ref=statement_ref,
         occurred_at=occurred_at,
         _continuity_internal=True,
+        source_authority_root=source_authority_root,
+        source_packet_content_hash=source_packet_content_hash,
+        source_reveal_content_hash=source_reveal_content_hash,
+        _production_observed_outcome=_production_observed_outcome,
     )
     receipt = _receipt_base(
         root=base,

@@ -243,6 +243,8 @@ def test_action_positive_capture_freeze_reveal_settle(tmp_path: Path) -> None:
     assert settled["settlement_written"] is True
     assert settled["actual_special_number"] == special
     assert settled["outcome_result_hash"] == reveal["outcome"]["result_hash"]
+    assert settled["source_raw_reparsed"] is True
+    assert settled["caller_verified_flag_trusted"] is False
     assert settled["account_identity"] == "ACTION"
     assert settled["statement_result"] is not None
     assert settled["pnl"] is not None
@@ -539,7 +541,10 @@ def test_pre_open_observation_rejected(tmp_path: Path) -> None:
         + "\n",
         encoding="utf-8",
     )
-    with pytest.raises(SettleFromRevealError, match=r"PRE_OPEN_OBSERVATION|SETTLE_CONSUMER"):
+    with pytest.raises(
+        SettleFromRevealError,
+        match=r"OUTCOME_OBSERVED_AT_UNBOUND|PRE_OPEN_OBSERVATION|SETTLE_CONSUMER",
+    ):
         apply_settle_from_reveal(
             authority_root=authority,
             portfolio_root=portfolio,

@@ -36,6 +36,7 @@ from xinao.science.episode_export_pool_adapter import (
     remint_episode_pool_entry_from_raw,
 )
 from xinao.science.freeze_adapter import (
+    FreezeAdapterError,
     apply_freeze_from_disposition,
     build_portfolio_binding_from_shadow,
 )
@@ -886,10 +887,10 @@ def test_missing_result_or_receipt_maps_to_pool_cas_partial_state(tmp_path: Path
 # --- Full consumer: export → pool → disposition → freeze-from-disposition ----
 
 
-def test_episode_export_disposition_freeze_consumer_no_auto_settle(
+def test_episode_export_disposition_rejects_flat_production_freeze(
     tmp_path: Path,
 ) -> None:
-    """Real consumer-shaped chain stops at freeze; pool immutable; no auto-settle/next."""
+    """Flat production freeze is unavailable until it has a source-bound settle path."""
 
     pool = tmp_path / "pool"
     owner = tmp_path / "owner"
@@ -920,25 +921,30 @@ def test_episode_export_disposition_freeze_consumer_no_auto_settle(
     assert verified["pool_entry"]["policy_ref"] == entry["policy_ref"]
     assert verified["pool_entry"]["policy_content_hash"] == entry["policy_content_hash"]
 
-    freeze = apply_freeze_from_disposition(
-        pool_root=pool,
-        owner_state_root=owner,
-        disposition_path=Path(written["disposition_path"]),
-        shadow_root=episode_root,
-        mode="episode",
-        result_sha256=entry["result_sha256"],
-        clock=lambda: FROZEN_AT,
-    )
-    assert freeze.get("ok", True) is True
-    assert freeze["mode"] == "episode"
-    assert freeze["auto_settle"] is False
-    assert freeze["auto_next_period"] is False
-    assert freeze["completion_claim_allowed"] is False
-    assert freeze["bound_result_sha256"] == entry["result_sha256"]
-    assert freeze["bound_pool_entry_content_hash"] == entry["content_hash"]
-    assert freeze["frozen_episode_hash"]
-    frozen = load_frozen(episode_root)
-    assert frozen.content_hash == freeze["frozen_episode_hash"]
+    episode_before = {
+        item.relative_to(episode_root): item.read_bytes()
+        for item in episode_root.rglob("*")
+        if item.is_file()
+    }
+    with pytest.raises(
+        FreezeAdapterError,
+        match="PRODUCTION_FREEZE_PORTFOLIO_REQUIRED",
+    ):
+        apply_freeze_from_disposition(
+            pool_root=pool,
+            owner_state_root=owner,
+            disposition_path=Path(written["disposition_path"]),
+            shadow_root=episode_root,
+            mode="episode",
+            result_sha256=entry["result_sha256"],
+            clock=lambda: FROZEN_AT,
+        )
+    episode_after = {
+        item.relative_to(episode_root): item.read_bytes()
+        for item in episode_root.rglob("*")
+        if item.is_file()
+    }
+    assert episode_after == episode_before
 
     after = _pool_snapshot(pool, entry["result_sha256"])
     assert after["entry_bytes"] == before["entry_bytes"]

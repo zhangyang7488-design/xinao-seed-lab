@@ -1249,6 +1249,11 @@ def apply_freeze_from_disposition(
 
     pool_entry = verified["pool_entry"]
     disposition = verified["disposition"]
+    if mode != "portfolio":
+        raise FreezeAdapterError(
+            "PRODUCTION_FREEZE_PORTFOLIO_REQUIRED",
+            "flat disposition-bound freeze has no source-bound production settlement route",
+        )
     expected_period = _assert_period_matches(
         disposition=disposition,
         mode=mode,
