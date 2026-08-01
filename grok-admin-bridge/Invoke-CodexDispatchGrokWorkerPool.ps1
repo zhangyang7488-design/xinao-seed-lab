@@ -220,6 +220,16 @@ if (-not [string]::IsNullOrWhiteSpace($RequiredResultMarkersJson)) {
 }
 $bridge = $PSScriptRoot
 . (Join-Path $bridge "GrokWindowsPathIdentity.ps1")
+$catalogTimeHelper = Join-Path $bridge "GrokAuthenticatedCatalogTime.ps1"
+$catalogRefreshHelper = Join-Path $bridge "GrokAuthenticatedCatalogRefresh.ps1"
+if (-not (Test-Path -LiteralPath $catalogTimeHelper -PathType Leaf)) {
+    throw "CODEX_GROK_AUTHENTICATED_CATALOG_TIME_HELPER_MISSING: $catalogTimeHelper"
+}
+if (-not (Test-Path -LiteralPath $catalogRefreshHelper -PathType Leaf)) {
+    throw "CODEX_GROK_AUTHENTICATED_CATALOG_REFRESH_HELPER_MISSING: $catalogRefreshHelper"
+}
+. $catalogTimeHelper
+. $catalogRefreshHelper
 $dispatchId = if ([string]::IsNullOrWhiteSpace($DispatchId)) {
     "cdx_" + (Get-Date -Format "yyyyMMddTHHmmss") + "_" + ([guid]::NewGuid().ToString("N").Substring(0, 8))
 } else {
@@ -253,6 +263,10 @@ if (-not (Test-Path -LiteralPath $supervisorCapabilityHelper -PathType Leaf)) {
 if ([string]::IsNullOrWhiteSpace($Model)) {
     throw "CODEX_GROK_MODEL_REQUIRED"
 }
+$priorReuseClassificationOnly = (
+    -not $SelectionOnly -and
+    -not [string]::IsNullOrWhiteSpace($CommonPriorAttemptReceiptPath)
+)
 if ([string]::IsNullOrWhiteSpace($SelectionPath)) {
     if ([string]::IsNullOrWhiteSpace($Cwd)) {
         throw "CODEX_GROK_CWD_REQUIRED"
@@ -261,44 +275,67 @@ if ([string]::IsNullOrWhiteSpace($SelectionPath)) {
     if (-not (Test-Path -LiteralPath $selectionResolver -PathType Leaf)) {
         throw "CODEX_GROK_SELECTION_RESOLVER_MISSING: $selectionResolver"
     }
-    $resolvedProbe = ""
-    if (-not [string]::IsNullOrWhiteSpace($SelectionProbeGrokExe)) {
-        try { $resolvedProbe = [IO.Path]::GetFullPath($SelectionProbeGrokExe) }
-        catch { throw "CODEX_GROK_SELECTION_PROBE_INVALID: $SelectionProbeGrokExe" }
-    }
-    else {
-        $resolvedProbe = [string](
-            (Get-Command grok.exe -ErrorAction SilentlyContinue | Select-Object -First 1 -ExpandProperty Source)
-        )
-        if ([string]::IsNullOrWhiteSpace($resolvedProbe)) {
-            $resolvedProbe = "C:\Users\xx363\.grok\bin\grok.exe"
-        }
-    }
-    if (-not (Test-Path -LiteralPath $resolvedProbe -PathType Leaf)) {
-        throw "CODEX_GROK_SELECTION_PROBE_MISSING: $resolvedProbe"
-    }
-    $previousGrokHome = $env:GROK_HOME
-    try {
-        $env:GROK_HOME = $GrokHome
-        $modelsOutput = @(& $resolvedProbe models 2>&1 | ForEach-Object { [string]$_ })
-        $modelsExit = $LASTEXITCODE
-    }
-    finally {
-        if ($null -eq $previousGrokHome) {
-            Remove-Item Env:\GROK_HOME -ErrorAction SilentlyContinue
+    if (-not $priorReuseClassificationOnly) {
+        $resolvedProbe = ""
+        if (-not [string]::IsNullOrWhiteSpace($SelectionProbeGrokExe)) {
+            try { $resolvedProbe = [IO.Path]::GetFullPath($SelectionProbeGrokExe) }
+            catch { throw "CODEX_GROK_SELECTION_PROBE_INVALID: $SelectionProbeGrokExe" }
         }
         else {
-            $env:GROK_HOME = $previousGrokHome
+            $resolvedProbe = [string](
+                (Get-Command grok.exe -ErrorAction SilentlyContinue | Select-Object -First 1 -ExpandProperty Source)
+            )
+            if ([string]::IsNullOrWhiteSpace($resolvedProbe)) {
+                $resolvedProbe = "C:\Users\xx363\.grok\bin\grok.exe"
+            }
         }
-    }
-    $modelIds = @(
-        [regex]::Matches(
-            ($modelsOutput -join "`n"),
-            '(?m)^\s*[-*]\s+([A-Za-z0-9_.-]+)(?:\s+\(default\))?\s*$'
-        ) | ForEach-Object { $_.Groups[1].Value } | Sort-Object -Unique
-    )
-    if ($modelsExit -ne 0 -or $modelIds -notcontains $requestedModel) {
-        throw "CODEX_GROK_SELECTED_MODEL_UNHEALTHY: requested=$Model profile=$GrokHome"
+        if (-not (Test-Path -LiteralPath $resolvedProbe -PathType Leaf)) {
+            throw "CODEX_GROK_SELECTION_PROBE_MISSING: $resolvedProbe"
+        }
+        $previousGrokHome = $env:GROK_HOME
+        try {
+            $env:GROK_HOME = $GrokHome
+            $selectionCatalogRefreshAction = {
+                $previousProbeErrorPreference = $ErrorActionPreference
+                try {
+                    $ErrorActionPreference = "Continue"
+                    $probeOutput = @(
+                        & $resolvedProbe models 2>&1 | ForEach-Object { [string]$_ }
+                    )
+                    $probeExit = $LASTEXITCODE
+                }
+                finally {
+                    $ErrorActionPreference = $previousProbeErrorPreference
+                }
+                [pscustomobject]@{
+                    exit_code = $probeExit
+                    stdout = $probeOutput -join "`n"
+                    stderr = ""
+                }
+            }
+            try {
+                $null = Invoke-GrokAuthenticatedCatalogSingleFlight `
+                    -GrokHome $GrokHome `
+                    -Model $requestedModel `
+                    -TtlSeconds 300 `
+                    -RefreshAction $selectionCatalogRefreshAction
+            }
+            catch {
+                if ([string]$_.Exception.Message -eq
+                    "GROK_AUTHENTICATED_MODEL_CATALOG_REFRESH_FAILED: requested_model_absent") {
+                    throw "CODEX_GROK_SELECTED_MODEL_UNHEALTHY: requested=$Model profile=$GrokHome"
+                }
+                throw
+            }
+        }
+        finally {
+            if ($null -eq $previousGrokHome) {
+                Remove-Item Env:\GROK_HOME -ErrorAction SilentlyContinue
+            }
+            else {
+                $env:GROK_HOME = $previousGrokHome
+            }
+        }
     }
     $supervisorCapability = Resolve-GrokSupervisorSelectorRoot `
         -SupervisorRoot $SupervisorRoot `

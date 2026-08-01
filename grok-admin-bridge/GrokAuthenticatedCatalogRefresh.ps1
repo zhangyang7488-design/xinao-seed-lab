@@ -1,5 +1,56 @@
 #Requires -Version 5.1
 
+function Test-GrokAuthenticatedProfileAuthPresent {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$GrokHome
+    )
+
+    try {
+        $authPath = Join-Path $GrokHome "auth.json"
+        if (-not (Test-Path -LiteralPath $authPath -PathType Leaf)) {
+            return $false
+        }
+        return (Get-Item -LiteralPath $authPath -Force -ErrorAction Stop).Length -gt 0
+    }
+    catch {
+        return $false
+    }
+}
+
+function Test-GrokAuthenticatedCatalogRefreshResultAuthRequired {
+    [CmdletBinding()]
+    param(
+        [AllowNull()]
+        [object]$RefreshResult
+    )
+
+    if ($null -eq $RefreshResult) {
+        return $false
+    }
+
+    $parts = [Collections.Generic.List[string]]::new()
+    foreach ($name in @("auth_required", "failure_code", "error", "stdout", "stderr")) {
+        $value = $null
+        if ($RefreshResult -is [Collections.IDictionary] -and $RefreshResult.Contains($name)) {
+            $value = $RefreshResult[$name]
+        }
+        elseif ($null -ne $RefreshResult.PSObject.Properties[$name]) {
+            $value = $RefreshResult.$name
+        }
+        if ($name -eq "auth_required" -and $value -eq $true) {
+            return $true
+        }
+        if ($null -ne $value) {
+            $parts.Add([string]$value)
+        }
+    }
+
+    $diagnostic = $parts -join "`n"
+    return $diagnostic -match '(?i)(?:invalid_grant|RefreshTokenRejected|refresh[ _-]?token.{0,40}(?:expired|invalid|rejected|revoked)|(?:authentication|authorization|sign[ -]?in|login).{0,40}(?:required|expired|invalid|revoked)|(?:not|no longer)[ -]?authenticated|\bunauthorized\b|\b401\b)'
+}
+
 function Get-GrokAuthenticatedCatalogRefreshState {
     [CmdletBinding()]
     param(
@@ -79,6 +130,10 @@ function Invoke-GrokAuthenticatedCatalogSingleFlight {
     )
 
     $resolvedHome = [IO.Path]::GetFullPath($GrokHome)
+    if (-not (Test-Path -LiteralPath $resolvedHome -PathType Container) -or
+        -not (Test-GrokAuthenticatedProfileAuthPresent -GrokHome $resolvedHome)) {
+        throw "GROK_AUTHENTICATED_PROFILE_AUTH_REQUIRED"
+    }
     $lockPath = Join-Path $resolvedHome ".xinao-authenticated-catalog-refresh.lock"
     $deadline = [DateTimeOffset]::UtcNow.AddSeconds($LockTimeoutSeconds)
     $started = [DateTimeOffset]::UtcNow
@@ -101,16 +156,28 @@ function Invoke-GrokAuthenticatedCatalogSingleFlight {
     }
 
     try {
+        if (-not (Test-GrokAuthenticatedProfileAuthPresent -GrokHome $resolvedHome)) {
+            throw "GROK_AUTHENTICATED_PROFILE_AUTH_REQUIRED"
+        }
         $before = Get-GrokAuthenticatedCatalogRefreshState `
             -GrokHome $resolvedHome -Model $Model -TtlSeconds $TtlSeconds
         $refreshPerformed = $false
         if (-not $before.valid) {
-            $authPath = Join-Path $resolvedHome "auth.json"
-            if (-not (Test-Path -LiteralPath $authPath -PathType Leaf) -or
-                (Get-Item -LiteralPath $authPath -Force).Length -le 0) {
-                throw "GROK_AUTHENTICATED_PROFILE_AUTH_MISSING"
+            $refreshResult = $null
+            try {
+                $refreshResult = & $RefreshAction
             }
-            $refreshResult = & $RefreshAction
+            catch {
+                if (-not (Test-GrokAuthenticatedProfileAuthPresent -GrokHome $resolvedHome) -or
+                    (Test-GrokAuthenticatedCatalogRefreshResultAuthRequired -RefreshResult $_)) {
+                    throw "GROK_AUTHENTICATED_PROFILE_AUTH_REQUIRED"
+                }
+                throw "GROK_AUTHENTICATED_MODEL_CATALOG_REFRESH_COMMAND_FAILED"
+            }
+            if (-not (Test-GrokAuthenticatedProfileAuthPresent -GrokHome $resolvedHome) -or
+                (Test-GrokAuthenticatedCatalogRefreshResultAuthRequired -RefreshResult $refreshResult)) {
+                throw "GROK_AUTHENTICATED_PROFILE_AUTH_REQUIRED"
+            }
             if ($null -eq $refreshResult -or [int]$refreshResult.exit_code -ne 0) {
                 throw "GROK_AUTHENTICATED_MODEL_CATALOG_REFRESH_COMMAND_FAILED"
             }
@@ -119,7 +186,13 @@ function Invoke-GrokAuthenticatedCatalogSingleFlight {
 
         $after = Get-GrokAuthenticatedCatalogRefreshState `
             -GrokHome $resolvedHome -Model $Model -TtlSeconds $TtlSeconds
+        if (-not (Test-GrokAuthenticatedProfileAuthPresent -GrokHome $resolvedHome)) {
+            throw "GROK_AUTHENTICATED_PROFILE_AUTH_REQUIRED"
+        }
         if (-not $after.valid) {
+            if ([string]$after.reason -eq "catalog_stale") {
+                throw "GROK_AUTHENTICATED_MODEL_CATALOG_STALE"
+            }
             throw "GROK_AUTHENTICATED_MODEL_CATALOG_REFRESH_FAILED: $($after.reason)"
         }
         return [pscustomobject][ordered]@{

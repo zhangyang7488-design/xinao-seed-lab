@@ -157,10 +157,15 @@ $poolFiles = @(
     "grok-admin-bridge/Prepare-CodexGrokTaskLocalCheckpoint.ps1",
     "grok-admin-bridge/run_grok_package_batch.py",
     "launchers/Invoke-Codex-GrokWorkerPool.ps1",
+    "install/Install-CodexGrokDispatch.ps1",
+    "install/Restore-CodexGrokDispatch.ps1",
+    "install/Test-CodexGrokDispatchInstall.ps1",
     "grok-admin-bridge/Invoke-GrokHostWorkerPoolFromTemporal.ps1",
     "grok-admin-bridge/Invoke-GrokTemporalHostPoolTrigger.ps1",
     "grok-admin-bridge/Test-GrokAuthenticatedCatalogTime.ps1",
     "grok-admin-bridge/Test-GrokAuthenticatedCatalogRefresh.ps1",
+    "grok-admin-bridge/Test-GrokHostAuthAdmission.ps1",
+    "grok-admin-bridge/Test-GrokPriorReuseAuthBypass.ps1",
     "grok-admin-bridge/Test-GrokWorkerProcessRuntime.ps1",
     "grok-admin-bridge/Test-GrokContainerWorkerRuntime.ps1",
     "grok-admin-bridge/Test-GrokWorkerSelectionReceiptContract.ps1"
@@ -340,6 +345,7 @@ Assert-Contract ($dispatchText -match 'selector_source_sha256\s*=') "selection_o
 $checkpointPreparerText = Get-Content -LiteralPath $checkpointPreparerPath -Raw -Encoding UTF8
 $packageLauncherSourceText = Get-Content -LiteralPath (Join-Path $repoRoot "launchers/Invoke-Codex-GrokWorkerPool.ps1") -Raw -Encoding UTF8
 $installerText = Get-Content -LiteralPath (Join-Path $repoRoot "install/Install-CodexGrokDispatch.ps1") -Raw -Encoding UTF8
+$rollbackInstallerText = Get-Content -LiteralPath (Join-Path $repoRoot "install/Restore-CodexGrokDispatch.ps1") -Raw -Encoding UTF8
 $codexLauncherPath = "C:\Users\xx363\CodexLaunchers\Invoke-Codex-GrokWorkerPool.ps1"
 Assert-Contract (Test-Path -LiteralPath $codexLauncherPath -PathType Leaf) "codex_worker_pool_launcher_present"
 $codexLauncherText = Get-Content -LiteralPath $codexLauncherPath -Raw -Encoding UTF8
@@ -351,8 +357,23 @@ Assert-Contract ($readmeText -match 'Leg A is not a fallback') "readme_leg_a_is_
 Assert-Contract ($readmeText -match 'continuous.+resume.+never switches legs') "readme_resume_preserves_leg"
 Assert-Contract ($intentRuleText -notmatch 'grok_live_field_intent_decode[.]v1[.]json') "intent_rule_has_no_missing_external_first_contract"
 Assert-Contract ($intentRuleText -match '状态/进度/对账/inventory.+本机现状') "intent_rule_local_state_first"
-Assert-Contract ($installerText -match 'xinao[.]codex_grok_dispatch_release_pointer[.]v1') "installer_publishes_hash_bound_current_pointer"
+Assert-Contract ($installerText -match 'xinao[.]codex_grok_dispatch_release_pointer[.]v2') "installer_publishes_hash_bound_current_pointer"
 Assert-Contract ($installerText -match 'install_receipt_sha256\s*=\s*\$receiptSha256') "installer_pointer_binds_receipt_hash"
+Assert-Contract ($installerText -match 'xinao[.]codex_grok_dispatch_install_receipt[.]v2') "installer_v2_receipt"
+foreach ($runtimeFile in @(
+    "GrokAuthenticatedCatalogTime.ps1",
+    "GrokAuthenticatedCatalogRefresh.ps1",
+    "Invoke-CodexDispatchGrokWorkerPool.ps1",
+    "Invoke-GrokComposer25Worker.ps1"
+)) {
+    Assert-Contract ($installerText.Contains('"' + $runtimeFile + '"')) ("installer_runtime_closure:" + $runtimeFile)
+}
+Assert-Contract ($installerText -match 'auth_bytes_read\s*=\s*\$false') "installer_never_reads_auth_bytes"
+Assert-Contract ($installerText -match 'auth_copied_or_backed_up\s*=\s*\$false') "installer_never_copies_auth"
+Assert-Contract ($installerText -match 'local_classification_before_provider_auth_zero_refresh_zero_worker_zero_tokens') "installer_preserves_prior_reuse_pareto"
+Assert-Contract ($rollbackInstallerText -match 'GROK_ROLLBACK_CURRENT_TARGET_DRIFT') "rollback_rejects_target_drift"
+Assert-Contract ($rollbackInstallerText -match 'GROK_ROLLBACK_CURRENT_POINTER_DRIFT') "rollback_rejects_pointer_drift"
+Assert-Contract ($rollbackInstallerText -match 'auth_profile_touched\s*=\s*\$false') "rollback_does_not_touch_auth"
 Assert-Contract ($workerText -notmatch '[.]grok-4[.]5-lane') "worker_has_no_stale_profile"
 Assert-Contract ($workerText -notmatch 'GROK_COMPOSER25_EXACT_MODEL_REQUIRED') "worker_has_no_static_composer_only_gate"
 Assert-Contract ($workerText -match '\$cliModelIds -notcontains \$Model') "worker_exact_profile_models_admission"
@@ -562,6 +583,7 @@ Assert-Contract ($poolText -match 'observed_capability_binding_sha256') "pool_re
 Assert-Contract ($poolText -match 'common_contract_preflight') "pool_records_common_contract_preflight"
 Assert-Contract ($poolText -match 'classify-prior-only') "pool_has_zero_model_prior_precheck"
 Assert-Contract ($poolText -match 'attempt_count = 0') "pool_reuse_accounts_zero_model_attempts"
+Assert-Contract ($poolText -match 'total_tokens = 0') "pool_reuse_accounts_zero_total_tokens"
 Assert-Contract ($poolText -match 'common_adapter_receipt[.]json') "pool_consumes_common_adapter_receipt"
 $reusePrecheckIndex = $poolText.IndexOf('"--classify-prior-only"')
 $workerStartIndex = $poolText.IndexOf('$workers = New-Object')
@@ -599,9 +621,18 @@ Assert-Contract ($catalogTimeText -match 'AdjustToUniversal') "catalog_timestamp
 Assert-Contract ($catalogTimeText -match 'InvariantCulture') "catalog_timestamp_parse_is_culture_independent"
 Assert-Contract ($workerText -match 'Test-GrokCatalogAgeWithinWindow') "worker_uses_executable_catalog_freshness_gate"
 Assert-Contract ($catalogTimeText -match 'Test-GrokCatalogAgeWithinWindow') "catalog_freshness_gate_is_pure_shared_seam"
-Assert-Contract ($workerText -match 'Invoke-GrokAuthenticatedCatalogSingleFlight') "container_catalog_refresh_precedes_provider"
+Assert-Contract ($workerText -match '(?s)\$authenticatedCatalogRefresh\s*=\s*Invoke-GrokAuthenticatedCatalogSingleFlight.+?if\s*\(\$containerMode\)') "host_and_container_catalog_refresh_precedes_backend_split"
+Assert-Contract ($dispatchText -match 'Invoke-GrokAuthenticatedCatalogSingleFlight') "selection_probe_uses_authenticated_catalog_singleflight"
+Assert-Contract ($dispatchText -notmatch 'ProbeWhenFresh') "selection_fresh_authenticated_catalog_skips_refresh_action"
+Assert-Contract ($dispatchText.IndexOf('Invoke-GrokAuthenticatedCatalogSingleFlight') -lt $dispatchText.IndexOf('& $supervisorPython -I -B $selectionResolver')) "selection_catalog_preflight_precedes_receipt_resolution"
+Assert-Contract ($dispatchText -match '\$priorReuseClassificationOnly') "identical_reuse_has_premodel_local_classification_path"
+Assert-Contract ($dispatchText -match '(?s)if\s*\(-not \$priorReuseClassificationOnly\).+?Invoke-GrokAuthenticatedCatalogSingleFlight') "identical_reuse_skips_provider_auth_admission"
 Assert-Contract ($catalogRefreshText -match 'FileShare\]::None') "catalog_refresh_cross_process_singleflight"
-Assert-Contract ($catalogRefreshText -match 'GROK_AUTHENTICATED_PROFILE_AUTH_MISSING') "catalog_refresh_missing_auth_fails_closed"
+Assert-Contract ($catalogRefreshText -match 'GROK_AUTHENTICATED_PROFILE_AUTH_REQUIRED') "catalog_refresh_auth_required_is_actionable"
+Assert-Contract ($catalogRefreshText -notmatch 'GROK_AUTHENTICATED_PROFILE_AUTH_MISSING') "catalog_refresh_has_one_auth_required_code"
+Assert-Contract ($catalogRefreshText -notmatch '(?:Get-Content|ReadAllBytes)\s+-LiteralPath\s+\$authPath') "catalog_refresh_never_reads_auth_bytes"
+Assert-Contract ($catalogRefreshText -match 'GROK_AUTHENTICATED_MODEL_CATALOG_REFRESH_COMMAND_FAILED') "catalog_refresh_command_failure_is_distinct"
+Assert-Contract ($catalogRefreshText -match 'GROK_AUTHENTICATED_MODEL_CATALOG_STALE') "catalog_refresh_true_stale_is_distinct"
 Assert-Contract ($catalogRefreshText -match 'refresh_performed') "catalog_refresh_records_reuse_or_refresh"
 Assert-Contract ($catalogTimeText -match 'IsInfinity') "catalog_infinite_age_rejected"
 Assert-Contract ($catalogTimeText -match 'IsNaN') "catalog_nan_age_rejected"

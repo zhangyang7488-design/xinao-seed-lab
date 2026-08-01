@@ -317,7 +317,7 @@ $containerCatalogSource = ""
 $containerTransportRoot = ""
 $containerPersistentAuthSource = ""
 $containerPersistentAuthSha256Before = ""
-$containerCatalogRefresh = $null
+$authenticatedCatalogRefresh = $null
 $containerAuthPlaceholder = ""
 $containerSandboxConfigPath = ""
 $containerConfigPath = ""
@@ -881,19 +881,28 @@ validator_class.check_schema(schema)
         }
     }
     $env:GROK_HOME = $GrokHome
-    if ($containerMode) {
-        $hostCatalogRefreshAction = {
-            Invoke-NativeCapture `
-                -FileName $GrokExe `
-                -WorkingDirectory $Cwd `
-                -DeadlineSeconds 120 `
-                -Arguments @("models")
-        }
-        $containerCatalogRefresh = Invoke-GrokAuthenticatedCatalogSingleFlight `
+    $hostCatalogRefreshAction = {
+        Invoke-NativeCapture `
+            -FileName $GrokExe `
+            -WorkingDirectory $Cwd `
+            -DeadlineSeconds 120 `
+            -Arguments @("models")
+    }
+    try {
+        $authenticatedCatalogRefresh = Invoke-GrokAuthenticatedCatalogSingleFlight `
             -GrokHome $GrokHome `
             -Model $Model `
             -TtlSeconds $catalogTtlSeconds `
             -RefreshAction $hostCatalogRefreshAction
+    }
+    catch {
+        if ([string]$_.Exception.Message -eq
+            "GROK_AUTHENTICATED_MODEL_CATALOG_REFRESH_FAILED: requested_model_absent") {
+            throw "GROK_REQUESTED_MODEL_NOT_IN_AUTHENTICATED_CATALOG: requested=$Model"
+        }
+        throw
+    }
+    if ($containerMode) {
         [IO.File]::WriteAllBytes(
             $containerCatalogSource,
             [IO.File]::ReadAllBytes($containerPersistentCatalogSource)
@@ -999,7 +1008,7 @@ validator_class.check_schema(schema)
         )
         availability_authority = "exact_profile_cli_and_authenticated_server_catalog"
         cache_sha256 = (Get-FileHash -LiteralPath $catalogPath -Algorithm SHA256).Hash.ToLowerInvariant()
-        host_profile_singleflight = $containerCatalogRefresh
+        host_profile_singleflight = $authenticatedCatalogRefresh
         merged_cli_stdout_sha256 = ([BitConverter]::ToString(
             [Security.Cryptography.SHA256]::Create().ComputeHash([Text.Encoding]::UTF8.GetBytes($modelsText))
         ) -replace '-', '').ToLowerInvariant()

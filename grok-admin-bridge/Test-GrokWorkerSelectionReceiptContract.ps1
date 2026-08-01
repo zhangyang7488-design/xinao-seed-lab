@@ -8,6 +8,8 @@ $helper = Join-Path $bridge "GrokWorkerSelectionReceipt.ps1"
 $resolver = Join-Path $bridge "resolve_grok_worker_selection_receipt.py"
 $capabilityHelper = Join-Path $bridge "GrokSupervisorRootCapability.ps1"
 $pathIdentityHelper = Join-Path $bridge "GrokWindowsPathIdentity.ps1"
+$catalogTimeHelper = Join-Path $bridge "GrokAuthenticatedCatalogTime.ps1"
+$catalogRefreshHelper = Join-Path $bridge "GrokAuthenticatedCatalogRefresh.ps1"
 $dispatch = Join-Path $bridge "Invoke-CodexDispatchGrokWorkerPool.ps1"
 $pool = Join-Path $bridge "Invoke-GrokWorkerPool.ps1"
 $temporalHost = Join-Path $bridge "Invoke-GrokHostWorkerPoolFromTemporal.ps1"
@@ -105,6 +107,8 @@ try {
     Copy-Item -LiteralPath $resolver -Destination $tempBridge
     Copy-Item -LiteralPath $capabilityHelper -Destination $tempBridge
     Copy-Item -LiteralPath $pathIdentityHelper -Destination $tempBridge
+    Copy-Item -LiteralPath $catalogTimeHelper -Destination $tempBridge
+    Copy-Item -LiteralPath $catalogRefreshHelper -Destination $tempBridge
     Copy-Item -LiteralPath $dispatch -Destination $tempBridge
 
     $stubPool = @'
@@ -179,11 +183,48 @@ $global:LASTEXITCODE = 0
         @'
 param([string]$Command)
 if ($Command -ne "models") { exit 7 }
+if (-not [string]::IsNullOrWhiteSpace($env:XINAO_GROK_SELECTION_PROBE_COUNTER)) {
+    [IO.File]::AppendAllText(
+        $env:XINAO_GROK_SELECTION_PROBE_COUNTER,
+        "refresh`n",
+        [Text.UTF8Encoding]::new($false)
+    )
+}
+if ($env:XINAO_GROK_SELECTION_PROBE_MODE -eq "remove-auth") {
+    Remove-Item -LiteralPath (Join-Path $env:GROK_HOME "auth.json") -Force
+    Write-Output "- grok-4.5"
+    exit 0
+}
+$catalog = [ordered]@{
+    origin = "https://cli-chat-proxy.grok.com/v1/models"
+    fetched_at = [DateTimeOffset]::UtcNow.ToString("o")
+    grok_version = "0.2.112"
+    auth_method = "session"
+    models = [ordered]@{ "grok-4.5" = [ordered]@{} }
+}
+[IO.File]::WriteAllText(
+    (Join-Path $env:GROK_HOME "models_cache.json"),
+    ($catalog | ConvertTo-Json -Depth 6 -Compress),
+    [Text.UTF8Encoding]::new($false)
+)
 Write-Output "- grok-4.5"
 exit 0
 '@,
         $utf8
     )
+    $selectionProfile = Join-Path $root "selection-profile"
+    New-Item -ItemType Directory -Force -Path $selectionProfile | Out-Null
+    [IO.File]::WriteAllText((Join-Path $selectionProfile "auth.json"), '{"test":true}', $utf8)
+    $selectionCatalog = [ordered]@{
+        origin = "https://cli-chat-proxy.grok.com/v1/models"
+        fetched_at = [DateTimeOffset]::UtcNow.AddMinutes(-10).ToString("o")
+        grok_version = "0.2.112"
+        auth_method = "session"
+        models = [ordered]@{ "grok-4.5" = [ordered]@{} }
+    }
+    Write-JsonFile (Join-Path $selectionProfile "models_cache.json") $selectionCatalog
+    $selectionProbeCounter = Join-Path $root "selection-probe-count.txt"
+    $env:XINAO_GROK_SELECTION_PROBE_COUNTER = $selectionProbeCounter
 
     $sSupervisorRoot = "E:\XINAO_RESEARCH_WORKSPACES\S"
     $selectorReleasePointer = "D:\XINAO_RESEARCH_RUNTIME\state\grok_supervisor_selector\current.json"
@@ -319,6 +360,7 @@ exit 0
         "-Prompt", "fixture-only",
         "-Cwd", $root,
         "-Model", "grok-4.5",
+        "-GrokHome", $selectionProfile,
         "-SelectionProbeGrokExe", $selectionProbe,
         "-SelectorReleasePointer", $selectorReleasePointer,
         "-RuntimeRoot", "D:\XINAO_RESEARCH_RUNTIME",
@@ -333,6 +375,7 @@ exit 0
     Assert-True (Test-Path -LiteralPath $autoReceipt -PathType Leaf) "automatic_selection_receipt_created"
     Assert-True ([IO.Path]::GetFullPath([string]$autoCall.selection_path) -eq [IO.Path]::GetFullPath($autoReceipt)) "automatic_selection_receipt_forwarded"
     Assert-True ([string]$autoCall.expected_selection_decision_sha256 -match '^[0-9a-f]{64}$') "automatic_selection_hash_bound"
+    Assert-True (@(Get-Content -LiteralPath $selectionProbeCounter).Count -eq 1) "automatic_selection_refreshes_stale_authenticated_catalog_once"
 
     Remove-Item -LiteralPath $stubCall -Force
     $stableSuffix = [guid]::NewGuid().ToString("N").Substring(0, 8)
@@ -347,6 +390,7 @@ exit 0
         "-Prompt", "fixture-only",
         "-Cwd", $sSupervisorRoot,
         "-Model", "grok-4.5",
+        "-GrokHome", $selectionProfile,
         "-SelectionProbeGrokExe", $selectionProbe,
         "-SelectorReleasePointer", $selectorReleasePointer,
         "-RuntimeRoot", "D:\XINAO_RESEARCH_RUNTIME",
@@ -359,6 +403,97 @@ exit 0
     Assert-True (Test-Path -LiteralPath $fallbackDispatchMeta -PathType Leaf) "stable_release_dispatch_meta_created"
     $fallbackMeta = Get-Content -LiteralPath $fallbackDispatchMeta -Raw | ConvertFrom-Json
     Assert-True ($fallbackMeta.selector_root_fallback_used -eq $false) "stable_release_has_no_fallback"
+    Remove-Item -LiteralPath $stubCall -Force
+
+    $selectionOnlySuffix = [guid]::NewGuid().ToString("N").Substring(0, 8)
+    $selectionOnlyDispatch = "cdx_20000101T000000_$selectionOnlySuffix"
+    $selectionOnlyDir = "D:\XINAO_RESEARCH_RUNTIME\state\grok_worker_selection\$selectionOnlyDispatch"
+    $selectionOnly = Invoke-FreshPowerShell @(
+        "-File", (Join-Path $tempBridge "Invoke-CodexDispatchGrokWorkerPool.ps1"),
+        "-N", "1", "-SelectionOnly",
+        "-Cwd", $root, "-Model", "grok-4.5",
+        "-GrokHome", $selectionProfile,
+        "-SelectionProbeGrokExe", $selectionProbe,
+        "-SelectorReleasePointer", $selectorReleasePointer,
+        "-RuntimeRoot", "D:\XINAO_RESEARCH_RUNTIME",
+        "-DispatchId", $selectionOnlyDispatch,
+        "-PoolId", "gwp_20000101T000000_$selectionOnlySuffix",
+        "-Quiet"
+    )
+    Assert-True ($selectionOnly.exit_code -eq 0) ("selection_only_fresh_catalog: " + $selectionOnly.output)
+    $selectionOnlyPayload = @(
+        $selectionOnly.output -split "`n" |
+            Where-Object { -not [string]::IsNullOrWhiteSpace($_) }
+    ) | Select-Object -Last 1 | ConvertFrom-Json -ErrorAction Stop
+    Assert-True ($selectionOnlyPayload.quota_query_performed -eq $false) "selection_only_skips_quota_query"
+    Assert-True ($selectionOnlyPayload.pool_artifact_created -eq $false) "selection_only_skips_pool_artifact"
+    Assert-True ($selectionOnlyPayload.model_invocation_count -eq 0) "selection_only_skips_model_invocation"
+    Assert-True (-not (Test-Path -LiteralPath $stubCall)) "selection_only_never_reaches_pool"
+    Assert-True (@(Get-Content -LiteralPath $selectionProbeCounter).Count -eq 1) "fresh_selection_catalog_skips_refresh_action"
+
+    . $catalogTimeHelper
+    . $catalogRefreshHelper
+    $workerAdmission = Invoke-GrokAuthenticatedCatalogSingleFlight `
+        -GrokHome $selectionProfile -Model "grok-4.5" -TtlSeconds 300 `
+        -RefreshAction {
+            [IO.File]::AppendAllText($selectionProbeCounter, "worker-refresh`n", $utf8)
+            [pscustomobject]@{ exit_code = 0; stdout = "- grok-4.5"; stderr = "" }
+        }
+    Assert-True ($workerAdmission.refresh_performed -eq $false) "worker_admission_reuses_selection_refresh"
+    Assert-True (@(Get-Content -LiteralPath $selectionProbeCounter).Count -eq 1) "selection_and_worker_admission_refresh_at_most_once"
+
+    $missingAuthProfile = Join-Path $root "selection-missing-auth-profile"
+    New-Item -ItemType Directory -Force -Path $missingAuthProfile | Out-Null
+    $freshMissingAuthCatalog = $selectionCatalog | ConvertTo-Json -Depth 6 | ConvertFrom-Json
+    $freshMissingAuthCatalog.fetched_at = [DateTimeOffset]::UtcNow.ToString("o")
+    Write-JsonFile (Join-Path $missingAuthProfile "models_cache.json") $freshMissingAuthCatalog
+    $missingAuthSuffix = [guid]::NewGuid().ToString("N").Substring(0, 8)
+    $missingAuthDispatch = "cdx_20000101T000000_$missingAuthSuffix"
+    $missingAuthSelectionDir = "D:\XINAO_RESEARCH_RUNTIME\state\grok_worker_selection\$missingAuthDispatch"
+    $missingAuthSelection = Invoke-FreshPowerShell @(
+        "-File", (Join-Path $tempBridge "Invoke-CodexDispatchGrokWorkerPool.ps1"),
+        "-N", "1", "-SelectionOnly",
+        "-Cwd", $root, "-Model", "grok-4.5",
+        "-GrokHome", $missingAuthProfile,
+        "-SelectionProbeGrokExe", $selectionProbe,
+        "-SelectorReleasePointer", $selectorReleasePointer,
+        "-RuntimeRoot", "D:\XINAO_RESEARCH_RUNTIME",
+        "-DispatchId", $missingAuthDispatch,
+        "-PoolId", "gwp_20000101T000000_$missingAuthSuffix",
+        "-Quiet"
+    )
+    Assert-True ($missingAuthSelection.exit_code -ne 0) "automatic_selection_missing_auth_must_fail"
+    Assert-True ($missingAuthSelection.output -match "GROK_AUTHENTICATED_PROFILE_AUTH_REQUIRED") "automatic_selection_missing_auth_reason"
+    Assert-True (-not (Test-Path -LiteralPath $missingAuthSelectionDir)) "automatic_selection_missing_auth_fails_before_receipt"
+
+    $revokedAuthProfile = Join-Path $root "selection-revoked-auth-profile"
+    New-Item -ItemType Directory -Force -Path $revokedAuthProfile | Out-Null
+    [IO.File]::WriteAllText((Join-Path $revokedAuthProfile "auth.json"), '{"test":true}', $utf8)
+    Write-JsonFile (Join-Path $revokedAuthProfile "models_cache.json") $selectionCatalog
+    $revokedAuthSuffix = [guid]::NewGuid().ToString("N").Substring(0, 8)
+    $revokedAuthDispatch = "cdx_20000101T000000_$revokedAuthSuffix"
+    $revokedAuthSelectionDir = "D:\XINAO_RESEARCH_RUNTIME\state\grok_worker_selection\$revokedAuthDispatch"
+    try {
+        $env:XINAO_GROK_SELECTION_PROBE_MODE = "remove-auth"
+        $revokedAuthSelection = Invoke-FreshPowerShell @(
+            "-File", (Join-Path $tempBridge "Invoke-CodexDispatchGrokWorkerPool.ps1"),
+            "-N", "1", "-SelectionOnly",
+            "-Cwd", $root, "-Model", "grok-4.5",
+            "-GrokHome", $revokedAuthProfile,
+            "-SelectionProbeGrokExe", $selectionProbe,
+            "-SelectorReleasePointer", $selectorReleasePointer,
+            "-RuntimeRoot", "D:\XINAO_RESEARCH_RUNTIME",
+            "-DispatchId", $revokedAuthDispatch,
+            "-PoolId", "gwp_20000101T000000_$revokedAuthSuffix",
+            "-Quiet"
+        )
+    }
+    finally {
+        Remove-Item Env:\XINAO_GROK_SELECTION_PROBE_MODE -ErrorAction SilentlyContinue
+    }
+    Assert-True ($revokedAuthSelection.exit_code -ne 0) "automatic_selection_revoked_auth_must_fail"
+    Assert-True ($revokedAuthSelection.output -match "GROK_AUTHENTICATED_PROFILE_AUTH_REQUIRED") "automatic_selection_revoked_auth_reason"
+    Assert-True (-not (Test-Path -LiteralPath $revokedAuthSelectionDir)) "automatic_selection_revoked_auth_fails_before_receipt"
     Assert-True ($fallbackMeta.selector_task_cwd_used -eq $false) "stable_release_ignores_task_cwd"
     Assert-True ([string]$fallbackMeta.selector_root_selected_from -eq "stable_release_pointer") "stable_release_pointer_selected"
     Assert-True ([string]$fallbackMeta.supervisor_root -eq $dSupervisorRoot) "stable_release_binds_capable_root"
@@ -367,7 +502,6 @@ exit 0
     Assert-True ($fallbackReports.Count -eq 1) "stable_release_records_one_probe"
     Assert-True ($fallbackReports[0].capable -eq $true) "stable_release_probe_capable"
 
-    Remove-Item -LiteralPath $stubCall -Force
     $datedReceipt = New-TestReceipt
     $datedReceipt["provider_preference"] = [ordered]@{
         strategy = "stable_default_reconciled_with_current_capacity"
@@ -560,6 +694,7 @@ exit 0
         "-File", (Join-Path $tempBridge "Invoke-CodexDispatchGrokWorkerPool.ps1"),
         "-N", "1", "-Prompt", "fixture-only",
         "-Cwd", $root, "-Model", "grok-not-observed",
+        "-GrokHome", $selectionProfile,
         "-SelectionProbeGrokExe", $selectionProbe,
         "-DispatchId", "cdx_20000101T000000_$unhealthySuffix",
         "-PoolId", "gwp_20000101T000000_$unhealthySuffix", "-Quiet"
@@ -664,6 +799,9 @@ exit 0
             "missing_model",
             "missing_cwd",
             "automatic_selection_unhealthy_model",
+            "selection_only_zero_model_zero_quota",
+            "automatic_selection_missing_auth",
+            "automatic_selection_revoked_auth",
             "stale_task_cwd_ignored_by_stable_release",
             "pythonpath_poison_ignored",
             "selector_source_drift",
@@ -679,6 +817,8 @@ exit 0
 finally {
     Remove-Item Env:\XINAO_GROK_SELECTION_STUB_CALL -ErrorAction SilentlyContinue
     Remove-Item Env:\XINAO_GROK_SELECTION_STUB_CALL_DIR -ErrorAction SilentlyContinue
+    Remove-Item Env:\XINAO_GROK_SELECTION_PROBE_COUNTER -ErrorAction SilentlyContinue
+    Remove-Item Env:\XINAO_GROK_SELECTION_PROBE_MODE -ErrorAction SilentlyContinue
     foreach ($path in @(
         $dispatchMeta,
         $poolDir,
@@ -687,7 +827,10 @@ finally {
         $autoSelectionDir,
         $fallbackDispatchMeta,
         $fallbackPoolDir,
-        $fallbackSelectionDir
+        $fallbackSelectionDir,
+        $selectionOnlyDir,
+        $missingAuthSelectionDir,
+        $revokedAuthSelectionDir
     ) + @(
         $concurrentDispatchMetas
     ) + @(
