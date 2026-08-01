@@ -20,23 +20,26 @@ function Assert-PowerShellSource([string]$Path) {
     $errors = $null
     [void][Management.Automation.Language.Parser]::ParseFile($Path, [ref]$tokens, [ref]$errors)
     if (@($errors).Count -gt 0) {
-        throw "CODEX_GROK_INSTALL_SOURCE_PARSE_FAILED: $Path :: $($errors -join '; ')"
+        throw "CODEX_GROK_INSTALL_SOURCE_PARSE_FAILED: $Path"
     }
 }
 
-function Write-AtomicFileFromSource([string]$Source, [string]$Target, [string]$ExpectedSha256) {
-    $parent = Split-Path -Parent $Target
-    New-Item -ItemType Directory -Path $parent -Force | Out-Null
-    $temporary = $Target + "." + [guid]::NewGuid().ToString("N") + ".tmp"
-    try {
-        [IO.File]::WriteAllBytes($temporary, [IO.File]::ReadAllBytes($Source))
-        if ((Get-Sha256Lower $temporary) -ne $ExpectedSha256) {
-            throw "CODEX_GROK_INSTALL_STAGING_HASH_MISMATCH: $Target"
+function Restore-PreviousInstallItem([object]$Item) {
+    if ([bool]$Item.previous_exists) {
+        $temporary = $Item.target_ref + "." + [guid]::NewGuid().ToString("N") + ".rollback"
+        try {
+            [IO.File]::WriteAllBytes($temporary, [IO.File]::ReadAllBytes($Item.rollback_ref))
+            if ((Get-Sha256Lower $temporary) -ne [string]$Item.previous_sha256) {
+                throw "CODEX_GROK_INSTALL_ROLLBACK_HASH_MISMATCH: $($Item.target_ref)"
+            }
+            Move-Item -LiteralPath $temporary -Destination $Item.target_ref -Force
         }
-        Move-Item -LiteralPath $temporary -Destination $Target -Force
+        finally {
+            Remove-Item -LiteralPath $temporary -Force -ErrorAction SilentlyContinue
+        }
     }
-    finally {
-        Remove-Item -LiteralPath $temporary -Force -ErrorAction SilentlyContinue
+    else {
+        Remove-Item -LiteralPath $Item.target_ref -Force -ErrorAction SilentlyContinue
     }
 }
 
@@ -45,96 +48,67 @@ $RuntimeRoot = [IO.Path]::GetFullPath($RuntimeRoot)
 $TargetLauncher = [IO.Path]::GetFullPath($TargetLauncher)
 $TargetBridgeRoot = [IO.Path]::GetFullPath($TargetBridgeRoot)
 $AuthProfileRoot = [IO.Path]::GetFullPath($AuthProfileRoot)
-
-$sourceLauncher = Join-Path $SourceRoot "launchers\Invoke-Codex-GrokWorkerPool.ps1"
-$sourceRollback = Join-Path $SourceRoot "install\Restore-CodexGrokDispatch.ps1"
 $runtimeRelativeFiles = @(
     "GrokAuthenticatedCatalogTime.ps1",
     "GrokAuthenticatedCatalogRefresh.ps1",
     "Invoke-CodexDispatchGrokWorkerPool.ps1",
     "Invoke-GrokComposer25Worker.ps1"
 )
-$requiredTargetDependencies = @(
-    "GrokWindowsPathIdentity.ps1",
-    "GrokWorkerProcessRuntime.ps1",
-    "Invoke-GrokWorkerPool.ps1",
-    "GrokWorkerSelectionReceipt.ps1",
-    "resolve_grok_worker_selection_receipt.py",
-    "GrokSupervisorRootCapability.ps1",
-    "Test-GrokCliEffectiveOutput.ps1"
-)
-
-$sourcePaths = @($sourceLauncher, $sourceRollback) + @(
-    $runtimeRelativeFiles | ForEach-Object { Join-Path $SourceRoot ("grok-admin-bridge\" + $_) }
-)
-foreach ($sourcePath in $sourcePaths) {
-    if (-not (Test-Path -LiteralPath $sourcePath -PathType Leaf)) {
-        throw "CODEX_GROK_INSTALL_SOURCE_MISSING: $sourcePath"
-    }
-    if ([IO.Path]::GetExtension($sourcePath) -ieq ".ps1") {
-        Assert-PowerShellSource $sourcePath
-    }
-}
-
-$runtimeSourceHashes = [ordered]@{}
+$sourceLauncher = Join-Path $SourceRoot "launchers\Invoke-Codex-GrokWorkerPool.ps1"
+$specs = [Collections.Generic.List[object]]::new()
+$order = 0
 foreach ($relative in $runtimeRelativeFiles) {
-    $runtimeSourceHashes[$relative] = Get-Sha256Lower (Join-Path $SourceRoot ("grok-admin-bridge\" + $relative))
-}
-$closureJson = $runtimeSourceHashes | ConvertTo-Json -Compress
-$closureSha256 = [Convert]::ToHexString(
-    [Security.Cryptography.SHA256]::HashData($utf8.GetBytes($closureJson))
-).ToLowerInvariant()
-$launcherSha256 = Get-Sha256Lower $sourceLauncher
-$rollbackScriptSha256 = Get-Sha256Lower $sourceRollback
-$releaseId = "dispatch-" + (Get-Date -Format "yyyyMMddTHHmmssfff") + "-" + $closureSha256.Substring(0, 12)
-$releaseBase = Join-Path $RuntimeRoot "state\codex_grok_dispatch_releases"
-$releaseRoot = Join-Path $releaseBase $releaseId
-$rollbackRoot = Join-Path $releaseRoot "rollback"
-New-Item -ItemType Directory -Path $rollbackRoot -ErrorAction Stop | Out-Null
-
-$installedRollbackScript = Join-Path $releaseRoot "Restore-CodexGrokDispatch.ps1"
-[IO.File]::WriteAllBytes($installedRollbackScript, [IO.File]::ReadAllBytes($sourceRollback))
-if ((Get-Sha256Lower $installedRollbackScript) -ne $rollbackScriptSha256) {
-    throw "CODEX_GROK_ROLLBACK_SCRIPT_INSTALL_HASH_MISMATCH"
-}
-
-$installSpecs = [Collections.Generic.List[object]]::new()
-$promotionOrder = 0
-foreach ($relative in $runtimeRelativeFiles) {
-    $promotionOrder += 1
-    $installSpecs.Add([pscustomobject][ordered]@{
+    $order += 1
+    $specs.Add([pscustomobject]@{
         role = "runtime_bridge"
         relative_ref = $relative
         source_ref = Join-Path $SourceRoot ("grok-admin-bridge\" + $relative)
-        source_sha256 = [string]$runtimeSourceHashes[$relative]
         target_ref = Join-Path $TargetBridgeRoot $relative
-        promotion_order = $promotionOrder
+        promotion_order = $order
     })
 }
-$promotionOrder += 1
-$installSpecs.Add([pscustomobject][ordered]@{
+$order += 1
+$specs.Add([pscustomobject]@{
     role = "public_launcher"
     relative_ref = "Invoke-Codex-GrokWorkerPool.ps1"
     source_ref = $sourceLauncher
-    source_sha256 = $launcherSha256
     target_ref = $TargetLauncher
-    promotion_order = $promotionOrder
+    promotion_order = $order
 })
 
+foreach ($spec in $specs) {
+    if (-not (Test-Path -LiteralPath $spec.source_ref -PathType Leaf)) {
+        throw "CODEX_GROK_INSTALL_SOURCE_MISSING: $($spec.source_ref)"
+    }
+    Assert-PowerShellSource $spec.source_ref
+    $spec | Add-Member -NotePropertyName source_sha256 -NotePropertyValue (Get-Sha256Lower $spec.source_ref)
+}
+$runtimeHashes = [ordered]@{}
+foreach ($spec in @($specs | Where-Object role -eq "runtime_bridge")) {
+    $runtimeHashes[[string]$spec.relative_ref] = [string]$spec.source_sha256
+}
+$closureSha256 = [Convert]::ToHexString(
+    [Security.Cryptography.SHA256]::HashData($utf8.GetBytes(($runtimeHashes | ConvertTo-Json -Compress)))
+).ToLowerInvariant()
+$releaseId = "dispatch-" + (Get-Date -Format "yyyyMMddTHHmmssfff") + "-" + $closureSha256.Substring(0, 12)
+$releaseBase = Join-Path $RuntimeRoot "state\codex_grok_dispatch_releases"
+$releaseRoot = Join-Path $releaseBase $releaseId
+$backupRoot = Join-Path $releaseRoot "previous"
+New-Item -ItemType Directory -Path $backupRoot -ErrorAction Stop | Out-Null
+
 $prepared = [Collections.Generic.List[object]]::new()
-foreach ($spec in $installSpecs) {
+foreach ($spec in $specs) {
     $target = [IO.Path]::GetFullPath([string]$spec.target_ref)
-    $targetParent = Split-Path -Parent $target
-    New-Item -ItemType Directory -Path $targetParent -Force | Out-Null
+    New-Item -ItemType Directory -Path (Split-Path -Parent $target) -Force | Out-Null
     $previousExists = Test-Path -LiteralPath $target -PathType Leaf
     $previousSha256 = ""
     $rollbackRef = ""
     if ($previousExists) {
         $previousSha256 = Get-Sha256Lower $target
-        $rollbackRef = Join-Path $rollbackRoot (("{0:D2}-" -f [int]$spec.promotion_order) + [IO.Path]::GetFileName($target))
+        $rollbackRef = Join-Path $backupRoot (("{0:D2}-" -f [int]$spec.promotion_order) + [IO.Path]::GetFileName($target))
         [IO.File]::WriteAllBytes($rollbackRef, [IO.File]::ReadAllBytes($target))
         if ((Get-Sha256Lower $rollbackRef) -ne $previousSha256) {
-            throw "CODEX_GROK_ROLLBACK_BACKUP_HASH_MISMATCH: $target"
+            throw "CODEX_GROK_INSTALL_BACKUP_HASH_MISMATCH: $target"
         }
     }
     $stageRef = $target + "." + $releaseId + ".stage"
@@ -157,21 +131,9 @@ foreach ($spec in $installSpecs) {
     })
 }
 
-$pointerPath = Join-Path $releaseBase "current.json"
-$previousPointerExists = Test-Path -LiteralPath $pointerPath -PathType Leaf
-$previousPointerSha256 = ""
-$previousPointerBackup = ""
-if ($previousPointerExists) {
-    $previousPointerSha256 = Get-Sha256Lower $pointerPath
-    $previousPointerBackup = Join-Path $rollbackRoot "previous.current.json"
-    [IO.File]::WriteAllBytes($previousPointerBackup, [IO.File]::ReadAllBytes($pointerPath))
-    if ((Get-Sha256Lower $previousPointerBackup) -ne $previousPointerSha256) {
-        throw "CODEX_GROK_PREVIOUS_POINTER_BACKUP_HASH_MISMATCH"
-    }
-}
-
 $promoted = [Collections.Generic.List[object]]::new()
 $receiptPath = Join-Path $releaseRoot "install-receipt.json"
+$pointerPath = Join-Path $releaseBase "current.json"
 try {
     foreach ($item in @($prepared | Sort-Object promotion_order)) {
         Move-Item -LiteralPath $item.stage_ref -Destination $item.target_ref -Force
@@ -179,18 +141,6 @@ try {
             throw "CODEX_GROK_INSTALL_READBACK_HASH_MISMATCH: $($item.target_ref)"
         }
         $promoted.Add($item)
-    }
-
-    $dependencyHashes = [ordered]@{}
-    foreach ($relative in $requiredTargetDependencies) {
-        $dependencyPath = Join-Path $TargetBridgeRoot $relative
-        if (-not (Test-Path -LiteralPath $dependencyPath -PathType Leaf)) {
-            throw "CODEX_GROK_TARGET_DEPENDENCY_MISSING: $dependencyPath"
-        }
-        if ([IO.Path]::GetExtension($dependencyPath) -ieq ".ps1") {
-            Assert-PowerShellSource $dependencyPath
-        }
-        $dependencyHashes[$relative] = Get-Sha256Lower $dependencyPath
     }
 
     $authPath = Join-Path $AuthProfileRoot "auth.json"
@@ -202,51 +152,38 @@ try {
         )
     }
     catch { $authPresent = $false }
-
-    $sourceGitHead = @(& git -C $SourceRoot rev-parse HEAD 2>$null | Select-Object -First 1)
-    if (@($sourceGitHead).Count -ne 1 -or [string]$sourceGitHead[0] -notmatch '^[0-9a-fA-F]{40}$') {
+    $sourceGitHead = [string](@(& git -C $SourceRoot rev-parse HEAD 2>$null | Select-Object -First 1)[0])
+    if ($sourceGitHead -notmatch '^[0-9a-fA-F]{40}$') {
         throw "CODEX_GROK_INSTALL_SOURCE_GIT_IDENTITY_UNAVAILABLE"
     }
-    $receiptItems = @($prepared | Sort-Object promotion_order | ForEach-Object {
-        [ordered]@{
-            role = $_.role
-            relative_ref = $_.relative_ref
-            source_ref = $_.source_ref
-            source_sha256 = $_.source_sha256
-            target_ref = $_.target_ref
-            installed_sha256 = $_.installed_sha256
-            previous_exists = $_.previous_exists
-            previous_sha256 = $_.previous_sha256
-            rollback_ref = $_.rollback_ref
-            promotion_order = $_.promotion_order
-        }
-    })
     $receipt = [ordered]@{
         schema_version = "xinao.codex_grok_dispatch_install_receipt.v2"
         installed_at = (Get-Date).ToUniversalTime().ToString("o")
         release_id = $releaseId
         source_root = $SourceRoot
-        source_git_head = [string]$sourceGitHead[0]
+        source_git_head = $sourceGitHead
         target_bridge_root = $TargetBridgeRoot
         bridge_closure_sha256 = $closureSha256
-        bridge_runtime_files = $runtimeSourceHashes
-        target_dependency_hashes = $dependencyHashes
-        install_items = $receiptItems
+        install_items = @($prepared | Sort-Object promotion_order | ForEach-Object {
+            [ordered]@{
+                role = $_.role
+                relative_ref = $_.relative_ref
+                source_ref = $_.source_ref
+                source_sha256 = $_.source_sha256
+                target_ref = $_.target_ref
+                installed_sha256 = $_.installed_sha256
+                previous_exists = $_.previous_exists
+                previous_sha256 = $_.previous_sha256
+                rollback_ref = $_.rollback_ref
+                promotion_order = $_.promotion_order
+            }
+        })
         auth_profile_root = $AuthProfileRoot
         auth_state = if ($authPresent) { "present_nonempty" } else { "login_required" }
         auth_present = [bool]$authPresent
         auth_bytes_read = $false
         auth_copied_or_backed_up = $false
         catalog_is_auth_proof = $false
-        rollback_script_ref = $installedRollbackScript
-        rollback_script_sha256 = $rollbackScriptSha256
-        release_pointer_ref = $pointerPath
-        previous_pointer_exists = [bool]$previousPointerExists
-        previous_pointer_sha256 = $previousPointerSha256
-        previous_pointer_rollback_ref = $previousPointerBackup
-        dispatch_epoch_policy = "stable_episode_identity_plus_s_quota_dispatch_epoch"
-        unscoped_ordinary_mode = "fail_closed_before_provider"
-        package_epoch_policy = "exact_neutral_manifest_epoch_reseal_on_expiry"
         exact_prior_reuse_policy = "local_classification_before_provider_auth_zero_refresh_zero_worker_zero_tokens"
         authority = $false
         completion_claim_allowed = $false
@@ -258,9 +195,8 @@ try {
         release_id = $releaseId
         install_receipt_ref = $receiptPath
         install_receipt_sha256 = $receiptSha256
-        source_git_head = [string]$sourceGitHead[0]
+        source_git_head = $sourceGitHead
         bridge_closure_sha256 = $closureSha256
-        target_bridge_root = $TargetBridgeRoot
         authority = $false
         completion_claim_allowed = $false
     }
@@ -273,43 +209,15 @@ try {
     finally {
         Remove-Item -LiteralPath $pointerTemporary -Force -ErrorAction SilentlyContinue
     }
-    $pointerReadback = Get-Content -LiteralPath $pointerPath -Raw -Encoding UTF8 | ConvertFrom-Json -ErrorAction Stop
-    if ([string]$pointerReadback.release_id -ne $releaseId -or
-        [string]$pointerReadback.install_receipt_sha256 -ne $receiptSha256) {
-        throw "CODEX_GROK_RELEASE_POINTER_READBACK_MISMATCH"
-    }
-
     $receipt | Add-Member -NotePropertyName receipt_ref -NotePropertyValue $receiptPath
     $receipt | Add-Member -NotePropertyName receipt_sha256 -NotePropertyValue $receiptSha256
+    $receipt | Add-Member -NotePropertyName release_pointer_ref -NotePropertyValue $pointerPath
     $receipt | Add-Member -NotePropertyName release_pointer_sha256 -NotePropertyValue (Get-Sha256Lower $pointerPath)
     $receipt | ConvertTo-Json -Depth 10
 }
 catch {
-    try {
-        if ($previousPointerExists) {
-            Write-AtomicFileFromSource `
-                -Source $previousPointerBackup `
-                -Target $pointerPath `
-                -ExpectedSha256 $previousPointerSha256
-        }
-        else {
-            Remove-Item -LiteralPath $pointerPath -Force -ErrorAction SilentlyContinue
-        }
-    }
-    catch { }
     foreach ($item in @($promoted | Sort-Object promotion_order -Descending)) {
-        try {
-            if ([bool]$item.previous_exists) {
-                Write-AtomicFileFromSource `
-                    -Source $item.rollback_ref `
-                    -Target $item.target_ref `
-                    -ExpectedSha256 $item.previous_sha256
-            }
-            else {
-                Remove-Item -LiteralPath $item.target_ref -Force -ErrorAction SilentlyContinue
-            }
-        }
-        catch { }
+        try { Restore-PreviousInstallItem $item } catch { }
     }
     throw
 }

@@ -158,7 +158,6 @@ $poolFiles = @(
     "grok-admin-bridge/run_grok_package_batch.py",
     "launchers/Invoke-Codex-GrokWorkerPool.ps1",
     "install/Install-CodexGrokDispatch.ps1",
-    "install/Restore-CodexGrokDispatch.ps1",
     "install/Test-CodexGrokDispatchInstall.ps1",
     "grok-admin-bridge/Invoke-GrokHostWorkerPoolFromTemporal.ps1",
     "grok-admin-bridge/Invoke-GrokTemporalHostPoolTrigger.ps1",
@@ -345,7 +344,6 @@ Assert-Contract ($dispatchText -match 'selector_source_sha256\s*=') "selection_o
 $checkpointPreparerText = Get-Content -LiteralPath $checkpointPreparerPath -Raw -Encoding UTF8
 $packageLauncherSourceText = Get-Content -LiteralPath (Join-Path $repoRoot "launchers/Invoke-Codex-GrokWorkerPool.ps1") -Raw -Encoding UTF8
 $installerText = Get-Content -LiteralPath (Join-Path $repoRoot "install/Install-CodexGrokDispatch.ps1") -Raw -Encoding UTF8
-$rollbackInstallerText = Get-Content -LiteralPath (Join-Path $repoRoot "install/Restore-CodexGrokDispatch.ps1") -Raw -Encoding UTF8
 $codexLauncherPath = "C:\Users\xx363\CodexLaunchers\Invoke-Codex-GrokWorkerPool.ps1"
 Assert-Contract (Test-Path -LiteralPath $codexLauncherPath -PathType Leaf) "codex_worker_pool_launcher_present"
 $codexLauncherText = Get-Content -LiteralPath $codexLauncherPath -Raw -Encoding UTF8
@@ -371,9 +369,6 @@ foreach ($runtimeFile in @(
 Assert-Contract ($installerText -match 'auth_bytes_read\s*=\s*\$false') "installer_never_reads_auth_bytes"
 Assert-Contract ($installerText -match 'auth_copied_or_backed_up\s*=\s*\$false') "installer_never_copies_auth"
 Assert-Contract ($installerText -match 'local_classification_before_provider_auth_zero_refresh_zero_worker_zero_tokens') "installer_preserves_prior_reuse_pareto"
-Assert-Contract ($rollbackInstallerText -match 'GROK_ROLLBACK_CURRENT_TARGET_DRIFT') "rollback_rejects_target_drift"
-Assert-Contract ($rollbackInstallerText -match 'GROK_ROLLBACK_CURRENT_POINTER_DRIFT') "rollback_rejects_pointer_drift"
-Assert-Contract ($rollbackInstallerText -match 'auth_profile_touched\s*=\s*\$false') "rollback_does_not_touch_auth"
 Assert-Contract ($workerText -notmatch '[.]grok-4[.]5-lane') "worker_has_no_stale_profile"
 Assert-Contract ($workerText -notmatch 'GROK_COMPOSER25_EXACT_MODEL_REQUIRED') "worker_has_no_static_composer_only_gate"
 Assert-Contract ($workerText -match '\$cliModelIds -notcontains \$Model') "worker_exact_profile_models_admission"
