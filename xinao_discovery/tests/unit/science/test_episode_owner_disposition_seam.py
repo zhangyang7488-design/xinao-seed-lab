@@ -1016,13 +1016,18 @@ def test_current_episode_actor_intent_projects_and_reaches_portfolio_consumer(
         verified_material_reality=verified_material,
     )
     intent = actor_fixture._intent(reality, selected_number=17, stake="100.0000")
+    intent_payload = intent.model_dump(mode="json")
+    # A producer may serialize the same UTC instant with an explicit offset.
+    # The intent seal is over the normalized model, not the transport spelling.
+    assert str(intent_payload["authored_at"]).endswith("Z")
+    intent_payload["authored_at"] = str(intent_payload["authored_at"]).replace("Z", "+00:00")
     material = reality.material_reality
     cutoff, authored_at, _deadline = actor_fixture._times(actor_fixture.P1_OPEN)
     entry = _ingest_episode(
         pool,
         episode_id=material.episode_id,
         recommendation="ACTION_CANDIDATE",
-        actor_intent=intent.model_dump(mode="json"),
+        actor_intent=intent_payload,
         attempt_cas_digest=material.attempt_cas_digest,
         attempt_hash=material.attempt_hash,
         cas_head_sha256=material.cas_head_sha256,

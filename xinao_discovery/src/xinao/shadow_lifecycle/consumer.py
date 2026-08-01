@@ -648,9 +648,15 @@ def _load_pool_and_research_source(
                 proposed.get("content_hash"),
                 "actor_authored_intent_hash",
             )
-            intent_body = dict(proposed)
-            intent_body.pop("content_hash", None)
-            if canonical_sha256(intent_body) != intent_hash:
+            # Imported at the consumer boundary to avoid a package import cycle:
+            # actor_reality also consumes the science-side pool adapter.
+            from xinao.shadow_lifecycle.actor_reality import ActorAuthoredBehaviorIntent
+
+            try:
+                normalized_intent = ActorAuthoredBehaviorIntent.model_validate(dict(proposed))
+            except ValueError as exc:
+                raise StoreError("PRODUCTION_FREEZE_ACTOR_INTENT_SEAL_INVALID") from exc
+            if normalized_intent.compute_content_hash() != intent_hash:
                 raise StoreError("PRODUCTION_FREEZE_ACTOR_INTENT_SEAL_INVALID")
             if actor_projection_binding.get("actor_authored_intent_hash") != intent_hash:
                 raise StoreError("PRODUCTION_FREEZE_ACTOR_INTENT_HASH_MISMATCH")
