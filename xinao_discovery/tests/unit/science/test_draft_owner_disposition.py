@@ -135,6 +135,25 @@ def _owner_fill_action(payload_draft: dict[str, Any], branch: dict[str, Any]) ->
     return body
 
 
+def _ingest_owner_action_candidate(
+    tmp_path: Path,
+    capture: dict[str, Any],
+) -> tuple[Path, dict[str, Any], bytes, dict[str, Any]]:
+    """Seal a synthetic researcher core matching this prospective authority packet."""
+
+    authority = capture["source_authority_binding"]
+    return _seam._ingest(
+        tmp_path / "pool",
+        selected_number=17,
+        researcher_executable_overrides={
+            "target_ref": authority["target_ref"],
+            "target_open_time": authority["target_guard_open_time"],
+            "freeze_deadline": authority["freeze_deadline"],
+            "knowledge_cutoff": "2026-07-30T08:00:00Z",
+        },
+    )
+
+
 def _owner_fill_no_action(payload_draft: dict[str, Any], branch: dict[str, Any]) -> dict[str, Any]:
     body = copy.deepcopy(payload_draft)
     body["disposition_source"] = CODEX_OWNER_CHANNEL_SOURCE
@@ -334,7 +353,7 @@ def test_owner_filled_action_and_no_action_both_validate(tmp_path: Path) -> None
 
 def test_owner_filled_write_owner_disposition_accepts(tmp_path: Path) -> None:
     capture = _capture_auth(tmp_path)
-    pool, entry, _, _ = _seam._ingest(tmp_path / "pool")
+    pool, entry, _, _ = _ingest_owner_action_candidate(tmp_path, capture)
     portfolio = tmp_path / "portfolio"
     init_portfolio(root=portfolio, seat_id="seat.write", portfolio_ref="portfolio.write")
     draft = draft_owner_disposition(
@@ -407,14 +426,14 @@ def test_authority_args_must_pair(tmp_path: Path) -> None:
 
 
 def test_portfolio_head_not_ready_rejected(tmp_path: Path) -> None:
-    pool, entry, _, _ = _seam._ingest(tmp_path / "pool")
+    capture = _capture_auth(tmp_path)
+    pool, entry, _, _ = _ingest_owner_action_candidate(tmp_path, capture)
     portfolio = tmp_path / "portfolio"
     init_portfolio(root=portfolio, seat_id="seat.bad", portfolio_ref="portfolio.bad")
     # Force a non-ready head by freezing period 1 then trying draft without feedback.
     from xinao.science.freeze_adapter import apply_freeze_from_disposition
     from xinao.science.owner_disposition import write_owner_disposition_artifact as write_disp
 
-    capture = _capture_auth(tmp_path)
     draft = draft_owner_disposition(
         pool_root=pool,
         result_sha256=entry["result_sha256"],
@@ -542,7 +561,7 @@ def test_cli_raw_draft_then_owner_fill_roundtrip(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     capture = _capture_auth(tmp_path)
-    pool, entry, _, _ = _seam._ingest(tmp_path / "pool")
+    pool, entry, _, _ = _ingest_owner_action_candidate(tmp_path, capture)
     portfolio = tmp_path / "portfolio"
     init_portfolio(root=portfolio, seat_id="seat.rt", portfolio_ref="portfolio.rt")
     code = main(

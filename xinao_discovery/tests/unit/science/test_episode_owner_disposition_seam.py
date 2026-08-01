@@ -35,7 +35,10 @@ from xinao.science.episode_export_pool_adapter import (
     load_episode_pool_entry,
     remint_episode_pool_entry_from_raw,
 )
-from xinao.science.freeze_adapter import apply_freeze_from_disposition
+from xinao.science.freeze_adapter import (
+    apply_freeze_from_disposition,
+    build_portfolio_binding_from_shadow,
+)
 from xinao.science.owner_disposition import (
     CODEX_OWNER_CHANNEL_SOURCE,
     DISPOSITION_MARKER,
@@ -52,8 +55,8 @@ from xinao.science.owner_disposition import (
     write_owner_disposition_artifact,
 )
 from xinao.science.researcher_result_adapter import raw_sha256 as oneshot_raw_sha256
-from xinao.shadow_lifecycle import init_episode
-from xinao.shadow_lifecycle.store import load_frozen
+from xinao.shadow_lifecycle import init_episode, init_portfolio
+from xinao.shadow_lifecycle.store import load_frozen, period_directory
 
 ROOT = Path(__file__).resolve().parents[3]
 FIXTURE_DIR = ROOT / "tests" / "fixtures" / "oneshot_xrr_20260730T201916_20001f0913"
@@ -80,6 +83,7 @@ def _manifest(
     episode_id: str = "ep_owner_disp",
     attempt: str | None = None,
     recommendation: str = "NO_RECOMMENDATION",
+    executable: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     return {
         "schema_version": "xinao.research_episode_candidate_manifest.v1",
@@ -97,7 +101,11 @@ def _manifest(
         "method_refs": ["wild_multi_turn_export", "lab_manifest"],
         "falsifiers": ["missing export seal", "one-shot loader path"],
         "account_recommendation": recommendation,
-        "proposed": {"numbers": [17], "stake": "1.00"},
+        "proposed": (
+            {"executable_account_decision": executable}
+            if executable is not None
+            else {"numbers": [17], "stake": "1.00"}
+        ),
         "candidate_only": True,
         "owner_adopted": False,
         "completion": False,
@@ -109,6 +117,7 @@ def _build_episode_export(
     episode_id: str = "ep_owner_disp",
     actual_turns: int = 9,
     recommendation: str = "NO_RECOMMENDATION",
+    executable: dict[str, Any] | None = None,
 ) -> tuple[bytes, bytes, dict[str, Any]]:
     """Return (export_bytes, manifest_bytes, export_obj) sealed like native export."""
 
@@ -117,6 +126,7 @@ def _build_episode_export(
         episode_id=episode_id,
         attempt=attempt,
         recommendation=recommendation,
+        executable=executable,
     )
     man_bytes = (json.dumps(manifest, ensure_ascii=False, sort_keys=True) + "\n").encode("utf-8")
     body: dict[str, Any] = {
@@ -208,6 +218,40 @@ def _no_action_disposition(
         },
     }
     body.update(overrides)
+    return body
+
+
+def _researcher_action_core(*, selected_number: int = 17) -> dict[str, Any]:
+    return {
+        "panel": "B",
+        "selected_number": selected_number,
+        "stake": "1.0000",
+        "target_ref": "draw.20260801-001",
+        "target_open_time": _iso(OPEN_AT),
+        "freeze_deadline": _iso(DEADLINE),
+        "knowledge_cutoff": _iso(CUTOFF),
+        "odds_version_ref": "odds.special-number.20260731.v1",
+        "baseline_ref": "BO0013",
+        "risk_policy_ref": "shadow-risk.max-one-unit.v1",
+        "rule_ref": "special-number-rule.v1",
+    }
+
+
+def _action_disposition(
+    entry: dict[str, Any],
+    *,
+    selected_number: int = 17,
+) -> dict[str, Any]:
+    body = _no_action_disposition(
+        entry,
+        science_disposition=SCIENCE_RETAIN_FOR_SHADOW,
+        account_identity="ACTION",
+    )
+    body.pop("no_action_period_binding", None)
+    body["executable_account_decision"] = {
+        **_researcher_action_core(selected_number=selected_number),
+        "frozen_at": _iso(FROZEN_AT),
+    }
     return body
 
 
@@ -334,6 +378,42 @@ def test_episode_export_write_owner_disposition_library(
     assert reloaded["owner_adopted"] is False
     _assert_no_freeze_artifacts(owner)
     _assert_no_freeze_artifacts(pool)
+
+
+def test_episode_action_requires_exact_manifest_authored_execution_core(tmp_path: Path) -> None:
+    pool = tmp_path / "pool"
+    owner = tmp_path / "owner"
+    core = _researcher_action_core(selected_number=17)
+    entry = _ingest_episode(
+        pool,
+        episode_id="ep_manifest_action",
+        recommendation="ACTION_CANDIDATE",
+        executable=core,
+    )
+    written = write_owner_disposition_artifact(
+        owner_state_root=owner,
+        payload=_action_disposition(entry, selected_number=17),
+        pool_root=pool,
+    )
+    binding = written["researcher_action_binding"]
+    assert binding["source_kind"] == "EPISODE_CANDIDATE_MANIFEST"
+    assert binding["source_artifact_sha256"] == entry["receipt_content_sha256"]
+    verified = load_and_verify_disposition(
+        disposition_path=Path(written["disposition_path"]),
+        owner_state_root=owner,
+        pool_root=pool,
+    )
+    assert verified["researcher_action_binding"] == binding
+
+    rejected_owner = tmp_path / "rejected-owner"
+    with pytest.raises(OwnerDispositionError) as exc:
+        write_owner_disposition_artifact(
+            owner_state_root=rejected_owner,
+            payload=_action_disposition(entry, selected_number=18),
+            pool_root=pool,
+        )
+    assert exc.value.reason_code == "RESEARCHER_EXECUTABLE_DECISION_MISMATCH"
+    assert not rejected_owner.exists()
 
 
 @pytest.mark.parametrize(
@@ -480,19 +560,14 @@ def test_pool_entry_content_hash_drift_rejected(tmp_path: Path) -> None:
         science_disposition=SCIENCE_ADOPT,
         pool_entry_content_hash="ff" * 32,
     )
-    written = write_owner_disposition_artifact(
-        owner_state_root=owner,
-        payload=payload,
-        pool_root=pool,
-    )
     with pytest.raises(OwnerDispositionError) as exc:
-        load_and_verify_disposition(
-            disposition_path=Path(written["disposition_path"]),
+        write_owner_disposition_artifact(
             owner_state_root=owner,
+            payload=payload,
             pool_root=pool,
-            result_sha256=entry["result_sha256"],
         )
     assert exc.value.reason_code == "DISPOSITION_POOL_ENTRY_HASH_MISMATCH"
+    assert list(owner.rglob("*.json")) == []
     assert load_episode_pool_entry(pool, entry["result_sha256"])["owner_adopted"] is False
 
 
@@ -508,18 +583,14 @@ def test_result_sha256_hash_drift_rejected(tmp_path: Path) -> None:
         science_disposition=SCIENCE_RETAIN_FOR_SHADOW,
         result_sha256=foreign,
     )
-    written = write_owner_disposition_artifact(
-        owner_state_root=owner,
-        payload=payload,
-        pool_root=pool,
-    )
     with pytest.raises(OwnerDispositionError) as exc:
-        load_and_verify_disposition(
-            disposition_path=Path(written["disposition_path"]),
+        write_owner_disposition_artifact(
             owner_state_root=owner,
+            payload=payload,
             pool_root=pool,
         )
     assert exc.value.reason_code == "POOL_ENTRY_MISSING"
+    assert list(owner.rglob("*.json")) == []
     assert load_episode_pool_entry(pool, entry["result_sha256"])["owner_adopted"] is False
 
 
@@ -533,19 +604,14 @@ def test_receipt_content_hash_drift_rejected(tmp_path: Path) -> None:
         science_disposition=SCIENCE_REJECT,
         receipt_content_sha256="cc" * 32,
     )
-    written = write_owner_disposition_artifact(
-        owner_state_root=owner,
-        payload=payload,
-        pool_root=pool,
-    )
     with pytest.raises(OwnerDispositionError) as exc:
-        load_and_verify_disposition(
-            disposition_path=Path(written["disposition_path"]),
+        write_owner_disposition_artifact(
             owner_state_root=owner,
+            payload=payload,
             pool_root=pool,
-            result_sha256=entry["result_sha256"],
         )
     assert exc.value.reason_code == "DISPOSITION_POOL_RECEIPT_MISMATCH"
+    assert list(owner.rglob("*.json")) == []
 
 
 def test_tampered_export_blob_fails_closed_on_verify(tmp_path: Path) -> None:
@@ -567,23 +633,18 @@ def test_tampered_export_blob_fails_closed_on_verify(tmp_path: Path) -> None:
     # Force overwrite outside pool API (attack surface).
     result_path.write_bytes(bytes(mutated))
     payload = _no_action_disposition(entry, science_disposition=SCIENCE_ADOPT)
-    written = write_owner_disposition_artifact(
-        owner_state_root=owner,
-        payload=payload,
-        pool_root=pool,
-    )
     with pytest.raises(OwnerDispositionError) as exc:
-        load_and_verify_disposition(
-            disposition_path=Path(written["disposition_path"]),
+        write_owner_disposition_artifact(
             owner_state_root=owner,
+            payload=payload,
             pool_root=pool,
-            result_sha256=entry["result_sha256"],
         )
     assert exc.value.reason_code in {
         "POOL_RESULT_BYTES_TAMPERED",
         "EPISODE_EXPORT_BUNDLE_HASH_MISMATCH",
         "EPISODE_EXPORT_JSON_INVALID",
     }
+    assert list(owner.rglob("*.json")) == []
 
 
 # --- One-shot regression -----------------------------------------------------
@@ -721,19 +782,14 @@ def test_entry_only_candidate_rewrite_reseal_fails_load(tmp_path: Path) -> None:
         forged,
         science_disposition=SCIENCE_ADOPT,
     )
-    written = write_owner_disposition_artifact(
-        owner_state_root=owner,
-        payload=payload,
-        pool_root=pool,
-    )
     with pytest.raises(OwnerDispositionError) as verify_exc:
-        load_and_verify_disposition(
-            disposition_path=Path(written["disposition_path"]),
+        write_owner_disposition_artifact(
             owner_state_root=owner,
+            payload=payload,
             pool_root=pool,
-            result_sha256=honest["result_sha256"],
         )
     assert verify_exc.value.reason_code == "POOL_ENTRY_IDENTITY_MISMATCH"
+    assert list(owner.rglob("*.json")) == []
     # CAS blobs (result/receipt) unchanged; only entry JSON was rewritten.
     assert pool_result_bytes_path(pool, honest["result_sha256"]).is_file()
     assert pool_receipt_path(pool, honest["result_sha256"]).is_file()
@@ -891,3 +947,43 @@ def test_episode_export_disposition_freeze_consumer_no_auto_settle(
     reloaded = load_episode_pool_entry(pool, entry["result_sha256"])
     assert reloaded["owner_adopted"] is False
     assert reloaded == entry
+
+
+def test_episode_export_action_reaches_production_portfolio_consumer(tmp_path: Path) -> None:
+    """Portfolio consumer independently re-reads the Episode manifest action core."""
+
+    pool = tmp_path / "pool_episode_action"
+    owner = tmp_path / "owner_episode_action"
+    portfolio = tmp_path / "portfolio_episode_action"
+    core = _researcher_action_core(selected_number=17)
+    entry = _ingest_episode(
+        pool,
+        episode_id="ep_portfolio_action",
+        recommendation="ACTION_CANDIDATE",
+        executable=core,
+    )
+    init_portfolio(
+        root=portfolio,
+        seat_id="seat.episode.action",
+        portfolio_ref="portfolio.episode.action",
+    )
+    payload = _action_disposition(entry, selected_number=17)
+    payload["portfolio_binding"] = build_portfolio_binding_from_shadow(portfolio)
+    written = write_owner_disposition_artifact(
+        owner_state_root=owner,
+        payload=payload,
+        pool_root=pool,
+    )
+    freeze = apply_freeze_from_disposition(
+        pool_root=pool,
+        owner_state_root=owner,
+        disposition_path=Path(written["disposition_path"]),
+        shadow_root=portfolio,
+        mode="portfolio",
+        clock=lambda: FROZEN_AT,
+    )
+    assert freeze["ok"] is True
+    assert freeze["researcher_action_binding"]["source_kind"] == ("EPISODE_CANDIDATE_MANIFEST")
+    frozen = load_frozen(period_directory(portfolio, 1))
+    assert frozen.bound_account_ticket is not None
+    assert frozen.bound_account_ticket.selected_number == 17

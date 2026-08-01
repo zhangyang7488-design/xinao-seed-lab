@@ -14,6 +14,7 @@ from typing import Any
 
 import pytest
 
+from xinao.canonical import canonical_sha256
 from xinao.science.candidate_pool import (
     CandidatePoolError,
     ingest_verified_research_result,
@@ -29,11 +30,13 @@ from xinao.science.freeze_adapter import (
     assert_no_control_plane_imports,
     build_freeze_request_from_disposition,
     build_portfolio_binding_from_shadow,
+    build_research_freeze_binding,
     extract_research_binding_hash_from_frozen,
     freeze_request_evidence_path,
     load_research_binding,
     write_freeze_request,
     write_freeze_request_evidence_exclusive,
+    write_research_binding_exclusive,
 )
 from xinao.science.owner_disposition import (
     CODEX_OWNER_CHANNEL_SOURCE,
@@ -71,6 +74,10 @@ from xinao.shadow_lifecycle import (
     init_portfolio,
     settle_portfolio_period,
 )
+from xinao.shadow_lifecycle.consumer import (
+    OWNER_FREEZE_AUTHORITY_MARKER,
+    OWNER_FREEZE_AUTHORITY_SCHEMA,
+)
 from xinao.shadow_lifecycle.store import detect_phase, load_frozen, period_directory
 
 AS_OF = "2026-07-30T12:00:00.000Z"
@@ -98,7 +105,35 @@ def _apply_freeze(**kwargs: Any) -> dict[str, Any]:
     return apply_freeze_from_disposition(**kwargs)
 
 
-def _candidate(**overrides: Any) -> dict[str, Any]:
+def _researcher_executable_core(
+    *,
+    selected_number: int = 7,
+    overrides: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    core = {
+        "panel": "B",
+        "selected_number": selected_number,
+        "stake": "1.0000",
+        "target_ref": "draw.20260801-001",
+        "target_open_time": _iso(OPEN_AT),
+        "freeze_deadline": _iso(DEADLINE),
+        "knowledge_cutoff": _iso(CUTOFF),
+        "odds_version_ref": "odds.special-number.20260731.v1",
+        "baseline_ref": "BO0013",
+        "risk_policy_ref": "shadow-risk.max-one-unit.v1",
+        "rule_ref": "special-number-rule.v1",
+    }
+    core.update(overrides or {})
+    return core
+
+
+def _candidate(
+    *,
+    researcher_selected_number: int = 7,
+    include_researcher_executable: bool = True,
+    researcher_executable_overrides: dict[str, Any] | None = None,
+    **overrides: Any,
+) -> dict[str, Any]:
     payload = {
         "schema_version": RESEARCH_CANDIDATE_SCHEMA,
         "status": "CANDIDATE_READY",
@@ -121,6 +156,11 @@ def _candidate(**overrides: Any) -> dict[str, Any]:
         "limitations": ["candidate evidence only"],
         "next_evidence": ["independent observation"],
     }
+    if include_researcher_executable:
+        payload["executable_account_decision"] = _researcher_executable_core(
+            selected_number=researcher_selected_number,
+            overrides=researcher_executable_overrides,
+        )
     payload.update(overrides)
     return payload
 
@@ -282,7 +322,14 @@ def _result_and_receipt(
     candidate: dict[str, Any] | None = None,
     status: str = "CANDIDATE_READY",
 ) -> tuple[bytes, dict[str, Any]]:
-    cand = candidate if candidate is not None else _candidate(status=status)
+    cand = (
+        candidate
+        if candidate is not None
+        else _candidate(
+            status=status,
+            include_researcher_executable=status == "CANDIDATE_READY",
+        )
+    )
     result = _production_result(candidate=cand, status=status)
     assert set(result) == PRODUCTION_SUCCESS_RESULT_KEYS
     result_bytes = (json.dumps(result, ensure_ascii=False, separators=(",", ":")) + "\n").encode(
@@ -297,9 +344,21 @@ def _result_and_receipt(
     return result_bytes, receipt
 
 
-def _ingest(tmp_path: Path) -> tuple[Path, dict[str, Any], bytes, dict[str, Any]]:
+def _ingest(
+    tmp_path: Path,
+    *,
+    selected_number: int = 7,
+    include_researcher_executable: bool = True,
+    researcher_executable_overrides: dict[str, Any] | None = None,
+) -> tuple[Path, dict[str, Any], bytes, dict[str, Any]]:
     pool = tmp_path / "pool"
-    result_bytes, receipt = _result_and_receipt()
+    result_bytes, receipt = _result_and_receipt(
+        candidate=_candidate(
+            researcher_selected_number=selected_number,
+            include_researcher_executable=include_researcher_executable,
+            researcher_executable_overrides=researcher_executable_overrides,
+        )
+    )
     entry = ingest_verified_research_result(
         pool_root=pool,
         result_bytes=result_bytes,
@@ -369,12 +428,13 @@ def _disposition_body(
     return body
 
 
-def _write_disposition(owner_root: Path, body: dict[str, Any]) -> Path:
+def _write_disposition(owner_root: Path, pool_root: Path, body: dict[str, Any]) -> Path:
     """Content-addressed exclusive write; no self-hash field."""
 
     written = write_owner_disposition_artifact(
         owner_state_root=owner_root,
         payload=body,
+        pool_root=pool_root,
     )
     return Path(written["disposition_path"])
 
@@ -407,12 +467,75 @@ def _attach_portfolio_binding(body: dict[str, Any], shadow_root: Path) -> dict[s
 
 def _write_portfolio_disposition(
     owner_root: Path,
+    pool_root: Path,
     entry: dict[str, Any],
     shadow_root: Path,
     **overrides: Any,
 ) -> Path:
     body = _attach_portfolio_binding(_disposition_body(entry, **overrides), shadow_root)
-    return _write_disposition(owner_root, body)
+    return _write_disposition(owner_root, pool_root, body)
+
+
+def _manual_production_authority_chain(
+    *,
+    body: dict[str, Any],
+    entry: dict[str, Any],
+    pool: Path,
+    owner: Path,
+    portfolio: Path,
+    binding_overrides: dict[str, Any] | None = None,
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    """Seal a caller-built, internally consistent chain for public-consumer negatives."""
+
+    raw = encode_disposition_bytes(body)
+    disposition_sha = raw_sha256(raw)
+    disposition_path = disposition_cas_path(owner, disposition_sha)
+    disposition_path.parent.mkdir(parents=True, exist_ok=True)
+    disposition_path.write_bytes(raw)
+
+    normalized = copy.deepcopy(body)
+    normalized["science_identity"] = "SCIENCE_CANDIDATE"
+    executable = normalized["executable_account_decision"]
+    researcher_core = _researcher_executable_core(
+        selected_number=int(executable["selected_number"]),
+    )
+    researcher_binding = {
+        "schema_version": "xinao.researcher_action_binding.v1",
+        "source_kind": "ONESHOT_RESEARCH_RESULT",
+        "source_artifact_sha256": entry["result_sha256"],
+        "source_json_path": "$.candidate.executable_account_decision",
+        "executable_content_hash": canonical_sha256(researcher_core),
+        "result_sha256": entry["result_sha256"],
+        "pool_entry_content_hash": entry["content_hash"],
+    }
+    binding_body = build_research_freeze_binding(
+        pool_entry=entry,
+        disposition=normalized,
+        owner_artifact_sha256=disposition_sha,
+        researcher_action_binding=researcher_binding,
+        portfolio_binding=body["portfolio_binding"],
+        freeze_action_time=FROZEN_AT,
+    )
+    binding_body.update(binding_overrides or {})
+    binding = write_research_binding_exclusive(shadow_root=portfolio, body=binding_body)
+    binding_sha = str(binding["research_binding_sha256"])
+    request = build_freeze_request_from_disposition(
+        pool_entry=entry,
+        disposition=normalized,
+        owner_artifact_sha256=disposition_sha,
+        research_binding_sha256=binding_sha,
+        freeze_action_time=FROZEN_AT,
+    )
+    authority = {
+        "schema_version": OWNER_FREEZE_AUTHORITY_SCHEMA,
+        "authority_marker": OWNER_FREEZE_AUTHORITY_MARKER,
+        "owner_state_root": str(owner.resolve()),
+        "research_pool_root": str(pool.resolve()),
+        "owner_disposition_sha256": disposition_sha,
+        "research_binding_sha256": binding_sha,
+        "request_content_hash": request["request_content_hash"],
+    }
+    return request, authority
 
 
 # --- Pool tests ---------------------------------------------------------------
@@ -547,22 +670,97 @@ def test_pool_cas_partial_conflict_fails_closed(tmp_path: Path) -> None:
 
 
 def test_disposition_worker_fields_not_authentic(tmp_path: Path) -> None:
-    _pool, entry, _, _ = _ingest(tmp_path)
+    pool, entry, _, _ = _ingest(tmp_path)
     owner = tmp_path / "owner"
     owner.mkdir()
     body = _disposition_body(entry, disposition_source="worker_fixture")
     with pytest.raises(OwnerDispositionError, match="DISPOSITION_SOURCE_NOT_OWNER_CHANNEL"):
-        write_owner_disposition_artifact(owner_state_root=owner, payload=body)
+        write_owner_disposition_artifact(owner_state_root=owner, payload=body, pool_root=pool)
 
 
 def test_disposition_owner_role_codex_text_not_sufficient(tmp_path: Path) -> None:
-    _pool, entry, _, _ = _ingest(tmp_path)
+    pool, entry, _, _ = _ingest(tmp_path)
     owner = tmp_path / "owner"
     owner.mkdir()
     body = _disposition_body(entry, disposition_source="mock")
     body["owner_role"] = "codex"
     with pytest.raises(OwnerDispositionError, match="DISPOSITION_SOURCE_NOT_OWNER_CHANNEL"):
-        write_owner_disposition_artifact(owner_state_root=owner, payload=body)
+        write_owner_disposition_artifact(owner_state_root=owner, payload=body, pool_root=pool)
+
+
+@pytest.mark.parametrize(
+    ("field", "reason"),
+    [
+        ("owner_role", "DISPOSITION_OWNER_ROLE_INVALID"),
+        ("worker_controlled", "DISPOSITION_WORKER_CONTROLLED"),
+    ],
+)
+def test_owner_claim_fields_must_be_explicit(
+    tmp_path: Path,
+    field: str,
+    reason: str,
+) -> None:
+    pool, entry, _, _ = _ingest(tmp_path)
+    owner = tmp_path / "owner"
+    body = _disposition_body(entry)
+    body.pop(field)
+    with pytest.raises(OwnerDispositionError, match=reason):
+        write_owner_disposition_artifact(
+            owner_state_root=owner,
+            payload=body,
+            pool_root=pool,
+        )
+    assert not owner.exists()
+
+
+def test_science_identity_is_derived_not_caller_controlled(tmp_path: Path) -> None:
+    pool, entry, _, _ = _ingest(tmp_path)
+    owner = tmp_path / "owner"
+    body = _disposition_body(entry)
+    body["science_identity"] = "POLICY_NO_ACTION"
+    with pytest.raises(
+        OwnerDispositionError,
+        match="SCIENCE_IDENTITY_CALLER_OVERRIDE_FORBIDDEN",
+    ):
+        write_owner_disposition_artifact(
+            owner_state_root=owner,
+            payload=body,
+            pool_root=pool,
+        )
+    assert not owner.exists()
+
+
+def test_disposition_writer_validates_and_writes_one_immutable_byte_snapshot(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Mutation after validation cannot change the bytes written to Owner CAS."""
+
+    import xinao.science.owner_disposition as disposition_module
+
+    pool, entry, _, _ = _ingest(tmp_path, selected_number=7)
+    owner = tmp_path / "owner_snapshot"
+    body = _disposition_body(entry, selected_number=7)
+    original_validate = disposition_module.validate_disposition_payload
+
+    def _validate_then_mutate(payload, *, pool_entry):  # type: ignore[no-untyped-def]
+        normalized = original_validate(payload, pool_entry=pool_entry)
+        body["executable_account_decision"]["selected_number"] = 49
+        return normalized
+
+    monkeypatch.setattr(
+        disposition_module,
+        "validate_disposition_payload",
+        _validate_then_mutate,
+    )
+    written = disposition_module.write_owner_disposition_artifact(
+        owner_state_root=owner,
+        payload=body,
+        pool_root=pool,
+    )
+    assert body["executable_account_decision"]["selected_number"] == 49
+    sealed = parse_disposition_json_strict(Path(written["disposition_path"]).read_bytes())
+    assert sealed["executable_account_decision"]["selected_number"] == 7
 
 
 def test_sibling_worker_dirs_do_not_self_certify_authentic(tmp_path: Path) -> None:
@@ -578,7 +776,7 @@ def test_sibling_worker_dirs_do_not_self_certify_authentic(tmp_path: Path) -> No
         result_bytes=result_bytes,
         receipt=receipt,
     )
-    path = _write_disposition(owner, _disposition_body(entry))
+    path = _write_disposition(owner, pool, _disposition_body(entry))
     verified = load_and_verify_disposition(
         disposition_path=path,
         owner_state_root=owner,
@@ -598,7 +796,7 @@ def test_disposition_not_under_owner_root(tmp_path: Path) -> None:
     elsewhere = tmp_path / "elsewhere"
     elsewhere.mkdir()
     body = _disposition_body(entry)
-    path = _write_disposition(elsewhere, body)
+    path = _write_disposition(elsewhere, pool, body)
     with pytest.raises(OwnerDispositionError, match="DISPOSITION_NOT_UNDER_OWNER_ROOT"):
         load_and_verify_disposition(
             disposition_path=path,
@@ -628,9 +826,9 @@ def test_disposition_single_raw_hash_mode_no_self_field(tmp_path: Path) -> None:
     body = _disposition_body(entry)
     body["owner_artifact_sha256"] = "a" * 64
     with pytest.raises(OwnerDispositionError, match="DISPOSITION_SELF_HASH_FORBIDDEN"):
-        write_owner_disposition_artifact(owner_state_root=owner, payload=body)
+        write_owner_disposition_artifact(owner_state_root=owner, payload=body, pool_root=pool)
 
-    path = _write_disposition(owner, _disposition_body(entry))
+    path = _write_disposition(owner, pool, _disposition_body(entry))
     verified = load_and_verify_disposition(
         disposition_path=path,
         owner_state_root=owner,
@@ -750,7 +948,7 @@ def test_decision_freeze_calls_real_shadow_store(tmp_path: Path) -> None:
     owner = tmp_path / "owner"
     owner.mkdir()
     portfolio = _init_portfolio(tmp_path)
-    path = _write_portfolio_disposition(owner, entry, portfolio, selected_number=7)
+    path = _write_portfolio_disposition(owner, pool, entry, portfolio, selected_number=7)
 
     result = _apply_freeze(
         pool_root=pool,
@@ -811,7 +1009,7 @@ def test_period_99_cannot_freeze_portfolio_period_1(tmp_path: Path) -> None:
         **body["portfolio_binding"],
         "intended_next_period_index": 99,
     }
-    path = _write_disposition(owner, body)
+    path = _write_disposition(owner, pool, body)
     with pytest.raises(
         FreezeAdapterError,
         match=r"FREEZE_PERIOD_MISMATCH|PORTFOLIO_HEAD_BINDING_MISMATCH",
@@ -826,16 +1024,16 @@ def test_period_99_cannot_freeze_portfolio_period_1(tmp_path: Path) -> None:
 
 
 def test_freeze_adapter_rejects_worker_disposition(tmp_path: Path) -> None:
-    _pool, entry, _, _ = _ingest(tmp_path)
+    pool, entry, _, _ = _ingest(tmp_path)
     owner = tmp_path / "owner"
     owner.mkdir()
     # write_owner rejects non-channel source at write time for closed schema.
     with pytest.raises(OwnerDispositionError, match="DISPOSITION_SOURCE_NOT_OWNER_CHANNEL"):
-        _write_disposition(owner, _disposition_body(entry, disposition_source="worker"))
+        _write_disposition(owner, pool, _disposition_body(entry, disposition_source="worker"))
 
 
 def test_no_prose_to_selected_number(tmp_path: Path) -> None:
-    pool, entry, _, _ = _ingest(tmp_path)
+    pool, entry, _, _ = _ingest(tmp_path, include_researcher_executable=False)
     owner = tmp_path / "owner"
     owner.mkdir()
     portfolio = _init_portfolio(tmp_path)
@@ -843,15 +1041,8 @@ def test_no_prose_to_selected_number(tmp_path: Path) -> None:
         _disposition_body(entry, include_executable=False),
         portfolio,
     )
-    path = _write_disposition(owner, body)
-    with pytest.raises(FreezeAdapterError, match="ACTION_REQUIRES_EXECUTABLE"):
-        _apply_freeze(
-            pool_root=pool,
-            owner_state_root=owner,
-            disposition_path=path,
-            shadow_root=portfolio,
-            mode="portfolio",
-        )
+    with pytest.raises(OwnerDispositionError, match="ACTION_REQUIRES_EXECUTABLE"):
+        _write_disposition(owner, pool, body)
 
 
 def test_freeze_request_with_outcome_rejected(tmp_path: Path) -> None:
@@ -859,7 +1050,7 @@ def test_freeze_request_with_outcome_rejected(tmp_path: Path) -> None:
     owner = tmp_path / "owner"
     owner.mkdir()
     verified = load_and_verify_disposition(
-        disposition_path=_write_disposition(owner, _disposition_body(entry)),
+        disposition_path=_write_disposition(owner, pool, _disposition_body(entry)),
         owner_state_root=owner,
         pool_root=pool,
     )
@@ -883,6 +1074,7 @@ def test_no_action_freeze_zero_stake(tmp_path: Path) -> None:
     portfolio = _init_portfolio(tmp_path)
     path = _write_portfolio_disposition(
         owner,
+        pool,
         entry,
         portfolio,
         account_identity="RESEARCHER_ACCOUNT_NO_ACTION",
@@ -904,12 +1096,13 @@ def test_no_action_freeze_zero_stake(tmp_path: Path) -> None:
 
 
 def test_retain_for_shadow_action_freezes(tmp_path: Path) -> None:
-    pool, entry, _, _ = _ingest(tmp_path)
+    pool, entry, _, _ = _ingest(tmp_path, selected_number=9)
     owner = tmp_path / "owner"
     owner.mkdir()
     portfolio = _init_portfolio(tmp_path)
     path = _write_portfolio_disposition(
         owner,
+        pool,
         entry,
         portfolio,
         science_disposition=SCIENCE_RETAIN_FOR_SHADOW,
@@ -956,7 +1149,7 @@ def test_file_freeze_trusted_time_proof_false(tmp_path: Path) -> None:
     owner = tmp_path / "owner"
     owner.mkdir()
     portfolio = _init_portfolio(tmp_path)
-    path = _write_portfolio_disposition(owner, entry, portfolio)
+    path = _write_portfolio_disposition(owner, pool, entry, portfolio)
     result = _apply_freeze(
         pool_root=pool,
         owner_state_root=owner,
@@ -972,11 +1165,11 @@ def test_file_freeze_trusted_time_proof_false(tmp_path: Path) -> None:
 
 
 def _freeze_settle_feedback(tmp_path: Path) -> tuple[Path, dict[str, Any], dict[str, Any]]:
-    pool, entry, _, _ = _ingest(tmp_path)
+    pool, entry, _, _ = _ingest(tmp_path, selected_number=1)
     owner = tmp_path / "owner"
     owner.mkdir()
     portfolio = _init_portfolio(tmp_path)
-    path = _write_portfolio_disposition(owner, entry, portfolio, selected_number=1)
+    path = _write_portfolio_disposition(owner, pool, entry, portfolio, selected_number=1)
     freeze = _apply_freeze(
         pool_root=pool,
         owner_state_root=owner,
@@ -1075,7 +1268,7 @@ def test_feedback_pack_absent_pre_outcome(tmp_path: Path) -> None:
     owner = tmp_path / "owner"
     owner.mkdir()
     portfolio = _init_portfolio(tmp_path)
-    path = _write_portfolio_disposition(owner, entry, portfolio)
+    path = _write_portfolio_disposition(owner, pool, entry, portfolio)
     _apply_freeze(
         pool_root=pool,
         owner_state_root=owner,
@@ -1109,6 +1302,7 @@ def test_happy_path_no_action_then_feedback(tmp_path: Path) -> None:
     portfolio = _init_portfolio(tmp_path)
     path = _write_portfolio_disposition(
         owner,
+        pool,
         entry,
         portfolio,
         account_identity="RESEARCHER_ACCOUNT_NO_ACTION",
@@ -1153,11 +1347,11 @@ def test_happy_path_no_action_then_feedback(tmp_path: Path) -> None:
 
 
 def test_action_information_set_includes_binding_hash(tmp_path: Path) -> None:
-    pool, entry, _, _ = _ingest(tmp_path)
+    pool, entry, _, _ = _ingest(tmp_path, selected_number=3)
     owner = tmp_path / "owner"
     owner.mkdir()
     portfolio = _init_portfolio(tmp_path)
-    path = _write_portfolio_disposition(owner, entry, portfolio, selected_number=3)
+    path = _write_portfolio_disposition(owner, pool, entry, portfolio, selected_number=3)
     result = _apply_freeze(
         pool_root=pool,
         owner_state_root=owner,
@@ -1185,8 +1379,8 @@ def test_encode_disposition_bytes_stable_and_cas_conflict(tmp_path: Path) -> Non
     owner = tmp_path / "owner"
     owner.mkdir()
     body = _disposition_body(entry)
-    first = write_owner_disposition_artifact(owner_state_root=owner, payload=body)
-    second = write_owner_disposition_artifact(owner_state_root=owner, payload=body)
+    first = write_owner_disposition_artifact(owner_state_root=owner, payload=body, pool_root=pool)
+    second = write_owner_disposition_artifact(owner_state_root=owner, payload=body, pool_root=pool)
     assert first["owner_artifact_sha256"] == second["owner_artifact_sha256"]
     assert second["bytes_written"] is False
     # Same path different bytes: craft by writing raw to CAS path is blocked on re-write helper
@@ -1225,7 +1419,7 @@ def test_cross_portfolio_disposition_rejected_before_write(tmp_path: Path) -> No
         seat_id="seat.b",
         portfolio_ref="portfolio.B",
     )
-    path = _write_portfolio_disposition(owner, entry, portfolio_a, selected_number=7)
+    path = _write_portfolio_disposition(owner, pool, entry, portfolio_a, selected_number=7)
     # No period dirs / binding objects may exist under B before rejection.
     assert not (portfolio_b / "periods").exists() or not any((portfolio_b / "periods").iterdir())
     with pytest.raises(FreezeAdapterError, match="PORTFOLIO_HEAD_BINDING_MISMATCH"):
@@ -1256,7 +1450,7 @@ def test_stale_head_prior_seat_portfolio_hash_each_reject(tmp_path: Path) -> Non
         body["portfolio_binding"] = pb
         if "intended_next_period_index" in field_overrides:
             body["period_index"] = field_overrides["intended_next_period_index"]
-        return _write_disposition(owner, body)
+        return _write_disposition(owner, pool, body)
 
     cases = [
         {"head_period_index": 99},
@@ -1289,7 +1483,7 @@ def test_full_action_intent_in_binding_agrees_with_frozen_ticket(tmp_path: Path)
     owner = tmp_path / "owner"
     owner.mkdir()
     portfolio = _init_portfolio(tmp_path)
-    path = _write_portfolio_disposition(owner, entry, portfolio, selected_number=7)
+    path = _write_portfolio_disposition(owner, pool, entry, portfolio, selected_number=7)
     result = _apply_freeze(
         pool_root=pool,
         owner_state_root=owner,
@@ -1331,6 +1525,7 @@ def test_full_no_action_intent_in_binding_agrees_with_frozen_branch(tmp_path: Pa
     portfolio = _init_portfolio(tmp_path)
     path = _write_portfolio_disposition(
         owner,
+        pool,
         entry,
         portfolio,
         account_identity="RESEARCHER_ACCOUNT_NO_ACTION",
@@ -1368,7 +1563,7 @@ def test_monkeypatched_request_rewrite_cannot_change_frozen_ticket(tmp_path: Pat
     owner = tmp_path / "owner"
     owner.mkdir()
     portfolio = _init_portfolio(tmp_path)
-    path = _write_portfolio_disposition(owner, entry, portfolio, selected_number=7)
+    path = _write_portfolio_disposition(owner, pool, entry, portfolio, selected_number=7)
 
     original = freeze_portfolio_period
     attack_seen = {"called": False, "used_path": None, "used_request": None}
@@ -1441,7 +1636,7 @@ def test_in_memory_request_mutation_cannot_poison_frozen_ledger(tmp_path: Path) 
     owner = tmp_path / "owner"
     owner.mkdir()
     portfolio = _init_portfolio(tmp_path)
-    path = _write_portfolio_disposition(owner, entry, portfolio, selected_number=7)
+    path = _write_portfolio_disposition(owner, pool, entry, portfolio, selected_number=7)
 
     original = freeze_portfolio_period
     attack_seen = {"called": False}
@@ -1553,9 +1748,10 @@ def test_default_research_feedback_pack_outside_period_cone_and_next_period(
     # Period-2 disposition freeze still works with later prior hashes.
     owner = tmp_path / "owner_p2"
     owner.mkdir()
-    pool, entry2, _, _ = _ingest(tmp_path / "pool2")
+    pool, entry2, _, _ = _ingest(tmp_path / "pool2", selected_number=11)
     path = _write_portfolio_disposition(
         owner,
+        pool,
         entry2,
         portfolio,
         selected_number=11,
@@ -1648,12 +1844,218 @@ def test_direct_production_freeze_without_owner_disposition_rejected(tmp_path: P
     assert frozen.bound_account_ticket.selected_number == 49
 
 
+def test_direct_production_freeze_rechecks_researcher_source_not_self_consistent_fakes(
+    tmp_path: Path,
+) -> None:
+    """A forged but internally consistent CAS chain cannot bypass producer re-read."""
+
+    from xinao.shadow_lifecycle.store import StoreError
+
+    pool, entry, _, _ = _ingest(tmp_path, selected_number=7)
+    owner = tmp_path / "owner_forged_chain"
+    portfolio = _init_portfolio(tmp_path, name="portfolio_forged_chain")
+
+    # Bypass the formal writer and manually seal an ACTION for 49 while the
+    # researcher's sealed result explicitly authored 7.
+    body = _attach_portfolio_binding(
+        _disposition_body(entry, selected_number=49),
+        portfolio,
+    )
+    raw = encode_disposition_bytes(body)
+    disposition_sha = raw_sha256(raw)
+    disposition_path = disposition_cas_path(owner, disposition_sha)
+    disposition_path.parent.mkdir(parents=True, exist_ok=True)
+    disposition_path.write_bytes(raw)
+
+    forged_normalized = copy.deepcopy(body)
+    forged_normalized["science_identity"] = "SCIENCE_CANDIDATE"
+    executable = forged_normalized["executable_account_decision"]
+    researcher_core = {key: value for key, value in executable.items() if key != "frozen_at"}
+    forged_researcher_binding = {
+        "schema_version": "xinao.researcher_action_binding.v1",
+        "source_kind": "ONESHOT_RESEARCH_RESULT",
+        "source_artifact_sha256": entry["result_sha256"],
+        "source_json_path": "$.candidate.executable_account_decision",
+        "executable_content_hash": canonical_sha256(researcher_core),
+        "result_sha256": entry["result_sha256"],
+        "pool_entry_content_hash": entry["content_hash"],
+    }
+    binding_body = build_research_freeze_binding(
+        pool_entry=entry,
+        disposition=forged_normalized,
+        owner_artifact_sha256=disposition_sha,
+        researcher_action_binding=forged_researcher_binding,
+        portfolio_binding=body["portfolio_binding"],
+        freeze_action_time=FROZEN_AT,
+    )
+    binding = write_research_binding_exclusive(
+        shadow_root=portfolio,
+        body=binding_body,
+    )
+    binding_sha = str(binding["research_binding_sha256"])
+    request = build_freeze_request_from_disposition(
+        pool_entry=entry,
+        disposition=forged_normalized,
+        owner_artifact_sha256=disposition_sha,
+        research_binding_sha256=binding_sha,
+        freeze_action_time=FROZEN_AT,
+    )
+    authority = {
+        "schema_version": OWNER_FREEZE_AUTHORITY_SCHEMA,
+        "authority_marker": OWNER_FREEZE_AUTHORITY_MARKER,
+        "owner_state_root": str(owner.resolve()),
+        "research_pool_root": str(pool.resolve()),
+        "owner_disposition_sha256": disposition_sha,
+        "research_binding_sha256": binding_sha,
+        "request_content_hash": request["request_content_hash"],
+    }
+
+    with pytest.raises(
+        StoreError,
+        match=r"PRODUCTION_FREEZE_DISPOSITION_REJECTED:.*RESEARCHER_EXECUTABLE_DECISION_MISMATCH",
+    ):
+        freeze_portfolio_period(
+            root=portfolio,
+            request=request,
+            owner_authority=authority,
+        )
+    assert not (period_directory(portfolio, 1) / "frozen_episode.v1.json").exists()
+
+
+def test_direct_production_freeze_rejects_caller_science_identity_override(
+    tmp_path: Path,
+) -> None:
+    """The low-level production consumer must use the same derived science branch."""
+
+    from xinao.shadow_lifecycle.store import StoreError
+
+    pool, entry, _, _ = _ingest(tmp_path, selected_number=7)
+    owner = tmp_path / "owner_science_override"
+    portfolio = _init_portfolio(tmp_path, name="portfolio_science_override")
+    body = _attach_portfolio_binding(_disposition_body(entry, selected_number=7), portfolio)
+    body["science_identity"] = "POLICY_NO_ACTION"
+    raw = encode_disposition_bytes(body)
+    disposition_sha = raw_sha256(raw)
+    disposition_path = disposition_cas_path(owner, disposition_sha)
+    disposition_path.parent.mkdir(parents=True, exist_ok=True)
+    disposition_path.write_bytes(raw)
+
+    # The request/binding are intentionally self-consistent with the forged
+    # override. Formal disposition verification must reject before freeze.
+    verified_source = load_and_verify_disposition(
+        disposition_path=_write_disposition(
+            tmp_path / "honest_owner_for_binding",
+            pool,
+            _attach_portfolio_binding(_disposition_body(entry, selected_number=7), portfolio),
+        ),
+        owner_state_root=tmp_path / "honest_owner_for_binding",
+        pool_root=pool,
+    )
+    binding_body = build_research_freeze_binding(
+        pool_entry=entry,
+        disposition=body,
+        owner_artifact_sha256=disposition_sha,
+        researcher_action_binding=verified_source["researcher_action_binding"],
+        portfolio_binding=body["portfolio_binding"],
+        freeze_action_time=FROZEN_AT,
+    )
+    binding = write_research_binding_exclusive(shadow_root=portfolio, body=binding_body)
+    binding_sha = str(binding["research_binding_sha256"])
+    request = build_freeze_request_from_disposition(
+        pool_entry=entry,
+        disposition=body,
+        owner_artifact_sha256=disposition_sha,
+        research_binding_sha256=binding_sha,
+        freeze_action_time=FROZEN_AT,
+    )
+    authority = {
+        "schema_version": OWNER_FREEZE_AUTHORITY_SCHEMA,
+        "authority_marker": OWNER_FREEZE_AUTHORITY_MARKER,
+        "owner_state_root": str(owner.resolve()),
+        "research_pool_root": str(pool.resolve()),
+        "owner_disposition_sha256": disposition_sha,
+        "research_binding_sha256": binding_sha,
+        "request_content_hash": request["request_content_hash"],
+    }
+    with pytest.raises(
+        StoreError,
+        match="SCIENCE_IDENTITY_CALLER_OVERRIDE_FORBIDDEN",
+    ):
+        freeze_portfolio_period(root=portfolio, request=request, owner_authority=authority)
+    assert not (period_directory(portfolio, 1) / "frozen_episode.v1.json").exists()
+
+
+def test_direct_production_freeze_rejects_owner_executable_unknown_field(
+    tmp_path: Path,
+) -> None:
+    """The public consumer must not silently project an expanded executable."""
+
+    from xinao.shadow_lifecycle.store import StoreError
+
+    pool, entry, _, _ = _ingest(tmp_path, selected_number=7)
+    owner = tmp_path / "owner_executable_extra"
+    portfolio = _init_portfolio(tmp_path, name="portfolio_executable_extra")
+    body = _attach_portfolio_binding(_disposition_body(entry, selected_number=7), portfolio)
+    body["executable_account_decision"]["debug_note"] = "must not be ignored"
+    request, authority = _manual_production_authority_chain(
+        body=body,
+        entry=entry,
+        pool=pool,
+        owner=owner,
+        portfolio=portfolio,
+    )
+
+    with pytest.raises(
+        StoreError,
+        match=r"PRODUCTION_FREEZE_DISPOSITION_REJECTED:.*unknown=\['debug_note'\]",
+    ):
+        freeze_portfolio_period(root=portfolio, request=request, owner_authority=authority)
+    assert not (period_directory(portfolio, 1) / "frozen_episode.v1.json").exists()
+
+
+@pytest.mark.parametrize(
+    "binding_overrides",
+    [
+        {"episode_ref": "episode.forged"},
+        {"portfolio_binding": {"forged": True}},
+        {"source_authority_binding": {"forged": True}},
+        {"scientific_promotion": True},
+        {"owner_adopted": True},
+        {"unexpected_binding_field": "forged"},
+    ],
+)
+def test_direct_production_freeze_rejects_noncanonical_research_binding_fields(
+    tmp_path: Path,
+    binding_overrides: dict[str, Any],
+) -> None:
+    """Every formal binding field is closed and compared before a period write."""
+
+    from xinao.shadow_lifecycle.store import StoreError
+
+    pool, entry, _, _ = _ingest(tmp_path, selected_number=7)
+    owner = tmp_path / "owner_binding_divergence"
+    portfolio = _init_portfolio(tmp_path, name="portfolio_binding_divergence")
+    body = _attach_portfolio_binding(_disposition_body(entry, selected_number=7), portfolio)
+    request, authority = _manual_production_authority_chain(
+        body=body,
+        entry=entry,
+        pool=pool,
+        owner=owner,
+        portfolio=portfolio,
+        binding_overrides=binding_overrides,
+    )
+
+    with pytest.raises(StoreError):
+        freeze_portfolio_period(root=portfolio, request=request, owner_authority=authority)
+    assert not (period_directory(portfolio, 1) / "frozen_episode.v1.json").exists()
+
+
 def test_content_addressed_request_evidence_display_only_no_overwrite(tmp_path: Path) -> None:
     pool, entry, _, _ = _ingest(tmp_path)
     owner = tmp_path / "owner"
     owner.mkdir()
     portfolio = _init_portfolio(tmp_path)
-    path = _write_portfolio_disposition(owner, entry, portfolio, selected_number=7)
+    path = _write_portfolio_disposition(owner, pool, entry, portfolio, selected_number=7)
     result = _apply_freeze(
         pool_root=pool,
         owner_state_root=owner,
@@ -1748,9 +2150,10 @@ def test_later_period_feedback_sealed_head_binding(tmp_path: Path) -> None:
     assert live["prior_feedback_hash"] is not None
     owner = tmp_path / "owner_p2"
     owner.mkdir()
-    pool, entry2, _, _ = _ingest(tmp_path / "pool2")
+    pool, entry2, _, _ = _ingest(tmp_path / "pool2", selected_number=11)
     path = _write_portfolio_disposition(
         owner,
+        pool,
         entry2,
         portfolio,
         selected_number=11,
@@ -1780,7 +2183,7 @@ def test_later_period_feedback_sealed_head_binding(tmp_path: Path) -> None:
 def test_flat_episode_mode_has_no_portfolio_identity(tmp_path: Path) -> None:
     from xinao.shadow_lifecycle import init_episode
 
-    pool, entry, _, _ = _ingest(tmp_path)
+    pool, entry, _, _ = _ingest(tmp_path, selected_number=5)
     owner = tmp_path / "owner"
     owner.mkdir()
     episode_root = tmp_path / "episode"
@@ -1792,7 +2195,7 @@ def test_flat_episode_mode_has_no_portfolio_identity(tmp_path: Path) -> None:
     # Flat mode: no portfolio_binding on disposition.
     body = _disposition_body(entry, period_index=1, selected_number=5)
     assert "portfolio_binding" not in body or body.get("portfolio_binding") is None
-    path = _write_disposition(owner, body)
+    path = _write_disposition(owner, pool, body)
     result = _apply_freeze(
         pool_root=pool,
         owner_state_root=owner,
@@ -1815,7 +2218,7 @@ def test_exact_retry_same_disposition_fails_closed_after_freeze(tmp_path: Path) 
     owner = tmp_path / "owner"
     owner.mkdir()
     portfolio = _init_portfolio(tmp_path)
-    path = _write_portfolio_disposition(owner, entry, portfolio, selected_number=7)
+    path = _write_portfolio_disposition(owner, pool, entry, portfolio, selected_number=7)
     first = _apply_freeze(
         pool_root=pool,
         owner_state_root=owner,
