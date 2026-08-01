@@ -15,6 +15,9 @@ from typing import Any
 
 TOOL_UID = 65532
 TOOL_GID = 65532
+TRANSPORT_UID = 0
+TRANSPORT_GID = 0
+TRANSPORT_USER = f"{TRANSPORT_UID}:{TRANSPORT_GID}"
 
 # Paths inside tool-executor container.
 TOOL_LAB_MOUNT = "/episode-lab"
@@ -67,11 +70,22 @@ TRANSPORT_MCP_EVIDENCE_MOUNT = TRANSPORT_MCP_EVENT_LOG
 # proxy. Offline network=none seats must not inject these keys.
 DEFAULT_PROVIDER_EGRESS_NETWORK = "xinao_researcher_internal"
 DEFAULT_PROVIDER_EGRESS_PROXY_ENDPOINT = "http://xinao-researcher-egress-proxy:3128"
-PROVIDER_EGRESS_PROXY_ENV_KEYS = (
+PROVIDER_EGRESS_ENV_POLICY_GENERATION = "sealed-env-v1"
+PROVIDER_EGRESS_PROXY_URL_ENV_KEYS = (
     "HTTP_PROXY",
     "HTTPS_PROXY",
     "http_proxy",
     "https_proxy",
+)
+PROVIDER_EGRESS_CLEAR_ENV_KEYS = (
+    "NO_PROXY",
+    "no_proxy",
+    "ALL_PROXY",
+    "all_proxy",
+)
+PROVIDER_EGRESS_CONTROLLED_ENV_KEYS = (
+    *PROVIDER_EGRESS_PROXY_URL_ENV_KEYS,
+    *PROVIDER_EGRESS_CLEAR_ENV_KEYS,
 )
 
 
@@ -85,12 +99,15 @@ def provider_egress_proxy_env(
     Empty when network is none/empty so offline/fake-client seats stay offline.
     """
     net = str(network or "").strip().lower()
-    if net in {"", "none"}:
+    if net != DEFAULT_PROVIDER_EGRESS_NETWORK:
         return {}
     ep = str(endpoint or "").strip()
     if not ep:
         return {}
-    return {key: ep for key in PROVIDER_EGRESS_PROXY_ENV_KEYS}
+    return {
+        **{key: ep for key in PROVIDER_EGRESS_PROXY_URL_ENV_KEYS},
+        **{key: "" for key in PROVIDER_EGRESS_CLEAR_ENV_KEYS},
+    }
 
 
 # Mount targets that must never appear on either container.
@@ -154,6 +171,7 @@ def transport_container_spec(
     episode_id: str | None = None,
     use_episode_entrypoint: bool = False,
     entrypoint: list[str] | None = None,
+    provider_egress_proxy_endpoint: str = DEFAULT_PROVIDER_EGRESS_PROXY_ENDPOINT,
 ) -> dict[str, Any]:
     """Spec for the model/transport container.
 
@@ -251,7 +269,13 @@ def transport_container_spec(
     # Live provider path: dual-host puts transport on xinao_researcher_internal.
     # Without HTTP(S)_PROXY, Grok cannot resolve/CONNECT cli-chat-proxy.grok.com
     # and fails with reqwest "error sending request" after -p headless attach.
-    env.update(provider_egress_proxy_env(network=network))
+    proxy_env = provider_egress_proxy_env(
+        network=network,
+        endpoint=provider_egress_proxy_endpoint,
+    )
+    env.update(proxy_env)
+    if proxy_env:
+        env["XINAO_EGRESS_ENV_POLICY_GENERATION"] = PROVIDER_EGRESS_ENV_POLICY_GENERATION
     if episode_id:
         env["XINAO_EPISODE_ID"] = episode_id
     if entrypoint is not None:
@@ -279,7 +303,9 @@ def transport_container_spec(
         "role": "transport_model",
         "image": image,
         "name": name,
-        "user": None,  # transport may run as image default for grok CLI
+        # Explicitly pin the peer identity consumed by the tool-side Linux
+        # SO_PEERCRED gate. Image-default drift must not silently change it.
+        "user": TRANSPORT_USER,
         "network": network,
         "read_only_rootfs": False,
         "cap_drop": ["ALL"],
@@ -337,7 +363,7 @@ def tool_executor_container_spec(
     episode_lab_host_path: str,
     ipc_host_dir: str,
     sidecar_evidence_host_path: str | None = None,
-    ipc_peer_uids: str | None = None,
+    ipc_peer_uids: str | None = str(TRANSPORT_UID),
     bwrap_mode: str = "require",
 ) -> dict[str, Any]:
     """Spec for the tool executor container (physical separation).
@@ -591,6 +617,8 @@ def validate_tool_spec_invariants(spec: dict[str, Any]) -> list[str]:
         violations.append("bwrap_env_missing_or_off")
     if str(env.get("XINAO_IPC_PEER_REQUIRE", "")).strip() not in {"1", "true", "yes"}:
         violations.append("ipc_peer_require_missing")
+    if str(env.get("XINAO_IPC_PEER_UIDS", "")).strip() != str(TRANSPORT_UID):
+        violations.append(f"ipc_peer_uids!={TRANSPORT_UID}")
     replay_dir = str(env.get("XINAO_REPLAY_STATE_DIR", "")).strip()
     if not replay_dir or TOOL_IPC_MOUNT not in replay_dir:
         violations.append("durable_replay_state_not_on_ipc")
@@ -660,10 +688,11 @@ def dual_container_bundle(
     attempt_agent_profile_host_path: str | None = None,
     episode_id: str | None = None,
     use_episode_entrypoint: bool = False,
-    ipc_peer_uids: str | None = None,
+    ipc_peer_uids: str | None = str(TRANSPORT_UID),
     bwrap_mode: str = "require",
     # Transport-only; tool executor create spec always forces network=none.
     network: str = "none",
+    provider_egress_proxy_endpoint: str = DEFAULT_PROVIDER_EGRESS_PROXY_ENDPOINT,
 ) -> dict[str, Any]:
     transport = transport_container_spec(
         image=transport_image,
@@ -682,6 +711,7 @@ def dual_container_bundle(
         episode_lab_host_path=episode_lab_host_path,
         episode_id=episode_id,
         use_episode_entrypoint=use_episode_entrypoint,
+        provider_egress_proxy_endpoint=provider_egress_proxy_endpoint,
     )
     tool = tool_executor_container_spec(
         image=tool_image,
@@ -716,7 +746,7 @@ def dual_container_bundle(
             "tool_env_required": [
                 "XINAO_TOOL_EXEC_BWRAP=require",
                 "XINAO_IPC_PEER_REQUIRE=1",
-                "XINAO_IPC_PEER_UIDS=<transport_uid>",
+                f"XINAO_IPC_PEER_UIDS={TRANSPORT_UID}",
                 f"XINAO_REPLAY_STATE_DIR={TOOL_REPLAY_STATE}",
             ],
             "transport_mcp": {
@@ -747,7 +777,9 @@ def dual_container_bundle(
             "network": "tool network=none by create spec",
             "writable_surface": "tool: episode-lab + private tmp only",
             "same_container_bwrap": "tool path uses bubblewrap require inside tool container",
-            "ipc_peer": "XINAO_IPC_PEER_REQUIRE=1 + SO_PEERCRED allowlist (genuine)",
+            "ipc_peer": (
+                f"XINAO_IPC_PEER_REQUIRE=1 + exact SO_PEERCRED uid={TRANSPORT_UID}"
+            ),
             "durable_replay_dir": TOOL_REPLAY_STATE,
             "model_tools": "attempt-local native MCP episode_lab → sidecar; no built-in generic file/shell",
         },
@@ -763,6 +795,8 @@ def validate_transport_spec_invariants(spec: dict[str, Any]) -> list[str]:
     violations: list[str] = []
     if spec.get("role") != "transport_model":
         violations.append("role!=transport_model")
+    if str(spec.get("user") or "") != TRANSPORT_USER:
+        violations.append(f"user!={TRANSPORT_USER}")
     if "ALL" not in (spec.get("cap_drop") or []):
         violations.append("cap_drop missing ALL")
     if "no-new-privileges:true" not in (spec.get("security_opt") or []):
@@ -774,16 +808,27 @@ def validate_transport_spec_invariants(spec: dict[str, Any]) -> list[str]:
         violations.append("XINAO_GENERIC_FILE_SHELL_TOOLS must be 0")
     if env.get("XINAO_DUAL_CONTAINER") != "1":
         violations.append("XINAO_DUAL_CONTAINER must be 1")
-    network = str(spec.get("network") or "none")
+    network = str(spec.get("network") or "none").strip().lower()
     expected_proxy = provider_egress_proxy_env(network=network)
-    if expected_proxy:
+    if network == DEFAULT_PROVIDER_EGRESS_NETWORK:
+        if env.get("XINAO_EGRESS_ENV_POLICY_GENERATION") != PROVIDER_EGRESS_ENV_POLICY_GENERATION:
+            violations.append("provider_egress_env_policy_generation_missing_or_wrong")
         for key, value in expected_proxy.items():
             if env.get(key) != value:
                 violations.append(f"proxy_env_missing_or_wrong:{key}")
-    else:
-        for key in PROVIDER_EGRESS_PROXY_ENV_KEYS:
-            if env.get(key):
+    elif network in {"", "none"}:
+        if "XINAO_EGRESS_ENV_POLICY_GENERATION" in env:
+            violations.append("provider_egress_env_policy_unexpected_on_offline_network")
+        for key in PROVIDER_EGRESS_CONTROLLED_ENV_KEYS:
+            if key in env:
                 violations.append(f"proxy_env_unexpected_on_offline_network:{key}")
+    else:
+        violations.append(f"provider_egress_network_unsupported:{network}")
+        if "XINAO_EGRESS_ENV_POLICY_GENERATION" in env:
+            violations.append("provider_egress_env_policy_unexpected_on_unsupported_network")
+        for key in PROVIDER_EGRESS_CONTROLLED_ENV_KEYS:
+            if key in env:
+                violations.append(f"proxy_env_unexpected_on_unsupported_network:{key}")
     entry = spec.get("entrypoint") or []
     entry_tokens = [str(x) for x in entry] if isinstance(entry, list) else [str(entry)]
     joined = " ".join(entry_tokens)
@@ -919,6 +964,8 @@ def validate_tool_container_inspect(
         "yes",
     }:
         violations.append("ipc_peer_require_missing")
+    if str(env_map.get("XINAO_IPC_PEER_UIDS", "")).strip() != str(TRANSPORT_UID):
+        violations.append(f"ipc_peer_uids!={TRANSPORT_UID}")
     replay_dir = str(env_map.get("XINAO_REPLAY_STATE_DIR", "")).strip()
     if not replay_dir or TOOL_IPC_MOUNT not in replay_dir:
         violations.append("durable_replay_state_not_on_ipc")
@@ -965,6 +1012,8 @@ def validate_transport_container_inspect(
             or image.startswith(expected_image_id.removeprefix("sha256:"))
         ):
             violations.append(f"image_id_mismatch:{image}")
+    if str(cfg.get("User") or "") != TRANSPORT_USER:
+        violations.append(f"user!={TRANSPORT_USER}:{cfg.get('User')}")
     cap_drop = {str(x).upper() for x in (hc.get("CapDrop") or [])}
     if "ALL" not in cap_drop:
         violations.append("cap_drop missing ALL")
@@ -980,10 +1029,20 @@ def validate_transport_container_inspect(
     if env_map.get("XINAO_GENERIC_FILE_SHELL_TOOLS") not in {None, "0"}:
         if env_map.get("XINAO_GENERIC_FILE_SHELL_TOOLS") != "0":
             violations.append("generic_file_shell_tools_env")
-    # Proxy env is enforced on create-spec (validate_transport_spec_invariants) and
-    # on docker-exec attach (dual_container_host). Do not hard-fail live inspect when
-    # Config.Env lacks proxy: pre-fix pairs can still recover via exec -e without
-    # stop/recreate, while create path stays fail-closed for new transports.
+    # New pairs declare a policy generation and must preserve the exact create-time
+    # route. Pre-fix pairs have no marker and remain recoverable through sealed
+    # docker-exec env without stop/recreate.
+    policy_generation = env_map.get("XINAO_EGRESS_ENV_POLICY_GENERATION")
+    if policy_generation is not None:
+        if policy_generation != PROVIDER_EGRESS_ENV_POLICY_GENERATION:
+            violations.append("provider_egress_env_policy_generation")
+        expected_proxy = provider_egress_proxy_env(
+            network=DEFAULT_PROVIDER_EGRESS_NETWORK,
+            endpoint=DEFAULT_PROVIDER_EGRESS_PROXY_ENDPOINT,
+        )
+        for key, value in expected_proxy.items():
+            if env_map.get(key) != value:
+                violations.append(f"provider_egress_env:{key}")
     destinations: set[str] = set()
     for mount in _mounts_from_inspect(inspect_doc):
         dest = str(mount.get("Destination") or mount.get("Target") or "")
@@ -1132,7 +1191,7 @@ def minimal_integrator_interface() -> dict[str, Any]:
         "tool_env_required": [
             "XINAO_TOOL_EXEC_BWRAP=require",
             "XINAO_IPC_PEER_REQUIRE=1",
-            "XINAO_IPC_PEER_UIDS=<transport_uid>",
+            f"XINAO_IPC_PEER_UIDS={TRANSPORT_UID}",
             f"XINAO_REPLAY_STATE_DIR={TOOL_REPLAY_STATE}",
         ],
         "durable_replay_dir": TOOL_REPLAY_STATE,
@@ -1143,7 +1202,7 @@ def minimal_integrator_interface() -> dict[str, Any]:
             "inspect_transport": "validate_transport_container_inspect",
             "agreement": "create_spec_matches_inspect",
         },
-        "ipc_peer": "XINAO_IPC_PEER_REQUIRE=1 + SO_PEERCRED allowlist (genuine)",
+        "ipc_peer": f"XINAO_IPC_PEER_REQUIRE=1 + exact SO_PEERCRED uid={TRANSPORT_UID}",
         "network": "tool network=none by create spec",
         "completion_claim_allowed": False,
     }

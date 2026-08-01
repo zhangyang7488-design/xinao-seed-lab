@@ -575,6 +575,73 @@ def test_ensure_pair_failed_retire_pending_recovers_then_recreates(
     assert old_tool is not None
 
 
+def test_retire_recreate_preserves_provider_session_uuid(
+    module: Any, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Disposable pair replacement must resume the same durable Grok session."""
+    _mod, episode, started, _manifest = _prepare_episode(module, tmp_path, monkeypatch)
+    first = module.research_episode_ensure_pair(
+        root=episode, expected_head_sha256=started["head_checkpoint_sha256"]
+    )
+    first_inventory = json.loads((episode / "session_inventory.json").read_text("utf-8"))
+    provider_session = first_inventory["grok_session_id"]
+
+    retired = module.research_episode_retire_pair(root=episode)
+    assert retired["status"] == "RETIRED"
+    recreated = module.research_episode_ensure_pair(
+        root=episode, expected_head_sha256=started["head_checkpoint_sha256"]
+    )
+    recreated_inventory = json.loads(
+        (episode / "session_inventory.json").read_text("utf-8")
+    )
+
+    assert recreated["status"] in {"PAIR_READY", "PAIR_STARTED"}
+    assert recreated["episode_id"] == started["episode_id"]
+    assert recreated["session_id"] == started["session_id"]
+    assert recreated["cas_head_sha256"] == started["head_checkpoint_sha256"]
+    assert recreated_inventory["episode_id"] == started["episode_id"]
+    assert recreated_inventory["host_session_id"] == started["session_id"]
+    assert recreated_inventory["grok_session_id"] == provider_session
+    assert recreated_inventory["resume_mode"] == "resume"
+
+
+@pytest.mark.parametrize(
+    ("field", "invalid", "reason_code"),
+    [
+        ("episode_id", "xre_foreign", "RESEARCH_EPISODE_FOREIGN_EPISODE"),
+        ("host_session_id", "xrsess_foreign", "RESEARCH_EPISODE_FOREIGN_SESSION"),
+        (
+            "grok_session_id",
+            "not-a-provider-uuid",
+            "RESEARCH_EPISODE_PROVIDER_SESSION_NOT_UUID",
+        ),
+    ],
+)
+def test_retire_recreate_rejects_invalid_prior_session_inventory(
+    module: Any,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    field: str,
+    invalid: str,
+    reason_code: str,
+) -> None:
+    _mod, episode, started, _manifest = _prepare_episode(module, tmp_path, monkeypatch)
+    module.research_episode_ensure_pair(
+        root=episode, expected_head_sha256=started["head_checkpoint_sha256"]
+    )
+    module.research_episode_retire_pair(root=episode)
+    inventory_path = episode / "session_inventory.json"
+    inventory = json.loads(inventory_path.read_text("utf-8"))
+    inventory[field] = invalid
+    inventory_path.write_text(json.dumps(inventory), encoding="utf-8")
+
+    with pytest.raises(module.XinaoError) as failure:
+        module.research_episode_ensure_pair(
+            root=episode, expected_head_sha256=started["head_checkpoint_sha256"]
+        )
+    assert failure.value.reason_code == reason_code
+
+
 def test_ensure_pair_already_ready_dual_host_error_maps_xinao(
     module: Any, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

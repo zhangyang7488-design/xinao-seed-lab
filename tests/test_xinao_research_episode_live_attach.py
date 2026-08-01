@@ -550,6 +550,8 @@ def test_create_pair_partial_fail_best_effort_cleanup(host_mod: Any, tmp_path: P
         auth_host_path=auth / "auth.json",
         episode_root=tmp_path / "ep_partial",
         network="xinao_researcher_internal",
+        egress_proxy_endpoint="http://xinao-researcher-egress-proxy:3128",
+        egress_live_seal_sha256="a" * 64,
         synthetic=False,
         runner=runner,
     )
@@ -626,6 +628,8 @@ def test_create_pair_tool_name_conflict_no_name_rm(host_mod: Any, tmp_path: Path
         auth_host_path=auth / "auth.json",
         episode_root=tmp_path / "ep_name_conflict",
         network="xinao_researcher_internal",
+        egress_proxy_endpoint="http://xinao-researcher-egress-proxy:3128",
+        egress_live_seal_sha256="a" * 64,
         synthetic=False,
         runner=runner,
     )
@@ -667,8 +671,13 @@ def test_require_live_transport_network_mismatch_fail_closed(host_mod: Any, tmp_
     syn.start_pair()
     lease = syn.load_lease()
     assert lease is not None
+    ipc_volume = "xinao-test-ipc-net"
+    ipc_volume_source = f"/var/lib/docker/volumes/{ipc_volume}/_data"
     lease["tool_container_id"] = "toolcid_net"
     lease["transport_container_id"] = "transportcid_net"
+    lease["ipc_mount_type"] = "volume"
+    lease["ipc_volume"] = ipc_volume
+    lease["ipc_volume_source"] = ipc_volume_source
     lease["phase"] = "running"
     syn._save_lease(lease)
     inv = syn.load_session_inventory()
@@ -680,6 +689,9 @@ def test_require_live_transport_network_mismatch_fail_closed(host_mod: Any, tmp_
     assert receipt is not None
     receipt["tool_container_id"] = "toolcid_net"
     receipt["transport_container_id"] = "transportcid_net"
+    receipt["ipc_mount_type"] = "volume"
+    receipt["ipc_volume"] = ipc_volume
+    receipt["ipc_volume_source"] = ipc_volume_source
     body = {k: v for k, v in receipt.items() if k != "pair_receipt_sha256"}
     receipt["pair_receipt_sha256"] = hashlib.sha256(
         (json.dumps(body, ensure_ascii=False, sort_keys=True, separators=(",", ":")) + "\n").encode(
@@ -696,7 +708,13 @@ def test_require_live_transport_network_mismatch_fail_closed(host_mod: Any, tmp_
         mounts = (
             [
                 {"Destination": "/episode-lab", "Source": "/h/lab", "Type": "bind"},
-                {"Destination": "/ipc", "Source": "/h/ipc", "Type": "bind"},
+                {
+                    "Destination": "/ipc",
+                    "Source": ipc_volume_source,
+                    "Name": ipc_volume,
+                    "Type": "volume",
+                    "RW": True,
+                },
             ]
             if role == "tool"
             else [
@@ -705,7 +723,13 @@ def test_require_live_transport_network_mismatch_fail_closed(host_mod: Any, tmp_
                     "Source": "/h/auth.json",
                     "Type": "bind",
                 },
-                {"Destination": "/ipc", "Source": "/h/ipc", "Type": "bind"},
+                {
+                    "Destination": "/ipc",
+                    "Source": ipc_volume_source,
+                    "Name": ipc_volume,
+                    "Type": "volume",
+                    "RW": True,
+                },
             ]
         )
         return {
@@ -717,7 +741,7 @@ def test_require_live_transport_network_mismatch_fail_closed(host_mod: Any, tmp_
                 "Image": lease.get("tool_image_id")
                 if role == "tool"
                 else lease.get("transport_image_id"),
-                "User": "65532:65532" if role == "tool" else "",
+                "User": "65532:65532" if role == "tool" else "0:0",
                 "Env": [],
             },
             "HostConfig": {"NetworkMode": network_mode},

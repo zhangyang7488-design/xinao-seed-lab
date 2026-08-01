@@ -10771,7 +10771,11 @@ def _load_and_validate_live_seal(
 
 
 def _compare_live_egress_objects(
-    docker: str, posture: dict[str, Any], runtime_lock: dict[str, Any]
+    docker: str,
+    posture: dict[str, Any],
+    runtime_lock: dict[str, Any],
+    *,
+    allowed_researcher_container_ids: set[str] | None = None,
 ) -> dict[str, Any]:
     network_name = str(posture["internal_network_name"])
     network_id = str(posture["internal_network_id"])
@@ -10800,6 +10804,11 @@ def _compare_live_egress_objects(
             "Containers empty or missing; proxy membership unobserved",
         )
     member_names: list[str] = []
+    allowed_ids = {
+        str(value).strip().lower()
+        for value in (allowed_researcher_container_ids or set())
+        if str(value).strip()
+    }
     proxy_seen = False
     for _cid, meta in containers.items():
         if not isinstance(meta, dict):
@@ -10813,8 +10822,20 @@ def _compare_live_egress_objects(
         for marker in EGRESS_DIFY_FORBIDDEN_MARKERS:
             if marker in lowered:
                 raise XinaoError("EGRESS_DIFY_CROSS_PROJECT_FORBIDDEN", name)
-        # Only proxy and dedicated researcher workloads may join the internal network.
-        if normalized != proxy_name and not normalized.startswith("xinao-researcher-"):
+        member_id = str(_cid).strip().lower()
+        exact_episode_transport = any(
+            member_id == allowed
+            or member_id.startswith(allowed)
+            or allowed.startswith(member_id)
+            for allowed in allowed_ids
+        )
+        # One-shot researcher names remain admitted. Persistent Episode transports
+        # are admitted only by their exact lease-bound ID, never a broad name prefix.
+        if (
+            normalized != proxy_name
+            and not normalized.startswith("xinao-researcher-")
+            and not exact_episode_transport
+        ):
             raise XinaoError("EGRESS_FOREIGN_NETWORK_MEMBER", normalized)
     if not proxy_seen:
         raise XinaoError(
@@ -10922,6 +10943,7 @@ def _observe_and_compare_egress_boundary(
     runtime_lock: dict[str, Any],
     *,
     require_live_seal: bool = True,
+    allowed_researcher_container_ids: set[str] | None = None,
 ) -> dict[str, Any]:
     """
     Direct Docker observation of proxy/network/config.
@@ -10948,7 +10970,12 @@ def _observe_and_compare_egress_boundary(
             )
         if seal["docker_server_version"] != engine["docker_server_version"]:
             raise XinaoError("EGRESS_LIVE_SEAL_DRIFT", "docker_server_version")
-    observed = _compare_live_egress_objects(docker, posture, runtime_lock)
+    observed = _compare_live_egress_objects(
+        docker,
+        posture,
+        runtime_lock,
+        allowed_researcher_container_ids=allowed_researcher_container_ids,
+    )
     if require_live_seal and seal is not None:
         if seal["proxy_container_id"] != observed["proxy_container_id"] and not (
             str(observed["proxy_container_id"]).startswith(str(seal["proxy_container_id"]))
@@ -11068,6 +11095,8 @@ def _validate_researcher_network_and_proxy_env(
 
 def _require_host_egress_boundary(
     runtime_lock: dict[str, Any] | None = None,
+    *,
+    allowed_researcher_container_ids: set[str] | None = None,
 ) -> dict[str, Any]:
     """
     Normal research gate: source network_profile + valid D-state live seal + direct observe.
@@ -11086,7 +11115,11 @@ def _require_host_egress_boundary(
             "EGRESS_SOURCE_CLAIM_FORBIDDEN",
             "source provider_egress_runtime_verified must remain false; use D-state live seal",
         )
-    return _observe_and_compare_egress_boundary(effective_lock, require_live_seal=True)
+    return _observe_and_compare_egress_boundary(
+        effective_lock,
+        require_live_seal=True,
+        allowed_researcher_container_ids=allowed_researcher_container_ids,
+    )
 
 
 def _assert_egress_observations_bound(before: dict[str, Any], after: dict[str, Any]) -> None:
@@ -15280,9 +15313,32 @@ def _research_episode_load_dual_host(root: Path) -> Any:
         "on",
     }
     auth = resolve_auth_host_path(allow_synthetic_missing=synthetic)
+    egress_bound: dict[str, Any] | None = None
+    if not synthetic:
+        # ResearchEpisode provider calls consume the same current live-seal gate as
+        # the one-shot researcher path; names/constants alone are not authority.
+        # A running persistent transport is admitted only by the exact ID already
+        # bound in this Episode's lease.
+        allowed_pair_ids: set[str] = set()
+        lease_path = Path(root) / "dual_container_pair_lease.json"
+        if lease_path.is_file():
+            lease_doc = _load_json(lease_path)
+            transport_id = str(lease_doc.get("transport_container_id") or "").strip().lower()
+            if HEX_SHA256_PATTERN.fullmatch(transport_id) is None:
+                raise XinaoError("DUAL_HOST_TRANSPORT_INVALID", transport_id)
+            allowed_pair_ids.add(transport_id)
+        egress_bound = _require_host_egress_boundary(
+            allowed_researcher_container_ids=allowed_pair_ids
+        )
     network = os.environ.get("XINAO_TRANSPORT_NETWORK", "").strip()
     if not network:
-        network = "none" if synthetic else EGRESS_INTERNAL_NETWORK_NAME
+        network = (
+            "none"
+            if synthetic
+            else str((egress_bound or {}).get("internal_network_name") or "")
+        )
+    if not synthetic and network != str((egress_bound or {}).get("internal_network_name") or ""):
+        raise XinaoError("EGRESS_TRANSPORT_NETWORK_MISMATCH", network)
     # Live attach/run/export refuse synthetic drivers regardless of env.
     return host_mod, host_mod.DualContainerHost(
         host_mod.DualHostConfig(
@@ -15291,6 +15347,12 @@ def _research_episode_load_dual_host(root: Path) -> Any:
             auth_host_path=Path(auth),
             episode_root=Path(root),
             network=network,
+            egress_proxy_endpoint=(
+                None if synthetic else str((egress_bound or {}).get("proxy_endpoint") or "")
+            ),
+            egress_live_seal_sha256=(
+                None if synthetic else str((egress_bound or {}).get("live_seal_sha256") or "")
+            ),
             synthetic=synthetic,
         )
     )
@@ -15473,10 +15535,37 @@ def research_episode_ensure_pair(
                     f"unsupported lease phase={phase}",
                 )
 
+        resume_provider_session_uuid: str | None = None
+        try:
+            prior_inventory = host.load_session_inventory()
+        except Exception as exc:
+            reason = getattr(exc, "reason_code", None) or "DUAL_HOST_SESSION_INVENTORY_INVALID"
+            raise XinaoError(str(reason), str(exc)[:2000]) from exc
+        if prior_inventory is not None:
+            if prior_inventory.get("episode_id") != meta["episode_id"]:
+                raise XinaoError(
+                    "RESEARCH_EPISODE_FOREIGN_EPISODE",
+                    str(prior_inventory.get("episode_id")),
+                )
+            if prior_inventory.get("host_session_id") != meta["session_id"]:
+                raise XinaoError(
+                    "RESEARCH_EPISODE_FOREIGN_SESSION",
+                    str(prior_inventory.get("host_session_id")),
+                )
+            provider_session = str(prior_inventory.get("grok_session_id") or "").strip()
+            try:
+                resume_provider_session_uuid = str(uuid.UUID(provider_session))
+            except (ValueError, TypeError, AttributeError) as exc:
+                raise XinaoError(
+                    "RESEARCH_EPISODE_PROVIDER_SESSION_NOT_UUID",
+                    provider_session,
+                ) from exc
+
         try:
             created = host.create_pair(
                 episode_id=str(meta["episode_id"]),
                 session_id=str(meta["session_id"]),
+                resume_session_id=resume_provider_session_uuid,
                 research_profile=profile,
             )
             started = host.start_pair()

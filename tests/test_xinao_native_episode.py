@@ -67,15 +67,92 @@ def test_dual_host_provider_egress_proxy_env_for_attach(host_mod: Any) -> None:
     on xinao_researcher_internal, so grok -p reqwest could not reach
     cli-chat-proxy.grok.com until docker exec -e injected the endpoint.
     """
-    live = host_mod.provider_egress_proxy_env(network=host_mod.DEFAULT_TRANSPORT_NETWORK)
+    specs = host_mod._load_specs_module()
+    live = specs.provider_egress_proxy_env(network=host_mod.DEFAULT_TRANSPORT_NETWORK)
     assert live
-    for key in host_mod.EGRESS_PROXY_ENV_KEYS:
-        assert live[key] == host_mod.EGRESS_PROXY_ENDPOINT
-    assert host_mod.provider_egress_proxy_env(network="none") == {}
-    assert host_mod.provider_egress_proxy_env(network="") == {}
+    for key in specs.PROVIDER_EGRESS_PROXY_URL_ENV_KEYS:
+        assert live[key] == specs.DEFAULT_PROVIDER_EGRESS_PROXY_ENDPOINT
+    for key in specs.PROVIDER_EGRESS_CLEAR_ENV_KEYS:
+        assert live[key] == ""
+    assert specs.provider_egress_proxy_env(network="none") == {}
+    assert specs.provider_egress_proxy_env(network="") == {}
+    assert specs.provider_egress_proxy_env(network="caller-net") == {}
     # Endpoint identity must stay the dedicated researcher egress, not Dify SSRF.
-    assert "xinao-researcher-egress-proxy" in host_mod.EGRESS_PROXY_ENDPOINT
-    assert "ssrf" not in host_mod.EGRESS_PROXY_ENDPOINT.lower()
+    assert "xinao-researcher-egress-proxy" in specs.DEFAULT_PROVIDER_EGRESS_PROXY_ENDPOINT
+    assert "ssrf" not in specs.DEFAULT_PROVIDER_EGRESS_PROXY_ENDPOINT.lower()
+
+
+def test_exec_transport_grok_overwrites_poisoned_proxy_env_in_final_argv(
+    host_mod: Any, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    auth = tmp_path / "auth"
+    auth.mkdir()
+    episode = tmp_path / "ep"
+    base = dict(
+        transport_image="transport:candidate",
+        tool_image="tool:candidate",
+        auth_host_path=auth,
+        episode_root=episode,
+    )
+    synthetic = host_mod.DualContainerHost(host_mod.DualHostConfig(**base, synthetic=True))
+    synthetic.create_pair(episode_id="ep_proxy_seal", session_id=f"xrsess_{uuid.uuid4().hex[:8]}")
+    lease = synthetic.load_lease()
+    assert lease is not None
+    lease["transport_container_id"] = "transportcid-proxy-seal"
+    synthetic._save_lease(lease)
+    inventory = synthetic.load_session_inventory()
+    assert inventory is not None
+    argv = synthetic.build_grok_session_argv(
+        resume=False,
+        session_id=str(inventory["grok_session_id"]),
+        max_turns=16,
+        prompt="proxy seal probe",
+    )
+
+    captured: list[str] = []
+
+    def fake_run(command: Any, **kwargs: Any) -> subprocess.CompletedProcess[bytes]:
+        captured.extend(str(part) for part in command)
+        return subprocess.CompletedProcess(command, 0, b"", b"")
+
+    monkeypatch.setattr(host_mod.subprocess, "run", fake_run)
+    live = host_mod.DualContainerHost(host_mod.DualHostConfig(**base, synthetic=False))
+    live.config.egress_proxy_endpoint = live.specs.DEFAULT_PROVIDER_EGRESS_PROXY_ENDPOINT
+    live.config.egress_live_seal_sha256 = "a" * 64
+    live.exec_transport_grok(
+        argv,
+        timeout_seconds=30,
+        env={
+            "HTTP_PROXY": "http://evil.example:9999",
+            "HTTPS_PROXY": "http://evil.example:9999",
+            "NO_PROXY": "*",
+            "no_proxy": "*",
+            "ALL_PROXY": "socks5://evil.example:1080",
+            "all_proxy": "socks5://evil.example:1080",
+        },
+    )
+    env_args = {
+        captured[index + 1].split("=", 1)[0]: captured[index + 1].split("=", 1)[1]
+        for index, token in enumerate(captured[:-1])
+        if token == "-e"
+    }
+    for key in live.specs.PROVIDER_EGRESS_PROXY_URL_ENV_KEYS:
+        assert env_args[key] == live.specs.DEFAULT_PROVIDER_EGRESS_PROXY_ENDPOINT
+    for key in live.specs.PROVIDER_EGRESS_CLEAR_ENV_KEYS:
+        assert env_args[key] == ""
+
+    unsupported = host_mod.DualContainerHost(
+        host_mod.DualHostConfig(
+            **base,
+            network="caller-net",
+            egress_proxy_endpoint=live.specs.DEFAULT_PROVIDER_EGRESS_PROXY_ENDPOINT,
+            egress_live_seal_sha256="a" * 64,
+            synthetic=False,
+        )
+    )
+    with pytest.raises(host_mod.DualHostError) as failure:
+        unsupported.exec_transport_grok(argv, timeout_seconds=30)
+    assert failure.value.reason_code == "DUAL_HOST_TRANSPORT_NETWORK_UNSUPPORTED"
 
 
 def test_cli_probe_and_fail_closed_contract(native: Any) -> None:

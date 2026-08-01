@@ -314,7 +314,7 @@ def test_union_create_spec_and_inspect_agree(specs: Any) -> None:
         name="tool-u",
         episode_lab_host_path="/host/lab",
         ipc_host_dir="/host/ipc",
-        ipc_peer_uids="1000",
+        ipc_peer_uids="0",
         bwrap_mode="require",
     )
     specs.assert_tool_spec_fail_closed(tool)
@@ -331,7 +331,7 @@ def test_union_create_spec_and_inspect_agree(specs: Any) -> None:
                 "HOME=/tmp",
                 "XINAO_TOOL_EXEC_BWRAP=require",
                 "XINAO_IPC_PEER_REQUIRE=1",
-                "XINAO_IPC_PEER_UIDS=1000",
+                "XINAO_IPC_PEER_UIDS=0",
                 "XINAO_REPLAY_STATE_DIR=/ipc/.xinao-replay",
             ],
         },
@@ -365,7 +365,7 @@ def test_union_create_spec_and_inspect_agree(specs: Any) -> None:
         output_host_path="/o",
         episode_lab_host_path="/lab",
         ipc_host_dir="/ipc",
-        ipc_peer_uids="1000",
+        ipc_peer_uids="0",
     )
     assert bundle["fail_closed_before_provider"] is True
     assert bundle["tool_spec_violations"] == []

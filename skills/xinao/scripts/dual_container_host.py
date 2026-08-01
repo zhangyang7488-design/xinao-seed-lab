@@ -20,6 +20,7 @@ import json
 import os
 import re
 import subprocess
+import time
 import uuid
 from dataclasses import dataclass
 from pathlib import Path
@@ -30,14 +31,9 @@ from typing import Any, Callable, Mapping, Sequence
 HOST_MODULES_DIRNAME = "host_modules"
 HEX_SHA256 = re.compile(r"^[0-9a-f]{64}$")
 DEFAULT_TRANSPORT_NETWORK = "xinao_researcher_internal"
-# Must match docker_create_specs / xinao_runtime sealed egress endpoint.
-EGRESS_PROXY_ENDPOINT = "http://xinao-researcher-egress-proxy:3128"
-EGRESS_PROXY_ENV_KEYS = (
-    "HTTP_PROXY",
-    "HTTPS_PROXY",
-    "http_proxy",
-    "https_proxy",
-)
+TOOL_SOCKET_READY_TIMEOUT_SECONDS = 10.0
+TOOL_SOCKET_READY_POLL_SECONDS = 0.05
+TOOL_SOCKET_EXPECTED_MODE = 0o666
 
 
 def host_modules_dir() -> Path:
@@ -98,19 +94,6 @@ class DualHostError(RuntimeError):
 
 
 DockerRunner = Callable[[Sequence[str]], subprocess.CompletedProcess[str]]
-
-
-def provider_egress_proxy_env(*, network: str | None = None) -> dict[str, str]:
-    """Proxy routing env for live transport on the sealed internal network.
-
-    Offline network=none returns empty. Used by create-time env (via specs) and
-    every docker-exec attach so already-running pairs without Config.Env proxy
-    still reach cli-chat-proxy.grok.com through Squid CONNECT.
-    """
-    net = str(network if network is not None else DEFAULT_TRANSPORT_NETWORK).strip().lower()
-    if net in {"", "none"}:
-        return {}
-    return {key: EGRESS_PROXY_ENDPOINT for key in EGRESS_PROXY_ENV_KEYS}
 
 
 def _canonical_bytes(value: object) -> bytes:
@@ -182,6 +165,9 @@ class DualHostConfig:
     episode_root: Path
     # Live default: sealed provider egress internal network (tool stays network=none).
     network: str = DEFAULT_TRANSPORT_NETWORK
+    # Supplied by xinao_runtime's live-seal observation for real provider work.
+    egress_proxy_endpoint: str | None = None
+    egress_live_seal_sha256: str | None = None
     material_host_path: Path | None = None
     docker: str = "docker"
     runner: DockerRunner | None = None
@@ -223,6 +209,68 @@ class DualContainerHost:
                 f"argv={argv!r} rc={completed.returncode} stderr={completed.stderr!r}",
             )
         return completed
+
+    def _wait_for_tool_socket_ready(
+        self,
+        container_id: str,
+        *,
+        timeout_seconds: float = TOOL_SOCKET_READY_TIMEOUT_SECONDS,
+    ) -> dict[str, Any]:
+        """Prove the started tool can materialize its socket on the shared volume."""
+        expected_uid = int(self.specs.TOOL_UID)
+        expected_gid = int(self.specs.TOOL_GID)
+        expected_mode = TOOL_SOCKET_EXPECTED_MODE
+        probe = (
+            "import json,os,stat;"
+            "s=os.lstat('/ipc/tool.sock');"
+            "print(json.dumps({'uid':s.st_uid,'gid':s.st_gid,"
+            "'mode':stat.S_IMODE(s.st_mode),'is_socket':stat.S_ISSOCK(s.st_mode)},"
+            "sort_keys=True))"
+        )
+        argv = [
+            self.config.docker,
+            "exec",
+            str(container_id),
+            "python",
+            "-I",
+            "-c",
+            probe,
+        ]
+        deadline = time.monotonic() + max(0.0, float(timeout_seconds))
+        last_detail = "not attempted"
+        while True:
+            completed = self.runner(argv)
+            if completed.returncode == 0:
+                try:
+                    observed = json.loads((completed.stdout or "").strip())
+                except (TypeError, ValueError, json.JSONDecodeError):
+                    observed = None
+                if isinstance(observed, dict):
+                    exact = {
+                        "uid": expected_uid,
+                        "gid": expected_gid,
+                        "mode": expected_mode,
+                        "is_socket": True,
+                    }
+                    normalized = {
+                        "uid": observed.get("uid"),
+                        "gid": observed.get("gid"),
+                        "mode": observed.get("mode"),
+                        "is_socket": observed.get("is_socket"),
+                    }
+                    if normalized == exact:
+                        return normalized
+                    last_detail = f"socket stat mismatch:{normalized!r}"
+                else:
+                    last_detail = "socket stat output invalid"
+            else:
+                last_detail = (
+                    f"rc={completed.returncode}:"
+                    f"{(completed.stderr or completed.stdout or '')[:300]}"
+                )
+            if time.monotonic() >= deadline:
+                raise DualHostError("DUAL_HOST_TOOL_SOCKET_NOT_READY", last_detail)
+            time.sleep(TOOL_SOCKET_READY_POLL_SECONDS)
 
     def _best_effort_cleanup_create_partial(
         self,
@@ -448,6 +496,7 @@ class DualContainerHost:
         else:
             ipc_for_spec = str(self.paths["ipc_bind"])
 
+        ipc_peer_uids = str(self.specs.TRANSPORT_UID)
         bundle = self.specs.dual_container_bundle(
             transport_image=transport_image_id,
             tool_image=tool_image_id,
@@ -465,8 +514,15 @@ class DualContainerHost:
             attempt_agent_profile_host_path=str(attempt["agent_profile"]),
             episode_id=episode_id,
             use_episode_entrypoint=True,
-            # Tool remains network=none inside bundle; transport uses sealed internal net.
-            network=str(self.config.network or DEFAULT_TRANSPORT_NETWORK),
+            ipc_peer_uids=ipc_peer_uids,
+            # Synthetic/fake-client seats are always offline. Real transport consumes
+            # only the live-seal-bound internal network supplied by xinao_runtime.
+            network=(
+                "none"
+                if self.config.synthetic
+                else str(self.config.network or DEFAULT_TRANSPORT_NETWORK)
+            ),
+            provider_egress_proxy_endpoint=str(self.config.egress_proxy_endpoint or ""),
         )
         if bundle["tool_spec_violations"] or bundle["transport_spec_violations"]:
             raise DualHostError(
@@ -491,9 +547,11 @@ class DualContainerHost:
         if self.config.synthetic:
             tool_id = f"synthetic-tool-{_sha256_bytes(episode_id.encode())[:12]}"
             transport_id = f"synthetic-transport-{_sha256_bytes(session_id.encode())[:12]}"
+            ipc_volume_source: str | None = None
         else:
             tool_id = ""
             transport_id = ""
+            ipc_volume_source = None
             try:
                 tool_id = self._run(tool_argv, reason="DUAL_HOST_TOOL_CREATE_FAILED").stdout.strip()
                 transport_id = self._run(
@@ -501,6 +559,12 @@ class DualContainerHost:
                 ).stdout.strip()
                 if not tool_id or not transport_id:
                     raise DualHostError("DUAL_HOST_CREATE_INCOMPLETE", f"{tool_id}/{transport_id}")
+                if ipc_mount_type == "volume":
+                    ipc_volume_source = _require_exact_ipc_volume_mounts(
+                        tool_inspect=self._docker_inspect(tool_id),
+                        transport_inspect=self._docker_inspect(transport_id),
+                        expected_volume=ipc_volume,
+                    )
             except DualHostError as exc:
                 # Best-effort cleanup of only this call's owned containers/volume.
                 # Container ownership = create-returned IDs only (names are journal-only).
@@ -585,6 +649,9 @@ class DualContainerHost:
             "transport_container_name": names["transport_name"],
             "ipc_volume": ipc_volume if ipc_mount_type == "volume" else None,
             "ipc_host_dir": str(self.paths["ipc_bind"]),
+            "ipc_mount_type": ipc_mount_type,
+            "ipc_volume_source": ipc_volume_source,
+            "ipc_peer_uids": ipc_peer_uids,
             "sidecar_evidence_host_dir": str(self.paths["sidecar_evidence"]),
             "tool_sidecar_events_path": str(self.paths["tool_events"]),
             "socket_basename": "tool.sock",
@@ -613,6 +680,8 @@ class DualContainerHost:
             "ipc_volume": ipc_volume if ipc_mount_type == "volume" else None,
             "ipc_host_dir": str(self.paths["ipc_bind"]),
             "ipc_mount_type": ipc_mount_type,
+            "ipc_volume_source": ipc_volume_source,
+            "ipc_peer_uids": ipc_peer_uids,
             "tool_container_name": names["tool_name"],
             "transport_container_name": names["transport_name"],
             "tool_container_id": tool_id,
@@ -685,6 +754,44 @@ class DualContainerHost:
             transport_inspect,
             expected_image_id=lease.get("transport_image_id"),
         )
+        expected_mount_type = "bind" if self.config.synthetic else "volume"
+        if str(lease.get("ipc_mount_type") or "") != expected_mount_type:
+            violation = (
+                "ipc_mount_type_mismatch:"
+                f"expected={expected_mount_type}:observed={lease.get('ipc_mount_type')}"
+            )
+            tool_violations.append(violation)
+            transport_violations.append(violation)
+        if str(lease.get("ipc_peer_uids") or "") != str(self.specs.TRANSPORT_UID):
+            tool_violations.append(
+                f"ipc_peer_lease!={self.specs.TRANSPORT_UID}:{lease.get('ipc_peer_uids')}"
+            )
+        if not self.config.synthetic and lease.get("ipc_mount_type") == "volume":
+            expected_volume = str(lease.get("ipc_volume") or "")
+            if not expected_volume:
+                violation = "ipc_volume_missing_from_lease"
+                tool_violations.append(violation)
+                transport_violations.append(violation)
+            else:
+                try:
+                    observed_source = _require_exact_ipc_volume_mounts(
+                        tool_inspect=tool_inspect,
+                        transport_inspect=transport_inspect,
+                        expected_volume=expected_volume,
+                    )
+                except DualHostError as exc:
+                    violation = f"{exc.reason_code}:{exc.detail}"
+                    tool_violations.append(violation)
+                    transport_violations.append(violation)
+                else:
+                    if observed_source != str(lease.get("ipc_volume_source") or ""):
+                        violation = (
+                            "ipc_volume_source_mismatch:"
+                            f"lease={lease.get('ipc_volume_source')!r}:"
+                            f"inspect={observed_source!r}"
+                        )
+                        tool_violations.append(violation)
+                        transport_violations.append(violation)
         # Exact paired identity.
         identity_ok = (
             lease.get("episode_id")
@@ -752,6 +859,10 @@ class DualContainerHost:
             "transport_container_id",
             "tool_image_id",
             "transport_image_id",
+            "ipc_mount_type",
+            "ipc_volume",
+            "ipc_volume_source",
+            "ipc_peer_uids",
         ):
             if receipt.get(key) != lease.get(key):
                 raise DualHostError(
@@ -818,6 +929,31 @@ class DualContainerHost:
         # Mid-crash after transport start but before phase=running was sealed:
         # both containers should already be up — advance lease only (idempotent).
         if lease.get("phase") == "transport_started":
+            try:
+                self.validate_before_start()
+                if not self.config.synthetic:
+                    socket_ready = self._wait_for_tool_socket_ready(
+                        str(lease["tool_container_id"])
+                    )
+                    lease["tool_socket_ready"] = {
+                        **socket_ready,
+                        "observed_at": _utc_now(),
+                    }
+            except DualHostError as exc:
+                lease["phase"] = "failed_retire_pending"
+                lease["failure_reason"] = exc.reason_code
+                lease["updated_at"] = _utc_now()
+                self._save_lease(lease)
+                self._append_journal(
+                    {
+                        "verb": "start_pair_failed",
+                        "at": _utc_now(),
+                        "reason_code": exc.reason_code,
+                        "detail": exc.detail,
+                        "phase": "failed_retire_pending",
+                    }
+                )
+                raise
             lease["phase"] = "running"
             lease["updated_at"] = _utc_now()
             self._save_lease(lease)
@@ -859,6 +995,27 @@ class DualContainerHost:
                         "at": _utc_now(),
                         "tool_container_id": lease["tool_container_id"],
                         "phase": "tool_started",
+                    }
+                )
+            if not self.config.synthetic:
+                socket_ready = self._wait_for_tool_socket_ready(
+                    str(lease["tool_container_id"])
+                )
+                lease["tool_socket_ready"] = {
+                    **socket_ready,
+                    "observed_at": _utc_now(),
+                }
+                lease["updated_at"] = _utc_now()
+                self._save_lease(lease)
+                self._append_journal(
+                    {
+                        "verb": "tool_socket_ready",
+                        "at": _utc_now(),
+                        "tool_container_id": lease["tool_container_id"],
+                        "socket": "/ipc/tool.sock",
+                        "uid": socket_ready["uid"],
+                        "gid": socket_ready["gid"],
+                        "mode": socket_ready["mode"],
                     }
                 )
             if not self.config.synthetic:
@@ -965,7 +1122,17 @@ class DualContainerHost:
             raise DualHostError("DUAL_HOST_LEASE_MISSING", "start_transport_only")
         if lease.get("phase") != "tool_started":
             raise DualHostError("DUAL_HOST_PHASE_INVALID", str(lease.get("phase")))
+        self.validate_before_start()
         if not self.config.synthetic:
+            socket_ready = self._wait_for_tool_socket_ready(
+                str(lease["tool_container_id"])
+            )
+            lease["tool_socket_ready"] = {
+                **socket_ready,
+                "observed_at": _utc_now(),
+            }
+            lease["updated_at"] = _utc_now()
+            self._save_lease(lease)
             self._run(
                 [self.config.docker, "start", str(lease["transport_container_id"])],
                 reason="DUAL_HOST_TRANSPORT_START_FAILED",
@@ -1276,6 +1443,14 @@ class DualContainerHost:
                 raise DualHostError("DUAL_HOST_WRONG_IMAGE", "tool")
             if receipt.get("transport_image_id") != lease.get("transport_image_id"):
                 raise DualHostError("DUAL_HOST_WRONG_IMAGE", "transport")
+            for key in (
+                "ipc_mount_type",
+                "ipc_volume",
+                "ipc_volume_source",
+                "ipc_peer_uids",
+            ):
+                if receipt.get(key) != lease.get(key):
+                    raise DualHostError("DUAL_HOST_PAIR_RECEIPT_MISMATCH", key)
         if mark_interrupted_first:
             lease["phase"] = "interrupted"
             lease["updated_at"] = _utc_now()
@@ -1284,6 +1459,7 @@ class DualContainerHost:
         resume_argv = self.build_grok_session_argv(resume=True, session_id=grok_session)
         # Ensure containers are running: tool first.
         if lease.get("phase") in {"created", "interrupted", "checkpointed", "tool_started"}:
+            self.validate_before_start()
             if lease.get("phase") == "created":
                 self.start_pair()
                 lease = self.load_lease() or lease
@@ -1294,6 +1470,13 @@ class DualContainerHost:
                 # Restart both if needed (idempotent docker start).
                 if not self.config.synthetic:
                     self.runner([self.config.docker, "start", str(lease["tool_container_id"])])
+                    socket_ready = self._wait_for_tool_socket_ready(
+                        str(lease["tool_container_id"])
+                    )
+                    lease["tool_socket_ready"] = {
+                        **socket_ready,
+                        "observed_at": _utc_now(),
+                    }
                     self.runner([self.config.docker, "start", str(lease["transport_container_id"])])
                 lease["phase"] = "running"
                 lease["updated_at"] = _utc_now()
@@ -1368,6 +1551,10 @@ class DualContainerHost:
             "transport_container_id",
             "tool_image_id",
             "transport_image_id",
+            "ipc_mount_type",
+            "ipc_volume",
+            "ipc_volume_source",
+            "ipc_peer_uids",
         ):
             if receipt.get(key) != lease.get(key):
                 raise DualHostError("DUAL_HOST_PAIR_RECEIPT_MISMATCH", key)
@@ -1409,6 +1596,30 @@ class DualContainerHost:
             for bad in ("/grok-home", "auth.json", "docker.sock"):
                 if any(bad in m for m in tool_mounts):
                     raise DualHostError("DUAL_HOST_AUTH_ON_TOOL", bad)
+            if lease.get("ipc_mount_type") != "volume":
+                raise DualHostError(
+                    "DUAL_HOST_IPC_VOLUME_MISMATCH",
+                    f"lease mount type={lease.get('ipc_mount_type')!r}",
+                )
+            if str(lease.get("ipc_peer_uids") or "") != str(self.specs.TRANSPORT_UID):
+                raise DualHostError(
+                    "DUAL_HOST_IPC_PEER_MISMATCH",
+                    f"lease={lease.get('ipc_peer_uids')!r}",
+                )
+            expected_volume = str(lease.get("ipc_volume") or "")
+            if not expected_volume:
+                raise DualHostError("DUAL_HOST_IPC_VOLUME_MISMATCH", "lease volume missing")
+            observed_volume_source = _require_exact_ipc_volume_mounts(
+                tool_inspect=tool_inspect,
+                transport_inspect=transport_inspect,
+                expected_volume=expected_volume,
+            )
+            if observed_volume_source != str(lease.get("ipc_volume_source") or ""):
+                raise DualHostError(
+                    "DUAL_HOST_IPC_VOLUME_MISMATCH",
+                    f"lease source={lease.get('ipc_volume_source')!r}:"
+                    f"inspect source={observed_volume_source!r}",
+                )
             # Network fail-closed: tool must stay none; transport must match config.
             tool_hc = tool_inspect.get("HostConfig") or {}
             transport_hc = transport_inspect.get("HostConfig") or {}
@@ -1454,8 +1665,16 @@ class DualContainerHost:
                         raise DualHostError("DUAL_HOST_WRONG_IMAGE", f"{role}:{image}")
                 state = doc.get("State") or {}
                 running = state.get("Running")
-                if running is False:
-                    raise DualHostError("DUAL_HOST_CONTAINER_STOPPED", role)
+                if running is not True:
+                    raise DualHostError(
+                        "DUAL_HOST_CONTAINER_STOPPED",
+                        f"{role}:running={running!r}",
+                    )
+            socket_ready = self._wait_for_tool_socket_ready(
+                str(lease["tool_container_id"])
+            )
+        else:
+            socket_ready = None
         return {
             "status": "LIVE_PAIR_READY",
             "lease": lease,
@@ -1463,6 +1682,7 @@ class DualContainerHost:
             "pair_receipt": receipt,
             "pair_receipt_sha256": observed_receipt,
             "provider_session_uuid": grok_session,
+            "tool_socket_ready": socket_ready,
             "completion_claim_allowed": False,
         }
 
@@ -1497,14 +1717,27 @@ class DualContainerHost:
         env_map.setdefault("GROK_HOME", CANONICAL_GROK_HOME)
         env_map.setdefault("XINAO_MCP_EVENT_LOG", CANONICAL_MCP_EVENTS)
         env_map.setdefault("XINAO_MCP_EVIDENCE_PATH", CANONICAL_MCP_EVENTS)
+        network = str(self.config.network or "").strip().lower()
+        if network != DEFAULT_TRANSPORT_NETWORK:
+            raise DualHostError(
+                "DUAL_HOST_TRANSPORT_NETWORK_UNSUPPORTED",
+                network or "none",
+            )
+        endpoint = str(self.config.egress_proxy_endpoint or "").strip()
+        seal_sha256 = str(self.config.egress_live_seal_sha256 or "").strip().lower()
+        if not endpoint or HEX_SHA256.fullmatch(seal_sha256) is None:
+            raise DualHostError("DUAL_HOST_EGRESS_POLICY_UNBOUND", "live seal endpoint/hash")
         # Live dual transport sits on internal net without default DNS/route to
         # provider hosts. Inject sealed HTTP(S)_PROXY on every exec so headless
         # grok -p can CONNECT via xinao-researcher-egress-proxy even when the
         # container was created without proxy Config.Env (pre-fix pairs).
-        for key, value in provider_egress_proxy_env(
-            network=str(self.config.network or DEFAULT_TRANSPORT_NETWORK)
-        ).items():
-            env_map.setdefault(key, value)
+        proxy_env = self.specs.provider_egress_proxy_env(network=network, endpoint=endpoint)
+        if not proxy_env:
+            raise DualHostError("DUAL_HOST_EGRESS_POLICY_UNBOUND", network)
+        for key, value in proxy_env.items():
+            # These keys are part of the sealed egress route. Caller values must
+            # never override the endpoint or bypass it through NO/ALL_PROXY.
+            env_map[key] = value
         for key, value in env_map.items():
             docker_argv.extend(["-e", f"{key}={value}"])
         docker_argv.append(transport_id)
@@ -2168,23 +2401,92 @@ def _utc_now() -> str:
     return dt.datetime.now(dt.UTC).isoformat().replace("+00:00", "Z")
 
 
+def _mount_cli_fields(value: str) -> dict[str, list[str]]:
+    """Parse the canonical key=value fields emitted by docker_create_argv."""
+    fields: dict[str, list[str]] = {}
+    for token in str(value).split(","):
+        if "=" not in token:
+            continue
+        key, item = token.split("=", 1)
+        fields.setdefault(key.strip().lower(), []).append(item)
+    return fields
+
+
 def _replace_ipc_bind_with_volume(argv: list[str], volume: str) -> list[str]:
-    """Swap bind mount to /ipc for a named volume mount."""
+    """Replace exactly one generated bind whose exact target is ``/ipc``."""
     out: list[str] = []
     i = 0
+    replaced = 0
     while i < len(argv):
-        if argv[i] == "--mount" and i + 1 < len(argv) and ",dst=/ipc," in argv[i + 1]:
-            out.extend(
-                [
-                    "--mount",
-                    f"type=volume,src={volume},dst=/ipc,volume-nocopy",
-                ]
-            )
-            i += 2
-            continue
+        if argv[i] == "--mount" and i + 1 < len(argv):
+            fields = _mount_cli_fields(argv[i + 1])
+            kinds = fields.get("type", [])
+            targets = [
+                *fields.get("dst", []),
+                *fields.get("destination", []),
+                *fields.get("target", []),
+            ]
+            if kinds == ["bind"] and targets == ["/ipc"]:
+                # Deliberately retain Docker's default volume copy-up. The tool
+                # image owns /ipc as 65532:65532; copy-up initializes a fresh
+                # named volume for the non-root tool before transport starts.
+                out.extend(["--mount", f"type=volume,src={volume},dst=/ipc"])
+                replaced += 1
+                i += 2
+                continue
         out.append(argv[i])
         i += 1
+    if replaced != 1:
+        raise DualHostError(
+            "DUAL_HOST_IPC_MOUNT_REWRITE_FAILED",
+            f"expected one exact bind target /ipc, observed={replaced}",
+        )
     return out
+
+
+def _exact_ipc_volume_mount(
+    inspect_doc: Mapping[str, Any], *, role: str, expected_volume: str
+) -> dict[str, str]:
+    mounts = [
+        mount
+        for mount in (inspect_doc.get("Mounts") or [])
+        if isinstance(mount, Mapping)
+        and str(mount.get("Destination") or mount.get("Target") or "") == "/ipc"
+    ]
+    if len(mounts) != 1:
+        raise DualHostError(
+            "DUAL_HOST_IPC_VOLUME_MISMATCH", f"{role}:ipc_mount_count={len(mounts)}"
+        )
+    mount = mounts[0]
+    kind = str(mount.get("Type") or "").lower()
+    name = str(mount.get("Name") or "")
+    source = str(mount.get("Source") or "")
+    if kind != "volume" or name != expected_volume or not source or mount.get("RW") is not True:
+        raise DualHostError(
+            "DUAL_HOST_IPC_VOLUME_MISMATCH",
+            f"{role}:type={kind!r}:name={name!r}:source={source!r}:rw={mount.get('RW')!r}",
+        )
+    return {"name": name, "source": source}
+
+
+def _require_exact_ipc_volume_mounts(
+    *,
+    tool_inspect: Mapping[str, Any],
+    transport_inspect: Mapping[str, Any],
+    expected_volume: str,
+) -> str:
+    tool = _exact_ipc_volume_mount(
+        tool_inspect, role="tool", expected_volume=expected_volume
+    )
+    transport = _exact_ipc_volume_mount(
+        transport_inspect, role="transport", expected_volume=expected_volume
+    )
+    if tool != transport:
+        raise DualHostError(
+            "DUAL_HOST_IPC_VOLUME_MISMATCH",
+            f"tool={tool!r}:transport={transport!r}",
+        )
+    return tool["source"]
 
 
 def _inspect_summary(doc: dict[str, Any]) -> dict[str, Any]:
@@ -2232,7 +2534,7 @@ def _synthetic_tool_inspect(lease: Mapping[str, Any]) -> dict[str, Any]:
                 "TMPDIR=/tmp",
                 "XINAO_TOOL_EXEC_BWRAP=require",
                 "XINAO_IPC_PEER_REQUIRE=1",
-                "XINAO_IPC_PEER_UIDS=",
+                f"XINAO_IPC_PEER_UIDS={lease.get('ipc_peer_uids', 0)}",
                 "XINAO_REPLAY_STATE_DIR=/ipc/.xinao-replay",
             ],
         },
@@ -2254,7 +2556,7 @@ def _synthetic_transport_inspect(lease: Mapping[str, Any]) -> dict[str, Any]:
         "Id": lease.get("transport_container_id"),
         "Image": lease.get("transport_image_id"),
         "Config": {
-            "User": "",
+            "User": "0:0",
             "Image": lease.get("transport_image_id"),
             "Entrypoint": [
                 "python",

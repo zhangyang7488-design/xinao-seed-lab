@@ -271,7 +271,7 @@ def test_bundle_with_episode_hold_fail_closed(specs: Any) -> None:
         episode_lab_host_path="/lab",
         ipc_host_dir="/ipc",
         use_episode_entrypoint=True,
-        ipc_peer_uids="1000",
+        ipc_peer_uids="0",
     )
     assert bundle["fail_closed_before_provider"] is True
     assert bundle["transport_spec_violations"] == []

@@ -27,10 +27,24 @@ def _load(name: str, path: Path) -> Any:
     assert spec is not None and spec.loader is not None
     module = importlib.util.module_from_spec(spec)
     parent = str(path.parent)
-    if parent not in sys.path:
+    inserted_parent = parent not in sys.path
+    if inserted_parent:
         sys.path.insert(0, parent)
+    missing = object()
+    previous_module = sys.modules.get(name, missing)
     sys.modules[name] = module
-    spec.loader.exec_module(module)
+    try:
+        spec.loader.exec_module(module)
+    except BaseException:
+        if sys.modules.get(name) is module:
+            if previous_module is missing:
+                del sys.modules[name]
+            else:
+                sys.modules[name] = previous_module
+        raise
+    finally:
+        if inserted_parent and parent in sys.path:
+            sys.path.remove(parent)
     return module
 
 
@@ -199,6 +213,26 @@ def test_open_research_argv_has_meta_web_no_disable(native: Any) -> None:
     assert "web_search" not in denied and "web_fetch" not in denied
     assert argv[argv.index("--cwd") + 1] == "/episode-lab"
     assert argv[argv.index("--agent") + 1] == "/grok-home/agents/genuine_scientist_mcp.md"
+    assert "--trust" in argv
+    assert argv[argv.index("--allow") + 1] == "MCPTool(episode_lab__*)"
+
+
+def test_live_research_requires_episode_trust_and_exact_mcp_allow(native: Any) -> None:
+    sid = native.new_session_uuid()
+    argv = native.build_genuine_session_argv(session_id=sid, max_turns=16, prompt="lab")
+
+    no_trust = list(argv)
+    no_trust.remove("--trust")
+    with pytest.raises(native.NativeSessionError) as exc:
+        native.assert_live_research_argv(no_trust, research_profile="OPEN_RESEARCH")
+    assert exc.value.reason_code == "LIVE_EPISODE_TRUST_MISSING"
+
+    no_mcp_allow = list(argv)
+    allow_index = no_mcp_allow.index("--allow")
+    del no_mcp_allow[allow_index : allow_index + 2]
+    with pytest.raises(native.NativeSessionError) as exc2:
+        native.assert_live_research_argv(no_mcp_allow, research_profile="OPEN_RESEARCH")
+    assert exc2.value.reason_code == "LIVE_EPISODE_MCP_ALLOW_MISSING"
 
 
 def test_closed_lab_and_canary_restrictions(native: Any) -> None:

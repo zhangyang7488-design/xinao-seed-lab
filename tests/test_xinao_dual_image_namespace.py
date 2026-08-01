@@ -129,7 +129,7 @@ def _fake_tool_inspect(
             "LANG=C.UTF-8",
             "XINAO_TOOL_EXEC_BWRAP=require",
             "XINAO_IPC_PEER_REQUIRE=1",
-            "XINAO_IPC_PEER_UIDS=",
+            "XINAO_IPC_PEER_UIDS=0",
             "XINAO_REPLAY_STATE_DIR=/ipc/.xinao-replay",
             "XINAO_TOOL_SIDECAR_EVIDENCE_DIR=/sidecar-evidence",
             "XINAO_TOOL_SIDECAR_EVENTS_PATH=/sidecar-evidence/tool_events.jsonl",
@@ -201,7 +201,7 @@ def _fake_transport_inspect(
         "Id": cid,
         "Image": image_id,
         "Config": {
-            "User": "",
+            "User": "0:0",
             "Image": image_id,
             "Entrypoint": list(entrypoint),
             "Cmd": list(cmd),
@@ -1873,7 +1873,7 @@ def test_transport_spec_injects_proxy_env_on_egress_network_only(
 
     offline = specs.transport_container_spec(**common, network="none")
     assert offline["network"] == "none"
-    for key in specs.PROVIDER_EGRESS_PROXY_ENV_KEYS:
+    for key in specs.PROVIDER_EGRESS_CONTROLLED_ENV_KEYS:
         assert key not in offline["env"]
     assert specs.validate_transport_spec_invariants(offline) == []
 
@@ -1881,8 +1881,10 @@ def test_transport_spec_injects_proxy_env_on_egress_network_only(
         **common, network=specs.DEFAULT_PROVIDER_EGRESS_NETWORK
     )
     assert live["network"] == specs.DEFAULT_PROVIDER_EGRESS_NETWORK
-    for key in specs.PROVIDER_EGRESS_PROXY_ENV_KEYS:
+    for key in specs.PROVIDER_EGRESS_PROXY_URL_ENV_KEYS:
         assert live["env"][key] == specs.DEFAULT_PROVIDER_EGRESS_PROXY_ENDPOINT
+    for key in specs.PROVIDER_EGRESS_CLEAR_ENV_KEYS:
+        assert live["env"][key] == ""
     assert specs.validate_transport_spec_invariants(live) == []
 
     # Create argv must materialize proxy env for docker create.
@@ -1893,7 +1895,7 @@ def test_transport_spec_injects_proxy_env_on_egress_network_only(
 
     stripped = dict(live)
     stripped_env = dict(live["env"])
-    for key in specs.PROVIDER_EGRESS_PROXY_ENV_KEYS:
+    for key in specs.PROVIDER_EGRESS_CONTROLLED_ENV_KEYS:
         stripped_env.pop(key, None)
     stripped["env"] = stripped_env
     violations = specs.validate_transport_spec_invariants(stripped)
@@ -1938,9 +1940,30 @@ def test_dual_bundle_live_network_propagates_proxy_env(specs: Any, tmp_path: Pat
     )
     assert bundle["transport_spec_violations"] == []
     transport = bundle["transport"]
-    for key in specs.PROVIDER_EGRESS_PROXY_ENV_KEYS:
+    for key in specs.PROVIDER_EGRESS_PROXY_URL_ENV_KEYS:
         assert transport["env"][key] == specs.DEFAULT_PROVIDER_EGRESS_PROXY_ENDPOINT
+    for key in specs.PROVIDER_EGRESS_CLEAR_ENV_KEYS:
+        assert transport["env"][key] == ""
     # Tool remains network=none and must never receive proxy routing env.
     tool_env = bundle["tool_executor"]["env"]
-    for key in specs.PROVIDER_EGRESS_PROXY_ENV_KEYS:
+    for key in specs.PROVIDER_EGRESS_CONTROLLED_ENV_KEYS:
         assert key not in tool_env
+
+
+def test_transport_spec_rejects_noncanonical_live_network(specs: Any, tmp_path: Path) -> None:
+    auth = tmp_path / "auth.json"
+    auth.write_text("{}", encoding="utf-8")
+    for name in ("in", "out", "ipc"):
+        (tmp_path / name).mkdir()
+    spec = specs.transport_container_spec(
+        image="sha256:" + "d" * 64,
+        name="xinao-transport-network-probe",
+        auth_host_path=str(auth),
+        input_host_path=str(tmp_path / "in"),
+        output_host_path=str(tmp_path / "out"),
+        ipc_host_dir=str(tmp_path / "ipc"),
+        network="caller-controlled-network",
+    )
+    violations = specs.validate_transport_spec_invariants(spec)
+    assert "provider_egress_network_unsupported:caller-controlled-network" in violations
+    assert not any(key in spec["env"] for key in specs.PROVIDER_EGRESS_CONTROLLED_ENV_KEYS)

@@ -160,6 +160,16 @@ BWRAP_BIN_ENV = "XINAO_TOOL_BWRAP_BIN"
 IPC_PEER_UID_ENV = "XINAO_IPC_PEER_UIDS"
 # Genuine dual-container profile: require=1 fail-closes when allowlist empty or peer mismatch.
 IPC_PEER_REQUIRE_ENV = "XINAO_IPC_PEER_REQUIRE"
+IPC_EXPECTED_TRANSPORT_UID = 0
+IPC_SOCKET_OWNER_ONLY_MODE = stat.S_IRUSR | stat.S_IWUSR
+IPC_SOCKET_PEER_GATED_MODE = (
+    stat.S_IRUSR
+    | stat.S_IWUSR
+    | stat.S_IRGRP
+    | stat.S_IWGRP
+    | stat.S_IROTH
+    | stat.S_IWOTH
+)
 # Durable (episode-scoped) replay markers live under IPC mount, never under lab RW.
 REPLAY_STATE_DIR_ENV = "XINAO_REPLAY_STATE_DIR"
 DEFAULT_REPLAY_STATE_BASENAME = ".xinao-replay"
@@ -738,22 +748,55 @@ def _peer_uids_allowed() -> set[int] | None:
     return allowed
 
 
-def assert_unix_peer_allowed(conn: socket.socket) -> None:
-    """SO_PEERCRED gate. Fail-closed when XINAO_IPC_PEER_REQUIRE=1 (genuine profile)."""
+def unix_socket_access_mode() -> int:
+    """Return the socket mode without ever widening an unpinned peer gate.
+
+    A cross-container Unix socket must be filesystem-reachable by a transport
+    running under a different uid. Linux SO_PEERCRED remains the authorization
+    boundary: the peer-visible mode is used only when a non-empty uid allowlist
+    is active. Standalone/dev mode without a peer gate stays owner-only.
+    """
     allowed = _peer_uids_allowed()
-    if allowed is None:
+    assert_required_peer_configuration(allowed)
+    return IPC_SOCKET_PEER_GATED_MODE if allowed else IPC_SOCKET_OWNER_ONLY_MODE
+
+
+def assert_required_peer_configuration(allowed: set[int] | None) -> None:
+    """Fail closed unless the genuine profile pins exactly the transport uid."""
+    if not peer_require_enabled():
         return
     if not allowed:
         raise ToolExecutorError(
             "IPC_PEER_CONFIG_REQUIRED",
             f"{IPC_PEER_UID_ENV} required when {IPC_PEER_REQUIRE_ENV}=1",
         )
+    if allowed != {IPC_EXPECTED_TRANSPORT_UID}:
+        raise ToolExecutorError(
+            "IPC_PEER_UID_CONFIG",
+            f"expected exactly uid={IPC_EXPECTED_TRANSPORT_UID}",
+        )
+
+
+def assert_unix_peer_allowed(conn: socket.socket) -> None:
+    """SO_PEERCRED gate. Fail-closed when XINAO_IPC_PEER_REQUIRE=1 (genuine profile)."""
+    allowed = _peer_uids_allowed()
+    assert_required_peer_configuration(allowed)
+    if allowed is None:
+        return
     # Linux SO_PEERCRED: struct ucred { pid_t pid; uid_t uid; gid_t gid; }
+    if not hasattr(socket, "SO_PEERCRED"):
+        raise ToolExecutorError(
+            "IPC_PEER_CRED_UNAVAILABLE",
+            "socket.SO_PEERCRED is unavailable; Linux peer credentials required",
+        )
     try:
-        SO_PEERCRED = getattr(socket, "SO_PEERCRED", 17)
-        creds = conn.getsockopt(socket.SOL_SOCKET, SO_PEERCRED, struct.calcsize("3i"))
+        creds = conn.getsockopt(
+            socket.SOL_SOCKET,
+            socket.SO_PEERCRED,
+            struct.calcsize("3i"),
+        )
         _pid, uid, _gid = struct.unpack("3i", creds)
-    except OSError as exc:
+    except (OSError, struct.error) as exc:
         raise ToolExecutorError("IPC_PEER_CRED_UNAVAILABLE", str(exc)) from exc
     if uid not in allowed:
         raise ToolExecutorError("IPC_PEER_UID_DENIED", f"uid={uid}")
@@ -1212,6 +1255,7 @@ def serve_unix(
     oneshot: bool = False,
     replay_state_dir: Path | None = None,
 ) -> int:
+    socket_mode = unix_socket_access_mode()
     if socket_path.exists():
         socket_path.unlink()
     server = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
@@ -1219,9 +1263,24 @@ def serve_unix(
     server.bind(str(socket_path))
     server.listen(8)
     try:
-        os.chmod(socket_path, stat.S_IRUSR | stat.S_IWUSR)
-    except OSError:
-        pass
+        os.chmod(socket_path, socket_mode)
+        observed = os.lstat(socket_path)
+        observed_mode = stat.S_IMODE(observed.st_mode)
+        if not stat.S_ISSOCK(observed.st_mode) or observed_mode != socket_mode:
+            raise ToolExecutorError(
+                "IPC_SOCKET_IDENTITY_FAILED",
+                f"is_socket={stat.S_ISSOCK(observed.st_mode)}:"
+                f"mode={oct(observed_mode)}:expected={oct(socket_mode)}",
+            )
+    except (OSError, ToolExecutorError) as exc:
+        server.close()
+        try:
+            socket_path.unlink()
+        except OSError:
+            pass
+        if isinstance(exc, ToolExecutorError):
+            raise
+        raise ToolExecutorError("IPC_SOCKET_PERMISSION_FAILED", str(exc)) from exc
     server.settimeout(60.0)
     state = replay_state_dir or resolve_replay_state_dir(socket_path=socket_path)
     replay_guard = RequestReplayGuard(state_dir=state)

@@ -877,7 +877,7 @@ def test_image_pin_source_is_resolved_and_immutable() -> None:
 
 def test_allowlist_source_is_exact_and_narrow() -> None:
     allow = json.loads((EGRESS_ROOT / "allowlist.v1.json").read_text(encoding="utf-8"))
-    assert allow.get("domains") == ["cli-chat-proxy.grok.com"]
+    assert allow.get("domains") == ["auth.x.ai", "cli-chat-proxy.grok.com"]
     assert allow.get("ports") == [443]
     assert allow.get("methods") == ["CONNECT"]
 

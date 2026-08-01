@@ -76,6 +76,7 @@ CANONICAL_MCP_EVENTS = "/output/mcp_events.jsonl"
 CANONICAL_TOOL_SIDECAR_EVENTS = "/sidecar-evidence/tool_events.jsonl"
 TOOL_SIDECAR_EVENTS_FILENAME = "tool_events.jsonl"
 CANONICAL_AGENT_PROFILE = "/grok-home/agents/genuine_scientist_mcp.md"
+EPISODE_LAB_MCP_ALLOW_RULE = "MCPTool(episode_lab__*)"
 PRODUCTIVE_LAB_OPS = frozenset({"write_file", "shell_exec"})
 # Tool-executor / MCP success vocabulary (only status==ok is a successful productive op).
 TOOL_STATUS_OK = "ok"
@@ -510,8 +511,10 @@ def build_genuine_session_argv(
             "genuine multi-turn episode requires max_turns >= 2 (canary uses 1)",
         )
     tools_csv = tools_allowlist_csv(profile)
-    # Headless MCP productivity: always-approve lab tools while host builtins stay denied.
-    # dontAsk alone auto-denies non-readonly MCP writes under 0.2.117.
+    # Headless MCP productivity: trust only the already-isolated episode cwd and
+    # explicitly allow its single attempt-local MCP server.  Grok 0.2.117 otherwise
+    # discovers the project-scoped server but refuses to start it for an untrusted
+    # folder; dontAsk also requires an explicit allow rule for MCP writes.
     effective_permission = permission_mode
     argv: list[str] = [
         grok_bin,
@@ -525,6 +528,9 @@ def build_genuine_session_argv(
         "--permission-mode",
         effective_permission,
         "--always-approve",
+        "--trust",
+        "--allow",
+        EPISODE_LAB_MCP_ALLOW_RULE,
         "--tools",
         tools_csv,
     ]
@@ -621,6 +627,21 @@ def assert_live_research_argv(
         raise NativeSessionError(
             "LIVE_ALWAYS_APPROVE_MISSING",
             "headless MCP productivity requires --always-approve",
+        )
+    if "--trust" not in joined:
+        raise NativeSessionError(
+            "LIVE_EPISODE_TRUST_MISSING",
+            "project-scoped episode_lab MCP requires exact episode cwd trust",
+        )
+    allow_rules = [
+        str(joined[index + 1])
+        for index, value in enumerate(joined[:-1])
+        if value == "--allow"
+    ]
+    if EPISODE_LAB_MCP_ALLOW_RULE not in allow_rules:
+        raise NativeSessionError(
+            "LIVE_EPISODE_MCP_ALLOW_MISSING",
+            EPISODE_LAB_MCP_ALLOW_RULE,
         )
     if web_enabled_for_profile(profile):
         if "--disable-web-search" in joined:
