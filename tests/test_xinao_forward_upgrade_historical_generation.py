@@ -1155,9 +1155,7 @@ def _sealed_current_dual_image_release(
     bundle_manifest = module._skill_bundle_manifest(source_rows, package_version=package_version)
     hashes = module._reference_hashes(SKILL_ROOT)
     if shadow_runtime_lock_payload is not None:
-        hashes["shadow_runtime_lock_sha256"] = module._sha256_bytes(
-            shadow_runtime_lock_payload
-        )
+        hashes["shadow_runtime_lock_sha256"] = module._sha256_bytes(shadow_runtime_lock_payload)
     shadow_lock = module._load_shadow_runtime_lock(SKILL_ROOT)
     shadow_rows = module._collect_shadow_runtime_rows(ROOT, shadow_lock)
     shadow_tree = (
@@ -1507,9 +1505,7 @@ def test_bootstrap_forward_upgrade_live_gen17_shadow_generation_to_current(
     """Real gen17 lock/tree identity reaches the versioned current target in tmp state."""
 
     module = _module()
-    world = _prepare_gen17_shadow_generation_forward_upgrade_world(
-        module, tmp_path, monkeypatch
-    )
+    world = _prepare_gen17_shadow_generation_forward_upgrade_world(module, tmp_path, monkeypatch)
     active = module._load_json(Path(world["active_path"]))
     module._validate_release_manifest(active, Path(world["active_path"]), verify_bundle=True)
     assert module._active_release_requires_forward_upgrade(active) is True
