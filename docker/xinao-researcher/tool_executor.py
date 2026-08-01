@@ -165,6 +165,11 @@ IPC_SOCKET_OWNER_ONLY_MODE = stat.S_IRUSR | stat.S_IWUSR
 IPC_SOCKET_PEER_GATED_MODE = (
     stat.S_IRUSR | stat.S_IWUSR | stat.S_IRGRP | stat.S_IWGRP | stat.S_IROTH | stat.S_IWOTH
 )
+# The tool owns /ipc and needs full access; the capless transport needs only
+# directory traversal to reach the 0666 socket.  Listing or writing /ipc stays
+# denied to the transport and every other uid.  SO_PEERCRED remains the socket
+# authorization boundary.
+IPC_DIRECTORY_PEER_GATED_MODE = stat.S_IRWXU | stat.S_IXGRP | stat.S_IXOTH
 # Durable (episode-scoped) replay markers live under IPC mount, never under lab RW.
 REPLAY_STATE_DIR_ENV = "XINAO_REPLAY_STATE_DIR"
 DEFAULT_REPLAY_STATE_BASENAME = ".xinao-replay"
@@ -772,6 +777,77 @@ def assert_required_peer_configuration(allowed: set[int] | None) -> None:
         )
 
 
+def prepare_peer_gated_socket_directory(socket_path: Path) -> dict[str, Any] | None:
+    """Heal and prove the shared directory for the genuine dual-container profile.
+
+    Named Docker volumes survive pair recreation, so the image's initial mode
+    is not sufficient.  A previous 0770 volume owned by the tool uid blocks the
+    capless uid-0 transport before SO_PEERCRED can run.  Only the exact required
+    uid-0 peer profile may widen traversal, and only on a directory still owned
+    by this tool process.
+    """
+    allowed = _peer_uids_allowed()
+    assert_required_peer_configuration(allowed)
+    if not peer_require_enabled():
+        return None
+
+    getuid = getattr(os, "getuid", None)
+    getgid = getattr(os, "getgid", None)
+    if not callable(getuid) or not callable(getgid):
+        raise ToolExecutorError(
+            "IPC_SOCKET_DIRECTORY_IDENTITY_FAILED",
+            "Unix uid/gid inspection unavailable",
+        )
+    expected_uid = int(getuid())
+    expected_gid = int(getgid())
+    parent = Path(socket_path).parent
+    try:
+        before = os.lstat(parent)
+        if not stat.S_ISDIR(before.st_mode):
+            raise ToolExecutorError(
+                "IPC_SOCKET_DIRECTORY_IDENTITY_FAILED",
+                f"not_directory:{parent}",
+            )
+        if before.st_uid != expected_uid or before.st_gid != expected_gid:
+            raise ToolExecutorError(
+                "IPC_SOCKET_DIRECTORY_IDENTITY_FAILED",
+                f"owner={before.st_uid}:{before.st_gid}:"
+                f"expected={expected_uid}:{expected_gid}",
+            )
+        os.chmod(parent, IPC_DIRECTORY_PEER_GATED_MODE)
+        after = os.lstat(parent)
+    except ToolExecutorError:
+        raise
+    except OSError as exc:
+        raise ToolExecutorError(
+            "IPC_SOCKET_DIRECTORY_PERMISSION_FAILED",
+            str(exc),
+        ) from exc
+
+    observed_mode = stat.S_IMODE(after.st_mode)
+    same_object = (before.st_dev, before.st_ino) == (after.st_dev, after.st_ino)
+    if (
+        not stat.S_ISDIR(after.st_mode)
+        or not same_object
+        or after.st_uid != expected_uid
+        or after.st_gid != expected_gid
+        or observed_mode != IPC_DIRECTORY_PEER_GATED_MODE
+    ):
+        raise ToolExecutorError(
+            "IPC_SOCKET_DIRECTORY_IDENTITY_FAILED",
+            f"is_directory={stat.S_ISDIR(after.st_mode)}:same_object={same_object}:"
+            f"owner={after.st_uid}:{after.st_gid}:mode={oct(observed_mode)}:"
+            f"expected_owner={expected_uid}:{expected_gid}:"
+            f"expected_mode={oct(IPC_DIRECTORY_PEER_GATED_MODE)}",
+        )
+    return {
+        "uid": after.st_uid,
+        "gid": after.st_gid,
+        "mode": observed_mode,
+        "is_directory": True,
+    }
+
+
 def assert_unix_peer_allowed(conn: socket.socket) -> None:
     """SO_PEERCRED gate. Fail-closed when XINAO_IPC_PEER_REQUIRE=1 (genuine profile)."""
     allowed = _peer_uids_allowed()
@@ -1251,6 +1327,7 @@ def serve_unix(
     replay_state_dir: Path | None = None,
 ) -> int:
     socket_mode = unix_socket_access_mode()
+    prepare_peer_gated_socket_directory(socket_path)
     if socket_path.exists():
         socket_path.unlink()
     server = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
