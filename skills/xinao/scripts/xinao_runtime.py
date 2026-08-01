@@ -3,6 +3,8 @@ from __future__ import annotations
 import argparse
 import datetime as dt
 import hashlib
+import importlib
+import importlib.util
 import json
 import math
 import os
@@ -15,13 +17,22 @@ import time
 import uuid
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Any, Callable, Iterator, Sequence
+from types import ModuleType
+from typing import Any, Callable, Iterator, Mapping, Sequence
+
+# Sealed skill-bundle / installed projection trees are exact inventories. Formal
+# consumers must not materialize __pycache__ under those roots. Fail-closed
+# inventory still rejects unauthorized .pyc if a bypassing importer pollutes.
+sys.dont_write_bytecode = True
+os.environ["PYTHONDONTWRITEBYTECODE"] = "1"
 
 SKILL_ROOT = Path(__file__).resolve().parents[1]
 REFERENCE_ROOT = SKILL_ROOT / "references"
 DEFAULT_STATE_ROOT = Path(r"D:\XINAO_RESEARCH_RUNTIME\state\xinao_skill")
 DEFAULT_RUN_ROOT = Path(r"D:\XINAO_RESEARCH_RUNTIME\runs\xinao_researcher")
-DEFAULT_AUTH_PATH = Path(r"C:\Users\xx363\.grok-bg-workers\auth.json")
+# Prefer resolve_auth_host_path() everywhere. This constant is the last-resort
+# path identity for one-shot research (never missing .grok-bg-workers pretend-ready).
+DEFAULT_AUTH_PATH = Path.home() / ".grok" / "auth.json"
 DEFAULT_INSTALLED_SKILL_ROOT = Path(r"C:\Users\xx363\.codex\skills\xinao")
 
 REGISTRY_PATH = REFERENCE_ROOT / "capabilities.v1.json"
@@ -127,6 +138,13 @@ EGRESS_REQUIRED_NEGATIVE_CASE_IDS: tuple[str, ...] = (
     "N17c",
     "N17d",
 )
+EGRESS_CANARY_TOOL_NAMESPACE_SECURITY_RELATIVE = Path("security") / "tool_namespace_separation"
+# Semantic alias used by tool-namespace security root and dual-image seal helpers.
+TOOL_NAMESPACE_SECURITY_RELATIVE = EGRESS_CANARY_TOOL_NAMESPACE_SECURITY_RELATIVE
+TOOL_NAMESPACE_DENY_PROOF_EXIT = 17
+TOOL_NAMESPACE_INFRA_EXEC_EXIT_CODES = frozenset({125, 126, 127})
+REQUESTED_MODEL = "grok-4.5"
+# Canary seal pin (distinct consumer name from ordinary REQUESTED_MODEL).
 EGRESS_CANARY_REQUESTED_MODEL = "grok-4.5"
 EGRESS_CANARY_OBSERVED_BACKEND_MODEL = "grok-4.5-build"
 EGRESS_CANARY_STOP_REASON = "EndTurn"
@@ -259,15 +277,107 @@ MAX_DONOR_BINARY_BYTES = 512 * 1024 * 1024
 MAX_PROVIDER_ID_BYTES = 4096
 DONOR_EXTRACT_NAME_PREFIX = "xinao-donor-extract-"
 DONOR_STAGING_DIR_PREFIX = ".donor-extract-"
+TOOL_BUILD_STAGING_DIR_PREFIX = ".tool-build-staging-"
 DONOR_BINARY_CONTEXT_RELATIVE = Path("donor-artifacts") / "grok"
 SHADOW_RUNTIME_CONTEXT_RELATIVE = Path("shadow-runtime")
 SHADOW_RUNTIME_LOCK_RELATIVE = Path("references") / "shadow-runtime-lock.v1.json"
 SHADOW_RUNTIME_LOCK_PATH = REFERENCE_ROOT / "shadow-runtime-lock.v1.json"
 SHADOW_RUNTIME_IMAGE_ROOT = "/opt/xinao-shadow"
+# Dual-profile researcher image modules staged under the owned Docker build context.
+# Paths are relative to docker/xinao-researcher/ and must match Dockerfile COPY sources.
+RESEARCHER_IMAGE_CONTEXT_RELATIVE = Path("docker") / "xinao-researcher"
+RESEARCHER_IMAGE_MODULE_INVENTORY: tuple[str, ...] = (
+    "entrypoint.py",
+    "episode_entrypoint.py",
+    "episode_boundary.py",
+    "episode_events.py",
+    "ipc_contract.py",
+    "transport_broker.py",
+    "episode_mcp_binding.py",
+    "mcp_episode_lab_server.py",
+    # Package-owned pure validator staged from xinao_discovery (exact same bytes).
+    "research_episode_candidate_manifest.py",
+    "empty-grok-profile/.gitkeep",
+    "grok-bwrap-unprivileged-wrapper.sh",
+    "episode-tool-shell-wrapper.sh",
+)
+# Canonical package path for the pure candidate-manifest validator (no hand-copied body).
+CANDIDATE_MANIFEST_VALIDATOR_PACKAGE_RELATIVE = (
+    Path("xinao_discovery") / "src" / "xinao" / "science" / "research_episode_candidate_manifest.py"
+)
+CANDIDATE_MANIFEST_VALIDATOR_IMAGE_RELATIVE = "research_episode_candidate_manifest.py"
+RESEARCHER_CANARY_ENTRYPOINT_IMAGE_PATH = "/opt/xinao-researcher/entrypoint.py"
+RESEARCHER_EPISODE_ENTRYPOINT_IMAGE_PATH = "/opt/xinao-researcher/episode_entrypoint.py"
+RESEARCHER_DEFAULT_PROFILE = "INSTRUMENT_CANARY"
+RESEARCHER_EPISODE_PROFILE = "GENUINE_SCIENTIST_EPISODE"
+RESEARCHER_MCP_TOOLS_ALLOWLIST = "search_tool,use_tool"
+# Tool-executor image cone (dual-container). Locked inventory; sealed into release identity.
+TOOL_EXECUTOR_DOCKERFILE_RELATIVE = RESEARCHER_IMAGE_CONTEXT_RELATIVE / "Dockerfile.tool-executor"
+TOOL_EXECUTOR_MODULE_INVENTORY: tuple[str, ...] = (
+    "ipc_contract.py",
+    "tool_executor.py",
+)
+# Host-consumed dual-episode modules sealed into skill-bundle (build copies source bytes).
+# Runtime resolves only from scripts/host_modules under the Skill tree / installed projection.
+HOST_MODULES_BUNDLE_RELATIVE = Path("scripts") / "host_modules"
+HOST_MODULE_INVENTORY: tuple[str, ...] = (
+    "docker_create_specs.py",
+    "native_grok_session.py",
+    "episode_mcp_binding.py",
+    "mcp_episode_lab_server.py",
+    "ipc_contract.py",
+    "episode_boundary.py",
+    "seccomp.bwrap.json",
+)
+TOOL_EXECUTOR_ENTRYPOINT = [
+    "python",
+    "-I",
+    "/opt/xinao-tool-executor/tool_executor.py",
+    "--lab-root",
+    "/episode-lab",
+    "--socket",
+    "/ipc/tool.sock",
+]
+TOOL_IMAGE_LABEL_KEYS = frozenset(
+    {
+        "org.opencontainers.image.title",
+        "io.xinao.researcher.role",
+        "io.xinao.researcher.dual-container",
+        "io.xinao.researcher.generic-worker-route",
+        "io.xinao.researcher.auth-mount",
+        "io.xinao.researcher.network-default",
+        "io.xinao.researcher.shell-isolation",
+        "io.xinao.tool.dockerfile.sha256",
+        "io.xinao.tool.modules.sha256",
+    }
+)
+TOOL_NAMESPACE_SECURITY_RELATIVE = Path("security") / "tool_namespace_separation"
+# Canary command markers that must never drift (max-turns 1, empty tools, no web).
+CANARY_FORBIDDEN_TOOL_TOKENS: tuple[str, ...] = (
+    "web_search",
+    "web_fetch",
+    "run_terminal_cmd",
+    "read_file",
+    "search_replace",
+    "browser",
+)
 SHADOW_EPISODE_CONTAINER_ROOT = "/episode"
 SHADOW_INPUT_CONTAINER_ROOT = "/input"
 SHADOW_CAPABILITY_ID = "shadow-lifecycle-leg-a"
-SHADOW_SKILL_VERBS = ("init", "inspect", "status", "freeze", "settle", "replay")
+SHADOW_SKILL_VERBS = (
+    "init",
+    "inspect",
+    "status",
+    "freeze",
+    "settle",
+    "replay",
+    "portfolio-init",
+    "portfolio-inspect",
+    "portfolio-freeze",
+    "portfolio-settle",
+    "portfolio-feedback",
+    "portfolio-replay",
+)
 SHADOW_FACET_CAPABILITY_IDS = (
     "shadow-account",
     "decision-freeze",
@@ -292,6 +402,10 @@ RELEASE_ID_PATTERN = re.compile(r"^researcher-[0-9]+\.[0-9]+\.[0-9]+-[0-9a-f]{16
 TXN_ID_PATTERN = re.compile(r"^xra_[0-9]{8}T[0-9]{6}_[0-9a-f]{16}$")
 SEMVER_PATTERN = re.compile(r"^[0-9]+\.[0-9]+\.[0-9]+$")
 HEX_SHA256_PATTERN = re.compile(r"^[0-9a-f]{64}$")
+# Aligned with bootstrap / Docker image Id format (current-generation only).
+DOCKER_IMAGE_ID_PATTERN = re.compile(r"^sha256:[0-9a-f]{64}$")
+# TOOL_NAMESPACE_DENY_PROOF_EXIT / TOOL_NAMESPACE_INFRA_EXEC_EXIT_CODES defined
+# earlier with tool-namespace security aliases (Owner fail-closed + wave46 host).
 
 RELEASE_SCHEMA = "xinao.researcher_release.v2"
 LEGACY_RELEASE_SCHEMA = "xinao.researcher_release.v1"
@@ -373,7 +487,7 @@ FORWARD_UPGRADE_FROM_KEYS = {
     "legacy_restore_tree_sha256",
     "installed_projection_receipt_sha256",
 }
-# Pre-shadow protocol-v2 (e.g. installed 1.2.0) sealed field sets. Historical manifests keep
+# Pre-shadow protocol-v2 (e.g. installed 1.1.x) sealed field sets. Historical manifests keep
 # these exact shapes; never rewrite them to pretend they had target shadow fields.
 PRE_SHADOW_SOURCE_IDENTITY_KEYS = frozenset(
     {
@@ -384,6 +498,34 @@ PRE_SHADOW_SOURCE_IDENTITY_KEYS = frozenset(
         "grok_donor_binary_sha256",
     }
 )
+# Pre-modules intermediate (live gen6 / researcher 1.2.x shadow-only era): shadow runtime
+# sealed, researcher image modules + tool executor not yet present. Distinct from both
+# pre_shadow (no shadow) and pre_tool_image (shadow+modules, no tool image).
+PRE_MODULES_SOURCE_IDENTITY_KEYS = frozenset(
+    {
+        "source_commit",
+        "source_tree",
+        "source_dirty",
+        "grok_donor_image_id",
+        "grok_donor_binary_sha256",
+        "shadow_runtime_tree_sha256",
+        "shadow_runtime_lock_sha256",
+    }
+)
+# Pre-tool-image generation (modules era): shadow+modules, transport image only.
+PRE_TOOL_IMAGE_SOURCE_IDENTITY_KEYS = frozenset(
+    {
+        "source_commit",
+        "source_tree",
+        "source_dirty",
+        "grok_donor_image_id",
+        "grok_donor_binary_sha256",
+        "shadow_runtime_tree_sha256",
+        "shadow_runtime_lock_sha256",
+        "researcher_image_modules_tree_sha256",
+    }
+)
+# Current dual-image generation: transport + sealed tool-executor digests.
 CURRENT_SOURCE_IDENTITY_KEYS = frozenset(
     {
         "source_commit",
@@ -393,6 +535,9 @@ CURRENT_SOURCE_IDENTITY_KEYS = frozenset(
         "grok_donor_binary_sha256",
         "shadow_runtime_tree_sha256",
         "shadow_runtime_lock_sha256",
+        "researcher_image_modules_tree_sha256",
+        "tool_executor_dockerfile_sha256",
+        "tool_executor_modules_tree_sha256",
     }
 )
 PRE_SHADOW_SKILL_HASH_KEYS = frozenset(
@@ -420,6 +565,8 @@ CURRENT_SKILL_HASH_KEYS = frozenset(
         "meta_sha256",
     }
 )
+# Shadow-era skill hashes (pre_modules and later): include sealed shadow-runtime lock pin.
+PRE_MODULES_SKILL_HASH_KEYS = CURRENT_SKILL_HASH_KEYS
 PRE_SHADOW_IMAGE_LABEL_KEYS = frozenset(
     {
         "io.xinao.researcher.chain",
@@ -435,6 +582,14 @@ PRE_SHADOW_IMAGE_LABEL_KEYS = frozenset(
         "io.xinao.researcher.entrypoint.sha256",
         "io.xinao.researcher.source-identity.sha256",
         "io.xinao.researcher.requested-model",
+    }
+)
+# Pre-modules labels: pre-shadow set + sealed shadow tree/lock, without modules/episode/mcp.
+PRE_MODULES_IMAGE_LABEL_KEYS = frozenset(
+    PRE_SHADOW_IMAGE_LABEL_KEYS
+    | {
+        "io.xinao.researcher.shadow-runtime.sha256",
+        "io.xinao.researcher.shadow-runtime-lock.sha256",
     }
 )
 CURRENT_IMAGE_LABEL_KEYS = frozenset(
@@ -453,7 +608,51 @@ CURRENT_IMAGE_LABEL_KEYS = frozenset(
         "io.xinao.researcher.source-identity.sha256",
         "io.xinao.researcher.shadow-runtime.sha256",
         "io.xinao.researcher.shadow-runtime-lock.sha256",
+        "io.xinao.researcher.image-modules.sha256",
         "io.xinao.researcher.requested-model",
+        "io.xinao.researcher.default-profile",
+        "io.xinao.researcher.episode-profile",
+        "io.xinao.researcher.episode-entrypoint",
+        "io.xinao.researcher.episode-network-policy",
+        "io.xinao.researcher.episode-tool-shell",
+        "io.xinao.researcher.mcp-server",
+        "io.xinao.researcher.mcp-tools-allowlist",
+    }
+)
+# Protocol-v2 release document top-level keys by generation.
+PRE_TOOL_IMAGE_RELEASE_KEYS = frozenset(
+    {
+        "schema_version",
+        "release_id",
+        "package_version",
+        "capability_id",
+        "capability_version",
+        "charter_version",
+        "runtime_version",
+        "release_identity_sha256",
+        "source_identity",
+        "skill_bundle_path",
+        "skill_bundle_manifest_path",
+        "skill_bundle_manifest_sha256",
+        "skill_bundle_tree_sha256",
+        "image_tag_observational",
+        "image_id",
+        "image_entrypoint",
+        "image_labels",
+        "skill_hashes",
+        "required_bootstrap_protocol",
+        "generic_worker_route_allowed",
+        "state_namespace",
+        "run_namespace",
+    }
+)
+CURRENT_RELEASE_KEYS = frozenset(
+    PRE_TOOL_IMAGE_RELEASE_KEYS
+    | {
+        "tool_image_id",
+        "tool_image_tag_observational",
+        "tool_image_entrypoint",
+        "tool_image_labels",
     }
 )
 SYNC_PROJECTION_FROM_KEYS = {
@@ -471,6 +670,7 @@ COMPANION_RUNTIME_RELATIVE = "scripts/xinao_runtime.py"
 HUMAN_VISIBLE_SKILL_PATHS = frozenset({"SKILL.md", "agents/openai.yaml"})
 SOURCE_BUNDLE_IGNORED_DIRECTORIES = {"__pycache__"}
 SOURCE_BUNDLE_IGNORED_SUFFIXES = {".pyc", ".pyo"}
+# Packaging ignores source-side caches only. Verified sealed trees never ignore them.
 BOOTSTRAP_FENCE_KEYS = {
     "schema_version",
     "state_root",
@@ -1072,7 +1272,24 @@ def _validate_bootstrap_fence_locked(
     return fence
 
 
-def _source_bundle_files(root: Path) -> list[tuple[str, Path, bytes]]:
+def _host_module_bundle_relatives() -> tuple[str, ...]:
+    return tuple((HOST_MODULES_BUNDLE_RELATIVE / name).as_posix() for name in HOST_MODULE_INVENTORY)
+
+
+def _require_host_modules_sealed_in_bundle_rows(
+    rows: Sequence[tuple[str, Path, bytes]],
+) -> None:
+    """Fail closed when a monorepo formal build omitted any sealed host module."""
+
+    present = {relative for relative, _path, _payload in rows}
+    missing = [relative for relative in _host_module_bundle_relatives() if relative not in present]
+    if missing:
+        raise XinaoError("HOST_MODULES_BUNDLE_INCOMPLETE", ",".join(missing))
+
+
+def _source_bundle_files(
+    root: Path, *, monorepo_source_root: Path | None = None
+) -> list[tuple[str, Path, bytes]]:
     root = Path(os.path.abspath(root))
     try:
         root_info = os.lstat(root)
@@ -1129,7 +1346,183 @@ def _source_bundle_files(root: Path) -> list[tuple[str, Path, bytes]]:
     normalized = [os.path.normcase(item[0]) for item in rows]
     if len(normalized) != len(set(normalized)):
         raise XinaoError("SKILL_BUNDLE_PATH_COLLISION", str(normalized))
+    # Seal host dual-episode modules into skill-bundle.
+    # Formal build_release always passes trusted monorepo_source_root (no parent guessing).
+    # Helper/authoring path may infer monorepo cone; installed projections already contain
+    # scripts/host_modules from a prior sealed build and do not re-walk monorepo parents.
+    trusted_root: Path | None
+    if monorepo_source_root is not None:
+        trusted_root = Path(os.path.abspath(monorepo_source_root))
+    else:
+        trusted_root = _infer_monorepo_source_root_for_skill(root)
+    if trusted_root is not None:
+        rows = _merge_source_bundle_with_host_modules(rows, trusted_root)
     return rows
+
+
+def _infer_monorepo_source_root_for_skill(skill_root: Path) -> Path | None:
+    """Return monorepo root when skill_root is skills/xinao beside docker/xinao-researcher.
+
+    Detection is layout-based (skills/xinao + docker cone directory). Inventory completeness
+    is enforced by ``_collect_packaged_host_module_rows`` (fail closed), not by probing one
+    optional file name and silently skipping the seal.
+    """
+    skill_root = Path(os.path.abspath(skill_root))
+    if skill_root.name != "xinao" or skill_root.parent.name != "skills":
+        return None
+    if len(skill_root.parents) < 2:
+        return None
+    candidate = skill_root.parents[1]
+    package_root = candidate / RESEARCHER_IMAGE_CONTEXT_RELATIVE
+    try:
+        info = os.lstat(package_root)
+    except OSError:
+        return None
+    if _is_reparse_stat(info) or not stat.S_ISDIR(info.st_mode):
+        return None
+    return Path(os.path.abspath(candidate))
+
+
+def _collect_packaged_host_module_rows(
+    source_root: Path,
+) -> list[tuple[str, Path, bytes]]:
+    """Copy host-needed docker/xinao-researcher modules into skill-bundle inventory."""
+    package_root = (Path(source_root) / RESEARCHER_IMAGE_CONTEXT_RELATIVE).resolve()
+    if not package_root.is_dir() or _is_reparse(package_root):
+        raise XinaoError("HOST_MODULES_SOURCE_MISSING", str(package_root))
+    rows: list[tuple[str, Path, bytes]] = []
+    for name in HOST_MODULE_INVENTORY:
+        if name.startswith("/") or "\\" in name or ".." in Path(name).parts:
+            raise XinaoError("HOST_MODULES_INVENTORY_INVALID", name)
+        path = package_root / name
+        if not path.is_file() or _is_reparse(path):
+            raise XinaoError("HOST_MODULES_SOURCE_MISSING", f"{name}:{path}")
+        payload = _regular_file_bytes(
+            path,
+            reason_code="HOST_MODULES_SOURCE_INVALID",
+            maximum=MAX_SKILL_BUNDLE_FILE_BYTES,
+        )
+        if name.endswith(".py"):
+            payload = _lf_materialize_bytes(payload)
+        relative = (HOST_MODULES_BUNDLE_RELATIVE / name).as_posix()
+        rows.append((relative, path, payload))
+    if [item[0] for item in rows] != list(_host_module_bundle_relatives()):
+        raise XinaoError("HOST_MODULES_INVENTORY_MISMATCH", str(package_root))
+    return rows
+
+
+def _merge_source_bundle_with_host_modules(
+    source_rows: Sequence[tuple[str, Path, bytes]],
+    source_root: Path,
+) -> list[tuple[str, Path, bytes]]:
+    host_rows = _collect_packaged_host_module_rows(source_root)
+    host_rels = {relative for relative, _path, _payload in host_rows}
+    base = [row for row in source_rows if row[0] not in host_rels]
+    merged = list(base) + list(host_rows)
+    merged.sort(key=lambda item: item[0])
+    normalized = [os.path.normcase(item[0]) for item in merged]
+    if len(normalized) != len(set(normalized)):
+        raise XinaoError("SKILL_BUNDLE_PATH_COLLISION", "host_modules")
+    return merged
+
+
+def resolve_packaged_host_modules_dir() -> Path:
+    """Resolve sealed host modules directory under the Skill tree (no monorepo walk)."""
+    packaged = Path(__file__).resolve().parent / HOST_MODULES_BUNDLE_RELATIVE.name
+    if (packaged / "docker_create_specs.py").is_file():
+        return packaged
+    # Authoring layout only: monorepo docker cone when SKILL.md co-located.
+    skill_md = Path(__file__).resolve().parents[1] / "SKILL.md"
+    monorepo = Path(__file__).resolve().parents[3] / RESEARCHER_IMAGE_CONTEXT_RELATIVE
+    if skill_md.is_file() and (monorepo / "docker_create_specs.py").is_file():
+        return monorepo
+    return packaged
+
+
+def resolve_auth_host_path(*, allow_synthetic_missing: bool | None = None) -> Path:
+    """Unified auth handle path resolution for one-shot / episode / ensure / attach.
+
+    Order: XINAO_AUTH_HOST_PATH -> GROK_HOME/auth.json -> ~/.grok/auth.json -> fail.
+    Only path/mount selection; never reads or copies secret bytes.
+    """
+    env_auth = os.environ.get("XINAO_AUTH_HOST_PATH", "").strip()
+    if env_auth:
+        path = Path(env_auth)
+    else:
+        grok_home = os.environ.get("GROK_HOME", "").strip()
+        if grok_home:
+            path = Path(grok_home) / "auth.json"
+        else:
+            path = Path.home() / ".grok" / "auth.json"
+    if allow_synthetic_missing is None:
+        allow_synthetic_missing = os.environ.get(
+            "XINAO_DUAL_CONTAINER_SYNTHETIC", ""
+        ).strip().lower() in {"1", "true", "yes", "on"}
+    if path.is_file():
+        return path
+    if allow_synthetic_missing:
+        return path
+    raise XinaoError(
+        "GROK_AUTH_HANDLE_MISSING",
+        f"auth handle missing: {path} (set XINAO_AUTH_HOST_PATH or provide ~/.grok/auth.json)",
+    )
+
+
+def _research_episode_no_successor_flags() -> dict[str, Any]:
+    """Shared no-successor / no-claim flags for ensure/retire/cancel pair consumers."""
+    return {
+        "next_task_created": False,
+        "leg_b_scheduled": False,
+        "successor_episode_created": False,
+        "daemon": False,
+        "temporal_leg_b": False,
+        "disposition_written": False,
+        "freeze_written": False,
+        "settlement_written": False,
+        "outcome_written": False,
+        "completion_claim_allowed": False,
+        "owner_adopted": False,
+        "science_restored": False,
+        "parent_complete": False,
+    }
+
+
+def _enforce_sealed_tree_bytecode_hygiene() -> None:
+    """Keep formal consumers from writing .pyc under authority skill trees."""
+
+    sys.dont_write_bytecode = True
+    os.environ["PYTHONDONTWRITEBYTECODE"] = "1"
+
+
+def _load_sealed_python_module(module_name: str, path: Path) -> Any:
+    """Load a co-located sealed .py without SourceFileLoader writing __pycache__."""
+
+    _enforce_sealed_tree_bytecode_hygiene()
+    lexical = Path(os.path.abspath(path))
+    if not lexical.is_file() or _is_reparse(lexical):
+        raise XinaoError("SEALED_MODULE_MISSING", str(lexical))
+    payload = _regular_file_bytes(
+        lexical,
+        reason_code="SEALED_MODULE_READ_FAILED",
+        maximum=MAX_SKILL_BUNDLE_FILE_BYTES,
+    )
+    try:
+        source = payload.decode("utf-8")
+    except UnicodeDecodeError as exc:
+        raise XinaoError("SEALED_MODULE_INVALID", str(lexical)) from exc
+    module = ModuleType(module_name)
+    module.__file__ = str(lexical)
+    module.__package__ = None
+    module.__cached__ = None
+    module.__loader__ = None
+    module.__spec__ = None
+    sys.modules[module_name] = module
+    try:
+        exec(compile(source, str(lexical), "exec"), module.__dict__)
+    except Exception:
+        sys.modules.pop(module_name, None)
+        raise
+    return module
 
 
 def _strict_plain_tree(root: Path, *, reason_code: str) -> tuple[dict[str, bytes], set[str]]:
@@ -1863,6 +2256,266 @@ def _remove_donor_staging_root(staging_root: Path | None) -> None:
     shutil.rmtree(resolved, ignore_errors=True)
 
 
+def _remove_tool_build_staging_root(staging_root: Path | None) -> None:
+    """Remove owned tool-executor build staging root only (exact prefix under capability)."""
+
+    if staging_root is None:
+        return
+    try:
+        if not staging_root.exists():
+            return
+    except OSError:
+        return
+    capability_root = _state_paths()["capability_root"]
+    try:
+        resolved = staging_root.resolve()
+        parent = resolved.parent
+        if parent != capability_root.resolve():
+            return
+        if not resolved.name.startswith(TOOL_BUILD_STAGING_DIR_PREFIX):
+            return
+    except OSError:
+        return
+    shutil.rmtree(resolved, ignore_errors=True)
+
+
+def _prepare_tool_executor_build_staging(
+    *,
+    tool_dockerfile_bytes: bytes,
+    tool_module_rows: list[tuple[str, Path, bytes]],
+) -> Path:
+    """Materialize LF-sealed tool Dockerfile + COPY modules into an owned build context.
+
+    Docker build must read only this staged context so Windows CRLF source bytes
+    cannot diverge from the sealed digests used for labels/identity.
+    """
+
+    capability_root = _state_paths()["capability_root"]
+    capability_root.mkdir(parents=True, exist_ok=True)
+    token = uuid.uuid4().hex
+    staging_root = capability_root / f"{TOOL_BUILD_STAGING_DIR_PREFIX}{token}"
+    if staging_root.exists():
+        raise XinaoError("TOOL_BUILD_STAGING_IDENTITY_COLLISION", str(staging_root))
+    staging_root.mkdir(parents=False, exist_ok=False)
+    try:
+        dockerfile_payload = _lf_materialize_bytes(tool_dockerfile_bytes)
+        if b"\r" in dockerfile_payload:
+            raise XinaoError(
+                "TOOL_EXECUTOR_DOCKERFILE_CRLF_FORBIDDEN",
+                "staged Dockerfile.tool-executor must be LF-only",
+            )
+        df_path = staging_root / "Dockerfile.tool-executor"
+        _write_bytes_atomic(df_path, dockerfile_payload, create_new=True)
+        modules_root = staging_root / RESEARCHER_IMAGE_CONTEXT_RELATIVE
+        modules_root.mkdir(parents=True, exist_ok=False)
+        for relative, _source, content in tool_module_rows:
+            if relative.startswith("/") or "\\" in relative or ".." in Path(relative).parts:
+                raise XinaoError("TOOL_EXECUTOR_MODULES_INVENTORY_INVALID", relative)
+            payload = bytes(content)
+            if relative.endswith((".py", ".sh", ".json", ".md", ".txt", ".toml")):
+                payload = _lf_materialize_bytes(payload)
+            if b"\r" in payload:
+                raise XinaoError("TOOL_EXECUTOR_MODULES_CRLF_FORBIDDEN", relative)
+            target = modules_root / relative
+            target.parent.mkdir(parents=True, exist_ok=True)
+            _write_bytes_atomic(target, payload, create_new=True)
+        return staging_root
+    except Exception:
+        _remove_tool_build_staging_root(staging_root)
+        raise
+
+
+def _verify_staged_tool_executor_build(
+    staging_root: Path,
+    *,
+    expected_dockerfile_sha256: str,
+    expected_modules_tree_sha256: str,
+    tool_module_rows: list[tuple[str, Path, bytes]],
+) -> None:
+    """Re-read staged tool build bytes and bind digests before docker build."""
+
+    if not staging_root.is_dir() or _is_reparse(staging_root):
+        raise XinaoError("TOOL_BUILD_STAGING_MISSING", str(staging_root))
+    df_path = staging_root / "Dockerfile.tool-executor"
+    if not df_path.is_file() or _is_reparse(df_path):
+        raise XinaoError("TOOL_BUILD_STAGING_MISSING", "Dockerfile.tool-executor")
+    df_payload = _regular_file_bytes(
+        df_path,
+        reason_code="TOOL_BUILD_STAGING_INVALID",
+        maximum=MAX_SKILL_BUNDLE_FILE_BYTES,
+    )
+    if b"\r" in df_payload:
+        raise XinaoError("TOOL_EXECUTOR_DOCKERFILE_CRLF_FORBIDDEN", "staged")
+    observed_df = _sha256_bytes(df_payload)
+    if observed_df != expected_dockerfile_sha256:
+        raise XinaoError(
+            "TOOL_BUILD_STAGING_DOCKERFILE_HASH_MISMATCH",
+            f"expected={expected_dockerfile_sha256} observed={observed_df}",
+        )
+    modules_root = staging_root / RESEARCHER_IMAGE_CONTEXT_RELATIVE
+    if not modules_root.is_dir() or _is_reparse(modules_root):
+        raise XinaoError("TOOL_BUILD_STAGING_MISSING", str(modules_root))
+    expected = [relative for relative, _path, _content in tool_module_rows]
+    if not expected:
+        raise XinaoError("TOOL_EXECUTOR_MODULES_INVENTORY_INVALID", "empty")
+    observed_rows: list[tuple[str, Path, bytes]] = []
+    for relative, _source, expected_content in tool_module_rows:
+        target = modules_root / relative
+        if not target.is_file() or _is_reparse(target):
+            raise XinaoError("TOOL_BUILD_STAGING_MISSING", relative)
+        try:
+            target.resolve().relative_to(modules_root.resolve())
+        except ValueError as exc:
+            raise XinaoError("TOOL_BUILD_STAGING_PATH_ESCAPE", relative) from exc
+        except OSError as exc:
+            raise XinaoError("TOOL_BUILD_STAGING_INVALID", f"{relative}: {exc}") from exc
+        payload = _regular_file_bytes(
+            target,
+            reason_code="TOOL_BUILD_STAGING_INVALID",
+            maximum=MAX_SKILL_BUNDLE_FILE_BYTES,
+        )
+        if b"\r" in payload:
+            raise XinaoError("TOOL_EXECUTOR_MODULES_CRLF_FORBIDDEN", relative)
+        if payload != expected_content:
+            raise XinaoError(
+                "TOOL_BUILD_STAGING_MODULE_DRIFT",
+                f"{relative}: staged bytes drifted from sealed LF materialization",
+            )
+        observed_rows.append((relative, target, payload))
+    if [item[0] for item in observed_rows] != expected:
+        raise XinaoError("TOOL_BUILD_STAGING_INVENTORY_MISMATCH", str(modules_root))
+    observed_tree = _tool_executor_modules_tree_sha256(observed_rows)
+    if observed_tree != expected_modules_tree_sha256:
+        raise XinaoError(
+            "TOOL_BUILD_STAGING_MODULES_HASH_MISMATCH",
+            f"expected={expected_modules_tree_sha256} observed={observed_tree}",
+        )
+
+
+def _parse_grok_cli_version(version_text: str | None) -> str | None:
+    """Extract x.y.z from `grok version` output (host-side seal helper)."""
+    if not version_text:
+        return None
+    match = re.search(r"\b(\d+\.\d+\.\d+)\b", str(version_text))
+    return match.group(1) if match else None
+
+
+def _require_lock_grok_cli_version(runtime_lock: dict[str, Any]) -> str:
+    """Return the lock-pinned Grok CLI version or fail closed."""
+    expected = runtime_lock.get("grok_cli_version")
+    if not isinstance(expected, str) or re.fullmatch(r"\d+\.\d+\.\d+", expected) is None:
+        raise XinaoError("RUNTIME_LOCK_GROK_CLI_VERSION_INVALID", _safe_text(expected))
+    return expected
+
+
+def _linux_elf_magic(path: Path) -> bool:
+    """True when path begins with Linux ELF magic (donor CLI is Linux-only)."""
+
+    try:
+        with path.open("rb") as handle:
+            return handle.read(4) == b"\x7fELF"
+    except OSError:
+        return False
+
+
+def _probe_grok_binary_version_via_docker_mount(
+    binary_path: Path, *, docker_image_id: str
+) -> subprocess.CompletedProcess[str]:
+    """Run staged Linux ELF ``grok version`` by mounting exact bytes into Docker.
+
+    Used on Windows hosts that cannot natively exec the donor ELF. The image id is only
+    the execution kernel; entrypoint is the staged binary path so tag retargeting cannot
+    substitute a different ``/usr/local/bin/grok``.
+    """
+
+    if re.fullmatch(r"sha256:[0-9a-f]{64}", docker_image_id) is None:
+        raise XinaoError("GROK_DONOR_IMAGE_IDENTITY_INVALID", docker_image_id)
+    binary_path = Path(os.path.abspath(binary_path))
+    if not binary_path.is_file() or _is_reparse(binary_path):
+        raise XinaoError("DONOR_BINARY_INVALID", str(binary_path))
+    parent = binary_path.parent
+    name = binary_path.name
+    if name != "grok" and "/" in name.replace("\\", "/"):
+        raise XinaoError("DONOR_BINARY_INVALID", str(binary_path))
+    docker = _docker()
+    # Mount only the parent directory that owns the staged binary (exact host bytes).
+    mount_spec = f"{parent}:/xinao-donor-probe:ro"
+    return _run(
+        [
+            docker,
+            "run",
+            "--rm",
+            "--network",
+            "none",
+            "-v",
+            mount_spec,
+            "--entrypoint",
+            f"/xinao-donor-probe/{name}",
+            docker_image_id,
+            "version",
+        ],
+        timeout=120,
+    )
+
+
+def _probe_grok_binary_version_text(
+    binary_path: Path, *, docker_exec_image_id: str | None = None
+) -> str:
+    """Execute staged/built grok binary `version` without auth/network assumptions.
+
+    Prefer native exec (Linux hosts). On PROCESS_START_FAILED for a Linux ELF (Windows
+    host building Linux researcher images), fall back to Docker-mount probe of the same
+    staged bytes using the lock-pinned donor image id as the execution kernel only.
+    """
+    binary_path = Path(binary_path)
+    try:
+        completed = _run([str(binary_path), "version"], timeout=60)
+    except XinaoError as exc:
+        if exc.reason_code != "PROCESS_START_FAILED":
+            raise
+        if not _linux_elf_magic(binary_path):
+            raise
+        if (
+            docker_exec_image_id is None
+            or re.fullmatch(r"sha256:[0-9a-f]{64}", docker_exec_image_id) is None
+        ):
+            raise XinaoError(
+                "GROK_CLI_VERSION_PROBE_HOST_INCOMPATIBLE",
+                (
+                    f"linux ELF cannot exec on this host and no docker image id for "
+                    f"staged-byte probe: {binary_path}"
+                ),
+            ) from exc
+        completed = _probe_grok_binary_version_via_docker_mount(
+            binary_path, docker_image_id=docker_exec_image_id
+        )
+    combined = f"{completed.stdout or ''}{completed.stderr or ''}".strip()
+    if not combined:
+        raise XinaoError("GROK_CLI_VERSION_PROBE_EMPTY", str(binary_path))
+    return combined.splitlines()[0].strip()[:200]
+
+
+def _require_staged_grok_cli_version(
+    binary_path: Path,
+    *,
+    expected_version: str,
+    docker_exec_image_id: str | None = None,
+) -> str:
+    """Fail closed unless staged binary reports exact lock equality."""
+    if re.fullmatch(r"\d+\.\d+\.\d+", expected_version) is None:
+        raise XinaoError("RUNTIME_LOCK_GROK_CLI_VERSION_INVALID", expected_version)
+    version_text = _probe_grok_binary_version_text(
+        binary_path, docker_exec_image_id=docker_exec_image_id
+    )
+    parsed = _parse_grok_cli_version(version_text)
+    if parsed != expected_version:
+        raise XinaoError(
+            "GROK_CLI_VERSION_MISMATCH",
+            f"required={expected_version} observed={version_text!r}",
+        )
+    return parsed
+
+
 def _prepare_donor_binary_staging(
     docker: str,
     *,
@@ -2038,6 +2691,65 @@ def _shadow_runtime_tree_sha256(rows: list[tuple[str, Path, bytes]]) -> str:
     return _sha256_bytes(_canonical_bytes(payload))
 
 
+def _assert_skill_hashes_shadow_lock_cross_bound(
+    expected_hashes: Mapping[str, Any], shadow_lock: str
+) -> None:
+    """Require skill_hashes.shadow_runtime_lock_sha256 == SI/label shadow lock.
+
+    skill_hashes already bind the sealed lock-file bytes under the skill-bundle.
+    Without this cross-check a format-valid SI/label lock can desync from those bytes.
+    """
+
+    if expected_hashes.get("shadow_runtime_lock_sha256") != shadow_lock:
+        raise XinaoError("RELEASE_SHADOW_RUNTIME_LOCK_INVALID", "skill_hashes_cross_check")
+
+
+def _verify_shadow_runtime_tree_from_source_bundle(
+    bundle_root: Path,
+    expected_tree: str,
+    *,
+    verify_bundle: bool,
+) -> None:
+    """Recompute shadow tree from package source rows when the sealed lock matches.
+
+    When ``verify_bundle`` is true and the skill-bundle lock bytes equal the migration
+    source skill lock, recompute the tree from the same inventory rows ``build_release``
+    uses and require equality with SI/label ``shadow_runtime_tree_sha256``. This rejects
+    forged arbitrary trees on current-lock seals (Wave91 A1b) without forcing evolved
+    ambient package bytes onto historical gen6 seals whose lock no longer matches.
+
+    When the migration source cone is absent or the lock generation differs, tree byte
+    recompute is skipped; skill_hashes lock cross-bind and label equality still apply.
+    """
+
+    if not verify_bundle:
+        return
+    if not isinstance(expected_tree, str) or HEX_SHA256_PATTERN.fullmatch(expected_tree) is None:
+        raise XinaoError("RELEASE_SHADOW_RUNTIME_TREE_INVALID", _safe_text(expected_tree))
+    bundle_lock_path = bundle_root / SHADOW_RUNTIME_LOCK_RELATIVE
+    if not bundle_lock_path.is_file() or _is_reparse(bundle_lock_path):
+        raise XinaoError("RELEASE_SHADOW_RUNTIME_TREE_INVALID", "bundle_lock_missing")
+    try:
+        source_root = _migration_source_root()
+    except XinaoError:
+        # Offline / no full source cone: cannot independently recompute package rows.
+        return
+    source_lock_path = source_root / "skills" / "xinao" / SHADOW_RUNTIME_LOCK_RELATIVE
+    if not source_lock_path.is_file() or _is_reparse(source_lock_path):
+        return
+    if _sha256(bundle_lock_path) != _sha256(source_lock_path):
+        # Historical sealed lock generation; package under ambient cone may have evolved.
+        return
+    lock = _load_shadow_runtime_lock(bundle_root)
+    rows = _collect_shadow_runtime_rows(source_root, lock)
+    observed = _shadow_runtime_tree_sha256(rows)
+    if observed != expected_tree:
+        raise XinaoError(
+            "RELEASE_SHADOW_RUNTIME_TREE_INVALID",
+            f"tree_cross_check:expected={expected_tree} observed={observed}",
+        )
+
+
 def _stage_shadow_runtime(build_context: Path, rows: list[tuple[str, Path, bytes]]) -> Path:
     """Materialize the locked shadow runtime cone into the owned Docker build context.
 
@@ -2123,6 +2835,295 @@ def _shadow_record(registry: dict[str, Any]) -> dict[str, Any]:
     if len(matches) != 1:
         raise XinaoError("SHADOW_CAPABILITY_IDENTITY_INVALID", SHADOW_CAPABILITY_ID)
     return matches[0]
+
+
+def _lf_materialize_bytes(payload: bytes) -> bytes:
+    """Materialize LF-only bytes for Linux image/shell assets.
+
+    Windows worktrees may store CRLF while Git status is clean; the owned Docker
+    build context must carry reproducible LF content rather than one dirty worktree's
+    physical bytes.
+    """
+
+    return payload.replace(b"\r\n", b"\n").replace(b"\r", b"\n")
+
+
+def _assert_canary_entrypoint_invariants(payload: bytes) -> None:
+    """Fail closed if INSTRUMENT_CANARY one-shot/tool-free/no-web markers drift."""
+
+    if b"\r" in payload:
+        raise XinaoError("CANARY_ENTRYPOINT_CRLF_FORBIDDEN", "entrypoint must be LF-only")
+    text = payload.decode("utf-8")
+    if "GENUINE_SCIENTIST_EPISODE" in text or "episode_entrypoint" in text:
+        raise XinaoError(
+            "CANARY_ENTRYPOINT_PROFILE_DRIFT",
+            "default entrypoint must not embed episode profile routing",
+        )
+    if "--max-turns" not in text:
+        raise XinaoError("CANARY_MAX_TURNS_MARKER_MISSING", "--max-turns")
+    # Empty tools string and single-turn budget remain literal in command assembly.
+    if '"--max-turns", "1"' not in text and "'--max-turns', '1'" not in text:
+        # Tolerate split-list forms that still pin turn budget to one.
+        if not re.search(r"""["']--max-turns["']\s*,\s*["']1["']""", text):
+            raise XinaoError("CANARY_MAX_TURNS_DRIFT", "max-turns must remain 1")
+    if '"--tools", ""' not in text and "'--tools', ''" not in text:
+        if not re.search(r"""["']--tools["']\s*,\s*["']{2}""", text):
+            raise XinaoError("CANARY_TOOLS_DRIFT", "tools must remain empty string")
+    if "--disable-web-search" not in text:
+        raise XinaoError("CANARY_WEB_DRIFT", "must keep --disable-web-search")
+    # Reject enabling web/search tools; allow the disable flag only.
+    if re.search(r"""["']--tools["']\s*,\s*["'][^"']*web_search""", text):
+        raise XinaoError("CANARY_WEB_DRIFT", "web_search must not appear in --tools")
+    if re.search(r"""["']--enable-web-search["']""", text):
+        raise XinaoError("CANARY_WEB_DRIFT", "enable-web-search forbidden")
+    for token in CANARY_FORBIDDEN_TOOL_TOKENS:
+        # Require token as a standalone tools-list element, not a disable flag substring.
+        if re.search(rf"""["']{re.escape(token)}["']""", text):
+            raise XinaoError("CANARY_UNINTENDED_TOOL_TOKEN", token)
+
+
+def _collect_researcher_image_module_rows(
+    source_root: Path,
+) -> list[tuple[str, Path, bytes]]:
+    """Collect dual-profile image modules with LF materialization for shell/text assets."""
+
+    package_root = (source_root / RESEARCHER_IMAGE_CONTEXT_RELATIVE).resolve()
+    if not package_root.is_dir():
+        raise XinaoError("RESEARCHER_IMAGE_MODULES_SOURCE_MISSING", str(package_root))
+    rows: list[tuple[str, Path, bytes]] = []
+    for relative in RESEARCHER_IMAGE_MODULE_INVENTORY:
+        if relative.startswith("/") or "\\" in relative or ".." in Path(relative).parts:
+            raise XinaoError("RESEARCHER_IMAGE_MODULES_INVENTORY_INVALID", relative)
+        # Pure candidate-manifest validator: stage exact package-owned source bytes.
+        if relative == CANDIDATE_MANIFEST_VALIDATOR_IMAGE_RELATIVE:
+            path = (source_root / CANDIDATE_MANIFEST_VALIDATOR_PACKAGE_RELATIVE).resolve()
+        else:
+            path = package_root / relative
+        if not path.is_file() or _is_reparse(path):
+            raise XinaoError("RESEARCHER_IMAGE_MODULES_SOURCE_MISSING", relative)
+        payload = _regular_file_bytes(
+            path,
+            reason_code="RESEARCHER_IMAGE_MODULES_SOURCE_INVALID",
+            maximum=MAX_SKILL_BUNDLE_FILE_BYTES,
+        )
+        if relative.endswith(
+            (".py", ".sh", ".json", ".md", ".txt", ".toml", ".keep")
+        ) or relative.endswith(".gitkeep"):
+            payload = _lf_materialize_bytes(payload)
+        if relative == "entrypoint.py":
+            _assert_canary_entrypoint_invariants(payload)
+        if relative.endswith(".sh"):
+            if b"\r" in payload:
+                raise XinaoError("RESEARCHER_SHELL_CRLF_FORBIDDEN", relative)
+            if not payload.startswith(b"#!/bin/sh\n") and not payload.startswith(b"#!/usr/bin/env"):
+                raise XinaoError("RESEARCHER_SHELL_SHEBANG_INVALID", relative)
+        rows.append((relative, path, payload))
+    if [item[0] for item in rows] != list(RESEARCHER_IMAGE_MODULE_INVENTORY):
+        raise XinaoError("RESEARCHER_IMAGE_MODULES_INVENTORY_MISMATCH", str(package_root))
+    return rows
+
+
+def _researcher_image_modules_tree_sha256(rows: list[tuple[str, Path, bytes]]) -> str:
+    payload = [
+        {"relative_path": relative, "sha256": _sha256_bytes(content)}
+        for relative, _path, content in rows
+    ]
+    return _sha256_bytes(_canonical_bytes(payload))
+
+
+def _collect_tool_executor_module_rows(
+    source_root: Path,
+) -> list[tuple[str, Path, bytes]]:
+    """Collect tool-executor modules with LF materialization for sealed identity."""
+
+    package_root = (source_root / RESEARCHER_IMAGE_CONTEXT_RELATIVE).resolve()
+    if not package_root.is_dir():
+        raise XinaoError("TOOL_EXECUTOR_MODULES_SOURCE_MISSING", str(package_root))
+    rows: list[tuple[str, Path, bytes]] = []
+    for relative in TOOL_EXECUTOR_MODULE_INVENTORY:
+        if relative.startswith("/") or "\\" in relative or ".." in Path(relative).parts:
+            raise XinaoError("TOOL_EXECUTOR_MODULES_INVENTORY_INVALID", relative)
+        path = package_root / relative
+        if not path.is_file() or _is_reparse(path):
+            raise XinaoError("TOOL_EXECUTOR_MODULES_SOURCE_MISSING", relative)
+        payload = _regular_file_bytes(
+            path,
+            reason_code="TOOL_EXECUTOR_MODULES_SOURCE_INVALID",
+            maximum=MAX_SKILL_BUNDLE_FILE_BYTES,
+        )
+        if relative.endswith((".py", ".sh", ".json", ".md", ".txt", ".toml")):
+            payload = _lf_materialize_bytes(payload)
+        rows.append((relative, path, payload))
+    if [item[0] for item in rows] != list(TOOL_EXECUTOR_MODULE_INVENTORY):
+        raise XinaoError("TOOL_EXECUTOR_MODULES_INVENTORY_MISMATCH", str(package_root))
+    return rows
+
+
+def _tool_executor_modules_tree_sha256(rows: list[tuple[str, Path, bytes]]) -> str:
+    inventory = [
+        {"relative_path": relative, "sha256": _sha256_bytes(payload), "size": len(payload)}
+        for relative, _path, payload in rows
+    ]
+    return _sha256_bytes(_canonical_bytes({"files": inventory}))
+
+
+def _tool_executor_expected_labels(
+    *, dockerfile_sha256: str, modules_tree_sha256: str
+) -> dict[str, str]:
+    return {
+        "org.opencontainers.image.title": (
+            "XINAO researcher tool executor (dual-container fallback)"
+        ),
+        "io.xinao.researcher.role": "tool_executor",
+        "io.xinao.researcher.dual-container": "true",
+        "io.xinao.researcher.generic-worker-route": "forbidden",
+        "io.xinao.researcher.auth-mount": "forbidden",
+        "io.xinao.researcher.network-default": "none",
+        "io.xinao.researcher.shell-isolation": "bubblewrap-require",
+        "io.xinao.tool.dockerfile.sha256": dockerfile_sha256,
+        "io.xinao.tool.modules.sha256": modules_tree_sha256,
+    }
+
+
+def _stage_researcher_image_modules(
+    build_context: Path, rows: list[tuple[str, Path, bytes]]
+) -> Path:
+    """Materialize dual-profile modules into the owned Docker build context.
+
+    The researcher Dockerfile COPYs ``docker/xinao-researcher/*`` from the minimal
+    staging context (not the full repository root). Omitting episode/MCP/shell
+    modules fails at ``COPY`` with ``not found``. Entrypoint may already exist from
+    donor staging; staged bytes must match canary identity.
+    """
+
+    destination_root = build_context / RESEARCHER_IMAGE_CONTEXT_RELATIVE
+    destination_root.mkdir(parents=True, exist_ok=True)
+    for relative, _source, content in rows:
+        target = destination_root / relative
+        target.parent.mkdir(parents=True, exist_ok=True)
+        if target.exists():
+            existing = _regular_file_bytes(
+                target,
+                reason_code="RESEARCHER_IMAGE_MODULES_STAGING_INVALID",
+                maximum=MAX_SKILL_BUNDLE_FILE_BYTES,
+            )
+            if existing != content:
+                raise XinaoError(
+                    "RESEARCHER_IMAGE_MODULES_STAGING_DRIFT",
+                    f"{relative}: pre-staged bytes differ from locked materialization",
+                )
+            continue
+        _write_bytes_atomic(target, content, create_new=True)
+    return destination_root
+
+
+def _verify_staged_researcher_image_modules(
+    build_context: Path,
+    rows: list[tuple[str, Path, bytes]],
+    *,
+    expected_tree_sha256: str,
+) -> None:
+    """Re-read staged dual-profile modules and bind them to the sealed tree hash."""
+
+    destination_root = build_context / RESEARCHER_IMAGE_CONTEXT_RELATIVE
+    if not destination_root.is_dir() or _is_reparse(destination_root):
+        raise XinaoError("RESEARCHER_IMAGE_MODULES_STAGING_MISSING", str(destination_root))
+    expected = [relative for relative, _path, _content in rows]
+    if not expected:
+        raise XinaoError("RESEARCHER_IMAGE_MODULES_INVENTORY_INVALID", "empty")
+    observed_rows: list[tuple[str, Path, bytes]] = []
+    for relative, _source, expected_content in rows:
+        target = destination_root / relative
+        if not target.is_file() or _is_reparse(target):
+            raise XinaoError("RESEARCHER_IMAGE_MODULES_STAGING_MISSING", relative)
+        try:
+            target.resolve().relative_to(destination_root.resolve())
+        except ValueError as exc:
+            raise XinaoError("RESEARCHER_IMAGE_MODULES_STAGING_PATH_ESCAPE", relative) from exc
+        except OSError as exc:
+            raise XinaoError(
+                "RESEARCHER_IMAGE_MODULES_STAGING_INVALID", f"{relative}: {exc}"
+            ) from exc
+        payload = _regular_file_bytes(
+            target,
+            reason_code="RESEARCHER_IMAGE_MODULES_STAGING_INVALID",
+            maximum=MAX_SKILL_BUNDLE_FILE_BYTES,
+        )
+        if payload != expected_content:
+            raise XinaoError(
+                "RESEARCHER_IMAGE_MODULES_STAGING_DRIFT",
+                f"{relative}: staged bytes drifted from locked inventory materialization",
+            )
+        observed_rows.append((relative, target, payload))
+    if [item[0] for item in observed_rows] != expected:
+        raise XinaoError(
+            "RESEARCHER_IMAGE_MODULES_STAGING_INVENTORY_MISMATCH", str(destination_root)
+        )
+    extras: list[str] = []
+    for path in sorted(destination_root.rglob("*")):
+        if not path.is_file() or _is_reparse(path):
+            continue
+        relative = path.relative_to(destination_root).as_posix()
+        if relative not in expected:
+            extras.append(relative)
+    if extras:
+        raise XinaoError("RESEARCHER_IMAGE_MODULES_STAGING_EXTRA_FILES", ",".join(extras[:8]))
+    observed_tree = _researcher_image_modules_tree_sha256(observed_rows)
+    if observed_tree != expected_tree_sha256:
+        raise XinaoError(
+            "RESEARCHER_IMAGE_MODULES_STAGING_HASH_MISMATCH",
+            f"expected={expected_tree_sha256} observed={observed_tree}",
+        )
+    # Explicit dual-profile surface checks the host consumer will re-assert on image labels.
+    canary = destination_root / "entrypoint.py"
+    episode = destination_root / "episode_entrypoint.py"
+    if not canary.is_file() or not episode.is_file():
+        raise XinaoError(
+            "RESEARCHER_IMAGE_MODULES_STAGING_MISSING",
+            "entrypoint.py+episode_entrypoint.py required for dual profile",
+        )
+    _assert_canary_entrypoint_invariants(canary.read_bytes())
+
+
+def _dual_profile_image_labels(
+    *,
+    researcher_image_modules_tree_sha256: str,
+) -> dict[str, str]:
+    """Static dual-profile labels sealed into release expected_labels / image inspect."""
+
+    if HEX_SHA256_PATTERN.fullmatch(researcher_image_modules_tree_sha256) is None:
+        raise XinaoError(
+            "RESEARCHER_IMAGE_MODULES_TREE_INVALID", researcher_image_modules_tree_sha256
+        )
+    return {
+        "io.xinao.researcher.image-modules.sha256": researcher_image_modules_tree_sha256,
+        "io.xinao.researcher.default-profile": RESEARCHER_DEFAULT_PROFILE,
+        "io.xinao.researcher.episode-profile": RESEARCHER_EPISODE_PROFILE,
+        "io.xinao.researcher.episode-entrypoint": RESEARCHER_EPISODE_ENTRYPOINT_IMAGE_PATH,
+        "io.xinao.researcher.episode-network-policy": "DENY_ALL_FAIL_CLOSED",
+        "io.xinao.researcher.episode-tool-shell": "/usr/libexec/xinao/episode-tool-shell-wrapper",
+        "io.xinao.researcher.mcp-server": "/opt/xinao-researcher/mcp_episode_lab_server.py",
+        "io.xinao.researcher.mcp-tools-allowlist": RESEARCHER_MCP_TOOLS_ALLOWLIST,
+    }
+
+
+def _inspect_dual_profile_image_labels(labels: Mapping[str, Any] | dict[str, Any]) -> None:
+    """Host-consumer inspect of dual-profile labels on a live or release image."""
+
+    required = _dual_profile_image_labels(
+        researcher_image_modules_tree_sha256=str(
+            labels.get("io.xinao.researcher.image-modules.sha256", "")
+        )
+    )
+    for key, value in required.items():
+        if labels.get(key) != value:
+            raise XinaoError("IMAGE_DUAL_PROFILE_LABEL_MISMATCH", key)
+    entrypoint_label = labels.get("io.xinao.researcher.entrypoint.sha256")
+    if (
+        not isinstance(entrypoint_label, str)
+        or HEX_SHA256_PATTERN.fullmatch(entrypoint_label) is None
+    ):
+        raise XinaoError("IMAGE_DUAL_PROFILE_LABEL_MISMATCH", "entrypoint.sha256")
 
 
 def _validate_shadow_registry(registry: dict[str, Any]) -> dict[str, Any]:
@@ -2270,6 +3271,7 @@ def _release_identity_payload(
 
     When ``include_shadow_runtime`` is None, detect from source_identity keys. Historical
     pre-shadow manifests must not recompute with synthetic null shadow fields.
+    Dual-image fields participate only when present on the sealed generation.
     """
 
     source_identity = manifest.get("source_identity") or {}
@@ -2301,6 +3303,24 @@ def _release_identity_payload(
     if include_shadow_runtime:
         payload["shadow_runtime_tree_sha256"] = source_identity.get("shadow_runtime_tree_sha256")
         payload["shadow_runtime_lock_sha256"] = source_identity.get("shadow_runtime_lock_sha256")
+        # Dual-profile modules tree is shadow-generation and later (absent on pre-shadow).
+        if "researcher_image_modules_tree_sha256" in source_identity:
+            payload["researcher_image_modules_tree_sha256"] = source_identity.get(
+                "researcher_image_modules_tree_sha256"
+            )
+        if "tool_executor_dockerfile_sha256" in source_identity:
+            payload["tool_executor_dockerfile_sha256"] = source_identity.get(
+                "tool_executor_dockerfile_sha256"
+            )
+        if "tool_executor_modules_tree_sha256" in source_identity:
+            payload["tool_executor_modules_tree_sha256"] = source_identity.get(
+                "tool_executor_modules_tree_sha256"
+            )
+    # Dual-image identity binds only when the sealed generation carries tool fields.
+    if "tool_image_id" in manifest:
+        payload["tool_image_id"] = manifest.get("tool_image_id")
+        payload["tool_image_entrypoint"] = manifest.get("tool_image_entrypoint")
+        payload["tool_image_labels"] = manifest.get("tool_image_labels")
     return payload
 
 
@@ -2310,6 +3330,10 @@ def _source_identity_generation(source_identity: object) -> str:
     keys = set(source_identity)
     if keys == CURRENT_SOURCE_IDENTITY_KEYS:
         return "current"
+    if keys == PRE_TOOL_IMAGE_SOURCE_IDENTITY_KEYS:
+        return "pre_tool_image"
+    if keys == PRE_MODULES_SOURCE_IDENTITY_KEYS:
+        return "pre_modules"
     if keys == PRE_SHADOW_SOURCE_IDENTITY_KEYS:
         return "pre_shadow"
     raise XinaoError("RELEASE_SOURCE_IDENTITY_INVALID", ",".join(sorted(keys)))
@@ -2318,31 +3342,8 @@ def _source_identity_generation(source_identity: object) -> str:
 def _validate_release_manifest(
     manifest: dict[str, Any], manifest_path: Path, *, verify_bundle: bool = True
 ) -> dict[str, Any]:
-    expected_keys = {
-        "schema_version",
-        "release_id",
-        "package_version",
-        "capability_id",
-        "capability_version",
-        "charter_version",
-        "runtime_version",
-        "release_identity_sha256",
-        "source_identity",
-        "skill_bundle_path",
-        "skill_bundle_manifest_path",
-        "skill_bundle_manifest_sha256",
-        "skill_bundle_tree_sha256",
-        "image_tag_observational",
-        "image_id",
-        "image_entrypoint",
-        "image_labels",
-        "skill_hashes",
-        "required_bootstrap_protocol",
-        "generic_worker_route_allowed",
-        "state_namespace",
-        "run_namespace",
-    }
-    if set(manifest) != expected_keys or manifest.get("schema_version") != RELEASE_SCHEMA:
+    """Validate exact-current dual-image protocol-v2 release (transport + tool executor)."""
+    if set(manifest) != CURRENT_RELEASE_KEYS or manifest.get("schema_version") != RELEASE_SCHEMA:
         raise XinaoError("RELEASE_SCHEMA_INVALID", str(manifest_path))
     package_version = str(manifest.get("package_version", ""))
     capability_version = str(manifest.get("capability_version", ""))
@@ -2384,10 +3385,19 @@ def _validate_release_manifest(
         raise XinaoError("RELEASE_DONOR_BINARY_IDENTITY_MISSING", _safe_text(donor_binary_sha256))
     shadow_tree = source_identity.get("shadow_runtime_tree_sha256")
     shadow_lock = source_identity.get("shadow_runtime_lock_sha256")
+    modules_tree = source_identity.get("researcher_image_modules_tree_sha256")
+    tool_df = source_identity.get("tool_executor_dockerfile_sha256")
+    tool_mod = source_identity.get("tool_executor_modules_tree_sha256")
     if not isinstance(shadow_tree, str) or HEX_SHA256_PATTERN.fullmatch(shadow_tree) is None:
         raise XinaoError("RELEASE_SHADOW_RUNTIME_TREE_INVALID", _safe_text(shadow_tree))
     if not isinstance(shadow_lock, str) or HEX_SHA256_PATTERN.fullmatch(shadow_lock) is None:
         raise XinaoError("RELEASE_SHADOW_RUNTIME_LOCK_INVALID", _safe_text(shadow_lock))
+    if not isinstance(modules_tree, str) or HEX_SHA256_PATTERN.fullmatch(modules_tree) is None:
+        raise XinaoError("RELEASE_RESEARCHER_IMAGE_MODULES_TREE_INVALID", _safe_text(modules_tree))
+    if not isinstance(tool_df, str) or HEX_SHA256_PATTERN.fullmatch(tool_df) is None:
+        raise XinaoError("RELEASE_TOOL_DOCKERFILE_IDENTITY_INVALID", _safe_text(tool_df))
+    if not isinstance(tool_mod, str) or HEX_SHA256_PATTERN.fullmatch(tool_mod) is None:
+        raise XinaoError("RELEASE_TOOL_MODULES_IDENTITY_INVALID", _safe_text(tool_mod))
     if (
         manifest.get("required_bootstrap_protocol") != REQUIRED_BOOTSTRAP_PROTOCOL
         or manifest.get("generic_worker_route_allowed") is not False
@@ -2396,13 +3406,42 @@ def _validate_release_manifest(
     labels = manifest.get("image_labels")
     if (
         not isinstance(manifest.get("image_id"), str)
-        or not str(manifest["image_id"]).startswith("sha256:")
+        or DOCKER_IMAGE_ID_PATTERN.fullmatch(str(manifest["image_id"])) is None
         or not isinstance(labels, dict)
         or set(labels) != CURRENT_IMAGE_LABEL_KEYS
         or manifest.get("image_entrypoint")
-        != ["python", "-I", "/opt/xinao-researcher/entrypoint.py"]
+        != ["python", "-I", RESEARCHER_CANARY_ENTRYPOINT_IMAGE_PATH]
     ):
         raise XinaoError("RELEASE_IMAGE_IDENTITY_INVALID", str(manifest_path))
+    tool_labels = manifest.get("tool_image_labels")
+    tool_image_id = manifest.get("tool_image_id")
+    tool_tag = manifest.get("tool_image_tag_observational")
+    if (
+        not isinstance(tool_image_id, str)
+        or DOCKER_IMAGE_ID_PATTERN.fullmatch(tool_image_id) is None
+        or not isinstance(tool_tag, str)
+        or not tool_tag
+        or len(tool_tag) > 256
+        or manifest.get("tool_image_entrypoint") != TOOL_EXECUTOR_ENTRYPOINT
+        or not isinstance(tool_labels, dict)
+        or set(tool_labels) != TOOL_IMAGE_LABEL_KEYS
+    ):
+        raise XinaoError("RELEASE_TOOL_IMAGE_IDENTITY_INVALID", str(manifest_path))
+    expected_tool_labels = {
+        "org.opencontainers.image.title": (
+            "XINAO researcher tool executor (dual-container fallback)"
+        ),
+        "io.xinao.researcher.role": "tool_executor",
+        "io.xinao.researcher.dual-container": "true",
+        "io.xinao.researcher.generic-worker-route": "forbidden",
+        "io.xinao.researcher.auth-mount": "forbidden",
+        "io.xinao.researcher.network-default": "none",
+        "io.xinao.researcher.shell-isolation": "bubblewrap-require",
+        "io.xinao.tool.dockerfile.sha256": tool_df,
+        "io.xinao.tool.modules.sha256": tool_mod,
+    }
+    if tool_labels != expected_tool_labels:
+        raise XinaoError("RELEASE_TOOL_IMAGE_IDENTITY_INVALID", "tool_image_labels")
     for value in (manifest.get("state_namespace"), manifest.get("run_namespace")):
         normalized = str(value).lower().replace("-", "_")
         if any(token in normalized for token in FORBIDDEN_RUNTIME_TOKENS):
@@ -2443,6 +3482,47 @@ def _validate_release_manifest(
         or expected_hashes != _reference_hashes(bundle_root)
     ):
         raise XinaoError("RELEASE_SKILL_HASHES_MISMATCH", str(manifest_path))
+    # Exact-current integrity: full expected_labels equality + lock/tree cross-binds
+    # (same strength as pre_modules; Wave91 A1c/A1d/A1e).
+    source_identity_sha256 = _sha256_bytes(_canonical_bytes(source_identity))
+    expected_labels = {
+        "io.xinao.researcher.chain": "dedicated-xinao-science",
+        "io.xinao.researcher.generic-worker-route": "forbidden",
+        "io.xinao.researcher.grok-donor-image-id": donor_id,
+        "io.xinao.researcher.grok-donor-binary.sha256": donor_binary_sha256,
+        "io.xinao.researcher.charter.sha256": expected_hashes["charter_sha256"],
+        "io.xinao.researcher.output-schema.sha256": expected_hashes["output_schema_sha256"],
+        "io.xinao.researcher.material-bundle-schema.sha256": expected_hashes[
+            "material_bundle_schema_sha256"
+        ],
+        "io.xinao.researcher.runtime-lock.sha256": expected_hashes["runtime_lock_sha256"],
+        "io.xinao.researcher.skill-invoker.sha256": expected_hashes["skill_invoker_sha256"],
+        "io.xinao.researcher.dockerfile.sha256": labels.get(
+            "io.xinao.researcher.dockerfile.sha256"
+        ),
+        "io.xinao.researcher.entrypoint.sha256": labels.get(
+            "io.xinao.researcher.entrypoint.sha256"
+        ),
+        "io.xinao.researcher.source-identity.sha256": source_identity_sha256,
+        "io.xinao.researcher.shadow-runtime.sha256": shadow_tree,
+        "io.xinao.researcher.shadow-runtime-lock.sha256": shadow_lock,
+        "io.xinao.researcher.requested-model": REQUESTED_MODEL,
+        **_dual_profile_image_labels(researcher_image_modules_tree_sha256=modules_tree),
+    }
+    if labels != expected_labels:
+        raise XinaoError("RELEASE_IMAGE_IDENTITY_INVALID", "image_labels")
+    _assert_skill_hashes_shadow_lock_cross_bound(expected_hashes, shadow_lock)
+    _verify_shadow_runtime_tree_from_source_bundle(
+        bundle_root, shadow_tree, verify_bundle=verify_bundle
+    )
+    for key in (
+        "io.xinao.researcher.dockerfile.sha256",
+        "io.xinao.researcher.entrypoint.sha256",
+        "io.xinao.researcher.shadow-runtime.sha256",
+        "io.xinao.researcher.shadow-runtime-lock.sha256",
+    ):
+        if HEX_SHA256_PATTERN.fullmatch(str(labels.get(key, ""))) is None:
+            raise XinaoError("RELEASE_IMAGE_IDENTITY_INVALID", key)
     return bundle_manifest
 
 
@@ -2482,39 +3562,32 @@ def _validate_sealed_protocol_v2_release(
 ) -> dict[str, Any]:
     """Validate an installed protocol-v2 release under the schema generation it actually has.
 
-    Ordinary activate/inspect keep using ``_validate_release_manifest`` (exact current).
-    Forward-upgrade preflight seals historical pre-shadow releases without rewriting them.
+    Ordinary activate/inspect keep using ``_validate_release_manifest`` (exact current dual-image).
+    Forward-upgrade preflight seals historical pre-shadow, pre_modules, and pre-tool-image
+    releases without rewriting them or weakening current validation.
     """
 
-    expected_keys = {
-        "schema_version",
-        "release_id",
-        "package_version",
-        "capability_id",
-        "capability_version",
-        "charter_version",
-        "runtime_version",
-        "release_identity_sha256",
-        "source_identity",
-        "skill_bundle_path",
-        "skill_bundle_manifest_path",
-        "skill_bundle_manifest_sha256",
-        "skill_bundle_tree_sha256",
-        "image_tag_observational",
-        "image_id",
-        "image_entrypoint",
-        "image_labels",
-        "skill_hashes",
-        "required_bootstrap_protocol",
-        "generic_worker_route_allowed",
-        "state_namespace",
-        "run_namespace",
-    }
-    if set(manifest) != expected_keys or manifest.get("schema_version") != RELEASE_SCHEMA:
+    keys = set(manifest)
+    if manifest.get("schema_version") != RELEASE_SCHEMA:
+        raise XinaoError("RELEASE_SCHEMA_INVALID", str(manifest_path))
+    if keys == CURRENT_RELEASE_KEYS:
+        generation = _source_identity_generation(manifest.get("source_identity"))
+        if generation != "current":
+            raise XinaoError("RELEASE_SOURCE_IDENTITY_INVALID", generation)
+        return _validate_release_manifest(manifest, manifest_path, verify_bundle=verify_bundle)
+    if keys != PRE_TOOL_IMAGE_RELEASE_KEYS:
         raise XinaoError("RELEASE_SCHEMA_INVALID", str(manifest_path))
     generation = _source_identity_generation(manifest.get("source_identity"))
     if generation == "current":
-        return _validate_release_manifest(manifest, manifest_path, verify_bundle=verify_bundle)
+        raise XinaoError(
+            "RELEASE_SOURCE_IDENTITY_INVALID", "current keys without tool image fields"
+        )
+    if generation == "pre_tool_image":
+        return _validate_pre_tool_image_release(
+            manifest, manifest_path, verify_bundle=verify_bundle
+        )
+    if generation == "pre_modules":
+        return _validate_pre_modules_release(manifest, manifest_path, verify_bundle=verify_bundle)
     # pre_shadow generation
     source_identity = manifest["source_identity"]
     assert isinstance(source_identity, dict)
@@ -2638,6 +3711,320 @@ def _validate_sealed_protocol_v2_release(
     return bundle_manifest
 
 
+def _validate_pre_modules_release(
+    manifest: dict[str, Any],
+    manifest_path: Path,
+    *,
+    verify_bundle: bool = True,
+) -> dict[str, Any]:
+    """Historical shadow-only transport release (no modules, no tool image).
+
+    Matches the live intermediate generation (e.g. researcher-1.2.1-a8be2b624f891038)
+    where shadow runtime is sealed but researcher image modules and tool executor
+    digests are absent. Readable for previous_verified / upgrade preflight and
+    terminal FORWARD_UPGRADE journal revalidation. Must never be treated as
+    exact-current dual-image generation.
+    """
+
+    source_identity = manifest.get("source_identity")
+    if (
+        not isinstance(source_identity, dict)
+        or set(source_identity) != PRE_MODULES_SOURCE_IDENTITY_KEYS
+    ):
+        raise XinaoError("RELEASE_SOURCE_IDENTITY_INVALID", str(manifest_path))
+    package_version = str(manifest.get("package_version", ""))
+    capability_version = str(manifest.get("capability_version", ""))
+    charter_version = str(manifest.get("charter_version", ""))
+    runtime_version = str(manifest.get("runtime_version", ""))
+    if SEMVER_PATTERN.fullmatch(package_version) is None:
+        raise XinaoError("SKILL_VERSION_INVALID", package_version)
+    if (
+        SEMVER_PATTERN.fullmatch(capability_version) is None
+        or capability_version != charter_version
+        or capability_version != runtime_version
+    ):
+        raise XinaoError(
+            "RESEARCHER_VERSION_IDENTITY_MISMATCH",
+            f"capability={capability_version} charter={charter_version} runtime={runtime_version}",
+        )
+    if manifest.get("capability_id") != "researcher-container":
+        raise XinaoError("RELEASE_CAPABILITY_IDENTITY_INVALID", str(manifest.get("capability_id")))
+    if type(source_identity.get("source_dirty")) is not bool:
+        raise XinaoError("RELEASE_SOURCE_IDENTITY_INVALID", "source_dirty")
+    if re.fullmatch(r"[0-9a-f]{40,64}", str(source_identity.get("source_commit", ""))) is None:
+        raise XinaoError("RELEASE_SOURCE_IDENTITY_INVALID", "source_commit")
+    if re.fullmatch(r"[0-9a-f]{40,64}", str(source_identity.get("source_tree", ""))) is None:
+        raise XinaoError("RELEASE_SOURCE_IDENTITY_INVALID", "source_tree")
+    donor_id = source_identity.get("grok_donor_image_id")
+    if not isinstance(donor_id, str) or not donor_id.startswith("sha256:") or len(donor_id) != 71:
+        raise XinaoError("RELEASE_DONOR_IDENTITY_MISSING", _safe_text(donor_id))
+    donor_binary_sha256 = source_identity.get("grok_donor_binary_sha256")
+    if (
+        not isinstance(donor_binary_sha256, str)
+        or HEX_SHA256_PATTERN.fullmatch(donor_binary_sha256) is None
+    ):
+        raise XinaoError("RELEASE_DONOR_BINARY_IDENTITY_MISSING", _safe_text(donor_binary_sha256))
+    shadow_tree = source_identity.get("shadow_runtime_tree_sha256")
+    shadow_lock = source_identity.get("shadow_runtime_lock_sha256")
+    if not isinstance(shadow_tree, str) or HEX_SHA256_PATTERN.fullmatch(shadow_tree) is None:
+        raise XinaoError("RELEASE_SHADOW_RUNTIME_TREE_INVALID", _safe_text(shadow_tree))
+    if not isinstance(shadow_lock, str) or HEX_SHA256_PATTERN.fullmatch(shadow_lock) is None:
+        raise XinaoError("RELEASE_SHADOW_RUNTIME_LOCK_INVALID", _safe_text(shadow_lock))
+    if (
+        manifest.get("required_bootstrap_protocol") != REQUIRED_BOOTSTRAP_PROTOCOL
+        or manifest.get("generic_worker_route_allowed") is not False
+    ):
+        raise XinaoError("RELEASE_CHAIN_CLASS_INVALID", str(manifest_path))
+    labels = manifest.get("image_labels")
+    if (
+        not isinstance(manifest.get("image_id"), str)
+        or not str(manifest["image_id"]).startswith("sha256:")
+        or not isinstance(labels, dict)
+        or set(labels) != PRE_MODULES_IMAGE_LABEL_KEYS
+        or manifest.get("image_entrypoint")
+        != ["python", "-I", RESEARCHER_CANARY_ENTRYPOINT_IMAGE_PATH]
+    ):
+        raise XinaoError("RELEASE_IMAGE_IDENTITY_INVALID", str(manifest_path))
+    for value in (manifest.get("state_namespace"), manifest.get("run_namespace")):
+        normalized = str(value).lower().replace("-", "_")
+        if any(token in normalized for token in FORBIDDEN_RUNTIME_TOKENS):
+            raise XinaoError("CROSS_CHAIN_NAMESPACE_FORBIDDEN", str(value))
+    identity_sha256 = _sha256_bytes(
+        _canonical_bytes(_release_identity_payload(manifest, include_shadow_runtime=True))
+    )
+    if manifest.get("release_identity_sha256") != identity_sha256:
+        raise XinaoError("RELEASE_IDENTITY_MISMATCH", str(manifest_path))
+    expected_release_id = f"researcher-{capability_version}-{identity_sha256[:16]}"
+    if manifest.get("release_id") != expected_release_id:
+        raise XinaoError("RELEASE_IDENTITY_INVALID", str(manifest.get("release_id")))
+    paths = _state_paths()
+    expected_manifest_path = paths["release_root"] / expected_release_id / "release.json"
+    if not _paths_equal(manifest_path, expected_manifest_path):
+        raise XinaoError("RELEASE_MANIFEST_PATH_INVALID", str(manifest_path))
+    release_dir = manifest_path.parent
+    bundle_root = Path(str(manifest.get("skill_bundle_path", "")))
+    bundle_manifest_path = Path(str(manifest.get("skill_bundle_manifest_path", "")))
+    if not _paths_equal(bundle_root, release_dir / "skill-bundle"):
+        raise XinaoError("SKILL_BUNDLE_PATH_INVALID", str(bundle_root))
+    if not _paths_equal(bundle_manifest_path, release_dir / "skill-bundle.manifest.json"):
+        raise XinaoError("SKILL_BUNDLE_MANIFEST_PATH_INVALID", str(bundle_manifest_path))
+    bundle_manifest = _load_json(bundle_manifest_path)
+    if _sha256(bundle_manifest_path) != manifest.get("skill_bundle_manifest_sha256"):
+        raise XinaoError("SKILL_BUNDLE_MANIFEST_IDENTITY_MISMATCH", str(bundle_manifest_path))
+    _validate_bundle_manifest_shape(bundle_manifest)
+    if bundle_manifest.get("package_version") != package_version or bundle_manifest.get(
+        "tree_sha256"
+    ) != manifest.get("skill_bundle_tree_sha256"):
+        raise XinaoError("SKILL_BUNDLE_TREE_IDENTITY_MISMATCH", str(bundle_manifest_path))
+    if verify_bundle:
+        _verify_skill_bundle(bundle_root, bundle_manifest)
+    expected_hashes = manifest.get("skill_hashes")
+    if (
+        not isinstance(expected_hashes, dict)
+        or set(expected_hashes) != PRE_MODULES_SKILL_HASH_KEYS
+        or expected_hashes != _reference_hashes_for_keys(bundle_root, PRE_MODULES_SKILL_HASH_KEYS)
+    ):
+        raise XinaoError("RELEASE_SKILL_HASHES_MISMATCH", str(manifest_path))
+    source_identity_sha256 = _sha256_bytes(_canonical_bytes(source_identity))
+    expected_labels = {
+        "io.xinao.researcher.chain": "dedicated-xinao-science",
+        "io.xinao.researcher.generic-worker-route": "forbidden",
+        "io.xinao.researcher.grok-donor-image-id": donor_id,
+        "io.xinao.researcher.grok-donor-binary.sha256": donor_binary_sha256,
+        "io.xinao.researcher.charter.sha256": expected_hashes["charter_sha256"],
+        "io.xinao.researcher.output-schema.sha256": expected_hashes["output_schema_sha256"],
+        "io.xinao.researcher.material-bundle-schema.sha256": expected_hashes[
+            "material_bundle_schema_sha256"
+        ],
+        "io.xinao.researcher.runtime-lock.sha256": expected_hashes["runtime_lock_sha256"],
+        "io.xinao.researcher.skill-invoker.sha256": expected_hashes["skill_invoker_sha256"],
+        "io.xinao.researcher.dockerfile.sha256": labels.get(
+            "io.xinao.researcher.dockerfile.sha256"
+        ),
+        "io.xinao.researcher.entrypoint.sha256": labels.get(
+            "io.xinao.researcher.entrypoint.sha256"
+        ),
+        "io.xinao.researcher.source-identity.sha256": source_identity_sha256,
+        "io.xinao.researcher.shadow-runtime.sha256": shadow_tree,
+        "io.xinao.researcher.shadow-runtime-lock.sha256": shadow_lock,
+        "io.xinao.researcher.requested-model": REQUESTED_MODEL,
+    }
+    if labels != expected_labels:
+        raise XinaoError("RELEASE_IMAGE_IDENTITY_INVALID", "image_labels")
+    # skill_hashes.shadow_runtime_lock_sha256 must equal SI lock (labels already bind SI).
+    _assert_skill_hashes_shadow_lock_cross_bound(expected_hashes, shadow_lock)
+    # When sealed lock matches migration source lock, recompute tree from package rows.
+    _verify_shadow_runtime_tree_from_source_bundle(
+        bundle_root, shadow_tree, verify_bundle=verify_bundle
+    )
+    for key in (
+        "io.xinao.researcher.dockerfile.sha256",
+        "io.xinao.researcher.entrypoint.sha256",
+        "io.xinao.researcher.shadow-runtime.sha256",
+        "io.xinao.researcher.shadow-runtime-lock.sha256",
+    ):
+        if HEX_SHA256_PATTERN.fullmatch(str(labels.get(key, ""))) is None:
+            raise XinaoError("RELEASE_IMAGE_IDENTITY_INVALID", key)
+    return bundle_manifest
+
+
+def _validate_pre_tool_image_release(
+    manifest: dict[str, Any],
+    manifest_path: Path,
+    *,
+    verify_bundle: bool = True,
+) -> dict[str, Any]:
+    """Historical shadow+modules transport-only release (no sealed tool image).
+
+    Kept readable for previous_verified / upgrade preflight. Must never be treated as
+    exact-current dual-image generation.
+    """
+
+    source_identity = manifest.get("source_identity")
+    if (
+        not isinstance(source_identity, dict)
+        or set(source_identity) != PRE_TOOL_IMAGE_SOURCE_IDENTITY_KEYS
+    ):
+        raise XinaoError("RELEASE_SOURCE_IDENTITY_INVALID", str(manifest_path))
+    package_version = str(manifest.get("package_version", ""))
+    capability_version = str(manifest.get("capability_version", ""))
+    charter_version = str(manifest.get("charter_version", ""))
+    runtime_version = str(manifest.get("runtime_version", ""))
+    if SEMVER_PATTERN.fullmatch(package_version) is None:
+        raise XinaoError("SKILL_VERSION_INVALID", package_version)
+    if (
+        SEMVER_PATTERN.fullmatch(capability_version) is None
+        or capability_version != charter_version
+        or capability_version != runtime_version
+    ):
+        raise XinaoError(
+            "RESEARCHER_VERSION_IDENTITY_MISMATCH",
+            f"capability={capability_version} charter={charter_version} runtime={runtime_version}",
+        )
+    if manifest.get("capability_id") != "researcher-container":
+        raise XinaoError("RELEASE_CAPABILITY_IDENTITY_INVALID", str(manifest.get("capability_id")))
+    if type(source_identity.get("source_dirty")) is not bool:
+        raise XinaoError("RELEASE_SOURCE_IDENTITY_INVALID", "source_dirty")
+    if re.fullmatch(r"[0-9a-f]{40,64}", str(source_identity.get("source_commit", ""))) is None:
+        raise XinaoError("RELEASE_SOURCE_IDENTITY_INVALID", "source_commit")
+    if re.fullmatch(r"[0-9a-f]{40,64}", str(source_identity.get("source_tree", ""))) is None:
+        raise XinaoError("RELEASE_SOURCE_IDENTITY_INVALID", "source_tree")
+    donor_id = source_identity.get("grok_donor_image_id")
+    if not isinstance(donor_id, str) or not donor_id.startswith("sha256:") or len(donor_id) != 71:
+        raise XinaoError("RELEASE_DONOR_IDENTITY_MISSING", _safe_text(donor_id))
+    donor_binary_sha256 = source_identity.get("grok_donor_binary_sha256")
+    if (
+        not isinstance(donor_binary_sha256, str)
+        or HEX_SHA256_PATTERN.fullmatch(donor_binary_sha256) is None
+    ):
+        raise XinaoError("RELEASE_DONOR_BINARY_IDENTITY_MISSING", _safe_text(donor_binary_sha256))
+    shadow_tree = source_identity.get("shadow_runtime_tree_sha256")
+    shadow_lock = source_identity.get("shadow_runtime_lock_sha256")
+    modules_tree = source_identity.get("researcher_image_modules_tree_sha256")
+    if not isinstance(shadow_tree, str) or HEX_SHA256_PATTERN.fullmatch(shadow_tree) is None:
+        raise XinaoError("RELEASE_SHADOW_RUNTIME_TREE_INVALID", _safe_text(shadow_tree))
+    if not isinstance(shadow_lock, str) or HEX_SHA256_PATTERN.fullmatch(shadow_lock) is None:
+        raise XinaoError("RELEASE_SHADOW_RUNTIME_LOCK_INVALID", _safe_text(shadow_lock))
+    if not isinstance(modules_tree, str) or HEX_SHA256_PATTERN.fullmatch(modules_tree) is None:
+        raise XinaoError("RELEASE_RESEARCHER_IMAGE_MODULES_TREE_INVALID", _safe_text(modules_tree))
+    if (
+        manifest.get("required_bootstrap_protocol") != REQUIRED_BOOTSTRAP_PROTOCOL
+        or manifest.get("generic_worker_route_allowed") is not False
+    ):
+        raise XinaoError("RELEASE_CHAIN_CLASS_INVALID", str(manifest_path))
+    labels = manifest.get("image_labels")
+    if (
+        not isinstance(manifest.get("image_id"), str)
+        or not str(manifest["image_id"]).startswith("sha256:")
+        or not isinstance(labels, dict)
+        or set(labels) != CURRENT_IMAGE_LABEL_KEYS
+        or manifest.get("image_entrypoint")
+        != ["python", "-I", RESEARCHER_CANARY_ENTRYPOINT_IMAGE_PATH]
+    ):
+        raise XinaoError("RELEASE_IMAGE_IDENTITY_INVALID", str(manifest_path))
+    for value in (manifest.get("state_namespace"), manifest.get("run_namespace")):
+        normalized = str(value).lower().replace("-", "_")
+        if any(token in normalized for token in FORBIDDEN_RUNTIME_TOKENS):
+            raise XinaoError("CROSS_CHAIN_NAMESPACE_FORBIDDEN", str(value))
+    identity_sha256 = _sha256_bytes(
+        _canonical_bytes(_release_identity_payload(manifest, include_shadow_runtime=True))
+    )
+    if manifest.get("release_identity_sha256") != identity_sha256:
+        raise XinaoError("RELEASE_IDENTITY_MISMATCH", str(manifest_path))
+    expected_release_id = f"researcher-{capability_version}-{identity_sha256[:16]}"
+    if manifest.get("release_id") != expected_release_id:
+        raise XinaoError("RELEASE_IDENTITY_INVALID", str(manifest.get("release_id")))
+    paths = _state_paths()
+    expected_manifest_path = paths["release_root"] / expected_release_id / "release.json"
+    if not _paths_equal(manifest_path, expected_manifest_path):
+        raise XinaoError("RELEASE_MANIFEST_PATH_INVALID", str(manifest_path))
+    release_dir = manifest_path.parent
+    bundle_root = Path(str(manifest.get("skill_bundle_path", "")))
+    bundle_manifest_path = Path(str(manifest.get("skill_bundle_manifest_path", "")))
+    if not _paths_equal(bundle_root, release_dir / "skill-bundle"):
+        raise XinaoError("SKILL_BUNDLE_PATH_INVALID", str(bundle_root))
+    if not _paths_equal(bundle_manifest_path, release_dir / "skill-bundle.manifest.json"):
+        raise XinaoError("SKILL_BUNDLE_MANIFEST_PATH_INVALID", str(bundle_manifest_path))
+    bundle_manifest = _load_json(bundle_manifest_path)
+    if _sha256(bundle_manifest_path) != manifest.get("skill_bundle_manifest_sha256"):
+        raise XinaoError("SKILL_BUNDLE_MANIFEST_IDENTITY_MISMATCH", str(bundle_manifest_path))
+    _validate_bundle_manifest_shape(bundle_manifest)
+    if bundle_manifest.get("package_version") != package_version or bundle_manifest.get(
+        "tree_sha256"
+    ) != manifest.get("skill_bundle_tree_sha256"):
+        raise XinaoError("SKILL_BUNDLE_TREE_IDENTITY_MISMATCH", str(bundle_manifest_path))
+    if verify_bundle:
+        _verify_skill_bundle(bundle_root, bundle_manifest)
+    expected_hashes = manifest.get("skill_hashes")
+    if (
+        not isinstance(expected_hashes, dict)
+        or set(expected_hashes) != CURRENT_SKILL_HASH_KEYS
+        or expected_hashes != _reference_hashes_for_keys(bundle_root, CURRENT_SKILL_HASH_KEYS)
+    ):
+        raise XinaoError("RELEASE_SKILL_HASHES_MISMATCH", str(manifest_path))
+    # Port pre_modules integrity to pre_tool: full expected_labels + lock/tree cross-binds.
+    source_identity_sha256 = _sha256_bytes(_canonical_bytes(source_identity))
+    expected_labels = {
+        "io.xinao.researcher.chain": "dedicated-xinao-science",
+        "io.xinao.researcher.generic-worker-route": "forbidden",
+        "io.xinao.researcher.grok-donor-image-id": donor_id,
+        "io.xinao.researcher.grok-donor-binary.sha256": donor_binary_sha256,
+        "io.xinao.researcher.charter.sha256": expected_hashes["charter_sha256"],
+        "io.xinao.researcher.output-schema.sha256": expected_hashes["output_schema_sha256"],
+        "io.xinao.researcher.material-bundle-schema.sha256": expected_hashes[
+            "material_bundle_schema_sha256"
+        ],
+        "io.xinao.researcher.runtime-lock.sha256": expected_hashes["runtime_lock_sha256"],
+        "io.xinao.researcher.skill-invoker.sha256": expected_hashes["skill_invoker_sha256"],
+        "io.xinao.researcher.dockerfile.sha256": labels.get(
+            "io.xinao.researcher.dockerfile.sha256"
+        ),
+        "io.xinao.researcher.entrypoint.sha256": labels.get(
+            "io.xinao.researcher.entrypoint.sha256"
+        ),
+        "io.xinao.researcher.source-identity.sha256": source_identity_sha256,
+        "io.xinao.researcher.shadow-runtime.sha256": shadow_tree,
+        "io.xinao.researcher.shadow-runtime-lock.sha256": shadow_lock,
+        "io.xinao.researcher.requested-model": REQUESTED_MODEL,
+        **_dual_profile_image_labels(researcher_image_modules_tree_sha256=modules_tree),
+    }
+    if labels != expected_labels:
+        raise XinaoError("RELEASE_IMAGE_IDENTITY_INVALID", "image_labels")
+    _assert_skill_hashes_shadow_lock_cross_bound(expected_hashes, shadow_lock)
+    _verify_shadow_runtime_tree_from_source_bundle(
+        bundle_root, shadow_tree, verify_bundle=verify_bundle
+    )
+    for key in (
+        "io.xinao.researcher.dockerfile.sha256",
+        "io.xinao.researcher.entrypoint.sha256",
+        "io.xinao.researcher.shadow-runtime.sha256",
+        "io.xinao.researcher.shadow-runtime-lock.sha256",
+    ):
+        if HEX_SHA256_PATTERN.fullmatch(str(labels.get(key, ""))) is None:
+            raise XinaoError("RELEASE_IMAGE_IDENTITY_INVALID", key)
+    return bundle_manifest
+
+
 def _validate_sealed_protocol_v2_release_ref(
     ref: object, *, verify_bundle: bool = True
 ) -> tuple[dict[str, Any], Path]:
@@ -2677,7 +4064,9 @@ def _current_source_skill_bundle_identity() -> dict[str, str]:
     _registry, _charter, _runtime_lock, package_version, capability_version = _source_versions(
         source_skill
     )
-    source_rows = _source_bundle_files(source_skill)
+    # Same trusted monorepo root formal build_release seals; never parent-walk guess only.
+    source_rows = _source_bundle_files(source_skill, monorepo_source_root=source_root)
+    _require_host_modules_sealed_in_bundle_rows(source_rows)
     bundle_manifest = _skill_bundle_manifest(source_rows, package_version=package_version)
     tree_sha256 = bundle_manifest.get("tree_sha256")
     if not isinstance(tree_sha256, str) or HEX_SHA256_PATTERN.fullmatch(tree_sha256) is None:
@@ -2695,12 +4084,31 @@ def _current_source_skill_bundle_identity() -> dict[str, str]:
     shadow_runtime_tree_sha256 = _shadow_runtime_tree_sha256(shadow_rows)
     if HEX_SHA256_PATTERN.fullmatch(shadow_runtime_tree_sha256) is None:
         raise XinaoError("SHADOW_RUNTIME_TREE_INVALID", shadow_runtime_tree_sha256)
+    module_rows = _collect_researcher_image_module_rows(source_root)
+    researcher_image_modules_tree_sha256 = _researcher_image_modules_tree_sha256(module_rows)
+    if HEX_SHA256_PATTERN.fullmatch(researcher_image_modules_tree_sha256) is None:
+        raise XinaoError(
+            "RESEARCHER_IMAGE_MODULES_TREE_INVALID", researcher_image_modules_tree_sha256
+        )
+    tool_df_path = source_root / TOOL_EXECUTOR_DOCKERFILE_RELATIVE
+    if not tool_df_path.is_file() or _is_reparse(tool_df_path):
+        raise XinaoError("TOOL_EXECUTOR_DOCKERFILE_MISSING", str(tool_df_path))
+    tool_df_bytes = tool_df_path.read_bytes()
+    _reject_crlf_source_bytes("tool_executor_dockerfile", tool_df_path, tool_df_bytes)
+    tool_executor_dockerfile_sha256 = _sha256_bytes(tool_df_bytes)
+    tool_rows = _collect_tool_executor_module_rows(source_root)
+    tool_executor_modules_tree_sha256 = _tool_executor_modules_tree_sha256(tool_rows)
+    if HEX_SHA256_PATTERN.fullmatch(tool_executor_modules_tree_sha256) is None:
+        raise XinaoError("TOOL_EXECUTOR_MODULES_TREE_INVALID", tool_executor_modules_tree_sha256)
     return {
         "package_version": package_version,
         "capability_version": capability_version,
         "skill_bundle_tree_sha256": tree_sha256,
         "shadow_runtime_tree_sha256": shadow_runtime_tree_sha256,
         "shadow_runtime_lock_sha256": shadow_runtime_lock_sha256,
+        "researcher_image_modules_tree_sha256": researcher_image_modules_tree_sha256,
+        "tool_executor_dockerfile_sha256": tool_executor_dockerfile_sha256,
+        "tool_executor_modules_tree_sha256": tool_executor_modules_tree_sha256,
     }
 
 
@@ -2720,13 +4128,18 @@ def _active_release_requires_forward_upgrade(manifest: dict[str, Any]) -> bool:
         generation = _source_identity_generation(manifest.get("source_identity"))
     except XinaoError:
         return True
-    if generation == "pre_shadow":
+    if generation in {"pre_shadow", "pre_modules", "pre_tool_image"}:
+        return True
+    if set(manifest) != CURRENT_RELEASE_KEYS:
         return True
     skill_hashes = manifest.get("skill_hashes")
     labels = manifest.get("image_labels")
     if not isinstance(skill_hashes, dict) or set(skill_hashes) != CURRENT_SKILL_HASH_KEYS:
         return True
     if not isinstance(labels, dict) or set(labels) != CURRENT_IMAGE_LABEL_KEYS:
+        return True
+    tool_labels = manifest.get("tool_image_labels")
+    if not isinstance(tool_labels, dict) or set(tool_labels) != TOOL_IMAGE_LABEL_KEYS:
         return True
     try:
         source = _current_source_skill_bundle_identity()
@@ -2745,6 +4158,19 @@ def _active_release_requires_forward_upgrade(manifest: dict[str, Any]) -> bool:
     if source_identity.get("shadow_runtime_tree_sha256") != source["shadow_runtime_tree_sha256"]:
         return True
     if source_identity.get("shadow_runtime_lock_sha256") != source["shadow_runtime_lock_sha256"]:
+        return True
+    if (
+        source_identity.get("researcher_image_modules_tree_sha256")
+        != source["researcher_image_modules_tree_sha256"]
+    ):
+        return True
+    if source_identity.get("tool_executor_dockerfile_sha256") != source.get(
+        "tool_executor_dockerfile_sha256"
+    ):
+        return True
+    if source_identity.get("tool_executor_modules_tree_sha256") != source.get(
+        "tool_executor_modules_tree_sha256"
+    ):
         return True
     return False
 
@@ -2845,14 +4271,17 @@ def _validate_journal(journal: dict[str, Any], journal_path: Path) -> None:
         raise XinaoError("ACTIVATION_STATE_INVALID", _safe_text(journal.get("state")))
     if type(journal.get("expected_generation")) is not int or journal["expected_generation"] < 1:
         raise XinaoError("ACTIVATION_GENERATION_INVALID", str(journal.get("expected_generation")))
-    # Journal-bound release refs validate under the generation they actually sealed.
-    # Ordinary pointer/active load remains exact-current and fail-closed outside upgrade.
-    if journal.get("operation") == "FORWARD_UPGRADE":
-        _validate_release_ref(journal.get("requested_to"))
-        _validate_release_ref(journal.get("to"))
-    else:
+    # Journal-bound release refs:
+    # - Terminal / recovery-conflict journals revalidate generation-aware sealed targets
+    #   so historical pre_modules FORWARD_UPGRADE history remains readable.
+    # - Nonterminal PREPARED/pending/switchable journals must bind exact-current dual-image
+    #   to/requested_to so a historical release cannot become the CAS switch target.
+    if journal.get("state") in TERMINAL_ACTIVATION_STATES | {"RECOVERY_CONFLICT"}:
         _validate_sealed_protocol_v2_release_ref(journal.get("requested_to"), verify_bundle=False)
         _validate_sealed_protocol_v2_release_ref(journal.get("to"), verify_bundle=False)
+    else:
+        _validate_release_ref(journal.get("requested_to"))
+        _validate_release_ref(journal.get("to"))
     from_value = journal.get("from")
     if journal.get("operation") == "MIGRATE":
         if not isinstance(from_value, dict) or set(from_value) != MIGRATE_FROM_KEYS:
@@ -3291,6 +4720,7 @@ def inspect_capability() -> dict[str, Any]:
                     "activation_txn_id"
                 ),
                 "image_id": release_obj.get("image_id"),
+                "tool_image_id": release_obj.get("tool_image_id"),
                 "installed_projection": projection_status,
                 "shadow": _shadow_live_status(
                     registry,
@@ -3351,6 +4781,7 @@ def inspect_capability() -> dict[str, Any]:
             "current_pointer_generation": context["pointer"]["generation"],
             "activation_txn_id": context["pointer"]["active"]["activation_txn_id"],
             "image_id": release.get("image_id"),
+            "tool_image_id": release.get("tool_image_id"),
             "installed_projection": projection,
             "shadow": _shadow_live_status(
                 registry,
@@ -3381,6 +4812,14 @@ def _source_versions(
         raise XinaoError("RESEARCHER_VERSION_IDENTITY_MISMATCH", capability_version)
     if runtime_lock.get("generic_worker_route_allowed") is not False:
         raise XinaoError("GENERIC_WORKER_ROUTE_NOT_FORBIDDEN", str(runtime_lock))
+    lock_cli = _require_lock_grok_cli_version(runtime_lock)
+    researcher = _researcher_record(registry)
+    supported_cli = researcher.get("supported_grok_cli_version")
+    if supported_cli is not None and supported_cli != lock_cli:
+        raise XinaoError(
+            "GROK_CLI_VERSION_CAPABILITY_MISMATCH",
+            f"lock={lock_cli} capabilities={supported_cli!r}",
+        )
     return registry, charter, runtime_lock, package_version, capability_version
 
 
@@ -3460,7 +4899,13 @@ def build_release(
     source_skill = source_root / "skills" / "xinao"
     dockerfile = source_root / "docker" / "xinao-researcher" / "Dockerfile"
     entrypoint = source_root / "docker" / "xinao-researcher" / "entrypoint.py"
-    if not source_skill.is_dir() or not dockerfile.is_file() or not entrypoint.is_file():
+    tool_dockerfile = source_root / TOOL_EXECUTOR_DOCKERFILE_RELATIVE
+    if (
+        not source_skill.is_dir()
+        or not dockerfile.is_file()
+        or not entrypoint.is_file()
+        or not tool_dockerfile.is_file()
+    ):
         raise XinaoError("SOURCE_CONE_MISSING", str(source_root))
     status = _run(["git", "status", "--porcelain"], cwd=source_root).stdout.strip()
     if status and not allow_dirty:
@@ -3475,13 +4920,21 @@ def build_release(
     _registry, _charter, runtime_lock, package_version, capability_version = _source_versions(
         source_skill
     )
-    source_rows = _source_bundle_files(source_skill)
+    # Explicit trusted monorepo source_root (CLI / migration / forward-upgrade), not brittle
+    # parent-walk guessing: host modules must be sealed from docker/xinao-researcher inventory.
+    source_rows = _source_bundle_files(source_skill, monorepo_source_root=source_root)
+    _require_host_modules_sealed_in_bundle_rows(source_rows)
     bundle_manifest = _skill_bundle_manifest(source_rows, package_version=package_version)
     hashes = _reference_hashes(source_skill)
     dockerfile_bytes = dockerfile.read_bytes()
     entrypoint_bytes = entrypoint.read_bytes()
+    tool_dockerfile_bytes = tool_dockerfile.read_bytes()
     _reject_crlf_source_bytes("dockerfile", dockerfile, dockerfile_bytes)
     _reject_crlf_source_bytes("entrypoint", entrypoint, entrypoint_bytes)
+    _reject_crlf_source_bytes("tool_executor_dockerfile", tool_dockerfile, tool_dockerfile_bytes)
+    tool_executor_dockerfile_sha256 = _sha256_bytes(tool_dockerfile_bytes)
+    tool_module_rows = _collect_tool_executor_module_rows(source_root)
+    tool_executor_modules_tree_sha256 = _tool_executor_modules_tree_sha256(tool_module_rows)
     invoker_path = source_skill / "scripts" / "xinao.py"
     runtime_path = source_skill / "scripts" / "xinao_runtime.py"
     _reject_crlf_source_bytes("skill_invoker", invoker_path, invoker_path.read_bytes())
@@ -3501,6 +4954,7 @@ def build_release(
     _docker_engine_os(docker)
     donor = str(runtime_lock.get("grok_donor_image", ""))
     expected_donor_id = str(runtime_lock.get("grok_donor_image_id", ""))
+    expected_grok_cli_version = _require_lock_grok_cli_version(runtime_lock)
     # Inspect the lock's donor tag once and require the exact lock-pinned full image Id.
     # Never re-resolve that mutable tag for Dockerfile FROM (SP-B-001); raw local Id is also
     # unbuildable as FROM under BuildKit, so extract the binary via never-started create/cp.
@@ -3514,6 +4968,8 @@ def build_release(
         )
     container_name: str | None = None
     staging_root: Path | None = None
+    tool_staging_root: Path | None = None
+    observed_grok_cli_version: str | None = None
     try:
         (
             donor_binary_sha256,
@@ -3529,6 +4985,13 @@ def build_release(
         # start it. Staging remains until build completes.
         _remove_donor_extract_container(docker, container_name)
         container_name = None
+        # Fail closed on CLI version before any transport image seal/build proceeds.
+        binary_path = build_context / DONOR_BINARY_CONTEXT_RELATIVE
+        observed_grok_cli_version = _require_staged_grok_cli_version(
+            binary_path,
+            expected_version=expected_grok_cli_version,
+            docker_exec_image_id=observed_donor_id,
+        )
         # Dockerfile COPYs shadow-runtime/ from this owned context; stage the locked cone
         # only (never the full repository), then re-hash the staged bytes before build.
         _stage_shadow_runtime(build_context, shadow_rows)
@@ -3536,6 +4999,15 @@ def build_release(
             build_context,
             shadow_rows,
             expected_tree_sha256=shadow_runtime_tree_sha256,
+        )
+        # Dual-profile modules (canary + episode/MCP/shell) must be staged with LF bytes.
+        module_rows = _collect_researcher_image_module_rows(source_root)
+        researcher_image_modules_tree_sha256 = _researcher_image_modules_tree_sha256(module_rows)
+        _stage_researcher_image_modules(build_context, module_rows)
+        _verify_staged_researcher_image_modules(
+            build_context,
+            module_rows,
+            expected_tree_sha256=researcher_image_modules_tree_sha256,
         )
         source_identity = {
             "source_commit": commit,
@@ -3545,6 +5017,9 @@ def build_release(
             "grok_donor_binary_sha256": donor_binary_sha256,
             "shadow_runtime_tree_sha256": shadow_runtime_tree_sha256,
             "shadow_runtime_lock_sha256": shadow_runtime_lock_sha256,
+            "researcher_image_modules_tree_sha256": researcher_image_modules_tree_sha256,
+            "tool_executor_dockerfile_sha256": tool_executor_dockerfile_sha256,
+            "tool_executor_modules_tree_sha256": tool_executor_modules_tree_sha256,
         }
         source_identity_sha256 = _sha256_bytes(_canonical_bytes(source_identity))
         provisional = {
@@ -3558,11 +5033,17 @@ def build_release(
                 "grok_donor_binary_sha256": donor_binary_sha256,
                 "shadow_runtime_tree_sha256": shadow_runtime_tree_sha256,
                 "shadow_runtime_lock_sha256": shadow_runtime_lock_sha256,
+                "researcher_image_modules_tree_sha256": researcher_image_modules_tree_sha256,
+                "tool_executor_dockerfile_sha256": tool_executor_dockerfile_sha256,
+                "tool_executor_modules_tree_sha256": tool_executor_modules_tree_sha256,
             },
             "skill_bundle_tree_sha256": bundle_manifest["tree_sha256"],
             "image_id": "pending",
-            "image_entrypoint": ["python", "-I", "/opt/xinao-researcher/entrypoint.py"],
+            "image_entrypoint": ["python", "-I", RESEARCHER_CANARY_ENTRYPOINT_IMAGE_PATH],
             "image_labels": {},
+            "tool_image_id": "pending",
+            "tool_image_entrypoint": list(TOOL_EXECUTOR_ENTRYPOINT),
+            "tool_image_labels": {},
             "required_bootstrap_protocol": REQUIRED_BOOTSTRAP_PROTOCOL,
             "generic_worker_route_allowed": False,
             "state_namespace": "xinao_skill/researcher_container",
@@ -3584,6 +5065,12 @@ def build_release(
                 "DONOR_BINARY_TAMPERED",
                 f"expected={donor_binary_sha256} observed={pre_build_sha256}",
             )
+        # Re-probe version on the exact pre-build bytes path so seal cannot race a swap.
+        observed_grok_cli_version = _require_staged_grok_cli_version(
+            binary_path,
+            expected_version=expected_grok_cli_version,
+            docker_exec_image_id=observed_donor_id,
+        )
         build_args = [
             docker,
             "build",
@@ -3595,6 +5082,8 @@ def build_release(
             f"GROK_DONOR_IMAGE_ID={observed_donor_id}",
             "--build-arg",
             f"GROK_DONOR_BINARY_SHA256={donor_binary_sha256}",
+            "--build-arg",
+            f"GROK_CLI_VERSION={expected_grok_cli_version}",
             "--build-arg",
             f"CHARTER_SHA256={hashes['charter_sha256']}",
             "--build-arg",
@@ -3615,6 +5104,8 @@ def build_release(
             f"SHADOW_RUNTIME_TREE_SHA256={shadow_runtime_tree_sha256}",
             "--build-arg",
             f"SHADOW_RUNTIME_LOCK_SHA256={shadow_runtime_lock_sha256}",
+            "--build-arg",
+            f"RESEARCHER_IMAGE_MODULES_TREE_SHA256={researcher_image_modules_tree_sha256}",
             "--build-arg",
             f"SHADOW_PYDANTIC_VERSION={shadow_pins['pydantic']}",
             "--build-arg",
@@ -3638,7 +5129,7 @@ def build_release(
         _run(build_args, cwd=source_root, timeout=1800)
         image = _docker_image(docker, image_tag)
         image_id = str(image.get("Id", ""))
-        if not image_id.startswith("sha256:"):
+        if DOCKER_IMAGE_ID_PATTERN.fullmatch(image_id) is None:
             raise XinaoError("IMAGE_IDENTITY_MISSING", image_id)
         labels = (image.get("Config") or {}).get("Labels") or {}
         expected_labels = {
@@ -3659,12 +5150,73 @@ def build_release(
             "io.xinao.researcher.shadow-runtime.sha256": shadow_runtime_tree_sha256,
             "io.xinao.researcher.shadow-runtime-lock.sha256": shadow_runtime_lock_sha256,
             "io.xinao.researcher.requested-model": REQUESTED_MODEL,
+            **_dual_profile_image_labels(
+                researcher_image_modules_tree_sha256=researcher_image_modules_tree_sha256
+            ),
         }
         if any(labels.get(key) != value for key, value in expected_labels.items()):
             raise XinaoError("IMAGE_LABEL_IDENTITY_MISMATCH", image_id)
+        _inspect_dual_profile_image_labels(labels)
+        entrypoint = (image.get("Config") or {}).get("Entrypoint")
+        if entrypoint != ["python", "-I", RESEARCHER_CANARY_ENTRYPOINT_IMAGE_PATH]:
+            raise XinaoError("IMAGE_ENTRYPOINT_IDENTITY_MISMATCH", image_id)
+        # Formal dual-image generation: also build and seal the tool-executor image.
+        # Build only from owned LF staging context (never raw Windows worktree source_root).
+        tool_image_tag = (
+            f"xinao-tool-executor:candidate-{capability_version}-{provisional_sha[:16]}"
+        )
+        expected_tool_labels = _tool_executor_expected_labels(
+            dockerfile_sha256=tool_executor_dockerfile_sha256,
+            modules_tree_sha256=tool_executor_modules_tree_sha256,
+        )
+        tool_staging_root = _prepare_tool_executor_build_staging(
+            tool_dockerfile_bytes=tool_dockerfile_bytes,
+            tool_module_rows=tool_module_rows,
+        )
+        _verify_staged_tool_executor_build(
+            tool_staging_root,
+            expected_dockerfile_sha256=tool_executor_dockerfile_sha256,
+            expected_modules_tree_sha256=tool_executor_modules_tree_sha256,
+            tool_module_rows=tool_module_rows,
+        )
+        staged_tool_dockerfile = tool_staging_root / "Dockerfile.tool-executor"
+        tool_build_args = [
+            docker,
+            "build",
+            "--file",
+            str(staged_tool_dockerfile),
+            "--tag",
+            tool_image_tag,
+            "--label",
+            f"io.xinao.tool.dockerfile.sha256={tool_executor_dockerfile_sha256}",
+            "--label",
+            f"io.xinao.tool.modules.sha256={tool_executor_modules_tree_sha256}",
+            str(tool_staging_root),
+        ]
+        with _activation_lock():
+            if migration_legacy_pointer_sha256 is None and forward_upgrade_pointer_sha256 is None:
+                _validate_bootstrap_fence_locked("build", expected=fence)
+            elif migration_legacy_pointer_sha256 is not None:
+                _validate_legacy_build_fence_locked(migration_legacy_pointer_sha256)
+            else:
+                assert forward_upgrade_pointer_sha256 is not None
+                _validate_forward_upgrade_build_fence_locked(forward_upgrade_pointer_sha256)
+        _run(tool_build_args, cwd=tool_staging_root, timeout=1800)
+        tool_image = _docker_image(docker, tool_image_tag)
+        tool_image_id = str(tool_image.get("Id", ""))
+        if DOCKER_IMAGE_ID_PATTERN.fullmatch(tool_image_id) is None:
+            raise XinaoError("TOOL_IMAGE_IDENTITY_MISSING", tool_image_id)
+        tool_labels_obs = (tool_image.get("Config") or {}).get("Labels") or {}
+        for key, value in expected_tool_labels.items():
+            if tool_labels_obs.get(key) != value:
+                raise XinaoError("TOOL_IMAGE_LABEL_IDENTITY_MISMATCH", key)
+        tool_entrypoint = (tool_image.get("Config") or {}).get("Entrypoint")
+        if tool_entrypoint != TOOL_EXECUTOR_ENTRYPOINT:
+            raise XinaoError("TOOL_IMAGE_ENTRYPOINT_IDENTITY_MISMATCH", tool_image_id)
     finally:
         _remove_donor_extract_container(docker, container_name)
         _remove_donor_staging_root(staging_root)
+        _remove_tool_build_staging_root(tool_staging_root)
     manifest: dict[str, Any] = {
         "schema_version": RELEASE_SCHEMA,
         "release_id": "pending",
@@ -3683,6 +5235,10 @@ def build_release(
         "image_id": image_id,
         "image_entrypoint": (image.get("Config") or {}).get("Entrypoint"),
         "image_labels": expected_labels,
+        "tool_image_tag_observational": tool_image_tag,
+        "tool_image_id": tool_image_id,
+        "tool_image_entrypoint": list(TOOL_EXECUTOR_ENTRYPOINT),
+        "tool_image_labels": expected_tool_labels,
         "skill_hashes": {
             key: value
             for key, value in hashes.items()
@@ -3723,10 +5279,16 @@ def build_release(
             if not candidate_path.is_file():
                 raise XinaoError("RELEASE_NAMESPACE_INVALID", str(candidate))
             existing = _load_json(candidate_path)
-            if existing.get("capability_version") != capability_version:
+            if (
+                existing.get("package_version") != package_version
+                or existing.get("capability_version") != capability_version
+            ):
                 continue
             if existing.get("release_identity_sha256") != identity_sha:
-                raise XinaoError("SEMVER_CONTENT_COLLISION", capability_version)
+                raise XinaoError(
+                    "SEMVER_CONTENT_COLLISION",
+                    f"package={package_version} capability={capability_version}",
+                )
             if existing.get("release_id") != release_id:
                 raise XinaoError("RELEASE_ID_COLLISION", str(candidate_path))
         if manifest_path.exists():
@@ -3754,6 +5316,11 @@ def build_release(
                     shutil.rmtree(staging)
                 raise
             _validate_release_manifest(manifest, manifest_path)
+    if observed_grok_cli_version != expected_grok_cli_version:
+        raise XinaoError(
+            "GROK_CLI_VERSION_MISMATCH",
+            f"required={expected_grok_cli_version} observed={observed_grok_cli_version!r}",
+        )
     return {
         "schema_version": "xinao.researcher_build_receipt.v2",
         "status": "CANDIDATE_BUILT",
@@ -3761,12 +5328,17 @@ def build_release(
         "package_version": package_version,
         "capability_version": capability_version,
         "image_id": image_id,
+        "tool_image_id": tool_image_id,
         "release_manifest_path": str(manifest_path),
         "release_manifest_sha256": _sha256(manifest_path),
         "skill_bundle_tree_sha256": bundle_manifest["tree_sha256"],
         "source_dirty": bool(status),
         "activated": False,
         "completion_claim_allowed": False,
+        # Bind donor identity + exact CLI version observed on the staged binary.
+        "grok_donor_image_id": observed_donor_id,
+        "grok_donor_binary_sha256": donor_binary_sha256,
+        "grok_cli_version": observed_grok_cli_version,
     }
 
 
@@ -4005,6 +5577,9 @@ def _switch_prepared_pointer(
 ) -> tuple[dict[str, Any], dict[str, Any], str]:
     if journal["state"] != "PREPARED":
         raise XinaoError("ACTIVATION_STATE_INVALID", str(journal["state"]))
+    # Commitment-boundary re-read: never CAS-switch to a non-exact-current target.
+    _validate_release_ref(journal.get("requested_to"))
+    _validate_release_ref(journal.get("to"))
     current, current_sha256 = _load_pointer_raw()
     from_value = journal["from"]
     if (
@@ -5072,8 +6647,9 @@ def _recovery_cone_entry_payload(txn_id: str) -> bytes:
         "import sys\n"
         f"_txn = {txn_id!r}\n"
         "_launcher = Path(__file__).resolve().with_name('xinao.py')\n"
-        "raise SystemExit(subprocess.run([sys.executable, '-I', str(_launcher), "
-        "'_recover-migration', '--txn-id', _txn], check=False).returncode)\n"
+        "raise SystemExit(subprocess.run([sys.executable, '-I', '-B', str(_launcher), "
+        "'_recover-migration', '--txn-id', _txn], check=False,"
+        "env={**__import__('os').environ,'PYTHONDONTWRITEBYTECODE':'1'}).returncode)\n"
     ).encode("utf-8")
 
 
@@ -5508,6 +7084,52 @@ def _projection_receipt_for_journal(journal: dict[str, Any]) -> dict[str, Any]:
 
 
 def _stable_recovery_launcher_payload() -> bytes:
+    """Steady-state stable recovery launcher (Wave92+ bytecode hygiene)."""
+
+    return (
+        "from pathlib import Path\n"
+        "import hashlib\n"
+        "import json\n"
+        "import os\n"
+        "import subprocess\n"
+        "import sys\n"
+        "_state = Path(os.environ.get('XINAO_SKILL_STATE_ROOT', "
+        "r'D:\\\\XINAO_RESEARCH_RUNTIME\\\\state\\\\xinao_skill'))\n"
+        "_pointer = _state / 'researcher_container' / 'migration' / 'current-recovery.v1.json'\n"
+        "try:\n"
+        "    _value = json.loads(_pointer.read_text(encoding='utf-8'))\n"
+        "    _keys = {'schema_version','txn_id','entry_path','entry_sha256','cone_manifest_path',"
+        "'cone_manifest_sha256','projection_receipt_path','projection_receipt_sha256',"
+        "'created_at','completion_claim_allowed'}\n"
+        "    if set(_value) != _keys or _value.get('schema_version') != "
+        "'xinao.current_migration_recovery.v1':\n"
+        "        raise ValueError('pointer shape')\n"
+        "    for _path_key, _sha_key in (('entry_path','entry_sha256'),"
+        "('cone_manifest_path','cone_manifest_sha256'),"
+        "('projection_receipt_path','projection_receipt_sha256')):\n"
+        "        _path = Path(_value[_path_key])\n"
+        "        _payload = _path.read_bytes()\n"
+        "        if hashlib.sha256(_payload).hexdigest() != _value[_sha_key]:\n"
+        "            raise ValueError(_path_key)\n"
+        "    _entry = Path(_value['entry_path'])\n"
+        "except Exception as _exc:\n"
+        "    print(json.dumps({'schema_version':'xinao.recovery_entry_error.v1',"
+        "'status':'PREFLIGHT_FAILED','reason_codes':['STABLE_RECOVERY_POINTER_INVALID'],"
+        "'detail':str(_exc),'completion_claim_allowed':False},sort_keys=True))\n"
+        "    raise SystemExit(2)\n"
+        "raise SystemExit(subprocess.run([sys.executable,'-I','-B',str(_entry)],check=False,"
+        "env={**__import__('os').environ,'PYTHONDONTWRITEBYTECODE':'1'}).returncode)\n"
+    ).encode("utf-8")
+
+
+def _stable_recovery_launcher_historical_payload() -> bytes:
+    """Exact pre-Wave92 stable recovery launcher bytes.
+
+    Frozen allowlisted generation only: no ``-B`` and no child
+    ``PYTHONDONTWRITEBYTECODE``. Matched by full byte identity, never by
+    substring, structural approximation, or state-supplied hash.
+    """
+
     return (
         "from pathlib import Path\n"
         "import hashlib\n"
@@ -5541,6 +7163,10 @@ def _stable_recovery_launcher_payload() -> bytes:
         "    raise SystemExit(2)\n"
         "raise SystemExit(subprocess.run([sys.executable,'-I',str(_entry)],check=False).returncode)\n"
     ).encode("utf-8")
+
+
+def _stable_recovery_generation_bridge_fault_point(_phase: str) -> None:
+    """Test seam around historical launcher upgrade CAS; production is a no-op."""
 
 
 def _stable_recovery_paths() -> tuple[Path, Path]:
@@ -5627,15 +7253,52 @@ def _retire_terminal_legacy_recovery_pointer_before_build(
 
 
 def _publish_stable_recovery_entry(journal: dict[str, Any]) -> None:
+    """Publish stable recovery launcher + pointer with one generation bridge.
+
+    Steady-state launcher is the current payload only. The single allowlisted
+    pre-Wave92 historical launcher may be CAS-upgraded to current when the
+    recovery pointer is absent; any other launcher bytes, and historical
+    launcher with any existing recovery pointer, fail closed without mutation.
+
+    Commitment boundary: re-read exact historical launcher bytes and re-check
+    pointer absence immediately before atomic replacement so a concurrent
+    pointer appearance cannot leave a partially mutated old-launcher state.
+    """
+
     launcher_path, pointer_path = _stable_recovery_paths()
     launcher_path.parent.mkdir(parents=True, exist_ok=True)
     launcher_payload = _stable_recovery_launcher_payload()
+    historical_payload = _stable_recovery_launcher_historical_payload()
     existing_launcher = _plain_file_or_absent(
         launcher_path, reason_code="STABLE_RECOVERY_ENTRY_INVALID"
     )
     if existing_launcher is None:
         _write_bytes_atomic(launcher_path, launcher_payload, create_new=True)
-    elif existing_launcher != launcher_payload:
+    elif existing_launcher == launcher_payload:
+        pass
+    elif existing_launcher == historical_payload:
+        # Generation bridge: upgrade exact historical bytes only with no pointer.
+        observed_pointer = _plain_file_or_absent(
+            pointer_path, reason_code="STABLE_RECOVERY_POINTER_CONFLICT"
+        )
+        if observed_pointer is not None:
+            raise XinaoError("STABLE_RECOVERY_ENTRY_INVALID", str(launcher_path))
+        _stable_recovery_generation_bridge_fault_point("before-replace-reread")
+        reread = _plain_file_or_absent(launcher_path, reason_code="STABLE_RECOVERY_ENTRY_INVALID")
+        if reread != historical_payload:
+            raise XinaoError("STABLE_RECOVERY_ENTRY_INVALID", str(launcher_path))
+        # Commitment-boundary pointer recheck (closes Wave115 TOCTOU gap).
+        observed_pointer = _plain_file_or_absent(
+            pointer_path, reason_code="STABLE_RECOVERY_POINTER_CONFLICT"
+        )
+        if observed_pointer is not None:
+            raise XinaoError("STABLE_RECOVERY_ENTRY_INVALID", str(launcher_path))
+        _write_bytes_atomic(launcher_path, launcher_payload, create_new=False)
+        after = _plain_file_or_absent(launcher_path, reason_code="STABLE_RECOVERY_ENTRY_INVALID")
+        if after != launcher_payload:
+            raise XinaoError("STABLE_RECOVERY_ENTRY_INVALID", str(launcher_path))
+        _stable_recovery_generation_bridge_fault_point("after-launcher-replace")
+    else:
         raise XinaoError("STABLE_RECOVERY_ENTRY_INVALID", str(launcher_path))
     expected = _stable_recovery_pointer_payload(journal)
     observed = _plain_file_or_absent(pointer_path, reason_code="STABLE_RECOVERY_POINTER_CONFLICT")
@@ -6142,6 +7805,106 @@ def _find_latest_verified_sync_projection() -> tuple[dict[str, Any], dict[str, A
         receipt = _projection_receipt_for_journal(journal)
         latest = (journal, receipt)
     return latest
+
+
+def _find_installed_projection_witness(
+    journal: dict[str, Any],
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    """Select a sealed projection witness from real installed bytes and transaction lineage.
+
+    Ordinary ACTIVATE/ROLLBACK do not rewrite the installed Skill tree.  The valid
+    launcher witness is therefore the last *actually installed* sealed projection,
+    which may be a MIGRATE, FORWARD_UPGRADE, or SYNC_PROJECTION transaction.  Directory
+    order or operation class alone cannot establish that identity.
+    """
+
+    root = _state_paths()["transaction_root"]
+    if not root.is_dir() or _is_reparse(root):
+        raise XinaoError("INSTALL_PROJECTION_RECEIPT_ABSENT", str(root))
+    installed_root = Path(os.path.abspath(_installed_skill_root()))
+    live, directories = _strict_plain_tree(
+        installed_root,
+        reason_code="INSTALL_PROJECTION_LIVE_INVALID",
+    )
+    observed = {
+        relative: (len(payload), _sha256_bytes(payload))
+        for relative, payload in sorted(live.items())
+    }
+    launcher = live.get(STABLE_LAUNCHER_RELATIVE)
+    if launcher is None:
+        raise XinaoError(
+            "INSTALLED_LAUNCHER_IDENTITY_MISMATCH",
+            str(installed_root / STABLE_LAUNCHER_RELATIVE),
+        )
+    launcher_sha256 = _sha256_bytes(launcher)
+    current_prepared = _parse_utc_z(
+        journal.get("prepared_at"),
+        reason_code="ACTIVATION_JOURNAL_SCHEMA_INVALID",
+        field="prepared_at",
+    )
+    from_value = journal.get("from")
+    from_active = from_value.get("active") if isinstance(from_value, dict) else None
+    candidates: list[
+        tuple[bool, dt.datetime, dt.datetime, str, dict[str, Any], dict[str, Any]]
+    ] = []
+    for entry in root.iterdir():
+        journal_path = entry / "activation.v1.json"
+        if not journal_path.is_file():
+            continue
+        candidate = _load_json(journal_path)
+        _validate_journal(candidate, journal_path)
+        if (
+            candidate.get("operation") not in {"MIGRATE", "FORWARD_UPGRADE", "SYNC_PROJECTION"}
+            or candidate.get("state") != "VERIFIED"
+            or candidate.get("txn_id") == journal.get("txn_id")
+        ):
+            continue
+        prepared = _parse_utc_z(
+            candidate.get("prepared_at"),
+            reason_code="ACTIVATION_JOURNAL_SCHEMA_INVALID",
+            field="prepared_at",
+        )
+        if prepared > current_prepared:
+            continue
+        updated = _parse_utc_z(
+            candidate.get("updated_at"),
+            reason_code="ACTIVATION_JOURNAL_SCHEMA_INVALID",
+            field="updated_at",
+        )
+        # A transaction prepared earlier but verified after this ACTIVATE began is not
+        # part of its observable projection lineage.
+        if updated > current_prepared:
+            continue
+        receipt = _projection_receipt_for_journal(candidate)
+        target = _inventory_map(
+            receipt.get("target_inventory"),
+            reason_code="INSTALL_PROJECTION_RECEIPT_INVALID",
+        )
+        if (
+            target != observed
+            or directories != _expected_directories(sorted(target))
+            or receipt.get("stable_launcher_sha256") != launcher_sha256
+        ):
+            continue
+        candidates.append(
+            (
+                isinstance(from_active, dict) and candidate.get("to") == from_active,
+                prepared,
+                updated,
+                str(candidate.get("txn_id")),
+                candidate,
+                receipt,
+            )
+        )
+    if not candidates:
+        raise XinaoError(
+            "INSTALLED_LAUNCHER_IDENTITY_MISMATCH",
+            str(installed_root / STABLE_LAUNCHER_RELATIVE),
+        )
+    # Prefer an exact from.active transaction binding.  Parsed journal time and the
+    # sealed transaction ID provide deterministic lineage ordering; filesystem names do not.
+    selected = max(candidates, key=lambda item: item[:4])
+    return selected[4], selected[5]
 
 
 def _installed_projection_alignment(release: dict[str, Any] | None) -> dict[str, Any]:
@@ -6776,14 +8539,7 @@ def _verify_stable_installed_launcher(journal: dict[str, Any]) -> dict[str, Any]
     if journal.get("operation") in {"MIGRATE", "FORWARD_UPGRADE", "SYNC_PROJECTION"}:
         receipt = _projection_receipt_for_journal(journal)
     else:
-        sync = _find_latest_verified_sync_projection()
-        if sync is not None:
-            _sync_journal, receipt = sync
-        else:
-            try:
-                _migration_journal, receipt = _find_verified_migration_projection()
-            except XinaoError:
-                _upgrade_journal, receipt = _find_verified_forward_upgrade_projection()
+        _witness_journal, receipt = _find_installed_projection_witness(journal)
     launcher_path = Path(os.path.abspath(_installed_skill_root())) / STABLE_LAUNCHER_RELATIVE
     launcher = _plain_file_or_absent(launcher_path, reason_code="INSTALLED_LAUNCHER_INVALID")
     if launcher is None or _sha256_bytes(launcher) != receipt.get("stable_launcher_sha256"):
@@ -6963,6 +8719,9 @@ def _switch_migrate_pointer(
 ) -> tuple[dict[str, Any], dict[str, Any], str]:
     if journal["operation"] != "MIGRATE" or journal["state"] != "PREPARED":
         raise XinaoError("ACTIVATION_STATE_INVALID", str(journal.get("state")))
+    # Commitment-boundary re-read: migrate CAS must land on exact-current dual-image only.
+    _validate_release_ref(journal.get("requested_to"))
+    _validate_release_ref(journal.get("to"))
     from_value = journal["from"]
     pointer_path = _state_paths()["pointer"]
     if not pointer_path.is_file():
@@ -7072,8 +8831,103 @@ def _continue_migrate_journal(journal: dict[str, Any], journal_path: Path) -> di
     raise XinaoError("RECOVERY_CONFLICT", str(journal_path))
 
 
+def _recover_exact_rolled_back_activation_conflict(
+    journal: dict[str, Any], journal_path: Path
+) -> dict[str, Any]:
+    """Seal one exact ACTIVATE rollback that the historical launcher selector rejected.
+
+    This is deliberately not a generic RECOVERY_CONFLICT escape hatch.  The rollback
+    pointer, transaction lineage, installed bytes, and original failure must all prove
+    the known false-negative shape before the rollback canary is retried.
+    """
+
+    failure = journal.get("failure_reason")
+    from_value = journal.get("from")
+    requested_to = journal.get("requested_to")
+    txn_id = str(journal.get("txn_id", ""))
+    if (
+        journal.get("operation") != "ACTIVATE"
+        or journal.get("state") not in {"RECOVERY_CONFLICT", "ROLLBACK_CANARY_STARTED"}
+        or not isinstance(failure, dict)
+        or failure.get("reason_code") != "INSTALLED_LAUNCHER_IDENTITY_MISMATCH"
+        or not isinstance(from_value, dict)
+        or not isinstance(from_value.get("active"), dict)
+        or not isinstance(requested_to, dict)
+        or requested_to.get("activation_txn_id") != txn_id
+    ):
+        raise XinaoError("RECOVERY_CONFLICT", str(journal_path))
+
+    rollback_ref = dict(from_value["active"])
+    rollback_ref["activation_txn_id"] = txn_id
+    if (
+        journal.get("to") != rollback_ref
+        or requested_to == rollback_ref
+        or journal.get("expected_generation") != from_value.get("generation", 0) + 2
+        or journal.get("canary") is not None
+        or journal.get("terminal_pointer_sha256") is not None
+    ):
+        raise XinaoError("RECOVERY_CONFLICT", str(journal_path))
+
+    # Explicit recovery must not choose one conflict while another transaction is live.
+    transaction_root = _state_paths()["transaction_root"]
+    for entry in transaction_root.iterdir():
+        other_path = entry / "activation.v1.json"
+        if not other_path.is_file() or other_path == journal_path:
+            continue
+        other = _load_json(other_path)
+        _validate_journal(other, other_path)
+        if other.get("state") not in TERMINAL_ACTIVATION_STATES:
+            raise XinaoError("RECOVERY_CONFLICT", "multiple nonterminal activation journals")
+
+    pointer, pointer_sha256 = _load_pointer_raw()
+    if (
+        pointer.get("generation") != journal["expected_generation"]
+        or pointer.get("active") != rollback_ref
+        or pointer.get("previous_verified") != from_value.get("previous_verified")
+        or pointer_sha256 != journal.get("switched_pointer_sha256")
+    ):
+        raise XinaoError("RECOVERY_CONFLICT", str(_state_paths()["pointer"]))
+
+    rollback_manifest, _rollback_manifest_path = _validate_release_ref(rollback_ref)
+    alignment = _installed_projection_alignment(rollback_manifest)
+    if alignment.get("status") != "ALIGNED":
+        raise XinaoError(
+            "RECOVERY_CONFLICT",
+            f"installed projection is not the rolled-back release: {alignment.get('reason_code')}",
+        )
+    _verify_stable_installed_launcher(journal)
+
+    # Both the journal transition and _complete_canary re-read their CAS-bound inputs.
+    if journal["state"] == "RECOVERY_CONFLICT":
+        journal = _journal_transition(journal_path, journal, "ROLLBACK_CANARY_STARTED")
+    try:
+        _journal, receipt = _complete_canary(journal, journal_path, terminal_state="ROLLED_BACK")
+    except XinaoError as exc:
+        _journal_transition(
+            journal_path,
+            _load_json(journal_path),
+            "RECOVERY_CONFLICT",
+            failure_reason={"reason_code": exc.reason_code, "detail": exc.detail},
+        )
+        raise XinaoError("RECOVERY_CONFLICT", str(journal_path)) from exc
+    return {
+        **receipt,
+        "schema_version": "xinao.researcher_recovery_receipt.v2",
+        "recovered_from": "RECOVERY_CONFLICT",
+    }
+
+
 def recover_release(txn_id: str | None = None) -> dict[str, Any]:
     with _activation_lock():
+        # A conflict is intentionally excluded from _pending_journals().  Only an
+        # explicit transaction ID may enter the narrowly proven rollback repair above.
+        if txn_id is not None:
+            explicit_path = _journal_path(txn_id)
+            if explicit_path.is_file():
+                explicit = _load_json(explicit_path)
+                _validate_journal(explicit, explicit_path)
+                if explicit.get("state") in {"RECOVERY_CONFLICT", "ROLLBACK_CANARY_STARTED"}:
+                    return _recover_exact_rolled_back_activation_conflict(explicit, explicit_path)
         pending = _pending_journals()
         if txn_id is not None:
             matches = [(journal, path) for journal, path in pending if journal["txn_id"] == txn_id]
@@ -7972,6 +9826,11 @@ def _switch_forward_upgrade_pointer(
     if journal["operation"] != "FORWARD_UPGRADE" or journal["state"] != "PREPARED":
         raise XinaoError("ACTIVATION_STATE_INVALID", str(journal.get("state")))
     from_value = journal["from"]
+    # CAS fence: never switch the active pointer to a non-exact-current target.
+    # Sealed historical generations remain readable for terminal journals / preflight,
+    # but prepare/build/pointer-switch targets must stay dual-image exact-current.
+    _validate_release_ref(journal.get("requested_to"))
+    _validate_release_ref(journal.get("to"))
     pointer_path = _state_paths()["pointer"]
     if not pointer_path.is_file():
         raise XinaoError("CURRENT_POINTER_CAS_CONFLICT", str(pointer_path))
@@ -9101,7 +10960,11 @@ def _load_and_validate_live_seal(
 
 
 def _compare_live_egress_objects(
-    docker: str, posture: dict[str, Any], runtime_lock: dict[str, Any]
+    docker: str,
+    posture: dict[str, Any],
+    runtime_lock: dict[str, Any],
+    *,
+    allowed_researcher_container_ids: set[str] | None = None,
 ) -> dict[str, Any]:
     network_name = str(posture["internal_network_name"])
     network_id = str(posture["internal_network_id"])
@@ -9130,6 +10993,11 @@ def _compare_live_egress_objects(
             "Containers empty or missing; proxy membership unobserved",
         )
     member_names: list[str] = []
+    allowed_ids = {
+        str(value).strip().lower()
+        for value in (allowed_researcher_container_ids or set())
+        if str(value).strip()
+    }
     proxy_seen = False
     for _cid, meta in containers.items():
         if not isinstance(meta, dict):
@@ -9143,8 +11011,18 @@ def _compare_live_egress_objects(
         for marker in EGRESS_DIFY_FORBIDDEN_MARKERS:
             if marker in lowered:
                 raise XinaoError("EGRESS_DIFY_CROSS_PROJECT_FORBIDDEN", name)
-        # Only proxy and dedicated researcher workloads may join the internal network.
-        if normalized != proxy_name and not normalized.startswith("xinao-researcher-"):
+        member_id = str(_cid).strip().lower()
+        exact_episode_transport = any(
+            member_id == allowed or member_id.startswith(allowed) or allowed.startswith(member_id)
+            for allowed in allowed_ids
+        )
+        # One-shot researcher names remain admitted. Persistent Episode transports
+        # are admitted only by their exact lease-bound ID, never a broad name prefix.
+        if (
+            normalized != proxy_name
+            and not normalized.startswith("xinao-researcher-")
+            and not exact_episode_transport
+        ):
             raise XinaoError("EGRESS_FOREIGN_NETWORK_MEMBER", normalized)
     if not proxy_seen:
         raise XinaoError(
@@ -9252,6 +11130,7 @@ def _observe_and_compare_egress_boundary(
     runtime_lock: dict[str, Any],
     *,
     require_live_seal: bool = True,
+    allowed_researcher_container_ids: set[str] | None = None,
 ) -> dict[str, Any]:
     """
     Direct Docker observation of proxy/network/config.
@@ -9278,7 +11157,12 @@ def _observe_and_compare_egress_boundary(
             )
         if seal["docker_server_version"] != engine["docker_server_version"]:
             raise XinaoError("EGRESS_LIVE_SEAL_DRIFT", "docker_server_version")
-    observed = _compare_live_egress_objects(docker, posture, runtime_lock)
+    observed = _compare_live_egress_objects(
+        docker,
+        posture,
+        runtime_lock,
+        allowed_researcher_container_ids=allowed_researcher_container_ids,
+    )
     if require_live_seal and seal is not None:
         if seal["proxy_container_id"] != observed["proxy_container_id"] and not (
             str(observed["proxy_container_id"]).startswith(str(seal["proxy_container_id"]))
@@ -9398,6 +11282,8 @@ def _validate_researcher_network_and_proxy_env(
 
 def _require_host_egress_boundary(
     runtime_lock: dict[str, Any] | None = None,
+    *,
+    allowed_researcher_container_ids: set[str] | None = None,
 ) -> dict[str, Any]:
     """
     Normal research gate: source network_profile + valid D-state live seal + direct observe.
@@ -9416,7 +11302,11 @@ def _require_host_egress_boundary(
             "EGRESS_SOURCE_CLAIM_FORBIDDEN",
             "source provider_egress_runtime_verified must remain false; use D-state live seal",
         )
-    return _observe_and_compare_egress_boundary(effective_lock, require_live_seal=True)
+    return _observe_and_compare_egress_boundary(
+        effective_lock,
+        require_live_seal=True,
+        allowed_researcher_container_ids=allowed_researcher_container_ids,
+    )
 
 
 def _assert_egress_observations_bound(before: dict[str, Any], after: dict[str, Any]) -> None:
@@ -9440,7 +11330,7 @@ def _validate_release_image_identity(release: dict[str, Any]) -> str:
     docker = _docker()
     _docker_engine_os(docker)
     image_id = str(release.get("image_id", ""))
-    if not image_id.startswith("sha256:"):
+    if DOCKER_IMAGE_ID_PATTERN.fullmatch(image_id) is None:
         raise XinaoError("IMAGE_IDENTITY_MISSING", image_id)
     image = _docker_image(docker, image_id)
     if image.get("Id") != image_id:
@@ -9451,6 +11341,9 @@ def _validate_release_image_identity(release: dict[str, Any]) -> str:
         raise XinaoError("IMAGE_LABEL_IDENTITY_MISSING", image_id)
     donor_image_id = release["source_identity"]["grok_donor_image_id"]
     donor_binary_sha256 = release["source_identity"]["grok_donor_binary_sha256"]
+    modules_tree = release["source_identity"].get("researcher_image_modules_tree_sha256")
+    if not isinstance(modules_tree, str) or HEX_SHA256_PATTERN.fullmatch(modules_tree) is None:
+        raise XinaoError("IMAGE_LABEL_IDENTITY_MISMATCH", "researcher_image_modules_tree_sha256")
     required_labels = {
         "io.xinao.researcher.chain": "dedicated-xinao-science",
         "io.xinao.researcher.generic-worker-route": "forbidden",
@@ -9473,6 +11366,7 @@ def _validate_release_image_identity(release: dict[str, Any]) -> str:
             "shadow_runtime_lock_sha256"
         ],
         "io.xinao.researcher.requested-model": REQUESTED_MODEL,
+        **_dual_profile_image_labels(researcher_image_modules_tree_sha256=modules_tree),
     }
     for key, value in required_labels.items():
         if expected_labels.get(key) != value or labels.get(key) != value:
@@ -9480,10 +11374,42 @@ def _validate_release_image_identity(release: dict[str, Any]) -> str:
     for key, value in expected_labels.items():
         if labels.get(key) != value:
             raise XinaoError("IMAGE_LABEL_IDENTITY_MISMATCH", key)
+    _inspect_dual_profile_image_labels(labels)
     entrypoint = (image.get("Config") or {}).get("Entrypoint")
-    expected_entrypoint = ["python", "-I", "/opt/xinao-researcher/entrypoint.py"]
+    expected_entrypoint = ["python", "-I", RESEARCHER_CANARY_ENTRYPOINT_IMAGE_PATH]
     if release.get("image_entrypoint") != expected_entrypoint or entrypoint != expected_entrypoint:
         raise XinaoError("IMAGE_ENTRYPOINT_IDENTITY_MISMATCH", image_id)
+    # Dual-image generation requires both sealed images present and live-matching.
+    generation = _source_identity_generation(release.get("source_identity"))
+    if generation == "current" or "tool_image_id" in release:
+        if generation != "current" or set(release) != CURRENT_RELEASE_KEYS:
+            raise XinaoError("RELEASE_TOOL_IMAGE_IDENTITY_INVALID", "generation")
+        tool_image_id = str(release.get("tool_image_id", ""))
+        if DOCKER_IMAGE_ID_PATTERN.fullmatch(tool_image_id) is None:
+            raise XinaoError("TOOL_IMAGE_IDENTITY_MISSING", tool_image_id)
+        tool_image = _docker_image(docker, tool_image_id)
+        if tool_image.get("Id") != tool_image_id:
+            raise XinaoError("TOOL_IMAGE_IDENTITY_MISMATCH", tool_image_id)
+        expected_tool_labels = release.get("tool_image_labels")
+        tool_labels = (tool_image.get("Config") or {}).get("Labels") or {}
+        if not isinstance(expected_tool_labels, dict):
+            raise XinaoError("TOOL_IMAGE_LABEL_IDENTITY_MISSING", tool_image_id)
+        tool_df = release["source_identity"].get("tool_executor_dockerfile_sha256")
+        tool_mod = release["source_identity"].get("tool_executor_modules_tree_sha256")
+        required_tool = _tool_executor_expected_labels(
+            dockerfile_sha256=str(tool_df), modules_tree_sha256=str(tool_mod)
+        )
+        if expected_tool_labels != required_tool:
+            raise XinaoError("TOOL_IMAGE_LABEL_IDENTITY_MISMATCH", "sealed")
+        for key, value in required_tool.items():
+            if tool_labels.get(key) != value:
+                raise XinaoError("TOOL_IMAGE_LABEL_IDENTITY_MISMATCH", key)
+        tool_entrypoint = (tool_image.get("Config") or {}).get("Entrypoint")
+        if (
+            release.get("tool_image_entrypoint") != TOOL_EXECUTOR_ENTRYPOINT
+            or tool_entrypoint != TOOL_EXECUTOR_ENTRYPOINT
+        ):
+            raise XinaoError("TOOL_IMAGE_ENTRYPOINT_IDENTITY_MISMATCH", tool_image_id)
     return docker
 
 
@@ -9499,8 +11425,9 @@ def _validate_release_for_invoke(release: dict[str, Any]) -> tuple[str, dict[str
     charter, runtime_lock = _validate_release_source_identity(release)
     _require_host_egress_boundary(runtime_lock)
     docker = _validate_release_image_identity(release)
-    if not DEFAULT_AUTH_PATH.is_file():
-        raise XinaoError("GROK_AUTH_HANDLE_MISSING", str(DEFAULT_AUTH_PATH))
+    auth_path = resolve_auth_host_path(allow_synthetic_missing=False)
+    if not auth_path.is_file():
+        raise XinaoError("GROK_AUTH_HANDLE_MISSING", str(auth_path))
     return docker, charter
 
 
@@ -9793,7 +11720,7 @@ def _validate_material_result_binding(
     candidate = result.get("candidate")
     if not isinstance(candidate, dict):
         raise XinaoError("RESEARCH_CANDIDATE_MISSING", "candidate")
-    expected_candidate_keys = {
+    required_candidate_keys = {
         "schema_version",
         "status",
         "research_question",
@@ -9809,8 +11736,16 @@ def _validate_material_result_binding(
         "limitations",
         "next_evidence",
     }
-    if set(candidate) != expected_candidate_keys:
-        raise XinaoError("RESEARCH_CANDIDATE_FIELDS_INVALID", "candidate keys are not exact")
+    optional_candidate_keys = {"executable_account_decision"}
+    observed_candidate_keys = set(candidate)
+    if (
+        not required_candidate_keys.issubset(observed_candidate_keys)
+        or observed_candidate_keys - required_candidate_keys - optional_candidate_keys
+    ):
+        raise XinaoError(
+            "RESEARCH_CANDIDATE_FIELDS_INVALID",
+            "candidate required/optional keys are invalid",
+        )
     if candidate.get("schema_version") != "xinao.research_candidate.v2":
         raise XinaoError("RESEARCH_CANDIDATE_SCHEMA_INVALID", "schema_version")
     if candidate.get("status") != result["status"]:
@@ -9819,6 +11754,31 @@ def _validate_material_result_binding(
         raise XinaoError("RESEARCH_CANDIDATE_REQUEST_DRIFT", "question/as_of")
     if candidate.get("material_bundle_id") != manifest["bundle_id"]:
         raise XinaoError("RESEARCH_CANDIDATE_BUNDLE_DRIFT", "material_bundle_id")
+    executable = candidate.get("executable_account_decision")
+    if executable is not None:
+        executable_keys = {
+            "panel",
+            "selected_number",
+            "stake",
+            "target_ref",
+            "target_open_time",
+            "freeze_deadline",
+            "knowledge_cutoff",
+            "odds_version_ref",
+            "baseline_ref",
+            "risk_policy_ref",
+            "rule_ref",
+        }
+        if not isinstance(executable, dict) or set(executable) != executable_keys:
+            raise XinaoError(
+                "RESEARCH_CANDIDATE_EXECUTABLE_INVALID",
+                "executable_account_decision keys are not exact",
+            )
+        if candidate.get("status") != "CANDIDATE_READY":
+            raise XinaoError(
+                "RESEARCH_CANDIDATE_EXECUTABLE_STATUS_INVALID",
+                str(candidate.get("status")),
+            )
     if not _plain_json_text(candidate.get("summary"), nonempty=True):
         raise XinaoError("RESEARCH_CANDIDATE_SUMMARY_INVALID", "summary")
     for key in (
@@ -11244,13 +13204,37 @@ def run_shadow(
     settlement_journal_group_ref: str | None = None,
     statement_ref: str | None = None,
     occurred_at: str | None = None,
+    kind: str | None = None,
+    feedback_ref: str | None = None,
+    reason_code: str | None = None,
+    notes: str | None = None,
+    period_index: int | None = None,
 ) -> dict[str, Any]:
     if verb not in SHADOW_SKILL_VERBS:
         raise XinaoError("SHADOW_VERB_INVALID", verb)
+    # Public freeze verbs are never production Owner freeze. Fail closed before Docker
+    # so Skill does not advertise a second authority-free freeze path with caller time.
+    if verb == "freeze":
+        raise XinaoError(
+            "FLAT_FREEZE_NOT_PRODUCTION",
+            "shadow freeze never accepts caller-authored frozen_at as production freeze. "
+            "Production path: xinao prospective freeze-from-disposition "
+            "(candidate pool + sealed Owner disposition + host UTC). "
+            "Historical inspect/settle/replay of sealed episodes remain available. "
+            "Fixture construction: tests-only helper under tests/.",
+        )
+    if verb == "portfolio-freeze":
+        raise XinaoError(
+            "PORTFOLIO_FREEZE_CLI_NOT_PRODUCTION",
+            "shadow portfolio-freeze never calls freeze_portfolio_period. "
+            "Production path: xinao prospective freeze-from-disposition "
+            "(authority-root + owner-state-root + disposition + portfolio-root). "
+            "Fixture construction: tests-only helper under tests/.",
+        )
     docker, release, context, fence = _require_shadow_ready()
     image_id = str(release["image_id"])
     episode_root = root.expanduser().resolve()
-    if verb == "init":
+    if verb in {"init", "portfolio-init"}:
         episode_root.mkdir(parents=True, exist_ok=True)
     elif not episode_root.exists():
         raise XinaoError("SHADOW_EPISODE_ROOT_MISSING", str(episode_root))
@@ -11264,25 +13248,13 @@ def run_shadow(
     work = run_root / "shadow_runs" / run_id
     work.mkdir(parents=True, exist_ok=False)
 
-    if verb == "init":
+    if verb in {"init", "portfolio-init"}:
         if not seat_id or not portfolio_ref:
             raise XinaoError("SHADOW_INIT_ARGUMENTS_INVALID", "seat_id/portfolio_ref required")
         module_argv.extend(["--seat-id", seat_id, "--portfolio-ref", portfolio_ref])
         if opening_balance is not None:
             module_argv.extend(["--opening-balance", opening_balance])
-    elif verb == "freeze":
-        if request is None or not request.is_file():
-            raise XinaoError("SHADOW_REQUEST_MISSING", str(request))
-        input_root = work / "input"
-        input_root.mkdir(parents=True, exist_ok=False)
-        target = input_root / "request.json"
-        target.write_bytes(
-            _regular_file_bytes(
-                request, reason_code="SHADOW_REQUEST_INVALID", maximum=MAX_JSON_FILE_BYTES
-            )
-        )
-        module_argv.extend(["--request", f"{SHADOW_INPUT_CONTAINER_ROOT}/request.json"])
-    elif verb == "settle":
+    elif verb in {"settle", "portfolio-settle"}:
         if outcome is None or not outcome.is_file():
             raise XinaoError("SHADOW_OUTCOME_MISSING", str(outcome))
         input_root = work / "input"
@@ -11302,6 +13274,20 @@ def run_shadow(
             module_argv.extend(["--statement-ref", statement_ref])
         if occurred_at:
             module_argv.extend(["--occurred-at", occurred_at])
+    elif verb == "portfolio-feedback":
+        if not kind:
+            raise XinaoError("SHADOW_FEEDBACK_KIND_MISSING", "kind required")
+        module_argv.extend(["--kind", kind])
+        if feedback_ref:
+            module_argv.extend(["--feedback-ref", feedback_ref])
+        if reason_code:
+            module_argv.extend(["--reason-code", reason_code])
+        if notes is not None:
+            module_argv.extend(["--notes", notes])
+    elif verb == "portfolio-replay":
+        if period_index is None:
+            raise XinaoError("SHADOW_PERIOD_INDEX_MISSING", "period_index required")
+        module_argv.extend(["--period-index", str(period_index)])
 
     name = "xinao-shadow-" + run_id.lower().replace("_", "-")
     create_argv = _build_shadow_docker_create_argv(
@@ -11457,9 +13443,20 @@ def _parser() -> argparse.ArgumentParser:
     shadow_inspect.add_argument("--root", type=Path, required=True)
     shadow_status = shadow_sub.add_parser("status")
     shadow_status.add_argument("--root", type=Path, required=True)
-    shadow_freeze = shadow_sub.add_parser("freeze")
+    shadow_freeze = shadow_sub.add_parser(
+        "freeze",
+        help=(
+            "NON-PRODUCTION: always FLAT_FREEZE_NOT_PRODUCTION. "
+            "Production freeze: xinao prospective freeze-from-disposition."
+        ),
+    )
     shadow_freeze.add_argument("--root", type=Path, required=True)
-    shadow_freeze.add_argument("--request", type=Path, required=True)
+    shadow_freeze.add_argument(
+        "--request",
+        type=Path,
+        required=True,
+        help="Ignored: this Skill verb never performs production freeze",
+    )
     shadow_settle = shadow_sub.add_parser("settle")
     shadow_settle.add_argument("--root", type=Path, required=True)
     shadow_settle.add_argument("--outcome", type=Path, required=True)
@@ -11469,7 +13466,3036 @@ def _parser() -> argparse.ArgumentParser:
     shadow_settle.add_argument("--occurred-at", default=None)
     shadow_replay = shadow_sub.add_parser("replay")
     shadow_replay.add_argument("--root", type=Path, required=True)
+    shadow_portfolio_init = shadow_sub.add_parser("portfolio-init")
+    shadow_portfolio_init.add_argument("--root", type=Path, required=True)
+    shadow_portfolio_init.add_argument("--seat-id", required=True)
+    shadow_portfolio_init.add_argument("--portfolio-ref", required=True)
+    shadow_portfolio_init.add_argument("--opening-balance", default=None)
+    shadow_portfolio_inspect = shadow_sub.add_parser("portfolio-inspect")
+    shadow_portfolio_inspect.add_argument("--root", type=Path, required=True)
+    shadow_portfolio_freeze = shadow_sub.add_parser(
+        "portfolio-freeze",
+        help=(
+            "NON-PRODUCTION: always PORTFOLIO_FREEZE_CLI_NOT_PRODUCTION. "
+            "Production freeze: xinao prospective freeze-from-disposition."
+        ),
+    )
+    shadow_portfolio_freeze.add_argument("--root", type=Path, required=True)
+    shadow_portfolio_freeze.add_argument(
+        "--request",
+        type=Path,
+        required=True,
+        help="Ignored: this Skill verb never performs production freeze",
+    )
+    shadow_portfolio_settle = shadow_sub.add_parser("portfolio-settle")
+    shadow_portfolio_settle.add_argument("--root", type=Path, required=True)
+    shadow_portfolio_settle.add_argument("--outcome", type=Path, required=True)
+    shadow_portfolio_settle.add_argument("--settlement-ref", default=None)
+    shadow_portfolio_settle.add_argument("--settlement-journal-group-ref", default=None)
+    shadow_portfolio_settle.add_argument("--statement-ref", default=None)
+    shadow_portfolio_settle.add_argument("--occurred-at", default=None)
+    shadow_portfolio_feedback = shadow_sub.add_parser("portfolio-feedback")
+    shadow_portfolio_feedback.add_argument("--root", type=Path, required=True)
+    shadow_portfolio_feedback.add_argument("--kind", required=True)
+    shadow_portfolio_feedback.add_argument("--feedback-ref", default=None)
+    shadow_portfolio_feedback.add_argument("--reason-code", default=None)
+    shadow_portfolio_feedback.add_argument("--notes", default=None)
+    shadow_portfolio_replay = shadow_sub.add_parser("portfolio-replay")
+    shadow_portfolio_replay.add_argument("--root", type=Path, required=True)
+    shadow_portfolio_replay.add_argument("--period-index", type=int, required=True)
+    # Local leg-A ResearchEpisode verbs (additive; does not alter INSTRUMENT_CANARY research).
+    research_episode = sub.add_parser("research-episode")
+    research_episode_sub = research_episode.add_subparsers(
+        dest="research_episode_command", required=True
+    )
+    re_start = research_episode_sub.add_parser("start")
+    re_start.add_argument("--root", type=Path, required=True)
+    re_start.add_argument("--question", required=True)
+    re_start.add_argument("--lease-seconds", type=int, default=3600)
+    re_status = research_episode_sub.add_parser("status")
+    re_status.add_argument("--root", type=Path, required=True)
+    re_checkpoint = research_episode_sub.add_parser("checkpoint")
+    re_checkpoint.add_argument("--root", type=Path, required=True)
+    re_checkpoint.add_argument("--expected-head", required=True)
+    re_checkpoint.add_argument("--progress-note", default="")
+    re_checkpoint.add_argument("--lab-relative", default=None)
+    re_checkpoint.add_argument("--mark-interrupted", action="store_true")
+    re_resume = research_episode_sub.add_parser("resume")
+    re_resume.add_argument("--root", type=Path, required=True)
+    re_resume.add_argument("--expected-head", required=True)
+    re_resume.add_argument("--expected-session", default=None)
+    re_cancel = research_episode_sub.add_parser("cancel")
+    re_cancel.add_argument("--root", type=Path, required=True)
+    re_ensure = research_episode_sub.add_parser(
+        "ensure-pair",
+        help=(
+            "Owner one-shot: materialize dual-container transport+tool pair for an "
+            "existing ResearchEpisode head (requires tool-namespace receipt; never "
+            "starts next episode or writes outcome/ledger)"
+        ),
+    )
+    re_ensure.add_argument("--root", type=Path, required=True)
+    re_ensure.add_argument("--expected-head", required=True)
+    re_ensure.add_argument(
+        "--research-profile",
+        default="OPEN_RESEARCH",
+        help="OPEN_RESEARCH (default productive multi-turn) or CLOSED_LAB",
+    )
+    re_retire = research_episode_sub.add_parser(
+        "retire-pair",
+        help=(
+            "Owner one-shot: retire dual-container pair for episode root "
+            "(idempotent; does not schedule successor)"
+        ),
+    )
+    re_retire.add_argument("--root", type=Path, required=True)
+    re_absorb = research_episode_sub.add_parser("absorb")
+    re_absorb.add_argument("--root", type=Path, required=True)
+    re_absorb.add_argument("--expected-head", required=True)
+    re_absorb.add_argument("--candidate", type=Path, default=None)
+    # Owner one-shot live provider attach/run (docker exec; not plan-only theater).
+    re_attach = research_episode_sub.add_parser("attach-run")
+    re_attach.add_argument("--root", type=Path, required=True)
+    re_attach.add_argument("--prompt", required=True)
+    re_attach.add_argument("--expected-head", default=None)
+    re_attach.add_argument("--max-turns", type=int, default=None)
+    re_attach.add_argument("--timeout-seconds", type=float, default=None)
+    re_attach.add_argument(
+        "--plan-only",
+        action="store_true",
+        help="Emit planned argv only; never records LIVE_ATTEMPT_RECORDED evidence",
+    )
+    re_resume_live = research_episode_sub.add_parser("resume-live")
+    re_resume_live.add_argument("--root", type=Path, required=True)
+    re_resume_live.add_argument("--expected-provider-session", required=True)
+    re_resume_live.add_argument("--expected-head", required=True)
+    re_resume_live.add_argument("--expected-session", default=None)
+    re_resume_live.add_argument("--prior-attempt-hash", default=None)
+    re_resume_live.add_argument("--prompt", default=None)
+    re_resume_live.add_argument("--max-turns", type=int, default=None)
+    re_resume_live.add_argument("--timeout-seconds", type=float, default=None)
+    re_resume_live.add_argument("--plan-only", action="store_true")
+    re_export = research_episode_sub.add_parser("export-candidate-evidence")
+    re_export.add_argument("--root", type=Path, required=True)
+    re_export.add_argument("--attempt-cas-digest", required=True)
+    re_export.add_argument("--expected-head", required=True)
+    re_export.add_argument("--expected-provider-session", default=None)
+    re_ingest = research_episode_sub.add_parser(
+        "ingest-export",
+        help=(
+            "Owner consumer: sealed episode export + lab manifest bytes -> immutable "
+            "candidate pool entry (owner_adopted=false; never freezes)"
+        ),
+    )
+    re_ingest.add_argument("--pool-root", type=Path, required=True)
+    re_ingest.add_argument(
+        "--export",
+        type=Path,
+        required=True,
+        help="Path to sealed export JSON (candidate evidence bundle)",
+    )
+    re_ingest.add_argument(
+        "--manifest",
+        type=Path,
+        required=True,
+        help="Exact lab candidate_manifest.v1.json bytes path",
+    )
+    re_bind_fb = research_episode_sub.add_parser(
+        "bind-feedback-material",
+        help=(
+            "Owner consumer: sealed settlement feedback pack -> later ResearchEpisode "
+            "material binding only (no auto-start, no rewrite of priors)"
+        ),
+    )
+    re_bind_fb.add_argument("--portfolio-root", type=Path, required=True)
+    re_bind_fb.add_argument("--feedback-content-hash", required=True)
+    re_bind_fb.add_argument("--prior-candidate-result-sha256", default=None)
+    re_bind_fb.add_argument("--prior-candidate-version", default=None)
+    re_bind_fb.add_argument("--settled-portfolio-hash", default=None)
+    re_bind_fb.add_argument("--target-episode-version", default=None)
+    # Owner one-shot host security issuer (not episode-local, not autonomous).
+    sub.add_parser("issue-tool-namespace-receipt")
     return parser
+
+
+# ---------------------------------------------------------------------------
+# Local leg-A ResearchEpisode lifecycle (host-side; no daemon/Goal/Temporal)
+# Candidate-only. Capability remains UNAVAILABLE until live tool-namespace receipt.
+# ---------------------------------------------------------------------------
+
+RESEARCH_EPISODE_SCHEMA = "xinao.research_episode_state.v1"
+RESEARCH_EPISODE_CHECKPOINT_SCHEMA = "xinao.research_episode_checkpoint.v1"
+# Narrow tool-namespace gate only — never scientist role fitness / completion.
+RESEARCH_EPISODE_PROFILE_STATUS = "UNAVAILABLE_AWAITING_TOOL_NAMESPACE_RECEIPT"
+RESEARCH_EPISODE_PROFILE_STATUS_VERIFIED = "TOOL_NAMESPACE_VERIFIED"
+TOOL_NAMESPACE_RECEIPT_SCHEMA = "xinao.tool_namespace_separation_receipt.v1"
+TOOL_NAMESPACE_CURRENT_POINTER_SCHEMA = "xinao.tool_namespace_separation_current.v1"
+TOOL_NAMESPACE_CURRENT_POINTER_KEYS = frozenset(
+    {
+        "schema_version",
+        "receipt_id",
+        "receipt_path",
+        "receipt_sha256",
+        "transport_image_id",
+        "tool_image_id",
+        "release_id",
+        "release_identity_sha256",
+        "sealed_at",
+        "authority",
+        "completion_claim_allowed",
+    }
+)
+GENUINE_SCIENTIST_PROFILE_ID = "genuine_scientist"
+TOOL_NAMESPACE_RECEIPT_REQUIRED_NEGATIVE_PROOF_IDS = (
+    "credential_read_denied",
+    "path_traversal_denied",
+    "symlink_escape_denied",
+    "proc_env_leak_denied",
+    "worktree_escape_denied",
+    "ledger_outcome_mutation_denied",
+    "capability_drift_denied",
+)
+TOOL_NAMESPACE_RECEIPT_MAX_AGE_SECONDS = 7 * 24 * 3600
+# Each physical probe run owns an exclusive child under security/.probe_work.
+# Fixed `.probe_work/lab/.auth_escape` reuse left Windows reparse residue that
+# blocked the next receipt issue; invocation roots isolate + enable exact cleanup.
+TOOL_NAMESPACE_PROBE_WORK_DIRNAME = ".probe_work"
+TOOL_NAMESPACE_PROBE_INVOCATION_PREFIX = "inv_"
+RESEARCH_EPISODE_LEASE_WAIT_SECONDS = 5.0
+RESEARCH_EPISODE_LOCK_NAME = "episode.lease.lock"
+
+
+def _research_episode_now() -> str:
+    return dt.datetime.now(dt.UTC).strftime("%Y%m%dT%H%M%S")
+
+
+def _research_episode_id(prefix: str) -> str:
+    return f"{prefix}_{_research_episode_now()}_{uuid.uuid4().hex[:12]}"
+
+
+def _research_episode_paths(root: Path) -> dict[str, Path]:
+    root = Path(root)
+    return {
+        "root": root,
+        "lab": root / "lab",
+        "outbox": root / "outbox",
+        "objects": root / "objects" / "sha256",
+        "artifacts": root / "artifacts" / "sha256",
+        "head": root / "head.json",
+        "meta": root / "episode_meta.json",
+        "lock": root / RESEARCH_EPISODE_LOCK_NAME,
+        "journal": root / "invocation_journal.jsonl",
+        "dual_lease": root / "dual_container_pair_lease.json",
+    }
+
+
+def _research_episode_assert_root_allowed(root: Path) -> None:
+    """Reject C: drive roots under Windows semantics (no implicit C growth)."""
+    text = str(root)
+    # Normalize drive forms: C:\ C:/ c: and /mnt/c
+    if (
+        re.match(r"(?i)^[cC]:([\\/]|$)", text)
+        or text.lower().startswith("/mnt/c/")
+        or text.lower().startswith("/c/")
+    ):
+        raise XinaoError("RESEARCH_EPISODE_ROOT_C_DRIVE_FORBIDDEN", text)
+
+
+@contextmanager
+def _research_episode_lock(root: Path):
+    paths = _research_episode_paths(root)
+    paths["root"].mkdir(parents=True, exist_ok=True)
+    lock_path = paths["lock"]
+    fh = open(lock_path, "a+b")
+    deadline = time.time() + RESEARCH_EPISODE_LEASE_WAIT_SECONDS
+    locked = False
+    try:
+        while True:
+            try:
+                if os.name == "nt":
+                    import msvcrt  # type: ignore
+
+                    try:
+                        msvcrt.locking(fh.fileno(), msvcrt.LK_NBLCK, 1)
+                        locked = True
+                        break
+                    except OSError:
+                        pass
+                else:
+                    import fcntl
+
+                    try:
+                        fcntl.flock(fh.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+                        locked = True
+                        break
+                    except BlockingIOError:
+                        pass
+            except Exception:
+                pass
+            if time.time() >= deadline:
+                raise XinaoError(
+                    "RESEARCH_EPISODE_LEASE_HELD",
+                    f"exclusive lease held: {lock_path}",
+                )
+            time.sleep(0.05)
+        yield
+    finally:
+        try:
+            if locked:
+                if os.name == "nt":
+                    import msvcrt  # type: ignore
+
+                    try:
+                        fh.seek(0)
+                        msvcrt.locking(fh.fileno(), msvcrt.LK_UNLCK, 1)
+                    except OSError:
+                        pass
+                else:
+                    import fcntl
+
+                    fcntl.flock(fh.fileno(), fcntl.LOCK_UN)
+        finally:
+            fh.close()
+
+
+def _research_episode_put_bytes(root: Path, kind: str, payload: bytes) -> str:
+    digest = _sha256_bytes(payload)
+    if kind == "objects":
+        dest_dir = _research_episode_paths(root)["objects"] / digest[:2]
+        dest = dest_dir / f"{digest}.json"
+    elif kind == "artifacts":
+        dest_dir = _research_episode_paths(root)["artifacts"] / digest[:2]
+        dest = dest_dir / f"{digest}.json"
+    else:
+        raise XinaoError("RESEARCH_EPISODE_OBJECT_KIND_INVALID", kind)
+    dest_dir.mkdir(parents=True, exist_ok=True)
+    if dest.exists():
+        existing = dest.read_bytes()
+        if existing != payload:
+            raise XinaoError(
+                "RESEARCH_EPISODE_IMMUTABLE_COLLISION"
+                if kind == "artifacts"
+                else "RESEARCH_EPISODE_OBJECT_HASH_MISMATCH",
+                f"cas collision {digest}",
+            )
+        return digest
+    tmp = dest.with_suffix(dest.suffix + ".tmp")
+    tmp.write_bytes(payload)
+    os.replace(tmp, dest)
+    return digest
+
+
+def _research_episode_load_bytes(root: Path, kind: str, digest: str) -> bytes:
+    if kind == "objects":
+        path = _research_episode_paths(root)["objects"] / digest[:2] / f"{digest}.json"
+    else:
+        path = _research_episode_paths(root)["artifacts"] / digest[:2] / f"{digest}.json"
+    if not path.is_file():
+        raise XinaoError("RESEARCH_EPISODE_OBJECT_MISSING", digest)
+    payload = path.read_bytes()
+    if _sha256_bytes(payload) != digest:
+        raise XinaoError(
+            "RESEARCH_EPISODE_ARTIFACT_HASH_MISMATCH"
+            if kind == "artifacts"
+            else "RESEARCH_EPISODE_OBJECT_HASH_MISMATCH",
+            digest,
+        )
+    return payload
+
+
+def _research_episode_write_head(root: Path, head: dict[str, Any]) -> None:
+    paths = _research_episode_paths(root)
+    tmp = paths["head"].with_suffix(".tmp")
+    tmp.write_bytes(_canonical_bytes(head))
+    os.replace(tmp, paths["head"])
+
+
+def _research_episode_read_meta(root: Path) -> dict[str, Any]:
+    paths = _research_episode_paths(root)
+    if not paths["meta"].is_file():
+        raise XinaoError("RESEARCH_EPISODE_META_MISSING", str(paths["meta"]))
+    return json.loads(paths["meta"].read_text(encoding="utf-8"))
+
+
+def _research_episode_load_head(root: Path) -> dict[str, Any]:
+    paths = _research_episode_paths(root)
+    if not paths["head"].is_file():
+        raise XinaoError("RESEARCH_EPISODE_HEAD_MISSING", str(paths["head"]))
+    head = json.loads(paths["head"].read_text(encoding="utf-8"))
+    meta = _research_episode_read_meta(root)
+    if head.get("episode_id") != meta.get("episode_id"):
+        raise XinaoError("RESEARCH_EPISODE_FOREIGN_EPISODE", str(head.get("episode_id")))
+    if "provider_session_identity" in head:
+        raise XinaoError(
+            "RESEARCH_EPISODE_PROVIDER_SESSION_NOT_AUTHORITY",
+            "provider_session_identity",
+        )
+    digest = head.get("head_checkpoint_sha256")
+    if not isinstance(digest, str) or len(digest) != 64:
+        raise XinaoError("RESEARCH_EPISODE_HEAD_INVALID", "head_checkpoint_sha256")
+    payload = _research_episode_load_bytes(root, "objects", digest)
+    checkpoint = json.loads(payload.decode("utf-8"))
+    checkpoint["checkpoint_sha256"] = digest
+    head["checkpoint"] = checkpoint
+    return head
+
+
+def _research_episode_append_journal(root: Path, event: dict[str, Any]) -> None:
+    paths = _research_episode_paths(root)
+    with open(paths["journal"], "a", encoding="utf-8") as fh:
+        fh.write(json.dumps(event, ensure_ascii=False, sort_keys=True) + "\n")
+
+
+def _active_release_sealed_dual_images() -> tuple[str, str, dict[str, Any]] | None:
+    """Return (transport_image_id, tool_image_id, release) from active dual-image release.
+
+    Returns None when no terminal dual-image active release is available (fail closed at call
+    sites that require sealed binding).
+    """
+
+    try:
+        with _activation_lock():
+            context = _load_current_context(require_terminal=True)
+        release = context.get("release")
+        if not isinstance(release, dict):
+            return None
+        # Owner fail-closed: exact current dual-image release key set only.
+        if set(release) != CURRENT_RELEASE_KEYS:
+            return None
+        transport_id = release.get("image_id")
+        tool_id = release.get("tool_image_id")
+        if (
+            not isinstance(transport_id, str)
+            or DOCKER_IMAGE_ID_PATTERN.fullmatch(transport_id) is None
+            or not isinstance(tool_id, str)
+            or DOCKER_IMAGE_ID_PATTERN.fullmatch(tool_id) is None
+        ):
+            return None
+        return transport_id, tool_id, release
+    except Exception:
+        return None
+
+
+def _resolve_research_episode_dual_images() -> tuple[str, str]:
+    """Default to active sealed IDs; reject env overrides whose resolved ID differs."""
+
+    sealed = _active_release_sealed_dual_images()
+    env_transport = os.environ.get("XINAO_TRANSPORT_IMAGE", "").strip()
+    env_tool = os.environ.get("XINAO_TOOL_EXECUTOR_IMAGE", "").strip()
+    synthetic = os.environ.get("XINAO_DUAL_CONTAINER_SYNTHETIC", "").strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
+    if sealed is None:
+        if not env_transport or not env_tool:
+            raise XinaoError(
+                "DUAL_CONTAINER_SEALED_IMAGES_REQUIRED",
+                "active dual-image release or sealed image IDs required",
+            )
+        # Without a sealed active dual-image release, only synthetic unit paths may proceed
+        # with explicit env refs (never as live namespace proof).
+        if not synthetic:
+            raise XinaoError(
+                "DUAL_CONTAINER_SEALED_IMAGES_REQUIRED",
+                "live dual-host requires active release with tool_image_id",
+            )
+        return env_transport, env_tool
+    sealed_transport, sealed_tool, _release = sealed
+    transport = sealed_transport
+    tool = sealed_tool
+    if env_transport:
+        if synthetic:
+            if env_transport != sealed_transport and not env_transport.startswith("sha256:"):
+                # Synthetic may use tags only when they are forced equal after resolve mock.
+                transport = env_transport
+            elif env_transport != sealed_transport:
+                raise XinaoError(
+                    "DUAL_CONTAINER_TRANSPORT_IMAGE_OVERRIDE_REJECTED",
+                    f"sealed={sealed_transport} override={env_transport}",
+                )
+        else:
+            # Live: resolve env ref and require exact sealed ID match.
+            docker = _docker()
+            observed = str(_docker_image(docker, env_transport).get("Id", ""))
+            if observed != sealed_transport:
+                raise XinaoError(
+                    "DUAL_CONTAINER_TRANSPORT_IMAGE_OVERRIDE_REJECTED",
+                    f"sealed={sealed_transport} resolved={observed}",
+                )
+            transport = sealed_transport
+    if env_tool:
+        if synthetic:
+            if env_tool != sealed_tool and not env_tool.startswith("sha256:"):
+                tool = env_tool
+            elif env_tool != sealed_tool:
+                raise XinaoError(
+                    "DUAL_CONTAINER_TOOL_IMAGE_OVERRIDE_REJECTED",
+                    f"sealed={sealed_tool} override={env_tool}",
+                )
+        else:
+            docker = _docker()
+            observed = str(_docker_image(docker, env_tool).get("Id", ""))
+            if observed != sealed_tool:
+                raise XinaoError(
+                    "DUAL_CONTAINER_TOOL_IMAGE_OVERRIDE_REJECTED",
+                    f"sealed={sealed_tool} resolved={observed}",
+                )
+            tool = sealed_tool
+    return transport, tool
+
+
+def _research_episode_container_identity(
+    *,
+    verb: str,
+    episode_id: str,
+    session_id: str,
+    generation: int,
+    lab_root: Path,
+    root: Path,
+) -> dict[str, Any]:
+    # Same live receipt judgment as start/status/resume — never hardcode AVAILABLE.
+    profile_status = _research_episode_resolve_profile_status(root)
+    dual = os.environ.get("XINAO_DUAL_CONTAINER_HOST", "").strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
+    if not dual:
+        return {
+            "schema_version": "xinao.research_episode_container_contract.v1",
+            "driver": "mock_host_side_until_sibling_container",
+            "verb": verb,
+            "episode_id": episode_id,
+            "session_id": session_id,
+            "generation": generation,
+            "container_id": None,
+            "tool_container_id": None,
+            "transport_container_id": None,
+            "image_id": None,
+            "profile_status": profile_status,
+            "writable_mounts": ["episode_lab", "outbox_candidates"],
+            "forbidden_mounts": [
+                "shadow_ledger",
+                "freeze_store",
+                "outcome_store",
+                "settlement",
+                "auth_secrets_on_tool",
+                "owner_adoption",
+                "docker_socket",
+            ],
+            "network_mode": "none",
+            "restart_policy": "no",
+            "daemon": False,
+            "goal": False,
+            "temporal_leg_b": False,
+            "generic_file_shell_tools": False,
+            "lab_root": str(lab_root),
+            "completion_claim_allowed": False,
+            "owner_adopted": False,
+            "science_restored": False,
+            "parent_complete": False,
+        }
+    host_path = Path(__file__).resolve().parent / "dual_container_host.py"
+    try:
+        host_mod = _load_sealed_python_module("xinao_dual_container_host_runtime", host_path)
+    except XinaoError as exc:
+        if exc.reason_code in {"SEALED_MODULE_MISSING", "SEALED_MODULE_READ_FAILED"}:
+            raise XinaoError("DUAL_CONTAINER_HOST_MISSING", str(host_path)) from exc
+        raise
+    transport, tool = _resolve_research_episode_dual_images()
+    synthetic = os.environ.get("XINAO_DUAL_CONTAINER_SYNTHETIC", "").strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
+    auth = resolve_auth_host_path(allow_synthetic_missing=synthetic)
+    network = os.environ.get("XINAO_TRANSPORT_NETWORK", "").strip()
+    if not network:
+        network = "none" if synthetic else EGRESS_INTERNAL_NETWORK_NAME
+    host = host_mod.DualContainerHost(
+        host_mod.DualHostConfig(
+            transport_image=transport,
+            tool_image=tool,
+            auth_host_path=Path(auth),
+            episode_root=Path(root),
+            network=network,
+            synthetic=synthetic,
+        )
+    )
+    return host_mod.research_episode_dual_container_driver(
+        verb=verb,
+        episode_id=episode_id,
+        session_id=session_id,
+        generation=generation,
+        lab_root=lab_root,
+        profile_status=profile_status,
+        host=host,
+    )
+
+
+def _research_episode_commit_checkpoint(
+    root: Path,
+    *,
+    episode_id: str,
+    session_id: str,
+    generation: int,
+    status: str,
+    progress_note: str,
+    parent_sha256: str | None,
+    container_identity: dict[str, Any],
+    lab_relative: str | None = None,
+    lab_bytes: bytes | None = None,
+    candidate_sha256: str | None = None,
+) -> dict[str, Any]:
+    paths = _research_episode_paths(root)
+    if lab_relative is not None and lab_bytes is not None:
+        rel = Path(lab_relative)
+        if ".." in rel.parts or rel.is_absolute():
+            raise XinaoError("RESEARCH_EPISODE_LAB_PATH_INVALID", lab_relative)
+        lowered = lab_relative.replace("\\", "/").lower()
+        for token in ("ledger", "freeze", "outcome", "settlement", "shadow", "auth"):
+            if token in lowered.split("/"):
+                raise XinaoError("RESEARCH_EPISODE_UNAUTHORIZED_LEDGER_PATH", lab_relative)
+        if any(part.startswith("..") for part in rel.parts):
+            raise XinaoError("RESEARCH_EPISODE_LAB_PATH_INVALID", lab_relative)
+        target = paths["lab"] / lab_relative
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_bytes(lab_bytes)
+    body = {
+        "schema_version": RESEARCH_EPISODE_CHECKPOINT_SCHEMA,
+        "episode_id": episode_id,
+        "session_id": session_id,
+        "generation": generation,
+        "status": status,
+        "progress_note": progress_note,
+        "parent_checkpoint_sha256": parent_sha256,
+        "container_identity": container_identity,
+        "lab_relative": lab_relative,
+        "lab_bytes_sha256": _sha256_bytes(lab_bytes) if lab_bytes is not None else None,
+        "candidate_sha256": candidate_sha256,
+        "created_at": dt.datetime.now(dt.UTC).isoformat().replace("+00:00", "Z"),
+        "completion_claim_allowed": False,
+        "owner_adopted": False,
+        "science_restored": False,
+        "parent_complete": False,
+    }
+    sealed_bytes = _canonical_bytes(body)
+    digest = _sha256_bytes(sealed_bytes)
+    body_with_digest = dict(body)
+    body_with_digest["checkpoint_sha256"] = digest
+    _research_episode_put_bytes(root, "objects", sealed_bytes)
+    head = {
+        "schema_version": RESEARCH_EPISODE_SCHEMA,
+        "episode_id": episode_id,
+        "session_id": session_id,
+        "generation": generation,
+        "status": status,
+        "head_checkpoint_sha256": digest,
+        "updated_at": body["created_at"],
+        "completion_claim_allowed": False,
+    }
+    _research_episode_write_head(root, head)
+    _research_episode_append_journal(
+        root,
+        {
+            "event": "checkpoint",
+            "status": status,
+            "generation": generation,
+            "head_checkpoint_sha256": digest,
+        },
+    )
+    out_status = status
+    if status == "INTERRUPTED":
+        out_status = "INTERRUPTED_CHECKPOINT"
+    elif status == "RUNNING":
+        out_status = "CHECKPOINT_COMMITTED"
+    elif status not in {"ABSORBED", "CANCELLED", "STARTED", "RESUMED"}:
+        out_status = "CHECKPOINT_COMMITTED"
+    return {
+        "status": out_status,
+        "head": head,
+        "head_checkpoint_sha256": digest,
+        "checkpoint": body_with_digest,
+        "generation": generation,
+        "session_id": session_id,
+        "episode_id": episode_id,
+        "completion_claim_allowed": False,
+    }
+
+
+def _tool_namespace_security_root() -> Path:
+    return _state_paths()["capability_root"] / TOOL_NAMESPACE_SECURITY_RELATIVE
+
+
+def _tool_namespace_canonical_path(path: Path) -> Path:
+    """Resolve a path without following reparse points on intermediate roots."""
+    resolved = path.resolve(strict=False)
+    if _is_reparse(resolved) if os.path.lexists(resolved) else False:
+        raise XinaoError("TOOL_NAMESPACE_RECEIPT_REPARSE_FORBIDDEN", str(path))
+    return resolved
+
+
+def _tool_namespace_paths_equal(left: Path, right: Path) -> bool:
+    try:
+        return os.path.normcase(str(_tool_namespace_canonical_path(left))) == os.path.normcase(
+            str(_tool_namespace_canonical_path(right))
+        )
+    except XinaoError:
+        return False
+
+
+def _refuse_synthetic_namespace_evidence(*, allow_live: bool) -> None:
+    """Never promote synthetic/harness/fixture evidence as live kernel namespace proof."""
+
+    markers = (
+        os.environ.get("XINAO_TOOL_NAMESPACE_SYNTHETIC", ""),
+        os.environ.get("XINAO_DUAL_CONTAINER_SYNTHETIC", ""),
+        os.environ.get("XINAO_ACCEPT_FIXTURE_NAMESPACE_RECEIPT", ""),
+    )
+    if any(str(m).strip().lower() in {"1", "true", "yes", "on"} for m in markers):
+        raise XinaoError(
+            "TOOL_NAMESPACE_SYNTHETIC_EVIDENCE_REFUSED",
+            "synthetic/fixture/harness evidence cannot mint live host_security_evidence",
+        )
+    if not allow_live:
+        raise XinaoError(
+            "TOOL_NAMESPACE_LIVE_PROOF_REQUIRED",
+            "physical dual-container probes required for live receipt",
+        )
+
+
+def _normalize_docker_create_argv(docker: str, create_argv: list[str]) -> list[str]:
+    """docker_create_argv starts with 'docker'; bind to the resolved docker binary."""
+    if create_argv and Path(str(create_argv[0])).name.lower() in {"docker", "docker.exe"}:
+        return [docker, *create_argv[1:]]
+    return [docker, *create_argv]
+
+
+def _load_docker_create_specs_module() -> Any:
+    specs_path = resolve_packaged_host_modules_dir() / "docker_create_specs.py"
+    if not specs_path.is_file():
+        raise XinaoError("TOOL_NAMESPACE_SPECS_MISSING", str(specs_path))
+    spec_loader = importlib.util.spec_from_file_location(
+        "xinao_docker_create_specs_namespace", specs_path
+    )
+    if spec_loader is None or spec_loader.loader is None:
+        raise XinaoError("TOOL_NAMESPACE_SPECS_MISSING", str(specs_path))
+    specs = importlib.util.module_from_spec(spec_loader)
+    sys.modules[spec_loader.name] = specs
+    spec_loader.loader.exec_module(specs)
+    return specs
+
+
+def _load_dual_container_host_module_for_namespace_probe() -> Any:
+    """Load the packaged host module that owns the production IPC volume seam."""
+
+    host_path = Path(__file__).resolve().parent / "dual_container_host.py"
+    if not host_path.is_file():
+        raise XinaoError("TOOL_NAMESPACE_HOST_MODULE_MISSING", str(host_path))
+    return _load_sealed_python_module("xinao_dual_container_host_namespace_probe", host_path)
+
+
+def _inspect_mount_destinations(inspect_doc: dict[str, Any]) -> set[str]:
+    mounts = inspect_doc.get("Mounts") or inspect_doc.get("mounts") or []
+    destinations: set[str] = set()
+    if not isinstance(mounts, list):
+        return destinations
+    for mount in mounts:
+        if not isinstance(mount, dict):
+            continue
+        dest = str(mount.get("Destination") or mount.get("Target") or "")
+        if dest:
+            destinations.add(dest)
+    return destinations
+
+
+def _tool_namespace_probe_work_parent() -> Path:
+    return _tool_namespace_security_root() / TOOL_NAMESPACE_PROBE_WORK_DIRNAME
+
+
+def _tool_namespace_probe_invocation_id() -> str:
+    return (
+        f"{TOOL_NAMESPACE_PROBE_INVOCATION_PREFIX}"
+        f"{dt.datetime.now(dt.UTC).strftime('%Y%m%dT%H%M%S')}_"
+        f"{uuid.uuid4().hex[:12]}"
+    )
+
+
+def _rmtree_no_follow_reparse(root: Path) -> None:
+    """Remove a directory tree without following reparse points or symlinks.
+
+    Reparse/symlink nodes are unlinked as leaves (target content is never walked).
+    Best-effort: OSError on individual entries is swallowed so partial residue
+    cannot abort an already-proven probe path.
+    """
+
+    try:
+        st = os.lstat(root)
+    except FileNotFoundError:
+        return
+    except OSError:
+        return
+    if stat.S_ISLNK(st.st_mode) or _is_reparse_stat(st):
+        try:
+            os.unlink(root)
+        except OSError:
+            pass
+        return
+    if not stat.S_ISDIR(st.st_mode):
+        try:
+            os.unlink(root)
+        except OSError:
+            pass
+        return
+    try:
+        with os.scandir(root) as iterator:
+            entries = list(iterator)
+    except OSError:
+        entries = []
+    for entry in entries:
+        child = Path(entry.path)
+        try:
+            est = entry.stat(follow_symlinks=False)
+        except OSError:
+            continue
+        if stat.S_ISLNK(est.st_mode) or _is_reparse_stat(est):
+            try:
+                os.unlink(child)
+            except OSError:
+                pass
+            continue
+        if stat.S_ISDIR(est.st_mode):
+            _rmtree_no_follow_reparse(child)
+        else:
+            try:
+                os.unlink(child)
+            except OSError:
+                pass
+    try:
+        os.rmdir(root)
+    except OSError:
+        pass
+
+
+def _tool_namespace_probe_root_is_owned(probe_root: Path, *, invocation_id: str) -> bool:
+    """Lexical ownership only: exact inv_* child of security .probe_work; no resolve."""
+
+    if not invocation_id or not invocation_id.startswith(TOOL_NAMESPACE_PROBE_INVOCATION_PREFIX):
+        return False
+    if probe_root.name != invocation_id:
+        return False
+    expected_parent = _tool_namespace_probe_work_parent()
+    try:
+        left = os.path.normcase(os.path.normpath(str(probe_root.parent)))
+        right = os.path.normcase(os.path.normpath(str(expected_parent)))
+    except OSError:
+        return False
+    return left == right
+
+
+def _allocate_tool_namespace_probe_root() -> tuple[str, Path]:
+    """Create an exclusive invocation-local probe work root under security namespace.
+
+    Never reuses a fixed ``.probe_work/lab`` path. Concurrent callers each get a
+    unique ``inv_*`` directory so symlink-escape residue cannot block the next run.
+    """
+
+    security_root = _tool_namespace_security_root()
+    security_root.mkdir(parents=True, exist_ok=True)
+    if os.path.lexists(security_root) and _is_reparse(security_root):
+        raise XinaoError("TOOL_NAMESPACE_PROBE_ROOT_REPARSE", str(security_root))
+    work_parent = _tool_namespace_probe_work_parent()
+    work_parent.mkdir(parents=False, exist_ok=True)
+    try:
+        parent_st = os.lstat(work_parent)
+    except OSError as exc:
+        raise XinaoError("TOOL_NAMESPACE_PROBE_ROOT_INVALID", str(work_parent)) from exc
+    if not stat.S_ISDIR(parent_st.st_mode) or _is_reparse_stat(parent_st):
+        raise XinaoError("TOOL_NAMESPACE_PROBE_ROOT_REPARSE", str(work_parent))
+    invocation_id = _tool_namespace_probe_invocation_id()
+    probe_root = work_parent / invocation_id
+    try:
+        probe_root.mkdir(parents=False, exist_ok=False)
+    except FileExistsError as exc:
+        raise XinaoError("TOOL_NAMESPACE_PROBE_ROOT_COLLISION", str(probe_root)) from exc
+    try:
+        root_st = os.lstat(probe_root)
+    except OSError as exc:
+        raise XinaoError("TOOL_NAMESPACE_PROBE_ROOT_INVALID", str(probe_root)) from exc
+    if not stat.S_ISDIR(root_st.st_mode) or _is_reparse_stat(root_st):
+        raise XinaoError("TOOL_NAMESPACE_PROBE_ROOT_REPARSE", str(probe_root))
+    return invocation_id, probe_root
+
+
+def _cleanup_tool_namespace_probe_root(
+    probe_root: Path,
+    *,
+    invocation_id: str,
+    success: bool,
+) -> dict[str, Any]:
+    """Success: remove only this exact owned root. Failure: retain for evidence.
+
+    Never deletes foreign directories, never follows reparse targets, never touches
+    paths outside ``security/tool_namespace_separation/.probe_work/inv_*``.
+    """
+
+    meta: dict[str, Any] = {
+        "invocation_id": invocation_id,
+        "probe_root": str(probe_root),
+        "success": success,
+        "cleaned": False,
+        "retained": False,
+        "owned": False,
+        "reason": "",
+    }
+    if not _tool_namespace_probe_root_is_owned(probe_root, invocation_id=invocation_id):
+        meta["reason"] = "not_owned"
+        return meta
+    meta["owned"] = True
+    if not success:
+        # Unique path already isolates the next call; keep residue for diagnosis.
+        meta["retained"] = True
+        meta["reason"] = "failure_evidence_retained"
+        return meta
+    if not os.path.lexists(probe_root):
+        meta["cleaned"] = True
+        meta["reason"] = "already_absent"
+        return meta
+    # Refuse to walk if the owned root itself flipped into a reparse after create.
+    try:
+        root_st = os.lstat(probe_root)
+    except OSError as exc:
+        meta["reason"] = f"lstat_failed:{exc}"
+        return meta
+    if _is_reparse_stat(root_st) or stat.S_ISLNK(root_st.st_mode):
+        try:
+            os.unlink(probe_root)
+            meta["cleaned"] = not os.path.lexists(probe_root)
+            meta["reason"] = "unlinked_reparse_root"
+        except OSError as exc:
+            meta["reason"] = f"reparse_unlink_failed:{exc}"
+        return meta
+    _rmtree_no_follow_reparse(probe_root)
+    meta["cleaned"] = not os.path.lexists(probe_root)
+    meta["reason"] = "removed_owned_root" if meta["cleaned"] else "remove_incomplete"
+    return meta
+
+
+def _run_tool_namespace_physical_probes(
+    *,
+    transport_image_id: str,
+    tool_image_id: str,
+) -> dict[str, Any]:
+    """Execute live physical negative probes against sealed image IDs.
+
+    Fail closed when Docker is unavailable or any required proof cannot be
+    demonstrated via real container create/inspect/start/exec (or a sealed-image
+    runtime attempt). Host-side create-spec validators alone and hand-edited
+    inspect JSON are not live evidence.
+
+    Production path intentionally ignores any
+    ``_TOOL_NAMESPACE_PHYSICAL_PROBE_IMPL`` global. Tests may monkeypatch narrow
+    I/O (``_run``, ``_docker_image``, ``_docker``) only.
+    """
+
+    if os.environ.get("XINAO_TOOL_NAMESPACE_PROBE_MODE", "").strip().lower() in {
+        "synthetic",
+        "static",
+        "fixture",
+        "harness",
+    }:
+        raise XinaoError(
+            "TOOL_NAMESPACE_SYNTHETIC_EVIDENCE_REFUSED",
+            "probe mode is not live physical",
+        )
+    # Refuse production-path global injector (even if a test left it set).
+    if callable(globals().get("_TOOL_NAMESPACE_PHYSICAL_PROBE_IMPL")):
+        # Do not short-circuit to forged proof; continue with real Docker I/O.
+        pass
+
+    docker = _docker()
+    _docker_engine_os(docker)
+    transport_image = _docker_image(docker, transport_image_id)
+    tool_image = _docker_image(docker, tool_image_id)
+    if transport_image.get("Id") != transport_image_id:
+        raise XinaoError("TOOL_NAMESPACE_TRANSPORT_IMAGE_MISMATCH", transport_image_id)
+    if tool_image.get("Id") != tool_image_id:
+        raise XinaoError("TOOL_NAMESPACE_TOOL_IMAGE_MISMATCH", tool_image_id)
+
+    specs = _load_docker_create_specs_module()
+    # Exclusive per-invocation root: never reuse fixed `.probe_work/lab` (auth_escape
+    # reparse residue from a prior run must not block the next receipt issue).
+    invocation_id, probe_root = _allocate_tool_namespace_probe_root()
+    proven: list[str] = []
+    details: dict[str, Any] = {
+        "proof_methods": {},
+        "runtime_attempts": [],
+        "probe_invocation_id": invocation_id,
+        "probe_root": str(probe_root),
+    }
+    clean_cid: str | None = None
+    transport_cid: str | None = None
+    ipc_volume: str | None = None
+    ipc_volume_created = False
+    probe_success = False
+
+    def _rm(cid: str) -> None:
+        _run([docker, "rm", "--force", cid], timeout=60, check=False)
+
+    def _create_only(create_argv: list[str]) -> str:
+        full = _normalize_docker_create_argv(docker, create_argv)
+        created = _run(full, timeout=120)
+        cid = (created.stdout or "").strip()
+        if not cid:
+            raise XinaoError("TOOL_NAMESPACE_PROBE_CREATE_EMPTY", " ".join(full[:6]))
+        return cid
+
+    def _inspect(cid: str) -> dict[str, Any]:
+        inspected = _strict_json_loads(
+            _run([docker, "inspect", cid], timeout=60).stdout,
+            reason_code="TOOL_NAMESPACE_PROBE_INSPECT_INVALID",
+            detail=cid,
+        )
+        if not isinstance(inspected, list) or not inspected or not isinstance(inspected[0], dict):
+            raise XinaoError("TOOL_NAMESPACE_PROBE_INSPECT_INVALID", cid)
+        return inspected[0]
+
+    # Once a clean container is marked unusable, no further attempt may contribute proof.
+    # Track usability per container id so transport positive probes do not poison tool proofs.
+    container_unusable: dict[str, bool] = {}
+
+    def _runtime_attempt(cid: str, exec_argv: list[str], *, expect_fail: bool) -> bool:
+        """Start + exec against a real container; fail closed for non-proof outcomes.
+
+        Proof rules:
+        - ``docker start`` must succeed and the container must remain exec-capable.
+        - ``docker exec`` must actually run the probe process.
+        - Expected denial only counts when exit code is ``TOOL_NAMESPACE_DENY_PROOF_EXIT``.
+        - Start failure, plumbing failure (125/126/127), timeout, wrong executable,
+          unrelated nonzero, and exceptions never count as isolation proof.
+        - After any unusable event, the same container cannot later mint proof.
+        """
+        attempt: dict[str, Any] = {
+            "container_id": cid,
+            "exec_argv": list(exec_argv),
+            "expect_fail": expect_fail,
+        }
+        if container_unusable.get(cid):
+            attempt["status"] = "container_unusable"
+            details["runtime_attempts"].append(attempt)
+            return False
+        try:
+            start = _run([docker, "start", cid], timeout=60, check=False)
+            attempt["start_rc"] = start.returncode
+            attempt["start_stderr"] = (start.stderr or "")[:200]
+            if start.returncode != 0:
+                attempt["status"] = "start_failed"
+                details["runtime_attempts"].append(attempt)
+                container_unusable[cid] = True
+                return False
+            # Confirm the container is running before claiming an exec probe.
+            state_probe = _run(
+                [docker, "inspect", "-f", "{{.State.Running}}", cid],
+                timeout=30,
+                check=False,
+            )
+            running = (state_probe.stdout or "").strip().lower()
+            attempt["running"] = running
+            if state_probe.returncode != 0 or running not in {"true", "1"}:
+                attempt["status"] = "not_running"
+                details["runtime_attempts"].append(attempt)
+                container_unusable[cid] = True
+                return False
+            executed = _run(
+                [docker, "exec", cid, *exec_argv],
+                timeout=60,
+                check=False,
+            )
+            attempt["exec_rc"] = executed.returncode
+            attempt["exec_stdout"] = (executed.stdout or "")[:200]
+            attempt["exec_stderr"] = (executed.stderr or "")[:200]
+            stderr_l = (executed.stderr or "").lower()
+            plumbing_markers = (
+                "executable file not found",
+                "oci runtime",
+                "container is not running",
+                "is not running",
+                "cannot exec in a stopped state",
+                "cannot exec",
+            )
+            if executed.returncode in TOOL_NAMESPACE_INFRA_EXEC_EXIT_CODES or any(
+                marker in stderr_l for marker in plumbing_markers
+            ):
+                attempt["status"] = "exec_plumbing_failed"
+                details["runtime_attempts"].append(attempt)
+                container_unusable[cid] = True
+                return False
+            if expect_fail:
+                ok = executed.returncode == TOOL_NAMESPACE_DENY_PROOF_EXIT
+            else:
+                ok = executed.returncode == 0
+            attempt["status"] = "ok" if ok else "unexpected_exit"
+            details["runtime_attempts"].append(attempt)
+            return ok
+        except Exception as exc:
+            attempt["status"] = "error"
+            attempt["error"] = str(exc)
+            details["runtime_attempts"].append(attempt)
+            container_unusable[cid] = True
+            return False
+        finally:
+            _run([docker, "stop", "-t", "1", cid], timeout=60, check=False)
+
+    def _last_attempt() -> dict[str, Any]:
+        attempts = details.get("runtime_attempts") or []
+        return attempts[-1] if attempts else {}
+
+    def _raise_runtime_unproven(
+        *,
+        not_denied_code: str,
+        not_denied_detail: str,
+        unproven_code: str,
+    ) -> None:
+        """Classify true isolation breach vs plumbing/unusable container failures."""
+        last = _last_attempt()
+        status = str(last.get("status") or "missing_attempt")
+        exec_rc = last.get("exec_rc")
+        # Only exit 0 under expect_fail means the protected path was actually readable.
+        if status == "unexpected_exit" and exec_rc == 0 and last.get("expect_fail") is True:
+            raise XinaoError(not_denied_code, not_denied_detail)
+        raise XinaoError(
+            unproven_code,
+            f"{status}:rc={exec_rc}:stderr={(last.get('exec_stderr') or last.get('start_stderr') or '')[:120]}",
+        )
+
+    try:
+        lab = probe_root / "lab"
+        ipc = probe_root / "ipc"
+        # Tool create-spec always points entrypoint/env at /sidecar-evidence. Without a
+        # writable bind, read-only rootfs makes tool_executor crash on mkdir and the
+        # container exits before any auth-denial exec can run — misreported as auth OK.
+        sidecar = probe_root / "sidecar-evidence"
+        lab.mkdir(exist_ok=False)
+        ipc.mkdir(exist_ok=False)
+        sidecar.mkdir(exist_ok=False)
+
+        # Production ResearchEpisode pairs use a fresh named volume at /ipc so
+        # Docker copies the tool image's sealed 65532:65532, 0711 directory into
+        # the volume.  A Windows host bind presents as root:root in the Linux VM;
+        # the peer-gated tool correctly rejects that foreign owner and may exit
+        # between start/inspect/exec (the exec then surfaces only rc=137).  The
+        # live namespace probe must exercise the same IPC carrier as production,
+        # not a host-bind shape that the production host already replaced.
+        probe_host = _load_dual_container_host_module_for_namespace_probe()
+        ipc_volume = f"xinao-ns-ipc-{uuid.uuid4().hex[:20]}"
+        collision = _run(
+            [docker, "volume", "inspect", ipc_volume],
+            timeout=60,
+            check=False,
+        )
+        if collision.returncode == 0:
+            raise XinaoError("TOOL_NAMESPACE_PROBE_IPC_VOLUME_COLLISION", ipc_volume)
+        created_volume = _run(
+            [docker, "volume", "create", ipc_volume],
+            timeout=60,
+        )
+        ipc_volume_created = True
+        if (created_volume.stdout or "").strip() != ipc_volume:
+            raise XinaoError("TOOL_NAMESPACE_PROBE_IPC_VOLUME_CREATE_INVALID", ipc_volume)
+        details["ipc_mount_type"] = "volume"
+        details["ipc_volume"] = ipc_volume
+
+        # --- Baseline: clean tool container must be real create + inspect ---
+        # Physical layout must match production tool mounts: lab + ipc + sidecar-evidence.
+        # Sidecar is tool-only (never auth); omitting it crashes the sealed entrypoint
+        # under --read-only and collapses every runtime denial into false "auth OK".
+        tool_spec = specs.tool_executor_container_spec(
+            image=tool_image_id,
+            name=f"xinao-ns-tool-clean-{uuid.uuid4().hex[:8]}",
+            episode_lab_host_path=str(lab),
+            ipc_host_dir=str(ipc),
+            sidecar_evidence_host_path=str(sidecar),
+        )
+        clean_violations = specs.validate_tool_spec_invariants(tool_spec)
+        if clean_violations:
+            raise XinaoError("TOOL_NAMESPACE_PROBE_BASELINE_DRIFT", ",".join(clean_violations[:4]))
+        create_argv = specs.docker_create_argv(tool_spec)
+        try:
+            create_argv = probe_host._replace_ipc_bind_with_volume(create_argv, ipc_volume)
+        except Exception as exc:
+            raise XinaoError("TOOL_NAMESPACE_PROBE_IPC_VOLUME_REWRITE_FAILED", str(exc)) from exc
+        # Real Docker CLI: --entrypoint must be a single executable token, not JSON text.
+        if "--entrypoint" in create_argv:
+            ep_idx = create_argv.index("--entrypoint")
+            ep_token = create_argv[ep_idx + 1] if ep_idx + 1 < len(create_argv) else ""
+            if str(ep_token).lstrip().startswith("["):
+                raise XinaoError(
+                    "TOOL_NAMESPACE_DOCKER_ARGV_ENTRYPOINT_SHAPE",
+                    "JSON-text --entrypoint is not real Docker CLI semantics",
+                )
+            if not str(ep_token) or " " in str(ep_token):
+                raise XinaoError(
+                    "TOOL_NAMESPACE_DOCKER_ARGV_ENTRYPOINT_SHAPE",
+                    "expected single-token --entrypoint before IMAGE and Cmd rest",
+                )
+        deny = str(TOOL_NAMESPACE_DENY_PROOF_EXIT)
+        # Flat Grok 0.2.117 layout + legacy nested path both must be unreachable from tool.
+        tool_auth_deny_snippet = (
+            "paths=('/grok-home/auth.json','/grok-home/.grok/auth.json')\n"
+            "for p in paths:\n"
+            " try:\n"
+            "  open(p,'rb').read(1)\n"
+            "  raise SystemExit(0)\n"
+            " except Exception:\n"
+            "  pass\n"
+            f"raise SystemExit({deny})"
+        )
+        clean_cid = _create_only(create_argv)
+        clean_inspect = _inspect(clean_cid)
+        try:
+            probe_host._exact_ipc_volume_mount(
+                clean_inspect,
+                role="tool",
+                expected_volume=ipc_volume,
+            )
+        except Exception as exc:
+            raise XinaoError("TOOL_NAMESPACE_PROBE_IPC_VOLUME_MISMATCH", str(exc)) from exc
+        clean_live = specs.validate_tool_container_inspect(
+            clean_inspect,
+            expected_image_id=tool_image_id,
+            expected_episode_lab=str(lab),
+            expected_ipc=str(ipc),
+        )
+        if clean_live:
+            raise XinaoError(
+                "TOOL_NAMESPACE_PROBE_BASELINE_LIVE_DRIFT",
+                ",".join(clean_live[:4]),
+            )
+        details["clean_tool_container_id"] = clean_cid
+        details["clean_tool_inspect_id"] = clean_inspect.get("Id")
+        destinations = _inspect_mount_destinations(clean_inspect)
+        env_list = list(((clean_inspect.get("Config") or {}).get("Env")) or [])
+        lowered_env = "\n".join(str(x) for x in env_list).lower()
+
+        # 1) credential_read_denied: tool has no auth mount + runtime open fails on
+        # both flat and legacy auth paths. Do not confuse this with transport, which
+        # *must* be able to open the provider auth handle at /grok-home/auth.json.
+        auth_markers = ("/grok-home", "/root/.grok", "auth.json")
+        if any(any(marker in dest for marker in auth_markers) for dest in destinations):
+            raise XinaoError("TOOL_NAMESPACE_PROBE_AUTH_MOUNT_PRESENT", str(sorted(destinations)))
+        if specs.TOOL_SIDECAR_EVIDENCE_MOUNT not in destinations:
+            raise XinaoError(
+                "TOOL_NAMESPACE_PROBE_SIDECAR_MOUNT_MISSING",
+                str(sorted(destinations)),
+            )
+        cred_runtime = _runtime_attempt(
+            clean_cid,
+            ["python", "-I", "-c", tool_auth_deny_snippet],
+            expect_fail=True,
+        )
+        if not cred_runtime:
+            _raise_runtime_unproven(
+                not_denied_code="TOOL_NAMESPACE_PROBE_AUTH_NOT_DENIED",
+                not_denied_detail="runtime auth read succeeded",
+                unproven_code="TOOL_NAMESPACE_PROBE_AUTH_RUNTIME_UNPROVEN",
+            )
+        proven.append("credential_read_denied")
+        details["proof_methods"]["credential_read_denied"] = "inspect_mounts+start_exec"
+
+        # 1b) Dual-role asymmetry with probe-local placeholder only (never host auth):
+        # transport create-spec must RO-mount flat auth and runtime open must succeed;
+        # tool must still fail (already proven above). Prevents role-inverted mounts.
+        transport_in = probe_root / "transport_in"
+        transport_out = probe_root / "transport_out"
+        transport_in.mkdir(exist_ok=True)
+        transport_out.mkdir(exist_ok=True)
+        # Placeholder identity file only — content is synthetic and not printed/returned.
+        placeholder_auth = probe_root / "auth.json"
+        placeholder_auth.write_bytes(b'{"xinao_probe":"placeholder_not_host_auth"}\n')
+        # Validate production-shaped transport create-spec (canary entrypoint + auth bind),
+        # then materialize a long-lived runtime process with the same mounts so path-identity
+        # exec can run without invoking the model canary (which may exit immediately).
+        transport_spec = specs.transport_container_spec(
+            image=transport_image_id,
+            name=f"xinao-ns-transport-auth-{uuid.uuid4().hex[:8]}",
+            auth_host_path=str(placeholder_auth),
+            input_host_path=str(transport_in),
+            output_host_path=str(transport_out),
+            ipc_host_dir=str(ipc),
+        )
+        transport_violations = specs.validate_transport_spec_invariants(transport_spec)
+        if transport_violations:
+            raise XinaoError(
+                "TOOL_NAMESPACE_PROBE_TRANSPORT_SPEC_DRIFT",
+                ",".join(transport_violations[:4]),
+            )
+        transport_runtime_spec = dict(transport_spec)
+        transport_runtime_spec["entrypoint"] = [
+            "python",
+            "-I",
+            "-c",
+            "import time; time.sleep(3600)",
+        ]
+        transport_argv = specs.docker_create_argv(transport_runtime_spec)
+        try:
+            transport_argv = probe_host._replace_ipc_bind_with_volume(transport_argv, ipc_volume)
+        except Exception as exc:
+            raise XinaoError("TOOL_NAMESPACE_PROBE_IPC_VOLUME_REWRITE_FAILED", str(exc)) from exc
+        transport_cid = _create_only(transport_argv)
+        transport_inspect = _inspect(transport_cid)
+        try:
+            details["ipc_volume_source"] = probe_host._require_exact_ipc_volume_mounts(
+                tool_inspect=clean_inspect,
+                transport_inspect=transport_inspect,
+                expected_volume=ipc_volume,
+            )
+        except Exception as exc:
+            raise XinaoError("TOOL_NAMESPACE_PROBE_IPC_VOLUME_MISMATCH", str(exc)) from exc
+        transport_live = specs.validate_transport_container_inspect(
+            transport_inspect,
+            expected_image_id=transport_image_id,
+            require_auth_mount=True,
+            require_ipc_mount=True,
+        )
+        if transport_live:
+            raise XinaoError(
+                "TOOL_NAMESPACE_PROBE_TRANSPORT_LIVE_DRIFT",
+                ",".join(transport_live[:4]),
+            )
+        transport_dests = _inspect_mount_destinations(transport_inspect)
+        if specs.TRANSPORT_AUTH_MOUNT not in transport_dests and not any(
+            d.rstrip("/").endswith("auth.json") for d in transport_dests
+        ):
+            raise XinaoError(
+                "TOOL_NAMESPACE_PROBE_TRANSPORT_AUTH_MOUNT_MISSING",
+                str(sorted(transport_dests)),
+            )
+        details["transport_probe_container_id"] = transport_cid
+        # Positive: transport may open the provider auth path (placeholder bytes only).
+        transport_auth_ok = _runtime_attempt(
+            transport_cid,
+            [
+                "python",
+                "-I",
+                "-c",
+                "import os\n"
+                "p='/grok-home/auth.json'\n"
+                "raise SystemExit(0 if os.path.isfile(p) and os.access(p, os.R_OK) else 1)",
+            ],
+            expect_fail=False,
+        )
+        if not transport_auth_ok:
+            last = _last_attempt()
+            raise XinaoError(
+                "TOOL_NAMESPACE_PROBE_TRANSPORT_AUTH_UNREACHABLE",
+                f"{last.get('status')}:rc={last.get('exec_rc')}",
+            )
+        details["proof_methods"]["transport_auth_handle_readable"] = (
+            "placeholder_mount+start_exec_path_identity"
+        )
+        details["role_boundary"] = {
+            "transport_auth_mount": specs.TRANSPORT_AUTH_MOUNT,
+            "tool_auth_mount": "forbidden",
+            "tool_sidecar_evidence_mount": specs.TOOL_SIDECAR_EVIDENCE_MOUNT,
+            "auth_bytes_observed": False,
+        }
+
+        # 2) path_traversal_denied: live mounts have no ".." destinations + runtime
+        # realpath outside the lab mount is treated as isolation failure (exit 0).
+        if any(".." in dest for dest in destinations):
+            raise XinaoError(
+                "TOOL_NAMESPACE_PROBE_TRAVERSAL_MOUNT_PRESENT", str(sorted(destinations))
+            )
+        trav_runtime = _runtime_attempt(
+            clean_cid,
+            [
+                "python",
+                "-I",
+                "-c",
+                "try:\n"
+                " open('/episode-lab/../../../grok-home/auth.json','rb').read(1)\n"
+                " raise SystemExit(0)\n"
+                f"except Exception:\n raise SystemExit({deny})",
+            ],
+            expect_fail=True,
+        )
+        if not trav_runtime:
+            _raise_runtime_unproven(
+                not_denied_code="TOOL_NAMESPACE_PROBE_TRAVERSAL_NOT_DENIED",
+                not_denied_detail="runtime path traversal succeeded",
+                unproven_code="TOOL_NAMESPACE_PROBE_TRAVERSAL_RUNTIME_UNPROVEN",
+            )
+        proven.append("path_traversal_denied")
+        details["proof_methods"]["path_traversal_denied"] = "inspect_mounts+start_exec"
+
+        # 3) symlink_escape_denied: no unexpected host binds; symlink to auth is denied.
+        # Production tool mounts: lab + ipc + sidecar-evidence (+ optional tmpfs /tmp).
+        allowed_dest = {
+            "/episode-lab",
+            "/ipc",
+            "/tmp",
+            specs.TOOL_SIDECAR_EVIDENCE_MOUNT,
+        }
+        unexpected = {d for d in destinations if d not in allowed_dest}
+        if unexpected:
+            raise XinaoError(
+                "TOOL_NAMESPACE_PROBE_SYMLINK_UNEXPECTED_MOUNTS",
+                str(sorted(unexpected)),
+            )
+        symlink_runtime = _runtime_attempt(
+            clean_cid,
+            [
+                "python",
+                "-I",
+                "-c",
+                "import os\n"
+                "t='/episode-lab/.auth_escape'\n"
+                "os.path.exists(t) or os.symlink('/grok-home', t)\n"
+                "try:\n"
+                " open(t + '/auth.json','rb').read(1)\n"
+                " raise SystemExit(0)\n"
+                f"except Exception:\n raise SystemExit({deny})",
+            ],
+            expect_fail=True,
+        )
+        if not symlink_runtime:
+            _raise_runtime_unproven(
+                not_denied_code="TOOL_NAMESPACE_PROBE_SYMLINK_NOT_DENIED",
+                not_denied_detail="runtime symlink escape succeeded",
+                unproven_code="TOOL_NAMESPACE_PROBE_SYMLINK_RUNTIME_UNPROVEN",
+            )
+        proven.append("symlink_escape_denied")
+        details["proof_methods"]["symlink_escape_denied"] = "inspect_mounts+start_exec"
+
+        # 4) proc_env_leak_denied: live inspect Env from real create.
+        for token in ("xai_api_key", "grok_auth", "authorization=", "openai_api_key"):
+            if token in lowered_env:
+                raise XinaoError("TOOL_NAMESPACE_PROBE_ENV_LEAK", token)
+        proven.append("proc_env_leak_denied")
+        details["proof_methods"]["proc_env_leak_denied"] = "inspect_env"
+
+        # 5) worktree_escape_denied: live mounts exclude workspace.
+        if any(dest == "/workspace" or dest.endswith("/workspace") for dest in destinations):
+            raise XinaoError(
+                "TOOL_NAMESPACE_PROBE_WORKTREE_MOUNT_PRESENT", str(sorted(destinations))
+            )
+        worktree_runtime = _runtime_attempt(
+            clean_cid,
+            [
+                "python",
+                "-I",
+                "-c",
+                f"import os\nraise SystemExit(0 if os.path.isdir('/workspace') else {deny})",
+            ],
+            expect_fail=True,
+        )
+        if not worktree_runtime:
+            _raise_runtime_unproven(
+                not_denied_code="TOOL_NAMESPACE_PROBE_WORKTREE_NOT_DENIED",
+                not_denied_detail="runtime worktree path present",
+                unproven_code="TOOL_NAMESPACE_PROBE_WORKTREE_RUNTIME_UNPROVEN",
+            )
+        proven.append("worktree_escape_denied")
+        details["proof_methods"]["worktree_escape_denied"] = "inspect_mounts+start_exec"
+
+        # 6) ledger_outcome_mutation_denied: live mounts exclude ledger/outcome/freeze.
+        forbidden_tokens = ("/ledger", "/outcome", "/outcomes", "/freeze", "/settlement", "/shadow")
+        if any(any(tok in dest for tok in forbidden_tokens) for dest in destinations):
+            raise XinaoError("TOOL_NAMESPACE_PROBE_LEDGER_MOUNT_PRESENT", str(sorted(destinations)))
+        ledger_runtime = _runtime_attempt(
+            clean_cid,
+            [
+                "python",
+                "-I",
+                "-c",
+                "import os\n"
+                "present=any(os.path.isdir(p) for p in "
+                "('/ledger','/outcome','/outcomes','/freeze'))\n"
+                f"raise SystemExit(0 if present else {deny})",
+            ],
+            expect_fail=True,
+        )
+        if not ledger_runtime:
+            _raise_runtime_unproven(
+                not_denied_code="TOOL_NAMESPACE_PROBE_LEDGER_NOT_DENIED",
+                not_denied_detail="runtime ledger/outcome path present",
+                unproven_code="TOOL_NAMESPACE_PROBE_LEDGER_RUNTIME_UNPROVEN",
+            )
+        proven.append("ledger_outcome_mutation_denied")
+        details["proof_methods"]["ledger_outcome_mutation_denied"] = "inspect_mounts+start_exec"
+
+        # 7) capability_drift_denied: sealed image labels from live image inspect.
+        tool_labels = (tool_image.get("Config") or {}).get("Labels") or {}
+        if tool_labels.get("io.xinao.researcher.role") != "tool_executor":
+            raise XinaoError(
+                "TOOL_NAMESPACE_PROBE_ROLE_DRIFT",
+                str(tool_labels.get("io.xinao.researcher.role")),
+            )
+        if tool_labels.get("io.xinao.researcher.auth-mount") != "forbidden":
+            raise XinaoError("TOOL_NAMESPACE_PROBE_AUTH_MOUNT_DRIFT", "auth-mount")
+        transport_labels = (transport_image.get("Config") or {}).get("Labels") or {}
+        if transport_labels.get("io.xinao.researcher.role") == "tool_executor":
+            raise XinaoError("TOOL_NAMESPACE_PROBE_TRANSPORT_ROLE_DRIFT", "transport role")
+        # Process argv shape on live inspect must agree with create-spec entrypoint.
+        process_argv = specs.process_argv_from_inspect(clean_inspect)
+        if "tool_executor.py" not in " ".join(process_argv):
+            raise XinaoError(
+                "TOOL_NAMESPACE_PROBE_ENTRYPOINT_SHAPE",
+                str(process_argv),
+            )
+        proven.append("capability_drift_denied")
+        details["proof_methods"]["capability_drift_denied"] = "image_labels+inspect_entrypoint"
+
+        missing = set(TOOL_NAMESPACE_RECEIPT_REQUIRED_NEGATIVE_PROOF_IDS) - set(proven)
+        if missing:
+            raise XinaoError("TOOL_NAMESPACE_PROOF_INCOMPLETE", ",".join(sorted(missing)))
+        # Only emit required ids that were actually proven — never pad.
+        probe_success = True
+        return {
+            "physical_proof": True,
+            "negative_proof_ids": list(proven),
+            "transport_image_id": transport_image_id,
+            "tool_image_id": tool_image_id,
+            "details": details,
+            "evidence_class": "live_physical_host",
+            "synthetic": False,
+            "probe_invocation_id": invocation_id,
+        }
+    finally:
+        if clean_cid:
+            _rm(clean_cid)
+        if transport_cid:
+            _rm(transport_cid)
+        if ipc_volume_created and ipc_volume:
+            removed_volume = _run(
+                [docker, "volume", "rm", "--force", ipc_volume],
+                timeout=60,
+                check=False,
+            )
+            details["ipc_volume_cleanup"] = {
+                "name": ipc_volume,
+                "removed": removed_volume.returncode == 0,
+                "returncode": removed_volume.returncode,
+            }
+        # Success: delete only this exact inv_* root. Failure: retain for evidence;
+        # unique path already prevents pollution of the next invocation.
+        details["probe_cleanup"] = _cleanup_tool_namespace_probe_root(
+            probe_root,
+            invocation_id=invocation_id,
+            success=probe_success,
+        )
+
+
+def _validate_tool_namespace_receipt_payload(
+    receipt: dict[str, Any],
+    *,
+    release: dict[str, Any],
+    transport_image_id: str,
+    tool_image_id: str,
+) -> None:
+    """Raise XinaoError when receipt fields fail the canonical live contract."""
+
+    if receipt.get("schema_version") != TOOL_NAMESPACE_RECEIPT_SCHEMA:
+        raise XinaoError(
+            "TOOL_NAMESPACE_RECEIPT_SCHEMA_INVALID", str(receipt.get("schema_version"))
+        )
+    if receipt.get("issuer") != "host_security_evidence":
+        raise XinaoError("TOOL_NAMESPACE_RECEIPT_ISSUER_INVALID", str(receipt.get("issuer")))
+    if receipt.get("profile_id") != GENUINE_SCIENTIST_PROFILE_ID:
+        raise XinaoError("TOOL_NAMESPACE_RECEIPT_PROFILE_INVALID", str(receipt.get("profile_id")))
+    if receipt.get("tool_namespace_isolated") is not True:
+        raise XinaoError("TOOL_NAMESPACE_RECEIPT_ISOLATION_INVALID", "tool_namespace_isolated")
+    for key in (
+        "auth_reachable_from_model_tools",
+        "ledger_writable_from_model_tools",
+        "freeze_writable_from_model_tools",
+        "outcome_writable_from_model_tools",
+        "same_container_file_tools_allowed",
+    ):
+        if receipt.get(key) is not False:
+            raise XinaoError("TOOL_NAMESPACE_RECEIPT_FIELD_INVALID", key)
+    for key in (
+        "completion_claim_allowed",
+        "authority",
+        "owner_adopted",
+        "science_restored",
+        "parent_complete",
+    ):
+        if receipt.get(key) is not False:
+            raise XinaoError("TOOL_NAMESPACE_RECEIPT_AUTHORITY_INVALID", key)
+    if receipt.get("synthetic") is not False:
+        raise XinaoError("TOOL_NAMESPACE_RECEIPT_SYNTHETIC", str(receipt.get("synthetic")))
+    if receipt.get("evidence_class") != "live_physical_host":
+        raise XinaoError(
+            "TOOL_NAMESPACE_RECEIPT_EVIDENCE_CLASS_INVALID",
+            str(receipt.get("evidence_class")),
+        )
+    if receipt.get("physical_proof") is not True:
+        raise XinaoError("TOOL_NAMESPACE_RECEIPT_PHYSICAL_PROOF_INVALID", "physical_proof")
+    if receipt.get("release_id") != release.get("release_id"):
+        raise XinaoError(
+            "TOOL_NAMESPACE_RECEIPT_RELEASE_MISMATCH",
+            f"{receipt.get('release_id')}!={release.get('release_id')}",
+        )
+    if receipt.get("release_identity_sha256") != release.get("release_identity_sha256"):
+        raise XinaoError(
+            "TOOL_NAMESPACE_RECEIPT_RELEASE_IDENTITY_MISMATCH",
+            str(receipt.get("release_identity_sha256")),
+        )
+    if receipt.get("transport_image_id") != transport_image_id:
+        raise XinaoError(
+            "TOOL_NAMESPACE_RECEIPT_TRANSPORT_IMAGE_MISMATCH",
+            str(receipt.get("transport_image_id")),
+        )
+    if receipt.get("tool_image_id") != tool_image_id:
+        raise XinaoError(
+            "TOOL_NAMESPACE_RECEIPT_TOOL_IMAGE_MISMATCH",
+            str(receipt.get("tool_image_id")),
+        )
+    sealed_at = receipt.get("sealed_at")
+    if not isinstance(sealed_at, str):
+        raise XinaoError("TOOL_NAMESPACE_RECEIPT_SEALED_AT_INVALID", "sealed_at")
+    try:
+        sealed_dt = dt.datetime.fromisoformat(sealed_at.replace("Z", "+00:00"))
+    except ValueError as exc:
+        raise XinaoError("TOOL_NAMESPACE_RECEIPT_SEALED_AT_INVALID", sealed_at) from exc
+    age = (dt.datetime.now(dt.UTC) - sealed_dt.astimezone(dt.UTC)).total_seconds()
+    if age < 0 or age > TOOL_NAMESPACE_RECEIPT_MAX_AGE_SECONDS:
+        raise XinaoError("TOOL_NAMESPACE_RECEIPT_STALE", sealed_at)
+    proofs = receipt.get("negative_proof_ids") or []
+    if not isinstance(proofs, list):
+        raise XinaoError("TOOL_NAMESPACE_RECEIPT_PROOFS_INVALID", "negative_proof_ids")
+    required = set(TOOL_NAMESPACE_RECEIPT_REQUIRED_NEGATIVE_PROOF_IDS)
+    if not required.issubset(set(proofs)):
+        raise XinaoError(
+            "TOOL_NAMESPACE_RECEIPT_PROOF_INCOMPLETE",
+            ",".join(sorted(required - set(proofs))),
+        )
+
+
+def _load_canonical_tool_namespace_receipt() -> dict[str, Any] | None:
+    """Load receipt only via canonical security-root current.json pointer.
+
+    Never trusts arbitrary env paths as authorization. Env may only equal the
+    canonical pointer receipt_path exactly.
+    """
+
+    sealed = _active_release_sealed_dual_images()
+    if sealed is None:
+        return None
+    transport_image_id, tool_image_id, release = sealed
+    security_root = _tool_namespace_security_root()
+    pointer_path = security_root / "current.json"
+    if not pointer_path.is_file():
+        return None
+    if _is_reparse(pointer_path):
+        raise XinaoError("TOOL_NAMESPACE_POINTER_REPARSE_FORBIDDEN", str(pointer_path))
+    pointer = json.loads(pointer_path.read_text(encoding="utf-8"))
+    if not isinstance(pointer, dict):
+        raise XinaoError("TOOL_NAMESPACE_POINTER_INVALID", "not_object")
+    if set(pointer.keys()) != TOOL_NAMESPACE_CURRENT_POINTER_KEYS:
+        raise XinaoError(
+            "TOOL_NAMESPACE_POINTER_SHAPE_INVALID",
+            ",".join(sorted(set(pointer.keys()) ^ TOOL_NAMESPACE_CURRENT_POINTER_KEYS)),
+        )
+    if pointer.get("schema_version") != TOOL_NAMESPACE_CURRENT_POINTER_SCHEMA:
+        raise XinaoError(
+            "TOOL_NAMESPACE_POINTER_SCHEMA_INVALID",
+            str(pointer.get("schema_version")),
+        )
+    if pointer.get("authority") is not False:
+        raise XinaoError("TOOL_NAMESPACE_POINTER_AUTHORITY_INVALID", "authority")
+    if pointer.get("completion_claim_allowed") is not False:
+        raise XinaoError("TOOL_NAMESPACE_POINTER_COMPLETION_INVALID", "completion_claim_allowed")
+    if pointer.get("transport_image_id") != transport_image_id:
+        raise XinaoError(
+            "TOOL_NAMESPACE_POINTER_TRANSPORT_MISMATCH",
+            str(pointer.get("transport_image_id")),
+        )
+    if pointer.get("tool_image_id") != tool_image_id:
+        raise XinaoError(
+            "TOOL_NAMESPACE_POINTER_TOOL_MISMATCH",
+            str(pointer.get("tool_image_id")),
+        )
+    if pointer.get("release_id") != release.get("release_id"):
+        raise XinaoError(
+            "TOOL_NAMESPACE_POINTER_RELEASE_MISMATCH",
+            str(pointer.get("release_id")),
+        )
+    if pointer.get("release_identity_sha256") != release.get("release_identity_sha256"):
+        raise XinaoError(
+            "TOOL_NAMESPACE_POINTER_RELEASE_IDENTITY_MISMATCH",
+            str(pointer.get("release_identity_sha256")),
+        )
+    receipt_path_raw = pointer.get("receipt_path")
+    if not isinstance(receipt_path_raw, str) or not receipt_path_raw:
+        raise XinaoError("TOOL_NAMESPACE_POINTER_RECEIPT_PATH_INVALID", "receipt_path")
+    receipt_path = Path(receipt_path_raw)
+    if not receipt_path.is_file():
+        raise XinaoError("TOOL_NAMESPACE_RECEIPT_MISSING", receipt_path_raw)
+    if _is_reparse(receipt_path):
+        raise XinaoError("TOOL_NAMESPACE_RECEIPT_REPARSE_FORBIDDEN", receipt_path_raw)
+    # Receipt must live under the canonical security root (no off-root copies).
+    try:
+        receipt_resolved = _tool_namespace_canonical_path(receipt_path)
+        root_resolved = _tool_namespace_canonical_path(security_root)
+        if (
+            not str(receipt_resolved).startswith(str(root_resolved) + os.sep)
+            and receipt_resolved != root_resolved
+        ):
+            # Windows: allow prefix with case-normalized compare.
+            if not os.path.normcase(str(receipt_resolved)).startswith(
+                os.path.normcase(str(root_resolved)) + os.sep
+            ):
+                raise XinaoError(
+                    "TOOL_NAMESPACE_RECEIPT_OFF_ROOT",
+                    receipt_path_raw,
+                )
+    except XinaoError:
+        raise
+    expected_sha = pointer.get("receipt_sha256")
+    if not isinstance(expected_sha, str) or len(expected_sha) != 64:
+        raise XinaoError("TOOL_NAMESPACE_POINTER_SHA_INVALID", str(expected_sha))
+    observed_sha = _sha256(receipt_path)
+    if observed_sha != expected_sha:
+        raise XinaoError(
+            "TOOL_NAMESPACE_RECEIPT_HASH_DRIFT",
+            f"expected={expected_sha} observed={observed_sha}",
+        )
+    # Optional env may only equal the canonical pointer path (not authorize others).
+    env_path = (os.environ.get("XINAO_TOOL_NAMESPACE_SEPARATION_RECEIPT") or "").strip()
+    if env_path:
+        if not _tool_namespace_paths_equal(Path(env_path), receipt_path):
+            raise XinaoError(
+                "TOOL_NAMESPACE_ENV_PATH_NOT_CANONICAL",
+                env_path,
+            )
+    receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
+    if not isinstance(receipt, dict):
+        raise XinaoError("TOOL_NAMESPACE_RECEIPT_INVALID", "not_object")
+    if receipt.get("receipt_id") != pointer.get("receipt_id"):
+        raise XinaoError(
+            "TOOL_NAMESPACE_RECEIPT_ID_MISMATCH",
+            str(receipt.get("receipt_id")),
+        )
+    _validate_tool_namespace_receipt_payload(
+        receipt,
+        release=release,
+        transport_image_id=transport_image_id,
+        tool_image_id=tool_image_id,
+    )
+    return receipt
+
+
+def _research_episode_resolve_profile_status(root: Path) -> str:
+    """Resolve narrow TOOL_NAMESPACE_VERIFIED status from canonical host receipt.
+
+    Never elevates scientist role fitness. Episode-local / off-root / env-only
+    forged JSON never grants TOOL_NAMESPACE_VERIFIED.
+    """
+    del root  # episode root must not authorize; kept for call-site symmetry
+    try:
+        receipt = _load_canonical_tool_namespace_receipt()
+    except XinaoError:
+        return RESEARCH_EPISODE_PROFILE_STATUS
+    except Exception:
+        return RESEARCH_EPISODE_PROFILE_STATUS
+    if receipt is None:
+        return RESEARCH_EPISODE_PROFILE_STATUS
+    return RESEARCH_EPISODE_PROFILE_STATUS_VERIFIED
+
+
+def issue_tool_namespace_separation_receipt(
+    *,
+    episode_root: Path | str | None = None,
+) -> dict[str, Any]:
+    """Owner one-shot host issuer for tool-namespace separation receipt.
+
+    Writes only under D-state security namespace. Episodes/workers cannot self-issue.
+    Never autonomous: must be invoked by Owner CLI. completion_claim_allowed=false.
+    Production path always runs real physical probes (no global injector short-circuit).
+    """
+
+    if episode_root is not None:
+        raise XinaoError(
+            "TOOL_NAMESPACE_EPISODE_LOCAL_ISSUE_FORBIDDEN",
+            str(episode_root),
+        )
+    _refuse_synthetic_namespace_evidence(allow_live=True)
+    sealed = _active_release_sealed_dual_images()
+    if sealed is None:
+        raise XinaoError(
+            "TOOL_NAMESPACE_SEALED_IMAGES_REQUIRED",
+            "active dual-image release with transport+tool image IDs required",
+        )
+    transport_image_id, tool_image_id, release = sealed
+    release_id = release.get("release_id")
+    release_identity_sha256 = release.get("release_identity_sha256")
+    if not isinstance(release_id, str) or not release_id:
+        raise XinaoError("TOOL_NAMESPACE_SEALED_IMAGES_REQUIRED", "release_id")
+    if not isinstance(release_identity_sha256, str) or len(release_identity_sha256) != 64:
+        raise XinaoError("TOOL_NAMESPACE_SEALED_IMAGES_REQUIRED", "release_identity_sha256")
+    _validate_release_image_identity(release)
+    probe = _run_tool_namespace_physical_probes(
+        transport_image_id=transport_image_id,
+        tool_image_id=tool_image_id,
+    )
+    if probe.get("physical_proof") is not True or probe.get("synthetic") is not False:
+        raise XinaoError("TOOL_NAMESPACE_PHYSICAL_PROOF_FAILED", "physical_proof")
+    proofs = probe.get("negative_proof_ids") or []
+    if set(TOOL_NAMESPACE_RECEIPT_REQUIRED_NEGATIVE_PROOF_IDS) - set(proofs):
+        raise XinaoError("TOOL_NAMESPACE_PROOF_INCOMPLETE", str(proofs))
+    now = dt.datetime.now(dt.UTC).isoformat().replace("+00:00", "Z")
+    receipt_id = f"tnsr_{dt.datetime.now(dt.UTC).strftime('%Y%m%dT%H%M%S')}_{uuid.uuid4().hex[:12]}"
+    security_root = _tool_namespace_security_root()
+    security_root.mkdir(parents=True, exist_ok=True)
+    receipt = {
+        "schema_version": TOOL_NAMESPACE_RECEIPT_SCHEMA,
+        "receipt_id": receipt_id,
+        "issuer": "host_security_evidence",
+        "profile_id": GENUINE_SCIENTIST_PROFILE_ID,
+        "tool_namespace_isolated": True,
+        "auth_reachable_from_model_tools": False,
+        "ledger_writable_from_model_tools": False,
+        "freeze_writable_from_model_tools": False,
+        "outcome_writable_from_model_tools": False,
+        "same_container_file_tools_allowed": False,
+        "negative_proof_ids": list(proofs),
+        "transport_image_id": transport_image_id,
+        "tool_image_id": tool_image_id,
+        "release_id": release_id,
+        "release_identity_sha256": release_identity_sha256,
+        "sealed_at": now,
+        "physical_proof": True,
+        "evidence_class": "live_physical_host",
+        "synthetic": False,
+        "authority": False,
+        "completion_claim_allowed": False,
+        "science_restored": False,
+        "parent_complete": False,
+        "owner_adopted": False,
+        "probe_details": {
+            "clean_tool_container_id": (probe.get("details") or {}).get("clean_tool_container_id"),
+            "proof_methods": (probe.get("details") or {}).get("proof_methods"),
+            "probe_invocation_id": (probe.get("details") or {}).get("probe_invocation_id")
+            or probe.get("probe_invocation_id"),
+            "probe_root": (probe.get("details") or {}).get("probe_root"),
+            "probe_cleanup": (probe.get("details") or {}).get("probe_cleanup"),
+        },
+    }
+    receipt_path = security_root / f"{receipt_id}.json"
+    _write_json_atomic(receipt_path, receipt, create_new=True)
+    pointer = {
+        "schema_version": TOOL_NAMESPACE_CURRENT_POINTER_SCHEMA,
+        "receipt_id": receipt_id,
+        "receipt_path": str(receipt_path),
+        "receipt_sha256": _sha256(receipt_path),
+        "transport_image_id": transport_image_id,
+        "tool_image_id": tool_image_id,
+        "release_id": release_id,
+        "release_identity_sha256": release_identity_sha256,
+        "sealed_at": now,
+        "authority": False,
+        "completion_claim_allowed": False,
+    }
+    if set(pointer.keys()) != TOOL_NAMESPACE_CURRENT_POINTER_KEYS:
+        raise XinaoError("TOOL_NAMESPACE_POINTER_SHAPE_INVALID", "issuer_pointer")
+    _write_json_atomic(security_root / "current.json", pointer)
+    return {
+        "schema_version": "xinao.tool_namespace_separation_issue_receipt.v1",
+        "status": "ISSUED",
+        "receipt_path": str(receipt_path),
+        "receipt_sha256": _sha256(receipt_path),
+        "receipt_id": receipt_id,
+        "transport_image_id": transport_image_id,
+        "tool_image_id": tool_image_id,
+        "release_id": release_id,
+        "release_identity_sha256": release_identity_sha256,
+        "negative_proof_ids": list(proofs),
+        "issuer": "host_security_evidence",
+        "authority": False,
+        "completion_claim_allowed": False,
+        "owner_adopted": False,
+        "science_restored": False,
+        "parent_complete": False,
+        "autonomous": False,
+        "episode_local": False,
+        "profile_status": RESEARCH_EPISODE_PROFILE_STATUS_VERIFIED,
+    }
+
+
+def research_episode_start(
+    *,
+    root: Path | str,
+    question: str,
+    lease_seconds: int = 3600,
+) -> dict[str, Any]:
+    del lease_seconds
+    root = Path(root)
+    _research_episode_assert_root_allowed(root)
+    with _research_episode_lock(root):
+        paths = _research_episode_paths(root)
+        if paths["meta"].is_file():
+            raise XinaoError("RESEARCH_EPISODE_EXISTS", str(root))
+        for key in ("lab", "outbox", "objects", "artifacts"):
+            paths[key].mkdir(parents=True, exist_ok=True)
+        episode_id = _research_episode_id("xre")
+        session_id = _research_episode_id("xrsess")
+        profile_status = _research_episode_resolve_profile_status(root)
+        meta = {
+            "schema_version": RESEARCH_EPISODE_SCHEMA,
+            "episode_id": episode_id,
+            "session_id": session_id,
+            "question": question,
+            "created_at": dt.datetime.now(dt.UTC).isoformat().replace("+00:00", "Z"),
+            "instrument_canary_route_preserved": True,
+            "profile_status": profile_status,
+            "dual_container_fallback": {
+                "strategy": "dual_container_ipc",
+                "same_container_file_tools_allowed": False,
+                "auth_and_tools_co_located_allowed": False,
+            },
+            "completion_claim_allowed": False,
+            "owner_adopted": False,
+            "science_restored": False,
+            "parent_complete": False,
+        }
+        paths["meta"].write_bytes(_canonical_bytes(meta))
+        container_identity = _research_episode_container_identity(
+            verb="start",
+            episode_id=episode_id,
+            session_id=session_id,
+            generation=1,
+            lab_root=paths["lab"],
+            root=root,
+        )
+        committed = _research_episode_commit_checkpoint(
+            root,
+            episode_id=episode_id,
+            session_id=session_id,
+            generation=1,
+            status="STARTED",
+            progress_note=f"start: {question[:200]}",
+            parent_sha256=None,
+            container_identity=container_identity,
+        )
+        return {
+            "status": "STARTED",
+            "episode": meta,
+            "episode_id": episode_id,
+            "session_id": session_id,
+            "head_checkpoint_sha256": committed["head_checkpoint_sha256"],
+            "head": committed["head"],
+            "container_identity": container_identity,
+            "profile_status": profile_status,
+            "instrument_canary_route_preserved": True,
+            "completion_claim_allowed": False,
+            "owner_adopted": False,
+            "science_restored": False,
+            "parent_complete": False,
+        }
+
+
+def research_episode_status(*, root: Path | str) -> dict[str, Any]:
+    root = Path(root)
+    with _research_episode_lock(root):
+        head = _research_episode_load_head(root)
+        meta = _research_episode_read_meta(root)
+        chain_length = 0
+        cursor = head.get("head_checkpoint_sha256")
+        seen: set[str] = set()
+        while isinstance(cursor, str) and cursor not in seen:
+            seen.add(cursor)
+            payload = _research_episode_load_bytes(root, "objects", cursor)
+            ckpt = json.loads(payload.decode("utf-8"))
+            chain_length += 1
+            cursor = ckpt.get("parent_checkpoint_sha256")
+        profile_status = _research_episode_resolve_profile_status(root)
+        return {
+            "status": "STATUS",
+            "episode_id": meta["episode_id"],
+            "session_id": meta["session_id"],
+            "head": head,
+            "head_checkpoint_sha256": head["head_checkpoint_sha256"],
+            "chain_length": chain_length,
+            "replayable": True,
+            "profile_status": profile_status,
+            "completion_claim_allowed": False,
+            "owner_adopted": False,
+            "science_restored": False,
+            "parent_complete": False,
+        }
+
+
+def research_episode_checkpoint(
+    *,
+    root: Path | str,
+    expected_head_sha256: str,
+    progress_note: str = "",
+    lab_relative: str | None = None,
+    lab_bytes: bytes | None = None,
+    mark_interrupted: bool = False,
+) -> dict[str, Any]:
+    root = Path(root)
+    with _research_episode_lock(root):
+        head = _research_episode_load_head(root)
+        if head.get("status") == "CANCELLED":
+            raise XinaoError("RESEARCH_EPISODE_CANCELLED", "checkpoint after cancel")
+        if head.get("status") == "ABSORBED":
+            raise XinaoError("RESEARCH_EPISODE_ABSORBED", "checkpoint after absorb")
+        if head.get("head_checkpoint_sha256") != expected_head_sha256:
+            raise XinaoError("RESEARCH_EPISODE_STALE_HEAD", expected_head_sha256)
+        meta = _research_episode_read_meta(root)
+        generation = int(head.get("generation") or 0) + 1
+        container_identity = _research_episode_container_identity(
+            verb="checkpoint",
+            episode_id=meta["episode_id"],
+            session_id=meta["session_id"],
+            generation=generation,
+            lab_root=_research_episode_paths(root)["lab"],
+            root=root,
+        )
+        status = "INTERRUPTED" if mark_interrupted else "RUNNING"
+        return _research_episode_commit_checkpoint(
+            root,
+            episode_id=meta["episode_id"],
+            session_id=meta["session_id"],
+            generation=generation,
+            status=status,
+            progress_note=progress_note,
+            parent_sha256=expected_head_sha256,
+            container_identity=container_identity,
+            lab_relative=lab_relative,
+            lab_bytes=lab_bytes,
+        )
+
+
+def research_episode_resume(
+    *,
+    root: Path | str,
+    expected_head_sha256: str,
+    expected_session_id: str | None = None,
+    provider_session_store: Path | str | None = None,
+) -> dict[str, Any]:
+    root = Path(root)
+    if provider_session_store is not None:
+        raise XinaoError(
+            "RESEARCH_EPISODE_PROVIDER_SESSION_NOT_AUTHORITY",
+            str(provider_session_store),
+        )
+    with _research_episode_lock(root):
+        head = _research_episode_load_head(root)
+        if head.get("status") == "CANCELLED":
+            raise XinaoError("RESEARCH_EPISODE_CANCELLED", "resume after cancel")
+        if head.get("head_checkpoint_sha256") != expected_head_sha256:
+            raise XinaoError("RESEARCH_EPISODE_STALE_HEAD", expected_head_sha256)
+        meta = _research_episode_read_meta(root)
+        if expected_session_id is not None and expected_session_id != meta["session_id"]:
+            raise XinaoError("RESEARCH_EPISODE_FOREIGN_SESSION", expected_session_id)
+        generation = int(head.get("generation") or 0) + 1
+        container_identity = _research_episode_container_identity(
+            verb="resume",
+            episode_id=meta["episode_id"],
+            session_id=meta["session_id"],
+            generation=generation,
+            lab_root=_research_episode_paths(root)["lab"],
+            root=root,
+        )
+        committed = _research_episode_commit_checkpoint(
+            root,
+            episode_id=meta["episode_id"],
+            session_id=meta["session_id"],
+            generation=generation,
+            status="RESUMED",
+            progress_note="resume exact session",
+            parent_sha256=expected_head_sha256,
+            container_identity=container_identity,
+        )
+        profile_status = _research_episode_resolve_profile_status(root)
+        return {
+            **committed,
+            "status": "RESUMED",
+            "exact_session_bound": True,
+            "session_id": meta["session_id"],
+            "container_identity": container_identity,
+            "profile_status": profile_status,
+            "completion_claim_allowed": False,
+            "owner_adopted": False,
+            "science_restored": False,
+            "parent_complete": False,
+        }
+
+
+def research_episode_cancel(*, root: Path | str) -> dict[str, Any]:
+    root = Path(root)
+    pair_retire: dict[str, Any] | None = None
+    with _research_episode_lock(root):
+        head = _research_episode_load_head(root)
+        if head.get("status") == "CANCELLED":
+            return {
+                "status": "CANCEL_IDEMPOTENT",
+                "head": head,
+                "head_checkpoint_sha256": head["head_checkpoint_sha256"],
+                "completion_claim_allowed": False,
+                "next_task_created": False,
+            }
+        meta = _research_episode_read_meta(root)
+        generation = int(head.get("generation") or 0) + 1
+        container_identity = _research_episode_container_identity(
+            verb="cancel",
+            episode_id=meta["episode_id"],
+            session_id=meta["session_id"],
+            generation=generation,
+            lab_root=_research_episode_paths(root)["lab"],
+            root=root,
+        )
+        committed = _research_episode_commit_checkpoint(
+            root,
+            episode_id=meta["episode_id"],
+            session_id=meta["session_id"],
+            generation=generation,
+            status="CANCELLED",
+            progress_note="cancel",
+            parent_sha256=head["head_checkpoint_sha256"],
+            container_identity=container_identity,
+        )
+        # Best-effort dual-pair retire after durable CANCELLED head (never blocks cancel).
+        try:
+            pair_retire = research_episode_retire_pair(root=root, already_locked=True)
+        except XinaoError as exc:
+            pair_retire = {
+                "status": "PAIR_RETIRE_SKIPPED",
+                "reason_code": exc.reason_code,
+                "detail": str(exc)[:500],
+            }
+        except Exception as exc:  # noqa: BLE001 — cancel must stay durable
+            pair_retire = {
+                "status": "PAIR_RETIRE_SKIPPED",
+                "reason_code": "PAIR_RETIRE_UNEXPECTED",
+                "detail": str(exc)[:500],
+            }
+        return {
+            **committed,
+            "status": "CANCELLED",
+            "completion_claim_allowed": False,
+            "next_task_created": False,
+            "pair_retire": pair_retire,
+            "leg_b_scheduled": False,
+            "successor_episode_created": False,
+        }
+
+
+def _research_episode_load_dual_host(root: Path) -> Any:
+    host_path = Path(__file__).resolve().parent / "dual_container_host.py"
+    try:
+        host_mod = _load_sealed_python_module("xinao_dual_container_host_runtime_live", host_path)
+    except XinaoError as exc:
+        if exc.reason_code in {"SEALED_MODULE_MISSING", "SEALED_MODULE_READ_FAILED"}:
+            raise XinaoError("DUAL_CONTAINER_HOST_MISSING", str(host_path)) from exc
+        raise
+    transport, tool = _resolve_research_episode_dual_images()
+    synthetic = os.environ.get("XINAO_DUAL_CONTAINER_SYNTHETIC", "").strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
+    auth = resolve_auth_host_path(allow_synthetic_missing=synthetic)
+    egress_bound: dict[str, Any] | None = None
+    if not synthetic:
+        # ResearchEpisode provider calls consume the same current live-seal gate as
+        # the one-shot researcher path; names/constants alone are not authority.
+        # A running persistent transport is admitted only by the exact ID already
+        # bound in this Episode's lease.
+        allowed_pair_ids: set[str] = set()
+        lease_path = Path(root) / "dual_container_pair_lease.json"
+        if lease_path.is_file():
+            lease_doc = _load_json(lease_path)
+            transport_id = str(lease_doc.get("transport_container_id") or "").strip().lower()
+            if HEX_SHA256_PATTERN.fullmatch(transport_id) is None:
+                raise XinaoError("DUAL_HOST_TRANSPORT_INVALID", transport_id)
+            allowed_pair_ids.add(transport_id)
+        egress_bound = _require_host_egress_boundary(
+            allowed_researcher_container_ids=allowed_pair_ids
+        )
+    network = os.environ.get("XINAO_TRANSPORT_NETWORK", "").strip()
+    if not network:
+        network = (
+            "none" if synthetic else str((egress_bound or {}).get("internal_network_name") or "")
+        )
+    if not synthetic and network != str((egress_bound or {}).get("internal_network_name") or ""):
+        raise XinaoError("EGRESS_TRANSPORT_NETWORK_MISMATCH", network)
+    # Live attach/run/export refuse synthetic drivers regardless of env.
+    return host_mod, host_mod.DualContainerHost(
+        host_mod.DualHostConfig(
+            transport_image=transport,
+            tool_image=tool,
+            auth_host_path=Path(auth),
+            episode_root=Path(root),
+            network=network,
+            egress_proxy_endpoint=(
+                None if synthetic else str((egress_bound or {}).get("proxy_endpoint") or "")
+            ),
+            egress_live_seal_sha256=(
+                None if synthetic else str((egress_bound or {}).get("live_seal_sha256") or "")
+            ),
+            synthetic=synthetic,
+        )
+    )
+
+
+def research_episode_ensure_pair(
+    *,
+    root: Path | str,
+    expected_head_sha256: str,
+    research_profile: str = "OPEN_RESEARCH",
+) -> dict[str, Any]:
+    """Owner one-shot: materialize dual-container pair for an existing episode head.
+
+    Consumes canonical tool-namespace receipt only (never self-issues). Never schedules
+    a successor episode, writes outcome/ledger, freezes, settles, or claims parent completion.
+    """
+    root = Path(root)
+    _research_episode_assert_root_allowed(root)
+    profile = str(research_profile or "OPEN_RESEARCH").strip().upper()
+    if profile in {"GENUINE_SCIENTIST_EPISODE", "GENUINE", "GENUINE_SCIENTIST"}:
+        profile = "OPEN_RESEARCH"
+    if profile not in {"OPEN_RESEARCH", "CLOSED_LAB"}:
+        raise XinaoError("RESEARCH_EPISODE_UNKNOWN_PROFILE", profile)
+    no_successor = _research_episode_no_successor_flags()
+    with _research_episode_lock(root):
+        head = _research_episode_load_head(root)
+        meta = _research_episode_read_meta(root)
+        if head.get("status") in {"CANCELLED", "ABSORBED"}:
+            raise XinaoError("RESEARCH_EPISODE_TERMINAL", str(head.get("status")))
+        if head.get("head_checkpoint_sha256") != expected_head_sha256:
+            raise XinaoError("RESEARCH_EPISODE_STALE_HEAD", expected_head_sha256)
+        profile_status = _research_episode_resolve_profile_status(root)
+        if profile_status != RESEARCH_EPISODE_PROFILE_STATUS_VERIFIED:
+            raise XinaoError(
+                "RESEARCH_EPISODE_NAMESPACE_UNVERIFIED",
+                profile_status,
+            )
+        facts = _research_episode_namespace_and_release_facts()
+        _host_mod, host = _research_episode_load_dual_host(root)
+
+        def _map_dual_host_exc(exc: BaseException) -> XinaoError:
+            reason = getattr(exc, "reason_code", None) or "RESEARCH_EPISODE_ENSURE_PAIR_FAILED"
+            detail = getattr(exc, "detail", None)
+            if detail is None:
+                detail = str(exc)
+            return XinaoError(str(reason), str(detail)[:2000])
+
+        def _require_ready() -> dict[str, Any]:
+            try:
+                return host.require_live_pair_ready(
+                    expected_episode_id=str(meta["episode_id"]),
+                    expected_host_session_id=str(meta["session_id"]),
+                    allow_synthetic=bool(host.config.synthetic),
+                )
+            except Exception as exc:
+                # DualHostError and any other host failure map to stable XinaoError.
+                if type(exc).__name__ == "DualHostError" or hasattr(exc, "reason_code"):
+                    mapped = _map_dual_host_exc(exc)
+                    raise mapped from exc
+                raise XinaoError("RESEARCH_EPISODE_ENSURE_PAIR_FAILED", str(exc)[:2000]) from exc
+
+        def _ensure_payload(
+            *,
+            status: str,
+            ready: dict[str, Any],
+            phase: str | None = None,
+            started: dict[str, Any] | None = None,
+            created: dict[str, Any] | None = None,
+        ) -> dict[str, Any]:
+            payload: dict[str, Any] = {
+                "status": status,
+                "episode_id": meta["episode_id"],
+                "session_id": meta["session_id"],
+                "cas_head_sha256": head["head_checkpoint_sha256"],
+                "research_profile": profile,
+                "profile_status": profile_status,
+                "pair_receipt_sha256": ready.get("pair_receipt_sha256"),
+                "provider_session_uuid": ready.get("provider_session_uuid"),
+                "namespace_receipt_sha256": facts.get("namespace_receipt_sha256"),
+                "release_id": facts.get("release_id"),
+                **no_successor,
+            }
+            if phase is not None:
+                payload["phase"] = phase
+            if started is not None:
+                payload["start_pair"] = {
+                    k: started.get(k)
+                    for k in ("status", "lease", "pair_receipt_sha256")
+                    if k in started
+                }
+            if created is not None:
+                payload["create_pair"] = {
+                    k: created.get(k)
+                    for k in ("status", "tool_container_id", "transport_container_id")
+                    if k in created
+                }
+            return payload
+
+        lease = host.load_lease()
+        if lease is not None and lease.get("phase") not in {"cancelled", "retired"}:
+            if lease.get("episode_id") != meta["episode_id"]:
+                raise XinaoError(
+                    "RESEARCH_EPISODE_FOREIGN_EPISODE",
+                    str(lease.get("episode_id")),
+                )
+            if lease.get("session_id") != meta["session_id"]:
+                raise XinaoError(
+                    "RESEARCH_EPISODE_FOREIGN_SESSION",
+                    str(lease.get("session_id")),
+                )
+            phase = str(lease.get("phase") or "")
+            # PAIR_ALREADY_READY only when lease is in a truly ready phase AND
+            # require_live proves dual containers Running (not intermediate start).
+            if phase in {"running", "checkpointed"}:
+                ready = _require_ready()
+                _research_episode_append_journal(
+                    root,
+                    {
+                        "verb": "ensure-pair",
+                        "at": dt.datetime.now(dt.UTC).isoformat().replace("+00:00", "Z"),
+                        "status": "PAIR_ALREADY_READY",
+                        "phase": phase,
+                    },
+                )
+                return _ensure_payload(
+                    status="PAIR_ALREADY_READY",
+                    ready=ready,
+                    phase=(host.load_lease() or {}).get("phase") or phase,
+                )
+
+            # Crash mid-start / failed start: never blind start_pair.
+            # recover_or_retire_after_crash retires failed_retire_pending (idempotent).
+            if phase == "failed_retire_pending":
+                try:
+                    recovered = host.recover_or_retire_after_crash()
+                except Exception as exc:
+                    if type(exc).__name__ == "DualHostError" or hasattr(exc, "reason_code"):
+                        raise _map_dual_host_exc(exc) from exc
+                    raise XinaoError(
+                        "RESEARCH_EPISODE_ENSURE_PAIR_FAILED", str(exc)[:2000]
+                    ) from exc
+                lease_after = host.load_lease()
+                after_phase = str((lease_after or {}).get("phase") or "")
+                if after_phase not in {"cancelled", "retired", ""}:
+                    raise XinaoError(
+                        "RESEARCH_EPISODE_ENSURE_PAIR_FAILED",
+                        f"recover left phase={after_phase} status={recovered.get('status')}",
+                    )
+                # Fall through to create_pair + start_pair under retired/missing lease.
+            elif phase in {"created", "tool_started", "transport_started", "interrupted"}:
+                # Intermediate phases: reuse start_pair / recover semantics (not already-ready).
+                # tool_started → continue transport start; transport_started → seal running.
+                try:
+                    started = host.start_pair()
+                except Exception as exc:
+                    if type(exc).__name__ == "DualHostError" or hasattr(exc, "reason_code"):
+                        raise _map_dual_host_exc(exc) from exc
+                    raise XinaoError(
+                        "RESEARCH_EPISODE_ENSURE_PAIR_FAILED", str(exc)[:2000]
+                    ) from exc
+                ready = _require_ready()
+                _research_episode_append_journal(
+                    root,
+                    {
+                        "verb": "ensure-pair",
+                        "at": dt.datetime.now(dt.UTC).isoformat().replace("+00:00", "Z"),
+                        "status": "PAIR_STARTED",
+                        "phase": (host.load_lease() or {}).get("phase"),
+                    },
+                )
+                return _ensure_payload(
+                    status="PAIR_STARTED",
+                    ready=ready,
+                    phase=(host.load_lease() or {}).get("phase"),
+                    started=started,
+                )
+            elif phase not in {"failed_retire_pending"}:
+                raise XinaoError(
+                    "RESEARCH_EPISODE_ENSURE_PAIR_FAILED",
+                    f"unsupported lease phase={phase}",
+                )
+
+        resume_provider_session_uuid: str | None = None
+        try:
+            prior_inventory = host.load_session_inventory()
+        except Exception as exc:
+            reason = getattr(exc, "reason_code", None) or "DUAL_HOST_SESSION_INVENTORY_INVALID"
+            raise XinaoError(str(reason), str(exc)[:2000]) from exc
+        if prior_inventory is not None:
+            if prior_inventory.get("episode_id") != meta["episode_id"]:
+                raise XinaoError(
+                    "RESEARCH_EPISODE_FOREIGN_EPISODE",
+                    str(prior_inventory.get("episode_id")),
+                )
+            if prior_inventory.get("host_session_id") != meta["session_id"]:
+                raise XinaoError(
+                    "RESEARCH_EPISODE_FOREIGN_SESSION",
+                    str(prior_inventory.get("host_session_id")),
+                )
+            provider_session = str(prior_inventory.get("grok_session_id") or "").strip()
+            try:
+                resume_provider_session_uuid = str(uuid.UUID(provider_session))
+            except (ValueError, TypeError, AttributeError) as exc:
+                raise XinaoError(
+                    "RESEARCH_EPISODE_PROVIDER_SESSION_NOT_UUID",
+                    provider_session,
+                ) from exc
+
+        try:
+            created = host.create_pair(
+                episode_id=str(meta["episode_id"]),
+                session_id=str(meta["session_id"]),
+                resume_session_id=resume_provider_session_uuid,
+                research_profile=profile,
+            )
+            started = host.start_pair()
+        except Exception as exc:
+            if type(exc).__name__ == "DualHostError" or hasattr(exc, "reason_code"):
+                raise _map_dual_host_exc(exc) from exc
+            raise XinaoError("RESEARCH_EPISODE_ENSURE_PAIR_FAILED", str(exc)[:2000]) from exc
+        ready = _require_ready()
+        _research_episode_append_journal(
+            root,
+            {
+                "verb": "ensure-pair",
+                "at": dt.datetime.now(dt.UTC).isoformat().replace("+00:00", "Z"),
+                "status": "PAIR_READY",
+                "research_profile": profile,
+                "pair_receipt_sha256": ready.get("pair_receipt_sha256"),
+            },
+        )
+        return _ensure_payload(
+            status="PAIR_READY",
+            ready=ready,
+            phase=(host.load_lease() or {}).get("phase"),
+            started=started,
+            created=created,
+        )
+
+
+def research_episode_retire_pair(
+    *, root: Path | str, already_locked: bool = False
+) -> dict[str, Any]:
+    """Owner one-shot: retire dual-container pair (idempotent; no successor)."""
+    root = Path(root)
+    _research_episode_assert_root_allowed(root)
+    no_successor = _research_episode_no_successor_flags()
+
+    def _body() -> dict[str, Any]:
+        meta: dict[str, Any] | None = None
+        try:
+            meta = _research_episode_read_meta(root)
+        except XinaoError:
+            meta = None
+        try:
+            _host_mod, host = _research_episode_load_dual_host(root)
+        except XinaoError as exc:
+            if exc.reason_code in {
+                "DUAL_CONTAINER_HOST_MISSING",
+                "DUAL_CONTAINER_SEALED_IMAGES_REQUIRED",
+                "DUAL_CONTAINER_HOST_CONFIG_REQUIRED",
+                "GROK_AUTH_HANDLE_MISSING",
+            }:
+                return {
+                    "status": "PAIR_RETIRE_NO_HOST",
+                    "reason_code": exc.reason_code,
+                    **{
+                        k: no_successor[k]
+                        for k in (
+                            "next_task_created",
+                            "leg_b_scheduled",
+                            "successor_episode_created",
+                            "completion_claim_allowed",
+                        )
+                    },
+                }
+            raise
+        lease = host.load_lease()
+        if lease is None:
+            return {
+                "status": "PAIR_RETIRE_NO_LEASE",
+                "episode_id": (meta or {}).get("episode_id"),
+                **{
+                    k: no_successor[k]
+                    for k in (
+                        "next_task_created",
+                        "leg_b_scheduled",
+                        "successor_episode_created",
+                        "completion_claim_allowed",
+                    )
+                },
+            }
+        if meta is not None:
+            if lease.get("episode_id") not in {None, meta.get("episode_id")}:
+                raise XinaoError(
+                    "RESEARCH_EPISODE_FOREIGN_EPISODE",
+                    str(lease.get("episode_id")),
+                )
+        try:
+            retired = host.retire_pair()
+        except Exception as exc:
+            reason = getattr(exc, "reason_code", None) or "RESEARCH_EPISODE_RETIRE_PAIR_FAILED"
+            raise XinaoError(str(reason), str(exc)[:2000]) from exc
+        _research_episode_append_journal(
+            root,
+            {
+                "verb": "retire-pair",
+                "at": dt.datetime.now(dt.UTC).isoformat().replace("+00:00", "Z"),
+                "status": retired.get("status"),
+            },
+        )
+        return {
+            "status": retired.get("status") or "RETIRED",
+            "episode_id": (meta or {}).get("episode_id") or lease.get("episode_id"),
+            "session_id": (meta or {}).get("session_id") or lease.get("session_id"),
+            "lease_phase": (host.load_lease() or {}).get("phase"),
+            **no_successor,
+        }
+
+    if already_locked:
+        return _body()
+    with _research_episode_lock(root):
+        return _body()
+
+
+def _research_episode_namespace_and_release_facts() -> dict[str, Any]:
+    """Bind export/attach to canonical namespace receipt + active release when present."""
+    facts: dict[str, Any] = {
+        "namespace_receipt_sha256": None,
+        "release_id": None,
+        "release_identity_sha256": None,
+        "profile_status": _research_episode_resolve_profile_status(Path(".")),
+    }
+    try:
+        receipt = _load_canonical_tool_namespace_receipt()
+    except XinaoError:
+        receipt = None
+    except Exception:
+        receipt = None
+    if receipt is not None:
+        # Pointer carries sealed receipt hash when available.
+        pointer_path = _tool_namespace_security_root() / "current.json"
+        if pointer_path.is_file():
+            try:
+                pointer = json.loads(pointer_path.read_text(encoding="utf-8"))
+                facts["namespace_receipt_sha256"] = pointer.get("receipt_sha256")
+                facts["release_id"] = pointer.get("release_id") or receipt.get("release_id")
+                facts["release_identity_sha256"] = pointer.get(
+                    "release_identity_sha256"
+                ) or receipt.get("release_identity_sha256")
+            except (OSError, json.JSONDecodeError):
+                facts["release_id"] = receipt.get("release_id")
+                facts["release_identity_sha256"] = receipt.get("release_identity_sha256")
+        else:
+            facts["release_id"] = receipt.get("release_id")
+            facts["release_identity_sha256"] = receipt.get("release_identity_sha256")
+    return facts
+
+
+def research_episode_attach_run(
+    *,
+    root: Path | str,
+    prompt: str,
+    expected_head_sha256: str | None = None,
+    max_turns: int | None = None,
+    timeout_seconds: float | None = None,
+    plan_only: bool = False,
+) -> dict[str, Any]:
+    """Owner one-shot live Grok attach/run inside transport container.
+
+    Never creates next task, freezes, settles, or claims parent completion.
+    Status vocabulary: PLANNED | ATTEMPT_FAILED | LIVE_ATTEMPT_RECORDED.
+    """
+    root = Path(root)
+    _research_episode_assert_root_allowed(root)
+    with _research_episode_lock(root):
+        head = _research_episode_load_head(root)
+        meta = _research_episode_read_meta(root)
+        if head.get("status") in {"CANCELLED", "ABSORBED"}:
+            raise XinaoError("RESEARCH_EPISODE_TERMINAL", str(head.get("status")))
+        if (
+            expected_head_sha256 is not None
+            and head.get("head_checkpoint_sha256") != expected_head_sha256
+        ):
+            raise XinaoError("RESEARCH_EPISODE_STALE_HEAD", expected_head_sha256)
+        profile_status = _research_episode_resolve_profile_status(root)
+        if profile_status != RESEARCH_EPISODE_PROFILE_STATUS_VERIFIED:
+            raise XinaoError(
+                "RESEARCH_EPISODE_NAMESPACE_UNVERIFIED",
+                profile_status,
+            )
+        facts = _research_episode_namespace_and_release_facts()
+        _host_mod, host = _research_episode_load_dual_host(root)
+        try:
+            result = host.attach_run_live(
+                prompt=prompt,
+                max_turns=max_turns,
+                timeout_seconds=timeout_seconds,
+                expected_episode_id=str(meta["episode_id"]),
+                expected_host_session_id=str(meta["session_id"]),
+                cas_head_sha256=str(head["head_checkpoint_sha256"]),
+                namespace_receipt_sha256=facts.get("namespace_receipt_sha256"),
+                release_id=facts.get("release_id"),
+                release_identity_sha256=facts.get("release_identity_sha256"),
+                plan_only=plan_only,
+            )
+        except Exception as exc:
+            # DualHostError / NativeSessionError map to XinaoError reason codes.
+            reason = getattr(exc, "reason_code", None) or "RESEARCH_EPISODE_ATTACH_FAILED"
+            raise XinaoError(str(reason), str(exc)[:2000]) from exc
+        _research_episode_append_journal(
+            root,
+            {
+                "verb": "attach-run",
+                "at": dt.datetime.now(dt.UTC).isoformat().replace("+00:00", "Z"),
+                "status": result.get("status"),
+                "attempt_cas_digest": result.get("attempt_cas_digest"),
+                "attempt_hash": result.get("attempt_hash"),
+                "plan_only": bool(plan_only),
+            },
+        )
+        return {
+            **result,
+            "episode_id": meta["episode_id"],
+            "host_session_id": meta["session_id"],
+            "cas_head_sha256": head["head_checkpoint_sha256"],
+            "profile_status": profile_status,
+            "next_task_created": False,
+            "disposition_written": False,
+            "freeze_written": False,
+            "settlement_written": False,
+            "portfolio_updated": False,
+            "completion_claim_allowed": False,
+            "owner_adopted": False,
+            "science_restored": False,
+            "parent_complete": False,
+        }
+
+
+def research_episode_resume_live(
+    *,
+    root: Path | str,
+    expected_provider_session_uuid: str,
+    expected_head_sha256: str,
+    expected_session_id: str | None = None,
+    prior_attempt_hash: str | None = None,
+    prompt: str | None = None,
+    max_turns: int | None = None,
+    timeout_seconds: float | None = None,
+    plan_only: bool = False,
+) -> dict[str, Any]:
+    """Owner one-shot provider-session resume via real --resume docker exec."""
+    root = Path(root)
+    _research_episode_assert_root_allowed(root)
+    with _research_episode_lock(root):
+        head = _research_episode_load_head(root)
+        meta = _research_episode_read_meta(root)
+        if head.get("status") in {"CANCELLED", "ABSORBED"}:
+            raise XinaoError("RESEARCH_EPISODE_TERMINAL", str(head.get("status")))
+        if head.get("head_checkpoint_sha256") != expected_head_sha256:
+            raise XinaoError("RESEARCH_EPISODE_STALE_HEAD", expected_head_sha256)
+        if expected_session_id is not None and expected_session_id != meta["session_id"]:
+            raise XinaoError("RESEARCH_EPISODE_FOREIGN_SESSION", expected_session_id)
+        profile_status = _research_episode_resolve_profile_status(root)
+        if profile_status != RESEARCH_EPISODE_PROFILE_STATUS_VERIFIED:
+            raise XinaoError(
+                "RESEARCH_EPISODE_NAMESPACE_UNVERIFIED",
+                profile_status,
+            )
+        facts = _research_episode_namespace_and_release_facts()
+        _host_mod, host = _research_episode_load_dual_host(root)
+        try:
+            result = host.resume_live(
+                expected_provider_session_uuid=expected_provider_session_uuid,
+                expected_host_session_id=str(meta["session_id"]),
+                expected_episode_id=str(meta["episode_id"]),
+                expected_cas_head_sha256=expected_head_sha256,
+                prior_attempt_hash=prior_attempt_hash,
+                prompt=prompt,
+                max_turns=max_turns,
+                timeout_seconds=timeout_seconds,
+                namespace_receipt_sha256=facts.get("namespace_receipt_sha256"),
+                release_id=facts.get("release_id"),
+                release_identity_sha256=facts.get("release_identity_sha256"),
+                plan_only=plan_only,
+            )
+        except Exception as exc:
+            reason = getattr(exc, "reason_code", None) or "RESEARCH_EPISODE_RESUME_LIVE_FAILED"
+            raise XinaoError(str(reason), str(exc)[:2000]) from exc
+        _research_episode_append_journal(
+            root,
+            {
+                "verb": "resume-live",
+                "at": dt.datetime.now(dt.UTC).isoformat().replace("+00:00", "Z"),
+                "status": result.get("status"),
+                "provider_session_uuid": expected_provider_session_uuid,
+                "attempt_cas_digest": result.get("attempt_cas_digest"),
+                "plan_only": bool(plan_only),
+            },
+        )
+        return {
+            **result,
+            "episode_id": meta["episode_id"],
+            "host_session_id": meta["session_id"],
+            "cas_head_sha256": head["head_checkpoint_sha256"],
+            "profile_status": profile_status,
+            "next_task_created": False,
+            "disposition_written": False,
+            "freeze_written": False,
+            "settlement_written": False,
+            "portfolio_updated": False,
+            "completion_claim_allowed": False,
+            "owner_adopted": False,
+            "science_restored": False,
+            "parent_complete": False,
+        }
+
+
+def research_episode_export_candidate_evidence(
+    *,
+    root: Path | str,
+    attempt_cas_digest: str,
+    expected_head_sha256: str,
+    expected_provider_session_uuid: str | None = None,
+) -> dict[str, Any]:
+    """Owner one-shot export of candidate-only evidence bundle from attempt CAS.
+
+    Identities are derived from sealed attempt evidence + episode head. Does not
+    require containers still running. Never writes shadow/adoption/freeze state.
+    """
+    root = Path(root)
+    _research_episode_assert_root_allowed(root)
+    with _research_episode_lock(root):
+        head = _research_episode_load_head(root)
+        meta = _research_episode_read_meta(root)
+        if head.get("head_checkpoint_sha256") != expected_head_sha256:
+            raise XinaoError("RESEARCH_EPISODE_STALE_HEAD", expected_head_sha256)
+        facts = _research_episode_namespace_and_release_facts()
+        native_path = resolve_packaged_host_modules_dir() / "native_grok_session.py"
+        spec = importlib.util.spec_from_file_location(
+            "xinao_native_grok_session_export", native_path
+        )
+        if spec is None or spec.loader is None:
+            raise XinaoError("NATIVE_GROK_SESSION_MISSING", str(native_path))
+        native = importlib.util.module_from_spec(spec)
+        sys.modules[spec.name] = native
+        spec.loader.exec_module(native)
+        # Optional pair receipt identity from episode root when still present.
+        pair_path = root / "dual_container_pair_receipt.json"
+        pair_sha = None
+        transport_image = None
+        tool_image = None
+        if pair_path.is_file():
+            try:
+                receipt = json.loads(pair_path.read_text(encoding="utf-8"))
+                body = {k: v for k, v in receipt.items() if k != "pair_receipt_sha256"}
+                pair_sha = _sha256_bytes(_canonical_bytes(body))
+                transport_image = receipt.get("transport_image_id")
+                tool_image = receipt.get("tool_image_id")
+            except (OSError, json.JSONDecodeError, TypeError):
+                pair_sha = None
+        try:
+            result = native.export_candidate_evidence_bundle(
+                episode_output_root=root / "output",
+                attempt_cas_digest=attempt_cas_digest,
+                episode_id=str(meta["episode_id"]),
+                cas_head_sha256=expected_head_sha256,
+                expected_provider_session_uuid=expected_provider_session_uuid,
+                expected_pair_receipt_sha256=pair_sha,
+                expected_namespace_receipt_sha256=facts.get("namespace_receipt_sha256"),
+                expected_transport_image_id=transport_image,
+                expected_tool_image_id=tool_image,
+                package_release_id=facts.get("release_id"),
+                package_release_identity_sha256=facts.get("release_identity_sha256"),
+                prompt_material_cutoff={
+                    "question": meta.get("question"),
+                    "episode_id": meta.get("episode_id"),
+                },
+                lab_root=root / "lab",
+            )
+        except Exception as exc:
+            reason = getattr(exc, "reason_code", None) or "RESEARCH_EPISODE_EXPORT_FAILED"
+            raise XinaoError(str(reason), str(exc)[:2000]) from exc
+        _research_episode_append_journal(
+            root,
+            {
+                "verb": "export-candidate-evidence",
+                "at": dt.datetime.now(dt.UTC).isoformat().replace("+00:00", "Z"),
+                "status": result.get("status"),
+                "attempt_cas_digest": attempt_cas_digest,
+                "bundle_sha256": result.get("bundle_sha256"),
+            },
+        )
+        return {
+            **result,
+            "episode_id": meta["episode_id"],
+            "host_session_id": meta["session_id"],
+            "cas_head_sha256": head["head_checkpoint_sha256"],
+            "next_task_created": False,
+            "disposition_written": False,
+            "freeze_written": False,
+            "settlement_written": False,
+            "portfolio_updated": False,
+            "completion_claim_allowed": False,
+            "owner_adopted": False,
+            "science_restored": False,
+            "parent_complete": False,
+        }
+
+
+def _import_discovery_science(module_name: str) -> Any:
+    """Import xinao.science.* preferring installed package, then monorepo src.
+
+    Installed Skill under ``~/.codex/skills/xinao`` has parents[3] outside the
+    monorepo; monorepo-only path walk must not be the primary consumer route.
+    Prefer sealed ``xinao-discovery`` package import first.
+    """
+
+    leaf = module_name.rsplit(".", 1)[-1]
+    # 1) Installed / site-packages package (fresh wheel or sealed env).
+    try:
+        return importlib.import_module(f"xinao.science.{leaf}")
+    except ImportError:
+        pass
+    # 2) Explicit override or monorepo discovery src (dev / worktree only).
+    repo_root = Path(__file__).resolve().parents[3]
+    discovery_src = Path(
+        os.environ.get("XINAO_DISCOVERY_SRC") or (repo_root / "xinao_discovery" / "src")
+    )
+    adapter_path = discovery_src / "xinao" / "science" / f"{leaf}.py"
+    if not discovery_src.is_dir() or not adapter_path.is_file():
+        raise XinaoError(
+            "EPISODE_POOL_ADAPTER_UNAVAILABLE",
+            (
+                f"installed xinao.science.{leaf} missing and monorepo src not found "
+                f"at {discovery_src}; install xinao-discovery or set XINAO_DISCOVERY_SRC"
+            ),
+        )
+    src = str(discovery_src)
+    if src in sys.path:
+        sys.path.remove(src)
+    sys.path.insert(0, src)
+    # Avoid skills/xinao name collision with package `xinao`.
+    existing = sys.modules.get("xinao")
+    if existing is not None and not hasattr(existing, "science"):
+        del sys.modules["xinao"]
+        for key in list(sys.modules):
+            if key.startswith("xinao."):
+                del sys.modules[key]
+    try:
+        return importlib.import_module(f"xinao.science.{leaf}")
+    except ImportError as exc:
+        raise XinaoError(
+            "EPISODE_POOL_ADAPTER_UNAVAILABLE",
+            f"xinao.science.{leaf} import failed: {exc}",
+        ) from exc
+
+
+def research_episode_ingest_export(
+    *,
+    pool_root: Path | str,
+    export_path: Path | str,
+    manifest_path: Path | str,
+) -> dict[str, Any]:
+    """Owner-callable pool admission: sealed export + exact manifest bytes.
+
+    Never freezes, settles, adopts, or starts next tasks. Separate from Owner disposition.
+    """
+    pool_root = Path(pool_root)
+    export_path = Path(export_path)
+    manifest_path = Path(manifest_path)
+    if not export_path.is_file():
+        raise XinaoError("EPISODE_EXPORT_MISSING", str(export_path))
+    if not manifest_path.is_file():
+        raise XinaoError("CANDIDATE_MANIFEST_MISSING", str(manifest_path))
+    try:
+        adapter = _import_discovery_science("episode_export_pool_adapter")
+    except XinaoError:
+        raise
+    except Exception as exc:
+        raise XinaoError("EPISODE_POOL_ADAPTER_UNAVAILABLE", str(exc)[:2000]) from exc
+    export_raw = export_path.read_bytes()
+    manifest_raw = manifest_path.read_bytes()
+    try:
+        entry = adapter.ingest_verified_episode_export(
+            pool_root=pool_root,
+            export=export_raw,
+            manifest_bytes=manifest_raw,
+        )
+    except Exception as exc:
+        reason = getattr(exc, "reason_code", None) or "EPISODE_POOL_INGEST_FAILED"
+        detail = getattr(exc, "detail", None) or str(exc)
+        raise XinaoError(str(reason), str(detail)[:2000]) from exc
+    return {
+        **dict(entry),
+        "status": "POOL_ENTRY_READY",
+        "ingest_kind": entry.get("ingest_kind"),
+        "result_sha256": entry.get("result_sha256"),
+        "owner_adopted": False,
+        "candidate_only": True,
+        "decision_map_projected": False,
+        "freeze_written": False,
+        "settlement_written": False,
+        "disposition_written": False,
+        "next_task_created": False,
+        "completion_claim_allowed": False,
+        "science_restored": False,
+        "parent_complete": False,
+    }
+
+
+def research_episode_bind_feedback_material(
+    *,
+    portfolio_root: Path | str,
+    feedback_content_hash: str,
+    prior_candidate_result_sha256: str | None = None,
+    prior_candidate_version: str | None = None,
+    settled_portfolio_hash: str | None = None,
+    target_episode_version: str | None = None,
+) -> dict[str, Any]:
+    """Owner-callable feedback material binding for a later ResearchEpisode version.
+
+    Input-only; never auto-starts research, never rewrites prior CAS.
+    """
+    portfolio_root = Path(portfolio_root)
+    try:
+        material = _import_discovery_science("research_feedback_material")
+    except XinaoError:
+        raise
+    except Exception as exc:
+        raise XinaoError("FEEDBACK_MATERIAL_ADAPTER_UNAVAILABLE", str(exc)[:2000]) from exc
+    try:
+        binding = material.bind_feedback_pack_as_episode_material(
+            portfolio_root=portfolio_root,
+            feedback_content_hash=feedback_content_hash,
+            prior_candidate_result_sha256=prior_candidate_result_sha256,
+            prior_candidate_version=prior_candidate_version,
+            settled_portfolio_hash=settled_portfolio_hash,
+            target_episode_version=target_episode_version,
+        )
+        material.assert_feedback_cannot_rewrite_priors(binding=binding)
+    except Exception as exc:
+        reason = getattr(exc, "reason_code", None) or "FEEDBACK_MATERIAL_BIND_FAILED"
+        detail = getattr(exc, "detail", None) or str(exc)
+        raise XinaoError(str(reason), str(detail)[:2000]) from exc
+    return {
+        **dict(binding),
+        "status": "FEEDBACK_MATERIAL_BOUND",
+        "auto_start_next_research": False,
+        "next_task_created": False,
+        "freeze_written": False,
+        "settlement_written": False,
+        "disposition_written": False,
+        "owner_adopted": False,
+        "completion_claim_allowed": False,
+        "science_restored": False,
+        "parent_complete": False,
+    }
+
+
+def research_episode_absorb(
+    *,
+    root: Path | str,
+    expected_head_sha256: str,
+    candidate: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """DEPRECATED placeholder outbox only — NOT candidate-pool admission.
+
+    Prefer research-episode export-candidate-evidence + ingest-export.
+    This verb must not masquerade as pool admission.
+    """
+    root = Path(root)
+    with _research_episode_lock(root):
+        head = _research_episode_load_head(root)
+        if head.get("head_checkpoint_sha256") != expected_head_sha256:
+            raise XinaoError("RESEARCH_EPISODE_STALE_HEAD", expected_head_sha256)
+        if head.get("status") == "CANCELLED":
+            raise XinaoError("RESEARCH_EPISODE_CANCELLED", "absorb after cancel")
+        meta = _research_episode_read_meta(root)
+        if candidate is None:
+            candidate = {
+                "schema_version": "xinao.research_episode_candidate.v1",
+                "status": "CANDIDATE_FOR_CODEX_REVIEW",
+                "summary": "typed candidate placeholder — NOT pool admission",
+                "pool_admission": False,
+                "deprecated_placeholder": True,
+                "owner_adopted": False,
+                "scientific_grade": None,
+                "profitability_claim_allowed": False,
+                "science_restored": False,
+                "parent_complete": False,
+                "completion_claim_allowed": False,
+            }
+        candidate = dict(candidate)
+        # Reject authority elevation in absorb inputs.
+        if candidate.get("owner_adopted") is True:
+            raise XinaoError("RESEARCH_EPISODE_ABSORB_ADOPTION_FORBIDDEN", "owner_adopted")
+        if candidate.get("completion_claim_allowed") is True:
+            raise XinaoError(
+                "RESEARCH_EPISODE_COMPLETION_CLAIM_FORBIDDEN", "completion_claim_allowed"
+            )
+        if candidate.get("science_restored") is True:
+            raise XinaoError("RESEARCH_EPISODE_SCIENCE_RESTORED_FORBIDDEN", "science_restored")
+        if candidate.get("parent_complete") is True:
+            raise XinaoError("RESEARCH_EPISODE_PARENT_COMPLETE_FORBIDDEN", "parent_complete")
+        if candidate.get("scientific_grade") not in {None, "CANDIDATE_ONLY", "UNGRADED"}:
+            # Allow null only for host absorb; non-null grades are Codex Owner only.
+            if candidate.get("scientific_grade") is not None:
+                raise XinaoError(
+                    "RESEARCH_EPISODE_SCIENTIFIC_GRADE_FORBIDDEN",
+                    str(candidate.get("scientific_grade")),
+                )
+        candidate["owner_adopted"] = False
+        candidate["completion_claim_allowed"] = False
+        candidate["science_restored"] = False
+        candidate["parent_complete"] = False
+        candidate.setdefault("profitability_claim_allowed", False)
+        cand_bytes = _canonical_bytes(candidate)
+        cand_digest = _research_episode_put_bytes(root, "artifacts", cand_bytes)
+        outbox = _research_episode_paths(root)["outbox"] / "candidate.json"
+        outbox.write_bytes(cand_bytes)
+        generation = int(head.get("generation") or 0) + 1
+        container_identity = _research_episode_container_identity(
+            verb="absorb",
+            episode_id=meta["episode_id"],
+            session_id=meta["session_id"],
+            generation=generation,
+            lab_root=_research_episode_paths(root)["lab"],
+            root=root,
+        )
+        committed = _research_episode_commit_checkpoint(
+            root,
+            episode_id=meta["episode_id"],
+            session_id=meta["session_id"],
+            generation=generation,
+            status="ABSORBED",
+            progress_note="absorb for Codex review only",
+            parent_sha256=expected_head_sha256,
+            container_identity=container_identity,
+            candidate_sha256=cand_digest,
+        )
+        return {
+            **committed,
+            "status": "ABSORBED_FOR_CODEX_REVIEW",
+            "codex_review_only": True,
+            "pool_admission": False,
+            "deprecated_placeholder": True,
+            "not_candidate_pool_entry": True,
+            "owner_adopted": False,
+            "scientific_grade": candidate.get("scientific_grade"),
+            "candidate_sha256": cand_digest,
+            "completion_claim_allowed": False,
+        }
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -11483,6 +16509,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             "bootstrap-migrate",
             "bootstrap-forward-upgrade",
             "recover",
+            "research-episode",
+            "issue-tool-namespace-receipt",
         }:
             with _activation_lock():
                 _validate_bootstrap_fence_locked(args.command)
@@ -11539,9 +16567,115 @@ def main(argv: Sequence[str] | None = None) -> int:
                 settlement_journal_group_ref=getattr(args, "settlement_journal_group_ref", None),
                 statement_ref=getattr(args, "statement_ref", None),
                 occurred_at=getattr(args, "occurred_at", None),
+                kind=getattr(args, "kind", None),
+                feedback_ref=getattr(args, "feedback_ref", None),
+                reason_code=getattr(args, "reason_code", None),
+                notes=getattr(args, "notes", None),
+                period_index=getattr(args, "period_index", None),
             )
-        else:
+        elif args.command == "research-episode":
+            if args.research_episode_command == "start":
+                value = research_episode_start(
+                    root=args.root,
+                    question=args.question,
+                    lease_seconds=args.lease_seconds,
+                )
+            elif args.research_episode_command == "status":
+                value = research_episode_status(root=args.root)
+            elif args.research_episode_command == "checkpoint":
+                lab_bytes = None
+                if args.lab_relative is not None:
+                    # checkpoint may create lab path; accept optional pre-read only when exists
+                    # Prefer explicit empty bytes when relative given without prior file — caller
+                    # uses progress_note; lab materialization optional via env path not used here.
+                    lab_bytes = b""
+                value = research_episode_checkpoint(
+                    root=args.root,
+                    expected_head_sha256=args.expected_head,
+                    progress_note=args.progress_note,
+                    lab_relative=args.lab_relative,
+                    lab_bytes=lab_bytes if args.lab_relative is not None else None,
+                    mark_interrupted=args.mark_interrupted,
+                )
+            elif args.research_episode_command == "resume":
+                value = research_episode_resume(
+                    root=args.root,
+                    expected_head_sha256=args.expected_head,
+                    expected_session_id=args.expected_session,
+                )
+            elif args.research_episode_command == "cancel":
+                value = research_episode_cancel(root=args.root)
+            elif args.research_episode_command == "ensure-pair":
+                value = research_episode_ensure_pair(
+                    root=args.root,
+                    expected_head_sha256=args.expected_head,
+                    research_profile=args.research_profile,
+                )
+            elif args.research_episode_command == "retire-pair":
+                value = research_episode_retire_pair(root=args.root)
+            elif args.research_episode_command == "absorb":
+                candidate = None
+                if args.candidate is not None:
+                    candidate = json.loads(Path(args.candidate).read_text(encoding="utf-8"))
+                value = research_episode_absorb(
+                    root=args.root,
+                    expected_head_sha256=args.expected_head,
+                    candidate=candidate,
+                )
+            elif args.research_episode_command == "attach-run":
+                value = research_episode_attach_run(
+                    root=args.root,
+                    prompt=args.prompt,
+                    expected_head_sha256=args.expected_head,
+                    max_turns=args.max_turns,
+                    timeout_seconds=args.timeout_seconds,
+                    plan_only=bool(args.plan_only),
+                )
+            elif args.research_episode_command == "resume-live":
+                value = research_episode_resume_live(
+                    root=args.root,
+                    expected_provider_session_uuid=args.expected_provider_session,
+                    expected_head_sha256=args.expected_head,
+                    expected_session_id=args.expected_session,
+                    prior_attempt_hash=args.prior_attempt_hash,
+                    prompt=args.prompt,
+                    max_turns=args.max_turns,
+                    timeout_seconds=args.timeout_seconds,
+                    plan_only=bool(args.plan_only),
+                )
+            elif args.research_episode_command == "export-candidate-evidence":
+                value = research_episode_export_candidate_evidence(
+                    root=args.root,
+                    attempt_cas_digest=args.attempt_cas_digest,
+                    expected_head_sha256=args.expected_head,
+                    expected_provider_session_uuid=args.expected_provider_session,
+                )
+            elif args.research_episode_command == "ingest-export":
+                value = research_episode_ingest_export(
+                    pool_root=args.pool_root,
+                    export_path=args.export,
+                    manifest_path=args.manifest,
+                )
+            elif args.research_episode_command == "bind-feedback-material":
+                value = research_episode_bind_feedback_material(
+                    portfolio_root=args.portfolio_root,
+                    feedback_content_hash=args.feedback_content_hash,
+                    prior_candidate_result_sha256=args.prior_candidate_result_sha256,
+                    prior_candidate_version=args.prior_candidate_version,
+                    settled_portfolio_hash=args.settled_portfolio_hash,
+                    target_episode_version=args.target_episode_version,
+                )
+            else:
+                raise XinaoError(
+                    "INVOCATION_ARGUMENTS_INVALID",
+                    f"unknown research-episode command: {args.research_episode_command}",
+                )
+        elif args.command == "issue-tool-namespace-receipt":
+            value = issue_tool_namespace_separation_receipt()
+        elif args.command == "research":
             value = research(args.question, args.as_of, args.material)
+        else:
+            raise XinaoError("INVOCATION_ARGUMENTS_INVALID", f"unknown command: {args.command}")
     except XinaoError as error:
         print(json.dumps(_error_envelope(error), ensure_ascii=False, sort_keys=True))
         return 2

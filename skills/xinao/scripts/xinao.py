@@ -15,6 +15,13 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, Sequence
 
+# Sealed installed / active / release skill-bundle trees are byte-exact inventories.
+# Formal entry must never emit __pycache__/.pyc there. Keep -B as defense in depth;
+# do not rely on callers remembering it. (Raw `import xinao_runtime` still writes the
+# importer's first module cache before body runs — use formal entry or -B for audits.)
+sys.dont_write_bytecode = True
+os.environ["PYTHONDONTWRITEBYTECODE"] = "1"
+
 DEFAULT_STATE_ROOT = Path(r"D:\XINAO_RESEARCH_RUNTIME\state\xinao_skill")
 MAX_CONTROL_BYTES = 512 * 1024
 MAX_MANIFEST_BYTES = 2 * 1024 * 1024
@@ -30,7 +37,7 @@ RELEASE_RUNTIME_RELATIVE_PATH = Path("skill-bundle") / "scripts" / "xinao_runtim
 # Bound to the co-located bootstrap-migration companion. Tampering fails before execution.
 # Update this whenever the candidate xinao_runtime.py bytes change.
 EXPECTED_COMPANION_RUNTIME_SHA256 = (
-    "557087e9873e8e9fd3af9ccbc058f71a0b241d45cc3bcf0b54ff87439c094b3d"
+    "2eb2675ad5ca07cc2b253837f3270962c0705bf47ca695f13a1152b7c79d51b3"
 )
 RELEASE_ID_PATTERN = re.compile(r"^researcher-[0-9]+\.[0-9]+\.[0-9]+-[0-9a-f]{16}$")
 TXN_ID_PATTERN = re.compile(r"^xra_[0-9]{8}T[0-9]{6}_[0-9a-f]{16}$")
@@ -121,7 +128,7 @@ FORBIDDEN_RUNTIME_TOKENS = (
     "common_contract",
     "integrated_bus",
 )
-RELEASE_KEYS = {
+PRE_TOOL_IMAGE_RELEASE_KEYS = {
     "schema_version",
     "release_id",
     "package_version",
@@ -144,6 +151,46 @@ RELEASE_KEYS = {
     "generic_worker_route_allowed",
     "state_namespace",
     "run_namespace",
+}
+RELEASE_KEYS = set(PRE_TOOL_IMAGE_RELEASE_KEYS) | {
+    "tool_image_id",
+    "tool_image_tag_observational",
+    "tool_image_entrypoint",
+    "tool_image_labels",
+}
+TOOL_EXECUTOR_ENTRYPOINT = [
+    "python",
+    "-I",
+    "/opt/xinao-tool-executor/tool_executor.py",
+    "--lab-root",
+    "/episode-lab",
+    "--socket",
+    "/ipc/tool.sock",
+]
+TOOL_IMAGE_LABEL_KEYS = {
+    "org.opencontainers.image.title",
+    "io.xinao.researcher.role",
+    "io.xinao.researcher.dual-container",
+    "io.xinao.researcher.generic-worker-route",
+    "io.xinao.researcher.auth-mount",
+    "io.xinao.researcher.network-default",
+    "io.xinao.researcher.shell-isolation",
+    "io.xinao.tool.dockerfile.sha256",
+    "io.xinao.tool.modules.sha256",
+}
+PRE_TOOL_IMAGE_SOURCE_IDENTITY_KEYS = {
+    "source_commit",
+    "source_tree",
+    "source_dirty",
+    "grok_donor_image_id",
+    "grok_donor_binary_sha256",
+    "shadow_runtime_tree_sha256",
+    "shadow_runtime_lock_sha256",
+    "researcher_image_modules_tree_sha256",
+}
+CURRENT_SOURCE_IDENTITY_KEYS = set(PRE_TOOL_IMAGE_SOURCE_IDENTITY_KEYS) | {
+    "tool_executor_dockerfile_sha256",
+    "tool_executor_modules_tree_sha256",
 }
 SKILL_HASH_PATHS = {
     "skill_md_sha256": "SKILL.md",
@@ -171,7 +218,15 @@ IMAGE_LABEL_KEYS = {
     "io.xinao.researcher.source-identity.sha256",
     "io.xinao.researcher.shadow-runtime.sha256",
     "io.xinao.researcher.shadow-runtime-lock.sha256",
+    "io.xinao.researcher.image-modules.sha256",
     "io.xinao.researcher.requested-model",
+    "io.xinao.researcher.default-profile",
+    "io.xinao.researcher.episode-profile",
+    "io.xinao.researcher.episode-entrypoint",
+    "io.xinao.researcher.episode-network-policy",
+    "io.xinao.researcher.episode-tool-shell",
+    "io.xinao.researcher.mcp-server",
+    "io.xinao.researcher.mcp-tools-allowlist",
 }
 
 
@@ -570,7 +625,7 @@ def _validate_journal_shape(
 
 def _release_identity_payload(manifest: dict[str, Any]) -> dict[str, Any]:
     source_identity = manifest.get("source_identity") or {}
-    return {
+    payload = {
         "package_version": manifest.get("package_version"),
         "capability_id": manifest.get("capability_id"),
         "capability_version": manifest.get("capability_version"),
@@ -580,6 +635,9 @@ def _release_identity_payload(manifest: dict[str, Any]) -> dict[str, Any]:
         "grok_donor_binary_sha256": source_identity.get("grok_donor_binary_sha256"),
         "shadow_runtime_tree_sha256": source_identity.get("shadow_runtime_tree_sha256"),
         "shadow_runtime_lock_sha256": source_identity.get("shadow_runtime_lock_sha256"),
+        "researcher_image_modules_tree_sha256": source_identity.get(
+            "researcher_image_modules_tree_sha256"
+        ),
         "skill_bundle_tree_sha256": manifest.get("skill_bundle_tree_sha256"),
         "image_id": manifest.get("image_id"),
         "image_entrypoint": manifest.get("image_entrypoint"),
@@ -589,6 +647,19 @@ def _release_identity_payload(manifest: dict[str, Any]) -> dict[str, Any]:
         "state_namespace": manifest.get("state_namespace"),
         "run_namespace": manifest.get("run_namespace"),
     }
+    if "tool_executor_dockerfile_sha256" in source_identity:
+        payload["tool_executor_dockerfile_sha256"] = source_identity.get(
+            "tool_executor_dockerfile_sha256"
+        )
+    if "tool_executor_modules_tree_sha256" in source_identity:
+        payload["tool_executor_modules_tree_sha256"] = source_identity.get(
+            "tool_executor_modules_tree_sha256"
+        )
+    if "tool_image_id" in manifest:
+        payload["tool_image_id"] = manifest.get("tool_image_id")
+        payload["tool_image_entrypoint"] = manifest.get("tool_image_entrypoint")
+        payload["tool_image_labels"] = manifest.get("tool_image_labels")
+    return payload
 
 
 def _validate_release_manifest_shape(
@@ -597,11 +668,14 @@ def _validate_release_manifest_shape(
     manifest_path: Path,
     state_root: Path,
 ) -> None:
-    if (
-        set(manifest) != RELEASE_KEYS
-        or manifest.get("schema_version") != "xinao.researcher_release.v2"
-    ):
+    keys = set(manifest)
+    if manifest.get("schema_version") != "xinao.researcher_release.v2":
         raise BootstrapError("RELEASE_SCHEMA_INVALID", str(manifest_path))
+    current_keys = frozenset(RELEASE_KEYS)
+    pre_tool_keys = frozenset(PRE_TOOL_IMAGE_RELEASE_KEYS)
+    if keys not in {current_keys, pre_tool_keys}:
+        raise BootstrapError("RELEASE_SCHEMA_INVALID", str(manifest_path))
+    dual_image = keys == current_keys
     package_version = manifest.get("package_version")
     capability_version = manifest.get("capability_version")
     charter_version = manifest.get("charter_version")
@@ -623,15 +697,10 @@ def _validate_release_manifest_shape(
             "RELEASE_CAPABILITY_IDENTITY_INVALID", str(manifest.get("capability_id"))
         )
     source_identity = manifest.get("source_identity")
-    if not isinstance(source_identity, dict) or set(source_identity) != {
-        "source_commit",
-        "source_tree",
-        "source_dirty",
-        "grok_donor_image_id",
-        "grok_donor_binary_sha256",
-        "shadow_runtime_tree_sha256",
-        "shadow_runtime_lock_sha256",
-    }:
+    expected_si = (
+        CURRENT_SOURCE_IDENTITY_KEYS if dual_image else PRE_TOOL_IMAGE_SOURCE_IDENTITY_KEYS
+    )
+    if not isinstance(source_identity, dict) or set(source_identity) != expected_si:
         raise BootstrapError("RELEASE_SOURCE_IDENTITY_INVALID", str(manifest_path))
     if source_identity.get("source_dirty") is not False:
         raise BootstrapError("DIRTY_RELEASE_ACTIVATION_FORBIDDEN", str(manifest_path))
@@ -650,10 +719,20 @@ def _validate_release_manifest_shape(
         raise BootstrapError("RELEASE_DONOR_BINARY_IDENTITY_MISSING", str(donor_binary_sha256))
     shadow_tree = source_identity.get("shadow_runtime_tree_sha256")
     shadow_lock = source_identity.get("shadow_runtime_lock_sha256")
+    modules_tree = source_identity.get("researcher_image_modules_tree_sha256")
     if not isinstance(shadow_tree, str) or HEX_SHA256_PATTERN.fullmatch(shadow_tree) is None:
         raise BootstrapError("RELEASE_SHADOW_RUNTIME_TREE_INVALID", str(shadow_tree))
     if not isinstance(shadow_lock, str) or HEX_SHA256_PATTERN.fullmatch(shadow_lock) is None:
         raise BootstrapError("RELEASE_SHADOW_RUNTIME_LOCK_INVALID", str(shadow_lock))
+    if not isinstance(modules_tree, str) or HEX_SHA256_PATTERN.fullmatch(modules_tree) is None:
+        raise BootstrapError("RELEASE_RESEARCHER_IMAGE_MODULES_TREE_INVALID", str(modules_tree))
+    tool_df = source_identity.get("tool_executor_dockerfile_sha256")
+    tool_mod = source_identity.get("tool_executor_modules_tree_sha256")
+    if dual_image:
+        if not isinstance(tool_df, str) or HEX_SHA256_PATTERN.fullmatch(tool_df) is None:
+            raise BootstrapError("RELEASE_TOOL_DOCKERFILE_IDENTITY_INVALID", str(tool_df))
+        if not isinstance(tool_mod, str) or HEX_SHA256_PATTERN.fullmatch(tool_mod) is None:
+            raise BootstrapError("RELEASE_TOOL_MODULES_IDENTITY_INVALID", str(tool_mod))
     if (
         manifest.get("required_bootstrap_protocol") != 2
         or manifest.get("generic_worker_route_allowed") is not False
@@ -683,6 +762,36 @@ def _validate_release_manifest_shape(
     labels = manifest.get("image_labels")
     if not isinstance(labels, dict) or set(labels) != IMAGE_LABEL_KEYS:
         raise BootstrapError("RELEASE_IMAGE_IDENTITY_INVALID", "image_labels")
+    if dual_image:
+        tool_image_id = manifest.get("tool_image_id")
+        tool_tag = manifest.get("tool_image_tag_observational")
+        tool_labels = manifest.get("tool_image_labels")
+        if (
+            not isinstance(tool_image_id, str)
+            or re.fullmatch(r"sha256:[0-9a-f]{64}", tool_image_id) is None
+            or not isinstance(tool_tag, str)
+            or not tool_tag
+            or len(tool_tag) > 256
+            or manifest.get("tool_image_entrypoint") != TOOL_EXECUTOR_ENTRYPOINT
+            or not isinstance(tool_labels, dict)
+            or set(tool_labels) != TOOL_IMAGE_LABEL_KEYS
+        ):
+            raise BootstrapError("RELEASE_TOOL_IMAGE_IDENTITY_INVALID", str(manifest_path))
+        expected_tool_labels = {
+            "org.opencontainers.image.title": (
+                "XINAO researcher tool executor (dual-container fallback)"
+            ),
+            "io.xinao.researcher.role": "tool_executor",
+            "io.xinao.researcher.dual-container": "true",
+            "io.xinao.researcher.generic-worker-route": "forbidden",
+            "io.xinao.researcher.auth-mount": "forbidden",
+            "io.xinao.researcher.network-default": "none",
+            "io.xinao.researcher.shell-isolation": "bubblewrap-require",
+            "io.xinao.tool.dockerfile.sha256": tool_df,
+            "io.xinao.tool.modules.sha256": tool_mod,
+        }
+        if tool_labels != expected_tool_labels:
+            raise BootstrapError("RELEASE_TOOL_IMAGE_IDENTITY_INVALID", "tool_image_labels")
     hashes = manifest.get("skill_hashes")
     if not isinstance(hashes, dict) or set(hashes) != set(SKILL_HASH_PATHS):
         raise BootstrapError("RELEASE_SKILL_HASHES_MISMATCH", str(manifest_path))
@@ -711,7 +820,15 @@ def _validate_release_manifest_shape(
         "io.xinao.researcher.source-identity.sha256": source_identity_sha256,
         "io.xinao.researcher.shadow-runtime.sha256": shadow_tree,
         "io.xinao.researcher.shadow-runtime-lock.sha256": shadow_lock,
+        "io.xinao.researcher.image-modules.sha256": modules_tree,
         "io.xinao.researcher.requested-model": "grok-4.5",
+        "io.xinao.researcher.default-profile": "INSTRUMENT_CANARY",
+        "io.xinao.researcher.episode-profile": "GENUINE_SCIENTIST_EPISODE",
+        "io.xinao.researcher.episode-entrypoint": "/opt/xinao-researcher/episode_entrypoint.py",
+        "io.xinao.researcher.episode-network-policy": "DENY_ALL_FAIL_CLOSED",
+        "io.xinao.researcher.episode-tool-shell": "/usr/libexec/xinao/episode-tool-shell-wrapper",
+        "io.xinao.researcher.mcp-server": "/opt/xinao-researcher/mcp_episode_lab_server.py",
+        "io.xinao.researcher.mcp-tools-allowlist": "search_tool,use_tool",
     }
     if labels != expected_labels:
         raise BootstrapError("RELEASE_IMAGE_IDENTITY_INVALID", "image_labels")
@@ -720,6 +837,7 @@ def _validate_release_manifest_shape(
         "io.xinao.researcher.entrypoint.sha256",
         "io.xinao.researcher.shadow-runtime.sha256",
         "io.xinao.researcher.shadow-runtime-lock.sha256",
+        "io.xinao.researcher.image-modules.sha256",
     ):
         if HEX_SHA256_PATTERN.fullmatch(str(labels.get(key, ""))) is None:
             raise BootstrapError("RELEASE_IMAGE_IDENTITY_INVALID", key)
@@ -1178,6 +1296,10 @@ def _runtime_wrapper(runtime_path: Path, runtime_payload: bytes) -> bytes:
     source_name = ascii(str(runtime_path))
     return (
         "import base64\n"
+        "import os\n"
+        "import sys\n"
+        "sys.dont_write_bytecode = True\n"
+        "os.environ['PYTHONDONTWRITEBYTECODE'] = '1'\n"
         f"_source = base64.b64decode({encoded!r}, validate=True)\n"
         f"_name = {source_name}\n"
         "_scope = {\n"
@@ -1188,6 +1310,18 @@ def _runtime_wrapper(runtime_path: Path, runtime_payload: bytes) -> bytes:
         "}\n"
         "exec(compile(_source, _name, 'exec'), _scope, _scope)\n"
     ).encode("ascii")
+
+
+def _sealed_runtime_child_argv(argv: Sequence[str]) -> list[str]:
+    """Isolated stdin-exec child that never writes bytecode under sealed trees."""
+
+    return [sys.executable, "-I", "-B", "-", *list(argv)]
+
+
+def _sealed_runtime_child_env(base: dict[str, str] | None = None) -> dict[str, str]:
+    environment = dict(os.environ if base is None else base)
+    environment["PYTHONDONTWRITEBYTECODE"] = "1"
+    return environment
 
 
 def _validate_legacy_restore_inventory_tree(
@@ -1379,11 +1513,11 @@ def _run_sealed_legacy_ordinary(argv: Sequence[str], state_root: Path) -> int:
                 state_root, pointer, pointer_sha256
             )
             wrapper = _runtime_wrapper(launcher_path, launcher_payload)
-            child_environment = os.environ.copy()
+            child_environment = _sealed_runtime_child_env()
             child_environment.pop("XINAO_BOOTSTRAP_FENCE_V1", None)
             try:
                 process = subprocess.Popen(
-                    [sys.executable, "-I", "-", *argv],
+                    _sealed_runtime_child_argv(argv),
                     stdin=subprocess.PIPE,
                     env=child_environment,
                 )
@@ -1486,7 +1620,7 @@ def _companion_runtime_path() -> Path:
 
 
 def _run_companion_runtime(argv: Sequence[str]) -> int:
-    """Execute the co-located runtime for protocol migration / forward-upgrade without a v2 fence.
+    """Execute the co-located runtime for bootstrap operations or exact conflict recovery.
 
     Ordinary inspect/research never take this path: they always require a verified
     protocol-2 pointer, terminal journal, and inventory-bound release runtime.
@@ -1510,6 +1644,19 @@ def _run_companion_runtime(argv: Sequence[str]) -> int:
         and (len(argv) != 3 or argv[1] != "--txn-id" or TXN_ID_PATTERN.fullmatch(argv[2]) is None)
     ):
         raise BootstrapError("INVOCATION_ARGUMENTS_INVALID", "_recover-migration")
+    if (
+        argv
+        and argv[0] == "recover"
+        and not (
+            len(argv) == 1
+            or (
+                len(argv) == 3
+                and argv[1] == "--txn-id"
+                and TXN_ID_PATTERN.fullmatch(argv[2]) is not None
+            )
+        )
+    ):
+        raise BootstrapError("INVOCATION_ARGUMENTS_INVALID", "recover")
     runtime_path = _companion_runtime_path()
     if not runtime_path.is_file():
         raise BootstrapError("BOOTSTRAP_MIGRATION_RUNTIME_ABSENT", str(runtime_path))
@@ -1539,11 +1686,11 @@ def _run_companion_runtime(argv: Sequence[str]) -> int:
     process: subprocess.Popen[bytes] | None = None
     try:
         wrapper = _runtime_wrapper(runtime_path, runtime_payload)
-        child_environment = os.environ.copy()
+        child_environment = _sealed_runtime_child_env()
         child_environment.pop("XINAO_BOOTSTRAP_FENCE_V1", None)
         try:
             process = subprocess.Popen(
-                [sys.executable, "-I", "-", *argv],
+                _sealed_runtime_child_argv(argv),
                 stdin=subprocess.PIPE,
                 env=child_environment,
             )
@@ -1564,7 +1711,57 @@ def _run_companion_runtime(argv: Sequence[str]) -> int:
         raise
 
 
-def _pointer_requires_migration_entry(state_root: Path, command: str) -> bool:
+def _exact_activation_conflict_recovery_entry(
+    state_root: Path, argv: Sequence[str], pointer: dict[str, Any], pointer_sha256: str
+) -> bool:
+    if not (
+        len(argv) == 3
+        and argv[0] == "recover"
+        and argv[1] == "--txn-id"
+        and TXN_ID_PATTERN.fullmatch(argv[2]) is not None
+    ):
+        return False
+    txn_id = argv[2]
+    journal_path = (
+        state_root / "researcher_container" / "transactions" / txn_id / "activation.v1.json"
+    )
+    try:
+        journal = _load_json(journal_path)
+        _validate_journal_shape(journal, journal_path=journal_path, state_root=state_root)
+        failure = journal.get("failure_reason")
+        from_value = journal.get("from")
+        requested_to = journal.get("requested_to")
+        if (
+            journal.get("txn_id") != txn_id
+            or journal.get("operation") != "ACTIVATE"
+            or journal.get("state") not in {"RECOVERY_CONFLICT", "ROLLBACK_CANARY_STARTED"}
+            or not isinstance(failure, dict)
+            or failure.get("reason_code") != "INSTALLED_LAUNCHER_IDENTITY_MISMATCH"
+            or not isinstance(from_value, dict)
+            or not isinstance(from_value.get("active"), dict)
+            or not isinstance(requested_to, dict)
+            or requested_to.get("activation_txn_id") != txn_id
+        ):
+            return False
+        rollback_ref = dict(from_value["active"])
+        rollback_ref["activation_txn_id"] = txn_id
+        return bool(
+            journal.get("to") == rollback_ref
+            and requested_to != rollback_ref
+            and journal.get("expected_generation") == from_value.get("generation", 0) + 2
+            and journal.get("switched_pointer_sha256") == pointer_sha256
+            and journal.get("canary") is None
+            and journal.get("terminal_pointer_sha256") is None
+            and pointer.get("generation") == journal.get("expected_generation")
+            and pointer.get("active") == rollback_ref
+            and pointer.get("previous_verified") == from_value.get("previous_verified")
+        )
+    except (BootstrapError, OSError, TypeError, ValueError):
+        return False
+
+
+def _pointer_requires_migration_entry(state_root: Path, argv: Sequence[str]) -> bool:
+    command = argv[0] if argv else ""
     if command not in {
         "_recover-migration",
         "bootstrap-migrate",
@@ -1580,13 +1777,15 @@ def _pointer_requires_migration_entry(state_root: Path, command: str) -> bool:
     if not pointer_path.is_file():
         return False
     try:
-        pointer, _sha = _load_json_with_identity(pointer_path)
+        pointer, pointer_sha256 = _load_json_with_identity(pointer_path)
     except BootstrapError:
         return False
     if pointer.get("schema_version") == "xinao.researcher_current_pointer.v1":
         return True
     if pointer.get("schema_version") != "xinao.researcher_current_pointer.v2":
         return False
+    if _exact_activation_conflict_recovery_entry(state_root, argv, pointer, pointer_sha256):
+        return True
     # Mid-migration / mid-forward-upgrade recover: pending journal while ordinary fence
     # cannot form (historical active release fails exact current validation).
     transaction_root = state_root / "researcher_container" / "transactions"
@@ -1613,8 +1812,7 @@ def _run_runtime(argv: Sequence[str]) -> int:
     state_root = Path(os.environ.get("XINAO_SKILL_STATE_ROOT", str(DEFAULT_STATE_ROOT)))
     if not state_root.is_absolute():
         raise BootstrapError("STATE_ROOT_INVALID", str(state_root))
-    command = argv[0] if argv else ""
-    if _pointer_requires_migration_entry(state_root, command):
+    if _pointer_requires_migration_entry(state_root, argv):
         return _run_companion_runtime(argv)
     pointer_path = state_root / "researcher_container" / "current.json"
     if pointer_path.is_file():
@@ -1627,7 +1825,7 @@ def _run_runtime(argv: Sequence[str]) -> int:
         nonlocal process
         runtime_path, runtime_payload, fence = _runtime_entry_locked(argv, state_root)
         wrapper = _runtime_wrapper(runtime_path, runtime_payload)
-        child_environment = os.environ.copy()
+        child_environment = _sealed_runtime_child_env()
         child_environment["XINAO_BOOTSTRAP_FENCE_V1"] = json.dumps(
             fence,
             ensure_ascii=True,
@@ -1636,7 +1834,7 @@ def _run_runtime(argv: Sequence[str]) -> int:
         )
         try:
             process = subprocess.Popen(
-                [sys.executable, "-I", "-", *argv],
+                _sealed_runtime_child_argv(argv),
                 stdin=subprocess.PIPE,
                 env=child_environment,
             )

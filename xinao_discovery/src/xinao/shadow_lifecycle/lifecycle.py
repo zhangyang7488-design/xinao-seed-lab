@@ -21,6 +21,7 @@ from xinao.ledger.accounting import (
     frozen_position_group,
     opening_group,
     replay_balances,
+    settlement_group,
 )
 from xinao.settlement.shadow import (
     OutcomeAdmission,
@@ -31,7 +32,12 @@ from xinao.settlement.shadow import (
     admit_settlement,
     settle_frozen_decision,
 )
-from xinao.settlement.special_number import SPECIAL_NUMBER_RULE
+from xinao.settlement.special_number import (
+    SPECIAL_NUMBER_FUNCTION,
+    SPECIAL_NUMBER_RULE,
+    SettlementResult,
+    settle_special_number,
+)
 
 DEFAULT_OPENING_BALANCE = "10000.0000"
 ZERO_AMOUNT = "0.0000"
@@ -54,6 +60,18 @@ class ScienceDecisionIdentity(StrEnum):
 class AccountDecisionIdentity(StrEnum):
     ACTION = "ACTION"
     RESEARCHER_ACCOUNT_NO_ACTION = "RESEARCHER_ACCOUNT_NO_ACTION"
+
+
+class AccountingBasis(StrEnum):
+    """How one episode reconstructs its opening cash without changing funding identity."""
+
+    LEGACY_OPENING_JOURNAL = "LEGACY_OPENING_JOURNAL"
+    CARRIED_BALANCE_SNAPSHOT = "CARRIED_BALANCE_SNAPSHOT"
+
+
+class FeedbackKind(StrEnum):
+    TYPED_FEEDBACK = "TYPED_FEEDBACK"
+    NO_CHANGE_WITH_REASON = "NO_CHANGE_WITH_REASON"
 
 
 class EvidenceState(StrEnum):
@@ -101,6 +119,16 @@ def _fmt_amount(value: Decimal | str) -> str:
 
 def _cash_balance(balances: dict[str, str]) -> str:
     return balances[Account.SHADOW_CASH.value]
+
+
+def _period_snapshot_balances(pre_freeze_balance: str) -> dict[str, str]:
+    """Balanced period-start snapshot; it is not a second funding transaction."""
+
+    amount = _fmt_amount(pre_freeze_balance)
+    values = {account.value: ZERO_AMOUNT for account in Account}
+    values[Account.SHADOW_CASH.value] = amount
+    values[Account.OPENING_CAPITAL_EQUITY.value] = _fmt_amount(-_amount(amount))
+    return values
 
 
 def _require_content_seal(obj: object, *, label: str) -> None:
@@ -226,6 +254,214 @@ class ScienceBranchDecision(BaseModel):
         return self.model_copy(update={"content_hash": self.compute_content_hash()})
 
 
+class AccountRiskTicket(BaseModel):
+    """Sealed account-scope ACTION ticket with no scientific adoption fields."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    ticket_ref: str = Field(min_length=1)
+    target_ref: str = Field(min_length=1)
+    target_open_time: datetime
+    freeze_deadline: datetime
+    knowledge_cutoff: datetime
+    frozen_at: datetime
+    panel: Literal["A", "B"]
+    selected_number: int = Field(ge=1, le=49)
+    stake: str
+    rule_ref: str = Field(min_length=1)
+    odds_version_ref: str = Field(min_length=1)
+    baseline_ref: str = Field(min_length=1)
+    risk_policy_ref: str = Field(min_length=1)
+    information_set_ref: str = Field(min_length=1)
+    information_set_hash: str = Field(pattern=r"^[0-9a-f]{64}$")
+    content_hash: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
+
+    @model_validator(mode="after")
+    def validate_ticket(self) -> Self:
+        for name, value in (
+            ("target_open_time", self.target_open_time),
+            ("freeze_deadline", self.freeze_deadline),
+            ("knowledge_cutoff", self.knowledge_cutoff),
+            ("frozen_at", self.frozen_at),
+        ):
+            _require_aware(value, field_name=name)
+        if not (self.frozen_at <= self.freeze_deadline < self.target_open_time):
+            raise ValueError(
+                "ACCOUNT_TICKET_TEMPORAL_VIOLATION: require "
+                "frozen_at <= freeze_deadline < target_open_time"
+            )
+        if self.knowledge_cutoff > self.frozen_at:
+            raise ValueError(
+                "ACCOUNT_TICKET_TEMPORAL_VIOLATION: knowledge_cutoff must be at or before frozen_at"
+            )
+        stake = _amount(self.stake)
+        if self.stake != _fmt_amount(stake) or stake <= 0:
+            raise ValueError(
+                "ACCOUNT_TICKET_STAKE_INVALID: stake must be positive at accounting scale"
+            )
+        _require_mechanical_rule_ref(self.rule_ref, boundary="AccountRiskTicket")
+        expected_baseline = (
+            SPECIAL_NUMBER_FUNCTION.a_baseline_ref
+            if self.panel == "A"
+            else SPECIAL_NUMBER_FUNCTION.b_baseline_ref
+        )
+        if self.baseline_ref != expected_baseline:
+            raise ValueError("ACCOUNT_TICKET_BASELINE_INVALID: baseline_ref must match the panel")
+        if self.content_hash is not None and self.content_hash != self.compute_content_hash():
+            raise ValueError("content_hash does not match the canonical account risk ticket")
+        return self
+
+    def canonical_content(self) -> dict[str, object]:
+        return self.model_dump(mode="json", exclude={"content_hash"})
+
+    def compute_content_hash(self) -> str:
+        return canonical_sha256(self.canonical_content())
+
+    def with_content_hash(self) -> AccountRiskTicket:
+        return self.model_copy(update={"content_hash": self.compute_content_hash()})
+
+
+class PeriodOpenBinding(BaseModel):
+    """Binds period N to the exact settled close of period N-1."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    period_index: int = Field(ge=2)
+    prior_period_index: int = Field(ge=1)
+    prior_episode_ref: str = Field(min_length=1)
+    prior_settled_episode_hash: str = Field(pattern=r"^[0-9a-f]{64}$")
+    prior_statement_hash: str = Field(pattern=r"^[0-9a-f]{64}$")
+    prior_closing_balance: str
+    content_hash: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
+
+    @model_validator(mode="after")
+    def validate_binding(self) -> Self:
+        if self.prior_period_index != self.period_index - 1:
+            raise ValueError("HISTORY_GAP: prior period must be exactly period_index - 1")
+        if self.prior_closing_balance != _fmt_amount(self.prior_closing_balance):
+            raise ValueError("prior_closing_balance must use accounting scale")
+        if self.content_hash is not None and self.content_hash != self.compute_content_hash():
+            raise ValueError("content_hash does not match the canonical period-open binding")
+        return self
+
+    def canonical_content(self) -> dict[str, object]:
+        return self.model_dump(mode="json", exclude={"content_hash"})
+
+    def compute_content_hash(self) -> str:
+        return canonical_sha256(self.canonical_content())
+
+    def with_content_hash(self) -> PeriodOpenBinding:
+        return self.model_copy(update={"content_hash": self.compute_content_hash()})
+
+
+class ShadowPortfolio(BaseModel):
+    """Immutable continuity-root identity; the live head is derived from sealed periods."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    schema_version: Literal["xinao.shadow_lifecycle.portfolio.v1"] = (
+        "xinao.shadow_lifecycle.portfolio.v1"
+    )
+    seat_id: str = Field(min_length=1)
+    portfolio_ref: str = Field(min_length=1)
+    seat_content_hash: str = Field(pattern=r"^[0-9a-f]{64}$")
+    genesis_opening_balance: str
+    min_consumer_version: Literal["0.3.0"] = "0.3.0"
+    content_hash: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
+
+    @model_validator(mode="after")
+    def validate_portfolio(self) -> Self:
+        if self.seat_id == self.portfolio_ref:
+            raise ValueError("seat_id and portfolio_ref must be distinct")
+        if self.genesis_opening_balance != _fmt_amount(self.genesis_opening_balance):
+            raise ValueError("genesis_opening_balance must use accounting scale")
+        if self.content_hash is not None and self.content_hash != self.compute_content_hash():
+            raise ValueError("content_hash does not match the canonical shadow portfolio")
+        return self
+
+    def canonical_content(self) -> dict[str, object]:
+        return self.model_dump(mode="json", exclude={"content_hash"})
+
+    def compute_content_hash(self) -> str:
+        return canonical_sha256(self.canonical_content())
+
+    def with_content_hash(self) -> ShadowPortfolio:
+        return self.model_copy(update={"content_hash": self.compute_content_hash()})
+
+
+class AccountFeedback(BaseModel):
+    """Sealed post-settlement account feedback that cannot promote science."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    feedback_ref: str = Field(min_length=1)
+    kind: FeedbackKind
+    period_index: int = Field(ge=1)
+    episode_ref: str = Field(min_length=1)
+    settled_episode_hash: str = Field(pattern=r"^[0-9a-f]{64}$")
+    statement_hash: str = Field(pattern=r"^[0-9a-f]{64}$")
+    outcome_result_hash: str = Field(pattern=r"^[0-9a-f]{64}$")
+    account_pnl_echo: str
+    reason_code: str | None = None
+    notes: str = ""
+    scientific_promotion: Literal[False] = False
+    claim_grade_delta: Literal[None] = None
+    content_hash: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
+
+    @model_validator(mode="after")
+    def validate_feedback(self) -> Self:
+        if self.account_pnl_echo != _fmt_amount(self.account_pnl_echo):
+            raise ValueError("account_pnl_echo must use accounting scale")
+        if self.kind == FeedbackKind.NO_CHANGE_WITH_REASON and not self.reason_code:
+            raise ValueError("NO_CHANGE_WITH_REASON requires reason_code")
+        if self.scientific_promotion is not False or self.claim_grade_delta is not None:
+            raise ValueError("SCIENCE_ACCOUNT_CROSS_GREEN")
+        if self.content_hash is not None and self.content_hash != self.compute_content_hash():
+            raise ValueError("content_hash does not match canonical account feedback")
+        return self
+
+    def canonical_content(self) -> dict[str, object]:
+        return self.model_dump(mode="json", exclude={"content_hash"})
+
+    def compute_content_hash(self) -> str:
+        return canonical_sha256(self.canonical_content())
+
+    def with_content_hash(self) -> AccountFeedback:
+        return self.model_copy(update={"content_hash": self.compute_content_hash()})
+
+
+class AccountTicketSettlementRecord(BaseModel):
+    """Mechanical settlement identity for an account-scoped risk ticket."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    settlement_ref: str = Field(min_length=1)
+    account_ticket_ref: str = Field(min_length=1)
+    account_ticket_hash: str = Field(pattern=r"^[0-9a-f]{64}$")
+    outcome_ref: str = Field(min_length=1)
+    outcome_hash: str = Field(pattern=r"^[0-9a-f]{64}$")
+    rule_ref: str = Field(min_length=1)
+    result: SettlementResult
+    journal_group_ref: str = Field(min_length=1)
+    settlement_hash: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
+
+    def canonical_content(self) -> dict[str, object]:
+        return self.model_dump(mode="json", exclude={"settlement_hash"})
+
+    def compute_settlement_hash(self) -> str:
+        return canonical_sha256(self.canonical_content())
+
+    def with_hash(self) -> AccountTicketSettlementRecord:
+        return self.model_copy(update={"settlement_hash": self.compute_settlement_hash()})
+
+
+class AccountTicketSettlementBundle(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    record: AccountTicketSettlementRecord
+    journal_group: JournalGroup
+
+
 class AccountBranchDecision(BaseModel):
     """Account branch only: ACTION risk ticket or explicit zero-risk no-action."""
 
@@ -235,6 +471,8 @@ class AccountBranchDecision(BaseModel):
     identity: AccountDecisionIdentity
     frozen_decision_ref: str | None = None
     frozen_decision_hash: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
+    account_ticket_ref: str | None = None
+    account_ticket_hash: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
     stake: str
     rule_ref: str = Field(min_length=1)
     odds_version_ref: str = Field(min_length=1)
@@ -248,19 +486,42 @@ class AccountBranchDecision(BaseModel):
         if self.identity == AccountDecisionIdentity.ACTION:
             if stake <= 0:
                 raise ValueError("ACTION requires positive stake")
-            if not self.frozen_decision_ref or not self.frozen_decision_hash:
-                raise ValueError("ACTION must bind a sealed FrozenDecision identity")
+            frozen_pair = (self.frozen_decision_ref, self.frozen_decision_hash)
+            ticket_pair = (self.account_ticket_ref, self.account_ticket_hash)
+            if any(frozen_pair) and not all(frozen_pair):
+                raise ValueError("ACTION FrozenDecision identity pair is incomplete")
+            if any(ticket_pair) and not all(ticket_pair):
+                raise ValueError("ACTION AccountRiskTicket identity pair is incomplete")
+            if bool(all(frozen_pair)) == bool(all(ticket_pair)):
+                raise ValueError(
+                    "ACTION must bind exactly one sealed FrozenDecision or AccountRiskTicket"
+                )
         else:
             if stake != 0:
                 raise ValueError("RESEARCHER_ACCOUNT_NO_ACTION must be zero-risk")
-            if self.frozen_decision_ref is not None or self.frozen_decision_hash is not None:
-                raise ValueError("RESEARCHER_ACCOUNT_NO_ACTION must not bind a FrozenDecision")
+            if any(
+                value is not None
+                for value in (
+                    self.frozen_decision_ref,
+                    self.frozen_decision_hash,
+                    self.account_ticket_ref,
+                    self.account_ticket_hash,
+                )
+            ):
+                raise ValueError("RESEARCHER_ACCOUNT_NO_ACTION must not bind an ACTION ticket")
         if self.content_hash is not None and self.content_hash != self.compute_content_hash():
             raise ValueError("content_hash does not match the canonical account decision")
         return self
 
     def canonical_content(self) -> dict[str, object]:
-        return self.model_dump(mode="json", exclude={"content_hash"})
+        body = self.model_dump(mode="json", exclude={"content_hash"})
+        # These fields did not exist in the 0.2.0 schema. Omitting their null defaults
+        # keeps every already sealed legacy decision byte-for-byte hash readable.
+        if self.account_ticket_ref is None:
+            body.pop("account_ticket_ref")
+        if self.account_ticket_hash is None:
+            body.pop("account_ticket_hash")
+        return body
 
     def compute_content_hash(self) -> str:
         return canonical_sha256(self.canonical_content())
@@ -288,6 +549,10 @@ class FrozenShadowEpisode(BaseModel):
     rule_ref: str = Field(min_length=1)
     odds_version_ref: str = Field(min_length=1)
     bound_frozen_decision: FrozenDecision | None = None
+    bound_account_ticket: AccountRiskTicket | None = None
+    period_index: int = Field(default=1, ge=1)
+    prior_close_binding: PeriodOpenBinding | None = None
+    accounting_basis: AccountingBasis = AccountingBasis.LEGACY_OPENING_JOURNAL
     opening_journal_group: JournalGroup | None = None
     position_journal_group: JournalGroup | None = None
     content_hash: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
@@ -320,65 +585,115 @@ class FrozenShadowEpisode(BaseModel):
             raise ValueError("opening_balance must use accounting scale")
         if self.pre_freeze_balance != _fmt_amount(self.pre_freeze_balance):
             raise ValueError("pre_freeze_balance must use accounting scale")
+        if _amount(self.pre_freeze_balance) < 0:
+            raise ValueError("pre_freeze_balance must be non-negative")
+
+        if self.period_index == 1:
+            if self.prior_close_binding is not None:
+                raise ValueError("period 1 must not bind a prior close")
+            if self.pre_freeze_balance != self.opening_balance:
+                raise ValueError("period 1 pre_freeze_balance must equal seat opening_balance")
+        else:
+            if self.accounting_basis != AccountingBasis.CARRIED_BALANCE_SNAPSHOT:
+                raise ValueError("period 2+ requires CARRIED_BALANCE_SNAPSHOT")
+            if self.prior_close_binding is None:
+                raise ValueError("period 2+ requires a sealed prior close binding")
+            _require_content_seal(self.prior_close_binding, label="prior close binding")
+            if self.prior_close_binding.period_index != self.period_index:
+                raise ValueError("HISTORY_GAP: prior close binding period mismatch")
+            if self.pre_freeze_balance != self.prior_close_binding.prior_closing_balance:
+                raise ValueError(
+                    "PRIOR_CLOSE_MISMATCH: pre-freeze balance differs from prior close"
+                )
 
         if self.account_decision.identity == AccountDecisionIdentity.ACTION:
-            if self.bound_frozen_decision is None:
-                raise ValueError("ACTION episode requires bound_frozen_decision")
-            frozen = self.bound_frozen_decision
-            if frozen.content_hash is None:
-                raise ValueError("bound FrozenDecision must be hash sealed")
-            if frozen.compute_content_hash() != frozen.content_hash:
-                raise ValueError("mutated sealed bound FrozenDecision rejected")
-            if frozen.decision_ref != self.account_decision.frozen_decision_ref:
-                raise ValueError("account decision frozen_decision_ref mismatch")
-            if frozen.content_hash != self.account_decision.frozen_decision_hash:
-                raise ValueError("account decision frozen_decision_hash mismatch")
-            if frozen.decision_kind not in _ACTION_DECISION_KINDS:
-                raise ValueError("ACTION requires an exact frozen shadow decision kind")
-            if frozen.target_ref != self.target_ref:
-                raise ValueError("bound FrozenDecision target_ref mismatch")
-            if frozen.rule_ref != self.rule_ref:
-                raise ValueError("bound FrozenDecision rule_ref mismatch")
-            if frozen.odds_version_ref != self.odds_version_ref:
-                raise ValueError("bound FrozenDecision odds_version_ref mismatch")
-            if frozen.stake != self.account_decision.stake:
-                raise ValueError("account stake must equal bound FrozenDecision stake")
-            if frozen.frozen_at > self.frozen_at:
-                raise ValueError(
-                    "bound FrozenDecision frozen_at must not be after episode frozen_at"
-                )
+            has_frozen = self.bound_frozen_decision is not None
+            has_ticket = self.bound_account_ticket is not None
+            if has_frozen == has_ticket:
+                raise ValueError("ACTION episode requires exactly one bound action ticket")
             _require_mechanical_rule_ref(self.rule_ref, boundary="ACTION episode")
-            _require_mechanical_rule_ref(frozen.rule_ref, boundary="bound FrozenDecision")
-            if self.opening_balance != self.pre_freeze_balance:
-                raise ValueError(
-                    "first-period pre_freeze_balance must equal sealed seat opening_balance; "
-                    "multi-period carry-forward from prior sealed closing is out of scope"
+            if _amount(self.account_decision.stake) > _amount(self.pre_freeze_balance):
+                raise ValueError("stake exceeds pre-freeze balance")
+
+            source_ref: str
+            if has_frozen:
+                assert self.bound_frozen_decision is not None
+                frozen = self.bound_frozen_decision
+                _require_content_seal(frozen, label="bound FrozenDecision")
+                if frozen.decision_ref != self.account_decision.frozen_decision_ref:
+                    raise ValueError("account decision frozen_decision_ref mismatch")
+                if frozen.content_hash != self.account_decision.frozen_decision_hash:
+                    raise ValueError("account decision frozen_decision_hash mismatch")
+                if frozen.decision_kind not in _ACTION_DECISION_KINDS:
+                    raise ValueError("ACTION requires an exact frozen shadow decision kind")
+                if frozen.target_ref != self.target_ref:
+                    raise ValueError("bound FrozenDecision target_ref mismatch")
+                if frozen.rule_ref != self.rule_ref:
+                    raise ValueError("bound FrozenDecision rule_ref mismatch")
+                if frozen.odds_version_ref != self.odds_version_ref:
+                    raise ValueError("bound FrozenDecision odds_version_ref mismatch")
+                if frozen.stake != self.account_decision.stake:
+                    raise ValueError("account stake must equal bound FrozenDecision stake")
+                if frozen.frozen_at > self.frozen_at:
+                    raise ValueError(
+                        "bound FrozenDecision frozen_at must not be after episode frozen_at"
+                    )
+                _require_mechanical_rule_ref(frozen.rule_ref, boundary="bound FrozenDecision")
+                if (
+                    self.science_decision.identity == ScienceDecisionIdentity.SCIENCE_CANDIDATE
+                    and self.science_decision.candidate_ref not in frozen.candidate_refs
+                ):
+                    raise ValueError(
+                        "SCIENCE_CANDIDATE candidate_ref must exist in bound "
+                        "FrozenDecision.candidate_refs"
+                    )
+                source_ref = frozen.decision_ref
+            else:
+                assert self.bound_account_ticket is not None
+                ticket = self.bound_account_ticket
+                _require_content_seal(ticket, label="bound AccountRiskTicket")
+                if ticket.ticket_ref != self.account_decision.account_ticket_ref:
+                    raise ValueError("account decision account_ticket_ref mismatch")
+                if ticket.content_hash != self.account_decision.account_ticket_hash:
+                    raise ValueError("account decision account_ticket_hash mismatch")
+                if ticket.target_ref != self.target_ref:
+                    raise ValueError("bound AccountRiskTicket target_ref mismatch")
+                if ticket.target_open_time != self.target_open_time:
+                    raise ValueError("bound AccountRiskTicket target_open_time mismatch")
+                if ticket.freeze_deadline != self.freeze_deadline:
+                    raise ValueError("bound AccountRiskTicket freeze_deadline mismatch")
+                if ticket.rule_ref != self.rule_ref:
+                    raise ValueError("bound AccountRiskTicket rule_ref mismatch")
+                if ticket.odds_version_ref != self.odds_version_ref:
+                    raise ValueError("bound AccountRiskTicket odds_version_ref mismatch")
+                if ticket.stake != self.account_decision.stake:
+                    raise ValueError("account stake must equal AccountRiskTicket stake")
+                if ticket.frozen_at > self.frozen_at:
+                    raise ValueError("AccountRiskTicket frozen_at must not follow episode freeze")
+                source_ref = ticket.ticket_ref
+
+            if self.position_journal_group is None:
+                raise ValueError("ACTION requires a frozen-position journal group")
+            if self.accounting_basis == AccountingBasis.LEGACY_OPENING_JOURNAL:
+                if self.opening_journal_group is None:
+                    raise ValueError("legacy ACTION requires an opening journal group")
+                expected_opening = _expected_opening_journal(
+                    group_ref=self.opening_journal_group.group_ref,
+                    portfolio_ref=self.portfolio_ref,
+                    frozen_at=self.frozen_at,
+                    pre_freeze_balance=self.pre_freeze_balance,
                 )
-            if (
-                self.science_decision.identity == ScienceDecisionIdentity.SCIENCE_CANDIDATE
-                and self.science_decision.candidate_ref not in frozen.candidate_refs
-            ):
-                raise ValueError(
-                    "SCIENCE_CANDIDATE candidate_ref must exist in bound "
-                    "FrozenDecision.candidate_refs"
-                )
-            if self.opening_journal_group is None or self.position_journal_group is None:
-                raise ValueError("ACTION requires opening and frozen-position journal groups")
-            expected_opening = _expected_opening_journal(
-                group_ref=self.opening_journal_group.group_ref,
-                portfolio_ref=self.portfolio_ref,
-                frozen_at=self.frozen_at,
-                pre_freeze_balance=self.pre_freeze_balance,
-            )
-            if self.opening_journal_group != expected_opening:
-                raise ValueError(
-                    "opening_journal_group must equal reconstructed opening_group "
-                    "(frozen_at, pre_freeze_balance, group_ref, portfolio)"
-                )
+                if self.opening_journal_group != expected_opening:
+                    raise ValueError(
+                        "opening_journal_group must equal reconstructed opening_group "
+                        "(frozen_at, pre_freeze_balance, group_ref, portfolio)"
+                    )
+            elif self.opening_journal_group is not None:
+                raise ValueError("carried-balance ACTION must not post a new OPENING journal")
             expected_position = _expected_position_journal(
                 group_ref=self.position_journal_group.group_ref,
                 portfolio_ref=self.portfolio_ref,
-                decision_ref=frozen.decision_ref,
+                decision_ref=source_ref,
                 frozen_at=self.frozen_at,
                 stake=self.account_decision.stake,
             )
@@ -388,8 +703,8 @@ class FrozenShadowEpisode(BaseModel):
                     "(frozen_at, decision_ref, stake, group_ref, portfolio)"
                 )
         else:
-            if self.bound_frozen_decision is not None:
-                raise ValueError("RESEARCHER_ACCOUNT_NO_ACTION must not bind FrozenDecision")
+            if self.bound_frozen_decision is not None or self.bound_account_ticket is not None:
+                raise ValueError("RESEARCHER_ACCOUNT_NO_ACTION must not bind an ACTION ticket")
             if self.opening_journal_group is not None or self.position_journal_group is not None:
                 raise ValueError("RESEARCHER_ACCOUNT_NO_ACTION must create no position journals")
 
@@ -398,7 +713,23 @@ class FrozenShadowEpisode(BaseModel):
         return self
 
     def canonical_content(self) -> dict[str, object]:
-        return self.model_dump(mode="json", exclude={"content_hash"})
+        body = self.model_dump(mode="json", exclude={"content_hash"})
+        # Additive 0.3.0 fields are absent from legacy 0.2.0 hash projections.
+        if self.bound_account_ticket is None:
+            body.pop("bound_account_ticket")
+        if self.period_index == 1:
+            body.pop("period_index")
+        if self.prior_close_binding is None:
+            body.pop("prior_close_binding")
+        if self.accounting_basis == AccountingBasis.LEGACY_OPENING_JOURNAL:
+            body.pop("accounting_basis")
+        account_body = body.get("account_decision")
+        if isinstance(account_body, dict):
+            if self.account_decision.account_ticket_ref is None:
+                account_body.pop("account_ticket_ref", None)
+            if self.account_decision.account_ticket_hash is None:
+                account_body.pop("account_ticket_hash", None)
+        return body
 
     def compute_content_hash(self) -> str:
         return canonical_sha256(self.canonical_content())
@@ -495,10 +826,11 @@ class SettledShadowEpisode(BaseModel):
 
     episode_ref: str = Field(min_length=1)
     frozen_episode_hash: str = Field(pattern=r"^[0-9a-f]{64}$")
+    period_index: int = Field(default=1, ge=1)
     seat_id: str = Field(min_length=1)
     portfolio_ref: str = Field(min_length=1)
     outcome: OutcomeObservation
-    settlement_bundle: SettlementBundle | None = None
+    settlement_bundle: SettlementBundle | AccountTicketSettlementBundle | None = None
     journal_groups: tuple[JournalGroup, ...] = ()
     statement: AccountStatement
     content_hash: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
@@ -527,12 +859,26 @@ class SettledShadowEpisode(BaseModel):
             raise ValueError("statement must be hash sealed")
         if self.statement.compute_content_hash() != self.statement.content_hash:
             raise ValueError("mutated sealed statement rejected")
+        if self.settlement_bundle is not None:
+            record = self.settlement_bundle.record
+            if (
+                record.settlement_hash is None
+                or record.with_hash().settlement_hash != record.settlement_hash
+            ):
+                raise ValueError("settlement record content seal invalid")
+            group = self.settlement_bundle.journal_group
+            if group.group_hash is None or group.with_hash().group_hash != group.group_hash:
+                raise ValueError("settlement journal content seal invalid")
         if self.content_hash is not None and self.content_hash != self.compute_content_hash():
             raise ValueError("content_hash does not match the canonical settled episode")
         return self
 
     def canonical_content(self) -> dict[str, object]:
-        return self.model_dump(mode="json", exclude={"content_hash"})
+        body = self.model_dump(mode="json", exclude={"content_hash"})
+        # Preserve 0.2.0 settled hashes while sealing period identity for period 2+.
+        if self.period_index == 1:
+            body.pop("period_index")
+        return body
 
     def compute_content_hash(self) -> str:
         return canonical_sha256(self.canonical_content())
@@ -584,6 +930,19 @@ def create_seat(
     ).with_content_hash()
 
 
+def create_portfolio(*, seat: ShadowSeat) -> ShadowPortfolio:
+    """Seal the immutable continuity-root identity around an existing seat."""
+
+    _require_content_seal(seat, label="seat")
+    assert seat.content_hash is not None
+    return ShadowPortfolio(
+        seat_id=seat.seat_id,
+        portfolio_ref=seat.portfolio_ref,
+        seat_content_hash=seat.content_hash,
+        genesis_opening_balance=seat.opening_balance,
+    ).with_content_hash()
+
+
 def build_science_decision(
     *,
     science_decision_ref: str,
@@ -624,6 +983,27 @@ def build_account_action(
     ).with_content_hash()
 
 
+def build_account_action_from_ticket(
+    *,
+    account_decision_ref: str,
+    account_ticket: AccountRiskTicket,
+) -> AccountBranchDecision:
+    """Build ACTION without importing scientific adoption or claim-grade gates."""
+
+    _require_content_seal(account_ticket, label="AccountRiskTicket")
+    _require_mechanical_rule_ref(account_ticket.rule_ref, boundary="account ticket build")
+    assert account_ticket.content_hash is not None
+    return AccountBranchDecision(
+        account_decision_ref=account_decision_ref,
+        identity=AccountDecisionIdentity.ACTION,
+        account_ticket_ref=account_ticket.ticket_ref,
+        account_ticket_hash=account_ticket.content_hash,
+        stake=account_ticket.stake,
+        rule_ref=account_ticket.rule_ref,
+        odds_version_ref=account_ticket.odds_version_ref,
+    ).with_content_hash()
+
+
 def build_account_no_action(
     *,
     account_decision_ref: str,
@@ -653,15 +1033,15 @@ def freeze_shadow_episode(
     frozen_at: datetime,
     pre_freeze_balance: str | None = None,
     bound_frozen_decision: FrozenDecision | None = None,
+    bound_account_ticket: AccountRiskTicket | None = None,
+    period_index: int = 1,
+    prior_settled: SettledShadowEpisode | None = None,
+    accounting_basis: AccountingBasis = AccountingBasis.LEGACY_OPENING_JOURNAL,
     opening_journal_group_ref: str | None = None,
     position_journal_group_ref: str | None = None,
     outcome_present: bool = False,
 ) -> FrozenShadowEpisode:
-    """Freeze an episode only while the outcome is absent and time bounds hold.
-
-    First period only: pre_freeze_balance must equal the sealed seat opening_balance.
-    Multi-period carry from a prior sealed closing is out of scope for this surface.
-    """
+    """Freeze one prospective period with exact genesis or predecessor balance binding."""
 
     _require_content_seal(seat, label="seat")
     _require_content_seal(science_decision, label="science decision")
@@ -684,18 +1064,46 @@ def freeze_shadow_episode(
             "(future knowledge cannot enter an earlier freeze)"
         )
 
-    # Single-seat first period: reject bare "续期余额" inflation away from seat opening.
     seat_opening = _fmt_amount(seat.opening_balance)
-    if pre_freeze_balance is not None:
-        balance = _fmt_amount(pre_freeze_balance)
-        if balance != seat_opening:
+    prior_binding: PeriodOpenBinding | None = None
+    if period_index < 1:
+        raise ValueError("period_index must be positive")
+    if period_index == 1:
+        if prior_settled is not None:
+            raise ValueError("period 1 must not supply a prior settled episode")
+        balance = seat_opening
+        if pre_freeze_balance is not None and _fmt_amount(pre_freeze_balance) != balance:
             raise ValueError(
                 "pre_freeze_balance must equal sealed seat opening_balance "
-                f"({seat_opening}); bare roll-forward / inflated balances rejected "
-                "(multi-period prior sealed closing is out of scope for this PR)"
+                f"({seat_opening}); bare roll-forward / inflated balances rejected"
             )
     else:
-        balance = seat_opening
+        if accounting_basis != AccountingBasis.CARRIED_BALANCE_SNAPSHOT:
+            raise ValueError("period 2+ requires CARRIED_BALANCE_SNAPSHOT")
+        if prior_settled is None:
+            raise ValueError("period 2+ requires the exact prior settled episode")
+        _require_content_seal(prior_settled, label="prior settled episode")
+        _require_content_seal(prior_settled.statement, label="prior statement")
+        if prior_settled.period_index != period_index - 1:
+            raise ValueError("HISTORY_GAP: prior settled period must be exactly period_index - 1")
+        if (
+            prior_settled.seat_id != seat.seat_id
+            or prior_settled.portfolio_ref != seat.portfolio_ref
+        ):
+            raise ValueError("FOREIGN_PORTFOLIO: prior settled seat/portfolio mismatch")
+        assert prior_settled.content_hash is not None
+        assert prior_settled.statement.content_hash is not None
+        balance = prior_settled.statement.closing_balance
+        if pre_freeze_balance is not None and _fmt_amount(pre_freeze_balance) != balance:
+            raise ValueError("PRIOR_CLOSE_MISMATCH: supplied balance differs from prior close")
+        prior_binding = PeriodOpenBinding(
+            period_index=period_index,
+            prior_period_index=period_index - 1,
+            prior_episode_ref=prior_settled.episode_ref,
+            prior_settled_episode_hash=prior_settled.content_hash,
+            prior_statement_hash=prior_settled.statement.content_hash,
+            prior_closing_balance=balance,
+        ).with_content_hash()
     if _amount(balance) < 0:
         raise ValueError("pre_freeze_balance must be non-negative")
 
@@ -703,52 +1111,83 @@ def freeze_shadow_episode(
     position_journal: JournalGroup | None = None
 
     if account_decision.identity == AccountDecisionIdentity.ACTION:
-        if bound_frozen_decision is None:
-            raise ValueError("ACTION freeze requires bound_frozen_decision")
-        _require_content_seal(bound_frozen_decision, label="bound FrozenDecision")
-        _require_mechanical_rule_ref(account_decision.rule_ref, boundary="ACTION freeze")
-        _require_mechanical_rule_ref(bound_frozen_decision.rule_ref, boundary="ACTION freeze")
-        if bound_frozen_decision.decision_ref != account_decision.frozen_decision_ref:
-            raise ValueError("bound FrozenDecision ref mismatch")
-        if bound_frozen_decision.content_hash != account_decision.frozen_decision_hash:
-            raise ValueError("bound FrozenDecision hash mismatch")
-        if bound_frozen_decision.target_ref != target_ref:
-            raise ValueError("bound FrozenDecision target mismatch")
-        if bound_frozen_decision.target_open_time != target_open_time:
-            raise ValueError("bound FrozenDecision target_open_time mismatch")
-        if bound_frozen_decision.freeze_deadline != freeze_deadline:
-            raise ValueError("bound FrozenDecision freeze_deadline mismatch")
-        if bound_frozen_decision.stake != account_decision.stake:
-            raise ValueError("stake mismatch between account decision and FrozenDecision")
-        if bound_frozen_decision.frozen_at > frozen_at:
-            raise ValueError("bound FrozenDecision frozen_at must not be after episode frozen_at")
-        if (
-            science_decision.identity == ScienceDecisionIdentity.SCIENCE_CANDIDATE
-            and science_decision.candidate_ref not in bound_frozen_decision.candidate_refs
-        ):
+        if (bound_frozen_decision is None) == (bound_account_ticket is None):
             raise ValueError(
-                "SCIENCE_CANDIDATE candidate_ref must exist in bound FrozenDecision.candidate_refs"
+                "ACTION freeze requires exactly one bound_frozen_decision or bound_account_ticket"
             )
+        _require_mechanical_rule_ref(account_decision.rule_ref, boundary="ACTION freeze")
+        source_ref: str
+        if bound_frozen_decision is not None:
+            _require_content_seal(bound_frozen_decision, label="bound FrozenDecision")
+            _require_mechanical_rule_ref(bound_frozen_decision.rule_ref, boundary="ACTION freeze")
+            if bound_frozen_decision.decision_ref != account_decision.frozen_decision_ref:
+                raise ValueError("bound FrozenDecision ref mismatch")
+            if bound_frozen_decision.content_hash != account_decision.frozen_decision_hash:
+                raise ValueError("bound FrozenDecision hash mismatch")
+            if bound_frozen_decision.target_ref != target_ref:
+                raise ValueError("bound FrozenDecision target mismatch")
+            if bound_frozen_decision.target_open_time != target_open_time:
+                raise ValueError("bound FrozenDecision target_open_time mismatch")
+            if bound_frozen_decision.freeze_deadline != freeze_deadline:
+                raise ValueError("bound FrozenDecision freeze_deadline mismatch")
+            if bound_frozen_decision.stake != account_decision.stake:
+                raise ValueError("stake mismatch between account decision and FrozenDecision")
+            if bound_frozen_decision.frozen_at > frozen_at:
+                raise ValueError(
+                    "bound FrozenDecision frozen_at must not be after episode frozen_at"
+                )
+            if (
+                science_decision.identity == ScienceDecisionIdentity.SCIENCE_CANDIDATE
+                and science_decision.candidate_ref not in bound_frozen_decision.candidate_refs
+            ):
+                raise ValueError(
+                    "SCIENCE_CANDIDATE candidate_ref must exist in bound "
+                    "FrozenDecision.candidate_refs"
+                )
+            source_ref = bound_frozen_decision.decision_ref
+        else:
+            assert bound_account_ticket is not None
+            _require_content_seal(bound_account_ticket, label="bound AccountRiskTicket")
+            if bound_account_ticket.ticket_ref != account_decision.account_ticket_ref:
+                raise ValueError("bound AccountRiskTicket ref mismatch")
+            if bound_account_ticket.content_hash != account_decision.account_ticket_hash:
+                raise ValueError("bound AccountRiskTicket hash mismatch")
+            if bound_account_ticket.target_ref != target_ref:
+                raise ValueError("bound AccountRiskTicket target mismatch")
+            if bound_account_ticket.target_open_time != target_open_time:
+                raise ValueError("bound AccountRiskTicket target_open_time mismatch")
+            if bound_account_ticket.freeze_deadline != freeze_deadline:
+                raise ValueError("bound AccountRiskTicket freeze_deadline mismatch")
+            if bound_account_ticket.frozen_at > frozen_at:
+                raise ValueError("bound AccountRiskTicket frozen_at follows episode freeze")
+            if bound_account_ticket.stake != account_decision.stake:
+                raise ValueError("stake mismatch between account decision and AccountRiskTicket")
+            source_ref = bound_account_ticket.ticket_ref
         if _amount(account_decision.stake) > _amount(balance):
             raise ValueError("stake exceeds pre-freeze balance")
-        if not opening_journal_group_ref or not position_journal_group_ref:
-            raise ValueError("ACTION freeze requires journal group refs")
-        opening_journal = _expected_opening_journal(
-            group_ref=opening_journal_group_ref,
-            portfolio_ref=seat.portfolio_ref,
-            frozen_at=frozen_at,
-            pre_freeze_balance=balance,
-        )
+        if not position_journal_group_ref:
+            raise ValueError("ACTION freeze requires position_journal_group_ref")
+        if accounting_basis == AccountingBasis.LEGACY_OPENING_JOURNAL:
+            if not opening_journal_group_ref:
+                raise ValueError("legacy ACTION freeze requires opening_journal_group_ref")
+            opening_journal = _expected_opening_journal(
+                group_ref=opening_journal_group_ref,
+                portfolio_ref=seat.portfolio_ref,
+                frozen_at=frozen_at,
+                pre_freeze_balance=balance,
+            )
+        elif opening_journal_group_ref is not None:
+            raise ValueError("carried-balance freeze must not request an OPENING journal")
         position_journal = _expected_position_journal(
             group_ref=position_journal_group_ref,
             portfolio_ref=seat.portfolio_ref,
-            decision_ref=bound_frozen_decision.decision_ref,
+            decision_ref=source_ref,
             frozen_at=frozen_at,
             stake=account_decision.stake,
         )
     else:
-        if bound_frozen_decision is not None:
-            raise ValueError("RESEARCHER_ACCOUNT_NO_ACTION must not bind FrozenDecision")
+        if bound_frozen_decision is not None or bound_account_ticket is not None:
+            raise ValueError("RESEARCHER_ACCOUNT_NO_ACTION must not bind an ACTION ticket")
         if opening_journal_group_ref is not None or position_journal_group_ref is not None:
             raise ValueError("RESEARCHER_ACCOUNT_NO_ACTION creates no position journals")
 
@@ -767,6 +1206,10 @@ def freeze_shadow_episode(
         rule_ref=account_decision.rule_ref,
         odds_version_ref=account_decision.odds_version_ref,
         bound_frozen_decision=bound_frozen_decision,
+        bound_account_ticket=bound_account_ticket,
+        period_index=period_index,
+        prior_close_binding=prior_binding,
+        accounting_basis=accounting_basis,
         opening_journal_group=opening_journal,
         position_journal_group=position_journal,
     ).with_content_hash()
@@ -804,6 +1247,73 @@ def admit_episode_outcome(
     return admit_outcome(existing, candidate)
 
 
+def _settle_account_ticket(
+    *,
+    ticket: AccountRiskTicket,
+    outcome: OutcomeObservation,
+    settlement_ref: str,
+    journal_group_ref: str,
+    portfolio_ref: str,
+    occurred_at: datetime,
+) -> AccountTicketSettlementBundle:
+    """Settle an account ticket through the same mechanical rule and ledger."""
+
+    _require_content_seal(ticket, label="AccountRiskTicket")
+    _require_outcome_seal(outcome)
+    if not outcome.verified:
+        raise ValueError("unverified outcome cannot produce a settlement")
+    if outcome.target_ref != ticket.target_ref:
+        raise ValueError("outcome target and AccountRiskTicket disagree")
+    _require_mechanical_rule_ref(ticket.rule_ref, boundary="account ticket settlement")
+    result = settle_special_number(
+        selected_number=ticket.selected_number,
+        actual_special_number=outcome.actual_special_number,
+        panel=ticket.panel,
+        stake=ticket.stake,
+    )
+    if result.rule_ref != ticket.rule_ref:
+        raise ValueError("SettlementResult.rule_ref must match AccountRiskTicket rule_ref")
+    if result.baseline_ref != ticket.baseline_ref:
+        raise ValueError("AccountRiskTicket baseline_ref disagrees with mechanical settlement")
+    journal = settlement_group(
+        group_ref=journal_group_ref,
+        portfolio_ref=portfolio_ref,
+        settlement_ref=settlement_ref,
+        occurred_at=occurred_at,
+        result=result,
+    )
+    assert ticket.content_hash is not None
+    assert outcome.result_hash is not None
+    record = AccountTicketSettlementRecord(
+        settlement_ref=settlement_ref,
+        account_ticket_ref=ticket.ticket_ref,
+        account_ticket_hash=ticket.content_hash,
+        outcome_ref=outcome.outcome_ref,
+        outcome_hash=outcome.result_hash,
+        rule_ref=ticket.rule_ref,
+        result=result,
+        journal_group_ref=journal.group_ref,
+    ).with_hash()
+    return AccountTicketSettlementBundle(record=record, journal_group=journal)
+
+
+def _admit_account_ticket_settlement(
+    existing: tuple[SettlementRecord | AccountTicketSettlementRecord, ...],
+    candidate: AccountTicketSettlementRecord,
+) -> Literal["ACCEPTED", "DUPLICATE"]:
+    if candidate.settlement_hash is None:
+        raise ValueError("settlement must be hash sealed")
+    for record in existing:
+        if not isinstance(record, AccountTicketSettlementRecord):
+            raise ValueError("settlement history source identity mismatch")
+        if record.account_ticket_ref != candidate.account_ticket_ref:
+            continue
+        if record.settlement_hash == candidate.settlement_hash:
+            return "DUPLICATE"
+        raise ValueError("settlement conflict must pause automatic posting")
+    return "ACCEPTED"
+
+
 def settle_shadow_episode(
     *,
     episode: FrozenShadowEpisode,
@@ -811,7 +1321,7 @@ def settle_shadow_episode(
     settlement_ref: str | None = None,
     settlement_journal_group_ref: str | None = None,
     statement_ref: str,
-    existing_settlements: tuple[SettlementRecord, ...],
+    existing_settlements: tuple[SettlementRecord | AccountTicketSettlementRecord, ...],
     occurred_at: datetime | None = None,
 ) -> SettledShadowEpisode:
     """Pure-function mechanical settlement; not naturally once-only without storage.
@@ -863,6 +1373,7 @@ def settle_shadow_episode(
         return SettledShadowEpisode(
             episode_ref=episode.episode_ref,
             frozen_episode_hash=episode.content_hash,
+            period_index=episode.period_index,
             seat_id=episode.seat_id,
             portfolio_ref=episode.portfolio_ref,
             outcome=outcome,
@@ -871,41 +1382,75 @@ def settle_shadow_episode(
             statement=statement,
         ).with_content_hash()
 
-    # ACTION path
-    if episode.bound_frozen_decision is None:
-        raise ValueError("ACTION settle requires bound FrozenDecision")
-    _require_content_seal(episode.bound_frozen_decision, label="bound FrozenDecision")
+    # ACTION path: the account ticket and legacy FrozenDecision are parallel
+    # admission identities. Both settle through the same mechanical rule.
+    if (episode.bound_frozen_decision is None) == (episode.bound_account_ticket is None):
+        raise ValueError("ACTION settle requires exactly one bound action ticket")
     _require_mechanical_rule_ref(episode.rule_ref, boundary="ACTION settle")
-    _require_mechanical_rule_ref(episode.bound_frozen_decision.rule_ref, boundary="ACTION settle")
-    if episode.opening_journal_group is None or episode.position_journal_group is None:
+    if episode.position_journal_group is None:
         raise ValueError("ACTION settle requires complete freeze journals (half transaction)")
+    if episode.accounting_basis == AccountingBasis.LEGACY_OPENING_JOURNAL:
+        if episode.opening_journal_group is None:
+            raise ValueError("legacy ACTION settle requires opening journal")
+    elif episode.opening_journal_group is not None:
+        raise ValueError("carried-balance ACTION must not carry an OPENING journal")
     if not settlement_ref or not settlement_journal_group_ref:
         raise ValueError("ACTION settle requires settlement refs")
 
-    bundle = settle_frozen_decision(
-        frozen=episode.bound_frozen_decision,
-        outcome=outcome,
-        settlement_ref=settlement_ref,
-        journal_group_ref=settlement_journal_group_ref,
-        portfolio_ref=episode.portfolio_ref,
-        occurred_at=settled_at,
-    )
+    bundle: SettlementBundle | AccountTicketSettlementBundle
+    if episode.bound_frozen_decision is not None:
+        _require_content_seal(episode.bound_frozen_decision, label="bound FrozenDecision")
+        _require_mechanical_rule_ref(
+            episode.bound_frozen_decision.rule_ref, boundary="ACTION settle"
+        )
+        if any(not isinstance(item, SettlementRecord) for item in existing_settlements):
+            raise ValueError("settlement history source identity mismatch")
+        bundle = settle_frozen_decision(
+            frozen=episode.bound_frozen_decision,
+            outcome=outcome,
+            settlement_ref=settlement_ref,
+            journal_group_ref=settlement_journal_group_ref,
+            portfolio_ref=episode.portfolio_ref,
+            occurred_at=settled_at,
+        )
+        admission_status = admit_settlement(
+            tuple(item for item in existing_settlements if isinstance(item, SettlementRecord)),
+            bundle.record,
+        )
+    else:
+        assert episode.bound_account_ticket is not None
+        bundle = _settle_account_ticket(
+            ticket=episode.bound_account_ticket,
+            outcome=outcome,
+            settlement_ref=settlement_ref,
+            journal_group_ref=settlement_journal_group_ref,
+            portfolio_ref=episode.portfolio_ref,
+            occurred_at=settled_at,
+        )
+        admission_status = _admit_account_ticket_settlement(existing_settlements, bundle.record)
     if bundle.journal_group.portfolio_ref != episode.portfolio_ref:
         raise ValueError("settlement journal portfolio mismatch")
     if bundle.record.rule_ref != episode.rule_ref:
         raise ValueError("settlement record rule_ref must match episode rule_ref")
-    if bundle.record.result.rule_ref != episode.bound_frozen_decision.rule_ref:
-        raise ValueError("SettlementResult.rule_ref must match frozen rule_ref")
-    admission_status = admit_settlement(existing_settlements, bundle.record)
+    if bundle.record.result.rule_ref != episode.rule_ref:
+        raise ValueError("SettlementResult.rule_ref must match episode rule_ref")
     if admission_status == "DUPLICATE":
         raise ValueError("double or conflicting settlement rejected")
 
-    journals = (
-        episode.opening_journal_group,
-        episode.position_journal_group,
-        bundle.journal_group,
-    )
-    balances = replay_balances(journals)
+    if episode.accounting_basis == AccountingBasis.LEGACY_OPENING_JOURNAL:
+        assert episode.opening_journal_group is not None
+        journals = (
+            episode.opening_journal_group,
+            episode.position_journal_group,
+            bundle.journal_group,
+        )
+        balances = replay_balances(journals)
+    else:
+        journals = (episode.position_journal_group, bundle.journal_group)
+        balances = replay_balances(
+            journals,
+            starting_balances=_period_snapshot_balances(episode.pre_freeze_balance),
+        )
     closing = _cash_balance(balances)
     pnl = _fmt_amount(_amount(closing) - _amount(episode.pre_freeze_balance))
     result_kind = StatementResultKind.HIT if bundle.record.result.hit else StatementResultKind.MISS
@@ -938,12 +1483,51 @@ def settle_shadow_episode(
     return SettledShadowEpisode(
         episode_ref=episode.episode_ref,
         frozen_episode_hash=episode.content_hash,
+        period_index=episode.period_index,
         seat_id=episode.seat_id,
         portfolio_ref=episode.portfolio_ref,
         outcome=outcome,
         settlement_bundle=bundle,
         journal_groups=journals,
         statement=statement,
+    ).with_content_hash()
+
+
+def seal_account_feedback(
+    *,
+    feedback_ref: str,
+    kind: FeedbackKind,
+    period_index: int,
+    settled: SettledShadowEpisode,
+    outcome: OutcomeObservation,
+    reason_code: str | None = None,
+    notes: str = "",
+) -> AccountFeedback:
+    """Seal period feedback without granting scientific adoption or completion."""
+
+    _require_content_seal(settled, label="settled episode")
+    _require_content_seal(settled.statement, label="statement")
+    _require_outcome_seal(outcome)
+    if settled.outcome != outcome:
+        raise ValueError("feedback outcome differs from settled episode outcome")
+    if settled.period_index != period_index:
+        raise ValueError("feedback period_index differs from settled episode")
+    assert settled.content_hash is not None
+    assert settled.statement.content_hash is not None
+    assert outcome.result_hash is not None
+    return AccountFeedback(
+        feedback_ref=feedback_ref,
+        kind=kind,
+        period_index=period_index,
+        episode_ref=settled.episode_ref,
+        settled_episode_hash=settled.content_hash,
+        statement_hash=settled.statement.content_hash,
+        outcome_result_hash=outcome.result_hash,
+        account_pnl_echo=settled.statement.pnl,
+        reason_code=reason_code,
+        notes=notes,
+        scientific_promotion=False,
+        claim_grade_delta=None,
     ).with_content_hash()
 
 
@@ -997,18 +1581,32 @@ def replay_settled_episode(
 
     # Half-transaction: ACTION must carry full journal chain
     if episode.account_decision.identity == AccountDecisionIdentity.ACTION:
-        if episode.opening_journal_group is None or episode.position_journal_group is None:
+        if episode.position_journal_group is None:
             raise ValueError("half transaction rejected")
         if settled.settlement_bundle is None:
             raise ValueError("half transaction rejected: missing settlement")
-        if len(settled.journal_groups) != 3:
-            raise ValueError("half transaction rejected: incomplete journals")
+        if episode.bound_frozen_decision is not None:
+            if not isinstance(settled.settlement_bundle, SettlementBundle):
+                raise ValueError("settlement bundle source identity mismatch")
+        elif episode.bound_account_ticket is not None:
+            if not isinstance(settled.settlement_bundle, AccountTicketSettlementBundle):
+                raise ValueError("settlement bundle source identity mismatch")
+        else:
+            raise ValueError("ACTION episode has no bound action ticket")
+        if episode.accounting_basis == AccountingBasis.LEGACY_OPENING_JOURNAL:
+            if episode.opening_journal_group is None or len(settled.journal_groups) != 3:
+                raise ValueError("half transaction rejected: incomplete legacy journals")
+            starting_balances = None
+        else:
+            if episode.opening_journal_group is not None or len(settled.journal_groups) != 2:
+                raise ValueError("half transaction rejected: incomplete carried journals")
+            starting_balances = _period_snapshot_balances(episode.pre_freeze_balance)
         for group in settled.journal_groups:
             if group.group_hash is None or group.with_hash().group_hash != group.group_hash:
                 raise ValueError("journal group hash mismatch")
             if group.portfolio_ref != episode.portfolio_ref:
                 raise ValueError("cross-portfolio mismatch rejected")
-        replay_balances(settled.journal_groups)
+        replay_balances(settled.journal_groups, starting_balances=starting_balances)
     else:
         if settled.settlement_bundle is not None:
             raise ValueError("account no-action must not carry settlement bundle")

@@ -621,6 +621,25 @@ def test_live_compare_fail_closed_mismatches() -> None:
         module._compare_live_egress_objects("docker", posture, lock)
     assert err7.value.reason_code == "EGRESS_FOREIGN_NETWORK_MEMBER"
 
+    # Persistent ResearchEpisode transport: exact lease-bound ID is allowed,
+    # while the xinao-transport-* prefix by itself grants nothing.
+    episode_transport_id = "f" * 64
+    episode_net = {
+        **network_ok,
+        "Containers": {
+            posture["proxy_container_id"]: {"Name": posture["proxy_container_name"]},
+            episode_transport_id: {"Name": "xinao-transport-ep-bound"},
+        },
+    }
+    module._docker_json_inspect = inspect_factory(network=episode_net)  # type: ignore[method-assign]
+    observed = module._compare_live_egress_objects(
+        "docker",
+        posture,
+        lock,
+        allowed_researcher_container_ids={episode_transport_id},
+    )
+    assert observed["proxy_container_id"] == posture["proxy_container_id"]
+
     # Containers populated but proxy absent
     no_proxy_members = {
         **network_ok,
@@ -749,7 +768,7 @@ def test_source_false_valid_live_seal_reaches_docker_observation(
     lock = fixture["lock"]
     assert lock["provider_egress_runtime_verified"] is False
 
-    def fake_compare(docker, posture, runtime_lock):
+    def fake_compare(docker, posture, runtime_lock, **_kwargs):
         return {
             "internal_network_id": posture["internal_network_id"],
             "internal_network_name": posture["internal_network_name"],

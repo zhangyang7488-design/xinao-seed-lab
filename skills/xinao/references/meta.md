@@ -65,9 +65,11 @@ release 的新 generation，不是覆盖旧指针，也不重写历史。若 `pr
 若旧版完整 bundle 与封印 restore 均不可用，在任何 active mutation 前返回
 `ROLLBACK_MATERIAL_ABSENT`。
 
-Skill bundle 版本、研究员能力版本、charter/runtime 版本和 bootstrap protocol 是独立
-维度；同一完整 identity 可幂等复用，同一语义版本对应不同 bundle 则拒绝为
-`SEMVER_CONTENT_COLLISION`。dirty source 只允许构建候选，绝不允许 activation。
+Skill bundle 版本、研究员能力/charter/runtime 共同版本和 bootstrap protocol 是独立维度；
+同一完整 identity 可幂等复用，package 与研究员共同版本均相同却对应不同完整 identity
+时拒绝为 `SEMVER_CONTENT_COLLISION`。package 或研究员共同版本合法提升可生成新的不可变
+release，但不得借版本变化宣称角色适任性；protocol 仍受自己的精确兼容约束。dirty
+source 只允许构建候选，绝不允许 activation。
 
 ## 接入新能力
 

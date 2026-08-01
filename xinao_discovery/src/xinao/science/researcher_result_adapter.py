@@ -149,7 +149,7 @@ _HEX_SHA256 = re.compile(r"^[0-9a-f]{64}$")
 _BUNDLE_ID = re.compile(r"^xinao-material-bundle-sha256:[0-9a-f]{64}$")
 _MATERIAL_ID = re.compile(r"^sha256:[0-9a-f]{64}$")
 _ALLOWED_STATUSES = frozenset({"CANDIDATE_READY", "INSUFFICIENT_EVIDENCE"})
-_RESEARCH_CANDIDATE_KEYS = frozenset(
+_RESEARCH_CANDIDATE_REQUIRED_KEYS = frozenset(
     {
         "schema_version",
         "status",
@@ -165,6 +165,22 @@ _RESEARCH_CANDIDATE_KEYS = frozenset(
         "counterevidence",
         "limitations",
         "next_evidence",
+    }
+)
+_RESEARCH_CANDIDATE_OPTIONAL_KEYS = frozenset({"executable_account_decision"})
+_RESEARCHER_EXECUTABLE_CORE_KEYS = frozenset(
+    {
+        "panel",
+        "selected_number",
+        "stake",
+        "target_ref",
+        "target_open_time",
+        "freeze_deadline",
+        "knowledge_cutoff",
+        "odds_version_ref",
+        "baseline_ref",
+        "risk_policy_ref",
+        "rule_ref",
     }
 )
 _PROVIDER_EVIDENCE_KEYS = frozenset(
@@ -470,10 +486,14 @@ def _validate_research_candidate(
     expected_bundle_id: str | None = None,
 ) -> dict[str, Any]:
     payload = _require_mapping(candidate, "RESEARCH_CANDIDATE_SCHEMA_INVALID", "candidate")
-    if set(payload) != _RESEARCH_CANDIDATE_KEYS:
+    observed_keys = set(payload)
+    if (
+        not _RESEARCH_CANDIDATE_REQUIRED_KEYS.issubset(observed_keys)
+        or observed_keys - _RESEARCH_CANDIDATE_REQUIRED_KEYS - _RESEARCH_CANDIDATE_OPTIONAL_KEYS
+    ):
         raise ResearcherResultAdapterError(
             "RESEARCH_CANDIDATE_FIELDS_INVALID",
-            "candidate keys are not exact",
+            "candidate required/optional keys are invalid",
         )
     if payload.get("schema_version") != RESEARCH_CANDIDATE_SCHEMA:
         raise ResearcherResultAdapterError(
@@ -507,6 +527,23 @@ def _validate_research_candidate(
         raise ResearcherResultAdapterError("RESEARCH_CANDIDATE_REQUEST_DRIFT", "as_of")
     if expected_bundle_id is not None and bundle_id != expected_bundle_id:
         raise ResearcherResultAdapterError("RESEARCH_CANDIDATE_BUNDLE_DRIFT", "material_bundle_id")
+    executable = payload.get("executable_account_decision")
+    if executable is not None:
+        executable_map = _require_mapping(
+            executable,
+            "RESEARCH_CANDIDATE_EXECUTABLE_INVALID",
+            "executable_account_decision",
+        )
+        if set(executable_map) != _RESEARCHER_EXECUTABLE_CORE_KEYS:
+            raise ResearcherResultAdapterError(
+                "RESEARCH_CANDIDATE_EXECUTABLE_INVALID",
+                "executable_account_decision keys are not exact",
+            )
+        if status != "CANDIDATE_READY":
+            raise ResearcherResultAdapterError(
+                "RESEARCH_CANDIDATE_EXECUTABLE_STATUS_INVALID",
+                str(status),
+            )
     if not _plain_json_text(payload.get("summary"), nonempty=True):
         raise ResearcherResultAdapterError("RESEARCH_CANDIDATE_SUMMARY_INVALID", "summary")
     for key in (
@@ -739,7 +776,6 @@ def _validate_success_receipt(
         "execution_activation_txn_id",
         "package_version",
         "capability_version",
-        "required_bootstrap_protocol",
         "image_id",
         "result_path",
         "created_at",
@@ -747,6 +783,16 @@ def _validate_success_receipt(
         "material_manifest_path",
     ):
         _require_text(core.get(key), "RECEIPT_PIN_INVALID", key)
+    # Producer seal: REQUIRED_BOOTSTRAP_PROTOCOL = 2 (JSON integer). Reject bool/float/str.
+    bootstrap_protocol = core.get("required_bootstrap_protocol")
+    if type(bootstrap_protocol) is not int or bootstrap_protocol != 2:
+        raise ResearcherResultAdapterError(
+            "RECEIPT_BOOTSTRAP_PROTOCOL_INVALID",
+            (
+                "required_bootstrap_protocol must be exact JSON integer 2; "
+                f"got {type(bootstrap_protocol).__name__} {bootstrap_protocol!r}"
+            ),
+        )
     if type(core.get("execution_pointer_generation")) is not int:
         raise ResearcherResultAdapterError(
             "RECEIPT_PIN_INVALID",

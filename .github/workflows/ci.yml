@@ -14,8 +14,46 @@ permissions:
   contents: read
 
 jobs:
+  # Single-platform root hygiene: identical Ruff/format/compileall need not
+  # run twice on Ubuntu and Windows. Root OS×shard matrix below keeps pytest coverage.
+  root-hygiene:
+    name: root hygiene
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Install bounded test environment
+        run: uv sync --frozen --extra dev --extra workflow
+
+      # Lint and format both always run so one failure cannot hide the other.
+      # Aggregate a non-zero exit after both exact root commands finish.
+      - name: Ruff lint and format check
+        run: |
+          set +e
+          uv run ruff check services scripts tests skills/xinao/scripts docker/xinao-researcher
+          lint_rc=$?
+          uv run ruff format --check services scripts tests skills/xinao/scripts docker/xinao-researcher
+          format_rc=$?
+          if [ "$lint_rc" -ne 0 ]; then exit "$lint_rc"; fi
+          exit "$format_rc"
+
+      - name: Compile retained Python
+        run: uv run python -m compileall -q services scripts tests skills/xinao/scripts docker/xinao-researcher
+
   verify:
-    name: verify (${{ matrix.os }}, py${{ matrix.python-version }})
+    # Six jobs: Ubuntu 3.12 × shards 0/1/2 and Windows 3.11 × shards 0/1/2.
+    # Full root pytest coverage is the union of shards per OS; no path filters.
+    name: verify (${{ matrix.os }}, py${{ matrix.python-version }}, shard ${{ matrix.shard }}/${{ matrix.shard_count }})
+    needs: root-hygiene
     runs-on: ${{ matrix.os }}
     timeout-minutes: 25
     strategy:
@@ -24,8 +62,28 @@ jobs:
         include:
           - os: ubuntu-latest
             python-version: "3.12"
+            shard: 0
+            shard_count: 3
+          - os: ubuntu-latest
+            python-version: "3.12"
+            shard: 1
+            shard_count: 3
+          - os: ubuntu-latest
+            python-version: "3.12"
+            shard: 2
+            shard_count: 3
           - os: windows-latest
             python-version: "3.11"
+            shard: 0
+            shard_count: 3
+          - os: windows-latest
+            python-version: "3.11"
+            shard: 1
+            shard_count: 3
+          - os: windows-latest
+            python-version: "3.11"
+            shard: 2
+            shard_count: 3
     steps:
       - uses: actions/checkout@v4
 
@@ -40,17 +98,13 @@ jobs:
       - name: Install bounded test environment
         run: uv sync --frozen --extra dev --extra workflow
 
-      - name: Ruff lint
-        run: uv run ruff check services scripts tests skills/xinao/scripts docker/xinao-researcher
-
-      - name: Ruff format check
-        run: uv run ruff format --check services scripts tests skills/xinao/scripts docker/xinao-researcher
-
-      - name: Compile retained Python
-        run: uv run python -m compileall -q services scripts tests skills/xinao/scripts docker/xinao-researcher
-
       - name: Run bounded tests
-        run: uv run pytest -q --basetemp "${{ runner.temp }}/pytest"
+        run: >-
+          uv run pytest -q
+          -p scripts.pytest_shard
+          --shard-count ${{ matrix.shard_count }}
+          --shard-index ${{ matrix.shard }}
+          --basetemp "${{ runner.temp }}/pytest-shard-${{ matrix.shard }}"
 
   project-verify:
     name: project (${{ matrix.project }})
@@ -106,6 +160,13 @@ jobs:
             os: ubuntu-latest
             pytest_args: -q tests/unit/assurance
             ruff_paths: src/xinao/assurance tests/unit/assurance
+          # Shadow lifecycle product cone: continuous portfolios changed this path
+          # but no project-verify row previously scheduled unit coverage.
+          - project: discovery-shadow-lifecycle
+            path: xinao_discovery
+            os: ubuntu-latest
+            pytest_args: -q tests/unit/shadow_lifecycle
+            ruff_paths: src/xinao/shadow_lifecycle tests/unit/shadow_lifecycle
     defaults:
       run:
         working-directory: ${{ matrix.path }}

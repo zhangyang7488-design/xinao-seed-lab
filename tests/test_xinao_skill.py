@@ -319,13 +319,24 @@ def _sealed_release(
     image_character: str = "a",
     dirty: bool = False,
     variant: bytes | None = None,
-    package_version: str = "1.3.2",
+    package_version: str = "1.3.6",
     capability_version: str = "1.1.0",
     shadow_runtime_tree_sha256: str | None = None,
     shadow_runtime_lock_sha256: str | None = None,
+    researcher_image_modules_tree_sha256: str | None = None,
+    launcher_payload: bytes | None = None,
 ) -> tuple[dict[str, object], Path]:
     state = _state(module, tmp_path, monkeypatch)
     source_rows = module._source_bundle_files(SKILL_ROOT)
+    if launcher_payload is not None:
+        source_rows = [
+            (
+                relative,
+                source_path,
+                launcher_payload if relative == "scripts/xinao.py" else payload,
+            )
+            for relative, source_path, payload in source_rows
+        ]
     if variant is not None:
         source_rows.append(
             (
@@ -337,6 +348,8 @@ def _sealed_release(
         source_rows.sort(key=lambda item: item[0])
     bundle_manifest = module._skill_bundle_manifest(source_rows, package_version=package_version)
     hashes = module._reference_hashes(SKILL_ROOT)
+    if launcher_payload is not None:
+        hashes["skill_invoker_sha256"] = module._sha256_bytes(launcher_payload)
     shadow_lock = module._load_shadow_runtime_lock(SKILL_ROOT)
     shadow_rows = module._collect_shadow_runtime_rows(ROOT, shadow_lock)
     shadow_tree = (
@@ -349,6 +362,20 @@ def _sealed_release(
         if shadow_runtime_lock_sha256 is not None
         else hashes["shadow_runtime_lock_sha256"]
     )
+    module_rows = module._collect_researcher_image_module_rows(ROOT)
+    modules_tree = (
+        researcher_image_modules_tree_sha256
+        if researcher_image_modules_tree_sha256 is not None
+        else module._researcher_image_modules_tree_sha256(module_rows)
+    )
+    tool_df_path = ROOT / module.TOOL_EXECUTOR_DOCKERFILE_RELATIVE
+    tool_df_sha = module._sha256_bytes(tool_df_path.read_bytes())
+    tool_rows = module._collect_tool_executor_module_rows(ROOT)
+    tool_mod_sha = module._tool_executor_modules_tree_sha256(tool_rows)
+    # Distinct tool image id from transport; both must be hex-only Docker image IDs.
+    if image_character not in "0123456789abcdef":
+        raise AssertionError(f"image_character must be hex digit, got {image_character!r}")
+    tool_char = format((int(image_character, 16) + 7) % 16, "x")
     source_identity = {
         "source_commit": "c" * 40,
         "source_tree": "d" * 40,
@@ -357,9 +384,13 @@ def _sealed_release(
         "grok_donor_binary_sha256": "a" * 64,
         "shadow_runtime_tree_sha256": shadow_tree,
         "shadow_runtime_lock_sha256": shadow_lock_hash,
+        "researcher_image_modules_tree_sha256": modules_tree,
+        "tool_executor_dockerfile_sha256": tool_df_sha,
+        "tool_executor_modules_tree_sha256": tool_mod_sha,
     }
     source_identity_sha256 = module._sha256_bytes(module._canonical_bytes(source_identity))
     image_id = "sha256:" + image_character * 64
+    tool_image_id = "sha256:" + tool_char * 64
     labels = {
         "io.xinao.researcher.chain": "dedicated-xinao-science",
         "io.xinao.researcher.generic-worker-route": "forbidden",
@@ -378,7 +409,11 @@ def _sealed_release(
         "io.xinao.researcher.shadow-runtime.sha256": shadow_tree,
         "io.xinao.researcher.shadow-runtime-lock.sha256": shadow_lock_hash,
         "io.xinao.researcher.requested-model": "grok-4.5",
+        **module._dual_profile_image_labels(researcher_image_modules_tree_sha256=modules_tree),
     }
+    tool_labels = module._tool_executor_expected_labels(
+        dockerfile_sha256=tool_df_sha, modules_tree_sha256=tool_mod_sha
+    )
     manifest: dict[str, object] = {
         "schema_version": module.RELEASE_SCHEMA,
         "release_id": "pending",
@@ -397,6 +432,10 @@ def _sealed_release(
         "image_id": image_id,
         "image_entrypoint": ["python", "-I", "/opt/xinao-researcher/entrypoint.py"],
         "image_labels": labels,
+        "tool_image_tag_observational": "xinao-tool-executor:test",
+        "tool_image_id": tool_image_id,
+        "tool_image_entrypoint": list(module.TOOL_EXECUTOR_ENTRYPOINT),
+        "tool_image_labels": tool_labels,
         "skill_hashes": hashes,
         "required_bootstrap_protocol": 2,
         "generic_worker_route_allowed": False,
@@ -642,10 +681,28 @@ def _fake_build_environment(
                 build_commands.append(values)
                 raise module.XinaoError("PROCESS_FAILED", "injected build failure")
             build_commands.append(values)
+            # Tool-executor formal build uses owned LF staging context (not source_root).
+            if any("Dockerfile.tool-executor" in str(part) for part in values):
+                assert "--file" in values
+                assert "--label" in values
+                context = Path(values[-1])
+                assert context.is_dir(), f"tool build context missing: {context}"
+                assert not (context / "skills").exists()
+                assert not (context / ".git").exists()
+                staged_df = context / "Dockerfile.tool-executor"
+                assert staged_df.is_file()
+                assert b"\r" not in staged_df.read_bytes()
+                modules_root = context / module.RESEARCHER_IMAGE_CONTEXT_RELATIVE
+                for relative in module.TOOL_EXECUTOR_MODULE_INVENTORY:
+                    staged = modules_root / relative
+                    assert staged.is_file(), f"missing staged tool module {relative}"
+                    assert b"\r" not in staged.read_bytes(), f"CRLF in staged {relative}"
+                return SimpleNamespace(stdout="", stderr="", returncode=0)
             args = _parse_build_args(values)
             assert "GROK_DONOR_IMAGE" not in args
             assert args.get("GROK_DONOR_IMAGE_ID") == donor_id
             assert args.get("GROK_DONOR_BINARY_SHA256") == donor_binary_sha256
+            assert args.get("GROK_CLI_VERSION") == str(lock["grok_cli_version"])
             context = Path(values[-1])
             binary = context / module.DONOR_BINARY_CONTEXT_RELATIVE
             assert binary.is_file()
@@ -658,6 +715,17 @@ def _fake_build_environment(
             assert shadow_main.is_file(), f"missing staged shadow entrypoint in {context}"
             assert re.fullmatch(r"[0-9a-f]{64}", args.get("SHADOW_RUNTIME_TREE_SHA256", ""))
             assert re.fullmatch(r"[0-9a-f]{64}", args.get("SHADOW_RUNTIME_LOCK_SHA256", ""))
+            assert re.fullmatch(
+                r"[0-9a-f]{64}", args.get("RESEARCHER_IMAGE_MODULES_TREE_SHA256", "")
+            )
+            # Dual-profile modules must be staged (canary + episode/MCP/shell).
+            modules_root = context / module.RESEARCHER_IMAGE_CONTEXT_RELATIVE
+            assert modules_root.is_dir(), f"missing staged researcher modules in {context}"
+            for relative in module.RESEARCHER_IMAGE_MODULE_INVENTORY:
+                staged = modules_root / relative
+                assert staged.is_file(), f"missing staged module {relative}"
+                if relative.endswith(".sh"):
+                    assert b"\r" not in staged.read_bytes(), f"CRLF in staged {relative}"
             assert not any(part == "start" for part in values)
             # No broad repository copy into the docker context.
             assert not (context / "xinao_discovery").exists()
@@ -666,13 +734,58 @@ def _fake_build_environment(
             return SimpleNamespace(stdout="", stderr="", returncode=0)
         if values[:2] == ["docker", "start"]:
             raise AssertionError(f"donor container must never start: {values}")
+        # Host-side fail-closed probe of the staged donor binary (never starts a container).
+        if len(values) == 2 and values[1] == "version":
+            binary = Path(values[0])
+            assert binary.is_file(), f"missing staged grok binary for version probe: {binary}"
+            # Always report the lock pin for unit-test donor stubs. Byte-level swaps remain
+            # fail-closed via DONOR_BINARY_TAMPERED / pre-build hash equality; mismatched
+            # real CLI versions are covered by dedicated version-mismatch tests.
+            return SimpleNamespace(
+                stdout=f"grok {lock['grok_cli_version']} (test-fake-binary)\n",
+                stderr="",
+                returncode=0,
+            )
         raise AssertionError(values)
 
     def fake_image(_docker: str, image: str) -> dict[str, object]:
         if image in {donor_tag, donor_id}:
             return {"Id": donor_id}
         assert build_commands
-        command = build_commands[-1]
+        # Prefer the build command matching the requested tag when available.
+        command = None
+        for candidate in reversed(build_commands):
+            if image in candidate:
+                command = candidate
+                break
+        if command is None:
+            command = build_commands[-1]
+        if any("Dockerfile.tool-executor" in str(part) for part in command) or str(
+            image
+        ).startswith("xinao-tool-executor:"):
+            # Recover sealed digests from --label flags on tool build.
+            labels_map: dict[str, str] = {}
+            i = 0
+            while i < len(command):
+                if command[i] == "--label" and i + 1 < len(command):
+                    key, _, value = command[i + 1].partition("=")
+                    labels_map[key] = value
+                    i += 2
+                    continue
+                i += 1
+            tool_df = labels_map.get("io.xinao.tool.dockerfile.sha256", "d" * 64)
+            tool_mod = labels_map.get("io.xinao.tool.modules.sha256", "e" * 64)
+            tool_labels = module._tool_executor_expected_labels(
+                dockerfile_sha256=tool_df, modules_tree_sha256=tool_mod
+            )
+            tool_char = format((int(image_character, 16) + 7) % 16, "x")
+            return {
+                "Id": "sha256:" + tool_char * 64,
+                "Config": {
+                    "Labels": tool_labels,
+                    "Entrypoint": list(module.TOOL_EXECUTOR_ENTRYPOINT),
+                },
+            }
         args = _parse_build_args(command)
         labels = {
             "io.xinao.researcher.chain": "dedicated-xinao-science",
@@ -692,6 +805,9 @@ def _fake_build_environment(
             "io.xinao.researcher.shadow-runtime.sha256": args["SHADOW_RUNTIME_TREE_SHA256"],
             "io.xinao.researcher.shadow-runtime-lock.sha256": args["SHADOW_RUNTIME_LOCK_SHA256"],
             "io.xinao.researcher.requested-model": args["REQUESTED_MODEL"],
+            **module._dual_profile_image_labels(
+                researcher_image_modules_tree_sha256=args["RESEARCHER_IMAGE_MODULES_TREE_SHA256"]
+            ),
         }
         return {
             "Id": "sha256:" + image_character * 64,
@@ -744,12 +860,12 @@ def test_package_version_is_separate_from_researcher_versions() -> None:
         for value in registry["capabilities"]
         if value["capability_id"] == "researcher-container"
     )
-    assert registry["skill_version"] == "1.3.2"
+    assert registry["skill_version"] == "1.3.17"
     assert (
         researcher["version"]
         == charter["charter_version"]
         == runtime_lock["runtime_version"]
-        == "1.2.1"
+        == "1.2.13"
     )
     shadow = next(
         value
@@ -757,7 +873,7 @@ def test_package_version_is_separate_from_researcher_versions() -> None:
         if value["capability_id"] == "shadow-lifecycle-leg-a"
     )
     assert shadow["source_status"] == "available"
-    assert shadow["version"] == "0.2.0"
+    assert shadow["version"] == "0.3.1"
     for facet_id in (
         "shadow-account",
         "decision-freeze",
@@ -769,7 +885,7 @@ def test_package_version_is_separate_from_researcher_versions() -> None:
         )
         assert facet["source_status"] == "available"
         assert facet["implemented_by"] == "shadow-lifecycle-leg-a"
-        assert facet["version"] == "0.2.0"
+        assert facet["version"] == "0.3.1"
 
 
 def test_open_research_prompt_has_no_family_admission() -> None:
@@ -800,7 +916,7 @@ def test_release_v2_and_exact_bundle_roundtrip(
     manifest, manifest_path = _sealed_release(module, tmp_path, monkeypatch)
     bundle_manifest = module._validate_release_manifest(manifest, manifest_path)
     assert manifest["schema_version"] == "xinao.researcher_release.v2"
-    assert manifest["package_version"] == "1.3.2"
+    assert manifest["package_version"] == "1.3.6"
     assert manifest["capability_version"] == "1.1.0"
     assert bundle_manifest["tree_sha256"] == manifest["skill_bundle_tree_sha256"]
     assert any(
@@ -914,7 +1030,123 @@ def test_dockerfile_has_no_donor_from_or_raw_image_id_stage() -> None:
     assert "COPY donor-artifacts/grok" in dockerfile
     assert "GROK_DONOR_BINARY_SHA256" in dockerfile
     assert "ARG GROK_DONOR_IMAGE_ID" in dockerfile
+    assert "ARG GROK_CLI_VERSION" in dockerfile
+    assert 'test "$parsed" = "${GROK_CLI_VERSION}"' in dockerfile
     assert "io.xinao.researcher.grok-donor-binary.sha256" in dockerfile
+
+
+def test_require_staged_grok_cli_version_fail_closed(tmp_path: Path) -> None:
+    module = _module()
+    binary = tmp_path / "grok"
+    binary.write_bytes(b"#!/bin/sh\n")
+    binary.chmod(0o755)
+
+    def fake_run(arguments, **_kwargs):
+        values = list(arguments)
+        assert values == [str(binary), "version"]
+        return SimpleNamespace(stdout="grok 0.2.112 (deadbeef)\n", stderr="", returncode=0)
+
+    module._run = fake_run  # type: ignore[method-assign]
+    assert module._parse_grok_cli_version("grok 0.2.117 (f1c0609308)") == "0.2.117"
+    with pytest.raises(module.XinaoError) as failure:
+        module._require_staged_grok_cli_version(binary, expected_version="0.2.117")
+    assert failure.value.reason_code == "GROK_CLI_VERSION_MISMATCH"
+    assert "0.2.112" in failure.value.detail
+
+    def ok_run(arguments, **_kwargs):
+        return SimpleNamespace(stdout="grok 0.2.117 (f1c0609308)\n", stderr="", returncode=0)
+
+    module._run = ok_run  # type: ignore[method-assign]
+    assert module._require_staged_grok_cli_version(binary, expected_version="0.2.117") == "0.2.117"
+
+
+def test_probe_grok_binary_version_process_start_failed_elf_docker_mount(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Wave106/108: Windows cannot exec Linux donor ELF; fall back to Docker-mount probe.
+
+    Existing fail-closed version tests only exercise the native-success path. This test
+    executes the PROCESS_START_FAILED → ELF magic → docker_exec_image_id mount path.
+    """
+    module = _module()
+    binary = tmp_path / "grok"
+    # Minimal Linux ELF magic so _linux_elf_magic is true; body is not executed natively.
+    binary.write_bytes(b"\x7fELF" + b"\x00" * 12)
+    binary.chmod(0o755)
+    donor_image = "sha256:" + ("ab" * 32)
+    calls: list[list[str]] = []
+
+    def fake_run(arguments, **_kwargs):
+        values = [str(v) for v in arguments]
+        calls.append(values)
+        # Native probe fails like WinError 193 for any direct binary path.
+        if len(values) == 2 and values[1] == "version" and values[0].endswith("grok"):
+            raise module.XinaoError(
+                "PROCESS_START_FAILED",
+                f"command={values[0]}: [WinError 193] %1 is not a valid Win32 application",
+            )
+        # Docker-mount fallback of the same staged bytes.
+        if values[:2] == [module._docker(), "run"] and "--entrypoint" in values:
+            entry_idx = values.index("--entrypoint")
+            assert values[entry_idx + 1] == "/xinao-donor-probe/grok"
+            assert donor_image in values
+            assert any("xinao-donor-probe" in part for part in values)
+            assert values[-1] == "version"
+            return SimpleNamespace(
+                stdout="grok 0.2.117 (f1c0609308)\n",
+                stderr="",
+                returncode=0,
+            )
+        raise AssertionError(f"unexpected _run arguments: {values}")
+
+    monkeypatch.setattr(module, "_run", fake_run)
+    text = module._probe_grok_binary_version_text(binary, docker_exec_image_id=donor_image)
+    assert text.startswith("grok 0.2.117")
+    assert any(len(c) == 2 and c[1] == "version" for c in calls)
+    assert any("run" in c and "--entrypoint" in c for c in calls)
+    assert (
+        module._require_staged_grok_cli_version(
+            binary, expected_version="0.2.117", docker_exec_image_id=donor_image
+        )
+        == "0.2.117"
+    )
+
+    # Non-ELF + PROCESS_START_FAILED must not claim Docker mount fallback.
+    non_elf = tmp_path / "not-elf-grok"
+    non_elf.write_bytes(b"MZ-not-elf")
+    with pytest.raises(module.XinaoError) as non_elf_fail:
+        module._probe_grok_binary_version_text(non_elf, docker_exec_image_id=donor_image)
+    assert non_elf_fail.value.reason_code == "PROCESS_START_FAILED"
+
+    # ELF without docker image id stays fail-closed with host-incompatible code.
+    with pytest.raises(module.XinaoError) as no_docker:
+        module._probe_grok_binary_version_text(binary, docker_exec_image_id=None)
+    assert no_docker.value.reason_code == "GROK_CLI_VERSION_PROBE_HOST_INCOMPATIBLE"
+
+
+def test_build_rejects_donor_cli_version_mismatch(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    module = _module()
+    _state(module, tmp_path, monkeypatch)
+    env = _fake_build_environment(module, monkeypatch, dirty=True)
+    original_run = module._run
+
+    def mismatch_version_run(arguments, **kwargs):
+        values = list(arguments)
+        if len(values) == 2 and values[1] == "version":
+            return SimpleNamespace(
+                stdout="grok 0.2.112 (donor-mismatch)\n",
+                stderr="",
+                returncode=0,
+            )
+        return original_run(arguments, **kwargs)
+
+    monkeypatch.setattr(module, "_run", mismatch_version_run)
+    with pytest.raises(module.XinaoError) as failure:
+        module.build_release(ROOT, allow_dirty=True)
+    assert failure.value.reason_code == "GROK_CLI_VERSION_MISMATCH"
+    assert env["build_commands"] == []
 
 
 def test_build_is_candidate_only_and_passes_complete_image_identity(
@@ -930,8 +1162,10 @@ def test_build_is_candidate_only_and_passes_complete_image_identity(
     donor_binary_sha256 = env["donor_binary_sha256"]
     receipt = module.build_release(ROOT, allow_dirty=True)
     assert receipt["status"] == "CANDIDATE_BUILT"
-    assert receipt["package_version"] == "1.3.2"
-    assert receipt["capability_version"] == "1.2.1"
+    assert receipt["package_version"] == "1.3.17"
+    assert receipt["capability_version"] == "1.2.13"
+    assert receipt.get("tool_image_id")
+    assert str(receipt["tool_image_id"]).startswith("sha256:")
     assert receipt["source_dirty"] is True
     assert receipt["activated"] is False
     assert not module._state_paths()["pointer"].exists()
@@ -946,6 +1180,7 @@ def test_build_is_candidate_only_and_passes_complete_image_identity(
         "REQUESTED_MODEL=grok-4.5",
         f"GROK_DONOR_IMAGE_ID={donor_id}",
         f"GROK_DONOR_BINARY_SHA256={donor_binary_sha256}",
+        "GROK_CLI_VERSION=0.2.117",
     ):
         assert key in joined
     assert "GROK_DONOR_IMAGE=" not in joined
@@ -956,10 +1191,22 @@ def test_build_is_candidate_only_and_passes_complete_image_identity(
     # time inside _fake_build_environment. Seal identities still bind the staged cone.
     assert "SHADOW_RUNTIME_TREE_SHA256=" in joined
     assert "SHADOW_RUNTIME_LOCK_SHA256=" in joined
+    assert receipt["grok_cli_version"] == "0.2.117"
+    assert receipt["grok_donor_image_id"] == donor_id
+    assert receipt["grok_donor_binary_sha256"] == donor_binary_sha256
     manifest = module._load_json(Path(receipt["release_manifest_path"]))
     module._validate_release_manifest(manifest, Path(receipt["release_manifest_path"]))
     assert manifest["source_identity"]["grok_donor_image_id"] == donor_id
     assert manifest["source_identity"]["grok_donor_binary_sha256"] == donor_binary_sha256
+    assert re.fullmatch(
+        r"[0-9a-f]{64}", manifest["source_identity"]["tool_executor_dockerfile_sha256"]
+    )
+    assert re.fullmatch(
+        r"[0-9a-f]{64}", manifest["source_identity"]["tool_executor_modules_tree_sha256"]
+    )
+    assert manifest["tool_image_id"].startswith("sha256:")
+    assert manifest["tool_image_entrypoint"] == list(module.TOOL_EXECUTOR_ENTRYPOINT)
+    assert manifest["tool_image_labels"]["io.xinao.researcher.role"] == "tool_executor"
     assert re.fullmatch(r"[0-9a-f]{64}", manifest["source_identity"]["shadow_runtime_tree_sha256"])
     assert re.fullmatch(r"[0-9a-f]{64}", manifest["source_identity"]["shadow_runtime_lock_sha256"])
     assert manifest["image_labels"]["io.xinao.researcher.grok-donor-image-id"] == donor_id
@@ -977,6 +1224,7 @@ def test_build_is_candidate_only_and_passes_complete_image_identity(
     )
     assert fence_checks == [
         ("build", None),
+        ("build", {"test_fence": "build"}),
         ("build", {"test_fence": "build"}),
         ("build", {"test_fence": "build"}),
     ]
@@ -1013,6 +1261,9 @@ def test_build_extract_pins_binary_against_tag_retarget(
 
     def on_before_build(values: list[str]) -> None:
         nonlocal tag_retargeted
+        # Dual-image generation builds tool-executor second; only assert donor pins on transport.
+        if any("Dockerfile.tool-executor" in str(part) for part in values):
+            return
         tag_retargeted = True
         args = _parse_build_args(values)
         assert "GROK_DONOR_IMAGE" not in args
@@ -1045,7 +1296,10 @@ def test_build_extract_pins_binary_against_tag_retarget(
     assert receipt["status"] == "CANDIDATE_BUILT"
     assert tag_retargeted is True
     assert donor_tag_inspects == 1
-    assert len(env["build_commands"]) == 1
+    assert len(env["build_commands"]) == 2
+    assert any(
+        "Dockerfile.tool-executor" in str(part) for cmd in env["build_commands"] for part in cmd
+    )
     assert module._docker_image("docker", donor_tag)["Id"] == retargeted_id
     assert module._docker_image("docker", pinned_id)["Id"] == pinned_id
     manifest = module._load_json(Path(receipt["release_manifest_path"]))
@@ -1188,13 +1442,77 @@ def test_same_semver_different_content_is_collision(
         tmp_path,
         monkeypatch,
         image_character="a",
-        package_version="1.3.2",
-        capability_version="1.2.1",
+        package_version="1.3.17",
+        capability_version="1.2.13",
     )
     _fake_build_environment(module, monkeypatch, dirty=False, image_character="f")
     with pytest.raises(module.XinaoError) as failure:
         module.build_release(ROOT, allow_dirty=False)
     assert failure.value.reason_code == "SEMVER_CONTENT_COLLISION"
+    assert failure.value.detail == "package=1.3.17 capability=1.2.13"
+
+
+def test_package_version_bump_can_reuse_researcher_capability_version(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    module = _module()
+    old, old_path = _sealed_release(
+        module,
+        tmp_path,
+        monkeypatch,
+        image_character="a",
+        package_version="1.3.1",
+        capability_version="1.2.1",
+    )
+    old_bytes = old_path.read_bytes()
+    _fake_build_environment(module, monkeypatch, dirty=False, image_character="f")
+
+    receipt = module.build_release(ROOT, allow_dirty=False)
+    new_path = Path(receipt["release_manifest_path"])
+    new = module._load_json(new_path)
+
+    assert receipt["status"] == "CANDIDATE_BUILT"
+    assert receipt["package_version"] == "1.3.17"
+    assert receipt["capability_version"] == "1.2.13"
+    assert new["release_id"] != old["release_id"]
+    assert new["package_version"] == "1.3.17"
+    assert new["capability_version"] == "1.2.13"
+    assert old_path.read_bytes() == old_bytes
+
+
+def test_forward_upgrade_target_build_accepts_package_only_bump(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    module = _module()
+    old, old_path = _sealed_release(
+        module,
+        tmp_path,
+        monkeypatch,
+        image_character="a",
+        package_version="1.3.1",
+        capability_version="1.2.1",
+    )
+    old_bytes = old_path.read_bytes()
+    _terminal_pointer(
+        module,
+        old,
+        old_path,
+        generation=4,
+        txn_suffix="9" * 16,
+        previous_verified=None,
+    )
+    monkeypatch.setattr(module, "_migration_source_root", lambda: ROOT)
+    _fake_build_environment(module, monkeypatch, dirty=False, image_character="f")
+
+    prepared = module._prepare_forward_upgrade_target()
+
+    assert prepared is not None
+    new, new_path = prepared
+    assert new_path.is_file()
+    assert new["release_id"] != old["release_id"]
+    assert new["package_version"] == "1.3.17"
+    assert new["capability_version"] == "1.2.13"
+    assert old_path.read_bytes() == old_bytes
 
 
 @pytest.mark.parametrize(
@@ -1303,17 +1621,25 @@ def test_activation_release_validation_excludes_egress_and_auth(
     monkeypatch.setattr(module, "DEFAULT_AUTH_PATH", tmp_path / "missing-auth.json")
     monkeypatch.setattr(module, "_docker", lambda: "docker")
     monkeypatch.setattr(module, "_docker_engine_os", lambda _docker: "linux")
-    monkeypatch.setattr(
-        module,
-        "_docker_image",
-        lambda _docker, _image: {
+
+    def _dual_image(_docker, image):
+        if image == manifest["tool_image_id"]:
+            return {
+                "Id": manifest["tool_image_id"],
+                "Config": {
+                    "Labels": manifest["tool_image_labels"],
+                    "Entrypoint": manifest["tool_image_entrypoint"],
+                },
+            }
+        return {
             "Id": manifest["image_id"],
             "Config": {
                 "Labels": manifest["image_labels"],
                 "Entrypoint": manifest["image_entrypoint"],
             },
-        },
-    )
+        }
+
+    monkeypatch.setattr(module, "_docker_image", _dual_image)
 
     docker, observed_charter = module._validate_release_for_activation(manifest)
 
@@ -1351,17 +1677,25 @@ def test_activation_release_validation_rejects_image_drift(
     )
     monkeypatch.setattr(module, "_docker", lambda: "docker")
     monkeypatch.setattr(module, "_docker_engine_os", lambda _docker: "linux")
-    monkeypatch.setattr(
-        module,
-        "_docker_image",
-        lambda _docker, _image: {
+
+    def _dual_image(_docker, image):
+        if image == manifest["tool_image_id"]:
+            return {
+                "Id": manifest["tool_image_id"],
+                "Config": {
+                    "Labels": manifest["tool_image_labels"],
+                    "Entrypoint": manifest["tool_image_entrypoint"],
+                },
+            }
+        return {
             "Id": manifest["image_id"],
             "Config": {
                 "Labels": observed_labels,
                 "Entrypoint": observed_entrypoint,
             },
-        },
-    )
+        }
+
+    monkeypatch.setattr(module, "_docker_image", _dual_image)
 
     with pytest.raises(module.XinaoError) as failure:
         module._validate_release_for_activation(manifest)
@@ -5031,6 +5365,9 @@ def test_build_stages_locked_shadow_runtime_into_docker_context(
     observed: dict[str, object] = {}
 
     def on_before_build(values: list[str]) -> None:
+        dockerfile = Path(values[values.index("--file") + 1])
+        if dockerfile.name == "Dockerfile.tool-executor":
+            return
         context = Path(values[-1])
         shadow_root = context / module.SHADOW_RUNTIME_CONTEXT_RELATIVE
         staged = sorted(
@@ -5156,7 +5493,7 @@ def test_shadow_inspect_requires_source_and_live_image_labels(
     registry = module._validate_registry()
     absent = module._shadow_live_status(registry, None, image_ok=False)
     assert absent["runtime_status"] == "RELEASE_ABSENT"
-    manifest, _path = _sealed_release(module, tmp_path, monkeypatch, capability_version="1.2.1")
+    manifest, _path = _sealed_release(module, tmp_path, monkeypatch, capability_version="1.2.2")
     _materialize_installed_from_release(module, tmp_path, monkeypatch, manifest)
     ready = module._shadow_live_status(registry, manifest, image_ok=True)
     assert ready["runtime_status"] == "AVAILABLE"
@@ -5197,6 +5534,95 @@ def test_shadow_parser_and_fresh_process_accept_verbs(
             continue
         parsed = parser.parse_args(["shadow", verb, "--root", str(tmp_path / "ep")])
         assert parsed.shadow_command == verb
+
+    portfolio_init = parser.parse_args(
+        [
+            "shadow",
+            "portfolio-init",
+            "--root",
+            str(tmp_path / "pf"),
+            "--seat-id",
+            "s1",
+            "--portfolio-ref",
+            "p1",
+        ]
+    )
+    assert portfolio_init.shadow_command == "portfolio-init"
+    assert portfolio_init.seat_id == "s1"
+    assert portfolio_init.portfolio_ref == "p1"
+    portfolio_inspect = parser.parse_args(
+        ["shadow", "portfolio-inspect", "--root", str(tmp_path / "pf")]
+    )
+    assert portfolio_inspect.shadow_command == "portfolio-inspect"
+    portfolio_freeze = parser.parse_args(
+        [
+            "shadow",
+            "portfolio-freeze",
+            "--root",
+            str(tmp_path / "pf"),
+            "--request",
+            str(tmp_path / "request.json"),
+        ]
+    )
+    assert portfolio_freeze.shadow_command == "portfolio-freeze"
+    portfolio_settle = parser.parse_args(
+        [
+            "shadow",
+            "portfolio-settle",
+            "--root",
+            str(tmp_path / "pf"),
+            "--outcome",
+            str(tmp_path / "outcome.json"),
+            "--settlement-ref",
+            "settlement.1",
+        ]
+    )
+    assert portfolio_settle.shadow_command == "portfolio-settle"
+    assert portfolio_settle.settlement_ref == "settlement.1"
+    portfolio_feedback = parser.parse_args(
+        [
+            "shadow",
+            "portfolio-feedback",
+            "--root",
+            str(tmp_path / "pf"),
+            "--kind",
+            "NO_CHANGE_WITH_REASON",
+            "--reason-code",
+            "hold",
+            "--notes",
+            "carry",
+        ]
+    )
+    assert portfolio_feedback.shadow_command == "portfolio-feedback"
+    assert portfolio_feedback.kind == "NO_CHANGE_WITH_REASON"
+    assert portfolio_feedback.reason_code == "hold"
+    assert portfolio_feedback.notes == "carry"
+    portfolio_replay = parser.parse_args(
+        [
+            "shadow",
+            "portfolio-replay",
+            "--root",
+            str(tmp_path / "pf"),
+            "--period-index",
+            "1",
+        ]
+    )
+    assert portfolio_replay.shadow_command == "portfolio-replay"
+    assert portfolio_replay.period_index == 1
+    assert set(module.SHADOW_SKILL_VERBS) == {
+        "init",
+        "inspect",
+        "status",
+        "freeze",
+        "settle",
+        "replay",
+        "portfolio-init",
+        "portfolio-inspect",
+        "portfolio-freeze",
+        "portfolio-settle",
+        "portfolio-feedback",
+        "portfolio-replay",
+    }
 
     # Fresh process: parser-level reject without active pointer (bootstrap/runtime handoff path).
     completed = subprocess.run(
@@ -5519,6 +5945,263 @@ def test_sync_projection_fresh_installed_parser_and_inspect(
     assert args.command == "sync-projection"
 
 
+def _prepare_synced_projection_world(
+    module,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    launcher_payload: bytes | None = None,
+) -> dict[str, object]:
+    active, active_path = _sealed_release(
+        module,
+        tmp_path,
+        monkeypatch,
+        image_character="1",
+        package_version="1.3.1",
+        capability_version="1.2.1",
+        launcher_payload=launcher_payload,
+    )
+    pointer, journal, journal_path = _terminal_pointer(
+        module,
+        active,
+        active_path,
+        generation=3,
+        txn_suffix="3" * 16,
+    )
+    import shutil
+
+    installed = tmp_path / "installed_skill"
+    shutil.copytree(Path(str(active["skill_bundle_path"])), installed)
+    (installed / "SKILL.md").write_bytes(
+        (installed / "SKILL.md").read_bytes() + b"\n# force-real-sync\n"
+    )
+    monkeypatch.setenv("XINAO_INSTALLED_SKILL_ROOT", str(installed))
+    monkeypatch.setattr(module, "DEFAULT_INSTALLED_SKILL_ROOT", installed)
+    monkeypatch.setattr(
+        module,
+        "_run_activation_canary",
+        lambda value: _canary_value(module, value),
+    )
+    _install_bootstrap_fence(module, monkeypatch, ["sync-projection"])
+    synced = module.sync_projection()
+    assert synced["status"] == "SYNCED"
+    assert _installed_tree_map(installed) == _active_skill_bundle_map(module, active)
+    return {
+        "active": active,
+        "active_path": active_path,
+        "pointer": pointer,
+        "journal": journal,
+        "journal_path": journal_path,
+        "installed": installed,
+        "sync": synced,
+    }
+
+
+def _lineage_canary(module, journal: dict[str, object]) -> dict[str, object]:
+    module._verify_stable_installed_launcher(journal)
+    return _canary_value(module, journal)
+
+
+def test_activate_selects_real_installed_projection_after_old_sync_and_forward_upgrades(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    module = _module()
+    old_launcher = b"from __future__ import annotations\n# sealed-old-launcher\n"
+    world = _prepare_synced_projection_world(
+        module,
+        tmp_path,
+        monkeypatch,
+        launcher_payload=old_launcher,
+    )
+    old_sync = module._find_latest_verified_sync_projection()
+    assert old_sync is not None
+    assert old_sync[1]["stable_launcher_sha256"] == module._sha256_bytes(old_launcher)
+
+    monkeypatch.setattr(
+        module,
+        "_run_activation_canary",
+        lambda value: _lineage_canary(module, value),
+    )
+    for index, image_character in enumerate(("4", "5"), start=1):
+        target, target_path = _sealed_release(
+            module,
+            tmp_path,
+            monkeypatch,
+            image_character=image_character,
+            package_version=f"1.3.{index + 1}",
+            capability_version=f"1.2.{index + 1}",
+        )
+        monkeypatch.setattr(
+            module,
+            "_prepare_forward_upgrade_target",
+            lambda target=target, target_path=target_path: (target, target_path),
+        )
+        upgraded = module.bootstrap_forward_upgrade()
+        assert upgraded["status"] == "UPGRADED"
+        world[f"forward_{index}"] = upgraded
+        world[f"forward_release_{index}"] = target
+
+    latest_forward = module._find_verified_forward_upgrade_projection()
+    installed_launcher = Path(world["installed"]) / "scripts" / "xinao.py"
+    assert latest_forward[1]["stable_launcher_sha256"] == module._sha256(installed_launcher)
+    assert old_sync[1]["stable_launcher_sha256"] != module._sha256(installed_launcher)
+
+    candidate, candidate_path = _sealed_release(
+        module,
+        tmp_path,
+        monkeypatch,
+        image_character="6",
+        package_version="1.3.9",
+        capability_version="1.2.9",
+        variant=b"ordinary-activate-after-forward-lineage\n",
+    )
+    _install_bootstrap_fence(
+        module,
+        monkeypatch,
+        ["activate", "--release-id", str(candidate["release_id"])],
+    )
+    activated = module.activate_release(str(candidate["release_id"]))
+    assert activated["status"] == "VERIFIED"
+    assert activated["release_id"] == candidate["release_id"]
+    activation_journal = module._load_json(module._journal_path(activated["txn_id"]))
+    assert activation_journal["state"] == "VERIFIED"
+
+    # A matching exact-from witness that becomes VERIFIED only after this ACTIVATE's
+    # prepared boundary must not retroactively enter its lineage.  The prior matching
+    # forward projection remains a valid fallback for the same installed bytes.
+    future_path = module._journal_path(str(world["forward_2"]["txn_id"]))
+    future = module._load_json(future_path)
+    future["updated_at"] = "2999-01-01T00:00:00Z"
+    module._write_json_atomic(future_path, future)
+    selected, _receipt = module._find_installed_projection_witness(activation_journal)
+    assert selected["txn_id"] == world["forward_1"]["txn_id"]
+
+
+def _prepare_rolled_back_activation_conflict(
+    module,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> dict[str, object]:
+    world = _prepare_synced_projection_world(module, tmp_path, monkeypatch)
+    candidate, candidate_path = _sealed_release(
+        module,
+        tmp_path,
+        monkeypatch,
+        image_character="7",
+        package_version="1.3.7",
+        capability_version="1.2.7",
+        variant=b"conflict-target\n",
+    )
+
+    def fail_launcher(_journal: dict[str, object]) -> dict[str, object]:
+        raise module.XinaoError(
+            "INSTALLED_LAUNCHER_IDENTITY_MISMATCH",
+            str(Path(world["installed"]) / "scripts" / "xinao.py"),
+        )
+
+    monkeypatch.setattr(module, "_run_activation_canary", fail_launcher)
+    _install_bootstrap_fence(
+        module,
+        monkeypatch,
+        ["activate", "--release-id", str(candidate["release_id"])],
+    )
+    with pytest.raises(module.XinaoError) as failure:
+        module.activate_release(str(candidate["release_id"]))
+    assert failure.value.reason_code == "RECOVERY_CONFLICT"
+    pointer = module._load_json(module._state_paths()["pointer"])
+    txn_id = str(pointer["active"]["activation_txn_id"])
+    conflict = module._load_json(module._journal_path(txn_id))
+    assert conflict["state"] == "RECOVERY_CONFLICT"
+    assert conflict["operation"] == "ACTIVATE"
+    assert conflict["failure_reason"]["reason_code"] == "INSTALLED_LAUNCHER_IDENTITY_MISMATCH"
+    world.update(
+        {
+            "candidate": candidate,
+            "candidate_path": candidate_path,
+            "conflict": conflict,
+            "txn_id": txn_id,
+        }
+    )
+    return world
+
+
+def test_explicit_conflict_recovery_seals_exact_rolled_back_pointer(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    module = _module()
+    world = _prepare_rolled_back_activation_conflict(module, tmp_path, monkeypatch)
+    txn_id = str(world["txn_id"])
+    monkeypatch.setattr(
+        module,
+        "_run_activation_canary",
+        lambda value: _lineage_canary(module, value),
+    )
+
+    bootstrap = _bootstrap_module()
+    state_root = module._state_paths()["state_root"]
+    assert bootstrap._pointer_requires_migration_entry(state_root, ["recover", "--txn-id", txn_id])
+    assert not bootstrap._pointer_requires_migration_entry(state_root, ["recover"])
+    routed: list[list[str]] = []
+    monkeypatch.setattr(
+        bootstrap,
+        "_run_companion_runtime",
+        lambda argv: routed.append(list(argv)) or 0,
+    )
+    assert bootstrap._run_runtime(["recover", "--txn-id", txn_id]) == 0
+    assert routed == [["recover", "--txn-id", txn_id]]
+
+    recovered = module.recover_release(txn_id)
+    assert recovered["status"] == "ROLLED_BACK"
+    assert recovered["recovered_from"] == "RECOVERY_CONFLICT"
+    sealed = module._load_json(module._journal_path(txn_id))
+    pointer_sha256 = module._sha256(module._state_paths()["pointer"])
+    assert sealed["state"] == "ROLLED_BACK"
+    assert sealed["terminal_pointer_sha256"] == pointer_sha256
+    assert sealed["switched_pointer_sha256"] == pointer_sha256
+
+
+@pytest.mark.parametrize(
+    "mutation", ("pointer_generation", "installed_tree", "different_conflict_reason")
+)
+def test_explicit_conflict_recovery_rejects_unbound_state(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    mutation: str,
+) -> None:
+    module = _module()
+    world = _prepare_rolled_back_activation_conflict(module, tmp_path, monkeypatch)
+    txn_id = str(world["txn_id"])
+    monkeypatch.setattr(
+        module,
+        "_run_activation_canary",
+        lambda value: _lineage_canary(module, value),
+    )
+    if mutation == "pointer_generation":
+        pointer_path = module._state_paths()["pointer"]
+        pointer = module._load_json(pointer_path)
+        pointer["generation"] += 1
+        module._write_json_atomic(pointer_path, pointer)
+    elif mutation == "installed_tree":
+        skill_md = Path(world["installed"]) / "SKILL.md"
+        skill_md.write_bytes(skill_md.read_bytes() + b"\n# tampered-after-conflict\n")
+    else:
+        journal_path = module._journal_path(txn_id)
+        conflict = module._load_json(journal_path)
+        conflict["failure_reason"] = {
+            "reason_code": "UNRELATED_RECOVERY_FAILURE",
+            "detail": "must not enter the selector-specific recovery cone",
+        }
+        module._write_json_atomic(journal_path, conflict)
+
+    with pytest.raises(module.XinaoError) as failure:
+        module.recover_release(txn_id)
+    assert failure.value.reason_code in {
+        "RECOVERY_CONFLICT",
+        "INSTALL_PROJECTION_TARGET_INCOMPLETE",
+    }
+    assert module._load_json(module._journal_path(txn_id))["state"] == "RECOVERY_CONFLICT"
+
+
 # ---------------------------------------------------------------------------
 # Protocol-v2 forward upgrade: installed 1.2.0 pre-shadow → 1.3.0 target
 # ---------------------------------------------------------------------------
@@ -5649,7 +6332,10 @@ def _sealed_pre_shadow_v2_release(
     module._validate_sealed_protocol_v2_release(manifest, manifest_path)
     with pytest.raises(module.XinaoError) as exact_failure:
         module._validate_release_manifest(manifest, manifest_path)
-    assert exact_failure.value.reason_code == "RELEASE_SOURCE_IDENTITY_INVALID"
+    assert exact_failure.value.reason_code in {
+        "RELEASE_SOURCE_IDENTITY_INVALID",
+        "RELEASE_SCHEMA_INVALID",
+    }
     return manifest, manifest_path
 
 
@@ -5709,8 +6395,8 @@ def _prepare_v2_forward_upgrade_world(
         tmp_path,
         monkeypatch,
         image_character="c",
-        package_version="1.3.2",
-        capability_version="1.2.1",
+        package_version="1.3.17",
+        capability_version="1.2.13",
     )
     monkeypatch.setattr(
         module,
@@ -5749,7 +6435,10 @@ def test_ordinary_exact_validation_fails_closed_on_pre_shadow_v2(
     world = _prepare_v2_forward_upgrade_world(module, tmp_path, monkeypatch)
     with pytest.raises(module.XinaoError) as failure:
         module._load_current_context(require_terminal=True)
-    assert failure.value.reason_code == "RELEASE_SOURCE_IDENTITY_INVALID"
+    assert failure.value.reason_code in {
+        "RELEASE_SOURCE_IDENTITY_INVALID",
+        "RELEASE_SCHEMA_INVALID",
+    }
     with pytest.raises(module.XinaoError) as migrate_failure:
         module.bootstrap_migrate()
     assert migrate_failure.value.reason_code == "FORWARD_UPGRADE_REQUIRED"
@@ -6094,7 +6783,12 @@ def test_same_version_skill_bundle_drift_requires_forward_upgrade(
 def test_shadow_only_source_drift_requires_forward_upgrade(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Shadow-only drift must not look current even when skill tree/versions match."""
+    """Shadow-only drift must not look current even when skill tree/versions match.
+
+    Active remains a fully sealed valid release (real tree/lock). Drift is modeled by
+    advancing the migration-source shadow tree identity, not by forging SI tree hex
+    (Wave91/95 tree recompute rejects forged trees under verify_bundle=True).
+    """
 
     module = _module()
     source = module._current_source_skill_bundle_identity()
@@ -6109,23 +6803,18 @@ def test_shadow_only_source_drift_requires_forward_upgrade(
     assert matching["skill_bundle_tree_sha256"] == source["skill_bundle_tree_sha256"]
     assert module._active_release_requires_forward_upgrade(matching) is False
 
-    shadow_drifted, _shadow_path = _sealed_release(
-        module,
-        tmp_path,
-        monkeypatch,
-        image_character="c",
-        package_version=source["package_version"],
-        capability_version=source["capability_version"],
-        shadow_runtime_tree_sha256="f" * 64,
-    )
-    assert shadow_drifted["skill_bundle_tree_sha256"] == source["skill_bundle_tree_sha256"]
-    assert shadow_drifted["package_version"] == source["package_version"]
-    assert shadow_drifted["capability_version"] == source["capability_version"]
+    drifted_source = dict(source)
+    drifted_source["shadow_runtime_tree_sha256"] = "f" * 64
+    assert drifted_source["shadow_runtime_tree_sha256"] != source["shadow_runtime_tree_sha256"]
+    monkeypatch.setattr(module, "_current_source_skill_bundle_identity", lambda: drifted_source)
+    assert matching["skill_bundle_tree_sha256"] == drifted_source["skill_bundle_tree_sha256"]
+    assert matching["package_version"] == drifted_source["package_version"]
+    assert matching["capability_version"] == drifted_source["capability_version"]
     assert (
-        shadow_drifted["source_identity"]["shadow_runtime_tree_sha256"]
-        != source["shadow_runtime_tree_sha256"]
+        matching["source_identity"]["shadow_runtime_tree_sha256"]
+        != drifted_source["shadow_runtime_tree_sha256"]
     )
-    assert module._active_release_requires_forward_upgrade(shadow_drifted) is True
+    assert module._active_release_requires_forward_upgrade(matching) is True
 
 
 def test_bootstrap_forward_upgrade_same_semver_source_drift_fails_closed(
@@ -6135,7 +6824,7 @@ def test_bootstrap_forward_upgrade_same_semver_source_drift_fails_closed(
 
     Formal prepare/build surfaces SEMVER_CONTENT_COLLISION; pointer and the existing
     same-semver release remain byte-identical. Version-bumped source upgrades via the
-    separate legal immutable bump path (package 1.3.2 / capability 1.2.1).
+    separate legal immutable bump path (package 1.3.6 / capability 1.2.2).
     """
 
     module = _module()
@@ -6194,26 +6883,58 @@ def test_bootstrap_forward_upgrade_same_version_drift_never_claims_already(
 def test_bootstrap_forward_upgrade_shadow_only_drift_never_claims_already(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Shadow-only source drift must not return ALREADY_* without pointer mutation."""
+    """Shadow-only source drift must not return ALREADY_* without pointer mutation.
+
+    Seals a valid active (real shadow tree + matching skill tree), then advances only the
+    migration-source shadow tree so skill-bundle still matches while shadow-only drift
+    forces upgrade. Forged SI tree hex is no longer a legal sealed fixture (Wave91 A1b).
+    """
 
     module = _module()
-    world = _prepare_current_schema_source_drift_world(
+    source_identity = module._current_source_skill_bundle_identity()
+    package_version = source_identity["package_version"]
+    capability_version = source_identity["capability_version"]
+    active, active_path = _sealed_release(
         module,
         tmp_path,
         monkeypatch,
+        image_character="d",
+        package_version=package_version,
+        capability_version=capability_version,
         variant=None,
-        shadow_runtime_tree_sha256="e" * 64,
     )
+    assert active["skill_bundle_tree_sha256"] == source_identity["skill_bundle_tree_sha256"]
+    assert module._active_release_requires_forward_upgrade(active) is False
+    pointer, journal, journal_path = _terminal_pointer(
+        module,
+        active,
+        active_path,
+        generation=3,
+        txn_suffix="b" * 16,
+        previous_verified=None,
+    )
+    import shutil
+
+    installed = tmp_path / "installed_skill_shadow_drift"
+    if installed.exists():
+        shutil.rmtree(installed)
+    shutil.copytree(Path(str(active["skill_bundle_path"])), installed)
+    monkeypatch.setenv("XINAO_INSTALLED_SKILL_ROOT", str(installed))
+    monkeypatch.setattr(module, "DEFAULT_INSTALLED_SKILL_ROOT", installed)
+    pointer_path = module._state_paths()["pointer"]
+    pointer_bytes = pointer_path.read_bytes()
+
+    drifted_source = dict(source_identity)
+    drifted_source["shadow_runtime_tree_sha256"] = "e" * 64
     assert (
-        world["active"]["skill_bundle_tree_sha256"]
-        == world["source_identity"]["skill_bundle_tree_sha256"]
+        active["source_identity"]["shadow_runtime_tree_sha256"]
+        != drifted_source["shadow_runtime_tree_sha256"]
     )
-    assert (
-        world["active"]["source_identity"]["shadow_runtime_tree_sha256"]
-        != world["source_identity"]["shadow_runtime_tree_sha256"]
-    )
+    monkeypatch.setattr(module, "_current_source_skill_bundle_identity", lambda: drifted_source)
+    assert module._active_release_requires_forward_upgrade(active) is True
     monkeypatch.setattr(module, "_prepare_forward_upgrade_target", lambda: None)
     with pytest.raises(module.XinaoError) as failure:
         module.bootstrap_forward_upgrade()
     assert failure.value.reason_code == "FORWARD_UPGRADE_TARGET_ABSENT"
-    assert world["pointer_path"].read_bytes() == world["pointer_bytes"]
+    assert pointer_path.read_bytes() == pointer_bytes
+    del journal, journal_path  # constructed for realistic terminal pointer world

@@ -124,7 +124,8 @@ def _production_receipt(
         "skill_bundle_tree_sha256": "3" * 64,
         "package_version": "1.3.0",
         "capability_version": "1.2.0",
-        "required_bootstrap_protocol": "xinao.researcher_bootstrap.v2",
+        # Producer pin is REQUIRED_BOOTSTRAP_PROTOCOL = 2 (JSON integer, not text).
+        "required_bootstrap_protocol": 2,
         "image_id": "sha256:" + ("4" * 64),
         "container_id": "ctr_volatile_aaa",
         "container_exit_code": 0,
@@ -529,3 +530,90 @@ def test_receipt_route_class_must_be_scientific_researcher() -> None:
     with pytest.raises(ResearcherResultAdapterError) as err:
         adapt_researcher_result_to_policy_candidate(result_bytes, receipt)
     assert err.value.reason_code == "RECEIPT_ROUTE_CLASS_INVALID"
+
+
+@pytest.mark.parametrize(
+    "bad_value",
+    [
+        True,
+        False,
+        "xinao.researcher_bootstrap.v2",
+        "2",
+        None,
+        2.0,
+        2.5,
+        0,
+        1,
+        -1,
+        3,
+        [],
+        {},
+    ],
+)
+def test_required_bootstrap_protocol_rejects_every_value_except_exact_int_2(
+    bad_value: object,
+) -> None:
+    result_bytes, receipt = _result_and_receipt()
+    receipt["required_bootstrap_protocol"] = bad_value
+    with pytest.raises(ResearcherResultAdapterError) as err:
+        adapt_researcher_result_to_policy_candidate(result_bytes, receipt)
+    assert err.value.reason_code == "RECEIPT_BOOTSTRAP_PROTOCOL_INVALID"
+
+
+def test_missing_required_bootstrap_protocol_remains_an_exact_key_failure() -> None:
+    result_bytes, receipt = _result_and_receipt()
+    del receipt["required_bootstrap_protocol"]
+    with pytest.raises(ResearcherResultAdapterError) as err:
+        adapt_researcher_result_to_policy_candidate(result_bytes, receipt)
+    assert err.value.reason_code == "RECEIPT_FIELDS_INVALID"
+    assert "required_bootstrap_protocol" in err.value.detail
+
+
+def test_rq008_live_immutable_pair_replays_with_bootstrap_int_2_portable() -> None:
+    """Replay sealed real RQ008 pair from in-tree fixtures (no host absolute path).
+
+    Retrospective E1 only: typed NO_ACTION projection stance; zero Ticket/Settlement.
+    """
+
+    from pathlib import Path
+
+    fixture_dir = Path(__file__).resolve().parent / "fixtures" / "rq008_live"
+    result_path = fixture_dir / "result.json"
+    receipt_path = fixture_dir / "receipt.json"
+    pins_path = fixture_dir / "sha256_pins.json"
+    pins = json.loads(pins_path.read_text(encoding="utf-8"))
+    result_bytes = result_path.read_bytes()
+    receipt_bytes = receipt_path.read_bytes()
+    assert raw_sha256(result_bytes) == pins["result.json"]
+    assert raw_sha256(receipt_bytes) == pins["receipt.json"]
+    # Sealed Owner-run content digests (portable pin file, not a mount path).
+    assert pins["result.json"] == (
+        "5460a71b5db33b43a486ef2a4999b142cc0fa0cc953dfa73b4adacbb5b5d3d76"
+    )
+    assert pins["receipt.json"] == (
+        "13812f6d75a000338bdc9ef39def8faacb2e6bae2ebba06abc38df812e06e253"
+    )
+    receipt = strict_json_loads(receipt_bytes.decode("utf-8"))
+    assert type(receipt["required_bootstrap_protocol"]) is int
+    assert receipt["required_bootstrap_protocol"] == 2
+    assert receipt["result_sha256"] == pins["result.json"]
+    policy = adapt_researcher_result_to_policy_candidate(result_bytes, receipt)
+    assert policy.policy_ref == (
+        "science.research_candidate.v2.sha256:"
+        "5460a71b5db33b43a486ef2a4999b142cc0fa0cc953dfa73b4adacbb5b5d3d76"
+    )
+    assert policy.content_hash == policy.compute_content_hash()
+    assert policy.semantic_config["completion_claim_allowed"] is False
+    assert policy.semantic_config["science_progress_claimed"] is False
+    assert policy.semantic_config["decision_map_projected"] is False
+    assert policy.semantic_config["active_set_admitted"] is False
+    assert policy.semantic_config["route_class"] == "scientific_researcher"
+    assert policy.decision_signature.abstention_rule == ("NO_ACTION_MAP_UNTIL_EXPLICIT_PROJECTION")
+    assert policy.decision_signature.action_support == "NOT_PROJECTED"
+    # RQ008 retrospective inventory: NO_ACTION text, not a Ticket/Settlement episode.
+    candidate = receipt["candidate"]
+    assert "NO_ACTION" in candidate["summary"]
+    assert "Ticket" not in candidate["summary"]
+    assert "Settlement" not in candidate["summary"]
+    assert "ticket" not in json.dumps(policy.semantic_config).lower()
+    assert "settlement" not in json.dumps(policy.semantic_config).lower()

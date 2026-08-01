@@ -1,0 +1,47 @@
+# Tool-executor image for dual-container / IPC fallback (candidate only).
+# Holds NO Grok binary, NO auth mounts at build time, NO provider session.
+# Network must be set to none at create time (see docker_create_specs.py).
+# Default canary transport Dockerfile/ENTRYPOINT is intentionally separate.
+
+ARG PYTHON_BASE_IMAGE=python:3.12-slim@sha256:423ed6ab25b1921a477529254bfeeabf5855151dc2c3141699a1bfc852199fbf
+
+FROM ${PYTHON_BASE_IMAGE}
+
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates bubblewrap \
+    && rm -rf /var/lib/apt/lists/* \
+    && install -d -m 0555 /opt/xinao-tool-executor \
+    && install -d -m 0770 /episode-lab \
+    && install -d -m 0711 /ipc \
+    && groupadd --gid 65532 nonroot \
+    && useradd --uid 65532 --gid 65532 --home-dir /tmp --shell /usr/sbin/nologin nonroot \
+    && chown 65532:65532 /episode-lab /ipc
+
+COPY --chmod=0555 docker/xinao-researcher/ipc_contract.py /opt/xinao-tool-executor/ipc_contract.py
+COPY --chmod=0555 docker/xinao-researcher/tool_executor.py /opt/xinao-tool-executor/tool_executor.py
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PYTHONUTF8=1 \
+    HOME=/tmp \
+    TMPDIR=/tmp \
+    PATH=/usr/local/bin:/usr/bin:/bin \
+    PYTHONPATH=/opt/xinao-tool-executor \
+    XINAO_TOOL_EXEC_BWRAP=require \
+    XINAO_IPC_PEER_REQUIRE=1 \
+    XINAO_REPLAY_STATE_DIR=/ipc/.xinao-replay
+
+# No GROK_HOME, no auth env, no provider keys.
+USER 65532:65532
+WORKDIR /episode-lab
+
+LABEL org.opencontainers.image.title="XINAO researcher tool executor (dual-container fallback)" \
+      io.xinao.researcher.role="tool_executor" \
+      io.xinao.researcher.dual-container="true" \
+      io.xinao.researcher.generic-worker-route="forbidden" \
+      io.xinao.researcher.auth-mount="forbidden" \
+      io.xinao.researcher.network-default="none" \
+      io.xinao.researcher.shell-isolation="bubblewrap-require"
+
+ENTRYPOINT ["python", "-I", "/opt/xinao-tool-executor/tool_executor.py", \
+            "--lab-root", "/episode-lab", \
+            "--socket", "/ipc/tool.sock"]

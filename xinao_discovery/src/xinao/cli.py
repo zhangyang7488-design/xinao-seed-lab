@@ -12,6 +12,7 @@ from xinao.catalog.compiler import (
     DEFAULT_COVERAGE_PATH,
     DEFAULT_FAMILY_REGISTRY_PATH,
 )
+from xinao.cli_json import print_cli_json
 from xinao.foundation import (
     assess_foundation,
     derive_foundation_closure_report,
@@ -24,6 +25,7 @@ from xinao.projection import (
     render_tui,
     verify_evidence_report,
 )
+from xinao.science.prospective_cli import add_prospective_parsers, dispatch_prospective
 from xinao.world import (
     build_science_episode_world,
     build_world,
@@ -43,6 +45,7 @@ def _load_json(path: Path) -> dict[str, object]:
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="xinao")
     groups = parser.add_subparsers(dest="group", required=True)
+    add_prospective_parsers(groups)
     catalog = groups.add_parser("catalog")
     commands = catalog.add_subparsers(dest="command", required=True)
     compile_command = commands.add_parser("compile")
@@ -130,9 +133,24 @@ def build_parser() -> argparse.ArgumentParser:
     shadow_inspect.add_argument("--root", type=Path, required=True)
     shadow_status = shadow_commands.add_parser("status")
     shadow_status.add_argument("--root", type=Path, required=True)
-    shadow_freeze = shadow_commands.add_parser("freeze")
+    _flat_freeze_help = (
+        "NON-PRODUCTION: always FLAT_FREEZE_NOT_PRODUCTION; never freezes. "
+        "Production Owner freeze: prospective freeze-from-disposition "
+        "(pool + sealed disposition + host UTC). "
+        "Historical inspect/settle/replay remain available."
+    )
+    shadow_freeze = shadow_commands.add_parser(
+        "freeze",
+        help=_flat_freeze_help,
+        description=_flat_freeze_help,
+    )
     shadow_freeze.add_argument("--root", type=Path, required=True)
-    shadow_freeze.add_argument("--request", type=Path, required=True)
+    shadow_freeze.add_argument(
+        "--request",
+        type=Path,
+        required=True,
+        help="Ignored: this CLI never performs production or fixture freeze",
+    )
     shadow_settle = shadow_commands.add_parser("settle")
     shadow_settle.add_argument("--root", type=Path, required=True)
     shadow_settle.add_argument("--outcome", type=Path, required=True)
@@ -142,50 +160,422 @@ def build_parser() -> argparse.ArgumentParser:
     shadow_settle.add_argument("--occurred-at")
     shadow_replay = shadow_commands.add_parser("replay")
     shadow_replay.add_argument("--root", type=Path, required=True)
+    # Packaged Owner consumers for ResearchEpisode pool / feedback (no monorepo walk).
+    research_episode = groups.add_parser(
+        "research-episode",
+        help=(
+            "Candidate-only pool admission (episode export OR one-shot result+receipt), "
+            "feedback pack emit, and feedback material bind (installed xinao-discovery; "
+            "no Owner adopt/freeze/settle/auto-next)"
+        ),
+    )
+    re_commands = research_episode.add_subparsers(dest="command", required=True)
+    re_pool_ingest = re_commands.add_parser(
+        "pool-ingest",
+        help="Ingest sealed ResearchEpisode export + exact candidate manifest into candidate pool",
+    )
+    re_pool_ingest.add_argument("--pool-root", type=Path, required=True)
+    re_pool_ingest.add_argument("--export", type=Path, required=True)
+    re_pool_ingest.add_argument("--manifest", type=Path, required=True)
+    # Alias matching Skill verb name for discovery parity.
+    re_ingest_export = re_commands.add_parser(
+        "ingest-export",
+        help="Alias of pool-ingest (Skill verb parity; episode export only)",
+    )
+    re_ingest_export.add_argument("--pool-root", type=Path, required=True)
+    re_ingest_export.add_argument("--export", type=Path, required=True)
+    re_ingest_export.add_argument("--manifest", type=Path, required=True)
+    # One-shot historical/public producer shape: raw result.json + receipt.json.
+    # Does not replace episode export pool-ingest; both share the sealed pool.
+    re_pool_ingest_result = re_commands.add_parser(
+        "pool-ingest-result",
+        help=(
+            "Ingest verified one-shot researcher result.json + receipt.json into "
+            "the sealed candidate pool (not ResearchEpisode export; owner_adopted=false)"
+        ),
+    )
+    re_pool_ingest_result.add_argument(
+        "--pool-root",
+        type=Path,
+        required=True,
+        help="Owner-selected candidate pool root (CAS exclusive create)",
+    )
+    re_pool_ingest_result.add_argument(
+        "--result",
+        type=Path,
+        required=True,
+        help="Path to raw one-shot result.json (xinao.researcher_container_result.v2)",
+    )
+    re_pool_ingest_result.add_argument(
+        "--receipt",
+        type=Path,
+        required=True,
+        help="Path to matching skill research receipt.json (xinao.skill_research_receipt.v2)",
+    )
+    re_pool_ingest_oneshot = re_commands.add_parser(
+        "pool-ingest-oneshot",
+        help="Alias of pool-ingest-result (one-shot result+receipt public seam)",
+    )
+    re_pool_ingest_oneshot.add_argument("--pool-root", type=Path, required=True)
+    re_pool_ingest_oneshot.add_argument("--result", type=Path, required=True)
+    re_pool_ingest_oneshot.add_argument("--receipt", type=Path, required=True)
+    re_emit_fb = re_commands.add_parser(
+        "emit-research-feedback-pack",
+        help=(
+            "Emit sealed research feedback pack from settled portfolio/episode "
+            "(Owner-selected root; never auto-starts next Episode or rewrites priors)"
+        ),
+    )
+    re_emit_fb.add_argument(
+        "--portfolio-root",
+        type=Path,
+        required=True,
+        help="Owner-selected portfolio/episode root with settled state",
+    )
+    re_emit_fb.add_argument(
+        "--period-index",
+        type=int,
+        default=None,
+        help="Optional settled period index (default: latest settled)",
+    )
+    re_emit_fb.add_argument(
+        "--output",
+        type=Path,
+        default=None,
+        help="Optional explicit output path (must be outside period cone; default CAS)",
+    )
+    re_emit_fb.add_argument(
+        "--require-account-feedback",
+        action="store_true",
+        help="Fail closed unless account feedback is already sealed",
+    )
+    re_feedback = re_commands.add_parser(
+        "feedback-bind",
+        help="Bind sealed feedback pack as later episode material (input-only)",
+    )
+    re_feedback.add_argument("--portfolio-root", type=Path, required=True)
+    re_feedback.add_argument("--feedback-content-hash", required=True)
+    re_feedback.add_argument("--prior-candidate-result-sha256")
+    re_feedback.add_argument("--prior-candidate-version")
+    re_feedback.add_argument("--settled-portfolio-hash")
+    re_feedback.add_argument("--target-episode-version")
+    re_bind_fb = re_commands.add_parser(
+        "bind-feedback-material",
+        help="Alias of feedback-bind (Skill verb parity)",
+    )
+    re_bind_fb.add_argument("--portfolio-root", type=Path, required=True)
+    re_bind_fb.add_argument("--feedback-content-hash", required=True)
+    re_bind_fb.add_argument("--prior-candidate-result-sha256")
+    re_bind_fb.add_argument("--prior-candidate-version")
+    re_bind_fb.add_argument("--settled-portfolio-hash")
+    re_bind_fb.add_argument("--target-episode-version")
     return parser
 
 
-def main() -> int:
-    args = build_parser().parse_args()
+def _cli_research_episode_pool_ingest(
+    *,
+    pool_root: Path,
+    export_path: Path,
+    manifest_path: Path,
+) -> dict[str, object]:
+    from xinao.science.episode_export_pool_adapter import ingest_verified_episode_export
+
+    if not export_path.is_file():
+        raise FileNotFoundError(f"export missing: {export_path}")
+    if not manifest_path.is_file():
+        raise FileNotFoundError(f"manifest missing: {manifest_path}")
+    entry = ingest_verified_episode_export(
+        pool_root=pool_root,
+        export=export_path.read_bytes(),
+        manifest_bytes=manifest_path.read_bytes(),
+    )
+    return {
+        **dict(entry),
+        "ok": True,
+        "command": "research-episode pool-ingest",
+        "status": "POOL_ENTRY_READY",
+        "admission_shape": "episode_export",
+        "owner_adopted": False,
+        "candidate_only": True,
+        "decision_map_projected": False,
+        "action_support": entry.get("action_support", "NOT_PROJECTED"),
+        "freeze_written": False,
+        "settlement_written": False,
+        "disposition_written": False,
+        "next_task_created": False,
+        "completion_claim_allowed": False,
+        "science_restored": False,
+        "parent_complete": False,
+        "daemon": False,
+    }
+
+
+def _cli_research_episode_pool_ingest_result(
+    *,
+    pool_root: Path,
+    result_path: Path,
+    receipt_path: Path,
+) -> dict[str, object]:
+    """Public one-shot result+receipt admission into the sealed candidate pool.
+
+    Thin wrapper over ``ingest_verified_research_result``. Never adopts, freezes,
+    settles, projects a decision map, or claims episode-export provenance.
+    """
+
+    from xinao.science.candidate_pool import ingest_verified_research_result
+    from xinao.science.researcher_result_adapter import raw_sha256
+
+    if not result_path.is_file():
+        raise FileNotFoundError(f"result missing: {result_path}")
+    if not receipt_path.is_file():
+        raise FileNotFoundError(f"receipt missing: {receipt_path}")
+
+    result_bytes = result_path.read_bytes()
+    if not result_bytes:
+        raise ValueError("result bytes empty")
+    receipt_raw = receipt_path.read_bytes()
+    if not receipt_raw:
+        raise ValueError("receipt bytes empty")
+    try:
+        receipt_obj = json.loads(receipt_raw.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise ValueError(f"receipt is not UTF-8 JSON: {exc}") from exc
+    if not isinstance(receipt_obj, dict):
+        raise ValueError("receipt must be a JSON object")
+
+    entry = ingest_verified_research_result(
+        pool_root=pool_root,
+        result_bytes=result_bytes,
+        receipt=receipt_obj,
+    )
+    return {
+        **dict(entry),
+        "ok": True,
+        "command": "research-episode pool-ingest-result",
+        "status": "POOL_ENTRY_READY",
+        "admission_shape": "oneshot_result_receipt",
+        "result_path": str(result_path.expanduser().resolve()),
+        "receipt_path": str(receipt_path.expanduser().resolve()),
+        "result_bytes_sha256": raw_sha256(result_bytes),
+        "owner_adopted": False,
+        "candidate_only": True,
+        "decision_map_projected": False,
+        "action_support": entry.get("action_support", "NOT_PROJECTED"),
+        "freeze_written": False,
+        "settlement_written": False,
+        "disposition_written": False,
+        "next_task_created": False,
+        "completion_claim_allowed": False,
+        "science_restored": False,
+        "parent_complete": False,
+        "daemon": False,
+    }
+
+
+def _cli_research_episode_feedback_bind(
+    *,
+    portfolio_root: Path,
+    feedback_content_hash: str,
+    prior_candidate_result_sha256: str | None = None,
+    prior_candidate_version: str | None = None,
+    settled_portfolio_hash: str | None = None,
+    target_episode_version: str | None = None,
+) -> dict[str, object]:
+    from xinao.science.research_feedback_material import (
+        assert_feedback_cannot_rewrite_priors,
+        bind_feedback_pack_as_episode_material,
+    )
+
+    binding = bind_feedback_pack_as_episode_material(
+        portfolio_root=portfolio_root,
+        feedback_content_hash=feedback_content_hash,
+        prior_candidate_result_sha256=prior_candidate_result_sha256,
+        prior_candidate_version=prior_candidate_version,
+        settled_portfolio_hash=settled_portfolio_hash,
+        target_episode_version=target_episode_version,
+    )
+    assert_feedback_cannot_rewrite_priors(binding=binding)
+    return {
+        **dict(binding),
+        "status": "FEEDBACK_MATERIAL_BOUND",
+        "auto_start_next_research": False,
+        "next_task_created": False,
+        "freeze_written": False,
+        "settlement_written": False,
+        "disposition_written": False,
+        "owner_adopted": False,
+        "completion_claim_allowed": False,
+        "science_restored": False,
+        "parent_complete": False,
+    }
+
+
+def _cli_research_episode_emit_feedback_pack(
+    *,
+    portfolio_root: Path,
+    period_index: int | None = None,
+    output_path: Path | None = None,
+    require_account_feedback: bool = False,
+) -> dict[str, object]:
+    from xinao.science.research_feedback_pack import emit_research_feedback_pack
+
+    emitted = emit_research_feedback_pack(
+        portfolio_root=portfolio_root,
+        period_index=period_index,
+        output_path=output_path,
+        require_account_feedback=require_account_feedback,
+    )
+    pack = dict(emitted.get("pack") or {})
+    return {
+        "ok": True,
+        "command": "research-episode emit-research-feedback-pack",
+        "status": "RESEARCH_FEEDBACK_PACK_EMITTED",
+        "pack_ref": emitted.get("pack_ref"),
+        "content_hash": emitted.get("content_hash"),
+        "path": emitted.get("path"),
+        "period_index": emitted.get("period_index"),
+        "cas_path": emitted.get("cas_path"),
+        "period_cone_artifact": emitted.get("period_cone_artifact", False),
+        "prior_research_binding_sha256": emitted.get("prior_research_binding_sha256"),
+        "prior_result_sha256": pack.get("prior_result_sha256"),
+        "scientific_promotion": False,
+        "future_outcome_access": False,
+        "auto_start_next_research": False,
+        "auto_next_period_freeze": False,
+        "next_task_created": False,
+        "freeze_written": False,
+        "settlement_written": False,
+        "disposition_written": False,
+        "owner_adopted": False,
+        "candidate_only": True,
+        "completion_claim_allowed": False,
+        "science_restored": False,
+        "parent_complete": False,
+        "daemon": False,
+    }
+
+
+def _cli_research_episode_fail(reason: str, detail: str = "") -> int:
+    print_cli_json(
+        {
+            "ok": False,
+            "error": f"{reason}: {detail}" if detail else reason,
+            "reason_code": reason,
+            "completion_claim_allowed": False,
+            "parent_complete": False,
+            "auto_start_next_research": False,
+            "auto_next_period_freeze": False,
+            "auto_freeze": False,
+            "auto_settle": False,
+            "next_task_created": False,
+            "owner_adopted": False,
+            "daemon": False,
+        }
+    )
+    return 1
+
+
+def main(argv: list[str] | None = None) -> int:
+    args = build_parser().parse_args(argv)
+    # wave46 packaged ResearchEpisode Owner consumers (candidate-only clamp).
+    if args.group == "research-episode" and args.command in {
+        "pool-ingest",
+        "ingest-export",
+    }:
+        from xinao.science.candidate_pool import CandidatePoolError
+        from xinao.science.episode_export_pool_adapter import EpisodeExportAdapterError
+
+        try:
+            result = _cli_research_episode_pool_ingest(
+                pool_root=args.pool_root,
+                export_path=args.export,
+                manifest_path=args.manifest,
+            )
+        except (CandidatePoolError, EpisodeExportAdapterError) as exc:
+            return _cli_research_episode_fail(exc.reason_code, getattr(exc, "detail", "") or "")
+        except (ValueError, TypeError, KeyError, OSError, FileNotFoundError) as exc:
+            return _cli_research_episode_fail("POOL_INGEST_CLI_ERROR", str(exc))
+        print_cli_json(result, default=str)
+        return 0
+    if args.group == "research-episode" and args.command in {
+        "pool-ingest-result",
+        "pool-ingest-oneshot",
+    }:
+        from xinao.science.candidate_pool import CandidatePoolError
+
+        try:
+            result = _cli_research_episode_pool_ingest_result(
+                pool_root=args.pool_root,
+                result_path=args.result,
+                receipt_path=args.receipt,
+            )
+        except CandidatePoolError as exc:
+            return _cli_research_episode_fail(exc.reason_code, exc.detail)
+        except (ValueError, TypeError, KeyError, OSError, FileNotFoundError) as exc:
+            return _cli_research_episode_fail("POOL_INGEST_RESULT_CLI_ERROR", str(exc))
+        print_cli_json(result, default=str)
+        return 0
+    if args.group == "research-episode" and args.command == "emit-research-feedback-pack":
+        from xinao.science.research_feedback_pack import ResearchFeedbackPackError
+
+        try:
+            result = _cli_research_episode_emit_feedback_pack(
+                portfolio_root=args.portfolio_root,
+                period_index=args.period_index,
+                output_path=args.output,
+                require_account_feedback=bool(args.require_account_feedback),
+            )
+        except ResearchFeedbackPackError as exc:
+            return _cli_research_episode_fail(exc.reason_code, exc.detail)
+        except (ValueError, TypeError, KeyError, OSError) as exc:
+            return _cli_research_episode_fail("FEEDBACK_PACK_CLI_ERROR", str(exc))
+        print_cli_json(result, default=str)
+        return 0
+    if args.group == "research-episode" and args.command in {
+        "feedback-bind",
+        "bind-feedback-material",
+    }:
+        result = _cli_research_episode_feedback_bind(
+            portfolio_root=args.portfolio_root,
+            feedback_content_hash=args.feedback_content_hash,
+            prior_candidate_result_sha256=getattr(args, "prior_candidate_result_sha256", None),
+            prior_candidate_version=getattr(args, "prior_candidate_version", None),
+            settled_portfolio_hash=getattr(args, "settled_portfolio_hash", None),
+            target_episode_version=getattr(args, "target_episode_version", None),
+        )
+        print_cli_json(result, default=str)
+        return 0
     if args.group == "catalog" and args.command == "compile":
         kwargs = {"baseline_ref": args.baseline, "output_path": args.out}
         if args.input is not None:
             kwargs["input_path"] = args.input
         catalog = compile_catalog(**kwargs)
-        print(
-            json.dumps(
-                {
-                    "ok": True,
-                    "catalog_ref": catalog["catalog_ref"],
-                    "entry_count": catalog["entry_count"],
-                    "content_hash": catalog["content_hash"],
-                    "output": str(args.out),
-                },
-                ensure_ascii=False,
-                sort_keys=True,
-            )
+        print_cli_json(
+            {
+                "ok": True,
+                "catalog_ref": catalog["catalog_ref"],
+                "entry_count": catalog["entry_count"],
+                "content_hash": catalog["content_hash"],
+                "output": str(args.out),
+            }
         )
         return 0
     if args.group == "catalog" and args.command == "coverage":
         report = coverage_report(_load_json(args.catalog), output_path=args.out)
-        print(json.dumps(report, ensure_ascii=False, sort_keys=True))
+        print_cli_json(report)
         if args.fail_on_unclassified and report["unclassified_count"]:
             return 1
         return 0 if report["ok"] else 1
     if args.group == "catalog" and args.command == "families":
         registry = family_registry(_load_json(args.catalog), output_path=args.out)
-        print(
-            json.dumps(
-                {
-                    "identity_complete": registry["identity_complete"],
-                    "foundation_compilation_complete": registry["foundation_compilation_complete"],
-                    "family_count": registry["family_count"],
-                    "content_hash": registry["content_hash"],
-                    "output": str(args.out),
-                },
-                ensure_ascii=False,
-                sort_keys=True,
-            )
+        print_cli_json(
+            {
+                "identity_complete": registry["identity_complete"],
+                "foundation_compilation_complete": registry["foundation_compilation_complete"],
+                "family_count": registry["family_count"],
+                "content_hash": registry["content_hash"],
+                "output": str(args.out),
+            }
         )
         return 0 if registry["identity_complete"] else 1
     if args.group == "world" and args.command == "build":
@@ -201,18 +591,14 @@ def main() -> int:
             protocol_pin_sha256=args.protocol_pin_sha256,
         )
         snapshot = result["event_matrix_snapshot"]
-        print(
-            json.dumps(
-                {
-                    "ok": result["ok"],
-                    "matrix_sha256": snapshot["matrix_sha256"],
-                    "row_count": snapshot["row_count"],
-                    "nnz": snapshot["nnz"],
-                    "output": str(result["output_root"]),
-                },
-                ensure_ascii=False,
-                sort_keys=True,
-            )
+        print_cli_json(
+            {
+                "ok": result["ok"],
+                "matrix_sha256": snapshot["matrix_sha256"],
+                "row_count": snapshot["row_count"],
+                "nnz": snapshot["nnz"],
+                "output": str(result["output_root"]),
+            }
         )
         return 0
     if args.group == "world" and args.command == "build-legacy":
@@ -226,17 +612,13 @@ def main() -> int:
             run_id=args.run_id,
         )
         snapshot = result["event_matrix_snapshot"]
-        print(
-            json.dumps(
-                {
-                    "ok": result["ok"],
-                    "authority_scope": "LEGACY_PARENT_G0_G8",
-                    "matrix_sha256": snapshot["matrix_sha256"],
-                    "output": str(args.out),
-                },
-                ensure_ascii=False,
-                sort_keys=True,
-            )
+        print_cli_json(
+            {
+                "ok": result["ok"],
+                "authority_scope": "LEGACY_PARENT_G0_G8",
+                "matrix_sha256": snapshot["matrix_sha256"],
+                "output": str(args.out),
+            }
         )
         return 0
     if args.group == "world" and args.command == "replay":
@@ -248,13 +630,13 @@ def main() -> int:
             protocol_pin_sha256=args.protocol_pin_sha256,
             report_path=args.report,
         )
-        print(json.dumps(result, ensure_ascii=False, sort_keys=True))
+        print_cli_json(result)
         return 0 if result["ok"] else 1
     if args.group == "world" and args.command == "replay-legacy":
         if not args.verify_hash:
             raise ValueError("legacy world replay requires --verify-hash")
         result = replay_world(args.out, report_path=args.report)
-        print(json.dumps(result, ensure_ascii=False, sort_keys=True))
+        print_cli_json(result)
         return 0 if result["ok"] else 1
     if args.group == "workflow" and args.command == "status":
         description = describe_temporal_workflow(
@@ -269,13 +651,13 @@ def main() -> int:
             runtime_root=args.runtime_root,
         )
         if args.format == "json":
-            print(json.dumps(projection, ensure_ascii=False, sort_keys=True))
+            print_cli_json(projection)
         else:
             print(render_tui(projection))
         return 0 if projection["evidence"]["ok"] else 1
     if args.group == "evidence" and args.command == "verify":
         result = verify_evidence_report(args.report, runtime_root=args.runtime_root)
-        print(json.dumps(result, ensure_ascii=False, sort_keys=True))
+        print_cli_json(result)
         return 0 if result["ok"] else 1
     if args.group == "foundation" and args.command == "legacy-gap":
         result = assess_foundation(
@@ -285,19 +667,15 @@ def main() -> int:
             operation_id=args.operation_id,
             output_path=args.out,
         )
-        print(
-            json.dumps(
-                {
-                    "legacy_diagnostic_only": result["legacy_diagnostic_only"],
-                    "legacy_all_gates_verified": result["legacy_all_gates_verified"],
-                    "foundation_closed": False,
-                    "gates": {name: gate["status"] for name, gate in result["gates"].items()},
-                    "content_hash": result["content_hash"],
-                    "output": str(args.out),
-                },
-                ensure_ascii=False,
-                sort_keys=True,
-            )
+        print_cli_json(
+            {
+                "legacy_diagnostic_only": result["legacy_diagnostic_only"],
+                "legacy_all_gates_verified": result["legacy_all_gates_verified"],
+                "foundation_closed": False,
+                "gates": {name: gate["status"] for name, gate in result["gates"].items()},
+                "content_hash": result["content_hash"],
+                "output": str(args.out),
+            }
         )
         return 0
     if args.group == "foundation" and args.command == "derive-report":
@@ -305,47 +683,43 @@ def main() -> int:
             _load_json(args.input), blueprint_path=args.blueprint
         )
         write_json_atomic(args.out, result)
-        print(
-            json.dumps(
-                {
-                    "foundation_closed": result["foundation_closed"],
-                    "formal_research_gate": result["formal_research_gate"],
-                    "status": result["status"],
-                    "artifact_hash": result["artifact_hash"],
-                    "output": str(args.out),
-                },
-                ensure_ascii=False,
-                sort_keys=True,
-            )
+        print_cli_json(
+            {
+                "foundation_closed": result["foundation_closed"],
+                "formal_research_gate": result["formal_research_gate"],
+                "status": result["status"],
+                "artifact_hash": result["artifact_hash"],
+                "output": str(args.out),
+            }
         )
         return 0 if result["foundation_closed"] else 2
     if args.group == "foundation" and args.command == "verify-report":
         result = verify_foundation_closure_report(
             _load_json(args.report), blueprint_path=args.blueprint
         )
-        print(json.dumps(result, ensure_ascii=False, sort_keys=True))
+        print_cli_json(result)
         return 0 if result["ok"] else 1
+    if args.group == "prospective":
+        return dispatch_prospective(args)
     if args.group == "shadow":
         from xinao.shadow_lifecycle.consumer import dispatch
+        from xinao.shadow_lifecycle.store import StoreError
 
         try:
             result = dispatch(args)
-        except (ValueError, TypeError, KeyError) as exc:
-            print(
-                json.dumps(
-                    {
-                        "ok": False,
-                        "error": str(exc),
-                        "completion_claim_allowed": False,
-                        "first_episode_verified": False,
-                        "candidate_only": True,
-                    },
-                    ensure_ascii=False,
-                    sort_keys=True,
-                )
+        except (StoreError, ValueError, TypeError, KeyError) as exc:
+            print_cli_json(
+                {
+                    "ok": False,
+                    "error": str(exc),
+                    "completion_claim_allowed": False,
+                    "first_episode_verified": False,
+                    "candidate_only": True,
+                    "production_owner_path": False,
+                }
             )
             return 1
-        print(json.dumps(result, ensure_ascii=False, sort_keys=True))
+        print_cli_json(result)
         return 0 if result.get("ok") else 1
     raise AssertionError("unreachable command")
 
