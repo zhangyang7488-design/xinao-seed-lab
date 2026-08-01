@@ -873,7 +873,7 @@ def test_package_version_is_separate_from_researcher_versions() -> None:
         if value["capability_id"] == "shadow-lifecycle-leg-a"
     )
     assert shadow["source_status"] == "available"
-    assert shadow["version"] == "0.3.2"
+    assert shadow["version"] == "0.3.3"
     for facet_id in (
         "shadow-account",
         "decision-freeze",
@@ -885,7 +885,7 @@ def test_package_version_is_separate_from_researcher_versions() -> None:
         )
         assert facet["source_status"] == "available"
         assert facet["implemented_by"] == "shadow-lifecycle-leg-a"
-        assert facet["version"] == "0.3.2"
+        assert facet["version"] == "0.3.3"
 
 
 def test_open_research_prompt_has_no_family_admission() -> None:

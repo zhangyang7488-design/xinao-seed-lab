@@ -77,7 +77,7 @@ from xinao.shadow_lifecycle.store import (
 )
 
 CONSUMER_ID = "shadow_lifecycle_file_backed_leg_a"
-CONSUMER_VERSION = "0.3.2"
+CONSUMER_VERSION = "0.3.3"
 
 # Production portfolio freeze requires a disposition-bound owner authority envelope.
 # Labels / private underscores are not security boundaries — this is a structural gate.

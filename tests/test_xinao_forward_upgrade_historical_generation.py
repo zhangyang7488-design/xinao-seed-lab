@@ -99,7 +99,7 @@ def test_source_shadow_seal_generation_advances_past_live_gen17() -> None:
     lock = module._load_shadow_runtime_lock(SKILL_ROOT)
     rows = module._collect_shadow_runtime_rows(ROOT, lock)
 
-    assert lock["shadow_runtime_version"] == shadow["version"] == "0.3.2"
+    assert lock["shadow_runtime_version"] == shadow["version"] == "0.3.3"
     assert module._sha256(lock_path) != LIVE_GEN17_SHADOW_RUNTIME_LOCK_SHA256
     assert module._shadow_runtime_tree_sha256(rows) != LIVE_GEN17_SHADOW_RUNTIME_TREE_SHA256
 

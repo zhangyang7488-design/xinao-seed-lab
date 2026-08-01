@@ -611,7 +611,7 @@ def test_semver_source_is_1_3_21_and_1_2_15(module: Any) -> None:
     shadow = next(
         c for c in registry["capabilities"] if c["capability_id"] == "shadow-lifecycle-leg-a"
     )
-    assert shadow["version"] == "0.3.2"
+    assert shadow["version"] == "0.3.3"
 
 
 def test_dual_image_identity_bound_in_current_release(
