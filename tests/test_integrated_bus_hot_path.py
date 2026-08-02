@@ -963,20 +963,17 @@ def test_docker_grok_canonical_package_rules_snapshot_consumes_exact_ref(
         docker_worker._package_rules_snapshot(rules_ref)
 
 
-def test_docker_grok_maps_both_live_repo_identities_to_app_mount() -> None:
+def test_docker_grok_maps_only_canonical_repo_identity_to_app_mount() -> None:
     from services.agent_runtime.grok_build_docker_worker import _map_host_path_to_container
 
     assert _map_host_path_to_container(r"E:\XINAO_RESEARCH_WORKSPACES\S") == "/app"
     assert (
-        _map_host_path_to_container(
-            r"E:\XINAO_RESEARCH_WORKSPACES\nianhua-new-route-active\projects"
-        )
-        == "/app/projects"
-    )
-    assert (
         _map_host_path_to_container(r"D:\XINAO_RESEARCH_RUNTIME\state\evidence")
         == "/evidence/state/evidence"
     )
+    retired_repo = "E:\\XINAO_RESEARCH_WORKSPACES\\" + "nianhua-new-" + "route-active"
+    with pytest.raises(ValueError, match="not mounted"):
+        _map_host_path_to_container(retired_repo)
     with pytest.raises(ValueError, match="not mounted"):
         _map_host_path_to_container(r"E:\some-unmounted-repository")
 

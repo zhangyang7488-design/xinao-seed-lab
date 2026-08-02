@@ -4,7 +4,7 @@
   XINAO_Base V2 compose stop thin shell.
 .DESCRIPTION
   Default SAFE: docker compose stop (keeps containers + volumes).
-  -CoreOnly: stop only core services.
+  -CoreOnly: stop only shiwu-ku / naijiu-shiwu / shiwu-mianban.
   -Down: docker compose down (volumes still kept by default).
   -RemoveVolumes: only with -Down adds -v (dangerous).
   Never default down -v.
@@ -30,7 +30,7 @@ param(
 
 $ErrorActionPreference = "Stop"
 $utf8 = New-Object System.Text.UTF8Encoding $false
-$script:CoreServices = @("shiwu-ku", "naijiu-shiwu", "shiwu-mianban", "houtai-gongren")
+$script:CoreServices = @("shiwu-ku", "naijiu-shiwu", "shiwu-mianban")
 
 if (-not $RepoRoot) {
     $RepoRoot = Split-Path $PSScriptRoot -Parent

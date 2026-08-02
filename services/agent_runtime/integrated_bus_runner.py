@@ -39,7 +39,6 @@ from services.agent_runtime.integrated_bus_graph import (
     mcp_tools_node,
     memory_bus_node,
     mirror_registry_node,
-    openhands_node,
     parallel_width_node,
     planner_node,
     pro_review_after_draft_node,
@@ -871,7 +870,6 @@ def _enrich_result_from_invoke_evidence(
         ("docker_sandbox", ("docker_sandbox_invoked",)),
         ("gitpython", ("gitpython_invoke_ok",)),
         ("instructor", ("instructor_invoked", "instructor_ok")),
-        ("openhands", ("openhands_activity_ok", "openhands_ok")),
         ("crawl4ai", ("crawl4ai_invoked", "crawl4ai_ok")),
     )
     for subdir, keys in evidence_map:
@@ -905,8 +903,6 @@ def _enrich_result_from_invoke_evidence(
     ):
         merged["langfuse_skipped"] = True
         merged["langfuse_named_blocker"] = "LANGFUSE_KEYS_MISSING"
-    if merged.get("openhands_ok") is True:
-        merged.setdefault("openhands_activity_ok", True)
     if merged.get("instructor_ok") is True:
         merged.setdefault("instructor_invoked", True)
     if merged.get("mcp_tools_ok") is True:
@@ -1278,7 +1274,6 @@ def _build_payload(
             if bus_params.get("instructor_enabled")
             else result.get("instructor_ok") is not False
         ),
-        "L3_openhands_activity": result.get("openhands_activity_ok") is True,
         "glue_seam_invoke": result.get("glue_seam_invoke_ok") is True,
         "L3_selected_provider_worker_fanin": (
             result.get("worker_lane_ok") is True
@@ -1662,7 +1657,6 @@ async def run_integrated_bus_local(
         mcp_tools_node,
         mirror_registry_node,
         glue_seam_invoke_node,
-        openhands_node,
         parallel_width_node,
         grok_worker_fanin_node,
         sandbox_node,

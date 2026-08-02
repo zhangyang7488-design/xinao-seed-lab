@@ -614,7 +614,6 @@ def _map_host_path_to_container(raw: object) -> str:
     mappings = (
         ("d:/xinao_research_runtime", "/evidence"),
         ("e:/xinao_research_workspaces/s", "/app"),
-        ("e:/xinao_research_workspaces/nianhua-new-route-active", "/app"),
     )
     for host_root, container_root in mappings:
         if folded == host_root:

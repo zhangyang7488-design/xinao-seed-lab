@@ -140,27 +140,6 @@
       "verify_status": "retired_to_archive"
     },
     {
-      "id": "L3_openhands_execution_activity",
-      "handroll_module": "services/agent_runtime/openhands_execution_activity.py",
-      "status": "retained_thin_adapter_verified_20260713",
-      "mature_components": [
-        "temporalio==1.30.0 Activity heartbeat/cancellation/retry",
-        "docker==7.1.0 Engine API",
-        "ghcr.io/openhands/agent-server@sha256:b31ac1a1865efd48966d95fdcc4cbd097883d2a63348bc582e3d2448318fef52"
-      ],
-      "retention_reason": "Current first-party comparison found no released Temporal-aware hardened local Docker lifecycle client that preserves exact identity reconciliation, HostConfig admission, per-attempt L2, and cancellation cleanup without adding a second orchestrator. OpenHands DockerWorkspace publishes host ports and the Temporal sandbox harness is a separate multi-workflow control plane.",
-      "scope": "policy and contract translation only; Temporal remains sole durable owner and OpenHands remains the pinned guest",
-      "positive_negative_regression": [
-        "success",
-        "cancellation",
-        "worker_crash_retry",
-        "foreign_identity_no_cleanup",
-        "zero_residual_container_and_network",
-        "zero_visible_window"
-      ],
-      "review_or_sunset_condition": "Re-evaluate on an OpenHands lifecycle API release, a released Temporal local sandbox provider, Docker Desktop sandbox GA that needs no new login/control plane, or a hostile multi-tenant requirement. Replace only after equivalent positive and prohibited-side-effect canaries."
-    },
-    {
       "id": "L5_one_shot_maturity_probe",
       "handroll_module": "scripts/probe_xinao_maturity.py",
       "status": "retained_thin_readonly_composition_verified_20260713",

@@ -351,50 +351,16 @@ def test_background_tool_surface_is_fixed_and_caller_can_only_shrink() -> None:
         grok_parallel.resolve_background_allowed_tools(["read_file", "search_replace"])
 
 
-def test_terminal_negative_canary_is_adversarial_and_window_observed() -> None:
-    canary = (REPO / "scripts" / "run_grok_background_window_canary.py").read_text(encoding="utf-8")
-    runner = (REPO / "scripts" / "run_canonical_grok_transaction.py").read_text(encoding="utf-8")
-    assert "negative phase of a bounded host-shell denial canary" in canary
-    assert "positive phase of a bounded sandbox-capability canary" in canary
-    assert "run_terminal_command exactly once" in canary
-    assert "xinao-sandbox__sandbox_execute exactly once" in canary
-    assert '"allowed_tools": ["read_file", "search_tool", "use_tool"]' in canary
-    assert "observer.abort_event.is_set()" in canary
-    assert "task.cancel()" in canary
-    assert "new_visible_console_window_count" in canary
-    assert 'negative.get("host_terminal_create_count") == 0' in canary
-    assert 'negative.get("host_execute_rejection_count") == 1' in canary
-    assert "negative_expected_error" in canary
-    assert 'sandbox_proof.get("ok") is True' in canary
-    assert 'run_dir / "started.json"' in runner
-    assert "await handle.cancel(" in runner
-    assert "rpc_timeout=rpc_timeout" in runner
-    assert 'transaction.transaction_dir / "execution.json"' in runner
-    assert '"workflow_terminal_confirmed"' in runner
-    assert 'run_dir / "aborted.json"' in runner
-    assert "require_explicit_model=True" in runner
-    assert "draft_model(" not in runner
-    assert 'parser.add_argument("--host-task-queue"' in runner
-    assert 'parser.add_argument("--langgraph-task-queue"' in runner
-    assert 'parser.add_argument("--worker-deployment-name"' in runner
-
-
-def test_managed_background_mcp_surface_disables_host_command_tools() -> None:
+def test_managed_background_mcp_surface_has_no_runtime_or_host_command_dependency() -> None:
     import tomllib
 
     surface = tomllib.loads(
         (REPO / "provisioning" / "grok-background-tool-surface.v1.toml").read_text(encoding="utf-8")
     )
     servers = surface["mcp_servers"]
+    assert set(servers) == {"filesystem", "commander"}
     assert servers["filesystem"]["enabled"] is False
     assert servers["commander"]["enabled"] is False
-    sandbox = servers["xinao-sandbox"]
-    assert sandbox["enabled"] is True
-    assert sandbox["args"][-2:] == ["-m", "services.mcp.xinao_sandbox_mcp_server"]
-    assert "hidden-stdio" in sandbox["command"]
-    carrier_root = Path(sandbox["cwd"])
-    assert carrier_root == Path(sandbox["env"]["PYTHONPATH"])
-    assert Path(sandbox["args"][0]).is_relative_to(carrier_root)
 
 
 def test_fanin_materializes_container_intake_and_lane_lineage(

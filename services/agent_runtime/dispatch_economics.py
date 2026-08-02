@@ -310,7 +310,6 @@ def _validate_candidate_output_isolation(
     forbidden_exact = []
     for logical in (
         "E:/XINAO_RESEARCH_WORKSPACES/S",
-        "E:/XINAO_RESEARCH_WORKSPACES/nianhua-new-route-active",
         "C:/Users/xx363/Desktop/主线",
         "/app",
         "/mainline",
