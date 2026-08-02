@@ -107,6 +107,8 @@ $architecture = [ordered]@{
     runtime = 'D:\XINAO_RESEARCH_RUNTIME'
     cold_archive = 'E:\XINAO_COLD_STORAGE\archives\LEGACY_XINAO_PLATFORM'
     desktop_hot_entry = 'C:\Users\xx363\Desktop\主线'
+    desktop_mainline_role = 'user_visible_control_surface_thin_auto_load_only'
+    engineering_adjudication = 'current_intent_plus_live_facts_compiled_by_non_authority_skills'
 }
 $catalog = [ordered]@{
     schema_version = 'xinao.codex_context_catalog.v4'

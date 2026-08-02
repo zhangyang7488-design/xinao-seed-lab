@@ -2,13 +2,14 @@
 
 SENTINEL:XINAO_SOFTWARE_TOOL_GLUE_CONSTITUTION_V2
 版本：v3.4
-状态：CURRENT_ACTIVE_COLD_MODULE
-文档角色：XINAO_SOFTWARE_GLUE_CONTENT；候选副本不因正文自取当前身份，只有稳定 current
-路径按版本化发布合同完成 CAS、回读与回滚封印后，该字节实例才取得上述状态。
+状态：CURRENT_ACTIVE_CONTRACT
+文档角色：XINAO_SOFTWARE_GLUE_CONTENT；本文件是用户可见的当前工程合同入口，S 仓同字节文件只是执行投影。两者都不产生用户意图、任务授权或 live 技术事实。
 
 本宪法只定义软件能力、成熟接缝、执行路线、版本、存储、验证和回滚。通用意图解码、行动/询问分界、授权/Stop、个人元认知与 continuous 控制细节分别只从全局热核、Decision Skill 和情况岛 working agreement 取回，不在这里复制。
 
-读取方式：软件/runtime/路径/工具/工人/仓接缝/安装/存储/版本/验证/回滚任务，先读本段和目录，再读命中完整章节；跨多个软件位阶、改变默认路线或做全局地基闭合时才读全文。它是冷权威模块，不属于每个新窗口默认全文。
+读取方式：软件/runtime/路径/工具/工人/仓接缝/安装/存储/版本/验证/回滚任务，先读本段和目录，再读命中完整章节；跨多个软件位阶、改变默认路线或做全局地基闭合时才读全文。它是按需当前合同，不属于每个新窗口默认全文。
+
+裁决顺序固定为：system/developer 与当前用户请求 → 当前父意图、对象、授权和 Stop → 仓库/进程/官方接口等 live 工程事实 → Decision Skill、行为修复 Skill 与代运维 Skill 的非权威编译 → 本合同的适用条款与 S 执行投影。合同与投影发生漂移时先回到前四层重算并修订合同；不得让旧文字反向规定用户意图或覆盖 live facts。
 
 目录：
 1. 唯一作用域与工程根
@@ -33,15 +34,17 @@ SENTINEL:XINAO_SOFTWARE_TOOL_GLUE_CONSTITUTION_V2
 仓内职责：
 
 - `docker-compose.yml`：基础服务组合入口；容器 healthy 不等于业务闭环。
-- `scripts/Update-CodexContextCatalog.ps1`：Situation Island 非权威哈希索引刷新器；领域研究、算法、实验、结果和知识全部在原生研究仓。
 - `services/agent_runtime/`：Temporal workflow/activity/registry、worker、LangGraph 与跨接缝协议；不保存领域事实，不建第二 scheduler/任务账本/研究平台。
 - `scripts/`：启动、状态、迁移、恢复、构建和验证的薄入口；复用逻辑进正式库，脚本不以 while+sleep 或隐藏状态取得耐久所有权。
 - `materials/authority_glue/`：候选、历史接缝和 sunset 检索材料；不是运行事实或权威主路。
+- `scripts/Update-CodexContextCatalog.ps1`：Situation Island 非权威哈希索引刷新器；领域研究、算法、实验、结果和知识全部在原生研究仓。
 - `D:\XINAO_RESEARCH_RUNTIME`：运行中的 workflow history、近期状态/证据、artifact、恢复包和隔离 probe；永久历史与考古材料进入 E 冷存，D 盘产物不反向成为领域/代码真源。
 
 仓库位阶先钉死：S 是活的工程本体与成熟能力承载仓；`E:\XINAO_RESEARCH_WORKSPACES\xinao-native-research` 承载默认新澳研究父意图、工作对象和完成身份；S 只作为研究可调用的工程载体、能力器官或有界基建旁路。旧平台已从活动树移除；S、普通 WorkerPool、launcher 与被真实消费者选中的通用工程能力继续有效。
 
 对一个已经准入的工程事务，依赖方向为：当前父需求/正式数据 → contracts/ports 与确定性库 → 必要 adapter/Activity → 被该事务真实消费者选中的成熟组件 → 正式存储和 D 证据。任何具体运行组件都只是按需能力，不是普通新澳研究的必经节点或开工条件。网络、数据库、文件、浏览器、LLM 与外部 CLI 的工程接线经适用 adapter/Activity 进入；外部仓不整包复制成第三主链。
+
+`C:\Users\xx363\Desktop\主线` 是用户可见、可理解、可修改的掌控面；“自动加载保持薄”只约束 AI 的上下文消费，不授权移动、隐藏或清空资料。迁移、去重和删除必须逐文件证明当前消费者、独有内容、用户可见替代与可恢复来源；不得因一个一级目录混有旧内容而整包处理。
 
 ## 2. 软件主路、双腿与耐久职责
 
@@ -65,7 +68,7 @@ SENTINEL:XINAO_SOFTWARE_TOOL_GLUE_CONSTITUTION_V2
 
 ## 3. 主管—工人、动态路由与额度
 
-默认工人成本顺序只由全局热核、`amplify-supervisor-worker` 及各 provider dispatch Skill 定义：普通 Grok WorkerPool 使用独立 Grok 额度并作为第一候选劳动面；Terra/Luna/Sol/Codex collaboration 共用 Codex 周额度，Terra/Luna 只按任务净收益升级；Codex collaboration 子代理默认不调用，只有外部路线不适配、继承上下文/原生能力不可替代且显著缩短关键路径三项同时成立并被 Owner 明确说明时例外。本宪法只补工程 transport 与写域，不另造第二套 provider 默认，也不依赖 C 盘说明副本。
+活动执行顺序只由全局热核、`amplify-supervisor-worker` 及各 provider dispatch Skill 定义；`C:\Users\xx363\Desktop\主线\07_资料\02_Grok工人调用说明\01_资料身份与当前边界.txt` 是用户可见的分工说明入口，不是第二执行合同。普通 Grok WorkerPool 使用独立 Grok 额度并作为第一候选劳动面；Terra/Luna/Sol/Codex collaboration 共用 Codex 周额度，Terra/Luna 只按任务净收益升级；Codex collaboration 子代理默认不调用，只有外部路线不适配、继承上下文/原生能力不可替代且显著缩短关键路径三项同时成立并被 Owner 明确说明时例外。本宪法只补工程 transport 与写域。
 
 ### 动态决策位阶表（递归动态净收益）
 
@@ -161,7 +164,7 @@ live facts 中辨认已经可以从临时处理剥离的确定性部分；每次
 复用现有能力、钉版本或参数换绑、接入正式 API/CLI/MCP/Activity、薄修默认主路或增加不可
 再薄的 adapter；不得再选择“继续临时手搓一次”。从触发成立到成熟能力被真实消费者回读
 之前，下一次依赖同一条件的正常生产调用建立局部前驱边并保持阻塞；用于完成熟化的 preflight、
-canary、恢复和 replay 调用仍可执行。不依赖该条件的 ResearchFrontier 与 IndependentFuture
+canary、恢复和 replay 调用仍可执行。不依赖该条件的健康父前沿与独立任务
 继续，不形成全局 readiness、开工门、第三前沿或父级等待。
 
 一个 `MATURED_ACTIVE` 能力必须在各自唯一真源中闭合以下身份和效果：
@@ -273,7 +276,7 @@ Grok 可增长 session 只把宿主 `D:\XINAO_RESEARCH_RUNTIME\state\tool_profil
 - C: 软件强制受管状态、登录态、凭据句柄和薄入口。
 - D: 工具、运行时、history、状态、证据、cache、恢复包和隔离 probe。
 - E: 工程/外部源码、冷存储、正式数据、模型与大缓存。
-- `Desktop\主线`: 人类意图、稳定入口、正式合同/数据和必要原始证据；不堆日志与批量产物。
+- `Desktop\主线`: 用户可见掌控面，保存稳定入口、按需当前合同、仍有消费者价值的资料与必要原始证据；不堆日志与批量产物，也不因自动加载面要薄而被整目录清空。
 
 任何可配置且增长的数据覆盖全生命周期落 D/E，不只移动 executable。路径变化先解析真实对象、更新唯一指针并以 fresh process 写回/消费者证明；不靠复制形成两个可写真源。清理/迁移不隐含删除未分类对象或改变拓扑。
 
@@ -298,10 +301,12 @@ Grok 可增长 session 只把宿主 `D:\XINAO_RESEARCH_RUNTIME\state\tool_profil
 ## 10. 当前入口与按需附录
 
 - 稳定主线路由器：`C:\Users\xx363\Desktop\主线\00_先读我_主线入口与读取顺序.txt`
-- 本宪法：`docs/tool_glue/SOFTWARE_TOOL_GLUE_CURRENT.md`
-- 跨接缝协议：`docs/tool_glue/CROSS_SEAM_EXECUTION_ENVELOPE_CURRENT.md`（跨 provider/transport/process 时）
+- 本宪法：`C:\Users\xx363\Desktop\主线\工具胶水宪法\软件工具胶水宪法_当前有效.txt`
+- 双腿结构投影：同目录 `新澳双腿执行结构树_腿A直调_腿B后台_当前有效.txt`（选腿/复现时）
+- 跨接缝协议：`C:\Users\xx363\Desktop\主线\工具胶水宪法\跨接缝执行封套与一致性协议_当前有效.txt`（跨 provider/transport/process 时）
+- S 仓执行投影：`E:\XINAO_RESEARCH_WORKSPACES\S\docs\tool_glue\SOFTWARE_TOOL_GLUE_CURRENT.md` 与 `CROSS_SEAM_EXECUTION_ENVELOPE_CURRENT.md`；投影必须与对应 C 盘 current 文件逐字节一致，不取得独立裁决权。
 - 工程共享读取根：`E:\XINAO_RESEARCH_WORKSPACES\S`
 - 运行/证据根：`D:\XINAO_RESEARCH_RUNTIME`
 - 控制/事故冷合同：`D:\XINAO_RESEARCH_RUNTIME\state\Codex_Situation_Island\contracts\working_agreement.md`
 
-本文件是软件工具胶水唯一根；只有上述具名窄域附录能在命中边界补充机器接缝。其他文本、卡片、索引、报告和投影不并列定义软件规则。
+本 C 盘 current 文件是唯一用户可见活动合同入口；只有上述具名窄域附录能在命中边界补充机器接缝。唯一性只防止多个活动合同静默漂移，不把文档提升为固定权威：当前意图和 live 工程事实始终先行，Skills 负责有来源地编译与纠偏，S 仓投影只执行当前采用版本。

@@ -16,8 +16,10 @@
 
 - 全机薄路由：`C:\Users\xx363\Desktop\主线\00_先读我_主线入口与读取顺序.txt`
 - 当前科学父稿：`C:\Users\xx363\Desktop\主线\01_主线入口\《新澳严格数学科学研究模式——独立融合稿》.txt`
-- S 工程真源：`docs\tool_glue\SOFTWARE_TOOL_GLUE_CURRENT.md`
-- 跨进程/transport 工程协议：`docs\tool_glue\CROSS_SEAM_EXECUTION_ENVELOPE_CURRENT.md`
+- 用户可见当前工程合同：`C:\Users\xx363\Desktop\主线\工具胶水宪法\软件工具胶水宪法_当前有效.txt`
+- 跨进程/transport 当前合同：同目录 `跨接缝执行封套与一致性协议_当前有效.txt`
+- S 仓执行投影：`docs\tool_glue\SOFTWARE_TOOL_GLUE_CURRENT.md` 与 `CROSS_SEAM_EXECUTION_ENVELOPE_CURRENT.md`；必须与对应 C 盘 current 文件逐字节一致，不取得第二裁决源身份。
+- 当前用户意图定义父结果和边界，live 仓库/进程/官方接口定义技术事实；Decision Skill、行为修复 Skill 与代运维 Skill 只作非权威编译。合同或投影漂移时回到这两类输入重算，不让旧文本、Skill 或测试反向取得授权。
 - 控制面或事故冷合同：`docs/current/CODEX_S_PROJECT_AGREEMENT_COLD_2026-07-13.md`
 
 只读取当前任务命中的最小章节；引用和目录不是授权、开工门或完成证据。本热卡不复制实现细节。
@@ -35,8 +37,8 @@
 - 先钉真实消费者与可观察完成尺，再做最小可回滚实现；形式材料、静态绿灯和报告不能代替消费者效果。
 - 对现有远端/PR 事务，完成默认包括相称测试、精确提交、推送、PR/合并、远端回读、真实消费者和临时载体卫生；保留无关 dirty 状态。
 - 文本由 Codex 正式写入和终验。工具、测试和工人只提供候选证据。
-- 增长物、运行状态和近期证据落 `D:\XINAO_RESEARCH_RUNTIME`；永久冷存落 `E:\XINAO_COLD_STORAGE`；C 盘只保留软件强制状态和薄入口。
-- 破坏性操作先核精确路径、真实消费者、可恢复来源与受保护对象。删除旧 Git 内容以历史提交为恢复边界；不得触碰 `C:\Users\xx363\Desktop\历史备用 不动`。
+- 增长物、运行状态和近期证据落 `D:\XINAO_RESEARCH_RUNTIME`；永久冷存落 `E:\XINAO_COLD_STORAGE`。`C:\Users\xx363\Desktop\主线` 是用户可见、可理解、可修改的掌控面；只有自动加载子集保持薄。
+- 破坏性操作先核精确路径、真实消费者、独有内容、用户可见替代、可恢复来源与受保护对象。不得因一级目录混有旧材料就整包删除；删除旧 Git 内容以历史提交为恢复边界；不得触碰 `C:\Users\xx363\Desktop\历史备用 不动`。
 - 修改工程入口、工具胶水或行为路由后，运行受影响测试、fresh-process/消费者回读和负例；按 `verified / partial / blocked / unverified` 诚实收口。
 
 只有控制面、continuous、事故、session ownership、进程终止或精确 rollback 任务，才读取冷合同与情况岛对应章节。

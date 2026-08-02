@@ -183,10 +183,49 @@ def test_agent_runtime_cannot_commit_the_worktree() -> None:
 
 def test_project_hot_entry_points_to_unique_tool_glue_constitution() -> None:
     agreement = (REPO_ROOT / "AGENTS.md").read_text(encoding="utf-8")
-    assert "docs\\tool_glue\\SOFTWARE_TOOL_GLUE_CURRENT.md" in agreement
+    authority = Path(r"C:\Users\xx363\Desktop\主线\工具胶水宪法\软件工具胶水宪法_当前有效.txt")
+    cross_authority = Path(
+        r"C:\Users\xx363\Desktop\主线\工具胶水宪法\跨接缝执行封套与一致性协议_当前有效.txt"
+    )
+    projection = REPO_ROOT / "docs" / "tool_glue" / "SOFTWARE_TOOL_GLUE_CURRENT.md"
+    cross_projection = REPO_ROOT / "docs" / "tool_glue" / "CROSS_SEAM_EXECUTION_ENVELOPE_CURRENT.md"
+    assert str(authority) in agreement
+    assert "用户可见当前工程合同" in agreement
+    assert "S 仓执行投影" in agreement
+    assert "逐字节一致" in agreement
+    assert "不取得第二裁决源身份" in agreement
+    assert "当前用户意图定义父结果和边界" in agreement
+    assert "live 仓库/进程/官方接口定义技术事实" in agreement
     assert "xinao-native-research" in agreement
     assert "S 是工程交付仓" in agreement
     assert "本热卡不复制实现细节" in agreement
+    projected_text = projection.read_text(encoding="utf-8")
+    assert str(authority) in projected_text
+    assert "唯一用户可见活动合同入口" in projected_text
+    assert "不把文档提升为固定权威" in projected_text
+    if authority.is_file():
+        assert projection.read_bytes() == authority.read_bytes()
+    if cross_authority.is_file():
+        assert cross_projection.read_bytes() == cross_authority.read_bytes()
+
+
+def test_thin_context_does_not_delete_visible_desktop_mainline() -> None:
+    agreement = (REPO_ROOT / "AGENTS.md").read_text(encoding="utf-8")
+    projection = (REPO_ROOT / "docs" / "tool_glue" / "SOFTWARE_TOOL_GLUE_CURRENT.md").read_text(
+        encoding="utf-8"
+    )
+    for required in (
+        "用户可见、可理解、可修改的掌控面",
+        "只有自动加载子集保持薄",
+        "不得因一级目录混有旧材料就整包删除",
+    ):
+        assert required in agreement
+    for required in (
+        "自动加载保持薄",
+        "不授权移动、隐藏或清空资料",
+        "不得因一个一级目录混有旧内容而整包处理",
+    ):
+        assert required in projection
     for duplicated_lifecycle_detail in (
         "publish-worktree-record",
         "services/agent_runtime/execution_consumers.v1.json",
@@ -1627,15 +1666,22 @@ def test_gitleaks_import_allowlist_is_exact_fingerprint_only() -> None:
     }
 
 
-def test_project_agreement_defers_mature_first_and_worker_routing_to_unique_constitution() -> None:
+def test_project_agreement_defers_engineering_adjudication_to_intent_live_facts_and_current_contract() -> (
+    None
+):
     text = _project_agreement_contract_text()
     for required in (
         "docs/tool_glue/SOFTWARE_TOOL_GLUE_CURRENT.md",
-        "Apply the current software tool-glue constitution directly",
+        "current user intent defines the parent result and boundaries",
+        "live repositories, processes, and official interfaces define engineering reality",
+        "Decision Skill, behavior repair, and operate-for-user compile those inputs",
+        "byte-identical repository projection",
+        "Apply the current user-visible engineering contract",
+        "It remains subordinate to current intent and live facts",
         "This cold agreement deliberately does not restate those rules",
         "xinao-native-research",
         "普通 Windows Grok WorkerPool",
-        "Codex",
+        "collaboration subagents remain default-denied",
     ):
         assert required in text, required
     for retired_duplicate in (
