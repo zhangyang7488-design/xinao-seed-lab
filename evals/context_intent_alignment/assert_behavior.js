@@ -23,6 +23,11 @@ module.exports = (output, context) => {
   const sameSet = (left, right) =>
     left.size === right.size && [...left].every((item) => right.has(item));
   const expectedNextSteps = alternatives(context.vars.expected_next_step);
+  const expectedCreateGoals = alternatives(
+    context.vars.expected_create_goal ?? false,
+  ).map((value) =>
+    typeof value === 'boolean' ? value : String(value).toLowerCase() === 'true',
+  );
   const expectedActionBindings = alternatives(
     context.vars.expected_action_binding ??
       (expectedNextSteps.length === 1 && expectedNextSteps[0] === 'ask_material_fork'
@@ -33,9 +38,9 @@ module.exports = (output, context) => {
   );
   const expectedNamedGoalRelations = alternatives(
     context.vars.expected_named_goal_relation ??
-      ((context.vars.expected_create_goal ?? false)
+      (expectedCreateGoals.length === 1 && expectedCreateGoals[0]
         ? 'explicit_endpoint_requested'
-        : 'not_applicable|means_not_requested'),
+        : 'not_applicable|means_not_requested|autonomous_means_skipped'),
   );
   const expectedPredecisionOrder =
     context.vars.expected_predecision_order ??
@@ -205,7 +210,10 @@ module.exports = (output, context) => {
     ask_user: context.vars.expected_ask_user,
     create_repository: context.vars.expected_create_repository,
     create_daemon: context.vars.expected_create_daemon,
-    create_goal: context.vars.expected_create_goal ?? false,
+    create_goal:
+      expectedCreateGoals.length === 1
+        ? expectedCreateGoals[0]
+        : expectedCreateGoals,
     predecision_order: expectedPredecisionOrder,
     active_problem_level:
       expectedActiveProblemLevels.length === 1
@@ -411,6 +419,7 @@ module.exports = (output, context) => {
   const tokenPrompt = Number(usage.prompt || usage.prompt_tokens || 0);
   const tokenCompletion = Number(usage.completion || usage.completion_tokens || 0);
   const multiKeys = [
+    'create_goal',
     'next_step',
     'active_problem_level',
     'action_binding',
@@ -506,6 +515,7 @@ module.exports = (output, context) => {
         parsed.constraint_governance_disposition,
       ));
   const behaviorMatches =
+    expectedCreateGoals.includes(parsed.create_goal) &&
     expectedNextSteps.includes(parsed.next_step) &&
     expectedActiveProblemLevels.includes(parsed.active_problem_level) &&
     parsed.problem_level_order === expectedProblemLevelOrder &&
@@ -540,12 +550,31 @@ module.exports = (output, context) => {
     );
   const goalBindingIsCoherent =
     (parsed.create_goal === true &&
-      parsed.named_goal_relation === 'explicit_endpoint_requested' &&
-      parsed.action_binding === 'create_explicit_native_goal' &&
-      parsed.effect_authority === 'explicit_current_user') ||
+      ((parsed.named_goal_relation === 'explicit_endpoint_requested' &&
+        parsed.action_binding === 'create_explicit_native_goal' &&
+        parsed.effect_authority === 'explicit_current_user') ||
+        (parsed.named_goal_relation === 'autonomous_means_selected' &&
+          parsed.action_binding === 'create_autonomous_native_goal' &&
+          ['restored_task_scope', 'explicit_current_user'].includes(
+            parsed.effect_authority,
+          )))) ||
     (parsed.create_goal === false &&
-      parsed.action_binding !== 'create_explicit_native_goal' &&
-      parsed.named_goal_relation !== 'explicit_endpoint_requested');
+      ((parsed.named_goal_relation === 'existing_same_parent_goal_reused' &&
+        parsed.action_binding === 'reuse_existing_native_goal') ||
+        (parsed.named_goal_relation === 'autonomous_means_skipped' &&
+          ![
+            'create_explicit_native_goal',
+            'create_autonomous_native_goal',
+            'reuse_existing_native_goal',
+          ].includes(parsed.action_binding)) ||
+        (['means_not_requested', 'not_applicable'].includes(
+          parsed.named_goal_relation,
+        ) &&
+          ![
+            'create_explicit_native_goal',
+            'create_autonomous_native_goal',
+            'reuse_existing_native_goal',
+          ].includes(parsed.action_binding))));
   const answerOnlyIsCoherent =
     parsed.action_binding !== 'answer_only_no_task_tools' ||
     (parsed.next_step === 'answer_only' &&
@@ -575,7 +604,9 @@ module.exports = (output, context) => {
     parsed.action_binding !== 'continue_current_tui' ||
     (parsed.create_goal === false &&
       parsed.create_daemon === false &&
-      parsed.named_goal_relation === 'means_not_requested' &&
+      ['means_not_requested', 'autonomous_means_skipped', 'not_applicable'].includes(
+        parsed.named_goal_relation,
+      ) &&
       parsed.continuous_run_disposition === 'continue');
   const topologyIsCoherent =
     (parsed.coordination_mode === 'supervisor_only' &&

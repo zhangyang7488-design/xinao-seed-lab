@@ -1,8 +1,10 @@
 """Bounded live task-run context for native Codex compact SessionStart hooks.
 
-The task run remains authoritative. This module only binds one visible session
-to one canonical run and renders a small, deterministic, non-authoritative view
-when Codex reports ``SessionStart(source=compact)``.
+The task run is authoritative only for its bounded execution fact chain, never
+for user intent, authorization, or fresh-window parent selection. This module
+binds one visible session to one canonical run and renders a small,
+deterministic, non-authoritative view when Codex reports
+``SessionStart(source=compact)``.
 """
 
 from __future__ import annotations

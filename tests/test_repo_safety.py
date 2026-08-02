@@ -101,6 +101,40 @@ ALLOWED_AGENT_RUNTIME_MODULES = {
 }
 
 
+def _tracked_baseline_files() -> list[Path]:
+    """Return the tracked baseline in a live checkout or its frozen raw snapshot."""
+
+    result = subprocess.run(
+        ["git", "ls-files", "-z"],
+        cwd=REPO_ROOT,
+        capture_output=True,
+        check=False,
+    )
+    if result.returncode == 0:
+        return [
+            REPO_ROOT / relative.decode("utf-8", errors="surrogateescape")
+            for relative in result.stdout.split(b"\0")
+            if relative
+        ]
+
+    snapshot_manifest = REPO_ROOT.parent / "source-snapshot.v1.json"
+    assert snapshot_manifest.is_file(), result.stderr.decode("utf-8", errors="replace")
+    snapshot = json.loads(snapshot_manifest.read_text(encoding="utf-8"))
+    assert snapshot["schema_version"] == "xinao.behavior_regression_source_snapshot.v1"
+    assert Path(snapshot["raw_root"]).resolve() == REPO_ROOT
+    return [REPO_ROOT / row["path"] for row in snapshot["raw_files"]]
+
+
+def _assert_identity_absent_from_tracked_baseline(identity: str) -> None:
+    needle = identity.encode("utf-8")
+    matches: list[str] = []
+    for path in _tracked_baseline_files():
+        content = path.read_bytes()
+        if b"\0" not in content and needle in content:
+            matches.append(path.relative_to(REPO_ROOT).as_posix())
+    assert not matches, f"{identity}: {matches}"
+
+
 def _executable_text() -> str:
     chunks: list[str] = []
     for root in EXECUTABLE_ROOTS:
@@ -156,26 +190,12 @@ def test_retired_platform_identities_are_absent_from_tracked_baseline() -> None:
         "platform_control_" + "worker",
     )
     for retired_identity in retired_identities:
-        result = subprocess.run(
-            ["git", "grep", "-n", "-I", "--", retired_identity],
-            cwd=REPO_ROOT,
-            text=True,
-            capture_output=True,
-            check=False,
-        )
-        assert result.returncode == 1, result.stdout or result.stderr
+        _assert_identity_absent_from_tracked_baseline(retired_identity)
 
 
 def test_retired_backing_repo_identity_is_absent_from_tracked_baseline() -> None:
     retired_identity = "nianhua-new-" + "route-active"
-    result = subprocess.run(
-        ["git", "grep", "-n", "-I", "--", retired_identity],
-        cwd=REPO_ROOT,
-        text=True,
-        capture_output=True,
-        check=False,
-    )
-    assert result.returncode == 1, result.stdout or result.stderr
+    _assert_identity_absent_from_tracked_baseline(retired_identity)
 
 
 def test_agent_runtime_only_contains_declared_hot_path_and_support_modules() -> None:
@@ -248,6 +268,12 @@ def test_project_hot_entry_points_to_unique_tool_glue_constitution() -> None:
         assert projection.read_bytes() == authority.read_bytes()
     if cross_authority.is_file():
         assert cross_projection.read_bytes() == cross_authority.read_bytes()
+
+    assert "task-run 只对其有界执行事实链负责" in projected_text
+    assert "不能选择或重建用户父意图" in projected_text
+    assert "task_objective_candidate" in projected_text
+    assert "verified-agent-loop/scripts/task_run.cmd" in projected_text
+    assert "不在 PowerShell 裸执行 `.py`" in projected_text
 
 
 def test_thin_context_does_not_delete_visible_desktop_mainline() -> None:
@@ -384,7 +410,7 @@ def test_context_intent_alignment_eval_is_balanced_and_friction_bounded() -> Non
         (REPO_ROOT / "evals/context_intent_alignment/cases.yaml").read_text(encoding="utf-8")
     )
     cases = {case["metadata"]["id"]: case for case in loaded}
-    assert len(cases) == suite["case_count"] == 119
+    assert len(cases) == suite["case_count"] == 124
     assert len(cases) == len(loaded)
     assert all(case["metadata"]["domain"] == case["vars"]["domain"] for case in cases.values())
     for required in (
@@ -1147,8 +1173,8 @@ def test_context_intent_alignment_eval_is_balanced_and_friction_bounded() -> Non
         (REPO_ROOT / "evals/behavior_regression/catalog.json").read_text(encoding="utf-8")
     )
     context_suite = next(s for s in catalog["suites"] if s["id"] == "context_intent_alignment")
-    assert context_suite["case_count"] == 119
-    assert catalog["declared_case_count"] == 136
+    assert context_suite["case_count"] == 124
+    assert catalog["declared_case_count"] == 141
 
     decision = json.loads(
         (REPO_ROOT / "evals/context_intent_alignment/decision_model.v1.json").read_text(
@@ -1384,7 +1410,7 @@ def test_thin_project_route_and_behavior_evidence_are_enforced() -> None:
     incident = cases["REG_ENTER_PERPETUAL_MODE_DOES_NOT_CREATE_GOAL"]
     assert incident["user_increment"] == "永续模式  还需要被显式提醒是吗 现在进入"
     assert incident["expected_create_goal"] is False
-    assert incident["expected_named_goal_relation"] == "means_not_requested"
+    assert incident["expected_named_goal_relation"] == "autonomous_means_skipped"
     assert incident["expected_action_binding"] == "continue_current_tui"
     assert incident["expected_predecision_order"] == "parent_frame_before_candidate_selection"
     assert incident["expected_active_problem_level"] == "object_instance"
@@ -1410,6 +1436,25 @@ def test_thin_project_route_and_behavior_evidence_are_enforced() -> None:
     assert bounded["expected_active_window_role"] == "bounded_task"
     assert "ATOM_LOCAL_TERMINAL_ALWAYS_RESUMES_RESEARCH" in bounded["expected_rejected_proxy_atoms"]
 
+    autonomous_goal = cases["POS_AUTONOMOUS_NATIVE_GOAL_ADMISSION"]
+    assert autonomous_goal["expected_create_goal"] is True
+    assert autonomous_goal["expected_named_goal_relation"] == "autonomous_means_selected"
+    assert autonomous_goal["expected_action_binding"] == "create_autonomous_native_goal"
+
+    reused_goal = cases["POS_REUSE_EXISTING_NATIVE_GOAL_WITHOUT_NEW_CREATION"]
+    assert reused_goal["expected_create_goal"] is False
+    assert reused_goal["expected_named_goal_relation"] == "existing_same_parent_goal_reused"
+    assert reused_goal["expected_action_binding"] == "reuse_existing_native_goal"
+
+    skipped_goal = cases["REG_ENTER_PERPETUAL_MODE_DOES_NOT_CREATE_GOAL"]
+    assert skipped_goal["expected_create_goal"] is False
+    assert skipped_goal["expected_named_goal_relation"] == "autonomous_means_skipped"
+
+    stale_state = cases["REG_FRESH_WINDOW_REJECTS_STALE_TASKRUN_AS_PARENT"]
+    assert stale_state["expected_active_problem_level"] == "parent_intent_and_harm"
+    assert stale_state["expected_object_identity_source"] == "current_user_increment"
+    assert "ATOM_NEWEST_TASK_JSON_WINS" in stale_state["expected_rejected_proxy_atoms"]
+
     explicit_goal = cases["POS_EXPLICIT_NATIVE_GOAL_REQUEST"]
     assert explicit_goal["expected_create_goal"] is True
     assert explicit_goal["expected_named_goal_relation"] == "explicit_endpoint_requested"
@@ -1434,12 +1479,17 @@ def test_thin_project_route_and_behavior_evidence_are_enforced() -> None:
     assert schema["properties"]["create_goal"] == {"type": "boolean"}
     assert set(schema["properties"]["named_goal_relation"]["enum"]) == {
         "means_not_requested",
+        "autonomous_means_selected",
+        "existing_same_parent_goal_reused",
+        "autonomous_means_skipped",
         "explicit_endpoint_requested",
         "not_applicable",
     }
     assert "answer_only" in schema["properties"]["next_step"]["enum"]
     assert set(schema["properties"]["action_binding"]["enum"]) >= {
         "continue_current_tui",
+        "create_autonomous_native_goal",
+        "reuse_existing_native_goal",
         "create_explicit_native_goal",
         "answer_only_no_task_tools",
     }
@@ -1451,6 +1501,10 @@ def test_thin_project_route_and_behavior_evidence_are_enforced() -> None:
         "active_problem_level",
         "before_rule_skill_mode_worker_and_tool_selection",
         "a continuous TUI mode is a means, not a request for a native Goal",
+        "autonomously creates, reuses, or skips a native Goal",
+        "absence of a per-use Goal phrase is not a reason to reject it",
+        "execution-state evidence only",
+        "cannot select or reconstruct the parent intent",
         "global default native XINAO parent",
         "rather than final-yield it",
         "Pause or discuss-first binds the turn to an answer only",
@@ -1855,7 +1909,7 @@ def test_behavior_evolution_runner_is_thin_and_domain_research_stays_native() ->
         (REPO_ROOT / "evals/behavior_regression/catalog.json").read_text(encoding="utf-8")
     )
     suite_count = sum(item["case_count"] for item in catalog["suites"])
-    assert suite_count == catalog["declared_case_count"] == 136
+    assert suite_count == catalog["declared_case_count"] == 141
     context_cases = yaml.safe_load(
         (REPO_ROOT / "evals/context_intent_alignment/cases.yaml").read_text(encoding="utf-8")
     )

@@ -103,11 +103,13 @@ providers:
             enum: [object_instance, problem_definition, parent_intent_and_harm, shared_upstream_generator]
           problem_level_order: { type: string, const: before_rule_skill_mode_worker_and_tool_selection }
           named_goal_relation:
-            enum: [means_not_requested, explicit_endpoint_requested, not_applicable]
+            enum: [means_not_requested, autonomous_means_selected, existing_same_parent_goal_reused, autonomous_means_skipped, explicit_endpoint_requested, not_applicable]
           action_binding:
             enum:
               - current_authorized_object
               - continue_current_tui
+              - create_autonomous_native_goal
+              - reuse_existing_native_goal
               - create_explicit_native_goal
               - answer_only_no_task_tools
               - ask_material_fork
