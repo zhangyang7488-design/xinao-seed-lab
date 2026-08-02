@@ -156,6 +156,7 @@ def _current_user_sid() -> str | None:
         return None
     completed = subprocess.run(
         ["whoami.exe", "/user", "/fo", "csv", "/nh"],
+        stdin=subprocess.DEVNULL,
         capture_output=True,
         text=True,
         encoding="utf-8",
@@ -307,6 +308,7 @@ def _repair_acl(path: Path) -> dict[str, Any]:
     commands: list[dict[str, Any]] = []
     takeown = subprocess.run(
         ["takeown.exe", "/F", str(path), "/A", "/R", "/D", "Y"],
+        stdin=subprocess.DEVNULL,
         capture_output=True,
         text=True,
         encoding="utf-8",
@@ -321,6 +323,7 @@ def _repair_acl(path: Path) -> dict[str, Any]:
     for principal in principals:
         remove_deny = subprocess.run(
             ["icacls.exe", str(path), "/remove:d", principal, "/T", "/C", "/Q"],
+            stdin=subprocess.DEVNULL,
             capture_output=True,
             text=True,
             encoding="utf-8",
@@ -344,6 +347,7 @@ def _repair_acl(path: Path) -> dict[str, Any]:
                 "/C",
                 "/Q",
             ],
+            stdin=subprocess.DEVNULL,
             capture_output=True,
             text=True,
             encoding="utf-8",
@@ -411,6 +415,7 @@ class SafeCleanupService:
                 continue
             completed = subprocess.run(
                 ["git", "-C", str(root), "worktree", "list", "--porcelain"],
+                stdin=subprocess.DEVNULL,
                 capture_output=True,
                 text=True,
                 encoding="utf-8",
@@ -472,8 +477,8 @@ class SafeCleanupService:
     def _active_consumers(targets: list[Path]) -> list[dict[str, Any]]:
         try:
             import psutil
-        except ImportError:
-            return []
+        except ImportError as exc:
+            raise ValueError("process consumer scan requires psutil") from exc
         normalized = [(target, os.path.normcase(str(target))) for target in targets]
         consumers: list[dict[str, Any]] = []
         for process in psutil.process_iter(["pid", "name", "exe", "cmdline", "cwd"]):
