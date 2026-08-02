@@ -674,6 +674,19 @@ def test_managed_episode_transport_discovery_requires_exact_live_lease_identity(
     transport_name = "xinao-transport-xre_peer_a"
     transport_image = "sha256:" + "c" * 64
     tool_image = "sha256:" + "d" * 64
+    output_source = str(episode_root / "output")
+    if sys.platform != "win32":
+        # Production inspect data uses a Windows host path.  Keep that contract
+        # in cross-platform CI while mapping the synthetic mount to tmp_path.
+        output_source = r"D:\xinao-ci-fixture\episode-a\output"
+        real_path = module.Path
+
+        def fixture_path(value):
+            if str(value) == output_source:
+                return episode_root / "output"
+            return real_path(value)
+
+        monkeypatch.setattr(module, "Path", fixture_path)
     _write_json(
         episode_root / "episode_meta.json",
         {
@@ -748,7 +761,7 @@ def test_managed_episode_transport_discovery_requires_exact_live_lease_identity(
         "Mounts": [
             {
                 "Type": "bind",
-                "Source": str(episode_root / "output"),
+                "Source": output_source,
                 "Destination": "/output",
                 "RW": True,
             }
