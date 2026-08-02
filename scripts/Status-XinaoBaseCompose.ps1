@@ -3,7 +3,7 @@
 .SYNOPSIS
   XINAO_Base V2 compose status thin shell.
 .DESCRIPTION
-  docker compose ps + core service table + Temporal health + worker evidence.
+  docker compose ps + three-service Temporal core health + optional worker evidence.
   Compatible with ClaimDurable: -RepoRoot / -RuntimeRoot emit JSON (worker_ready).
 .EXAMPLE
   .\Status-XinaoBaseCompose.ps1
@@ -69,8 +69,7 @@ $emitJson = $AsJson -or ($PSBoundParameters.ContainsKey("RuntimeRoot") -or $PSBo
 $coreServiceDefs = @(
     @{ service = "shiwu-ku";       container = "shiwu-ku";       display_cn = "shiwu-ku";       role_cn = "Temporal Postgres";     port = $null; required = $true },
     @{ service = "naijiu-shiwu";   container = "naijiu-shiwu";   display_cn = "naijiu-shiwu";   role_cn = "Temporal Server :7233"; port = 7233;  required = $true },
-    @{ service = "shiwu-mianban";  container = "shiwu-mianban";  display_cn = "shiwu-mianban";  role_cn = "Temporal UI :8080";     port = 8080;  required = $true },
-    @{ service = "houtai-gongren"; container = "houtai-gongren"; display_cn = "houtai-gongren"; role_cn = "Temporal Worker";      port = $null; required = $true }
+    @{ service = "shiwu-mianban";  container = "shiwu-mianban";  display_cn = "shiwu-mianban";  role_cn = "Temporal UI :8080";     port = 8080;  required = $true }
 )
 
 $displayPath = Join-Path $RepoRoot "materials\xinao_compose_display_names.v1.json"
@@ -100,7 +99,6 @@ $result = [ordered]@{
         "shiwu-ku"       = $false
         "naijiu-shiwu"   = $false
         "shiwu-mianban"  = $false
-        "houtai-gongren" = $false
     }
     core_ok                  = $false
     temporal_address         = "127.0.0.1:7233"
@@ -115,6 +113,7 @@ $result = [ordered]@{
     worker_container_state   = ""
     worker_mount_ok          = $false
     worker_mount_actual      = $null
+    worker_issue             = $null
     daemon_status            = ""
     status                   = "unknown"
     ps_text_excerpt          = ""
@@ -170,8 +169,9 @@ try {
             Write-Output $psText.TrimEnd()
         }
 
-        $namesRunning = @(& docker ps --format "{{.Names}}" 2>$null)
-        $namesAll = @(& docker ps -a --format "{{.Names}}" 2>$null)
+        $projectFilter = "label=com.docker.compose.project=xinao-base"
+        $namesRunning = @(& docker ps --format "{{.Names}}" --filter $projectFilter 2>$null)
+        $namesAll = @(& docker ps -a --format "{{.Names}}" --filter $projectFilter 2>$null)
 
         $svcList = @()
         foreach ($n in $namesRunning) {
@@ -263,7 +263,7 @@ try {
             if ($st -eq "running/healthy" -and $result.worker_mount_ok) {
                 $result.worker_ready = $true
             } elseif (-not $result.worker_mount_ok) {
-                $result.named_blocker = "WORKER_REPO_MOUNT_MISMATCH"
+                $result.worker_issue = "WORKER_REPO_MOUNT_MISMATCH"
             }
         }
 
@@ -365,9 +365,7 @@ finally {
 $result.core_ok = [bool](
     $result.required_running["shiwu-ku"] -and
     $result.required_running["naijiu-shiwu"] -and
-    $result.required_running["houtai-gongren"] -and
-    $result.worker_ready -and
-    $result.worker_mount_ok
+    $result.required_running["shiwu-mianban"]
 )
 
 if (-not $result.docker_ok) {
@@ -378,11 +376,7 @@ if (-not $result.docker_ok) {
 } elseif ($result.temporal_ok -or $result.required_running["naijiu-shiwu"]) {
     $result.status = "partial"
     if (-not $result.named_blocker) {
-        if (-not $result.required_running["houtai-gongren"]) {
-            $result.named_blocker = "WORKER_NOT_UP"
-        } else {
-            $result.named_blocker = "CORE_PARTIAL"
-        }
+        $result.named_blocker = "CORE_PARTIAL"
     }
 } else {
     $result.status = "degraded"

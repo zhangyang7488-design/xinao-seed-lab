@@ -62,11 +62,6 @@ ALLOWED_AGENT_RUNTIME_MODULES = {
     "integrated_bus_workflow_registry.py",
     "lexicon_cn_escape.py",
     "overnight_local_search.py",
-    "openhands_execution_activity.py",
-    "openhands_execution_contract.py",
-    "openhands_execution_worker.py",
-    "platform_capacity_maintenance.py",
-    "platform_control_worker.py",
     "pro_review_after_draft.py",
     "provider_routing_preference.py",
     "quota_dispatch_epoch.py",
@@ -136,6 +131,39 @@ def test_retired_control_stack_directories_are_absent() -> None:
         "scripts/hardmode",
     ):
         assert not (REPO_ROOT / relative).exists(), relative
+
+
+def test_retired_platform_carriers_are_absent() -> None:
+    for relative in (
+        "projects/dual-brain-coordination/scripts/run_grok_background_" + "window_canary.py",
+        "scripts/manage_platform_" + "capacity_schedule.py",
+        "services/agent_runtime/openhands_execution_" + "activity.py",
+        "services/agent_runtime/openhands_execution_" + "contract.py",
+        "services/agent_runtime/openhands_execution_" + "worker.py",
+        "services/agent_runtime/platform_capacity_" + "maintenance.py",
+        "services/agent_runtime/platform_control_" + "worker.py",
+        "services/mcp/xinao_sandbox_" + "mcp_server.py",
+    ):
+        assert not (REPO_ROOT / relative).exists(), relative
+
+
+def test_retired_platform_identities_are_absent_from_tracked_baseline() -> None:
+    retired_identities = (
+        "mowei-" + "zhixing",
+        "xinao-platform-" + "capacity-daily-v1",
+        "xinao_sandbox_" + "mcp_server",
+        "openhands_execution_" + "activity",
+        "platform_control_" + "worker",
+    )
+    for retired_identity in retired_identities:
+        result = subprocess.run(
+            ["git", "grep", "-n", "-I", "--", retired_identity],
+            cwd=REPO_ROOT,
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+        assert result.returncode == 1, result.stdout or result.stderr
 
 
 def test_retired_backing_repo_identity_is_absent_from_tracked_baseline() -> None:

@@ -89,7 +89,6 @@ LEGACY_REQUIRED_LANGGRAPH_TRUE_CHECKS = (
     "child_wf_ok",
     "signal_feed_ok",
     "instructor_ok",
-    "openhands_activity_ok",
     "glue_seam_invoke_ok",
     "worker_lane_ok",
     "pro_review_ok",

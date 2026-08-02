@@ -50,7 +50,6 @@ from services.agent_runtime.integrated_bus_bus_nodes import (
     run_mcp_tools_bus,
     run_memory_bus,
     run_mirror_registry_bus,
-    run_openhands_bus,
     run_planner_bus,
     run_pytest_slice_bus,
     run_search_bus,
@@ -326,8 +325,6 @@ class BusState(TypedDict, total=False):
     instructor_ok: bool
     instructor_invoked: bool
     instructor_enabled: bool
-    openhands_ok: bool
-    openhands_activity_ok: bool
     memory_bus_ok: bool
     memory_bus_ref: str
     glue_seam_invoke_ok: bool
@@ -1217,11 +1214,6 @@ async def glue_seam_invoke_node(state: BusState) -> dict[str, Any]:
     )
 
 
-async def openhands_node(state: BusState) -> dict[str, Any]:
-    params = _load_params_file(_params_path(state))
-    return run_openhands_bus(params=params, runtime_root=_runtime_root(state))
-
-
 async def parallel_width_node(state: BusState) -> dict[str, Any]:
     params = _load_params_file(_params_path(state))
     grok_lane = _grok_fanin_worker_lane(state)
@@ -1739,7 +1731,6 @@ def make_integrated_graph(
     g.add_node("mcp_tools", mcp_tools_node, metadata=_activity_options())
     g.add_node("mirror_registry", mirror_registry_node, metadata=_activity_options())
     g.add_node("glue_seam_invoke", glue_seam_invoke_node, metadata=_activity_options())
-    g.add_node("openhands", openhands_node, metadata=_activity_options())
     g.add_node("parallel_width", parallel_width_node, metadata=_activity_options())
     g.add_node("memory_bus", memory_bus_node, metadata=_activity_options())
     g.add_node("grok_worker_fanin", grok_worker_fanin_node, metadata=_activity_options())
@@ -1768,8 +1759,7 @@ def make_integrated_graph(
     g.add_edge("crawl4ai", "mcp_tools")
     g.add_conditional_edges("mcp_tools", should_react_continue)
     g.add_edge("mirror_registry", "glue_seam_invoke")
-    g.add_edge("glue_seam_invoke", "openhands")
-    g.add_edge("openhands", "parallel_width")
+    g.add_edge("glue_seam_invoke", "parallel_width")
     g.add_conditional_edges(
         "parallel_width",
         route_parallel_send,

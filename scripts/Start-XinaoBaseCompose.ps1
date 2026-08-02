@@ -4,8 +4,8 @@
   XINAO_Base V2 compose start thin shell.
 .DESCRIPTION
   docker compose -f S\docker-compose.yml up -d
-  -CoreOnly: shiwu-ku / naijiu-shiwu / shiwu-mianban / houtai-gongren
-  Optional -Profile ollama / -Build
+  Bare start and -CoreOnly: shiwu-ku / naijiu-shiwu / shiwu-mianban
+  Optional -Profile extended / ollama / -Build
   ClaimDurable: -RepoRoot / -RuntimeRoot write state\xinao_base_compose\latest.json
   Never down / never -v.
 .EXAMPLE
@@ -27,7 +27,7 @@ param(
 
 $ErrorActionPreference = "Stop"
 $utf8 = New-Object System.Text.UTF8Encoding $false
-$script:CoreServices = @("shiwu-ku", "naijiu-shiwu", "shiwu-mianban", "houtai-gongren")
+$script:CoreServices = @("shiwu-ku", "naijiu-shiwu", "shiwu-mianban")
 
 function Invoke-WorkerRepoMountPreflight {
     param(
@@ -92,8 +92,10 @@ $report = [ordered]@{
     build                    = [bool]$Build
     profiles                 = @($Profile)
     services_targeted        = @()
+    core_ok                  = $false
     status                   = "unknown"
     temporal_ok              = $false
+    worker_targeted          = $false
     worker_ok                = $false
     worker_container_state   = ""
     docker_exit_code         = $null
@@ -125,7 +127,11 @@ try {
         $report.services_targeted = $targets
     }
 
-    $workerTargeted = ($targets.Count -eq 0 -or $targets -contains "houtai-gongren")
+    $workerTargeted = (
+        $targets -contains "houtai-gongren" -or
+        ($targets.Count -eq 0 -and $Profile -contains "extended")
+    )
+    $report.worker_targeted = [bool]$workerTargeted
     if ($workerTargeted) {
         $composeMount = Invoke-WorkerRepoMountPreflight -Mode "compose" -Repo $RepoRoot -Compose $ComposeFile
         $report.worker_mount_compose = $composeMount.report
@@ -134,8 +140,8 @@ try {
             $report.named_blocker = "WORKER_REPO_MOUNT_MISMATCH"
             throw "worker compose mount preflight rejected provider invocation"
         }
-        $dargs += @("--wait", "--wait-timeout", "120")
     }
+    $dargs += @("--wait", "--wait-timeout", "120")
 
     $report.docker_command = ("docker {0}" -f ($dargs -join " "))
     if (-not $Quiet) {
@@ -150,10 +156,14 @@ try {
         throw "docker compose up failed exit=$($report.docker_exit_code)"
     }
 
-    $names = @(& docker ps --format "{{.Names}}" 2>$null)
+    $names = @(& docker ps --format "{{.Names}}" --filter "label=com.docker.compose.project=xinao-base" 2>$null)
+    $report.core_ok = [bool](
+        @($script:CoreServices | Where-Object { $names -contains $_ }).Count -eq
+        $script:CoreServices.Count
+    )
     $report.temporal_ok = ($names -contains "naijiu-shiwu")
     $workerRunning = ($names -contains "houtai-gongren")
-    if ($workerRunning) {
+    if ($workerTargeted -and $workerRunning) {
         $actualMount = Invoke-WorkerRepoMountPreflight -Mode "actual" -Repo $RepoRoot -Compose $ComposeFile
         $report.worker_mount_actual = $actualMount.report
         if ($actualMount.exit_code -ne 0 -or $actualMount.report.ok -ne $true) {
@@ -174,15 +184,19 @@ try {
         if ($tcp.TcpTestSucceeded) { $report.temporal_ok = $true }
     } catch { }
 
-    if ($report.temporal_ok -and $report.worker_ok) {
+    if ($report.core_ok -and $report.temporal_ok -and (-not $workerTargeted -or $report.worker_ok)) {
         $report.status = "running"
     }
-    elseif ($report.temporal_ok) {
+    elseif ($report.temporal_ok -or $report.core_ok) {
         $report.status = "partial"
         if ($composeFailed) {
             $report.named_blocker = "DOCKER_COMPOSE_UP_FAILED"
+        } elseif ($workerTargeted -and -not $workerRunning) {
+            $report.named_blocker = "WORKER_NOT_UP"
+        } elseif ($workerTargeted -and -not $report.worker_ok) {
+            $report.named_blocker = "WORKER_NOT_READY"
         } else {
-            $report.named_blocker = if ($workerRunning) { "WORKER_NOT_READY" } else { "WORKER_NOT_UP" }
+            $report.named_blocker = "CORE_PARTIAL"
         }
     }
     else {

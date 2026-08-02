@@ -114,7 +114,6 @@
     "microsoft__markitdown"
   ],
   "pytest_slice_path": "tests/test_integrated_bus_hot_path.py::test_integrated_bus_default_route_is_readonly_at_finalize",
-  "openhands_mirror": "E:\\XINAO_EXTERNAL_MATURE\\codex_20260627\\official\\OpenHands__OpenHands",
   "letta_mirror": "E:\\XINAO_EXTERNAL_MATURE\\codex_20260627\\official\\letta-ai__letta",
   "mem0_mirror": "E:\\XINAO_EXTERNAL_MATURE\\codex_20260627\\official\\mem0ai__mem0",
   "memory_bus_skip_without_promotion": true,

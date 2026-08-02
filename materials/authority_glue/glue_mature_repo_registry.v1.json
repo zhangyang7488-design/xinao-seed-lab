@@ -2,21 +2,7 @@
   "schema_version": "xinao.glue_mature_repo_registry.v1",
   "sentinel": "SENTINEL:GLUE_MATURE_REPO_REGISTRY_V1",
   "generated_at": "2026-07-08",
-  "purpose_cn": "成熟仓库链接注册表 — 不用重搜；瘦身只删聊天草稿，不删本表",
-  "read_order": [
-    "00_先发这个_阅读顺序.txt",
-    "XINAO_外部薄胶开焊总图_20260708.txt",
-    "glue_mature_repo_registry.v1.json",
-    "XINAO_胶水层调研结果_Grok_20260708.md",
-    "overnight_glue_items.v1.json"
-  ],
-  "authoritative_manifests": {
-    "external_mature_tsv_560": "E:\\XINAO_EXTERNAL_MATURE\\codex_20260627\\manifests\\github_external_mature_all_repos.tsv",
-    "external_mature_json": "E:\\XINAO_EXTERNAL_MATURE\\codex_20260627\\manifests\\github_external_mature_all_repos.json",
-    "grok_seam_map": "C:\\Users\\xx363\\Desktop\\Grok_Admin_Isolated\\workspace\\grok-admin-bridge\\external_mature_seam_map.v1.json",
-    "overnight_wave_evidence": "D:\\XINAO_RESEARCH_RUNTIME\\overnight\\overnight-glue-20260708",
-    "full_chain_architecture": "C:\\Users\\xx363\\Desktop\\XINAO_全链外部薄胶替代与一次性测试闭环架构_20260708.txt"
-  },
+  "purpose_cn": "可选集成总线使用的机器可读成熟组件镜像注册表；不参与默认启动或父任务裁决",
   "layers": {
     "L0": [
       {"repo": "microsoft/markitdown", "url": "https://github.com/microsoft/markitdown", "replaces": "current_task_source_intake handroll"},
@@ -36,8 +22,6 @@
     ],
     "L3": [
       {"repo": "docker", "url": "https://docs.docker.com/engine/", "replaces": "v4pro_mature_bind_execution_controller", "bind": "local python:3.12-slim default"},
-      {"repo": "OpenHands/OpenHands", "url": "https://github.com/OpenHands/OpenHands", "replaces": "handroll execution controller", "optional": true},
-      {"repo": "OpenHands/software-agent-sdk", "url": "https://github.com/OpenHands/software-agent-sdk", "version": "v1.35.0", "bind": "pinned agent-server guest and HTTP command surface"},
       {"repo": "docker/engine-network-api", "url": "https://docs.docker.com/engine/network/drivers/bridge/", "bind": "one internal bridge per Temporal Activity attempt"},
       {"repo": "jlowin/fastmcp", "url": "https://github.com/jlowin/fastmcp", "replaces": "v4pro_tool_bearing_executor_policy"},
       {"repo": "gitpython-developers/GitPython", "url": "https://github.com/gitpython-developers/GitPython", "replaces": "git shell handroll"}
@@ -82,12 +66,5 @@
   "build_tooling": [
     {"repo": "astral-sh/uv", "url": "https://github.com/astral-sh/uv", "version": "0.11.28", "image_digest": "sha256:0f36cb9361a3346885ca3677e3767016687b5a170c1a6b88465ec14aefec90aa", "bind": "official Docker binary copy plus BuildKit cache; replaces unpinned pip install uv"}
   ],
-  "paid_policy_cn": "API与已有付费订阅除外；难采购/新开账单云SaaS禁止默认热路径",
-  "overnight_items_ref": "materials/authority_glue/overnight_glue_items.v1.json",
-  "not_deleted": [
-    "E:\\XINAO_EXTERNAL_MATURE 560-repo TSV",
-    "D:\\XINAO_RESEARCH_RUNTIME\\overnight\\overnight-glue-20260708 12 items",
-    "grok-admin-bridge external_mature_seam_map.v1.json",
-    "桌面归档 XINAO_胶水层调研结果_Grok_20260708.md"
-  ]
+  "paid_policy_cn": "API与已有付费订阅除外；难采购/新开账单云SaaS禁止默认热路径"
 }

@@ -90,6 +90,7 @@ services:
     restart: unless-stopped
 
   xiangliang-ku:
+    profiles: ["extended"]
     image: qdrant/qdrant:v1.13.2
     container_name: xiangliang-ku
     labels:
@@ -110,6 +111,7 @@ services:
       start_period: 15s
 
   keguan-shuju:
+    profiles: ["extended"]
     image: postgres:17-alpine
     container_name: keguan-shuju
     labels:
@@ -131,6 +133,7 @@ services:
       retries: 10
 
   keguan-fenxi:
+    profiles: ["extended"]
     image: clickhouse/clickhouse-server:24.8-alpine
     container_name: keguan-fenxi
     labels:
@@ -154,6 +157,7 @@ services:
       start_period: 10s
 
   keguan-huancun:
+    profiles: ["extended"]
     image: redis:7-alpine
     container_name: keguan-huancun
     labels:
@@ -174,6 +178,7 @@ services:
       retries: 10
 
   keguan-cunchu:
+    profiles: ["extended"]
     image: minio/minio:latest
     container_name: keguan-cunchu
     labels:
@@ -197,6 +202,7 @@ services:
       start_period: 10s
 
   keguan-gongren:
+    profiles: ["extended"]
     image: langfuse/langfuse-worker:3
     container_name: keguan-gongren
     labels:
@@ -244,6 +250,7 @@ services:
     restart: unless-stopped
 
   keguan-zhuiji:
+    profiles: ["extended"]
     image: langfuse/langfuse:3
     container_name: keguan-zhuiji
     labels:
@@ -275,6 +282,7 @@ services:
       start_period: 90s
 
   moxing-wangguan:
+    profiles: ["extended"]
     image: ghcr.io/berriai/litellm:main-latest
     container_name: moxing-wangguan
     env_file:
@@ -314,6 +322,7 @@ services:
       - "host.docker.internal:host-gateway"
 
   houtai-gongren:
+    profiles: ["extended"]
     build:
       context: .
       dockerfile: docker/houtai-gongren/Dockerfile
@@ -340,7 +349,7 @@ services:
       - seccomp=unconfined
     labels:
       xinao.display_cn: "后台工人"
-      xinao.role_cn: "333主路步2·波内真执行"
+      xinao.role_cn: "可选 Docker Grok 工人"
     depends_on:
       naijiu-shiwu:
         condition: service_started
@@ -411,56 +420,6 @@ services:
       retries: 3
       start_period: 90s
 
-  mowei-zhixing:
-    image: xinao-base-houtai-gongren:platform-control-e74057f0
-    pull_policy: never
-    container_name: mowei-zhixing
-    labels:
-      xinao.display_cn: "末端执行"
-      xinao.role_cn: "固定角色 OpenHands 隔离执行 broker"
-      xinao.endpoint_owner: "openhands-execution-broker-v1"
-      xinao.platform_maintenance_owner: "xinao-platform-maintenance-v1"
-    depends_on:
-      naijiu-shiwu:
-        condition: service_healthy
-    environment:
-      XINAO_RESEARCH_RUNTIME: /evidence
-      PYTHONPATH: /app:/app/src
-      TEMPORAL_ADDRESS: naijiu-shiwu:7233
-      TEMPORAL_NAMESPACE: default
-      XINAO_OPENHANDS_WORKER_IDENTITY: xinao-openhands-execution-broker-v1
-      XINAO_OPENHANDS_BROKER_CONTAINER: mowei-zhixing
-      XINAO_CAPACITY_POLICY: /app/services/agent_runtime/maintenance-policy.v1.json
-      XINAO_PGBACKREST_CONFIG: /app/services/agent_runtime/pgbackrest.conf
-      XINAO_PLATFORM_BROKER_IMAGE_ID: sha256:e74057f05d1f337180e32372296cda91146890b7854d31bc0ab7b78b9e4a85b0
-      XINAO_PLATFORM_CONTROL_WORKER_SHA256: 4a4be34bc057868daa1e4c2aeb3660d54e5d97eab4a9f26d3f025c5bd78ea960
-      XINAO_PLATFORM_CAPACITY_MODULE_SHA256: a55cb194620ee5e2218271cba9d5ed8746b06a9cc8e65553d38187fd96c29509
-      XINAO_PLATFORM_CAPACITY_POLICY_SHA256: ec265fb9c132240ecda63e555a487234ea8dc4f80a9806e6d876b9e1d63ea58e
-      XINAO_PGBACKREST_CONFIG_SHA256: 076d8d88f3a91a645445ff55d8d806c3286d5f8912a38d4d9d1d56358faa77bb
-    volumes:
-      - ${XINAO_EVIDENCE_HOST:-D:/XINAO_RESEARCH_RUNTIME}:/evidence
-      - /var/run/docker.sock:/var/run/docker.sock
-      - ./services/agent_runtime/platform_control_worker.py:/app/services/agent_runtime/platform_control_worker.py:ro
-      - ./services/agent_runtime/platform_capacity_maintenance.py:/app/services/agent_runtime/platform_capacity_maintenance.py:ro
-      - ./infra/capacity/maintenance-policy.v1.json:/app/services/agent_runtime/maintenance-policy.v1.json:ro
-      - ./infra/postgres/pgbackrest/pgbackrest.conf:/app/services/agent_runtime/pgbackrest.conf:ro
-    command:
-      - python
-      - -m
-      - services.agent_runtime.platform_control_worker
-      - --runtime-root
-      - /evidence
-    networks:
-      - xinao_internal
-      - xinao_sandbox_control
-    restart: unless-stopped
-    healthcheck:
-      test: ["CMD-SHELL", "test -f /evidence/state/openhands_execution_worker/latest.json && kill -0 1"]
-      interval: 10s
-      timeout: 5s
-      retries: 6
-      start_period: 20s
-
   bendi-moxing:
     image: ollama/ollama:latest
     container_name: bendi-moxing
@@ -478,6 +437,7 @@ services:
       - ollama
 
   waiwang-sousuo:
+    profiles: ["extended"]
     image: searxng/searxng:latest
     container_name: waiwang-sousuo
     labels:
@@ -501,6 +461,7 @@ services:
       start_period: 30s
 
   shiyan-zhuiji:
+    profiles: ["extended"]
     image: ghcr.io/mlflow/mlflow:v2.22.0
     container_name: shiyan-zhuiji
     labels:
@@ -528,6 +489,7 @@ services:
       start_period: 25s
 
   xueyuan-ku:
+    profiles: ["extended"]
     image: postgres:14-alpine
     container_name: xueyuan-ku
     labels:
@@ -549,6 +511,7 @@ services:
       retries: 8
 
   xueyuan-zhuiji:
+    profiles: ["extended"]
     image: marquezproject/marquez:0.50.0
     container_name: xueyuan-zhuiji
     labels:
@@ -577,6 +540,7 @@ services:
       start_period: 60s
 
   xueyuan-mianban:
+    profiles: ["extended"]
     image: marquezproject/marquez-web:0.50.0
     container_name: xueyuan-mianban
     labels:

@@ -2126,46 +2126,6 @@ def run_instructor_bus(
     }
 
 
-def run_openhands_bus(
-    *, params: dict[str, Any], runtime_root: Path | None = None
-) -> dict[str, Any]:
-    runtime_root = resolve_runtime_root(runtime_root or params.get("runtime_root"))
-    mirror = resolve_external_mature_path(
-        params.get("openhands_mirror")
-        or r"E:\XINAO_EXTERNAL_MATURE\codex_20260627\official\OpenHands__OpenHands",
-        params=params,
-    )
-    readme = mirror / "README.md"
-    docker_compose = mirror / "docker-compose.yml"
-    present = mirror.is_dir() and (readme.is_file() or docker_compose.is_file())
-    readme_excerpt = (
-        readme.read_text(encoding="utf-8", errors="replace")[:800] if readme.is_file() else ""
-    )
-    activity = {
-        "schema_version": "xinao.integrated_bus.openhands_activity.v1",
-        "invoke_ok": present,
-        "adapter": "openhands_thin_activity",
-        "activity": "mirror_readme_activity_slice",
-        "mirror": str(mirror),
-        "readme_present": readme.is_file(),
-        "docker_compose_present": docker_compose.is_file(),
-        "readme_excerpt": readme_excerpt,
-        "optional": True,
-    }
-    evidence_ref = _write_invoke_evidence(runtime_root, "openhands", activity)
-    return {
-        "openhands_ok": present,
-        "openhands_activity_ok": present,
-        "openhands_mirror_present": present,
-        "openhands_mirror": str(mirror),
-        "openhands_readme": readme.is_file(),
-        "openhands_docker_compose": docker_compose.is_file(),
-        "openhands_evidence_ref": evidence_ref,
-        "adapter": "openhands_thin_activity",
-        "optional": True,
-    }
-
-
 def _mem0_local_store_fallback(
     *,
     runtime_root: Path,

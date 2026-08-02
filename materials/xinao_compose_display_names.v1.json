@@ -7,7 +7,7 @@
   "services": {
     "houtai-gongren": {
       "display_cn": "后台工人",
-      "role_cn": "333主路步2·波内真执行·Temporal Worker",
+      "role_cn": "可选 Docker Grok 工人",
       "compose_service": "houtai-gongren",
       "container_name": "houtai-gongren",
       "legacy_slugs": ["xinao-worker"],

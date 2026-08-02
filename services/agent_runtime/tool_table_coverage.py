@@ -29,7 +29,6 @@ ROWS: tuple[dict[str, str], ...] = (
     {"id": "L2_langgraph", "layer": "L2", "tool": "langgraph", "state": "invoke_green"},
     {"id": "L3_litellm", "layer": "L3", "tool": "litellm", "state": "invoke_green"},
     {"id": "L3_docker", "layer": "L3", "tool": "docker", "state": "invoke_green"},
-    {"id": "L3_openhands", "layer": "L3", "tool": "openhands", "state": "invoke_green"},
     {"id": "L3_gitpython", "layer": "L3", "tool": "gitpython", "state": "invoke_green"},
     {"id": "L4_ripgrep", "layer": "L4", "tool": "ripgrep", "state": "thin_bind"},
     {"id": "L4_searxng", "layer": "L4", "tool": "searxng", "state": "thin_bind"},
@@ -146,8 +145,6 @@ def resolve_states_from_bus_result(result: dict[str, Any]) -> dict[str, str]:
         upgrades["L7_letta_mem0"] = "invoke_green"
     if result.get("glue_seam_invoke_ok"):
         upgrades["glue_seam_invoke"] = "invoke_green"
-    if result.get("openhands_ok"):
-        upgrades["L3_openhands"] = "invoke_green"
     if result.get("token_bus_ok"):
         upgrades["L8_jinja"] = "invoke_green"
     if result.get("rtk_adapter") == "rtk":

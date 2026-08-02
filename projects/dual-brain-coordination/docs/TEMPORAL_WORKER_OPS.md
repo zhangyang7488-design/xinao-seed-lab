@@ -295,9 +295,9 @@ Mock **不能** 证明：真实 poller、history、跨进程接管、live start_
 | L8 | 证据落盘 | `C08_temporal_promoted_live_*.json`（或等价）含 describe 摘录与 queue poller 摘录 |
 | L9 | 副作用边界 | canary 未 `compose up/recreate`；`completion_claim_allowed` 仍按整包策略 |
 
-当前基线（2026-07-12）：live start、promoted poller、真实 history、PINNED
-Worker Deployment 和 Grok→LangGraph→OpenHands broker E2E 均已焊通。配置或旧 PASS
-标签仍不能代替新 build 的 replay、真实 E2E 与禁止副作用检查。
+本页的 2026-07-12 live 结果只保留为 Temporal worker versioning 的历史证据；已退役的
+平台 broker 不属于当前启动基线。配置或旧 PASS 标签仍不能代替新 build 的 replay、
+真实 E2E 与禁止副作用检查。
 
 ### 5.3 分列登记（S5 inventory 规则）
 

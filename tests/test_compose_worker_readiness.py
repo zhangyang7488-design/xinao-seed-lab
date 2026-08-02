@@ -353,6 +353,33 @@ def test_compose_healthcheck_invokes_generation_aware_readiness() -> None:
     assert "test -f /evidence/state/integrated_bus_worker_daemon/latest.json" not in dockerfile
 
 
+def test_default_compose_baseline_contains_only_temporal_core() -> None:
+    compose = yaml.safe_load((REPO_ROOT / "docker-compose.yml").read_text(encoding="utf-8"))
+    services = compose["services"]
+    assert {
+        name for name, service in services.items() if not service.get("profiles")
+    } == {"shiwu-ku", "naijiu-shiwu", "shiwu-mianban"}
+    assert services["houtai-gongren"]["profiles"] == ["extended"]
+    assert "mowei-" + "zhixing" not in services
+
+
+def test_compose_lifecycle_scripts_do_not_require_optional_worker() -> None:
+    start = (REPO_ROOT / "scripts" / "Start-XinaoBaseCompose.ps1").read_text(
+        encoding="utf-8"
+    )
+    stop = (REPO_ROOT / "scripts" / "Stop-XinaoBaseCompose.ps1").read_text(
+        encoding="utf-8"
+    )
+    status = (REPO_ROOT / "scripts" / "Status-XinaoBaseCompose.ps1").read_text(
+        encoding="utf-8"
+    )
+    core_literal = '@("shiwu-ku", "naijiu-shiwu", "shiwu-mianban")'
+    assert f"$script:CoreServices = {core_literal}" in start
+    assert f"$script:CoreServices = {core_literal}" in stop
+    assert '$result.required_running["shiwu-mianban"]' in status
+    assert '$result.required_running["houtai-gongren"]' not in status
+
+
 def test_grok_session_store_preflight_requires_a_writable_directory(tmp_path: Path) -> None:
     missing = tmp_path / "missing-sessions"
     with pytest.raises(RuntimeError, match="session store is unavailable"):
