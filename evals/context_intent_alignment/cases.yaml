@@ -7542,3 +7542,127 @@
     expected_durable_behavior_closure: land_consumer_and_cross_context_regression
     expected_recovered_requirement_atoms: ATOM_GAP_IS_NAMED_BY_LIVE_RESEARCH|ATOM_ONLY_GAP_ROUTES_TO_S|ATOM_NATIVE_RESEARCH_SIBLINGS_CONTINUE|ATOM_REAL_CONSUMER_REPLAYS|ATOM_RETURN_TO_NATIVE_PARENT
     expected_rejected_proxy_atoms: ATOM_ENGINEERING_REPLACES_RESEARCH|ATOM_BUILD_GENERAL_PLATFORM|ATOM_ENGINEERING_GREEN_COMPLETES_PARENT|ATOM_REMAIN_IN_S_AFTER_REPAIR
+- description: A mature XINAO capability is exercised by real actors before more readiness work
+  metadata:
+    id: REG_MATURE_XINAO_RUNS_REAL_ACTORS_BEFORE_AUDIT_PROXY
+    domain: intent_decoding
+    class: real_use_first_changed_context_regression
+    profiles: [smoke, core, deep]
+    source_type: explicit_user_correction
+    source_ref: personal-decision-model/evt-mature-capability-real-use-first-20260801
+    lifecycle: regression
+    added_at: 2026-08-01
+    not_authority: true
+  vars:
+    case_id: REG_MATURE_XINAO_RUNS_REAL_ACTORS_BEFORE_AUDIT_PROXY
+    domain: intent_decoding
+    restored_context: |-
+      The active XINAO parent is to keep a complete AI actor researching and acting in an unknown
+      world, committing limited resources before results, accepting independent consequences, and
+      reading those consequences in the next episode. The currently installed researcher capability
+      and lifecycle entry are being presented as mature. Several independent positive-value research
+      actors are ready now, each with an isolated candidate output and no formal authority. The existing
+      commissioning or shadow consumer can receive complete behavior candidates without letting a
+      researcher adopt itself, write formal state, or relabel known outcomes as unknown-future evidence.
+      Codex remains the sole formal adopter and commitment owner.
+
+      The stable correction for this changed context concerns the next actual choice: maturity is
+      exercised through use. Reviews, schemas, receipts and tests may run beside a real episode when
+      useful, but they cannot become a readiness phase that delays all actors. A live failure identifies
+      the smallest affected dependency cone; repair it and rerun the original actor or consumer while
+      independent actors continue. Actor methods, ACTION or NO_ACTION, stake, stopping and learning
+      remain actor choices rather than platform defaults. Width follows current independent positive
+      value and fan-in capacity, not a fixed actor count.
+
+      Neutral candidate pool:
+      ATOM_MATURE_CLAIM_IS_EXERCISED_BY_REAL_USE=a maturity claim makes immediate real use, not another
+      internal completion object, the next epistemic action;
+      ATOM_MAX_USEFUL_REAL_ACTOR_WIDTH=run all currently ready independent positive-value actors up to
+      real execution and Owner fan-in capacity without fixing a ritual count;
+      ATOM_ACTORS_RETAIN_COMPLETE_BEHAVIOR_CHOICE=each actor freely researches and forms its own complete
+      prediction, ACTION or NO_ACTION, stake, stopping and learning behavior;
+      ATOM_EXISTING_DOWNSTREAM_CONSUMER_RUNS_NOW=send complete candidates into the existing commissioning
+      or shadow lifecycle now instead of stopping at researcher output;
+      ATOM_CODEX_CONTACTS_LIVE_CONSUMER_FIRST_HAND=Codex invokes and observes the Owner-callable
+      main-chain consumer directly while workers widen separable research and repair beside it;
+      ATOM_LIVE_FAILURE_BECOMES_LOCAL_REPAIR_INPUT=use the first real collision to identify and repair
+      only the affected dependency cone;
+      ATOM_ORIGINAL_ACTOR_OR_CONSUMER_RETRIES=after repair rerun the same actor or downstream consumer
+      that exposed the failure rather than accepting an unrelated green test;
+      ATOM_UNAFFECTED_REAL_ACTORS_CONTINUE=keep independent healthy research and consumption moving;
+      ATOM_AUDIT_SCHEMA_AND_TESTS_ARE_SIDECARS=use review, schemas, receipts and tests only where they
+      support or interpret the real run, never as a substitute readiness phase;
+      ATOM_EVIDENCE_IDENTITY_STAYS_HONEST=keep commissioning, replay or known-outcome results distinct
+      from unknown-future scientific evidence;
+      ATOM_CODEX_RETAINS_FORMAL_COMMITMENTS=keep adoption, shared-tree integration, formal freeze,
+      settlement and parent completion with the sole Codex Owner;
+      ATOM_AUDIT_READINESS_FIRST=dispatch more architecture, code and lifecycle audits and wait for
+      their reports before any real actor uses the allegedly mature capability;
+      ATOM_SCHEMA_TEST_RELEASE_SUBSTITUTE_USE=treat actor schemas, green tests, release identity or
+      receipts as proof that the real activity has happened;
+      ATOM_PLATFORM_COMPLETES_ACTOR_BEHAVIOR=let the platform fill prediction, ACTION or NO_ACTION,
+      stake, stop or learning fields for an incomplete actor candidate;
+      ATOM_SINGLE_NUMBER_COUNTS_AS_COMPLETE_ACTOR=accept a lone prediction or number as the complete
+      prediction-action-resource behavior;
+      ATOM_WAIT_FOR_ALL_INFRASTRUCTURE=delay research until every imagined reusable facility is closed;
+      ATOM_LOCAL_FAILURE_STOPS_ALL_ACTORS=turn one collision into a global research and construction
+      stop instead of isolating its dependency cone;
+      ATOM_WORKER_TERMINAL_COUNTS_AS_REAL_USE=treat a worker report or candidate terminal as downstream
+      consumption and reality feedback;
+      ATOM_WORKERS_MEDIATE_OWNER_LIVE_CONTACT=wait for worker observation reports and make them the
+      exclusive path between Codex and the callable main-chain consumer;
+      ATOM_KNOWN_OUTCOME_COUNTS_AS_UNKNOWN_FUTURE=elevate commissioning or replay success into formal
+      unknown-future scientific evidence.
+    user_increment: 继续当前生产主循环；既然这套能力说成熟了，现在就让真实研究行动者用起来。
+    expected_target_relation: existing_object
+    expected_next_step: act
+    expected_ask_user: false
+    expected_create_repository: false
+    expected_create_daemon: false
+    expected_create_goal: false
+    expected_predecision_order: parent_frame_before_candidate_selection
+    expected_active_problem_level: object_instance|parent_intent_and_harm
+    expected_problem_level_order: before_rule_skill_mode_worker_and_tool_selection
+    expected_named_goal_relation: means_not_requested|not_applicable
+    expected_action_binding: continue_current_tui|current_authorized_object
+    expected_object_identity_source: restored_context
+    expected_mature_comparison_triggered: false
+    expected_learning_loop: not_applicable
+    expected_repair_target: not_applicable
+    expected_closure_evidence: not_applicable
+    expected_constraint_governance_disposition: not_applicable
+    expected_effect_scope: reversible_local
+    expected_effect_authority: explicit_current_user|restored_task_scope
+    expected_coordination_mode: single_supervisor_worker
+    expected_worker_provider: external_worker
+    expected_worker_transport: adaptive|direct_batch
+    expected_quota_action: query_now|reuse_episode_cache
+    expected_quota_query_disposition: query_now_before_routing|reuse_fresh_snapshot
+    expected_owner_execution_state: dynamic_supervisor
+    expected_terminal_refill: immediate_positive_value|not_applicable
+    expected_worker_receipt_disposition: not_applicable
+    expected_text_writer: not_applicable
+    expected_completion_claim_scope: not_applicable
+    expected_local_completion_transition: not_applicable|rederive_mainline_frontier
+    expected_continuous_run_disposition: continue
+    expected_active_window_role: mainline_owner
+    expected_interruption_frame_action: preserve_current_parent
+    expected_resume_target_source: not_applicable
+    expected_completed_history_disposition: not_applicable|keep_closed
+    expected_frontier_disposition: execute
+    expected_candidate_value: positive
+    expected_global_frontier_reconciled: false
+    expected_downstream_recovery_required: false
+    expected_freeze_unaffected_provider: false
+    expected_degraded_scope: none
+    expected_preserve_parent_completion_bar: true
+    expected_unaffected_frontier_action: not_applicable
+    expected_recovery_probe: not_applicable
+    expected_preference_update: none
+    expected_starts_new_project: false
+    expected_decision_responsibility: owner_execute_and_inform
+    expected_human_explanation_mode: technical_plain_action
+    expected_metacognition_disposition: do_not_capture
+    expected_durable_behavior_closure: not_applicable
+    expected_recovered_requirement_atoms: ATOM_MATURE_CLAIM_IS_EXERCISED_BY_REAL_USE|ATOM_MAX_USEFUL_REAL_ACTOR_WIDTH|ATOM_ACTORS_RETAIN_COMPLETE_BEHAVIOR_CHOICE|ATOM_EXISTING_DOWNSTREAM_CONSUMER_RUNS_NOW|ATOM_CODEX_CONTACTS_LIVE_CONSUMER_FIRST_HAND|ATOM_LIVE_FAILURE_BECOMES_LOCAL_REPAIR_INPUT|ATOM_ORIGINAL_ACTOR_OR_CONSUMER_RETRIES|ATOM_UNAFFECTED_REAL_ACTORS_CONTINUE|ATOM_AUDIT_SCHEMA_AND_TESTS_ARE_SIDECARS|ATOM_EVIDENCE_IDENTITY_STAYS_HONEST|ATOM_CODEX_RETAINS_FORMAL_COMMITMENTS
+    expected_rejected_proxy_atoms: ATOM_AUDIT_READINESS_FIRST|ATOM_SCHEMA_TEST_RELEASE_SUBSTITUTE_USE|ATOM_PLATFORM_COMPLETES_ACTOR_BEHAVIOR|ATOM_SINGLE_NUMBER_COUNTS_AS_COMPLETE_ACTOR|ATOM_WAIT_FOR_ALL_INFRASTRUCTURE|ATOM_LOCAL_FAILURE_STOPS_ALL_ACTORS|ATOM_WORKER_TERMINAL_COUNTS_AS_REAL_USE|ATOM_WORKERS_MEDIATE_OWNER_LIVE_CONTACT|ATOM_KNOWN_OUTCOME_COUNTS_AS_UNKNOWN_FUTURE
