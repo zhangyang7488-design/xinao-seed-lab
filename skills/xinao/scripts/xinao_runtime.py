@@ -11594,10 +11594,7 @@ def _managed_episode_transport_root(
         if len(output_mounts) != 1:
             return None
         output_mount = output_mounts[0]
-        if (
-            str(output_mount.get("Type") or "") != "bind"
-            or output_mount.get("RW") is not True
-        ):
+        if str(output_mount.get("Type") or "") != "bind" or output_mount.get("RW") is not True:
             return None
         output_source = str(output_mount.get("Source") or "").strip()
         if not output_source or re.match(r"(?i)^[a-z]:[\\/]", output_source) is None:
@@ -11630,8 +11627,7 @@ def _managed_episode_transport_root(
         if (
             meta.get("schema_version") != "xinao.research_episode_state.v1"
             or lease.get("schema_version") != "xinao.dual_container_pair_lease.v1"
-            or inventory.get("schema_version")
-            != "xinao.dual_container_session_inventory.v1"
+            or inventory.get("schema_version") != "xinao.dual_container_session_inventory.v1"
             or receipt.get("schema_version") != "xinao.dual_container_pair_receipt.v1"
         ):
             return None
@@ -16682,9 +16678,7 @@ def _research_episode_load_dual_host(root: Path) -> Any:
                 raise XinaoError("DUAL_HOST_TRANSPORT_INVALID", transport_id)
             allowed_pair_ids.add(transport_id)
         posture, _posture_sha256, _posture_path = _posture_file_sha256()
-        allowed_pair_ids.update(
-            _discover_managed_episode_transport_ids(_docker(), posture)
-        )
+        allowed_pair_ids.update(_discover_managed_episode_transport_ids(_docker(), posture))
         egress_bound = _require_host_egress_boundary(
             allowed_researcher_container_ids=allowed_pair_ids
         )

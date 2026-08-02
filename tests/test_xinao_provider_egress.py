@@ -725,9 +725,7 @@ def test_managed_episode_transport_discovery_requires_exact_live_lease_identity(
                 "io.xinao.researcher.generic-worker-route": "forbidden",
                 "io.xinao.researcher.episode-profile": "GENUINE_SCIENTIST_EPISODE",
             },
-            "Env": [
-                f"{key}={value}" for key, value in proxy_env.items()
-            ]
+            "Env": [f"{key}={value}" for key, value in proxy_env.items()]
             + [
                 f"XINAO_EPISODE_ID={episode_id}",
                 "XINAO_DUAL_CONTAINER=1",
@@ -784,12 +782,15 @@ def test_managed_episode_transport_discovery_requires_exact_live_lease_identity(
         "_research_episode_load_dual_host_module",
         lambda: types.SimpleNamespace(DualHostConfig=FakeConfig, DualContainerHost=FakeHost),
     )
-    assert module._managed_episode_transport_root(
-        "docker",
-        member_id=transport_id,
-        member_name=transport_name,
-        posture=posture,
-    ) == episode_root
+    assert (
+        module._managed_episode_transport_root(
+            "docker",
+            member_id=transport_id,
+            member_name=transport_name,
+            posture=posture,
+        )
+        == episode_root
+    )
 
     assert (
         module._managed_episode_transport_root(
@@ -847,18 +848,14 @@ def test_dual_host_admits_current_and_all_valid_managed_episode_transports(
     monkeypatch.setattr(
         module,
         "_research_episode_load_dual_host_module",
-        lambda: types.SimpleNamespace(
-            DualHostConfig=FakeConfig, DualContainerHost=FakeHost
-        ),
+        lambda: types.SimpleNamespace(DualHostConfig=FakeConfig, DualContainerHost=FakeHost),
     )
     monkeypatch.setattr(
         module,
         "_resolve_research_episode_dual_images",
         lambda: ("sha256:" + "d" * 64, "sha256:" + "e" * 64),
     )
-    monkeypatch.setattr(
-        module, "resolve_auth_host_path", lambda **_kwargs: auth_path
-    )
+    monkeypatch.setattr(module, "resolve_auth_host_path", lambda **_kwargs: auth_path)
     monkeypatch.setattr(
         module,
         "_posture_file_sha256",
@@ -869,9 +866,7 @@ def test_dual_host_admits_current_and_all_valid_managed_episode_transports(
         module,
         "_discover_managed_episode_transport_ids",
         lambda docker, observed_posture: (
-            peer_transport_ids
-            if docker == "docker" and observed_posture == posture
-            else set()
+            peer_transport_ids if docker == "docker" and observed_posture == posture else set()
         ),
     )
 
