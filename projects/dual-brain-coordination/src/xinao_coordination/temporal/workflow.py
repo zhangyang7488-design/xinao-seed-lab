@@ -135,7 +135,7 @@ def _is_accepted_grok_lane(item: object, *, attested_lane_acceptance: bool) -> b
 
 
 def _containerize_input_ref(value: object) -> str:
-    """Map the runtime and both launcher-backed repo identities into container mounts."""
+    """Map the runtime and canonical S repository into container mounts."""
     raw = str(value or "").strip().replace("\\", "/")
     if not raw:
         return DEFAULT_LANGGRAPH_INPUT_REF
@@ -145,13 +145,10 @@ def _containerize_input_ref(value: object) -> str:
     folded = raw.casefold()
     runtime_prefix = "d:/xinao_research_runtime/"
     repo_prefix = "e:/xinao_research_workspaces/s/"
-    active_repo_prefix = "e:/xinao_research_workspaces/nianhua-new-route-active/"
     if folded.startswith(runtime_prefix):
         return "/evidence/" + raw[len(runtime_prefix) :]
     if folded.startswith(repo_prefix):
         return "/app/" + raw[len(repo_prefix) :]
-    if folded.startswith(active_repo_prefix):
-        return "/app/" + raw[len(active_repo_prefix) :]
     raise ValueError(f"input ref is outside canonical container mounts: {raw}")
 
 

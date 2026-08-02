@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import ast
 import json
+import subprocess
 from pathlib import Path
 
 import yaml
@@ -135,6 +136,18 @@ def test_retired_control_stack_directories_are_absent() -> None:
         "scripts/hardmode",
     ):
         assert not (REPO_ROOT / relative).exists(), relative
+
+
+def test_retired_backing_repo_identity_is_absent_from_tracked_baseline() -> None:
+    retired_identity = "nianhua-new-" + "route-active"
+    result = subprocess.run(
+        ["git", "grep", "-n", "-I", "--", retired_identity],
+        cwd=REPO_ROOT,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    assert result.returncode == 1, result.stdout or result.stderr
 
 
 def test_agent_runtime_only_contains_declared_hot_path_and_support_modules() -> None:

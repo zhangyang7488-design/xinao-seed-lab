@@ -220,10 +220,6 @@ def test_t9_child_spec_prefers_materialized_promoted_intake() -> None:
             r"E:\XINAO_RESEARCH_WORKSPACES\S\materials\input.md",
             "/app/materials/input.md",
         ),
-        (
-            r"E:\XINAO_RESEARCH_WORKSPACES\nianhua-new-route-active\materials\input.md",
-            "/app/materials/input.md",
-        ),
         ("/evidence/state/input.md", "/evidence/state/input.md"),
     ],
 )
@@ -231,9 +227,16 @@ def test_t9_containerizes_only_canonical_roots(host_path: str, container_path: s
     assert _containerize_input_ref(host_path) == container_path
 
 
-def test_t9_rejects_noncanonical_input_ref() -> None:
+@pytest.mark.parametrize(
+    "host_path",
+    [
+        r"C:\Users\xx363\Desktop\input.md",
+        "E:\\XINAO_RESEARCH_WORKSPACES\\" + "nianhua-new-" + "route-active\\input.md",
+    ],
+)
+def test_t9_rejects_noncanonical_input_ref(host_path: str) -> None:
     with pytest.raises(ValueError, match="outside canonical"):
-        _containerize_input_ref(r"C:\Users\xx363\Desktop\input.md")
+        _containerize_input_ref(host_path)
 
 
 def test_t9_langgraph_summary_requires_real_acceptance_evidence() -> None:
