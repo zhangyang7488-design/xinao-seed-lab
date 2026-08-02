@@ -138,4 +138,3 @@ def local_search(query: str, *, max_results: int = 5) -> dict[str, Any]:
         ],
         "hits": github_first[:max_results],
     }
-
