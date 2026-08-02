@@ -1,0 +1,22 @@
+{
+  "name": "safe-cleanup",
+  "version": "0.1.0",
+  "description": "Plan and execute exact protected Windows cleanup without returning shell deletion work to the user.",
+  "author": {
+    "name": "XINAO Local"
+  },
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "Safe Cleanup",
+    "shortDescription": "Exact protected Windows cleanup for Codex",
+    "longDescription": "Plans exact paths, blocks protected or active objects, repairs access-denied ACLs only during authorized execution, and returns typed cleanup receipts.",
+    "developerName": "XINAO Local",
+    "category": "Productivity",
+    "capabilities": ["Local files", "Protected destructive actions"],
+    "defaultPrompt": [
+      "Safely remove these exact obsolete paths.",
+      "Plan cleanup and show me any protected or active blockers."
+    ]
+  },
+  "mcpServers": "./.mcp.json"
+}

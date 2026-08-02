@@ -1,0 +1,33 @@
+{
+  "protected_exact": [
+    "C:\\Windows",
+    "C:\\Program Files",
+    "C:\\Program Files (x86)",
+    "C:\\ProgramData",
+    "C:\\Users",
+    "C:\\Users\\xx363",
+    "C:\\Users\\xx363\\Desktop",
+    "D:\\XINAO_RESEARCH_RUNTIME",
+    "E:\\XINAO_COLD_STORAGE",
+    "E:\\XINAO_RESEARCH_WORKSPACES"
+  ],
+  "protected_subtrees": [
+    "C:\\Users\\xx363\\.agents",
+    "C:\\Users\\xx363\\.codex",
+    "C:\\Users\\xx363\\plugins",
+    "C:\\Users\\xx363\\Desktop\\主线",
+    "C:\\Users\\xx363\\Desktop\\历史备用 不动"
+  ],
+  "git_roots": [
+    "E:\\XINAO_RESEARCH_WORKSPACES\\S",
+    "D:\\Grok_Admin_Isolated\\workspace",
+    "D:\\Grok_Admin_Isolated\\workspace-grok-4.5-island",
+    "C:\\Users\\xx363\\Grok_Admin_Isolated\\workspace",
+    "C:\\Users\\xx363\\Grok_Admin_Isolated\\workspace-grok-4.5-island"
+  ],
+  "quarantine_roots": {
+    "C:": "C:\\Users\\xx363\\AppData\\Local\\safe-cleanup\\quarantine",
+    "D:": "D:\\XINAO_RESEARCH_RUNTIME\\quarantine\\safe-cleanup",
+    "E:": "E:\\XINAO_COLD_STORAGE\\quarantine\\safe-cleanup"
+  }
+}

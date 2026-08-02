@@ -1,0 +1,12 @@
+interface:
+  display_name: "Safe Cleanup"
+  short_description: "Plan and execute exact protected Windows cleanup"
+  default_prompt: "Use $safe-cleanup to safely remove these exact authorized paths."
+dependencies:
+  tools:
+    - type: "mcp"
+      value: "safe-cleanup"
+      description: "Typed local Windows cleanup plan and execute tools"
+      transport: "stdio"
+policy:
+  allow_implicit_invocation: true
