@@ -140,6 +140,33 @@ def test_ancestor_of_protected_or_quarantine_root_is_refused(tmp_path: Path) -> 
     assert quarantine_root.exists()
 
 
+@pytest.mark.skipif(os.name != "nt", reason="process consumer checks are Windows-specific")
+def test_active_process_consumer_is_refused(tmp_path: Path) -> None:
+    service = _service(tmp_path)
+    target = tmp_path / "active-consumer-target"
+    target.mkdir()
+    consumer = subprocess.Popen(
+        [sys.executable, "-c", "import time; time.sleep(30)"],
+        cwd=target,
+        stdin=subprocess.DEVNULL,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+    try:
+        plan = _plan(service, target)
+        assert plan["ok"] is False
+        assert plan["error_code"] == "ACTIVE_CONSUMER"
+        assert any(row["matches"]["cwd"] for row in plan["active_consumers"])
+        assert target.exists()
+    finally:
+        consumer.terminate()
+        try:
+            consumer.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            consumer.kill()
+            consumer.wait(timeout=5)
+
+
 @pytest.mark.skipif(os.name != "nt", reason="safe-cleanup is a Windows capability")
 def test_stale_plan_fails_before_any_mutation(tmp_path: Path) -> None:
     service = _service(tmp_path)
@@ -270,6 +297,79 @@ def test_mcp_server_advertises_only_typed_plan_and_execute_tools() -> None:
     assert asyncio.run(exercise()) == ["safe_cleanup_plan", "safe_cleanup_execute"]
 
 
+@pytest.mark.skipif(os.name != "nt", reason="plugin MCP entry is Windows-specific")
+def test_mcp_server_completes_successful_plan_and_execute_calls(tmp_path: Path) -> None:
+    from mcp.client.stdio import stdio_client
+
+    from mcp import ClientSession, StdioServerParameters
+
+    target = tmp_path / "mcp-success-target"
+    target.mkdir()
+    (target / "payload.txt").write_text("payload", encoding="utf-8")
+    config = tmp_path / "mcp-config.json"
+    config.write_text(
+        json.dumps(
+            {
+                "protected_exact": [],
+                "protected_subtrees": [],
+                "git_roots": [],
+                "quarantine_roots": {tmp_path.drive.upper(): str(tmp_path / "quarantine")},
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    async def exercise() -> tuple[dict[str, object], dict[str, object]]:
+        runtime = json.loads((PLUGIN_ROOT / ".mcp.json").read_text(encoding="utf-8"))["mcpServers"][
+            "safe-cleanup"
+        ]
+        params = StdioServerParameters(
+            command=runtime["command"],
+            args=runtime["args"],
+            cwd=str(PLUGIN_ROOT),
+            env={
+                **os.environ,
+                "SAFE_CLEANUP_STATE_ROOT": str(tmp_path / "mcp-state"),
+                "SAFE_CLEANUP_CONFIG_PATH": str(config),
+            },
+        )
+        async with stdio_client(params) as (read_stream, write_stream):
+            async with ClientSession(read_stream, write_stream) as session:
+                await session.initialize()
+                planned = await asyncio.wait_for(
+                    session.call_tool(
+                        "safe_cleanup_plan",
+                        {
+                            "paths": [str(target)],
+                            "disposition": "permanent",
+                            "classification": "authorized_disposable",
+                            "justification": "MCP success-path regression fixture",
+                            "recovery_basis": "recreated by this test",
+                        },
+                    ),
+                    timeout=5,
+                )
+                plan = json.loads(planned.content[0].text)
+                executed = await asyncio.wait_for(
+                    session.call_tool(
+                        "safe_cleanup_execute",
+                        {
+                            "plan_id": plan["plan_id"],
+                            "plan_sha256": plan["plan_sha256"],
+                        },
+                    ),
+                    timeout=5,
+                )
+                return plan, json.loads(executed.content[0].text)
+
+    plan, receipt = asyncio.run(exercise())
+
+    assert plan["ready"] is True
+    assert receipt["status"] == "completed"
+    assert receipt["ok"] is True
+    assert not target.exists()
+
+
 def test_plugin_manifest_and_skill_are_validation_ready() -> None:
     manifest = json.loads(
         (PLUGIN_ROOT / ".codex-plugin" / "plugin.json").read_text(encoding="utf-8")
@@ -280,5 +380,9 @@ def test_plugin_manifest_and_skill_are_validation_ready() -> None:
     assert manifest["name"] == "safe-cleanup"
     assert manifest["mcpServers"] == "./.mcp.json"
     assert set(mcp_config["mcpServers"]) == {"safe-cleanup"}
+    runtime = mcp_config["mcpServers"]["safe-cleanup"]
+    assert runtime["command"] == "uv"
+    assert "mcp==1.28.1" in runtime["args"]
+    assert "psutil==7.2.2" in runtime["args"]
     assert "arbitrary command" in skill.lower()
     assert "[TODO:" not in skill

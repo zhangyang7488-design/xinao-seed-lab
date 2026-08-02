@@ -1,8 +1,17 @@
 {
   "mcpServers": {
     "safe-cleanup": {
-      "command": "python",
-      "args": ["./mcp/server.py"],
+      "command": "uv",
+      "args": [
+        "run",
+        "--no-project",
+        "--with",
+        "mcp==1.28.1",
+        "--with",
+        "psutil==7.2.2",
+        "python",
+        "./mcp/server.py"
+      ],
       "cwd": ".",
       "env": {
         "PYTHONUTF8": "1"
