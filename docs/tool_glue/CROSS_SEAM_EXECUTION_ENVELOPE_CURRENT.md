@@ -7,7 +7,7 @@ SENTINEL:XINAO_CROSS_SEAM_EXECUTION_ENVELOPE_PROTOCOL_V1
 
 一、身份与边界
 
-1. 本协议是《软件工具胶水宪法》明确纳入的唯一跨接缝窄域附录，只约束一次已选执行怎样穿过现有 adapter、Activity、worker、provider、fan-in 与 fallback 而不失真；宪法仍是唯一软件工程根权威。
+1. 本协议是《软件工具胶水宪法》明确纳入的唯一跨接缝窄域附录，只约束一次已选执行怎样穿过现有 adapter、Activity、worker、provider、fan-in 与 fallback 而不失真；宪法仍是用户可见的当前工程合同入口，但不替代当前意图或 live 工程事实。
 2. 本协议不创造任务授权、continuous、provider 默认、调度、重试 owner、状态库、Gateway、policy engine、daemon 或第二控制面；领域目标与允许副作用只从当前用户请求和当前父对象取得，正式合同只能在其对象作用域与授权范围内细化约束和验收，不能创设、扩张或转移授权。历史合同不得借跨接缝传播成当前任务的准入门。
 3. 只在设计、修改、调用或验收跨进程/跨 provider/跨 transport 接缝时按需读取，不加入每窗热上下文。
 4. 本协议属于 S 工程载体的按需能力，不是 Codex 默认工作父对象或新澳原生研究前门。无明确其他任务时默认进入 `E:\XINAO_RESEARCH_WORKSPACES\xinao-native-research`；只有当前请求明确是跨接缝工程事务，或 live 研究先暴露一个具名接缝缺口，才消费本协议。普通研究、长研究、科学、腿 A、continuous 或多个工人都不自动创建工程运行面。

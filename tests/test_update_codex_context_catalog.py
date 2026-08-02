@@ -105,6 +105,14 @@ def test_catalog_refreshes_hash_index_without_mutating_sources(tmp_path: Path) -
     refreshed_map = json.loads(source_map.read_text(encoding="utf-8"))
     assert catalog["schema_version"] == "xinao.codex_context_catalog.v4"
     assert catalog["legacy_platform_in_active_choice_set"] is False
+    assert (
+        catalog["architecture"]["desktop_mainline_role"]
+        == "user_visible_control_surface_thin_auto_load_only"
+    )
+    assert (
+        catalog["architecture"]["engineering_adjudication"]
+        == "current_intent_plus_live_facts_compiled_by_non_authority_skills"
+    )
     assert {item["id"] for item in catalog["sources"]} == {"first", "second"}
     assert next(item for item in catalog["sources"] if item["id"] == "first")["sha256"] == _sha256(
         first
