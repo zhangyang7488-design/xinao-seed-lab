@@ -425,10 +425,35 @@ class SafeCleanupService:
             )
             if completed.returncode != 0:
                 continue
+            listed: list[Path] = []
             for line in completed.stdout.splitlines():
                 if not line.startswith("worktree "):
                     continue
                 candidate = _normalize_exact_path(line.removeprefix("worktree ").strip())
+                listed.append(candidate)
+            for candidate in listed:
+                exact_target = any(_same_path(candidate, target) for target in targets)
+                if exact_target and len(listed) == 1:
+                    common_dir = subprocess.run(
+                        ["git", "-C", str(candidate), "rev-parse", "--git-common-dir"],
+                        stdin=subprocess.DEVNULL,
+                        capture_output=True,
+                        text=True,
+                        encoding="utf-8",
+                        errors="replace",
+                        timeout=15,
+                        check=False,
+                    )
+                    if common_dir.returncode == 0:
+                        common = Path(common_dir.stdout.strip())
+                        if not common.is_absolute():
+                            common = candidate / common
+                        common = Path(os.path.abspath(os.path.normpath(str(common))))
+                        if _is_same_or_child(common, candidate):
+                            # An exact, self-contained repository with no other worktrees is a
+                            # normal disposable clone. A linked worktree, a repository with
+                            # sibling worktrees, or any target inside a repository remains blocked.
+                            continue
                 observed[os.path.normcase(str(candidate))] = candidate
         return sorted(observed.values(), key=lambda item: os.path.normcase(str(item)))
 
@@ -443,6 +468,7 @@ class SafeCleanupService:
                     "root": value,
                 }
         protected_subtrees = [Path(value) for value in self.config.get("protected_subtrees", [])]
+        protected_subtrees.extend(Path(value) for value in self.config.get("git_roots", []))
         protected_subtrees.extend([self.plugin_root, self.state_root])
         for root in protected_subtrees:
             if _is_same_or_child(target, root) or _is_same_or_child(root, target):

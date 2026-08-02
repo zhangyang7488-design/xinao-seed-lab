@@ -98,7 +98,7 @@ def test_completed_plan_never_deletes_a_recreated_target(tmp_path: Path) -> None
 
 
 @pytest.mark.skipif(os.name != "nt", reason="safe-cleanup is a Windows capability")
-def test_protected_path_and_registered_worktree_are_refused(tmp_path: Path) -> None:
+def test_protected_path_and_configured_git_root_are_refused(tmp_path: Path) -> None:
     protected = tmp_path / "protected"
     protected.mkdir()
     worktree = tmp_path / "active-worktree"
@@ -117,8 +117,99 @@ def test_protected_path_and_registered_worktree_are_refused(tmp_path: Path) -> N
     assert protected_plan["error_code"] == "PROTECTED_PATH"
     assert protected.exists()
     assert worktree_plan["ok"] is False
-    assert worktree_plan["error_code"] == "ACTIVE_GIT_WORKTREE"
+    assert worktree_plan["error_code"] == "PROTECTED_PATH"
     assert worktree.exists()
+
+
+@pytest.mark.skipif(os.name != "nt", reason="safe-cleanup is a Windows capability")
+def test_exact_self_contained_git_repository_can_be_deleted(tmp_path: Path) -> None:
+    repository = tmp_path / "disposable-clone"
+    repository.mkdir()
+    initialized = subprocess.run(
+        ["git", "-C", str(repository), "init"], capture_output=True, text=True, check=False
+    )
+    if initialized.returncode != 0:
+        pytest.skip(f"git init unavailable: {initialized.stderr}")
+    service = _service(tmp_path)
+
+    plan = _plan(service, repository)
+    assert plan["ok"] is True
+    assert plan["ready"] is True
+    result = service.execute_cleanup(
+        plan_id=str(plan["plan_id"]), plan_sha256=str(plan["plan_sha256"])
+    )
+
+    assert result["ok"] is True
+    assert not repository.exists()
+
+
+@pytest.mark.skipif(os.name != "nt", reason="safe-cleanup is a Windows capability")
+def test_target_inside_self_contained_git_repository_is_refused(tmp_path: Path) -> None:
+    repository = tmp_path / "repository"
+    target = repository / "tracked-area"
+    target.mkdir(parents=True)
+    initialized = subprocess.run(
+        ["git", "-C", str(repository), "init"], capture_output=True, text=True, check=False
+    )
+    if initialized.returncode != 0:
+        pytest.skip(f"git init unavailable: {initialized.stderr}")
+    service = _service(tmp_path)
+
+    plan = _plan(service, target)
+
+    assert plan["ok"] is False
+    assert plan["error_code"] == "ACTIVE_GIT_WORKTREE"
+    assert target.exists()
+
+
+@pytest.mark.skipif(os.name != "nt", reason="safe-cleanup is a Windows capability")
+def test_registered_linked_worktree_is_refused(tmp_path: Path) -> None:
+    repository = tmp_path / "repository"
+    linked = tmp_path / "linked-worktree"
+    repository.mkdir()
+    initialized = subprocess.run(
+        ["git", "-C", str(repository), "init"], capture_output=True, text=True, check=False
+    )
+    if initialized.returncode != 0:
+        pytest.skip(f"git init unavailable: {initialized.stderr}")
+    (repository / "seed.txt").write_text("seed", encoding="utf-8")
+    subprocess.run(["git", "-C", str(repository), "add", "seed.txt"], check=True)
+    subprocess.run(
+        [
+            "git",
+            "-C",
+            str(repository),
+            "-c",
+            "user.name=Safe Cleanup Test",
+            "-c",
+            "user.email=safe-cleanup@example.invalid",
+            "commit",
+            "-m",
+            "seed",
+        ],
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    subprocess.run(
+        ["git", "-C", str(repository), "worktree", "add", str(linked)],
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    service = _service(tmp_path, git_roots=[repository])
+
+    plan = _plan(service, linked)
+
+    assert plan["ok"] is False
+    assert plan["error_code"] == "ACTIVE_GIT_WORKTREE"
+    assert linked.exists()
+
+    unconfigured_service = _service(tmp_path)
+    repository_plan = _plan(unconfigured_service, repository)
+    assert repository_plan["ok"] is False
+    assert repository_plan["error_code"] == "ACTIVE_GIT_WORKTREE"
+    assert repository.exists()
 
 
 @pytest.mark.skipif(os.name != "nt", reason="safe-cleanup is a Windows capability")
