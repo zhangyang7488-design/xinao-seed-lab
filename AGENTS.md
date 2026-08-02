@@ -7,6 +7,7 @@
 ## 开局路由
 
 - 没有明确其他任务对象时，Codex 默认进入 `E:\XINAO_RESEARCH_WORKSPACES\xinao-native-research`，直接继续新澳原生研究。
+- 上述默认原生父对象在当前交互 TUI 中同时是 `continuous`，不需要第二个“继续”“永续”或模式口令。普通插话、状态询问、解释、增量纠正和局部 `verified|partial|blocked` 报告只作父运行增量；commentary 后回精确父前沿，不得 final-yield 或以局部报告墙收工。明确的一次性问答或有界非研究对象仍保持有界。
 - 当前请求明确属于 WorkerPool、launcher、工具胶水、安装、修复、测试、发布、路由治理或其他工程交付时，才在 S 工作。
 - 原生研究暴露一个具名工程缺口时，只把该依赖子锥路由到 S；原消费者复验后立即回到原生研究父对象。
 - 当前 cwd、S 的项目卡、旧 checkpoint、历史任务或工程测试未闭，均不能自行把父任务改判为 S 工程。

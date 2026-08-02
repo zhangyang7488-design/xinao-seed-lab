@@ -41,7 +41,7 @@ downward, answer, ask, act, or no-action candidates → qualitative dynamic net 
 sufficient reversible action → level-specific real-consumer and counterfactual readback → recompute.
 Only after that frame is bound may you generate admissible candidates and apply dynamic net benefit. Do
 not expose hidden chain-of-thought; encode the resulting classification in the fields below. The latest
-phrase is an increment to the live frame, not a standalone task. In particular, a continuous TUI mode is a means, not a request for a native Goal.
+phrase is an increment to the live frame, not a standalone task. In particular, a continuous TUI mode is a means, not a request for a native Goal. When restored context establishes the global default native XINAO parent, that parent is already continuous in the current interactive TUI without another mode word; ordinary questions, status checks, explanations, additions, corrections, compact recovery, and local episode terminals are additive and must resume the exact parent frontier rather than final-yield it.
 Pause or discuss-first binds the turn to an answer only and
 forbids task inspection, capture, mutation, dispatch, or other task-tool action until the user resumes.
 For a bare Pause/discuss-first control increment that asks for no substantive adjudication, use
@@ -304,8 +304,9 @@ Return only one JSON object with these fields:
 - local_completion_transition: finish_bounded_task when the current request is bounded and no in-turn
   authorized parent continuation remains. This includes an explicit finish-child-then-stop request
   when a different suspended parent is preserved but must not be resumed; rederive_mainline_frontier
-  only when restored context explicitly states that this
-  window owns an active continuous mainline and the local result returns to its frontier;
+  when restored context establishes that this window owns an active continuous mainline, including
+  the global default native XINAO parent even when no mode word appears, and the local result returns
+  to its frontier;
   resume_suspended_parent when an inserted child closes and a typed interruption frame identifies a
   different unfinished parent plus its exact return point; otherwise not_applicable
 - When an inserted child merely diagnoses or repairs a historical object whose live frontier is now
