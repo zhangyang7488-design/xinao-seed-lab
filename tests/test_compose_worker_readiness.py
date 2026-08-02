@@ -356,23 +356,19 @@ def test_compose_healthcheck_invokes_generation_aware_readiness() -> None:
 def test_default_compose_baseline_contains_only_temporal_core() -> None:
     compose = yaml.safe_load((REPO_ROOT / "docker-compose.yml").read_text(encoding="utf-8"))
     services = compose["services"]
-    assert {
-        name for name, service in services.items() if not service.get("profiles")
-    } == {"shiwu-ku", "naijiu-shiwu", "shiwu-mianban"}
+    assert {name for name, service in services.items() if not service.get("profiles")} == {
+        "shiwu-ku",
+        "naijiu-shiwu",
+        "shiwu-mianban",
+    }
     assert services["houtai-gongren"]["profiles"] == ["extended"]
     assert "mowei-" + "zhixing" not in services
 
 
 def test_compose_lifecycle_scripts_do_not_require_optional_worker() -> None:
-    start = (REPO_ROOT / "scripts" / "Start-XinaoBaseCompose.ps1").read_text(
-        encoding="utf-8"
-    )
-    stop = (REPO_ROOT / "scripts" / "Stop-XinaoBaseCompose.ps1").read_text(
-        encoding="utf-8"
-    )
-    status = (REPO_ROOT / "scripts" / "Status-XinaoBaseCompose.ps1").read_text(
-        encoding="utf-8"
-    )
+    start = (REPO_ROOT / "scripts" / "Start-XinaoBaseCompose.ps1").read_text(encoding="utf-8")
+    stop = (REPO_ROOT / "scripts" / "Stop-XinaoBaseCompose.ps1").read_text(encoding="utf-8")
+    status = (REPO_ROOT / "scripts" / "Status-XinaoBaseCompose.ps1").read_text(encoding="utf-8")
     core_literal = '@("shiwu-ku", "naijiu-shiwu", "shiwu-mianban")'
     assert f"$script:CoreServices = {core_literal}" in start
     assert f"$script:CoreServices = {core_literal}" in stop
