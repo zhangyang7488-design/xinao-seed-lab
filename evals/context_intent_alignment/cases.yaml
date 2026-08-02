@@ -7441,6 +7441,169 @@
     expected_durable_behavior_closure: land_consumer_and_cross_context_regression
     expected_recovered_requirement_atoms: ATOM_NATIVE_RESEARCH_IS_DEFAULT_PARENT|ATOM_CWD_CANNOT_STEAL_PARENT|ATOM_OWNER_CONTACTS_RESEARCH_REALITY|ATOM_GROK_IS_DEFAULT_SEPARABLE_LABOR|ATOM_S_ONLY_FOR_CONCRETE_ENGINEERING_GAP
     expected_rejected_proxy_atoms: ATOM_CWD_SELECTS_ENGINEERING|ATOM_INFRASTRUCTURE_BEFORE_RESEARCH|ATOM_LEGACY_PLATFORM_IS_ALTERNATE_ROUTE|ATOM_CODEX_SUBAGENT_IS_DEFAULT_WORKER
+- description: Default native continuous research survives a status interjection and local episode closure
+  metadata:
+    id: REG_XINAO_DEFAULT_CONTINUOUS_SURVIVES_STATUS_AND_LOCAL_CLOSE
+    domain: continuity
+    class: native_architecture_regression
+    profiles:
+    - smoke
+    - core
+    - deep
+    source_type: observed_failure_and_explicit_user_correction
+    source_ref: current-user-2026-08-03/default-continuous-report-wall
+    lifecycle: regression
+    added_at: '2026-08-03'
+    not_authority: true
+  vars:
+    case_id: REG_XINAO_DEFAULT_CONTINUOUS_SURVIVES_STATUS_AND_LOCAL_CLOSE
+    domain: continuity
+    restored_context: 'The global L0 has made native XINAO research the active default parent and current-TUI
+      continuous mode without a separate mode phrase. One local science episode has just been independently
+      verified and locally committed, but the parent economic-value completion ruler remains open and the
+      recorded next research frontier has a positive action. The user asks an ordinary status question.
+      Neutral candidate pool: ATOM_NATIVE_DEFAULT_CONTINUOUS_WITHOUT_MAGIC=preserve the active native parent
+      and continuous mode without asking for another 永续 or continue phrase; ATOM_STATUS_INTERJECTION_ADDITIVE=answer
+      the status question briefly at the commentary boundary and keep the parent active; ATOM_LOCAL_TERMINAL_SCOPED_ONLY=report
+      the verified episode only as a local result; ATOM_RESUME_EXACT_PARENT_FRONTIER=advance immediately into the
+      recorded positive research frontier; ATOM_COMMENTARY_NOT_FINAL_WALL=use the status answer as an additive
+      update rather than a terminal completion report; ATOM_MODE_MAGIC_REQUIRED=stop until the user explicitly
+      re-enters 永续 mode; ATOM_FINAL_REPORT_WALL=emit a long final completion report and yield control; ATOM_FINISH_BOUNDED_PARENT=treat
+      the local episode as completing the native research parent; ATOM_CREATE_GOAL_TO_CONTINUE=create a native
+      Goal as a prerequisite for continuation; ATOM_LOCAL_BLOCKER_STOPS_PARENT=promote any local blocked cone into
+      a global stop.'
+    user_increment: 刚才那个局部实验已经验证了，现在做到哪了？
+    expected_target_relation: existing_object
+    expected_next_step: act
+    expected_ask_user: false
+    expected_create_repository: false
+    expected_create_daemon: false
+    expected_create_goal: false
+    expected_predecision_order: parent_frame_before_candidate_selection
+    expected_active_problem_level: parent_intent_and_harm
+    expected_problem_level_order: before_rule_skill_mode_worker_and_tool_selection
+    expected_named_goal_relation: means_not_requested|not_applicable
+    expected_action_binding: continue_current_tui|current_authorized_object
+    expected_object_identity_source: restored_context
+    expected_mature_comparison_triggered: false
+    expected_learning_loop: double_loop_structural|not_applicable
+    expected_repair_target: governing_invariant|not_applicable
+    expected_closure_evidence: cross_context_entry_and_negative|not_applicable
+    expected_constraint_governance_disposition: not_applicable
+    expected_effect_scope: reversible_local
+    expected_effect_authority: restored_task_scope
+    expected_coordination_mode: supervisor_only|single_supervisor_worker
+    expected_worker_provider: not_applicable|external_worker|grok
+    expected_worker_transport: not_applicable|adaptive|direct_batch
+    expected_quota_action: not_applicable|reuse_episode_cache|query_now
+    expected_quota_query_disposition: not_applicable|reuse_fresh_snapshot|query_now_before_routing
+    expected_owner_execution_state: inseparable_owner_slice|dynamic_supervisor|authority_lane
+    expected_terminal_refill: not_applicable|immediate_positive_value
+    expected_worker_receipt_disposition: not_applicable|accept
+    expected_text_writer: not_applicable
+    expected_completion_claim_scope: local_object
+    expected_local_completion_transition: rederive_mainline_frontier
+    expected_continuous_run_disposition: continue
+    expected_active_window_role: mainline_owner
+    expected_interruption_frame_action: preserve_current_parent
+    expected_resume_target_source: not_applicable
+    expected_completed_history_disposition: keep_closed
+    expected_frontier_disposition: advance_mainline
+    expected_candidate_value: positive
+    expected_global_frontier_reconciled: false
+    expected_downstream_recovery_required: false
+    expected_freeze_unaffected_provider: false
+    expected_degraded_scope: none
+    expected_preserve_parent_completion_bar: true
+    expected_unaffected_frontier_action: continue_recompute|not_applicable
+    expected_recovery_probe: not_applicable
+    expected_preference_update: none
+    expected_starts_new_project: false
+    expected_decision_responsibility: owner_execute_and_inform
+    expected_human_explanation_mode: technical_plain_action
+    expected_metacognition_disposition: do_not_capture
+    expected_durable_behavior_closure: land_consumer_and_cross_context_regression|not_applicable
+    expected_recovered_requirement_atoms: ATOM_NATIVE_DEFAULT_CONTINUOUS_WITHOUT_MAGIC|ATOM_STATUS_INTERJECTION_ADDITIVE|ATOM_LOCAL_TERMINAL_SCOPED_ONLY|ATOM_RESUME_EXACT_PARENT_FRONTIER|ATOM_COMMENTARY_NOT_FINAL_WALL
+    expected_rejected_proxy_atoms: ATOM_MODE_MAGIC_REQUIRED|ATOM_FINAL_REPORT_WALL|ATOM_FINISH_BOUNDED_PARENT|ATOM_CREATE_GOAL_TO_CONTINUE|ATOM_LOCAL_BLOCKER_STOPS_PARENT
+- description: An explicit bounded non-research task does not inherit native default continuous mode
+  metadata:
+    id: NEG_XINAO_DEFAULT_CONTINUOUS_DOES_NOT_CAPTURE_BOUNDED_NONRESEARCH
+    domain: continuity
+    class: native_architecture_negative
+    profiles:
+    - smoke
+    - core
+    - deep
+    source_type: balanced_scope_reversal
+    source_ref: current-user-2026-08-03/default-continuous-bounded-negative
+    lifecycle: regression
+    added_at: '2026-08-03'
+    not_authority: true
+  vars:
+    case_id: NEG_XINAO_DEFAULT_CONTINUOUS_DOES_NOT_CAPTURE_BOUNDED_NONRESEARCH
+    domain: continuity
+    restored_context: 'A fresh TUI has loaded the global native XINAO default, but no native research
+      episode is active in this request. The user explicitly names one bounded local engineering
+      assertion repair and says to stop after its verification. Neutral candidate pool:
+      ATOM_EXPLICIT_BOUNDED_OBJECT_STAYS_BOUNDED=keep this named non-research repair bounded;
+      ATOM_LOCAL_REPORT_MAY_FINAL_YIELD_BOUNDED_OBJECT=after the named assertion is verified, report
+      its local result and yield because the user explicitly said to stop; ATOM_USER_STOP_BOUNDARY_CONTROLS=the
+      current stop boundary overrides any default parent fallback; ATOM_NATIVE_DEFAULT_CAPTURES_BOUNDED_OBJECT=force
+      the repair into native research continuous mode; ATOM_LOCAL_TERMINAL_ALWAYS_RESUMES_RESEARCH=resume
+      native research despite the explicit stop; ATOM_CONTINUOUS_IS_GLOBAL_DAEMON=apply continuous to every
+      object in the TUI.'
+    user_increment: 只修这个 pytest 的一个断言，验证通过就停；不要继续新澳研究。
+    expected_target_relation: existing_object
+    expected_next_step: act
+    expected_ask_user: false
+    expected_create_repository: false
+    expected_create_daemon: false
+    expected_create_goal: false
+    expected_predecision_order: parent_frame_before_candidate_selection
+    expected_active_problem_level: object_instance
+    expected_problem_level_order: before_rule_skill_mode_worker_and_tool_selection
+    expected_named_goal_relation: not_applicable
+    expected_action_binding: current_authorized_object
+    expected_object_identity_source: current_user_increment|restored_context
+    expected_mature_comparison_triggered: false
+    expected_learning_loop: single_loop_instance
+    expected_repair_target: instance_action
+    expected_closure_evidence: current_object_verification
+    expected_constraint_governance_disposition: not_applicable
+    expected_effect_scope: reversible_local
+    expected_effect_authority: explicit_current_user
+    expected_coordination_mode: supervisor_only|single_supervisor_worker
+    expected_worker_provider: not_applicable|external_worker|grok
+    expected_worker_transport: not_applicable|adaptive|direct_batch
+    expected_quota_action: not_applicable|reuse_episode_cache|query_now
+    expected_quota_query_disposition: not_applicable|reuse_fresh_snapshot|query_now_before_routing
+    expected_owner_execution_state: inseparable_owner_slice|dynamic_supervisor|authority_lane
+    expected_terminal_refill: not_applicable
+    expected_worker_receipt_disposition: not_applicable|accept
+    expected_text_writer: codex_main|not_applicable
+    expected_completion_claim_scope: local_object|not_applicable
+    expected_local_completion_transition: finish_bounded_task
+    expected_continuous_run_disposition: not_applicable|stop_requested
+    expected_active_window_role: bounded_task
+    expected_interruption_frame_action: not_applicable|preserve_current_parent
+    expected_resume_target_source: not_applicable
+    expected_completed_history_disposition: not_applicable
+    expected_frontier_disposition: execute
+    expected_candidate_value: positive
+    expected_global_frontier_reconciled: false
+    expected_downstream_recovery_required: false
+    expected_freeze_unaffected_provider: false
+    expected_degraded_scope: none|dependency_cone_only
+    expected_unaffected_frontier_action: not_applicable
+    expected_recovery_probe: not_applicable
+    expected_preference_update: none
+    expected_starts_new_project: false
+    expected_decision_responsibility: owner_execute_and_inform
+    expected_human_explanation_mode: technical_plain_action
+    expected_metacognition_disposition: do_not_capture
+    expected_durable_behavior_closure: not_applicable
+    expected_recovered_requirement_atoms: ATOM_EXPLICIT_BOUNDED_OBJECT_STAYS_BOUNDED|ATOM_LOCAL_REPORT_MAY_FINAL_YIELD_BOUNDED_OBJECT|ATOM_USER_STOP_BOUNDARY_CONTROLS
+    expected_rejected_proxy_atoms: ATOM_NATIVE_DEFAULT_CAPTURES_BOUNDED_OBJECT|ATOM_LOCAL_TERMINAL_ALWAYS_RESUMES_RESEARCH|ATOM_CONTINUOUS_IS_GLOBAL_DAEMON
 - description: A concrete engineering gap routes narrowly to S and returns to native research
   metadata:
     id: REG_XINAO_ENGINEERING_GAP_RETURNS_TO_NATIVE_PARENT

@@ -343,7 +343,7 @@ def test_context_intent_alignment_eval_is_balanced_and_friction_bounded() -> Non
         (REPO_ROOT / "evals/context_intent_alignment/cases.yaml").read_text(encoding="utf-8")
     )
     cases = {case["metadata"]["id"]: case for case in loaded}
-    assert len(cases) == suite["case_count"] == 117
+    assert len(cases) == suite["case_count"] == 119
     assert len(cases) == len(loaded)
     assert all(case["metadata"]["domain"] == case["vars"]["domain"] for case in cases.values())
     for required in (
@@ -1074,7 +1074,7 @@ def test_context_intent_alignment_eval_is_balanced_and_friction_bounded() -> Non
         transition = values.get("expected_local_completion_transition")
         continuous = values.get("expected_continuous_run_disposition")
         if transition == "finish_bounded_task":
-            assert continuous in {"not_applicable", "stop_requested"}
+            assert set(continuous.split("|")) <= {"not_applicable", "stop_requested"}
         elif transition == "rederive_mainline_frontier":
             assert continuous == "continue"
 
@@ -1106,8 +1106,8 @@ def test_context_intent_alignment_eval_is_balanced_and_friction_bounded() -> Non
         (REPO_ROOT / "evals/behavior_regression/catalog.json").read_text(encoding="utf-8")
     )
     context_suite = next(s for s in catalog["suites"] if s["id"] == "context_intent_alignment")
-    assert context_suite["case_count"] == 117
-    assert catalog["declared_case_count"] == 134
+    assert context_suite["case_count"] == 119
+    assert catalog["declared_case_count"] == 136
 
     decision = json.loads(
         (REPO_ROOT / "evals/context_intent_alignment/decision_model.v1.json").read_text(
@@ -1240,6 +1240,10 @@ def test_context_intent_alignment_eval_is_balanced_and_friction_bounded() -> Non
         "neither selects temporal_durable nor claims parent completion"
         in decision["input_interpretation"]["continuous_task_packages"]
     )
+    interjections = decision["input_interpretation"]["continuous_interjections"]
+    assert "global default native XINAO parent without a second mode phrase" in interjections
+    assert "local verified|partial|blocked report" in interjections
+    assert "without final yield or a terminal report wall" in interjections
     assert (
         "Worker transport is evidence-bound"
         in decision["input_interpretation"]["model_worker_routing"]
@@ -1348,6 +1352,23 @@ def test_thin_project_route_and_behavior_evidence_are_enforced() -> None:
         == "before_rule_skill_mode_worker_and_tool_selection"
     )
 
+    additive = cases["REG_XINAO_DEFAULT_CONTINUOUS_SURVIVES_STATUS_AND_LOCAL_CLOSE"]
+    assert additive["user_increment"] == "刚才那个局部实验已经验证了，现在做到哪了？"
+    assert additive["expected_continuous_run_disposition"] == "continue"
+    assert additive["expected_local_completion_transition"] == "rederive_mainline_frontier"
+    assert additive["expected_active_window_role"] == "mainline_owner"
+    assert additive["expected_frontier_disposition"] == "advance_mainline"
+    assert "ATOM_FINAL_REPORT_WALL" in additive["expected_rejected_proxy_atoms"]
+
+    bounded = cases["NEG_XINAO_DEFAULT_CONTINUOUS_DOES_NOT_CAPTURE_BOUNDED_NONRESEARCH"]
+    assert set(bounded["expected_continuous_run_disposition"].split("|")) == {
+        "not_applicable",
+        "stop_requested",
+    }
+    assert bounded["expected_local_completion_transition"] == "finish_bounded_task"
+    assert bounded["expected_active_window_role"] == "bounded_task"
+    assert "ATOM_LOCAL_TERMINAL_ALWAYS_RESUMES_RESEARCH" in bounded["expected_rejected_proxy_atoms"]
+
     explicit_goal = cases["POS_EXPLICIT_NATIVE_GOAL_REQUEST"]
     assert explicit_goal["expected_create_goal"] is True
     assert explicit_goal["expected_named_goal_relation"] == "explicit_endpoint_requested"
@@ -1389,6 +1410,8 @@ def test_thin_project_route_and_behavior_evidence_are_enforced() -> None:
         "active_problem_level",
         "before_rule_skill_mode_worker_and_tool_selection",
         "a continuous TUI mode is a means, not a request for a native Goal",
+        "global default native XINAO parent",
+        "rather than final-yield it",
         "Pause or discuss-first binds the turn to an answer only",
     ):
         assert required in prompt
@@ -1791,7 +1814,7 @@ def test_behavior_evolution_runner_is_thin_and_domain_research_stays_native() ->
         (REPO_ROOT / "evals/behavior_regression/catalog.json").read_text(encoding="utf-8")
     )
     suite_count = sum(item["case_count"] for item in catalog["suites"])
-    assert suite_count == catalog["declared_case_count"] == 134
+    assert suite_count == catalog["declared_case_count"] == 136
     context_cases = yaml.safe_load(
         (REPO_ROOT / "evals/context_intent_alignment/cases.yaml").read_text(encoding="utf-8")
     )
@@ -1864,6 +1887,10 @@ def test_project_agreement_has_bounded_control_plane_tripwires() -> None:
     text = _project_agreement_contract_text()
     for required in (
         "continuous execution is episodic and checkpoint-based",
+        "global default native XINAO parent is active",
+        "without a second mode phrase",
+        "no local `verified`, `partial`, or `blocked` result",
+        "permits a final-yield transition",
         "no helper may veto a normal turn boundary",
         "adopt a session without a newer fenced ownership generation",
         "predeclared finite time, turn, and action/tool-call budgets",
@@ -1871,6 +1898,10 @@ def test_project_agreement_has_bounded_control_plane_tripwires() -> None:
         "freezes related automation before passive forensics",
     ):
         assert required in text, required
+
+    hot = (REPO_ROOT / "AGENTS.md").read_text(encoding="utf-8")
+    assert "不需要第二个“继续”“永续”或模式口令" in hot
+    assert "不得 final-yield 或以局部报告墙收工" in hot
 
 
 def test_project_agreement_requires_user_named_incident_lifecycle_without_new_authority() -> None:

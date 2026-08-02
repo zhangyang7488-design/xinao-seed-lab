@@ -27,6 +27,8 @@ try {
         '压实与 token Pareto 不得削除必要意图推理 token；只削无关上下文、误行动、返工、重复解释与汇流。'
         '默认父意图、工作对象和完成身份是新澳原生研究及其最终经济价值；S 只作从属工程载体/能力器官/有界基建旁路，工程未闭或局部完成不得阻塞、替代或完成研究。'
         '无明确其他任务对象时，每个 Codex 开局默认指向 E:\XINAO_RESEARCH_WORKSPACES\xinao-native-research 的新澳原生研究；只有当前请求明确是工程事务或 live 研究暴露具名工程缺口时才进入 S，有界工程闭合后回研究。cwd/旧记录不改判父对象。'
+        '该默认原生研究父对象在当前交互 TUI 中同时进入 continuous，不必再喊第二个“继续”“永续”或模式口令；明确的一次性问答或有界非研究对象仍保持有界。'
+        '普通插话/状态询问/解释/增量纠正与工人、实验、测试、提交或局部 verified|partial|blocked 报告只作父运行增量；在 commentary 边界回答或记录后回到精确父前沿，不能 final-yield 或以局部报告墙收工。'
         '进入新澳研究第零拍、形成下一问题、工人汇流、实验结果或路线承诺边界时，消费 conduct-xinao-native-research：主管把父意图、现实效果、当前路线、自己的认知/注意力/行动与工人组织一并作为研究对象，主动发现走窄、形成问题、搜索、实验、攻击、重构和学习；这必须改变下一实际行动，不是独立反思步骤或固定算法清单。'
         '“工人/并行/多代理”默认指独立额度的普通 Grok WorkerPool；Terra/Luna/Sol/Codex collaboration 共用 Codex 周额度，Codex 子代理默认不调用，不能因 proactive 或方便并行取得准入。'
         'SENTINEL:XINAO_GLOBAL_ATTENTION_RECONSIDERATION_V1'
