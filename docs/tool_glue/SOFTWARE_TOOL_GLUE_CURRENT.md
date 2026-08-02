@@ -123,7 +123,7 @@ provider/model/transport/profile 是可替换模块。稳定能力合同只描�
 
 上下文/token 同样按收益分配：稀缺 Codex 上下文留给意图、裁决、单写和终验；工人厚材料与大工具结果留 D，只回有界摘要、hash、路径和必要 readback；需要共享的确定性上下文由已验证 manifest 直接渲染为真实模型输入并绑定其精确 bytes/hash，不另建 compiled cache、语义答案缓存或第二内容平台。依赖漂移、损坏、超预算或模型输入未真实消费即拒绝相应效果声明。节省成本不能降低模型、推理、证据、能力或父完成尺，也不把 token 消耗本身计作进展。
 
-长窗口中段默认不要求用户频繁换窗：大工具输出优先由调用源或单次命令有界落盘，只把必要摘要/路径/readback 放回窗口，不用全局 PostToolUse 改写器替换原始工具返回；在上下文压力高时使用 Codex 原生 compaction。完整状态留 task-run/events/D 证据；当前 session 以显式 CAS 绑定 canonical task-run，原生 `SessionStart(source=compact)` 只读 live task-run 并注入有界父结果、当前 frontier、blocker、Stop 边界与 event head，不自造 Pre/PostCompact 生命周期、控制面或 consumed/applied 声明。上下文压力只作为本节前述动态执行形状的当前输入，不把语义裁决固化成代码 selector；任何形状都是可撤销的本次计划，不是永久配置、身份或固定宗教。
+长窗口中段默认不要求用户频繁换窗：大工具输出优先由调用源或单次命令有界落盘，只把必要摘要/路径/readback 放回窗口，不用全局 PostToolUse 改写器替换原始工具返回；在上下文压力高时使用 Codex 原生 compaction。完整执行状态留 task-run/events/D 证据；task-run 只对其有界执行事实链负责，不能选择或重建用户父意图。当前 session 以显式 CAS 绑定 canonical task-run，原生 `SessionStart(source=compact)` 只读 live task-run 并注入 `task_objective_candidate`、当前 frontier、blocker、Stop 边界与 event head 等候选执行状态；新窗口必须先由当前用户增量、适用 L0 和 live 对象恢复父身份，只有精确同父绑定后才能吸收该有界状态。交互式 task-run 命令统一经 `verified-agent-loop/scripts/task_run.cmd` 调用，不在 PowerShell 裸执行 `.py`，不改系统文件关联或 Codex 本体。该链不自造 Pre/PostCompact 生命周期、控制面或 consumed/applied 声明。上下文压力只作为本节前述动态执行形状的当前输入，不把语义裁决固化成代码 selector；任何形状都是可撤销的本次计划，不是永久配置、身份或固定宗教。
 
 ## 4. 父级持续成熟化不变量的工程兑现与成熟实现准入
 

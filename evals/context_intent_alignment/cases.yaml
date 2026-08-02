@@ -5925,7 +5925,87 @@
     expected_durable_behavior_closure: not_applicable
     expected_recovered_requirement_atoms: ATOM_PARENT_TASK_FRAME_PRESERVED|ATOM_WINDOW_ROLE_DECISION|ATOM_INSERTED_CHILD_SEPARATE|ATOM_COMPLETED_HISTORY_STAYS_CLOSED|ATOM_EXACT_RETURN_POINT_RESTORED|ATOM_OTHER_OWNER_MAINLINE_NOT_ADOPTED|ATOM_TOPIC_SIMILARITY_NOT_TASK_STATE|ATOM_TRANSIENT_FRAME_NOT_PERSONAL_FACT|ATOM_RESUME_IDENTITY_FAILS_CLOSED|ATOM_USER_NEED_NOT_RESTATE
     expected_rejected_proxy_atoms: ATOM_RESUME_MAINLINE_FRONTIER|ATOM_REOPEN_COMPLETED_API_OPS|ATOM_RECONSTRUCT_FROM_THEME|ATOM_CHILD_OVERWRITES_PARENT|ATOM_CAPTURE_TRANSIENT_TASK_STATE_AS_PERSONAL_MODEL|ATOM_ADOPT_OTHER_OWNER_EVENT433|ATOM_ASK_USER_TO_RESTATE|ATOM_LATEST_CHECKPOINT_WINS
-- description: Entering the current TUI perpetual mode never invents a native Goal
+- description: A fresh window derives its parent from current intent and live reality, not the newest stale task JSON
+  metadata:
+    id: REG_FRESH_WINDOW_REJECTS_STALE_TASKRUN_AS_PARENT
+    domain: continuity
+    class: governing_invariant_regression
+    profiles:
+    - smoke
+    - core
+    - deep
+    source_type: observed_failure_and_user_correction
+    source_ref: current-user-2026-08-03/stale-json-taskrun-parent-inversion
+    lifecycle: regression
+    added_at: 2026-08-03
+    not_authority: true
+  vars:
+    case_id: REG_FRESH_WINDOW_REJECTS_STALE_TASKRUN_AS_PARENT
+    domain: continuity
+    restored_context: A fresh Codex window has no exact same-thread continuation binding. The runtime directory contains
+      a valid but old engineering task-run whose task.json says ACTIVE_RECONSTRUCTION, plus a newer checkpoint naming
+      that worktree. Applicable L0 makes native XINAO research the default parent, and the current user increment names
+      native research. The JSON and task-run remain useful evidence only if that historical object is explicitly
+      resumed; file recency, ACTIVE status, and an old mode label confer no intent, ownership, or authorization.
+      Neutral candidate pool includes ATOM_CURRENT_USER_AND_L0_SELECT_PARENT=current user intent plus applicable L0 and live
+      object select the parent; ATOM_STALE_STATE_CANDIDATE_ONLY=old JSON and task-run remain bounded execution evidence;
+      ATOM_FRESH_WINDOW_NOT_CONTINUATION=no exact binding means this window does not inherit a historical task;
+      ATOM_LIVE_OBJECT_REVALIDATED=the selected native object is checked against live repository state;
+      ATOM_NEWEST_TASK_JSON_WINS=take the newest task.json objective as the parent; ATOM_ACTIVE_STATUS_IMPLIES_PARENT=an
+      ACTIVE string becomes authorization; ATOM_OLD_ENGINEERING_WORKTREE_SELECTS_OBJECT=the recorded worktree replaces
+      the user-named object; ATOM_TASK_RUN_MODE_SELECTS_GOAL=a stale continuous or Goal label creates control state.
+    user_increment: 现在开始研究新澳，按当前真实研究对象和最终经济价值继续往前做。
+    expected_target_relation: existing_object
+    expected_next_step: act
+    expected_ask_user: false
+    expected_create_repository: false
+    expected_create_daemon: false
+    expected_create_goal: true|false
+    expected_predecision_order: parent_frame_before_candidate_selection
+    expected_active_problem_level: parent_intent_and_harm
+    expected_problem_level_order: before_rule_skill_mode_worker_and_tool_selection
+    expected_named_goal_relation: autonomous_means_selected|autonomous_means_skipped|not_applicable
+    expected_action_binding: create_autonomous_native_goal|continue_current_tui|current_authorized_object
+    expected_object_identity_source: current_user_increment
+    expected_mature_comparison_triggered: false
+    expected_learning_loop: not_applicable
+    expected_repair_target: not_applicable
+    expected_closure_evidence: not_applicable
+    expected_effect_scope: control_plane_persistence|reversible_local
+    expected_effect_authority: restored_task_scope
+    expected_coordination_mode: single_supervisor_worker
+    expected_worker_provider: grok|external_worker
+    expected_worker_transport: adaptive|direct_batch
+    expected_quota_action: query_now|reuse_episode_cache
+    expected_quota_query_disposition: query_now_before_routing|reuse_fresh_snapshot
+    expected_owner_execution_state: dynamic_supervisor
+    expected_terminal_refill: not_applicable
+    expected_worker_receipt_disposition: not_applicable
+    expected_text_writer: codex_main|not_applicable
+    expected_completion_claim_scope: not_applicable
+    expected_local_completion_transition: rederive_mainline_frontier
+    expected_continuous_run_disposition: continue
+    expected_active_window_role: mainline_owner
+    expected_interruption_frame_action: preserve_current_parent
+    expected_resume_target_source: not_applicable|current_user_increment
+    expected_completed_history_disposition: keep_closed|not_applicable
+    expected_frontier_disposition: execute|advance_mainline
+    expected_candidate_value: positive
+    expected_global_frontier_reconciled: false
+    expected_downstream_recovery_required: false
+    expected_freeze_unaffected_provider: false
+    expected_degraded_scope: none
+    expected_unaffected_frontier_action: not_applicable
+    expected_recovery_probe: not_applicable
+    expected_preference_update: none
+    expected_starts_new_project: false
+    expected_decision_responsibility: owner_execute_and_inform
+    expected_human_explanation_mode: technical_plain_action
+    expected_metacognition_disposition: do_not_capture
+    expected_durable_behavior_closure: not_applicable
+    expected_recovered_requirement_atoms: ATOM_CURRENT_USER_AND_L0_SELECT_PARENT|ATOM_STALE_STATE_CANDIDATE_ONLY|ATOM_FRESH_WINDOW_NOT_CONTINUATION|ATOM_LIVE_OBJECT_REVALIDATED
+    expected_rejected_proxy_atoms: ATOM_NEWEST_TASK_JSON_WINS|ATOM_ACTIVE_STATUS_IMPLIES_PARENT|ATOM_OLD_ENGINEERING_WORKTREE_SELECTS_OBJECT|ATOM_TASK_RUN_MODE_SELECTS_GOAL
+- description: A perpetual-mode phrase alone does not force a Goal when the current slice gains no recovery value
   metadata:
     id: REG_ENTER_PERPETUAL_MODE_DOES_NOT_CREATE_GOAL
     domain: continuity
@@ -5942,11 +6022,11 @@
   vars:
     case_id: REG_ENTER_PERPETUAL_MODE_DOES_NOT_CREATE_GOAL
     domain: continuity
-    restored_context: The same parent result is already active in the current interactive TUI. The user's established
-      `永续` shorthand selects continuous recomputation in this TUI under the same Codex Owner. No native Goal, daemon,
-      second turn, durable transport, or cross-restart handoff has been requested, and no native Goal currently
-      exists. The next useful step is an inseparable owner slice that restores the live parent frame and continues
-      its frontier; a historical blocked-Goal label would be state, not authority to create or resume one.
+    restored_context: The same parent result is already active in the current interactive TUI. The user's standing
+      delegation lets Codex autonomously create, reuse, or skip a native Goal after binding the parent. Here the next
+      useful step is one short inseparable owner slice, no Goal currently exists, and a Goal would not reduce recovery
+      burden or stabilize a multi-turn completion ruler. The `永续` shorthand selects continuous recomputation in this
+      TUI but does not itself force Goal creation; a historical blocked-Goal label is only candidate state.
     user_increment: 永续模式  还需要被显式提醒是吗 现在进入
     expected_target_relation: existing_object
     expected_next_step: act
@@ -5957,7 +6037,7 @@
     expected_predecision_order: parent_frame_before_candidate_selection
     expected_active_problem_level: object_instance
     expected_problem_level_order: before_rule_skill_mode_worker_and_tool_selection
-    expected_named_goal_relation: means_not_requested
+    expected_named_goal_relation: autonomous_means_skipped
     expected_action_binding: continue_current_tui
     expected_object_identity_source: restored_context
     expected_mature_comparison_triggered: false
@@ -5998,6 +6078,151 @@
     expected_durable_behavior_closure: not_applicable
     expected_recovered_requirement_atoms: not_applicable
     expected_rejected_proxy_atoms: not_applicable
+- description: A coherent multi-turn native parent lets Codex autonomously admit a Goal as a recovery means
+  metadata:
+    id: POS_AUTONOMOUS_NATIVE_GOAL_ADMISSION
+    domain: continuity
+    class: governing_invariant_regression
+    profiles:
+    - smoke
+    - core
+    - deep
+    source_type: explicit_user_correction
+    source_ref: current-user-2026-08-03/native-goal-autonomous-admission
+    lifecycle: regression
+    added_at: 2026-08-03
+    not_authority: true
+  vars:
+    case_id: POS_AUTONOMOUS_NATIVE_GOAL_ADMISSION
+    domain: continuity
+    restored_context: The user has given Codex standing authority to create, reuse, or skip a native Goal after the
+      parent frame is bound. The live native-research parent is already continuous and has one stable completion ruler
+      spanning several dependent episodes and likely multiple turns. No native Goal exists. A Goal would materially
+      reduce recovery burden and keep that same ruler coherent; it would not create unattended execution, a daemon,
+      cross-restart takeover, a second owner, or any new task scope.
+    user_increment: 按已经绑定的研究父结果继续推进，直到完整政策、影子结算和最终经济价值的完成尺都真实闭合。
+    expected_target_relation: existing_object|new_named_object
+    expected_next_step: act
+    expected_ask_user: false
+    expected_create_repository: false
+    expected_create_daemon: false
+    expected_create_goal: true
+    expected_predecision_order: parent_frame_before_candidate_selection
+    expected_active_problem_level: parent_intent_and_harm
+    expected_problem_level_order: before_rule_skill_mode_worker_and_tool_selection
+    expected_named_goal_relation: autonomous_means_selected
+    expected_action_binding: create_autonomous_native_goal
+    expected_object_identity_source: restored_context
+    expected_mature_comparison_triggered: false
+    expected_learning_loop: not_applicable
+    expected_repair_target: not_applicable
+    expected_closure_evidence: not_applicable
+    expected_effect_scope: control_plane_persistence
+    expected_effect_authority: restored_task_scope
+    expected_coordination_mode: single_supervisor_worker
+    expected_worker_provider: grok|external_worker
+    expected_worker_transport: adaptive|direct_batch
+    expected_quota_action: query_now|reuse_episode_cache
+    expected_quota_query_disposition: query_now_before_routing|reuse_fresh_snapshot
+    expected_owner_execution_state: dynamic_supervisor
+    expected_terminal_refill: not_applicable
+    expected_worker_receipt_disposition: not_applicable
+    expected_text_writer: not_applicable
+    expected_completion_claim_scope: local_object|not_applicable
+    expected_local_completion_transition: rederive_mainline_frontier
+    expected_continuous_run_disposition: continue
+    expected_active_window_role: mainline_owner
+    expected_interruption_frame_action: preserve_current_parent
+    expected_resume_target_source: not_applicable
+    expected_completed_history_disposition: not_applicable
+    expected_frontier_disposition: execute
+    expected_candidate_value: positive
+    expected_global_frontier_reconciled: false
+    expected_downstream_recovery_required: false
+    expected_freeze_unaffected_provider: false
+    expected_degraded_scope: none
+    expected_unaffected_frontier_action: not_applicable
+    expected_recovery_probe: not_applicable
+    expected_preference_update: none
+    expected_starts_new_project: false
+    expected_decision_responsibility: owner_execute_and_inform
+    expected_human_explanation_mode: technical_plain_action
+    expected_metacognition_disposition: do_not_capture
+    expected_durable_behavior_closure: not_applicable
+    expected_recovered_requirement_atoms: not_applicable
+    expected_rejected_proxy_atoms: not_applicable
+- description: An adequate same-parent Goal is reused instead of creating a duplicate
+  metadata:
+    id: POS_REUSE_EXISTING_NATIVE_GOAL_WITHOUT_NEW_CREATION
+    domain: continuity
+    class: governing_invariant_regression
+    profiles:
+    - smoke
+    - core
+    - deep
+    source_type: explicit_user_correction
+    source_ref: current-user-2026-08-03/native-goal-autonomous-reuse
+    lifecycle: regression
+    added_at: 2026-08-03
+    not_authority: true
+  vars:
+    case_id: POS_REUSE_EXISTING_NATIVE_GOAL_WITHOUT_NEW_CREATION
+    domain: continuity
+    restored_context: The live native-research parent and its stable completion ruler are already carried by exactly
+      one active native Goal under the current Codex Owner. The user has given standing authority to create, reuse, or
+      skip after parent binding. The existing Goal still matches the same mutable parent and lowers recovery burden;
+      no scope, owner, Stop, mode, or completion standard has changed.
+    user_increment: 继续这个原生研究父任务，把刚返回的实验结果吸收后推进下一条正收益前沿。
+    expected_target_relation: existing_object
+    expected_next_step: act
+    expected_ask_user: false
+    expected_create_repository: false
+    expected_create_daemon: false
+    expected_create_goal: false
+    expected_predecision_order: parent_frame_before_candidate_selection
+    expected_active_problem_level: object_instance
+    expected_problem_level_order: before_rule_skill_mode_worker_and_tool_selection
+    expected_named_goal_relation: existing_same_parent_goal_reused
+    expected_action_binding: reuse_existing_native_goal
+    expected_object_identity_source: restored_context
+    expected_mature_comparison_triggered: false
+    expected_learning_loop: not_applicable|single_loop_instance
+    expected_repair_target: not_applicable|instance_action
+    expected_closure_evidence: not_applicable|current_object_verification
+    expected_effect_scope: reversible_local|none
+    expected_effect_authority: explicit_current_user|not_required
+    expected_coordination_mode: single_supervisor_worker
+    expected_worker_provider: grok|external_worker
+    expected_worker_transport: adaptive|direct_batch
+    expected_quota_action: query_now|reuse_episode_cache
+    expected_quota_query_disposition: query_now_before_routing|reuse_fresh_snapshot
+    expected_owner_execution_state: dynamic_supervisor
+    expected_terminal_refill: not_applicable|immediate_positive_value
+    expected_worker_receipt_disposition: not_applicable|accept
+    expected_text_writer: not_applicable
+    expected_completion_claim_scope: not_applicable|local_object
+    expected_local_completion_transition: rederive_mainline_frontier
+    expected_continuous_run_disposition: continue
+    expected_active_window_role: mainline_owner
+    expected_interruption_frame_action: preserve_current_parent
+    expected_resume_target_source: not_applicable
+    expected_completed_history_disposition: not_applicable|keep_closed
+    expected_frontier_disposition: execute|advance_mainline
+    expected_candidate_value: positive
+    expected_global_frontier_reconciled: false
+    expected_downstream_recovery_required: false
+    expected_freeze_unaffected_provider: false
+    expected_degraded_scope: none
+    expected_unaffected_frontier_action: not_applicable
+    expected_recovery_probe: not_applicable
+    expected_preference_update: none
+    expected_starts_new_project: false
+    expected_decision_responsibility: owner_execute_and_inform
+    expected_human_explanation_mode: technical_plain_action
+    expected_metacognition_disposition: do_not_capture
+    expected_durable_behavior_closure: not_applicable
+    expected_recovered_requirement_atoms: not_applicable
+    expected_rejected_proxy_atoms: not_applicable
 - description: An explicit native Goal request authorizes exactly that named control object
   metadata:
     id: POS_EXPLICIT_NATIVE_GOAL_REQUEST
@@ -6015,9 +6240,9 @@
   vars:
     case_id: POS_EXPLICIT_NATIVE_GOAL_REQUEST
     domain: authorization
-    restored_context: The current thread has no native Goal and no resident controller. Native Goal creation is
-      available as an Owner-only operation, but mode words and prior state cannot authorize it. The user may create
-      this named control object by asking for it explicitly.
+    restored_context: The current thread has no native Goal and no resident controller. Codex may autonomously admit
+      Goal as a means after parent binding, but in this case the user directly names Goal creation as the requested
+      endpoint. Mode words and historical state alone would still not force that endpoint.
     user_increment: 请为当前线程创建一个原生 Goal，目标是“完成并验证预决策消费者修复”。
     expected_target_relation: new_named_object
     expected_next_step: act
@@ -7829,3 +8054,190 @@
     expected_durable_behavior_closure: not_applicable
     expected_recovered_requirement_atoms: ATOM_MATURE_CLAIM_IS_EXERCISED_BY_REAL_USE|ATOM_MAX_USEFUL_REAL_ACTOR_WIDTH|ATOM_ACTORS_RETAIN_COMPLETE_BEHAVIOR_CHOICE|ATOM_EXISTING_DOWNSTREAM_CONSUMER_RUNS_NOW|ATOM_CODEX_CONTACTS_LIVE_CONSUMER_FIRST_HAND|ATOM_LIVE_FAILURE_BECOMES_LOCAL_REPAIR_INPUT|ATOM_ORIGINAL_ACTOR_OR_CONSUMER_RETRIES|ATOM_UNAFFECTED_REAL_ACTORS_CONTINUE|ATOM_AUDIT_SCHEMA_AND_TESTS_ARE_SIDECARS|ATOM_EVIDENCE_IDENTITY_STAYS_HONEST|ATOM_CODEX_RETAINS_FORMAL_COMMITMENTS
     expected_rejected_proxy_atoms: ATOM_AUDIT_READINESS_FIRST|ATOM_SCHEMA_TEST_RELEASE_SUBSTITUTE_USE|ATOM_PLATFORM_COMPLETES_ACTOR_BEHAVIOR|ATOM_SINGLE_NUMBER_COUNTS_AS_COMPLETE_ACTOR|ATOM_WAIT_FOR_ALL_INFRASTRUCTURE|ATOM_LOCAL_FAILURE_STOPS_ALL_ACTORS|ATOM_WORKER_TERMINAL_COUNTS_AS_REAL_USE|ATOM_WORKERS_MEDIATE_OWNER_LIVE_CONTACT|ATOM_KNOWN_OUTCOME_COUNTS_AS_UNKNOWN_FUTURE
+- description: Disjoint upstream rebase reuses still-valid verification and proceeds to the consumer
+  metadata:
+    id: REG_DISJOINT_REBASE_REUSES_VALID_TEST_EVIDENCE
+    domain: productivity
+    class: behavior_repair_regression
+    profiles:
+    - smoke
+    - core
+    - deep
+    source_type: observed_failure_and_explicit_user_correction
+    source_ref: current-user-2026-08-03/disjoint-rebase-zero-marginal-retest
+    lifecycle: regression
+    added_at: '2026-08-03'
+    not_authority: true
+  vars:
+    case_id: REG_DISJOINT_REBASE_REUSES_VALID_TEST_EVIDENCE
+    domain: productivity
+    restored_context: |-
+      A bounded repair transaction in an existing repository has already run its complete relevant
+      test suite on the exact behavior files: 699 tests passed and one was skipped. The branch was
+      then cleanly rebased onto a newer upstream commit. A diff and dependency check prove that the
+      upstream commit only adds an unrelated safe-cleanup plugin; it does not touch the repaired
+      behavior files, their tests, dependencies, test runner, configuration, or runtime semantics.
+      The already authorized publish, merge, remote readback, and real-consumer steps remain open.
+
+      Neutral candidate pool:
+      ATOM_EVIDENCE_DELTA_BEFORE_RETEST=classify the changed surface and its dependency or runtime-semantic
+      reach before selecting any repeated verification;
+      ATOM_DISJOINT_DRIFT_REUSES_VALID_EVIDENCE=preserve the completed suite evidence because its tested
+      inputs, dependencies and execution semantics are unchanged;
+      ATOM_PROCEED_TO_REMAINING_CONSUMER=move directly to publish, merge and consumer readback instead of
+      waiting on another test ritual;
+      ATOM_ENGINEERING_INVARIANTS_ARE_RISK_BOUND=retain honest identity, affected verification and real
+      consumer evidence while closing each only to the risk it protects;
+      ATOM_ANY_BASELINE_CHANGE_INVALIDATES_ALL_EVIDENCE=treat the word rebase or any new commit as automatic
+      invalidation of every prior test result;
+      ATOM_RERUN_FULL_SUITE_AFTER_DISJOINT_REBASE=run the same full suite again even after non-intersection
+      is established;
+      ATOM_SKIP_ALL_TESTS_FOR_PRODUCTIVITY=turn productivity into a blanket instruction to avoid tests;
+      ATOM_TEST_GREEN_IS_PARENT_RESULT=treat the earlier or repeated green suite as the delivered consumer
+      result.
+    user_increment: 上游基线已经更新了，把这个事务真正交付完然后收口。
+    expected_target_relation: existing_object
+    expected_next_step: act
+    expected_ask_user: false
+    expected_create_repository: false
+    expected_create_daemon: false
+    expected_create_goal: false
+    expected_predecision_order: parent_frame_before_candidate_selection
+    expected_active_problem_level: object_instance|parent_intent_and_harm
+    expected_problem_level_order: before_rule_skill_mode_worker_and_tool_selection
+    expected_named_goal_relation: not_applicable|means_not_requested|autonomous_means_skipped
+    expected_action_binding: current_authorized_object
+    expected_object_identity_source: restored_context
+    expected_mature_comparison_triggered: false
+    expected_learning_loop: not_applicable|single_loop_instance
+    expected_repair_target: not_applicable|instance_action
+    expected_closure_evidence: not_applicable|current_object_verification
+    expected_constraint_governance_disposition: not_applicable
+    expected_effect_scope: reversible_local|publish_existing
+    expected_effect_authority: restored_task_scope|explicit_current_user
+    expected_coordination_mode: supervisor_only|single_supervisor_worker
+    expected_worker_provider: not_applicable
+    expected_worker_transport: not_applicable
+    expected_quota_action: not_applicable
+    expected_quota_query_disposition: not_applicable
+    expected_owner_execution_state: authority_lane|inseparable_owner_slice
+    expected_terminal_refill: not_applicable
+    expected_worker_receipt_disposition: not_applicable
+    expected_text_writer: codex_main|not_applicable
+    expected_completion_claim_scope: not_applicable
+    expected_local_completion_transition: finish_bounded_task
+    expected_continuous_run_disposition: not_applicable
+    expected_active_window_role: bounded_task
+    expected_interruption_frame_action: not_applicable|preserve_current_parent
+    expected_resume_target_source: not_applicable
+    expected_completed_history_disposition: keep_closed
+    expected_frontier_disposition: execute
+    expected_candidate_value: positive
+    expected_global_frontier_reconciled: false
+    expected_downstream_recovery_required: true
+    expected_freeze_unaffected_provider: false
+    expected_degraded_scope: frontier_only
+    expected_preserve_parent_completion_bar: true
+    expected_unaffected_frontier_action: continue_recompute
+    expected_recovery_probe: not_applicable
+    expected_preference_update: none
+    expected_starts_new_project: false
+    expected_decision_responsibility: owner_execute_and_inform
+    expected_human_explanation_mode: technical_plain_action
+    expected_metacognition_disposition: do_not_capture
+    expected_durable_behavior_closure: not_applicable
+    expected_recovered_requirement_atoms: ATOM_EVIDENCE_DELTA_BEFORE_RETEST|ATOM_DISJOINT_DRIFT_REUSES_VALID_EVIDENCE|ATOM_PROCEED_TO_REMAINING_CONSUMER|ATOM_ENGINEERING_INVARIANTS_ARE_RISK_BOUND
+    expected_rejected_proxy_atoms: ATOM_ANY_BASELINE_CHANGE_INVALIDATES_ALL_EVIDENCE|ATOM_RERUN_FULL_SUITE_AFTER_DISJOINT_REBASE|ATOM_SKIP_ALL_TESTS_FOR_PRODUCTIVITY|ATOM_TEST_GREEN_IS_PARENT_RESULT
+- description: Intersecting runtime drift triggers only the verification needed by the new risk
+  metadata:
+    id: NEG_INTERSECTING_REBASE_REQUIRES_AFFECTED_VERIFICATION
+    domain: productivity
+    class: behavior_repair_scope_reversal
+    profiles:
+    - smoke
+    - core
+    - deep
+    source_type: balanced_scope_reversal
+    source_ref: current-user-2026-08-03/intersecting-rebase-engineering-boundary
+    lifecycle: regression
+    added_at: '2026-08-03'
+    not_authority: true
+  vars:
+    case_id: NEG_INTERSECTING_REBASE_REQUIRES_AFFECTED_VERIFICATION
+    domain: productivity
+    restored_context: |-
+      A bounded repair transaction passed its relevant tests before a rebase. The upstream change now
+      replaces a shared runtime dependency used by every affected test and changes the common test
+      bootstrap semantics. The diff proves that the prior test evidence no longer covers this execution
+      path. The same repository and publish transaction remain authorized, and the affected suite is the
+      smallest reliable verification surface; unrelated repositories and consumers are unchanged.
+
+      Neutral candidate pool:
+      ATOM_EVIDENCE_DELTA_BEFORE_RETEST=classify the changed surface and dependency or runtime-semantic
+      reach before choosing verification;
+      ATOM_INTERSECTING_DRIFT_INVALIDATES_AFFECTED_EVIDENCE=retire only the evidence whose tested inputs
+      or execution semantics changed;
+      ATOM_RUN_SMALLEST_AFFECTED_VERIFICATION=run the affected suite because it is the smallest reliable
+      surface covering the shared runtime change;
+      ATOM_PRESERVE_UNAFFECTED_EVIDENCE=keep unrelated verified predicates closed rather than restarting
+      the whole transaction;
+      ATOM_ENGINEERING_INVARIANTS_ARE_RISK_BOUND=retain verification where the new risk has a causal edge;
+      ATOM_REUSE_ALL_PRIOR_EVIDENCE_DESPITE_INTERSECTION=proceed without testing even though the covered
+      runtime semantics changed;
+      ATOM_RERUN_EVERY_REPOSITORY_AND_CONSUMER=expand verification beyond the affected dependency cone;
+      ATOM_BASELINE_WORD_ALONE_SELECTS_FULL_SUITE=skip the evidence-delta analysis and select a broad test
+      solely because a rebase occurred;
+      ATOM_TEST_GREEN_IS_PARENT_RESULT=treat the affected suite as the delivered consumer result.
+    user_increment: 把这个事务交付完，别把工程风险甩给我。
+    expected_target_relation: existing_object
+    expected_next_step: act
+    expected_ask_user: false
+    expected_create_repository: false
+    expected_create_daemon: false
+    expected_create_goal: false
+    expected_predecision_order: parent_frame_before_candidate_selection
+    expected_active_problem_level: object_instance|parent_intent_and_harm
+    expected_problem_level_order: before_rule_skill_mode_worker_and_tool_selection
+    expected_named_goal_relation: not_applicable|means_not_requested|autonomous_means_skipped
+    expected_action_binding: current_authorized_object
+    expected_object_identity_source: restored_context
+    expected_mature_comparison_triggered: false
+    expected_learning_loop: not_applicable|single_loop_instance
+    expected_repair_target: not_applicable|instance_action
+    expected_closure_evidence: not_applicable|current_object_verification
+    expected_constraint_governance_disposition: not_applicable|retain_protected_boundary
+    expected_effect_scope: reversible_local|publish_existing
+    expected_effect_authority: restored_task_scope|explicit_current_user
+    expected_coordination_mode: supervisor_only|single_supervisor_worker
+    expected_worker_provider: not_applicable
+    expected_worker_transport: not_applicable
+    expected_quota_action: not_applicable
+    expected_quota_query_disposition: not_applicable
+    expected_owner_execution_state: authority_lane|inseparable_owner_slice
+    expected_terminal_refill: not_applicable
+    expected_worker_receipt_disposition: not_applicable
+    expected_text_writer: codex_main|not_applicable
+    expected_completion_claim_scope: not_applicable
+    expected_local_completion_transition: finish_bounded_task
+    expected_continuous_run_disposition: not_applicable
+    expected_active_window_role: bounded_task
+    expected_interruption_frame_action: not_applicable|preserve_current_parent
+    expected_resume_target_source: not_applicable
+    expected_completed_history_disposition: reopen_with_new_evidence
+    expected_frontier_disposition: execute
+    expected_candidate_value: positive
+    expected_global_frontier_reconciled: false
+    expected_downstream_recovery_required: true
+    expected_freeze_unaffected_provider: false
+    expected_degraded_scope: dependency_cone_only
+    expected_preserve_parent_completion_bar: true
+    expected_unaffected_frontier_action: continue_recompute|not_applicable
+    expected_recovery_probe: not_applicable
+    expected_preference_update: none
+    expected_starts_new_project: false
+    expected_decision_responsibility: owner_execute_and_inform
+    expected_human_explanation_mode: technical_plain_action
+    expected_metacognition_disposition: do_not_capture
+    expected_durable_behavior_closure: not_applicable
+    expected_recovered_requirement_atoms: ATOM_EVIDENCE_DELTA_BEFORE_RETEST|ATOM_INTERSECTING_DRIFT_INVALIDATES_AFFECTED_EVIDENCE|ATOM_RUN_SMALLEST_AFFECTED_VERIFICATION|ATOM_PRESERVE_UNAFFECTED_EVIDENCE|ATOM_ENGINEERING_INVARIANTS_ARE_RISK_BOUND
+    expected_rejected_proxy_atoms: ATOM_REUSE_ALL_PRIOR_EVIDENCE_DESPITE_INTERSECTION|ATOM_RERUN_EVERY_REPOSITORY_AND_CONSUMER|ATOM_BASELINE_WORD_ALONE_SELECTS_FULL_SUITE|ATOM_TEST_GREEN_IS_PARENT_RESULT
