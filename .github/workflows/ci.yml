@@ -39,15 +39,15 @@ jobs:
       - name: Ruff lint and format check
         run: |
           set +e
-          uv run ruff check services scripts tests skills/xinao/scripts docker/xinao-researcher
+          uv run ruff check services scripts tests
           lint_rc=$?
-          uv run ruff format --check services scripts tests skills/xinao/scripts docker/xinao-researcher
+          uv run ruff format --check services scripts tests
           format_rc=$?
           if [ "$lint_rc" -ne 0 ]; then exit "$lint_rc"; fi
           exit "$format_rc"
 
       - name: Compile retained Python
-        run: uv run python -m compileall -q services scripts tests skills/xinao/scripts docker/xinao-researcher
+        run: uv run python -m compileall -q services scripts tests
 
   verify:
     # Six jobs: Ubuntu 3.12 × shards 0/1/2 and Windows 3.11 × shards 0/1/2.
@@ -119,54 +119,6 @@ jobs:
             os: windows-latest
             pytest_args: -q
             ruff_paths: .
-          - project: xinao-market-lab
-            path: projects/xinao-market-lab
-            os: ubuntu-latest
-            pytest_args: -q
-            ruff_paths: .
-          - project: g4-hidden-capability-seam
-            path: projects/g4-hidden-capability-seam
-            os: windows-latest
-            pytest_args: -q
-            ruff_paths: src adapters tests
-          # AF-005 single_home: exercise the exact package cone and durable unit suite on PRs.
-          - project: xinao-discovery
-            path: xinao_discovery
-            os: ubuntu-latest
-            pytest_args: -q tests/unit/single_home
-            ruff_paths: src/xinao/single_home tests/unit/single_home
-          - project: discovery-capability
-            path: xinao_discovery
-            os: ubuntu-latest
-            pytest_args: -q tests/unit/capability
-            ruff_paths: src/xinao/capability tests/unit/capability
-          - project: discovery-science-parent
-            path: xinao_discovery
-            os: ubuntu-latest
-            pytest_args: -q tests/unit/science tests/contract/test_world.py
-            ruff_paths: >-
-              src/xinao/science src/xinao/world/builder.py
-              tests/unit/science tests/contract/test_world.py
-          - project: discovery-domain-admission
-            path: xinao_discovery
-            os: ubuntu-latest
-            pytest_args: >-
-              -q tests/unit/admission tests/unit/ledger/test_formal_vertical_registration.py
-            ruff_paths: >-
-              src/xinao/admission scripts/register/formal_vertical.py
-              tests/unit/admission tests/unit/ledger/test_formal_vertical_registration.py
-          - project: discovery-operational-assurance
-            path: xinao_discovery
-            os: ubuntu-latest
-            pytest_args: -q tests/unit/assurance
-            ruff_paths: src/xinao/assurance tests/unit/assurance
-          # Shadow lifecycle product cone: continuous portfolios changed this path
-          # but no project-verify row previously scheduled unit coverage.
-          - project: discovery-shadow-lifecycle
-            path: xinao_discovery
-            os: ubuntu-latest
-            pytest_args: -q tests/unit/shadow_lifecycle
-            ruff_paths: src/xinao/shadow_lifecycle tests/unit/shadow_lifecycle
     defaults:
       run:
         working-directory: ${{ matrix.path }}

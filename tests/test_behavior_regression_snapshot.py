@@ -32,6 +32,7 @@ def _fixture_repo(tmp_path: Path) -> Path:
         "evals/context_intent_alignment/cases.yaml": "[]\n",
         "evals/context_intent_alignment/prompt.txt": "prompt\n",
         "unrelated/tracked.txt": "audit only\n",
+        "unrelated/deleted.txt": "must follow live deletion\n",
         ".gitignore": "ignored.txt\n",
     }
     for relative, value in files.items():
@@ -40,6 +41,7 @@ def _fixture_repo(tmp_path: Path) -> Path:
     _write(root / "ignored.txt", "must not be copied\n")
     subprocess.run(["git", "init", "--quiet", str(root)], check=True)
     subprocess.run(["git", "-C", str(root), "add", "."], check=True)
+    (root / "unrelated/deleted.txt").unlink()
     return root
 
 
@@ -53,6 +55,7 @@ def test_context_snapshot_is_immutable_and_effective_tree_is_sparse(tmp_path: Pa
     effective = Path(manifest["effective_root"])
 
     assert (raw / "unrelated/tracked.txt").read_text(encoding="utf-8") == "audit only\n"
+    assert not (raw / "unrelated/deleted.txt").exists()
     assert (raw / "untracked.txt").exists()
     assert not (raw / "ignored.txt").exists()
     assert not (effective / "unrelated/tracked.txt").exists()
@@ -75,7 +78,6 @@ def test_external_cache_is_copied_and_rebound_for_deep_profile(tmp_path: Path) -
     for relative in (
         "evals/codex_capability",
         "evals/proactive_mature_first",
-        "evals/dynamic_orchestration",
         "evals/mature_capability_recall",
         "evals/thin_localization/fixture_template",
     ):
@@ -84,8 +86,6 @@ def test_external_cache_is_copied_and_rebound_for_deep_profile(tmp_path: Path) -
         "tests/test_open_world_reuse_behavior.py",
         "tests/test_repo_safety.py",
         "tests/test_behavior_regression_snapshot.py",
-        "tests/test_dynamic_orchestration_runner.py",
-        "tests/test_dynamic_orchestration_behavior.py",
     ):
         _write(repo / relative, "# test\n")
     external = tmp_path / "external.json"
@@ -105,44 +105,3 @@ def test_external_cache_is_copied_and_rebound_for_deep_profile(tmp_path: Path) -
     assert str(external) not in effective_config
     assert "/src/x/live_discovery_cache/external.json" in effective_config.replace("\\", "/")
     assert manifest["external_files"][0]["sha256"]
-    assert (effective / "evals/dynamic_orchestration/placeholder.txt").exists()
-    assert (effective / "tests/test_dynamic_orchestration_runner.py").exists()
-    assert (effective / "tests/test_dynamic_orchestration_behavior.py").exists()
-
-
-def test_orchestration_snapshot_includes_suite_and_excludes_unrelated(tmp_path: Path) -> None:
-    repo = _fixture_repo(tmp_path)
-    _write(repo / "evals/dynamic_orchestration/promptfooconfig.yaml", "description: x\n")
-    _write(repo / "evals/dynamic_orchestration/cases.yaml", "[]\n")
-    _write(repo / "tests/test_dynamic_orchestration_runner.py", "# test\n")
-    _write(repo / "tests/test_dynamic_orchestration_behavior.py", "# test\n")
-    _write(repo / "evals/codex_capability/placeholder.txt", "x\n")
-    subprocess.run(["git", "-C", str(repo), "add", "."], check=True)
-
-    output = tmp_path / "run"
-    output.mkdir()
-    manifest_path = create_snapshot(repo, output, "orchestration")
-    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-    effective = Path(manifest["effective_root"])
-
-    assert (effective / "evals/dynamic_orchestration/promptfooconfig.yaml").exists()
-    assert (effective / "evals/dynamic_orchestration/cases.yaml").exists()
-    assert (effective / "tests/test_dynamic_orchestration_runner.py").exists()
-    assert (effective / "tests/test_dynamic_orchestration_behavior.py").exists()
-    assert not (effective / "evals/context_intent_alignment").exists()
-    assert not (effective / "evals/codex_capability").exists()
-    roles = {row["role"] for row in manifest["source_inputs"]}
-    assert "dynamic_orchestration_eval" in roles
-    assert "dynamic_orchestration_runner_tests" in roles
-    assert "dynamic_orchestration_behavior_tests" in roles
-
-    capability_output = tmp_path / "capability-run"
-    capability_output.mkdir()
-    capability_manifest = json.loads(
-        create_snapshot(repo, capability_output, "capability").read_text(encoding="utf-8")
-    )
-    capability_effective = Path(capability_manifest["effective_root"])
-    assert (capability_effective / "evals/codex_capability/placeholder.txt").exists()
-    assert not (capability_effective / "evals/dynamic_orchestration").exists()
-    assert not (capability_effective / "tests/test_dynamic_orchestration_runner.py").exists()
-    assert not (capability_effective / "tests/test_dynamic_orchestration_behavior.py").exists()

@@ -6,12 +6,6 @@ import os
 from dataclasses import dataclass, field
 from typing import Any
 
-from services.agent_runtime.foundation_continuous_workflow import (
-    temporal_exports as foundation_continuous_exports,
-)
-from services.agent_runtime.foundation_continuous_workflow_v2 import (
-    temporal_exports_v2 as foundation_continuous_exports_v2,
-)
 from services.agent_runtime.integrated_bus_graph import (
     GRAPH_ID,
     XinaoIntegratedBusWorkflow,
@@ -32,13 +26,6 @@ from services.agent_runtime.openhands_execution_contract import (
 )
 from services.agent_runtime.openhands_execution_contract import (
     XinaoOpenHandsExecuteWorkflowV1,
-)
-from services.agent_runtime.xinao_mainline_canary import (
-    TASK_QUEUE as MAINLINE_CANARY_TASK_QUEUE,
-)
-from services.agent_runtime.xinao_mainline_canary import temporal_exports as mainline_exports
-from services.agent_runtime.xinao_science_episode_workflow import (
-    temporal_exports_v1 as science_episode_exports,
 )
 
 
@@ -105,28 +92,6 @@ def collect_worker_bindings() -> list[WorkerBinding]:
         ]
     )
 
-    mainline_workflows, mainline_activities = mainline_exports()
-    science_workflows, science_activities = science_episode_exports()
-    foundation_workflows, foundation_activities = foundation_continuous_exports()
-    foundation_v2_workflows, foundation_v2_activities = foundation_continuous_exports_v2()
-    bindings.append(
-        WorkerBinding(
-            task_queue=MAINLINE_CANARY_TASK_QUEUE,
-            workflows=[
-                *mainline_workflows,
-                *science_workflows,
-                *foundation_workflows,
-                *foundation_v2_workflows,
-            ],
-            activities=[
-                *mainline_activities,
-                *science_activities,
-                *foundation_activities,
-                *foundation_v2_activities,
-            ],
-        )
-    )
-
     return bindings
 
 
@@ -136,12 +101,6 @@ def registry_summary() -> dict[str, Any]:
         "XinaoIntegratedBusWorkflow": "REUSABLE_INSTRUMENT",
         "XinaoIntegratedBusParentWorkflow": "REUSABLE_INSTRUMENT_ORCHESTRATOR",
         "XinaoIntegratedBusChildWorkflow": "REUSABLE_INSTRUMENT_CHILD",
-        "XinaoScienceEpisodeWorkflowV1": "CURRENT_SCIENCE_ENTRY",
-        "XinaoResearchCampaignWorkflow": "LEGACY_REPLAY",
-        "XinaoMainlineCanaryWorkflow": "INFRASTRUCTURE_CANARY",
-        "FoundationContinuousWorkflowV1": "LEGACY_PARENT_G0_G8_REPLAY",
-        "FoundationWaveChildWorkflowV1": "LEGACY_PARENT_G0_G8_REPLAY",
-        "FoundationContinuousWorkflowV2": "LEGACY_PARENT_G0_G8_REPLAY",
     }
     return {
         "binding_count": len(bindings),

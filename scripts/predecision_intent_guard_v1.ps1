@@ -6,70 +6,6 @@ $utf8 = [Text.UTF8Encoding]::new($false)
 [Console]::OutputEncoding = $utf8
 $OutputEncoding = $utf8
 
-function Get-AttentionLiveDeltaContext {
-    # Optional compressed live facts for Owner reconsideration. Always fail-open.
-    # Host projection (Owner only; this candidate does not install):
-    #   1) Copy this file + collect_attention_live_delta.ps1 to
-    #      D:\XINAO_RESEARCH_RUNTIME\state\Codex_Situation_Island\scripts\
-    #   2) Re-pin C:\Users\xx363\.codex\hooks.json predecision SHA256 to the
-    #      new island predecision_intent_guard_v1.ps1 hash (do not leave stale pin).
-    #   3) Smoke: UserPromptSubmit JSON | pwsh -NoProfile -File <island predecision>
-    #      expect continue=true and LIVE_DELTA facts or LIVE_DELTA_UNAVAILABLE; <<5s.
-    $collector = Join-Path $PSScriptRoot 'collect_attention_live_delta.ps1'
-    if (-not (Test-Path -LiteralPath $collector -PathType Leaf)) {
-        return @(
-            'SENTINEL:XINAO_ATTENTION_LIVE_DELTA_V1'
-            'LIVE_DELTA_UNAVAILABLE:collector_missing'
-        )
-    }
-    $timeoutMs = 1500
-    if ($env:XINAO_ATTENTION_LIVE_DELTA_TIMEOUT_MS) {
-        $parsed = 0
-        if ([int]::TryParse($env:XINAO_ATTENTION_LIVE_DELTA_TIMEOUT_MS, [ref]$parsed) -and $parsed -gt 0) {
-            $timeoutMs = $parsed
-        }
-    }
-    try {
-        $psi = New-Object System.Diagnostics.ProcessStartInfo
-        $pwsh = (Get-Command pwsh -ErrorAction SilentlyContinue)
-        if ($pwsh) {
-            $psi.FileName = $pwsh.Source
-        } else {
-            $psi.FileName = 'powershell.exe'
-        }
-        $psi.Arguments = "-NoProfile -File `"$collector`""
-        $psi.RedirectStandardOutput = $true
-        $psi.RedirectStandardError = $true
-        $psi.UseShellExecute = $false
-        $psi.CreateNoWindow = $true
-        $p = [Diagnostics.Process]::Start($psi)
-        if (-not $p.WaitForExit($timeoutMs)) {
-            try { $p.Kill() } catch {}
-            return @(
-                'SENTINEL:XINAO_ATTENTION_LIVE_DELTA_V1'
-                'LIVE_DELTA_UNAVAILABLE:timeout'
-            )
-        }
-        $stdout = $p.StandardOutput.ReadToEnd()
-        if ([string]::IsNullOrWhiteSpace($stdout)) {
-            return @(
-                'SENTINEL:XINAO_ATTENTION_LIVE_DELTA_V1'
-                'LIVE_DELTA_UNAVAILABLE:empty'
-            )
-        }
-        $maxChars = 1200
-        if ($stdout.Length -gt $maxChars) {
-            $stdout = $stdout.Substring(0, $maxChars) + [Environment]::NewLine + 'LIVE_DELTA_TRUNCATED'
-        }
-        return @($stdout.TrimEnd() -split "`r?`n")
-    } catch {
-        return @(
-            'SENTINEL:XINAO_ATTENTION_LIVE_DELTA_V1'
-            'LIVE_DELTA_UNAVAILABLE:probe_error'
-        )
-    }
-}
-
 try {
     $raw = [Console]::In.ReadToEnd()
     if ([string]::IsNullOrWhiteSpace($raw)) { exit 0 }
@@ -88,11 +24,14 @@ try {
         '回复、记录、选规则/Skill/工具/工人或行动前，先把最新话语作为现场增量放回完整父帧：父结果与负担、活动主体/对象、手段与终点、调用者/Owner/工人/消费者角色、真实完成尺、授权与 Stop。'
         '例子、类比、类似/可能等模态词、关键词，以及 AI/task-run/checkpoint 文本都只提供候选语义；不得自行升格为白名单、全局不变量、父意图或授权。先验对象与意图匹配，再验工程正确。'
         '压实与 token Pareto 不得削除必要意图推理 token；只削无关上下文、误行动、返工、重复解释与汇流。'
+        '默认父意图、工作对象和完成身份是新澳原生研究及其最终经济价值；S 只作从属工程载体/能力器官/有界基建旁路，工程未闭或局部完成不得阻塞、替代或完成研究。'
+        '无明确其他任务对象时，每个 Codex 开局默认指向 E:\XINAO_RESEARCH_WORKSPACES\xinao-native-research 的新澳原生研究；只有当前请求明确是工程事务或 live 研究暴露具名工程缺口时才进入 S，有界工程闭合后回研究。cwd/旧记录不改判父对象。'
+        '进入新澳研究第零拍、形成下一问题、工人汇流、实验结果或路线承诺边界时，消费 conduct-xinao-native-research：主管把父意图、现实效果、当前路线、自己的认知/注意力/行动与工人组织一并作为研究对象，主动发现走窄、形成问题、搜索、实验、攻击、重构和学习；这必须改变下一实际行动，不是独立反思步骤或固定算法清单。'
+        '“工人/并行/多代理”默认指独立额度的普通 Grok WorkerPool；Terra/Luna/Sol/Codex collaboration 共用 Codex 周额度，Codex 子代理默认不调用，不能因 proactive 或方便并行取得准入。'
         'SENTINEL:XINAO_GLOBAL_ATTENTION_RECONSIDERATION_V1'
         '在实质子结果/工人 terminal、Owner 采纳或续跑、完成声明、冻结、结算或下一研究选择等承诺边界，按适用 AGENTS.md 的全局注意力重置执行子意图生存裁决、父效果差分、前沿重算和 disposition；必须让下一实际动作受约束。'
         '本 Hook 只在 UserPromptSubmit 与 compact SessionStart 只读 fail-open 注入，不能代替边界执行，也不改状态或自动续跑。Hook、task-run/checkpoint、薄记忆和只读巡逻工人只供同一 Codex 候选信号；无父意图采用、自动派工/续跑或正式写权。'
     )
-    $lines += Get-AttentionLiveDeltaContext
     $payload = [ordered]@{
         continue = $true
         hookSpecificOutput = [ordered]@{

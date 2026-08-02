@@ -65,9 +65,13 @@ def _git_files(repo_root: Path) -> list[str]:
         check=True,
         stdout=subprocess.PIPE,
     )
-    return sorted(
+    relative_paths = (
         os.fsdecode(item).replace("\\", "/") for item in completed.stdout.split(b"\0") if item
     )
+    # ``git ls-files --cached`` also reports tracked paths deleted only in the
+    # working tree.  A source snapshot describes the live tree, so those paths
+    # must disappear instead of making cleanup impossible until staging.
+    return sorted(relative for relative in relative_paths if (repo_root / Path(relative)).is_file())
 
 
 def _safe_repo_file(repo_root: Path, relative: str) -> Path:
@@ -108,7 +112,6 @@ def _profile_flags(
         and not failed_from,
         "context": profile in {"context", "smoke", "core", "deep"},
         "proactive": profile in {"proactive", "core", "deep"},
-        "orchestration": profile in {"orchestration", "smoke", "core", "deep"},
         "recall_replay": profile in {"core", "deep", "reuse"},
         "recall_live": profile in {"deep", "reuse"},
         "thin": profile in {"core", "deep", "reuse"},
@@ -148,24 +151,10 @@ def selected_inputs(
         )
     if flags["context"] or flags["proactive"]:
         relative_inputs.append(("tests/test_repo_safety.py", "repository_safety_tests"))
-    if flags["orchestration"]:
-        relative_inputs.extend(
-            [
-                (
-                    "tests/test_dynamic_orchestration_runner.py",
-                    "dynamic_orchestration_runner_tests",
-                ),
-                (
-                    "tests/test_dynamic_orchestration_behavior.py",
-                    "dynamic_orchestration_behavior_tests",
-                ),
-            ]
-        )
     for enabled, relative, role in (
         (flags["capability"], "evals/codex_capability", "capability_eval"),
         (flags["context"], "evals/context_intent_alignment", "context_eval"),
         (flags["proactive"], "evals/proactive_mature_first", "proactive_eval"),
-        (flags["orchestration"], "evals/dynamic_orchestration", "dynamic_orchestration_eval"),
         (
             flags["recall_replay"] or flags["recall_live"],
             "evals/mature_capability_recall",
@@ -348,7 +337,6 @@ def _parser() -> argparse.ArgumentParser:
             "context",
             "proactive",
             "reuse",
-            "orchestration",
         ),
     )
     parser.add_argument("--domain", default="")

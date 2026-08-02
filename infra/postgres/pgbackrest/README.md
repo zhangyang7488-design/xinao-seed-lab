@@ -2,7 +2,7 @@
 
 `shiwu-ku` uses PostgreSQL 16.14 with pgBackRest 2.58.0. The active repository
 is the Windows NTFS host bind
-`D:\XINAO_RESEARCH_RUNTIME\projects\xinao_discovery\backups\postgres\pgbackrest-repo1`.
+`D:\XINAO_RESEARCH_RUNTIME\state\s_base_compose\backups\postgres\pgbackrest-repo1`.
 It was admitted only after uid/gid 70 could create, fsync, read and remove a
 probe through the container mount. This is a host-bound local recovery path,
 not a claim that the Windows repository is a native POSIX filesystem.

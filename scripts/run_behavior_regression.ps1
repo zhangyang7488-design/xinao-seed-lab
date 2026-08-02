@@ -1,6 +1,6 @@
 [CmdletBinding()]
 param(
-    [ValidateSet('capability', 'smoke', 'core', 'deep', 'context', 'proactive', 'reuse', 'orchestration')]
+    [ValidateSet('capability', 'smoke', 'core', 'deep', 'context', 'proactive', 'reuse')]
     [string]$Profile = 'smoke',
     [string]$Domain,
     [string]$CasePattern,
@@ -30,11 +30,11 @@ if ($List) {
 if ($Domain -and $Profile -notin @('context', 'smoke', 'core', 'deep')) {
     throw 'Domain filtering applies to context behavior cases only.'
 }
-if ($CasePattern -and $Profile -notin @('context', 'proactive', 'orchestration')) {
-    throw 'CasePattern is suite-specific; use it with -Profile context, proactive, or orchestration.'
+if ($CasePattern -and $Profile -notin @('context', 'proactive')) {
+    throw 'CasePattern is suite-specific; use it with -Profile context or proactive.'
 }
-if ($FailedFrom -and $Profile -notin @('context', 'proactive', 'orchestration')) {
-    throw 'FailedFrom is suite-specific; use it with -Profile context, proactive, or orchestration.'
+if ($FailedFrom -and $Profile -notin @('context', 'proactive')) {
+    throw 'FailedFrom is suite-specific; use it with -Profile context or proactive.'
 }
 if ($FailedFrom -and $CasePattern) {
     throw 'FailedFrom cannot be combined with CasePattern.'
@@ -160,7 +160,6 @@ if ($FailedFrom) {
     $expectedDescription = switch ($Profile) {
         'context' { 'Context-first intent alignment without routine approval friction' }
         'proactive' { 'Proactive mature-first regressions' }
-        'orchestration' { 'Dynamic orchestration execution-shape regressions' }
         default { throw "FailedFrom is not supported for profile: $Profile" }
     }
     if ($failedDocument.config.description -ne $expectedDescription) {
@@ -575,7 +574,6 @@ $runCapability = $Profile -in @('capability', 'smoke', 'core', 'deep') -and
     -not $Domain -and -not $CasePattern -and -not $FailedFrom
 $runContext = $Profile -in @('context', 'smoke', 'core', 'deep')
 $runProactive = $Profile -in @('proactive', 'core', 'deep')
-$runOrchestration = $Profile -in @('orchestration', 'smoke', 'core', 'deep')
 $runRecallReplay = $Profile -in @('core', 'deep', 'reuse')
 $runRecallLive = $Profile -in @('deep', 'reuse')
 $runThinLocalization = $Profile -in @('core', 'deep', 'reuse')
@@ -637,20 +635,6 @@ if ($runProactive) {
     $sourceInputs += [pscustomobject]@{
         path = (Join-Path $repoRoot 'evals\proactive_mature_first')
         role = 'proactive_eval'
-    }
-}
-if ($runOrchestration) {
-    $sourceInputs += [pscustomobject]@{
-        path = (Join-Path $repoRoot 'evals\dynamic_orchestration')
-        role = 'dynamic_orchestration_eval'
-    }
-    $sourceInputs += [pscustomobject]@{
-        path = (Join-Path $repoRoot 'tests\test_dynamic_orchestration_runner.py')
-        role = 'dynamic_orchestration_runner_tests'
-    }
-    $sourceInputs += [pscustomobject]@{
-        path = (Join-Path $repoRoot 'tests\test_dynamic_orchestration_behavior.py')
-        role = 'dynamic_orchestration_behavior_tests'
     }
 }
 if ($runRecallReplay -or $runRecallLive) {
@@ -736,12 +720,6 @@ try {
         $preflightTests += @(
             'tests/test_repo_safety.py',
             'tests/test_context_intent_alignment_behavior.py'
-        )
-    }
-    if ($runOrchestration) {
-        $preflightTests += @(
-            'tests/test_dynamic_orchestration_runner.py',
-            'tests/test_dynamic_orchestration_behavior.py'
         )
     }
     $preflightResult.tests = $preflightTests
@@ -869,25 +847,6 @@ try {
         $suiteRuns += Invoke-PromptfooSuiteWithErrorRetry -SuiteId 'proactive_mature_first' `
             -ConfigPath $proactiveConfig -ResultPath $proactiveResult `
             -ExtraArguments $proactiveFilters `
-            -ExpectedCaseIds $(if ($FailedFrom) { $failedSelection.case_ids } else { @() })
-    }
-
-    if ($overallExit -eq 0 -and $runOrchestration -and -not $PreflightOnly) {
-        $orchestrationConfig = Join-Path $executionRoot 'evals\dynamic_orchestration\promptfooconfig.yaml'
-        $orchestrationResult = Join-Path $outputRoot 'dynamic-orchestration.result.json'
-        $orchestrationFilters = @()
-        if ($Profile -in @('smoke', 'core', 'deep')) {
-            $orchestrationFilters += @('--filter-metadata', "profiles=$Profile")
-        }
-        if ($FailedFrom) {
-            $orchestrationFilters += @('--filter-pattern', $failedSelection.pattern)
-        }
-        if ($CasePattern) {
-            $orchestrationFilters += @('--filter-pattern', $CasePattern)
-        }
-        $suiteRuns += Invoke-PromptfooSuiteWithErrorRetry -SuiteId 'dynamic_orchestration' `
-            -ConfigPath $orchestrationConfig -ResultPath $orchestrationResult `
-            -ExtraArguments $orchestrationFilters `
             -ExpectedCaseIds $(if ($FailedFrom) { $failedSelection.case_ids } else { @() })
     }
 

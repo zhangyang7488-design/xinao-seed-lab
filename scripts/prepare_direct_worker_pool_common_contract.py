@@ -31,7 +31,7 @@ from services.agent_runtime.grok_execution_contract_adapter import (
     direct_worker_pool_output_contract,
 )
 
-DEFAULT_RULES_FILE = Path(r"C:\Users\xx363\Desktop\主线\工具胶水宪法\软件工具胶水宪法_当前有效.txt")
+DEFAULT_RULES_FILE = REPO_ROOT / "docs" / "tool_glue" / "SOFTWARE_TOOL_GLUE_CURRENT.md"
 CONTEXT_SLICE_PROMPT_SEPARATOR = "\n\n---\n\n"
 
 

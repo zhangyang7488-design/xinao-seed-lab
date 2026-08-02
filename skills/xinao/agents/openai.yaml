@@ -1,6 +1,0 @@
-interface:
-  display_name: "新澳 Skill"
-  short_description: "仅在明确选择 ResearchEpisode 等专用对象时进入；原生研究和普通候选工包不改路由"
-  default_prompt: "Use $xinao only when the current user explicitly selects a ResearchEpisode, researcher container, freeze, settlement, replay, shadow lifecycle/account, or capability correction. XINAO, Grok, leg A, long research, or continuation alone does not select the dedicated or Docker-backed route; ordinary native research remains Codex-led and may use bounded candidate-only WorkerPool labor."
-policy:
-  allow_implicit_invocation: true

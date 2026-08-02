@@ -936,36 +936,29 @@ def test_consumer_registry_requires_current_exact_evidence_for_complete_status()
         pytest.skip("canonical operator evidence is unavailable on this runner")
     report = validate_consumer_registry(registry, repo_root=ROOT)
     assert report["ok"] is True
-    assert report["consumer_count"] == 20
-    exact_consumers = {
+    assert report["consumer_count"] == 15
+    assert not {
+        item["consumer_id"]
+        for item in report["consumers"]
+        if item["effective_status"] == "complete"
+    }
+    partial_consumers = {
         "canonical_docker_grok_worker",
         "canonical_langgraph_grok_fanin",
         "integrated_bus_provider_promotion",
         "promoted_temporal_task_workflow",
-        "foundation_v2_reconciliation",
+        "direct_grok_composer25_worker",
+        "direct_grok_worker_pool",
+        "codex_inner_profile_consumer",
     }
     assert {
-        item["consumer_id"]
+        item["consumer_id"] for item in report["consumers"] if item["declared_status"] == "partial"
+    } == partial_consumers
+    assert all(
+        item["effective_status"] == "partial" and item["completion_claim_allowed"] is False
         for item in report["consumers"]
-        if item["effective_status"] == "complete"
-    } == exact_consumers
-    for item in report["consumers"]:
-        if item["consumer_id"] not in exact_consumers:
-            continue
-        assert item["declared_status"] == "complete"
-        assert item["effective_status"] == "complete"
-        assert item["conformance_status"] == "complete"
-        assert item["completion_claim_allowed"] is True
-        assert "EXACT_MODEL_IDENTITY_DRIFT" not in item["reason_codes"]
-        assert item["evidence_files_exist"] is True
-    inner = next(
-        item
-        for item in report["consumers"]
-        if item["consumer_id"] == "codex_inner_profile_consumer"
+        if item["consumer_id"] in partial_consumers
     )
-    assert inner["declared_status"] == "partial"
-    assert inner["effective_status"] == "partial"
-    assert inner["completion_claim_allowed"] is False
     boundary_consumers = {
         item["consumer_id"]: item
         for item in report["consumers"]
@@ -974,9 +967,6 @@ def test_consumer_registry_requires_current_exact_evidence_for_complete_status()
     assert set(boundary_consumers) == {
         "action_resume_preaction_guard",
         "audit_adjudication_repair_gate",
-        "current_science_temporal_entry",
-        "g4_batch_preregistration_producer",
-        "g4_provider_neutral_batch_admission",
         "global_frontier_reconciliation_v4",
         "problem_transition_task_run_adapter",
         "system_awareness_task_run_scanner",
@@ -990,46 +980,33 @@ def test_consumer_registry_requires_current_exact_evidence_for_complete_status()
         and item["parent_completion_authority"] is False
         for item in boundary_consumers.values()
     )
-    science = boundary_consumers["current_science_temporal_entry"]
-    assert science["conformance_status"] == "complete"
-    science_source = next(
-        item
+    assert all(
+        Path(item["source_path"]).is_file()
         for item in registry["consumers"]
-        if item["consumer_id"] == "current_science_temporal_entry"
+        if ":/" in item["source_path"]
     )
-    assert science_source["legacy_parent_gate_consumed"] is False
-    assert science_source["research_progress_authority"] is False
-    assert science_source["replay_evidence"]
-    assert science_source["current_positive_canary_evidence"]
-    assert science_source["negative_canary_evidence"]
-    assert science_source["fresh_canary_evidence"]
-    science_fresh = set(science_source["fresh_canary_evidence"])
-    tool_gap_id = "science-tool-gap-behavior-regression-20260724T104812Z"
-    self_bootstrap_id = "science-mainline-self-bootstrap-behavior-regression-20260724T184208Z"
-    assert {tool_gap_id, self_bootstrap_id} <= science_fresh
-    assert evidence_catalog[tool_gap_id]["case_ids"] == [
-        "REG_SCIENCE_TOOL_GAP_STAYS_IN_EPISODE_CONE"
-    ]
-    assert evidence_catalog[self_bootstrap_id]["case_ids"] == [
-        "REG_FRESH_WINDOW_SCIENCE_MAINLINE_SELF_BOOTSTRAPS_DAG_LOOP"
-    ]
-    assert evidence_catalog[self_bootstrap_id]["research_progress_claim_allowed"] is False
-    assert evidence_catalog[self_bootstrap_id]["completion_claim_allowed"] is False
-    by_id = {item["consumer_id"]: item for item in registry["consumers"]}
-    for consumer_id in (
+    assert all(
+        (ROOT / item["source_path"]).is_file()
+        for item in registry["consumers"]
+        if ":/" not in item["source_path"]
+    )
+    serialized = json.dumps(registry, sort_keys=True)
+    for removed_id in (
+        "current_science_temporal_entry",
         "foundation_v2_reconciliation",
         "g4_batch_preregistration_producer",
         "g4_provider_neutral_batch_admission",
+        "legacy_host_temporal_pool_bridge",
     ):
-        assert by_id[consumer_id]["authority_scope"] == "LEGACY_PARENT_G0_G8"
-        assert by_id[consumer_id]["usable_as_current_science_parent"] is False
-        assert by_id[consumer_id]["parent_completion_authority"] is False
+        assert removed_id not in serialized
     forged = copy.deepcopy(registry)
     incomplete = next(
         item
         for item in forged["consumers"]
         if item["consumer_id"] == "canonical_docker_grok_worker"
     )
+    incomplete["status"] = "complete"
+    incomplete["conformance_status"] = "complete"
     incomplete["current_positive_canary_evidence"] = []
     with pytest.raises(ExecutionContractError, match="declared complete is not earned"):
         validate_consumer_registry(forged, repo_root=ROOT)
@@ -1331,173 +1308,6 @@ def test_superseded_or_missing_evidence_cannot_earn_complete(tmp_path: Path) -> 
         validate_consumer_registry(registry, repo_root=tmp_path)
 
 
-def test_foundation_consumer_accepts_only_hash_bound_docker_common_artifacts(
-    tmp_path: Path,
-) -> None:
-    from services.agent_runtime.foundation_continuous_workflow_v2 import (
-        _verify_docker_common_lane_receipt,
-        _verify_operation_spec,
-    )
-
-    operation_root = tmp_path / "operations" / "op-1"
-    operation_root.mkdir(parents=True)
-    final_text = '{"status":"VERIFIED","work_key":"work-1"}'
-    final_raw = final_text.encode("utf-8")
-    final_sha256 = hashlib.sha256(final_raw).hexdigest()
-    identity = {
-        "stopReason": "EndTurn",
-        "sessionId": "session-1",
-        "modelUsage": {"grok-4.5-build": {"modelCalls": 1}},
-    }
-    identity_raw = artifact_json_bytes(identity)
-    identity_sha256 = hashlib.sha256(identity_raw).hexdigest()
-    identity_path = operation_root / "cli_result.json"
-    identity_path.write_bytes(identity_raw)
-    session_evidence = _session_model_evidence("grok-composer-2.5-fast", "session-1")
-    contract = build_grok_logical_contract(
-        workflow_id="workflow-1",
-        lane_id="lane-1",
-        operation_id="op-1",
-        work_key="work-1",
-        correlation_id="work-1",
-        parent_operation_id="parent-1",
-        task_contract_ref="xinao.foundation.f4.readonly_lane.v1",
-        provider_id="grok_acpx_headless",
-        model_id="grok-composer-2.5-fast",
-        execution_prompt_sha256="1" * 64,
-        context_sha256="2" * 64,
-        rules_sha256="3" * 64,
-        output_contract_sha256="4" * 64,
-        capability_policy={"planning": "auto"},
-        allowed_tools=["read_file"],
-        cli_policy_version="grok-cli-effective-output-v7",
-        write=False,
-        deadline_seconds=1800,
-    )
-    receipt = build_grok_attempt_receipt(
-        logical_contract=contract,
-        attempt=1,
-        invocation_evidence=[
-            {
-                "invocation": 1,
-                "effective_output_accepted": True,
-                "failure_kind": "none",
-                "return_code": 0,
-                "observed_models": ["grok-4.5-build"],
-                "stop_reason": "EndTurn",
-                "text_sha256": final_sha256,
-                "text_chars": len(final_text),
-                "usage": {"total_tokens": 7},
-            }
-        ],
-        invocation_accounting={
-            "invocation_count": 1,
-            "total_tokens": 7,
-            "accepted_tokens": 7,
-            "cancelled_tokens": 0,
-            "failed_tokens": 0,
-        },
-        observed_model="grok-composer-2.5-fast",
-        observed_rules_sha256="3" * 64,
-        runtime_version="0.2.101",
-        execution_location="docker:houtai-gongren",
-        executor_id="container-1",
-        result_format="json_object",
-        result_text_sha256=final_sha256,
-        result_text_chars=len(final_text),
-        output_schema_sha256="4" * 64,
-        schema_valid=True,
-        markers_ok=True,
-        substantive=True,
-        stop_reason="EndTurn",
-        workflow_id="workflow-1",
-        lane_id="lane-1",
-        parent_operation_id="parent-1",
-        correlation_id="work-1",
-        session_id="session-1",
-        provider_contract_version="xinao.grok.shared_execution_contract.v1",
-        provider_evidence_ref=str(identity_path),
-        provider_evidence_sha256=identity_sha256,
-        provider_evidence_valid=True,
-        session_model_evidence=session_evidence,
-        replayed=False,
-    )
-    result_schema = {"type": "object"}
-    result_schema_sha256 = hashlib.sha256(artifact_json_bytes(result_schema)).hexdigest()
-    operation_spec = {
-        "schema_version": "xinao.grok.docker_native_cli.v1",
-        "model": "grok-composer-2.5-fast",
-        "contract_id": "xinao.foundation.f4.readonly_lane.v1",
-        "write": False,
-        "allowed_tools": ["read_file"],
-        "prompt_sha256": "5" * 64,
-        "execution_prompt_sha256": "1" * 64,
-        "result_format": "json_object",
-        "result_json_schema": result_schema,
-        "result_json_schema_sha256": result_schema_sha256,
-    }
-    values = {
-        "logical_contract.json": artifact_json_bytes(contract),
-        "attempt_receipt.json": artifact_json_bytes(receipt),
-        "operation-spec.json": artifact_json_bytes(operation_spec),
-        "session_model_evidence.json": artifact_json_bytes(session_evidence),
-        "final.txt": final_raw,
-    }
-    paths = {"cli_result.json": identity_path}
-    for name, raw in values.items():
-        path = operation_root / name
-        path.write_bytes(raw)
-        paths[name] = path
-    artifacts = {
-        name: {
-            "name": name,
-            "path": str(path),
-            "sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
-        }
-        for name, path in paths.items()
-    }
-    lane = {
-        "cross_seam_contract_version": LOGICAL_CONTRACT_VERSION,
-        "cross_seam_attempt_receipt_version": ATTEMPT_RECEIPT_VERSION,
-        "cross_seam_contract_sha256": logical_contract_sha256(contract),
-        "cross_seam_logical_contract": contract,
-        "cross_seam_logical_contract_ref": str(paths["logical_contract.json"]),
-        "cross_seam_logical_contract_artifact_sha256": artifacts["logical_contract.json"]["sha256"],
-        "cross_seam_attempt_receipt": receipt,
-        "cross_seam_attempt_receipt_ref": str(paths["attempt_receipt.json"]),
-        "cross_seam_attempt_receipt_sha256": artifacts["attempt_receipt.json"]["sha256"],
-        "model_identity_ref": str(identity_path),
-        "model_identity_sha256": identity_sha256,
-        "session_model_evidence": session_evidence,
-        "session_model_evidence_ref": str(paths["session_model_evidence.json"]),
-        "session_model_evidence_sha256": artifacts["session_model_evidence.json"]["sha256"],
-        "agent_session_id": "session-1",
-        "operation_spec_ref": str(paths["operation-spec.json"]),
-        "operation_spec_sha256": artifacts["operation-spec.json"]["sha256"],
-        "final_ref": str(paths["final.txt"]),
-        "result_text": final_text,
-        "result_text_sha256": final_sha256,
-    }
-    expected_binding = {
-        "requested_model": "grok-composer-2.5-fast",
-        "contract_id": "xinao.foundation.f4.readonly_lane.v1",
-        "write": False,
-        "allowed_tools": ["read_file"],
-        "permission_mode": "approve-reads",
-        "prompt_sha256": "5" * 64,
-        "result_format": "json_object",
-        "result_json_schema_sha256": result_schema_sha256,
-    }
-
-    _verify_operation_spec(paths["operation-spec.json"], expected_binding)
-    accepted = _verify_docker_common_lane_receipt(tmp_path, lane, artifacts)
-    assert accepted["attempt_receipt_sha256"] == artifacts["attempt_receipt.json"]["sha256"]
-
-    paths["final.txt"].write_text("tampered", encoding="utf-8")
-    with pytest.raises(ValueError, match="artifact binding drifted"):
-        _verify_docker_common_lane_receipt(tmp_path, lane, artifacts)
-
-
 def test_cross_seam_protocol_is_one_constitution_incorporated_appendix() -> None:
     if not all(
         path.is_file()
@@ -1510,7 +1320,8 @@ def test_cross_seam_protocol_is_one_constitution_incorporated_appendix() -> None
     assert "SENTINEL:XINAO_CROSS_SEAM_EXECUTION_ENVELOPE_PROTOCOL_V1" in protocol
     assert str(CROSS_SEAM_PROTOCOL) in constitution
     assert "唯一跨接缝窄域附录" in constitution
-    assert "唯一跨接缝窄域附录" in stable_entry
+    assert "唯一跨接缝窄域附录" not in stable_entry
+    assert "xinao-native-research" in stable_entry
     assert "外部成熟完整性不是产品名词清单" in protocol
     assert "不创造任务授权" in protocol and "第二控制面" in protocol
 

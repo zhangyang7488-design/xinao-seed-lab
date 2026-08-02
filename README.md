@@ -1,131 +1,50 @@
-# XINAO Codex local capability workspace
+# S engineering workspace
 
-This repository contains the thin, locally verified capabilities that Codex uses directly. The
-retired custom Seed Cortex / 333 / CLEAN controllers are not startup paths. The retained software
-route is one Codex owner and task-run with two task-fit transports: bounded online work normally
-uses the direct Grok WorkerPool leg, while explicitly durable post-window work uses the Temporal +
-Docker `houtai-gongren` + LangGraph leg.
+S is the general engineering body and mature-capability carrier. It is not the
+default XINAO research object, a science parent, or a second control plane.
 
-## Current roots
+## Active machine architecture
 
-- Workspace discovery entry: `E:\XINAO_RESEARCH_WORKSPACES\S` (a junction that may resolve to a
-  Git root, but does not by itself identify the current writable carrier; recover that from the
-  task-run lifecycle record).
-- Human material entry: `C:\Users\xx363\Desktop\主线`.
-- Runtime and evidence: `D:\XINAO_RESEARCH_RUNTIME`.
-- Situation and cross-window checkpoint:
-  `D:\XINAO_RESEARCH_RUNTIME\state\Codex_Situation_Island`.
-- Local long-term memory: `D:\XINAO_RESEARCH_RUNTIME\state\mem0`.
+- Thin hot entry: `C:\Users\xx363\Desktop\主线`
+- Default XINAO native research: `E:\XINAO_RESEARCH_WORKSPACES\xinao-native-research`
+- General engineering and WorkerPool tooling: `E:\XINAO_RESEARCH_WORKSPACES\S`
+- Live runtime, recent evidence, and recovery state: `D:\XINAO_RESEARCH_RUNTIME`
+- Cold archaeology: `E:\XINAO_COLD_STORAGE\archives\LEGACY_XINAO_PLATFORM`
 
-Files under `Desktop\主线` are human-controlled source material. Six were present at final audit,
-including three concurrently restored, explicitly retained long-form files. They are discoverable
-on demand; their full contents are not injected into every prompt.
+Without an explicit different task, a new Codex window continues native XINAO
+research. S is entered only for an explicit engineering task or a concrete
+engineering gap exposed by live research. Finishing that bounded child returns
+to the native-research parent.
 
-## Retained capability surface
+Ordinary bounded worker labor uses the installed supervisor/dispatch Skills.
+Grok is normally preferred when its independent quota and the task fit produce
+positive net benefit. Terra, Luna, Sol, and Codex collaboration share the Codex
+quota pool; built-in collaboration subagents require exceptional net benefit.
 
-- `services/mcp/xinao_memory_mcp_server.py`: explicit local memory MCP.
-- `services/mcp/local_mem0_store.py`: Ollama + embedded Qdrant storage with a cross-process lock
-  and explicit close lifecycle.
-- `scripts/local_data_profile.py`: local, token-efficient data profiling.
-- `scripts/local_human_intake.py`: local document conversion and audio/video transcription.
-- `evals/codex_capability`: outcome-based Promptfoo checks for the Codex app-server.
-- `evals/context_intent_alignment`: balanced real-agent regressions that keep reversible local work
-  fast while preventing assumptions from expanding external authority.
-- `evals/proactive_mature_first`: live-agent mature-first regressions; adaptive worker-routing
-  ownership lives in `evals/context_intent_alignment` (pinned Promptfoo, D-isolated state,
-  deterministic assertions).
-- `evals/suite_registry.v1.json`: the dual-loop registry; domain and behavior share evidence
-  semantics but keep separate evaluators and completion claims.
-- `evals/control_plane_incident`: continuity-specific control-plane incident admission checks
-  (static fixtures are not runtime evidence).
-- `evals/incident_response_lifecycle`: generic, evidence-bound incident lifecycle checks
-  (runtime evidence required for closure).
-- `docs/current/CODEX_INCIDENT_RESPONSE_LIFECYCLE_2026-07-11.md`: the bounded incident-response
-  contract supplement and current official engineering comparison.
-- `scripts/run_codex_capability_eval.ps1`: pinned local eval entrypoint.
-- `scripts/run_context_intent_alignment_eval.ps1`: pinned, operation-scoped behavior-evolution
-  eval using the real Codex app-server in read-only mode.
-- `scripts/run_proactive_mature_first_eval.ps1`: pinned mature-first live-agent suite.
-- `scripts/run_domain_self_evolution.ps1`: thin verify/fresh entry for the existing Market Lab P3
-  finite protocol, exact Settlement, and TrialLedger.
-- `scripts/run_self_evolution_eval_battery.ps1`: one bounded entry for domain, behavior, or both loops.
-- `scripts/Import-PromptfooFailuresToBehaviorCandidates.ps1`: one-way trace/failure intake; it never
-  promotes or rewrites policy.
-- `docker-compose.yml` and `docker/houtai-gongren/Dockerfile`: reproducible Temporal worker stack.
-- `services/agent_runtime/integrated_bus_runner.py`: canonical client entry for the real
-  Temporal/LangGraph workflow.
-- `services/agent_runtime/task_entry_claim.py`: durable task-entry adapter used by the Grok bridge.
+## Retained engineering surface
 
-Memory operations use:
+- ordinary Grok/Terra/Luna WorkerPool launchers and dispatch adapters;
+- generic Temporal/LangGraph durable execution for explicitly durable work;
+- behavior regressions and Promptfoo evaluation;
+- local memory and human-material intake;
+- the thin Situation Island catalog updater in `scripts/`;
+- the reusable dual-brain coordination kernel.
 
-```text
-inter-process lock -> open Qdrant/history -> one operation -> close both -> release lock
-```
-
-This lets independent Codex agents share one D-drive embedded store without a boot service.
+The removed legacy XINAO platform and its tests are absent from the active tree.
+Git history is the code recovery boundary; the E-drive archive holds unique
+historical documents and evidence. Neither is loaded by default.
 
 ## Development
 
 ```powershell
-uv sync --extra dev --extra human-capabilities --extra workflow
+uv sync --extra dev --extra workflow
 uv lock --check
-# Root CI hygiene cone (services, scripts, tests, skills/xinao/scripts, docker/xinao-researcher):
-uv run python scripts/run_ci_hygiene.py
-# Full remote hygiene parity (root + every project-local Ruff cone in its own lock/config):
 uv run python scripts/run_ci_hygiene.py --all
 uv run pytest -q
 ```
 
-Do not treat a partial `ruff check services scripts tests` alone as sufficient: remote root CI
-also gates `skills/xinao/scripts` and `docker/xinao-researcher`, and project jobs keep their own
-Ruff cones under each project's working directory. Prefer `scripts/run_ci_hygiene.py` for the
-exact local hygiene entry.
+`--all` is the local full remote hygiene parity check for the retained root and
+dual-brain project cones. Root hygiene covers `services`, `scripts`, and `tests`.
 
-Tests in this repository are bounded and must not run `git add`, `git commit`, start legacy
-workflows, or mutate the real worktree outside their temporary directories.
-
-## Consolidated project domains
-
-- `projects/dual-brain-coordination`: the local embedded coordination kernel and its preserved
-  project history; it is not a second remote product or second orchestration spine.
-- `projects/xinao-market-lab`: the bounded market-research engineering domain and its preserved
-  project history; its tests and dependency environment remain explicitly project-scoped.
-
-The Grok Admin and Grok 4.5 identity/isolation workspaces are recovery bundles outside GitHub, not
-public subprojects. See `materials/repository_topology/recovery_manifest.v1.json` for exact hashes
-and dispositions.
-
-## A/B execution legs
-
-Leg A is the normal bounded online route while the current Codex TUI remains the owner. It uses the
-hash-bound `direct-grok-worker-pool` dispatch envelope and is not a fallback. Leg B is selected only
-for an explicit post-window, cross-restart, or unattended multi-wave durability need; then its
-default implementation is:
-
-```powershell
-docker compose up -d
-docker exec houtai-gongren python -m services.agent_runtime.integrated_bus_runner `
-  --temporal --address naijiu-shiwu:7233 `
-  --input /evidence/state/integrated_bus_intake/default_input.md
-```
-
-Leg-B acceptance requires a real workflow ID and history, `worker_ownership=docker_daemon`,
-`invoke_mode=temporal_langgraph_plugin`, and matching evidence under
-`D:\XINAO_RESEARCH_RUNTIME`. Finalization records a read-only GitPython snapshot and writes proof
-to `D:\XINAO_RESEARCH_RUNTIME\state\integrated_bus_proof`; it never stages or commits the S
-worktree. Leg-A acceptance instead requires its selected route receipt, exact provider/common
-contract, effective output, usage, and terminal event. Continuous mode, resume, or a Git-resolved
-root never changes an existing leg; only a new fact-backed route event does.
-
-## Operating model
-
-Codex chooses dialogue, plan-only, bounded execution, or explicitly continuous work from the
-current request. Complex work follows observable success criteria, implementation, independent
-verification, and a concise evidence-backed reflection when a real failure produced a reusable
-lesson. Context and memory are retrieved just in time; recalled text never grants authority.
-
-Observed intent/object mismatches are distilled into balanced behavior cases. One small candidate
-change is evaluated at a time, with local productivity cases beside external-effect regressions;
-this is an episodic learn-and-promote loop, not a resident approval controller.
-
-No Windows boot task, Startup entry, service, hidden daemon, or old continuation loop is required.
+Tests and engineering reports do not claim scientific progress or replace the
+native-research consumer.

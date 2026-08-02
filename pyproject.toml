@@ -42,14 +42,10 @@ workflow = [
   "rfc8785==0.1.4",
   "temporalio>=1.30,<2",
   "uuid6==2025.0.1",
-  "xinao-discovery; python_version >= '3.12' and python_version < '3.13'",
 ]
 
 [tool.uv]
 package = false
-
-[tool.uv.sources]
-xinao-discovery = { path = "xinao_discovery", editable = true }
 
 [tool.pytest.ini_options]
 pythonpath = ["."]
