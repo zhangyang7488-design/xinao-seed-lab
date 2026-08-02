@@ -39,8 +39,9 @@ def _ready_marker() -> dict[str, object]:
         "grok_bwrap_bootstrap_required": False,
         "grok_bwrap_bootstrap_available": False,
         "workflow_roles": {
-            "XinaoScienceEpisodeWorkflowV1": "CURRENT_SCIENCE_ENTRY",
-            "XinaoResearchCampaignWorkflow": "LEGACY_REPLAY",
+            "XinaoIntegratedBusWorkflow": "REUSABLE_INSTRUMENT",
+            "XinaoIntegratedBusParentWorkflow": "REUSABLE_INSTRUMENT_ORCHESTRATOR",
+            "XinaoIntegratedBusChildWorkflow": "REUSABLE_INSTRUMENT_CHILD",
         },
     }
 

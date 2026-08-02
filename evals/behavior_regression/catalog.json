@@ -4,26 +4,24 @@
   "runner": "scripts/run_behavior_regression.ps1",
   "candidate_intake": "scripts/New-BehaviorRegressionCandidate.ps1",
   "result_root": "D:\\XINAO_RESEARCH_RUNTIME\\state\\human-capabilities\\evals\\behavior-regression",
-  "declared_case_count": 178,
+  "declared_case_count": 133,
   "profiles": {
     "capability": "One fresh Codex app-server capability canary.",
-    "smoke": "Capability canary plus 82 representative context cases and seven dynamic-orchestration smoke cases.",
-    "core": "Capability canary, 113 context cases, six proactive mature-first cases, 13 dynamic-orchestration cases, frozen mature-candidate recall, one real thin-localization trajectory, and static validation.",
-    "deep": "Core plus all 118 context cases, all 13 dynamic-orchestration cases, and one current open-world public-repository search.",
-    "context": "All 118 context and intent live cases; retained for the compatibility runner.",
+    "smoke": "Capability canary plus representative context cases.",
+    "core": "Capability canary, context cases, proactive mature-first cases, frozen mature-candidate recall, one real thin-localization trajectory, and static validation.",
+    "deep": "Core plus all context cases and one current open-world public-repository search.",
+    "context": "All 116 context and intent live cases; retained for the compatibility runner.",
     "proactive": "All six mature-first live cases; worker routing is owned by context_intent_alignment.",
-    "reuse": "Only the four live open-world-reuse cases plus their deterministic contract validation.",
-    "orchestration": "All 13 dynamic orchestration execution-shape live cases without metadata filtering."
+    "reuse": "Only the four live open-world-reuse cases plus their deterministic contract validation."
   },
   "live_profile_case_counts": {
     "capability": 1,
-    "smoke": 90,
-    "core": 136,
-    "deep": 142,
-    "context": 118,
+    "smoke": 81,
+    "core": 121,
+    "deep": 127,
+    "context": 116,
     "proactive": 6,
-    "reuse": 4,
-    "orchestration": 13
+    "reuse": 4
   },
   "suites": [
     {
@@ -37,26 +35,10 @@
     {
       "id": "context_intent_alignment",
       "kind": "promptfoo_live",
-      "case_count": 118,
+      "case_count": 116,
       "config": "evals/context_intent_alignment/promptfooconfig.yaml",
       "case_source": "evals/context_intent_alignment/cases.yaml",
       "runtime_claim_allowed": true
-    },
-    {
-      "id": "control_plane_incident",
-      "kind": "static_specification",
-      "case_count": 15,
-      "case_source": "evals/control_plane_incident/cases.json",
-      "validator": "tests/test_repo_safety.py",
-      "runtime_claim_allowed": false
-    },
-    {
-      "id": "incident_response_lifecycle",
-      "kind": "static_specification",
-      "case_count": 15,
-      "case_source": "evals/incident_response_lifecycle/cases.json",
-      "validator": "tests/test_repo_safety.py",
-      "runtime_claim_allowed": false
     },
     {
       "id": "proactive_mature_first",
@@ -67,14 +49,6 @@
       "validator": "tests/test_repo_safety.py",
       "policy_classification_claim_allowed": true,
       "replacement_runtime_claim_allowed": false
-    },
-    {
-      "id": "dynamic_orchestration",
-      "kind": "promptfoo_live",
-      "case_count": 13,
-      "config": "evals/dynamic_orchestration/promptfooconfig.yaml",
-      "case_source": "evals/dynamic_orchestration/cases.yaml",
-      "runtime_claim_allowed": true
     },
     {
       "id": "mature_capability_recall_replay",

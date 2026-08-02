@@ -38,11 +38,9 @@ GROK_EXPECTED_NO_NEW_PRIVS = "1"
 SOURCE_RELEASE_CRITICAL_FILES = (
     "services/agent_runtime/integrated_bus_worker_daemon.py",
     "services/agent_runtime/integrated_bus_workflow_registry.py",
-    "services/agent_runtime/xinao_science_episode_workflow.py",
+    "services/agent_runtime/integrated_bus_graph.py",
+    "services/agent_runtime/integrated_bus_parent_workflow.py",
     "services/agent_runtime/grok_build_docker_worker.py",
-    "xinao_discovery/src/xinao/science/episode_admission.py",
-    "xinao_discovery/src/xinao/world/builder.py",
-    "scripts/verify_science_startup_validation.py",
     "pyproject.toml",
     "uv.lock",
 )
@@ -320,12 +318,15 @@ def readiness_marker_issues(
     ):
         issues.append("grok_bwrap_bootstrap_unavailable")
     roles = evidence.get("workflow_roles")
+    required_roles = {
+        "XinaoIntegratedBusWorkflow": "REUSABLE_INSTRUMENT",
+        "XinaoIntegratedBusParentWorkflow": "REUSABLE_INSTRUMENT_ORCHESTRATOR",
+        "XinaoIntegratedBusChildWorkflow": "REUSABLE_INSTRUMENT_CHILD",
+    }
     if not isinstance(roles, dict):
         issues.append("workflow_roles_missing")
-    elif roles.get("XinaoScienceEpisodeWorkflowV1") != "CURRENT_SCIENCE_ENTRY":
-        issues.append("current_science_workflow_role_missing")
-    elif roles.get("XinaoResearchCampaignWorkflow") != "LEGACY_REPLAY":
-        issues.append("legacy_campaign_workflow_role_missing")
+    elif roles != required_roles:
+        issues.append("workflow_roles_not_exact_generic_set")
     if (
         expected_source_release is not None
         and evidence.get("source_release") != expected_source_release

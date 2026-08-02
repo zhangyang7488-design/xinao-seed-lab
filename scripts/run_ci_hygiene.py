@@ -40,60 +40,12 @@ ROOT_PATHS: tuple[str, ...] = (
     "services",
     "scripts",
     "tests",
-    "skills/xinao/scripts",
-    "docker/xinao-researcher",
 )
 
 # Project cones use each project's own working directory, lock, and Ruff config.
 # Paths match the project-verify matrix ruff_paths in .github/workflows/ci.yml.
 PROJECT_CONES: tuple[tuple[str, str, tuple[str, ...]], ...] = (
     ("dual-brain-coordination", "projects/dual-brain-coordination", (".",)),
-    ("xinao-market-lab", "projects/xinao-market-lab", (".",)),
-    (
-        "g4-hidden-capability-seam",
-        "projects/g4-hidden-capability-seam",
-        ("src", "adapters", "tests"),
-    ),
-    (
-        "xinao-discovery",
-        "xinao_discovery",
-        ("src/xinao/single_home", "tests/unit/single_home"),
-    ),
-    (
-        "discovery-capability",
-        "xinao_discovery",
-        ("src/xinao/capability", "tests/unit/capability"),
-    ),
-    (
-        "discovery-science-parent",
-        "xinao_discovery",
-        (
-            "src/xinao/science",
-            "src/xinao/world/builder.py",
-            "tests/unit/science",
-            "tests/contract/test_world.py",
-        ),
-    ),
-    (
-        "discovery-domain-admission",
-        "xinao_discovery",
-        (
-            "src/xinao/admission",
-            "scripts/register/formal_vertical.py",
-            "tests/unit/admission",
-            "tests/unit/ledger/test_formal_vertical_registration.py",
-        ),
-    ),
-    (
-        "discovery-operational-assurance",
-        "xinao_discovery",
-        ("src/xinao/assurance", "tests/unit/assurance"),
-    ),
-    (
-        "discovery-shadow-lifecycle",
-        "xinao_discovery",
-        ("src/xinao/shadow_lifecycle", "tests/unit/shadow_lifecycle"),
-    ),
 )
 
 CommandRunner = Callable[..., subprocess.CompletedProcess[str]]

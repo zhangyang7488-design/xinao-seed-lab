@@ -1,1 +1,0 @@
-"""Operational-assurance unit tests."""

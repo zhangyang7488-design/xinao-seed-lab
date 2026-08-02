@@ -352,9 +352,7 @@ def test_project_verify_and_codeql_surfaces_remain() -> None:
     assert "project-verify" in workflow["jobs"]
     project = workflow["jobs"]["project-verify"]
     projects = {entry["project"] for entry in project["strategy"]["matrix"]["include"]}
-    assert "dual-brain-coordination" in projects
-    assert "xinao-market-lab" in projects
-    assert "xinao-discovery" in projects
+    assert projects == {"dual-brain-coordination"}
     assert CODEQL_WORKFLOW.is_file()
     codeql = CODEQL_WORKFLOW.read_text(encoding="utf-8")
     assert "github/codeql-action/analyze@v3" in codeql

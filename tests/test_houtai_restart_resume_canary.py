@@ -82,7 +82,6 @@ _SPLIT_REPO_MOUNTS = (
     ("evals", "/app/evals"),
     ("pyproject.toml", "/app/pyproject.toml"),
     ("uv.lock", "/app/uv.lock"),
-    ("xinao_discovery/src", "/app/xinao_discovery/src"),
     ("tests", "/app/tests"),
     ("materials", "/app/materials"),
     ("policies", "/app/policies"),

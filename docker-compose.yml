@@ -25,8 +25,8 @@ services:
       - archive_timeout=60s
     volumes:
       - shiwu-ku-data:/var/lib/postgresql/data
-      - ${XINAO_EVIDENCE_HOST:-D:/XINAO_RESEARCH_RUNTIME}/projects/xinao_discovery/backups/postgres/wal:/wal-archive
-      - ${XINAO_EVIDENCE_HOST:-D:/XINAO_RESEARCH_RUNTIME}/projects/xinao_discovery/backups:/backup
+      - ${XINAO_EVIDENCE_HOST:-D:/XINAO_RESEARCH_RUNTIME}/state/s_base_compose/backups/postgres/wal:/wal-archive
+      - ${XINAO_EVIDENCE_HOST:-D:/XINAO_RESEARCH_RUNTIME}/state/s_base_compose/backups:/backup
     networks:
       - xinao_internal
     restart: unless-stopped
@@ -362,7 +362,7 @@ services:
       XINAO_CODEX_S_REPO_ROOT: /app
       XINAO_S_RUNTIME_RELEASE_COMMIT: ${XINAO_S_RUNTIME_RELEASE_COMMIT:-}
       XINAO_S_RUNTIME_RELEASE_MANIFEST_SHA256: ${XINAO_S_RUNTIME_RELEASE_MANIFEST_SHA256:-}
-      PYTHONPATH: /app:/app/src:/app/xinao_discovery/src
+      PYTHONPATH: /app:/app/src
       TEMPORAL_ADDRESS: naijiu-shiwu:7233
       XINAO_GATEWAY_BASE_URL: http://moxing-wangguan:4000/v1
       XINAO_PROVIDER_BASE_URL: http://moxing-wangguan:4000/v1
@@ -392,12 +392,10 @@ services:
       - ${XINAO_CODEX_S_REPO_HOST:-.}/evals:/app/evals:ro
       - ${XINAO_CODEX_S_REPO_HOST:-.}/pyproject.toml:/app/pyproject.toml:ro
       - ${XINAO_CODEX_S_REPO_HOST:-.}/uv.lock:/app/uv.lock:ro
-      - ${XINAO_CODEX_S_REPO_HOST:-.}/xinao_discovery/src:/app/xinao_discovery/src:ro
       - ${XINAO_CODEX_S_REPO_HOST:-.}/tests:/app/tests:ro
       - ${XINAO_CODEX_S_REPO_HOST:-.}/materials:/app/materials:ro
       - ${XINAO_CODEX_S_REPO_HOST:-.}/policies:/app/policies:ro
       - ${XINAO_EXTERNAL_MATURE_HOST:-E:/XINAO_EXTERNAL_MATURE/codex_20260627/official}:/external_mature/official:ro
-      - ${XINAO_MAINLINE_HOST:-C:/Users/xx363/Desktop/主线}:/mainline:ro
       - ${XINAO_GROK_WORKER_HOME_HOST:-C:/Users/xx363/.grok-bg-workers}:/grok-home/.grok
       # The shared Windows profile relocates sessions to this exact Linux path.
       # Bind only that D-disk store so the existing link resolves in-container;

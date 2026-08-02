@@ -60,8 +60,6 @@ RUN curl -fsSL -o /usr/local/bin/opa \
     && opa version
 
 COPY pyproject.toml uv.lock README.md* ./
-COPY xinao_discovery/pyproject.toml xinao_discovery/README.md ./xinao_discovery/
-COPY xinao_discovery/src ./xinao_discovery/src
 RUN --mount=type=cache,target=/root/.cache/uv \
     uv sync --frozen --extra workflow --no-dev \
     && uv pip install "markitdown[all]" pytest pytest-cov pytest-json-report diff-cover \

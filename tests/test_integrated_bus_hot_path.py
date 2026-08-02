@@ -2316,7 +2316,7 @@ def test_docker_grok_output_contract_hashes_exact_artifact_schema_bytes() -> Non
     assert artifact_digest != hashlib.sha256(canonical_json_bytes(schema)).hexdigest()
 
 
-def test_docker_grok_receives_current_project_rules_read_only() -> None:
+def test_docker_grok_receives_only_current_project_rules_read_only() -> None:
     from services.agent_runtime.grok_build_docker_worker import (
         CANDIDATE_SANDBOX_PROFILE,
         NO_TOOLS_SANDBOX_ENFORCEMENT,
@@ -2330,7 +2330,7 @@ def test_docker_grok_receives_current_project_rules_read_only() -> None:
 
     compose = (REPO_ROOT / "docker-compose.yml").read_text(encoding="utf-8")
     assert "/AGENTS.md:/app/AGENTS.md:ro" in compose
-    assert "}:/mainline:ro" in compose
+    assert ":/mainline:ro" not in compose
     assert "/projects:/app/projects:ro" in compose
     assert "/scripts:/app/scripts:ro" in compose
     assert "GROK_HOME: /grok-home/.grok" in compose
@@ -3539,7 +3539,6 @@ def test_integrated_bus_worker_registry_contains_real_temporal_langgraph_route()
         "xinao-integrated-langgraph-plugin-queue",
         "xinao-integrated-bus-parent-queue",
         "xinao-integrated-bus-child-queue",
-        "xinao-mainline-canary-queue",
     }
     assert set(registry["task_queues"]) == expected_queues
     assert registry["langgraph_plugin_queues"] == ["xinao-integrated-langgraph-plugin-queue"]
@@ -3547,22 +3546,13 @@ def test_integrated_bus_worker_registry_contains_real_temporal_langgraph_route()
         "XinaoIntegratedBusWorkflow",
         "XinaoIntegratedBusParentWorkflow",
         "XinaoIntegratedBusChildWorkflow",
-        "XinaoMainlineCanaryWorkflow",
-        "XinaoResearchCampaignWorkflow",
-        "XinaoScienceEpisodeWorkflowV1",
-        "FoundationContinuousWorkflowV1",
-        "FoundationWaveChildWorkflowV1",
-        "FoundationContinuousWorkflowV2",
     ]
-    assert registry["activity_count"] == 14
-    assert registry["workflow_roles"]["XinaoScienceEpisodeWorkflowV1"] == ("CURRENT_SCIENCE_ENTRY")
-    assert registry["workflow_roles"]["XinaoResearchCampaignWorkflow"] == "LEGACY_REPLAY"
-    assert registry["workflow_roles"]["FoundationContinuousWorkflowV1"] == (
-        "LEGACY_PARENT_G0_G8_REPLAY"
-    )
-    assert registry["workflow_roles"]["FoundationContinuousWorkflowV2"] == (
-        "LEGACY_PARENT_G0_G8_REPLAY"
-    )
+    assert registry["activity_count"] == 2
+    assert registry["workflow_roles"] == {
+        "XinaoIntegratedBusWorkflow": "REUSABLE_INSTRUMENT",
+        "XinaoIntegratedBusParentWorkflow": "REUSABLE_INSTRUMENT_ORCHESTRATOR",
+        "XinaoIntegratedBusChildWorkflow": "REUSABLE_INSTRUMENT_CHILD",
+    }
     assert not any("ThinGlue" in name for name in registry["workflows_registered"])
     assert not any(queue.startswith("xinao-thin-glue-") for queue in registry["task_queues"])
     assert "xinao-integrated-bus-v2" in registry["graph_ids"]
