@@ -365,6 +365,58 @@ def test_default_compose_baseline_contains_only_temporal_core() -> None:
     assert "mowei-" + "zhixing" not in services
 
 
+def test_default_compose_does_not_expand_optional_litellm_secret() -> None:
+    compose = (REPO_ROOT / "docker-compose.yml").read_text(encoding="utf-8")
+    start = (REPO_ROOT / "scripts" / "Start-XinaoBaseCompose.ps1").read_text(encoding="utf-8")
+    assert "${LITELLM_MASTER_KEY:?" not in compose
+    assert compose.count("${LITELLM_MASTER_KEY:-}") == 2
+    assert 'named_blocker = "LITELLM_MASTER_KEY_MISSING"' in start
+
+
+def test_extended_start_fails_before_compose_when_litellm_key_is_missing(tmp_path: Path) -> None:
+    shell = shutil.which("pwsh") or shutil.which("powershell")
+    if not shell:
+        pytest.skip("PowerShell is unavailable")
+    compose = tmp_path / "docker-compose.yml"
+    compose.write_text("services: {}\n", encoding="utf-8")
+    runtime_root = tmp_path / "runtime"
+    env = os.environ.copy()
+    env.pop("LITELLM_MASTER_KEY", None)
+    completed = subprocess.run(
+        [
+            shell,
+            "-NoLogo",
+            "-NoProfile",
+            "-File",
+            str(REPO_ROOT / "scripts" / "Start-XinaoBaseCompose.ps1"),
+            "-ComposeFile",
+            str(compose),
+            "-RepoRoot",
+            str(REPO_ROOT),
+            "-RuntimeRoot",
+            str(runtime_root),
+            "-Profile",
+            "extended",
+            "-Quiet",
+        ],
+        cwd=tmp_path,
+        env=env,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        timeout=30,
+        check=False,
+    )
+    assert completed.returncode != 0
+    latest = json.loads(
+        (runtime_root / "state" / "xinao_base_compose" / "latest.json").read_text(encoding="utf-8")
+    )
+    assert latest["named_blocker"] == "LITELLM_MASTER_KEY_MISSING"
+    assert latest["litellm_key_required"] is True
+    assert latest["litellm_key_available"] is False
+
+
 def test_compose_lifecycle_scripts_do_not_require_optional_worker() -> None:
     start = (REPO_ROOT / "scripts" / "Start-XinaoBaseCompose.ps1").read_text(encoding="utf-8")
     stop = (REPO_ROOT / "scripts" / "Stop-XinaoBaseCompose.ps1").read_text(encoding="utf-8")

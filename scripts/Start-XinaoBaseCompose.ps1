@@ -65,6 +65,37 @@ function Invoke-WorkerRepoMountPreflight {
     return [pscustomobject]@{ exit_code = $exitCode; report = $payload }
 }
 
+function Test-ComposeEnvironmentValue {
+    param(
+        [Parameter(Mandatory = $true)][string]$Name,
+        [Parameter(Mandatory = $true)][string]$Directory
+    )
+    $processValue = [Environment]::GetEnvironmentVariable($Name)
+    if (-not [string]::IsNullOrWhiteSpace($processValue)) {
+        return $true
+    }
+    $envPath = Join-Path $Directory ".env"
+    if (-not (Test-Path -LiteralPath $envPath -PathType Leaf)) {
+        return $false
+    }
+    foreach ($line in [IO.File]::ReadAllLines($envPath, [Text.UTF8Encoding]::new($false))) {
+        $trimmed = $line.Trim()
+        if (-not $trimmed -or $trimmed.StartsWith("#")) { continue }
+        if ($trimmed -notmatch '^(?:export\s+)?(?<name>[A-Za-z_][A-Za-z0-9_]*)\s*=\s*(?<value>.*)$') { continue }
+        if ($Matches.name -ine $Name) { continue }
+        $value = $Matches.value.Trim()
+        if ($value.Length -ge 2) {
+            $first = $value[0]
+            $last = $value[$value.Length - 1]
+            if (($first -eq '"' -and $last -eq '"') -or ($first -eq "'" -and $last -eq "'")) {
+                $value = $value.Substring(1, $value.Length - 2)
+            }
+        }
+        return -not [string]::IsNullOrWhiteSpace($value)
+    }
+    return $false
+}
+
 if (-not $RepoRoot) {
     $RepoRoot = Split-Path $PSScriptRoot -Parent
 }
@@ -96,6 +127,8 @@ $report = [ordered]@{
     status                   = "unknown"
     temporal_ok              = $false
     worker_targeted          = $false
+    litellm_key_required     = $false
+    litellm_key_available    = $false
     worker_ok                = $false
     worker_container_state   = ""
     docker_exit_code         = $null
@@ -132,6 +165,22 @@ try {
         ($targets.Count -eq 0 -and $Profile -contains "extended")
     )
     $report.worker_targeted = [bool]$workerTargeted
+    $litellmKeyRequired = (
+        $targets -contains "moxing-wangguan" -or
+        $targets -contains "houtai-gongren" -or
+        ($targets.Count -eq 0 -and $Profile -contains "extended")
+    )
+    $report.litellm_key_required = [bool]$litellmKeyRequired
+    if ($litellmKeyRequired) {
+        $report.litellm_key_available = [bool](
+            Test-ComposeEnvironmentValue -Name "LITELLM_MASTER_KEY" -Directory $workDir
+        )
+        if (-not $report.litellm_key_available) {
+            $report.status = "failed"
+            $report.named_blocker = "LITELLM_MASTER_KEY_MISSING"
+            throw "extended LiteLLM services require LITELLM_MASTER_KEY in the process environment or .env"
+        }
+    }
     if ($workerTargeted) {
         $composeMount = Invoke-WorkerRepoMountPreflight -Mode "compose" -Repo $RepoRoot -Compose $ComposeFile
         $report.worker_mount_compose = $composeMount.report
