@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "project": "xinao-dual-brain-coordination",
-  "recorded_at_utc": "2026-07-23T23:22:03.4884860Z",
+  "recorded_at_utc": "2026-08-02T22:27:11.4452120Z",
   "lane": "C",
   "purpose": "managed_temporal_mcp_pin",
   "python": {
@@ -43,7 +43,7 @@
   "worker_deployment": {
     "manifest": "adapters/temporal/worker_deployment.v1.json",
     "deployment_name": "xinao-dualbrain-promoted",
-    "build_id": "ecd816e6e9f64aa61033cd4393275d31",
+    "build_id": "8a7a36102141957b3a8a62195ca7642b",
     "default_versioning_behavior": "PINNED",
     "target_server": "1.31.0",
     "replay_gate": "adapters/temporal/replay_promoted_histories.py"
@@ -69,8 +69,8 @@
     "src/xinao_coordination/temporal/policy.py": "9ADB578C1674E7B8118124695F05419F5387F47DFF8A7E367F558860BE3228CE",
     "adapters/temporal/README.md": "97ED3021965DEB78E262FC828F91A56C675C5EB9863ABFC53AB931763271DCCE",
     "adapters/temporal/requirements-temporal.txt": "D42951000D399606716814029951FFA0504763E4E7CEDDBC955F1E3CC7AF0E3B",
-    "adapters/temporal/worker_deployment.v1.json": "07A3F5D420217A876FE999C77D0AC6625C619937203351A64DB757B68CD2E150",
+    "adapters/temporal/worker_deployment.v1.json": "E18FCCAB197FCDAF9E210BD92C62454A91DF98D69A24EBE0D4451960B7E090BD",
     "adapters/temporal/replay_promoted_histories.py": "A6C0E486C7DDE5D7AEC0AE91CED7DA96569C4B3354CA03A2A449913BF51E377E",
-    "docs/TEMPORAL_WORKER_OPS.md": "DC09162E79A2B8A9F0FF8F7E627C22D7C9CD6ACB0F0011B86B0E18418BC7C43C"
+    "docs/TEMPORAL_WORKER_OPS.md": "21772F8F8DC463E5B28260EB7516B509549BCD6CB0BF4D6172C6E6C9F230A2E5"
   }
 }
