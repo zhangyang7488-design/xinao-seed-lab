@@ -1,6 +1,6 @@
 ---
 name: xinao
-description: Operate the dedicated Xinao research system and its versioned local capabilities. Use whenever the user asks about 新澳/XINAO research, researcher containers, shadow accounts, frozen decisions, settlement, replay, capability correction, or continuation of the Xinao scientific mainline. Keep this path separate from ordinary worker dispatch and absorb all technical operation for the user.
+description: Operate the dedicated Xinao runtime only when the current user explicitly selects a ResearchEpisode, researcher container, freeze, settlement, replay, shadow lifecycle/account, or capability correction. Ordinary xinao-native-research continuation stays Codex-led and may use bounded candidate-only Grok or Terra WorkerPool packages; XINAO, Grok, leg A, long research, or continuation alone does not select this runtime or its Docker prerequisites.
 ---
 
 # 新澳
@@ -9,7 +9,21 @@ Read [meta.md](references/meta.md) before changing or adding a Xinao capability.
 [capabilities.v1.json](references/capabilities.v1.json) to select only a capability whose
 source implementation is present; verify its live runtime status instead of trusting the file.
 
-For the researcher container, run `scripts/xinao.py inspect` first. Invoke it with
+## Select the surface before inspecting it
+
+- Enter this dedicated runtime only when the current user explicitly names or selects a
+  `ResearchEpisode`, researcher container, freeze, settlement, replay, shadow lifecycle/account,
+  or capability correction. Discovery or implicit Skill activation is not that selection.
+- Otherwise continue ordinary research in `xinao-native-research`: Codex remains the direct
+  researcher and Owner, while bounded Grok or Terra packages may contribute candidate-only
+  exploration, attack, recomputation, or review through their ordinary public WorkerPool routes.
+- Leg A describes online Owner scheduling and durability, not a physical backend. An ordinary Grok
+  long package and a ResearchEpisode may both be productive candidate research labor; select between
+  them by the required lifecycle and provenance, not by package length or a productivity rank.
+- Docker readiness is only a prerequisite after this dedicated container surface has been selected.
+  It is never a start gate for ordinary native-repository research or ordinary leg-A WorkerPool labor.
+
+After the dedicated researcher container has been selected, run `scripts/xinao.py inspect` first. Invoke it with
 `scripts/xinao.py research --question <material research question>` and add `--material <local
 UTF-8 evidence file>` only for exact files the current bounded call may disclose to the provider;
 repeat the option when needed. The launcher freezes ordinary local evidence into its own sealed
@@ -193,9 +207,13 @@ missing live link, invoke its declared transactional install verb; for legacy re
 source `bootstrap-migrate` entry above. Verify the resulting installed entry in a fresh process
 instead of continuing broader infrastructure work around an uninstalled candidate.
 
-Do not route Xinao scientific researchers through the ordinary WorkerPool, its task contracts,
-state roots, evidence roots, or completion semantics. Reuse low-level libraries only when the
-scientific chain retains its own identity and tests prove the chains cannot cross.
+Do not place the complete dedicated Xinao researcher seat or ResearchEpisode identity on the
+ordinary WorkerPool, its task contracts, state roots, evidence roots, or completion semantics.
+This identity boundary does not prohibit bounded candidate-only Grok or Terra packages in ordinary
+Codex-led native research; those packages remain labor, cannot become Owner, and cannot claim
+ResearchEpisode provenance, freeze, settlement, or dedicated-seat completion. Reuse low-level
+libraries only when the scientific chain retains its own identity and tests prove the chains cannot
+cross.
 
 Research topics are open. Do not inject seven-family grades or another inherited background menu
 by default: active-parent background is optional and discardable, not attention allocation.
