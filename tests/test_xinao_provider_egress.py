@@ -817,6 +817,80 @@ def test_managed_episode_transport_discovery_requires_exact_live_lease_identity(
     )
 
 
+def test_dual_host_admits_current_and_all_valid_managed_episode_transports(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    module = _runtime()
+    episode_root = tmp_path / "episode-main"
+    episode_root.mkdir()
+    current_transport_id = "a" * 64
+    peer_transport_ids = {"b" * 64, "c" * 64}
+    _write_json(
+        episode_root / "dual_container_pair_lease.json",
+        {"transport_container_id": current_transport_id},
+    )
+    auth_path = tmp_path / "auth.json"
+    auth_path.write_text("{}", encoding="utf-8")
+    posture = _sample_posture()
+    captured: dict[str, set[str]] = {}
+
+    class FakeConfig:
+        def __init__(self, **kwargs):
+            self.kwargs = kwargs
+
+    class FakeHost:
+        def __init__(self, config):
+            self.config = config
+
+    monkeypatch.delenv("XINAO_DUAL_CONTAINER_SYNTHETIC", raising=False)
+    monkeypatch.delenv("XINAO_TRANSPORT_NETWORK", raising=False)
+    monkeypatch.setattr(
+        module,
+        "_research_episode_load_dual_host_module",
+        lambda: types.SimpleNamespace(
+            DualHostConfig=FakeConfig, DualContainerHost=FakeHost
+        ),
+    )
+    monkeypatch.setattr(
+        module,
+        "_resolve_research_episode_dual_images",
+        lambda: ("sha256:" + "d" * 64, "sha256:" + "e" * 64),
+    )
+    monkeypatch.setattr(
+        module, "resolve_auth_host_path", lambda **_kwargs: auth_path
+    )
+    monkeypatch.setattr(
+        module,
+        "_posture_file_sha256",
+        lambda: (posture, "f" * 64, tmp_path / "posture.json"),
+    )
+    monkeypatch.setattr(module, "_docker", lambda: "docker")
+    monkeypatch.setattr(
+        module,
+        "_discover_managed_episode_transport_ids",
+        lambda docker, observed_posture: (
+            peer_transport_ids
+            if docker == "docker" and observed_posture == posture
+            else set()
+        ),
+    )
+
+    def require_boundary(*, allowed_researcher_container_ids):
+        captured["allowed"] = set(allowed_researcher_container_ids)
+        return {
+            "internal_network_name": posture["internal_network_name"],
+            "proxy_endpoint": posture["proxy_endpoint"],
+        }
+
+    monkeypatch.setattr(module, "_require_host_egress_boundary", require_boundary)
+
+    _host_module, host = module._research_episode_load_dual_host(episode_root)
+
+    assert captured["allowed"] == {current_transport_id, *peer_transport_ids}
+    assert host.config.kwargs["episode_root"] == episode_root
+    assert host.config.kwargs["network"] == posture["internal_network_name"]
+
+
 def test_container_inspect_rejects_bridge_and_missing_proxy_env(tmp_path: Path) -> None:
     module = _runtime()
     endpoint = "http://xinao-researcher-egress-proxy:3128"
