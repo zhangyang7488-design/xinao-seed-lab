@@ -4,22 +4,20 @@
   "runner": "scripts/run_behavior_regression.ps1",
   "candidate_intake": "scripts/New-BehaviorRegressionCandidate.ps1",
   "result_root": "D:\\XINAO_RESEARCH_RUNTIME\\state\\human-capabilities\\evals\\behavior-regression",
-  "declared_case_count": 141,
+  "declared_case_count": 17,
   "profiles": {
     "capability": "One fresh Codex app-server capability canary.",
-    "smoke": "Capability canary plus representative context cases.",
-    "core": "Capability canary, context cases, proactive mature-first cases, frozen mature-candidate recall, one real thin-localization trajectory, and static validation.",
-    "deep": "Core plus all context cases and one current open-world public-repository search.",
-    "context": "All 124 context and intent live cases; retained for the compatibility runner.",
-    "proactive": "All six mature-first live cases; worker routing is owned by context_intent_alignment.",
+    "smoke": "One fresh Codex app-server capability canary; retired context-routing golds are excluded.",
+    "core": "Capability, proactive mature-first, frozen mature-candidate recall, one real thin-localization trajectory, and static validation; retired context-routing golds are excluded.",
+    "deep": "Core plus one current open-world public-repository search; retired context-routing golds are excluded.",
+    "proactive": "All six mature-first live cases; routing facts are checked by their real engineering consumers, not the retired context suite.",
     "reuse": "Only the four live open-world-reuse cases plus their deterministic contract validation."
   },
   "live_profile_case_counts": {
     "capability": 1,
-    "smoke": 89,
-    "core": 129,
-    "deep": 135,
-    "context": 124,
+    "smoke": 1,
+    "core": 10,
+    "deep": 11,
     "proactive": 6,
     "reuse": 4
   },
@@ -30,14 +28,6 @@
       "case_count": 1,
       "config": "evals/codex_capability/promptfooconfig.yaml",
       "case_source": "evals/codex_capability/promptfooconfig.yaml",
-      "runtime_claim_allowed": true
-    },
-    {
-      "id": "context_intent_alignment",
-      "kind": "promptfoo_live",
-      "case_count": 124,
-      "config": "evals/context_intent_alignment/promptfooconfig.yaml",
-      "case_source": "evals/context_intent_alignment/cases.yaml",
       "runtime_claim_allowed": true
     },
     {

@@ -1,0 +1,67 @@
+{
+  "schema_version": "xinao.intent_continuity_baseline.v1",
+  "sentinel": "SENTINEL:INTENT_CONTINUITY_BASELINE_V1",
+  "authority": false,
+  "completion_claim_allowed": false,
+  "purpose": "Reduce repeated user explanation and operational burden by restoring the live human frame before choosing an action, without selecting a domain route.",
+  "priority": [
+    "current_system_and_developer_instructions",
+    "current_user_words",
+    "live_object_and_consumer_facts",
+    "current_authorization_and_pause_stop",
+    "non_authoritative_continuity_candidates"
+  ],
+  "zero_beat": [
+    "parent_result_and_user_burden",
+    "active_subject_and_object",
+    "means_versus_endpoint",
+    "user_codex_worker_tool_and_consumer_roles",
+    "observable_completion_ruler",
+    "authorization_and_pause_stop_boundary"
+  ],
+  "continuity_may": [
+    "restore_confirmed_parent_intent",
+    "restore_stable_preferences_and_corrections",
+    "restore_an_exact_unfinished_return_point",
+    "absorb_known_technical_and_handoff_burden",
+    "rank_already_admissible_candidates"
+  ],
+  "continuity_must_not": [
+    "invent_or_replace_user_intent",
+    "select_a_scientific_question_or_next_action",
+    "select_a_default_domain_task_mode_goal_worker_or_transport",
+    "override_current_words_live_facts_or_pause_stop",
+    "turn_history_checkpoint_report_test_or_worker_terminal_into_authority",
+    "claim_adoption_effect_or_parent_completion"
+  ],
+  "failure_semantics": {
+    "missing_stale_or_conflicting_continuity": "fail_open_from_current_words_and_live_facts",
+    "new_user_correction": "supersedes_the_conflicting_continuity_candidate",
+    "unrelated_explicit_task": "remains_unrelated",
+    "worker_terminal": "candidate_only_until_owner_verification_and_adoption"
+  },
+  "three_responsibility_domains": {
+    "domain_work": "forms questions and actions from the current human frame and real object",
+    "engineering": "provides reliable execution facts without domain routing or completion authority",
+    "continuity": "reduces recall and operation burden without governing authority"
+  },
+  "preserved_engineering_invariants": [
+    "exact_identity",
+    "candidate_adoption_effect_and_parent_completion_are_separate",
+    "evidence_cutoff_and_honesty",
+    "write_domain_isolation",
+    "idempotent_recovery",
+    "localized_failure",
+    "real_consumer_readback",
+    "recoverable_rollback"
+  ],
+  "activity_consumers": [
+    "C:\\Users\\xx363\\.codex\\AGENTS.md",
+    "D:\\XINAO_RESEARCH_RUNTIME\\state\\Codex_Situation_Island\\scripts\\session_start_continuity_pointer_v1.ps1",
+    "Decision Skill when metacognition or stable preference is actually relevant",
+    "operate-for-user when hidden technical or lifecycle burden is actually relevant",
+    "fresh-window action-level canaries"
+  ],
+  "not_a_runtime_gate": true,
+  "not_a_science_router": true
+}

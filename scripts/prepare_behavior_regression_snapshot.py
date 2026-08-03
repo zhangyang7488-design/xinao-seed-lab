@@ -110,7 +110,7 @@ def _profile_flags(
         and not domain
         and not case_pattern
         and not failed_from,
-        "context": profile in {"context", "smoke", "core", "deep"},
+        "context": False,
         "proactive": profile in {"proactive", "core", "deep"},
         "recall_replay": profile in {"core", "deep", "reuse"},
         "recall_live": profile in {"deep", "reuse"},
@@ -144,6 +144,10 @@ def selected_inputs(
         ("tests/test_behavior_regression_snapshot.py", "snapshot_builder_tests"),
         ("tests/test_behavior_regression_incremental.py", "incremental_selector_tests"),
         ("evals/behavior_regression/catalog.json", "catalog"),
+        (
+            "evals/intent_continuity_baseline/decision_model.v1.json",
+            "intent_continuity_baseline",
+        ),
     ]
     if flags["static"]:
         relative_inputs.append(
@@ -153,7 +157,6 @@ def selected_inputs(
         relative_inputs.append(("tests/test_repo_safety.py", "repository_safety_tests"))
     for enabled, relative, role in (
         (flags["capability"], "evals/codex_capability", "capability_eval"),
-        (flags["context"], "evals/context_intent_alignment", "context_eval"),
         (flags["proactive"], "evals/proactive_mature_first", "proactive_eval"),
         (
             flags["recall_replay"] or flags["recall_live"],
@@ -334,7 +337,6 @@ def _parser() -> argparse.ArgumentParser:
             "smoke",
             "core",
             "deep",
-            "context",
             "proactive",
             "reuse",
         ),

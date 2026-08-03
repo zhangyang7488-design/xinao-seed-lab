@@ -26,11 +26,7 @@ def _fixture_repo(tmp_path: Path) -> Path:
         "tests/test_behavior_regression_incremental.py": "# test\n",
         "tests/test_repo_safety.py": "# test\n",
         "evals/behavior_regression/catalog.json": "{}\n",
-        "evals/context_intent_alignment/promptfooconfig.yaml": (
-            "providers:\n  - config:\n      working_dir: ../..\n"
-        ),
-        "evals/context_intent_alignment/cases.yaml": "[]\n",
-        "evals/context_intent_alignment/prompt.txt": "prompt\n",
+        "evals/intent_continuity_baseline/decision_model.v1.json": "{}\n",
         "unrelated/tracked.txt": "audit only\n",
         "unrelated/deleted.txt": "must follow live deletion\n",
         ".gitignore": "ignored.txt\n",
@@ -45,7 +41,7 @@ def _fixture_repo(tmp_path: Path) -> Path:
     return root
 
 
-def test_context_snapshot_is_immutable_and_effective_tree_is_sparse(tmp_path: Path) -> None:
+def test_baseline_snapshot_is_immutable_and_effective_tree_is_sparse(tmp_path: Path) -> None:
     repo = _fixture_repo(tmp_path)
     output = tmp_path / "run"
     output.mkdir()
@@ -62,15 +58,13 @@ def test_context_snapshot_is_immutable_and_effective_tree_is_sparse(tmp_path: Pa
     assert (effective / "AGENTS.md").exists()
     assert (effective / ".git").exists()
     assert manifest["effective_git_head"]
-    config = effective / "evals/context_intent_alignment/promptfooconfig.yaml"
-    assert (config.parent / "../..").resolve() == effective.resolve()
+    model = effective / "evals/intent_continuity_baseline/decision_model.v1.json"
+    assert model.read_text(encoding="utf-8") == "{}\n"
 
     identity = manifest["identity_sha256"]
-    _write(repo / "evals/context_intent_alignment/prompt.txt", "changed live tree\n")
+    _write(repo / "evals/intent_continuity_baseline/decision_model.v1.json", "changed\n")
     assert json.loads(manifest_path.read_text(encoding="utf-8"))["identity_sha256"] == identity
-    assert (effective / "evals/context_intent_alignment/prompt.txt").read_text(
-        encoding="utf-8"
-    ) == "prompt\n"
+    assert model.read_text(encoding="utf-8") == "{}\n"
 
 
 def test_external_cache_is_copied_and_rebound_for_deep_profile(tmp_path: Path) -> None:

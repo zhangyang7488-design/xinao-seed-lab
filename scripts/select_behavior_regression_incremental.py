@@ -22,8 +22,7 @@ NON_RUNTIME_ROLES = {
     "static_assertion_tests",
 }
 NON_RUNTIME_PATHS = {
-    "evals/context_intent_alignment/cases.yaml",
-    "evals/context_intent_alignment/suite.json",
+    "evals/proactive_mature_first/cases.json",
 }
 
 

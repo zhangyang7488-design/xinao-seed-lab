@@ -1,46 +1,36 @@
-# Codex S 项目热差分
+# S 仓工程职责薄投影
 
-`SENTINEL:XINAO_CODEX_S_PROJECT_AGREEMENT_V5`
+`SENTINEL:S_GENERIC_ENGINEERING_ROLE_V1`
 
-本文件只定义 S 仓差异；全机热核和当前用户请求始终先行。S 是工程交付仓、成熟能力承载仓，不是默认新澳研究对象、科学父目标、历史入口或第二控制面。
+当前用户请求和 live 技术事实始终先行。本文件只定义 S 仓的工程职责，不恢复旧新澳平台、科学路线、`continuous`、Goal、情况岛、CURRENT/INDEX 或历史下一动作。
 
-## 开局路由
+## 职责归位
 
-- 没有明确其他任务对象时，Codex 默认进入 `E:\XINAO_RESEARCH_WORKSPACES\xinao-native-research`，直接继续新澳原生研究。
-- 上述默认原生父对象在当前交互 TUI 中同时是 `continuous`，不需要第二个“继续”“永续”或模式口令。普通插话、状态询问、解释、增量纠正和局部 `verified|partial|blocked` 报告只作父运行增量；commentary 后回精确父前沿，不得 final-yield 或以局部报告墙收工。明确的一次性问答或有界非研究对象仍保持有界。
-- Goal 只引用全局热核 §4：父帧闭合后由 Codex 自主 `create|reuse|skip`，无需逐次 Goal 口令；它不启停 `continuous`，也不扩大对象、权限或 Stop。
-- 当前请求明确属于 WorkerPool、launcher、工具胶水、安装、修复、测试、发布、路由治理或其他工程交付时，才在 S 工作。
-- 原生研究暴露一个具名工程缺口时，只把该依赖子锥路由到 S；原消费者复验后立即回到原生研究父对象。
-- 当前 cwd、S 的项目卡、旧 checkpoint、历史任务或工程测试未闭，均不能自行把父任务改判为 S 工程。
-- 已移除的旧新澳平台不参与启动、路由、准入、续跑或完成判断；需要考古时只读 E 盘冷存或 Git 历史。
+- S 是通用工程实现与成熟能力承载仓：WorkerPool、launcher、工具胶水、测试、发布和可复用组件可以在这里维护。
+- S 不是科学父目标、研究入口、研究准入器、科学状态库或完成身份。科学可以按需调用 S；S 不能决定科学是否开始、研究什么、是否值得继续或何时完成。
+- 连续性只帮助恢复人的意图、纠偏和技术现场，不能由 S 的合同、checkpoint、catalog、进程或测试生成科学路线。
+- 当前明确任务是工程交付或 live 研究暴露具名工程缺口时才在 S 施工；工程子事务闭合后返回原消费者复验。cwd、旧任务、未闭测试和历史平台存在均不产生父任务。
 
-稳定入口：
+当前活动工程合同只有：`docs/tool_glue/GENERIC_ENGINEERING_SUBSTRATE_CURRENT.md`。旧 `SOFTWARE_TOOL_GLUE_CURRENT.md` 已退出活动树；需要考古时只从 Git 或 `E:\XINAO_COLD_STORAGE\xinao-global-clean-preimage-20260803-v1\S-preclean.bundle` 恢复，不得整份重新加载为活动规则。
 
-- 全机薄路由：`C:\Users\xx363\Desktop\主线\00_先读我_主线入口与读取顺序.txt`
-- 当前科学父稿：`C:\Users\xx363\Desktop\主线\01_主线入口\《新澳严格数学科学研究模式——独立融合稿》.txt`
-- 用户可见当前工程合同：`C:\Users\xx363\Desktop\主线\工具胶水宪法\软件工具胶水宪法_当前有效.txt`
-- 跨进程/transport 当前合同：同目录 `跨接缝执行封套与一致性协议_当前有效.txt`
-- S 仓执行投影：`docs\tool_glue\SOFTWARE_TOOL_GLUE_CURRENT.md` 与 `CROSS_SEAM_EXECUTION_ENVELOPE_CURRENT.md`；必须与对应 C 盘 current 文件逐字节一致，不取得第二裁决源身份。
-- 当前用户意图定义父结果和边界，live 仓库/进程/官方接口定义技术事实；Decision Skill、行为修复 Skill 与代运维 Skill 只作非权威编译。合同或投影漂移时回到这两类输入重算，不让旧文本、Skill 或测试反向取得授权。
-- 控制面或事故冷合同：`docs/current/CODEX_S_PROJECT_AGREEMENT_COLD_2026-07-13.md`
+若当前交互确实在继续未完成的新澳事务且没有更明确对象，背景只从以下薄入口恢复：
 
-只读取当前任务命中的最小章节；引用和目录不是授权、开工门或完成证据。本热卡不复制实现细节。
+- `C:\Users\xx363\Desktop\主线\00_先读我_主线入口与读取顺序.txt`
+- `C:\Users\xx363\Desktop\主线\01_新澳研究父意图.txt`
+- `C:\Users\xx363\Desktop\主线\02_事实与研究边界.txt`
+- `E:\XINAO_RESEARCH_WORKSPACES\xinao-native-research\STATUS.md`
 
-## Owner 与工人
+缺失或冲突时从当前人话与 live facts 继续，不锁死任务；明确的新任务优先。
 
-- Codex 是唯一 Owner，亲自接触真实消费者，独占正式采用、写入、整合、承诺和终验。
-- 可分离且正收益的劳动默认交给普通外部工人。独立额度的普通 Windows Grok WorkerPool 通常优先承担开放探索、攻击、候选和宽扫描。
-- Terra、Luna、Sol 与 Codex collaboration 共用 Codex 额度池；只有任务适配收益覆盖共享额度和汇流成本时才使用。内置 collaboration 子代理不是默认劳动力。
-- 工人可以在继承且收窄的对象、证据、写域、预算、授权和 Stop 内独立形成问题、研究、实现、测试和批判；结果始终是候选，不取得 Owner 权限。
-- 谁接触现实与谁承担可分离劳动彼此独立：Owner 亲临不等于单线程包办，工人并行也不允许 Owner 只收报告。
+## 工程工作方式
 
-## 工程交付
+- Codex 是唯一正式 Owner，亲自接触真实消费者并负责采用、整合、承诺和终验；工人只交候选。
+- 可分离且正收益的劳动可交普通外部 WorkerPool。工人继承并收窄对象、证据、权限、写域、预算与 Stop；不得用不同模型、文件或 prompt 冒充科学异质性。
+- 先绑定真实消费者与可观察完成尺，再做最小可回滚实现。Schema、哈希、receipt、测试和报告是证据，不是父完成。
+- 保留精确身份、候选/采用/效果分账、截止边界、写域隔离、幂等恢复、真实消费者 readback、证据诚实、Stop 和可恢复回滚。
+- 破坏性操作先核精确对象、当前消费者、独有内容、替代和恢复来源。不得触碰 `C:\Users\xx363\Desktop\历史备用 不动`。
+- 增长物与近期运行证据落 `D:\XINAO_RESEARCH_RUNTIME`；仓库和冷历史落 E；C 主线只保留用户可理解和修改的薄掌控面。
 
-- 先钉真实消费者与可观察完成尺，再做最小可回滚实现；形式材料、静态绿灯和报告不能代替消费者效果。
-- 对现有远端/PR 事务，完成默认包括相称测试、精确提交、推送、PR/合并、远端回读、真实消费者和临时载体卫生；保留无关 dirty 状态。
-- 文本由 Codex 正式写入和终验。工具、测试和工人只提供候选证据。
-- 增长物、运行状态和近期证据落 `D:\XINAO_RESEARCH_RUNTIME`；永久冷存落 `E:\XINAO_COLD_STORAGE`。`C:\Users\xx363\Desktop\主线` 是用户可见、可理解、可修改的掌控面；只有自动加载子集保持薄。
-- 破坏性操作先核精确路径、真实消费者、独有内容、用户可见替代、可恢复来源与受保护对象。不得因一级目录混有旧材料就整包删除；删除旧 Git 内容以历史提交为恢复边界；不得触碰 `C:\Users\xx363\Desktop\历史备用 不动`。
-- 修改工程入口、工具胶水或行为路由后，运行受影响测试、fresh-process/消费者回读和负例；按 `verified / partial / blocked / unverified` 诚实收口。
+修改活动入口、launcher、工人合同或真实消费者后，运行相交测试、fresh-process、正负例与消费者回读，并按 `verified / partial / blocked / unverified` 诚实报告。
 
-只有控制面、continuous、事故、session ownership、进程终止或精确 rollback 任务，才读取冷合同与情况岛对应章节。
+只有当前任务明确命中控制面事故、session ownership、进程终止或精确 rollback 时，才按需读取 `docs/current/CODEX_S_PROJECT_AGREEMENT_COLD_2026-07-13.md`；该冷合同不产生默认任务或科学路线。

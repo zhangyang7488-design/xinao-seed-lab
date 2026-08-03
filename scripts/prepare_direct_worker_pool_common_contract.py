@@ -31,7 +31,7 @@ from services.agent_runtime.grok_execution_contract_adapter import (
     direct_worker_pool_output_contract,
 )
 
-DEFAULT_RULES_FILE = REPO_ROOT / "docs" / "tool_glue" / "SOFTWARE_TOOL_GLUE_CURRENT.md"
+DEFAULT_RULES_FILE = REPO_ROOT / "docs" / "tool_glue" / "GENERIC_ENGINEERING_SUBSTRATE_CURRENT.md"
 CONTEXT_SLICE_PROMPT_SEPARATOR = "\n\n---\n\n"
 
 
