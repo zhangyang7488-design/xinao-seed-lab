@@ -15,7 +15,7 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = [
-  "hypothesis==6.156.6",
+  "hypothesis==6.164.0",
   "markitdown>=0.1.5,<0.2",
   "polars>=1.42,<2",
   "pytest>=9",
@@ -29,7 +29,7 @@ human-capabilities = [
   "polars>=1.42,<2",
 ]
 workflow = [
-  "apsw==3.53.3.1",
+  "apsw==3.53.4.0",
   "ddgs>=9.14.4,<10",
   "docker==7.2.0",
   "GitPython>=3.1,<4",
