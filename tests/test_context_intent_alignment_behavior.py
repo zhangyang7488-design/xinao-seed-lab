@@ -361,9 +361,7 @@ def test_problem_level_tracks_the_live_completion_identity_not_the_goal_carrier(
         assert _case(case_id)["vars"]["expected_active_problem_level"] == "object_instance"
 
     assert (
-        _case("POS_AUTONOMOUS_NATIVE_GOAL_ADMISSION")["vars"][
-            "expected_active_problem_level"
-        ]
+        _case("POS_AUTONOMOUS_NATIVE_GOAL_ADMISSION")["vars"]["expected_active_problem_level"]
         == "parent_intent_and_harm"
     )
     assert (
