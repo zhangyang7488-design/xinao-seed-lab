@@ -15,8 +15,10 @@ PowerShell deletion block while the tool is available.
 3. Use `quarantine` for an unclassified but currently removable object. Use `permanent` only when
    current authority covers deletion and the object is disposable, committed/recoverable, or
    rebuildable. State the concrete recovery basis.
-4. Read every blocker. Do not bypass protected roots, registered Git worktrees, active consumers,
-   root reparse points, or a stale plan. Resolve only the exact legitimate dependency and re-plan.
+4. Read every blocker. Do not bypass protected roots, linked or multi-worktree Git repositories,
+   repository-internal targets, active consumers, root reparse points, or a stale plan. An exact
+   self-contained clone root with no other worktree may proceed only after the normal authority,
+   value, and recovery classification is already complete.
 5. Call `safe_cleanup_execute` with the exact returned `plan_id` and `plan_sha256`. If ACL repair is
    needed, the tool applies it only to the planned target during execution. It never traverses a
    reparse point and exposes no arbitrary command channel.
