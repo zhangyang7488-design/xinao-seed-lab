@@ -18,15 +18,9 @@ services:
       - -c
       - wal_level=replica
       - -c
-      - archive_mode=on
-      - -c
-      - archive_command=test ! -f /wal-archive/%f && cp %p /wal-archive/%f
-      - -c
-      - archive_timeout=60s
+      - archive_mode=off
     volumes:
       - shiwu-ku-data:/var/lib/postgresql/data
-      - ${XINAO_EVIDENCE_HOST:-D:/XINAO_RESEARCH_RUNTIME}/state/s_base_compose/backups/postgres/wal:/wal-archive
-      - ${XINAO_EVIDENCE_HOST:-D:/XINAO_RESEARCH_RUNTIME}/state/s_base_compose/backups:/backup
     networks:
       - xinao_internal
     restart: unless-stopped
