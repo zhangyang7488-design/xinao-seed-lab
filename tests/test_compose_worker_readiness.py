@@ -365,6 +365,22 @@ def test_default_compose_baseline_contains_only_temporal_core() -> None:
     assert "mowei-" + "zhixing" not in services
 
 
+def test_default_postgres_has_no_wal_archive_or_dead_backup_mount() -> None:
+    compose_path = REPO_ROOT / "docker-compose.yml"
+    compose_text = compose_path.read_text(encoding="utf-8")
+    compose = yaml.safe_load(compose_text)
+    postgres = compose["services"]["shiwu-ku"]
+    command = [str(value) for value in postgres["command"]]
+    volumes = [str(value) for value in postgres["volumes"]]
+
+    assert "archive_mode=off" in command
+    assert not any(value.startswith("archive_command=") for value in command)
+    assert not any(value.startswith("archive_timeout=") for value in command)
+    assert not any(value.endswith(":/wal-archive") for value in volumes)
+    assert not any(value.endswith(":/backup") for value in volumes)
+    assert "s_base_compose/backups" not in compose_text
+
+
 def test_default_compose_does_not_expand_optional_litellm_secret() -> None:
     compose = (REPO_ROOT / "docker-compose.yml").read_text(encoding="utf-8")
     start = (REPO_ROOT / "scripts" / "Start-XinaoBaseCompose.ps1").read_text(encoding="utf-8")
