@@ -62,6 +62,7 @@ ALLOWED_AGENT_RUNTIME_MODULES = {
     "integrated_bus_workflow_registry.py",
     "lexicon_cn_escape.py",
     "overnight_local_search.py",
+    "outcome_boundary_preflight.py",
     "pro_review_after_draft.py",
     "provider_routing_preference.py",
     "quota_dispatch_epoch.py",
@@ -258,6 +259,8 @@ def test_project_hot_entry_points_to_generic_engineering_substrate() -> None:
     assert "SENTINEL:GENERIC_ENGINEERING_SUBSTRATE_CURRENT_V1" in contract_text
     assert "不定义任何科学父意图" in contract_text
     assert "工程入口只保证运行边界和事实血缘，不建立科学准入法院" in contract_text
+    assert "scripts/preflight_outcome_boundary.py" in contract_text
+    assert "不是语义安全证明、科学准入器或 Reveal 授权" in contract_text
     assert "WAIT_FOR_REAL_TARGET" not in contract_text
     assert "biased-urn" not in contract_text
     assert not retired_projection.exists()
