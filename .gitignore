@@ -33,6 +33,7 @@ runtime-data/
 tmp/
 tmp_debug_*/
 .codex_tmp_*
+.codex-tmp/
 _audit_*.txt
 
 # Local tool-schema and smoke-test outputs.

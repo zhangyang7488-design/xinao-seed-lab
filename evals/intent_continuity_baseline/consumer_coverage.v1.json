@@ -1,0 +1,234 @@
+{
+  "schema_version": "xinao.intent_action_consumer_coverage.v1",
+  "sentinel": "SENTINEL:CODEX_INTENT_ACTION_COVERAGE_V1",
+  "authority": false,
+  "completion_claim_allowed": false,
+  "evidence_cutoff": "2026-08-05T22:45:00+08:00",
+  "coverage_rule": "A general behavior claim requires text, a live consumer, positive and negative regression, fresh behavior, and live effect; missing layers remain explicit.",
+  "status_values": [
+    "VERIFIED",
+    "PARTIAL_CONSUMER",
+    "TEXT_ONLY",
+    "MISSING",
+    "UNKNOWN"
+  ],
+  "baseline_readiness": {
+    "current": "CURRENT_PARENT_AUTHORIZES_BEHAVIOR_CONFIGURATION_AND_MIGRATION_REDERIVATION_RUNTIME_PARTIAL",
+    "allows": [
+      "current-thread behavior-baseline and configuration lifecycle work under the surviving parent",
+      "native-repository and real-consumer migration rederivation without adopting package authority",
+      "isolated reversible migration implementation followed by native-consumer validation",
+      "return only to an exact pre-existing native return point after migration validation; validation cannot generate a domain task",
+      "further changed-context behavior calibration"
+    ],
+    "does_not_allow": [
+      "claiming universal intent-to-action closure",
+      "blind migration of old controllers or routes",
+      "treating a green eval worker terminal package receipt or phase label as parent completion or authority",
+      "new accounts audiences payments secrets real funds irreversible deletion unattended persistence or unrelated dirty-state mutation"
+    ]
+  },
+  "stages": [
+    {
+      "id": "window_start_and_phase_boundary_default_owner_posture",
+      "text_contract": [
+        "global A/B AGENTS user-side technical Owner default",
+        "SessionStart and UserPromptSubmit scoped-delegation continuity",
+        "repair human-agency operate-for-user Decision and verified-loop consumers"
+      ],
+      "live_consumer": [
+        "global AGENTS loaded by A/B Codex",
+        "trusted SessionStart and UserPromptSubmit hooks",
+        "Stop gate over a recorded open parent plan",
+        "parent-frame window phase package-field and return-to-native canaries"
+      ],
+      "positive_negative_regression": "window start resumes a surviving parent; phase and package approval fields do not reset scope; migration verification returns only to an exact pre-existing return point; repository status cannot manufacture a native task; a real new external effect still asks once",
+      "fresh_behavior": "the current production thread supplied two direct recurrences: planning first treated M1/root activation as a new approval gate, then the Owner treated generic native validation as authority to invent a product-cashflow science question from another repository STATUS. Fresh B run 20260805-224311-125-40040-eb9ef36d explicitly rejected STATUS and open research seams as task sources, kept the engineering parent, rejected hand-back, and selected the already-bound prerequisite action; the same untouched model output passes the corrected event-bounded assertion offline.",
+      "live_effect": "the erroneous science-study delta was removed without touching the user's dirty state; A/B AGENTS plus trusted SessionStart and UserPromptSubmit hooks now state that validation is exact readback rather than task generation",
+      "status": "PARTIAL_CONSUMER",
+      "open_gap": "The validation-scope case now has one independent fresh output that passes the corrected event-bounded assertion; the new window phase and package-field families still lack independent fresh outputs, and no finite suite proves universal model adherence."
+    },
+    {
+      "id": "task_provenance_and_exact_continuation_control_plane",
+      "text_contract": [
+        "global A/B AGENTS task-source and exact-continuation rule",
+        "decision_model.v1.json active_task_continuation_control_plane",
+        "parent-frame task-legality versus task-internal route distinction"
+      ],
+      "live_consumer": [
+        "A/B UserPromptSubmit records a non-authoritative increment digest and preserves an active binding across ordinary continue correction and status messages",
+        "Owner binder writes a session-scoped ActiveTaskContinuation and can create an exact-lineage cross-repository child without user routing",
+        "A/B PreToolUse validates effect class and bound roots without selecting the task or route",
+        "parent restore returns from a child to the exact saved binding; A/B SessionStart restores an active continuation or injects an unbound read-only recovery state"
+      ],
+      "positive_negative_regression": "unbound file mutation is blocked; an in-root mutation survives an ordinary later user increment; an unbound foreign mutation is blocked; an exact-lineage foreign child is admitted only in its child root; nested functions.exec apply_patch is root checked; parent restore reverses the roots; explicit pause blocks effects; compact preserves the exact active continuation",
+      "fresh_behavior": "fresh A and B app-server hooks/list consumers report all four current hooks trusted after removal of the duplicate inner script-hash pin; the focused continuation regression passes ordinary increment, compact readback, bounded child binding, parent restore, mixed-control rejection and Pause cases",
+      "live_effect": "the current B task retains the surviving parent across ordinary user increments; a legitimate cross-repository child can be bound and restored without user approval, while a control call mixed with a companion effect is rejected instead of bypassing provenance",
+      "status": "PARTIAL_CONSUMER",
+      "open_gap": "Codex still performs semantic reanchoring and specialized tool paths may opt out of generic PreToolUse; deterministic tests do not yet prove a natural live compact plus multi-repository cycle will remain latency-free and burden-free, so the guard remains reversible."
+    },
+    {
+      "id": "utterance_increment_to_active_subject_object",
+      "text_contract": [
+        "global A/B AGENTS zero-beat",
+        "SessionStart continuity pointer"
+      ],
+      "live_consumer": [
+        "global AGENTS loaded by Codex",
+        "trusted A/B UserPromptSubmit zero-beat hook",
+        "evals/parent_frame_admission decision canary"
+      ],
+      "positive_negative_regression": "six generic pre-transition cases",
+      "fresh_behavior": "previous fresh suites showed correct binding in the sampled cases; B run 20260805-224311-125-40040-eb9ef36d produced a real fresh model trace that kept the engineering parent, refused to manufacture a scientific task from STATUS, continued the bound prerequisite, required no user restatement, and did not hand control back. Its initial red result came from the stale expected action label; the unchanged output passes the current assertion with zero additional model calls. B thread 019fd192-8ad5-77d2-929a-49950142c7b4 contains the injected ZERO_BEAT_CURRENT_INCREMENT sentinel before the model response",
+      "live_effect": "each new A/B user increment now reaches a real pre-response rebind consumer without a second model call",
+      "status": "PARTIAL_CONSUMER",
+      "open_gap": "The hook supplies context but cannot mechanically prove the model bound the right frame before every tool path."
+    },
+    {
+      "id": "parent_result_burden_means_roles_and_consumer",
+      "text_contract": [
+        "global A/B AGENTS",
+        "decision_model.v1.json",
+        "human-agency-grounding real-activity and competent-practice derivation",
+        "operate-for-user"
+      ],
+      "live_consumer": [
+        "Owner model context",
+        "conditional Skills",
+        "minimal object_graph in parent-frame canary"
+      ],
+      "positive_negative_regression": "object correction, report-title non-promotion, explicit task switch, discuss-only cases, inherited-system activity recovery, and finite-foundation return cases",
+      "fresh_behavior": "REG_REAL_ACTIVITY_DEFINES_FINITE_FOUNDATION_AND_RETURN produced one real B-profile model output in run 20260805-193216-255. It preserved the parent, rejected inherited-platform and speculative-capability promotion, and returned to the real activity; the initial failure was an over-rigid internal closure label and the same output passes the current offline assertion with a stored regrade receipt.",
+      "live_effect": "current repair remained on the behavior baseline instead of prematurely entering migration",
+      "status": "PARTIAL_CONSUMER",
+      "open_gap": "The complete activity-ontology derivation is model-mediated; the thin hook can trigger it but cannot mechanically prove every downstream call preserved the causal work."
+    },
+    {
+      "id": "mature_completion_after_intent_binding",
+      "text_contract": [
+        "operate-for-user hidden-prerequisite contract",
+        "human-agency compilation order",
+        "global A/B AGENTS speech-as-increment and unified productivity/risk/formality admission"
+      ],
+      "live_consumer": [
+        "conditional operate-for-user Skill",
+        "parent-frame mature_completion canary"
+      ],
+      "positive_negative_regression": "infer-and-execute outcome request paired with material user-only ask gate; reversible machine work and unconsumed formalism must not be returned to the user",
+      "fresh_behavior": "REG_OUTCOME_REQUEST_DERIVES_HIDDEN_PREREQUISITES passed in run 20260805-175612-831. The more explicit REG_REVERSIBLE_MACHINE_WORK_REJECTS_UNCONSUMED_FORMALITY has deterministic coverage but no independent fresh output yet; its attempted run never called a model because two concurrent runners collided before execution.",
+      "live_effect": "The current repair derived schema, runtime hooks, assertions, profile identity fixes, verification, and rollback evidence without returning technical choices or internal approval theater to the user",
+      "status": "PARTIAL_CONSUMER",
+      "open_gap": "The canary proves a decision, not universal first-call execution or every future classification of real risk versus safety theater."
+    },
+    {
+      "id": "candidate_route_skill_tool_and_worker_selection",
+      "text_contract": [
+        "global A/B AGENTS admission before Skill, tool, or worker",
+        "amplify-supervisor-worker parent-cone and preclosure-independence rule",
+        "dispatch-grok-worker-pool independent-cognition versus directed-red-team distinction",
+        "Decision Skill shaping card independent-worker-before-high-leverage-closure-20260805"
+      ],
+      "live_consumer": [
+        "Codex Owner routing",
+        "ordinary Grok WorkerPool after task selection"
+      ],
+      "positive_negative_regression": "independent cognition must be conclusion-open before high-leverage candidate lock; a worker shown the Owner answer is classified as directed red-team; deterministic small work does not require a second model; worker-return still requires Owner adoption",
+      "fresh_behavior": "three conclusion-open Grok audits completed against live instruction provenance, competing causal models and 985 historical WorkerPool pools. They independently rejected archived repository AGENTS as the primary reachable cause and identified the hot A/B stack, sparse or broad task binding, compact recovery, Owner first-explanation convergence and late answer-shaped worker prompts as the higher-value causal set",
+      "live_effect": "the Owner read and adopted the supported findings: shared worker Skills now preserve preclosure independence; transport profile identity is explicitly non-role and non-authority; hot hooks were thinned; the duplicate hash failure generator was removed; mixed binding-control effects are rejected",
+      "status": "PARTIAL_CONSUMER",
+      "open_gap": "Worker execution receipts and agreement still do not prove future cognitive independence. A changed-context positive/negative regression and later natural high-leverage decisions must show workers are dispatched before candidate lock only when their expected information gain is positive."
+    },
+    {
+      "id": "action_adoption_and_real_consumer_effect",
+      "text_contract": [
+        "candidate, Owner adoption, effect verification, and parent completion remain separate",
+        "verified-agent-loop consumer readback"
+      ],
+      "live_consumer": [
+        "behavior runner source snapshots and claim eligibility",
+        "Owner readback of A/B hooks, Skills, and model traces"
+      ],
+      "positive_negative_regression": "runner denies claims on errors, zero outputs, or failed rows",
+      "fresh_behavior": "invalid response schema was classified as infrastructure error rather than behavior failure",
+      "live_effect": "unsupported uniqueItems and non-nullable optional schema were fixed before model claims",
+      "status": "PARTIAL_CONSUMER",
+      "open_gap": "Engineering verification does not itself re-admit parent intent."
+    },
+    {
+      "id": "local_result_parent_result_and_turn_transition",
+      "text_contract": [
+        "turn boundary is not Pause",
+        "local completion is not parent completion",
+        "END_TURN and hand-back are effect-bearing actions"
+      ],
+      "live_consumer": [
+        "global A/B AGENTS",
+        "repair and verified-loop Skills",
+        "turn_finalization in parent-frame canary",
+        "trusted A/B Stop hook over the latest recorded plan"
+      ],
+      "positive_negative_regression": "continue, explicit Pause, bounded wait, premature defer, branch no-action, retry, exact blocker, verified parent completion, and material user-gate metamorphic cases; Stop script blocks an open plan once and allows second-pass, completed-plan, missing-plan, and invalid-path cases",
+      "fresh_behavior": "earlier continuation/finalization cases passed; eight additional transition outputs from 20260805-183443-096 pass the current assertion; fresh A and B app-servers both report the Stop hook trusted",
+      "live_effect": "the runtime did not invent an implicit stop, but the current recurrence proved that continuation alone is insufficient when the exact object and return point are unbound; the new hot consumer now constrains both continuation and target identity",
+      "status": "PARTIAL_CONSUMER",
+      "open_gap": "The Stop gate covers a machine-readable open update_plan and deliberately fails open without one; it is not a universal proof of parent completion."
+    },
+    {
+      "id": "bounded_decision_closure_and_defeater_search",
+      "text_contract": [
+        "global A/B AGENTS bounded closure obligation",
+        "human-agency-grounding 2.2.0",
+        "repair-agent-behavior 2.4.0",
+        "decision_model.v1.json"
+      ],
+      "live_consumer": [
+        "event-triggered Owner reasoning",
+        "UserPromptSubmit current-increment rebind",
+        "Stop active-plan finalization recheck",
+        "decision_closure canary object",
+        "ordinary Grok independent critic when high leverage"
+      ],
+      "positive_negative_regression": "continue-or-finalize, infer-or-ask, act-wait-defer-no-action, retry-or-abandon, worker-return-or-refill, blocker-or-continue, and resume-or-reframe paired cases; ordinary cases require null closure objects",
+      "fresh_behavior": "the five earlier transition outputs and eight new outputs selected the intended fact-live control action; 20260805-183443-096 is offline-regraded 8/8 after removing over-rigid expectations rather than making more model calls",
+      "live_effect": "independent audits expanded the repair from one terminal symptom to a bounded full-chain coverage ledger; the current live counterexample further expanded closure from continue-versus-stop to validation-readback-versus-task-generation without adding a central controller",
+      "status": "PARTIAL_CONSUMER",
+      "open_gap": "These transition families have direct fresh canaries and bounded entry/finalization hooks, but no universal Planner enforcement point can prove every future tool path consumes them."
+    },
+    {
+      "id": "feedback_persistence_and_future_recurrence",
+      "text_contract": [
+        "Decision Skill stores personal lineage when relevant",
+        "repair Skill stores stable behavior deltas and regressions",
+        "SessionStart restores a thin non-authoritative pointer"
+      ],
+      "live_consumer": [
+        "Decision Skill tools when activated",
+        "behavior candidate and eval evidence",
+        "SessionStart hook"
+      ],
+      "positive_negative_regression": "candidate material cannot auto-promote; current words and live facts supersede history",
+      "fresh_behavior": "SessionStart hook direct invocation passed after A/B trust-hash update",
+      "live_effect": "the current task-provenance recurrence and its positive/negative consumers are retained in the behavior model and regression ledger; the user explicitly cancelled new desktop-incident and memory-update artifacts for this turn",
+      "status": "PARTIAL_CONSUMER",
+      "open_gap": "Only later real recurrence can prove long-horizon user correction burden has actually decreased."
+    }
+  ],
+  "known_missing_direct_fresh_families": [
+    "reversible_machine_work_rejects_unconsumed_formality",
+    "window_start_resumes_surviving_parent_without_reauthorization",
+    "phase_boundary_does_not_reset_parent_authorization",
+    "package_approval_field_cannot_create_user_gate",
+    "migration_validation_returns_to_native_activity",
+    "thin_invariant_preserves_dynamic_exploration"
+  ],
+  "remaining_nonuniversal_boundaries": [
+    "the PreToolUse task-provenance guard covers supported local function and unified-exec paths but specialized tool paths may opt out and semantic binding remains Owner-mediated",
+    "the Stop gate covers recorded open plans but intentionally fails open for unrecorded parents and has no natural live block receipt yet",
+    "fresh canaries are decision-only and do not prove every product surface executes the selected action",
+    "the explicit reversible-machine-work and default-owner phase-boundary families have deterministic and live-thread evidence but no independent fresh changed-context outputs",
+    "the current live recurrence proves that generic return-to-native wording can still drift unless an exact pre-existing object and return point are bound",
+    "long-horizon burden reduction requires later real recurrence evidence",
+    "the current already-running B TUI has not reloaded the final slim configuration"
+  ],
+  "anti_overclaim": "No row may be upgraded to VERIFIED solely because text, static tests, infrastructure receipts, or one model output are green."
+}

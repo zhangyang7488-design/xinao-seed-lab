@@ -20,6 +20,12 @@
   },
   "live_agent_suites": [
     {
+      "id": "parent_frame_admission",
+      "path": "evals/parent_frame_admission",
+      "runner": "scripts/run_parent_frame_admission_eval.ps1",
+      "role": "generic_parent_frame_transition_and_mature_owner_admission"
+    },
+    {
       "id": "proactive_mature_first",
       "path": "evals/proactive_mature_first",
       "runner": "scripts/run_proactive_mature_first_eval.ps1",
@@ -55,7 +61,7 @@
       "id": "context_intent_alignment",
       "status": "removed_from_worktree",
       "recovery": "Git history or E:\\XINAO_COLD_STORAGE\\xinao-global-clean-preimage-20260803-v1\\S-preclean.bundle",
-      "reason": "Pre-clean-baseline suite mixed useful zero-beat intent cases with retired continuous, Goal, default-XINAO, and worker-routing control semantics. Its valid zero-beat core was re-expressed in evals/intent_continuity_baseline/decision_model.v1.json."
+      "reason": "Pre-clean-baseline suite mixed useful zero-beat intent cases with retired continuous, Goal, default-XINAO, and worker-routing control semantics. Its static core is in evals/intent_continuity_baseline/decision_model.v1.json and its generic live replacement is evals/parent_frame_admission."
     }
   ],
   "admission_fixture_only": [

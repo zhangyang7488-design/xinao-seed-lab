@@ -5,5 +5,5 @@ param(
 )
 
 $runner = Join-Path $PSScriptRoot 'run_behavior_regression.ps1'
-& $runner -Profile proactive -RuntimeRoot $RuntimeRoot -CodexHome $CodexHome
+& $runner -Profile intent -RuntimeRoot $RuntimeRoot -CodexHome $CodexHome
 exit $LASTEXITCODE

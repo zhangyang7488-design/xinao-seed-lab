@@ -14,15 +14,17 @@
   "protected_subtrees": [
     "C:\\Users\\xx363\\.agents",
     "C:\\Users\\xx363\\.codex",
+    "C:\\Users\\xx363\\.codex-s-hardmode-account-b",
+    "C:\\Users\\xx363\\.grok-bg-workers",
+    "C:\\Users\\xx363\\CodexLaunchers",
     "C:\\Users\\xx363\\plugins",
     "C:\\Users\\xx363\\Desktop\\主线",
-    "C:\\Users\\xx363\\Desktop\\历史备用 不动"
+    "C:\\Users\\xx363\\Desktop\\历史备用 不动",
+    "D:\\XINAO_RESEARCH_RUNTIME\\tools\\grok-worker-pool"
   ],
   "git_roots": [
     "E:\\XINAO_RESEARCH_WORKSPACES\\S",
-    "D:\\Grok_Admin_Isolated\\workspace",
     "D:\\Grok_Admin_Isolated\\workspace-grok-4.5-island",
-    "C:\\Users\\xx363\\Grok_Admin_Isolated\\workspace",
     "C:\\Users\\xx363\\Grok_Admin_Isolated\\workspace-grok-4.5-island"
   ],
   "quarantine_roots": {

@@ -27,6 +27,9 @@ def _fixture_repo(tmp_path: Path) -> Path:
         "tests/test_repo_safety.py": "# test\n",
         "evals/behavior_regression/catalog.json": "{}\n",
         "evals/intent_continuity_baseline/decision_model.v1.json": "{}\n",
+        "evals/intent_continuity_baseline/consumer_coverage.v1.json": "{}\n",
+        "evals/intent_continuity_baseline/BASELINE.md": "# baseline\n",
+        "tests/test_intent_action_consumer_coverage.py": "# test\n",
         "unrelated/tracked.txt": "audit only\n",
         "unrelated/deleted.txt": "must follow live deletion\n",
         ".gitignore": "ignored.txt\n",
@@ -60,6 +63,10 @@ def test_baseline_snapshot_is_immutable_and_effective_tree_is_sparse(tmp_path: P
     assert manifest["effective_git_head"]
     model = effective / "evals/intent_continuity_baseline/decision_model.v1.json"
     assert model.read_text(encoding="utf-8") == "{}\n"
+    assert (
+        effective / "evals/intent_continuity_baseline/consumer_coverage.v1.json"
+    ).exists()
+    assert (effective / "evals/intent_continuity_baseline/BASELINE.md").exists()
 
     identity = manifest["identity_sha256"]
     _write(repo / "evals/intent_continuity_baseline/decision_model.v1.json", "changed\n")
@@ -71,6 +78,7 @@ def test_external_cache_is_copied_and_rebound_for_deep_profile(tmp_path: Path) -
     repo = _fixture_repo(tmp_path)
     for relative in (
         "evals/codex_capability",
+        "evals/parent_frame_admission",
         "evals/proactive_mature_first",
         "evals/mature_capability_recall",
         "evals/thin_localization/fixture_template",
@@ -78,19 +86,28 @@ def test_external_cache_is_copied_and_rebound_for_deep_profile(tmp_path: Path) -
         _write(repo / relative / "placeholder.txt", "x\n")
     for relative in (
         "tests/test_open_world_reuse_behavior.py",
+        "tests/test_parent_frame_admission.py",
         "tests/test_repo_safety.py",
         "tests/test_behavior_regression_snapshot.py",
     ):
         _write(repo / relative, "# test\n")
     external = tmp_path / "external.json"
     _write(external, "{}\n")
+    codex_home = tmp_path / "codex-home"
+    _write(codex_home / "AGENTS.md", "global behavior kernel\n")
     config = repo / "evals/mature_capability_recall/promptfooconfig.live.yaml"
     _write(config, f"discovery_cache_path: {external}\n")
     subprocess.run(["git", "-C", str(repo), "add", "."], check=True)
 
     output = tmp_path / "run"
     output.mkdir()
-    manifest_path = create_snapshot(repo, output, "deep", external_cache=external)
+    manifest_path = create_snapshot(
+        repo,
+        output,
+        "deep",
+        external_cache=external,
+        codex_home=codex_home,
+    )
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     effective = Path(manifest["effective_root"])
     effective_config = (
@@ -98,4 +115,6 @@ def test_external_cache_is_copied_and_rebound_for_deep_profile(tmp_path: Path) -
     ).read_text(encoding="utf-8")
     assert str(external) not in effective_config
     assert "/src/x/live_discovery_cache/external.json" in effective_config.replace("\\", "/")
-    assert manifest["external_files"][0]["sha256"]
+    assert all(row["sha256"] for row in manifest["external_files"])
+    roles = {row["role"] for row in manifest["source_inputs"]}
+    assert "global_working_kernel" in roles

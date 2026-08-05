@@ -1,0 +1,347 @@
+# yaml-language-server: $schema=https://promptfoo.dev/config-schema.json
+description: Parent-frame admission before local trigger routing
+
+providers:
+  - id: openai:codex-app-server
+    config:
+      working_dir: ../..
+      sandbox_mode: read-only
+      approval_policy: never
+      ephemeral: true
+      reuse_server: false
+      cli_config:
+        features:
+          hooks: false
+      thread_cleanup: unsubscribe
+      inherit_process_env: false
+      # The active hardmode profile uses max reasoning; a 120 s transport
+      # cutoff produced zero-output false negatives on otherwise bounded cases.
+      turn_timeout_ms: 300000
+      codex_path_override: '{{env.CODEX_APP_SERVER_PATH}}'
+      cli_env:
+        CODEX_HOME: '{{env.CODEX_HOME}}'
+        HTTP_PROXY: '{{env.HTTP_PROXY}}'
+        HTTPS_PROXY: '{{env.HTTPS_PROXY}}'
+        ALL_PROXY: '{{env.ALL_PROXY}}'
+        NO_PROXY: '{{env.NO_PROXY}}'
+      output_schema:
+        type: object
+        additionalProperties: false
+        required:
+          - case_id
+          - frame_relation
+          - active_object
+          - candidate_frame
+          - next_action
+          - task_switch
+          - trigger_role
+          - parent_frame_before_trigger
+          - user_must_restate_parent
+          - object_graph
+          - turn_finalization
+          - mature_completion
+          - decision_closure
+          - reason
+        properties:
+          case_id: { type: string }
+          frame_relation:
+            enum:
+              - same_parent_increment
+              - correction_to_existing_parent
+              - explicit_new_task
+              - literal_high_stakes_new_task
+              - pause_or_discuss_only
+          active_object:
+            enum:
+              - existing_parent_object
+              - corrected_existing_object
+              - new_explicit_object
+              - literal_health_event
+              - current_question_only
+          candidate_frame:
+            enum:
+              - existing_parent_frame
+              - open_causal_diagnosis
+              - corrected_parent_frame
+              - explicit_new_task_frame
+              - literal_high_stakes_frame
+              - answer_only_frame
+              - verified_parent_frame
+              - material_user_gate_frame
+              - mature_delivery_frame
+              - bounded_wait_frame
+              - no_value_branch_frame
+              - failed_route_frame
+              - real_blocker_frame
+              - worker_candidate_frame
+              - partial_blocker_frame
+              - resumed_parent_frame
+              - real_activity_return_frame
+          next_action:
+            enum:
+              - acknowledge_burden_and_continue_existing_task
+              - investigate_competing_causes
+              - restore_corrected_object
+              - perform_explicit_new_task
+              - switch_to_literal_safety_response
+              - answer_current_question_without_task_tools
+              - resume_known_parent_frontier
+              - preserve_pause_and_return_point
+              - finalize_verified_parent
+              - ask_minimum_material_question
+              - derive_and_execute_hidden_prerequisites
+              - wait_for_exact_external_condition
+              - execute_known_parent_action_now
+              - skip_no_value_branch_and_continue
+              - retry_alternative_machine_route
+              - request_exact_user_only_gate
+              - verify_worker_candidate_then_continue
+              - isolate_blocker_and_continue
+              - resume_exact_return_point
+              - return_to_real_activity_from_sufficient_foundation
+              - execute_reversible_owner_work_without_unconsumed_formality
+          task_switch: { type: boolean }
+          trigger_role:
+            enum:
+              - subordinate_after_frame_binding
+              - permitted_for_bound_literal_task
+              - not_applicable
+          parent_frame_before_trigger: { type: boolean }
+          user_must_restate_parent: { type: boolean }
+          object_graph:
+            type: object
+            additionalProperties: false
+            required:
+              - root_status
+              - active_level
+              - surface_role
+              - blocked_promotion
+              - projection_levels
+              - upward_service_path
+              - downward_effect_path
+              - cross_cutting_preserved
+              - scope
+            properties:
+              root_status:
+                enum:
+                  - existing_parent_preserved
+                  - explicit_new_parent
+                  - literal_safety_parent
+                  - suspended_parent_preserved
+                  - verified_parent_complete
+              active_level:
+                enum:
+                  - current_frame
+                  - human_safety
+                  - answer_only
+              surface_role:
+                enum:
+                  - contextual_signal
+                  - literal_safety_fact
+                  - candidate_downstream_means
+                  - corrected_current_object
+                  - explicit_new_task
+                  - pause_or_question
+                  - child_completion_signal
+                  - verified_parent_completion
+                  - material_value_fork
+                  - outcome_request
+                  - external_wait_condition
+                  - premature_defer_candidate
+                  - optional_no_value_branch
+                  - failed_machine_route
+                  - exhausted_machine_routes
+                  - worker_candidate
+                  - localized_blocker
+                  - continuity_return_pointer
+                  - real_activity_and_sufficient_foundation
+                  - reversible_owner_work_with_safety_theater
+              blocked_promotion:
+                enum:
+                  - emotion_to_literal_event
+                  - downstream_means_to_parent_result
+                  - stale_object_to_current_object
+                  - old_parent_over_new_task
+                  - pause_to_parent_erasure
+                  - local_completion_to_parent_completion
+                  - technical_choice_to_user
+                  - bounded_wait_to_implicit_stop
+                  - available_action_to_defer
+                  - skipped_branch_to_parent_no_action
+                  - route_failure_to_parent_abandonment
+                  - blocker_to_parent_abandonment
+                  - worker_terminal_to_parent_completion
+                  - local_blocker_to_parent_blocker
+                  - turn_boundary_to_parent_erasure
+                  - inherited_system_or_future_capability_to_parent_result
+                  - unconsumed_formality_to_user_gate
+                  - none
+              projection_levels:
+                type: array
+                minItems: 3
+                maxItems: 7
+                items:
+                  enum:
+                    - human_practice
+                    - parent_result
+                    - current_frame
+                    - approach_or_capability
+                    - responsibility
+                    - runtime_carrier
+                    - consumer_effect
+              upward_service_path: { type: boolean, const: true }
+              downward_effect_path: { type: boolean, const: true }
+              cross_cutting_preserved: { type: boolean, const: true }
+              scope: { type: string, const: minimal_current_slice }
+          turn_finalization:
+            type: [object, "null"]
+            additionalProperties: false
+            required:
+              - parent_status
+              - turn_disposition
+              - user_input_required
+              - hand_back_to_user
+              - turn_boundary_is_not_pause
+              - local_completion_does_not_close_parent
+              - implicit_stop_rejected
+              - next_parent_item_admitted
+              - legal_terminal_predicate
+            properties:
+              parent_status:
+                enum: [active, suspended, complete, blocked]
+              turn_disposition:
+                enum:
+                  - continue_existing_parent
+                  - pause_preserve_parent
+                  - complete_parent
+                  - ask_user_once
+                  - yield_blocked
+                  - wait_bounded
+              user_input_required: { type: boolean }
+              hand_back_to_user: { type: boolean }
+              turn_boundary_is_not_pause: { type: boolean, const: true }
+              local_completion_does_not_close_parent: { type: boolean }
+              implicit_stop_rejected: { type: boolean }
+              next_parent_item_admitted: { type: boolean }
+              legal_terminal_predicate:
+                enum:
+                  - none
+                  - pause_stop
+                  - parent_verified_complete
+                  - material_user_gate
+                  - real_blocker
+                  - bounded_external_wait
+                  - root_bounded_closed
+          mature_completion:
+            type: [object, "null"]
+            additionalProperties: false
+            required:
+              - intent_bound_before_engineering
+              - unstated_prerequisites_derived
+              - owner_technical_decision
+              - user_choice_required
+              - real_consumer_bound
+              - recovery_and_verification_included
+              - completion_requires_consumer_readback
+              - burden_not_returned_to_user
+            properties:
+              intent_bound_before_engineering: { type: boolean, const: true }
+              unstated_prerequisites_derived: { type: boolean, const: true }
+              owner_technical_decision: { type: boolean, const: true }
+              user_choice_required: { type: boolean, const: false }
+              real_consumer_bound: { type: boolean, const: true }
+              recovery_and_verification_included: { type: boolean, const: true }
+              completion_requires_consumer_readback: { type: boolean, const: true }
+              burden_not_returned_to_user: { type: boolean, const: true }
+          decision_closure:
+            type: [object, "null"]
+            additionalProperties: false
+            required:
+              - decision_family
+              - selected_control_action
+              - symmetric_alternatives_considered
+              - unsafe_if_provided_checked
+              - unsafe_if_not_provided_checked
+              - timing_or_order_checked
+              - duration_or_early_stop_checked
+              - upward_service_path_checked
+              - downward_consumer_effect_checked
+              - residual_defeater
+              - scope
+            properties:
+              decision_family:
+                enum:
+                  - continue_or_finalize
+                  - infer_or_ask
+                  - act_wait_defer_or_no_action
+                  - retry_or_abandon
+                  - worker_return_or_refill
+                  - blocker_or_continue
+                  - resume_or_reframe
+              selected_control_action:
+                enum:
+                  - continue_existing_parent
+                  - pause_preserve_parent
+                  - complete_parent
+                  - ask_user_once
+                  - infer_and_execute
+                  - execute_now
+                  - wait_for_condition
+                  - no_action_for_branch
+                  - retry_alternative_route
+                  - yield_exact_blocker
+                  - owner_verify_candidate
+                  - continue_unblocked_route
+                  - resume_exact_return_point
+              symmetric_alternatives_considered:
+                type: array
+                minItems: 2
+                maxItems: 5
+                items:
+                  enum:
+                    - continue_existing_parent
+                    - pause_preserve_parent
+                    - complete_parent
+                    - ask_user_once
+                    - yield_blocked
+                    - infer_and_execute
+                    - execute_now
+                    - wait_for_condition
+                    - defer
+                    - no_action_for_branch
+                    - retry_alternative_route
+                    - yield_exact_blocker
+                    - abandon_parent
+                    - owner_verify_candidate
+                    - refill_worker
+                    - accept_worker_as_parent_complete
+                    - continue_unblocked_route
+                    - resume_exact_return_point
+                    - ask_user_to_restate
+                    - start_new_parent
+              unsafe_if_provided_checked: { type: boolean, const: true }
+              unsafe_if_not_provided_checked: { type: boolean, const: true }
+              timing_or_order_checked: { type: boolean, const: true }
+              duration_or_early_stop_checked: { type: boolean, const: true }
+              upward_service_path_checked: { type: boolean, const: true }
+              downward_consumer_effect_checked: { type: boolean, const: true }
+              residual_defeater:
+                enum:
+                  - none
+                  - material_user_gate
+                  - external_condition_not_ready
+                  - real_user_only_gate
+                  - localized_blocker_preserved
+              scope: { type: string, const: event_triggered_bounded }
+          reason: { type: string, minLength: 1 }
+
+prompts:
+  - prompt.txt
+
+defaultTest:
+  assert:
+    - type: is-json
+    - type: javascript
+      value: file://assert_behavior.js
+
+tests: file://cases.yaml

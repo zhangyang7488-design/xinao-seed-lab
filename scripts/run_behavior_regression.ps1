@@ -1,6 +1,6 @@
 [CmdletBinding()]
 param(
-    [ValidateSet('capability', 'smoke', 'core', 'deep', 'proactive', 'reuse')]
+    [ValidateSet('capability', 'smoke', 'core', 'deep', 'proactive', 'reuse', 'intent')]
     [string]$Profile = 'smoke',
     [string]$Domain,
     [string]$CasePattern,
@@ -12,7 +12,7 @@ param(
     [switch]$PreflightOnly,
     [switch]$List,
     [string]$RuntimeRoot = $(if ($env:XINAO_RUNTIME_ROOT) { $env:XINAO_RUNTIME_ROOT } else { 'D:\XINAO_RESEARCH_RUNTIME' }),
-    [string]$CodexHome = $(Join-Path $HOME '.codex')
+    [string]$CodexHome = $(if ($env:CODEX_HOME) { $env:CODEX_HOME } else { Join-Path $HOME '.codex' })
 )
 
 $ErrorActionPreference = 'Stop'
@@ -29,8 +29,8 @@ if ($List) {
 if ($Domain -and $Profile -notin @('proactive', 'core', 'deep')) {
     throw 'Domain filtering applies to proactive behavior cases only.'
 }
-if ($CasePattern -and $Profile -ne 'proactive') {
-    throw 'CasePattern is suite-specific; use it with -Profile proactive.'
+if ($CasePattern -and $Profile -notin @('proactive', 'intent')) {
+    throw 'CasePattern is suite-specific; use it with -Profile proactive or intent.'
 }
 if ($FailedFrom -and $Profile -ne 'proactive') {
     throw 'FailedFrom is suite-specific; use it with -Profile proactive.'
@@ -187,7 +187,10 @@ if (-not $codexBinary) {
     throw "Native Codex app-server binary is missing below: $codexPackage"
 }
 
-$runId = Get-Date -Format 'yyyyMMdd-HHmmss-fff'
+$runId = '{0}-{1}-{2}' -f `
+    (Get-Date -Format 'yyyyMMdd-HHmmss-fff'), `
+    $PID, `
+    ([Guid]::NewGuid().ToString('N').Substring(0, 8))
 $resultRoot = Join-Path $RuntimeRoot 'state\human-capabilities\evals\behavior-regression'
 $outputRoot = Join-Path $resultRoot $runId
 $promptfooState = Join-Path $outputRoot 'promptfoo'
@@ -199,8 +202,8 @@ $startedAt = Get-Date
 $needsThinWorkspace = $Profile -in @('core', 'deep', 'reuse')
 $thinWorkspace = Join-Path $outputRoot 'thin-localization-workspace'
 
+New-Item -ItemType Directory -Path $outputRoot -ErrorAction Stop | Out-Null
 New-Item -ItemType Directory -Path @(
-    $outputRoot,
     $promptfooState,
     $promptfooLogs,
     $promptfooCache,
@@ -215,7 +218,8 @@ $snapshotArguments = @(
     'run', 'python', $snapshotBuilder,
     '--repo-root', $repoRoot,
     '--output-root', $outputRoot,
-    '--profile', $Profile
+    '--profile', $Profile,
+    '--codex-home', $CodexHome
 )
 if ($Domain) { $snapshotArguments += @('--domain', $Domain) }
 if ($CasePattern) { $snapshotArguments += @('--case-pattern', $CasePattern) }
@@ -559,6 +563,7 @@ function New-BehaviorSourceManifest {
 
 $runCapability = $Profile -in @('capability', 'smoke', 'core', 'deep') -and
     -not $Domain -and -not $CasePattern -and -not $FailedFrom
+$runIntent = $Profile -in @('intent', 'smoke', 'core', 'deep')
 $runProactive = $Profile -in @('proactive', 'core', 'deep')
 $runRecallReplay = $Profile -in @('core', 'deep', 'reuse')
 $runRecallLive = $Profile -in @('deep', 'reuse')
@@ -595,12 +600,39 @@ $sourceInputs = @(
     [pscustomobject]@{
         path = (Join-Path $repoRoot 'evals\intent_continuity_baseline\decision_model.v1.json')
         role = 'intent_continuity_baseline'
+    },
+    [pscustomobject]@{
+        path = (Join-Path $repoRoot 'evals\intent_continuity_baseline\consumer_coverage.v1.json')
+        role = 'intent_action_consumer_coverage'
+    },
+    [pscustomobject]@{
+        path = (Join-Path $repoRoot 'evals\intent_continuity_baseline\BASELINE.md')
+        role = 'intent_action_baseline_documentation'
+    },
+    [pscustomobject]@{
+        path = (Join-Path $repoRoot 'tests\test_intent_action_consumer_coverage.py')
+        role = 'intent_action_coverage_tests'
     }
 )
 if ($runStatic) {
     $sourceInputs += [pscustomobject]@{
         path = (Join-Path $repoRoot 'tests\test_open_world_reuse_behavior.py')
         role = 'static_assertion_tests'
+    }
+}
+if ($runIntent) {
+    $sourceInputs += [pscustomobject]@{
+        path = (Join-Path $repoRoot 'tests\test_parent_frame_admission.py')
+        role = 'parent_frame_admission_tests'
+    }
+    $sourceInputs += [pscustomobject]@{
+        path = (Join-Path $repoRoot 'evals\parent_frame_admission')
+        role = 'parent_frame_admission'
+    }
+    $sourceInputs += [pscustomobject]@{
+        path = (Join-Path $CodexHome 'AGENTS.md')
+        logical_path = 'external/global_codex_home/AGENTS.md'
+        role = 'global_working_kernel'
     }
 }
 if ($runProactive) {
@@ -678,6 +710,10 @@ try {
     if ($runProactive) {
         $preflightTests += 'tests/test_repo_safety.py'
     }
+    if ($runIntent) {
+        $preflightTests += 'tests/test_parent_frame_admission.py'
+        $preflightTests += 'tests/test_intent_action_consumer_coverage.py'
+    }
     $preflightResult.tests = $preflightTests
     Push-Location $rawSnapshotRoot
     try {
@@ -711,6 +747,26 @@ try {
         if ($staticResult.exit_code -ne 0) {
             $overallExit = 1
         }
+    }
+
+    if ($overallExit -eq 0 -and $runIntent -and -not $PreflightOnly) {
+        $intentConfig = Join-Path $executionRoot `
+            'evals\parent_frame_admission\promptfooconfig.yaml'
+        $intentResult = Join-Path $outputRoot 'parent-frame-admission.result.json'
+        $intentFilters = @()
+        if ($Profile -eq 'smoke') {
+            $intentFilters += @(
+                '--filter-pattern',
+                '^Contextual distress remains in the active repair$'
+            )
+        }
+        if ($Profile -eq 'intent' -and $CasePattern) {
+            $intentFilters += @('--filter-pattern', $CasePattern)
+        }
+        $suiteRuns += Invoke-PromptfooSuiteWithErrorRetry `
+            -SuiteId 'parent_frame_admission' `
+            -ConfigPath $intentConfig -ResultPath $intentResult `
+            -ExtraArguments $intentFilters
     }
 
     if ($overallExit -eq 0 -and $runCapability -and -not $PreflightOnly) {

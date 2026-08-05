@@ -192,7 +192,7 @@
     {
       "consumer_id": "direct_grok_composer25_worker",
       "route_transport_id": "direct-grok-worker-pool",
-      "source_path": "C:/Users/xx363/Grok_Admin_Isolated/workspace/grok-admin-bridge/Invoke-GrokComposer25Worker.ps1",
+      "source_path": "D:/XINAO_RESEARCH_RUNTIME/tools/grok-worker-pool/bridge/Invoke-GrokComposer25Worker.ps1",
       "entrypoint": "Invoke-GrokComposer25Worker.ps1",
       "role": "direct_provider_primitive",
       "contract_mode": "provider_v1_only",
@@ -206,7 +206,7 @@
     {
       "consumer_id": "direct_grok_worker_pool",
       "route_transport_id": "direct-grok-worker-pool",
-      "source_path": "C:/Users/xx363/Grok_Admin_Isolated/workspace/grok-admin-bridge/Invoke-GrokWorkerPool.ps1",
+      "source_path": "D:/XINAO_RESEARCH_RUNTIME/tools/grok-worker-pool/bridge/Invoke-GrokWorkerPool.ps1",
       "entrypoint": "Invoke-GrokWorkerPool.ps1",
       "role": "normal_bounded_online_leg_a",
       "contract_mode": "provider_v1_then_common_adapter",

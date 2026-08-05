@@ -1,0 +1,348 @@
+from __future__ import annotations
+
+import json
+from pathlib import Path
+
+import yaml
+
+
+REPO_ROOT = Path(__file__).resolve().parents[1]
+
+
+def test_parent_frame_admission_suite_is_small_generic_and_balanced() -> None:
+    suite_root = REPO_ROOT / "evals" / "parent_frame_admission"
+    config = yaml.safe_load((suite_root / "promptfooconfig.yaml").read_text(encoding="utf-8"))
+    cases = yaml.safe_load((suite_root / "cases.yaml").read_text(encoding="utf-8"))
+    case_ids = {case["vars"]["case_id"] for case in cases}
+
+    assert len(cases) == 27
+    assert case_ids == {
+        "REG_CONTEXTUAL_DISTRESS_STAYS_IN_ACTIVE_REPAIR",
+        "REG_LITERAL_DANGER_SIGNS_ADMIT_SAFETY_TASK",
+        "REG_REPORT_TITLE_DOES_NOT_DEFINE_REDUCTION_GOAL",
+        "REG_OBJECT_CORRECTION_RETURNS_TO_LIVE_TARGET",
+        "REG_EXPLICIT_NEW_TASK_IS_NOT_BLOCKED_BY_OLD_PARENT",
+        "REG_DISCUSS_ONLY_ANSWERS_WITHOUT_TASK_TOOLS",
+        "REG_CHILD_COMPLETION_RESUMES_KNOWN_PARENT_FRONTIER",
+        "REG_CHILD_COMPLETION_RESPECTS_EXPLICIT_PAUSE",
+        "REG_VERIFIED_PARENT_COMPLETION_ALLOWS_FINAL_YIELD",
+        "REG_MATERIAL_USER_GATE_ALLOWS_HAND_BACK",
+        "REG_OUTCOME_REQUEST_DERIVES_HIDDEN_PREREQUISITES",
+        "REG_BOUNDED_EXTERNAL_WAIT_PRESERVES_PARENT",
+        "REG_AVAILABLE_ACTION_REJECTS_PREMATURE_DEFER",
+        "REG_NO_VALUE_BRANCH_IS_SKIPPED_PARENT_CONTINUES",
+        "REG_FAILED_ROUTE_RETRIES_ALTERNATIVE_BEFORE_ABANDON",
+        "REG_EXHAUSTED_ROUTES_YIELD_EXACT_BLOCKER",
+        "REG_WORKER_RETURN_REQUIRES_OWNER_ADOPTION",
+        "REG_LOCAL_BLOCKER_ISOLATED_PARENT_CONTINUES",
+        "REG_COMPACT_RESUMES_EXACT_PARENT_WITHOUT_RESTATEMENT",
+        "REG_REAL_ACTIVITY_DEFINES_FINITE_FOUNDATION_AND_RETURN",
+        "REG_REVERSIBLE_MACHINE_WORK_REJECTS_UNCONSUMED_FORMALITY",
+        "REG_WINDOW_START_RESUMES_SURVIVING_PARENT_WITHOUT_REAUTHORIZATION",
+        "REG_PHASE_BOUNDARY_DOES_NOT_RESET_PARENT_AUTHORIZATION",
+        "REG_PACKAGE_APPROVAL_FIELD_CANNOT_CREATE_USER_GATE",
+        "REG_MIGRATION_VALIDATION_RETURNS_TO_NATIVE_ACTIVITY",
+        "REG_VALIDATION_SCOPE_CANNOT_GENERATE_DOMAIN_TASK",
+        "REG_THIN_INVARIANT_PRESERVES_DYNAMIC_EXPLORATION",
+    }
+    assert cases[0]["metadata"]["profiles"] == ["smoke", "core", "deep", "intent"]
+    assert all("intent" in case["metadata"]["profiles"] for case in cases)
+
+    schema = config["providers"][0]["config"]["output_schema"]
+    nullable_event_objects = {
+        "turn_finalization",
+        "mature_completion",
+        "decision_closure",
+    }
+    assert set(schema["required"]) == set(schema["properties"])
+    assert all(
+        set(schema["properties"][name]["type"]) == {"object", "null"}
+        for name in nullable_event_objects
+    )
+    graph_schema = schema["properties"]["object_graph"]
+    assert set(graph_schema["required"]) == set(graph_schema["properties"])
+    assert graph_schema["properties"]["scope"]["const"] == "minimal_current_slice"
+    assert graph_schema["properties"]["upward_service_path"]["const"] is True
+    assert graph_schema["properties"]["downward_effect_path"]["const"] is True
+    assert graph_schema["properties"]["cross_cutting_preserved"]["const"] is True
+    assert set(graph_schema["properties"]["projection_levels"]["items"]["enum"]) == {
+        "human_practice",
+        "parent_result",
+        "current_frame",
+        "approach_or_capability",
+        "responsibility",
+        "runtime_carrier",
+        "consumer_effect",
+    }
+    assert config["providers"][0]["config"]["sandbox_mode"] == "read-only"
+    assert config["providers"][0]["config"]["approval_policy"] == "never"
+    assert config["providers"][0]["config"]["cli_config"]["features"]["hooks"] is False
+
+    serialized = json.dumps(cases, ensure_ascii=False)
+    for transient_incident_token in ("配置减负.txt", "头好痛 我该怎么办", "V4"):
+        assert transient_incident_token not in serialized
+
+    graph_expectations = {
+        case["vars"]["case_id"]: {
+            "root_status": case["vars"]["expected_root_status"],
+            "active_level": case["vars"]["expected_active_level"],
+            "surface_role": case["vars"]["expected_surface_role"],
+            "blocked_promotion": case["vars"]["expected_blocked_promotion"],
+            "required_projection_levels": json.loads(
+                case["vars"]["expected_required_projection_levels"]
+            ),
+        }
+        for case in cases
+    }
+    assert graph_expectations["REG_REPORT_TITLE_DOES_NOT_DEFINE_REDUCTION_GOAL"] == {
+        "root_status": "existing_parent_preserved",
+        "active_level": "current_frame",
+        "surface_role": "candidate_downstream_means",
+        "blocked_promotion": "downstream_means_to_parent_result",
+        "required_projection_levels": [
+            "human_practice",
+            "parent_result",
+            "current_frame",
+            "approach_or_capability",
+            "responsibility",
+            "runtime_carrier",
+            "consumer_effect",
+        ],
+    }
+    assert graph_expectations["REG_EXPLICIT_NEW_TASK_IS_NOT_BLOCKED_BY_OLD_PARENT"][
+        "root_status"
+    ] == "explicit_new_parent"
+
+    continuation = next(
+        case
+        for case in cases
+        if case["vars"]["case_id"]
+        == "REG_CHILD_COMPLETION_RESUMES_KNOWN_PARENT_FRONTIER"
+    )
+    assert continuation["vars"]["expected_frame_relation"] == "same_parent_increment"
+    assert continuation["vars"]["expected_next_action"] == "resume_known_parent_frontier"
+    assert continuation["vars"]["expected_task_switch"] is False
+    assert continuation["vars"]["expected_user_must_restate_parent"] is False
+
+    terminal_schema = schema["properties"]["turn_finalization"]
+    assert "turn_finalization" in schema["required"]
+    assert set(terminal_schema["required"]) == set(terminal_schema["properties"])
+    terminal_cases = {
+        case["vars"]["case_id"]: case["vars"]
+        for case in cases
+        if "expected_turn_disposition" in case["vars"]
+    }
+    new_transition_cases = {
+        "REG_BOUNDED_EXTERNAL_WAIT_PRESERVES_PARENT",
+        "REG_AVAILABLE_ACTION_REJECTS_PREMATURE_DEFER",
+        "REG_NO_VALUE_BRANCH_IS_SKIPPED_PARENT_CONTINUES",
+        "REG_FAILED_ROUTE_RETRIES_ALTERNATIVE_BEFORE_ABANDON",
+        "REG_EXHAUSTED_ROUTES_YIELD_EXACT_BLOCKER",
+        "REG_WORKER_RETURN_REQUIRES_OWNER_ADOPTION",
+        "REG_LOCAL_BLOCKER_ISOLATED_PARENT_CONTINUES",
+        "REG_COMPACT_RESUMES_EXACT_PARENT_WITHOUT_RESTATEMENT",
+        "REG_REAL_ACTIVITY_DEFINES_FINITE_FOUNDATION_AND_RETURN",
+        "REG_WINDOW_START_RESUMES_SURVIVING_PARENT_WITHOUT_REAUTHORIZATION",
+        "REG_PHASE_BOUNDARY_DOES_NOT_RESET_PARENT_AUTHORIZATION",
+        "REG_PACKAGE_APPROVAL_FIELD_CANNOT_CREATE_USER_GATE",
+        "REG_MIGRATION_VALIDATION_RETURNS_TO_NATIVE_ACTIVITY",
+        "REG_VALIDATION_SCOPE_CANNOT_GENERATE_DOMAIN_TASK",
+        "REG_THIN_INVARIANT_PRESERVES_DYNAMIC_EXPLORATION",
+    }
+    assert set(terminal_cases) == {
+        "REG_CHILD_COMPLETION_RESUMES_KNOWN_PARENT_FRONTIER",
+        "REG_CHILD_COMPLETION_RESPECTS_EXPLICIT_PAUSE",
+        "REG_VERIFIED_PARENT_COMPLETION_ALLOWS_FINAL_YIELD",
+        "REG_MATERIAL_USER_GATE_ALLOWS_HAND_BACK",
+    } | new_transition_cases
+    assert terminal_cases["REG_CHILD_COMPLETION_RESUMES_KNOWN_PARENT_FRONTIER"] == {
+        **terminal_cases["REG_CHILD_COMPLETION_RESUMES_KNOWN_PARENT_FRONTIER"],
+        "expected_parent_status": "active",
+        "expected_turn_disposition": "continue_existing_parent",
+        "expected_user_input_required": False,
+        "expected_hand_back_to_user": False,
+        "expected_turn_boundary_is_not_pause": True,
+        "expected_local_completion_does_not_close_parent": True,
+        "expected_implicit_stop_rejected": True,
+        "expected_next_parent_item_admitted": True,
+        "expected_legal_terminal_predicate": "none",
+    }
+    assert terminal_cases["REG_CHILD_COMPLETION_RESPECTS_EXPLICIT_PAUSE"][
+        "expected_turn_disposition"
+    ] == "pause_preserve_parent"
+    assert terminal_cases["REG_VERIFIED_PARENT_COMPLETION_ALLOWS_FINAL_YIELD"][
+        "expected_turn_disposition"
+    ] == "complete_parent"
+    assert terminal_cases["REG_MATERIAL_USER_GATE_ALLOWS_HAND_BACK"][
+        "expected_turn_disposition"
+    ] == "ask_user_once"
+    assert terminal_cases["REG_BOUNDED_EXTERNAL_WAIT_PRESERVES_PARENT"][
+        "expected_turn_disposition"
+    ] == "wait_bounded"
+    assert terminal_cases["REG_EXHAUSTED_ROUTES_YIELD_EXACT_BLOCKER"][
+        "expected_legal_terminal_predicate"
+    ] == "real_blocker"
+    for case_id in new_transition_cases - {
+        "REG_BOUNDED_EXTERNAL_WAIT_PRESERVES_PARENT",
+        "REG_EXHAUSTED_ROUTES_YIELD_EXACT_BLOCKER",
+    }:
+        assert terminal_cases[case_id]["expected_turn_disposition"] == (
+            "continue_existing_parent"
+        )
+        assert terminal_cases[case_id]["expected_user_must_restate_parent"] is False
+
+    mature_case = next(
+        case
+        for case in cases
+        if case["vars"]["case_id"]
+        == "REG_OUTCOME_REQUEST_DERIVES_HIDDEN_PREREQUISITES"
+    )["vars"]
+    assert mature_case["expected_mature_completion"] is True
+    assert mature_case["expected_selected_control_action"] == "infer_and_execute"
+    assert mature_case["expected_blocked_promotion"] == "technical_choice_to_user"
+
+    closure_schema = schema["properties"]["decision_closure"]
+    assert set(closure_schema["required"]) == set(closure_schema["properties"])
+    closure_cases = {
+        case["vars"]["case_id"]: case["vars"]
+        for case in cases
+        if "expected_decision_family" in case["vars"]
+    }
+    assert set(closure_cases) == {
+        "REG_CHILD_COMPLETION_RESUMES_KNOWN_PARENT_FRONTIER",
+        "REG_CHILD_COMPLETION_RESPECTS_EXPLICIT_PAUSE",
+        "REG_VERIFIED_PARENT_COMPLETION_ALLOWS_FINAL_YIELD",
+        "REG_MATERIAL_USER_GATE_ALLOWS_HAND_BACK",
+        "REG_OUTCOME_REQUEST_DERIVES_HIDDEN_PREREQUISITES",
+        "REG_REVERSIBLE_MACHINE_WORK_REJECTS_UNCONSUMED_FORMALITY",
+    } | new_transition_cases
+    assert {
+        closure_cases["REG_MATERIAL_USER_GATE_ALLOWS_HAND_BACK"][
+            "expected_selected_control_action"
+        ],
+        closure_cases["REG_OUTCOME_REQUEST_DERIVES_HIDDEN_PREREQUISITES"][
+            "expected_selected_control_action"
+        ],
+    } == {"ask_user_once", "infer_and_execute"}
+    assert closure_cases["REG_NO_VALUE_BRANCH_IS_SKIPPED_PARENT_CONTINUES"][
+        "expected_selected_control_action"
+    ] == "no_action_for_branch"
+    assert closure_cases["REG_WORKER_RETURN_REQUIRES_OWNER_ADOPTION"][
+        "expected_selected_control_action"
+    ] == "owner_verify_candidate"
+    assert closure_cases[
+        "REG_COMPACT_RESUMES_EXACT_PARENT_WITHOUT_RESTATEMENT"
+    ]["expected_selected_control_action"] == "resume_exact_return_point"
+    assert closure_cases[
+        "REG_WINDOW_START_RESUMES_SURVIVING_PARENT_WITHOUT_REAUTHORIZATION"
+    ]["expected_selected_control_action"] == "resume_exact_return_point"
+    assert closure_cases[
+        "REG_PHASE_BOUNDARY_DOES_NOT_RESET_PARENT_AUTHORIZATION"
+    ]["expected_selected_control_action"] == "continue_existing_parent"
+    assert closure_cases[
+        "REG_PACKAGE_APPROVAL_FIELD_CANNOT_CREATE_USER_GATE"
+    ]["expected_selected_control_action"] == "infer_and_execute"
+    assert closure_cases[
+        "REG_MIGRATION_VALIDATION_RETURNS_TO_NATIVE_ACTIVITY"
+    ]["expected_selected_control_action"] == "resume_exact_return_point"
+    assert closure_cases[
+        "REG_THIN_INVARIANT_PRESERVES_DYNAMIC_EXPLORATION"
+    ]["expected_selected_control_action"] == "execute_now"
+
+    activity_case = next(
+        case
+        for case in cases
+        if case["vars"]["case_id"]
+        == "REG_REAL_ACTIVITY_DEFINES_FINITE_FOUNDATION_AND_RETURN"
+    )["vars"]
+    assert activity_case["expected_next_action"] == (
+        "return_to_real_activity_from_sufficient_foundation"
+    )
+    assert activity_case["expected_blocked_promotion"] == (
+        "inherited_system_or_future_capability_to_parent_result"
+    )
+    assert activity_case["expected_turn_disposition"] == "continue_existing_parent"
+
+    anti_formality_case = next(
+        case
+        for case in cases
+        if case["vars"]["case_id"]
+        == "REG_REVERSIBLE_MACHINE_WORK_REJECTS_UNCONSUMED_FORMALITY"
+    )["vars"]
+    assert anti_formality_case["expected_mature_completion"] is True
+    assert anti_formality_case["expected_selected_control_action"] == "infer_and_execute"
+    assert anti_formality_case["expected_blocked_promotion"] == (
+        "unconsumed_formality_to_user_gate"
+    )
+
+    package_gate_case = next(
+        case
+        for case in cases
+        if case["vars"]["case_id"]
+        == "REG_PACKAGE_APPROVAL_FIELD_CANNOT_CREATE_USER_GATE"
+    )["vars"]
+    assert package_gate_case["expected_mature_completion"] is True
+    assert package_gate_case["expected_user_input_required"] is False
+
+    thin_invariant_case = next(
+        case
+        for case in cases
+        if case["vars"]["case_id"]
+        == "REG_THIN_INVARIANT_PRESERVES_DYNAMIC_EXPLORATION"
+    )["vars"]
+    assert thin_invariant_case["expected_next_action"] == (
+        "return_to_real_activity_from_sufficient_foundation"
+    )
+    assert thin_invariant_case["expected_residual_defeater"] == "none"
+
+    assertion = (suite_root / "assert_behavior.js").read_text(encoding="utf-8")
+    assert "projectionIsCanonicalMinimalSlice" in assertion
+    assert "requiredProjectionLevels.every" in assertion
+    assert "actualProjectionLevels.length === requiredProjectionLevels.length" not in assertion
+    assert "optionalObjectsAreEventBound" in assertion
+    assert "graphTaxonomyMatches" in assertion
+
+    validation_scope_case = next(
+        case["vars"]
+        for case in cases
+        if case["vars"]["case_id"]
+        == "REG_VALIDATION_SCOPE_CANNOT_GENERATE_DOMAIN_TASK"
+    )
+    assert validation_scope_case["expected_next_action"] == (
+        "execute_known_parent_action_now"
+    )
+    assert validation_scope_case["expected_turn_disposition"] == (
+        "continue_existing_parent"
+    )
+    assert validation_scope_case["expected_hand_back_to_user"] is False
+    assert validation_scope_case["expected_decision_family"] == (
+        "act_wait_defer_or_no_action"
+    )
+    assert json.loads(validation_scope_case["allowed_surface_roles"]) == [
+        "continuity_return_pointer",
+        "contextual_signal",
+    ]
+
+
+def test_parent_frame_admission_is_a_live_behavior_runner_consumer() -> None:
+    runner = (REPO_ROOT / "scripts" / "run_behavior_regression.ps1").read_text(
+        encoding="utf-8"
+    )
+    snapshot = (
+        REPO_ROOT / "scripts" / "prepare_behavior_regression_snapshot.py"
+    ).read_text(encoding="utf-8")
+    wrapper = (
+        REPO_ROOT / "scripts" / "run_parent_frame_admission_eval.ps1"
+    ).read_text(encoding="utf-8")
+
+    for required in (
+        "$runIntent",
+        "evals\\parent_frame_admission\\promptfooconfig.yaml",
+        "parent_frame_admission",
+        "global_working_kernel",
+    ):
+        assert required in runner
+    assert '"intent": profile in {"intent", "smoke", "core", "deep"}' in snapshot
+    assert "evals/parent_frame_admission" in snapshot
+    assert "external/global_codex_home/AGENTS.md" in snapshot
+    assert "-Profile intent" in wrapper

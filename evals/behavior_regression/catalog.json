@@ -4,20 +4,22 @@
   "runner": "scripts/run_behavior_regression.ps1",
   "candidate_intake": "scripts/New-BehaviorRegressionCandidate.ps1",
   "result_root": "D:\\XINAO_RESEARCH_RUNTIME\\state\\human-capabilities\\evals\\behavior-regression",
-  "declared_case_count": 17,
+  "declared_case_count": 44,
   "profiles": {
     "capability": "One fresh Codex app-server capability canary.",
-    "smoke": "One fresh Codex app-server capability canary; retired context-routing golds are excluded.",
-    "core": "Capability, proactive mature-first, frozen mature-candidate recall, one real thin-localization trajectory, and static validation; retired context-routing golds are excluded.",
-    "deep": "Core plus one current open-world public-repository search; retired context-routing golds are excluded.",
+    "smoke": "One fresh parent-frame admission case plus one Codex app-server capability canary; retired routing golds remain excluded.",
+    "core": "Eighteen generic parent-frame, bounded-transition, default-owner, first-principles, and mature-owner admission cases plus capability, proactive mature-first, frozen mature-candidate recall, one real thin-localization trajectory, and static validation.",
+    "deep": "Core plus one current open-world public-repository search.",
+    "intent": "Twenty-seven generic fresh Codex parent-frame, bounded-transition, default-owner, first-principles, and mature-owner admission cases without retired domain routing.",
     "proactive": "All six mature-first live cases; routing facts are checked by their real engineering consumers, not the retired context suite.",
     "reuse": "Only the four live open-world-reuse cases plus their deterministic contract validation."
   },
   "live_profile_case_counts": {
     "capability": 1,
-    "smoke": 1,
-    "core": 10,
-    "deep": 11,
+    "smoke": 2,
+    "core": 28,
+    "deep": 29,
+    "intent": 27,
     "proactive": 6,
     "reuse": 4
   },
@@ -29,6 +31,15 @@
       "config": "evals/codex_capability/promptfooconfig.yaml",
       "case_source": "evals/codex_capability/promptfooconfig.yaml",
       "runtime_claim_allowed": true
+    },
+    {
+      "id": "parent_frame_admission",
+      "kind": "promptfoo_live",
+      "case_count": 27,
+      "config": "evals/parent_frame_admission/promptfooconfig.yaml",
+      "case_source": "evals/parent_frame_admission/cases.yaml",
+      "runtime_claim_allowed": true,
+      "domain_routing_claim_allowed": false
     },
     {
       "id": "proactive_mature_first",
