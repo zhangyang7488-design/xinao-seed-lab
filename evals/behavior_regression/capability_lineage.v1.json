@@ -4,7 +4,7 @@
   "authority": false,
   "runtime_loaded": false,
   "completion_claim_allowed": false,
-  "evidence_cutoff": "2026-08-06T15:00:00+08:00",
+  "evidence_cutoff": "2026-08-06T23:45:00+08:00",
   "purpose": "Recover the complete capability, pain, consumer, and retirement lineage before another architecture migration. This registry prevents carrier deletion from being mistaken for authority cleanup or capability restoration; it never selects a task, domain route, tool, worker, or completion state.",
   "frozen_baseline": {
     "capability_id": "intent_source_parent_admission",
@@ -244,6 +244,10 @@
       "current_consumers": [
         "external:A/B AGENTS.md",
         "external:UserPromptSubmit zero-beat hook",
+        "external:repair-agent-behavior 2.5.1 source-adjudication action economy",
+        "external:maintain-personal-decision-model task-local adjudication exclusion",
+        "external:human-agency-grounding supplied-material adjudication exclusion",
+        "external:amplify-supervisor-worker direct-verdict no-dispatch boundary",
         "evals/parent_frame_admission",
         "evals/intent_continuity_baseline/decision_model.v1.json"
       ],
@@ -252,7 +256,8 @@
       "cost_and_failure_radius": "Always-hot text has global semantic radius; expansion can recreate literal matching or a rule stack.",
       "rollback": "Revert only an isolated new behavior delta; retain the accepted source-aware decoder and its changed-context cases.",
       "unknowns": [
-        "No finite suite proves correct frame binding on every future tool path."
+        "No finite suite proves correct frame binding on every future tool path.",
+        "Pre-fix B native-agent session 019fd7a6-82fd-7541-a881-782c986c4737 inflated a direct verdict into broad Skill/history loading and planned worker dispatch; intermediate session 019fd7bc-a55d-7fd1-a64e-cb49b9c22294 narrowed to one Skill but still performed unnecessary full Skill loading. Post-fix changed-domain session 019fd7be-14cf-77f1-a758-d9a67219d5d4 returned the verdict with no Skill read, repository search, worker dispatch, or mutation. Future natural recurrence remains the parent-level burden readback."
       ]
     },
     {
@@ -421,7 +426,8 @@
         "C:/Users/xx363/.codex-s-hardmode-account-b/memories"
       ],
       "current_consumers": [
-        "external:repair-agent-behavior skill",
+        "external:repair-agent-behavior 2.5.1",
+        "external:amplify-supervisor-worker source-adjudication boundary",
         "external:maintain-personal-decision-model skill",
         "evals/behavior_regression/catalog.json",
         "scripts/Import-PromptfooFailuresToBehaviorCandidates.ps1"
@@ -431,7 +437,8 @@
       "cost_and_failure_radius": "Always loading personal lineage or auto-promoting failures would bias every task; conditional retrieval keeps the radius local.",
       "rollback": "Demote or remove a bad candidate/case; current words and live facts always override stored shaping evidence.",
       "unknowns": [
-        "Long-horizon reduction in repeated user correction is observable only through future natural recurrence."
+        "Long-horizon reduction in repeated user correction is observable only through future natural recurrence.",
+        "One natural recurrence disproved the earlier broad behavior claim and produced a bounded 2.5.1 repair. The structured pair and a changed-domain ordinary native-agent trajectory now pass; A-profile model execution remains unavailable because its refresh token is revoked, while A/B active projections are byte-identical."
       ]
     },
     {

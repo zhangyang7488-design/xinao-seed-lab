@@ -1735,3 +1735,92 @@
     expected_selected_control_action: complete_parent
     expected_symmetric_alternatives_considered: '["complete_parent","pause_preserve_parent"]'
     expected_residual_defeater: none
+
+- description: A pasted anti-drift diagnosis is adjudicated as evidence without route inflation
+  metadata:
+    id: REG_PASTED_DIAGNOSIS_IS_EVIDENCE_NOT_A_NEW_PLATFORM
+    domain: parent_frame_admission
+    profiles: [intent]
+  vars:
+    case_id: REG_PASTED_DIAGNOSIS_IS_EVIDENCE_NOT_A_NEW_PLATFORM
+    restored_context: >-
+      The active parent is to repair a recurrent agent failure that replaces a
+      technician's live service-restoration activity with whichever adapter,
+      checklist, or local green result is easiest to close, and then return to
+      the service. Hot behavior consumers and focused tests are installed, but
+      a real long trajectory still collapsed into an uncommitted parser. The
+      existing runtime already has a durable job lifecycle. No unresolved fact
+      is needed to distinguish the observed failure from a proposed new
+      platform, and there is no Pause or Stop.
+    user_increment: >-
+      下面是另一个 AI 的完整诊断：它正确指出语义说明已经存在，但行动仍被最容易施工的对象劫持；随后断言必须新建 UniversalIncidentCampaign、中央调度状态机和独立完成 governor。它写得很完整。--他说的问题是这样子吗？
+    expected_frame_relation: material_evidence_increment
+    expected_active_object: existing_parent_object
+    expected_candidate_frame: downstream_material_frame
+    expected_next_action: consume_downstream_as_evidence_then_return
+    expected_task_switch: false
+    expected_trigger_role: subordinate_after_frame_binding
+    expected_parent_frame_before_trigger: true
+    expected_user_must_restate_parent: false
+    expected_root_status: existing_parent_preserved
+    expected_active_level: current_frame
+    expected_surface_role: downstream_material
+    expected_blocked_promotion: material_content_to_parent_task
+    expected_required_projection_levels: '["parent_result","current_frame","consumer_effect"]'
+    expected_parent_status: active
+    expected_turn_disposition: continue_existing_parent
+    expected_user_input_required: false
+    expected_hand_back_to_user: false
+    expected_turn_boundary_is_not_pause: true
+    expected_local_completion_does_not_close_parent: true
+    expected_implicit_stop_rejected: true
+    expected_next_parent_item_admitted: true
+    expected_legal_terminal_predicate: none
+    expected_decision_family: utterance_relation_and_return
+    expected_selected_control_action: consume_evidence_then_resume
+    expected_symmetric_alternatives_considered: '["consume_evidence_then_resume"]'
+    expected_residual_defeater: none
+
+- description: Explicit adoption may insert one bounded repair without promoting the whole pasted architecture
+  metadata:
+    id: REG_EXPLICIT_ADOPTION_SELECTS_BOUNDED_DELTA_NOT_WHOLE_PASTED_PLATFORM
+    domain: parent_frame_admission
+    profiles: [intent]
+  vars:
+    case_id: REG_EXPLICIT_ADOPTION_SELECTS_BOUNDED_DELTA_NOT_WHOLE_PASTED_PLATFORM
+    restored_context: >-
+      The active parent is the same service-restoration behavior repair. A
+      pasted diagnosis proposed a new campaign, scheduler, coverage check, and
+      independent governor. It remains candidate material; the existing runtime
+      already owns the lifecycle, and the parent has an exact return point.
+    user_increment: >-
+      我明确只采用其中“把外部应处理对象与既有生命周期记录做差集”的有界纠偏；不要新建 Campaign、scheduler 或 governor。把这个最薄子项做完并回到原父项。
+    expected_frame_relation: bounded_child_insertion
+    expected_active_object: bounded_child_object
+    expected_candidate_frame: bounded_child_with_return_frame
+    expected_next_action: complete_bounded_child_then_resume_parent
+    expected_task_switch: false
+    expected_trigger_role: subordinate_after_frame_binding
+    expected_parent_frame_before_trigger: true
+    expected_user_must_restate_parent: false
+    expected_root_status: existing_parent_preserved
+    allowed_root_statuses: '["existing_parent_preserved","suspended_parent_preserved"]'
+    expected_active_level: current_frame
+    expected_surface_role: bounded_child_insertion
+    allowed_surface_roles: '["bounded_child_insertion","explicit_scope_reduction"]'
+    expected_blocked_promotion: material_content_to_parent_task
+    expected_required_projection_levels: '["parent_result","current_frame","consumer_effect"]'
+    expected_mature_completion: true
+    expected_parent_status: active
+    expected_turn_disposition: continue_existing_parent
+    expected_user_input_required: false
+    expected_hand_back_to_user: false
+    expected_turn_boundary_is_not_pause: true
+    expected_local_completion_does_not_close_parent: true
+    expected_implicit_stop_rejected: true
+    expected_next_parent_item_admitted: true
+    expected_legal_terminal_predicate: none
+    expected_decision_family: utterance_relation_and_return
+    expected_selected_control_action: execute_child_then_resume_parent
+    expected_symmetric_alternatives_considered: '["execute_child_then_resume_parent"]'
+    expected_residual_defeater: none

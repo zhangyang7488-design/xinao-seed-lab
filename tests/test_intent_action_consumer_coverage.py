@@ -28,7 +28,7 @@ def test_intent_action_baseline_is_thin_honest_and_migration_bounded() -> None:
 
     statuses = set(ledger["status_values"])
     stages = ledger["stages"]
-    assert len(stages) == 13
+    assert len(stages) == 14
     assert len({stage["id"] for stage in stages}) == len(stages)
     assert all(stage["status"] in statuses for stage in stages)
     assert all(stage["open_gap"] for stage in stages)
@@ -56,6 +56,8 @@ def test_intent_action_baseline_is_thin_honest_and_migration_bounded() -> None:
     assert "architecture_migration_preserves_capability_lineage" in serialized
     assert "semantic_scope_fidelity_and_parent_completion_identity" in serialized
     assert "stable_behavior_delivery_closure" in serialized
+    assert "pasted_candidate_adjudication_and_action_economy" in serialized
+    assert "repair-agent-behavior 2.5.1" in serialized
     assert "applicable repository adoption" in serialized
     assert "retired science routing remains retired" in serialized
     assert "all 124 historical context cases" in serialized
