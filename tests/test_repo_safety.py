@@ -485,8 +485,21 @@ def test_live_grok_worker_runtime_uses_active_generic_contract_when_installed() 
     launcher_text = launcher_path.read_text(encoding="utf-8")
     assert "GENERIC_ENGINEERING_SUBSTRATE_CURRENT.md" in worker_text
     assert "软件工具胶水宪法_当前有效.txt" not in worker_text
+    entrypoint_flag = worker_text.index('[void]$containerArguments.Add("--entrypoint")')
+    entrypoint_value = worker_text.index(
+        '[void]$containerArguments.Add("/usr/local/bin/xinao-grok-entrypoint")'
+    )
+    image_value = worker_text.index("[void]$containerArguments.Add($containerRuntimeImageRef)")
+    assert entrypoint_flag < entrypoint_value < image_value
+    assert (
+        worker_text.count('[void]$containerArguments.Add("/usr/local/bin/xinao-grok-entrypoint")')
+        == 1
+    )
     assert "Grok_Admin_Isolated\\workspace" not in launcher_text
     assert "Assert-CodexGrokWorkerRuntime" in launcher_text
+    assert '[string]$CommonSealedInputRoot = ""' in launcher_text
+    assert "$arguments.CommonSealedInputRoot = $CommonSealedInputRoot" in launcher_text
+    assert "CommonSealedInputRoot does not exist" in launcher_text
 
     auth_helper = bridge_root / "GrokAuthenticatedCatalogRefresh.ps1"
     quoted_helper = str(auth_helper).replace("'", "''")
@@ -499,11 +512,19 @@ def test_live_grok_worker_runtime_uses_active_generic_contract_when_installed() 
             "-Command",
             (
                 f". '{quoted_helper}'; "
-                "$bare401 = Test-GrokAuthenticatedCatalogRefreshResultAuthRequired "
+                "$bare401Object = Test-GrokAuthenticatedCatalogRefreshResultAuthRequired "
                 "-RefreshResult ([pscustomobject]@{ exit_code=1; stderr='HTTP 401 unauthorized' }); "
+                "$bare401String = Test-GrokAuthenticatedCatalogRefreshResultAuthRequired "
+                "-RefreshResult 'HTTP 401 unauthorized'; "
+                "try { throw 'HTTP 401 unauthorized' } catch { $bare401Error = $_ }; "
+                "$bare401ErrorClassified = Test-GrokAuthenticatedCatalogRefreshResultAuthRequired "
+                "-RefreshResult $bare401Error; "
+                "$headerInvalid = Test-GrokAuthenticatedCatalogRefreshResultAuthRequired "
+                "-RefreshResult 'HTTP 401 Unauthorized: authorization header invalid'; "
                 "$revoked = Test-GrokAuthenticatedCatalogRefreshResultAuthRequired "
                 "-RefreshResult ([pscustomobject]@{ exit_code=1; stderr='invalid_grant: RefreshTokenRejected' }); "
-                "if ($bare401 -or -not $revoked) { exit 1 }"
+                "if ($bare401Object -or $bare401String -or $bare401ErrorClassified -or "
+                "    $headerInvalid -or -not $revoked) { exit 1 }"
             ),
         ],
         capture_output=True,
@@ -532,6 +553,163 @@ def test_live_grok_worker_runtime_uses_active_generic_contract_when_installed() 
     assert 'profile_identity = "generic_workerpool_transport"' in oauth_text
     assert "profile_role_authority = $false" in oauth_text
     assert "worker_transport_auth_present" in oauth_text
+
+
+def test_live_grok_catalog_refresh_prefers_verified_postcondition_over_stale_terminal_text(
+    tmp_path: Path,
+) -> None:
+    bridge_root = Path(r"D:\XINAO_RESEARCH_RUNTIME\tools\grok-worker-pool\bridge")
+    time_helper = bridge_root / "GrokAuthenticatedCatalogTime.ps1"
+    refresh_helper = bridge_root / "GrokAuthenticatedCatalogRefresh.ps1"
+    if not time_helper.is_file() or not refresh_helper.is_file():
+        return
+
+    grok_home = tmp_path / "grok-home"
+    grok_home.mkdir()
+    (grok_home / "auth.json").write_text("{}", encoding="utf-8")
+
+    def quote(value: object) -> str:
+        return str(value).replace("'", "''")
+
+    check = subprocess.run(
+        [
+            "pwsh",
+            "-NoLogo",
+            "-NoProfile",
+            "-NonInteractive",
+            "-Command",
+            (
+                f". '{quote(time_helper)}'; . '{quote(refresh_helper)}'; "
+                f"$grokProfileRoot = '{quote(grok_home)}'; "
+                "$refresh = { "
+                "  $catalog = [ordered]@{ "
+                "    origin='https://cli-chat-proxy.grok.com'; "
+                "    auth_method='session'; "
+                "    fetched_at=[DateTimeOffset]::UtcNow.ToString('o'); "
+                "    models=[ordered]@{ 'grok-4.5'=[ordered]@{} } "
+                "  }; "
+                "  $catalog | ConvertTo-Json -Depth 8 | "
+                "    Set-Content -LiteralPath (Join-Path $grokProfileRoot 'models_cache.json') -Encoding utf8; "
+                "  [pscustomobject]@{ exit_code=1; stdout=''; "
+                "    stderr='invalid_grant: RefreshTokenRejected from an earlier attempt' } "
+                "}; "
+                "$result = Invoke-GrokAuthenticatedCatalogSingleFlight "
+                "  -GrokHome $grokProfileRoot -Model 'grok-4.5' -TtlSeconds 300 -RefreshAction $refresh; "
+                "if (-not $result.refresh_performed -or "
+                "    $result.final_reason -ne 'fresh_authenticated_catalog') { exit 31 }"
+            ),
+        ],
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        check=False,
+    )
+    assert check.returncode == 0, check.stderr or check.stdout
+
+
+def test_live_grok_catalog_refresh_prefers_valid_postcondition_over_thrown_terminal_error(
+    tmp_path: Path,
+) -> None:
+    bridge_root = Path(r"D:\XINAO_RESEARCH_RUNTIME\tools\grok-worker-pool\bridge")
+    time_helper = bridge_root / "GrokAuthenticatedCatalogTime.ps1"
+    refresh_helper = bridge_root / "GrokAuthenticatedCatalogRefresh.ps1"
+    if not time_helper.is_file() or not refresh_helper.is_file():
+        return
+
+    grok_home = tmp_path / "grok-home"
+    grok_home.mkdir()
+    (grok_home / "auth.json").write_text("{}", encoding="utf-8")
+
+    def quote(value: object) -> str:
+        return str(value).replace("'", "''")
+
+    check = subprocess.run(
+        [
+            "pwsh",
+            "-NoLogo",
+            "-NoProfile",
+            "-NonInteractive",
+            "-Command",
+            (
+                f". '{quote(time_helper)}'; . '{quote(refresh_helper)}'; "
+                f"$grokProfileRoot = '{quote(grok_home)}'; "
+                "$refresh = { "
+                "  $catalog = [ordered]@{ "
+                "    origin='https://cli-chat-proxy.grok.com'; "
+                "    auth_method='session'; "
+                "    fetched_at=[DateTimeOffset]::UtcNow.ToString('o'); "
+                "    models=[ordered]@{ 'grok-4.5'=[ordered]@{} } "
+                "  }; "
+                "  $catalog | ConvertTo-Json -Depth 8 | "
+                "    Set-Content -LiteralPath "
+                "      (Join-Path $grokProfileRoot 'models_cache.json') -Encoding utf8; "
+                "  throw 'invalid_grant: RefreshTokenRejected from an earlier attempt' "
+                "}; "
+                "$result = Invoke-GrokAuthenticatedCatalogSingleFlight "
+                "  -GrokHome $grokProfileRoot -Model 'grok-4.5' "
+                "  -TtlSeconds 300 -RefreshAction $refresh; "
+                "if (-not $result.refresh_performed -or "
+                "    $result.final_reason -ne 'fresh_authenticated_catalog') { exit 31 }"
+            ),
+        ],
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        check=False,
+    )
+    assert check.returncode == 0, check.stderr or check.stdout
+
+
+def test_live_grok_catalog_refresh_keeps_terminal_failure_without_valid_postcondition(
+    tmp_path: Path,
+) -> None:
+    bridge_root = Path(r"D:\XINAO_RESEARCH_RUNTIME\tools\grok-worker-pool\bridge")
+    time_helper = bridge_root / "GrokAuthenticatedCatalogTime.ps1"
+    refresh_helper = bridge_root / "GrokAuthenticatedCatalogRefresh.ps1"
+    if not time_helper.is_file() or not refresh_helper.is_file():
+        return
+
+    grok_home = tmp_path / "grok-home"
+    grok_home.mkdir()
+    (grok_home / "auth.json").write_text("{}", encoding="utf-8")
+
+    def quote(value: object) -> str:
+        return str(value).replace("'", "''")
+
+    check = subprocess.run(
+        [
+            "pwsh",
+            "-NoLogo",
+            "-NoProfile",
+            "-NonInteractive",
+            "-Command",
+            (
+                f". '{quote(time_helper)}'; . '{quote(refresh_helper)}'; "
+                f"$grokProfileRoot = '{quote(grok_home)}'; "
+                "$refresh = { throw 'invalid_grant: RefreshTokenRejected' }; "
+                "$seenExpected = $false; "
+                "try { "
+                "  Invoke-GrokAuthenticatedCatalogSingleFlight "
+                "    -GrokHome $grokProfileRoot -Model 'grok-4.5' "
+                "    -TtlSeconds 300 -RefreshAction $refresh | Out-Null "
+                "} catch { "
+                "  if ($_.Exception.Message -eq "
+                "      'GROK_AUTHENTICATED_PROFILE_AUTH_REQUIRED: refresh_token_terminal') { "
+                "    $seenExpected = $true "
+                "  } else { Write-Error $_; exit 32 } "
+                "}; "
+                "if (-not $seenExpected) { exit 33 }"
+            ),
+        ],
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        check=False,
+    )
+    assert check.returncode == 0, check.stderr or check.stdout
 
 
 def test_shared_worker_skills_preserve_preclosure_independence_when_installed() -> None:
