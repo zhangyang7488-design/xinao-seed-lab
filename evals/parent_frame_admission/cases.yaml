@@ -1550,7 +1550,6 @@
     expected_selected_control_action: execute_child_then_resume_parent
     expected_symmetric_alternatives_considered: '["execute_child_then_resume_parent"]'
     expected_residual_defeater: none
-
 - description: A tractable foundation cannot compress the complete adopted outcome envelope
   metadata:
     id: REG_TRACTABLE_FOUNDATION_PRESERVES_FULL_INTENT_ENVELOPE
