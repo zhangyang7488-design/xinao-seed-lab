@@ -6,8 +6,8 @@ from pathlib import Path
 
 import pytest
 from scripts.prepare_direct_worker_pool_common_contract import (
-    ContractPreparationError,
     DEFAULT_RULES_FILE,
+    ContractPreparationError,
     build_effective_prompt_bytes,
     prepare_contract,
 )

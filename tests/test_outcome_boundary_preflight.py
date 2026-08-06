@@ -16,9 +16,7 @@ def test_inspection_denies_post_cutoff_reference_without_returning_source_conten
 ) -> None:
     source = tmp_path / "unknown-worker-return.md"
     source.write_text(
-        "ordinary pre-cutoff context\n"
-        "outcome_interval=3000090..3000109\n"
-        "private-result-sentinel\n",
+        "ordinary pre-cutoff context\noutcome_interval=3000090..3000109\nprivate-result-sentinel\n",
         encoding="utf-8",
     )
 
@@ -55,9 +53,7 @@ def test_inspection_allows_only_pre_cutoff_periods_and_ignores_embedded_digits(
 ) -> None:
     source = tmp_path / "safe.txt"
     source.write_text(
-        "period=3000099\n"
-        "post_cutoff_outcomes_consumed=false\n"
-        "digest-fragment=abc3000109def\n",
+        "period=3000099\npost_cutoff_outcomes_consumed=false\ndigest-fragment=abc3000109def\n",
         encoding="utf-8",
     )
 

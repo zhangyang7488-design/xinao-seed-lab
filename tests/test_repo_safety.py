@@ -291,12 +291,9 @@ def test_cross_seam_contract_is_generic_execution_truth_not_science_routing() ->
 
 def test_intent_continuity_baseline_reduces_burden_without_routing_science() -> None:
     model = json.loads(
-        (
-            REPO_ROOT
-            / "evals"
-            / "intent_continuity_baseline"
-            / "decision_model.v1.json"
-        ).read_text(encoding="utf-8")
+        (REPO_ROOT / "evals" / "intent_continuity_baseline" / "decision_model.v1.json").read_text(
+            encoding="utf-8"
+        )
     )
     assert model["sentinel"] == "SENTINEL:INTENT_CONTINUITY_BASELINE_V1"
     assert model["authority"] is False
@@ -321,15 +318,18 @@ def test_intent_continuity_baseline_reduces_burden_without_routing_science() -> 
         "runtime_carrier",
         "consumer_effect",
     ]
-    assert "levels_are_assigned_by_the_current_relation_not_by_noun_or_file_type" in graph[
-        "admission_rules"
-    ]
-    assert "an_action_requires_an_upward_service_path_to_the_current_parent_result" in graph[
-        "admission_rules"
-    ]
-    assert "a_completion_claim_requires_a_downward_path_to_real_consumer_effect_and_readback" in graph[
-        "admission_rules"
-    ]
+    assert (
+        "levels_are_assigned_by_the_current_relation_not_by_noun_or_file_type"
+        in graph["admission_rules"]
+    )
+    assert (
+        "an_action_requires_an_upward_service_path_to_the_current_parent_result"
+        in graph["admission_rules"]
+    )
+    assert (
+        "a_completion_claim_requires_a_downward_path_to_real_consumer_effect_and_readback"
+        in graph["admission_rules"]
+    )
     economy = model["context_economy"]
     assert economy["forbidden_shape"] == "per_turn_full_PDM_dump_or_second_model_call"
     assert economy["hot_layer"].startswith("global_AGENTS")
@@ -354,9 +354,7 @@ def test_intent_continuity_baseline_reduces_burden_without_routing_science() -> 
     assert unified["first_principles"]["return_rule"].startswith(
         "when_the_finite_foundation_is_sufficient"
     )
-    assert unified["productivity"]["role"].startswith(
-        "selection_among_already_legal_candidates"
-    )
+    assert unified["productivity"]["role"].startswith("selection_among_already_legal_candidates")
     assert unified["real_risk_and_anti_formalism"]["formality_admission"].startswith(
         "documents_schemas_checks_approvals"
     )
@@ -380,15 +378,11 @@ def test_intent_continuity_baseline_reduces_burden_without_routing_science() -> 
     assert closure["ordinary_path"].startswith("do_not_expand_the_full_graph")
     assert "new_failure_family" in closure["independent_defeater_search_when"]
     task_control = model["active_task_continuation_advisory"]
-    assert task_control["task_source_rule"].startswith(
-        "effect_bearing_work_requires_a_named_task"
-    )
+    assert task_control["task_source_rule"].startswith("effect_bearing_work_requires_a_named_task")
     assert task_control["observed_state_rule"].startswith(
         "cwd_STATUS_reports_tests_packages_worker_results"
     )
-    assert task_control["permission_rule"].startswith(
-        "ordinary_authorized_reads_writes_tests"
-    )
+    assert task_control["permission_rule"].startswith("ordinary_authorized_reads_writes_tests")
     assert task_control["restore_failure_rule"].startswith(
         "fail_open_to_current_user_words_and_live_facts"
     )
@@ -405,30 +399,22 @@ def test_intent_continuity_baseline_reduces_burden_without_routing_science() -> 
         registry["loops"]["behavior"]["intent_decision_model"]
         == "evals/intent_continuity_baseline/decision_model.v1.json"
     )
-    assert "context_intent_alignment" not in {
-        item["id"] for item in registry["live_agent_suites"]
-    }
-    assert "parent_frame_admission" in {
-        item["id"] for item in registry["live_agent_suites"]
-    }
+    assert "context_intent_alignment" not in {item["id"] for item in registry["live_agent_suites"]}
+    assert "parent_frame_admission" in {item["id"] for item in registry["live_agent_suites"]}
     assert "context_intent_alignment" in {
         item["id"] for item in registry["retired_compatibility_suites"]
     }
 
-    runner = (REPO_ROOT / "scripts" / "run_behavior_regression.ps1").read_text(
+    runner = (REPO_ROOT / "scripts" / "run_behavior_regression.ps1").read_text(encoding="utf-8")
+    snapshot = (REPO_ROOT / "scripts" / "prepare_behavior_regression_snapshot.py").read_text(
         encoding="utf-8"
     )
-    snapshot = (
-        REPO_ROOT / "scripts" / "prepare_behavior_regression_snapshot.py"
-    ).read_text(encoding="utf-8")
     assert "$runContext" not in runner
     assert "evals\\context_intent_alignment" not in runner
     assert "'deep', 'context', 'proactive'" not in runner
     assert '"context": False' in snapshot
 
-    readme = (REPO_ROOT / "evals" / "behavior_regression" / "README.md").read_text(
-        encoding="utf-8"
-    )
+    readme = (REPO_ROOT / "evals" / "behavior_regression" / "README.md").read_text(encoding="utf-8")
     assert "currently inventories 62" in readme
     assert "-Profile context" not in readme
 
@@ -442,9 +428,9 @@ def test_intent_continuity_baseline_reduces_burden_without_routing_science() -> 
 
 
 def test_docker_worker_rules_bind_only_generic_engineering_sources() -> None:
-    source = (
-        REPO_ROOT / "services" / "agent_runtime" / "grok_build_docker_worker.py"
-    ).read_text(encoding="utf-8")
+    source = (REPO_ROOT / "services" / "agent_runtime" / "grok_build_docker_worker.py").read_text(
+        encoding="utf-8"
+    )
     assert 'Path("/app/AGENTS.md")' in source
     assert 'Path("/app/docs/tool_glue/GENERIC_ENGINEERING_SUBSTRATE_CURRENT.md")' in source
     assert 'Path("/mainline/' not in source
@@ -475,8 +461,7 @@ def test_grok_worker_pool_runtime_is_independent_of_retired_admin_workspace() ->
     direct_consumers = {
         item["consumer_id"]: item["source_path"]
         for item in registry["consumers"]
-        if item["consumer_id"]
-        in {"direct_grok_composer25_worker", "direct_grok_worker_pool"}
+        if item["consumer_id"] in {"direct_grok_composer25_worker", "direct_grok_worker_pool"}
     }
     assert set(direct_consumers) == {
         "direct_grok_composer25_worker",
@@ -493,18 +478,14 @@ def test_grok_worker_pool_runtime_is_independent_of_retired_admin_workspace() ->
             encoding="utf-8"
         )
     )
-    assert r"D:\XINAO_RESEARCH_RUNTIME\tools\grok-worker-pool" in cleanup_paths[
-        "protected_subtrees"
-    ]
+    assert (
+        r"D:\XINAO_RESEARCH_RUNTIME\tools\grok-worker-pool" in cleanup_paths["protected_subtrees"]
+    )
     assert r"C:\Users\xx363\.grok-bg-workers" in cleanup_paths["protected_subtrees"]
-    assert r"C:\Users\xx363\.codex-s-hardmode-account-b" in cleanup_paths[
-        "protected_subtrees"
-    ]
+    assert r"C:\Users\xx363\.codex-s-hardmode-account-b" in cleanup_paths["protected_subtrees"]
     assert r"C:\Users\xx363\CodexLaunchers" in cleanup_paths["protected_subtrees"]
     assert r"D:\Grok_Admin_Isolated\workspace" not in cleanup_paths["git_roots"]
-    assert r"C:\Users\xx363\Grok_Admin_Isolated\workspace" not in cleanup_paths[
-        "git_roots"
-    ]
+    assert r"C:\Users\xx363\Grok_Admin_Isolated\workspace" not in cleanup_paths["git_roots"]
 
 
 def test_live_grok_worker_runtime_uses_active_generic_contract_when_installed() -> None:
@@ -524,9 +505,7 @@ def test_live_grok_worker_runtime_uses_active_generic_contract_when_installed() 
         assert source.is_file(), name
         assert hashlib.sha256(source.read_bytes()).hexdigest() == expected_sha256
 
-    worker_text = (bridge_root / "Invoke-GrokComposer25Worker.ps1").read_text(
-        encoding="utf-8"
-    )
+    worker_text = (bridge_root / "Invoke-GrokComposer25Worker.ps1").read_text(encoding="utf-8")
     launcher_text = launcher_path.read_text(encoding="utf-8")
     assert "GENERIC_ENGINEERING_SUBSTRATE_CURRENT.md" in worker_text
     assert "软件工具胶水宪法_当前有效.txt" not in worker_text
@@ -557,9 +536,7 @@ def test_live_grok_worker_runtime_uses_active_generic_contract_when_installed() 
     )
     assert classifier_check.returncode == 0, classifier_check.stderr
 
-    skill_path = Path(
-        r"C:\Users\xx363\.codex\skills\dispatch-grok-worker-pool\SKILL.md"
-    )
+    skill_path = Path(r"C:\Users\xx363\.codex\skills\dispatch-grok-worker-pool\SKILL.md")
     if skill_path.is_file():
         skill_text = skill_path.read_text(encoding="utf-8")
         assert "SelectionOnly success" in skill_text
@@ -570,9 +547,7 @@ def test_live_grok_worker_runtime_uses_active_generic_contract_when_installed() 
         assert "not a scientific worker role" in skill_text
         assert "generic WorkerPool transport profile" in skill_text
 
-    oauth_wrapper = Path(
-        r"C:\Users\xx363\CodexLaunchers\Invoke-GrokWorkerOAuthRecovery.ps1"
-    )
+    oauth_wrapper = Path(r"C:\Users\xx363\CodexLaunchers\Invoke-GrokWorkerOAuthRecovery.ps1")
     assert oauth_wrapper.is_file()
     oauth_text = oauth_wrapper.read_text(encoding="utf-8")
     assert "SelectionOnly success is a hard OAuth veto" in oauth_text
@@ -598,10 +573,7 @@ def test_shared_worker_skills_preserve_preclosure_independence_when_installed() 
     repair = paths["repair"].read_text(encoding="utf-8")
     amplify_words = " ".join(amplify.split())
     assert "Owner locks the first candidate" in amplify
-    assert (
-        "directed red-team review rather than independent problem formation"
-        in amplify_words
-    )
+    assert "directed red-team review rather than independent problem formation" in amplify_words
     assert "Independence is also a timing and prompt-provenance claim" in dispatch
     assert "recommend rollback/removal/no-action" in dispatch
     assert "高杠杆候选是否由 Owner 先行封闭" in repair
@@ -626,6 +598,8 @@ def test_retained_executable_sources_have_no_dead_desktop_or_runtime_entry() -> 
         "xinao_clean_runtime",
     ):
         assert forbidden not in text, forbidden
+
+
 def test_grok_mcp_bundle_excludes_unconfigured_vulnerable_endpoints() -> None:
     runtime = REPO_ROOT / "projects/dual-brain-coordination/provisioning/grok-mcp-runtime"
     package = json.loads((runtime / "package.json").read_text(encoding="utf-8"))
@@ -722,9 +696,7 @@ def test_eval_runners_inherit_the_active_codex_account_profile() -> None:
         assert "if ($env:CODEX_HOME) { $env:CODEX_HOME }" in text, name
         assert "else { Join-Path $HOME '.codex' }" in text, name
 
-    regression = (REPO_ROOT / "scripts/run_behavior_regression.ps1").read_text(
-        encoding="utf-8-sig"
-    )
+    regression = (REPO_ROOT / "scripts/run_behavior_regression.ps1").read_text(encoding="utf-8-sig")
     battery = (REPO_ROOT / "scripts/run_self_evolution_eval_battery.ps1").read_text(
         encoding="utf-8-sig"
     )
@@ -1288,9 +1260,10 @@ def test_live_codex_productivity_profile_keeps_core_and_colds_stale_surfaces() -
 
     assert main["plugins"]["temporal@openai-curated"]["enabled"] is True
     assert account_b["plugins"]["temporal@openai-curated"]["enabled"] is True
-    assert main["plugins"]["sites@openai-bundled"]["mcp_servers"][
-        "sites-design-picker"
-    ]["enabled"] is False
+    assert (
+        main["plugins"]["sites@openai-bundled"]["mcp_servers"]["sites-design-picker"]["enabled"]
+        is False
+    )
 
     b_node_env = account_b["mcp_servers"]["node_repl"]["env"]
     expected_b_home = r"C:\Users\xx363\.codex-s-hardmode-account-b"
@@ -1302,8 +1275,8 @@ def test_live_codex_productivity_profile_keeps_core_and_colds_stale_surfaces() -
 
     launcher = launcher_path.read_text(encoding="utf-8-sig")
     assert '"cold-capabilities.config.toml"' in launcher
-    assert '"CODEX_HOME = \'$mainCodexHome\'"' in launcher
-    assert '"CODEX_HOME = \'$codexHome\'"' in launcher
+    assert "\"CODEX_HOME = '$mainCodexHome'\"" in launcher
+    assert "\"CODEX_HOME = '$codexHome'\"" in launcher
     assert "The copied config is rewritten only for B-local CODEX_HOME" in launcher
     main_agents = main_path.with_name("AGENTS.md").read_text(encoding="utf-8-sig")
     account_b_agents = account_b_path.with_name("AGENTS.md").read_text(encoding="utf-8-sig")
@@ -1346,9 +1319,7 @@ def test_live_codex_source_aware_continuity_hooks_are_trusted_and_bounded(
 ) -> None:
     main_home = Path(r"C:\Users\xx363\.codex")
     account_b_home = Path(r"C:\Users\xx363\.codex-s-hardmode-account-b")
-    script_root = Path(
-        r"D:\XINAO_RESEARCH_RUNTIME\state\Codex_Situation_Island\scripts"
-    )
+    script_root = Path(r"D:\XINAO_RESEARCH_RUNTIME\state\Codex_Situation_Island\scripts")
     pwsh = Path(r"D:\XINAO_RESEARCH_RUNTIME\tools\powershell\7.6.4\pwsh.exe")
     session_script = script_root / "session_start_continuity_pointer_v1.ps1"
     user_prompt_script = script_root / "user_prompt_zero_beat_v1.ps1"
@@ -1371,9 +1342,7 @@ def test_live_codex_source_aware_continuity_hooks_are_trusted_and_bounded(
         return
 
     main_hooks = json.loads((main_home / "hooks.json").read_text(encoding="utf-8-sig"))
-    account_b_hooks = json.loads(
-        (account_b_home / "hooks.json").read_text(encoding="utf-8-sig")
-    )
+    account_b_hooks = json.loads((account_b_home / "hooks.json").read_text(encoding="utf-8-sig"))
     assert main_hooks == account_b_hooks
     assert set(main_hooks["hooks"]) == {
         "SessionStart",
@@ -1643,12 +1612,10 @@ def test_live_codex_source_aware_continuity_hooks_are_trusted_and_bounded(
         "transcript_path": None,
     }
     restored = run_hook(session_script, compact_event)
-    assert "ACTIVE_TASK_CONTINUATION_ADVISORY" in restored["hookSpecificOutput"][
-        "additionalContext"
-    ]
-    assert "next known parent frontier" in restored["hookSpecificOutput"][
-        "additionalContext"
-    ]
+    assert (
+        "ACTIVE_TASK_CONTINUATION_ADVISORY" in restored["hookSpecificOutput"]["additionalContext"]
+    )
+    assert "next known parent frontier" in restored["hookSpecificOutput"]["additionalContext"]
 
     # An ordinary new increment does not reset an established parent scope.
     # The Owner rebinds only when the meaning actually changes the parent,
@@ -1666,9 +1633,7 @@ def test_live_codex_source_aware_continuity_hooks_are_trusted_and_bounded(
             "turn_id": "pytest-prompt-2",
         },
     )
-    prompt_context_2 = prompt_output_2[
-        "hookSpecificOutput"
-    ]["additionalContext"]
+    prompt_context_2 = prompt_output_2["hookSpecificOutput"]["additionalContext"]
     assert "TASK_CONTINUATION_ADVISORY_ONLY" in prompt_context_2
     assert "task-provenance-regression" in prompt_context_2
     assert "parent_scope_candidate=verify task provenance consumer" in prompt_context_2
@@ -1677,9 +1642,10 @@ def test_live_codex_source_aware_continuity_hooks_are_trusted_and_bounded(
     assert "return_point=next known parent frontier" in prompt_context_2
     assert "FRAME_BINDING_STATE:BOUND_ADVISORY" in prompt_context_2
     compact_inherited = run_hook(session_script, compact_event)
-    assert "ACTIVE_TASK_CONTINUATION_ADVISORY" in compact_inherited[
-        "hookSpecificOutput"
-    ]["additionalContext"]
+    assert (
+        "ACTIVE_TASK_CONTINUATION_ADVISORY"
+        in compact_inherited["hookSpecificOutput"]["additionalContext"]
+    )
 
     # A legitimate cross-repository child is bound internally with exact
     # lineage and return. The user is not asked to choose or approve a repo.
@@ -1729,9 +1695,7 @@ def test_live_codex_source_aware_continuity_hooks_are_trusted_and_bounded(
         check=False,
     )
     assert child.returncode == 0, child.stderr
-    assert json.loads(child.stdout)["binding_relation"] == (
-        "child_of_surviving_parent"
-    )
+    assert json.loads(child.stdout)["binding_relation"] == ("child_of_surviving_parent")
 
     restored_parent = subprocess.run(
         [
@@ -1751,9 +1715,7 @@ def test_live_codex_source_aware_continuity_hooks_are_trusted_and_bounded(
         check=False,
     )
     assert restored_parent.returncode == 0, restored_parent.stderr
-    assert json.loads(restored_parent.stdout)["task_id"] == (
-        "task-provenance-regression"
-    )
+    assert json.loads(restored_parent.stdout)["task_id"] == ("task-provenance-regression")
 
     paused = subprocess.run(
         [
@@ -1897,8 +1859,7 @@ def test_live_codex_source_aware_continuity_hooks_are_trusted_and_bounded(
                     "type": "custom_tool_call",
                     "name": "exec",
                     "input": (
-                        "await tools.update_plan({plan:["
-                        "{step:'parent work',status:'completed'}]});"
+                        "await tools.update_plan({plan:[{step:'parent work',status:'completed'}]});"
                     ),
                 },
             }
