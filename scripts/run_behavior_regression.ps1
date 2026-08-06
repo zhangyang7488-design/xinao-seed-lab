@@ -1,11 +1,10 @@
 [CmdletBinding()]
 param(
-    [ValidateSet('capability', 'smoke', 'core', 'deep', 'context', 'proactive', 'reuse')]
+    [ValidateSet('capability', 'smoke', 'core', 'deep', 'proactive', 'reuse', 'intent', 'subagent')]
     [string]$Profile = 'smoke',
     [string]$Domain,
     [string]$CasePattern,
     [string]$FailedFrom,
-    [string[]]$ReusePassedFrom = @(),
     [ValidateRange(1, 16)]
     [int]$MaxConcurrency = 2,
     [ValidateRange(0, 2)]
@@ -13,7 +12,7 @@ param(
     [switch]$PreflightOnly,
     [switch]$List,
     [string]$RuntimeRoot = $(if ($env:XINAO_RUNTIME_ROOT) { $env:XINAO_RUNTIME_ROOT } else { 'D:\XINAO_RESEARCH_RUNTIME' }),
-    [string]$CodexHome = $(Join-Path $HOME '.codex')
+    [string]$CodexHome = $(if ($env:CODEX_HOME) { $env:CODEX_HOME } else { Join-Path $HOME '.codex' })
 )
 
 $ErrorActionPreference = 'Stop'
@@ -27,28 +26,17 @@ if ($List) {
     $catalog | ConvertTo-Json -Depth 10
     return
 }
-if ($Domain -and $Profile -notin @('context', 'smoke', 'core', 'deep')) {
-    throw 'Domain filtering applies to context behavior cases only.'
+if ($Domain -and $Profile -notin @('proactive', 'core', 'deep')) {
+    throw 'Domain filtering applies to proactive behavior cases only.'
 }
-if ($CasePattern -and $Profile -notin @('context', 'proactive')) {
-    throw 'CasePattern is suite-specific; use it with -Profile context or proactive.'
+if ($CasePattern -and $Profile -notin @('proactive', 'intent')) {
+    throw 'CasePattern is suite-specific; use it with -Profile proactive or intent.'
 }
-if ($FailedFrom -and $Profile -notin @('context', 'proactive')) {
-    throw 'FailedFrom is suite-specific; use it with -Profile context or proactive.'
+if ($FailedFrom -and $Profile -ne 'proactive') {
+    throw 'FailedFrom is suite-specific; use it with -Profile proactive.'
 }
 if ($FailedFrom -and $CasePattern) {
     throw 'FailedFrom cannot be combined with CasePattern.'
-}
-if ($ReusePassedFrom.Count -gt 0 -and $Profile -ne 'context') {
-    throw 'ReusePassedFrom currently applies only to the context profile.'
-}
-if ($ReusePassedFrom.Count -gt 0 -and $FailedFrom) {
-    throw 'ReusePassedFrom cannot be combined with FailedFrom.'
-}
-foreach ($reuseResult in $ReusePassedFrom) {
-    if (-not (Test-Path -LiteralPath $reuseResult -PathType Leaf)) {
-        throw "Reusable Promptfoo result is missing: $reuseResult"
-    }
 }
 if ($FailedFrom -and -not (Test-Path -LiteralPath $FailedFrom -PathType Leaf)) {
     throw "Previous Promptfoo result is missing: $FailedFrom"
@@ -158,7 +146,6 @@ function Assert-FailedCaseSelection {
 if ($FailedFrom) {
     $failedDocument = Get-Content -LiteralPath $FailedFrom -Raw | ConvertFrom-Json
     $expectedDescription = switch ($Profile) {
-        'context' { 'Context-first intent alignment without routine approval friction' }
         'proactive' { 'Proactive mature-first regressions' }
         default { throw "FailedFrom is not supported for profile: $Profile" }
     }
@@ -200,7 +187,10 @@ if (-not $codexBinary) {
     throw "Native Codex app-server binary is missing below: $codexPackage"
 }
 
-$runId = Get-Date -Format 'yyyyMMdd-HHmmss-fff'
+$runId = '{0}-{1}-{2}' -f `
+    (Get-Date -Format 'yyyyMMdd-HHmmss-fff'), `
+    $PID, `
+    ([Guid]::NewGuid().ToString('N').Substring(0, 8))
 $resultRoot = Join-Path $RuntimeRoot 'state\human-capabilities\evals\behavior-regression'
 $outputRoot = Join-Path $resultRoot $runId
 $promptfooState = Join-Path $outputRoot 'promptfoo'
@@ -211,9 +201,11 @@ $summaryPath = Join-Path $outputRoot 'summary.json'
 $startedAt = Get-Date
 $needsThinWorkspace = $Profile -in @('core', 'deep', 'reuse')
 $thinWorkspace = Join-Path $outputRoot 'thin-localization-workspace'
+$needsNativeSubagentWorkspace = $Profile -eq 'subagent'
+$nativeSubagentWorkspace = Join-Path $outputRoot 'native-subagent-workspace'
 
+New-Item -ItemType Directory -Path $outputRoot -ErrorAction Stop | Out-Null
 New-Item -ItemType Directory -Path @(
-    $outputRoot,
     $promptfooState,
     $promptfooLogs,
     $promptfooCache,
@@ -228,7 +220,8 @@ $snapshotArguments = @(
     'run', 'python', $snapshotBuilder,
     '--repo-root', $repoRoot,
     '--output-root', $outputRoot,
-    '--profile', $Profile
+    '--profile', $Profile,
+    '--codex-home', $CodexHome
 )
 if ($Domain) { $snapshotArguments += @('--domain', $Domain) }
 if ($CasePattern) { $snapshotArguments += @('--case-pattern', $CasePattern) }
@@ -264,6 +257,21 @@ if ($needsThinWorkspace) {
         commit --quiet -m baseline
     if ($LASTEXITCODE -ne 0) { throw 'Could not freeze the thin-localization baseline.' }
 }
+if ($needsNativeSubagentWorkspace) {
+    $nativeTemplate = Join-Path $executionRoot `
+        'evals\native_subagent_trajectory\fixture_template'
+    if (-not (Test-Path -LiteralPath $nativeTemplate -PathType Container)) {
+        throw "Native-subagent fixture template is missing: $nativeTemplate"
+    }
+    Copy-Item -LiteralPath $nativeTemplate -Destination $nativeSubagentWorkspace -Recurse
+    & git -C $nativeSubagentWorkspace init --quiet
+    if ($LASTEXITCODE -ne 0) { throw 'Could not initialize the native-subagent evidence workspace.' }
+    & git -C $nativeSubagentWorkspace add --all
+    if ($LASTEXITCODE -ne 0) { throw 'Could not stage the native-subagent baseline.' }
+    & git -C $nativeSubagentWorkspace -c user.name=xinao-eval -c user.email=xinao-eval@local `
+        commit --quiet -m baseline
+    if ($LASTEXITCODE -ne 0) { throw 'Could not freeze the native-subagent baseline.' }
+}
 
 $environment = @{
     CODEX_HOME = (Resolve-Path -LiteralPath $CodexHome).Path
@@ -283,6 +291,9 @@ $environment = @{
 }
 if ($needsThinWorkspace) {
     $environment['XINAO_THIN_LOCALIZATION_WORKSPACE'] = $thinWorkspace
+}
+if ($needsNativeSubagentWorkspace) {
+    $environment['XINAO_NATIVE_SUBAGENT_WORKSPACE'] = $nativeSubagentWorkspace
 }
 $previous = @{}
 foreach ($name in $environment.Keys) {
@@ -572,11 +583,12 @@ function New-BehaviorSourceManifest {
 
 $runCapability = $Profile -in @('capability', 'smoke', 'core', 'deep') -and
     -not $Domain -and -not $CasePattern -and -not $FailedFrom
-$runContext = $Profile -in @('context', 'smoke', 'core', 'deep')
+$runIntent = $Profile -in @('intent', 'smoke', 'core', 'deep')
 $runProactive = $Profile -in @('proactive', 'core', 'deep')
 $runRecallReplay = $Profile -in @('core', 'deep', 'reuse')
 $runRecallLive = $Profile -in @('deep', 'reuse')
 $runThinLocalization = $Profile -in @('core', 'deep', 'reuse')
+$runNativeSubagent = $Profile -eq 'subagent'
 $runStatic = $Profile -in @('core', 'deep', 'reuse') -and -not $FailedFrom
 $sourceInputs = @(
     [pscustomobject]@{ path = (Join-Path $repoRoot 'AGENTS.md'); role = 'working_agreement' },
@@ -605,6 +617,46 @@ $sourceInputs = @(
     [pscustomobject]@{
         path = (Join-Path $repoRoot 'evals\behavior_regression\catalog.json')
         role = 'catalog'
+    },
+    [pscustomobject]@{
+        path = (Join-Path $repoRoot 'evals\behavior_regression\capability_lineage.v1.json')
+        role = 'capability_lineage_migration_preflight'
+    },
+    [pscustomobject]@{
+        path = (Join-Path $repoRoot 'tests\test_behavior_capability_lineage.py')
+        role = 'capability_lineage_migration_preflight_tests'
+    },
+    [pscustomobject]@{
+        path = (Join-Path $repoRoot 'scripts\build_codex_productivity_recovery.py')
+        role = 'codex_productivity_recovery_builder'
+    },
+    [pscustomobject]@{
+        path = (Join-Path $repoRoot 'infra\codex_productivity_recovery\v1\manifest.v1.json')
+        role = 'codex_productivity_recovery_manifest'
+    },
+    [pscustomobject]@{
+        path = (Join-Path $repoRoot 'infra\codex_productivity_recovery\v1\codex-productivity-recovery.v1.zip')
+        role = 'codex_productivity_recovery_archive'
+    },
+    [pscustomobject]@{
+        path = (Join-Path $repoRoot 'tests\test_codex_productivity_recovery.py')
+        role = 'codex_productivity_recovery_tests'
+    },
+    [pscustomobject]@{
+        path = (Join-Path $repoRoot 'evals\intent_continuity_baseline\decision_model.v1.json')
+        role = 'intent_continuity_baseline'
+    },
+    [pscustomobject]@{
+        path = (Join-Path $repoRoot 'evals\intent_continuity_baseline\consumer_coverage.v1.json')
+        role = 'intent_action_consumer_coverage'
+    },
+    [pscustomobject]@{
+        path = (Join-Path $repoRoot 'evals\intent_continuity_baseline\BASELINE.md')
+        role = 'intent_action_baseline_documentation'
+    },
+    [pscustomobject]@{
+        path = (Join-Path $repoRoot 'tests\test_intent_action_consumer_coverage.py')
+        role = 'intent_action_coverage_tests'
     }
 )
 if ($runStatic) {
@@ -613,7 +665,22 @@ if ($runStatic) {
         role = 'static_assertion_tests'
     }
 }
-if ($runContext -or $runProactive) {
+if ($runIntent) {
+    $sourceInputs += [pscustomobject]@{
+        path = (Join-Path $repoRoot 'tests\test_parent_frame_admission.py')
+        role = 'parent_frame_admission_tests'
+    }
+    $sourceInputs += [pscustomobject]@{
+        path = (Join-Path $repoRoot 'evals\parent_frame_admission')
+        role = 'parent_frame_admission'
+    }
+    $sourceInputs += [pscustomobject]@{
+        path = (Join-Path $CodexHome 'AGENTS.md')
+        logical_path = 'external/global_codex_home/AGENTS.md'
+        role = 'global_working_kernel'
+    }
+}
+if ($runProactive) {
     $sourceInputs += [pscustomobject]@{
         path = (Join-Path $repoRoot 'tests\test_repo_safety.py')
         role = 'repository_safety_tests'
@@ -623,12 +690,6 @@ if ($runCapability) {
     $sourceInputs += [pscustomobject]@{
         path = (Join-Path $repoRoot 'evals\codex_capability')
         role = 'capability_eval'
-    }
-}
-if ($runContext) {
-    $sourceInputs += [pscustomobject]@{
-        path = (Join-Path $repoRoot 'evals\context_intent_alignment')
-        role = 'context_eval'
     }
 }
 if ($runProactive) {
@@ -655,6 +716,16 @@ if ($runThinLocalization) {
         role = 'thin_localization_eval'
     }
 }
+if ($runNativeSubagent) {
+    $sourceInputs += [pscustomobject]@{
+        path = (Join-Path $repoRoot 'tests\test_native_subagent_trajectory.py')
+        role = 'native_subagent_trajectory_tests'
+    }
+    $sourceInputs += [pscustomobject]@{
+        path = (Join-Path $repoRoot 'evals\native_subagent_trajectory')
+        role = 'native_subagent_trajectory_eval'
+    }
+}
 $sourceManifestPath = Join-Path $outputRoot 'source-manifest.json'
 $sourceManifestFinalPath = Join-Path $outputRoot 'source-manifest.final.json'
 $liveSourceManifestPath = Join-Path $outputRoot 'live-source-manifest.before.json'
@@ -674,31 +745,6 @@ $runtimeSourceInputs = @(
 $sourceManifest = New-BehaviorSourceManifest `
     -Inputs $runtimeSourceInputs `
     -OutputPath $sourceManifestPath
-$incrementalSelection = $null
-$incrementalSelectionPath = $null
-if ($ReusePassedFrom.Count -gt 0) {
-    $incrementalSelector = Join-Path $executionRoot `
-        'scripts\select_behavior_regression_incremental.py'
-    $incrementalSelectionPath = Join-Path $outputRoot 'incremental-selection.v1.json'
-    $incrementalArguments = @(
-        'run', 'python', $incrementalSelector,
-        '--cases', (Join-Path $executionRoot 'evals\context_intent_alignment\cases.yaml'),
-        '--current-manifest', $sourceManifestPath,
-        '--output', $incrementalSelectionPath,
-        '--profile', $Profile
-    )
-    if ($Domain) { $incrementalArguments += @('--domain', $Domain) }
-    if ($CasePattern) { $incrementalArguments += @('--case-pattern', $CasePattern) }
-    foreach ($reuseResult in $ReusePassedFrom) {
-        $incrementalArguments += @('--reuse-result', (Resolve-Path -LiteralPath $reuseResult).Path)
-    }
-    $incrementalConsole = & uv @incrementalArguments 2>&1
-    if ($LASTEXITCODE -ne 0) {
-        throw "Behavior incremental selection failed: $($incrementalConsole -join [Environment]::NewLine)"
-    }
-    $incrementalSelection = Get-Content -LiteralPath $incrementalSelectionPath -Raw |
-        ConvertFrom-Json
-}
 $suiteRuns = @()
 $preflightResult = [ordered]@{ ran = $false; exit_code = 0; log = $null; tests = @() }
 $staticResult = [ordered]@{ ran = $false; exit_code = 0; log = $null }
@@ -714,13 +760,19 @@ try {
     $preflightResult.log = Join-Path $outputRoot 'preflight-validation.log'
     $preflightTests = @(
         'tests/test_behavior_regression_snapshot.py',
-        'tests/test_behavior_regression_incremental.py'
+        'tests/test_behavior_regression_incremental.py',
+        'tests/test_behavior_capability_lineage.py',
+        'tests/test_codex_productivity_recovery.py'
     )
-    if ($runContext -or $runProactive) {
-        $preflightTests += @(
-            'tests/test_repo_safety.py',
-            'tests/test_context_intent_alignment_behavior.py'
-        )
+    if ($runProactive) {
+        $preflightTests += 'tests/test_repo_safety.py'
+    }
+    if ($runIntent) {
+        $preflightTests += 'tests/test_parent_frame_admission.py'
+        $preflightTests += 'tests/test_intent_action_consumer_coverage.py'
+    }
+    if ($runNativeSubagent) {
+        $preflightTests += 'tests/test_native_subagent_trajectory.py'
     }
     $preflightResult.tests = $preflightTests
     Push-Location $rawSnapshotRoot
@@ -757,81 +809,31 @@ try {
         }
     }
 
+    if ($overallExit -eq 0 -and $runIntent -and -not $PreflightOnly) {
+        $intentConfig = Join-Path $executionRoot `
+            'evals\parent_frame_admission\promptfooconfig.yaml'
+        $intentResult = Join-Path $outputRoot 'parent-frame-admission.result.json'
+        $intentFilters = @()
+        if ($Profile -eq 'smoke') {
+            $intentFilters += @(
+                '--filter-pattern',
+                '^Contextual distress remains in the active repair$'
+            )
+        }
+        if ($Profile -eq 'intent' -and $CasePattern) {
+            $intentFilters += @('--filter-pattern', $CasePattern)
+        }
+        $suiteRuns += Invoke-PromptfooSuiteWithErrorRetry `
+            -SuiteId 'parent_frame_admission' `
+            -ConfigPath $intentConfig -ResultPath $intentResult `
+            -ExtraArguments $intentFilters
+    }
+
     if ($overallExit -eq 0 -and $runCapability -and -not $PreflightOnly) {
         $capabilityConfig = Join-Path $executionRoot 'evals\codex_capability\promptfooconfig.yaml'
         $capabilityResult = Join-Path $outputRoot 'codex-capability.result.json'
         $suiteRuns += Invoke-PromptfooSuiteWithErrorRetry -SuiteId 'codex_capability' `
             -ConfigPath $capabilityConfig -ResultPath $capabilityResult
-    }
-
-    if ($overallExit -eq 0 -and $runContext -and -not $PreflightOnly) {
-        $contextConfig = Join-Path $executionRoot 'evals\context_intent_alignment\promptfooconfig.yaml'
-        $contextResult = Join-Path $outputRoot 'context-intent-alignment.result.json'
-        $filters = @()
-        if ($Profile -in @('smoke', 'core', 'deep')) {
-            $filters += @('--filter-metadata', "profiles=$Profile")
-        }
-        if ($Domain) {
-            $filters += @('--filter-metadata', "domain=$Domain")
-        }
-        if ($incrementalSelection -and $incrementalSelection.fresh_case_ids.Count -gt 0) {
-            $filters += @('--filter-pattern', [string]$incrementalSelection.fresh_case_pattern)
-        }
-        elseif ($CasePattern -and -not $incrementalSelection) {
-            $filters += @('--filter-pattern', $CasePattern)
-        }
-        if ($FailedFrom) {
-            $filters += @('--filter-pattern', $failedSelection.pattern)
-        }
-        if ($incrementalSelection -and $incrementalSelection.fresh_case_ids.Count -eq 0) {
-            $suiteRuns += [ordered]@{
-                suite = 'context_intent_alignment'
-                exit_code = 0
-                result = $null
-                successes = [int]$incrementalSelection.reused_case_ids.Count
-                failures = 0
-                errors = 0
-                duration_ms = 0
-                token_usage = [ordered]@{ total = 0; prompt = 0; completion = 0; cached = 0; numRequests = 0 }
-                case_ids = @($incrementalSelection.selected_case_ids)
-                fresh_case_ids = @()
-                reused_case_ids = @($incrementalSelection.reused_case_ids)
-                incremental_selection = $incrementalSelectionPath
-                terminal_counts_authority = 'incremental_selection_reuse_receipt'
-                model_outputs_observed = 0
-                runtime_pass_claim_eligible = $false
-                runtime_claim_denial_reasons = @('reuse_only_no_fresh_model_trajectory')
-            }
-        }
-        else {
-            $expectedContextIds = if ($FailedFrom) {
-                $failedSelection.case_ids
-            }
-            elseif ($incrementalSelection) {
-                @($incrementalSelection.fresh_case_ids)
-            }
-            else {
-                @()
-            }
-            $contextRun = Invoke-PromptfooSuiteWithErrorRetry `
-                -SuiteId 'context_intent_alignment' `
-                -ConfigPath $contextConfig `
-                -ResultPath $contextResult `
-                -ExtraArguments $filters `
-                -ExpectedCaseIds $expectedContextIds
-            if ($incrementalSelection) {
-                $contextRun['fresh_successes'] = [int]$contextRun.successes
-                $contextRun['reused_successes'] = [int]$incrementalSelection.reused_case_ids.Count
-                $contextRun.successes = [int]$contextRun.successes + `
-                    [int]$incrementalSelection.reused_case_ids.Count
-                $contextRun.case_ids = @($incrementalSelection.selected_case_ids)
-                $contextRun['fresh_case_ids'] = @($incrementalSelection.fresh_case_ids)
-                $contextRun['reused_case_ids'] = @($incrementalSelection.reused_case_ids)
-                $contextRun['incremental_selection'] = $incrementalSelectionPath
-                $contextRun['terminal_counts_authority'] = 'fresh_rows_plus_incremental_reuse_receipt'
-            }
-            $suiteRuns += $contextRun
-        }
     }
 
     if ($overallExit -eq 0 -and $runProactive -and -not $PreflightOnly) {
@@ -865,6 +867,15 @@ try {
         # Retrying a mutation trajectory against its already-mutated fixture would invalidate order.
         $suiteRuns += Invoke-PromptfooSuite -SuiteId 'thin_localization_live' `
             -ConfigPath $thinConfig -ResultPath $thinResult -Concurrency 1
+    }
+
+    if ($overallExit -eq 0 -and $runNativeSubagent -and -not $PreflightOnly) {
+        $nativeSubagentConfig = Join-Path $executionRoot `
+            'evals\native_subagent_trajectory\promptfooconfig.yaml'
+        $nativeSubagentResult = Join-Path $outputRoot 'native-subagent-trajectory.result.json'
+        # This trajectory mutates one disposable workspace and must never be retried in place.
+        $suiteRuns += Invoke-PromptfooSuite -SuiteId 'native_subagent_trajectory' `
+            -ConfigPath $nativeSubagentConfig -ResultPath $nativeSubagentResult -Concurrency 1
     }
 
     if ($overallExit -eq 0 -and $runRecallLive -and -not $PreflightOnly) {
@@ -999,8 +1010,6 @@ $summary = [ordered]@{
     domain = $Domain
     case_pattern = $CasePattern
     failed_from = $FailedFrom
-    reuse_passed_from = @($ReusePassedFrom)
-    incremental_selection = $incrementalSelectionPath
     started_at = $startedAt.ToString('o')
     finished_at = (Get-Date).ToString('o')
     git_sha = $gitSha
@@ -1011,6 +1020,9 @@ $summary = [ordered]@{
     max_error_retries = $MaxErrorRetries
     preflight_only = [bool]$PreflightOnly
     thin_localization_workspace = $(if ($needsThinWorkspace) { $thinWorkspace } else { $null })
+    native_subagent_workspace = $(
+        if ($needsNativeSubagentWorkspace) { $nativeSubagentWorkspace } else { $null }
+    )
     catalog = $catalogPath
     output_root = $outputRoot
     source_snapshot = $sourceSnapshotPath

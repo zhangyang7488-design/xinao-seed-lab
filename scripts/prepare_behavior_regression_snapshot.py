@@ -110,11 +110,13 @@ def _profile_flags(
         and not domain
         and not case_pattern
         and not failed_from,
-        "context": profile in {"context", "smoke", "core", "deep"},
+        "context": False,
+        "intent": profile in {"intent", "smoke", "core", "deep"},
         "proactive": profile in {"proactive", "core", "deep"},
         "recall_replay": profile in {"core", "deep", "reuse"},
         "recall_live": profile in {"deep", "reuse"},
         "thin": profile in {"core", "deep", "reuse"},
+        "native_subagent": profile == "subagent",
         "static": profile in {"core", "deep", "reuse"} and not failed_from,
     }
 
@@ -127,6 +129,7 @@ def selected_inputs(
     case_pattern: str = "",
     failed_from: str = "",
     external_cache: Path = EXTERNAL_CACHE_DEFAULT,
+    codex_home: Path | None = None,
 ) -> list[SourceInput]:
     flags = _profile_flags(
         profile,
@@ -144,6 +147,46 @@ def selected_inputs(
         ("tests/test_behavior_regression_snapshot.py", "snapshot_builder_tests"),
         ("tests/test_behavior_regression_incremental.py", "incremental_selector_tests"),
         ("evals/behavior_regression/catalog.json", "catalog"),
+        (
+            "evals/behavior_regression/capability_lineage.v1.json",
+            "capability_lineage_migration_preflight",
+        ),
+        (
+            "tests/test_behavior_capability_lineage.py",
+            "capability_lineage_migration_preflight_tests",
+        ),
+        (
+            "scripts/build_codex_productivity_recovery.py",
+            "codex_productivity_recovery_builder",
+        ),
+        (
+            "infra/codex_productivity_recovery/v1/manifest.v1.json",
+            "codex_productivity_recovery_manifest",
+        ),
+        (
+            "infra/codex_productivity_recovery/v1/codex-productivity-recovery.v1.zip",
+            "codex_productivity_recovery_archive",
+        ),
+        (
+            "tests/test_codex_productivity_recovery.py",
+            "codex_productivity_recovery_tests",
+        ),
+        (
+            "evals/intent_continuity_baseline/decision_model.v1.json",
+            "intent_continuity_baseline",
+        ),
+        (
+            "evals/intent_continuity_baseline/consumer_coverage.v1.json",
+            "intent_action_consumer_coverage",
+        ),
+        (
+            "evals/intent_continuity_baseline/BASELINE.md",
+            "intent_action_baseline_documentation",
+        ),
+        (
+            "tests/test_intent_action_consumer_coverage.py",
+            "intent_action_coverage_tests",
+        ),
     ]
     if flags["static"]:
         relative_inputs.append(
@@ -151,9 +194,22 @@ def selected_inputs(
         )
     if flags["context"] or flags["proactive"]:
         relative_inputs.append(("tests/test_repo_safety.py", "repository_safety_tests"))
+    if flags["intent"]:
+        relative_inputs.extend(
+            (
+                ("tests/test_parent_frame_admission.py", "parent_frame_admission_tests"),
+                ("evals/parent_frame_admission", "parent_frame_admission"),
+            )
+        )
+    if flags["native_subagent"]:
+        relative_inputs.append(
+            (
+                "tests/test_native_subagent_trajectory.py",
+                "native_subagent_trajectory_tests",
+            )
+        )
     for enabled, relative, role in (
         (flags["capability"], "evals/codex_capability", "capability_eval"),
-        (flags["context"], "evals/context_intent_alignment", "context_eval"),
         (flags["proactive"], "evals/proactive_mature_first", "proactive_eval"),
         (
             flags["recall_replay"] or flags["recall_live"],
@@ -161,6 +217,11 @@ def selected_inputs(
             "mature_capability_recall_eval",
         ),
         (flags["thin"], "evals/thin_localization", "thin_localization_eval"),
+        (
+            flags["native_subagent"],
+            "evals/native_subagent_trajectory",
+            "native_subagent_trajectory_eval",
+        ),
     ):
         if enabled:
             relative_inputs.append((relative, role))
@@ -169,6 +230,16 @@ def selected_inputs(
         SourceInput(repo_root / relative, role, relative.replace("\\", "/"))
         for relative, role in relative_inputs
     ]
+    if flags["intent"]:
+        if codex_home is None:
+            raise ValueError("codex_home is required for the parent-frame admission profile")
+        inputs.append(
+            SourceInput(
+                codex_home / "AGENTS.md",
+                "global_working_kernel",
+                "external/global_codex_home/AGENTS.md",
+            )
+        )
     if flags["recall_live"]:
         inputs.append(
             SourceInput(
@@ -231,6 +302,7 @@ def create_snapshot(
     case_pattern: str = "",
     failed_from: str = "",
     external_cache: Path = EXTERNAL_CACHE_DEFAULT,
+    codex_home: Path | None = None,
 ) -> Path:
     repo_root = repo_root.resolve()
     output_root = output_root.resolve()
@@ -252,6 +324,7 @@ def create_snapshot(
         case_pattern=case_pattern,
         failed_from=failed_from,
         external_cache=external_cache,
+        codex_home=codex_home,
     )
     input_rows: list[dict[str, object]] = []
     external_rebindings: list[tuple[str, str]] = []
@@ -262,7 +335,8 @@ def create_snapshot(
             target = effective_root / source_input.logical_path
         except ValueError:
             target = external_root / source_input.role / source.name
-            external_rebindings.append((str(source), str(target)))
+            if source_input.role == "live_discovery_cache":
+                external_rebindings.append((str(source), str(target)))
         _copy_tree_files(source, target)
         input_rows.append(
             {
@@ -334,15 +408,17 @@ def _parser() -> argparse.ArgumentParser:
             "smoke",
             "core",
             "deep",
-            "context",
             "proactive",
             "reuse",
+            "intent",
+            "subagent",
         ),
     )
     parser.add_argument("--domain", default="")
     parser.add_argument("--case-pattern", default="")
     parser.add_argument("--failed-from", default="")
     parser.add_argument("--external-cache", type=Path, default=EXTERNAL_CACHE_DEFAULT)
+    parser.add_argument("--codex-home", type=Path)
     return parser
 
 
@@ -356,6 +432,7 @@ def main() -> int:
         case_pattern=args.case_pattern,
         failed_from=args.failed_from,
         external_cache=args.external_cache,
+        codex_home=args.codex_home,
     )
     print(manifest)
     return 0

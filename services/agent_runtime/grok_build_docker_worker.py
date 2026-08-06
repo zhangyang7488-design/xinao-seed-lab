@@ -101,10 +101,7 @@ MIN_GROK_CLI_VERSION = (0, 2, 85)
 RULES_SNAPSHOT_VERSION = "xinao.grok.rules_snapshot.v1"
 REQUIRED_RULE_PATHS = (
     Path("/app/AGENTS.md"),
-    Path("/mainline/00_先读我_主线入口与读取顺序.txt"),
-    Path("/mainline/工具胶水宪法/软件工具胶水宪法_当前有效.txt"),
-    Path("/mainline/工具胶水宪法/跨接缝执行封套与一致性协议_当前有效.txt"),
-    Path("/evidence/state/Codex_Situation_Island/contracts/working_agreement.md"),
+    Path("/app/docs/tool_glue/GENERIC_ENGINEERING_SUBSTRATE_CURRENT.md"),
 )
 
 

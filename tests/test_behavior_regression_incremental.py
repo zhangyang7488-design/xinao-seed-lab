@@ -24,14 +24,14 @@ def _manifest(path: Path, prompt_hash: str, cases_hash: str) -> None:
                     "sha256": "a" * 64,
                 },
                 {
-                    "path": "evals/context_intent_alignment/prompt.txt",
-                    "role": "context_eval",
+                    "path": "evals/intent_continuity_baseline/decision_model.v1.json",
+                    "role": "intent_continuity_baseline",
                     "size_bytes": 1,
                     "sha256": prompt_hash,
                 },
                 {
-                    "path": "evals/context_intent_alignment/cases.yaml",
-                    "role": "context_eval",
+                    "path": "evals/proactive_mature_first/cases.json",
+                    "role": "proactive_eval",
                     "size_bytes": 1,
                     "sha256": cases_hash,
                 },

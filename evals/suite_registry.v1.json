@@ -6,7 +6,8 @@
     "behavior": {
       "object": "agent_instruction_routing_tool_context_and_preference_behavior",
       "catalog": "evals/behavior_regression/catalog.json",
-      "intent_decision_model": "evals/context_intent_alignment/decision_model.v1.json",
+      "capability_lineage": "evals/behavior_regression/capability_lineage.v1.json",
+      "intent_decision_model": "evals/intent_continuity_baseline/decision_model.v1.json",
       "runner": "scripts/run_behavior_regression.ps1",
       "candidate_intake": "scripts/New-BehaviorRegressionCandidate.ps1",
       "failure_import": "scripts/Import-PromptfooFailuresToBehaviorCandidates.ps1",
@@ -14,16 +15,27 @@
       "cannot_claim": "domain_edge_or_economic_truth"
     }
   },
+  "capability_migration_preflight": {
+    "registry": "evals/behavior_regression/capability_lineage.v1.json",
+    "test": "tests/test_behavior_capability_lineage.py",
+    "recovery_archive": "infra/codex_productivity_recovery/v1/codex-productivity-recovery.v1.zip",
+    "recovery_manifest": "infra/codex_productivity_recovery/v1/manifest.v1.json",
+    "recovery_test": "tests/test_codex_productivity_recovery.py",
+    "authority": false,
+    "runtime_loaded": false,
+    "failure_meaning": "A capability lineage, consumer, or explicit retirement disposition was silently lost; it does not select a task or restore an old route.",
+    "success_cannot_claim": "runtime adoption, domain routing, consumer effect, or parent completion"
+  },
   "pinned_runtime": {
     "promptfoo_root": "D:\\XINAO_RESEARCH_RUNTIME\\tools\\promptfoo",
     "version": "0.121.18"
   },
   "live_agent_suites": [
     {
-      "id": "context_intent_alignment",
-      "path": "evals/context_intent_alignment",
-      "runner": "scripts/run_context_intent_alignment_eval.ps1",
-      "role": "intent_object_context_preference_behavior_regression"
+      "id": "parent_frame_admission",
+      "path": "evals/parent_frame_admission",
+      "runner": "scripts/run_parent_frame_admission_eval.ps1",
+      "role": "generic_parent_frame_transition_and_mature_owner_admission"
     },
     {
       "id": "proactive_mature_first",
@@ -54,6 +66,20 @@
       "path": "evals/thin_localization",
       "runner": "scripts/run_open_world_reuse_eval.ps1",
       "role": "parameter_only_binding_with_real_external_invocation_swap_and_lesion"
+    },
+    {
+      "id": "native_subagent_trajectory",
+      "path": "evals/native_subagent_trajectory",
+      "runner": "scripts/run_behavior_regression.ps1 -Profile subagent",
+      "role": "fail_closed_disposable_native_codex_subagent_trace_capability_probe"
+    }
+  ],
+  "retired_compatibility_suites": [
+    {
+      "id": "context_intent_alignment",
+      "status": "removed_from_worktree",
+      "recovery": "Git history or E:\\XINAO_COLD_STORAGE\\xinao-global-clean-preimage-20260803-v1\\S-preclean.bundle",
+      "reason": "Pre-clean-baseline suite mixed useful zero-beat intent cases with retired continuous, Goal, default-XINAO, and worker-routing control semantics. Its static core is in evals/intent_continuity_baseline/decision_model.v1.json and its generic live replacement is evals/parent_frame_admission."
     }
   ],
   "admission_fixture_only": [

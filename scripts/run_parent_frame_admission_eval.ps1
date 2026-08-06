@@ -1,12 +1,9 @@
 [CmdletBinding()]
 param(
-    [string]$Domain,
-    [string]$FailedFrom,
     [string]$RuntimeRoot = $(if ($env:XINAO_RUNTIME_ROOT) { $env:XINAO_RUNTIME_ROOT } else { 'D:\XINAO_RESEARCH_RUNTIME' }),
-    [string]$CodexHome = $(Join-Path $HOME '.codex')
+    [string]$CodexHome = $(if ($env:CODEX_HOME) { $env:CODEX_HOME } else { Join-Path $HOME '.codex' })
 )
 
 $runner = Join-Path $PSScriptRoot 'run_behavior_regression.ps1'
-& $runner -Profile context -Domain $Domain -FailedFrom $FailedFrom `
-    -RuntimeRoot $RuntimeRoot -CodexHome $CodexHome
+& $runner -Profile intent -RuntimeRoot $RuntimeRoot -CodexHome $CodexHome
 exit $LASTEXITCODE

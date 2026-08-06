@@ -5,13 +5,16 @@ param(
     [ValidateSet('smoke', 'core', 'deep')]
     [string]$Profile = 'smoke',
     [string]$RuntimeRoot = $(if ($env:XINAO_RUNTIME_ROOT) { $env:XINAO_RUNTIME_ROOT } else { 'D:\XINAO_RESEARCH_RUNTIME' }),
-    [string]$CodexHome = $(Join-Path $HOME '.codex')
+    [string]$CodexHome = $(if ($env:CODEX_HOME) { $env:CODEX_HOME } else { Join-Path $HOME '.codex' })
 )
 
 $ErrorActionPreference = 'Stop'
-$batteryId = Get-Date -Format 'yyyyMMdd-HHmmss-fff'
+$batteryId = '{0}-{1}-{2}' -f `
+    (Get-Date -Format 'yyyyMMdd-HHmmss-fff'), `
+    $PID, `
+    ([Guid]::NewGuid().ToString('N').Substring(0, 8))
 $batteryRoot = Join-Path $RuntimeRoot "state\human-capabilities\evals\behavior-battery\$batteryId"
-New-Item -ItemType Directory -Path $batteryRoot -Force | Out-Null
+New-Item -ItemType Directory -Path $batteryRoot -ErrorAction Stop | Out-Null
 $consolePath = Join-Path $batteryRoot 'behavior.console.log'
 $console = & (Join-Path $PSScriptRoot 'run_behavior_regression.ps1') `
     -Profile $Profile -RuntimeRoot $RuntimeRoot -CodexHome $CodexHome 2>&1

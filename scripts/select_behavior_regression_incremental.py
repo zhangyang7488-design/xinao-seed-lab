@@ -20,10 +20,11 @@ NON_RUNTIME_ROLES = {
     "snapshot_builder_tests",
     "incremental_selector_tests",
     "static_assertion_tests",
+    "capability_lineage_migration_preflight",
+    "capability_lineage_migration_preflight_tests",
 }
 NON_RUNTIME_PATHS = {
-    "evals/context_intent_alignment/cases.yaml",
-    "evals/context_intent_alignment/suite.json",
+    "evals/proactive_mature_first/cases.json",
 }
 
 

@@ -4,24 +4,26 @@
   "runner": "scripts/run_behavior_regression.ps1",
   "candidate_intake": "scripts/New-BehaviorRegressionCandidate.ps1",
   "result_root": "D:\\XINAO_RESEARCH_RUNTIME\\state\\human-capabilities\\evals\\behavior-regression",
-  "declared_case_count": 141,
+  "declared_case_count": 62,
   "profiles": {
     "capability": "One fresh Codex app-server capability canary.",
-    "smoke": "Capability canary plus representative context cases.",
-    "core": "Capability canary, context cases, proactive mature-first cases, frozen mature-candidate recall, one real thin-localization trajectory, and static validation.",
-    "deep": "Core plus all context cases and one current open-world public-repository search.",
-    "context": "All 124 context and intent live cases; retained for the compatibility runner.",
-    "proactive": "All six mature-first live cases; worker routing is owned by context_intent_alignment.",
-    "reuse": "Only the four live open-world-reuse cases plus their deterministic contract validation."
+    "smoke": "One fresh parent-frame admission case plus one Codex app-server capability canary; retired routing golds remain excluded.",
+    "core": "Twenty generic parent-frame, bounded-transition, stable-behavior-delivery, default-owner, first-principles, and mature-owner admission cases plus capability, proactive mature-first, frozen mature-candidate recall, one real thin-localization trajectory, and static validation.",
+    "deep": "Core plus one current open-world public-repository search.",
+    "intent": "Forty-four generic fresh Codex parent-frame, source-aware utterance-relation, semantic-scope-fidelity, stable-behavior-delivery, bounded-transition, default-owner, first-principles, mature-owner, owner-worker dual-track, and cold-native standing exception admission cases without retired domain routing.",
+    "proactive": "All six mature-first live cases; routing facts are checked by their real engineering consumers, not the retired context suite.",
+    "reuse": "Only the four live open-world-reuse cases plus their deterministic contract validation.",
+    "subagent": "One fail-closed disposable native-Codex-subagent Owner/worker/consumer capability probe; not part of core or deep."
   },
   "live_profile_case_counts": {
     "capability": 1,
-    "smoke": 89,
-    "core": 129,
-    "deep": 135,
-    "context": 124,
+    "smoke": 2,
+    "core": 30,
+    "deep": 31,
+    "intent": 44,
     "proactive": 6,
-    "reuse": 4
+    "reuse": 4,
+    "subagent": 1
   },
   "suites": [
     {
@@ -33,12 +35,13 @@
       "runtime_claim_allowed": true
     },
     {
-      "id": "context_intent_alignment",
+      "id": "parent_frame_admission",
       "kind": "promptfoo_live",
-      "case_count": 124,
-      "config": "evals/context_intent_alignment/promptfooconfig.yaml",
-      "case_source": "evals/context_intent_alignment/cases.yaml",
-      "runtime_claim_allowed": true
+      "case_count": 44,
+      "config": "evals/parent_frame_admission/promptfooconfig.yaml",
+      "case_source": "evals/parent_frame_admission/cases.yaml",
+      "runtime_claim_allowed": true,
+      "domain_routing_claim_allowed": false
     },
     {
       "id": "proactive_mature_first",
@@ -87,6 +90,24 @@
       "case_source": "evals/thin_localization/contract_cases.json",
       "validator": "tests/test_open_world_reuse_behavior.py",
       "runtime_claim_allowed": false
+    },
+    {
+      "id": "native_subagent_trajectory",
+      "kind": "promptfoo_live_disposable_workspace_capability_probe",
+      "case_count": 1,
+      "config": "evals/native_subagent_trajectory/promptfooconfig.yaml",
+      "case_source": "evals/native_subagent_trajectory/promptfooconfig.yaml",
+      "diagnostic_probe_only": true,
+      "native_multi_agent_runtime_claim_allowed": false,
+      "parent_owner_and_consumer_claim_allowed": false,
+      "child_terminal_trace_claim_allowed": false,
+      "child_internal_tool_trace_claim_allowed": false,
+      "production_feature_enablement_claim_allowed": false,
+      "runtime_claim_requires": [
+        "spawn identity in the parent raw trace",
+        "completed child terminal for that same identity",
+        "later nonce-bearing Owner consumer invocation"
+      ]
     }
   ],
   "components": [

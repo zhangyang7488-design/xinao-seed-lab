@@ -6,6 +6,7 @@ from pathlib import Path
 
 import pytest
 from scripts.prepare_direct_worker_pool_common_contract import (
+    DEFAULT_RULES_FILE,
     ContractPreparationError,
     build_effective_prompt_bytes,
     prepare_contract,
@@ -30,6 +31,16 @@ def _write_json(path: Path, value: object) -> None:
         json.dumps(value, ensure_ascii=False, indent=2),
         encoding="utf-8",
     )
+
+
+def test_default_rules_are_the_generic_engineering_substrate() -> None:
+    assert DEFAULT_RULES_FILE.name == "GENERIC_ENGINEERING_SUBSTRATE_CURRENT.md"
+    text = DEFAULT_RULES_FILE.read_text(encoding="utf-8")
+    assert "SENTINEL:GENERIC_ENGINEERING_SUBSTRATE_CURRENT_V1" in text
+    assert "不定义任何科学父意图" in text
+    assert "工程层不能反向决定科学是否开始、研究什么或何时结束" in text
+    assert "WAIT_FOR_REAL_TARGET" not in text
+    assert "biased-urn" not in text
 
 
 def test_prepare_contract_binds_prompt_selection_rules_context_and_output(
