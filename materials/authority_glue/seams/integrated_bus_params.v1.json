@@ -1,7 +1,6 @@
 {
   "schema_version": "xinao.integrated_bus_params.v1",
   "sentinel": "SENTINEL:XINAO_INTEGRATED_BUS_PARAMS_V1",
-  "not_333_mainline": false,
   "external_seam_refs": {
     "langgraph_plugin_hello": "E:\\XINAO_EXTERNAL_MATURE\\codex_20260627\\official\\temporalio__samples-python\\langgraph_plugin\\graph_api\\hello_world\\workflow.py",
     "temporal_langgraph_docs": "https://docs.temporal.io/develop/python/integrations/langgraph",
@@ -11,7 +10,7 @@
   },
   "runtime_root": "D:\\XINAO_RESEARCH_RUNTIME",
   "repo_root": "E:\\XINAO_RESEARCH_WORKSPACES\\S",
-  "input_path": "E:\\XINAO_RESEARCH_WORKSPACES\\S\\materials\\phase0_test_input.md",
+  "input_path": "E:\\XINAO_RESEARCH_WORKSPACES\\S\\materials\\integrated_bus_smoke_input.md",
   "fallback_input_path": "D:\\XINAO_RESEARCH_RUNTIME\\state\\integrated_bus_intake\\default_input.md",
   "fallback_input_path_container": "/evidence/state/integrated_bus_intake/default_input.md",
   "intake_path_policy_cn": "容器默认 /evidence 或 materials；禁止默认读主机 Desktop\\*.lnk；缺失记 named_blocker 并 synthetic fallback",
@@ -119,7 +118,7 @@
   "memory_bus_skip_without_promotion": true,
   "mem0_bind_enabled": false,
   "mem0_oss_mode": false,
-  "mem0_user_id": "xinao_seed_cortex",
+  "mem0_user_id": "codex_s_engineering",
   "mem0_ollama_base_url": "http://127.0.0.1:11434",
   "mem0_llm_model": "qwen3:8b",
   "mem0_embedder_model": "nomic-embed-text",

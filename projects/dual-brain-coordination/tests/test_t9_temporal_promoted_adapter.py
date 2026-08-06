@@ -14,6 +14,9 @@ from xinao_coordination.errors import AuthorizationError, InvalidTransitionError
 from xinao_coordination.service import TASK_DISPATCHERS, CoordinationService
 from xinao_coordination.temporal import activities as temporal_activities
 from xinao_coordination.temporal.client import TemporalClient, reset_mock_registry
+from xinao_coordination.temporal.envelope import (
+    DEFAULT_LANGGRAPH_INPUT_REF as CURRENT_LANGGRAPH_INPUT_REF,
+)
 from xinao_coordination.temporal.envelope import envelope_from_kernel_task
 from xinao_coordination.temporal.policy import temporal_policy
 from xinao_coordination.temporal.workflow import (
@@ -130,7 +133,7 @@ def test_t9_promoted_envelope_routes_to_canonical_langgraph_child(
         "enabled": True,
         "task_queue": DEFAULT_LANGGRAPH_CHILD_QUEUE,
         "workflow_type": DEFAULT_LANGGRAPH_CHILD_WORKFLOW,
-        "input_ref": "/app/materials/phase0_test_input.md",
+        "input_ref": CURRENT_LANGGRAPH_INPUT_REF,
     }
 
 

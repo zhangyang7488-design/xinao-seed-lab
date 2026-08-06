@@ -1,4 +1,4 @@
-"""Thin worker lane carrier — mature seams only (not phase1 handroll)."""
+"""Worker-lane carrier for bounded provider-backed draft and review work."""
 
 from __future__ import annotations
 
@@ -40,7 +40,7 @@ from services.agent_runtime.thin_provider_client import (
 
 SCHEMA_VERSION = "xinao.codex_s.worker_lane_carrier.thin.v1"
 SENTINEL = "SENTINEL:XINAO_CODEX_S_WORKER_LANE_CARRIER_THIN_V1"
-TASK_ID = "codex_s_worker_lane_carrier_20260708"
+TASK_ID = "codex_s_worker_lane_carrier"
 
 MODE_ORDER = (
     "draft",
@@ -82,8 +82,6 @@ QWEN_FALLBACK_ALLOWED_REASONS = {
     "PROVIDER_GATEWAY_AUTH_OR_UPSTREAM",
 }
 EXTERNAL_DRAFT_PROVIDER_IDS = {QWEN_CHEAP_WORKER_PROVIDER_ID}
-LOCAL_STUB_PROVIDER_PREFIXES = ("seed_cortex.local_",)
-PROVIDER_SCHEDULER_TASK_ID = "codex_native_provider_scheduler_phase4_20260704"
 
 FallbackInvoker = Callable[..., dict[str, Any]]
 QwenInvoker = Callable[..., dict[str, Any]]
@@ -96,23 +94,6 @@ def safe_stem(value: str, *, limit: int = 96) -> str:
         return cleaned
     digest = hashlib.sha256(value.encode("utf-8", errors="replace")).hexdigest()[:12]
     return f"{cleaned[: limit - 13].strip('-_.') or 'default'}-{digest}"
-
-
-def write_text(path: Path, text: str) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_name(f"{path.name}.{os.getpid()}.{time.time_ns()}.tmp")
-    tmp.write_text(text, encoding="utf-8", newline="\n")
-    os.replace(tmp, path)
-
-
-def read_json(path: Path) -> dict[str, Any]:
-    if not path.is_file():
-        return {}
-    try:
-        payload = json.loads(path.read_text(encoding="utf-8"))
-    except json.JSONDecodeError:
-        return {}
-    return payload if isinstance(payload, dict) else {}
 
 
 def sha256_json(payload: Any) -> str:
@@ -150,65 +131,22 @@ def wave_digest_stem(wave_id: str) -> str:
     return f"mdwp-{hashlib.sha256(wave_id.encode('utf-8')).hexdigest()[:16]}"
 
 
-def provider_scheduler_paths(runtime: Path) -> dict[str, Path]:
-    state = runtime / "state" / PROVIDER_SCHEDULER_TASK_ID
-    return {
-        "state": state,
-        "latest": state / "latest.json",
-        "qwen_prepaid_policy": state / "qwen_prepaid_policy" / "latest.json",
-        "qwen_invocation": state / "qwen_invocation" / "latest.json",
-    }
-
-
 def load_provider_route_context(runtime: Path) -> dict[str, Any]:
-    paths = provider_scheduler_paths(runtime)
-    qwen_policy = read_json(paths["qwen_prepaid_policy"])
-    qwen_invocation = read_json(paths["qwen_invocation"])
     gateway_url = resolve_gateway_base_url()
     probe = probe_gateway(base_url=gateway_url)
     gateway_ok = probe.get("ok") is True
-    qwen_ready = gateway_ok or (
-        qwen_policy.get("status") == "qwen_prepaid_policy_ready"
-        and (
-            qwen_invocation.get("status") == "qwen_dashscope_canary_ready"
-            or qwen_invocation.get("succeeded") is True
-        )
-    )
-    cheap_models = (
-        qwen_policy.get("models", {}).get("cheap_default_candidates")
-        if isinstance(qwen_policy.get("models"), dict)
-        else []
-    )
-    selected_model = sanitize_default_draft_model(
-        str(
-            qwen_invocation.get("selected_model")
-            or (cheap_models[0] if isinstance(cheap_models, list) and cheap_models else "")
-            or "qwen3.6-flash"
-        )
-    )
+    selected_model = sanitize_default_draft_model("qwen3.6-flash")
     return {
         "runtime_root": str(runtime),
-        "provider_scheduler_task_id": PROVIDER_SCHEDULER_TASK_ID,
-        "provider_scheduler_latest_ref": str(paths["latest"]),
-        "qwen_prepaid_policy_ref": str(paths["qwen_prepaid_policy"]),
-        "qwen_invocation_ref": str(paths["qwen_invocation"]),
-        "qwen_prepaid_policy_status": str(qwen_policy.get("status") or ""),
-        "qwen_invocation_status": str(qwen_invocation.get("status") or ""),
-        "qwen_prepaid_cheap_worker_ready": qwen_ready,
-        "qwen_prepaid_cheap_worker_default_first": gateway_ok or qwen_ready,
+        "qwen_prepaid_cheap_worker_ready": gateway_ok,
+        "qwen_prepaid_cheap_worker_default_first": gateway_ok,
         "qwen_selected_model": selected_model,
-        "qwen_api_key_source_label": str(
-            qwen_policy.get("secret_status", {}).get("api_key_source_label")
-            if isinstance(qwen_policy.get("secret_status"), dict)
-            else ("thin_glue_gateway" if gateway_ok else "")
-        ),
+        "qwen_api_key_source_label": "provider_gateway" if gateway_ok else "",
         "gateway_probe": probe,
         "gateway_base_url": gateway_url,
-        "routing_contract": qwen_policy.get("routing_contract", {}),
         "fallback_allowed_reasons": sorted(QWEN_FALLBACK_ALLOWED_REASONS),
         "outputs_to_staging_only": True,
         "direct_repo_write_allowed": False,
-        "refs": {key: str(path) for key, path in paths.items()},
         "not_completion_boundary": True,
         "thin_carrier": True,
     }
@@ -766,7 +704,6 @@ def run_lane(
         and selected_provider in EXTERNAL_DRAFT_PROVIDER_IDS
         and model_invocation_performed
     )
-    local_stub = selected_provider.startswith(LOCAL_STUB_PROVIDER_PREFIXES)
     provider_route = (
         brief.get("provider_route") if isinstance(brief.get("provider_route"), dict) else {}
     )
@@ -792,7 +729,6 @@ def run_lane(
         "fallback_allowed": provider_payload.get("fallback_allowed") is True,
         "provider_route": provider_route,
         "external_draft_invocation": external_draft_invocation,
-        "local_stub": local_stub,
         "artifact_ref": artifact_ref,
         "draft_ref": artifact_ref if mode == "draft" else "",
         "artifact_exists": artifact_exists,
@@ -883,7 +819,6 @@ def run_worker_lane_bus_activity(
         "input_text": input_text,
         "provider_route": provider_route,
         "integrated_bus_bound": integrated_bus_bound,
-        "not_333_mainline": not integrated_bus_bound,
         "completion_claim_allowed": False,
         "outputs_to_staging_only": True,
     }
@@ -925,12 +860,6 @@ def run_worker_lane_bus_activity(
         "mode": mode,
         "provider": provider,
         "integrated_bus_bound": integrated_bus_bound,
-        "not_333_mainline": not integrated_bus_bound,
-        "not_333_mainline_reason": (
-            ""
-            if integrated_bus_bound
-            else "Worker lane invoked outside integrated_bus Temporal activity graph."
-        ),
         "route_role": str(provider_route.get("route_role") or ""),
         "route_class": str(provider_route.get("route_class") or ""),
         "preferred_provider_id": str(provider_route.get("preferred_provider_id") or ""),
@@ -974,7 +903,6 @@ def run_worker_lane_bus_activity(
                     "lane_id": lane_id,
                     "integrated_bus_bound": True,
                     "integrated_bus_temporal_activity": True,
-                    "not_333_mainline": False,
                     "not_mainline_reason": (
                         "Worker lane invoked from integrated_bus Temporal LangGraphPlugin "
                         "activity node (qwen draft + pro review chain)."

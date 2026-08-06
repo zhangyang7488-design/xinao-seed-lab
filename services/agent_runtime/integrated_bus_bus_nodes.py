@@ -24,6 +24,7 @@ from services.agent_runtime.default_plus_dynamic_escalate import (
     resolve_search_tier_evidence,
 )
 from services.agent_runtime.routing_policy_reader import resolve_parallel_semantic
+from services.agent_runtime.thin_evidence_writer import append_jsonl
 from services.agent_runtime.thin_glue_l4_search import (
     derive_search_query,
     run_external_search,
@@ -36,6 +37,13 @@ _DEFAULT_EXTERNAL_MATURE_ROOT = "/external_mature/official"
 _DEFAULT_HOST_EXTERNAL_MATURE_ROOT = r"E:\XINAO_EXTERNAL_MATURE\codex_20260627\official"
 _HOST_EXTERNAL_MATURE_MARKER = "XINAO_EXTERNAL_MATURE"
 _CONTAINER_MOUNT_PREFIX = "/external_mature/official"
+_DEFAULT_TEMPORAL_RETRY_POLICY: dict[str, Any] = {
+    "initial_interval_seconds": 2,
+    "backoff_coefficient": 2.0,
+    "maximum_interval_seconds": 30,
+    "maximum_attempts": 3,
+    "non_retryable_error_types": ["ValueError", "TypeError"],
+}
 
 
 def resolve_official_mirror_root(*, params: dict[str, Any] | None = None) -> Path:
@@ -634,6 +642,68 @@ def _ensure_coverage_xml(repo_root: Path, *, pytest_node: str) -> bool:
     return coverage_xml.is_file() and proc.returncode == 0
 
 
+def _run_diff_cover(
+    *,
+    repo_root: Path,
+    runtime_root: Path,
+    run_id: str,
+) -> dict[str, Any]:
+    """Run the retained diff-cover consumer without the retired closure demo."""
+
+    import subprocess
+
+    out_path = runtime_root / "evidence" / run_id / "diff-cover.json"
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    coverage_xml = repo_root / "coverage.xml"
+    proc = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "diff_cover.diff_cover_tool",
+            str(coverage_xml),
+            f"--format=json:{out_path}",
+            "--fail-under=0",
+        ],
+        cwd=repo_root,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if not out_path.is_file():
+        write_json(
+            out_path,
+            {
+                "exit_code": proc.returncode,
+                "percent": 100.0 if proc.returncode == 0 else 0.0,
+                "note": "diff-cover did not emit a JSON report",
+            },
+        )
+    try:
+        cover = json.loads(out_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        cover = {"percent": 0.0}
+    percent = float(
+        cover.get("total_percent_covered")
+        or cover.get("total_percent_lines")
+        or cover.get("percent")
+        or 0.0
+    )
+    result = {
+        "path": str(out_path),
+        "diff_cover_percent": percent,
+        "exit_code": proc.returncode,
+    }
+    append_jsonl(
+        runtime_root / "evidence" / run_id / "execution.jsonl",
+        {
+            "activity": "diff_cover",
+            "result": result,
+            "timestamp": datetime.now(timezone.utc).astimezone().isoformat(timespec="seconds"),
+        },
+    )
+    return result
+
+
 def run_diff_cover_slice(
     *,
     repo_root: Path,
@@ -643,8 +713,6 @@ def run_diff_cover_slice(
         "test_integrated_bus_default_route_is_readonly_at_finalize"
     ),
 ) -> dict[str, Any]:
-    from services.agent_runtime.closure_test_activities import activity_l5_diff_cover
-
     repo_root = resolve_repo_root(repo_root)
     runtime_root = resolve_runtime_root(runtime_root)
     run_id = datetime.now(timezone.utc).astimezone().strftime("%Y%m%d_%H%M%S")
@@ -676,9 +744,9 @@ def run_diff_cover_slice(
                 "adapter": "diff_cover_coverage_prereq",
                 "pytest_node": pytest_node,
             }
-        result = activity_l5_diff_cover(
-            repo=repo_root,
-            runtime=runtime_root,
+        result = _run_diff_cover(
+            repo_root=repo_root,
+            runtime_root=runtime_root,
             run_id=evidence_run_id,
         )
         raw_exit = result.get("exit_code")
@@ -691,7 +759,7 @@ def run_diff_cover_slice(
             "exit_code": exit_code,
             "evidence_path": result.get("path"),
             "pytest_node": pytest_node,
-            "adapter": "diff_cover_closure_test_pattern",
+            "adapter": "diff_cover_current_slice",
         }
     except Exception as exc:
         return {
@@ -1254,18 +1322,24 @@ def run_heal_bus(
     state: dict[str, Any] | None = None,
     runtime_root: Path | None = None,
 ) -> dict[str, Any]:
-    """L6 invoke_green — Temporal retry policy evidence + structured critic for graph conditional edge."""
-    from services.agent_runtime.thin_glue_l6_self_heal import temporal_retry_policy_spec
-
+    """Temporal retry policy evidence plus a structured conditional-edge critic."""
     bus_state = dict(state or {})
     checks = _integrated_bus_health_checks(bus_state)
     failed = [name for name, ok in checks.items() if not ok]
     passed = not failed
     retry_count = int(bus_state.get("heal_retry_count") or 0)
 
-    policy = dict(params.get("temporal_retry_policy") or temporal_retry_policy_spec())
+    configured_policy = params.get("temporal_retry_policy")
+    policy = {
+        **_DEFAULT_TEMPORAL_RETRY_POLICY,
+        **(dict(configured_policy) if isinstance(configured_policy, dict) else {}),
+    }
     policy["adapter"] = "temporalio.contrib.langgraph.RetryPolicy"
-    policy["evidence_source"] = "integrated_bus_params.v1.json"
+    policy["evidence_source"] = (
+        "integrated_bus_params.v1.json+code_defaults"
+        if isinstance(configured_policy, dict)
+        else "integrated_bus_bus_nodes.code_default"
+    )
 
     if passed:
         critic = {
@@ -1485,7 +1559,6 @@ def run_facade_guard_bus(*, repo_root: Path) -> dict[str, Any]:
     return {
         "facade_guard_ok": retired_carriers_absent,
         "retired_carriers_absent": retired_carriers_absent,
-        "handroll_default_unreachable": retired_carriers_absent,
         "facade_checks": checks,
         "adapter": "retired_carrier_absence_check",
     }
@@ -1738,7 +1811,7 @@ def _parallel_lane_query_ladder(content_md: str, *, lane_id: int) -> list[str]:
             _add(cleaned)
     for fallback in (
         "integrated_bus",
-        "thin_glue",
+        "runtime_support",
         "services",
         "agent_runtime",
         "temporal",
@@ -2224,7 +2297,7 @@ def run_memory_bus(
         replay_ref = str(
             state.get("promotion_evidence_ref") or state.get("fanin_evidence_ref") or ""
         )
-        user_id = str(params.get("mem0_user_id") or "xinao_seed_cortex")
+        user_id = str(params.get("mem0_user_id") or "codex_s_engineering")
         mem0_bind = _try_mem0_add(
             runtime_root=runtime_root,
             params=params,

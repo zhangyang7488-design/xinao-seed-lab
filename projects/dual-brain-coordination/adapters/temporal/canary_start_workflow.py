@@ -114,7 +114,7 @@ async def main() -> int:
             "enabled": True,
             "task_queue": "xinao-integrated-langgraph-plugin-queue",
             "workflow_type": "XinaoIntegratedBusWorkflow",
-            "input_ref": "/app/materials/phase0_test_input.md",
+            "input_ref": "/app/materials/integrated_bus_smoke_input.md",
         },
     }
     if payload_path:

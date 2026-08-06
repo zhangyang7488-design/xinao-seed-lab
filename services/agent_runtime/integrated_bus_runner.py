@@ -61,11 +61,6 @@ from services.agent_runtime.thin_glue_stack import DEFAULT_REPO, DEFAULT_RUNTIME
 SCHEMA_VERSION = "xinao.integrated_bus_runner.v1"
 SENTINEL = "SENTINEL:XINAO_INTEGRATED_BUS_RUNNER_READY"
 WINDOWLESS_CREATIONFLAGS = getattr(subprocess, "CREATE_NO_WINDOW", 0) if os.name == "nt" else 0
-REPLACES = [
-    "phase0_minimal_weld_activity",
-    "phase0_external_seam_invoke",
-    "thin_glue_temporal_single_activity",
-]
 
 
 def integrated_bus_default_enabled() -> bool:
@@ -249,7 +244,7 @@ def _initial_state_for_docker_worker(
         runtime_root=runtime_root,
     )
     if not input_path.is_file():
-        input_container = "/app/materials/phase0_test_input.md"
+        input_container = "/app/materials/integrated_bus_smoke_input.md"
     params_host = DEFAULT_PARAMS
     params_container = _host_path_to_container(
         params_host, host_root=repo_root, container_root="/app"
@@ -1008,10 +1003,7 @@ def _build_payload(
             result.get("gitpython_invoke_ok") is True
             and str(result.get("git_commit_adapter") or "") == "gitpython_readonly"
         ),
-        "handroll_driver_replaced": True,
-        "handroll_intact_false": True,
-        "facade_default_unreachable": result.get("handroll_default_unreachable") is True
-        or result.get("facade_guard_ok") is True,
+        "retired_carriers_absent": result.get("facade_guard_ok") is True,
         "mirror_registry_probe": result.get("mirror_registry_ok") is True,
         "aaq_claim_written": result.get("aaq_ok") is True,
         "pytest_slice_green": result.get("pytest_slice_ok") is True,
@@ -1103,12 +1095,6 @@ def _build_payload(
         "integrated_bus_invoke": True,
         "integration_pattern": "temporalio.contrib.langgraph.LangGraphPlugin",
         "graph_id": GRAPH_ID,
-        "replaces": REPLACES,
-        "thin_glue": True,
-        "handroll_intact": False,
-        "facade_hard_redirect": True,
-        "mainline_default_hot_path": mainline_default,
-        "not_333_mainline": not mainline_default,
         "invoke_mode": invoke_mode,
         "workflow_id": workflow_id,
         "run_id": run_id,

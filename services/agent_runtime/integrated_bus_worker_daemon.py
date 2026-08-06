@@ -489,9 +489,6 @@ async def run_integrated_bus_worker_daemon(
         "workflow_roles": reg.get("workflow_roles", {}),
         "source_release": release,
         "activity_count": reg.get("activity_count", 0),
-        "handroll_intact": False,
-        "facade_hard_redirect": True,
-        "not_333_mainline": False,
         "completion_claim_allowed": False,
         "generated_at": datetime.now().astimezone().isoformat(),
     }

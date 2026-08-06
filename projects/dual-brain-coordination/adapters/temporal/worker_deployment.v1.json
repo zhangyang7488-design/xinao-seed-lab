@@ -1,15 +1,15 @@
 {
   "schema_version": "xinao.temporal.worker_deployment.v1",
   "deployment_name": "xinao-dualbrain-promoted",
-  "build_id": "5cbffa75cb65c6f66f9e8a4b0d819519",
-  "source_digest_sha256": "5cbffa75cb65c6f66f9e8a4b0d8195192cfdb173eb65c33a42f62b3a85755b85",
+  "build_id": "3b1dc0aadeda7bedfc279468290ece99",
+  "source_digest_sha256": "3b1dc0aadeda7bedfc279468290ece99a52f44731629f231385d400904e9dd8a",
   "use_worker_versioning": true,
   "default_versioning_behavior": "PINNED",
   "temporalio": "1.30.0",
   "target_server": "1.31.0",
   "task_queue": "xinao-dualbrain-promoted-v1",
   "source_hashes": {
-    "src/xinao_coordination/temporal/workflow.py": "395e3a5ee1bca0414acebc4eb07f944464d91a16899530846006b56c1155e377",
+    "src/xinao_coordination/temporal/workflow.py": "250e8978c1fcc2a7e591db15f9508e70d69387049d3a5b5f41afe462b83d77d2",
     "src/xinao_coordination/temporal/activities.py": "6b33d7213af2d8d0d2006807a6dfde0ca74d8761a0a8a2201b231a1b21387981",
     "src/xinao_coordination/temporal/grok_parallel.py": "54d9dc96209572506b638dcc9749fc4ca59ea1e5b6af53c578d262bf52d50d8c",
     "src/xinao_coordination/agent_controller.py": "ed62bb861334ae6e4b194ef282ebe1e56b14efd5c561883b1ff94e81d8f3e856",

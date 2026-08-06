@@ -38,23 +38,3 @@ def test_explicit_existing_repo_override_wins_over_environment(
     from services.agent_runtime.carrier_identity import resolve_code_carrier_root
 
     assert resolve_code_carrier_root(explicit) == explicit.resolve()
-
-
-@pytest.mark.parametrize(
-    "module_name",
-    [
-        "services.agent_runtime.closure_test_activities",
-    ],
-)
-def test_remaining_host_entrypoints_share_the_loaded_source_carrier(
-    module_name: str,
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    monkeypatch.delenv("XINAO_CODEX_S_REPO_ROOT", raising=False)
-    monkeypatch.chdir(tmp_path)
-
-    module = importlib.import_module(module_name)
-    module = importlib.reload(module)
-
-    assert module.DEFAULT_REPO.resolve() == REPO_ROOT
