@@ -29,11 +29,13 @@ quota pool; built-in collaboration subagents require exceptional net benefit.
 - the reusable dual-brain coordination kernel;
 - recovery and safe-cleanup tooling with explicit consumer verification.
 
-The root Temporal/LangGraph and extended Compose stack are retained as cold,
-conditional engineering capabilities. They are not a default route and remain
-`partial` until an exact current consumer supplies a fresh canary. Historical
-XINAO task-entry, Seed Cortex, and scientific-control compatibility shims are
-not part of that retained surface.
+The root Temporal/LangGraph route remains a cold, conditional engineering
+capability. Compose keeps a small Temporal core and independent `worker`,
+`gateway`, `search`, and `ollama` profiles; the former catch-all `extended`
+stack is retired. These profiles do not select a default route, and the durable
+worker remains `partial` until an exact current consumer supplies a fresh
+canary. Historical XINAO task-entry, Seed Cortex, and scientific-control
+compatibility shims are not part of that retained surface.
 
 The removed legacy XINAO platform and its tests are absent from the active tree.
 Git history is the code recovery boundary; the E-drive archive holds unique

@@ -1462,34 +1462,32 @@ def run_mirror_registry_bus(
 
 
 def run_facade_guard_bus(*, repo_root: Path) -> dict[str, Any]:
-    from services.agent_runtime.integrated_bus_facade_redirect import (
-        FACADE_MODULE_NAMES,
-        facade_hard_redirect_enabled,
-    )
     from services.agent_runtime.thin_glue_stack import DEFAULT_REPO
 
-    redirect_on = facade_hard_redirect_enabled()
+    retired_modules = (
+        "current_task_source_intake",
+        "codex_s_light_research_loop",
+        "codex_native_provider_scheduler_phase4",
+        "worker_dispatch_ledger",
+        "pre_pass_audit_loop",
+    )
     scan_root = repo_root if (repo_root / "services" / "agent_runtime").is_dir() else DEFAULT_REPO
     checks: list[dict[str, Any]] = []
-    for module_name in FACADE_MODULE_NAMES:
+    for module_name in retired_modules:
         path = scan_root / "services" / "agent_runtime" / f"{module_name}.py"
-        text = path.read_text(encoding="utf-8", errors="replace") if path.is_file() else ""
         checks.append(
             {
                 "module": module_name,
                 "present": path.is_file(),
-                "hard_redirect": "guard_facade_getattr" in text
-                or "facade_hard_redirect_enabled" in text,
-                "retired_star_import": "from services.agent_runtime._retired" in text,
             }
         )
-    star_import_live = any(item.get("retired_star_import") for item in checks)
+    retired_carriers_absent = not any(item.get("present") for item in checks)
     return {
-        "facade_guard_ok": redirect_on and not star_import_live,
-        "facade_hard_redirect": redirect_on,
-        "handroll_default_unreachable": redirect_on,
+        "facade_guard_ok": retired_carriers_absent,
+        "retired_carriers_absent": retired_carriers_absent,
+        "handroll_default_unreachable": retired_carriers_absent,
         "facade_checks": checks,
-        "adapter": "facade_guard_thin_bind",
+        "adapter": "retired_carrier_absence_check",
     }
 
 

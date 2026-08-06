@@ -1,8 +1,8 @@
 {
   "schema_version": "xinao.compose_display_names.v1",
   "sentinel": "SENTINEL:XINAO_COMPOSE_DISPLAY_NAMES",
-  "note_cn": "软件里不适合中文→一律拼音机器名(如 shaxiang/houtai-gongren)；中文只放 display_cn 给人看，可自建改",
-  "naming_rule_cn": "机器=拼音 · 显示=中文 · 旧英文名见 legacy_slugs 兼容探活",
+  "note_cn": "机器名保持拼音稳定；中文仅用于用户可见显示。可选能力各自按 profile 启动，不再共用 extended 抓总入口。",
+  "naming_rule_cn": "机器=拼音 · 显示=中文 · profile=独立消费者能力",
   "user_editable": true,
   "services": {
     "houtai-gongren": {
@@ -11,7 +11,7 @@
       "compose_service": "houtai-gongren",
       "container_name": "houtai-gongren",
       "legacy_slugs": ["xinao-worker"],
-      "step": "2"
+      "profile": "worker"
     },
     "shiwu-ku": {
       "display_cn": "事务库",
@@ -43,15 +43,7 @@
       "compose_service": "moxing-wangguan",
       "container_name": "moxing-wangguan",
       "legacy_slugs": ["xinao-thin-glue-litellm", "litellm"],
-      "step": "1"
-    },
-    "xiangliang-ku": {
-      "display_cn": "向量库",
-      "role_cn": "Qdrant :6333",
-      "compose_service": "xiangliang-ku",
-      "container_name": "xiangliang-ku",
-      "legacy_slugs": ["xinao-qdrant", "qdrant"],
-      "step": "1"
+      "profile": "gateway"
     },
     "bendi-moxing": {
       "display_cn": "本地模型",
@@ -68,57 +60,9 @@
       "compose_service": "waiwang-sousuo",
       "container_name": "waiwang-sousuo",
       "legacy_slugs": ["xinao-searxng", "searxng"],
-      "step": "4"
-    },
-    "keguan-zhuiji": {
-      "display_cn": "观测追踪",
-      "role_cn": "Langfuse UI :3100",
-      "compose_service": "keguan-zhuiji",
-      "container_name": "keguan-zhuiji",
-      "legacy_slugs": ["langfuse", "langfuse-web"],
-      "step": "5"
-    },
-    "keguan-gongren": {
-      "display_cn": "观测工人",
-      "role_cn": "Langfuse Worker",
-      "compose_service": "keguan-gongren",
-      "container_name": "keguan-gongren",
-      "legacy_slugs": ["langfuse-worker"],
-      "step": "5"
-    },
-    "shiyan-zhuiji": {
-      "display_cn": "实验追踪",
-      "role_cn": "MLflow Tracking :5000",
-      "compose_service": "shiyan-zhuiji",
-      "container_name": "shiyan-zhuiji",
-      "legacy_slugs": ["mlflow", "mlflow-tracking"],
-      "step": "7"
-    },
-    "xueyuan-ku": {
-      "display_cn": "血缘库",
-      "role_cn": "Marquez PostgreSQL",
-      "compose_service": "xueyuan-ku",
-      "container_name": "xueyuan-ku",
-      "legacy_slugs": ["marquez-db", "marquez-postgres"],
-      "step": "5"
-    },
-    "xueyuan-zhuiji": {
-      "display_cn": "血缘追踪",
-      "role_cn": "Marquez OpenLineage API :5001",
-      "compose_service": "xueyuan-zhuiji",
-      "container_name": "xueyuan-zhuiji",
-      "legacy_slugs": ["marquez", "marquez-api", "openlineage"],
-      "step": "5"
-    },
-    "xueyuan-mianban": {
-      "display_cn": "血缘面板",
-      "role_cn": "Marquez UI :3001",
-      "compose_service": "xueyuan-mianban",
-      "container_name": "xueyuan-mianban",
-      "legacy_slugs": ["marquez-web", "marquez-ui"],
-      "step": "5"
+      "profile": "search"
     }
   },
-  "stack_display_cn": "信奥后台底座",
+  "stack_display_cn": "通用耐久执行底座",
   "compose_project_legacy": "xinao-base"
 }

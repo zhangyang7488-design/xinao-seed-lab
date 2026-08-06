@@ -145,21 +145,8 @@ $workDir = Split-Path $ComposeFile -Parent
 Push-Location $workDir
 try {
     if ($result.docker_ok) {
-        $hadLiteLLMKey = Test-Path Env:LITELLM_MASTER_KEY
-        $previousLiteLLMKey = $env:LITELLM_MASTER_KEY
-        if (-not $hadLiteLLMKey -or [string]::IsNullOrWhiteSpace($previousLiteLLMKey)) {
-            $env:LITELLM_MASTER_KEY = "status-read-only-interpolation"
-        }
-        try {
-            $psText = & docker compose -f $ComposeFile ps 2>&1 | Out-String
-            $result.ps_exit_code = $LASTEXITCODE
-        } finally {
-            if ($hadLiteLLMKey) {
-                $env:LITELLM_MASTER_KEY = $previousLiteLLMKey
-            } else {
-                Remove-Item Env:LITELLM_MASTER_KEY -ErrorAction SilentlyContinue
-            }
-        }
+        $psText = & docker compose -f $ComposeFile ps 2>&1 | Out-String
+        $result.ps_exit_code = $LASTEXITCODE
         if ($psText.Length -gt 4000) {
             $result.ps_text_excerpt = $psText.Substring(0, 4000) + "..."
         } else {
