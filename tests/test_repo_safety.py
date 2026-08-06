@@ -50,7 +50,6 @@ ALLOWED_AGENT_RUNTIME_MODULES = {
     "dispatch_economics.py",
     "codex_s_worker_lane_carrier.py",
     "default_plus_dynamic_escalate.py",
-    "dp_sidecar_execution_port.py",
     "execution_contract.py",
     "grok_build_docker_worker.py",
     "grok_execution_contract_adapter.py",
@@ -77,8 +76,6 @@ ALLOWED_AGENT_RUNTIME_MODULES = {
     "session_frontier_projection.py",
     "supervisor_worker_selector.py",
     "system_awareness_consumer.py",
-    "task_entry_claim.py",
-    "temporal_codex_task_workflow.py",
     "thin_bootstrap_sandbox.py",
     "thin_evidence_writer.py",
     "thin_glue_intake.py",
@@ -98,7 +95,6 @@ ALLOWED_AGENT_RUNTIME_MODULES = {
     "thin_glue_provider_scheduler.py",
     "thin_glue_rg_utils.py",
     "thin_glue_stack.py",
-    "thin_glue_sunset_registry.py",
     "thin_glue_work_proof.py",
     "thin_langgraph_closure.py",
     "thin_provider_client.py",
@@ -588,7 +584,6 @@ def test_retained_executable_sources_have_no_dead_desktop_or_runtime_entry() -> 
             "integrated_bus_graph.py",
             "integrated_bus_runner.py",
             "integrated_bus_worker_daemon.py",
-            "task_entry_claim.py",
         )
     ).lower()
     for forbidden in (

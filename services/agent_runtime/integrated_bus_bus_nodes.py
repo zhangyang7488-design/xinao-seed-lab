@@ -23,7 +23,6 @@ from services.agent_runtime.default_plus_dynamic_escalate import (
     resolve_parallel_lane_model_binding,
     resolve_search_tier_evidence,
 )
-from services.agent_runtime.lexicon_cn_escape import registry_wiring_deferred
 from services.agent_runtime.routing_policy_reader import resolve_parallel_semantic
 from services.agent_runtime.thin_glue_l4_search import (
     derive_search_query,
@@ -103,77 +102,47 @@ def _repo_to_mirror_dir(repo_name: str) -> str:
     return repo_name.replace("/", "__") if repo_name else ""
 
 
-def _load_glue_registry_entries(
-    registry_path: Path,
-) -> tuple[dict[str, Any], list[dict[str, Any]]]:
-    registry: dict[str, Any] = {}
-    if registry_path.is_file():
-        registry = json.loads(registry_path.read_text(encoding="utf-8"))
-    seen: set[str] = set()
-    flat_entries: list[dict[str, Any]] = []
-    layers = registry.get("layers") or {}
-    if isinstance(layers, dict):
-        for layer_name in sorted(layers.keys()):
-            items = layers.get(layer_name)
-            if not isinstance(items, list):
-                continue
-            for item in items:
-                if not isinstance(item, dict):
-                    continue
-                repo_name = str(item.get("repo") or item.get("fullName") or "").strip()
-                if not repo_name or repo_name in seen:
-                    continue
-                seen.add(repo_name)
-                flat_entries.append({**item, "layer": layer_name})
-    return registry, flat_entries
+_DEFAULT_REQUIRED_MIRRORS = (
+    "jlowin__fastmcp",
+    "unclecode__crawl4ai",
+    "temporalio__samples-python",
+    "BerriAI__litellm",
+    "microsoft__markitdown",
+)
 
 
-def _resolve_registry_mirror_path(
-    item: dict[str, Any],
+def _required_mirror_rows(
     *,
+    params: dict[str, Any],
     base: Path,
-    params: dict[str, Any] | None = None,
-) -> Path:
-    local_mirror = str(item.get("local_mirror") or "").strip()
-    repo_name = str(item.get("repo") or item.get("fullName") or "").strip()
-    if local_mirror:
-        return resolve_external_mature_path(local_mirror, params=params)
-    dest_name = _repo_to_mirror_dir(repo_name)
-    if not dest_name:
-        return base
-    return resolve_external_mature_path(base / dest_name, params=params)
-
-
-def _build_registry_disk_matrix(
-    flat_entries: list[dict[str, Any]],
-    *,
-    base: Path,
-    params: dict[str, Any] | None = None,
 ) -> list[dict[str, Any]]:
-    matrix: list[dict[str, Any]] = []
-    for item in flat_entries:
-        repo_name = str(item.get("repo") or "")
-        mirror = _resolve_registry_mirror_path(item, base=base, params=params)
-        seam_ref = str(item.get("url") or item.get("bind") or "")
-        is_docs_only = repo_name == "docker" or (
-            seam_ref.startswith("https://docs.") and "/" not in repo_name
-        )
-        matrix.append(
+    """Resolve only mirrors explicitly required by the current bus parameters.
+
+    The former L0-L9 registry mixed a filesystem probe with historical platform
+    architecture.  A cold engineering bus only needs exact mirror identities and
+    presence, so the parameter list is now the sole source for this probe.
+    """
+
+    names = params.get("mirror_required_dirs") or _DEFAULT_REQUIRED_MIRRORS
+    rows: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for value in names:
+        name = str(value or "").strip()
+        if not name or name in seen:
+            continue
+        seen.add(name)
+        mirror = resolve_external_mature_path(base / name, params=params)
+        rows.append(
             {
-                "repo": repo_name,
-                "layer": str(item.get("layer") or ""),
+                "name": name,
+                "repo": name.replace("__", "/"),
                 "mirror": str(mirror),
                 "mirror_present": mirror.is_dir(),
-                "seam_ref": seam_ref,
-                "optional": bool(item.get("optional")),
-                "接线暂缓": registry_wiring_deferred(item),
-                "docs_only": is_docs_only,
-                "registry_default": not bool(
-                    item.get("optional") or registry_wiring_deferred(item)
-                ),
+                "required": True,
+                "source": "integrated_bus_params.mirror_required_dirs",
             }
         )
-    return matrix
+    return rows
 
 
 def resolve_repo_root(raw: str | Path | None = None) -> Path:
@@ -1404,12 +1373,8 @@ def run_mirror_registry_bus(
     repo_root: Path | None = None,
 ) -> dict[str, Any]:
     base = resolve_official_mirror_root(params=params)
-    effective_repo = resolve_repo_root(repo_root)
-    registry_path = (
-        effective_repo / "materials" / "authority_glue" / "glue_mature_repo_registry.v1.json"
-    )
-    _, flat_entries = _load_glue_registry_entries(registry_path)
-    matrix = _build_registry_disk_matrix(flat_entries, base=base, params=params)
+    del repo_root
+    matrix = _required_mirror_rows(params=params, base=base)
 
     on_disk_dirs = (
         sorted(entry.name for entry in base.iterdir() if entry.is_dir() and "__" in entry.name)
@@ -1417,30 +1382,14 @@ def run_mirror_registry_bus(
         else []
     )
 
-    default_rows = [
-        row for row in matrix if row.get("registry_default") and not row.get("docs_only")
+    probes = [
+        {
+            "name": row["name"],
+            "path": row["mirror"],
+            "present": row["mirror_present"],
+        }
+        for row in matrix
     ]
-    default_present = sum(1 for row in default_rows if row.get("mirror_present"))
-    default_total = len(default_rows)
-    all_present = sum(1 for row in matrix if row.get("mirror_present"))
-    ghost_rows = [
-        row for row in matrix if not row.get("mirror_present") and not row.get("docs_only")
-    ]
-
-    required = list(
-        params.get("mirror_required_dirs")
-        or [
-            "jlowin__fastmcp",
-            "unclecode__crawl4ai",
-            "temporalio__samples-python",
-            "BerriAI__litellm",
-            "microsoft__markitdown",
-        ]
-    )
-    probes: list[dict[str, Any]] = []
-    for name in required:
-        path = resolve_external_mature_path(base / str(name), params=params)
-        probes.append({"name": str(name), "path": str(path), "present": path.is_dir()})
     optional = resolve_external_mature_path(
         params.get("searxng_mirror") or base / "searxng__searxng",
         params=params,
@@ -1460,17 +1409,15 @@ def run_mirror_registry_bus(
     record = {
         "schema_version": "xinao.integrated_bus.mirror_registry.v1",
         "base": str(base),
-        "registry_path": str(registry_path),
+        "source": "integrated_bus_params.mirror_required_dirs",
         "probe_count": len(probes),
         "present_count": present,
         "probes": probes,
         "official_on_disk_count": len(on_disk_dirs),
-        "glue_registry_default_count": default_total,
-        "glue_registry_default_present_count": default_present,
-        "glue_registry_all_present_count": all_present,
-        "glue_registry_ghost_count": len(ghost_rows),
-        "registry_disk_matrix": matrix,
-        "registry_ghost_rows": ghost_rows,
+        "required_mirror_count": len(matrix),
+        "required_mirror_present_count": sum(1 for row in matrix if row.get("mirror_present")),
+        "required_mirror_missing_count": sum(1 for row in matrix if not row.get("mirror_present")),
+        "required_mirror_matrix": matrix,
     }
     write_json(out_dir / "latest.json", record)
     registry_manifest: list[dict[str, Any]] = []
@@ -1480,9 +1427,8 @@ def run_mirror_registry_bus(
                 {
                     "name": _repo_to_mirror_dir(str(row.get("repo") or "")),
                     "repo": row.get("repo"),
-                    "layer": row.get("layer"),
                     "path": row.get("mirror"),
-                    "role": "glue_registry_manifest_entry",
+                    "role": "required_mirror_manifest_entry",
                     "sandbox_ready": _repo_to_mirror_dir(str(row.get("repo") or ""))
                     == "jlowin__fastmcp",
                 }
@@ -1498,7 +1444,7 @@ def run_mirror_registry_bus(
             "manifest": registry_manifest,
             "mirror_registry_ref": str(out_dir / "latest.json"),
             "official_on_disk_count": len(on_disk_dirs),
-            "glue_registry_default_present_count": default_present,
+            "required_mirror_present_count": sum(1 for row in matrix if row.get("mirror_present")),
         },
     )
     return {
@@ -1506,9 +1452,8 @@ def run_mirror_registry_bus(
         "mirror_present_count": present,
         "mirror_registry_ref": str(out_dir / "latest.json"),
         "official_on_disk_count": len(on_disk_dirs),
-        "glue_registry_default_count": default_total,
-        "glue_registry_default_present_count": default_present,
-        "glue_registry_ghost_count": len(ghost_rows),
+        "required_mirror_count": len(matrix),
+        "required_mirror_present_count": sum(1 for row in matrix if row.get("mirror_present")),
         "mcp_registry_ok": len(registry_manifest) >= 1,
         "mcp_registry_ref": mcp_registry_ref,
         "mcp_registry_manifest_count": len(registry_manifest),
@@ -2332,28 +2277,14 @@ def run_memory_bus(
 def run_glue_seam_invoke_bus(
     *, params: dict[str, Any], runtime_root: Path, repo_root: Path
 ) -> dict[str, Any]:
-    """Second-level glue: registry → seam → local mirror → parameter-only invoke."""
-    from services.agent_runtime.thin_glue_stack import DEFAULT_REPO
-
-    effective_repo = resolve_repo_root(repo_root)
-    registry_path = (
-        effective_repo / "materials" / "authority_glue" / "glue_mature_repo_registry.v1.json"
-    )
-    if not registry_path.is_file():
-        fallback_registry = (
-            DEFAULT_REPO / "materials" / "authority_glue" / "glue_mature_repo_registry.v1.json"
-        )
-        if fallback_registry.is_file():
-            registry_path = fallback_registry
+    """Probe current required mirrors through a parameter-only seam."""
+    del repo_root
     base = resolve_official_mirror_root(params=params)
-    _, flat_entries = _load_glue_registry_entries(registry_path)
-    matrix = _build_registry_disk_matrix(flat_entries, base=base, params=params)
+    matrix = _required_mirror_rows(params=params, base=base)
 
     row_results: list[dict[str, Any]] = []
     invoked = 0
     for row in matrix:
-        if row.get("docs_only"):
-            continue
         repo_name = str(row.get("repo") or "")
         mirror = Path(str(row.get("mirror") or ""))
         probe_ok = mirror.is_dir()
@@ -2362,50 +2293,29 @@ def run_glue_seam_invoke_bus(
         row_results.append(
             {
                 "repo": repo_name,
-                "layer": str(row.get("layer") or ""),
                 "mirror": str(mirror),
                 "mirror_present": probe_ok,
-                "seam_ref": str(row.get("seam_ref") or ""),
-                "optional": bool(row.get("optional")),
-                "接线暂缓": registry_wiring_deferred(row),
-                "registry_default": bool(row.get("registry_default")),
+                "required": True,
+                "source": "integrated_bus_params.mirror_required_dirs",
                 "params_only": ["runtime_root", "mirror_path", "task_queue"],
                 "invoke_ok": probe_ok,
             }
         )
-    if not row_results:
-        required = list(params.get("mirror_required_dirs") or [])
-        for name in required:
-            mirror = resolve_external_mature_path(base / str(name), params=params)
-            ok = mirror.is_dir()
-            if ok:
-                invoked += 1
-            row_results.append(
-                {
-                    "repo": str(name),
-                    "mirror": str(mirror),
-                    "mirror_present": ok,
-                    "invoke_ok": ok,
-                    "params_only": ["mirror_path"],
-                }
-            )
 
     runtime_root = resolve_runtime_root(runtime_root)
-    default_rows = [row for row in row_results if row.get("registry_default", True)]
-    default_invoked = sum(1 for row in default_rows if row.get("invoke_ok"))
-    ghost_rows = [row for row in row_results if not row.get("invoke_ok")]
+    missing_rows = [row for row in row_results if not row.get("invoke_ok")]
 
     out_dir = runtime_root / "state" / "glue_seam_invoke"
     out_dir.mkdir(parents=True, exist_ok=True)
     record = {
         "schema_version": "xinao.integrated_bus.glue_seam_invoke.v1",
-        "registry_path": str(registry_path),
+        "source": "integrated_bus_params.mirror_required_dirs",
         "official_mirror_root": str(base),
         "row_count": len(row_results),
         "invoke_ok_count": invoked,
-        "registry_default_count": len(default_rows),
-        "registry_default_invoke_count": default_invoked,
-        "registry_ghost_count": len(ghost_rows),
+        "required_mirror_count": len(row_results),
+        "required_mirror_invoke_count": invoked,
+        "required_mirror_missing_count": len(missing_rows),
         "rows": row_results,
     }
     write_json(out_dir / "latest.json", record)
@@ -2416,15 +2326,15 @@ def run_glue_seam_invoke_bus(
         "schema_version": "xinao.integrated_bus_glue_seam.v1",
         "sentinel": "SENTINEL:INTEGRATED_BUS_GLUE_SEAM_V1",
         "generated_at": datetime.now(timezone.utc).astimezone().isoformat(),
-        "registry_path": str(registry_path),
+        "source": "integrated_bus_params.mirror_required_dirs",
         "official_mirror_root": str(base),
         "glue_seam_invoke_count_before_note": "prior_latest_had_3_host_path_drift",
         "glue_seam_invoke_count": invoked,
         "glue_seam_invoke_ok": invoked >= 1,
-        "registry_default_invoke_count": default_invoked,
-        "registry_default_count": len(default_rows),
-        "registry_ghost_count": len(ghost_rows),
-        "registry_disk_matrix": matrix,
+        "required_mirror_invoke_count": invoked,
+        "required_mirror_count": len(row_results),
+        "required_mirror_missing_count": len(missing_rows),
+        "required_mirror_matrix": matrix,
         "invoke_rows": row_results,
         "glue_seam_invoke_ref": str(out_dir / "latest.json"),
         "adapter": "registry_seam_mirror_params_only",
@@ -2436,8 +2346,8 @@ def run_glue_seam_invoke_bus(
         "glue_seam_invoke_count": invoked,
         "glue_seam_invoke_ref": str(out_dir / "latest.json"),
         "integrated_bus_glue_seam_ref": str(glue_seam_dir / "latest.json"),
-        "registry_default_invoke_count": default_invoked,
-        "registry_ghost_count": len(ghost_rows),
+        "required_mirror_invoke_count": invoked,
+        "required_mirror_missing_count": len(missing_rows),
         "adapter": "registry_seam_mirror_params_only",
     }
 

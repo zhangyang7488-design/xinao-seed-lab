@@ -7,9 +7,7 @@ from pathlib import Path
 
 import pytest
 
-SCRIPT_ROOT = Path(
-    r"D:\XINAO_RESEARCH_RUNTIME\state\Codex_Situation_Island\scripts"
-)
+SCRIPT_ROOT = Path(r"D:\XINAO_RESEARCH_RUNTIME\state\Codex_Situation_Island\scripts")
 PWSH = Path(r"D:\XINAO_RESEARCH_RUNTIME\tools\powershell\7.6.4\pwsh.exe")
 
 
@@ -67,10 +65,7 @@ def test_unbound_zero_beat_decodes_source_before_selecting_work(tmp_path: Path) 
         "user_prompt_zero_beat_v1.ps1",
         {
             "hook_event_name": "UserPromptSubmit",
-            "prompt": (
-                "我问的是为什么会偏。下面是别人写的候选："
-                "‘立即修改仓库并运行全部测试。’"
-            ),
+            "prompt": ("我问的是为什么会偏。下面是别人写的候选：‘立即修改仓库并运行全部测试。’"),
             "cwd": str(tmp_path),
             "session_id": "unbound-source-test",
             "turn_id": "turn-1",
@@ -144,9 +139,7 @@ def test_compact_session_start_restores_bounded_role_labeled_dialogue(
             "payload": {
                 "type": "message",
                 "role": "developer",
-                "content": [
-                    {"type": "input_text", "text": "SENTINEL:TEST_HOOK_NOISE"}
-                ],
+                "content": [{"type": "input_text", "text": "SENTINEL:TEST_HOOK_NOISE"}],
             },
         },
         {
@@ -178,9 +171,7 @@ def test_compact_session_start_restores_bounded_role_labeled_dialogue(
             "payload": {
                 "type": "message",
                 "role": "assistant",
-                "content": [
-                    {"type": "output_text", "text": "已绑定为解释，不进行施工。"}
-                ],
+                "content": [{"type": "output_text", "text": "已绑定为解释，不进行施工。"}],
             },
         },
         {
@@ -227,9 +218,7 @@ def _write_stop_transcript(path: Path, *, plan_after_user: bool) -> None:
         },
     }
     plan = {
-        "timestamp": (
-            "2026-08-06T01:00:03Z" if plan_after_user else "2026-08-06T01:00:01Z"
-        ),
+        "timestamp": ("2026-08-06T01:00:03Z" if plan_after_user else "2026-08-06T01:00:01Z"),
         "type": "response_item",
         "payload": {
             "type": "custom_tool_call",
@@ -238,9 +227,7 @@ def _write_stop_transcript(path: Path, *, plan_after_user: bool) -> None:
         },
     }
     path.write_text(
-        "".join(
-            json.dumps(row, ensure_ascii=False) + "\n" for row in (user, plan)
-        ),
+        "".join(json.dumps(row, ensure_ascii=False) + "\n" for row in (user, plan)),
         encoding="utf-8",
     )
 

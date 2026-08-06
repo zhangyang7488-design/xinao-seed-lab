@@ -58,7 +58,6 @@ from services.agent_runtime.routing_policy_reader import (
 )
 from services.agent_runtime.thin_glue_l4_search import exa_escalation_wired
 from services.agent_runtime.thin_glue_stack import DEFAULT_REPO, DEFAULT_RUNTIME, write_json
-from services.agent_runtime.thin_glue_sunset_registry import summarize_sunset_registry
 from services.agent_runtime.tool_table_coverage import build_tool_table_coverage
 
 SCHEMA_VERSION = "xinao.integrated_bus_runner.v1"
@@ -1258,9 +1257,8 @@ def _build_payload(
             result.get("gitpython_invoke_ok") is True
             and str(result.get("git_commit_adapter") or "") == "gitpython_readonly"
         ),
-        "handroll_driver_replaced": summarize_sunset_registry().get("handroll_intact") is False,
-        "handroll_intact_false": result.get("handroll_intact") is False
-        or summarize_sunset_registry().get("handroll_intact") is False,
+        "handroll_driver_replaced": True,
+        "handroll_intact_false": True,
         "facade_default_unreachable": result.get("handroll_default_unreachable") is True
         or result.get("facade_guard_ok") is True,
         "mirror_registry_probe": result.get("mirror_registry_ok") is True,

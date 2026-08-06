@@ -1,4 +1,4 @@
-"""DeepSeek V4 Pro review node — gateway invoke after worker draft terminal (thin bind)."""
+"""Configured review-gateway node after a worker draft reaches terminal state."""
 
 from __future__ import annotations
 
@@ -22,7 +22,7 @@ SCHEMA_VERSION = "xinao.pro_review_after_draft.v1"
 SENTINEL = "SENTINEL:XINAO_PRO_REVIEW_AFTER_DRAFT_V1"
 STATE_NAME = "pro_review_after_draft"
 TASK_ID = "pro_review_after_draft_20260709"
-PROVIDER_ID = "legacy.deepseek_dp_sidecar"
+REVIEW_GATEWAY_PROVIDER_ID = "configured.review_gateway"
 PRO_REVIEW_MODES = {"audit", "contradiction"}
 
 
@@ -50,19 +50,19 @@ def _classify_blocker(value: Any) -> str:
     text = str(value or "")
     upper = text.upper()
     if not text:
-        return "DEEPSEEK_PRO_REVIEW_INVOKE_FAILED"
+        return "REVIEW_GATEWAY_INVOKE_FAILED"
     if "429" in upper or "RATE" in upper:
-        return "DEEPSEEK_RATE_LIMIT"
+        return "REVIEW_GATEWAY_RATE_LIMIT"
     if "401" in upper or "403" in upper or "AUTH" in upper:
-        return "DEEPSEEK_AUTH_FAILED"
+        return "REVIEW_GATEWAY_AUTH_FAILED"
     if any(
         token in upper for token in ("TIMEOUT", "UNREACHABLE", "UNAVAILABLE", "502", "503", "504")
     ):
-        return "DEEPSEEK_ENDPOINT_UNAVAILABLE"
-    return text if upper.startswith("DEEPSEEK_") else "DEEPSEEK_PRO_REVIEW_INVOKE_FAILED"
+        return "REVIEW_GATEWAY_ENDPOINT_UNAVAILABLE"
+    return text if upper.startswith("REVIEW_GATEWAY_") else "REVIEW_GATEWAY_INVOKE_FAILED"
 
 
-def _sync_dp_sidecar_provider_evidence(
+def _sync_review_provider_evidence(
     *,
     runtime: Path,
     invocation_id: str,
@@ -79,24 +79,26 @@ def _sync_dp_sidecar_provider_evidence(
     usage: dict[str, Any],
     trigger_installed: bool,
 ) -> str:
-    """Mirror pro-review progress into dp_sidecar_execution_provider/latest.json (honest partial)."""
-    provider_state = runtime / "state" / "dp_sidecar_execution_provider"
+    """Mirror review progress into a provider-neutral evidence stream."""
+    provider_state = runtime / "state" / "review_gateway_provider"
     provider_state.mkdir(parents=True, exist_ok=True)
     latest_path = provider_state / "latest.json"
     record_path = provider_state / "records" / f"{invocation_id}.json"
     input_hash = hashlib.sha256(input_text.encode("utf-8", errors="replace")).hexdigest()
     runtime_enforced = trigger_installed and model_invocation_performed and gateway_ok
     payload: dict[str, Any] = {
-        "schema_version": "xinao.seedcortex.dp_sidecar_execution_provider.v1",
-        "status": "dp_sidecar_execution_provider_ready"
+        "schema_version": "xinao.review_gateway.provider.v1",
+        "status": "review_gateway_provider_ready"
         if model_invocation_performed
-        else "dp_sidecar_execution_provider_blocked",
+        else "review_gateway_provider_blocked",
         "provider_registration_status": "provider_registered",
         "mode_invocation_status": "model_ready" if model_invocation_performed else "blocked",
-        "provider_id": PROVIDER_ID,
-        "selected_carrier_provider_id": PROVIDER_ID if model_invocation_performed else "",
+        "provider_id": REVIEW_GATEWAY_PROVIDER_ID,
+        "selected_carrier_provider_id": (
+            REVIEW_GATEWAY_PROVIDER_ID if model_invocation_performed else ""
+        ),
         "selected_model": model if model_invocation_performed else "",
-        "port_id": "dp_sidecar_execution_port",
+        "port_id": "review_gateway",
         "task_id": TASK_ID,
         "request_id": f"{invocation_id}-pro-review-request",
         "invocation_id": invocation_id,
@@ -192,8 +194,8 @@ def invoke_pro_review_via_gateway(
         "mode": mode,
         "route_role": PRO_REVIEW_ROUTE_ROLE,
         "objective": objective,
-        "provider_id": PROVIDER_ID,
-        "selected_carrier_provider_id": PROVIDER_ID,
+        "provider_id": REVIEW_GATEWAY_PROVIDER_ID,
+        "selected_carrier_provider_id": REVIEW_GATEWAY_PROVIDER_ID,
         "selected_model": model,
         "gateway_base_url": gateway_url,
         "routing_policy_ref": policy.get("policy_path"),
@@ -227,7 +229,7 @@ def invoke_pro_review_via_gateway(
         if write:
             write_json(record_path, runner)
             write_json(paths["latest"], runner)
-            _sync_dp_sidecar_provider_evidence(
+            _sync_review_provider_evidence(
                 runtime=runtime,
                 invocation_id=resolved_invocation,
                 mode=mode,
@@ -246,8 +248,8 @@ def invoke_pro_review_via_gateway(
         return runner
 
     system_prompt = (
-        "You are DeepSeek V4 Pro on the XINAO 333 mature control plane pro-review node. "
-        "Audit worker draft artifacts after draft terminal. Return bounded acceptance review: "
+        "You are the configured independent review model for a generic engineering workflow. "
+        "Audit the worker draft after terminal. Return a bounded acceptance review: "
         "findings, risks, weld recommendations, fan-in hints. No completion claims."
     )
     user_prompt = "\n".join(
@@ -286,7 +288,7 @@ def invoke_pro_review_via_gateway(
         if write:
             write_json(record_path, runner)
             write_json(paths["latest"], runner)
-            _sync_dp_sidecar_provider_evidence(
+            _sync_review_provider_evidence(
                 runtime=runtime,
                 invocation_id=resolved_invocation,
                 mode=mode,
@@ -315,7 +317,7 @@ def invoke_pro_review_via_gateway(
         write_json(raw_response_path, {"response": response_body, "usage": usage})
 
     if not content.strip():
-        blocker = "DEEPSEEK_EMPTY_MODEL_RESPONSE"
+        blocker = "REVIEW_GATEWAY_EMPTY_MODEL_RESPONSE"
         payload = {
             **base_payload,
             "status": "pro_review_blocked",
@@ -330,7 +332,7 @@ def invoke_pro_review_via_gateway(
         if write:
             write_json(record_path, runner)
             write_json(paths["latest"], runner)
-            _sync_dp_sidecar_provider_evidence(
+            _sync_review_provider_evidence(
                 runtime=runtime,
                 invocation_id=resolved_invocation,
                 mode=mode,
@@ -350,8 +352,8 @@ def invoke_pro_review_via_gateway(
 
     artifact = {
         "schema_version": f"{SCHEMA_VERSION}.artifact.v1",
-        "provider_id": PROVIDER_ID,
-        "selected_carrier_provider_id": PROVIDER_ID,
+        "provider_id": REVIEW_GATEWAY_PROVIDER_ID,
+        "selected_carrier_provider_id": REVIEW_GATEWAY_PROVIDER_ID,
         "selected_model": model,
         "mode": mode,
         "route_role": PRO_REVIEW_ROUTE_ROLE,
@@ -402,7 +404,7 @@ def invoke_pro_review_via_gateway(
     if write:
         write_json(record_path, runner)
         write_json(paths["latest"], runner)
-        dp_latest = _sync_dp_sidecar_provider_evidence(
+        review_latest = _sync_review_provider_evidence(
             runtime=runtime,
             invocation_id=resolved_invocation,
             mode=mode,
@@ -418,7 +420,7 @@ def invoke_pro_review_via_gateway(
             usage=usage,
             trigger_installed=trigger_installed,
         )
-        payload["dp_sidecar_provider_latest_ref"] = dp_latest
+        payload["review_gateway_provider_latest_ref"] = review_latest
         write_json(paths["latest"], runner)
     return runner
 
@@ -457,7 +459,7 @@ def run_pro_review_bus(
         "tier_used": build_tier_used(),
         "pro_review_route_role": str(payload.get("route_role") or PRO_REVIEW_ROUTE_ROLE),
         "pro_review_tier": "T1_SECONDARY",
-        "pro_review_adapter": "deepseek_v4_pro_or_strong_review",
+        "pro_review_adapter": "configured_review_gateway",
         "pro_review_named_blocker": str(payload.get("named_blocker") or ""),
         "pro_review_evidence_ref": str(
             payload.get("evidence_refs", {}).get("latest")
@@ -466,5 +468,5 @@ def run_pro_review_bus(
         ),
         "pro_review_runtime_enforced": payload.get("runtime_enforced") is True,
         "pro_review_trigger_installed": payload.get("trigger_installed") is True,
-        "adapter": "routing_policy_gateway_deepseek_v4_pro",
+        "adapter": "routing_policy_review_gateway",
     }

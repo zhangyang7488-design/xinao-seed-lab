@@ -44,8 +44,6 @@ def test_explicit_existing_repo_override_wins_over_environment(
     "module_name",
     [
         "services.agent_runtime.closure_test_activities",
-        "services.agent_runtime.task_entry_claim",
-        "services.agent_runtime.temporal_codex_task_workflow",
     ],
 )
 def test_remaining_host_entrypoints_share_the_loaded_source_carrier(

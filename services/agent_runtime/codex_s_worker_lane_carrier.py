@@ -13,7 +13,10 @@ from pathlib import Path
 from typing import Any
 
 from services.agent_runtime.default_plus_dynamic_escalate import sanitize_default_draft_model
-from services.agent_runtime.pro_review_after_draft import invoke_pro_review_via_gateway
+from services.agent_runtime.pro_review_after_draft import (
+    REVIEW_GATEWAY_PROVIDER_ID,
+    invoke_pro_review_via_gateway,
+)
 from services.agent_runtime.routing_policy_reader import (
     DEFAULT_DRAFT_ROUTE_ROLE,
     PRO_REVIEW_ROUTE_ROLE,
@@ -52,8 +55,7 @@ MODE_ORDER = (
 SUCCESS_STATUSES = {"draft_ready", "model_ready", "search_ready", "provider_probe_ready"}
 
 QWEN_CHEAP_WORKER_PROVIDER_ID = "qwen_prepaid_cheap_worker"
-DEEPSEEK_DP_PROVIDER_ID = "legacy.deepseek_dp_sidecar"
-DEEPSEEK_DP_ROUTE_ID = "deepseek_dp"
+UNAVAILABLE_FALLBACK_PROVIDER_ID = "unavailable.no_configured_fallback"
 CODEX_EXEC_PROVIDER_ID = "codex_exec"
 CHEAP_QWEN_FIRST_MODES = {"draft", "extraction", "eval"}
 QWEN_FIRST_APPLIES_ONLY_TO = "cheap_worker_lane"
@@ -79,22 +81,11 @@ QWEN_FALLBACK_ALLOWED_REASONS = {
     "PROVIDER_GATEWAY_UNREACHABLE",
     "PROVIDER_GATEWAY_AUTH_OR_UPSTREAM",
 }
-DP_FALLBACK_ALLOWED_REASONS = {
-    "DEEPSEEK_AUTH_FAILED",
-    "DEEPSEEK_RATE_LIMIT",
-    "DEEPSEEK_TIMEOUT",
-    "DEEPSEEK_ENDPOINT_UNAVAILABLE",
-    "DEEPSEEK_ENDPOINT_TRANSIENT_HTTP_ERROR",
-    "DEEPSEEK_PROVIDER_NOT_CONFIGURED",
-    "DEEPSEEK_MODEL_INVOCATION_FAILED",
-    "DEEPSEEK_EMPTY_MODEL_RESPONSE",
-    "DP_WORKER_POOL_INVOKE_FAILED",
-}
-EXTERNAL_DRAFT_PROVIDER_IDS = {DEEPSEEK_DP_PROVIDER_ID, QWEN_CHEAP_WORKER_PROVIDER_ID}
+EXTERNAL_DRAFT_PROVIDER_IDS = {QWEN_CHEAP_WORKER_PROVIDER_ID}
 LOCAL_STUB_PROVIDER_PREFIXES = ("seed_cortex.local_",)
 PROVIDER_SCHEDULER_TASK_ID = "codex_native_provider_scheduler_phase4_20260704"
 
-DpInvoker = Callable[..., dict[str, Any]]
+FallbackInvoker = Callable[..., dict[str, Any]]
 QwenInvoker = Callable[..., dict[str, Any]]
 
 
@@ -240,7 +231,7 @@ def provider_route_for_mode(mode: str, context: dict[str, Any]) -> dict[str, Any
             "route_role": DEFAULT_DRAFT_ROUTE_ROLE,
             "adapter": "cloud_qwen_via_litellm",
             "ollama_default_banned": True,
-            "fallback_provider_ids": [DEEPSEEK_DP_PROVIDER_ID, CODEX_EXEC_PROVIDER_ID],
+            "fallback_provider_ids": [CODEX_EXEC_PROVIDER_ID],
             "qwen_prepaid_first_required": True,
             "qwen_prepaid_first_reason": "thin_carrier: gateway/qwen cheap first for draft/extract/eval",
             "qwen_first_applies_only_to": QWEN_FIRST_APPLIES_ONLY_TO,
@@ -251,11 +242,11 @@ def provider_route_for_mode(mode: str, context: dict[str, Any]) -> dict[str, Any
         }
     if cheap_mode:
         return {
-            "route_class": "cheap_draft_extract_eval",
-            "lane_kind": "dp_sidecar_execution",
+            "route_class": "provider_unavailable",
+            "lane_kind": "no_configured_provider",
             "provider_role": "CheapWorkerProvider",
-            "preferred_provider_id": DEEPSEEK_DP_PROVIDER_ID,
-            "preferred_provider_label": "DeepSeek/DP sidecar",
+            "preferred_provider_id": UNAVAILABLE_FALLBACK_PROVIDER_ID,
+            "preferred_provider_label": "No configured active fallback provider",
             "fallback_provider_ids": [CODEX_EXEC_PROVIDER_ID],
             "qwen_prepaid_first_required": False,
             "qwen_prepaid_first_reason": "QWEN_NOT_READY",
@@ -281,26 +272,26 @@ def provider_route_for_mode(mode: str, context: dict[str, Any]) -> dict[str, Any
         )
     return {
         "route_class": route_class,
-        "lane_kind": "dp_sidecar_execution",
+        "lane_kind": "review_gateway"
+        if route_class == "pro_review_after_draft"
+        else "no_configured_provider",
         "provider_role": "ProReviewProvider"
         if route_class == "pro_review_after_draft"
         else "CheapWorkerProvider",
         "route_role": PRO_REVIEW_ROUTE_ROLE if route_class == "pro_review_after_draft" else "",
-        "preferred_provider_id": DEEPSEEK_DP_PROVIDER_ID,
-        "preferred_provider_label": "DeepSeek V4 Pro review"
+        "preferred_provider_id": REVIEW_GATEWAY_PROVIDER_ID
         if route_class == "pro_review_after_draft"
-        else "DeepSeek/DP sidecar",
+        else UNAVAILABLE_FALLBACK_PROVIDER_ID,
+        "preferred_provider_label": "Configured review gateway"
+        if route_class == "pro_review_after_draft"
+        else "No configured active fallback provider",
         "preferred_model": preferred_model,
         "fallback_provider_ids": fallback,
         "qwen_prepaid_first_required": False,
         "qwen_prepaid_first_reason": "mode_not_qwen_cheap_first",
         "qwen_first_applies_only_to": QWEN_FIRST_APPLIES_ONLY_TO,
         "qwen_first_must_not_override": QWEN_FIRST_MUST_NOT_OVERRIDE_LANES,
-        "fallback_allowed_reasons": sorted(
-            DP_FALLBACK_ALLOWED_REASONS
-            if route_class == "pro_review_after_draft"
-            else QWEN_FALLBACK_ALLOWED_REASONS
-        ),
+        "fallback_allowed_reasons": sorted(QWEN_FALLBACK_ALLOWED_REASONS),
         "outputs_to_staging_only": True,
         "direct_repo_write_allowed": False,
     }
@@ -339,26 +330,6 @@ def classify_qwen_blocker(value: Any) -> str:
         text
         if upper.startswith("QWEN_") or upper.startswith("PROVIDER_")
         else "QWEN_WORKER_POOL_INVOKE_FAILED"
-    )
-
-
-def classify_dp_blocker(value: Any) -> str:
-    text = str(value or "")
-    upper = text.upper()
-    if not text:
-        return "DP_WORKER_POOL_INVOKE_FAILED"
-    if "429" in upper or "RATE" in upper:
-        return "DEEPSEEK_RATE_LIMIT"
-    if "401" in upper or "403" in upper or "AUTH" in upper or "NOT_CONFIGURED" in upper:
-        return "DEEPSEEK_PROVIDER_NOT_CONFIGURED"
-    if "TIMEOUT" in upper:
-        return "DEEPSEEK_TIMEOUT"
-    if any(token in upper for token in ("ENDPOINT", "UNAVAILABLE", "502", "503", "504")):
-        return "DEEPSEEK_ENDPOINT_UNAVAILABLE"
-    return (
-        text
-        if upper.startswith("DEEPSEEK_") or upper.startswith("DP_")
-        else "DP_WORKER_POOL_INVOKE_FAILED"
     )
 
 
@@ -589,17 +560,42 @@ def invoke_qwen_cheap_worker_lane(
     return runner
 
 
-def default_dp_invoker() -> DpInvoker:
-    from services.agent_runtime.dp_sidecar_execution_port import invoke_dp_sidecar_execution_port
+def invoke_unavailable_fallback(**kwargs: Any) -> dict[str, Any]:
+    """Return an honest blocked result after the retired DP carrier was removed."""
 
-    return invoke_dp_sidecar_execution_port
+    runtime = Path(kwargs.get("runtime_root") or DEFAULT_RUNTIME)
+    invocation_id = safe_stem(str(kwargs.get("invocation_id") or "fallback-unavailable"))
+    state = runtime / "state" / "codex_s_direct_worker_lane" / "unavailable_fallback"
+    record_path = state / "records" / f"{invocation_id}.json"
+    latest_path = state / "latest.json"
+    provider_payload = {
+        "schema_version": f"{SCHEMA_VERSION}.unavailable_fallback.v1",
+        "mode_invocation_status": "blocked",
+        "selected_carrier_provider_id": "",
+        "provider_invocation_performed": False,
+        "model_invocation_performed": False,
+        "tool_invocation_performed": False,
+        "named_blocker": "NO_CONFIGURED_FALLBACK_PROVIDER",
+        "provider_invocation_ref": str(record_path),
+        "evidence_refs": {"latest": str(latest_path), "record_path": str(record_path)},
+        "completion_claim_allowed": False,
+    }
+    runner = {"provider_payload": provider_payload, "actual_dispatch_refs": {}}
+    if kwargs.get("write", True):
+        write_json(record_path, runner)
+        write_json(latest_path, runner)
+    return runner
+
+
+def default_fallback_invoker() -> FallbackInvoker:
+    return invoke_unavailable_fallback
 
 
 def default_qwen_invoker() -> QwenInvoker:
     return invoke_qwen_cheap_worker_lane
 
 
-def _normalize_dp_runner(runner: dict[str, Any]) -> dict[str, Any]:
+def _normalize_provider_runner(runner: dict[str, Any]) -> dict[str, Any]:
     provider_payload = runner.get("provider_payload")
     if isinstance(provider_payload, dict) and provider_payload:
         return runner
@@ -623,7 +619,7 @@ def invoke_lane_with_provider_route(
     runtime: Path,
     wave_id: str,
     brief: dict[str, Any],
-    dp_invoker: DpInvoker,
+    fallback_invoker: FallbackInvoker,
     qwen_invoker: QwenInvoker,
     write: bool,
 ) -> dict[str, Any]:
@@ -672,10 +668,10 @@ def invoke_lane_with_provider_route(
             return qwen_runner
         fallback_reason = classify_qwen_blocker(qwen_payload.get("named_blocker"))
         if fallback_reason in QWEN_FALLBACK_ALLOWED_REASONS:
-            dp_runner = _normalize_dp_runner(dp_invoker(**common))
+            fallback_runner = _normalize_provider_runner(fallback_invoker(**common))
             provider_payload = (
-                dp_runner.get("provider_payload")
-                if isinstance(dp_runner.get("provider_payload"), dict)
+                fallback_runner.get("provider_payload")
+                if isinstance(fallback_runner.get("provider_payload"), dict)
                 else {}
             )
             provider_payload.update(
@@ -689,9 +685,9 @@ def invoke_lane_with_provider_route(
                     "qwen_attempt_ref": str(qwen_payload.get("provider_invocation_ref") or ""),
                 }
             )
-            dp_runner["provider_payload"] = provider_payload
-            dp_runner["qwen_prepaid_attempt"] = qwen_payload
-            return dp_runner
+            fallback_runner["provider_payload"] = provider_payload
+            fallback_runner["qwen_prepaid_attempt"] = qwen_payload
+            return fallback_runner
         qwen_payload.update(
             {
                 "fallback_allowed": False,
@@ -703,7 +699,7 @@ def invoke_lane_with_provider_route(
         )
         qwen_runner["provider_payload"] = qwen_payload
         return qwen_runner
-    return _normalize_dp_runner(dp_invoker(**common))
+    return _normalize_provider_runner(fallback_invoker(**common))
 
 
 def run_lane(
@@ -711,7 +707,7 @@ def run_lane(
     runtime: Path,
     wave_id: str,
     brief: dict[str, Any],
-    dp_invoker: DpInvoker,
+    fallback_invoker: FallbackInvoker,
     qwen_invoker: QwenInvoker,
     write: bool,
     qwen_quality_invoker: QwenInvoker | None = None,
@@ -726,7 +722,7 @@ def run_lane(
         runtime=runtime,
         wave_id=wave_id,
         brief=brief,
-        dp_invoker=dp_invoker,
+        fallback_invoker=fallback_invoker,
         qwen_invoker=qwen_invoker,
         write=write,
     )
@@ -765,10 +761,6 @@ def run_lane(
     qwen_invocation = (
         selected_provider == QWEN_CHEAP_WORKER_PROVIDER_ID and model_invocation_performed
     )
-    deepseek_dp_invocation = (
-        selected_provider in {DEEPSEEK_DP_PROVIDER_ID, DEEPSEEK_DP_ROUTE_ID}
-        and model_invocation_performed
-    )
     external_draft_invocation = (
         mode == "draft"
         and selected_provider in EXTERNAL_DRAFT_PROVIDER_IDS
@@ -793,7 +785,6 @@ def run_lane(
         "model_invocation_performed": model_invocation_performed,
         "tool_invocation_performed": tool_invocation_performed,
         "qwen_prepaid_invocation": qwen_invocation,
-        "deepseek_dp_invocation": deepseek_dp_invocation,
         "qwen_prepaid_first_required": provider_route.get("qwen_prepaid_first_required") is True,
         "qwen_prepaid_first_attempted": provider_payload.get("qwen_prepaid_first_attempted")
         is True,
@@ -911,7 +902,7 @@ def run_worker_lane_bus_activity(
         runtime=runtime,
         wave_id=wave_id,
         brief=brief,
-        dp_invoker=default_dp_invoker(),
+        fallback_invoker=default_fallback_invoker(),
         qwen_invoker=_qwen_invoker,
         write=write,
     )

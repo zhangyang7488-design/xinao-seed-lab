@@ -11,10 +11,10 @@ default XINAO research object, a science parent, or a second control plane.
 - Live runtime, recent evidence, and recovery state: `D:\XINAO_RESEARCH_RUNTIME`
 - Cold archaeology: `E:\XINAO_COLD_STORAGE\archives\LEGACY_XINAO_PLATFORM`
 
-Without an explicit different task, a new Codex window continues native XINAO
-research. S is entered only for an explicit engineering task or a concrete
-engineering gap exposed by live research. Finishing that bounded child returns
-to the native-research parent.
+This README does not choose the active task. Current user words, the surviving
+parent frame, and live consumers do that. S owns only the engineering work that
+the active task actually places here; it never creates or resumes a scientific
+route from its directory, status, tests, or documentation.
 
 Ordinary bounded worker labor uses the installed supervisor/dispatch Skills.
 Grok is normally preferred when its independent quota and the task fit produce
@@ -24,11 +24,16 @@ quota pool; built-in collaboration subagents require exceptional net benefit.
 ## Retained engineering surface
 
 - ordinary Grok/Terra/Luna WorkerPool launchers and dispatch adapters;
-- generic Temporal/LangGraph durable execution for explicitly durable work;
 - behavior regressions and Promptfoo evaluation;
 - local memory and human-material intake;
-- the thin Situation Island catalog updater in `scripts/`;
-- the reusable dual-brain coordination kernel.
+- the reusable dual-brain coordination kernel;
+- recovery and safe-cleanup tooling with explicit consumer verification.
+
+The root Temporal/LangGraph and extended Compose stack are retained as cold,
+conditional engineering capabilities. They are not a default route and remain
+`partial` until an exact current consumer supplies a fresh canary. Historical
+XINAO task-entry, Seed Cortex, and scientific-control compatibility shims are
+not part of that retained surface.
 
 The removed legacy XINAO platform and its tests are absent from the active tree.
 Git history is the code recovery boundary; the E-drive archive holds unique
