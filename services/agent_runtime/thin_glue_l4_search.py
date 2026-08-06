@@ -1,4 +1,4 @@
-"""L4 搜索薄绑 — ripgrep 本地 + SearXNG/DDGS/Exa 外部（替 codex_s_light_research_loop 默认热路径）."""
+"""Reusable local and external search adapters for the integrated bus."""
 
 from __future__ import annotations
 
@@ -14,95 +14,13 @@ from services.agent_runtime.default_plus_dynamic_escalate import (
     should_escalate_search,
 )
 from services.agent_runtime.overnight_local_search import probe_ddgs, probe_exa
-from services.agent_runtime.thin_evidence_writer import append_jsonl, now_iso, write_json
-from services.agent_runtime.thin_glue_stack import (
-    DEFAULT_REPO,
-    DEFAULT_RUNTIME,
-    SCHEMA_VERSION,
-    SENTINEL,
-)
 
-TASK_ID = "thin_glue_search"
-REPLACES_MODULE = "codex_s_light_research_loop"
 _SEARXNG_USER_AGENT = "XINAO-integrated-bus/1.0"
 _DEFAULT_SEARXNG_BASE = "http://127.0.0.1:8888"
 _EXA_AGGRESSIVE_MODES = frozenset({"aggressive", "auto", "on", "1", "true", "yes"})
 
 
-def output_paths(runtime: Path) -> dict[str, Path]:
-    state = runtime / "state" / "thin_glue_search"
-    return {
-        "latest": state / "latest.json",
-        "readback": runtime / "readback" / "zh" / "thin_glue_search_latest.md",
-    }
-
-
-def adapter_evidence_paths(runtime: Path) -> dict[str, Path]:
-    """Per-adapter evidence — desktop 后台搜索实施源: state/search/<adapter>/latest.json."""
-    base = runtime / "state" / "search"
-    return {
-        "searxng": base / "searxng" / "latest.json",
-        "ripgrep": base / "ripgrep" / "latest.json",
-        "ddgs": base / "ddgs" / "latest.json",
-        "exa": base / "exa" / "latest.json",
-    }
-
-
-def write_adapter_evidence(
-    runtime: Path,
-    *,
-    run_id: str,
-    local: dict[str, Any],
-    external: dict[str, Any],
-) -> dict[str, str]:
-    """Write machine-readable per-adapter search evidence for Temporal/LangGraph workers."""
-    paths = adapter_evidence_paths(runtime)
-    written: dict[str, str] = {}
-    ts = now_iso()
-    external_q = str(external.get("query") or "")
-
-    def _emit(adapter: str, probe: dict[str, Any], *, query: str) -> None:
-        path = paths.get(adapter)
-        if path is None:
-            return
-        payload: dict[str, Any] = {
-            "schema_version": SCHEMA_VERSION,
-            "sentinel": SENTINEL,
-            "task_id": TASK_ID,
-            "adapter": adapter,
-            "run_id": run_id,
-            "query": query,
-            "ok": probe.get("ok"),
-            "hit_count": int(probe.get("hit_count") or 0),
-            "hits": (probe.get("hits") or [])[:8],
-            "skipped": probe.get("skipped"),
-            "reason": probe.get("reason"),
-            "wired": probe.get("wired"),
-            "search_tier_used": external.get("search_tier_used"),
-            "escalate_policy": external.get("escalate_policy"),
-            "timestamp": ts,
-            "evidence_contract": "state/search/<adapter>/latest.json",
-        }
-        if adapter == "searxng":
-            payload["base_url"] = probe.get("base_url")
-            payload["status_code"] = probe.get("status_code")
-            payload["searxng_query_used"] = probe.get("searxng_query_used")
-        write_json(path, payload)
-        written[adapter] = str(path)
-
-    _emit("ripgrep", local, query=str(local.get("query") or ""))
-    searx = external.get("searxng") or {}
-    _emit("searxng", searx, query=external_q)
-    ddgs = external.get("ddgs") or {}
-    if ddgs.get("skipped") is not True or ddgs.get("wired") is True:
-        _emit("ddgs", ddgs, query=external_q)
-    exa = external.get("exa") or {}
-    if exa.get("skipped") is not True or exa.get("wired") is True or exa.get("invoked") is True:
-        _emit("exa", exa, query=external_q)
-    return written
-
-
-def derive_search_query(task_preview: str, *, fallback: str = "thin_glue") -> str:
+def derive_search_query(task_preview: str, *, fallback: str = "runtime_support") -> str:
     text = (task_preview or "").replace("#", " ")
     for token in re.split(r"[^\w.-]+", text):
         cleaned = token.strip("._-")
@@ -420,102 +338,3 @@ def run_external_search(
         "ddgs_named_blocker": ddgs_named_blocker,
         "escalate_policy": "default_plus_dynamic_escalate.v1",
     }
-
-
-def run_thin_glue_search(
-    *,
-    runtime_root: str | Path = DEFAULT_RUNTIME,
-    repo_root: str | Path = DEFAULT_REPO,
-    run_id: str,
-    local_query: str | None = None,
-    external_query: str | None = None,
-    max_results: int = 8,
-    write: bool = True,
-) -> dict[str, Any]:
-    runtime = Path(runtime_root)
-    repo = Path(repo_root)
-    paths = output_paths(runtime)
-    local_q = (local_query or "").strip() or derive_search_query("")
-    external_q = (external_query or local_q).strip()
-
-    local = run_local_rg_search(repo, local_q, max_results=max_results)
-    external = run_external_search(external_q, max_results=min(max_results, 5))
-
-    local_ok = local.get("ok") is True
-    external_ok = external.get("ok") is True
-    checks = {
-        "local_rg_performed": True,
-        "local_rg_hits": local_ok,
-        "external_search_attempted": True,
-        "external_search_hits_or_searx_skipped": external_ok
-        or bool(external.get("searxng", {}).get("skipped")),
-        "hand_rolled_light_research_bypassed": True,
-    }
-    passed = local_ok
-
-    payload: dict[str, Any] = {
-        "schema_version": SCHEMA_VERSION,
-        "sentinel": SENTINEL,
-        "task_id": TASK_ID,
-        "thin_glue": True,
-        "replaces": REPLACES_MODULE,
-        "run_id": run_id,
-        "local_query": local_q,
-        "external_query": external_q,
-        "local_search": local,
-        "external_search": external,
-        "local_hit_count": local.get("hit_count", 0),
-        "external_hit_count": external.get("hit_count", 0),
-        "validation": {
-            "passed": passed,
-            "checks": checks,
-            "validated_at": now_iso(),
-        },
-        "named_blockers": [] if passed else ["THIN_GLUE_L4_LOCAL_RG_EMPTY"],
-        "timestamp": now_iso(),
-    }
-
-    append_jsonl(
-        runtime / "evidence" / run_id / "execution.jsonl",
-        {
-            "layer": "L4",
-            "activity": "search",
-            "local_hits": local.get("hit_count", 0),
-            "external_hits": external.get("hit_count", 0),
-            "timestamp": now_iso(),
-        },
-    )
-
-    if write:
-        adapter_paths = write_adapter_evidence(
-            runtime,
-            run_id=run_id,
-            local=local,
-            external=external,
-        )
-        write_json(paths["latest"], payload)
-        paths["readback"].parent.mkdir(parents=True, exist_ok=True)
-        lines = [
-            "## 一层一句",
-            f"- 本地 ripgrep：`{local_q}` → {local.get('hit_count', 0)} 条",
-            f"- 外部搜索：{external.get('adapter')} → {external.get('hit_count', 0)} 条",
-            f"- 替：`{REPLACES_MODULE}`（正文已归档 _retired）",
-            "",
-            "## 分适配器证据",
-            *[f"- {name}: {path}" for name, path in sorted(adapter_paths.items())],
-            "",
-            "## 现在能干什么",
-            "thin-glue 默认链已走 L4 搜索薄绑；本地 rg 必绿，外部 SearXNG/DDGS/Exa 尽力。",
-        ]
-        paths["readback"].write_text(
-            "\n".join([f"# 薄胶 L4 搜索 {run_id}", "", *lines, ""]),
-            encoding="utf-8",
-        )
-        payload["output_paths"] = {
-            "latest": str(paths["latest"]),
-            "readback": str(paths["readback"]),
-            "adapter_evidence": adapter_paths,
-        }
-        payload["adapter_evidence"] = adapter_paths
-
-    return payload

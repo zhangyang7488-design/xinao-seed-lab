@@ -361,8 +361,51 @@ def test_default_compose_baseline_contains_only_temporal_core() -> None:
         "naijiu-shiwu",
         "shiwu-mianban",
     }
-    assert services["houtai-gongren"]["profiles"] == ["extended"]
+    assert services["houtai-gongren"]["profiles"] == ["worker"]
+    assert services["moxing-wangguan"]["profiles"] == ["gateway"]
+    assert services["waiwang-sousuo"]["profiles"] == ["search"]
+    assert services["bendi-moxing"]["profiles"] == ["ollama"]
     assert "mowei-" + "zhixing" not in services
+
+
+def test_worker_profile_has_only_temporal_as_a_service_dependency() -> None:
+    compose = yaml.safe_load((REPO_ROOT / "docker-compose.yml").read_text(encoding="utf-8"))
+    worker = compose["services"]["houtai-gongren"]
+
+    assert set(worker["depends_on"]) == {"naijiu-shiwu"}
+    assert not (
+        set(worker["environment"])
+        & {
+            "LITELLM_MASTER_KEY",
+            "XINAO_GATEWAY_BASE_URL",
+            "XINAO_PROVIDER_BASE_URL",
+            "XINAO_QDRANT_URL",
+            "LANGFUSE_PUBLIC_KEY",
+            "LANGFUSE_SECRET_KEY",
+            "LANGFUSE_HOST",
+            "XINAO_SEARXNG_BASE_URL",
+            "XINAO_SEARXNG_COMPOSE",
+            "MLFLOW_TRACKING_URI",
+            "MARQUEZ_URL",
+            "OPENLINEAGE_URL",
+        }
+    )
+    assert not (
+        set(compose["services"])
+        & {
+            "xiangliang-ku",
+            "keguan-shuju",
+            "keguan-fenxi",
+            "keguan-huancun",
+            "keguan-cunchu",
+            "keguan-gongren",
+            "keguan-zhuiji",
+            "shiyan-zhuiji",
+            "xueyuan-ku",
+            "xueyuan-zhuiji",
+            "xueyuan-mianban",
+        }
+    )
 
 
 def test_default_postgres_has_no_wal_archive_or_dead_backup_mount() -> None:
@@ -385,11 +428,11 @@ def test_default_compose_does_not_expand_optional_litellm_secret() -> None:
     compose = (REPO_ROOT / "docker-compose.yml").read_text(encoding="utf-8")
     start = (REPO_ROOT / "scripts" / "Start-XinaoBaseCompose.ps1").read_text(encoding="utf-8")
     assert "${LITELLM_MASTER_KEY:?" not in compose
-    assert compose.count("${LITELLM_MASTER_KEY:-}") == 2
+    assert compose.count("${LITELLM_MASTER_KEY:-}") == 1
     assert 'named_blocker = "LITELLM_MASTER_KEY_MISSING"' in start
 
 
-def test_extended_start_fails_before_compose_when_litellm_key_is_missing(tmp_path: Path) -> None:
+def test_gateway_start_fails_before_compose_when_litellm_key_is_missing(tmp_path: Path) -> None:
     shell = shutil.which("pwsh") or shutil.which("powershell")
     if not shell:
         pytest.skip("PowerShell is unavailable")
@@ -412,7 +455,7 @@ def test_extended_start_fails_before_compose_when_litellm_key_is_missing(tmp_pat
             "-RuntimeRoot",
             str(runtime_root),
             "-Profile",
-            "extended",
+            "gateway",
             "-Quiet",
         ],
         cwd=tmp_path,

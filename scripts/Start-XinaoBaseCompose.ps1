@@ -5,7 +5,7 @@
 .DESCRIPTION
   docker compose -f S\docker-compose.yml up -d
   Bare start and -CoreOnly: shiwu-ku / naijiu-shiwu / shiwu-mianban
-  Optional -Profile extended / ollama / -Build
+  Optional -Profile worker / gateway / search / ollama / -Build
   ClaimDurable: -RepoRoot / -RuntimeRoot write state\xinao_base_compose\latest.json
   Never down / never -v.
 .EXAMPLE
@@ -127,6 +127,7 @@ $report = [ordered]@{
     status                   = "unknown"
     temporal_ok              = $false
     worker_targeted          = $false
+    gateway_targeted         = $false
     litellm_key_required     = $false
     litellm_key_available    = $false
     worker_ok                = $false
@@ -162,14 +163,15 @@ try {
 
     $workerTargeted = (
         $targets -contains "houtai-gongren" -or
-        ($targets.Count -eq 0 -and $Profile -contains "extended")
+        ($targets.Count -eq 0 -and $Profile -contains "worker")
     )
     $report.worker_targeted = [bool]$workerTargeted
-    $litellmKeyRequired = (
+    $gatewayTargeted = (
         $targets -contains "moxing-wangguan" -or
-        $targets -contains "houtai-gongren" -or
-        ($targets.Count -eq 0 -and $Profile -contains "extended")
+        ($targets.Count -eq 0 -and $Profile -contains "gateway")
     )
+    $report.gateway_targeted = [bool]$gatewayTargeted
+    $litellmKeyRequired = $gatewayTargeted
     $report.litellm_key_required = [bool]$litellmKeyRequired
     if ($litellmKeyRequired) {
         $report.litellm_key_available = [bool](
@@ -178,7 +180,7 @@ try {
         if (-not $report.litellm_key_available) {
             $report.status = "failed"
             $report.named_blocker = "LITELLM_MASTER_KEY_MISSING"
-            throw "extended LiteLLM services require LITELLM_MASTER_KEY in the process environment or .env"
+            throw "gateway profile requires LITELLM_MASTER_KEY in the process environment or .env"
         }
     }
     if ($workerTargeted) {

@@ -3,7 +3,7 @@
 Default mode uses WorkflowEnvironment time-skipping (no live Temporal server).
 Optional live mode: set XINAO_TEMPORAL_SELFTEST_LIVE=1 (requires server + worker).
 
-Writes G25 evidence JSON. Does not touch client.py.
+Writes generic dual-brain evidence JSON. Does not touch client.py.
 """
 
 from __future__ import annotations
@@ -32,8 +32,10 @@ from adapters.temporal.names import (  # noqa: E402
 )
 
 EVIDENCE_DIR = Path(
-    r"D:\XINAO_RESEARCH_RUNTIME\evidence\grok45_peer_acceptance"
-    r"\night_run_20260712\saturation\G25_temporal_selftest_e2e"
+    os.environ.get(
+        "XINAO_TEMPORAL_SELFTEST_EVIDENCE_DIR",
+        r"D:\XINAO_RESEARCH_RUNTIME\evidence\dual_brain_coordination\temporal_selftest_e2e",
+    )
 )
 
 
@@ -46,12 +48,12 @@ def _sample_input(task_id: str) -> dict[str, Any]:
         "task_id": task_id,
         "workflow_id": f"xinao-task-{task_id}-g0",
         "generation": 0,
-        "immutable_intent_hash": "g25-selftest-intent-hash-001",
-        "title": "G25 selftest e2e",
+        "immutable_intent_hash": "temporal-selftest-intent-hash-001",
+        "title": "Temporal selftest e2e",
         "goal": "connect start wait COMPLETED query",
         "source_thread_id": None,
-        "owner": "g25",
-        "decision_hash": "g25-selftest-intent-hash-001",
+        "owner": "codex",
+        "decision_hash": "temporal-selftest-intent-hash-001",
         "promoted_only": True,
         "step_count": 1,
     }
@@ -66,9 +68,9 @@ async def _run_time_skipping_e2e() -> dict[str, Any]:
         start_promoted_workflow,
     )
 
-    task_id = f"g25-e2e-{uuid.uuid4().hex[:10]}"
+    task_id = f"temporal-selftest-e2e-{uuid.uuid4().hex[:10]}"
     payload = _sample_input(task_id)
-    task_queue = f"g25-selftest-e2e-{uuid.uuid4().hex[:8]}"
+    task_queue = f"temporal-selftest-e2e-{uuid.uuid4().hex[:8]}"
 
     async with await WorkflowEnvironment.start_time_skipping() as env:
         # connect (env.client is the connected Temporal client)
@@ -119,7 +121,7 @@ async def _run_live_e2e() -> dict[str, Any]:
     namespace = os.environ.get("XINAO_TEMPORAL_NAMESPACE", "default").strip()
     task_queue = os.environ.get("XINAO_TEMPORAL_TASK_QUEUE", DEFAULT_TASK_QUEUE).strip()
 
-    task_id = f"g25-live-{uuid.uuid4().hex[:10]}"
+    task_id = f"temporal-selftest-live-{uuid.uuid4().hex[:10]}"
     payload = _sample_input(task_id)
     wf_id = payload["workflow_id"]
 
@@ -191,8 +193,8 @@ async def main_async() -> dict[str, Any]:
 
     all_ok = bool(name_report.get("ok")) and bool(e2e and e2e.get("ok")) and not errors
     return {
-        "schema_version": "xinao.G25.temporal_selftest_e2e.v1",
-        "lane": "G25",
+        "schema_version": "xinao.dual_brain.temporal_selftest_e2e.v1",
+        "lane": "temporal-selftest-e2e",
         "generated_at": datetime.now(UTC).isoformat(),
         "pass": all_ok,
         "name_consistency": name_report,
@@ -215,7 +217,7 @@ async def main_async() -> dict[str, Any]:
             "adapters/temporal/activities.py",
         ],
         "note_cn": (
-            "G25：names SSOT 校验 workflow/activity/query 名一致；"
+            "names SSOT 校验 workflow/activity/query 名一致；"
             "一键 selftest_e2e = connect→start→wait COMPLETED→query；"
             "默认 time-skipping，XINAO_TEMPORAL_SELFTEST_LIVE=1 走 live"
         ),
@@ -225,7 +227,7 @@ async def main_async() -> dict[str, Any]:
 def main() -> int:
     EVIDENCE_DIR.mkdir(parents=True, exist_ok=True)
     report = asyncio.run(main_async())
-    out = EVIDENCE_DIR / "G25_temporal_selftest_e2e_latest.json"
+    out = EVIDENCE_DIR / "temporal_selftest_e2e_latest.json"
     out.write_text(json.dumps(report, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
     summary = {
         "pass": report["pass"],
@@ -236,11 +238,11 @@ def main() -> int:
         "terminal_status": (report.get("e2e") or {}).get("terminal_status"),
         "query_name": (report.get("e2e") or {}).get("query_name"),
     }
-    (EVIDENCE_DIR / "G25_RESULT.json").write_text(
+    (EVIDENCE_DIR / "result.json").write_text(
         json.dumps(
             {
-                "schema": "G25_RESULT.v1",
-                "lane": "G25",
+                "schema": "xinao.dual_brain.temporal_selftest_result.v1",
+                "lane": "temporal-selftest-e2e",
                 "status": "PASS" if report["pass"] else "FAIL",
                 "timestamp_utc": report["generated_at"],
                 "summary": summary,

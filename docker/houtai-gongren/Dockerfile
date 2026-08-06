@@ -53,22 +53,14 @@ RUN set -eu; \
     # Version probe may recreate guides/sessions under HOME; scrub installer home again.
     rm -rf /opt/grok-installer
 
-ENV OPA_VERSION=1.0.0
-RUN curl -fsSL -o /usr/local/bin/opa \
-    "https://openpolicyagent.org/downloads/v${OPA_VERSION}/opa_linux_amd64_static" \
-    && chmod 0755 /usr/local/bin/opa \
-    && opa version
-
 COPY pyproject.toml uv.lock README.md* ./
 RUN --mount=type=cache,target=/root/.cache/uv \
     uv sync --frozen --extra workflow --no-dev \
     && uv pip install "markitdown[all]" pytest pytest-cov pytest-json-report diff-cover \
-       instructor fastmcp duckdb watchdog GitPython litellm "langfuse>=2.60,<3" \
-       crawl4ai opentelemetry-sdk optuna "dvc>=3"
+       instructor fastmcp duckdb watchdog GitPython crawl4ai opentelemetry-sdk
 
 COPY services ./services
 COPY materials ./materials
-COPY policies ./policies
 COPY scripts ./scripts
 COPY tests ./tests
 

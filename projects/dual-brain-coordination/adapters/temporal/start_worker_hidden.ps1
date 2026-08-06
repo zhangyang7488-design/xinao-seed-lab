@@ -4,9 +4,9 @@
   Start promoted Temporal worker as a Hidden host process (no compose recreate).
 
 .DESCRIPTION
-  G23/G1 ops helper. Sets PYTHONPATH=repo+src, launches adapters/temporal/run_worker.py
-  Hidden (CreateNoWindow / WindowStyle Hidden), and writes pid + logs under the evidence
-  dir (default: saturation/G1_temporal_worker).
+  Sets PYTHONPATH=repo+src, launches adapters/temporal/run_worker.py Hidden
+  (CreateNoWindow / WindowStyle Hidden), and writes pid + logs under the current
+  runtime state directory.
 
   Does not touch client/policy/service/cli/mcp/pyproject. Does not docker compose.
 
@@ -14,7 +14,7 @@
   dual-brain-coordination repo root
 
 .PARAMETER EvidenceDir
-  Directory for worker_pid.txt / logs (default night-run G1_temporal_worker)
+  Directory for worker_pid.txt and logs.
 
 .PARAMETER PythonExe
   Optional override for python.exe
@@ -25,12 +25,12 @@
 [CmdletBinding(PositionalBinding = $false)]
 param(
     [string]$ProjectRoot = (Join-Path $PSScriptRoot '..\..'),
-    [string]$EvidenceDir = 'D:\XINAO_RESEARCH_RUNTIME\evidence\grok45_peer_acceptance\night_run_20260712\saturation\G1_temporal_worker',
+    [string]$EvidenceDir = 'D:\XINAO_RESEARCH_RUNTIME\state\dual_brain_coordination\promoted_worker',
     [string]$PythonExe = '',
     [string]$Address = '127.0.0.1:7233',
     [string]$Namespace = 'default',
     [string]$TaskQueue = 'xinao-dualbrain-promoted-v1',
-    [string]$WorkerIdentity = 'xinao-promoted-worker-g1',
+    [string]$WorkerIdentity = 'xinao-promoted-worker',
     [string]$DeploymentManifest = '',
     [string]$DeploymentName = '',
     [string]$BuildId = '',
@@ -155,13 +155,13 @@ $pidLine = "new_pid={0} alive={1} entry=adapters/temporal/run_worker.py queue={2
 [IO.File]::WriteAllText($pidFile, $pidLine + [Environment]::NewLine, [Text.UTF8Encoding]::new($false))
 
 try {
-    $marker = "{0} INFO g23.start_worker_hidden started pid={1} alive={2} address={3} queue={4} identity={5} versioning={6} deployment={7} build_id={8} stdout={9}" -f `
+    $marker = "{0} INFO promoted_worker.start_hidden started pid={1} alive={2} address={3} queue={4} identity={5} versioning={6} deployment={7} build_id={8} stdout={9}" -f `
         (Get-Date -Format 'yyyy-MM-dd HH:mm:ss,fff'), $pidValue, $alive, $Address, $TaskQueue, $WorkerIdentity, $useWorkerVersioning, $DeploymentName, $BuildId, $stdoutLog
     [IO.File]::AppendAllText($startLog, $marker + [Environment]::NewLine, [Text.UTF8Encoding]::new($false))
 } catch { }
 
 $meta = [ordered]@{
-    schema           = 'g23.start_worker_hidden.v2'
+    schema           = 'xinao.dual_brain.start_worker_hidden.v1'
     started_at_utc   = $bootStamp
     pid              = $pidValue
     alive            = $alive

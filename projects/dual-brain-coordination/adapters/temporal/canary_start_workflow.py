@@ -29,8 +29,8 @@ from xinao_coordination.database import default_db_path
 from xinao_coordination.service import CoordinationService
 
 DEFAULT_OUT = Path(
-    r"D:\XINAO_RESEARCH_RUNTIME\evidence\grok45_peer_acceptance"
-    r"\night_run_20260712\saturation\G1_temporal_worker\workflow_canary.json"
+    r"D:\XINAO_RESEARCH_RUNTIME\evidence\dual_brain_coordination"
+    r"\temporal_worker\workflow_canary.json"
 )
 
 
@@ -97,24 +97,24 @@ async def main() -> int:
     out_path = Path(os.environ.get("XINAO_TEMPORAL_CANARY_OUT", str(DEFAULT_OUT)))
     payload_path = os.environ.get("XINAO_TEMPORAL_CANARY_PAYLOAD", "").strip()
 
-    wf_id = os.environ.get("XINAO_TEMPORAL_CANARY_WF_ID", "xinao-task-g1-canary-e2e-g0")
+    wf_id = os.environ.get("XINAO_TEMPORAL_CANARY_WF_ID", "xinao-task-promoted-canary-e2e-g0")
     timeout_seconds = float(os.environ.get("XINAO_TEMPORAL_CANARY_TIMEOUT", "900"))
     payload = {
-        "task_id": "g1-canary-e2e",
+        "task_id": "promoted-canary-e2e",
         "workflow_id": wf_id,
         "generation": 0,
-        "immutable_intent_hash": "g1-canary-intent",
-        "title": "G1 canary",
+        "immutable_intent_hash": "promoted-canary-intent",
+        "title": "Promoted Temporal canary",
         "goal": "prove worker executes workflow",
         "source_thread_id": None,
         "owner": "codex",
-        "decision_hash": "g1-canary-intent",
+        "decision_hash": "promoted-canary-intent",
         "promoted_only": True,
         "langgraph_child": {
             "enabled": True,
             "task_queue": "xinao-integrated-langgraph-plugin-queue",
             "workflow_type": "XinaoIntegratedBusWorkflow",
-            "input_ref": "/app/materials/phase0_test_input.md",
+            "input_ref": "/app/materials/integrated_bus_smoke_input.md",
         },
     }
     if payload_path:

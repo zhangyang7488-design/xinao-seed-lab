@@ -46,7 +46,7 @@ async def run(run_root: Path, runtime_root: Path, timeout_seconds: float) -> dic
     run_dir.mkdir(parents=True, exist_ok=False)
     workflow_id = f"xinao-kernel-convergence-{suffix}"
     workflow_input = {
-        "input_path": "/app/materials/phase0_test_input.md",
+        "input_path": "/app/materials/integrated_bus_smoke_input.md",
         "params_path": "/app/materials/authority_glue/seams/integrated_bus_params.v1.json",
         "repo_root": "/app",
         "runtime_root": "/evidence",

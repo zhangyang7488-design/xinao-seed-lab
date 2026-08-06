@@ -1,5 +1,11 @@
-# Phase0 test input
+# Legacy integrated-bus input path
 
-薄胶 Phase0 最小环 smoke：intake → sandbox → commit。
+This filename remains only for replay and external-carrier compatibility. New
+invocations use `integrated_bus_smoke_input.md`.
 
-marker: phase0_minimal_weld
+Constraints:
+- keep repository access read-only;
+- do not select or restore a scientific task;
+- do not treat this compatibility input as completion evidence.
+
+marker: integrated_bus_legacy_input_compatibility

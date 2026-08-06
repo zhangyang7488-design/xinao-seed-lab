@@ -56,19 +56,11 @@ from services.agent_runtime.routing_policy_reader import (
     build_tier_used,
     resolve_parallel_semantic,
 )
-from services.agent_runtime.thin_glue_l4_search import exa_escalation_wired
 from services.agent_runtime.thin_glue_stack import DEFAULT_REPO, DEFAULT_RUNTIME, write_json
-from services.agent_runtime.thin_glue_sunset_registry import summarize_sunset_registry
-from services.agent_runtime.tool_table_coverage import build_tool_table_coverage
 
 SCHEMA_VERSION = "xinao.integrated_bus_runner.v1"
 SENTINEL = "SENTINEL:XINAO_INTEGRATED_BUS_RUNNER_READY"
 WINDOWLESS_CREATIONFLAGS = getattr(subprocess, "CREATE_NO_WINDOW", 0) if os.name == "nt" else 0
-REPLACES = [
-    "phase0_minimal_weld_activity",
-    "phase0_external_seam_invoke",
-    "thin_glue_temporal_single_activity",
-]
 
 
 def integrated_bus_default_enabled() -> bool:
@@ -252,7 +244,7 @@ def _initial_state_for_docker_worker(
         runtime_root=runtime_root,
     )
     if not input_path.is_file():
-        input_container = "/app/materials/phase0_test_input.md"
+        input_container = "/app/materials/integrated_bus_smoke_input.md"
     params_host = DEFAULT_PARAMS
     params_container = _host_path_to_container(
         params_host, host_root=repo_root, container_root="/app"
@@ -912,253 +904,6 @@ def _enrich_result_from_invoke_evidence(
     return merged
 
 
-def _resolve_l4_exa_weld_labels(result: dict[str, Any]) -> tuple[dict[str, str], dict[str, str]]:
-    """L4_exa: thin_bind when wired; optional_tier3 reflects invoke vs wired — 禁止英文暂缓逃逸."""
-    suspend_registry: dict[str, str] = {}
-    optional_tier3: dict[str, str] = {}
-    search_ext = result.get("search_external") or {}
-    exa = search_ext.get("exa") or {}
-    wired = (
-        exa_escalation_wired()
-        or exa.get("wired") is True
-        or search_ext.get("exa_dynamic_optional_tier3") is True
-        or bool(search_ext.get("search_tier_chain"))
-    )
-    if not wired:
-        return suspend_registry, optional_tier3
-    if exa.get("ok") is True:
-        optional_tier3["L4_exa"] = "exa_dynamic_tier3_invoke_green"
-    elif search_ext.get("exa_dynamic") is True or exa.get("invoked") is True:
-        optional_tier3["L4_exa"] = "exa_dynamic_tier3_invoked"
-    else:
-        optional_tier3["L4_exa"] = "exa_dynamic_optional_tier3_wired"
-    return suspend_registry, optional_tier3
-
-
-def _evolution_weld_named_blocker(smoke: dict[str, Any], *, fallback: str) -> str:
-    return str(
-        smoke.get("named_blocker") or (smoke.get("eval") or {}).get("named_blocker") or fallback
-    )
-
-
-def _build_evolution_weld(
-    result: dict[str, Any],
-    *,
-    params: dict[str, Any] | None = None,
-    runtime_root: Path | None = None,
-) -> dict[str, Any]:
-    """G4/G5/G6 + L2/L6/L8/L9 invoke_green weld evidence — non-blocking."""
-    p = params or {}
-    suspend_registry, optional_tier3 = _resolve_l4_exa_weld_labels(result)
-    mlflow_smoke: dict[str, Any] = {}
-    openlineage_smoke: dict[str, Any] = {}
-    opa_smoke: dict[str, Any] = {}
-    optuna_smoke: dict[str, Any] = {}
-    dvc_smoke: dict[str, Any] = {}
-    wandb_smoke: dict[str, Any] = {}
-    mlflow_ok = False
-    openlineage_ok = False
-    opa_ok = False
-    optuna_ok = False
-    dvc_ok = False
-    dvc_invoke_green = False
-    dvc_thin_bind = False
-    wandb_ok = False
-    wandb_invoke_green = False
-    wandb_thin_bind = False
-    rt = runtime_root or DEFAULT_RUNTIME
-    try:
-        from services.agent_runtime.thin_glue_l7_mlflow import run_mlflow_smoke
-
-        mlflow_smoke = run_mlflow_smoke(runtime=rt, write_evidence=True)
-        mlflow_ok = mlflow_smoke.get("invoke_ok") is True
-    except Exception as exc:
-        mlflow_smoke = {"ok": False, "reason": str(exc), "named_blocker": "MLFLOW_SMOKE_EXCEPTION"}
-    if not mlflow_ok:
-        suspend_registry["L7_mlflow"] = _evolution_weld_named_blocker(
-            mlflow_smoke, fallback="实验追踪未焊接"
-        )
-    try:
-        from services.agent_runtime.thin_glue_l5_openlineage import run_openlineage_smoke
-
-        openlineage_smoke = run_openlineage_smoke(runtime=rt, write_evidence=True)
-        openlineage_ok = openlineage_smoke.get("invoke_ok") is True
-    except Exception as exc:
-        openlineage_smoke = {
-            "ok": False,
-            "reason": str(exc),
-            "named_blocker": "OPENLINEAGE_SMOKE_EXCEPTION",
-        }
-    if not openlineage_ok:
-        suspend_registry["L5_openlineage"] = _evolution_weld_named_blocker(
-            openlineage_smoke, fallback="血缘未焊接"
-        )
-    try:
-        from services.agent_runtime.thin_glue_l5_opa import run_opa_smoke
-
-        opa_smoke = run_opa_smoke(runtime=rt, write_evidence=True)
-        opa_ok = opa_smoke.get("invoke_ok") is True
-    except Exception as exc:
-        opa_smoke = {"ok": False, "reason": str(exc), "named_blocker": "OPA_SMOKE_EXCEPTION"}
-    if not opa_ok:
-        suspend_registry["L5_opa"] = _evolution_weld_named_blocker(
-            opa_smoke, fallback="OPA策略门未焊接"
-        )
-    try:
-        from services.agent_runtime.thin_glue_l7_optuna import run_optuna_smoke
-
-        optuna_smoke = run_optuna_smoke(runtime=rt, write_evidence=True)
-        optuna_ok = optuna_smoke.get("invoke_ok") is True
-    except Exception as exc:
-        optuna_smoke = {"ok": False, "reason": str(exc), "named_blocker": "OPTUNA_SMOKE_EXCEPTION"}
-    if not optuna_ok:
-        suspend_registry["L7_optuna"] = _evolution_weld_named_blocker(
-            optuna_smoke, fallback="超参优化未焊接"
-        )
-    try:
-        from services.agent_runtime.thin_glue_l7_dvc import run_dvc_smoke
-
-        dvc_smoke = run_dvc_smoke(runtime=rt, write_evidence=True)
-        dvc_ok = dvc_smoke.get("invoke_ok") is True
-        dvc_invoke_green = dvc_smoke.get("L7_dvc_invoke_green") is True
-        dvc_thin_bind = dvc_smoke.get("L7_dvc_thin_bind") is True
-    except Exception as exc:
-        dvc_smoke = {"ok": False, "reason": str(exc), "named_blocker": "DVC_SMOKE_EXCEPTION"}
-    if not dvc_ok:
-        suspend_registry["L7_dvc"] = _evolution_weld_named_blocker(
-            dvc_smoke, fallback="数据版本薄绑未焊接"
-        )
-    try:
-        from services.agent_runtime.thin_glue_l7_wandb import run_wandb_smoke
-
-        wandb_smoke = run_wandb_smoke(
-            runtime=rt,
-            write_evidence=True,
-            mlflow_ok=mlflow_ok,
-            mlflow_tracking_uri=str(mlflow_smoke.get("tracking_uri") or ""),
-            hot_path=True,
-        )
-        wandb_invoke_green = wandb_smoke.get("L7_wandb_invoke_green") is True
-        wandb_thin_bind = wandb_smoke.get("L7_wandb_thin_bind") is True
-        wandb_ok = wandb_smoke.get("invoke_ok") is True
-    except Exception as exc:
-        wandb_smoke = {"ok": False, "reason": str(exc), "named_blocker": "WANDB_ALIAS_EXCEPTION"}
-    if not wandb_ok:
-        suspend_registry["L7_wandb"] = _evolution_weld_named_blocker(
-            wandb_smoke, fallback="WANDB_CLOUD_SKIPPED"
-        )
-    return {
-        "schema_version": "xinao.integrated_bus.evolution_weld.v1",
-        "non_blocking": True,
-        "G4_react_conditional_wired": result.get("react_conditional_wired") is True,
-        "G4_react_loop_count": int(result.get("react_loop_count") or 0),
-        "G4_react_loop_enabled": p.get("react_loop_enabled", False) is True,
-        "G5_hitl_ok": result.get("hitl_ok") is True,
-        "G5_hitl_signal_wired": result.get("hitl_signal_wired") is True,
-        "G5_hitl_feedback": str(result.get("hitl_feedback") or ""),
-        "G5_hitl_auto_approve": p.get("hitl_auto_approve", True) is not False,
-        "G5_hitl_evidence_ref": str(result.get("hitl_evidence_ref") or ""),
-        "G6_episode_phase": int(result.get("episode_phase") or p.get("episode_phase_default", 3)),
-        "G6_episode_max_phase": int(
-            result.get("episode_max_phase") or p.get("episode_max_phase", 3)
-        ),
-        "G6_continue_as_new_wired": result.get("continue_as_new_wired") is True,
-        "G6_episode_cache_ref": str(result.get("episode_cache_ref") or ""),
-        "G6_episode_multi_wave": result.get("episode_multi_wave") is True,
-        "L2_planner_structured_by": str(
-            result.get("planner_structured_by") or result.get("adapter") or ""
-        ),
-        "L2_planner_llm_invoked": result.get("planner_llm_invoked") is True,
-        "L2_checkpoint_invoked": result.get("checkpoint_invoked") is True,
-        "L2_checkpoint_thread_id": str(result.get("checkpoint_thread_id") or ""),
-        "L2_langgraph_send_wired": result.get("langgraph_send_wired") is True,
-        "L6_heal_bus_ok": result.get("heal_bus_ok") is True,
-        "L6_critic_decision": str(result.get("critic_decision") or ""),
-        "L6_critic_edge_wired": result.get("critic_edge_wired") is True,
-        "L6_retry_policy_evidence_ref": str(result.get("retry_policy_evidence_ref") or ""),
-        "L8_jinja_readback_ref": str(result.get("jinja_readback_ref") or ""),
-        "L8_rtk_adapter": str(result.get("rtk_adapter") or ""),
-        "L8_caveman_adapter": str(result.get("caveman_adapter") or ""),
-        "L8_compression_adapter": str(result.get("compression_adapter") or ""),
-        "L9_parallel_succeeded": int(result.get("parallel_succeeded") or 0),
-        "dynamic_loop_shape": result.get("dynamic_loop_shape") or {},
-        "draft_model": str(result.get("draft_model") or result.get("worker_lane_model") or ""),
-        "review_model": str(result.get("review_model") or result.get("pro_review_model") or ""),
-        "parallel_semantic": str(result.get("parallel_semantic") or resolve_parallel_semantic(p)),
-        "tier_used": result.get("tier_used")
-        if isinstance(result.get("tier_used"), dict)
-        else build_tier_used(),
-        "L9_child_wf_ok": result.get("child_wf_ok") is True,
-        "L9_child_invoked": result.get("child_invoked") is True,
-        "L9_signals_continue_as_new_wired": result.get("signals_continue_as_new_wired") is True
-        or result.get("continue_as_new_wired") is True,
-        "L7_mlflow_ok": mlflow_ok,
-        "L7_mlflow_run_id": str(mlflow_smoke.get("mlflow_run_id") or ""),
-        "L7_mlflow_tracking_uri": str(mlflow_smoke.get("tracking_uri") or ""),
-        "L7_mlflow_evidence_ref": str((mlflow_smoke.get("output_paths") or {}).get("latest") or ""),
-        "L5_openlineage_ok": openlineage_ok,
-        "L5_openlineage_run_id": str(openlineage_smoke.get("openlineage_run_id") or ""),
-        "L5_marquez_url": str(openlineage_smoke.get("marquez_url") or ""),
-        "L5_openlineage_evidence_ref": str(
-            (openlineage_smoke.get("output_paths") or {}).get("latest") or ""
-        ),
-        "L5_opa_ok": opa_ok,
-        "L5_opa_named_blocker": _evolution_weld_named_blocker(opa_smoke, fallback="")
-        if not opa_ok
-        else "",
-        "L5_opa_evidence_ref": str((opa_smoke.get("output_paths") or {}).get("latest") or ""),
-        "L7_optuna_ok": optuna_ok,
-        "L7_optuna_named_blocker": _evolution_weld_named_blocker(optuna_smoke, fallback="")
-        if not optuna_ok
-        else "",
-        "L7_optuna_evidence_ref": str((optuna_smoke.get("output_paths") or {}).get("latest") or ""),
-        "L7_dvc_ok": dvc_ok,
-        "L7_dvc_invoke_green": dvc_invoke_green,
-        "L7_dvc_thin_bind": dvc_thin_bind,
-        "L7_dvc_named_blocker": _evolution_weld_named_blocker(dvc_smoke, fallback="")
-        if not dvc_ok
-        else "",
-        "L7_dvc_evidence_ref": str((dvc_smoke.get("output_paths") or {}).get("latest") or ""),
-        "L7_wandb_ok": wandb_ok,
-        "L7_wandb_invoke_green": wandb_invoke_green,
-        "L7_wandb_thin_bind": wandb_thin_bind,
-        "wandb_mlflow_alias_ok": wandb_smoke.get("wandb_mlflow_alias_ok") is True,
-        "L7_wandb_named_blocker": _evolution_weld_named_blocker(wandb_smoke, fallback="")
-        if not wandb_ok
-        else "",
-        "L7_wandb_evidence_ref": str((wandb_smoke.get("output_paths") or {}).get("latest") or ""),
-        "mlflow_ok": mlflow_ok,
-        "openlineage_ok": openlineage_ok,
-        "显式暂缓登记": suspend_registry,
-        "optional_tier3": optional_tier3,
-        "mature_refs": {
-            "G4": "temporalio/samples-python/langgraph_plugin/graph_api/react_agent/workflow.py",
-            "G5": "temporalio/samples-python/langgraph_plugin/graph_api/human_in_the_loop/workflow.py",
-            "G6": "temporalio/samples-python/langgraph_plugin/graph_api/continue_as_new/workflow.py",
-            "L6": "thin_glue_l6_self_heal + integrated_bus_graph/should_heal_critic",
-            "L8": "thin_glue_l8_token_stack + jinja2 readback template",
-            "L9": "Temporal parent ready frontier + Grok ACPX fan-in + LangGraph child",
-            "L7": "thin_glue_l7_mlflow + thin_glue_l7_optuna + thin_glue_l7_dvc + thin_glue_l7_wandb",
-            "L5": "thin_glue_l5_openlineage + thin_glue_l5_opa",
-        },
-    }
-
-
-def _bus_result_for_tool_table_coverage(
-    result: dict[str, Any],
-    evolution_weld: dict[str, Any],
-) -> dict[str, Any]:
-    """Flatten evolution_weld invoke flags into bus_result for tool_table_coverage."""
-    merged = dict(result)
-    for key, value in evolution_weld.items():
-        if key.startswith(("L5_", "L7_", "mlflow_", "openlineage_", "wandb_")) or key in {
-            "mlflow_ok",
-            "openlineage_ok",
-        }:
-            merged[key] = value
-    return merged
-
-
 def _build_payload(
     result: dict[str, Any],
     *,
@@ -1258,11 +1003,7 @@ def _build_payload(
             result.get("gitpython_invoke_ok") is True
             and str(result.get("git_commit_adapter") or "") == "gitpython_readonly"
         ),
-        "handroll_driver_replaced": summarize_sunset_registry().get("handroll_intact") is False,
-        "handroll_intact_false": result.get("handroll_intact") is False
-        or summarize_sunset_registry().get("handroll_intact") is False,
-        "facade_default_unreachable": result.get("handroll_default_unreachable") is True
-        or result.get("facade_guard_ok") is True,
+        "retired_carriers_absent": result.get("facade_guard_ok") is True,
         "mirror_registry_probe": result.get("mirror_registry_ok") is True,
         "aaq_claim_written": result.get("aaq_ok") is True,
         "pytest_slice_green": result.get("pytest_slice_ok") is True,
@@ -1348,19 +1089,12 @@ def _build_payload(
     if not langfuse_ok and str(result.get("langfuse_named_blocker") or ""):
         named_blockers["langfuse_callback_wired"] = str(result.get("langfuse_named_blocker"))
     passed = all(checks.values())
-    evolution_weld = _build_evolution_weld(result, params=bus_params, runtime_root=runtime_root)
     payload: dict[str, Any] = {
         "schema_version": SCHEMA_VERSION,
         "sentinel": SENTINEL,
         "integrated_bus_invoke": True,
         "integration_pattern": "temporalio.contrib.langgraph.LangGraphPlugin",
         "graph_id": GRAPH_ID,
-        "replaces": REPLACES,
-        "thin_glue": True,
-        "handroll_intact": False,
-        "facade_hard_redirect": True,
-        "mainline_default_hot_path": mainline_default,
-        "not_333_mainline": not mainline_default,
         "invoke_mode": invoke_mode,
         "workflow_id": workflow_id,
         "run_id": run_id,
@@ -1381,7 +1115,6 @@ def _build_payload(
             "named_blockers": named_blockers,
             "validated_at": datetime.now().astimezone().isoformat(),
         },
-        "evolution_weld": evolution_weld,
     }
     evidence = runtime_root / "readback" / f"integrated_bus_{run_id}.json"
     write_json(evidence, payload)
@@ -1389,13 +1122,6 @@ def _build_payload(
     state_latest = runtime_root / "state" / "integrated_bus_v2" / "latest.json"
     write_json(state_latest, payload)
     payload["integrated_bus_v2_latest_ref"] = str(state_latest)
-    coverage = build_tool_table_coverage(
-        runtime_root=runtime_root,
-        integrated_bus_evidence=str(evidence),
-        bus_result=_bus_result_for_tool_table_coverage(result, evolution_weld),
-        mainline_default=mainline_default,
-    )
-    payload["tool_table_coverage_ref"] = coverage.get("output_paths", {}).get("latest", "")
     zh = runtime_root / "readback" / "zh" / f"integrated_bus_{run_id}.md"
     zh.parent.mkdir(parents=True, exist_ok=True)
     zh.write_text(

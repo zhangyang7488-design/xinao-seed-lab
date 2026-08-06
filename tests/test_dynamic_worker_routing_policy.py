@@ -223,6 +223,38 @@ def test_missing_policy_does_not_invent_provider_or_model(tmp_path: Path) -> Non
         draft_model(runtime_root=tmp_path, candidate="grok-4.5")
 
 
+def test_retired_dp_fallback_is_absent_and_unconfigured_route_fails_closed(
+    tmp_path: Path,
+) -> None:
+    from services.agent_runtime.codex_s_worker_lane_carrier import (
+        UNAVAILABLE_FALLBACK_PROVIDER_ID,
+        invoke_unavailable_fallback,
+        provider_route_for_mode,
+    )
+
+    route = provider_route_for_mode(
+        "draft",
+        {
+            "qwen_prepaid_cheap_worker_ready": False,
+            "runtime_root": str(tmp_path),
+        },
+    )
+    assert route["preferred_provider_id"] == UNAVAILABLE_FALLBACK_PROVIDER_ID
+    assert route["lane_kind"] == "no_configured_provider"
+    runner = invoke_unavailable_fallback(
+        runtime_root=tmp_path,
+        invocation_id="retired-dp-negative",
+        write=False,
+    )
+    payload = runner["provider_payload"]
+    assert payload["mode_invocation_status"] == "blocked"
+    assert payload["provider_invocation_performed"] is False
+    assert payload["named_blocker"] == "NO_CONFIGURED_FALLBACK_PROVIDER"
+    assert not (
+        Path(__file__).parents[1] / "services/agent_runtime/dp_sidecar_execution_port.py"
+    ).exists()
+
+
 def test_production_bridge_binds_exact_policy_candidate_and_hash(tmp_path: Path) -> None:
     _write_policy(tmp_path, _dynamic_policy())
     identity = {

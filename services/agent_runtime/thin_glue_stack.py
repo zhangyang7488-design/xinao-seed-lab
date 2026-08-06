@@ -1,4 +1,4 @@
-"""L0–L9 thin glue adapters — external mature OSS + minimal seams."""
+"""Shared runtime paths, intake, sandbox, and evidence helpers."""
 
 from __future__ import annotations
 
@@ -10,11 +10,8 @@ from typing import Any
 
 from services.agent_runtime.carrier_identity import resolve_code_carrier_root
 
-SCHEMA_VERSION = "xinao.codex_s.thin_glue_stack.v1"
-SENTINEL = "SENTINEL:XINAO_THIN_GLUE_STACK_READY"
 DEFAULT_RUNTIME = Path(os.environ.get("XINAO_RESEARCH_RUNTIME", r"D:\XINAO_RESEARCH_RUNTIME"))
 DEFAULT_REPO = resolve_code_carrier_root(anchor=__file__)
-DEFAULT_MATERIALS = DEFAULT_REPO / "materials"
 # Container mount for D:\XINAO_RESEARCH_RUNTIME (houtai-gongren). Never default to host Desktop.
 DEFAULT_EVIDENCE_MOUNT = Path("/evidence")
 DEFAULT_INTAKE_FALLBACK_TEXT = (
@@ -23,10 +20,6 @@ DEFAULT_INTAKE_FALLBACK_TEXT = (
     "intent_cn: 默认 intake 使用 /evidence 或 materials，禁止依赖主机 Desktop\\*.lnk\n"
     "acceptance: readable\n"
 )
-
-
-def thin_glue_enabled(flag: str, *, default: str = "1") -> bool:
-    return os.environ.get(flag, default).strip().lower() not in {"0", "false", "no", "off"}
 
 
 def now_iso() -> str:
@@ -73,11 +66,10 @@ def default_intake_candidates(
         runtime / "state" / "watchdog" / "integrated_bus" / "inbox" / "default_intake.md",
         runtime / "state" / "integrated_bus_intake" / "default_input.md",
         runtime / "tmp" / "probe_intake_text.txt",
+        app / "materials" / "integrated_bus_smoke_input.md",
+        repo / "materials" / "integrated_bus_smoke_input.md",
         app / "materials" / "phase0_test_input.md",
-        app / "materials" / "thin_bootstrap_input.md",
         repo / "materials" / "phase0_test_input.md",
-        repo / "materials" / "thin_bootstrap_input.md",
-        DEFAULT_MATERIALS / "phase0_test_input.md",
     ]
 
 
@@ -171,39 +163,6 @@ def l0_intake_markdown(path: Path, *, max_chars: int = 4000) -> dict[str, Any]:
     }
 
 
-def l0_scan_materials(
-    materials_root: Path,
-    *,
-    patterns: tuple[str, ...] = ("*.md", "*.txt"),
-    max_files: int = 12,
-) -> list[dict[str, Any]]:
-    entries: list[dict[str, Any]] = []
-    if not materials_root.is_dir():
-        return entries
-    seen: set[str] = set()
-    for pattern in patterns:
-        for path in sorted(materials_root.rglob(pattern)):
-            key = str(path.resolve())
-            if key in seen or path.name.startswith("."):
-                continue
-            seen.add(key)
-            try:
-                entries.append(l0_intake_markdown(path))
-            except Exception as exc:
-                entries.append(
-                    {
-                        "layer": "L0",
-                        "adapter": "markitdown",
-                        "source": str(path),
-                        "error": str(exc),
-                        "timestamp": now_iso(),
-                    }
-                )
-            if len(entries) >= max_files:
-                return entries
-    return entries
-
-
 def l3_run_sandbox(
     code: str,
     *,
@@ -227,49 +186,3 @@ def l3_run_sandbox(
         "exit_code": result.exit_code,
         "ok": result.exit_code == 0,
     }
-
-
-def l8_write_zh_readback(
-    runtime_root: Path,
-    *,
-    run_id: str,
-    title: str,
-    lines: list[str],
-) -> Path:
-    zh_path = runtime_root / "readback" / "zh" / f"{run_id}.md"
-    zh_path.parent.mkdir(parents=True, exist_ok=True)
-    body = "\n".join([f"# {title}", "", *lines, ""])
-    zh_path.write_text(body, encoding="utf-8")
-    if thin_glue_enabled("XINAO_THIN_GLUE_TOKEN_STACK", default="1"):
-        from services.agent_runtime.thin_glue_l8_token_stack import compress_zh_readback_file
-
-        compress_zh_readback_file(zh_path, runtime_root=runtime_root, write=True)
-    return zh_path
-
-
-def l9_probe_provider(*, base_url: str | None = None) -> dict[str, Any]:
-    from services.agent_runtime.thin_provider_client import DEFAULT_BASE_URL, probe_gateway
-
-    probe = probe_gateway(base_url=base_url or DEFAULT_BASE_URL)
-    probe["layer"] = "L9"
-    probe["adapter"] = "litellm_or_omniroute_openai_compat"
-    return probe
-
-
-def l9_chat_smoke(
-    *,
-    base_url: str | None = None,
-    model: str = "auto",
-    prompt: str = "reply with exactly: glue_ok",
-) -> dict[str, Any]:
-    from services.agent_runtime.thin_provider_client import DEFAULT_BASE_URL, chat_completion
-
-    result = chat_completion(
-        [{"role": "user", "content": prompt}],
-        model=model,
-        base_url=base_url or DEFAULT_BASE_URL,
-        timeout_s=30.0,
-    )
-    result["layer"] = "L9"
-    result["adapter"] = "litellm_or_omniroute_openai_compat"
-    return result

@@ -3205,11 +3205,9 @@ def test_integrated_bus_promotion_slice_contract() -> None:
         evaluate_current_promotion,
     )
     from services.agent_runtime.integrated_bus_runner import SENTINEL
-    from services.agent_runtime.thin_glue_sunset_registry import summarize_sunset_registry
 
     assert GRAPH_ID == "xinao-integrated-bus-v2"
     assert SENTINEL == "SENTINEL:XINAO_INTEGRATED_BUS_RUNNER_READY"
-    assert summarize_sunset_registry().get("handroll_intact") is False
     workflow_id = "wf-current"
     fanin_ref = "/evidence/state/source_ledger/integrated_bus/fanin.json"
     fanin_sha256 = "f" * 64

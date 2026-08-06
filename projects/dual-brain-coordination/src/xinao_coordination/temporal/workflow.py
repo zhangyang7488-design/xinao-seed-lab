@@ -65,7 +65,10 @@ LANGGRAPH_DYNAMIC_PROVIDER_ACCEPTANCE_PATCH_ID = "promoted-langgraph-dynamic-pro
 LEGACY_CHILD_WF_REQUIRED_BUILD_IDS = frozenset({"4d914c0249ea40d9d666e2832812436f"})
 DEFAULT_LANGGRAPH_CHILD_QUEUE = "xinao-integrated-langgraph-plugin-queue"
 DEFAULT_LANGGRAPH_CHILD_WORKFLOW = "XinaoIntegratedBusWorkflow"
+# Keep the historical default stable for replay. New envelopes carry the
+# current generic input explicitly.
 DEFAULT_LANGGRAPH_INPUT_REF = "/app/materials/phase0_test_input.md"
+CURRENT_LANGGRAPH_INPUT_REF = "/app/materials/integrated_bus_smoke_input.md"
 DEFAULT_LANGGRAPH_PARAMS_REF = "/app/materials/authority_glue/seams/integrated_bus_params.v1.json"
 LEGACY_REQUIRED_LANGGRAPH_TRUE_CHECKS = (
     "validate_ok",
@@ -166,7 +169,7 @@ def build_langgraph_child_spec(
     if isinstance(intake, dict) and intake.get("ok") is True:
         materialized_ref = str(intake.get("container_path") or "").strip()
     input_ref = configured_ref
-    if not input_ref or input_ref == DEFAULT_LANGGRAPH_INPUT_REF:
+    if not input_ref or input_ref in {DEFAULT_LANGGRAPH_INPUT_REF, CURRENT_LANGGRAPH_INPUT_REF}:
         input_ref = materialized_ref or configured_ref
 
     parent_id = str(workflow_input.get("workflow_id") or workflow_input.get("task_id") or "")
@@ -921,6 +924,7 @@ class XinaoPromotedTaskWorkflowV1:
 PROMOTED_WORKFLOWS = (XinaoPromotedTaskWorkflowV1,)
 
 __all__ = [
+    "CURRENT_LANGGRAPH_INPUT_REF",
     "DEFAULT_LANGGRAPH_CHILD_QUEUE",
     "DEFAULT_LANGGRAPH_CHILD_WORKFLOW",
     "DEFAULT_LANGGRAPH_INPUT_REF",

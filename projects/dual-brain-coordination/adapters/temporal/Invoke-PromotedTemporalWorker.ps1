@@ -4,11 +4,11 @@
   Reproducible promoted Temporal worker ensure: describe pollers → start if missing.
 
 .DESCRIPTION
-  G23 ops entry for queue xinao-dualbrain-promoted-v1:
+  Idempotent operations entry for queue xinao-dualbrain-promoted-v1:
     1) temporal task-queue describe (real poller identities; never mock)
     2) if pollers present → record identities (no second worker unless -ForceStart)
     3) if no pollers → start via start_worker_hidden.ps1 (Hidden, PYTHONPATH=repo+src)
-    4) write pid/log under G1_temporal_worker and G23_worker_ops.json
+    4) write pid/log and worker_ops.json under the current runtime state root
 
   This worker-only helper never mutates the Temporal server or compose stack.
   Server/schema migrations use their separately preregistered canary and rollback.
@@ -17,7 +17,7 @@
   dual-brain-coordination repo root
 
 .PARAMETER EvidenceDir
-  Default night-run saturation/G1_temporal_worker
+  Runtime state directory for worker identity, logs, and readback evidence.
 
 .PARAMETER ForceStart
   Start a worker even if pollers already present (ops only; not default)
@@ -31,11 +31,11 @@
 [CmdletBinding(PositionalBinding = $false)]
 param(
     [string]$ProjectRoot = (Join-Path $PSScriptRoot '..\..'),
-    [string]$EvidenceDir = 'D:\XINAO_RESEARCH_RUNTIME\evidence\grok45_peer_acceptance\night_run_20260712\saturation\G1_temporal_worker',
+    [string]$EvidenceDir = 'D:\XINAO_RESEARCH_RUNTIME\state\dual_brain_coordination\promoted_worker',
     [string]$Address = '127.0.0.1:7233',
     [string]$Namespace = 'default',
     [string]$TaskQueue = 'xinao-dualbrain-promoted-v1',
-    [string]$WorkerIdentity = 'xinao-promoted-worker-g1',
+    [string]$WorkerIdentity = 'xinao-promoted-worker',
     [string]$PythonExe = '',
     [string]$DeploymentManifest = '',
     [string]$DeploymentName = '',
@@ -56,7 +56,7 @@ $EvidenceDir = [IO.Path]::GetFullPath($EvidenceDir)
 [void][IO.Directory]::CreateDirectory($EvidenceDir)
 
 $startedUtc = (Get-Date).ToUniversalTime().ToString('o')
-$opsPath = Join-Path $EvidenceDir 'G23_worker_ops.json'
+$opsPath = Join-Path $EvidenceDir 'worker_ops.json'
 $describeTxt = Join-Path $EvidenceDir 'queue_describe.txt'
 $describeJson = Join-Path $EvidenceDir 'queue_describe.json'
 $startScript = Join-Path $ProjectRoot 'adapters\temporal\start_worker_hidden.ps1'
@@ -105,7 +105,7 @@ function Parse-PollerIdentities {
 
     # Typical table row:
     #   UNVERSIONED  workflow       31440@DESKTOP-IB5LQL0  44 seconds ago         100000
-    # or identity=xinao-promoted-worker-g1
+    # or identity=xinao-promoted-worker
     foreach ($line in ($Text -split "`r?`n")) {
         $trim = $line.Trim()
         if (-not $trim) { continue }
@@ -145,7 +145,7 @@ function Write-JsonAtomic {
 }
 
 $cli = Resolve-TemporalCli -Override $TemporalCli
-Write-Host "==> G23 Invoke-PromotedTemporalWorker" -ForegroundColor Cyan
+Write-Host "==> Ensure promoted Temporal worker" -ForegroundColor Cyan
 Write-Host "    task_queue=$TaskQueue address=$Address"
 Write-Host "    evidence=$EvidenceDir"
 Write-Host "    temporal_cli=$cli"
@@ -169,7 +169,7 @@ $action = 'record_existing_poller'
 $startMeta = $null
 $startedWorker = $false
 $notes = [System.Collections.Generic.List[string]]::new()
-[void]$notes.Add('Scope: adapters/temporal/** + evidence G1/G23 only.')
+[void]$notes.Add('Scope: promoted Temporal worker process and its runtime readback only.')
 [void]$notes.Add('This helper is worker-only; server/schema migration is a separate preregistered operation.')
 
 if ($pollersPresent -and -not $ForceStart) {
@@ -245,8 +245,8 @@ else {
 }
 
 $ops = [ordered]@{
-    schema_version            = 'xinao.g23_worker_ops.v1'
-    station                   = 'G23'
+    schema_version            = 'xinao.dual_brain.promoted_worker_ops.v1'
+    station                   = 'promoted-worker'
     role                      = 'temporal_worker_reproducible_start'
     generated_at_utc          = (Get-Date).ToUniversalTime().ToString('o')
     started_at_utc            = $startedUtc
@@ -282,13 +282,12 @@ $ops = [ordered]@{
     )
     scope                     = @(
         'adapters/temporal/**',
-        'saturation/G1_temporal_worker',
-        'G23_worker_ops.json'
+        'state/dual_brain_coordination/promoted_worker',
+        'worker_ops.json'
     )
     forbidden_touched         = $false
     compose_recreate_attempted = $false
     desktop_commander_used    = $false
-    product_closed            = $false
     completion_claim_allowed  = $false
     notes                     = @($notes)
 }

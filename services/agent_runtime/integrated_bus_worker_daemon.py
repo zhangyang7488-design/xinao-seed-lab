@@ -27,7 +27,6 @@ from services.agent_runtime.integrated_bus_workflow_registry import (
     registry_summary,
 )
 from services.agent_runtime.thin_glue_stack import DEFAULT_RUNTIME, write_json
-from services.agent_runtime.thin_glue_sunset_registry import summarize_sunset_registry
 
 SCHEMA_VERSION = "xinao.integrated_bus_worker_daemon.v5"
 SENTINEL = "SENTINEL:XINAO_INTEGRATED_BUS_WORKER_DAEMON_READY"
@@ -434,7 +433,6 @@ async def run_integrated_bus_worker_daemon(
 
     bindings = collect_worker_bindings()
     run_id = datetime.now(timezone.utc).astimezone().strftime("%Y%m%d_%H%M%S_%f")
-    sunset = summarize_sunset_registry()
     reg = registry_summary()
     process_id = os.getpid()
     process_start_ticks = _process_start_ticks(process_id)
@@ -491,10 +489,6 @@ async def run_integrated_bus_worker_daemon(
         "workflow_roles": reg.get("workflow_roles", {}),
         "source_release": release,
         "activity_count": reg.get("activity_count", 0),
-        "handroll_intact": False,
-        "facade_hard_redirect": True,
-        "sunset_registry_handroll_intact": sunset.get("handroll_intact") is False,
-        "not_333_mainline": False,
         "completion_claim_allowed": False,
         "generated_at": datetime.now().astimezone().isoformat(),
     }

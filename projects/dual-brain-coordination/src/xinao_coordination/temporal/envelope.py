@@ -8,7 +8,7 @@ from typing import Any
 
 DEFAULT_LANGGRAPH_CHILD_QUEUE = "xinao-integrated-langgraph-plugin-queue"
 DEFAULT_LANGGRAPH_CHILD_WORKFLOW = "XinaoIntegratedBusWorkflow"
-DEFAULT_LANGGRAPH_INPUT_REF = "/app/materials/phase0_test_input.md"
+DEFAULT_LANGGRAPH_INPUT_REF = "/app/materials/integrated_bus_smoke_input.md"
 
 
 @dataclass(frozen=True)

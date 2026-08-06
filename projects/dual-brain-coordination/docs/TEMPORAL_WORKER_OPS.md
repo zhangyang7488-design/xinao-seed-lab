@@ -1,12 +1,12 @@
-# Temporal promoted worker · 运维手册（T9 / S5 / C08）
+# Temporal promoted worker · 运维手册
 
 状态：ops guide（非 ADR）。与 `ADR-0001-EMBEDDED-KERNEL.md` **不冲突**：
 内核仍是 SQLite 真源；Temporal 仅作 **promoted-task 执行附接**，
 永不成为 dual-brain 治理 owner，也不替换 claim/lease/fencing。
 
-当前实况（2026-07-12）：Temporal Server `1.31.0`、UI `2.49.1`、Python SDK
-`1.30.0`；promoted queue 已进入官方 Worker Deployment，短任务使用
-`PINNED`。日常 worker 运维不碰 compose；服务/schema 升级只能走独立预登记
+准确版本与当前 build 必须从 compose、deployment manifest 和 live readback 读取，
+不能从旧验收批次或本手册中的快照推断。promoted queue 使用官方 Worker
+Deployment，短任务使用 `PINNED`。日常 worker 运维不碰 compose；服务/schema 升级只能走独立预登记
 canary、数据库备份/恢复演练和服务级回滚，不能借日常脚本顺手重建。
 
 ---
@@ -53,7 +53,7 @@ canary、数据库备份/恢复演练和服务级回滚，不能借日常脚本�
 | `XINAO_TEMPORAL_NAMESPACE` | `default` | Namespace |
 | `XINAO_TEMPORAL_TASK_QUEUE` | `xinao-dualbrain-promoted-v1` | 隔离 queue；勿与 bus 队列混用 |
 | `XINAO_TEMPORAL_WORKFLOW_TYPE` | `XinaoPromotedTaskWorkflowV1` | worker_runtime 可选覆盖 |
-| `XINAO_TEMPORAL_WORKER_LOG` | （可选） | G1 启动日志路径 |
+| `XINAO_TEMPORAL_WORKER_LOG` | （可选） | worker 启动日志路径 |
 | `XINAO_TEMPORAL_WORKER_VERSIONING` | `0` | canonical live worker 必须为 `1`；测试/历史 replay 可显式关 |
 | `XINAO_TEMPORAL_WORKER_DEPLOYMENT_NAME` | 空 | versioning 开启时必须为 `xinao-dualbrain-promoted` |
 | `XINAO_TEMPORAL_WORKER_BUILD_ID` | 空 | versioning 开启时必填；来自 `worker_deployment.v1.json` |
@@ -83,7 +83,7 @@ $Managed = 'E:\XINAO_RESEARCH_WORKSPACES\S\projects\dual-brain-coordination\prov
 
 ## 3. 日常硬禁与已注册迁移例外
 
-下列命令与行为在普通 dual-brain canary、night-run、peer 验收中 **默认禁止**
+下列命令与行为在普通 dual-brain canary 和日常运维中 **默认禁止**
 （`configs/modules/temporal.toml` → `[temporal.forbidden]`；证据字段
 `no_live_temporal_recreate` / `no_docker_compose_up`）：
 
@@ -105,10 +105,10 @@ docker rm -f naijiu-shiwu shiwu-mianban shiwu-ku
 | `auto_start_on_promote=true` | promote 不得隐式起 workflow |
 | chat/discuss 载荷进 Temporal | 仅 `metadata.promoted=true` 任务 |
 | CLI/MCP 传入 `--live` | live **仅** env `XINAO_TEMPORAL_LIVE=1` |
-| mock `pollers=1` 当作 live 焊通 | mock 假绿；C08 必须 CLI `task-queue describe` |
+| mock `pollers=1` 当作 live 焊通 | mock 假绿；live 必须 CLI `task-queue describe` |
 | 用 `houtai-gongren` bus 队列冒充 dual-brain poller | queue 名不同；须单独注册 |
 | 把 Temporal 写成 dual-brain 治理 owner | 内核 + M-BG 仍权威 |
-| canary 写生产 DB 冒充 live C08 | 隔离 canary DB 或明确 live 证据路径 |
+| canary 写生产 DB 冒充 live | 隔离 canary DB 或明确 live 证据路径 |
 
 **允许**：对 **已运行** 栈做只读探活（`temporal task-queue describe`、
 UI、TCP `:7233`）、在 host 上 **新增** dual-brain worker 进程
@@ -135,8 +135,8 @@ temporal task-queue describe `
   --task-queue xinao-dualbrain-promoted-v1 `
   --address 127.0.0.1:7233 `
   --namespace default
-# Pollers 空 = 未焊通；有 Identity（如 xinao-promoted-worker-g1）= worker 在轮询
-# 夜跑初段曾为空；G1 启动后应以当次 describe 为准，禁止用 mock pollers 字段代替
+# Pollers 空 = 未焊通；有 Identity（如 xinao-promoted-worker）= worker 在轮询
+# 始终以当次 describe 为准，禁止用 mock pollers 字段代替
 ```
 
 对比：既有 bus worker 在别的 queue 上 **有** poller，例如
@@ -145,8 +145,8 @@ temporal task-queue describe `
 
 ### 4.2 Worker 注册要求
 
-Worker 实现归属 **G1**（`adapters/temporal/workflow.py` + `activities.py`
-及可执行入口）。运维要求固定为：
+Worker 实现在 `adapters/temporal/workflow.py`、`activities.py` 及可执行入口。
+运维要求固定为：
 
 1. `Client.connect(XINAO_TEMPORAL_ADDRESS, namespace=…)` 连 **既有** 服务。
 2. `Worker(..., task_queue="xinao-dualbrain-promoted-v1",
@@ -157,7 +157,7 @@ Worker 实现归属 **G1**（`adapters/temporal/workflow.py` + `activities.py`
 5. `await worker.run()` 常驻；崩溃后 **重启同一 build/脚本**，禁止 compose recreate。
 6. Identity 应可识别（日志/Deployment describe 可见），便于审计。
 
-### 4.3 推荐启动形态（host 进程 · G1 入口）
+### 4.3 推荐启动形态（host 进程）
 
 入口与细节见 `adapters/temporal/README.md`；权威实现：
 
@@ -227,7 +227,7 @@ temporal task-queue describe `
 切换新 build 必须先旁挂 candidate、重放全部 retained history、做真实 E2E，再通过
 `set-ramping-version` / `set-current-version` 路由；不能靠停止旧进程碰运气。
 
-历史 replay（写 D 盘证据，不调用模型）：
+Retained history replay（写 D 盘证据，不调用模型）：
 
 ```powershell
 $Py = 'D:\XINAO_RESEARCH_RUNTIME\tools\xinao-coordination\generations\worker-versioning-sdk-1.30.0-ca1106b\Scripts\python.exe'
@@ -261,17 +261,16 @@ MCP 等价：`temporal_status` / `temporal_start_promoted`（角色由
 
 ## 5. Mock vs Live 验收尺（Scoped ≠ Welded）
 
-### 5.1 Mock / canary → 最高 `PASS_SCOPED*`（**不是** C08 PASS）
+### 5.1 Mock / canary（不等于 live 验收）
 
 | 尺 | 要求 |
 |---|---|
 | Env | `ENABLED=1` `MOCK=1` `LIVE=0` |
 | 代码路径 | 进程内 mock 注册表；`mode=mock` |
-| 测试 | `tests/test_t9_temporal_promoted_adapter.py` 全过 |
-| 证据脚本 | `scripts/_t9_temporal_promoted_evidence.py` → `PASS_SCOPED_CANARY` |
-| S5 | `scripts/_s5_temporal_adapter_landed_evidence.py` → implementation landed |
+| 回归 | `pytest tests/test_t9_temporal_promoted_adapter.py` 全过 |
+| 实现读回 | `adapters/temporal`、`src/xinao_coordination/temporal` 与 deployment manifest 相互一致 |
 | 硬声明 | `live_workflow_start_attempted=false`；`live_temporal_recreate=false`；`no_docker_compose_up=true` |
-| 禁止升级 | 不得把 mock 幂等 start 写成 C08 / product_closed / completion_claim |
+| 禁止升级 | 不得把 mock 幂等 start 写成 live consumer effect 或完成结论 |
 
 Mock 可证明：**薄适配落地、promoted-only、幂等、Stop 抢占、角色边界**。
 Mock **不能** 证明：真实 poller、history、跨进程接管、live start_workflow。
@@ -279,7 +278,7 @@ Mock **不能** 证明：真实 poller、history、跨进程接管、live start_
 > 注：当前 mock `describe_promoted_queue` 可能报 `pollers=1`——**属假指标**，
 > 验收与 inventory 必须分列 **code landed** vs **live welded**；不得引用该字段为 live 焊通。
 
-### 5.2 Live / C08 → 才可讨论 `C08 PASS`
+### 5.2 Live 验收
 
 全部满足才算 live welded（缺一 → `PARTIAL` / `FAIL_LIVE`）：
 
@@ -292,20 +291,20 @@ Mock **不能** 证明：真实 poller、history、跨进程接管、live start_
 | L5 | 幂等 | 同 task/idem 二次 start → already-started / `replayed=true` |
 | L6 | Stop 抢占 | user stop 后 start 拒绝 |
 | L7 | 无 chat ingress | 非 promoted / discuss-only 被拒 |
-| L8 | 证据落盘 | `C08_temporal_promoted_live_*.json`（或等价）含 describe 摘录与 queue poller 摘录 |
+| L8 | 证据落盘 | `temporal_live_canary.json`（或等价）含 describe 摘录与 queue poller 摘录 |
 | L9 | 副作用边界 | canary 未 `compose up/recreate`；`completion_claim_allowed` 仍按整包策略 |
 
 本页的 2026-07-12 live 结果只保留为 Temporal worker versioning 的历史证据；已退役的
 平台 broker 不属于当前启动基线。配置或旧 PASS 标签仍不能代替新 build 的 replay、
 真实 E2E 与禁止副作用检查。
 
-### 5.3 分列登记（S5 inventory 规则）
+### 5.3 能力与效果分列
 
 ```text
 code_landed:     adapters/temporal + src/.../temporal + CLI/MCP surface
 live_welded:     poller_on_promoted_queue && real_start_workflow && live_evidence_json
-mock_canary:     PASS_SCOPED_CANARY  (≠ C08 PASS)
-C08_verdict:     PASS only if live_welded
+mock_regression: tests pass (does not imply live effect)
+live_verdict:    verified only if live_welded
 ```
 
 ---
@@ -315,7 +314,7 @@ C08_verdict:     PASS only if live_welded
 1. **探活**：`naijiu-shiwu` healthy；`:7233` 可达。
 2. **Poller**：`task-queue describe` on `xinao-dualbrain-promoted-v1`。
 3. **Policy**：`temporal-status` → `auto_start_on_promote=false`；`mbg_temporal_owner=false`。
-4. **Mock 回归**（默认）：`ENABLED=1 MOCK=1 LIVE=0` + T9 pytest / evidence 脚本。
+4. **Mock 回归**（默认）：`ENABLED=1 MOCK=1 LIVE=0` + `tests/test_t9_temporal_promoted_adapter.py`。
 5. **Versioning**：Deployment Current 必须等于 manifest，ramping 默认为空；新 build
    走旁挂→replay→E2E→ramp/current，失败先路由回已知 build。
 6. **Live 仅在 L2+L3 就绪后**：设 `LIVE=1`，跑 live canary；失败时只处理精确身份的
@@ -338,10 +337,9 @@ C08_verdict:     PASS only if live_welded
 | `adapters/temporal/replay_promoted_histories.py` | 全 retained history 导出与确定性 replay |
 | `configs/modules/temporal.toml` | 默认与 forbidden 清单 |
 | `provisioning/Invoke-XinaoCoordManaged.ps1` | managed env 注入 + temporal targets |
-| `scripts/_t9_temporal_promoted_evidence.py` | mock canary 证据 |
-| `scripts/_s5_temporal_adapter_landed_evidence.py` | code landed 证据 |
+| `scripts/Invoke-T9TemporalLiveCanary.ps1` | 有界 live canary；默认写入通用 dual-brain 证据根 |
+| `tests/test_t9_temporal_promoted_adapter.py` | 默认 mock 回归与 Stop/幂等边界 |
 | `docs/ADR-0001-EMBEDDED-KERNEL.md` | 内核默认不装 Temporal；升级触发器 |
 | `docs/OPERATIONS.md` | 本机协调入口 / 备份 / 租约 |
 
-证据（G14）：
-`D:\XINAO_RESEARCH_RUNTIME\evidence\grok45_peer_acceptance\night_run_20260712\saturation\G14_ops_doc\`
+2026-07-12 的分阶段验收材料仅作历史证据，可从 Git 与冷归档恢复；不再是当前运维入口。

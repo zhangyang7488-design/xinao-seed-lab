@@ -1,12 +1,14 @@
 """Self-test: WorkflowEnvironment time-skipping + Worker + start_workflow.
 
-No live Temporal server required. Writes evidence JSON for G8_mature_bind.
+No live Temporal server is required; evidence is written to the generic
+dual-brain runtime evidence root.
 """
 
 from __future__ import annotations
 
 import asyncio
 import json
+import os
 import sys
 import traceback
 import uuid
@@ -22,8 +24,10 @@ if str(REPO) not in sys.path:
     sys.path.insert(0, str(REPO))
 
 EVIDENCE_DIR = Path(
-    r"D:\XINAO_RESEARCH_RUNTIME\evidence\grok45_peer_acceptance"
-    r"\night_run_20260712\saturation\G8_mature_bind"
+    os.environ.get(
+        "XINAO_TEMPORAL_WORKER_SELFTEST_DIR",
+        r"D:\XINAO_RESEARCH_RUNTIME\evidence\dual_brain_coordination\temporal_worker_selftest",
+    )
 )
 
 
@@ -33,7 +37,7 @@ def _sample_input(task_id: str) -> dict[str, Any]:
         "workflow_id": f"xinao-task-{task_id}-g0",
         "generation": 0,
         "immutable_intent_hash": "deadbeef" * 8,
-        "title": "G8 selftest promoted",
+        "title": "Temporal worker selftest promoted task",
         "goal": "validate worker signal/query/retry/cancel",
         "source_thread_id": None,
         "owner": "codex",
@@ -51,7 +55,7 @@ async def _run_happy_path(env_client, task_queue: str) -> dict[str, Any]:
     )
     from xinao_coordination.temporal.workflow import XinaoPromotedTaskWorkflowV1
 
-    task_id = f"g8-happy-{uuid.uuid4().hex[:10]}"
+    task_id = f"worker-selftest-happy-{uuid.uuid4().hex[:10]}"
     payload = _sample_input(task_id)
     async with build_promoted_worker(env_client, task_queue=task_queue):
         handle = await start_promoted_workflow(
@@ -85,7 +89,7 @@ async def _run_signal_cancel(env_client, task_queue: str) -> dict[str, Any]:
     )
     from xinao_coordination.temporal.workflow import XinaoPromotedTaskWorkflowV1
 
-    task_id = f"g8-cancel-{uuid.uuid4().hex[:10]}"
+    task_id = f"worker-selftest-cancel-{uuid.uuid4().hex[:10]}"
     payload = _sample_input(task_id)
     # Force pause so we can signal cancel before steps finish
     payload["step_count"] = 3
@@ -97,7 +101,7 @@ async def _run_signal_cancel(env_client, task_queue: str) -> dict[str, Any]:
             task_queue=task_queue,
         )
         await handle.signal(XinaoPromotedTaskWorkflowV1.pause)
-        await handle.signal(XinaoPromotedTaskWorkflowV1.request_cancel, "g8-selftest-cancel")
+        await handle.signal(XinaoPromotedTaskWorkflowV1.request_cancel, "worker-selftest-cancel")
         await handle.signal(XinaoPromotedTaskWorkflowV1.resume)
         result = await handle.result()
         status = await handle.query(XinaoPromotedTaskWorkflowV1.get_status)
@@ -124,7 +128,7 @@ async def _run_workflow_cancel_api(env_client, task_queue: str) -> dict[str, Any
     )
     from xinao_coordination.temporal.workflow import XinaoPromotedTaskWorkflowV1
 
-    task_id = f"g8-wfcancel-{uuid.uuid4().hex[:10]}"
+    task_id = f"worker-selftest-api-cancel-{uuid.uuid4().hex[:10]}"
     payload = _sample_input(task_id)
     payload["step_count"] = 4
     cancelled_exc: str | None = None
@@ -174,8 +178,8 @@ async def main_async() -> dict[str, Any]:
     cases: list[dict[str, Any]] = []
     errors: list[str] = []
     async with await WorkflowEnvironment.start_time_skipping() as env:
-        tq = f"g8-promoted-selftest-{uuid.uuid4().hex[:8]}"
-        # Required for G8 bind pass: worker + retry path + soft cancel signal.
+        tq = f"promoted-worker-selftest-{uuid.uuid4().hex[:8]}"
+        # Required for the worker contract: worker + retry path + soft cancel signal.
         for runner in (_run_happy_path, _run_signal_cancel):
             try:
                 case = await runner(env.client, tq)
@@ -220,7 +224,7 @@ async def main_async() -> dict[str, Any]:
     required = [c for c in cases if c.get("required_for_pass", True)]
     all_ok = all(c.get("ok") for c in required) and not errors
     return {
-        "schema_version": "xinao.G8_mature_bind.temporal_worker.v1",
+        "schema_version": "xinao.dual_brain.temporal_worker_selftest.v1",
         "generated_at": datetime.now(UTC).isoformat(),
         "official_patterns": [
             "Client.connect + Worker(task_queue, workflows, activities) + worker.run",
@@ -252,7 +256,7 @@ async def main_async() -> dict[str, Any]:
             "pyproject.toml",
         ],
         "note_cn": (
-            "G8 落地：官方 Worker/start_workflow/signal/query/cancel/retry 模式；"
+            "覆盖官方 Worker/start_workflow/signal/query/cancel/retry 模式；"
             "time-skipping 自测无需 live Temporal；live poller 用 run_worker.py"
         ),
     }
@@ -261,17 +265,17 @@ async def main_async() -> dict[str, Any]:
 def main() -> int:
     EVIDENCE_DIR.mkdir(parents=True, exist_ok=True)
     report = asyncio.run(main_async())
-    out = EVIDENCE_DIR / "G8_temporal_worker_selftest_latest.json"
+    out = EVIDENCE_DIR / "temporal_worker_selftest_latest.json"
     out.write_text(json.dumps(report, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
     # compact companion for inventory
     inv = {
-        "schema_version": "xinao.G8_mature_bind.landed_files.v1",
+        "schema_version": "xinao.dual_brain.temporal_worker_files.v1",
         "generated_at": report["generated_at"],
         "pass": report["pass"],
         "files": report["landed_files"],
         "evidence": str(out),
     }
-    inv_path = EVIDENCE_DIR / "G8_landed_files.json"
+    inv_path = EVIDENCE_DIR / "landed_files.json"
     inv_path.write_text(json.dumps(inv, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
     print(
         json.dumps(

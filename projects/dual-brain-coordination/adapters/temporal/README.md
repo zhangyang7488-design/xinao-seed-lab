@@ -1,4 +1,4 @@
-# Temporal adapter (T9 / M-TMPL)
+# Temporal promoted-task adapter
 
 Blueprint shims re-export `src/xinao_coordination/temporal/*`.
 
@@ -7,7 +7,7 @@ Blueprint shims re-export `src/xinao_coordination/temporal/*`.
 - **Mock default** — `XINAO_TEMPORAL_ENABLED=1` + `XINAO_TEMPORAL_MOCK=1` for canary/CI
 - **Live** — requires `XINAO_TEMPORAL_LIVE=1`, real client start (Admin-owned), and this worker
 
-## Real worker (G1)
+## Real worker
 
 | Item | Value |
 |------|--------|
@@ -50,7 +50,7 @@ E:\XINAO_RESEARCH_WORKSPACES\S\projects\dual-brain-coordination\.venv\Scripts\py
 set XINAO_TEMPORAL_ADDRESS=127.0.0.1:7233
 set XINAO_TEMPORAL_NAMESPACE=default
 set XINAO_TEMPORAL_TASK_QUEUE=xinao-dualbrain-promoted-v1
-set XINAO_TEMPORAL_WORKER_LOG=D:\XINAO_RESEARCH_RUNTIME\evidence\grok45_peer_acceptance\night_run_20260712\saturation\G1_temporal_worker\worker_start.log
+set XINAO_TEMPORAL_WORKER_LOG=D:\XINAO_RESEARCH_RUNTIME\state\dual_brain_coordination\promoted_worker\worker_start.log
 E:\XINAO_RESEARCH_WORKSPACES\S\projects\dual-brain-coordination\.venv\Scripts\python.exe E:\XINAO_RESEARCH_WORKSPACES\S\projects\dual-brain-coordination\adapters\temporal\run_worker.py
 ```
 
@@ -90,23 +90,22 @@ D:\XINAO_RESEARCH_RUNTIME\tools\xinao-coordination\generations\worker-versioning
 The command writes canonical history JSON plus `replay_report.json` and exits non-zero on
 any nondeterminism. Run it before routing a new build.
 
-## G8 mature bind (official Worker / RetryPolicy map)
+## Worker and RetryPolicy verification
 
-Code-landed patterns are inventoried with **path + line anchors** (not C08 live PASS):
+The selftest exercises the official Worker and RetryPolicy patterns without claiming a live consumer effect:
 
 | Artifact | Path |
 |----------|------|
-| Primary map | `D:\XINAO_RESEARCH_RUNTIME\evidence\...\saturation\G8_mature_bind\MATURE_BIND_MAP.json` |
 | Selftest entry | `adapters/temporal/selftest_worker.py` (WorkflowEnvironment time-skipping; no live server) |
 | Worker bind | `adapters/temporal/worker_runtime.py` → `Client.connect` + `Worker(...)` + `worker.run()` |
 | RetryPolicy | `src/.../temporal/activities.py` `DEFAULT_ACTIVITY_RETRY` + `workflow.execute_activity(..., retry_policy=...)` |
 
-### Selftest (G8 evidence)
+### Selftest
 
 ```bat
 E:\XINAO_RESEARCH_WORKSPACES\S\projects\dual-brain-coordination\.venv\Scripts\python.exe E:\XINAO_RESEARCH_WORKSPACES\S\projects\dual-brain-coordination\adapters\temporal\selftest_worker.py
 ```
 
-Writes `G8_temporal_worker_selftest_latest.json` under `G8_mature_bind/`.
+Writes `temporal_worker_selftest_latest.json` under the generic dual-brain evidence root.
 
-**Scope boundary:** G8/G26 does **not** edit `src/xinao_coordination/temporal/client.py` (Admin live start).
+**Scope boundary:** the selftest does **not** edit `src/xinao_coordination/temporal/client.py` (Admin live start).

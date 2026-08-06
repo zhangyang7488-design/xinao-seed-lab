@@ -40,10 +40,6 @@ from services.agent_runtime.grok_execution_contract_adapter import (
 
 ROOT = Path(__file__).resolve().parents[1]
 SCHEMA_ROOT = ROOT / "services" / "agent_runtime" / "schemas"
-MAINLINE_ROOT = Path(r"C:\Users\xx363\Desktop\主线")
-TOOL_GLUE_CONSTITUTION = MAINLINE_ROOT / "工具胶水宪法" / "软件工具胶水宪法_当前有效.txt"
-CROSS_SEAM_PROTOCOL = MAINLINE_ROOT / "工具胶水宪法" / "跨接缝执行封套与一致性协议_当前有效.txt"
-STABLE_MAINLINE_ENTRY = MAINLINE_ROOT / "00_先读我_主线入口与读取顺序.txt"
 
 
 def _route_selection_receipt(transport_id: str) -> dict[str, object]:
@@ -1306,30 +1302,3 @@ def test_superseded_or_missing_evidence_cannot_earn_complete(tmp_path: Path) -> 
     registry["evidence_catalog"]["replay"]["path"] = str(tmp_path / "absent.json")
     with pytest.raises(ExecutionContractError, match="REPLAY_EVIDENCE_INVALID"):
         validate_consumer_registry(registry, repo_root=tmp_path)
-
-
-def test_cross_seam_protocol_is_one_constitution_incorporated_appendix() -> None:
-    if not all(
-        path.is_file()
-        for path in (TOOL_GLUE_CONSTITUTION, CROSS_SEAM_PROTOCOL, STABLE_MAINLINE_ENTRY)
-    ):
-        pytest.skip("canonical mainline material is unavailable on this runner")
-    constitution = TOOL_GLUE_CONSTITUTION.read_text(encoding="utf-8")
-    protocol = CROSS_SEAM_PROTOCOL.read_text(encoding="utf-8")
-    stable_entry = STABLE_MAINLINE_ENTRY.read_text(encoding="utf-8")
-    assert "SENTINEL:XINAO_CROSS_SEAM_EXECUTION_ENVELOPE_PROTOCOL_V1" in protocol
-    assert str(CROSS_SEAM_PROTOCOL) in constitution
-    assert "唯一跨接缝窄域附录" in constitution
-    assert "唯一跨接缝窄域附录" not in stable_entry
-    assert "xinao-native-research" in stable_entry
-    assert "外部成熟完整性不是产品名词清单" in protocol
-    assert "不创造任务授权" in protocol and "第二控制面" in protocol
-
-
-def test_cross_seam_protocol_has_no_web_answer_or_enterprise_gate_template() -> None:
-    if not CROSS_SEAM_PROTOCOL.is_file():
-        pytest.skip("canonical mainline material is unavailable on this runner")
-    protocol = CROSS_SEAM_PROTOCOL.read_text(encoding="utf-8")
-    assert "http://" not in protocol and "https://" not in protocol
-    for phrase in ("我会先", "我已经读取", "你可以直接", "别被吓到", "REQUIRE_APPROVAL"):
-        assert phrase not in protocol

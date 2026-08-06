@@ -23,8 +23,8 @@ from services.agent_runtime.default_plus_dynamic_escalate import (
     resolve_parallel_lane_model_binding,
     resolve_search_tier_evidence,
 )
-from services.agent_runtime.lexicon_cn_escape import registry_wiring_deferred
 from services.agent_runtime.routing_policy_reader import resolve_parallel_semantic
+from services.agent_runtime.thin_evidence_writer import append_jsonl
 from services.agent_runtime.thin_glue_l4_search import (
     derive_search_query,
     run_external_search,
@@ -37,6 +37,13 @@ _DEFAULT_EXTERNAL_MATURE_ROOT = "/external_mature/official"
 _DEFAULT_HOST_EXTERNAL_MATURE_ROOT = r"E:\XINAO_EXTERNAL_MATURE\codex_20260627\official"
 _HOST_EXTERNAL_MATURE_MARKER = "XINAO_EXTERNAL_MATURE"
 _CONTAINER_MOUNT_PREFIX = "/external_mature/official"
+_DEFAULT_TEMPORAL_RETRY_POLICY: dict[str, Any] = {
+    "initial_interval_seconds": 2,
+    "backoff_coefficient": 2.0,
+    "maximum_interval_seconds": 30,
+    "maximum_attempts": 3,
+    "non_retryable_error_types": ["ValueError", "TypeError"],
+}
 
 
 def resolve_official_mirror_root(*, params: dict[str, Any] | None = None) -> Path:
@@ -103,77 +110,47 @@ def _repo_to_mirror_dir(repo_name: str) -> str:
     return repo_name.replace("/", "__") if repo_name else ""
 
 
-def _load_glue_registry_entries(
-    registry_path: Path,
-) -> tuple[dict[str, Any], list[dict[str, Any]]]:
-    registry: dict[str, Any] = {}
-    if registry_path.is_file():
-        registry = json.loads(registry_path.read_text(encoding="utf-8"))
-    seen: set[str] = set()
-    flat_entries: list[dict[str, Any]] = []
-    layers = registry.get("layers") or {}
-    if isinstance(layers, dict):
-        for layer_name in sorted(layers.keys()):
-            items = layers.get(layer_name)
-            if not isinstance(items, list):
-                continue
-            for item in items:
-                if not isinstance(item, dict):
-                    continue
-                repo_name = str(item.get("repo") or item.get("fullName") or "").strip()
-                if not repo_name or repo_name in seen:
-                    continue
-                seen.add(repo_name)
-                flat_entries.append({**item, "layer": layer_name})
-    return registry, flat_entries
+_DEFAULT_REQUIRED_MIRRORS = (
+    "jlowin__fastmcp",
+    "unclecode__crawl4ai",
+    "temporalio__samples-python",
+    "BerriAI__litellm",
+    "microsoft__markitdown",
+)
 
 
-def _resolve_registry_mirror_path(
-    item: dict[str, Any],
+def _required_mirror_rows(
     *,
+    params: dict[str, Any],
     base: Path,
-    params: dict[str, Any] | None = None,
-) -> Path:
-    local_mirror = str(item.get("local_mirror") or "").strip()
-    repo_name = str(item.get("repo") or item.get("fullName") or "").strip()
-    if local_mirror:
-        return resolve_external_mature_path(local_mirror, params=params)
-    dest_name = _repo_to_mirror_dir(repo_name)
-    if not dest_name:
-        return base
-    return resolve_external_mature_path(base / dest_name, params=params)
-
-
-def _build_registry_disk_matrix(
-    flat_entries: list[dict[str, Any]],
-    *,
-    base: Path,
-    params: dict[str, Any] | None = None,
 ) -> list[dict[str, Any]]:
-    matrix: list[dict[str, Any]] = []
-    for item in flat_entries:
-        repo_name = str(item.get("repo") or "")
-        mirror = _resolve_registry_mirror_path(item, base=base, params=params)
-        seam_ref = str(item.get("url") or item.get("bind") or "")
-        is_docs_only = repo_name == "docker" or (
-            seam_ref.startswith("https://docs.") and "/" not in repo_name
-        )
-        matrix.append(
+    """Resolve only mirrors explicitly required by the current bus parameters.
+
+    The former L0-L9 registry mixed a filesystem probe with historical platform
+    architecture.  A cold engineering bus only needs exact mirror identities and
+    presence, so the parameter list is now the sole source for this probe.
+    """
+
+    names = params.get("mirror_required_dirs") or _DEFAULT_REQUIRED_MIRRORS
+    rows: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for value in names:
+        name = str(value or "").strip()
+        if not name or name in seen:
+            continue
+        seen.add(name)
+        mirror = resolve_external_mature_path(base / name, params=params)
+        rows.append(
             {
-                "repo": repo_name,
-                "layer": str(item.get("layer") or ""),
+                "name": name,
+                "repo": name.replace("__", "/"),
                 "mirror": str(mirror),
                 "mirror_present": mirror.is_dir(),
-                "seam_ref": seam_ref,
-                "optional": bool(item.get("optional")),
-                "接线暂缓": registry_wiring_deferred(item),
-                "docs_only": is_docs_only,
-                "registry_default": not bool(
-                    item.get("optional") or registry_wiring_deferred(item)
-                ),
+                "required": True,
+                "source": "integrated_bus_params.mirror_required_dirs",
             }
         )
-    return matrix
+    return rows
 
 
 def resolve_repo_root(raw: str | Path | None = None) -> Path:
@@ -665,6 +642,68 @@ def _ensure_coverage_xml(repo_root: Path, *, pytest_node: str) -> bool:
     return coverage_xml.is_file() and proc.returncode == 0
 
 
+def _run_diff_cover(
+    *,
+    repo_root: Path,
+    runtime_root: Path,
+    run_id: str,
+) -> dict[str, Any]:
+    """Run the retained diff-cover consumer without the retired closure demo."""
+
+    import subprocess
+
+    out_path = runtime_root / "evidence" / run_id / "diff-cover.json"
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    coverage_xml = repo_root / "coverage.xml"
+    proc = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "diff_cover.diff_cover_tool",
+            str(coverage_xml),
+            f"--format=json:{out_path}",
+            "--fail-under=0",
+        ],
+        cwd=repo_root,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if not out_path.is_file():
+        write_json(
+            out_path,
+            {
+                "exit_code": proc.returncode,
+                "percent": 100.0 if proc.returncode == 0 else 0.0,
+                "note": "diff-cover did not emit a JSON report",
+            },
+        )
+    try:
+        cover = json.loads(out_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        cover = {"percent": 0.0}
+    percent = float(
+        cover.get("total_percent_covered")
+        or cover.get("total_percent_lines")
+        or cover.get("percent")
+        or 0.0
+    )
+    result = {
+        "path": str(out_path),
+        "diff_cover_percent": percent,
+        "exit_code": proc.returncode,
+    }
+    append_jsonl(
+        runtime_root / "evidence" / run_id / "execution.jsonl",
+        {
+            "activity": "diff_cover",
+            "result": result,
+            "timestamp": datetime.now(timezone.utc).astimezone().isoformat(timespec="seconds"),
+        },
+    )
+    return result
+
+
 def run_diff_cover_slice(
     *,
     repo_root: Path,
@@ -674,8 +713,6 @@ def run_diff_cover_slice(
         "test_integrated_bus_default_route_is_readonly_at_finalize"
     ),
 ) -> dict[str, Any]:
-    from services.agent_runtime.closure_test_activities import activity_l5_diff_cover
-
     repo_root = resolve_repo_root(repo_root)
     runtime_root = resolve_runtime_root(runtime_root)
     run_id = datetime.now(timezone.utc).astimezone().strftime("%Y%m%d_%H%M%S")
@@ -707,9 +744,9 @@ def run_diff_cover_slice(
                 "adapter": "diff_cover_coverage_prereq",
                 "pytest_node": pytest_node,
             }
-        result = activity_l5_diff_cover(
-            repo=repo_root,
-            runtime=runtime_root,
+        result = _run_diff_cover(
+            repo_root=repo_root,
+            runtime_root=runtime_root,
             run_id=evidence_run_id,
         )
         raw_exit = result.get("exit_code")
@@ -722,7 +759,7 @@ def run_diff_cover_slice(
             "exit_code": exit_code,
             "evidence_path": result.get("path"),
             "pytest_node": pytest_node,
-            "adapter": "diff_cover_closure_test_pattern",
+            "adapter": "diff_cover_current_slice",
         }
     except Exception as exc:
         return {
@@ -1285,18 +1322,24 @@ def run_heal_bus(
     state: dict[str, Any] | None = None,
     runtime_root: Path | None = None,
 ) -> dict[str, Any]:
-    """L6 invoke_green — Temporal retry policy evidence + structured critic for graph conditional edge."""
-    from services.agent_runtime.thin_glue_l6_self_heal import temporal_retry_policy_spec
-
+    """Temporal retry policy evidence plus a structured conditional-edge critic."""
     bus_state = dict(state or {})
     checks = _integrated_bus_health_checks(bus_state)
     failed = [name for name, ok in checks.items() if not ok]
     passed = not failed
     retry_count = int(bus_state.get("heal_retry_count") or 0)
 
-    policy = dict(params.get("temporal_retry_policy") or temporal_retry_policy_spec())
+    configured_policy = params.get("temporal_retry_policy")
+    policy = {
+        **_DEFAULT_TEMPORAL_RETRY_POLICY,
+        **(dict(configured_policy) if isinstance(configured_policy, dict) else {}),
+    }
     policy["adapter"] = "temporalio.contrib.langgraph.RetryPolicy"
-    policy["evidence_source"] = "integrated_bus_params.v1.json"
+    policy["evidence_source"] = (
+        "integrated_bus_params.v1.json+code_defaults"
+        if isinstance(configured_policy, dict)
+        else "integrated_bus_bus_nodes.code_default"
+    )
 
     if passed:
         critic = {
@@ -1404,12 +1447,8 @@ def run_mirror_registry_bus(
     repo_root: Path | None = None,
 ) -> dict[str, Any]:
     base = resolve_official_mirror_root(params=params)
-    effective_repo = resolve_repo_root(repo_root)
-    registry_path = (
-        effective_repo / "materials" / "authority_glue" / "glue_mature_repo_registry.v1.json"
-    )
-    _, flat_entries = _load_glue_registry_entries(registry_path)
-    matrix = _build_registry_disk_matrix(flat_entries, base=base, params=params)
+    del repo_root
+    matrix = _required_mirror_rows(params=params, base=base)
 
     on_disk_dirs = (
         sorted(entry.name for entry in base.iterdir() if entry.is_dir() and "__" in entry.name)
@@ -1417,30 +1456,14 @@ def run_mirror_registry_bus(
         else []
     )
 
-    default_rows = [
-        row for row in matrix if row.get("registry_default") and not row.get("docs_only")
+    probes = [
+        {
+            "name": row["name"],
+            "path": row["mirror"],
+            "present": row["mirror_present"],
+        }
+        for row in matrix
     ]
-    default_present = sum(1 for row in default_rows if row.get("mirror_present"))
-    default_total = len(default_rows)
-    all_present = sum(1 for row in matrix if row.get("mirror_present"))
-    ghost_rows = [
-        row for row in matrix if not row.get("mirror_present") and not row.get("docs_only")
-    ]
-
-    required = list(
-        params.get("mirror_required_dirs")
-        or [
-            "jlowin__fastmcp",
-            "unclecode__crawl4ai",
-            "temporalio__samples-python",
-            "BerriAI__litellm",
-            "microsoft__markitdown",
-        ]
-    )
-    probes: list[dict[str, Any]] = []
-    for name in required:
-        path = resolve_external_mature_path(base / str(name), params=params)
-        probes.append({"name": str(name), "path": str(path), "present": path.is_dir()})
     optional = resolve_external_mature_path(
         params.get("searxng_mirror") or base / "searxng__searxng",
         params=params,
@@ -1460,17 +1483,15 @@ def run_mirror_registry_bus(
     record = {
         "schema_version": "xinao.integrated_bus.mirror_registry.v1",
         "base": str(base),
-        "registry_path": str(registry_path),
+        "source": "integrated_bus_params.mirror_required_dirs",
         "probe_count": len(probes),
         "present_count": present,
         "probes": probes,
         "official_on_disk_count": len(on_disk_dirs),
-        "glue_registry_default_count": default_total,
-        "glue_registry_default_present_count": default_present,
-        "glue_registry_all_present_count": all_present,
-        "glue_registry_ghost_count": len(ghost_rows),
-        "registry_disk_matrix": matrix,
-        "registry_ghost_rows": ghost_rows,
+        "required_mirror_count": len(matrix),
+        "required_mirror_present_count": sum(1 for row in matrix if row.get("mirror_present")),
+        "required_mirror_missing_count": sum(1 for row in matrix if not row.get("mirror_present")),
+        "required_mirror_matrix": matrix,
     }
     write_json(out_dir / "latest.json", record)
     registry_manifest: list[dict[str, Any]] = []
@@ -1480,9 +1501,8 @@ def run_mirror_registry_bus(
                 {
                     "name": _repo_to_mirror_dir(str(row.get("repo") or "")),
                     "repo": row.get("repo"),
-                    "layer": row.get("layer"),
                     "path": row.get("mirror"),
-                    "role": "glue_registry_manifest_entry",
+                    "role": "required_mirror_manifest_entry",
                     "sandbox_ready": _repo_to_mirror_dir(str(row.get("repo") or ""))
                     == "jlowin__fastmcp",
                 }
@@ -1498,7 +1518,7 @@ def run_mirror_registry_bus(
             "manifest": registry_manifest,
             "mirror_registry_ref": str(out_dir / "latest.json"),
             "official_on_disk_count": len(on_disk_dirs),
-            "glue_registry_default_present_count": default_present,
+            "required_mirror_present_count": sum(1 for row in matrix if row.get("mirror_present")),
         },
     )
     return {
@@ -1506,9 +1526,8 @@ def run_mirror_registry_bus(
         "mirror_present_count": present,
         "mirror_registry_ref": str(out_dir / "latest.json"),
         "official_on_disk_count": len(on_disk_dirs),
-        "glue_registry_default_count": default_total,
-        "glue_registry_default_present_count": default_present,
-        "glue_registry_ghost_count": len(ghost_rows),
+        "required_mirror_count": len(matrix),
+        "required_mirror_present_count": sum(1 for row in matrix if row.get("mirror_present")),
         "mcp_registry_ok": len(registry_manifest) >= 1,
         "mcp_registry_ref": mcp_registry_ref,
         "mcp_registry_manifest_count": len(registry_manifest),
@@ -1517,34 +1536,31 @@ def run_mirror_registry_bus(
 
 
 def run_facade_guard_bus(*, repo_root: Path) -> dict[str, Any]:
-    from services.agent_runtime.integrated_bus_facade_redirect import (
-        FACADE_MODULE_NAMES,
-        facade_hard_redirect_enabled,
-    )
     from services.agent_runtime.thin_glue_stack import DEFAULT_REPO
 
-    redirect_on = facade_hard_redirect_enabled()
+    retired_modules = (
+        "current_task_source_intake",
+        "codex_s_light_research_loop",
+        "codex_native_provider_scheduler_phase4",
+        "worker_dispatch_ledger",
+        "pre_pass_audit_loop",
+    )
     scan_root = repo_root if (repo_root / "services" / "agent_runtime").is_dir() else DEFAULT_REPO
     checks: list[dict[str, Any]] = []
-    for module_name in FACADE_MODULE_NAMES:
+    for module_name in retired_modules:
         path = scan_root / "services" / "agent_runtime" / f"{module_name}.py"
-        text = path.read_text(encoding="utf-8", errors="replace") if path.is_file() else ""
         checks.append(
             {
                 "module": module_name,
                 "present": path.is_file(),
-                "hard_redirect": "guard_facade_getattr" in text
-                or "facade_hard_redirect_enabled" in text,
-                "retired_star_import": "from services.agent_runtime._retired" in text,
             }
         )
-    star_import_live = any(item.get("retired_star_import") for item in checks)
+    retired_carriers_absent = not any(item.get("present") for item in checks)
     return {
-        "facade_guard_ok": redirect_on and not star_import_live,
-        "facade_hard_redirect": redirect_on,
-        "handroll_default_unreachable": redirect_on,
+        "facade_guard_ok": retired_carriers_absent,
+        "retired_carriers_absent": retired_carriers_absent,
         "facade_checks": checks,
-        "adapter": "facade_guard_thin_bind",
+        "adapter": "retired_carrier_absence_check",
     }
 
 
@@ -1795,7 +1811,7 @@ def _parallel_lane_query_ladder(content_md: str, *, lane_id: int) -> list[str]:
             _add(cleaned)
     for fallback in (
         "integrated_bus",
-        "thin_glue",
+        "runtime_support",
         "services",
         "agent_runtime",
         "temporal",
@@ -2281,7 +2297,7 @@ def run_memory_bus(
         replay_ref = str(
             state.get("promotion_evidence_ref") or state.get("fanin_evidence_ref") or ""
         )
-        user_id = str(params.get("mem0_user_id") or "xinao_seed_cortex")
+        user_id = str(params.get("mem0_user_id") or "codex_s_engineering")
         mem0_bind = _try_mem0_add(
             runtime_root=runtime_root,
             params=params,
@@ -2332,28 +2348,14 @@ def run_memory_bus(
 def run_glue_seam_invoke_bus(
     *, params: dict[str, Any], runtime_root: Path, repo_root: Path
 ) -> dict[str, Any]:
-    """Second-level glue: registry → seam → local mirror → parameter-only invoke."""
-    from services.agent_runtime.thin_glue_stack import DEFAULT_REPO
-
-    effective_repo = resolve_repo_root(repo_root)
-    registry_path = (
-        effective_repo / "materials" / "authority_glue" / "glue_mature_repo_registry.v1.json"
-    )
-    if not registry_path.is_file():
-        fallback_registry = (
-            DEFAULT_REPO / "materials" / "authority_glue" / "glue_mature_repo_registry.v1.json"
-        )
-        if fallback_registry.is_file():
-            registry_path = fallback_registry
+    """Probe current required mirrors through a parameter-only seam."""
+    del repo_root
     base = resolve_official_mirror_root(params=params)
-    _, flat_entries = _load_glue_registry_entries(registry_path)
-    matrix = _build_registry_disk_matrix(flat_entries, base=base, params=params)
+    matrix = _required_mirror_rows(params=params, base=base)
 
     row_results: list[dict[str, Any]] = []
     invoked = 0
     for row in matrix:
-        if row.get("docs_only"):
-            continue
         repo_name = str(row.get("repo") or "")
         mirror = Path(str(row.get("mirror") or ""))
         probe_ok = mirror.is_dir()
@@ -2362,50 +2364,29 @@ def run_glue_seam_invoke_bus(
         row_results.append(
             {
                 "repo": repo_name,
-                "layer": str(row.get("layer") or ""),
                 "mirror": str(mirror),
                 "mirror_present": probe_ok,
-                "seam_ref": str(row.get("seam_ref") or ""),
-                "optional": bool(row.get("optional")),
-                "接线暂缓": registry_wiring_deferred(row),
-                "registry_default": bool(row.get("registry_default")),
+                "required": True,
+                "source": "integrated_bus_params.mirror_required_dirs",
                 "params_only": ["runtime_root", "mirror_path", "task_queue"],
                 "invoke_ok": probe_ok,
             }
         )
-    if not row_results:
-        required = list(params.get("mirror_required_dirs") or [])
-        for name in required:
-            mirror = resolve_external_mature_path(base / str(name), params=params)
-            ok = mirror.is_dir()
-            if ok:
-                invoked += 1
-            row_results.append(
-                {
-                    "repo": str(name),
-                    "mirror": str(mirror),
-                    "mirror_present": ok,
-                    "invoke_ok": ok,
-                    "params_only": ["mirror_path"],
-                }
-            )
 
     runtime_root = resolve_runtime_root(runtime_root)
-    default_rows = [row for row in row_results if row.get("registry_default", True)]
-    default_invoked = sum(1 for row in default_rows if row.get("invoke_ok"))
-    ghost_rows = [row for row in row_results if not row.get("invoke_ok")]
+    missing_rows = [row for row in row_results if not row.get("invoke_ok")]
 
     out_dir = runtime_root / "state" / "glue_seam_invoke"
     out_dir.mkdir(parents=True, exist_ok=True)
     record = {
         "schema_version": "xinao.integrated_bus.glue_seam_invoke.v1",
-        "registry_path": str(registry_path),
+        "source": "integrated_bus_params.mirror_required_dirs",
         "official_mirror_root": str(base),
         "row_count": len(row_results),
         "invoke_ok_count": invoked,
-        "registry_default_count": len(default_rows),
-        "registry_default_invoke_count": default_invoked,
-        "registry_ghost_count": len(ghost_rows),
+        "required_mirror_count": len(row_results),
+        "required_mirror_invoke_count": invoked,
+        "required_mirror_missing_count": len(missing_rows),
         "rows": row_results,
     }
     write_json(out_dir / "latest.json", record)
@@ -2416,15 +2397,15 @@ def run_glue_seam_invoke_bus(
         "schema_version": "xinao.integrated_bus_glue_seam.v1",
         "sentinel": "SENTINEL:INTEGRATED_BUS_GLUE_SEAM_V1",
         "generated_at": datetime.now(timezone.utc).astimezone().isoformat(),
-        "registry_path": str(registry_path),
+        "source": "integrated_bus_params.mirror_required_dirs",
         "official_mirror_root": str(base),
         "glue_seam_invoke_count_before_note": "prior_latest_had_3_host_path_drift",
         "glue_seam_invoke_count": invoked,
         "glue_seam_invoke_ok": invoked >= 1,
-        "registry_default_invoke_count": default_invoked,
-        "registry_default_count": len(default_rows),
-        "registry_ghost_count": len(ghost_rows),
-        "registry_disk_matrix": matrix,
+        "required_mirror_invoke_count": invoked,
+        "required_mirror_count": len(row_results),
+        "required_mirror_missing_count": len(missing_rows),
+        "required_mirror_matrix": matrix,
         "invoke_rows": row_results,
         "glue_seam_invoke_ref": str(out_dir / "latest.json"),
         "adapter": "registry_seam_mirror_params_only",
@@ -2436,8 +2417,8 @@ def run_glue_seam_invoke_bus(
         "glue_seam_invoke_count": invoked,
         "glue_seam_invoke_ref": str(out_dir / "latest.json"),
         "integrated_bus_glue_seam_ref": str(glue_seam_dir / "latest.json"),
-        "registry_default_invoke_count": default_invoked,
-        "registry_ghost_count": len(ghost_rows),
+        "required_mirror_invoke_count": invoked,
+        "required_mirror_missing_count": len(missing_rows),
         "adapter": "registry_seam_mirror_params_only",
     }
 

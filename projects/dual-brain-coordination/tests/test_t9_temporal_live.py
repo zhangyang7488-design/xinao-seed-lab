@@ -332,9 +332,9 @@ def test_live_bypass_idempotent_duplicate_start(
 def test_live_worker_poller_and_crash_resilience_design(
     service: CoordinationService, live_env: dict[str, str]
 ) -> None:
-    """Best-effort: require G1 poller for full resilience claim; else design-level skip.
+    """Best-effort: require a promoted-queue poller for full resilience claim; else design-level skip.
 
-    Design contract (G1 worker):
+    Design contract (promoted-task worker):
     - Workflow history is durable on Temporal server, not worker memory.
     - Kill/restart worker while workflow is RUNNING must leave execution
       recoverable; new poller continues activities without re-start from kernel.
@@ -364,7 +364,7 @@ def test_live_worker_poller_and_crash_resilience_design(
         )
     if int(poller_count) < 1:
         pytest.skip(
-            f"No G1 worker pollers on {live_env['task_queue']} (poller_count=0). "
+            f"No promoted-task worker pollers on {live_env['task_queue']} (poller_count=0). "
             "Crash/restart live run requires registered worker; design contract remains: "
             "history-durable, restart-resumable, duplicate-start idempotent."
         )
@@ -397,7 +397,7 @@ def test_live_worker_poller_and_crash_resilience_design(
             "poller_probe": probe,
             "workflow_id": envelope.workflow_id,
             "note_cn": (
-                "G1 poller present; workflow started. Full crash inject "
+                "Promoted-task poller present; workflow started. Full crash inject "
                 "(kill worker PID mid-run) is ops-level; history durability is Temporal server contract."
             ),
         }
@@ -405,5 +405,5 @@ def test_live_worker_poller_and_crash_resilience_design(
     outcome = asyncio.run(_start_and_describe())
     assert outcome["started"]["ok"] is True
     assert outcome["workflow_id"] == workflow_id_for(task)
-    # Status may be RUNNING / COMPLETED / CONTINUED depending on G1 activities.
+    # Status may be RUNNING / COMPLETED / CONTINUED depending on worker activities.
     assert outcome["status"]

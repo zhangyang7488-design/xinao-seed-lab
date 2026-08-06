@@ -308,7 +308,6 @@ class BusState(TypedDict, total=False):
     parallel_succeeded: int
     parallel_evidence_ref: str
     facade_guard_ok: bool
-    handroll_default_unreachable: bool
     mirror_registry_ok: bool
     mirror_registry_ref: str
     aaq_ok: bool
@@ -317,7 +316,6 @@ class BusState(TypedDict, total=False):
     aaq_fanin_evidence_sha256: str
     pytest_slice_ok: bool
     pytest_slice_ref: str
-    handroll_intact: bool
     signal_feed_ok: bool
     auto_feed_count: int
     child_wf_ok: bool
@@ -995,9 +993,7 @@ async def watchdog_node(state: BusState) -> dict[str, Any]:
 
 
 async def facade_guard_node(state: BusState) -> dict[str, Any]:
-    guarded = run_facade_guard_bus(repo_root=_repo_root(state))
-    guarded["handroll_intact"] = False
-    return guarded
+    return run_facade_guard_bus(repo_root=_repo_root(state))
 
 
 async def _validate_node_impl(
@@ -1404,7 +1400,6 @@ async def aaq_node(state: BusState) -> dict[str, Any]:
         state=dict(state),
         workflow_id=str(state.get("workflow_id") or ""),
     )
-    payload["handroll_intact"] = False
     return payload
 
 
@@ -1703,7 +1698,6 @@ async def finalize_node(state: BusState) -> dict[str, Any]:
         "git_snapshot_adapter": git_adapter,
         "gitpython_invoke_ok": gitpython_invoke,
         "gitpython_evidence_ref": git_evidence_ref,
-        "handroll_intact": False,
     }
 
 
