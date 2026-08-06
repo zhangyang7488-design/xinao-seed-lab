@@ -379,15 +379,18 @@ def test_intent_continuity_baseline_reduces_burden_without_routing_science() -> 
     } <= set(closure["symmetric_risk_guidewords"])
     assert closure["ordinary_path"].startswith("do_not_expand_the_full_graph")
     assert "new_failure_family" in closure["independent_defeater_search_when"]
-    task_control = model["active_task_continuation_control_plane"]
-    assert task_control["legal_task_existence_rule"].startswith(
-        "effect_bearing_work_requires_a_current_bound_task"
+    task_control = model["active_task_continuation_advisory"]
+    assert task_control["task_source_rule"].startswith(
+        "effect_bearing_work_requires_a_named_task"
     )
     assert task_control["observed_state_rule"].startswith(
         "cwd_STATUS_reports_tests_packages_worker_results"
     )
+    assert task_control["permission_rule"].startswith(
+        "ordinary_authorized_reads_writes_tests"
+    )
     assert task_control["restore_failure_rule"].startswith(
-        "preserve_current_discussion_and_read_only_recovery"
+        "fail_open_to_current_user_words_and_live_facts"
     )
     assert "select_a_scientific_question_or_next_action" in model["continuity_must_not"]
     assert (
@@ -1283,6 +1286,15 @@ def test_live_codex_productivity_profile_keeps_core_and_colds_stale_surfaces() -
     assert main_agents == account_b_agents
     assert "cold-capabilities.config.toml" in main_agents
     assert "-p cold-capabilities" in main_agents
+    assert "这个冷默认不是权限禁止" in main_agents
+    assert "standing delegation" in main_agents
+    assert "无需逐次向用户索取许可" in main_agents
+    assert "只有当前用户明确要求时" not in main_agents
+
+    contract = contract_path.read_text(encoding="utf-8-sig")
+    assert "这是已授予的任务适配权，不是逐次用户审批点" in contract
+    assert "普通探索、一般第二意见、并行方便、烧额度" in contract
+    assert "只允许进程/任务作用域覆盖" in contract
 
 
 def test_live_codex_zero_beat_and_finalization_hooks_are_trusted_and_bounded(
@@ -1296,7 +1308,6 @@ def test_live_codex_zero_beat_and_finalization_hooks_are_trusted_and_bounded(
     pwsh = Path(r"D:\XINAO_RESEARCH_RUNTIME\tools\powershell\7.6.4\pwsh.exe")
     session_script = script_root / "session_start_continuity_pointer_v1.ps1"
     user_prompt_script = script_root / "user_prompt_zero_beat_v1.ps1"
-    guard_script = script_root / "pretool_task_provenance_guard_v1.ps1"
     binder_script = script_root / "bind_active_task_continuation_v1.ps1"
     restore_script = script_root / "restore_parent_task_continuation_v1.ps1"
     stop_script = script_root / "turn_finalization_gate_v1.ps1"
@@ -1307,7 +1318,6 @@ def test_live_codex_zero_beat_and_finalization_hooks_are_trusted_and_bounded(
         account_b_home / "config.toml",
         session_script,
         user_prompt_script,
-        guard_script,
         binder_script,
         restore_script,
         stop_script,
@@ -1324,13 +1334,11 @@ def test_live_codex_zero_beat_and_finalization_hooks_are_trusted_and_bounded(
     assert set(main_hooks["hooks"]) == {
         "SessionStart",
         "UserPromptSubmit",
-        "PreToolUse",
         "Stop",
     }
 
     session_handler = main_hooks["hooks"]["SessionStart"][0]["hooks"][0]
     prompt_handler = main_hooks["hooks"]["UserPromptSubmit"][0]["hooks"][0]
-    guard_handler = main_hooks["hooks"]["PreToolUse"][0]["hooks"][0]
     stop_handler = main_hooks["hooks"]["Stop"][0]["hooks"][0]
     # Codex already trusts each discovered hook command by currentHash. Do not
     # add a second hand-maintained script SHA inside the command: that duplicate
@@ -1339,7 +1347,6 @@ def test_live_codex_zero_beat_and_finalization_hooks_are_trusted_and_bounded(
     handlers_and_scripts = (
         (session_handler, session_script),
         (prompt_handler, user_prompt_script),
-        (guard_handler, guard_script),
         (stop_handler, stop_script),
     )
     for handler, script in handlers_and_scripts:
@@ -1356,7 +1363,6 @@ def test_live_codex_zero_beat_and_finalization_hooks_are_trusted_and_bounded(
             for event in (
                 "session_start",
                 "user_prompt_submit",
-                "pre_tool_use",
                 "stop",
             ):
                 key = f"{home}\\hooks.json:{event}:0:0"
@@ -1366,6 +1372,7 @@ def test_live_codex_zero_beat_and_finalization_hooks_are_trusted_and_bounded(
                 assert all(char in "0123456789abcdef" for char in trusted_hash[7:])
                 previous = home_trust.setdefault(event, trusted_hash)
                 assert previous == trusted_hash
+        assert not any(":pre_tool_use:" in key for key in trust)
 
     # Trust is a runtime consumer property, not a claim we can prove by copying
     # a hash into both the hook state and this test. Query a fresh Codex
@@ -1378,7 +1385,6 @@ def test_live_codex_zero_beat_and_finalization_hooks_are_trusted_and_bounded(
     )
     assert codex_exe.is_file()
     event_key_by_name = {
-        "preToolUse": "pre_tool_use",
         "sessionStart": "session_start",
         "userPromptSubmit": "user_prompt_submit",
         "stop": "stop",
@@ -1451,7 +1457,7 @@ def test_live_codex_zero_beat_and_finalization_hooks_are_trusted_and_bounded(
         discovered = response["result"]["data"][0]
         assert discovered["warnings"] == []
         assert discovered["errors"] == []
-        assert len(discovered["hooks"]) == 4
+        assert len(discovered["hooks"]) == 3
         for hook in discovered["hooks"]:
             event_key = event_key_by_name[hook["eventName"]]
             assert hook["trustStatus"] == "trusted"
@@ -1492,50 +1498,25 @@ def test_live_codex_zero_beat_and_finalization_hooks_are_trusted_and_bounded(
     context = prompt_output["hookSpecificOutput"]["additionalContext"]
     assert "SENTINEL:ZERO_BEAT_CURRENT_INCREMENT_V1" in context
     assert "不要求用户重说“继续”" in context
-    assert "TASK_PROVENANCE_PENDING_INITIAL_BIND" in context
+    assert "TASK_CONTINUATION_ADVISORY_ONLY" in context
+    assert "TASK_PROVENANCE_PENDING_INITIAL_BIND" not in context
 
-    patch_event: dict[str, object] = {
-        "hook_event_name": "PreToolUse",
-        "cwd": str(REPO_ROOT),
-        "model": "gpt-5.6-sol",
-        "permission_mode": "dontAsk",
-        "session_id": "pytest",
-        "turn_id": "pytest-prompt",
-        "tool_name": "apply_patch",
-        "tool_input": {
-            "command": (
-                "*** Begin Patch\n"
-                f"*** Update File: {REPO_ROOT / 'README.md'}\n"
-                "*** End Patch"
-            )
+    unbound_session = run_hook(
+        session_script,
+        {
+            "hook_event_name": "SessionStart",
+            "source": "startup",
+            "cwd": str(REPO_ROOT),
+            "model": "gpt-5.6-sol",
+            "permission_mode": "dontAsk",
+            "session_id": "pytest-unbound",
+            "transcript_path": None,
         },
-    }
-    unbound = run_hook(guard_script, patch_event)
-    assert unbound["decision"] == "block"
-    assert "TASK_PROVENANCE_UNBOUND" in unbound["reason"]
-
-    control_only_event = json.loads(json.dumps(patch_event))
-    control_only_event["tool_name"] = "functions.exec"
-    control_only_event["tool_input"] = (
-        "await tools.exec_command({cmd: \"pwsh -NoProfile -File "
-        + str(binder_script)
-        + " -TaskId bounded-control-test\"})"
     )
-    control_only = run_hook(guard_script, control_only_event)
-    assert control_only["hookSpecificOutput"]["permissionDecision"] == "allow"
-    assert "TASK_BINDING_CONTROL_ONLY" in control_only["hookSpecificOutput"][
-        "additionalContext"
-    ]
-
-    mixed_control_event = json.loads(json.dumps(control_only_event))
-    mixed_control_event["tool_input"] += (
-        "; await tools.apply_patch(\"*** Begin Patch\\n"
-        f"*** Update File: {REPO_ROOT / 'README.md'}\\n"
-        "*** End Patch\")"
-    )
-    mixed_control = run_hook(guard_script, mixed_control_event)
-    assert mixed_control["decision"] == "block"
-    assert "TASK_BINDING_CONTROL_MIXED_EFFECT" in mixed_control["reason"]
+    unbound_context = unbound_session["hookSpecificOutput"]["additionalContext"]
+    assert "TASK_CONTINUATION_ADVISORY_ONLY" in unbound_context
+    assert "no separate manifest is required" in unbound_context
+    assert "do not produce effect-bearing writes" not in unbound_context
 
     binder_env = os.environ.copy()
     binder_env["CODEX_ACTIVE_TASK_STATE_ROOT"] = str(active_state_root)
@@ -1587,21 +1568,9 @@ def test_live_codex_zero_beat_and_finalization_hooks_are_trusted_and_bounded(
     )
     assert bound.returncode == 0, bound.stderr
     assert json.loads(bound.stdout)["status"] == "bound"
-    admitted = run_hook(guard_script, patch_event)
-    assert admitted["hookSpecificOutput"]["permissionDecision"] == "allow"
-    assert "TASK_PROVENANCE_BOUND" in admitted["hookSpecificOutput"]["additionalContext"]
 
     foreign_root = tmp_path / "foreign-repo"
     foreign_root.mkdir()
-    foreign_event = json.loads(json.dumps(patch_event))
-    foreign_event["tool_input"]["command"] = (
-        "*** Begin Patch\n"
-        f"*** Update File: {foreign_root / 'STATUS.md'}\n"
-        "*** End Patch"
-    )
-    foreign = run_hook(guard_script, foreign_event)
-    assert foreign["decision"] == "block"
-    assert "TASK_REPOSITORY_MISMATCH" in foreign["reason"]
 
     compact_event: dict[str, object] = {
         "hook_event_name": "SessionStart",
@@ -1613,7 +1582,7 @@ def test_live_codex_zero_beat_and_finalization_hooks_are_trusted_and_bounded(
         "transcript_path": None,
     }
     restored = run_hook(session_script, compact_event)
-    assert "ACTIVE_TASK_CONTINUATION_BOUND" in restored["hookSpecificOutput"][
+    assert "ACTIVE_TASK_CONTINUATION_ADVISORY" in restored["hookSpecificOutput"][
         "additionalContext"
     ]
     assert "next known parent frontier" in restored["hookSpecificOutput"][
@@ -1639,15 +1608,10 @@ def test_live_codex_zero_beat_and_finalization_hooks_are_trusted_and_bounded(
     prompt_context_2 = prompt_output_2[
         "hookSpecificOutput"
     ]["additionalContext"]
-    assert "TASK_PROVENANCE_INHERITED_PENDING_SEMANTIC_REANCHOR" in prompt_context_2
+    assert "TASK_CONTINUATION_ADVISORY_ONLY" in prompt_context_2
     assert "task-provenance-regression" in prompt_context_2
-    inherited = run_hook(guard_script, patch_event)
-    assert inherited["hookSpecificOutput"]["permissionDecision"] == "allow"
-    assert "surviving_binding_after_ordinary_increment" in inherited[
-        "hookSpecificOutput"
-    ]["additionalContext"]
     compact_inherited = run_hook(session_script, compact_event)
-    assert "ACTIVE_TASK_CONTINUATION_BOUND" in compact_inherited[
+    assert "ACTIVE_TASK_CONTINUATION_ADVISORY" in compact_inherited[
         "hookSpecificOutput"
     ]["additionalContext"]
 
@@ -1702,22 +1666,6 @@ def test_live_codex_zero_beat_and_finalization_hooks_are_trusted_and_bounded(
     assert json.loads(child.stdout)["binding_relation"] == (
         "child_of_surviving_parent"
     )
-    child_foreign = run_hook(guard_script, foreign_event)
-    assert child_foreign["hookSpecificOutput"]["permissionDecision"] == "allow"
-    child_parent = run_hook(guard_script, patch_event)
-    assert child_parent["decision"] == "block"
-    assert "TASK_REPOSITORY_MISMATCH" in child_parent["reason"]
-
-    nested_foreign_event = json.loads(json.dumps(foreign_event))
-    nested_foreign_event["tool_name"] = "functions.exec"
-    nested_foreign_event["tool_input"] = (
-        "await tools.apply_patch(\"*** Begin Patch\n"
-        f"*** Update File: {REPO_ROOT / 'README.md'}\n"
-        "*** End Patch\");"
-    )
-    nested_foreign = run_hook(guard_script, nested_foreign_event)
-    assert nested_foreign["decision"] == "block"
-    assert "TASK_REPOSITORY_MISMATCH" in nested_foreign["reason"]
 
     restored_parent = subprocess.run(
         [
@@ -1740,10 +1688,6 @@ def test_live_codex_zero_beat_and_finalization_hooks_are_trusted_and_bounded(
     assert json.loads(restored_parent.stdout)["task_id"] == (
         "task-provenance-regression"
     )
-    parent_again = run_hook(guard_script, patch_event)
-    assert parent_again["hookSpecificOutput"]["permissionDecision"] == "allow"
-    foreign_again = run_hook(guard_script, foreign_event)
-    assert foreign_again["decision"] == "block"
 
     paused = subprocess.run(
         [
@@ -1791,9 +1735,6 @@ def test_live_codex_zero_beat_and_finalization_hooks_are_trusted_and_bounded(
         check=False,
     )
     assert paused.returncode == 0, paused.stderr
-    paused_effect = run_hook(guard_script, patch_event)
-    assert paused_effect["decision"] == "block"
-    assert "TASK_PAUSED_OR_SUPERSEDED" in paused_effect["reason"]
 
     active_transcript = tmp_path / "active.jsonl"
     active_transcript.write_text(

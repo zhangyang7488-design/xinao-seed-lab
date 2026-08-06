@@ -203,9 +203,9 @@
     "ordinary_path": "do_not_expand_the_full_graph_or_call_a_second_model_for_low_risk_continuous_execution",
     "closure_claim_requires": "text_plus_live_consumer_plus_positive_and_negative_regression_plus_fresh_behavior_plus_live_effect_or_an_explicit_unknown"
   },
-  "active_task_continuation_control_plane": {
-    "purpose": "keep_legal_task_existence_authorization_identity_and_exact_continuation_durable_without_freezing_dynamic_task_internal_reasoning",
-    "minimum_runtime_binding": [
+  "active_task_continuation_advisory": {
+    "purpose": "optionally_preserve_an_exact_cross_window_or_cross_repository_return_point_without_turning_continuity_into_task_authority_or_a_tool_permission_system",
+    "minimum_recovery_record": [
       "task_id_and_parent_task_id",
       "current_interaction_mode",
       "task_source_and_authorizing_user_increment",
@@ -216,15 +216,16 @@
       "exact_return_task_repository_point_and_mode"
     ],
     "source_seed": "each_current_user_increment_records_a_non_authoritative_semantic_reanchor_seed_but_does_not_invalidate_a_surviving_binding_by_turn_boundary_alone",
-    "legal_task_existence_rule": "effect_bearing_work_requires_a_current_bound_task_whose_source_is_the_current_user_turn_or_an_exact_surviving_parent_not_a_repository_artifact",
+    "task_source_rule": "effect_bearing_work_requires_a_named_task_from_current_user_words_or_an_exact_semantically_surviving_parent_not_from_a_repository_artifact_but_no_separate_manifest_is_required",
     "observed_state_rule": "cwd_STATUS_reports_tests_packages_worker_results_and_open_work_are_observed_facts_or_candidates_and_cannot_create_desired_state_authorization_or_a_parent_task",
-    "effect_admission": "pretool_consumer_checks_fresh_binding_mode_allowed_effect_and_bound_root_before_supported_effect_bearing_tool_paths",
+    "permission_rule": "ordinary_authorized_reads_writes_tests_local_processes_and_worker_dispatch_do_not_require_an_ActiveTaskContinuation_or_a_custom_PreToolUse_gate",
+    "hard_boundary_rule": "native_sandbox_and_permissions_precise_destructive_checks_pause_stop_major_external_effect_authority_recoverable_rollback_and_consumer_readback_protect_real_effects",
     "ordinary_increment_rule": "continue_correction_status_question_and_other_same_parent_increments_inherit_the_active_binding_without_user_or_per_turn_reauthorization",
-    "cross_carrier_rule": "when_the_parent_requires_another_repository_or_consumer_the_owner_creates_a_minimal_child_binding_with_parent_lineage_and_exact_return_then_restores_the_parent_automatically",
-    "restore_rule": "compact_or_session_start_restores_only_an_exact_fresh_continuation_binding",
-    "restore_failure_rule": "preserve_current_discussion_and_read_only_recovery_but_do_not_synthesize_an_effect_bearing_task_or_return_point",
+    "cross_carrier_rule": "when_the_parent_requires_another_repository_or_consumer_the_owner_names_the_child_scope_and_exact_return_and_records_them_only_when_cross_window_recovery_value_exceeds_maintenance_cost",
+    "restore_rule": "compact_or_session_start_may_surface_only_an_exact_fresh_continuation_as_non_authoritative_recovery_evidence",
+    "restore_failure_rule": "fail_open_to_current_user_words_and_live_facts_without_synthesizing_a_task_or_return_point_from_observed_repository_state",
     "continuation_rule": "child_completion_returns_by_exact_parent_task_and_return_point_not_by_the_words_native_original_or_next_phase",
-    "scope_boundary": "the_control_plane_decides_whether_an_effect_bearing_task_legally_exists_and_where_it_is_bound_while_the_owner_dynamically_selects_routes_inside_that_task"
+    "scope_boundary": "the_current_owner_frame_decides_task_scope_and_action_while_optional_continuation_records_only_reduce_recovery_burden"
   },
   "continuity_may": [
     "restore_confirmed_parent_intent",
@@ -254,8 +255,8 @@
     "implicit_stop_invention": "turn_boundary_or_local_completion_cannot_create_pause_stop_or_hand_back_authority",
     "phase_authorization_reset": "window_plan_phase_local_completion_report_or_package_approval_field_cannot_reset_an_established_parent_scope_to_no_authority",
     "validation_scope_task_generation": "migration_or_consumer_validation_may_read_back_only_the_previously_bound_object_and_cannot_create_a_new_domain_problem_from_repository_status",
-    "task_provenance_collapse": "loss_of_task_source_mode_bound_object_allowed_effects_or_exact_return_cannot_be_repaired_by_guessing_from_observed_repository_state",
-    "orphaned_continuation_synthesis": "a_vague_continue_or_return_instruction_without_an_exact_durable_parent_binding_cannot_authorize_an_effect_bearing_task"
+    "task_provenance_collapse": "loss_of_current_task_source_object_scope_or_return_point_cannot_be_repaired_by_guessing_from_observed_repository_state_or_by_demanding_a_manifest",
+    "orphaned_continuation_synthesis": "a_vague_continue_or_return_instruction_without_a_semantically_surviving_parent_cannot_invent_a_new_effect_bearing_task_but_current_user_words_need_no_separate_binding"
   },
   "three_responsibility_domains": {
     "domain_work": "forms questions and actions from the current human frame and real object",
@@ -263,10 +264,13 @@
     "continuity": "reduces recall and operation burden without governing authority"
   },
   "preserved_engineering_invariants": [
+    "current_user_authority_and_pause_stop",
     "exact_identity",
     "candidate_adoption_effect_and_parent_completion_are_separate",
     "evidence_cutoff_and_honesty",
     "write_domain_isolation",
+    "preserve_unrelated_state",
+    "major_external_and_irreversible_effect_boundary",
     "idempotent_recovery",
     "localized_failure",
     "real_consumer_readback",
@@ -278,7 +282,6 @@
     "D:\\XINAO_RESEARCH_RUNTIME\\state\\Codex_Situation_Island\\scripts\\session_start_continuity_pointer_v1.ps1",
     "D:\\XINAO_RESEARCH_RUNTIME\\state\\Codex_Situation_Island\\scripts\\user_prompt_zero_beat_v1.ps1",
     "D:\\XINAO_RESEARCH_RUNTIME\\state\\Codex_Situation_Island\\scripts\\bind_active_task_continuation_v1.ps1",
-    "D:\\XINAO_RESEARCH_RUNTIME\\state\\Codex_Situation_Island\\scripts\\pretool_task_provenance_guard_v1.ps1",
     "D:\\XINAO_RESEARCH_RUNTIME\\state\\Codex_Situation_Island\\scripts\\turn_finalization_gate_v1.ps1",
     "human-agency-grounding for current human practice and bounded closure",
     "Decision Skill when metacognition or stable preference is actually relevant",

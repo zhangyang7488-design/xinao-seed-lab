@@ -3,7 +3,7 @@
   "sentinel": "SENTINEL:CODEX_INTENT_ACTION_COVERAGE_V1",
   "authority": false,
   "completion_claim_allowed": false,
-  "evidence_cutoff": "2026-08-05T22:45:00+08:00",
+  "evidence_cutoff": "2026-08-06T07:33:01+08:00",
   "coverage_rule": "A general behavior claim requires text, a live consumer, positive and negative regression, fresh behavior, and live effect; missing layers remain explicit.",
   "status_values": [
     "VERIFIED",
@@ -49,23 +49,23 @@
       "open_gap": "The validation-scope case now has one independent fresh output that passes the corrected event-bounded assertion; the new window phase and package-field families still lack independent fresh outputs, and no finite suite proves universal model adherence."
     },
     {
-      "id": "task_provenance_and_exact_continuation_control_plane",
+      "id": "exact_continuation_advisory_without_tool_gate",
       "text_contract": [
-        "global A/B AGENTS task-source and exact-continuation rule",
-        "decision_model.v1.json active_task_continuation_control_plane",
-        "parent-frame task-legality versus task-internal route distinction"
+        "global A/B AGENTS task-source and advisory exact-continuation rule",
+        "decision_model.v1.json active_task_continuation_advisory",
+        "current Owner frame versus non-authoritative recovery records and repository artifacts"
       ],
       "live_consumer": [
-        "A/B UserPromptSubmit records a non-authoritative increment digest and preserves an active binding across ordinary continue correction and status messages",
-        "Owner binder writes a session-scoped ActiveTaskContinuation and can create an exact-lineage cross-repository child without user routing",
-        "A/B PreToolUse validates effect class and bound roots without selecting the task or route",
-        "parent restore returns from a child to the exact saved binding; A/B SessionStart restores an active continuation or injects an unbound read-only recovery state"
+        "A/B UserPromptSubmit records a non-authoritative increment digest and explicitly says no manifest is required for ordinary authorized effects",
+        "optional binder and restore preserve an exact cross-window or cross-repository return point only when recovery value is positive",
+        "A/B hooks.json no longer registers the task-provenance PreToolUse gate; the legacy script is fail-open for stale already-running processes",
+        "A/B SessionStart surfaces an exact continuation as advisory evidence or fails open to current user words and live facts"
       ],
-      "positive_negative_regression": "unbound file mutation is blocked; an in-root mutation survives an ordinary later user increment; an unbound foreign mutation is blocked; an exact-lineage foreign child is admitted only in its child root; nested functions.exec apply_patch is root checked; parent restore reverses the roots; explicit pause blocks effects; compact preserves the exact active continuation",
-      "fresh_behavior": "fresh A and B app-server hooks/list consumers report all four current hooks trusted after removal of the duplicate inner script-hash pin; the focused continuation regression passes ordinary increment, compact readback, bounded child binding, parent restore, mixed-control rejection and Pause cases",
-      "live_effect": "the current B task retains the surviving parent across ordinary user increments; a legitimate cross-repository child can be bound and restored without user approval, while a control call mixed with a companion effect is rejected instead of bypassing provenance",
+      "positive_negative_regression": "fresh A/B discovery contains exactly SessionStart UserPromptSubmit and Stop; no pre_tool_use trust entry remains; unbound zero-beat says continuation is advisory; optional exact continuation survives ordinary increments compact child binding parent restore and Pause metadata without admitting or denying tools",
+      "fresh_behavior": "fresh A and B app-server hooks/list consumers report exactly three current hooks trusted and no PreToolUse hook; the focused live continuation regression passes advisory unbound and bound contexts optional child restore and Stop cases",
+      "live_effect": "the current B task continued ordinary authorized edits after the stale loaded guard was made fail-open, while new processes do not discover the gate at all; task source still comes from current words or a semantically surviving parent rather than cwd STATUS reports or tests",
       "status": "PARTIAL_CONSUMER",
-      "open_gap": "Codex still performs semantic reanchoring and specialized tool paths may opt out of generic PreToolUse; deterministic tests do not yet prove a natural live compact plus multi-repository cycle will remain latency-free and burden-free, so the guard remains reversible."
+      "open_gap": "Only later natural tasks and a fresh user window can show that removing the gate lowers real correction and latency burden without increasing unrelated-state errors; optional continuation remains reversible evidence rather than a completion claim."
     },
     {
       "id": "utterance_increment_to_active_subject_object",
@@ -134,7 +134,7 @@
       ],
       "positive_negative_regression": "independent cognition must be conclusion-open before high-leverage candidate lock; a worker shown the Owner answer is classified as directed red-team; deterministic small work does not require a second model; worker-return still requires Owner adoption",
       "fresh_behavior": "three conclusion-open Grok audits completed against live instruction provenance, competing causal models and 985 historical WorkerPool pools. They independently rejected archived repository AGENTS as the primary reachable cause and identified the hot A/B stack, sparse or broad task binding, compact recovery, Owner first-explanation convergence and late answer-shaped worker prompts as the higher-value causal set",
-      "live_effect": "the Owner read and adopted the supported findings: shared worker Skills now preserve preclosure independence; transport profile identity is explicitly non-role and non-authority; hot hooks were thinned; the duplicate hash failure generator was removed; mixed binding-control effects are rejected",
+      "live_effect": "the Owner read and adopted the supported findings: shared worker Skills preserve preclosure independence; transport profile identity is explicitly non-role and non-authority; continuity hooks are thin; the task-provenance PreToolUse gate was retired after live false positives showed that its regex control plane increased burden without enforcing a complete write boundary",
       "status": "PARTIAL_CONSUMER",
       "open_gap": "Worker execution receipts and agreement still do not prove future cognitive independence. A changed-context positive/negative regression and later natural high-leverage decisions must show workers are dispatched before candidate lock only when their expected information gain is positive."
     },
@@ -222,13 +222,14 @@
     "thin_invariant_preserves_dynamic_exploration"
   ],
   "remaining_nonuniversal_boundaries": [
-    "the PreToolUse task-provenance guard covers supported local function and unified-exec paths but specialized tool paths may opt out and semantic binding remains Owner-mediated",
+    "ActiveTaskContinuation is now advisory recovery evidence rather than a tool gate; later natural windows must still show that exact returns remain recoverable without recurring manifest rituals",
+    "the retired PreToolUse script remains as a fail-open stale-process shim until no already-running consumer can reference it; fresh A/B discovery excludes it",
     "the Stop gate covers recorded open plans but intentionally fails open for unrecorded parents and has no natural live block receipt yet",
     "fresh canaries are decision-only and do not prove every product surface executes the selected action",
     "the explicit reversible-machine-work and default-owner phase-boundary families have deterministic and live-thread evidence but no independent fresh changed-context outputs",
     "the current live recurrence proves that generic return-to-native wording can still drift unless an exact pre-existing object and return point are bound",
     "long-horizon burden reduction requires later real recurrence evidence",
-    "the current already-running B TUI has not reloaded the final slim configuration"
+    "the current already-running B TUI cached the old hook list but executes the retired guard as fail-open; a fresh B app-server already reads the final three-hook configuration"
   ],
   "anti_overclaim": "No row may be upgraded to VERIFIED solely because text, static tests, infrastructure receipts, or one model output are green."
 }
