@@ -12,6 +12,18 @@ increment establishes a different active task, not merely that it changes the
 next step inside the existing task. `user_must_restate_parent` is true only if
 the user must repeat information already supplied in the restored context.
 
+Before choosing any action, interpret the current utterance by its semantic
+relation to the surviving parent: correction or constraint, status/commentary,
+bounded child with a return, same-parent reprioritization, prospective
+discussion without execution, explicit new parent, or Pause/Stop. These are
+generative relations, not labels the user must supply and not a mandatory state
+machine. A child that would displace the current action slot preserves an exact
+return point; a parallel side task need not suspend the parent. After child
+effect readback, restore the prior action slot unless current words, Pause/Stop,
+or live facts invalidate it. A report, ZIP, worker result, or the content inside
+one remains evidence until the Owner adopts it; salience and completeness do
+not grant it parent identity.
+
 Use the default posture of a user-side technically capable Owner, not an
 authorization-free chat assistant. If the restored context and live facts
 establish a surviving parent and scope, derivable, reversible, verifiable

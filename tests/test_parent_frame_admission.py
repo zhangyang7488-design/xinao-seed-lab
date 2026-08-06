@@ -15,7 +15,7 @@ def test_parent_frame_admission_suite_is_small_generic_and_balanced() -> None:
     cases = yaml.safe_load((suite_root / "cases.yaml").read_text(encoding="utf-8"))
     case_ids = {case["vars"]["case_id"] for case in cases}
 
-    assert len(cases) == 34
+    assert len(cases) == 39
     assert case_ids == {
         "REG_CONTEXTUAL_DISTRESS_STAYS_IN_ACTIVE_REPAIR",
         "REG_LITERAL_DANGER_SIGNS_ADMIT_SAFETY_TASK",
@@ -51,6 +51,11 @@ def test_parent_frame_admission_suite_is_small_generic_and_balanced() -> None:
         "REG_COLD_NATIVE_STANDING_EXCEPTION_ADMITS_TASK_SCOPED_SUBAGENT",
         "REG_ORDINARY_SEPARABLE_WORK_REJECTS_NATIVE_EXCEPTION",
         "REG_ABUNDANT_QUOTA_IS_NOT_FORCED_FANOUT_KPI",
+        "REG_BOUNDED_CHILD_INSERTION_PRESERVES_AND_RETURNS_PARENT",
+        "REG_STATUS_COMMENTARY_DOES_NOT_STOP_OR_REPLACE_PARENT",
+        "REG_SAME_PARENT_REPRIORITIZATION_CHANGES_ORDER_NOT_PARENT",
+        "REG_PROSPECTIVE_DISCUSSION_DOES_NOT_EXECUTE_FUTURE_TASK",
+        "REG_DOWNSTREAM_ZIP_ANALYSIS_REMAINS_EVIDENCE_AND_PARENT_CONTINUES",
     }
     assert cases[0]["metadata"]["profiles"] == ["smoke", "core", "deep", "intent"]
     assert all("intent" in case["metadata"]["profiles"] for case in cases)
@@ -161,6 +166,11 @@ def test_parent_frame_admission_suite_is_small_generic_and_balanced() -> None:
         "REG_COLD_NATIVE_STANDING_EXCEPTION_ADMITS_TASK_SCOPED_SUBAGENT",
         "REG_ORDINARY_SEPARABLE_WORK_REJECTS_NATIVE_EXCEPTION",
         "REG_ABUNDANT_QUOTA_IS_NOT_FORCED_FANOUT_KPI",
+        "REG_BOUNDED_CHILD_INSERTION_PRESERVES_AND_RETURNS_PARENT",
+        "REG_STATUS_COMMENTARY_DOES_NOT_STOP_OR_REPLACE_PARENT",
+        "REG_SAME_PARENT_REPRIORITIZATION_CHANGES_ORDER_NOT_PARENT",
+        "REG_PROSPECTIVE_DISCUSSION_DOES_NOT_EXECUTE_FUTURE_TASK",
+        "REG_DOWNSTREAM_ZIP_ANALYSIS_REMAINS_EVIDENCE_AND_PARENT_CONTINUES",
     }
     # Monopoly rejection is decision-closure only: the model may omit the
     # turn-finalization object when the increment is framed as continuous work.
@@ -302,6 +312,86 @@ def test_parent_frame_admission_suite_is_small_generic_and_balanced() -> None:
     assert closure_cases["REG_ABUNDANT_QUOTA_IS_NOT_FORCED_FANOUT_KPI"][
         "expected_blocked_promotion"
     ] == "quota_or_fixed_count_to_forced_fanout_kpi"
+    utterance_relation_cases = {
+        "REG_BOUNDED_CHILD_INSERTION_PRESERVES_AND_RETURNS_PARENT": (
+            "execute_child_then_resume_parent",
+            "child_to_parent_replacement",
+        ),
+        "REG_STATUS_COMMENTARY_DOES_NOT_STOP_OR_REPLACE_PARENT": (
+            "answer_status_then_continue_parent",
+            "status_to_implicit_stop",
+        ),
+        "REG_SAME_PARENT_REPRIORITIZATION_CHANGES_ORDER_NOT_PARENT": (
+            "reprioritize_within_parent",
+            "reorder_to_new_parent",
+        ),
+        "REG_PROSPECTIVE_DISCUSSION_DOES_NOT_EXECUTE_FUTURE_TASK": (
+            "discuss_only_preserve_parent",
+            "prospective_talk_to_execution",
+        ),
+        "REG_DOWNSTREAM_ZIP_ANALYSIS_REMAINS_EVIDENCE_AND_PARENT_CONTINUES": (
+            "consume_evidence_then_resume",
+            "material_content_to_parent_task",
+        ),
+    }
+    for case_id, (selected, blocked) in utterance_relation_cases.items():
+        assert closure_cases[case_id]["expected_selected_control_action"] == selected
+        assert closure_cases[case_id]["expected_blocked_promotion"] == blocked
+        assert closure_cases[case_id]["expected_task_switch"] is False
+        assert closure_cases[case_id]["expected_user_must_restate_parent"] is False
+        assert json.loads(
+            closure_cases[case_id]["expected_symmetric_alternatives_considered"]
+        ) == [selected]
+        assert json.loads(
+            closure_cases[case_id]["expected_required_projection_levels"]
+        ) == ["parent_result", "current_frame", "consumer_effect"]
+    bounded_routes = json.loads(
+        closure_cases["REG_BOUNDED_CHILD_INSERTION_PRESERVES_AND_RETURNS_PARENT"][
+            "allowed_control_routes"
+        ]
+    )
+    assert bounded_routes == [
+        {
+            "next_action": "complete_bounded_child_then_resume_parent",
+            "decision_family": "utterance_relation_and_return",
+            "selected_control_action": "execute_child_then_resume_parent",
+        },
+        {
+            "next_action": "dispatch_parallel_separable_packages_with_owner_consume",
+            "decision_family": "owner_worker_dual_track",
+            "selected_control_action": "dispatch_parallel_and_owner_consume",
+        },
+    ]
+    assert json.loads(
+        closure_cases["REG_STATUS_COMMENTARY_DOES_NOT_STOP_OR_REPLACE_PARENT"][
+            "allowed_trigger_roles"
+        ]
+    ) == ["subordinate_after_frame_binding", "not_applicable"]
+    assert json.loads(
+        closure_cases["REG_SAME_PARENT_REPRIORITIZATION_CHANGES_ORDER_NOT_PARENT"][
+            "allowed_trigger_roles"
+        ]
+    ) == ["subordinate_after_frame_binding", "not_applicable"]
+    assert json.loads(
+        closure_cases["REG_PROSPECTIVE_DISCUSSION_DOES_NOT_EXECUTE_FUTURE_TASK"][
+            "allowed_root_statuses"
+        ]
+    ) == ["existing_parent_preserved", "suspended_parent_preserved"]
+    assert json.loads(
+        closure_cases["REG_PROSPECTIVE_DISCUSSION_DOES_NOT_EXECUTE_FUTURE_TASK"][
+            "allowed_trigger_roles"
+        ]
+    ) == ["not_applicable", "subordinate_after_frame_binding"]
+    assert json.loads(
+        closure_cases["REG_PROSPECTIVE_DISCUSSION_DOES_NOT_EXECUTE_FUTURE_TASK"][
+            "allowed_active_levels"
+        ]
+    ) == ["answer_only", "current_frame"]
+    assert json.loads(
+        closure_cases["REG_STATUS_COMMENTARY_DOES_NOT_STOP_OR_REPLACE_PARENT"][
+            "expected_required_projection_levels"
+        ]
+    ) == ["parent_result", "current_frame", "consumer_effect"]
     # Semantic width only: no fixed minimum worker count and no fake runtime claim.
     for case_id in dual_track_cases | native_routing_cases:
         blob = json.dumps(closure_cases[case_id], ensure_ascii=False).lower()
@@ -378,7 +468,10 @@ def test_parent_frame_admission_suite_is_small_generic_and_balanced() -> None:
     assert "projectionIsCanonicalMinimalSlice" in assertion
     assert "requiredProjectionLevels.every" in assertion
     assert "actualProjectionLevels.length === requiredProjectionLevels.length" not in assertion
-    assert "optionalObjectsAreEventBound" in assertion
+    assert "effectProfile" in assertion
+    assert "allowedControlRoutes" in assertion
+    assert "effectDecisionClosureMatches" in assertion
+    assert "strictOptionalObjectsAreEventBound" in assertion
     assert "graphTaxonomyMatches" in assertion
 
     validation_scope_case = next(
@@ -408,6 +501,10 @@ def test_parent_frame_admission_suite_is_small_generic_and_balanced() -> None:
     assert "multi_agent=false" in prompt
     assert "positive-value width" in prompt
     assert "Do not claim" in prompt and "runtime pass" in prompt
+    assert "interpret the current utterance" in prompt
+    assert "relation to the surviving parent" in prompt
+    assert "not labels the user must supply" in prompt
+    assert "report, ZIP, worker result" in prompt
 
 
 def test_parent_frame_admission_is_a_live_behavior_runner_consumer() -> None:

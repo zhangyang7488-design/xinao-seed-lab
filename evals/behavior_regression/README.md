@@ -1,7 +1,7 @@
 # Local behavior regression
 
 This is a bounded S engineering capability, not a research platform, scheduler,
-authority source, or completion gate. The catalog currently inventories 52
+authority source, or completion gate. The catalog currently inventories 57
 live and reusable specifications. XINAO domain research and economic evidence
 belong to `E:\XINAO_RESEARCH_WORKSPACES\xinao-native-research`.
 
@@ -9,7 +9,7 @@ The active profiles are:
 
 - `capability`: one fresh Codex app-server capability canary;
 - `smoke`: one parent-frame admission case plus the capability canary;
-- `intent`: thirty-four generic fresh parent-frame, bounded-transition,
+- `intent`: thirty-nine generic fresh parent-frame, utterance-relation, bounded-transition,
   mature-owner, owner-worker dual-track, and cold-native standing exception cases;
 - `core`: intent admission, capability, proactive mature-first, frozen recall,
   thin localization, and deterministic static checks;

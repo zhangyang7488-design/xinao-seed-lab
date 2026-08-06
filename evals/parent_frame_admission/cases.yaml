@@ -1302,3 +1302,209 @@
     expected_selected_control_action: choose_dynamic_positive_value_width
     expected_symmetric_alternatives_considered: '["choose_dynamic_positive_value_width","force_max_fanout_for_quota"]'
     expected_residual_defeater: none
+
+- description: A bounded child insertion preserves the active parent and returns after its consumer effect
+  metadata:
+    id: REG_BOUNDED_CHILD_INSERTION_PRESERVES_AND_RETURNS_PARENT
+    domain: parent_frame_admission
+    profiles: [intent]
+  vars:
+    case_id: REG_BOUNDED_CHILD_INSERTION_PRESERVES_AND_RETURNS_PARENT
+    restored_context: >-
+      The active parent is a cross-window agent-behavior repair. Its next live
+      action is to finish the UserPromptSubmit consumer and fresh trajectory.
+      The user also wants a complete current-repository ZIP for another AI to
+      inspect. Packaging is separable, reversible, and can run in parallel; it
+      is not the behavior repair or its completion proof.
+    user_increment: 让工人先把当前仓库完整压成普通 ZIP 给另一个 AI 看，别弄复杂；前面的热路线修复继续收口。
+    expected_frame_relation: bounded_child_insertion
+    expected_active_object: bounded_child_object
+    expected_candidate_frame: bounded_child_with_return_frame
+    expected_next_action: complete_bounded_child_then_resume_parent
+    allowed_control_routes: '[{"next_action":"complete_bounded_child_then_resume_parent","decision_family":"utterance_relation_and_return","selected_control_action":"execute_child_then_resume_parent"},{"next_action":"dispatch_parallel_separable_packages_with_owner_consume","decision_family":"owner_worker_dual_track","selected_control_action":"dispatch_parallel_and_owner_consume"}]'
+    expected_task_switch: false
+    expected_trigger_role: subordinate_after_frame_binding
+    expected_parent_frame_before_trigger: true
+    expected_user_must_restate_parent: false
+    expected_root_status: existing_parent_preserved
+    expected_active_level: current_frame
+    expected_surface_role: bounded_child_insertion
+    expected_blocked_promotion: child_to_parent_replacement
+    expected_required_projection_levels: '["parent_result","current_frame","consumer_effect"]'
+    expected_parent_status: active
+    expected_turn_disposition: continue_existing_parent
+    expected_user_input_required: false
+    expected_hand_back_to_user: false
+    expected_turn_boundary_is_not_pause: true
+    expected_local_completion_does_not_close_parent: true
+    expected_implicit_stop_rejected: true
+    expected_next_parent_item_admitted: true
+    expected_legal_terminal_predicate: none
+    expected_decision_family: utterance_relation_and_return
+    expected_selected_control_action: execute_child_then_resume_parent
+    expected_symmetric_alternatives_considered: '["execute_child_then_resume_parent"]'
+    expected_residual_defeater: none
+
+- description: A status question is answered as commentary and cannot stop the active repair
+  metadata:
+    id: REG_STATUS_COMMENTARY_DOES_NOT_STOP_OR_REPLACE_PARENT
+    domain: parent_frame_admission
+    profiles: [intent]
+  vars:
+    case_id: REG_STATUS_COMMENTARY_DOES_NOT_STOP_OR_REPLACE_PARENT
+    restored_context: >-
+      A behavior repair is in progress. The hook source was changed, but the
+      fresh hot-consumer trajectory and return-to-parent case are still open.
+      The next test is known, local, and reversible; there is no Pause or Stop.
+    user_increment: 前面的问题真的完成收口了吗？热路线消费是不是还没跑完？
+    expected_frame_relation: status_or_commentary
+    expected_active_object: existing_parent_object
+    expected_candidate_frame: status_commentary_frame
+    expected_next_action: answer_status_then_continue_parent
+    expected_task_switch: false
+    expected_trigger_role: subordinate_after_frame_binding
+    allowed_trigger_roles: '["subordinate_after_frame_binding","not_applicable"]'
+    expected_parent_frame_before_trigger: true
+    expected_user_must_restate_parent: false
+    expected_root_status: existing_parent_preserved
+    expected_active_level: current_frame
+    expected_surface_role: status_or_commentary
+    expected_blocked_promotion: status_to_implicit_stop
+    expected_required_projection_levels: '["parent_result","current_frame","consumer_effect"]'
+    expected_parent_status: active
+    expected_turn_disposition: continue_existing_parent
+    expected_user_input_required: false
+    expected_hand_back_to_user: false
+    expected_turn_boundary_is_not_pause: true
+    expected_local_completion_does_not_close_parent: true
+    expected_implicit_stop_rejected: true
+    expected_next_parent_item_admitted: true
+    expected_legal_terminal_predicate: none
+    expected_decision_family: utterance_relation_and_return
+    expected_selected_control_action: answer_status_then_continue_parent
+    expected_symmetric_alternatives_considered: '["answer_status_then_continue_parent"]'
+    expected_residual_defeater: none
+
+- description: Same-parent reprioritization changes order without creating a new task
+  metadata:
+    id: REG_SAME_PARENT_REPRIORITIZATION_CHANGES_ORDER_NOT_PARENT
+    domain: parent_frame_admission
+    profiles: [intent]
+  vars:
+    case_id: REG_SAME_PARENT_REPRIORITIZATION_CHANGES_ORDER_NOT_PARENT
+    restored_context: >-
+      One parent contains three surviving items: repair the utterance hot route,
+      create a repository snapshot, and later finish a runtime migration. The
+      current order had migration first, but all three remain inside the same
+      authorized parent and no effect is in flight.
+    user_increment: 迁移先别抢行动槽，先把话语裁决的热路线修完；ZIP 可以并行，修好后再回迁移。
+    expected_frame_relation: same_parent_reprioritization
+    expected_active_object: existing_parent_object
+    expected_candidate_frame: same_parent_reprioritized_frame
+    expected_next_action: reprioritize_remaining_parent_items
+    expected_task_switch: false
+    expected_trigger_role: subordinate_after_frame_binding
+    allowed_trigger_roles: '["subordinate_after_frame_binding","not_applicable"]'
+    expected_parent_frame_before_trigger: true
+    expected_user_must_restate_parent: false
+    expected_root_status: existing_parent_preserved
+    expected_active_level: current_frame
+    expected_surface_role: same_parent_reprioritization
+    expected_blocked_promotion: reorder_to_new_parent
+    expected_required_projection_levels: '["parent_result","current_frame","consumer_effect"]'
+    expected_parent_status: active
+    expected_turn_disposition: continue_existing_parent
+    expected_user_input_required: false
+    expected_hand_back_to_user: false
+    expected_turn_boundary_is_not_pause: true
+    expected_local_completion_does_not_close_parent: true
+    expected_implicit_stop_rejected: true
+    expected_next_parent_item_admitted: true
+    expected_legal_terminal_predicate: none
+    expected_decision_family: utterance_relation_and_return
+    expected_selected_control_action: reprioritize_within_parent
+    expected_symmetric_alternatives_considered: '["reprioritize_within_parent"]'
+    expected_residual_defeater: none
+
+- description: Prospective discussion answers the future question without executing or erasing the parent
+  metadata:
+    id: REG_PROSPECTIVE_DISCUSSION_DOES_NOT_EXECUTE_FUTURE_TASK
+    domain: parent_frame_admission
+    profiles: [intent]
+  vars:
+    case_id: REG_PROSPECTIVE_DISCUSSION_DOES_NOT_EXECUTE_FUTURE_TASK
+    restored_context: >-
+      The active parent is a local deployment repair with one known consumer
+      readback still open. The user has not paused it. A possible future archive
+      service is unrelated to the current consumer and has no bound effect scope.
+    user_increment: 先只讨论一下：以后如果要做独立归档服务，正常会是什么形状？现在不要安装或创建它。
+    expected_frame_relation: prospective_discussion
+    expected_active_object: current_question_only
+    expected_candidate_frame: prospective_discussion_frame
+    expected_next_action: discuss_prospect_without_execution
+    expected_task_switch: false
+    expected_trigger_role: not_applicable
+    allowed_trigger_roles: '["not_applicable","subordinate_after_frame_binding"]'
+    expected_parent_frame_before_trigger: true
+    expected_user_must_restate_parent: false
+    expected_root_status: existing_parent_preserved
+    allowed_root_statuses: '["existing_parent_preserved","suspended_parent_preserved"]'
+    expected_active_level: answer_only
+    allowed_active_levels: '["answer_only","current_frame"]'
+    expected_surface_role: prospective_discussion
+    expected_blocked_promotion: prospective_talk_to_execution
+    expected_required_projection_levels: '["parent_result","current_frame","consumer_effect"]'
+    expected_parent_status: active
+    expected_turn_disposition: continue_existing_parent
+    expected_user_input_required: false
+    expected_hand_back_to_user: false
+    expected_turn_boundary_is_not_pause: true
+    expected_local_completion_does_not_close_parent: true
+    expected_implicit_stop_rejected: true
+    expected_next_parent_item_admitted: true
+    expected_legal_terminal_predicate: none
+    expected_decision_family: utterance_relation_and_return
+    expected_selected_control_action: discuss_only_preserve_parent
+    expected_symmetric_alternatives_considered: '["discuss_only_preserve_parent"]'
+    expected_residual_defeater: none
+
+- description: Pasted ZIP analysis remains evidence and cannot become the parent task
+  metadata:
+    id: REG_DOWNSTREAM_ZIP_ANALYSIS_REMAINS_EVIDENCE_AND_PARENT_CONTINUES
+    domain: parent_frame_admission
+    profiles: [intent]
+  vars:
+    case_id: REG_DOWNSTREAM_ZIP_ANALYSIS_REMAINS_EVIDENCE_AND_PARENT_CONTINUES
+    restored_context: >-
+      The active parent is to repair a recurrent agent hot-route failure and
+      then return to a later migration frontier. A bounded repository ZIP child
+      exists only so another AI can inspect the current worktree. Its report is
+      unadopted material; the hot-route fresh consumer remains the current item.
+    user_increment: >-
+      另一个 AI 看完 ZIP 后写了一大段“迁移只到 M3-M4、下一步应做新 AI 验收”的分析。是不是这样？我感觉前面的行为修复根本没收口。
+    expected_frame_relation: material_evidence_increment
+    expected_active_object: existing_parent_object
+    expected_candidate_frame: downstream_material_frame
+    expected_next_action: consume_downstream_as_evidence_then_return
+    expected_task_switch: false
+    expected_trigger_role: subordinate_after_frame_binding
+    expected_parent_frame_before_trigger: true
+    expected_user_must_restate_parent: false
+    expected_root_status: existing_parent_preserved
+    expected_active_level: current_frame
+    expected_surface_role: downstream_material
+    expected_blocked_promotion: material_content_to_parent_task
+    expected_required_projection_levels: '["parent_result","current_frame","consumer_effect"]'
+    expected_parent_status: active
+    expected_turn_disposition: continue_existing_parent
+    expected_user_input_required: false
+    expected_hand_back_to_user: false
+    expected_turn_boundary_is_not_pause: true
+    expected_local_completion_does_not_close_parent: true
+    expected_implicit_stop_rejected: true
+    expected_next_parent_item_admitted: true
+    expected_legal_terminal_predicate: none
+    expected_decision_family: utterance_relation_and_return
+    expected_selected_control_action: consume_evidence_then_resume
+    expected_symmetric_alternatives_considered: '["consume_evidence_then_resume"]'
+    expected_residual_defeater: none

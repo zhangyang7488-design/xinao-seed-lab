@@ -23,6 +23,37 @@ module.exports = (output, context) => {
   )
     ? JSON.parse(context.vars.allowed_blocked_promotions)
     : [context.vars.expected_blocked_promotion];
+  const allowedTriggerRoles = Object.prototype.hasOwnProperty.call(
+    context.vars,
+    "allowed_trigger_roles",
+  )
+    ? JSON.parse(context.vars.allowed_trigger_roles)
+    : [context.vars.expected_trigger_role];
+  const allowedRootStatuses = Object.prototype.hasOwnProperty.call(
+    context.vars,
+    "allowed_root_statuses",
+  )
+    ? JSON.parse(context.vars.allowed_root_statuses)
+    : [context.vars.expected_root_status];
+  const allowedActiveLevels = Object.prototype.hasOwnProperty.call(
+    context.vars,
+    "allowed_active_levels",
+  )
+    ? JSON.parse(context.vars.allowed_active_levels)
+    : [context.vars.expected_active_level];
+  const effectProfile =
+    context.vars.expected_decision_family === "utterance_relation_and_return";
+  const defaultControlRoute = {
+    next_action: context.vars.expected_next_action,
+    decision_family: context.vars.expected_decision_family,
+    selected_control_action: context.vars.expected_selected_control_action,
+  };
+  const allowedControlRoutes = Object.prototype.hasOwnProperty.call(
+    context.vars,
+    "allowed_control_routes",
+  )
+    ? JSON.parse(context.vars.allowed_control_routes)
+    : [defaultControlRoute];
   const hasTurnExpectation = Object.prototype.hasOwnProperty.call(
     context.vars,
     "expected_turn_disposition",
@@ -45,7 +76,6 @@ module.exports = (output, context) => {
     candidate_frame: context.vars.expected_candidate_frame,
     next_action: context.vars.expected_next_action,
     task_switch: asBool(context.vars.expected_task_switch),
-    trigger_role: context.vars.expected_trigger_role,
     parent_frame_before_trigger: asBool(
       context.vars.expected_parent_frame_before_trigger,
     ),
@@ -53,8 +83,6 @@ module.exports = (output, context) => {
       context.vars.expected_user_must_restate_parent,
     ),
     object_graph: {
-      root_status: context.vars.expected_root_status,
-      active_level: context.vars.expected_active_level,
       upward_service_path: true,
       downward_effect_path: true,
       cross_cutting_preserved: true,
@@ -133,10 +161,31 @@ module.exports = (output, context) => {
     }
     return actual === wanted;
   };
-  const behaviorMatches = Object.entries(expected).every(([key, value]) =>
+  const strictBehaviorMatches = Object.entries(expected).every(([key, value]) =>
     sameValue(parsed[key], value),
   );
+  const effectExpected = {
+    ...expected,
+    object_graph: { ...expected.object_graph },
+  };
+  delete effectExpected.next_action;
+  delete effectExpected.turn_finalization;
+  delete effectExpected.mature_completion;
+  delete effectExpected.decision_closure;
+  const effectBehaviorMatches =
+    Object.entries(effectExpected).every(([key, value]) =>
+      sameValue(parsed[key], value),
+    ) &&
+    allowedControlRoutes.some(
+      (route) => route.next_action === parsed.next_action,
+    );
+  const behaviorMatches = effectProfile
+    ? effectBehaviorMatches
+    : strictBehaviorMatches;
   const graphTaxonomyMatches =
+    allowedTriggerRoles.includes(parsed.trigger_role) &&
+    allowedRootStatuses.includes(parsed.object_graph?.root_status) &&
+    allowedActiveLevels.includes(parsed.object_graph?.active_level) &&
     allowedSurfaceRoles.includes(parsed.object_graph?.surface_role) &&
     allowedBlockedPromotions.includes(parsed.object_graph?.blocked_promotion);
   const canonicalLevels = [
@@ -164,7 +213,7 @@ module.exports = (output, context) => {
     requiredProjectionLevels.every((level) =>
       actualProjectionLevels.includes(level),
     );
-  const optionalObjectsAreEventBound =
+  const strictOptionalObjectsAreEventBound =
     (hasTurnExpectation
       ? parsed.turn_finalization !== null
       : parsed.turn_finalization === null) &&
@@ -174,9 +223,56 @@ module.exports = (output, context) => {
     (hasClosureExpectation
       ? parsed.decision_closure !== null
       : parsed.decision_closure === null);
+  const matureCompletionContract = {
+    intent_bound_before_engineering: true,
+    unstated_prerequisites_derived: true,
+    owner_technical_decision: true,
+    user_choice_required: false,
+    real_consumer_bound: true,
+    recovery_and_verification_included: true,
+    completion_requires_consumer_readback: true,
+    burden_not_returned_to_user: true,
+  };
+  const effectTurnFinalizationMatches =
+    parsed.turn_finalization === null ||
+    sameValue(parsed.turn_finalization, expected.turn_finalization);
+  const effectMatureCompletionMatches =
+    parsed.mature_completion === null ||
+    sameValue(parsed.mature_completion, matureCompletionContract);
+  const effectDecisionClosureMatches =
+    parsed.decision_closure === null ||
+    (allowedControlRoutes.some(
+      (route) =>
+        route.next_action === parsed.next_action &&
+        route.decision_family === parsed.decision_closure?.decision_family &&
+        route.selected_control_action ===
+          parsed.decision_closure?.selected_control_action,
+    ) &&
+      parsed.decision_closure?.unsafe_if_provided_checked === true &&
+      parsed.decision_closure?.unsafe_if_not_provided_checked === true &&
+      parsed.decision_closure?.timing_or_order_checked === true &&
+      parsed.decision_closure?.duration_or_early_stop_checked === true &&
+      parsed.decision_closure?.upward_service_path_checked === true &&
+      parsed.decision_closure?.downward_consumer_effect_checked === true &&
+      parsed.decision_closure?.residual_defeater ===
+        context.vars.expected_residual_defeater &&
+      parsed.decision_closure?.scope === "event_triggered_bounded");
+  const optionalObjectsMatch = effectProfile
+    ? effectTurnFinalizationMatches &&
+      effectMatureCompletionMatches &&
+      effectDecisionClosureMatches
+    : strictOptionalObjectsAreEventBound;
   const actualClosureAlternatives =
     parsed.decision_closure?.symmetric_alternatives_considered;
-  const closureAlternativesAreBoundedAndSufficient =
+  const effectClosureAlternativesMatch =
+    parsed.decision_closure === null ||
+    (Array.isArray(actualClosureAlternatives) &&
+      actualClosureAlternatives.length >= 2 &&
+      new Set(actualClosureAlternatives).size === actualClosureAlternatives.length &&
+      actualClosureAlternatives.includes(
+        parsed.decision_closure?.selected_control_action,
+      ));
+  const strictClosureAlternativesMatch =
     !hasClosureExpectation ||
     (Array.isArray(actualClosureAlternatives) &&
       new Set(actualClosureAlternatives).size === actualClosureAlternatives.length &&
@@ -186,6 +282,9 @@ module.exports = (output, context) => {
       requiredClosureAlternatives.every((item) =>
         actualClosureAlternatives.includes(item),
       ));
+  const closureAlternativesAreBoundedAndSufficient = effectProfile
+    ? effectClosureAlternativesMatch
+    : strictClosureAlternativesMatch;
 
   const usage = context.providerResponse?.tokenUsage || {};
   const appServer = context.metadata?.codexAppServer || {};
@@ -216,7 +315,7 @@ module.exports = (output, context) => {
     behaviorMatches &&
     graphTaxonomyMatches &&
     projectionIsCanonicalMinimalSlice &&
-    optionalObjectsAreEventBound &&
+    optionalObjectsMatch &&
     closureAlternativesAreBoundedAndSufficient &&
     parsed.parent_frame_before_trigger === true &&
     parsed.user_must_restate_parent === false &&
@@ -227,13 +326,18 @@ module.exports = (output, context) => {
   const evidence = {
     expected: {
       ...expected,
+      allowed_trigger_roles: allowedTriggerRoles,
       object_graph: {
         ...expected.object_graph,
+        allowed_root_statuses: allowedRootStatuses,
+        allowed_active_levels: allowedActiveLevels,
         allowed_surface_roles: allowedSurfaceRoles,
         allowed_blocked_promotions: allowedBlockedPromotions,
         required_projection_levels: requiredProjectionLevels,
       },
       required_closure_alternatives: requiredClosureAlternatives,
+      effect_profile: effectProfile,
+      allowed_control_routes: allowedControlRoutes,
     },
     actual: parsed,
     toolCallTypes: toolCalls.map((item) => item.type),

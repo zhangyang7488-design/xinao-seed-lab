@@ -51,6 +51,11 @@ providers:
               - explicit_new_task
               - literal_high_stakes_new_task
               - pause_or_discuss_only
+              - bounded_child_insertion
+              - status_or_commentary
+              - same_parent_reprioritization
+              - prospective_discussion
+              - material_evidence_increment
           active_object:
             enum:
               - existing_parent_object
@@ -58,6 +63,7 @@ providers:
               - new_explicit_object
               - literal_health_event
               - current_question_only
+              - bounded_child_object
           candidate_frame:
             enum:
               - existing_parent_frame
@@ -81,6 +87,11 @@ providers:
               - tightly_coupled_serial_frame
               - cold_native_standing_exception_frame
               - dynamic_positive_value_width_frame
+              - bounded_child_with_return_frame
+              - status_commentary_frame
+              - same_parent_reprioritized_frame
+              - prospective_discussion_frame
+              - downstream_material_frame
           next_action:
             enum:
               - acknowledge_burden_and_continue_existing_task
@@ -108,6 +119,11 @@ providers:
               - execute_serial_owner_work_without_forced_parallel
               - admit_task_scoped_native_subagent_then_restore_persistent_off
               - choose_dynamic_positive_value_width_not_max_fanout
+              - complete_bounded_child_then_resume_parent
+              - answer_status_then_continue_parent
+              - reprioritize_remaining_parent_items
+              - discuss_prospect_without_execution
+              - consume_downstream_as_evidence_then_return
           task_switch: { type: boolean }
           trigger_role:
             enum:
@@ -171,6 +187,11 @@ providers:
                   - native_collaboration_or_unavailable_native_evidence
                   - ordinary_separable_repo_work
                   - abundant_quota_or_fixed_worker_count
+                  - bounded_child_insertion
+                  - status_or_commentary
+                  - same_parent_reprioritization
+                  - prospective_discussion
+                  - downstream_material
               blocked_promotion:
                 enum:
                   - emotion_to_literal_event
@@ -197,6 +218,11 @@ providers:
                   - native_exception_to_persistent_multi_agent_or_owner_surrender
                   - ordinary_separable_work_to_native_exception
                   - quota_or_fixed_count_to_forced_fanout_kpi
+                  - child_to_parent_replacement
+                  - status_to_implicit_stop
+                  - reorder_to_new_parent
+                  - prospective_talk_to_execution
+                  - material_content_to_parent_task
                   - none
               projection_levels:
                 type: array
@@ -301,6 +327,7 @@ providers:
                   - blocker_or_continue
                   - resume_or_reframe
                   - owner_worker_dual_track
+                  - utterance_relation_and_return
               selected_control_action:
                 enum:
                   - continue_existing_parent
@@ -320,6 +347,11 @@ providers:
                   - execute_serial_now
                   - admit_task_scoped_native_subagent
                   - choose_dynamic_positive_value_width
+                  - execute_child_then_resume_parent
+                  - answer_status_then_continue_parent
+                  - reprioritize_within_parent
+                  - discuss_only_preserve_parent
+                  - consume_evidence_then_resume
               symmetric_alternatives_considered:
                 type: array
                 minItems: 2
@@ -355,6 +387,11 @@ providers:
                     - keep_persistent_multi_agent_on
                     - choose_dynamic_positive_value_width
                     - force_max_fanout_for_quota
+                    - execute_child_then_resume_parent
+                    - answer_status_then_continue_parent
+                    - reprioritize_within_parent
+                    - discuss_only_preserve_parent
+                    - consume_evidence_then_resume
               unsafe_if_provided_checked: { type: boolean, const: true }
               unsafe_if_not_provided_checked: { type: boolean, const: true }
               timing_or_order_checked: { type: boolean, const: true }

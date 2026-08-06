@@ -429,7 +429,7 @@ def test_intent_continuity_baseline_reduces_burden_without_routing_science() -> 
     readme = (REPO_ROOT / "evals" / "behavior_regression" / "README.md").read_text(
         encoding="utf-8"
     )
-    assert "currently inventories 52" in readme
+    assert "currently inventories 57" in readme
     assert "-Profile context" not in readme
 
     attributes = (REPO_ROOT / ".gitattributes").read_text(encoding="utf-8")
@@ -1055,20 +1055,20 @@ def test_behavior_evolution_runner_is_thin_and_domain_research_stays_native() ->
         (REPO_ROOT / "evals/behavior_regression/catalog.json").read_text(encoding="utf-8")
     )
     suite_count = sum(item["case_count"] for item in catalog["suites"])
-    assert suite_count == catalog["declared_case_count"] == 52
+    assert suite_count == catalog["declared_case_count"] == 57
     assert catalog["live_profile_case_counts"] == {
         "capability": 1,
         "smoke": 1 + 1,
         "core": 18 + 1 + 6 + 2 + 1,
         "deep": 18 + 1 + 6 + 2 + 1 + 1,
-        "intent": 34,
+        "intent": 39,
         "proactive": 6,
         "reuse": 4,
         "subagent": 1,
     }
     intent = next(item for item in catalog["suites"] if item["id"] == "parent_frame_admission")
     assert intent["kind"] == "promptfoo_live"
-    assert intent["case_count"] == 34
+    assert intent["case_count"] == 39
     assert intent["runtime_claim_allowed"] is True
     assert intent["domain_routing_claim_allowed"] is False
     proactive = next(item for item in catalog["suites"] if item["id"] == "proactive_mature_first")
@@ -1522,6 +1522,9 @@ def test_live_codex_zero_beat_and_finalization_hooks_are_trusted_and_bounded(
     context = prompt_output["hookSpecificOutput"]["additionalContext"]
     assert "SENTINEL:ZERO_BEAT_CURRENT_INCREMENT_V1" in context
     assert "不要求用户重说“继续”" in context
+    assert "动作选择前按语义裁决" in context
+    assert "有界子项及返回" in context
+    assert "报告、ZIP、worker 输出及其内容只作候选证据" in context
     assert "TASK_CONTINUATION_ADVISORY_ONLY" in context
     assert "TASK_PROVENANCE_PENDING_INITIAL_BIND" not in context
 
@@ -1634,6 +1637,10 @@ def test_live_codex_zero_beat_and_finalization_hooks_are_trusted_and_bounded(
     ]["additionalContext"]
     assert "TASK_CONTINUATION_ADVISORY_ONLY" in prompt_context_2
     assert "task-provenance-regression" in prompt_context_2
+    assert "parent_scope_candidate=verify task provenance consumer" in prompt_context_2
+    assert "parent_completion_candidate=guard and compact readback pass" in prompt_context_2
+    assert "return_task=behavior-parent" in prompt_context_2
+    assert "return_point=next known parent frontier" in prompt_context_2
     compact_inherited = run_hook(session_script, compact_event)
     assert "ACTIVE_TASK_CONTINUATION_ADVISORY" in compact_inherited[
         "hookSpecificOutput"
