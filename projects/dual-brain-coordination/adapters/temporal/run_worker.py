@@ -4,11 +4,11 @@ Env:
   XINAO_TEMPORAL_ADDRESS          default 127.0.0.1:7233
   XINAO_TEMPORAL_NAMESPACE        default default
   XINAO_TEMPORAL_TASK_QUEUE       default xinao-dualbrain-promoted-v1
-  XINAO_TEMPORAL_WORKER_IDENTITY  default xinao-promoted-worker-g1
+  XINAO_TEMPORAL_WORKER_IDENTITY  default xinao-promoted-worker
   XINAO_TEMPORAL_WORKER_VERSIONING 1 enables official Worker Deployments
   XINAO_TEMPORAL_WORKER_DEPLOYMENT_NAME stable deployment name
   XINAO_TEMPORAL_WORKER_BUILD_ID  immutable candidate build identity
-  XINAO_TEMPORAL_WORKER_LOG       optional path for file logging (G1 evidence dir)
+  XINAO_TEMPORAL_WORKER_LOG       optional path for file logging
   PYTHONPATH                      prefer repo root + src (see start_worker_hidden.ps1)
 """
 

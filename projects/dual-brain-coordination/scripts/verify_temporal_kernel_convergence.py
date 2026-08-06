@@ -30,7 +30,7 @@ from xinao_coordination.service import CoordinationService  # noqa: E402
 
 DEFAULT_DB = Path(r"D:\XINAO_RESEARCH_RUNTIME\state\dual_brain_coordination\coordination.sqlite3")
 DEFAULT_OUTPUT = Path(
-    r"D:\XINAO_RESEARCH_RUNTIME\state\kaigong_wave\C08_temporal_kernel_convergence_latest.json"
+    r"D:\XINAO_RESEARCH_RUNTIME\state\dual_brain_coordination\temporal_kernel_convergence_latest.json"
 )
 
 

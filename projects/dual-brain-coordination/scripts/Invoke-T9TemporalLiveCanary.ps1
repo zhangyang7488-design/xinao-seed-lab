@@ -1,7 +1,7 @@
 #Requires -Version 7.2
 <#
 .SYNOPSIS
-  T9 Temporal LIVE canary (G2): gated pytest + temporalio bypass evidence.
+  Promoted-task Temporal live canary: gated pytest + temporalio evidence.
 
 .DESCRIPTION
   Sets XINAO_TEMPORAL_LIVE_E2E=1 and runs scripts/_t9_temporal_live_evidence.py.
@@ -12,7 +12,7 @@
   dual-brain-coordination repo root
 
 .PARAMETER EvidenceOut
-  Optional override for evidence JSON path (script has default under saturation/G2)
+  Optional override for the generic evidence JSON path.
 #>
 [CmdletBinding(PositionalBinding = $false)]
 param(
@@ -49,23 +49,26 @@ if (-not $env:XINAO_TEMPORAL_ADDRESS) { $env:XINAO_TEMPORAL_ADDRESS = '127.0.0.1
 if (-not $env:XINAO_TEMPORAL_NAMESPACE) { $env:XINAO_TEMPORAL_NAMESPACE = 'default' }
 if (-not $env:XINAO_TEMPORAL_TASK_QUEUE) { $env:XINAO_TEMPORAL_TASK_QUEUE = 'xinao-dualbrain-promoted-v1' }
 
-Write-Host "==> T9 Temporal LIVE canary (G2)" -ForegroundColor Cyan
+Write-Host "==> Promoted-task Temporal live canary" -ForegroundColor Cyan
 Write-Host "    python=$py"
 Write-Host "    script=$script"
 Write-Host "    LIVE_E2E=$($env:XINAO_TEMPORAL_LIVE_E2E) ADDRESS=$($env:XINAO_TEMPORAL_ADDRESS)"
 
-& $py $script
-$code = $LASTEXITCODE
-if ($EvidenceOut -and (Test-Path -LiteralPath (
-        'D:\XINAO_RESEARCH_RUNTIME\evidence\grok45_peer_acceptance\night_run_20260712\saturation\G2_temporal_live\T9_temporal_live_canary.json'
-    ))) {
-    $src = 'D:\XINAO_RESEARCH_RUNTIME\evidence\grok45_peer_acceptance\night_run_20260712\saturation\G2_temporal_live\T9_temporal_live_canary.json'
-    $destDir = Split-Path -Parent $EvidenceOut
-    if ($destDir -and -not (Test-Path -LiteralPath $destDir)) {
-        New-Item -ItemType Directory -Path $destDir -Force | Out-Null
+$previousEvidenceOut = $env:XINAO_DUAL_BRAIN_EVIDENCE_OUT
+try {
+    if ($EvidenceOut) {
+        $env:XINAO_DUAL_BRAIN_EVIDENCE_OUT = $EvidenceOut
     }
-    Copy-Item -LiteralPath $src -Destination $EvidenceOut -Force
-    Write-Host "    copied evidence -> $EvidenceOut"
+    & $py $script
+    $code = $LASTEXITCODE
+}
+finally {
+    if ($null -eq $previousEvidenceOut) {
+        Remove-Item Env:XINAO_DUAL_BRAIN_EVIDENCE_OUT -ErrorAction SilentlyContinue
+    }
+    else {
+        $env:XINAO_DUAL_BRAIN_EVIDENCE_OUT = $previousEvidenceOut
+    }
 }
 
 Write-Host ("==> exit {0}" -f $code)

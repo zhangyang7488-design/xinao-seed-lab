@@ -1,10 +1,7 @@
-"""T9 Temporal LIVE canary + evidence writer (G2).
+"""Promoted-task Temporal live canary with bounded evidence output.
 
-Gate: XINAO_TEMPORAL_LIVE_E2E=1 for live pytest / bypass.
-
-Writes:
-  D:\\XINAO_RESEARCH_RUNTIME\\evidence\\grok45_peer_acceptance\\
-    night_run_20260712\\saturation\\G2_temporal_live\\T9_temporal_live_canary.json
+Gate: XINAO_TEMPORAL_LIVE_E2E=1 for live pytest / bypass.  The default
+evidence root is generic runtime state, not a historical acceptance run.
 """
 
 from __future__ import annotations
@@ -21,11 +18,13 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[1]
-EVIDENCE_DIR = Path(
-    r"D:\XINAO_RESEARCH_RUNTIME\evidence\grok45_peer_acceptance"
-    r"\night_run_20260712\saturation\G2_temporal_live"
+DEFAULT_EVIDENCE_DIR = Path(r"D:\XINAO_RESEARCH_RUNTIME\evidence\dual_brain_coordination\temporal_live")
+OUT = Path(
+    os.environ.get(
+        "XINAO_DUAL_BRAIN_EVIDENCE_OUT",
+        str(DEFAULT_EVIDENCE_DIR / "temporal_live_canary.json"),
+    )
 )
-OUT = EVIDENCE_DIR / "T9_temporal_live_canary.json"
 CANARY_ROOT = Path(r"D:\XINAO_RESEARCH_RUNTIME\state\dual_brain_coordination_canary")
 CANARY_DB = CANARY_ROOT / "evidence" / "t9_temporal_live_canary.sqlite3"
 LIVE_CASE = "tests/test_t9_temporal_live.py"
@@ -181,7 +180,7 @@ async def _bypass_canary() -> dict[str, object]:
         source_thread_id=thread_id,
         decision_hash=f"resolution-{suffix}",
         title="T9 live bypass canary",
-        goal="temporalio direct start against G1 queue",
+        goal="temporalio direct start against the promoted-task queue",
         idempotency_key=f"t9-live-promote-{suffix}",
     )
     task = promoted["task"]
@@ -359,7 +358,7 @@ async def _bypass_canary() -> dict[str, object]:
             ],
             "live_crash_inject_attempted": False,
             "reason": (
-                "G2 does not kill production workers; live inject requires G1 poller "
+                "This bounded canary does not kill production workers; live inject requires a poller "
                 "and explicit ops window. Design + poller probe recorded."
             ),
             "poller_present": bool(
@@ -370,7 +369,7 @@ async def _bypass_canary() -> dict[str, object]:
 
 
 def main() -> int:
-    EVIDENCE_DIR.mkdir(parents=True, exist_ok=True)
+    OUT.parent.mkdir(parents=True, exist_ok=True)
     connectivity = _tcp_reachable(DEFAULT_ADDRESS)
 
     # Default-gated pytest must skip cleanly (exit 0).
@@ -420,18 +419,18 @@ def main() -> int:
     )
 
     if pytest_gated_off["passed"] and bypass_ok and kernel_gates_ok:
-        verdict = "PASS_SCOPED_BYPASS_LIVE" if admin_raised else "PASS_LIVE_WELDED"
+        verdict = "PARTIAL_LIVE_BYPASS" if admin_raised else "VERIFIED_LIVE"
     elif pytest_gated_off["passed"] and kernel_gates_ok:
         verdict = "PARTIAL_KERNEL_GATES_ONLY"
     else:
         verdict = "FAIL_OR_UNREACHABLE"
 
     payload = {
-        "schema_version": "xinao.saturation.G2_temporal_live.v1",
-        "phase": "G2/T9-live",
-        "title_cn": "T9 Temporal live tests + Admin client + temporalio duplicate-start canary",
+        "schema_version": "xinao.dual_brain.temporal_live_canary.v1",
+        "phase": "temporal-live",
+        "title_cn": "Temporal live tests + Admin client + temporalio duplicate-start canary",
         "generated_at_utc": datetime.now(UTC).isoformat(),
-        "executor": "grok45_g2_temporal_live",
+        "executor": "dual_brain_temporal_live_canary",
         "repo": str(REPO),
         "gate_env": "XINAO_TEMPORAL_LIVE_E2E",
         "live_workflow_start_attempted": True,
@@ -440,7 +439,6 @@ def main() -> int:
         "admin_client_still_raises": admin_raised,
         "live_temporal_recreate": False,
         "completion_claim_allowed": False,
-        "product_closed": False,
         "coverage": {
             "idempotency_duplicate_start": bypass_ok,
             "stop_blocks_start": kernel_gates_ok
@@ -471,7 +469,7 @@ def main() -> int:
     }
     OUT.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
     summary = {
-        "ok": verdict.startswith("PASS"),
+        "ok": verdict == "VERIFIED_LIVE",
         "out": str(OUT),
         "verdict": verdict,
         "admin_client_still_raises": admin_raised,

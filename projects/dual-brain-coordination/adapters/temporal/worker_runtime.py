@@ -6,9 +6,8 @@ docs.temporal.io develop/python/workers/run-worker-process:
     worker = Worker(client, task_queue=..., workflows=[...], activities=[...])
     await worker.run()
 
-G8 mature-bind anchors (path+line map):
-  evidence/.../G8_mature_bind/MATURE_BIND_MAP.json  → binds B1_worker_entity, B7_start_workflow_tooling
-  RetryPolicy / execute_activity live in package workflow.py + activities.py (B2/B3).
+RetryPolicy and execute_activity live in the package workflow.py and
+activities.py; the current verifier exercises those actual registrations.
 
 Does not touch kernel client.py (mock registry). This module is the live poller
 attachment surface for queue xinao-dualbrain-promoted-v1.
@@ -46,7 +45,7 @@ DEFAULT_ADDRESS = "127.0.0.1:7233"
 DEFAULT_NAMESPACE = "default"
 
 
-DEFAULT_WORKER_IDENTITY = "xinao-promoted-worker-g1"
+DEFAULT_WORKER_IDENTITY = "xinao-promoted-worker"
 DEFAULT_DEPLOYMENT_NAME = "xinao-dualbrain-promoted"
 
 
@@ -182,7 +181,7 @@ async def start_promoted_workflow(
     """start_workflow — official Client API (docs.temporal.io develop/python/client).
 
     Prefer this from worker-side tooling / self-tests. Kernel live start remains
-    in client.py (out of G8 writer scope).
+    in client.py (outside this worker runtime).
     """
     cfg = WorkerRuntimeConfig.from_env()
     wid = workflow_id or str(workflow_input.get("workflow_id") or "")
