@@ -54,6 +54,12 @@
       "path": "evals/thin_localization",
       "runner": "scripts/run_open_world_reuse_eval.ps1",
       "role": "parameter_only_binding_with_real_external_invocation_swap_and_lesion"
+    },
+    {
+      "id": "native_subagent_trajectory",
+      "path": "evals/native_subagent_trajectory",
+      "runner": "scripts/run_behavior_regression.ps1 -Profile subagent",
+      "role": "fail_closed_disposable_native_codex_subagent_trace_capability_probe"
     }
   ],
   "retired_compatibility_suites": [

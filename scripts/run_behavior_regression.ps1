@@ -1,6 +1,6 @@
 [CmdletBinding()]
 param(
-    [ValidateSet('capability', 'smoke', 'core', 'deep', 'proactive', 'reuse', 'intent')]
+    [ValidateSet('capability', 'smoke', 'core', 'deep', 'proactive', 'reuse', 'intent', 'subagent')]
     [string]$Profile = 'smoke',
     [string]$Domain,
     [string]$CasePattern,
@@ -201,6 +201,8 @@ $summaryPath = Join-Path $outputRoot 'summary.json'
 $startedAt = Get-Date
 $needsThinWorkspace = $Profile -in @('core', 'deep', 'reuse')
 $thinWorkspace = Join-Path $outputRoot 'thin-localization-workspace'
+$needsNativeSubagentWorkspace = $Profile -eq 'subagent'
+$nativeSubagentWorkspace = Join-Path $outputRoot 'native-subagent-workspace'
 
 New-Item -ItemType Directory -Path $outputRoot -ErrorAction Stop | Out-Null
 New-Item -ItemType Directory -Path @(
@@ -255,6 +257,21 @@ if ($needsThinWorkspace) {
         commit --quiet -m baseline
     if ($LASTEXITCODE -ne 0) { throw 'Could not freeze the thin-localization baseline.' }
 }
+if ($needsNativeSubagentWorkspace) {
+    $nativeTemplate = Join-Path $executionRoot `
+        'evals\native_subagent_trajectory\fixture_template'
+    if (-not (Test-Path -LiteralPath $nativeTemplate -PathType Container)) {
+        throw "Native-subagent fixture template is missing: $nativeTemplate"
+    }
+    Copy-Item -LiteralPath $nativeTemplate -Destination $nativeSubagentWorkspace -Recurse
+    & git -C $nativeSubagentWorkspace init --quiet
+    if ($LASTEXITCODE -ne 0) { throw 'Could not initialize the native-subagent evidence workspace.' }
+    & git -C $nativeSubagentWorkspace add --all
+    if ($LASTEXITCODE -ne 0) { throw 'Could not stage the native-subagent baseline.' }
+    & git -C $nativeSubagentWorkspace -c user.name=xinao-eval -c user.email=xinao-eval@local `
+        commit --quiet -m baseline
+    if ($LASTEXITCODE -ne 0) { throw 'Could not freeze the native-subagent baseline.' }
+}
 
 $environment = @{
     CODEX_HOME = (Resolve-Path -LiteralPath $CodexHome).Path
@@ -274,6 +291,9 @@ $environment = @{
 }
 if ($needsThinWorkspace) {
     $environment['XINAO_THIN_LOCALIZATION_WORKSPACE'] = $thinWorkspace
+}
+if ($needsNativeSubagentWorkspace) {
+    $environment['XINAO_NATIVE_SUBAGENT_WORKSPACE'] = $nativeSubagentWorkspace
 }
 $previous = @{}
 foreach ($name in $environment.Keys) {
@@ -568,6 +588,7 @@ $runProactive = $Profile -in @('proactive', 'core', 'deep')
 $runRecallReplay = $Profile -in @('core', 'deep', 'reuse')
 $runRecallLive = $Profile -in @('deep', 'reuse')
 $runThinLocalization = $Profile -in @('core', 'deep', 'reuse')
+$runNativeSubagent = $Profile -eq 'subagent'
 $runStatic = $Profile -in @('core', 'deep', 'reuse') -and -not $FailedFrom
 $sourceInputs = @(
     [pscustomobject]@{ path = (Join-Path $repoRoot 'AGENTS.md'); role = 'working_agreement' },
@@ -671,6 +692,16 @@ if ($runThinLocalization) {
         role = 'thin_localization_eval'
     }
 }
+if ($runNativeSubagent) {
+    $sourceInputs += [pscustomobject]@{
+        path = (Join-Path $repoRoot 'tests\test_native_subagent_trajectory.py')
+        role = 'native_subagent_trajectory_tests'
+    }
+    $sourceInputs += [pscustomobject]@{
+        path = (Join-Path $repoRoot 'evals\native_subagent_trajectory')
+        role = 'native_subagent_trajectory_eval'
+    }
+}
 $sourceManifestPath = Join-Path $outputRoot 'source-manifest.json'
 $sourceManifestFinalPath = Join-Path $outputRoot 'source-manifest.final.json'
 $liveSourceManifestPath = Join-Path $outputRoot 'live-source-manifest.before.json'
@@ -713,6 +744,9 @@ try {
     if ($runIntent) {
         $preflightTests += 'tests/test_parent_frame_admission.py'
         $preflightTests += 'tests/test_intent_action_consumer_coverage.py'
+    }
+    if ($runNativeSubagent) {
+        $preflightTests += 'tests/test_native_subagent_trajectory.py'
     }
     $preflightResult.tests = $preflightTests
     Push-Location $rawSnapshotRoot
@@ -807,6 +841,15 @@ try {
         # Retrying a mutation trajectory against its already-mutated fixture would invalidate order.
         $suiteRuns += Invoke-PromptfooSuite -SuiteId 'thin_localization_live' `
             -ConfigPath $thinConfig -ResultPath $thinResult -Concurrency 1
+    }
+
+    if ($overallExit -eq 0 -and $runNativeSubagent -and -not $PreflightOnly) {
+        $nativeSubagentConfig = Join-Path $executionRoot `
+            'evals\native_subagent_trajectory\promptfooconfig.yaml'
+        $nativeSubagentResult = Join-Path $outputRoot 'native-subagent-trajectory.result.json'
+        # This trajectory mutates one disposable workspace and must never be retried in place.
+        $suiteRuns += Invoke-PromptfooSuite -SuiteId 'native_subagent_trajectory' `
+            -ConfigPath $nativeSubagentConfig -ResultPath $nativeSubagentResult -Concurrency 1
     }
 
     if ($overallExit -eq 0 -and $runRecallLive -and -not $PreflightOnly) {
@@ -951,6 +994,9 @@ $summary = [ordered]@{
     max_error_retries = $MaxErrorRetries
     preflight_only = [bool]$PreflightOnly
     thin_localization_workspace = $(if ($needsThinWorkspace) { $thinWorkspace } else { $null })
+    native_subagent_workspace = $(
+        if ($needsNativeSubagentWorkspace) { $nativeSubagentWorkspace } else { $null }
+    )
     catalog = $catalogPath
     output_root = $outputRoot
     source_snapshot = $sourceSnapshotPath

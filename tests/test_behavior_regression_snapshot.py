@@ -118,3 +118,24 @@ def test_external_cache_is_copied_and_rebound_for_deep_profile(tmp_path: Path) -
     assert all(row["sha256"] for row in manifest["external_files"])
     roles = {row["role"] for row in manifest["source_inputs"]}
     assert "global_working_kernel" in roles
+
+
+def test_subagent_profile_copies_only_the_disposable_trajectory(tmp_path: Path) -> None:
+    repo = _fixture_repo(tmp_path)
+    _write(repo / "tests/test_native_subagent_trajectory.py", "# test\n")
+    _write(repo / "evals/native_subagent_trajectory/promptfooconfig.yaml", "tests: []\n")
+    _write(repo / "evals/native_subagent_trajectory/fixture_template/AGENTS.md", "fixture\n")
+    subprocess.run(["git", "-C", str(repo), "add", "."], check=True)
+
+    output = tmp_path / "run"
+    output.mkdir()
+    manifest_path = create_snapshot(repo, output, "subagent")
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    effective = Path(manifest["effective_root"])
+    roles = {row["role"] for row in manifest["source_inputs"]}
+
+    assert "native_subagent_trajectory_eval" in roles
+    assert (effective / "evals/native_subagent_trajectory/promptfooconfig.yaml").exists()
+    assert (effective / "tests/test_native_subagent_trajectory.py").exists()
+    assert not (effective / "evals/codex_capability").exists()
+    assert not (effective / "evals/thin_localization").exists()

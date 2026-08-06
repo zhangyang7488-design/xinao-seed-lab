@@ -4,7 +4,7 @@
   "runner": "scripts/run_behavior_regression.ps1",
   "candidate_intake": "scripts/New-BehaviorRegressionCandidate.ps1",
   "result_root": "D:\\XINAO_RESEARCH_RUNTIME\\state\\human-capabilities\\evals\\behavior-regression",
-  "declared_case_count": 44,
+  "declared_case_count": 45,
   "profiles": {
     "capability": "One fresh Codex app-server capability canary.",
     "smoke": "One fresh parent-frame admission case plus one Codex app-server capability canary; retired routing golds remain excluded.",
@@ -12,7 +12,8 @@
     "deep": "Core plus one current open-world public-repository search.",
     "intent": "Twenty-seven generic fresh Codex parent-frame, bounded-transition, default-owner, first-principles, and mature-owner admission cases without retired domain routing.",
     "proactive": "All six mature-first live cases; routing facts are checked by their real engineering consumers, not the retired context suite.",
-    "reuse": "Only the four live open-world-reuse cases plus their deterministic contract validation."
+    "reuse": "Only the four live open-world-reuse cases plus their deterministic contract validation.",
+    "subagent": "One fail-closed disposable native-Codex-subagent Owner/worker/consumer capability probe; not part of core or deep."
   },
   "live_profile_case_counts": {
     "capability": 1,
@@ -21,7 +22,8 @@
     "deep": 29,
     "intent": 27,
     "proactive": 6,
-    "reuse": 4
+    "reuse": 4,
+    "subagent": 1
   },
   "suites": [
     {
@@ -88,6 +90,24 @@
       "case_source": "evals/thin_localization/contract_cases.json",
       "validator": "tests/test_open_world_reuse_behavior.py",
       "runtime_claim_allowed": false
+    },
+    {
+      "id": "native_subagent_trajectory",
+      "kind": "promptfoo_live_disposable_workspace_capability_probe",
+      "case_count": 1,
+      "config": "evals/native_subagent_trajectory/promptfooconfig.yaml",
+      "case_source": "evals/native_subagent_trajectory/promptfooconfig.yaml",
+      "diagnostic_probe_only": true,
+      "native_multi_agent_runtime_claim_allowed": false,
+      "parent_owner_and_consumer_claim_allowed": false,
+      "child_terminal_trace_claim_allowed": false,
+      "child_internal_tool_trace_claim_allowed": false,
+      "production_feature_enablement_claim_allowed": false,
+      "runtime_claim_requires": [
+        "spawn identity in the parent raw trace",
+        "completed child terminal for that same identity",
+        "later nonce-bearing Owner consumer invocation"
+      ]
     }
   ],
   "components": [

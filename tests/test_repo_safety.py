@@ -429,7 +429,7 @@ def test_intent_continuity_baseline_reduces_burden_without_routing_science() -> 
     readme = (REPO_ROOT / "evals" / "behavior_regression" / "README.md").read_text(
         encoding="utf-8"
     )
-    assert "currently inventories 44" in readme
+    assert "currently inventories 45" in readme
     assert "-Profile context" not in readme
 
     attributes = (REPO_ROOT / ".gitattributes").read_text(encoding="utf-8")
@@ -691,6 +691,7 @@ def test_fresh_promptfoo_codex_sessions_do_not_run_interactive_hooks() -> None:
         "evals/mature_capability_recall/promptfooconfig.yaml",
         "evals/proactive_mature_first/promptfooconfig.yaml",
         "evals/thin_localization/promptfooconfig.yaml",
+        "evals/native_subagent_trajectory/promptfooconfig.yaml",
     )
     for relative_path in config_paths:
         config = yaml.safe_load((REPO_ROOT / relative_path).read_text(encoding="utf-8"))
@@ -698,7 +699,13 @@ def test_fresh_promptfoo_codex_sessions_do_not_run_interactive_hooks() -> None:
         assert provider["id"] == "openai:codex-app-server", relative_path
         provider_config = provider["config"]
         assert provider_config["reuse_server"] is False, relative_path
-        assert provider_config["cli_config"] == {"features": {"hooks": False}}, relative_path
+        expected_features = {"hooks": False}
+        if relative_path == "evals/native_subagent_trajectory/promptfooconfig.yaml":
+            expected_features["multi_agent"] = True
+            expected_features["multi_agent_v2"] = True
+            assert provider_config["include_raw_events"] is True
+            assert provider_config["ephemeral"] is True
+        assert provider_config["cli_config"] == {"features": expected_features}, relative_path
 
 
 def test_eval_runners_inherit_the_active_codex_account_profile() -> None:
@@ -1026,6 +1033,7 @@ def test_behavior_evolution_runner_is_thin_and_domain_research_stays_native() ->
     assert "mature_capability_recall_replay" in live_ids
     assert "mature_capability_recall_live" in live_ids
     assert "thin_localization_live" in live_ids
+    assert "native_subagent_trajectory" in live_ids
     retired_ids = {item["id"] for item in registry["retired_compatibility_suites"]}
     assert retired_ids == {"context_intent_alignment"}
     admission_ids = {item["id"] for item in registry["admission_fixture_only"]}
@@ -1047,7 +1055,7 @@ def test_behavior_evolution_runner_is_thin_and_domain_research_stays_native() ->
         (REPO_ROOT / "evals/behavior_regression/catalog.json").read_text(encoding="utf-8")
     )
     suite_count = sum(item["case_count"] for item in catalog["suites"])
-    assert suite_count == catalog["declared_case_count"] == 44
+    assert suite_count == catalog["declared_case_count"] == 45
     assert catalog["live_profile_case_counts"] == {
         "capability": 1,
         "smoke": 1 + 1,
@@ -1056,6 +1064,7 @@ def test_behavior_evolution_runner_is_thin_and_domain_research_stays_native() ->
         "intent": 27,
         "proactive": 6,
         "reuse": 4,
+        "subagent": 1,
     }
     intent = next(item for item in catalog["suites"] if item["id"] == "parent_frame_admission")
     assert intent["kind"] == "promptfoo_live"
@@ -1075,6 +1084,21 @@ def test_behavior_evolution_runner_is_thin_and_domain_research_stays_native() ->
     assert thin_live["parameter_locality_claim_allowed"] is True
     assert thin_live["real_external_invocation_claim_allowed"] is True
     assert thin_live["production_replacement_claim_allowed"] is False
+    native_subagent = next(
+        item for item in catalog["suites"] if item["id"] == "native_subagent_trajectory"
+    )
+    assert native_subagent["kind"] == "promptfoo_live_disposable_workspace_capability_probe"
+    assert native_subagent["diagnostic_probe_only"] is True
+    assert native_subagent["native_multi_agent_runtime_claim_allowed"] is False
+    assert native_subagent["parent_owner_and_consumer_claim_allowed"] is False
+    assert native_subagent["child_terminal_trace_claim_allowed"] is False
+    assert native_subagent["child_internal_tool_trace_claim_allowed"] is False
+    assert native_subagent["production_feature_enablement_claim_allowed"] is False
+    assert native_subagent["runtime_claim_requires"] == [
+        "spawn identity in the parent raw trace",
+        "completed child terminal for that same identity",
+        "later nonce-bearing Owner consumer invocation",
+    ]
 
 
 def test_behavior_failure_intake_is_trace_linked_and_never_auto_promotes() -> None:

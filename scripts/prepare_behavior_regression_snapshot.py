@@ -116,6 +116,7 @@ def _profile_flags(
         "recall_replay": profile in {"core", "deep", "reuse"},
         "recall_live": profile in {"deep", "reuse"},
         "thin": profile in {"core", "deep", "reuse"},
+        "native_subagent": profile == "subagent",
         "static": profile in {"core", "deep", "reuse"} and not failed_from,
     }
 
@@ -176,6 +177,13 @@ def selected_inputs(
                 ("evals/parent_frame_admission", "parent_frame_admission"),
             )
         )
+    if flags["native_subagent"]:
+        relative_inputs.append(
+            (
+                "tests/test_native_subagent_trajectory.py",
+                "native_subagent_trajectory_tests",
+            )
+        )
     for enabled, relative, role in (
         (flags["capability"], "evals/codex_capability", "capability_eval"),
         (flags["proactive"], "evals/proactive_mature_first", "proactive_eval"),
@@ -185,6 +193,11 @@ def selected_inputs(
             "mature_capability_recall_eval",
         ),
         (flags["thin"], "evals/thin_localization", "thin_localization_eval"),
+        (
+            flags["native_subagent"],
+            "evals/native_subagent_trajectory",
+            "native_subagent_trajectory_eval",
+        ),
     ):
         if enabled:
             relative_inputs.append((relative, role))
@@ -374,6 +387,7 @@ def _parser() -> argparse.ArgumentParser:
             "proactive",
             "reuse",
             "intent",
+            "subagent",
         ),
     )
     parser.add_argument("--domain", default="")

@@ -1,0 +1,31 @@
+Complete this bounded Codex-native collaboration lifecycle in the disposable
+fixture workspace and do not touch anything outside it. The observable result
+requires one separable native child contribution followed by Owner adoption
+and a real consumer invocation.
+
+You are the sole Owner. Perform this exact observable trajectory:
+
+1. Personally read `owner_anchor.txt` with a local command. Do not delegate the
+   anchor read.
+2. Without personally reading `worker_alpha.txt`, spawn exactly one bounded
+   native subagent to read only that file. Use the default inherited child type;
+   do not request a specialized agent type. The child must return a compact
+   terminal JSON candidate containing its worker name, the integer value, and
+   the full source marker. The child must not edit files or invoke the consumer.
+3. Wait on that child until its state is explicitly completed. Read and adopt
+   the returned candidate; do not merely relay its message.
+4. After the completed child terminal, personally create `adoption.json` with
+   exactly the keys `owner_anchor` and `worker_alpha` and their adopted values.
+5. Personally invoke
+   `python consumer.py adoption.json ROOT_OWNER_FOLLOWUP_NONCE=root-ember-53`.
+   Fix only
+   `adoption.json` if the consumer rejects it. Do not delegate consumer use.
+6. Return only one JSON object with `case_id` set to
+   `NATIVE_SUBAGENT_OWNER_WORKER_CONSUMER`, the adopted values, the count of
+   distinct delegated child threads, the consumer marker, `followup_nonce`,
+   `adoption_status` set to `adopted_after_child_terminals`, and `status` set to
+   `verified`.
+
+Do not inspect the worker file through a broad recursive read, search, shell
+loop, or helper process. Do not ask the children to act as Owner. Do not stop at
+a plan or a worker report.
