@@ -1,0 +1,580 @@
+{
+  "schema_version": "xinao.codex_productivity_recovery.v1",
+  "sentinel": "SENTINEL:CODEX_PRODUCTIVITY_RECOVERY_COLD_V1",
+  "authority": false,
+  "runtime_loaded": false,
+  "completion_claim_allowed": false,
+  "archive": "codex-productivity-recovery.v1.zip",
+  "archive_sha256": "5e02d8cda2f77e7496277adda2ad6ea936bc3d76eeefb442275368ad4d41b87a",
+  "entry_count": 77,
+  "entries": [
+    {
+      "archive_path": "launchers/CODEX_PRODUCTIVITY_PROFILE.md",
+      "live_source": "C:\\Users\\xx363\\CodexLaunchers\\CODEX_PRODUCTIVITY_PROFILE.md",
+      "role": "launcher_or_profile",
+      "size": 9038,
+      "sha256": "968fd5b5166ce4d37901762f6f7d509686312226eec5fd09a41c4e9f266f2ad9"
+    },
+    {
+      "archive_path": "launchers/Open-Codex-S-Hardmode-Account-B.ps1",
+      "live_source": "C:\\Users\\xx363\\CodexLaunchers\\Open-Codex-S-Hardmode-Account-B.ps1",
+      "role": "launcher_or_profile",
+      "size": 8193,
+      "sha256": "3d61b456837e9f6befa451c9555cbfa7153f870916fee176b2384a7bd344fd23"
+    },
+    {
+      "archive_path": "launchers/Open-Codex-S-Hardmode.ps1",
+      "live_source": "C:\\Users\\xx363\\CodexLaunchers\\Open-Codex-S-Hardmode.ps1",
+      "role": "launcher_or_profile",
+      "size": 3430,
+      "sha256": "462765ca44d049ea4ea47ea4b49e885c118c3e724bd39a59fd9b5ad7256af6f5"
+    },
+    {
+      "archive_path": "main-home/AGENTS.md",
+      "live_source": "C:\\Users\\xx363\\.codex\\AGENTS.md",
+      "role": "main_live_source",
+      "size": 17796,
+      "sha256": "b29a006a35be488d0b44fafbc42f5a1ad17e78b821d03682894d6e1073c1696b"
+    },
+    {
+      "archive_path": "main-home/agents/luna-worker.toml",
+      "live_source": "C:\\Users\\xx363\\.codex\\agents\\luna-worker.toml",
+      "role": "main_live_source",
+      "size": 944,
+      "sha256": "65e98d57f3ea46831b63b6410bb63ee73398a7def09f081f56046204893c1530"
+    },
+    {
+      "archive_path": "main-home/cold-capabilities.config.toml",
+      "live_source": "C:\\Users\\xx363\\.codex\\cold-capabilities.config.toml",
+      "role": "main_live_source",
+      "size": 710,
+      "sha256": "1c3a667ec73679521cb5e4c34678fe956eeb1a95a88d9941244eedecccb1a34d"
+    },
+    {
+      "archive_path": "main-home/config.toml",
+      "live_source": "C:\\Users\\xx363\\.codex\\config.toml",
+      "role": "main_live_source",
+      "size": 13903,
+      "sha256": "53721971ce41b2ee7ebcf4d6669ca6b7f7c5afdf803b3ea8de929ed512c050d7"
+    },
+    {
+      "archive_path": "main-home/hooks.json",
+      "live_source": "C:\\Users\\xx363\\.codex\\hooks.json",
+      "role": "main_live_source",
+      "size": 1423,
+      "sha256": "cc27c8c4826243bf8cb4a29d210bef19a0ca7c9de58a55b5cebdb341a182787d"
+    },
+    {
+      "archive_path": "main-home/inner-luna.config.toml",
+      "live_source": "C:\\Users\\xx363\\.codex\\inner-luna.config.toml",
+      "role": "main_live_source",
+      "size": 949,
+      "sha256": "7ad6d6d509614ad005b700c5282bfd9dd33baf9c4b82a33709b8534676631642"
+    },
+    {
+      "archive_path": "main-home/inner-sol-verifier.config.toml",
+      "live_source": "C:\\Users\\xx363\\.codex\\inner-sol-verifier.config.toml",
+      "role": "main_live_source",
+      "size": 873,
+      "sha256": "aec7c88953c06dd4e299051354b074475d2f5a4af8100af3ba4eca8484323d35"
+    },
+    {
+      "archive_path": "main-home/inner-terra.config.toml",
+      "live_source": "C:\\Users\\xx363\\.codex\\inner-terra.config.toml",
+      "role": "main_live_source",
+      "size": 902,
+      "sha256": "787af1f79266dfbc1e46301d9404d1c5905e60f80344945a5db397372242ccb7"
+    },
+    {
+      "archive_path": "main-home/skills/amplify-supervisor-worker/SKILL.md",
+      "live_source": "C:\\Users\\xx363\\.codex\\skills\\amplify-supervisor-worker\\SKILL.md",
+      "role": "generic_custom_skill",
+      "size": 20734,
+      "sha256": "ebbd9ce7686f1eb4d17e43ebce87b0096b987bc0c1240257f256d28e72a5e106"
+    },
+    {
+      "archive_path": "main-home/skills/amplify-supervisor-worker/agents/openai.yaml",
+      "live_source": "C:\\Users\\xx363\\.codex\\skills\\amplify-supervisor-worker\\agents\\openai.yaml",
+      "role": "generic_custom_skill",
+      "size": 534,
+      "sha256": "7bf132a017d817f99acd121aa31420f3b0e099536823f8371db9d718ff515d1c"
+    },
+    {
+      "archive_path": "main-home/skills/amplify-supervisor-worker/references/decision-cases.md",
+      "live_source": "C:\\Users\\xx363\\.codex\\skills\\amplify-supervisor-worker\\references\\decision-cases.md",
+      "role": "generic_custom_skill",
+      "size": 11173,
+      "sha256": "8a94557bb15d98d3934418c178d584d2ce816b832077e1a62855f13a6dcd8611"
+    },
+    {
+      "archive_path": "main-home/skills/ast-grep-structural-search/SKILL.md",
+      "live_source": "C:\\Users\\xx363\\.codex\\skills\\ast-grep-structural-search\\SKILL.md",
+      "role": "generic_custom_skill",
+      "size": 1633,
+      "sha256": "2537595c03bd3db85208c7c05be9cf02837372fbbe79141f4fc7d73eef2d9535"
+    },
+    {
+      "archive_path": "main-home/skills/ast-grep-structural-search/agents/openai.yaml",
+      "live_source": "C:\\Users\\xx363\\.codex\\skills\\ast-grep-structural-search\\agents\\openai.yaml",
+      "role": "generic_custom_skill",
+      "size": 233,
+      "sha256": "a6cba3fb2e7f75ed6ff34036aa170b471204aaf6e6240bf3569a6a7e0139a505"
+    },
+    {
+      "archive_path": "main-home/skills/dispatch-grok-worker-pool/SKILL.md",
+      "live_source": "C:\\Users\\xx363\\.codex\\skills\\dispatch-grok-worker-pool\\SKILL.md",
+      "role": "generic_custom_skill",
+      "size": 11259,
+      "sha256": "930f877768fd0333a4f83852625ffce988f275046726dff09fe7b490d7720f71"
+    },
+    {
+      "archive_path": "main-home/skills/dispatch-grok-worker-pool/agents/openai.yaml",
+      "live_source": "C:\\Users\\xx363\\.codex\\skills\\dispatch-grok-worker-pool\\agents\\openai.yaml",
+      "role": "generic_custom_skill",
+      "size": 401,
+      "sha256": "22f08e0a2ac292f57da94bcd2adfe3790f47e7c4998345f333658fe9f8adb197"
+    },
+    {
+      "archive_path": "main-home/skills/dispatch-grok-worker-pool/assets/artifact-worker-result.v1.schema.json",
+      "live_source": "C:\\Users\\xx363\\.codex\\skills\\dispatch-grok-worker-pool\\assets\\artifact-worker-result.v1.schema.json",
+      "role": "generic_custom_skill",
+      "size": 1785,
+      "sha256": "28b6eb66dc690ab6b14b72f4e63d3c3fce6a2497ee9df0ae1ec2e4bc8e3742ef"
+    },
+    {
+      "archive_path": "main-home/skills/dispatch-luna-worker-pool/SKILL.md",
+      "live_source": "C:\\Users\\xx363\\.codex\\skills\\dispatch-luna-worker-pool\\SKILL.md",
+      "role": "generic_custom_skill",
+      "size": 6604,
+      "sha256": "a7ad03e8305a60b83820519e2293fed841b7cb0dba62cc189031bf2fd4501119"
+    },
+    {
+      "archive_path": "main-home/skills/dispatch-terra-worker-pool/SKILL.md",
+      "live_source": "C:\\Users\\xx363\\.codex\\skills\\dispatch-terra-worker-pool\\SKILL.md",
+      "role": "generic_custom_skill",
+      "size": 6964,
+      "sha256": "b329a1670b1cebe4abc3578a0d12693af5585592451b7224d265f61b78385268"
+    },
+    {
+      "archive_path": "main-home/skills/human-agency-grounding/SKILL.md",
+      "live_source": "C:\\Users\\xx363\\.codex\\skills\\human-agency-grounding\\SKILL.md",
+      "role": "generic_custom_skill",
+      "size": 15203,
+      "sha256": "af894bf55b6d3fe664c21266469b08455c490dbb7ae6f3d7e15050b41bcd8bab"
+    },
+    {
+      "archive_path": "main-home/skills/human-agency-grounding/agents/openai.yaml",
+      "live_source": "C:\\Users\\xx363\\.codex\\skills\\human-agency-grounding\\agents\\openai.yaml",
+      "role": "generic_custom_skill",
+      "size": 708,
+      "sha256": "582a8532c8d27beccb0aa1315866e7a1499d36c957776bad8f9be2c740e962c8"
+    },
+    {
+      "archive_path": "main-home/skills/human-agency-grounding/references/evaluation-cases.md",
+      "live_source": "C:\\Users\\xx363\\.codex\\skills\\human-agency-grounding\\references\\evaluation-cases.md",
+      "role": "generic_custom_skill",
+      "size": 9160,
+      "sha256": "8189dd2b68c08809ff0bceca5f3d0e70446748bc791d61d26e7629a5d680e5e1"
+    },
+    {
+      "archive_path": "main-home/skills/human-agency-grounding/references/first-principles-audit.md",
+      "live_source": "C:\\Users\\xx363\\.codex\\skills\\human-agency-grounding\\references\\first-principles-audit.md",
+      "role": "generic_custom_skill",
+      "size": 3293,
+      "sha256": "279dc878f9c40358e60f7eeefbdd613745b296fefe6e742a32ef48ea05a73e78"
+    },
+    {
+      "archive_path": "main-home/skills/human-agency-grounding/references/foundations-and-lineage.md",
+      "live_source": "C:\\Users\\xx363\\.codex\\skills\\human-agency-grounding\\references\\foundations-and-lineage.md",
+      "role": "generic_custom_skill",
+      "size": 9267,
+      "sha256": "dd4038f280192c069df86fc05a5c63191c23194befa09203fde271e9cf76be2e"
+    },
+    {
+      "archive_path": "main-home/skills/human-agency-grounding/references/meta.md",
+      "live_source": "C:\\Users\\xx363\\.codex\\skills\\human-agency-grounding\\references\\meta.md",
+      "role": "generic_custom_skill",
+      "size": 6283,
+      "sha256": "2deb26e97968c2b4d51fd5a9f9d483a6edd30cd170746f0e3ffb8facac3dd3c1"
+    },
+    {
+      "archive_path": "main-home/skills/human-agency-grounding/references/practical-agency-lens.md",
+      "live_source": "C:\\Users\\xx363\\.codex\\skills\\human-agency-grounding\\references\\practical-agency-lens.md",
+      "role": "generic_custom_skill",
+      "size": 5858,
+      "sha256": "e98d595e47a322ed7d57cf9d77b8e02014617b76e9716fc469c3383338861e3f"
+    },
+    {
+      "archive_path": "main-home/skills/maintain-personal-decision-model/SKILL.md",
+      "live_source": "C:\\Users\\xx363\\.codex\\skills\\maintain-personal-decision-model\\SKILL.md",
+      "role": "generic_custom_skill",
+      "size": 19073,
+      "sha256": "d1dfa8d5d311c0a3ec3a45b6b3386e789149b2fda6d5c30b2a450b40fa1b6280"
+    },
+    {
+      "archive_path": "main-home/skills/maintain-personal-decision-model/agents/openai.yaml",
+      "live_source": "C:\\Users\\xx363\\.codex\\skills\\maintain-personal-decision-model\\agents\\openai.yaml",
+      "role": "generic_custom_skill",
+      "size": 647,
+      "sha256": "966920d912be155ed5f474290cf39663a73dc96d50a508fa91040ba526329e31"
+    },
+    {
+      "archive_path": "main-home/skills/maintain-personal-decision-model/references/maintenance-policy.md",
+      "live_source": "C:\\Users\\xx363\\.codex\\skills\\maintain-personal-decision-model\\references\\maintenance-policy.md",
+      "role": "generic_custom_skill",
+      "size": 6888,
+      "sha256": "17059605e955872b8d284ed7f3be9ffc1abd3882c2cbcce9dae2b50e1a66afe3"
+    },
+    {
+      "archive_path": "main-home/skills/maintain-personal-decision-model/references/model-contract.md",
+      "live_source": "C:\\Users\\xx363\\.codex\\skills\\maintain-personal-decision-model\\references\\model-contract.md",
+      "role": "generic_custom_skill",
+      "size": 11951,
+      "sha256": "3db38c9017653613a87a31d13c89c28bcbd8ac477611f0ad88d19963bed9b755"
+    },
+    {
+      "archive_path": "main-home/skills/maintain-personal-decision-model/references/personal-decision-model.v1.schema.json",
+      "live_source": "C:\\Users\\xx363\\.codex\\skills\\maintain-personal-decision-model\\references\\personal-decision-model.v1.schema.json",
+      "role": "generic_custom_skill",
+      "size": 23180,
+      "sha256": "82c582315aec1e722388f0f7d196795917695ef144ace9a4dd48fae6f0e2b45f"
+    },
+    {
+      "archive_path": "main-home/skills/maintain-personal-decision-model/references/personal-decision-model.v2.schema.json",
+      "live_source": "C:\\Users\\xx363\\.codex\\skills\\maintain-personal-decision-model\\references\\personal-decision-model.v2.schema.json",
+      "role": "generic_custom_skill",
+      "size": 32682,
+      "sha256": "c9fd56bacdc3b60086aa72d92d97bf53dccb0218ba4df6eb4fec88abfa46bb39"
+    },
+    {
+      "archive_path": "main-home/skills/maintain-personal-decision-model/references/personal-decision-model.v3.schema.json",
+      "live_source": "C:\\Users\\xx363\\.codex\\skills\\maintain-personal-decision-model\\references\\personal-decision-model.v3.schema.json",
+      "role": "generic_custom_skill",
+      "size": 50867,
+      "sha256": "d96e252ee49380a4de4df2aed32a6c03461cbe05f0dfbfbf82a9113ec7df3ee7"
+    },
+    {
+      "archive_path": "main-home/skills/maintain-personal-decision-model/references/task-interruption-frame.v1.schema.json",
+      "live_source": "C:\\Users\\xx363\\.codex\\skills\\maintain-personal-decision-model\\references\\task-interruption-frame.v1.schema.json",
+      "role": "generic_custom_skill",
+      "size": 5205,
+      "sha256": "66252e0d1e36514ab95f695496c6da881298f0e38564a9bbf2dc89976db34109"
+    },
+    {
+      "archive_path": "main-home/skills/maintain-personal-decision-model/references/user-perspective-packet.v1.schema.json",
+      "live_source": "C:\\Users\\xx363\\.codex\\skills\\maintain-personal-decision-model\\references\\user-perspective-packet.v1.schema.json",
+      "role": "generic_custom_skill",
+      "size": 5697,
+      "sha256": "f0513ba204043f0ca2cf6c70943eae1f58d0471354ed08ac189f10281f848724"
+    },
+    {
+      "archive_path": "main-home/skills/maintain-personal-decision-model/references/user-perspective-packet.v2.schema.json",
+      "live_source": "C:\\Users\\xx363\\.codex\\skills\\maintain-personal-decision-model\\references\\user-perspective-packet.v2.schema.json",
+      "role": "generic_custom_skill",
+      "size": 9917,
+      "sha256": "024c9b69867b6ab2d2c31a4a6b68dd04bd308a01f491a5c839b1b283889c6642"
+    },
+    {
+      "archive_path": "main-home/skills/maintain-personal-decision-model/scripts/pdm.py",
+      "live_source": "C:\\Users\\xx363\\.codex\\skills\\maintain-personal-decision-model\\scripts\\pdm.py",
+      "role": "generic_custom_skill",
+      "size": 108302,
+      "sha256": "7fdec40d2751417f95baaa02b8bf8fdcbd96b6016f3255bbea52cf34c6d322d4"
+    },
+    {
+      "archive_path": "main-home/skills/maintain-personal-decision-model/scripts/pdm_mcp_server.py",
+      "live_source": "C:\\Users\\xx363\\.codex\\skills\\maintain-personal-decision-model\\scripts\\pdm_mcp_server.py",
+      "role": "generic_custom_skill",
+      "size": 5515,
+      "sha256": "15e246053e599fe9a6d1baf793ac31491aa88e52e4a13ecc95ee3f9f1f361fe6"
+    },
+    {
+      "archive_path": "main-home/skills/maintain-personal-decision-model/tests/test_mcp_stdio.py",
+      "live_source": "C:\\Users\\xx363\\.codex\\skills\\maintain-personal-decision-model\\tests\\test_mcp_stdio.py",
+      "role": "generic_custom_skill",
+      "size": 3831,
+      "sha256": "3e48d8e6cf0d8dae6a1df6adc110e1b9613e8b708711326a3455ba1041118373"
+    },
+    {
+      "archive_path": "main-home/skills/maintain-personal-decision-model/tests/test_pdm.py",
+      "live_source": "C:\\Users\\xx363\\.codex\\skills\\maintain-personal-decision-model\\tests\\test_pdm.py",
+      "role": "generic_custom_skill",
+      "size": 53594,
+      "sha256": "15281aceb57a8acb260b2a4b1498fb665fa2af62ef6c4369259941b2b196904e"
+    },
+    {
+      "archive_path": "main-home/skills/mcp-inspector-admission/SKILL.md",
+      "live_source": "C:\\Users\\xx363\\.codex\\skills\\mcp-inspector-admission\\SKILL.md",
+      "role": "generic_custom_skill",
+      "size": 3980,
+      "sha256": "3844478e13f5bf97554882d8cefabc6ee440c8c214b47d560cfd6c34a1215042"
+    },
+    {
+      "archive_path": "main-home/skills/mcp-inspector-admission/agents/openai.yaml",
+      "live_source": "C:\\Users\\xx363\\.codex\\skills\\mcp-inspector-admission\\agents\\openai.yaml",
+      "role": "generic_custom_skill",
+      "size": 293,
+      "sha256": "94c73d2dc1778ae4f4af540dc8d091a3f9575c385e654b8625779f7644fa97ea"
+    },
+    {
+      "archive_path": "main-home/skills/operate-for-user/SKILL.md",
+      "live_source": "C:\\Users\\xx363\\.codex\\skills\\operate-for-user\\SKILL.md",
+      "role": "generic_custom_skill",
+      "size": 20912,
+      "sha256": "effdcedb826c2b6ebf75edff69216f9296344a73955bce7f299907ec5f035037"
+    },
+    {
+      "archive_path": "main-home/skills/operate-for-user/agents/openai.yaml",
+      "live_source": "C:\\Users\\xx363\\.codex\\skills\\operate-for-user\\agents\\openai.yaml",
+      "role": "generic_custom_skill",
+      "size": 624,
+      "sha256": "ef56b374f8623980d77cdb65226202323226e3c4f71d5c5365f24be0196800e0"
+    },
+    {
+      "archive_path": "main-home/skills/operate-for-user/references/first-call-closure-pattern.md",
+      "live_source": "C:\\Users\\xx363\\.codex\\skills\\operate-for-user\\references\\first-call-closure-pattern.md",
+      "role": "generic_custom_skill",
+      "size": 6819,
+      "sha256": "c9402c12024d986cb7be9184337a46f47affed92b1947abf18840e24ee4f00cc"
+    },
+    {
+      "archive_path": "main-home/skills/operate-for-user/references/parent-intent-architecture-ruler.md",
+      "live_source": "C:\\Users\\xx363\\.codex\\skills\\operate-for-user\\references\\parent-intent-architecture-ruler.md",
+      "role": "generic_custom_skill",
+      "size": 17187,
+      "sha256": "2629575e70962a588d76b6f75cb2d71a8096537232c0bfc3990ab2846acef4b9"
+    },
+    {
+      "archive_path": "main-home/skills/playwright-cli/SKILL.md",
+      "live_source": "C:\\Users\\xx363\\.codex\\skills\\playwright-cli\\SKILL.md",
+      "role": "generic_custom_skill",
+      "size": 12588,
+      "sha256": "a2c41356a394f7bce167b7587bc6d70bd399dd0c8afb64df38c89012fc6901ea"
+    },
+    {
+      "archive_path": "main-home/skills/playwright-cli/references/element-attributes.md",
+      "live_source": "C:\\Users\\xx363\\.codex\\skills\\playwright-cli\\references\\element-attributes.md",
+      "role": "generic_custom_skill",
+      "size": 666,
+      "sha256": "fadbf1d01cf6e13923b4a31c2544ff87df3eb2d3c6b5ceb5a772ba0c03569f23"
+    },
+    {
+      "archive_path": "main-home/skills/playwright-cli/references/playwright-tests.md",
+      "live_source": "C:\\Users\\xx363\\.codex\\skills\\playwright-cli\\references\\playwright-tests.md",
+      "role": "generic_custom_skill",
+      "size": 1691,
+      "sha256": "087c07cc620ba2a8d5e352c7e13a00e8f70a914f890f0c24f8483b2560fbaf03"
+    },
+    {
+      "archive_path": "main-home/skills/playwright-cli/references/request-mocking.md",
+      "live_source": "C:\\Users\\xx363\\.codex\\skills\\playwright-cli\\references\\request-mocking.md",
+      "role": "generic_custom_skill",
+      "size": 2183,
+      "sha256": "0cb11d40faa7e65dea78f8d67cd31b953c6cc25088e9358b2936d0393a391e6f"
+    },
+    {
+      "archive_path": "main-home/skills/playwright-cli/references/running-code.md",
+      "live_source": "C:\\Users\\xx363\\.codex\\skills\\playwright-cli\\references\\running-code.md",
+      "role": "generic_custom_skill",
+      "size": 5643,
+      "sha256": "516f338e9087a152d53f981f9d5cff97d3d472d72fe8b34be75712c3b2bead79"
+    },
+    {
+      "archive_path": "main-home/skills/playwright-cli/references/session-management.md",
+      "live_source": "C:\\Users\\xx363\\.codex\\skills\\playwright-cli\\references\\session-management.md",
+      "role": "generic_custom_skill",
+      "size": 5672,
+      "sha256": "1ef6adb5ac32cfeb69dfe5171c12da38d7301b761ac32ecb5335513c0131480c"
+    },
+    {
+      "archive_path": "main-home/skills/playwright-cli/references/storage-state.md",
+      "live_source": "C:\\Users\\xx363\\.codex\\skills\\playwright-cli\\references\\storage-state.md",
+      "role": "generic_custom_skill",
+      "size": 5199,
+      "sha256": "e99556d378ba390cce310b5e8ac93485462fd4e44ae0122278954f396b615ee0"
+    },
+    {
+      "archive_path": "main-home/skills/playwright-cli/references/test-generation.md",
+      "live_source": "C:\\Users\\xx363\\.codex\\skills\\playwright-cli\\references\\test-generation.md",
+      "role": "generic_custom_skill",
+      "size": 16115,
+      "sha256": "6ecbe2a0264f3040828f2754942d70b55f24145de82326fb93a7564ebf5a9a06"
+    },
+    {
+      "archive_path": "main-home/skills/playwright-cli/references/tracing.md",
+      "live_source": "C:\\Users\\xx363\\.codex\\skills\\playwright-cli\\references\\tracing.md",
+      "role": "generic_custom_skill",
+      "size": 3441,
+      "sha256": "81d163d1f678b4f128b6b6f60c9d38805177e972e7de90192a3c156a92d7b82e"
+    },
+    {
+      "archive_path": "main-home/skills/playwright-cli/references/video-recording.md",
+      "live_source": "C:\\Users\\xx363\\.codex\\skills\\playwright-cli\\references\\video-recording.md",
+      "role": "generic_custom_skill",
+      "size": 5388,
+      "sha256": "c20ed57bcc24f42feb7ab351421e769fdb33e6de98a76a7f8de5e0e6b6ec0594"
+    },
+    {
+      "archive_path": "main-home/skills/promptfoo-agent-evals/SKILL.md",
+      "live_source": "C:\\Users\\xx363\\.codex\\skills\\promptfoo-agent-evals\\SKILL.md",
+      "role": "generic_custom_skill",
+      "size": 3516,
+      "sha256": "a435a88671481d0a34e8ee3fb051e6904e83e8efdc76de98fc473609ac8be6bc"
+    },
+    {
+      "archive_path": "main-home/skills/promptfoo-agent-evals/agents/openai.yaml",
+      "live_source": "C:\\Users\\xx363\\.codex\\skills\\promptfoo-agent-evals\\agents\\openai.yaml",
+      "role": "generic_custom_skill",
+      "size": 246,
+      "sha256": "61ec32022f4fe46dcf29a406e97f10866c0eb8133079594661e80c7265ebb987"
+    },
+    {
+      "archive_path": "main-home/skills/repair-agent-behavior/SKILL.md",
+      "live_source": "C:\\Users\\xx363\\.codex\\skills\\repair-agent-behavior\\SKILL.md",
+      "role": "generic_custom_skill",
+      "size": 20297,
+      "sha256": "285d558ec0592dce42832d2761e46c42ed21f4b8135f33dd4a211b4eb37399a5"
+    },
+    {
+      "archive_path": "main-home/skills/repair-agent-behavior/agents/openai.yaml",
+      "live_source": "C:\\Users\\xx363\\.codex\\skills\\repair-agent-behavior\\agents\\openai.yaml",
+      "role": "generic_custom_skill",
+      "size": 821,
+      "sha256": "d64a4ea681f3f4c7db13c92379aa58425753e19700bdc3ec37a1c8c418ee1c1b"
+    },
+    {
+      "archive_path": "main-home/skills/repair-agent-behavior/references/evaluation-cases.md",
+      "live_source": "C:\\Users\\xx363\\.codex\\skills\\repair-agent-behavior\\references\\evaluation-cases.md",
+      "role": "generic_custom_skill",
+      "size": 16051,
+      "sha256": "1a75b7c08b2a19f79a70030fe3fe8d5e601ee0b3be5c9bc69402d0322e5d70c6"
+    },
+    {
+      "archive_path": "main-home/skills/repair-agent-behavior/references/maintenance-contract.md",
+      "live_source": "C:\\Users\\xx363\\.codex\\skills\\repair-agent-behavior\\references\\maintenance-contract.md",
+      "role": "generic_custom_skill",
+      "size": 9006,
+      "sha256": "9a9ab8727eb52b051bbb494b979776c5e21a1c337e3a393eed378364de1f9f21"
+    },
+    {
+      "archive_path": "main-home/skills/repair-agent-behavior/references/value-semantics.md",
+      "live_source": "C:\\Users\\xx363\\.codex\\skills\\repair-agent-behavior\\references\\value-semantics.md",
+      "role": "generic_custom_skill",
+      "size": 7805,
+      "sha256": "b62ee050207599e833f8a77632642aa7de3e4d3a04a154c69702cb95f342660f"
+    },
+    {
+      "archive_path": "main-home/skills/verified-agent-loop/SKILL.md",
+      "live_source": "C:\\Users\\xx363\\.codex\\skills\\verified-agent-loop\\SKILL.md",
+      "role": "generic_custom_skill",
+      "size": 11882,
+      "sha256": "41f20a3e0ede28790de3ece787f37ef510754f81f7ef806d17c1a9891c77c39b"
+    },
+    {
+      "archive_path": "main-home/skills/verified-agent-loop/agents/openai.yaml",
+      "live_source": "C:\\Users\\xx363\\.codex\\skills\\verified-agent-loop\\agents\\openai.yaml",
+      "role": "generic_custom_skill",
+      "size": 514,
+      "sha256": "cfc7596063c032a9cf0b151dd11dd5c7863ff6184555645ce8863453b1182fd8"
+    },
+    {
+      "archive_path": "main-home/skills/verified-agent-loop/references/source-patterns.md",
+      "live_source": "C:\\Users\\xx363\\.codex\\skills\\verified-agent-loop\\references\\source-patterns.md",
+      "role": "generic_custom_skill",
+      "size": 2650,
+      "sha256": "ccbf127499be4ee4d54fa93856a9dbcc5cdc62bca9b98d26f1acc71c94a99c8b"
+    },
+    {
+      "archive_path": "main-home/skills/verified-agent-loop/scripts/task_run.cmd",
+      "live_source": "C:\\Users\\xx363\\.codex\\skills\\verified-agent-loop\\scripts\\task_run.cmd",
+      "role": "generic_custom_skill",
+      "size": 211,
+      "sha256": "9f99270ee78a675306b510db66343ee3c1a21cab14f6aadd7dd5bbdae7012aab"
+    },
+    {
+      "archive_path": "main-home/skills/verified-agent-loop/scripts/task_run.py",
+      "live_source": "C:\\Users\\xx363\\.codex\\skills\\verified-agent-loop\\scripts\\task_run.py",
+      "role": "generic_custom_skill",
+      "size": 36630,
+      "sha256": "6963dade9f879c1188166f0a0c7c0d0bf014651b1a44a7800f1b9b41ad28dba2"
+    },
+    {
+      "archive_path": "main-home/skills/verified-agent-loop/tests/test_task_run_idempotency.py",
+      "live_source": "C:\\Users\\xx363\\.codex\\skills\\verified-agent-loop\\tests\\test_task_run_idempotency.py",
+      "role": "generic_custom_skill",
+      "size": 15175,
+      "sha256": "9031dfed687e20d6191ab70abe7aa367013b1f1661886690f6409cbd6d7286ec"
+    },
+    {
+      "archive_path": "runtime/Codex_Situation_Island/README.md",
+      "live_source": "D:\\XINAO_RESEARCH_RUNTIME\\state\\Codex_Situation_Island\\README.md",
+      "role": "continuity_runtime",
+      "size": 1426,
+      "sha256": "bba84586f72118ecd6b59e235e309cda437961265366f57d205568e602086bf8"
+    },
+    {
+      "archive_path": "runtime/Codex_Situation_Island/scripts/bind_active_task_continuation_v1.ps1",
+      "live_source": "D:\\XINAO_RESEARCH_RUNTIME\\state\\Codex_Situation_Island\\scripts\\bind_active_task_continuation_v1.ps1",
+      "role": "continuity_runtime",
+      "size": 7261,
+      "sha256": "d033c71af09eeee12b67f359d38796655ce38262e6c3005bd91512cdb46e5e57"
+    },
+    {
+      "archive_path": "runtime/Codex_Situation_Island/scripts/restore_parent_task_continuation_v1.ps1",
+      "live_source": "D:\\XINAO_RESEARCH_RUNTIME\\state\\Codex_Situation_Island\\scripts\\restore_parent_task_continuation_v1.ps1",
+      "role": "continuity_runtime",
+      "size": 2792,
+      "sha256": "2430af7f9dfbebab5e4fe9fdca428067d150b8b4542f6b6bc9ea2dadae46110c"
+    },
+    {
+      "archive_path": "runtime/Codex_Situation_Island/scripts/session_start_continuity_pointer_v1.ps1",
+      "live_source": "D:\\XINAO_RESEARCH_RUNTIME\\state\\Codex_Situation_Island\\scripts\\session_start_continuity_pointer_v1.ps1",
+      "role": "continuity_runtime",
+      "size": 10746,
+      "sha256": "ebda6a563ed3a8fefeb3ef652821a2911a6a0c20c094b05e57a7c370178f04d5"
+    },
+    {
+      "archive_path": "runtime/Codex_Situation_Island/scripts/turn_finalization_gate_v1.ps1",
+      "live_source": "D:\\XINAO_RESEARCH_RUNTIME\\state\\Codex_Situation_Island\\scripts\\turn_finalization_gate_v1.ps1",
+      "role": "continuity_runtime",
+      "size": 7104,
+      "sha256": "39557a0930259f9e5785d677188780d9e18ebc0aedaea59664b08b1727459548"
+    },
+    {
+      "archive_path": "runtime/Codex_Situation_Island/scripts/user_prompt_zero_beat_v1.ps1",
+      "live_source": "D:\\XINAO_RESEARCH_RUNTIME\\state\\Codex_Situation_Island\\scripts\\user_prompt_zero_beat_v1.ps1",
+      "role": "continuity_runtime",
+      "size": 9945,
+      "sha256": "da3dce2a222646c63f201272b9a5d36fb0591df61fa3e8ad3c13c16eb896ccc1"
+    }
+  ],
+  "source_and_projection": {
+    "main_home_is_live_source": true,
+    "account_b_is_generated_projection": true,
+    "cold_archive_is_immutable_recovery_media_not_a_second_runtime_truth": true
+  },
+  "excluded_on_purpose": [
+    "authentication credentials and refresh tokens",
+    "sessions transcripts and memory data",
+    "plugin caches and reinstallable bundled or curated plugins",
+    "conduct-xinao-native-research and all science-domain authority",
+    "retired pretool_task_provenance_guard_v1.ps1",
+    "legacy platform control planes and runtime state"
+  ],
+  "science_boundary": {
+    "science_domain_authority_owner": "E:/XINAO_RESEARCH_WORKSPACES/xinao-native-research",
+    "restore_into_s_or_global_generic_router": false,
+    "retired_science_routing_remains_retired": true
+  },
+  "recovery_contract": {
+    "automatic_live_restore": false,
+    "staged_restore_supported": true,
+    "owner_must_verify_exact_targets_backup_and_live_consumers_before_apply": true,
+    "account_b_auth_and_sessions_must_never_be_copied_from_main": true,
+    "required_post_apply_readback": [
+      "A/B projection equality for AGENTS hooks and cold capability overlay",
+      "fresh app-server hooks/list trust from each installed account",
+      "changed-context positive and negative behavior consumer"
+    ]
+  }
+}

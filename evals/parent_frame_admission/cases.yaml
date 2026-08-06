@@ -1508,3 +1508,231 @@
     expected_selected_control_action: consume_evidence_then_resume
     expected_symmetric_alternatives_considered: '["consume_evidence_then_resume"]'
     expected_residual_defeater: none
+
+- description: Explicit human adoption makes quoted material an executable bounded child
+  metadata:
+    id: REG_EXPLICIT_ADOPTION_OF_QUOTED_MATERIAL_IS_HONORED
+    domain: parent_frame_admission
+    profiles: [intent]
+  vars:
+    case_id: REG_EXPLICIT_ADOPTION_OF_QUOTED_MATERIAL_IS_HONORED
+    restored_context: >-
+      The active parent is a source-aware agent-behavior repair with a known
+      return point. An external candidate proposed a small reversible parser
+      change, but it has remained unadopted evidence so far.
+    user_increment: >-
+      我现在明确采用上面引号里的解析器方案作为有界子项：照它实现并做消费者回读；完成后自动回到行为修复父项。
+    expected_frame_relation: bounded_child_insertion
+    expected_active_object: bounded_child_object
+    expected_candidate_frame: bounded_child_with_return_frame
+    expected_next_action: complete_bounded_child_then_resume_parent
+    expected_task_switch: false
+    expected_trigger_role: subordinate_after_frame_binding
+    expected_parent_frame_before_trigger: true
+    expected_user_must_restate_parent: false
+    expected_root_status: existing_parent_preserved
+    allowed_root_statuses: '["existing_parent_preserved","suspended_parent_preserved"]'
+    expected_active_level: current_frame
+    expected_surface_role: bounded_child_insertion
+    expected_blocked_promotion: child_to_parent_replacement
+    expected_required_projection_levels: '["parent_result","current_frame","consumer_effect"]'
+    expected_mature_completion: true
+    expected_parent_status: active
+    expected_turn_disposition: continue_existing_parent
+    expected_user_input_required: false
+    expected_hand_back_to_user: false
+    expected_turn_boundary_is_not_pause: true
+    expected_local_completion_does_not_close_parent: true
+    expected_implicit_stop_rejected: true
+    expected_next_parent_item_admitted: true
+    expected_legal_terminal_predicate: none
+    expected_decision_family: utterance_relation_and_return
+    expected_selected_control_action: execute_child_then_resume_parent
+    expected_symmetric_alternatives_considered: '["execute_child_then_resume_parent"]'
+    expected_residual_defeater: none
+
+- description: A tractable foundation cannot compress the complete adopted outcome envelope
+  metadata:
+    id: REG_TRACTABLE_FOUNDATION_PRESERVES_FULL_INTENT_ENVELOPE
+    domain: parent_frame_admission
+    profiles: [intent]
+  vars:
+    case_id: REG_TRACTABLE_FOUNDATION_PRESERVES_FULL_INTENT_ENVELOPE
+    restored_context: >-
+      The active parent is to restore a degraded local service as a whole: recover
+      the historical capabilities and the pains they solved, verify which live
+      consumers still use them, compare mature replacement patterns, adjudicate
+      what should stay hot, activate on demand, merge, replace, or retire, and
+      implement every Pareto-positive change through real consumer readback. A
+      dependency-lineage registry has just been completed. It is useful migration
+      protection, but it covers only one foundation and none of the other open
+      outcome dimensions. There is no Pause, Stop, blocker, or material user gate.
+    user_increment: >-
+      那张谱系表只是底图，不是交付物。保留它，然后继续核对现场消费者、成熟替代、热冷取舍和真实回读；别把最先能落地的一块缩成整项结果。
+    expected_frame_relation: correction_to_existing_parent
+    expected_active_object: corrected_existing_object
+    expected_candidate_frame: corrected_parent_frame
+    expected_next_action: preserve_full_intent_envelope_and_continue_residual
+    expected_task_switch: false
+    expected_trigger_role: subordinate_after_frame_binding
+    allowed_trigger_roles: '["subordinate_after_frame_binding","not_applicable"]'
+    expected_parent_frame_before_trigger: true
+    expected_user_must_restate_parent: false
+    expected_root_status: existing_parent_preserved
+    expected_active_level: current_frame
+    expected_surface_role: semantic_scope_correction
+    expected_blocked_promotion: tractable_child_to_parent_completion_identity
+    expected_required_projection_levels: '["parent_result","current_frame","approach_or_capability","consumer_effect"]'
+    expected_parent_status: active
+    expected_turn_disposition: continue_existing_parent
+    expected_user_input_required: false
+    expected_hand_back_to_user: false
+    expected_turn_boundary_is_not_pause: true
+    expected_local_completion_does_not_close_parent: true
+    expected_implicit_stop_rejected: true
+    expected_next_parent_item_admitted: true
+    expected_legal_terminal_predicate: none
+    expected_decision_family: utterance_relation_and_return
+    expected_selected_control_action: continue_existing_parent
+    expected_symmetric_alternatives_considered: '["continue_existing_parent"]'
+    allowed_control_routes: '[{"next_action":"preserve_full_intent_envelope_and_continue_residual","decision_family":"continue_or_finalize","selected_control_action":"continue_existing_parent"},{"next_action":"preserve_full_intent_envelope_and_continue_residual","decision_family":"resume_or_reframe","selected_control_action":"continue_existing_parent"},{"next_action":"preserve_full_intent_envelope_and_continue_residual","decision_family":"utterance_relation_and_return","selected_control_action":"continue_existing_parent"}]'
+    expected_residual_defeater: none
+
+- description: An explicit human scope reduction may replace the previous completion envelope
+  metadata:
+    id: REG_EXPLICIT_SCOPE_REDUCTION_REPLACES_OLD_ENVELOPE
+    domain: parent_frame_admission
+    profiles: [intent]
+  vars:
+    case_id: REG_EXPLICIT_SCOPE_REDUCTION_REPLACES_OLD_ENVELOPE
+    restored_context: >-
+      The active parent previously covered a whole local-service redesign with
+      historical reconstruction, mature comparison, hot-versus-cold routing,
+      implementation, and consumer verification. A dependency-lineage registry
+      is one separable bounded result. No destructive or external effect is involved.
+    user_increment: >-
+      我现在明确取消这轮整体重塑；本轮只要把谱系登记和迁移前置检查验证好，完成后就结束，不要继续其余架构项。
+    expected_frame_relation: explicit_new_task
+    expected_active_object: new_explicit_object
+    expected_candidate_frame: explicit_new_task_frame
+    expected_next_action: perform_explicit_new_task
+    expected_task_switch: true
+    allowed_frame_routes: '[{"frame_relation":"explicit_new_task","active_object":"new_explicit_object","candidate_frame":"explicit_new_task_frame","next_action":"perform_explicit_new_task","task_switch":true},{"frame_relation":"correction_to_existing_parent","active_object":"corrected_existing_object","candidate_frame":"corrected_parent_frame","next_action":"restore_corrected_object","task_switch":false}]'
+    expected_trigger_role: subordinate_after_frame_binding
+    allowed_trigger_roles: '["subordinate_after_frame_binding","not_applicable"]'
+    expected_parent_frame_before_trigger: true
+    expected_user_must_restate_parent: false
+    expected_root_status: explicit_new_parent
+    allowed_root_statuses: '["explicit_new_parent","existing_parent_preserved"]'
+    expected_active_level: current_frame
+    expected_surface_role: explicit_scope_reduction
+    expected_blocked_promotion: old_parent_over_new_task
+    allowed_blocked_promotions: '["old_parent_over_new_task","stale_object_to_current_object"]'
+    expected_required_projection_levels: '["parent_result","current_frame","consumer_effect"]'
+    expected_mature_completion: true
+    expected_parent_status: active
+    expected_turn_disposition: continue_existing_parent
+    expected_user_input_required: false
+    expected_hand_back_to_user: false
+    expected_turn_boundary_is_not_pause: true
+    expected_local_completion_does_not_close_parent: true
+    expected_implicit_stop_rejected: true
+    expected_next_parent_item_admitted: true
+    expected_legal_terminal_predicate: none
+    allowed_turn_finalizations: '[{"parent_status":"active","turn_disposition":"continue_existing_parent","user_input_required":false,"hand_back_to_user":false,"turn_boundary_is_not_pause":true,"local_completion_does_not_close_parent":true,"implicit_stop_rejected":true,"next_parent_item_admitted":true,"legal_terminal_predicate":"none"},{"parent_status":"active","turn_disposition":"continue_existing_parent","user_input_required":false,"hand_back_to_user":false,"turn_boundary_is_not_pause":true,"local_completion_does_not_close_parent":true,"implicit_stop_rejected":false,"next_parent_item_admitted":true,"legal_terminal_predicate":"root_bounded_closed"},{"parent_status":"active","turn_disposition":"continue_existing_parent","user_input_required":false,"hand_back_to_user":false,"turn_boundary_is_not_pause":true,"local_completion_does_not_close_parent":true,"implicit_stop_rejected":true,"next_parent_item_admitted":true,"legal_terminal_predicate":"root_bounded_closed"}]'
+    expected_decision_family: utterance_relation_and_return
+    expected_selected_control_action: infer_and_execute
+    expected_symmetric_alternatives_considered: '["infer_and_execute"]'
+    allowed_control_routes: '[{"next_action":"perform_explicit_new_task","decision_family":"infer_or_ask","selected_control_action":"infer_and_execute"},{"next_action":"perform_explicit_new_task","decision_family":"utterance_relation_and_return","selected_control_action":"infer_and_execute"},{"next_action":"restore_corrected_object","decision_family":"infer_or_ask","selected_control_action":"infer_and_execute"},{"next_action":"restore_corrected_object","decision_family":"continue_or_finalize","selected_control_action":"continue_existing_parent"},{"next_action":"restore_corrected_object","decision_family":"utterance_relation_and_return","selected_control_action":"continue_existing_parent"}]'
+    expected_residual_defeater: none
+
+- description: A stable behavior repair stays active until delivery closure reaches future consumers
+  metadata:
+    id: REG_STABLE_BEHAVIOR_REPAIR_REQUIRES_DELIVERY_CLOSURE
+    domain: parent_frame_admission
+    profiles: [core, deep, intent]
+  vars:
+    case_id: REG_STABLE_BEHAVIOR_REPAIR_REQUIRES_DELIVERY_CLOSURE
+    restored_context: >-
+      The active parent is an admitted stable cross-window behavior repair. Its
+      hot A/B text was changed and focused local tests are green. The same
+      repair's authoritative repository sources are still uncommitted, the
+      installed projection has not been read back from both normal entries, no
+      held-out fresh window has demonstrated the behavior, and rollback plus
+      migration-survival evidence remain open. The existing repository and
+      remote workflow are already in scope; unrelated dirty files must remain
+      untouched. No Pause, Stop, material user gate, or blocker exists.
+    user_increment: 热文件和测试都绿了，这项长期行为修复现在可以算完整结束了吧？
+    expected_frame_relation: status_or_commentary
+    expected_active_object: existing_parent_object
+    expected_candidate_frame: mature_delivery_frame
+    expected_next_action: complete_behavior_delivery_closure
+    expected_task_switch: false
+    expected_semantic_effect_profile: true
+    allowed_frame_routes: '[{"frame_relation":"status_or_commentary","active_object":"existing_parent_object","candidate_frame":"mature_delivery_frame","next_action":"complete_behavior_delivery_closure","task_switch":false},{"frame_relation":"same_parent_increment","active_object":"existing_parent_object","candidate_frame":"mature_delivery_frame","next_action":"complete_behavior_delivery_closure","task_switch":false}]'
+    expected_trigger_role: subordinate_after_frame_binding
+    expected_parent_frame_before_trigger: true
+    expected_user_must_restate_parent: false
+    expected_root_status: existing_parent_preserved
+    expected_active_level: current_frame
+    expected_surface_role: stable_behavior_delivery_incomplete
+    expected_blocked_promotion: local_green_to_stable_behavior_completion
+    expected_required_projection_levels: '["human_practice","parent_result","current_frame","approach_or_capability","responsibility","runtime_carrier","consumer_effect"]'
+    expected_mature_completion: true
+    expected_parent_status: active
+    expected_turn_disposition: continue_existing_parent
+    expected_user_input_required: false
+    expected_hand_back_to_user: false
+    expected_turn_boundary_is_not_pause: true
+    expected_local_completion_does_not_close_parent: true
+    expected_implicit_stop_rejected: true
+    expected_next_parent_item_admitted: true
+    expected_legal_terminal_predicate: none
+    expected_decision_family: behavior_delivery_or_partial
+    expected_selected_control_action: complete_behavior_delivery_closure
+    expected_symmetric_alternatives_considered: '["complete_behavior_delivery_closure","declare_partial_and_continue","complete_parent"]'
+    expected_residual_defeater: none
+
+- description: An explicit disposable local-only behavior experiment does not force adoption
+  metadata:
+    id: REG_LOCAL_ONLY_BEHAVIOR_EXPERIMENT_DOES_NOT_FORCE_ADOPTION
+    domain: parent_frame_admission
+    profiles: [core, deep, intent]
+  vars:
+    case_id: REG_LOCAL_ONLY_BEHAVIOR_EXPERIMENT_DOES_NOT_FORCE_ADOPTION
+    restored_context: >-
+      The bounded parent is only to compare one disposable prompt draft in a
+      temporary local file. The human explicitly excluded installation,
+      repository adoption, publication, and any change to future windows. The
+      comparison and requested read-only check have passed; the temporary file
+      has no downstream consumer. No broader stable behavior repair was
+      admitted.
+    user_increment: 这个临时比较已经看完，到这里停止；不要安装、不要提交，也不要改变以后窗口。
+    expected_frame_relation: same_parent_increment
+    expected_active_object: existing_parent_object
+    expected_candidate_frame: verified_parent_frame
+    expected_next_action: finalize_verified_parent
+    expected_task_switch: false
+    expected_semantic_effect_profile: true
+    expected_trigger_role: not_applicable
+    allowed_trigger_roles: '["not_applicable","subordinate_after_frame_binding"]'
+    expected_parent_frame_before_trigger: true
+    expected_user_must_restate_parent: false
+    expected_root_status: verified_parent_complete
+    expected_active_level: current_frame
+    expected_surface_role: verified_parent_completion
+    expected_blocked_promotion: local_green_to_stable_behavior_completion
+    expected_required_projection_levels: '["parent_result","current_frame","consumer_effect"]'
+    expected_parent_status: complete
+    expected_turn_disposition: complete_parent
+    expected_user_input_required: false
+    expected_hand_back_to_user: true
+    expected_turn_boundary_is_not_pause: true
+    expected_local_completion_does_not_close_parent: false
+    expected_implicit_stop_rejected: false
+    expected_next_parent_item_admitted: false
+    expected_legal_terminal_predicate: parent_verified_complete
+    expected_decision_family: continue_or_finalize
+    expected_selected_control_action: complete_parent
+    expected_symmetric_alternatives_considered: '["complete_parent","pause_preserve_parent"]'
+    expected_residual_defeater: none

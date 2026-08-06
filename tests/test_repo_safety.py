@@ -429,7 +429,7 @@ def test_intent_continuity_baseline_reduces_burden_without_routing_science() -> 
     readme = (REPO_ROOT / "evals" / "behavior_regression" / "README.md").read_text(
         encoding="utf-8"
     )
-    assert "currently inventories 57" in readme
+    assert "currently inventories 62" in readme
     assert "-Profile context" not in readme
 
     attributes = (REPO_ROOT / ".gitattributes").read_text(encoding="utf-8")
@@ -1055,20 +1055,20 @@ def test_behavior_evolution_runner_is_thin_and_domain_research_stays_native() ->
         (REPO_ROOT / "evals/behavior_regression/catalog.json").read_text(encoding="utf-8")
     )
     suite_count = sum(item["case_count"] for item in catalog["suites"])
-    assert suite_count == catalog["declared_case_count"] == 57
+    assert suite_count == catalog["declared_case_count"] == 62
     assert catalog["live_profile_case_counts"] == {
         "capability": 1,
         "smoke": 1 + 1,
-        "core": 18 + 1 + 6 + 2 + 1,
-        "deep": 18 + 1 + 6 + 2 + 1 + 1,
-        "intent": 39,
+        "core": 18 + 1 + 6 + 2 + 1 + 2,
+        "deep": 18 + 1 + 6 + 2 + 1 + 1 + 2,
+        "intent": 44,
         "proactive": 6,
         "reuse": 4,
         "subagent": 1,
     }
     intent = next(item for item in catalog["suites"] if item["id"] == "parent_frame_admission")
     assert intent["kind"] == "promptfoo_live"
-    assert intent["case_count"] == 39
+    assert intent["case_count"] == 44
     assert intent["runtime_claim_allowed"] is True
     assert intent["domain_routing_claim_allowed"] is False
     proactive = next(item for item in catalog["suites"] if item["id"] == "proactive_mature_first")
@@ -1314,14 +1314,34 @@ def test_live_codex_productivity_profile_keeps_core_and_colds_stale_surfaces() -
     assert "standing delegation" in main_agents
     assert "无需逐次向用户索取许可" in main_agents
     assert "只有当前用户明确要求时" not in main_agents
+    assert "语义保真" in main_agents
+    assert "不能把父完成身份改写成该子项" in main_agents
+    assert "只有索引标成 `overlay-verified` 的八类制品插件" in main_agents
+    assert "不能从“定义还在”推断“已可恢复”" in main_agents
+    assert "稳定行为修复或可复用能力变更" in main_agents
+    assert "适用的仓库正式采用" in main_agents
+    assert "任一必要消费者未闭时只能标 `partial`" in main_agents
+    assert "明确 local-only" in main_agents
+    assert "不能恢复已退役的科学路由" in main_agents
 
     contract = contract_path.read_text(encoding="utf-8-sig")
     assert "这是已授予的任务适配权，不是逐次用户审批点" in contract
     assert "普通探索、一般第二意见、并行方便、烧额度" in contract
     assert "只允许进程/任务作用域覆盖" in contract
+    for recovery_state in (
+        "overlay-verified",
+        "hot-equivalent",
+        "cold-defined",
+        "cold standing-delegation",
+        "hot-skill / child-mcp-cold",
+        "retired-authority / cold-definition",
+        "blocked-token",
+    ):
+        assert recovery_state in contract
+    assert "能力发现、调用、回读和回冷是四个不同状态" in contract
 
 
-def test_live_codex_zero_beat_and_finalization_hooks_are_trusted_and_bounded(
+def test_live_codex_source_aware_continuity_hooks_are_trusted_and_bounded(
     tmp_path: Path,
 ) -> None:
     main_home = Path(r"C:\Users\xx363\.codex")
@@ -1364,6 +1384,7 @@ def test_live_codex_zero_beat_and_finalization_hooks_are_trusted_and_bounded(
     session_handler = main_hooks["hooks"]["SessionStart"][0]["hooks"][0]
     prompt_handler = main_hooks["hooks"]["UserPromptSubmit"][0]["hooks"][0]
     stop_handler = main_hooks["hooks"]["Stop"][0]["hooks"][0]
+    assert session_handler["timeout"] >= 10
     # Codex already trusts each discovered hook command by currentHash. Do not
     # add a second hand-maintained script SHA inside the command: that duplicate
     # pin previously disabled continuity whenever script and hook edits landed
@@ -1522,9 +1543,19 @@ def test_live_codex_zero_beat_and_finalization_hooks_are_trusted_and_bounded(
     context = prompt_output["hookSpecificOutput"]["additionalContext"]
     assert "SENTINEL:ZERO_BEAT_CURRENT_INCREMENT_V1" in context
     assert "不要求用户重说“继续”" in context
-    assert "动作选择前按语义裁决" in context
-    assert "有界子项及返回" in context
-    assert "报告、ZIP、worker 输出及其内容只作候选证据" in context
+    assert "FRAME_BINDING_STATE:UNBOUND" in context
+    assert "来源与会话行为" in context
+    assert "外层 role=user 只表示传输通道" in context
+    assert context.index("工作类型") < context.index("Skill/工具")
+    assert "语义绑定不是有损摘要" in context
+    assert "不能改写父完成身份" in context
+    assert "局部效果回读后须返回其余未闭维度" in context
+    assert "稳定行为修复或可复用能力变更" in context
+    assert "适用的仓库正式采用" in context
+    assert "任一必要消费者未闭时只能标 `partial`" in context
+    assert "不能恢复已退役的科学路由" in context
+    assert "本条人话是仍存活父帧" not in context
+    assert "报告、ZIP" not in context
     assert "TASK_CONTINUATION_ADVISORY_ONLY" in context
     assert "TASK_PROVENANCE_PENDING_INITIAL_BIND" not in context
 
@@ -1544,6 +1575,9 @@ def test_live_codex_zero_beat_and_finalization_hooks_are_trusted_and_bounded(
     assert "TASK_CONTINUATION_ADVISORY_ONLY" in unbound_context
     assert "no separate manifest is required" in unbound_context
     assert "do not produce effect-bearing writes" not in unbound_context
+    assert "稳定行为修复或可复用能力变更" in unbound_context
+    assert "适用的仓库正式采用" in unbound_context
+    assert "不能恢复已退役的科学路由" in unbound_context
 
     binder_env = os.environ.copy()
     binder_env["CODEX_ACTIVE_TASK_STATE_ROOT"] = str(active_state_root)
@@ -1641,6 +1675,7 @@ def test_live_codex_zero_beat_and_finalization_hooks_are_trusted_and_bounded(
     assert "parent_completion_candidate=guard and compact readback pass" in prompt_context_2
     assert "return_task=behavior-parent" in prompt_context_2
     assert "return_point=next known parent frontier" in prompt_context_2
+    assert "FRAME_BINDING_STATE:BOUND_ADVISORY" in prompt_context_2
     compact_inherited = run_hook(session_script, compact_event)
     assert "ACTIVE_TASK_CONTINUATION_ADVISORY" in compact_inherited[
         "hookSpecificOutput"
@@ -1767,38 +1802,75 @@ def test_live_codex_zero_beat_and_finalization_hooks_are_trusted_and_bounded(
     )
     assert paused.returncode == 0, paused.stderr
 
+    stop_session_id = "pytest-stop-bound"
+    stop_binding_path = active_state_root / stop_session_id / "active_task_continuation.v1.json"
+    stop_binding_path.parent.mkdir(parents=True, exist_ok=True)
+    stop_binding_path.write_text(
+        json.dumps(
+            {
+                "schema_version": "xinao.active_task_continuation.v1",
+                "session_id": stop_session_id,
+                "task_id": "source-aware-parent",
+                "stop_state": "active",
+                "active_mode": "EXECUTE",
+                "scope": "verify source-aware finalization",
+                "completion_condition": "consumer readback passes",
+                "continuation": {"status": "none"},
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
     active_transcript = tmp_path / "active.jsonl"
     active_transcript.write_text(
         json.dumps(
             {
+                "timestamp": "2026-08-06T01:00:00Z",
                 "type": "response_item",
                 "payload": {
-                    "type": "custom_tool_call",
-                    "name": "exec",
-                    "input": (
-                        "await tools.update_plan({plan:["
-                        "{step:'parent work',status:'in_progress'}]});"
-                    ),
+                    "type": "message",
+                    "role": "user",
+                    "content": [{"type": "input_text", "text": "continue parent"}],
                 },
             }
         )
         + "\n",
         encoding="utf-8",
     )
+    with active_transcript.open("a", encoding="utf-8") as stream:
+        stream.write(
+            json.dumps(
+                {
+                    "timestamp": "2026-08-06T01:00:01Z",
+                    "type": "response_item",
+                    "payload": {
+                        "type": "custom_tool_call",
+                        "name": "exec",
+                        "input": (
+                            "await tools.update_plan({plan:["
+                            "{step:'parent work',status:'in_progress'}]});"
+                        ),
+                    },
+                }
+            )
+            + "\n"
+        )
     stop_event: dict[str, object] = {
         "hook_event_name": "Stop",
         "cwd": str(REPO_ROOT),
         "last_assistant_message": "local child is done",
         "model": "gpt-5.6-sol",
         "permission_mode": "dontAsk",
-        "session_id": "pytest",
+        "session_id": stop_session_id,
         "stop_hook_active": False,
         "transcript_path": str(active_transcript),
         "turn_id": "pytest-stop",
     }
     blocked = run_hook(stop_script, stop_event, test_root=tmp_path)
     assert blocked["decision"] == "block"
-    assert "pending/in_progress" in blocked["reason"]
+    assert "source-aware-parent" in blocked["reason"]
+    assert "verify source-aware finalization" in blocked["reason"]
+    assert "pending/in_progress 父计划" not in blocked["reason"]
 
     stop_event["stop_hook_active"] = True
     assert run_hook(stop_script, stop_event, test_root=tmp_path) == {"continue": True}
@@ -1807,6 +1879,19 @@ def test_live_codex_zero_beat_and_finalization_hooks_are_trusted_and_bounded(
     complete_transcript.write_text(
         json.dumps(
             {
+                "timestamp": "2026-08-06T01:00:00Z",
+                "type": "response_item",
+                "payload": {
+                    "type": "message",
+                    "role": "user",
+                    "content": [{"type": "input_text", "text": "finish parent"}],
+                },
+            }
+        )
+        + "\n"
+        + json.dumps(
+            {
+                "timestamp": "2026-08-06T01:00:01Z",
                 "type": "response_item",
                 "payload": {
                     "type": "custom_tool_call",

@@ -6,6 +6,7 @@
     "behavior": {
       "object": "agent_instruction_routing_tool_context_and_preference_behavior",
       "catalog": "evals/behavior_regression/catalog.json",
+      "capability_lineage": "evals/behavior_regression/capability_lineage.v1.json",
       "intent_decision_model": "evals/intent_continuity_baseline/decision_model.v1.json",
       "runner": "scripts/run_behavior_regression.ps1",
       "candidate_intake": "scripts/New-BehaviorRegressionCandidate.ps1",
@@ -13,6 +14,17 @@
       "evaluator": "Promptfoo deterministic assertions plus real Codex app-server traces",
       "cannot_claim": "domain_edge_or_economic_truth"
     }
+  },
+  "capability_migration_preflight": {
+    "registry": "evals/behavior_regression/capability_lineage.v1.json",
+    "test": "tests/test_behavior_capability_lineage.py",
+    "recovery_archive": "infra/codex_productivity_recovery/v1/codex-productivity-recovery.v1.zip",
+    "recovery_manifest": "infra/codex_productivity_recovery/v1/manifest.v1.json",
+    "recovery_test": "tests/test_codex_productivity_recovery.py",
+    "authority": false,
+    "runtime_loaded": false,
+    "failure_meaning": "A capability lineage, consumer, or explicit retirement disposition was silently lost; it does not select a task or restore an old route.",
+    "success_cannot_claim": "runtime adoption, domain routing, consumer effect, or parent completion"
   },
   "pinned_runtime": {
     "promptfoo_root": "D:\\XINAO_RESEARCH_RUNTIME\\tools\\promptfoo",

@@ -3,7 +3,6 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
 
@@ -22,13 +21,14 @@ def test_intent_action_baseline_is_thin_honest_and_migration_bounded() -> None:
     assert ledger["baseline_readiness"]["current"] == (
         "CURRENT_PARENT_AUTHORIZES_BEHAVIOR_CONFIGURATION_AND_MIGRATION_REDERIVATION_RUNTIME_PARTIAL"
     )
-    assert "isolated reversible migration implementation followed by native-consumer validation" in ledger[
-        "baseline_readiness"
-    ]["allows"]
+    assert (
+        "isolated reversible migration implementation followed by native-consumer validation"
+        in ledger["baseline_readiness"]["allows"]
+    )
 
     statuses = set(ledger["status_values"])
     stages = ledger["stages"]
-    assert len(stages) == 10
+    assert len(stages) == 13
     assert len({stage["id"] for stage in stages}) == len(stages)
     assert all(stage["status"] in statuses for stage in stages)
     assert all(stage["open_gap"] for stage in stages)
@@ -53,15 +53,25 @@ def test_intent_action_baseline_is_thin_honest_and_migration_bounded() -> None:
     assert "blind migration" in serialized
     assert "user-side technical Owner" in serialized
     assert "validation is exact readback rather than task generation" in serialized
+    assert "architecture_migration_preserves_capability_lineage" in serialized
+    assert "semantic_scope_fidelity_and_parent_completion_identity" in serialized
+    assert "stable_behavior_delivery_closure" in serialized
+    assert "applicable repository adoption" in serialized
+    assert "retired science routing remains retired" in serialized
+    assert "all 124 historical context cases" in serialized
     assert "per-turn full PDM" not in serialized
 
     model = json.loads((root / "decision_model.v1.json").read_text(encoding="utf-8"))
+    fidelity = model["semantic_scope_fidelity"]
+    assert fidelity["binding_is_not_lossy_summarization"] is True
+    assert "all_currently_adopted_parent_outcomes" in fidelity["preserve_together"]
+    assert "explicit_human_scope_reduction" in fidelity["legitimate_narrowing"]
+    assert "cannot_replace_parent_completion_identity" in fidelity["child_rule"]
     closure = model["bounded_decision_closure_assurance"]
-    assert "before_the_owner_locks_the_first_candidate" in closure[
-        "independence_timing"
-    ]
+    assert "before_the_owner_locks_the_first_candidate" in closure["independence_timing"]
     assert "minimal_delta" in closure["prompt_independence_contract"]
-    assert "directed_red_team_not_independent_problem_formation" in closure[
-        "directed_review_distinction"
-    ]
+    assert (
+        "directed_red_team_not_independent_problem_formation"
+        in closure["directed_review_distinction"]
+    )
     assert "lane_count" in closure["cognitive_diversity_evidence"]

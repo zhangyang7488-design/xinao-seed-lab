@@ -41,13 +41,32 @@ module.exports = (output, context) => {
   )
     ? JSON.parse(context.vars.allowed_active_levels)
     : [context.vars.expected_active_level];
-  const effectProfile =
+  const nullableOptionalEffectProfile =
     context.vars.expected_decision_family === "utterance_relation_and_return";
+  const effectProfile =
+    nullableOptionalEffectProfile ||
+    (Object.prototype.hasOwnProperty.call(
+      context.vars,
+      "expected_semantic_effect_profile",
+    ) && asBool(context.vars.expected_semantic_effect_profile));
   const defaultControlRoute = {
     next_action: context.vars.expected_next_action,
     decision_family: context.vars.expected_decision_family,
     selected_control_action: context.vars.expected_selected_control_action,
   };
+  const defaultFrameRoute = {
+    frame_relation: context.vars.expected_frame_relation,
+    active_object: context.vars.expected_active_object,
+    candidate_frame: context.vars.expected_candidate_frame,
+    next_action: context.vars.expected_next_action,
+    task_switch: asBool(context.vars.expected_task_switch),
+  };
+  const allowedFrameRoutes = Object.prototype.hasOwnProperty.call(
+    context.vars,
+    "allowed_frame_routes",
+  )
+    ? JSON.parse(context.vars.allowed_frame_routes)
+    : [defaultFrameRoute];
   const allowedControlRoutes = Object.prototype.hasOwnProperty.call(
     context.vars,
     "allowed_control_routes",
@@ -114,6 +133,12 @@ module.exports = (output, context) => {
         context.vars.expected_legal_terminal_predicate,
     };
   }
+  const allowedTurnFinalizations = Object.prototype.hasOwnProperty.call(
+    context.vars,
+    "allowed_turn_finalizations",
+  )
+    ? JSON.parse(context.vars.allowed_turn_finalizations)
+    : [expected.turn_finalization];
   if (hasMatureExpectation) {
     expected.mature_completion = {
       intent_bound_before_engineering: true,
@@ -169,12 +194,24 @@ module.exports = (output, context) => {
     object_graph: { ...expected.object_graph },
   };
   delete effectExpected.next_action;
+  delete effectExpected.frame_relation;
+  delete effectExpected.active_object;
+  delete effectExpected.candidate_frame;
+  delete effectExpected.task_switch;
   delete effectExpected.turn_finalization;
   delete effectExpected.mature_completion;
   delete effectExpected.decision_closure;
   const effectBehaviorMatches =
     Object.entries(effectExpected).every(([key, value]) =>
       sameValue(parsed[key], value),
+    ) &&
+    allowedFrameRoutes.some(
+      (route) =>
+        route.frame_relation === parsed.frame_relation &&
+        route.active_object === parsed.active_object &&
+        route.candidate_frame === parsed.candidate_frame &&
+        route.next_action === parsed.next_action &&
+        asBool(route.task_switch) === parsed.task_switch,
     ) &&
     allowedControlRoutes.some(
       (route) => route.next_action === parsed.next_action,
@@ -235,7 +272,9 @@ module.exports = (output, context) => {
   };
   const effectTurnFinalizationMatches =
     parsed.turn_finalization === null ||
-    sameValue(parsed.turn_finalization, expected.turn_finalization);
+    allowedTurnFinalizations.some((candidate) =>
+      sameValue(parsed.turn_finalization, candidate),
+    );
   const effectMatureCompletionMatches =
     parsed.mature_completion === null ||
     sameValue(parsed.mature_completion, matureCompletionContract);
@@ -257,7 +296,7 @@ module.exports = (output, context) => {
       parsed.decision_closure?.residual_defeater ===
         context.vars.expected_residual_defeater &&
       parsed.decision_closure?.scope === "event_triggered_bounded");
-  const optionalObjectsMatch = effectProfile
+  const optionalObjectsMatch = nullableOptionalEffectProfile
     ? effectTurnFinalizationMatches &&
       effectMatureCompletionMatches &&
       effectDecisionClosureMatches
@@ -282,7 +321,7 @@ module.exports = (output, context) => {
       requiredClosureAlternatives.every((item) =>
         actualClosureAlternatives.includes(item),
       ));
-  const closureAlternativesAreBoundedAndSufficient = effectProfile
+  const closureAlternativesAreBoundedAndSufficient = nullableOptionalEffectProfile
     ? effectClosureAlternativesMatch
     : strictClosureAlternativesMatch;
 
@@ -337,7 +376,9 @@ module.exports = (output, context) => {
       },
       required_closure_alternatives: requiredClosureAlternatives,
       effect_profile: effectProfile,
+      allowed_frame_routes: allowedFrameRoutes,
       allowed_control_routes: allowedControlRoutes,
+      allowed_turn_finalizations: allowedTurnFinalizations,
     },
     actual: parsed,
     toolCallTypes: toolCalls.map((item) => item.type),

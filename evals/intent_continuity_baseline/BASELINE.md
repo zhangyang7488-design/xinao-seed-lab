@@ -135,7 +135,19 @@ a recorded open plan but does not prove every Planner/tool path or an unrecorded
 parent. No green eval, hook receipt, package verifier, worker terminal, or
 approval artifact can silently widen or narrow the live scope. A migrated
 component must retain its parent service path, live consumer, reversible
-   carrier, positive and negative behavior, fresh readback, and explicit unknowns;
+carrier, positive and negative behavior, fresh readback, and explicit unknowns;
 after validation, execution returns only to the exact pre-migration activity
 and return point already bound in the surviving parent. Validation does not
 authorize the Owner to derive a new domain problem from repository status.
+
+The non-runtime capability lineage at
+`evals/behavior_regression/capability_lineage.v1.json` makes that migration
+obligation mechanically consumable. It inventories historical pain and causal
+work before a shared carrier is removed, while keeping retired science routing
+and control-plane topology out of the live prompt and agent suites.
+
+Source-aware decoding and semantic scope fidelity are separate consumers. A
+correctly sourced request can still be damaged if its complete adopted outcome
+envelope is compressed into the first tractable guard or local green result.
+Local work may occupy the action slot, but residual parent dimensions survive
+until effect readback; an explicit current human scope reduction still wins.

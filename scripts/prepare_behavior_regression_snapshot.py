@@ -148,6 +148,30 @@ def selected_inputs(
         ("tests/test_behavior_regression_incremental.py", "incremental_selector_tests"),
         ("evals/behavior_regression/catalog.json", "catalog"),
         (
+            "evals/behavior_regression/capability_lineage.v1.json",
+            "capability_lineage_migration_preflight",
+        ),
+        (
+            "tests/test_behavior_capability_lineage.py",
+            "capability_lineage_migration_preflight_tests",
+        ),
+        (
+            "scripts/build_codex_productivity_recovery.py",
+            "codex_productivity_recovery_builder",
+        ),
+        (
+            "infra/codex_productivity_recovery/v1/manifest.v1.json",
+            "codex_productivity_recovery_manifest",
+        ),
+        (
+            "infra/codex_productivity_recovery/v1/codex-productivity-recovery.v1.zip",
+            "codex_productivity_recovery_archive",
+        ),
+        (
+            "tests/test_codex_productivity_recovery.py",
+            "codex_productivity_recovery_tests",
+        ),
+        (
             "evals/intent_continuity_baseline/decision_model.v1.json",
             "intent_continuity_baseline",
         ),

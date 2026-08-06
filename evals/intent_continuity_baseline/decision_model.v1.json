@@ -56,6 +56,41 @@
     "forbidden_reverse_flow": "engineering_artifacts_or_mature_patterns_must_not_manufacture_user_intent_solution_preference_or_authorization",
     "owner_burden_rule": "derive_chain_internal_technical_choices_when_the_relation_is_sufficient_instead_of_returning_them_to_the_user"
   },
+  "semantic_scope_fidelity": {
+    "binding_is_not_lossy_summarization": true,
+    "preserve_together": [
+      "all_currently_adopted_parent_outcomes",
+      "open_questions_and_comparison_scope",
+      "burdens_the_user_must_not_reassume",
+      "current_constraints_and_authority_boundaries",
+      "observable_parent_completion_ruler"
+    ],
+    "child_rule": "the_first_tractable_thin_or_easily_verified_item_may_occupy_the_action_slot_but_cannot_replace_parent_completion_identity",
+    "residual_rule": "carry_every_other_open_dimension_through_local_work_and_resume_it_after_effect_readback",
+    "legitimate_narrowing": "a_current_explicit_human_scope_reduction_may_replace_the_old_envelope_and_must_not_be_blocked_by_continuity",
+    "forbidden_proxy": "a_guard_registry_report_shared_generator_worker_terminal_or_local_green_result_cannot_silently_become_the_whole_deliverable"
+  },
+  "stable_behavior_delivery_closure": {
+    "applies_to": "an_admitted_cross_window_behavior_repair_or_reusable_capability_change",
+    "required_predicates": [
+      "unique_source",
+      "active_projection",
+      "changed_context_fresh_consumer",
+      "balanced_positive_negative_regression",
+      "applicable_repository_adoption",
+      "rollback_recovery",
+      "migration_survival"
+    ],
+    "missing_predicate_result": "partial_and_continue_the_legal_machine_frontier",
+    "consumer_intersection_rule": "require_only_consumers_that_really_apply_to_the_admitted_change",
+    "does_not_force": [
+      "commit_push_install_or_publication_for_explicit_local_only_or_discussion_scope",
+      "repository_adoption_when_no_repository_is_a_real_consumer",
+      "continuation_after_pause_or_stop",
+      "restoration_of_retired_science_routing_or_completion_authority"
+    ],
+    "not_a_controller": true
+  },
   "unified_user_result_productivity_admission": {
     "not_a_new_controller_or_skill": true,
     "applies_to": "nontrivial_convergence_and_effect_bearing_action_or_nonaction",
@@ -256,7 +291,8 @@
     "phase_authorization_reset": "window_plan_phase_local_completion_report_or_package_approval_field_cannot_reset_an_established_parent_scope_to_no_authority",
     "validation_scope_task_generation": "migration_or_consumer_validation_may_read_back_only_the_previously_bound_object_and_cannot_create_a_new_domain_problem_from_repository_status",
     "task_provenance_collapse": "loss_of_current_task_source_object_scope_or_return_point_cannot_be_repaired_by_guessing_from_observed_repository_state_or_by_demanding_a_manifest",
-    "orphaned_continuation_synthesis": "a_vague_continue_or_return_instruction_without_a_semantically_surviving_parent_cannot_invent_a_new_effect_bearing_task_but_current_user_words_need_no_separate_binding"
+    "orphaned_continuation_synthesis": "a_vague_continue_or_return_instruction_without_a_semantically_surviving_parent_cannot_invent_a_new_effect_bearing_task_but_current_user_words_need_no_separate_binding",
+    "semantic_scope_compression": "the_first_tractable_subproblem_or_known_causal_generator_cannot_replace_the_complete_adopted_parent_result_or_erase_its_residual_open_dimensions"
   },
   "three_responsibility_domains": {
     "domain_work": "forms questions and actions from the current human frame and real object",

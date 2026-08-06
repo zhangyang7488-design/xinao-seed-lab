@@ -1,15 +1,20 @@
 # Local behavior regression
 
 This is a bounded S engineering capability, not a research platform, scheduler,
-authority source, or completion gate. The catalog currently inventories 57
+authority source, or completion gate. The catalog currently inventories 62
 live and reusable specifications. XINAO domain research and economic evidence
 belong to `E:\XINAO_RESEARCH_WORKSPACES\xinao-native-research`.
+
+`capability_lineage.v1.json` is a non-runtime migration preflight. It preserves
+the historical pain/consumer/retirement map—including all 124 retired mixed
+suite cases—so a future cleanup cannot silently delete capability together
+with a harmful carrier. It is never loaded as an agent prompt or route source.
 
 The active profiles are:
 
 - `capability`: one fresh Codex app-server capability canary;
 - `smoke`: one parent-frame admission case plus the capability canary;
-- `intent`: thirty-nine generic fresh parent-frame, utterance-relation, bounded-transition,
+- `intent`: forty-four generic fresh parent-frame, source-aware utterance-relation, semantic-scope-fidelity, stable-behavior-delivery, bounded-transition,
   mature-owner, owner-worker dual-track, and cold-native standing exception cases;
 - `core`: intent admission, capability, proactive mature-first, frozen recall,
   thin localization, and deterministic static checks;

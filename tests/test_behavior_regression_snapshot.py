@@ -26,6 +26,12 @@ def _fixture_repo(tmp_path: Path) -> Path:
         "tests/test_behavior_regression_incremental.py": "# test\n",
         "tests/test_repo_safety.py": "# test\n",
         "evals/behavior_regression/catalog.json": "{}\n",
+        "evals/behavior_regression/capability_lineage.v1.json": "{}\n",
+        "tests/test_behavior_capability_lineage.py": "# test\n",
+        "scripts/build_codex_productivity_recovery.py": "# helper\n",
+        "infra/codex_productivity_recovery/v1/manifest.v1.json": "{}\n",
+        "infra/codex_productivity_recovery/v1/codex-productivity-recovery.v1.zip": "archive\n",
+        "tests/test_codex_productivity_recovery.py": "# test\n",
         "evals/intent_continuity_baseline/decision_model.v1.json": "{}\n",
         "evals/intent_continuity_baseline/consumer_coverage.v1.json": "{}\n",
         "evals/intent_continuity_baseline/BASELINE.md": "# baseline\n",
@@ -63,10 +69,14 @@ def test_baseline_snapshot_is_immutable_and_effective_tree_is_sparse(tmp_path: P
     assert manifest["effective_git_head"]
     model = effective / "evals/intent_continuity_baseline/decision_model.v1.json"
     assert model.read_text(encoding="utf-8") == "{}\n"
-    assert (
-        effective / "evals/intent_continuity_baseline/consumer_coverage.v1.json"
-    ).exists()
+    assert (effective / "evals/intent_continuity_baseline/consumer_coverage.v1.json").exists()
     assert (effective / "evals/intent_continuity_baseline/BASELINE.md").exists()
+    assert (effective / "evals/behavior_regression/capability_lineage.v1.json").exists()
+    assert (effective / "tests/test_behavior_capability_lineage.py").exists()
+    assert (
+        effective / "infra/codex_productivity_recovery/v1/codex-productivity-recovery.v1.zip"
+    ).exists()
+    assert (effective / "tests/test_codex_productivity_recovery.py").exists()
 
     identity = manifest["identity_sha256"]
     _write(repo / "evals/intent_continuity_baseline/decision_model.v1.json", "changed\n")

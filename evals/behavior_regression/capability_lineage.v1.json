@@ -1,0 +1,921 @@
+{
+  "schema_version": "xinao.behavior_capability_lineage.v1",
+  "sentinel": "SENTINEL:BEHAVIOR_CAPABILITY_LINEAGE_MIGRATION_PREFLIGHT_V1",
+  "authority": false,
+  "runtime_loaded": false,
+  "completion_claim_allowed": false,
+  "evidence_cutoff": "2026-08-06T15:00:00+08:00",
+  "purpose": "Recover the complete capability, pain, consumer, and retirement lineage before another architecture migration. This registry prevents carrier deletion from being mistaken for authority cleanup or capability restoration; it never selects a task, domain route, tool, worker, or completion state.",
+  "frozen_baseline": {
+    "capability_id": "intent_source_parent_admission",
+    "decision": "KEEP_FROZEN",
+    "reason": "The current user explicitly accepts the restored basic source-aware human-utterance decoder. That acceptance does not imply that the distinct historical semantic-scope-fidelity capability was restored; the newly observed parent-to-foundation compression is handled as a separate family without rewriting source classification.",
+    "hot_carriers": [
+      "C:/Users/xx363/.codex/AGENTS.md",
+      "C:/Users/xx363/.codex-s-hardmode-account-b/AGENTS.md",
+      "D:/XINAO_RESEARCH_RUNTIME/state/Codex_Situation_Island/scripts/user_prompt_zero_beat_v1.ps1",
+      "D:/XINAO_RESEARCH_RUNTIME/state/Codex_Situation_Island/scripts/session_start_continuity_pointer_v1.ps1"
+    ]
+  },
+  "migration_rule": {
+    "carrier_is_not_capability": true,
+    "text_or_file_presence_is_not_restoration": true,
+    "worker_terminal_is_not_adoption": true,
+    "green_test_is_not_consumer_effect": true,
+    "required_before_removing_or_colding_a_carrier": [
+      "name the historical pain and causal work the carrier served",
+      "name every still-relevant capability family that intersects the carrier",
+      "bind each retained family to a current consumer and observable readback",
+      "give each retired family a named harm, recovery handle, and explicit no-hot-restore boundary",
+      "preserve a reversible recovery path for cold or uncertain capabilities",
+      "run this lineage preflight plus the intersecting deterministic and fresh behavior consumers"
+    ],
+    "allowed_dispositions": [
+      "KEEP_FROZEN",
+      "KEEP_HOT",
+      "KEEP_CONDITIONAL",
+      "KEEP_COLD_ON_DEMAND",
+      "SELECTIVE_CONSUMER_RECOVERY",
+      "REPLACE_WITH_MATURE_SURFACE",
+      "RETIRE_FROM_S",
+      "NO_ACTION"
+    ]
+  },
+  "third_architecture": {
+    "decision": "ADOPT_THIN_RECOMPOSITION_OF_EXISTING_CONSUMERS",
+    "runtime_controller": false,
+    "new_daemon": false,
+    "new_user_entry": false,
+    "raw_utterance_capability_router": false,
+    "stable_behavior_delivery_closure": {
+      "mandatory_for": "admitted_cross_window_behavior_or_reusable_capability_change",
+      "required_predicates": [
+        "unique_source",
+        "active_projection",
+        "changed_context_fresh_consumer",
+        "balanced_positive_negative_regression",
+        "applicable_repository_adoption",
+        "rollback_recovery",
+        "migration_survival"
+      ],
+      "missing_predicate_status": "PARTIAL_CONTINUE_FRONTIER",
+      "does_not_force": [
+        "publication_for_explicit_local_only_or_discussion_scope",
+        "repository_adoption_when_no_repository_is_a_real_consumer",
+        "restoration_of_retired_science_routing",
+        "new_manifest_daemon_router_or_owner"
+      ]
+    },
+    "selection_order": [
+      "bind the human source, complete intent envelope, object, authority, and completion ruler",
+      "resolve only capabilities relevant to that bound frame from hot metadata, conditional Skills, cold overlays, and live route facts",
+      "execute through the smallest reversible surface with typed identity, isolation, recovery, and Stop boundaries",
+      "keep worker terminal, Owner adoption, authority application, effect readback, and parent completion distinct",
+      "return from bounded work to every residual open parent dimension",
+      "learn only through evidence-bound regression and capability-lineage migration preflight"
+    ],
+    "planes": [
+      {
+        "id": "semantic_admission_and_scope_fidelity",
+        "activation": "hot",
+        "task_selection_authority": "current human words plus live facts interpreted by Codex Owner",
+        "consumers": [
+          "external:A/B AGENTS.md",
+          "external:UserPromptSubmit zero-beat hook",
+          "evals/parent_frame_admission"
+        ],
+        "readback": "fresh changed-surface source, scope-preservation, and explicit-scope-reduction cases",
+        "fallback": "fail open to current words; never synthesize a task from a carrier"
+      },
+      {
+        "id": "lifecycle_event_reanchor",
+        "activation": "hot_advisory",
+        "task_selection_authority": "none",
+        "consumers": [
+          "external:SessionStart compact/resume/clear/startup hook",
+          "external:UserPromptSubmit hook",
+          "external:Stop hook",
+          "services/agent_runtime/action_resume_receipt.py"
+        ],
+        "readback": "event-shaped hook probes plus exact-return and no-binding negatives",
+        "fallback": "missing or stale continuation cannot block current words or manufacture a return point"
+      },
+      {
+        "id": "post_binding_capability_resolution",
+        "activation": "progressive_disclosure_and_cold_on_demand",
+        "task_selection_authority": "none_before_frame_binding",
+        "consumers": [
+          "external:Skill metadata and selected SKILL.md",
+          "external:C:/Users/xx363/CodexLaunchers/CODEX_PRODUCTIVITY_PROFILE.md post-binding capability index",
+          "external:C:/Users/xx363/.codex/cold-capabilities.config.toml",
+          "external:single-process profile override",
+          "external:live tool and route facts"
+        ],
+        "readback": "named capability invocation and original consumer verification, not definition presence",
+        "fallback": "use an already-hot mature equivalent or report the exact cold-recovery boundary; never ask the user to choose a fat window"
+      },
+      {
+        "id": "execution_identity_failure_isolation_and_recovery",
+        "activation": "conditional",
+        "task_selection_authority": "none",
+        "consumers": [
+          "docs/tool_glue/GENERIC_ENGINEERING_SUBSTRATE_CURRENT.md",
+          "services/agent_runtime/execution_consumers.v1.json",
+          "services/agent_runtime/dispatch_economics.py"
+        ],
+        "readback": "typed receipt, intersecting tests, safe retry or rollback, and the named original consumer",
+        "fallback": "localize failure to the dependency cone and recompute an unaffected route"
+      },
+      {
+        "id": "worker_fanin_owner_adoption_and_authority",
+        "activation": "dynamic_positive_value",
+        "task_selection_authority": "Codex Owner only",
+        "consumers": [
+          "external:ordinary Grok WorkerPool",
+          "scripts/record_dispatch_outcome.py",
+          "services/agent_runtime/dispatch_economics.py"
+        ],
+        "readback": "worker_terminal then typed owner_verdict and owner_adopted only after direct Owner inspection",
+        "fallback": "discard, partially adopt, reroute, or continue Owner work; never auto-adopt or auto-complete"
+      },
+      {
+        "id": "effect_readback_and_parent_completion",
+        "activation": "conditional_at_effect_and_transition",
+        "task_selection_authority": "Codex Owner with current completion ruler",
+        "consumers": [
+          "services/agent_runtime/dispatch_economics.py",
+          "services/agent_runtime/system_awareness_consumer.py",
+          "evals/intent_continuity_baseline/consumer_coverage.v1.json"
+        ],
+        "readback": "effect_verified references adoption or authority plus a real consumer artifact; parent completion remains separate",
+        "fallback": "retain partial or blocked honestly and return to residual open parent dimensions"
+      },
+      {
+        "id": "learning_regression_and_migration",
+        "activation": "event_bounded_non_runtime",
+        "task_selection_authority": "none",
+        "consumers": [
+          "evals/behavior_regression/capability_lineage.v1.json",
+          "scripts/run_behavior_regression.ps1",
+          "scripts/prepare_behavior_regression_snapshot.py"
+        ],
+        "readback": "deterministic lineage partition, affected fresh behavior, prohibited-side-effect negative, and source snapshot",
+        "fallback": "keep uncertain capabilities cold or partial instead of claiming restoration"
+      },
+      {
+        "id": "science_engineering_continuity_role_separation",
+        "activation": "hot_boundary",
+        "task_selection_authority": "domain work remains with current human words and Codex Owner",
+        "consumers": [
+          "external:global AGENTS.md",
+          "AGENTS.md",
+          "docs/tool_glue/GENERIC_ENGINEERING_SUBSTRATE_CURRENT.md"
+        ],
+        "readback": "S live suites contain no default XINAO, continuous, Goal, or scientific completion routing",
+        "fallback": "domain evidence may be read on demand but cannot become engineering or continuity authority"
+      }
+    ],
+    "topology_adjudication": [
+      {
+        "id": "T0_CURRENT_NO_ACTION",
+        "verdict": "REJECT_AS_COMPLETE_ARCHITECTURE",
+        "reason": "Low cost but contradicted by observed semantic-scope loss and incomplete cold-consumer proof."
+      },
+      {
+        "id": "T1_THIN_GAP_CLOSURE",
+        "verdict": "ADOPT_AS_FOUNDATION",
+        "reason": "Restores named missing consumers and migration proof with low failure radius."
+      },
+      {
+        "id": "T2_CAPABILITY_COMPILER",
+        "verdict": "ADOPT_ONLY_POST_BINDING_DISCOVERY_ATOMS",
+        "reason": "Progressive disclosure and cold overlays are useful; a raw-speech router or second agenda controller is not."
+      },
+      {
+        "id": "T3_PLATFORM_CONSOLIDATION",
+        "verdict": "NO_ACTION",
+        "reason": "No named consumer justifies a daemon, new entry, or large replacement platform."
+      }
+    ]
+  },
+  "reshape_waves": [
+    {
+      "id": "2026-08-03-science-engineering-authority-separation",
+      "evidence": [
+        "git:9369f277f0a3fbce77646faab0831bfafee567b3",
+        "git:4096f52e61484841a62586225dcb620ffd8cf394",
+        "E:/XINAO_COLD_STORAGE/xinao-global-clean-preimage-20260803-v1/S-preclean.bundle"
+      ],
+      "benefit": "Removed S as a scientific parent, Goal/continuous authority, and legacy platform default.",
+      "collateral_loss": "The mixed carrier deletion also removed the large generic exception bank, pre-action global-attention text, module recovery notes, and several consumer-discovery handles.",
+      "lesson": "Authority and capability must be separated semantically before deleting their shared carrier."
+    },
+    {
+      "id": "2026-08-05-productivity-and-token-slim",
+      "evidence": [
+        "D:/XINAO_RESEARCH_RUNTIME/state/codex/productivity-profile/20260805-pre-slim-v1",
+        "D:/XINAO_RESEARCH_RUNTIME/state/codex/productivity-profile/20260805-pre-plugin-cold-v2",
+        "D:/XINAO_RESEARCH_RUNTIME/state/codex/productivity-profile/CURRENT.md",
+        "C:/Users/xx363/CodexLaunchers/CODEX_PRODUCTIVITY_PROFILE.md"
+      ],
+      "benefit": "Kept one A/B work shape while colding low-frequency, duplicate, stale, or broken MCP/plugin surfaces.",
+      "collateral_loss": "Some recovery recipes and live-process proof remained partial; cold definition or file equality was sometimes described more strongly than real consumer recovery.",
+      "lesson": "Cold-defined, discoverable, invoked, read back, and fully recovered are distinct states."
+    }
+  ],
+  "state_values": [
+    "FROZEN_PARTIAL",
+    "PARTIAL_CONSUMER",
+    "VERIFIED_COMPONENT_NOT_PARENT",
+    "COLD_DEFINED",
+    "TEXT_ONLY",
+    "RETIRED",
+    "UNKNOWN"
+  ],
+  "families": [
+    {
+      "id": "intent_source_parent_admission",
+      "pain": "Quoted material, the latest sentence, a report title, cwd, STATUS, or a complete imperative can be mistaken for the human's adopted parent task.",
+      "causal_work": "Decode source and conversational act, bind the active object and parent result, then let domain or engineering knowledge complete only the means.",
+      "historical_carriers": [
+        "git:4096f52^:evals/context_intent_alignment",
+        "git:4096f52^:scripts/predecision_intent_guard_v1.ps1"
+      ],
+      "current_consumers": [
+        "external:A/B AGENTS.md",
+        "external:UserPromptSubmit zero-beat hook",
+        "evals/parent_frame_admission",
+        "evals/intent_continuity_baseline/decision_model.v1.json"
+      ],
+      "current_state": "FROZEN_PARTIAL",
+      "disposition": "KEEP_FROZEN",
+      "cost_and_failure_radius": "Always-hot text has global semantic radius; expansion can recreate literal matching or a rule stack.",
+      "rollback": "Revert only an isolated new behavior delta; retain the accepted source-aware decoder and its changed-context cases.",
+      "unknowns": [
+        "No finite suite proves correct frame binding on every future tool path."
+      ]
+    },
+    {
+      "id": "semantic_scope_fidelity_and_parent_completion_identity",
+      "pain": "A complete user-owned outcome can be lossily compressed into the first tractable guard, shared generator, report, or local green result, leaving the user to recover every omitted dimension.",
+      "causal_work": "Preserve the full adopted outcome envelope and residual open dimensions after source binding; let a local item occupy the action slot without rewriting parent completion identity, and honor an explicit human scope reduction when it really occurs.",
+      "historical_carriers": [
+        "git:4096f52^:evals/context_intent_alignment/cases.yaml",
+        "git:4096f52^:scripts/predecision_intent_guard_v1.ps1"
+      ],
+      "current_consumers": [
+        "external:A/B AGENTS.md semantic-fidelity invariant",
+        "external:UserPromptSubmit semantic-fidelity projection",
+        "evals/parent_frame_admission"
+      ],
+      "current_state": "PARTIAL_CONSUMER",
+      "disposition": "KEEP_HOT",
+      "cost_and_failure_radius": "Always-hot semantic scope has global radius; the thin invariant must preserve legitimate explicit narrowing and avoid storing a full task graph on every turn.",
+      "rollback": "Revert only the semantic-fidelity delta if it blocks an explicit human scope change; retain source-aware admission and the paired preserve-versus-explicit-reduction cases.",
+      "unknowns": [
+        "The paired changed-surface fresh outputs pass the current semantic-effect oracle and A/B hot carriers are byte-identical; only later natural recurrence can establish parent-level burden reduction across arbitrary work."
+      ]
+    },
+    {
+      "id": "transition_reanchor_and_exact_continuation",
+      "pain": "Window, compact, child insertion, worker terminal, local completion, or interruption can erase the exact parent slot or manufacture a new task from observed state.",
+      "causal_work": "Rebind at lifecycle and control-transfer events; preserve an exact return point only when one exists; fail open to current words rather than synthesize a task.",
+      "historical_carriers": [
+        "git:4096f52^:scripts/predecision_intent_guard_v1.ps1",
+        "git:4096f52^:evals/context_intent_alignment/cases.yaml"
+      ],
+      "current_consumers": [
+        "external:SessionStart compact/resume hook",
+        "external:optional ActiveTaskContinuation binder and restore",
+        "services/agent_runtime/action_resume_receipt.py",
+        "evals/parent_frame_admission"
+      ],
+      "current_state": "PARTIAL_CONSUMER",
+      "disposition": "SELECTIVE_CONSUMER_RECOVERY",
+      "cost_and_failure_radius": "A resident continuation controller can seize task authority; advisory lifecycle hooks and typed action receipts have smaller radius.",
+      "rollback": "Remove only the failing advisory projection or binding; never restore the retired PreToolUse permission gate or science-bearing predecision injection.",
+      "unknowns": [
+        "Natural long-horizon compact and arbitrary interruption recurrence remain only partially sampled."
+      ]
+    },
+    {
+      "id": "bounded_control_decision_and_authorization",
+      "pain": "The first defensible action can end search too early: ask instead of infer, defer despite an available action, continue after Pause, or stop after local green.",
+      "causal_work": "At high-leverage transfer points compare the nearest fact-live symmetric alternatives and preserve real user-only or irreversible boundaries without approval theater.",
+      "historical_carriers": [
+        "git:4096f52^:evals/context_intent_alignment/decision_model.v1.json"
+      ],
+      "current_consumers": [
+        "evals/intent_continuity_baseline/decision_model.v1.json",
+        "evals/parent_frame_admission",
+        "external:Stop finalization hook",
+        "external:human-agency-grounding and operate-for-user skills"
+      ],
+      "current_state": "PARTIAL_CONSUMER",
+      "disposition": "KEEP_CONDITIONAL",
+      "cost_and_failure_radius": "Full enumeration on every turn is expensive and rigid; event-bounded reasoning plus paired regressions is the thin form.",
+      "rollback": "Remove an over-rigid case or hook branch while retaining Pause/Stop and major-effect boundaries.",
+      "unknowns": [
+        "User Pause is a hard semantic boundary but has no universal machine-readable freeze bit across every tool surface."
+      ]
+    },
+    {
+      "id": "mature_user_operation_and_open_world_reuse",
+      "pain": "The system can hand technical preparation back to the user, stop at a report, or hand-roll a second runtime before checking mature capabilities.",
+      "causal_work": "Compile the real user outcome into a full product operation, search mature surfaces first, bind only the needed parameters, invoke the real consumer, and return to the parent activity.",
+      "historical_carriers": [
+        "git:1e24d51",
+        "git:e4223c3",
+        "git:4096f52^:evals/context_intent_alignment/cases.yaml"
+      ],
+      "current_consumers": [
+        "external:operate-for-user skill",
+        "external:human-agency-grounding skill",
+        "evals/proactive_mature_first",
+        "evals/mature_capability_recall",
+        "evals/thin_localization"
+      ],
+      "current_state": "PARTIAL_CONSUMER",
+      "disposition": "KEEP_CONDITIONAL",
+      "cost_and_failure_radius": "Open-world search and live invocation are costly; they should trigger only where reuse can change the implementation route.",
+      "rollback": "Reject a candidate mature surface and fall back to the smallest local implementation without changing the parent result.",
+      "unknowns": [
+        "Current public alternatives drift and require fresh primary-source verification."
+      ]
+    },
+    {
+      "id": "owner_worker_fanin_and_adoption",
+      "pain": "Sole Owner was confused with sole labor, while worker terminal, model identity, or agreement could be confused with adoption and completion.",
+      "causal_work": "Dispatch separable positive-value labor, keep Codex in direct contact with the real object, and separate candidate, Owner adoption, effect, and parent completion.",
+      "historical_carriers": [
+        "git:4096f52^:evals/context_intent_alignment/cases.yaml",
+        "D:/XINAO_RESEARCH_RUNTIME/state/grok_worker_pool"
+      ],
+      "current_consumers": [
+        "external:dispatch-grok-worker-pool skill",
+        "external:Invoke-GrokWorkerPool.ps1",
+        "services/agent_runtime/dispatch_economics.py",
+        "services/agent_runtime/execution_consumers.v1.json",
+        "evals/parent_frame_admission"
+      ],
+      "current_state": "PARTIAL_CONSUMER",
+      "disposition": "KEEP_HOT",
+      "cost_and_failure_radius": "Fan-out spends independent quota and creates Owner fan-in burden; auto-adoption would have parent-wide failure radius.",
+      "rollback": "Reject or quarantine a candidate receipt; never translate accepted worker execution into Owner adoption.",
+      "unknowns": [
+        "External WorkerPool has strong terminal receipts but no universal automated Owner-adoption consumer by design."
+      ]
+    },
+    {
+      "id": "quota_endpoint_dependency_failure_isolation",
+      "pain": "A quota query, provider drift, seal mismatch, one lane failure, or local wait can poison the whole parent or silently switch transport.",
+      "causal_work": "Cache bounded routing facts, fail closed on identity drift, isolate only the dependency cone, and reroute only on an explicit fact-backed event.",
+      "historical_carriers": [
+        "git:4096f52^:evals/context_intent_alignment/cases.yaml"
+      ],
+      "current_consumers": [
+        "services/agent_runtime/quota_dispatch_epoch.py",
+        "services/agent_runtime/supervisor_worker_selector.py",
+        "services/agent_runtime/dispatch_economics.py",
+        "tests/test_quota_dispatch_epoch.py",
+        "tests/test_supervisor_worker_selector.py",
+        "tests/test_dispatch_economics.py"
+      ],
+      "current_state": "VERIFIED_COMPONENT_NOT_PARENT",
+      "disposition": "KEEP_CONDITIONAL",
+      "cost_and_failure_radius": "Deterministic code is cheaper and safer than live language cases; a bad route event should affect only its dispatch cone.",
+      "rollback": "Retain the last hash-bound route receipt or choose another healthy route without altering the parent task.",
+      "unknowns": [
+        "Current provider behavior and quota catalogs remain time-specific."
+      ]
+    },
+    {
+      "id": "effect_identity_replay_and_consumer_readback",
+      "pain": "A callback, file, test, receipt, or accepted attempt can be reported as a landed effect or parent completion without physical readback.",
+      "causal_work": "Bind work key, effect identity, attempt receipt, replay state, Owner verdict, and original-consumer readback as separate evidence.",
+      "historical_carriers": [
+        "git:4096f52^:docs/tool_glue/SOFTWARE_TOOL_GLUE_CURRENT.md",
+        "git:4096f52^:evals/context_intent_alignment/cases.yaml"
+      ],
+      "current_consumers": [
+        "docs/tool_glue/CROSS_SEAM_EXECUTION_ENVELOPE_CURRENT.md",
+        "services/agent_runtime/execution_contract.py",
+        "services/agent_runtime/action_resume_receipt.py",
+        "services/agent_runtime/execution_consumers.v1.json",
+        "tests/test_cross_seam_execution_conformance.py"
+      ],
+      "current_state": "PARTIAL_CONSUMER",
+      "disposition": "SELECTIVE_CONSUMER_RECOVERY",
+      "cost_and_failure_radius": "Receipts add bounded engineering cost; promoting unused legacy consumers would recreate a platform with no parent benefit.",
+      "rollback": "Mark the exact consumer partial or rejected and preserve the prior physical state; do not repair by changing parent semantics.",
+      "unknowns": [
+        "Several registered legacy or durable consumers still have no current fresh canary."
+      ]
+    },
+    {
+      "id": "behavior_learning_and_personal_decision_lineage",
+      "pain": "Recurring AI pain can be forgotten, while one-off wording or temporary task state can be over-promoted into permanent rules.",
+      "causal_work": "Turn stable cross-context failures into source-aware cases and real consumers; keep personal judgment lineage conditional and overridable by current words.",
+      "historical_carriers": [
+        "git:4096f52^:evals/context_intent_alignment/cases.yaml",
+        "C:/Users/xx363/.codex-s-hardmode-account-b/memories"
+      ],
+      "current_consumers": [
+        "external:repair-agent-behavior skill",
+        "external:maintain-personal-decision-model skill",
+        "evals/behavior_regression/catalog.json",
+        "scripts/Import-PromptfooFailuresToBehaviorCandidates.ps1"
+      ],
+      "current_state": "PARTIAL_CONSUMER",
+      "disposition": "KEEP_CONDITIONAL",
+      "cost_and_failure_radius": "Always loading personal lineage or auto-promoting failures would bias every task; conditional retrieval keeps the radius local.",
+      "rollback": "Demote or remove a bad candidate/case; current words and live facts always override stored shaping evidence.",
+      "unknowns": [
+        "Long-horizon reduction in repeated user correction is observable only through future natural recurrence."
+      ]
+    },
+    {
+      "id": "capability_discovery_module_recovery_and_cold_activation",
+      "pain": "A capability can exist on disk yet be undiscoverable, falsely reported recovered, or require the user to operate fat and thin windows.",
+      "causal_work": "Keep low-frequency definitions and exact recovery recipes, activate them in one task scope after intent binding, verify the real consumer, then return to cold.",
+      "historical_carriers": [
+        "git:4096f52^:docs/tool_glue/SOFTWARE_TOOL_GLUE_CURRENT.md",
+        "git:4096f52^:scripts/Update-CodexContextCatalog.ps1",
+        "D:/XINAO_RESEARCH_RUNTIME/state/codex/productivity-profile/20260805-pre-slim-v1"
+      ],
+      "current_consumers": [
+        "C:/Users/xx363/.codex/cold-capabilities.config.toml",
+        "C:/Users/xx363/CodexLaunchers/CODEX_PRODUCTIVITY_PROFILE.md",
+        "infra/codex_productivity_recovery/v1/manifest.v1.json",
+        "scripts/build_codex_productivity_recovery.py",
+        "tests/test_codex_productivity_recovery.py",
+        "external:Codex skills progressive disclosure",
+        "tests/test_repo_safety.py"
+      ],
+      "current_state": "COLD_DEFINED",
+      "disposition": "KEEP_COLD_ON_DEMAND",
+      "cost_and_failure_radius": "A global catalog or always-on MCP tree has broad prompt/process cost; a stale recovery recipe can create a false sense of completeness.",
+      "rollback": "Disable the task-scoped override and restore the base profile; never ask the user to choose a permanent fat/lean entry.",
+      "unknowns": [
+        "The current overlay covers eight artifact plugins, not every cold MCP or parent plugin.",
+        "Fresh TUI process and memory reduction remained pending in the productivity receipt."
+      ]
+    },
+    {
+      "id": "behavior_eval_snapshot_and_migration_preflight",
+      "pain": "A broad cleanup can delete both harmful authority and useful behavioral capability while the remaining catalog still claims recovery.",
+      "causal_work": "Freeze exact sources before model calls, inventory historical capability atoms, require a disposition and consumer for every family, and fail migration preflight on silent loss.",
+      "historical_carriers": [
+        "git:4096f52^:evals/context_intent_alignment",
+        "git:4096f52^:scripts/Update-CodexContextCatalog.ps1"
+      ],
+      "current_consumers": [
+        "scripts/prepare_behavior_regression_snapshot.py",
+        "scripts/run_behavior_regression.ps1",
+        "evals/behavior_regression/capability_lineage.v1.json",
+        "tests/test_behavior_capability_lineage.py",
+        "infra/codex_productivity_recovery/v1/manifest.v1.json",
+        "infra/codex_productivity_recovery/v1/codex-productivity-recovery.v1.zip",
+        "tests/test_codex_productivity_recovery.py"
+      ],
+      "current_state": "PARTIAL_CONSUMER",
+      "disposition": "SELECTIVE_CONSUMER_RECOVERY",
+      "cost_and_failure_radius": "A static preflight is cheap and runs only with behavior work; it does not become a runtime router.",
+      "rollback": "Revert the registry/test transaction; historical sources remain in Git and cold preimage.",
+      "unknowns": [
+        "A repository preflight cannot force unrelated manual config edits to run the behavior battery.",
+        "The main A account model consumer is currently blocked by a revoked refresh token; copying B authentication is forbidden."
+      ]
+    },
+    {
+      "id": "native_codex_interaction_surface",
+      "pain": "A custom platform can suppress or duplicate Codex's native shell, edit, browser, hooks, memory, skills, plugin, and bounded collaboration surfaces.",
+      "causal_work": "Use native surfaces as the primary interaction layer; keep rare native collaboration task-scoped when it has unique value.",
+      "historical_carriers": [
+        "git:82c4636^:docs/current/CODEX_CAPABILITY_MAXIMIZATION_2026-07-10.md",
+        "C:/Users/xx363/.codex/config.toml"
+      ],
+      "current_consumers": [
+        "evals/codex_capability",
+        "evals/native_subagent_trajectory",
+        "C:/Users/xx363/.codex/config.toml",
+        "C:/Users/xx363/.codex/hooks.json"
+      ],
+      "current_state": "PARTIAL_CONSUMER",
+      "disposition": "KEEP_HOT",
+      "cost_and_failure_radius": "Always-on GUI, memory, and hook surfaces have prompt/process cost, but colding them can remove unique live capabilities; native multi-agent remains cold by default.",
+      "rollback": "Use task-scoped overrides and restore base config; A/B remain one work shape.",
+      "unknowns": [
+        "A and B version metadata currently differ and running processes may cache older configuration."
+      ]
+    },
+    {
+      "id": "durable_execution_temporal_and_integrated_bus",
+      "pain": "Long work may need crash-safe history, while ordinary work can be burdened by a permanent orchestration platform.",
+      "causal_work": "Use Temporal/LangGraph/docker durability only for a named long-running consumer; keep direct WorkerPool and ordinary tools as the default hot path.",
+      "historical_carriers": [
+        "git:9369f27^",
+        "projects/dual-brain-coordination",
+        "services/agent_runtime/integrated_bus_graph.py"
+      ],
+      "current_consumers": [
+        "services/agent_runtime/execution_consumers.v1.json",
+        "projects/dual-brain-coordination",
+        "tests/test_cross_seam_execution_conformance.py"
+      ],
+      "current_state": "PARTIAL_CONSUMER",
+      "disposition": "KEEP_COLD_ON_DEMAND",
+      "cost_and_failure_radius": "Starting a durable stack has high process and maintenance cost; stale history can be misread as current authority.",
+      "rollback": "Stop only the exact task-scoped carrier and retain direct execution; do not change the parent task or revive an old episode.",
+      "unknowns": [
+        "Current exact durable consumer health is unverified after dedicated platform evidence was retired."
+      ]
+    },
+    {
+      "id": "validation_data_and_outcome_boundary",
+      "pain": "Validation data can leak into development, a post-cutoff outcome can contaminate analysis, or validation can invent a new domain task.",
+      "causal_work": "Keep data roles and cutoffs explicit, use the same byte snapshot for scan and emit, and restrict validation to named readback and exact return points.",
+      "historical_carriers": [
+        "git:4096f52^:evals/context_intent_alignment/cases.yaml",
+        "git:d670854"
+      ],
+      "current_consumers": [
+        "scripts/preflight_outcome_boundary.py",
+        "tests/test_outcome_boundary_preflight.py",
+        "evals/parent_frame_admission"
+      ],
+      "current_state": "VERIFIED_COMPONENT_NOT_PARENT",
+      "disposition": "KEEP_CONDITIONAL",
+      "cost_and_failure_radius": "A fail-closed byte preflight is local; using it as a reveal or science authorization gate would exceed its role.",
+      "rollback": "Reject the affected artifact and regenerate from the same admissible snapshot.",
+      "unknowns": [
+        "Semantic validation-to-task drift remains model-mediated even when byte boundaries are deterministic."
+      ]
+    },
+    {
+      "id": "system_awareness_and_problem_transition_evidence",
+      "pain": "Problem lifecycle evidence can be lost, or its state machine can become a new task router and scientific Goal system.",
+      "causal_work": "Record typed work-key transitions and consumer effects for an already-bound problem without selecting the parent or next domain question.",
+      "historical_carriers": [
+        "git:82c4636^:docs/current/SYSTEM_SELF_AWARENESS_THIN_LOOP.md"
+      ],
+      "current_consumers": [
+        "services/agent_runtime/system_awareness_consumer.py",
+        "scripts/record_problem_transition.py",
+        "tests/test_system_awareness_consumer.py",
+        "tests/test_problem_transition.py"
+      ],
+      "current_state": "VERIFIED_COMPONENT_NOT_PARENT",
+      "disposition": "KEEP_CONDITIONAL",
+      "cost_and_failure_radius": "Typed evidence is local; a resident awareness loop would create a second agenda surface.",
+      "rollback": "Retire or ignore the exact transition carrier; current human words and live facts remain sufficient.",
+      "unknowns": [
+        "Current ordinary work rarely needs this consumer, so broad hot activation has no evidence."
+      ]
+    },
+    {
+      "id": "safe_cleanup_and_destructive_boundary",
+      "pain": "Windows cleanup can delete active roots, protected paths, unique user content, or unrelated dirty state.",
+      "causal_work": "Classify exact targets, verify consumers and recovery, use bounded ACL repair, and return typed receipts.",
+      "historical_carriers": [
+        "git:4564e28",
+        "git:edfe47d",
+        "git:52077f6"
+      ],
+      "current_consumers": [
+        "plugins/safe-cleanup",
+        "tests/test_safe_cleanup_plugin.py",
+        "external:safe-cleanup plugin"
+      ],
+      "current_state": "VERIFIED_COMPONENT_NOT_PARENT",
+      "disposition": "KEEP_HOT",
+      "cost_and_failure_radius": "Low steady-state cost; failure radius is destructive, so exact path and recovery checks stay mandatory.",
+      "rollback": "Prefer recoverable moves; otherwise use the recorded source and exact target receipt.",
+      "unknowns": []
+    },
+    {
+      "id": "audit_candidate_and_owner_adjudication",
+      "pain": "An auditor, provider identity, or complete report can drive repair or declare completion without Owner adoption.",
+      "causal_work": "Keep audit assessment candidate-only and bind formal adjudication, writes, and final verification to Codex Owner.",
+      "historical_carriers": [
+        "git:4096f52^:evals/context_intent_alignment/cases.yaml"
+      ],
+      "current_consumers": [
+        "services/agent_runtime/audit_adjudication.py",
+        "tests/test_audit_adjudication.py",
+        "docs/tool_glue/CROSS_SEAM_EXECUTION_ENVELOPE_CURRENT.md"
+      ],
+      "current_state": "VERIFIED_COMPONENT_NOT_PARENT",
+      "disposition": "KEEP_CONDITIONAL",
+      "cost_and_failure_radius": "Automatic adoption would have parent-wide authority radius; typed candidate and adjudication separation is local.",
+      "rollback": "Reject the assessment or withdraw the Owner verdict before effect; never rewrite history as adopted.",
+      "unknowns": []
+    },
+    {
+      "id": "science_domain_authority",
+      "pain": "S engineering contracts, Goals, continuous mode, STATUS, or a fresh window can select a XINAO research question and claim scientific completion.",
+      "causal_work": "Keep scientific problem formation and completion in the current human/native-research frame; S only serves a named engineering gap and returns to an exact caller.",
+      "historical_carriers": [
+        "git:4096f52^:AGENTS.md",
+        "git:4096f52^:evals/context_intent_alignment/cases.yaml",
+        "git:4096f52^:scripts/predecision_intent_guard_v1.ps1"
+      ],
+      "current_consumers": [
+        "E:/XINAO_RESEARCH_WORKSPACES/xinao-native-research",
+        "C:/Users/xx363/Desktop/主线/00_先读我_主线入口与读取顺序.txt"
+      ],
+      "current_state": "RETIRED",
+      "disposition": "RETIRE_FROM_S",
+      "cost_and_failure_radius": "Restoring this authority into S or global hooks would redirect every engineering or ordinary task into a scientific route.",
+      "rollback": "Recover historical text only from Git or cold preimage for archaeology; never add it to S live suites, AGENTS, hooks, or startup context.",
+      "unknowns": [
+        "Domain-specific behavior belongs to the native research consumer and is outside this generic registry's completion authority."
+      ]
+    },
+    {
+      "id": "legacy_continuity_catalog_and_control_plane",
+      "pain": "A continuity helper can become a second state database, permission gate, maintenance map, or task source.",
+      "causal_work": "Retain only advisory recovery evidence and lifecycle pointers; current words and live facts stay authoritative.",
+      "historical_carriers": [
+        "git:4096f52^:scripts/Update-CodexContextCatalog.ps1",
+        "git:4096f52^:scripts/predecision_intent_guard_v1.ps1",
+        "E:/XINAO_COLD_STORAGE/xinao-global-clean-preimage-20260803-v1/situation-island-preclean.tar"
+      ],
+      "current_consumers": [
+        "external:Situation Island SessionStart/UserPromptSubmit/Stop scripts"
+      ],
+      "current_state": "RETIRED",
+      "disposition": "RETIRE_FROM_S",
+      "cost_and_failure_radius": "A resident catalog or PreToolUse task gate has global control radius and previously produced false positives and user ritual.",
+      "rollback": "Keep the legacy script fail-open for stale processes, then remove only when no process can reference it; archaeology remains cold.",
+      "unknowns": []
+    },
+    {
+      "id": "desktop_human_entry_and_single_productivity_shape",
+      "pain": "Multiple desktop constitutions, A/B config sources, and fat/lean windows can make the user a configuration operator and create competing truths.",
+      "causal_work": "Keep one thin human-readable entry, one main configuration source, B authentication/session isolation, and Owner-managed task-scoped cold recovery.",
+      "historical_carriers": [
+        "E:/XINAO_COLD_STORAGE/xinao-global-clean-preimage-20260803-v1/C-mainline-removed-live-surface",
+        "D:/XINAO_RESEARCH_RUNTIME/state/codex/productivity-profile/20260805-pre-slim-v1"
+      ],
+      "current_consumers": [
+        "C:/Users/xx363/Desktop/主线/00_先读我_主线入口与读取顺序.txt",
+        "C:/Users/xx363/CodexLaunchers/CODEX_PRODUCTIVITY_PROFILE.md",
+        "C:/Users/xx363/CodexLaunchers/Open-Codex-S-Hardmode-Account-B.ps1",
+        "tests/test_repo_safety.py"
+      ],
+      "current_state": "PARTIAL_CONSUMER",
+      "disposition": "KEEP_HOT",
+      "cost_and_failure_radius": "A thin entry lowers cognitive cost; stale A/B processes or sync drift can still widen failure radius across windows.",
+      "rollback": "Restore exact pre-slim files or resync B from A without copying authentication, sessions, or unrelated state.",
+      "unknowns": [
+        "Fresh live TUI process-tree and memory readback after the slim remained pending."
+      ]
+    },
+    {
+      "id": "legacy_platform_infrastructure",
+      "pain": "Capacity schedules, overnight glue, OpenHands, sandbox MCP, WAL backup, and old platform launchers became standing maintenance without a current consumer.",
+      "causal_work": "Preserve recovery evidence, but admit each infrastructure capability again only for a newly named consumer after mature-first comparison.",
+      "historical_carriers": [
+        "git:9369f277f0a3fbce77646faab0831bfafee567b3^",
+        "E:/XINAO_COLD_STORAGE/xinao-global-clean-preimage-20260803-v1/S-preclean.bundle"
+      ],
+      "current_consumers": [],
+      "current_state": "RETIRED",
+      "disposition": "NO_ACTION",
+      "cost_and_failure_radius": "Default restoration would recreate a large process, storage, and operational failure cone with no named parent benefit.",
+      "rollback": "Recover only the exact needed blob or mature replacement into an isolated task scope.",
+      "unknowns": [
+        "A future named consumer may justify one capability, but not the old platform bundle."
+      ]
+    }
+  ],
+  "legacy_context_suite": {
+    "source_ref": "4096f52^",
+    "source_path": "evals/context_intent_alignment/cases.yaml",
+    "source_blob": "6ef1b1d495f0010e5150cc10123722be6cde67e9",
+    "prompt_blob": "999da1cd39db107377e8fdebb399bc2668d118ac",
+    "decision_model_blob": "69fbad6a4ca9384c988890071b14b81be23be689",
+    "case_count": 124,
+    "sorted_case_ids_sha256": "21eb5f99e02728110944fe89ed1dc518ada4d34890cc1fdb500f0b71e2e40edb",
+    "live_restore_allowed": false,
+    "groups": [
+      {
+        "family_id": "intent_source_parent_admission",
+        "disposition": "MINE_GENERIC_ATOMS_KEEP_CASES_RETIRED",
+        "case_ids": [
+          "REG_EXAMPLES_ARE_PROBES_NOT_WHITELIST",
+          "REG_EXTERNAL_AI_INVENTORY_NOT_SECOND_TRUTH",
+          "NEG_VALUE_KERNEL_DISCUSSION_STOP_PRESERVES_READ_ONLY",
+          "NEG_SINGLE_LOCAL_CAUSE_STAYS_OBJECT_INSTANCE",
+          "NEG_INDEPENDENT_BUGS_DO_NOT_INVENT_GENERATOR"
+        ]
+      },
+      {
+        "family_id": "semantic_scope_fidelity_and_parent_completion_identity",
+        "disposition": "RESTORE_GENERIC_INVARIANT_WITH_BALANCED_CHANGED_SURFACE_CASES",
+        "case_ids": [
+          "NEG_VALUE_KERNEL_SAME_TOOL_USES_CURRENT_COMPLETION_RULER",
+          "NEG_KNOWN_GENERATOR_DOES_NOT_REPLACE_PARENT_COMPLETION_IDENTITY",
+          "REG_ACTIVE_SUBJECT_AND_OBJECT_SCOPE_BIND_BEFORE_GENERALIZATION",
+          "REG_MULTI_LEAF_TEXT_REFLEX_SELECTS_SHARED_UPSTREAM",
+          "REG_SYMPTOM_PROBE_RECOVERS_PROBLEM_DEFINITION",
+          "REG_USER_BURDEN_REANCHORS_PARENT_INTENT"
+        ]
+      },
+      {
+        "family_id": "transition_reanchor_and_exact_continuation",
+        "disposition": "SPLIT_SEMANTIC_CASES_FROM_TYPED_RECEIPT_TESTS",
+        "case_ids": [
+          "REG_WORK_UNIT_INTERRUPTION_PRESERVES_EXACT_CONTINUATION",
+          "REG_DIRECT_ROUTE_AND_CARRIER_SURVIVE_WINDOW",
+          "REG_COMPACT_RESUME_RECEIPT_BEFORE_DISPATCH",
+          "NEG_STALE_RESUME_RECEIPT_REJECTS_ACTION",
+          "REG_LOCAL_WAIT_CANNOT_POISON_PARENT",
+          "REG_LIVE_FACT_MUST_CHANGE_DOMINATED_NEXT_ACTION",
+          "REG_CHILD_PROCESS_RULE_PRESERVES_CALLER_FRAME",
+          "REG_FRESH_WINDOW_REUSES_ACCEPTED_D_CANDIDATE",
+          "NEG_FRESH_WINDOW_DIRECTORY_ONLY_IS_NOT_REUSE",
+          "REG_INSERTED_CHILD_RESUMES_EXACT_SUSPENDED_PARENT",
+          "REG_FRESH_WINDOW_REJECTS_STALE_TASKRUN_AS_PARENT",
+          "REG_COMPLETED_CHILD_RETIRES_WITHOUT_SYNONYM_REDISPATCH",
+          "REG_LOCAL_GREEN_PROMOTES_PARTIAL_NOT_PARENT_COMPLETION",
+          "REG_LIVE_FACTS_INVALIDATE_SUNK_CHILD_AND_CHANGE_ACTION",
+          "REG_AFTER_CHILD_RETIRE_SELECT_DISTINCT_POSITIVE_FRONTIER"
+        ]
+      },
+      {
+        "family_id": "bounded_control_decision_and_authorization",
+        "disposition": "MINE_BALANCED_GENERIC_CASES_KEEP_FULL_MODEL_COLD",
+        "case_ids": [
+          "REG_DYNAMIC_NET_BENEFIT_GOVERNS_AI_EFFORT_AND_GRANULARITY",
+          "REG_TRUE_VALUE_FORK_REQUIRES_USER",
+          "NEG_IRREVERSIBLE_MIGRATION_REQUIRES_USER",
+          "NEG_DISCUSSION_ONLY_IS_NOT_CLOSURE",
+          "NEG_AMBIGUOUS_PUBLICATION_OBJECT",
+          "REG_DIRECT_FALLBACK_BY_NET_VALUE",
+          "REG_DURABLE_BACKGROUND_BY_NET_VALUE",
+          "REG_GLOBAL_WAIT_REQUIRES_ATOMIC_EXTERNALITY_AND_CAUSAL_REPAIR",
+          "REG_PAUSE_TO_DISCUSS_BLOCKS_TASK_ACTIONS",
+          "REG_ASYMMETRIC_RITUAL_CONSTRAINT_RETIRES_MINIMALLY",
+          "NEG_EXPENSIVE_HARD_BOUNDARY_STAYS_PROTECTED",
+          "NEG_INCOMPLETE_CONSTRAINT_EVIDENCE_PRESERVES_CANDIDATE",
+          "REG_HONEST_NO_ACTION_WHEN_NO_POSITIVE_CANDIDATE"
+        ]
+      },
+      {
+        "family_id": "mature_user_operation_and_open_world_reuse",
+        "disposition": "KEEP_VIA_CONDITIONAL_SKILLS_AND_MATURE_REUSE_EVALS",
+        "case_ids": [
+          "POS_CLEAR_REVERSIBLE_LOCAL_FIX",
+          "REG_SAME_OBJECT_REVERSIBLE_RELEASE_OWNER_ACTS",
+          "REG_NONTECHNICAL_USER_GETS_MULTILAYER_PLAIN_LANGUAGE",
+          "REG_CLOSE_AND_PUSH_EXISTING_OBJECTS",
+          "POS_EXPLICIT_REPOSITORY_CREATE",
+          "POS_INSPECT_THEN_CLEAN_LOCAL_RESIDUE",
+          "REG_TEXT_CLEANUP_DIRECT_CURRENT_INTENT",
+          "REG_ALL_TEXT_PREFINALIZATION_TEMPLATE_CLEANUP",
+          "REG_SOFTWARE_INSTALL_FULL_CHAIN",
+          "REG_SOFTWARE_INSTALL_UNRESOLVED_SOURCE_WORKER",
+          "REG_OAUTH_EXPANSION_SAME_CAPABILITY_CHAIN",
+          "REG_EXPLICIT_DELETE_EXACT_REPOSITORIES",
+          "REG_MATURE_FIRST_BEFORE_LOCAL_GLUE",
+          "REG_LOCAL_GIT_ROOT_NOT_REMOTE_PRODUCT",
+          "REG_AMBITIOUS_VAGUE_IDEA_MAPS_TO_MATURE_CAPABILITY",
+          "REG_SHARED_DEPENDENCY_RECOVERY_COMPLETES_DOWNSTREAM",
+          "REG_ROLE_FIT_DERIVES_INTERACTIVE_CAPABILITY_FROM_CORE_VERBS",
+          "NEG_SAME_REVIEWER_STATIC_VISUAL_JOB_NEEDS_NO_INTERACTIVE_GATE",
+          "REG_VALUE_SEMANTICS_DERIVES_AUXILIARY_HYGIENE_WITHOUT_HINT",
+          "REG_VALUE_SEMANTICS_TRANSFERS_ACROSS_UNNAMED_SURFACE",
+          "REG_OPERATE_FOR_USER_CROSS_PRODUCT_FIRST_CALL_CLOSURE",
+          "REG_OPERATE_FOR_USER_PRE_REPORT_CROSS_WINDOW_GATE",
+          "REG_COMPLETE_CLOSURE_ACTIVATES_FULL_LIFECYCLE_TRANSACTION",
+          "REG_OPERATE_FOR_USER_PRESERVES_MATERIAL_USER_FORK"
+        ]
+      },
+      {
+        "family_id": "owner_worker_fanin_and_adoption",
+        "disposition": "KEEP_SEMANTICS_MOVE_TO_CURRENT_WORKER_CONSUMERS",
+        "case_ids": [
+          "REG_SUPERVISOR_WIDTH_ONE_REMAINS_PROGRESS",
+          "REG_EXTERNAL_WORKER_PROVIDER_AND_TRANSPORT_ADAPTIVE",
+          "REG_INNER_CODEX_OPTIMIZATION_CANNOT_OVERRIDE_OUTER_PROVIDER",
+          "REG_USER_GROK_TUI_NOT_DEFAULT_WORKER_POOL",
+          "REG_DYNAMIC_SUPERVISOR_CODEX_SUBAGENT_EXCEPTION",
+          "REG_TIGHT_CORE_DELEGATES_FROZEN_REPRO",
+          "REG_DYNAMIC_SUPERVISOR_NET_BENEFIT",
+          "REG_DYNAMIC_SUPERVISOR_EXTERNAL_DEFAULT",
+          "REG_DYNAMIC_SUPERVISOR_TERMINAL_REFILL",
+          "REG_DYNAMIC_SUPERVISOR_AUTHORITY_LANE",
+          "REG_DYNAMIC_SUPERVISOR_NO_SEPARABLE_NO_JUNK",
+          "REG_DYNAMIC_SUPERVISOR_PAUSE_STOPS",
+          "NEG_MAX_BEHAVIOR_DELEGATION_PRESERVES_MAJOR_EXTERNAL_BOUNDARIES",
+          "REG_ADMIT_COGNITIVE_PACKAGES_BEFORE_TIGHT_COUPLING",
+          "REG_GROK_HETEROGENEOUS_FIRST_ATTEMPT_PREFLIGHT",
+          "REG_QUOTA_ASYMMETRY_INVENTS_NO_COGNITIVE_THEATER",
+          "REG_DYNAMIC_SUPERVISOR_LIVE_ROUTING_FACTS"
+        ]
+      },
+      {
+        "family_id": "quota_endpoint_dependency_failure_isolation",
+        "disposition": "MOVE_MACHINE_FACTS_TO_DETERMINISTIC_TESTS",
+        "case_ids": [
+          "REG_QUOTA_CACHE_WITHIN_EPISODE",
+          "REG_QUOTA_QUERY_FAILURE_NONBLOCKING",
+          "REG_ENDPOINT_DRIFT_PRESERVES_PARENT_AND_REROUTES",
+          "REG_LANE_FAILURE_ONLY_CLOSES_DEPENDENCY_CONE",
+          "REG_DYNAMIC_SUPERVISOR_SEAL_MISMATCH"
+        ]
+      },
+      {
+        "family_id": "effect_identity_replay_and_consumer_readback",
+        "disposition": "MOVE_TO_TYPED_EFFECT_AND_READBACK_CONSUMERS",
+        "case_ids": [
+          "REG_WORK_UNIT_LANDS_EFFECT_THEN_RETIRES_CARRIER",
+          "POS_EXPLICIT_CALLER_WINDOW_TARGET_ALLOWS_CALLER_EFFECT"
+        ]
+      },
+      {
+        "family_id": "behavior_learning_and_personal_decision_lineage",
+        "disposition": "KEEP_CONDITIONAL_NEVER_AUTO_PROMOTE",
+        "case_ids": [
+          "REG_METACOGNITION_CAPTURE_WITHOUT_MAGIC_PHRASE",
+          "NEG_METACOGNITION_EVENT_IS_NOT_AUTO_RULE",
+          "REG_PREFERENCE_SMALLEST_DELTA_NOT_PROJECT",
+          "REG_ONE_OFF_INSTRUCTION_NOT_STABLE_PREFERENCE",
+          "REG_RECURRING_AI_PAIN_ACTIVATES_OWNED_BEHAVIOR_REPAIR",
+          "REG_TEMPORARY_PAIN_INPUTS_ARE_NOT_RELEASE_DEPENDENCIES",
+          "REG_EXISTING_BEHAVIOR_RULE_FAILURE_REPAIRS_CONSUMER_FIRST",
+          "NEG_BEHAVIOR_REPAIR_DISCUSSION_ONLY_STAYS_READ_ONLY",
+          "REG_FRESH_WINDOW_BOUNDED_TRAJECTORY_EVOLUTION_IS_POSITIVE_DUTY"
+        ]
+      },
+      {
+        "family_id": "capability_discovery_module_recovery_and_cold_activation",
+        "disposition": "KEEP_CAPABILITY_ATOMS_REPLACE_OLD_CATALOG",
+        "case_ids": [
+          "REG_MACHINE_MODULE_OPERATIONAL_NOTE_LAYER",
+          "REG_MODULE_FAILURE_SELF_RECOVERS_WITHOUT_RENARRATION"
+        ]
+      },
+      {
+        "family_id": "validation_data_and_outcome_boundary",
+        "disposition": "KEEP_DETERMINISTIC_BOUNDARY_AND_GENERIC_ROLE_CASES",
+        "case_ids": [
+          "REG_VALIDATION_DATA_ROLE_CANNOT_BECOME_DEVELOPMENT_INPUT",
+          "POS_PREREGISTERED_ADAPTIVE_POLICY_MAY_USE_FEEDBACK",
+          "REG_MATURATION_VERDICT_SYMMETRY_NOT_REQUIRED_VS_UNDECIDABLE",
+          "REG_DISJOINT_REBASE_REUSES_VALID_TEST_EVIDENCE",
+          "NEG_INTERSECTING_REBASE_REQUIRES_AFFECTED_VERIFICATION"
+        ]
+      },
+      {
+        "family_id": "science_domain_authority",
+        "disposition": "RETIRE_CASES_FROM_GENERIC_S_LIVE_SUITE",
+        "case_ids": [
+          "REG_CONTINUOUS_WITHOUT_DAEMON",
+          "REG_XINAO_AUTOMATION_RELIEF_DOES_NOT_SETTLE_SCIENCE",
+          "REG_XINAO_CHILD_CLOSURE_THEN_STOP_PRESERVES_SUSTAINABILITY",
+          "REG_XINAO_INCONCLUSIVE_IS_NOT_FALSIFICATION_OR_NO_ACTION",
+          "REG_XINAO_CURRENT_INFEASIBILITY_IS_SCOPED_AND_REOPENABLE",
+          "REG_FRESH_WINDOW_PARENT_INTENT_FIRST_DYNAMIC_CONTINUOUS",
+          "REG_ENTER_PERPETUAL_MODE_DOES_NOT_CREATE_GOAL",
+          "POS_AUTONOMOUS_NATIVE_GOAL_ADMISSION",
+          "POS_REUSE_EXISTING_NATIVE_GOAL_WITHOUT_NEW_CREATION",
+          "POS_EXPLICIT_NATIVE_GOAL_REQUEST",
+          "REG_SETTLEMENT_FEEDBACK_CHANGES_NEXT_RESEARCH_CHOICE",
+          "REG_XINAO_RECURSIVE_RESEARCH_AGENCY_CHANGES_ACTION",
+          "REG_XINAO_FRESH_WINDOW_DEFAULTS_TO_NATIVE_RESEARCH",
+          "REG_XINAO_DEFAULT_CONTINUOUS_SURVIVES_STATUS_AND_LOCAL_CLOSE",
+          "NEG_XINAO_DEFAULT_CONTINUOUS_DOES_NOT_CAPTURE_BOUNDED_NONRESEARCH",
+          "REG_XINAO_ENGINEERING_GAP_RETURNS_TO_NATIVE_PARENT",
+          "REG_MATURE_XINAO_RUNS_REAL_ACTORS_BEFORE_AUDIT_PROXY"
+        ]
+      },
+      {
+        "family_id": "legacy_continuity_catalog_and_control_plane",
+        "disposition": "RETIRE_TOPOLOGY_MINE_ONLY_GENERIC_ATOMS",
+        "case_ids": [
+          "REG_DYNAMIC_WHOLE_PACKAGE_GLOBAL_DAG",
+          "NEG_WHOLE_TEMPORAL_REPLACEMENT_STAYS_EXCLUDED"
+        ]
+      },
+      {
+        "family_id": "audit_candidate_and_owner_adjudication",
+        "disposition": "KEEP_CANDIDATE_OWNER_SEPARATION",
+        "case_ids": [
+          "REG_HIGH_VALUE_AUDIT_CAPABILITY_NOT_PROVIDER_IDENTITY",
+          "NEG_UNVERIFIED_AUDITOR_CANNOT_DRIVE_REPAIR"
+        ]
+      }
+    ]
+  },
+  "do_not_restore_hot": [
+    "default XINAO research, continuous, Goal, or perpetual-mode routing in S or global hooks",
+    "the full context_intent_alignment suite as a live authority or golden routing bank",
+    "the science-bearing predecision guard or the retired PreToolUse task-provenance permission gate",
+    "Situation Island catalog, core index, maintenance map, or task-run state as an agenda controller",
+    "legacy L0-L9, 333, capacity, overnight, OpenHands, sandbox-MCP, or WAL platform bundles without a newly named consumer",
+    "automatic worker adoption, automatic parent completion, or a user-facing fat-versus-thin window choice"
+  ]
+}

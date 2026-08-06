@@ -619,6 +619,30 @@ $sourceInputs = @(
         role = 'catalog'
     },
     [pscustomobject]@{
+        path = (Join-Path $repoRoot 'evals\behavior_regression\capability_lineage.v1.json')
+        role = 'capability_lineage_migration_preflight'
+    },
+    [pscustomobject]@{
+        path = (Join-Path $repoRoot 'tests\test_behavior_capability_lineage.py')
+        role = 'capability_lineage_migration_preflight_tests'
+    },
+    [pscustomobject]@{
+        path = (Join-Path $repoRoot 'scripts\build_codex_productivity_recovery.py')
+        role = 'codex_productivity_recovery_builder'
+    },
+    [pscustomobject]@{
+        path = (Join-Path $repoRoot 'infra\codex_productivity_recovery\v1\manifest.v1.json')
+        role = 'codex_productivity_recovery_manifest'
+    },
+    [pscustomobject]@{
+        path = (Join-Path $repoRoot 'infra\codex_productivity_recovery\v1\codex-productivity-recovery.v1.zip')
+        role = 'codex_productivity_recovery_archive'
+    },
+    [pscustomobject]@{
+        path = (Join-Path $repoRoot 'tests\test_codex_productivity_recovery.py')
+        role = 'codex_productivity_recovery_tests'
+    },
+    [pscustomobject]@{
         path = (Join-Path $repoRoot 'evals\intent_continuity_baseline\decision_model.v1.json')
         role = 'intent_continuity_baseline'
     },
@@ -736,7 +760,9 @@ try {
     $preflightResult.log = Join-Path $outputRoot 'preflight-validation.log'
     $preflightTests = @(
         'tests/test_behavior_regression_snapshot.py',
-        'tests/test_behavior_regression_incremental.py'
+        'tests/test_behavior_regression_incremental.py',
+        'tests/test_behavior_capability_lineage.py',
+        'tests/test_codex_productivity_recovery.py'
     )
     if ($runProactive) {
         $preflightTests += 'tests/test_repo_safety.py'

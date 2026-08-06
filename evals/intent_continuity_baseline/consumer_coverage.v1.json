@@ -3,7 +3,7 @@
   "sentinel": "SENTINEL:CODEX_INTENT_ACTION_COVERAGE_V1",
   "authority": false,
   "completion_claim_allowed": false,
-  "evidence_cutoff": "2026-08-06T07:33:01+08:00",
+  "evidence_cutoff": "2026-08-06T15:00:00+08:00",
   "coverage_rule": "A general behavior claim requires text, a live consumer, positive and negative regression, fresh behavior, and live effect; missing layers remain explicit.",
   "status_values": [
     "VERIFIED",
@@ -102,6 +102,24 @@
       "live_effect": "current repair remained on the behavior baseline instead of prematurely entering migration",
       "status": "PARTIAL_CONSUMER",
       "open_gap": "The complete activity-ontology derivation is model-mediated; the thin hook can trigger it but cannot mechanically prove every downstream call preserved the causal work."
+    },
+    {
+      "id": "semantic_scope_fidelity_and_parent_completion_identity",
+      "text_contract": [
+        "global A/B AGENTS full adopted intent envelope",
+        "UserPromptSubmit non-lossy semantic binding projection",
+        "decision_model.v1.json semantic_scope_fidelity"
+      ],
+      "live_consumer": [
+        "global A/B AGENTS loaded by Codex",
+        "trusted A/B UserPromptSubmit hook",
+        "paired parent-frame changed-surface canaries"
+      ],
+      "positive_negative_regression": "a tractable foundation preserves every residual parent dimension and continues; a current explicit human scope reduction replaces the old envelope rather than being blocked by continuity",
+      "fresh_behavior": "Fresh B-profile production run 20260806-164232-514-43500-16e6600c produced two new model outputs and passed the normal runner 2/2 with runtime_pass_claim_eligible=true. The preserve case kept every residual parent dimension active; the explicit-reduction case honored the new narrower completion ruler. Equivalent correction/new-task and continue/infer routes are adjudicated by external semantic effect rather than one brittle internal taxonomy; earlier runner reds and offline regrades remain historical evidence rather than the current green claim.",
+      "live_effect": "The hot A/B consumer now distinguishes source-aware admission from scope fidelity, so a local migration guard can remain a child without becoming the parent completion identity.",
+      "status": "PARTIAL_CONSUMER",
+      "open_gap": "No finite pair proves semantic fidelity for every future multi-dimensional request; later natural recurrence remains the parent-level burden readback."
     },
     {
       "id": "mature_completion_after_intent_binding",
@@ -211,6 +229,45 @@
       "live_effect": "the current task-provenance recurrence and its positive/negative consumers are retained in the behavior model and regression ledger; the user explicitly cancelled new desktop-incident and memory-update artifacts for this turn",
       "status": "PARTIAL_CONSUMER",
       "open_gap": "Only later real recurrence can prove long-horizon user correction burden has actually decreased."
+    },
+    {
+      "id": "architecture_migration_preserves_capability_lineage",
+      "text_contract": [
+        "capability carriers, authority, consumers, and completion claims remain separate",
+        "a migration must disposition historical causal work before deleting or colding its carrier",
+        "the lineage registry is evidence and never a runtime router"
+      ],
+      "live_consumer": [
+        "evals/behavior_regression/capability_lineage.v1.json",
+        "tests/test_behavior_capability_lineage.py",
+        "infra/codex_productivity_recovery/v1 manifest plus deterministic cold archive",
+        "tests/test_codex_productivity_recovery.py staged restore and live hash readback",
+        "every behavior-regression source snapshot and deterministic preflight"
+      ],
+      "positive_negative_regression": "all 124 historical context cases are partitioned exactly once; science/Goal/continuous cases remain retired from S live suites; every retained capability family names a current consumer while silent carrier loss fails preflight; the cold archive restores generic hot carriers and custom Skills into staging while excluding authentication sessions memories retired PreToolUse and science-domain authority",
+      "fresh_behavior": "The current deterministic build sealed 77 exact generic carrier files into a SHA-verified cold archive, verified every live source against it, restored every entry into an empty staging root, and wired the archive test into every behavior-regression preflight. This is migration evidence rather than a runtime behavior or science claim.",
+      "live_effect": "A future behavior migration can no longer delete the mixed historical carrier and still pass the normal behavior battery without explicitly preserving, replacing, colding, or retiring each capability family; current A/B hot projections are also hash-bound to the cold recovery media without making that archive a second runtime authority.",
+      "status": "PARTIAL_CONSUMER",
+      "open_gap": "Repository preflight cannot force an unrelated manual A/B config edit to run the behavior battery. Fresh A model behavior is currently blocked by that account's revoked refresh token; B behavior and both A/B hook-discovery consumers are separate evidence, and authentication must not be copied across accounts."
+    },
+    {
+      "id": "stable_behavior_delivery_closure",
+      "text_contract": [
+        "global A/B AGENTS and hot SessionStart/UserPromptSubmit contexts require closure for an admitted stable behavior repair or reusable capability change",
+        "repair-agent-behavior behavior-change closure and operate-for-user pre-report completion classification",
+        "applicable repository adoption is one conditional consumer edge rather than a universal git gate"
+      ],
+      "live_consumer": [
+        "A/B AGENTS loaded by future Codex windows",
+        "trusted A/B SessionStart and UserPromptSubmit hooks",
+        "paired parent-frame delivery-incomplete and explicit-local-only cases",
+        "repository transaction and recovery readback when a repository is an actual consumer"
+      ],
+      "positive_negative_regression": "a cross-window stable repair remains partial while any applicable unique-source projection changed-context fresh-consumer balanced-regression repository-adoption rollback or migration-survival edge is open; an explicit disposable local-only experiment may finish without commit push install or publication; Pause and Stop still freeze; retired science routing remains retired",
+      "fresh_behavior": "The current recurrence directly showed the positive failure: hot text and static tests were treated as completion while authoritative repository changes remained unadopted. B fresh model run 20260806-162439-243-50780-08867a5d then produced two real outputs and passed 2/2 with runtime claim eligibility: the stable repair stayed active and the explicit local-only comparison finished without forced adoption. A ran the same sources but returned zero model outputs because its own refresh token is revoked, so no A behavior pass is claimed.",
+      "live_effect": "The closure predicate is projected into both A/B hot instruction carriers and both wired continuity hooks; fresh app-server discovery trusts all three hooks in both homes, the B changed-context behavior pair is green, and repository plus A-authenticated behavior readback remain part of this active repair transaction rather than being silently declared complete.",
+      "status": "PARTIAL_CONSUMER",
+      "open_gap": "Formal repository adoption and remote readback remain open, and the main A account requires its owner to reauthenticate before an A model-behavior pass is possible. Missing applicable edges continue as partial without reviving science, copying credentials, or creating a new controller."
     }
   ],
   "known_missing_direct_fresh_families": [

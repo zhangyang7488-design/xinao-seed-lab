@@ -124,6 +124,8 @@ providers:
               - reprioritize_remaining_parent_items
               - discuss_prospect_without_execution
               - consume_downstream_as_evidence_then_return
+              - preserve_full_intent_envelope_and_continue_residual
+              - complete_behavior_delivery_closure
           task_switch: { type: boolean }
           trigger_role:
             enum:
@@ -192,6 +194,9 @@ providers:
                   - same_parent_reprioritization
                   - prospective_discussion
                   - downstream_material
+                  - semantic_scope_correction
+                  - explicit_scope_reduction
+                  - stable_behavior_delivery_incomplete
               blocked_promotion:
                 enum:
                   - emotion_to_literal_event
@@ -223,6 +228,8 @@ providers:
                   - reorder_to_new_parent
                   - prospective_talk_to_execution
                   - material_content_to_parent_task
+                  - tractable_child_to_parent_completion_identity
+                  - local_green_to_stable_behavior_completion
                   - none
               projection_levels:
                 type: array
@@ -328,6 +335,7 @@ providers:
                   - resume_or_reframe
                   - owner_worker_dual_track
                   - utterance_relation_and_return
+                  - behavior_delivery_or_partial
               selected_control_action:
                 enum:
                   - continue_existing_parent
@@ -352,6 +360,7 @@ providers:
                   - reprioritize_within_parent
                   - discuss_only_preserve_parent
                   - consume_evidence_then_resume
+                  - complete_behavior_delivery_closure
               symmetric_alternatives_considered:
                 type: array
                 minItems: 2
@@ -392,6 +401,8 @@ providers:
                     - reprioritize_within_parent
                     - discuss_only_preserve_parent
                     - consume_evidence_then_resume
+                    - complete_behavior_delivery_closure
+                    - declare_partial_and_continue
               unsafe_if_provided_checked: { type: boolean, const: true }
               unsafe_if_not_provided_checked: { type: boolean, const: true }
               timing_or_order_checked: { type: boolean, const: true }
