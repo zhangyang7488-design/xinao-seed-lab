@@ -355,7 +355,7 @@ def test_project_verify_and_codeql_surfaces_remain() -> None:
     assert projects == {"dual-brain-coordination"}
     assert CODEQL_WORKFLOW.is_file()
     codeql = CODEQL_WORKFLOW.read_text(encoding="utf-8")
-    assert "github/codeql-action/analyze@v3" in codeql
+    assert "github/codeql-action/analyze@v4.37.4" in codeql
     assert "name: CodeQL" in codeql
 
 
