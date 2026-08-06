@@ -77,6 +77,10 @@ providers:
               - partial_blocker_frame
               - resumed_parent_frame
               - real_activity_return_frame
+              - owner_worker_dual_track_frame
+              - tightly_coupled_serial_frame
+              - cold_native_standing_exception_frame
+              - dynamic_positive_value_width_frame
           next_action:
             enum:
               - acknowledge_burden_and_continue_existing_task
@@ -100,6 +104,10 @@ providers:
               - resume_exact_return_point
               - return_to_real_activity_from_sufficient_foundation
               - execute_reversible_owner_work_without_unconsumed_formality
+              - dispatch_parallel_separable_packages_with_owner_consume
+              - execute_serial_owner_work_without_forced_parallel
+              - admit_task_scoped_native_subagent_then_restore_persistent_off
+              - choose_dynamic_positive_value_width_not_max_fanout
           task_switch: { type: boolean }
           trigger_role:
             enum:
@@ -156,6 +164,13 @@ providers:
                   - continuity_return_pointer
                   - real_activity_and_sufficient_foundation
                   - reversible_owner_work_with_safety_theater
+                  - separable_complete_packages_ready
+                  - owner_monopoly_of_separable_labor
+                  - worker_judgment_owner_rubber_stamp
+                  - tightly_coupled_single_beat_task
+                  - native_collaboration_or_unavailable_native_evidence
+                  - ordinary_separable_repo_work
+                  - abundant_quota_or_fixed_worker_count
               blocked_promotion:
                 enum:
                   - emotion_to_literal_event
@@ -175,6 +190,13 @@ providers:
                   - turn_boundary_to_parent_erasure
                   - inherited_system_or_future_capability_to_parent_result
                   - unconsumed_formality_to_user_gate
+                  - dual_track_to_owner_or_worker_pole
+                  - separable_labor_to_owner_monopoly
+                  - worker_judgment_to_owner_rubber_stamp
+                  - tight_coupling_to_forced_parallel
+                  - native_exception_to_persistent_multi_agent_or_owner_surrender
+                  - ordinary_separable_work_to_native_exception
+                  - quota_or_fixed_count_to_forced_fanout_kpi
                   - none
               projection_levels:
                 type: array
@@ -278,6 +300,7 @@ providers:
                   - worker_return_or_refill
                   - blocker_or_continue
                   - resume_or_reframe
+                  - owner_worker_dual_track
               selected_control_action:
                 enum:
                   - continue_existing_parent
@@ -293,6 +316,10 @@ providers:
                   - owner_verify_candidate
                   - continue_unblocked_route
                   - resume_exact_return_point
+                  - dispatch_parallel_and_owner_consume
+                  - execute_serial_now
+                  - admit_task_scoped_native_subagent
+                  - choose_dynamic_positive_value_width
               symmetric_alternatives_considered:
                 type: array
                 minItems: 2
@@ -319,6 +346,15 @@ providers:
                     - resume_exact_return_point
                     - ask_user_to_restate
                     - start_new_parent
+                    - dispatch_parallel_and_owner_consume
+                    - owner_do_all_separable_work
+                    - force_parallel_dispatch
+                    - execute_serial_now
+                    - admit_task_scoped_native_subagent
+                    - force_external_only
+                    - keep_persistent_multi_agent_on
+                    - choose_dynamic_positive_value_width
+                    - force_max_fanout_for_quota
               unsafe_if_provided_checked: { type: boolean, const: true }
               unsafe_if_not_provided_checked: { type: boolean, const: true }
               timing_or_order_checked: { type: boolean, const: true }

@@ -15,7 +15,7 @@ def test_parent_frame_admission_suite_is_small_generic_and_balanced() -> None:
     cases = yaml.safe_load((suite_root / "cases.yaml").read_text(encoding="utf-8"))
     case_ids = {case["vars"]["case_id"] for case in cases}
 
-    assert len(cases) == 27
+    assert len(cases) == 34
     assert case_ids == {
         "REG_CONTEXTUAL_DISTRESS_STAYS_IN_ACTIVE_REPAIR",
         "REG_LITERAL_DANGER_SIGNS_ADMIT_SAFETY_TASK",
@@ -44,6 +44,13 @@ def test_parent_frame_admission_suite_is_small_generic_and_balanced() -> None:
         "REG_MIGRATION_VALIDATION_RETURNS_TO_NATIVE_ACTIVITY",
         "REG_VALIDATION_SCOPE_CANNOT_GENERATE_DOMAIN_TASK",
         "REG_THIN_INVARIANT_PRESERVES_DYNAMIC_EXPLORATION",
+        "REG_OWNER_WORKER_DUAL_TRACK_PARALLEL_DISPATCH_AND_CONSUME",
+        "REG_OWNER_MUST_NOT_MONOPOLIZE_SEPARABLE_LABOR",
+        "REG_OWNER_MUST_NOT_RUBBER_STAMP_WORKER_JUDGMENT",
+        "REG_TIGHTLY_COUPLED_SINGLE_BEAT_REJECTS_FORCED_PARALLEL",
+        "REG_COLD_NATIVE_STANDING_EXCEPTION_ADMITS_TASK_SCOPED_SUBAGENT",
+        "REG_ORDINARY_SEPARABLE_WORK_REJECTS_NATIVE_EXCEPTION",
+        "REG_ABUNDANT_QUOTA_IS_NOT_FORCED_FANOUT_KPI",
     }
     assert cases[0]["metadata"]["profiles"] == ["smoke", "core", "deep", "intent"]
     assert all("intent" in case["metadata"]["profiles"] for case in cases)
@@ -148,6 +155,17 @@ def test_parent_frame_admission_suite_is_small_generic_and_balanced() -> None:
         "REG_MIGRATION_VALIDATION_RETURNS_TO_NATIVE_ACTIVITY",
         "REG_VALIDATION_SCOPE_CANNOT_GENERATE_DOMAIN_TASK",
         "REG_THIN_INVARIANT_PRESERVES_DYNAMIC_EXPLORATION",
+        "REG_OWNER_WORKER_DUAL_TRACK_PARALLEL_DISPATCH_AND_CONSUME",
+        "REG_OWNER_MUST_NOT_RUBBER_STAMP_WORKER_JUDGMENT",
+        "REG_TIGHTLY_COUPLED_SINGLE_BEAT_REJECTS_FORCED_PARALLEL",
+        "REG_COLD_NATIVE_STANDING_EXCEPTION_ADMITS_TASK_SCOPED_SUBAGENT",
+        "REG_ORDINARY_SEPARABLE_WORK_REJECTS_NATIVE_EXCEPTION",
+        "REG_ABUNDANT_QUOTA_IS_NOT_FORCED_FANOUT_KPI",
+    }
+    # Monopoly rejection is decision-closure only: the model may omit the
+    # turn-finalization object when the increment is framed as continuous work.
+    dual_track_closure_only = {
+        "REG_OWNER_MUST_NOT_MONOPOLIZE_SEPARABLE_LABOR",
     }
     assert set(terminal_cases) == {
         "REG_CHILD_COMPLETION_RESUMES_KNOWN_PARENT_FRONTIER",
@@ -155,6 +173,9 @@ def test_parent_frame_admission_suite_is_small_generic_and_balanced() -> None:
         "REG_VERIFIED_PARENT_COMPLETION_ALLOWS_FINAL_YIELD",
         "REG_MATERIAL_USER_GATE_ALLOWS_HAND_BACK",
     } | new_transition_cases
+    # Keep monopoly out of the terminal-object set while still counting it as
+    # a dual-track control case in the broader suite inventory.
+    assert dual_track_closure_only.isdisjoint(set(terminal_cases))
     assert terminal_cases["REG_CHILD_COMPLETION_RESUMES_KNOWN_PARENT_FRONTIER"] == {
         **terminal_cases["REG_CHILD_COMPLETION_RESUMES_KNOWN_PARENT_FRONTIER"],
         "expected_parent_status": "active",
@@ -215,7 +236,7 @@ def test_parent_frame_admission_suite_is_small_generic_and_balanced() -> None:
         "REG_MATERIAL_USER_GATE_ALLOWS_HAND_BACK",
         "REG_OUTCOME_REQUEST_DERIVES_HIDDEN_PREREQUISITES",
         "REG_REVERSIBLE_MACHINE_WORK_REJECTS_UNCONSUMED_FORMALITY",
-    } | new_transition_cases
+    } | new_transition_cases | dual_track_closure_only
     assert {
         closure_cases["REG_MATERIAL_USER_GATE_ALLOWS_HAND_BACK"][
             "expected_selected_control_action"
@@ -230,6 +251,64 @@ def test_parent_frame_admission_suite_is_small_generic_and_balanced() -> None:
     assert closure_cases["REG_WORKER_RETURN_REQUIRES_OWNER_ADOPTION"][
         "expected_selected_control_action"
     ] == "owner_verify_candidate"
+    dual_track_cases = {
+        "REG_OWNER_WORKER_DUAL_TRACK_PARALLEL_DISPATCH_AND_CONSUME",
+        "REG_OWNER_MUST_NOT_MONOPOLIZE_SEPARABLE_LABOR",
+        "REG_OWNER_MUST_NOT_RUBBER_STAMP_WORKER_JUDGMENT",
+        "REG_TIGHTLY_COUPLED_SINGLE_BEAT_REJECTS_FORCED_PARALLEL",
+    }
+    native_routing_cases = {
+        "REG_COLD_NATIVE_STANDING_EXCEPTION_ADMITS_TASK_SCOPED_SUBAGENT",
+        "REG_ORDINARY_SEPARABLE_WORK_REJECTS_NATIVE_EXCEPTION",
+        "REG_ABUNDANT_QUOTA_IS_NOT_FORCED_FANOUT_KPI",
+    }
+    assert dual_track_cases <= set(closure_cases)
+    assert native_routing_cases <= set(closure_cases)
+    assert closure_cases["REG_OWNER_WORKER_DUAL_TRACK_PARALLEL_DISPATCH_AND_CONSUME"][
+        "expected_selected_control_action"
+    ] == "dispatch_parallel_and_owner_consume"
+    assert closure_cases["REG_OWNER_MUST_NOT_MONOPOLIZE_SEPARABLE_LABOR"][
+        "expected_blocked_promotion"
+    ] == "separable_labor_to_owner_monopoly"
+    assert closure_cases["REG_OWNER_MUST_NOT_RUBBER_STAMP_WORKER_JUDGMENT"][
+        "expected_selected_control_action"
+    ] == "owner_verify_candidate"
+    assert closure_cases["REG_OWNER_MUST_NOT_RUBBER_STAMP_WORKER_JUDGMENT"][
+        "expected_blocked_promotion"
+    ] == "worker_judgment_to_owner_rubber_stamp"
+    assert closure_cases["REG_TIGHTLY_COUPLED_SINGLE_BEAT_REJECTS_FORCED_PARALLEL"][
+        "expected_selected_control_action"
+    ] == "execute_serial_now"
+    assert closure_cases["REG_TIGHTLY_COUPLED_SINGLE_BEAT_REJECTS_FORCED_PARALLEL"][
+        "expected_blocked_promotion"
+    ] == "tight_coupling_to_forced_parallel"
+    assert closure_cases[
+        "REG_COLD_NATIVE_STANDING_EXCEPTION_ADMITS_TASK_SCOPED_SUBAGENT"
+    ]["expected_selected_control_action"] == "admit_task_scoped_native_subagent"
+    assert closure_cases[
+        "REG_COLD_NATIVE_STANDING_EXCEPTION_ADMITS_TASK_SCOPED_SUBAGENT"
+    ]["expected_blocked_promotion"] == (
+        "native_exception_to_persistent_multi_agent_or_owner_surrender"
+    )
+    assert closure_cases[
+        "REG_ORDINARY_SEPARABLE_WORK_REJECTS_NATIVE_EXCEPTION"
+    ]["expected_selected_control_action"] == "dispatch_parallel_and_owner_consume"
+    assert closure_cases[
+        "REG_ORDINARY_SEPARABLE_WORK_REJECTS_NATIVE_EXCEPTION"
+    ]["expected_blocked_promotion"] == "ordinary_separable_work_to_native_exception"
+    assert closure_cases["REG_ABUNDANT_QUOTA_IS_NOT_FORCED_FANOUT_KPI"][
+        "expected_selected_control_action"
+    ] == "choose_dynamic_positive_value_width"
+    assert closure_cases["REG_ABUNDANT_QUOTA_IS_NOT_FORCED_FANOUT_KPI"][
+        "expected_blocked_promotion"
+    ] == "quota_or_fixed_count_to_forced_fanout_kpi"
+    # Semantic width only: no fixed minimum worker count and no fake runtime claim.
+    for case_id in dual_track_cases | native_routing_cases:
+        blob = json.dumps(closure_cases[case_id], ensure_ascii=False).lower()
+        assert "min_worker" not in blob
+        assert "minimum_worker" not in blob
+        assert "at least 3 workers" not in blob
+        assert "runtime pass" not in blob
     assert closure_cases[
         "REG_COMPACT_RESUMES_EXACT_PARENT_WITHOUT_RESTATEMENT"
     ]["expected_selected_control_action"] == "resume_exact_return_point"
@@ -322,6 +401,13 @@ def test_parent_frame_admission_suite_is_small_generic_and_balanced() -> None:
         "continuity_return_pointer",
         "contextual_signal",
     ]
+
+    prompt = (suite_root / "prompt.txt").read_text(encoding="utf-8")
+    assert "dual tracks" in prompt
+    assert "standing exception" in prompt
+    assert "multi_agent=false" in prompt
+    assert "positive-value width" in prompt
+    assert "Do not claim" in prompt and "runtime pass" in prompt
 
 
 def test_parent_frame_admission_is_a_live_behavior_runner_consumer() -> None:

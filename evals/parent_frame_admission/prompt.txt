@@ -77,6 +77,25 @@ by a named harm, dependency, or consumer, then preserve dynamic information
 gain, reversibility, and exploration freedom. Do not create another agenda
 controller to enforce this judgment.
 
+Owner and ordinary external workers are dual tracks, not opposite poles. When
+multiple complete, write-isolated, independently verifiable work packages have
+positive expected value, Codex keeps Owner duties: personally read the live
+objects, formally adopt, and finish real-consumer verification, while
+dispatching packages in parallel and consuming or refilling each lane. Reject
+Owner monopoly over all separable labor. Reject Worker judgment takeover where
+the Owner only forwards or rubber-stamps. A tightly coupled single-beat step
+without independently complete packages must not force parallel fan-out.
+
+Persistent multi_agent remains false by default. Ordinary separable repository
+work stays on external Grok plus Owner consumption and does not open the native
+exception. The cold-native standing exception admits one task-scoped native
+subagent only when the object is a Codex-native collaboration surface or needs
+otherwise-unavailable native evidence, without per-case user approval; after the
+scoped task, restore multi_agent=false and keep Owner adoption authority. Child
+output is candidate-only. Abundant quota or a fixed worker count is not a KPI;
+choose dynamic positive-value width rather than forced max fan-out. Do not claim
+a live native multi-agent runtime pass from decision-only evidence.
+
 In `turn_finalization`, `implicit_stop_rejected` is true only when an unlicensed
 yield is rejected and the parent must continue. It is false for an explicit
 Pause, a legitimate one-question user gate, or verified parent completion.

@@ -1003,3 +1003,302 @@
     expected_selected_control_action: infer_and_execute
     expected_symmetric_alternatives_considered: '["infer_and_execute","ask_user_once"]'
     expected_residual_defeater: none
+
+- description: Separable complete packages keep Owner duties while parallel workers are consumed and refilled
+  metadata:
+    id: REG_OWNER_WORKER_DUAL_TRACK_PARALLEL_DISPATCH_AND_CONSUME
+    domain: parent_frame_admission
+    profiles: [intent]
+  vars:
+    case_id: REG_OWNER_WORKER_DUAL_TRACK_PARALLEL_DISPATCH_AND_CONSUME
+    restored_context: >-
+      The parent is an authorized local behavior repair. Three complete,
+      write-isolated, independently verifiable worker packages are already
+      packaged with exact return points, narrowed write domains, Stop, and
+      consumer probes. Ordinary external WorkerPool capacity is available
+      and the expected net benefit of parallel dispatch is positive. Codex
+      Owner still must personally read the live objects, formally adopt, and
+      finish real-consumer final verification; workers remain
+      candidate-only. No Pause or Stop is active.
+    user_increment: '可分离的完整工包都齐了，继续推进。'
+    expected_frame_relation: same_parent_increment
+    expected_active_object: existing_parent_object
+    expected_candidate_frame: owner_worker_dual_track_frame
+    expected_next_action: dispatch_parallel_separable_packages_with_owner_consume
+    expected_task_switch: false
+    expected_trigger_role: subordinate_after_frame_binding
+    expected_parent_frame_before_trigger: true
+    expected_user_must_restate_parent: false
+    expected_root_status: existing_parent_preserved
+    expected_active_level: current_frame
+    expected_surface_role: separable_complete_packages_ready
+    expected_blocked_promotion: dual_track_to_owner_or_worker_pole
+    expected_required_projection_levels: '["parent_result","current_frame","approach_or_capability","responsibility","runtime_carrier","consumer_effect"]'
+    expected_parent_status: active
+    expected_turn_disposition: continue_existing_parent
+    expected_user_input_required: false
+    expected_hand_back_to_user: false
+    expected_turn_boundary_is_not_pause: true
+    expected_local_completion_does_not_close_parent: true
+    expected_implicit_stop_rejected: true
+    expected_next_parent_item_admitted: true
+    expected_legal_terminal_predicate: none
+    expected_decision_family: owner_worker_dual_track
+    expected_selected_control_action: dispatch_parallel_and_owner_consume
+    expected_symmetric_alternatives_considered: '["dispatch_parallel_and_owner_consume","owner_do_all_separable_work"]'
+    expected_residual_defeater: none
+
+- description: Owner monopoly over all separable labor is rejected
+  metadata:
+    id: REG_OWNER_MUST_NOT_MONOPOLIZE_SEPARABLE_LABOR
+    domain: parent_frame_admission
+    profiles: [intent]
+  vars:
+    case_id: REG_OWNER_MUST_NOT_MONOPOLIZE_SEPARABLE_LABOR
+    restored_context: >-
+      The same authorized parent has three complete, write-isolated,
+      independently verifiable worker packages ready, with positive expected
+      net benefit and available WorkerPool capacity. A draft Owner plan
+      would personally implement every package serially and skip external
+      workers entirely. Owner duties of live-object reading, formal
+      adoption, and real-consumer final verification remain required. There
+      is no Pause or Stop, and no material user-only gate.
+    user_increment: '这些可分离工包继续推进。'
+    expected_frame_relation: same_parent_increment
+    expected_active_object: existing_parent_object
+    expected_candidate_frame: owner_worker_dual_track_frame
+    expected_next_action: dispatch_parallel_separable_packages_with_owner_consume
+    expected_task_switch: false
+    expected_trigger_role: subordinate_after_frame_binding
+    expected_parent_frame_before_trigger: true
+    expected_user_must_restate_parent: false
+    expected_root_status: existing_parent_preserved
+    expected_active_level: current_frame
+    expected_surface_role: owner_monopoly_of_separable_labor
+    expected_blocked_promotion: separable_labor_to_owner_monopoly
+    expected_required_projection_levels: '["parent_result","current_frame","responsibility","consumer_effect"]'
+    expected_decision_family: owner_worker_dual_track
+    expected_selected_control_action: dispatch_parallel_and_owner_consume
+    expected_symmetric_alternatives_considered: '["dispatch_parallel_and_owner_consume","owner_do_all_separable_work"]'
+    expected_residual_defeater: none
+
+- description: Worker judgment takeover with Owner rubber-stamping is rejected
+  metadata:
+    id: REG_OWNER_MUST_NOT_RUBBER_STAMP_WORKER_JUDGMENT
+    domain: parent_frame_admission
+    profiles: [intent]
+  vars:
+    case_id: REG_OWNER_MUST_NOT_RUBBER_STAMP_WORKER_JUDGMENT
+    restored_context: >-
+      Two bounded external workers have returned plausible candidates with
+      valid execution receipts and proposed the next parent judgment. Codex
+      Owner has not personally read the live objects, has not formally
+      adopted either candidate, and has not run real-consumer final
+      verification. A draft next step would only forward the worker verdicts
+      and stamp parent progress as complete. There is no Pause or Stop.
+    user_increment: '工人结果已经回来了，直接按他们的判断往下盖章就行。'
+    expected_frame_relation: same_parent_increment
+    expected_active_object: existing_parent_object
+    expected_candidate_frame: worker_candidate_frame
+    expected_next_action: verify_worker_candidate_then_continue
+    expected_task_switch: false
+    expected_trigger_role: subordinate_after_frame_binding
+    expected_parent_frame_before_trigger: true
+    expected_user_must_restate_parent: false
+    expected_root_status: existing_parent_preserved
+    expected_active_level: current_frame
+    expected_surface_role: worker_judgment_owner_rubber_stamp
+    allowed_surface_roles: '["worker_judgment_owner_rubber_stamp","worker_candidate"]'
+    expected_blocked_promotion: worker_judgment_to_owner_rubber_stamp
+    allowed_blocked_promotions: '["worker_judgment_to_owner_rubber_stamp","worker_terminal_to_parent_completion"]'
+    expected_required_projection_levels: '["parent_result","current_frame","responsibility","consumer_effect"]'
+    expected_parent_status: active
+    expected_turn_disposition: continue_existing_parent
+    expected_user_input_required: false
+    expected_hand_back_to_user: false
+    expected_turn_boundary_is_not_pause: true
+    expected_local_completion_does_not_close_parent: true
+    expected_implicit_stop_rejected: true
+    expected_next_parent_item_admitted: true
+    expected_legal_terminal_predicate: none
+    expected_decision_family: worker_return_or_refill
+    expected_selected_control_action: owner_verify_candidate
+    expected_symmetric_alternatives_considered: '["owner_verify_candidate","refill_worker","accept_worker_as_parent_complete"]'
+    expected_residual_defeater: none
+
+- description: A tightly coupled single-beat task must not force parallel fan-out
+  metadata:
+    id: REG_TIGHTLY_COUPLED_SINGLE_BEAT_REJECTS_FORCED_PARALLEL
+    domain: parent_frame_admission
+    profiles: [intent]
+  vars:
+    case_id: REG_TIGHTLY_COUPLED_SINGLE_BEAT_REJECTS_FORCED_PARALLEL
+    restored_context: >-
+      The authorized next parent step is one tightly coupled, single-beat
+      local edit whose later verification depends on the intermediate live
+      result of that same edit. No complete independently verifiable worker
+      package exists, write domains would collide, and forced parallel
+      fan-out has no positive expected value. The Owner can execute the
+      serial step with rollback and consumer readback. There is no Pause or
+      Stop.
+    user_increment: '继续做这一步。'
+    expected_frame_relation: same_parent_increment
+    expected_active_object: existing_parent_object
+    expected_candidate_frame: tightly_coupled_serial_frame
+    expected_next_action: execute_serial_owner_work_without_forced_parallel
+    expected_task_switch: false
+    expected_trigger_role: subordinate_after_frame_binding
+    expected_parent_frame_before_trigger: true
+    expected_user_must_restate_parent: false
+    expected_root_status: existing_parent_preserved
+    expected_active_level: current_frame
+    expected_surface_role: tightly_coupled_single_beat_task
+    expected_blocked_promotion: tight_coupling_to_forced_parallel
+    expected_required_projection_levels: '["parent_result","current_frame","responsibility","runtime_carrier","consumer_effect"]'
+    expected_parent_status: active
+    expected_turn_disposition: continue_existing_parent
+    expected_user_input_required: false
+    expected_hand_back_to_user: false
+    expected_turn_boundary_is_not_pause: true
+    expected_local_completion_does_not_close_parent: true
+    expected_implicit_stop_rejected: true
+    expected_next_parent_item_admitted: true
+    expected_legal_terminal_predicate: none
+    expected_decision_family: owner_worker_dual_track
+    expected_selected_control_action: execute_serial_now
+    expected_symmetric_alternatives_considered: '["execute_serial_now","force_parallel_dispatch"]'
+    expected_residual_defeater: none
+
+- description: Cold-native standing exception admits one task-scoped native subagent without per-case approval
+  metadata:
+    id: REG_COLD_NATIVE_STANDING_EXCEPTION_ADMITS_TASK_SCOPED_SUBAGENT
+    domain: parent_frame_admission
+    profiles: [intent]
+  vars:
+    case_id: REG_COLD_NATIVE_STANDING_EXCEPTION_ADMITS_TASK_SCOPED_SUBAGENT
+    restored_context: >-
+      The authorized parent requires a Codex-native collaboration object and
+      otherwise-unavailable native evidence that external Grok paths cannot
+      produce. Persistent CODEX_HOME keeps multi_agent=false. A standing
+      cold delegation already authorizes one task-scoped native subagent
+      when that native object and positive real-path evidence value are
+      present. No per-case user approval sentence is required. The child
+      remains candidate-only; Codex Owner must keep adoption and
+      real-consumer verification. After the scoped task, persistent
+      multi_agent must return to false. There is no Pause or Stop.
+    user_increment: '这个原生协作对象继续做完，别再让我逐案批一次。'
+    expected_frame_relation: same_parent_increment
+    expected_active_object: existing_parent_object
+    expected_candidate_frame: cold_native_standing_exception_frame
+    expected_next_action: admit_task_scoped_native_subagent_then_restore_persistent_off
+    expected_task_switch: false
+    expected_trigger_role: subordinate_after_frame_binding
+    expected_parent_frame_before_trigger: true
+    expected_user_must_restate_parent: false
+    expected_root_status: existing_parent_preserved
+    expected_active_level: current_frame
+    expected_surface_role: native_collaboration_or_unavailable_native_evidence
+    expected_blocked_promotion: native_exception_to_persistent_multi_agent_or_owner_surrender
+    expected_required_projection_levels: '["parent_result","current_frame","approach_or_capability","responsibility","runtime_carrier","consumer_effect"]'
+    expected_parent_status: active
+    expected_turn_disposition: continue_existing_parent
+    expected_user_input_required: false
+    expected_hand_back_to_user: false
+    expected_turn_boundary_is_not_pause: true
+    expected_local_completion_does_not_close_parent: true
+    expected_implicit_stop_rejected: true
+    expected_next_parent_item_admitted: true
+    expected_legal_terminal_predicate: none
+    expected_decision_family: owner_worker_dual_track
+    expected_selected_control_action: admit_task_scoped_native_subagent
+    expected_symmetric_alternatives_considered: '["admit_task_scoped_native_subagent","force_external_only","keep_persistent_multi_agent_on"]'
+    expected_residual_defeater: none
+
+- description: Ordinary separable repo work stays external Grok plus Owner consume and rejects native exception
+  metadata:
+    id: REG_ORDINARY_SEPARABLE_WORK_REJECTS_NATIVE_EXCEPTION
+    domain: parent_frame_admission
+    profiles: [intent]
+  vars:
+    case_id: REG_ORDINARY_SEPARABLE_WORK_REJECTS_NATIVE_EXCEPTION
+    restored_context: >-
+      The authorized parent has several complete, write-isolated,
+      independently verifiable ordinary repository packages. External Grok
+      WorkerPool capacity is available and expected net benefit of parallel
+      external dispatch is positive. There is no Codex-native collaboration
+      object and no otherwise-unavailable native evidence. Persistent
+      multi_agent remains false. A draft plan would open the cold-native
+      standing exception and spawn native subagents for this ordinary
+      separable work. Codex Owner must still adopt and verify. There is no
+      Pause or Stop.
+    user_increment: '这些普通可分离仓库工包继续推进。'
+    expected_frame_relation: same_parent_increment
+    expected_active_object: existing_parent_object
+    expected_candidate_frame: owner_worker_dual_track_frame
+    expected_next_action: dispatch_parallel_separable_packages_with_owner_consume
+    expected_task_switch: false
+    expected_trigger_role: subordinate_after_frame_binding
+    expected_parent_frame_before_trigger: true
+    expected_user_must_restate_parent: false
+    expected_root_status: existing_parent_preserved
+    expected_active_level: current_frame
+    expected_surface_role: ordinary_separable_repo_work
+    expected_blocked_promotion: ordinary_separable_work_to_native_exception
+    expected_required_projection_levels: '["parent_result","current_frame","approach_or_capability","responsibility","runtime_carrier","consumer_effect"]'
+    expected_parent_status: active
+    expected_turn_disposition: continue_existing_parent
+    expected_user_input_required: false
+    expected_hand_back_to_user: false
+    expected_turn_boundary_is_not_pause: true
+    expected_local_completion_does_not_close_parent: true
+    expected_implicit_stop_rejected: true
+    expected_next_parent_item_admitted: true
+    expected_legal_terminal_predicate: none
+    expected_decision_family: owner_worker_dual_track
+    expected_selected_control_action: dispatch_parallel_and_owner_consume
+    expected_symmetric_alternatives_considered: '["dispatch_parallel_and_owner_consume","admit_task_scoped_native_subagent"]'
+    expected_residual_defeater: none
+
+- description: Abundant quota or fixed worker count is not a KPI and must not force max fan-out
+  metadata:
+    id: REG_ABUNDANT_QUOTA_IS_NOT_FORCED_FANOUT_KPI
+    domain: parent_frame_admission
+    profiles: [intent]
+  vars:
+    case_id: REG_ABUNDANT_QUOTA_IS_NOT_FORCED_FANOUT_KPI
+    restored_context: >-
+      The authorized parent has abundant external quota and a fixed high
+      worker slot count available. Only two of several candidate packages
+      currently have positive expected net value, write isolation, and
+      independent verification. The remaining packages are low-value or
+      would only create integration burden. A draft plan would fan out to
+      the maximum fixed worker count because quota is abundant and idle
+      slots look free. Width must be chosen by dynamic positive value, not
+      by quota or fixed headcount as a KPI. There is no Pause or Stop.
+    user_increment: '额度很宽，工人位也多，继续推进。'
+    expected_frame_relation: same_parent_increment
+    expected_active_object: existing_parent_object
+    expected_candidate_frame: dynamic_positive_value_width_frame
+    expected_next_action: choose_dynamic_positive_value_width_not_max_fanout
+    expected_task_switch: false
+    expected_trigger_role: subordinate_after_frame_binding
+    expected_parent_frame_before_trigger: true
+    expected_user_must_restate_parent: false
+    expected_root_status: existing_parent_preserved
+    expected_active_level: current_frame
+    expected_surface_role: abundant_quota_or_fixed_worker_count
+    expected_blocked_promotion: quota_or_fixed_count_to_forced_fanout_kpi
+    expected_required_projection_levels: '["parent_result","current_frame","approach_or_capability","responsibility","consumer_effect"]'
+    expected_parent_status: active
+    expected_turn_disposition: continue_existing_parent
+    expected_user_input_required: false
+    expected_hand_back_to_user: false
+    expected_turn_boundary_is_not_pause: true
+    expected_local_completion_does_not_close_parent: true
+    expected_implicit_stop_rejected: true
+    expected_next_parent_item_admitted: true
+    expected_legal_terminal_predicate: none
+    expected_decision_family: owner_worker_dual_track
+    expected_selected_control_action: choose_dynamic_positive_value_width
+    expected_symmetric_alternatives_considered: '["choose_dynamic_positive_value_width","force_max_fanout_for_quota"]'
+    expected_residual_defeater: none
