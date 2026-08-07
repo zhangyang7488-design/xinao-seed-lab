@@ -1,6 +1,6 @@
 [CmdletBinding()]
 param(
-    [ValidateSet('capability', 'smoke', 'core', 'deep', 'proactive', 'reuse', 'intent', 'subagent')]
+    [ValidateSet('capability', 'smoke', 'core', 'deep', 'proactive', 'reuse', 'intent', 'productivity', 'subagent')]
     [string]$Profile = 'smoke',
     [string]$Domain,
     [string]$CasePattern,
@@ -203,6 +203,8 @@ $needsThinWorkspace = $Profile -in @('core', 'deep', 'reuse')
 $thinWorkspace = Join-Path $outputRoot 'thin-localization-workspace'
 $needsNativeSubagentWorkspace = $Profile -eq 'subagent'
 $nativeSubagentWorkspace = Join-Path $outputRoot 'native-subagent-workspace'
+$needsProductiveActionWorkspace = $Profile -in @('productivity', 'core', 'deep')
+$productiveActionWorkspace = Join-Path $outputRoot 'productive-action-workspace'
 
 New-Item -ItemType Directory -Path $outputRoot -ErrorAction Stop | Out-Null
 New-Item -ItemType Directory -Path @(
@@ -272,6 +274,21 @@ if ($needsNativeSubagentWorkspace) {
         commit --quiet -m baseline
     if ($LASTEXITCODE -ne 0) { throw 'Could not freeze the native-subagent baseline.' }
 }
+if ($needsProductiveActionWorkspace) {
+    $actionTemplate = Join-Path $executionRoot `
+        'evals\productive_action_trajectory\fixture_template'
+    if (-not (Test-Path -LiteralPath $actionTemplate -PathType Container)) {
+        throw "Productive-action fixture template is missing: $actionTemplate"
+    }
+    Copy-Item -LiteralPath $actionTemplate -Destination $productiveActionWorkspace -Recurse
+    & git -C $productiveActionWorkspace init --quiet
+    if ($LASTEXITCODE -ne 0) { throw 'Could not initialize the productive-action evidence workspace.' }
+    & git -C $productiveActionWorkspace add --all
+    if ($LASTEXITCODE -ne 0) { throw 'Could not stage the productive-action baseline.' }
+    & git -C $productiveActionWorkspace -c user.name=xinao-eval -c user.email=xinao-eval@local `
+        commit --quiet -m baseline
+    if ($LASTEXITCODE -ne 0) { throw 'Could not freeze the productive-action baseline.' }
+}
 
 $environment = @{
     CODEX_HOME = (Resolve-Path -LiteralPath $CodexHome).Path
@@ -294,6 +311,9 @@ if ($needsThinWorkspace) {
 }
 if ($needsNativeSubagentWorkspace) {
     $environment['XINAO_NATIVE_SUBAGENT_WORKSPACE'] = $nativeSubagentWorkspace
+}
+if ($needsProductiveActionWorkspace) {
+    $environment['XINAO_PRODUCTIVE_ACTION_WORKSPACE'] = $productiveActionWorkspace
 }
 $previous = @{}
 foreach ($name in $environment.Keys) {
@@ -589,6 +609,7 @@ $runRecallReplay = $Profile -in @('core', 'deep', 'reuse')
 $runRecallLive = $Profile -in @('deep', 'reuse')
 $runThinLocalization = $Profile -in @('core', 'deep', 'reuse')
 $runNativeSubagent = $Profile -eq 'subagent'
+$runProductiveAction = $Profile -in @('productivity', 'core', 'deep')
 $runStatic = $Profile -in @('core', 'deep', 'reuse') -and -not $FailedFrom
 $sourceInputs = @(
     [pscustomobject]@{ path = (Join-Path $repoRoot 'AGENTS.md'); role = 'working_agreement' },
@@ -665,6 +686,13 @@ if ($runStatic) {
         role = 'static_assertion_tests'
     }
 }
+if ($runIntent -or $runProductiveAction) {
+    $sourceInputs += [pscustomobject]@{
+        path = (Join-Path $CodexHome 'AGENTS.md')
+        logical_path = 'external/global_codex_home/AGENTS.md'
+        role = 'global_working_kernel'
+    }
+}
 if ($runIntent) {
     $sourceInputs += [pscustomobject]@{
         path = (Join-Path $repoRoot 'tests\test_parent_frame_admission.py')
@@ -673,11 +701,6 @@ if ($runIntent) {
     $sourceInputs += [pscustomobject]@{
         path = (Join-Path $repoRoot 'evals\parent_frame_admission')
         role = 'parent_frame_admission'
-    }
-    $sourceInputs += [pscustomobject]@{
-        path = (Join-Path $CodexHome 'AGENTS.md')
-        logical_path = 'external/global_codex_home/AGENTS.md'
-        role = 'global_working_kernel'
     }
 }
 if ($runProactive) {
@@ -724,6 +747,16 @@ if ($runNativeSubagent) {
     $sourceInputs += [pscustomobject]@{
         path = (Join-Path $repoRoot 'evals\native_subagent_trajectory')
         role = 'native_subagent_trajectory_eval'
+    }
+}
+if ($runProductiveAction) {
+    $sourceInputs += [pscustomobject]@{
+        path = (Join-Path $repoRoot 'tests\test_productive_action_trajectory.py')
+        role = 'productive_action_trajectory_tests'
+    }
+    $sourceInputs += [pscustomobject]@{
+        path = (Join-Path $repoRoot 'evals\productive_action_trajectory')
+        role = 'productive_action_trajectory_eval'
     }
 }
 $sourceManifestPath = Join-Path $outputRoot 'source-manifest.json'
@@ -773,6 +806,9 @@ try {
     }
     if ($runNativeSubagent) {
         $preflightTests += 'tests/test_native_subagent_trajectory.py'
+    }
+    if ($runProductiveAction) {
+        $preflightTests += 'tests/test_productive_action_trajectory.py'
     }
     $preflightResult.tests = $preflightTests
     Push-Location $rawSnapshotRoot
@@ -876,6 +912,17 @@ try {
         # This trajectory mutates one disposable workspace and must never be retried in place.
         $suiteRuns += Invoke-PromptfooSuite -SuiteId 'native_subagent_trajectory' `
             -ConfigPath $nativeSubagentConfig -ResultPath $nativeSubagentResult -Concurrency 1
+    }
+
+    if ($overallExit -eq 0 -and $runProductiveAction -and -not $PreflightOnly) {
+        $productiveActionConfig = Join-Path $executionRoot `
+            'evals\productive_action_trajectory\promptfooconfig.yaml'
+        $productiveActionResult = Join-Path $outputRoot `
+            'productive-action-trajectory.result.json'
+        # Each case owns a different fixture subtree. The suite is sequential and is never retried in place.
+        $suiteRuns += Invoke-PromptfooSuite -SuiteId 'productive_action_trajectory' `
+            -ConfigPath $productiveActionConfig -ResultPath $productiveActionResult `
+            -Concurrency 1
     }
 
     if ($overallExit -eq 0 -and $runRecallLive -and -not $PreflightOnly) {
@@ -1022,6 +1069,9 @@ $summary = [ordered]@{
     thin_localization_workspace = $(if ($needsThinWorkspace) { $thinWorkspace } else { $null })
     native_subagent_workspace = $(
         if ($needsNativeSubagentWorkspace) { $nativeSubagentWorkspace } else { $null }
+    )
+    productive_action_workspace = $(
+        if ($needsProductiveActionWorkspace) { $productiveActionWorkspace } else { $null }
     )
     catalog = $catalogPath
     output_root = $outputRoot

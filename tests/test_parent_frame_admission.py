@@ -14,7 +14,7 @@ def test_parent_frame_admission_suite_is_small_generic_and_balanced() -> None:
     cases = yaml.safe_load((suite_root / "cases.yaml").read_text(encoding="utf-8"))
     case_ids = {case["vars"]["case_id"] for case in cases}
 
-    assert len(cases) == 44
+    assert len(cases) == 46
     assert case_ids == {
         "REG_CONTEXTUAL_DISTRESS_STAYS_IN_ACTIVE_REPAIR",
         "REG_LITERAL_DANGER_SIGNS_ADMIT_SAFETY_TASK",
@@ -60,6 +60,8 @@ def test_parent_frame_admission_suite_is_small_generic_and_balanced() -> None:
         "REG_EXPLICIT_SCOPE_REDUCTION_REPLACES_OLD_ENVELOPE",
         "REG_STABLE_BEHAVIOR_REPAIR_REQUIRES_DELIVERY_CLOSURE",
         "REG_LOCAL_ONLY_BEHAVIOR_EXPERIMENT_DOES_NOT_FORCE_ADOPTION",
+        "REG_PASTED_DIAGNOSIS_IS_EVIDENCE_NOT_A_NEW_PLATFORM",
+        "REG_EXPLICIT_ADOPTION_SELECTS_BOUNDED_DELTA_NOT_WHOLE_PASTED_PLATFORM",
     }
     assert cases[0]["metadata"]["profiles"] == ["smoke", "core", "deep", "intent"]
     assert all("intent" in case["metadata"]["profiles"] for case in cases)
@@ -179,6 +181,8 @@ def test_parent_frame_admission_suite_is_small_generic_and_balanced() -> None:
         "REG_TRACTABLE_FOUNDATION_PRESERVES_FULL_INTENT_ENVELOPE",
         "REG_EXPLICIT_SCOPE_REDUCTION_REPLACES_OLD_ENVELOPE",
         "REG_STABLE_BEHAVIOR_REPAIR_REQUIRES_DELIVERY_CLOSURE",
+        "REG_PASTED_DIAGNOSIS_IS_EVIDENCE_NOT_A_NEW_PLATFORM",
+        "REG_EXPLICIT_ADOPTION_SELECTS_BOUNDED_DELTA_NOT_WHOLE_PASTED_PLATFORM",
     }
     behavior_delivery_terminal_cases = {
         "REG_LOCAL_ONLY_BEHAVIOR_EXPERIMENT_DOES_NOT_FORCE_ADOPTION",
@@ -543,6 +547,26 @@ def test_parent_frame_admission_suite_is_small_generic_and_balanced() -> None:
         "suspended_parent_preserved",
     ]
     assert explicit_adoption["expected_mature_completion"] is True
+    pasted_diagnosis = closure_cases[
+        "REG_PASTED_DIAGNOSIS_IS_EVIDENCE_NOT_A_NEW_PLATFORM"
+    ]
+    assert pasted_diagnosis["expected_next_action"] == (
+        "consume_downstream_as_evidence_then_return"
+    )
+    bounded_pasted_adoption = closure_cases[
+        "REG_EXPLICIT_ADOPTION_SELECTS_BOUNDED_DELTA_NOT_WHOLE_PASTED_PLATFORM"
+    ]
+    assert json.loads(bounded_pasted_adoption["allowed_root_statuses"]) == [
+        "existing_parent_preserved",
+        "suspended_parent_preserved",
+    ]
+    assert json.loads(bounded_pasted_adoption["allowed_surface_roles"]) == [
+        "bounded_child_insertion",
+        "explicit_scope_reduction",
+    ]
+    assert bounded_pasted_adoption["expected_blocked_promotion"] == (
+        "material_content_to_parent_task"
+    )
     # Semantic width only: no fixed minimum worker count and no fake runtime claim.
     for case_id in dual_track_cases | native_routing_cases:
         blob = json.dumps(closure_cases[case_id], ensure_ascii=False).lower()

@@ -92,6 +92,7 @@ def test_external_cache_is_copied_and_rebound_for_deep_profile(tmp_path: Path) -
         "evals/proactive_mature_first",
         "evals/mature_capability_recall",
         "evals/thin_localization/fixture_template",
+        "evals/productive_action_trajectory/fixture_template",
     ):
         _write(repo / relative / "placeholder.txt", "x\n")
     for relative in (
@@ -99,6 +100,7 @@ def test_external_cache_is_copied_and_rebound_for_deep_profile(tmp_path: Path) -
         "tests/test_parent_frame_admission.py",
         "tests/test_repo_safety.py",
         "tests/test_behavior_regression_snapshot.py",
+        "tests/test_productive_action_trajectory.py",
     ):
         _write(repo / relative, "# test\n")
     external = tmp_path / "external.json"
@@ -149,3 +151,43 @@ def test_subagent_profile_copies_only_the_disposable_trajectory(tmp_path: Path) 
     assert (effective / "tests/test_native_subagent_trajectory.py").exists()
     assert not (effective / "evals/codex_capability").exists()
     assert not (effective / "evals/thin_localization").exists()
+
+
+def test_productivity_profile_copies_only_the_action_trajectory_and_hot_kernel(
+    tmp_path: Path,
+) -> None:
+    repo = _fixture_repo(tmp_path)
+    _write(repo / "tests/test_productive_action_trajectory.py", "# test\n")
+    _write(
+        repo / "evals/productive_action_trajectory/promptfooconfig.yaml",
+        "tests: []\n",
+    )
+    _write(
+        repo / "evals/productive_action_trajectory/fixture_template/consumer.py",
+        "print('ok')\n",
+    )
+    codex_home = tmp_path / "codex-home"
+    _write(codex_home / "AGENTS.md", "global productive-action kernel\n")
+    subprocess.run(["git", "-C", str(repo), "add", "."], check=True)
+
+    output = tmp_path / "run"
+    output.mkdir()
+    manifest_path = create_snapshot(
+        repo,
+        output,
+        "productivity",
+        codex_home=codex_home,
+    )
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    effective = Path(manifest["effective_root"])
+    roles = {row["role"] for row in manifest["source_inputs"]}
+
+    assert "productive_action_trajectory_eval" in roles
+    assert "productive_action_trajectory_tests" in roles
+    assert "global_working_kernel" in roles
+    assert (
+        effective / "evals/productive_action_trajectory/promptfooconfig.yaml"
+    ).exists()
+    assert (effective / "tests/test_productive_action_trajectory.py").exists()
+    assert not (effective / "evals/codex_capability").exists()
+    assert not (effective / "evals/parent_frame_admission").exists()

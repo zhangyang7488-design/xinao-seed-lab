@@ -116,6 +116,7 @@ def _profile_flags(
         "recall_replay": profile in {"core", "deep", "reuse"},
         "recall_live": profile in {"deep", "reuse"},
         "thin": profile in {"core", "deep", "reuse"},
+        "productivity": profile in {"productivity", "core", "deep"},
         "native_subagent": profile == "subagent",
         "static": profile in {"core", "deep", "reuse"} and not failed_from,
     }
@@ -208,6 +209,13 @@ def selected_inputs(
                 "native_subagent_trajectory_tests",
             )
         )
+    if flags["productivity"]:
+        relative_inputs.append(
+            (
+                "tests/test_productive_action_trajectory.py",
+                "productive_action_trajectory_tests",
+            )
+        )
     for enabled, relative, role in (
         (flags["capability"], "evals/codex_capability", "capability_eval"),
         (flags["proactive"], "evals/proactive_mature_first", "proactive_eval"),
@@ -217,6 +225,11 @@ def selected_inputs(
             "mature_capability_recall_eval",
         ),
         (flags["thin"], "evals/thin_localization", "thin_localization_eval"),
+        (
+            flags["productivity"],
+            "evals/productive_action_trajectory",
+            "productive_action_trajectory_eval",
+        ),
         (
             flags["native_subagent"],
             "evals/native_subagent_trajectory",
@@ -230,9 +243,11 @@ def selected_inputs(
         SourceInput(repo_root / relative, role, relative.replace("\\", "/"))
         for relative, role in relative_inputs
     ]
-    if flags["intent"]:
+    if flags["intent"] or flags["productivity"]:
         if codex_home is None:
-            raise ValueError("codex_home is required for the parent-frame admission profile")
+            raise ValueError(
+                "codex_home is required for intent and productive-action profiles"
+            )
         inputs.append(
             SourceInput(
                 codex_home / "AGENTS.md",
@@ -411,6 +426,7 @@ def _parser() -> argparse.ArgumentParser:
             "proactive",
             "reuse",
             "intent",
+            "productivity",
             "subagent",
         ),
     )
