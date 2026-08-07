@@ -34,6 +34,11 @@ def test_productive_action_fixture_supports_transfer_and_classification_reversal
     assert not (workspace / "evidence_disjoint" / "repair.marker").exists()
     assert (workspace / "evidence_disjoint" / "operator_notes.txt").exists()
 
+    # A checkout-only line-ending conversion is not a material evidence delta.
+    artifact = workspace / "evidence_disjoint" / "artifact.txt"
+    artifact.write_bytes(b"canonical review payload\r\n")
+    assert _run(workspace, "consumer.py", "evidence_disjoint").returncode == 0
+
     intersecting = _run(workspace, "consumer.py", "evidence_intersecting")
     assert intersecting.returncode == 2
     assert "ACTION_EVIDENCE_STALE" in intersecting.stdout
@@ -85,9 +90,7 @@ def test_productive_action_suite_is_cross_domain_effect_scored_and_not_the_sourc
     assert "classification reversal" in readme
 
     catalog = json.loads(
-        (REPO_ROOT / "evals" / "behavior_regression" / "catalog.json").read_text(
-            encoding="utf-8"
-        )
+        (REPO_ROOT / "evals" / "behavior_regression" / "catalog.json").read_text(encoding="utf-8")
     )
     suite = next(row for row in catalog["suites"] if row["id"] == "productive_action_trajectory")
     assert suite["case_count"] == 3

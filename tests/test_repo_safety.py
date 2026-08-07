@@ -1180,20 +1180,21 @@ def test_behavior_evolution_runner_is_thin_and_domain_research_stays_native() ->
         (REPO_ROOT / "evals/behavior_regression/catalog.json").read_text(encoding="utf-8")
     )
     suite_count = sum(item["case_count"] for item in catalog["suites"])
-    assert suite_count == catalog["declared_case_count"] == 62
+    assert suite_count == catalog["declared_case_count"] == 67
     assert catalog["live_profile_case_counts"] == {
         "capability": 1,
         "smoke": 1 + 1,
-        "core": 18 + 1 + 6 + 2 + 1 + 2,
-        "deep": 18 + 1 + 6 + 2 + 1 + 1 + 2,
-        "intent": 44,
+        "core": 18 + 1 + 6 + 2 + 1 + 2 + 3,
+        "deep": 18 + 1 + 6 + 2 + 1 + 1 + 2 + 3,
+        "intent": 46,
         "proactive": 6,
         "reuse": 4,
+        "productivity": 3,
         "subagent": 1,
     }
     intent = next(item for item in catalog["suites"] if item["id"] == "parent_frame_admission")
     assert intent["kind"] == "promptfoo_live"
-    assert intent["case_count"] == 44
+    assert intent["case_count"] == 46
     assert intent["runtime_claim_allowed"] is True
     assert intent["domain_routing_claim_allowed"] is False
     proactive = next(item for item in catalog["suites"] if item["id"] == "proactive_mature_first")
