@@ -185,9 +185,7 @@ def test_productivity_profile_copies_only_the_action_trajectory_and_hot_kernel(
     assert "productive_action_trajectory_eval" in roles
     assert "productive_action_trajectory_tests" in roles
     assert "global_working_kernel" in roles
-    assert (
-        effective / "evals/productive_action_trajectory/promptfooconfig.yaml"
-    ).exists()
+    assert (effective / "evals/productive_action_trajectory/promptfooconfig.yaml").exists()
     assert (effective / "tests/test_productive_action_trajectory.py").exists()
     assert not (effective / "evals/codex_capability").exists()
     assert not (effective / "evals/parent_frame_admission").exists()

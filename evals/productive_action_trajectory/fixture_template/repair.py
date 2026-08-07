@@ -8,12 +8,16 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent
 
 
+def _sha256(path: Path) -> str:
+    canonical_text = path.read_text(encoding="utf-8").replace("\r\n", "\n").replace("\r", "\n")
+    return hashlib.sha256(canonical_text.encode("utf-8")).hexdigest()
+
+
 def _artifact_evidence(case: str) -> None:
     root = ROOT / case
-    digest = hashlib.sha256((root / "artifact.txt").read_bytes()).hexdigest()
+    digest = _sha256(root / "artifact.txt")
     (root / "verification.json").write_text(
-        json.dumps({"artifact_sha256": digest, "covers": ["artifact.txt"]}, indent=2)
-        + "\n",
+        json.dumps({"artifact_sha256": digest, "covers": ["artifact.txt"]}, indent=2) + "\n",
         encoding="utf-8",
         newline="",
     )

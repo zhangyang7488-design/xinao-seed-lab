@@ -9,7 +9,10 @@ ROOT = Path(__file__).resolve().parent
 
 
 def _sha256(path: Path) -> str:
-    return hashlib.sha256(path.read_bytes()).hexdigest()
+    # This fixture models text-content evidence. Platform checkout line endings
+    # are not a material artifact change.
+    canonical_text = path.read_text(encoding="utf-8").replace("\r\n", "\n").replace("\r", "\n")
+    return hashlib.sha256(canonical_text.encode("utf-8")).hexdigest()
 
 
 def _artifact_evidence(case: str) -> int:

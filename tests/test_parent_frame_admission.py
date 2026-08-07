@@ -547,9 +547,7 @@ def test_parent_frame_admission_suite_is_small_generic_and_balanced() -> None:
         "suspended_parent_preserved",
     ]
     assert explicit_adoption["expected_mature_completion"] is True
-    pasted_diagnosis = closure_cases[
-        "REG_PASTED_DIAGNOSIS_IS_EVIDENCE_NOT_A_NEW_PLATFORM"
-    ]
+    pasted_diagnosis = closure_cases["REG_PASTED_DIAGNOSIS_IS_EVIDENCE_NOT_A_NEW_PLATFORM"]
     assert pasted_diagnosis["expected_next_action"] == (
         "consume_downstream_as_evidence_then_return"
     )

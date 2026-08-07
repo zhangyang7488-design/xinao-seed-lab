@@ -245,9 +245,7 @@ def selected_inputs(
     ]
     if flags["intent"] or flags["productivity"]:
         if codex_home is None:
-            raise ValueError(
-                "codex_home is required for intent and productive-action profiles"
-            )
+            raise ValueError("codex_home is required for intent and productive-action profiles")
         inputs.append(
             SourceInput(
                 codex_home / "AGENTS.md",
