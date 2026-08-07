@@ -5,7 +5,7 @@
   "runtime_loaded": false,
   "completion_claim_allowed": false,
   "archive": "codex-productivity-recovery.v1.zip",
-  "archive_sha256": "a504ec862524156b82830c8cdffef36eddf301d3dfc8cfd7c41900b4901d918b",
+  "archive_sha256": "ff232e80e667ba0259f3ab98ef8215c1f3fc86384ac7d2451df40e6b558b055b",
   "entry_count": 77,
   "entries": [
     {
@@ -33,8 +33,8 @@
       "archive_path": "main-home/AGENTS.md",
       "live_source": "C:\\Users\\xx363\\.codex\\AGENTS.md",
       "role": "main_live_source",
-      "size": 18350,
-      "sha256": "1a499174073335f90eb16733c9c5b9a166cec9f6eb59917eda9954b11376224e"
+      "size": 20019,
+      "sha256": "7bc61a4181f4341c051d1404204f339679a1f4ebbceea10e0befe9f52c66adab"
     },
     {
       "archive_path": "main-home/agents/luna-worker.toml",
@@ -54,8 +54,8 @@
       "archive_path": "main-home/config.toml",
       "live_source": "C:\\Users\\xx363\\.codex\\config.toml",
       "role": "main_live_source",
-      "size": 13903,
-      "sha256": "53721971ce41b2ee7ebcf4d6669ca6b7f7c5afdf803b3ea8de929ed512c050d7"
+      "size": 14194,
+      "sha256": "d3f4d2957d50fc9a7ae9ba3752f778a0ab30dae87042fce97907ac0de65f16b4"
     },
     {
       "archive_path": "main-home/hooks.json",
@@ -460,8 +460,8 @@
       "archive_path": "main-home/skills/repair-agent-behavior/references/value-semantics.md",
       "live_source": "C:\\Users\\xx363\\.codex\\skills\\repair-agent-behavior\\references\\value-semantics.md",
       "role": "generic_custom_skill",
-      "size": 7805,
-      "sha256": "b62ee050207599e833f8a77632642aa7de3e4d3a04a154c69702cb95f342660f"
+      "size": 10618,
+      "sha256": "3ad2d50bd743f17777cd18ab0a0d6e55cfeaac6a215c9e457eaa5f8dd5e68965"
     },
     {
       "archive_path": "main-home/skills/verified-agent-loop/SKILL.md",

@@ -4,25 +4,27 @@
   "runner": "scripts/run_behavior_regression.ps1",
   "candidate_intake": "scripts/New-BehaviorRegressionCandidate.ps1",
   "result_root": "D:\\XINAO_RESEARCH_RUNTIME\\state\\human-capabilities\\evals\\behavior-regression",
-  "declared_case_count": 64,
+  "declared_case_count": 67,
   "profiles": {
     "capability": "One fresh Codex app-server capability canary.",
     "smoke": "One fresh parent-frame admission case plus one Codex app-server capability canary; retired routing golds remain excluded.",
-    "core": "Twenty generic parent-frame, bounded-transition, stable-behavior-delivery, default-owner, first-principles, and mature-owner admission cases plus capability, proactive mature-first, frozen mature-candidate recall, one real thin-localization trajectory, and static validation.",
+    "core": "Twenty generic parent-frame, bounded-transition, stable-behavior-delivery, default-owner, first-principles, and mature-owner admission cases plus capability, proactive mature-first, frozen mature-candidate recall, one real thin-localization trajectory, three cross-domain productive-action trajectories, and static validation.",
     "deep": "Core plus one current open-world public-repository search.",
     "intent": "Forty-six generic fresh Codex parent-frame, source-aware utterance-relation, semantic-scope-fidelity, stable-behavior-delivery, bounded-transition, default-owner, first-principles, mature-owner, owner-worker dual-track, and cold-native standing exception admission cases without retired domain routing.",
     "proactive": "All six mature-first live cases; routing facts are checked by their real engineering consumers, not the retired context suite.",
     "reuse": "Only the four live open-world-reuse cases plus their deterministic contract validation.",
+    "productivity": "Three disposable-workspace trajectories that test evidence-delta reuse, classification reversal, necessary rigor, and decision-relevant process visibility.",
     "subagent": "One fail-closed disposable native-Codex-subagent Owner/worker/consumer capability probe; not part of core or deep."
   },
   "live_profile_case_counts": {
     "capability": 1,
     "smoke": 2,
-    "core": 30,
-    "deep": 31,
+    "core": 33,
+    "deep": 34,
     "intent": 46,
     "proactive": 6,
     "reuse": 4,
+    "productivity": 3,
     "subagent": 1
   },
   "suites": [
@@ -92,6 +94,21 @@
       "runtime_claim_allowed": false
     },
     {
+      "id": "productive_action_trajectory",
+      "kind": "promptfoo_live_disposable_workspace",
+      "case_count": 3,
+      "config": "evals/productive_action_trajectory/promptfooconfig.yaml",
+      "case_source": "evals/productive_action_trajectory/promptfooconfig.yaml",
+      "action_value_claim_allowed": true,
+      "semantic_transparency_claim_allowed": true,
+      "universal_future_behavior_claim_allowed": false,
+      "runtime_claim_requires": [
+        "ordered consumer and state-changing effect trace",
+        "classification reversal under changed evidence reach plus changed-domain rigor",
+        "user-visible purpose and route, material finding when present, and final effect evidence"
+      ]
+    },
+    {
       "id": "native_subagent_trajectory",
       "kind": "promptfoo_live_disposable_workspace_capability_probe",
       "case_count": 1,
@@ -118,7 +135,7 @@
     },
     {
       "name": "Codex App Server",
-      "role": "real read-only agent trajectory with tool and token evidence",
+      "role": "real read-only or disposable-workspace agent trajectory with tool, effect, and token evidence",
       "activation": "active_on_demand"
     },
     {

@@ -3,7 +3,7 @@
   "sentinel": "SENTINEL:CODEX_INTENT_ACTION_COVERAGE_V1",
   "authority": false,
   "completion_claim_allowed": false,
-  "evidence_cutoff": "2026-08-06T23:45:00+08:00",
+  "evidence_cutoff": "2026-08-07T23:05:00+08:00",
   "coverage_rule": "A general behavior claim requires text, a live consumer, positive and negative regression, fresh behavior, and live effect; missing layers remain explicit.",
   "status_values": [
     "VERIFIED",
@@ -193,6 +193,24 @@
       "open_gap": "Engineering verification does not itself re-admit parent intent."
     },
     {
+      "id": "productive_action_value_and_meaningful_transparency",
+      "text_contract": [
+        "global A/B AGENTS purpose-efficacy production-event and non-black-box process rule",
+        "repair-agent-behavior value semantics separates neutral formality from burden without functional efficacy",
+        "verified-agent-loop and operate-for-user evidence-delta reuse"
+      ],
+      "live_consumer": [
+        "byte-identical A/B AGENTS projections and shared repair-agent-behavior Skill",
+        "evals/productive_action_trajectory disposable workspaces with real command and effect traces",
+        "behavior-regression productivity profile source snapshot and claim-eligibility checks"
+      ],
+      "positive_negative_regression": "the same verification surface reuses still-valid evidence after a disjoint documentation change but performs one bounded refresh after a covered artifact changes; a held-out safety-limit object keeps necessary rigor productive; purpose and route appear before action, material findings before effects, and consumer evidence after readback without requiring raw command narration",
+      "fresh_behavior": "Fresh B-profile run 20260807-225728-675-5260-a94e8343 produced three real workspace-writing model trajectories and passed 3/3 with runtime_pass_claim_eligible=true. The disjoint case called the consumer once and made no repair; the intersecting case called the same consumer, refreshed invalid evidence once, and passed readback; the changed-domain safety case restored the approved limit once and passed readback. All three preserved decision-relevant commentary and final evidence, used no web, MCP, computer, or worker tool, and left unrelated local notes intact.",
+      "live_effect": "The detailed generator is now in the shared behavior value semantics and a thin projection is active in both A/B AGENTS. The previous packet-residue-specific suite identity was withdrawn; the live regression now treats cases only as witnesses and proves a classification reversal plus a changed-domain necessary-rigor case.",
+      "status": "PARTIAL_CONSUMER",
+      "open_gap": "No finite witness set proves arbitrary future transfer or long-horizon burden reduction. Later natural tasks must still show that the agent rejects dominated process work without deleting purpose-linked safety, verification, recovery, or user-visible control."
+    },
+    {
       "id": "local_result_parent_result_and_turn_transition",
       "text_contract": [
         "turn boundary is not Pause",
@@ -291,7 +309,6 @@
     }
   ],
   "known_missing_direct_fresh_families": [
-    "reversible_machine_work_rejects_unconsumed_formality",
     "window_start_resumes_surviving_parent_without_reauthorization",
     "phase_boundary_does_not_reset_parent_authorization",
     "package_approval_field_cannot_create_user_gate",
@@ -303,7 +320,7 @@
     "the retired PreToolUse script remains as a fail-open stale-process shim until no already-running consumer can reference it; fresh A/B discovery excludes it",
     "the Stop gate covers recorded open plans but intentionally fails open for unrecorded parents and has no natural live block receipt yet",
     "fresh canaries are decision-only and do not prove every product surface executes the selected action",
-    "the explicit reversible-machine-work and default-owner phase-boundary families have deterministic and live-thread evidence but no independent fresh changed-context outputs",
+    "the default-owner phase-boundary families have deterministic and live-thread evidence but no independent fresh changed-context outputs",
     "the current live recurrence proves that generic return-to-native wording can still drift unless an exact pre-existing object and return point are bound",
     "long-horizon burden reduction requires later real recurrence evidence",
     "the current already-running B TUI cached the old hook list but executes the retired guard as fail-open; a fresh B app-server already reads the final three-hook configuration"
