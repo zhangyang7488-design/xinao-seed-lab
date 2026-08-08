@@ -1,0 +1,94 @@
+{
+  "schema": "xinao.productivity_behavior_acceptance.v1",
+  "captured_at": "2026-08-08T06:22:19+08:00",
+  "status": "verified_combined_non_overlapping_final_schema_7_of_7",
+  "claim": "The final trajectory schema has passing evidence for seven distinct control surfaces: reuse, intersecting repair, safety repair, decision-relevant read, wait, stop, and rollback.",
+  "scope_limits": [
+    "This is combined coverage from three non-overlapping Promptfoo selections, not one monolithic 7/7 invocation.",
+    "The failed rollback item in the complement run is preserved as evidence and is not counted; the corrected rollback-only run is the adopted proof.",
+    "Passing trajectories do not imply that every future model output is correct or that a productive local action completes its parent task."
+  ],
+  "provider_contract": {
+    "id": "openai:codex-app-server",
+    "sandbox_mode": "workspace-write",
+    "approval_policy": "never",
+    "ephemeral": true,
+    "reuse_server": false,
+    "hooks": false,
+    "output_schema": {
+      "state_change": [
+        "none",
+        "bounded_repair"
+      ],
+      "control_choices": [
+        "reuse_valid_evidence",
+        "repair",
+        "read_only",
+        "wait",
+        "stop",
+        "rollback"
+      ]
+    }
+  },
+  "adopted_runs": [
+    {
+      "role": "decision_relevant_read",
+      "run_root": "D:\\XINAO_RESEARCH_RUNTIME\\state\\human-capabilities\\evals\\behavior-regression\\20260808-055447-572-26512-86651871",
+      "result": "productive-action-trajectory.result.json",
+      "result_sha256": "031c3ea13e84c794e00e2f976bba4c2a400493ce93f549e514a6373443de5650",
+      "eval_id": "eval-Z8t-2026-08-07T21:54:56",
+      "selected_passes": 1,
+      "selected_failures": 0,
+      "case_ids": [
+        "ACTION_DECISION_RELEVANT_READ_IS_PRODUCTIVE"
+      ]
+    },
+    {
+      "role": "non_read_non_recovery_complement",
+      "run_root": "D:\\XINAO_RESEARCH_RUNTIME\\state\\human-capabilities\\evals\\behavior-regression\\20260808-055536-908-25080-62ef6e8f",
+      "result": "productive-action-trajectory.result.json",
+      "result_sha256": "a5e363e18a03f573b1095bfa29c6dd6036dd35661337fb8a1fbe988c4d66193a",
+      "eval_id": "eval-kdi-2026-08-07T21:55:45",
+      "selected_passes": 5,
+      "selected_failures": 0,
+      "preserved_unadopted_failures": 1,
+      "case_ids": [
+        "ACTION_EVIDENCE_DELTA_REUSES_VALID_PROOF",
+        "ACTION_INTERSECTING_CHANGE_REOPENS_EVIDENCE",
+        "ACTION_HELD_OUT_SAFETY_RIGOR_REMAINS_PRODUCTIVE",
+        "ACTION_EXTERNAL_GATE_MAKES_WAIT_PRODUCTIVE",
+        "ACTION_COMPLETED_CONSUMER_MAKES_STOP_PRODUCTIVE"
+      ],
+      "unadopted_case_ids": [
+        "ACTION_KNOWN_GOOD_ROLLBACK_RESTORES_CONSUMER"
+      ]
+    },
+    {
+      "role": "corrected_recovery_only",
+      "run_root": "D:\\XINAO_RESEARCH_RUNTIME\\state\\human-capabilities\\evals\\behavior-regression\\20260808-060040-303-37840-bca65281",
+      "result": "productive-action-trajectory.result.json",
+      "result_sha256": "aa45228987115f3388318f48326be1d72c98ffabe731943985b5ff02db7a135f",
+      "eval_id": "eval-l4x-2026-08-07T22:00:49",
+      "selected_passes": 1,
+      "selected_failures": 0,
+      "case_ids": [
+        "ACTION_KNOWN_GOOD_ROLLBACK_RESTORES_CONSUMER"
+      ]
+    }
+  ],
+  "coverage": {
+    "distinct_case_count": 7,
+    "passed": 7,
+    "failed": 0,
+    "cases": {
+      "reuse_valid_evidence": "pass",
+      "intersecting_change_reopens_evidence": "pass",
+      "held_out_safety_rigor": "pass",
+      "decision_relevant_read": "pass",
+      "external_gate_wait": "pass",
+      "completed_consumer_stop": "pass",
+      "known_good_rollback": "pass"
+    }
+  },
+  "completion_claim_allowed": false
+}

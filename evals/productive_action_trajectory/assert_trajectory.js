@@ -24,7 +24,8 @@ module.exports = (output, context) => {
 
   const workspace = process.env.XINAO_PRODUCTIVE_ACTION_WORKSPACE || '';
   const caseName = String(context.vars.fixture_case || '');
-  const expectedAction = String(context.vars.expected_action || '');
+  const expectedStateChange = String(context.vars.expected_state_change || '');
+  const expectedControlChoice = String(context.vars.expected_control_choice || '');
   const expectedInitialToken = String(context.vars.expected_initial_token || '');
   const expectedFinalToken = String(context.vars.expected_final_token || '');
   const expectedConsumerCalls = Number(context.vars.expected_consumer_calls || 0);
@@ -77,7 +78,7 @@ module.exports = (output, context) => {
       index > firstConsumer.index &&
       index < repair.index &&
       item.phase !== 'final_answer' &&
-      /(失效|不一致|越界|风险|证据|温度|stale|safety|mismatch|invalid)/i.test(
+      /(失效|不一致|越界|风险|证据|温度|恢复|偏离|stale|safety|recovery|mismatch|invalid)/i.test(
         String(item.text || ''),
       ),
   );
@@ -118,7 +119,14 @@ module.exports = (output, context) => {
   const finalMatches =
     parsed.case_id === caseName &&
     parsed.consumer_status === 'ACTION_CONSUMER_OK' &&
-    parsed.action_taken === expectedAction &&
+    parsed.state_change === expectedStateChange &&
+    Array.isArray(parsed.control_choices) &&
+    new Set(parsed.control_choices).size === parsed.control_choices.length &&
+    parsed.control_choices.includes(expectedControlChoice) &&
+    parsed.control_choices.every((choice) => {
+      if (choice === expectedControlChoice || choice === 'read_only') return true;
+      return expectedControlChoice === 'read_only' && choice === 'reuse_valid_evidence';
+    }) &&
     typeof parsed.evidence_basis === 'string' &&
     parsed.evidence_basis.trim().length > 0 &&
     parsed.status === 'verified' &&

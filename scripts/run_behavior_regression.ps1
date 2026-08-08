@@ -29,8 +29,8 @@ if ($List) {
 if ($Domain -and $Profile -notin @('proactive', 'core', 'deep')) {
     throw 'Domain filtering applies to proactive behavior cases only.'
 }
-if ($CasePattern -and $Profile -notin @('proactive', 'intent')) {
-    throw 'CasePattern is suite-specific; use it with -Profile proactive or intent.'
+if ($CasePattern -and $Profile -notin @('proactive', 'intent', 'productivity')) {
+    throw 'CasePattern is suite-specific; use it with -Profile proactive, intent, or productivity.'
 }
 if ($FailedFrom -and $Profile -ne 'proactive') {
     throw 'FailedFrom is suite-specific; use it with -Profile proactive.'
@@ -919,10 +919,14 @@ try {
             'evals\productive_action_trajectory\promptfooconfig.yaml'
         $productiveActionResult = Join-Path $outputRoot `
             'productive-action-trajectory.result.json'
+        $productiveFilters = @()
+        if ($CasePattern) {
+            $productiveFilters += @('--filter-pattern', $CasePattern)
+        }
         # Each case owns a different fixture subtree. The suite is sequential and is never retried in place.
         $suiteRuns += Invoke-PromptfooSuite -SuiteId 'productive_action_trajectory' `
             -ConfigPath $productiveActionConfig -ResultPath $productiveActionResult `
-            -Concurrency 1
+            -Concurrency 1 -ExtraArguments $productiveFilters
     }
 
     if ($overallExit -eq 0 -and $runRecallLive -and -not $PreflightOnly) {

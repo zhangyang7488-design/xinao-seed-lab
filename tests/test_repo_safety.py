@@ -1170,6 +1170,8 @@ def test_behavior_evolution_runner_is_thin_and_domain_research_stays_native() ->
     assert "'--max-concurrency', $Concurrency" in runner
     assert "[int]$MaxErrorRetries = 1" in runner
     assert "'--filter-errors-only', $previousResult" in runner
+    assert "@('proactive', 'intent', 'productivity')" in runner
+    assert "$productiveFilters += @('--filter-pattern', $CasePattern)" in runner
     assert "-Concurrency 1" in runner
     assert "FailedFrom belongs to a different behavior suite" in runner
     assert "terminal_counts_authority = 'resolved_result_rows'" in runner
@@ -1180,16 +1182,16 @@ def test_behavior_evolution_runner_is_thin_and_domain_research_stays_native() ->
         (REPO_ROOT / "evals/behavior_regression/catalog.json").read_text(encoding="utf-8")
     )
     suite_count = sum(item["case_count"] for item in catalog["suites"])
-    assert suite_count == catalog["declared_case_count"] == 67
+    assert suite_count == catalog["declared_case_count"] == 71
     assert catalog["live_profile_case_counts"] == {
         "capability": 1,
         "smoke": 1 + 1,
-        "core": 18 + 1 + 6 + 2 + 1 + 2 + 3,
-        "deep": 18 + 1 + 6 + 2 + 1 + 1 + 2 + 3,
+        "core": 18 + 1 + 6 + 2 + 1 + 2 + 7,
+        "deep": 18 + 1 + 6 + 2 + 1 + 1 + 2 + 7,
         "intent": 46,
         "proactive": 6,
         "reuse": 4,
-        "productivity": 3,
+        "productivity": 7,
         "subagent": 1,
     }
     intent = next(item for item in catalog["suites"] if item["id"] == "parent_frame_admission")
@@ -1625,8 +1627,19 @@ def test_live_codex_source_aware_continuity_hooks_are_trusted_and_bounded(
         discovered = response["result"]["data"][0]
         assert discovered["warnings"] == []
         assert discovered["errors"] == []
-        assert len(discovered["hooks"]) == 3
-        for hook in discovered["hooks"]:
+        # Installed plugins may contribute their own independently keyed hooks.
+        # This regression owns the three user continuity hooks for this
+        # CODEX_HOME; plugin discovery must neither replace nor inflate that
+        # owned set into a brittle global-count assertion.
+        owned_prefix = f"{home}\\hooks.json:"
+        owned_hooks = [
+            hook
+            for hook in discovered["hooks"]
+            if hook.get("source") == "user" and hook.get("key", "").startswith(owned_prefix)
+        ]
+        assert len(owned_hooks) == 3
+        assert {hook["eventName"] for hook in owned_hooks} == set(event_key_by_name)
+        for hook in owned_hooks:
             event_key = event_key_by_name[hook["eventName"]]
             assert hook["trustStatus"] == "trusted"
             assert hook["currentHash"] == trust_by_home[home][event_key]

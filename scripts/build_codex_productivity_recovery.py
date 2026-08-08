@@ -29,6 +29,7 @@ GENERIC_SKILLS = (
     "mcp-inspector-admission",
     "operate-for-user",
     "playwright-cli",
+    "productivity",
     "promptfoo-agent-evals",
     "repair-agent-behavior",
     "verified-agent-loop",
