@@ -16,11 +16,10 @@
 若当前交互确实在继续未完成的新澳事务且没有更明确对象，背景只从以下薄入口恢复：
 
 - `C:\Users\xx363\Desktop\主线\00_先读我_主线入口与读取顺序.txt`
-- `C:\Users\xx363\Desktop\主线\01_新澳研究父意图.txt`
-- `C:\Users\xx363\Desktop\主线\02_事实与研究边界.txt`
+- 当前主体为 Codex 时读 `C:\Users\xx363\Desktop\主线\03_Codex当前新澳认识.txt`；当前主体为 PiS 时按正式新澳仓入口读取 PiS 自己的 `cognition\CURRENT_EFFECTIVE_WORLD.md`。两边共享一手证据但不自动同步解释，避免一边错误全局传播。
 - `E:\XINAO_RESEARCH_WORKSPACES\xinao-native-research\STATUS.md`
 
-缺失或冲突时从当前人话与 live facts 继续，不锁死任务；明确的新任务优先。
+旧 `01_新澳研究父意图.txt`、`02_事实与研究边界.txt` 与迁移/历史材料只作按需时序考古，不再是默认现役入口。缺失或冲突时从当前人话与 live facts 继续，不锁死任务；明确的新任务优先。
 
 ## 工程工作方式
 

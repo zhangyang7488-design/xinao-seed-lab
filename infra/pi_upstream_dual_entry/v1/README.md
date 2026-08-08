@@ -19,6 +19,10 @@ prime S 当前的稀疏身体还包括 profile-local Hermes memory/session ancho
 server 的 MCP adapter、原生 Serper `web_search`、以及 native DeepSeek V4 Flash/Pro。
 Luna、Terra 与 DeepSeek 的递归劳动都通过 `pi-subagents` child session 发生，不等于
 Codex 外部 WorkerPool；具体任务是否调用某个器官仍由根 Pi 按真实信息收益选择。
+PiS 的 0.43.0 Windows 兼容补丁同时保证异步 workflow ID 不把 provider tool-call 字符带入
+路径，并把 child `write` 回执中的 `/d`、`/mnt/d`、`/cygdrive/d` 仅在权威输出路径比较时
+等价为 `D:\...`。它不放宽成功 write、精确目标、错盘或 sibling 输出的 authorship 边界；
+每次安装和启动都会做版本、源码 hash 与补丁 hash 校验，未知上游字节直接拒绝。
 Hermes 的 PiS 兼容层会跳过 `sessions\subagent-artifacts` 中的孩子 transcript 账本，避免
 把它们误报成损坏的 Pi v3 session；账本本身保留，主 session 与孩子 session 均不删除。
 
@@ -30,6 +34,13 @@ Terminal profile；旧 `Open-Prime-Codex-Parity-Test.ps1` 只作无状态兼容�
 `Open-Prime-S.ps1 -Session <native-session-id|profile-local-session-file>` 可在本 profile 内恢复具名 session；
 `-NewSession` 与 `-Session` 互斥，跨 profile 路径会拒绝。RPC/验收脚本默认使用
 `--no-session`，不得污染桌面最近会话。
+
+Codex 代用户执行可见 PiS 重启时，必须先在 ingress 上让精确实例到安全边界并 stop，再使用
+`scripts\Start-PrimeSInWindowsTerminal.ps1 -Session <native-session-id>`。该入口强制选择
+`XINAO prime S` Windows Terminal profile，并先证明具名 session 正是该 profile 的最新 session，
+再让原生 profile commandline 以 `--continue` 恢复；不通过 `wt.exe` 覆盖 wrapper commandline；
+不得直接 `Start-Process pwsh ...Open-Prime-S.ps1`，因为那会保留 Pi 会话却把用户可见宿主降成
+独立 conhost。启动回执仍只是请求证据，须从新 ingress 回读同 profile/session 与新 instance。
 
 prime S 还继承了旧 PrimeB 已经由用户真实确认的小键盘回车双语义，但没有沿用旧 Prime
 动作名：`scripts\Set-PiSNumpadEnterFollow.ps1` 把物理 `NumpadEnter` 限定在标题为
@@ -65,3 +76,17 @@ auth、account-binding、sessions、整 profile 和整岛复制。包/launcher/r
 而是先回读共同合同岛与当前能力谱系，再按需进入真实 profile、通信边缘、身体实验室和消费者。
 `scripts\Install-CodexPiSStewardSkill.ps1` 将这一源码确定性投影到主 Codex Skills；Account B
 通过既有 `skills` junction 共同消费，不生成第二份配置源。
+
+PiS 的 `gpt-5.6-sol` 上下文窗口由 profile 的 `models-store.json` provider catalog 决定；
+`Set-PiSBodyConfiguration.ps1` 会精确移除 `models.json` 中同模型的本地 `contextWindow`
+覆盖，同时保留其他 provider/model 自定义。`Test-UpstreamPiDualEntry.ps1` 会从活动 catalog
+读回实际窗口并拒绝覆盖复发。当前观察值是 272000，但源码不把该漂移事实写死为未来上限。
+
+`pi-subagents@0.43.0` 的 Windows 兼容层同时闭合两条已复现路径：异步 workflow 使用独立
+`workflow-UUID`，不把 provider tool-call ID 当目录；file-only structured acceptance 在
+比较孩子写入归属时，将 `/d`、`/mnt/d`、`/cygdrive/d` 视为同一 Windows 盘符路径。
+错盘、sibling、失败/无回执 write、edit 与仅 prose 仍拒绝；安装和启动按版本及源码哈希
+fail closed，不把路径兼容放宽成任意文件信任。
+`scripts\Test-PiSFileOnlyAcceptanceRpc.mjs` 可在 fresh RPC 中重跑真实根 Pi -> operator child
+链，核对 child session 的 `win32` 探针、唯一 `/d/...` write、structured acceptance 消费，
+并在同一源码上重放上述负边界。

@@ -5,8 +5,8 @@
   "runtime_loaded": false,
   "completion_claim_allowed": false,
   "archive": "codex-productivity-recovery.v1.zip",
-  "archive_sha256": "6350a27dcfe312c5ec5b7afe092dc832f1f3d510bbb92fd263f33b6a9b5127ab",
-  "entry_count": 84,
+  "archive_sha256": "98ee0a53f60b8cb9a21fddab3d87b1e5ea88a8c5692ad175731a62a99b5acd71",
+  "entry_count": 87,
   "entries": [
     {
       "archive_path": "launchers/CODEX_PRODUCTIVITY_PROFILE.md",
@@ -33,8 +33,8 @@
       "archive_path": "main-home/AGENTS.md",
       "live_source": "C:\\Users\\xx363\\.codex\\AGENTS.md",
       "role": "main_live_source",
-      "size": 26208,
-      "sha256": "06282be7fc42b19c16bdd3b996a0505695e27feb1861c07a41749874e553c907"
+      "size": 28874,
+      "sha256": "0eeb7f5eae06a00999186a5fe3e7bb8f56da5e067c1858aa226c6a4d2dfb4f2c"
     },
     {
       "archive_path": "main-home/agents/luna-worker.toml",
@@ -159,8 +159,8 @@
       "archive_path": "main-home/skills/human-agency-grounding/SKILL.md",
       "live_source": "C:\\Users\\xx363\\.codex\\skills\\human-agency-grounding\\SKILL.md",
       "role": "generic_custom_skill",
-      "size": 15282,
-      "sha256": "305b64ec88f43c37b634c8be9c288ae3862753067480ea6563d9c794fbcd61cc"
+      "size": 14989,
+      "sha256": "d10cf771397f8e3eb08f79629b855769ea5fdee7774a6c384c3ae0d645dc0c26"
     },
     {
       "archive_path": "main-home/skills/human-agency-grounding/agents/openai.yaml",
@@ -208,8 +208,8 @@
       "archive_path": "main-home/skills/maintain-personal-decision-model/SKILL.md",
       "live_source": "C:\\Users\\xx363\\.codex\\skills\\maintain-personal-decision-model\\SKILL.md",
       "role": "generic_custom_skill",
-      "size": 19540,
-      "sha256": "1fd73e6e876f6eec85c025faa660c83ebecbada7b7871b21d59986d493a26533"
+      "size": 19273,
+      "sha256": "32a7446dad6a20543bef2409e9cfb33f91fc4bf220498cd530081ada34e03830"
     },
     {
       "archive_path": "main-home/skills/maintain-personal-decision-model/agents/openai.yaml",
@@ -511,6 +511,27 @@
       "role": "generic_custom_skill",
       "size": 3374,
       "sha256": "098acbf3f8493ace514a3ae42b72190f4d7fec3ea95f6e885b7e0024f7fb0087"
+    },
+    {
+      "archive_path": "main-home/skills/steward-pis-evolution/.xinao-projection.json",
+      "live_source": "C:\\Users\\xx363\\.codex\\skills\\steward-pis-evolution\\.xinao-projection.json",
+      "role": "generic_custom_skill",
+      "size": 547,
+      "sha256": "e79a98256c7d43ffed2ce0376fe7b8cbc350c0a2e6f93e7fe92d97b6412f028e"
+    },
+    {
+      "archive_path": "main-home/skills/steward-pis-evolution/SKILL.md",
+      "live_source": "C:\\Users\\xx363\\.codex\\skills\\steward-pis-evolution\\SKILL.md",
+      "role": "generic_custom_skill",
+      "size": 23153,
+      "sha256": "c0975ac7629d971e294050fa6c3ce8d454566de1a8ae0876df06ef450d35dd4d"
+    },
+    {
+      "archive_path": "main-home/skills/steward-pis-evolution/references/recovery-map.md",
+      "live_source": "C:\\Users\\xx363\\.codex\\skills\\steward-pis-evolution\\references\\recovery-map.md",
+      "role": "generic_custom_skill",
+      "size": 10426,
+      "sha256": "3806bbb782dbde401d50198ab866ce3370b46612bf01b405af95f7fe01bfb4c5"
     },
     {
       "archive_path": "main-home/skills/verified-agent-loop/SKILL.md",

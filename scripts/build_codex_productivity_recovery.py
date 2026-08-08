@@ -33,6 +33,7 @@ GENERIC_SKILLS = (
     "promptfoo-agent-evals",
     "repair-agent-behavior",
     "research-external-reality",
+    "steward-pis-evolution",
     "verified-agent-loop",
 )
 

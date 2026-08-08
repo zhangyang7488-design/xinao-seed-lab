@@ -25,9 +25,18 @@ type SupervisorRequest = {
 type PendingDelivery = {
 	request_id: string;
 	command: "prompt" | "steer" | "follow_up";
+	delivery: "prompt" | "steer" | "followUp";
+	content: string;
 	message_sha256: string;
 	runtime_accepted: boolean;
 	message_consumed: boolean;
+	aborted: boolean;
+};
+
+type PendingCompaction = {
+	request_id: string;
+	instructions_sha256: string;
+	phase: "compact_requested" | "compact_completed" | "compact_failed";
 };
 
 type SupervisorEvent = JsonObject & {
@@ -64,6 +73,7 @@ export default function supervisorIngress(pi: ExtensionAPI): void {
 	let activeRequestId: string | undefined;
 	const events: SupervisorEvent[] = [];
 	const pending: PendingDelivery[] = [];
+	const compactions: PendingCompaction[] = [];
 
 	function emit(kind: string, detail: JsonObject = {}): SupervisorEvent {
 		const event: SupervisorEvent = {
@@ -90,6 +100,7 @@ export default function supervisorIngress(pi: ExtensionAPI): void {
 				last_sequence: sequence,
 			};
 		}
+		const editorText = ctx.mode === "tui" && ctx.hasUI ? ctx.ui.getEditorText() : "";
 		return {
 			protocol: PROTOCOL,
 			profile: PROFILE,
@@ -101,6 +112,9 @@ export default function supervisorIngress(pi: ExtensionAPI): void {
 			cwd: ctx.cwd,
 			idle: ctx.isIdle(),
 			pending_messages: ctx.hasPendingMessages(),
+			editor_text_present: editorText.length > 0,
+			editor_text_length: Buffer.byteLength(editorText, "utf8"),
+			editor_text_sha256: sha256(editorText),
 			active_tools: [...pi.getActiveTools()].sort(),
 			available_tools: pi.getAllTools().map((tool) => tool.name).sort(),
 			last_sequence: sequence,
@@ -124,6 +138,15 @@ export default function supervisorIngress(pi: ExtensionAPI): void {
 		return request.content;
 	}
 
+	function optionalContent(request: SupervisorRequest): string | undefined {
+		if (request.content === undefined) return undefined;
+		if (typeof request.content !== "string") throw new Error("PI_SUPERVISOR_CONTENT_INVALID");
+		if (Buffer.byteLength(request.content, "utf8") > MAX_REQUEST_BYTES) {
+			throw new Error("PI_SUPERVISOR_CONTENT_TOO_LARGE");
+		}
+		return request.content.trim().length > 0 ? request.content : undefined;
+	}
+
 	function requireRequestId(request: SupervisorRequest): string {
 		if (typeof request.request_id !== "string" || request.request_id.trim().length === 0) {
 			throw new Error("PI_SUPERVISOR_REQUEST_ID_REQUIRED");
@@ -131,17 +154,73 @@ export default function supervisorIngress(pi: ExtensionAPI): void {
 		return request.request_id;
 	}
 
-	function rememberDelivery(requestId: string, command: PendingDelivery["command"], content: string): PendingDelivery {
+	function rememberDelivery(
+		requestId: string,
+		command: PendingDelivery["command"],
+		delivery: PendingDelivery["delivery"],
+		content: string,
+	): PendingDelivery {
 		const item: PendingDelivery = {
 			request_id: requestId,
 			command,
+			delivery,
+			content,
 			message_sha256: sha256(content),
 			runtime_accepted: false,
 			message_consumed: false,
+			aborted: false,
 		};
 		pending.push(item);
 		if (pending.length > 128) pending.splice(0, pending.length - 128);
 		return item;
+	}
+
+	function deliveryPhase(item: PendingDelivery): string {
+		if (item.aborted) return "aborted";
+		if (item.message_consumed) return "message_consumed";
+		if (item.runtime_accepted) return "runtime_accepted";
+		return "dispatch_requested";
+	}
+
+	function reconcileOwnedAbortResidue(
+		ctx: ExtensionContext,
+		abortRequestId: string,
+		editorBefore: string,
+		candidates: PendingDelivery[],
+	): JsonObject {
+		if (ctx.mode !== "tui" || !ctx.hasUI || candidates.length === 0) {
+			return { owned_delivery_count: candidates.length, editor_reconciled: false };
+		}
+		const ordered = [
+			...candidates.filter((item) => item.delivery === "steer"),
+			...candidates.filter((item) => item.delivery === "followUp"),
+		];
+		if (ordered.length === 0) {
+			return { owned_delivery_count: 0, editor_reconciled: false };
+		}
+		const ownedQueueText = ordered.map((item) => item.content).join("\n\n");
+		const expectedAfterAbort = [ownedQueueText, editorBefore]
+			.filter((text) => text.trim().length > 0)
+			.join("\n\n");
+		const editorAfterAbort = ctx.ui.getEditorText();
+		if (editorAfterAbort !== expectedAfterAbort) {
+			emit("owned_editor_reconcile_skipped", {
+				request_id: abortRequestId,
+				owned_delivery_count: ordered.length,
+				editor_before_sha256: sha256(editorBefore),
+				editor_after_sha256: sha256(editorAfterAbort),
+				reason: "EDITOR_CONTENT_DID_NOT_MATCH_OWNED_ABORT_RESTORE",
+			});
+			return { owned_delivery_count: ordered.length, editor_reconciled: false };
+		}
+		ctx.ui.setEditorText(editorBefore);
+		emit("owned_editor_residue_removed", {
+			request_id: abortRequestId,
+			owned_delivery_count: ordered.length,
+			editor_before_sha256: sha256(editorBefore),
+			editor_after_sha256: sha256(editorBefore),
+		});
+		return { owned_delivery_count: ordered.length, editor_reconciled: true };
 	}
 
 	async function processRequest(request: SupervisorRequest): Promise<JsonObject> {
@@ -171,25 +250,125 @@ export default function supervisorIngress(pi: ExtensionAPI): void {
 
 		if (command === "abort") {
 			const wasIdle = ctx.isIdle();
-			emit("abort_requested", { request_id: requestId, was_idle: wasIdle, pending_messages: ctx.hasPendingMessages() });
+			const editorBefore = ctx.mode === "tui" && ctx.hasUI ? ctx.ui.getEditorText() : "";
+			const ownedUnconsumed = pending.filter((item) => !item.message_consumed && !item.aborted);
+			emit("abort_requested", {
+				request_id: requestId,
+				was_idle: wasIdle,
+				pending_messages: ctx.hasPendingMessages(),
+				owned_unconsumed_count: ownedUnconsumed.length,
+			});
 			ctx.abort();
-			return { ok: true, phase: "abort_requested", request_id: requestId, was_idle: wasIdle };
+			const reconciliation = reconcileOwnedAbortResidue(ctx, requestId, editorBefore, ownedUnconsumed);
+			for (const item of ownedUnconsumed) {
+				item.aborted = true;
+				item.content = "";
+			}
+			return { ok: true, phase: "abort_requested", request_id: requestId, was_idle: wasIdle, ...reconciliation };
 		}
 		if (command === "stop") {
 			emit("stop_requested", { request_id: requestId, pending_messages: ctx.hasPendingMessages() });
 			setTimeout(() => ctx.shutdown(), 50);
 			return { ok: true, phase: "stop_requested", request_id: requestId, process_shutdown: true };
 		}
+		if (command === "compact") {
+			const customInstructions = optionalContent(request);
+			const instructionsDigest = sha256(customInstructions ?? "");
+			const existing = compactions.find((item) => item.request_id === requestId);
+			if (existing) {
+				if (existing.instructions_sha256 !== instructionsDigest) {
+					throw new Error("PI_SUPERVISOR_REQUEST_ID_CONFLICT");
+				}
+				return {
+					ok: true,
+					phase: existing.phase,
+					request_id: requestId,
+					instructions_sha256: instructionsDigest,
+					deduplicated: true,
+				};
+			}
+			if (!ctx.isIdle()) throw new Error("PI_SUPERVISOR_BUSY_CANNOT_COMPACT");
+			const item: PendingCompaction = {
+				request_id: requestId,
+				instructions_sha256: instructionsDigest,
+				phase: "compact_requested",
+			};
+			compactions.push(item);
+			if (compactions.length > 64) compactions.splice(0, compactions.length - 64);
+			const usageBefore = ctx.getContextUsage();
+			emit("compact_requested", {
+				request_id: requestId,
+				instructions_sha256: instructionsDigest,
+				context_tokens_before: usageBefore?.tokens ?? null,
+				context_window: usageBefore?.contextWindow ?? null,
+			});
+			try {
+				ctx.compact({
+					customInstructions,
+					onComplete: () => {
+						item.phase = "compact_completed";
+						const usageAfter = currentContext?.getContextUsage();
+						emit("compact_completed", {
+							request_id: requestId,
+							instructions_sha256: instructionsDigest,
+							context_tokens_after: usageAfter?.tokens ?? null,
+							context_window: usageAfter?.contextWindow ?? null,
+						});
+					},
+					onError: (error) => {
+						item.phase = "compact_failed";
+						emit("compact_failed", {
+							request_id: requestId,
+							instructions_sha256: instructionsDigest,
+							error_text: error.message,
+						});
+					},
+				});
+			} catch (error) {
+				item.phase = "compact_failed";
+				const errorText = error instanceof Error ? error.message : String(error);
+				emit("compact_failed", {
+					request_id: requestId,
+					instructions_sha256: instructionsDigest,
+					error_text: errorText,
+				});
+				throw error;
+			}
+			return {
+				ok: true,
+				phase: item.phase,
+				request_id: requestId,
+				instructions_sha256: instructionsDigest,
+			};
+		}
 		if (command !== "prompt" && command !== "steer" && command !== "follow_up") {
 			throw new Error("PI_SUPERVISOR_COMMAND_UNKNOWN");
 		}
 
 		const content = requireContent(request);
+		const digest = sha256(content);
+		const existing = pending.find((item) => item.request_id === requestId);
+		if (existing) {
+			if (existing.command !== command || existing.message_sha256 !== digest) {
+				throw new Error("PI_SUPERVISOR_REQUEST_ID_CONFLICT");
+			}
+			return {
+				ok: true,
+				phase: deliveryPhase(existing),
+				request_id: existing.request_id,
+				command: existing.command,
+				delivery: existing.delivery,
+				message_sha256: existing.message_sha256,
+				deduplicated: true,
+			};
+		}
 		if (command === "prompt" && !ctx.isIdle()) {
 			throw new Error("PI_SUPERVISOR_BUSY_USE_STEER_OR_FOLLOW_UP");
 		}
-		const item = rememberDelivery(requestId, command, content);
 		let delivery: "prompt" | "steer" | "followUp" = "prompt";
+		if (!ctx.isIdle() && command === "follow_up") delivery = "followUp";
+		else if (!ctx.isIdle()) delivery = "steer";
+		const item = rememberDelivery(requestId, command, delivery, content);
 		emit("dispatch_requested", {
 			request_id: requestId,
 			command,
@@ -199,10 +378,8 @@ export default function supervisorIngress(pi: ExtensionAPI): void {
 		if (ctx.isIdle()) {
 			pi.sendUserMessage(content);
 		} else if (command === "follow_up") {
-			delivery = "followUp";
 			pi.sendUserMessage(content, { deliverAs: "followUp" });
 		} else {
-			delivery = "steer";
 			pi.sendUserMessage(content, { deliverAs: "steer" });
 		}
 		return {
@@ -288,7 +465,7 @@ export default function supervisorIngress(pi: ExtensionAPI): void {
 		capture(ctx);
 		if (event.source !== "extension") return;
 		const digest = sha256(event.text);
-		const item = pending.find((candidate) => candidate.message_sha256 === digest && !candidate.runtime_accepted);
+		const item = pending.find((candidate) => candidate.message_sha256 === digest && !candidate.aborted && !candidate.runtime_accepted);
 		if (!item) {
 			emit("unmatched_extension_input", { message_sha256: digest });
 			return;
@@ -307,9 +484,10 @@ export default function supervisorIngress(pi: ExtensionAPI): void {
 		const text = userText(event.message);
 		if (text === undefined) return;
 		const digest = sha256(text);
-		const item = pending.find((candidate) => candidate.message_sha256 === digest && !candidate.message_consumed);
+		const item = pending.find((candidate) => candidate.message_sha256 === digest && !candidate.aborted && !candidate.message_consumed);
 		if (!item) return;
 		item.message_consumed = true;
+		item.content = "";
 		activeRequestId = item.request_id;
 		emit("message_consumed", {
 			request_id: item.request_id,

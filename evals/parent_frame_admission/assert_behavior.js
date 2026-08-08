@@ -100,6 +100,12 @@ module.exports = (output, context) => {
   const requiredClosureAlternatives = hasClosureExpectation
     ? JSON.parse(context.vars.expected_symmetric_alternatives_considered)
     : [];
+  const allowedResidualDefeaters = Object.prototype.hasOwnProperty.call(
+    context.vars,
+    "allowed_residual_defeaters",
+  )
+    ? JSON.parse(context.vars.allowed_residual_defeaters)
+    : [context.vars.expected_residual_defeater];
   const expected = {
     case_id: context.vars.case_id,
     frame_relation: context.vars.expected_frame_relation,
@@ -359,8 +365,9 @@ module.exports = (output, context) => {
       parsed.decision_closure?.duration_or_early_stop_checked === true &&
       parsed.decision_closure?.upward_service_path_checked === true &&
       parsed.decision_closure?.downward_consumer_effect_checked === true &&
-      parsed.decision_closure?.residual_defeater ===
-        context.vars.expected_residual_defeater &&
+      allowedResidualDefeaters.includes(
+        parsed.decision_closure?.residual_defeater,
+      ) &&
       parsed.decision_closure?.scope === "event_triggered_bounded");
   const effectCredentialDeliveryMatches = sameValue(
     parsed.credential_delivery,
@@ -460,6 +467,7 @@ module.exports = (output, context) => {
       allowed_frame_routes: allowedFrameRoutes,
       allowed_control_routes: allowedControlRoutes,
       allowed_turn_finalizations: allowedTurnFinalizations,
+      allowed_residual_defeaters: allowedResidualDefeaters,
     },
     actual: parsed,
     toolCallTypes: toolCalls.map((item) => item.type),

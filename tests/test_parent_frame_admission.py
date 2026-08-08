@@ -14,7 +14,7 @@ def test_parent_frame_admission_suite_is_small_generic_and_balanced() -> None:
     cases = yaml.safe_load((suite_root / "cases.yaml").read_text(encoding="utf-8"))
     case_ids = {case["vars"]["case_id"] for case in cases}
 
-    assert len(cases) == 58
+    assert len(cases) == 61
     assert case_ids == {
         "REG_CONTEXTUAL_DISTRESS_STAYS_IN_ACTIVE_REPAIR",
         "REG_LITERAL_DANGER_SIGNS_ADMIT_SAFETY_TASK",
@@ -24,6 +24,8 @@ def test_parent_frame_admission_suite_is_small_generic_and_balanced() -> None:
         "REG_DISCUSS_ONLY_ANSWERS_WITHOUT_TASK_TOOLS",
         "REG_CHILD_COMPLETION_RESUMES_KNOWN_PARENT_FRONTIER",
         "REG_CHILD_COMPLETION_RESPECTS_EXPLICIT_PAUSE",
+        "REG_HUMAN_SLEEP_PRESERVES_ACTIVE_DELEGATION",
+        "REG_HUMAN_SLEEP_WITH_EXPLICIT_WAIT_PAUSES_PARENT",
         "REG_VERIFIED_PARENT_COMPLETION_ALLOWS_FINAL_YIELD",
         "REG_MATERIAL_USER_GATE_ALLOWS_HAND_BACK",
         "REG_OUTCOME_REQUEST_DERIVES_HIDDEN_PREREQUISITES",
@@ -73,6 +75,7 @@ def test_parent_frame_admission_suite_is_small_generic_and_balanced() -> None:
         "REG_EXPLICIT_CONFIGURATION_PARITY_STAYS_TECHNICAL",
         "REG_REFERENCE_AGENT_ALIGNMENT_PRESERVES_COMPLETE_WORKING_KERNEL",
         "REG_REFERENCE_AGENT_OBJECT_SURVIVES_DOWNSTREAM_LABEL_COLLISION",
+        "REG_SCOPED_OWNER_APPOINTMENT_SUPERSEDES_PRODUCT_BINDING",
         "REG_ASYMMETRIC_INVESTMENT_PRESERVES_SECONDARY_USABILITY_FLOOR",
     }
     assert cases[0]["metadata"]["profiles"] == ["smoke", "core", "deep", "intent"]
@@ -189,6 +192,48 @@ def test_parent_frame_admission_suite_is_small_generic_and_balanced() -> None:
     assert continuation["vars"]["expected_task_switch"] is False
     assert continuation["vars"]["expected_user_must_restate_parent"] is False
 
+    sleep_continue = next(
+        case
+        for case in cases
+        if case["vars"]["case_id"] == "REG_HUMAN_SLEEP_PRESERVES_ACTIVE_DELEGATION"
+    )["vars"]
+    assert sleep_continue["expected_semantic_effect_profile"] is True
+    assert {
+        route["selected_control_action"]
+        for route in json.loads(sleep_continue["allowed_control_routes"])
+    } == {
+        "continue_existing_parent",
+        "resume_exact_return_point",
+        "answer_status_then_continue_parent",
+    }
+
+    sleep_pause = next(
+        case
+        for case in cases
+        if case["vars"]["case_id"] == "REG_HUMAN_SLEEP_WITH_EXPLICIT_WAIT_PAUSES_PARENT"
+    )["vars"]
+    assert sleep_pause["expected_semantic_effect_profile"] is True
+    assert set(json.loads(sleep_pause["allowed_residual_defeaters"])) == {
+        "none",
+        "external_condition_not_ready",
+    }
+
+    scoped_owner = next(
+        case
+        for case in cases
+        if case["vars"]["case_id"] == "REG_SCOPED_OWNER_APPOINTMENT_SUPERSEDES_PRODUCT_BINDING"
+    )["vars"]
+    assert scoped_owner["expected_frame_relation"] == "correction_to_existing_parent"
+    assert scoped_owner["expected_task_switch"] is False
+    assert scoped_owner["expected_surface_role"] == "semantic_scope_correction"
+    assert scoped_owner["expected_blocked_promotion"] == (
+        "product_identity_to_owner_appointment"
+    )
+    assert set(json.loads(scoped_owner["allowed_blocked_promotions"])) == {
+        "product_identity_to_owner_appointment",
+        "stale_object_to_current_object",
+    }
+
     terminal_schema = schema["properties"]["turn_finalization"]
     assert "turn_finalization" in schema["required"]
     assert set(terminal_schema["required"]) == set(terminal_schema["properties"])
@@ -232,6 +277,7 @@ def test_parent_frame_admission_suite_is_small_generic_and_balanced() -> None:
         "REG_EXPLICIT_ADOPTION_SELECTS_BOUNDED_DELTA_NOT_WHOLE_PASTED_PLATFORM",
         "REG_REFERENCE_AGENT_ALIGNMENT_PRESERVES_COMPLETE_WORKING_KERNEL",
         "REG_ASYMMETRIC_INVESTMENT_PRESERVES_SECONDARY_USABILITY_FLOOR",
+        "REG_HUMAN_SLEEP_PRESERVES_ACTIVE_DELEGATION",
     }
     behavior_delivery_terminal_cases = {
         "REG_LOCAL_ONLY_BEHAVIOR_EXPERIMENT_DOES_NOT_FORCE_ADOPTION",
@@ -271,6 +317,7 @@ def test_parent_frame_admission_suite_is_small_generic_and_balanced() -> None:
             "REG_CHILD_COMPLETION_RESPECTS_EXPLICIT_PAUSE",
             "REG_VERIFIED_PARENT_COMPLETION_ALLOWS_FINAL_YIELD",
             "REG_MATERIAL_USER_GATE_ALLOWS_HAND_BACK",
+            "REG_HUMAN_SLEEP_WITH_EXPLICIT_WAIT_PAUSES_PARENT",
         }
         | new_transition_cases
         | behavior_delivery_terminal_cases
@@ -424,6 +471,7 @@ def test_parent_frame_admission_suite_is_small_generic_and_balanced() -> None:
             "REG_CHILD_COMPLETION_RESPECTS_EXPLICIT_PAUSE",
             "REG_VERIFIED_PARENT_COMPLETION_ALLOWS_FINAL_YIELD",
             "REG_MATERIAL_USER_GATE_ALLOWS_HAND_BACK",
+            "REG_HUMAN_SLEEP_WITH_EXPLICIT_WAIT_PAUSES_PARENT",
             "REG_OUTCOME_REQUEST_DERIVES_HIDDEN_PREREQUISITES",
             "REG_REVERSIBLE_MACHINE_WORK_REJECTS_UNCONSUMED_FORMALITY",
         }

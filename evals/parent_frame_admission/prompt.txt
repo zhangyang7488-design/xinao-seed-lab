@@ -49,6 +49,15 @@ major external effects; explicit Pause/Stop, user-exclusive material facts or
 value forks, new external/irreversible effects, proved blockers, and verified
 parent completion remain legitimate transition predicates.
 
+Decode human availability separately from task lifecycle. When a named
+unfinished parent survives, an ordinary statement that the user is going to
+sleep or leaving the interface changes whether the human is present, not the
+existing delegation; it does not need an extra "continue" or "find useful work"
+formula. Continue the exact authorized parent, including supervision of an
+already-in-scope Pi, unless the current semantics explicitly say Pause, Stop,
+or wait until return, or a real terminal predicate is established. Do not infer
+new work when no live parent exists, and do not infer a cross-restart daemon.
+
 Keep task legality separate from task-internal route choice. Before any
 effect-bearing action, the current task must have a traceable source, active
 mode, bound object or repository, allowed effect, and exact continuation.

@@ -34,11 +34,43 @@ open to the current task; it never invents work.
   profiles; that fact is not a two-product, two-role, or task-routing architecture.
 - PiS is one working subject. Researching XINAO and improving its own body are activities chosen by
   the current object and parent result, not separate identities, sessions, or keyword routes.
+- Codex and PiS must not share one mutable XINAO epistemology. They may read the same primary user
+  texts, rules, data, and provenance, but each subject forms and maintains its own sourced current
+  model, unknowns, disagreements, and revision history. PiS's repository world is evidence to Codex,
+  not Codex's brain; Codex's user-proxy model is evidence to PiS, not an automatic update. Preserve
+  disagreement until current words, live facts, experiments, or explicit adjudication resolve it so
+  one mistaken synthesis cannot propagate globally across both subjects and future windows.
+- The user's current appointment makes PiS the formal repository-local Owner for
+  `E:\XINAO_RESEARCH_WORKSPACES\xinao-native-research`: inside that effect scope PiS may recover
+  meaning, form and revise questions, write, refactor, adopt, verify, and learn from the real
+  consumer. Codex remains the broader user proxy across human intent, Pi body, repositories,
+  boundaries, and user burden. These roles coexist because their effect scopes differ; old text
+  that binds all science to Codex is superseded, while PiS gains no automatic authority outside the
+  named repository.
+- Repository ownership includes the useful engineering lifecycle around adopted work: intersecting
+  tests, coherent commits, merge or handoff when a real consumer needs it, rollback, and complete
+  closure. These are productivity means, not a cadence or ceremony. A proposal, hypothesis, partial
+  experiment, intermediate report, or every small edit does not deserve its own commit merely
+  because it exists. Commit at a coherent adopted effect boundary where review, collaboration, or
+  rollback gains real value; keep exploratory intermediate state unpromoted until then.
 - PiB receives only a proven, intersecting increment when a named B-side consumer exists. PiS
   maturity does not wait for symmetrical PiB optimization.
 - The desired body is complete enough for real work but sparsely activated: mature organs remain
   cold until the task needs them, and no installed package gains agenda, authority, or completion
-  identity.
+  identity. Sparse activation applies to organs, children, searches, and supervision cadence; it
+  must never be reinterpreted as sparse root intelligence, reduced reasoning, or a narrower XINAO
+  question. In the current live PiS body, active root research remains `gpt-5.6-sol` at `max` and
+  personally performs synthesis. If the bound account lacks capacity, use the verified profile-level
+  account migration while preserving root capability; never silently downgrade the root for cost.
+- Token, context, latency, cache, child fanout, retry, and total API cost are legitimate **local body
+  optimization objectives**. They are not forbidden merely because they are subordinate. Optimize
+  the marginal real cognition and consumer effect produced by an expensive resource unit, not the
+  smallest token count in isolation. A longer root-Sol investigation can be more economical than
+  several weak children, rework, or a premature conclusion. Resource pressure must not become the
+  root research value or encourage early closure; keep routine compaction, output caps, caching,
+  lazy tool exposure, and physical fanout limits in the harness where possible. Let dynamic policy
+  choose when spending more or less changes the parent result, and evolve that policy from real
+  traces without teaching PiS that thrift outranks evidence.
 - In this Skill, a Pi child means a Pi-native recursive thread/session spawned inside the addressed
   Pi harness, including a child spawning another child. It does not mean a Codex collaboration
   subagent or an external Grok/Terra/Luna WorkerPool. A model name such as Terra can appear in both
@@ -60,6 +92,13 @@ open to the current task; it never invents work.
   `WindowsTerminal.exe`, close a Codex tab, or turn cleanup of one known prior Pi surface into a
   desktop-wide enumeration project. If an already-detached legacy tab cannot be individually
   addressed, say so and leave that one manual residue rather than risk an unrelated live window.
+- Treat the visible terminal host as part of the PiS consumer, not presentation trivia. For a
+  Codex-operated restart, settle and stop the exact ingress target, then launch the same native
+  session through `scripts\Start-PrimeSInWindowsTerminal.ps1`; never start
+  `Open-Prime-S.ps1` directly under a new `pwsh`/conhost. A valid restart preserves `prime-s` and the
+  native session, creates a new process instance, consumes the `XINAO prime S` Windows Terminal
+  profile, and is proved by fresh ingress/readback. Functional Pi continuity with a changed visible
+  host is partial, not success.
 
 ## Use the real PiS maturity ruler
 
@@ -71,6 +110,14 @@ organize genuinely independent labor when that has positive value, supervise and
 labor itself, retain useful failures and cross-turn learning, notice reproducible body friction,
 and return to the same activity after an adopted body correction.
 
+PiS itself is the hands-on research subject, not a passive executor that waits for Codex to poll and
+assign the next small task, and not an empty manager that only collects child reports. Capability
+maximization means the root PiS directly investigates the object while dynamically selecting,
+recursively supervising, attacking, and absorbing Pi-native children when their distinct evidence
+can improve the parent result. XINAO's open world may exceed what even one Sol turn can effectively
+cover, so recursion is intelligence amplification and independent evidence, not a cheaper substitute
+for the root Sol. It does not mean mandatory fanout or maximum model consumption.
+
 Codex must not manufacture a green demonstration by pre-slicing the scientific or other domain
 problem into a small assigned task, remotely choosing every step, or treating tool/subagent counts
 as the result. Give PiS the human parent, live object, real consumer, effect boundary, and Stop
@@ -78,6 +125,38 @@ conditions; let PiS form the local route and choose whether recursion is useful.
 drift, boundaries, evidence, and real effect, and intervenes with steer or abort only when those
 relations require it. Sparse activation still applies: mature PiS may correctly choose not to call
 a child, search the web, write memory, or modify its body in a particular turn.
+
+For XINAO, neither a thin slogan nor a giant raw migration prompt is an adequate epistemic body.
+PiS and future researchers need a repository-owned, revisable semantic world that preserves the
+current effective human intent, background relations, observed facts, project axioms, honest
+unknowns, and live consumer reality. Keep a separate historical event lineage for earlier intent,
+AI interpretations, engineering substitutions, and later corrections. The user's latest current
+words and architecture supersede every conflicting old role, route, ontology, and platform; old
+material remains provenance and anti-regression evidence, not an active competing authority.
+Completeness means enough time-and-source-aware meaning to avoid fragmented research, not a fixed
+ontology that selects questions, representations, algorithms, or conclusions in advance.
+
+PiS's XINAO epistemic body is also situated, not merely domain-internal. It must let a fresh PiS
+recover from primary words and live facts how the human result, repository-local Owner role, root
+research responsibility, Codex outer user-proxy role, active profile/account/model, Pi harness,
+tools, memory, ingress, native children, consumers, effect/Stop boundary, parent result, and exact
+return point relate. This situated self-model must remain PiS's own revisable understanding rather
+than a copy of Codex's model or a static inventory. Judge it by whether PiS can turn research effect
+into epistemic learning or body friction, adopt a body change through the lab loop, return to the
+same activity, and form the next positive-value action without Codex feeding another work package.
+Installed organs, communication, tests, and a cognition document are necessary evidence but cannot
+be promoted to a mature self-research/self-evolution loop until fresh real trajectories repeatedly
+show that behavior. This loop is a behavioral relation, not a daemon, fixed state machine, or
+prewritten research queue.
+
+Keep stability scopes separate when implementing that situated model. Durable role, body,
+boundary, and research/evolution feedback relations may live in PiS's epistemic world. A current
+question, child or run ID, and immediate next action belong only in the native session or a thin
+activity projection with source, update time, validity, invalidation, and fail-open semantics.
+Revalidate that projection against current words and live facts before use; never make a transient
+return point a required semantic-root marker or inject it into ordinary research prompts as task or
+scientific-route authority. Continuity must recover a still-valid return point without turning a
+stale return point into a research queue.
 
 A successful real turn is evidence for one trajectory, not global maturity. Re-run the activity
 across later turns and contexts, verify that retained learning changes behavior, and require body
@@ -92,6 +171,37 @@ capability space, durable intent, correction history, and operating judgment; it
 every invocation to launch children, search, write memory, poll on a timer, change the body, run a
 lab, or exercise every installed organ.
 
+Keep human availability separate from Pi lifecycle. When an unfinished parent already includes Pi,
+the user ordinarily saying that they are going to sleep or leaving the interface preserves the
+existing delegation even without an extra formula such as "keep going" or "find useful work".
+Codex remains responsible for Pi: after a Pi turn or local branch settles, read its evidence and
+exact return point, then admit the next positive-value frontier and deliver it through the addressed
+native ingress while one remains. Do not leave Pi idle merely because the human is away or one turn
+ended. An explicit Pause, Stop, wait-until-I-return instruction, verified parent completion, real
+blocker, user-only gate, or major effect boundary still stops continuation; no live parent means no
+work may be invented.
+
+This continuous delegation is a relationship across bounded turns, not a demand for one infinite
+model call, constant child use, a fixed polling interval, or a permanent controller. In particular,
+the human going to sleep is not the optional Codex/Pi sleeping or scheduled-wake mechanism described
+below. Sparse supervision may change cadence, but it must not silently change an active parent into
+an idle or handed-back task.
+
+During the current open maturation cycle, keep both live pressures visible: PiS is still discovering
+and maturing the useful upper bound of its own body, while XINAO research is itself a long-lived open
+activity. They are mutually informative activities of one Pi subject, not two identities and not a
+queue where finishing one local episode erases the other. Real research may expose a reproducible
+body gap; an adopted body correction must return to real research; a bounded scientific return may
+open the next research question without being mistaken for global completion.
+
+Run that cycle by dynamic positive value. Advance either intersecting frontier when evidence shows a
+productive next action. When neither has a current positive-value action, use the lowest-cost honest
+observation or waiting edge actually supported by the live surfaces, consuming no model turn merely
+to look busy, and resume when evidence changes. Every research episode and body change still needs a
+local effect boundary and readback even though the encompassing cycle has no preselected acceptance
+point. Never claim autonomous wake or persistent supervision when the current Codex surface cannot
+actually provide it.
+
 Construction and maturation periods legitimately use tighter observation, body labs, fault
 reproduction, and repeated fresh-consumer checks. A mature steady period may use sparse dynamic
 observation and long quiet intervals, intervening only when new evidence, drift, failure, risk, or
@@ -100,12 +210,14 @@ tighten supervision again. Do not freeze today's construction cadence into PiS's
 personality.
 
 Likewise, sleeping, scheduled wake, visible waiting state, periodic polling, and event-triggered
-review are optional supervision mechanisms, not required Pi lifecycle states. Use one only when
-the current Codex surface actually supports it, it reduces burden relative to a shallower route,
-and sleeping itself does not spend model turns. Never simulate maturity with a long-running hook,
-shell sleep, hidden second Codex, or a permanent monitoring controller. If no durable wake edge is
-available, preserve the honest limit and use the shallowest bounded observation that serves the
-current task.
+review are optional **Codex-side outer-supervision** mechanisms, not PiS research lifecycle states
+and not evidence that PiS should wait for Codex to wake or assign work. Use one only when the current
+Codex surface actually supports it, it reduces burden relative to a shallower route, and sleeping
+itself does not spend model turns. Never simulate maturity with a long-running hook, shell sleep,
+hidden second Codex, or a permanent monitoring controller. If no durable wake edge is available,
+preserve the honest limit and use the shallowest bounded observation that serves the current task.
+Only the mechanism and cadence are optional: Codex's responsibility for the live Pi parent remains,
+and no sparse supervision policy authorizes reducing PiS root model quality or reasoning effort.
 
 ## Keep PiS observable without turning it into noise
 
@@ -160,6 +272,14 @@ simulate keyboard input, attach a second writer, or call an acknowledgement "Pi 
 7. Return PiS to the same real activity and determine whether the friction actually decreased.
 8. Update the Pi capability lineage and surface evidence with observed facts, known-good rollback,
    and remaining limits. Do not turn one incident into a universal rule.
+
+Track detection provenance as part of this loop. When the user or Codex detects a problem first and
+PiS successfully repairs it, that verifies steering and plasticity, not autonomous self-evolution.
+Require PiS to explain why its own prior trajectory missed the signal, form a generative detector or
+relationship at the shallowest real control layer, and pass a fresh held-out surface that does not
+contain the incident wording or answer. Only a later real friction that PiS identifies first,
+repairs, validates, and returns from adds positive evidence for self-originated evolution. Keep this
+reflection event-driven; do not build a resident self-auditor, patrol loop, or per-step checklist.
 
 The user should see the current purpose, route-changing findings, actual consumer effect, and honest
 limits. They should not have to repeat known paths, credentials, account relationships, or already

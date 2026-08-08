@@ -66,6 +66,36 @@ foreach ($profileName in $Profile) {
 
     $settings = Get-Content -Raw -LiteralPath $settingsPath -Encoding UTF8 | ConvertFrom-Json
     $subagentConfig = Get-Content -Raw -LiteralPath $subagentConfigPath -Encoding UTF8 | ConvertFrom-Json
+    $catalogContextWindow = $null
+    $profileContextWindowOverrideAbsent = $null
+    if ($profileName -eq 'prime-s') {
+        $modelsStorePath = Join-Path $spec.AgentDir 'models-store.json'
+        if (-not (Test-Path -LiteralPath $modelsStorePath -PathType Leaf)) {
+            throw "PI_SURFACE_TEST_PROVIDER_MODEL_CATALOG_MISSING: $modelsStorePath"
+        }
+        $modelsStore = Get-Content -Raw -LiteralPath $modelsStorePath -Encoding UTF8 | ConvertFrom-Json
+        $providerProperty = $modelsStore.PSObject.Properties['openai-codex']
+        $catalogModels = if ($null -ne $providerProperty) { @($providerProperty.Value.models) } else { @() }
+        $catalogSol = @($catalogModels | Where-Object { [string]$_.id -ceq 'gpt-5.6-sol' })
+        if ($catalogSol.Count -ne 1 -or [int64]$catalogSol[0].contextWindow -le 0) {
+            throw 'PI_SURFACE_TEST_SOL_CONTEXT_WINDOW_CATALOG_INVALID'
+        }
+        $catalogContextWindow = [int64]$catalogSol[0].contextWindow
+
+        $modelsOverridePath = Join-Path $spec.AgentDir 'models.json'
+        if (Test-Path -LiteralPath $modelsOverridePath -PathType Leaf) {
+            $modelsOverride = Get-Content -Raw -LiteralPath $modelsOverridePath -Encoding UTF8 | ConvertFrom-Json
+            $providersProperty = $modelsOverride.PSObject.Properties['providers']
+            $codexProperty = if ($null -ne $providersProperty) { $providersProperty.Value.PSObject.Properties['openai-codex'] } else { $null }
+            $modelOverridesProperty = if ($null -ne $codexProperty) { $codexProperty.Value.PSObject.Properties['modelOverrides'] } else { $null }
+            $solOverrideProperty = if ($null -ne $modelOverridesProperty) { $modelOverridesProperty.Value.PSObject.Properties['gpt-5.6-sol'] } else { $null }
+            $contextOverrideProperty = if ($null -ne $solOverrideProperty) { $solOverrideProperty.Value.PSObject.Properties['contextWindow'] } else { $null }
+            if ($null -ne $contextOverrideProperty) {
+                throw "PI_SURFACE_TEST_UNSUPPORTED_SOL_CONTEXT_WINDOW_OVERRIDE: $($contextOverrideProperty.Value)"
+            }
+        }
+        $profileContextWindowOverrideAbsent = $true
+    }
     if (
         [string]$subagentConfig.artifactDir -ne 'session' -or
         $subagentConfig.scheduledRuns.enabled -ne $false -or
@@ -193,6 +223,8 @@ Without using tools, report instructions already present in your current context
         subagent_artifact_dir = [string]$subagentConfig.artifactDir
         scheduled_runs_enabled = [bool]$subagentConfig.scheduledRuns.enabled
         missions_enabled = [bool]$subagentConfig.missions.enabled
+        provider_catalog_context_window = $catalogContextWindow
+        profile_context_window_override_absent = $profileContextWindowOverrideAbsent
         numpad_enter_follow = $numpadAcceptance
         live_model_probe = $liveProbe
     }
@@ -215,10 +247,18 @@ if (-not $nativeWindowsHide) { throw 'PI_SURFACE_TEST_NATIVE_WINDOWS_HIDE_MISSIN
 $node = Get-PiDualEntryNodeInfo
 $primeBWrapper = 'C:\Users\xx363\CodexLaunchers\Open-Prime-Agent-Account-B.ps1'
 $primeSWrapper = 'C:\Users\xx363\CodexLaunchers\Open-Prime-S.ps1'
+$primeSVisibleRestart = Join-Path $PSScriptRoot 'Start-PrimeSInWindowsTerminal.ps1'
 $wrapperBText = Get-Content -Raw -LiteralPath $primeBWrapper -Encoding UTF8
 $wrapperSText = Get-Content -Raw -LiteralPath $primeSWrapper -Encoding UTF8
 if ($wrapperBText -notmatch 'Start-UpstreamPi\.ps1' -or $wrapperBText -notmatch 'Profile prime-b') { throw 'PI_SURFACE_TEST_PRIME_B_WRAPPER_STALE' }
 if ($wrapperSText -notmatch 'Start-UpstreamPi\.ps1' -or $wrapperSText -notmatch 'Profile prime-s') { throw 'PI_SURFACE_TEST_PRIME_S_WRAPPER_STALE' }
+if (-not (Test-Path -LiteralPath $primeSVisibleRestart -PathType Leaf)) { throw 'PI_SURFACE_TEST_VISIBLE_RESTART_MISSING' }
+$visibleRestartText = Get-Content -Raw -LiteralPath $primeSVisibleRestart -Encoding UTF8
+foreach ($requiredRestartMarker in @('XINAO prime S','Open-Prime-S.ps1','-Session','PIS_VISIBLE_RESTART_SESSION_NOT_LATEST_FOR_PROFILE','profile-native-continue-after-latest-session-proof','ingress_readback_required')) {
+    if ($visibleRestartText -notmatch [regex]::Escape($requiredRestartMarker)) {
+        throw "PI_SURFACE_TEST_VISIBLE_RESTART_MARKER_MISSING: $requiredRestartMarker"
+    }
+}
 $terminalSettingsPath = 'C:\Users\xx363\AppData\Local\Packages\Microsoft.WindowsTerminal_8wekyb3d8bbwe\LocalState\settings.json'
 $terminalSettings = Get-Content -Raw -LiteralPath $terminalSettingsPath -Encoding UTF8 | ConvertFrom-Json
 $primeSProfile = @($terminalSettings.profiles.list | Where-Object { [string]$_.name -eq 'XINAO prime S' })
@@ -235,6 +275,19 @@ $shortcutPath = 'C:\Users\xx363\Desktop\prime S.lnk'
 $shell = New-Object -ComObject WScript.Shell
 $shortcut = $shell.CreateShortcut($shortcutPath)
 if ([string]$shortcut.Arguments -ne '-w new -p "XINAO prime S"') { throw 'PI_SURFACE_TEST_PRIME_S_SHORTCUT_STALE' }
+$latestPrimeSSession = Get-ChildItem -LiteralPath (Join-Path $profileRoot 'prime-s\sessions') -File -Filter '*.jsonl' | Sort-Object LastWriteTimeUtc -Descending | Select-Object -First 1
+if ($null -eq $latestPrimeSSession) { throw 'PI_SURFACE_TEST_VISIBLE_RESTART_SESSION_MISSING' }
+$latestPrimeSSessionHeader = Get-Content -LiteralPath $latestPrimeSSession.FullName -TotalCount 1 -Encoding UTF8 | ConvertFrom-Json
+$visibleRestartValidationRaw = @(& $primeSVisibleRestart -Session ([string]$latestPrimeSSessionHeader.id) -ValidateOnly 2>&1)
+if ($LASTEXITCODE -ne 0) { throw "PI_SURFACE_TEST_VISIBLE_RESTART_VALIDATION_FAILED: $($visibleRestartValidationRaw -join ' ')" }
+$visibleRestartValidation = ($visibleRestartValidationRaw -join [Environment]::NewLine) | ConvertFrom-Json
+if (
+    [string]$visibleRestartValidation.status -ne 'ready' -or
+    [string]$visibleRestartValidation.terminal_profile -ne 'XINAO prime S' -or
+    [string]$visibleRestartValidation.session_id -ne [string]$latestPrimeSSessionHeader.id -or
+    $visibleRestartValidation.same_profile_session_required -ne $true -or
+    $visibleRestartValidation.ingress_readback_required -ne $true
+) { throw 'PI_SURFACE_TEST_VISIBLE_RESTART_VALIDATION_INVALID' }
 
 $acceptance = [ordered]@{
     schema = 'xinao.pi_stable_leading_surfaces.acceptance.v2'
@@ -259,6 +312,7 @@ $acceptance = [ordered]@{
     desktop_wrappers = @($primeBWrapper,$primeSWrapper)
     prime_s_terminal_profile = 'XINAO prime S'
     prime_s_shortcut = $shortcutPath
+    prime_s_visible_restart = $visibleRestartValidation
 }
 if (-not [string]::IsNullOrWhiteSpace($ReceiptPath)) {
     Write-PiDualEntryJsonAtomic -Path $ReceiptPath -Value $acceptance

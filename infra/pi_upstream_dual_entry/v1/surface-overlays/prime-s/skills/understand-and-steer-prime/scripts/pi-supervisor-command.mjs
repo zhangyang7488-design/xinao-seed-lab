@@ -5,10 +5,11 @@ import { readFile } from "node:fs/promises";
 import { createConnection } from "node:net";
 
 const DEFAULT_PIPE = "\\\\.\\pipe\\xinao-pi-supervisor-prime-s-v1";
-const ALLOWED = new Set(["list", "get_state", "get_events", "prompt", "steer", "follow_up", "abort", "stop", "wait"]);
-const MUTATING = new Set(["prompt", "steer", "follow_up", "abort", "stop"]);
+const ALLOWED = new Set(["list", "get_state", "get_events", "prompt", "steer", "follow_up", "compact", "abort", "stop", "wait"]);
+const MUTATING = new Set(["prompt", "steer", "follow_up", "compact", "abort", "stop"]);
 const DELIVERY = new Set(["prompt", "steer", "follow_up"]);
-const WAITABLE = new Set(["runtime_accepted", "message_consumed", "agent_settled", "abort_requested"]);
+const WAIT_CAPABLE = new Set([...DELIVERY, "compact"]);
+const WAITABLE = new Set(["runtime_accepted", "message_consumed", "agent_settled", "compact_completed", "compact_failed", "abort_requested"]);
 
 function fail(text, code = 2) {
 	process.stderr.write(`${text}\n`);
@@ -119,6 +120,9 @@ async function waitForEvent(args) {
 		if (!sameTarget(response.state, args)) fail("PI_SUPERVISOR_TARGET_CHANGED_WHILE_WAITING", 1);
 		for (const event of response.events ?? []) {
 			since = Math.max(since, Number(event.sequence) || 0);
+			if (args.until === "compact_completed" && event.request_id === args.requestId && event.kind === "compact_failed") {
+				fail(`PI_SUPERVISOR_COMPACTION_FAILED request=${args.requestId}: ${event.error_text ?? "unknown error"}`, 1);
+			}
 			if (event.request_id === args.requestId && event.kind === args.until) {
 				return { ok: true, matched_event: event, state: response.state };
 			}
@@ -153,8 +157,21 @@ try {
 			body.content = args.contentFile ? await readFile(args.contentFile, "utf8") : await stdinText();
 			if (!body.content.trim()) fail("Delivery content is empty");
 		}
+		if (args.command === "compact" && args.contentFile) {
+			body.content = await readFile(args.contentFile, "utf8");
+			if (!body.content.trim()) fail("Compaction instructions are empty");
+		}
 		response = await request(args.pipe, body, args.timeout);
 		assertResponse(response);
+		if (WAIT_CAPABLE.has(args.command) && args.until) {
+			if (!WAITABLE.has(args.until)) fail(`${args.command} --until must be <${[...WAITABLE].join("|")}>`);
+			if (response.phase === args.until) {
+				response = { ok: true, dispatch: response, matched_phase: args.until, state: undefined };
+			} else {
+				const waited = await waitForEvent({ ...args, requestId: body.request_id });
+				response = { ok: true, dispatch: response, ...waited };
+			}
+		}
 	}
 	process.stdout.write(`${JSON.stringify(response, null, 2)}\n`);
 } catch (error) {

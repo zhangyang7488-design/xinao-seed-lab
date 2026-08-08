@@ -147,7 +147,7 @@ function Get-PiDualEntrySpec {
         SurfaceIsland = 'E:\XINAO_RESEARCH_WORKSPACES\prime-s-local-cognition-island'
         SurfaceContractSource = 'E:\XINAO_RESEARCH_WORKSPACES\prime-s-local-cognition-island\AGENTS.md'
         SurfaceSentinel = 'PI_SURFACE_PRIME_S_V1'
-        Packages = @('npm:pi-subagents@0.43.0','npm:pi-autoresearch@1.6.2','npm:pi-hermes-memory@0.9.4','npm:pi-mcp-adapter@2.21.0')
+        Packages = @('npm:pi-subagents@0.43.0','npm:pi-autoresearch@1.6.2','npm:pi-hermes-memory@0.9.4','npm:pi-mcp-adapter@2.21.1')
         ExcludedTools = @('skill_manage','mcp','mcpScript')
         MutexName = 'Local\XinaoUpstreamPi0841S'
     })

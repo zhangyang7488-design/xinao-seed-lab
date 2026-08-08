@@ -208,6 +208,7 @@ providers:
                   - old_parent_over_new_task
                   - pause_to_parent_erasure
                   - local_completion_to_parent_completion
+                  - human_availability_to_task_pause
                   - technical_choice_to_user
                   - bounded_wait_to_implicit_stop
                   - available_action_to_defer

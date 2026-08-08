@@ -21,10 +21,39 @@ surface's body lineage, candidate evidence, acceptance, and rollback. Neither cr
   `E:\XINAO_RESEARCH_WORKSPACES\S\infra\pi_upstream_dual_entry\v1`
 - PiS desktop wrapper: `C:\Users\xx363\CodexLaunchers\Open-Prime-S.ps1`
 - PiB desktop wrapper: `C:\Users\xx363\CodexLaunchers\Open-Prime-Agent-Account-B.ps1`
+- Exact visible PiS restart:
+  `E:\XINAO_RESEARCH_WORKSPACES\S\infra\pi_upstream_dual_entry\v1\scripts\Start-PrimeSInWindowsTerminal.ps1 -Session <native-session-id>`
 
 Verify launcher target, active account binding, Pi/Node version, settings, installed packages,
 contract projection, overlay manifest, native session identity, process instance, and target
 consumer only to the degree they intersect the current action.
+
+Do not invoke the PiS desktop wrapper as a fresh `pwsh` process. That produces a separate conhost and
+changes the user's visible TUI even when the Pi profile/session is correct. A Codex-driven restart
+must settle and stop the exact old ingress target, use the exact visible restart script above, then
+prove the new instance retained the same `prime-s` profile and native session. The Windows Terminal
+profile is a real consumer because it owns appearance, title, close-on-exit, and numpad-follow scope.
+The restart script only admits the newest profile-local session, launches the profile's proven native
+commandline unchanged, and treats its launch receipt as non-final until exact ingress readback. Do not
+replace the profile commandline through `wt.exe`: a zero launcher exit code does not prove a tab or Pi
+process was created.
+
+### Context-window authority and recovery
+
+The active provider model catalog in `prime-s\models-store.json` is authoritative for the selected
+model's context window. `Set-PiSBodyConfiguration.ps1` removes only a profile-local
+`providers.openai-codex.modelOverrides.gpt-5.6-sol.contextWindow` override while preserving unrelated
+custom models and providers. Never copy a remembered numeric window into `models.json`; read the
+current catalog and verify that the local override is absent. As of the 2026-08-08 incident the live
+catalog reported 272000, but that value is drift-prone evidence, not a permanent contract.
+
+If the provider rejects an already-oversized native session, preserve the session file. Native
+compaction is the first bounded recovery only while the branch can still fit a provider request; it
+cannot rescue a branch that already exceeds the real window. At that boundary, start a fresh visible
+PiS session through the proven Windows Terminal profile and give it a short technical pointer to the
+old session and named primary artifacts. Do not paste the old transcript, a complete migration tree,
+large logs, or recursive file inventories into the new prompt. Read long sources by purpose, offsets,
+search hits, and named receipts; a file pointer is transport, not epistemic authority or a task queue.
 
 PiS's numpad transcript-follow behavior is sourced and installed from:
 
@@ -82,3 +111,52 @@ adoption, fresh-launch PiS and re-run the real activity that exposed the gap.
 
 PiB is outside the default write cone. Compare or promote to it only when the current parent names a
 B-side consumer or rollback check.
+
+## Native maturity organs
+
+Read the current capability lineage and installed package source before relying on a versioned
+behavior. These organs are available to PiS but remain sparsely activated means, never a required
+ritual or an automatic claim of self-evolution:
+
+- `pi-subagents` owns Pi-native child sessions, recursion, async FleetView, steer/stop, and bounded
+  project-local child refinement. Its `refine`, `refine.show`, and `refine.rollback` actions build an
+  evidence-cited overlay under the current project's `.pi-subagents\refinements`; they do not rewrite
+  the base agent, root Pi contract, safety, tools, acceptance, or scientific route. Refine only an
+  agent with recent bounded evidence and verify a later fresh child; absence of an overlay means the
+  capability is available but has not been consumed.
+- `pi-autoresearch` is for an isolated, measurable edit -> benchmark -> keep/revert loop with a
+  scalar metric and external correctness checks. It writes `.auto`, commits experiments, and can
+  resume after compaction. Never point it at open XINAO question formation, an unbounded semantic
+  world, or a dirty formal worktree merely because the package is installed.
+- Hermes memory/session search is a recovery and learning organ. In policy-only mode it should be
+  searched when durable context can change the action; it does not inject a second authoritative
+  Pi identity, task queue, or scientific ontology.
+- The MCP adapter discovers servers on demand behind a small proxy surface. Installing or updating
+  it does not justify adding MCP servers, exposing their schemas to every turn, or treating an empty
+  server catalog as a maturity gap.
+
+The useful body loop is always consumer-shaped: real friction -> bounded diagnosis -> isolated
+candidate -> positive/negative/fresh evidence -> keep or rollback -> return to the interrupted real
+activity. Record who detected the friction first and whether the root actually absorbed the child or
+tool result into a changed judgment.
+
+## XINAO epistemic sources
+
+When the live parent is XINAO research or repair of its research body, the current repository-owned
+epistemic entry is authoritative after current user words and live facts:
+
+- Repository: `E:\XINAO_RESEARCH_WORKSPACES\xinao-native-research`
+- Current visible human entry: `C:\Users\xx363\Desktop\主线`
+- Migration chronology: `C:\Users\xx363\Desktop\迁移`
+- Read-only historical archaeology root: `C:\Users\xx363\Desktop\历史备用 不动`
+- Early complete construction/double-loop source:
+  `C:\Users\xx363\Desktop\历史备用 不动\新建文件夹\新澳完整研究施工与旁路双环进化_施工级终稿_v1.0_2026-07-13.txt`
+- Early background-model source:
+  `C:\Users\xx363\Desktop\历史备用 不动\新建文件夹\新澳背景模型前置约束-与验收定义.txt`
+- First-principles research source: `C:\Users\xx363\Desktop\研究开奖序列_第一性原理.txt`
+
+Do not read these roots on every startup or modify the historical root. The repository's current
+effective semantic world should absorb the presently valid understanding. Use the old sources only
+for a named provenance gap, intent event, background event, or drift explanation. Current user words
+supersede every conflicting historical role, architecture, ontology, and route; preservation of a
+historical event never restores its authority.

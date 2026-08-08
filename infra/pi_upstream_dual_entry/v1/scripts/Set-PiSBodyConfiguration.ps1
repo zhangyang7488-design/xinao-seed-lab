@@ -27,6 +27,17 @@ function Write-PiSBodyJsonIfChanged {
     return $true
 }
 
+function Get-PiSBodyJsonPropertyValue {
+    param(
+        $Object,
+        [Parameter(Mandatory)][string]$Name
+    )
+    if ($null -eq $Object) { return $null }
+    $property = $Object.PSObject.Properties[$Name]
+    if ($null -eq $property) { return $null }
+    return $property.Value
+}
+
 $target = Get-NormalizedPiSBodyPath -Path $AgentDir
 $activeTarget = Get-NormalizedPiSBodyPath -Path (Join-Path $script:PiDualEntryStateRoot 'profiles\prime-s')
 $labParent = Get-NormalizedPiSBodyPath -Path (Join-Path $script:PiDualEntryStateRoot 'body-labs\prime-s')
@@ -85,6 +96,52 @@ $mcpConfig = [ordered]@{
 }
 $mcpChanged = Write-PiSBodyJsonIfChanged -Path $mcpPath -Value $mcpConfig
 
+# The provider model catalog is the authority for a model's real context window. A local
+# override above that value suppresses Pi's early compaction and lets a request reach the
+# provider only after it is already too large. Remove only this profile-local override;
+# preserve every unrelated provider/model customization and let future catalog updates flow.
+$modelsPath = Join-Path $target 'models.json'
+$unsupportedContextWindowOverrideRemoved = $false
+$removedContextWindowValue = $null
+$modelsOverrideChanged = $false
+if (Test-Path -LiteralPath $modelsPath -PathType Leaf) {
+    $models = Get-Content -Raw -LiteralPath $modelsPath -Encoding UTF8 | ConvertFrom-Json
+    $providers = Get-PiSBodyJsonPropertyValue -Object $models -Name 'providers'
+    $openAiCodex = Get-PiSBodyJsonPropertyValue -Object $providers -Name 'openai-codex'
+    $modelOverrides = Get-PiSBodyJsonPropertyValue -Object $openAiCodex -Name 'modelOverrides'
+    $solOverride = Get-PiSBodyJsonPropertyValue -Object $modelOverrides -Name 'gpt-5.6-sol'
+    $contextProperty = if ($null -ne $solOverride) { $solOverride.PSObject.Properties['contextWindow'] } else { $null }
+    if ($null -ne $contextProperty) {
+        $removedContextWindowValue = $contextProperty.Value
+        $solOverride.PSObject.Properties.Remove('contextWindow')
+        $unsupportedContextWindowOverrideRemoved = $true
+        $modelsOverrideChanged = $true
+    }
+    if ($null -ne $solOverride -and @($solOverride.PSObject.Properties).Count -eq 0) {
+        $modelOverrides.PSObject.Properties.Remove('gpt-5.6-sol')
+        $modelsOverrideChanged = $true
+    }
+    if ($null -ne $modelOverrides -and @($modelOverrides.PSObject.Properties).Count -eq 0) {
+        $openAiCodex.PSObject.Properties.Remove('modelOverrides')
+        $modelsOverrideChanged = $true
+    }
+    if ($null -ne $openAiCodex -and @($openAiCodex.PSObject.Properties).Count -eq 0) {
+        $providers.PSObject.Properties.Remove('openai-codex')
+        $modelsOverrideChanged = $true
+    }
+    if ($null -ne $providers -and @($providers.PSObject.Properties).Count -eq 0) {
+        $models.PSObject.Properties.Remove('providers')
+        $modelsOverrideChanged = $true
+    }
+    if ($modelsOverrideChanged) {
+        if (@($models.PSObject.Properties).Count -eq 0) {
+            Remove-Item -LiteralPath $modelsPath -Force
+        } else {
+            Write-PiDualEntryJsonAtomic -Path $modelsPath -Value $models
+        }
+    }
+}
+
 [pscustomobject]@{
     schema = 'xinao.pi_s_sparse_body_configuration.v1'
     agent_dir = $target
@@ -94,6 +151,11 @@ $mcpChanged = Write-PiSBodyJsonIfChanged -Path $mcpPath -Value $mcpConfig
     mcp_config = $mcpPath
     mcp_sha256 = (Get-FileHash -Algorithm SHA256 -LiteralPath $mcpPath).Hash.ToLowerInvariant()
     mcp_changed = $mcpChanged
+    models_override_path = $modelsPath
+    unsupported_context_window_override_removed = $unsupportedContextWindowOverrideRemoved
+    removed_context_window_value = $removedContextWindowValue
+    models_override_changed = $modelsOverrideChanged
+    context_window_source = 'provider_model_catalog'
     autonomous_memory_learning_enabled = $false
     ambient_mcp_discovery_enabled = $false
 } | ConvertTo-Json -Depth 5
