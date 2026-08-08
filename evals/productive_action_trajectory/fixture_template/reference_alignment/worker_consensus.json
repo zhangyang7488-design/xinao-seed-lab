@@ -1,0 +1,6 @@
+{
+  "worker_count": 12,
+  "config_parity": true,
+  "recommendation": "accept startup health as sufficient",
+  "authority": "candidate_only"
+}

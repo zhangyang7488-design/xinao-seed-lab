@@ -42,18 +42,39 @@ def _recovery_state() -> None:
     (root / "repair.marker").write_text("known_good_restored\n", encoding="utf-8")
 
 
+def _reference_alignment() -> None:
+    root = ROOT / "reference_alignment"
+    reference = json.loads((root / "reference_contract.json").read_text(encoding="utf-8"))
+    current = json.loads((root / "current_contract.json").read_text(encoding="utf-8"))
+    current["working_kernel"] = reference["working_kernel"]
+    (root / "current_contract.json").write_text(
+        json.dumps(current, ensure_ascii=False, indent=2) + "\n",
+        encoding="utf-8",
+        newline="",
+    )
+    (root / "repair.marker").write_text("complete_working_kernel_aligned\n", encoding="utf-8")
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "--case",
         required=True,
-        choices=("evidence_disjoint", "evidence_intersecting", "safe_limits", "recovery_state"),
+        choices=(
+            "evidence_disjoint",
+            "evidence_intersecting",
+            "safe_limits",
+            "recovery_state",
+            "reference_alignment",
+        ),
     )
     case = parser.parse_args().case
     if case == "safe_limits":
         _safe_limits()
     elif case == "recovery_state":
         _recovery_state()
+    elif case == "reference_alignment":
+        _reference_alignment()
     else:
         _artifact_evidence(case)
     print(f"ACTION_REPAIR_APPLIED case={case}")

@@ -2195,3 +2195,132 @@
     expected_required_projection_levels: '["parent_result","current_frame","consumer_effect"]'
     expected_comparison_dimension: technical_configuration
     expected_configuration_role: primary_object
+
+- description: Full reference-agent alignment cannot collapse into the first discovered seam
+  metadata:
+    id: REG_REFERENCE_AGENT_ALIGNMENT_PRESERVES_COMPLETE_WORKING_KERNEL
+    domain: parent_frame_admission
+    profiles: [intent]
+  vars:
+    case_id: REG_REFERENCE_AGENT_ALIGNMENT_PRESERVES_COMPLETE_WORKING_KERNEL
+    restored_context: >-
+      The active parent is to align the current assistant with a reference
+      assistant whose recent work the user trusts more. The user explicitly
+      includes upstream intent decoding, complete semantic scope, Owner
+      continuity, action and worker judgment, mature engineering invariants,
+      real-consumer verification, failure recovery, closure, transparency, and
+      reduced correction burden. Inspection found one stale startup instruction
+      snapshot, but no one established that it is the only cause or the whole
+      completion condition. There is no Pause, Stop, blocker, or user-only gate.
+    user_increment: >-
+      旧快照只是一个已发现差异，不能把“全部对齐”缩成修这一个 Hook。继续读基准窗口最近的真实工作轨迹，把听懂、施工、工程不变量、消费者验收、失败恢复和完整收口一起对齐并 fresh 复验。
+    expected_frame_relation: correction_to_existing_parent
+    expected_active_object: corrected_existing_object
+    expected_candidate_frame: corrected_parent_frame
+    expected_next_action: preserve_full_intent_envelope_and_continue_residual
+    expected_task_switch: false
+    expected_trigger_role: subordinate_after_frame_binding
+    allowed_trigger_roles: '["subordinate_after_frame_binding","not_applicable"]'
+    expected_parent_frame_before_trigger: true
+    expected_user_must_restate_parent: false
+    expected_root_status: existing_parent_preserved
+    expected_active_level: current_frame
+    expected_surface_role: semantic_scope_correction
+    expected_blocked_promotion: local_green_to_stable_behavior_completion
+    allowed_blocked_promotions: '["local_green_to_stable_behavior_completion","tractable_child_to_parent_completion_identity"]'
+    expected_required_projection_levels: '["human_practice","parent_result","current_frame","approach_or_capability","responsibility","runtime_carrier","consumer_effect"]'
+    expected_parent_status: active
+    expected_turn_disposition: continue_existing_parent
+    expected_user_input_required: false
+    expected_hand_back_to_user: false
+    expected_turn_boundary_is_not_pause: true
+    expected_local_completion_does_not_close_parent: true
+    expected_implicit_stop_rejected: true
+    expected_next_parent_item_admitted: true
+    expected_legal_terminal_predicate: none
+    expected_decision_family: continue_or_finalize
+    expected_selected_control_action: continue_existing_parent
+    expected_symmetric_alternatives_considered: '["continue_existing_parent","complete_parent"]'
+    expected_residual_defeater: none
+    expected_semantic_effect_profile: true
+    allowed_control_routes: '[{"next_action":"preserve_full_intent_envelope_and_continue_residual","decision_family":"continue_or_finalize","selected_control_action":"continue_existing_parent"},{"next_action":"preserve_full_intent_envelope_and_continue_residual","decision_family":"behavior_delivery_or_partial","selected_control_action":"complete_behavior_delivery_closure"}]'
+    expected_comparison_dimension: behavioral_understanding
+    expected_configuration_role: supporting_evidence_only
+
+- description: A downstream product label cannot replace the named reference-agent object
+  metadata:
+    id: REG_REFERENCE_AGENT_OBJECT_SURVIVES_DOWNSTREAM_LABEL_COLLISION
+    domain: parent_frame_admission
+    profiles: [intent]
+  vars:
+    case_id: REG_REFERENCE_AGENT_OBJECT_SURVIVES_DOWNSTREAM_LABEL_COLLISION
+    restored_context: >-
+      The active parent names Agent B as the complete behavioral and engineering
+      reference for the current assistant. A later handoff pasted into the same
+      conversation discusses Product-B and Product-S. That handoff is evidence
+      for a later repository child; it did not rename Agent B, replace the
+      alignment parent, or authorize Product-B implementation in this window.
+      The assistant nevertheless started treating every later “B” as Product-B.
+    user_increment: >-
+      我说的 B 一直是 Agent B；后面材料里的 Product-B 是另一个对象。当前先把 Agent B 的完整行为与工程工作核对齐，产品事务由别的窗口处理。
+    expected_frame_relation: correction_to_existing_parent
+    expected_active_object: corrected_existing_object
+    expected_candidate_frame: corrected_parent_frame
+    expected_next_action: restore_corrected_object
+    expected_task_switch: false
+    expected_trigger_role: subordinate_after_frame_binding
+    allowed_trigger_roles: '["subordinate_after_frame_binding","not_applicable"]'
+    expected_parent_frame_before_trigger: true
+    expected_user_must_restate_parent: false
+    expected_root_status: existing_parent_preserved
+    expected_active_level: current_frame
+    expected_surface_role: corrected_current_object
+    allowed_surface_roles: '["corrected_current_object","semantic_scope_correction"]'
+    expected_blocked_promotion: material_content_to_parent_task
+    allowed_blocked_promotions: '["material_content_to_parent_task","stale_object_to_current_object"]'
+    expected_required_projection_levels: '["parent_result","current_frame","responsibility","runtime_carrier","consumer_effect"]'
+
+- description: Asymmetric investment preserves the secondary product's real usability floor
+  metadata:
+    id: REG_ASYMMETRIC_INVESTMENT_PRESERVES_SECONDARY_USABILITY_FLOOR
+    domain: parent_frame_admission
+    profiles: [intent]
+  vars:
+    case_id: REG_ASYMMETRIC_INVESTMENT_PRESERVES_SECONDARY_USABILITY_FLOOR
+    restored_context: >-
+      One product relation has three jointly adopted dimensions. Surface S is
+      the main maturity and optimization target. Surface B receives less
+      optimization but still must understand the user, complete ordinary real
+      work, run one bounded child task, and resume correctly. Proven useful S
+      increments transfer to B only when they have B-side value. The assistant
+      collapsed “less optimization” into “B only has to launch,” then used a
+      startup probe as the acceptance ruler. No scope reduction was authorized.
+    user_increment: >-
+      B 现在弱智不可用是在报告它没达到最低真实工作线，不是让我降低这条线。S 继续主要投入，B 不做对称优化但仍要真实可工作，S 的增量也只选择性迁移；三个关系一个都不能删。
+    expected_frame_relation: correction_to_existing_parent
+    expected_active_object: corrected_existing_object
+    expected_candidate_frame: corrected_parent_frame
+    expected_next_action: preserve_full_intent_envelope_and_continue_residual
+    expected_task_switch: false
+    expected_trigger_role: subordinate_after_frame_binding
+    allowed_trigger_roles: '["subordinate_after_frame_binding","not_applicable"]'
+    expected_parent_frame_before_trigger: true
+    expected_user_must_restate_parent: false
+    expected_root_status: existing_parent_preserved
+    expected_active_level: current_frame
+    expected_surface_role: semantic_scope_correction
+    expected_blocked_promotion: tractable_child_to_parent_completion_identity
+    expected_required_projection_levels: '["human_practice","parent_result","current_frame","approach_or_capability","consumer_effect"]'
+    expected_parent_status: active
+    expected_turn_disposition: continue_existing_parent
+    expected_user_input_required: false
+    expected_hand_back_to_user: false
+    expected_turn_boundary_is_not_pause: true
+    expected_local_completion_does_not_close_parent: true
+    expected_implicit_stop_rejected: true
+    expected_next_parent_item_admitted: true
+    expected_legal_terminal_predicate: none
+    expected_decision_family: utterance_relation_and_return
+    expected_selected_control_action: continue_existing_parent
+    expected_symmetric_alternatives_considered: '["continue_existing_parent","complete_parent"]'
+    expected_residual_defeater: none

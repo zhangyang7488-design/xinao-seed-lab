@@ -391,7 +391,7 @@ def test_intent_continuity_baseline_reduces_burden_without_routing_science() -> 
     assert '"context": False' in snapshot
 
     readme = (REPO_ROOT / "evals" / "behavior_regression" / "README.md").read_text(encoding="utf-8")
-    assert "currently inventories 62" in readme
+    assert "currently inventories 65" in readme
     assert "-Profile context" not in readme
 
     attributes = (REPO_ROOT / ".gitattributes").read_text(encoding="utf-8")
@@ -1197,21 +1197,21 @@ def test_behavior_evolution_runner_is_thin_and_domain_research_stays_native() ->
         (REPO_ROOT / "evals/behavior_regression/catalog.json").read_text(encoding="utf-8")
     )
     suite_count = sum(item["case_count"] for item in catalog["suites"])
-    assert suite_count == catalog["declared_case_count"] == 80
+    assert suite_count == catalog["declared_case_count"] == 84
     assert catalog["live_profile_case_counts"] == {
         "capability": 1,
         "smoke": 1 + 1,
-        "core": 18 + 1 + 6 + 2 + 1 + 2 + 7,
-        "deep": 18 + 1 + 6 + 2 + 1 + 1 + 2 + 7,
-        "intent": 55,
+        "core": 18 + 1 + 6 + 2 + 1 + 2 + 8,
+        "deep": 18 + 1 + 6 + 2 + 1 + 1 + 2 + 8,
+        "intent": 58,
         "proactive": 6,
         "reuse": 4,
-        "productivity": 7,
+        "productivity": 8,
         "subagent": 1,
     }
     intent = next(item for item in catalog["suites"] if item["id"] == "parent_frame_admission")
     assert intent["kind"] == "promptfoo_live"
-    assert intent["case_count"] == 55
+    assert intent["case_count"] == 58
     assert intent["runtime_claim_allowed"] is True
     assert intent["domain_routing_claim_allowed"] is False
     proactive = next(item for item in catalog["suites"] if item["id"] == "proactive_mature_first")
@@ -1473,6 +1473,9 @@ def test_live_codex_productivity_profile_keeps_core_and_colds_stale_surfaces() -
     assert "只有当前用户明确要求时" not in main_agents
     assert "语义保真" in main_agents
     assert "不能把父完成身份改写成该子项" in main_agents
+    assert "完整有效工作关系" in main_agents
+    assert "读取基准的近期真实轨迹与工作效果" in main_agents
+    assert "不能把行为对齐缩成静态配置一致或一个局部修复" in main_agents
     assert "只有索引标成 `overlay-verified` 的八类制品插件" in main_agents
     assert "不能从“定义还在”推断“已可恢复”" in main_agents
     assert "稳定行为修复或可复用能力变更" in main_agents
@@ -1692,11 +1695,19 @@ def test_live_codex_source_aware_continuity_hooks_are_trusted_and_bounded(
 
     active_state_root = tmp_path / "active-task-state"
 
-    def run_hook(script: Path, event: dict[str, object], *, test_root: Path | None = None):
+    def run_hook(
+        script: Path,
+        event: dict[str, object],
+        *,
+        test_root: Path | None = None,
+        behavior_source: Path | None = None,
+    ):
         env = os.environ.copy()
         env["CODEX_ACTIVE_TASK_STATE_ROOT"] = str(active_state_root)
         if test_root is not None:
             env["CODEX_HOOK_TEST_SESSION_ROOT"] = str(test_root)
+        if behavior_source is not None:
+            env["CODEX_HOT_BEHAVIOR_SOURCE_PATH"] = str(behavior_source)
         completed = subprocess.run(
             [str(pwsh), "-NoProfile", "-File", str(script)],
             input=json.dumps(event, ensure_ascii=False),
@@ -1740,6 +1751,75 @@ def test_live_codex_source_aware_continuity_hooks_are_trusted_and_bounded(
     assert "报告、ZIP" not in context
     assert "TASK_CONTINUATION_ADVISORY_ONLY" in context
     assert "TASK_PROVENANCE_PENDING_INITIAL_BIND" not in context
+
+    behavior_source = tmp_path / "live-AGENTS.md"
+    behavior_source.write_text(
+        "SENTINEL:TEST_LIVE_BEHAVIOR_SOURCE_V1\ncurrent semantic and engineering invariants\n",
+        encoding="utf-8",
+    )
+    transcript_root = tmp_path / "hook-transcripts"
+    transcript_root.mkdir()
+
+    def write_startup_transcript(path: Path, startup_agents: str) -> None:
+        row = {
+            "type": "response_item",
+            "payload": {
+                "type": "message",
+                "role": "user",
+                "content": [
+                    {
+                        "type": "input_text",
+                        "text": (
+                            "# AGENTS.md instructions for test\n\n<INSTRUCTIONS>\n"
+                            + startup_agents
+                            + "\n</INSTRUCTIONS>"
+                        ),
+                    }
+                ],
+            },
+        }
+        path.write_text(json.dumps(row, ensure_ascii=False) + "\n", encoding="utf-8")
+
+    current_transcript = transcript_root / "current.jsonl"
+    write_startup_transcript(current_transcript, behavior_source.read_text(encoding="utf-8"))
+    current_source_output = run_hook(
+        user_prompt_script,
+        {
+            "hook_event_name": "UserPromptSubmit",
+            "prompt": "继续",
+            "cwd": str(REPO_ROOT),
+            "session_id": "pytest-current-source",
+            "transcript_path": str(current_transcript),
+            "turn_id": "pytest-current-source-turn",
+        },
+        test_root=transcript_root,
+        behavior_source=behavior_source,
+    )
+    assert (
+        "SENTINEL:LIVE_BEHAVIOR_SOURCE_DRIFT_V1"
+        not in current_source_output["hookSpecificOutput"]["additionalContext"]
+    )
+
+    stale_transcript = transcript_root / "stale.jsonl"
+    write_startup_transcript(stale_transcript, "SENTINEL:STALE_BEHAVIOR_SOURCE_V0")
+    stale_source_output = run_hook(
+        user_prompt_script,
+        {
+            "hook_event_name": "UserPromptSubmit",
+            "prompt": "继续",
+            "cwd": str(REPO_ROOT),
+            "session_id": "pytest-stale-source",
+            "transcript_path": str(stale_transcript),
+            "turn_id": "pytest-stale-source-turn",
+        },
+        test_root=transcript_root,
+        behavior_source=behavior_source,
+    )
+    stale_source_context = stale_source_output["hookSpecificOutput"]["additionalContext"]
+    assert "SENTINEL:LIVE_BEHAVIOR_SOURCE_DRIFT_V1" in stale_source_context
+    assert str(behavior_source) in stale_source_context
+    assert "完整读取 live source" in stale_source_context
+    assert "不得把这次漂移缩成单个配置差异" in stale_source_context
 
     unbound_session = run_hook(
         session_script,

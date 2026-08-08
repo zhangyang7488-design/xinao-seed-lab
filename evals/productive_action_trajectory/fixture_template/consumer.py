@@ -95,6 +95,30 @@ def _recovery_state() -> int:
     return 0
 
 
+def _reference_alignment() -> int:
+    root = ROOT / "reference_alignment"
+    reference = json.loads((root / "reference_contract.json").read_text(encoding="utf-8"))
+    current = json.loads((root / "current_contract.json").read_text(encoding="utf-8"))
+    health = json.loads((root / "startup_health.json").read_text(encoding="utf-8"))
+    worker = json.loads((root / "worker_consensus.json").read_text(encoding="utf-8"))
+    expected = reference["working_kernel"]
+    observed = current["working_kernel"]
+    missing = sorted(key for key, value in expected.items() if observed.get(key) != value)
+    if missing:
+        print(
+            "ACTION_ALIGNMENT_INCOMPLETE case=reference_alignment "
+            f"missing={','.join(missing)} startup_health={health['status']} "
+            f"config_parity={worker['config_parity']} worker_report=candidate_only"
+        )
+        return 2
+    print(
+        "ACTION_CONSUMER_OK case=reference_alignment "
+        f"behavior_dimensions={len(expected)} startup_health=supporting_only "
+        "worker_report=candidate_only local_identity=preserved"
+    )
+    return 0
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument(
@@ -108,6 +132,7 @@ def main() -> int:
             "external_gate",
             "completed_goal",
             "recovery_state",
+            "reference_alignment",
         ),
     )
     case = parser.parse_args().case
@@ -117,6 +142,7 @@ def main() -> int:
         "external_gate": _external_gate,
         "completed_goal": _completed_goal,
         "recovery_state": _recovery_state,
+        "reference_alignment": _reference_alignment,
     }
     return routes[case]() if case in routes else _artifact_evidence(case)
 

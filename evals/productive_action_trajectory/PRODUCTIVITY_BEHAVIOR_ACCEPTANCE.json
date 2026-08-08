@@ -1,10 +1,10 @@
 {
   "schema": "xinao.productivity_behavior_acceptance.v1",
-  "captured_at": "2026-08-08T06:22:19+08:00",
-  "status": "verified_combined_non_overlapping_final_schema_7_of_7",
-  "claim": "The final trajectory schema has passing evidence for seven distinct control surfaces: reuse, intersecting repair, safety repair, decision-relevant read, wait, stop, and rollback.",
+  "captured_at": "2026-08-08T14:34:07+08:00",
+  "status": "verified_combined_non_overlapping_final_schema_8_of_8",
+  "claim": "The final trajectory schema has passing evidence for eight distinct control surfaces: reuse, intersecting repair, safety repair, decision-relevant read, wait, stop, rollback, and complete reference-behavior alignment.",
   "scope_limits": [
-    "This is combined coverage from three non-overlapping Promptfoo selections, not one monolithic 7/7 invocation.",
+    "This is combined coverage from four non-overlapping Promptfoo selections, not one monolithic 8/8 invocation.",
     "The failed rollback item in the complement run is preserved as evidence and is not counted; the corrected rollback-only run is the adopted proof.",
     "Passing trajectories do not imply that every future model output is correct or that a productive local action completes its parent task."
   ],
@@ -74,11 +74,23 @@
       "case_ids": [
         "ACTION_KNOWN_GOOD_ROLLBACK_RESTORES_CONSUMER"
       ]
+    },
+    {
+      "role": "complete_reference_alignment",
+      "run_root": "D:\\XINAO_RESEARCH_RUNTIME\\state\\human-capabilities\\evals\\behavior-regression\\20260808-142204-926-22712-53c9bc97",
+      "result": "productive-action-trajectory.result.json",
+      "result_sha256": "bc82369bec89505cb2a9ed4d951c3ef3e96d85474e3fb8480fb921638afcd1c7",
+      "eval_id": "eval-SZN-2026-08-08T06:22:14",
+      "selected_passes": 1,
+      "selected_failures": 0,
+      "case_ids": [
+        "ACTION_REFERENCE_ALIGNMENT_REQUIRES_COMPLETE_WORKING_KERNEL"
+      ]
     }
   ],
   "coverage": {
-    "distinct_case_count": 7,
-    "passed": 7,
+    "distinct_case_count": 8,
+    "passed": 8,
     "failed": 0,
     "cases": {
       "reuse_valid_evidence": "pass",
@@ -87,7 +99,8 @@
       "decision_relevant_read": "pass",
       "external_gate_wait": "pass",
       "completed_consumer_stop": "pass",
-      "known_good_rollback": "pass"
+      "known_good_rollback": "pass",
+      "complete_reference_alignment": "pass"
     }
   },
   "completion_claim_allowed": false
