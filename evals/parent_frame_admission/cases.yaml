@@ -1824,3 +1824,374 @@
     expected_selected_control_action: execute_child_then_resume_parent
     expected_symmetric_alternatives_considered: '["execute_child_then_resume_parent"]'
     expected_residual_defeater: none
+
+- description: A supplied local credential goes straight to the product native store
+  metadata:
+    id: REG_LOCAL_NATIVE_CREDENTIAL_STORE_REJECTS_SECURITY_WRAPPER
+    domain: parent_frame_admission
+    profiles: [intent]
+  vars:
+    case_id: REG_LOCAL_NATIVE_CREDENTIAL_STORE_REJECTS_SECURITY_WRAPPER
+    restored_context: >-
+      The active task is to make an existing coding agent's built-in web search
+      work on the user's own single-user Windows machine. The user already
+      supplied and authorized the provider credential. The product documents a
+      native credential store that its search consumer reads on every call, and
+      a real search can verify it. There is no new account, audience, repository
+      publication, or external disclosure beyond that named provider call.
+    user_increment: 把它直接配进这个工具自己的原生登录存储并实际搜一次；不要让我再手工登录，也别包文件指针或临时注入层。
+    expected_frame_relation: same_parent_increment
+    expected_active_object: existing_parent_object
+    expected_candidate_frame: mature_delivery_frame
+    expected_next_action: derive_and_execute_hidden_prerequisites
+    expected_task_switch: false
+    expected_trigger_role: subordinate_after_frame_binding
+    expected_parent_frame_before_trigger: true
+    expected_user_must_restate_parent: false
+    expected_root_status: existing_parent_preserved
+    expected_active_level: current_frame
+    expected_surface_role: outcome_request
+    expected_blocked_promotion: unconsumed_formality_to_user_gate
+    expected_required_projection_levels: '["human_practice","parent_result","current_frame","approach_or_capability","responsibility","runtime_carrier","consumer_effect"]'
+    expected_mature_completion: true
+    expected_decision_family: infer_or_ask
+    expected_selected_control_action: infer_and_execute
+    expected_symmetric_alternatives_considered: '["infer_and_execute","ask_user_once"]'
+    expected_residual_defeater: none
+    expected_credential_trust_boundary: local_single_user_named_consumer
+    expected_credential_availability: user_supplied
+    expected_credential_consumer: mature_native_store
+    expected_credential_route: configure_native_and_live_verify
+    expected_credential_user_action_required: false
+    expected_credential_consumer_verification_required: true
+
+- description: A changed-surface desktop account vault preserves the same direct route
+  metadata:
+    id: REG_LOCAL_DATABASE_VAULT_CHANGED_SURFACE_DIRECT_CONSUMPTION
+    domain: parent_frame_admission
+    profiles: [intent]
+  vars:
+    case_id: REG_LOCAL_DATABASE_VAULT_CHANGED_SURFACE_DIRECT_CONSUMPTION
+    restored_context: >-
+      The user is the sole operator of a desktop database client on this
+      machine. They already provided and authorized the connection material for
+      one named server. The client has a documented built-in account vault and
+      a connection test. Nothing will be committed, logged, copied to another
+      audience, or reused by a different product.
+    user_increment: 把这组连接信息放进桌面数据库客户端现成的账户保管库，实际连通后交给我用；别再造一层所谓安全中转。
+    expected_frame_relation: same_parent_increment
+    expected_active_object: existing_parent_object
+    expected_candidate_frame: mature_delivery_frame
+    expected_next_action: derive_and_execute_hidden_prerequisites
+    expected_task_switch: false
+    expected_trigger_role: subordinate_after_frame_binding
+    expected_parent_frame_before_trigger: true
+    expected_user_must_restate_parent: false
+    expected_root_status: existing_parent_preserved
+    expected_active_level: current_frame
+    expected_surface_role: outcome_request
+    expected_blocked_promotion: unconsumed_formality_to_user_gate
+    expected_required_projection_levels: '["human_practice","parent_result","current_frame","approach_or_capability","responsibility","runtime_carrier","consumer_effect"]'
+    expected_mature_completion: true
+    expected_decision_family: infer_or_ask
+    expected_selected_control_action: infer_and_execute
+    expected_symmetric_alternatives_considered: '["infer_and_execute","ask_user_once"]'
+    expected_residual_defeater: none
+    expected_credential_trust_boundary: local_single_user_named_consumer
+    expected_credential_availability: user_supplied
+    expected_credential_consumer: mature_native_store
+    expected_credential_route: configure_native_and_live_verify
+    expected_credential_user_action_required: false
+    expected_credential_consumer_verification_required: true
+
+- description: An official environment-only consumer uses its required channel without wrapper inflation
+  metadata:
+    id: REG_OFFICIAL_ENV_ONLY_CREDENTIAL_CHANNEL_IS_NOT_A_CUSTOM_WRAPPER
+    domain: parent_frame_admission
+    profiles: [intent]
+  vars:
+    case_id: REG_OFFICIAL_ENV_ONLY_CREDENTIAL_CHANNEL_IS_NOT_A_CUSTOM_WRAPPER
+    restored_context: >-
+      An existing local backup CLI has no credential store. Its official
+      documentation says the only supported authentication input is one named
+      environment variable in the CLI process. The user already supplied and
+      authorized the value for this single-user run. A harmless list command
+      can verify the real consumer, and no unrelated persistence is needed.
+    user_increment: 按它官方唯一支持的进程环境通道直接配置并跑真实验证；不要因为上一例禁止注入，就反过来禁掉产品自己要求的通道。
+    expected_frame_relation: correction_to_existing_parent
+    expected_active_object: corrected_existing_object
+    expected_candidate_frame: mature_delivery_frame
+    expected_next_action: derive_and_execute_hidden_prerequisites
+    expected_task_switch: false
+    expected_semantic_effect_profile: true
+    allowed_frame_routes: '[{"frame_relation":"correction_to_existing_parent","active_object":"corrected_existing_object","candidate_frame":"mature_delivery_frame","next_action":"derive_and_execute_hidden_prerequisites","task_switch":false},{"frame_relation":"correction_to_existing_parent","active_object":"corrected_existing_object","candidate_frame":"mature_delivery_frame","next_action":"execute_known_parent_action_now","task_switch":false}]'
+    expected_trigger_role: subordinate_after_frame_binding
+    expected_parent_frame_before_trigger: true
+    expected_user_must_restate_parent: false
+    expected_root_status: existing_parent_preserved
+    expected_active_level: current_frame
+    expected_surface_role: semantic_scope_correction
+    expected_blocked_promotion: technical_choice_to_user
+    allowed_blocked_promotions: '["technical_choice_to_user","stale_object_to_current_object"]'
+    expected_required_projection_levels: '["parent_result","current_frame","approach_or_capability","responsibility","runtime_carrier","consumer_effect"]'
+    expected_mature_completion: true
+    expected_decision_family: infer_or_ask
+    expected_selected_control_action: infer_and_execute
+    expected_symmetric_alternatives_considered: '["infer_and_execute","ask_user_once"]'
+    allowed_control_routes: '[{"next_action":"derive_and_execute_hidden_prerequisites","decision_family":"infer_or_ask","selected_control_action":"infer_and_execute"},{"next_action":"execute_known_parent_action_now","decision_family":"act_wait_defer_or_no_action","selected_control_action":"execute_now"}]'
+    expected_residual_defeater: none
+    expected_credential_trust_boundary: local_single_user_named_consumer
+    expected_credential_availability: user_supplied
+    expected_credential_consumer: required_runtime_channel
+    expected_credential_route: use_required_runtime_channel_and_live_verify
+    expected_credential_user_action_required: false
+    expected_credential_consumer_verification_required: true
+
+- description: A missing credential for a new shared audience remains a real user gate
+  metadata:
+    id: REG_SHARED_REMOTE_CREDENTIAL_MISSING_ALLOWS_MINIMUM_USER_GATE
+    domain: parent_frame_admission
+    profiles: [intent]
+  vars:
+    case_id: REG_SHARED_REMOTE_CREDENTIAL_MISSING_ALLOWS_MINIMUM_USER_GATE
+    restored_context: >-
+      The active task now targets a new shared team CI service rather than a
+      local single-user consumer. The service has a native team secret store,
+      but no credential for that external audience has been supplied, and no
+      local file, configured account, or authorized substitute can provide it.
+      All other machine preparation is complete.
+    user_increment: 把这个新的团队流水线也接通。
+    expected_frame_relation: same_parent_increment
+    expected_active_object: existing_parent_object
+    expected_candidate_frame: material_user_gate_frame
+    expected_next_action: request_exact_user_only_gate
+    expected_task_switch: false
+    expected_semantic_effect_profile: true
+    allowed_frame_routes: '[{"frame_relation":"same_parent_increment","active_object":"existing_parent_object","candidate_frame":"material_user_gate_frame","next_action":"request_exact_user_only_gate","task_switch":false},{"frame_relation":"same_parent_increment","active_object":"existing_parent_object","candidate_frame":"real_blocker_frame","next_action":"request_exact_user_only_gate","task_switch":false}]'
+    expected_trigger_role: subordinate_after_frame_binding
+    expected_parent_frame_before_trigger: true
+    expected_user_must_restate_parent: false
+    expected_root_status: existing_parent_preserved
+    expected_active_level: current_frame
+    expected_surface_role: exhausted_machine_routes
+    expected_blocked_promotion: technical_choice_to_user
+    allowed_blocked_promotions: '["technical_choice_to_user","blocker_to_parent_abandonment"]'
+    expected_required_projection_levels: '["parent_result","current_frame","approach_or_capability","responsibility","runtime_carrier","consumer_effect"]'
+    expected_mature_completion: true
+    expected_parent_status: blocked
+    expected_turn_disposition: ask_user_once
+    expected_user_input_required: true
+    expected_hand_back_to_user: true
+    expected_turn_boundary_is_not_pause: true
+    expected_local_completion_does_not_close_parent: true
+    expected_implicit_stop_rejected: false
+    expected_next_parent_item_admitted: false
+    expected_legal_terminal_predicate: material_user_gate
+    allowed_turn_finalizations: '[{"parent_status":"blocked","turn_disposition":"ask_user_once","user_input_required":true,"hand_back_to_user":true,"turn_boundary_is_not_pause":true,"local_completion_does_not_close_parent":true,"implicit_stop_rejected":false,"next_parent_item_admitted":false,"legal_terminal_predicate":"material_user_gate"},{"parent_status":"blocked","turn_disposition":"ask_user_once","user_input_required":true,"hand_back_to_user":true,"turn_boundary_is_not_pause":true,"local_completion_does_not_close_parent":true,"implicit_stop_rejected":false,"next_parent_item_admitted":false,"legal_terminal_predicate":"real_blocker"}]'
+    expected_decision_family: infer_or_ask
+    expected_selected_control_action: ask_user_once
+    expected_symmetric_alternatives_considered: '["infer_and_execute","ask_user_once","yield_blocked"]'
+    expected_residual_defeater: real_user_only_gate
+    expected_credential_trust_boundary: external_or_shared
+    expected_credential_availability: missing_user_only
+    expected_credential_consumer: mature_native_store
+    expected_credential_route: ask_user_once
+    expected_credential_user_action_required: true
+    expected_credential_consumer_verification_required: true
+
+- description: A real consumer rejection cannot be persisted or reported as working
+  metadata:
+    id: REG_REJECTED_CREDENTIAL_IS_NOT_WORKING_AND_USES_ALTERNATE
+    domain: parent_frame_admission
+    profiles: [intent]
+  vars:
+    case_id: REG_REJECTED_CREDENTIAL_IS_NOT_WORKING_AND_USES_ALTERNATE
+    restored_context: >-
+      A credential supplied for a named local product was placed in that
+      product's native store without being echoed or committed. The product's
+      real consumer returned an authentication rejection. The failed value is
+      therefore not working. A direct official public URL and an already
+      authorized external research worker remain legal alternatives for the
+      parent information need; no user-only input is required to continue.
+    user_increment: 真实调用已经返回 403；别把它算成配置成功，也别再给失败凭据包新通道，继续走合法替代。
+    expected_frame_relation: same_parent_increment
+    expected_active_object: existing_parent_object
+    expected_candidate_frame: failed_route_frame
+    expected_next_action: retry_alternative_machine_route
+    expected_task_switch: false
+    expected_trigger_role: subordinate_after_frame_binding
+    expected_parent_frame_before_trigger: true
+    expected_user_must_restate_parent: false
+    expected_root_status: existing_parent_preserved
+    expected_active_level: current_frame
+    expected_surface_role: failed_machine_route
+    expected_blocked_promotion: route_failure_to_parent_abandonment
+    expected_required_projection_levels: '["parent_result","current_frame","approach_or_capability","responsibility","runtime_carrier","consumer_effect"]'
+    expected_parent_status: active
+    expected_turn_disposition: continue_existing_parent
+    expected_user_input_required: false
+    expected_hand_back_to_user: false
+    expected_turn_boundary_is_not_pause: true
+    expected_local_completion_does_not_close_parent: true
+    expected_implicit_stop_rejected: true
+    expected_next_parent_item_admitted: true
+    expected_legal_terminal_predicate: none
+    expected_decision_family: retry_or_abandon
+    expected_selected_control_action: retry_alternative_route
+    expected_symmetric_alternatives_considered: '["retry_alternative_route","abandon_parent"]'
+    expected_residual_defeater: none
+    expected_credential_trust_boundary: local_single_user_named_consumer
+    expected_credential_availability: consumer_rejected
+    expected_credential_consumer: mature_native_store
+    expected_credential_route: reject_invalid_and_use_alternate
+    expected_credential_user_action_required: false
+    expected_credential_consumer_verification_required: true
+
+- description: Background Windows regression processes stay hidden while the real result remains observable
+  metadata:
+    id: REG_WINDOWS_BACKGROUND_TESTS_HIDE_CONSOLE_DESCENDANTS
+    domain: parent_frame_admission
+    profiles: [intent]
+  vars:
+    case_id: REG_WINDOWS_BACKGROUND_TESTS_HIDE_CONSOLE_DESCENDANTS
+    restored_context: >-
+      The active task is to run a fresh-process regression on the user's Windows
+      desktop. The runner starts a detached daemon, probes, workers, and helper
+      children. None of those console windows is a consumer; the real consumers
+      are the structured result and the existing interactive desktop surface.
+      The platform provides a mature hidden/no-window child-process option that
+      can be applied in the runner and propagated to descendants.
+    user_increment: 继续跑测试，但后台进程不要再快速弹出一堆蓝色窗口；把真实启动消费者修好，不是这次手工关窗。
+    expected_frame_relation: same_parent_increment
+    expected_active_object: existing_parent_object
+    expected_candidate_frame: mature_delivery_frame
+    expected_next_action: complete_behavior_delivery_closure
+    expected_task_switch: false
+    expected_trigger_role: subordinate_after_frame_binding
+    expected_parent_frame_before_trigger: true
+    expected_user_must_restate_parent: false
+    expected_root_status: existing_parent_preserved
+    expected_active_level: current_frame
+    expected_surface_role: stable_behavior_delivery_incomplete
+    expected_blocked_promotion: local_green_to_stable_behavior_completion
+    expected_required_projection_levels: '["human_practice","parent_result","current_frame","approach_or_capability","runtime_carrier","consumer_effect"]'
+    expected_mature_completion: true
+    expected_parent_status: active
+    expected_turn_disposition: continue_existing_parent
+    expected_user_input_required: false
+    expected_hand_back_to_user: false
+    expected_turn_boundary_is_not_pause: true
+    expected_local_completion_does_not_close_parent: true
+    expected_implicit_stop_rejected: true
+    expected_next_parent_item_admitted: true
+    expected_legal_terminal_predicate: none
+    expected_decision_family: behavior_delivery_or_partial
+    expected_selected_control_action: complete_behavior_delivery_closure
+    expected_symmetric_alternatives_considered: '["complete_behavior_delivery_closure","declare_partial_and_continue"]'
+    expected_residual_defeater: none
+    expected_process_kind: background_noninteractive
+    expected_process_window_mode: hidden
+    expected_visible_window_is_consumer: false
+    expected_durable_launch_consumer_update_required: true
+
+- description: A user-operated Windows TUI stays visible while its background descendants stay hidden
+  metadata:
+    id: REG_WINDOWS_INTERACTIVE_TUI_REMAINS_VISIBLE
+    domain: parent_frame_admission
+    profiles: [intent]
+  vars:
+    case_id: REG_WINDOWS_INTERACTIVE_TUI_REMAINS_VISIBLE
+    restored_context: >-
+      The active task is to launch a named terminal TUI that the user will type
+      into and continuously observe. That persistent terminal is the real user
+      interface and consumer. Its detached daemon, probes, and helper children
+      are non-interactive implementation details and support mature hidden
+      launch options.
+    user_increment: 启动这个交互 TUI 给我用；后台子进程可以隐藏，但别把真正供我操作的主界面也藏掉。
+    expected_frame_relation: same_parent_increment
+    expected_active_object: existing_parent_object
+    expected_candidate_frame: mature_delivery_frame
+    expected_next_action: derive_and_execute_hidden_prerequisites
+    expected_task_switch: false
+    expected_trigger_role: subordinate_after_frame_binding
+    expected_parent_frame_before_trigger: true
+    expected_user_must_restate_parent: false
+    expected_root_status: existing_parent_preserved
+    expected_active_level: current_frame
+    expected_surface_role: outcome_request
+    expected_blocked_promotion: technical_choice_to_user
+    allowed_blocked_promotions: '["technical_choice_to_user","downstream_means_to_parent_result"]'
+    expected_required_projection_levels: '["human_practice","parent_result","current_frame","approach_or_capability","runtime_carrier","consumer_effect"]'
+    expected_mature_completion: true
+    expected_decision_family: infer_or_ask
+    expected_selected_control_action: infer_and_execute
+    expected_symmetric_alternatives_considered: '["infer_and_execute","ask_user_once"]'
+    expected_residual_defeater: none
+    expected_process_kind: interactive_user_surface
+    expected_process_window_mode: visible
+    expected_visible_window_is_consumer: true
+    expected_durable_launch_consumer_update_required: false
+
+- description: A behavior-equivalence question rejects configuration parity as the active object
+  metadata:
+    id: REG_BEHAVIOR_EQUIVALENCE_REJECTS_CONFIGURATION_SHORTCUT
+    domain: parent_frame_admission
+    profiles: [intent]
+  vars:
+    case_id: REG_BEHAVIOR_EQUIVALENCE_REJECTS_CONFIGURATION_SHORTCUT
+    restored_context: >-
+      The user is comparing two locally launched assistant entries and originally
+      asked whether they are really the same. The assistant answered by comparing
+      launch arguments, file hashes, and account isolation. Earlier dialogue made
+      the user's actual burden explicit: one entry repeatedly misses the intended
+      object and makes the user restate or correct what they mean.
+    user_increment: 我问的是它们会不会一样地听懂我、抓住真正对象并采取行动，不是配置文件是不是相同。
+    expected_frame_relation: correction_to_existing_parent
+    expected_active_object: corrected_existing_object
+    expected_candidate_frame: corrected_parent_frame
+    expected_next_action: restore_corrected_object
+    expected_task_switch: false
+    expected_trigger_role: subordinate_after_frame_binding
+    allowed_trigger_roles: '["subordinate_after_frame_binding","not_applicable"]'
+    expected_parent_frame_before_trigger: true
+    expected_user_must_restate_parent: false
+    expected_root_status: existing_parent_preserved
+    expected_active_level: current_frame
+    expected_surface_role: corrected_current_object
+    allowed_surface_roles: '["corrected_current_object","semantic_scope_correction"]'
+    expected_blocked_promotion: downstream_means_to_parent_result
+    expected_required_projection_levels: '["human_practice","parent_result","current_frame","consumer_effect"]'
+    expected_comparison_dimension: behavioral_understanding
+    expected_configuration_role: supporting_evidence_only
+
+- description: An explicitly technical parity question keeps configuration as the primary object
+  metadata:
+    id: REG_EXPLICIT_CONFIGURATION_PARITY_STAYS_TECHNICAL
+    domain: parent_frame_admission
+    profiles: [intent]
+  vars:
+    case_id: REG_EXPLICIT_CONFIGURATION_PARITY_STAYS_TECHNICAL
+    restored_context: >-
+      There is no active parent task. The user wants one bounded read-only fact
+      about two launch entries and explicitly excludes any judgment about their
+      behavior, understanding, account identity, or session history. The current
+      request itself establishes this technical parent before any inspection.
+    user_increment: 先不评价它们会不会听懂我；只核实两边实际加载的 AGENTS 和 config 是否逐项相同。
+    expected_frame_relation: explicit_new_task
+    expected_active_object: new_explicit_object
+    expected_candidate_frame: explicit_new_task_frame
+    expected_next_action: perform_explicit_new_task
+    expected_task_switch: true
+    expected_trigger_role: not_applicable
+    allowed_trigger_roles: '["not_applicable","subordinate_after_frame_binding"]'
+    expected_parent_frame_before_trigger: true
+    expected_user_must_restate_parent: false
+    expected_root_status: explicit_new_parent
+    expected_active_level: current_frame
+    expected_surface_role: explicit_new_task
+    allowed_surface_roles: '["explicit_new_task","explicit_scope_reduction"]'
+    expected_blocked_promotion: none
+    allowed_blocked_promotions: '["none","downstream_means_to_parent_result"]'
+    expected_required_projection_levels: '["parent_result","current_frame","consumer_effect"]'
+    expected_comparison_dimension: technical_configuration
+    expected_configuration_role: primary_object

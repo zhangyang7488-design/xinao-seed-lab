@@ -29,8 +29,8 @@ if ($List) {
 if ($Domain -and $Profile -notin @('proactive', 'core', 'deep')) {
     throw 'Domain filtering applies to proactive behavior cases only.'
 }
-if ($CasePattern -and $Profile -notin @('proactive', 'intent')) {
-    throw 'CasePattern is suite-specific; use it with -Profile proactive or intent.'
+if ($CasePattern -and $Profile -notin @('proactive', 'intent', 'productivity')) {
+    throw 'CasePattern is suite-specific; use it with -Profile proactive, intent, or productivity.'
 }
 if ($FailedFrom -and $Profile -ne 'proactive') {
     throw 'FailedFrom is suite-specific; use it with -Profile proactive.'
@@ -175,6 +175,11 @@ if (-not (Test-Path -LiteralPath $promptfooEntrypoint -PathType Leaf)) {
     throw "Pinned Promptfoo entrypoint is missing: $promptfooEntrypoint"
 }
 $node = (Get-Command node -ErrorAction Stop).Source
+$windowsHiddenChildrenShim = Join-Path $repoRoot 'scripts\windows_hide_background_children.cjs'
+if (-not (Test-Path -LiteralPath $windowsHiddenChildrenShim -PathType Leaf)) {
+    throw "Windows background-process visibility shim is missing: $windowsHiddenChildrenShim"
+}
+$windowsHiddenChildrenNodePath = $windowsHiddenChildrenShim.Replace('\', '/')
 if (-not (Test-Path -LiteralPath $CodexHome -PathType Container)) {
     throw "Canonical CODEX_HOME is missing: $CodexHome"
 }
@@ -302,6 +307,13 @@ $environment = @{
     PROMPTFOO_DISABLE_ERROR_LOG = '1'
     TSX_DISABLE_CACHE = '1'
     PYTHONDONTWRITEBYTECODE = '1'
+    # This runner is non-interactive.  Patch Promptfoo's Node process so every
+    # fresh Codex/app-server descendant uses windowsHide; normal Codex and TUI
+    # launchers never consume this process-scoped NODE_OPTIONS value.
+    NODE_OPTIONS = (@(
+        [Environment]::GetEnvironmentVariable('NODE_OPTIONS', 'Process'),
+        "--require=`"$windowsHiddenChildrenNodePath`""
+    ) | Where-Object { -not [string]::IsNullOrWhiteSpace($_) }) -join ' '
     TEMP = $tempRoot
     TMP = $tempRoot
     PATH = [Environment]::GetEnvironmentVariable('PATH', 'Process')
@@ -620,6 +632,10 @@ $sourceInputs = @(
         role = 'runner'
     },
     [pscustomobject]@{
+        path = (Join-Path $repoRoot 'scripts\windows_hide_background_children.cjs')
+        role = 'background_process_visibility_consumer'
+    },
+    [pscustomobject]@{
         path = (Join-Path $repoRoot 'scripts\prepare_behavior_regression_snapshot.py')
         role = 'snapshot_builder'
     },
@@ -919,10 +935,14 @@ try {
             'evals\productive_action_trajectory\promptfooconfig.yaml'
         $productiveActionResult = Join-Path $outputRoot `
             'productive-action-trajectory.result.json'
+        $productiveFilters = @()
+        if ($CasePattern) {
+            $productiveFilters += @('--filter-pattern', $CasePattern)
+        }
         # Each case owns a different fixture subtree. The suite is sequential and is never retried in place.
         $suiteRuns += Invoke-PromptfooSuite -SuiteId 'productive_action_trajectory' `
             -ConfigPath $productiveActionConfig -ResultPath $productiveActionResult `
-            -Concurrency 1
+            -Concurrency 1 -ExtraArguments $productiveFilters
     }
 
     if ($overallExit -eq 0 -and $runRecallLive -and -not $PreflightOnly) {

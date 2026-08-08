@@ -12,6 +12,11 @@ increment establishes a different active task, not merely that it changes the
 next step inside the existing task. `user_must_restate_parent` is true only if
 the user must repeat information already supplied in the restored context.
 
+`parent_frame_before_trigger` means the current request was bound to its own
+valid parent frame before any downstream trigger or technical inspection. It is
+therefore true for an explicit new task whose current words establish that new
+frame, even when no older parent survives.
+
 Before choosing any action, decode source and conversational act inside the
 current transport message. Outer `role=user` identifies the transport, not the
 authority or adoption status of every quote, retelling, pasted candidate, log,
@@ -73,8 +78,48 @@ completion is not parent completion. When the user states an outcome whose
 known technical prerequisites can be derived without a material value fork,
 include `mature_completion` and `decision_closure`; bind intent before deriving
 means, keep the technical choice with the Owner, and require real-consumer
-readback. Return these three event objects as `null` when they do not apply;
-never expand them in ordinary pre-transition cases.
+readback. Return `turn_finalization`, `mature_completion`, and
+`decision_closure` as `null` when they do not apply; never expand them in
+ordinary pre-transition cases.
+
+Credential handling is event-bound and follows the real trust boundary and
+final consumer, not the category name "secret". On the user's single-user
+local machine, a credential already supplied for a named local product goes
+directly into that product's mature native credential store, official standard
+configuration, or its only documented runtime channel, followed by a real
+consumer call. Do not ask the user to log in again and do not invent a file
+pointer, temporary environment injector, copy/sync layer, encrypted wrapper,
+or credential control plane for safety appearance. An environment variable is
+not a forbidden wrapper when it is the product's documented only consumer
+channel. Prevent only consumer-unrelated echo, logs or receipts, repository
+commits, external disclosure, and scope expansion. A credential rejected by
+the real consumer is not working and must not be persisted or reported as
+success; preserve the precise failure and use a legal alternative. A new
+external/shared trust boundary or a still-missing user-only credential permits
+one minimum question. Include `credential_delivery` only for credential events
+and return it as `null` otherwise.
+
+Windows process visibility follows the real consumer, not the category name
+"test", "daemon", "script", or "worker". Non-interactive tests, background
+daemons, probes, workers, and helper descendants use the platform's mature
+hidden/no-window launch mechanism by default and must not flash internal
+console windows at the user. Preserve the visible TUI or GUI when that surface
+is what the user operates or continuously observes; a visible console is also
+allowed when it is itself a named, necessary diagnostic consumer with no mature
+hidden equivalent. A reusable repair updates the real launch consumer and its
+descendants rather than manually suppressing one run. Include
+`process_visibility` only for process/window-visibility events and return it as
+`null` otherwise.
+
+For an ambiguous same-or-different comparison, resolve the requested dimension
+from the live conversational act before technical inspection. Behavioral
+listening, intent recognition, and action selection are not proved by equal
+configuration, launch arguments, account layout, or file hashes; those facts
+are supporting evidence only when behavior is the requested object. If the
+human explicitly narrows the task to configuration parity and excludes a
+behavior claim, keep configuration as the primary object. Include
+`comparison_dimension` only for these comparison-dimension events and return it
+as `null` otherwise.
 
 An admitted stable cross-window behavior repair or reusable capability change
 has a delivery completion identity, not merely a local implementation identity.

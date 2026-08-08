@@ -5,22 +5,22 @@
   "runtime_loaded": false,
   "completion_claim_allowed": false,
   "archive": "codex-productivity-recovery.v1.zip",
-  "archive_sha256": "ff232e80e667ba0259f3ab98ef8215c1f3fc86384ac7d2451df40e6b558b055b",
-  "entry_count": 77,
+  "archive_sha256": "ba3c6b4aed3471077d92ce8e82fd17440d149965ea3751c1cdcee22cc759c202",
+  "entry_count": 81,
   "entries": [
     {
       "archive_path": "launchers/CODEX_PRODUCTIVITY_PROFILE.md",
       "live_source": "C:\\Users\\xx363\\CodexLaunchers\\CODEX_PRODUCTIVITY_PROFILE.md",
       "role": "launcher_or_profile",
-      "size": 9038,
-      "sha256": "968fd5b5166ce4d37901762f6f7d509686312226eec5fd09a41c4e9f266f2ad9"
+      "size": 9288,
+      "sha256": "0f213c4b269caa86c60b325bbc3c5e0fb5fa357f065e2db71ca8d6c7c0146737"
     },
     {
       "archive_path": "launchers/Open-Codex-S-Hardmode-Account-B.ps1",
       "live_source": "C:\\Users\\xx363\\CodexLaunchers\\Open-Codex-S-Hardmode-Account-B.ps1",
       "role": "launcher_or_profile",
-      "size": 8193,
-      "sha256": "3d61b456837e9f6befa451c9555cbfa7153f870916fee176b2384a7bd344fd23"
+      "size": 10787,
+      "sha256": "bbd20893da4b4541414240f7a937befea0dfc616d3c5ed4144f652ceffa44a6d"
     },
     {
       "archive_path": "launchers/Open-Codex-S-Hardmode.ps1",
@@ -33,8 +33,8 @@
       "archive_path": "main-home/AGENTS.md",
       "live_source": "C:\\Users\\xx363\\.codex\\AGENTS.md",
       "role": "main_live_source",
-      "size": 20019,
-      "sha256": "7bc61a4181f4341c051d1404204f339679a1f4ebbceea10e0befe9f52c66adab"
+      "size": 24500,
+      "sha256": "000741cc373b8551addf81e052c859cec0aa74b78a9395cef1ef1df989eda04a"
     },
     {
       "archive_path": "main-home/agents/luna-worker.toml",
@@ -54,8 +54,8 @@
       "archive_path": "main-home/config.toml",
       "live_source": "C:\\Users\\xx363\\.codex\\config.toml",
       "role": "main_live_source",
-      "size": 14194,
-      "sha256": "d3f4d2957d50fc9a7ae9ba3752f778a0ab30dae87042fce97907ac0de65f16b4"
+      "size": 14855,
+      "sha256": "e3c6378365b9e1746eb34ef0491130b62fcb378383727e1367539d73b9ef87a1"
     },
     {
       "archive_path": "main-home/hooks.json",
@@ -159,8 +159,8 @@
       "archive_path": "main-home/skills/human-agency-grounding/SKILL.md",
       "live_source": "C:\\Users\\xx363\\.codex\\skills\\human-agency-grounding\\SKILL.md",
       "role": "generic_custom_skill",
-      "size": 15412,
-      "sha256": "7bcaefa43f1e36f60292190dafacaf1f981c416259465b50b14aca9985e645e5"
+      "size": 15282,
+      "sha256": "305b64ec88f43c37b634c8be9c288ae3862753067480ea6563d9c794fbcd61cc"
     },
     {
       "archive_path": "main-home/skills/human-agency-grounding/agents/openai.yaml",
@@ -415,6 +415,34 @@
       "sha256": "c20ed57bcc24f42feb7ab351421e769fdb33e6de98a76a7f8de5e0e6b6ec0594"
     },
     {
+      "archive_path": "main-home/skills/productivity/SKILL.md",
+      "live_source": "C:\\Users\\xx363\\.codex\\skills\\productivity\\SKILL.md",
+      "role": "generic_custom_skill",
+      "size": 7943,
+      "sha256": "a4c33bf455d635f6552cc40be99c85439b57a0611675304bd3fa35f739be3a27"
+    },
+    {
+      "archive_path": "main-home/skills/productivity/agents/openai.yaml",
+      "live_source": "C:\\Users\\xx363\\.codex\\skills\\productivity\\agents\\openai.yaml",
+      "role": "generic_custom_skill",
+      "size": 270,
+      "sha256": "e0fcdd8536c3e5b97297d93b5d0b7f467d2dc27e3d6afc2bdde311df957f0c8e"
+    },
+    {
+      "archive_path": "main-home/skills/productivity/references/protocol.md",
+      "live_source": "C:\\Users\\xx363\\.codex\\skills\\productivity\\references\\protocol.md",
+      "role": "generic_custom_skill",
+      "size": 6445,
+      "sha256": "83074b06590a1c297f75b682bc42ef792a2fa7b32fcc1bd035be1d41df0e31aa"
+    },
+    {
+      "archive_path": "main-home/skills/productivity/references/skill-ecology.md",
+      "live_source": "C:\\Users\\xx363\\.codex\\skills\\productivity\\references\\skill-ecology.md",
+      "role": "generic_custom_skill",
+      "size": 4178,
+      "sha256": "d39a32ed924a4bd829d8eb39583f22ac3504c45ab5ece88d13c93d733a34de8a"
+    },
+    {
       "archive_path": "main-home/skills/promptfoo-agent-evals/SKILL.md",
       "live_source": "C:\\Users\\xx363\\.codex\\skills\\promptfoo-agent-evals\\SKILL.md",
       "role": "generic_custom_skill",
@@ -432,8 +460,8 @@
       "archive_path": "main-home/skills/repair-agent-behavior/SKILL.md",
       "live_source": "C:\\Users\\xx363\\.codex\\skills\\repair-agent-behavior\\SKILL.md",
       "role": "generic_custom_skill",
-      "size": 21665,
-      "sha256": "78b23b65447a8f18b3d4e643a48ec344fc9c38c098ba386aeacdf4312cf912d6"
+      "size": 21692,
+      "sha256": "e0c179b819ab47aa1c88b31f944e60074d58272dc0a01b292ce1b0cc30bb8a12"
     },
     {
       "archive_path": "main-home/skills/repair-agent-behavior/agents/openai.yaml",
@@ -460,8 +488,8 @@
       "archive_path": "main-home/skills/repair-agent-behavior/references/value-semantics.md",
       "live_source": "C:\\Users\\xx363\\.codex\\skills\\repair-agent-behavior\\references\\value-semantics.md",
       "role": "generic_custom_skill",
-      "size": 10618,
-      "sha256": "3ad2d50bd743f17777cd18ab0a0d6e55cfeaac6a215c9e457eaa5f8dd5e68965"
+      "size": 8245,
+      "sha256": "044497f36fbf2cf4df70c4f785cdbfdfef543221537a45184ce26ddf5e9cfe4a"
     },
     {
       "archive_path": "main-home/skills/verified-agent-loop/SKILL.md",

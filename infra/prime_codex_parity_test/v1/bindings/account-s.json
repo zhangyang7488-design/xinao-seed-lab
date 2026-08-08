@@ -1,0 +1,11 @@
+{
+  "schema": "xinao.prime_codex_parity.account_binding.v1",
+  "account_id": "account-s",
+  "display_name": "Codex Account S",
+  "codex_home": "C:\\Users\\xx363\\.codex",
+  "canonical_codex_root": "C:\\Users\\xx363\\.codex",
+  "provider": "openai-codex",
+  "prime_auth_source": null,
+  "initial_state": "unconfigured",
+  "secret_material_in_binding": false
+}

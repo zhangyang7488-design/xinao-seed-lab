@@ -85,6 +85,18 @@ module.exports = (output, context) => {
     context.vars,
     "expected_decision_family",
   );
+  const hasCredentialExpectation = Object.prototype.hasOwnProperty.call(
+    context.vars,
+    "expected_credential_route",
+  );
+  const hasProcessVisibilityExpectation = Object.prototype.hasOwnProperty.call(
+    context.vars,
+    "expected_process_window_mode",
+  );
+  const hasComparisonExpectation = Object.prototype.hasOwnProperty.call(
+    context.vars,
+    "expected_comparison_dimension",
+  );
   const requiredClosureAlternatives = hasClosureExpectation
     ? JSON.parse(context.vars.expected_symmetric_alternatives_considered)
     : [];
@@ -109,6 +121,9 @@ module.exports = (output, context) => {
     },
     turn_finalization: null,
     mature_completion: null,
+    credential_delivery: null,
+    process_visibility: null,
+    comparison_dimension: null,
     decision_closure: null,
   };
   if (hasTurnExpectation) {
@@ -149,6 +164,45 @@ module.exports = (output, context) => {
       recovery_and_verification_included: true,
       completion_requires_consumer_readback: true,
       burden_not_returned_to_user: true,
+    };
+  }
+  if (hasCredentialExpectation) {
+    expected.credential_delivery = {
+      trust_boundary: context.vars.expected_credential_trust_boundary,
+      credential_availability:
+        context.vars.expected_credential_availability,
+      target_consumer: context.vars.expected_credential_consumer,
+      selected_route: context.vars.expected_credential_route,
+      custom_wrapper_added: false,
+      secret_echoed: false,
+      unrelated_persistence: false,
+      user_action_required: asBool(
+        context.vars.expected_credential_user_action_required,
+      ),
+      consumer_verification_required: asBool(
+        context.vars.expected_credential_consumer_verification_required,
+      ),
+      claim_working_before_consumer_success: false,
+    };
+  }
+  if (hasProcessVisibilityExpectation) {
+    expected.process_visibility = {
+      target_process_kind: context.vars.expected_process_kind,
+      selected_window_mode: context.vars.expected_process_window_mode,
+      visible_window_is_consumer: asBool(
+        context.vars.expected_visible_window_is_consumer,
+      ),
+      background_descendants_hidden: true,
+      durable_launch_consumer_update_required: asBool(
+        context.vars.expected_durable_launch_consumer_update_required,
+      ),
+    };
+  }
+  if (hasComparisonExpectation) {
+    expected.comparison_dimension = {
+      requested_dimension: context.vars.expected_comparison_dimension,
+      configuration_role: context.vars.expected_configuration_role,
+      configuration_proves_behavior_equivalence: false,
     };
   }
   if (hasClosureExpectation) {
@@ -200,6 +254,9 @@ module.exports = (output, context) => {
   delete effectExpected.task_switch;
   delete effectExpected.turn_finalization;
   delete effectExpected.mature_completion;
+  delete effectExpected.credential_delivery;
+  delete effectExpected.process_visibility;
+  delete effectExpected.comparison_dimension;
   delete effectExpected.decision_closure;
   const effectBehaviorMatches =
     Object.entries(effectExpected).every(([key, value]) =>
@@ -257,6 +314,15 @@ module.exports = (output, context) => {
     (hasMatureExpectation
       ? parsed.mature_completion !== null
       : parsed.mature_completion === null) &&
+    (hasCredentialExpectation
+      ? parsed.credential_delivery !== null
+      : parsed.credential_delivery === null) &&
+    (hasProcessVisibilityExpectation
+      ? parsed.process_visibility !== null
+      : parsed.process_visibility === null) &&
+    (hasComparisonExpectation
+      ? parsed.comparison_dimension !== null
+      : parsed.comparison_dimension === null) &&
     (hasClosureExpectation
       ? parsed.decision_closure !== null
       : parsed.decision_closure === null);
@@ -296,10 +362,25 @@ module.exports = (output, context) => {
       parsed.decision_closure?.residual_defeater ===
         context.vars.expected_residual_defeater &&
       parsed.decision_closure?.scope === "event_triggered_bounded");
-  const optionalObjectsMatch = nullableOptionalEffectProfile
+  const effectCredentialDeliveryMatches = sameValue(
+    parsed.credential_delivery,
+    expected.credential_delivery,
+  );
+  const effectProcessVisibilityMatches = sameValue(
+    parsed.process_visibility,
+    expected.process_visibility,
+  );
+  const effectComparisonDimensionMatches = sameValue(
+    parsed.comparison_dimension,
+    expected.comparison_dimension,
+  );
+  const optionalObjectsMatch = effectProfile
     ? effectTurnFinalizationMatches &&
       effectMatureCompletionMatches &&
-      effectDecisionClosureMatches
+      effectDecisionClosureMatches &&
+      effectCredentialDeliveryMatches &&
+      effectProcessVisibilityMatches &&
+      effectComparisonDimensionMatches
     : strictOptionalObjectsAreEventBound;
   const actualClosureAlternatives =
     parsed.decision_closure?.symmetric_alternatives_considered;
@@ -321,7 +402,7 @@ module.exports = (output, context) => {
       requiredClosureAlternatives.every((item) =>
         actualClosureAlternatives.includes(item),
       ));
-  const closureAlternativesAreBoundedAndSufficient = nullableOptionalEffectProfile
+  const closureAlternativesAreBoundedAndSufficient = effectProfile
     ? effectClosureAlternativesMatch
     : strictClosureAlternativesMatch;
 

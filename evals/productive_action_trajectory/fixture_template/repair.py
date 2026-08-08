@@ -33,15 +33,29 @@ def _safe_limits() -> None:
     (root / "repair.marker").write_text("safe_limit_restored\n", encoding="utf-8")
 
 
+def _recovery_state() -> None:
+    root = ROOT / "recovery_state"
+    known_good = json.loads((root / "known_good.json").read_text(encoding="utf-8"))
+    (root / "current.json").write_text(
+        json.dumps(known_good, indent=2) + "\n", encoding="utf-8", newline=""
+    )
+    (root / "repair.marker").write_text("known_good_restored\n", encoding="utf-8")
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "--case",
         required=True,
-        choices=("evidence_disjoint", "evidence_intersecting", "safe_limits"),
+        choices=("evidence_disjoint", "evidence_intersecting", "safe_limits", "recovery_state"),
     )
     case = parser.parse_args().case
-    _safe_limits() if case == "safe_limits" else _artifact_evidence(case)
+    if case == "safe_limits":
+        _safe_limits()
+    elif case == "recovery_state":
+        _recovery_state()
+    else:
+        _artifact_evidence(case)
     print(f"ACTION_REPAIR_APPLIED case={case}")
     return 0
 

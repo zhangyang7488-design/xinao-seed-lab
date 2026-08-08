@@ -1,0 +1,11 @@
+{
+  "schema": "xinao.prime_parity.live_fact_fixture.v1",
+  "subject": "unrelated greenfield corpus project",
+  "facts": {
+    "formal_repository_exists": false,
+    "existing_consumer_exists": false,
+    "shared_history_with_xinao": false,
+    "project_has_independent_lifecycle": true,
+    "requested_outcome": "create a traceable formal source and experiment history"
+  }
+}
