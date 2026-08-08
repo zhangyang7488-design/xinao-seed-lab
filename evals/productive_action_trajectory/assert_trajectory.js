@@ -78,7 +78,7 @@ module.exports = (output, context) => {
       index > firstConsumer.index &&
       index < repair.index &&
       item.phase !== 'final_answer' &&
-      /(失效|不一致|越界|风险|证据|温度|恢复|偏离|stale|safety|recovery|mismatch|invalid)/i.test(
+      /(失效|不一致|越界|风险|证据|温度|恢复|偏离|对齐|候选|代理|stale|safety|recovery|mismatch|invalid|alignment|candidate|proxy|incomplete)/i.test(
         String(item.text || ''),
       ),
   );

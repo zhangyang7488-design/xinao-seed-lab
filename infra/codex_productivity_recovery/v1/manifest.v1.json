@@ -5,7 +5,7 @@
   "runtime_loaded": false,
   "completion_claim_allowed": false,
   "archive": "codex-productivity-recovery.v1.zip",
-  "archive_sha256": "ba3c6b4aed3471077d92ce8e82fd17440d149965ea3751c1cdcee22cc759c202",
+  "archive_sha256": "1286cc1cd516285aa171b8605df636bdc63d9433d8d368ca76714e2a366a3796",
   "entry_count": 81,
   "entries": [
     {
@@ -33,8 +33,8 @@
       "archive_path": "main-home/AGENTS.md",
       "live_source": "C:\\Users\\xx363\\.codex\\AGENTS.md",
       "role": "main_live_source",
-      "size": 24500,
-      "sha256": "000741cc373b8551addf81e052c859cec0aa74b78a9395cef1ef1df989eda04a"
+      "size": 25435,
+      "sha256": "fceacb24408d0daf666083bd997d965c0c68d825b91e66eb5a6669c302fe952d"
     },
     {
       "archive_path": "main-home/agents/luna-worker.toml",
@@ -54,8 +54,8 @@
       "archive_path": "main-home/config.toml",
       "live_source": "C:\\Users\\xx363\\.codex\\config.toml",
       "role": "main_live_source",
-      "size": 14855,
-      "sha256": "e3c6378365b9e1746eb34ef0491130b62fcb378383727e1367539d73b9ef87a1"
+      "size": 15033,
+      "sha256": "80616dba5bcb61b1998fa9c0c5d7e8c785bc311513bef34274e9c8f94f45ba84"
     },
     {
       "archive_path": "main-home/hooks.json",
@@ -572,8 +572,8 @@
       "archive_path": "runtime/Codex_Situation_Island/scripts/user_prompt_zero_beat_v1.ps1",
       "live_source": "D:\\XINAO_RESEARCH_RUNTIME\\state\\Codex_Situation_Island\\scripts\\user_prompt_zero_beat_v1.ps1",
       "role": "continuity_runtime",
-      "size": 9945,
-      "sha256": "da3dce2a222646c63f201272b9a5d36fb0591df61fa3e8ad3c13c16eb896ccc1"
+      "size": 14210,
+      "sha256": "7163e39e2a439070d44d9ca3b017d3b418cf53b3a1d594cb70e4bf44022119a4"
     }
   ],
   "source_and_projection": {

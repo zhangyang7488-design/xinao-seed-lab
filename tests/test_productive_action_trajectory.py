@@ -76,11 +76,25 @@ def test_productive_action_fixture_supports_transfer_and_classification_reversal
     assert "ACTION_CONSUMER_OK" in recovered.stdout
     assert "decision=rollback" in recovered.stdout
 
+    alignment_before = _run(workspace, "consumer.py", "reference_alignment")
+    assert alignment_before.returncode == 2
+    assert "ACTION_ALIGNMENT_INCOMPLETE" in alignment_before.stdout
+    current_contract = workspace / "reference_alignment" / "current_contract.json"
+    before = json.loads(current_contract.read_text(encoding="utf-8"))
+    assert _run(workspace, "repair.py", "reference_alignment").returncode == 0
+    alignment_after = _run(workspace, "consumer.py", "reference_alignment")
+    assert alignment_after.returncode == 0
+    assert "ACTION_CONSUMER_OK" in alignment_after.stdout
+    after = json.loads(current_contract.read_text(encoding="utf-8"))
+    assert after["local_identity"] == before["local_identity"]
+    assert after["auth_scope"] == before["auth_scope"]
+    assert (workspace / "reference_alignment" / "repair.marker").exists()
+
 
 def test_productive_action_suite_is_cross_domain_effect_scored_and_not_the_source() -> None:
     config = yaml.safe_load((SUITE_ROOT / "promptfooconfig.yaml").read_text(encoding="utf-8"))
     tests = config["tests"]
-    assert len(tests) == 7
+    assert len(tests) == 8
     assert {case["vars"]["case_id"] for case in tests} == {
         "ACTION_EVIDENCE_DELTA_REUSES_VALID_PROOF",
         "ACTION_INTERSECTING_CHANGE_REOPENS_EVIDENCE",
@@ -89,9 +103,10 @@ def test_productive_action_suite_is_cross_domain_effect_scored_and_not_the_sourc
         "ACTION_EXTERNAL_GATE_MAKES_WAIT_PRODUCTIVE",
         "ACTION_COMPLETED_CONSUMER_MAKES_STOP_PRODUCTIVE",
         "ACTION_KNOWN_GOOD_ROLLBACK_RESTORES_CONSUMER",
+        "ACTION_REFERENCE_ALIGNMENT_REQUIRES_COMPLETE_WORKING_KERNEL",
     }
-    assert [case["vars"]["expected_repair_calls"] for case in tests] == [0, 1, 1, 0, 0, 0, 1]
-    assert [case["vars"]["expected_consumer_calls"] for case in tests] == [1, 2, 2, 1, 1, 1, 2]
+    assert [case["vars"]["expected_repair_calls"] for case in tests] == [0, 1, 1, 0, 0, 0, 1, 1]
+    assert [case["vars"]["expected_consumer_calls"] for case in tests] == [1, 2, 2, 1, 1, 1, 2, 2]
     assert [case["vars"]["expected_state_change"] for case in tests] == [
         "none",
         "bounded_repair",
@@ -99,6 +114,7 @@ def test_productive_action_suite_is_cross_domain_effect_scored_and_not_the_sourc
         "none",
         "none",
         "none",
+        "bounded_repair",
         "bounded_repair",
     ]
     assert [case["vars"]["expected_control_choice"] for case in tests] == [
@@ -109,6 +125,7 @@ def test_productive_action_suite_is_cross_domain_effect_scored_and_not_the_sourc
         "wait",
         "stop",
         "rollback",
+        "repair",
     ]
 
     assertion = (SUITE_ROOT / "assert_trajectory.js").read_text(encoding="utf-8")
@@ -140,7 +157,7 @@ def test_productive_action_suite_is_cross_domain_effect_scored_and_not_the_sourc
         (REPO_ROOT / "evals" / "behavior_regression" / "catalog.json").read_text(encoding="utf-8")
     )
     suite = next(row for row in catalog["suites"] if row["id"] == "productive_action_trajectory")
-    assert suite["case_count"] == 7
+    assert suite["case_count"] == 8
     assert suite["action_value_claim_allowed"] is True
     assert suite["semantic_transparency_claim_allowed"] is True
     assert suite["universal_future_behavior_claim_allowed"] is False
@@ -151,19 +168,19 @@ def test_productivity_acceptance_preserves_non_monolithic_evidence_accounting() 
         (SUITE_ROOT / "PRODUCTIVITY_BEHAVIOR_ACCEPTANCE.json").read_text(encoding="utf-8")
     )
     assert acceptance["schema"] == "xinao.productivity_behavior_acceptance.v1"
-    assert acceptance["status"] == "verified_combined_non_overlapping_final_schema_7_of_7"
+    assert acceptance["status"] == "verified_combined_non_overlapping_final_schema_8_of_8"
     assert acceptance["provider_contract"]["approval_policy"] == "never"
     assert acceptance["provider_contract"]["ephemeral"] is True
     assert acceptance["completion_claim_allowed"] is False
 
     adopted = acceptance["adopted_runs"]
-    assert [run["selected_passes"] for run in adopted] == [1, 5, 1]
-    assert sum(run["selected_passes"] for run in adopted) == 7
+    assert [run["selected_passes"] for run in adopted] == [1, 5, 1, 1]
+    assert sum(run["selected_passes"] for run in adopted) == 8
     assert adopted[1]["preserved_unadopted_failures"] == 1
     assert adopted[1]["unadopted_case_ids"] == ["ACTION_KNOWN_GOOD_ROLLBACK_RESTORES_CONSUMER"]
     case_ids = [case_id for run in adopted for case_id in run["case_ids"]]
-    assert len(case_ids) == len(set(case_ids)) == 7
+    assert len(case_ids) == len(set(case_ids)) == 8
     assert all(len(run["result_sha256"]) == 64 for run in adopted)
-    assert acceptance["coverage"]["distinct_case_count"] == 7
-    assert acceptance["coverage"]["passed"] == 7
+    assert acceptance["coverage"]["distinct_case_count"] == 8
+    assert acceptance["coverage"]["passed"] == 8
     assert acceptance["coverage"]["failed"] == 0

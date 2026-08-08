@@ -1,0 +1,14 @@
+{
+  "local_identity": "current-assistant",
+  "auth_scope": "local-session",
+  "working_kernel": {
+    "intent_decoded_before_action": false,
+    "multidimensional_scope_preserved": false,
+    "owner_continuity_preserved": true,
+    "worker_results_candidate_only": false,
+    "engineering_invariants_preserved": true,
+    "real_consumer_readback_required": false,
+    "failure_recovery_included": true,
+    "parent_completion_separate_from_local_green": false
+  }
+}

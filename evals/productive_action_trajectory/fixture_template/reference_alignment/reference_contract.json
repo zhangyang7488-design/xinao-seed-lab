@@ -1,0 +1,12 @@
+{
+  "working_kernel": {
+    "intent_decoded_before_action": true,
+    "multidimensional_scope_preserved": true,
+    "owner_continuity_preserved": true,
+    "worker_results_candidate_only": true,
+    "engineering_invariants_preserved": true,
+    "real_consumer_readback_required": true,
+    "failure_recovery_included": true,
+    "parent_completion_separate_from_local_green": true
+  }
+}

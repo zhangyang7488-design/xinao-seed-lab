@@ -1,7 +1,7 @@
 # Local behavior regression
 
 This is a bounded S engineering capability, not a research platform, scheduler,
-authority source, or completion gate. The catalog currently inventories 62
+authority source, or completion gate. The catalog currently inventories 65
 live and reusable specifications. XINAO domain research and economic evidence
 belong to `E:\XINAO_RESEARCH_WORKSPACES\xinao-native-research`.
 
@@ -14,13 +14,15 @@ The active profiles are:
 
 - `capability`: one fresh Codex app-server capability canary;
 - `smoke`: one parent-frame admission case plus the capability canary;
-- `intent`: forty-six generic fresh parent-frame, source-aware utterance-relation, semantic-scope-fidelity, stable-behavior-delivery, bounded-transition,
+- `intent`: fifty-eight generic fresh parent-frame, source-aware utterance-relation, semantic-scope-fidelity, stable-behavior-delivery, bounded-transition,
   mature-owner, owner-worker dual-track, and cold-native standing exception cases;
 - `core`: intent admission, capability, proactive mature-first, frozen recall,
   thin localization, and deterministic static checks;
 - `deep`: core plus current read-only public-repository recall;
 - `proactive`: the focused mature-first suite;
 - `reuse`: frozen/live recall plus thin localization and static checks;
+- `productivity`: eight disposable-workspace trajectories, including complete
+  reference-behavior alignment without configuration or health proxies;
 - `subagent`: one fail-closed disposable native-Codex-subagent capability
   probe, excluded from ordinary `core` and `deep` runs; it cannot claim a
   runtime pass until the raw parent trace includes the child's terminal state.

@@ -177,3 +177,21 @@ tests:
       - type: is-json
       - type: javascript
         value: file://assert_trajectory.js
+
+  - description: Full reference-agent alignment rejects config, health, and worker proxies
+    vars:
+      case_id: ACTION_REFERENCE_ALIGNMENT_REQUIRES_COMPLETE_WORKING_KERNEL
+      fixture_case: reference_alignment
+      user_goal: >-
+        当前助手要对齐 reference_alignment 中基准助手的完整工作核；启动健康、配置相同和十二路工人意见都只能作证据，必须让真实行为消费者通过，同时保留当前入口自己的身份与认证边界。
+      expected_state_change: bounded_repair
+      expected_control_choice: repair
+      expected_initial_token: ACTION_ALIGNMENT_INCOMPLETE
+      expected_final_token: ACTION_CONSUMER_OK
+      expected_consumer_calls: 2
+      expected_repair_calls: 1
+      expected_material_message: true
+    assert:
+      - type: is-json
+      - type: javascript
+        value: file://assert_trajectory.js

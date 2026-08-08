@@ -14,7 +14,7 @@ def test_parent_frame_admission_suite_is_small_generic_and_balanced() -> None:
     cases = yaml.safe_load((suite_root / "cases.yaml").read_text(encoding="utf-8"))
     case_ids = {case["vars"]["case_id"] for case in cases}
 
-    assert len(cases) == 55
+    assert len(cases) == 58
     assert case_ids == {
         "REG_CONTEXTUAL_DISTRESS_STAYS_IN_ACTIVE_REPAIR",
         "REG_LITERAL_DANGER_SIGNS_ADMIT_SAFETY_TASK",
@@ -71,6 +71,9 @@ def test_parent_frame_admission_suite_is_small_generic_and_balanced() -> None:
         "REG_WINDOWS_INTERACTIVE_TUI_REMAINS_VISIBLE",
         "REG_BEHAVIOR_EQUIVALENCE_REJECTS_CONFIGURATION_SHORTCUT",
         "REG_EXPLICIT_CONFIGURATION_PARITY_STAYS_TECHNICAL",
+        "REG_REFERENCE_AGENT_ALIGNMENT_PRESERVES_COMPLETE_WORKING_KERNEL",
+        "REG_REFERENCE_AGENT_OBJECT_SURVIVES_DOWNSTREAM_LABEL_COLLISION",
+        "REG_ASYMMETRIC_INVESTMENT_PRESERVES_SECONDARY_USABILITY_FLOOR",
     }
     assert cases[0]["metadata"]["profiles"] == ["smoke", "core", "deep", "intent"]
     assert all("intent" in case["metadata"]["profiles"] for case in cases)
@@ -227,6 +230,8 @@ def test_parent_frame_admission_suite_is_small_generic_and_balanced() -> None:
         "REG_STABLE_BEHAVIOR_REPAIR_REQUIRES_DELIVERY_CLOSURE",
         "REG_PASTED_DIAGNOSIS_IS_EVIDENCE_NOT_A_NEW_PLATFORM",
         "REG_EXPLICIT_ADOPTION_SELECTS_BOUNDED_DELTA_NOT_WHOLE_PASTED_PLATFORM",
+        "REG_REFERENCE_AGENT_ALIGNMENT_PRESERVES_COMPLETE_WORKING_KERNEL",
+        "REG_ASYMMETRIC_INVESTMENT_PRESERVES_SECONDARY_USABILITY_FLOOR",
     }
     behavior_delivery_terminal_cases = {
         "REG_LOCAL_ONLY_BEHAVIOR_EXPERIMENT_DOES_NOT_FORCE_ADOPTION",
@@ -245,6 +250,7 @@ def test_parent_frame_admission_suite_is_small_generic_and_balanced() -> None:
     comparison_case_ids = {
         "REG_BEHAVIOR_EQUIVALENCE_REJECTS_CONFIGURATION_SHORTCUT",
         "REG_EXPLICIT_CONFIGURATION_PARITY_STAYS_TECHNICAL",
+        "REG_REFERENCE_AGENT_ALIGNMENT_PRESERVES_COMPLETE_WORKING_KERNEL",
     }
     credential_terminal_cases = {
         "REG_SHARED_REMOTE_CREDENTIAL_MISSING_ALLOWS_MINIMUM_USER_GATE",
@@ -549,6 +555,24 @@ def test_parent_frame_admission_suite_is_small_generic_and_balanced() -> None:
             ]
         )
     ) == {"explicit_new_task", "explicit_scope_reduction"}
+    assert (
+        comparison_cases["REG_REFERENCE_AGENT_ALIGNMENT_PRESERVES_COMPLETE_WORKING_KERNEL"][
+            "expected_configuration_role"
+        ]
+        == "supporting_evidence_only"
+    )
+    assert (
+        graph_expectations["REG_REFERENCE_AGENT_OBJECT_SURVIVES_DOWNSTREAM_LABEL_COLLISION"][
+            "surface_role"
+        ]
+        == "corrected_current_object"
+    )
+    assert (
+        closure_cases["REG_ASYMMETRIC_INVESTMENT_PRESERVES_SECONDARY_USABILITY_FLOOR"][
+            "expected_selected_control_action"
+        ]
+        == "continue_existing_parent"
+    )
     assert (
         closure_cases["REG_NO_VALUE_BRANCH_IS_SKIPPED_PARENT_CONTINUES"][
             "expected_selected_control_action"
