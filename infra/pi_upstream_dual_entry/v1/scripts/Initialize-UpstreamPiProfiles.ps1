@@ -8,11 +8,11 @@ param(
 $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot 'PiDualEntry.Common.ps1')
 
-Assert-PiDualEntryBinary
 $receipts = @()
 foreach ($profileName in $Profile) {
     Initialize-PiDualEntryAccountBinding -Profile $profileName | Out-Null
     $spec = Get-PiDualEntrySpec -Profile $profileName
+    Assert-PiDualEntryBinary -Spec $spec
     foreach ($directory in @($spec.AgentDir,$spec.SessionDir)) {
         New-Item -ItemType Directory -Force -Path $directory | Out-Null
     }
@@ -153,6 +153,7 @@ foreach ($profileName in $Profile) {
     $receipts += [ordered]@{
         profile = $profileName
         role = $spec.Role
+        pi_tool_root = $spec.PiToolRoot
         account_slot = $spec.AccountSlot
         workspace = $spec.Workspace
         agent_dir = $spec.AgentDir

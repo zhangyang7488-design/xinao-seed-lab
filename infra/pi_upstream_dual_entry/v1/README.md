@@ -11,6 +11,11 @@ S 只承载主 `prime` 与隔离 PiB 冷备的启动、投影、认证绑定、�
 - `prime-s`：主 `prime` 的内部兼容 profile 名；账号可在干净边界切换，用户未限定地说 Pi 时默认指它。
 - `prime-b`：`C:\Users\xx363\PrimeB.lnk` 指向的隔离冷备。当前边界一次性冻结主 `prime` 已证明的完整身体；完成后不随主面演化，也不进入例行维护、测试、报告或提起。
 
+两者的 Pi 核心也物理隔离：主 `prime` 使用
+`D:\XINAO_RESEARCH_RUNTIME\tools\pi\prime\0.84.1`，PiB 冷备保留
+`D:\XINAO_RESEARCH_RUNTIME\tools\pi\0.84.1`。所有 launcher、安装器和回归都从当前
+profile spec 取得 `PiToolRoot/PiCommand`；不存在可同时改动两边的共享活动 command。
+
 研究新澳和改进 Pi 自身都是主 `prime` 可以在同一个 active session 内开展的活动，不是角色、profile 或 session 类型。冷备复刻行为、能力器官、扩展、Pi-native 孩子与恢复链；不复刻 OAuth、`auth.json`、account binding、session、运行中孩子树、memory 数据、表面认知、活动状态或主快捷入口。它只在这次快照边界做 fresh 根/孩子验收，之后保持冻结。
 
 每个 profile 内的 `account-binding.json` 只选择自己的 OAuth 来源。主 `prime` 可用 `Set-UpstreamPiAccountBinding.ps1 -Profile prime-s -Slot main|account-b` 在干净边界切换额度来源；它不改行为、Skills、session 或仓库。切换只替换 native `auth.json` 的 `openai-codex` 项；重启后的根与后续 OpenAI 孩子共同消费这一绑定，DeepSeek 等独立 provider 原样保留。PiB 保持自己的隔离绑定，普通账号切换不碰它。
@@ -99,14 +104,26 @@ Pi 0.84.1 的普通 auto-compaction 只在完整 agent run 结算后检查；一
 同时证明上游红例、PiS gate 绿例、同 session compaction 持久化、完成结果消费，以及“压缩被取消且
 已有排队 steer”时仍不放行下一 provider 请求；各形态保留独立 receipt，不调用外部模型。
 首次应用会保存并校验精确上游 preimage。回滚先停止活动 PiS，运行
-`Restore-PiSMidTurnCompactionCompatibility.ps1`，再以
+`Restore-PiSMidTurnCompactionCompatibility.ps1 -PiToolRoot D:\XINAO_RESEARCH_RUNTIME\tools\pi\prime\0.84.1`，再以
 `Start-UpstreamPi.ps1 -Profile prime-s -DisableMidTurnCompactionCompatibility` 启动已恢复的上游核心；
 普通 launcher/installer 会正式重新应用兼容层，不能在回退验证期间调用。恢复脚本只在当前字节等于
 已知补丁 hash 或已知上游 hash 时工作，不能用 preimage 覆盖未知包字节。
 
-核心候选不能直接在共享 Pi binary 上试验。`New-PiSBodyLab.ps1 -IsolatePiCore` 会在该 lab 下
+`Install-PiSMainCore.ps1` 幂等安装并验证主 `prime` 的独立 0.84.1 核心。主核心另选择性
+回移上游 `c185d412...` 的 DeepSeek `max_tokens` 修复和 `18dee5f0...` 的 fullscreen
+全宽行快路；`Apply-PiSPost0841UpstreamCompatibility.ps1` 只允许主核心或隔离 body lab，
+明确拒绝冷备核心。`Test-PiSPost0841UpstreamCompatibility.mjs` 以无网络 payload 捕获证明
+内置及 custom DeepSeek 都发送 `max_tokens`，并比较修补前后中文可见输出。回滚使用
+`Restore-PiSPost0841UpstreamCompatibility.ps1 -PiToolRoot <main-root>`，随后必须 fresh 重启；
+PiB 不应用这两笔主面增量。
+
+核心候选不能直接在主或冷备的受管 Pi binary 上试验。`New-PiSBodyLab.ps1 -IsolatePiCore` 会在该 lab 下
 安装独立的 pinned `pi-tool-root`；再加 `-ApplyMidTurnCompactionCompatibility` 才把候选补丁施加
-到这份隔离核心。默认 body lab 不复制或修改共享核心。
+到这份隔离核心。默认 body lab 不复制或修改主核心或冷备核心。
+
+Pi profile 的 `shellPath` 是 Git Bash。丢弃输出使用 `/dev/null`，不能写 `NUL`；后者会在
+Git Bash 中创建真实未跟踪文件。研究或身体变更到自然边界时回读相交仓库工作树，精确清除
+已证工具副作用，不把广目录扫描或清理仪式化。
 
 `pi-subagents@0.44.0` 已由上游使用 portable workflow ID，不把 provider tool-call ID 当
 目录；本地 Windows 兼容层仍闭合 file-only structured acceptance 路径，在比较孩子写入

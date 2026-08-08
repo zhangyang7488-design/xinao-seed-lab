@@ -10,7 +10,6 @@ param(
 $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot 'PiDualEntry.Common.ps1')
 
-Assert-PiDualEntryBinary
 $profileRoot = Join-Path $script:PiDualEntryStateRoot 'profiles'
 $actualProfileNames = @(Get-ChildItem -LiteralPath $profileRoot -Directory | Select-Object -ExpandProperty Name | Sort-Object)
 $unexpectedProfiles = @($actualProfileNames | Where-Object { $_ -notin @('prime-b','prime-s') })
@@ -29,8 +28,10 @@ if (-not (Select-String -LiteralPath $legacyRetired -Pattern 'PRIME_AGENT_0_7_IS
     throw 'PI_SURFACE_TEST_LEGACY_0_7_RETIREMENT_SENTINEL_MISSING'
 }
 $surfaceResults = @()
+$allNativeWindowsHide = $true
 foreach ($profileName in $Profile) {
     $spec = Get-PiDualEntrySpec -Profile $profileName
+    Assert-PiDualEntryBinary -Spec $spec
     $env:PI_CODING_AGENT_DIR = $spec.AgentDir
     $env:PI_CODING_AGENT_SESSION_DIR = $spec.SessionDir
     $env:PI_SKIP_VERSION_CHECK = '1'
@@ -119,13 +120,13 @@ foreach ($profileName in $Profile) {
 
     $authArgs = @('auth','check','--provider','openai-codex','--json')
     if ($SkipAuthRefresh) { $authArgs += '--no-refresh' }
-    $authRaw = @(& $script:PiDualEntryCommand @authArgs 2>&1)
+    $authRaw = @(& $spec.PiCommand @authArgs 2>&1)
     if ($LASTEXITCODE -ne 0) { throw "PI_SURFACE_TEST_AUTH_CHECK_FAILED: profile=$profileName output=$($authRaw -join ' ')" }
     $authResult = ($authRaw -join [Environment]::NewLine) | ConvertFrom-Json
     $authReady = ([string]$authResult.status -eq 'ready' -and [string]$authResult.provider -eq 'openai-codex')
     if (-not $authReady) { throw "PI_SURFACE_TEST_AUTH_NOT_READY: profile=$profileName status=$($authResult.status)" }
 
-    $rpcRaw = @('{"type":"get_commands"}') | & $script:PiDualEntryCommand --mode rpc --no-session --offline --provider openai-codex --model gpt-5.6-sol --thinking max --append-system-prompt $spec.ContractProjection
+    $rpcRaw = @('{"type":"get_commands"}') | & $spec.PiCommand --mode rpc --no-session --offline --provider openai-codex --model gpt-5.6-sol --thinking max --append-system-prompt $spec.ContractProjection
     if ($LASTEXITCODE -ne 0) { throw "PI_SURFACE_TEST_RPC_FAILED: $profileName" }
     $rpcObjects = @($rpcRaw | ForEach-Object { try { $_ | ConvertFrom-Json } catch {} })
     $commandResponse = $rpcObjects | Where-Object { $_.type -eq 'response' -and $_.command -eq 'get_commands' -and $_.success -eq $true } | Select-Object -Last 1
@@ -146,7 +147,7 @@ foreach ($profileName in $Profile) {
     $numpadAcceptance = $null
     $activityVisibilityAcceptance = $null
     $midTurnCompactionAcceptance = $null
-    $midTurnRaw = @(& (Join-Path $PSScriptRoot 'Apply-PiSMidTurnCompactionCompatibility.ps1') -VerifyOnly 2>&1)
+    $midTurnRaw = @(& (Join-Path $PSScriptRoot 'Apply-PiSMidTurnCompactionCompatibility.ps1') -PiToolRoot $spec.PiToolRoot -VerifyOnly 2>&1)
     $midTurnCompactionAcceptance = ($midTurnRaw -join [Environment]::NewLine) | ConvertFrom-Json
     if (
         [string]$midTurnCompactionAcceptance.schema -ne 'xinao.pi_midturn_compaction_compatibility.v2' -or
@@ -158,7 +159,22 @@ foreach ($profileName in $Profile) {
     ) {
         throw "PI_SURFACE_TEST_MIDTURN_PATCH_STATUS_INVALID: $($midTurnRaw -join ' ')"
     }
-    $piPackageRoot = Join-Path $script:PiDualEntryToolRoot 'node_modules\@earendil-works\pi-coding-agent'
+    $piPackageRoot = Join-Path $spec.PiToolRoot 'node_modules\@earendil-works\pi-coding-agent'
+    $post0841UpstreamAcceptance = $null
+    if ($profileName -eq 'prime-s') {
+        $post0841Raw = @(& (Join-Path $PSScriptRoot 'Apply-PiSPost0841UpstreamCompatibility.ps1') -PiToolRoot $spec.PiToolRoot -VerifyOnly 2>&1)
+        $post0841UpstreamAcceptance = ($post0841Raw -join [Environment]::NewLine) | ConvertFrom-Json
+        if (
+            [string]$post0841UpstreamAcceptance.schema -ne 'xinao.pi_post_0841_upstream_compatibility.v1' -or
+            $post0841UpstreamAcceptance.deepseek_builtin_and_custom_send_max_tokens -ne $true -or
+            $post0841UpstreamAcceptance.fullscreen_visible_output_preserved -ne $true -or
+            $post0841UpstreamAcceptance.shared_cold_backup_core_allowed -ne $false
+        ) { throw "PI_SURFACE_TEST_POST0841_PATCH_STATUS_INVALID: $($post0841Raw -join ' ')" }
+        $post0841BehaviorRaw = @(& node (Join-Path $PSScriptRoot 'Test-PiSPost0841UpstreamCompatibility.mjs') --pi-root $spec.PiToolRoot 2>&1)
+        if ($LASTEXITCODE -ne 0 -or ($post0841BehaviorRaw -join [Environment]::NewLine) -notmatch 'PIS_POST_0841_UPSTREAM_COMPATIBILITY_V1') {
+            throw "PI_SURFACE_TEST_POST0841_BEHAVIOR_FAILED: $($post0841BehaviorRaw -join ' ')"
+        }
+    }
     $activityRaw = @(& node (Join-Path $PSScriptRoot 'Test-PiSActivityVisibility.mjs') $piPackageRoot 2>&1)
     if ($LASTEXITCODE -ne 0) { throw "PI_SURFACE_TEST_ACTIVITY_VISIBILITY_FAILED: $($activityRaw -join ' ')" }
     $activityVisibilityAcceptance = ($activityRaw -join [Environment]::NewLine) | ConvertFrom-Json
@@ -193,7 +209,7 @@ Without using tools, report instructions already present in your current context
 "@.Trim()
         Push-Location -LiteralPath $spec.Workspace
         try {
-            $probeRaw = @(& $script:PiDualEntryCommand --print --no-session --no-tools --provider openai-codex --model gpt-5.6-sol --thinking max --append-system-prompt $spec.ContractProjection $probePrompt 2>&1)
+            $probeRaw = @(& $spec.PiCommand --print --no-session --no-tools --provider openai-codex --model gpt-5.6-sol --thinking max --append-system-prompt $spec.ContractProjection $probePrompt 2>&1)
             if ($LASTEXITCODE -ne 0) { throw "PI_SURFACE_TEST_LIVE_MODEL_FAILED: profile=$profileName output=$($probeRaw -join ' ')" }
         } finally {
             Pop-Location
@@ -232,6 +248,7 @@ Without using tools, report instructions already present in your current context
     $surfaceResults += [ordered]@{
         name = $profileName
         role = $spec.Role
+        pi_tool_root = $spec.PiToolRoot
         runtime_version = $script:PiDualEntryVersion
         account_slot = $spec.AccountSlot
         account_binding_path = $spec.AccountBindingPath
@@ -255,10 +272,18 @@ Without using tools, report instructions already present in your current context
         provider_catalog_context_window = $catalogContextWindow
         profile_context_window_override_absent = $profileContextWindowOverrideAbsent
         midturn_compaction_compatibility = $midTurnCompactionAcceptance
+        post_0841_upstream_compatibility = $post0841UpstreamAcceptance
         numpad_enter_follow = $numpadAcceptance
         activity_visibility = $activityVisibilityAcceptance
         overlay_projection_sha256 = $overlayProjection.Sha256
         live_model_probe = $liveProbe
+    }
+
+    $bashTool = Join-Path $spec.PiToolRoot 'node_modules\@earendil-works\pi-coding-agent\dist\core\tools\bash.js'
+    $nativeWindowsHide = Select-String -LiteralPath $bashTool -Pattern 'windowsHide: true' -SimpleMatch -Quiet
+    if (-not $nativeWindowsHide) {
+        $allNativeWindowsHide = $false
+        throw "PI_SURFACE_TEST_NATIVE_WINDOWS_HIDE_MISSING: profile=$profileName path=$bashTool"
     }
 }
 
@@ -273,9 +298,6 @@ if ($Profile.Count -eq 2) {
     }
 }
 
-$bashTool = Join-Path $script:PiDualEntryToolRoot 'node_modules\@earendil-works\pi-coding-agent\dist\core\tools\bash.js'
-$nativeWindowsHide = Select-String -LiteralPath $bashTool -Pattern 'windowsHide: true' -SimpleMatch -Quiet
-if (-not $nativeWindowsHide) { throw 'PI_SURFACE_TEST_NATIVE_WINDOWS_HIDE_MISSING' }
 $node = Get-PiDualEntryNodeInfo
 $primeBWrapper = 'C:\Users\xx363\CodexLaunchers\Open-Prime-Agent-Account-B.ps1'
 $primeSWrapper = 'C:\Users\xx363\CodexLaunchers\Open-Prime.ps1'
@@ -322,7 +344,7 @@ if (
 ) { throw 'PI_SURFACE_TEST_VISIBLE_RESTART_VALIDATION_INVALID' }
 
 $acceptance = [ordered]@{
-    schema = 'xinao.pi_main_with_cold_snapshot.acceptance.v3'
+    schema = 'xinao.pi_main_with_cold_snapshot.acceptance.v4'
     status = 'verified'
     upstream_pi_version = $script:PiDualEntryVersion
     node_version = $node.RawVersion
@@ -333,7 +355,7 @@ $acceptance = [ordered]@{
     family_contract = $script:PiDualEntryFamilyContract
     shared_behavior_source = Join-Path $script:PiDualEntryBehaviorCodexHome 'AGENTS.md'
     shared_skills_source = Join-Path $script:PiDualEntryBehaviorCodexHome 'skills'
-    native_background_child_windows_hidden = $true
+    native_background_child_windows_hidden = $allNativeWindowsHide
     task_topology = 'prime is the one default active subject; prime-s is only its internal compatibility profile and account binding is a quota source.'
     evolution_topology = 'PiB is a one-time isolated full-body cold snapshot; after fresh verification it is not routinely maintained, tested, reported, mentioned, or synchronized.'
     legacy_prime_0_7_0 = [ordered]@{

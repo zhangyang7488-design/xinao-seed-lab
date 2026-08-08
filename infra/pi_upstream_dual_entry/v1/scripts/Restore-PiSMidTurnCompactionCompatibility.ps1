@@ -1,7 +1,7 @@
 #Requires -Version 5.1
 [CmdletBinding()]
 param(
-    [string]$PiToolRoot = 'D:\XINAO_RESEARCH_RUNTIME\tools\pi\0.84.1',
+    [Parameter(Mandatory)][string]$PiToolRoot,
     [switch]$VerifyOnly
 )
 
@@ -14,7 +14,8 @@ function Get-NormalizedPiSCorePath {
 }
 
 $target = Get-NormalizedPiSCorePath -Path $PiToolRoot
-$activeTarget = Get-NormalizedPiSCorePath -Path $script:PiDualEntryToolRoot
+$mainTarget = Get-NormalizedPiSCorePath -Path $script:PiDualEntryMainToolRoot
+$backupTarget = Get-NormalizedPiSCorePath -Path $script:PiDualEntryBackupToolRoot
 $labParent = Get-NormalizedPiSCorePath -Path (Join-Path $script:PiDualEntryStateRoot 'body-labs\prime-s')
 $labPrefix = $labParent + [IO.Path]::DirectorySeparatorChar
 $isLabCore = $false
@@ -23,8 +24,8 @@ if ($target.StartsWith($labPrefix,[StringComparison]::OrdinalIgnoreCase)) {
     $segments = @($relative.Split([IO.Path]::DirectorySeparatorChar,[StringSplitOptions]::RemoveEmptyEntries))
     $isLabCore = ($segments.Count -eq 2 -and $segments[1] -ceq 'pi-tool-root')
 }
-if ($target -ine $activeTarget -and -not $isLabCore) {
-    throw "PI_S_MIDTURN_RESTORE_TARGET_OUTSIDE_CORE_OR_BODY_LAB: $target"
+if ($target -notin @($mainTarget,$backupTarget) -and -not $isLabCore) {
+    throw "PI_S_MIDTURN_RESTORE_TARGET_OUTSIDE_MANAGED_CORE_OR_BODY_LAB: $target"
 }
 
 $packageRoot = Join-Path $target 'node_modules\@earendil-works\pi-coding-agent'

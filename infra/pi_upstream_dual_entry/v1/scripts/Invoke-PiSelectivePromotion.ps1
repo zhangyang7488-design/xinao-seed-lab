@@ -10,7 +10,6 @@ param(
 $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot 'PiDualEntry.Common.ps1')
 
-Assert-PiDualEntryBinary
 $normalized = $RelativePath.Replace('/','\')
 if ($normalized -notmatch '^(agents|contract)\\[a-zA-Z0-9][a-zA-Z0-9._-]*\.md$') {
     throw "PI_PROMOTION_RELATIVE_PATH_REJECTED: $RelativePath"

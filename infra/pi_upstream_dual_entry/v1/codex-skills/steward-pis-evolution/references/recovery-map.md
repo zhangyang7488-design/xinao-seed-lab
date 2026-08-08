@@ -19,6 +19,10 @@ surface's body lineage, candidate evidence, acceptance, and rollback. Neither cr
 - PiB isolated cold-snapshot profile: `D:\XINAO_RESEARCH_RUNTIME\state\pi\0.84.1\profiles\prime-b`
 - Pi engineering source:
   `E:\XINAO_RESEARCH_WORKSPACES\S\infra\pi_upstream_dual_entry\v1`
+- Main `prime` Pi core: `D:\XINAO_RESEARCH_RUNTIME\tools\pi\prime\0.84.1`
+- PiB cold-snapshot Pi core: `D:\XINAO_RESEARCH_RUNTIME\tools\pi\0.84.1`
+- Main-core installer/verifier:
+  `E:\XINAO_RESEARCH_WORKSPACES\S\infra\pi_upstream_dual_entry\v1\scripts\Install-PiSMainCore.ps1`
 - Main desktop wrapper: `C:\Users\xx363\CodexLaunchers\Open-Prime.ps1`
 - PiB cold-backup shortcut: `C:\Users\xx363\PrimeB.lnk`
 - Exact visible PiS restart:
@@ -122,9 +126,10 @@ adoption, fresh-launch PiS and re-run the real activity that exposed the gap.
 
 Core-runtime candidates need stronger isolation than profile packages. Use
 `New-PiSBodyLab.ps1 -LabId <id> -IsolatePiCore` to install a pinned Pi binary under the lab; add
-`-ApplyMidTurnCompactionCompatibility` only for the named candidate. The shared
-`D:\XINAO_RESEARCH_RUNTIME\tools\pi\0.84.1` core must remain unchanged until the isolated red/green
-consumer has passed. For the 0.84.1 long-tool-loop incident, run
+`-ApplyMidTurnCompactionCompatibility` only for the named candidate. The PiB cold-snapshot core at
+`D:\XINAO_RESEARCH_RUNTIME\tools\pi\0.84.1` is not the main active core and must not be modified by
+main-prime experiments or adoption. After an isolated red/green consumer passes, adopt only into the
+main core at `D:\XINAO_RESEARCH_RUNTIME\tools\pi\prime\0.84.1`. For the 0.84.1 long-tool-loop incident, run
 `Test-PiSMidTurnCompaction.mjs` against both the unpatched and patched roots. Required green evidence
 is provider order `tool-call -> compact -> resume-after-tool`, one durable session, a persisted
 compaction entry, and final consumption of the completed tool result. Gate-off behavior must retain
@@ -134,11 +139,23 @@ no next provider request. The three runs use separate receipt roots so a gate-of
 the green evidence.
 
 To roll back this compatibility layer, stop the active PiS process, run
-`Restore-PiSMidTurnCompactionCompatibility.ps1`, verify the upstream hash, then launch with
+`Restore-PiSMidTurnCompactionCompatibility.ps1 -PiToolRoot D:\XINAO_RESEARCH_RUNTIME\tools\pi\prime\0.84.1`, verify the upstream hash, then launch with
 `Start-UpstreamPi.ps1 -Profile prime-s -DisableMidTurnCompactionCompatibility`. Do not run the normal
 launcher or capability installer during rollback validation because their formal path reapplies the
 known compatibility patch. A restarted process is required; restoring bytes cannot change a module
 already loaded by a live PiS TUI.
+
+The main core also carries two hash-gated post-0.84.1 upstream fixes: DeepSeek requests use
+`max_tokens`, and fullscreen full-width rows avoid unnecessary recomposition. Verify them with
+`Install-PiSMainCore.ps1 -VerifyOnly` and `Test-PiSPost0841UpstreamCompatibility.mjs --pi-root
+D:\XINAO_RESEARCH_RUNTIME\tools\pi\prime\0.84.1`. Their apply/restore scripts reject the PiB cold
+core. Rollback restores exact preimages and requires a fresh visible restart; bytes cannot change the
+already loaded process.
+
+The profile shell is Git Bash. Use `/dev/null` for discarded output, never Windows `NUL`: in Git Bash
+`2>NUL` creates a real untracked file in the current repository. At a natural boundary, read back the
+intersecting worktree and remove only proven tool residue. Do not turn this into desktop-wide or
+repository-wide cleanup.
 
 PiB is outside the default write, maintenance, upgrade, test, report, and mention cone after the
 currently authorized full-body snapshot has passed fresh root/child verification. Reopen it only

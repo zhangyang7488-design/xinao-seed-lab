@@ -41,7 +41,6 @@ function Get-NativeProviderFromCodexAuthPath {
     }
 }
 
-Assert-PiDualEntryBinary
 $receipts = @()
 foreach ($profileName in $Profile) {
     Initialize-PiDualEntryAccountBinding -Profile $profileName | Out-Null

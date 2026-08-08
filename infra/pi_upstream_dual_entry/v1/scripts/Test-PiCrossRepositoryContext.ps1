@@ -8,7 +8,6 @@ param(
 $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot 'PiDualEntry.Common.ps1')
 
-Assert-PiDualEntryBinary
 $targetRepository = 'E:\XINAO_RESEARCH_WORKSPACES\xinao-native-research'
 $expectedRepositorySentinel = 'SENTINEL:XINAO_NATIVE_RESEARCH_ROLE_V2'
 $expectedStatusSentinel = 'SENTINEL:XINAO_CURRENT_PROJECTION_V7'
@@ -16,6 +15,7 @@ $results = @()
 
 foreach ($profileName in $Profile) {
     $spec = Get-PiDualEntrySpec -Profile $profileName
+    Assert-PiDualEntryBinary -Spec $spec
     $env:PI_CODING_AGENT_DIR = $spec.AgentDir
     $env:PI_CODING_AGENT_SESSION_DIR = $spec.SessionDir
     $env:CODEX_HOME = $spec.CodexHome
@@ -34,7 +34,7 @@ foreach ($profileName in $Profile) {
 
     Push-Location -LiteralPath $spec.Workspace
     try {
-        $raw = @(& $script:PiDualEntryCommand --print --no-session --tools read --provider openai-codex --model gpt-5.6-sol --thinking max --append-system-prompt $spec.ContractProjection $prompt 2>&1)
+        $raw = @(& $spec.PiCommand --print --no-session --tools read --provider openai-codex --model gpt-5.6-sol --thinking max --append-system-prompt $spec.ContractProjection $prompt 2>&1)
         if ($LASTEXITCODE -ne 0) {
             throw "PI_CROSS_REPOSITORY_PROBE_FAILED: profile=$profileName output=$($raw -join ' ')"
         }
@@ -56,6 +56,7 @@ foreach ($profileName in $Profile) {
     }
     $results += [ordered]@{
         profile = $profileName
+        pi_tool_root = $spec.PiToolRoot
         starting_workspace = $spec.Workspace
         named_object = $targetRepository
         model = 'openai-codex/gpt-5.6-sol'

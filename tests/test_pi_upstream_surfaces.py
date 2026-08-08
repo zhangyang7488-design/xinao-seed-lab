@@ -93,6 +93,79 @@ def test_pi_windows_powershell_51_scripts_avoid_newer_dotnet_hash_apis() -> None
     assert "[Convert]::ToHexString" not in scripts
 
 
+def test_main_prime_core_is_profile_scoped_and_cold_backup_stays_isolated() -> None:
+    common = _text(SOURCE_ROOT / "scripts" / "PiDualEntry.Common.ps1")
+    consumers = {
+        name: _text(SOURCE_ROOT / "scripts" / name)
+        for name in (
+            "Start-UpstreamPi.ps1",
+            "Install-UpstreamPiCapabilities.ps1",
+            "Test-PiCrossRepositoryContext.ps1",
+            "Test-UpstreamPiDualEntry.ps1",
+            "New-PiSBodyLab.ps1",
+        )
+    }
+    midturn_apply = _text(
+        SOURCE_ROOT / "scripts" / "Apply-PiSMidTurnCompactionCompatibility.ps1"
+    )
+    midturn_restore = _text(
+        SOURCE_ROOT / "scripts" / "Restore-PiSMidTurnCompactionCompatibility.ps1"
+    )
+    post_apply = _text(
+        SOURCE_ROOT / "scripts" / "Apply-PiSPost0841UpstreamCompatibility.ps1"
+    )
+    post_restore = _text(
+        SOURCE_ROOT / "scripts" / "Restore-PiSPost0841UpstreamCompatibility.ps1"
+    )
+    start = consumers["Start-UpstreamPi.ps1"]
+    installer = _text(SOURCE_ROOT / "scripts" / "Install-PiSMainCore.ps1")
+    readme = _text(SOURCE_ROOT / "README.md")
+    recovery = _text(
+        SOURCE_ROOT
+        / "codex-skills"
+        / "steward-pis-evolution"
+        / "references"
+        / "recovery-map.md"
+    )
+
+    assert "$script:PiDualEntryMainToolRoot = 'D:\\XINAO_RESEARCH_RUNTIME\\tools\\pi\\prime\\0.84.1'" in common
+    assert "$script:PiDualEntryBackupToolRoot = 'D:\\XINAO_RESEARCH_RUNTIME\\tools\\pi\\0.84.1'" in common
+    assert "PiToolRoot = $toolRoot" in common
+    assert "PiCommand = Join-Path $toolRoot 'node_modules\\.bin\\pi.cmd'" in common
+    assert "[Parameter(Mandatory)]$Spec" in common
+    assert "$Spec.PiCommand" in common
+    assert "$script:PiDualEntryToolRoot" not in common
+    assert "$script:PiDualEntryCommand" not in common
+
+    for name, text in consumers.items():
+        assert "$script:PiDualEntryCommand" not in text, name
+        assert "$script:PiDualEntryToolRoot" not in text, name
+
+    assert "$script:PiDualEntryMainToolRoot" in midturn_apply
+    assert "$script:PiDualEntryBackupToolRoot" in midturn_apply
+    assert "$script:PiDualEntryMainToolRoot" in midturn_restore
+    assert "$script:PiDualEntryBackupToolRoot" in midturn_restore
+    for text in (post_apply, post_restore):
+        assert "$script:PiDualEntryMainToolRoot" in text
+        assert "$script:PiDualEntryBackupToolRoot" not in text
+        assert "BODY_LAB" in text
+    assert "shared_cold_backup_core_allowed = $false" in post_apply
+    assert "Apply-PiSPost0841UpstreamCompatibility.ps1" in start
+    assert "-PiToolRoot $spec.PiToolRoot" in start
+    assert "xinao.pi_main_with_cold_snapshot.acceptance.v4" in consumers[
+        "Test-UpstreamPiDualEntry.ps1"
+    ]
+    assert "Get-PiDualEntrySpec -Profile 'prime-s'" in installer
+    assert "$script:PiDualEntryMainToolRoot" in installer
+    assert "$script:PiDualEntryBackupToolRoot" in installer
+    assert "cold_backup_touched = $false" in installer
+    for text in (readme, recovery):
+        assert "tools\\pi\\prime\\0.84.1" in text
+        assert "tools\\pi\\0.84.1" in text
+        assert "Install-PiSMainCore.ps1" in text
+        assert "/dev/null" in text
+
+
 @pytest.mark.skipif(not MAIN_CODEX.exists(), reason="shared Codex skill catalog is not present")
 def test_shared_skill_descriptions_fit_pi_catalog_limit() -> None:
     names = (
@@ -764,6 +837,15 @@ def test_codex_pis_steward_skill_recovers_durable_intent_without_second_truth() 
     assert "PI_CODEX_STEWARD_PROJECTION_CONFLICT" in installer
     assert "Write-PiDualEntryJsonAtomic" in installer
     assert ".codex-s-hardmode-account-b" not in installer
+
+    live_skill_root = MAIN_CODEX / "skills" / "steward-pis-evolution"
+    if live_skill_root.exists():
+        assert (skill_root / "SKILL.md").read_bytes() == (
+            live_skill_root / "SKILL.md"
+        ).read_bytes()
+        assert (skill_root / "references" / "recovery-map.md").read_bytes() == (
+            live_skill_root / "references" / "recovery-map.md"
+        ).read_bytes()
 
 
 def test_prime_agent_0_7_harness_is_explicitly_cold_history() -> None:

@@ -11,8 +11,8 @@ param(
 $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot 'PiDualEntry.Common.ps1')
 
-Assert-PiDualEntryBinary
 $source = Get-PiDualEntrySpec -Profile 'prime-s'
+Assert-PiDualEntryBinary -Spec $source
 $labRoot = Join-Path $script:PiDualEntryStateRoot "body-labs\prime-s\$LabId"
 if (Test-Path -LiteralPath $labRoot) { throw "PI_S_BODY_LAB_ALREADY_EXISTS: $labRoot" }
 if ($ApplyMidTurnCompactionCompatibility -and -not $IsolatePiCore) {
@@ -73,7 +73,7 @@ $env:PI_SKIP_VERSION_CHECK = '1'
 $env:PI_TELEMETRY = '0'
 $env:CODEX_HOME = $source.CodexHome
 foreach ($package in $allPackages) {
-    $installOutput = @(& $script:PiDualEntryCommand install $package --no-approve 2>&1)
+    $installOutput = @(& $source.PiCommand install $package --no-approve 2>&1)
     if ($LASTEXITCODE -ne 0) {
         throw "PI_S_BODY_LAB_INSTALL_FAILED: package=$package output=$($installOutput -join ' ')"
     }

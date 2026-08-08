@@ -1,8 +1,8 @@
 #Requires -Version 5.1
 
 $script:PiDualEntryVersion = '0.84.1'
-$script:PiDualEntryToolRoot = 'D:\XINAO_RESEARCH_RUNTIME\tools\pi\0.84.1'
-$script:PiDualEntryCommand = Join-Path $script:PiDualEntryToolRoot 'node_modules\.bin\pi.cmd'
+$script:PiDualEntryBackupToolRoot = 'D:\XINAO_RESEARCH_RUNTIME\tools\pi\0.84.1'
+$script:PiDualEntryMainToolRoot = 'D:\XINAO_RESEARCH_RUNTIME\tools\pi\prime\0.84.1'
 $script:PiDualEntryStateRoot = 'D:\XINAO_RESEARCH_RUNTIME\state\pi\0.84.1'
 $script:PiDualEntryMinimumNodeVersion = [version]'22.19.0'
 $script:PiDualEntryBehaviorCodexHome = 'C:\Users\xx363\.codex'
@@ -105,10 +105,17 @@ function Get-PiDualEntrySpec {
     param([Parameter(Mandatory)][ValidateSet('prime-b','prime-s')][string]$Profile)
 
     $account = Get-PiDualEntryAccountBinding -Profile $Profile
+    $toolRoot = if ($Profile -eq 'prime-b') {
+        $script:PiDualEntryBackupToolRoot
+    } else {
+        $script:PiDualEntryMainToolRoot
+    }
     $agentDir = Join-Path $script:PiDualEntryStateRoot "profiles\$Profile"
     $overlayRoot = Join-Path $script:PiDualEntrySourceRoot "surface-overlays\$Profile"
     $common = [ordered]@{
         Profile = $Profile
+        PiToolRoot = $toolRoot
+        PiCommand = Join-Path $toolRoot 'node_modules\.bin\pi.cmd'
         AccountSlot = $account.Slot
         AccountDisplayName = $account.DisplayName
         AccountBindingPath = Get-PiDualEntryAccountBindingPath -Profile $Profile
@@ -271,17 +278,19 @@ function Sync-PiDualEntrySurfaceOverlay {
 }
 
 function Assert-PiDualEntryBinary {
+    param([Parameter(Mandatory)]$Spec)
+
     $node = Get-PiDualEntryNodeInfo
     if (-not $node.MinimumSatisfied) {
         throw "PI_NODE_VERSION_TOO_OLD: required=$($node.Minimum) actual=$($node.Version) path=$($node.Path)"
     }
-    if (-not (Test-Path -LiteralPath $script:PiDualEntryCommand -PathType Leaf)) {
-        throw "PI_0841_BINARY_MISSING: $script:PiDualEntryCommand"
+    if (-not (Test-Path -LiteralPath $Spec.PiCommand -PathType Leaf)) {
+        throw "PI_0841_BINARY_MISSING: profile=$($Spec.Profile) path=$($Spec.PiCommand)"
     }
-    $versionOutput = @(& $script:PiDualEntryCommand --version 2>$null)
+    $versionOutput = @(& $Spec.PiCommand --version 2>$null)
     $actual = ([string]($versionOutput | Select-Object -First 1)).Trim()
     if (-not [string]::Equals($actual, $script:PiDualEntryVersion, [StringComparison]::Ordinal)) {
-        throw "PI_VERSION_MISMATCH: expected=$script:PiDualEntryVersion actual=$actual"
+        throw "PI_VERSION_MISMATCH: profile=$($Spec.Profile) expected=$script:PiDualEntryVersion actual=$actual"
     }
 }
 

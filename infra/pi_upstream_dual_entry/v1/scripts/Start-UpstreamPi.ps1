@@ -11,8 +11,8 @@ param(
 $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot 'PiDualEntry.Common.ps1')
 
-Assert-PiDualEntryBinary
 $spec = Get-PiDualEntrySpec -Profile $Profile
+Assert-PiDualEntryBinary -Spec $spec
 if ($NewSession -and -not [string]::IsNullOrWhiteSpace($Session)) {
     throw 'PI_SESSION_SELECTION_CONFLICTS_WITH_NEW_SESSION'
 }
@@ -73,21 +73,30 @@ $surfaceOverlay = Sync-PiDualEntrySurfaceOverlay -Spec $spec
 $subagentsCompatibility = $null
 $hermesSessionCompatibility = $null
 $midTurnCompactionCompatibility = $null
+$post0841UpstreamCompatibility = $null
 $numpadEnterFollow = $null
 $numpadHelperProcess = $null
 $numpadHelperStatus = 'not-applicable'
 $numpadHelperSource = Join-Path (Split-Path -Parent $PSScriptRoot) 'helpers\PrimeS-NumPadEnter-Follow.ahk'
 & (Join-Path $PSScriptRoot 'Set-PiSBodyConfiguration.ps1') -AgentDir $spec.AgentDir | Out-Null
 if ($DisableMidTurnCompactionCompatibility) {
-    $midTurnCompactionCompatibility = (& (Join-Path $PSScriptRoot 'Restore-PiSMidTurnCompactionCompatibility.ps1') -VerifyOnly) | ConvertFrom-Json
+    $midTurnCompactionCompatibility = (& (Join-Path $PSScriptRoot 'Restore-PiSMidTurnCompactionCompatibility.ps1') -PiToolRoot $spec.PiToolRoot -VerifyOnly) | ConvertFrom-Json
 } elseif ($ValidateOnly) {
     $subagentsCompatibility = (& (Join-Path $PSScriptRoot 'Apply-PiSSubagentsWindowsCompatibility.ps1') -AgentDir $spec.AgentDir -VerifyOnly) | ConvertFrom-Json
     $hermesSessionCompatibility = (& (Join-Path $PSScriptRoot 'Apply-PiSHermesSessionCompatibility.ps1') -AgentDir $spec.AgentDir -VerifyOnly) | ConvertFrom-Json
-    $midTurnCompactionCompatibility = (& (Join-Path $PSScriptRoot 'Apply-PiSMidTurnCompactionCompatibility.ps1') -VerifyOnly) | ConvertFrom-Json
+    $midTurnCompactionCompatibility = (& (Join-Path $PSScriptRoot 'Apply-PiSMidTurnCompactionCompatibility.ps1') -PiToolRoot $spec.PiToolRoot -VerifyOnly) | ConvertFrom-Json
 } else {
     $subagentsCompatibility = (& (Join-Path $PSScriptRoot 'Apply-PiSSubagentsWindowsCompatibility.ps1') -AgentDir $spec.AgentDir) | ConvertFrom-Json
     $hermesSessionCompatibility = (& (Join-Path $PSScriptRoot 'Apply-PiSHermesSessionCompatibility.ps1') -AgentDir $spec.AgentDir) | ConvertFrom-Json
-    $midTurnCompactionCompatibility = (& (Join-Path $PSScriptRoot 'Apply-PiSMidTurnCompactionCompatibility.ps1')) | ConvertFrom-Json
+    $midTurnCompactionCompatibility = (& (Join-Path $PSScriptRoot 'Apply-PiSMidTurnCompactionCompatibility.ps1') -PiToolRoot $spec.PiToolRoot) | ConvertFrom-Json
+}
+if ($Profile -eq 'prime-s') {
+    $post0841Raw = if ($ValidateOnly) {
+        & (Join-Path $PSScriptRoot 'Apply-PiSPost0841UpstreamCompatibility.ps1') -PiToolRoot $spec.PiToolRoot -VerifyOnly
+    } else {
+        & (Join-Path $PSScriptRoot 'Apply-PiSPost0841UpstreamCompatibility.ps1') -PiToolRoot $spec.PiToolRoot
+    }
+    $post0841UpstreamCompatibility = ($post0841Raw -join [Environment]::NewLine) | ConvertFrom-Json
 }
 if ($Profile -eq 'prime-s') {
     try {
@@ -120,7 +129,7 @@ foreach ($required in @($spec.Workspace,$spec.SurfaceIsland,$spec.CodexHome,$spe
 & (Join-Path $PSScriptRoot 'Seed-PiCodexAuth.ps1') -Profile $Profile | Out-Null
 if (-not (Test-PiDualEntryAuth -Path $authPath)) { throw "PI_PROFILE_AUTH_INVALID: $Profile" }
 function Test-SelectedPiAuthReady {
-    $raw = @(& $script:PiDualEntryCommand auth check --provider openai-codex --json 2>&1)
+    $raw = @(& $spec.PiCommand auth check --provider openai-codex --json 2>&1)
     if ($LASTEXITCODE -ne 0) { return $false }
     try {
         $result = ($raw -join [Environment]::NewLine) | ConvertFrom-Json
@@ -142,7 +151,8 @@ if ($ValidateOnly) {
     [pscustomobject]@{
         profile = $Profile
         role = $spec.Role
-        version = (& $script:PiDualEntryCommand --version | Select-Object -First 1)
+        version = (& $spec.PiCommand --version | Select-Object -First 1)
+        pi_tool_root = $spec.PiToolRoot
         node_version = $node.RawVersion
         node_path = $node.Path
         node_minimum = [string]$node.Minimum
@@ -159,6 +169,7 @@ if ($ValidateOnly) {
         subagents_windows_compatibility = $subagentsCompatibility
         hermes_session_compatibility = $hermesSessionCompatibility
         midturn_compaction_compatibility = $midTurnCompactionCompatibility
+        post_0841_upstream_compatibility = $post0841UpstreamCompatibility
         midturn_compaction_runtime_enabled = (-not $DisableMidTurnCompactionCompatibility)
         numpad_enter_follow = $numpadEnterFollow
         family_contract = $spec.FamilyContractSource
@@ -246,7 +257,7 @@ try {
     } elseif (-not $NewSession) {
         $arguments += '--continue'
     }
-    & $script:PiDualEntryCommand @arguments
+    & $spec.PiCommand @arguments
     exit $LASTEXITCODE
 } finally {
     if ($Profile -eq 'prime-s') {
