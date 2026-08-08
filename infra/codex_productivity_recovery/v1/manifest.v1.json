@@ -5,22 +5,22 @@
   "runtime_loaded": false,
   "completion_claim_allowed": false,
   "archive": "codex-productivity-recovery.v1.zip",
-  "archive_sha256": "b7f45848d5f4411600a7c3b8ba43361b57912a1b84b44c770ae7d2b30e0f21e3",
+  "archive_sha256": "966b8995872d537b352696ac5777494520ee2be41cc713abd705183c55b3e2ed",
   "entry_count": 81,
   "entries": [
     {
       "archive_path": "launchers/CODEX_PRODUCTIVITY_PROFILE.md",
       "live_source": "C:\\Users\\xx363\\CodexLaunchers\\CODEX_PRODUCTIVITY_PROFILE.md",
       "role": "launcher_or_profile",
-      "size": 9038,
-      "sha256": "968fd5b5166ce4d37901762f6f7d509686312226eec5fd09a41c4e9f266f2ad9"
+      "size": 9288,
+      "sha256": "0f213c4b269caa86c60b325bbc3c5e0fb5fa357f065e2db71ca8d6c7c0146737"
     },
     {
       "archive_path": "launchers/Open-Codex-S-Hardmode-Account-B.ps1",
       "live_source": "C:\\Users\\xx363\\CodexLaunchers\\Open-Codex-S-Hardmode-Account-B.ps1",
       "role": "launcher_or_profile",
-      "size": 8193,
-      "sha256": "3d61b456837e9f6befa451c9555cbfa7153f870916fee176b2384a7bd344fd23"
+      "size": 10787,
+      "sha256": "bbd20893da4b4541414240f7a937befea0dfc616d3c5ed4144f652ceffa44a6d"
     },
     {
       "archive_path": "launchers/Open-Codex-S-Hardmode.ps1",

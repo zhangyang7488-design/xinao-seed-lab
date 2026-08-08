@@ -1433,7 +1433,17 @@ def test_live_codex_productivity_profile_keeps_core_and_colds_stale_surfaces() -
     assert '"cold-capabilities.config.toml"' in launcher
     assert "\"CODEX_HOME = '$mainCodexHome'\"" in launcher
     assert "\"CODEX_HOME = '$codexHome'\"" in launcher
-    assert "The copied config is rewritten only for B-local CODEX_HOME" in launcher
+    assert "Get-CodexHookStateBlocks" in launcher
+    assert "Merge-CodexHookStateBlocks" in launcher
+    assert "$preservedHookStateBlocks" in launcher
+    assert "B-local hook trust is preserved" in launcher
+    assert "--dangerously-bypass-hook-trust" not in launcher
+
+    plugin_hook_prefix = "wt-agent-hooks@wt-local:hooks/hooks.json:"
+    main_hook_state = main["hooks"]["state"]
+    account_b_hook_state = account_b["hooks"]["state"]
+    assert not any(key.startswith(plugin_hook_prefix) for key in main_hook_state)
+    assert sum(key.startswith(plugin_hook_prefix) for key in account_b_hook_state) == 4
     main_agents = main_path.with_name("AGENTS.md").read_text(encoding="utf-8-sig")
     account_b_agents = account_b_path.with_name("AGENTS.md").read_text(encoding="utf-8-sig")
     assert main_agents == account_b_agents
@@ -1454,6 +1464,8 @@ def test_live_codex_productivity_profile_keeps_core_and_colds_stale_surfaces() -
     assert "不能恢复已退役的科学路由" in main_agents
 
     contract = contract_path.read_text(encoding="utf-8-sig")
+    assert "`hooks.state` 是各入口已经作出的本地信任选择" in contract
+    assert "不把一次已确认的信任在下次启动时抹掉" in contract
     assert "这是已授予的任务适配权，不是逐次用户审批点" in contract
     assert "普通探索、一般第二意见、并行方便、烧额度" in contract
     assert "只允许进程/任务作用域覆盖" in contract
@@ -1643,6 +1655,23 @@ def test_live_codex_source_aware_continuity_hooks_are_trusted_and_bounded(
             event_key = event_key_by_name[hook["eventName"]]
             assert hook["trustStatus"] == "trusted"
             assert hook["currentHash"] == trust_by_home[home][event_key]
+
+        if home == account_b_home:
+            plugin_prefix = "wt-agent-hooks@wt-local:hooks/hooks.json:"
+            plugin_hooks = [
+                hook
+                for hook in discovered["hooks"]
+                if hook.get("source") == "plugin"
+                and hook.get("key", "").startswith(plugin_prefix)
+            ]
+            assert len(plugin_hooks) == 4
+            account_b_config = tomllib.loads(
+                (account_b_home / "config.toml").read_text(encoding="utf-8-sig")
+            )
+            plugin_trust = account_b_config["hooks"]["state"]
+            for hook in plugin_hooks:
+                assert hook["trustStatus"] == "trusted"
+                assert hook["currentHash"] == plugin_trust[hook["key"]]["trusted_hash"]
 
     active_state_root = tmp_path / "active-task-state"
 
