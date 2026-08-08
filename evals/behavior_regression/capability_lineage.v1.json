@@ -4,7 +4,7 @@
   "authority": false,
   "runtime_loaded": false,
   "completion_claim_allowed": false,
-  "evidence_cutoff": "2026-08-07T23:05:00+08:00",
+  "evidence_cutoff": "2026-08-08T00:00:00+08:00",
   "purpose": "Recover the complete capability, pain, consumer, and retirement lineage before another architecture migration. This registry prevents carrier deletion from being mistaken for authority cleanup or capability restoration; it never selects a task, domain route, tool, worker, or completion state.",
   "frozen_baseline": {
     "capability_id": "intent_source_parent_admission",
@@ -326,8 +326,8 @@
     },
     {
       "id": "mature_user_operation_and_open_world_reuse",
-      "pain": "The system can hand technical preparation back to the user, stop at a report, or hand-roll a second runtime before checking mature capabilities.",
-      "causal_work": "Compile the real user outcome into a full product operation, search mature surfaces first, bind only the needed parameters, invoke the real consumer, and return to the parent activity.",
+      "pain": "The system can hand technical preparation back to the user, stop at a report, hand-roll a second runtime before checking mature capabilities, or collapse an open external task into the latest query and return news without comparing live local reality.",
+      "causal_work": "Compile the real user outcome into a full product operation; for open external questions, bind the surviving parent and smallest relevant local baseline, expand only decision-changing dimensions, collide evidence into local deltas, and stop on coverage plus marginal novelty before returning to the parent activity.",
       "historical_carriers": [
         "git:1e24d51",
         "git:e4223c3",
@@ -336,17 +336,20 @@
       "current_consumers": [
         "external:operate-for-user skill",
         "external:human-agency-grounding skill",
+        "external:research-external-reality skill",
         "evals/proactive_mature_first",
+        "evals/external_reality_research",
         "evals/mature_capability_recall",
         "evals/thin_localization",
         "evals/productive_action_trajectory"
       ],
       "current_state": "PARTIAL_CONSUMER",
       "disposition": "KEEP_CONDITIONAL",
-      "cost_and_failure_radius": "Open-world search and live invocation are costly; they should trigger only where reuse can change the implementation route.",
-      "rollback": "Reject a candidate mature surface and fall back to the smallest local implementation without changing the parent result.",
+      "cost_and_failure_radius": "Open-world search and live invocation are costly; over-triggering would turn every exact lookup into a research campaign, while under-triggering returns locally ungrounded news.",
+      "rollback": "Reject a candidate external finding or remove the conditional Skill/L0 delta while retaining direct bounded lookup and the unchanged parent result.",
       "unknowns": [
         "Current public alternatives drift and require fresh primary-source verification.",
+        "The focused suite proves synthetic parent/local/external classification and fresh planning behavior, not that every future live search achieves complete external coverage.",
         "The productive-action witness set covers evidence-delta reuse, classification reversal, and one changed-domain safety boundary; it does not prove every future classification of useful rigor versus formalism."
       ]
     },

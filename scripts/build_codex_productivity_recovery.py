@@ -32,6 +32,7 @@ GENERIC_SKILLS = (
     "productivity",
     "promptfoo-agent-evals",
     "repair-agent-behavior",
+    "research-external-reality",
     "verified-agent-loop",
 )
 

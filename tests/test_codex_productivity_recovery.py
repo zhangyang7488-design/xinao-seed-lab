@@ -45,6 +45,11 @@ def test_productivity_recovery_archive_is_cold_self_contained_and_science_free(
     assert "main-home/skills/productivity/SKILL.md" in names
     assert "main-home/skills/productivity/references/protocol.md" in names
     assert "main-home/skills/productivity/references/skill-ecology.md" in names
+    assert "main-home/skills/research-external-reality/SKILL.md" in names
+    assert "main-home/skills/research-external-reality/agents/openai.yaml" in names
+    assert (
+        "main-home/skills/research-external-reality/references/evaluation-cases.md" in names
+    )
     assert "runtime/Codex_Situation_Island/scripts/user_prompt_zero_beat_v1.ps1" in names
     serialized_names = "\n".join(names).lower()
     for forbidden in (

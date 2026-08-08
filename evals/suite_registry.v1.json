@@ -38,6 +38,12 @@
       "role": "generic_parent_frame_transition_and_mature_owner_admission"
     },
     {
+      "id": "external_reality_research",
+      "path": "evals/external_reality_research",
+      "runner": "scripts/run_external_reality_research_eval.ps1",
+      "role": "parent_grounded_external_search_local_delta_and_marginal_stop"
+    },
+    {
       "id": "proactive_mature_first",
       "path": "evals/proactive_mature_first",
       "runner": "scripts/run_proactive_mature_first_eval.ps1",

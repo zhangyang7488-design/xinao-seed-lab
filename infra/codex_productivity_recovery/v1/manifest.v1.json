@@ -5,8 +5,8 @@
   "runtime_loaded": false,
   "completion_claim_allowed": false,
   "archive": "codex-productivity-recovery.v1.zip",
-  "archive_sha256": "1286cc1cd516285aa171b8605df636bdc63d9433d8d368ca76714e2a366a3796",
-  "entry_count": 81,
+  "archive_sha256": "6350a27dcfe312c5ec5b7afe092dc832f1f3d510bbb92fd263f33b6a9b5127ab",
+  "entry_count": 84,
   "entries": [
     {
       "archive_path": "launchers/CODEX_PRODUCTIVITY_PROFILE.md",
@@ -33,8 +33,8 @@
       "archive_path": "main-home/AGENTS.md",
       "live_source": "C:\\Users\\xx363\\.codex\\AGENTS.md",
       "role": "main_live_source",
-      "size": 25435,
-      "sha256": "fceacb24408d0daf666083bd997d965c0c68d825b91e66eb5a6669c302fe952d"
+      "size": 26208,
+      "sha256": "06282be7fc42b19c16bdd3b996a0505695e27feb1861c07a41749874e553c907"
     },
     {
       "archive_path": "main-home/agents/luna-worker.toml",
@@ -490,6 +490,27 @@
       "role": "generic_custom_skill",
       "size": 8245,
       "sha256": "044497f36fbf2cf4df70c4f785cdbfdfef543221537a45184ce26ddf5e9cfe4a"
+    },
+    {
+      "archive_path": "main-home/skills/research-external-reality/SKILL.md",
+      "live_source": "C:\\Users\\xx363\\.codex\\skills\\research-external-reality\\SKILL.md",
+      "role": "generic_custom_skill",
+      "size": 6599,
+      "sha256": "bd52519848542707b4982238b82f224ebde211916080cb8e1469ba80de0f1105"
+    },
+    {
+      "archive_path": "main-home/skills/research-external-reality/agents/openai.yaml",
+      "live_source": "C:\\Users\\xx363\\.codex\\skills\\research-external-reality\\agents\\openai.yaml",
+      "role": "generic_custom_skill",
+      "size": 363,
+      "sha256": "1319ccf324fef952d7e13ad8137214409f852d4884d6e44a068d6ab1e3ef8b1e"
+    },
+    {
+      "archive_path": "main-home/skills/research-external-reality/references/evaluation-cases.md",
+      "live_source": "C:\\Users\\xx363\\.codex\\skills\\research-external-reality\\references\\evaluation-cases.md",
+      "role": "generic_custom_skill",
+      "size": 3374,
+      "sha256": "098acbf3f8493ace514a3ae42b72190f4d7fec3ea95f6e885b7e0024f7fb0087"
     },
     {
       "archive_path": "main-home/skills/verified-agent-loop/SKILL.md",

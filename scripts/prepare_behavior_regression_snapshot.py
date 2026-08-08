@@ -112,6 +112,7 @@ def _profile_flags(
         and not failed_from,
         "context": False,
         "intent": profile in {"intent", "smoke", "core", "deep"},
+        "external_reality": profile in {"external", "core", "deep"},
         "proactive": profile in {"proactive", "core", "deep"},
         "recall_replay": profile in {"core", "deep", "reuse"},
         "recall_live": profile in {"deep", "reuse"},
@@ -202,6 +203,19 @@ def selected_inputs(
                 ("evals/parent_frame_admission", "parent_frame_admission"),
             )
         )
+    if flags["external_reality"]:
+        relative_inputs.extend(
+            (
+                (
+                    "tests/test_external_reality_research.py",
+                    "external_reality_research_tests",
+                ),
+                (
+                    "evals/external_reality_research",
+                    "external_reality_research_eval",
+                ),
+            )
+        )
     if flags["native_subagent"]:
         relative_inputs.append(
             (
@@ -243,14 +257,24 @@ def selected_inputs(
         SourceInput(repo_root / relative, role, relative.replace("\\", "/"))
         for relative, role in relative_inputs
     ]
-    if flags["intent"] or flags["productivity"]:
+    if flags["intent"] or flags["external_reality"] or flags["productivity"]:
         if codex_home is None:
-            raise ValueError("codex_home is required for intent and productive-action profiles")
+            raise ValueError(
+                "codex_home is required for intent, external-reality, and productive-action profiles"
+            )
         inputs.append(
             SourceInput(
                 codex_home / "AGENTS.md",
                 "global_working_kernel",
                 "external/global_codex_home/AGENTS.md",
+            )
+        )
+    if flags["external_reality"]:
+        inputs.append(
+            SourceInput(
+                codex_home / "skills" / "research-external-reality",
+                "external_reality_research_skill",
+                "external/global_codex_home/skills/research-external-reality",
             )
         )
     if flags["recall_live"]:
@@ -424,6 +448,7 @@ def _parser() -> argparse.ArgumentParser:
             "proactive",
             "reuse",
             "intent",
+            "external",
             "productivity",
             "subagent",
         ),

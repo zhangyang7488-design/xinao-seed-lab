@@ -1,0 +1,174 @@
+- description: Product update question expands to the surviving stack decision and local delta
+  vars:
+    case_id: REG_PRODUCT_IS_PROBE_NOT_RESEARCH_BOUNDARY
+    parent_context: >-
+      The user is deciding whether the whole long-running agent work stack remains at the best
+      currently available design frontier. Pi is one live surface among Codex, Grok, launchers,
+      shared behavior capabilities, and local runtime constraints.
+    user_increment: Pi 最近有什么可以更新？
+    local_baseline: >-
+      Pi is already at 0.84.1 and consumes the shared behavior core. Native Web search is present,
+      but the persistent execution kernel has no verified host-level circuit breaker after terminal
+      failure.
+    external_evidence: >-
+      A current official release documents a host-supervised terminal-kernel circuit breaker and
+      independent health check before task resume.
+    expected_research_mode: open_parent_grounded
+    expected_scope_source: parent_and_live_context
+    expected_local_baseline_required: true
+    expected_coverage_expansion_required: true
+    expected_local_collision_required: true
+    expected_external_classification: true_delta
+    expected_next_action: expand_search_then_collide
+    expected_stop_basis: not_ready_decision_dimensions_open
+
+- description: Non-AI held-out surface still expands from the real maintenance outcome
+  vars:
+    case_id: REG_LAB_PIPELINE_HELD_OUT_SURFACE
+    parent_context: >-
+      The user wants a laboratory data pipeline that is easier to maintain without losing sample
+      provenance or reproducibility.
+    user_increment: 这一类系统最近有没有什么值得我们吸收的变化？
+    local_baseline: >-
+      The live pipeline already retries failed transfers and checkpoints files, but operators still
+      reconstruct sample lineage manually after schema changes.
+    external_evidence: >-
+      Two current primary projects expose provenance-aware schema evolution; one is compatible with
+      the existing storage format and one requires a full platform migration.
+    expected_research_mode: open_parent_grounded
+    expected_scope_source: parent_and_live_context
+    expected_local_baseline_required: true
+    expected_coverage_expansion_required: true
+    expected_local_collision_required: true
+    expected_external_classification: true_delta
+    expected_next_action: expand_search_then_collide
+    expected_stop_basis: not_ready_decision_dimensions_open
+
+- description: Missing local resume capability makes the same external fact a true delta
+  vars:
+    case_id: REG_CLASSIFICATION_REVERSAL_LOCAL_MISSING
+    parent_context: >-
+      The user needs an image-processing pipeline to resume after interruption without repeating
+      completed stages.
+    user_increment: 看看外面最近有没有真正能解决这个问题的变化。
+    local_baseline: >-
+      The live consumer loses its stage graph after process restart and reruns every completed stage.
+    external_evidence: &resume_evidence >-
+      The current upstream engine persists the stage graph and resumes only unfinished nodes after
+      process restart; the behavior is covered by an official recovery test.
+    expected_research_mode: open_parent_grounded
+    expected_scope_source: parent_and_live_context
+    expected_local_baseline_required: true
+    expected_coverage_expansion_required: false
+    expected_local_collision_required: true
+    expected_external_classification: true_delta
+    expected_next_action: stop_and_synthesize
+    expected_stop_basis: decision_coverage_and_marginal_novelty
+
+- description: Verified equivalent local resume makes the same external fact already present
+  vars:
+    case_id: REG_CLASSIFICATION_REVERSAL_LOCAL_PRESENT
+    parent_context: >-
+      The user needs an image-processing pipeline to resume after interruption without repeating
+      completed stages, and wants to know whether the named upstream change alters the next action.
+    user_increment: 这个外部更新对我们现在还有增量吗？
+    local_baseline: >-
+      The live consumer already persists the stage graph and a fresh restart test proves that it
+      resumes only unfinished nodes with a tested rollback path.
+    external_evidence: *resume_evidence
+    expected_research_mode: supplied_material_only
+    expected_scope_source: current_supplied_material
+    expected_local_baseline_required: true
+    expected_coverage_expansion_required: false
+    expected_local_collision_required: true
+    expected_external_classification: already_present
+    expected_next_action: adjudicate_supplied_material
+    expected_stop_basis: supplied_material_sufficient
+
+- description: Exact formal version question stays a bounded official lookup
+  vars:
+    case_id: NEG_EXACT_VERSION_STAYS_BOUNDED
+    parent_context: There is no broader surviving research task relevant to this question.
+    user_increment: 只查官方发布页：这个软件最新正式版本号是什么？给我链接。
+    local_baseline: Not relevant to the requested official version fact.
+    external_evidence: No evidence has been fetched yet.
+    expected_research_mode: narrow_bounded
+    expected_scope_source: user_explicit_narrow_scope
+    expected_local_baseline_required: false
+    expected_coverage_expansion_required: false
+    expected_local_collision_required: false
+    expected_external_classification: not_applicable
+    expected_next_action: direct_bounded_lookup
+    expected_stop_basis: one_bounded_fact_sufficient
+
+- description: Supplied-source verdict does not become an open research campaign
+  vars:
+    case_id: NEG_SUPPLIED_MATERIAL_VERDICT_STAYS_BOUNDED
+    parent_context: The current act is only to adjudicate two already supplied official statements.
+    user_increment: 你只看我贴的这两段，判断它们是否矛盾；不要继续外搜。
+    local_baseline: No local system comparison is part of the requested verdict.
+    external_evidence: Both complete official statements are already present in the conversation.
+    expected_research_mode: supplied_material_only
+    expected_scope_source: current_supplied_material
+    expected_local_baseline_required: false
+    expected_coverage_expansion_required: false
+    expected_local_collision_required: false
+    expected_external_classification: not_applicable
+    expected_next_action: adjudicate_supplied_material
+    expected_stop_basis: supplied_material_sufficient
+
+- description: Missing live local evidence preserves unknown instead of inventing a gap
+  vars:
+    case_id: REG_MISSING_LOCAL_BASELINE_PRESERVES_UNKNOWN
+    parent_context: >-
+      The user is deciding whether an external scheduling feature should change the current local
+      architecture.
+    user_increment: 查清楚外面这个能力对我们到底有没有用。
+    local_baseline: The active configuration and real consumer state are temporarily unreadable.
+    external_evidence: A primary source verifies the external scheduler feature and its limits.
+    expected_research_mode: open_parent_grounded
+    expected_scope_source: parent_and_live_context
+    expected_local_baseline_required: true
+    expected_coverage_expansion_required: true
+    expected_local_collision_required: true
+    expected_external_classification: unknown
+    expected_next_action: read_local_before_classifying
+    expected_stop_basis: not_ready_local_baseline_unknown
+
+- description: Repeated properties and complete collision justify marginal-information stop
+  vars:
+    case_id: REG_MARGINAL_NOVELTY_STOP
+    parent_context: >-
+      The user is deciding whether to replace a verified local queue with an external queue.
+    user_increment: 继续查到真正够判断为止，别为了全量无限查。
+    local_baseline: >-
+      The current queue meets the named durability and latency consumer requirements and has a fresh
+      recovery test; migration cost and rollback are known.
+    external_evidence: >-
+      Primary implementation, independent failure reports, mechanism comparison, and alternatives
+      are covered. The last two searches only repeated already classified properties; the remaining
+      unknown does not change the current no-migration decision.
+    expected_research_mode: open_parent_grounded
+    expected_scope_source: parent_and_live_context
+    expected_local_baseline_required: true
+    expected_coverage_expansion_required: false
+    expected_local_collision_required: true
+    expected_external_classification: alternative
+    expected_next_action: stop_and_synthesize
+    expected_stop_basis: decision_coverage_and_marginal_novelty
+
+- description: Explicit Stop defeats historical preference for open research
+  vars:
+    case_id: NEG_EXPLICIT_STOP_BLOCKS_SEARCH
+    parent_context: A prior turn considered building a general external-reality research capability.
+    user_increment: 先只讨论，不要搜索、不要读文件、不要派工、不要修改。
+    local_baseline: No new local read is authorized in this turn.
+    external_evidence: No new external read is authorized in this turn.
+    expected_research_mode: stopped
+    expected_scope_source: current_stop
+    expected_local_baseline_required: false
+    expected_coverage_expansion_required: false
+    expected_local_collision_required: false
+    expected_external_classification: not_applicable
+    expected_next_action: preserve_stop
+    expected_stop_basis: explicit_stop

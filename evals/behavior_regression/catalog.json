@@ -4,13 +4,14 @@
   "runner": "scripts/run_behavior_regression.ps1",
   "candidate_intake": "scripts/New-BehaviorRegressionCandidate.ps1",
   "result_root": "D:\\XINAO_RESEARCH_RUNTIME\\state\\human-capabilities\\evals\\behavior-regression",
-  "declared_case_count": 84,
+  "declared_case_count": 93,
   "profiles": {
     "capability": "One fresh Codex app-server capability canary.",
     "smoke": "One fresh parent-frame admission case plus one Codex app-server capability canary; retired routing golds remain excluded.",
-    "core": "Twenty generic parent-frame, bounded-transition, stable-behavior-delivery, default-owner, first-principles, and mature-owner admission cases plus capability, proactive mature-first, frozen mature-candidate recall, one real thin-localization trajectory, eight cross-domain productive-action trajectories, and static validation.",
+    "core": "Generic parent-frame and mature-owner admission plus capability, nine parent-grounded external-reality cases, proactive mature-first, frozen mature-candidate recall, one real thin-localization trajectory, eight cross-domain productive-action trajectories, and static validation.",
     "deep": "Core plus one current open-world public-repository search.",
     "intent": "Fifty-eight generic fresh Codex parent-frame, source-aware utterance-relation, comparison-dimension, semantic-scope-fidelity, stable-behavior-delivery, credential-consumer, Windows process-visibility, bounded-transition, default-owner, first-principles, mature-owner, owner-worker dual-track, and cold-native standing exception admission cases without retired domain routing.",
+    "external": "Nine parent-grounded external-reality cases covering open expansion, held-out surfaces, local classification reversal, narrow lookup, supplied-material verdict, unknown evidence, marginal stop, and explicit Stop.",
     "proactive": "All six mature-first live cases; routing facts are checked by their real engineering consumers, not the retired context suite.",
     "reuse": "Only the four live open-world-reuse cases plus their deterministic contract validation.",
     "productivity": "Eight disposable-workspace trajectories that test evidence-delta reuse, action/non-action symmetry, classification reversal, necessary rigor, complete reference-behavior alignment, and decision-relevant process visibility.",
@@ -19,9 +20,10 @@
   "live_profile_case_counts": {
     "capability": 1,
     "smoke": 2,
-    "core": 38,
-    "deep": 39,
+    "core": 47,
+    "deep": 48,
     "intent": 58,
+    "external": 9,
     "proactive": 6,
     "reuse": 4,
     "productivity": 8,
@@ -44,6 +46,16 @@
       "case_source": "evals/parent_frame_admission/cases.yaml",
       "runtime_claim_allowed": true,
       "domain_routing_claim_allowed": false
+    },
+    {
+      "id": "external_reality_research",
+      "kind": "promptfoo_live",
+      "case_count": 9,
+      "config": "evals/external_reality_research/promptfooconfig.yaml",
+      "case_source": "evals/external_reality_research/cases.yaml",
+      "parent_grounded_delta_claim_allowed": true,
+      "automatic_adoption_claim_allowed": false,
+      "universal_external_completeness_claim_allowed": false
     },
     {
       "id": "proactive_mature_first",

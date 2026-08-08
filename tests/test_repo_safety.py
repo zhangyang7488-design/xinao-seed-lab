@@ -817,6 +817,7 @@ def test_fresh_promptfoo_codex_sessions_do_not_run_interactive_hooks() -> None:
         "evals/mature_capability_recall/promptfooconfig.live.yaml",
         "evals/mature_capability_recall/promptfooconfig.yaml",
         "evals/proactive_mature_first/promptfooconfig.yaml",
+        "evals/external_reality_research/promptfooconfig.yaml",
         "evals/thin_localization/promptfooconfig.yaml",
         "evals/native_subagent_trajectory/promptfooconfig.yaml",
     )
@@ -857,6 +858,7 @@ def test_eval_runners_inherit_the_active_codex_account_profile() -> None:
         "run_codex_capability_eval.ps1",
         "run_proactive_mature_first_eval.ps1",
         "run_open_world_reuse_eval.ps1",
+        "run_external_reality_research_eval.ps1",
         "run_self_evolution_eval_battery.ps1",
     )
     for name in runners:
@@ -1174,6 +1176,7 @@ def test_behavior_evolution_runner_is_thin_and_domain_research_stays_native() ->
     assert "mature_capability_recall_live" in live_ids
     assert "thin_localization_live" in live_ids
     assert "native_subagent_trajectory" in live_ids
+    assert "external_reality_research" in live_ids
     retired_ids = {item["id"] for item in registry["retired_compatibility_suites"]}
     assert retired_ids == {"context_intent_alignment"}
     admission_ids = {item["id"] for item in registry["admission_fixture_only"]}
@@ -1185,7 +1188,7 @@ def test_behavior_evolution_runner_is_thin_and_domain_research_stays_native() ->
     assert "'--max-concurrency', $Concurrency" in runner
     assert "[int]$MaxErrorRetries = 1" in runner
     assert "'--filter-errors-only', $previousResult" in runner
-    assert "@('proactive', 'intent', 'productivity')" in runner
+    assert "@('proactive', 'intent', 'external', 'productivity')" in runner
     assert "$productiveFilters += @('--filter-pattern', $CasePattern)" in runner
     assert "-Concurrency 1" in runner
     assert "FailedFrom belongs to a different behavior suite" in runner
@@ -1197,13 +1200,14 @@ def test_behavior_evolution_runner_is_thin_and_domain_research_stays_native() ->
         (REPO_ROOT / "evals/behavior_regression/catalog.json").read_text(encoding="utf-8")
     )
     suite_count = sum(item["case_count"] for item in catalog["suites"])
-    assert suite_count == catalog["declared_case_count"] == 84
+    assert suite_count == catalog["declared_case_count"] == 93
     assert catalog["live_profile_case_counts"] == {
         "capability": 1,
         "smoke": 1 + 1,
-        "core": 18 + 1 + 6 + 2 + 1 + 2 + 8,
-        "deep": 18 + 1 + 6 + 2 + 1 + 1 + 2 + 8,
+        "core": 18 + 1 + 9 + 6 + 2 + 1 + 2 + 8,
+        "deep": 18 + 1 + 9 + 6 + 2 + 1 + 1 + 2 + 8,
         "intent": 58,
+        "external": 9,
         "proactive": 6,
         "reuse": 4,
         "productivity": 8,
@@ -1214,6 +1218,14 @@ def test_behavior_evolution_runner_is_thin_and_domain_research_stays_native() ->
     assert intent["case_count"] == 58
     assert intent["runtime_claim_allowed"] is True
     assert intent["domain_routing_claim_allowed"] is False
+    external_reality = next(
+        item for item in catalog["suites"] if item["id"] == "external_reality_research"
+    )
+    assert external_reality["kind"] == "promptfoo_live"
+    assert external_reality["case_count"] == 9
+    assert external_reality["parent_grounded_delta_claim_allowed"] is True
+    assert external_reality["automatic_adoption_claim_allowed"] is False
+    assert external_reality["universal_external_completeness_claim_allowed"] is False
     proactive = next(item for item in catalog["suites"] if item["id"] == "proactive_mature_first")
     assert proactive["kind"] == "promptfoo_live"
     assert proactive["policy_classification_claim_allowed"] is True
@@ -2166,7 +2178,7 @@ def test_live_codex_source_aware_continuity_hooks_are_trusted_and_bounded(
 
 
 def test_prime_terminal_kernel_recovery_is_hash_guarded_tested_and_reversible() -> None:
-    root = REPO_ROOT / "infra" / "prime_codex_parity_test" / "v1"
+    root = REPO_ROOT / "infra" / "retired_prime_agent_0_7_parity_test" / "v1"
     install = (root / "scripts" / "Install-PrimeKernelTerminalRecovery.ps1").read_text(
         encoding="utf-8"
     )
@@ -2175,6 +2187,9 @@ def test_prime_terminal_kernel_recovery_is_hash_guarded_tested_and_reversible() 
     )
     probe = (root / "scripts" / "Test-PrimeKernelTerminalRecovery.mjs").read_text(encoding="utf-8")
     readme = (root / "README.md").read_text(encoding="utf-8")
+
+    assert "PRIME_AGENT_0_7_PARITY_RETIRED_V1" in readme
+    assert "cold migration and rollback evidence only" in readme
 
     for source in (install, restore):
         assert "2289467E28B6F817EDFC65B0E5AA77382B193920323B9AEF95FBDC82812975BD" in source

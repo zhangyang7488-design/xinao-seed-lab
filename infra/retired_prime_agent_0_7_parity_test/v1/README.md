@@ -1,4 +1,15 @@
-# Prime / Codex behavior-parity test v1
+# RETIRED: Prime Agent 0.7.0 parity experiment
+
+`SENTINEL:PRIME_AGENT_0_7_PARITY_RETIRED_V1`
+
+This tree is cold migration and rollback evidence only. The active desktop surfaces are the
+upstream Pi 0.84.1 `prime-b` and `prime-s` profiles implemented by
+`infra/pi_upstream_dual_entry/v1`. Do not run this tree's launch, mode-switch, account-binding,
+daemon, kernel-recovery, or same-session scripts against either current surface. In particular,
+the single-JSONL mode-switch architecture below was rejected: current PrimeB and prime S have
+independent native session trees and are stable/leading surfaces, not task identities.
+
+# Historical Prime / Codex behavior-parity test v1
 
 `SENTINEL:PRIME_CODEX_PARITY_TEST_V1`
 

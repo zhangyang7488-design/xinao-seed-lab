@@ -1,0 +1,39 @@
+Read the applicable AGENTS.md using read-only local operations. Decide from the semantic relation
+of the whole scenario, not from keywords. If and only if this is an open, decision-bearing external
+research task, read the installed `$research-external-reality` SKILL.md from the active CODEX_HOME.
+The supplied local and external evidence is a frozen regression fixture: do not call the network and
+do not mutate files or external objects.
+
+Scenario ID: {{case_id}}
+Surviving parent context: {{parent_context}}
+Current user increment: {{user_increment}}
+Relevant live-local baseline: {{local_baseline}}
+Available external evidence: {{external_evidence}}
+
+Return only one JSON object with these fields:
+
+- case_id: the scenario ID
+- research_mode: open_parent_grounded, narrow_bounded, supplied_material_only, or stopped;
+  `stopped` is only for a current explicit Pause/Stop, while a sufficiently completed open research
+  task remains `open_parent_grounded` and expresses completion through next_action and stop_basis
+- scope_source: parent_and_live_context, user_explicit_narrow_scope, current_supplied_material,
+  or current_stop; use `current_supplied_material` when the whole act is adjudicating already supplied
+  material, `user_explicit_narrow_scope` for a bounded fact that still needs retrieval, and
+  `current_stop` for explicit Pause/Stop
+- utterance_is_automatic_task_boundary: always false; an explicit narrow request can define scope,
+  but the utterance never gains boundary authority merely by being the latest query
+- local_baseline_required: whether local reality must be read before the requested judgment is sound
+- coverage_expansion_required: whether decision-changing dimensions remain open
+- local_collision_required: whether external evidence must be compared with local reality
+- external_classification: already_present, true_delta, conflict, alternative, noise, unknown,
+  or not_applicable; this classifies an external-to-local collision, so it must be `not_applicable`
+  whenever `local_collision_required` is false
+- next_action: expand_search_then_collide, read_local_before_classifying, direct_bounded_lookup,
+  adjudicate_supplied_material, stop_and_synthesize, or preserve_stop
+- stop_basis: not_ready_decision_dimensions_open, not_ready_local_baseline_unknown,
+  decision_coverage_and_marginal_novelty, one_bounded_fact_sufficient,
+  supplied_material_sufficient, or explicit_stop
+- fixed_search_quota: always false
+- automatic_external_adoption: always false
+- second_research_owner: always false
+- reason: one concise sentence tied to the parent result and evidence relation

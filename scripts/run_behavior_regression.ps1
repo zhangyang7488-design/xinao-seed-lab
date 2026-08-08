@@ -1,6 +1,6 @@
 [CmdletBinding()]
 param(
-    [ValidateSet('capability', 'smoke', 'core', 'deep', 'proactive', 'reuse', 'intent', 'productivity', 'subagent')]
+    [ValidateSet('capability', 'smoke', 'core', 'deep', 'proactive', 'reuse', 'intent', 'external', 'productivity', 'subagent')]
     [string]$Profile = 'smoke',
     [string]$Domain,
     [string]$CasePattern,
@@ -29,8 +29,8 @@ if ($List) {
 if ($Domain -and $Profile -notin @('proactive', 'core', 'deep')) {
     throw 'Domain filtering applies to proactive behavior cases only.'
 }
-if ($CasePattern -and $Profile -notin @('proactive', 'intent', 'productivity')) {
-    throw 'CasePattern is suite-specific; use it with -Profile proactive, intent, or productivity.'
+if ($CasePattern -and $Profile -notin @('proactive', 'intent', 'external', 'productivity')) {
+    throw 'CasePattern is suite-specific; use it with -Profile proactive, intent, external, or productivity.'
 }
 if ($FailedFrom -and $Profile -ne 'proactive') {
     throw 'FailedFrom is suite-specific; use it with -Profile proactive.'
@@ -616,6 +616,7 @@ function New-BehaviorSourceManifest {
 $runCapability = $Profile -in @('capability', 'smoke', 'core', 'deep') -and
     -not $Domain -and -not $CasePattern -and -not $FailedFrom
 $runIntent = $Profile -in @('intent', 'smoke', 'core', 'deep')
+$runExternalReality = $Profile -in @('external', 'core', 'deep')
 $runProactive = $Profile -in @('proactive', 'core', 'deep')
 $runRecallReplay = $Profile -in @('core', 'deep', 'reuse')
 $runRecallLive = $Profile -in @('deep', 'reuse')
@@ -702,7 +703,7 @@ if ($runStatic) {
         role = 'static_assertion_tests'
     }
 }
-if ($runIntent -or $runProductiveAction) {
+if ($runIntent -or $runExternalReality -or $runProductiveAction) {
     $sourceInputs += [pscustomobject]@{
         path = (Join-Path $CodexHome 'AGENTS.md')
         logical_path = 'external/global_codex_home/AGENTS.md'
@@ -717,6 +718,21 @@ if ($runIntent) {
     $sourceInputs += [pscustomobject]@{
         path = (Join-Path $repoRoot 'evals\parent_frame_admission')
         role = 'parent_frame_admission'
+    }
+}
+if ($runExternalReality) {
+    $sourceInputs += [pscustomobject]@{
+        path = (Join-Path $repoRoot 'tests\test_external_reality_research.py')
+        role = 'external_reality_research_tests'
+    }
+    $sourceInputs += [pscustomobject]@{
+        path = (Join-Path $repoRoot 'evals\external_reality_research')
+        role = 'external_reality_research_eval'
+    }
+    $sourceInputs += [pscustomobject]@{
+        path = (Join-Path $CodexHome 'skills\research-external-reality')
+        logical_path = 'external/global_codex_home/skills/research-external-reality'
+        role = 'external_reality_research_skill'
     }
 }
 if ($runProactive) {
@@ -820,6 +836,9 @@ try {
         $preflightTests += 'tests/test_parent_frame_admission.py'
         $preflightTests += 'tests/test_intent_action_consumer_coverage.py'
     }
+    if ($runExternalReality) {
+        $preflightTests += 'tests/test_external_reality_research.py'
+    }
     if ($runNativeSubagent) {
         $preflightTests += 'tests/test_native_subagent_trajectory.py'
     }
@@ -879,6 +898,21 @@ try {
             -SuiteId 'parent_frame_admission' `
             -ConfigPath $intentConfig -ResultPath $intentResult `
             -ExtraArguments $intentFilters
+    }
+
+    if ($overallExit -eq 0 -and $runExternalReality -and -not $PreflightOnly) {
+        $externalRealityConfig = Join-Path $executionRoot `
+            'evals\external_reality_research\promptfooconfig.yaml'
+        $externalRealityResult = Join-Path $outputRoot `
+            'external-reality-research.result.json'
+        $externalRealityFilters = @()
+        if ($CasePattern) {
+            $externalRealityFilters += @('--filter-pattern', $CasePattern)
+        }
+        $suiteRuns += Invoke-PromptfooSuiteWithErrorRetry `
+            -SuiteId 'external_reality_research' `
+            -ConfigPath $externalRealityConfig -ResultPath $externalRealityResult `
+            -ExtraArguments $externalRealityFilters
     }
 
     if ($overallExit -eq 0 -and $runCapability -and -not $PreflightOnly) {
