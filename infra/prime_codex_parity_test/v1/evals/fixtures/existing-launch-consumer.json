@@ -1,0 +1,11 @@
+{
+  "schema": "xinao.prime_parity.live_fact_fixture.v1",
+  "subject": "local research launcher",
+  "facts": {
+    "canonical_launcher_exists": true,
+    "canonical_launcher_path": "C:\\Users\\xx363\\CodexLaunchers\\Run-Research.ps1",
+    "desktop_consumer_exists": true,
+    "desktop_consumer_path": "C:\\Users\\xx363\\Desktop\\Research.lnk",
+    "requested_change": "add one optional diagnostic flag without creating another user entry"
+  }
+}

@@ -1,0 +1,34 @@
+{
+  "shellPath": "C:\\Program Files\\Git\\bin\\bash.exe",
+  "onboardingShown": true,
+  "rlmMaxDepth": 2,
+  "terminal": {
+    "fullscreen": true,
+    "fullscreenMouse": true
+  },
+  "autoRefine": {
+    "enabled": false,
+    "compact": false
+  },
+  "mcpServers": {
+    "opencode_workers": {
+      "type": "stdio",
+      "command": "C:\\Program Files\\nodejs\\node.exe",
+      "args": [
+        "D:\\XINAO_RESEARCH_RUNTIME\\tools\\opencode_workers_mcp\\src\\server.mjs"
+      ],
+      "env": {
+        "OPENCODE_WORKERS_ROOT": "D:\\XINAO_RESEARCH_RUNTIME\\state\\opencode_headless_worker",
+        "SCOOP": "D:\\scoop",
+        "OPENCODE_WORKERS_PWSH": "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe"
+      },
+      "includeTools": [
+        "worker_models",
+        "worker_dispatch",
+        "worker_inspect",
+        "worker_collect"
+      ]
+    }
+  },
+  "hideThinkingBlock": true
+}

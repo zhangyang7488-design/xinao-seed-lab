@@ -1,0 +1,12 @@
+{
+  "schema": "xinao.prime_parity.live_fact_fixture.v1",
+  "subject": "XINAO research",
+  "facts": {
+    "formal_repository_exists": true,
+    "formal_repository_path": "E:\\XINAO_RESEARCH_WORKSPACES\\xinao-native-research",
+    "formal_repository_role": "the one current formal XINAO research line",
+    "prime_island_path": "E:\\XINAO_RESEARCH_WORKSPACES\\prime-agent-local-cognition-island",
+    "prime_island_is_git_repository": false,
+    "prime_island_role": "candidate cognition and validation surface, not a second formal XINAO root"
+  }
+}
