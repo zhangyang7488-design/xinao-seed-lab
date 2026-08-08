@@ -40,6 +40,7 @@ foreach ($profileName in $Profile) {
     $env:XINAO_PI_ROLE = $spec.Role
 
     $projection = Sync-PiDualEntryContractProjection -Spec $spec
+    $overlayProjection = Sync-PiDualEntrySurfaceOverlay -Spec $spec
     $authPath = Join-Path $spec.AgentDir 'auth.json'
     $settingsPath = Join-Path $spec.AgentDir 'settings.json'
     $subagentConfigPath = Join-Path $spec.AgentDir 'extensions\subagent\config.json'
@@ -68,8 +69,7 @@ foreach ($profileName in $Profile) {
     $subagentConfig = Get-Content -Raw -LiteralPath $subagentConfigPath -Encoding UTF8 | ConvertFrom-Json
     $catalogContextWindow = $null
     $profileContextWindowOverrideAbsent = $null
-    if ($profileName -eq 'prime-s') {
-        $modelsStorePath = Join-Path $spec.AgentDir 'models-store.json'
+    $modelsStorePath = Join-Path $spec.AgentDir 'models-store.json'
         if (-not (Test-Path -LiteralPath $modelsStorePath -PathType Leaf)) {
             throw "PI_SURFACE_TEST_PROVIDER_MODEL_CATALOG_MISSING: $modelsStorePath"
         }
@@ -94,8 +94,7 @@ foreach ($profileName in $Profile) {
                 throw "PI_SURFACE_TEST_UNSUPPORTED_SOL_CONTEXT_WINDOW_OVERRIDE: $($contextOverrideProperty.Value)"
             }
         }
-        $profileContextWindowOverrideAbsent = $true
-    }
+    $profileContextWindowOverrideAbsent = $true
     if (
         [string]$subagentConfig.artifactDir -ne 'session' -or
         $subagentConfig.scheduledRuns.enabled -ne $false -or
@@ -145,25 +144,40 @@ foreach ($profileName in $Profile) {
     }
 
     $numpadAcceptance = $null
+    $activityVisibilityAcceptance = $null
     $midTurnCompactionAcceptance = $null
+    $midTurnRaw = @(& (Join-Path $PSScriptRoot 'Apply-PiSMidTurnCompactionCompatibility.ps1') -VerifyOnly 2>&1)
+    $midTurnCompactionAcceptance = ($midTurnRaw -join [Environment]::NewLine) | ConvertFrom-Json
+    if (
+        [string]$midTurnCompactionAcceptance.schema -ne 'xinao.pi_midturn_compaction_compatibility.v2' -or
+        $midTurnCompactionAcceptance.profile_scoped_runtime_gate_required -ne $true -or
+        @($midTurnCompactionAcceptance.managed_profiles | Where-Object { $_ -in @('prime-s','prime-b') }).Count -ne 2 -or
+        $midTurnCompactionAcceptance.completed_tool_boundary_stop -ne $true -or
+        $midTurnCompactionAcceptance.compact_and_continue_same_run -ne $true -or
+        $midTurnCompactionAcceptance.compaction_failure_stops_before_provider -ne $true
+    ) {
+        throw "PI_SURFACE_TEST_MIDTURN_PATCH_STATUS_INVALID: $($midTurnRaw -join ' ')"
+    }
+    $piPackageRoot = Join-Path $script:PiDualEntryToolRoot 'node_modules\@earendil-works\pi-coding-agent'
+    $activityRaw = @(& node (Join-Path $PSScriptRoot 'Test-PiSActivityVisibility.mjs') $piPackageRoot 2>&1)
+    if ($LASTEXITCODE -ne 0) { throw "PI_SURFACE_TEST_ACTIVITY_VISIBILITY_FAILED: $($activityRaw -join ' ')" }
+    $activityVisibilityAcceptance = ($activityRaw -join [Environment]::NewLine) | ConvertFrom-Json
+    if (
+        [string]$activityVisibilityAcceptance.status -ne 'verified' -or
+        $activityVisibilityAcceptance.natural_chinese_activity -ne $true -or
+        $activityVisibilityAcceptance.native_working_visibility_unchanged -ne $true -or
+        $activityVisibilityAcceptance.native_working_indicator_unchanged -ne $true -or
+        $activityVisibilityAcceptance.native_tool_cards_unmodified -ne $true -or
+        [int]$activityVisibilityAcceptance.secondary_model_calls -ne 0
+    ) {
+        throw "PI_SURFACE_TEST_ACTIVITY_VISIBILITY_INVALID: $($activityRaw -join ' ')"
+    }
     if ($profileName -eq 'prime-s') {
-        $midTurnRaw = @(& (Join-Path $PSScriptRoot 'Apply-PiSMidTurnCompactionCompatibility.ps1') -VerifyOnly 2>&1)
-        $midTurnCompactionAcceptance = ($midTurnRaw -join [Environment]::NewLine) | ConvertFrom-Json
-        if (
-            [string]$midTurnCompactionAcceptance.schema -ne 'xinao.pi_s_midturn_compaction_compatibility.v1' -or
-            $midTurnCompactionAcceptance.prime_s_runtime_gate_required -ne $true -or
-            $midTurnCompactionAcceptance.completed_tool_boundary_stop -ne $true -or
-            $midTurnCompactionAcceptance.compact_and_continue_same_run -ne $true -or
-            $midTurnCompactionAcceptance.compaction_failure_stops_before_provider -ne $true
-        ) {
-            throw "PI_SURFACE_TEST_MIDTURN_PATCH_STATUS_INVALID: $($midTurnRaw -join ' ')"
-        }
         $numpadRaw = @(& (Join-Path $PSScriptRoot 'Set-PiSNumpadEnterFollow.ps1') -AgentDir $spec.AgentDir -ValidateOnly 2>&1)
         $numpadStatus = ($numpadRaw -join [Environment]::NewLine) | ConvertFrom-Json
         if ([string]$numpadStatus.status -ne 'ready' -or $numpadStatus.main_enter_unchanged -ne $true -or $numpadStatus.helper_failure_blocks_pi -ne $false) {
             throw "PI_SURFACE_TEST_NUMPAD_STATUS_INVALID: $($numpadRaw -join ' ')"
         }
-        $piPackageRoot = Join-Path $script:PiDualEntryToolRoot 'node_modules\@earendil-works\pi-coding-agent'
         $numpadProbeRaw = @(& node (Join-Path $PSScriptRoot 'Test-PiSNumpadEnterFollow.mjs') $spec.AgentDir $piPackageRoot 2>&1)
         if ($LASTEXITCODE -ne 0) { throw "PI_SURFACE_TEST_NUMPAD_KEYBINDINGS_FAILED: $($numpadProbeRaw -join ' ')" }
         $numpadAcceptance = ($numpadProbeRaw -join [Environment]::NewLine) | ConvertFrom-Json
@@ -175,7 +189,7 @@ foreach ($profileName in $Profile) {
     $liveProbe = $null
     if ($RunLiveModelProbe) {
         $probePrompt = @"
-Without using tools, report instructions already present in your current context. Return exactly one minified JSON object and nothing else with these keys and values: global_sentinel="HUMAN_INTENT_CONTINUITY_ROLE_SEPARATION_V1"; family_sentinel="PI_LOCAL_COGNITION_CONTRACT_ISLAND_V1"; surface_sentinel="$($spec.SurfaceSentinel)"; current_surface="$profileName"; surface_role="$($spec.Role)"; runtime_version="0.84.1"; research_and_self_evolution_are_tasks=true; one_session_can_cross_repositories=true; profile_auth_session_and_island_are_independent=true; codex_behavior_and_skills_are_shared_baseline=true; pi_specific_contract_stays_outside_codex_and_s=true; prime_s_is_primary_work_surface=true; prime_b_has_minimum_real_work_ability=true; optimization_investment_is_asymmetric=true; promotion_only_for_proven_delta_with_real_b_consumer=true; owner_eligibility_depends_on_consumed_intent_and_responsibility_not_shell=true; sibling_repository_local_context_must_be_read_before_effects=true; open_external_query_is_seed_not_automatic_boundary=true; external_findings_must_collide_with_live_local_baseline=true; exact_or_explicitly_narrow_lookup_stays_bounded=true; natural_chinese_commentary_without_status_templates=true.
+Without using tools, report instructions already present in your current context. Return exactly one minified JSON object and nothing else with these keys and values: global_sentinel="HUMAN_INTENT_CONTINUITY_ROLE_SEPARATION_V1"; family_sentinel="PI_LOCAL_COGNITION_CONTRACT_ISLAND_V1"; surface_sentinel="$($spec.SurfaceSentinel)"; current_surface="$profileName"; surface_role="$($spec.Role)"; runtime_version="0.84.1"; research_and_self_evolution_are_tasks=true; one_session_can_cross_repositories=true; profile_auth_session_and_island_are_independent=true; codex_behavior_and_skills_are_shared_baseline=true; pi_specific_contract_stays_outside_codex_and_s=true; main_prime_is_default_subject=true; unqualified_pi_means_main_prime=true; prime_s_is_internal_compat_profile=true; account_binding_is_quota_source_not_identity=true; pi_b_is_isolated_cold_snapshot=true; cold_snapshot_preserves_auth_session_child_cognition_isolation=true; cold_snapshot_not_live_sync_peer=true; owner_eligibility_depends_on_consumed_intent_and_responsibility_not_shell=true; sibling_repository_local_context_must_be_read_before_effects=true; open_external_query_is_seed_not_automatic_boundary=true; external_findings_must_collide_with_live_local_baseline=true; exact_or_explicitly_narrow_lookup_stays_bounded=true; natural_chinese_commentary_without_status_templates=true.
 "@.Trim()
         Push-Location -LiteralPath $spec.Workspace
         try {
@@ -198,10 +212,13 @@ Without using tools, report instructions already present in your current context
             $probe.profile_auth_session_and_island_are_independent -ne $true -or
             $probe.codex_behavior_and_skills_are_shared_baseline -ne $true -or
             $probe.pi_specific_contract_stays_outside_codex_and_s -ne $true -or
-            $probe.prime_s_is_primary_work_surface -ne $true -or
-            $probe.prime_b_has_minimum_real_work_ability -ne $true -or
-            $probe.optimization_investment_is_asymmetric -ne $true -or
-            $probe.promotion_only_for_proven_delta_with_real_b_consumer -ne $true -or
+            $probe.main_prime_is_default_subject -ne $true -or
+            $probe.unqualified_pi_means_main_prime -ne $true -or
+            $probe.prime_s_is_internal_compat_profile -ne $true -or
+            $probe.account_binding_is_quota_source_not_identity -ne $true -or
+            $probe.pi_b_is_isolated_cold_snapshot -ne $true -or
+            $probe.cold_snapshot_preserves_auth_session_child_cognition_isolation -ne $true -or
+            $probe.cold_snapshot_not_live_sync_peer -ne $true -or
             $probe.owner_eligibility_depends_on_consumed_intent_and_responsibility_not_shell -ne $true -or
             $probe.sibling_repository_local_context_must_be_read_before_effects -ne $true -or
             $probe.open_external_query_is_seed_not_automatic_boundary -ne $true -or
@@ -239,6 +256,8 @@ Without using tools, report instructions already present in your current context
         profile_context_window_override_absent = $profileContextWindowOverrideAbsent
         midturn_compaction_compatibility = $midTurnCompactionAcceptance
         numpad_enter_follow = $numpadAcceptance
+        activity_visibility = $activityVisibilityAcceptance
+        overlay_projection_sha256 = $overlayProjection.Sha256
         live_model_probe = $liveProbe
     }
 }
@@ -249,7 +268,7 @@ if ($Profile.Count -eq 2) {
     if ($b.account_binding_path -eq $s.account_binding_path -or $b.session_dir -eq $s.session_dir -or $b.surface_island -eq $s.surface_island) {
         throw 'PI_SURFACE_TEST_ISOLATION_COLLAPSED'
     }
-    if ($b.account_slot -ne 'account-b' -or $s.account_slot -ne 'main') {
+    if ($b.account_slot -ne 'account-b' -or $s.account_slot -notin @('main','account-b')) {
         throw "PI_SURFACE_TEST_CURRENT_BINDING_UNEXPECTED: prime-b=$($b.account_slot) prime-s=$($s.account_slot)"
     }
 }
@@ -259,7 +278,7 @@ $nativeWindowsHide = Select-String -LiteralPath $bashTool -Pattern 'windowsHide:
 if (-not $nativeWindowsHide) { throw 'PI_SURFACE_TEST_NATIVE_WINDOWS_HIDE_MISSING' }
 $node = Get-PiDualEntryNodeInfo
 $primeBWrapper = 'C:\Users\xx363\CodexLaunchers\Open-Prime-Agent-Account-B.ps1'
-$primeSWrapper = 'C:\Users\xx363\CodexLaunchers\Open-Prime-S.ps1'
+$primeSWrapper = 'C:\Users\xx363\CodexLaunchers\Open-Prime.ps1'
 $primeSVisibleRestart = Join-Path $PSScriptRoot 'Start-PrimeSInWindowsTerminal.ps1'
 $wrapperBText = Get-Content -Raw -LiteralPath $primeBWrapper -Encoding UTF8
 $wrapperSText = Get-Content -Raw -LiteralPath $primeSWrapper -Encoding UTF8
@@ -267,27 +286,27 @@ if ($wrapperBText -notmatch 'Start-UpstreamPi\.ps1' -or $wrapperBText -notmatch 
 if ($wrapperSText -notmatch 'Start-UpstreamPi\.ps1' -or $wrapperSText -notmatch 'Profile prime-s') { throw 'PI_SURFACE_TEST_PRIME_S_WRAPPER_STALE' }
 if (-not (Test-Path -LiteralPath $primeSVisibleRestart -PathType Leaf)) { throw 'PI_SURFACE_TEST_VISIBLE_RESTART_MISSING' }
 $visibleRestartText = Get-Content -Raw -LiteralPath $primeSVisibleRestart -Encoding UTF8
-foreach ($requiredRestartMarker in @('XINAO prime S','Open-Prime-S.ps1','-Session','PIS_VISIBLE_RESTART_SESSION_NOT_LATEST_FOR_PROFILE','profile-native-continue-after-latest-session-proof','ingress_readback_required')) {
+foreach ($requiredRestartMarker in @("`$terminalProfileName = 'prime'",'Open-Prime.ps1','-Session','PIS_VISIBLE_RESTART_SESSION_NOT_LATEST_FOR_PROFILE','profile-native-continue-after-latest-session-proof','ingress_readback_required')) {
     if ($visibleRestartText -notmatch [regex]::Escape($requiredRestartMarker)) {
         throw "PI_SURFACE_TEST_VISIBLE_RESTART_MARKER_MISSING: $requiredRestartMarker"
     }
 }
 $terminalSettingsPath = 'C:\Users\xx363\AppData\Local\Packages\Microsoft.WindowsTerminal_8wekyb3d8bbwe\LocalState\settings.json'
 $terminalSettings = Get-Content -Raw -LiteralPath $terminalSettingsPath -Encoding UTF8 | ConvertFrom-Json
-$primeSProfile = @($terminalSettings.profiles.list | Where-Object { [string]$_.name -eq 'XINAO prime S' })
+$primeSProfile = @($terminalSettings.profiles.list | Where-Object { [string]$_.name -eq 'prime' })
 if (
     $primeSProfile.Count -ne 1 -or
-    [string]$primeSProfile[0].commandline -notmatch 'Open-Prime-S\.ps1' -or
-    [string]$primeSProfile[0].tabTitle -ne 'prime S' -or
+    [string]$primeSProfile[0].commandline -notmatch 'Open-Prime\.ps1' -or
+    [string]$primeSProfile[0].tabTitle -ne 'prime' -or
     $primeSProfile[0].suppressApplicationTitle -ne $true -or
     [string]$primeSProfile[0].closeOnExit -ne 'always'
 ) {
     throw 'PI_SURFACE_TEST_PRIME_S_TERMINAL_PROFILE_STALE'
 }
-$shortcutPath = 'C:\Users\xx363\Desktop\prime S.lnk'
+$shortcutPath = 'C:\Users\xx363\Desktop\prime.lnk'
 $shell = New-Object -ComObject WScript.Shell
 $shortcut = $shell.CreateShortcut($shortcutPath)
-if ([string]$shortcut.Arguments -ne '-w new -p "XINAO prime S"') { throw 'PI_SURFACE_TEST_PRIME_S_SHORTCUT_STALE' }
+if ([string]$shortcut.Arguments -ne '-w new -p "prime"') { throw 'PI_SURFACE_TEST_PRIME_S_SHORTCUT_STALE' }
 $latestPrimeSSession = Get-ChildItem -LiteralPath (Join-Path $profileRoot 'prime-s\sessions') -File -Filter '*.jsonl' | Sort-Object LastWriteTimeUtc -Descending | Select-Object -First 1
 if ($null -eq $latestPrimeSSession) { throw 'PI_SURFACE_TEST_VISIBLE_RESTART_SESSION_MISSING' }
 $latestPrimeSSessionHeader = Get-Content -LiteralPath $latestPrimeSSession.FullName -TotalCount 1 -Encoding UTF8 | ConvertFrom-Json
@@ -296,14 +315,14 @@ if ($LASTEXITCODE -ne 0) { throw "PI_SURFACE_TEST_VISIBLE_RESTART_VALIDATION_FAI
 $visibleRestartValidation = ($visibleRestartValidationRaw -join [Environment]::NewLine) | ConvertFrom-Json
 if (
     [string]$visibleRestartValidation.status -ne 'ready' -or
-    [string]$visibleRestartValidation.terminal_profile -ne 'XINAO prime S' -or
+    [string]$visibleRestartValidation.terminal_profile -ne 'prime' -or
     [string]$visibleRestartValidation.session_id -ne [string]$latestPrimeSSessionHeader.id -or
     $visibleRestartValidation.same_profile_session_required -ne $true -or
     $visibleRestartValidation.ingress_readback_required -ne $true
 ) { throw 'PI_SURFACE_TEST_VISIBLE_RESTART_VALIDATION_INVALID' }
 
 $acceptance = [ordered]@{
-    schema = 'xinao.pi_stable_leading_surfaces.acceptance.v2'
+    schema = 'xinao.pi_main_with_cold_snapshot.acceptance.v3'
     status = 'verified'
     upstream_pi_version = $script:PiDualEntryVersion
     node_version = $node.RawVersion
@@ -315,15 +334,15 @@ $acceptance = [ordered]@{
     shared_behavior_source = Join-Path $script:PiDualEntryBehaviorCodexHome 'AGENTS.md'
     shared_skills_source = Join-Path $script:PiDualEntryBehaviorCodexHome 'skills'
     native_background_child_windows_hidden = $true
-    task_topology = 'prime S is the primary work surface; research and self-evolution are tasks inside one active session, never identities or session routes.'
-    evolution_topology = 'PrimeB keeps minimum real-work usability while optimization investment remains asymmetric toward prime S; promotion is optional and only for a proven delta with a real B consumer.'
+    task_topology = 'prime is the one default active subject; prime-s is only its internal compatibility profile and account binding is a quota source.'
+    evolution_topology = 'PiB is a one-time isolated full-body cold snapshot; after fresh verification it is not routinely maintained, tested, reported, mentioned, or synchronized.'
     legacy_prime_0_7_0 = [ordered]@{
         active = $false
         installation_preserved_for_rollback = (Test-Path -LiteralPath 'D:\XINAO_RESEARCH_RUNTIME\tools\prime-agent\0.7.0' -PathType Container)
         contract_snapshot = 'E:\XINAO_RESEARCH_WORKSPACES\prime-agent-local-cognition-island\contracts\evidence\prime-agent-0.7.0-pre-upgrade-20260808'
     }
     desktop_wrappers = @($primeBWrapper,$primeSWrapper)
-    prime_s_terminal_profile = 'XINAO prime S'
+    prime_s_terminal_profile = 'prime'
     prime_s_shortcut = $shortcutPath
     prime_s_visible_restart = $visibleRestartValidation
 }

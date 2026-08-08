@@ -14,11 +14,17 @@ function Get-NormalizedPiSHermesCompatibilityPath {
 }
 
 $target = Get-NormalizedPiSHermesCompatibilityPath -Path $AgentDir
-$activeTarget = Get-NormalizedPiSHermesCompatibilityPath -Path (Join-Path $script:PiDualEntryStateRoot 'profiles\prime-s')
-$labParent = Get-NormalizedPiSHermesCompatibilityPath -Path (Join-Path $script:PiDualEntryStateRoot 'body-labs\prime-s')
+$activeTargets = @(
+    Get-NormalizedPiSHermesCompatibilityPath -Path (Join-Path $script:PiDualEntryStateRoot 'profiles\prime-s')
+    Get-NormalizedPiSHermesCompatibilityPath -Path (Join-Path $script:PiDualEntryStateRoot 'profiles\prime-b')
+)
+$labParents = @(
+    Get-NormalizedPiSHermesCompatibilityPath -Path (Join-Path $script:PiDualEntryStateRoot 'body-labs\prime-s')
+    Get-NormalizedPiSHermesCompatibilityPath -Path (Join-Path $script:PiDualEntryStateRoot 'body-labs\prime-b')
+)
 $targetParent = Get-NormalizedPiSHermesCompatibilityPath -Path (Split-Path -Parent $target)
-if ($target -ine $activeTarget -and $targetParent -ine $labParent) {
-    throw "PI_S_HERMES_PATCH_TARGET_OUTSIDE_PRIME_S: $target"
+if ($target -notin $activeTargets -and $targetParent -notin $labParents) {
+    throw "PI_HERMES_PATCH_TARGET_OUTSIDE_MANAGED_PROFILE: $target"
 }
 
 $packageRoot = Join-Path $target 'npm\node_modules\pi-hermes-memory'

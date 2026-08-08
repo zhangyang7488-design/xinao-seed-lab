@@ -125,29 +125,29 @@ function Get-PiDualEntrySpec {
         OverlayExtensionDir = Join-Path $overlayRoot 'extensions'
         OverlaySkillDir = Join-Path $overlayRoot 'skills'
         OverlayProjectionManifest = Join-Path $agentDir 'xinao-surface-overlay-manifest.json'
-        SupervisorPipe = $(if ($Profile -eq 'prime-s') { '\\.\pipe\xinao-pi-supervisor-prime-s-v1' } else { $null })
+        SupervisorPipe = "\\.\pipe\xinao-pi-supervisor-$Profile-v1"
     }
     if ($Profile -eq 'prime-b') {
         return [pscustomobject]($common + [ordered]@{
-            Role = 'minimum-usable'
+            Role = 'cold-backup-snapshot'
             DisplayName = 'PrimeB'
             Workspace = 'E:\XINAO_RESEARCH_WORKSPACES\prime-agent-local-cognition-island'
             SurfaceIsland = 'E:\XINAO_RESEARCH_WORKSPACES\prime-agent-local-cognition-island'
             SurfaceContractSource = 'E:\XINAO_RESEARCH_WORKSPACES\prime-agent-local-cognition-island\AGENTS.md'
             SurfaceSentinel = 'PI_SURFACE_PRIME_B_V3'
-            Packages = @('npm:pi-subagents@0.43.0')
-            ExcludedTools = @()
+            Packages = @('npm:pi-subagents@0.44.0','npm:pi-autoresearch@1.6.2','npm:pi-hermes-memory@0.9.4','npm:pi-mcp-adapter@2.21.1')
+            ExcludedTools = @('skill_manage','mcp','mcpScript')
             MutexName = 'Local\XinaoUpstreamPi0841B'
         })
     }
     [pscustomobject]($common + [ordered]@{
         Role = 'primary'
-        DisplayName = 'prime S'
+        DisplayName = 'prime'
         Workspace = 'E:\XINAO_RESEARCH_WORKSPACES\S'
         SurfaceIsland = 'E:\XINAO_RESEARCH_WORKSPACES\prime-s-local-cognition-island'
         SurfaceContractSource = 'E:\XINAO_RESEARCH_WORKSPACES\prime-s-local-cognition-island\AGENTS.md'
         SurfaceSentinel = 'PI_SURFACE_PRIME_S_V1'
-        Packages = @('npm:pi-subagents@0.43.0','npm:pi-autoresearch@1.6.2','npm:pi-hermes-memory@0.9.4','npm:pi-mcp-adapter@2.21.1')
+        Packages = @('npm:pi-subagents@0.44.0','npm:pi-autoresearch@1.6.2','npm:pi-hermes-memory@0.9.4','npm:pi-mcp-adapter@2.21.1')
         ExcludedTools = @('skill_manage','mcp','mcpScript')
         MutexName = 'Local\XinaoUpstreamPi0841S'
     })

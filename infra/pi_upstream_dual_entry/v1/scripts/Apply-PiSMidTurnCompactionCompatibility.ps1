@@ -42,7 +42,7 @@ if ([string]$package.name -cne '@earendil-works/pi-coding-agent' -or [string]$pa
 }
 
 $upstreamHash = '91e72d5497f665e731cbd79da6a6e826d8cae7d2ce156a7dee39f8ca205e32c8'
-$patchedHash = '604748b31a08b583aa056c1527b4f4d62afc69aefea28e094e53a8d7ce81185a'
+$patchedHash = '3d42e3311f1b7b5b72aa81dd745cf7a8e089e9b7708abe5e33b9b553651739e6'
 $preimagePath = Join-Path $target 'xinao-compatibility-preimages\pi-coding-agent-0.84.1-agent-session.upstream.js'
 $beforeHash = (Get-FileHash -Algorithm SHA256 -LiteralPath $sourcePath).Hash.ToLowerInvariant()
 $changed = $false
@@ -91,7 +91,7 @@ if ($beforeHash -ceq $upstreamHash) {
     ) -join "`n"
     $methodReplacement = @(
         '    _installMidTurnCompactionBackpressure() {'
-        '        if (process.env.XINAO_PI_PROFILE !== "prime-s" ||'
+        '        if (!["prime-s", "prime-b"].includes(process.env.XINAO_PI_PROFILE) ||'
         '            process.env.XINAO_PI_MIDTURN_COMPACTION_BACKPRESSURE !== "1") {'
         '            return;'
         '        }'
@@ -185,7 +185,7 @@ if ($preimageHash -cne $upstreamHash) {
 $verified = [IO.File]::ReadAllText($sourcePath,[Text.UTF8Encoding]::new($false))
 if (
     -not $verified.Contains('this._installMidTurnCompactionBackpressure();') -or
-    -not $verified.Contains('process.env.XINAO_PI_PROFILE !== "prime-s"') -or
+    -not $verified.Contains('!["prime-s", "prime-b"].includes(process.env.XINAO_PI_PROFILE)') -or
     -not $verified.Contains('estimateContextTokens(context.context.messages).tokens') -or
     -not $verified.Contains('this._runAutoCompaction("threshold", true)')
 ) {
@@ -193,8 +193,8 @@ if (
 }
 
 [pscustomobject]@{
-    schema = 'xinao.pi_s_midturn_compaction_compatibility.v1'
-    patch_id = 'pi-coding-agent-0.84.1-midturn-compaction-backpressure-v1'
+    schema = 'xinao.pi_midturn_compaction_compatibility.v2'
+    patch_id = 'pi-coding-agent-0.84.1-midturn-compaction-backpressure-v2'
     pi_tool_root = $target
     package = '@earendil-works/pi-coding-agent@0.84.1'
     source_path = $sourcePath
@@ -205,6 +205,8 @@ if (
     changed = $changed
     verify_only = [bool]$VerifyOnly
     prime_s_runtime_gate_required = $true
+    managed_profiles = @('prime-s','prime-b')
+    profile_scoped_runtime_gate_required = $true
     completed_tool_boundary_stop = $true
     compact_and_continue_same_run = $true
     compaction_failure_stops_before_provider = $true

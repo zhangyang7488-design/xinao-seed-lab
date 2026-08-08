@@ -7,10 +7,10 @@ param(
 
 $ErrorActionPreference = 'Stop'
 
-$terminalProfileName = 'XINAO prime S'
+$terminalProfileName = 'prime'
 $workspace = 'E:\XINAO_RESEARCH_WORKSPACES\S'
 $sessionDir = 'D:\XINAO_RESEARCH_RUNTIME\state\pi\0.84.1\profiles\prime-s\sessions'
-$desktopWrapper = 'C:\Users\xx363\CodexLaunchers\Open-Prime-S.ps1'
+$desktopWrapper = 'C:\Users\xx363\CodexLaunchers\Open-Prime.ps1'
 $terminalSettingsPath = 'C:\Users\xx363\AppData\Local\Packages\Microsoft.WindowsTerminal_8wekyb3d8bbwe\LocalState\settings.json'
 $windowsTerminal = 'C:\Users\xx363\AppData\Local\Microsoft\WindowsApps\wt.exe'
 
@@ -55,8 +55,8 @@ $terminalSettings = Get-Content -Raw -LiteralPath $terminalSettingsPath -Encodin
 $terminalProfiles = @($terminalSettings.profiles.list | Where-Object { [string]$_.name -eq $terminalProfileName })
 if (
     $terminalProfiles.Count -ne 1 -or
-    [string]$terminalProfiles[0].commandline -notmatch 'Open-Prime-S\.ps1' -or
-    [string]$terminalProfiles[0].tabTitle -ne 'prime S' -or
+    [string]$terminalProfiles[0].commandline -notmatch 'Open-Prime\.ps1' -or
+    [string]$terminalProfiles[0].tabTitle -ne 'prime' -or
     $terminalProfiles[0].suppressApplicationTitle -ne $true -or
     [string]$terminalProfiles[0].closeOnExit -ne 'always'
 ) {
@@ -85,7 +85,7 @@ if ($ValidateOnly) {
 # was observed to return exit 0 while creating no Pi process. Launch the proven profile commandline
 # unchanged. Start-UpstreamPi's default --continue can select only the newest profile session, so the
 # exact requested session is proved newest above and must still be read back through ingress below.
-$terminalArguments = @('-w','new','-p','"XINAO prime S"')
+$terminalArguments = @('-w','new','-p','"prime"')
 $terminalProcess = Start-Process -FilePath $windowsTerminal -ArgumentList $terminalArguments -WorkingDirectory $workspace -PassThru
 $receipt.status = 'launch_requested'
 $receipt['launcher_process_id'] = $terminalProcess.Id

@@ -55,25 +55,18 @@ foreach ($profileName in $Profile) {
             modelScope = [ordered]@{enforce=$true;allow=@('openai-codex/gpt-5.6-*')}
         }
     }
-    if ($profileName -eq 'prime-s') {
-        # PiS is intentionally observable: the user wants the visible reasoning stream,
-        # provided it is natural Chinese. Ctrl+T remains available for a temporary fold.
-        $settings['hideThinkingBlock'] = $false
-        # Sol Max can add a large reasoning/tool turn after the last usage sample. Keep a
-        # wider hidden reserve so Pi compacts before the provider rejects the next turn;
-        # this is body reliability, not a scarcity instruction exposed to the researcher.
-        $settings['compaction'] = [ordered]@{
-            enabled = $true
-            reserveTokens = 65536
-            keepRecentTokens = 24000
-        }
-        # DeepSeek is an independent native Pi provider. It expands the Pi-native child
-        # model ecology without routing through a Codex WorkerPool or another profile.
-        $settings['subagents']['modelScope']['allow'] = @(
-            'openai-codex/gpt-5.6-*',
-            'deepseek/deepseek-v4-*'
-        )
+    # Both the active main profile and the explicitly frozen cold backup consume the same
+    # proven body policy. Identity-bearing session/auth paths remain profile-specific.
+    $settings['hideThinkingBlock'] = $false
+    $settings['compaction'] = [ordered]@{
+        enabled = $true
+        reserveTokens = 65536
+        keepRecentTokens = 24000
     }
+    $settings['subagents']['modelScope']['allow'] = @(
+        'openai-codex/gpt-5.6-*',
+        'deepseek/deepseek-v4-*'
+    )
     if ($existingPackages.Count -gt 0) { $settings.packages = $existingPackages }
     Write-PiDualEntryJsonAtomic -Path $settingsPath -Value $settings
 
@@ -101,8 +94,8 @@ foreach ($profileName in $Profile) {
     }
     Write-PiDualEntryJsonAtomic -Path $subagentConfigPath -Value $subagentConfig
 
+    & (Join-Path $PSScriptRoot 'Set-PiSBodyConfiguration.ps1') -AgentDir $spec.AgentDir | Out-Null
     if ($profileName -eq 'prime-s') {
-        & (Join-Path $PSScriptRoot 'Set-PiSBodyConfiguration.ps1') -AgentDir $spec.AgentDir | Out-Null
         $numpadRaw = & (Join-Path $PSScriptRoot 'Set-PiSNumpadEnterFollow.ps1') -AgentDir $spec.AgentDir
         $numpadEnterFollow = ($numpadRaw -join [Environment]::NewLine) | ConvertFrom-Json
     }

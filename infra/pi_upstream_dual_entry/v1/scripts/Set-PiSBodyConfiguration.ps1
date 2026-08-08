@@ -39,11 +39,17 @@ function Get-PiSBodyJsonPropertyValue {
 }
 
 $target = Get-NormalizedPiSBodyPath -Path $AgentDir
-$activeTarget = Get-NormalizedPiSBodyPath -Path (Join-Path $script:PiDualEntryStateRoot 'profiles\prime-s')
-$labParent = Get-NormalizedPiSBodyPath -Path (Join-Path $script:PiDualEntryStateRoot 'body-labs\prime-s')
+$activeTargets = @(
+    Get-NormalizedPiSBodyPath -Path (Join-Path $script:PiDualEntryStateRoot 'profiles\prime-s')
+    Get-NormalizedPiSBodyPath -Path (Join-Path $script:PiDualEntryStateRoot 'profiles\prime-b')
+)
+$labParents = @(
+    Get-NormalizedPiSBodyPath -Path (Join-Path $script:PiDualEntryStateRoot 'body-labs\prime-s')
+    Get-NormalizedPiSBodyPath -Path (Join-Path $script:PiDualEntryStateRoot 'body-labs\prime-b')
+)
 $targetParent = Get-NormalizedPiSBodyPath -Path (Split-Path -Parent $target)
-if ($target -ine $activeTarget -and $targetParent -ine $labParent) {
-    throw "PI_S_BODY_CONFIG_TARGET_OUTSIDE_PRIME_S: $target"
+if ($target -notin $activeTargets -and $targetParent -notin $labParents) {
+    throw "PI_BODY_CONFIG_TARGET_OUTSIDE_MANAGED_PROFILE: $target"
 }
 
 New-Item -ItemType Directory -Force -Path $target | Out-Null
@@ -143,7 +149,7 @@ if (Test-Path -LiteralPath $modelsPath -PathType Leaf) {
 }
 
 [pscustomobject]@{
-    schema = 'xinao.pi_s_sparse_body_configuration.v1'
+    schema = 'xinao.pi_sparse_body_configuration.v1'
     agent_dir = $target
     hermes_config = $hermesPath
     hermes_sha256 = (Get-FileHash -Algorithm SHA256 -LiteralPath $hermesPath).Hash.ToLowerInvariant()

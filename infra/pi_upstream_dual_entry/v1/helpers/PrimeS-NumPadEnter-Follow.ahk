@@ -72,9 +72,9 @@ WriteTriggerReceipt(context) {
     FileMove tempPath, receiptPath, 1
 }
 
-; The Windows Terminal profile has a fixed tabTitle of "prime S". The helper
+; The Windows Terminal profile has a fixed tabTitle of "prime". The helper
 ; never observes or remaps keys in another terminal window or application.
-#HotIf WinActive("prime S ahk_exe WindowsTerminal.exe")
+#HotIf WinActive("prime ahk_exe WindowsTerminal.exe")
 $NumpadEnter::{
     try context := GetPointerContext()
     catch {

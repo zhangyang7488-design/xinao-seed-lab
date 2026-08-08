@@ -43,7 +43,8 @@ if ([string]$package.name -cne '@earendil-works/pi-coding-agent' -or [string]$pa
 }
 
 $upstreamHash = '91e72d5497f665e731cbd79da6a6e826d8cae7d2ce156a7dee39f8ca205e32c8'
-$patchedHash = '604748b31a08b583aa056c1527b4f4d62afc69aefea28e094e53a8d7ce81185a'
+$patchedHash = '3d42e3311f1b7b5b72aa81dd745cf7a8e089e9b7708abe5e33b9b553651739e6'
+$legacyPatchedHash = '604748b31a08b583aa056c1527b4f4d62afc69aefea28e094e53a8d7ce81185a'
 $preimageHash = (Get-FileHash -Algorithm SHA256 -LiteralPath $preimagePath).Hash.ToLowerInvariant()
 if ($preimageHash -cne $upstreamHash) {
     throw "PI_S_MIDTURN_RESTORE_PREIMAGE_INVALID: expected=$upstreamHash actual=$preimageHash"
@@ -54,11 +55,11 @@ if ($VerifyOnly) {
     if ($beforeHash -cne $upstreamHash) {
         throw "PI_S_MIDTURN_RESTORE_NOT_APPLIED: expected=$upstreamHash actual=$beforeHash"
     }
-} elseif ($beforeHash -ceq $patchedHash) {
+} elseif ($beforeHash -in @($patchedHash,$legacyPatchedHash)) {
     Copy-Item -LiteralPath $preimagePath -Destination $sourcePath -Force
     $changed = $true
 } elseif ($beforeHash -cne $upstreamHash) {
-    throw "PI_S_MIDTURN_RESTORE_SOURCE_CONFLICT: expected=$patchedHash|$upstreamHash actual=$beforeHash"
+    throw "PI_S_MIDTURN_RESTORE_SOURCE_CONFLICT: expected=$patchedHash|$legacyPatchedHash|$upstreamHash actual=$beforeHash"
 }
 
 $afterHash = (Get-FileHash -Algorithm SHA256 -LiteralPath $sourcePath).Hash.ToLowerInvariant()
@@ -67,8 +68,8 @@ if ($afterHash -cne $upstreamHash) {
 }
 
 [pscustomobject]@{
-    schema = 'xinao.pi_s_midturn_compaction_restore.v1'
-    restore_id = 'pi-coding-agent-0.84.1-midturn-compaction-backpressure-restore-v1'
+    schema = 'xinao.pi_midturn_compaction_restore.v2'
+    restore_id = 'pi-coding-agent-0.84.1-midturn-compaction-backpressure-restore-v2'
     pi_tool_root = $target
     package = '@earendil-works/pi-coding-agent@0.84.1'
     source_path = $sourcePath

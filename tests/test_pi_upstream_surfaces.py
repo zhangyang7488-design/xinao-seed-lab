@@ -118,7 +118,7 @@ def test_pi_surface_source_models_stable_leading_not_task_identities() -> None:
     assert "$script:PiDualEntryVersion = '0.84.1'" in common
     assert "$script:PiDualEntryMinimumNodeVersion = [version]'22.19.0'" in common
     assert "ValidateSet('prime-b','prime-s')" in common
-    assert "Role = 'minimum-usable'" in common
+    assert "Role = 'cold-backup-snapshot'" in common
     assert "Role = 'primary'" in common
     assert "[string[]]$Profile = @('prime-s')" in initializer
     assert "[string[]]$Profile = @('prime-s')" in installer
@@ -127,7 +127,7 @@ def test_pi_surface_source_models_stable_leading_not_task_identities() -> None:
     assert "Get-PiDualEntrySpec -Profile $profileName" in initializer
     assert "$spec.OverlayAgentDir" in initializer
     assert "$settings['hideThinkingBlock'] = $false" in initializer
-    assert "the user wants the visible reasoning stream" in initializer
+    assert "explicitly frozen cold backup consume the same" in initializer
     assert (
         SOURCE_ROOT
         / "surface-overlays"
@@ -138,9 +138,9 @@ def test_pi_surface_source_models_stable_leading_not_task_identities() -> None:
     assert "agents\\evolution" not in initializer
     assert "研究新澳和改进 Pi 自身" in readme
     assert "不是角色、profile 或 session 类型" in readme
-    assert "prime S 是否可用和成熟由它自己的 fresh 消费者决定" in readme
-    assert "不追求与 prime S 对称优化" in readme
-    assert "不能用“能启动”代替" in readme
+    assert "用户未限定地说 Pi 时默认指它" in readme
+    assert "隔离冷备" in readme
+    assert "完成后不随主面演化" in readme
     assert "same conversation" not in readme.lower()
     assert "prime-agent.cmd" not in start.lower()
     assert "--append-system-prompt" in start
@@ -161,6 +161,27 @@ def test_pi_surface_source_models_stable_leading_not_task_identities() -> None:
     assert "PI_SESSION_SELECTION_CONFLICTS_WITH_NEW_SESSION" in start
     assert "PI_SESSION_SELECTION_OUTSIDE_PROFILE" in start
     assert "$arguments += @('--session',$selectedSession)" in start
+    assert common.count("npm:pi-subagents@0.44.0','npm:pi-autoresearch@1.6.2','npm:pi-hermes-memory@0.9.4','npm:pi-mcp-adapter@2.21.1") == 2
+    assert common.count("ExcludedTools = @('skill_manage','mcp','mcpScript')") == 2
+
+    snapshot_files = (
+        "agents/body-friction-auditor.md",
+        "extensions/activity-visibility.ts",
+        "extensions/serper-search.ts",
+        "extensions/supervisor-ingress.ts",
+        "skills/understand-and-steer-prime/SKILL.md",
+        "skills/understand-and-steer-prime/references/pi-runtime-and-control.md",
+        "skills/understand-and-steer-prime/scripts/pi-supervisor-command.mjs",
+    )
+    for relative in snapshot_files:
+        assert (SOURCE_ROOT / "surface-overlays" / "prime-s" / relative).read_bytes() == (
+            SOURCE_ROOT / "surface-overlays" / "prime-b" / relative
+        ).read_bytes()
+    snapshot_contract = _text(
+        SOURCE_ROOT / "surface-overlays" / "prime-b" / "COLD_SNAPSHOT.md"
+    )
+    assert "Never copied from main or cross-linked: Codex OAuth" in snapshot_contract
+    assert "ordinary maintenance, upgrade, test, reporting, and mention cone" in snapshot_contract
 
 
 def test_prime_s_programmatic_restart_preserves_visible_terminal_profile() -> None:
@@ -179,13 +200,13 @@ def test_prime_s_programmatic_restart_preserves_visible_terminal_profile() -> No
         / "recovery-map.md"
     )
 
-    assert "$terminalProfileName = 'XINAO prime S'" in restart
-    assert "$desktopWrapper = 'C:\\Users\\xx363\\CodexLaunchers\\Open-Prime-S.ps1'" in restart
+    assert "$terminalProfileName = 'prime'" in restart
+    assert "$desktopWrapper = 'C:\\Users\\xx363\\CodexLaunchers\\Open-Prime.ps1'" in restart
     assert "PIS_VISIBLE_RESTART_SESSION_OUTSIDE_PROFILE" in restart
     assert "PIS_VISIBLE_RESTART_SESSION_NOT_LATEST_FOR_PROFILE" in restart
     assert "PIS_VISIBLE_RESTART_TERMINAL_PROFILE_INVALID" in restart
     assert "Start-Process -FilePath $windowsTerminal" in restart
-    assert "@('-w','new','-p','\"XINAO prime S\"')" in restart
+    assert "@('-w','new','-p','\"prime\"')" in restart
     assert "Supplying a replacement commandline through wt.exe" in restart
     assert "EncodedCommand" not in restart
     assert "same_profile_session_required = $true" in restart
@@ -206,7 +227,7 @@ def test_prime_s_numpad_enter_follow_preserves_native_input_and_is_nonblocking()
     start = _text(SOURCE_ROOT / "scripts" / "Start-UpstreamPi.ps1")
     readme = _text(SOURCE_ROOT / "README.md")
 
-    assert '#HotIf WinActive("prime S ahk_exe WindowsTerminal.exe")' in helper
+    assert '#HotIf WinActive("prime ahk_exe WindowsTerminal.exe")' in helper
     assert "$NumpadEnter::" in helper
     assert 'Send "{Enter}"' in helper
     assert 'Send "{F12}"' in helper
@@ -241,7 +262,7 @@ def test_prime_s_numpad_enter_follow_preserves_native_input_and_is_nonblocking()
     assert "unavailable-nonblocking" in start
     assert "Pi 将按原生键位正常启动" in start
     assert "tui.altScreen.bottom" in readme
-    assert "Windows Terminal 全局键位和 PrimeB 均保持不变" in readme
+    assert "Windows Terminal 全局键位均保持不变" in readme
     assert "closeOnExit=always" in readme
 
 
@@ -275,8 +296,8 @@ def test_prime_s_supervisor_ingress_uses_owned_overlay_and_native_pi_seam() -> N
     assert "$env:XINAO_PI_PROFILE = $Profile" in start
     assert "$env:XINAO_PI_SUPERVISOR_ENABLED = '1'" in start
     assert "$env:XINAO_PI_SUPERVISOR_PIPE = $spec.SupervisorPipe" in start
-    assert "Remove-Item Env:XINAO_PI_SUPERVISOR_ENABLED" in start
-    assert "Remove-Item Env:XINAO_PI_SUPERVISOR_PIPE" in start
+    assert 'SupervisorPipe = "\\\\.\\pipe\\xinao-pi-supervisor-$Profile-v1"' in common
+    assert '["prime-s", "prime-b"].includes(PROFILE)' in extension
 
     assert 'from "node:net"' in extension
     assert "pi.sendUserMessage" in extension
@@ -316,7 +337,7 @@ def test_prime_s_supervisor_ingress_uses_owned_overlay_and_native_pi_seam() -> N
     assert "`--content-file` is only a transport input" in skill
     assert "short ingress message that names the exact existing read-only path" in skill
     assert "per-step task files into a second queue or control plane" in skill
-    assert "PiS is the formally appointed repository Owner" in skill
+    assert "main `prime` (internal profile `prime-s`) is the formally appointed repository Owner" in skill
     assert "prime-daemon-command.mjs" not in skill
     assert "get_state" in client and "get_events" in client
     assert "--session" in client and "--profile" in client
@@ -337,8 +358,8 @@ def test_prime_s_supervisor_ingress_uses_owned_overlay_and_native_pi_seam() -> N
     assert "client_fails_fast_on_typed_delivery_failure: true" in regression
     assert "stop_cancels_unconsumed_owned_delivery: true" in regression
     assert "stop_request_not_misreported_as_process_exit: true" in regression
-    assert not (SOURCE_ROOT / "surface-overlays" / "prime-b" / "extensions").exists()
-    assert not (SOURCE_ROOT / "surface-overlays" / "prime-b" / "skills").exists()
+    assert (SOURCE_ROOT / "surface-overlays" / "prime-b" / "extensions" / "supervisor-ingress.ts").is_file()
+    assert (SOURCE_ROOT / "surface-overlays" / "prime-b" / "skills" / "understand-and-steer-prime" / "SKILL.md").is_file()
 
 
 def test_pi_s_body_lab_is_isolated_version_pinned_and_session_empty() -> None:
@@ -384,13 +405,13 @@ def test_prime_s_midturn_compaction_uses_gated_core_seam_and_durable_resume() ->
 
     assert "@earendil-works/pi-coding-agent@0.84.1" in compatibility
     assert "91e72d5497f665e731cbd79da6a6e826d8cae7d2ce156a7dee39f8ca205e32c8" in compatibility
-    assert "604748b31a08b583aa056c1527b4f4d62afc69aefea28e094e53a8d7ce81185a" in compatibility
+    assert "3d42e3311f1b7b5b72aa81dd745cf7a8e089e9b7708abe5e33b9b553651739e6" in compatibility
     assert "PI_S_MIDTURN_PATCH_SOURCE_CONFLICT" in compatibility
     assert "PI_S_MIDTURN_PATCH_PREIMAGE_CONFLICT" in compatibility
     assert "PI_S_MIDTURN_PATCH_PREIMAGE_MISSING_OR_INVALID" in compatibility
     assert "xinao-compatibility-preimages" in compatibility
     assert "this.agent.shouldStopAfterTurn" in compatibility
-    assert 'process.env.XINAO_PI_PROFILE !== "prime-s"' in compatibility
+    assert '!["prime-s", "prime-b"].includes(process.env.XINAO_PI_PROFILE)' in compatibility
     assert "context.toolResults?.length" in compatibility
     assert "estimateContextTokens(context.context.messages).tokens" in compatibility
     assert "contextWindow <= 0" in compatibility
@@ -400,9 +421,10 @@ def test_prime_s_midturn_compaction_uses_gated_core_seam_and_durable_resume() ->
     assert "compaction_failure_stops_before_provider = $true" in compatibility
     assert "rollback_requires_gate_off_and_verified_preimage_restore = $true" in compatibility
 
-    assert "xinao.pi_s_midturn_compaction_restore.v1" in restore
+    assert "xinao.pi_midturn_compaction_restore.v2" in restore
     assert "PI_S_MIDTURN_RESTORE_PREIMAGE_INVALID" in restore
     assert "PI_S_MIDTURN_RESTORE_SOURCE_CONFLICT" in restore
+    assert "3d42e3311f1b7b5b72aa81dd745cf7a8e089e9b7708abe5e33b9b553651739e6" in restore
     assert "604748b31a08b583aa056c1527b4f4d62afc69aefea28e094e53a8d7ce81185a" in restore
 
     assert "PIS_MIDTURN_COMPACTION_REGRESSION_V1" in regression
@@ -427,7 +449,7 @@ def test_prime_s_midturn_compaction_uses_gated_core_seam_and_durable_resume() ->
     assert "$env:XINAO_PI_MIDTURN_COMPACTION_BACKPRESSURE = '1'" in start
     assert "Remove-Item Env:XINAO_PI_MIDTURN_COMPACTION_BACKPRESSURE" in start
     assert "midturn_compaction_compatibility" in start
-    assert "midturn_compaction_runtime_enabled = ($Profile -eq 'prime-s' -and -not $DisableMidTurnCompactionCompatibility)" in start
+    assert "midturn_compaction_runtime_enabled = (-not $DisableMidTurnCompactionCompatibility)" in start
     assert "DisableMidTurnCompactionCompatibility" in start
     assert "Restore-PiSMidTurnCompactionCompatibility.ps1" in start
     assert "PI_SURFACE_TEST_MIDTURN_PATCH_STATUS_INVALID" in surface_test
@@ -442,7 +464,7 @@ def test_prime_s_midturn_compaction_uses_gated_core_seam_and_durable_resume() ->
 
     assert "shouldStopAfterTurn" in readme
     assert "同一 durable session" in readme
-    assert "PrimeB 和未带 gate" in readme
+    assert "未带 gate 的普通 Pi consumer" in readme
 
 
 def test_prime_s_mature_body_is_profile_local_sparse_and_non_autonomous() -> None:
@@ -476,7 +498,8 @@ def test_prime_s_mature_body_is_profile_local_sparse_and_non_autonomous() -> Non
 
     assert "profiles\\prime-s" in body
     assert "body-labs\\prime-s" in body
-    assert "PI_S_BODY_CONFIG_TARGET_OUTSIDE_PRIME_S" in body
+    assert "profiles\\prime-b" in body
+    assert "PI_BODY_CONFIG_TARGET_OUTSIDE_MANAGED_PROFILE" in body
     assert "hermes-memory-config.json" in body
     assert "memoryPolicyStyle = 'custom'" in body
     assert "reviewEnabled = $false" in body
@@ -554,9 +577,10 @@ def test_prime_s_native_children_cover_openai_account_follow_deepseek_and_portab
     assert "codex_external_worker_used: false" in deepseek_child
     assert '"--no-session"' in deepseek_child
 
-    assert "pi-subagents@0.43.0" in compatibility
-    assert "workflow-" in compatibility and "randomUUID()" in compatibility
+    assert "pi-subagents-0.44.0-windows-compatibility-v3" in compatibility
+    assert "const workflowRunId = randomUUID();" in compatibility
     assert "provider_tool_id_used_as_path = $false" in compatibility
+    assert "upstream_portable_workflow_id" in compatibility
     assert "single-output.ts" in compatibility
     assert "comparableOutputPath" in compatibility
     assert "(?:mnt\\/|cygdrive\\/)?([a-z])" in compatibility
@@ -589,17 +613,17 @@ def test_prime_s_serper_is_profile_native_strict_and_has_no_exa_fallback() -> No
     assert "SERPER_AUTH_REJECTED" in extension
     assert "SERPER_QUOTA_REJECTED" in extension
     assert "strictProvider: true" in extension
-    assert "PROFILE !== \"prime-s\"" in extension
+    assert '["prime-s", "prime-b"].includes(PROFILE)' in extension
     assert "exa" not in extension.lower()
 
     assert "profiles\\prime-s" in credential
     assert "body-labs\\prime-s" in credential
-    assert "PI_SERPER_TARGET_NOT_PRIME_S" in credential
+    assert "profiles\\prime-b" in credential
+    assert "PI_SERPER_TARGET_OUTSIDE_MANAGED_PROFILE" in credential
     assert "xinao.pi_serper_credential.v1" in credential
     assert "source_path_persisted_as_runtime_dependency = $false" in credential
     assert "credential_stored = $true" in credential
     assert "apiKey = $apiKey" in credential
-    assert "PrimeB" not in credential
     assert "C:\\Users\\xx363\\私钥\\serper-key.txt" in credential
     assert "serper-----key.txt" not in credential
     assert "pi-s-body-lab.json" in credential
@@ -636,8 +660,9 @@ def test_codex_pis_steward_skill_recovers_durable_intent_without_second_truth() 
     assert "understand-and-steer-prime\\SKILL.md" in skill
     assert "sent -> acknowledged -> runtime accepted -> message consumed" in skill
     normalized_skill = " ".join(skill.split())
-    assert "PiS is the primary working and evolution surface" in skill
-    assert "Two Codex accounts" in skill
+    assert "user-visible main subject is exactly `prime`" in skill
+    assert "PrimeB.lnk` is an isolated cold backup" in skill
+    assert "do not routinely maintain, upgrade, test, report, or mention it" in normalized_skill
     assert "Sparse activation applies to organs, children, searches, and supervision cadence" in normalized_skill
     assert "must never be reinterpreted as sparse root intelligence" in normalized_skill
     assert "active root research remains `gpt-5.6-sol` at `max`" in normalized_skill
@@ -713,7 +738,7 @@ def test_codex_pis_steward_skill_recovers_durable_intent_without_second_truth() 
 
     assert "Default PiS pipe" in recovery
     assert "body-labs\\prime-s" in recovery
-    assert "PiB is outside the default write cone" in recovery
+    assert "PiB is outside the default write, maintenance, upgrade, test, report, and mention cone" in normalized_recovery
     assert "C:\\Users\\xx363\\私钥" in recovery
     assert "PrimeS-NumPadEnter-Follow.ahk" in recovery
     assert "Set-PiSDeepSeekCredential.ps1" in recovery
@@ -789,25 +814,24 @@ def test_live_pi_profiles_are_isolated_and_exa_is_not_installed() -> None:
             "packages": settings.get("packages", []),
         }
         assert all("exa" not in str(package).lower() for package in settings.get("packages", []))
-        if profile == "prime-s":
-            assert settings["compaction"] == {
-                "enabled": True,
-                "reserveTokens": 65536,
-                "keepRecentTokens": 24000,
-            }
+        assert settings["compaction"] == {
+            "enabled": True,
+            "reserveTokens": 65536,
+            "keepRecentTokens": 24000,
+        }
         assert subagent_config["artifactDir"] == "session"
         assert subagent_config["missions"]["enabled"] is False
         assert subagent_config["scheduledRuns"]["enabled"] is False
         assert "artifactDir" not in settings["subagents"]
+        assert "agentOverrides" not in settings["subagents"]
         projection = _text(root / "PI_CONTRACT.md")
         assert "PI_LOCAL_COGNITION_CONTRACT_ISLAND_V1" in projection
 
     assert manifests["prime-b"]["binding"] == "account-b"
-    assert manifests["prime-s"]["binding"] == "main"
+    assert manifests["prime-s"]["binding"] in {"main", "account-b"}
     assert manifests["prime-b"]["session"] != manifests["prime-s"]["session"]
-    assert manifests["prime-b"]["packages"] == ["npm:pi-subagents@0.43.0"]
-    assert manifests["prime-s"]["packages"] == [
-        "npm:pi-subagents@0.43.0",
+    assert manifests["prime-b"]["packages"] == manifests["prime-s"]["packages"] == [
+        "npm:pi-subagents@0.44.0",
         "npm:pi-autoresearch@1.6.2",
         "npm:pi-hermes-memory@0.9.4",
         "npm:pi-mcp-adapter@2.21.1",
@@ -824,8 +848,9 @@ def test_pi_contract_islands_keep_body_knowledge_outside_codex_and_s() -> None:
     assert "PI_SURFACE_PRIME_B_V3" in prime_b
     assert "PI_SURFACE_PRIME_S_V1" in prime_s
     assert "研究 session" in family and "进化 session" in family
-    assert "prime S" in family and "PrimeB" in family
-    assert "选择性晋升" in family
+    assert "主 `prime`" in family and "PrimeB" in family
+    assert "一次性冷备快照" in family
+    assert "不做例行升级、测试、报告或提起" in family
     assert "当前开放成熟周期同时保留两条未闭压力" in family
     assert "已有正收益前沿时继续推进" in family
     assert "不得假称不存在的自动唤醒能力" in family
@@ -876,7 +901,8 @@ def test_pi_contract_islands_keep_body_knowledge_outside_codex_and_s() -> None:
     assert "PiS 身体成熟与新澳真实研究两条未闭压力" in lineage
     assert "当前 Codex TUI 尚无已验证的" in lineage
     assert "refine/refine.show/refine.rollback" in lineage
-    assert "LAB_VERIFIED_NOT_LIVE_PROMOTED" in lineage
+    assert "现已进入主与冷备身体" in lineage
+    assert "没有配置 server、direct schema 或常驻工具面" in lineage
 
 
 @pytest.mark.skipif(

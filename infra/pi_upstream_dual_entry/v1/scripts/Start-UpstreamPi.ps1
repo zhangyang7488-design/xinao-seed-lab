@@ -16,9 +16,6 @@ $spec = Get-PiDualEntrySpec -Profile $Profile
 if ($NewSession -and -not [string]::IsNullOrWhiteSpace($Session)) {
     throw 'PI_SESSION_SELECTION_CONFLICTS_WITH_NEW_SESSION'
 }
-if ($DisableMidTurnCompactionCompatibility -and $Profile -ne 'prime-s') {
-    throw 'PI_MIDTURN_COMPACTION_RECOVERY_ONLY_APPLIES_TO_PRIME_S'
-}
 
 function Resolve-PiProfileSessionSelection {
     param(
@@ -64,18 +61,12 @@ $env:XINAO_PI_ROLE = $spec.Role
 $env:XINAO_REPO = $spec.Workspace
 $env:XINAO_RUNTIME = 'D:\XINAO_RESEARCH_RUNTIME'
 $env:XINAO_PI_PROFILE = $Profile
-if ($Profile -eq 'prime-s') {
-    $env:XINAO_PI_SUPERVISOR_ENABLED = '1'
-    $env:XINAO_PI_SUPERVISOR_PIPE = $spec.SupervisorPipe
-    if ($DisableMidTurnCompactionCompatibility) {
-        Remove-Item Env:XINAO_PI_MIDTURN_COMPACTION_BACKPRESSURE -ErrorAction SilentlyContinue
-    } else {
-        $env:XINAO_PI_MIDTURN_COMPACTION_BACKPRESSURE = '1'
-    }
-} else {
-    Remove-Item Env:XINAO_PI_SUPERVISOR_ENABLED -ErrorAction SilentlyContinue
-    Remove-Item Env:XINAO_PI_SUPERVISOR_PIPE -ErrorAction SilentlyContinue
+$env:XINAO_PI_SUPERVISOR_ENABLED = '1'
+$env:XINAO_PI_SUPERVISOR_PIPE = $spec.SupervisorPipe
+if ($DisableMidTurnCompactionCompatibility) {
     Remove-Item Env:XINAO_PI_MIDTURN_COMPACTION_BACKPRESSURE -ErrorAction SilentlyContinue
+} else {
+    $env:XINAO_PI_MIDTURN_COMPACTION_BACKPRESSURE = '1'
 }
 $contractProjection = Sync-PiDualEntryContractProjection -Spec $spec
 $surfaceOverlay = Sync-PiDualEntrySurfaceOverlay -Spec $spec
@@ -86,19 +77,19 @@ $numpadEnterFollow = $null
 $numpadHelperProcess = $null
 $numpadHelperStatus = 'not-applicable'
 $numpadHelperSource = Join-Path (Split-Path -Parent $PSScriptRoot) 'helpers\PrimeS-NumPadEnter-Follow.ahk'
+& (Join-Path $PSScriptRoot 'Set-PiSBodyConfiguration.ps1') -AgentDir $spec.AgentDir | Out-Null
+if ($DisableMidTurnCompactionCompatibility) {
+    $midTurnCompactionCompatibility = (& (Join-Path $PSScriptRoot 'Restore-PiSMidTurnCompactionCompatibility.ps1') -VerifyOnly) | ConvertFrom-Json
+} elseif ($ValidateOnly) {
+    $subagentsCompatibility = (& (Join-Path $PSScriptRoot 'Apply-PiSSubagentsWindowsCompatibility.ps1') -AgentDir $spec.AgentDir -VerifyOnly) | ConvertFrom-Json
+    $hermesSessionCompatibility = (& (Join-Path $PSScriptRoot 'Apply-PiSHermesSessionCompatibility.ps1') -AgentDir $spec.AgentDir -VerifyOnly) | ConvertFrom-Json
+    $midTurnCompactionCompatibility = (& (Join-Path $PSScriptRoot 'Apply-PiSMidTurnCompactionCompatibility.ps1') -VerifyOnly) | ConvertFrom-Json
+} else {
+    $subagentsCompatibility = (& (Join-Path $PSScriptRoot 'Apply-PiSSubagentsWindowsCompatibility.ps1') -AgentDir $spec.AgentDir) | ConvertFrom-Json
+    $hermesSessionCompatibility = (& (Join-Path $PSScriptRoot 'Apply-PiSHermesSessionCompatibility.ps1') -AgentDir $spec.AgentDir) | ConvertFrom-Json
+    $midTurnCompactionCompatibility = (& (Join-Path $PSScriptRoot 'Apply-PiSMidTurnCompactionCompatibility.ps1')) | ConvertFrom-Json
+}
 if ($Profile -eq 'prime-s') {
-    & (Join-Path $PSScriptRoot 'Set-PiSBodyConfiguration.ps1') -AgentDir $spec.AgentDir | Out-Null
-    if ($DisableMidTurnCompactionCompatibility) {
-        $midTurnCompactionCompatibility = (& (Join-Path $PSScriptRoot 'Restore-PiSMidTurnCompactionCompatibility.ps1') -VerifyOnly) | ConvertFrom-Json
-    } elseif ($ValidateOnly) {
-        $subagentsCompatibility = (& (Join-Path $PSScriptRoot 'Apply-PiSSubagentsWindowsCompatibility.ps1') -AgentDir $spec.AgentDir -VerifyOnly) | ConvertFrom-Json
-        $hermesSessionCompatibility = (& (Join-Path $PSScriptRoot 'Apply-PiSHermesSessionCompatibility.ps1') -AgentDir $spec.AgentDir -VerifyOnly) | ConvertFrom-Json
-        $midTurnCompactionCompatibility = (& (Join-Path $PSScriptRoot 'Apply-PiSMidTurnCompactionCompatibility.ps1') -VerifyOnly) | ConvertFrom-Json
-    } else {
-        $subagentsCompatibility = (& (Join-Path $PSScriptRoot 'Apply-PiSSubagentsWindowsCompatibility.ps1') -AgentDir $spec.AgentDir) | ConvertFrom-Json
-        $hermesSessionCompatibility = (& (Join-Path $PSScriptRoot 'Apply-PiSHermesSessionCompatibility.ps1') -AgentDir $spec.AgentDir) | ConvertFrom-Json
-        $midTurnCompactionCompatibility = (& (Join-Path $PSScriptRoot 'Apply-PiSMidTurnCompactionCompatibility.ps1')) | ConvertFrom-Json
-    }
     try {
         $numpadRaw = if ($ValidateOnly) {
             & (Join-Path $PSScriptRoot 'Set-PiSNumpadEnterFollow.ps1') -AgentDir $spec.AgentDir -ValidateOnly
@@ -168,7 +159,7 @@ if ($ValidateOnly) {
         subagents_windows_compatibility = $subagentsCompatibility
         hermes_session_compatibility = $hermesSessionCompatibility
         midturn_compaction_compatibility = $midTurnCompactionCompatibility
-        midturn_compaction_runtime_enabled = ($Profile -eq 'prime-s' -and -not $DisableMidTurnCompactionCompatibility)
+        midturn_compaction_runtime_enabled = (-not $DisableMidTurnCompactionCompatibility)
         numpad_enter_follow = $numpadEnterFollow
         family_contract = $spec.FamilyContractSource
         surface_island = $spec.SurfaceIsland
@@ -229,7 +220,7 @@ try {
     Write-Host "$($spec.DisplayName) | Pi $script:PiDualEntryVersion | $($spec.AccountDisplayName)" -ForegroundColor Cyan
     Write-Host "完整 Pi 主体 · $($spec.Profile) | 起点 $($spec.Workspace)" -ForegroundColor Green
     if ($Profile -eq 'prime-b') {
-        Write-Host '最低可用与回退表面；保留真实工作能力，但不做与 prime S 对称的优化。' -ForegroundColor DarkGray
+        Write-Host '隔离冷备快照；仅在明确恢复场景使用，不参与主 prime 的日常演化。' -ForegroundColor DarkGray
     } else {
         Write-Host '当前主要工作表面；直接服务真实事务并从实际使用中成熟。' -ForegroundColor DarkGray
         if ($numpadHelperStatus -eq 'active') {

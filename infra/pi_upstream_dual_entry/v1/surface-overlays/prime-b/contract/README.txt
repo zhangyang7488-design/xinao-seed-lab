@@ -1,1 +1,1 @@
-Only selectively adopted PrimeB contract fragments live here. Never copy auth, sessions or profiles.
+Only PiB cold-snapshot-specific contract fragments live here. The shared family and PiB island contracts define its frozen role; never copy auth, sessions, running children, cognition, activity state, or profiles.

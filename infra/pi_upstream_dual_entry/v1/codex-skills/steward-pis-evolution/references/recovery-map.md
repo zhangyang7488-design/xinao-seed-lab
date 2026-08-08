@@ -1,4 +1,4 @@
-# PiS recovery map for Codex
+# Main prime recovery map for Codex
 
 Use this map only after the current parent result and active Pi object are bound.
 
@@ -7,20 +7,20 @@ Use this map only after the current parent result and active Pi object are bound
 - Family contract: `E:\XINAO_RESEARCH_WORKSPACES\pi-local-cognition-contract-island\AGENTS.md`
 - Current capability lineage:
   `E:\XINAO_RESEARCH_WORKSPACES\pi-local-cognition-contract-island\cognition\CURRENT_CAPABILITY_LINEAGE.md`
-- PiS surface island: `E:\XINAO_RESEARCH_WORKSPACES\prime-s-local-cognition-island`
-- PiB surface island: `E:\XINAO_RESEARCH_WORKSPACES\prime-agent-local-cognition-island`
+- Main `prime` surface island: `E:\XINAO_RESEARCH_WORKSPACES\prime-s-local-cognition-island`
+- Isolated PiB cold-snapshot island: `E:\XINAO_RESEARCH_WORKSPACES\prime-agent-local-cognition-island`
 
 The family contract carries stable Pi-specific intent and lifecycle. A surface island carries that
 surface's body lineage, candidate evidence, acceptance, and rollback. Neither creates a task.
 
 ## Live products
 
-- PiS profile: `D:\XINAO_RESEARCH_RUNTIME\state\pi\0.84.1\profiles\prime-s`
-- PiB profile: `D:\XINAO_RESEARCH_RUNTIME\state\pi\0.84.1\profiles\prime-b`
+- Main `prime` profile (internal compatibility name): `D:\XINAO_RESEARCH_RUNTIME\state\pi\0.84.1\profiles\prime-s`
+- PiB isolated cold-snapshot profile: `D:\XINAO_RESEARCH_RUNTIME\state\pi\0.84.1\profiles\prime-b`
 - Pi engineering source:
   `E:\XINAO_RESEARCH_WORKSPACES\S\infra\pi_upstream_dual_entry\v1`
-- PiS desktop wrapper: `C:\Users\xx363\CodexLaunchers\Open-Prime-S.ps1`
-- PiB desktop wrapper: `C:\Users\xx363\CodexLaunchers\Open-Prime-Agent-Account-B.ps1`
+- Main desktop wrapper: `C:\Users\xx363\CodexLaunchers\Open-Prime.ps1`
+- PiB cold-backup shortcut: `C:\Users\xx363\PrimeB.lnk`
 - Exact visible PiS restart:
   `E:\XINAO_RESEARCH_WORKSPACES\S\infra\pi_upstream_dual_entry\v1\scripts\Start-PrimeSInWindowsTerminal.ps1 -Session <native-session-id>`
 
@@ -60,7 +60,7 @@ PiS's numpad transcript-follow behavior is sourced and installed from:
 - `E:\XINAO_RESEARCH_WORKSPACES\S\infra\pi_upstream_dual_entry\v1\helpers\PrimeS-NumPadEnter-Follow.ahk`
 - `E:\XINAO_RESEARCH_WORKSPACES\S\infra\pi_upstream_dual_entry\v1\scripts\Set-PiSNumpadEnterFollow.ps1`
 
-It is scoped to the exact `prime S` Windows Terminal title. The profile keybinding adds `F12` only
+It is scoped to the exact `prime` Windows Terminal title. The profile keybinding adds `F12` only
 to `tui.altScreen.bottom`; the helper sends F12 only from transcript geometry and sends ordinary
 Enter from input or uncertain geometry. Never migrate this as a global Windows Terminal action or
 change main Enter.
@@ -140,8 +140,10 @@ launcher or capability installer during rollback validation because their formal
 known compatibility patch. A restarted process is required; restoring bytes cannot change a module
 already loaded by a live PiS TUI.
 
-PiB is outside the default write cone. Compare or promote to it only when the current parent names a
-B-side consumer or rollback check.
+PiB is outside the default write, maintenance, upgrade, test, report, and mention cone after the
+currently authorized full-body snapshot has passed fresh root/child verification. Reopen it only
+when the user explicitly names it or main-prime recovery demonstrably requires it; never treat the
+frozen snapshot as a live synchronization peer.
 
 ## Native maturity organs
 

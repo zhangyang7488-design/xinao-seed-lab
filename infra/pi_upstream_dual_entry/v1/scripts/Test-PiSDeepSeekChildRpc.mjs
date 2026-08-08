@@ -91,16 +91,26 @@ async function main() {
 	const codexHome = required(args, "codex-home");
 	const modelRef = required(args, "model");
 	const marker = required(args, "marker");
+	const profile = args.profile ?? path.basename(path.resolve(agentDir));
+	const accountSlot = args["account-slot"] ?? "main";
+	const role = args.role ?? "primary";
 	const timeoutMs = Number(args["timeout-ms"] ?? "180000");
 	const receiptPath = args.receipt;
 	const [provider, model] = modelRef.split("/", 2);
 	if (provider !== "deepseek" || !/^deepseek-v4-(flash|pro)$/.test(model ?? "")) {
 		throw new Error(`Unsupported DeepSeek child model: ${modelRef}`);
 	}
+	if (!new Set(["prime-s", "prime-b"]).has(profile)) throw new Error(`Unsupported profile: ${profile}`);
+	if (!new Set(["main", "account-b"]).has(accountSlot)) throw new Error(`Unsupported account slot: ${accountSlot}`);
 
 	const contract = path.join(agentDir, "PI_CONTRACT.md");
-	for (const file of [cliPath, rpcClientPath, contract]) if (!fs.statSync(file).isFile()) throw new Error(`Required file missing: ${file}`);
+	const bindingPath = path.join(agentDir, "account-binding.json");
+	for (const file of [cliPath, rpcClientPath, contract, bindingPath]) if (!fs.statSync(file).isFile()) throw new Error(`Required file missing: ${file}`);
 	for (const directory of [cwd, agentDir, sessionDir, codexHome]) if (!fs.statSync(directory).isDirectory()) throw new Error(`Required directory missing: ${directory}`);
+	const binding = JSON.parse(fs.readFileSync(bindingPath, "utf8"));
+	if (binding.active_slot !== accountSlot || path.resolve(binding.selected_codex_home).toLowerCase() !== path.resolve(codexHome).toLowerCase()) {
+		throw new Error(`Profile binding does not match invocation: ${JSON.stringify({ active_slot: binding.active_slot, selected_codex_home: binding.selected_codex_home })}`);
+	}
 
 	const { RpcClient } = await import(pathToFileURL(rpcClientPath).href);
 	const client = new RpcClient({
@@ -122,9 +132,9 @@ async function main() {
 			PI_TELEMETRY: "0",
 			PI_SUBAGENT_MAX_DEPTH: "2",
 			CODEX_HOME: codexHome,
-			XINAO_ACCOUNT_SLOT: "main",
-			XINAO_PI_ROLE: "primary",
-			XINAO_PI_PROFILE: "prime-s",
+			XINAO_ACCOUNT_SLOT: accountSlot,
+			XINAO_PI_ROLE: role,
+			XINAO_PI_PROFILE: profile,
 			XINAO_PI_SUPERVISOR_ENABLED: "0",
 		},
 	});
@@ -158,7 +168,10 @@ async function main() {
 		const receipt = {
 			schema: "xinao.pis.deepseek_native_child_rpc_acceptance.v1",
 			status: "verified",
-			profile: "prime-s",
+			profile,
+			account_slot: accountSlot,
+			role,
+			profile_binding_matches_invocation: true,
 			transport: "pi-subagents-native-child",
 			provider: child.provider,
 			model: child.model,

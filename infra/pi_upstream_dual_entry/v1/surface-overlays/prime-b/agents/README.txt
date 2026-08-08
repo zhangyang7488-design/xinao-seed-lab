@@ -1,1 +1,1 @@
-Only selectively adopted PrimeB agent overlays live here. Never copy a whole prime-s profile.
+This directory contains the explicitly frozen main-prime agent-body snapshot for the isolated PiB backup. Never copy OAuth, sessions, running child trees, memory data, cognition, activity state, or the whole prime-s profile.

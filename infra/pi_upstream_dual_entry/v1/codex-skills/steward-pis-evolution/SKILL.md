@@ -1,6 +1,6 @@
 ---
 name: steward-pis-evolution
-description: Recover and operate the user's long-lived Pi system from Codex without making them restate PiB/PiS intent, current capability, supervision, communication, correction, or evolution history. Use when Codex is asked to understand, supervise, mature, repair, test, launch, steer, evolve, promote, roll back, or hand off PiS or PiB. Bind the live Pi contract island and profiles first; treat PiS as the primary evolving subject and PiB as a minimum-usable account-isolated baseline, not as two task identities.
+description: Recover and operate the user's long-lived main prime from Codex without making them restate intent, capability, supervision, communication, correction, account binding, or evolution history. Use when Codex is asked to understand, supervise, mature, repair, test, launch, steer, evolve, snapshot, or recover Pi. Unqualified Pi means the main visible prime backed by the internal prime-s profile; PrimeB is an isolated cold snapshot only when explicitly named or truly needed for recovery.
 ---
 
 # Steward PiS evolution
@@ -14,8 +14,8 @@ Do not ask the user to reconstruct established Pi context that can be read local
 user words and the live parent are bound, read only the intersecting parts of these sources:
 
 1. `E:\XINAO_RESEARCH_WORKSPACES\pi-local-cognition-contract-island\AGENTS.md` for the durable
-   PiB/PiS relationship, long-lived user intent, evolution method, promotion, rollback, and
-   retirement boundaries.
+   main-prime/cold-backup relationship, long-lived user intent, evolution method, snapshot,
+   rollback, and retirement boundaries.
 2. `E:\XINAO_RESEARCH_WORKSPACES\pi-local-cognition-contract-island\cognition\CURRENT_CAPABILITY_LINEAGE.md`
    for currently observed capabilities and evidence. Recheck drift-prone versions, packages,
    credentials, processes, sessions, and API status against live reality.
@@ -29,9 +29,16 @@ open to the current task; it never invents work.
 
 ## Preserve the stable relationship
 
-- PiS is the primary working and evolution surface. PiB is the account-B, minimum-usable baseline
-  and optional rollback/comparison surface. Two Codex accounts produce two isolated Pi auth/session
-  profiles; that fact is not a two-product, two-role, or task-routing architecture.
+- The user-visible main subject is exactly `prime`; its existing `prime-s` profile, session, pipe,
+  and script names remain internal compatibility handles. Unless the user qualifies it otherwise,
+  every reference to Pi addresses this main prime. Its Codex account binding is a switchable quota
+  source, not an identity or work-surface split.
+- `C:\Users\xx363\PrimeB.lnk` is an isolated cold backup. At the currently authorized one-time
+  snapshot boundary, replicate the main prime's proven behavior, body organs, extensions, native
+  child mechanism, and recovery chain into its own consumer, while preserving separate OAuth,
+  profile, sessions, running child tree, surface cognition, activity state, and entrypoint. After
+  fresh root/child verification, do not routinely maintain, upgrade, test, report, or mention it;
+  reopen it only when the user explicitly names it or main-prime recovery truly requires it.
 - PiS is one working subject. Researching XINAO and improving its own body are activities chosen by
   the current object and parent result, not separate identities, sessions, or keyword routes.
 - Codex and PiS must not share one mutable XINAO epistemology. They may read the same primary user
@@ -53,8 +60,9 @@ open to the current task; it never invents work.
   experiment, intermediate report, or every small edit does not deserve its own commit merely
   because it exists. Commit at a coherent adopted effect boundary where review, collaboration, or
   rollback gains real value; keep exploratory intermediate state unpromoted until then.
-- PiB receives only a proven, intersecting increment when a named B-side consumer exists. PiS
-  maturity does not wait for symmetrical PiB optimization.
+- The current full-body PiB snapshot is a single coherent backup transaction, not a permanent
+  promotion stream. Once frozen and verified, later main-prime evolution does not silently flow to
+  PiB, and ordinary Pi work must not reopen a B-side maintenance obligation.
 - The desired body is complete enough for real work but sparsely activated: mature organs remain
   cold until the task needs them, and no installed package gains agenda, authority, or completion
   identity. Sparse activation applies to organs, children, searches, and supervision cadence; it
@@ -75,11 +83,16 @@ open to the current task; it never invents work.
   Pi harness, including a child spawning another child. It does not mean a Codex collaboration
   subagent or an external Grok/Terra/Luna WorkerPool. A model name such as Terra can appear in both
   worlds; identify the transport and session lineage before describing it.
-- OpenAI-model Pi children follow the addressed profile's current account binding. A PiS binding
-  change replaces only `prime-s`'s `openai-codex` credential and takes effect at a clean process
-  boundary so the resumed root and every newly spawned child consume the same account. PiB follows
-  the equivalent rule inside `prime-b`. Never copy OAuth, sessions, or child trees across profiles,
-  and preserve independent native-provider credentials such as DeepSeek during an account switch.
+- OpenAI-model Pi children follow the addressed profile's current account binding. A main-prime
+  binding change replaces only `prime-s`'s `openai-codex` credential and takes effect at a clean
+  process boundary so the resumed root and every newly spawned child consume the same account.
+  Never copy OAuth, sessions, or child trees across profiles, and preserve independent
+  native-provider credentials such as DeepSeek during an account switch.
+- When the user tells Codex to switch the main prime to a named Codex account, treat that request
+  as their live observation that the destination account has usable quota; do not add a separate
+  quota-query or confirmation gate. Still prove the switched root and a fresh OpenAI child against
+  the selected profile credential. Only an actual provider rejection or failed consumer probe may
+  override that observation and trigger honest recovery; never migrate an already-running child tree.
 - DeepSeek is a Pi-native provider available through a task-local `pi-subagents` model override, not
   a permanent child role or a spending target. Admit Flash or Pro only on a naturally separable real
   Pi-child question where provider difference may add evidence, keep the root/constraints and a fit
@@ -89,11 +102,12 @@ open to the current task; it never invents work.
 - Treat the physical numpad bottom-right Enter as a PiS surface affordance, not a new submit
   convention: while the pointer is over the transcript it returns to the bottom and restores
   follow-output; while the pointer is over the input area it remains ordinary submit. Main Enter,
-  Pi's native End behavior, mouse behavior, and PrimeB must remain unchanged. If exact terminal
+  Pi's native End behavior and mouse behavior must remain unchanged. The cold backup keeps its own
+  isolated entry affordances. If exact terminal
   title, pointer geometry, or helper health cannot be established, fall back to ordinary Enter.
 - Absorb Pi-owned terminal lifecycle cleanup. A temporary, failed, or stopped PiS TUI must not be
   left as a visible `process exited`/launch-error page for the user to sort out. Keep the dedicated
-  `XINAO prime S` profile on `closeOnExit=always`, reap the exact helper and Pi process owned by the
+  `prime` profile on `closeOnExit=always`, reap the exact helper and Pi process owned by the
   completed launch, and preserve the one live PiS consumer. Never kill the shared
   `WindowsTerminal.exe`, close a Codex tab, or turn cleanup of one known prior Pi surface into a
   desktop-wide enumeration project. If an already-detached legacy tab cannot be individually
@@ -102,7 +116,7 @@ open to the current task; it never invents work.
   Codex-operated restart, settle and stop the exact ingress target, then launch the same native
   session through `scripts\Start-PrimeSInWindowsTerminal.ps1`; never start
   `Open-Prime-S.ps1` directly under a new `pwsh`/conhost. A valid restart preserves `prime-s` and the
-  native session, creates a new process instance, consumes the `XINAO prime S` Windows Terminal
+  native session, creates a new process instance, consumes the `prime` Windows Terminal
   profile, and is proved by fresh ingress/readback. Functional Pi continuity with a changed visible
   host is partial, not success.
 

@@ -24,6 +24,7 @@ $keybindingsPath = Join-Path $actualAgentDir 'keybindings.json'
 $inputRoot = Join-Path $actualAgentDir 'input'
 $receiptPath = Join-Path $inputRoot 'numpad-enter-follow-install.json'
 $terminalSettingsPath = Join-Path $env:LOCALAPPDATA 'Packages\Microsoft.WindowsTerminal_8wekyb3d8bbwe\LocalState\settings.json'
+$expectedTerminalCommandline = '%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe -NoProfile -ExecutionPolicy Bypass -File "C:\Users\xx363\CodexLaunchers\Open-Prime.ps1"'
 
 if (-not (Test-Path -LiteralPath $helperSource -PathType Leaf)) {
     throw "PI_S_NUMPAD_HELPER_SOURCE_MISSING: $helperSource"
@@ -76,12 +77,9 @@ function Get-PrimeSTerminalIdentity {
     } catch {
         throw "PI_S_NUMPAD_WINDOWS_TERMINAL_SETTINGS_INVALID: $terminalSettingsPath"
     }
-    $profiles = @($terminalSettings.profiles.list | Where-Object { [string]$_.name -eq 'XINAO prime S' })
+    $profiles = @($terminalSettings.profiles.list | Where-Object { [string]$_.name -in @('prime','XINAO prime S') })
     if ($profiles.Count -ne 1) { throw "PI_S_NUMPAD_WINDOWS_TERMINAL_PROFILE_NOT_UNIQUE: count=$($profiles.Count)" }
     $profile = $profiles[0]
-    if ([string]$profile.tabTitle -ne 'prime S' -or $profile.suppressApplicationTitle -ne $true) {
-        throw "PI_S_NUMPAD_WINDOWS_TERMINAL_TITLE_SCOPE_INVALID: tabTitle=$($profile.tabTitle) suppressApplicationTitle=$($profile.suppressApplicationTitle)"
-    }
     [pscustomobject]@{
         Settings = $terminalSettings
         Profile = $profile
@@ -90,6 +88,23 @@ function Get-PrimeSTerminalIdentity {
 
 $terminalIdentity = Get-PrimeSTerminalIdentity
 $terminalSettingsChanged = $false
+if (
+    [string]$terminalIdentity.Profile.name -ne 'prime' -or
+    [string]$terminalIdentity.Profile.tabTitle -ne 'prime' -or
+    [string]$terminalIdentity.Profile.commandline -ne $expectedTerminalCommandline -or
+    $terminalIdentity.Profile.suppressApplicationTitle -ne $true
+) {
+    if ($ValidateOnly) {
+        throw "PI_S_NUMPAD_WINDOWS_TERMINAL_TITLE_SCOPE_INVALID: name=$($terminalIdentity.Profile.name) tabTitle=$($terminalIdentity.Profile.tabTitle) suppressApplicationTitle=$($terminalIdentity.Profile.suppressApplicationTitle)"
+    }
+    $terminalIdentity.Profile.name = 'prime'
+    $terminalIdentity.Profile.tabTitle = 'prime'
+    $terminalIdentity.Profile.commandline = $expectedTerminalCommandline
+    $terminalIdentity.Profile.description = 'Main prime | Pi 0.84.1 | switchable Codex account | isolated native session and cognition'
+    $terminalIdentity.Profile.suppressApplicationTitle = $true
+    Write-PiDualEntryJsonAtomic -Path $terminalSettingsPath -Value $terminalIdentity.Settings -Depth 30
+    $terminalSettingsChanged = $true
+}
 if ([string]$terminalIdentity.Profile.closeOnExit -ne 'always') {
     if ($ValidateOnly) {
         throw "PI_S_WINDOWS_TERMINAL_CLOSE_ON_EXIT_NOT_INSTALLED: expected=always actual=$($terminalIdentity.Profile.closeOnExit)"
@@ -164,7 +179,7 @@ if ($ValidateOnly) {
         schema = 'xinao.pis.numpad_enter_follow_install.v1'
         status = 'ready'
         profile = 'prime-s'
-        window_scope = 'prime S ahk_exe WindowsTerminal.exe'
+        window_scope = 'prime ahk_exe WindowsTerminal.exe'
         physical_key = 'NumpadEnter'
         input_route = 'ordinary Enter'
         transcript_route = 'F12 -> tui.altScreen.bottom'

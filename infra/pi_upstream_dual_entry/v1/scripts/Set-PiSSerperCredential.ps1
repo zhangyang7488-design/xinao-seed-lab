@@ -13,13 +13,17 @@ if (-not (Test-Path -LiteralPath $SourcePath -PathType Leaf)) {
     throw 'PI_SERPER_CREDENTIAL_SOURCE_MISSING'
 }
 
-$activeRoot = [IO.Path]::GetFullPath((Join-Path $script:PiDualEntryStateRoot 'profiles\prime-s'))
+$activeRoots = [ordered]@{
+    'prime-s' = [IO.Path]::GetFullPath((Join-Path $script:PiDualEntryStateRoot 'profiles\prime-s'))
+    'prime-b' = [IO.Path]::GetFullPath((Join-Path $script:PiDualEntryStateRoot 'profiles\prime-b'))
+}
 $labRoot = [IO.Path]::GetFullPath((Join-Path $script:PiDualEntryStateRoot 'body-labs\prime-s')).TrimEnd('\','/') + [IO.Path]::DirectorySeparatorChar
 $targetRoot = [IO.Path]::GetFullPath($AgentDir)
-$isActiveTarget = [string]::Equals($targetRoot,$activeRoot,[StringComparison]::OrdinalIgnoreCase)
+$activeProfile = @($activeRoots.Keys | Where-Object { [string]::Equals($targetRoot,$activeRoots[$_],[StringComparison]::OrdinalIgnoreCase) } | Select-Object -First 1)
+$isActiveTarget = $activeProfile.Count -eq 1
 $isLabTarget = ($targetRoot + [IO.Path]::DirectorySeparatorChar).StartsWith($labRoot,[StringComparison]::OrdinalIgnoreCase)
 if (-not $isActiveTarget -and -not $isLabTarget) {
-    throw "PI_SERPER_TARGET_NOT_PRIME_S: $targetRoot"
+    throw "PI_SERPER_TARGET_OUTSIDE_MANAGED_PROFILE: $targetRoot"
 }
 if ($SkipConnectionTest -and $isActiveTarget) {
     throw 'PI_SERPER_ACTIVE_PROFILE_REQUIRES_PROVIDER_PROBE'
@@ -92,7 +96,7 @@ if ($isLabTarget) {
 
 [pscustomobject]@{
     schema = 'xinao.pi_serper_credential_receipt.v1'
-    profile = 'prime-s'
+    profile = $(if ($isActiveTarget) { [string]$activeProfile[0] } else { 'prime-s-body-lab' })
     credential_path = $credentialPath
     credential_stored = $true
     credential_length = $apiKey.Length

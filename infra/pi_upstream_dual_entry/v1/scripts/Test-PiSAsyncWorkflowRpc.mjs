@@ -128,7 +128,7 @@ async function main() {
     const asyncId = findKey(executionEnd, "asyncId") ?? findKey(executionEnd, "runId");
     const asyncDir = findKey(executionEnd, "asyncDir");
     if (!asyncId || !asyncDir) throw new Error(`Missing async identity or directory: ${JSON.stringify(executionEnd)}`);
-    if (!/^workflow-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(asyncId)) {
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(asyncId)) {
       throw new Error(`Async workflow ID is not provider-independent and portable: ${asyncId}`);
     }
     if (/[<>:"/\\|?*]/.test(path.basename(asyncDir)) || path.basename(asyncDir) !== asyncId) {

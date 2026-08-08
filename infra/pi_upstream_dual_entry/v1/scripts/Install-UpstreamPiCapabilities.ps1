@@ -11,9 +11,7 @@ Assert-PiDualEntryBinary
 $receipts = @()
 foreach ($profileName in $Profile) {
     $spec = Get-PiDualEntrySpec -Profile $profileName
-    if ($profileName -eq 'prime-s') {
-        & (Join-Path $PSScriptRoot 'Set-PiSBodyConfiguration.ps1') -AgentDir $spec.AgentDir | Out-Null
-    }
+    & (Join-Path $PSScriptRoot 'Set-PiSBodyConfiguration.ps1') -AgentDir $spec.AgentDir | Out-Null
     $env:PI_CODING_AGENT_DIR = $spec.AgentDir
     $env:PI_CODING_AGENT_SESSION_DIR = $spec.SessionDir
     $env:PI_SKIP_VERSION_CHECK = '1'
@@ -30,11 +28,9 @@ foreach ($profileName in $Profile) {
     $subagentsCompatibility = $null
     $hermesSessionCompatibility = $null
     $midTurnCompactionCompatibility = $null
-    if ($profileName -eq 'prime-s') {
-        $subagentsCompatibility = (& (Join-Path $PSScriptRoot 'Apply-PiSSubagentsWindowsCompatibility.ps1') -AgentDir $spec.AgentDir) | ConvertFrom-Json
-        $hermesSessionCompatibility = (& (Join-Path $PSScriptRoot 'Apply-PiSHermesSessionCompatibility.ps1') -AgentDir $spec.AgentDir) | ConvertFrom-Json
-        $midTurnCompactionCompatibility = (& (Join-Path $PSScriptRoot 'Apply-PiSMidTurnCompactionCompatibility.ps1')) | ConvertFrom-Json
-    }
+    $subagentsCompatibility = (& (Join-Path $PSScriptRoot 'Apply-PiSSubagentsWindowsCompatibility.ps1') -AgentDir $spec.AgentDir) | ConvertFrom-Json
+    $hermesSessionCompatibility = (& (Join-Path $PSScriptRoot 'Apply-PiSHermesSessionCompatibility.ps1') -AgentDir $spec.AgentDir) | ConvertFrom-Json
+    $midTurnCompactionCompatibility = (& (Join-Path $PSScriptRoot 'Apply-PiSMidTurnCompactionCompatibility.ps1')) | ConvertFrom-Json
     $list = @(& $script:PiDualEntryCommand list 2>&1)
     if ($LASTEXITCODE -ne 0) { throw "PI_CAPABILITY_LIST_FAILED: profile=$profileName output=$($list -join ' ')" }
     foreach ($package in @($spec.Packages)) {

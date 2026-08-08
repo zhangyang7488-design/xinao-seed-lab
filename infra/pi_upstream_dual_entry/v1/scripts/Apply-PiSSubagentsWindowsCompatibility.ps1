@@ -14,11 +14,17 @@ function Get-NormalizedPiSCompatibilityPath {
 }
 
 $target = Get-NormalizedPiSCompatibilityPath -Path $AgentDir
-$activeTarget = Get-NormalizedPiSCompatibilityPath -Path (Join-Path $script:PiDualEntryStateRoot 'profiles\prime-s')
-$labParent = Get-NormalizedPiSCompatibilityPath -Path (Join-Path $script:PiDualEntryStateRoot 'body-labs\prime-s')
+$activeTargets = @(
+    Get-NormalizedPiSCompatibilityPath -Path (Join-Path $script:PiDualEntryStateRoot 'profiles\prime-s')
+    Get-NormalizedPiSCompatibilityPath -Path (Join-Path $script:PiDualEntryStateRoot 'profiles\prime-b')
+)
+$labParents = @(
+    Get-NormalizedPiSCompatibilityPath -Path (Join-Path $script:PiDualEntryStateRoot 'body-labs\prime-s')
+    Get-NormalizedPiSCompatibilityPath -Path (Join-Path $script:PiDualEntryStateRoot 'body-labs\prime-b')
+)
 $targetParent = Get-NormalizedPiSCompatibilityPath -Path (Split-Path -Parent $target)
-if ($target -ine $activeTarget -and $targetParent -ine $labParent) {
-    throw "PI_S_SUBAGENTS_PATCH_TARGET_OUTSIDE_PRIME_S: $target"
+if ($target -notin $activeTargets -and $targetParent -notin $labParents) {
+    throw "PI_SUBAGENTS_PATCH_TARGET_OUTSIDE_MANAGED_PROFILE: $target"
 }
 
 $packageRoot = Join-Path $target 'npm\node_modules\pi-subagents'
@@ -32,19 +38,35 @@ foreach ($required in @($packageJsonPath,$asyncSourcePath,$singleOutputSourcePat
 }
 
 $package = Get-Content -Raw -LiteralPath $packageJsonPath -Encoding UTF8 | ConvertFrom-Json
-if ([string]$package.name -cne 'pi-subagents' -or [string]$package.version -cne '0.43.0') {
+$packageVersion = [string]$package.version
+if (
+    [string]$package.name -cne 'pi-subagents' -or
+    $packageVersion -notin @('0.43.0','0.44.0')
+) {
     throw "PI_S_SUBAGENTS_PATCH_VERSION_UNSUPPORTED: $($package.name)@$($package.version)"
 }
 
-$asyncUpstreamHash = '412b2a6eefb2d796fcfe1d4b933726b469cc0033db7f533ed09ecca95ec48332'
-$asyncPatchedHash = '15e3e072431e43fa774d4d4993c606e0c671841539606fac90f9b86f94777b48'
+$asyncUpstreamHash = if ($packageVersion -ceq '0.44.0') {
+    '59216ed57a01b240359bf68a3ef5ddd80a981d76ff31760095e6acf2c1b34fa1'
+} else {
+    '412b2a6eefb2d796fcfe1d4b933726b469cc0033db7f533ed09ecca95ec48332'
+}
+$asyncPatchedHash = if ($packageVersion -ceq '0.44.0') {
+    $asyncUpstreamHash
+} else {
+    '15e3e072431e43fa774d4d4993c606e0c671841539606fac90f9b86f94777b48'
+}
 $singleOutputUpstreamHash = 'f2af95cd15e1fd021bff802812043704d5569c5eeed9a8f13741174654de4e08'
 $singleOutputPatchedHash = 'aa63de8ffd7e2ce671560c6cbded541e475bdfa700e33c069042b32af0c2605b'
 $asyncBeforeHash = (Get-FileHash -Algorithm SHA256 -LiteralPath $asyncSourcePath).Hash.ToLowerInvariant()
 $singleOutputBeforeHash = (Get-FileHash -Algorithm SHA256 -LiteralPath $singleOutputSourcePath).Hash.ToLowerInvariant()
 $changed = $false
 
-if ($asyncBeforeHash -ceq $asyncUpstreamHash) {
+if ($packageVersion -ceq '0.44.0') {
+    if ($asyncBeforeHash -cne $asyncUpstreamHash) {
+        throw "PI_S_SUBAGENTS_PATCH_SOURCE_CONFLICT: expected=$asyncUpstreamHash actual=$asyncBeforeHash"
+    }
+} elseif ($asyncBeforeHash -ceq $asyncUpstreamHash) {
     if ($VerifyOnly) {
         throw "PI_S_SUBAGENTS_PATCH_NOT_APPLIED: $asyncSourcePath"
     }
@@ -73,7 +95,17 @@ if ($asyncAfterHash -cne $asyncPatchedHash) {
     throw "PI_S_SUBAGENTS_PATCH_VERIFY_FAILED: expected=$asyncPatchedHash actual=$asyncAfterHash"
 }
 $verified = [IO.File]::ReadAllText($asyncSourcePath,[Text.UTF8Encoding]::new($false))
-if ($verified.Contains('const workflowRunId = _id;') -or -not $verified.Contains('const workflowRunId = `workflow-${randomUUID()}`;')) {
+if (
+    $verified.Contains('const workflowRunId = _id;') -or
+    (
+        $packageVersion -ceq '0.44.0' -and
+        -not $verified.Contains('const workflowRunId = randomUUID();')
+    ) -or
+    (
+        $packageVersion -ceq '0.43.0' -and
+        -not $verified.Contains('const workflowRunId = `workflow-${randomUUID()}`;')
+    )
+) {
     throw 'PI_S_SUBAGENTS_PATCH_SEMANTIC_VERIFY_FAILED'
 }
 
@@ -158,9 +190,9 @@ if (
 
 [pscustomobject]@{
     schema = 'xinao.pi_s_subagents_windows_compatibility.v1'
-    patch_id = 'pi-subagents-0.43.0-windows-compatibility-v2'
+    patch_id = $(if ($packageVersion -ceq '0.44.0') { 'pi-subagents-0.44.0-windows-compatibility-v3' } else { 'pi-subagents-0.43.0-windows-compatibility-v2' })
     agent_dir = $target
-    package = 'pi-subagents@0.43.0'
+    package = "pi-subagents@$packageVersion"
     source_path = $asyncSourcePath
     source_paths = @($asyncSourcePath,$singleOutputSourcePath)
     before_sha256 = $asyncBeforeHash
@@ -170,5 +202,6 @@ if (
     changed = $changed
     verify_only = [bool]$VerifyOnly
     provider_tool_id_used_as_path = $false
+    upstream_portable_workflow_id = [bool]($packageVersion -ceq '0.44.0')
     msys_drive_path_authorship_equivalence = $true
 } | ConvertTo-Json -Depth 5

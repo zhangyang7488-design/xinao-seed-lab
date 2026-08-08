@@ -14,11 +14,18 @@ function Get-NormalizedPiSDeepSeekPath {
 }
 
 $target = Get-NormalizedPiSDeepSeekPath -Path $AgentDir
-$activeTarget = Get-NormalizedPiSDeepSeekPath -Path (Join-Path $script:PiDualEntryStateRoot 'profiles\prime-s')
-$labParent = Get-NormalizedPiSDeepSeekPath -Path (Join-Path $script:PiDualEntryStateRoot 'body-labs\prime-s')
+$activeTargets = [ordered]@{
+    'prime-s' = Get-NormalizedPiSDeepSeekPath -Path (Join-Path $script:PiDualEntryStateRoot 'profiles\prime-s')
+    'prime-b' = Get-NormalizedPiSDeepSeekPath -Path (Join-Path $script:PiDualEntryStateRoot 'profiles\prime-b')
+}
+$labParents = @(
+    Get-NormalizedPiSDeepSeekPath -Path (Join-Path $script:PiDualEntryStateRoot 'body-labs\prime-s')
+    Get-NormalizedPiSDeepSeekPath -Path (Join-Path $script:PiDualEntryStateRoot 'body-labs\prime-b')
+)
 $targetParent = Get-NormalizedPiSDeepSeekPath -Path (Split-Path -Parent $target)
-if ($target -ine $activeTarget -and $targetParent -ine $labParent) {
-    throw "PI_DEEPSEEK_TARGET_NOT_PRIME_S: $target"
+$activeProfile = @($activeTargets.Keys | Where-Object { $target -ieq $activeTargets[$_] } | Select-Object -First 1)
+if ($activeProfile.Count -ne 1 -and $targetParent -notin $labParents) {
+    throw "PI_DEEPSEEK_TARGET_OUTSIDE_MANAGED_PROFILE: $target"
 }
 if (-not (Test-Path -LiteralPath $SourcePath -PathType Leaf)) {
     throw "PI_DEEPSEEK_CREDENTIAL_SOURCE_MISSING: $SourcePath"
@@ -85,7 +92,7 @@ try {
 
     [pscustomobject]@{
         schema = 'xinao.pi_s_deepseek_credential.v1'
-        profile = 'prime-s'
+        profile = $(if ($activeProfile.Count -eq 1) { [string]$activeProfile[0] } else { 'body-lab' })
         agent_dir = $target
         native_auth_store = $authPath
         credential_stored = $true

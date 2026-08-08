@@ -9,7 +9,7 @@ const MARKER = "PIS_MIDTURN_COMPACTION_REGRESSION_V1";
 const FINAL_MARKER = "PIS_MIDTURN_COMPACT_RESUMED_V1";
 
 function parseArgs(argv) {
-  const parsed = { expect: "patched", gate: "on", fault: "none" };
+  const parsed = { expect: "patched", gate: "on", fault: "none", profile: "prime-s" };
   for (let index = 0; index < argv.length; index += 1) {
     const key = argv[index];
     if (key === "--pi-root") parsed.piRoot = argv[++index];
@@ -17,10 +17,11 @@ function parseArgs(argv) {
     else if (key === "--expect") parsed.expect = argv[++index];
     else if (key === "--gate") parsed.gate = argv[++index];
     else if (key === "--fault") parsed.fault = argv[++index];
+    else if (key === "--profile") parsed.profile = argv[++index];
     else throw new Error(`Unknown argument: ${key}`);
   }
   if (!parsed.piRoot || !parsed.agentDir) {
-    throw new Error("Usage: Test-PiSMidTurnCompaction.mjs --pi-root <isolated-root> --agent-dir <body-lab> [--expect upstream-gap|patched] [--gate on|off]");
+    throw new Error("Usage: Test-PiSMidTurnCompaction.mjs --pi-root <isolated-root> --agent-dir <body-lab> [--expect upstream-gap|patched] [--gate on|off] [--profile prime-s|prime-b]");
   }
   if (!new Set(["upstream-gap", "patched"]).has(parsed.expect)) {
     throw new Error(`Invalid --expect value: ${parsed.expect}`);
@@ -30,6 +31,9 @@ function parseArgs(argv) {
   }
   if (!new Set(["none", "cancel-with-steer"]).has(parsed.fault)) {
     throw new Error(`Invalid --fault value: ${parsed.fault}`);
+  }
+  if (!new Set(["prime-s", "prime-b"]).has(parsed.profile)) {
+    throw new Error(`Invalid --profile value: ${parsed.profile}`);
   }
   if (parsed.fault !== "none" && (parsed.expect !== "patched" || parsed.gate !== "on")) {
     throw new Error("Fault regression requires --expect patched --gate on");
@@ -177,7 +181,7 @@ async function main() {
     throw new Error(`Unexpected Pi package: ${packageInfo.name}@${packageInfo.version}`);
   }
 
-  const testRoot = join(agentDir, `midturn-compaction-regression-${args.expect}-${args.gate}-${args.fault}`);
+  const testRoot = join(agentDir, `midturn-compaction-regression-${args.profile}-${args.expect}-${args.gate}-${args.fault}`);
   const sessionDir = join(testRoot, "sessions");
   await rm(testRoot, { recursive: true, force: true });
   await mkdir(sessionDir, { recursive: true });
@@ -300,7 +304,7 @@ async function main() {
     PI_TELEMETRY: "0",
     PI_OFFLINE: "1",
     PI_MIDTURN_TEST_CWD: testRoot,
-    XINAO_PI_PROFILE: args.gate === "on" ? "prime-s" : "prime-b",
+    XINAO_PI_PROFILE: args.profile,
     XINAO_PI_MIDTURN_COMPACTION_BACKPRESSURE: args.gate === "on" ? "1" : "0",
   };
   const common = [
@@ -421,6 +425,8 @@ async function main() {
     marker: MARKER,
     expected_surface: args.expect,
     prime_s_runtime_gate: args.gate,
+    managed_profile: args.profile,
+    profile_scoped_runtime_gate: args.gate,
     fault_injection: args.fault,
     pi_version: packageInfo.version,
     provider_request_stages: stages,
