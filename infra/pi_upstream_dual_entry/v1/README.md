@@ -55,7 +55,11 @@ PiS 正常启动。`XINAO prime S` profile 另外固定 `closeOnExit=always`：�
 prime S 的可寻址通信由 profile-local `supervisor-ingress.ts` 和
 `understand-and-steer-prime` Skill 提供，支持 exact instance/session 的 prompt、忙态
 steer、follow-up、abort 与 stop。ACK 只是运输证据；必须继续回读 message consumed、
-agent settled、native transcript 和真实效果。重启后 instance 会改变，旧目标请求失效。
+agent settled、native transcript 和真实效果。idle 投递会先越过 Pi 把 `isIdle` 置真但
+`agent_settled` 尚未退栈的竞争窗口，防止只见 `runtime_accepted` 而正文未进入 session；
+延迟期间若目标转为 busy，idle prompt 显式失败而不偷换成 steer。stop 先取消 ingress 自己尚未
+消费的延迟/排队消息；其回执也只证明 shutdown 已请求，必须由 pipe/进程消失证明退出。重启后 instance 会改变，
+旧目标请求失效。
 
 初始化脚本会把共同合同岛与相应表面岛确定性合成为该 profile 的 `PI_CONTRACT.md`；launcher 每次启动前刷新该活动投影。profile 的 `AGENTS.md` 仍直接链接主 Codex 行为源，因此合同岛补 Pi 自己的关系，不复制第二套 Codex。
 
@@ -81,6 +85,25 @@ PiS 的 `gpt-5.6-sol` 上下文窗口由 profile 的 `models-store.json` provide
 `Set-PiSBodyConfiguration.ps1` 会精确移除 `models.json` 中同模型的本地 `contextWindow`
 覆盖，同时保留其他 provider/model 自定义。`Test-UpstreamPiDualEntry.ps1` 会从活动 catalog
 读回实际窗口并拒绝覆盖复发。当前观察值是 272000，但源码不把该漂移事实写死为未来上限。
+
+Pi 0.84.1 的普通 auto-compaction 只在完整 agent run 结算后检查；一个持续调用工具的长回合
+可以在中间追加 tool result 后立刻发出下一次 provider 请求，越过 `reserveTokens` 阈值。
+`Apply-PiSMidTurnCompactionCompatibility.ps1` 只在 `XINAO_PI_PROFILE=prime-s` 且 launcher
+显式开启 gate 时，复用 agent-core 已有的 `shouldStopAfterTurn`：在完整 tool result 边界估算
+下一请求上下文，达到阈值则先结束当前 loop、调用原生 compaction，再从同一 durable session
+的 tool result 继续。PrimeB 和未带 gate 的普通 Pi consumer 保持 0.84.1 原行为。补丁按包版本、
+上游源码 hash 与补丁 hash fail closed；`Test-PiSMidTurnCompaction.mjs` 使用本地确定性 provider
+同时证明上游红例、PiS gate 绿例、同 session compaction 持久化、完成结果消费，以及“压缩被取消且
+已有排队 steer”时仍不放行下一 provider 请求；各形态保留独立 receipt，不调用外部模型。
+首次应用会保存并校验精确上游 preimage。回滚先停止活动 PiS，运行
+`Restore-PiSMidTurnCompactionCompatibility.ps1`，再以
+`Start-UpstreamPi.ps1 -Profile prime-s -DisableMidTurnCompactionCompatibility` 启动已恢复的上游核心；
+普通 launcher/installer 会正式重新应用兼容层，不能在回退验证期间调用。恢复脚本只在当前字节等于
+已知补丁 hash 或已知上游 hash 时工作，不能用 preimage 覆盖未知包字节。
+
+核心候选不能直接在共享 Pi binary 上试验。`New-PiSBodyLab.ps1 -IsolatePiCore` 会在该 lab 下
+安装独立的 pinned `pi-tool-root`；再加 `-ApplyMidTurnCompactionCompatibility` 才把候选补丁施加
+到这份隔离核心。默认 body lab 不复制或修改共享核心。
 
 `pi-subagents@0.43.0` 的 Windows 兼容层同时闭合两条已复现路径：异步 workflow 使用独立
 `workflow-UUID`，不把 provider tool-call ID 当目录；file-only structured acceptance 在

@@ -22,7 +22,7 @@ This Skill defines how to operate the communication edge. The transport is the p
    - `follow_up`: queue a later user turn; while idle it starts a normal turn.
    - `compact`: while idle, invoke Pi's native compaction on the same durable session; optional instructions preserve the parent, live facts, decisions and return point without retaining raw tool noise.
    - `abort`: cancel the current operation but keep the TUI alive. It does not promise to drain already queued messages.
-   - `stop`: fail-closed Stop by shutting down the addressed PiS process, which also removes queued work. The durable native session remains resumable.
+   - `stop`: request fail-closed shutdown of the addressed PiS process, aborting an active run first when necessary. Its ACK is not process-exit proof; require the addressed pipe/process to disappear. The durable native session remains resumable.
 5. Poll the same process and session after delivery. A transport ACK or `dispatch_requested` is not `runtime_accepted`; acceptance is not `message_consumed`; consumption is not `agent_settled`; settled is not effect.
 6. Verify effect in the native transcript, produced artifact, repository/live consumer, or observed behavior. Then return to the surviving parent activity.
 

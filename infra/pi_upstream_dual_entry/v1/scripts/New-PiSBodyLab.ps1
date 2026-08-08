@@ -3,7 +3,9 @@
 param(
     [Parameter(Mandatory)][ValidatePattern('^[A-Za-z0-9][A-Za-z0-9._-]{0,79}$')][string]$LabId,
     [string[]]$CandidatePackage = @(),
-    [switch]$SeedSerperCredential
+    [switch]$SeedSerperCredential,
+    [switch]$IsolatePiCore,
+    [switch]$ApplyMidTurnCompactionCompatibility
 )
 
 $ErrorActionPreference = 'Stop'
@@ -13,6 +15,9 @@ Assert-PiDualEntryBinary
 $source = Get-PiDualEntrySpec -Profile 'prime-s'
 $labRoot = Join-Path $script:PiDualEntryStateRoot "body-labs\prime-s\$LabId"
 if (Test-Path -LiteralPath $labRoot) { throw "PI_S_BODY_LAB_ALREADY_EXISTS: $labRoot" }
+if ($ApplyMidTurnCompactionCompatibility -and -not $IsolatePiCore) {
+    throw 'PI_S_BODY_LAB_MIDTURN_PATCH_REQUIRES_ISOLATED_CORE'
+}
 
 $allPackages = @(@($source.Packages) + @($CandidatePackage) | Select-Object -Unique)
 foreach ($package in $allPackages) {
@@ -76,6 +81,29 @@ foreach ($package in $allPackages) {
 $subagentsCompatibility = (& (Join-Path $PSScriptRoot 'Apply-PiSSubagentsWindowsCompatibility.ps1') -AgentDir $labSpec.AgentDir) | ConvertFrom-Json
 $hermesSessionCompatibility = (& (Join-Path $PSScriptRoot 'Apply-PiSHermesSessionCompatibility.ps1') -AgentDir $labSpec.AgentDir) | ConvertFrom-Json
 
+$isolatedPiRoot = $null
+$isolatedPiVersion = $null
+$midTurnCompactionCompatibility = $null
+if ($IsolatePiCore) {
+    $isolatedPiRoot = Join-Path $labRoot 'pi-tool-root'
+    $npm = Get-Command npm.cmd -ErrorAction Stop
+    $coreInstallOutput = @(& $npm.Source install --prefix $isolatedPiRoot --no-audit --no-fund --save-exact "@earendil-works/pi-coding-agent@$script:PiDualEntryVersion" 2>&1)
+    if ($LASTEXITCODE -ne 0) {
+        throw "PI_S_BODY_LAB_CORE_INSTALL_FAILED: $($coreInstallOutput -join ' ')"
+    }
+    $isolatedPiCommand = Join-Path $isolatedPiRoot 'node_modules\.bin\pi.cmd'
+    if (-not (Test-Path -LiteralPath $isolatedPiCommand -PathType Leaf)) {
+        throw "PI_S_BODY_LAB_CORE_BINARY_MISSING: $isolatedPiCommand"
+    }
+    $isolatedPiVersion = ([string](& $isolatedPiCommand --version | Select-Object -First 1)).Trim()
+    if ($isolatedPiVersion -cne $script:PiDualEntryVersion) {
+        throw "PI_S_BODY_LAB_CORE_VERSION_MISMATCH: expected=$script:PiDualEntryVersion actual=$isolatedPiVersion"
+    }
+    if ($ApplyMidTurnCompactionCompatibility) {
+        $midTurnCompactionCompatibility = (& (Join-Path $PSScriptRoot 'Apply-PiSMidTurnCompactionCompatibility.ps1') -PiToolRoot $isolatedPiRoot) | ConvertFrom-Json
+    }
+}
+
 $serperReceipt = $null
 if ($SeedSerperCredential) {
     $serperReceipt = & (Join-Path $PSScriptRoot 'Set-PiSSerperCredential.ps1') -AgentDir $labSpec.AgentDir
@@ -111,6 +139,9 @@ Write-PiDualEntryJsonAtomic -Path $manifestPath -Value ([ordered]@{
     surface_overlay_manifest_sha256 = $overlay.Sha256
     subagents_windows_compatibility = $subagentsCompatibility
     hermes_session_compatibility = $hermesSessionCompatibility
+    isolated_pi_root = $isolatedPiRoot
+    isolated_pi_version = $isolatedPiVersion
+    midturn_compaction_compatibility = $midTurnCompactionCompatibility
     session_file_count = 0
     created_at = [DateTimeOffset]::Now.ToString('o')
 })

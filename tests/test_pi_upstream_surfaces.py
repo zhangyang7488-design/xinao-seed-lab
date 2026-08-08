@@ -301,6 +301,13 @@ def test_prime_s_supervisor_ingress_uses_owned_overlay_and_native_pi_seam() -> N
     assert "owned_editor_reconcile_skipped" in extension
     assert "PI_SUPERVISOR_REQUEST_ID_CONFLICT" in extension
     assert "deduplicated: true" in extension
+    assert "IDLE_DISPATCH_SETTLE_MS" in extension
+    assert 'emit("dispatch_attempted"' in extension
+    assert "deferred_past_idle_settlement" in extension
+    assert "TARGET_BECAME_BUSY_BEFORE_PROMPT" in extension
+    assert 'emit("message_consumption_missing"' in extension
+    assert "process_shutdown: false" in extension
+    assert "shutdown_requested: true" in extension
 
     assert "ACK" in skill and "consumed" in skill and "effect" in skill
     assert "pi-supervisor-command.mjs" in skill
@@ -314,6 +321,8 @@ def test_prime_s_supervisor_ingress_uses_owned_overlay_and_native_pi_seam() -> N
     assert "get_state" in client and "get_events" in client
     assert "--session" in client and "--profile" in client
     assert "WAIT_CAPABLE.has(args.command) && args.until" in client
+    assert "PI_SUPERVISOR_DELIVERY_FAILED" in client
+    assert "message_consumption_missing" in client
     assert '"compact_completed"' in client
     assert "process.stdin" in client
     assert "request_id_idempotency: true" in regression
@@ -322,6 +331,12 @@ def test_prime_s_supervisor_ingress_uses_owned_overlay_and_native_pi_seam() -> N
     assert "preexisting_draft_preserved: true" in regression
     assert "mismatch_preserved: true" in regression
     assert "plaintext_absent_from_events: true" in regression
+    assert "idle_settlement_race_deferred: true" in regression
+    assert "message_consumption_proven: true" in regression
+    assert "prompt_never_silently_becomes_steer: true" in regression
+    assert "client_fails_fast_on_typed_delivery_failure: true" in regression
+    assert "stop_cancels_unconsumed_owned_delivery: true" in regression
+    assert "stop_request_not_misreported_as_process_exit: true" in regression
     assert not (SOURCE_ROOT / "surface-overlays" / "prime-b" / "extensions").exists()
     assert not (SOURCE_ROOT / "surface-overlays" / "prime-b" / "skills").exists()
 
@@ -349,6 +364,85 @@ def test_pi_s_body_lab_is_isolated_version_pinned_and_session_empty() -> None:
     assert body_lab.index("$labSpec = [pscustomobject]$labValues") < body_lab.index(
         "Set-PiSSerperCredential.ps1"
     )
+
+
+def test_prime_s_midturn_compaction_uses_gated_core_seam_and_durable_resume() -> None:
+    compatibility = _text(
+        SOURCE_ROOT / "scripts" / "Apply-PiSMidTurnCompactionCompatibility.ps1"
+    )
+    restore = _text(
+        SOURCE_ROOT / "scripts" / "Restore-PiSMidTurnCompactionCompatibility.ps1"
+    )
+    regression = _text(
+        SOURCE_ROOT / "scripts" / "Test-PiSMidTurnCompaction.mjs"
+    )
+    installer = _text(SOURCE_ROOT / "scripts" / "Install-UpstreamPiCapabilities.ps1")
+    start = _text(SOURCE_ROOT / "scripts" / "Start-UpstreamPi.ps1")
+    body_lab = _text(SOURCE_ROOT / "scripts" / "New-PiSBodyLab.ps1")
+    surface_test = _text(SOURCE_ROOT / "scripts" / "Test-UpstreamPiDualEntry.ps1")
+    readme = _text(SOURCE_ROOT / "README.md")
+
+    assert "@earendil-works/pi-coding-agent@0.84.1" in compatibility
+    assert "91e72d5497f665e731cbd79da6a6e826d8cae7d2ce156a7dee39f8ca205e32c8" in compatibility
+    assert "604748b31a08b583aa056c1527b4f4d62afc69aefea28e094e53a8d7ce81185a" in compatibility
+    assert "PI_S_MIDTURN_PATCH_SOURCE_CONFLICT" in compatibility
+    assert "PI_S_MIDTURN_PATCH_PREIMAGE_CONFLICT" in compatibility
+    assert "PI_S_MIDTURN_PATCH_PREIMAGE_MISSING_OR_INVALID" in compatibility
+    assert "xinao-compatibility-preimages" in compatibility
+    assert "this.agent.shouldStopAfterTurn" in compatibility
+    assert 'process.env.XINAO_PI_PROFILE !== "prime-s"' in compatibility
+    assert "context.toolResults?.length" in compatibility
+    assert "estimateContextTokens(context.context.messages).tokens" in compatibility
+    assert "contextWindow <= 0" in compatibility
+    assert 'this._runAutoCompaction("threshold", true)' in compatibility
+    assert "completed_tool_boundary_stop = $true" in compatibility
+    assert "compact_and_continue_same_run = $true" in compatibility
+    assert "compaction_failure_stops_before_provider = $true" in compatibility
+    assert "rollback_requires_gate_off_and_verified_preimage_restore = $true" in compatibility
+
+    assert "xinao.pi_s_midturn_compaction_restore.v1" in restore
+    assert "PI_S_MIDTURN_RESTORE_PREIMAGE_INVALID" in restore
+    assert "PI_S_MIDTURN_RESTORE_SOURCE_CONFLICT" in restore
+    assert "604748b31a08b583aa056c1527b4f4d62afc69aefea28e094e53a8d7ce81185a" in restore
+
+    assert "PIS_MIDTURN_COMPACTION_REGRESSION_V1" in regression
+    assert '"warmup"' in regression and '"tool-call"' in regression
+    assert '"compact"' in regression and '"resume-after-tool"' in regression
+    assert "compaction_before_resume" in regression
+    assert "compaction_persisted" in regression
+    assert "completed_tool_result_consumed_after_compaction" in regression
+    assert "completed_tool_result_present_in_resume_request" in regression
+    assert "provider_request_blocked_after_compaction_cancel_with_queued_steer" in regression
+    assert '"cancel-with-steer"' in regression
+    assert 'const testAgentDir = join(testRoot, "agent")' in regression
+    assert "PI_CODING_AGENT_DIR: testAgentDir" in regression
+    assert 'readFile(join(agentDir, "settings.json")' in regression
+    assert 'join(testRoot, "receipt.json")' in regression
+    assert 'XINAO_PI_MIDTURN_COMPACTION_BACKPRESSURE: args.gate === "on" ? "1" : "0"' in regression
+    assert "external_provider_used: false" in regression
+
+    assert "Apply-PiSMidTurnCompactionCompatibility.ps1" in installer
+    assert "midturn_compaction_compatibility" in installer
+    assert "Apply-PiSMidTurnCompactionCompatibility.ps1" in start
+    assert "$env:XINAO_PI_MIDTURN_COMPACTION_BACKPRESSURE = '1'" in start
+    assert "Remove-Item Env:XINAO_PI_MIDTURN_COMPACTION_BACKPRESSURE" in start
+    assert "midturn_compaction_compatibility" in start
+    assert "midturn_compaction_runtime_enabled = ($Profile -eq 'prime-s' -and -not $DisableMidTurnCompactionCompatibility)" in start
+    assert "DisableMidTurnCompactionCompatibility" in start
+    assert "Restore-PiSMidTurnCompactionCompatibility.ps1" in start
+    assert "PI_SURFACE_TEST_MIDTURN_PATCH_STATUS_INVALID" in surface_test
+    assert "midturn_compaction_compatibility" in surface_test
+
+    assert "IsolatePiCore" in body_lab
+    assert "ApplyMidTurnCompactionCompatibility" in body_lab
+    assert "PI_S_BODY_LAB_MIDTURN_PATCH_REQUIRES_ISOLATED_CORE" in body_lab
+    assert "pi-tool-root" in body_lab
+    assert "PI_S_BODY_LAB_CORE_VERSION_MISMATCH" in body_lab
+    assert "midturn_compaction_compatibility" in body_lab
+
+    assert "shouldStopAfterTurn" in readme
+    assert "同一 durable session" in readme
+    assert "PrimeB 和未带 gate" in readme
 
 
 def test_prime_s_mature_body_is_profile_local_sparse_and_non_autonomous() -> None:
@@ -577,6 +671,9 @@ def test_codex_pis_steward_skill_recovers_durable_intent_without_second_truth() 
     assert "Track detection provenance as part of this loop" in skill
     assert "legitimate **local body optimization objectives**" in normalized_skill
     assert "marginal real cognition and consumer effect" in normalized_skill
+    assert "task-local `pi-subagents` model override" in normalized_skill
+    assert "Marker probes prove connectivity only" in normalized_skill
+    assert "spend alone proves neither value nor body maturity" in normalized_skill
     assert "verifies steering and plasticity, not autonomous self-evolution" in normalized_skill
     assert "does not contain the incident wording or answer" in normalized_skill
     assert "do not build a resident self-auditor" in normalized_skill
@@ -620,6 +717,9 @@ def test_codex_pis_steward_skill_recovers_durable_intent_without_second_truth() 
     assert "C:\\Users\\xx363\\私钥" in recovery
     assert "PrimeS-NumPadEnter-Follow.ahk" in recovery
     assert "Set-PiSDeepSeekCredential.ps1" in recovery
+    assert "deepseek/deepseek-v4-flash" in recovery
+    assert "deepseek/deepseek-v4-pro" in recovery
+    assert "per-run `model` override" in normalized_recovery
     assert "closeOnExit=always" in recovery
     assert "`refine`, `refine.show`, and `refine.rollback`" in recovery
     assert ".pi-subagents\\refinements" in recovery

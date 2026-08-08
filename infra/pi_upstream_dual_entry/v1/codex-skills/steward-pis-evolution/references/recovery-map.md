@@ -86,6 +86,13 @@ Serper credential store and `Set-PiSDeepSeekCredential.ps1` for Pi's native `dee
 `auth.json`. Re-probe the provider before claiming current availability. OpenAI account migration
 owns only the `openai-codex` entry and must preserve independent providers.
 
+The PiS model scope admits `deepseek/deepseek-v4-flash` and `deepseek/deepseek-v4-pro`, and
+`pi-subagents` accepts a per-run `model` override. Reuse the existing task-fit Pi child role with
+that override; do not create a permanent DeepSeek agent merely to force consumption. A marker child
+is a transport/auth probe only. For a real value or billing comparison, keep the task and evidence
+ruler fixed enough to compare, and bind the exact provider call to official balance before/after
+readback without exposing the credential.
+
 ## Communication
 
 - Source operation Skill:
@@ -96,7 +103,11 @@ owns only the `openai-codex` entry and must preserve independent providers.
 
 The client accepts delivery content on stdin or from a file. Always list/read state before a
 mutation and bind `profile + instance + session`. After restart, a resumed native session has a new
-process instance and stale mutations must fail.
+process instance and stale mutations must fail. For delivery, require `message_consumed`, not only
+`runtime_accepted`; apparently idle sends are deferred past Pi's `agent_settled` unwind race, and an
+idle prompt that becomes busy fails instead of becoming a steer. Stop cancels ingress-owned
+unconsumed delivery first. Its response proves only that shutdown was requested—confirm the exact
+pipe and owned process disappear.
 
 ## Body labs and adoption
 
@@ -108,6 +119,26 @@ A lab is session-empty and account/profile isolated. Installed candidates remain
 active PiS adoption, record the exact source/body version, config without secrets, credential
 consumer path, positive and negative evidence, known-good preimage, and rollback procedure. After
 adoption, fresh-launch PiS and re-run the real activity that exposed the gap.
+
+Core-runtime candidates need stronger isolation than profile packages. Use
+`New-PiSBodyLab.ps1 -LabId <id> -IsolatePiCore` to install a pinned Pi binary under the lab; add
+`-ApplyMidTurnCompactionCompatibility` only for the named candidate. The shared
+`D:\XINAO_RESEARCH_RUNTIME\tools\pi\0.84.1` core must remain unchanged until the isolated red/green
+consumer has passed. For the 0.84.1 long-tool-loop incident, run
+`Test-PiSMidTurnCompaction.mjs` against both the unpatched and patched roots. Required green evidence
+is provider order `tool-call -> compact -> resume-after-tool`, one durable session, a persisted
+compaction entry, and final consumption of the completed tool result. Gate-off behavior must retain
+the upstream order so PrimeB is not silently changed. Also run `--fault cancel-with-steer`: a
+cancelled native compaction with a queued steer must settle after the completed tool result and make
+no next provider request. The three runs use separate receipt roots so a gate-off run cannot erase
+the green evidence.
+
+To roll back this compatibility layer, stop the active PiS process, run
+`Restore-PiSMidTurnCompactionCompatibility.ps1`, verify the upstream hash, then launch with
+`Start-UpstreamPi.ps1 -Profile prime-s -DisableMidTurnCompactionCompatibility`. Do not run the normal
+launcher or capability installer during rollback validation because their formal path reapplies the
+known compatibility patch. A restarted process is required; restoring bytes cannot change a module
+already loaded by a live PiS TUI.
 
 PiB is outside the default write cone. Compare or promote to it only when the current parent names a
 B-side consumer or rollback check.

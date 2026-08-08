@@ -80,6 +80,12 @@ open to the current task; it never invents work.
   boundary so the resumed root and every newly spawned child consume the same account. PiB follows
   the equivalent rule inside `prime-b`. Never copy OAuth, sessions, or child trees across profiles,
   and preserve independent native-provider credentials such as DeepSeek during an account switch.
+- DeepSeek is a Pi-native provider available through a task-local `pi-subagents` model override, not
+  a permanent child role or a spending target. Admit Flash or Pro only on a naturally separable real
+  Pi-child question where provider difference may add evidence, keep the root/constraints and a fit
+  comparison visible, and judge the evidence and parent effect. Marker probes prove connectivity
+  only. When billing itself is under examination, pair the exact API run with official balance
+  before/after evidence; zero or positive spend alone proves neither value nor body maturity.
 - Treat the physical numpad bottom-right Enter as a PiS surface affordance, not a new submit
   convention: while the pointer is over the transcript it returns to the bottom and restores
   follow-output; while the pointer is over the input area it remains ordinary submit. Main Enter,

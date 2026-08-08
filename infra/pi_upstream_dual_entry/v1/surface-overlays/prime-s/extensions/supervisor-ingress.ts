@@ -9,6 +9,8 @@ const PIPE = process.env.XINAO_PI_SUPERVISOR_PIPE ?? "";
 const ENABLED = process.env.XINAO_PI_SUPERVISOR_ENABLED === "1" && PROFILE === "prime-s" && PIPE.length > 0;
 const MAX_REQUEST_BYTES = 1024 * 1024;
 const MAX_EVENTS = 512;
+const IDLE_DISPATCH_SETTLE_MS = 25;
+const RUNTIME_ACCEPTANCE_WATCHDOG_MS = 2_000;
 const INSTANCE_ID = randomUUID();
 
 type JsonObject = Record<string, unknown>;
@@ -28,9 +30,11 @@ type PendingDelivery = {
 	delivery: "prompt" | "steer" | "followUp";
 	content: string;
 	message_sha256: string;
+	dispatch_attempted: boolean;
 	runtime_accepted: boolean;
 	message_consumed: boolean;
 	aborted: boolean;
+	failure_reason?: string;
 };
 
 type PendingCompaction = {
@@ -166,6 +170,7 @@ export default function supervisorIngress(pi: ExtensionAPI): void {
 			delivery,
 			content,
 			message_sha256: sha256(content),
+			dispatch_attempted: false,
 			runtime_accepted: false,
 			message_consumed: false,
 			aborted: false,
@@ -176,9 +181,11 @@ export default function supervisorIngress(pi: ExtensionAPI): void {
 	}
 
 	function deliveryPhase(item: PendingDelivery): string {
+		if (item.failure_reason) return "dispatch_failed";
 		if (item.aborted) return "aborted";
 		if (item.message_consumed) return "message_consumed";
 		if (item.runtime_accepted) return "runtime_accepted";
+		if (item.dispatch_attempted) return "dispatch_attempted";
 		return "dispatch_requested";
 	}
 
@@ -221,6 +228,80 @@ export default function supervisorIngress(pi: ExtensionAPI): void {
 			editor_after_sha256: sha256(editorBefore),
 		});
 		return { owned_delivery_count: ordered.length, editor_reconciled: true };
+	}
+
+	function scheduleDelivery(item: PendingDelivery, sessionId: string, deferPastIdleSettlement: boolean): void {
+		const attempt = () => {
+			if (item.aborted || item.dispatch_attempted) return;
+			const ctx = currentContext;
+			if (!ctx || ctx.sessionManager.getSessionId() !== sessionId) {
+				item.aborted = true;
+				item.failure_reason = "TARGET_SESSION_CHANGED_BEFORE_DISPATCH";
+				item.content = "";
+				emit("dispatch_failed", {
+					request_id: item.request_id,
+					command: item.command,
+					message_sha256: item.message_sha256,
+					reason: "TARGET_SESSION_CHANGED_BEFORE_DISPATCH",
+				});
+				return;
+			}
+
+			const nowIdle = ctx.isIdle();
+			if (item.command === "prompt" && !nowIdle) {
+				item.aborted = true;
+				item.failure_reason = "TARGET_BECAME_BUSY_BEFORE_PROMPT";
+				item.content = "";
+				emit("dispatch_failed", {
+					request_id: item.request_id,
+					command: item.command,
+					message_sha256: item.message_sha256,
+					reason: item.failure_reason,
+				});
+				return;
+			}
+			if (nowIdle) item.delivery = "prompt";
+			else if (item.command === "follow_up") item.delivery = "followUp";
+			else item.delivery = "steer";
+			item.dispatch_attempted = true;
+			emit("dispatch_attempted", {
+				request_id: item.request_id,
+				command: item.command,
+				delivery: item.delivery,
+				message_sha256: item.message_sha256,
+				deferred_past_idle_settlement: deferPastIdleSettlement,
+			});
+			if (item.delivery === "prompt") pi.sendUserMessage(item.content);
+			else pi.sendUserMessage(item.content, { deliverAs: item.delivery });
+
+			const watchdog = setTimeout(() => {
+				if (item.aborted || item.message_consumed) return;
+				if (!item.runtime_accepted) {
+					emit("runtime_acceptance_missing", {
+						request_id: item.request_id,
+						command: item.command,
+						delivery: item.delivery,
+						message_sha256: item.message_sha256,
+					});
+				} else if (item.delivery === "prompt") {
+					emit("message_consumption_missing", {
+						request_id: item.request_id,
+						command: item.command,
+						delivery: item.delivery,
+						message_sha256: item.message_sha256,
+					});
+				}
+			}, RUNTIME_ACCEPTANCE_WATCHDOG_MS);
+			watchdog.unref();
+		};
+
+		// AgentSession sets isIdle=true immediately before it emits agent_settled.
+		// A pipe request can therefore observe idle while the previous settled
+		// stack is still unwinding. Starting a prompt synchronously in that window
+		// races the old run's finally block and can accept input without ever
+		// appending the user message. Cross one macrotask boundary first.
+		if (deferPastIdleSettlement) setTimeout(attempt, IDLE_DISPATCH_SETTLE_MS);
+		else attempt();
 	}
 
 	async function processRequest(request: SupervisorRequest): Promise<JsonObject> {
@@ -267,9 +348,37 @@ export default function supervisorIngress(pi: ExtensionAPI): void {
 			return { ok: true, phase: "abort_requested", request_id: requestId, was_idle: wasIdle, ...reconciliation };
 		}
 		if (command === "stop") {
-			emit("stop_requested", { request_id: requestId, pending_messages: ctx.hasPendingMessages() });
-			setTimeout(() => ctx.shutdown(), 50);
-			return { ok: true, phase: "stop_requested", request_id: requestId, process_shutdown: true };
+			const wasIdle = ctx.isIdle();
+			const editorBefore = ctx.mode === "tui" && ctx.hasUI ? ctx.ui.getEditorText() : "";
+			const ownedUnconsumed = pending.filter((item) => !item.message_consumed && !item.aborted);
+			emit("stop_requested", {
+				request_id: requestId,
+				was_idle: wasIdle,
+				pending_messages: ctx.hasPendingMessages(),
+				owned_unconsumed_count: ownedUnconsumed.length,
+			});
+			let reconciliation: JsonObject = { owned_delivery_count: ownedUnconsumed.length, editor_reconciled: false };
+			if (!wasIdle) {
+				ctx.abort();
+				reconciliation = reconcileOwnedAbortResidue(ctx, requestId, editorBefore, ownedUnconsumed);
+			}
+			for (const item of ownedUnconsumed) {
+				item.aborted = true;
+				item.content = "";
+			}
+			setTimeout(() => {
+				emit("shutdown_dispatched", { request_id: requestId });
+				ctx.shutdown();
+			}, 50);
+			return {
+				ok: true,
+				phase: "stop_requested",
+				request_id: requestId,
+				shutdown_requested: true,
+				process_shutdown: false,
+				was_idle: wasIdle,
+				...reconciliation,
+			};
 		}
 		if (command === "compact") {
 			const customInstructions = optionalContent(request);
@@ -359,29 +468,25 @@ export default function supervisorIngress(pi: ExtensionAPI): void {
 				command: existing.command,
 				delivery: existing.delivery,
 				message_sha256: existing.message_sha256,
+				failure_reason: existing.failure_reason,
 				deduplicated: true,
 			};
 		}
-		if (command === "prompt" && !ctx.isIdle()) {
+		const wasIdle = ctx.isIdle();
+		if (command === "prompt" && !wasIdle) {
 			throw new Error("PI_SUPERVISOR_BUSY_USE_STEER_OR_FOLLOW_UP");
 		}
 		let delivery: "prompt" | "steer" | "followUp" = "prompt";
-		if (!ctx.isIdle() && command === "follow_up") delivery = "followUp";
-		else if (!ctx.isIdle()) delivery = "steer";
+		if (!wasIdle && command === "follow_up") delivery = "followUp";
+		else if (!wasIdle) delivery = "steer";
 		const item = rememberDelivery(requestId, command, delivery, content);
 		emit("dispatch_requested", {
 			request_id: requestId,
 			command,
 			message_sha256: item.message_sha256,
-			was_idle: ctx.isIdle(),
+			was_idle: wasIdle,
 		});
-		if (ctx.isIdle()) {
-			pi.sendUserMessage(content);
-		} else if (command === "follow_up") {
-			pi.sendUserMessage(content, { deliverAs: "followUp" });
-		} else {
-			pi.sendUserMessage(content, { deliverAs: "steer" });
-		}
+		scheduleDelivery(item, ctx.sessionManager.getSessionId(), wasIdle);
 		return {
 			ok: true,
 			phase: "dispatch_requested",

@@ -145,7 +145,19 @@ foreach ($profileName in $Profile) {
     }
 
     $numpadAcceptance = $null
+    $midTurnCompactionAcceptance = $null
     if ($profileName -eq 'prime-s') {
+        $midTurnRaw = @(& (Join-Path $PSScriptRoot 'Apply-PiSMidTurnCompactionCompatibility.ps1') -VerifyOnly 2>&1)
+        $midTurnCompactionAcceptance = ($midTurnRaw -join [Environment]::NewLine) | ConvertFrom-Json
+        if (
+            [string]$midTurnCompactionAcceptance.schema -ne 'xinao.pi_s_midturn_compaction_compatibility.v1' -or
+            $midTurnCompactionAcceptance.prime_s_runtime_gate_required -ne $true -or
+            $midTurnCompactionAcceptance.completed_tool_boundary_stop -ne $true -or
+            $midTurnCompactionAcceptance.compact_and_continue_same_run -ne $true -or
+            $midTurnCompactionAcceptance.compaction_failure_stops_before_provider -ne $true
+        ) {
+            throw "PI_SURFACE_TEST_MIDTURN_PATCH_STATUS_INVALID: $($midTurnRaw -join ' ')"
+        }
         $numpadRaw = @(& (Join-Path $PSScriptRoot 'Set-PiSNumpadEnterFollow.ps1') -AgentDir $spec.AgentDir -ValidateOnly 2>&1)
         $numpadStatus = ($numpadRaw -join [Environment]::NewLine) | ConvertFrom-Json
         if ([string]$numpadStatus.status -ne 'ready' -or $numpadStatus.main_enter_unchanged -ne $true -or $numpadStatus.helper_failure_blocks_pi -ne $false) {
@@ -225,6 +237,7 @@ Without using tools, report instructions already present in your current context
         missions_enabled = [bool]$subagentConfig.missions.enabled
         provider_catalog_context_window = $catalogContextWindow
         profile_context_window_override_absent = $profileContextWindowOverrideAbsent
+        midturn_compaction_compatibility = $midTurnCompactionAcceptance
         numpad_enter_follow = $numpadAcceptance
         live_model_probe = $liveProbe
     }

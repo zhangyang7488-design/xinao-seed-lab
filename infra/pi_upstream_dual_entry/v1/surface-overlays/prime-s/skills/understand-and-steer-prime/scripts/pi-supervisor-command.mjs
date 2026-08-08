@@ -10,6 +10,7 @@ const MUTATING = new Set(["prompt", "steer", "follow_up", "compact", "abort", "s
 const DELIVERY = new Set(["prompt", "steer", "follow_up"]);
 const WAIT_CAPABLE = new Set([...DELIVERY, "compact"]);
 const WAITABLE = new Set(["runtime_accepted", "message_consumed", "agent_settled", "compact_completed", "compact_failed", "abort_requested"]);
+const DELIVERY_FAILURES = new Set(["dispatch_failed", "runtime_acceptance_missing", "message_consumption_missing"]);
 
 function fail(text, code = 2) {
 	process.stderr.write(`${text}\n`);
@@ -120,6 +121,10 @@ async function waitForEvent(args) {
 		if (!sameTarget(response.state, args)) fail("PI_SUPERVISOR_TARGET_CHANGED_WHILE_WAITING", 1);
 		for (const event of response.events ?? []) {
 			since = Math.max(since, Number(event.sequence) || 0);
+			if (event.request_id === args.requestId && DELIVERY_FAILURES.has(event.kind)) {
+				const detail = event.reason ?? event.error_text ?? "delivery did not reach the requested phase";
+				fail(`PI_SUPERVISOR_DELIVERY_FAILED request=${args.requestId} kind=${event.kind}: ${detail}`, 1);
+			}
 			if (args.until === "compact_completed" && event.request_id === args.requestId && event.kind === "compact_failed") {
 				fail(`PI_SUPERVISOR_COMPACTION_FAILED request=${args.requestId}: ${event.error_text ?? "unknown error"}`, 1);
 			}
@@ -163,6 +168,9 @@ try {
 		}
 		response = await request(args.pipe, body, args.timeout);
 		assertResponse(response);
+		if (DELIVERY.has(args.command) && (response.phase === "aborted" || response.phase === "dispatch_failed")) {
+			fail(`PI_SUPERVISOR_DELIVERY_FAILED request=${body.request_id} phase=${response.phase}: ${response.failure_reason ?? "delivery is terminal"}`, 1);
+		}
 		if (WAIT_CAPABLE.has(args.command) && args.until) {
 			if (!WAITABLE.has(args.until)) fail(`${args.command} --until must be <${[...WAITABLE].join("|")}>`);
 			if (response.phase === args.until) {

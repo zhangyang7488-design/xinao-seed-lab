@@ -29,9 +29,11 @@ foreach ($profileName in $Profile) {
     }
     $subagentsCompatibility = $null
     $hermesSessionCompatibility = $null
+    $midTurnCompactionCompatibility = $null
     if ($profileName -eq 'prime-s') {
         $subagentsCompatibility = (& (Join-Path $PSScriptRoot 'Apply-PiSSubagentsWindowsCompatibility.ps1') -AgentDir $spec.AgentDir) | ConvertFrom-Json
         $hermesSessionCompatibility = (& (Join-Path $PSScriptRoot 'Apply-PiSHermesSessionCompatibility.ps1') -AgentDir $spec.AgentDir) | ConvertFrom-Json
+        $midTurnCompactionCompatibility = (& (Join-Path $PSScriptRoot 'Apply-PiSMidTurnCompactionCompatibility.ps1')) | ConvertFrom-Json
     }
     $list = @(& $script:PiDualEntryCommand list 2>&1)
     if ($LASTEXITCODE -ne 0) { throw "PI_CAPABILITY_LIST_FAILED: profile=$profileName output=$($list -join ' ')" }
@@ -51,6 +53,7 @@ foreach ($profileName in $Profile) {
         automatic_autoresearch_loop_started = $false
         subagents_windows_compatibility = $subagentsCompatibility
         hermes_session_compatibility = $hermesSessionCompatibility
+        midturn_compaction_compatibility = $midTurnCompactionCompatibility
     }
 }
 $receipts | ConvertTo-Json -Depth 6
