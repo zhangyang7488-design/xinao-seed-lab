@@ -13,11 +13,38 @@ S 只承载 PrimeB 与 prime S 的启动、投影、认证绑定、包安装、�
 
 研究新澳和改进 Pi 自身都是一个完整 Pi 可以在同一个 active session 内开展的活动，不是角色、profile 或 session 类型。prime S 是否可用和成熟由它自己的 fresh 消费者决定，不以 PrimeB 接收增量为完成门槛；PrimeB 仍有独立的最低真实工作能力完成尺，不能用“能启动”代替。只有某个已证明增量确有 B 侧消费者时，才做选择性晋升和 B fresh 验收。
 
-每个 profile 内的 `account-binding.json` 只选择该表面的 OAuth 来源。`Set-UpstreamPiAccountBinding.ps1 -Profile prime-b|prime-s -Slot main|account-b` 不改另一表面、行为核、Skills、session 或仓库。
+每个 profile 内的 `account-binding.json` 只选择该表面的 OAuth 来源。`Set-UpstreamPiAccountBinding.ps1 -Profile prime-b|prime-s -Slot main|account-b` 不改另一表面、行为核、Skills、session 或仓库。切换只允许在该 profile 停止后发生，只替换 native `auth.json` 的 `openai-codex` 项；新启动的根 Pi 与后续 OpenAI 孩子共同消费这一 profile，DeepSeek 等独立 provider 原样保留。切换后的真实根/孩子验收仍必须重跑，脚本本身不把“写入成功”冒充消费成功。
+
+prime S 当前的稀疏身体还包括 profile-local Hermes memory/session anchors、默认冷置且空
+server 的 MCP adapter、原生 Serper `web_search`、以及 native DeepSeek V4 Flash/Pro。
+Luna、Terra 与 DeepSeek 的递归劳动都通过 `pi-subagents` child session 发生，不等于
+Codex 外部 WorkerPool；具体任务是否调用某个器官仍由根 Pi 按真实信息收益选择。
+Hermes 的 PiS 兼容层会跳过 `sessions\subagent-artifacts` 中的孩子 transcript 账本，避免
+把它们误报成损坏的 Pi v3 session；账本本身保留，主 session 与孩子 session 均不删除。
 
 用户入口分别是 `Open-Prime-Agent-Account-B.ps1` 与 `Open-Prime-S.ps1`，对应独立 Windows
 Terminal profile；旧 `Open-Prime-Codex-Parity-Test.ps1` 只作无状态兼容转发，不再承担
 “同一会话 parity mode”语义。
+
+普通桌面启动使用 Pi 原生 `--continue`。事故恢复或精确返回时，
+`Open-Prime-S.ps1 -Session <native-session-id|profile-local-session-file>` 可在本 profile 内恢复具名 session；
+`-NewSession` 与 `-Session` 互斥，跨 profile 路径会拒绝。RPC/验收脚本默认使用
+`--no-session`，不得污染桌面最近会话。
+
+prime S 还继承了旧 PrimeB 已经由用户真实确认的小键盘回车双语义，但没有沿用旧 Prime
+动作名：`scripts\Set-PiSNumpadEnterFollow.ps1` 把物理 `NumpadEnter` 限定在标题为
+`prime S` 的 Windows Terminal 窗口。鼠标在底部输入区时发送普通 `Enter`；鼠标在输出区
+时发送 `F12`，由 Pi 0.84.1 profile 的 `tui.altScreen.bottom` 消费，滚到输出末尾并恢复
+跟随。原生 `End`、主键盘 `Enter`、Windows Terminal 全局键位和 PrimeB 均保持不变；
+AutoHotkey 辅助由 launcher 隐藏启动并随 owner 退出，缺失或失败只降低这项便利，不能阻断
+PiS 正常启动。`XINAO prime S` profile 另外固定 `closeOnExit=always`：失败或已停止的 Pi
+页签自动退场，不把“进程已退出”残页留给用户；它不作用于其他 Windows Terminal profile
+或 Codex 页签。
+
+prime S 的可寻址通信由 profile-local `supervisor-ingress.ts` 和
+`understand-and-steer-prime` Skill 提供，支持 exact instance/session 的 prompt、忙态
+steer、follow-up、abort 与 stop。ACK 只是运输证据；必须继续回读 message consumed、
+agent settled、native transcript 和真实效果。重启后 instance 会改变，旧目标请求失效。
 
 初始化脚本会把共同合同岛与相应表面岛确定性合成为该 profile 的 `PI_CONTRACT.md`；launcher 每次启动前刷新该活动投影。profile 的 `AGENTS.md` 仍直接链接主 Codex 行为源，因此合同岛补 Pi 自己的关系，不复制第二套 Codex。
 
@@ -33,3 +60,8 @@ auth、account-binding、sessions、整 profile 和整岛复制。包/launcher/r
 `scripts\Test-PiCrossRepositoryContext.ps1` 默认只验证 prime S；需要回退面证据时才显式传
 `-Profile prime-b`。探针用 fresh、no-session、只读工具实际读取新澳仓的 `AGENTS.md` 与
 `STATUS.md`，验证跨仓连续性来自当前对象识别和局部语义恢复，而不是切换 Pi 身份或只让模型复述热合同。
+
+`codex-skills\steward-pis-evolution` 是 Codex 侧的薄恢复/操作入口：它不复制 Pi 认知正文，
+而是先回读共同合同岛与当前能力谱系，再按需进入真实 profile、通信边缘、身体实验室和消费者。
+`scripts\Install-CodexPiSStewardSkill.ps1` 将这一源码确定性投影到主 Codex Skills；Account B
+通过既有 `skills` junction 共同消费，不生成第二份配置源。

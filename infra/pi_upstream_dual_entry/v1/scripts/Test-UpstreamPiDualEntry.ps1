@@ -114,6 +114,22 @@ foreach ($profileName in $Profile) {
         throw "PI_SURFACE_TEST_REQUIRED_SKILLS_MISSING: profile=$profileName skills=$($missingSkills -join ',')"
     }
 
+    $numpadAcceptance = $null
+    if ($profileName -eq 'prime-s') {
+        $numpadRaw = @(& (Join-Path $PSScriptRoot 'Set-PiSNumpadEnterFollow.ps1') -AgentDir $spec.AgentDir -ValidateOnly 2>&1)
+        $numpadStatus = ($numpadRaw -join [Environment]::NewLine) | ConvertFrom-Json
+        if ([string]$numpadStatus.status -ne 'ready' -or $numpadStatus.main_enter_unchanged -ne $true -or $numpadStatus.helper_failure_blocks_pi -ne $false) {
+            throw "PI_SURFACE_TEST_NUMPAD_STATUS_INVALID: $($numpadRaw -join ' ')"
+        }
+        $piPackageRoot = Join-Path $script:PiDualEntryToolRoot 'node_modules\@earendil-works\pi-coding-agent'
+        $numpadProbeRaw = @(& node (Join-Path $PSScriptRoot 'Test-PiSNumpadEnterFollow.mjs') $spec.AgentDir $piPackageRoot 2>&1)
+        if ($LASTEXITCODE -ne 0) { throw "PI_SURFACE_TEST_NUMPAD_KEYBINDINGS_FAILED: $($numpadProbeRaw -join ' ')" }
+        $numpadAcceptance = ($numpadProbeRaw -join [Environment]::NewLine) | ConvertFrom-Json
+        if ([string]$numpadAcceptance.status -ne 'verified') {
+            throw "PI_SURFACE_TEST_NUMPAD_KEYBINDINGS_NOT_VERIFIED: $($numpadProbeRaw -join ' ')"
+        }
+    }
+
     $liveProbe = $null
     if ($RunLiveModelProbe) {
         $probePrompt = @"
@@ -177,6 +193,7 @@ Without using tools, report instructions already present in your current context
         subagent_artifact_dir = [string]$subagentConfig.artifactDir
         scheduled_runs_enabled = [bool]$subagentConfig.scheduledRuns.enabled
         missions_enabled = [bool]$subagentConfig.missions.enabled
+        numpad_enter_follow = $numpadAcceptance
         live_model_probe = $liveProbe
     }
 }
@@ -205,7 +222,13 @@ if ($wrapperSText -notmatch 'Start-UpstreamPi\.ps1' -or $wrapperSText -notmatch 
 $terminalSettingsPath = 'C:\Users\xx363\AppData\Local\Packages\Microsoft.WindowsTerminal_8wekyb3d8bbwe\LocalState\settings.json'
 $terminalSettings = Get-Content -Raw -LiteralPath $terminalSettingsPath -Encoding UTF8 | ConvertFrom-Json
 $primeSProfile = @($terminalSettings.profiles.list | Where-Object { [string]$_.name -eq 'XINAO prime S' })
-if ($primeSProfile.Count -ne 1 -or [string]$primeSProfile[0].commandline -notmatch 'Open-Prime-S\.ps1') {
+if (
+    $primeSProfile.Count -ne 1 -or
+    [string]$primeSProfile[0].commandline -notmatch 'Open-Prime-S\.ps1' -or
+    [string]$primeSProfile[0].tabTitle -ne 'prime S' -or
+    $primeSProfile[0].suppressApplicationTitle -ne $true -or
+    [string]$primeSProfile[0].closeOnExit -ne 'always'
+) {
     throw 'PI_SURFACE_TEST_PRIME_S_TERMINAL_PROFILE_STALE'
 }
 $shortcutPath = 'C:\Users\xx363\Desktop\prime S.lnk'

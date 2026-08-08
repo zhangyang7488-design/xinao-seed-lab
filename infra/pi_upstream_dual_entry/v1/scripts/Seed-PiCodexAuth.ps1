@@ -62,13 +62,37 @@ foreach ($profileName in $Profile) {
     }
 
     if ($Force -or $status -in @('seeded-new-profile','rebound-to-selected-account')) {
-        Write-PiDualEntryJsonAtomic -Path $target -Value ([ordered]@{'openai-codex' = $provider})
+        # Account migration owns only the openai-codex credential. Preserve independent
+        # native Pi providers (for example DeepSeek) instead of replacing auth.json.
+        $mergedAuth = [ordered]@{}
+        if (Test-Path -LiteralPath $target -PathType Leaf) {
+            try {
+                $existingAuth = Get-Content -Raw -LiteralPath $target -Encoding UTF8 | ConvertFrom-Json
+            } catch {
+                throw "PI_PROFILE_AUTH_MERGE_SOURCE_INVALID: profile=$profileName target=$target"
+            }
+            foreach ($property in @($existingAuth.PSObject.Properties)) {
+                if ($property.Name -cne 'openai-codex') {
+                    $mergedAuth[$property.Name] = $property.Value
+                }
+            }
+        }
+        $mergedAuth['openai-codex'] = $provider
+        Write-PiDualEntryJsonAtomic -Path $target -Value $mergedAuth
     }
     if (-not (Test-PiDualEntryAuth -Path $target)) {
         throw "PI_PROFILE_AUTH_WRITE_FAILED: profile=$profileName"
     }
 
-    $accountHash = [Convert]::ToHexString([Security.Cryptography.SHA256]::HashData([Text.Encoding]::UTF8.GetBytes([string]$provider.accountId))).ToLowerInvariant()
+    $accountHasher = [Security.Cryptography.SHA256]::Create()
+    try {
+        $accountHashBytes = $accountHasher.ComputeHash(
+            [Text.Encoding]::UTF8.GetBytes([string]$provider.accountId)
+        )
+        $accountHash = ([BitConverter]::ToString($accountHashBytes) -replace '-', '').ToLowerInvariant()
+    } finally {
+        $accountHasher.Dispose()
+    }
     $receipts += [ordered]@{
         profile = $profileName
         account_slot = $spec.AccountSlot
@@ -77,6 +101,7 @@ foreach ($profileName in $Profile) {
         target = $target
         auth_sha256 = (Get-FileHash -Algorithm SHA256 -LiteralPath $target).Hash.ToLowerInvariant()
         account_id_sha256 = $accountHash
+        independent_provider_credentials_preserved = $true
         secret_values_emitted = $false
     }
 }

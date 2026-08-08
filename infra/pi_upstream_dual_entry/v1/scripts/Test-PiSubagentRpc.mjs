@@ -2,6 +2,7 @@
 
 import fs from "node:fs";
 import path from "node:path";
+import { createHash } from "node:crypto";
 import { pathToFileURL } from "node:url";
 
 function parseArgs(argv) {
@@ -92,10 +93,16 @@ function messagePartsText(content) {
 function inspectChildSession(file, marker) {
   let assistantText = "";
   let cleanStop = false;
+  let provider;
+  let model;
   try {
     for (const line of fs.readFileSync(file, "utf8").split(/\r?\n/)) {
       if (!line.trim()) continue;
       const entry = JSON.parse(line);
+      if (entry?.type === "model_change") {
+        provider = entry.provider;
+        model = entry.modelId;
+      }
       const message = entry?.type === "message" ? entry.message : undefined;
       if (message?.role !== "assistant") continue;
       const text = messagePartsText(message.content);
@@ -106,7 +113,7 @@ function inspectChildSession(file, marker) {
     return null;
   }
   if (!cleanStop || !assistantText.includes(marker)) return null;
-  return { assistantText };
+  return { assistantText, provider, model };
 }
 
 function recentSuccessfulRun(historyPath, startedAt, agent) {
@@ -170,6 +177,19 @@ async function main() {
   for (const directory of [cwd, agentDir, sessionDir, codexHome]) {
     if (!fs.statSync(directory).isDirectory()) throw new Error(`Required directory is not a directory: ${directory}`);
   }
+  const bindingPath = path.join(agentDir, "account-binding.json");
+  const authPath = path.join(agentDir, "auth.json");
+  for (const file of [bindingPath, authPath]) {
+    if (!fs.statSync(file).isFile()) throw new Error(`Required account file is not a file: ${file}`);
+  }
+  const binding = JSON.parse(fs.readFileSync(bindingPath, "utf8"));
+  const auth = JSON.parse(fs.readFileSync(authPath, "utf8"));
+  if (binding.active_slot !== accountSlot || path.resolve(binding.selected_codex_home).toLowerCase() !== path.resolve(codexHome).toLowerCase()) {
+    throw new Error(`Profile binding does not match invocation: ${JSON.stringify({ active_slot: binding.active_slot, selected_codex_home: binding.selected_codex_home })}`);
+  }
+  const accountId = auth?.["openai-codex"]?.accountId;
+  if (typeof accountId !== "string" || accountId.length === 0) throw new Error("Profile openai-codex accountId is missing");
+  const accountIdSha256 = createHash("sha256").update(accountId, "utf8").digest("hex");
 
   const { RpcClient } = await import(pathToFileURL(rpcClientPath).href);
   const client = new RpcClient({
@@ -257,6 +277,10 @@ async function main() {
     if (childSessions.length === 0 || childSessions.some((file) => !path.resolve(file).toLowerCase().startsWith(normalizedSessionRoot))) {
       throw new Error(`Child session escaped profile session root: ${childSessions.join(",")}`);
     }
+    const childModels = childSessions.map((file) => inspectChildSession(file, marker));
+    if (childModels.some((item) => !item || item.provider !== "openai-codex")) {
+      throw new Error(`Child did not consume the selected profile's native OpenAI provider: ${JSON.stringify(childModels)}`);
+    }
     const receipt = {
       schema: "xinao.pi_subagent_rpc_acceptance.v1",
       status: "verified",
@@ -268,6 +292,13 @@ async function main() {
       child_agents: terminal.results.map((result) => result.agent),
       child_sessions: childSessions,
       child_sessions_under_profile_root: true,
+      profile: path.basename(path.resolve(agentDir)),
+      account_slot: accountSlot,
+      account_id_sha256: accountIdSha256,
+      profile_binding_matches_invocation: true,
+      root_provider: "openai-codex",
+      child_models: childModels.map((item) => ({ provider: item.provider, model: item.model })),
+      root_and_child_native_openai_consumed: true,
       observation_source: terminal.observationSource ?? "rpc-custom-message",
       duration_ms: Date.now() - startedAt,
     };

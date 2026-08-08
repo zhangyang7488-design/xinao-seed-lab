@@ -122,6 +122,10 @@ function Get-PiDualEntrySpec {
         OverlayRoot = $overlayRoot
         OverlayAgentDir = Join-Path $overlayRoot 'agents'
         OverlayContractDir = Join-Path $overlayRoot 'contract'
+        OverlayExtensionDir = Join-Path $overlayRoot 'extensions'
+        OverlaySkillDir = Join-Path $overlayRoot 'skills'
+        OverlayProjectionManifest = Join-Path $agentDir 'xinao-surface-overlay-manifest.json'
+        SupervisorPipe = $(if ($Profile -eq 'prime-s') { '\\.\pipe\xinao-pi-supervisor-prime-s-v1' } else { $null })
     }
     if ($Profile -eq 'prime-b') {
         return [pscustomobject]($common + [ordered]@{
@@ -132,6 +136,7 @@ function Get-PiDualEntrySpec {
             SurfaceContractSource = 'E:\XINAO_RESEARCH_WORKSPACES\prime-agent-local-cognition-island\AGENTS.md'
             SurfaceSentinel = 'PI_SURFACE_PRIME_B_V3'
             Packages = @('npm:pi-subagents@0.43.0')
+            ExcludedTools = @()
             MutexName = 'Local\XinaoUpstreamPi0841B'
         })
     }
@@ -142,7 +147,8 @@ function Get-PiDualEntrySpec {
         SurfaceIsland = 'E:\XINAO_RESEARCH_WORKSPACES\prime-s-local-cognition-island'
         SurfaceContractSource = 'E:\XINAO_RESEARCH_WORKSPACES\prime-s-local-cognition-island\AGENTS.md'
         SurfaceSentinel = 'PI_SURFACE_PRIME_S_V1'
-        Packages = @('npm:pi-subagents@0.43.0','npm:pi-autoresearch@1.6.2')
+        Packages = @('npm:pi-subagents@0.43.0','npm:pi-autoresearch@1.6.2','npm:pi-hermes-memory@0.9.4','npm:pi-mcp-adapter@2.21.0')
+        ExcludedTools = @('skill_manage','mcp','mcpScript')
         MutexName = 'Local\XinaoUpstreamPi0841S'
     })
 }
@@ -176,6 +182,91 @@ function Sync-PiDualEntryContractProjection {
         FamilySha256 = (Get-FileHash -Algorithm SHA256 -LiteralPath $Spec.FamilyContractSource).Hash.ToLowerInvariant()
         SurfaceSha256 = (Get-FileHash -Algorithm SHA256 -LiteralPath $Spec.SurfaceContractSource).Hash.ToLowerInvariant()
         Sources = @($contractSources)
+    }
+}
+
+function Sync-PiDualEntrySurfaceOverlay {
+    param([Parameter(Mandatory)]$Spec)
+
+    New-Item -ItemType Directory -Force -Path $Spec.AgentDir | Out-Null
+    $previousOwned = @()
+    if (Test-Path -LiteralPath $Spec.OverlayProjectionManifest -PathType Leaf) {
+        try {
+            $previous = Get-Content -Raw -LiteralPath $Spec.OverlayProjectionManifest -Encoding UTF8 | ConvertFrom-Json
+        } catch {
+            throw "PI_PROFILE_OVERLAY_MANIFEST_INVALID: $($Spec.OverlayProjectionManifest)"
+        }
+        if ([string]$previous.schema -ne 'xinao.pi_surface_overlay_projection.v1' -or [string]$previous.profile -ne [string]$Spec.Profile) {
+            throw "PI_PROFILE_OVERLAY_MANIFEST_IDENTITY_MISMATCH: $($Spec.OverlayProjectionManifest)"
+        }
+        $previousOwned = @($previous.owned_files | ForEach-Object { [string]$_ })
+    }
+
+    $sourceKinds = [ordered]@{
+        extensions = $Spec.OverlayExtensionDir
+        skills = $Spec.OverlaySkillDir
+    }
+    $owned = @()
+    $hashes = [ordered]@{}
+    foreach ($kind in $sourceKinds.Keys) {
+        $sourceRoot = [string]$sourceKinds[$kind]
+        if (-not (Test-Path -LiteralPath $sourceRoot -PathType Container)) { continue }
+        $sourcePrefix = [IO.Path]::GetFullPath($sourceRoot).TrimEnd('\','/') + [IO.Path]::DirectorySeparatorChar
+        foreach ($source in @(Get-ChildItem -LiteralPath $sourceRoot -Recurse -File | Sort-Object FullName)) {
+            $sourceFull = [IO.Path]::GetFullPath($source.FullName)
+            if (-not $sourceFull.StartsWith($sourcePrefix,[StringComparison]::OrdinalIgnoreCase)) {
+                throw "PI_PROFILE_OVERLAY_SOURCE_ESCAPE: $sourceFull"
+            }
+            $relative = $sourceFull.Substring($sourcePrefix.Length).Replace('\','/')
+            if ([string]::IsNullOrWhiteSpace($relative) -or $relative -match '(^|/)\.\.(/|$)') {
+                throw "PI_PROFILE_OVERLAY_RELATIVE_PATH_INVALID: $relative"
+            }
+            $ownedRelative = "$kind/$relative"
+            if ($ownedRelative -in $owned) { throw "PI_PROFILE_OVERLAY_SOURCE_COLLISION: $ownedRelative" }
+            $destination = Join-Path $Spec.AgentDir $ownedRelative.Replace('/','\')
+            $destinationParent = Split-Path -Parent $destination
+            New-Item -ItemType Directory -Force -Path $destinationParent | Out-Null
+            $sourceHash = (Get-FileHash -Algorithm SHA256 -LiteralPath $sourceFull).Hash.ToLowerInvariant()
+            if ((Test-Path -LiteralPath $destination -PathType Leaf) -and $ownedRelative -notin $previousOwned) {
+                $existingHash = (Get-FileHash -Algorithm SHA256 -LiteralPath $destination).Hash.ToLowerInvariant()
+                if ($existingHash -ne $sourceHash) {
+                    throw "PI_PROFILE_OVERLAY_PROJECTION_CONFLICT: $destination"
+                }
+            }
+            Copy-Item -LiteralPath $sourceFull -Destination $destination -Force
+            $destinationHash = (Get-FileHash -Algorithm SHA256 -LiteralPath $destination).Hash.ToLowerInvariant()
+            if ($destinationHash -ne $sourceHash) { throw "PI_PROFILE_OVERLAY_PROJECTION_DRIFT: $destination" }
+            $owned += $ownedRelative
+            $hashes[$ownedRelative] = $sourceHash
+        }
+    }
+
+    $agentPrefix = [IO.Path]::GetFullPath($Spec.AgentDir).TrimEnd('\','/') + [IO.Path]::DirectorySeparatorChar
+    foreach ($stale in @($previousOwned | Where-Object { $_ -notin $owned })) {
+        if ($stale -notmatch '^(extensions|skills)/' -or $stale -match '(^|/)\.\.(/|$)') {
+            throw "PI_PROFILE_OVERLAY_STALE_PATH_INVALID: $stale"
+        }
+        $stalePath = [IO.Path]::GetFullPath((Join-Path $Spec.AgentDir $stale.Replace('/','\')))
+        if (-not $stalePath.StartsWith($agentPrefix,[StringComparison]::OrdinalIgnoreCase)) {
+            throw "PI_PROFILE_OVERLAY_STALE_PATH_ESCAPE: $stalePath"
+        }
+        if (Test-Path -LiteralPath $stalePath -PathType Leaf) {
+            Remove-Item -LiteralPath $stalePath -Force
+        }
+    }
+
+    Write-PiDualEntryJsonAtomic -Path $Spec.OverlayProjectionManifest -Value ([ordered]@{
+        schema = 'xinao.pi_surface_overlay_projection.v1'
+        profile = $Spec.Profile
+        source_root = $Spec.OverlayRoot
+        owned_files = @($owned)
+        sha256 = $hashes
+    })
+    [pscustomobject]@{
+        Path = $Spec.OverlayProjectionManifest
+        Sha256 = (Get-FileHash -Algorithm SHA256 -LiteralPath $Spec.OverlayProjectionManifest).Hash.ToLowerInvariant()
+        OwnedFiles = @($owned)
+        Hashes = $hashes
     }
 }
 

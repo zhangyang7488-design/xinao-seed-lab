@@ -20,6 +20,8 @@ foreach ($profileName in $Profile) {
         if (-not (Test-Path -LiteralPath $required)) { throw "PI_PROFILE_SOURCE_MISSING: $required" }
     }
     $contractProjection = Sync-PiDualEntryContractProjection -Spec $spec
+    $surfaceOverlay = Sync-PiDualEntrySurfaceOverlay -Spec $spec
+    $numpadEnterFollow = $null
 
     $settingsPath = Join-Path $spec.AgentDir 'settings.json'
     $existingPackages = @()
@@ -53,6 +55,17 @@ foreach ($profileName in $Profile) {
             modelScope = [ordered]@{enforce=$true;allow=@('openai-codex/gpt-5.6-*')}
         }
     }
+    if ($profileName -eq 'prime-s') {
+        # PiS is intentionally observable: the user wants the visible reasoning stream,
+        # provided it is natural Chinese. Ctrl+T remains available for a temporary fold.
+        $settings['hideThinkingBlock'] = $false
+        # DeepSeek is an independent native Pi provider. It expands the Pi-native child
+        # model ecology without routing through a Codex WorkerPool or another profile.
+        $settings['subagents']['modelScope']['allow'] = @(
+            'openai-codex/gpt-5.6-*',
+            'deepseek/deepseek-v4-*'
+        )
+    }
     if ($existingPackages.Count -gt 0) { $settings.packages = $existingPackages }
     Write-PiDualEntryJsonAtomic -Path $settingsPath -Value $settings
 
@@ -79,6 +92,12 @@ foreach ($profileName in $Profile) {
         parallel = [ordered]@{maxTasks=8;concurrency=4}
     }
     Write-PiDualEntryJsonAtomic -Path $subagentConfigPath -Value $subagentConfig
+
+    if ($profileName -eq 'prime-s') {
+        & (Join-Path $PSScriptRoot 'Set-PiSBodyConfiguration.ps1') -AgentDir $spec.AgentDir | Out-Null
+        $numpadRaw = & (Join-Path $PSScriptRoot 'Set-PiSNumpadEnterFollow.ps1') -AgentDir $spec.AgentDir
+        $numpadEnterFollow = ($numpadRaw -join [Environment]::NewLine) | ConvertFrom-Json
+    }
 
     $agentsPath = Join-Path $spec.AgentDir 'AGENTS.md'
     if (Test-Path -LiteralPath $agentsPath) {
@@ -145,6 +164,10 @@ foreach ($profileName in $Profile) {
         surface_contract = $spec.SurfaceContractSource
         contract_projection = $contractProjection.Path
         contract_projection_sha256 = $contractProjection.Sha256
+        surface_overlay_manifest = $surfaceOverlay.Path
+        surface_overlay_manifest_sha256 = $surfaceOverlay.Sha256
+        surface_overlay_owned_files = @($surfaceOverlay.OwnedFiles)
+        numpad_enter_follow = $numpadEnterFollow
         account_binding = $spec.AccountBindingPath
         agents = $agentHashes
     }
