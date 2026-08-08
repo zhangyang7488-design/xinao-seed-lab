@@ -175,6 +175,11 @@ if (-not (Test-Path -LiteralPath $promptfooEntrypoint -PathType Leaf)) {
     throw "Pinned Promptfoo entrypoint is missing: $promptfooEntrypoint"
 }
 $node = (Get-Command node -ErrorAction Stop).Source
+$windowsHiddenChildrenShim = Join-Path $repoRoot 'scripts\windows_hide_background_children.cjs'
+if (-not (Test-Path -LiteralPath $windowsHiddenChildrenShim -PathType Leaf)) {
+    throw "Windows background-process visibility shim is missing: $windowsHiddenChildrenShim"
+}
+$windowsHiddenChildrenNodePath = $windowsHiddenChildrenShim.Replace('\', '/')
 if (-not (Test-Path -LiteralPath $CodexHome -PathType Container)) {
     throw "Canonical CODEX_HOME is missing: $CodexHome"
 }
@@ -302,6 +307,13 @@ $environment = @{
     PROMPTFOO_DISABLE_ERROR_LOG = '1'
     TSX_DISABLE_CACHE = '1'
     PYTHONDONTWRITEBYTECODE = '1'
+    # This runner is non-interactive.  Patch Promptfoo's Node process so every
+    # fresh Codex/app-server descendant uses windowsHide; normal Codex and TUI
+    # launchers never consume this process-scoped NODE_OPTIONS value.
+    NODE_OPTIONS = (@(
+        [Environment]::GetEnvironmentVariable('NODE_OPTIONS', 'Process'),
+        "--require=`"$windowsHiddenChildrenNodePath`""
+    ) | Where-Object { -not [string]::IsNullOrWhiteSpace($_) }) -join ' '
     TEMP = $tempRoot
     TMP = $tempRoot
     PATH = [Environment]::GetEnvironmentVariable('PATH', 'Process')
@@ -618,6 +630,10 @@ $sourceInputs = @(
     [pscustomobject]@{
         path = (Join-Path $repoRoot 'scripts\run_behavior_regression.ps1')
         role = 'runner'
+    },
+    [pscustomobject]@{
+        path = (Join-Path $repoRoot 'scripts\windows_hide_background_children.cjs')
+        role = 'background_process_visibility_consumer'
     },
     [pscustomobject]@{
         path = (Join-Path $repoRoot 'scripts\prepare_behavior_regression_snapshot.py')

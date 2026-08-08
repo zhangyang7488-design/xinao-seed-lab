@@ -192,6 +192,6 @@ def test_current_catalog_counts_include_delivery_closure_cases() -> None:
         (REPO_ROOT / "evals" / "behavior_regression" / "catalog.json").read_text(encoding="utf-8")
     )
     intent = next(suite for suite in catalog["suites"] if suite["id"] == "parent_frame_admission")
-    assert intent["case_count"] == 46
-    assert catalog["live_profile_case_counts"]["intent"] == 46
+    assert intent["case_count"] == 55
+    assert catalog["live_profile_case_counts"]["intent"] == 55
     assert catalog["declared_case_count"] == sum(suite["case_count"] for suite in catalog["suites"])

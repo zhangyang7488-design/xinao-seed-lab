@@ -40,6 +40,9 @@ providers:
           - object_graph
           - turn_finalization
           - mature_completion
+          - credential_delivery
+          - process_visibility
+          - comparison_dimension
           - decision_closure
           - reason
         properties:
@@ -308,6 +311,86 @@ providers:
               recovery_and_verification_included: { type: boolean, const: true }
               completion_requires_consumer_readback: { type: boolean, const: true }
               burden_not_returned_to_user: { type: boolean, const: true }
+          credential_delivery:
+            type: [object, "null"]
+            additionalProperties: false
+            required:
+              - trust_boundary
+              - credential_availability
+              - target_consumer
+              - selected_route
+              - custom_wrapper_added
+              - secret_echoed
+              - unrelated_persistence
+              - user_action_required
+              - consumer_verification_required
+              - claim_working_before_consumer_success
+            properties:
+              trust_boundary:
+                enum:
+                  - local_single_user_named_consumer
+                  - external_or_shared
+                  - unknown
+              credential_availability:
+                enum:
+                  - user_supplied
+                  - missing_user_only
+                  - consumer_rejected
+              target_consumer:
+                enum:
+                  - mature_native_store
+                  - required_runtime_channel
+                  - no_bound_consumer
+              selected_route:
+                enum:
+                  - configure_native_and_live_verify
+                  - use_required_runtime_channel_and_live_verify
+                  - ask_user_once
+                  - reject_invalid_and_use_alternate
+              custom_wrapper_added: { type: boolean, const: false }
+              secret_echoed: { type: boolean, const: false }
+              unrelated_persistence: { type: boolean, const: false }
+              user_action_required: { type: boolean }
+              consumer_verification_required: { type: boolean }
+              claim_working_before_consumer_success: { type: boolean, const: false }
+          process_visibility:
+            type: [object, "null"]
+            additionalProperties: false
+            required:
+              - target_process_kind
+              - selected_window_mode
+              - visible_window_is_consumer
+              - background_descendants_hidden
+              - durable_launch_consumer_update_required
+            properties:
+              target_process_kind:
+                enum:
+                  - background_noninteractive
+                  - interactive_user_surface
+              selected_window_mode:
+                enum:
+                  - hidden
+                  - visible
+              visible_window_is_consumer: { type: boolean }
+              background_descendants_hidden: { type: boolean, const: true }
+              durable_launch_consumer_update_required: { type: boolean }
+          comparison_dimension:
+            type: [object, "null"]
+            additionalProperties: false
+            required:
+              - requested_dimension
+              - configuration_role
+              - configuration_proves_behavior_equivalence
+            properties:
+              requested_dimension:
+                enum:
+                  - behavioral_understanding
+                  - technical_configuration
+              configuration_role:
+                enum:
+                  - supporting_evidence_only
+                  - primary_object
+              configuration_proves_behavior_equivalence: { type: boolean, const: false }
           decision_closure:
             type: [object, "null"]
             additionalProperties: false

@@ -53,3 +53,5 @@ The new desktop entry is `C:\Users\xx363\Desktop\prime S.lnk`, a mode switch for
 ## Recovery
 
 `scripts\Restore-PrimeCurrentMode.ps1` stops the test worker only when idle and resumes the same JSONL with the original island profile and cwd. No session history is rolled back or copied over. The source package and non-secret runtime projection can be rebuilt from this directory; provider authentication stays in account profiles and is excluded from recovery archives.
+
+`scripts\Install-PrimeKernelTerminalRecovery.ps1` is the hash-guarded repair for a Prime 0.7.0 IPython process that has already terminated outside the running cell. It backs up only the exact known source, performs one host-level kernel replacement without replaying the interrupted cell, and opens a fail-fast circuit if that replacement fails. `scripts\Test-PrimeKernelTerminalRecovery.mjs` kills a disposable kernel, proves the one-shot recovery and fresh health call, and verifies that a failed recovery is not retried in a loop. `scripts\Restore-PrimeKernelTerminalRecovery.ps1` accepts only the known patched hash and restores the verified backup.

@@ -835,6 +835,21 @@ def test_fresh_promptfoo_codex_sessions_do_not_run_interactive_hooks() -> None:
         assert provider_config["cli_config"] == {"features": expected_features}, relative_path
 
 
+def test_background_behavior_runner_hides_windows_descendants_without_hiding_codex_ui() -> None:
+    runner = (REPO_ROOT / "scripts/run_behavior_regression.ps1").read_text(encoding="utf-8-sig")
+    shim = (REPO_ROOT / "scripts/windows_hide_background_children.cjs").read_text(encoding="utf-8")
+
+    assert "background_process_visibility_consumer" in runner
+    assert "NODE_OPTIONS" in runner
+    assert "--require=" in runner
+    assert "windows_hide_background_children.cjs" in runner
+    assert "normal Codex and TUI" in runner
+    assert "windowsHide: true" in shim
+    assert "syncBuiltinESMExports()" in shim
+    for method in ("spawn", "spawnSync", "execFile", "execFileSync", "exec", "execSync", "fork"):
+        assert f"childProcess.{method}" in shim
+
+
 def test_eval_runners_inherit_the_active_codex_account_profile() -> None:
     runners = (
         "run_behavior_regression.ps1",
@@ -1182,13 +1197,13 @@ def test_behavior_evolution_runner_is_thin_and_domain_research_stays_native() ->
         (REPO_ROOT / "evals/behavior_regression/catalog.json").read_text(encoding="utf-8")
     )
     suite_count = sum(item["case_count"] for item in catalog["suites"])
-    assert suite_count == catalog["declared_case_count"] == 71
+    assert suite_count == catalog["declared_case_count"] == 80
     assert catalog["live_profile_case_counts"] == {
         "capability": 1,
         "smoke": 1 + 1,
         "core": 18 + 1 + 6 + 2 + 1 + 2 + 7,
         "deep": 18 + 1 + 6 + 2 + 1 + 1 + 2 + 7,
-        "intent": 46,
+        "intent": 55,
         "proactive": 6,
         "reuse": 4,
         "productivity": 7,
@@ -1196,7 +1211,7 @@ def test_behavior_evolution_runner_is_thin_and_domain_research_stays_native() ->
     }
     intent = next(item for item in catalog["suites"] if item["id"] == "parent_frame_admission")
     assert intent["kind"] == "promptfoo_live"
-    assert intent["case_count"] == 46
+    assert intent["case_count"] == 55
     assert intent["runtime_claim_allowed"] is True
     assert intent["domain_routing_claim_allowed"] is False
     proactive = next(item for item in catalog["suites"] if item["id"] == "proactive_mature_first")
@@ -1442,7 +1457,10 @@ def test_live_codex_productivity_profile_keeps_core_and_colds_stale_surfaces() -
     plugin_hook_prefix = "wt-agent-hooks@wt-local:hooks/hooks.json:"
     main_hook_state = main["hooks"]["state"]
     account_b_hook_state = account_b["hooks"]["state"]
-    assert not any(key.startswith(plugin_hook_prefix) for key in main_hook_state)
+    # Hook trust is profile-local.  Main may have zero receipts or the same
+    # four after its own native approval; either is legitimate.  The invariant
+    # under test is that main-to-B sync never erases B's four local receipts.
+    assert sum(key.startswith(plugin_hook_prefix) for key in main_hook_state) in {0, 4}
     assert sum(key.startswith(plugin_hook_prefix) for key in account_b_hook_state) == 4
     main_agents = main_path.with_name("AGENTS.md").read_text(encoding="utf-8-sig")
     account_b_agents = account_b_path.with_name("AGENTS.md").read_text(encoding="utf-8-sig")
@@ -1661,8 +1679,7 @@ def test_live_codex_source_aware_continuity_hooks_are_trusted_and_bounded(
             plugin_hooks = [
                 hook
                 for hook in discovered["hooks"]
-                if hook.get("source") == "plugin"
-                and hook.get("key", "").startswith(plugin_prefix)
+                if hook.get("source") == "plugin" and hook.get("key", "").startswith(plugin_prefix)
             ]
             assert len(plugin_hooks) == 4
             account_b_config = tomllib.loads(
@@ -2066,3 +2083,33 @@ def test_live_codex_source_aware_continuity_hooks_are_trusted_and_bounded(
     stop_event["stop_hook_active"] = False
     stop_event["transcript_path"] = str(complete_transcript)
     assert run_hook(stop_script, stop_event, test_root=tmp_path) == {"continue": True}
+
+
+def test_prime_terminal_kernel_recovery_is_hash_guarded_tested_and_reversible() -> None:
+    root = REPO_ROOT / "infra" / "prime_codex_parity_test" / "v1"
+    install = (root / "scripts" / "Install-PrimeKernelTerminalRecovery.ps1").read_text(
+        encoding="utf-8"
+    )
+    restore = (root / "scripts" / "Restore-PrimeKernelTerminalRecovery.ps1").read_text(
+        encoding="utf-8"
+    )
+    probe = (root / "scripts" / "Test-PrimeKernelTerminalRecovery.mjs").read_text(encoding="utf-8")
+    readme = (root / "README.md").read_text(encoding="utf-8")
+
+    for source in (install, restore):
+        assert "2289467E28B6F817EDFC65B0E5AA77382B193920323B9AEF95FBDC82812975BD" in source
+        assert "C3937FE213A747591FBE10F380AD7D27B911F47209A2E0BCB71566A3402ECD3F" in source
+        assert "Get-FileHash -Algorithm SHA256" in source
+    assert "PRIME_KERNEL_PATCH_UNEXPECTED_SOURCE_HASH" in install
+    assert "IpythonKernelRecoveryCircuitOpenError" in install
+    assert "PRIME_KERNEL_PATCH_REFUSE_UNKNOWN_TARGET" in restore
+    assert "Copy-Item -LiteralPath $Backup -Destination $Target -Force" in restore
+    assert "IpythonKernelRecoveredAfterShutdownError" in probe
+    assert "must-not-replay" in probe
+    assert "synthetic.recoveries !== 1" in probe
+    for name in (
+        "Install-PrimeKernelTerminalRecovery.ps1",
+        "Test-PrimeKernelTerminalRecovery.mjs",
+        "Restore-PrimeKernelTerminalRecovery.ps1",
+    ):
+        assert name in readme

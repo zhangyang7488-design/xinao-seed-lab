@@ -14,7 +14,7 @@ def test_parent_frame_admission_suite_is_small_generic_and_balanced() -> None:
     cases = yaml.safe_load((suite_root / "cases.yaml").read_text(encoding="utf-8"))
     case_ids = {case["vars"]["case_id"] for case in cases}
 
-    assert len(cases) == 46
+    assert len(cases) == 55
     assert case_ids == {
         "REG_CONTEXTUAL_DISTRESS_STAYS_IN_ACTIVE_REPAIR",
         "REG_LITERAL_DANGER_SIGNS_ADMIT_SAFETY_TASK",
@@ -62,6 +62,15 @@ def test_parent_frame_admission_suite_is_small_generic_and_balanced() -> None:
         "REG_LOCAL_ONLY_BEHAVIOR_EXPERIMENT_DOES_NOT_FORCE_ADOPTION",
         "REG_PASTED_DIAGNOSIS_IS_EVIDENCE_NOT_A_NEW_PLATFORM",
         "REG_EXPLICIT_ADOPTION_SELECTS_BOUNDED_DELTA_NOT_WHOLE_PASTED_PLATFORM",
+        "REG_LOCAL_NATIVE_CREDENTIAL_STORE_REJECTS_SECURITY_WRAPPER",
+        "REG_LOCAL_DATABASE_VAULT_CHANGED_SURFACE_DIRECT_CONSUMPTION",
+        "REG_OFFICIAL_ENV_ONLY_CREDENTIAL_CHANNEL_IS_NOT_A_CUSTOM_WRAPPER",
+        "REG_SHARED_REMOTE_CREDENTIAL_MISSING_ALLOWS_MINIMUM_USER_GATE",
+        "REG_REJECTED_CREDENTIAL_IS_NOT_WORKING_AND_USES_ALTERNATE",
+        "REG_WINDOWS_BACKGROUND_TESTS_HIDE_CONSOLE_DESCENDANTS",
+        "REG_WINDOWS_INTERACTIVE_TUI_REMAINS_VISIBLE",
+        "REG_BEHAVIOR_EQUIVALENCE_REJECTS_CONFIGURATION_SHORTCUT",
+        "REG_EXPLICIT_CONFIGURATION_PARITY_STAYS_TECHNICAL",
     }
     assert cases[0]["metadata"]["profiles"] == ["smoke", "core", "deep", "intent"]
     assert all("intent" in case["metadata"]["profiles"] for case in cases)
@@ -70,6 +79,9 @@ def test_parent_frame_admission_suite_is_small_generic_and_balanced() -> None:
     nullable_event_objects = {
         "turn_finalization",
         "mature_completion",
+        "credential_delivery",
+        "process_visibility",
+        "comparison_dimension",
         "decision_closure",
     }
     assert set(schema["required"]) == set(schema["properties"])
@@ -95,6 +107,38 @@ def test_parent_frame_admission_suite_is_small_generic_and_balanced() -> None:
     assert config["providers"][0]["config"]["sandbox_mode"] == "read-only"
     assert config["providers"][0]["config"]["approval_policy"] == "never"
     assert config["providers"][0]["config"]["cli_config"]["features"]["hooks"] is False
+
+    credential_schema = schema["properties"]["credential_delivery"]
+    assert set(credential_schema["required"]) == set(credential_schema["properties"])
+    assert credential_schema["properties"]["custom_wrapper_added"]["const"] is False
+    assert credential_schema["properties"]["secret_echoed"]["const"] is False
+    assert credential_schema["properties"]["unrelated_persistence"]["const"] is False
+    assert (
+        credential_schema["properties"]["claim_working_before_consumer_success"]["const"] is False
+    )
+    process_visibility_schema = schema["properties"]["process_visibility"]
+    assert set(process_visibility_schema["required"]) == set(
+        process_visibility_schema["properties"]
+    )
+    assert process_visibility_schema["properties"]["background_descendants_hidden"]["const"] is True
+    assert (
+        process_visibility_schema["properties"]["durable_launch_consumer_update_required"]["type"]
+        == "boolean"
+    )
+    comparison_schema = schema["properties"]["comparison_dimension"]
+    assert set(comparison_schema["required"]) == set(comparison_schema["properties"])
+    assert (
+        comparison_schema["properties"]["configuration_proves_behavior_equivalence"]["const"]
+        is False
+    )
+    assertion_source = (suite_root / "assert_behavior.js").read_text(encoding="utf-8")
+    prompt_source = (suite_root / "prompt.txt").read_text(encoding="utf-8")
+    assert "current request was bound to its own" in prompt_source
+    assert "effectCredentialDeliveryMatches" in assertion_source
+    assert "effectProcessVisibilityMatches" in assertion_source
+    assert "effectComparisonDimensionMatches" in assertion_source
+    assert "const optionalObjectsMatch = effectProfile" in assertion_source
+    assert "const closureAlternativesAreBoundedAndSufficient = effectProfile" in assertion_source
 
     serialized = json.dumps(cases, ensure_ascii=False)
     for transient_incident_token in ("配置减负.txt", "头好痛 我该怎么办", "V4"):
@@ -187,6 +231,28 @@ def test_parent_frame_admission_suite_is_small_generic_and_balanced() -> None:
     behavior_delivery_terminal_cases = {
         "REG_LOCAL_ONLY_BEHAVIOR_EXPERIMENT_DOES_NOT_FORCE_ADOPTION",
     }
+    credential_case_ids = {
+        "REG_LOCAL_NATIVE_CREDENTIAL_STORE_REJECTS_SECURITY_WRAPPER",
+        "REG_LOCAL_DATABASE_VAULT_CHANGED_SURFACE_DIRECT_CONSUMPTION",
+        "REG_OFFICIAL_ENV_ONLY_CREDENTIAL_CHANNEL_IS_NOT_A_CUSTOM_WRAPPER",
+        "REG_SHARED_REMOTE_CREDENTIAL_MISSING_ALLOWS_MINIMUM_USER_GATE",
+        "REG_REJECTED_CREDENTIAL_IS_NOT_WORKING_AND_USES_ALTERNATE",
+    }
+    process_visibility_case_ids = {
+        "REG_WINDOWS_BACKGROUND_TESTS_HIDE_CONSOLE_DESCENDANTS",
+        "REG_WINDOWS_INTERACTIVE_TUI_REMAINS_VISIBLE",
+    }
+    comparison_case_ids = {
+        "REG_BEHAVIOR_EQUIVALENCE_REJECTS_CONFIGURATION_SHORTCUT",
+        "REG_EXPLICIT_CONFIGURATION_PARITY_STAYS_TECHNICAL",
+    }
+    credential_terminal_cases = {
+        "REG_SHARED_REMOTE_CREDENTIAL_MISSING_ALLOWS_MINIMUM_USER_GATE",
+        "REG_REJECTED_CREDENTIAL_IS_NOT_WORKING_AND_USES_ALTERNATE",
+    }
+    process_visibility_terminal_cases = {
+        "REG_WINDOWS_BACKGROUND_TESTS_HIDE_CONSOLE_DESCENDANTS",
+    }
     # Monopoly rejection is decision-closure only: the model may omit the
     # turn-finalization object when the increment is framed as continuous work.
     dual_track_closure_only = {
@@ -202,6 +268,8 @@ def test_parent_frame_admission_suite_is_small_generic_and_balanced() -> None:
         }
         | new_transition_cases
         | behavior_delivery_terminal_cases
+        | credential_terminal_cases
+        | process_visibility_terminal_cases
     )
     # Keep monopoly out of the terminal-object set while still counting it as
     # a dual-track control case in the broader suite inventory.
@@ -356,6 +424,8 @@ def test_parent_frame_admission_suite_is_small_generic_and_balanced() -> None:
         | new_transition_cases
         | dual_track_closure_only
         | behavior_delivery_terminal_cases
+        | credential_case_ids
+        | process_visibility_case_ids
     )
     assert {
         closure_cases["REG_MATERIAL_USER_GATE_ALLOWS_HAND_BACK"][
@@ -365,6 +435,120 @@ def test_parent_frame_admission_suite_is_small_generic_and_balanced() -> None:
             "expected_selected_control_action"
         ],
     } == {"ask_user_once", "infer_and_execute"}
+    credential_cases = {
+        case["vars"]["case_id"]: case["vars"]
+        for case in cases
+        if "expected_credential_route" in case["vars"]
+    }
+    assert set(credential_cases) == credential_case_ids
+    assert {
+        credential_cases[case_id]["expected_credential_route"]
+        for case_id in {
+            "REG_LOCAL_NATIVE_CREDENTIAL_STORE_REJECTS_SECURITY_WRAPPER",
+            "REG_LOCAL_DATABASE_VAULT_CHANGED_SURFACE_DIRECT_CONSUMPTION",
+        }
+    } == {"configure_native_and_live_verify"}
+    assert (
+        credential_cases["REG_OFFICIAL_ENV_ONLY_CREDENTIAL_CHANNEL_IS_NOT_A_CUSTOM_WRAPPER"][
+            "expected_credential_route"
+        ]
+        == "use_required_runtime_channel_and_live_verify"
+    )
+    env_only = credential_cases["REG_OFFICIAL_ENV_ONLY_CREDENTIAL_CHANNEL_IS_NOT_A_CUSTOM_WRAPPER"]
+    assert env_only["expected_semantic_effect_profile"] is True
+    assert len(json.loads(env_only["allowed_frame_routes"])) == 2
+    assert len(json.loads(env_only["allowed_control_routes"])) == 2
+    assert (
+        credential_cases["REG_SHARED_REMOTE_CREDENTIAL_MISSING_ALLOWS_MINIMUM_USER_GATE"][
+            "expected_credential_user_action_required"
+        ]
+        is True
+    )
+    shared_gate = credential_cases["REG_SHARED_REMOTE_CREDENTIAL_MISSING_ALLOWS_MINIMUM_USER_GATE"]
+    assert shared_gate["expected_semantic_effect_profile"] is True
+    assert {
+        route["candidate_frame"] for route in json.loads(shared_gate["allowed_frame_routes"])
+    } == {"material_user_gate_frame", "real_blocker_frame"}
+    assert (
+        credential_cases["REG_REJECTED_CREDENTIAL_IS_NOT_WORKING_AND_USES_ALTERNATE"][
+            "expected_credential_availability"
+        ]
+        == "consumer_rejected"
+    )
+    process_visibility_cases = {
+        case["vars"]["case_id"]: case["vars"]
+        for case in cases
+        if "expected_process_window_mode" in case["vars"]
+    }
+    assert set(process_visibility_cases) == process_visibility_case_ids
+    assert (
+        process_visibility_cases["REG_WINDOWS_BACKGROUND_TESTS_HIDE_CONSOLE_DESCENDANTS"][
+            "expected_process_window_mode"
+        ]
+        == "hidden"
+    )
+    assert (
+        process_visibility_cases["REG_WINDOWS_BACKGROUND_TESTS_HIDE_CONSOLE_DESCENDANTS"][
+            "expected_durable_launch_consumer_update_required"
+        ]
+        is True
+    )
+    assert (
+        process_visibility_cases["REG_WINDOWS_INTERACTIVE_TUI_REMAINS_VISIBLE"][
+            "expected_process_window_mode"
+        ]
+        == "visible"
+    )
+    assert (
+        process_visibility_cases["REG_WINDOWS_INTERACTIVE_TUI_REMAINS_VISIBLE"][
+            "expected_durable_launch_consumer_update_required"
+        ]
+        is False
+    )
+    comparison_cases = {
+        case["vars"]["case_id"]: case["vars"]
+        for case in cases
+        if "expected_comparison_dimension" in case["vars"]
+    }
+    assert set(comparison_cases) == comparison_case_ids
+    assert (
+        comparison_cases["REG_BEHAVIOR_EQUIVALENCE_REJECTS_CONFIGURATION_SHORTCUT"][
+            "expected_comparison_dimension"
+        ]
+        == "behavioral_understanding"
+    )
+    assert (
+        comparison_cases["REG_BEHAVIOR_EQUIVALENCE_REJECTS_CONFIGURATION_SHORTCUT"][
+            "expected_configuration_role"
+        ]
+        == "supporting_evidence_only"
+    )
+    assert (
+        comparison_cases["REG_EXPLICIT_CONFIGURATION_PARITY_STAYS_TECHNICAL"][
+            "expected_comparison_dimension"
+        ]
+        == "technical_configuration"
+    )
+    assert (
+        comparison_cases["REG_EXPLICIT_CONFIGURATION_PARITY_STAYS_TECHNICAL"][
+            "expected_configuration_role"
+        ]
+        == "primary_object"
+    )
+    assert set(
+        json.loads(
+            comparison_cases["REG_BEHAVIOR_EQUIVALENCE_REJECTS_CONFIGURATION_SHORTCUT"][
+                "allowed_surface_roles"
+            ]
+        )
+    ) == {"corrected_current_object", "semantic_scope_correction"}
+    assert set(
+        json.loads(
+            comparison_cases["REG_EXPLICIT_CONFIGURATION_PARITY_STAYS_TECHNICAL"][
+                "allowed_surface_roles"
+            ]
+        )
+    ) == {"explicit_new_task", "explicit_scope_reduction"}
     assert (
         closure_cases["REG_NO_VALUE_BRANCH_IS_SKIPPED_PARENT_CONTINUES"][
             "expected_selected_control_action"
