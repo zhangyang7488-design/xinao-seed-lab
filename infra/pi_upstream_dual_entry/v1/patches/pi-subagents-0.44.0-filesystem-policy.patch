@@ -1,0 +1,2502 @@
+diff --git a/src/extension/schemas.ts b/src/extension/schemas.ts
+index 586fe99..3eb1204 100644
+--- a/src/extension/schemas.ts
++++ b/src/extension/schemas.ts
+@@ -129,6 +129,15 @@ const UsageBudgetOverride = Type.Object({
+ 	costUsd: Type.Optional(UsageBudgetLimitOverride),
+ }, { additionalProperties: false, description: "Optional root-only reported-usage budget. Hard limits prevent future child launches; running children are not stopped." });
+ 
++const FilesystemPolicyOverride = Type.Object({
++	allowedRoots: Type.Array(Type.String({ minLength: 1 }), { minItems: 1 }),
++	deniedPaths: Type.Optional(Type.Array(Type.String({ minLength: 1 }))),
++	bash: Type.Optional(Type.String({ enum: ["deny"] })),
++}, {
++	additionalProperties: false,
++	description: "Opt-in task-scoped child filesystem boundary for workflow defaults or one runs.run item. Paths are normalized from the child cwd; bash is always denied and only read/grep/find/ls remain available.",
++});
++
+ // Parallel task item (within a parallel step)
+ export const ParallelTaskSchema = Type.Object({
+ 	agent: Type.String(),
+@@ -314,7 +323,7 @@ const SubagentParamsSchema = Type.Object({
+ 		],
+ 		description: "Agent/chain config for create/update. Object or JSON string; presence of steps creates a chain."
+ 	})),
+-	workflowScript: Type.Optional(Type.String({ minLength: 1, description: "Trusted inline JavaScript statement body. Starts async by default; pass async:false for a small foreground run. Use explicit return for output. Use await runs.run(key, {agent, task, worktree?, gate?}) or runs.run(key, {resume, task}), runs.all([...]), runs.status(id), runs.ref(s), emit(value), console, and return. Mission workflows also have async state.get(key) and state.set(key, JSONValue). Use ordinary JavaScript loops, branches, awaits, and arrays to mix sequential and parallel phases dynamically. Set worktree:true at workflow or child level for a separate managed worktree; child fields override workflow defaults. gate is one host-run command and cannot be combined with acceptance. runs.run accepts one child only. No filesystem, shell, Pi tools, or host globals." })),
++	workflowScript: Type.Optional(Type.String({ minLength: 1, description: "Trusted JS body using runs.run for sequential and parallel phases dynamically; worktree:true isolates children. Async by default. One child per runs.run; no filesystem, shell, Pi tools, or host globals." })),
+ 	chatProgress: Type.Optional(Type.String({ enum: ["auto", "off", "live-card"], description: "WorkflowScript chat progress projection. auto shows a live in-chat card only for watched foreground workflows in the same Git repository; it is off otherwise." })),
+ 	worktree: Type.Optional(Type.Boolean({ description: "Managed child isolation. true gives each workflow child a separate git worktree; an individual runs.run/runs.all item can override a workflow default with worktree:false." })),
+ 	step: Type.Optional(Type.Unsafe({ ...ChainItem, description: "One chain step for action='append-step' only. Not an execution mode." })),
+@@ -338,6 +347,7 @@ const SubagentParamsSchema = Type.Object({
+ 	),
+ 	control: Type.Optional(ControlOverrides),
+ 	// Workflow defaults forwarded to each runs.run/runs.all child unless overridden there.
++	filesystemPolicy: Type.Optional(FilesystemPolicyOverride),
+ 	output: Type.Optional(Type.Unsafe({
+ 		anyOf: [
+ 			{ type: "string" },
+diff --git a/src/runs/background/async-execution.ts b/src/runs/background/async-execution.ts
+index 2b8d719..abdd97a 100644
+--- a/src/runs/background/async-execution.ts
++++ b/src/runs/background/async-execution.ts
+@@ -46,8 +46,10 @@ import {
+ 	type SteeringRecoveryDescriptor,
+ 	type UsageBudgetConfig,
+ 	DIRS,
++	DEFAULT_ARTIFACT_CONFIG,
+ 	SUBAGENT_ASYNC_STARTED_EVENT,
+ 	SUBAGENT_LIFECYCLE_ARTIFACT_VERSION,
++	TEMP_ARTIFACTS_DIR,
+ 	TEMP_ROOT_DIR,
+ 	getAsyncConfigPath,
+ 	resolveChildMaxSubagentDepth,
+@@ -63,6 +65,7 @@ import { SUBAGENT_PROCESS_TERMINAL_EVENT } from "../../shared/types.ts";
+ import { assertAgentAllowedByCapabilityCeiling, decodeSubagentCapabilityCeiling, intersectSubagentCapabilityCeilings, resolveCurrentSubagentCapabilityCeiling, SUBAGENT_CAPABILITY_CEILING_ENV, type ResolvedSubagentCapabilityCeiling } from "../shared/capability-ceiling.ts";
+ import { agentDefinitionDigest, launchBindingDigest } from "../../shared/launch-contract.ts";
+ import { resolvePermissionRules, type PermissionConfig } from "../shared/permissions.ts";
++import { filesystemPolicyAcceptanceError, filesystemPolicyDigest, resolveFilesystemPolicy, type FilesystemPolicyInput, type ResolvedFilesystemPolicy } from "../shared/filesystem-policy.ts";
+ 
+ const require = createRequire(import.meta.url);
+ const piPackageRoot = resolvePiPackageRoot();
+@@ -171,6 +174,7 @@ interface AsyncChainParams {
+ 	capabilityCeiling?: ResolvedSubagentCapabilityCeiling;
+ 	parentWorkflowRunId?: string;
+ 	workflowKey?: string;
++	filesystemPolicy?: FilesystemPolicyInput | ResolvedFilesystemPolicy;
+ }
+ 
+ interface AsyncSingleParams {
+@@ -219,6 +223,7 @@ interface AsyncSingleParams {
+ 	capabilityCeiling?: ResolvedSubagentCapabilityCeiling;
+ 	parentWorkflowRunId?: string;
+ 	workflowKey?: string;
++	filesystemPolicy?: FilesystemPolicyInput | ResolvedFilesystemPolicy;
+ }
+ 
+ interface AsyncExecutionResult {
+@@ -252,6 +257,7 @@ export interface AsyncRunnerStepBuildParams {
+ 	toolBudget?: ResolvedToolBudget;
+ 	configToolBudget?: ResolvedToolBudget;
+ 	capabilityCeiling?: ResolvedSubagentCapabilityCeiling;
++	filesystemPolicy?: FilesystemPolicyInput | ResolvedFilesystemPolicy;
+ }
+ 
+ export type AsyncRunnerStepBuildResult =
+@@ -573,6 +579,9 @@ class UnavailableSubagentSkillError extends Error {}
+ class AsyncStartValidationError extends Error {}
+ 
+ export function buildAsyncRunnerSteps(id: string, params: AsyncRunnerStepBuildParams): AsyncRunnerStepBuildResult {
++	if (params.filesystemPolicy !== undefined) {
++		return { error: "filesystemPolicy v1 supports detached async single runs only; async chain and parallel launches are not supported." };
++	}
+ 	const {
+ 		chain,
+ 		agents,
+@@ -617,7 +626,6 @@ export function buildAsyncRunnerSteps(id: string, params: AsyncRunnerStepBuildPa
+ 		throw error;
+ 	}
+ 	const workflowGraph = buildWorkflowGraphSnapshot({ runId: id, mode: resultMode, steps: graphChain });
+-
+ 	for (const s of chain) {
+ 		const stepAgents = isCheckpointStep(s)
+ 			? []
+@@ -996,6 +1004,7 @@ export function executeAsyncChain(
+ 		toolBudget: params.toolBudget,
+ 		configToolBudget: params.configToolBudget,
+ 		capabilityCeiling,
++		filesystemPolicy: params.filesystemPolicy,
+ 	});
+ 	if ("error" in built) {
+ 		try {
+@@ -1206,9 +1215,9 @@ export function executeAsyncSingle(
+ 		ctx,
+ 		cwd,
+ 		maxOutput,
+-		artifactsDir,
+-		artifactConfig,
+-		shareEnabled,
++		artifactsDir: requestedArtifactsDir,
++		artifactConfig: requestedArtifactConfig,
++		shareEnabled: requestedShareEnabled,
+ 		sessionRoot,
+ 		sessionFile,
+ 		maxSubagentDepth,
+@@ -1221,6 +1230,15 @@ export function executeAsyncSingle(
+ 		nestedRoute,
+ 	} = params;
+ 	const task = params.task ?? "";
++	const filesystemPolicyRequested = params.filesystemPolicy !== undefined;
++	if (filesystemPolicyRequested) {
++		const acceptanceError = filesystemPolicyAcceptanceError(params.acceptance);
++		if (acceptanceError) return formatAsyncStartError("single", acceptanceError);
++		if (params.output !== undefined && params.output !== false) return formatAsyncStartError("single", "filesystemPolicy cannot use host-side output files.");
++		if (params.outputMode === "file-only") return formatAsyncStartError("single", "filesystemPolicy cannot use file-only output mode.");
++		if (requestedShareEnabled) return formatAsyncStartError("single", "filesystemPolicy cannot share child sessions.");
++		if (params.structuredOutputSchema !== undefined) return formatAsyncStartError("single", "filesystemPolicy cannot use structured output.");
++	}
+ 	const acceptanceErrors = validateAcceptanceInput(params.acceptance);
+ 	if (acceptanceErrors.length > 0) return formatAsyncStartError("single", acceptanceErrors.join(" "));
+ 	const externalRunner = agentConfig.runner?.type === "external-cli";
+@@ -1235,6 +1253,7 @@ export function executeAsyncSingle(
+ 		if (params.context === "fork") unsupported.push("fork context");
+ 		if ((params.skills?.length ?? 0) > 0) unsupported.push("skills");
+ 		if (permissionRules) unsupported.push("native Pi child permissions");
++		if (params.filesystemPolicy !== undefined) unsupported.push("filesystem policy");
+ 		if (unsupported.length > 0) return formatAsyncStartError("single", `Agent '${agentConfig.name}' uses runner.type='external-cli' and does not support: ${unsupported.join(", ")}.`);
+ 	}
+ 	const capabilityCeiling = intersectSubagentCapabilityCeilings(params.capabilityCeiling ?? resolveCurrentSubagentCapabilityCeiling(ctx.currentSessionId), decodeSubagentCapabilityCeiling(process.env[SUBAGENT_CAPABILITY_CEILING_ENV]));
+@@ -1244,7 +1263,22 @@ export function executeAsyncSingle(
+ 		return formatAsyncStartError("single", error instanceof Error ? error.message : String(error));
+ 	}
+ 	const runnerCwd = resolveChildCwd(ctx.cwd, cwd);
+-	const skillNames = params.skills ?? agentConfig.skills ?? [];
++	let filesystemPolicy: ResolvedFilesystemPolicy | undefined;
++	try {
++		filesystemPolicy = params.filesystemPolicy === undefined ? undefined : resolveFilesystemPolicy(params.filesystemPolicy, runnerCwd);
++	} catch (error) {
++		return formatAsyncStartError("single", error instanceof Error ? error.message : String(error));
++	}
++	if (filesystemPolicy && params.context === "fork") {
++		return formatAsyncStartError("single", "filesystemPolicy requires fresh child context and cannot be combined with context:'fork'.");
++	}
++	const artifactConfig: ArtifactConfig = filesystemPolicy
++		? { ...DEFAULT_ARTIFACT_CONFIG, ...requestedArtifactConfig, dir: "temp" }
++		: requestedArtifactConfig;
++	const artifactsDir = filesystemPolicy ? TEMP_ARTIFACTS_DIR : requestedArtifactsDir;
++	const shareEnabled = filesystemPolicy ? false : requestedShareEnabled;
++	const acceptanceInput = filesystemPolicy ? params.acceptance ?? false : params.acceptance;
++	const skillNames = filesystemPolicy ? [] : params.skills ?? agentConfig.skills ?? [];
+ 	const availableModels = params.availableModels;
+ 	const { resolved: resolvedSkills, missing: missingSkills } = resolveSkillsWithFallback(
+ 		skillNames,
+@@ -1259,11 +1293,11 @@ export function executeAsyncSingle(
+ 		const injection = buildSkillInjection(resolvedSkills);
+ 		systemPrompt = systemPrompt ? `${systemPrompt}\n\n${injection}` : injection;
+ 	}
+-	const memoryInjection = buildAgentMemoryInjection(agentConfig, runnerCwd);
++	const memoryInjection = filesystemPolicy ? "" : buildAgentMemoryInjection(agentConfig, runnerCwd);
+ 	if (memoryInjection) {
+ 		systemPrompt = systemPrompt ? `${systemPrompt}\n\n${memoryInjection}` : memoryInjection;
+ 	}
+-	systemPrompt = appendAgentRefinementOverlay(systemPrompt, { cwd: runnerCwd, agentName: agentConfig.name });
++	if (!filesystemPolicy) systemPrompt = appendAgentRefinementOverlay(systemPrompt, { cwd: runnerCwd, agentName: agentConfig.name });
+ 
+ 	const inheritedNestedRoute = resolveInheritedNestedRouteFromEnv();
+ 	const nestedAddress = inheritedNestedRoute ? resolveNestedParentAddressFromEnv() : undefined;
+@@ -1281,10 +1315,10 @@ export function executeAsyncSingle(
+ 		};
+ 	}
+ 
+-	const effectiveOutput = normalizeSingleOutputOverride(params.output, agentConfig.output);
++	const effectiveOutput = filesystemPolicy ? false : normalizeSingleOutputOverride(params.output, agentConfig.output);
+ 	const outputPath = resolveSingleOutputPath(effectiveOutput, ctx.cwd, runnerCwd, params.outputBaseDir ?? (artifactsDir ? path.join(artifactsDir, "outputs", id) : undefined));
+ 	systemPrompt = injectOutputPathSystemPrompt(systemPrompt, outputPath, agentConfig);
+-	const outputMode = params.outputMode ?? "inline";
++	const outputMode = filesystemPolicy ? "inline" : params.outputMode ?? "inline";
+ 	const validationError = validateFileOnlyOutputMode(outputMode, outputPath, `Async single run (${agent})`);
+ 	if (validationError) return formatAsyncStartError("single", validationError);
+ 	const taskWithOutputInstruction = injectSingleOutputInstruction(task, outputPath, agentConfig);
+@@ -1327,6 +1361,7 @@ export function executeAsyncSingle(
+ 		capabilityCeiling,
+ 		inheritedCapabilityCeiling: decodeSubagentCapabilityCeiling(process.env[SUBAGENT_CAPABILITY_CEILING_ENV]),
+ 		agentName: agentConfig.name,
++		filesystemPolicyActive: filesystemPolicy !== undefined,
+ 	});
+ 	const launchResolvedExtensions = externalRunner ? undefined : projectLaunchResolvedChildExtensions(toolPlan);
+ 	const launchContractDigest = launchBindingDigest({
+@@ -1337,8 +1372,8 @@ export function executeAsyncSingle(
+ 		...(resolveEffectiveThinking(model, effectiveThinking) ? { thinking: resolveEffectiveThinking(model, effectiveThinking) } : {}),
+ 		systemPrompt: effectiveSystemPrompt,
+ 		systemPromptMode: agentConfig.systemPromptMode,
+-		inheritProjectContext: agentConfig.inheritProjectContext,
+-		inheritSkills: agentConfig.inheritSkills,
++		inheritProjectContext: filesystemPolicy ? false : agentConfig.inheritProjectContext,
++		inheritSkills: filesystemPolicy ? false : agentConfig.inheritSkills,
+ 		skills: resolvedSkills.map((skill) => skill.name),
+ 		tools: toolPlan.effectiveToolAllowlist,
+ 		extensions: toolPlan.extensionArgs,
+@@ -1346,9 +1381,11 @@ export function executeAsyncSingle(
+ 		...(outputPath ? { outputPath } : {}),
+ 		outputMode,
+ 		...(params.structuredOutputSchema ? { structuredOutputSchema: params.structuredOutputSchema } : {}),
++		...(filesystemPolicy ? { filesystemPolicy } : {}),
++		...(filesystemPolicy ? { artifactsDir, artifactConfig } : {}),
+ 	});
+ 	const resolvedAcceptance = resolveEffectiveAcceptance({
+-		explicit: params.acceptance,
++		explicit: acceptanceInput,
+ 		agentName: agent,
+ 		acceptanceRole: agentConfig.acceptanceRole,
+ 		task,
+@@ -1363,6 +1400,10 @@ export function executeAsyncSingle(
+ 		...(params.agentContract ? { agentContract: params.agentContract } : {}),
+ 		agent,
+ 		launchResolvedExtensions,
++		...(filesystemPolicy ? {
++			filesystemPolicy,
++			filesystemPolicyDigest: filesystemPolicyDigest(filesystemPolicy),
++		} : {}),
+ 		...(sessionFile ? { sessionFile } : {}),
+ 		cwd: runnerCwd,
+ 		...(model ? { model } : {}),
+@@ -1374,22 +1415,22 @@ export function executeAsyncSingle(
+ 		...(agentConfig.mcpDirectTools ? { mcpDirectTools: [...agentConfig.mcpDirectTools] } : {}),
+ 		...(agentConfig.systemPrompt ? { systemPrompt: agentConfig.systemPrompt } : {}),
+ 		systemPromptMode: agentConfig.systemPromptMode,
+-		inheritProjectContext: agentConfig.inheritProjectContext,
+-		inheritSkills: agentConfig.inheritSkills,
+-		...(resolvedSkills.length ? { skills: resolvedSkills.map((skill) => skill.name) } : {}),
+-		...(agentConfig.skillPath ? { skillPath: [...agentConfig.skillPath] } : {}),
++		inheritProjectContext: filesystemPolicy ? false : agentConfig.inheritProjectContext,
++		inheritSkills: filesystemPolicy ? false : agentConfig.inheritSkills,
++		...(!filesystemPolicy && resolvedSkills.length ? { skills: resolvedSkills.map((skill) => skill.name) } : {}),
++		...(!filesystemPolicy && agentConfig.skillPath ? { skillPath: [...agentConfig.skillPath] } : {}),
+ 		...(agentConfig.filePath ? { agentFilePath: agentConfig.filePath } : {}),
+ 		...(agentConfig.completionGuard !== undefined ? { completionGuard: agentConfig.completionGuard } : {}),
+-		...(agentConfig.memory ? { memory: { ...agentConfig.memory } } : {}),
++		...(!filesystemPolicy && agentConfig.memory ? { memory: { ...agentConfig.memory } } : {}),
+ 		...(outputPath ? { outputPath } : {}),
+ 		outputMode,
+ 		...(params.structuredOutputSchema ? { structuredOutputSchema: params.structuredOutputSchema } : {}),
+-		...(params.acceptance !== undefined ? { acceptance: params.acceptance } : {}),
++		...(acceptanceInput !== undefined ? { acceptance: acceptanceInput } : {}),
+ 		...(controlConfig ? { controlConfig } : {}),
+ 		...(deadlineAt !== undefined ? { absoluteDeadlineAt: deadlineAt } : {}),
+ 		...(initialTurnBudget ? { initialTurnBudget } : {}),
+ 		...(resolvedToolBudget.budget ? { initialToolBudget: resolvedToolBudget.budget } : {}),
+-		maxSubagentDepth: resolveChildMaxSubagentDepth(maxSubagentDepth, agentConfig.maxSubagentDepth),
++		maxSubagentDepth: filesystemPolicy ? 0 : resolveChildMaxSubagentDepth(maxSubagentDepth, agentConfig.maxSubagentDepth),
+ 		...(maxOutput ? { maxOutput } : {}),
+ 		share: shareEnabled,
+ 		...(resolvedSessionDir ? { sessionDir: resolvedSessionDir } : {}),
+@@ -1413,11 +1454,15 @@ export function executeAsyncSingle(
+ 					{
+ 						parentSessionId: ctx.parentSessionId ?? ctx.currentSessionId,
+ 						permissionRules,
++						...(filesystemPolicy ? {
++							filesystemPolicy,
++							filesystemPolicyDigest: filesystemPolicyDigest(filesystemPolicy),
++						} : {}),
+ 						...(capabilityCeiling ? { capabilityCeiling } : {}),
+ 						agent,
+ 						task: taskWithOutputInstruction,
+ 						...(agentConfig.runner ? { runner: agentConfig.runner } : {}),
+-						...(params.context ? { context: params.context } : {}),
++						...(filesystemPolicy ? { context: "fresh" as const } : params.context ? { context: params.context } : {}),
+ 						cwd: runnerCwd,
+ 						model,
+ 						thinking: resolveEffectiveThinking(model, effectiveThinking),
+@@ -1429,13 +1474,13 @@ export function executeAsyncSingle(
+ 						completionGuard: agentConfig.completionGuard,
+ 						systemPrompt,
+ 						systemPromptMode: agentConfig.systemPromptMode,
+-						inheritProjectContext: agentConfig.inheritProjectContext,
+-						inheritSkills: agentConfig.inheritSkills,
++						inheritProjectContext: filesystemPolicy ? false : agentConfig.inheritProjectContext,
++						inheritSkills: filesystemPolicy ? false : agentConfig.inheritSkills,
+ 						skills: resolvedSkills.map((r) => r.name),
+ 						outputPath,
+ 						outputMode,
+ 						...(!externalRunner && sessionFile ? { sessionFile } : {}),
+-						maxSubagentDepth: resolveChildMaxSubagentDepth(maxSubagentDepth, agentConfig.maxSubagentDepth),
++						maxSubagentDepth: filesystemPolicy ? 0 : resolveChildMaxSubagentDepth(maxSubagentDepth, agentConfig.maxSubagentDepth),
+ 						waitToolEnabled: params.waitToolEnabled,
+ 						...(params.agentContract ? { agentContract: params.agentContract } : {}),
+ 						definitionDigest: agentDefinitionDigest(agentConfig),
+@@ -1561,6 +1606,6 @@ export function executeAsyncSingle(
+ 
+ 	return {
+ 		content: [{ type: "text", text: formatAsyncStartedMessage(`Async: ${agent} [${id}]`, ctx.interactive === true) }],
+-		details: { mode: "single", runId: id, results: [], asyncId: id, asyncDir, launchContractDigest, launchResolvedExtensions, ...(capabilityCeiling ? { capabilityCeiling } : {}), ...(params.context ? { context: params.context } : {}), ...(timeoutMs !== undefined ? { timeoutMs, deadlineAt } : {}), ...(params.turnBudget ? { turnBudget: params.turnBudget } : {}), ...(params.toolBudget ? { toolBudget: resolvedToolBudget.budget ?? params.toolBudget } : {}), ...(initialUsageBudget ? { usageBudget: initialUsageBudget } : {}) } as Details,
++		details: { mode: "single", runId: id, results: [], asyncId: id, asyncDir, launchContractDigest, launchResolvedExtensions, ...(filesystemPolicy ? { filesystemPolicy, filesystemPolicyDigest: filesystemPolicyDigest(filesystemPolicy) } : {}), ...(capabilityCeiling ? { capabilityCeiling } : {}), ...(params.context ? { context: params.context } : {}), ...(timeoutMs !== undefined ? { timeoutMs, deadlineAt } : {}), ...(params.turnBudget ? { turnBudget: params.turnBudget } : {}), ...(params.toolBudget ? { toolBudget: resolvedToolBudget.budget ?? params.toolBudget } : {}), ...(initialUsageBudget ? { usageBudget: initialUsageBudget } : {}) } as Details,
+ 	};
+ }
+diff --git a/src/runs/background/async-resume.ts b/src/runs/background/async-resume.ts
+index 9b61f19..9b5f3c8 100644
+--- a/src/runs/background/async-resume.ts
++++ b/src/runs/background/async-resume.ts
+@@ -1,12 +1,13 @@
+ import * as fs from "node:fs";
+ import * as path from "node:path";
+-import { DIRS, type AcceptanceInput, type AsyncStatus, type SteeringRecoveryDescriptor } from "../../shared/types.ts";
++import { DIRS, TEMP_ARTIFACTS_DIR, type AcceptanceInput, type AsyncStatus, type SteeringRecoveryDescriptor } from "../../shared/types.ts";
+ import type { AgentConfig } from "../../agents/agents.ts";
+ import { validateAcceptanceInput } from "../shared/acceptance.ts";
+ import { validateToolBudgetConfig } from "../shared/tool-budget.ts";
+ import { intersectSubagentCapabilityCeilings, parseSubagentCapabilityCeiling, type ResolvedSubagentCapabilityCeiling } from "../shared/capability-ceiling.ts";
+ import { resolveTurnBudgetConfig } from "../shared/turn-budget.ts";
+ import { reconcileAsyncRun } from "./stale-run-reconciler.ts";
++import { filesystemPolicyAcceptanceError, filesystemPolicyDigest, resolveFilesystemPolicy, type ResolvedFilesystemPolicy } from "../shared/filesystem-policy.ts";
+ 
+ export interface AsyncResumeParams {
+ 	id?: string;
+@@ -41,6 +42,8 @@ export type AsyncResumeTarget = {
+ 	recoveryDescriptor?: SteeringRecoveryDescriptor;
+ 	capabilityCeiling?: ResolvedSubagentCapabilityCeiling;
+ 	launchContractDigest?: string;
++	filesystemPolicy?: import("../shared/filesystem-policy.ts").ResolvedFilesystemPolicy;
++	filesystemPolicyDigest?: string;
+ };
+ 
+ interface AsyncResultFile {
+@@ -56,8 +59,10 @@ interface AsyncResultFile {
+ 	model?: string;
+ 	thinking?: string;
+ 	launchContractDigest?: string;
++	filesystemPolicy?: ResolvedFilesystemPolicy;
++	filesystemPolicyDigest?: string;
+ 	capabilityCeiling?: ResolvedSubagentCapabilityCeiling;
+-	results?: Array<{ agent?: string; success?: boolean; sessionFile?: string; intercomTarget?: string; model?: string; thinking?: string; launchContractDigest?: string; capabilityCeiling?: ResolvedSubagentCapabilityCeiling }>;
++	results?: Array<{ agent?: string; success?: boolean; cwd?: string; sessionFile?: string; intercomTarget?: string; model?: string; thinking?: string; launchContractDigest?: string; filesystemPolicy?: ResolvedFilesystemPolicy; filesystemPolicyDigest?: string; capabilityCeiling?: ResolvedSubagentCapabilityCeiling }>;
+ }
+ 
+ export interface AsyncRunLocation {
+@@ -84,8 +89,35 @@ function validateOptionalString(value: Record<string, unknown>, field: string, s
+ 	return fieldValue;
+ }
+ 
++interface FilesystemPolicyEvidence {
++	policy: ResolvedFilesystemPolicy;
++	digest: string;
++}
++
++function validateFilesystemPolicyPair(
++	policyValue: unknown,
++	digestValue: unknown,
++	cwd: string | undefined,
++	source: string,
++): FilesystemPolicyEvidence | undefined {
++	if (policyValue === undefined && digestValue === undefined) return undefined;
++	if (policyValue === undefined || digestValue === undefined) {
++		throw new Error(`Invalid ${source}: filesystemPolicy and filesystemPolicyDigest must either both be present or both be absent.`);
++	}
++	if (typeof digestValue !== "string" || !/^[0-9a-f]{64}$/.test(digestValue)) {
++		throw new Error(`Invalid ${source}: filesystemPolicyDigest must be a lowercase SHA-256 digest.`);
++	}
++	if (!cwd) throw new Error(`Invalid ${source}: cwd is required when filesystemPolicy is present.`);
++	const policy = resolveFilesystemPolicy(policyValue, cwd);
++	if (filesystemPolicyDigest(policy) !== digestValue) {
++		throw new Error(`Invalid ${source}: filesystemPolicyDigest mismatch.`);
++	}
++	return { policy, digest: digestValue };
++}
++
+ function validateResultFile(value: unknown, resultPath: string): AsyncResultFile {
+ 	const data = ensureObject(value, resultPath);
++	const cwd = validateOptionalString(data, "cwd", resultPath);
+ 	const resultsValue = data.results;
+ 	let results: AsyncResultFile["results"];
+ 	if (resultsValue !== undefined) {
+@@ -93,31 +125,35 @@ function validateResultFile(value: unknown, resultPath: string): AsyncResultFile
+ 		results = resultsValue.map((entry, index) => {
+ 			const child = ensureObject(entry, `${resultPath} results[${index}]`);
+ 			const agent = validateOptionalString(child, "agent", resultPath, `results[${index}].agent`);
++			const childCwd = validateOptionalString(child, "cwd", resultPath, `results[${index}].cwd`) ?? cwd;
+ 			const sessionFile = validateOptionalString(child, "sessionFile", resultPath, `results[${index}].sessionFile`);
+ 			const intercomTarget = validateOptionalString(child, "intercomTarget", resultPath, `results[${index}].intercomTarget`);
+ 			const model = validateOptionalString(child, "model", resultPath, `results[${index}].model`);
+ 			const thinking = validateOptionalString(child, "thinking", resultPath, `results[${index}].thinking`);
+ 			const launchContractDigest = validateOptionalString(child, "launchContractDigest", resultPath, `results[${index}].launchContractDigest`);
++			const policyEvidence = validateFilesystemPolicyPair(child.filesystemPolicy, child.filesystemPolicyDigest, childCwd, `async result file '${resultPath}' results[${index}]`);
+ 			const capabilityCeiling = child.capabilityCeiling === undefined ? undefined : parseSubagentCapabilityCeiling(child.capabilityCeiling, `async result file '${resultPath}' results[${index}].capabilityCeiling`);
+ 			const success = child.success;
+ 			if (success !== undefined && typeof success !== "boolean") throw new Error(`Invalid async result file '${resultPath}': results[${index}].success must be a boolean.`);
+-			return { agent, sessionFile, intercomTarget, model, thinking, launchContractDigest, ...(capabilityCeiling ? { capabilityCeiling } : {}), ...(typeof success === "boolean" ? { success } : {}) };
++			return { agent, cwd: childCwd, sessionFile, intercomTarget, model, thinking, launchContractDigest, ...(policyEvidence ? { filesystemPolicy: policyEvidence.policy, filesystemPolicyDigest: policyEvidence.digest } : {}), ...(capabilityCeiling ? { capabilityCeiling } : {}), ...(typeof success === "boolean" ? { success } : {}) };
+ 		});
+ 	}
+ 	const success = data.success;
+ 	if (success !== undefined && typeof success !== "boolean") throw new Error(`Invalid async result file '${resultPath}': success must be a boolean.`);
++	const policyEvidence = validateFilesystemPolicyPair(data.filesystemPolicy, data.filesystemPolicyDigest, cwd, `async result file '${resultPath}'`);
+ 	return {
+ 		id: validateOptionalString(data, "id", resultPath),
+ 		runId: validateOptionalString(data, "runId", resultPath),
+ 		agent: validateOptionalString(data, "agent", resultPath),
+ 		mode: validateOptionalString(data, "mode", resultPath),
+ 		state: validateOptionalString(data, "state", resultPath),
+-		cwd: validateOptionalString(data, "cwd", resultPath),
++		cwd,
+ 		sessionId: validateOptionalString(data, "sessionId", resultPath),
+ 		sessionFile: validateOptionalString(data, "sessionFile", resultPath),
+ 		model: validateOptionalString(data, "model", resultPath),
+ 		thinking: validateOptionalString(data, "thinking", resultPath),
+ 		launchContractDigest: validateOptionalString(data, "launchContractDigest", resultPath),
++		...(policyEvidence ? { filesystemPolicy: policyEvidence.policy, filesystemPolicyDigest: policyEvidence.digest } : {}),
+ 		...(data.capabilityCeiling === undefined ? {} : { capabilityCeiling: parseSubagentCapabilityCeiling(data.capabilityCeiling, `async result file '${resultPath}' capabilityCeiling`) }),
+ 		...(typeof success === "boolean" ? { success } : {}),
+ 		...(results ? { results } : {}),
+@@ -246,6 +282,11 @@ function validateStatusForResume(status: AsyncStatus | null, source: string): vo
+ 	if (status.sessionId !== undefined && typeof status.sessionId !== "string") throw new Error(`Invalid async status '${source}': sessionId must be a string.`);
+ 	if (status.cwd !== undefined && typeof status.cwd !== "string") throw new Error(`Invalid async status '${source}': cwd must be a string.`);
+ 	if (status.sessionFile !== undefined && typeof status.sessionFile !== "string") throw new Error(`Invalid async status '${source}': sessionFile must be a string.`);
++	const rootPolicyEvidence = validateFilesystemPolicyPair(status.filesystemPolicy, status.filesystemPolicyDigest, status.cwd, `async status '${source}'`);
++	if (rootPolicyEvidence) {
++		status.filesystemPolicy = rootPolicyEvidence.policy;
++		status.filesystemPolicyDigest = rootPolicyEvidence.digest;
++	}
+ 	if (status.capabilityCeiling !== undefined) status.capabilityCeiling = parseSubagentCapabilityCeiling(status.capabilityCeiling, `async status '${source}' capabilityCeiling`);
+ 	if (status.steps !== undefined) {
+ 		if (!Array.isArray(status.steps)) throw new Error(`Invalid async status '${source}': steps must be an array.`);
+@@ -253,10 +294,16 @@ function validateStatusForResume(status: AsyncStatus | null, source: string): vo
+ 			if (!step || typeof step !== "object" || Array.isArray(step)) throw new Error(`Invalid async status '${source}': steps[${index}] must be an object.`);
+ 			const stepRecord = step as Record<string, unknown>;
+ 			if (typeof stepRecord.agent !== "string") throw new Error(`Invalid async status '${source}': steps[${index}].agent must be a string.`);
++			if (stepRecord.cwd !== undefined && typeof stepRecord.cwd !== "string") throw new Error(`Invalid async status '${source}': steps[${index}].cwd must be a string.`);
+ 			if (stepRecord.sessionFile !== undefined && typeof stepRecord.sessionFile !== "string") throw new Error(`Invalid async status '${source}': steps[${index}].sessionFile must be a string.`);
+ 			if (stepRecord.model !== undefined && typeof stepRecord.model !== "string") throw new Error(`Invalid async status '${source}': steps[${index}].model must be a string.`);
+ 			if (stepRecord.thinking !== undefined && typeof stepRecord.thinking !== "string") throw new Error(`Invalid async status '${source}': steps[${index}].thinking must be a string.`);
+ 			if (stepRecord.launchContractDigest !== undefined && typeof stepRecord.launchContractDigest !== "string") throw new Error(`Invalid async status '${source}': steps[${index}].launchContractDigest must be a string.`);
++			const stepPolicyEvidence = validateFilesystemPolicyPair(stepRecord.filesystemPolicy, stepRecord.filesystemPolicyDigest, (stepRecord.cwd as string | undefined) ?? status.cwd, `async status '${source}' steps[${index}]`);
++			if (stepPolicyEvidence) {
++				stepRecord.filesystemPolicy = stepPolicyEvidence.policy;
++				stepRecord.filesystemPolicyDigest = stepPolicyEvidence.digest;
++			}
+ 			if (stepRecord.capabilityCeiling !== undefined) stepRecord.capabilityCeiling = parseSubagentCapabilityCeiling(stepRecord.capabilityCeiling, `async status '${source}' steps[${index}].capabilityCeiling`);
+ 		});
+ 	}
+@@ -290,7 +337,7 @@ export function readAsyncRecoveryDescriptor(asyncDir: string | undefined): Steer
+ 		"subagentOnlyExtensions", "mcpDirectTools", "systemPrompt", "systemPromptMode", "inheritProjectContext", "inheritSkills", "skills",
+ 		"skillPath", "agentFilePath", "completionGuard", "memory", "outputPath", "outputMode", "structuredOutputSchema", "acceptance", "sessionDir", "artifactConfig",
+ 		"artifactsDir", "maxOutput", "controlConfig", "absoluteDeadlineAt", "initialTurnBudget", "initialToolBudget", "maxSubagentDepth", "share", "capabilityCeiling",
+-		"launchResolvedExtensions",
++		"launchResolvedExtensions", "filesystemPolicy", "filesystemPolicyDigest",
+ 	]);
+ 	for (const field of Object.keys(parsed)) {
+ 		if (!allowedFields.has(field)) throw new Error(`Invalid async recovery descriptor '${descriptorPath}': unknown field '${field}'.`);
+@@ -312,6 +359,18 @@ export function readAsyncRecoveryDescriptor(asyncDir: string | undefined): Steer
+ 		if (typeof parsed[field] !== "boolean") throw new Error(`Invalid async recovery descriptor '${descriptorPath}': ${field} must be a boolean.`);
+ 	}
+ 	if (!Number.isInteger(parsed.maxSubagentDepth) || (parsed.maxSubagentDepth as number) < 0) throw new Error(`Invalid async recovery descriptor '${descriptorPath}': maxSubagentDepth must be a non-negative integer.`);
++	if (parsed.filesystemPolicy !== undefined) {
++		if (parsed.maxSubagentDepth !== 0) throw new Error(`Invalid async recovery descriptor '${descriptorPath}': filesystemPolicy requires maxSubagentDepth=0.`);
++		if (parsed.inheritProjectContext !== false || parsed.inheritSkills !== false) throw new Error(`Invalid async recovery descriptor '${descriptorPath}': filesystemPolicy requires automatic project context and skills to be disabled.`);
++		if ((Array.isArray(parsed.skills) && parsed.skills.length > 0) || parsed.memory !== undefined) throw new Error(`Invalid async recovery descriptor '${descriptorPath}': filesystemPolicy cannot retain injected skills or agent memory.`);
++		const policy = resolveFilesystemPolicy(parsed.filesystemPolicy, parsed.cwd as string);
++		if (typeof parsed.filesystemPolicyDigest !== "string" || parsed.filesystemPolicyDigest !== filesystemPolicyDigest(policy)) {
++			throw new Error(`Invalid async recovery descriptor '${descriptorPath}': filesystemPolicyDigest mismatch.`);
++		}
++		parsed.filesystemPolicy = policy;
++	} else if (parsed.filesystemPolicyDigest !== undefined) {
++		throw new Error(`Invalid async recovery descriptor '${descriptorPath}': filesystemPolicyDigest requires filesystemPolicy.`);
++	}
+ 	for (const field of ["fallbackModels", "tools", "extensions", "subagentOnlyExtensions", "mcpDirectTools", "skills", "skillPath"] as const) {
+ 		const item = parsed[field];
+ 		if (item !== undefined && (!Array.isArray(item) || item.some((entry) => typeof entry !== "string" || !entry.trim()))) throw new Error(`Invalid async recovery descriptor '${descriptorPath}': ${field} must contain non-empty strings.`);
+@@ -352,6 +411,24 @@ export function readAsyncRecoveryDescriptor(asyncDir: string | undefined): Steer
+ 		if (artifact.includeTranscript !== undefined && typeof artifact.includeTranscript !== "boolean") throw new Error(`Invalid async recovery descriptor '${descriptorPath}': artifactConfig.includeTranscript must be a boolean.`);
+ 		if (!Number.isInteger(artifact.cleanupDays) || (artifact.cleanupDays as number) < 0) throw new Error(`Invalid async recovery descriptor '${descriptorPath}': artifactConfig.cleanupDays must be a non-negative integer.`);
+ 	}
++	if (parsed.filesystemPolicy !== undefined) {
++		if (parsed.outputPath !== undefined || parsed.outputMode !== "inline" || parsed.structuredOutputSchema !== undefined || parsed.share !== false) {
++			throw new Error(`Invalid async recovery descriptor '${descriptorPath}': filesystemPolicy cannot retain host-side output files, structured output, or sharing.`);
++		}
++		const acceptanceError = filesystemPolicyAcceptanceError(parsed.acceptance);
++		if (parsed.acceptance === undefined || acceptanceError) {
++			throw new Error(`Invalid async recovery descriptor '${descriptorPath}': ${acceptanceError ?? "filesystemPolicy requires an explicit no-command acceptance value"}.`);
++		}
++		const artifact = parsed.artifactConfig as Record<string, unknown> | undefined;
++		if (!artifact || artifact.dir !== "temp") {
++			throw new Error(`Invalid async recovery descriptor '${descriptorPath}': filesystemPolicy requires artifactConfig.dir='temp'.`);
++		}
++		const descriptorArtifactsDir = parsed.artifactsDir as string | undefined;
++		const comparable = (value: string) => process.platform === "win32" ? path.resolve(value).toLocaleLowerCase("en-US") : path.resolve(value);
++		if (!descriptorArtifactsDir || comparable(descriptorArtifactsDir) !== comparable(TEMP_ARTIFACTS_DIR)) {
++			throw new Error(`Invalid async recovery descriptor '${descriptorPath}': filesystemPolicy requires the managed temp artifacts directory.`);
++		}
++	}
+ 	if (parsed.controlConfig !== undefined) {
+ 		if (!parsed.controlConfig || typeof parsed.controlConfig !== "object" || Array.isArray(parsed.controlConfig)) throw new Error(`Invalid async recovery descriptor '${descriptorPath}': controlConfig must be an object.`);
+ 		const control = parsed.controlConfig as Record<string, unknown>;
+@@ -373,6 +450,103 @@ export function readAsyncRecoveryDescriptor(asyncDir: string | undefined): Steer
+ 	return parsed as unknown as SteeringRecoveryDescriptor;
+ }
+ 
++interface FilesystemPolicyCarrier {
++	filesystemPolicy?: ResolvedFilesystemPolicy;
++	filesystemPolicyDigest?: string;
++}
++
++function hasFilesystemPolicyMarker(value: FilesystemPolicyCarrier | undefined): boolean {
++	return value?.filesystemPolicy !== undefined || value?.filesystemPolicyDigest !== undefined;
++}
++
++function retainedFilesystemPolicyEvidence(
++	value: FilesystemPolicyCarrier | undefined,
++	cwd: string | undefined,
++	source: string,
++): FilesystemPolicyEvidence | undefined {
++	if (!value) return undefined;
++	return validateFilesystemPolicyPair(value.filesystemPolicy, value.filesystemPolicyDigest, cwd, source);
++}
++
++/**
++ * A restricted async run is recognized from every durable lifecycle surface,
++ * not just recovery-descriptor.json. Once any retained marker exists, the
++ * descriptor and each surface that should exist at the selected lifecycle
++ * point must carry the same canonical policy digest. This prevents a missing
++ * descriptor or a stripped selected result/status entry from silently
++ * downgrading the follow-up to an unrestricted legacy resume.
++ */
++function resolveResumeFilesystemPolicyEvidence(input: {
++	runId: string;
++	index: number;
++	stepCount: number;
++	status: AsyncStatus | null;
++	result: AsyncResultFile | undefined;
++	recoveryDescriptor: SteeringRecoveryDescriptor | undefined;
++}): FilesystemPolicyEvidence | undefined {
++	const { runId, index, stepCount, status, result, recoveryDescriptor } = input;
++	const statusSteps = status?.steps ?? [];
++	const resultSteps = result?.results ?? [];
++	const allCarriers: FilesystemPolicyCarrier[] = [
++		...(recoveryDescriptor ? [recoveryDescriptor] : []),
++		...(status ? [status] : []),
++		...statusSteps,
++		...(result ? [result] : []),
++		...resultSteps,
++	];
++	if (!allCarriers.some(hasFilesystemPolicyMarker)) return undefined;
++	if (stepCount !== 1) {
++		throw new Error(`Async run '${runId}' contains filesystemPolicy markers in a multi-child run, which filesystemPolicy v1 does not support; refusing resume.`);
++	}
++
++	const descriptorEvidence = retainedFilesystemPolicyEvidence(
++		recoveryDescriptor,
++		recoveryDescriptor?.cwd,
++		`async run '${runId}' recovery descriptor`,
++	);
++	if (!descriptorEvidence) {
++		throw new Error(`Async run '${runId}' has retained filesystem policy markers but its recovery descriptor is missing filesystemPolicy evidence; refusing unrestricted resume.`);
++	}
++
++	const requiredEvidence: Array<{ label: string; evidence: FilesystemPolicyEvidence | undefined }> = [];
++	if (status) {
++		if (stepCount === 1) {
++			requiredEvidence.push({
++				label: "status root",
++				evidence: retainedFilesystemPolicyEvidence(status, status.cwd, `async run '${runId}' status root`),
++			});
++		}
++		const selected = statusSteps[index];
++		requiredEvidence.push({
++			label: `status step ${index}`,
++			evidence: retainedFilesystemPolicyEvidence(selected, selected?.cwd ?? status.cwd, `async run '${runId}' status step ${index}`),
++		});
++	}
++	if (result) {
++		if (stepCount === 1) {
++			requiredEvidence.push({
++				label: "result root",
++				evidence: retainedFilesystemPolicyEvidence(result, result.cwd, `async run '${runId}' result root`),
++			});
++		}
++		const selected = resultSteps[index];
++		requiredEvidence.push({
++			label: `result child ${index}`,
++			evidence: retainedFilesystemPolicyEvidence(selected, selected?.cwd ?? result.cwd, `async run '${runId}' result child ${index}`),
++		});
++	}
++
++	for (const required of requiredEvidence) {
++		if (!required.evidence) {
++			throw new Error(`Async run '${runId}' is filesystem-restricted but ${required.label} is missing filesystemPolicy evidence; refusing unrestricted resume.`);
++		}
++		if (required.evidence.digest !== descriptorEvidence.digest) {
++			throw new Error(`Async run '${runId}' filesystem policy conflict between recovery descriptor and ${required.label}; refusing resume.`);
++		}
++	}
++	return descriptorEvidence;
++}
++
+ function validateResumeSessionFile(runId: string, sessionFile: string): string {
+ 	if (path.extname(sessionFile) !== ".jsonl") throw new Error(`Async run '${runId}' session file must be a .jsonl file: ${sessionFile}`);
+ 	const resolved = path.resolve(sessionFile);
+@@ -418,6 +592,7 @@ export function resolveAsyncResumeTarget(params: AsyncResumeParams, deps: AsyncR
+ 			const selectedStep = statusSteps[requestedIndex];
+ 			if (selectedStep?.status === "running") {
+ 				const capabilityCeiling = intersectSubagentCapabilityCeilings(status?.capabilityCeiling, selectedStep.capabilityCeiling);
++				const filesystemPolicyEvidence = resolveResumeFilesystemPolicyEvidence({ runId, index: requestedIndex, stepCount, status, result, recoveryDescriptor });
+ 				return {
+ 					kind: "live",
+ 					runId,
+@@ -425,11 +600,12 @@ export function resolveAsyncResumeTarget(params: AsyncResumeParams, deps: AsyncR
+ 					state,
+ 					agent: selectedStep.agent,
+ 					index: requestedIndex,
+-					cwd: status?.cwd ?? result?.cwd,
++					cwd: filesystemPolicyEvidence?.policy.cwd ?? selectedStep.cwd ?? status?.cwd ?? result?.cwd,
+ 					sessionFile: selectedStep.sessionFile ?? status?.sessionFile ?? result?.sessionFile,
+ 					model: selectedStep.model,
+ 					thinking: selectedStep.thinking,
+ 					launchContractDigest: selectedStep.launchContractDigest ?? result?.results?.[requestedIndex]?.launchContractDigest ?? result?.launchContractDigest ?? recoveryDescriptor?.launchContractDigest,
++					...(filesystemPolicyEvidence ? { filesystemPolicy: filesystemPolicyEvidence.policy, filesystemPolicyDigest: filesystemPolicyEvidence.digest } : {}),
+ 					...(capabilityCeiling ? { capabilityCeiling } : {}),
+ 					...(recoveryDescriptor ? { recoveryDescriptor } : {}),
+ 				};
+@@ -445,6 +621,7 @@ export function resolveAsyncResumeTarget(params: AsyncResumeParams, deps: AsyncR
+ 				throw new Error(`Async run '${runId}' has ${running.length} running children. Provide index to choose one.`);
+ 			}
+ 			const capabilityCeiling = intersectSubagentCapabilityCeilings(status?.capabilityCeiling, selected.step.capabilityCeiling);
++			const filesystemPolicyEvidence = resolveResumeFilesystemPolicyEvidence({ runId, index: selected.index, stepCount, status, result, recoveryDescriptor });
+ 			return {
+ 				kind: "live",
+ 				runId,
+@@ -452,11 +629,12 @@ export function resolveAsyncResumeTarget(params: AsyncResumeParams, deps: AsyncR
+ 				state,
+ 				agent: selected.step.agent,
+ 				index: selected.index,
+-				cwd: status?.cwd ?? result?.cwd,
++				cwd: filesystemPolicyEvidence?.policy.cwd ?? selected.step.cwd ?? status?.cwd ?? result?.cwd,
+ 				sessionFile: selected.step.sessionFile ?? status?.sessionFile ?? result?.sessionFile,
+ 				model: selected.step.model,
+ 				thinking: selected.step.thinking,
+ 				launchContractDigest: selected.step.launchContractDigest ?? result?.results?.[selected.index]?.launchContractDigest ?? result?.launchContractDigest ?? recoveryDescriptor?.launchContractDigest,
++				...(filesystemPolicyEvidence ? { filesystemPolicy: filesystemPolicyEvidence.policy, filesystemPolicyDigest: filesystemPolicyEvidence.digest } : {}),
+ 				...(capabilityCeiling ? { capabilityCeiling } : {}),
+ 				...(recoveryDescriptor ? { recoveryDescriptor } : {}),
+ 			};
+@@ -480,6 +658,7 @@ export function resolveAsyncResumeTarget(params: AsyncResumeParams, deps: AsyncR
+ 	const stepModel = statusSteps[index]?.model ?? resultSteps[index]?.model ?? (stepCount === 1 ? result?.model : undefined);
+ 	const stepThinking = statusSteps[index]?.thinking ?? resultSteps[index]?.thinking ?? (stepCount === 1 ? result?.thinking : undefined);
+ 	const capabilityCeiling = intersectSubagentCapabilityCeilings(status?.capabilityCeiling, statusSteps[index]?.capabilityCeiling, result?.capabilityCeiling, resultSteps[index]?.capabilityCeiling);
++	const filesystemPolicyEvidence = resolveResumeFilesystemPolicyEvidence({ runId, index, stepCount, status, result, recoveryDescriptor });
+ 
+ 	return {
+ 		kind: "revive",
+@@ -488,17 +667,19 @@ export function resolveAsyncResumeTarget(params: AsyncResumeParams, deps: AsyncR
+ 		state,
+ 		agent,
+ 		index,
+-		cwd: status?.cwd ?? result?.cwd,
++		cwd: filesystemPolicyEvidence?.policy.cwd ?? statusSteps[index]?.cwd ?? resultSteps[index]?.cwd ?? status?.cwd ?? result?.cwd,
+ 		...(resolvedSessionFile ? { sessionFile: resolvedSessionFile } : {}),
+ 		...(stepModel ? { model: stepModel } : {}),
+ 		...(stepThinking ? { thinking: stepThinking } : {}),
+ 		launchContractDigest: statusSteps[index]?.launchContractDigest ?? resultSteps[index]?.launchContractDigest ?? result?.launchContractDigest ?? recoveryDescriptor?.launchContractDigest,
++		...(filesystemPolicyEvidence ? { filesystemPolicy: filesystemPolicyEvidence.policy, filesystemPolicyDigest: filesystemPolicyEvidence.digest } : {}),
+ 		...(capabilityCeiling ? { capabilityCeiling } : {}),
+ 		...(recoveryDescriptor ? { recoveryDescriptor } : {}),
+ 	};
+ }
+ 
+ export function applySteeringRecoveryAgentConfig(agentConfig: AgentConfig, descriptor: SteeringRecoveryDescriptor): AgentConfig {
++	const restricted = descriptor.filesystemPolicy !== undefined;
+ 	return {
+ 		...agentConfig,
+ 		model: descriptor.model,
+@@ -510,16 +691,16 @@ export function applySteeringRecoveryAgentConfig(agentConfig: AgentConfig, descr
+ 		mcpDirectTools: descriptor.mcpDirectTools ? [...descriptor.mcpDirectTools] : undefined,
+ 		systemPrompt: descriptor.systemPrompt ?? agentConfig.systemPrompt,
+ 		systemPromptMode: descriptor.systemPromptMode,
+-		inheritProjectContext: descriptor.inheritProjectContext,
+-		inheritSkills: descriptor.inheritSkills,
+-		skills: descriptor.skills ? [...descriptor.skills] : undefined,
+-		skillPath: descriptor.skillPath ? [...descriptor.skillPath] : undefined,
++		inheritProjectContext: restricted ? false : descriptor.inheritProjectContext,
++		inheritSkills: restricted ? false : descriptor.inheritSkills,
++		skills: restricted ? undefined : descriptor.skills ? [...descriptor.skills] : undefined,
++		skillPath: restricted ? undefined : descriptor.skillPath ? [...descriptor.skillPath] : undefined,
+ 		filePath: descriptor.agentFilePath as string,
+ 		completionGuard: descriptor.completionGuard,
+-		memory: descriptor.memory ? { ...descriptor.memory } : undefined,
++		memory: restricted ? undefined : descriptor.memory ? { ...descriptor.memory } : undefined,
+ 		output: descriptor.outputPath,
+ 		toolBudget: descriptor.initialToolBudget,
+-		maxSubagentDepth: descriptor.maxSubagentDepth,
++		maxSubagentDepth: restricted ? 0 : descriptor.maxSubagentDepth,
+ 	};
+ }
+ 
+diff --git a/src/runs/background/stale-run-reconciler.ts b/src/runs/background/stale-run-reconciler.ts
+index 6bda224..48f7841 100644
+--- a/src/runs/background/stale-run-reconciler.ts
++++ b/src/runs/background/stale-run-reconciler.ts
+@@ -243,11 +243,15 @@ function buildFailedRepair(status: AsyncStatus, asyncDir: string, now: number, r
+ 		steps: repairedSteps,
+ 	};
+ 	const resultAgent = repairedSteps[status.currentStep ?? 0]?.agent ?? repairedSteps[0]?.agent ?? "subagent";
++	const singleStep = repairedSteps.length === 1 ? repairedSteps[0] : undefined;
++	const retainedFilesystemPolicy = status.filesystemPolicy ?? singleStep?.filesystemPolicy;
++	const retainedFilesystemPolicyDigest = status.filesystemPolicyDigest ?? singleStep?.filesystemPolicyDigest;
+ 	return {
+ 		status: repairedStatus,
+ 		message,
+ 		result: {
+ 			id: runId,
++			runId,
+ 			agent: resultAgent,
+ 			mode: status.mode,
+ 			success: false,
+@@ -255,6 +259,7 @@ function buildFailedRepair(status: AsyncStatus, asyncDir: string, now: number, r
+ 			summary: message,
+ 			results: repairedSteps.map((step) => ({
+ 				agent: step.agent,
++				cwd: step.cwd ?? status.cwd,
+ 				output: step.status === "complete" || step.status === "completed" ? "" : message,
+ 				error: step.status === "complete" || step.status === "completed" ? undefined : step.error ?? message,
+ 				success: step.status === "complete" || step.status === "completed",
+@@ -262,11 +267,18 @@ function buildFailedRepair(status: AsyncStatus, asyncDir: string, now: number, r
+ 				attemptedModels: step.attemptedModels,
+ 				modelAttempts: step.modelAttempts,
+ 				sessionFile: step.sessionFile,
++				launchContractDigest: step.launchContractDigest,
++				filesystemPolicy: step.filesystemPolicy,
++				filesystemPolicyDigest: step.filesystemPolicyDigest,
+ 			})),
+ 			exitCode: 1,
+ 			timestamp: now,
+ 			durationMs: Math.max(0, now - status.startedAt),
+ 			asyncDir,
++			cwd: status.cwd,
++			launchContractDigest: status.launchContractDigest ?? singleStep?.launchContractDigest,
++			filesystemPolicy: retainedFilesystemPolicy,
++			filesystemPolicyDigest: retainedFilesystemPolicyDigest,
+ 			sessionId: status.sessionId,
+ 			sessionFile: status.sessionFile,
+ 		},
+diff --git a/src/runs/background/subagent-runner.ts b/src/runs/background/subagent-runner.ts
+index 59ddf55..07d9f22 100644
+--- a/src/runs/background/subagent-runner.ts
++++ b/src/runs/background/subagent-runner.ts
+@@ -176,6 +176,8 @@ interface SubagentRunConfig {
+ 	globalConcurrencyLimit?: number;
+ 	capabilityCeiling?: ResolvedSubagentCapabilityCeiling;
+ 	launchContractDigest?: string;
++	filesystemPolicy?: import("../shared/filesystem-policy.ts").ResolvedFilesystemPolicy;
++	filesystemPolicyDigest?: string;
+ 	launchResolvedExtensions?: LaunchResolvedChildExtensionsV1;
+ 	runtimeAcknowledgedExtensions?: RuntimeAcknowledgedChildExtensionsV1;
+ 	runnerProcessInstanceId?: string;
+@@ -189,6 +191,8 @@ interface StepResult {
+ 	capabilityCeiling?: ResolvedSubagentCapabilityCeiling;
+ 	capabilityAudit?: import("../shared/capability-ceiling.ts").SubagentCapabilityAudit;
+ 	launchResolvedExtensions?: LaunchResolvedChildExtensionsV1;
++	filesystemPolicy?: import("../shared/filesystem-policy.ts").ResolvedFilesystemPolicy;
++	filesystemPolicyDigest?: string;
+ 	runtimeAcknowledgedExtensions?: RuntimeAcknowledgedChildExtensionsV1;
+ 	output: string;
+ 	outputState?: SubagentOutputState;
+@@ -1186,6 +1190,12 @@ async function runSingleStep(
+ 	const effectiveStructuredOutput = step.structuredOutput ?? (step.structuredOutputSchema
+ 		? createStructuredOutputRuntime(step.structuredOutputSchema, path.join(path.dirname(ctx.outputFile), "structured-output"))
+ 		: undefined);
++	if (step.filesystemPolicy) {
++		if (step.context === "fork") throw new Error("filesystemPolicy requires fresh child context and cannot be combined with context:'fork'.");
++		if (effectiveStructuredOutput) throw new Error("filesystemPolicy cannot be combined with structured output.");
++		if (step.inheritProjectContext || step.inheritSkills || (step.skills?.length ?? 0) > 0) throw new Error("filesystemPolicy requires automatic project context and skills to be disabled before provider launch.");
++		if (step.maxSubagentDepth !== 0) throw new Error("filesystemPolicy requires maxSubagentDepth=0 before provider launch.");
++	}
+ 	const placeholderRegex = new RegExp(ctx.placeholder.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "g");
+ 	let task = step.task.replace(placeholderRegex, () => ctx.previousOutput);
+ 	if (ctx.outputs) task = resolveOutputReferences(task, ctx.outputs);
+@@ -1220,6 +1230,7 @@ async function runSingleStep(
+ 	transcriptWriter?.writeInitialUserMessage(task);
+ 
+ 	if (step.runner?.type === "external-cli") {
++		if (step.filesystemPolicy) throw new Error(`Agent '${step.agent}' uses runner.type='external-cli', which cannot enforce filesystemPolicy.`);
+ 		const runner: ExternalCliRunnerStatus = {
+ 			type: "external-cli",
+ 			command: step.runner.command,
+@@ -1365,6 +1376,7 @@ async function runSingleStep(
+ 				: undefined,
+ 			childWatchdog,
+ 			waitToolEnabled: step.waitToolEnabled,
++			filesystemPolicy: step.filesystemPolicy,
+ 		}));
+ 		if (step.definitionDigest) {
+ 			const toolPlan = resolvePiLaunchToolPlan(omitUndefinedProperties({
+@@ -1377,6 +1389,7 @@ async function runSingleStep(
+ 				structuredOutput: Boolean(effectiveStructuredOutput),
+ 				capabilityCeiling: step.capabilityCeiling ?? ctx.capabilityCeiling,
+ 				inheritedCapabilityCeiling: decodeSubagentCapabilityCeiling(process.env[SUBAGENT_CAPABILITY_CEILING_ENV]),
++				filesystemPolicyActive: step.filesystemPolicy !== undefined,
+ 			}));
+ 			launchResolvedExtensions = projectLaunchResolvedChildExtensions(toolPlan);
+ 			actualLaunchContractDigest = launchBindingDigest(omitUndefinedProperties({
+@@ -1396,6 +1409,8 @@ async function runSingleStep(
+ 				...(step.outputPath ? { outputPath: step.outputPath } : {}),
+ 				...(step.outputMode ? { outputMode: step.outputMode } : {}),
+ 				...(step.structuredOutputSchema ? { structuredOutputSchema: step.structuredOutputSchema } : {}),
++				...(step.filesystemPolicy ? { filesystemPolicy: step.filesystemPolicy } : {}),
++				...(step.filesystemPolicy ? { artifactsDir: ctx.artifactsDir, artifactConfig: ctx.artifactConfig } : {}),
+ 			}));
+ 		}
+ 		capabilityAudit = attemptCapabilityAudit;
+@@ -1707,6 +1722,7 @@ async function runSingleStep(
+ 				acceptance: effectiveAcceptance,
+ 				...(capabilityAudit ? { capabilityCeiling: capabilityAudit.ceiling, capabilityAudit } : {}),
+ 				launchContractDigest: actualLaunchContractDigest,
++				...(step.filesystemPolicy ? { filesystemPolicy: step.filesystemPolicy, filesystemPolicyDigest: step.filesystemPolicyDigest } : {}),
+ 				launchResolvedExtensions,
+ 				...((finalResult as (RunPiStreamingResult & { runtimeAcknowledgedExtensions?: RuntimeAcknowledgedChildExtensionsV1 }) | undefined)?.runtimeAcknowledgedExtensions ? { runtimeAcknowledgedExtensions: (finalResult as RunPiStreamingResult & { runtimeAcknowledgedExtensions?: RuntimeAcknowledgedChildExtensionsV1 }).runtimeAcknowledgedExtensions } : {}),
+ 				...(transcriptWriter ? { transcriptPath: artifactPaths.transcriptPath } : {}),
+@@ -1722,6 +1738,7 @@ async function runSingleStep(
+ 		context: step.context,
+ 		...(step.agentContract ? { agentContract: step.agentContract } : {}),
+ 		launchContractDigest: actualLaunchContractDigest,
++		...(step.filesystemPolicy ? { filesystemPolicy: step.filesystemPolicy, filesystemPolicyDigest: step.filesystemPolicyDigest } : {}),
+ 		output: outputForSummary,
+ 		outputState,
+ 		exitCode: effectiveFinalExitCode,
+@@ -2070,6 +2087,7 @@ async function runSubagent(
+ 			const transcriptPath = resolveAsyncStepTranscriptPath(omitUndefinedProperties({ artifactsDir, artifactConfig, runId: id, agent: step.agent, flatIndex: stepFlatIndex, flatStepCount: initialFlatStepCount }));
+ 			initialStatusSteps.push(omitUndefinedProperties({
+ 				agent: step.agent,
++				cwd: step.cwd ?? cwd,
+ 				...(externalRunnerStatus(step.runner) ? { runner: externalRunnerStatus(step.runner) } : {}),
+ 				...(statusStepDescription(step.task) ? { description: statusStepDescription(step.task) } : {}),
+ 				...(step.context ? { context: step.context } : {}),
+@@ -2079,6 +2097,7 @@ async function runSubagent(
+ 				structured: step.structured,
+ 				...(step.agentContract ? { agentContract: step.agentContract } : {}),
+ 				...(step.launchContractDigest ? { launchContractDigest: step.launchContractDigest } : {}),
++				...(step.filesystemPolicy ? { filesystemPolicy: step.filesystemPolicy, filesystemPolicyDigest: step.filesystemPolicyDigest } : {}),
+ 				...(step.launchResolvedExtensions ? { launchResolvedExtensions: step.launchResolvedExtensions } : {}),
+ 				...(step.capabilityCeiling ? { capabilityCeiling: step.capabilityCeiling } : {}),
+ 				status: "pending",
+@@ -2126,6 +2145,10 @@ async function runSubagent(
+ 		parallelGroups,
+ 		workflowGraph: config.workflowGraph,
+ 		...(config.launchContractDigest ? { launchContractDigest: config.launchContractDigest } : {}),
++		...(flatSteps.length === 1 && flatSteps[0]?.filesystemPolicy ? {
++			filesystemPolicy: flatSteps[0].filesystemPolicy,
++			filesystemPolicyDigest: flatSteps[0].filesystemPolicyDigest,
++		} : {}),
+ 		...(config.launchResolvedExtensions ? { launchResolvedExtensions: config.launchResolvedExtensions } : {}),
+ 		...(config.capabilityCeiling ? { capabilityCeiling: config.capabilityCeiling } : {}),
+ 		...(config.parentWorkflowRunId ? { parentWorkflowRunId: config.parentWorkflowRunId } : {}),
+@@ -4162,6 +4185,8 @@ async function runSubagent(
+ 				context: singleResult.context,
+ 				agentContract: singleResult.agentContract,
+ 				launchContractDigest: singleResult.launchContractDigest,
++				filesystemPolicy: singleResult.filesystemPolicy,
++				filesystemPolicyDigest: singleResult.filesystemPolicyDigest,
+ 				launchResolvedExtensions: singleResult.launchResolvedExtensions,
+ 				runtimeAcknowledgedExtensions: singleResult.runtimeAcknowledgedExtensions,
+ 				output: stopped || childStopped ? stopMessage : timedOut ? (timeoutMessage ?? "Subagent timed out.") : singleResult.output,
+@@ -4330,6 +4355,8 @@ async function runSubagent(
+ 
+ 	const resultMode = config.resultMode ?? statusPayload.mode;
+ 	const singleRuntimeAcknowledgedExtensions = results.length === 1 ? results[0]?.runtimeAcknowledgedExtensions : undefined;
++	const singleFilesystemPolicy = results.length === 1 ? results[0]?.filesystemPolicy : undefined;
++	const singleFilesystemPolicyDigest = results.length === 1 ? results[0]?.filesystemPolicyDigest : undefined;
+ 	const totalCost = results.reduce<CostSummary>((sum, result) => ({
+ 		inputTokens: sum.inputTokens + (result.totalCost?.inputTokens ?? 0),
+ 		outputTokens: sum.outputTokens + (result.totalCost?.outputTokens ?? 0),
+@@ -4492,8 +4519,9 @@ async function runSubagent(
+ 			...(statusPayload.usageBudget ? { usageBudget: statusPayload.usageBudget } : {}),
+ 			...(statusPayload.checkpoint ? { checkpoint: statusPayload.checkpoint } : {}),
+ 			...(stopped ? { stopped: true, error: stopMessage } : timedOut ? { timedOut: true, error: timeoutMessage ?? "Subagent timed out." } : turnBudgetExceeded ? { error: statusPayload.error ?? "Subagent exceeded turn budget." } : usageBudgetExceeded ? { error: statusPayload.error ?? "Usage budget exhausted." } : {}),
+-			results: results.map((r) => omitUndefinedProperties({
++			results: results.map((r, index) => omitUndefinedProperties({
+ 				agent: r.agent,
++				cwd: statusPayload.steps[index]?.cwd ?? cwd,
+ 				context: r.context,
+ 				output: r.output,
+ 				outputState: r.outputState,
+@@ -4524,6 +4552,8 @@ async function runSubagent(
+ 				transcriptError: r.transcriptError,
+ 				agentContract: r.agentContract,
+ 				launchContractDigest: r.launchContractDigest,
++				filesystemPolicy: r.filesystemPolicy,
++				filesystemPolicyDigest: r.filesystemPolicyDigest,
+ 				launchResolvedExtensions: r.launchResolvedExtensions,
+ 				runtimeAcknowledgedExtensions: r.runtimeAcknowledgedExtensions,
+ 				runner: r.runner,
+@@ -4558,6 +4588,8 @@ async function runSubagent(
+ 			cwd,
+ 			asyncDir,
+ 			launchContractDigest: config.launchContractDigest,
++			filesystemPolicy: singleFilesystemPolicy,
++			filesystemPolicyDigest: singleFilesystemPolicyDigest,
+ 			launchResolvedExtensions: config.launchResolvedExtensions,
+ 			runtimeAcknowledgedExtensions: singleRuntimeAcknowledgedExtensions,
+ 			sessionId: config.sessionId,
+diff --git a/src/runs/foreground/chain-execution.ts b/src/runs/foreground/chain-execution.ts
+index 8136b23..6e5262f 100644
+--- a/src/runs/foreground/chain-execution.ts
++++ b/src/runs/foreground/chain-execution.ts
+@@ -78,6 +78,7 @@ import {
+ 	resolveChildMaxSubagentDepth,
+ } from "../../shared/types.ts";
+ import { resolveEffectiveSubagentModel } from "../shared/model-fallback.ts";
++import { resolveFilesystemPolicy, type FilesystemPolicyInput, type ResolvedFilesystemPolicy } from "../shared/filesystem-policy.ts";
+ import type { ModelScopeConfig } from "../shared/model-scope.ts";
+ import { injectSingleOutputInstruction, validateFileOnlyOutputMode } from "../shared/single-output.ts";
+ import { buildWorkflowGraphSnapshot } from "../shared/workflow-graph.ts";
+@@ -168,6 +169,7 @@ interface ParallelChainRunInput {
+ 	capabilityCeiling?: ResolvedSubagentCapabilityCeiling;
+ 	permissions?: PermissionConfig;
+ 	dynamic?: boolean;
++	filesystemPolicy?: FilesystemPolicyInput | ResolvedFilesystemPolicy;
+ }
+ 
+ function buildChainExecutionDetails(input: ChainExecutionDetailsInput): Details {
+@@ -349,13 +351,15 @@ async function runParallelChainTasks(input: ParallelChainRunInput): Promise<Sing
+ 			taskStr = prefix + taskStr + suffix;
+ 
+ 			const effectiveModel = effectiveModels[taskIndex];
+-			const maxSubagentDepth = resolveChildMaxSubagentDepth(input.maxSubagentDepth, taskAgentConfig?.maxSubagentDepth);
+ 			const toolBudget = resolveChainToolBudget({ stepBudget: task.toolBudget, runBudget: input.toolBudget, agentBudget: taskAgentConfig?.toolBudget, configBudget: input.configToolBudget });
+ 			if (toolBudget.error) throw new Error(toolBudget.error);
+ 
+ 			const taskCwd = input.worktreeSetup
+ 				? input.worktreeSetup.worktrees[taskIndex]!.agentCwd
+ 				: resolveChildCwd(input.cwd ?? input.ctx.cwd, task.cwd);
++			const filesystemPolicy = input.filesystemPolicy === undefined ? undefined : resolveFilesystemPolicy(input.filesystemPolicy, taskCwd);
++			if (filesystemPolicy && taskAgentConfig?.runner?.type === "external-cli") throw new Error(`Agent '${taskAgentConfig.name}' uses runner.type='external-cli', which cannot enforce filesystemPolicy.`);
++			const maxSubagentDepth = filesystemPolicy ? 0 : resolveChildMaxSubagentDepth(input.maxSubagentDepth, taskAgentConfig?.maxSubagentDepth);
+ 
+ 			const outputPath = typeof behavior.output === "string"
+ 				? (path.isAbsolute(behavior.output) ? behavior.output : path.join(input.chainDir, behavior.output))
+@@ -386,6 +390,7 @@ async function runParallelChainTasks(input: ParallelChainRunInput): Promise<Sing
+ 			try {
+ 				result = await runSync(input.ctx.cwd, input.agents, task.agent, taskStr, {
+ 				permissions: input.permissions,
++				filesystemPolicy,
+ 				parentSessionId: input.ctx.sessionManager.getSessionId() ?? undefined,
+ 				capabilityCeiling: input.capabilityCeiling,
+ 				context: input.contextForAgent?.(task.agent),
+@@ -538,6 +543,7 @@ interface ChainExecutionParams {
+ 	/** Global cap on simultaneously-running tasks within this chain. Defaults to DEFAULT_GLOBAL_CONCURRENCY_LIMIT. */
+ 	globalConcurrencyLimit?: number;
+ 	capabilityCeiling?: ResolvedSubagentCapabilityCeiling;
++	filesystemPolicy?: FilesystemPolicyInput | ResolvedFilesystemPolicy;
+ }
+ 
+ interface ChainExecutionResult {
+@@ -874,6 +880,7 @@ ${step.message}` : ""}` }],
+ 					configToolBudget: params.configToolBudget,
+ 					globalSemaphore,
+ 					permissions: params.permissions,
++					filesystemPolicy: params.filesystemPolicy,
+ 				});
+ 				globalTaskIndex += step.parallel.length;
+ 
+@@ -1135,6 +1142,7 @@ ${step.message}` : ""}` }],
+ 				configToolBudget: params.configToolBudget,
+ 				globalSemaphore,
+ 				permissions: params.permissions,
++				filesystemPolicy: params.filesystemPolicy,
+ 				dynamic: true,
+ 			});
+ 			globalTaskIndex = dynamicStartIndex + reservedDynamicItems;
+@@ -1322,7 +1330,15 @@ ${step.message}` : ""}` }],
+ 			if (validationError) {
+ 				return buildChainExecutionErrorResult(validationError, makeDetailsInput({ currentStepIndex: stepIndex, currentFlatIndex: globalTaskIndex }));
+ 			}
+-			const maxSubagentDepth = resolveChildMaxSubagentDepth(params.maxSubagentDepth, agentConfig.maxSubagentDepth);
++			const stepCwd = resolveChildCwd(cwd ?? ctx.cwd, seqStep.cwd);
++			let filesystemPolicy: ResolvedFilesystemPolicy | undefined;
++			try {
++				filesystemPolicy = params.filesystemPolicy === undefined ? undefined : resolveFilesystemPolicy(params.filesystemPolicy, stepCwd);
++			} catch (error) {
++				return buildChainExecutionErrorResult(error instanceof Error ? error.message : String(error), makeDetailsInput({ currentStepIndex: stepIndex, currentFlatIndex: globalTaskIndex }));
++			}
++			if (filesystemPolicy && agentConfig.runner?.type === "external-cli") return buildChainExecutionErrorResult(`Agent '${agentConfig.name}' uses runner.type='external-cli', which cannot enforce filesystemPolicy.`, makeDetailsInput({ currentStepIndex: stepIndex, currentFlatIndex: globalTaskIndex }));
++			const maxSubagentDepth = filesystemPolicy ? 0 : resolveChildMaxSubagentDepth(params.maxSubagentDepth, agentConfig.maxSubagentDepth);
+ 			const childIndex = globalTaskIndex;
+ 			const interruptController = new AbortController();
+ 			if (foregroundControl) {
+@@ -1366,10 +1382,11 @@ ${step.message}` : ""}` }],
+ 				});
+ 				r = await runSync(ctx.cwd, agents, seqStep.agent, stepTask, {
+ 				permissions: params.permissions,
++				filesystemPolicy,
+ 				parentSessionId: ctx.sessionManager.getSessionId() ?? undefined,
+ 				capabilityCeiling: params.capabilityCeiling,
+ 				context: params.contextForAgent?.(seqStep.agent),
+-				cwd: resolveChildCwd(cwd ?? ctx.cwd, seqStep.cwd),
++				cwd: stepCwd,
+ 				signal,
+ 				interruptSignal: interruptController.signal,
+ 				allowIntercomDetach: agentConfig.systemPrompt?.includes(INTERCOM_BRIDGE_MARKER) === true,
+diff --git a/src/runs/foreground/execution.ts b/src/runs/foreground/execution.ts
+index 768c419..0a081f7 100644
+--- a/src/runs/foreground/execution.ts
++++ b/src/runs/foreground/execution.ts
+@@ -31,6 +31,8 @@ import {
+ 	type ResolvedAcceptanceConfig,
+ 	truncateOutput,
+ 	getSubagentDepthEnv,
++	DEFAULT_ARTIFACT_CONFIG,
++	TEMP_ARTIFACTS_DIR,
+ } from "../../shared/types.ts";
+ import {
+ 	DEFAULT_CONTROL_CONFIG,
+@@ -94,6 +96,7 @@ import { appendTurnBudgetSystemPrompt, formatTurnBudgetOutput, initialTurnBudget
+ import { initialToolBudgetState, toolBudgetState } from "../shared/tool-budget.ts";
+ import { resolveWatchdogConfig } from "../../watchdog/settings.ts";
+ import { agentDefinitionDigest, launchBindingDigest } from "../../shared/launch-contract.ts";
++import { filesystemPolicyAcceptanceError, filesystemPolicyDigest } from "../shared/filesystem-policy.ts";
+ import { createBoundedByteTail, createBoundedLineReader, formatProtocolOutputLimit, MAX_CHILD_STDERR_BYTES, PI_AGGREGATE_EVENT_PROJECTOR, projectChildLifecycle, type ChildLifecycleAction, type ProtocolOutputLimit } from "../shared/child-protocol.ts";
+ import {
+ 	acceptChildWatchdogEvent,
+@@ -317,8 +320,8 @@ async function runSingleAttempt(
+ 		model: modelArg,
+ 		thinking: effectiveThinking,
+ 		systemPromptMode: agent.systemPromptMode,
+-		inheritProjectContext: agent.inheritProjectContext,
+-		inheritSkills: agent.inheritSkills,
++		inheritProjectContext: options.filesystemPolicy ? false : agent.inheritProjectContext,
++		inheritSkills: options.filesystemPolicy ? false : agent.inheritSkills,
+ 		requireReadTool: Boolean(shared.resolvedSkillNames?.length),
+ 		tools: agent.tools,
+ 		extensions: agent.extensions,
+@@ -345,6 +348,7 @@ async function runSingleAttempt(
+ 		childWatchdog,
+ 		waitToolEnabled: options.waitToolEnabled,
+ 		capabilityCeiling: options.capabilityCeiling,
++		filesystemPolicy: options.filesystemPolicy,
+ 	});
+ 
+ 	const effectiveSystemPrompt = appendTurnBudgetSystemPrompt(shared.systemPrompt, options.turnBudget);
+@@ -359,6 +363,7 @@ async function runSingleAttempt(
+ 		capabilityCeiling: options.capabilityCeiling,
+ 		inheritedCapabilityCeiling: decodeSubagentCapabilityCeiling(process.env[SUBAGENT_CAPABILITY_CEILING_ENV]),
+ 		agentName: agent.name,
++		filesystemPolicyActive: options.filesystemPolicy !== undefined,
+ 	});
+ 	const launchResolvedExtensions = projectLaunchResolvedChildExtensions(toolPlan);
+ 	const launchContractDigest = launchBindingDigest({
+@@ -369,8 +374,8 @@ async function runSingleAttempt(
+ 		...(resolvedThinking ? { thinking: resolvedThinking } : {}),
+ 		systemPrompt: effectiveSystemPrompt,
+ 		systemPromptMode: agent.systemPromptMode,
+-		inheritProjectContext: agent.inheritProjectContext,
+-		inheritSkills: agent.inheritSkills,
++		inheritProjectContext: options.filesystemPolicy ? false : agent.inheritProjectContext,
++		inheritSkills: options.filesystemPolicy ? false : agent.inheritSkills,
+ 		skills: shared.resolvedSkillNames ?? [],
+ 		tools: toolPlan.effectiveToolAllowlist,
+ 		extensions: toolPlan.extensionArgs,
+@@ -378,6 +383,8 @@ async function runSingleAttempt(
+ 		...(options.outputPath ? { outputPath: options.outputPath } : {}),
+ 		outputMode: options.outputMode ?? "inline",
+ 		...(options.structuredOutput ? { structuredOutputSchema: options.structuredOutput.schema } : {}),
++		...(options.filesystemPolicy ? { filesystemPolicy: options.filesystemPolicy } : {}),
++		...(options.filesystemPolicy ? { artifactsDir: options.artifactsDir, artifactConfig: options.artifactConfig } : {}),
+ 	});
+ 	const result: SingleResult = withRunContext({
+ 		index: options.index ?? 0,
+@@ -386,6 +393,10 @@ async function runSingleAttempt(
+ 		...(options.agentContract ? { agentContract: options.agentContract } : {}),
+ 		launchContractDigest,
+ 		launchResolvedExtensions,
++		...(options.filesystemPolicy ? {
++			filesystemPolicy: options.filesystemPolicy,
++			filesystemPolicyDigest: filesystemPolicyDigest(options.filesystemPolicy),
++		} : {}),
+ 		exitCode: 0,
+ 		outputState: "absent",
+ 		messages: [],
+@@ -1349,6 +1360,50 @@ async function runSyncCompletion(
+ 		...options,
+ 		capabilityCeiling: intersectSubagentCapabilityCeilings(options.capabilityCeiling ?? resolveCurrentSubagentCapabilityCeiling(options.parentSessionId), decodeSubagentCapabilityCeiling(process.env[SUBAGENT_CAPABILITY_CEILING_ENV])),
+ 	};
++	if (options.filesystemPolicy) {
++		const acceptanceError = filesystemPolicyAcceptanceError(options.acceptance);
++		if (acceptanceError) {
++			return withRunContext({
++				index: options.index ?? 0,
++				agent: agentName,
++				task,
++				exitCode: 1,
++				messages: [],
++				usage: emptyUsage(),
++				error: acceptanceError,
++				filesystemPolicy: options.filesystemPolicy,
++				filesystemPolicyDigest: filesystemPolicyDigest(options.filesystemPolicy),
++			}, options.context);
++		}
++		if (options.outputPath !== undefined || options.outputMode === "file-only" || options.share === true) {
++			return withRunContext({
++				index: options.index ?? 0,
++				agent: agentName,
++				task,
++				exitCode: 1,
++				messages: [],
++				usage: emptyUsage(),
++				error: "filesystemPolicy cannot use host-side output files, file-only mode, or session sharing.",
++				filesystemPolicy: options.filesystemPolicy,
++				filesystemPolicyDigest: filesystemPolicyDigest(options.filesystemPolicy),
++			}, options.context);
++		}
++		options = {
++			...options,
++			context: "fresh",
++			acceptance: options.acceptance ?? false,
++			share: false,
++			outputPath: undefined,
++			outputMode: "inline",
++			maxSubagentDepth: 0,
++			artifactsDir: TEMP_ARTIFACTS_DIR,
++			artifactConfig: {
++				...DEFAULT_ARTIFACT_CONFIG,
++				...options.artifactConfig,
++				dir: "temp",
++			},
++		};
++	}
+ 	const agent = agents.find((a) => a.name === agentName);
+ 	if (!agent) {
+ 		return withRunContext({
+@@ -1400,6 +1455,19 @@ async function runSyncCompletion(
+ 			error: outputModeValidationError,
+ 		}, options.context);
+ 	}
++	if (options.filesystemPolicy && options.context === "fork") {
++		return withRunContext({
++			index: options.index ?? 0,
++			agent: agentName,
++			task,
++			exitCode: 1,
++			messages: [],
++			usage: emptyUsage(),
++			error: "filesystemPolicy requires fresh child context and cannot be combined with context:'fork'.",
++			filesystemPolicy: options.filesystemPolicy,
++			filesystemPolicyDigest: filesystemPolicyDigest(options.filesystemPolicy),
++		}, options.context);
++	}
+ 
+ 	const shareEnabled = options.share === true;
+ 	const effectiveAcceptance = resolveEffectiveAcceptance({
+@@ -1416,7 +1484,7 @@ async function runSyncCompletion(
+ 	const acceptancePrompt = formatAcceptancePrompt(effectiveAcceptance, { reportOptional: isAgentContractV1(options.agentContract) });
+ 	const taskWithAcceptance = acceptancePrompt ? `${task}\n${acceptancePrompt}` : task;
+ 	const sessionEnabled = Boolean(options.sessionFile || options.sessionDir) || shareEnabled;
+-	const skillNames = options.skills ?? agent.skills ?? [];
++	const skillNames = options.filesystemPolicy ? [] : options.skills ?? agent.skills ?? [];
+ 	const skillCwd = options.cwd ?? runtimeCwd;
+ 	const { resolved: resolvedSkills, missing: missingSkills } = resolveSkillsWithFallback(
+ 		skillNames,
+@@ -1441,11 +1509,11 @@ async function runSyncCompletion(
+ 		const skillInjection = buildSkillInjection(resolvedSkills);
+ 		systemPrompt = systemPrompt ? `${systemPrompt}\n\n${skillInjection}` : skillInjection;
+ 	}
+-	const memoryInjection = buildAgentMemoryInjection(agent, skillCwd);
++	const memoryInjection = options.filesystemPolicy ? "" : buildAgentMemoryInjection(agent, skillCwd);
+ 	if (memoryInjection) {
+ 		systemPrompt = systemPrompt ? `${systemPrompt}\n\n${memoryInjection}` : memoryInjection;
+ 	}
+-	systemPrompt = appendAgentRefinementOverlay(systemPrompt, { cwd: skillCwd, agentName });
++	if (!options.filesystemPolicy) systemPrompt = appendAgentRefinementOverlay(systemPrompt, { cwd: skillCwd, agentName });
+ 	systemPrompt = injectOutputPathSystemPrompt(systemPrompt, options.outputPath, agent);
+ 
+ 	const candidates = buildModelCandidates(
+diff --git a/src/runs/foreground/subagent-executor.ts b/src/runs/foreground/subagent-executor.ts
+index 200d121..a95df2e 100644
+--- a/src/runs/foreground/subagent-executor.ts
++++ b/src/runs/foreground/subagent-executor.ts
+@@ -88,6 +88,7 @@ import { attachRootChildrenToSteps, createNestedRoute, findNestedControlResult,
+ import { resolveSubagentRunId, type ResolvedSubagentRunId } from "../background/run-id-resolver.ts";
+ import { formatNestedRunStatusLines } from "../shared/nested-render.ts";
+ import { inspectSubagentStatus } from "../background/run-status.ts";
++import { filesystemPolicyAcceptanceError, filesystemPolicyDigest, resolveFilesystemPolicy, type FilesystemPolicyInput, type ResolvedFilesystemPolicy } from "../shared/filesystem-policy.ts";
+ import { applyForceTopLevelAsyncOverride } from "../background/top-level-async.ts";
+ import { handleMissionAction, MISSION_ACTIONS } from "../../missions/actions.ts";
+ import { attachMissionToLaunchResult, prepareMissionLaunch, type MissionLaunchBinding } from "../../missions/lifecycle.ts";
+@@ -197,6 +198,7 @@ interface TaskParam {
+ 	acceptance?: AcceptanceInput;
+ 	agentContract?: AgentContract;
+ 	toolBudget?: ToolBudgetConfig;
++	filesystemPolicy?: FilesystemPolicyInput | ResolvedFilesystemPolicy;
+ }
+ 
+ export interface SubagentParamsLike {
+@@ -240,6 +242,7 @@ export interface SubagentParamsLike {
+ 	/** Internal-only strict turn-boundary enforcement for versioned foreground delegation. */
+ 	enforceHardTurnLimit?: boolean;
+ 	toolBudget?: ToolBudgetConfig;
++	filesystemPolicy?: FilesystemPolicyInput | ResolvedFilesystemPolicy;
+ 	usageBudget?: UsageBudgetConfig;
+ 	clarify?: boolean;
+ 	share?: boolean;
+@@ -535,6 +538,7 @@ function rememberForegroundRun(state: SubagentState, input: { runId: string; mod
+ 				...(result.detachedReason ? { detachedReason: result.detachedReason } : {}),
+ 				...(result.acceptance ? { acceptance: result.acceptance } : {}),
+ 				...(result.launchContractDigest ? { launchContractDigest: result.launchContractDigest } : {}),
++				...(result.filesystemPolicy ? { filesystemPolicy: result.filesystemPolicy, filesystemPolicyDigest: result.filesystemPolicyDigest } : {}),
+ 				...(result.launchResolvedExtensions ? { launchResolvedExtensions: result.launchResolvedExtensions } : {}),
+ 				...(result.runtimeAcknowledgedExtensions ? { runtimeAcknowledgedExtensions: result.runtimeAcknowledgedExtensions } : {}),
+ 				...(result.capabilityCeiling ? { capabilityCeiling: result.capabilityCeiling } : {}),
+@@ -614,6 +618,7 @@ function updateRememberedForegroundChild(state: SubagentState, input: { runId: s
+ 		...(input.result.detachedReason ? { detachedReason: input.result.detachedReason } : {}),
+ 		...(input.result.acceptance ? { acceptance: input.result.acceptance } : {}),
+ 		...(input.result.launchContractDigest ? { launchContractDigest: input.result.launchContractDigest } : {}),
++		...(input.result.filesystemPolicy ? { filesystemPolicy: input.result.filesystemPolicy, filesystemPolicyDigest: input.result.filesystemPolicyDigest } : {}),
+ 		...(input.result.launchResolvedExtensions ? { launchResolvedExtensions: input.result.launchResolvedExtensions } : {}),
+ 		...(input.result.runtimeAcknowledgedExtensions ? { runtimeAcknowledgedExtensions: input.result.runtimeAcknowledgedExtensions } : {}),
+ 		...(input.result.capabilityCeiling ? { capabilityCeiling: input.result.capabilityCeiling } : {}),
+@@ -651,7 +656,7 @@ function updateRememberedForegroundChild(state: SubagentState, input: { runId: s
+ 	});
+ }
+ 
+-function resolveForegroundResumeTarget(params: SubagentParamsLike, state: SubagentState): { runId: string; mode: SubagentRunMode; state: "complete"; agent: string; index: number; cwd: string; sessionFile: string; model?: string; thinking?: string; launchContractDigest?: string; capabilityCeiling?: ResolvedSubagentCapabilityCeiling } | undefined {
++function resolveForegroundResumeTarget(params: SubagentParamsLike, state: SubagentState): { runId: string; mode: SubagentRunMode; state: "complete"; agent: string; index: number; cwd: string; sessionFile: string; model?: string; thinking?: string; launchContractDigest?: string; filesystemPolicy?: ResolvedFilesystemPolicy; filesystemPolicyDigest?: string; capabilityCeiling?: ResolvedSubagentCapabilityCeiling } | undefined {
+ 	const requested = (params.id ?? params.runId)?.trim();
+ 	if (!requested || !state.foregroundRuns?.size || !state.currentSessionId) return undefined;
+ 	const sessionRuns = [...state.foregroundRuns.values()].filter((run) => run.sessionId === state.currentSessionId);
+@@ -681,6 +686,7 @@ function resolveForegroundResumeTarget(params: SubagentParamsLike, state: Subage
+ 		...(child.model ? { model: child.model } : {}),
+ 		...(child.thinking ? { thinking: child.thinking } : {}),
+ 		...(child.launchContractDigest ? { launchContractDigest: child.launchContractDigest } : {}),
++		...(child.filesystemPolicy ? { filesystemPolicy: child.filesystemPolicy, filesystemPolicyDigest: child.filesystemPolicyDigest } : {}),
+ 		...(child.capabilityCeiling ? { capabilityCeiling: child.capabilityCeiling } : {}),
+ 	};
+ }
+@@ -700,6 +706,8 @@ type NestedResumeSourceTarget = {
+ 	thinking?: AgentConfig["thinking"];
+ 	launchContractDigest?: string;
+ 	capabilityCeiling?: ResolvedSubagentCapabilityCeiling;
++	filesystemPolicy?: ResolvedFilesystemPolicy;
++	filesystemPolicyDigest?: string;
+ };
+ type ResumeSourceTarget = AsyncResumeSourceTarget | ForegroundResumeSourceTarget | NestedResumeSourceTarget;
+ 
+@@ -1284,6 +1292,13 @@ async function resumeAsyncRun(input: {
+ 			details: { mode: "management", results: [] },
+ 		};
+ 	}
++	if (input.params.filesystemPolicy !== undefined) {
++		return {
++			content: [{ type: "text", text: "action='resume' reuses the persisted child filesystemPolicy and does not accept a policy override." }],
++			isError: true,
++			details: { mode: "management", results: [] },
++		};
++	}
+ 	const acceptanceErrors = validateExecutionAcceptance(input.params as Parameters<typeof validateExecutionAcceptance>[0]);
+ 	if (acceptanceErrors.length > 0) {
+ 		return {
+@@ -1333,6 +1348,39 @@ async function resumeAsyncRun(input: {
+ 		const message = error instanceof Error ? error.message : String(error);
+ 		return { content: [{ type: "text", text: message }], isError: true, details: { mode: "management", results: [] } };
+ 	}
++	const retainedFilesystemPolicy = ("recoveryDescriptor" in target ? target.recoveryDescriptor?.filesystemPolicy : undefined) ?? target.filesystemPolicy;
++	if (retainedFilesystemPolicy && attachChain) {
++		return {
++			content: [{ type: "text", text: "filesystemPolicy v1 cannot attach a restricted child as a chain root; resume it as one detached async single child." }],
++			isError: true,
++			details: { mode: "management", results: [] },
++		};
++	}
++	if (retainedFilesystemPolicy && input.params.context === "fork") {
++		return {
++			content: [{ type: "text", text: "filesystemPolicy requires fresh child context and cannot be combined with context:'fork'." }],
++			isError: true,
++			details: { mode: "management", results: [] },
++		};
++	}
++	if (retainedFilesystemPolicy) {
++		const acceptanceError = filesystemPolicyAcceptanceError(input.params.acceptance);
++		if (acceptanceError) {
++			return { content: [{ type: "text", text: acceptanceError }], isError: true, details: { mode: "management", results: [] } };
++		}
++		if ((input.params.output !== undefined && input.params.output !== false) || input.params.outputMode === "file-only") {
++			return { content: [{ type: "text", text: "filesystemPolicy resume cannot use host-side output files or file-only mode." }], isError: true, details: { mode: "management", results: [] } };
++		}
++		if (input.params.share === true) {
++			return { content: [{ type: "text", text: "filesystemPolicy resume cannot share child sessions." }], isError: true, details: { mode: "management", results: [] } };
++		}
++		if (input.params.outputSchema !== undefined) {
++			return { content: [{ type: "text", text: "filesystemPolicy resume cannot use structured output." }], isError: true, details: { mode: "management", results: [] } };
++		}
++		if (input.params.sessionDir !== undefined) {
++			return { content: [{ type: "text", text: "filesystemPolicy resume cannot override the managed session directory." }], isError: true, details: { mode: "management", results: [] } };
++		}
++	}
+ 
+ 	if (target.kind === "live" && !attachChain) {
+ 		return {
+@@ -1391,7 +1439,6 @@ async function resumeAsyncRun(input: {
+ 			details: { mode: "management", results: [] },
+ 		};
+ 	}
+-
+ 	if (attachChain) {
+ 		if (target.source !== "async") {
+ 			return {
+@@ -1450,7 +1497,7 @@ async function resumeAsyncRun(input: {
+ 			chainSkills: normalized === false ? [] : (normalized ?? []),
+ 			agentContract: input.params.agentContract,
+ 			dynamicFanoutMaxItems: input.deps.config.chain?.dynamicFanout?.maxItems,
+-			maxSubagentDepth: resolveCurrentMaxSubagentDepth(input.deps.config.maxSubagentDepth),
++			maxSubagentDepth: retainedFilesystemPolicy ? 0 : resolveCurrentMaxSubagentDepth(input.deps.config.maxSubagentDepth),
+ 			waitToolEnabled: input.deps.waitToolEnabled,
+ 			worktreeSetupHook: input.deps.config.worktreeSetupHook,
+ 			worktreeSetupHookTimeoutMs: input.deps.config.worktreeSetupHookTimeoutMs,
+@@ -1460,6 +1507,7 @@ async function resumeAsyncRun(input: {
+ 			childIntercomTarget: intercomBridge.active ? (agent, index) => resolveSubagentIntercomTarget(runId, agent, index) : undefined,
+ 			globalConcurrencyLimit: input.deps.config.globalConcurrencyLimit,
+ 			capabilityCeiling: intersectSubagentCapabilityCeilings("capabilityCeiling" in target ? target.capabilityCeiling : undefined, resolveCurrentSubagentCapabilityCeiling(input.deps.state.currentSessionId)),
++			filesystemPolicy: retainedFilesystemPolicy,
+ 		}));
+ 		if (result.isError) return result;
+ 		const attachedId = result.details.asyncId ?? runId;
+@@ -1482,8 +1530,12 @@ async function resumeAsyncRun(input: {
+ 	}
+ 	const runId = randomUUID().slice(0, 8);
+ 	const recoveryAgentConfig = recoveryDescriptor ? applySteeringRecoveryAgentConfig(agentConfig, recoveryDescriptor) : agentConfig;
+-	const artifactConfig: ArtifactConfig = recoveryDescriptor?.artifactConfig ?? omitUndefinedProperties({ ...DEFAULT_ARTIFACT_CONFIG, enabled: input.params.artifacts !== false, dir: input.deps.config.artifactDir ?? DEFAULT_ARTIFACT_CONFIG.dir });
+-	const artifactsDir = recoveryDescriptor?.artifactsDir ?? getArtifactsDir(parentSessionFile, effectiveCwd, artifactConfig.dir);
++	const artifactConfig: ArtifactConfig = retainedFilesystemPolicy
++		? { ...DEFAULT_ARTIFACT_CONFIG, ...recoveryDescriptor?.artifactConfig, dir: "temp" }
++		: recoveryDescriptor?.artifactConfig ?? omitUndefinedProperties({ ...DEFAULT_ARTIFACT_CONFIG, enabled: input.params.artifacts !== false, dir: input.deps.config.artifactDir ?? DEFAULT_ARTIFACT_CONFIG.dir });
++	const artifactsDir = retainedFilesystemPolicy
++		? getArtifactsDir(parentSessionFile, effectiveCwd, "temp")
++		: recoveryDescriptor?.artifactsDir ?? getArtifactsDir(parentSessionFile, effectiveCwd, artifactConfig.dir);
+ 	const availableModels = input.ctx.modelRegistry.getAvailable().map(toModelInfo);
+ 	const parentModel = input.parentModel;
+ 	const result = executeAsyncSingle(runId, compactOptional<Parameters<typeof executeAsyncSingle>[1]>({
+@@ -1506,7 +1558,7 @@ async function resumeAsyncRun(input: {
+ 		maxOutput: input.params.maxOutput ?? recoveryDescriptor?.maxOutput,
+ 		artifactsDir,
+ 		artifactConfig,
+-		shareEnabled: recoveryDescriptor?.share ?? input.params.share === true,
++		shareEnabled: retainedFilesystemPolicy ? false : recoveryDescriptor?.share ?? input.params.share === true,
+ 		sessionRoot: input.deps.getSubagentSessionRoot(parentSessionFile ?? revivalSessionFile),
+ 		...(recoveryDescriptor?.sessionDir ? { sessionDir: recoveryDescriptor.sessionDir } : {}),
+ 		sessionFile: revivalSessionFile,
+@@ -1518,8 +1570,9 @@ async function resumeAsyncRun(input: {
+ 		},
+ 		modelOverride: recoveryDescriptor?.model ?? target.model,
+ 		thinkingOverride: recoveryDescriptor?.thinking ?? target.thinking,
++		filesystemPolicy: retainedFilesystemPolicy,
+ 		outputBaseDir: resolveSingleRunOutputBaseDir(input.deps, artifactsDir, runId),
+-		maxSubagentDepth: recoveryDescriptor?.maxSubagentDepth ?? resolveCurrentMaxSubagentDepth(input.deps.config.maxSubagentDepth),
++		maxSubagentDepth: retainedFilesystemPolicy ? 0 : recoveryDescriptor?.maxSubagentDepth ?? resolveCurrentMaxSubagentDepth(input.deps.config.maxSubagentDepth),
+ 		waitToolEnabled: input.deps.waitToolEnabled,
+ 		worktreeSetupHook: input.deps.config.worktreeSetupHook,
+ 		worktreeSetupHookTimeoutMs: input.deps.config.worktreeSetupHookTimeoutMs,
+@@ -1528,12 +1581,14 @@ async function resumeAsyncRun(input: {
+ 		controlIntercomTarget: intercomBridge.active ? intercomBridge.orchestratorTarget : undefined,
+ 		childIntercomTarget: intercomBridge.active ? (agent, index) => resolveSubagentIntercomTarget(runId, agent, index) : undefined,
+ 		availableModels,
+-		output: typeof input.params.output === "string" ? input.params.output : recoveryDescriptor?.outputPath,
+-		outputMode: input.params.outputMode ?? recoveryDescriptor?.outputMode,
++		output: retainedFilesystemPolicy ? false : typeof input.params.output === "string" ? input.params.output : recoveryDescriptor?.outputPath,
++		outputMode: retainedFilesystemPolicy ? "inline" : input.params.outputMode ?? recoveryDescriptor?.outputMode,
+ 		...(recoveryDescriptor?.agentContract ? { agentContract: recoveryDescriptor.agentContract } : {}),
+ 		...(recoveryDescriptor?.structuredOutputSchema ? { structuredOutputSchema: recoveryDescriptor.structuredOutputSchema } : {}),
+ 		...(recoveryDescriptor?.skills ? { skills: [...recoveryDescriptor.skills] } : {}),
+-		...(recoveryDescriptor?.acceptance !== undefined && input.params.acceptance === undefined ? { acceptance: recoveryDescriptor.acceptance } : {}),
++		acceptance: retainedFilesystemPolicy
++			? input.params.acceptance ?? recoveryDescriptor?.acceptance ?? false
++			: input.params.acceptance ?? recoveryDescriptor?.acceptance,
+ 		...(input.params.timeoutMs !== undefined ? { timeoutMs: input.params.timeoutMs } : {}),
+ 		...(input.absoluteDeadlineAt !== undefined ? { absoluteDeadlineAt: input.absoluteDeadlineAt } : {}),
+ 		...(input.params.turnBudget !== undefined ? { turnBudget: input.params.turnBudget } : {}),
+@@ -1968,7 +2023,7 @@ function applySingleAgentLaunchDefaults(params: SubagentParamsLike, agents: Agen
+ 		...(params.turnBudget === undefined && agent.defaultTurnBudget !== undefined
+ 			? { turnBudget: agent.defaultTurnBudget }
+ 			: {}),
+-		...(params.acceptance === undefined && agent.defaultAcceptance !== undefined
++		...(params.filesystemPolicy === undefined && params.acceptance === undefined && agent.defaultAcceptance !== undefined
+ 			? { acceptance: agent.defaultAcceptance }
+ 			: {}),
+ 	};
+@@ -2477,6 +2532,7 @@ function runAsyncPath(data: ExecutionContextData, deps: ExecutorDeps): AgentTool
+ 			usageBudget: data.usageBudget,
+ 			configToolBudget: data.configToolBudget,
+ 			capabilityCeiling: data.capabilityCeiling,
++			filesystemPolicy: params.filesystemPolicy,
+ 			globalConcurrencyLimit: deps.config.globalConcurrencyLimit,
+ 			parentWorkflowRunId: params.workflowParentRunId,
+ 			workflowKey: params.workflowKey,
+@@ -2522,6 +2578,7 @@ function runAsyncPath(data: ExecutionContextData, deps: ExecutorDeps): AgentTool
+ 			usageBudget: data.usageBudget,
+ 			configToolBudget: data.configToolBudget,
+ 			capabilityCeiling: data.capabilityCeiling,
++			filesystemPolicy: params.filesystemPolicy,
+ 			globalConcurrencyLimit: deps.config.globalConcurrencyLimit,
+ 			parentWorkflowRunId: params.workflowParentRunId,
+ 			workflowKey: params.workflowKey,
+@@ -2583,6 +2640,7 @@ function runAsyncPath(data: ExecutionContextData, deps: ExecutorDeps): AgentTool
+ 			usageBudget: data.usageBudget,
+ 			configToolBudget: data.configToolBudget,
+ 			capabilityCeiling: data.capabilityCeiling,
++			filesystemPolicy: params.filesystemPolicy,
+ 			parentWorkflowRunId: params.workflowParentRunId,
+ 			workflowKey: params.workflowKey,
+ 		}));
+@@ -2673,6 +2731,7 @@ async function runChainPath(data: ExecutionContextData, deps: ExecutorDeps): Pro
+ 		permissions: deps.config.permissions,
+ 		globalConcurrencyLimit: deps.config.globalConcurrencyLimit,
+ 		capabilityCeiling: data.capabilityCeiling,
++		filesystemPolicy: params.filesystemPolicy,
+ 	}));
+ 
+ 	if (chainResult.requestedAsync) {
+@@ -2733,6 +2792,7 @@ async function runChainPath(data: ExecutionContextData, deps: ExecutorDeps): Pro
+ 			usageBudget: data.usageBudget,
+ 			configToolBudget: data.configToolBudget,
+ 			capabilityCeiling: data.capabilityCeiling,
++			filesystemPolicy: params.filesystemPolicy,
+ 			globalConcurrencyLimit: deps.config.globalConcurrencyLimit,
+ 		}));
+ 	}
+@@ -2819,6 +2879,7 @@ interface ForegroundParallelRunInput {
+ 	toolBudgets: (ResolvedToolBudget | undefined)[];
+ 	agentContract?: AgentContract;
+ 	permissions?: ExtensionConfig["permissions"];
++	filesystemPolicies: Array<ResolvedFilesystemPolicy | undefined>;
+ }
+ function buildParallelModeError(message: string): AgentToolResult<Details> {
+ 	return {
+@@ -3032,6 +3093,7 @@ async function runForegroundParallelTasks(input: ForegroundParallelRunInput): Pr
+ 		let detachedReceipt = false;
+ 		const result = await runSync(input.ctx.cwd, input.agents, task.agent, taskText, compactOptional<Parameters<typeof runSync>[4]>({
+ 			permissions: input.permissions,
++			filesystemPolicy: input.filesystemPolicies[index],
+ 			parentSessionId: input.ctx.sessionManager.getSessionId() ?? undefined,
+ 			context: input.contextPolicy.contextForAgent(task.agent),
+ 			cwd: taskCwd,
+@@ -3049,7 +3111,7 @@ async function runForegroundParallelTasks(input: ForegroundParallelRunInput): Pr
+ 			maxOutput: input.maxOutput,
+ 			outputPath,
+ 			outputMode: behavior?.outputMode,
+-			maxSubagentDepth: input.maxSubagentDepths[index],
++			maxSubagentDepth: input.filesystemPolicies[index] ? 0 : input.maxSubagentDepths[index],
+ 			waitToolEnabled: input.waitToolEnabled,
+ 			capabilityCeiling: input.capabilityCeiling,
+ 			controlConfig: input.controlConfig,
+@@ -3153,6 +3215,11 @@ async function runParallelPath(data: ExecutionContextData, deps: ExecutorDeps):
+ 	const tasks = params.tasks!;
+ 	const maxParallelTasks = resolveTopLevelParallelMaxTasks(deps.config.parallel?.maxTasks);
+ 	const parallelConcurrency = resolveTopLevelParallelConcurrency(params.concurrency, deps.config.parallel?.concurrency);
++	const hasFilesystemPolicy = params.filesystemPolicy !== undefined
++		|| tasks.some((task) => task.filesystemPolicy !== undefined);
++	if (params.worktree === true && hasFilesystemPolicy) {
++		return buildParallelModeError("filesystemPolicy cannot be combined with worktree:true; use a pre-generated safe projection and launch the restricted child directly from that directory.");
++	}
+ 
+ 	if (tasks.length > maxParallelTasks)
+ 		return {
+@@ -3324,6 +3391,7 @@ async function runParallelPath(data: ExecutionContextData, deps: ExecutorDeps):
+ 				usageBudget: data.usageBudget,
+ 				toolBudget: data.toolBudget,
+ 				configToolBudget: data.configToolBudget,
++				filesystemPolicy: params.filesystemPolicy,
+ 				globalConcurrencyLimit: deps.config.globalConcurrencyLimit,
+ 			}));
+ 		}
+@@ -3382,6 +3450,18 @@ async function runParallelPath(data: ExecutionContextData, deps: ExecutorDeps):
+ 			const validationError = validateFileOnlyOutputMode(behaviors[index]?.outputMode, outputPath, `Parallel task ${index + 1} (${tasks[index]!.agent})`);
+ 			if (validationError) return buildParallelModeError(validationError);
+ 		}
++		const filesystemPolicies: Array<ResolvedFilesystemPolicy | undefined> = [];
++		for (let index = 0; index < tasks.length; index++) {
++			const taskPolicy = tasks[index]?.filesystemPolicy ?? params.filesystemPolicy;
++			const taskCwd = resolveParallelTaskCwd(tasks[index]!, effectiveCwd, worktreeSetup, index);
++			try {
++				const resolved = taskPolicy === undefined ? undefined : resolveFilesystemPolicy(taskPolicy, taskCwd);
++				if (resolved && agentConfigs[index]?.runner?.type === "external-cli") return buildParallelModeError(`Agent '${agentConfigs[index]!.name}' uses runner.type='external-cli', which cannot enforce filesystemPolicy.`);
++				filesystemPolicies.push(resolved);
++			} catch (error) {
++				return buildParallelModeError(error instanceof Error ? error.message : String(error));
++			}
++		}
+ 
+ 		const parallelProgressPrecreated = firstProgressIndex !== -1;
+ 		const parallelProgressDir = path.join(artifactsDir, "progress", runId);
+@@ -3396,6 +3476,7 @@ async function runParallelPath(data: ExecutionContextData, deps: ExecutorDeps):
+ 		const results = await runForegroundParallelTasks(compactOptional<ForegroundParallelRunInput>({
+ 			tasks,
+ 			permissions: deps.config.permissions,
++			filesystemPolicies,
+ 			taskTexts,
+ 			taskDescriptions,
+ 			agents,
+@@ -3576,6 +3657,15 @@ async function runSinglePath(data: ExecutionContextData, deps: ExecutorDeps): Pr
+ 	}
+ 	const effectiveToolBudget = resolveEffectiveToolBudget(omitUndefinedProperties({ runBudget: data.toolBudget, agentBudget: agentConfig.toolBudget, configBudget: data.configToolBudget }));
+ 	if (effectiveToolBudget.error) return toExecutionErrorResult(params, new Error(effectiveToolBudget.error), data.contextPolicy.contextSummary);
++	let filesystemPolicy: ResolvedFilesystemPolicy | undefined;
++	try {
++		filesystemPolicy = params.filesystemPolicy === undefined ? undefined : resolveFilesystemPolicy(params.filesystemPolicy, effectiveCwd);
++	} catch (error) {
++		return toExecutionErrorResult(params, error instanceof Error ? error : new Error(String(error)), data.contextPolicy.contextSummary);
++	}
++	if (filesystemPolicy && agentConfig.runner?.type === "external-cli") {
++		return toExecutionErrorResult(params, new Error(`Agent '${agentConfig.name}' uses runner.type='external-cli', which cannot enforce filesystemPolicy.`), data.contextPolicy.contextSummary);
++	}
+ 
+ 	const parentModel = data.parentModel;
+ 	const currentProvider = parentModel?.provider;
+@@ -3594,7 +3684,7 @@ async function runSinglePath(data: ExecutionContextData, deps: ExecutorDeps): Pr
+ 	let effectiveOutput = normalizeSingleOutputOverride(rawOutput, agentConfig.output);
+ 	const effectiveOutputMode = params.outputMode ?? "inline";
+ 	const currentMaxSubagentDepth = resolveCurrentMaxSubagentDepth(deps.config.maxSubagentDepth);
+-	const maxSubagentDepth = resolveChildMaxSubagentDepth(currentMaxSubagentDepth, agentConfig.maxSubagentDepth);
++	const maxSubagentDepth = filesystemPolicy ? 0 : resolveChildMaxSubagentDepth(currentMaxSubagentDepth, agentConfig.maxSubagentDepth);
+ 
+ 	if (params.clarify === true && ctx.hasUI) {
+ 		const behavior = resolveStepBehavior(agentConfig, omitUndefinedProperties({ output: effectiveOutput, skills: skillOverride }));
+@@ -3686,6 +3776,7 @@ async function runSinglePath(data: ExecutionContextData, deps: ExecutorDeps): Pr
+ 				toolBudget: effectiveToolBudget.toolBudget,
+ 				usageBudget: data.usageBudget,
+ 				allowZeroToolBudget: data.allowZeroToolBudget && effectiveToolBudget.toolBudget === data.toolBudget,
++				filesystemPolicy,
+ 			}));
+ 		}
+ 	}
+@@ -3777,6 +3868,7 @@ async function runSinglePath(data: ExecutionContextData, deps: ExecutorDeps): Pr
+ 			agentContract: params.agentContract,
+ 			acceptance: params.acceptance,
+ 			acceptanceContext: { mode: "single" },
++			filesystemPolicy,
+ 			onDetachReady: (detach) => {
+ 				detachForeground = detach;
+ 			},
+@@ -3957,6 +4049,9 @@ export function prepareWorkflowLaunchParams(
+ 	options: { missionDetached?: boolean; suppressRoutineResultIntercom?: boolean } = {},
+ ): SubagentParamsLike {
+ 	if (typeof childParams.resume === "string") {
++		if (childParams.filesystemPolicy !== undefined) {
++			throw new Error("filesystemPolicy cannot be overridden on retained resume; the persisted child policy is reused.");
++		}
+ 		if (childParams.gate !== undefined || workflowDefaults.gate !== undefined) {
+ 			throw new Error("gate is not supported with retained resume; resume uses the retained child contract.");
+ 		}
+@@ -3993,6 +4088,9 @@ type GateParamsNormalizationResult =
+ 	| { ok: false; error: string };
+ 
+ function normalizeGateParams(params: SubagentParamsLike): GateParamsNormalizationResult {
++	if (params.filesystemPolicy !== undefined && params.gate !== undefined) {
++		return { ok: false, error: "filesystemPolicy cannot use gate commands." };
++	}
+ 	if (params.gate !== undefined && params.action === "resume") {
+ 		return { ok: false, error: "gate is not supported with action='resume'; resume uses the retained child contract." };
+ 	}
+@@ -4004,6 +4102,28 @@ function normalizeGateParams(params: SubagentParamsLike): GateParamsNormalizatio
+ }
+ 
+ function prepareWorkflowChildParams(params: SubagentParamsLike): SubagentParamsLike {
++	if (params.filesystemPolicy !== undefined) {
++		const acceptanceError = filesystemPolicyAcceptanceError(params.acceptance);
++		if (acceptanceError) throw new Error(acceptanceError);
++		if (params.output !== undefined && params.output !== false) throw new Error("filesystemPolicy cannot use host-side output files.");
++		if (params.outputMode === "file-only") throw new Error("filesystemPolicy cannot use file-only output mode.");
++		if (params.share === true) throw new Error("filesystemPolicy cannot share child sessions.");
++		if (params.outputSchema !== undefined) throw new Error("filesystemPolicy cannot use structured output.");
++		if (params.sessionDir !== undefined) throw new Error("filesystemPolicy cannot use an explicit sessionDir.");
++		if (params.clarify === true) throw new Error("filesystemPolicy cannot use interactive launch clarification.");
++		if (params.context === "fork") throw new Error("filesystemPolicy requires fresh child context and cannot be combined with context:'fork'.");
++		params = {
++			...params,
++			acceptance: params.acceptance ?? false,
++			output: false,
++			outputMode: "inline",
++			share: false,
++			context: params.context ?? "fresh",
++		};
++	}
++	if (params.worktree === true && params.filesystemPolicy !== undefined) {
++		throw new Error("filesystemPolicy cannot be combined with worktree:true; use a pre-generated safe projection and launch the restricted child directly from that directory.");
++	}
+ 	if (params.worktree !== true || !params.agent) return params;
+ 	const {
+ 		agent,
+@@ -4295,6 +4415,7 @@ export function createSubagentExecutor(deps: ExecutorDeps): {
+ 							script: workflowScript,
+ 							timeoutMs: timeout,
+ 							signal: controller.signal,
++							defaultFilesystemPolicyActive: workflowChildDefaults.filesystemPolicy !== undefined,
+ 							...(workflowState ? { state: workflowState } : {}),
+ 							onTrace: updateTrace,
+ 							onEmit: (emits) => {
+@@ -4356,6 +4477,7 @@ export function createSubagentExecutor(deps: ExecutorDeps): {
+ 					script: requestParams.workflowScript,
+ 					timeoutMs: timeout,
+ 					signal,
++					defaultFilesystemPolicyActive: workflowChildDefaults.filesystemPolicy !== undefined,
+ 					...(workflowState ? { state: workflowState } : {}),
+ 					onTrace: (trace) => {
+ 						liveWorkflow = { ...liveWorkflow, trace };
+@@ -5003,6 +5125,49 @@ export function createSubagentExecutor(deps: ExecutorDeps): {
+ 		effectiveParams = applySingleAgentLaunchDefaults(effectiveParams, discoveredAgents);
+ 		const turnBudget = resolveTurnBudgetConfig(effectiveParams.turnBudget ?? deps.config.turnBudget);
+ 		if (turnBudget.error) return buildRequestedModeError(effectiveParams, turnBudget.error);
++		const hasFilesystemPolicy = effectiveParams.filesystemPolicy !== undefined
++			|| (effectiveParams.tasks ?? []).some((task) => task.filesystemPolicy !== undefined);
++		if (hasFilesystemPolicy) {
++			const acceptanceError = filesystemPolicyAcceptanceError(effectiveParams.acceptance);
++			if (acceptanceError) return buildRequestedModeError(effectiveParams, acceptanceError);
++			if (effectiveParams.output !== undefined && effectiveParams.output !== false) {
++				return buildRequestedModeError(effectiveParams, "filesystemPolicy cannot use host-side output files.");
++			}
++			if (effectiveParams.outputMode === "file-only") {
++				return buildRequestedModeError(effectiveParams, "filesystemPolicy cannot use file-only output mode.");
++			}
++			if (effectiveParams.share === true) {
++				return buildRequestedModeError(effectiveParams, "filesystemPolicy cannot share child sessions.");
++			}
++			if (effectiveParams.sessionDir !== undefined) {
++				return buildRequestedModeError(effectiveParams, "filesystemPolicy cannot use an explicit sessionDir; restricted session state is stored in the managed runtime root.");
++			}
++			if (effectiveParams.clarify === true) {
++				return buildRequestedModeError(effectiveParams, "filesystemPolicy cannot use interactive launch clarification; provide the fixed fresh single-child parameters directly.");
++			}
++			effectiveParams = {
++				...effectiveParams,
++				acceptance: effectiveParams.acceptance ?? false,
++				output: false,
++				outputMode: "inline",
++				share: false,
++			};
++		}
++		if (hasFilesystemPolicy && effectiveParams.worktree === true) {
++			return buildRequestedModeError(effectiveParams, "filesystemPolicy cannot be combined with worktree:true; use a pre-generated safe projection and launch the restricted child directly from that directory.");
++		}
++		if (hasFilesystemPolicy && effectiveParams.outputSchema !== undefined) {
++			return buildRequestedModeError(effectiveParams, "filesystemPolicy cannot be combined with structured output; the fixed tool surface is read/grep/find/ls only.");
++		}
++		if (hasFilesystemPolicy && effectiveParams.skill !== undefined && effectiveParams.skill !== false) {
++			return buildRequestedModeError(effectiveParams, "filesystemPolicy cannot load skills; carry required context in the root task/system prompt or read it through the gated safe projection.");
++		}
++		if (hasFilesystemPolicy && effectiveParams.context === "fork") {
++			return buildRequestedModeError(effectiveParams, "filesystemPolicy requires fresh child context and cannot be combined with context:'fork'.");
++		}
++		if (hasFilesystemPolicy && effectiveParams.context !== "fresh") {
++			effectiveParams = { ...effectiveParams, context: "fresh" };
++		}
+ 		const contextPolicy = resolveAgentDefaultContextPolicy(effectiveParams, discoveredAgents);
+ 		effectiveParams = contextPolicy.params;
+ 		const sessionName = resolveIntercomSessionTarget(deps.pi.getSessionName(), ctx.sessionManager.getSessionId());
+@@ -5018,10 +5183,13 @@ export function createSubagentExecutor(deps: ExecutorDeps): {
+ 		const inheritedNestedRoute = resolveInheritedNestedRouteFromEnv();
+ 		const nestedParentAddress = inheritedNestedRoute ? resolveNestedParentAddressFromEnv() : undefined;
+ 		const nestedRoute = inheritedNestedRoute ?? createNestedRoute(runId);
+-		const shareEnabled = effectiveParams.share === true;
++		const shareEnabled = hasFilesystemPolicy ? false : effectiveParams.share === true;
+ 		const hasChain = (effectiveParams.chain?.length ?? 0) > 0;
+ 		const hasTasks = (effectiveParams.tasks?.length ?? 0) > 0;
+ 		const hasSingle = !hasChain && !hasTasks && Boolean(effectiveParams.agent);
++		if (hasFilesystemPolicy && !hasSingle) {
++			return buildRequestedModeError(effectiveParams, "filesystemPolicy v1 supports one fresh single Pi child only; chain, parallel/tasks, and runs.all launches are not supported.");
++		}
+ 		const allowClarifyTaskPrompt = hasChain
+ 			&& effectiveParams.clarify === true
+ 			&& ctx.hasUI
+@@ -5108,7 +5276,7 @@ export function createSubagentExecutor(deps: ExecutorDeps): {
+ 		const artifactConfig: ArtifactConfig = omitUndefinedProperties({
+ 			...DEFAULT_ARTIFACT_CONFIG,
+ 			enabled: effectiveParams.artifacts !== false,
+-			dir: deps.config.artifactDir ?? DEFAULT_ARTIFACT_CONFIG.dir,
++			dir: hasFilesystemPolicy ? "temp" : deps.config.artifactDir ?? DEFAULT_ARTIFACT_CONFIG.dir,
+ 		});
+ 		const artifactsDir = getArtifactsDir(parentSessionFile, effectiveCwd, artifactConfig.dir);
+ 		if (artifactConfig.dir === "project" && !warnedArtifactPackageDirs.has(effectiveCwd)) {
+diff --git a/src/runs/shared/filesystem-policy.ts b/src/runs/shared/filesystem-policy.ts
+new file mode 100644
+index 0000000..999d0bb
+--- /dev/null
++++ b/src/runs/shared/filesystem-policy.ts
+@@ -0,0 +1,340 @@
++import { createHash } from "node:crypto";
++import * as fs from "node:fs";
++import * as path from "node:path";
++import { fileURLToPath } from "node:url";
++
++export const FILESYSTEM_POLICY_REQUIRED_ENV = "PI_SUBAGENT_FILESYSTEM_POLICY_REQUIRED";
++export const FILESYSTEM_POLICY_ENV = "PI_SUBAGENT_FILESYSTEM_POLICY";
++export const FILESYSTEM_POLICY_SHA256_ENV = "PI_SUBAGENT_FILESYSTEM_POLICY_SHA256";
++export const FILESYSTEM_POLICY_RUNTIME_PATH_ENV = "PI_SUBAGENT_FILESYSTEM_POLICY_RUNTIME_PATH";
++export const FILESYSTEM_POLICY_RUNTIME_SHA256_ENV = "PI_SUBAGENT_FILESYSTEM_POLICY_RUNTIME_SHA256";
++export const FILESYSTEM_POLICY_GATE_PATH_ENV = "PI_SUBAGENT_FILESYSTEM_POLICY_GATE_PATH";
++export const FILESYSTEM_POLICY_GATE_SHA256_ENV = "PI_SUBAGENT_FILESYSTEM_POLICY_GATE_SHA256";
++export const FILESYSTEM_POLICY_MODULE_PATH = fileURLToPath(import.meta.url);
++
++export const FILESYSTEM_POLICY_ALLOWED_TOOLS = ["read", "grep", "find", "ls"] as const;
++
++export interface FilesystemPolicyInput {
++	allowedRoots: string[];
++	deniedPaths?: string[];
++	bash?: "deny";
++}
++
++export interface ResolvedFilesystemPolicy {
++	version: 1;
++	cwd: string;
++	allowedRoots: string[];
++	deniedPaths: string[];
++	bash: "deny";
++	allowedTools: readonly ["read", "grep", "find", "ls"];
++}
++
++export interface FilesystemPolicyToolDecision {
++	allowed: boolean;
++	reason?: string;
++	resolvedPath?: string;
++}
++
++/** Host-side acceptance controls allowed for a read-only restricted child. */
++export function filesystemPolicyAcceptanceError(value: unknown): string | undefined {
++	if (value === undefined || value === false || value === "checked") return undefined;
++	if (!isRecord(value)) return "filesystemPolicy acceptance must be false or a no-command none/checked object.";
++	if (value.verify !== undefined) return "filesystemPolicy cannot use acceptance.verify commands.";
++	if (value.review !== undefined && value.review !== false) return "filesystemPolicy cannot use acceptance.review.";
++	if (value.level !== "none" && value.level !== "checked") return "filesystemPolicy acceptance level must be none or checked.";
++	return undefined;
++}
++
++type Environment = Record<string, string | undefined>;
++
++function isRecord(value: unknown): value is Record<string, unknown> {
++	return Boolean(value) && typeof value === "object" && !Array.isArray(value);
++}
++
++function sha256(value: string | Buffer): string {
++	return createHash("sha256").update(value).digest("hex");
++}
++
++function normalizeInputSeparators(value: string): string {
++	return process.platform === "win32" ? value.replace(/[\\/]+/g, path.sep) : value;
++}
++
++function comparablePath(value: string): string {
++	const normalized = path.normalize(value).replace(/[\\/]+$/, "");
++	return process.platform === "win32" ? normalized.toLocaleLowerCase("en-US") : normalized;
++}
++
++function samePath(left: string, right: string): boolean {
++	return comparablePath(left) === comparablePath(right);
++}
++
++function pathIsWithin(candidate: string, root: string): boolean {
++	const child = comparablePath(candidate);
++	const parent = comparablePath(root);
++	return child === parent || child.startsWith(`${parent}${path.sep}`);
++}
++
++function containsTraversal(value: string): boolean {
++	return normalizeInputSeparators(value).split(path.sep).some((segment) => segment === "..");
++}
++
++function canonicalExistingPath(value: string, cwd: string, label: string): string {
++	if (typeof value !== "string" || !value.trim()) throw new Error(`${label} must be a non-empty path.`);
++	const trimmed = value.trim();
++	if (containsTraversal(trimmed)) throw new Error(`${label} must not contain '..' traversal segments.`);
++	const platformPath = normalizeInputSeparators(trimmed);
++	const absolute = path.isAbsolute(platformPath) ? path.normalize(platformPath) : path.resolve(cwd, platformPath);
++	try {
++		return path.normalize(fs.realpathSync.native(absolute));
++	} catch (error) {
++		throw new Error(`${label} must resolve to an existing filesystem target: ${error instanceof Error ? error.message : String(error)}`);
++	}
++}
++
++function normalizePathList(value: unknown, cwd: string, label: string, requireNonEmpty: boolean): string[] {
++	if (!Array.isArray(value)) throw new Error(`${label} must be an array of paths.`);
++	if (requireNonEmpty && value.length === 0) throw new Error(`${label} must contain at least one path.`);
++	const resolved = value.map((entry, index) => canonicalExistingPath(entry as string, cwd, `${label}[${index}]`));
++	const unique = new Map<string, string>();
++	for (const entry of resolved) unique.set(comparablePath(entry), entry);
++	return [...unique.values()].sort((left, right) => comparablePath(left).localeCompare(comparablePath(right)));
++}
++
++export function resolveFilesystemPolicy(input: unknown, childCwd: string): ResolvedFilesystemPolicy {
++	if (!isRecord(input)) throw new Error("filesystemPolicy must be an object.");
++	if (input.version === 1) {
++		const resolved = validateResolvedFilesystemPolicy(input);
++		const cwd = canonicalExistingPath(childCwd, process.cwd(), "filesystemPolicy child cwd");
++		if (!samePath(cwd, resolved.cwd)) throw new Error(`filesystemPolicy retained cwd does not match this child cwd: retained=${resolved.cwd} current=${cwd}`);
++		return resolved;
++	}
++	const unknown = Object.keys(input).filter((key) => !["allowedRoots", "deniedPaths", "bash"].includes(key));
++	if (unknown.length > 0) throw new Error(`filesystemPolicy contains unknown field(s): ${unknown.join(", ")}.`);
++	if (input.bash !== undefined && input.bash !== "deny") throw new Error("filesystemPolicy.bash is fixed to 'deny'.");
++	const cwd = canonicalExistingPath(childCwd, process.cwd(), "filesystemPolicy child cwd");
++	if (!fs.statSync(cwd).isDirectory()) throw new Error("filesystemPolicy child cwd must be a directory.");
++	const allowedRoots = normalizePathList(input.allowedRoots, cwd, "filesystemPolicy.allowedRoots", true);
++	for (const [index, root] of allowedRoots.entries()) {
++		if (!fs.statSync(root).isDirectory()) throw new Error(`filesystemPolicy.allowedRoots[${index}] must be a directory.`);
++	}
++	const deniedPaths = normalizePathList(input.deniedPaths ?? [], cwd, "filesystemPolicy.deniedPaths", false);
++	return {
++		version: 1,
++		cwd,
++		allowedRoots,
++		deniedPaths,
++		bash: "deny",
++		allowedTools: FILESYSTEM_POLICY_ALLOWED_TOOLS,
++	};
++}
++
++function validateResolvedFilesystemPolicy(value: unknown): ResolvedFilesystemPolicy {
++	if (!isRecord(value)) throw new Error("filesystem policy payload must be an object.");
++	const exactFields = ["version", "cwd", "allowedRoots", "deniedPaths", "bash", "allowedTools"];
++	const unknown = Object.keys(value).filter((key) => !exactFields.includes(key));
++	if (unknown.length > 0) throw new Error(`filesystem policy payload contains unknown field(s): ${unknown.join(", ")}.`);
++	if (value.version !== 1 || value.bash !== "deny") throw new Error("filesystem policy payload version/bash contract is invalid.");
++	if (typeof value.cwd !== "string" || !path.isAbsolute(normalizeInputSeparators(value.cwd))) throw new Error("filesystem policy payload cwd must be absolute.");
++	if (!Array.isArray(value.allowedRoots) || value.allowedRoots.length === 0 || value.allowedRoots.some((entry) => typeof entry !== "string" || !path.isAbsolute(normalizeInputSeparators(entry)))) {
++		throw new Error("filesystem policy payload allowedRoots must contain absolute paths.");
++	}
++	if (!Array.isArray(value.deniedPaths) || value.deniedPaths.some((entry) => typeof entry !== "string" || !path.isAbsolute(normalizeInputSeparators(entry)))) {
++		throw new Error("filesystem policy payload deniedPaths must contain absolute paths.");
++	}
++	const allowedTools = value.allowedTools;
++	if (!Array.isArray(allowedTools) || allowedTools.length !== FILESYSTEM_POLICY_ALLOWED_TOOLS.length || FILESYSTEM_POLICY_ALLOWED_TOOLS.some((tool, index) => allowedTools[index] !== tool)) {
++		throw new Error("filesystem policy payload allowedTools contract is invalid.");
++	}
++	const policy = value as unknown as ResolvedFilesystemPolicy;
++	for (const [label, entries] of [["cwd", [policy.cwd]], ["allowedRoots", policy.allowedRoots], ["deniedPaths", policy.deniedPaths]] as const) {
++		for (const entry of entries) {
++			let canonical: string;
++			try { canonical = path.normalize(fs.realpathSync.native(entry)); }
++			catch { throw new Error(`filesystem policy payload ${label} target no longer exists: ${entry}`); }
++			if (!samePath(canonical, entry)) throw new Error(`filesystem policy payload ${label} target changed identity: ${entry}`);
++		}
++	}
++	return policy;
++}
++
++export function encodeFilesystemPolicy(policy: ResolvedFilesystemPolicy): { payload: string; digest: string } {
++	const payload = JSON.stringify(policy);
++	return { payload, digest: sha256(payload) };
++}
++
++export function filesystemPolicyDigest(policy: ResolvedFilesystemPolicy): string {
++	return encodeFilesystemPolicy(policy).digest;
++}
++
++export function fileSha256(filePath: string): string {
++	return sha256(fs.readFileSync(filePath));
++}
++
++export function decodeFilesystemPolicyEnvironment(env: Environment, runtimeModulePath?: string, gateModulePath = FILESYSTEM_POLICY_MODULE_PATH): ResolvedFilesystemPolicy | undefined {
++	const required = env[FILESYSTEM_POLICY_REQUIRED_ENV]?.trim();
++	const payload = env[FILESYSTEM_POLICY_ENV]?.trim();
++	const digest = env[FILESYSTEM_POLICY_SHA256_ENV]?.trim().toLowerCase();
++	const declaredRuntimePath = env[FILESYSTEM_POLICY_RUNTIME_PATH_ENV]?.trim();
++	const declaredRuntimeDigest = env[FILESYSTEM_POLICY_RUNTIME_SHA256_ENV]?.trim().toLowerCase();
++	const declaredGatePath = env[FILESYSTEM_POLICY_GATE_PATH_ENV]?.trim();
++	const declaredGateDigest = env[FILESYSTEM_POLICY_GATE_SHA256_ENV]?.trim().toLowerCase();
++	const anyPolicyField = [required, payload, digest, declaredRuntimePath, declaredRuntimeDigest, declaredGatePath, declaredGateDigest].some(Boolean);
++	if (!anyPolicyField) return undefined;
++	if (required !== "1") throw new Error(`Invalid ${FILESYSTEM_POLICY_REQUIRED_ENV}; active policy requires value '1'.`);
++	if (!payload) throw new Error(`Missing ${FILESYSTEM_POLICY_ENV} for required filesystem policy.`);
++	if (!digest || !/^[0-9a-f]{64}$/.test(digest)) throw new Error(`Missing or invalid ${FILESYSTEM_POLICY_SHA256_ENV}.`);
++	if (sha256(payload) !== digest) throw new Error("Filesystem policy payload hash mismatch.");
++	if (!declaredRuntimePath || !declaredRuntimeDigest || !/^[0-9a-f]{64}$/.test(declaredRuntimeDigest)) throw new Error("Filesystem policy runtime identity is missing or invalid.");
++	if (!declaredGatePath || !declaredGateDigest || !/^[0-9a-f]{64}$/.test(declaredGateDigest)) throw new Error("Filesystem policy gate identity is missing or invalid.");
++	if (runtimeModulePath) {
++		const actualRuntimePath = path.normalize(fs.realpathSync.native(runtimeModulePath));
++		const expectedRuntimePath = path.normalize(fs.realpathSync.native(declaredRuntimePath));
++		if (!samePath(actualRuntimePath, expectedRuntimePath)) throw new Error("Filesystem policy forced runtime path mismatch.");
++		if (fileSha256(actualRuntimePath) !== declaredRuntimeDigest) throw new Error("Filesystem policy forced runtime hash mismatch.");
++	}
++	const actualGatePath = path.normalize(fs.realpathSync.native(gateModulePath));
++	const expectedGatePath = path.normalize(fs.realpathSync.native(declaredGatePath));
++	if (!samePath(actualGatePath, expectedGatePath)) throw new Error("Filesystem policy gate module path mismatch.");
++	if (fileSha256(actualGatePath) !== declaredGateDigest) throw new Error("Filesystem policy gate module hash mismatch.");
++	let parsed: unknown;
++	try { parsed = JSON.parse(payload); }
++	catch (error) { throw new Error(`Filesystem policy payload is not valid JSON: ${error instanceof Error ? error.message : String(error)}`); }
++	return validateResolvedFilesystemPolicy(parsed);
++}
++
++export function assertFilesystemPolicyLaunchContract(input: {
++	policy: ResolvedFilesystemPolicy;
++	args: string[];
++	env: Environment;
++	runtimeModulePath: string;
++}): void {
++	const runtimePath = path.normalize(fs.realpathSync.native(input.runtimeModulePath));
++	let found = false;
++	for (let index = 0; index < input.args.length - 1; index++) {
++		if (input.args[index] === "--extension" && samePath(input.args[index + 1]!, runtimePath)) {
++			found = true;
++			break;
++		}
++	}
++	if (!found) throw new Error("Filesystem policy requires the forced subagent prompt runtime extension before provider launch.");
++	const decoded = decodeFilesystemPolicyEnvironment(input.env);
++	if (!decoded || filesystemPolicyDigest(decoded) !== filesystemPolicyDigest(input.policy)) throw new Error("Filesystem policy launch contract does not match the resolved policy.");
++	const declaredRuntimePath = input.env[FILESYSTEM_POLICY_RUNTIME_PATH_ENV];
++	const declaredRuntimeDigest = input.env[FILESYSTEM_POLICY_RUNTIME_SHA256_ENV];
++	if (!declaredRuntimePath || !samePath(declaredRuntimePath, runtimePath) || declaredRuntimeDigest !== fileSha256(runtimePath)) {
++		throw new Error("Filesystem policy launch runtime identity does not match the forced runtime extension.");
++	}
++	const declaredGatePath = input.env[FILESYSTEM_POLICY_GATE_PATH_ENV];
++	const declaredGateDigest = input.env[FILESYSTEM_POLICY_GATE_SHA256_ENV];
++	const gatePath = path.normalize(fs.realpathSync.native(FILESYSTEM_POLICY_MODULE_PATH));
++	if (!declaredGatePath || !samePath(declaredGatePath, gatePath) || declaredGateDigest !== fileSha256(gatePath)) {
++		throw new Error("Filesystem policy launch gate identity does not match the enforced gate module.");
++	}
++}
++
++function unsafePatternValue(value: string): boolean {
++	const normalized = normalizeInputSeparators(value.trim());
++	return containsTraversal(normalized) || path.isAbsolute(normalized) || /^[A-Za-z]:[\\/]/.test(value.trim()) || /^[\\/]{2}/.test(value.trim());
++}
++
++type AllowedFilesystemTool = (typeof FILESYSTEM_POLICY_ALLOWED_TOOLS)[number];
++
++const TOOL_INPUT_SCHEMAS: Record<AllowedFilesystemTool, {
++	requiredStrings: readonly string[];
++	optionalStrings: readonly string[];
++	optionalNumbers: readonly string[];
++	optionalBooleans: readonly string[];
++}> = {
++	read: { requiredStrings: ["path"], optionalStrings: [], optionalNumbers: ["offset", "limit"], optionalBooleans: [] },
++	grep: { requiredStrings: ["pattern"], optionalStrings: ["path", "glob"], optionalNumbers: ["context", "limit"], optionalBooleans: ["ignoreCase", "literal"] },
++	find: { requiredStrings: ["pattern"], optionalStrings: ["path"], optionalNumbers: ["limit"], optionalBooleans: [] },
++	ls: { requiredStrings: [], optionalStrings: ["path"], optionalNumbers: ["limit"], optionalBooleans: [] },
++};
++
++function validateToolInputShape(toolName: AllowedFilesystemTool, input: Record<string, unknown>): string | undefined {
++	const schema = TOOL_INPUT_SCHEMAS[toolName];
++	const allowed = new Set([...schema.requiredStrings, ...schema.optionalStrings, ...schema.optionalNumbers, ...schema.optionalBooleans]);
++	const unknown = Object.keys(input).filter((key) => !allowed.has(key));
++	if (unknown.length > 0) return `unknown argument(s): ${unknown.join(", ")}`;
++	for (const key of schema.requiredStrings) {
++		if (typeof input[key] !== "string") return `${key} must be a string`;
++	}
++	for (const key of schema.optionalStrings) {
++		if (input[key] !== undefined && typeof input[key] !== "string") return `${key} must be a string`;
++	}
++	for (const key of schema.optionalNumbers) {
++		if (input[key] !== undefined && (typeof input[key] !== "number" || !Number.isFinite(input[key]))) return `${key} must be a finite number`;
++	}
++	for (const key of schema.optionalBooleans) {
++		if (input[key] !== undefined && typeof input[key] !== "boolean") return `${key} must be a boolean`;
++	}
++	return undefined;
++}
++
++function pathPatternValues(toolName: string, input: Record<string, unknown>): string[] {
++	const values: string[] = [];
++	// grep.pattern is content regex, find.pattern is a pathname matcher, and ls
++	// has no path-pattern argument. Treating all three alike blocks harmless
++	// content searches without closing an additional filesystem path.
++	const keys = toolName === "grep" ? ["glob"] : toolName === "find" ? ["pattern"] : [];
++	for (const key of keys) {
++		const value = input[key];
++		if (typeof value === "string") values.push(value);
++		else if (Array.isArray(value)) values.push(...value.filter((entry): entry is string => typeof entry === "string"));
++	}
++	return values;
++}
++
++export function evaluateFilesystemPolicyToolCall(policy: ResolvedFilesystemPolicy, toolName: string, rawInput: unknown): FilesystemPolicyToolDecision {
++	if (toolName === "bash") return { allowed: false, reason: "Blocked by task filesystem policy: bash is always denied." };
++	if (!FILESYSTEM_POLICY_ALLOWED_TOOLS.includes(toolName as (typeof FILESYSTEM_POLICY_ALLOWED_TOOLS)[number])) {
++		return { allowed: false, reason: `Blocked by task filesystem policy: tool '${toolName}' is not in the fixed read/grep/find/ls allowlist.` };
++	}
++	if (!isRecord(rawInput)) return { allowed: false, reason: `Blocked by task filesystem policy: '${toolName}' input must be an object.` };
++	const allowedToolName = toolName as AllowedFilesystemTool;
++	const shapeError = validateToolInputShape(allowedToolName, rawInput);
++	if (shapeError) return { allowed: false, reason: `Blocked by task filesystem policy: malformed '${toolName}' input (${shapeError}).` };
++	if (pathPatternValues(toolName, rawInput).some(unsafePatternValue)) {
++		return { allowed: false, reason: `Blocked by task filesystem policy: '${toolName}' glob/pattern may not be absolute or contain traversal.` };
++	}
++	const rawPath = rawInput.path;
++	if (toolName === "read" && (typeof rawPath !== "string" || !rawPath.trim())) {
++		return { allowed: false, reason: "Blocked by task filesystem policy: read requires a non-empty path." };
++	}
++	if (rawPath !== undefined && (typeof rawPath !== "string" || !rawPath.trim())) {
++		return { allowed: false, reason: `Blocked by task filesystem policy: '${toolName}' path must be a non-empty string.` };
++	}
++	const requested = typeof rawPath === "string" ? rawPath.trim() : policy.cwd;
++	if (containsTraversal(requested)) return { allowed: false, reason: "Blocked by task filesystem policy: '..' traversal is not allowed." };
++	const platformPath = normalizeInputSeparators(requested);
++	const lexical = path.isAbsolute(platformPath) ? path.normalize(platformPath) : path.resolve(policy.cwd, platformPath);
++	let target: string;
++	try { target = path.normalize(fs.realpathSync.native(lexical)); }
++	catch { return { allowed: false, reason: "Blocked by task filesystem policy: target must already exist." }; }
++	if (!policy.allowedRoots.some((root) => pathIsWithin(target, root))) {
++		return { allowed: false, reason: "Blocked by task filesystem policy: target is outside allowedRoots.", resolvedPath: target };
++	}
++	if (policy.deniedPaths.some((denied) => pathIsWithin(target, denied))) {
++		return { allowed: false, reason: "Blocked by task filesystem policy: target is within deniedPaths.", resolvedPath: target };
++	}
++	if (toolName !== "read" && policy.deniedPaths.some((denied) => pathIsWithin(denied, target))) {
++		return { allowed: false, reason: "Blocked by task filesystem policy: recursive/search root is an ancestor of a denied subtree.", resolvedPath: target };
++	}
++	return { allowed: true, resolvedPath: target };
++}
++
++export function registerFilesystemPolicyGate(
++	pi: { on: unknown },
++	env: Environment = process.env,
++	runtimeModulePath?: string,
++): ResolvedFilesystemPolicy | undefined {
++	const policy = decodeFilesystemPolicyEnvironment(env, runtimeModulePath);
++	if (!policy) return undefined;
++	const onRuntimeEvent = pi.on as (event: string, handler: (event: { toolName?: string; input?: unknown }) => unknown) => unknown;
++	onRuntimeEvent("tool_call", (event) => {
++		const toolName = typeof event.toolName === "string" ? event.toolName : "tool";
++		const decision = evaluateFilesystemPolicyToolCall(policy, toolName, event.input);
++		return decision.allowed ? undefined : { block: true, reason: decision.reason };
++	});
++	return policy;
++}
+diff --git a/src/runs/shared/parallel-utils.ts b/src/runs/shared/parallel-utils.ts
+index dcc507d..e263987 100644
+--- a/src/runs/shared/parallel-utils.ts
++++ b/src/runs/shared/parallel-utils.ts
+@@ -5,6 +5,8 @@ export interface RunnerSubagentStep {
+ 	parentSessionId?: string;
+ 	/** Resolved opt-in rules for native Pi child tool calls. */
+ 	permissionRules?: import("./permissions.ts").PermissionRules;
++	filesystemPolicy?: import("./filesystem-policy.ts").ResolvedFilesystemPolicy;
++	filesystemPolicyDigest?: string;
+ 	agent: string;
+ 	task: string;
+ 	runner?: ResolvedRunnerConfig;
+diff --git a/src/runs/shared/pi-args.ts b/src/runs/shared/pi-args.ts
+index 3460e59..9378055 100644
+--- a/src/runs/shared/pi-args.ts
++++ b/src/runs/shared/pi-args.ts
+@@ -61,10 +61,25 @@ import {
+ 	type ResolvedSubagentCapabilityCeiling,
+ 	type SubagentCapabilityAudit,
+ } from "./capability-ceiling.ts";
++import {
++	FILESYSTEM_POLICY_ALLOWED_TOOLS,
++	FILESYSTEM_POLICY_ENV,
++	FILESYSTEM_POLICY_GATE_PATH_ENV,
++	FILESYSTEM_POLICY_GATE_SHA256_ENV,
++	FILESYSTEM_POLICY_MODULE_PATH,
++	FILESYSTEM_POLICY_REQUIRED_ENV,
++	FILESYSTEM_POLICY_RUNTIME_PATH_ENV,
++	FILESYSTEM_POLICY_RUNTIME_SHA256_ENV,
++	FILESYSTEM_POLICY_SHA256_ENV,
++	assertFilesystemPolicyLaunchContract,
++	encodeFilesystemPolicy,
++	fileSha256,
++	type ResolvedFilesystemPolicy,
++} from "./filesystem-policy.ts";
+ 
+ const TASK_ARG_LIMIT = 8000;
+ const MAX_LAUNCH_RESOLVED_EXTENSION_IDS = 32;
+-const PROMPT_RUNTIME_EXTENSION_PATH = path.join(
++export const PROMPT_RUNTIME_EXTENSION_PATH = path.join(
+ 	path.dirname(fileURLToPath(import.meta.url)),
+ 	"subagent-prompt-runtime.ts",
+ );
+@@ -151,6 +166,7 @@ export interface BuildPiArgsInput {
+ 	childWatchdog?: ChildWatchdogConfig;
+ 	waitToolEnabled?: boolean;
+ 	capabilityCeiling?: ResolvedSubagentCapabilityCeiling;
++	filesystemPolicy?: ResolvedFilesystemPolicy;
+ }
+ 
+ export interface BuildPiArgsResult {
+@@ -216,6 +232,7 @@ export interface ResolvePiLaunchToolPlanInput {
+ 	capabilityCeiling?: ResolvedSubagentCapabilityCeiling;
+ 	inheritedCapabilityCeiling?: ResolvedSubagentCapabilityCeiling;
+ 	agentName?: string;
++	filesystemPolicyActive?: boolean;
+ }
+ 
+ export interface PiLaunchToolPlan {
+@@ -343,10 +360,15 @@ export function resolvePiLaunchToolPlan(
+ 		input.capabilityCeiling,
+ 		input.inheritedCapabilityCeiling,
+ 	);
+-	const allowedToolSet =
+-		capabilityCeiling?.allowedTools === undefined
+-			? undefined
+-			: new Set(capabilityCeiling.allowedTools);
++	const capabilityAllowedToolSet = capabilityCeiling?.allowedTools === undefined
++		? undefined
++		: new Set(capabilityCeiling.allowedTools);
++	const policyAllowedToolSet = input.filesystemPolicyActive
++		? new Set<string>(FILESYSTEM_POLICY_ALLOWED_TOOLS)
++		: undefined;
++	const allowedToolSet = policyAllowedToolSet && capabilityAllowedToolSet
++		? new Set([...policyAllowedToolSet].filter((tool) => capabilityAllowedToolSet.has(tool)))
++		: policyAllowedToolSet ?? capabilityAllowedToolSet;
+ 	const requestedBuiltinTools =
+ 		input.tools?.filter(
+ 			(tool) =>
+@@ -369,15 +391,18 @@ export function resolvePiLaunchToolPlan(
+ 					? ["read", ...requestedBuiltinTools]
+ 					: requestedBuiltinTools
+ 				).filter((tool) => !allowedToolSet || allowedToolSet.has(tool));
+-	const fanoutAuthorized = declaredBuiltinTools.includes("subagent");
+-	const toolExtensionPaths: string[] = capabilityCeiling?.denyExtensions
++	if (input.filesystemPolicyActive && input.structuredOutput) {
++		throw new Error("filesystemPolicy cannot be combined with structured output because the policy exposes only read/grep/find/ls.");
++	}
++	const fanoutAuthorized = !input.filesystemPolicyActive && declaredBuiltinTools.includes("subagent");
++	const toolExtensionPaths: string[] = capabilityCeiling?.denyExtensions || input.filesystemPolicyActive
+ 		? []
+ 		: (input.tools ?? []).filter(
+ 				(tool) =>
+ 					!requestedBuiltinTools.includes(tool) &&
+ 					(tool.includes("/") || tool.endsWith(".ts") || tool.endsWith(".js")),
+ 			);
+-	const resolvedMcpSelections = capabilityCeiling?.denyExtensions
++	const resolvedMcpSelections = capabilityCeiling?.denyExtensions || input.filesystemPolicyActive
+ 		? []
+ 		: resolveMcpDirectToolSelections(input.mcpDirectTools, input.cwd);
+ 	const effectiveMcpSelections = resolvedMcpSelections.filter(
+@@ -390,7 +415,7 @@ export function resolvePiLaunchToolPlan(
+ 		input.tools !== undefined ||
+ 		(input.mcpDirectTools?.length ?? 0) > 0 ||
+ 		allowedToolSet !== undefined;
+-	const internalTools = input.structuredOutput ? ["structured_output"] : [];
++	const internalTools = input.filesystemPolicyActive ? [] : input.structuredOutput ? ["structured_output"] : [];
+ 	const effectiveToolAllowlist = [
+ 		...new Set([
+ 			...declaredBuiltinTools,
+@@ -407,7 +432,7 @@ export function resolvePiLaunchToolPlan(
+ 				]),
+ 			]
+ 		: [];
+-	const permSystemExt = capabilityCeiling?.denyExtensions
++	const permSystemExt = capabilityCeiling?.denyExtensions || input.filesystemPolicyActive
+ 		? undefined
+ 		: resolvePermissionSystemExtension();
+ 	const runtimeExtensions = [
+@@ -416,9 +441,10 @@ export function resolvePiLaunchToolPlan(
+ 		...(permSystemExt ? [permSystemExt] : []),
+ 	];
+ 	const disableAmbientExtensions =
++		input.filesystemPolicyActive === true ||
+ 		capabilityCeiling?.denyExtensions === true ||
+ 		input.extensions !== undefined;
+-	const configuredExtensions = capabilityCeiling?.denyExtensions
++	const configuredExtensions = capabilityCeiling?.denyExtensions || input.filesystemPolicyActive
+ 		? []
+ 		: [
+ 				...toolExtensionPaths,
+@@ -545,6 +571,7 @@ export function buildPiArgs(input: BuildPiArgsInput): BuildPiArgsResult {
+ 			process.env[SUBAGENT_CAPABILITY_CEILING_ENV],
+ 		),
+ 		agentName: input.childAgentName,
++		filesystemPolicyActive: input.filesystemPolicy !== undefined,
+ 	});
+ 	if (toolPlan.explicitToolAllowlist) {
+ 		args.push(
+@@ -559,10 +586,15 @@ export function buildPiArgs(input: BuildPiArgsInput): BuildPiArgsResult {
+ 	for (const extPath of toolPlan.extensionArgs)
+ 		args.push("--extension", extPath);
+ 
+-	if (!input.inheritProjectContext) {
++	// A filesystem policy would be meaningless if Pi could preload cwd/ancestor
++	// context files or skills before the first gated tool call. Policy launches
++	// therefore disable both automatic ingestion paths regardless of the agent's
++	// ordinary defaults. Required context must be carried explicitly by the root
++	// task/system prompt or read through the gated safe projection.
++	if (input.filesystemPolicy || !input.inheritProjectContext) {
+ 		args.push("--no-context-files");
+ 	}
+-	if (!input.inheritSkills) {
++	if (input.filesystemPolicy || !input.inheritSkills) {
+ 		args.push("--no-skills");
+ 	}
+ 
+@@ -607,6 +639,26 @@ export function buildPiArgs(input: BuildPiArgsInput): BuildPiArgsResult {
+ 		"runtime-acknowledged-extensions.json",
+ 	);
+ 	env[RUNTIME_EXTENSION_ACK_PATH_ENV] = runtimeAcknowledgedExtensionsPath;
++	if (input.filesystemPolicy) {
++		const encodedPolicy = encodeFilesystemPolicy(input.filesystemPolicy);
++		env[FILESYSTEM_POLICY_REQUIRED_ENV] = "1";
++		env[FILESYSTEM_POLICY_ENV] = encodedPolicy.payload;
++		env[FILESYSTEM_POLICY_SHA256_ENV] = encodedPolicy.digest;
++		env[FILESYSTEM_POLICY_RUNTIME_PATH_ENV] = PROMPT_RUNTIME_EXTENSION_PATH;
++		env[FILESYSTEM_POLICY_RUNTIME_SHA256_ENV] = fileSha256(PROMPT_RUNTIME_EXTENSION_PATH);
++		env[FILESYSTEM_POLICY_GATE_PATH_ENV] = FILESYSTEM_POLICY_MODULE_PATH;
++		env[FILESYSTEM_POLICY_GATE_SHA256_ENV] = fileSha256(FILESYSTEM_POLICY_MODULE_PATH);
++	} else {
++		// Explicitly shadow inherited child policy state. Omitting these keys would
++		// let a policy from the parent process leak into an unrelated no-policy run.
++		env[FILESYSTEM_POLICY_REQUIRED_ENV] = "";
++		env[FILESYSTEM_POLICY_ENV] = "";
++		env[FILESYSTEM_POLICY_SHA256_ENV] = "";
++		env[FILESYSTEM_POLICY_RUNTIME_PATH_ENV] = "";
++		env[FILESYSTEM_POLICY_RUNTIME_SHA256_ENV] = "";
++		env[FILESYSTEM_POLICY_GATE_PATH_ENV] = "";
++		env[FILESYSTEM_POLICY_GATE_SHA256_ENV] = "";
++	}
+ 	let toolDiagnosticPath: string | undefined;
+ 	if (toolPlan.requiredChildTools.length > 0) {
+ 		if (!tempDir)
+@@ -694,10 +746,10 @@ export function buildPiArgs(input: BuildPiArgsInput): BuildPiArgsResult {
+ 			process.env[SUBAGENT_PARENT_CAPABILITY_TOKEN_ENV] ??
+ 			"")
+ 		: "";
+-	env.PI_SUBAGENT_INHERIT_PROJECT_CONTEXT = input.inheritProjectContext
++	env.PI_SUBAGENT_INHERIT_PROJECT_CONTEXT = !input.filesystemPolicy && input.inheritProjectContext
+ 		? "1"
+ 		: "0";
+-	env.PI_SUBAGENT_INHERIT_SKILLS = input.inheritSkills ? "1" : "0";
++	env.PI_SUBAGENT_INHERIT_SKILLS = !input.filesystemPolicy && input.inheritSkills ? "1" : "0";
+ 	env[PI_INTERCOM_STABLE_ID_ENV] = input.intercomSessionName || undefined;
+ 	env[PI_INTERCOM_SESSION_ID_ENV] = undefined;
+ 	if (input.intercomSessionName) {
+@@ -772,6 +824,14 @@ export function buildPiArgs(input: BuildPiArgsInput): BuildPiArgsResult {
+ 	const encodedChildWatchdog = encodeChildWatchdogConfig(input.childWatchdog);
+ 	if (encodedChildWatchdog)
+ 		env[CHILD_WATCHDOG_CONFIG_ENV] = encodedChildWatchdog;
++	if (input.filesystemPolicy) {
++		assertFilesystemPolicyLaunchContract({
++			policy: input.filesystemPolicy,
++			args,
++			env,
++			runtimeModulePath: PROMPT_RUNTIME_EXTENSION_PATH,
++		});
++	}
+ 
+ 	env[SUBAGENT_PARENT_SESSION_ENV] =
+ 		input.parentSessionId ?? process.env[SUBAGENT_PARENT_SESSION_ENV] ?? "";
+diff --git a/src/runs/shared/subagent-prompt-runtime.ts b/src/runs/shared/subagent-prompt-runtime.ts
+index a23ab11..123ce3e 100644
+--- a/src/runs/shared/subagent-prompt-runtime.ts
++++ b/src/runs/shared/subagent-prompt-runtime.ts
+@@ -1,6 +1,7 @@
+ import { createHash } from "node:crypto";
+ import * as fs from "node:fs";
+ import * as path from "node:path";
++import { fileURLToPath } from "node:url";
+ import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
+ import { registerNativeSupervisorClient } from "../../intercom/native-supervisor-channel.ts";
+ import { decodePermissionRules, permissionDecision, PERMISSION_AUDIT_PATH_ENV, PERMISSION_POLICY_ENV } from "./permissions.ts";
+@@ -26,6 +27,7 @@ import { SUBAGENT_WATCHDOG_WARNING_TYPE } from "../../watchdog/types.ts";
+ import { resolveWaitToolConfig } from "../background/wait-config.ts";
+ import { registerWaitTool } from "../background/wait-tool.ts";
+ import { drainOutstandingWork } from "../background/auto-drain.ts";
++import { registerFilesystemPolicyGate } from "./filesystem-policy.ts";
+ 
+ const SUBAGENT_INHERIT_PROJECT_CONTEXT_ENV = "PI_SUBAGENT_INHERIT_PROJECT_CONTEXT";
+ const SUBAGENT_INHERIT_SKILLS_ENV = "PI_SUBAGENT_INHERIT_SKILLS";
+@@ -473,6 +475,7 @@ export function registerSteeringInbox(
+ }
+ 
+ export default function registerSubagentPromptRuntime(pi: ExtensionAPI): void {
++	registerFilesystemPolicyGate(pi, process.env, fileURLToPath(import.meta.url));
+ 	registerRuntimeExtensionAcknowledgements(pi);
+ 	registerSteeringInbox(pi);
+ 	registerPermissionGate(pi);
+diff --git a/src/shared/launch-contract.ts b/src/shared/launch-contract.ts
+index 8b17d27..c3320fd 100644
+--- a/src/shared/launch-contract.ts
++++ b/src/shared/launch-contract.ts
+@@ -1,6 +1,8 @@
+ import { createHash } from "node:crypto";
+ import * as fs from "node:fs";
+ import type { AgentConfig } from "../agents/agents.ts";
++import type { ArtifactConfig } from "./types.ts";
++import type { ResolvedFilesystemPolicy } from "../runs/shared/filesystem-policy.ts";
+ 
+ export const AGENT_DEFINITION_PROJECTION_VERSION = 1 as const;
+ export const LAUNCH_BINDING_PROJECTION_VERSION = 1 as const;
+@@ -92,6 +94,10 @@ export interface LaunchBindingInput {
+ 	outputPath?: string;
+ 	outputMode?: string;
+ 	structuredOutputSchema?: unknown;
++	filesystemPolicy?: ResolvedFilesystemPolicy;
++	/** Effective host-side artifact target bound for restricted launches. */
++	artifactsDir?: string;
++	artifactConfig?: Partial<ArtifactConfig>;
+ }
+ 
+ /** Canonical projection of the resolved inputs handed to the child. */
+@@ -116,6 +122,9 @@ export function projectLaunchBinding(input: LaunchBindingInput): Record<string,
+ 		outputPath: input.outputPath,
+ 		outputMode: input.outputMode,
+ 		structuredOutputSchema: input.structuredOutputSchema,
++		filesystemPolicy: input.filesystemPolicy,
++		artifactsDir: input.artifactsDir,
++		artifactConfig: input.artifactConfig,
+ 	};
+ }
+ 
+diff --git a/src/shared/types.ts b/src/shared/types.ts
+index 69e0278..1246e7c 100644
+--- a/src/shared/types.ts
++++ b/src/shared/types.ts
+@@ -498,6 +498,8 @@ export interface SteeringRecoveryDescriptor {
+ 	maxOutput?: MaxOutputConfig;
+ 	capabilityCeiling?: ResolvedSubagentCapabilityCeiling;
+ 	launchResolvedExtensions?: LaunchResolvedChildExtensionsV1;
++	filesystemPolicy?: import("../runs/shared/filesystem-policy.ts").ResolvedFilesystemPolicy;
++	filesystemPolicyDigest?: string;
+ 	share: boolean;
+ 	sessionDir?: string;
+ 	artifactsDir?: string;
+@@ -916,6 +918,8 @@ export interface SingleResult {
+ 	acceptance?: AcceptanceLedger;
+ 	agentContract?: AgentContract;
+ 	launchContractDigest?: string;
++	filesystemPolicy?: import("../runs/shared/filesystem-policy.ts").ResolvedFilesystemPolicy;
++	filesystemPolicyDigest?: string;
+ 	launchResolvedExtensions?: LaunchResolvedChildExtensionsV1;
+ 	runtimeAcknowledgedExtensions?: RuntimeAcknowledgedChildExtensionsV1;
+ 	execution?: ExecutionProjection;
+@@ -997,6 +1001,8 @@ export interface Details {
+ 		processTerminal?: ProcessTerminalV1;
+ 	};
+ 	launchContractDigest?: string;
++	filesystemPolicy?: import("../runs/shared/filesystem-policy.ts").ResolvedFilesystemPolicy;
++	filesystemPolicyDigest?: string;
+ 	launchResolvedExtensions?: LaunchResolvedChildExtensionsV1;
+ 	runtimeAcknowledgedExtensions?: RuntimeAcknowledgedChildExtensionsV1;
+ 	/** Original launch contract whose persisted session is being revived. */
+@@ -1199,6 +1205,8 @@ export interface AsyncStartedEvent {
+ 	workflowGraph?: WorkflowGraphSnapshot;
+ 	checkpoint?: ChainCheckpointState;
+ 	launchContractDigest?: string;
++	filesystemPolicy?: import("../runs/shared/filesystem-policy.ts").ResolvedFilesystemPolicy;
++	filesystemPolicyDigest?: string;
+ 	launchResolvedExtensions?: LaunchResolvedChildExtensionsV1;
+ 	runtimeAcknowledgedExtensions?: RuntimeAcknowledgedChildExtensionsV1;
+ 	usageBudget?: UsageBudgetState;
+@@ -1287,6 +1295,8 @@ export interface AsyncStatus {
+ 	checkpoint?: ChainCheckpointState;
+ 	processTerminal?: ProcessTerminalV1;
+ 	launchContractDigest?: string;
++	filesystemPolicy?: import("../runs/shared/filesystem-policy.ts").ResolvedFilesystemPolicy;
++	filesystemPolicyDigest?: string;
+ 	launchResolvedExtensions?: LaunchResolvedChildExtensionsV1;
+ 	runtimeAcknowledgedExtensions?: RuntimeAcknowledgedChildExtensionsV1;
+ 	capabilityCeiling?: ResolvedSubagentCapabilityCeiling;
+@@ -1296,6 +1306,8 @@ export interface AsyncStatus {
+ 	workflowKey?: string;
+ 	steps?: Array<{
+ 		agent: string;
++		/** Exact child launch cwd; required to validate retained filesystem policy identity. */
++		cwd?: string;
+ 		runner?: ExternalCliRunnerStatus;
+ 		externalProcess?: ExternalProcessStatus;
+ 		/** Resolved launch context for this child step. */
+@@ -1350,6 +1362,8 @@ export interface AsyncStatus {
+ 		acceptance?: AcceptanceLedger;
+ 		agentContract?: AgentContract;
+ 		launchContractDigest?: string;
++		filesystemPolicy?: import("../runs/shared/filesystem-policy.ts").ResolvedFilesystemPolicy;
++		filesystemPolicyDigest?: string;
+ 		launchResolvedExtensions?: LaunchResolvedChildExtensionsV1;
+ 		runtimeAcknowledgedExtensions?: RuntimeAcknowledgedChildExtensionsV1;
+ 		execution?: ExecutionProjection;
+@@ -1461,6 +1475,8 @@ export interface ForegroundResumeChild {
+ 	acceptance?: AcceptanceLedger;
+ 	agentContract?: AgentContract;
+ 	launchContractDigest?: string;
++	filesystemPolicy?: import("../runs/shared/filesystem-policy.ts").ResolvedFilesystemPolicy;
++	filesystemPolicyDigest?: string;
+ 	launchResolvedExtensions?: LaunchResolvedChildExtensionsV1;
+ 	runtimeAcknowledgedExtensions?: RuntimeAcknowledgedChildExtensionsV1;
+ 	execution?: ExecutionProjection;
+@@ -1639,6 +1655,7 @@ export const SUBAGENT_RESULT_INTERCOM_DELIVERY_EVENT = "subagent:result-intercom
+ export interface RunSyncOptions {
+ 	/** Opt-in global permission rules; missing tools remain allowed. */
+ 	permissions?: import("../runs/shared/permissions.ts").PermissionConfig;
++	filesystemPolicy?: import("../runs/shared/filesystem-policy.ts").ResolvedFilesystemPolicy;
+ 	/** Session id of the direct parent session for permission-system ask forwarding. */
+ 	parentSessionId?: string;
+ 	/** Resolved launch context for this child. */
+diff --git a/src/workflows/scripted-workflow.ts b/src/workflows/scripted-workflow.ts
+index e30cbd1..67b6894 100644
+--- a/src/workflows/scripted-workflow.ts
++++ b/src/workflows/scripted-workflow.ts
+@@ -34,6 +34,16 @@ function formatRef(result) {
+ 
+ const runFingerprints = new Map();
+ 
++function validateFilesystemPolicy(value, label) {
++  if (value === undefined) return;
++  if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error(label + " filesystemPolicy must be an object.");
++  const unknown = Object.keys(value).filter((key) => !["allowedRoots", "deniedPaths", "bash"].includes(key));
++  if (unknown.length) throw new Error(label + " filesystemPolicy has unknown fields: " + unknown.join(", ") + ".");
++  if (!Array.isArray(value.allowedRoots) || value.allowedRoots.length === 0 || value.allowedRoots.some((entry) => typeof entry !== "string" || !entry.trim())) throw new Error(label + " filesystemPolicy.allowedRoots must contain non-empty paths.");
++  if (value.deniedPaths !== undefined && (!Array.isArray(value.deniedPaths) || value.deniedPaths.some((entry) => typeof entry !== "string" || !entry.trim()))) throw new Error(label + " filesystemPolicy.deniedPaths must contain non-empty paths.");
++  if (value.bash !== undefined && value.bash !== "deny") throw new Error(label + " filesystemPolicy.bash is fixed to 'deny'.");
++}
++
+ function validateRunCall(key, params, label, fingerprints) {
+   if (typeof key !== "string" || !runKeyPattern.test(key)) throw new Error(label + " has an invalid key.");
+   if (!params || typeof params !== "object" || Array.isArray(params)) throw new Error(label + " requires a params object.");
+@@ -48,6 +58,9 @@ function validateRunCall(key, params, label, fingerprints) {
+   if (params.resume !== undefined && (typeof params.resume !== "string" || !params.resume.trim())) throw new Error(label + " resume must be a non-empty retained run id.");
+   if (params.resume !== undefined && params.agent !== undefined) throw new Error(label + " resume and agent are mutually exclusive.");
+   if (params.resume !== undefined && (typeof params.task !== "string" || !params.task.trim())) throw new Error(label + " resume requires a non-empty task follow-up.");
++  if (params.resume !== undefined && params.filesystemPolicy !== undefined) throw new Error(label + " retained resume cannot override filesystemPolicy.");
++  validateFilesystemPolicy(params.filesystemPolicy, label);
++  if (params.worktree === true && params.filesystemPolicy !== undefined) throw new Error(label + " filesystemPolicy cannot be combined with worktree:true.");
+   assertJsonValue(params, label + " params");
+   const fingerprint = stableRunJson(params);
+   const existing = fingerprints.get(key);
+@@ -62,6 +75,7 @@ const runs = Object.freeze({
+   },
+   all(items) {
+     if (!Array.isArray(items)) throw new Error("runs.all(items) requires an array.");
++	if (items.some((item) => item && typeof item === "object" && !Array.isArray(item) && item.filesystemPolicy !== undefined)) throw new Error("filesystemPolicy v1 supports one runs.run child only and cannot be used with runs.all(...).");
+     const fingerprints = new Map(runFingerprints);
+     const calls = [];
+     for (let index = 0; index < items.length; index++) {
+@@ -198,6 +212,8 @@ export interface RunWorkflowScriptOptions {
+ 	script: string;
+ 	timeoutMs?: number;
+ 	signal?: AbortSignal;
++	/** Workflow default projected into each non-resume runs.run child. */
++	defaultFilesystemPolicyActive?: boolean;
+ 	launch: (key: string, params: Record<string, unknown>, signal: AbortSignal) => Promise<WorkflowScriptChildResult>;
+ 	status: (keyOrRunId: string, signal: AbortSignal) => Promise<WorkflowScriptChildResult>;
+ 	state?: {
+@@ -294,6 +310,16 @@ function stableJson(value: unknown): string {
+ 	return JSON.stringify(value) ?? "undefined";
+ }
+ 
++function validateFilesystemPolicy(value: unknown, label: string): void {
++	if (value === undefined) return;
++	if (!isRecord(value)) throw new Error(`${label} filesystemPolicy must be an object.`);
++	const unknown = Object.keys(value).filter((key) => !["allowedRoots", "deniedPaths", "bash"].includes(key));
++	if (unknown.length > 0) throw new Error(`${label} filesystemPolicy has unknown fields: ${unknown.join(", ")}.`);
++	if (!Array.isArray(value.allowedRoots) || value.allowedRoots.length === 0 || value.allowedRoots.some((entry) => typeof entry !== "string" || !entry.trim())) throw new Error(`${label} filesystemPolicy.allowedRoots must contain non-empty paths.`);
++	if (value.deniedPaths !== undefined && (!Array.isArray(value.deniedPaths) || value.deniedPaths.some((entry) => typeof entry !== "string" || !entry.trim()))) throw new Error(`${label} filesystemPolicy.deniedPaths must contain non-empty paths.`);
++	if (value.bash !== undefined && value.bash !== "deny") throw new Error(`${label} filesystemPolicy.bash is fixed to 'deny'.`);
++}
++
+ function validateKey(value: unknown, owner = "runs.run"): string {
+ 	if (typeof value !== "string" || !KEY_PATTERN.test(value)) {
+ 		throw new Error(`${owner} key must be 1-128 characters using letters, numbers, '.', '_' or '-', and start with a letter or number.`);
+@@ -319,6 +345,7 @@ export async function runWorkflowScript(options: RunWorkflowScriptOptions): Prom
+ 	const children = new Map<string, WorkflowScriptChildResult>();
+ 	const childOrder: string[] = [];
+ 	const launches = new Map<string, { fingerprint: string; promise: Promise<WorkflowScriptChildResult> }>();
++	let restrictedRunKey: string | undefined;
+ 	const childController = new AbortController();
+ 	let settled = false;
+ 
+@@ -459,6 +486,14 @@ export async function runWorkflowScript(options: RunWorkflowScriptOptions): Prom
+ 			if (params.resume !== undefined && (typeof params.task !== "string" || !params.task.trim())) {
+ 				return respond(Promise.reject(new Error(`runs.run('${key}') resume requires a non-empty task follow-up.`)));
+ 			}
++			if (params.resume !== undefined && params.filesystemPolicy !== undefined) {
++				return respond(Promise.reject(new Error(`runs.run('${key}') retained resume cannot override filesystemPolicy.`)));
++			}
++			try { validateFilesystemPolicy(params.filesystemPolicy, `runs.run('${key}')`); }
++			catch (error) { return respond(Promise.reject(error)); }
++			if (params.worktree === true && params.filesystemPolicy !== undefined) {
++				return respond(Promise.reject(new Error(`runs.run('${key}') filesystemPolicy cannot be combined with worktree:true.`)));
++			}
+ 			const collectFailure = message.args.collectFailure === true;
+ 			const deliver = (promise: Promise<WorkflowScriptChildResult>) => collectFailure
+ 				? promise
+@@ -474,6 +509,19 @@ export async function runWorkflowScript(options: RunWorkflowScriptOptions): Prom
+ 				traceChanged();
+ 				return respond(deliver(existing.promise));
+ 			}
++			const filesystemPolicyActive = params.resume === undefined
++				&& (params.filesystemPolicy !== undefined || options.defaultFilesystemPolicyActive === true);
++			const requiresExclusiveLaunch = filesystemPolicyActive || options.defaultFilesystemPolicyActive === true;
++			if ((requiresExclusiveLaunch || restrictedRunKey !== undefined) && collectFailure) {
++				return respond(Promise.reject(new Error("filesystemPolicy v1 supports one runs.run child only and cannot be used with runs.all(...).")));
++			}
++			if (requiresExclusiveLaunch && launches.size > 0) {
++				return respond(Promise.reject(new Error("filesystemPolicy v1 must be the workflow's only child launch; another child already launched.")));
++			}
++			if (!requiresExclusiveLaunch && restrictedRunKey !== undefined) {
++				return respond(Promise.reject(new Error(`filesystemPolicy v1 child '${restrictedRunKey}' is the workflow's only permitted launch.`)));
++			}
++			if (requiresExclusiveLaunch) restrictedRunKey = key;
+ 
+ 			const startedAt = Date.now();
+ 			childOrder.push(key);

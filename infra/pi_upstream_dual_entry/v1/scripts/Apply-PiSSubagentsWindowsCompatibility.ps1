@@ -57,8 +57,9 @@ $asyncPatchedHash = if ($packageVersion -ceq '0.44.0') {
     '15e3e072431e43fa774d4d4993c606e0c671841539606fac90f9b86f94777b48'
 }
 $asyncOwnerSessionStopCombinedHash = '6022d233c27a0f796581ba6ebda282c736cf0442771f41a89ad290912898a220'
+$asyncFilesystemPolicyCombinedHash = 'f6e1ed79bfc0373e77efb0754dcfcddf643942d406d1c8371d57a5c3203f4fed'
 $asyncAcceptedHashes = if ($packageVersion -ceq '0.44.0') {
-    @($asyncUpstreamHash,$asyncOwnerSessionStopCombinedHash)
+    @($asyncUpstreamHash,$asyncOwnerSessionStopCombinedHash,$asyncFilesystemPolicyCombinedHash)
 } else {
     @($asyncUpstreamHash,$asyncPatchedHash)
 }
@@ -213,5 +214,6 @@ if (
     provider_tool_id_used_as_path = $false
     upstream_portable_workflow_id = [bool]($packageVersion -ceq '0.44.0')
     owner_session_stop_combination_accepted = [bool]($packageVersion -ceq '0.44.0' -and $asyncAfterHash -ceq $asyncOwnerSessionStopCombinedHash)
+    filesystem_policy_combination_accepted = [bool]($packageVersion -ceq '0.44.0' -and $asyncAfterHash -ceq $asyncFilesystemPolicyCombinedHash)
     msys_drive_path_authorship_equivalence = $true
 } | ConvertTo-Json -Depth 5

@@ -31,7 +31,9 @@ if ($target -notin @($mainTarget,$backupTarget) -and -not $isLabCore) {
 $packageRoot = Join-Path $target 'node_modules\@earendil-works\pi-coding-agent'
 $packageJsonPath = Join-Path $packageRoot 'package.json'
 $sourcePath = Join-Path $packageRoot 'dist\core\agent-session.js'
-foreach ($required in @($packageJsonPath,$sourcePath)) {
+$nativeTypesPath = Join-Path $packageRoot 'dist\core\agent-session.d.ts'
+$nativeAgentLoopPath = Join-Path $packageRoot 'node_modules\@earendil-works\pi-agent-core\dist\agent-loop.js'
+foreach ($required in @($packageJsonPath,$sourcePath,$nativeTypesPath,$nativeAgentLoopPath)) {
     if (-not (Test-Path -LiteralPath $required -PathType Leaf)) {
         throw "PI_S_MIDTURN_PATCH_SOURCE_MISSING: $required"
     }
@@ -44,9 +46,13 @@ if ([string]$package.name -cne '@earendil-works/pi-coding-agent' -or [string]$pa
 
 $upstreamHash = '91e72d5497f665e731cbd79da6a6e826d8cae7d2ce156a7dee39f8ca205e32c8'
 $patchedHash = '3d42e3311f1b7b5b72aa81dd745cf7a8e089e9b7708abe5e33b9b553651739e6'
+$nativeContinuationPatchedHash = 'afdb16fdacf1a66ac56a96bdcf924beddd3763a97eb8ee39ca2ae410faa7ce93'
+$nativeContinuationTypesHash = 'f495c75f3ec032c7336b2234ee7ba5693f26b41f321ec48d570fed2d292f13e1'
+$nativeContinuationAgentLoopHash = 'c625c477ee786eeef1b4b5b03c0339e5bf78f90a5b8432018ae0f48dfc98723f'
 $preimagePath = Join-Path $target 'xinao-compatibility-preimages\pi-coding-agent-0.84.1-agent-session.upstream.js'
 $beforeHash = (Get-FileHash -Algorithm SHA256 -LiteralPath $sourcePath).Hash.ToLowerInvariant()
 $changed = $false
+$nativeContinuationDownstreamComposed = $false
 
 if ($beforeHash -ceq $upstreamHash) {
     if ($VerifyOnly) {
@@ -169,13 +175,23 @@ if ($beforeHash -ceq $upstreamHash) {
     if ($updated -ceq $source) { throw 'PI_S_MIDTURN_PATCH_NO_CHANGE' }
     [IO.File]::WriteAllText($sourcePath,$updated,[Text.UTF8Encoding]::new($false))
     $changed = $true
+} elseif ($beforeHash -ceq $nativeContinuationPatchedHash) {
+    $typesHash = (Get-FileHash -Algorithm SHA256 -LiteralPath $nativeTypesPath).Hash.ToLowerInvariant()
+    $agentLoopHash = (Get-FileHash -Algorithm SHA256 -LiteralPath $nativeAgentLoopPath).Hash.ToLowerInvariant()
+    if ($typesHash -cne $nativeContinuationTypesHash -or $agentLoopHash -cne $nativeContinuationAgentLoopHash) {
+        throw "PI_S_MIDTURN_NATIVE_CONTINUATION_COMBINATION_CONFLICT: agent_session=$beforeHash types=$typesHash agent_loop=$agentLoopHash"
+    }
+    # Native continuation is a downstream layer over the exact mid-turn final.
+    # Verify it as a coherent composition; never rewrite it back to the underlay.
+    $nativeContinuationDownstreamComposed = $true
 } elseif ($beforeHash -cne $patchedHash) {
-    throw "PI_S_MIDTURN_PATCH_SOURCE_CONFLICT: expected=$upstreamHash|$patchedHash actual=$beforeHash"
+    throw "PI_S_MIDTURN_PATCH_SOURCE_CONFLICT: expected=$upstreamHash|$patchedHash|$nativeContinuationPatchedHash actual=$beforeHash"
 }
 
 $afterHash = (Get-FileHash -Algorithm SHA256 -LiteralPath $sourcePath).Hash.ToLowerInvariant()
-if ($afterHash -cne $patchedHash) {
-    throw "PI_S_MIDTURN_PATCH_VERIFY_FAILED: expected=$patchedHash actual=$afterHash"
+$expectedAfterHash = if ($nativeContinuationDownstreamComposed) { $nativeContinuationPatchedHash } else { $patchedHash }
+if ($afterHash -cne $expectedAfterHash) {
+    throw "PI_S_MIDTURN_PATCH_VERIFY_FAILED: expected=$expectedAfterHash actual=$afterHash"
 }
 $preimageHash = $(if (Test-Path -LiteralPath $preimagePath -PathType Leaf) {
     (Get-FileHash -Algorithm SHA256 -LiteralPath $preimagePath).Hash.ToLowerInvariant()
@@ -192,6 +208,19 @@ if (
 ) {
     throw 'PI_S_MIDTURN_PATCH_SEMANTIC_VERIFY_FAILED'
 }
+if ($nativeContinuationDownstreamComposed) {
+    $nativeTypesVerified = [IO.File]::ReadAllText($nativeTypesPath,[Text.UTF8Encoding]::new($false))
+    $nativeAgentLoopVerified = [IO.File]::ReadAllText($nativeAgentLoopPath,[Text.UTF8Encoding]::new($false))
+    if (
+        -not $verified.Contains('_extensionAbortEpoch') -or
+        -not $verified.Contains('_handlePostAgentRun(extensionAbortEpoch)') -or
+        -not $nativeTypesVerified.Contains('private _extensionAbortEpoch;') -or
+        -not $nativeTypesVerified.Contains('private _handlePostAgentRun;') -or
+        -not $nativeAgentLoopVerified.Contains('signal?.throwIfAborted();')
+    ) {
+        throw 'PI_S_MIDTURN_NATIVE_CONTINUATION_SEMANTIC_VERIFY_FAILED'
+    }
+}
 
 [pscustomobject]@{
     schema = 'xinao.pi_midturn_compaction_compatibility.v2'
@@ -205,6 +234,9 @@ if (
     after_sha256 = $afterHash
     changed = $changed
     verify_only = [bool]$VerifyOnly
+    native_continuation_downstream_composed = $nativeContinuationDownstreamComposed
+    native_continuation_types_sha256 = if ($nativeContinuationDownstreamComposed) { $nativeContinuationTypesHash } else { $null }
+    native_continuation_agent_loop_sha256 = if ($nativeContinuationDownstreamComposed) { $nativeContinuationAgentLoopHash } else { $null }
     prime_s_runtime_gate_required = $true
     managed_profiles = @('prime-s','prime-b')
     profile_scoped_runtime_gate_required = $true

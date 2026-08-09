@@ -5,6 +5,7 @@ param([switch]$VerifyOnly)
 $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot 'PiDualEntry.Common.ps1')
 
+Remove-Item Env:XINAO_PI_NATIVE_CONTINUATION_ABORT_FENCE -ErrorAction SilentlyContinue
 $spec = Get-PiDualEntrySpec -Profile 'prime-s'
 $target = [IO.Path]::GetFullPath($spec.PiToolRoot).TrimEnd('\')
 $expected = [IO.Path]::GetFullPath($script:PiDualEntryMainToolRoot).TrimEnd('\')
@@ -32,6 +33,12 @@ $midTurnRaw = if ($VerifyOnly) {
     & (Join-Path $PSScriptRoot 'Apply-PiSMidTurnCompactionCompatibility.ps1') -PiToolRoot $target
 }
 $midTurn = ($midTurnRaw -join [Environment]::NewLine) | ConvertFrom-Json
+$nativeRaw = if ($VerifyOnly) {
+    & (Join-Path $PSScriptRoot 'Apply-PiSNativeContinuationCompatibility.ps1') -PiToolRoot $target -VerifyOnly
+} else {
+    & (Join-Path $PSScriptRoot 'Apply-PiSNativeContinuationCompatibility.ps1') -PiToolRoot $target
+}
+$native = ($nativeRaw -join [Environment]::NewLine) | ConvertFrom-Json
 $postRaw = if ($VerifyOnly) {
     & (Join-Path $PSScriptRoot 'Apply-PiSPost0841UpstreamCompatibility.ps1') -PiToolRoot $target -VerifyOnly
 } else {
@@ -61,6 +68,7 @@ $lockPath = Join-Path $target 'package-lock.json'
         (Get-FileHash -Algorithm SHA256 -LiteralPath $lockPath).Hash.ToLowerInvariant()
     } else { $null }
     midturn_compaction_compatibility = $midTurn
+    native_continuation_compatibility = $native
     post_0841_upstream_compatibility = $post
     cold_backup_tool_root = $backup
     cold_backup_touched = $false

@@ -39,18 +39,23 @@ function Get-PiSBodyJsonPropertyValue {
 }
 
 $target = Get-NormalizedPiSBodyPath -Path $AgentDir
+$primeSProfileTarget = Get-NormalizedPiSBodyPath -Path (Join-Path $script:PiDualEntryStateRoot 'profiles\prime-s')
+$primeBProfileTarget = Get-NormalizedPiSBodyPath -Path (Join-Path $script:PiDualEntryStateRoot 'profiles\prime-b')
+$primeSLabParent = Get-NormalizedPiSBodyPath -Path (Join-Path $script:PiDualEntryStateRoot 'body-labs\prime-s')
+$primeBLabParent = Get-NormalizedPiSBodyPath -Path (Join-Path $script:PiDualEntryStateRoot 'body-labs\prime-b')
 $activeTargets = @(
-    Get-NormalizedPiSBodyPath -Path (Join-Path $script:PiDualEntryStateRoot 'profiles\prime-s')
-    Get-NormalizedPiSBodyPath -Path (Join-Path $script:PiDualEntryStateRoot 'profiles\prime-b')
+    $primeSProfileTarget
+    $primeBProfileTarget
 )
 $labParents = @(
-    Get-NormalizedPiSBodyPath -Path (Join-Path $script:PiDualEntryStateRoot 'body-labs\prime-s')
-    Get-NormalizedPiSBodyPath -Path (Join-Path $script:PiDualEntryStateRoot 'body-labs\prime-b')
+    $primeSLabParent
+    $primeBLabParent
 )
 $targetParent = Get-NormalizedPiSBodyPath -Path (Split-Path -Parent $target)
 if ($target -notin $activeTargets -and $targetParent -notin $labParents) {
     throw "PI_BODY_CONFIG_TARGET_OUTSIDE_MANAGED_PROFILE: $target"
 }
+$isMainPrimeSBody = ($target -eq $primeSProfileTarget -or $targetParent -eq $primeSLabParent)
 
 New-Item -ItemType Directory -Force -Path $target | Out-Null
 
@@ -77,6 +82,15 @@ $hermesConfig = [ordered]@{
     standingInstructionsEnabled = $false
     projectsMemoryDir = 'projects-memory'
     sessionSearch = [ordered]@{variant = 'anchors'}
+}
+# Main prime keeps a larger explicit global/failure-memory working set. Hermes
+# derives the failure limit as 2x memoryCharLimit. User and project memories
+# retain the upstream 5k boundary, and the isolated PrimeB snapshot retains its
+# byte-for-byte default-derived configuration.
+if ($isMainPrimeSBody) {
+    $hermesConfig['memoryCharLimit'] = 10000
+    $hermesConfig['userCharLimit'] = 5000
+    $hermesConfig['projectCharLimit'] = 5000
 }
 $hermesChanged = Write-PiSBodyJsonIfChanged -Path $hermesPath -Value $hermesConfig
 
@@ -154,6 +168,11 @@ if (Test-Path -LiteralPath $modelsPath -PathType Leaf) {
     hermes_config = $hermesPath
     hermes_sha256 = (Get-FileHash -Algorithm SHA256 -LiteralPath $hermesPath).Hash.ToLowerInvariant()
     hermes_changed = $hermesChanged
+    hermes_memory_capacity_scope = $(if ($isMainPrimeSBody) { 'main-prime-s-explicit' } else { 'upstream-default-derived' })
+    hermes_memory_char_limit = $(if ($isMainPrimeSBody) { 10000 } else { 5000 })
+    hermes_user_char_limit = 5000
+    hermes_project_char_limit = 5000
+    hermes_failure_char_limit = $(if ($isMainPrimeSBody) { 20000 } else { 10000 })
     mcp_config = $mcpPath
     mcp_sha256 = (Get-FileHash -Algorithm SHA256 -LiteralPath $mcpPath).Hash.ToLowerInvariant()
     mcp_changed = $mcpChanged

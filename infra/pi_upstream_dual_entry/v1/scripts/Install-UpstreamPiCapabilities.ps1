@@ -5,6 +5,7 @@ param([ValidateSet('prime-b','prime-s')][string[]]$Profile = @('prime-s'))
 $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot 'PiDualEntry.Common.ps1')
 
+Remove-Item Env:XINAO_PI_NATIVE_CONTINUATION_ABORT_FENCE -ErrorAction SilentlyContinue
 & (Join-Path $PSScriptRoot 'Initialize-UpstreamPiProfiles.ps1') -Profile $Profile | Out-Null
 
 $receipts = @()
@@ -26,13 +27,21 @@ foreach ($profileName in $Profile) {
         }
     }
     $subagentsCompatibility = $null
+    $subagentsOwnerSessionStopCompatibility = $null
+    $subagentsFilesystemPolicyCompatibility = $null
     $hermesSessionCompatibility = $null
     $midTurnCompactionCompatibility = $null
+    $nativeContinuationCompatibility = $null
     $subagentsCompatibility = (& (Join-Path $PSScriptRoot 'Apply-PiSSubagentsWindowsCompatibility.ps1') -AgentDir $spec.AgentDir) | ConvertFrom-Json
+    if ($profileName -eq 'prime-s') {
+        $subagentsOwnerSessionStopCompatibility = (& (Join-Path $PSScriptRoot 'Apply-PiSSubagentsSessionStopCompatibility.ps1') -AgentDir $spec.AgentDir) | ConvertFrom-Json
+        $subagentsFilesystemPolicyCompatibility = (& (Join-Path $PSScriptRoot 'Apply-PiSSubagentsFilesystemPolicy.ps1') -AgentDir $spec.AgentDir) | ConvertFrom-Json
+    }
     $hermesSessionCompatibility = (& (Join-Path $PSScriptRoot 'Apply-PiSHermesSessionCompatibility.ps1') -AgentDir $spec.AgentDir) | ConvertFrom-Json
     $midTurnCompactionCompatibility = (& (Join-Path $PSScriptRoot 'Apply-PiSMidTurnCompactionCompatibility.ps1') -PiToolRoot $spec.PiToolRoot) | ConvertFrom-Json
     $post0841UpstreamCompatibility = $null
     if ($profileName -eq 'prime-s') {
+        $nativeContinuationCompatibility = (& (Join-Path $PSScriptRoot 'Apply-PiSNativeContinuationCompatibility.ps1') -PiToolRoot $spec.PiToolRoot) | ConvertFrom-Json
         $post0841UpstreamCompatibility = (& (Join-Path $PSScriptRoot 'Apply-PiSPost0841UpstreamCompatibility.ps1') -PiToolRoot $spec.PiToolRoot) | ConvertFrom-Json
     }
     $list = @(& $spec.PiCommand list 2>&1)
@@ -53,8 +62,11 @@ foreach ($profileName in $Profile) {
         missions_enabled = $false
         automatic_autoresearch_loop_started = $false
         subagents_windows_compatibility = $subagentsCompatibility
+        subagents_owner_session_stop_compatibility = $subagentsOwnerSessionStopCompatibility
+        subagents_filesystem_policy_compatibility = $subagentsFilesystemPolicyCompatibility
         hermes_session_compatibility = $hermesSessionCompatibility
         midturn_compaction_compatibility = $midTurnCompactionCompatibility
+        native_continuation_compatibility = $nativeContinuationCompatibility
         post_0841_upstream_compatibility = $post0841UpstreamCompatibility
     }
 }

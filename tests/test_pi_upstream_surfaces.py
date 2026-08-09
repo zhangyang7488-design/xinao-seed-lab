@@ -247,9 +247,19 @@ def test_pi_surface_source_models_stable_leading_not_task_identities() -> None:
         "skills/understand-and-steer-prime/scripts/pi-supervisor-command.mjs",
     )
     for relative in snapshot_files:
-        assert (SOURCE_ROOT / "surface-overlays" / "prime-s" / relative).read_bytes() == (
-            SOURCE_ROOT / "surface-overlays" / "prime-b" / relative
-        ).read_bytes()
+        # PiB is an isolated frozen snapshot, not a live mirror of the main
+        # surface. Both snapshot entries remain recoverable, but later main-only
+        # evolution must not be forced back into byte equality here.
+        assert (SOURCE_ROOT / "surface-overlays" / "prime-s" / relative).is_file()
+        assert (SOURCE_ROOT / "surface-overlays" / "prime-b" / relative).is_file()
+    assert (
+        SOURCE_ROOT / "surface-overlays" / "prime-s" / "extensions" / "return-to-parent.ts"
+    ).is_file()
+    assert not (
+        SOURCE_ROOT / "surface-overlays" / "prime-b" / "extensions" / "return-to-parent.ts"
+    ).exists()
+    assert (SOURCE_ROOT / "surface-overlays" / "prime-s" / "agents" / "peer.md").is_file()
+    assert not (SOURCE_ROOT / "surface-overlays" / "prime-b" / "agents" / "peer.md").exists()
     snapshot_contract = _text(
         SOURCE_ROOT / "surface-overlays" / "prime-b" / "COLD_SNAPSHOT.md"
     )
@@ -479,6 +489,9 @@ def test_prime_s_midturn_compaction_uses_gated_core_seam_and_durable_resume() ->
     assert "@earendil-works/pi-coding-agent@0.84.1" in compatibility
     assert "91e72d5497f665e731cbd79da6a6e826d8cae7d2ce156a7dee39f8ca205e32c8" in compatibility
     assert "3d42e3311f1b7b5b72aa81dd745cf7a8e089e9b7708abe5e33b9b553651739e6" in compatibility
+    assert "afdb16fdacf1a66ac56a96bdcf924beddd3763a97eb8ee39ca2ae410faa7ce93" in compatibility
+    assert "PI_S_MIDTURN_NATIVE_CONTINUATION_COMBINATION_CONFLICT" in compatibility
+    assert "native_continuation_downstream_composed" in compatibility
     assert "PI_S_MIDTURN_PATCH_SOURCE_CONFLICT" in compatibility
     assert "PI_S_MIDTURN_PATCH_PREIMAGE_CONFLICT" in compatibility
     assert "PI_S_MIDTURN_PATCH_PREIMAGE_MISSING_OR_INVALID" in compatibility
@@ -540,6 +553,95 @@ def test_prime_s_midturn_compaction_uses_gated_core_seam_and_durable_resume() ->
     assert "未带 gate 的普通 Pi consumer" in readme
 
 
+def test_prime_s_native_continuation_is_root_only_abort_fenced_and_reversible() -> None:
+    extension = _text(
+        SOURCE_ROOT / "surface-overlays" / "prime-s" / "extensions" / "return-to-parent.ts"
+    )
+    mechanical = _text(SOURCE_ROOT / "scripts" / "Test-PiSReturnToParent.mjs")
+    live = _text(SOURCE_ROOT / "scripts" / "Test-PiSReturnToParentLive.mjs")
+    core_patch = _text(
+        SOURCE_ROOT
+        / "patches"
+        / "pi-coding-agent-0.84.1-native-continuation-abort-fence.patch"
+    )
+    apply_native = _text(
+        SOURCE_ROOT / "scripts" / "Apply-PiSNativeContinuationCompatibility.ps1"
+    )
+    restore_native = _text(
+        SOURCE_ROOT / "scripts" / "Restore-PiSNativeContinuationCompatibility.ps1"
+    )
+    start = _text(SOURCE_ROOT / "scripts" / "Start-UpstreamPi.ps1")
+    installer = _text(SOURCE_ROOT / "scripts" / "Install-UpstreamPiCapabilities.ps1")
+    main_core = _text(SOURCE_ROOT / "scripts" / "Install-PiSMainCore.ps1")
+    body_lab = _text(SOURCE_ROOT / "scripts" / "New-PiSBodyLab.ps1")
+    surface_test = _text(SOURCE_ROOT / "scripts" / "Test-UpstreamPiDualEntry.ps1")
+    readme = _text(SOURCE_ROOT / "README.md")
+
+    assert 'process.env.PI_SUBAGENT_CHILD === "1"' in extension
+    handshake = 'process.env.XINAO_PI_NATIVE_CONTINUATION_ABORT_FENCE !== "1"'
+    assert handshake in extension
+    assert extension.index(handshake) < extension.index("pi.registerTool")
+    assert 'stopReason !== "stop"' in extension
+    assert 'deliverAs: "followUp", triggerTurn: true' in extension
+    assert "continuationRunSignal" in extension
+    assert "xinao-return-to-parent-continuation" in extension
+    assert "provider_context_visibility: \"single_current_arm\"" in extension
+
+    assert "xinao.pi_return_to_parent.acceptance.v3" in mechanical
+    assert "provider_calls_multi_provider_continuation" in mechanical
+    assert "tagged_context_same_continuation_run_all_providers" in mechanical
+    assert "stop_during_continuation_provider_delta" in mechanical
+    assert "parserAmbiguousResult" in mechanical and "parserNonFirstArm" in mechanical
+    assert "normalized_argument_binding" in live
+    assert "matching_tool_result_unique" in live
+    assert "matching_arm_first_and_unique" in live
+
+    assert "_extensionAbortEpoch" in core_patch
+    assert "signal?.throwIfAborted();" in core_patch
+    assert "xinao.pi_native_continuation_compatibility.v1" in apply_native
+    assert "requires_midturn_preimage = $true" in apply_native
+    assert "$script:PiDualEntryBackupToolRoot" not in apply_native
+    assert "native_continuation_absent = $true" in restore_native
+    assert "restored_to_midturn_preimage" in restore_native
+    assert "fully_restored_upstream_accepted" in restore_native
+
+    clear_index = start.index("Remove-Item Env:XINAO_PI_NATIVE_CONTINUATION_ABORT_FENCE")
+    midturn_index = start.index("Apply-PiSMidTurnCompactionCompatibility.ps1")
+    native_index = start.index("Apply-PiSNativeContinuationCompatibility.ps1")
+    owner_stop_index = start.index("Apply-PiSSubagentsSessionStopCompatibility.ps1")
+    assert clear_index < midturn_index < native_index < owner_stop_index
+    assert "$env:XINAO_PI_NATIVE_CONTINUATION_ABORT_FENCE = '1'" in start
+    assert "PI_S_NATIVE_CONTINUATION_RUNTIME_HANDSHAKE_WITHOUT_VERIFIED_CORE" in start
+    assert "Restore-PiSNativeContinuationCompatibility.ps1" in start
+    assert "native_continuation_runtime_enabled = $false" in start
+
+    for consumer in (installer, main_core, body_lab):
+        assert "Apply-PiSNativeContinuationCompatibility.ps1" in consumer
+        assert consumer.index("Apply-PiSMidTurnCompactionCompatibility.ps1") < consumer.index(
+            "Apply-PiSNativeContinuationCompatibility.ps1"
+        )
+    assert "native_continuation_compatibility" in surface_test
+    assert "xinao.pi_return_to_parent.acceptance.v3" in surface_test
+    assert "PI_SURFACE_TEST_COLD_BACKUP_NATIVE_CONTINUATION_PRESENT_OR_MIXED" in surface_test
+    assert readme.index("Restore-PiSNativeContinuationCompatibility.ps1") < readme.index(
+        "Restore-PiSMidTurnCompactionCompatibility.ps1"
+    )
+
+
+def test_prime_s_filesystem_policy_receipt_is_bound_to_current_active_packages() -> None:
+    surface_test = _text(SOURCE_ROOT / "scripts" / "Test-UpstreamPiDualEntry.ps1")
+
+    assert "function Get-PiSubagentsSourceAggregateSha256" in surface_test
+    assert (
+        "active_pi_subagents_source_after_sha256 -cne $currentActivePiSubagentsSourceSha256"
+        in surface_test
+    )
+    assert (
+        "prime_b_pi_subagents_source_after_sha256 -cne $currentPrimeBPiSubagentsSourceSha256"
+        in surface_test
+    )
+
+
 def test_prime_s_mature_body_is_profile_local_sparse_and_non_autonomous() -> None:
     common = _text(SOURCE_ROOT / "scripts" / "PiDualEntry.Common.ps1")
     initializer = _text(SOURCE_ROOT / "scripts" / "Initialize-UpstreamPiProfiles.ps1")
@@ -551,6 +653,9 @@ def test_prime_s_mature_body_is_profile_local_sparse_and_non_autonomous() -> Non
     )
     hermes_probe = _text(
         SOURCE_ROOT / "scripts" / "Test-PiSHermesSessionCompatibility.mjs"
+    )
+    hermes_capacity = _text(
+        SOURCE_ROOT / "scripts" / "Test-PiSHermesMemoryCapacity.mjs"
     )
 
     assert "npm:pi-hermes-memory@0.9.4" in common
@@ -582,6 +687,13 @@ def test_prime_s_mature_body_is_profile_local_sparse_and_non_autonomous() -> Non
     assert "memoryOverflowStrategy = 'reject'" in body
     assert "standingInstructionsEnabled = $false" in body
     assert "variant = 'anchors'" in body
+    assert "$isMainPrimeSBody" in body
+    assert "$target -eq $primeSProfileTarget -or $targetParent -eq $primeSLabParent" in body
+    assert "$hermesConfig['memoryCharLimit'] = 10000" in body
+    assert "$hermesConfig['userCharLimit'] = 5000" in body
+    assert "$hermesConfig['projectCharLimit'] = 5000" in body
+    assert "main-prime-s-explicit" in body
+    assert "upstream-default-derived" in body
     assert "mcp.json" in body
     assert "hostConfigDiscovery = 'off'" in body
     assert "directTools = $false" in body
@@ -605,6 +717,12 @@ def test_prime_s_mature_body_is_profile_local_sparse_and_non_autonomous() -> Non
     assert "result.errors.length > 0" in hermes_probe
     assert "subagent_artifact_transcripts_parsed_as_sessions: false" in hermes_probe
     assert "child_artifacts_deleted: false" in hermes_probe
+    assert 'assertNoExplicitLimits(raw.primeB.parsed, "PrimeB raw")' in hermes_capacity
+    assert 'assertNoExplicitLimits(raw.primeBLab.parsed, "PrimeB lab raw")' in hermes_capacity
+    assert "PI_HERMES_MEMORY_CONFIG_INVALID" in hermes_capacity
+    assert "Main memory limit changed the first provider system prompt" in hermes_capacity
+    assert 'includes("/20000 chars")' in hermes_capacity
+    assert "fresh_process_memory_search" in hermes_capacity
 
     rpc = _text(SOURCE_ROOT / "scripts" / "Test-PiSSparseBodyRpc.mjs")
     assert 'tools: ["memory_add"]' in rpc

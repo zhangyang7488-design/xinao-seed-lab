@@ -35,6 +35,14 @@ authorship 边界；每次安装和启动都会做版本、源码 hash 与补丁
 直接拒绝。
 Hermes 的 PiS 兼容层会跳过 `sessions\subagent-artifacts` 中的孩子 transcript 账本，避免
 把它们误报成损坏的 Pi v3 session；账本本身保留，主 session 与孩子 session 均不删除。
+主 `prime` 另外把 Hermes 的全局/失败记忆容量显式设为 10k/20k 字符，`USER.md` 与每个
+project memory 仍各为 5k；overflow 继续 `reject`，不启用截断、FIFO、自动 consolidate 或
+failure prompt 注入。这只增加 profile-local 的可检索存储余量，不增加模型上下文、首次 provider
+请求或自动回忆。PiB 冷备不写三个 limit 字段，继续消费锁定依赖的 5k/5k/5k、failure 10k
+默认值。`Test-PiSHermesMemoryCapacity.mjs` 在隔离主/冷备 body lab 中验证越过旧 10k 的写入、
+超过 20k 的原子拒绝、Markdown/SQLite 逻辑一致、fresh-process search、prompt 不变与 PiB 字节
+负例；它是采用/升级验收，不进入普通启动热路径。正式回执写到
+`D:\XINAO_RESEARCH_RUNTIME\state\pi\0.84.1\acceptance\pi-hermes-memory-capacity-v1.json`。
 
 默认用户入口是桌面 `prime.lnk`，经 Windows Terminal `prime` profile 和 `Open-Prime.ps1`
 进入内部 `prime-s` profile。`C:\Users\xx363\PrimeB.lnk` 保留独立冷备入口；普通工作不枚举、
@@ -93,17 +101,89 @@ runner close 被观察、状态为 stopped，且并发新 launch 被 fence 拒�
 `Test-PiSubagentSessionStopProcess.mjs`，当前源码绑定回执位于
 `D:\XINAO_RESEARCH_RUNTIME\state\pi\0.84.1\acceptance\pi-subagents-owner-session-stop-v2.json`。
 
+主 `prime` 的 `pi-subagents@0.44.0` 还提供 opt-in、单任务作用域的
+`filesystemPolicy`。它可以作为 `workflowScript` 默认项或一个 `runs.run` 的显式项，例如：
+
+```js
+const policy = {
+  allowedRoots: ["D:\\safe-projection"],
+  deniedPaths: ["D:\\safe-projection\\private"],
+  bash: "deny",
+};
+return await runs.run("restricted-peer", {
+  agent: "peer",
+  task: "只读取安全投影并返回候选认识",
+  context: "fresh",
+  filesystemPolicy: policy,
+});
+```
+
+v1 只支持一个 fresh native Pi child；可前台或 detached async single，多个并发 restricted
+peer 由根分别发起多个独立 invocation。带 policy 的 chain、parallel、`runs.all`、attach-chain、
+worktree、external-cli、structured output、显式 output/file-only、share，以及会执行宿主命令的
+gate/acceptance verify/review 都在首个孩子启动前拒绝。一个 public workflow 一旦启用 policy，
+不能再混入第二个 launch key 或无 policy child。普通无 policy 的根 Pi 和 worker 保持原行为。
+
+policy active 时只暴露 `read/grep/find/ls`；`bash` 固定拒绝，未知或自定义 file-capable 工具也
+拒绝。相对路径从 child cwd 解析；Windows 盘符大小写和分隔符归一化，已存在目标按 realpath
+验证，因此 `..`、绝对越界、symlink/junction 越界均被阻断。`grep/find/ls` 的搜索根若是
+denied subtree 的祖先，会整次阻断而不是过滤结果；`grep` 的内容 regex 不是路径，只有 glob
+参与路径检查，`find` 才检查 path pattern，`ls` 没有 pattern 字段。孩子可见错误只说明阻断
+类别，不回显越界 canonical target。
+
+restricted launch 强制 `--no-context-files --no-skills`、`context=fresh`、`maxSubagentDepth=0`
+和 managed temp artifacts；agent 默认的 project context、skills、memory 或项目 artifactDir
+不能覆盖。规范化 policy、digest、cwd、effective preload、depth、artifact dir 与 launch digest
+进入 detached descriptor/status/result；resume 必须从 single-run durable surfaces 得到同一
+policy/digest，任一 marker 缺失、冲突或 descriptor 缺失都 fail closed。policy payload、payload
+hash、强制 runtime loader、gate module 的 path/hash 任一缺失或漂移，也在 provider 请求前拒绝。
+
+这是一条路径能力边界，不是文本语义 redaction：如果一个已允许文件内部同时含有不应交给孩子的
+语义，路径 policy 无法隐藏其中一段。根必须先生成只含安全内容的 projection，并只 allow 这个
+projection 目录；不能把混合敏感文件加入 allowedRoots 后期待 policy 按内容删减。它也不是
+Windows OS sandbox：同一用户身份下的恶意本地代码、并发路径替换、TOCTOU 和 hardlink alias
+不在这条模型误搜防线的保证内；需要这类对抗隔离时必须使用操作系统级边界。
+
+可重放应用顺序固定为 surface overlay projection → Windows compatibility → owner-session-stop →
+filesystem-policy。最后一层由 `Apply-PiSSubagentsFilesystemPolicy.ps1` 对 15 个精确 owner baseline
+hash 应用 `patches/pi-subagents-0.44.0-filesystem-policy.patch`；它只接受完整 owner baseline 或
+完整 FS final，不接受半态。旧 Windows/owner-stop 脚本只会识别 final 组合 hash，不会反向覆盖。
+Start、Install 和 `New-PiSBodyLab.ps1` 只在 `prime-s` 接这层，PiB 永不调用，也不得出现该模块。
+
+先在新 body lab 运行 `Test-PiSFilesystemPolicyAcceptance.ps1 -AgentDir <lab-agent-dir>`。验收使用
+本地 stub provider，但通过真实 Pi RPC 跑 foreground、detached/resume、stale repair、Stop、
+no-policy 对照、pre-context 攻击、junction 和 pre-provider 负例；每个具名 child toolResult 的
+`toolCallId/toolName/isError/result hash` 与 transcript path/hash 都进入源码绑定 receipt。正式回执
+路径是 `D:\XINAO_RESEARCH_RUNTIME\state\pi\0.84.1\acceptance\pi-subagents-filesystem-policy-v1.json`。
+应用到主面后必须用 final 源码重跑这份验收；旧 owner-stop process receipt 不能代替它。
+
+临时回滚前先停止活动主 Pi，并且只在 15 个文件仍全部等于已知 FS final 时，对 package root 运行
+`git -c core.autocrlf=false apply --reverse --check <filesystem-policy.patch>` 后再 `apply --reverse`，
+随后用 Windows 与 owner-stop 脚本 `-VerifyOnly` 证明精确 owner baseline。普通 launcher/installer
+会重新应用 FS 层，因此回滚验证期间不要调用它们；未知字节或半态不得用补丁覆盖。
+
 主 `prime` 另有 profile-local、root-only 的 `return_to_parent` 根工具。它只在根 Pi 已经判断一个局部问题、
-实验、动作或报告结算，而已绑定父现实仍有具体正收益前沿时，由根 Pi 自己调用；普通工具结果
-语义会让 Pi 0.84.1 在同一 agent run 内再进行一次模型计算，因此不需要 Codex 再投递用户消息。
-它不在 `agent_end` 自动触发，不建立 timer、daemon、任务队列或跨 turn wake；明确 Stop/Pause、
-真实用户关口、父完成与整个合法空间无正收益仍允许直接结算。工具不调用 `sendUserMessage`，
-因此不会制造 abort 后的排队文本残留。`PI_SUBAGENT_CHILD=1` 时扩展在注册前 fail-closed；有界
-孩子正常以 subagent result 返回根调用者，不取得根生命周期接缝。
-session `019fe1f2-9cd7-73af-94ca-440c180f35db` 已出现一次非预写的 live Sol 选择：根在提交
-`ca04b44` 的局部工程边界实际调用该工具，消费 tool result 后在同一 run 继续读取整个新澳并形成
-下一认识动作。它把状态从纯机械候选提升为 `LIVE_SOL_VERIFIED`，但单次同表面正例不证明跨任务
-成熟，也不取消 whole-space no-action、用户关口与 Stop 负边界。
+实验、动作或报告结算，而已绑定父现实仍有具体正收益前沿时，由根 Pi 自己调用。工具先保留普通
+tool result，让当前 run 消费局部结果；当且仅当该 run 以干净的 `stopReason=stop` 结算时，它才武装
+一次原生 custom follow-up，使根 Pi 在 terminal final 后自行获得一个新的完整 agent run。该续行 run
+可以包含多次 provider/tool/toolResult 往返；同一 run 结束后，带 arm id 的父现实指令会从以后普通
+prompt 与 resume context 中移除。下一次局部边界必须由根重新显式调用，不能靠旧 arm 自动续命。
+
+这条能力要求 launcher 在每次启动前先清除继承的
+`XINAO_PI_NATIVE_CONTINUATION_ABORT_FENCE`，依次验证 MidTurn underlay 与 native abort fence 后，才给
+实际主 Pi 进程设置 handshake。缺 handshake、`PI_SUBAGENT_CHILD=1`、Stop/abort/error/length/shutdown
+时扩展保持 inert 或清除当前 arm；孩子仍以 subagent result 返回根。核心 fence 同时覆盖 agent_start
+后与 provider 调用紧前的 abort，避免 follow-up 已入队后 Stop 又逃出一次新请求。它不调用
+`sendUserMessage`，不建立 timer、daemon、任务队列、跨重启接管或固定研究节拍；整个合法空间真实
+无正收益、用户关口与父完成仍可诚实等待或结算。
+
+`Apply-PiSNativeContinuationCompatibility.ps1` 只接受完整 MidTurn final 或完整 native final；重复
+Start 时 MidTurn 层只验证 exact downstream-composed 三文件组合，不把它反向改回 underlay。回滚必须
+先 `Restore-PiSNativeContinuationCompatibility.ps1`，再
+`Restore-PiSMidTurnCompactionCompatibility.ps1`，混合或未知 hash 一律拒绝。机械 faux provider 与
+持久 session 轨迹已经覆盖多-provider run、post-enqueue Stop、TUI/print、context 清理和 live parser
+歧义负例；正式采用后仍必须 fresh 重启，并由真实 `gpt-5.6-sol` 自主调用一次再验 live parser。
+在此之前它只是 `ADOPT_CANDIDATE`，旧同-run live 正例不能冒充原生 post-final 成熟。
 
 初始化脚本会把共同合同岛与相应表面岛确定性合成为该 profile 的 `PI_CONTRACT.md`；launcher 每次启动前刷新该活动投影。profile 的 `AGENTS.md` 仍直接链接主 Codex 行为源，因此合同岛补 Pi 自己的关系，不复制第二套 Codex。
 
@@ -136,7 +216,8 @@ Pi 0.84.1 的普通 auto-compaction 只在完整 agent run 结算后检查；一
 上游源码 hash 与补丁 hash fail closed；`Test-PiSMidTurnCompaction.mjs` 使用本地确定性 provider
 同时证明上游红例、PiS gate 绿例、同 session compaction 持久化、完成结果消费，以及“压缩被取消且
 已有排队 steer”时仍不放行下一 provider 请求；各形态保留独立 receipt，不调用外部模型。
-首次应用会保存并校验精确上游 preimage。回滚先停止活动 PiS，运行
+首次应用会保存并校验精确上游 preimage。若 native continuation 已应用，回滚先停止活动 PiS，依次运行
+`Restore-PiSNativeContinuationCompatibility.ps1 -PiToolRoot D:\XINAO_RESEARCH_RUNTIME\tools\pi\prime\0.84.1` 与
 `Restore-PiSMidTurnCompactionCompatibility.ps1 -PiToolRoot D:\XINAO_RESEARCH_RUNTIME\tools\pi\prime\0.84.1`，再以
 `Start-UpstreamPi.ps1 -Profile prime-s -DisableMidTurnCompactionCompatibility` 启动已恢复的上游核心；
 普通 launcher/installer 会正式重新应用兼容层，不能在回退验证期间调用。恢复脚本只在当前字节等于
@@ -151,8 +232,9 @@ Pi 0.84.1 的普通 auto-compaction 只在完整 agent run 结算后检查；一
 PiB 不应用这两笔主面增量。
 
 核心候选不能直接在主或冷备的受管 Pi binary 上试验。`New-PiSBodyLab.ps1 -IsolatePiCore` 会在该 lab 下
-安装独立的 pinned `pi-tool-root`；再加 `-ApplyMidTurnCompactionCompatibility` 才把候选补丁施加
-到这份隔离核心。默认 body lab 不复制或修改主核心或冷备核心。
+安装独立的 pinned `pi-tool-root`；再加 `-ApplyMidTurnCompactionCompatibility` 才依次把 MidTurn 与
+native continuation 候选补丁施加到这份隔离核心。默认 body lab 不复制或修改主核心或冷备核心，
+也不设置 runtime handshake；验收进程只在核心与扩展 hash 都已读回后显式注入。
 
 Pi profile 的 `shellPath` 是 Git Bash。丢弃输出使用 `/dev/null`，不能写 `NUL`；后者会在
 Git Bash 中创建真实未跟踪文件。研究或身体变更到自然边界时回读相交仓库工作树，精确清除

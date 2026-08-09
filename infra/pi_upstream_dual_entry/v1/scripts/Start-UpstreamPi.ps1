@@ -63,6 +63,9 @@ $env:XINAO_RUNTIME = 'D:\XINAO_RESEARCH_RUNTIME'
 $env:XINAO_PI_PROFILE = $Profile
 $env:XINAO_PI_SUPERVISOR_ENABLED = '1'
 $env:XINAO_PI_SUPERVISOR_PIPE = $spec.SupervisorPipe
+# Never trust an inherited continuation handshake. The root-only extension stays
+# inert until this launch has verified both the MidTurn underlay and native fence.
+Remove-Item Env:XINAO_PI_NATIVE_CONTINUATION_ABORT_FENCE -ErrorAction SilentlyContinue
 if ($DisableMidTurnCompactionCompatibility) {
     Remove-Item Env:XINAO_PI_MIDTURN_COMPACTION_BACKPRESSURE -ErrorAction SilentlyContinue
 } else {
@@ -72,24 +75,39 @@ $contractProjection = Sync-PiDualEntryContractProjection -Spec $spec
 $surfaceOverlay = Sync-PiDualEntrySurfaceOverlay -Spec $spec
 $subagentsCompatibility = $null
 $subagentsOwnerSessionStopCompatibility = $null
+$subagentsFilesystemPolicyCompatibility = $null
 $hermesSessionCompatibility = $null
 $midTurnCompactionCompatibility = $null
+$nativeContinuationCompatibility = $null
+$nativeContinuationAbsence = $null
 $post0841UpstreamCompatibility = $null
 $numpadEnterFollow = $null
 $numpadHelperProcess = $null
 $numpadHelperStatus = 'not-applicable'
 $numpadHelperSource = Join-Path (Split-Path -Parent $PSScriptRoot) 'helpers\PrimeS-NumPadEnter-Follow.ahk'
 & (Join-Path $PSScriptRoot 'Set-PiSBodyConfiguration.ps1') -AgentDir $spec.AgentDir | Out-Null
-if ($DisableMidTurnCompactionCompatibility) {
-    $midTurnCompactionCompatibility = (& (Join-Path $PSScriptRoot 'Restore-PiSMidTurnCompactionCompatibility.ps1') -PiToolRoot $spec.PiToolRoot -VerifyOnly) | ConvertFrom-Json
-} elseif ($ValidateOnly) {
+if ($ValidateOnly) {
     $subagentsCompatibility = (& (Join-Path $PSScriptRoot 'Apply-PiSSubagentsWindowsCompatibility.ps1') -AgentDir $spec.AgentDir -VerifyOnly) | ConvertFrom-Json
     $hermesSessionCompatibility = (& (Join-Path $PSScriptRoot 'Apply-PiSHermesSessionCompatibility.ps1') -AgentDir $spec.AgentDir -VerifyOnly) | ConvertFrom-Json
-    $midTurnCompactionCompatibility = (& (Join-Path $PSScriptRoot 'Apply-PiSMidTurnCompactionCompatibility.ps1') -PiToolRoot $spec.PiToolRoot -VerifyOnly) | ConvertFrom-Json
 } else {
     $subagentsCompatibility = (& (Join-Path $PSScriptRoot 'Apply-PiSSubagentsWindowsCompatibility.ps1') -AgentDir $spec.AgentDir) | ConvertFrom-Json
     $hermesSessionCompatibility = (& (Join-Path $PSScriptRoot 'Apply-PiSHermesSessionCompatibility.ps1') -AgentDir $spec.AgentDir) | ConvertFrom-Json
+}
+if ($DisableMidTurnCompactionCompatibility) {
+    if ($Profile -eq 'prime-s') {
+        $nativeContinuationAbsence = (& (Join-Path $PSScriptRoot 'Restore-PiSNativeContinuationCompatibility.ps1') -PiToolRoot $spec.PiToolRoot -VerifyOnly) | ConvertFrom-Json
+    }
+    $midTurnCompactionCompatibility = (& (Join-Path $PSScriptRoot 'Restore-PiSMidTurnCompactionCompatibility.ps1') -PiToolRoot $spec.PiToolRoot -VerifyOnly) | ConvertFrom-Json
+} elseif ($ValidateOnly) {
+    $midTurnCompactionCompatibility = (& (Join-Path $PSScriptRoot 'Apply-PiSMidTurnCompactionCompatibility.ps1') -PiToolRoot $spec.PiToolRoot -VerifyOnly) | ConvertFrom-Json
+    if ($Profile -eq 'prime-s') {
+        $nativeContinuationCompatibility = (& (Join-Path $PSScriptRoot 'Apply-PiSNativeContinuationCompatibility.ps1') -PiToolRoot $spec.PiToolRoot -VerifyOnly) | ConvertFrom-Json
+    }
+} else {
     $midTurnCompactionCompatibility = (& (Join-Path $PSScriptRoot 'Apply-PiSMidTurnCompactionCompatibility.ps1') -PiToolRoot $spec.PiToolRoot) | ConvertFrom-Json
+    if ($Profile -eq 'prime-s') {
+        $nativeContinuationCompatibility = (& (Join-Path $PSScriptRoot 'Apply-PiSNativeContinuationCompatibility.ps1') -PiToolRoot $spec.PiToolRoot) | ConvertFrom-Json
+    }
 }
 if ($Profile -eq 'prime-s') {
     $ownerStopRaw = if ($ValidateOnly) {
@@ -98,6 +116,12 @@ if ($Profile -eq 'prime-s') {
         & (Join-Path $PSScriptRoot 'Apply-PiSSubagentsSessionStopCompatibility.ps1') -AgentDir $spec.AgentDir
     }
     $subagentsOwnerSessionStopCompatibility = ($ownerStopRaw -join [Environment]::NewLine) | ConvertFrom-Json
+    $filesystemPolicyRaw = if ($ValidateOnly) {
+        & (Join-Path $PSScriptRoot 'Apply-PiSSubagentsFilesystemPolicy.ps1') -AgentDir $spec.AgentDir -VerifyOnly
+    } else {
+        & (Join-Path $PSScriptRoot 'Apply-PiSSubagentsFilesystemPolicy.ps1') -AgentDir $spec.AgentDir
+    }
+    $subagentsFilesystemPolicyCompatibility = ($filesystemPolicyRaw -join [Environment]::NewLine) | ConvertFrom-Json
 }
 if ($Profile -eq 'prime-s') {
     $post0841Raw = if ($ValidateOnly) {
@@ -177,10 +201,14 @@ if ($ValidateOnly) {
         supervisor_pipe = $spec.SupervisorPipe
         subagents_windows_compatibility = $subagentsCompatibility
         subagents_owner_session_stop_compatibility = $subagentsOwnerSessionStopCompatibility
+        subagents_filesystem_policy_compatibility = $subagentsFilesystemPolicyCompatibility
         hermes_session_compatibility = $hermesSessionCompatibility
         midturn_compaction_compatibility = $midTurnCompactionCompatibility
+        native_continuation_compatibility = $nativeContinuationCompatibility
+        native_continuation_absence = $nativeContinuationAbsence
         post_0841_upstream_compatibility = $post0841UpstreamCompatibility
         midturn_compaction_runtime_enabled = (-not $DisableMidTurnCompactionCompatibility)
+        native_continuation_runtime_enabled = $false
         numpad_enter_follow = $numpadEnterFollow
         family_contract = $spec.FamilyContractSource
         surface_island = $spec.SurfaceIsland
@@ -267,9 +295,16 @@ try {
     } elseif (-not $NewSession) {
         $arguments += '--continue'
     }
+    if ($Profile -eq 'prime-s' -and -not $DisableMidTurnCompactionCompatibility) {
+        if ($null -eq $nativeContinuationCompatibility -or [string]$nativeContinuationCompatibility.schema -cne 'xinao.pi_native_continuation_compatibility.v1') {
+            throw 'PI_S_NATIVE_CONTINUATION_RUNTIME_HANDSHAKE_WITHOUT_VERIFIED_CORE'
+        }
+        $env:XINAO_PI_NATIVE_CONTINUATION_ABORT_FENCE = '1'
+    }
     & $spec.PiCommand @arguments
     exit $LASTEXITCODE
 } finally {
+    Remove-Item Env:XINAO_PI_NATIVE_CONTINUATION_ABORT_FENCE -ErrorAction SilentlyContinue
     if ($Profile -eq 'prime-s') {
         try { Stop-PiSNumpadEnterHelper } catch { Write-Warning $_.Exception.Message }
     }

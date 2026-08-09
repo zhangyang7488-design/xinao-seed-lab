@@ -1,0 +1,150 @@
+diff --git a/dist/core/agent-session.js b/dist/core/agent-session.js
+index de31aed..b470018 100644
+--- a/dist/core/agent-session.js
++++ b/dist/core/agent-session.js
+@@ -124,6 +124,10 @@ export class AgentSession {
+     _extensionMode = "print";
+     _extensionCommandContextActions;
+     _extensionAbortHandler;
++    // Monotonic fence for aborts requested through ExtensionContext. This is
++    // separate from public AgentSession.abort(): it only prevents a queued
++    // post-agent continuation from escaping the run that an extension stopped.
++    _extensionAbortEpoch = 0;
+     _extensionShutdownHandler;
+     _extensionErrorListener;
+     _extensionErrorUnsubscriber;
+@@ -777,10 +781,11 @@ export class AgentSession {
+     // Prompting
+     // =========================================================================
+     async _runAgentPrompt(messages) {
++        const extensionAbortEpoch = this._extensionAbortEpoch;
+         this._isAgentRunActive = true;
+         try {
+             await this.agent.prompt(messages);
+-            while (await this._handlePostAgentRun()) {
++            while (await this._handlePostAgentRun(extensionAbortEpoch)) {
+                 await this.agent.continue();
+             }
+         }
+@@ -790,14 +795,26 @@ export class AgentSession {
+             await this._emitAgentSettled();
+         }
+     }
+-    async _handlePostAgentRun() {
++    async _handlePostAgentRun(extensionAbortEpoch) {
+         const msg = this._lastAssistantMessage;
+         this._lastAssistantMessage = undefined;
++        const extensionAbortFenced = () => {
++            if (this._extensionAbortEpoch === extensionAbortEpoch)
++                return false;
++            // ExtensionContext Stop/abort owns this outer run. Cancel every
++            // queued continuation before hasQueuedMessages() can create a fresh
++            // AbortController and escape the stopped run.
++            this.clearQueue();
++            return true;
++        };
++        if (extensionAbortFenced()) {
++            return false;
++        }
+         if (!msg) {
+             return false;
+         }
+         if (this._isRetryableError(msg) && (await this._prepareRetry(msg))) {
+-            return true;
++            return !extensionAbortFenced();
+         }
+         if (msg.stopReason === "error" && this._retryAttempt > 0) {
+             this._emit({
+@@ -813,18 +830,18 @@ export class AgentSession {
+             // The last persisted message is a completed tool result, so compact and
+             // continue the same run instead of sending an oversized provider request.
+             if (await this._runAutoCompaction("threshold", true)) {
+-                return true;
++                return !extensionAbortFenced();
+             }
+             // Compaction cancellation/failure must settle at the completed tool result.
+             // Falling through to queued messages could reopen the oversized provider request.
+             return false;
+         }
+         if (await this._checkCompaction(msg)) {
+-            return true;
++            return !extensionAbortFenced();
+         }
+         // The agent loop drains both queues before emitting agent_end. Any messages
+         // here were queued by agent_end extension handlers and need a continuation.
+-        return this.agent.hasQueuedMessages();
++        return !extensionAbortFenced() && this.agent.hasQueuedMessages();
+     }
+     /**
+      * Send a prompt to the agent.
+@@ -1943,6 +1960,7 @@ export class AgentSession {
+             isProjectTrusted: () => this.settingsManager.isProjectTrusted(),
+             getSignal: () => this.agent.signal,
+             abort: () => {
++                this._extensionAbortEpoch += 1;
+                 if (this._extensionAbortHandler) {
+                     this._extensionAbortHandler();
+                     return;
+@@ -2730,4 +2748,4 @@ export class AgentSession {
+         return this._extensionRunner;
+     }
+ }
+-//# sourceMappingURL=agent-session.js.map
+\ No newline at end of file
++//# sourceMappingURL=agent-session.js.map
+diff --git a/dist/core/agent-session.d.ts b/dist/core/agent-session.d.ts
+index f37d1cc..4442455 100644
+--- a/dist/core/agent-session.d.ts
++++ b/dist/core/agent-session.d.ts
+@@ -229,6 +229,7 @@ export declare class AgentSession {
+     private _extensionMode;
+     private _extensionCommandContextActions?;
+     private _extensionAbortHandler?;
++    private _extensionAbortEpoch;
+     private _extensionShutdownHandler?;
+     private _extensionErrorListener?;
+     private _extensionErrorUnsubscriber?;
+@@ -641,4 +642,4 @@ export declare class AgentSession {
+      */
+     get extensionRunner(): ExtensionRunner;
+ }
+-//# sourceMappingURL=agent-session.d.ts.map
+\ No newline at end of file
++//# sourceMappingURL=agent-session.d.ts.map
+diff --git a/node_modules/@earendil-works/pi-agent-core/dist/agent-loop.js b/node_modules/@earendil-works/pi-agent-core/dist/agent-loop.js
+index 569149f..a7380e6 100644
+--- a/node_modules/@earendil-works/pi-agent-core/dist/agent-loop.js
++++ b/node_modules/@earendil-works/pi-agent-core/dist/agent-loop.js
+@@ -47,6 +47,7 @@ export async function runAgentLoop(prompts, context, config, emit, signal, strea
+         messages: [...context.messages, ...prompts],
+     };
+     await emit({ type: "agent_start" });
++    signal?.throwIfAborted();
+     await emit({ type: "turn_start" });
+     for (const prompt of prompts) {
+         await emit({ type: "message_start", message: prompt });
+@@ -65,6 +66,7 @@ export async function runAgentLoopContinue(context, config, emit, signal, stream
+     const newMessages = [];
+     const currentContext = { ...context };
+     await emit({ type: "agent_start" });
++    signal?.throwIfAborted();
+     await emit({ type: "turn_start" });
+     await runLoop(currentContext, newMessages, config, signal, emit, streamFn ?? getDefaultStreamFn());
+     return newMessages;
+@@ -191,6 +193,9 @@ async function streamAssistantResponse(context, config, signal, emit, streamFunc
+     };
+     // Resolve API key (important for expiring tokens)
+     const resolvedApiKey = (config.getApiKey ? await config.getApiKey(config.model.provider) : undefined) || config.apiKey;
++    // Stop may arrive while an async context transform or credential refresh is
++    // in flight. Never enter the provider after that boundary.
++    signal?.throwIfAborted();
+     const response = await streamFunction(config.model, llmContext, {
+         ...config,
+         apiKey: resolvedApiKey,
+@@ -550,4 +555,4 @@ async function emitToolResultMessage(toolResultMessage, emit) {
+     await emit({ type: "message_start", message: toolResultMessage });
+     await emit({ type: "message_end", message: toolResultMessage });
+ }
+-//# sourceMappingURL=agent-loop.js.map
+\ No newline at end of file
++//# sourceMappingURL=agent-loop.js.map

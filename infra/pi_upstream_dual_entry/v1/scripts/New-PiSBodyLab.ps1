@@ -11,6 +11,7 @@ param(
 $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot 'PiDualEntry.Common.ps1')
 
+Remove-Item Env:XINAO_PI_NATIVE_CONTINUATION_ABORT_FENCE -ErrorAction SilentlyContinue
 $source = Get-PiDualEntrySpec -Profile 'prime-s'
 Assert-PiDualEntryBinary -Spec $source
 $labRoot = Join-Path $script:PiDualEntryStateRoot "body-labs\prime-s\$LabId"
@@ -79,11 +80,14 @@ foreach ($package in $allPackages) {
     }
 }
 $subagentsCompatibility = (& (Join-Path $PSScriptRoot 'Apply-PiSSubagentsWindowsCompatibility.ps1') -AgentDir $labSpec.AgentDir) | ConvertFrom-Json
+$subagentsOwnerSessionStopCompatibility = (& (Join-Path $PSScriptRoot 'Apply-PiSSubagentsSessionStopCompatibility.ps1') -AgentDir $labSpec.AgentDir) | ConvertFrom-Json
+$subagentsFilesystemPolicyCompatibility = (& (Join-Path $PSScriptRoot 'Apply-PiSSubagentsFilesystemPolicy.ps1') -AgentDir $labSpec.AgentDir) | ConvertFrom-Json
 $hermesSessionCompatibility = (& (Join-Path $PSScriptRoot 'Apply-PiSHermesSessionCompatibility.ps1') -AgentDir $labSpec.AgentDir) | ConvertFrom-Json
 
 $isolatedPiRoot = $null
 $isolatedPiVersion = $null
 $midTurnCompactionCompatibility = $null
+$nativeContinuationCompatibility = $null
 if ($IsolatePiCore) {
     $isolatedPiRoot = Join-Path $labRoot 'pi-tool-root'
     $npm = Get-Command npm.cmd -ErrorAction Stop
@@ -101,6 +105,7 @@ if ($IsolatePiCore) {
     }
     if ($ApplyMidTurnCompactionCompatibility) {
         $midTurnCompactionCompatibility = (& (Join-Path $PSScriptRoot 'Apply-PiSMidTurnCompactionCompatibility.ps1') -PiToolRoot $isolatedPiRoot) | ConvertFrom-Json
+        $nativeContinuationCompatibility = (& (Join-Path $PSScriptRoot 'Apply-PiSNativeContinuationCompatibility.ps1') -PiToolRoot $isolatedPiRoot) | ConvertFrom-Json
     }
 }
 
@@ -138,10 +143,14 @@ Write-PiDualEntryJsonAtomic -Path $manifestPath -Value ([ordered]@{
     contract_projection_sha256 = $contract.Sha256
     surface_overlay_manifest_sha256 = $overlay.Sha256
     subagents_windows_compatibility = $subagentsCompatibility
+    subagents_owner_session_stop_compatibility = $subagentsOwnerSessionStopCompatibility
+    subagents_filesystem_policy_compatibility = $subagentsFilesystemPolicyCompatibility
     hermes_session_compatibility = $hermesSessionCompatibility
     isolated_pi_root = $isolatedPiRoot
     isolated_pi_version = $isolatedPiVersion
     midturn_compaction_compatibility = $midTurnCompactionCompatibility
+    native_continuation_compatibility = $nativeContinuationCompatibility
+    native_continuation_runtime_handshake_enabled = $false
     session_file_count = 0
     created_at = [DateTimeOffset]::Now.ToString('o')
 })
