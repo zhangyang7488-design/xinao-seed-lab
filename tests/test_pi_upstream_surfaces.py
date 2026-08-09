@@ -93,6 +93,63 @@ def test_pi_windows_powershell_51_scripts_avoid_newer_dotnet_hash_apis() -> None
     assert "[Convert]::ToHexString" not in scripts
 
 
+@pytest.mark.skipif(
+    not WINDOWS_POWERSHELL.exists(),
+    reason="Windows PowerShell 5.1 desktop consumer is not present",
+)
+def test_pi_native_command_capture_uses_exit_code_not_warning_stderr() -> None:
+    common = SOURCE_ROOT / "scripts" / "PiDualEntry.Common.ps1"
+    escaped_common = str(common).replace("'", "''")
+    command = (
+        "$ErrorActionPreference='Stop';"
+        f". '{escaped_common}';"
+        "$ok=Invoke-PiDualEntryNativeCommand -FilePath $env:ComSpec "
+        "-ArgumentList @('/d','/c','echo WARN_ONLY 1>&2 & exit /b 0');"
+        "$bad=Invoke-PiDualEntryNativeCommand -FilePath $env:ComSpec "
+        "-ArgumentList @('/d','/c','echo REAL_ERROR 1>&2 & exit /b 7');"
+        "[ordered]@{"
+        "ok_exit=$ok.exit_code;ok_output=($ok.output -join '|');"
+        "bad_exit=$bad.exit_code;bad_output=($bad.output -join '|');"
+        "restored=[string]$ErrorActionPreference"
+        "}|ConvertTo-Json -Compress"
+    )
+    completed = subprocess.run(
+        [
+            str(WINDOWS_POWERSHELL),
+            "-NoLogo",
+            "-NoProfile",
+            "-NonInteractive",
+            "-Command",
+            command,
+        ],
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        check=False,
+    )
+
+    assert completed.returncode == 0, completed.stdout + completed.stderr
+    receipt = json.loads(completed.stdout)
+    assert receipt["ok_exit"] == 0
+    assert "WARN_ONLY" in receipt["ok_output"]
+    assert receipt["bad_exit"] == 7
+    assert "REAL_ERROR" in receipt["bad_output"]
+    assert receipt["restored"] == "Stop"
+
+
+def test_pi_install_consumers_use_native_exit_code_capture() -> None:
+    expected_sites = {
+        "New-PiSBodyLab.ps1": 2,
+        "Install-UpstreamPiCapabilities.ps1": 1,
+        "Install-PiSMainCore.ps1": 1,
+    }
+    for name, expected_count in expected_sites.items():
+        text = _text(SOURCE_ROOT / "scripts" / name)
+        assert text.count("Invoke-PiDualEntryNativeCommand") == expected_count
+        assert " install $package --no-approve 2>&1" not in text
+
+
 def test_main_prime_core_is_profile_scoped_and_cold_backup_stays_isolated() -> None:
     common = _text(SOURCE_ROOT / "scripts" / "PiDualEntry.Common.ps1")
     consumers = {
@@ -454,6 +511,10 @@ def test_pi_s_body_lab_is_isolated_version_pinned_and_session_empty() -> None:
     assert "$activeAuthSource = Join-Path $source.AgentDir 'auth.json'" in body_lab
     assert "Copy-Item -LiteralPath $activeAuthSource" in body_lab
     assert "Sync-PiDualEntrySurfaceOverlay -Spec $labSpec" in body_lab
+    assert 'if ($ownedRelative -in @($overlay.OwnedFiles))' in body_lab
+    assert "PI_S_BODY_LAB_OVERLAY_PROJECTION_MISSING" in body_lab
+    assert "PI_S_BODY_LAB_OVERLAY_PROJECTION_DRIFT" in body_lab
+    assert "surface_overlay_projection_verified = $true" in body_lab
     assert "New-Item -ItemType Directory -Force -Path $labSpec.SessionDir" in body_lab
     assert "Copy-Item -LiteralPath $source.SessionDir" not in body_lab
     assert "PI_S_BODY_LAB_PACKAGE_NOT_PINNED" in body_lab
@@ -640,6 +701,77 @@ def test_prime_s_filesystem_policy_receipt_is_bound_to_current_active_packages()
         "prime_b_pi_subagents_source_after_sha256 -cne $currentPrimeBPiSubagentsSourceSha256"
         in surface_test
     )
+
+
+def test_prime_s_high_capacity_is_typed_main_only_and_transactional() -> None:
+    common = _text(SOURCE_ROOT / "scripts" / "PiDualEntry.Common.ps1")
+    initializer = _text(SOURCE_ROOT / "scripts" / "Initialize-UpstreamPiProfiles.ps1")
+    start = _text(SOURCE_ROOT / "scripts" / "Start-UpstreamPi.ps1")
+    installer = _text(SOURCE_ROOT / "scripts" / "Install-UpstreamPiCapabilities.ps1")
+    main_core = _text(SOURCE_ROOT / "scripts" / "Install-PiSMainCore.ps1")
+    body_lab = _text(SOURCE_ROOT / "scripts" / "New-PiSBodyLab.ps1")
+    surface_test = _text(SOURCE_ROOT / "scripts" / "Test-UpstreamPiDualEntry.ps1")
+    recursive_peer = _text(SOURCE_ROOT / "surface-overlays" / "prime-s" / "agents" / "recursive-peer.md")
+    readme = _text(SOURCE_ROOT / "README.md")
+
+    assert "maxSubagentDepth = 3" in common
+    assert "MaxSubagentSpawnsPerSession = 40" in common
+    assert "GlobalConcurrencyLimit = 6" in common
+    assert "ParallelMaxTasks = 10" in common
+    assert "TaskTurnMinimum = 10" in common and "TaskTurnMaximum = 30" in common
+    assert "bf6ba259cf937cf9b5bd0d9afd89243206ea15b759bbebf96c27fb651231a1dc" in common
+    assert "New-PiSubagentCapacityConfig" in initializer
+    assert "New-PiSubagentCapacityConfig" in body_lab
+    assert "Enter-PiDualEntryMaintenanceLocks" in common
+    assert "Exit-PiDualEntryMaintenanceLocks" in common
+    assert "PI_DUAL_ENTRY_MAINTENANCE_TARGET_ACTIVE_OR_BUSY" in common
+    for write_installer in (installer, main_core):
+        assert "Enter-PiDualEntryMaintenanceLocks" in write_installer
+        assert "Exit-PiDualEntryMaintenanceLocks" in write_installer
+        assert write_installer.index("Enter-PiDualEntryMaintenanceLocks") < write_installer.index(
+            "Apply-PiSMidTurnCompactionCompatibility.ps1"
+        )
+
+    clear_index = start.index("Clear-PiSubagentCapacityEnvironment")
+    apply_index = start.index("Apply-PiSHighCapacityCompatibility.ps1")
+    handshake_index = start.index("Enable-PiSubagentCapacityEnvironment")
+    assert clear_index < apply_index < handshake_index
+    assert "Global\\XinaoPiSHighCapacityCompatibilityV1" in start
+    assert "if ($Profile -eq 'prime-s')" in start
+    assert "including intentionally disabled launches" in start
+    assert start.index("$capacityCompatibilityMutex = [Threading.Mutex]::new") < start.index(
+        "Sync-PiDualEntrySurfaceOverlay"
+    )
+    assert start.index("$held = $mutex.WaitOne(0)") < start.index(
+        "Sync-PiDualEntrySurfaceOverlay"
+    )
+    assert start.index("$capacityCompatibilityHeld = $capacityCompatibilityMutex.WaitOne(0)") < start.index(
+        "Sync-PiDualEntrySurfaceOverlay"
+    )
+    assert "PI_S_HIGH_CAPACITY_RUNTIME_HANDSHAKE_WITHOUT_VERIFIED_PACKAGE_AND_CORE" in start
+    for consumer in (installer, main_core, body_lab):
+        assert "Apply-PiSHighCapacityCompatibility.ps1" in consumer
+    assert "PI_SURFACE_TEST_COLD_BACKUP_INHERITED_HIGH_CAPACITY" in surface_test
+    assert "xinao.pi_s_high_capacity_compatibility.v1" in surface_test
+
+    assert "tools: subagent" in recursive_peer
+    assert 'turnBudget: {"maxTurns":30,"graceTurns":0}' in recursive_peer
+    assert "maxSubagentDepth: 3" in recursive_peer
+    assert "model:" not in recursive_peer
+    assert "typed `tasks:[...]`" in readme
+    assert "maxTurns + graceTurns" in readme
+    assert 'tasks: [{ agent: "peer"' in _text(
+        SOURCE_ROOT / "scripts" / "Test-PiSHighCapacityPublicTasks.test.mjs"
+    )
+
+    for relative in (
+        "patches/pi-subagents-0.44.0-high-capacity-v1.patch",
+        "patches/pi-coding-agent-0.84.1-high-capacity-v1.patch",
+        "scripts/Apply-PiSHighCapacityCompatibility.ps1",
+        "scripts/Restore-PiSHighCapacityCompatibility.ps1",
+        "scripts/Test-PiSHighCapacityReplay.ps1",
+    ):
+        assert (SOURCE_ROOT / relative).is_file()
 
 
 def test_prime_s_mature_body_is_profile_local_sparse_and_non_autonomous() -> None:

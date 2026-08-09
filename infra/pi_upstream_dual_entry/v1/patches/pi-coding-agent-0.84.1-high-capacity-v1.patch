@@ -1,0 +1,1231 @@
+diff --git a/dist/core/sdk.js b/dist/core/sdk.js
+index 2e8e67c884cf254112eb67a82d8958ec61c0cfa0..3038555b0eefa8cf338073db255b04d9330076e0 100644
+--- a/dist/core/sdk.js
++++ b/dist/core/sdk.js
+@@ -1,6 +1,6 @@
+ import { join } from "node:path";
+ import { Agent, setDefaultStreamFn } from "@earendil-works/pi-agent-core";
+-import { clampThinkingLevel, streamSimple } from "@earendil-works/pi-ai/compat";
++import { clampThinkingLevel, createAssistantMessageEventStream, streamSimple } from "@earendil-works/pi-ai/compat";
+ import { getAgentDir } from "../config.js";
+ import { resolvePath } from "../utils/paths.js";
+ import { AgentSession } from "./agent-session.js";
+@@ -15,6 +15,7 @@ import { getDefaultSessionDir, SessionManager } from "./session-manager.js";
+ import { SettingsManager } from "./settings-manager.js";
+ import { time } from "./timings.js";
+ import { createBashTool, createCodingTools, createEditTool, createFindTool, createGrepTool, createLsTool, createReadOnlyTools, createReadTool, createWriteTool, withFileMutationQueue, } from "./tools/index.js";
++import { acquireProviderSlot as acquireXinaoProviderSlot, classifyProviderCapacityGate, } from "./xinao-pi-subagent-capacity-runtime.js";
+ // Preserve the pre-0.81 fallback for extensions that construct Agent instances
+ // or invoke low-level agent loops without supplying streamFn. Agent core remains
+ // provider-agnostic and does not import pi-ai/compat itself.
+@@ -28,6 +29,147 @@ createCodingTools, createReadOnlyTools, createReadTool, createBashTool, createEd
+ function getDefaultAgentDir() {
+     return getAgentDir();
+ }
++function capacityFailureMessage(model, reason, error) {
++    let errorMessage;
++    if (error instanceof Error && error.message) {
++        errorMessage = error.message;
++    }
++    else if (reason === "aborted" && error == null) {
++        errorMessage = "Request was aborted";
++    }
++    else {
++        errorMessage = String(error);
++    }
++    return {
++        role: "assistant",
++        content: [],
++        api: model.api,
++        provider: model.provider,
++        model: model.id,
++        usage: {
++            input: 0,
++            output: 0,
++            cacheRead: 0,
++            cacheWrite: 0,
++            totalTokens: 0,
++            cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
++        },
++        stopReason: reason,
++        errorMessage,
++        timestamp: Date.now(),
++    };
++}
++function endCapacityFailure(stream, model, reason, error) {
++    const message = capacityFailureMessage(model, reason, error);
++    stream.push({ type: "error", reason, error: message });
++    stream.end(message);
++}
++function terminalCapacityFailureStream(model, reason, error) {
++    const stream = createAssistantMessageEventStream();
++    endCapacityFailure(stream, model, reason, error);
++    return stream;
++}
++function capacityFailureReason(options, error) {
++    return options?.signal?.aborted || (error instanceof Error && error.name === "AbortError")
++        ? "aborted"
++        : "error";
++}
++/**
++ * Internal executable seam shared by production and the isolated capacity tests.
++ * Classification intentionally is not injectable: tests exercise the same strict
++ * static/dynamic handshake admission used by real child provider calls.
++ */
++function createXinaoCapacityGatedProviderStream({ model, context, options, env = process.env, streamSimple: providerStreamSimple, acquireProviderSlot = acquireXinaoProviderSlot, }) {
++    let disposition;
++    try {
++        disposition = classifyProviderCapacityGate(env);
++    }
++    catch (error) {
++        return terminalCapacityFailureStream(model, "error", error);
++    }
++    if (disposition.mode === "direct") {
++        // Keep the ordinary/root path as the original provider stream, including
++        // its identity and synchronous failure behavior.
++        return providerStreamSimple(model, context, options);
++    }
++    if (disposition.mode !== "gated") {
++        return terminalCapacityFailureStream(model, "error", new Error(`Unsupported capacity gate disposition: ${String(disposition.mode)}`));
++    }
++    const outer = createAssistantMessageEventStream();
++    void (async () => {
++        let lease;
++        let finalResult;
++        let terminalEvent;
++        let failure;
++        try {
++            if (options?.signal?.aborted) {
++                throw options.signal.reason ?? new DOMException("Request was aborted", "AbortError");
++            }
++            lease = await acquireProviderSlot({
++                binding: disposition.binding,
++                signal: options?.signal,
++                env,
++            });
++            // A queued request may be aborted at the same edge at which a slot
++            // becomes available. Recheck before the provider sees the request.
++            if (options?.signal?.aborted) {
++                throw options.signal.reason ?? new DOMException("Request was aborted", "AbortError");
++            }
++            const inner = providerStreamSimple(model, context, options);
++            for await (const event of inner) {
++                if (event.type === "done" || event.type === "error") {
++                    terminalEvent = event;
++                }
++                else {
++                    outer.push(event);
++                }
++            }
++            // Slot ownership follows the real provider lifecycle, not whether an
++            // outer consumer is still iterating. result() settles independently.
++            finalResult = await inner.result();
++        }
++        catch (error) {
++            failure = error;
++        }
++        finally {
++            if (lease) {
++                try {
++                    await lease.release();
++                }
++                catch (error) {
++                    failure ??= error;
++                }
++            }
++        }
++        if (terminalEvent) {
++            outer.push(terminalEvent);
++            outer.end(finalResult);
++            return;
++        }
++        if (failure) {
++            endCapacityFailure(outer, model, capacityFailureReason(options, failure), failure);
++            return;
++        }
++        if (!finalResult) {
++            endCapacityFailure(outer, model, "error", new Error("Provider stream completed without a result"));
++            return;
++        }
++        const reason = finalResult.stopReason === "error" || finalResult.stopReason === "aborted"
++            ? finalResult.stopReason
++            : undefined;
++        if (reason) {
++            outer.push({ type: "error", reason, error: finalResult });
++        }
++        else {
++            outer.push({ type: "done", reason: finalResult.stopReason, message: finalResult });
++        }
++        outer.end(finalResult);
++    })().catch((error) => {
++        endCapacityFailure(outer, model, capacityFailureReason(options, error), error);
++    });
++    return outer;
++}
++export { createXinaoCapacityGatedProviderStream as __xinaoCreateCapacityGatedProviderStreamForTests };
+ /**
+  * Create an AgentSession with the specified options.
+  *
+@@ -183,18 +325,23 @@ export async function createAgentSession(options = {}) {
+             const timeoutMs = options?.timeoutMs ?? providerRetrySettings.timeoutMs ?? effectiveTimeoutMs;
+             const websocketConnectTimeoutMs = options?.websocketConnectTimeoutMs ?? settingsManager.getWebSocketConnectTimeoutMs();
+             const headerRunner = extensionRunnerRef.current;
+-            return modelRuntime.streamSimple(model, context, {
+-                ...options,
+-                timeoutMs,
+-                websocketConnectTimeoutMs,
+-                maxRetries: options?.maxRetries ?? providerRetrySettings.maxRetries,
+-                maxRetryDelayMs: options?.maxRetryDelayMs ?? providerRetrySettings.maxRetryDelayMs,
+-                transformHeaders: async (requestHeaders) => {
+-                    const headers = mergeProviderAttributionHeaders(model, settingsManager, options?.sessionId, requestHeaders);
+-                    return headerRunner?.hasHandlers("before_provider_headers")
+-                        ? headerRunner.emitBeforeProviderHeaders(headers ?? {})
+-                        : (headers ?? {});
++            return createXinaoCapacityGatedProviderStream({
++                model,
++                context,
++                options: {
++                    ...options,
++                    timeoutMs,
++                    websocketConnectTimeoutMs,
++                    maxRetries: options?.maxRetries ?? providerRetrySettings.maxRetries,
++                    maxRetryDelayMs: options?.maxRetryDelayMs ?? providerRetrySettings.maxRetryDelayMs,
++                    transformHeaders: async (requestHeaders) => {
++                        const headers = mergeProviderAttributionHeaders(model, settingsManager, options?.sessionId, requestHeaders);
++                        return headerRunner?.hasHandlers("before_provider_headers")
++                            ? headerRunner.emitBeforeProviderHeaders(headers ?? {})
++                            : (headers ?? {});
++                    },
+                 },
++                streamSimple: (requestModel, requestContext, requestOptions) => modelRuntime.streamSimple(requestModel, requestContext, requestOptions),
+             });
+         },
+         onPayload: async (payload, _model) => {
+@@ -264,4 +411,4 @@ export async function createAgentSession(options = {}) {
+         modelFallbackMessage,
+     };
+ }
+-//# sourceMappingURL=sdk.js.map
+\ No newline at end of file
++//# sourceMappingURL=sdk.js.map
+diff --git a/dist/core/xinao-pi-subagent-capacity-runtime.js b/dist/core/xinao-pi-subagent-capacity-runtime.js
+new file mode 100644
+index 0000000000000000000000000000000000000000..edd83775343e277ee20290801934375be722983f
+--- /dev/null
++++ b/dist/core/xinao-pi-subagent-capacity-runtime.js
+@@ -0,0 +1,1015 @@
++import { createHash, randomBytes } from "node:crypto";
++import { execFileSync } from "node:child_process";
++import * as fs from "node:fs";
++import * as path from "node:path";
++import { DatabaseSync } from "node:sqlite";
++
++export const CAPACITY_STATIC_ENV_KEY = "XINAO_PI_SUBAGENT_CAPACITY_V1";
++export const CAPACITY_STATIC_SHA_ENV_KEY = "XINAO_PI_SUBAGENT_CAPACITY_SHA256_V1";
++export const ROOT_BINDING_ENV_KEY = "PI_SUBAGENT_ROOT_OWNER_SESSION";
++export const ROOT_BINDING_SHA_ENV_KEY = "PI_SUBAGENT_ROOT_OWNER_SESSION_SHA256";
++export const CAPACITY_LAUNCH_TICKET_ENV_KEY = "XINAO_PI_SUBAGENT_LAUNCH_TICKET_V1";
++export const CAPACITY_LAUNCH_TICKET_SHA_ENV_KEY = "XINAO_PI_SUBAGENT_LAUNCH_TICKET_SHA256_V1";
++
++export const CAPACITY_POLICY_SCHEMA = "xinao.pi.subagent.capacity.v1";
++export const ROOT_BINDING_SCHEMA = "xinao.pi.subagent.root-owner-session.v1";
++export const ROOT_SPAWN_TICKET_SCHEMA = "xinao.pi.subagent.launch-ticket.v1";
++export const PRODUCTION_CAPACITY_REGISTRY_ROOT = "D:\\XINAO_RESEARCH_RUNTIME\\state\\pi\\0.84.1\\capacity\\prime-s";
++
++const LEDGER_SCHEMA_VERSION = 1;
++const HEX_ID_RE = /^[0-9a-f]{64}$/;
++const TEST_ENV_REGISTRIES = new WeakMap();
++const TEST_REGISTRY_ROOTS = new Set();
++const TEST_STATIC_REGISTRIES = new Map();
++const VERIFIED_FIXED_NTFS_VOLUMES = new Set();
++const STATIC_KEYS = [
++	"schema", "profile", "registryRoot", "maxSubagentDepth", "maxFanoutWidth",
++	"maxConcurrentProviders", "maxTreeSpawns", "turnMin", "turnMax",
++	"turnDefaultMax", "turnDefaultGrace", "scheduledRuns", "missions",
++	"asyncByDefault", "providerScope", "fanoutScope", "spawnScope",
++	"spawnAccounting", "externalCli",
++];
++const BINDING_KEYS = [
++	"schema", "canonicalAgentDir", "profile", "canonicalSessionFile", "sessionId",
++	"rootKey", "epoch", "token", "policySha", "registryRoot",
++];
++const TICKET_KEYS = [
++	"schema", "rootKey", "epoch", "token", "reservationId", "ticketId",
++	"launchKey", "policySha",
++];
++
++export class CapacityRuntimeError extends Error {
++	constructor(code, message, cause) {
++		super(message, cause === undefined ? undefined : { cause });
++		this.name = "CapacityRuntimeError";
++		this.code = code;
++	}
++}
++
++function fail(code, message, cause) {
++	throw new CapacityRuntimeError(code, message, cause);
++}
++
++function owns(object, key) {
++	return Object.prototype.hasOwnProperty.call(object, key);
++}
++
++function isRecord(value) {
++	return value !== null && typeof value === "object" && !Array.isArray(value) && Object.getPrototypeOf(value) === Object.prototype;
++}
++
++function exactKeys(value, expected, label) {
++	const actual = Object.keys(value);
++	if (actual.length !== expected.length || actual.some((key, index) => key !== expected[index])) {
++		fail("XINAO_PI_CAPACITY_NONCANONICAL", `${label} must use the exact canonical field set and order.`);
++	}
++}
++
++function requireString(value, name, max = 4096) {
++	if (typeof value !== "string" || value.length === 0 || value.length > max || value.includes("\0")) {
++		fail("XINAO_PI_CAPACITY_INVALID_FIELD", `${name} must be a non-empty bounded string.`);
++	}
++	return value;
++}
++
++function requireHexId(value, name) {
++	if (typeof value !== "string" || !HEX_ID_RE.test(value)) {
++		fail("XINAO_PI_CAPACITY_INVALID_FIELD", `${name} must be 64 lowercase hexadecimal characters.`);
++	}
++	return value;
++}
++
++function requireInteger(value, name, minimum = 0) {
++	if (!Number.isSafeInteger(value) || value < minimum) {
++		fail("XINAO_PI_CAPACITY_INVALID_FIELD", `${name} must be a safe integer >= ${minimum}.`);
++	}
++	return value;
++}
++
++export function canonicalJson(value) {
++	return JSON.stringify(value);
++}
++
++export function sha256Hex(value) {
++	return createHash("sha256").update(value).digest("hex");
++}
++
++export function encodeCanonicalEnvPayload(value) {
++	const raw = canonicalJson(value);
++	return Object.freeze({ raw, sha: sha256Hex(raw) });
++}
++
++export function createStaticCapacityPayload() {
++	return Object.freeze({
++		schema: CAPACITY_POLICY_SCHEMA,
++		profile: "prime-s",
++		registryRoot: PRODUCTION_CAPACITY_REGISTRY_ROOT,
++		maxSubagentDepth: 3,
++		maxFanoutWidth: 10,
++		maxConcurrentProviders: 6,
++		maxTreeSpawns: 40,
++		turnMin: 10,
++		turnMax: 30,
++		turnDefaultMax: 30,
++		turnDefaultGrace: 0,
++		scheduledRuns: false,
++		missions: false,
++		asyncByDefault: false,
++		providerScope: "recursive-descendant-native-pi-streams",
++		fanoutScope: "per-launching-parent",
++		spawnScope: "durable-root-session-descendants",
++		spawnAccounting: "committed-launches",
++		externalCli: false,
++	});
++}
++
++function parsePair(env, rawKey, shaKey, label, { absent = "null" } = {}) {
++	const hasRaw = owns(env, rawKey);
++	const hasSha = owns(env, shaKey);
++	if (!hasRaw && !hasSha) {
++		if (absent === "null") return null;
++		fail("XINAO_PI_CAPACITY_HANDSHAKE_INCOMPLETE", `${label} environment pair is required.`);
++	}
++	if (!hasRaw || !hasSha) fail("XINAO_PI_CAPACITY_HANDSHAKE_INCOMPLETE", `${label} environment pair is incomplete.`);
++	const raw = requireString(env[rawKey], rawKey, 32768);
++	const digest = requireHexId(env[shaKey], shaKey);
++	if (sha256Hex(raw) !== digest) fail("XINAO_PI_CAPACITY_HASH_MISMATCH", `${label} SHA-256 does not match its raw payload.`);
++	let value;
++	try {
++		value = JSON.parse(raw);
++	} catch (error) {
++		fail("XINAO_PI_CAPACITY_INVALID_JSON", `${label} is not valid JSON.`, error);
++	}
++	if (!isRecord(value) || canonicalJson(value) !== raw) {
++		fail("XINAO_PI_CAPACITY_NONCANONICAL", `${label} must be a canonical JSON object.`);
++	}
++	return { raw, digest, value };
++}
++
++function validateStatic(value, expectedRegistryRoot = PRODUCTION_CAPACITY_REGISTRY_ROOT) {
++	exactKeys(value, STATIC_KEYS, "Static capacity policy");
++	const expected = createStaticCapacityPayload();
++	for (const key of STATIC_KEYS) {
++		const wanted = key === "registryRoot" ? expectedRegistryRoot : expected[key];
++		if (value[key] !== wanted) {
++			fail("XINAO_PI_CAPACITY_POLICY_DRIFT", `Static capacity policy field '${key}' is not the canonical main-prime value.`);
++		}
++	}
++	return Object.freeze({ ...value });
++}
++
++function parseStaticWithRegistry(env, expectedRegistryRoot) {
++	const pair = parsePair(env, CAPACITY_STATIC_ENV_KEY, CAPACITY_STATIC_SHA_ENV_KEY, "Static capacity policy");
++	if (!pair) return null;
++	return validateStatic(pair.value, expectedRegistryRoot);
++}
++
++export function parseStaticCapacityEnv(env = process.env) {
++	return parseStaticWithRegistry(env, runtimeRegistryRoot(env));
++}
++
++function runtimeRegistryRoot(env) {
++	const direct = TEST_ENV_REGISTRIES.get(env);
++	if (direct) return direct;
++	const raw = env?.[CAPACITY_STATIC_ENV_KEY];
++	const sha = env?.[CAPACITY_STATIC_SHA_ENV_KEY];
++	if (typeof raw === "string" && typeof sha === "string") {
++		const registered = TEST_STATIC_REGISTRIES.get(sha);
++		if (registered?.raw === raw) return registered.registryRoot;
++	}
++	return PRODUCTION_CAPACITY_REGISTRY_ROOT;
++}
++
++function parseRuntimeStatic(env) {
++	return parseStaticWithRegistry(env, runtimeRegistryRoot(env));
++}
++
++function canonicalExistingPath(value, label) {
++	const input = requireString(value, label);
++	let canonical;
++	try {
++		canonical = fs.realpathSync.native(path.resolve(input));
++	} catch (error) {
++		fail("XINAO_PI_CAPACITY_PATH_INVALID", `${label} must resolve to an existing local path.`, error);
++	}
++	if (canonical.toLowerCase() !== input.toLowerCase()) {
++		fail("XINAO_PI_CAPACITY_PATH_INVALID", `${label} is not its canonical real path.`);
++	}
++	return canonical;
++}
++
++function computeRootKey(canonicalAgentDir, profile, canonicalSessionFile, sessionId) {
++	return sha256Hex(`${canonicalAgentDir.toLowerCase()}\0${profile}\0${canonicalSessionFile.toLowerCase()}\0${sessionId}`);
++}
++
++function parseBindingWithRegistry(env, expectedRegistryRoot) {
++	const policy = parseStaticWithRegistry(env, expectedRegistryRoot);
++	if (!policy) fail("XINAO_PI_CAPACITY_HANDSHAKE_INCOMPLETE", "Root binding requires the static capacity policy pair.");
++	const pair = parsePair(env, ROOT_BINDING_ENV_KEY, ROOT_BINDING_SHA_ENV_KEY, "Root owner-session binding", { absent: "error" });
++	const value = pair.value;
++	exactKeys(value, BINDING_KEYS, "Root owner-session binding");
++	if (value.schema !== ROOT_BINDING_SCHEMA || value.profile !== policy.profile || value.registryRoot !== policy.registryRoot) {
++		fail("XINAO_PI_CAPACITY_BINDING_DRIFT", "Root owner-session binding does not match the canonical static policy.");
++	}
++	const canonicalAgentDir = canonicalExistingPath(value.canonicalAgentDir, "canonicalAgentDir");
++	const canonicalSessionFile = canonicalExistingPath(value.canonicalSessionFile, "canonicalSessionFile");
++	const sessionId = requireString(value.sessionId, "sessionId", 1024);
++	const rootKey = requireHexId(value.rootKey, "rootKey");
++	const epoch = requireInteger(value.epoch, "epoch", 1);
++	const token = requireHexId(value.token, "token");
++	const policySha = requireHexId(value.policySha, "policySha");
++	if (policySha !== env[CAPACITY_STATIC_SHA_ENV_KEY]) fail("XINAO_PI_CAPACITY_BINDING_DRIFT", "Root binding policySha does not match the static payload hash.");
++	if (rootKey !== computeRootKey(canonicalAgentDir, value.profile, canonicalSessionFile, sessionId)) {
++		fail("XINAO_PI_CAPACITY_BINDING_DRIFT", "Root binding rootKey does not match its canonical native session identity.");
++	}
++	return Object.freeze({ ...value, canonicalAgentDir, canonicalSessionFile, sessionId, rootKey, epoch, token, policySha });
++}
++
++export function parseRootOwnerSessionEnv(env = process.env) {
++	return parseBindingWithRegistry(env, runtimeRegistryRoot(env));
++}
++
++function parseRuntimeBinding(env) {
++	return parseBindingWithRegistry(env, runtimeRegistryRoot(env));
++}
++
++function parseTicketWithRegistry(env, expectedRegistryRoot, binding) {
++	const resolvedBinding = binding ?? parseBindingWithRegistry(env, expectedRegistryRoot);
++	const pair = parsePair(env, CAPACITY_LAUNCH_TICKET_ENV_KEY, CAPACITY_LAUNCH_TICKET_SHA_ENV_KEY, "Root spawn ticket", { absent: "error" });
++	const value = pair.value;
++	exactKeys(value, TICKET_KEYS, "Root spawn ticket");
++	if (value.schema !== ROOT_SPAWN_TICKET_SCHEMA) fail("XINAO_PI_CAPACITY_TICKET_DRIFT", "Root spawn ticket schema is invalid.");
++	for (const key of ["rootKey", "token", "reservationId", "ticketId", "launchKey", "policySha"]) requireHexId(value[key], key);
++	requireInteger(value.epoch, "epoch", 1);
++	for (const key of ["rootKey", "epoch", "token", "policySha"]) {
++		if (value[key] !== resolvedBinding[key]) fail("XINAO_PI_CAPACITY_TICKET_DRIFT", `Root spawn ticket '${key}' does not match the owner binding.`);
++	}
++	return Object.freeze({ ...value });
++}
++
++export function parseRootSpawnTicketEnv(env = process.env) {
++	return parseTicketWithRegistry(env, runtimeRegistryRoot(env));
++}
++
++function parseRuntimeTicket(env) {
++	return parseTicketWithRegistry(env, runtimeRegistryRoot(env));
++}
++
++function normalizeOpaqueId(value, label) {
++	const text = requireString(value, label, 4096);
++	return HEX_ID_RE.test(text) ? text : sha256Hex(text);
++}
++
++export function projectRootBindingEnv(binding) {
++	const encoded = encodeCanonicalEnvPayload(binding);
++	return Object.freeze({ [ROOT_BINDING_ENV_KEY]: encoded.raw, [ROOT_BINDING_SHA_ENV_KEY]: encoded.sha });
++}
++
++export function projectRootSpawnTicketEnv({ env = process.env, reservationId, ticketId, launchKey }) {
++	const binding = parseRuntimeBinding(env);
++	const payload = {
++		schema: ROOT_SPAWN_TICKET_SCHEMA,
++		rootKey: binding.rootKey,
++		epoch: binding.epoch,
++		token: binding.token,
++		reservationId: normalizeOpaqueId(reservationId, "reservationId"),
++		ticketId: normalizeOpaqueId(ticketId, "ticketId"),
++		launchKey: normalizeOpaqueId(launchKey, "launchKey"),
++		policySha: binding.policySha,
++	};
++	const encoded = encodeCanonicalEnvPayload(payload);
++	return Object.freeze({ [CAPACITY_LAUNCH_TICKET_ENV_KEY]: encoded.raw, [CAPACITY_LAUNCH_TICKET_SHA_ENV_KEY]: encoded.sha });
++}
++
++function isBusy(error) {
++	return error && typeof error === "object" && (
++		error.errcode === 5 || error.code === "SQLITE_BUSY" || /database is (?:locked|busy)/i.test(String(error.message ?? ""))
++	);
++}
++
++function abortError(signal) {
++	return signal?.reason ?? new DOMException("Request was aborted", "AbortError");
++}
++
++function assertNotAborted(signal) {
++	if (signal?.aborted) throw abortError(signal);
++}
++
++function retryDelay(signal, milliseconds = 10) {
++	assertNotAborted(signal);
++	return new Promise((resolve, reject) => {
++		let settled = false;
++		const finish = () => {
++			if (settled) return;
++			settled = true;
++			signal?.removeEventListener("abort", onAbort);
++			resolve();
++		};
++		const onAbort = () => {
++			if (settled) return;
++			settled = true;
++			clearTimeout(timer);
++			reject(abortError(signal));
++		};
++		const timer = setTimeout(finish, milliseconds);
++		signal?.addEventListener("abort", onAbort, { once: true });
++	});
++}
++
++function assertRegularDatabasePath(filename) {
++	const resolved = path.resolve(filename);
++	const volumeRoot = path.parse(resolved).root;
++	validateNoReparsePoints(path.dirname(resolved), volumeRoot);
++	if (!fs.existsSync(resolved)) return;
++	const stat = fs.lstatSync(resolved);
++	if (stat.isSymbolicLink() || !stat.isFile()) {
++		fail("XINAO_PI_CAPACITY_DATABASE_INVALID", `Capacity database must be a regular non-link file: ${resolved}`);
++	}
++}
++
++function openDatabase(filename) {
++	assertRegularDatabasePath(filename);
++	let database;
++	try {
++		database = new DatabaseSync(filename);
++		assertRegularDatabasePath(filename);
++		database.exec("PRAGMA busy_timeout=0; PRAGMA foreign_keys=ON;");
++		return database;
++	} catch (error) {
++		if (database) safeClose(database);
++		if (error instanceof CapacityRuntimeError) throw error;
++		fail("XINAO_PI_CAPACITY_DATABASE_INVALID", `Capacity database is unreadable or corrupt: ${path.resolve(filename)}`, error);
++	}
++}
++
++function safeRollback(database) {
++	try { database.exec("ROLLBACK"); } catch { /* no live transaction */ }
++}
++
++function safeClose(database) {
++	try { database.close(); } catch { /* already closed */ }
++}
++
++function rootDirectory(binding) {
++	return path.join(binding.registryRoot, "roots", binding.rootKey);
++}
++
++function ledgerFilename(binding) {
++	return path.join(rootDirectory(binding), "ledger.sqlite");
++}
++
++function activationFilename(binding) {
++	return path.join(rootDirectory(binding), "activation.sqlite");
++}
++
++function providerSlotFilename(binding, slot) {
++	return path.join(rootDirectory(binding), `provider-slot-${slot}.sqlite`);
++}
++
++function validateNoReparsePoints(target, stopAt) {
++	let current = path.resolve(target);
++	const boundary = path.resolve(stopAt).toLowerCase();
++	for (;;) {
++		if (fs.existsSync(current) && fs.lstatSync(current).isSymbolicLink()) {
++			fail("XINAO_PI_CAPACITY_PATH_INVALID", `Capacity registry path may not traverse a link or junction: ${current}`);
++		}
++		if (current.toLowerCase() === boundary) break;
++		const parent = path.dirname(current);
++		if (parent === current) fail("XINAO_PI_CAPACITY_PATH_INVALID", "Capacity registry escaped its fixed local volume.");
++		current = parent;
++	}
++}
++
++function assertFixedNtfsVolumeFacts(facts, volumeRoot = "D:\\") {
++	if (!facts || facts.IsReady !== true || Number(facts.DriveType) !== 3 || String(facts.DriveFormat).toUpperCase() !== "NTFS") {
++		fail("XINAO_PI_CAPACITY_VOLUME_INVALID", `Capacity registry volume ${volumeRoot} must be ready, fixed, local NTFS.`);
++	}
++	return true;
++}
++
++function validateFixedNtfsVolume(volumeRoot) {
++	const canonicalRoot = path.resolve(volumeRoot).toLowerCase();
++	if (VERIFIED_FIXED_NTFS_VOLUMES.has(canonicalRoot)) return;
++	if (process.platform !== "win32") fail("XINAO_PI_CAPACITY_VOLUME_INVALID", "Capacity registry requires the supported Windows fixed-NTFS runtime.");
++	const systemRoot = process.env.SystemRoot;
++	if (typeof systemRoot !== "string" || !systemRoot) fail("XINAO_PI_CAPACITY_VOLUME_PROBE_FAILED", "SystemRoot is unavailable for the fixed-NTFS volume probe.");
++	const powershell = path.join(systemRoot, "System32", "WindowsPowerShell", "v1.0", "powershell.exe");
++	if (!fs.existsSync(powershell)) fail("XINAO_PI_CAPACITY_VOLUME_PROBE_FAILED", `Windows PowerShell volume probe is unavailable: ${powershell}`);
++	const escapedRoot = volumeRoot.replace(/'/g, "''");
++	const script = `$ErrorActionPreference='Stop';$d=[System.IO.DriveInfo]::new('${escapedRoot}');[pscustomobject]@{DriveType=[int]$d.DriveType;DriveFormat=$d.DriveFormat;IsReady=$d.IsReady}|ConvertTo-Json -Compress`;
++	let facts;
++	try {
++		const raw = execFileSync(powershell, ["-NoLogo", "-NoProfile", "-NonInteractive", "-Command", script], {
++			encoding: "utf8",
++			windowsHide: true,
++			stdio: ["ignore", "pipe", "pipe"],
++			timeout: 5000,
++		});
++		facts = JSON.parse(raw.trim());
++	} catch (error) {
++		fail("XINAO_PI_CAPACITY_VOLUME_PROBE_FAILED", `Cannot verify fixed local NTFS volume ${volumeRoot}.`, error);
++	}
++	assertFixedNtfsVolumeFacts(facts, volumeRoot);
++	VERIFIED_FIXED_NTFS_VOLUMES.add(canonicalRoot);
++}
++
++function ensureRegistryDirectories(registryRoot, rootKey) {
++	if (registryRoot !== PRODUCTION_CAPACITY_REGISTRY_ROOT && !TEST_REGISTRY_ROOTS.has(path.resolve(registryRoot).toLowerCase())) {
++		fail("XINAO_PI_CAPACITY_PATH_INVALID", "Non-production capacity registries are admitted only through the isolated D-volume test harness.");
++	}
++	const parsed = path.parse(path.resolve(registryRoot));
++	if (!/^D:\\$/i.test(parsed.root)) fail("XINAO_PI_CAPACITY_PATH_INVALID", "Capacity registry must live on the fixed local D: volume.");
++	validateFixedNtfsVolume(parsed.root);
++	const rootDirectoryPath = path.join(registryRoot, "roots", rootKey);
++	// Validate existing ancestors before mkdir so an existing junction can never
++	// be written through even once, then recheck the materialized path.
++	validateNoReparsePoints(rootDirectoryPath, parsed.root);
++	fs.mkdirSync(rootDirectoryPath, { recursive: true });
++	validateNoReparsePoints(rootDirectoryPath, parsed.root);
++}
++
++function createLedgerSchema(database) {
++	database.exec(`
++		CREATE TABLE IF NOT EXISTS capacity_meta (
++			singleton INTEGER PRIMARY KEY CHECK (singleton = 1),
++			schema_version INTEGER NOT NULL,
++			root_key TEXT NOT NULL,
++			profile TEXT NOT NULL,
++			canonical_agent_dir TEXT NOT NULL,
++			canonical_session_file TEXT NOT NULL,
++			session_id TEXT NOT NULL,
++			policy_sha TEXT NOT NULL,
++			registry_root TEXT NOT NULL,
++			epoch INTEGER NOT NULL,
++			token TEXT NOT NULL,
++			spawn_count INTEGER NOT NULL,
++			stopped INTEGER NOT NULL,
++			terminal_confirmed INTEGER NOT NULL,
++			created_at INTEGER NOT NULL,
++			updated_at INTEGER NOT NULL
++		);
++		CREATE TABLE IF NOT EXISTS spawn_reservations (
++			reservation_id TEXT PRIMARY KEY,
++			root_key TEXT NOT NULL,
++			epoch INTEGER NOT NULL,
++			token TEXT NOT NULL,
++			requested_count INTEGER NOT NULL,
++			closed INTEGER NOT NULL DEFAULT 0,
++			created_at INTEGER NOT NULL,
++			updated_at INTEGER NOT NULL
++		);
++		CREATE TABLE IF NOT EXISTS spawn_tickets (
++			ticket_id TEXT PRIMARY KEY,
++			reservation_id TEXT NOT NULL REFERENCES spawn_reservations(reservation_id),
++			ordinal INTEGER NOT NULL,
++			state TEXT NOT NULL CHECK (state IN ('reserved','claimed','committed','refunded')),
++			launch_key TEXT,
++			created_at INTEGER NOT NULL,
++			updated_at INTEGER NOT NULL,
++			UNIQUE (reservation_id, ordinal)
++		);
++		CREATE INDEX IF NOT EXISTS spawn_tickets_state_idx ON spawn_tickets(state);
++	`);
++}
++
++function metaRow(database) {
++	return database.prepare("SELECT * FROM capacity_meta WHERE singleton = 1").get();
++}
++
++function validateMetaIdentity(row, binding, { allowStopped = true } = {}) {
++	if (!row || Number(row.schema_version) !== LEDGER_SCHEMA_VERSION) fail("XINAO_PI_CAPACITY_LEDGER_DRIFT", "Capacity ledger schema is missing or unsupported.");
++	const checks = [
++		["root_key", binding.rootKey], ["profile", binding.profile],
++		["canonical_agent_dir", binding.canonicalAgentDir],
++		["canonical_session_file", binding.canonicalSessionFile],
++		["session_id", binding.sessionId], ["policy_sha", binding.policySha],
++		["registry_root", binding.registryRoot], ["epoch", binding.epoch], ["token", binding.token],
++	];
++	for (const [column, expected] of checks) {
++		const actual = column === "epoch" ? Number(row[column]) : row[column];
++		const equal = column.startsWith("canonical_") || column === "registry_root"
++			? String(actual).toLowerCase() === String(expected).toLowerCase()
++			: actual === expected;
++		if (!equal) fail("XINAO_PI_CAPACITY_STALE_BINDING", `Capacity binding no longer matches durable ledger field '${column}'.`);
++	}
++	if (!allowStopped && Number(row.stopped) !== 0) fail("XINAO_PI_CAPACITY_STOPPED", "The root owner-session has been explicitly stopped.");
++	return row;
++}
++
++function ledgerSnapshot(database, row = metaRow(database)) {
++	if (!row) fail("XINAO_PI_CAPACITY_LEDGER_DRIFT", "Capacity ledger metadata is missing.");
++	const pending = database.prepare("SELECT COUNT(*) AS count FROM spawn_tickets WHERE state IN ('reserved','claimed')").get();
++	return Object.freeze({
++		schemaVersion: Number(row.schema_version),
++		rootKey: row.root_key,
++		profile: row.profile,
++		epoch: Number(row.epoch),
++		token: row.token,
++		spawnCount: Number(row.spawn_count),
++		pendingSpawns: Number(pending?.count ?? 0),
++		stopped: Number(row.stopped) !== 0,
++		terminalConfirmed: Number(row.terminal_confirmed) !== 0,
++		updatedAt: Number(row.updated_at),
++	});
++}
++
++async function withLedgerWrite(binding, signal, operation) {
++	const filename = ledgerFilename(binding);
++	if (!fs.existsSync(filename)) fail("XINAO_PI_CAPACITY_LEDGER_MISSING", "Capacity ledger does not exist for this root binding.");
++	for (;;) {
++		assertNotAborted(signal);
++		const database = openDatabase(filename);
++		try {
++			database.exec("BEGIN IMMEDIATE");
++			const result = operation(database);
++			database.exec("COMMIT");
++			safeClose(database);
++			return result;
++		} catch (error) {
++			safeRollback(database);
++			safeClose(database);
++			if (!isBusy(error)) throw error;
++			await retryDelay(signal);
++		}
++	}
++}
++
++function assertBindingPayloadEqual(actual, expected) {
++	if (!expected) return;
++	for (const key of BINDING_KEYS) {
++		if (actual[key] !== expected[key]) fail("XINAO_PI_CAPACITY_BINDING_DRIFT", `Supplied binding field '${key}' differs from the canonical environment.`);
++	}
++}
++
++function resolveBindingInput(env, supplied) {
++	const binding = parseRuntimeBinding(env);
++	assertBindingPayloadEqual(binding, supplied);
++	return binding;
++}
++
++function activationLeaseIsHeld(binding) {
++	const filename = activationFilename(binding);
++	if (!fs.existsSync(filename)) return false;
++	const database = openDatabase(filename);
++	try {
++		database.exec("BEGIN EXCLUSIVE");
++		database.exec("ROLLBACK");
++		safeClose(database);
++		return false;
++	} catch (error) {
++		safeClose(database);
++		if (isBusy(error)) return true;
++		throw error;
++	}
++}
++
++function readAndValidateCurrent(binding, { allowStopped = false, requireActivation = true } = {}) {
++	if (requireActivation && !activationLeaseIsHeld(binding)) fail("XINAO_PI_CAPACITY_ROOT_INACTIVE", "No exclusive root activation lease owns this binding.");
++	const filename = ledgerFilename(binding);
++	if (!fs.existsSync(filename)) fail("XINAO_PI_CAPACITY_LEDGER_MISSING", "Capacity ledger does not exist for this root binding.");
++	const database = openDatabase(filename);
++	try {
++		const row = validateMetaIdentity(metaRow(database), binding, { allowStopped });
++		return ledgerSnapshot(database, row);
++	} finally {
++		safeClose(database);
++	}
++}
++
++function initializeSlotFile(binding, slot) {
++	const filename = providerSlotFilename(binding, slot);
++	const database = openDatabase(filename);
++	try {
++		database.exec("BEGIN EXCLUSIVE");
++		database.exec("CREATE TABLE IF NOT EXISTS slot_guard (singleton INTEGER PRIMARY KEY CHECK(singleton=1), schema_version INTEGER NOT NULL, root_key TEXT NOT NULL, slot INTEGER NOT NULL)");
++		database.prepare("INSERT OR IGNORE INTO slot_guard(singleton,schema_version,root_key,slot) VALUES(1,?,?,?)").run(LEDGER_SCHEMA_VERSION, binding.rootKey, slot);
++		const row = database.prepare("SELECT * FROM slot_guard WHERE singleton=1").get();
++		if (!row || Number(row.schema_version) !== LEDGER_SCHEMA_VERSION || row.root_key !== binding.rootKey || Number(row.slot) !== slot) {
++			fail("XINAO_PI_CAPACITY_SLOT_DRIFT", `Provider slot ${slot} metadata is invalid.`);
++		}
++		database.exec("COMMIT");
++	} catch (error) {
++		safeRollback(database);
++		throw error;
++	} finally {
++		safeClose(database);
++	}
++}
++
++function acquireAllSlotsForRotation(binding, count) {
++	const held = [];
++	try {
++		for (let slot = 0; slot < count; slot += 1) {
++			const database = openDatabase(providerSlotFilename(binding, slot));
++			try {
++				database.exec("BEGIN EXCLUSIVE");
++				held.push(database);
++			} catch (error) {
++				safeClose(database);
++				if (isBusy(error)) fail("XINAO_PI_CAPACITY_SLOTS_BUSY", "Stopped root cannot rotate while a provider slot remains held.", error);
++				throw error;
++			}
++		}
++		return () => {
++			for (const database of held.reverse()) { safeRollback(database); safeClose(database); }
++		};
++	} catch (error) {
++		for (const database of held.reverse()) { safeRollback(database); safeClose(database); }
++		throw error;
++	}
++}
++
++function makeBinding({ canonicalAgentDir, profile, canonicalSessionFile, sessionId, rootKey, epoch, token, policySha, registryRoot }) {
++	return Object.freeze({
++		schema: ROOT_BINDING_SCHEMA,
++		canonicalAgentDir,
++		profile,
++		canonicalSessionFile,
++		sessionId,
++		rootKey,
++		epoch,
++		token,
++		policySha,
++		registryRoot,
++	});
++}
++
++export async function activateRootCapacity({ env = process.env, agentDir, profile, sessionId, sessionFile, signal } = {}) {
++	assertNotAborted(signal);
++	const policy = parseRuntimeStatic(env);
++	if (!policy) fail("XINAO_PI_CAPACITY_HANDSHAKE_INCOMPLETE", "Root activation requires the canonical static capacity policy.");
++	if (profile !== policy.profile) fail("XINAO_PI_CAPACITY_POLICY_DRIFT", "Root activation profile differs from the static policy.");
++	if (owns(env, ROOT_BINDING_ENV_KEY) || owns(env, ROOT_BINDING_SHA_ENV_KEY)) fail("XINAO_PI_CAPACITY_STALE_BINDING", "A fresh root activation may not inherit a dynamic owner binding.");
++	const canonicalAgentDir = canonicalExistingPath(agentDir, "agentDir");
++	const canonicalSessionFile = canonicalExistingPath(sessionFile, "sessionFile");
++	const canonicalSessionId = requireString(sessionId, "sessionId", 1024);
++	const rootKey = computeRootKey(canonicalAgentDir, profile, canonicalSessionFile, canonicalSessionId);
++	const policySha = env[CAPACITY_STATIC_SHA_ENV_KEY];
++	const provisional = makeBinding({ canonicalAgentDir, profile, canonicalSessionFile, sessionId: canonicalSessionId, rootKey, epoch: 1, token: "0".repeat(64), policySha, registryRoot: policy.registryRoot });
++	ensureRegistryDirectories(policy.registryRoot, rootKey);
++
++	const ledgerFile = ledgerFilename(provisional);
++	const ledgerExistedAtActivation = fs.existsSync(ledgerFile);
++	const activationDatabase = openDatabase(activationFilename(provisional));
++	try {
++		activationDatabase.exec("BEGIN EXCLUSIVE");
++		activationDatabase.exec("CREATE TABLE IF NOT EXISTS activation_guard (singleton INTEGER PRIMARY KEY CHECK(singleton=1), schema_version INTEGER NOT NULL, root_key TEXT NOT NULL, ledger_initialized INTEGER NOT NULL CHECK(ledger_initialized IN (0,1)))");
++		activationDatabase.prepare("INSERT OR IGNORE INTO activation_guard(singleton,schema_version,root_key,ledger_initialized) VALUES(1,?,?,?)").run(LEDGER_SCHEMA_VERSION, rootKey, ledgerExistedAtActivation ? 1 : 0);
++		const guard = activationDatabase.prepare("SELECT * FROM activation_guard WHERE singleton=1").get();
++		if (!guard || Number(guard.schema_version) !== LEDGER_SCHEMA_VERSION || guard.root_key !== rootKey || ![0, 1].includes(Number(guard.ledger_initialized))) fail("XINAO_PI_CAPACITY_ACTIVATION_DRIFT", "Root activation lease metadata is invalid.");
++		if (Number(guard.ledger_initialized) === 1 && !ledgerExistedAtActivation) {
++			fail("XINAO_PI_CAPACITY_LEDGER_MISSING", "An initialized root activation lease cannot silently recreate a missing capacity ledger.");
++		}
++	} catch (error) {
++		safeRollback(activationDatabase);
++		safeClose(activationDatabase);
++		if (isBusy(error)) fail("XINAO_PI_CAPACITY_ALREADY_ACTIVE", "This native root session already has an active owner lease.", error);
++		if (error instanceof CapacityRuntimeError) throw error;
++		fail("XINAO_PI_CAPACITY_DATABASE_INVALID", "Root activation database is unreadable, corrupt, or has an unsupported schema.", error);
++	}
++
++	let binding;
++	try {
++		const database = openDatabase(ledgerFile);
++		let releaseRotationSlots;
++		try {
++			database.exec("BEGIN IMMEDIATE");
++			createLedgerSchema(database);
++			let row = metaRow(database);
++			const now = Date.now();
++			if (!row) {
++				const token = randomBytes(32).toString("hex");
++				database.prepare(`INSERT INTO capacity_meta(singleton,schema_version,root_key,profile,canonical_agent_dir,canonical_session_file,session_id,policy_sha,registry_root,epoch,token,spawn_count,stopped,terminal_confirmed,created_at,updated_at) VALUES(1,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
++					.run(LEDGER_SCHEMA_VERSION, rootKey, profile, canonicalAgentDir, canonicalSessionFile, canonicalSessionId, policySha, policy.registryRoot, 1, token, 0, 0, 0, now, now);
++				row = metaRow(database);
++			} else {
++				const identity = { ...provisional, epoch: Number(row.epoch), token: row.token };
++				validateMetaIdentity(row, identity, { allowStopped: true });
++				if (Number(row.stopped) !== 0) {
++					if (Number(row.terminal_confirmed) !== 1) fail("XINAO_PI_CAPACITY_STOP_UNCONFIRMED", "Stopped root cannot reactivate before child terminal confirmation.");
++					for (let slot = 0; slot < policy.maxConcurrentProviders; slot += 1) {
++						if (!fs.existsSync(providerSlotFilename(provisional, slot))) initializeSlotFile(provisional, slot);
++					}
++					releaseRotationSlots = acquireAllSlotsForRotation(provisional, policy.maxConcurrentProviders);
++					const nextEpoch = Number(row.epoch) + 1;
++					const nextToken = randomBytes(32).toString("hex");
++					database.prepare("UPDATE spawn_tickets SET state='refunded', updated_at=? WHERE state IN ('reserved','claimed')").run(now);
++					database.prepare("UPDATE spawn_reservations SET closed=1, updated_at=? WHERE closed=0").run(now);
++					database.prepare("UPDATE capacity_meta SET epoch=?, token=?, stopped=0, terminal_confirmed=0, updated_at=? WHERE singleton=1").run(nextEpoch, nextToken, now);
++					row = metaRow(database);
++				}
++			}
++			database.exec("COMMIT");
++			binding = makeBinding({ canonicalAgentDir, profile, canonicalSessionFile, sessionId: canonicalSessionId, rootKey, epoch: Number(row.epoch), token: row.token, policySha, registryRoot: policy.registryRoot });
++		} catch (error) {
++			safeRollback(database);
++			if (error instanceof CapacityRuntimeError) throw error;
++			if (isBusy(error)) fail("XINAO_PI_CAPACITY_LEDGER_BUSY", "Capacity ledger is busy during root activation; retry after the prior child transaction settles.", error);
++			fail("XINAO_PI_CAPACITY_DATABASE_INVALID", "Capacity ledger is unreadable, corrupt, or has an unsupported schema.", error);
++		} finally {
++			releaseRotationSlots?.();
++			safeClose(database);
++		}
++		for (let slot = 0; slot < policy.maxConcurrentProviders; slot += 1) {
++			if (!fs.existsSync(providerSlotFilename(binding, slot))) initializeSlotFile(binding, slot);
++		}
++		activationDatabase.prepare("UPDATE activation_guard SET ledger_initialized=1 WHERE singleton=1").run();
++	} catch (error) {
++		safeRollback(activationDatabase);
++		safeClose(activationDatabase);
++		throw error;
++	}
++
++	let released = false;
++	const envProjection = projectRootBindingEnv(binding);
++	return Object.freeze({
++		binding,
++		envProjection,
++		async release() {
++			if (released) return;
++			released = true;
++			try { activationDatabase.exec("COMMIT"); } finally { safeClose(activationDatabase); }
++		},
++	});
++}
++
++export async function assertCurrentRootBinding({ env = process.env, binding: supplied } = {}) {
++	const binding = resolveBindingInput(env, supplied);
++	readAndValidateCurrent(binding, { allowStopped: false, requireActivation: true });
++	return binding;
++}
++
++export async function inspectRootCapacityLedger({ env = process.env, binding: supplied } = {}) {
++	const binding = resolveBindingInput(env, supplied);
++	return readAndValidateCurrent(binding, { allowStopped: true, requireActivation: true });
++}
++
++export async function reserveRootSpawnGroup({ env = process.env, reservationId, count, signal } = {}) {
++	const binding = resolveBindingInput(env);
++	await assertCurrentRootBinding({ env, binding });
++	const requestedCount = requireInteger(count, "count", 1);
++	const policy = parseRuntimeStatic(env);
++	if (requestedCount > policy.maxFanoutWidth) fail("XINAO_PI_CAPACITY_FANOUT_EXCEEDED", `One launching parent may reserve at most ${policy.maxFanoutWidth} children.`);
++	const canonicalReservationId = normalizeOpaqueId(reservationId, "reservationId");
++	return withLedgerWrite(binding, signal, (database) => {
++		const meta = validateMetaIdentity(metaRow(database), binding, { allowStopped: false });
++		const existing = database.prepare("SELECT * FROM spawn_reservations WHERE reservation_id=?").get(canonicalReservationId);
++		if (existing) {
++			if (Number(existing.requested_count) !== requestedCount || existing.root_key !== binding.rootKey || Number(existing.epoch) !== binding.epoch || existing.token !== binding.token) {
++				fail("XINAO_PI_CAPACITY_RESERVATION_COLLISION", "Reservation id was reused with different root or count semantics.");
++			}
++			const tickets = database.prepare("SELECT ticket_id, ordinal FROM spawn_tickets WHERE reservation_id=? ORDER BY ordinal").all(canonicalReservationId);
++			return Object.freeze({ reservationId: canonicalReservationId, count: requestedCount, tickets: Object.freeze(tickets.map((ticket) => Object.freeze({ ticketId: ticket.ticket_id, ordinal: Number(ticket.ordinal) }))) });
++		}
++		const pending = Number(database.prepare("SELECT COUNT(*) AS count FROM spawn_tickets WHERE state IN ('reserved','claimed')").get()?.count ?? 0);
++		if (Number(meta.spawn_count) + pending + requestedCount > policy.maxTreeSpawns) fail("XINAO_PI_CAPACITY_TREE_SPAWNS_EXCEEDED", `Durable root tree capacity of ${policy.maxTreeSpawns} child launches would be exceeded.`);
++		const now = Date.now();
++		database.prepare("INSERT INTO spawn_reservations(reservation_id,root_key,epoch,token,requested_count,closed,created_at,updated_at) VALUES(?,?,?,?,?,0,?,?)")
++			.run(canonicalReservationId, binding.rootKey, binding.epoch, binding.token, requestedCount, now, now);
++		const insertTicket = database.prepare("INSERT INTO spawn_tickets(ticket_id,reservation_id,ordinal,state,launch_key,created_at,updated_at) VALUES(?,?,?,'reserved',NULL,?,?)");
++		const tickets = [];
++		for (let ordinal = 0; ordinal < requestedCount; ordinal += 1) {
++			const ticketId = sha256Hex(`${binding.rootKey}\0${binding.epoch}\0${binding.token}\0${canonicalReservationId}\0${ordinal}`);
++			insertTicket.run(ticketId, canonicalReservationId, ordinal, now, now);
++			tickets.push(Object.freeze({ ticketId, ordinal }));
++		}
++		return Object.freeze({ reservationId: canonicalReservationId, count: requestedCount, tickets: Object.freeze(tickets) });
++	});
++}
++
++function ticketIdentifiers(input, env, { requireTicketEnv = false } = {}) {
++	let projected;
++	const hasTicket = owns(env, CAPACITY_LAUNCH_TICKET_ENV_KEY) || owns(env, CAPACITY_LAUNCH_TICKET_SHA_ENV_KEY);
++	if (hasTicket || requireTicketEnv) projected = parseRuntimeTicket(env);
++	const reservationId = normalizeOpaqueId(input.reservationId ?? projected?.reservationId, "reservationId");
++	const ticketId = normalizeOpaqueId(input.ticketId ?? projected?.ticketId, "ticketId");
++	const launchKey = normalizeOpaqueId(input.launchKey ?? projected?.launchKey, "launchKey");
++	if (projected && (reservationId !== projected.reservationId || ticketId !== projected.ticketId || launchKey !== projected.launchKey)) {
++		fail("XINAO_PI_CAPACITY_TICKET_DRIFT", "Explicit ticket identifiers differ from the projected child ticket.");
++	}
++	return { reservationId, ticketId, launchKey, projected };
++}
++
++export async function claimRootSpawnTicket(input = {}) {
++	const env = input.env ?? process.env;
++	const binding = resolveBindingInput(env, input.binding);
++	await assertCurrentRootBinding({ env, binding });
++	const ids = ticketIdentifiers(input, env);
++	return withLedgerWrite(binding, input.signal, (database) => {
++		validateMetaIdentity(metaRow(database), binding, { allowStopped: false });
++		const row = database.prepare("SELECT * FROM spawn_tickets WHERE ticket_id=? AND reservation_id=?").get(ids.ticketId, ids.reservationId);
++		if (!row) fail("XINAO_PI_CAPACITY_TICKET_UNKNOWN", "Spawn ticket is not present in the durable reservation ledger.");
++		if (row.state === "refunded") fail("XINAO_PI_CAPACITY_TICKET_REFUNDED", "Spawn ticket was already refunded before launch.");
++		if (row.launch_key && row.launch_key !== ids.launchKey) fail("XINAO_PI_CAPACITY_TICKET_REPLAY", "Spawn ticket was claimed by a different launch key.");
++		if (row.state === "reserved") database.prepare("UPDATE spawn_tickets SET state='claimed', launch_key=?, updated_at=? WHERE ticket_id=?").run(ids.launchKey, Date.now(), ids.ticketId);
++		return Object.freeze({ reservationId: ids.reservationId, ticketId: ids.ticketId, launchKey: ids.launchKey, state: row.state === "reserved" ? "claimed" : row.state });
++	});
++}
++
++export async function commitRootSpawnTicket(input = {}) {
++	const env = input.env ?? process.env;
++	const binding = resolveBindingInput(env, input.binding);
++	await assertCurrentRootBinding({ env, binding });
++	const ids = ticketIdentifiers(input, env);
++	return withLedgerWrite(binding, input.signal, (database) => {
++		validateMetaIdentity(metaRow(database), binding, { allowStopped: false });
++		const row = database.prepare("SELECT * FROM spawn_tickets WHERE ticket_id=? AND reservation_id=?").get(ids.ticketId, ids.reservationId);
++		if (!row) fail("XINAO_PI_CAPACITY_TICKET_UNKNOWN", "Spawn ticket is not present in the durable reservation ledger.");
++		if (row.launch_key !== ids.launchKey) fail("XINAO_PI_CAPACITY_TICKET_REPLAY", "Spawn ticket launch key does not match its durable claim.");
++		if (row.state === "committed") return Object.freeze({ ...ids, state: "committed", idempotent: true });
++		if (row.state !== "claimed") fail("XINAO_PI_CAPACITY_TICKET_STATE", `Spawn ticket cannot commit from state '${row.state}'.`);
++		const now = Date.now();
++		database.prepare("UPDATE spawn_tickets SET state='committed', updated_at=? WHERE ticket_id=?").run(now, ids.ticketId);
++		database.prepare("UPDATE capacity_meta SET spawn_count=spawn_count+1, updated_at=? WHERE singleton=1").run(now);
++		return Object.freeze({ ...ids, state: "committed", idempotent: false });
++	});
++}
++
++export async function refundRootSpawnTicketBeforeSpawn(input = {}) {
++	const env = input.env ?? process.env;
++	const binding = resolveBindingInput(env, input.binding);
++	const ids = ticketIdentifiers(input, env);
++	return withLedgerWrite(binding, input.signal, (database) => {
++		validateMetaIdentity(metaRow(database), binding, { allowStopped: true });
++		const row = database.prepare("SELECT * FROM spawn_tickets WHERE ticket_id=? AND reservation_id=?").get(ids.ticketId, ids.reservationId);
++		if (!row) fail("XINAO_PI_CAPACITY_TICKET_UNKNOWN", "Spawn ticket is not present in the durable reservation ledger.");
++		if (row.state === "refunded") return Object.freeze({ refunded: true, idempotent: true });
++		if (row.state === "committed") return Object.freeze({ refunded: false, committed: true });
++		if (row.state === "claimed" && row.launch_key !== ids.launchKey) fail("XINAO_PI_CAPACITY_TICKET_REPLAY", "Only the claiming launch may refund a claimed pre-spawn ticket.");
++		database.prepare("UPDATE spawn_tickets SET state='refunded', launch_key=COALESCE(launch_key,?), updated_at=? WHERE ticket_id=?").run(ids.launchKey, Date.now(), ids.ticketId);
++		return Object.freeze({ refunded: true, idempotent: false });
++	});
++}
++
++export async function closeRootSpawnReservation({ env = process.env, reservationId, signal } = {}) {
++	const binding = resolveBindingInput(env);
++	const canonicalReservationId = normalizeOpaqueId(reservationId, "reservationId");
++	return withLedgerWrite(binding, signal, (database) => {
++		validateMetaIdentity(metaRow(database), binding, { allowStopped: true });
++		const reservation = database.prepare("SELECT * FROM spawn_reservations WHERE reservation_id=?").get(canonicalReservationId);
++		if (!reservation) fail("XINAO_PI_CAPACITY_RESERVATION_UNKNOWN", "Spawn reservation is not present in the durable ledger.");
++		const now = Date.now();
++		const result = database.prepare("UPDATE spawn_tickets SET state='refunded', updated_at=? WHERE reservation_id=? AND state='reserved'").run(now, canonicalReservationId);
++		database.prepare("UPDATE spawn_reservations SET closed=1, updated_at=? WHERE reservation_id=?").run(now, canonicalReservationId);
++		return Object.freeze({ reservationId: canonicalReservationId, refunded: Number(result.changes ?? 0) });
++	});
++}
++
++export async function markRootCapacityStopped({ env = process.env, binding: supplied, signal } = {}) {
++	const binding = resolveBindingInput(env, supplied);
++	return withLedgerWrite(binding, signal, (database) => {
++		validateMetaIdentity(metaRow(database), binding, { allowStopped: true });
++		database.prepare("UPDATE capacity_meta SET stopped=1, terminal_confirmed=0, updated_at=? WHERE singleton=1").run(Date.now());
++		return ledgerSnapshot(database);
++	});
++}
++
++export async function confirmRootCapacityStopTerminal({ env = process.env, binding: supplied, signal } = {}) {
++	const binding = resolveBindingInput(env, supplied);
++	return withLedgerWrite(binding, signal, (database) => {
++		const row = validateMetaIdentity(metaRow(database), binding, { allowStopped: true });
++		if (Number(row.stopped) !== 1) fail("XINAO_PI_CAPACITY_STOP_REQUIRED", "Terminal confirmation requires a prior explicit Stop mark.");
++		database.prepare("UPDATE capacity_meta SET terminal_confirmed=1, updated_at=? WHERE singleton=1").run(Date.now());
++		return ledgerSnapshot(database);
++	});
++}
++
++function tryAcquireProviderSlot(binding, slot) {
++	const filename = providerSlotFilename(binding, slot);
++	if (!fs.existsSync(filename)) fail("XINAO_PI_CAPACITY_SLOT_MISSING", `Provider slot ${slot} is missing.`);
++	const database = openDatabase(filename);
++	try {
++		database.exec("BEGIN EXCLUSIVE");
++		const row = database.prepare("SELECT * FROM slot_guard WHERE singleton=1").get();
++		if (!row || Number(row.schema_version) !== LEDGER_SCHEMA_VERSION || row.root_key !== binding.rootKey || Number(row.slot) !== slot) {
++			fail("XINAO_PI_CAPACITY_SLOT_DRIFT", `Provider slot ${slot} metadata is invalid.`);
++		}
++		let released = false;
++		return Object.freeze({
++			slot,
++			async release() {
++				if (released) return;
++				released = true;
++				try { database.exec("COMMIT"); } finally { safeClose(database); }
++			},
++		});
++	} catch (error) {
++		safeClose(database);
++		if (isBusy(error)) return null;
++		throw error;
++	}
++}
++
++export async function acquireProviderSlot({ env = process.env, binding: supplied, signal } = {}) {
++	assertNotAborted(signal);
++	const binding = resolveBindingInput(env, supplied);
++	const policy = parseRuntimeStatic(env);
++	const ticket = parseRuntimeTicket(env);
++	await assertCurrentRootBinding({ env, binding });
++	await claimRootSpawnTicket({ env, binding, reservationId: ticket.reservationId, ticketId: ticket.ticketId, launchKey: ticket.launchKey, signal });
++	await commitRootSpawnTicket({ env, binding, reservationId: ticket.reservationId, ticketId: ticket.ticketId, launchKey: ticket.launchKey, signal });
++	const start = Number.parseInt(ticket.ticketId.slice(0, 8), 16) % policy.maxConcurrentProviders;
++	for (;;) {
++		assertNotAborted(signal);
++		// A durable Stop or epoch rotation must cancel a queued provider even
++		// while all six slot files remain held; do not wait until a slot opens.
++		await assertCurrentRootBinding({ env, binding });
++		for (let offset = 0; offset < policy.maxConcurrentProviders; offset += 1) {
++			const slot = (start + offset) % policy.maxConcurrentProviders;
++			const lease = tryAcquireProviderSlot(binding, slot);
++			if (!lease) continue;
++			try {
++				await assertCurrentRootBinding({ env, binding });
++				assertNotAborted(signal);
++				return lease;
++			} catch (error) {
++				await lease.release();
++				throw error;
++			}
++		}
++		await retryDelay(signal);
++	}
++}
++
++export async function releaseProviderSlot(lease) {
++	return lease?.release?.();
++}
++
++export function assertLegacySpawnGrantDisabled() {
++	fail("XINAO_PI_CAPACITY_GRANT_DISABLED", "Legacy spawn-budget grants are disabled by the durable root-session capacity contract.");
++}
++
++export function classifyProviderCapacityGate(env = process.env) {
++	if (env.PI_SUBAGENT_CHILD !== "1") return Object.freeze({ mode: "direct" });
++	const keys = [
++		CAPACITY_STATIC_ENV_KEY, CAPACITY_STATIC_SHA_ENV_KEY,
++		ROOT_BINDING_ENV_KEY, ROOT_BINDING_SHA_ENV_KEY,
++		CAPACITY_LAUNCH_TICKET_ENV_KEY, CAPACITY_LAUNCH_TICKET_SHA_ENV_KEY,
++	];
++	const present = keys.filter((key) => owns(env, key));
++	if (present.length === 0) return Object.freeze({ mode: "direct" });
++	if (present.length !== keys.length) fail("XINAO_PI_CAPACITY_HANDSHAKE_INCOMPLETE", "Capacity-bound child provider handshake is incomplete.");
++	const binding = parseRuntimeBinding(env);
++	const ticket = parseRuntimeTicket(env);
++	return Object.freeze({ mode: "gated", binding, ticket });
++}
++
++function createIsolatedHarness(options) {
++	const input = typeof options === "string" ? { registryRoot: options } : (options ?? {});
++	const registryRoot = path.resolve(requireString(input.registryRoot, "registryRoot"));
++	if (!/^D:\\/i.test(registryRoot)) fail("XINAO_PI_CAPACITY_PATH_INVALID", "Isolated capacity harness must use the local D: volume.");
++	TEST_REGISTRY_ROOTS.add(registryRoot.toLowerCase());
++	const staticPayload = { ...createStaticCapacityPayload(), registryRoot };
++	const staticEncoded = encodeCanonicalEnvPayload(staticPayload);
++	TEST_STATIC_REGISTRIES.set(staticEncoded.sha, Object.freeze({ raw: staticEncoded.raw, registryRoot }));
++	const makeRootEnv = () => {
++		const env = {
++			[CAPACITY_STATIC_ENV_KEY]: staticEncoded.raw,
++			[CAPACITY_STATIC_SHA_ENV_KEY]: staticEncoded.sha,
++		};
++		TEST_ENV_REGISTRIES.set(env, registryRoot);
++		return env;
++	};
++	let env = makeRootEnv();
++	let activation;
++	return Object.freeze({
++		registryRoot,
++		staticPayload: Object.freeze(staticPayload),
++		staticEncoded,
++		get env() { return env; },
++		get binding() { return activation?.binding; },
++		freshRootEnv() {
++			env = makeRootEnv();
++			return env;
++		},
++		async activate(activationInput) {
++			activation = await activateRootCapacity({ ...activationInput, env });
++			Object.assign(env, activation.envProjection);
++			return activation;
++		},
++		async inspect() { return inspectRootCapacityLedger({ env, binding: activation?.binding }); },
++		async reserve(input) { return reserveRootSpawnGroup({ ...input, env }); },
++		async markStopped() { return markRootCapacityStopped({ env, binding: activation?.binding }); },
++		async confirmTerminal() { return confirmRootCapacityStopTerminal({ env, binding: activation?.binding }); },
++		projectTicket(input) { return projectRootSpawnTicketEnv({ ...input, env }); },
++		childEnv(input) {
++			const child = { ...env, PI_SUBAGENT_CHILD: "1", ...projectRootSpawnTicketEnv({ ...input, env }) };
++			TEST_ENV_REGISTRIES.set(child, registryRoot);
++			return child;
++		},
++		registerEnv(candidate) {
++			TEST_ENV_REGISTRIES.set(candidate, registryRoot);
++			return candidate;
++		},
++	});
++}
++
++export const __testing = Object.freeze({
++	computeRootKey,
++	normalizeOpaqueId,
++	parseStaticWithRegistry,
++	parseBindingWithRegistry,
++	parseTicketWithRegistry,
++	assertFixedNtfsVolumeFacts,
++	createIsolatedHarness,
++});

@@ -13,6 +13,24 @@ function Get-NormalizedPiSCompatibilityPath {
     [IO.Path]::GetFullPath($Path).TrimEnd('\')
 }
 
+function Assert-PiSCompatibilityNoReparsePath {
+    param([Parameter(Mandatory)][string]$Path)
+    $cursor = Get-NormalizedPiSCompatibilityPath -Path $Path
+    $root = [IO.Path]::GetPathRoot($cursor)
+    while (-not [string]::IsNullOrWhiteSpace($cursor)) {
+        if (Test-Path -LiteralPath $cursor) {
+            $item = Get-Item -LiteralPath $cursor -Force
+            if (($item.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) {
+                throw "PI_S_SUBAGENTS_PATCH_REPARSE_POINT_REJECTED: $cursor"
+            }
+        }
+        if ([string]::Equals($cursor,$root,[StringComparison]::OrdinalIgnoreCase)) { break }
+        $parent = Split-Path -Parent $cursor
+        if ([string]::IsNullOrWhiteSpace($parent) -or $parent -ceq $cursor) { break }
+        $cursor = $parent
+    }
+}
+
 $target = Get-NormalizedPiSCompatibilityPath -Path $AgentDir
 $activeTargets = @(
     Get-NormalizedPiSCompatibilityPath -Path (Join-Path $script:PiDualEntryStateRoot 'profiles\prime-s')
@@ -31,6 +49,9 @@ $packageRoot = Join-Path $target 'npm\node_modules\pi-subagents'
 $packageJsonPath = Join-Path $packageRoot 'package.json'
 $asyncSourcePath = Join-Path $packageRoot 'src\runs\foreground\subagent-executor.ts'
 $singleOutputSourcePath = Join-Path $packageRoot 'src\runs\shared\single-output.ts'
+foreach ($pathToValidate in @($packageRoot,$packageJsonPath,$asyncSourcePath,$singleOutputSourcePath)) {
+    Assert-PiSCompatibilityNoReparsePath -Path $pathToValidate
+}
 foreach ($required in @($packageJsonPath,$asyncSourcePath,$singleOutputSourcePath)) {
     if (-not (Test-Path -LiteralPath $required -PathType Leaf)) {
         throw "PI_S_SUBAGENTS_PATCH_SOURCE_MISSING: $required"
@@ -58,8 +79,9 @@ $asyncPatchedHash = if ($packageVersion -ceq '0.44.0') {
 }
 $asyncOwnerSessionStopCombinedHash = '6022d233c27a0f796581ba6ebda282c736cf0442771f41a89ad290912898a220'
 $asyncFilesystemPolicyCombinedHash = 'f6e1ed79bfc0373e77efb0754dcfcddf643942d406d1c8371d57a5c3203f4fed'
+$asyncHighCapacityCombinedHash = '411f4f275f164786f2388fb001d67954366d69fd5188a996b1a79d300dcd320e'
 $asyncAcceptedHashes = if ($packageVersion -ceq '0.44.0') {
-    @($asyncUpstreamHash,$asyncOwnerSessionStopCombinedHash,$asyncFilesystemPolicyCombinedHash)
+    @($asyncUpstreamHash,$asyncOwnerSessionStopCombinedHash,$asyncFilesystemPolicyCombinedHash,$asyncHighCapacityCombinedHash)
 } else {
     @($asyncUpstreamHash,$asyncPatchedHash)
 }
@@ -215,5 +237,6 @@ if (
     upstream_portable_workflow_id = [bool]($packageVersion -ceq '0.44.0')
     owner_session_stop_combination_accepted = [bool]($packageVersion -ceq '0.44.0' -and $asyncAfterHash -ceq $asyncOwnerSessionStopCombinedHash)
     filesystem_policy_combination_accepted = [bool]($packageVersion -ceq '0.44.0' -and $asyncAfterHash -ceq $asyncFilesystemPolicyCombinedHash)
+    high_capacity_combination_accepted = [bool]($packageVersion -ceq '0.44.0' -and $asyncAfterHash -ceq $asyncHighCapacityCombinedHash)
     msys_drive_path_authorship_equivalence = $true
 } | ConvertTo-Json -Depth 5

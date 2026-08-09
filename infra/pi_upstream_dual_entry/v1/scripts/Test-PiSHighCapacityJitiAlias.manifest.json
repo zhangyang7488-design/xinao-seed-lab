@@ -1,0 +1,47 @@
+{
+  "schema": "xinao.pi_s_high_capacity_jiti_alias_manifest.v1",
+  "core_package": "@earendil-works/pi-coding-agent",
+  "core_package_version": "0.84.1",
+  "packages": [
+    {
+      "name": "@earendil-works/pi-coding-agent",
+      "version": "0.84.1",
+      "package_json": "package.json",
+      "package_sha256": "f9aaa275eac3292508bd9a1325d705a41c2d24c9a34da2b690e400d5a761a985",
+      "entry": "dist/index.js",
+      "entry_sha256": "de74c5324f2b38317eb3f9ae36ef47b41e130a4501637a0e5fce555a3e1c065b",
+      "entry_selector": "exports[.].import",
+      "entry_value": "./dist/index.js"
+    },
+    {
+      "name": "@earendil-works/pi-agent-core",
+      "version": "0.84.1",
+      "package_json": "node_modules/@earendil-works/pi-agent-core/package.json",
+      "package_sha256": "457a24a34000da4837274246688c0b64b32f6600830010d14be2b2e6fcfc258e",
+      "entry": "node_modules/@earendil-works/pi-agent-core/dist/index.js",
+      "entry_sha256": "b981a7810efdb229f2878efddf9c6e7cdb5aa20cdbf6475999aa19a04c429f60",
+      "entry_selector": "exports[.].import",
+      "entry_value": "./dist/index.js"
+    },
+    {
+      "name": "@earendil-works/pi-ai",
+      "version": "0.84.1",
+      "package_json": "node_modules/@earendil-works/pi-ai/package.json",
+      "package_sha256": "c69acef56f6b9510ef0b3db2d35fb1f22c240bd0b11fd588c3e860042ed98b04",
+      "entry": "node_modules/@earendil-works/pi-ai/dist/compat.js",
+      "entry_sha256": "cde63dcc0cd419767f6ac8b7c0d8fcb8446902cb1e1800c61aea343839c48999",
+      "entry_selector": "exports[./compat].import",
+      "entry_value": "./dist/compat.js"
+    },
+    {
+      "name": "@earendil-works/pi-tui",
+      "version": "0.84.1",
+      "package_json": "node_modules/@earendil-works/pi-tui/package.json",
+      "package_sha256": "f7f8f42f7cfa8c53c4f00bdc12c14cb035aa62d9fb73555661ce08b68da61290",
+      "entry": "node_modules/@earendil-works/pi-tui/dist/index.js",
+      "entry_sha256": "80fdafd86a5649384fde4be965ccf4b2375b168fc375c074cfd9b5e9e9d59f89",
+      "entry_selector": "main",
+      "entry_value": "dist/index.js"
+    }
+  ]
+}

@@ -12,7 +12,10 @@ $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot 'PiDualEntry.Common.ps1')
 
 Remove-Item Env:XINAO_PI_NATIVE_CONTINUATION_ABORT_FENCE -ErrorAction SilentlyContinue
+Clear-PiSubagentCapacityEnvironment
 $source = Get-PiDualEntrySpec -Profile 'prime-s'
+$capacityProfile = Get-PiSubagentCapacityProfile -Profile 'prime-s'
+$subagentCapacityStaticPolicy = Get-PiSubagentCapacityStaticPolicy -Profile 'prime-s'
 Assert-PiDualEntryBinary -Spec $source
 $labRoot = Join-Path $script:PiDualEntryStateRoot "body-labs\prime-s\$LabId"
 if (Test-Path -LiteralPath $labRoot) { throw "PI_S_BODY_LAB_ALREADY_EXISTS: $labRoot" }
@@ -52,6 +55,10 @@ New-Item -ItemType SymbolicLink -Path $agentsPath -Target $source.AgentsSource |
 $agentProjection = Join-Path $labSpec.AgentDir 'agents'
 New-Item -ItemType Directory -Force -Path $agentProjection | Out-Null
 foreach ($agentFile in @(Get-ChildItem -LiteralPath (Join-Path $source.AgentDir 'agents') -File -Filter '*.md')) {
+    $ownedRelative = "agents/$($agentFile.Name)"
+    if ($ownedRelative -in @($overlay.OwnedFiles)) {
+        continue
+    }
     Copy-Item -LiteralPath $agentFile.FullName -Destination (Join-Path $agentProjection $agentFile.Name) -Force
 }
 
@@ -61,10 +68,9 @@ $settings.sessionDir = $labSpec.SessionDir.Replace('\','/')
 $settings.packages = @($allPackages)
 Write-PiDualEntryJsonAtomic -Path (Join-Path $labSpec.AgentDir 'settings.json') -Value $settings
 
-$sourceSubagentConfig = Join-Path $source.AgentDir 'extensions\subagent\config.json'
-$subagentConfig = Get-Content -Raw -LiteralPath $sourceSubagentConfig -Encoding UTF8 | ConvertFrom-Json
-$subagentConfig.defaultSessionDir = (Join-Path $labSpec.SessionDir 'children').Replace('\','/')
+$subagentConfig = New-PiSubagentCapacityConfig -Profile 'prime-s' -DefaultSessionDir (Join-Path $labSpec.SessionDir 'children')
 Write-PiDualEntryJsonAtomic -Path (Join-Path $labSpec.AgentDir 'extensions\subagent\config.json') -Value $subagentConfig
+$subagentCapacity = Assert-PiSubagentCapacityProjection -Profile 'prime-s' -AgentDir $labSpec.AgentDir
 
 & (Join-Path $PSScriptRoot 'Set-PiSBodyConfiguration.ps1') -AgentDir $labSpec.AgentDir | Out-Null
 
@@ -72,11 +78,12 @@ $env:PI_CODING_AGENT_DIR = $labSpec.AgentDir
 $env:PI_CODING_AGENT_SESSION_DIR = $labSpec.SessionDir
 $env:PI_SKIP_VERSION_CHECK = '1'
 $env:PI_TELEMETRY = '0'
+$env:PI_SUBAGENT_MAX_DEPTH = [string]$capacityProfile.MaxSubagentDepth
 $env:CODEX_HOME = $source.CodexHome
 foreach ($package in $allPackages) {
-    $installOutput = @(& $source.PiCommand install $package --no-approve 2>&1)
-    if ($LASTEXITCODE -ne 0) {
-        throw "PI_S_BODY_LAB_INSTALL_FAILED: package=$package output=$($installOutput -join ' ')"
+    $install = Invoke-PiDualEntryNativeCommand -FilePath $source.PiCommand -ArgumentList @('install',$package,'--no-approve')
+    if ($install.exit_code -ne 0) {
+        throw "PI_S_BODY_LAB_INSTALL_FAILED: package=$package output=$($install.output -join ' ')"
     }
 }
 $subagentsCompatibility = (& (Join-Path $PSScriptRoot 'Apply-PiSSubagentsWindowsCompatibility.ps1') -AgentDir $labSpec.AgentDir) | ConvertFrom-Json
@@ -88,12 +95,13 @@ $isolatedPiRoot = $null
 $isolatedPiVersion = $null
 $midTurnCompactionCompatibility = $null
 $nativeContinuationCompatibility = $null
+$highCapacityCompatibility = $null
 if ($IsolatePiCore) {
     $isolatedPiRoot = Join-Path $labRoot 'pi-tool-root'
     $npm = Get-Command npm.cmd -ErrorAction Stop
-    $coreInstallOutput = @(& $npm.Source install --prefix $isolatedPiRoot --no-audit --no-fund --save-exact "@earendil-works/pi-coding-agent@$script:PiDualEntryVersion" 2>&1)
-    if ($LASTEXITCODE -ne 0) {
-        throw "PI_S_BODY_LAB_CORE_INSTALL_FAILED: $($coreInstallOutput -join ' ')"
+    $coreInstall = Invoke-PiDualEntryNativeCommand -FilePath $npm.Source -ArgumentList @('install','--prefix',$isolatedPiRoot,'--no-audit','--no-fund','--save-exact',"@earendil-works/pi-coding-agent@$script:PiDualEntryVersion")
+    if ($coreInstall.exit_code -ne 0) {
+        throw "PI_S_BODY_LAB_CORE_INSTALL_FAILED: $($coreInstall.output -join ' ')"
     }
     $isolatedPiCommand = Join-Path $isolatedPiRoot 'node_modules\.bin\pi.cmd'
     if (-not (Test-Path -LiteralPath $isolatedPiCommand -PathType Leaf)) {
@@ -106,12 +114,25 @@ if ($IsolatePiCore) {
     if ($ApplyMidTurnCompactionCompatibility) {
         $midTurnCompactionCompatibility = (& (Join-Path $PSScriptRoot 'Apply-PiSMidTurnCompactionCompatibility.ps1') -PiToolRoot $isolatedPiRoot) | ConvertFrom-Json
         $nativeContinuationCompatibility = (& (Join-Path $PSScriptRoot 'Apply-PiSNativeContinuationCompatibility.ps1') -PiToolRoot $isolatedPiRoot) | ConvertFrom-Json
+        $highCapacityCompatibility = (& (Join-Path $PSScriptRoot 'Apply-PiSHighCapacityCompatibility.ps1') -AgentDir $labSpec.AgentDir -PiToolRoot $isolatedPiRoot) | ConvertFrom-Json
     }
 }
 
 $serperReceipt = $null
 if ($SeedSerperCredential) {
     $serperReceipt = & (Join-Path $PSScriptRoot 'Set-PiSSerperCredential.ps1') -AgentDir $labSpec.AgentDir
+}
+
+foreach ($ownedRelative in @($overlay.OwnedFiles)) {
+    $projectionPath = Join-Path $labSpec.AgentDir ([string]$ownedRelative).Replace('/','\')
+    if (-not (Test-Path -LiteralPath $projectionPath -PathType Leaf)) {
+        throw "PI_S_BODY_LAB_OVERLAY_PROJECTION_MISSING: $ownedRelative"
+    }
+    $expectedHash = [string]$overlay.Hashes[[string]$ownedRelative]
+    $actualHash = (Get-FileHash -Algorithm SHA256 -LiteralPath $projectionPath).Hash.ToLowerInvariant()
+    if ($actualHash -cne $expectedHash) {
+        throw "PI_S_BODY_LAB_OVERLAY_PROJECTION_DRIFT: relative=$ownedRelative expected=$expectedHash actual=$actualHash"
+    }
 }
 
 $installedSettings = Get-Content -Raw -LiteralPath (Join-Path $labSpec.AgentDir 'settings.json') -Encoding UTF8 | ConvertFrom-Json
@@ -142,15 +163,21 @@ Write-PiDualEntryJsonAtomic -Path $manifestPath -Value ([ordered]@{
     auth_sha256 = (Get-FileHash -Algorithm SHA256 -LiteralPath $authPath).Hash.ToLowerInvariant()
     contract_projection_sha256 = $contract.Sha256
     surface_overlay_manifest_sha256 = $overlay.Sha256
+    surface_overlay_owned_file_count = @($overlay.OwnedFiles).Count
+    surface_overlay_projection_verified = $true
     subagents_windows_compatibility = $subagentsCompatibility
     subagents_owner_session_stop_compatibility = $subagentsOwnerSessionStopCompatibility
     subagents_filesystem_policy_compatibility = $subagentsFilesystemPolicyCompatibility
+    subagent_capacity = $subagentCapacity
+    subagent_capacity_static_policy = $subagentCapacityStaticPolicy
+    high_capacity_compatibility = $highCapacityCompatibility
     hermes_session_compatibility = $hermesSessionCompatibility
     isolated_pi_root = $isolatedPiRoot
     isolated_pi_version = $isolatedPiVersion
     midturn_compaction_compatibility = $midTurnCompactionCompatibility
     native_continuation_compatibility = $nativeContinuationCompatibility
     native_continuation_runtime_handshake_enabled = $false
+    high_capacity_runtime_handshake_enabled = $false
     session_file_count = 0
     created_at = [DateTimeOffset]::Now.ToString('o')
 })

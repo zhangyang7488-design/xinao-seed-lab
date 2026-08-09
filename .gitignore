@@ -20,6 +20,15 @@ node_modules/
 dist/
 build/
 
+# Canonical compile-only declarations for the PiS high-capacity replay.
+# Keep this exception exact: no other vendored node_modules/dist tree is admitted.
+!infra/pi_upstream_dual_entry/v1/scripts/Test-PiSHighCapacityTypeShim/
+!infra/pi_upstream_dual_entry/v1/scripts/Test-PiSHighCapacityTypeShim/node_modules/
+!infra/pi_upstream_dual_entry/v1/scripts/Test-PiSHighCapacityTypeShim/node_modules/**
+!infra/pi_upstream_dual_entry/v1/scripts/Test-PiSHighCapacityTypeShim/pi-coding-agent/
+!infra/pi_upstream_dual_entry/v1/scripts/Test-PiSHighCapacityTypeShim/pi-coding-agent/dist/
+!infra/pi_upstream_dual_entry/v1/scripts/Test-PiSHighCapacityTypeShim/pi-coding-agent/dist/**
+
 .vercel/
 .wrangler/
 .chainlit/

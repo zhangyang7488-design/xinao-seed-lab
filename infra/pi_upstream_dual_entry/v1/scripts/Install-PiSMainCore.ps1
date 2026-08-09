@@ -6,6 +6,7 @@ $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot 'PiDualEntry.Common.ps1')
 
 Remove-Item Env:XINAO_PI_NATIVE_CONTINUATION_ABORT_FENCE -ErrorAction SilentlyContinue
+Clear-PiSubagentCapacityEnvironment
 $spec = Get-PiDualEntrySpec -Profile 'prime-s'
 $target = [IO.Path]::GetFullPath($spec.PiToolRoot).TrimEnd('\')
 $expected = [IO.Path]::GetFullPath($script:PiDualEntryMainToolRoot).TrimEnd('\')
@@ -14,14 +15,16 @@ if ($target -ine $expected -or $target -ieq $backup) {
     throw "PI_S_MAIN_CORE_TARGET_IDENTITY_INVALID: $target"
 }
 
+$maintenanceLocks = Enter-PiDualEntryMaintenanceLocks -Profile @('prime-s') -IncludeHighCapacity
+try {
 $installed = $false
 if (-not (Test-Path -LiteralPath $spec.PiCommand -PathType Leaf)) {
     if ($VerifyOnly) { throw "PI_S_MAIN_CORE_NOT_INSTALLED: $($spec.PiCommand)" }
     New-Item -ItemType Directory -Force -Path $target | Out-Null
     $npm = Get-Command npm.cmd -ErrorAction Stop
-    $installOutput = @(& $npm.Source install --prefix $target --no-audit --no-fund --save-exact "@earendil-works/pi-coding-agent@$script:PiDualEntryVersion" 2>&1)
-    if ($LASTEXITCODE -ne 0) {
-        throw "PI_S_MAIN_CORE_INSTALL_FAILED: $($installOutput -join ' ')"
+    $install = Invoke-PiDualEntryNativeCommand -FilePath $npm.Source -ArgumentList @('install','--prefix',$target,'--no-audit','--no-fund','--save-exact',"@earendil-works/pi-coding-agent@$script:PiDualEntryVersion")
+    if ($install.exit_code -ne 0) {
+        throw "PI_S_MAIN_CORE_INSTALL_FAILED: $($install.output -join ' ')"
     }
     $installed = $true
 }
@@ -39,6 +42,12 @@ $nativeRaw = if ($VerifyOnly) {
     & (Join-Path $PSScriptRoot 'Apply-PiSNativeContinuationCompatibility.ps1') -PiToolRoot $target
 }
 $native = ($nativeRaw -join [Environment]::NewLine) | ConvertFrom-Json
+$highCapacityRaw = if ($VerifyOnly) {
+    & (Join-Path $PSScriptRoot 'Apply-PiSHighCapacityCompatibility.ps1') -AgentDir $spec.AgentDir -PiToolRoot $target -VerifyOnly
+} else {
+    & (Join-Path $PSScriptRoot 'Apply-PiSHighCapacityCompatibility.ps1') -AgentDir $spec.AgentDir -PiToolRoot $target
+}
+$highCapacity = ($highCapacityRaw -join [Environment]::NewLine) | ConvertFrom-Json
 $postRaw = if ($VerifyOnly) {
     & (Join-Path $PSScriptRoot 'Apply-PiSPost0841UpstreamCompatibility.ps1') -PiToolRoot $target -VerifyOnly
 } else {
@@ -69,7 +78,11 @@ $lockPath = Join-Path $target 'package-lock.json'
     } else { $null }
     midturn_compaction_compatibility = $midTurn
     native_continuation_compatibility = $native
+    high_capacity_compatibility = $highCapacity
     post_0841_upstream_compatibility = $post
     cold_backup_tool_root = $backup
     cold_backup_touched = $false
 } | ConvertTo-Json -Depth 8
+} finally {
+    Exit-PiDualEntryMaintenanceLocks -Handle $maintenanceLocks
+}

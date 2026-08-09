@@ -74,25 +74,9 @@ foreach ($profileName in $Profile) {
     # settings. The latter are read only from extensions/subagent/config.json; keeping them
     # under settings.json/subagents silently falls back to project-local .pi-subagents state.
     $subagentConfigPath = Join-Path $spec.AgentDir 'extensions\subagent\config.json'
-    $subagentConfig = [ordered]@{
-        maxSubagentDepth = 2
-        maxSubagentSpawnsPerSession = 32
-        globalConcurrencyLimit = 4
-        asyncByDefault = $false
-        forceTopLevelAsync = $false
-        fleetView = $true
-        fleetViewPlacement = 'aboveEditor'
-        asyncWidget = $true
-        inlineToolDisplay = 'rich'
-        toolDescriptionMode = 'compact'
-        artifactDir = 'session'
-        defaultSessionDir = (Join-Path $spec.SessionDir 'children').Replace('\','/')
-        scheduledRuns = [ordered]@{enabled=$false}
-        missions = [ordered]@{enabled=$false}
-        proactiveSkillSubagents = $false
-        parallel = [ordered]@{maxTasks=8;concurrency=4}
-    }
+    $subagentConfig = New-PiSubagentCapacityConfig -Profile $profileName -DefaultSessionDir (Join-Path $spec.SessionDir 'children')
     Write-PiDualEntryJsonAtomic -Path $subagentConfigPath -Value $subagentConfig
+    $subagentCapacity = Assert-PiSubagentCapacityProjection -Profile $profileName -AgentDir $spec.AgentDir
 
     & (Join-Path $PSScriptRoot 'Set-PiSBodyConfiguration.ps1') -AgentDir $spec.AgentDir | Out-Null
     if ($profileName -eq 'prime-s') {
@@ -161,6 +145,7 @@ foreach ($profileName in $Profile) {
         settings_sha256 = (Get-FileHash -Algorithm SHA256 -LiteralPath $settingsPath).Hash.ToLowerInvariant()
         subagent_config = $subagentConfigPath
         subagent_config_sha256 = (Get-FileHash -Algorithm SHA256 -LiteralPath $subagentConfigPath).Hash.ToLowerInvariant()
+        subagent_capacity = $subagentCapacity
         agents_source = $spec.AgentsSource
         family_contract = $spec.FamilyContractSource
         surface_contract = $spec.SurfaceContractSource

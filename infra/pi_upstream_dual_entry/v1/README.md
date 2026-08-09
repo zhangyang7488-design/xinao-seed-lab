@@ -28,6 +28,24 @@ Codex 外部 WorkerPool；具体任务是否调用某个器官仍由根 Pi 按�
 认识面，不预装 reviewer/operator/task-generator 职业，可直接重建继承的完整对象并形成或
 拒绝局部问题。其长期默认模型是 Terra；根可按当次现实收益覆盖为 Sol，这不把临时额度口头
 许可写成长期策略，也不转移 PiS 的正式 Owner/effect 责任。
+主 `prime` 还提供无固定职业的 `recursive-peer` 高容量面：`thinking=max`、模型继承当前根或由
+根按任务显式覆盖，不把一次额度口头授权固化成长期 provider 路由；它只暴露原生 `subagent`，
+不直接取得文件、shell、网络或写入工具，并由 capability ceiling 把所有后代继续锁为
+`recursive-peer`。主面唯一执行形状是 typed `tasks:[...]`：一个批次 1–10 个 native child，
+`concurrency` 1–6；省略 `async` 时前台执行，只有显式 `async:true` 才 detached。批次只有一份
+顶层 `turnBudget`，每个 child 共同消费，`maxTurns + graceTurns` 必须在 10–30，省略即 30+0，
+第 30 个 assistant turn 仍尝试工具时也会硬停，不能进入第 31 turn。
+
+main profile 的递归深度为 3；同一 durable root session 的 descendant committed launch 累计上限
+40；整棵 canonical child tree 同时最多 6 个 native Pi provider stream。根 Pi 不占这 6 个槽，
+可继续综合，所以 provider 侧可观察到“根 + 最多 6 个孩子”。这些是可用上限，不是自动 fanout、
+常驻任务或额度消耗目标。`workflowScript`、retained-child resume、external-cli、spawn-budget grant、
+schedule 和 mission 在 capacity 模式中不可用；管理/Stop action 仍可用，已完成孩子最多保留 40 个
+供 `children.list` 查看。PiB 冷备继续保留 2/32/4、8/4 和普通同步默认，绝不继承这套握手。
+
+6/10/40 约束的是 canonical `pi-subagents` descendant tree，不是账号级配额或同一 Windows 用户下
+恶意进程的 OS sandbox。深度、票据、provider 槽、轮次、Owner Stop、虚拟研究与 restricted
+filesystem child 均 fail-closed；根仍按真实信息收益选择是否调用，不为烧额度制造任务。
 PiS 的 `pi-subagents@0.44.0` 直接消费上游 portable workflow ID，不再为这条路径保留本地
 改写；本地最薄兼容层只把 child `write` 回执中的 `/d`、`/mnt/d`、`/cygdrive/d` 在权威
 输出路径比较时等价为 `D:\...`。它不放宽成功 write、精确目标、错盘或 sibling 输出的
@@ -93,8 +111,12 @@ abort，防止根模型复起。stop 回执仍只证明 shutdown 已请求，必
 `pi-subagents@0.44.0` 精确源码 hash 应用；补丁正文位于
 `patches/pi-subagents-0.44.0-owner-session-stop.patch`。它在原生 RPC 内合并当前内存 job 与
 磁盘 active run，按 session-file owner key 隔离，不让 supervisor 自己扫描临时目录或猜 UUID。
-未知上游字节直接拒绝；PiB 冷备不随这次主面身体演化修改。由于 Stop 的物理终止闭环先于便利，
-`asyncByDefault` 仍保持关闭，根只在当次正收益成立时显式选择 async。
+未知上游字节直接拒绝；PiB 冷备不随这次主面身体演化修改。主面的全局
+`asyncByDefault=false` 与 `forceTopLevelAsync=false` 继续保留；这是生命周期/回收语义，不是
+容量上限。`recursive-peer` frontmatter 的 `async:true` 只保留普通 single 兼容语义；主面的
+capacity typed tasks 不继承 agent 级 async，省略时一律 foreground，只有根显式 `async:true`
+才 detached，避免把 probe、verifier、operator 与 restricted single 无差别 detach。PiB 同样
+保持普通同步默认。
 Windows 上 detached runner 的 Stop 使用进程树终止而不是只杀 Pi writer，避免正在执行的 tool
 后代变成孤儿；隔离 native Sol child 已实际启动长驻 Node 后代，并证明 Stop 后后代 PID 消失、
 runner close 被观察、状态为 stopped，且并发新 launch 被 fence 拒绝。可重放验收脚本是
@@ -102,27 +124,30 @@ runner close 被观察、状态为 stopped，且并发新 launch 被 fence 拒�
 `D:\XINAO_RESEARCH_RUNTIME\state\pi\0.84.1\acceptance\pi-subagents-owner-session-stop-v2.json`。
 
 主 `prime` 的 `pi-subagents@0.44.0` 还提供 opt-in、单任务作用域的
-`filesystemPolicy`。它可以作为 `workflowScript` 默认项或一个 `runs.run` 的显式项，例如：
+`filesystemPolicy`。在高容量主面，它只有一个 root-only 入口：恰好一个 typed task，加顶层
+policy；必须使用原生 read-capable `peer`，不能使用只有递归工具的 `recursive-peer`：
 
-```js
-const policy = {
-  allowedRoots: ["D:\\safe-projection"],
-  deniedPaths: ["D:\\safe-projection\\private"],
-  bash: "deny",
-};
-return await runs.run("restricted-peer", {
-  agent: "peer",
-  task: "只读取安全投影并返回候选认识",
-  context: "fresh",
-  filesystemPolicy: policy,
-});
+```json
+{
+  "tasks": [{
+    "agent": "peer",
+    "task": "只读取安全投影并返回候选认识"
+  }],
+  "filesystemPolicy": {
+    "allowedRoots": ["D:\\safe-projection"],
+    "deniedPaths": ["D:\\safe-projection\\private"],
+    "bash": "deny"
+  },
+  "turnBudget": {"maxTurns": 20, "graceTurns": 0}
+}
 ```
 
-v1 只支持一个 fresh native Pi child；可前台或 detached async single，多个并发 restricted
-peer 由根分别发起多个独立 invocation。带 policy 的 chain、parallel、`runs.all`、attach-chain、
-worktree、external-cli、structured output、显式 output/file-only、share，以及会执行宿主命令的
-gate/acceptance verify/review 都在首个孩子启动前拒绝。一个 public workflow 一旦启用 policy，
-不能再混入第二个 launch key 或无 policy child。普通无 policy 的根 Pi 和 worker 保持原行为。
+省略 `async` 时它走 foreground native single；显式 `async:true` 才 detached。task `count>1`、
+两个 task、item-level policy、policy 与 list/status/其他 action 混用、descendant/direct/RPC 注入，
+以及 worktree、external-cli、structured output、显式 output/file-only、share、gate、acceptance
+verify/review 都在创建 session、reserve ticket 或发 provider 请求前拒绝。容量后代的 schema
+根本不暴露 policy；普通无 capacity 握手的 legacy FS workflow 只保留在兼容回归里，不是主 Pi
+当前模型入口。
 
 policy active 时只暴露 `read/grep/find/ls`；`bash` 固定拒绝，未知或自定义 file-capable 工具也
 拒绝。相对路径从 child cwd 解析；Windows 盘符大小写和分隔符归一化，已存在目标按 realpath
@@ -144,11 +169,18 @@ projection 目录；不能把混合敏感文件加入 allowedRoots 后期待 pol
 Windows OS sandbox：同一用户身份下的恶意本地代码、并发路径替换、TOCTOU 和 hardlink alias
 不在这条模型误搜防线的保证内；需要这类对抗隔离时必须使用操作系统级边界。
 
-可重放应用顺序固定为 surface overlay projection → Windows compatibility → owner-session-stop →
-filesystem-policy。最后一层由 `Apply-PiSSubagentsFilesystemPolicy.ps1` 对 15 个精确 owner baseline
-hash 应用 `patches/pi-subagents-0.44.0-filesystem-policy.patch`；它只接受完整 owner baseline 或
-完整 FS final，不接受半态。旧 Windows/owner-stop 脚本只会识别 final 组合 hash，不会反向覆盖。
-Start、Install 和 `New-PiSBodyLab.ps1` 只在 `prime-s` 接这层，PiB 永不调用，也不得出现该模块。
+可重放 package 顺序固定为 surface overlay projection → Windows compatibility →
+owner-session-stop → filesystem-policy → high-capacity；core 顺序为 midturn → native continuation →
+high-capacity provider gate。恢复严格反序，先退 high-capacity，再退 FS/native 及其下层。每一层
+只接受精确前像、自己的 final 或已知完整 downstream-composed final；二次 Start 只验证，不会
+把 capacity-final 反向覆盖。Start、Install 和 `New-PiSBodyLab.ps1` 只在 `prime-s` 接这层，并且
+每次启动先清空 static/binding/ticket 环境，只有 package/core/source/active hash 与本机
+`node:sqlite` transaction probe 全部通过后才注入 static handshake。PiB 永不调用、永不注入，
+也不得出现 capacity runtime、schema 或 registry。
+主 `prime` 的可见进程在完整生命周期同时持有 profile instance mutex 与 high-capacity transaction
+mutex；即使显式禁用 MidTurn/capacity，仍在同一临界区重新验证 underlay、保持 handshake 关闭，
+并阻止运行期间替换 package/core 字节。两个写型安装器在 Initialize、npm install 或任何 patch
+之前取得同一组锁；活动 Pi 存在或另一个事务占用时直接 fail closed，不会先写一半再报告 busy。
 
 先在新 body lab 运行 `Test-PiSFilesystemPolicyAcceptance.ps1 -AgentDir <lab-agent-dir>`。验收使用
 本地 stub provider，但通过真实 Pi RPC 跑 foreground、detached/resume、stale repair、Stop、
@@ -216,14 +248,16 @@ Pi 0.84.1 的普通 auto-compaction 只在完整 agent run 结算后检查；一
 上游源码 hash 与补丁 hash fail closed；`Test-PiSMidTurnCompaction.mjs` 使用本地确定性 provider
 同时证明上游红例、PiS gate 绿例、同 session compaction 持久化、完成结果消费，以及“压缩被取消且
 已有排队 steer”时仍不放行下一 provider 请求；各形态保留独立 receipt，不调用外部模型。
-首次应用会保存并校验精确上游 preimage。若 native continuation 已应用，回滚先停止活动 PiS，依次运行
+首次应用会保存并校验精确上游 preimage。若 high-capacity/native continuation 已应用，回滚先停止活动 PiS，依次运行
+`Restore-PiSHighCapacityCompatibility.ps1 -AgentDir D:\XINAO_RESEARCH_RUNTIME\state\pi\0.84.1\profiles\prime-s -PiToolRoot D:\XINAO_RESEARCH_RUNTIME\tools\pi\prime\0.84.1`、
 `Restore-PiSNativeContinuationCompatibility.ps1 -PiToolRoot D:\XINAO_RESEARCH_RUNTIME\tools\pi\prime\0.84.1` 与
 `Restore-PiSMidTurnCompactionCompatibility.ps1 -PiToolRoot D:\XINAO_RESEARCH_RUNTIME\tools\pi\prime\0.84.1`，再以
 `Start-UpstreamPi.ps1 -Profile prime-s -DisableMidTurnCompactionCompatibility` 启动已恢复的上游核心；
 普通 launcher/installer 会正式重新应用兼容层，不能在回退验证期间调用。恢复脚本只在当前字节等于
 已知补丁 hash 或已知上游 hash 时工作，不能用 preimage 覆盖未知包字节。
 
-`Install-PiSMainCore.ps1` 幂等安装并验证主 `prime` 的独立 0.84.1 核心。主核心另选择性
+`Install-PiSMainCore.ps1` 幂等安装并验证主 `prime` 的独立 0.84.1 核心；它要求对应 main
+AgentDir 已有 FS-final package，并把 high-capacity package/core 作为一个原子事务接上。主核心另选择性
 回移上游 `c185d412...` 的 DeepSeek `max_tokens` 修复和 `18dee5f0...` 的 fullscreen
 全宽行快路；`Apply-PiSPost0841UpstreamCompatibility.ps1` 只允许主核心或隔离 body lab，
 明确拒绝冷备核心。`Test-PiSPost0841UpstreamCompatibility.mjs` 以无网络 payload 捕获证明
@@ -232,8 +266,8 @@ Pi 0.84.1 的普通 auto-compaction 只在完整 agent run 结算后检查；一
 PiB 不应用这两笔主面增量。
 
 核心候选不能直接在主或冷备的受管 Pi binary 上试验。`New-PiSBodyLab.ps1 -IsolatePiCore` 会在该 lab 下
-安装独立的 pinned `pi-tool-root`；再加 `-ApplyMidTurnCompactionCompatibility` 才依次把 MidTurn 与
-native continuation 候选补丁施加到这份隔离核心。默认 body lab 不复制或修改主核心或冷备核心，
+安装独立的 pinned `pi-tool-root`；再加 `-ApplyMidTurnCompactionCompatibility` 才依次把 MidTurn、
+native continuation 与 high-capacity package/core 候选补丁施加到这份隔离身体。默认 body lab 不复制或修改主核心或冷备核心，
 也不设置 runtime handshake；验收进程只在核心与扩展 hash 都已读回后显式注入。
 
 Pi profile 的 `shellPath` 是 Git Bash。丢弃输出使用 `/dev/null`，不能写 `NUL`；后者会在

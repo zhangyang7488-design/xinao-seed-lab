@@ -66,6 +66,240 @@ function Get-PiDualEntryAccountBinding {
     Resolve-PiDualEntryAccountBinding -Slot $Slot
 }
 
+function Get-PiSubagentCapacityProfile {
+    param([Parameter(Mandatory)][ValidateSet('prime-b','prime-s')][string]$Profile)
+
+    if ($Profile -eq 'prime-s') {
+        return [pscustomobject]@{
+            Scope = 'main-high-capacity'
+            HighCapacity = $true
+            MaxSubagentDepth = 3
+            MaxSubagentSpawnsPerSession = 40
+            GlobalConcurrencyLimit = 6
+            AsyncByDefault = $false
+            ForceTopLevelAsync = $false
+            ParallelMaxTasks = 10
+            ParallelConcurrency = 6
+            DynamicFanoutMaxItems = 10
+            ProactiveSkillSubagents = $false
+            TurnBudget = [ordered]@{maxTurns=30;graceTurns=0}
+            TaskTurnMinimum = 10
+            TaskTurnMaximum = 30
+        }
+    }
+
+    [pscustomobject]@{
+        Scope = 'cold-backup-conservative'
+        HighCapacity = $false
+        MaxSubagentDepth = 2
+        MaxSubagentSpawnsPerSession = 32
+        GlobalConcurrencyLimit = 4
+        AsyncByDefault = $false
+        ForceTopLevelAsync = $false
+        ParallelMaxTasks = 8
+        ParallelConcurrency = 4
+        DynamicFanoutMaxItems = $null
+        ProactiveSkillSubagents = $false
+        TurnBudget = $null
+    }
+}
+
+function New-PiSubagentCapacityConfig {
+    param(
+        [Parameter(Mandatory)][ValidateSet('prime-b','prime-s')][string]$Profile,
+        [Parameter(Mandatory)][string]$DefaultSessionDir
+    )
+
+    $capacity = Get-PiSubagentCapacityProfile -Profile $Profile
+    $config = [ordered]@{
+        maxSubagentDepth = $capacity.MaxSubagentDepth
+        maxSubagentSpawnsPerSession = $capacity.MaxSubagentSpawnsPerSession
+        globalConcurrencyLimit = $capacity.GlobalConcurrencyLimit
+        asyncByDefault = $capacity.AsyncByDefault
+        forceTopLevelAsync = $capacity.ForceTopLevelAsync
+        fleetView = $true
+        fleetViewPlacement = 'aboveEditor'
+        asyncWidget = $true
+        inlineToolDisplay = 'rich'
+        toolDescriptionMode = 'compact'
+        artifactDir = 'session'
+        defaultSessionDir = $DefaultSessionDir.Replace('\','/')
+        scheduledRuns = [ordered]@{enabled=$false}
+        missions = [ordered]@{enabled=$false}
+        proactiveSkillSubagents = $capacity.ProactiveSkillSubagents
+        parallel = [ordered]@{
+            maxTasks = $capacity.ParallelMaxTasks
+            concurrency = $capacity.ParallelConcurrency
+        }
+    }
+    if ($null -ne $capacity.TurnBudget) {
+        $config['turnBudget'] = $capacity.TurnBudget
+    }
+    if ($null -ne $capacity.DynamicFanoutMaxItems) {
+        $config['chain'] = [ordered]@{
+            dynamicFanout = [ordered]@{maxItems=$capacity.DynamicFanoutMaxItems}
+        }
+    }
+    $config
+}
+
+function Get-PiSubagentCapacityStaticPolicy {
+    param([Parameter(Mandatory)][ValidateSet('prime-b','prime-s')][string]$Profile)
+
+    if ($Profile -ne 'prime-s') {
+        return [pscustomobject]@{
+            enabled = $false
+            schema = $null
+            raw = $null
+            sha256 = $null
+            registry_root = $null
+        }
+    }
+
+    # Field order is part of the runtime handshake. Keep this byte-for-byte
+    # aligned with createStaticCapacityPayload() in the capacity runtime.
+    $payload = [ordered]@{
+        schema = 'xinao.pi.subagent.capacity.v1'
+        profile = 'prime-s'
+        registryRoot = 'D:\XINAO_RESEARCH_RUNTIME\state\pi\0.84.1\capacity\prime-s'
+        maxSubagentDepth = 3
+        maxFanoutWidth = 10
+        maxConcurrentProviders = 6
+        maxTreeSpawns = 40
+        turnMin = 10
+        turnMax = 30
+        turnDefaultMax = 30
+        turnDefaultGrace = 0
+        scheduledRuns = $false
+        missions = $false
+        asyncByDefault = $false
+        providerScope = 'recursive-descendant-native-pi-streams'
+        fanoutScope = 'per-launching-parent'
+        spawnScope = 'durable-root-session-descendants'
+        spawnAccounting = 'committed-launches'
+        externalCli = $false
+    }
+    $raw = $payload | ConvertTo-Json -Compress -Depth 4
+    $hasher = [Security.Cryptography.SHA256]::Create()
+    try {
+        $digestBytes = $hasher.ComputeHash([Text.Encoding]::UTF8.GetBytes($raw))
+    } finally {
+        $hasher.Dispose()
+    }
+    $sha256 = ([BitConverter]::ToString($digestBytes)).Replace('-','').ToLowerInvariant()
+    $expectedSha256 = 'bf6ba259cf937cf9b5bd0d9afd89243206ea15b759bbebf96c27fb651231a1dc'
+    if ($sha256 -cne $expectedSha256) {
+        throw "PI_SUBAGENT_CAPACITY_STATIC_POLICY_DRIFT: expected=$expectedSha256 actual=$sha256"
+    }
+
+    [pscustomobject]@{
+        enabled = $true
+        schema = [string]$payload.schema
+        raw = $raw
+        sha256 = $sha256
+        registry_root = [string]$payload.registryRoot
+        max_subagent_depth = [int]$payload.maxSubagentDepth
+        max_fanout_width = [int]$payload.maxFanoutWidth
+        max_concurrent_providers = [int]$payload.maxConcurrentProviders
+        max_tree_spawns = [int]$payload.maxTreeSpawns
+        turn_min = [int]$payload.turnMin
+        turn_max = [int]$payload.turnMax
+        turn_default_max = [int]$payload.turnDefaultMax
+        turn_default_grace = [int]$payload.turnDefaultGrace
+    }
+}
+
+function Clear-PiSubagentCapacityEnvironment {
+    foreach ($name in @(
+        'XINAO_PI_SUBAGENT_CAPACITY_V1',
+        'XINAO_PI_SUBAGENT_CAPACITY_SHA256_V1',
+        'PI_SUBAGENT_ROOT_OWNER_SESSION',
+        'PI_SUBAGENT_ROOT_OWNER_SESSION_SHA256',
+        'XINAO_PI_SUBAGENT_LAUNCH_TICKET_V1',
+        'XINAO_PI_SUBAGENT_LAUNCH_TICKET_SHA256_V1'
+    )) {
+        Remove-Item -LiteralPath "Env:$name" -ErrorAction SilentlyContinue
+    }
+}
+
+function Enable-PiSubagentCapacityEnvironment {
+    param([Parameter(Mandatory)][ValidateSet('prime-b','prime-s')][string]$Profile)
+
+    Clear-PiSubagentCapacityEnvironment
+    $policy = Get-PiSubagentCapacityStaticPolicy -Profile $Profile
+    if (-not $policy.enabled) {
+        return $policy
+    }
+    Set-Item -LiteralPath 'Env:XINAO_PI_SUBAGENT_CAPACITY_V1' -Value $policy.raw
+    Set-Item -LiteralPath 'Env:XINAO_PI_SUBAGENT_CAPACITY_SHA256_V1' -Value $policy.sha256
+    $policy
+}
+
+function Assert-PiSubagentCapacityProjection {
+    param(
+        [Parameter(Mandatory)][ValidateSet('prime-b','prime-s')][string]$Profile,
+        [Parameter(Mandatory)][string]$AgentDir
+    )
+
+    $expected = Get-PiSubagentCapacityProfile -Profile $Profile
+    $configPath = Join-Path $AgentDir 'extensions\subagent\config.json'
+    if (-not (Test-Path -LiteralPath $configPath -PathType Leaf)) {
+        throw "PI_SUBAGENT_CAPACITY_CONFIG_MISSING: profile=$Profile path=$configPath"
+    }
+    try { $config = Get-Content -Raw -LiteralPath $configPath -Encoding UTF8 | ConvertFrom-Json }
+    catch { throw "PI_SUBAGENT_CAPACITY_CONFIG_INVALID: profile=$Profile path=$configPath" }
+
+    if (
+        [int]$config.maxSubagentDepth -ne [int]$expected.MaxSubagentDepth -or
+        [int]$config.maxSubagentSpawnsPerSession -ne [int]$expected.MaxSubagentSpawnsPerSession -or
+        [int]$config.globalConcurrencyLimit -ne [int]$expected.GlobalConcurrencyLimit -or
+        [bool]$config.asyncByDefault -ne [bool]$expected.AsyncByDefault -or
+        [bool]$config.forceTopLevelAsync -ne [bool]$expected.ForceTopLevelAsync -or
+        [int]$config.parallel.maxTasks -ne [int]$expected.ParallelMaxTasks -or
+        [int]$config.parallel.concurrency -ne [int]$expected.ParallelConcurrency -or
+        $config.scheduledRuns.enabled -ne $false -or
+        $config.missions.enabled -ne $false
+    ) {
+        throw "PI_SUBAGENT_CAPACITY_PROFILE_DRIFT: profile=$Profile path=$configPath"
+    }
+
+    if ($expected.HighCapacity) {
+        if (
+            $config.proactiveSkillSubagents -ne $false -or
+            [int]$config.turnBudget.maxTurns -ne 30 -or
+            [int]$config.turnBudget.graceTurns -ne 0 -or
+            [int]$config.chain.dynamicFanout.maxItems -ne [int]$expected.DynamicFanoutMaxItems
+        ) { throw "PI_SUBAGENT_CAPACITY_MAIN_POLICY_DRIFT: path=$configPath" }
+    } elseif (
+        $config.proactiveSkillSubagents -ne $false -or
+        $null -ne $config.PSObject.Properties['turnBudget'] -or
+        $null -ne $config.PSObject.Properties['chain']
+    ) {
+        throw "PI_SUBAGENT_CAPACITY_COLD_BACKUP_INHERITED_MAIN_POLICY: path=$configPath"
+    }
+
+    [pscustomobject]@{
+        scope = $expected.Scope
+        config_path = $configPath
+        config_sha256 = (Get-FileHash -Algorithm SHA256 -LiteralPath $configPath).Hash.ToLowerInvariant()
+        max_subagent_depth = [int]$config.maxSubagentDepth
+        max_subagent_spawns_per_session = [int]$config.maxSubagentSpawnsPerSession
+        global_concurrency_limit = [int]$config.globalConcurrencyLimit
+        async_by_default = [bool]$config.asyncByDefault
+        force_top_level_async = [bool]$config.forceTopLevelAsync
+        parallel_max_tasks = [int]$config.parallel.maxTasks
+        parallel_concurrency = [int]$config.parallel.concurrency
+        dynamic_fanout_max_items = $(if ($expected.HighCapacity) { [int]$config.chain.dynamicFanout.maxItems } else { $null })
+        turn_max = $(if ($expected.HighCapacity) { [int]$config.turnBudget.maxTurns } else { $null })
+        turn_grace = $(if ($expected.HighCapacity) { [int]$config.turnBudget.graceTurns } else { $null })
+        task_turn_minimum = $(if ($expected.HighCapacity) { [int]$expected.TaskTurnMinimum } else { $null })
+        task_turn_maximum = $(if ($expected.HighCapacity) { [int]$expected.TaskTurnMaximum } else { $null })
+        proactive_skill_subagents = $false
+        scheduled_runs_enabled = [bool]$config.scheduledRuns.enabled
+        missions_enabled = [bool]$config.missions.enabled
+    }
+}
+
 function Initialize-PiDualEntryAccountBinding {
     param([Parameter(Mandatory)][ValidateSet('prime-b','prime-s')][string]$Profile)
 
@@ -158,6 +392,55 @@ function Get-PiDualEntrySpec {
         ExcludedTools = @('skill_manage','mcp','mcpScript')
         MutexName = 'Local\XinaoUpstreamPi0841S'
     })
+}
+
+function Exit-PiDualEntryMaintenanceLocks {
+    param($Handle)
+    if ($null -eq $Handle) { return }
+    $locks = @($Handle.Locks)
+    for ($index = $locks.Count - 1; $index -ge 0; $index--) {
+        $entry = $locks[$index]
+        if ($null -eq $entry) { continue }
+        try {
+            if ([bool]$entry.Held) { $entry.Mutex.ReleaseMutex() }
+        } finally {
+            if ($null -ne $entry.Mutex) { $entry.Mutex.Dispose() }
+        }
+    }
+}
+
+function Enter-PiDualEntryMaintenanceLocks {
+    param(
+        [Parameter(Mandatory)][ValidateSet('prime-b','prime-s')][string[]]$Profile,
+        [switch]$IncludeHighCapacity
+    )
+
+    $names = New-Object Collections.Generic.List[string]
+    foreach ($profileName in @($Profile | Sort-Object -Unique)) {
+        $names.Add([string](Get-PiDualEntrySpec -Profile $profileName).MutexName)
+    }
+    if ($IncludeHighCapacity -and 'prime-s' -in @($Profile)) {
+        $names.Add('Global\XinaoPiSHighCapacityCompatibilityV1')
+    }
+
+    $locks = New-Object Collections.Generic.List[object]
+    try {
+        foreach ($name in @($names)) {
+            $mutex = [Threading.Mutex]::new($false,$name)
+            $held = $false
+            try { $held = $mutex.WaitOne(0) }
+            catch [Threading.AbandonedMutexException] { $held = $true }
+            if (-not $held) {
+                $mutex.Dispose()
+                throw "PI_DUAL_ENTRY_MAINTENANCE_TARGET_ACTIVE_OR_BUSY: mutex=$name"
+            }
+            $locks.Add([pscustomobject]@{ Name = $name; Mutex = $mutex; Held = $true })
+        }
+        [pscustomobject]@{ Locks = [object[]]$locks.ToArray() }
+    } catch {
+        Exit-PiDualEntryMaintenanceLocks -Handle ([pscustomobject]@{ Locks = [object[]]$locks.ToArray() })
+        throw
+    }
 }
 
 function Sync-PiDualEntryContractProjection {
@@ -292,6 +575,41 @@ function Assert-PiDualEntryBinary {
     $actual = ([string]($versionOutput | Select-Object -First 1)).Trim()
     if (-not [string]::Equals($actual, $script:PiDualEntryVersion, [StringComparison]::Ordinal)) {
         throw "PI_VERSION_MISMATCH: profile=$($Spec.Profile) expected=$script:PiDualEntryVersion actual=$actual"
+    }
+}
+
+function Invoke-PiDualEntryNativeCommand {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)][string]$FilePath,
+        [string[]]$ArgumentList = @()
+    )
+
+    if (-not (Test-Path -LiteralPath $FilePath -PathType Leaf)) {
+        throw "PI_NATIVE_COMMAND_NOT_FOUND: $FilePath"
+    }
+
+    $previousErrorActionPreference = $ErrorActionPreference
+    $nativeOutput = @()
+    $nativeExitCode = $null
+    try {
+        # Windows PowerShell 5.1 turns redirected native stderr into a terminating
+        # NativeCommandError when the caller uses Stop, even when the process exits 0.
+        # Capture both streams here and let the real native exit code decide success.
+        $ErrorActionPreference = 'Continue'
+        $nativeOutput = @(& $FilePath @ArgumentList 2>&1)
+        $nativeExitCode = $LASTEXITCODE
+    } finally {
+        $ErrorActionPreference = $previousErrorActionPreference
+    }
+
+    if ($null -eq $nativeExitCode) {
+        throw "PI_NATIVE_COMMAND_EXIT_CODE_MISSING: $FilePath"
+    }
+
+    [pscustomobject]@{
+        exit_code = [int]$nativeExitCode
+        output = @($nativeOutput | ForEach-Object { [string]$_ })
     }
 }
 

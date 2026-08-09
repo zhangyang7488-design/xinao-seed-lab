@@ -6,3 +6,11 @@ evals/thin_localization/** text eol=lf
 evals/external_reality_research/** text eol=lf
 docs/tool_glue/GENERIC_ENGINEERING_SUBSTRATE_CURRENT.md text eol=lf
 docs/tool_glue/CROSS_SEAM_EXECUTION_ENVELOPE_CURRENT.md text eol=lf
+
+# The projected Codex skill is byte-compared with its live LF consumer.
+infra/pi_upstream_dual_entry/v1/codex-skills/steward-pis-evolution/** text eol=lf
+
+# Exact upstream/patch fixtures are hash-pinned; preserve their source whitespace.
+infra/pi_upstream_dual_entry/v1/patches/pi-subagents-0.44.0-high-capacity-v1.patch -whitespace
+infra/pi_upstream_dual_entry/v1/scripts/Test-PiSHighCapacityTypeShim/node_modules/@anthropic-ai/sdk/internal/types.d.mts -whitespace
+infra/pi_upstream_dual_entry/v1/scripts/Test-PiSHighCapacityTypeShim/node_modules/openai/internal/types.d.ts -whitespace

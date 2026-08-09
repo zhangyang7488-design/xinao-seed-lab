@@ -57,6 +57,7 @@ $allNativeWindowsHide = $true
 foreach ($profileName in $Profile) {
     $spec = Get-PiDualEntrySpec -Profile $profileName
     Assert-PiDualEntryBinary -Spec $spec
+    Clear-PiSubagentCapacityEnvironment
     $env:PI_CODING_AGENT_DIR = $spec.AgentDir
     $env:PI_CODING_AGENT_SESSION_DIR = $spec.SessionDir
     $env:PI_SKIP_VERSION_CHECK = '1'
@@ -172,13 +173,33 @@ foreach ($profileName in $Profile) {
             }
         }
     $profileContextWindowOverrideAbsent = $true
+    $highCapacityMain = $profileName -eq 'prime-s'
     if (
         [string]$subagentConfig.artifactDir -ne 'session' -or
         $subagentConfig.scheduledRuns.enabled -ne $false -or
-        $subagentConfig.missions.enabled -ne $false -or
-        [int]$subagentConfig.maxSubagentDepth -ne 2 -or
-        [int]$subagentConfig.globalConcurrencyLimit -ne 4
+        $subagentConfig.missions.enabled -ne $false
     ) { throw "PI_SURFACE_TEST_SUBAGENT_RUNTIME_CONFIG_INVALID: profile=$profileName" }
+    $subagentCapacity = Assert-PiSubagentCapacityProjection -Profile $profileName -AgentDir $spec.AgentDir
+    $subagentCapacityStaticPolicy = Get-PiSubagentCapacityStaticPolicy -Profile $profileName
+    if ($highCapacityMain) {
+        if (
+            -not $subagentCapacityStaticPolicy.enabled -or
+            [string]$subagentCapacityStaticPolicy.schema -cne 'xinao.pi.subagent.capacity.v1' -or
+            [string]$subagentCapacityStaticPolicy.sha256 -cne 'bf6ba259cf937cf9b5bd0d9afd89243206ea15b759bbebf96c27fb651231a1dc' -or
+            [int]$subagentCapacityStaticPolicy.max_subagent_depth -ne 3 -or
+            [int]$subagentCapacityStaticPolicy.max_fanout_width -ne 10 -or
+            [int]$subagentCapacityStaticPolicy.max_concurrent_providers -ne 6 -or
+            [int]$subagentCapacityStaticPolicy.max_tree_spawns -ne 40 -or
+            [int]$subagentCapacityStaticPolicy.turn_min -ne 10 -or
+            [int]$subagentCapacityStaticPolicy.turn_max -ne 30
+        ) { throw 'PI_SURFACE_TEST_CAPACITY_STATIC_POLICY_INVALID' }
+    } elseif (
+        $subagentCapacityStaticPolicy.enabled -or
+        -not [string]::IsNullOrWhiteSpace([string]$subagentCapacityStaticPolicy.raw) -or
+        -not [string]::IsNullOrWhiteSpace([string]$subagentCapacityStaticPolicy.sha256)
+    ) {
+        throw 'PI_SURFACE_TEST_PRIME_B_INHERITED_CAPACITY_STATIC_POLICY'
+    }
     $expectedPackages = @($spec.Packages)
     $actualPackages = @($settings.packages)
     if (@($expectedPackages | Where-Object { $_ -notin $actualPackages }).Count -gt 0 -or @($actualPackages | Where-Object { $_ -notin $expectedPackages }).Count -gt 0) {
@@ -194,11 +215,24 @@ foreach ($profileName in $Profile) {
         }
     }
     $peerAgentAcceptance = $null
+    $recursivePeerAcceptance = $null
     if ($profileName -eq 'prime-s') {
         $peerAgentPath = Join-Path $spec.AgentDir 'agents\peer.md'
+        $peerAgentSourcePath = Join-Path $spec.OverlayAgentDir 'peer.md'
         if (-not (Test-Path -LiteralPath $peerAgentPath -PathType Leaf)) {
             throw "PI_SURFACE_TEST_PEER_AGENT_MISSING: $peerAgentPath"
         }
+        if (-not (Test-Path -LiteralPath $peerAgentSourcePath -PathType Leaf)) {
+            throw "PI_SURFACE_TEST_PEER_AGENT_SOURCE_MISSING: $peerAgentSourcePath"
+        }
+        $peerAgentSourceSha256 = (Get-FileHash -Algorithm SHA256 -LiteralPath $peerAgentSourcePath).Hash.ToLowerInvariant()
+        $peerAgentActiveSha256 = (Get-FileHash -Algorithm SHA256 -LiteralPath $peerAgentPath).Hash.ToLowerInvariant()
+        $peerOverlayManifest = Get-Content -Raw -LiteralPath $spec.OverlayProjectionManifest -Encoding UTF8 | ConvertFrom-Json
+        $peerAgentManifestSha256 = [string]$peerOverlayManifest.sha256.'agents/peer.md'
+        if (
+            $peerAgentSourceSha256 -cne $peerAgentActiveSha256 -or
+            $peerAgentSourceSha256 -cne $peerAgentManifestSha256
+        ) { throw 'PI_SURFACE_TEST_PEER_AGENT_SOURCE_ACTIVE_MANIFEST_DRIFT' }
         $peerAgentText = Get-Content -Raw -LiteralPath $peerAgentPath -Encoding UTF8
         $peerAgentNormalized = ($peerAgentText -replace '\s+', ' ').Trim()
         $peerRequiredFragments = @(
@@ -222,6 +256,61 @@ foreach ($profileName in $Profile) {
             repository_effects_allowed = $false
             candidate_only = $true
             local_no_action_closes_parent = $false
+            source_sha256 = $peerAgentSourceSha256
+            active_sha256 = $peerAgentActiveSha256
+            manifest_sha256 = $peerAgentManifestSha256
+        }
+        $recursivePeerPath = Join-Path $spec.AgentDir 'agents\recursive-peer.md'
+        if (-not (Test-Path -LiteralPath $recursivePeerPath -PathType Leaf)) {
+            throw "PI_SURFACE_TEST_RECURSIVE_PEER_MISSING: $recursivePeerPath"
+        }
+        $recursivePeerText = Get-Content -Raw -LiteralPath $recursivePeerPath -Encoding UTF8
+        $recursivePeerNormalized = ($recursivePeerText -replace '\s+', ' ').Trim()
+        $recursivePeerRequiredFragments = @(
+            'name: recursive-peer',
+            'thinking: max',
+            'tools: subagent',
+            'inheritProjectContext: false',
+            'inheritSkills: false',
+            'defaultContext: fresh',
+            'acceptanceRole: read-only',
+            'async: true',
+            'maxSubagentDepth: 3',
+            'turnBudget: {"maxTurns":30,"graceTurns":0}',
+            'without a fixed profession',
+            'Keep doing your own synthesis while children run',
+            'A local no-action returns to the inherited parent'
+        )
+        $recursivePeerMissing = @($recursivePeerRequiredFragments | Where-Object {
+            $recursivePeerNormalized.IndexOf($_, [StringComparison]::Ordinal) -lt 0
+        })
+        if (
+            $recursivePeerMissing.Count -gt 0 -or
+            $recursivePeerText -match '(?m)^model:' -or
+            $recursivePeerText -match '(?m)^tools:.*\b(read|grep|find|ls|bash|edit|write|web_search)\b'
+        ) {
+            throw "PI_SURFACE_TEST_RECURSIVE_PEER_CONTRACT_INVALID: missing=$($recursivePeerMissing -join ',')"
+        }
+        $recursivePeerAcceptance = [ordered]@{
+            name = 'recursive-peer'
+            model_policy = 'inherit-current-root-or-explicit-task-override'
+            fixed_model = $false
+            thinking = 'max'
+            max_subagent_depth = 3
+            max_turns = 30
+            grace_turns = 0
+            async = $true
+            recursive_tool = 'subagent'
+            file_shell_network_tools = $false
+            candidate_only = $true
+        }
+        $bodyFrictionPath = Join-Path $spec.AgentDir 'agents\body-friction-auditor.md'
+        if (-not (Test-Path -LiteralPath $bodyFrictionPath -PathType Leaf)) {
+            throw "PI_SURFACE_TEST_BODY_FRICTION_AGENT_MISSING: $bodyFrictionPath"
+        }
+        $bodyFrictionText = Get-Content -Raw -LiteralPath $bodyFrictionPath -Encoding UTF8
+        if ($bodyFrictionText.IndexOf('turnBudget: {"maxTurns":30,"graceTurns":0}', [StringComparison]::Ordinal) -lt 0) {
+            throw "PI_SURFACE_TEST_BODY_FRICTION_TURN_BUDGET_EXCEEDS_MAIN_CEILING: $bodyFrictionPath"
         }
     }
 
@@ -262,6 +351,9 @@ foreach ($profileName in $Profile) {
     $supervisorIngressAcceptance = $null
     $nativeContinuationCompatibility = $null
     $nativeContinuationAbsence = $null
+    $highCapacityCompatibility = $null
+    $highCapacityAcceptance = $null
+    $highCapacityAbsence = $null
     $midTurnRaw = @(& (Join-Path $PSScriptRoot 'Apply-PiSMidTurnCompactionCompatibility.ps1') -PiToolRoot $spec.PiToolRoot -VerifyOnly 2>&1)
     $midTurnCompactionAcceptance = ($midTurnRaw -join [Environment]::NewLine) | ConvertFrom-Json
     if (
@@ -309,6 +401,23 @@ foreach ($profileName in $Profile) {
             native_continuation_absent = $true
             exact_midturn_underlay_sha256 = $nativeAbsentActual
         }
+        $coldPackageCapacityRuntime = Join-Path $spec.AgentDir 'npm\node_modules\pi-subagents\src\runs\shared\xinao-pi-subagent-capacity-runtime.js'
+        $coldCoreCapacityRuntime = Join-Path $piPackageRoot 'dist\core\xinao-pi-subagent-capacity-runtime.js'
+        $coldCoreSdk = Join-Path $piPackageRoot 'dist\core\sdk.js'
+        $coldCoreSdkSha256 = (Get-FileHash -Algorithm SHA256 -LiteralPath $coldCoreSdk).Hash.ToLowerInvariant()
+        if (
+            (Test-Path -LiteralPath $coldPackageCapacityRuntime) -or
+            (Test-Path -LiteralPath $coldCoreCapacityRuntime) -or
+            $coldCoreSdkSha256 -cne 'f6e72f33f44c708249c8d74931d816c36fe27175f7fa1639cba0a3d988592821'
+        ) { throw 'PI_SURFACE_TEST_COLD_BACKUP_HIGH_CAPACITY_PRESENT_OR_MIXED' }
+        $highCapacityAbsence = [pscustomobject]@{
+            schema = 'xinao.pi_high_capacity_cold_negative.v1'
+            high_capacity_absent = $true
+            package_runtime_absent = $true
+            core_runtime_absent = $true
+            core_sdk_sha256 = $coldCoreSdkSha256
+            static_handshake_absent = -not $subagentCapacityStaticPolicy.enabled
+        }
     }
     $post0841UpstreamAcceptance = $null
     if ($profileName -eq 'prime-s') {
@@ -336,6 +445,34 @@ foreach ($profileName in $Profile) {
             $filesystemPolicyCompatibility.async_resume_requires_consistent_durable_policy -ne $true -or
             $filesystemPolicyCompatibility.prime_b_modified -ne $false
         ) { throw "PI_SURFACE_TEST_FILESYSTEM_POLICY_PATCH_INVALID: $($filesystemPolicyRaw -join ' ')" }
+        $highCapacityRaw = @(& (Join-Path $PSScriptRoot 'Apply-PiSHighCapacityCompatibility.ps1') -AgentDir $spec.AgentDir -PiToolRoot $spec.PiToolRoot -VerifyOnly 2>&1)
+        $highCapacityCompatibility = ($highCapacityRaw -join [Environment]::NewLine) | ConvertFrom-Json
+        if (
+            [string]$highCapacityCompatibility.schema -cne 'xinao.pi_s_high_capacity_compatibility.v1' -or
+            $highCapacityCompatibility.changed -ne $false -or
+            $highCapacityCompatibility.handshake_written -ne $false
+        ) { throw "PI_SURFACE_TEST_HIGH_CAPACITY_PATCH_INVALID: $($highCapacityRaw -join ' ')" }
+        $highCapacityReceiptPath = Join-Path $script:PiDualEntryStateRoot 'acceptance\pi-high-capacity-v1.json'
+        $highCapacityReplayRaw = @(& (Join-Path $PSScriptRoot 'Test-PiSHighCapacityReplay.ps1') -AgentDir $spec.AgentDir -PiToolRoot $spec.PiToolRoot -ReceiptPath $highCapacityReceiptPath 2>&1)
+        $highCapacityAcceptance = ($highCapacityReplayRaw -join [Environment]::NewLine) | ConvertFrom-Json
+        $currentPeerSourceSha256 = (Get-FileHash -Algorithm SHA256 -LiteralPath (Join-Path $spec.OverlayAgentDir 'peer.md')).Hash.ToLowerInvariant()
+        if (
+            [string]$highCapacityAcceptance.schema -cne 'xinao.pi_s_high_capacity_replay_acceptance.v1' -or
+            [string]$highCapacityAcceptance.status -cne 'verified' -or
+            [int]$highCapacityAcceptance.tests.expected -ne 48 -or
+            [int]$highCapacityAcceptance.tests.observed -ne 48 -or
+            [int]$highCapacityAcceptance.tests.passed -ne 48 -or
+            [int]$highCapacityAcceptance.tests.failed -ne 0 -or
+            [string]$highCapacityAcceptance.strict_typescript.status -cne 'pass' -or
+            $highCapacityAcceptance.strict_typescript.strict -ne $true -or
+            $highCapacityAcceptance.strict_typescript.no_unchecked_indexed_access -ne $true -or
+            $highCapacityAcceptance.strict_typescript.skip_lib_check -ne $false -or
+            $highCapacityAcceptance.runtime_projection.byte_equal -ne $true -or
+            [int64]$highCapacityAcceptance.runtime_projection.bytes -ne 47259 -or
+            [string]$highCapacityAcceptance.runtime_projection.sha256 -cne 'ba5614b01ee3b2c15194d1006596bef50134fdd4f86125713cf61987f7be76b2' -or
+            [string]$highCapacityAcceptance.peer.sha256 -cne $currentPeerSourceSha256 -or
+            $highCapacityAcceptance.temp_cleanup -ne $true
+        ) { throw "PI_SURFACE_TEST_HIGH_CAPACITY_ACCEPTANCE_INVALID: $highCapacityReceiptPath" }
         $ownerStopBehaviorRaw = @(& node (Join-Path $PSScriptRoot 'Test-PiSubagentSessionStop.mjs') 2>&1)
         if ($LASTEXITCODE -ne 0) { throw "PI_SURFACE_TEST_OWNER_SESSION_STOP_FAILED: $($ownerStopBehaviorRaw -join ' ')" }
         $ownerSessionStopAcceptance = ($ownerStopBehaviorRaw -join [Environment]::NewLine) | ConvertFrom-Json
@@ -658,6 +795,9 @@ Without using tools, report instructions already present in your current context
         required_skills_loaded = $true
         packages = $actualPackages
         hermes_memory_capacity = $hermesMemoryCapacity
+        subagent_capacity = $subagentCapacity
+        subagent_capacity_static_policy = $subagentCapacityStaticPolicy
+        recursive_peer = $recursivePeerAcceptance
         subagent_config_path = $subagentConfigPath
         subagent_artifact_dir = [string]$subagentConfig.artifactDir
         scheduled_runs_enabled = [bool]$subagentConfig.scheduledRuns.enabled
@@ -672,6 +812,9 @@ Without using tools, report instructions already present in your current context
         subagents_owner_session_stop_process = $ownerSessionStopProcessAcceptance
         subagents_filesystem_policy_compatibility = $filesystemPolicyCompatibility
         subagents_filesystem_policy = $filesystemPolicyAcceptance
+        high_capacity_compatibility = $highCapacityCompatibility
+        high_capacity_acceptance = $highCapacityAcceptance
+        high_capacity_absence = $highCapacityAbsence
         supervisor_ingress = $supervisorIngressAcceptance
         post_0841_upstream_compatibility = $post0841UpstreamAcceptance
         numpad_enter_follow = $numpadAcceptance
@@ -712,10 +855,23 @@ if (Test-Path -LiteralPath $primeBSpecForNegative.OverlayProjectionManifest -Pat
 }
 if (
     (Test-Path -LiteralPath (Join-Path $primeBSpecForNegative.AgentDir 'agents\peer.md') -PathType Leaf) -or
+    (Test-Path -LiteralPath (Join-Path $primeBSpecForNegative.AgentDir 'agents\recursive-peer.md') -PathType Leaf) -or
     (Test-Path -LiteralPath (Join-Path $primeBSpecForNegative.AgentDir 'extensions\return-to-parent.ts') -PathType Leaf) -or
     'agents/peer.md' -in $primeBManifestOwned -or
+    'agents/recursive-peer.md' -in $primeBManifestOwned -or
     'extensions/return-to-parent.ts' -in $primeBManifestOwned
 ) { throw 'PI_SURFACE_TEST_COLD_BACKUP_INHERITED_MAIN_ONLY_CAPABILITY' }
+$primeBCapacityStaticPolicy = Get-PiSubagentCapacityStaticPolicy -Profile 'prime-b'
+$primeBCapacityPackageRuntime = Join-Path $primeBSpecForNegative.AgentDir 'npm\node_modules\pi-subagents\src\runs\shared\xinao-pi-subagent-capacity-runtime.js'
+$primeBCapacityCoreRoot = Join-Path $primeBSpecForNegative.PiToolRoot 'node_modules\@earendil-works\pi-coding-agent\dist\core'
+$primeBCapacityCoreRuntime = Join-Path $primeBCapacityCoreRoot 'xinao-pi-subagent-capacity-runtime.js'
+$primeBCapacityCoreSdk = Join-Path $primeBCapacityCoreRoot 'sdk.js'
+if (
+    $primeBCapacityStaticPolicy.enabled -or
+    (Test-Path -LiteralPath $primeBCapacityPackageRuntime) -or
+    (Test-Path -LiteralPath $primeBCapacityCoreRuntime) -or
+    (Get-FileHash -Algorithm SHA256 -LiteralPath $primeBCapacityCoreSdk).Hash.ToLowerInvariant() -cne 'f6e72f33f44c708249c8d74931d816c36fe27175f7fa1639cba0a3d988592821'
+) { throw 'PI_SURFACE_TEST_COLD_BACKUP_INHERITED_HIGH_CAPACITY' }
 $primeBPolicyModule = Join-Path $primeBSpecForNegative.AgentDir 'npm\node_modules\pi-subagents\src\runs\shared\filesystem-policy.ts'
 $primeBManifestText = if (Test-Path -LiteralPath $primeBSpecForNegative.OverlayProjectionManifest -PathType Leaf) {
     Get-Content -Raw -LiteralPath $primeBSpecForNegative.OverlayProjectionManifest -Encoding UTF8

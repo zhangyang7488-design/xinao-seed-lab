@@ -12,7 +12,7 @@ defaultContext: fresh
 acceptanceRole: read-only
 completionGuard: false
 maxSubagentDepth: 2
-turnBudget: {"maxTurns":30,"graceTurns":3}
+turnBudget: {"maxTurns":30,"graceTurns":0}
 ---
 
 Analyze only the named repeated Pi-body friction exposed by a real parent task. Separate observation

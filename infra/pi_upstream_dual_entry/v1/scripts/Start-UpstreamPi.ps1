@@ -12,6 +12,7 @@ $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot 'PiDualEntry.Common.ps1')
 
 $spec = Get-PiDualEntrySpec -Profile $Profile
+$capacityProfile = Get-PiSubagentCapacityProfile -Profile $Profile
 Assert-PiDualEntryBinary -Spec $spec
 if ($NewSession -and -not [string]::IsNullOrWhiteSpace($Session)) {
     throw 'PI_SESSION_SELECTION_CONFLICTS_WITH_NEW_SESSION'
@@ -50,11 +51,35 @@ $selectedSession = $null
 if (-not [string]::IsNullOrWhiteSpace($Session)) {
     $selectedSession = Resolve-PiProfileSessionSelection -SessionDir $spec.SessionDir -Selection $Session
 }
+
+$mutex = [Threading.Mutex]::new($false,$spec.MutexName)
+$held = $false
+$capacityCompatibilityMutex = $null
+$capacityCompatibilityHeld = $false
+if ($Profile -eq 'prime-s') {
+    # Hold the package/core transaction fence for the complete validation or
+    # visible Pi lifetime, including intentionally disabled launches.
+    $capacityCompatibilityMutex = [Threading.Mutex]::new($false,'Global\XinaoPiSHighCapacityCompatibilityV1')
+}
+try {
+    try { $held = $mutex.WaitOne(0) } catch [Threading.AbandonedMutexException] { $held = $true }
+    if (-not $held) {
+        Write-Host "$($spec.DisplayName) 已经开着；没有再启动第二个会话窗口。" -ForegroundColor Yellow
+        exit 73
+    }
+    if ($null -ne $capacityCompatibilityMutex) {
+        try { $capacityCompatibilityHeld = $capacityCompatibilityMutex.WaitOne(0) }
+        catch [Threading.AbandonedMutexException] { $capacityCompatibilityHeld = $true }
+        if (-not $capacityCompatibilityHeld) {
+            throw 'PI_S_HIGH_CAPACITY_COMPATIBILITY_TRANSACTION_BUSY'
+        }
+    }
+
 $env:PI_CODING_AGENT_DIR = $spec.AgentDir
 $env:PI_CODING_AGENT_SESSION_DIR = $spec.SessionDir
 $env:PI_SKIP_VERSION_CHECK = '1'
 $env:PI_TELEMETRY = '0'
-$env:PI_SUBAGENT_MAX_DEPTH = '2'
+$env:PI_SUBAGENT_MAX_DEPTH = [string]$capacityProfile.MaxSubagentDepth
 $env:CODEX_HOME = $spec.CodexHome
 $env:XINAO_ACCOUNT_SLOT = $spec.AccountSlot
 $env:XINAO_PI_ROLE = $spec.Role
@@ -63,6 +88,10 @@ $env:XINAO_RUNTIME = 'D:\XINAO_RESEARCH_RUNTIME'
 $env:XINAO_PI_PROFILE = $Profile
 $env:XINAO_PI_SUPERVISOR_ENABLED = '1'
 $env:XINAO_PI_SUPERVISOR_PIPE = $spec.SupervisorPipe
+# Capacity credentials are launch-scoped. Never accept a static policy, a root
+# activation binding, or a child ticket inherited from the caller.
+Clear-PiSubagentCapacityEnvironment
+$subagentCapacityStaticPolicy = Get-PiSubagentCapacityStaticPolicy -Profile $Profile
 # Never trust an inherited continuation handshake. The root-only extension stays
 # inert until this launch has verified both the MidTurn underlay and native fence.
 Remove-Item Env:XINAO_PI_NATIVE_CONTINUATION_ABORT_FENCE -ErrorAction SilentlyContinue
@@ -76,6 +105,8 @@ $surfaceOverlay = Sync-PiDualEntrySurfaceOverlay -Spec $spec
 $subagentsCompatibility = $null
 $subagentsOwnerSessionStopCompatibility = $null
 $subagentsFilesystemPolicyCompatibility = $null
+$highCapacityCompatibility = $null
+$highCapacityAbsence = $null
 $hermesSessionCompatibility = $null
 $midTurnCompactionCompatibility = $null
 $nativeContinuationCompatibility = $null
@@ -86,6 +117,7 @@ $numpadHelperProcess = $null
 $numpadHelperStatus = 'not-applicable'
 $numpadHelperSource = Join-Path (Split-Path -Parent $PSScriptRoot) 'helpers\PrimeS-NumPadEnter-Follow.ahk'
 & (Join-Path $PSScriptRoot 'Set-PiSBodyConfiguration.ps1') -AgentDir $spec.AgentDir | Out-Null
+$subagentCapacity = Assert-PiSubagentCapacityProjection -Profile $Profile -AgentDir $spec.AgentDir
 if ($ValidateOnly) {
     $subagentsCompatibility = (& (Join-Path $PSScriptRoot 'Apply-PiSSubagentsWindowsCompatibility.ps1') -AgentDir $spec.AgentDir -VerifyOnly) | ConvertFrom-Json
     $hermesSessionCompatibility = (& (Join-Path $PSScriptRoot 'Apply-PiSHermesSessionCompatibility.ps1') -AgentDir $spec.AgentDir -VerifyOnly) | ConvertFrom-Json
@@ -122,6 +154,17 @@ if ($Profile -eq 'prime-s') {
         & (Join-Path $PSScriptRoot 'Apply-PiSSubagentsFilesystemPolicy.ps1') -AgentDir $spec.AgentDir
     }
     $subagentsFilesystemPolicyCompatibility = ($filesystemPolicyRaw -join [Environment]::NewLine) | ConvertFrom-Json
+    if ($DisableMidTurnCompactionCompatibility) {
+        $highCapacityAbsence = (& (Join-Path $PSScriptRoot 'Restore-PiSHighCapacityCompatibility.ps1') -AgentDir $spec.AgentDir -PiToolRoot $spec.PiToolRoot -VerifyOnly) | ConvertFrom-Json
+    } elseif ($ValidateOnly) {
+        $highCapacityRaw = & (Join-Path $PSScriptRoot 'Apply-PiSHighCapacityCompatibility.ps1') -AgentDir $spec.AgentDir -PiToolRoot $spec.PiToolRoot -VerifyOnly
+        $highCapacityCompatibility = ($highCapacityRaw -join [Environment]::NewLine) | ConvertFrom-Json
+    } else {
+        # Apply re-enters the already-held transaction mutex on this same
+        # PowerShell thread. The outer ownership remains until Pi exits.
+        $highCapacityRaw = & (Join-Path $PSScriptRoot 'Apply-PiSHighCapacityCompatibility.ps1') -AgentDir $spec.AgentDir -PiToolRoot $spec.PiToolRoot
+        $highCapacityCompatibility = ($highCapacityRaw -join [Environment]::NewLine) | ConvertFrom-Json
+    }
 }
 if ($Profile -eq 'prime-s') {
     $post0841Raw = if ($ValidateOnly) {
@@ -199,9 +242,14 @@ if ($ValidateOnly) {
         contract_projection_sha256 = $contractProjection.Sha256
         surface_overlay_manifest_sha256 = $surfaceOverlay.Sha256
         supervisor_pipe = $spec.SupervisorPipe
+        subagent_max_depth = [int]$env:PI_SUBAGENT_MAX_DEPTH
+        subagent_capacity = $subagentCapacity
+        subagent_capacity_static_policy = $subagentCapacityStaticPolicy
         subagents_windows_compatibility = $subagentsCompatibility
         subagents_owner_session_stop_compatibility = $subagentsOwnerSessionStopCompatibility
         subagents_filesystem_policy_compatibility = $subagentsFilesystemPolicyCompatibility
+        high_capacity_compatibility = $highCapacityCompatibility
+        high_capacity_absence = $highCapacityAbsence
         hermes_session_compatibility = $hermesSessionCompatibility
         midturn_compaction_compatibility = $midTurnCompactionCompatibility
         native_continuation_compatibility = $nativeContinuationCompatibility
@@ -209,6 +257,7 @@ if ($ValidateOnly) {
         post_0841_upstream_compatibility = $post0841UpstreamCompatibility
         midturn_compaction_runtime_enabled = (-not $DisableMidTurnCompactionCompatibility)
         native_continuation_runtime_enabled = $false
+        high_capacity_runtime_enabled = $false
         numpad_enter_follow = $numpadEnterFollow
         family_contract = $spec.FamilyContractSource
         surface_island = $spec.SurfaceIsland
@@ -228,15 +277,6 @@ function Stop-PiSNumpadEnterHelper {
         Stop-Process -Id ([int]$victim.ProcessId) -Force -ErrorAction SilentlyContinue
     }
 }
-
-$mutex = [Threading.Mutex]::new($false,$spec.MutexName)
-$held = $false
-try {
-    try { $held = $mutex.WaitOne(0) } catch [Threading.AbandonedMutexException] { $held = $true }
-    if (-not $held) {
-        Write-Host "$($spec.DisplayName) 已经开着；没有再启动第二个会话窗口。" -ForegroundColor Yellow
-        exit 73
-    }
 
     Get-ChildItem Env: | Where-Object { $_.Name -like 'PRIME_AGENT_*' -or $_.Name -like 'RLM_*' } | ForEach-Object {
         Remove-Item -LiteralPath ("Env:" + $_.Name) -ErrorAction SilentlyContinue
@@ -299,15 +339,22 @@ try {
         if ($null -eq $nativeContinuationCompatibility -or [string]$nativeContinuationCompatibility.schema -cne 'xinao.pi_native_continuation_compatibility.v1') {
             throw 'PI_S_NATIVE_CONTINUATION_RUNTIME_HANDSHAKE_WITHOUT_VERIFIED_CORE'
         }
+        if ($null -eq $highCapacityCompatibility -or [string]$highCapacityCompatibility.schema -cne 'xinao.pi_s_high_capacity_compatibility.v1') {
+            throw 'PI_S_HIGH_CAPACITY_RUNTIME_HANDSHAKE_WITHOUT_VERIFIED_PACKAGE_AND_CORE'
+        }
         $env:XINAO_PI_NATIVE_CONTINUATION_ABORT_FENCE = '1'
+        $subagentCapacityStaticPolicy = Enable-PiSubagentCapacityEnvironment -Profile $Profile
     }
     & $spec.PiCommand @arguments
     exit $LASTEXITCODE
 } finally {
+    Clear-PiSubagentCapacityEnvironment
     Remove-Item Env:XINAO_PI_NATIVE_CONTINUATION_ABORT_FENCE -ErrorAction SilentlyContinue
-    if ($Profile -eq 'prime-s') {
+    if ($Profile -eq 'prime-s' -and $null -ne (Get-Command Stop-PiSNumpadEnterHelper -ErrorAction SilentlyContinue)) {
         try { Stop-PiSNumpadEnterHelper } catch { Write-Warning $_.Exception.Message }
     }
+    if ($capacityCompatibilityHeld) { $capacityCompatibilityMutex.ReleaseMutex() }
+    if ($null -ne $capacityCompatibilityMutex) { $capacityCompatibilityMutex.Dispose() }
     if ($held) { $mutex.ReleaseMutex() }
     $mutex.Dispose()
 }
