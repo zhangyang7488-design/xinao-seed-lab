@@ -210,6 +210,7 @@ function Sync-PiDualEntrySurfaceOverlay {
     }
 
     $sourceKinds = [ordered]@{
+        agents = $Spec.OverlayAgentDir
         extensions = $Spec.OverlayExtensionDir
         skills = $Spec.OverlaySkillDir
     }
@@ -250,7 +251,7 @@ function Sync-PiDualEntrySurfaceOverlay {
 
     $agentPrefix = [IO.Path]::GetFullPath($Spec.AgentDir).TrimEnd('\','/') + [IO.Path]::DirectorySeparatorChar
     foreach ($stale in @($previousOwned | Where-Object { $_ -notin $owned })) {
-        if ($stale -notmatch '^(extensions|skills)/' -or $stale -match '(^|/)\.\.(/|$)') {
+        if ($stale -notmatch '^(agents|extensions|skills)/' -or $stale -match '(^|/)\.\.(/|$)') {
             throw "PI_PROFILE_OVERLAY_STALE_PATH_INVALID: $stale"
         }
         $stalePath = [IO.Path]::GetFullPath((Join-Path $Spec.AgentDir $stale.Replace('/','\')))

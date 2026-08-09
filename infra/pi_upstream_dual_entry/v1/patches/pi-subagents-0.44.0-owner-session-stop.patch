@@ -1,0 +1,418 @@
+diff --git a/src/shared/types.ts b/src/shared/types.ts
+--- a/src/shared/types.ts
++++ b/src/shared/types.ts
+@@ -1553,6 +1553,8 @@ export interface WaitSubscriptionRecord {
+ export interface SubagentState {
+ 	baseCwd: string;
+ 	currentSessionId: string | null;
++	/** Owner sessions that have accepted an explicit whole-session Stop. New launches fail closed until a fresh session_start. */
++	sessionStopFences?: Set<string>;
+ 	/** Runtime-owned artifact resolution inputs used by Fleet transcript targeting. */
+ 	artifactDirPreference?: ArtifactDirPreference;
+ 	/** Runtime authority snapshot used by optional inspector controls. */
+diff --git a/src/extension/index.ts b/src/extension/index.ts
+--- a/src/extension/index.ts
++++ b/src/extension/index.ts
+@@ -341,6 +341,7 @@ export default function registerSubagentExtension(pi: ExtensionAPI): void {
+ 	const state: SubagentState = {
+ 		baseCwd: "",
+ 		currentSessionId: null,
++		sessionStopFences: new Set(),
+ 		artifactDirPreference: config.artifactDir ?? DEFAULT_ARTIFACT_CONFIG.dir,
+ 		...(config.authorityPolicy ? { authorityPolicy: config.authorityPolicy } : {}),
+ 		...(config.missions ? { missionStoreConfig: config.missions } : {}),
+@@ -698,6 +699,8 @@ export default function registerSubagentExtension(pi: ExtensionAPI): void {
+ 		state.baseCwd = ctx.cwd;
+ 		goalTurnId = 0;
+ 		state.currentSessionId = resolveCurrentSessionId(ctx.sessionManager);
++		state.sessionStopFences ??= new Set();
++		state.sessionStopFences.delete(state.currentSessionId);
+ 		state.parentSessionFile = ctx.sessionManager.getSessionFile();
+ 		state.subagentSpawns = {
+ 			sessionId: state.currentSessionId,
+diff --git a/src/extension/rpc.ts b/src/extension/rpc.ts
+--- a/src/extension/rpc.ts
++++ b/src/extension/rpc.ts
+@@ -3,7 +3,9 @@ import type { AgentToolResult } from "@earendil-works/pi-agent-core";
+ import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
+ import { Compile } from "typebox/compile";
+ import { resolveAsyncRunLocation } from "../runs/background/async-resume.ts";
++import { listAsyncRuns } from "../runs/background/async-status.ts";
+ import { deliverStopRequest } from "../runs/background/control-channel.ts";
++import { readProcessTerminal } from "../runs/background/process-terminal.ts";
+ import { reconcileAsyncRun } from "../runs/background/stale-run-reconciler.ts";
+ import type { SubagentParamsLike } from "../runs/foreground/subagent-executor.ts";
+ import { resolveCurrentSessionId } from "../shared/session-identity.ts";
+@@ -26,7 +28,7 @@ export const SUBAGENT_RPC_REQUEST_EVENT = "subagents:rpc:v1:request";
+ export const SUBAGENT_RPC_READY_EVENT = "subagents:rpc:v1:ready";
+ export const SUBAGENT_RPC_REPLY_EVENT_PREFIX = "subagents:rpc:v1:reply:";
+ 
+-export const SUBAGENT_RPC_METHODS = ["ping", "status", "spawn", "steer", "interrupt", "stop", "resume"] as const;
++export const SUBAGENT_RPC_METHODS = ["ping", "status", "spawn", "steer", "interrupt", "stop", "stop-session", "resume"] as const;
+ export type SubagentRpcMethod = typeof SUBAGENT_RPC_METHODS[number];
+ 
+ export interface SubagentRpcRequestEnvelope {
+@@ -291,6 +293,8 @@ interface RegisterSubagentRpcBridgeOptions {
+ 	resultsDir?: string;
+ 	kill?: (pid: number, signal?: NodeJS.Signals | 0) => boolean;
+ 	now?: () => number;
++	ownerSessionStopWaitMs?: number;
++	ownerSessionStopPollMs?: number;
+ 	/** Native live state, projected into the optional public fleet-status capability. */
+ 	state?: SubagentState;
+ }
+@@ -389,6 +393,7 @@ function pingData(ctx: ExtensionContext | null) {
+ 			nonRecoveringSteer: true,
+ 			interrupt: true,
+ 			stop: true,
++			stopOwnerSession: { version: 1 },
+ 			resume: true,
+ 			launchResolvedExtensions: { version: 1, source: "launch-resolved" },
+ 			runtimeAcknowledgedExtensions: { version: 1, source: "child-runtime", event: "subagent:acknowledge-extension" },
+@@ -529,10 +534,197 @@ function stopAsyncRun(
+ 	};
+ }
+ 
++const OWNER_SESSION_STOP_WAIT_MS = 7_000;
++const OWNER_SESSION_STOP_POLL_MS = 100;
++const ACTIVE_ASYNC_STATES = new Set(["queued", "running"]);
++const TERMINAL_ASYNC_STATES = new Set(["complete", "failed", "paused", "stopped", "rejected"]);
++
++type OwnerSessionStopDisposition =
++	| "stopped_observed"
++	| "completed_before_stop"
++	| "failed_before_stop"
++	| "in_process_stopped"
++	| "stop_unverified"
++	| "delivery_failed";
++
++type OwnerSessionStopTarget = {
++	runId: string;
++	asyncDir: string;
++	kind: "detached" | "in-process-workflow";
++	previousState: string;
++	controller?: AbortController;
++	delivery?: "delivered" | "controller-aborted" | "failed";
++	deliveryError?: string;
++};
++
++function waitForOwnerStopPoll(delayMs: number): Promise<void> {
++	return new Promise((resolve) => setTimeout(resolve, delayMs));
++}
++
++function classifyOwnerStopTarget(target: OwnerSessionStopTarget): {
++	disposition?: OwnerSessionStopDisposition;
++	state?: string;
++	processTerminalState?: string;
++} {
++	if (target.delivery === "failed") {
++		return { disposition: "delivery_failed" };
++	}
++	const status = readStatus(target.asyncDir);
++	const state = status?.state;
++	if (target.kind === "in-process-workflow") {
++		return state === "stopped"
++			? { disposition: "in_process_stopped", state }
++			: { ...(state ? { state } : {}) };
++	}
++	const proof = readProcessTerminal(target.asyncDir, { runId: target.runId });
++	if (proof?.state !== "observed" || !state || !TERMINAL_ASYNC_STATES.has(state)) {
++		return {
++			...(state ? { state } : {}),
++			...(proof?.state ? { processTerminalState: proof.state } : {}),
++		};
++	}
++	if (state === "stopped") return { disposition: "stopped_observed", state, processTerminalState: proof.state };
++	if (state === "complete") return { disposition: "completed_before_stop", state, processTerminalState: proof.state };
++	if (state === "failed" || state === "rejected") return { disposition: "failed_before_stop", state, processTerminalState: proof.state };
++	return { state, processTerminalState: proof.state };
++}
++
++async function stopOwnerSession(
++	params: unknown,
++	options: RegisterSubagentRpcBridgeOptions,
++	ctx: ExtensionContext,
++): Promise<{
++	version: 1;
++	sessionId: string;
++	status: "verified" | "partial";
++	stopFence: true;
++	targetCount: number;
++	results: Array<{
++		runId: string;
++		kind: OwnerSessionStopTarget["kind"];
++		previousState: string;
++		disposition: OwnerSessionStopDisposition;
++		state?: string;
++		processTerminalState?: string;
++		error?: string;
++	}>;
++	enumerationErrors: string[];
++}> {
++	const input = assertRecordParams(params, "stop-session");
++	if (Object.keys(input).length > 0) throw new SubagentRpcError("invalid_params", "RPC stop-session does not accept parameters.");
++	if (!options.state) throw new SubagentRpcError("execution_failed", "RPC stop-session requires native subagent state.");
++	const ownerSessionId = resolveCurrentSessionId(ctx.sessionManager);
++	if (!options.state.currentSessionId || options.state.currentSessionId !== ownerSessionId) {
++		throw new SubagentRpcError(
++			"execution_failed",
++			`RPC stop-session owner mismatch: runtime=${options.state.currentSessionId ?? "missing"} context=${ownerSessionId}`,
++		);
++	}
++	options.state.sessionStopFences ??= new Set();
++	options.state.sessionStopFences.add(ownerSessionId);
++
++	const targets = new Map<string, OwnerSessionStopTarget>();
++	const addTarget = (candidate: OwnerSessionStopTarget): void => {
++		const key = path.resolve(candidate.asyncDir);
++		const existing = targets.get(key);
++		if (!existing) {
++			targets.set(key, candidate);
++			return;
++		}
++		if (!existing.controller && candidate.controller) existing.controller = candidate.controller;
++		if (candidate.kind === "in-process-workflow") existing.kind = candidate.kind;
++	};
++
++	for (const [runId, job] of options.state.asyncJobs) {
++		if (job.sessionId !== ownerSessionId || !ACTIVE_ASYNC_STATES.has(job.status)) continue;
++		const controller = options.state.workflowControllers?.get(runId);
++		addTarget({
++			runId,
++			asyncDir: job.asyncDir,
++			kind: job.mode === "workflow" ? "in-process-workflow" : "detached",
++			previousState: job.status,
++			...(controller ? { controller } : {}),
++		});
++	}
++
++	const enumerationErrors: string[] = [];
++	try {
++		for (const run of listAsyncRuns(options.asyncDirRoot ?? DIRS.async, {
++			states: ["queued", "running"],
++			sessionId: ownerSessionId,
++			resultsDir: options.resultsDir ?? DIRS.results,
++			kill: options.kill,
++			now: options.now,
++			reconcile: false,
++		})) {
++			const controller = options.state.workflowControllers?.get(run.id);
++			addTarget({
++				runId: run.id,
++				asyncDir: run.asyncDir,
++				kind: run.mode === "workflow" ? "in-process-workflow" : "detached",
++				previousState: run.state,
++				...(controller ? { controller } : {}),
++			});
++		}
++	} catch (error) {
++		enumerationErrors.push(error instanceof Error ? error.message : String(error));
++	}
++
++	for (const target of targets.values()) {
++		try {
++			if (target.kind === "in-process-workflow") {
++				if (!target.controller) throw new Error("in-process workflow controller is unavailable");
++				target.controller.abort(new Error("Owning Pi session stopped."));
++				target.delivery = "controller-aborted";
++			} else {
++				deliverStopRequest({ asyncDir: target.asyncDir, source: "rpc-stop-session", kill: options.kill, now: options.now });
++				target.delivery = "delivered";
++			}
++		} catch (error) {
++			target.delivery = "failed";
++			target.deliveryError = error instanceof Error ? error.message : String(error);
++		}
++	}
++
++	const waitMs = options.ownerSessionStopWaitMs ?? OWNER_SESSION_STOP_WAIT_MS;
++	const pollMs = options.ownerSessionStopPollMs ?? OWNER_SESSION_STOP_POLL_MS;
++	const deadline = Date.now() + waitMs;
++	while (Date.now() < deadline) {
++		const unsettled = [...targets.values()].some((target) => classifyOwnerStopTarget(target).disposition === undefined);
++		if (!unsettled) break;
++		await waitForOwnerStopPoll(pollMs);
++	}
++
++	const results = [...targets.values()].map((target) => {
++		const observed = classifyOwnerStopTarget(target);
++		const disposition = observed.disposition ?? "stop_unverified";
++		return {
++			runId: target.runId,
++			kind: target.kind,
++			previousState: target.previousState,
++			disposition,
++			...(observed.state ? { state: observed.state } : {}),
++			...(observed.processTerminalState ? { processTerminalState: observed.processTerminalState } : {}),
++			...(target.deliveryError ? { error: target.deliveryError } : {}),
++		};
++	});
++	const verified = enumerationErrors.length === 0 && results.every((result) => !["stop_unverified", "delivery_failed"].includes(result.disposition));
++	return {
++		version: 1,
++		sessionId: ownerSessionId,
++		status: verified ? "verified" : "partial",
++		stopFence: true,
++		targetCount: results.length,
++		results,
++		enumerationErrors,
++	};
++}
++
+ async function handleRequest(
+ 	request: SubagentRpcRequestEnvelope,
+ 	options: RegisterSubagentRpcBridgeOptions,
+ 	fleetKeys: FleetKeyState,
++	ownerStops: Map<string, Promise<unknown>>,
+ ): Promise<unknown> {
+ 	const ctx = options.getContext();
+ 	if (request.method === "ping") return pingData(ctx);
+@@ -567,6 +759,17 @@ async function handleRequest(
+ 	if (request.method === "stop") {
+ 		return stopAsyncRun(request.params, options, ctx);
+ 	}
++	if (request.method === "stop-session") {
++		const ownerSessionId = resolveCurrentSessionId(ctx.sessionManager);
++		const existing = ownerStops.get(ownerSessionId);
++		if (existing) return existing;
++		const operation = stopOwnerSession(request.params, options, ctx);
++		ownerStops.set(ownerSessionId, operation);
++		operation.catch(() => {
++			if (ownerStops.get(ownerSessionId) === operation) ownerStops.delete(ownerSessionId);
++		});
++		return operation;
++	}
+ 	if (request.method === "resume") {
+ 		return executeChecked(options, ctx, request.requestId, request.method, resumeParams(request.params));
+ 	}
+@@ -624,11 +827,12 @@ export function registerSubagentRpcBridge(options: RegisterSubagentRpcBridgeOpti
+ 	dispose: () => void;
+ } {
+ 	const fleetKeys: FleetKeyState = { sessionId: null, next: 0, keys: new Map() };
++	const ownerStops = new Map<string, Promise<unknown>>();
+ 	const unsubscribe = options.events.on(SUBAGENT_RPC_REQUEST_EVENT, async (raw) => {
+ 		let request: SubagentRpcRequestEnvelope | undefined;
+ 		try {
+ 			request = parseRequest(raw);
+-			const data = await handleRequest(request, options, fleetKeys);
++			const data = await handleRequest(request, options, fleetKeys, ownerStops);
+ 			options.events.emit(subagentRpcReplyEvent(request.requestId), {
+ 				version: SUBAGENT_RPC_PROTOCOL_VERSION,
+ 				requestId: request.requestId,
+diff --git a/src/runs/foreground/subagent-executor.ts b/src/runs/foreground/subagent-executor.ts
+--- a/src/runs/foreground/subagent-executor.ts
++++ b/src/runs/foreground/subagent-executor.ts
+@@ -4146,6 +4146,18 @@ export function createSubagentExecutor(deps: ExecutorDeps): {
+ 		if (!normalizedGate.ok) return buildRequestedModeError(params, normalizedGate.error);
+ 		const requestParams = normalizedGate.params;
+ 		const normalizedAction = typeof requestParams.action === "string" ? requestParams.action.trim() : requestParams.action;
++		const sessionStopFenced = (): boolean => {
++			const ownerSessionId = resolveCurrentSessionId(ctx.sessionManager);
++			return deps.state.sessionStopFences?.has(ownerSessionId) === true;
++		};
++		const sessionStopFenceResult = (mode: "single" | "workflow" | "parallel" | "chain"): AgentToolResult<Details> => ({
++			content: [{ type: "text", text: "Subagent launch rejected: the owning Pi session is stopping." }],
++			isError: true,
++			details: { mode, results: [] },
++		});
++		if (normalizedAction === undefined && sessionStopFenced()) {
++			return sessionStopFenceResult(requestParams.workflowScript !== undefined ? "workflow" : "single");
++		}
+ 		if (requestParams.workflowScript !== undefined && normalizedAction === undefined) {
+ 			const parentCwd = ctx.cwd;
+ 			const timeout = requestParams.timeoutMs ?? requestParams.maxRuntimeMs ?? (requestParams.async === false ? DEFAULT_FOREGROUND_TIMEOUT_MS : undefined);
+@@ -4211,6 +4223,7 @@ export function createSubagentExecutor(deps: ExecutorDeps): {
+ 				const eventsPath = path.join(asyncDir, "events.jsonl");
+ 				const startedAt = Date.now();
+ 				const currentSessionId = resolveCurrentSessionId(ctx.sessionManager);
++				if (sessionStopFenced()) return sessionStopFenceResult("workflow");
+ 				fs.mkdirSync(asyncDir, { recursive: true });
+ 				fs.mkdirSync(DIRS.results, { recursive: true });
+ 				const controller = new AbortController();
+@@ -5191,6 +5204,7 @@ export function createSubagentExecutor(deps: ExecutorDeps): {
+ 			}
+ 		};
+ 
++		if (sessionStopFenced()) return attachMission(sessionStopFenceResult(foregroundMode));
+ 		const reservation = reserveSpawnBudget(
+ 			deps.state,
+ 			deps.config,
+@@ -5349,6 +5363,12 @@ export function createSubagentExecutor(deps: ExecutorDeps): {
+ 
+ 		let nestedForegroundStarted = false;
+ 		try {
++			// This is the async launch commit fence. JavaScript cannot dispatch the
++			// stop-session event between this synchronous check and runAsyncPath's
++			// runner creation, so a Stop accepted before commit cannot leak a child.
++			if (effectiveAsync && sessionStopFenced()) {
++				return attachMission(sessionStopFenceResult(foregroundMode));
++			}
+ 			const asyncResult = runAsyncPath(execData, deps);
+ 			if (asyncResult) return attachMission(withResolvedContext(withForkThinkingNotes(asyncResult, forkThinkingDowngrades), contextPolicy.contextSummary));
+ 			if (foregroundControl) {
+diff --git a/src/shared/post-exit-stdio-guard.ts b/src/shared/post-exit-stdio-guard.ts
+--- a/src/shared/post-exit-stdio-guard.ts
++++ b/src/shared/post-exit-stdio-guard.ts
+@@ -1,4 +1,4 @@
+-import type { ChildProcess } from "node:child_process";
++import { spawnSync, type ChildProcess } from "node:child_process";
+ 
+ interface PostExitStdioGuardOptions {
+ 	idleMs: number;
+@@ -12,6 +12,7 @@ interface ChildWithPipedStdio {
+ }
+ 
+ interface ChildWithKill {
++	pid?: number;
+ 	kill(signal?: NodeJS.Signals | number): boolean;
+ }
+ 
+@@ -23,6 +24,27 @@ export function trySignalChild(child: ChildWithKill, signal: NodeJS.Signals): bo
+ 	}
+ }
+ 
++/**
++ * Explicit Stop owns the whole child tree. On Windows, signalling only the Pi
++ * writer can orphan an active bash/tool descendant before the writer closes.
++ * taskkill /T must complete before the runner is allowed to write terminal
++ * proof for that writer.
++ */
++export function tryStopChildTree(child: ChildWithKill): boolean {
++	if (process.platform === "win32" && typeof child.pid === "number" && child.pid > 0) {
++		try {
++			const result = spawnSync("taskkill", ["/F", "/T", "/PID", String(child.pid)], {
++				stdio: "ignore",
++				windowsHide: true,
++			});
++			if (result.status === 0) return true;
++		} catch {
++			// Fall through to the ordinary signal path.
++		}
++	}
++	return trySignalChild(child, "SIGTERM");
++}
++
+ export function attachPostExitStdioGuard(
+ 	child: ChildWithPipedStdio,
+ 	options: PostExitStdioGuardOptions,
+diff --git a/src/runs/background/subagent-runner.ts b/src/runs/background/subagent-runner.ts
+--- a/src/runs/background/subagent-runner.ts
++++ b/src/runs/background/subagent-runner.ts
+@@ -84,7 +84,7 @@ import {
+ } from "../shared/subagent-startup-retry.ts";
+ import { markProcessTerminalCandidateLeaseRelease, writeProcessTerminalCandidate, type ProcessTerminalCandidate } from "./process-terminal.ts";
+ import { createSteeringStatus, recordSteeringRequest, steeringStatus, terminalSteeringNoticeState, updateSteeringTarget } from "./steering.ts";
+-import { attachPostExitStdioGuard, trySignalChild } from "../../shared/post-exit-stdio-guard.ts";
++import { attachPostExitStdioGuard, trySignalChild, tryStopChildTree } from "../../shared/post-exit-stdio-guard.ts";
+ import { detectSubagentError, extractTextFromContent, extractToolArgsPreview, getFinalOutput, hasEmptyTerminalAssistantResponse, readStatus } from "../../shared/utils.ts";
+ import { evaluateCompletionMutationGuard } from "../shared/completion-guard.ts";
+ import {
+@@ -785,7 +785,7 @@ function runPiStreaming(
+ 			stopped = true;
+ 			interrupted = false;
+ 			error = stopMessage ?? "Subagent stopped by user.";
+-			trySignalChild(child, "SIGTERM");
++			tryStopChildTree(child);
+ 			timeoutHardKillTimer = setTimeout(() => {
+ 				if (!settled) trySignalChild(child, "SIGKILL");
+ 			}, TIMEOUT_HARD_KILL_MS);

@@ -3,6 +3,7 @@
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
+import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { createConnection } from "node:net";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -26,6 +27,7 @@ const loaded = await jiti.import(extensionPath);
 const installExtension = loaded.default ?? loaded;
 
 const handlers = new Map();
+const eventHandlers = new Map();
 const queue = { steer: [], followUp: [] };
 let editorText = "USER_DRAFT_SENTINEL";
 let idle = false;
@@ -36,7 +38,9 @@ let idlePromptMayStart = true;
 let promptDispatchCount = 0;
 let abortCalls = 0;
 let shutdownCalls = 0;
+let abortThrowsRemaining = 0;
 let becomeBusyAfterNextIdleRead = false;
+let ownerSessionStopRequests = 0;
 
 function on(name, handler) {
 	const items = handlers.get(name) ?? [];
@@ -71,6 +75,10 @@ const context = {
 	},
 	abort: () => {
 		abortCalls += 1;
+		if (abortThrowsRemaining > 0) {
+			abortThrowsRemaining -= 1;
+			throw new Error("TEST_ABORT_FAILURE");
+		}
 		const restored = [...queue.steer, ...queue.followUp];
 		queue.steer.length = 0;
 		queue.followUp.length = 0;
@@ -88,6 +96,17 @@ const context = {
 
 const pi = {
 	on,
+	events: {
+		on: (name, handler) => {
+			const items = eventHandlers.get(name) ?? new Set();
+			items.add(handler);
+			eventHandlers.set(name, items);
+			return () => items.delete(handler);
+		},
+		emit: (name, payload) => {
+			for (const handler of eventHandlers.get(name) ?? []) handler(payload);
+		},
+	},
 	getActiveTools: () => new Set(["read"]),
 	getAllTools: () => [{ name: "read" }, { name: "edit" }],
 	sendUserMessage: (content, options) => {
@@ -113,6 +132,28 @@ const pi = {
 		})();
 	},
 };
+
+pi.events.on("subagents:rpc:v1:request", (request) => {
+	if (request?.method !== "stop-session") return;
+	ownerSessionStopRequests += 1;
+	queueMicrotask(() => pi.events.emit(`subagents:rpc:v1:reply:${request.requestId}`, {
+		version: 1,
+		requestId: request.requestId,
+		method: request.method,
+		success: true,
+		data: {
+			version: 1,
+			status: "verified",
+			stopFence: true,
+			targetCount: 2,
+			results: [
+				{ runId: "child-a", disposition: "stopped_observed" },
+				{ runId: "child-b", disposition: "completed_before_stop" },
+			],
+			enumerationErrors: [],
+		},
+	}));
+});
 
 function request(body, timeout = 5000) {
 	return new Promise((resolve, reject) => {
@@ -184,6 +225,9 @@ function target(type, requestId, content) {
 }
 
 installExtension(pi);
+const extensionSource = readFileSync(extensionPath, "utf8");
+const stopRpcTimeout = Number(extensionSource.match(/SUBAGENT_STOP_RPC_TIMEOUT_MS\s*=\s*([\d_]+)/)?.[1]?.replaceAll("_", ""));
+assert.equal(Number.isSafeInteger(stopRpcTimeout) && stopRpcTimeout < 10_000, true);
 let started = false;
 let liveState;
 try {
@@ -317,6 +361,7 @@ try {
 	// cancels any unconsumed owned delivery before requesting shutdown.
 	idle = false;
 	const abortCallsBeforeStop = abortCalls;
+	abortThrowsRemaining = 1;
 	const ownedBeforeStop = await request(target("follow_up", "stop-owned-delivery", "STOP_OWNED_QUEUE_SENTINEL"));
 	assert.equal(ownedBeforeStop.ok, true);
 	const stopResponse = await request(target("stop", "stop-busy"));
@@ -325,8 +370,20 @@ try {
 	assert.equal(stopResponse.process_shutdown, false);
 	assert.equal(stopResponse.shutdown_requested, true);
 	assert.equal(stopResponse.owned_delivery_count >= 1, true);
+	assert.equal(stopResponse.child_stop.status, "verified");
+	assert.equal(stopResponse.child_stop.stop_fence, true);
+	assert.equal(stopResponse.child_stop.target_count, 2);
+	assert.equal(stopResponse.status, "partial");
+	assert.equal(stopResponse.cleanup_errors.some((item) => item.includes("root_abort:TEST_ABORT_FAILURE")), true);
+	assert.equal(ownerSessionStopRequests, 1);
+	const duplicateStop = await request(target("stop", "stop-busy-duplicate"));
+	assert.equal(duplicateStop.ok, true);
+	assert.equal(duplicateStop.deduplicated, true);
+	assert.equal(duplicateStop.original_request_id, "stop-busy");
+	assert.equal(ownerSessionStopRequests, 1);
+	await fire("agent_start", {}, context);
 	await new Promise((resolve) => setTimeout(resolve, 80));
-	assert.equal(abortCalls, abortCallsBeforeStop + 1);
+	assert.equal(abortCalls, abortCallsBeforeStop + 2);
 	assert.equal(shutdownCalls, 1);
 
 	process.stdout.write(`${JSON.stringify({
@@ -346,6 +403,11 @@ try {
 		prompt_never_silently_becomes_steer: true,
 		client_fails_fast_on_typed_delivery_failure: true,
 		stop_cancels_unconsumed_owned_delivery: true,
+		stop_fences_and_settles_owner_session_children: true,
+		stop_cleanup_failure_still_schedules_shutdown: true,
+		duplicate_stop_is_idempotent: true,
+		child_stop_timeout_precedes_default_client_timeout: true,
+		stop_reasserts_abort_on_agent_restart: true,
 		stop_request_not_misreported_as_process_exit: true,
 	}, null, 2)}\n`);
 } finally {

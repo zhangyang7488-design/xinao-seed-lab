@@ -24,6 +24,10 @@ profile spec 取得 `PiToolRoot/PiCommand`；不存在可同时改动两边的�
 server 的 MCP adapter、原生 Serper `web_search`、以及 native DeepSeek V4 Flash/Pro。
 Luna、Terra 与 DeepSeek 的递归劳动都通过 `pi-subagents` child session 发生，不等于
 Codex 外部 WorkerPool；具体任务是否调用某个器官仍由根 Pi 按真实信息收益选择。
+主 `prime` 另有 profile-local `peer`：它是 fresh、candidate-only、read-only 的无预分工
+认识面，不预装 reviewer/operator/task-generator 职业，可直接重建继承的完整对象并形成或
+拒绝局部问题。其长期默认模型是 Terra；根可按当次现实收益覆盖为 Sol，这不把临时额度口头
+许可写成长期策略，也不转移 PiS 的正式 Owner/effect 责任。
 PiS 的 `pi-subagents@0.44.0` 直接消费上游 portable workflow ID，不再为这条路径保留本地
 改写；本地最薄兼容层只把 child `write` 回执中的 `/d`、`/mnt/d`、`/cygdrive/d` 在权威
 输出路径比较时等价为 `D:\...`。它不放宽成功 write、精确目标、错盘或 sibling 输出的
@@ -69,8 +73,37 @@ steer、follow-up、abort 与 stop。ACK 只是运输证据；必须继续回读
 agent settled、native transcript 和真实效果。idle 投递会先越过 Pi 把 `isIdle` 置真但
 `agent_settled` 尚未退栈的竞争窗口，防止只见 `runtime_accepted` 而正文未进入 session；
 延迟期间若目标转为 busy，idle prompt 显式失败而不偷换成 steer。stop 先取消 ingress 自己尚未
-消费的延迟/排队消息；其回执也只证明 shutdown 已请求，必须由 pipe/进程消失证明退出。重启后 instance 会改变，
+消费的延迟/排队消息，并通过 `pi-subagents` 的 session-scoped RPC 同步立起新孩子启动栅栏，
+停止同一 owner session 的 detached children 与 in-process workflow。detached child 只有在
+`process-terminal.json` 已由真实 close observer 标为 `observed` 后才算 `stopped_observed`；
+超时或证明缺失只返回 `partial/stop_unverified`，但明确 Stop 仍继续关闭根进程，不把验证失败
+偷换成继续运行。等待窗口内若 child completion 意外触发新的 `agent_start`，supervisor 会再次
+abort，防止根模型复起。stop 回执仍只证明 shutdown 已请求，必须由 pipe/根进程消失证明根退出。重启后 instance 会改变，
 旧目标请求失效。
+
+这条能力由主面专用 `Apply-PiSSubagentsSessionStopCompatibility.ps1` 按
+`pi-subagents@0.44.0` 精确源码 hash 应用；补丁正文位于
+`patches/pi-subagents-0.44.0-owner-session-stop.patch`。它在原生 RPC 内合并当前内存 job 与
+磁盘 active run，按 session-file owner key 隔离，不让 supervisor 自己扫描临时目录或猜 UUID。
+未知上游字节直接拒绝；PiB 冷备不随这次主面身体演化修改。由于 Stop 的物理终止闭环先于便利，
+`asyncByDefault` 仍保持关闭，根只在当次正收益成立时显式选择 async。
+Windows 上 detached runner 的 Stop 使用进程树终止而不是只杀 Pi writer，避免正在执行的 tool
+后代变成孤儿；隔离 native Sol child 已实际启动长驻 Node 后代，并证明 Stop 后后代 PID 消失、
+runner close 被观察、状态为 stopped，且并发新 launch 被 fence 拒绝。可重放验收脚本是
+`Test-PiSubagentSessionStopProcess.mjs`，当前源码绑定回执位于
+`D:\XINAO_RESEARCH_RUNTIME\state\pi\0.84.1\acceptance\pi-subagents-owner-session-stop-v2.json`。
+
+主 `prime` 另有 profile-local、root-only 的 `return_to_parent` 根工具。它只在根 Pi 已经判断一个局部问题、
+实验、动作或报告结算，而已绑定父现实仍有具体正收益前沿时，由根 Pi 自己调用；普通工具结果
+语义会让 Pi 0.84.1 在同一 agent run 内再进行一次模型计算，因此不需要 Codex 再投递用户消息。
+它不在 `agent_end` 自动触发，不建立 timer、daemon、任务队列或跨 turn wake；明确 Stop/Pause、
+真实用户关口、父完成与整个合法空间无正收益仍允许直接结算。工具不调用 `sendUserMessage`，
+因此不会制造 abort 后的排队文本残留。`PI_SUBAGENT_CHILD=1` 时扩展在注册前 fail-closed；有界
+孩子正常以 subagent result 返回根调用者，不取得根生命周期接缝。
+session `019fe1f2-9cd7-73af-94ca-440c180f35db` 已出现一次非预写的 live Sol 选择：根在提交
+`ca04b44` 的局部工程边界实际调用该工具，消费 tool result 后在同一 run 继续读取整个新澳并形成
+下一认识动作。它把状态从纯机械候选提升为 `LIVE_SOL_VERIFIED`，但单次同表面正例不证明跨任务
+成熟，也不取消 whole-space no-action、用户关口与 Stop 负边界。
 
 初始化脚本会把共同合同岛与相应表面岛确定性合成为该 profile 的 `PI_CONTRACT.md`；launcher 每次启动前刷新该活动投影。profile 的 `AGENTS.md` 仍直接链接主 Codex 行为源，因此合同岛补 Pi 自己的关系，不复制第二套 Codex。
 

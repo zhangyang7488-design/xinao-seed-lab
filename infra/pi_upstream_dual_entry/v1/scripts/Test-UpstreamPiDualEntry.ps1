@@ -4,6 +4,7 @@ param(
     [ValidateSet('prime-b','prime-s')][string[]]$Profile = @('prime-s'),
     [switch]$SkipAuthRefresh,
     [switch]$RunLiveModelProbe,
+    [switch]$RequireLiveReturnAcceptance,
     [string]$ReceiptPath
 )
 
@@ -42,6 +43,26 @@ foreach ($profileName in $Profile) {
 
     $projection = Sync-PiDualEntryContractProjection -Spec $spec
     $overlayProjection = Sync-PiDualEntrySurfaceOverlay -Spec $spec
+    $expectedOverlayOwned = @()
+    foreach ($overlayKind in @(
+        [pscustomobject]@{ Name = 'agents'; Root = $spec.OverlayAgentDir },
+        [pscustomobject]@{ Name = 'extensions'; Root = $spec.OverlayExtensionDir },
+        [pscustomobject]@{ Name = 'skills'; Root = $spec.OverlaySkillDir }
+    )) {
+        if (-not (Test-Path -LiteralPath $overlayKind.Root -PathType Container)) { continue }
+        $overlayKindPrefix = [IO.Path]::GetFullPath($overlayKind.Root).TrimEnd('\','/') + [IO.Path]::DirectorySeparatorChar
+        $expectedOverlayOwned += @(Get-ChildItem -LiteralPath $overlayKind.Root -Recurse -File | ForEach-Object {
+            "$($overlayKind.Name)/$([IO.Path]::GetFullPath($_.FullName).Substring($overlayKindPrefix.Length).Replace('\','/'))"
+        })
+    }
+    $actualOverlayOwned = @($overlayProjection.OwnedFiles | ForEach-Object { [string]$_ })
+    if (
+        @($expectedOverlayOwned | Where-Object { $_ -notin $actualOverlayOwned }).Count -ne 0 -or
+        @($actualOverlayOwned | Where-Object { $_ -notin $expectedOverlayOwned }).Count -ne 0
+    ) { throw "PI_SURFACE_TEST_OVERLAY_OWNERSHIP_MISMATCH: profile=$profileName" }
+    if ($profileName -eq 'prime-s' -and 'agents/peer.md' -notin $actualOverlayOwned) {
+        throw 'PI_SURFACE_TEST_PEER_NOT_OWNED_BY_OVERLAY'
+    }
     $authPath = Join-Path $spec.AgentDir 'auth.json'
     $settingsPath = Join-Path $spec.AgentDir 'settings.json'
     $subagentConfigPath = Join-Path $spec.AgentDir 'extensions\subagent\config.json'
@@ -117,6 +138,37 @@ foreach ($profileName in $Profile) {
             throw "PI_SURFACE_TEST_AGENT_MISSING: profile=$profileName agent=$agentName"
         }
     }
+    $peerAgentAcceptance = $null
+    if ($profileName -eq 'prime-s') {
+        $peerAgentPath = Join-Path $spec.AgentDir 'agents\peer.md'
+        if (-not (Test-Path -LiteralPath $peerAgentPath -PathType Leaf)) {
+            throw "PI_SURFACE_TEST_PEER_AGENT_MISSING: $peerAgentPath"
+        }
+        $peerAgentText = Get-Content -Raw -LiteralPath $peerAgentPath -Encoding UTF8
+        $peerAgentNormalized = ($peerAgentText -replace '\s+', ' ').Trim()
+        $peerRequiredFragments = @(
+            'name: peer',
+            'model: openai-codex/gpt-5.6-terra',
+            'acceptanceRole: read-only',
+            'maxSubagentDepth: 0',
+            'without a fixed profession or preselected local question',
+            'A local no-action or route closure does not settle the whole inherited parent',
+            'do not modify repositories or external state'
+        )
+        $peerMissingFragments = @($peerRequiredFragments | Where-Object { $peerAgentNormalized.IndexOf($_, [StringComparison]::Ordinal) -lt 0 })
+        if ($peerMissingFragments.Count -gt 0 -or $peerAgentText -match '(?m)^tools:.*\b(edit|write|subagent)\b') {
+            throw "PI_SURFACE_TEST_PEER_AGENT_CONTRACT_INVALID: missing=$($peerMissingFragments -join ',')"
+        }
+        $peerAgentAcceptance = [ordered]@{
+            name = 'peer'
+            fixed_profession = $false
+            default_model = 'openai-codex/gpt-5.6-terra'
+            per_run_model_override_allowed = $true
+            repository_effects_allowed = $false
+            candidate_only = $true
+            local_no_action_closes_parent = $false
+        }
+    }
 
     $authArgs = @('auth','check','--provider','openai-codex','--json')
     if ($SkipAuthRefresh) { $authArgs += '--no-refresh' }
@@ -147,6 +199,10 @@ foreach ($profileName in $Profile) {
     $numpadAcceptance = $null
     $activityVisibilityAcceptance = $null
     $midTurnCompactionAcceptance = $null
+    $ownerSessionStopCompatibility = $null
+    $ownerSessionStopAcceptance = $null
+    $ownerSessionStopProcessAcceptance = $null
+    $supervisorIngressAcceptance = $null
     $midTurnRaw = @(& (Join-Path $PSScriptRoot 'Apply-PiSMidTurnCompactionCompatibility.ps1') -PiToolRoot $spec.PiToolRoot -VerifyOnly 2>&1)
     $midTurnCompactionAcceptance = ($midTurnRaw -join [Environment]::NewLine) | ConvertFrom-Json
     if (
@@ -162,6 +218,71 @@ foreach ($profileName in $Profile) {
     $piPackageRoot = Join-Path $spec.PiToolRoot 'node_modules\@earendil-works\pi-coding-agent'
     $post0841UpstreamAcceptance = $null
     if ($profileName -eq 'prime-s') {
+        $ownerStopRaw = @(& (Join-Path $PSScriptRoot 'Apply-PiSSubagentsSessionStopCompatibility.ps1') -AgentDir $spec.AgentDir -VerifyOnly 2>&1)
+        $ownerSessionStopCompatibility = ($ownerStopRaw -join [Environment]::NewLine) | ConvertFrom-Json
+        if (
+            [string]$ownerSessionStopCompatibility.schema -ne 'xinao.pi_s_subagents_owner_session_stop_compatibility.v2' -or
+            $ownerSessionStopCompatibility.owner_session_stop_rpc -ne $true -or
+            $ownerSessionStopCompatibility.exact_owner_union -ne $true -or
+            $ownerSessionStopCompatibility.new_launch_fence -ne $true -or
+            $ownerSessionStopCompatibility.detached_process_terminal_observation -ne $true -or
+            $ownerSessionStopCompatibility.windows_stop_owns_child_process_tree -ne $true -or
+            $ownerSessionStopCompatibility.cold_backup_modified -ne $false
+        ) { throw "PI_SURFACE_TEST_OWNER_SESSION_STOP_PATCH_INVALID: $($ownerStopRaw -join ' ')" }
+        $ownerStopBehaviorRaw = @(& node (Join-Path $PSScriptRoot 'Test-PiSubagentSessionStop.mjs') 2>&1)
+        if ($LASTEXITCODE -ne 0) { throw "PI_SURFACE_TEST_OWNER_SESSION_STOP_FAILED: $($ownerStopBehaviorRaw -join ' ')" }
+        $ownerSessionStopAcceptance = ($ownerStopBehaviorRaw -join [Environment]::NewLine) | ConvertFrom-Json
+        if (
+            [string]$ownerSessionStopAcceptance.status -ne 'module_mechanically_verified' -or
+            $ownerSessionStopAcceptance.exact_owner_union -ne $true -or
+            $ownerSessionStopAcceptance.foreign_session_untouched -ne $true -or
+            $ownerSessionStopAcceptance.pending_proof_is_partial -ne $true -or
+            $ownerSessionStopAcceptance.launch_fence_present_at_entry_and_commit -ne $true -or
+            $ownerSessionStopAcceptance.windows_stop_owns_child_process_tree -ne $true -or
+            $ownerSessionStopAcceptance.owner_mismatch_fails_closed_and_retry_recovers -ne $true -or
+            [string]$ownerSessionStopAcceptance.real_process_termination_status -ne 'pending_isolated_process' -or
+            [string]$ownerSessionStopAcceptance.launch_fence_race_status -ne 'pending_isolated_process'
+        ) { throw "PI_SURFACE_TEST_OWNER_SESSION_STOP_BEHAVIOR_INVALID: $($ownerStopBehaviorRaw -join ' ')" }
+        $ownerStopProcessReceiptPath = Join-Path $script:PiDualEntryStateRoot 'acceptance\pi-subagents-owner-session-stop-v2.json'
+        if (-not (Test-Path -LiteralPath $ownerStopProcessReceiptPath -PathType Leaf)) {
+            throw "PI_SURFACE_TEST_OWNER_SESSION_STOP_PROCESS_RECEIPT_MISSING: $ownerStopProcessReceiptPath"
+        }
+        $ownerSessionStopProcessAcceptance = Get-Content -Raw -LiteralPath $ownerStopProcessReceiptPath -Encoding UTF8 | ConvertFrom-Json
+        $subagentsPackageRoot = Join-Path $spec.AgentDir 'npm\node_modules\pi-subagents'
+        $ownerStopProcessSourceHashes = [ordered]@{
+            rpc = (Get-FileHash -Algorithm SHA256 -LiteralPath (Join-Path $subagentsPackageRoot 'src\extension\rpc.ts')).Hash.ToLowerInvariant()
+            executor = (Get-FileHash -Algorithm SHA256 -LiteralPath (Join-Path $subagentsPackageRoot 'src\runs\foreground\subagent-executor.ts')).Hash.ToLowerInvariant()
+            process_guard = (Get-FileHash -Algorithm SHA256 -LiteralPath (Join-Path $subagentsPackageRoot 'src\shared\post-exit-stdio-guard.ts')).Hash.ToLowerInvariant()
+            runner = (Get-FileHash -Algorithm SHA256 -LiteralPath (Join-Path $subagentsPackageRoot 'src\runs\background\subagent-runner.ts')).Hash.ToLowerInvariant()
+            test_extension = (Get-FileHash -Algorithm SHA256 -LiteralPath (Join-Path $PSScriptRoot 'fixtures\pi-owner-stop-autolaunch.ts')).Hash.ToLowerInvariant()
+            fixture = (Get-FileHash -Algorithm SHA256 -LiteralPath (Join-Path $PSScriptRoot 'fixtures\pi-owner-stop-child.mjs')).Hash.ToLowerInvariant()
+            harness = (Get-FileHash -Algorithm SHA256 -LiteralPath (Join-Path $PSScriptRoot 'Test-PiSubagentSessionStopProcess.mjs')).Hash.ToLowerInvariant()
+        }
+        $ownerStopProcessHashMismatch = @($ownerStopProcessSourceHashes.GetEnumerator() | Where-Object {
+            [string]$ownerSessionStopProcessAcceptance.source_sha256.($_.Key) -cne [string]$_.Value
+        })
+        if (
+            [string]$ownerSessionStopProcessAcceptance.schema -ne 'xinao.pi_subagent_owner_session_stop_process_acceptance.v2' -or
+            [string]$ownerSessionStopProcessAcceptance.status -ne 'verified' -or
+            $ownerSessionStopProcessAcceptance.real_detached_process_started -ne $true -or
+            $ownerSessionStopProcessAcceptance.real_detached_process_terminated -ne $true -or
+            $ownerSessionStopProcessAcceptance.process_terminal_observed -ne $true -or
+            $ownerSessionStopProcessAcceptance.status_stopped -ne $true -or
+            $ownerSessionStopProcessAcceptance.launch_commit_fence_rejected_race -ne $true -or
+            $ownerStopProcessHashMismatch.Count -ne 0
+        ) { throw "PI_SURFACE_TEST_OWNER_SESSION_STOP_PROCESS_INVALID: $ownerStopProcessReceiptPath" }
+        $supervisorRaw = @(& node (Join-Path $PSScriptRoot 'Test-PiSupervisorIngress.mjs') 2>&1)
+        if ($LASTEXITCODE -ne 0) { throw "PI_SURFACE_TEST_SUPERVISOR_INGRESS_FAILED: $($supervisorRaw -join ' ')" }
+        $supervisorIngressAcceptance = ($supervisorRaw -join [Environment]::NewLine) | ConvertFrom-Json
+        if (
+            [string]$supervisorIngressAcceptance.status -ne 'verified' -or
+            $supervisorIngressAcceptance.stop_fences_and_settles_owner_session_children -ne $true -or
+            $supervisorIngressAcceptance.stop_reasserts_abort_on_agent_restart -ne $true -or
+            $supervisorIngressAcceptance.stop_cleanup_failure_still_schedules_shutdown -ne $true -or
+            $supervisorIngressAcceptance.duplicate_stop_is_idempotent -ne $true -or
+            $supervisorIngressAcceptance.child_stop_timeout_precedes_default_client_timeout -ne $true -or
+            $supervisorIngressAcceptance.stop_request_not_misreported_as_process_exit -ne $true
+        ) { throw "PI_SURFACE_TEST_SUPERVISOR_INGRESS_INVALID: $($supervisorRaw -join ' ')" }
         $post0841Raw = @(& (Join-Path $PSScriptRoot 'Apply-PiSPost0841UpstreamCompatibility.ps1') -PiToolRoot $spec.PiToolRoot -VerifyOnly 2>&1)
         $post0841UpstreamAcceptance = ($post0841Raw -join [Environment]::NewLine) | ConvertFrom-Json
         if (
@@ -188,7 +309,38 @@ foreach ($profileName in $Profile) {
     ) {
         throw "PI_SURFACE_TEST_ACTIVITY_VISIBILITY_INVALID: $($activityRaw -join ' ')"
     }
+    $returnToParentAcceptance = $null
+    $returnToParentLiveAcceptance = $null
     if ($profileName -eq 'prime-s') {
+        $returnToParentRaw = @(& node (Join-Path $PSScriptRoot 'Test-PiSReturnToParent.mjs') $piPackageRoot 2>&1)
+        if ($LASTEXITCODE -ne 0) { throw "PI_SURFACE_TEST_RETURN_TO_PARENT_FAILED: $($returnToParentRaw -join ' ')" }
+        $returnToParentAcceptance = ($returnToParentRaw -join [Environment]::NewLine) | ConvertFrom-Json
+        if (
+			[string]$returnToParentAcceptance.status -ne 'mechanically_verified' -or
+			[string]$returnToParentAcceptance.behavior_selection_status -ne 'pending_live_sol' -or
+			$returnToParentAcceptance.root_only_registration -ne $true -or
+			$returnToParentAcceptance.normalized_empty_rejected -ne $true -or
+            $returnToParentAcceptance.same_run_continuation_after_local_boundary -ne $true -or
+			$returnToParentAcceptance.scripted_no_action_path_does_not_auto_continue -ne $true -or
+			$returnToParentAcceptance.pre_execute_abort_rejected -ne $true -or
+			$returnToParentAcceptance.turn_boundary_abort_prevents_next_provider -ne $true -or
+            [int]$returnToParentAcceptance.queued_user_messages -ne 0 -or
+            $returnToParentAcceptance.automatic_wake -ne $false
+        ) { throw "PI_SURFACE_TEST_RETURN_TO_PARENT_INVALID: $($returnToParentRaw -join ' ')" }
+        if ($RequireLiveReturnAcceptance) {
+            $returnToParentLiveRaw = @(& node (Join-Path $PSScriptRoot 'Test-PiSReturnToParentLive.mjs') $spec.SessionDir 2>&1)
+            if ($LASTEXITCODE -ne 0) { throw "PI_SURFACE_TEST_RETURN_TO_PARENT_LIVE_FAILED: $($returnToParentLiveRaw -join ' ')" }
+            $returnToParentLiveAcceptance = ($returnToParentLiveRaw -join [Environment]::NewLine) | ConvertFrom-Json
+            if (
+                [string]$returnToParentLiveAcceptance.status -ne 'live_sol_verified' -or
+                [string]$returnToParentLiveAcceptance.maturity -ne 'not_yet_mature' -or
+                [string]$returnToParentLiveAcceptance.provider -ne 'openai-codex' -or
+                [string]$returnToParentLiveAcceptance.model -ne 'gpt-5.6-sol' -or
+                $returnToParentLiveAcceptance.actual_provider_tool_call -ne $true -or
+                $returnToParentLiveAcceptance.tool_result_consumed_before_continuation -ne $true -or
+                $returnToParentLiveAcceptance.same_run_continued -ne $true
+            ) { throw "PI_SURFACE_TEST_RETURN_TO_PARENT_LIVE_INVALID: $($returnToParentLiveRaw -join ' ')" }
+        }
         $numpadRaw = @(& (Join-Path $PSScriptRoot 'Set-PiSNumpadEnterFollow.ps1') -AgentDir $spec.AgentDir -ValidateOnly 2>&1)
         $numpadStatus = ($numpadRaw -join [Environment]::NewLine) | ConvertFrom-Json
         if ([string]$numpadStatus.status -ne 'ready' -or $numpadStatus.main_enter_unchanged -ne $true -or $numpadStatus.helper_failure_blocks_pi -ne $false) {
@@ -272,9 +424,16 @@ Without using tools, report instructions already present in your current context
         provider_catalog_context_window = $catalogContextWindow
         profile_context_window_override_absent = $profileContextWindowOverrideAbsent
         midturn_compaction_compatibility = $midTurnCompactionAcceptance
+        subagents_owner_session_stop_compatibility = $ownerSessionStopCompatibility
+        subagents_owner_session_stop = $ownerSessionStopAcceptance
+        subagents_owner_session_stop_process = $ownerSessionStopProcessAcceptance
+        supervisor_ingress = $supervisorIngressAcceptance
         post_0841_upstream_compatibility = $post0841UpstreamAcceptance
         numpad_enter_follow = $numpadAcceptance
         activity_visibility = $activityVisibilityAcceptance
+        return_to_parent = $returnToParentAcceptance
+        return_to_parent_live = $returnToParentLiveAcceptance
+        peer_cognition = $peerAgentAcceptance
         overlay_projection_sha256 = $overlayProjection.Sha256
         live_model_probe = $liveProbe
     }
@@ -286,6 +445,18 @@ Without using tools, report instructions already present in your current context
         throw "PI_SURFACE_TEST_NATIVE_WINDOWS_HIDE_MISSING: profile=$profileName path=$bashTool"
     }
 }
+
+$primeBSpecForNegative = Get-PiDualEntrySpec -Profile 'prime-b'
+$primeBManifestOwned = @()
+if (Test-Path -LiteralPath $primeBSpecForNegative.OverlayProjectionManifest -PathType Leaf) {
+    $primeBManifestOwned = @((Get-Content -Raw -LiteralPath $primeBSpecForNegative.OverlayProjectionManifest -Encoding UTF8 | ConvertFrom-Json).owned_files | ForEach-Object { [string]$_ })
+}
+if (
+    (Test-Path -LiteralPath (Join-Path $primeBSpecForNegative.AgentDir 'agents\peer.md') -PathType Leaf) -or
+    (Test-Path -LiteralPath (Join-Path $primeBSpecForNegative.AgentDir 'extensions\return-to-parent.ts') -PathType Leaf) -or
+    'agents/peer.md' -in $primeBManifestOwned -or
+    'extensions/return-to-parent.ts' -in $primeBManifestOwned
+) { throw 'PI_SURFACE_TEST_COLD_BACKUP_INHERITED_MAIN_ONLY_CAPABILITY' }
 
 if ($Profile.Count -eq 2) {
     $b = $surfaceResults | Where-Object name -eq 'prime-b'

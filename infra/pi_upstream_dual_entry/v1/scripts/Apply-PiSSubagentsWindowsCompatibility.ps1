@@ -56,6 +56,12 @@ $asyncPatchedHash = if ($packageVersion -ceq '0.44.0') {
 } else {
     '15e3e072431e43fa774d4d4993c606e0c671841539606fac90f9b86f94777b48'
 }
+$asyncOwnerSessionStopCombinedHash = '6022d233c27a0f796581ba6ebda282c736cf0442771f41a89ad290912898a220'
+$asyncAcceptedHashes = if ($packageVersion -ceq '0.44.0') {
+    @($asyncUpstreamHash,$asyncOwnerSessionStopCombinedHash)
+} else {
+    @($asyncUpstreamHash,$asyncPatchedHash)
+}
 $singleOutputUpstreamHash = 'f2af95cd15e1fd021bff802812043704d5569c5eeed9a8f13741174654de4e08'
 $singleOutputPatchedHash = 'aa63de8ffd7e2ce671560c6cbded541e475bdfa700e33c069042b32af0c2605b'
 $asyncBeforeHash = (Get-FileHash -Algorithm SHA256 -LiteralPath $asyncSourcePath).Hash.ToLowerInvariant()
@@ -63,8 +69,8 @@ $singleOutputBeforeHash = (Get-FileHash -Algorithm SHA256 -LiteralPath $singleOu
 $changed = $false
 
 if ($packageVersion -ceq '0.44.0') {
-    if ($asyncBeforeHash -cne $asyncUpstreamHash) {
-        throw "PI_S_SUBAGENTS_PATCH_SOURCE_CONFLICT: expected=$asyncUpstreamHash actual=$asyncBeforeHash"
+    if ($asyncBeforeHash -notin $asyncAcceptedHashes) {
+        throw "PI_S_SUBAGENTS_PATCH_SOURCE_CONFLICT: expected=$($asyncAcceptedHashes -join '|') actual=$asyncBeforeHash"
     }
 } elseif ($asyncBeforeHash -ceq $asyncUpstreamHash) {
     if ($VerifyOnly) {
@@ -91,7 +97,10 @@ if ($packageVersion -ceq '0.44.0') {
 }
 
 $asyncAfterHash = (Get-FileHash -Algorithm SHA256 -LiteralPath $asyncSourcePath).Hash.ToLowerInvariant()
-if ($asyncAfterHash -cne $asyncPatchedHash) {
+if ($packageVersion -ceq '0.44.0' -and $asyncAfterHash -notin $asyncAcceptedHashes) {
+    throw "PI_S_SUBAGENTS_PATCH_VERIFY_FAILED: expected=$($asyncAcceptedHashes -join '|') actual=$asyncAfterHash"
+}
+if ($packageVersion -cne '0.44.0' -and $asyncAfterHash -cne $asyncPatchedHash) {
     throw "PI_S_SUBAGENTS_PATCH_VERIFY_FAILED: expected=$asyncPatchedHash actual=$asyncAfterHash"
 }
 $verified = [IO.File]::ReadAllText($asyncSourcePath,[Text.UTF8Encoding]::new($false))
@@ -203,5 +212,6 @@ if (
     verify_only = [bool]$VerifyOnly
     provider_tool_id_used_as_path = $false
     upstream_portable_workflow_id = [bool]($packageVersion -ceq '0.44.0')
+    owner_session_stop_combination_accepted = [bool]($packageVersion -ceq '0.44.0' -and $asyncAfterHash -ceq $asyncOwnerSessionStopCombinedHash)
     msys_drive_path_authorship_equivalence = $true
 } | ConvertTo-Json -Depth 5

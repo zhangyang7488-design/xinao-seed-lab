@@ -11,6 +11,9 @@ const MAX_REQUEST_BYTES = 1024 * 1024;
 const MAX_EVENTS = 512;
 const IDLE_DISPATCH_SETTLE_MS = 25;
 const RUNTIME_ACCEPTANCE_WATCHDOG_MS = 2_000;
+const SUBAGENT_RPC_REQUEST_EVENT = "subagents:rpc:v1:request";
+const SUBAGENT_RPC_REPLY_EVENT_PREFIX = "subagents:rpc:v1:reply:";
+const SUBAGENT_STOP_RPC_TIMEOUT_MS = 8_000;
 const INSTANCE_ID = randomUUID();
 
 type JsonObject = Record<string, unknown>;
@@ -56,6 +59,10 @@ function sha256(value: string): string {
 	return createHash("sha256").update(value, "utf8").digest("hex");
 }
 
+function jsonObject(value: unknown): JsonObject | undefined {
+	return value && typeof value === "object" && !Array.isArray(value) ? value as JsonObject : undefined;
+}
+
 function userText(value: unknown): string | undefined {
 	if (!value || typeof value !== "object") return undefined;
 	const candidate = value as { role?: unknown; content?: unknown };
@@ -75,6 +82,9 @@ export default function supervisorIngress(pi: ExtensionAPI): void {
 	let server: Server | undefined;
 	let sequence = 0;
 	let activeRequestId: string | undefined;
+	let stopping = false;
+	let stopOperation: Promise<JsonObject> | undefined;
+	let stopOperationRequestId: string | undefined;
 	const events: SupervisorEvent[] = [];
 	const pending: PendingDelivery[] = [];
 	const compactions: PendingCompaction[] = [];
@@ -102,6 +112,7 @@ export default function supervisorIngress(pi: ExtensionAPI): void {
 				instance_id: INSTANCE_ID,
 				ready: false,
 				last_sequence: sequence,
+				stopping,
 			};
 		}
 		const editorText = ctx.mode === "tui" && ctx.hasUI ? ctx.ui.getEditorText() : "";
@@ -122,7 +133,64 @@ export default function supervisorIngress(pi: ExtensionAPI): void {
 			active_tools: [...pi.getActiveTools()].sort(),
 			available_tools: pi.getAllTools().map((tool) => tool.name).sort(),
 			last_sequence: sequence,
+			stopping,
 		};
+	}
+
+	function requestOwnerSessionStop(requestId: string): Promise<JsonObject> {
+		const rpcRequestId = `supervisor-stop-${randomUUID()}`;
+		const replyEvent = `${SUBAGENT_RPC_REPLY_EVENT_PREFIX}${rpcRequestId}`;
+		return new Promise((resolve) => {
+			let settled = false;
+			let unsubscribe: (() => void) | void;
+			const finish = (value: JsonObject): void => {
+				if (settled) return;
+				settled = true;
+				clearTimeout(timer);
+				if (typeof unsubscribe === "function") unsubscribe();
+				resolve(value);
+			};
+			const timer = setTimeout(() => finish({
+				status: "partial",
+				verified: false,
+				error: "PI_SUBAGENT_OWNER_STOP_RPC_TIMEOUT",
+			}), SUBAGENT_STOP_RPC_TIMEOUT_MS);
+			unsubscribe = pi.events.on(replyEvent, (raw) => {
+				const reply = jsonObject(raw);
+				if (!reply || reply.success !== true) {
+					const error = jsonObject(reply?.error);
+					finish({
+						status: "partial",
+						verified: false,
+						error: typeof error?.message === "string" ? error.message : "PI_SUBAGENT_OWNER_STOP_RPC_FAILED",
+					});
+					return;
+				}
+				const data = jsonObject(reply.data);
+				finish({
+					status: data?.status === "verified" ? "verified" : "partial",
+					verified: data?.status === "verified",
+					stop_fence: data?.stopFence === true,
+					target_count: typeof data?.targetCount === "number" ? data.targetCount : 0,
+					results: Array.isArray(data?.results) ? data.results : [],
+					enumeration_errors: Array.isArray(data?.enumerationErrors) ? data.enumerationErrors : [],
+				});
+			});
+			try {
+				pi.events.emit(SUBAGENT_RPC_REQUEST_EVENT, {
+					version: 1,
+					requestId: rpcRequestId,
+					method: "stop-session",
+					source: { extension: "xinao-supervisor-ingress", requestId },
+				});
+			} catch (error) {
+				finish({
+					status: "partial",
+					verified: false,
+					error: error instanceof Error ? error.message : String(error),
+				});
+			}
+		});
 	}
 
 	function requireTarget(request: SupervisorRequest, ctx: ExtensionContext): void {
@@ -325,6 +393,7 @@ export default function supervisorIngress(pi: ExtensionAPI): void {
 				events: events.filter((event) => event.sequence > since),
 			};
 		}
+		if (stopping && command !== "stop") throw new Error("PI_SUPERVISOR_STOP_IN_PROGRESS");
 
 		requireTarget(request, ctx);
 		const requestId = requireRequestId(request);
@@ -348,37 +417,118 @@ export default function supervisorIngress(pi: ExtensionAPI): void {
 			return { ok: true, phase: "abort_requested", request_id: requestId, was_idle: wasIdle, ...reconciliation };
 		}
 		if (command === "stop") {
-			const wasIdle = ctx.isIdle();
-			const editorBefore = ctx.mode === "tui" && ctx.hasUI ? ctx.ui.getEditorText() : "";
-			const ownedUnconsumed = pending.filter((item) => !item.message_consumed && !item.aborted);
-			emit("stop_requested", {
-				request_id: requestId,
-				was_idle: wasIdle,
-				pending_messages: ctx.hasPendingMessages(),
-				owned_unconsumed_count: ownedUnconsumed.length,
-			});
-			let reconciliation: JsonObject = { owned_delivery_count: ownedUnconsumed.length, editor_reconciled: false };
-			if (!wasIdle) {
-				ctx.abort();
-				reconciliation = reconcileOwnedAbortResidue(ctx, requestId, editorBefore, ownedUnconsumed);
+			if (stopOperation) {
+				const receipt = await stopOperation;
+				return {
+					...receipt,
+					request_id: requestId,
+					original_request_id: stopOperationRequestId,
+					deduplicated: true,
+				};
 			}
-			for (const item of ownedUnconsumed) {
-				item.aborted = true;
-				item.content = "";
-			}
-			setTimeout(() => {
-				emit("shutdown_dispatched", { request_id: requestId });
-				ctx.shutdown();
-			}, 50);
-			return {
+			stopping = true;
+			stopOperationRequestId = requestId;
+			stopOperation = (async (): Promise<JsonObject> => {
+				const cleanupErrors: string[] = [];
+				let wasIdle = false;
+				let editorBefore = "";
+				let ownedUnconsumed: PendingDelivery[] = [];
+				let reconciliation: JsonObject = { owned_delivery_count: 0, editor_reconciled: false };
+				try {
+					wasIdle = ctx.isIdle();
+					editorBefore = ctx.mode === "tui" && ctx.hasUI ? ctx.ui.getEditorText() : "";
+					ownedUnconsumed = pending.filter((item) => !item.message_consumed && !item.aborted);
+					emit("stop_requested", {
+						request_id: requestId,
+						was_idle: wasIdle,
+						pending_messages: ctx.hasPendingMessages(),
+						owned_unconsumed_count: ownedUnconsumed.length,
+					});
+				} catch (error) {
+					cleanupErrors.push(`stop_setup:${error instanceof Error ? error.message : String(error)}`);
+				}
+
+				let childStopPromise: Promise<JsonObject>;
+				try {
+					childStopPromise = requestOwnerSessionStop(requestId);
+				} catch (error) {
+					childStopPromise = Promise.resolve({
+						status: "partial",
+						verified: false,
+						error: error instanceof Error ? error.message : String(error),
+					});
+				}
+				try {
+					ctx.abort();
+				} catch (error) {
+					cleanupErrors.push(`root_abort:${error instanceof Error ? error.message : String(error)}`);
+				}
+				try {
+					reconciliation = reconcileOwnedAbortResidue(ctx, requestId, editorBefore, ownedUnconsumed);
+				} catch (error) {
+					cleanupErrors.push(`residue_reconciliation:${error instanceof Error ? error.message : String(error)}`);
+				}
+				for (const item of ownedUnconsumed) {
+					item.aborted = true;
+					item.content = "";
+				}
+
+				let childStop: JsonObject;
+				try {
+					childStop = await childStopPromise;
+				} catch (error) {
+					childStop = {
+						status: "partial",
+						verified: false,
+						error: error instanceof Error ? error.message : String(error),
+					};
+				}
+				try {
+					emit("child_stop_settled", {
+						request_id: requestId,
+						status: childStop.status,
+						target_count: childStop.target_count,
+						cleanup_error_count: cleanupErrors.length,
+					});
+				} catch (error) {
+					cleanupErrors.push(`stop_event:${error instanceof Error ? error.message : String(error)}`);
+				}
+				return {
+					ok: true,
+					phase: "stop_requested",
+					request_id: requestId,
+					shutdown_requested: true,
+					process_shutdown: false,
+					was_idle: wasIdle,
+					status: childStop.status === "verified" && cleanupErrors.length === 0 ? "verified" : "partial",
+					child_stop: childStop,
+					cleanup_errors: cleanupErrors,
+					...reconciliation,
+				};
+			})().catch((error): JsonObject => ({
 				ok: true,
 				phase: "stop_requested",
 				request_id: requestId,
 				shutdown_requested: true,
 				process_shutdown: false,
-				was_idle: wasIdle,
-				...reconciliation,
-			};
+				status: "partial",
+				child_stop: { status: "partial", verified: false },
+				cleanup_errors: [`stop_operation:${error instanceof Error ? error.message : String(error)}`],
+			})).finally(() => {
+				setTimeout(() => {
+					try {
+						emit("shutdown_dispatched", { request_id: requestId });
+					} catch (error) {
+						console.error("Failed to record Pi supervisor shutdown dispatch:", error);
+					}
+					try {
+						ctx.shutdown();
+					} catch (error) {
+						console.error("Failed to dispatch Pi supervisor shutdown:", error);
+					}
+				}, 50);
+			});
+			return await stopOperation;
 		}
 		if (command === "compact") {
 			const customInstructions = optionalContent(request);
@@ -604,6 +754,10 @@ export default function supervisorIngress(pi: ExtensionAPI): void {
 	pi.on("agent_start", (_event, ctx) => {
 		capture(ctx);
 		emit("agent_start", { request_id: activeRequestId });
+		if (stopping) {
+			emit("stop_abort_reasserted", { request_id: activeRequestId });
+			ctx.abort();
+		}
 	});
 
 	pi.on("tool_execution_start", (event, ctx) => {

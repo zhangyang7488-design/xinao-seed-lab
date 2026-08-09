@@ -71,6 +71,7 @@ if ($DisableMidTurnCompactionCompatibility) {
 $contractProjection = Sync-PiDualEntryContractProjection -Spec $spec
 $surfaceOverlay = Sync-PiDualEntrySurfaceOverlay -Spec $spec
 $subagentsCompatibility = $null
+$subagentsOwnerSessionStopCompatibility = $null
 $hermesSessionCompatibility = $null
 $midTurnCompactionCompatibility = $null
 $post0841UpstreamCompatibility = $null
@@ -89,6 +90,14 @@ if ($DisableMidTurnCompactionCompatibility) {
     $subagentsCompatibility = (& (Join-Path $PSScriptRoot 'Apply-PiSSubagentsWindowsCompatibility.ps1') -AgentDir $spec.AgentDir) | ConvertFrom-Json
     $hermesSessionCompatibility = (& (Join-Path $PSScriptRoot 'Apply-PiSHermesSessionCompatibility.ps1') -AgentDir $spec.AgentDir) | ConvertFrom-Json
     $midTurnCompactionCompatibility = (& (Join-Path $PSScriptRoot 'Apply-PiSMidTurnCompactionCompatibility.ps1') -PiToolRoot $spec.PiToolRoot) | ConvertFrom-Json
+}
+if ($Profile -eq 'prime-s') {
+    $ownerStopRaw = if ($ValidateOnly) {
+        & (Join-Path $PSScriptRoot 'Apply-PiSSubagentsSessionStopCompatibility.ps1') -AgentDir $spec.AgentDir -VerifyOnly
+    } else {
+        & (Join-Path $PSScriptRoot 'Apply-PiSSubagentsSessionStopCompatibility.ps1') -AgentDir $spec.AgentDir
+    }
+    $subagentsOwnerSessionStopCompatibility = ($ownerStopRaw -join [Environment]::NewLine) | ConvertFrom-Json
 }
 if ($Profile -eq 'prime-s') {
     $post0841Raw = if ($ValidateOnly) {
@@ -167,6 +176,7 @@ if ($ValidateOnly) {
         surface_overlay_manifest_sha256 = $surfaceOverlay.Sha256
         supervisor_pipe = $spec.SupervisorPipe
         subagents_windows_compatibility = $subagentsCompatibility
+        subagents_owner_session_stop_compatibility = $subagentsOwnerSessionStopCompatibility
         hermes_session_compatibility = $hermesSessionCompatibility
         midturn_compaction_compatibility = $midTurnCompactionCompatibility
         post_0841_upstream_compatibility = $post0841UpstreamCompatibility
