@@ -1,6 +1,6 @@
 [CmdletBinding()]
 param(
-    [ValidateSet('capability', 'smoke', 'core', 'deep', 'proactive', 'reuse', 'intent', 'external', 'productivity', 'subagent')]
+    [ValidateSet('capability', 'smoke', 'core', 'deep', 'proactive', 'reuse', 'intent', 'external', 'reconstitution', 'productivity', 'subagent')]
     [string]$Profile = 'smoke',
     [string]$Domain,
     [string]$CasePattern,
@@ -29,8 +29,8 @@ if ($List) {
 if ($Domain -and $Profile -notin @('proactive', 'core', 'deep')) {
     throw 'Domain filtering applies to proactive behavior cases only.'
 }
-if ($CasePattern -and $Profile -notin @('proactive', 'intent', 'external', 'productivity')) {
-    throw 'CasePattern is suite-specific; use it with -Profile proactive, intent, external, or productivity.'
+if ($CasePattern -and $Profile -notin @('proactive', 'intent', 'external', 'reconstitution', 'productivity')) {
+    throw 'CasePattern is suite-specific; use it with -Profile proactive, intent, external, reconstitution, or productivity.'
 }
 if ($FailedFrom -and $Profile -ne 'proactive') {
     throw 'FailedFrom is suite-specific; use it with -Profile proactive.'
@@ -617,6 +617,7 @@ $runCapability = $Profile -in @('capability', 'smoke', 'core', 'deep') -and
     -not $Domain -and -not $CasePattern -and -not $FailedFrom
 $runIntent = $Profile -in @('intent', 'smoke', 'core', 'deep')
 $runExternalReality = $Profile -in @('external', 'core', 'deep')
+$runReconstitution = $Profile -in @('reconstitution', 'core', 'deep')
 $runProactive = $Profile -in @('proactive', 'core', 'deep')
 $runRecallReplay = $Profile -in @('core', 'deep', 'reuse')
 $runRecallLive = $Profile -in @('deep', 'reuse')
@@ -703,7 +704,7 @@ if ($runStatic) {
         role = 'static_assertion_tests'
     }
 }
-if ($runIntent -or $runExternalReality -or $runProductiveAction) {
+if ($runIntent -or $runExternalReality -or $runReconstitution -or $runProductiveAction) {
     $sourceInputs += [pscustomobject]@{
         path = (Join-Path $CodexHome 'AGENTS.md')
         logical_path = 'external/global_codex_home/AGENTS.md'
@@ -718,6 +719,21 @@ if ($runIntent) {
     $sourceInputs += [pscustomobject]@{
         path = (Join-Path $repoRoot 'evals\parent_frame_admission')
         role = 'parent_frame_admission'
+    }
+}
+if ($runReconstitution) {
+    $sourceInputs += [pscustomobject]@{
+        path = (Join-Path $repoRoot 'tests\test_recursive_frame_reconstitution.py')
+        role = 'recursive_frame_reconstitution_tests'
+    }
+    $sourceInputs += [pscustomobject]@{
+        path = (Join-Path $repoRoot 'evals\recursive_frame_reconstitution')
+        role = 'recursive_frame_reconstitution_eval'
+    }
+    $sourceInputs += [pscustomobject]@{
+        path = (Join-Path $CodexHome 'skills\conduct-xinao-native-research')
+        logical_path = 'external/global_codex_home/skills/conduct-xinao-native-research'
+        role = 'xinao_native_research_skill'
     }
 }
 if ($runExternalReality) {
@@ -839,6 +855,9 @@ try {
     if ($runExternalReality) {
         $preflightTests += 'tests/test_external_reality_research.py'
     }
+    if ($runReconstitution) {
+        $preflightTests += 'tests/test_recursive_frame_reconstitution.py'
+    }
     if ($runNativeSubagent) {
         $preflightTests += 'tests/test_native_subagent_trajectory.py'
     }
@@ -913,6 +932,21 @@ try {
             -SuiteId 'external_reality_research' `
             -ConfigPath $externalRealityConfig -ResultPath $externalRealityResult `
             -ExtraArguments $externalRealityFilters
+    }
+
+    if ($overallExit -eq 0 -and $runReconstitution -and -not $PreflightOnly) {
+        $reconstitutionConfig = Join-Path $executionRoot `
+            'evals\recursive_frame_reconstitution\promptfooconfig.yaml'
+        $reconstitutionResult = Join-Path $outputRoot `
+            'recursive-frame-reconstitution.result.json'
+        $reconstitutionFilters = @()
+        if ($CasePattern) {
+            $reconstitutionFilters += @('--filter-pattern', $CasePattern)
+        }
+        $suiteRuns += Invoke-PromptfooSuiteWithErrorRetry `
+            -SuiteId 'recursive_frame_reconstitution' `
+            -ConfigPath $reconstitutionConfig -ResultPath $reconstitutionResult `
+            -ExtraArguments $reconstitutionFilters
     }
 
     if ($overallExit -eq 0 -and $runCapability -and -not $PreflightOnly) {

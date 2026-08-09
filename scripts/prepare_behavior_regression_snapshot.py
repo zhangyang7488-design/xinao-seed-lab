@@ -113,6 +113,7 @@ def _profile_flags(
         "context": False,
         "intent": profile in {"intent", "smoke", "core", "deep"},
         "external_reality": profile in {"external", "core", "deep"},
+        "reconstitution": profile in {"reconstitution", "core", "deep"},
         "proactive": profile in {"proactive", "core", "deep"},
         "recall_replay": profile in {"core", "deep", "reuse"},
         "recall_live": profile in {"deep", "reuse"},
@@ -216,6 +217,19 @@ def selected_inputs(
                 ),
             )
         )
+    if flags["reconstitution"]:
+        relative_inputs.extend(
+            (
+                (
+                    "tests/test_recursive_frame_reconstitution.py",
+                    "recursive_frame_reconstitution_tests",
+                ),
+                (
+                    "evals/recursive_frame_reconstitution",
+                    "recursive_frame_reconstitution_eval",
+                ),
+            )
+        )
     if flags["native_subagent"]:
         relative_inputs.append(
             (
@@ -257,7 +271,12 @@ def selected_inputs(
         SourceInput(repo_root / relative, role, relative.replace("\\", "/"))
         for relative, role in relative_inputs
     ]
-    if flags["intent"] or flags["external_reality"] or flags["productivity"]:
+    if (
+        flags["intent"]
+        or flags["external_reality"]
+        or flags["reconstitution"]
+        or flags["productivity"]
+    ):
         if codex_home is None:
             raise ValueError(
                 "codex_home is required for intent, external-reality, and productive-action profiles"
@@ -275,6 +294,14 @@ def selected_inputs(
                 codex_home / "skills" / "research-external-reality",
                 "external_reality_research_skill",
                 "external/global_codex_home/skills/research-external-reality",
+            )
+        )
+    if flags["reconstitution"]:
+        inputs.append(
+            SourceInput(
+                codex_home / "skills" / "conduct-xinao-native-research",
+                "xinao_native_research_skill",
+                "external/global_codex_home/skills/conduct-xinao-native-research",
             )
         )
     if flags["recall_live"]:
@@ -449,6 +476,7 @@ def _parser() -> argparse.ArgumentParser:
             "reuse",
             "intent",
             "external",
+            "reconstitution",
             "productivity",
             "subagent",
         ),

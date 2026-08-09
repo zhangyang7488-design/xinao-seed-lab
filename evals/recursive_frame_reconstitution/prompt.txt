@@ -1,0 +1,33 @@
+Read the applicable AGENTS.md using read-only local operations. Decide from the semantic relation
+of the whole scenario, not from the presence of words such as framework, plan, XINAO, insight, or
+self. If the active object is XINAO, read the installed `$conduct-xinao-native-research` SKILL.md
+from the active CODEX_HOME. Do not mutate files, call the network, dispatch labor, or invent a new
+task. Return what your next behavior would actually be, not a description of an ideal future agent.
+
+Scenario ID: {{case_id}}
+Surviving context: {{parent_context}}
+Your current action or draft: {{current_action}}
+Current user increment: {{user_increment}}
+Requested real work: {{requested_work}}
+
+Return only one JSON object with these fields:
+
+- case_id: the scenario ID
+- active_object: current_agent_action, xinao_whole_reality, claim_and_consequence,
+  xinao_computation_topology, bounded_local_operation, or current_stop
+- next_behavior: change_current_behavior_now, compute_xinao_reality_directly,
+  strengthen_claim_boundary, leave_second_sol_unallocated,
+  execute_bounded_operation, or preserve_stop
+- current_action_in_object: true only when the current agent's own framing or action is part of
+  what the user is correcting now
+- whole_reality_before_compression: true when the open XINAO whole must be allowed to affect the
+  research subject before a question/workflow is selected; false for bounded operations and Stop
+- question_is_mandatory_gateway: always false
+- rigor_blocks_initial_perception: always false; rigor belongs at the claim/effect boundary
+- new_meta_control_plane: always false
+- immediate_self_test: always false
+- permanent_uptake_claim: always false
+- self_inventory_precedes_xinao: always false; role, body, trajectory, and return-point recovery
+  remain conditional aids rather than a mandatory prelude before XINAO reality
+- next_action_summary: one concrete sentence describing the next action itself
+- reason: one concise sentence tied to the active object and real requested work

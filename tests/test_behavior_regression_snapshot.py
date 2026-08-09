@@ -91,6 +91,7 @@ def test_external_cache_is_copied_and_rebound_for_deep_profile(tmp_path: Path) -
         "evals/parent_frame_admission",
         "evals/proactive_mature_first",
         "evals/external_reality_research",
+        "evals/recursive_frame_reconstitution",
         "evals/mature_capability_recall",
         "evals/thin_localization/fixture_template",
         "evals/productive_action_trajectory/fixture_template",
@@ -100,6 +101,7 @@ def test_external_cache_is_copied_and_rebound_for_deep_profile(tmp_path: Path) -
         "tests/test_open_world_reuse_behavior.py",
         "tests/test_parent_frame_admission.py",
         "tests/test_external_reality_research.py",
+        "tests/test_recursive_frame_reconstitution.py",
         "tests/test_repo_safety.py",
         "tests/test_behavior_regression_snapshot.py",
         "tests/test_productive_action_trajectory.py",
@@ -112,6 +114,10 @@ def test_external_cache_is_copied_and_rebound_for_deep_profile(tmp_path: Path) -
     _write(
         codex_home / "skills/research-external-reality/SKILL.md",
         "---\nname: research-external-reality\ndescription: fixture\n---\n",
+    )
+    _write(
+        codex_home / "skills/conduct-xinao-native-research/SKILL.md",
+        "---\nname: conduct-xinao-native-research\ndescription: fixture\n---\n",
     )
     config = repo / "evals/mature_capability_recall/promptfooconfig.live.yaml"
     _write(config, f"discovery_cache_path: {external}\n")
@@ -138,6 +144,8 @@ def test_external_cache_is_copied_and_rebound_for_deep_profile(tmp_path: Path) -
     assert "global_working_kernel" in roles
     assert "external_reality_research_eval" in roles
     assert "external_reality_research_skill" in roles
+    assert "recursive_frame_reconstitution_eval" in roles
+    assert "xinao_native_research_skill" in roles
 
 
 def test_subagent_profile_copies_only_the_disposable_trajectory(tmp_path: Path) -> None:
@@ -229,3 +237,42 @@ def test_productivity_profile_copies_only_the_action_trajectory_and_hot_kernel(
     assert (effective / "tests/test_productive_action_trajectory.py").exists()
     assert not (effective / "evals/codex_capability").exists()
     assert not (effective / "evals/parent_frame_admission").exists()
+
+
+def test_reconstitution_profile_copies_only_focused_suite_kernel_and_skill(
+    tmp_path: Path,
+) -> None:
+    repo = _fixture_repo(tmp_path)
+    _write(repo / "tests/test_recursive_frame_reconstitution.py", "# test\n")
+    _write(
+        repo / "evals/recursive_frame_reconstitution/promptfooconfig.yaml",
+        "tests: []\n",
+    )
+    codex_home = tmp_path / "codex-home"
+    _write(codex_home / "AGENTS.md", "global recursive-frame kernel\n")
+    _write(
+        codex_home / "skills/conduct-xinao-native-research/SKILL.md",
+        "---\nname: conduct-xinao-native-research\ndescription: fixture\n---\n",
+    )
+    subprocess.run(["git", "-C", str(repo), "add", "."], check=True)
+
+    output = tmp_path / "run"
+    output.mkdir()
+    manifest_path = create_snapshot(
+        repo,
+        output,
+        "reconstitution",
+        codex_home=codex_home,
+    )
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    effective = Path(manifest["effective_root"])
+    roles = {row["role"] for row in manifest["source_inputs"]}
+
+    assert "recursive_frame_reconstitution_eval" in roles
+    assert "recursive_frame_reconstitution_tests" in roles
+    assert "xinao_native_research_skill" in roles
+    assert "global_working_kernel" in roles
+    assert (effective / "evals/recursive_frame_reconstitution/promptfooconfig.yaml").exists()
+    assert (effective / "tests/test_recursive_frame_reconstitution.py").exists()
+    assert not (effective / "evals/parent_frame_admission").exists()
+    assert not (effective / "evals/external_reality_research").exists()

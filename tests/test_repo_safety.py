@@ -1177,6 +1177,7 @@ def test_behavior_evolution_runner_is_thin_and_domain_research_stays_native() ->
     assert "thin_localization_live" in live_ids
     assert "native_subagent_trajectory" in live_ids
     assert "external_reality_research" in live_ids
+    assert "recursive_frame_reconstitution" in live_ids
     retired_ids = {item["id"] for item in registry["retired_compatibility_suites"]}
     assert retired_ids == {"context_intent_alignment"}
     admission_ids = {item["id"] for item in registry["admission_fixture_only"]}
@@ -1188,7 +1189,7 @@ def test_behavior_evolution_runner_is_thin_and_domain_research_stays_native() ->
     assert "'--max-concurrency', $Concurrency" in runner
     assert "[int]$MaxErrorRetries = 1" in runner
     assert "'--filter-errors-only', $previousResult" in runner
-    assert "@('proactive', 'intent', 'external', 'productivity')" in runner
+    assert "@('proactive', 'intent', 'external', 'reconstitution', 'productivity')" in runner
     assert "$productiveFilters += @('--filter-pattern', $CasePattern)" in runner
     assert "-Concurrency 1" in runner
     assert "FailedFrom belongs to a different behavior suite" in runner
@@ -1200,14 +1201,15 @@ def test_behavior_evolution_runner_is_thin_and_domain_research_stays_native() ->
         (REPO_ROOT / "evals/behavior_regression/catalog.json").read_text(encoding="utf-8")
     )
     suite_count = sum(item["case_count"] for item in catalog["suites"])
-    assert suite_count == catalog["declared_case_count"] == 93
+    assert suite_count == catalog["declared_case_count"] == 102
     assert catalog["live_profile_case_counts"] == {
         "capability": 1,
         "smoke": 1 + 1,
-        "core": 18 + 1 + 9 + 6 + 2 + 1 + 2 + 8,
-        "deep": 18 + 1 + 9 + 6 + 2 + 1 + 1 + 2 + 8,
+        "core": 18 + 1 + 9 + 9 + 6 + 2 + 1 + 2 + 8,
+        "deep": 18 + 1 + 9 + 9 + 6 + 2 + 1 + 1 + 2 + 8,
         "intent": 58,
         "external": 9,
+        "reconstitution": 9,
         "proactive": 6,
         "reuse": 4,
         "productivity": 8,
@@ -1226,6 +1228,14 @@ def test_behavior_evolution_runner_is_thin_and_domain_research_stays_native() ->
     assert external_reality["parent_grounded_delta_claim_allowed"] is True
     assert external_reality["automatic_adoption_claim_allowed"] is False
     assert external_reality["universal_external_completeness_claim_allowed"] is False
+    reconstitution = next(
+        item for item in catalog["suites"] if item["id"] == "recursive_frame_reconstitution"
+    )
+    assert reconstitution["kind"] == "promptfoo_live"
+    assert reconstitution["case_count"] == 9
+    assert reconstitution["current_action_binding_claim_allowed"] is True
+    assert reconstitution["one_trajectory_permanent_uptake_claim_allowed"] is False
+    assert reconstitution["hidden_state_claim_allowed"] is False
     proactive = next(item for item in catalog["suites"] if item["id"] == "proactive_mature_first")
     assert proactive["kind"] == "promptfoo_live"
     assert proactive["policy_classification_claim_allowed"] is True

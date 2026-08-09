@@ -44,6 +44,12 @@
       "role": "parent_grounded_external_search_local_delta_and_marginal_stop"
     },
     {
+      "id": "recursive_frame_reconstitution",
+      "path": "evals/recursive_frame_reconstitution",
+      "runner": "scripts/run_behavior_regression.ps1 -Profile reconstitution",
+      "role": "current_action_self_binding_xinao_primary_reality_conditional_self_model_unallocated_second_sol_and_claim_boundary"
+    },
+    {
       "id": "proactive_mature_first",
       "path": "evals/proactive_mature_first",
       "runner": "scripts/run_proactive_mature_first_eval.ps1",
