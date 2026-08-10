@@ -5,7 +5,7 @@
   "runtime_loaded": false,
   "completion_claim_allowed": false,
   "archive": "codex-productivity-recovery.v1.zip",
-  "archive_sha256": "30025aa33564cc2d96cf47fab3f55a7350e5a11f6e31bf8efa576e57d442a790",
+  "archive_sha256": "f083dd04186859d528083047d862558b1ee308ff3059da5bf20083767984a96d",
   "entry_count": 87,
   "entries": [
     {
@@ -33,8 +33,8 @@
       "archive_path": "main-home/AGENTS.md",
       "live_source": "C:\\Users\\xx363\\.codex\\AGENTS.md",
       "role": "main_live_source",
-      "size": 29388,
-      "sha256": "fd5d36133d4b80172d686c0bb01c03827c5c2e596513d9c888c4b0d25d5b54ea"
+      "size": 29979,
+      "sha256": "c71fa13c834404da1e21ad5bf22aa9e3e8d44b6e9c1ad62deb5e66b4454d3e02"
     },
     {
       "archive_path": "main-home/agents/luna-worker.toml",
@@ -54,8 +54,8 @@
       "archive_path": "main-home/config.toml",
       "live_source": "C:\\Users\\xx363\\.codex\\config.toml",
       "role": "main_live_source",
-      "size": 15032,
-      "sha256": "6785aa2b4d08130925814e77e465c20cbda7e1015137b7789a8c3d81caf0ba2c"
+      "size": 15030,
+      "sha256": "cca53a227d784495863540fb130da3a6c5aec228172bba35e85aa837228a1029"
     },
     {
       "archive_path": "main-home/hooks.json",
@@ -523,8 +523,8 @@
       "archive_path": "main-home/skills/steward-pis-evolution/SKILL.md",
       "live_source": "C:\\Users\\xx363\\.codex\\skills\\steward-pis-evolution\\SKILL.md",
       "role": "generic_custom_skill",
-      "size": 27846,
-      "sha256": "580c1c61478ac63d71c008c76ac60d1e02f89592125f81f4b27bbfa7d566d483"
+      "size": 24978,
+      "sha256": "32636be6735c1beea0a84a98bf3efbe8c77c4e078c9e7d20f311b10bee26eb47"
     },
     {
       "archive_path": "main-home/skills/steward-pis-evolution/references/recovery-map.md",
@@ -614,8 +614,8 @@
       "archive_path": "runtime/Codex_Situation_Island/scripts/user_prompt_zero_beat_v1.ps1",
       "live_source": "D:\\XINAO_RESEARCH_RUNTIME\\state\\Codex_Situation_Island\\scripts\\user_prompt_zero_beat_v1.ps1",
       "role": "continuity_runtime",
-      "size": 14210,
-      "sha256": "7163e39e2a439070d44d9ca3b017d3b418cf53b3a1d594cb70e4bf44022119a4"
+      "size": 14777,
+      "sha256": "856af145530a192f06cfd9b47da48810676d854f292423d55d56f5b5491b8c8b"
     }
   ],
   "source_and_projection": {

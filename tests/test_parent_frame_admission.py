@@ -14,7 +14,7 @@ def test_parent_frame_admission_suite_is_small_generic_and_balanced() -> None:
     cases = yaml.safe_load((suite_root / "cases.yaml").read_text(encoding="utf-8"))
     case_ids = {case["vars"]["case_id"] for case in cases}
 
-    assert len(cases) == 61
+    assert len(cases) == 63
     assert case_ids == {
         "REG_CONTEXTUAL_DISTRESS_STAYS_IN_ACTIVE_REPAIR",
         "REG_LITERAL_DANGER_SIGNS_ADMIT_SAFETY_TASK",
@@ -77,6 +77,8 @@ def test_parent_frame_admission_suite_is_small_generic_and_balanced() -> None:
         "REG_REFERENCE_AGENT_OBJECT_SURVIVES_DOWNSTREAM_LABEL_COLLISION",
         "REG_SCOPED_OWNER_APPOINTMENT_SUPERSEDES_PRODUCT_BINDING",
         "REG_ASYMMETRIC_INVESTMENT_PRESERVES_SECONDARY_USABILITY_FLOOR",
+        "REG_CORRECTION_UPDATES_PARENT_NOT_NEW_LOCAL_TASK",
+        "REG_EXPLICIT_HIGHEST_BURDEN_RECORD_IS_BOUNDED_CHILD",
     }
     assert cases[0]["metadata"]["profiles"] == ["smoke", "core", "deep", "intent"]
     assert all("intent" in case["metadata"]["profiles"] for case in cases)
@@ -277,6 +279,8 @@ def test_parent_frame_admission_suite_is_small_generic_and_balanced() -> None:
         "REG_EXPLICIT_ADOPTION_SELECTS_BOUNDED_DELTA_NOT_WHOLE_PASTED_PLATFORM",
         "REG_REFERENCE_AGENT_ALIGNMENT_PRESERVES_COMPLETE_WORKING_KERNEL",
         "REG_ASYMMETRIC_INVESTMENT_PRESERVES_SECONDARY_USABILITY_FLOOR",
+        "REG_CORRECTION_UPDATES_PARENT_NOT_NEW_LOCAL_TASK",
+        "REG_EXPLICIT_HIGHEST_BURDEN_RECORD_IS_BOUNDED_CHILD",
         "REG_HUMAN_SLEEP_PRESERVES_ACTIVE_DELEGATION",
     }
     behavior_delivery_terminal_cases = {

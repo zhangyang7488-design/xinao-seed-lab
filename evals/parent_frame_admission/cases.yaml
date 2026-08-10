@@ -2338,6 +2338,95 @@
     expected_comparison_dimension: behavioral_understanding
     expected_configuration_role: supporting_evidence_only
 
+- description: A correction updates the live parent instead of becoming a new repair task
+  metadata:
+    id: REG_CORRECTION_UPDATES_PARENT_NOT_NEW_LOCAL_TASK
+    domain: parent_frame_admission
+    profiles: [intent]
+  vars:
+    case_id: REG_CORRECTION_UPDATES_PARENT_NOT_NEW_LOCAL_TASK
+    restored_context: >-
+      The active parent is to rebuild a local AI workspace from three generations
+      of history while preserving useful engineering substrate and removing old
+      cognitive routing authority. The assistant has repeatedly reduced the
+      latest user correction into a new document, Skill, trigger edit, or report,
+      and then stopped. The implementation frontier is still known and reversible;
+      there is no Pause, Stop, user-only choice, or major external effect.
+    user_increment: >-
+      我每纠正一次，你就把纠正变成一个新的局部任务，又让我替你保住整件事。现在这句话是在纠正你当前怎么做，不是让你另开一个行为项目；吸收它，保住完整改造对象，直接继续原来的施工和消费者验证。
+    expected_frame_relation: correction_to_existing_parent
+    expected_active_object: corrected_existing_object
+    expected_candidate_frame: corrected_parent_frame
+    expected_next_action: preserve_full_intent_envelope_and_continue_residual
+    allowed_frame_routes: '[{"frame_relation":"correction_to_existing_parent","active_object":"corrected_existing_object","candidate_frame":"corrected_parent_frame","next_action":"preserve_full_intent_envelope_and_continue_residual","task_switch":false},{"frame_relation":"correction_to_existing_parent","active_object":"corrected_existing_object","candidate_frame":"corrected_parent_frame","next_action":"restore_corrected_object","task_switch":false}]'
+    allowed_control_routes: '[{"next_action":"preserve_full_intent_envelope_and_continue_residual","decision_family":"utterance_relation_and_return","selected_control_action":"continue_existing_parent"},{"next_action":"preserve_full_intent_envelope_and_continue_residual","decision_family":"continue_or_finalize","selected_control_action":"continue_existing_parent"},{"next_action":"preserve_full_intent_envelope_and_continue_residual","decision_family":"resume_or_reframe","selected_control_action":"resume_exact_return_point"},{"next_action":"restore_corrected_object","decision_family":"utterance_relation_and_return","selected_control_action":"continue_existing_parent"},{"next_action":"restore_corrected_object","decision_family":"continue_or_finalize","selected_control_action":"continue_existing_parent"},{"next_action":"restore_corrected_object","decision_family":"resume_or_reframe","selected_control_action":"resume_exact_return_point"}]'
+    expected_task_switch: false
+    expected_trigger_role: subordinate_after_frame_binding
+    allowed_trigger_roles: '["subordinate_after_frame_binding","not_applicable"]'
+    expected_parent_frame_before_trigger: true
+    expected_user_must_restate_parent: false
+    expected_root_status: existing_parent_preserved
+    expected_active_level: current_frame
+    expected_surface_role: semantic_scope_correction
+    expected_blocked_promotion: child_to_parent_replacement
+    allowed_blocked_promotions: '["child_to_parent_replacement","tractable_child_to_parent_completion_identity"]'
+    expected_required_projection_levels: '["human_practice","parent_result","current_frame","consumer_effect"]'
+    expected_parent_status: active
+    expected_turn_disposition: continue_existing_parent
+    expected_user_input_required: false
+    expected_hand_back_to_user: false
+    expected_turn_boundary_is_not_pause: true
+    expected_local_completion_does_not_close_parent: true
+    expected_implicit_stop_rejected: true
+    expected_next_parent_item_admitted: true
+    expected_legal_terminal_predicate: none
+    expected_decision_family: utterance_relation_and_return
+    expected_selected_control_action: continue_existing_parent
+    expected_symmetric_alternatives_considered: '["continue_existing_parent","complete_parent"]'
+    expected_residual_defeater: none
+
+- description: An explicit request to record the correction admits a bounded behavior child
+  metadata:
+    id: REG_EXPLICIT_HIGHEST_BURDEN_RECORD_IS_BOUNDED_CHILD
+    domain: parent_frame_admission
+    profiles: [intent]
+  vars:
+    case_id: REG_EXPLICIT_HIGHEST_BURDEN_RECORD_IS_BOUNDED_CHILD
+    restored_context: >-
+      A larger local workspace evolution remains active with an exact return point.
+      The user has just identified correction-recursion as their highest AI burden.
+      Merely absorbing an ordinary correction would normally be sufficient, but the
+      user now explicitly asks for a durable global behavior record and fresh
+      consumer verification. The change is local, reversible, and bounded.
+    user_increment: >-
+      就是这种头痛。把“每纠正一次又被压成新局部任务”记录到 L0 或真正最高的生效位置，验证以后回到原来的改造，不要只口头记住。
+    expected_frame_relation: bounded_child_insertion
+    expected_active_object: bounded_child_object
+    expected_candidate_frame: bounded_child_with_return_frame
+    expected_next_action: complete_bounded_child_then_resume_parent
+    expected_task_switch: false
+    expected_trigger_role: subordinate_after_frame_binding
+    expected_parent_frame_before_trigger: true
+    expected_user_must_restate_parent: false
+    expected_root_status: existing_parent_preserved
+    expected_active_level: current_frame
+    expected_surface_role: bounded_child_insertion
+    expected_blocked_promotion: child_to_parent_replacement
+    expected_required_projection_levels: '["human_practice","parent_result","current_frame","runtime_carrier","consumer_effect"]'
+    expected_parent_status: active
+    expected_turn_disposition: continue_existing_parent
+    expected_user_input_required: false
+    expected_hand_back_to_user: false
+    expected_turn_boundary_is_not_pause: true
+    expected_local_completion_does_not_close_parent: true
+    expected_implicit_stop_rejected: true
+    expected_next_parent_item_admitted: true
+    expected_legal_terminal_predicate: none
+    expected_decision_family: utterance_relation_and_return
+    expected_selected_control_action: execute_child_then_resume_parent
+    expected_symmetric_alternatives_considered: '["execute_child_then_resume_parent"]'
+    expected_residual_defeater: none
+
 - description: A downstream product label cannot replace the named reference-agent object
   metadata:
     id: REG_REFERENCE_AGENT_OBJECT_SURVIVES_DOWNSTREAM_LABEL_COLLISION
