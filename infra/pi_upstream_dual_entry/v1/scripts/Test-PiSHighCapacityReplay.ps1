@@ -330,6 +330,160 @@ function Assert-NoReparseContainedPath {
     }
 }
 
+function Get-VerifiedHighCapacityCandidateManifest {
+    param(
+        [Parameter(Mandatory)][string]$ManifestPath,
+        [Parameter(Mandatory)][string]$PackageRoot,
+        [Parameter(Mandatory)][string]$CoreRoot
+    )
+    $manifestFile = Get-RequiredFile -Path $ManifestPath -Label 'high-capacity V4.2 candidate manifest'
+    $manifestSha = (Get-FileHash -LiteralPath $manifestFile -Algorithm SHA256).Hash.ToLowerInvariant()
+    $expectedManifestSha = '8f88fa47dffb4ff591a4b89a367fde0dce96b3d19d3c397200dbc79869b63468'
+    if ($manifestSha -cne $expectedManifestSha) {
+        throw "PI_HIGH_CAPACITY_REPLAY_CANDIDATE_MANIFEST_DRIFT: expected=$expectedManifestSha actual=$manifestSha"
+    }
+    $manifest = [IO.File]::ReadAllText($manifestFile,[Text.Encoding]::UTF8) | ConvertFrom-Json
+    if ([string]$manifest.schema -cne 'xinao.pi.subagent.capacity.candidate-manifest.v4.2' -or
+        [string]$manifest.generation -cne 'V4.2' -or
+        [string]$manifest.profile -cne 'prime-s' -or
+        [string]$manifest.supersedes_manifest_sha256 -cne '019f6fec12a1261c29af1c3e38a52a6a9858e14d7d42cbe9d918a3306fdeb4bb') {
+        throw 'PI_HIGH_CAPACITY_REPLAY_CANDIDATE_MANIFEST_IDENTITY_DRIFT'
+    }
+    $patches = @($manifest.patches)
+    $files = @($manifest.files)
+    if ($patches.Count -ne 3 -or $files.Count -ne 23) {
+        throw "PI_HIGH_CAPACITY_REPLAY_CANDIDATE_MANIFEST_CARDINALITY_DRIFT: patches=$($patches.Count) files=$($files.Count)"
+    }
+    $expectedPatches = [ordered]@{
+        'pi-subagents-0.44.0-high-capacity-v1.patch' = '229869:a31617bd6df9004f0581935de5ef68897b2382f3c7656b1d6977c7a61cc645d4'
+        'pi-subagents-0.44.0-high-capacity-v4.2-descriptor-resume.patch' = '5324:8c872c65657476a2db3c0dbc9145e9630e4e7715f7a476431fef07f51f98f75b'
+        'pi-coding-agent-0.84.1-high-capacity-v1.patch' = '58145:13a89eda2b22e9337c90aa817e75e766499ee62f1fa044142a9cceef91d9d3ad'
+    }
+    $observedPatches = @{}
+    foreach ($patch in $patches) {
+        $name = [string]$patch.name
+        if (-not $expectedPatches.Contains($name) -or $observedPatches.ContainsKey($name)) {
+            throw "PI_HIGH_CAPACITY_REPLAY_CANDIDATE_MANIFEST_PATCH_SET_DRIFT: $name"
+        }
+        $observed = "$([long]$patch.bytes):$([string]$patch.sha256)"
+        if ($observed -cne [string]$expectedPatches[$name]) {
+            throw "PI_HIGH_CAPACITY_REPLAY_CANDIDATE_MANIFEST_PATCH_DRIFT: $name"
+        }
+        $observedPatches[$name] = $true
+    }
+    $roots = [ordered]@{
+        package = Get-CanonicalDirectory -Path $PackageRoot -Label 'candidate manifest package root'
+        core = Get-CanonicalDirectory -Path $CoreRoot -Label 'candidate manifest core root'
+    }
+    $seen = @{}
+    $packageCount = 0
+    $coreCount = 0
+    foreach ($file in $files) {
+        $rootName = [string]$file.root
+        $relative = [string]$file.path
+        if (-not $roots.Contains($rootName) -or
+            [string]::IsNullOrWhiteSpace($relative) -or
+            $relative.Contains('\') -or
+            [IO.Path]::IsPathRooted($relative) -or
+            $relative.Contains(':') -or
+            $relative -match '(^|/)\.\.(/|$)' -or
+            [long]$file.bytes -lt 1 -or
+            [string]$file.sha256 -notmatch '^[a-f0-9]{64}$') {
+            throw "PI_HIGH_CAPACITY_REPLAY_CANDIDATE_MANIFEST_FILE_INVALID: root=$rootName path=$relative"
+        }
+        $key = "$rootName`:$relative"
+        if ($seen.ContainsKey($key)) { throw "PI_HIGH_CAPACITY_REPLAY_CANDIDATE_MANIFEST_FILE_DUPLICATE: $key" }
+        $seen[$key] = $true
+        if ($rootName -ceq 'package') { $packageCount++ } else { $coreCount++ }
+        $target = Get-RequiredFile -Path (Join-Path $roots[$rootName] ($relative -replace '/','\')) -Label "candidate manifest member $key"
+        Assert-NoReparseContainedPath -Root $roots[$rootName] -Path $target -Label "candidate manifest member $key"
+        $actualBytes = (Get-Item -LiteralPath $target).Length
+        $actualSha = (Get-FileHash -LiteralPath $target -Algorithm SHA256).Hash.ToLowerInvariant()
+        if ($actualBytes -ne [long]$file.bytes -or $actualSha -cne [string]$file.sha256) {
+            throw "PI_HIGH_CAPACITY_REPLAY_CANDIDATE_MANIFEST_MEMBER_DRIFT: $key expected=$($file.bytes)/$($file.sha256) actual=$actualBytes/$actualSha"
+        }
+    }
+    if ($packageCount -ne 21 -or $coreCount -ne 2 -or $seen.Count -ne 23) {
+        throw "PI_HIGH_CAPACITY_REPLAY_CANDIDATE_MANIFEST_ROOT_SET_DRIFT: package=$packageCount core=$coreCount total=$($seen.Count)"
+    }
+    return [pscustomobject]@{
+        path = $manifestFile
+        sha256 = $manifestSha
+        bytes = (Get-Item -LiteralPath $manifestFile).Length
+        generation = 'V4.2'
+        package_files = $packageCount
+        core_files = $coreCount
+        patches = $patches
+    }
+}
+
+function Test-ExactHighCapacityResolvedTurnBudget {
+    param($Budget)
+    if ($null -eq $Budget) { return $false }
+    $names = @($Budget.PSObject.Properties.Name | Sort-Object)
+    return ($names.Count -eq 2 -and $names[0] -ceq 'graceTurns' -and $names[1] -ceq 'maxTurns' -and
+        [int]$Budget.maxTurns -eq 30 -and [int]$Budget.graceTurns -eq 0)
+}
+
+function Invoke-VerifiedHighCapacityReplayWorkRootCleanup {
+    param(
+        [Parameter(Mandatory)][string]$Path,
+        [Parameter(Mandatory)][string]$AllowedParent
+    )
+    $parent = [IO.Path]::GetFullPath($AllowedParent).TrimEnd('\','/')
+    $target = [IO.Path]::GetFullPath($Path).TrimEnd('\','/')
+    $prefix = $parent + [IO.Path]::DirectorySeparatorChar
+    $leaf = Split-Path -Leaf $target
+    if (-not $target.StartsWith($prefix,[StringComparison]::OrdinalIgnoreCase) -or
+        $leaf -notmatch '^high-capacity-replay-[a-f0-9]{32}$') {
+        throw "PI_HIGH_CAPACITY_REPLAY_FILESYSTEM_CLEANUP_TARGET_REJECTED: $target"
+    }
+    if (-not (Test-Path -LiteralPath $target)) {
+        return [pscustomobject]@{ removed = $true; reparse_points_unlinked = 0; path = $target }
+    }
+    $rootItem = Get-Item -LiteralPath $target -Force
+    if (-not $rootItem.PSIsContainer -or ($rootItem.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) {
+        throw "PI_HIGH_CAPACITY_REPLAY_FILESYSTEM_CLEANUP_ROOT_INVALID: $target"
+    }
+    $pending = [Collections.Generic.Stack[string]]::new()
+    $pending.Push($target)
+    $reparsePaths = [Collections.Generic.List[string]]::new()
+    while ($pending.Count -gt 0) {
+        $current = $pending.Pop()
+        foreach ($item in @(Get-ChildItem -LiteralPath $current -Force -ErrorAction Stop)) {
+            $full = [IO.Path]::GetFullPath($item.FullName)
+            if (-not $full.StartsWith($prefix,[StringComparison]::OrdinalIgnoreCase)) {
+                throw "PI_HIGH_CAPACITY_REPLAY_FILESYSTEM_CLEANUP_ESCAPE: $full"
+            }
+            if (($item.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) {
+                [void]$reparsePaths.Add($full)
+            } elseif ($item.PSIsContainer) {
+                $pending.Push($full)
+            }
+        }
+    }
+    foreach ($reparsePath in @($reparsePaths | Sort-Object Length -Descending)) {
+        $item = Get-Item -LiteralPath $reparsePath -Force
+        if ($item.PSIsContainer) { [IO.Directory]::Delete($reparsePath,$false) } else { [IO.File]::Delete($reparsePath) }
+    }
+    $remaining = [Collections.Generic.Stack[string]]::new()
+    $remaining.Push($target)
+    while ($remaining.Count -gt 0) {
+        $current = $remaining.Pop()
+        foreach ($item in @(Get-ChildItem -LiteralPath $current -Force -ErrorAction Stop)) {
+            if (($item.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) {
+                throw "PI_HIGH_CAPACITY_REPLAY_FILESYSTEM_CLEANUP_REPARSE_REMAINED: $($item.FullName)"
+            }
+            if ($item.PSIsContainer) { $remaining.Push($item.FullName) }
+        }
+    }
+    Remove-Item -LiteralPath $target -Recurse -Force
+    if (Test-Path -LiteralPath $target) {
+        throw "PI_HIGH_CAPACITY_REPLAY_FILESYSTEM_CLEANUP_FAILED: $target"
+    }
+    return [pscustomobject]@{ removed = $true; reparse_points_unlinked = $reparsePaths.Count; path = $target }
+}
+
 function Get-VerifiedJitiAliasProjection {
     param(
         [Parameter(Mandatory)][string]$CorePackageRoot,
@@ -469,7 +623,7 @@ function Invoke-HiddenProcess {
             } else {
                 $process.Kill()
             }
-        } catch {}
+        } catch { $null = $_ }
         $process.WaitForExit()
         throw "PI_HIGH_CAPACITY_REPLAY_PROCESS_TIMEOUT: $FilePath $($Arguments -join ' ')"
     }
@@ -484,9 +638,9 @@ function Invoke-HiddenProcess {
 
 function Get-NodeTestCount {
     param([Parameter(Mandatory)][string]$Text,[Parameter(Mandatory)][string]$Kind)
-    $matches = [regex]::Matches($Text,"(?m)[^`r`n]*\b$([regex]::Escape($Kind))\s+(\d+)\s*`r?$")
-    if ($matches.Count -eq 0) { throw "PI_HIGH_CAPACITY_REPLAY_TAP_COUNT_MISSING: $Kind" }
-    return [int]$matches[$matches.Count - 1].Groups[1].Value
+    $countMatches = [regex]::Matches($Text,"(?m)[^`r`n]*\b$([regex]::Escape($Kind))\s+(\d+)\s*`r?$")
+    if ($countMatches.Count -eq 0) { throw "PI_HIGH_CAPACITY_REPLAY_TAP_COUNT_MISSING: $Kind" }
+    return [int]$countMatches[$countMatches.Count - 1].Groups[1].Value
 }
 
 function Write-JsonAtomic {
@@ -537,6 +691,10 @@ $canonicalAgentDir = $null
 $canonicalPiToolRoot = $null
 $tempBase = [IO.Path]::GetFullPath('D:\XINAO_RESEARCH_RUNTIME\temp\pi-high-capacity-acceptance').TrimEnd('\','/')
 $tempRoot = $null
+$filesystemWorkBase = [IO.Path]::GetFullPath('D:\XINAO_RESEARCH_RUNTIME\temp\body-lab').TrimEnd('\','/')
+$filesystemWorkRoot = $null
+$filesystemHostileRoot = $null
+$filesystemCleanupVerified = $true
 $cleanupVerified = $false
 $startedAt = [DateTimeOffset]::Now
 $receipt = [ordered]@{
@@ -553,6 +711,9 @@ $receipt = [ordered]@{
     jiti_alias_projection = $null
     syntax = [ordered]@{ status = 'not-run'; files = 0 }
     runtime_projection = $null
+    candidate_manifest = $null
+    compatibility_inputs = $null
+    filesystem_resume_cross_product = $null
     peer = $null
     temp_cleanup = $false
     error = $null
@@ -587,6 +748,27 @@ try {
     $subagentsRoot = Get-CanonicalDirectory -Path (Join-Path $canonicalAgentDir 'npm\node_modules\pi-subagents') -Label 'pi-subagents replay root'
     $peerPath = Get-RequiredFile -Path (Join-Path $canonicalAgentDir 'agents\peer.md') -Label 'peer frontmatter'
     $corePackageRoot = Get-CanonicalDirectory -Path (Join-Path $canonicalPiToolRoot 'node_modules\@earendil-works\pi-coding-agent') -Label 'Pi coding-agent replay package'
+    $candidateManifest = Get-VerifiedHighCapacityCandidateManifest -ManifestPath (Join-Path (Split-Path -Parent $PSScriptRoot) 'patches\pi-s-high-capacity-v4.2-manifest.json') -PackageRoot $subagentsRoot -CoreRoot $corePackageRoot
+    $receipt.candidate_manifest = [ordered]@{
+        path = $candidateManifest.path
+        bytes = $candidateManifest.bytes
+        sha256 = $candidateManifest.sha256
+        generation = $candidateManifest.generation
+        package_files = $candidateManifest.package_files
+        core_files = $candidateManifest.core_files
+        patches = $candidateManifest.patches
+    }
+    $filesystemCompatibilityApply = Get-RequiredFile -Path (Join-Path $PSScriptRoot 'Apply-PiSSubagentsFilesystemPolicy.ps1') -Label 'filesystem compatibility migration apply'
+    $filesystemCompatibilityApplySha = (Get-FileHash -LiteralPath $filesystemCompatibilityApply -Algorithm SHA256).Hash.ToLowerInvariant()
+    if ($filesystemCompatibilityApplySha -cne '05d05cc6739bc891c9cb0bbfed52b9af508e2b980c36ab705115a4cd96957aae') {
+        throw "PI_HIGH_CAPACITY_REPLAY_FILESYSTEM_COMPATIBILITY_APPLY_DRIFT: $filesystemCompatibilityApplySha"
+    }
+    $receipt.compatibility_inputs = [ordered]@{
+        filesystem_apply_path = $filesystemCompatibilityApply
+        filesystem_apply_bytes = (Get-Item -LiteralPath $filesystemCompatibilityApply).Length
+        filesystem_apply_sha256 = $filesystemCompatibilityApplySha
+        accepted_capacity_generations = @('V4.1','V4.2')
+    }
     $jitiAliasProjection = Get-VerifiedJitiAliasProjection -CorePackageRoot $corePackageRoot -ManifestPath (Join-Path $PSScriptRoot 'Test-PiSHighCapacityJitiAlias.manifest.json')
     $receipt.jiti_alias_projection = [ordered]@{
         manifest_sha256 = $jitiAliasProjection.manifest_sha256
@@ -712,11 +894,270 @@ try {
         throw "PI_HIGH_CAPACITY_REPLAY_STRICT_TSC_FAILED: exit=$($strictResult.exit_code)`n$($strictResult.stdout)`n$($strictResult.stderr)"
     }
     $receipt.strict_typescript = [ordered]@{ status = 'pass'; compiler = $tscPath; compiler_version = $compilerFixture.version; compiler_sha256 = $compilerFixture.compiler_sha256; strict = $true; no_unchecked_indexed_access = $true; skip_lib_check = $false; fixture_tree_sha256 = $typeShim.tree_sha256 }
+
+    $filesystemScript = Get-RequiredFile -Path (Join-Path $PSScriptRoot 'Test-PiSHighCapacityFilesystemResume.ps1') -Label 'high-capacity filesystem resume cross-product'
+    $filesystemScriptSha = (Get-FileHash -LiteralPath $filesystemScript -Algorithm SHA256).Hash.ToLowerInvariant()
+    if ($filesystemScriptSha -cne 'cc95bdf0a8e59cb0af20211ac1b2cfdfa8e71b17d4c753c7315724c3a6dd320d') {
+        throw "PI_HIGH_CAPACITY_REPLAY_FILESYSTEM_SCRIPT_DRIFT: $filesystemScriptSha"
+    }
+    if (-not (Test-Path -LiteralPath $filesystemWorkBase -PathType Container)) {
+        New-Item -ItemType Directory -Force -Path $filesystemWorkBase | Out-Null
+    }
+    $filesystemWorkRoot = Join-Path $filesystemWorkBase ('high-capacity-replay-' + [guid]::NewGuid().ToString('N'))
+    if (Test-Path -LiteralPath $filesystemWorkRoot) {
+        throw "PI_HIGH_CAPACITY_REPLAY_FILESYSTEM_WORK_ROOT_COLLISION: $filesystemWorkRoot"
+    }
+    $filesystemHostileRoot = Join-Path $filesystemWorkBase ('high-capacity-replay-' + [guid]::NewGuid().ToString('N'))
+    if (Test-Path -LiteralPath $filesystemHostileRoot) {
+        throw "PI_HIGH_CAPACITY_REPLAY_FILESYSTEM_HOSTILE_ROOT_COLLISION: $filesystemHostileRoot"
+    }
+    New-Item -ItemType Directory -Path $filesystemHostileRoot | Out-Null
+    $hostilePackageRoot = Join-Path $filesystemHostileRoot 'fake-pi-coding-agent'
+    $hostileNodePath = Join-Path $filesystemHostileRoot 'node_modules'
+    New-Item -ItemType Directory -Force -Path $hostilePackageRoot,$hostileNodePath | Out-Null
+    $hostilePiBinary = Join-Path $filesystemHostileRoot 'hostile-pi.cmd'
+    $hostileInvocationMarker = Join-Path $filesystemHostileRoot 'hostile-pi-invoked.marker'
+    [IO.File]::WriteAllText($hostilePiBinary,"@echo off`r`n> `"%~dp0hostile-pi-invoked.marker`" echo invoked`r`nexit /b 97`r`n",[Text.UTF8Encoding]::new($false))
+    $filesystemCleanupVerified = $false
+    $filesystemReceiptPath = Join-Path $canonicalTempRoot 'Test-PiSHighCapacityFilesystemResume.receipt.json'
+    $windowsPowerShell = Get-RequiredFile -Path (Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe') -Label 'Windows PowerShell 5.1'
+    $filesystemEnvironment = @{}
+    foreach ($environmentEntry in $childEnvironment.GetEnumerator()) {
+        $filesystemEnvironment[[string]$environmentEntry.Key] = [string]$environmentEntry.Value
+    }
+    $filesystemPowerShellModulePath = Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\Modules'
+    if (-not (Test-Path -LiteralPath $filesystemPowerShellModulePath -PathType Container)) {
+        throw "PI_HIGH_CAPACITY_REPLAY_WINDOWS_POWERSHELL_MODULE_PATH_MISSING: $filesystemPowerShellModulePath"
+    }
+    $filesystemEnvironment['PSModulePath'] = $filesystemPowerShellModulePath
+    $filesystemEnvironment['PI_SUBAGENT_PI_BINARY'] = $hostilePiBinary
+    $filesystemEnvironment['PI_SUBAGENTS_PI_CODING_AGENT_PACKAGE_ROOT'] = $hostilePackageRoot
+    $filesystemEnvironment['NODE_PATH'] = $hostileNodePath
+    $filesystemResult = Invoke-HiddenProcess -FilePath $windowsPowerShell -Arguments @(
+        '-NoProfile','-NonInteractive','-ExecutionPolicy','Bypass','-File',$filesystemScript,
+        '-AgentDir',$canonicalAgentDir,
+        '-PiToolRoot',$canonicalPiToolRoot,
+        '-WorkRoot',$filesystemWorkRoot,
+        '-ReceiptPath',$filesystemReceiptPath,
+        '-TimeoutMs','180000'
+    ) -Environment $filesystemEnvironment -TimeoutMs 300000
+    if ($filesystemResult.exit_code -ne 0) {
+        throw "PI_HIGH_CAPACITY_REPLAY_FILESYSTEM_CROSS_PRODUCT_FAILED: exit=$($filesystemResult.exit_code)`n$($filesystemResult.stderr)`n$($filesystemResult.stdout)"
+    }
+    $filesystemReceiptFile = Get-RequiredFile -Path $filesystemReceiptPath -Label 'high-capacity filesystem resume receipt'
+    $filesystemReceiptBytes = (Get-Item -LiteralPath $filesystemReceiptFile).Length
+    $filesystemReceiptSha = (Get-FileHash -LiteralPath $filesystemReceiptFile -Algorithm SHA256).Hash.ToLowerInvariant()
+    $filesystemReceipt = [IO.File]::ReadAllText($filesystemReceiptFile,[Text.Encoding]::UTF8) | ConvertFrom-Json
+    if ([string]$filesystemReceipt.schema -cne 'xinao.pi_s_high_capacity_filesystem_resume_acceptance.v1' -or
+        [string]$filesystemReceipt.status -cne 'verified' -or
+        [IO.Path]::GetFullPath([string]$filesystemReceipt.agent_dir) -cne $canonicalAgentDir -or
+        [IO.Path]::GetFullPath([string]$filesystemReceipt.pi_tool_root) -cne $canonicalPiToolRoot -or
+        [string]$filesystemReceipt.canonical_harness.sha256 -cne 'ffd09a360411fd32c4764a8369d61a58effdd973e564d111be2a400db6ea53d6' -or
+        [string]$filesystemReceipt.projected_harness.source_sha256 -cne [string]$filesystemReceipt.canonical_harness.sha256 -or
+        [bool]$filesystemReceipt.projected_harness.assertion_and_receipt_only -or
+        -not [bool]$filesystemReceipt.projected_harness.test_instrumentation_only -or
+        [bool]$filesystemReceipt.projected_harness.provider_headers_instrumented -or
+        [bool]$filesystemReceipt.projected_harness.launch_parameter_semantics_changed -or
+        [bool]$filesystemReceipt.projected_harness.launch_turn_budget_override -or
+        [bool]$filesystemReceipt.projected_harness.product_source_changed) {
+        throw 'PI_HIGH_CAPACITY_REPLAY_FILESYSTEM_RECEIPT_IDENTITY_DRIFT'
+    }
+    $coreIsolation = $filesystemReceipt.core_isolation
+    $processEnvironment = $filesystemReceipt.process_environment
+    $actualChildIdentity = $filesystemReceipt.actual_child_identity
+    if (-not (Test-ExactHighCapacityResolvedTurnBudget $filesystemReceipt.capacity_config.turn_budget) -or
+        [bool]$filesystemReceipt.capacity_config.launch_request_turn_budget_override -or
+        -not [bool]$filesystemReceipt.capacity_config.default_session_dir_matches -or
+        -not [bool]$coreIsolation.paired_pi_tool_root -or
+        -not [bool]$coreIsolation.all_key_paths_no_reparse -or
+        -not [bool]$coreIsolation.all_key_paths_realpath_contained -or
+        [string]$coreIsolation.pi_subagents.name -cne 'pi-subagents' -or
+        [string]$coreIsolation.pi_subagents.version -cne '0.44.0' -or
+        [IO.Path]::GetFullPath([string]$coreIsolation.pi_subagents.root) -cne $subagentsRoot -or
+        [string]$coreIsolation.pi_coding_agent.name -cne '@earendil-works/pi-coding-agent' -or
+        [string]$coreIsolation.pi_coding_agent.version -cne '0.84.1' -or
+        [IO.Path]::GetFullPath([string]$coreIsolation.pi_coding_agent.root) -cne $corePackageRoot -or
+        @($coreIsolation.isolated_dependencies).Count -ne 3 -or
+        -not [bool]$filesystemReceipt.isolation.fixture_codex_home_under_work_root -or
+        -not [bool]$filesystemReceipt.isolation.fixture_codex_home_empty_at_start) {
+        throw 'PI_HIGH_CAPACITY_REPLAY_FILESYSTEM_CONFIG_OR_ISOLATION_DRIFT'
+    }
+    $expectedDependencyNames = @('@earendil-works/pi-agent-core','@earendil-works/pi-ai','@earendil-works/pi-tui')
+    foreach ($dependency in @($coreIsolation.isolated_dependencies)) {
+        if ([string]$dependency.name -notin $expectedDependencyNames -or
+            [string]$dependency.version -cne '0.84.1' -or
+            -not [bool]$dependency.no_reparse -or
+            -not [bool]$dependency.realpath_contained) {
+            throw "PI_HIGH_CAPACITY_REPLAY_FILESYSTEM_ISOLATED_DEPENDENCY_DRIFT: $($dependency.name)@$($dependency.version)"
+        }
+    }
+    if ([string]$processEnvironment.scope -cne 'body-node-process-and-inherited-descendants-only' -or
+        [bool]$processEnvironment.parent_process_modified -or
+        [string]$processEnvironment.pi_subagent_pi_binary_override_raw -cne ' ' -or
+        -not [bool]$processEnvironment.pi_subagent_pi_binary_override_trimmed_empty -or
+        -not [bool]$processEnvironment.parent_presence_before.pi_subagent_pi_binary -or
+        -not [bool]$processEnvironment.parent_presence_before.pi_coding_agent_package_root -or
+        -not [bool]$processEnvironment.parent_presence_before.node_path -or
+        -not [bool]$processEnvironment.observed_in_body_process.exact_overrides_observed -or
+        [string]$processEnvironment.observed_in_body_process.pi_subagent_pi_binary_raw -cne ' ' -or
+        -not [bool]$processEnvironment.observed_in_body_process.pi_subagent_pi_binary_trimmed_empty -or
+        [string]$processEnvironment.observed_in_body_process.pi_coding_agent_package_root -cne [string]$coreIsolation.pi_coding_agent.root -or
+        [string]$processEnvironment.observed_in_body_process.node_path -cne [string]$processEnvironment.node_path_override -or
+        -not [bool]$processEnvironment.parent_process_unchanged_after -or
+        -not [bool]$processEnvironment.descendant_core_escape_blocked -or
+        -not [bool]$processEnvironment.hostile_parent.paths_existing -or
+        -not [bool]$processEnvironment.hostile_parent.paths_no_reparse -or
+        -not [bool]$processEnvironment.hostile_parent.paths_distinct -or
+        -not [bool]$processEnvironment.hostile_parent.outside_isolated_roots -or
+        -not [bool]$processEnvironment.hostile_parent.invocation_marker_absent_after -or
+        (Test-Path -LiteralPath $hostileInvocationMarker)) {
+        throw 'PI_HIGH_CAPACITY_REPLAY_FILESYSTEM_PROCESS_ENVIRONMENT_ISOLATION_DRIFT'
+    }
+    $criticalIdentityCases = @('CASE_FOREGROUND_SAFE','CASE_DETACHED_SAFE','CASE_RESUME_SAFE','CASE_NO_POLICY_DETACHED_SAFE','CASE_NO_POLICY_RESUME_SAFE')
+    if ([string]$actualChildIdentity.schema -cne 'xinao.pi_s_high_capacity_actual_child_identity_evidence.v1' -or
+        -not [bool]$actualChildIdentity.verified -or
+        [int]$actualChildIdentity.identity_record_count -ne 11 -or
+        [int]$actualChildIdentity.root_identity_record_count -ne 0 -or
+        [string]$actualChildIdentity.preload.node_check -cne 'pass' -or
+        [string]$actualChildIdentity.preload.sha256 -notmatch '^[a-f0-9]{64}$') {
+        throw 'PI_HIGH_CAPACITY_REPLAY_FILESYSTEM_ACTUAL_CHILD_IDENTITY_AGGREGATE_DRIFT'
+    }
+    foreach ($criticalIdentityCase in $criticalIdentityCases) {
+        $caseEvidence = $actualChildIdentity.cases.PSObject.Properties[$criticalIdentityCase].Value
+        if ($null -eq $caseEvidence -or
+            [int]$caseEvidence.pid -le 0 -or
+            [int]$caseEvidence.ppid -le 0 -or
+            [long]$caseEvidence.recorded_at_ms -le 0 -or
+            [long]$caseEvidence.recorded_at_ms -gt [long]$caseEvidence.provider_at_ms -or
+            [int]$caseEvidence.provider_request_count -lt 1 -or
+            @($caseEvidence.provider_body_sha256).Count -ne [int]$caseEvidence.provider_request_count -or
+            @($caseEvidence.provider_body_sha256 | Where-Object { [string]$_ -notmatch '^[a-f0-9]{64}$' }).Count -ne 0 -or
+            [string]$caseEvidence.transcript_sha256 -notmatch '^[a-f0-9]{64}$' -or
+            @($caseEvidence.loaded_entries.PSObject.Properties.Name | Sort-Object) -join ',' -cne 'piAgentCoreEntry,piAiEntry,piCodingAgentCli,piTuiEntry') {
+            throw "PI_HIGH_CAPACITY_REPLAY_FILESYSTEM_ACTUAL_CHILD_IDENTITY_CASE_DRIFT: $criticalIdentityCase"
+        }
+    }
+    if (-not [bool]$filesystemReceipt.provider_resume.detached_complete -or
+        -not [bool]$filesystemReceipt.provider_resume.resume_reached_provider -or
+        -not [bool]$filesystemReceipt.provider_resume.no_policy_resume_reached_provider -or
+        -not (Test-ExactHighCapacityResolvedTurnBudget $filesystemReceipt.filesystem_resume.source_initial_turn_budget) -or
+        -not (Test-ExactHighCapacityResolvedTurnBudget $filesystemReceipt.filesystem_resume.no_policy_source_initial_turn_budget) -or
+        [bool]$filesystemReceipt.filesystem_resume.resume_initial_turn_budget_present -or
+        [bool]$filesystemReceipt.filesystem_resume.no_policy_resume_initial_turn_budget_present -or
+        [bool]$filesystemReceipt.filesystem_resume.source_enforce_hard_turn_limit -or
+        [bool]$filesystemReceipt.filesystem_resume.resume_enforce_hard_turn_limit -or
+        [bool]$filesystemReceipt.filesystem_resume.no_policy_source_enforce_hard_turn_limit -or
+        [bool]$filesystemReceipt.filesystem_resume.no_policy_resume_enforce_hard_turn_limit -or
+        [int]$filesystemReceipt.filesystem_resume.resume_max_subagent_depth -ne 0 -or
+        -not [bool]$filesystemReceipt.filesystem_resume.resume_retained_policy -or
+        [string]$filesystemReceipt.filesystem_resume.source_filesystem_policy_digest -notmatch '^[a-f0-9]{64}$' -or
+        [string]$filesystemReceipt.filesystem_resume.resume_filesystem_policy_digest -cne [string]$filesystemReceipt.filesystem_resume.source_filesystem_policy_digest) {
+        throw 'PI_HIGH_CAPACITY_REPLAY_FILESYSTEM_RESUME_EVIDENCE_DRIFT'
+    }
+    $clean = $filesystemReceipt.clean
+    if (-not [bool]$clean.caller_agent_source_unchanged -or
+        -not [bool]$clean.package_source_projection_unchanged -or
+        -not [bool]$clean.settings_restored -or
+        -not [bool]$clean.models_restored -or
+        -not [bool]$clean.capacity_config_unchanged -or
+        -not [bool]$clean.stop_agent_projections_restored -or
+        -not [bool]$clean.cli_unchanged -or
+        -not [bool]$clean.rpc_client_unchanged -or
+        -not [bool]$clean.codex_home_empty_after -or
+        -not [bool]$clean.restricted_allowed_tree_unchanged -or
+        [bool]$clean.project_artifacts_written -or
+        -not [bool]$clean.owner_stop_process_terminated -or
+        -not [bool]$clean.parent_process_environment_unchanged -or
+        -not [bool]$clean.mutable_agent_files.auth_json.restored_exactly -or
+        -not [bool]$clean.mutable_agent_files.models_store_json.restored_exactly -or
+        -not [bool]$clean.mutable_agent_files.run_history_jsonl.restored_exactly -or
+        -not [bool]$clean.child_sessions.restored_exactly -or
+        -not [bool]$clean.child_sessions.preexisting_entries_preserved -or
+        [int]$clean.child_sessions.nested_reparse_points_found -ne 0 -or
+        [int]$clean.child_sessions.reparse_points_followed -ne 0 -or
+        -not [bool]$clean.transcript_hashes_bound_before_session_retirement) {
+        throw 'PI_HIGH_CAPACITY_REPLAY_FILESYSTEM_CLEANUP_EVIDENCE_DRIFT'
+    }
+    $receipt.filesystem_resume_cross_product = [ordered]@{
+        schema = [string]$filesystemReceipt.schema
+        status = [string]$filesystemReceipt.status
+        script_path = $filesystemScript
+        script_sha256 = $filesystemScriptSha
+        receipt_sha256 = $filesystemReceiptSha
+        receipt_bytes = $filesystemReceiptBytes
+        canonical_harness_sha256 = [string]$filesystemReceipt.canonical_harness.sha256
+        projected_harness_sha256 = [string]$filesystemReceipt.projected_harness.sha256
+        launch_turn_budget_override = [bool]$filesystemReceipt.projected_harness.launch_turn_budget_override
+        capacity_config_sha256 = [string]$filesystemReceipt.capacity_config.sha256
+        capacity_config_turn_budget = $filesystemReceipt.capacity_config.turn_budget
+        paired_pi_tool_root = [bool]$coreIsolation.paired_pi_tool_root
+        core_paths_no_reparse = [bool]$coreIsolation.all_key_paths_no_reparse
+        isolated_pi_coding_agent_identity_sha256 = [string]$coreIsolation.pi_coding_agent.isolated_package_identity_sha256
+        actual_child_identity_records = [int]$actualChildIdentity.identity_record_count
+        actual_child_identity_root_records = [int]$actualChildIdentity.root_identity_record_count
+        actual_child_identity_cases = @($criticalIdentityCases)
+        actual_child_identity_preload_sha256 = [string]$actualChildIdentity.preload.sha256
+        hostile_parent_environment_present = [bool]($processEnvironment.parent_presence_before.pi_subagent_pi_binary -and $processEnvironment.parent_presence_before.pi_coding_agent_package_root -and $processEnvironment.parent_presence_before.node_path)
+        windows_powershell_module_path = $filesystemPowerShellModulePath
+        hostile_invocation_marker_absent = -not (Test-Path -LiteralPath $hostileInvocationMarker)
+        body_pi_binary_trimmed_empty = [bool]$processEnvironment.observed_in_body_process.pi_subagent_pi_binary_trimmed_empty
+        body_pi_coding_agent_package_root = [string]$processEnvironment.observed_in_body_process.pi_coding_agent_package_root
+        body_node_path = [string]$processEnvironment.observed_in_body_process.node_path
+        descendant_core_escape_blocked = [bool]$processEnvironment.descendant_core_escape_blocked
+        parent_process_environment_unchanged = [bool]$processEnvironment.parent_process_unchanged_after
+        fixture_codex_home_empty = [bool]$clean.codex_home_empty_after
+        restricted_source_initial_turn_budget = $filesystemReceipt.filesystem_resume.source_initial_turn_budget
+        no_policy_source_initial_turn_budget = $filesystemReceipt.filesystem_resume.no_policy_source_initial_turn_budget
+        ordinary_resume_initial_turn_budget_present = [bool]$filesystemReceipt.filesystem_resume.resume_initial_turn_budget_present
+        ordinary_no_policy_resume_initial_turn_budget_present = [bool]$filesystemReceipt.filesystem_resume.no_policy_resume_initial_turn_budget_present
+        resume_reached_provider = [bool]$filesystemReceipt.provider_resume.resume_reached_provider
+        no_policy_resume_reached_provider = [bool]$filesystemReceipt.provider_resume.no_policy_resume_reached_provider
+        filesystem_policy_digest = [string]$filesystemReceipt.filesystem_resume.source_filesystem_policy_digest
+        resume_max_subagent_depth = [int]$filesystemReceipt.filesystem_resume.resume_max_subagent_depth
+        owner_stop_process_terminated = [bool]$clean.owner_stop_process_terminated
+        candidate_mutable_files_restored = $true
+        candidate_child_sessions_restored = [bool]$clean.child_sessions.restored_exactly
+        work_root_cleanup = $null
+    }
     $receipt.status = 'verified'
 } catch {
     $receipt.status = 'blocked'
     $receipt.error = [string]$_.Exception.Message
 } finally {
+    if ($null -ne $filesystemWorkRoot) {
+        try {
+            $filesystemCleanup = Invoke-VerifiedHighCapacityReplayWorkRootCleanup -Path $filesystemWorkRoot -AllowedParent $filesystemWorkBase
+            $filesystemCleanupVerified = [bool]$filesystemCleanup.removed
+            if ($null -ne $receipt.filesystem_resume_cross_product) {
+                $receipt.filesystem_resume_cross_product['work_root_cleanup'] = [ordered]@{
+                    removed = [bool]$filesystemCleanup.removed
+                    reparse_points_unlinked = [int]$filesystemCleanup.reparse_points_unlinked
+                }
+            }
+        } catch {
+            $filesystemCleanupVerified = $false
+            $receipt.status = 'blocked'
+            $filesystemCleanupError = "PI_HIGH_CAPACITY_REPLAY_FILESYSTEM_WORK_ROOT_CLEANUP_FAILED: $($_.Exception.Message)"
+            $receipt.error = if ([string]::IsNullOrWhiteSpace([string]$receipt.error)) { $filesystemCleanupError } else { "$filesystemCleanupError; prior=$($receipt.error)" }
+        }
+    }
+    if ($null -ne $filesystemHostileRoot) {
+        try {
+            $filesystemHostileCleanup = Invoke-VerifiedHighCapacityReplayWorkRootCleanup -Path $filesystemHostileRoot -AllowedParent $filesystemWorkBase
+            $filesystemCleanupVerified = [bool]($filesystemCleanupVerified -and $filesystemHostileCleanup.removed)
+            if ($null -ne $receipt.filesystem_resume_cross_product) {
+                $receipt.filesystem_resume_cross_product['hostile_root_cleanup'] = [ordered]@{
+                    removed = [bool]$filesystemHostileCleanup.removed
+                    reparse_points_unlinked = [int]$filesystemHostileCleanup.reparse_points_unlinked
+                }
+            }
+        } catch {
+            $filesystemCleanupVerified = $false
+            $receipt.status = 'blocked'
+            $filesystemHostileCleanupError = "PI_HIGH_CAPACITY_REPLAY_FILESYSTEM_HOSTILE_ROOT_CLEANUP_FAILED: $($_.Exception.Message)"
+            $receipt.error = if ([string]::IsNullOrWhiteSpace([string]$receipt.error)) { $filesystemHostileCleanupError } else { "$filesystemHostileCleanupError; prior=$($receipt.error)" }
+        }
+    }
     if ($null -ne $tempRoot) {
         $resolvedBase = [IO.Path]::GetFullPath($tempBase).TrimEnd('\','/')
         $resolvedTarget = [IO.Path]::GetFullPath($tempRoot)
@@ -727,8 +1168,9 @@ try {
             $cleanupVerified = -not (Test-Path -LiteralPath $resolvedTarget)
         }
     }
+    $cleanupVerified = [bool]($cleanupVerified -and $filesystemCleanupVerified)
     $receipt.temp_cleanup = $cleanupVerified
-    if (-not $cleanupVerified -and $null -ne $tempRoot) {
+    if (-not $cleanupVerified -and ($null -ne $tempRoot -or $null -ne $filesystemWorkRoot -or $null -ne $filesystemHostileRoot)) {
         $receipt.status = 'blocked'
         if ([string]::IsNullOrWhiteSpace([string]$receipt.error)) { $receipt.error = "PI_HIGH_CAPACITY_REPLAY_TEMP_CLEANUP_FAILED: $tempRoot" }
     }

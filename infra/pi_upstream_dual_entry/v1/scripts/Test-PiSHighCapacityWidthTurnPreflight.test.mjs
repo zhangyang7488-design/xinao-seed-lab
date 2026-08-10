@@ -138,6 +138,8 @@ test("foreground and durable background bind hard turns only to capacity handsha
 	const asyncSource = readFileSync(path.join(subagentsRoot, "src", "runs", "background", "async-execution.ts"), "utf8");
 	assert.equal((asyncSource.match(/const enforceHardTurnLimit = params\.capacityRootContext !== undefined;/g) ?? []).length, 2);
 	assert.ok((asyncSource.match(/\benforceHardTurnLimit,\r?\n/g) ?? []).length >= 3, "chain config, single descriptor, and single config persist the flag");
+	assert.match(asyncSource, /const persistedInitialTurnBudget: ResolvedTurnBudget \| undefined = initialTurnBudget/);
+	assert.match(asyncSource, /\{ initialTurnBudget: persistedInitialTurnBudget \}/);
 
 	const runnerSource = readFileSync(path.join(subagentsRoot, "src", "runs", "background", "subagent-runner.ts"), "utf8");
 	assert.match(runnerSource, /turnBudgetDecision\(budget, turnCount, terminalAssistantStop, toolWorkActiveOrStarting, config\.enforceHardTurnLimit === true\)/);
@@ -159,11 +161,37 @@ test("durable recovery descriptor retains and validates the hard-turn flag", () 
 		outputMode: "inline",
 		maxSubagentDepth: 2,
 		share: false,
+		initialTurnBudget: { maxTurns: 30, graceTurns: 0 },
 		enforceHardTurnLimit: true,
 	};
 	try {
 		writeFileSync(descriptorPath, JSON.stringify(descriptor), "utf8");
-		assert.equal(readAsyncRecoveryDescriptor(asyncDir)?.enforceHardTurnLimit, true);
+		const canonical = readAsyncRecoveryDescriptor(asyncDir);
+		assert.deepEqual(canonical?.initialTurnBudget, { maxTurns: 30, graceTurns: 0 });
+		assert.equal(canonical?.enforceHardTurnLimit, true);
+
+		writeFileSync(descriptorPath, JSON.stringify({
+			...descriptor,
+			initialTurnBudget: { maxTurns: 30, graceTurns: 0, outcome: "within-budget", turnCount: 0 },
+		}), "utf8");
+		const normalizedLegacy = readAsyncRecoveryDescriptor(asyncDir);
+		assert.deepEqual(normalizedLegacy?.initialTurnBudget, { maxTurns: 30, graceTurns: 0 });
+		assert.equal(Object.hasOwn(normalizedLegacy?.initialTurnBudget ?? {}, "outcome"), false);
+		assert.equal(Object.hasOwn(normalizedLegacy?.initialTurnBudget ?? {}, "turnCount"), false);
+		assert.equal(normalizedLegacy?.enforceHardTurnLimit, true, "legacy normalization must not weaken the sibling hard-turn flag");
+
+		for (const [invalid, pattern] of [
+			[{ maxTurns: 30, graceTurns: 0, extra: true }, /extra is not supported/],
+			[{ maxTurns: 30, graceTurns: 0, outcome: "within-budget" }, /must contain exactly/],
+			[{ maxTurns: 30, graceTurns: 0, turnCount: 0 }, /must contain exactly/],
+			[{ maxTurns: 30, graceTurns: 0, outcome: "wrap-up-requested", turnCount: 0 }, /outcome must be 'within-budget'/],
+			[{ maxTurns: 30, graceTurns: 0, outcome: "within-budget", turnCount: 1 }, /turnCount must be 0/],
+			[{ maxTurns: 30, graceTurns: 0, outcome: "within-budget", turnCount: 0, wrapUpRequestedAtTurn: 30 }, /must contain exactly/],
+		]) {
+			writeFileSync(descriptorPath, JSON.stringify({ ...descriptor, initialTurnBudget: invalid }), "utf8");
+			assert.throws(() => readAsyncRecoveryDescriptor(asyncDir), pattern);
+		}
+
 		writeFileSync(descriptorPath, JSON.stringify({ ...descriptor, enforceHardTurnLimit: "yes" }), "utf8");
 		assert.throws(() => readAsyncRecoveryDescriptor(asyncDir), /enforceHardTurnLimit must be a boolean/);
 	} finally {

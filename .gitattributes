@@ -11,6 +11,18 @@ docs/tool_glue/CROSS_SEAM_EXECUTION_ENVELOPE_CURRENT.md text eol=lf
 infra/pi_upstream_dual_entry/v1/codex-skills/steward-pis-evolution/** text eol=lf
 
 # Exact upstream/patch fixtures are hash-pinned; preserve their source whitespace.
+infra/pi_upstream_dual_entry/v1/patches/*.patch text eol=lf
+infra/pi_upstream_dual_entry/v1/patches/*.json text eol=lf
+infra/pi_upstream_dual_entry/v1/scripts/*.ps1 text eol=lf
+infra/pi_upstream_dual_entry/v1/scripts/*.mjs text eol=lf
+infra/pi_upstream_dual_entry/v1/scripts/*.ts text eol=lf
+infra/pi_upstream_dual_entry/v1/scripts/Test-PiSHighCapacityJitiAlias.manifest.json text eol=lf
+infra/pi_upstream_dual_entry/v1/scripts/Test-PiSHighCapacityTypeShim/node_modules/** text eol=lf
+infra/pi_upstream_dual_entry/v1/scripts/Test-PiSHighCapacityTypeShim/pi-coding-agent/** text eol=crlf
+infra/pi_upstream_dual_entry/v1/scripts/Test-PiSHighCapacityTypeShim.manifest.json text eol=crlf
+infra/pi_upstream_dual_entry/v1/scripts/Test-PiSHighCapacityCompilerFixture/** text eol=lf
+infra/pi_upstream_dual_entry/v1/scripts/Test-PiSHighCapacityCompilerFixture.manifest.json text eol=crlf
+infra/pi_upstream_dual_entry/v1/surface-overlays/prime-s/** text eol=lf
 infra/pi_upstream_dual_entry/v1/patches/pi-subagents-0.44.0-high-capacity-v1.patch -whitespace
 infra/pi_upstream_dual_entry/v1/scripts/Test-PiSHighCapacityTypeShim/node_modules/@anthropic-ai/sdk/internal/types.d.mts -whitespace
 infra/pi_upstream_dual_entry/v1/scripts/Test-PiSHighCapacityTypeShim/node_modules/openai/internal/types.d.ts -whitespace

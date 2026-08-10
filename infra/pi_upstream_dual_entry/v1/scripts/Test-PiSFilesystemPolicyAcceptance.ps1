@@ -2,6 +2,7 @@
 [CmdletBinding()]
 param(
     [Parameter(Mandatory)][string]$AgentDir,
+    [string]$PiToolRoot,
     [string]$ReceiptPath = 'D:\XINAO_RESEARCH_RUNTIME\state\pi\0.84.1\acceptance\pi-subagents-filesystem-policy-v1.json',
     [string]$FixtureRoot,
     [ValidateRange(30000,600000)][int]$TimeoutMs = 120000
@@ -13,6 +14,24 @@ $ErrorActionPreference = 'Stop'
 function Get-NormalizedPiSFilesystemAcceptancePath {
     param([Parameter(Mandatory)][string]$Path)
     [IO.Path]::GetFullPath($Path).TrimEnd('\','/')
+}
+
+function Assert-PiSFilesystemAcceptanceNoReparseAncestor {
+    param([Parameter(Mandatory)][string]$Path)
+    $cursor = Get-NormalizedPiSFilesystemAcceptancePath -Path $Path
+    $root = [IO.Path]::GetPathRoot($cursor)
+    while (-not [string]::IsNullOrWhiteSpace($cursor)) {
+        if (Test-Path -LiteralPath $cursor) {
+            $item = Get-Item -LiteralPath $cursor -Force
+            if (($item.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) {
+                throw "PI_S_FILESYSTEM_POLICY_ACCEPTANCE_REPARSE_REJECTED: $cursor"
+            }
+        }
+        if ($cursor -ceq $root) { break }
+        $parent = Split-Path -Parent $cursor
+        if ([string]::IsNullOrWhiteSpace($parent) -or $parent -ceq $cursor) { break }
+        $cursor = $parent
+    }
 }
 
 function Get-PiSubagentsSourceAggregateSha256 {
@@ -39,18 +58,31 @@ $labParent = Get-NormalizedPiSFilesystemAcceptancePath -Path (Join-Path $script:
 if ((Get-NormalizedPiSFilesystemAcceptancePath -Path (Split-Path -Parent $target)) -cne $labParent) {
     throw "PI_S_FILESYSTEM_POLICY_ACCEPTANCE_REQUIRES_MAIN_BODY_LAB: $target"
 }
+$expectedPiToolRoot = Get-NormalizedPiSFilesystemAcceptancePath -Path (Join-Path $target 'pi-tool-root')
+$consumerPiToolRoot = if ([string]::IsNullOrWhiteSpace($PiToolRoot)) {
+    $expectedPiToolRoot
+} else {
+    Get-NormalizedPiSFilesystemAcceptancePath -Path $PiToolRoot
+}
+if ($consumerPiToolRoot -cne $expectedPiToolRoot) {
+    throw "PI_S_FILESYSTEM_POLICY_ACCEPTANCE_REQUIRES_PAIRED_ISOLATED_CORE: expected=$expectedPiToolRoot actual=$consumerPiToolRoot"
+}
+if (-not (Test-Path -LiteralPath $consumerPiToolRoot -PathType Container)) {
+    throw "PI_S_FILESYSTEM_POLICY_ACCEPTANCE_ISOLATED_CORE_MISSING: $consumerPiToolRoot"
+}
+Assert-PiSFilesystemAcceptanceNoReparseAncestor -Path $target
+Assert-PiSFilesystemAcceptanceNoReparseAncestor -Path $consumerPiToolRoot
 
 $spec = Get-PiDualEntrySpec -Profile 'prime-s'
 $primeBSpec = Get-PiDualEntrySpec -Profile 'prime-b'
-Assert-PiDualEntryBinary -Spec $spec
 $activePackageBefore = Get-PiSubagentsSourceAggregateSha256 -AgentDir $spec.AgentDir
 $primeBPackageBefore = Get-PiSubagentsSourceAggregateSha256 -AgentDir $primeBSpec.AgentDir
 if ($activePackageBefore -ceq 'absent' -or $primeBPackageBefore -ceq 'absent') {
     throw 'PI_S_FILESYSTEM_POLICY_ACCEPTANCE_REFERENCE_PACKAGE_MISSING'
 }
 $packageRoot = Join-Path $target 'npm\node_modules\pi-subagents'
-$cliPath = Join-Path $spec.PiToolRoot 'node_modules\@earendil-works\pi-coding-agent\dist\cli.js'
-$rpcClientPath = Join-Path $spec.PiToolRoot 'node_modules\@earendil-works\pi-coding-agent\dist\modes\rpc\rpc-client.js'
+$cliPath = Join-Path $consumerPiToolRoot 'node_modules\@earendil-works\pi-coding-agent\dist\cli.js'
+$rpcClientPath = Join-Path $consumerPiToolRoot 'node_modules\@earendil-works\pi-coding-agent\dist\modes\rpc\rpc-client.js'
 $securityHarness = Join-Path $PSScriptRoot 'Test-PiSubagentFilesystemPolicy.mjs'
 $bodyHarness = Join-Path $PSScriptRoot 'Test-PiSubagentFilesystemPolicyBodyLab.mjs'
 $stopHarness = Join-Path $PSScriptRoot 'Test-PiSubagentSessionStopProcess.mjs'
@@ -73,7 +105,10 @@ foreach ($required in @(
     if (-not (Test-Path -LiteralPath $required -PathType Leaf)) {
         throw "PI_S_FILESYSTEM_POLICY_ACCEPTANCE_INPUT_MISSING: $required"
     }
+    Assert-PiSFilesystemAcceptanceNoReparseAncestor -Path $required
 }
+$piCliBeforeSha256 = (Get-FileHash -Algorithm SHA256 -LiteralPath $cliPath).Hash.ToLowerInvariant()
+$piRpcClientBeforeSha256 = (Get-FileHash -Algorithm SHA256 -LiteralPath $rpcClientPath).Hash.ToLowerInvariant()
 
 function Test-PiFilesystemPolicyPatchOrder {
     param([Parameter(Mandatory)][string]$Text)
@@ -89,7 +124,13 @@ $bodyLabFactoryText = Get-Content -Raw -LiteralPath $bodyLabFactory -Encoding UT
 $dualEntryText = Get-Content -Raw -LiteralPath $dualEntryAcceptance -Encoding UTF8
 $readmeText = Get-Content -Raw -LiteralPath $readmePath -Encoding UTF8
 $startPrimeSOnly = $startText -match "(?s)if\s*\(\`$Profile\s+-eq\s+'prime-s'\)\s*\{.*?Apply-PiSSubagentsSessionStopCompatibility\.ps1.*?Apply-PiSSubagentsFilesystemPolicy\.ps1"
-$startDisableMidTurnIndex = $startText.LastIndexOf('if ($DisableMidTurnCompactionCompatibility)',[StringComparison]::Ordinal)
+# Bind the ordering check to the disabled branch that guards the actual
+# mid-turn/native Apply. An earlier branch only clears the launch handshake,
+# while a later branch verifies high-capacity absence after filesystem policy.
+$startMidTurnApplyIndex = $startText.IndexOf('Apply-PiSMidTurnCompactionCompatibility.ps1',[StringComparison]::Ordinal)
+$startDisableMidTurnIndex = if ($startMidTurnApplyIndex -ge 0) {
+    $startText.LastIndexOf('if ($DisableMidTurnCompactionCompatibility)',$startMidTurnApplyIndex,[StringComparison]::Ordinal)
+} else { -1 }
 $startDisableMidTurnKeepsPrerequisites =
     $startDisableMidTurnIndex -ge 0 -and
     $startText.LastIndexOf('Apply-PiSSubagentsWindowsCompatibility.ps1',[StringComparison]::Ordinal) -lt $startDisableMidTurnIndex -and
@@ -99,22 +140,30 @@ $installPrimeSOnly = $installText -match "(?s)if\s*\(\`$profileName\s+-eq\s+'pri
 $bodyLabPrimeSOnly = $bodyLabFactoryText -match "Get-PiDualEntrySpec\s+-Profile\s+'prime-s'"
 $dualEntryPrimeBNegative = $dualEntryText.IndexOf('primeBOverlayPolicyMatches',[StringComparison]::Ordinal) -ge 0 -and
     $dualEntryText.IndexOf('PI_SURFACE_TEST_COLD_BACKUP_INHERITED_FILESYSTEM_POLICY',[StringComparison]::Ordinal) -ge 0
-$readmeOneHome = $readmeText.IndexOf('Start、Install',[StringComparison]::Ordinal) -ge 0 -and
-    $readmeText.IndexOf('PiB 永不调用',[StringComparison]::Ordinal) -ge 0 -and
-    $readmeText.IndexOf('路径能力边界',[StringComparison]::Ordinal) -ge 0 -and
-    $readmeText.IndexOf('只含安全内容的 projection',[StringComparison]::Ordinal) -ge 0 -and
+# Keep source literals ASCII-only so Windows PowerShell 5.1 can execute this
+# UTF-8-without-BOM acceptance script without mojibaking its own predicates.
+$readmeOneHome = $readmeText.IndexOf('Start',[StringComparison]::Ordinal) -ge 0 -and
+    $readmeText.IndexOf('Install',[StringComparison]::Ordinal) -ge 0 -and
+    $readmeText.IndexOf('New-PiSBodyLab.ps1',[StringComparison]::Ordinal) -ge 0 -and
+    $readmeText.IndexOf('`prime-s`',[StringComparison]::Ordinal) -ge 0 -and
+    $readmeText.IndexOf('PiB',[StringComparison]::Ordinal) -ge 0 -and
+    $readmeText.IndexOf('`filesystemPolicy`',[StringComparison]::Ordinal) -ge 0 -and
+    $readmeText.IndexOf('typed task',[StringComparison]::Ordinal) -ge 0 -and
+    $readmeText.IndexOf('projection',[StringComparison]::Ordinal) -ge 0 -and
     $readmeText.IndexOf('Windows OS sandbox',[StringComparison]::Ordinal) -ge 0
-if (
-    -not (Test-PiFilesystemPolicyPatchOrder -Text $startText) -or
-    -not (Test-PiFilesystemPolicyPatchOrder -Text $installText) -or
-    -not (Test-PiFilesystemPolicyPatchOrder -Text $bodyLabFactoryText) -or
-    -not $startPrimeSOnly -or
-    -not $startDisableMidTurnKeepsPrerequisites -or
-    -not $installPrimeSOnly -or
-    -not $bodyLabPrimeSOnly -or
-    -not $dualEntryPrimeBNegative -or
-    -not $readmeOneHome
-) { throw 'PI_S_FILESYSTEM_POLICY_WIRING_SOURCE_INVALID' }
+$wiringFailures = @()
+if (-not (Test-PiFilesystemPolicyPatchOrder -Text $startText)) { $wiringFailures += 'start_patch_order' }
+if (-not (Test-PiFilesystemPolicyPatchOrder -Text $installText)) { $wiringFailures += 'install_patch_order' }
+if (-not (Test-PiFilesystemPolicyPatchOrder -Text $bodyLabFactoryText)) { $wiringFailures += 'body_lab_patch_order' }
+if (-not $startPrimeSOnly) { $wiringFailures += 'start_prime_s_only' }
+if (-not $startDisableMidTurnKeepsPrerequisites) { $wiringFailures += 'start_disable_midturn_prerequisites' }
+if (-not $installPrimeSOnly) { $wiringFailures += 'install_prime_s_only' }
+if (-not $bodyLabPrimeSOnly) { $wiringFailures += 'body_lab_prime_s_only' }
+if (-not $dualEntryPrimeBNegative) { $wiringFailures += 'dual_entry_prime_b_negative' }
+if (-not $readmeOneHome) { $wiringFailures += 'readme_one_home' }
+if ($wiringFailures.Count -gt 0) {
+    throw "PI_S_FILESYSTEM_POLICY_WIRING_SOURCE_INVALID: $($wiringFailures -join ',')"
+}
 
 $primeBPolicyModule = Join-Path $primeBSpec.AgentDir 'npm\node_modules\pi-subagents\src\runs\shared\filesystem-policy.ts'
 $primeBManifestText = if (Test-Path -LiteralPath $primeBSpec.OverlayProjectionManifest -PathType Leaf) {
@@ -144,7 +193,8 @@ New-Item -ItemType Directory -Force -Path $FixtureRoot | Out-Null
 $bodyReceiptPath = Join-Path $FixtureRoot 'body-lab-receipt.json'
 $sessionDir = Join-Path $FixtureRoot 'root-sessions'
 $moduleRoot = Join-Path $FixtureRoot 'package-source'
-New-Item -ItemType Directory -Force -Path $moduleRoot | Out-Null
+$isolatedCodexHome = Join-Path $FixtureRoot 'codex-home'
+New-Item -ItemType Directory -Force -Path $moduleRoot,$isolatedCodexHome | Out-Null
 Get-ChildItem -LiteralPath $packageRoot -Force | ForEach-Object {
     Copy-Item -LiteralPath $_.FullName -Destination $moduleRoot -Recurse -Force
 }
@@ -155,14 +205,24 @@ Get-ChildItem -LiteralPath $packageRoot -Force | ForEach-Object {
 $moduleNodeModules = Join-Path $moduleRoot 'node_modules'
 $moduleScope = Join-Path $moduleNodeModules '@earendil-works'
 $agentNpmRoot = Split-Path -Parent $packageRoot
-$piCodingAgentRoot = Join-Path $spec.PiToolRoot 'node_modules\@earendil-works\pi-coding-agent'
+$piCodingAgentRoot = Join-Path $consumerPiToolRoot 'node_modules\@earendil-works\pi-coding-agent'
 $piPeerRoot = Join-Path $piCodingAgentRoot 'node_modules\@earendil-works'
+Assert-PiSFilesystemAcceptanceNoReparseAncestor -Path $piCodingAgentRoot
+$piCodingAgentPackageJsonPath = Join-Path $piCodingAgentRoot 'package.json'
+if (-not (Test-Path -LiteralPath $piCodingAgentPackageJsonPath -PathType Leaf)) {
+    throw "PI_S_FILESYSTEM_POLICY_ACCEPTANCE_ISOLATED_CORE_PACKAGE_MISSING: $piCodingAgentPackageJsonPath"
+}
+$piCodingAgentPackage = Get-Content -Raw -LiteralPath $piCodingAgentPackageJsonPath -Encoding UTF8 | ConvertFrom-Json
+if ([string]$piCodingAgentPackage.name -cne '@earendil-works/pi-coding-agent' -or [string]$piCodingAgentPackage.version -cne '0.84.1') {
+    throw "PI_S_FILESYSTEM_POLICY_ACCEPTANCE_ISOLATED_CORE_IDENTITY_MISMATCH: $piCodingAgentPackageJsonPath"
+}
 New-Item -ItemType Directory -Force -Path $moduleScope | Out-Null
 foreach ($dependency in @('jiti','typebox','yaml')) {
     $dependencySource = Join-Path $agentNpmRoot $dependency
     if (-not (Test-Path -LiteralPath $dependencySource -PathType Container)) {
         throw "PI_S_FILESYSTEM_POLICY_ACCEPTANCE_DEPENDENCY_MISSING: $dependencySource"
     }
+    Assert-PiSFilesystemAcceptanceNoReparseAncestor -Path $dependencySource
     New-Item -ItemType Junction -Path (Join-Path $moduleNodeModules $dependency) -Target $dependencySource | Out-Null
 }
 $peerDependencies = [ordered]@{
@@ -175,41 +235,103 @@ foreach ($peer in $peerDependencies.GetEnumerator()) {
     if (-not (Test-Path -LiteralPath $peer.Value -PathType Container)) {
         throw "PI_S_FILESYSTEM_POLICY_ACCEPTANCE_PEER_DEPENDENCY_MISSING: $($peer.Value)"
     }
+    Assert-PiSFilesystemAcceptanceNoReparseAncestor -Path $peer.Value
     New-Item -ItemType Junction -Path (Join-Path $moduleScope $peer.Key) -Target $peer.Value | Out-Null
 }
 
 $windowsRaw = @(& $windowsScript -AgentDir $target -VerifyOnly 2>&1)
-if ($LASTEXITCODE -ne 0) { throw "PI_S_FILESYSTEM_POLICY_ACCEPTANCE_WINDOWS_VERIFY_FAILED: $($windowsRaw -join ' ')" }
 $windowsReceipt = ($windowsRaw -join [Environment]::NewLine) | ConvertFrom-Json
 $ownerRaw = @(& $ownerStopScript -AgentDir $target -VerifyOnly 2>&1)
-if ($LASTEXITCODE -ne 0) { throw "PI_S_FILESYSTEM_POLICY_ACCEPTANCE_OWNER_STOP_VERIFY_FAILED: $($ownerRaw -join ' ')" }
 $ownerReceipt = ($ownerRaw -join [Environment]::NewLine) | ConvertFrom-Json
 $policyRaw = @(& $applyScript -AgentDir $target -VerifyOnly 2>&1)
-if ($LASTEXITCODE -ne 0) { throw "PI_S_FILESYSTEM_POLICY_ACCEPTANCE_PATCH_VERIFY_FAILED: $($policyRaw -join ' ')" }
 $policyReceipt = ($policyRaw -join [Environment]::NewLine) | ConvertFrom-Json
 
-$securityRaw = @(& node --experimental-strip-types $securityHarness $moduleRoot 2>&1)
-if ($LASTEXITCODE -ne 0) { throw "PI_S_FILESYSTEM_POLICY_SECURITY_ACCEPTANCE_FAILED: $($securityRaw -join ' ')" }
+$nodeCommand = (Get-Command node.exe -ErrorAction Stop).Source
+$securityRun = Invoke-PiDualEntryNativeCommand -FilePath $nodeCommand -ArgumentList @(
+    '--experimental-strip-types',
+    $securityHarness,
+    $moduleRoot
+)
+$securityRaw = @($securityRun.output)
+if ([int]$securityRun.exit_code -ne 0) { throw "PI_S_FILESYSTEM_POLICY_SECURITY_ACCEPTANCE_FAILED: $($securityRaw -join ' ')" }
 $securityReceipt = ($securityRaw -join [Environment]::NewLine) | ConvertFrom-Json
 if (
     [string]$securityReceipt.schema -cne 'xinao.pi_subagents_filesystem_policy_security_acceptance.v1' -or
     @($securityReceipt.checks.PSObject.Properties | Where-Object { $_.Value -ne $true }).Count -ne 0
 ) { throw 'PI_S_FILESYSTEM_POLICY_SECURITY_ACCEPTANCE_INVALID' }
 
-$bodyRaw = @(& node $bodyHarness `
-    --cli $cliPath `
-    --rpc-client $rpcClientPath `
-    --agent-dir $target `
-    --module-root $moduleRoot `
-    --codex-home $spec.CodexHome `
-    --stop-harness $stopHarness `
-    --stop-extension $stopExtension `
-    --stop-fixture $stopFixture `
-    --fixture-root $FixtureRoot `
-    --session-dir $sessionDir `
-    --receipt $bodyReceiptPath `
-    --timeout-ms ([string]$TimeoutMs) 2>&1)
-if ($LASTEXITCODE -ne 0) { throw "PI_S_FILESYSTEM_POLICY_BODY_LAB_ACCEPTANCE_FAILED: $($bodyRaw -join ' ')" }
+$childNodePathEntries = @(
+    $moduleNodeModules,
+    (Join-Path $consumerPiToolRoot 'node_modules'),
+    (Join-Path $piCodingAgentRoot 'node_modules')
+)
+$isolatedChildEnvironment = [ordered]@{
+    PI_SUBAGENT_PI_BINARY = ' '
+    PI_SUBAGENTS_PI_CODING_AGENT_PACKAGE_ROOT = $piCodingAgentRoot
+    NODE_PATH = ($childNodePathEntries -join [IO.Path]::PathSeparator)
+}
+$previousChildEnvironment = [ordered]@{}
+$spawnProbe = $null
+$bodyRaw = @()
+$bodyExitCode = -1
+try {
+    foreach ($entry in $isolatedChildEnvironment.GetEnumerator()) {
+        $previousChildEnvironment[$entry.Key] = [Environment]::GetEnvironmentVariable($entry.Key,[EnvironmentVariableTarget]::Process)
+        [Environment]::SetEnvironmentVariable($entry.Key,[string]$entry.Value,[EnvironmentVariableTarget]::Process)
+    }
+    $spawnResolverPath = Join-Path $moduleRoot 'src\runs\shared\pi-spawn.ts'
+    Assert-PiSFilesystemAcceptanceNoReparseAncestor -Path $spawnResolverPath
+    $spawnProbeScript = @'
+import { pathToFileURL } from "node:url";
+const [sourcePath, cliPath] = process.argv.slice(2);
+    const { getPiSpawnCommand } = await import(pathToFileURL(sourcePath).href);
+    process.stdout.write(JSON.stringify(getPiSpawnCommand([], { env: process.env, argv1: cliPath, execPath: process.execPath })));
+'@
+    $spawnProbePath = Join-Path $FixtureRoot 'spawn-resolver-probe.mjs'
+    [IO.File]::WriteAllText($spawnProbePath,$spawnProbeScript,[Text.UTF8Encoding]::new($false))
+    $spawnProbeRun = Invoke-PiDualEntryNativeCommand -FilePath $nodeCommand -ArgumentList @(
+        '--experimental-strip-types',
+        $spawnProbePath,
+        $spawnResolverPath,
+        $cliPath
+    )
+    $spawnProbeRaw = @($spawnProbeRun.output)
+    $spawnProbeExitCode = [int]$spawnProbeRun.exit_code
+    if ($spawnProbeExitCode -ne 0) {
+        throw "PI_S_FILESYSTEM_POLICY_ACCEPTANCE_CHILD_PI_RESOLUTION_FAILED: $($spawnProbeRaw -join ' ')"
+    }
+    $spawnProbe = ($spawnProbeRaw -join [Environment]::NewLine) | ConvertFrom-Json
+    $expectedNodeCommand = $nodeCommand
+    if (
+        [string]$spawnProbe.command -ine $expectedNodeCommand -or
+        @($spawnProbe.args).Count -ne 1 -or
+        (Get-NormalizedPiSFilesystemAcceptancePath -Path ([string]$spawnProbe.args[0])) -ine (Get-NormalizedPiSFilesystemAcceptancePath -Path $cliPath)
+    ) {
+        throw "PI_S_FILESYSTEM_POLICY_ACCEPTANCE_CHILD_PI_RESOLUTION_DRIFT: command=$($spawnProbe.command) args=$(@($spawnProbe.args) -join ',')"
+    }
+    $bodyRun = Invoke-PiDualEntryNativeCommand -FilePath $nodeCommand -ArgumentList @(
+        $bodyHarness,
+        '--cli', $cliPath,
+        '--rpc-client', $rpcClientPath,
+        '--agent-dir', $target,
+        '--module-root', $moduleRoot,
+        '--codex-home', $isolatedCodexHome,
+        '--stop-harness', $stopHarness,
+        '--stop-extension', $stopExtension,
+        '--stop-fixture', $stopFixture,
+        '--fixture-root', $FixtureRoot,
+        '--session-dir', $sessionDir,
+        '--receipt', $bodyReceiptPath,
+        '--timeout-ms', ([string]$TimeoutMs)
+    )
+    $bodyRaw = @($bodyRun.output)
+    $bodyExitCode = [int]$bodyRun.exit_code
+} finally {
+    foreach ($entry in $isolatedChildEnvironment.GetEnumerator()) {
+        [Environment]::SetEnvironmentVariable($entry.Key,$previousChildEnvironment[$entry.Key],[EnvironmentVariableTarget]::Process)
+    }
+}
+if ($bodyExitCode -ne 0) { throw "PI_S_FILESYSTEM_POLICY_BODY_LAB_ACCEPTANCE_FAILED: $($bodyRaw -join ' ')" }
 $bodyReceipt = Get-Content -Raw -LiteralPath $bodyReceiptPath -Encoding UTF8 | ConvertFrom-Json
 if (
     [string]$bodyReceipt.schema -cne 'xinao.pi_subagents_filesystem_policy_body_lab.v1' -or
@@ -241,6 +363,15 @@ foreach ($evidence in $transcriptEvidence) {
         throw "PI_S_FILESYSTEM_POLICY_TRANSCRIPT_HASH_MISMATCH: case=$($evidence.caseName)"
     }
     if ($null -eq $evidence.isError) { throw "PI_S_FILESYSTEM_POLICY_TRANSCRIPT_IS_ERROR_MISSING: case=$($evidence.caseName)" }
+}
+$piCliAfterSha256 = (Get-FileHash -Algorithm SHA256 -LiteralPath $cliPath).Hash.ToLowerInvariant()
+$piRpcClientAfterSha256 = (Get-FileHash -Algorithm SHA256 -LiteralPath $rpcClientPath).Hash.ToLowerInvariant()
+if ($piCliAfterSha256 -cne $piCliBeforeSha256 -or $piRpcClientAfterSha256 -cne $piRpcClientBeforeSha256) {
+    throw 'PI_S_FILESYSTEM_POLICY_ACCEPTANCE_MODIFIED_ISOLATED_CORE'
+}
+$isolatedCodexHomeEntries = @(Get-ChildItem -LiteralPath $isolatedCodexHome -Force -ErrorAction Stop)
+if ($isolatedCodexHomeEntries.Count -ne 0) {
+    throw "PI_S_FILESYSTEM_POLICY_ACCEPTANCE_CODEX_HOME_NOT_EMPTY: $isolatedCodexHome"
 }
 $activePackageAfter = Get-PiSubagentsSourceAggregateSha256 -AgentDir $spec.AgentDir
 $primeBPackageAfter = Get-PiSubagentsSourceAggregateSha256 -AgentDir $primeBSpec.AgentDir
@@ -277,6 +408,21 @@ $receipt = [ordered]@{
     status = 'verified'
     generated_at = [DateTimeOffset]::Now.ToString('o')
     lab_agent_dir = $target
+    lab_pi_tool_root = $consumerPiToolRoot
+    isolated_pi_core = $true
+    pi_cli_sha256 = $piCliAfterSha256
+    pi_rpc_client_sha256 = $piRpcClientAfterSha256
+    isolated_pi_entrypoints_unchanged = $true
+    child_pi_identity = [ordered]@{
+        pi_binary_override_neutralized = $true
+        package_root = $piCodingAgentRoot
+        node_path = $childNodePathEntries
+        spawn_command = [string]$spawnProbe.command
+        spawn_cli = [string]$spawnProbe.args[0]
+        isolated_cli_resolved = $true
+    }
+    isolated_codex_home = $isolatedCodexHome
+    isolated_codex_home_empty_after = $true
     fixture_root = $FixtureRoot
     package = 'pi-subagents@0.44.0'
     patch = $policyReceipt

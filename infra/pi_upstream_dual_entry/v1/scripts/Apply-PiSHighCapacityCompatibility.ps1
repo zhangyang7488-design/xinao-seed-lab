@@ -50,7 +50,7 @@ function Test-PiSHighCapacityState {
     param(
         [Parameter(Mandatory)][System.Collections.IDictionary]$Actual,
         [Parameter(Mandatory)][System.Collections.IDictionary]$Files,
-        [Parameter(Mandatory)][ValidateSet('Pre','Final')][string]$Expected
+        [Parameter(Mandatory)][ValidateSet('Pre','V41','Final')][string]$Expected
     )
     @($Files.Keys | Where-Object { $Actual[$_] -ceq $Files[$_][$Expected] }).Count -eq $Files.Count
 }
@@ -212,7 +212,7 @@ function Assert-PiSHighCapacityTreeState {
     param(
         [Parameter(Mandatory)][string]$Root,
         [Parameter(Mandatory)][System.Collections.IDictionary]$Files,
-        [Parameter(Mandatory)][ValidateSet('Pre','Final')][string]$Expected,
+        [Parameter(Mandatory)][ValidateSet('Pre','V41','Final')][string]$Expected,
         [Parameter(Mandatory)][string]$ErrorId
     )
     $actual = Get-PiSHighCapacityFileState -Root $Root -Files $Files
@@ -250,8 +250,8 @@ function Copy-PiSHighCapacityFileAtomic {
 function Invoke-PiSHighCapacityCommit {
     param(
         [Parameter(Mandatory)][object[]]$Trees,
-        [Parameter(Mandatory)][ValidateSet('Pre','Final')][string]$SourceState,
-        [Parameter(Mandatory)][ValidateSet('Pre','Final')][string]$TargetState,
+        [Parameter(Mandatory)][ValidateSet('Pre','V41','Final')][string]$SourceState,
+        [Parameter(Mandatory)][ValidateSet('Pre','V41','Final')][string]$TargetState,
         [Parameter(Mandatory)][string]$TransactionRoot
     )
     $backupRoot = Join-Path $TransactionRoot 'rollback'
@@ -353,10 +353,13 @@ $packageJsonPath = Join-Path $packageRoot 'package.json'
 $corePackageJsonPath = Join-Path $coreRoot 'package.json'
 $patchRoot = Join-Path (Split-Path -Parent $PSScriptRoot) 'patches'
 $packagePatchPath = Join-Path $patchRoot 'pi-subagents-0.44.0-high-capacity-v1.patch'
+$packageDeltaPatchPath = Join-Path $patchRoot 'pi-subagents-0.44.0-high-capacity-v4.2-descriptor-resume.patch'
 $corePatchPath = Join-Path $patchRoot 'pi-coding-agent-0.84.1-high-capacity-v1.patch'
+$candidateManifestPath = Join-Path $patchRoot 'pi-s-high-capacity-v4.2-manifest.json'
 $expectedPackagePatchHash = 'a31617bd6df9004f0581935de5ef68897b2382f3c7656b1d6977c7a61cc645d4'
+$expectedPackageDeltaPatchHash = '8c872c65657476a2db3c0dbc9145e9630e4e7715f7a476431fef07f51f98f75b'
 $expectedCorePatchHash = '13a89eda2b22e9337c90aa817e75e766499ee62f1fa044142a9cceef91d9d3ad'
-$candidateManifestHash = '019f6fec12a1261c29af1c3e38a52a6a9858e14d7d42cbe9d918a3306fdeb4bb'
+$candidateManifestHash = '8f88fa47dffb4ff591a4b89a367fde0dce96b3d19d3c397200dbc79869b63468'
 
 $packageFiles = [ordered]@{
     'src\extension\fanout-child.ts' = @{ Pre = '0209c6079fb86be1257e68a460eedbea8da577193a831fc0ecec3e3a6f7d8e51'; Final = 'b777190d50b43d4ca1366da8f64e53eb75846d660a149029cc2cc027607f632b' }
@@ -365,8 +368,8 @@ $packageFiles = [ordered]@{
     'src\extension\rpc.ts' = @{ Pre = '397d971cc7ec1ef1df846426c654d343a3fa91ab718eec24a8e78a12ad0fc0a7'; Final = '637d4c70a99f229c11e743a6b2e41569b91217f36f002958bf3ad3ed2cae5599' }
     'src\extension\schemas.ts' = @{ Pre = 'ddd81da1c7d0063acadfe692378b640bf87418c699b3b471e5e74b7eac069bcc'; Final = 'd83e7ba5311dfc2d4b0316365ff934929abe6e1ce59ffeea5d4134c242b33302' }
     'src\extension\tool-description.ts' = @{ Pre = 'd2ceefa78c4f5a5cf57d91f8b368144ffe29ea14ef2cf650f866218040aabb89'; Final = '3493ac9686b14f7322786467948c6efcc0c23340bfaee32f06c50db57e278d50' }
-    'src\runs\background\async-execution.ts' = @{ Pre = 'b8a272c050155439dc405da71d2cf5c21002744357b1c37e5f046c399cde10e7'; Final = 'ef0ba69b0c6d083b27e5f05336031556ad0a7a2646cfb018ec91a3100c8eadf4' }
-    'src\runs\background\async-resume.ts' = @{ Pre = 'ae3a301b1dab8ec0b8348def3111eb5382a8006d042b0726c313e8d83ef806e3'; Final = 'a32eb20de710ec4b443b1027d8bff76afc8d6e853d4d4e72783501b839764661' }
+    'src\runs\background\async-execution.ts' = @{ Pre = 'b8a272c050155439dc405da71d2cf5c21002744357b1c37e5f046c399cde10e7'; V41 = 'ef0ba69b0c6d083b27e5f05336031556ad0a7a2646cfb018ec91a3100c8eadf4'; Final = '64ecfc461aea05adf809dda9a296364e8e85098ffb7b9c0d71c9d4c5101fb921' }
+    'src\runs\background\async-resume.ts' = @{ Pre = 'ae3a301b1dab8ec0b8348def3111eb5382a8006d042b0726c313e8d83ef806e3'; V41 = 'a32eb20de710ec4b443b1027d8bff76afc8d6e853d4d4e72783501b839764661'; Final = '6356456ead3ad359324a5664786da74dc0077de80448e35f209a797127482371' }
     'src\runs\background\retained-children.ts' = @{ Pre = '39baebf55230c3812d04d6573296356e62f80cf9f8cb258f0f2b3b4c9c77580a'; Final = '444fd33aaeb5117483330d9fc1535acecf4531927070cea3c5c550367b7023b1' }
     'src\runs\background\subagent-runner.ts' = @{ Pre = '599eb6faad6029272d26b41aa9ed8c6c0cd1b389230cd5fe46203a555312382d'; Final = 'ae581fd8367e8ae32c712afb3cc405b2fa9e6b686b6b14f81af54d870c550f86' }
     'src\runs\foreground\chain-execution.ts' = @{ Pre = 'c810388939735b169bba11c9cb8359803e063d408cd9d18feb1884ffebbdec41'; Final = 'aaf7271cd547c948ef1f4492f32ec85f7ab4a113fc19899c34396fe89ec7ef77' }
@@ -385,6 +388,12 @@ $coreFiles = [ordered]@{
     'dist\core\sdk.js' = @{ Pre = 'f6e72f33f44c708249c8d74931d816c36fe27175f7fa1639cba0a3d988592821'; Final = '0248f6d4c080a92e8e076016b0e4d9b8533041c624445da6cd94bc8a3f83e7c5' }
     'dist\core\xinao-pi-subagent-capacity-runtime.js' = @{ Pre = 'absent'; Final = 'ba5614b01ee3b2c15194d1006596bef50134fdd4f86125713cf61987f7be76b2' }
 }
+foreach ($entry in $packageFiles.GetEnumerator()) {
+    if (-not $entry.Value.ContainsKey('V41')) { $entry.Value['V41'] = $entry.Value.Final }
+}
+foreach ($entry in $coreFiles.GetEnumerator()) {
+    $entry.Value['V41'] = $entry.Value.Final
+}
 
 Assert-PiSHighCapacityNoReparsePath -Path $packageRoot
 Assert-PiSHighCapacityNoReparsePath -Path $coreRoot
@@ -395,18 +404,75 @@ foreach ($relative in $coreFiles.Keys) {
     Assert-PiSHighCapacityNoReparsePath -Path (Join-Path $coreRoot $relative)
 }
 
-foreach ($required in @($packageJsonPath,$corePackageJsonPath,$packagePatchPath,$corePatchPath)) {
+foreach ($required in @($packageJsonPath,$corePackageJsonPath,$packagePatchPath,$packageDeltaPatchPath,$corePatchPath,$candidateManifestPath)) {
     if (-not (Test-Path -LiteralPath $required -PathType Leaf)) {
         throw "PI_S_HIGH_CAPACITY_SOURCE_MISSING: $required"
     }
 }
 $packagePatchHash = (Get-FileHash -Algorithm SHA256 -LiteralPath $packagePatchPath).Hash.ToLowerInvariant()
+$packageDeltaPatchHash = (Get-FileHash -Algorithm SHA256 -LiteralPath $packageDeltaPatchPath).Hash.ToLowerInvariant()
 $corePatchHash = (Get-FileHash -Algorithm SHA256 -LiteralPath $corePatchPath).Hash.ToLowerInvariant()
+$actualCandidateManifestHash = (Get-FileHash -Algorithm SHA256 -LiteralPath $candidateManifestPath).Hash.ToLowerInvariant()
 if ($packagePatchHash -cne $expectedPackagePatchHash) {
     throw "PI_S_HIGH_CAPACITY_PACKAGE_PATCH_IDENTITY_MISMATCH: expected=$expectedPackagePatchHash actual=$packagePatchHash"
 }
+if ($packageDeltaPatchHash -cne $expectedPackageDeltaPatchHash) {
+    throw "PI_S_HIGH_CAPACITY_PACKAGE_DELTA_PATCH_IDENTITY_MISMATCH: expected=$expectedPackageDeltaPatchHash actual=$packageDeltaPatchHash"
+}
 if ($corePatchHash -cne $expectedCorePatchHash) {
     throw "PI_S_HIGH_CAPACITY_CORE_PATCH_IDENTITY_MISMATCH: expected=$expectedCorePatchHash actual=$corePatchHash"
+}
+if ($actualCandidateManifestHash -cne $candidateManifestHash) {
+    throw "PI_S_HIGH_CAPACITY_CANDIDATE_MANIFEST_IDENTITY_MISMATCH: expected=$candidateManifestHash actual=$actualCandidateManifestHash"
+}
+$candidateManifest = Get-Content -Raw -LiteralPath $candidateManifestPath -Encoding UTF8 | ConvertFrom-Json
+if ([string]$candidateManifest.schema -cne 'xinao.pi.subagent.capacity.candidate-manifest.v4.2' -or
+    [string]$candidateManifest.generation -cne 'V4.2' -or
+    @($candidateManifest.files).Count -ne 23 -or
+    @($candidateManifest.patches).Count -ne 3) {
+    throw 'PI_S_HIGH_CAPACITY_CANDIDATE_MANIFEST_CONTRACT_MISMATCH'
+}
+$manifestFileKeys = @{}
+foreach ($manifestFile in @($candidateManifest.files)) {
+    $manifestRoot = [string]$manifestFile.root
+    $manifestRelative = ([string]$manifestFile.path).Replace('/','\')
+    if ($manifestRoot -notin @('package','core') -or
+        [string]::IsNullOrWhiteSpace($manifestRelative) -or
+        [IO.Path]::IsPathRooted($manifestRelative) -or
+        $manifestRelative.Contains(':') -or
+        $manifestRelative -match '(^|\\)\.\.(\\|$)' -or
+        [string]$manifestFile.sha256 -notmatch '^[a-f0-9]{64}$' -or
+        [long]$manifestFile.bytes -lt 1) {
+        throw "PI_S_HIGH_CAPACITY_CANDIDATE_MANIFEST_FILE_INVALID: root=$manifestRoot path=$manifestRelative"
+    }
+    $manifestKey = "$manifestRoot`:$manifestRelative"
+    if ($manifestFileKeys.ContainsKey($manifestKey)) {
+        throw "PI_S_HIGH_CAPACITY_CANDIDATE_MANIFEST_FILE_DUPLICATE: $manifestKey"
+    }
+    $manifestFileKeys[$manifestKey] = $true
+    $generationMap = if ($manifestRoot -ceq 'package') { $packageFiles } else { $coreFiles }
+    if (-not $generationMap.Contains($manifestRelative) -or
+        [string]$generationMap[$manifestRelative].Final -cne [string]$manifestFile.sha256) {
+        throw "PI_S_HIGH_CAPACITY_CANDIDATE_MANIFEST_FILE_MAP_MISMATCH: $manifestKey"
+    }
+}
+if ($manifestFileKeys.Count -ne ($packageFiles.Count + $coreFiles.Count)) {
+    throw 'PI_S_HIGH_CAPACITY_CANDIDATE_MANIFEST_FILE_SET_MISMATCH'
+}
+$manifestPatchIdentity = @{}
+foreach ($manifestPatch in @($candidateManifest.patches)) {
+    $manifestPatchIdentity[[string]$manifestPatch.name] = "$( [long]$manifestPatch.bytes ):$( [string]$manifestPatch.sha256 )"
+}
+$expectedManifestPatches = [ordered]@{
+    (Split-Path -Leaf $packagePatchPath) = "$( (Get-Item -LiteralPath $packagePatchPath).Length ):$packagePatchHash"
+    (Split-Path -Leaf $packageDeltaPatchPath) = "$( (Get-Item -LiteralPath $packageDeltaPatchPath).Length ):$packageDeltaPatchHash"
+    (Split-Path -Leaf $corePatchPath) = "$( (Get-Item -LiteralPath $corePatchPath).Length ):$corePatchHash"
+}
+foreach ($manifestPatchName in $expectedManifestPatches.Keys) {
+    if (-not $manifestPatchIdentity.ContainsKey($manifestPatchName) -or
+        [string]$manifestPatchIdentity[$manifestPatchName] -cne [string]$expectedManifestPatches[$manifestPatchName]) {
+        throw "PI_S_HIGH_CAPACITY_CANDIDATE_MANIFEST_PATCH_MISMATCH: $manifestPatchName"
+    }
 }
 $package = Get-Content -Raw -LiteralPath $packageJsonPath -Encoding UTF8 | ConvertFrom-Json
 $corePackage = Get-Content -Raw -LiteralPath $corePackageJsonPath -Encoding UTF8 | ConvertFrom-Json
@@ -440,17 +506,26 @@ $allPre = (
     (Test-PiSHighCapacityState -Actual $packageBefore -Files $packageFiles -Expected Pre) -and
     (Test-PiSHighCapacityState -Actual $coreBefore -Files $coreFiles -Expected Pre)
 )
+$allV41 = (
+    (Test-PiSHighCapacityState -Actual $packageBefore -Files $packageFiles -Expected V41) -and
+    (Test-PiSHighCapacityState -Actual $coreBefore -Files $coreFiles -Expected V41)
+)
 $allFinal = (
     (Test-PiSHighCapacityState -Actual $packageBefore -Files $packageFiles -Expected Final) -and
     (Test-PiSHighCapacityState -Actual $coreBefore -Files $coreFiles -Expected Final)
 )
-if (-not $allPre -and -not $allFinal) {
+if (-not $allPre -and -not $allV41 -and -not $allFinal) {
     throw "PI_S_HIGH_CAPACITY_SOURCE_CONFLICT: package=$(Format-PiSHighCapacityState -State $packageBefore) core=$(Format-PiSHighCapacityState -State $coreBefore)"
 }
 
 $operation = if ($InternalRestore) { 'restore' } else { 'apply' }
 $alreadyDesired = if ($InternalRestore) { $allPre } else { $allFinal }
-$sourceReady = if ($InternalRestore) { $allFinal } else { $allPre }
+$sourceGeneration = if ($InternalRestore) {
+    if ($allFinal) { 'Final' } elseif ($allV41) { 'V41' } else { $null }
+} else {
+    if ($allPre) { 'Pre' } elseif ($allV41) { 'V41' } else { $null }
+}
+$sourceReady = -not [string]::IsNullOrWhiteSpace($sourceGeneration)
 if ($VerifyOnly -and -not $alreadyDesired) {
     $errorId = if ($InternalRestore) { 'PI_S_HIGH_CAPACITY_RESTORE_NOT_APPLIED' } else { 'PI_S_HIGH_CAPACITY_PATCH_NOT_APPLIED' }
     throw "$errorId`: agent_dir=$targetAgentDir pi_tool_root=$targetPiToolRoot"
@@ -470,6 +545,10 @@ try {
         Initialize-PiSHighCapacityStage -SourceRoot $coreRoot -StageRoot $coreStage -Files $coreFiles
 
         if ($InternalRestore) {
+            if ($sourceGeneration -ceq 'Final') {
+                Invoke-PiSHighCapacityGitPatch -StageRoot $packageStage -PatchPath $packageDeltaPatchPath -Reverse
+                Assert-PiSHighCapacityTreeState -Root $packageStage -Files $packageFiles -Expected V41 -ErrorId 'PI_S_HIGH_CAPACITY_RESTORE_DELTA_STAGE_VERIFY_FAILED' | Out-Null
+            }
             Invoke-PiSHighCapacityGitPatch -StageRoot $coreStage -PatchPath $corePatchPath -Reverse
             Invoke-PiSHighCapacityGitPatch -StageRoot $packageStage -PatchPath $packagePatchPath -Reverse
             Assert-PiSHighCapacityTreeState -Root $coreStage -Files $coreFiles -Expected Pre -ErrorId 'PI_S_HIGH_CAPACITY_RESTORE_CORE_STAGE_VERIFY_FAILED' | Out-Null
@@ -478,10 +557,15 @@ try {
                 [pscustomobject]@{ Name = 'core'; LiveRoot = $coreRoot; StageRoot = $coreStage; Files = $coreFiles },
                 [pscustomobject]@{ Name = 'package'; LiveRoot = $packageRoot; StageRoot = $packageStage; Files = $packageFiles }
             )
-            Invoke-PiSHighCapacityCommit -Trees $trees -SourceState Final -TargetState Pre -TransactionRoot $transactionRoot
+            Invoke-PiSHighCapacityCommit -Trees $trees -SourceState $sourceGeneration -TargetState Pre -TransactionRoot $transactionRoot
         } else {
-            Invoke-PiSHighCapacityGitPatch -StageRoot $packageStage -PatchPath $packagePatchPath
-            Invoke-PiSHighCapacityGitPatch -StageRoot $coreStage -PatchPath $corePatchPath
+            if ($sourceGeneration -ceq 'Pre') {
+                Invoke-PiSHighCapacityGitPatch -StageRoot $packageStage -PatchPath $packagePatchPath
+                Invoke-PiSHighCapacityGitPatch -StageRoot $coreStage -PatchPath $corePatchPath
+                Assert-PiSHighCapacityTreeState -Root $packageStage -Files $packageFiles -Expected V41 -ErrorId 'PI_S_HIGH_CAPACITY_BASE_PACKAGE_STAGE_VERIFY_FAILED' | Out-Null
+                Assert-PiSHighCapacityTreeState -Root $coreStage -Files $coreFiles -Expected V41 -ErrorId 'PI_S_HIGH_CAPACITY_BASE_CORE_STAGE_VERIFY_FAILED' | Out-Null
+            }
+            Invoke-PiSHighCapacityGitPatch -StageRoot $packageStage -PatchPath $packageDeltaPatchPath
             Assert-PiSHighCapacityTreeState -Root $packageStage -Files $packageFiles -Expected Final -ErrorId 'PI_S_HIGH_CAPACITY_PACKAGE_STAGE_VERIFY_FAILED' | Out-Null
             Assert-PiSHighCapacityTreeState -Root $coreStage -Files $coreFiles -Expected Final -ErrorId 'PI_S_HIGH_CAPACITY_CORE_STAGE_VERIFY_FAILED' | Out-Null
             $packageRuntime = Join-Path $packageStage 'src\runs\shared\xinao-pi-subagent-capacity-runtime.js'
@@ -493,7 +577,7 @@ try {
                 [pscustomobject]@{ Name = 'package'; LiveRoot = $packageRoot; StageRoot = $packageStage; Files = $packageFiles },
                 [pscustomobject]@{ Name = 'core'; LiveRoot = $coreRoot; StageRoot = $coreStage; Files = $coreFiles }
             )
-            Invoke-PiSHighCapacityCommit -Trees $trees -SourceState Pre -TargetState Final -TransactionRoot $transactionRoot
+            Invoke-PiSHighCapacityCommit -Trees $trees -SourceState $sourceGeneration -TargetState Final -TransactionRoot $transactionRoot
         }
         $changed = $true
     }
@@ -509,23 +593,34 @@ try {
         if (-not $runtimeProjectionEqual) { throw 'PI_S_HIGH_CAPACITY_RUNTIME_FINAL_PROJECTION_MISMATCH' }
     }
 
+    $receiptSourceGeneration = if ($alreadyDesired) { if ($InternalRestore) { 'Pre' } else { 'Final' } } else { $sourceGeneration }
+    $targetGeneration = if ($InternalRestore) { 'Pre' } else { 'Final' }
+    $transition = if ($alreadyDesired) { 'no-op' } else { "$sourceGeneration->$targetGeneration" }
+
     [pscustomobject]@{
         schema = if ($InternalRestore) { 'xinao.pi_s_high_capacity_compatibility_restore.v1' } else { 'xinao.pi_s_high_capacity_compatibility.v1' }
         operation = $operation
-        patch_id = 'pi-high-capacity-compatibility-v1'
+        patch_id = 'pi-high-capacity-compatibility-v4.2'
         agent_dir = $targetAgentDir
         pi_tool_root = $targetPiToolRoot
         package = 'pi-subagents@0.44.0'
         core_package = '@earendil-works/pi-coding-agent@0.84.1'
         package_patch_path = $packagePatchPath
         package_patch_sha256 = $packagePatchHash
+        package_delta_patch_path = $packageDeltaPatchPath
+        package_delta_patch_sha256 = $packageDeltaPatchHash
         core_patch_path = $corePatchPath
         core_patch_sha256 = $corePatchHash
+        candidate_manifest_path = $candidateManifestPath
         candidate_manifest_sha256 = $candidateManifestHash
+        candidate_manifest_bytes = (Get-Item -LiteralPath $candidateManifestPath).Length
         before_package_sha256 = $packageBefore
         before_core_sha256 = $coreBefore
         after_package_sha256 = $packageAfter
         after_core_sha256 = $coreAfter
+        source_generation = $receiptSourceGeneration
+        target_generation = $targetGeneration
+        transition = $transition
         changed = $changed
         verify_only = [bool]$VerifyOnly
         sqlite_probe = $sqliteProbe

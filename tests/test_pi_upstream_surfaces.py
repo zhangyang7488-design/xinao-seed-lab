@@ -691,6 +691,12 @@ def test_prime_s_native_continuation_is_root_only_abort_fenced_and_reversible() 
 
 def test_prime_s_filesystem_policy_receipt_is_bound_to_current_active_packages() -> None:
     surface_test = _text(SOURCE_ROOT / "scripts" / "Test-UpstreamPiDualEntry.ps1")
+    filesystem_apply = _text(
+        SOURCE_ROOT / "scripts" / "Apply-PiSSubagentsFilesystemPolicy.ps1"
+    )
+    filesystem_acceptance = _text(
+        SOURCE_ROOT / "scripts" / "Test-PiSFilesystemPolicyAcceptance.ps1"
+    )
 
     assert "function Get-PiSubagentsSourceAggregateSha256" in surface_test
     assert (
@@ -701,9 +707,42 @@ def test_prime_s_filesystem_policy_receipt_is_bound_to_current_active_packages()
         "prime_b_pi_subagents_source_after_sha256 -cne $currentPrimeBPiSubagentsSourceSha256"
         in surface_test
     )
+    assert "$startMidTurnApplyIndex" in filesystem_acceptance
+    assert (
+        "$startText.LastIndexOf('if ($DisableMidTurnCompactionCompatibility)',"
+        "$startMidTurnApplyIndex,[StringComparison]::Ordinal)"
+        in filesystem_acceptance
+    )
+    assert "PI_S_FILESYSTEM_POLICY_ACCEPTANCE_REQUIRES_PAIRED_ISOLATED_CORE" in filesystem_acceptance
+    assert "Join-Path $target 'pi-tool-root'" in filesystem_acceptance
+    assert "Join-Path $FixtureRoot 'codex-home'" in filesystem_acceptance
+    assert "'--codex-home', $isolatedCodexHome" in filesystem_acceptance
+    assert "lab_pi_tool_root = $consumerPiToolRoot" in filesystem_acceptance
+    assert "isolated_pi_core = $true" in filesystem_acceptance
+    assert "PI_S_FILESYSTEM_POLICY_ACCEPTANCE_MODIFIED_ISOLATED_CORE" in filesystem_acceptance
+    assert "PI_S_FILESYSTEM_POLICY_ACCEPTANCE_CODEX_HOME_NOT_EMPTY" in filesystem_acceptance
+    assert "isolated_codex_home_empty_after = $true" in filesystem_acceptance
+    assert "Assert-PiDualEntryBinary -Spec $spec" not in filesystem_acceptance
+    assert "PI_S_FILESYSTEM_POLICY_ACCEPTANCE_REPARSE_REJECTED" in filesystem_acceptance
+    assert "PI_SUBAGENT_PI_BINARY = ' '" in filesystem_acceptance
+    assert "PI_SUBAGENTS_PI_CODING_AGENT_PACKAGE_ROOT = $piCodingAgentRoot" in filesystem_acceptance
+    assert "PI_S_FILESYSTEM_POLICY_ACCEPTANCE_CHILD_PI_RESOLUTION_DRIFT" in filesystem_acceptance
+    assert "pi_binary_override_neutralized = $true" in filesystem_acceptance
+    assert "Assert-PiSFilesystemAcceptanceNoReparseAncestor -Path $peer.Value" in filesystem_acceptance
+    assert "isolated_pi_entrypoints_unchanged = $true" in filesystem_acceptance
+    assert filesystem_acceptance.count("Invoke-PiDualEntryNativeCommand") == 3
+    assert "$LASTEXITCODE" not in filesystem_acceptance
+    assert "spawn-resolver-probe.mjs" in filesystem_acceptance
+    assert "process.argv.slice(2)" in filesystem_acceptance
+    assert "CapacityV41 = 'ef0ba69b0c6d083b27e5f05336031556ad0a7a2646cfb018ec91a3100c8eadf4'" in filesystem_apply
+    assert "CapacityV41 = 'a32eb20de710ec4b443b1027d8bff76afc8d6e853d4d4e72783501b839764661'" in filesystem_apply
+    assert "Capacity = '64ecfc461aea05adf809dda9a296364e8e85098ffb7b9c0d71c9d4c5101fb921'" in filesystem_apply
+    assert "Capacity = '6356456ead3ad359324a5664786da74dc0077de80448e35f209a797127482371'" in filesystem_apply
+    assert "high_capacity_generation_accepted = $capacityGeneration" in filesystem_apply
 
 
 def test_prime_s_high_capacity_is_typed_main_only_and_transactional() -> None:
+    attributes = _text(REPO_ROOT / ".gitattributes")
     common = _text(SOURCE_ROOT / "scripts" / "PiDualEntry.Common.ps1")
     initializer = _text(SOURCE_ROOT / "scripts" / "Initialize-UpstreamPiProfiles.ps1")
     start = _text(SOURCE_ROOT / "scripts" / "Start-UpstreamPi.ps1")
@@ -713,6 +752,17 @@ def test_prime_s_high_capacity_is_typed_main_only_and_transactional() -> None:
     surface_test = _text(SOURCE_ROOT / "scripts" / "Test-UpstreamPiDualEntry.ps1")
     recursive_peer = _text(SOURCE_ROOT / "surface-overlays" / "prime-s" / "agents" / "recursive-peer.md")
     readme = _text(SOURCE_ROOT / "README.md")
+    capacity_public = _text(
+        SOURCE_ROOT / "scripts" / "Test-PiSHighCapacityPublicTasks.test.mjs"
+    )
+    capacity_width = _text(
+        SOURCE_ROOT / "scripts" / "Test-PiSHighCapacityWidthTurnPreflight.test.mjs"
+    )
+    capacity_resume_delta = _text(
+        SOURCE_ROOT
+        / "patches"
+        / "pi-subagents-0.44.0-high-capacity-v4.2-descriptor-resume.patch"
+    )
 
     assert "maxSubagentDepth = 3" in common
     assert "MaxSubagentSpawnsPerSession = 40" in common
@@ -760,12 +810,30 @@ def test_prime_s_high_capacity_is_typed_main_only_and_transactional() -> None:
     assert "model:" not in recursive_peer
     assert "typed `tasks:[...]`" in readme
     assert "maxTurns + graceTurns" in readme
-    assert 'tasks: [{ agent: "peer"' in _text(
-        SOURCE_ROOT / "scripts" / "Test-PiSHighCapacityPublicTasks.test.mjs"
-    )
+    assert 'tasks: [{ agent: "peer"' in capacity_public
+    assert "readAsyncRecoveryDescriptor" in capacity_public
+    assert '{ action: "resume"' in capacity_public
+    assert "persistedInitialTurnBudget" in capacity_width
+    assert "resolveRecoveryInitialTurnBudget" in capacity_resume_delta
+    for path_rule in (
+        "infra/pi_upstream_dual_entry/v1/patches/*.patch text eol=lf",
+        "infra/pi_upstream_dual_entry/v1/patches/*.json text eol=lf",
+        "infra/pi_upstream_dual_entry/v1/scripts/*.ps1 text eol=lf",
+        "infra/pi_upstream_dual_entry/v1/scripts/*.mjs text eol=lf",
+        "infra/pi_upstream_dual_entry/v1/scripts/*.ts text eol=lf",
+        "infra/pi_upstream_dual_entry/v1/scripts/Test-PiSHighCapacityJitiAlias.manifest.json text eol=lf",
+        "infra/pi_upstream_dual_entry/v1/scripts/Test-PiSHighCapacityTypeShim/node_modules/** text eol=lf",
+        "infra/pi_upstream_dual_entry/v1/scripts/Test-PiSHighCapacityTypeShim/pi-coding-agent/** text eol=crlf",
+        "infra/pi_upstream_dual_entry/v1/scripts/Test-PiSHighCapacityTypeShim.manifest.json text eol=crlf",
+        "infra/pi_upstream_dual_entry/v1/scripts/Test-PiSHighCapacityCompilerFixture/** text eol=lf",
+        "infra/pi_upstream_dual_entry/v1/scripts/Test-PiSHighCapacityCompilerFixture.manifest.json text eol=crlf",
+        "infra/pi_upstream_dual_entry/v1/surface-overlays/prime-s/** text eol=lf",
+    ):
+        assert path_rule in attributes
 
     for relative in (
         "patches/pi-subagents-0.44.0-high-capacity-v1.patch",
+        "patches/pi-subagents-0.44.0-high-capacity-v4.2-descriptor-resume.patch",
         "patches/pi-coding-agent-0.84.1-high-capacity-v1.patch",
         "scripts/Apply-PiSHighCapacityCompatibility.ps1",
         "scripts/Restore-PiSHighCapacityCompatibility.ps1",

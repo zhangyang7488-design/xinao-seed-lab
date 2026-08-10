@@ -83,6 +83,13 @@ const { deliverStopRequest } = await import(pathToFileURL(path.join(
 	"background",
 	"control-channel.ts",
 )).href);
+const { readAsyncRecoveryDescriptor } = await import(pathToFileURL(path.join(
+	subagentsRoot,
+	"src",
+	"runs",
+	"background",
+	"async-resume.ts",
+)).href);
 const { DIRS } = await import(pathToFileURL(path.join(
 	subagentsRoot,
 	"src",
@@ -593,12 +600,21 @@ test("executePublic enforces the canonical typed-tasks capacity boundary before 
 	assert.equal(restrictedStatus.state, "complete", JSON.stringify(restrictedStatus));
 	assert.equal(mockPi.callCount(), restrictedCallsBefore + 1, "restricted typed single must launch exactly one Pi child");
 	assert.equal(restrictedStatus.steps?.[0]?.context, "fresh", "filesystem-restricted child context must be fresh");
-	const restrictedRecovery = JSON.parse(readFileSync(path.join(restrictedRun.asyncDir, "recovery-descriptor.json"), "utf8"));
+	const restrictedDescriptorPath = path.join(restrictedRun.asyncDir, "recovery-descriptor.json");
+	const restrictedRawRecovery = JSON.parse(readFileSync(restrictedDescriptorPath, "utf8"));
+	assert.deepEqual(restrictedRawRecovery.initialTurnBudget, { maxTurns: 30, graceTurns: 0 }, "writer must persist only the resolved initial budget");
+	assert.deepEqual(Object.keys(restrictedRawRecovery.initialTurnBudget).sort(), ["graceTurns", "maxTurns"]);
+	const restrictedRecovery = readAsyncRecoveryDescriptor(restrictedRun.asyncDir);
+	assert.ok(restrictedRecovery, "restricted async run must retain a readable recovery descriptor");
 	assert.equal(restrictedRecovery.maxSubagentDepth, 0, "filesystem-restricted child must have recursion depth zero");
 	assert.equal(restrictedRecovery.inheritProjectContext, false);
 	assert.equal(restrictedRecovery.inheritSkills, false);
 	assert.equal(Object.hasOwn(restrictedRecovery, "skills"), false, "filesystem-restricted recovery must not retain skills");
 	assert.deepEqual(restrictedRecovery.filesystemPolicy?.allowedRoots, [realpathSync(allowedRoot)]);
+	assert.deepEqual(restrictedRecovery.initialTurnBudget, { maxTurns: 30, graceTurns: 0 });
+	assert.equal(Object.hasOwn(restrictedRecovery.initialTurnBudget ?? {}, "outcome"), false);
+	assert.equal(Object.hasOwn(restrictedRecovery.initialTurnBudget ?? {}, "turnCount"), false);
+	assert.equal(restrictedRecovery.enforceHardTurnLimit, true);
 
 	const restrictedCall = readSingleNewMockCall(mockPi, restrictedCallFilesBefore);
 	const restrictedToolsIndex = restrictedCall.args.indexOf("--tools");
@@ -614,6 +630,51 @@ test("executePublic enforces the canonical typed-tasks capacity boundary before 
 	assert.equal(restrictedResult.results?.length, 1);
 	const restrictedChildEnv = parseEchoedEnvironment(restrictedResult.results[0].output);
 	assertRestrictedFilesystemGate(restrictedChildEnv, allowedReadPath, outsideReadPath);
+	await waitForPendingZero(harness);
+	writeFileSync(restrictedDescriptorPath, JSON.stringify({
+		...restrictedRawRecovery,
+		initialTurnBudget: { maxTurns: 30, graceTurns: 0, outcome: "within-budget", turnCount: 0 },
+	}), "utf8");
+
+	const resumeTaskText = "capacity restricted resume must retain policy and hard turns";
+	mockPi.onCall({
+		matchArgIncludes: [resumeTaskText, "--session", "--tools", "--no-context-files", "--no-skills"],
+		echoEnv: filesystemPolicyEnvKeys,
+	});
+	const resumeCallsBefore = mockPi.callCount();
+	const resumeCallFilesBefore = mockCallFiles(mockPi);
+	const resumed = await restrictedCapacityExecutor.execute(
+		`capacity-resume-${Math.random().toString(16).slice(2)}`,
+		{ action: "resume", id: restrictedRun.asyncId, message: resumeTaskText },
+		new AbortController().signal,
+		undefined,
+		makeContext(testRoot, sessionId),
+	);
+	assert.equal(resumed.isError, undefined, resultText(resumed));
+	const resumedRun = registerAsyncCleanup(t, resumed);
+	const resumedStatus = await waitForAsyncTerminal(resumedRun.asyncDir);
+	assert.equal(resumedStatus.state, "complete", JSON.stringify(resumedStatus));
+	assert.equal(mockPi.callCount(), resumeCallsBefore + 1, "resume must reach one retained native Pi child");
+	const resumedRawRecovery = JSON.parse(readFileSync(path.join(resumedRun.asyncDir, "recovery-descriptor.json"), "utf8"));
+	assert.deepEqual(resumedRawRecovery.initialTurnBudget, { maxTurns: 30, graceTurns: 0 }, "revived writer must not re-emit legacy runtime state");
+	assert.deepEqual(Object.keys(resumedRawRecovery.initialTurnBudget).sort(), ["graceTurns", "maxTurns"]);
+	const resumedRecovery = readAsyncRecoveryDescriptor(resumedRun.asyncDir);
+	assert.ok(resumedRecovery, "revived run must publish a readable recovery descriptor");
+	assert.deepEqual(resumedRecovery.initialTurnBudget, { maxTurns: 30, graceTurns: 0 });
+	assert.equal(resumedRecovery.enforceHardTurnLimit, true);
+	assert.equal(resumedRecovery.maxSubagentDepth, 0);
+	assert.equal(resumedRecovery.filesystemPolicyDigest, restrictedRecovery.filesystemPolicyDigest);
+	assert.deepEqual(resumedRecovery.filesystemPolicy, restrictedRecovery.filesystemPolicy);
+	const resumedCall = readSingleNewMockCall(mockPi, resumeCallFilesBefore);
+	const resumedToolsIndex = resumedCall.args.indexOf("--tools");
+	assert.notEqual(resumedToolsIndex, -1);
+	assert.equal(resumedCall.args[resumedToolsIndex + 1], restrictedToolList.join(","));
+	assert.equal(resumedCall.args.includes("--no-context-files"), true);
+	assert.equal(resumedCall.args.includes("--no-skills"), true);
+	const resumedResult = JSON.parse(readFileSync(resumedRun.resultPath, "utf8"));
+	assert.equal(resumedResult.success, true);
+	assert.equal(resumedResult.results?.length, 1);
+	assertRestrictedFilesystemGate(parseEchoedEnvironment(resumedResult.results[0].output), allowedReadPath, outsideReadPath);
 	await waitForPendingZero(harness);
 
 	const stopTaskText = "capacity restricted stop must terminate the live child";

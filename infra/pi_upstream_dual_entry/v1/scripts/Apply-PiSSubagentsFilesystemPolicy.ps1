@@ -45,8 +45,8 @@ $patchPath = Join-Path (Split-Path -Parent $PSScriptRoot) 'patches\pi-subagents-
 $expectedPatchHash = '37244821214a76d8f1cdc03e6a8105be95b2d862ee97cc79a9ca04967f1f21b5'
 $files = [ordered]@{
     'src\extension\schemas.ts' = @{ Owner = '32c99f0e6614d747bd4dc3fd5ee84f47e4d600d3adb646b795413da10fe3b81e'; Final = 'ddd81da1c7d0063acadfe692378b640bf87418c699b3b471e5e74b7eac069bcc'; Capacity = 'd83e7ba5311dfc2d4b0316365ff934929abe6e1ce59ffeea5d4134c242b33302' }
-    'src\runs\background\async-execution.ts' = @{ Owner = 'db7ed1d5d9e33dd1a81267ca9db775c7d3204d3f0f2e1eb2b38794150f0f3287'; Final = 'b8a272c050155439dc405da71d2cf5c21002744357b1c37e5f046c399cde10e7'; Capacity = 'ef0ba69b0c6d083b27e5f05336031556ad0a7a2646cfb018ec91a3100c8eadf4' }
-    'src\runs\background\async-resume.ts' = @{ Owner = '8ba25898299ed73da20e1f66742aece1b25f4a5e852cf126f8d151373388ced9'; Final = 'ae3a301b1dab8ec0b8348def3111eb5382a8006d042b0726c313e8d83ef806e3'; Capacity = 'a32eb20de710ec4b443b1027d8bff76afc8d6e853d4d4e72783501b839764661' }
+    'src\runs\background\async-execution.ts' = @{ Owner = 'db7ed1d5d9e33dd1a81267ca9db775c7d3204d3f0f2e1eb2b38794150f0f3287'; Final = 'b8a272c050155439dc405da71d2cf5c21002744357b1c37e5f046c399cde10e7'; CapacityV41 = 'ef0ba69b0c6d083b27e5f05336031556ad0a7a2646cfb018ec91a3100c8eadf4'; Capacity = '64ecfc461aea05adf809dda9a296364e8e85098ffb7b9c0d71c9d4c5101fb921' }
+    'src\runs\background\async-resume.ts' = @{ Owner = '8ba25898299ed73da20e1f66742aece1b25f4a5e852cf126f8d151373388ced9'; Final = 'ae3a301b1dab8ec0b8348def3111eb5382a8006d042b0726c313e8d83ef806e3'; CapacityV41 = 'a32eb20de710ec4b443b1027d8bff76afc8d6e853d4d4e72783501b839764661'; Capacity = '6356456ead3ad359324a5664786da74dc0077de80448e35f209a797127482371' }
     'src\runs\background\stale-run-reconciler.ts' = @{ Owner = '2cd7978d8d5c1499d721882554cb2002f9cb926e39ec0ab2ae6cfa17b003ccc6'; Final = '4c5d1fb4e6ae436b7a03b9003867b04ea222e14c268f40f9b51eaa45cadedf9f'; Capacity = '4c5d1fb4e6ae436b7a03b9003867b04ea222e14c268f40f9b51eaa45cadedf9f' }
     'src\runs\background\subagent-runner.ts' = @{ Owner = '90886336f176488db2bfc945fb80072c88c04941dd703b2a5ae9e406566e538c'; Final = '599eb6faad6029272d26b41aa9ed8c6c0cd1b389230cd5fe46203a555312382d'; Capacity = 'ae581fd8367e8ae32c712afb3cc405b2fa9e6b686b6b14f81af54d870c550f86' }
     'src\runs\foreground\chain-execution.ts' = @{ Owner = 'a78410a15f7bc330fa50d490cbf7a36aeaef9a9f56311c0b32986839a70a02f4'; Final = 'c810388939735b169bba11c9cb8359803e063d408cd9d18feb1884ffebbdec41'; Capacity = 'aaf7271cd547c948ef1f4492f32ec85f7ab4a113fc19899c34396fe89ec7ef77' }
@@ -59,6 +59,9 @@ $files = [ordered]@{
     'src\shared\launch-contract.ts' = @{ Owner = '25b6342ff008d6c240e33b61f1d40c9b88aa7a3f2aadaf67740ff713bb13258e'; Final = 'a4251d0827c4c9b3611c8509e69331337a8636ac21cbf7a6c1bf7a8970e5fe76'; Capacity = 'a4251d0827c4c9b3611c8509e69331337a8636ac21cbf7a6c1bf7a8970e5fe76' }
     'src\shared\types.ts' = @{ Owner = 'd04043d8cbcdc9ee6e6a6d85b3e09d5282cd16a2b614a69758476ae13916fd09'; Final = '2e80765b425f6a8481cb559759b313ae679e2f67959a3c0f61214e1d529d6a33'; Capacity = 'acb00bd809ebaaf65bd67f300444ce314d6255739af5f140c8fed640ed8791ec' }
     'src\workflows\scripted-workflow.ts' = @{ Owner = '639af6b74b8c890ceef80c9d42f0a8ffbdaef8f7d67047bb9a6b4bb2077c034d'; Final = 'b67c105c52e33be616f316471601120751741f283a0ccea3f123fb9867ccf0e6'; Capacity = '80d38d915e08f0173387c14249bed9688d1f9ec1d5c7f177e6d4cafba68b2eea' }
+}
+foreach ($entry in $files.GetEnumerator()) {
+    if (-not $entry.Value.ContainsKey('CapacityV41')) { $entry.Value['CapacityV41'] = $entry.Value.Capacity }
 }
 $prerequisites = [ordered]@{
     'src\runs\shared\single-output.ts' = @{ Final = 'aa63de8ffd7e2ce671560c6cbded541e475bdfa700e33c069042b32af0c2605b'; Capacity = 'aa63de8ffd7e2ce671560c6cbded541e475bdfa700e33c069042b32af0c2605b' }
@@ -107,10 +110,14 @@ $allOwner = @($files.Keys | Where-Object {
     ($null -eq $expected -and $before[$_] -ceq 'absent') -or ($null -ne $expected -and $before[$_] -ceq $expected)
 }).Count -eq $files.Count
 $allFinal = @($files.Keys | Where-Object { $before[$_] -ceq $files[$_].Final }).Count -eq $files.Count
-$allCapacity = @($files.Keys | Where-Object { $before[$_] -ceq $files[$_].Capacity }).Count -eq $files.Count
+$allCapacityV41 = @($files.Keys | Where-Object { $before[$_] -ceq $files[$_].CapacityV41 }).Count -eq $files.Count
+$allCapacityFinal = @($files.Keys | Where-Object { $before[$_] -ceq $files[$_].Capacity }).Count -eq $files.Count
 $coherentOwner = $allOwner -and $allPrerequisitesFinal
 $coherentFinal = $allFinal -and $allPrerequisitesFinal
-$coherentCapacity = $allCapacity -and $allPrerequisitesCapacity
+$coherentCapacityV41 = $allCapacityV41 -and $allPrerequisitesCapacity
+$coherentCapacityFinal = $allCapacityFinal -and $allPrerequisitesCapacity
+$coherentCapacity = $coherentCapacityV41 -or $coherentCapacityFinal
+$capacityGeneration = if ($coherentCapacityV41) { 'V4.1' } elseif ($coherentCapacityFinal) { 'V4.2' } else { $null }
 $changed = $false
 
 if ($coherentOwner) {
@@ -133,7 +140,7 @@ foreach ($relative in $files.Keys) {
         throw "PI_S_FILESYSTEM_POLICY_PATCH_VERIFY_MISSING: $relative"
     }
     $after[$relative] = (Get-FileHash -Algorithm SHA256 -LiteralPath $sourcePath).Hash.ToLowerInvariant()
-    $expected = if ($coherentCapacity) { $files[$relative].Capacity } else { $files[$relative].Final }
+    $expected = if ($coherentCapacityV41) { $files[$relative].CapacityV41 } elseif ($coherentCapacityFinal) { $files[$relative].Capacity } else { $files[$relative].Final }
     if ($after[$relative] -cne $expected) {
         throw "PI_S_FILESYSTEM_POLICY_PATCH_VERIFY_FAILED: file=$relative expected=$expected actual=$($after[$relative])"
     }
@@ -182,4 +189,5 @@ if (
     async_resume_requires_consistent_durable_policy = $true
     prime_b_modified = $false
     high_capacity_combination_accepted = [bool]$coherentCapacity
+    high_capacity_generation_accepted = $capacityGeneration
 } | ConvertTo-Json -Depth 7

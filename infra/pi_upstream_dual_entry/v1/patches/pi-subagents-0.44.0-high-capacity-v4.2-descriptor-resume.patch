@@ -1,0 +1,82 @@
+diff --git a/src/runs/background/async-execution.ts b/src/runs/background/async-execution.ts
+index fa9d455..4661019 100644
+--- a/src/runs/background/async-execution.ts
++++ b/src/runs/background/async-execution.ts
+@@ -1364,6 +1364,9 @@ export function executeAsyncSingle(
+ 		: params.timeoutMs;
+ 	if (timeoutMs !== undefined && timeoutMs <= 0) return formatAsyncStartError("single", "The source run's absolute deadline expired before recovery could launch.");
+ 	const initialTurnBudget = params.turnBudget ? initialTurnBudgetState(params.turnBudget) : undefined;
++	const persistedInitialTurnBudget: ResolvedTurnBudget | undefined = initialTurnBudget
++		? { maxTurns: initialTurnBudget.maxTurns, graceTurns: initialTurnBudget.graceTurns }
++		: undefined;
+ 	const enforceHardTurnLimit = params.capacityRootContext !== undefined;
+ 	const initialUsageBudget = usageBudgetState(params.usageBudget, undefined);
+ 	const resolvedSessionDir = params.sessionDir ?? (sessionRoot ? path.join(sessionRoot, `async-${id}`) : undefined);
+@@ -1454,7 +1457,7 @@ export function executeAsyncSingle(
+ 		...(acceptanceInput !== undefined ? { acceptance: acceptanceInput } : {}),
+ 		...(controlConfig ? { controlConfig } : {}),
+ 		...(deadlineAt !== undefined ? { absoluteDeadlineAt: deadlineAt } : {}),
+-		...(initialTurnBudget ? { initialTurnBudget } : {}),
++		...(persistedInitialTurnBudget ? { initialTurnBudget: persistedInitialTurnBudget } : {}),
+ 		enforceHardTurnLimit,
+ 		...(resolvedToolBudget.budget ? { initialToolBudget: resolvedToolBudget.budget } : {}),
+ 		maxSubagentDepth: filesystemPolicy ? 0 : resolveChildMaxSubagentDepth(maxSubagentDepth, agentConfig.maxSubagentDepth),
+diff --git a/src/runs/background/async-resume.ts b/src/runs/background/async-resume.ts
+index 87e3ff9..104d09f 100644
+--- a/src/runs/background/async-resume.ts
++++ b/src/runs/background/async-resume.ts
+@@ -1,6 +1,6 @@
+ import * as fs from "node:fs";
+ import * as path from "node:path";
+-import { DIRS, TEMP_ARTIFACTS_DIR, type AcceptanceInput, type AsyncStatus, type SteeringRecoveryDescriptor } from "../../shared/types.ts";
++import { DIRS, TEMP_ARTIFACTS_DIR, type AcceptanceInput, type AsyncStatus, type ResolvedTurnBudget, type SteeringRecoveryDescriptor } from "../../shared/types.ts";
+ import type { AgentConfig } from "../../agents/agents.ts";
+ import { validateAcceptanceInput } from "../shared/acceptance.ts";
+ import { validateToolBudgetConfig } from "../shared/tool-budget.ts";
+@@ -320,6 +320,35 @@ function normalizeRecoveryAcceptance(value: unknown, descriptorPath: string): Ac
+ 	return value as AcceptanceInput;
+ }
+ 
++function resolveRecoveryInitialTurnBudget(
++	value: unknown,
++): { turnBudget?: ResolvedTurnBudget; error?: string } {
++	const label = "recoveryDescriptor.initialTurnBudget";
++	if (!value || typeof value !== "object" || Array.isArray(value)) {
++		return resolveTurnBudgetConfig(value, label);
++	}
++	const record = value as Record<string, unknown>;
++	const hasOutcome = Object.prototype.hasOwnProperty.call(record, "outcome");
++	const hasTurnCount = Object.prototype.hasOwnProperty.call(record, "turnCount");
++	if (!hasOutcome && !hasTurnCount) return resolveTurnBudgetConfig(value, label);
++
++	const legacyFields = new Set(["maxTurns", "graceTurns", "outcome", "turnCount"]);
++	const unknownField = Object.keys(record).find((key) => !legacyFields.has(key));
++	if (!hasOutcome || !hasTurnCount || Object.keys(record).length !== legacyFields.size || unknownField) {
++		return { error: `${label} legacy state must contain exactly maxTurns, graceTurns, outcome, and turnCount.` };
++	}
++	if (record.outcome !== "within-budget") {
++		return { error: `${label}.outcome must be 'within-budget' for a legacy initial state.` };
++	}
++	if (record.turnCount !== 0) {
++		return { error: `${label}.turnCount must be 0 for a legacy initial state.` };
++	}
++	return resolveTurnBudgetConfig(
++		{ maxTurns: record.maxTurns, graceTurns: record.graceTurns },
++		label,
++	);
++}
++
+ export function readAsyncRecoveryDescriptor(asyncDir: string | undefined): SteeringRecoveryDescriptor | undefined {
+ 	if (!asyncDir) return undefined;
+ 	const descriptorPath = path.join(asyncDir, "recovery-descriptor.json");
+@@ -389,8 +418,9 @@ export function readAsyncRecoveryDescriptor(asyncDir: string | undefined): Steer
+ 	if (parsed.absoluteDeadlineAt !== undefined && (!Number.isFinite(parsed.absoluteDeadlineAt) || (parsed.absoluteDeadlineAt as number) <= 0)) throw new Error(`Invalid async recovery descriptor '${descriptorPath}': absoluteDeadlineAt must be a positive timestamp.`);
+ 	if (parsed.enforceHardTurnLimit !== undefined && typeof parsed.enforceHardTurnLimit !== "boolean") throw new Error(`Invalid async recovery descriptor '${descriptorPath}': enforceHardTurnLimit must be a boolean.`);
+ 	if (parsed.initialTurnBudget !== undefined) {
+-		const result = resolveTurnBudgetConfig(parsed.initialTurnBudget, "recoveryDescriptor.initialTurnBudget");
++		const result = resolveRecoveryInitialTurnBudget(parsed.initialTurnBudget);
+ 		if (result.error) throw new Error(`Invalid async recovery descriptor '${descriptorPath}': ${result.error}`);
++		parsed.initialTurnBudget = result.turnBudget;
+ 	}
+ 	if (parsed.initialToolBudget !== undefined) {
+ 		const result = validateToolBudgetConfig(parsed.initialToolBudget, "recoveryDescriptor.initialToolBudget");

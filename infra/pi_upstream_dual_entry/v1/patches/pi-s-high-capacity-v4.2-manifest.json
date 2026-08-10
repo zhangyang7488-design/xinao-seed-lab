@@ -1,0 +1,66 @@
+{
+  "schema": "xinao.pi.subagent.capacity.candidate-manifest.v4.2",
+  "generation": "V4.2",
+  "profile": "prime-s",
+  "supersedes_manifest_sha256": "019f6fec12a1261c29af1c3e38a52a6a9858e14d7d42cbe9d918a3306fdeb4bb",
+  "policy": {
+    "max_depth": 3,
+    "max_explicit_fanout_batch": 10,
+    "max_recursive_descendant_provider_streams": 6,
+    "max_root_session_committed_descendant_launches": 40,
+    "hard_turn_total_min": 10,
+    "hard_turn_total_max": 30,
+    "default_turn_budget": {
+      "maxTurns": 30,
+      "graceTurns": 0
+    },
+    "async_by_default": false,
+    "execution_surface": "typed tasks only",
+    "workflow_script": "unavailable under capacity v1",
+    "root_restricted_filesystem_single": "exactly one expanded task plus top-level filesystemPolicy; native fresh single path, max descendant depth 0",
+    "descriptor_writer": "resolved turn budget only",
+    "legacy_descriptor_reader": "exact initial within-budget turn-zero state normalized to resolved turn budget"
+  },
+  "patches": [
+    {
+      "name": "pi-subagents-0.44.0-high-capacity-v1.patch",
+      "bytes": 229869,
+      "sha256": "a31617bd6df9004f0581935de5ef68897b2382f3c7656b1d6977c7a61cc645d4"
+    },
+    {
+      "name": "pi-subagents-0.44.0-high-capacity-v4.2-descriptor-resume.patch",
+      "bytes": 5324,
+      "sha256": "8c872c65657476a2db3c0dbc9145e9630e4e7715f7a476431fef07f51f98f75b"
+    },
+    {
+      "name": "pi-coding-agent-0.84.1-high-capacity-v1.patch",
+      "bytes": 58145,
+      "sha256": "13a89eda2b22e9337c90aa817e75e766499ee62f1fa044142a9cceef91d9d3ad"
+    }
+  ],
+  "files": [
+    { "root": "package", "path": "src/extension/fanout-child.ts", "bytes": 9224, "sha256": "b777190d50b43d4ca1366da8f64e53eb75846d660a149029cc2cc027607f632b" },
+    { "root": "package", "path": "src/extension/index.ts", "bytes": 40531, "sha256": "2d3d3c61eb59186a2abdd59b235a834abe5ac7daca64c9a504bb902eb78ed5a9" },
+    { "root": "package", "path": "src/extension/public-execution.ts", "bytes": 9129, "sha256": "ec34983599cbc79143c103333ae86475beba9a33f36379d6ca6254c3589e4d1f" },
+    { "root": "package", "path": "src/extension/rpc.ts", "bytes": 40825, "sha256": "637d4c70a99f229c11e743a6b2e41569b91217f36f002958bf3ad3ed2cae5599" },
+    { "root": "package", "path": "src/extension/schemas.ts", "bytes": 28382, "sha256": "d83e7ba5311dfc2d4b0316365ff934929abe6e1ce59ffeea5d4134c242b33302" },
+    { "root": "package", "path": "src/extension/tool-description.ts", "bytes": 18964, "sha256": "3493ac9686b14f7322786467948c6efcc0c23340bfaee32f06c50db57e278d50" },
+    { "root": "package", "path": "src/runs/background/async-execution.ts", "bytes": 74502, "sha256": "64ecfc461aea05adf809dda9a296364e8e85098ffb7b9c0d71c9d4c5101fb921" },
+    { "root": "package", "path": "src/runs/background/async-resume.ts", "bytes": 45544, "sha256": "6356456ead3ad359324a5664786da74dc0077de80448e35f209a797127482371" },
+    { "root": "package", "path": "src/runs/background/retained-children.ts", "bytes": 2590, "sha256": "444fd33aaeb5117483330d9fc1535acecf4531927070cea3c5c550367b7023b1" },
+    { "root": "package", "path": "src/runs/background/subagent-runner.ts", "bytes": 224226, "sha256": "ae581fd8367e8ae32c712afb3cc405b2fa9e6b686b6b14f81af54d870c550f86" },
+    { "root": "package", "path": "src/runs/foreground/chain-execution.ts", "bytes": 67548, "sha256": "aaf7271cd547c948ef1f4492f32ec85f7ab4a113fc19899c34396fe89ec7ef77" },
+    { "root": "package", "path": "src/runs/foreground/execution.ts", "bytes": 77597, "sha256": "3345076d827c8e63f973794a195fefab5e600e8c000583d4a98f72b52fb051ce" },
+    { "root": "package", "path": "src/runs/foreground/subagent-executor.ts", "bytes": 291721, "sha256": "411f4f275f164786f2388fb001d67954366d69fd5188a996b1a79d300dcd320e" },
+    { "root": "package", "path": "src/runs/shared/parallel-utils.ts", "bytes": 8149, "sha256": "1d0b11ce0fab443cdbe9798007c5fc68f344757e617d8ced572f93fe4a047793" },
+    { "root": "package", "path": "src/runs/shared/pi-args.ts", "bytes": 29979, "sha256": "a177dfe33d9eab63960df1cc998ead47be5138342427845d1896f9066332847f" },
+    { "root": "package", "path": "src/runs/shared/spawn-budget.ts", "bytes": 12462, "sha256": "5f5d8a25f9c4df093065bc8a56d60e2a2d5719b4ff99ed6b498fde8e38422744" },
+    { "root": "package", "path": "src/runs/shared/turn-budget.ts", "bytes": 6277, "sha256": "1984da30964641c3dc3428848f087ac12a3bc7374513e23fbd872651e82de06a" },
+    { "root": "package", "path": "src/runs/shared/xinao-pi-subagent-capacity-runtime.d.ts", "bytes": 6335, "sha256": "52a0df5fef19215f13fe7fb6828e4513a7e55c28f13baaa4c32d0f2d64180af3" },
+    { "root": "package", "path": "src/runs/shared/xinao-pi-subagent-capacity-runtime.js", "bytes": 47259, "sha256": "ba5614b01ee3b2c15194d1006596bef50134fdd4f86125713cf61987f7be76b2" },
+    { "root": "package", "path": "src/shared/types.ts", "bytes": 64488, "sha256": "acb00bd809ebaaf65bd67f300444ce314d6255739af5f140c8fed640ed8791ec" },
+    { "root": "package", "path": "src/workflows/scripted-workflow.ts", "bytes": 29961, "sha256": "80d38d915e08f0173387c14249bed9688d1f9ec1d5c7f177e6d4cafba68b2eea" },
+    { "root": "core", "path": "dist/core/sdk.js", "bytes": 17990, "sha256": "0248f6d4c080a92e8e076016b0e4d9b8533041c624445da6cd94bc8a3f83e7c5" },
+    { "root": "core", "path": "dist/core/xinao-pi-subagent-capacity-runtime.js", "bytes": 47259, "sha256": "ba5614b01ee3b2c15194d1006596bef50134fdd4f86125713cf61987f7be76b2" }
+  ]
+}
