@@ -7,7 +7,8 @@ param(
 
 $ErrorActionPreference = "Stop"
 $utf8 = [Text.UTF8Encoding]::new($false, $true)
-$bindingPlaceholder = "__XINAO_SELECTOR_VALIDATOR_BINDING_SHA256__"
+$bindingShaPlaceholder = "__XINAO_SELECTOR_VALIDATOR_BINDING_SHA256__"
+$bindingBase64Placeholder = "__XINAO_SELECTOR_VALIDATOR_BINDING_BASE64__"
 $validatorClosure = @(
     "scripts/build_selector_release.py",
     "services/__init__.py",
@@ -16,10 +17,7 @@ $validatorClosure = @(
 )
 $sourceRootFull = [IO.Path]::GetFullPath($SourceRoot)
 $source = Join-Path $sourceRootFull "scripts\quota_query\Get-AIQuota.ps1"
-$targetDirectory = Join-Path $RuntimeRoot "state\quota_query"
-$target = Join-Path $targetDirectory "Get-AIQuota.ps1"
-$validatorBinding = Join-Path $targetDirectory "selector-validator-root.txt"
-$releaseParent = Join-Path $RuntimeRoot "state\quota_query_releases"
+$runtimeRootRequested = [IO.Path]::GetFullPath($RuntimeRoot)
 
 function Get-Sha256Hex {
     param(
@@ -29,6 +27,342 @@ function Get-Sha256Hex {
     )
 
     [Convert]::ToHexString([Security.Cryptography.SHA256]::HashData($Bytes)).ToLowerInvariant()
+}
+
+function Initialize-XinaoInstallPathNative {
+    if ($null -ne ("XinaoInstallPathNative" -as [type])) {
+        return
+    }
+    $nativeSource = @'
+using System;
+using System.ComponentModel;
+using System.Runtime.InteropServices;
+using System.Runtime.InteropServices.ComTypes;
+using System.Text;
+using Microsoft.Win32.SafeHandles;
+
+public static class XinaoInstallPathNative
+{
+    public const uint FileAttributeDirectory = 0x00000010;
+    public const uint FileAttributeReparsePoint = 0x00000400;
+    private const uint GenericRead = 0x80000000;
+    private const uint GenericWrite = 0x40000000;
+    private const uint FileReadAttributes = 0x00000080;
+    private const uint FileShareRead = 0x00000001;
+    private const uint OpenExisting = 3;
+    private const uint OpenAlways = 4;
+    private const uint FileFlagBackupSemantics = 0x02000000;
+    private const uint FileFlagOpenReparsePoint = 0x00200000;
+    private const uint FileFlagSequentialScan = 0x08000000;
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct ByHandleFileInformation
+    {
+        public uint FileAttributes;
+        public FILETIME CreationTime;
+        public FILETIME LastAccessTime;
+        public FILETIME LastWriteTime;
+        public uint VolumeSerialNumber;
+        public uint FileSizeHigh;
+        public uint FileSizeLow;
+        public uint NumberOfLinks;
+        public uint FileIndexHigh;
+        public uint FileIndexLow;
+    }
+
+    [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+    private static extern SafeFileHandle CreateFileW(
+        string fileName,
+        uint desiredAccess,
+        uint shareMode,
+        IntPtr securityAttributes,
+        uint creationDisposition,
+        uint flagsAndAttributes,
+        IntPtr templateFile);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    private static extern bool GetFileInformationByHandle(
+        SafeFileHandle file,
+        out ByHandleFileInformation information);
+
+    [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+    private static extern uint GetFinalPathNameByHandleW(
+        SafeFileHandle file,
+        StringBuilder path,
+        uint pathLength,
+        uint flags);
+
+    public static SafeFileHandle OpenDirectory(string path)
+    {
+        SafeFileHandle handle = CreateFileW(
+            path,
+            FileReadAttributes,
+            FileShareRead,
+            IntPtr.Zero,
+            OpenExisting,
+            FileFlagBackupSemantics | FileFlagOpenReparsePoint,
+            IntPtr.Zero);
+        if (handle.IsInvalid)
+        {
+            int error = Marshal.GetLastWin32Error();
+            handle.Dispose();
+            throw new Win32Exception(error, "CreateFileW directory open failed: " + path);
+        }
+        return handle;
+    }
+
+    public static SafeFileHandle OpenReadFile(string path)
+    {
+        SafeFileHandle handle = CreateFileW(
+            path,
+            GenericRead,
+            FileShareRead,
+            IntPtr.Zero,
+            OpenExisting,
+            FileFlagOpenReparsePoint | FileFlagSequentialScan,
+            IntPtr.Zero);
+        if (handle.IsInvalid)
+        {
+            int error = Marshal.GetLastWin32Error();
+            handle.Dispose();
+            throw new Win32Exception(error, "CreateFileW file open failed: " + path);
+        }
+        return handle;
+    }
+
+    public static SafeFileHandle OpenExclusiveLock(string path)
+    {
+        SafeFileHandle handle = CreateFileW(
+            path,
+            GenericRead | GenericWrite,
+            0,
+            IntPtr.Zero,
+            OpenAlways,
+            FileFlagOpenReparsePoint,
+            IntPtr.Zero);
+        if (handle.IsInvalid)
+        {
+            int error = Marshal.GetLastWin32Error();
+            handle.Dispose();
+            throw new Win32Exception(error, "CreateFileW lock open failed: " + path);
+        }
+        return handle;
+    }
+
+    public static uint GetAttributes(SafeFileHandle handle)
+    {
+        ByHandleFileInformation information;
+        if (!GetFileInformationByHandle(handle, out information))
+        {
+            throw new Win32Exception(Marshal.GetLastWin32Error());
+        }
+        return information.FileAttributes;
+    }
+
+    public static string GetFinalPath(SafeFileHandle handle)
+    {
+        int capacity = 512;
+        while (true)
+        {
+            StringBuilder value = new StringBuilder(capacity);
+            uint length = GetFinalPathNameByHandleW(handle, value, (uint)capacity, 0);
+            if (length == 0)
+            {
+                throw new Win32Exception(Marshal.GetLastWin32Error());
+            }
+            if (length < capacity)
+            {
+                string path = value.ToString();
+                if (path.StartsWith(@"\\?\UNC\", StringComparison.OrdinalIgnoreCase))
+                {
+                    return @"\\" + path.Substring(8);
+                }
+                if (path.StartsWith(@"\\?\", StringComparison.OrdinalIgnoreCase))
+                {
+                    return path.Substring(4);
+                }
+                return path;
+            }
+            capacity = checked((int)length + 1);
+        }
+    }
+}
+'@
+    Add-Type -TypeDefinition $nativeSource -Language CSharp | Out-Null
+}
+
+function Add-NoReparseInstallDirectory {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Path,
+        [Parameter(Mandatory = $true)]
+        [AllowEmptyCollection()]
+        [Collections.Generic.List[IDisposable]]$Handles,
+        [Parameter(Mandatory = $true)]
+        [AllowEmptyCollection()]
+        [Collections.Generic.HashSet[string]]$Seen
+    )
+
+    $fullPath = [IO.Path]::GetFullPath($Path)
+    if (-not $Seen.Add($fullPath)) {
+        return
+    }
+    $handle = $null
+    try {
+        $handle = [XinaoInstallPathNative]::OpenDirectory($fullPath)
+        $attributes = [XinaoInstallPathNative]::GetAttributes($handle)
+        if (
+            ($attributes -band [XinaoInstallPathNative]::FileAttributeDirectory) -eq 0 -or
+            ($attributes -band [XinaoInstallPathNative]::FileAttributeReparsePoint) -ne 0
+        ) {
+            throw "XINAO_QUOTA_INSTALL_NAMESPACE_REPARSE_POINT: $fullPath"
+        }
+        [void]$Handles.Add($handle)
+        $handle = $null
+    }
+    finally {
+        if ($null -ne $handle) {
+            $handle.Dispose()
+        }
+    }
+}
+
+function Add-NoReparseInstallAncestry {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Path,
+        [Parameter(Mandatory = $true)]
+        [AllowEmptyCollection()]
+        [Collections.Generic.List[IDisposable]]$Handles,
+        [Parameter(Mandatory = $true)]
+        [AllowEmptyCollection()]
+        [Collections.Generic.HashSet[string]]$Seen
+    )
+
+    $current = [IO.Path]::GetFullPath($Path)
+    $ancestors = [Collections.Generic.List[string]]::new()
+    while (-not [string]::IsNullOrWhiteSpace($current)) {
+        [void]$ancestors.Add($current)
+        $parent = Split-Path -Parent $current
+        if ([string]::IsNullOrWhiteSpace($parent) -or $parent -eq $current) {
+            break
+        }
+        $current = $parent
+    }
+    for ($index = $ancestors.Count - 1; $index -ge 0; $index--) {
+        Add-NoReparseInstallDirectory -Path $ancestors[$index] `
+            -Handles $Handles -Seen $Seen
+    }
+}
+
+function Open-FixedInstallDirectory {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Path,
+        [Parameter(Mandatory = $true)]
+        [AllowEmptyCollection()]
+        [Collections.Generic.List[IDisposable]]$Handles,
+        [Parameter(Mandatory = $true)]
+        [AllowEmptyCollection()]
+        [Collections.Generic.HashSet[string]]$Seen
+    )
+
+    Initialize-XinaoInstallPathNative
+    Add-NoReparseInstallAncestry -Path $Path -Handles $Handles -Seen $Seen
+    $leafHandle = [XinaoInstallPathNative]::OpenDirectory([IO.Path]::GetFullPath($Path))
+    try {
+        $attributes = [XinaoInstallPathNative]::GetAttributes($leafHandle)
+        if (($attributes -band [XinaoInstallPathNative]::FileAttributeReparsePoint) -ne 0) {
+            throw "XINAO_QUOTA_INSTALL_NAMESPACE_REPARSE_POINT: $Path"
+        }
+        $finalPath = [IO.Path]::GetFullPath(
+            [XinaoInstallPathNative]::GetFinalPath($leafHandle)
+        )
+        Add-NoReparseInstallAncestry -Path $finalPath -Handles $Handles -Seen $Seen
+        $finalPath
+    }
+    finally {
+        $leafHandle.Dispose()
+    }
+}
+
+function Get-InstallFileCapture {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Path,
+        [Parameter(Mandatory = $true)]
+        [AllowEmptyCollection()]
+        [Collections.Generic.List[IDisposable]]$Handles,
+        [Parameter(Mandatory = $true)]
+        [AllowEmptyCollection()]
+        [Collections.Generic.HashSet[string]]$Seen,
+        [switch]$Hold
+    )
+
+    $fullPath = [IO.Path]::GetFullPath($Path)
+    Add-NoReparseInstallAncestry -Path (Split-Path -Parent $fullPath) `
+        -Handles $Handles -Seen $Seen
+    $safeHandle = [XinaoInstallPathNative]::OpenReadFile($fullPath)
+    $stream = $null
+    try {
+        $attributes = [XinaoInstallPathNative]::GetAttributes($safeHandle)
+        if (
+            ($attributes -band [XinaoInstallPathNative]::FileAttributeDirectory) -ne 0 -or
+            ($attributes -band [XinaoInstallPathNative]::FileAttributeReparsePoint) -ne 0
+        ) {
+            throw "XINAO_QUOTA_INSTALL_FILE_REPARSE_POINT: $fullPath"
+        }
+        $finalPath = [IO.Path]::GetFullPath(
+            [XinaoInstallPathNative]::GetFinalPath($safeHandle)
+        )
+        Add-NoReparseInstallAncestry -Path (Split-Path -Parent $finalPath) `
+            -Handles $Handles -Seen $Seen
+        $stream = [IO.FileStream]::new($safeHandle, [IO.FileAccess]::Read)
+        $safeHandle = $null
+        $memory = [IO.MemoryStream]::new()
+        try {
+            $stream.CopyTo($memory)
+            $bytes = $memory.ToArray()
+        }
+        finally {
+            $memory.Dispose()
+        }
+        $stream.Position = 0
+        if ($Hold) {
+            [void]$Handles.Add($stream)
+            $stream = $null
+        }
+        [pscustomobject]@{
+            path = $finalPath
+            bytes = $bytes
+            sha256 = Get-Sha256Hex -Bytes $bytes
+            size_bytes = $bytes.Length
+        }
+    }
+    finally {
+        if ($null -ne $stream) {
+            $stream.Dispose()
+        } elseif ($null -ne $safeHandle) {
+            $safeHandle.Dispose()
+        }
+    }
+}
+
+function Assert-InstallLeafNotReparse {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Path,
+        [Parameter(Mandatory = $true)]
+        [string]$ErrorCode
+    )
+
+    if (-not (Test-Path -LiteralPath $Path)) {
+        return
+    }
+    $item = Get-Item -LiteralPath $Path -Force
+    if (($item.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) {
+        throw "${ErrorCode}: $Path"
+    }
 }
 
 function Get-SourceGitHead {
@@ -50,19 +384,31 @@ function Get-SourceGitHead {
 function Resolve-BasePython {
     param(
         [Parameter(Mandatory = $true)]
-        [string]$Root
+        [string]$Root,
+        [Parameter(Mandatory = $true)]
+        [AllowEmptyCollection()]
+        [Collections.Generic.List[IDisposable]]$Handles,
+        [Parameter(Mandatory = $true)]
+        [AllowEmptyCollection()]
+        [Collections.Generic.HashSet[string]]$Seen
     )
 
     $candidate = Join-Path $Root ".venv\Scripts\python.exe"
     if (-not (Test-Path -LiteralPath $candidate -PathType Leaf)) {
-        $pythonCommand = Get-Command python -CommandType Application -ErrorAction Stop |
+        $pythonCommand = Get-Command python.exe -CommandType Application -ErrorAction Stop |
             Select-Object -First 1
         $candidate = [string]$pythonCommand.Source
     }
     if (-not (Test-Path -LiteralPath $candidate -PathType Leaf)) {
         throw "XINAO_SELECTOR_RELEASE_VALIDATOR_PYTHON_MISSING: $candidate"
     }
-    $lines = @(& $candidate -I -S -B -c "import os,sys; print(os.path.realpath(sys._base_executable))" 2>&1 |
+    $candidateCapture = Get-InstallFileCapture -Path $candidate `
+        -Handles $Handles -Seen $Seen -Hold
+    $candidatePhysical = [string]$candidateCapture.path
+    if ([IO.Path]::GetExtension($candidatePhysical) -ne ".exe") {
+        throw "XINAO_SELECTOR_RELEASE_VALIDATOR_PYTHON_INVALID: native python.exe required"
+    }
+    $lines = @(& $candidatePhysical -I -S -B -c "import os,sys; print(os.path.realpath(sys._base_executable))" 2>&1 |
         ForEach-Object { [string]$_ })
     $exitCode = $LASTEXITCODE
     $basePython = [string](@($lines | Where-Object {
@@ -78,9 +424,27 @@ function Resolve-BasePython {
             "exit=$exitCode output=$($lines -join [Environment]::NewLine)"
         )
     }
-    $resolved = [IO.Path]::GetFullPath($basePython)
+    $baseCapture = Get-InstallFileCapture -Path ([IO.Path]::GetFullPath($basePython)) `
+        -Handles $Handles -Seen $Seen -Hold
+    [pscustomobject]@{
+        candidate = $candidateCapture
+        base = $baseCapture
+    }
+}
+
+function Resolve-BaseNode {
+    $nodeCommand = Get-Command node.exe -CommandType Application -ErrorAction Stop |
+        Select-Object -First 1
+    $candidate = [string]$nodeCommand.Source
+    if (
+        [string]::IsNullOrWhiteSpace($candidate) -or
+        -not [IO.Path]::IsPathFullyQualified($candidate)
+    ) {
+        throw "XINAO_QUOTA_INSTALL_NODE_INVALID: native node.exe required"
+    }
+    $resolved = [IO.Path]::GetFullPath($candidate)
     if (-not (Test-Path -LiteralPath $resolved -PathType Leaf)) {
-        throw "XINAO_SELECTOR_RELEASE_VALIDATOR_PYTHON_MISSING: $resolved"
+        throw "XINAO_QUOTA_INSTALL_NODE_MISSING: $resolved"
     }
     $resolved
 }
@@ -147,15 +511,16 @@ function Enter-QuotaInstallLock {
     $deadline = [Environment]::TickCount64 + $TimeoutMilliseconds
     while ($true) {
         try {
-            return [IO.FileStream]::new(
-                $Path,
-                [IO.FileMode]::OpenOrCreate,
-                [IO.FileAccess]::ReadWrite,
-                [IO.FileShare]::None
-            )
+            $handle = [XinaoInstallPathNative]::OpenExclusiveLock($Path)
+            $attributes = [XinaoInstallPathNative]::GetAttributes($handle)
+            if (($attributes -band [XinaoInstallPathNative]::FileAttributeReparsePoint) -ne 0) {
+                $handle.Dispose()
+                throw "XINAO_QUOTA_INSTALL_LOCK_REPARSE_POINT: $Path"
+            }
+            return $handle
         }
-        catch [IO.IOException] {
-            $nativeCode = $_.Exception.HResult -band 0xFFFF
+        catch [ComponentModel.Win32Exception] {
+            $nativeCode = $_.Exception.NativeErrorCode
             if ($nativeCode -ne 32) {
                 throw (
                     "XINAO_QUOTA_INSTALL_LOCK_FAILED: path=$Path " +
@@ -170,10 +535,35 @@ function Enter-QuotaInstallLock {
     }
 }
 
+$installNamespaceHandles = [Collections.Generic.List[IDisposable]]::new()
+$installNamespaceSeen = [Collections.Generic.HashSet[string]]::new(
+    [StringComparer]::OrdinalIgnoreCase
+)
+if (-not (Test-Path -LiteralPath $runtimeRootRequested -PathType Container)) {
+    throw "XINAO_QUOTA_INSTALL_RUNTIME_ROOT_MISSING: $runtimeRootRequested"
+}
+try {
+$physicalRuntimeRoot = Open-FixedInstallDirectory -Path $runtimeRootRequested `
+    -Handles $installNamespaceHandles -Seen $installNamespaceSeen
+$stateDirectoryRequested = Join-Path $physicalRuntimeRoot "state"
+[IO.Directory]::CreateDirectory($stateDirectoryRequested) | Out-Null
+$physicalStateDirectory = Open-FixedInstallDirectory -Path $stateDirectoryRequested `
+    -Handles $installNamespaceHandles -Seen $installNamespaceSeen
+$targetDirectoryRequested = Join-Path $physicalStateDirectory "quota_query"
+[IO.Directory]::CreateDirectory($targetDirectoryRequested) | Out-Null
+$targetDirectory = Open-FixedInstallDirectory -Path $targetDirectoryRequested `
+    -Handles $installNamespaceHandles -Seen $installNamespaceSeen
+$releaseParentRequested = Join-Path $physicalStateDirectory "quota_query_releases"
+[IO.Directory]::CreateDirectory($releaseParentRequested) | Out-Null
+$releaseParent = Open-FixedInstallDirectory -Path $releaseParentRequested `
+    -Handles $installNamespaceHandles -Seen $installNamespaceSeen
+$target = Join-Path $targetDirectory "Get-AIQuota.ps1"
+$collector = Join-Path $targetDirectory "quota-query.mjs"
+
 if (-not (Test-Path -LiteralPath $source -PathType Leaf)) {
     throw "XINAO_QUOTA_EPOCH_SOURCE_MISSING: $source"
 }
-if (-not (Test-Path -LiteralPath (Join-Path $targetDirectory "quota-query.mjs") -PathType Leaf)) {
+if (-not (Test-Path -LiteralPath $collector -PathType Leaf)) {
     throw "XINAO_QUOTA_LIVE_COLLECTOR_MISSING"
 }
 foreach ($relativeText in $validatorClosure) {
@@ -193,13 +583,15 @@ $sourceGitHead = Get-SourceGitHead -Root $sourceRootFull
 $sourceBytes = [IO.File]::ReadAllBytes($source)
 $sourceSha = Get-Sha256Hex -Bytes $sourceBytes
 $sourceText = $utf8.GetString($sourceBytes)
-$placeholderMatches = [regex]::Matches($sourceText, [regex]::Escape($bindingPlaceholder)).Count
-if ($placeholderMatches -ne 1) {
-    throw "XINAO_SELECTOR_VALIDATOR_TRUST_ANCHOR_INVALID: count=$placeholderMatches"
+foreach ($placeholder in @($bindingShaPlaceholder, $bindingBase64Placeholder)) {
+    $placeholderMatches = [regex]::Matches($sourceText, [regex]::Escape($placeholder)).Count
+    if ($placeholderMatches -ne 1) {
+        throw (
+            "XINAO_SELECTOR_VALIDATOR_TRUST_ANCHOR_INVALID: " +
+            "placeholder=$placeholder count=$placeholderMatches"
+        )
+    }
 }
-$validatorPython = Resolve-BasePython -Root $sourceRootFull
-$validatorPythonBytes = [IO.File]::ReadAllBytes($validatorPython)
-$validatorPythonSha = Get-Sha256Hex -Bytes $validatorPythonBytes
 $capturedValidatorBytes = [ordered]@{}
 foreach ($relativeText in $validatorClosure) {
     $origin = Join-Path $sourceRootFull ($relativeText -replace '/', '\')
@@ -209,20 +601,28 @@ foreach ($relativeText in $validatorClosure) {
 $installLockPath = Join-Path $targetDirectory ".install.lock"
 $installLock = Enter-QuotaInstallLock -Path $installLockPath
 try {
+$validatorPythonResolution = Resolve-BasePython -Root $sourceRootFull `
+    -Handles $installNamespaceHandles -Seen $installNamespaceSeen
+$validatorPythonCandidateCapture = $validatorPythonResolution.candidate
+$validatorPythonCapture = $validatorPythonResolution.base
+$validatorPython = [string]$validatorPythonCapture.path
+$validatorPythonBytes = [byte[]]$validatorPythonCapture.bytes
+$validatorPythonSha = [string]$validatorPythonCapture.sha256
 $previousTargetExisted = Test-Path -LiteralPath $target -PathType Leaf
-$previousBindingExisted = Test-Path -LiteralPath $validatorBinding -PathType Leaf
+Assert-InstallLeafNotReparse -Path $target -ErrorCode "XINAO_QUOTA_INSTALL_TARGET_REPARSE_POINT"
 $previousTargetBytes = if ($previousTargetExisted) { [IO.File]::ReadAllBytes($target) } else { $null }
-$previousBindingBytes = if ($previousBindingExisted) {
-    [IO.File]::ReadAllBytes($validatorBinding)
-} else {
-    $null
-}
 $previousSha = if ($previousTargetExisted) { Get-Sha256Hex -Bytes $previousTargetBytes } else { "" }
-$previousBindingSha = if ($previousBindingExisted) {
-    Get-Sha256Hex -Bytes $previousBindingBytes
-} else {
-    ""
-}
+$collectorCapture = Get-InstallFileCapture -Path $collector `
+    -Handles $installNamespaceHandles -Seen $installNamespaceSeen -Hold
+$collector = [string]$collectorCapture.path
+$collectorBytes = [byte[]]$collectorCapture.bytes
+$collectorSha = [string]$collectorCapture.sha256
+$nodeCandidate = Resolve-BaseNode
+$nodeCapture = Get-InstallFileCapture -Path $nodeCandidate `
+    -Handles $installNamespaceHandles -Seen $installNamespaceSeen -Hold
+$nodeExecutable = [string]$nodeCapture.path
+$nodeBytes = [byte[]]$nodeCapture.bytes
+$nodeSha = [string]$nodeCapture.sha256
 
 $releaseId = (
     "quota-validator-" + (Get-Date -Format "yyyyMMddTHHmmssfff") + "-" +
@@ -231,13 +631,10 @@ $releaseId = (
 $releaseRoot = Join-Path $releaseParent $releaseId
 $validatorRoot = Join-Path $releaseRoot "validator"
 $backup = ""
-$bindingBackup = ""
 $targetTemporary = $target + "." + [guid]::NewGuid().ToString("N") + ".tmp"
-$bindingTemporary = $validatorBinding + "." + [guid]::NewGuid().ToString("N") + ".tmp"
 $receiptPath = Join-Path $releaseRoot "install-receipt.json"
 $receiptTemporary = $receiptPath + "." + [guid]::NewGuid().ToString("N") + ".tmp"
 $releaseCreated = $false
-$bindingPublished = $false
 $targetPublished = $false
 $rollbackSucceeded = $false
 try {
@@ -247,11 +644,6 @@ try {
         $backup = Join-Path $releaseRoot "previous.Get-AIQuota.ps1"
         [IO.File]::WriteAllBytes($backup, $previousTargetBytes)
     }
-    if ($previousBindingExisted) {
-        $bindingBackup = Join-Path $releaseRoot "previous.selector-validator-root.txt"
-        [IO.File]::WriteAllBytes($bindingBackup, $previousBindingBytes)
-    }
-
     $validatorRows = @()
     foreach ($relativeText in $validatorClosure) {
         $selectedBytes = [byte[]]$capturedValidatorBytes[$relativeText]
@@ -271,29 +663,45 @@ try {
     }
 
     $bindingPayload = [ordered]@{
-        schema_version = "xinao.selector_validator_binding.v1"
+        schema_version = "xinao.selector_validator_binding.v2"
         validator_root = [IO.Path]::GetFullPath($validatorRoot)
         files = $validatorRows
         python_executable = $validatorPython
         python_sha256 = $validatorPythonSha
         python_size_bytes = $validatorPythonBytes.Length
+        python_candidate = [ordered]@{
+            path = [string]$validatorPythonCandidateCapture.path
+            sha256 = [string]$validatorPythonCandidateCapture.sha256
+            size_bytes = [long]$validatorPythonCandidateCapture.size_bytes
+        }
+        collector = [ordered]@{
+            path = [IO.Path]::GetFullPath($collector)
+            sha256 = $collectorSha
+            size_bytes = $collectorBytes.Length
+        }
+        node = [ordered]@{
+            path = $nodeExecutable
+            sha256 = $nodeSha
+            size_bytes = $nodeBytes.Length
+        }
         authority = $false
         completion_claim_allowed = $false
     }
     $bindingBytes = $utf8.GetBytes(($bindingPayload | ConvertTo-Json -Depth 8 -Compress) + "`n")
     $bindingSha = Get-Sha256Hex -Bytes $bindingBytes
-    $installedText = $sourceText.Replace($bindingPlaceholder, $bindingSha)
-    if ($installedText.Contains($bindingPlaceholder)) {
+    $bindingBase64 = [Convert]::ToBase64String($bindingBytes)
+    $installedText = $sourceText.Replace($bindingShaPlaceholder, $bindingSha).
+        Replace($bindingBase64Placeholder, $bindingBase64)
+    if (
+        $installedText.Contains($bindingShaPlaceholder) -or
+        $installedText.Contains($bindingBase64Placeholder)
+    ) {
         throw "XINAO_SELECTOR_VALIDATOR_TRUST_ANCHOR_INJECTION_FAILED"
     }
     $installedBytes = $utf8.GetBytes($installedText)
     $installedSha = Get-Sha256Hex -Bytes $installedBytes
     [IO.File]::WriteAllBytes($targetTemporary, $installedBytes)
-    [IO.File]::WriteAllBytes($bindingTemporary, $bindingBytes)
-    if (
-        (Get-Sha256Hex -Bytes ([IO.File]::ReadAllBytes($targetTemporary))) -ne $installedSha -or
-        (Get-Sha256Hex -Bytes ([IO.File]::ReadAllBytes($bindingTemporary))) -ne $bindingSha
-    ) {
+    if ((Get-Sha256Hex -Bytes ([IO.File]::ReadAllBytes($targetTemporary))) -ne $installedSha) {
         throw "XINAO_QUOTA_EPOCH_STAGING_HASH_MISMATCH"
     }
     $stagedTokens = $null
@@ -325,23 +733,22 @@ try {
     ) {
         throw "XINAO_QUOTA_EPOCH_SOURCE_CHANGED"
     }
-    if (
-        -not (Test-ExactInstalledState -Path $target -ExpectedPresent $previousTargetExisted -ExpectedBytes $previousTargetBytes) -or
-        -not (Test-ExactInstalledState -Path $validatorBinding -ExpectedPresent $previousBindingExisted -ExpectedBytes $previousBindingBytes)
-    ) {
+    Assert-InstallLeafNotReparse -Path $target `
+        -ErrorCode "XINAO_QUOTA_INSTALL_TARGET_REPARSE_POINT"
+    if (-not (Test-ExactInstalledState -Path $target -ExpectedPresent $previousTargetExisted -ExpectedBytes $previousTargetBytes)) {
         throw "XINAO_QUOTA_INSTALL_TARGET_CHANGED_BEFORE_PUBLISH"
     }
+    if (-not (Test-ExactInstalledState -Path $collector -ExpectedPresent $true -ExpectedBytes $collectorBytes)) {
+        throw "XINAO_QUOTA_INSTALL_COLLECTOR_CHANGED_BEFORE_PUBLISH"
+    }
+    if (-not (Test-ExactInstalledState -Path $nodeExecutable -ExpectedPresent $true -ExpectedBytes $nodeBytes)) {
+        throw "XINAO_QUOTA_INSTALL_NODE_CHANGED_BEFORE_PUBLISH"
+    }
 
-    # Publish the locator first.  Until the consumer swap completes, the old
-    # embedded anchor rejects it, so concurrent reads fail closed rather than
-    # executing a mismatched validator.
-    Move-Item -LiteralPath $bindingTemporary -Destination $validatorBinding -Force
-    $bindingPublished = $true
+    # The exact validator binding is embedded in these target bytes.  This one
+    # atomic move is therefore the complete consumer generation commit point.
     Move-Item -LiteralPath $targetTemporary -Destination $target -Force
     $targetPublished = $true
-    if (-not (Test-ExactInstalledState -Path $validatorBinding -ExpectedPresent $true -ExpectedBytes $bindingBytes)) {
-        throw "XINAO_SELECTOR_VALIDATOR_BINDING_INSTALL_MISMATCH"
-    }
     if (-not (Test-ExactInstalledState -Path $target -ExpectedPresent $true -ExpectedBytes $installedBytes)) {
         throw "XINAO_QUOTA_EPOCH_INSTALL_HASH_MISMATCH"
     }
@@ -364,9 +771,15 @@ try {
             throw "XINAO_SELECTOR_VALIDATOR_SOURCE_CHANGED_AFTER_PUBLISH: $relativeText"
         }
     }
+    if (-not (Test-ExactInstalledState -Path $collector -ExpectedPresent $true -ExpectedBytes $collectorBytes)) {
+        throw "XINAO_QUOTA_INSTALL_COLLECTOR_CHANGED_AFTER_PUBLISH"
+    }
+    if (-not (Test-ExactInstalledState -Path $nodeExecutable -ExpectedPresent $true -ExpectedBytes $nodeBytes)) {
+        throw "XINAO_QUOTA_INSTALL_NODE_CHANGED_AFTER_PUBLISH"
+    }
 
     $receipt = [ordered]@{
-        schema_version = "xinao.dispatch_economics_runtime_install_receipt.v2"
+        schema_version = "xinao.dispatch_economics_runtime_install_receipt.v3"
         installed_at = (Get-Date).ToString("o")
         source_root = $sourceRootFull
         source_git_head = $sourceGitHead
@@ -377,16 +790,21 @@ try {
         validator_python_ref = $validatorPython
         validator_python_sha256 = $validatorPythonSha
         validator_python_size_bytes = $validatorPythonBytes.Length
-        validator_binding_ref = [IO.Path]::GetFullPath($validatorBinding)
+        validator_python_candidate_ref = [string]$validatorPythonCandidateCapture.path
+        validator_python_candidate_sha256 = [string]$validatorPythonCandidateCapture.sha256
+        validator_python_candidate_size_bytes = [long]$validatorPythonCandidateCapture.size_bytes
+        collector_ref = [IO.Path]::GetFullPath($collector)
+        collector_sha256 = $collectorSha
+        collector_size_bytes = $collectorBytes.Length
+        node_ref = $nodeExecutable
+        node_sha256 = $nodeSha
+        node_size_bytes = $nodeBytes.Length
+        validator_binding_storage = "embedded_base64"
         validator_binding_sha256 = $bindingSha
-        validator_root_binding_ref = [IO.Path]::GetFullPath($validatorBinding)
-        validator_root_binding_sha256 = $bindingSha
         target_ref = [IO.Path]::GetFullPath($target)
         target_sha256 = $installedSha
         previous_sha256 = $previousSha
         rollback_ref = $backup
-        previous_validator_binding_sha256 = $previousBindingSha
-        rollback_validator_binding_ref = $bindingBackup
         release_id = $releaseId
         release_root = [IO.Path]::GetFullPath($releaseRoot)
         authority = $false
@@ -407,9 +825,10 @@ try {
     $receipt | Add-Member -NotePropertyName receipt_sha256 -NotePropertyValue $receiptSha
     if (
         -not (Test-ExactInstalledState -Path $target -ExpectedPresent $true -ExpectedBytes $installedBytes) -or
-        -not (Test-ExactInstalledState -Path $validatorBinding -ExpectedPresent $true -ExpectedBytes $bindingBytes)
+        -not (Test-ExactInstalledState -Path $collector -ExpectedPresent $true -ExpectedBytes $collectorBytes) -or
+        -not (Test-ExactInstalledState -Path $nodeExecutable -ExpectedPresent $true -ExpectedBytes $nodeBytes)
     ) {
-        throw "XINAO_QUOTA_INSTALL_FINAL_PAIR_READBACK_MISMATCH"
+        throw "XINAO_QUOTA_INSTALL_FINAL_TARGET_READBACK_MISMATCH"
     }
 }
 catch {
@@ -421,16 +840,8 @@ catch {
                 throw "installed consumer changed before rollback: $target"
             }
         }
-        if ($bindingPublished) {
-            if (-not (Test-ExactInstalledState -Path $validatorBinding -ExpectedPresent $true -ExpectedBytes $bindingBytes)) {
-                throw "validator binding changed before rollback: $validatorBinding"
-            }
-        }
         if ($targetPublished) {
             Restore-InstalledFile -TargetPath $target -PreviouslyExisted $previousTargetExisted -PreviousBytes $previousTargetBytes
-        }
-        if ($bindingPublished) {
-            Restore-InstalledFile -TargetPath $validatorBinding -PreviouslyExisted $previousBindingExisted -PreviousBytes $previousBindingBytes
         }
         $rollbackSucceeded = $true
     }
@@ -451,11 +862,17 @@ catch {
 }
 finally {
     Remove-Item -LiteralPath $targetTemporary -Force -ErrorAction SilentlyContinue
-    Remove-Item -LiteralPath $bindingTemporary -Force -ErrorAction SilentlyContinue
     Remove-Item -LiteralPath $receiptTemporary -Force -ErrorAction SilentlyContinue
 }
 $receipt | ConvertTo-Json -Depth 8
 }
 finally {
     $installLock.Dispose()
+}
+}
+finally {
+    for ($index = $installNamespaceHandles.Count - 1; $index -ge 0; $index--) {
+        $installNamespaceHandles[$index].Dispose()
+    }
+    $installNamespaceHandles.Clear()
 }

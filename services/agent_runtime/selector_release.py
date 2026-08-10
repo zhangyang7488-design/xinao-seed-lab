@@ -19,9 +19,10 @@ from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
 
-RELEASE_SCHEMA = "xinao.selector_release.v1"
+RELEASE_SCHEMA = "xinao.selector_release.v2"
 POINTER_SCHEMA = "xinao.selector_release_pointer.v1"
 SOURCE_CAPTURE_SCHEMA = "xinao.selector_release_source_capture.v1"
+EXECUTION_BINDING_SCHEMA = "xinao.selector_release_execution_binding.v1"
 CURRENT_STATE_ABSENT = "ABSENT"
 CURRENT_STATE_PRESENT = "PRESENT"
 REQUIRED_DISTRIBUTIONS = (
@@ -187,16 +188,24 @@ class _SelectorReleaseLock:
                 release()
 
 
-def _read_object(path: Path, label: str) -> dict[str, Any]:
-    if not path.is_file():
-        raise SelectorReleaseError(f"{label} missing: {path}")
+def _decode_object(raw: bytes, *, path: Path, label: str) -> dict[str, Any]:
     try:
-        value = json.loads(path.read_text(encoding="utf-8-sig"))
-    except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+        value = json.loads(raw.decode("utf-8-sig"))
+    except (UnicodeError, json.JSONDecodeError) as exc:
         raise SelectorReleaseError(f"{label} invalid JSON: {path}: {exc}") from exc
     if not isinstance(value, dict):
         raise SelectorReleaseError(f"{label} must be an object: {path}")
     return value
+
+
+def _read_object(path: Path, label: str) -> dict[str, Any]:
+    if not path.is_file():
+        raise SelectorReleaseError(f"{label} missing: {path}")
+    try:
+        raw = path.read_bytes()
+    except OSError as exc:
+        raise SelectorReleaseError(f"{label} unreadable: {path}: {exc}") from exc
+    return _decode_object(raw, path=path, label=label)
 
 
 def _capture_selected_sources(source_root: Path) -> dict[str, dict[str, object]]:
@@ -606,6 +615,13 @@ def build_selector_release(
             captured_sources,
             source_git_head=source_git_head,
         )
+        selected_python_path = Path(str(probe["python_executable"]))
+        try:
+            selected_python_raw = selected_python_path.read_bytes()
+        except OSError as exc:
+            raise SelectorReleaseError(
+                f"selector release python unreadable: {selected_python_path}: {exc}"
+            ) from exc
         manifest: dict[str, object] = {
             "schema_version": RELEASE_SCHEMA,
             "release_id": identifier,
@@ -616,6 +632,8 @@ def build_selector_release(
             "files": files,
             "selector_source_sha256": probe["selector_source_sha256"],
             "python_executable": probe["python_executable"],
+            "python_sha256": _sha_bytes(selected_python_raw),
+            "python_size_bytes": len(selected_python_raw),
             "probe": probe,
             "authority": False,
             "completion_claim_allowed": False,
@@ -665,7 +683,13 @@ def _git_head(source: Path) -> str | None:
 
 
 def validate_selector_release_pointer(pointer_path: Path) -> dict[str, Any]:
-    """Validate pointer, manifest, every release byte, and interpreter identity."""
+    """Validate pointer, same-read manifest bytes, and the static release closure.
+
+    Runtime consumers receive an exact execution binding and perform the final
+    no-reparse, same-handle validation while holding those handles through
+    process exit.  Loading a current release must never import its code across
+    a validate-then-reopen seam.
+    """
 
     pointer_file = Path(pointer_path).resolve(strict=False)
     pointer = _read_object(pointer_file, "selector release pointer")
@@ -683,13 +707,21 @@ def validate_selector_release_pointer(pointer_path: Path) -> dict[str, Any]:
     )
     if not manifest_path.is_file():
         raise SelectorReleaseError(f"release manifest missing: {manifest_path}")
-    observed_manifest_sha = _sha_file(manifest_path)
+    try:
+        manifest_raw = manifest_path.read_bytes()
+    except OSError as exc:
+        raise SelectorReleaseError(f"release manifest unreadable: {manifest_path}: {exc}") from exc
+    observed_manifest_sha = _sha_bytes(manifest_raw)
     if observed_manifest_sha != expected_manifest_sha:
         raise SelectorReleaseError(
             "release manifest hash mismatch: "
             f"expected={expected_manifest_sha}; observed={observed_manifest_sha}"
         )
-    manifest = _read_object(manifest_path, "selector release manifest")
+    manifest = _decode_object(
+        manifest_raw,
+        path=manifest_path,
+        label="selector release manifest",
+    )
     if manifest.get("schema_version") != RELEASE_SCHEMA:
         raise SelectorReleaseError("selector release manifest schema mismatch")
     if manifest.get("release_id") != release_id:
@@ -723,7 +755,11 @@ def validate_selector_release_pointer(pointer_path: Path) -> dict[str, Any]:
         if not target.is_file() or not _under(target.resolve(strict=True), release_root):
             raise SelectorReleaseError(f"release file missing: {target}")
         expected = _sha(raw.get("sha256"), f"files[{index}].sha256")
-        actual = _sha_file(target)
+        try:
+            target_raw = target.read_bytes()
+        except OSError as exc:
+            raise SelectorReleaseError(f"release file unreadable: {target}: {exc}") from exc
+        actual = _sha_bytes(target_raw)
         if actual != expected:
             raise SelectorReleaseError(
                 f"release file hash mismatch: {relative_text}; "
@@ -732,7 +768,7 @@ def validate_selector_release_pointer(pointer_path: Path) -> dict[str, Any]:
         size = raw.get("size_bytes")
         if isinstance(size, bool) or not isinstance(size, int) or size < 0:
             raise SelectorReleaseError(f"files[{index}].size_bytes must be >= 0")
-        if target.stat().st_size != size:
+        if len(target_raw) != size:
             raise SelectorReleaseError(f"release file size mismatch: {relative_text}")
         observed_files[relative_text] = {"sha256": expected, "size_bytes": size}
     if observed_paths != set(RELEASE_FILES):
@@ -745,12 +781,44 @@ def validate_selector_release_pointer(pointer_path: Path) -> dict[str, Any]:
     python_executable = _absolute_executable(
         Path(_text(manifest.get("python_executable"), "python_executable"))
     )
-    observed_probe = _probe_release(release_root, python_executable)
     declared_probe = manifest.get("probe")
     if not isinstance(declared_probe, dict):
         raise SelectorReleaseError("selector release probe missing")
-    if observed_probe != declared_probe:
-        raise SelectorReleaseError("selector release interpreter or dependency closure drifted")
+    if declared_probe.get("python_executable") != str(python_executable):
+        raise SelectorReleaseError("selector release probe interpreter mismatch")
+    if declared_probe.get("selector_source_sha256") != selector_sha:
+        raise SelectorReleaseError("selector release probe selector mismatch")
+    expected_python_sha = _sha(manifest.get("python_sha256"), "python_sha256")
+    python_size = manifest.get("python_size_bytes")
+    if isinstance(python_size, bool) or not isinstance(python_size, int) or python_size < 0:
+        raise SelectorReleaseError("python_size_bytes must be >= 0")
+    try:
+        python_raw = python_executable.read_bytes()
+    except OSError as exc:
+        raise SelectorReleaseError(
+            f"selector release python unreadable: {python_executable}: {exc}"
+        ) from exc
+    if _sha_bytes(python_raw) != expected_python_sha or len(python_raw) != python_size:
+        raise SelectorReleaseError("selector release interpreter bytes drifted")
+    execution_binding = {
+        "schema_version": EXECUTION_BINDING_SCHEMA,
+        "release_root": str(release_root),
+        "python": {
+            "path": str(python_executable),
+            "sha256": expected_python_sha,
+            "size_bytes": python_size,
+        },
+        "files": [
+            {
+                "path": relative_text,
+                "sha256": observed_files[relative_text]["sha256"],
+                "size_bytes": observed_files[relative_text]["size_bytes"],
+            }
+            for relative_text in RELEASE_FILES
+        ],
+    }
+    if _sha_file(manifest_path) != expected_manifest_sha:
+        raise SelectorReleaseError("release manifest changed during validation")
     return {
         **pointer,
         "pointer_path": str(pointer_file),
@@ -761,6 +829,7 @@ def validate_selector_release_pointer(pointer_path: Path) -> dict[str, Any]:
         "selector_source_sha256": selector_sha,
         "python_executable": str(python_executable),
         "release_manifest": manifest,
+        "execution_binding": execution_binding,
     }
 
 

@@ -236,8 +236,18 @@ def test_versioned_selector_release_is_not_task_cwd_dependent(tmp_path: Path) ->
     assert promoted["status"] == "release_promoted"
     current = load_current_selector_release(runtime)
     assert current["release_id"] == "selector-test-1"
+    assert current["release_manifest"]["schema_version"] == "xinao.selector_release.v2"
     assert current["selector_source_sha256"] == built["selector_source_sha256"]
     assert Path(current["release_root"]) != repo
+    assert current["execution_binding"]["schema_version"] == (
+        "xinao.selector_release_execution_binding.v1"
+    )
+    assert [row["path"] for row in current["execution_binding"]["files"]] == list(
+        RELEASE_FILES
+    )
+    assert current["execution_binding"]["python"]["sha256"] == current[
+        "release_manifest"
+    ]["python_sha256"]
     assert current["release_manifest"]["probe"]["dependency_distributions"]["jsonschema"]
     assert current["release_manifest"]["probe"]["dependency_distributions"]["portalocker"]
     assert current["release_manifest"]["probe"]["dispatch_route_claim_callable"] is True
@@ -338,6 +348,78 @@ def test_selector_release_hash_drift_fails_closed(tmp_path: Path) -> None:
     selector.write_text(selector.read_text(encoding="utf-8") + "\n# drift\n", encoding="utf-8")
     pointer = runtime / "state" / "grok_supervisor_selector" / "current.json"
     with pytest.raises(SelectorReleaseError, match="release file hash mismatch"):
+        validate_selector_release_pointer(pointer)
+
+
+def test_manifest_swap_after_hash_before_parse_is_rejected(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    repo = Path(__file__).resolve().parents[1]
+    runtime = tmp_path / "runtime"
+    monkeypatch.setattr(selector_release, "_probe_release", _fast_probe)
+    built = _build_fast_release(repo, runtime, "manifest-swap")
+    promote_selector_release(
+        runtime,
+        release_id="manifest-swap",
+        expected_current=selector_release_current_identity(runtime),
+    )
+    manifest_path = Path(str(built["release_manifest_ref"]))
+    malicious = json.loads(manifest_path.read_text(encoding="utf-8"))
+    malicious["source_root"] = str(tmp_path / "redirected-source")
+    content = dict(malicious)
+    content.pop("release_content_sha256")
+    malicious["release_content_sha256"] = selector_release._sha_bytes(
+        selector_release._canonical_bytes(content)
+    )
+    malicious_raw = selector_release._json_bytes(malicious)
+    real_decode = selector_release._decode_object
+    swapped = False
+
+    def swap_then_decode(raw: bytes, *, path: Path, label: str) -> dict[str, object]:
+        nonlocal swapped
+        if path == manifest_path and not swapped:
+            manifest_path.write_bytes(malicious_raw)
+            swapped = True
+        return real_decode(raw, path=path, label=label)
+
+    monkeypatch.setattr(selector_release, "_decode_object", swap_then_decode)
+
+    pointer = runtime / "state" / "grok_supervisor_selector" / "current.json"
+    with pytest.raises(SelectorReleaseError, match="manifest changed during validation"):
+        validate_selector_release_pointer(pointer)
+    assert swapped is True
+
+
+def test_legacy_v1_release_manifest_requires_fresh_rebuild(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    repo = Path(__file__).resolve().parents[1]
+    runtime = tmp_path / "runtime"
+    monkeypatch.setattr(selector_release, "_probe_release", _fast_probe)
+    built = _build_fast_release(repo, runtime, "legacy-schema")
+    promote_selector_release(
+        runtime,
+        release_id="legacy-schema",
+        expected_current=selector_release_current_identity(runtime),
+    )
+    manifest_path = Path(str(built["release_manifest_ref"]))
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest["schema_version"] = "xinao.selector_release.v1"
+    content = dict(manifest)
+    content.pop("release_content_sha256")
+    manifest["release_content_sha256"] = selector_release._sha_bytes(
+        selector_release._canonical_bytes(content)
+    )
+    manifest_raw = selector_release._json_bytes(manifest)
+    manifest_path.write_bytes(manifest_raw)
+    pointer = runtime / "state" / "grok_supervisor_selector" / "current.json"
+    pointer_payload = json.loads(pointer.read_text(encoding="utf-8"))
+    pointer_payload["release_manifest_sha256"] = selector_release._sha_bytes(manifest_raw)
+    pointer.write_bytes(selector_release._json_bytes(pointer_payload))
+
+    with pytest.raises(SelectorReleaseError, match="schema mismatch"):
         validate_selector_release_pointer(pointer)
 
 
