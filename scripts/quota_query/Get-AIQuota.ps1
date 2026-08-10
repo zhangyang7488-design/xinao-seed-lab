@@ -803,7 +803,7 @@ try {
         $relativePython -ne ".."
     ) {
         Assert-ExactPhysicalRelativePath -PhysicalRoot $physicalReleaseRoot `
-            -RelativePath ($relativePython -replace '\', '/') `
+            -RelativePath ($relativePython -replace '\\', '/') `
             -FinalPath $physicalPython `
             -ErrorCode "XINAO_SELECTOR_RELEASE_PYTHON_ROOT_MISMATCH"
     }

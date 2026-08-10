@@ -18,6 +18,7 @@ from services.agent_runtime.selector_release import (
     build_selector_release,
     promote_selector_release,
     selector_release_current_identity,
+    validate_selector_release_pointer,
 )
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -93,6 +94,22 @@ def _rewrite_release_python_binding(
         encoding="utf-8",
         newline="\n",
     )
+
+
+def _bind_release_local_python(runtime: Path, release_root: Path) -> Path:
+    relative = (
+        Path(".venv") / "Scripts" / "python.exe"
+        if os.name == "nt"
+        else Path(".venv") / "bin" / "python"
+    )
+    release_python = release_root / relative
+    release_python.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(Path(sys.executable), release_python)
+    source_venv_config = Path(sys.prefix) / "pyvenv.cfg"
+    if source_venv_config.is_file():
+        shutil.copy2(source_venv_config, release_root / ".venv" / "pyvenv.cfg")
+    _rewrite_release_python_binding(runtime, release_root, release_python)
+    return release_python
 
 
 def _copy_release_source(destination: Path) -> None:
@@ -253,6 +270,7 @@ def _release_fixture(tmp_path: Path) -> tuple[Path, Path, Path, Path, dict[str, 
         expected_current=selector_release_current_identity(runtime),
     )
     assert promoted["status"] == "release_promoted"
+    _bind_release_local_python(runtime, Path(built["release_root"]))
     script, receipt = _install_consumer(source, runtime)
     return runtime, Path(built["release_root"]), script, source, receipt
 
@@ -311,7 +329,15 @@ def _run_direct_consumer(script: Path, runtime: Path) -> subprocess.CompletedPro
 
 @pytest.mark.skipif(os.name != "nt", reason="Windows hidden-process consumer")
 def test_installed_epoch_consumer_survives_source_root_deletion(tmp_path: Path) -> None:
-    runtime, _, script, source, _ = _release_fixture(tmp_path)
+    runtime, release_root, script, source, _ = _release_fixture(tmp_path)
+    manifest = json.loads((release_root / "release_manifest.json").read_text(encoding="utf-8"))
+    release_python = Path(manifest["python_executable"])
+    assert release_python.resolve(strict=True).is_relative_to(release_root.resolve(strict=True))
+    pointer = runtime / "state" / "grok_supervisor_selector" / "current.json"
+    execution_binding = validate_selector_release_pointer(pointer)["execution_binding"]
+    bound_python = Path(execution_binding["python"]["path"])
+    assert bound_python == release_python
+    assert bound_python.resolve(strict=True).is_relative_to(release_root.resolve(strict=True))
     _retire_fixture_source(source)
 
     completed = _run_consumer(script, runtime, "epoch-source-retired")
