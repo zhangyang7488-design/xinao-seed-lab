@@ -1,0 +1,23 @@
+{
+  "schema_version": "xinao.semantic_implication_case_input.v3",
+  "read_nonce": "sir-dedup-source-f6b1",
+  "analysis_object_id": "complete_draw_event",
+  "source_witness_ids": ["sealed_example_alpha"],
+  "representations": [
+    {"dimension_id": "ordered_numbers", "source_witness_id": "sealed_example_alpha"},
+    {"dimension_id": "zodiac", "source_witness_id": "sealed_example_alpha"},
+    {"dimension_id": "color", "source_witness_id": "sealed_example_alpha"}
+  ],
+  "named_consumer": {
+    "consumer_id": "historical_association_accounting",
+    "dimension_ids": ["ordered_numbers", "zodiac", "color"]
+  },
+  "observation_ids": ["open-code-dedup-context", "open-code-dedup-request"],
+  "facts": {
+    "event_id": "sealed_example_alpha",
+    "ordered_numbers": [17, 29, 4, 41, 8, 33, 12],
+    "zodiac": ["Z3", "Z3", "Z8", "Z6", "Z2", "Z9", "Z5"],
+    "color": ["red", "red", "blue", "green", "red", "green", "blue"],
+    "mapping": "zodiac and color are deterministic under the sealed number-year mapping"
+  }
+}

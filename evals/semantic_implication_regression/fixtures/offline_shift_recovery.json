@@ -1,0 +1,16 @@
+{
+  "schema_version": "xinao.semantic_implication_case_input.v3",
+  "read_nonce": "sir-recovery-e04b",
+  "analysis_object_id": "complete_draw_event",
+  "source_witness_ids": ["recovery_event"],
+  "representations": [
+    {"dimension_id": "ordered_numbers", "source_witness_id": "recovery_event"},
+    {"dimension_id": "zodiac", "source_witness_id": "recovery_event"},
+    {"dimension_id": "settlement_effect", "source_witness_id": "recovery_event"}
+  ],
+  "named_consumer": {
+    "consumer_id": "recovered_complete_event_analysis",
+    "dimension_ids": ["ordered_numbers", "zodiac", "settlement_effect"]
+  },
+  "observation_ids": ["open-code-recovery-correction"]
+}

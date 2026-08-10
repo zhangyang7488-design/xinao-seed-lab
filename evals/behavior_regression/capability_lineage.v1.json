@@ -4,8 +4,16 @@
   "authority": false,
   "runtime_loaded": false,
   "completion_claim_allowed": false,
-  "evidence_cutoff": "2026-08-08T00:00:00+08:00",
+  "evidence_cutoff": "2026-08-10T22:54:00+08:00",
   "purpose": "Recover the complete capability, pain, consumer, and retirement lineage before another architecture migration. This registry prevents carrier deletion from being mistaken for authority cleanup or capability restoration; it never selects a task, domain route, tool, worker, or completion state.",
+  "current_runtime_topology": {
+    "active_hook_events": [
+      "UserPromptSubmit"
+    ],
+    "active_situation_script": "D:/XINAO_RESEARCH_RUNTIME/state/Codex_Situation_Island/scripts/user_prompt_zero_beat_v1.ps1",
+    "cold_lifecycle_recovery_manifest": "infra/codex_productivity_recovery/v2/manifest.v2.json",
+    "legacy_v1_disposition": "IMMUTABLE_HISTORICAL_EVIDENCE"
+  },
   "frozen_baseline": {
     "capability_id": "intent_source_parent_admission",
     "decision": "KEEP_FROZEN",
@@ -13,8 +21,7 @@
     "hot_carriers": [
       "C:/Users/xx363/.codex/AGENTS.md",
       "C:/Users/xx363/.codex-s-hardmode-account-b/AGENTS.md",
-      "D:/XINAO_RESEARCH_RUNTIME/state/Codex_Situation_Island/scripts/user_prompt_zero_beat_v1.ps1",
-      "D:/XINAO_RESEARCH_RUNTIME/state/Codex_Situation_Island/scripts/session_start_continuity_pointer_v1.ps1"
+      "D:/XINAO_RESEARCH_RUNTIME/state/Codex_Situation_Island/scripts/user_prompt_zero_beat_v1.ps1"
     ]
   },
   "migration_rule": {
@@ -89,16 +96,16 @@
       },
       {
         "id": "lifecycle_event_reanchor",
-        "activation": "hot_advisory",
+        "activation": "hot_current_increment_plus_cold_lifecycle_repair",
         "task_selection_authority": "none",
         "consumers": [
-          "external:SessionStart compact/resume/clear/startup hook",
-          "external:UserPromptSubmit hook",
-          "external:Stop hook",
-          "services/agent_runtime/action_resume_receipt.py"
+          "external:UserPromptSubmit current-increment hook",
+          "services/agent_runtime/action_resume_receipt.py",
+          "evals/parent_frame_admission"
         ],
-        "readback": "event-shaped hook probes plus exact-return and no-binding negatives",
-        "fallback": "missing or stale continuation cannot block current words or manufacture a return point"
+        "readback": "fresh A/B hooks/list reports exactly UserPromptSubmit; v2 recovery roles mark SessionStart Stop binder and restore scripts cold; exact-return and no-binding behavior negatives remain separate",
+        "fallback": "cold or missing continuation cannot block current words or manufacture a return point",
+        "cold_recovery_material": "infra/codex_productivity_recovery/v2/manifest.v2.json"
       },
       {
         "id": "post_binding_capability_resolution",
@@ -271,7 +278,9 @@
       "current_consumers": [
         "external:A/B AGENTS.md semantic-fidelity invariant",
         "external:UserPromptSubmit semantic-fidelity projection",
-        "evals/parent_frame_admission"
+        "evals/parent_frame_admission",
+        "evals/semantic_implication_regression",
+        "tests/test_semantic_implication_regression.py"
       ],
       "current_state": "PARTIAL_CONSUMER",
       "disposition": "KEEP_HOT",
@@ -290,8 +299,7 @@
         "git:4096f52^:evals/context_intent_alignment/cases.yaml"
       ],
       "current_consumers": [
-        "external:SessionStart compact/resume hook",
-        "external:optional ActiveTaskContinuation binder and restore",
+        "external:A/B AGENTS semantic parent-continuity rule",
         "services/agent_runtime/action_resume_receipt.py",
         "evals/parent_frame_admission"
       ],
@@ -300,8 +308,10 @@
       "cost_and_failure_radius": "A resident continuation controller can seize task authority; advisory lifecycle hooks and typed action receipts have smaller radius.",
       "rollback": "Remove only the failing advisory projection or binding; never restore the retired PreToolUse permission gate or science-bearing predecision injection.",
       "unknowns": [
-        "Natural long-horizon compact and arbitrary interruption recurrence remain only partially sampled."
-      ]
+        "Natural long-horizon compact and arbitrary interruption recurrence remain only partially sampled.",
+        "No SessionStart binder or restore consumer is currently installed; their v2-archived scripts are cold repair material only."
+      ],
+      "cold_recovery_material": "infra/codex_productivity_recovery/v2/manifest.v2.json"
     },
     {
       "id": "bounded_control_decision_and_authorization",
@@ -313,7 +323,6 @@
       "current_consumers": [
         "evals/intent_continuity_baseline/decision_model.v1.json",
         "evals/parent_frame_admission",
-        "external:Stop finalization hook",
         "external:human-agency-grounding and operate-for-user skills"
       ],
       "current_state": "PARTIAL_CONSUMER",
@@ -455,12 +464,13 @@
       "historical_carriers": [
         "git:4096f52^:docs/tool_glue/SOFTWARE_TOOL_GLUE_CURRENT.md",
         "git:4096f52^:scripts/Update-CodexContextCatalog.ps1",
-        "D:/XINAO_RESEARCH_RUNTIME/state/codex/productivity-profile/20260805-pre-slim-v1"
+        "D:/XINAO_RESEARCH_RUNTIME/state/codex/productivity-profile/20260805-pre-slim-v1",
+        "infra/codex_productivity_recovery/v1/manifest.v1.json"
       ],
       "current_consumers": [
         "C:/Users/xx363/.codex/cold-capabilities.config.toml",
         "C:/Users/xx363/CodexLaunchers/CODEX_PRODUCTIVITY_PROFILE.md",
-        "infra/codex_productivity_recovery/v1/manifest.v1.json",
+        "infra/codex_productivity_recovery/v2/manifest.v2.json",
         "scripts/build_codex_productivity_recovery.py",
         "tests/test_codex_productivity_recovery.py",
         "external:Codex skills progressive disclosure",
@@ -481,7 +491,9 @@
       "causal_work": "Freeze exact sources before model calls, inventory historical capability atoms, require a disposition and consumer for every family, and fail migration preflight on silent loss.",
       "historical_carriers": [
         "git:4096f52^:evals/context_intent_alignment",
-        "git:4096f52^:scripts/Update-CodexContextCatalog.ps1"
+        "git:4096f52^:scripts/Update-CodexContextCatalog.ps1",
+        "infra/codex_productivity_recovery/v1/manifest.v1.json",
+        "infra/codex_productivity_recovery/v1/codex-productivity-recovery.v1.zip"
       ],
       "current_consumers": [
         "scripts/prepare_behavior_regression_snapshot.py",
@@ -490,8 +502,8 @@
         "tests/test_behavior_capability_lineage.py",
         "evals/productive_action_trajectory",
         "tests/test_productive_action_trajectory.py",
-        "infra/codex_productivity_recovery/v1/manifest.v1.json",
-        "infra/codex_productivity_recovery/v1/codex-productivity-recovery.v1.zip",
+        "infra/codex_productivity_recovery/v2/manifest.v2.json",
+        "infra/codex_productivity_recovery/v2/codex-productivity-recovery.non-pi.v2.zip",
         "tests/test_codex_productivity_recovery.py"
       ],
       "current_state": "PARTIAL_CONSUMER",
@@ -657,14 +669,16 @@
         "git:4096f52^:scripts/predecision_intent_guard_v1.ps1",
         "E:/XINAO_COLD_STORAGE/xinao-global-clean-preimage-20260803-v1/situation-island-preclean.tar"
       ],
-      "current_consumers": [
-        "external:Situation Island SessionStart/UserPromptSubmit/Stop scripts"
-      ],
+      "current_consumers": [],
       "current_state": "RETIRED",
       "disposition": "RETIRE_FROM_S",
       "cost_and_failure_radius": "A resident catalog or PreToolUse task gate has global control radius and previously produced false positives and user ritual.",
       "rollback": "Keep the legacy script fail-open for stale processes, then remove only when no process can reference it; archaeology remains cold.",
-      "unknowns": []
+      "unknowns": [],
+      "cold_recovery_material": [
+        "infra/codex_productivity_recovery/v2/manifest.v2.json",
+        "Situation Island SessionStart Stop binder and restore scripts classified cold"
+      ]
     },
     {
       "id": "desktop_human_entry_and_single_productivity_shape",

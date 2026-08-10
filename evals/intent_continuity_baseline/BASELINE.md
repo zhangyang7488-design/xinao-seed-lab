@@ -38,25 +38,24 @@ use dynamic information gain, reversibility, and exploration value inside the
 remaining legal space. This compilation is a reasoning obligation, not a new
 agenda controller.
 
-The baseline is carried by six different consumers:
+The baseline is carried by four current consumers and one cold recovery surface:
 
 1. **Hot runtime:** the global A/B `AGENTS.md` files hold the minimal zero-beat,
    speech-as-increment rule, and event-triggered bounded-closure obligation.
-2. **Entry/recovery:** the SessionStart hook injects only a short continuity and
-   closure pointer after start, resume, clear, or compact.
-3. **Current increment:** the UserPromptSubmit hook injects one thin zero-beat
+2. **Current increment:** the sole installed Hook is UserPromptSubmit. It injects one thin zero-beat
    reminder before each new user increment. It does not call another model or
-   serialize the personal decision model.
-4. **Finalization:** the Stop hook performs a deterministic, one-retry check for
-   an open recorded parent plan before Codex hands control back. It fails open
-   when there is no safe machine-readable basis and cannot by itself prove that
-   an unrecorded parent is complete.
-5. **Conditional behavior:** `human-agency-grounding`, Decision Skill,
+   serialize the personal decision model, bind a task, or restore a lifecycle.
+3. **Conditional behavior:** `human-agency-grounding`, Decision Skill,
    `operate-for-user`, `repair-agent-behavior`, and worker amplification consume
    only their own task-fit slices. They do not all load on every turn.
-6. **Assurance:** `decision_model.v1.json`, `consumer_coverage.v1.json`, and
+4. **Assurance:** `decision_model.v1.json`, `consumer_coverage.v1.json`, and
    `evals/parent_frame_admission` record the model, honest coverage boundary,
    and fresh changed-context canaries. They are evidence, not runtime authority.
+5. **Cold recovery:** `infra/codex_productivity_recovery/v2` preserves the
+   Situation Island contract and the former SessionStart, Stop, binder, and
+   restore scripts as cold repair material. Those scripts are not installed
+   Hooks and file presence is not a current consumer. Recovery v1 remains
+   immutable historical evidence and is not a current build or preflight input.
 
 ## Compilation order
 
@@ -111,28 +110,32 @@ materially change a high-impact or general repair claim.
 Ordinary low-risk continuous execution does not serialize this frame, enumerate
 the full graph, or call a second model.
 
-The runtime cost is therefore bounded: SessionStart runs only at lifecycle
-events, UserPromptSubmit adds a small fixed context once per user increment, and
-Stop is a local deterministic transcript check. Independent workers and the
-full decision lineage remain conditional rather than permanently loaded.
+The runtime cost is therefore bounded: the sole installed UserPromptSubmit Hook
+adds a small fixed context once per user increment. Session start and handing
+control back remain semantic transition events for the Owner, but no
+SessionStart or Stop Hook currently implements them. Independent workers and
+the full decision lineage remain conditional rather than permanently loaded.
 
 ## Migration admission
 
 The direct fresh canaries cover the high-leverage control families used at
 migration boundaries: ask/infer, act/wait/defer/no-action, continue/finalize,
 retry/block, worker return/refill, blocker isolation, and compact/resume. A
-fresh A/B app-server also accepts SessionStart, UserPromptSubmit, and Stop as
-trusted runtime hooks. These are engineering evidence, not an authorization
-source. Conversely, a migration phase or package approval field cannot revoke
-or reset authorization already established by the current parent scope.
+fresh A/B app-server currently discovers and trusts exactly one user Hook,
+UserPromptSubmit. The former lifecycle scripts remain cold recovery evidence;
+their old runs are historical engineering evidence, not a claim that those
+Hooks are installed now and not an authorization source. Conversely, a
+migration phase or package approval field cannot revoke or reset authorization
+already established by the current parent scope.
 
 Before a migration write, rederive the exact delta from the native repository,
 real activity, and live consumers; preserve unrelated state; use an isolated
 reversible carrier; and bound every intersecting gap by proportionate tests and
 consumer readback. When the current parent already authorizes that chain, the
-Owner proceeds without asking for a second phase approval. The Stop gate covers
-a recorded open plan but does not prove every Planner/tool path or an unrecorded
-parent. No green eval, hook receipt, package verifier, worker terminal, or
+Owner proceeds without asking for a second phase approval. There is currently
+no installed Stop gate; finalization remains an Owner decision under the live
+parent completion ruler. No green eval, historical hook receipt, package
+verifier, worker terminal, or
 approval artifact can silently widen or narrow the live scope. A migrated
 component must retain its parent service path, live consumer, reversible
 carrier, positive and negative behavior, fresh readback, and explicit unknowns;

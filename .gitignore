@@ -42,6 +42,7 @@ runtime-data/
 tmp/
 tmp_debug_*/
 .codex_tmp_*
+.codex_tmp/
 .codex-tmp/
 _audit_*.txt
 

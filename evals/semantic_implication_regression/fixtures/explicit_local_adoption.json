@@ -1,0 +1,10 @@
+{
+  "schema_version": "xinao.semantic_implication_case_input.v3",
+  "read_nonce": "sir-explicit-adoption-31df",
+  "analysis_object_id": "bounded_local_target",
+  "source_witness_ids": ["bounded-local-target"],
+  "representations": [],
+  "named_consumer": {"consumer_id": "bounded_local_target", "dimension_ids": []},
+  "observation_ids": ["explicit-current-adoption", "bounded-local-target"],
+  "effect": {"authorized": true, "initial_target": "ORIGINAL", "adopted_target": "ADOPTED_LOCAL_CHANGE"}
+}

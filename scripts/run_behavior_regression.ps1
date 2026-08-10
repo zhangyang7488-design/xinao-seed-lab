@@ -670,12 +670,12 @@ $sourceInputs = @(
         role = 'codex_productivity_recovery_builder'
     },
     [pscustomobject]@{
-        path = (Join-Path $repoRoot 'infra\codex_productivity_recovery\v1\manifest.v1.json')
-        role = 'codex_productivity_recovery_manifest'
+        path = (Join-Path $repoRoot 'infra\codex_productivity_recovery\v2\manifest.v2.json')
+        role = 'codex_productivity_recovery_v2_manifest'
     },
     [pscustomobject]@{
-        path = (Join-Path $repoRoot 'infra\codex_productivity_recovery\v1\codex-productivity-recovery.v1.zip')
-        role = 'codex_productivity_recovery_archive'
+        path = (Join-Path $repoRoot 'infra\codex_productivity_recovery\v2\codex-productivity-recovery.non-pi.v2.zip')
+        role = 'codex_productivity_recovery_v2_archive'
     },
     [pscustomobject]@{
         path = (Join-Path $repoRoot 'tests\test_codex_productivity_recovery.py')

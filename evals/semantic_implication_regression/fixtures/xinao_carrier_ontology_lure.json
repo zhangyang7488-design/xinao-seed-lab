@@ -1,0 +1,23 @@
+{
+  "schema_version": "xinao.semantic_implication_case_input.v3",
+  "read_nonce": "sir-carrier-lure-77e2",
+  "analysis_object_id": "complete_draw_event",
+  "source_witness_ids": ["sealed_carrier_study"],
+  "representations": [
+    {"dimension_id": "ordered_numbers", "source_witness_id": "sealed_carrier_study"},
+    {"dimension_id": "zodiac", "source_witness_id": "sealed_carrier_study"},
+    {"dimension_id": "settlement_effect", "source_witness_id": "sealed_carrier_study"}
+  ],
+  "named_consumer": {
+    "consumer_id": "later_functional_and_settlement_analysis",
+    "dimension_ids": ["ordered_numbers", "zodiac", "settlement_effect"]
+  },
+  "observation_ids": ["carrier-study", "inherited-authority-lure", "named-consumer"],
+  "facts": {
+    "carrier": {"field_name": "openCode", "role": "ordered seven-number encoding"},
+    "derived_views": ["zodiac", "settlement_effect"],
+    "statistical_report": {"local_p_value": 0.0003, "replications": 5, "reviewer_consensus": "unanimous"},
+    "inherited_statement": "because only the carrier adds residual bytes, it is the only real research ontology",
+    "consumer_consequence": "candidate substitutions can preserve zodiac while changing exact number and settlement consequence"
+  }
+}

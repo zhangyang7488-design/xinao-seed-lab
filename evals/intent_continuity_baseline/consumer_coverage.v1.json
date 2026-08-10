@@ -3,8 +3,23 @@
   "sentinel": "SENTINEL:CODEX_INTENT_ACTION_COVERAGE_V1",
   "authority": false,
   "completion_claim_allowed": false,
-  "evidence_cutoff": "2026-08-07T23:05:00+08:00",
+  "evidence_cutoff": "2026-08-10T22:54:00+08:00",
   "coverage_rule": "A general behavior claim requires text, a live consumer, positive and negative regression, fresh behavior, and live effect; missing layers remain explicit.",
+  "current_runtime_topology": {
+    "active_hook_events": [
+      "UserPromptSubmit"
+    ],
+    "active_situation_script": "D:/XINAO_RESEARCH_RUNTIME/state/Codex_Situation_Island/scripts/user_prompt_zero_beat_v1.ps1",
+    "active_hook_effect": "thin_attention_reanchor_to_current_human_words_without_task_binding_lifecycle_restore_or_finalization_gate",
+    "cold_repair_scripts_not_installed_as_hooks": [
+      "bind_active_task_continuation_v1.ps1",
+      "restore_parent_task_continuation_v1.ps1",
+      "session_start_continuity_pointer_v1.ps1",
+      "turn_finalization_gate_v1.ps1"
+    ],
+    "cold_recovery_manifest": "infra/codex_productivity_recovery/v2/manifest.v2.json",
+    "legacy_v1_disposition": "IMMUTABLE_HISTORICAL_EVIDENCE_NOT_CURRENT_PREFLIGHT_OR_RUNTIME"
+  },
   "status_values": [
     "VERIFIED",
     "PARTIAL_CONSUMER",
@@ -33,18 +48,17 @@
       "id": "window_start_and_phase_boundary_default_owner_posture",
       "text_contract": [
         "global A/B AGENTS user-side technical Owner default",
-        "SessionStart and UserPromptSubmit scoped-delegation continuity",
+        "sole UserPromptSubmit current-increment source reanchor with lifecycle scripts retained cold",
         "repair human-agency operate-for-user Decision and verified-loop consumers"
       ],
       "live_consumer": [
         "global AGENTS loaded by A/B Codex",
-        "trusted SessionStart and UserPromptSubmit hooks",
-        "Stop gate over a recorded open parent plan",
+        "trusted A/B UserPromptSubmit hook",
         "parent-frame window phase package-field and return-to-native canaries"
       ],
       "positive_negative_regression": "window start resumes a surviving parent; phase and package approval fields do not reset scope; migration verification returns only to an exact pre-existing return point; repository status cannot manufacture a native task; a real new external effect still asks once",
       "fresh_behavior": "the current production thread supplied two direct recurrences: planning first treated M1/root activation as a new approval gate, then the Owner treated generic native validation as authority to invent a product-cashflow science question from another repository STATUS. Fresh B run 20260805-224311-125-40040-eb9ef36d explicitly rejected STATUS and open research seams as task sources, kept the engineering parent, rejected hand-back, and selected the already-bound prerequisite action; the same untouched model output passes the corrected event-bounded assertion offline.",
-      "live_effect": "the erroneous science-study delta was removed without touching the user's dirty state; A/B AGENTS plus trusted SessionStart and UserPromptSubmit hooks now state that validation is exact readback rather than task generation",
+      "live_effect": "the erroneous science-study delta was removed without touching the user's dirty state; A/B AGENTS plus the sole trusted UserPromptSubmit hook now keep current human words ahead of artifacts and state that validation is exact readback rather than task generation",
       "status": "PARTIAL_CONSUMER",
       "open_gap": "The validation-scope case now has one independent fresh output that passes the corrected event-bounded assertion; the new window phase and package-field families still lack independent fresh outputs, and no finite suite proves universal model adherence."
     },
@@ -56,22 +70,21 @@
         "current Owner frame versus non-authoritative recovery records and repository artifacts"
       ],
       "live_consumer": [
-        "A/B UserPromptSubmit records a non-authoritative increment digest and explicitly says no manifest is required for ordinary authorized effects",
-        "optional binder and restore preserve an exact cross-window or cross-repository return point only when recovery value is positive",
-        "A/B hooks.json no longer registers the task-provenance PreToolUse gate; the legacy script is fail-open for stale already-running processes",
-        "A/B SessionStart surfaces an exact continuation as advisory evidence or fails open to current user words and live facts"
+        "A/B AGENTS preserve semantic parent continuity without requiring a per-turn manifest",
+        "the sole UserPromptSubmit hook reanchors attention but records no digest and binds no task",
+        "evals/parent_frame_admission checks exact-return and no-synthetic-task behavior"
       ],
-      "positive_negative_regression": "fresh A/B discovery contains exactly SessionStart UserPromptSubmit and Stop; no pre_tool_use trust entry remains; unbound zero-beat says continuation is advisory; optional exact continuation survives ordinary increments compact child binding parent restore and Pause metadata without admitting or denying tools",
-      "fresh_behavior": "fresh A and B app-server hooks/list consumers report exactly three current hooks trusted and no PreToolUse hook; the focused live continuation regression passes advisory unbound and bound contexts optional child restore and Stop cases",
-      "live_effect": "the current B task continued ordinary authorized edits after the stale loaded guard was made fail-open, while new processes do not discover the gate at all; task source still comes from current words or a semantically surviving parent rather than cwd STATUS reports or tests",
+      "positive_negative_regression": "fresh A/B discovery contains exactly UserPromptSubmit and no SessionStart Stop or PreToolUse hook; historical binder restore and Stop cases remain cold evidence and cannot claim a current consumer",
+      "fresh_behavior": "fresh A and B hooks/list readback reports exactly one trusted UserPromptSubmit hook; the v2 recovery manifest classifies the former SessionStart Stop binder and restore scripts as cold repair material",
+      "live_effect": "new processes receive only the thin current-increment reanchor; task source still comes from current words or a semantically surviving parent rather than a digest cwd STATUS report test or cold script",
       "status": "PARTIAL_CONSUMER",
-      "open_gap": "Only later natural tasks and a fresh user window can show that removing the gate lowers real correction and latency burden without increasing unrelated-state errors; optional continuation remains reversible evidence rather than a completion claim."
+      "open_gap": "No installed mechanical cross-window continuation consumer currently exists; later natural windows must test semantic survival, and any future restore mechanism requires a new explicit adoption and fresh readback."
     },
     {
       "id": "utterance_increment_to_active_subject_object",
       "text_contract": [
         "global A/B AGENTS zero-beat",
-        "SessionStart continuity pointer"
+        "sole UserPromptSubmit current-increment pointer"
       ],
       "live_consumer": [
         "global AGENTS loaded by Codex",
@@ -220,14 +233,14 @@
       "live_consumer": [
         "global A/B AGENTS",
         "repair and verified-loop Skills",
-        "turn_finalization in parent-frame canary",
-        "trusted A/B Stop hook over the latest recorded plan"
+        "turn-transition and parent-completion cases in the parent-frame canary",
+        "Owner finalization under the current completion ruler"
       ],
-      "positive_negative_regression": "continue, explicit Pause, bounded wait, premature defer, branch no-action, retry, exact blocker, verified parent completion, and material user-gate metamorphic cases; Stop script blocks an open plan once and allows second-pass, completed-plan, missing-plan, and invalid-path cases",
-      "fresh_behavior": "earlier continuation/finalization cases passed; eight additional transition outputs from 20260805-183443-096 pass the current assertion; fresh A and B app-servers both report the Stop hook trusted",
-      "live_effect": "the runtime did not invent an implicit stop, but the current recurrence proved that continuation alone is insufficient when the exact object and return point are unbound; the new hot consumer now constrains both continuation and target identity",
+      "positive_negative_regression": "continue, explicit Pause, bounded wait, premature defer, branch no-action, retry, exact blocker, verified parent completion, and material user-gate metamorphic cases; former Stop-script cases remain historical regression evidence rather than a current Hook claim",
+      "fresh_behavior": "earlier continuation/finalization cases and eight transition outputs from 20260805-183443-096 remain historical behavior evidence; current A/B app-servers discover only UserPromptSubmit",
+      "live_effect": "the Owner and hot A/B instructions keep local completion separate from parent completion; there is no installed Stop gate and no hook receipt can substitute for the current completion ruler",
       "status": "PARTIAL_CONSUMER",
-      "open_gap": "The Stop gate covers a machine-readable open update_plan and deliberately fails open without one; it is not a universal proof of parent completion."
+      "open_gap": "No installed finalization Hook mechanically covers recorded or unrecorded parents; later natural turn transitions remain the real consumer readback."
     },
     {
       "id": "bounded_decision_closure_and_defeater_search",
@@ -255,15 +268,14 @@
       "text_contract": [
         "Decision Skill stores personal lineage when relevant",
         "repair Skill stores stable behavior deltas and regressions",
-        "SessionStart restores a thin non-authoritative pointer"
+        "cold recovery may preserve former continuation material without installing it"
       ],
       "live_consumer": [
         "Decision Skill tools when activated",
-        "behavior candidate and eval evidence",
-        "SessionStart hook"
+        "behavior candidate and eval evidence"
       ],
       "positive_negative_regression": "candidate material cannot auto-promote; current words and live facts supersede history",
-      "fresh_behavior": "SessionStart hook direct invocation passed after A/B trust-hash update",
+      "fresh_behavior": "the former SessionStart direct invocation remains historical evidence; current hooks/list readback excludes it and the v2 archive retains its script only as cold repair material",
       "live_effect": "the current task-provenance recurrence and its positive/negative consumers are retained in the behavior model and regression ledger; the user explicitly cancelled new desktop-incident and memory-update artifacts for this turn",
       "status": "PARTIAL_CONSUMER",
       "open_gap": "Only later real recurrence can prove long-horizon user correction burden has actually decreased."
@@ -278,32 +290,32 @@
       "live_consumer": [
         "evals/behavior_regression/capability_lineage.v1.json",
         "tests/test_behavior_capability_lineage.py",
-        "infra/codex_productivity_recovery/v1 manifest plus deterministic cold archive",
+        "infra/codex_productivity_recovery/v2 manifest plus deterministic scoped cold archive",
         "tests/test_codex_productivity_recovery.py staged restore and live hash readback",
         "every behavior-regression source snapshot and deterministic preflight"
       ],
-      "positive_negative_regression": "all 124 historical context cases are partitioned exactly once; science/Goal/continuous cases remain retired from S live suites; every retained capability family names a current consumer while silent carrier loss fails preflight; the cold archive restores generic hot carriers and custom Skills into staging while excluding authentication sessions memories retired PreToolUse and science-domain authority",
-      "fresh_behavior": "The current deterministic build sealed 77 exact generic carrier files into a SHA-verified cold archive, verified every live source against it, restored every entry into an empty staging root, and wired the archive test into every behavior-regression preflight. This is migration evidence rather than a runtime behavior or science claim.",
+      "positive_negative_regression": "all 124 historical context cases are partitioned exactly once; science/Goal/continuous cases remain retired from S live suites; every retained capability family names a current consumer while silent carrier loss fails preflight; recovery v2 restores its scoped generic carriers into staging and keeps recovery v1 frozen as history rather than a build source",
+      "fresh_behavior": "The current deterministic v2 build sealed 84 exact scoped carrier files into a SHA-verified cold archive, verified every live source against it, restored every entry into an empty staging root, and classifies UserPromptSubmit as the only active Situation hook while four former lifecycle scripts remain cold. This is migration evidence rather than a runtime behavior or science claim.",
       "live_effect": "A future behavior migration can no longer delete the mixed historical carrier and still pass the normal behavior battery without explicitly preserving, replacing, colding, or retiring each capability family; current A/B hot projections are also hash-bound to the cold recovery media without making that archive a second runtime authority.",
       "status": "PARTIAL_CONSUMER",
-      "open_gap": "Repository preflight cannot force an unrelated manual A/B config edit to run the behavior battery. Fresh A model behavior is currently blocked by that account's revoked refresh token; B behavior and both A/B hook-discovery consumers are separate evidence, and authentication must not be copied across accounts."
+      "open_gap": "Repository preflight cannot force an unrelated manual A/B config edit to run the behavior battery. Fresh model behavior and A/B single-hook discovery remain separate evidence, and authentication must not be copied across accounts."
     },
     {
       "id": "stable_behavior_delivery_closure",
       "text_contract": [
-        "global A/B AGENTS and hot SessionStart/UserPromptSubmit contexts require closure for an admitted stable behavior repair or reusable capability change",
+        "global A/B AGENTS and the sole hot UserPromptSubmit context require closure for an admitted stable behavior repair or reusable capability change",
         "repair-agent-behavior behavior-change closure and operate-for-user pre-report completion classification",
         "applicable repository adoption is one conditional consumer edge rather than a universal git gate"
       ],
       "live_consumer": [
         "A/B AGENTS loaded by future Codex windows",
-        "trusted A/B SessionStart and UserPromptSubmit hooks",
+        "trusted A/B UserPromptSubmit hook",
         "paired parent-frame delivery-incomplete and explicit-local-only cases",
         "repository transaction and recovery readback when a repository is an actual consumer"
       ],
       "positive_negative_regression": "a cross-window stable repair remains partial while any applicable unique-source projection changed-context fresh-consumer balanced-regression repository-adoption rollback or migration-survival edge is open; an explicit disposable local-only experiment may finish without commit push install or publication; Pause and Stop still freeze; retired science routing remains retired",
       "fresh_behavior": "The current recurrence directly showed the positive failure: hot text and static tests were treated as completion while authoritative repository changes remained unadopted. B fresh model run 20260806-162439-243-50780-08867a5d then produced two real outputs and passed 2/2 with runtime claim eligibility: the stable repair stayed active and the explicit local-only comparison finished without forced adoption. A ran the same sources but returned zero model outputs because its own refresh token is revoked, so no A behavior pass is claimed.",
-      "live_effect": "The closure predicate is projected into both A/B hot instruction carriers and both wired continuity hooks; fresh app-server discovery trusts all three hooks in both homes, the B changed-context behavior pair is green, and repository plus A-authenticated behavior readback remain part of this active repair transaction rather than being silently declared complete.",
+      "live_effect": "The closure predicate is projected into both A/B hot instruction carriers and the sole wired UserPromptSubmit hook; fresh app-server discovery trusts exactly that one hook in both homes, while changed-context behavior and repository readback remain separate evidence rather than being silently declared complete.",
       "status": "PARTIAL_CONSUMER",
       "open_gap": "Formal repository adoption and remote readback remain open, and the main A account requires its owner to reauthenticate before an A model-behavior pass is possible. Missing applicable edges continue as partial without reviving science, copying credentials, or creating a new controller."
     }
@@ -316,14 +328,14 @@
     "thin_invariant_preserves_dynamic_exploration"
   ],
   "remaining_nonuniversal_boundaries": [
-    "ActiveTaskContinuation is now advisory recovery evidence rather than a tool gate; later natural windows must still show that exact returns remain recoverable without recurring manifest rituals",
+    "ActiveTaskContinuation binder restore SessionStart and Stop scripts are cold repair material rather than installed consumers; later natural windows must still show semantic parent survival without recurring manifest rituals",
     "the retired PreToolUse script remains as a fail-open stale-process shim until no already-running consumer can reference it; fresh A/B discovery excludes it",
-    "the Stop gate covers recorded open plans but intentionally fails open for unrecorded parents and has no natural live block receipt yet",
+    "there is no installed Stop gate; current finalization depends on the Owner preserving the live parent completion ruler",
     "fresh canaries are decision-only and do not prove every product surface executes the selected action",
     "the default-owner phase-boundary families have deterministic and live-thread evidence but no independent fresh changed-context outputs",
     "the current live recurrence proves that generic return-to-native wording can still drift unless an exact pre-existing object and return point are bound",
     "long-horizon burden reduction requires later real recurrence evidence",
-    "the current already-running B TUI cached the old hook list but executes the retired guard as fail-open; a fresh B app-server already reads the final three-hook configuration"
+    "fresh A/B app-servers read the exact single-hook configuration; historical three-hook receipts are retained only as dated evidence"
   ],
   "anti_overclaim": "No row may be upgraded to VERIFIED solely because text, static tests, infrastructure receipts, or one model output are green."
 }

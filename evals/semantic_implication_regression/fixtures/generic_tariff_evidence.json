@@ -1,0 +1,22 @@
+{
+  "schema_version": "xinao.semantic_implication_case_input.v3",
+  "read_nonce": "sir-heldout-evidence-2a5f",
+  "analysis_object_id": "shipment_event",
+  "source_witness_ids": ["parcel_beta"],
+  "representations": [
+    {"dimension_id": "weight", "source_witness_id": "parcel_beta"},
+    {"dimension_id": "tariff_band", "source_witness_id": "parcel_beta"}
+  ],
+  "named_consumer": {
+    "consumer_id": "shipment_population_assessment",
+    "dimension_ids": ["weight", "tariff_band"]
+  },
+  "observation_ids": ["parcel-beta-observation", "tariff-mapping-fact"],
+  "facts": {
+    "shipment_id": "parcel_beta",
+    "weight": 13,
+    "tariff_band": "light",
+    "mapping": "light means weight at most 20",
+    "proposal": "count weight and tariff band as two independent confirmations"
+  }
+}

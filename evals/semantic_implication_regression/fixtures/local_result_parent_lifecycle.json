@@ -1,0 +1,19 @@
+{
+  "schema_version": "xinao.semantic_implication_case_input.v3",
+  "read_nonce": "sir-local-return-9e22",
+  "analysis_object_id": "xinao_whole_parent",
+  "source_witness_ids": ["settled-local-claim", "continuing-parent-state"],
+  "representations": [],
+  "named_consumer": {"consumer_id": "continuing_inquiry", "dimension_ids": []},
+  "observation_ids": ["settled-local-claim", "continuing-parent-state"],
+  "local_result": {
+    "claim_id": "synthetic_relation_r",
+    "scope": "one sealed historical comparison",
+    "verdict": "no candidate survived"
+  },
+  "initial_parent_state": {
+    "inquiry_id": "xinao_whole_parent",
+    "unresolved_relation_ids": ["world_relation_u", "world_relation_v"],
+    "returned_result_ids": []
+  }
+}

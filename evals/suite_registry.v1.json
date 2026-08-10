@@ -18,9 +18,14 @@
   "capability_migration_preflight": {
     "registry": "evals/behavior_regression/capability_lineage.v1.json",
     "test": "tests/test_behavior_capability_lineage.py",
-    "recovery_archive": "infra/codex_productivity_recovery/v1/codex-productivity-recovery.v1.zip",
-    "recovery_manifest": "infra/codex_productivity_recovery/v1/manifest.v1.json",
+    "recovery_archive": "infra/codex_productivity_recovery/v2/codex-productivity-recovery.non-pi.v2.zip",
+    "recovery_manifest": "infra/codex_productivity_recovery/v2/manifest.v2.json",
     "recovery_test": "tests/test_codex_productivity_recovery.py",
+    "legacy_recovery_evidence": {
+      "manifest": "infra/codex_productivity_recovery/v1/manifest.v1.json",
+      "archive": "infra/codex_productivity_recovery/v1/codex-productivity-recovery.v1.zip",
+      "disposition": "immutable_history_not_current_build_preflight_or_runtime_source"
+    },
     "authority": false,
     "runtime_loaded": false,
     "failure_meaning": "A capability lineage, consumer, or explicit retirement disposition was silently lost; it does not select a task or restore an old route.",
@@ -48,6 +53,12 @@
       "path": "evals/recursive_frame_reconstitution",
       "runner": "scripts/run_behavior_regression.ps1 -Profile reconstitution",
       "role": "current_action_self_binding_xinao_primary_reality_conditional_self_model_unallocated_second_sol_and_claim_boundary"
+    },
+    {
+      "id": "semantic_implication_regression",
+      "path": "evals/semantic_implication_regression",
+      "runner": "scripts/run_semantic_implication_regression_eval.ps1",
+      "role": "dedicated_cold_formal_fresh_consumer_for_evidence_function_ontology_effect_recovery_and_local_lifecycle_semantic_accidents"
     },
     {
       "id": "proactive_mature_first",

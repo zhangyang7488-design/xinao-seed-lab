@@ -1,0 +1,24 @@
+{
+  "schema_version": "xinao.semantic_implication_case_input.v3",
+  "read_nonce": "sir-heldout-function-a83d",
+  "analysis_object_id": "billing_event",
+  "source_witness_ids": ["billing_event_13"],
+  "representations": [
+    {"dimension_id": "shipment_weight", "source_witness_id": "billing_event_13"},
+    {"dimension_id": "tariff_band", "source_witness_id": "billing_event_13"},
+    {"dimension_id": "invoice_rule", "source_witness_id": "billing_event_13"}
+  ],
+  "named_consumer": {
+    "consumer_id": "invoice_consequence_reconciliation",
+    "dimension_ids": ["tariff_band", "invoice_rule"]
+  },
+  "observation_ids": ["billing-event-observation", "billing-consumer-fact"],
+  "facts": {
+    "shipment_weight": 13,
+    "tariff_band": "light",
+    "invoice_rule": "light_band_credit",
+    "invoice_delta": -4,
+    "mapping": "tariff band is deterministic from shipment weight",
+    "consumer": "the billing engine selects the invoice rule by tariff band"
+  }
+}

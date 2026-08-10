@@ -1,0 +1,34 @@
+{
+  "schema_version": "xinao.semantic_implication_source_contract.v1",
+  "authority": false,
+  "runtime_loaded": false,
+  "purpose": "Bind the on-demand S consumer eval to the native repository's cold semantic-accident corpus without copying that corpus into S.",
+  "canonical_source": {
+    "repository": "E:\\XINAO_RESEARCH_WORKSPACES\\xinao-native-research",
+    "relative_path": "semantic_accidents/cases.v1.json",
+    "git_object_format": "sha1",
+    "repository_commit": "4328f8c45497f19eb0b046b35a0c27cd81935fc5",
+    "repository_tree": "f04976be6237e51d6a77838297c689610534d52e",
+    "file_blob": "14491233e8aa71ab7f39d94aff2add1ac0f060a4",
+    "schema_version": "xinao.semantic-accident-corpus.v1",
+    "corpus_id": "xinao-semantic-accidents-v1",
+    "load_policy": "explicit_cold_read_only",
+    "file_sha256": "1b1f0b561ad9fad74cbeca9afda14cb16c99eea17978a2e63eebde4b2ce4c630",
+    "corpus_seal_sha256": "e9adb152736abb48857341dde83a409dbafef6e331fabc5dd61319383add2c97",
+    "selected_case_ids": [
+      "open-code-carrier-vs-functional-ontology"
+    ],
+    "selected_case_seals": {
+      "open-code-carrier-vs-functional-ontology": "9023c673cb36d72ec6d0b0f7353b7637f439a21cbede2b7af5eabf0bb2cc9d29"
+    }
+  },
+  "local_case_status": "held_out_eval_scenarios_not_incident_authority",
+  "automatic_core_inclusion": false,
+  "success_cannot_claim": [
+    "domain truth",
+    "hidden-state uptake",
+    "permanent future behavior",
+    "parent completion",
+    "authorization to rewrite core behavior"
+  ]
+}

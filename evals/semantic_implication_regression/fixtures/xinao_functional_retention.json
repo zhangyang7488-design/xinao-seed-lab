@@ -1,0 +1,31 @@
+{
+  "schema_version": "xinao.semantic_implication_case_input.v3",
+  "read_nonce": "sir-function-source-b91d",
+  "analysis_object_id": "complete_draw_event",
+  "source_witness_ids": ["candidate_substitution_pair"],
+  "representations": [
+    {"dimension_id": "exact_number", "source_witness_id": "candidate_substitution_pair"},
+    {"dimension_id": "zodiac", "source_witness_id": "candidate_substitution_pair"},
+    {"dimension_id": "color", "source_witness_id": "candidate_substitution_pair"},
+    {"dimension_id": "settlement_effect", "source_witness_id": "candidate_substitution_pair"}
+  ],
+  "named_consumer": {
+    "consumer_id": "substitution_consequence_comparison",
+    "dimension_ids": ["exact_number", "zodiac", "color", "settlement_effect"]
+  },
+  "observation_ids": ["open-code-function-context", "open-code-function-request"],
+  "candidate_substitutions": [
+    {
+      "exact_number": 17,
+      "zodiac": "Z3",
+      "color": "red",
+      "settlement_effect": "zodiac_product=win;color_product=win"
+    },
+    {
+      "exact_number": 29,
+      "zodiac": "Z3",
+      "color": "blue",
+      "settlement_effect": "zodiac_product=win;color_product=lose"
+    }
+  ]
+}

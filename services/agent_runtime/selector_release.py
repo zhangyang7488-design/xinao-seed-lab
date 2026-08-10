@@ -13,12 +13,17 @@ import os
 import shutil
 import subprocess
 import tempfile
+import time
 import tomllib
+from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
 
 RELEASE_SCHEMA = "xinao.selector_release.v1"
 POINTER_SCHEMA = "xinao.selector_release_pointer.v1"
+SOURCE_CAPTURE_SCHEMA = "xinao.selector_release_source_capture.v1"
+CURRENT_STATE_ABSENT = "ABSENT"
+CURRENT_STATE_PRESENT = "PRESENT"
 REQUIRED_DISTRIBUTIONS = (
     "attrs",
     "jsonschema",
@@ -61,6 +66,7 @@ RELEASE_FILES = (
     "scripts/project_dispatch_outcomes.py",
     "scripts/build_worker_package_batch.py",
 )
+SOURCE_CAPTURE_FILES = (*RELEASE_FILES, "uv.lock")
 
 
 class SelectorReleaseError(ValueError):
@@ -106,9 +112,13 @@ def _under(path: Path, root: Path) -> bool:
         return False
 
 
+def _json_bytes(payload: object) -> bytes:
+    return json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True).encode("utf-8") + b"\n"
+
+
 def _atomic_json(path: Path, payload: object) -> str:
     path.parent.mkdir(parents=True, exist_ok=True)
-    raw = json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True).encode("utf-8") + b"\n"
+    raw = _json_bytes(payload)
     descriptor, temporary = tempfile.mkstemp(
         prefix=path.name + ".",
         suffix=".tmp",
@@ -126,6 +136,57 @@ def _atomic_json(path: Path, payload: object) -> str:
     return _sha_bytes(raw)
 
 
+class _SelectorReleaseLock:
+    """Serialize only the shared selector pointer commit boundary."""
+
+    def __init__(self, directory: Path, timeout_sec: float = 30.0) -> None:
+        self.path = directory / ".promotion.lock"
+        self.timeout_sec = timeout_sec
+        self._lock: object | None = None
+
+    def __enter__(self) -> "_SelectorReleaseLock":
+        # Pointer validation is intentionally standard-library-only so an
+        # installed consumer can run the immutable validator carrier with
+        # ``python -I -S -B``.  Promotion alone needs the third-party lock.
+        try:
+            import portalocker
+        except ImportError as exc:
+            raise SelectorReleaseError("selector release promotion requires portalocker") from exc
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        lock = portalocker.Lock(
+            str(self.path),
+            mode="a+",
+            timeout=self.timeout_sec,
+            check_interval=0.05,
+            flags=portalocker.LockFlags.EXCLUSIVE | portalocker.LockFlags.NON_BLOCKING,
+        )
+        try:
+            stream = lock.acquire()
+        except portalocker.exceptions.LockException as exc:
+            raise SelectorReleaseError(
+                f"selector release promotion lock timeout: {self.path}"
+            ) from exc
+        try:
+            stream.seek(0)
+            stream.truncate()
+            stream.write(f"pid={os.getpid()}\n")
+            stream.flush()
+            os.fsync(stream.fileno())
+        except Exception:
+            lock.release()
+            raise
+        self._lock = lock
+        return self
+
+    def __exit__(self, exc_type: object, exc: object, traceback: object) -> None:
+        lock = self._lock
+        self._lock = None
+        if lock is not None:
+            release = getattr(lock, "release", None)
+            if callable(release):
+                release()
+
+
 def _read_object(path: Path, label: str) -> dict[str, Any]:
     if not path.is_file():
         raise SelectorReleaseError(f"{label} missing: {path}")
@@ -136,6 +197,115 @@ def _read_object(path: Path, label: str) -> dict[str, Any]:
     if not isinstance(value, dict):
         raise SelectorReleaseError(f"{label} must be an object: {path}")
     return value
+
+
+def _capture_selected_sources(source_root: Path) -> dict[str, dict[str, object]]:
+    """Read the exact selected closure once; callers must verify it again later."""
+
+    captured: dict[str, dict[str, object]] = {}
+    for relative_text in SOURCE_CAPTURE_FILES:
+        relative = Path(relative_text)
+        origin = source_root / relative
+        try:
+            resolved = origin.resolve(strict=True)
+        except OSError as exc:
+            raise SelectorReleaseError(f"selector release source missing: {relative_text}") from exc
+        if not origin.is_file() or not _under(resolved, source_root):
+            raise SelectorReleaseError(f"selector release source missing: {relative_text}")
+        try:
+            raw = origin.read_bytes()
+        except OSError as exc:
+            raise SelectorReleaseError(
+                f"selector release source unreadable: {relative_text}: {exc}"
+            ) from exc
+        captured[relative.as_posix()] = {
+            "path": relative.as_posix(),
+            "sha256": _sha_bytes(raw),
+            "size_bytes": len(raw),
+            "raw": raw,
+        }
+    return captured
+
+
+def _source_capture_manifest(
+    captured: Mapping[str, Mapping[str, object]], *, source_git_head: str | None
+) -> dict[str, object]:
+    body: dict[str, object] = {
+        "schema_version": SOURCE_CAPTURE_SCHEMA,
+        "method": "selected_source_double_read",
+        "source_git_head": source_git_head,
+        "files": [
+            {
+                "path": relative_text,
+                "sha256": captured[relative_text]["sha256"],
+                "size_bytes": captured[relative_text]["size_bytes"],
+            }
+            for relative_text in SOURCE_CAPTURE_FILES
+        ],
+    }
+    return {**body, "source_capture_sha256": _sha_bytes(_canonical_bytes(body))}
+
+
+def _same_source_capture(
+    before: Mapping[str, Mapping[str, object]],
+    after: Mapping[str, Mapping[str, object]],
+) -> bool:
+    if before.keys() != after.keys():
+        return False
+    return all(
+        before[path].get("raw") == after[path].get("raw")
+        and before[path].get("size_bytes") == after[path].get("size_bytes")
+        for path in before
+    )
+
+
+def _validate_source_capture(
+    manifest: Mapping[str, object],
+    release_files: Mapping[str, Mapping[str, object]],
+) -> None:
+    raw_capture = manifest.get("source_capture")
+    if raw_capture is None:
+        # Legacy v1 releases predate coherent producer capture.  New builds
+        # always carry the stronger contract, while old live pointers remain readable.
+        return
+    if not isinstance(raw_capture, dict):
+        raise SelectorReleaseError("selector release source capture must be an object")
+    capture = dict(raw_capture)
+    expected_capture_sha = _sha(
+        capture.pop("source_capture_sha256", None), "source_capture.source_capture_sha256"
+    )
+    if _sha_bytes(_canonical_bytes(capture)) != expected_capture_sha:
+        raise SelectorReleaseError("selector release source capture hash mismatch")
+    if capture.get("schema_version") != SOURCE_CAPTURE_SCHEMA:
+        raise SelectorReleaseError("selector release source capture schema mismatch")
+    if capture.get("method") != "selected_source_double_read":
+        raise SelectorReleaseError("selector release source capture method mismatch")
+    if capture.get("source_git_head") != manifest.get("source_git_head"):
+        raise SelectorReleaseError("selector release source git head mismatch")
+    rows = capture.get("files")
+    if not isinstance(rows, list):
+        raise SelectorReleaseError("selector release source capture files missing")
+    observed: dict[str, dict[str, object]] = {}
+    for index, raw in enumerate(rows):
+        if not isinstance(raw, dict):
+            raise SelectorReleaseError(f"source capture file entry invalid: {index}")
+        relative_text = _text(raw.get("path"), f"source_capture.files[{index}].path")
+        if relative_text in observed:
+            raise SelectorReleaseError(f"duplicate source capture file: {relative_text}")
+        size = raw.get("size_bytes")
+        if isinstance(size, bool) or not isinstance(size, int) or size < 0:
+            raise SelectorReleaseError(f"source_capture.files[{index}].size_bytes must be >= 0")
+        observed[relative_text] = {
+            "sha256": _sha(raw.get("sha256"), f"source_capture.files[{index}].sha256"),
+            "size_bytes": size,
+        }
+    if tuple(observed) != SOURCE_CAPTURE_FILES:
+        raise SelectorReleaseError("selector release source capture closure mismatch")
+    for relative_text in RELEASE_FILES:
+        if observed[relative_text] != release_files[relative_text]:
+            raise SelectorReleaseError(
+                f"selector release source capture differs from release file: {relative_text}"
+            )
 
 
 def _runtime_paths(runtime_root: Path) -> tuple[Path, Path]:
@@ -158,13 +328,10 @@ def _absolute_executable(path: Path) -> Path:
     return executable
 
 
-def _locked_requirement_specs(source_root: Path) -> tuple[str, ...]:
-    """Resolve the release dependency subset to exact versions from ``uv.lock``."""
-
-    lock_path = source_root / "uv.lock"
+def _locked_requirement_specs_from_bytes(raw: bytes, *, lock_path: Path) -> tuple[str, ...]:
     try:
-        lock = tomllib.loads(lock_path.read_text(encoding="utf-8"))
-    except (OSError, UnicodeError, tomllib.TOMLDecodeError) as exc:
+        lock = tomllib.loads(raw.decode("utf-8"))
+    except (UnicodeError, tomllib.TOMLDecodeError) as exc:
         raise SelectorReleaseError(f"selector release lock invalid: {lock_path}: {exc}") from exc
     packages = lock.get("package")
     if not isinstance(packages, list):
@@ -186,15 +353,28 @@ def _locked_requirement_specs(source_root: Path) -> tuple[str, ...]:
     return tuple(f"{name}=={next(iter(versions[name]))}" for name in REQUIRED_DISTRIBUTIONS)
 
 
+def _locked_requirement_specs(source_root: Path) -> tuple[str, ...]:
+    """Resolve the release dependency subset to exact versions from ``uv.lock``."""
+
+    lock_path = source_root / "uv.lock"
+    try:
+        raw = lock_path.read_bytes()
+    except OSError as exc:
+        raise SelectorReleaseError(f"selector release lock invalid: {lock_path}: {exc}") from exc
+    return _locked_requirement_specs_from_bytes(raw, lock_path=lock_path)
+
+
 def _bootstrap_release_dependencies(
-    *, source_root: Path, python_executable: Path
+    *,
+    source_root: Path,
+    python_executable: Path,
+    requirements: tuple[str, ...],
 ) -> tuple[str, ...]:
     """Install only the exact locked release closure into its isolated venv."""
 
     uv_executable = shutil.which("uv")
     if not uv_executable:
         raise SelectorReleaseError("selector release bootstrap requires the uv executable")
-    requirements = _locked_requirement_specs(source_root)
     completed = subprocess.run(
         [
             uv_executable,
@@ -336,8 +516,9 @@ def build_selector_release(
     python_executable: Path,
     create_venv: bool = True,
     promote: bool = False,
+    expected_current: Mapping[str, object] | None = None,
 ) -> dict[str, object]:
-    """Copy the pinned selector closure into a new immutable release directory."""
+    """Build one release from a stable double-read of the selected source closure."""
 
     source = Path(source_root).resolve(strict=True)
     runtime = Path(runtime_root).resolve(strict=False)
@@ -346,6 +527,19 @@ def build_selector_release(
         raise SelectorReleaseError("release_id is not a safe path segment")
     executable = _absolute_executable(Path(python_executable))
     release_parent, _ = _runtime_paths(runtime)
+    if expected_current is not None and not promote:
+        raise SelectorReleaseError("expected_current is only valid when promote=True")
+    promotion_expectation: dict[str, str] | None = None
+    if expected_current is not None:
+        promotion_expectation = _normalize_current_identity(expected_current)
+    elif promote:
+        promotion_expectation = selector_release_current_identity(runtime)
+    source_git_head = _git_head(source)
+    captured_sources = _capture_selected_sources(source)
+    requirements = _locked_requirement_specs_from_bytes(
+        captured_sources["uv.lock"]["raw"],
+        lock_path=source / "uv.lock",
+    )
     release_root = release_parent / identifier
     if release_root.exists():
         raise SelectorReleaseError(f"selector release already exists: {release_root}")
@@ -354,12 +548,15 @@ def build_selector_release(
         files: list[dict[str, object]] = []
         for relative_text in RELEASE_FILES:
             relative = Path(relative_text)
-            origin = (source / relative).resolve(strict=False)
-            if not origin.is_file() or not _under(origin.resolve(strict=True), source):
-                raise SelectorReleaseError(f"selector release source missing: {relative_text}")
             target = release_root / relative
             target.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copy2(origin, target)
+            selected = captured_sources[relative.as_posix()]
+            raw = selected["raw"]
+            if not isinstance(raw, bytes):
+                raise SelectorReleaseError(
+                    f"selector release source capture invalid: {relative_text}"
+                )
+            target.write_bytes(raw)
             files.append(
                 {
                     "path": relative.as_posix(),
@@ -392,14 +589,30 @@ def build_selector_release(
             _bootstrap_release_dependencies(
                 source_root=source,
                 python_executable=selected_python,
+                requirements=requirements,
             )
         probe = _probe_release(release_root, selected_python)
+        observed_sources = _capture_selected_sources(source)
+        if not _same_source_capture(captured_sources, observed_sources):
+            raise SelectorReleaseError(
+                "selector release selected source changed during coherent capture"
+            )
+        observed_git_head = _git_head(source)
+        if observed_git_head != source_git_head:
+            raise SelectorReleaseError(
+                "selector release source git HEAD changed during coherent capture"
+            )
+        source_capture = _source_capture_manifest(
+            captured_sources,
+            source_git_head=source_git_head,
+        )
         manifest: dict[str, object] = {
             "schema_version": RELEASE_SCHEMA,
             "release_id": identifier,
             "release_root": str(release_root.resolve(strict=True)),
             "source_root": str(source),
-            "source_git_head": _git_head(source),
+            "source_git_head": source_git_head,
+            "source_capture": source_capture,
             "files": files,
             "selector_source_sha256": probe["selector_source_sha256"],
             "python_executable": probe["python_executable"],
@@ -418,9 +631,18 @@ def build_selector_release(
             "release_manifest_sha256": manifest_sha,
             "selector_source_sha256": probe["selector_source_sha256"],
             "python_executable": probe["python_executable"],
+            "source_capture_sha256": source_capture["source_capture_sha256"],
         }
         if promote:
-            result.update(promote_selector_release(runtime, release_id=identifier))
+            if promotion_expectation is None:
+                raise SelectorReleaseError("selector release promotion expectation missing")
+            result.update(
+                promote_selector_release(
+                    runtime,
+                    release_id=identifier,
+                    expected_current=promotion_expectation,
+                )
+            )
             result["status"] = "release_built_and_promoted"
         return result
     except Exception:
@@ -486,6 +708,7 @@ def validate_selector_release_pointer(pointer_path: Path) -> dict[str, Any]:
     if not isinstance(files, list) or not files:
         raise SelectorReleaseError("selector release file list missing")
     observed_paths: set[str] = set()
+    observed_files: dict[str, dict[str, object]] = {}
     for index, raw in enumerate(files):
         if not isinstance(raw, dict):
             raise SelectorReleaseError(f"release file entry invalid: {index}")
@@ -506,8 +729,15 @@ def validate_selector_release_pointer(pointer_path: Path) -> dict[str, Any]:
                 f"release file hash mismatch: {relative_text}; "
                 f"expected={expected}; observed={actual}"
             )
+        size = raw.get("size_bytes")
+        if isinstance(size, bool) or not isinstance(size, int) or size < 0:
+            raise SelectorReleaseError(f"files[{index}].size_bytes must be >= 0")
+        if target.stat().st_size != size:
+            raise SelectorReleaseError(f"release file size mismatch: {relative_text}")
+        observed_files[relative_text] = {"sha256": expected, "size_bytes": size}
     if observed_paths != set(RELEASE_FILES):
         raise SelectorReleaseError("selector release file closure mismatch")
+    _validate_source_capture(manifest, observed_files)
     selector_sha = _sha(manifest.get("selector_source_sha256"), "selector_source_sha256")
     selector = release_root / "services" / "agent_runtime" / "routing_policy_reader.py"
     if _sha_file(selector) != selector_sha:
@@ -534,43 +764,199 @@ def validate_selector_release_pointer(pointer_path: Path) -> dict[str, Any]:
     }
 
 
-def promote_selector_release(runtime_root: Path, *, release_id: str) -> dict[str, object]:
-    """Atomically move the single current pointer after full release validation."""
+def _normalize_current_identity(value: Mapping[str, object]) -> dict[str, str]:
+    state = _text(value.get("state"), "expected_current.state").upper()
+    if state == CURRENT_STATE_ABSENT:
+        if set(value) != {"state"}:
+            raise SelectorReleaseError("ABSENT expected_current may only contain state")
+        return {"state": CURRENT_STATE_ABSENT}
+    if state != CURRENT_STATE_PRESENT:
+        raise SelectorReleaseError("expected_current.state must be ABSENT or PRESENT")
+    if set(value) != {"state", "release_id", "pointer_sha256"}:
+        raise SelectorReleaseError(
+            "PRESENT expected_current requires exact release_id and pointer_sha256"
+        )
+    return {
+        "state": CURRENT_STATE_PRESENT,
+        "release_id": _text(value.get("release_id"), "expected_current.release_id"),
+        "pointer_sha256": _sha(value.get("pointer_sha256"), "expected_current.pointer_sha256"),
+    }
+
+
+def _current_pointer_identity(pointer_path: Path) -> dict[str, str]:
+    try:
+        before = pointer_path.read_bytes()
+    except FileNotFoundError:
+        return {"state": CURRENT_STATE_ABSENT}
+    except OSError as exc:
+        raise SelectorReleaseError(
+            f"selector release pointer unreadable: {pointer_path}: {exc}"
+        ) from exc
+    try:
+        before_pointer = json.loads(before.decode("utf-8-sig"))
+    except (UnicodeError, json.JSONDecodeError) as exc:
+        raise SelectorReleaseError(
+            f"selector release pointer invalid JSON: {pointer_path}: {exc}"
+        ) from exc
+    if not isinstance(before_pointer, dict):
+        raise SelectorReleaseError(f"selector release pointer must be an object: {pointer_path}")
+    validated = validate_selector_release_pointer(pointer_path)
+    try:
+        after = pointer_path.read_bytes()
+    except OSError as exc:
+        raise SelectorReleaseError(
+            f"selector release pointer changed during observation: {pointer_path}: {exc}"
+        ) from exc
+    if before != after:
+        raise SelectorReleaseError(
+            f"selector release pointer changed during observation: {pointer_path}"
+        )
+    before_semantics = {
+        "schema_version": before_pointer.get("schema_version"),
+        "release_id": _text(before_pointer.get("release_id"), "pointer.release_id"),
+        "release_root": str(
+            Path(_text(before_pointer.get("release_root"), "pointer.release_root")).resolve(
+                strict=False
+            )
+        ),
+        "release_manifest_ref": str(
+            Path(
+                _text(
+                    before_pointer.get("release_manifest_ref"),
+                    "pointer.release_manifest_ref",
+                )
+            ).resolve(strict=False)
+        ),
+        "release_manifest_sha256": _sha(
+            before_pointer.get("release_manifest_sha256"),
+            "pointer.release_manifest_sha256",
+        ),
+    }
+    validated_semantics = {field: validated.get(field) for field in before_semantics}
+    if before_semantics != validated_semantics:
+        raise SelectorReleaseError(
+            f"selector release pointer changed during observation: {pointer_path}"
+        )
+    return {
+        "state": CURRENT_STATE_PRESENT,
+        "release_id": str(validated["release_id"]),
+        "pointer_sha256": _sha_bytes(before),
+    }
+
+
+def selector_release_current_identity(runtime_root: Path) -> dict[str, str]:
+    """Return the exact current pointer identity, including an explicit ABSENT state."""
+
+    _, pointer_path = _runtime_paths(Path(runtime_root).resolve(strict=False))
+    return _current_pointer_identity(pointer_path)
+
+
+def _write_pointer_candidate(pointer_path: Path, payload: object) -> tuple[Path, str]:
+    pointer_path.parent.mkdir(parents=True, exist_ok=True)
+    raw = _json_bytes(payload)
+    descriptor, temporary = tempfile.mkstemp(
+        prefix=pointer_path.name + ".candidate.",
+        suffix=".tmp",
+        dir=pointer_path.parent,
+    )
+    temporary_path = Path(temporary)
+    try:
+        with os.fdopen(descriptor, "wb") as stream:
+            stream.write(raw)
+            stream.flush()
+            os.fsync(stream.fileno())
+    except Exception:
+        temporary_path.unlink(missing_ok=True)
+        raise
+    return temporary_path, _sha_bytes(raw)
+
+
+def _replace_pointer_candidate(
+    temporary_pointer: Path,
+    pointer_path: Path,
+    *,
+    timeout_sec: float = 2.0,
+) -> None:
+    """Retry only the transient Windows sharing denial at the atomic replace syscall."""
+
+    deadline = time.monotonic() + timeout_sec
+    while True:
+        try:
+            os.replace(temporary_pointer, pointer_path)
+            return
+        except PermissionError as exc:
+            if os.name != "nt" or time.monotonic() >= deadline:
+                raise SelectorReleaseError(
+                    f"selector release pointer replace failed: {pointer_path}: {exc}"
+                ) from exc
+            time.sleep(0.01)
+
+
+def promote_selector_release(
+    runtime_root: Path,
+    *,
+    release_id: str,
+    expected_current: Mapping[str, object],
+) -> dict[str, object]:
+    """CAS-promote one validated release against the caller-observed pointer identity."""
 
     runtime = Path(runtime_root).resolve(strict=False)
     identifier = _text(release_id, "release_id")
+    if any(char in identifier for char in '\\/:*?"<>|') or identifier in {".", ".."}:
+        raise SelectorReleaseError("release_id is not a safe path segment")
+    expectation = _normalize_current_identity(expected_current)
     releases, pointer_path = _runtime_paths(runtime)
     release_root = releases / identifier
     manifest_path = release_root / "release_manifest.json"
     if not manifest_path.is_file():
         raise SelectorReleaseError(f"release manifest missing: {manifest_path}")
-    pointer = {
-        "schema_version": POINTER_SCHEMA,
-        "release_id": identifier,
-        "release_root": str(release_root.resolve(strict=True)),
-        "release_manifest_ref": str(manifest_path.resolve(strict=True)),
-        "release_manifest_sha256": _sha_file(manifest_path),
-    }
-    temporary_pointer = pointer_path.with_name(pointer_path.name + ".candidate")
-    if temporary_pointer.exists():
-        temporary_pointer.unlink()
-    try:
-        _atomic_json(temporary_pointer, pointer)
-        validate_selector_release_pointer(temporary_pointer)
-        pointer_path.parent.mkdir(parents=True, exist_ok=True)
-        os.replace(temporary_pointer, pointer_path)
-    finally:
-        temporary_pointer.unlink(missing_ok=True)
-    validated = validate_selector_release_pointer(pointer_path)
-    return {
-        "status": "release_promoted",
-        "release_id": identifier,
-        "pointer_path": str(pointer_path.resolve(strict=True)),
-        "pointer_sha256": _sha_file(pointer_path),
-        "release_root": validated["release_root"],
-        "selector_source_sha256": validated["selector_source_sha256"],
-        "python_executable": validated["python_executable"],
-    }
+
+    with _SelectorReleaseLock(pointer_path.parent):
+        pointer = {
+            "schema_version": POINTER_SCHEMA,
+            "release_id": identifier,
+            "release_root": str(release_root.resolve(strict=True)),
+            "release_manifest_ref": str(manifest_path.resolve(strict=True)),
+            "release_manifest_sha256": _sha_file(manifest_path),
+        }
+        temporary_pointer, desired_pointer_sha = _write_pointer_candidate(pointer_path, pointer)
+        try:
+            validated_candidate = validate_selector_release_pointer(temporary_pointer)
+            desired_identity = {
+                "state": CURRENT_STATE_PRESENT,
+                "release_id": identifier,
+                "pointer_sha256": desired_pointer_sha,
+            }
+            observed = _current_pointer_identity(pointer_path)
+            if observed == desired_identity:
+                status = "release_already_current"
+            else:
+                if observed != expectation:
+                    raise SelectorReleaseError(
+                        "selector release current pointer changed: "
+                        f"expected={json.dumps(expectation, sort_keys=True)}; "
+                        f"observed={json.dumps(observed, sort_keys=True)}"
+                    )
+                _replace_pointer_candidate(temporary_pointer, pointer_path)
+                status = "release_promoted"
+        finally:
+            temporary_pointer.unlink(missing_ok=True)
+
+        validated = validate_selector_release_pointer(pointer_path)
+        observed_pointer_sha = _sha_file(pointer_path)
+        if validated["release_id"] != identifier or observed_pointer_sha != desired_pointer_sha:
+            raise SelectorReleaseError("selector release pointer commit readback mismatch")
+        if validated_candidate["release_manifest_sha256"] != validated["release_manifest_sha256"]:
+            raise SelectorReleaseError("selector release candidate readback mismatch")
+        return {
+            "status": status,
+            "release_id": identifier,
+            "pointer_path": str(pointer_path.resolve(strict=True)),
+            "pointer_sha256": observed_pointer_sha,
+            "release_root": validated["release_root"],
+            "selector_source_sha256": validated["selector_source_sha256"],
+            "python_executable": validated["python_executable"],
+        }
 
 
 def load_current_selector_release(runtime_root: Path) -> dict[str, Any]:

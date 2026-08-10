@@ -14,6 +14,7 @@ import hashlib
 import json
 import os
 import shutil
+import stat
 import subprocess
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -30,6 +31,17 @@ class SourceInput:
     path: Path
     role: str
     logical_path: str
+
+
+@dataclass(frozen=True)
+class FrozenSourceInput:
+    source_input: SourceInput
+    source: Path
+    state: dict[str, object]
+
+
+class SourceSnapshotConflict(RuntimeError):
+    """A selected input no longer matches the state chosen for this snapshot."""
 
 
 def _sha256(path: Path) -> str:
@@ -87,19 +99,203 @@ def _safe_repo_file(repo_root: Path, relative: str) -> Path:
 
 def _copy_file(source: Path, target: Path) -> None:
     target.parent.mkdir(parents=True, exist_ok=True)
-    shutil.copyfile(source, target)
+    shutil.copy2(source, target)
 
 
-def _copy_tree_files(source: Path, target: Path) -> None:
-    if source.is_file():
-        _copy_file(source, target)
-        return
-    if not source.is_dir():
-        raise FileNotFoundError(source)
-    for file_path in sorted(path for path in source.rglob("*") if path.is_file()):
-        if "__pycache__" in file_path.parts:
-            continue
-        _copy_file(file_path, target / file_path.relative_to(source))
+def _mode(st_mode: int) -> int:
+    return stat.S_IMODE(st_mode)
+
+
+def _regular_file_state(path: Path) -> dict[str, object]:
+    try:
+        with path.open("rb") as handle:
+            opened = os.fstat(handle.fileno())
+            if not stat.S_ISREG(opened.st_mode):
+                raise SourceSnapshotConflict(f"selected input changed type while hashing: {path}")
+            digest = hashlib.sha256()
+            size_bytes = 0
+            for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+                digest.update(chunk)
+                size_bytes += len(chunk)
+            finished = os.fstat(handle.fileno())
+    except (FileNotFoundError, NotADirectoryError) as exc:
+        raise SourceSnapshotConflict(f"selected input disappeared while hashing: {path}") from exc
+    if (
+        not stat.S_ISREG(finished.st_mode)
+        or _mode(opened.st_mode) != _mode(finished.st_mode)
+        or opened.st_size != finished.st_size
+        or size_bytes != finished.st_size
+    ):
+        raise SourceSnapshotConflict(f"selected input changed while hashing: {path}")
+    return {
+        "type": "file",
+        "mode": _mode(finished.st_mode),
+        "size_bytes": size_bytes,
+        "sha256": digest.hexdigest(),
+    }
+
+
+def _link_state(path: Path, st_mode: int) -> dict[str, object]:
+    try:
+        target_bytes = os.fsencode(os.readlink(path))
+    except (FileNotFoundError, NotADirectoryError) as exc:
+        raise SourceSnapshotConflict(
+            f"selected input link disappeared while inspecting: {path}"
+        ) from exc
+    return {
+        "type": "symlink",
+        "mode": _mode(st_mode),
+        "size_bytes": len(target_bytes),
+        "sha256": hashlib.sha256(target_bytes).hexdigest(),
+    }
+
+
+def _directory_entries(root: Path) -> list[dict[str, object]]:
+    rows: list[dict[str, object]] = []
+
+    def visit(directory: Path, relative_root: Path) -> None:
+        try:
+            children = sorted(directory.iterdir(), key=lambda item: item.name)
+        except (FileNotFoundError, NotADirectoryError) as exc:
+            raise SourceSnapshotConflict(
+                f"selected input directory changed while inspecting: {directory}"
+            ) from exc
+        for child in children:
+            relative = relative_root / child.name
+            if "__pycache__" in relative.parts:
+                continue
+            try:
+                child_stat = child.lstat()
+            except (FileNotFoundError, NotADirectoryError) as exc:
+                raise SourceSnapshotConflict(
+                    f"selected input entry changed while inspecting: {child}"
+                ) from exc
+            row: dict[str, object] = {
+                "path": relative.as_posix(),
+                "mode": _mode(child_stat.st_mode),
+            }
+            if stat.S_ISREG(child_stat.st_mode):
+                row.update(_regular_file_state(child))
+            elif stat.S_ISDIR(child_stat.st_mode):
+                row["type"] = "directory"
+                rows.append(row)
+                visit(child, relative)
+                continue
+            elif stat.S_ISLNK(child_stat.st_mode):
+                row.update(_link_state(child, child_stat.st_mode))
+            else:
+                row.update({"type": "special", "sha256": None})
+            rows.append(row)
+
+    visit(root, Path())
+    return sorted(rows, key=lambda row: str(row["path"]))
+
+
+def _capture_source_state(path: Path) -> dict[str, object]:
+    try:
+        root_stat = path.lstat()
+    except (FileNotFoundError, NotADirectoryError):
+        return {"type": "ABSENT", "mode": None, "sha256": None}
+    if stat.S_ISREG(root_stat.st_mode):
+        return _regular_file_state(path)
+    if stat.S_ISDIR(root_stat.st_mode):
+        entries = _directory_entries(path)
+        return {
+            "type": "directory",
+            "mode": _mode(root_stat.st_mode),
+            "sha256": _canonical_sha256(entries),
+            "entries": entries,
+        }
+    if stat.S_ISLNK(root_stat.st_mode):
+        return _link_state(path, root_stat.st_mode)
+    return {
+        "type": "special",
+        "mode": _mode(root_stat.st_mode),
+        "sha256": None,
+    }
+
+
+def _freeze_source_inputs(inputs: list[SourceInput]) -> list[FrozenSourceInput]:
+    frozen: list[FrozenSourceInput] = []
+    for source_input in inputs:
+        source = source_input.path.resolve(strict=False)
+        frozen.append(
+            FrozenSourceInput(
+                source_input=source_input,
+                source=source,
+                state=_capture_source_state(source),
+            )
+        )
+    return frozen
+
+
+def _assert_source_state(frozen: FrozenSourceInput, *, phase: str) -> None:
+    actual = _capture_source_state(frozen.source)
+    if actual != frozen.state:
+        raise SourceSnapshotConflict(
+            "selected input drifted during "
+            f"{phase}: {frozen.source}; "
+            f"expected={_canonical_sha256(frozen.state)}; "
+            f"actual={_canonical_sha256(actual)}"
+        )
+
+
+def _assert_source_states(frozen_inputs: list[FrozenSourceInput], *, phase: str) -> None:
+    for frozen in frozen_inputs:
+        _assert_source_state(frozen, phase=phase)
+
+
+def _assert_copyable_state(frozen: FrozenSourceInput) -> None:
+    state_type = frozen.state["type"]
+    if state_type == "ABSENT":
+        raise FileNotFoundError(frozen.source)
+    if state_type not in {"file", "directory"}:
+        raise SourceSnapshotConflict(
+            f"unsupported selected input type {state_type}: {frozen.source}"
+        )
+    if state_type == "directory":
+        unsupported = [
+            row for row in frozen.state["entries"] if row["type"] not in {"file", "directory"}
+        ]
+        if unsupported:
+            raise SourceSnapshotConflict(
+                f"unsupported entry in selected input tree: {frozen.source}"
+            )
+
+
+def _copy_frozen_source(frozen: FrozenSourceInput, target: Path) -> None:
+    _assert_copyable_state(frozen)
+    if frozen.state["type"] == "file":
+        _copy_file(frozen.source, target)
+    else:
+        target.mkdir(parents=True, exist_ok=True)
+        entries = frozen.state["entries"]
+        directories = [row for row in entries if row["type"] == "directory"]
+        files = [row for row in entries if row["type"] == "file"]
+        for row in sorted(directories, key=lambda item: len(Path(str(item["path"])).parts)):
+            (target / str(row["path"])).mkdir(parents=True, exist_ok=True)
+        for row in files:
+            relative = Path(str(row["path"]))
+            _copy_file(frozen.source / relative, target / relative)
+        for row in sorted(
+            directories,
+            key=lambda item: len(Path(str(item["path"])).parts),
+            reverse=True,
+        ):
+            relative = Path(str(row["path"]))
+            shutil.copystat(
+                frozen.source / relative,
+                target / relative,
+                follow_symlinks=False,
+            )
+        shutil.copystat(frozen.source, target, follow_symlinks=False)
+    copied_state = _capture_source_state(target)
+    if copied_state != frozen.state:
+        raise SourceSnapshotConflict(
+            "copied input does not match its frozen source state: "
+            f"{frozen.source}; expected={_canonical_sha256(frozen.state)}; "
+            f"copied={_canonical_sha256(copied_state)}"
+        )
 
 
 def _profile_flags(
@@ -163,12 +359,12 @@ def selected_inputs(
             "codex_productivity_recovery_builder",
         ),
         (
-            "infra/codex_productivity_recovery/v1/manifest.v1.json",
-            "codex_productivity_recovery_manifest",
+            "infra/codex_productivity_recovery/v2/manifest.v2.json",
+            "codex_productivity_recovery_v2_manifest",
         ),
         (
-            "infra/codex_productivity_recovery/v1/codex-productivity-recovery.v1.zip",
-            "codex_productivity_recovery_archive",
+            "infra/codex_productivity_recovery/v2/codex-productivity-recovery.non-pi.v2.zip",
+            "codex_productivity_recovery_v2_archive",
         ),
         (
             "tests/test_codex_productivity_recovery.py",
@@ -332,6 +528,10 @@ def _file_rows(root: Path) -> list[dict[str, object]]:
 
 def _initialize_effective_git(effective_root: Path) -> str:
     subprocess.run(["git", "-C", str(effective_root), "init", "--quiet"], check=True)
+    subprocess.run(
+        ["git", "-C", str(effective_root), "config", "core.longpaths", "true"],
+        check=True,
+    )
     subprocess.run(["git", "-C", str(effective_root), "add", "--all"], check=True)
     subprocess.run(
         [
@@ -374,13 +574,6 @@ def create_snapshot(
     raw_root = source_root / "r"
     effective_root = source_root / "e"
     external_root = source_root / "x"
-    for path in (raw_root, effective_root, external_root):
-        path.mkdir(parents=True, exist_ok=False)
-
-    raw_files = _git_files(repo_root)
-    for relative in raw_files:
-        _copy_file(_safe_repo_file(repo_root, relative), raw_root / relative)
-
     inputs = selected_inputs(
         repo_root,
         profile,
@@ -390,10 +583,22 @@ def create_snapshot(
         external_cache=external_cache,
         codex_home=codex_home,
     )
+    frozen_inputs = _freeze_source_inputs(inputs)
+    _assert_source_states(frozen_inputs, phase="initial source freeze")
+    for path in (raw_root, effective_root, external_root):
+        path.mkdir(parents=True, exist_ok=False)
+
+    raw_files = _git_files(repo_root)
+    for relative in raw_files:
+        _copy_file(_safe_repo_file(repo_root, relative), raw_root / relative)
+    _assert_source_states(frozen_inputs, phase="raw-tree capture")
+
     input_rows: list[dict[str, object]] = []
     external_rebindings: list[tuple[str, str]] = []
-    for source_input in inputs:
-        source = source_input.path.resolve()
+    for frozen in frozen_inputs:
+        source_input = frozen.source_input
+        source = frozen.source
+        _assert_source_state(frozen, phase=f"pre-copy for {source_input.role}")
         try:
             source.relative_to(repo_root)
             target = effective_root / source_input.logical_path
@@ -401,13 +606,16 @@ def create_snapshot(
             target = external_root / source_input.role / source.name
             if source_input.role == "live_discovery_cache":
                 external_rebindings.append((str(source), str(target)))
-        _copy_tree_files(source, target)
+        _copy_frozen_source(frozen, target)
+        _assert_source_state(frozen, phase=f"post-copy for {source_input.role}")
         input_rows.append(
             {
                 "role": source_input.role,
                 "logical_path": source_input.logical_path,
                 "source_path": str(source),
                 "snapshot_path": str(target),
+                "source_state": frozen.state,
+                "source_state_sha256": _canonical_sha256(frozen.state),
             }
         )
 
@@ -424,11 +632,21 @@ def create_snapshot(
     raw_rows = _file_rows(raw_root)
     effective_rows = _file_rows(effective_root)
     external_rows = _file_rows(external_root)
+    source_state_rows = [
+        {
+            "role": row["role"],
+            "logical_path": row["logical_path"],
+            "source_state": row["source_state"],
+            "source_state_sha256": row["source_state_sha256"],
+        }
+        for row in input_rows
+    ]
     identity_document = {
         "profile": profile,
         "domain": domain,
         "case_pattern": case_pattern,
         "failed_from": bool(failed_from),
+        "source_inputs": source_state_rows,
         "raw_files": raw_rows,
         "effective_files": effective_rows,
         "external_files": external_rows,
@@ -451,6 +669,7 @@ def create_snapshot(
         "external_files": external_rows,
         "identity_sha256": _canonical_sha256(identity_document),
     }
+    _assert_source_states(frozen_inputs, phase="snapshot finalization")
     manifest_path = source_root / "source-snapshot.v1.json"
     manifest_path.write_text(
         json.dumps(manifest, ensure_ascii=False, indent=2) + "\n",

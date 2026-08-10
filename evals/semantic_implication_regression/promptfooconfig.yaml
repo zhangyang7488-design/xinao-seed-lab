@@ -1,0 +1,64 @@
+# yaml-language-server: $schema=https://promptfoo.dev/config-schema.json
+description: Cold semantic implication property and metamorphic regressions
+
+providers:
+  - id: openai:codex-app-server
+    config:
+      working_dir: '{{env.SEMANTIC_IMPLICATION_WORKSPACE}}'
+      skip_git_repo_check: true
+      sandbox_mode: workspace-write
+      approval_policy: never
+      model: '{{env.SEMANTIC_IMPLICATION_MODEL}}'
+      model_reasoning_effort: '{{env.SEMANTIC_IMPLICATION_MODEL_REASONING_EFFORT}}'
+      ephemeral: true
+      reuse_server: false
+      cli_config:
+        features:
+          hooks: false
+      thread_cleanup: unsubscribe
+      inherit_process_env: false
+      turn_timeout_ms: 180000
+      codex_path_override: '{{env.CODEX_APP_SERVER_PATH}}'
+      cli_env:
+        CODEX_HOME: '{{env.CODEX_HOME}}'
+        PYTHONDONTWRITEBYTECODE: '1'
+        HTTP_PROXY: '{{env.HTTP_PROXY}}'
+        HTTPS_PROXY: '{{env.HTTPS_PROXY}}'
+        ALL_PROXY: '{{env.ALL_PROXY}}'
+        NO_PROXY: '{{env.NO_PROXY}}'
+      output_schema:
+        type: object
+        additionalProperties: false
+        required:
+          - case_id
+          - analysis_object_id
+          - evidence_source_witness_ids
+          - functional_dimension_ids
+          - working_relation
+          - relation_evidence_refs
+          - basis
+        properties:
+          case_id: { type: string, minLength: 1 }
+          analysis_object_id: { type: string, minLength: 1 }
+          evidence_source_witness_ids:
+            type: array
+            items: { type: string, minLength: 1 }
+          functional_dimension_ids:
+            type: array
+            items: { type: string, minLength: 1 }
+          working_relation: { type: string, minLength: 1 }
+          relation_evidence_refs:
+            type: array
+            items: { type: string, minLength: 1 }
+          basis: { type: string, minLength: 1 }
+
+prompts:
+  - prompt.txt
+
+defaultTest:
+  assert:
+    - type: is-json
+    - type: javascript
+      value: file://assert_behavior.js
+
+tests: file://cases.yaml

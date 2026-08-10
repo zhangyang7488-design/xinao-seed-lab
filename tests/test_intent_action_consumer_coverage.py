@@ -16,6 +16,9 @@ def test_intent_action_baseline_is_thin_honest_and_migration_bounded() -> None:
     assert "Ordinary low-risk continuous execution" in baseline
     assert "full first-principles activity recovery" in baseline
     assert "Productivity is not a new parent goal" in baseline
+    assert "sole installed Hook is UserPromptSubmit" in baseline
+    assert "SessionStart or Stop Hook currently implements them" in baseline
+    assert "infra/codex_productivity_recovery/v2" in baseline
     assert ledger["authority"] is False
     assert ledger["completion_claim_allowed"] is False
     assert ledger["baseline_readiness"]["current"] == (
@@ -44,10 +47,31 @@ def test_intent_action_baseline_is_thin_honest_and_migration_bounded() -> None:
         "thin_invariant_preserves_dynamic_exploration",
     }
     assert len(ledger["remaining_nonuniversal_boundaries"]) >= 3
+    topology = ledger["current_runtime_topology"]
+    assert topology["active_hook_events"] == ["UserPromptSubmit"]
+    assert topology["active_situation_script"].endswith("user_prompt_zero_beat_v1.ps1")
+    assert topology["cold_repair_scripts_not_installed_as_hooks"] == [
+        "bind_active_task_continuation_v1.ps1",
+        "restore_parent_task_continuation_v1.ps1",
+        "session_start_continuity_pointer_v1.ps1",
+        "turn_finalization_gate_v1.ps1",
+    ]
+    assert topology["cold_recovery_manifest"] == (
+        "infra/codex_productivity_recovery/v2/manifest.v2.json"
+    )
+    active_consumers = "\n".join(
+        consumer for stage in stages for consumer in stage["live_consumer"]
+    )
+    for retired_active_claim in (
+        "SessionStart hook",
+        "Stop hook",
+        "ActiveTaskContinuation binder",
+    ):
+        assert retired_active_claim not in active_consumers
 
     serialized = json.dumps(ledger, ensure_ascii=False)
     assert "trusted A/B UserPromptSubmit zero-beat hook" in serialized
-    assert "trusted A/B Stop hook" in serialized
+    assert "recovery v1 frozen as history" in serialized
     assert "claiming universal intent-to-action closure" in serialized
     assert "blind migration" in serialized
     assert "user-side technical Owner" in serialized
@@ -79,3 +103,15 @@ def test_intent_action_baseline_is_thin_honest_and_migration_bounded() -> None:
         in closure["directed_review_distinction"]
     )
     assert "lane_count" in closure["cognitive_diversity_evidence"]
+    continuation = model["active_task_continuation_advisory"]
+    assert continuation["mechanical_runtime_status"].startswith("NOT_INSTALLED")
+    assert continuation["cold_recovery_ref"] == (
+        "infra/codex_productivity_recovery/v2/manifest.v2.json"
+    )
+    activity_consumers = "\n".join(model["activity_consumers"])
+    assert "user_prompt_zero_beat_v1.ps1" in activity_consumers
+    for cold_script in model["cold_recovery_material"]["situation_scripts_not_installed_as_hooks"]:
+        assert cold_script not in activity_consumers
+    assert model["cold_recovery_material"]["legacy_v1_disposition"].startswith(
+        "IMMUTABLE_HISTORICAL_EVIDENCE"
+    )

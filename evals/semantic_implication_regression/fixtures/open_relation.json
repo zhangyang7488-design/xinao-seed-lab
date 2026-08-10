@@ -1,0 +1,14 @@
+{
+  "schema_version": "xinao.semantic_implication_case_input.v3",
+  "read_nonce": "sir-open-relation-a426",
+  "analysis_object_id": "cache_rotation_observations",
+  "source_witness_ids": ["obs-a", "obs-b", "obs-c"],
+  "representations": [],
+  "named_consumer": {"consumer_id": "working_relation_formation", "dimension_ids": []},
+  "observation_ids": ["obs-a", "obs-b", "obs-c"],
+  "facts": {
+    "obs-a": "queue delay rises after a cache rotation",
+    "obs-b": "the rise appears only when warm-up overlaps a batch boundary",
+    "obs-c": "the next isolated rotation without overlap has no delay rise"
+  }
+}

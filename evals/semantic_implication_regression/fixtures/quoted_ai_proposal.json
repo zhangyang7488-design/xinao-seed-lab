@@ -1,0 +1,10 @@
+{
+  "schema_version": "xinao.semantic_implication_case_input.v3",
+  "read_nonce": "sir-quoted-candidate-c7a0",
+  "analysis_object_id": "quoted_candidate_material",
+  "source_witness_ids": ["quoted-proposal", "current-user-disposition"],
+  "representations": [],
+  "named_consumer": {"consumer_id": "bounded_local_target", "dimension_ids": []},
+  "observation_ids": ["quoted-proposal", "current-user-disposition"],
+  "effect": {"authorized": false, "initial_target": "ORIGINAL", "adopted_target": "ADOPTED_LOCAL_CHANGE"}
+}

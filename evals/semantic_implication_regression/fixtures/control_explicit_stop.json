@@ -1,0 +1,10 @@
+{
+  "schema_version": "xinao.semantic_implication_case_input.v3",
+  "read_nonce": "sir-explicit-stop-31d9",
+  "analysis_object_id": "current_stop",
+  "source_witness_ids": [],
+  "representations": [],
+  "named_consumer": {"consumer_id": "none", "dimension_ids": []},
+  "observation_ids": [],
+  "explicit_stop": true
+}

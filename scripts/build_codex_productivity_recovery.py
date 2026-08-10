@@ -9,16 +9,18 @@ from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-DEFAULT_OUTPUT_ROOT = REPO_ROOT / "infra" / "codex_productivity_recovery" / "v1"
-ARCHIVE_NAME = "codex-productivity-recovery.v1.zip"
-MANIFEST_NAME = "manifest.v1.json"
+RECOVERY_ROOT = REPO_ROOT / "infra" / "codex_productivity_recovery"
+LEGACY_V1_ROOT = RECOVERY_ROOT / "v1"
+DEFAULT_OUTPUT_ROOT = RECOVERY_ROOT / "v2"
+ARCHIVE_NAME = "codex-productivity-recovery.non-pi.v2.zip"
+MANIFEST_NAME = "manifest.v2.json"
 
 MAIN_HOME = Path(r"C:\Users\xx363\.codex")
 ACCOUNT_B_HOME = Path(r"C:\Users\xx363\.codex-s-hardmode-account-b")
 LAUNCHER_ROOT = Path(r"C:\Users\xx363\CodexLaunchers")
 SITUATION_ROOT = Path(r"D:\XINAO_RESEARCH_RUNTIME\state\Codex_Situation_Island")
 
-GENERIC_SKILLS = (
+NON_PI_GENERIC_SKILLS = (
     "amplify-supervisor-worker",
     "ast-grep-structural-search",
     "dispatch-grok-worker-pool",
@@ -33,8 +35,15 @@ GENERIC_SKILLS = (
     "promptfoo-agent-evals",
     "repair-agent-behavior",
     "research-external-reality",
-    "steward-pis-evolution",
     "verified-agent-loop",
+)
+
+# Product-specific Pi stewardship is deliberately outside this archive's effect
+# scope.  Keep the name here only as a fail-closed inventory boundary: build,
+# verify-live, and restore never enumerate or read that tree.
+EXCLUDED_PRODUCT_SKILL_TREES = ("steward-pis-evolution",)
+EXCLUDED_ARCHIVE_PREFIXES = tuple(
+    f"main-home/skills/{skill_name}/" for skill_name in EXCLUDED_PRODUCT_SKILL_TREES
 )
 
 MAIN_FILES = (
@@ -42,6 +51,7 @@ MAIN_FILES = (
     "config.toml",
     "hooks.json",
     "cold-capabilities.config.toml",
+    "native-collaboration.config.toml",
     "inner-luna.config.toml",
     "inner-terra.config.toml",
     "inner-sol-verifier.config.toml",
@@ -54,14 +64,14 @@ LAUNCHER_FILES = (
     "CODEX_PRODUCTIVITY_PROFILE.md",
 )
 
-SITUATION_FILES = (
-    "README.md",
-    "scripts/bind_active_task_continuation_v1.ps1",
-    "scripts/restore_parent_task_continuation_v1.ps1",
-    "scripts/session_start_continuity_pointer_v1.ps1",
-    "scripts/turn_finalization_gate_v1.ps1",
-    "scripts/user_prompt_zero_beat_v1.ps1",
-)
+SITUATION_FILES = {
+    "README.md": "situation_island_contract",
+    "scripts/bind_active_task_continuation_v1.ps1": "cold_continuity_repair_material",
+    "scripts/restore_parent_task_continuation_v1.ps1": "cold_continuity_repair_material",
+    "scripts/session_start_continuity_pointer_v1.ps1": "cold_continuity_repair_material",
+    "scripts/turn_finalization_gate_v1.ps1": "cold_continuity_repair_material",
+    "scripts/user_prompt_zero_beat_v1.ps1": "active_user_prompt_hook",
+}
 
 EXCLUDED_PARTS = {
     ".git",
@@ -112,7 +122,7 @@ def _collect_sources() -> list[SourceEntry]:
             )
         )
 
-    for skill_name in GENERIC_SKILLS:
+    for skill_name in NON_PI_GENERIC_SKILLS:
         skill_root = MAIN_HOME / "skills" / skill_name
         if not skill_root.is_dir():
             raise FileNotFoundError(f"generic skill is missing: {skill_root}")
@@ -140,7 +150,7 @@ def _collect_sources() -> list[SourceEntry]:
             )
         )
 
-    for relative in SITUATION_FILES:
+    for relative, role in SITUATION_FILES.items():
         source = SITUATION_ROOT / Path(relative)
         entries.append(
             SourceEntry(
@@ -148,7 +158,7 @@ def _collect_sources() -> list[SourceEntry]:
                 archive_path=PurePosixPath(
                     "runtime", "Codex_Situation_Island", *Path(relative).parts
                 ).as_posix(),
-                role="continuity_runtime",
+                role=role,
             )
         )
 
@@ -170,6 +180,10 @@ def _zip_info(name: str) -> zipfile.ZipInfo:
 
 
 def build(output_root: Path) -> dict[str, object]:
+    if output_root.resolve() == LEGACY_V1_ROOT.resolve():
+        raise ValueError(
+            "legacy v1 recovery media is immutable; build the scoped non-Pi v2 package"
+        )
     output_root.mkdir(parents=True, exist_ok=True)
     archive_path = output_root / ARCHIVE_NAME
     entries = _collect_sources()
@@ -194,11 +208,17 @@ def build(output_root: Path) -> dict[str, object]:
             )
 
     manifest: dict[str, object] = {
-        "schema_version": "xinao.codex_productivity_recovery.v1",
-        "sentinel": "SENTINEL:CODEX_PRODUCTIVITY_RECOVERY_COLD_V1",
+        "schema_version": "xinao.codex_productivity_recovery.v2",
+        "sentinel": "SENTINEL:CODEX_NON_PI_PRODUCTIVITY_RECOVERY_COLD_V2",
         "authority": False,
         "runtime_loaded": False,
         "completion_claim_allowed": False,
+        "effect_scope": {
+            "id": "codex_non_pi_productivity_runtime",
+            "self_contained": True,
+            "excluded_product_skill_trees": list(EXCLUDED_PRODUCT_SKILL_TREES),
+            "excluded_trees_are_not_read_verified_or_restored": True,
+        },
         "archive": ARCHIVE_NAME,
         "archive_sha256": _sha256_file(archive_path),
         "entry_count": len(manifest_entries),
@@ -207,6 +227,7 @@ def build(output_root: Path) -> dict[str, object]:
             "main_home_is_live_source": True,
             "account_b_is_generated_projection": True,
             "cold_archive_is_immutable_recovery_media_not_a_second_runtime_truth": True,
+            "legacy_v1_is_separate_history_not_a_build_input": True,
         },
         "excluded_on_purpose": [
             "authentication credentials and refresh tokens",
@@ -215,6 +236,10 @@ def build(output_root: Path) -> dict[str, object]:
             "conduct-xinao-native-research and all science-domain authority",
             "retired pretool_task_provenance_guard_v1.ps1",
             "legacy platform control planes and runtime state",
+            (
+                "steward-pis-evolution and its complete product-specific tree; "
+                "Pi is frozen outside this non-Pi effect scope"
+            ),
         ],
         "science_boundary": {
             "science_domain_authority_owner": "E:/XINAO_RESEARCH_WORKSPACES/xinao-native-research",
@@ -224,6 +249,7 @@ def build(output_root: Path) -> dict[str, object]:
         "recovery_contract": {
             "automatic_live_restore": False,
             "staged_restore_supported": True,
+            "legacy_v1_must_not_be_refreshed_or_used_as_a_source": True,
             "owner_must_verify_exact_targets_backup_and_live_consumers_before_apply": True,
             "account_b_auth_and_sessions_must_never_be_copied_from_main": True,
             "required_post_apply_readback": [
@@ -242,7 +268,13 @@ def build(output_root: Path) -> dict[str, object]:
 
 
 def _load_manifest(output_root: Path) -> dict[str, object]:
-    return json.loads((output_root / MANIFEST_NAME).read_text(encoding="utf-8"))
+    manifest = json.loads((output_root / MANIFEST_NAME).read_text(encoding="utf-8"))
+    if manifest.get("schema_version") != "xinao.codex_productivity_recovery.v2":
+        raise ValueError("non-Pi recovery manifest schema mismatch")
+    scope = manifest.get("effect_scope")
+    if not isinstance(scope, dict) or scope.get("id") != "codex_non_pi_productivity_runtime":
+        raise ValueError("non-Pi recovery effect scope mismatch")
+    return manifest
 
 
 def verify_archive(output_root: Path) -> dict[str, object]:
@@ -268,6 +300,7 @@ def verify_archive(output_root: Path) -> dict[str, object]:
 
     forbidden_paths = (
         "conduct-xinao-native-research",
+        *EXCLUDED_ARCHIVE_PREFIXES,
         "pretool_task_provenance_guard_v1.ps1",
         "auth.json",
         "/sessions/",
@@ -277,6 +310,14 @@ def verify_archive(output_root: Path) -> dict[str, object]:
     for forbidden in forbidden_paths:
         if forbidden.lower() in lowered:
             raise ValueError(f"forbidden recovery entry present: {forbidden}")
+    lowered_live_sources = "\n".join(
+        str(row.get("live_source", "")) for row in manifest["entries"]
+    ).lower()
+    for skill_name in EXCLUDED_PRODUCT_SKILL_TREES:
+        windows_fragment = f"\\skills\\{skill_name}\\"
+        posix_fragment = f"/skills/{skill_name}/"
+        if windows_fragment in lowered_live_sources or posix_fragment in lowered_live_sources:
+            raise ValueError(f"excluded product live source present: {skill_name}")
     return manifest
 
 

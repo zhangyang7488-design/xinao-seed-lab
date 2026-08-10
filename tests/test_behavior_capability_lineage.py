@@ -24,6 +24,16 @@ def test_capability_lineage_recovers_history_without_becoming_runtime_authority(
     assert lineage["completion_claim_allowed"] is False
     assert lineage["frozen_baseline"]["capability_id"] == ("intent_source_parent_admission")
     assert lineage["frozen_baseline"]["decision"] == "KEEP_FROZEN"
+    topology = lineage["current_runtime_topology"]
+    assert topology["active_hook_events"] == ["UserPromptSubmit"]
+    assert topology["active_situation_script"].endswith("user_prompt_zero_beat_v1.ps1")
+    assert topology["cold_lifecycle_recovery_manifest"] == (
+        "infra/codex_productivity_recovery/v2/manifest.v2.json"
+    )
+    assert not any(
+        "session_start_continuity_pointer" in carrier
+        for carrier in lineage["frozen_baseline"]["hot_carriers"]
+    )
 
     families = lineage["families"]
     family_ids = {family["id"] for family in families}
@@ -110,6 +120,42 @@ def test_capability_lineage_recovers_history_without_becoming_runtime_authority(
         "science_engineering_continuity_role_separation",
     } <= plane_ids
     assert all(plane["consumers"] and plane["readback"] for plane in architecture["planes"])
+    lifecycle = next(
+        plane for plane in architecture["planes"] if plane["id"] == "lifecycle_event_reanchor"
+    )
+    assert lifecycle["consumers"] == [
+        "external:UserPromptSubmit current-increment hook",
+        "services/agent_runtime/action_resume_receipt.py",
+        "evals/parent_frame_admission",
+    ]
+    assert lifecycle["cold_recovery_material"] == (
+        "infra/codex_productivity_recovery/v2/manifest.v2.json"
+    )
+    transition = next(
+        family
+        for family in families
+        if family["id"] == "transition_reanchor_and_exact_continuation"
+    )
+    assert not any(
+        token in consumer
+        for consumer in transition["current_consumers"]
+        for token in ("SessionStart", "binder", "restore")
+    )
+    bounded = next(
+        family
+        for family in families
+        if family["id"] == "bounded_control_decision_and_authorization"
+    )
+    assert not any("Stop" in consumer for consumer in bounded["current_consumers"])
+    retired_continuity = next(
+        family
+        for family in families
+        if family["id"] == "legacy_continuity_catalog_and_control_plane"
+    )
+    assert retired_continuity["current_consumers"] == []
+    assert retired_continuity["cold_recovery_material"][0] == (
+        "infra/codex_productivity_recovery/v2/manifest.v2.json"
+    )
     topology = {row["id"]: row["verdict"] for row in architecture["topology_adjudication"]}
     assert topology == {
         "T0_CURRENT_NO_ACTION": "REJECT_AS_COMPLETE_ARCHITECTURE",
@@ -166,8 +212,14 @@ def test_every_behavior_run_consumes_the_lineage_migration_preflight() -> None:
         "tests/test_behavior_capability_lineage.py"
     )
     assert registry["capability_migration_preflight"]["recovery_archive"] == (
-        "infra/codex_productivity_recovery/v1/codex-productivity-recovery.v1.zip"
+        "infra/codex_productivity_recovery/v2/codex-productivity-recovery.non-pi.v2.zip"
     )
+    assert registry["capability_migration_preflight"]["recovery_manifest"] == (
+        "infra/codex_productivity_recovery/v2/manifest.v2.json"
+    )
+    legacy = registry["capability_migration_preflight"]["legacy_recovery_evidence"]
+    assert legacy["manifest"] == "infra/codex_productivity_recovery/v1/manifest.v1.json"
+    assert legacy["disposition"].startswith("immutable_history")
     assert registry["capability_migration_preflight"]["recovery_test"] == (
         "tests/test_codex_productivity_recovery.py"
     )
@@ -181,6 +233,8 @@ def test_every_behavior_run_consumes_the_lineage_migration_preflight() -> None:
         assert "test_behavior_capability_lineage.py" in text
         assert "codex_productivity_recovery" in text
         assert "test_codex_productivity_recovery.py" in text
+        assert "codex_productivity_recovery/v2" in text.replace("\\", "/")
+        assert "codex_productivity_recovery/v1" not in text.replace("\\", "/")
 
     assert "tests/test_behavior_capability_lineage.py" in runner
     assert "tests/test_codex_productivity_recovery.py" in runner

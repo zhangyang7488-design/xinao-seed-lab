@@ -1,0 +1,10 @@
+{
+  "schema_version": "xinao.semantic_implication_case_input.v3",
+  "read_nonce": "sir-control-read-55c8",
+  "analysis_object_id": "named_local_file",
+  "source_witness_ids": [],
+  "representations": [],
+  "named_consumer": {"consumer_id": "named_local_file", "dimension_ids": []},
+  "observation_ids": ["named-local-file"],
+  "authorization": "read only this exact case consumer once"
+}
