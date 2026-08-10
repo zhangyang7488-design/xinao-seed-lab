@@ -28,7 +28,16 @@ def main() -> int:
     parser.add_argument("--no-venv", action="store_true")
     parser.add_argument("--promote", action="store_true")
     parser.add_argument("--show-current", action="store_true")
+    parser.add_argument(
+        "--migrate-current-v1",
+        action="store_true",
+        help="one-shot CAS migration from the exact current v1 pointer to this new v2 release",
+    )
     args = parser.parse_args()
+    if args.migrate_current_v1 and not args.promote:
+        parser.error("--migrate-current-v1 requires --promote")
+    if args.show_current and args.promote:
+        parser.error("--show-current cannot be combined with --promote")
     if not args.show_current and not args.release_id:
         parser.error("--release-id is required unless --show-current is used")
     try:
@@ -42,6 +51,7 @@ def main() -> int:
                 python_executable=args.python_executable,
                 create_venv=not args.no_venv,
                 promote=args.promote,
+                migrate_current_v1=args.migrate_current_v1,
             )
         )
         print(json.dumps(result, ensure_ascii=False, sort_keys=True, separators=(",", ":")))

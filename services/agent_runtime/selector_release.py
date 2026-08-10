@@ -11,6 +11,7 @@ import hashlib
 import json
 import os
 import shutil
+import stat
 import subprocess
 import tempfile
 import time
@@ -20,11 +21,14 @@ from pathlib import Path
 from typing import Any
 
 RELEASE_SCHEMA = "xinao.selector_release.v2"
+LEGACY_V1_RELEASE_SCHEMA = "xinao.selector_release.v1"
 POINTER_SCHEMA = "xinao.selector_release_pointer.v1"
 SOURCE_CAPTURE_SCHEMA = "xinao.selector_release_source_capture.v1"
 EXECUTION_BINDING_SCHEMA = "xinao.selector_release_execution_binding.v1"
+LEGACY_V1_MIGRATION_SCHEMA = "xinao.selector_release_legacy_v1_migration.v1"
 CURRENT_STATE_ABSENT = "ABSENT"
 CURRENT_STATE_PRESENT = "PRESENT"
+CURRENT_STATE_LEGACY_V1_PRESENT = "LEGACY_V1_PRESENT"
 REQUIRED_DISTRIBUTIONS = (
     "attrs",
     "jsonschema",
@@ -68,6 +72,32 @@ RELEASE_FILES = (
     "scripts/build_worker_package_batch.py",
 )
 SOURCE_CAPTURE_FILES = (*RELEASE_FILES, "uv.lock")
+LEGACY_V1_POINTER_FIELDS = frozenset(
+    {
+        "schema_version",
+        "release_id",
+        "release_root",
+        "release_manifest_ref",
+        "release_manifest_sha256",
+    }
+)
+LEGACY_V1_MANIFEST_FIELDS = frozenset(
+    {
+        "schema_version",
+        "release_id",
+        "release_root",
+        "source_root",
+        "source_git_head",
+        "source_capture",
+        "files",
+        "selector_source_sha256",
+        "python_executable",
+        "probe",
+        "authority",
+        "completion_claim_allowed",
+        "release_content_sha256",
+    }
+)
 
 
 class SelectorReleaseError(ValueError):
@@ -206,6 +236,203 @@ def _read_object(path: Path, label: str) -> dict[str, Any]:
     except OSError as exc:
         raise SelectorReleaseError(f"{label} unreadable: {path}: {exc}") from exc
     return _decode_object(raw, path=path, label=label)
+
+
+def _lexical_absolute(path: Path) -> Path:
+    """Return an absolute path without following a symlink or junction."""
+
+    return Path(os.path.abspath(os.fspath(path)))
+
+
+def _path_key(path: Path) -> str:
+    return os.path.normcase(os.path.normpath(os.fspath(_lexical_absolute(path))))
+
+
+def _assert_no_reparse_existing_path(path: Path, *, label: str) -> Path:
+    """Reject every pre-existing symlink/reparse component before legacy reads."""
+
+    absolute = _lexical_absolute(path)
+    anchor = Path(absolute.anchor)
+    current = anchor
+    final_stat: os.stat_result | None = None
+    for component in absolute.parts[1:]:
+        current /= component
+        try:
+            final_stat = current.lstat()
+        except OSError as exc:
+            raise SelectorReleaseError(f"{label} missing or unreadable: {current}: {exc}") from exc
+        attributes = int(getattr(final_stat, "st_file_attributes", 0))
+        reparse_attribute = int(getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0x400))
+        if stat.S_ISLNK(final_stat.st_mode) or attributes & reparse_attribute:
+            raise SelectorReleaseError(f"{label} reparse component rejected: {current}")
+    if final_stat is None:
+        raise SelectorReleaseError(f"{label} must not be a volume root: {absolute}")
+    return absolute
+
+
+def _declared_legacy_path(value: object, label: str) -> Path:
+    text = _text(value, label)
+    raw = Path(text)
+    if not raw.is_absolute():
+        raise SelectorReleaseError(f"{label} must be absolute")
+    segments = text.replace("\\", "/").split("/")
+    if any(segment in {".", ".."} for segment in segments):
+        raise SelectorReleaseError(f"{label} must not contain dot path segments")
+    return _lexical_absolute(raw)
+
+
+def _legacy_release_identifier(value: object) -> str:
+    identifier = _text(value, "pointer.release_id")
+    if (
+        any(char in identifier for char in '\\/:*?"<>|')
+        or identifier in {".", ".."}
+        or Path(identifier).name != identifier
+    ):
+        raise SelectorReleaseError("legacy v1 release_id is not a safe path segment")
+    return identifier
+
+
+def _legacy_runtime_paths(runtime_root: Path) -> tuple[Path, Path]:
+    state = _lexical_absolute(runtime_root) / "state" / "grok_supervisor_selector"
+    return state / "releases", state / "current.json"
+
+
+def _read_stable_bytes(path: Path, *, label: str) -> bytes:
+    try:
+        before = path.read_bytes()
+        after = path.read_bytes()
+    except OSError as exc:
+        raise SelectorReleaseError(f"{label} unreadable: {path}: {exc}") from exc
+    if before != after:
+        raise SelectorReleaseError(f"{label} changed during observation: {path}")
+    return before
+
+
+def _legacy_v1_static_file_bindings(
+    manifest: Mapping[str, object],
+) -> dict[str, dict[str, object]]:
+    rows = manifest.get("files")
+    if not isinstance(rows, list):
+        raise SelectorReleaseError("legacy v1 release file list missing")
+    observed: dict[str, dict[str, object]] = {}
+    for index, raw in enumerate(rows):
+        if not isinstance(raw, dict) or set(raw) != {"path", "sha256", "size_bytes"}:
+            raise SelectorReleaseError(f"legacy v1 release file entry invalid: {index}")
+        relative_text = _text(raw.get("path"), f"legacy files[{index}].path")
+        relative = Path(relative_text)
+        if (
+            relative.is_absolute()
+            or ".." in relative.parts
+            or relative.as_posix() != relative_text
+            or relative_text in observed
+        ):
+            raise SelectorReleaseError(f"legacy v1 release file path invalid: {relative_text}")
+        size = raw.get("size_bytes")
+        if isinstance(size, bool) or not isinstance(size, int) or size < 0:
+            raise SelectorReleaseError(f"legacy files[{index}].size_bytes must be >= 0")
+        observed[relative_text] = {
+            "sha256": _sha(raw.get("sha256"), f"legacy files[{index}].sha256"),
+            "size_bytes": size,
+        }
+    if tuple(observed) != RELEASE_FILES:
+        raise SelectorReleaseError("legacy v1 release file closure mismatch")
+    return observed
+
+
+def _legacy_v1_pointer_identity(runtime_root: Path) -> dict[str, str]:
+    """Statically bind the exact legacy pointer+manifest without executing legacy code."""
+
+    runtime = _lexical_absolute(runtime_root)
+    releases, pointer_path = _legacy_runtime_paths(runtime)
+    _assert_no_reparse_existing_path(pointer_path, label="legacy v1 current pointer")
+    pointer_raw = _read_stable_bytes(pointer_path, label="legacy v1 current pointer")
+    pointer = _decode_object(
+        pointer_raw,
+        path=pointer_path,
+        label="legacy v1 current pointer",
+    )
+    if set(pointer) != LEGACY_V1_POINTER_FIELDS:
+        raise SelectorReleaseError("legacy v1 current pointer field set mismatch")
+    if pointer.get("schema_version") != POINTER_SCHEMA:
+        raise SelectorReleaseError("legacy v1 current pointer schema mismatch")
+    release_id = _legacy_release_identifier(pointer.get("release_id"))
+    expected_release_root = releases / release_id
+    release_root = _declared_legacy_path(pointer.get("release_root"), "pointer.release_root")
+    if release_root.name != release_id or _path_key(release_root) != _path_key(
+        expected_release_root
+    ):
+        raise SelectorReleaseError("legacy v1 release root is not the exact runtime release")
+    manifest_path = _declared_legacy_path(
+        pointer.get("release_manifest_ref"), "pointer.release_manifest_ref"
+    )
+    expected_manifest_path = expected_release_root / "release_manifest.json"
+    if _path_key(manifest_path) != _path_key(expected_manifest_path):
+        raise SelectorReleaseError("legacy v1 manifest is not the exact runtime release manifest")
+    _assert_no_reparse_existing_path(manifest_path, label="legacy v1 release manifest")
+    manifest_raw = _read_stable_bytes(manifest_path, label="legacy v1 release manifest")
+    expected_manifest_sha = _sha(
+        pointer.get("release_manifest_sha256"), "pointer.release_manifest_sha256"
+    )
+    if _sha_bytes(manifest_raw) != expected_manifest_sha:
+        raise SelectorReleaseError("legacy v1 release manifest hash mismatch")
+    manifest = _decode_object(
+        manifest_raw,
+        path=manifest_path,
+        label="legacy v1 release manifest",
+    )
+    if set(manifest) != LEGACY_V1_MANIFEST_FIELDS:
+        raise SelectorReleaseError("legacy v1 release manifest field set mismatch")
+    if manifest.get("schema_version") != LEGACY_V1_RELEASE_SCHEMA:
+        raise SelectorReleaseError("current release is not the expected legacy v1 schema")
+    if manifest.get("release_id") != release_id:
+        raise SelectorReleaseError("legacy v1 release id mismatch")
+    declared_manifest_root = _declared_legacy_path(
+        manifest.get("release_root"), "manifest.release_root"
+    )
+    if _path_key(declared_manifest_root) != _path_key(expected_release_root):
+        raise SelectorReleaseError("legacy v1 manifest release root mismatch")
+    content = dict(manifest)
+    expected_content_sha = _sha(
+        content.pop("release_content_sha256", None), "release_content_sha256"
+    )
+    if _sha_bytes(_canonical_bytes(content)) != expected_content_sha:
+        raise SelectorReleaseError("legacy v1 release content hash mismatch")
+    observed_files = _legacy_v1_static_file_bindings(manifest)
+    if manifest.get("source_capture") is None:
+        raise SelectorReleaseError("legacy v1 source capture missing")
+    _validate_source_capture(manifest, observed_files)
+    selector_sha = _sha(
+        manifest.get("selector_source_sha256"), "legacy selector_source_sha256"
+    )
+    selector_relative = "services/agent_runtime/routing_policy_reader.py"
+    if observed_files[selector_relative]["sha256"] != selector_sha:
+        raise SelectorReleaseError("legacy v1 selector source declaration mismatch")
+    python_executable = _text(manifest.get("python_executable"), "legacy python_executable")
+    probe = manifest.get("probe")
+    if not isinstance(probe, dict):
+        raise SelectorReleaseError("legacy v1 probe declaration missing")
+    if probe.get("python_executable") != python_executable:
+        raise SelectorReleaseError("legacy v1 probe interpreter declaration mismatch")
+    if probe.get("selector_source_sha256") != selector_sha:
+        raise SelectorReleaseError("legacy v1 probe selector declaration mismatch")
+    if manifest.get("authority") is not False or manifest.get("completion_claim_allowed") is not False:
+        raise SelectorReleaseError("legacy v1 authority declaration mismatch")
+    if _read_stable_bytes(manifest_path, label="legacy v1 release manifest") != manifest_raw:
+        raise SelectorReleaseError("legacy v1 release manifest changed during observation")
+    if _read_stable_bytes(pointer_path, label="legacy v1 current pointer") != pointer_raw:
+        raise SelectorReleaseError("legacy v1 current pointer changed during observation")
+    return {
+        "state": CURRENT_STATE_LEGACY_V1_PRESENT,
+        "release_id": release_id,
+        "pointer_sha256": _sha_bytes(pointer_raw),
+        "release_manifest_sha256": expected_manifest_sha,
+    }
+
+
+def selector_release_legacy_v1_migration_identity(runtime_root: Path) -> dict[str, str]:
+    """Return a one-shot CAS identity only for the exact current legacy v1 release."""
+
+    return _legacy_v1_pointer_identity(runtime_root)
 
 
 def _capture_selected_sources(source_root: Path) -> dict[str, dict[str, object]]:
@@ -517,6 +744,31 @@ def _probe_release(release_root: Path, python_executable: Path) -> dict[str, obj
     }
 
 
+def _pointer_statically_references_release(
+    pointer_path: Path,
+    *,
+    release_id: str,
+    release_root: Path,
+    manifest_path: Path,
+) -> bool:
+    """Avoid deleting a new release after its pointer commit already happened."""
+
+    try:
+        raw = pointer_path.read_bytes()
+        pointer = _decode_object(raw, path=pointer_path, label="selector release pointer")
+        manifest_raw = manifest_path.read_bytes()
+    except (OSError, SelectorReleaseError):
+        return False
+    return (
+        pointer.get("schema_version") == POINTER_SCHEMA
+        and pointer.get("release_id") == release_id
+        and _path_key(Path(str(pointer.get("release_root") or ""))) == _path_key(release_root)
+        and _path_key(Path(str(pointer.get("release_manifest_ref") or "")))
+        == _path_key(manifest_path)
+        and pointer.get("release_manifest_sha256") == _sha_bytes(manifest_raw)
+    )
+
+
 def build_selector_release(
     *,
     source_root: Path,
@@ -526,23 +778,40 @@ def build_selector_release(
     create_venv: bool = True,
     promote: bool = False,
     expected_current: Mapping[str, object] | None = None,
+    migrate_current_v1: bool = False,
 ) -> dict[str, object]:
     """Build one release from a stable double-read of the selected source closure."""
 
     source = Path(source_root).resolve(strict=True)
-    runtime = Path(runtime_root).resolve(strict=False)
+    runtime = (
+        _lexical_absolute(Path(runtime_root))
+        if migrate_current_v1
+        else Path(runtime_root).resolve(strict=False)
+    )
     identifier = _text(release_id, "release_id")
     if any(char in identifier for char in '\\/:*?"<>|') or identifier in {".", ".."}:
         raise SelectorReleaseError("release_id is not a safe path segment")
     executable = _absolute_executable(Path(python_executable))
-    release_parent, _ = _runtime_paths(runtime)
+    release_parent, pointer_path = (
+        _legacy_runtime_paths(runtime) if migrate_current_v1 else _runtime_paths(runtime)
+    )
     if expected_current is not None and not promote:
         raise SelectorReleaseError("expected_current is only valid when promote=True")
+    if migrate_current_v1 and not promote:
+        raise SelectorReleaseError("migrate_current_v1 is only valid when promote=True")
+    if migrate_current_v1 and expected_current is not None:
+        raise SelectorReleaseError(
+            "migrate_current_v1 observes its own exact legacy expectation"
+        )
     promotion_expectation: dict[str, str] | None = None
     if expected_current is not None:
         promotion_expectation = _normalize_current_identity(expected_current)
     elif promote:
-        promotion_expectation = selector_release_current_identity(runtime)
+        promotion_expectation = (
+            selector_release_legacy_v1_migration_identity(runtime)
+            if migrate_current_v1
+            else selector_release_current_identity(runtime)
+        )
     source_git_head = _git_head(source)
     captured_sources = _capture_selected_sources(source)
     requirements = _locked_requirement_specs_from_bytes(
@@ -659,12 +928,24 @@ def build_selector_release(
                     runtime,
                     release_id=identifier,
                     expected_current=promotion_expectation,
+                    migrate_current_v1=migrate_current_v1,
                 )
             )
-            result["status"] = "release_built_and_promoted"
+            result["status"] = (
+                "release_built_and_migrated_from_legacy_v1"
+                if migrate_current_v1
+                else "release_built_and_promoted"
+            )
         return result
     except Exception:
-        shutil.rmtree(release_root, ignore_errors=True)
+        committed = migrate_current_v1 and _pointer_statically_references_release(
+            pointer_path,
+            release_id=identifier,
+            release_root=release_root,
+            manifest_path=release_root / "release_manifest.json",
+        )
+        if not committed:
+            shutil.rmtree(release_root, ignore_errors=True)
         raise
 
 
@@ -833,14 +1114,46 @@ def validate_selector_release_pointer(pointer_path: Path) -> dict[str, Any]:
     }
 
 
-def _normalize_current_identity(value: Mapping[str, object]) -> dict[str, str]:
+def _normalize_current_identity(
+    value: Mapping[str, object],
+    *,
+    allow_legacy_v1: bool = False,
+) -> dict[str, str]:
     state = _text(value.get("state"), "expected_current.state").upper()
     if state == CURRENT_STATE_ABSENT:
         if set(value) != {"state"}:
             raise SelectorReleaseError("ABSENT expected_current may only contain state")
         return {"state": CURRENT_STATE_ABSENT}
+    if state == CURRENT_STATE_LEGACY_V1_PRESENT:
+        if not allow_legacy_v1:
+            raise SelectorReleaseError(
+                "LEGACY_V1_PRESENT expected_current is forbidden for normal promotion"
+            )
+        if set(value) != {
+            "state",
+            "release_id",
+            "pointer_sha256",
+            "release_manifest_sha256",
+        }:
+            raise SelectorReleaseError(
+                "LEGACY_V1_PRESENT expected_current requires exact release_id, "
+                "pointer_sha256, and release_manifest_sha256"
+            )
+        return {
+            "state": CURRENT_STATE_LEGACY_V1_PRESENT,
+            "release_id": _text(value.get("release_id"), "expected_current.release_id"),
+            "pointer_sha256": _sha(
+                value.get("pointer_sha256"), "expected_current.pointer_sha256"
+            ),
+            "release_manifest_sha256": _sha(
+                value.get("release_manifest_sha256"),
+                "expected_current.release_manifest_sha256",
+            ),
+        }
     if state != CURRENT_STATE_PRESENT:
-        raise SelectorReleaseError("expected_current.state must be ABSENT or PRESENT")
+        raise SelectorReleaseError(
+            "expected_current.state must be ABSENT, PRESENT, or explicit LEGACY_V1_PRESENT"
+        )
     if set(value) != {"state", "release_id", "pointer_sha256"}:
         raise SelectorReleaseError(
             "PRESENT expected_current requires exact release_id and pointer_sha256"
@@ -966,15 +1279,29 @@ def promote_selector_release(
     *,
     release_id: str,
     expected_current: Mapping[str, object],
+    migrate_current_v1: bool = False,
 ) -> dict[str, object]:
     """CAS-promote one validated release against the caller-observed pointer identity."""
 
-    runtime = Path(runtime_root).resolve(strict=False)
+    runtime = (
+        _lexical_absolute(Path(runtime_root))
+        if migrate_current_v1
+        else Path(runtime_root).resolve(strict=False)
+    )
     identifier = _text(release_id, "release_id")
     if any(char in identifier for char in '\\/:*?"<>|') or identifier in {".", ".."}:
         raise SelectorReleaseError("release_id is not a safe path segment")
-    expectation = _normalize_current_identity(expected_current)
-    releases, pointer_path = _runtime_paths(runtime)
+    expectation = _normalize_current_identity(
+        expected_current,
+        allow_legacy_v1=migrate_current_v1,
+    )
+    if migrate_current_v1 and expectation["state"] != CURRENT_STATE_LEGACY_V1_PRESENT:
+        raise SelectorReleaseError(
+            "migrate_current_v1 requires an exact LEGACY_V1_PRESENT expectation"
+        )
+    releases, pointer_path = (
+        _legacy_runtime_paths(runtime) if migrate_current_v1 else _runtime_paths(runtime)
+    )
     release_root = releases / identifier
     manifest_path = release_root / "release_manifest.json"
     if not manifest_path.is_file():
@@ -996,7 +1323,16 @@ def promote_selector_release(
                 "release_id": identifier,
                 "pointer_sha256": desired_pointer_sha,
             }
-            observed = _current_pointer_identity(pointer_path)
+            if migrate_current_v1:
+                try:
+                    observed = _legacy_v1_pointer_identity(runtime)
+                except SelectorReleaseError as exc:
+                    raise SelectorReleaseError(
+                        "selector release current pointer changed from expected legacy v1: "
+                        f"{exc}"
+                    ) from exc
+            else:
+                observed = _current_pointer_identity(pointer_path)
             if observed == desired_identity:
                 status = "release_already_current"
             else:
@@ -1007,7 +1343,11 @@ def promote_selector_release(
                         f"observed={json.dumps(observed, sort_keys=True)}"
                     )
                 _replace_pointer_candidate(temporary_pointer, pointer_path)
-                status = "release_promoted"
+                status = (
+                    "release_migrated_from_legacy_v1"
+                    if migrate_current_v1
+                    else "release_promoted"
+                )
         finally:
             temporary_pointer.unlink(missing_ok=True)
 
@@ -1017,7 +1357,7 @@ def promote_selector_release(
             raise SelectorReleaseError("selector release pointer commit readback mismatch")
         if validated_candidate["release_manifest_sha256"] != validated["release_manifest_sha256"]:
             raise SelectorReleaseError("selector release candidate readback mismatch")
-        return {
+        result: dict[str, object] = {
             "status": status,
             "release_id": identifier,
             "pointer_path": str(pointer_path.resolve(strict=True)),
@@ -1026,6 +1366,20 @@ def promote_selector_release(
             "selector_source_sha256": validated["selector_source_sha256"],
             "python_executable": validated["python_executable"],
         }
+        if migrate_current_v1:
+            result["completion_claim_allowed"] = False
+            result["migration"] = {
+                "schema_version": LEGACY_V1_MIGRATION_SCHEMA,
+                "from": expectation,
+                "to": {
+                    "state": CURRENT_STATE_PRESENT,
+                    "release_id": identifier,
+                    "pointer_sha256": observed_pointer_sha,
+                    "release_manifest_sha256": validated["release_manifest_sha256"],
+                },
+                "completion_claim_allowed": False,
+            }
+        return result
 
 
 def load_current_selector_release(runtime_root: Path) -> dict[str, Any]:

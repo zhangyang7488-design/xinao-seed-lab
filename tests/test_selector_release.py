@@ -9,6 +9,7 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 import pytest
+import scripts.build_selector_release as selector_release_cli
 from services.agent_runtime import selector_release
 from services.agent_runtime.selector_release import (
     RELEASE_FILES,
@@ -56,6 +57,81 @@ def _build_fast_release(repo: Path, runtime: Path, release_id: str) -> dict[str,
         create_venv=False,
         promote=False,
     )
+
+
+def _rewrite_current_as_legacy_v1(
+    runtime: Path,
+    built: dict[str, object],
+    *,
+    marker_path: Path | None = None,
+) -> dict[str, object]:
+    manifest_path = Path(str(built["release_manifest_ref"]))
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest["schema_version"] = "xinao.selector_release.v1"
+    manifest.pop("python_sha256")
+    manifest.pop("python_size_bytes")
+    if marker_path is not None:
+        relative = "services/agent_runtime/routing_policy_reader.py"
+        target = Path(str(built["release_root"])) / relative
+        target.write_text(
+            target.read_text(encoding="utf-8")
+            + "\nfrom pathlib import Path as _LegacyMarkerPath\n"
+            + f"_LegacyMarkerPath({str(marker_path)!r}).write_text('executed', encoding='utf-8')\n",
+            encoding="utf-8",
+        )
+        target_raw = target.read_bytes()
+        target_sha = selector_release._sha_bytes(target_raw)
+        for row in manifest["files"]:
+            if row["path"] == relative:
+                row["sha256"] = target_sha
+                row["size_bytes"] = len(target_raw)
+        source_capture = manifest["source_capture"]
+        for row in source_capture["files"]:
+            if row["path"] == relative:
+                row["sha256"] = target_sha
+                row["size_bytes"] = len(target_raw)
+        capture_body = dict(source_capture)
+        capture_body.pop("source_capture_sha256")
+        source_capture["source_capture_sha256"] = selector_release._sha_bytes(
+            selector_release._canonical_bytes(capture_body)
+        )
+        manifest["selector_source_sha256"] = target_sha
+        manifest["probe"]["selector_source_sha256"] = target_sha
+    content = dict(manifest)
+    content.pop("release_content_sha256")
+    manifest["release_content_sha256"] = selector_release._sha_bytes(
+        selector_release._canonical_bytes(content)
+    )
+    manifest_raw = selector_release._json_bytes(manifest)
+    manifest_path.write_bytes(manifest_raw)
+    pointer_path = runtime / "state" / "grok_supervisor_selector" / "current.json"
+    pointer = json.loads(pointer_path.read_text(encoding="utf-8"))
+    pointer["release_manifest_sha256"] = selector_release._sha_bytes(manifest_raw)
+    pointer_raw = selector_release._json_bytes(pointer)
+    pointer_path.write_bytes(pointer_raw)
+    return {
+        "pointer_path": pointer_path,
+        "pointer_raw": pointer_raw,
+        "manifest_path": manifest_path,
+        "manifest_raw": manifest_raw,
+        "release_root": Path(str(built["release_root"])),
+    }
+
+
+def _make_legacy_v1_current(
+    repo: Path,
+    runtime: Path,
+    release_id: str,
+    *,
+    marker_path: Path | None = None,
+) -> dict[str, object]:
+    built = _build_fast_release(repo, runtime, release_id)
+    promote_selector_release(
+        runtime,
+        release_id=release_id,
+        expected_current=selector_release_current_identity(runtime),
+    )
+    return _rewrite_current_as_legacy_v1(runtime, built, marker_path=marker_path)
 
 
 def test_release_dependencies_are_exactly_derived_from_uv_lock(tmp_path: Path) -> None:
@@ -391,36 +467,444 @@ def test_manifest_swap_after_hash_before_parse_is_rejected(
     assert swapped is True
 
 
-def test_legacy_v1_release_manifest_requires_fresh_rebuild(
+def test_legacy_v1_release_is_rejected_without_explicit_migration(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    repo = Path(__file__).resolve().parents[1]
+    runtime = tmp_path / "runtime"
+    monkeypatch.setattr(selector_release, "_probe_release", _fast_probe)
+    legacy = _make_legacy_v1_current(repo, runtime, "legacy-schema")
+    _build_fast_release(repo, runtime, "normal-candidate")
+    pointer = Path(str(legacy["pointer_path"]))
+    legacy_present = {
+        "state": "PRESENT",
+        "release_id": "legacy-schema",
+        "pointer_sha256": selector_release._sha_bytes(pointer.read_bytes()),
+    }
+
+    with pytest.raises(SelectorReleaseError, match="schema mismatch"):
+        validate_selector_release_pointer(pointer)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "build_selector_release.py",
+            "--runtime-root",
+            str(runtime),
+            "--show-current",
+        ],
+    )
+    assert selector_release_cli.main() == 20
+    assert "manifest schema mismatch" in capsys.readouterr().err
+    with pytest.raises(SelectorReleaseError, match="schema mismatch"):
+        promote_selector_release(
+            runtime,
+            release_id="normal-candidate",
+            expected_current=legacy_present,
+        )
+    with pytest.raises(SelectorReleaseError, match="schema mismatch"):
+        build_selector_release(
+            source_root=repo,
+            runtime_root=runtime,
+            release_id="normal-build-must-not-migrate",
+            python_executable=Path(sys.executable),
+            create_venv=False,
+            promote=True,
+        )
+    explicit_legacy = selector_release.selector_release_legacy_v1_migration_identity(runtime)
+    with pytest.raises(SelectorReleaseError, match="forbidden for normal promotion"):
+        promote_selector_release(
+            runtime,
+            release_id="normal-candidate",
+            expected_current=explicit_legacy,
+        )
+    assert pointer.read_bytes() == legacy["pointer_raw"]
+
+
+@pytest.mark.parametrize(
+    "argv",
+    (
+        ("--release-id", "candidate", "--migrate-current-v1"),
+        ("--show-current", "--promote", "--migrate-current-v1"),
+    ),
+)
+def test_legacy_v1_cli_flag_requires_dedicated_promote_mode(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    argv: tuple[str, ...],
+) -> None:
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "build_selector_release.py",
+            "--runtime-root",
+            str(tmp_path / "runtime"),
+            *argv,
+        ],
+    )
+
+    with pytest.raises(SystemExit) as exc_info:
+        selector_release_cli.main()
+
+    assert exc_info.value.code == 2
+
+
+def test_legacy_v1_cli_forwards_explicit_migration_flag(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    observed: dict[str, object] = {}
+
+    def fake_build(**kwargs: object) -> dict[str, object]:
+        observed.update(kwargs)
+        return {"status": "release_built_and_migrated_from_legacy_v1"}
+
+    monkeypatch.setattr(selector_release_cli, "build_selector_release", fake_build)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "build_selector_release.py",
+            "--runtime-root",
+            str(tmp_path / "runtime"),
+            "--release-id",
+            "v2-candidate",
+            "--promote",
+            "--migrate-current-v1",
+            "--no-venv",
+        ],
+    )
+
+    assert selector_release_cli.main() == 0
+    assert observed["promote"] is True
+    assert observed["migrate_current_v1"] is True
+    assert json.loads(capsys.readouterr().out)["status"] == (
+        "release_built_and_migrated_from_legacy_v1"
+    )
+
+
+def test_explicit_legacy_v1_migration_promotes_strict_v2_without_executing_legacy(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    repo = Path(__file__).resolve().parents[1]
+    runtime = tmp_path / "runtime"
+    marker = tmp_path / "legacy-code-executed.txt"
+    monkeypatch.setattr(selector_release, "_probe_release", _fast_probe)
+    legacy = _make_legacy_v1_current(
+        repo,
+        runtime,
+        "legacy-current",
+        marker_path=marker,
+    )
+    _build_fast_release(repo, runtime, "v2-candidate")
+    legacy_root = Path(str(legacy["release_root"]))
+    legacy_tree = {
+        path.relative_to(legacy_root).as_posix(): path.read_bytes()
+        for path in legacy_root.rglob("*")
+        if path.is_file()
+    }
+    expected = selector_release.selector_release_legacy_v1_migration_identity(runtime)
+
+    result = promote_selector_release(
+        runtime,
+        release_id="v2-candidate",
+        expected_current=expected,
+        migrate_current_v1=True,
+    )
+
+    assert result["status"] == "release_migrated_from_legacy_v1"
+    assert result["migration"]["from"] == expected
+    assert result["migration"]["to"]["release_id"] == "v2-candidate"
+    assert result["migration"]["completion_claim_allowed"] is False
+    assert result["completion_claim_allowed"] is False
+    current = load_current_selector_release(runtime)
+    assert current["release_id"] == "v2-candidate"
+    assert current["release_manifest"]["schema_version"] == "xinao.selector_release.v2"
+    assert not marker.exists()
+    assert legacy["manifest_path"].read_bytes() == legacy["manifest_raw"]
+    assert {
+        path.relative_to(legacy_root).as_posix(): path.read_bytes()
+        for path in legacy_root.rglob("*")
+        if path.is_file()
+    } == legacy_tree
+
+
+def test_build_api_performs_one_shot_legacy_v1_migration(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     repo = Path(__file__).resolve().parents[1]
     runtime = tmp_path / "runtime"
     monkeypatch.setattr(selector_release, "_probe_release", _fast_probe)
-    built = _build_fast_release(repo, runtime, "legacy-schema")
+    _make_legacy_v1_current(repo, runtime, "legacy-build-api")
+
+    result = build_selector_release(
+        source_root=repo,
+        runtime_root=runtime,
+        release_id="v2-built-and-migrated",
+        python_executable=Path(sys.executable),
+        create_venv=False,
+        promote=True,
+        migrate_current_v1=True,
+    )
+
+    assert result["status"] == "release_built_and_migrated_from_legacy_v1"
+    assert result["migration"]["from"]["state"] == "LEGACY_V1_PRESENT"
+    assert load_current_selector_release(runtime)["release_id"] == "v2-built-and-migrated"
+
+
+@pytest.mark.parametrize(
+    "damage",
+    (
+        "pointer_manifest_hash",
+        "manifest_content_seal",
+        "manifest_moved",
+        "pointer_moved",
+        "release_root_dotdot",
+        "manifest_external",
+    ),
+)
+def test_legacy_v1_migration_rejects_tampered_or_moved_identity(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    damage: str,
+) -> None:
+    repo = Path(__file__).resolve().parents[1]
+    runtime = tmp_path / damage
+    monkeypatch.setattr(selector_release, "_probe_release", _fast_probe)
+    legacy = _make_legacy_v1_current(repo, runtime, f"legacy-{damage}")
+    pointer_path = Path(str(legacy["pointer_path"]))
+    manifest_path = Path(str(legacy["manifest_path"]))
+    pointer = json.loads(pointer_path.read_text(encoding="utf-8"))
+    if damage == "pointer_manifest_hash":
+        pointer["release_manifest_sha256"] = "0" * 64
+        pointer_path.write_bytes(selector_release._json_bytes(pointer))
+    elif damage == "manifest_content_seal":
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        manifest["source_root"] = str(tmp_path / "redirected-source")
+        manifest_raw = selector_release._json_bytes(manifest)
+        manifest_path.write_bytes(manifest_raw)
+        pointer["release_manifest_sha256"] = selector_release._sha_bytes(manifest_raw)
+        pointer_path.write_bytes(selector_release._json_bytes(pointer))
+    elif damage == "manifest_moved":
+        moved = manifest_path.with_name("moved-release-manifest.json")
+        manifest_path.rename(moved)
+        pointer["release_manifest_ref"] = str(moved)
+        pointer_path.write_bytes(selector_release._json_bytes(pointer))
+    elif damage == "pointer_moved":
+        pointer_path.rename(pointer_path.with_name("moved-current.json"))
+    elif damage == "release_root_dotdot":
+        release_root = Path(str(legacy["release_root"]))
+        pointer["release_root"] = str(
+            release_root.parent / "unused-segment" / ".." / release_root.name
+        )
+        pointer_path.write_bytes(selector_release._json_bytes(pointer))
+    else:
+        external = tmp_path / "external-manifest.json"
+        external.write_bytes(manifest_path.read_bytes())
+        pointer["release_manifest_ref"] = str(external)
+        pointer_path.write_bytes(selector_release._json_bytes(pointer))
+
+    with pytest.raises(SelectorReleaseError):
+        selector_release.selector_release_legacy_v1_migration_identity(runtime)
+
+
+@pytest.mark.parametrize(
+    "reparse_leaf",
+    ("pointer", "manifest", "release_root", "runtime_root"),
+)
+def test_legacy_v1_migration_rejects_prepositioned_reparse_components(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    reparse_leaf: str,
+) -> None:
+    repo = Path(__file__).resolve().parents[1]
+    runtime = tmp_path / reparse_leaf
+    monkeypatch.setattr(selector_release, "_probe_release", _fast_probe)
+    legacy = _make_legacy_v1_current(repo, runtime, f"legacy-{reparse_leaf}")
+    pointer_path = Path(str(legacy["pointer_path"]))
+    manifest_path = Path(str(legacy["manifest_path"]))
+    release_root = Path(str(legacy["release_root"]))
+    observed_runtime = runtime
+    try:
+        if reparse_leaf == "pointer":
+            external = tmp_path / "identical-current.json"
+            external.write_bytes(pointer_path.read_bytes())
+            pointer_path.unlink()
+            pointer_path.symlink_to(external)
+        elif reparse_leaf == "manifest":
+            external = tmp_path / "identical-manifest.json"
+            external.write_bytes(manifest_path.read_bytes())
+            manifest_path.unlink()
+            manifest_path.symlink_to(external)
+        elif reparse_leaf == "release_root":
+            physical = release_root.with_name(release_root.name + "-physical")
+            release_root.rename(physical)
+            release_root.symlink_to(physical, target_is_directory=True)
+        else:
+            observed_runtime = tmp_path / "runtime-alias"
+            observed_runtime.symlink_to(runtime, target_is_directory=True)
+    except OSError as exc:
+        pytest.skip(f"symlink creation is unavailable: {exc}")
+
+    with pytest.raises(SelectorReleaseError, match="reparse"):
+        selector_release.selector_release_legacy_v1_migration_identity(observed_runtime)
+
+
+def test_legacy_v1_migration_rejects_absent_v2_unknown_and_repeat_use(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    repo = Path(__file__).resolve().parents[1]
+    monkeypatch.setattr(selector_release, "_probe_release", _fast_probe)
+    with pytest.raises(SelectorReleaseError, match="legacy v1"):
+        build_selector_release(
+            source_root=repo,
+            runtime_root=tmp_path / "absent",
+            release_id="must-not-be-created",
+            python_executable=Path(sys.executable),
+            create_venv=False,
+            promote=True,
+            migrate_current_v1=True,
+        )
+    assert not (
+        tmp_path
+        / "absent"
+        / "state"
+        / "grok_supervisor_selector"
+        / "releases"
+        / "must-not-be-created"
+    ).exists()
+
+    runtime = tmp_path / "runtime"
+    legacy = _make_legacy_v1_current(repo, runtime, "legacy-once")
+    _build_fast_release(repo, runtime, "v2-current")
+    expected = selector_release.selector_release_legacy_v1_migration_identity(runtime)
     promote_selector_release(
         runtime,
-        release_id="legacy-schema",
+        release_id="v2-current",
+        expected_current=expected,
+        migrate_current_v1=True,
+    )
+    pointer_path = Path(str(legacy["pointer_path"]))
+    v2_pointer = pointer_path.read_bytes()
+    with pytest.raises(SelectorReleaseError, match="legacy v1"):
+        selector_release.selector_release_legacy_v1_migration_identity(runtime)
+    with pytest.raises(SelectorReleaseError, match="legacy v1"):
+        build_selector_release(
+            source_root=repo,
+            runtime_root=runtime,
+            release_id="repeat-migration-must-not-build",
+            python_executable=Path(sys.executable),
+            create_venv=False,
+            promote=True,
+            migrate_current_v1=True,
+        )
+    assert pointer_path.read_bytes() == v2_pointer
+    normal = promote_selector_release(
+        runtime,
+        release_id="v2-current",
         expected_current=selector_release_current_identity(runtime),
     )
-    manifest_path = Path(str(built["release_manifest_ref"]))
-    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-    manifest["schema_version"] = "xinao.selector_release.v1"
-    content = dict(manifest)
+    assert normal["status"] == "release_already_current"
+
+    unknown_runtime = tmp_path / "unknown"
+    unknown = _make_legacy_v1_current(repo, unknown_runtime, "legacy-unknown")
+    unknown_manifest_path = Path(str(unknown["manifest_path"]))
+    unknown_manifest = json.loads(unknown_manifest_path.read_text(encoding="utf-8"))
+    unknown_manifest["schema_version"] = "xinao.selector_release.unknown"
+    content = dict(unknown_manifest)
     content.pop("release_content_sha256")
-    manifest["release_content_sha256"] = selector_release._sha_bytes(
+    unknown_manifest["release_content_sha256"] = selector_release._sha_bytes(
         selector_release._canonical_bytes(content)
     )
-    manifest_raw = selector_release._json_bytes(manifest)
-    manifest_path.write_bytes(manifest_raw)
-    pointer = runtime / "state" / "grok_supervisor_selector" / "current.json"
-    pointer_payload = json.loads(pointer.read_text(encoding="utf-8"))
-    pointer_payload["release_manifest_sha256"] = selector_release._sha_bytes(manifest_raw)
-    pointer.write_bytes(selector_release._json_bytes(pointer_payload))
+    unknown_raw = selector_release._json_bytes(unknown_manifest)
+    unknown_manifest_path.write_bytes(unknown_raw)
+    unknown_pointer_path = Path(str(unknown["pointer_path"]))
+    unknown_pointer = json.loads(unknown_pointer_path.read_text(encoding="utf-8"))
+    unknown_pointer["release_manifest_sha256"] = selector_release._sha_bytes(unknown_raw)
+    unknown_pointer_path.write_bytes(selector_release._json_bytes(unknown_pointer))
+    with pytest.raises(SelectorReleaseError, match="legacy v1"):
+        selector_release.selector_release_legacy_v1_migration_identity(unknown_runtime)
 
-    with pytest.raises(SelectorReleaseError, match="schema mismatch"):
-        validate_selector_release_pointer(pointer)
+
+def test_legacy_v1_migration_stale_cas_rejects_concurrent_change(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    repo = Path(__file__).resolve().parents[1]
+    runtime = tmp_path / "runtime"
+    monkeypatch.setattr(selector_release, "_probe_release", _fast_probe)
+    _make_legacy_v1_current(repo, runtime, "legacy-stale")
+    _build_fast_release(repo, runtime, "winner")
+    _build_fast_release(repo, runtime, "stale")
+    stale_expected = selector_release.selector_release_legacy_v1_migration_identity(runtime)
+    promote_selector_release(
+        runtime,
+        release_id="winner",
+        expected_current=stale_expected,
+        migrate_current_v1=True,
+    )
+
+    with pytest.raises(SelectorReleaseError, match="changed"):
+        promote_selector_release(
+            runtime,
+            release_id="stale",
+            expected_current=stale_expected,
+            migrate_current_v1=True,
+        )
+    assert load_current_selector_release(runtime)["release_id"] == "winner"
+
+
+def test_legacy_v1_migration_is_recoverable_after_replace_before_return(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    repo = Path(__file__).resolve().parents[1]
+    runtime = tmp_path / "runtime"
+    monkeypatch.setattr(selector_release, "_probe_release", _fast_probe)
+    legacy = _make_legacy_v1_current(repo, runtime, "legacy-crash")
+    real_validate = selector_release.validate_selector_release_pointer
+    pointer_path = Path(str(legacy["pointer_path"]))
+
+    def crash_on_committed_readback(path: Path) -> dict[str, object]:
+        if Path(path) == pointer_path and json.loads(pointer_path.read_text(encoding="utf-8"))[
+            "release_id"
+        ] == "v2-after-crash":
+            raise RuntimeError("simulated process crash after pointer replace")
+        return real_validate(path)
+
+    monkeypatch.setattr(
+        selector_release,
+        "validate_selector_release_pointer",
+        crash_on_committed_readback,
+    )
+    with pytest.raises(RuntimeError, match="simulated process crash"):
+        build_selector_release(
+            source_root=repo,
+            runtime_root=runtime,
+            release_id="v2-after-crash",
+            python_executable=Path(sys.executable),
+            create_venv=False,
+            promote=True,
+            migrate_current_v1=True,
+        )
+    monkeypatch.setattr(selector_release, "validate_selector_release_pointer", real_validate)
+
+    assert load_current_selector_release(runtime)["release_id"] == "v2-after-crash"
+    assert (
+        runtime
+        / "state"
+        / "grok_supervisor_selector"
+        / "releases"
+        / "v2-after-crash"
+    ).is_dir()
+    assert Path(str(legacy["manifest_path"])).read_bytes() == legacy["manifest_raw"]
 
 
 def test_selector_pointer_never_scans_arbitrary_worktrees(tmp_path: Path) -> None:
