@@ -28,6 +28,10 @@ function cleaned(value) {
 	return typeof value === "string" ? value.replace(/\s+/g, " ").trim() : "";
 }
 
+function trimmed(value) {
+	return typeof value === "string" ? value.trim() : "";
+}
+
 let accepted;
 for (const sessionPath of candidates) {
 	const records = fs.readFileSync(sessionPath, "utf8")
@@ -44,8 +48,8 @@ for (const sessionPath of candidates) {
 		const rawArgs = call.arguments ?? {};
 		const normalizedArgs = {
 			local_boundary: cleaned(rawArgs.local_boundary),
-			surviving_parent: cleaned(rawArgs.surviving_parent),
-			next_contact: cleaned(rawArgs.next_contact),
+			activity_context_ref: cleaned(rawArgs.activity_context_ref),
+			returned_fact: trimmed(rawArgs.returned_fact),
 		};
 		if (Object.values(normalizedArgs).some((value) => !value)) continue;
 		const matchingResults = records.filter((record) =>
@@ -61,10 +65,10 @@ for (const sessionPath of candidates) {
 		if (!result) continue;
 		const resultDetails = result.message?.details;
 		if (
-			resultDetails?.schema !== "xinao.pi_return_to_parent.v3"
+			resultDetails?.schema !== "xinao.pi_return_to_parent.v5"
 			|| resultDetails.local_boundary !== normalizedArgs.local_boundary
-			|| resultDetails.surviving_parent !== normalizedArgs.surviving_parent
-			|| resultDetails.next_contact !== normalizedArgs.next_contact
+			|| resultDetails.activity_context_ref !== normalizedArgs.activity_context_ref
+			|| resultDetails.returned_fact !== normalizedArgs.returned_fact
 		) continue;
 		const resultIndex = records.indexOf(result);
 		const descendantArms = records
@@ -73,13 +77,13 @@ for (const sessionPath of candidates) {
 				recordIndex > resultIndex
 				&& record.type === "custom_message"
 				&& record.customType === "xinao-return-to-parent-continuation"
-				&& record.details?.schema === "xinao.pi_return_to_parent_continuation.v2"
+				&& record.details?.schema === "xinao.pi_return_to_parent_continuation.v4"
 				&& isDescendant(record, result.id, byId),
 			);
 		const matchingArms = descendantArms.filter(({ record }) =>
 			record.details?.local_boundary === normalizedArgs.local_boundary
-			&& record.details?.surviving_parent === normalizedArgs.surviving_parent
-			&& record.details?.armed_first_contact === normalizedArgs.next_contact,
+			&& record.details?.activity_context_ref === normalizedArgs.activity_context_ref
+			&& record.details?.returned_fact === normalizedArgs.returned_fact,
 		);
 		if (matchingArms.length > 1) {
 			throw new Error(`RETURN_TO_PARENT_LIVE_ARM_AMBIGUOUS: tool_call_id=${call.id}`);
@@ -108,18 +112,17 @@ for (const sessionPath of candidates) {
 		assert.equal(firstRunFinal.message?.stopReason, "stop");
 		assert.equal(continuation.message.provider, expectedProvider);
 		assert.equal(continuation.message.model, expectedModel);
-		assert.match(resultText, /^LOCAL_BOUNDARY_ONLY/m);
-		assert.match(continuationArm.content, /^ROOT_PARENT_CONTINUATION_ONE_SHOT/m);
-		assert.match(continuationArm.content, /may already have been consumed/i);
-		assert.match(continuationArm.content, /Do not mechanically repeat/i);
+		assert.match(resultText, /^LOCAL_FACT_RETURN_ARMED/m);
+		assert.match(continuationArm.content, /^ROOT_ACTIVITY_RETURN_ONE_SHOT/m);
+		assert.match(continuationArm.content, /Activity context ref:/i);
+		assert.match(continuationArm.content, /Returned fact:/i);
 		assert.equal(continuationArm.details?.one_shot, true);
 		assert.equal(typeof continuationArm.details?.arm_id === "string" && continuationArm.details.arm_id.length > 0, true);
-		assert.equal(continuationArm.details?.next_contact_may_already_be_consumed, true);
 		assert.equal(continuationArm.details?.abort_fenced, true);
 		assert.equal(continuationArm.details?.provider_context_visibility, "single_current_arm");
 		assert.equal(continuationContent.length > 0, true);
 		accepted = {
-			schema: "xinao.pi_return_to_parent_live_sol_acceptance.v3",
+			schema: "xinao.pi_return_to_parent_live_transport_acceptance.v5",
 			status: "live_sol_native_continuation_abort_fenced_verified",
 			maturity: "not_yet_mature",
 			session_id: session?.id,
@@ -137,14 +140,13 @@ for (const sessionPath of candidates) {
 			matching_tool_result_unique: true,
 			matching_arm_first_and_unique: true,
 			local_boundary_named: true,
-			surviving_parent_named: true,
-			next_contact_named: true,
+			activity_context_ref_bound: true,
+			returned_fact_bound: true,
 			tool_result_consumed_before_first_run_final: true,
 			first_run_reached_terminal_assistant_before_native_follow_up: true,
 			native_custom_follow_up_triggered_second_provider: true,
 			one_shot: true,
 			arm_id: continuationArm.details.arm_id,
-			next_contact_may_already_be_consumed: true,
 			abort_fenced: true,
 			provider_context_visibility: "single_current_arm",
 			continuation_tool_names: continuationToolNames,

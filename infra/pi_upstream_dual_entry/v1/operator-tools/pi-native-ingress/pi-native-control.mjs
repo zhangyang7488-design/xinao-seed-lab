@@ -139,7 +139,7 @@ async function waitForEvent(args) {
 
 const args = parseArgs(process.argv.slice(2));
 if (!ALLOWED.has(args.command)) {
-	fail(`Usage: pi-supervisor-command.mjs <${[...ALLOWED].join("|")}> [--pipe <name>] [--profile prime-s --instance <id> --session <id>] [--request-id <id>] [--content-file <path>] [--since <n>] [--until <phase>] [--timeout <ms>]`);
+	fail(`Usage: pi-native-control.mjs <${[...ALLOWED].join("|")}> [--pipe <name>] [--profile prime-s --instance <id> --session <id>] [--request-id <id>] [--content-file <path>] [--since <n>] [--until <phase>] [--timeout <ms>]`);
 }
 if (!Number.isFinite(args.timeout) || args.timeout < 100 || args.timeout > 600_000) fail("--timeout must be 100..600000 ms");
 if (!Number.isSafeInteger(args.since) || args.since < 0) fail("--since must be a non-negative integer");

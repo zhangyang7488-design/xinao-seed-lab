@@ -223,8 +223,8 @@ def test_main_prime_core_is_profile_scoped_and_cold_backup_stays_isolated() -> N
         assert "/dev/null" in text
 
 
-@pytest.mark.skipif(not MAIN_CODEX.exists(), reason="shared Codex skill catalog is not present")
-def test_shared_skill_descriptions_fit_pi_catalog_limit() -> None:
+@pytest.mark.skipif(not MAIN_CODEX.exists(), reason="Codex skill catalog is not present")
+def test_codex_skill_descriptions_fit_catalog_limit() -> None:
     names = (
         "conduct-xinao-native-research",
         "human-agency-grounding",
@@ -244,6 +244,7 @@ def test_pi_surface_source_models_stable_leading_not_task_identities() -> None:
     initializer = _text(SOURCE_ROOT / "scripts" / "Initialize-UpstreamPiProfiles.ps1")
     installer = _text(SOURCE_ROOT / "scripts" / "Install-UpstreamPiCapabilities.ps1")
     cross_repo = _text(SOURCE_ROOT / "scripts" / "Test-PiCrossRepositoryContext.ps1")
+    aggregate = _text(SOURCE_ROOT / "scripts" / "Test-UpstreamPiDualEntry.ps1")
 
     assert "$script:PiDualEntryVersion = '0.84.1'" in common
     assert "$script:PiDualEntryMinimumNodeVersion = [version]'22.19.0'" in common
@@ -257,6 +258,12 @@ def test_pi_surface_source_models_stable_leading_not_task_identities() -> None:
     assert "Get-PiDualEntrySpec -Profile $profileName" in initializer
     assert "$spec.OverlayAgentDir" in initializer
     assert "$settings['hideThinkingBlock'] = $false" in initializer
+    assert "skills = @()" in initializer
+    assert "defaultModel = 'gpt-5.6-sol'" not in initializer
+    assert "$existingDefaultModel" in initializer
+    assert "$spec.CodexHome.Replace('\\','/') + '/skills'" not in initializer
+    assert "prime-s-local-cognition-island\\AGENTS.md" in common
+    assert "prime-agent-local-cognition-island\\AGENTS.md" in common
     assert "explicitly frozen cold backup consume the same" in initializer
     assert (
         SOURCE_ROOT
@@ -266,8 +273,9 @@ def test_pi_surface_source_models_stable_leading_not_task_identities() -> None:
         / "body-friction-auditor.md"
     ).is_file()
     assert "agents\\evolution" not in initializer
-    assert "研究新澳和改进 Pi 自身" in readme
-    assert "不是角色、profile 或 session 类型" in readme
+    assert "日期化工程映射" in readme
+    assert "它不定义" in readme
+    assert "活动对象由当前人话和 live facts 决定" in readme
     assert "用户未限定地说 Pi 时默认指它" in readme
     assert "隔离冷备" in readme
     assert "完成后不随主面演化" in readme
@@ -285,13 +293,18 @@ def test_pi_surface_source_models_stable_leading_not_task_identities() -> None:
     assert "foreach ($profileName in $Profile)" in installer
     assert "foreach ($profile in $Profile)" not in installer
     assert "--no-session --tools read" in cross_repo
-    assert "SENTINEL:XINAO_NATIVE_RESEARCH_ROLE_V2" in cross_repo
-    assert "SENTINEL:XINAO_CURRENT_PROJECTION_V7" in cross_repo
+    assert "SENTINEL:XINAO_REALITY_DIRECT_TO_CURRENT_SOL_V2" in cross_repo
     assert "Resolve-PiProfileSessionSelection" in start
     assert "PI_SESSION_SELECTION_CONFLICTS_WITH_NEW_SESSION" in start
     assert "PI_SESSION_SELECTION_OUTSIDE_PROFILE" in start
     assert "$arguments += @('--session',$selectedSession)" in start
-    assert common.count("npm:pi-subagents@0.44.0','npm:pi-autoresearch@1.6.2','npm:pi-hermes-memory@0.9.4','npm:pi-mcp-adapter@2.21.1") == 2
+    assert "Packages = @('npm:pi-subagents@0.44.0','npm:pi-hermes-memory@0.9.4','npm:pi-mcp-adapter@2.21.1')" in common
+    assert common.count("npm:pi-autoresearch@1.6.2") == 1
+    assert "[string]$_ -cne 'npm:pi-autoresearch@1.6.2'" in initializer
+    assert "ExcludedOverlayAgentNames = @('body-friction-auditor.md')" in common
+    assert "$spec.ExcludedOverlayAgentNames" in initializer
+    assert "$_.Name -notin @($spec.ExcludedOverlayAgentNames)" in aggregate
+    assert "PI_SURFACE_TEST_EXCLUDED_BODY_FRICTION_AGENT_PRESENT" in aggregate
     assert common.count("ExcludedTools = @('skill_manage','mcp','mcpScript')") == 2
 
     snapshot_files = (
@@ -299,9 +312,6 @@ def test_pi_surface_source_models_stable_leading_not_task_identities() -> None:
         "extensions/activity-visibility.ts",
         "extensions/serper-search.ts",
         "extensions/supervisor-ingress.ts",
-        "skills/understand-and-steer-prime/SKILL.md",
-        "skills/understand-and-steer-prime/references/pi-runtime-and-control.md",
-        "skills/understand-and-steer-prime/scripts/pi-supervisor-command.mjs",
     )
     for relative in snapshot_files:
         # PiB is an isolated frozen snapshot, not a live mirror of the main
@@ -309,6 +319,15 @@ def test_pi_surface_source_models_stable_leading_not_task_identities() -> None:
         # evolution must not be forced back into byte equality here.
         assert (SOURCE_ROOT / "surface-overlays" / "prime-s" / relative).is_file()
         assert (SOURCE_ROOT / "surface-overlays" / "prime-b" / relative).is_file()
+    control_root = SOURCE_ROOT / "operator-tools" / "pi-native-ingress"
+    assert (control_root / "README.md").is_file()
+    assert (control_root / "pi-native-control.mjs").is_file()
+    assert not (
+        SOURCE_ROOT / "surface-overlays" / "prime-s" / "skills" / "understand-and-steer-prime" / "SKILL.md"
+    ).exists()
+    assert not (
+        SOURCE_ROOT / "surface-overlays" / "prime-b" / "skills" / "understand-and-steer-prime" / "SKILL.md"
+    ).exists()
     assert (
         SOURCE_ROOT / "surface-overlays" / "prime-s" / "extensions" / "return-to-parent.ts"
     ).is_file()
@@ -353,7 +372,7 @@ def test_prime_s_programmatic_restart_preserves_visible_terminal_profile() -> No
     assert "ingress_readback_required = $true" in restart
     assert "profile-native-continue-after-latest-session-proof" in restart
     assert "Start-PrimeSInWindowsTerminal.ps1 -Session" in readme
-    assert "never start" in steward and "directly under a new `pwsh`/conhost" in steward
+    assert "Fresh-launch the actual desktop/native consumer" in steward
     assert "Do not invoke the PiS desktop wrapper as a fresh `pwsh` process" in recovery
 
 
@@ -417,15 +436,9 @@ def test_prime_s_supervisor_ingress_uses_owned_overlay_and_native_pi_seam() -> N
         / "extensions"
         / "supervisor-ingress.ts"
     )
-    skill_root = (
-        SOURCE_ROOT
-        / "surface-overlays"
-        / "prime-s"
-        / "skills"
-        / "understand-and-steer-prime"
-    )
-    skill = _text(skill_root / "SKILL.md")
-    client = _text(skill_root / "scripts" / "pi-supervisor-command.mjs")
+    control_root = SOURCE_ROOT / "operator-tools" / "pi-native-ingress"
+    control_note = _text(control_root / "README.md")
+    client = _text(control_root / "pi-native-control.mjs")
     regression = _text(SOURCE_ROOT / "scripts" / "Test-PiSupervisorIngress.mjs")
 
     assert "Sync-PiDualEntrySurfaceOverlay" in common
@@ -470,15 +483,12 @@ def test_prime_s_supervisor_ingress_uses_owned_overlay_and_native_pi_seam() -> N
     assert "process_shutdown: false" in extension
     assert "shutdown_requested: true" in extension
 
-    assert "ACK" in skill and "consumed" in skill and "effect" in skill
-    assert "pi-supervisor-command.mjs" in skill
-    assert "Never type, paste, or stage supervisor text" in skill
-    assert "pre-existing draft byte-for-byte" in skill
-    assert "`--content-file` is only a transport input" in skill
-    assert "short ingress message that names the exact existing read-only path" in skill
-    assert "per-step task files into a second queue or control plane" in skill
-    assert "main `prime` (internal profile `prime-s`) is the formally appointed repository Owner" in skill
-    assert "prime-daemon-command.mjs" not in skill
+    assert "Codex/S-side operating note" in control_note
+    assert "not a Skill installed in Pi" in control_note
+    assert "wire-compatibility identifiers" in control_note
+    assert "dispatch_requested" in control_note and "message_consumed" in control_note
+    assert "consumer/effect readback" in control_note
+    assert "pre-existing editor draft" in control_note
     assert "get_state" in client and "get_events" in client
     assert "--session" in client and "--profile" in client
     assert "WAIT_CAPABLE.has(args.command) && args.until" in client
@@ -499,7 +509,8 @@ def test_prime_s_supervisor_ingress_uses_owned_overlay_and_native_pi_seam() -> N
     assert "stop_cancels_unconsumed_owned_delivery: true" in regression
     assert "stop_request_not_misreported_as_process_exit: true" in regression
     assert (SOURCE_ROOT / "surface-overlays" / "prime-b" / "extensions" / "supervisor-ingress.ts").is_file()
-    assert (SOURCE_ROOT / "surface-overlays" / "prime-b" / "skills" / "understand-and-steer-prime" / "SKILL.md").is_file()
+    assert not (SOURCE_ROOT / "surface-overlays" / "prime-b" / "skills" / "understand-and-steer-prime" / "SKILL.md").exists()
+    assert not (SOURCE_ROOT / "surface-overlays" / "prime-s" / "skills" / "understand-and-steer-prime" / "SKILL.md").exists()
 
 
 def test_pi_s_body_lab_is_isolated_version_pinned_and_session_empty() -> None:
@@ -648,7 +659,7 @@ def test_prime_s_native_continuation_is_root_only_abort_fenced_and_reversible() 
     assert "xinao-return-to-parent-continuation" in extension
     assert "provider_context_visibility: \"single_current_arm\"" in extension
 
-    assert "xinao.pi_return_to_parent.acceptance.v3" in mechanical
+    assert "xinao.pi_return_to_parent.acceptance.v5" in mechanical
     assert "provider_calls_multi_provider_continuation" in mechanical
     assert "tagged_context_same_continuation_run_all_providers" in mechanical
     assert "stop_during_continuation_provider_delta" in mechanical
@@ -682,7 +693,7 @@ def test_prime_s_native_continuation_is_root_only_abort_fenced_and_reversible() 
             "Apply-PiSNativeContinuationCompatibility.ps1"
         )
     assert "native_continuation_compatibility" in surface_test
-    assert "xinao.pi_return_to_parent.acceptance.v3" in surface_test
+    assert "xinao.pi_return_to_parent.acceptance.v5" in surface_test
     assert "PI_SURFACE_TEST_COLD_BACKUP_NATIVE_CONTINUATION_PRESENT_OR_MIXED" in surface_test
     assert readme.index("Restore-PiSNativeContinuationCompatibility.ps1") < readme.index(
         "Restore-PiSMidTurnCompactionCompatibility.ps1"
@@ -803,6 +814,50 @@ def test_prime_s_high_capacity_is_typed_main_only_and_transactional() -> None:
         assert "Apply-PiSHighCapacityCompatibility.ps1" in consumer
     assert "PI_SURFACE_TEST_COLD_BACKUP_INHERITED_HIGH_CAPACITY" in surface_test
     assert "xinao.pi_s_high_capacity_compatibility.v1" in surface_test
+    assert "-ProjectionOnly -ReceiptPath $highCapacityProjectionReceiptPath" in surface_test
+    assert "xinao.pi_s_high_capacity_active_projection_acceptance.v1" in surface_test
+    assert "pi-high-capacity-current-lab-replay-v1.json" in surface_test
+    assert "PI_SURFACE_TEST_HIGH_CAPACITY_LAB_REPLAY_RECEIPT_MISSING" in surface_test
+    assert "PI_SURFACE_TEST_HIGH_CAPACITY_LAB_REPLAY_INVALID" in surface_test
+    assert "acceptance_sources.aggregate_sha256" in surface_test
+    assert 'body-labs\\prime-s' in surface_test
+    assert "xinao.pi_s_high_capacity_filesystem_resume_acceptance.v1" in surface_test
+    assert "currentFilesystemResumeScriptSha256" in surface_test
+    assert "currentBodyLabHarnessSha256" in surface_test
+    assert "filesystem_resume_cross_product.status" in surface_test
+    assert "high_capacity_active_projection = $highCapacityActiveProjectionReceiptIdentity" in surface_test
+    assert "high_capacity_replay = $highCapacityReplayReceiptIdentity" in surface_test
+    assert "high_capacity_acceptance = $highCapacityAcceptance" not in surface_test
+    assert "filesystem_policy_digest" in surface_test
+    assert "candidate_child_sessions_restored" in surface_test
+    assert "-AgentDir $spec.AgentDir -PiToolRoot $spec.PiToolRoot -ReceiptPath" not in surface_test
+
+    filesystem_acceptance = _text(
+        SOURCE_ROOT / "scripts" / "Test-PiSFilesystemPolicyAcceptance.ps1"
+    )
+    assert "xinao.pi_s_subagents_filesystem_policy_acceptance.v2" in filesystem_acceptance
+    assert "transcriptBase64" in filesystem_acceptance
+    assert "Get-PiSFilesystemAcceptanceBytesSha256" in filesystem_acceptance
+    assert "common = $commonScript" in filesystem_acceptance
+    assert "case-bytes-sha256-v2" in filesystem_acceptance
+    assert "sourceTranscriptPath" in filesystem_acceptance
+    assert "transcript_total_bytes" in filesystem_acceptance
+    assert "xinao.pi_s_subagents_filesystem_policy_receipt_identity.v1" in filesystem_acceptance
+    assert "$receipt | ConvertTo-Json -Depth 15" not in filesystem_acceptance
+    assert "FromBase64String" in surface_test
+    assert "Get-PiSurfaceBytesSha256" in surface_test
+    assert "common = Join-Path $PSScriptRoot 'PiDualEntry.Common.ps1'" in surface_test
+    assert "transcriptCaseSetValid" in surface_test
+    assert "transcript_count -ne $transcriptEvidence.Count" in surface_test
+    assert "expectedEncodedLength" in surface_test
+    assert "ToBase64String($transcriptBytes) -cne $encodedTranscript" in surface_test
+    assert "source_bound_embedded_transcripts = $true" in surface_test
+    assert "source_paths_required_for_readback = $false" in surface_test
+    assert "PI_SURFACE_TEST_FILESYSTEM_POLICY_RECEIPT_SIZE_INVALID" in surface_test
+    assert "PI_SURFACE_TEST_FILESYSTEM_POLICY_RECEIPT_UTF8_INVALID" in surface_test
+    assert "PI_SURFACE_TEST_FILESYSTEM_POLICY_RECEIPT_CHANGED_DURING_VALIDATION" in surface_test
+    assert "subagents_filesystem_policy = $filesystemPolicyReceiptIdentity" in surface_test
+    assert "subagents_filesystem_policy = $filesystemPolicyAcceptance" not in surface_test
 
     assert "tools: subagent" in recursive_peer
     assert 'turnBudget: {"maxTurns":30,"graceTurns":0}' in recursive_peer
@@ -1036,118 +1091,51 @@ def test_prime_s_serper_is_profile_native_strict_and_has_no_exa_fallback() -> No
     assert 'no_other_tool_called: true' in rpc
 
 
-def test_codex_pis_steward_skill_recovers_durable_intent_without_second_truth() -> None:
+def test_codex_pis_steward_skill_tracks_live_pi_without_defining_it() -> None:
     skill_root = SOURCE_ROOT / "codex-skills" / "steward-pis-evolution"
     skill = _text(skill_root / "SKILL.md")
     recovery = _text(skill_root / "references" / "recovery-map.md")
-    normalized_recovery = " ".join(recovery.split())
     installer = _text(SOURCE_ROOT / "scripts" / "Install-CodexPiSStewardSkill.ps1")
+    normalized_skill = " ".join(skill.split())
 
     assert "name: steward-pis-evolution" in skill
-    description = skill.split("description:", 1)[1].splitlines()[0].strip()
-    assert len(description) <= 1024
-    assert "pi-local-cognition-contract-island\\AGENTS.md" in skill
-    assert "CURRENT_CAPABILITY_LINEAGE.md" in skill
-    assert "understand-and-steer-prime\\SKILL.md" in skill
+    assert "rapidly evolving live product" in normalized_skill
+    assert "do not freeze a model, child topology, research role, supervisor relation, or" in normalized_skill
+    assert "Owner belongs to a named live effect scope" in skill
+    assert "current official Pi installation" in skill
+    assert "superseded by upstream and ready for bounded retirement" in skill
+    assert "operator-tools\\pi-native-ingress\\pi-native-control.mjs" in skill
+    assert "operator files stay outside Pi's active Skill directory" in skill
     assert "sent -> acknowledged -> runtime accepted -> message consumed" in skill
-    normalized_skill = " ".join(skill.split())
-    assert "user-visible main subject is exactly `prime`" in skill
-    assert "PrimeB.lnk` is an isolated cold backup" in skill
-    assert "do not routinely maintain, upgrade, test, report, or mention it" in normalized_skill
-    assert "Sparse activation applies to organs, children, searches, and supervision cadence" in normalized_skill
-    assert "must never be reinterpreted as sparse root intelligence" in normalized_skill
-    assert "active root research remains `gpt-5.6-sol` at `max`" in normalized_skill
-    assert "never silently downgrade the root for cost" in normalized_skill
-    assert "formal repository-local Owner" in skill
-    assert "Codex remains the broader user proxy" in skill
-    assert "old text that binds all science to Codex is superseded" in normalized_skill
-    assert "Ordinary TUI competence is only the floor" in skill
-    assert "form or revise its own local problem" in skill
-    assert "recursively organize genuinely independent labor" in normalized_skill
-    assert "PiS itself is the hands-on research subject" in skill
-    assert "not a passive executor that waits for Codex to poll" in normalized_skill
-    assert "dynamically selecting, recursively supervising, attacking, and absorbing" in normalized_skill
-    assert "recursion is intelligence amplification and independent evidence" in normalized_skill
-    assert "not a cheaper substitute for the root Sol" in normalized_skill
-    assert "does not mean mandatory fanout or maximum model consumption" in normalized_skill
-    assert "Codex must not manufacture a green demonstration by pre-slicing" in skill
-    assert "tool/subagent counts" in skill
-    assert "Sparse activation still applies" in skill
-    assert "repository-owned, revisable semantic world" in skill
-    assert "latest current words and architecture supersede" in normalized_skill
-    assert "not a fixed ontology" in normalized_skill
-    assert "XINAO epistemic body is also situated" in skill
-    assert "without Codex feeding another work package" in normalized_skill
-    assert "cannot be promoted to a mature self-research/self-evolution loop" in normalized_skill
-    assert "not a daemon, fixed state machine, or prewritten research queue" in normalized_skill
-    assert "Keep stability scopes separate" in skill
-    assert "never make a transient return point a required semantic-root marker" in normalized_skill
-    assert "without turning a stale return point into a research queue" in normalized_skill
-    assert "return-to-task loop" in skill
-    assert "Track detection provenance as part of this loop" in skill
-    assert "legitimate **local body optimization objectives**" in normalized_skill
-    assert "marginal real cognition and consumer effect" in normalized_skill
-    assert "task-local `pi-subagents` model override" in normalized_skill
-    assert "Marker probes prove connectivity only" in normalized_skill
-    assert "spend alone proves neither value nor body maturity" in normalized_skill
-    assert "verifies steering and plasticity, not autonomous self-evolution" in normalized_skill
-    assert "does not contain the incident wording or answer" in normalized_skill
-    assert "do not build a resident self-auditor" in normalized_skill
-    assert "Compile the Pi relationship, not a fixed ritual" in skill
-    assert "select only the actions with positive value" in normalized_skill
-    assert "does not require every invocation to launch children" in normalized_skill
-    assert "Keep human availability separate from Pi lifecycle" in skill
-    assert 'even without an extra formula such as "keep going"' in skill
-    assert "Do not leave Pi idle merely because the human is away" in normalized_skill
-    assert "human going to sleep is not the optional Codex/Pi sleeping" in normalized_skill
-    assert "no live parent means no work may be invented" in normalized_skill
-    assert "keep both live pressures visible" in normalized_skill
-    assert "Run that cycle by dynamic positive value" in skill
-    assert "consuming no model turn merely to look busy" in normalized_skill
-    assert "no preselected acceptance point" in normalized_skill
-    assert "Do not freeze today's construction cadence" in skill
-    assert "optional **Codex-side outer-supervision** mechanisms" in skill
-    assert "Codex-side outer-supervision" in skill
-    assert "not evidence that PiS should wait for Codex to wake or assign work" in normalized_skill
-    assert "Only the mechanism and cadence are optional" in skill
-    assert "no sparse supervision policy authorizes reducing PiS root model quality" in normalized_skill
-    assert "Never simulate maturity with a long-running hook" in skill
-    assert "Keep PiS observable without turning it into noise" in skill
-    assert "natural Simplified Chinese" in skill
-    assert "leaving only a spinner" in normalized_skill
-    assert "preserve `Working...`, tool cards" in skill
-    assert "material evidence change" in skill
-    assert "endlessly spinning activity marker" in skill
-    assert "without turning every incident into a permanent command" in normalized_skill
-    assert "must not be left as a visible `process exited`/launch-error page" in normalized_skill
-    assert "Never kill the shared `WindowsTerminal.exe`" in normalized_skill
-    assert "desktop-wide enumeration project" in normalized_skill
-    assert "Do not restore Prime Agent 0.7" in skill
-    assert "unattended self-modifying service" in skill
-    assert "source-file path as a runtime dependency" in skill
-    assert "prime-daemon-command.mjs" not in skill
+    assert "Root/child behavior is whatever the addressed live Pi version actually implements" in skill
+    assert "do not make" in skill.lower() and "part of Pi's identity" in skill
+    assert "Address external transport and observation mechanically" in skill
+    assert "exact Pi" in skill and "named mechanical scope" in skill
+    assert "currently appointed effect Owner" in skill
+    assert "current|verify|event|trajectory|evidence|source|evidence-check|identity|intent|material|runtime|effect|operator|replay" in skill
+    assert "主管模式.txt" not in skill
+    assert "studies" not in skill and "study-check" not in skill
 
+    for stale in (
+        "understand-and-steer-prime\\SKILL.md",
+        "formal repository-local Owner",
+        "Codex remains the broader user proxy",
+        "PiS itself is the hands-on research subject",
+        "active root research remains",
+        "Do not leave Pi idle merely because",
+        "Run that cycle by dynamic positive value",
+    ):
+        assert stale not in skill
+
+    assert "operator-tools\\pi-native-ingress\\README.md" in recovery
+    assert "operator-tools\\pi-native-ingress\\pi-native-control.mjs" in recovery
     assert "Default PiS pipe" in recovery
     assert "body-labs\\prime-s" in recovery
-    assert "PiB is outside the default write, maintenance, upgrade, test, report, and mention cone" in normalized_recovery
-    assert "C:\\Users\\xx363\\私钥" in recovery
-    assert "PrimeS-NumPadEnter-Follow.ahk" in recovery
-    assert "Set-PiSDeepSeekCredential.ps1" in recovery
-    assert "deepseek/deepseek-v4-flash" in recovery
-    assert "deepseek/deepseek-v4-pro" in recovery
-    assert "per-run `model` override" in normalized_recovery
-    assert "closeOnExit=always" in recovery
-    assert "`refine`, `refine.show`, and `refine.rollback`" in recovery
-    assert ".pi-subagents\\refinements" in recovery
-    assert "scalar metric and external correctness checks" in normalized_recovery
-    assert "real friction -> bounded diagnosis -> isolated" in normalized_recovery
     assert r"C:\Users\xx363\Desktop\历史备用 不动" in recovery
-    assert "preservation of a historical event never restores its authority" in normalized_recovery
-    assert "Context-window authority and recovery" in recovery
-    assert "prime-s\\models-store.json" in recovery
-    assert "providers.openai-codex.modelOverrides.gpt-5.6-sol.contextWindow" in recovery
-    assert "cannot rescue a branch that already exceeds the real window" in normalized_recovery
-    assert "a file pointer is transport, not epistemic authority" in normalized_recovery
+    assert "not in the main `prime` active default package set" in recovery
+    assert "Current CLI" in recovery and "evidence-check" in recovery
+    assert "Migration chronology" not in recovery
+    assert "understand-and-steer-prime" not in recovery
 
     assert "$CodexHome = 'C:\\Users\\xx363\\.codex'" in installer
     assert "xinao.codex_pis_steward_projection.v1" in installer
@@ -1225,64 +1213,85 @@ def test_live_pi_profiles_are_isolated_and_exa_is_not_installed() -> None:
         assert "artifactDir" not in settings["subagents"]
         assert "agentOverrides" not in settings["subagents"]
         projection = _text(root / "PI_CONTRACT.md")
-        assert "PI_LOCAL_COGNITION_CONTRACT_ISLAND_V1" in projection
+        if profile == "prime-s":
+            assert "SENTINEL:PI_LOCAL_COMPATIBILITY_BOUNDARY_V3" in projection
+            assert "SENTINEL:PI_SURFACE_PRIME_S_VERSIONED_V2" in projection
+            assert settings.get("skills") == []
+            assert (root / "AGENTS.md").resolve() == (PRIME_S_ISLAND / "AGENTS.md").resolve()
+            assert (
+                "表示之间可确定性恢复，只约束新增信息和独立证据权重；"
+                "不分配功能、本体、结算或消费者优先级。具体作用由当前关系、"
+                "仓库现实与真实消费者决定。"
+            ) in projection
+            assert not (root / "skills" / "understand-and-steer-prime" / "SKILL.md").exists()
+            assert (root / "agents" / "peer.md").is_file()
+            assert not (root / "agents" / "body-friction-auditor.md").exists()
+        else:
+            # PrimeB is a deliberately cold dated snapshot and is not rewritten
+            # merely to mirror current main-prime semantics.
+            assert "SENTINEL:PI_SURFACE_PRIME_B_V3" in projection
 
     assert manifests["prime-b"]["binding"] == "account-b"
     assert manifests["prime-s"]["binding"] in {"main", "account-b"}
     assert manifests["prime-b"]["session"] != manifests["prime-s"]["session"]
-    assert manifests["prime-b"]["packages"] == manifests["prime-s"]["packages"] == [
+    assert manifests["prime-b"]["packages"] == [
         "npm:pi-subagents@0.44.0",
         "npm:pi-autoresearch@1.6.2",
+        "npm:pi-hermes-memory@0.9.4",
+        "npm:pi-mcp-adapter@2.21.1",
+    ]
+    assert manifests["prime-s"]["packages"] == [
+        "npm:pi-subagents@0.44.0",
         "npm:pi-hermes-memory@0.9.4",
         "npm:pi-mcp-adapter@2.21.1",
     ]
 
 
 @pytest.mark.skipif(not FAMILY_ISLAND.exists(), reason="local Pi contract islands are not present")
-def test_pi_contract_islands_keep_body_knowledge_outside_codex_and_s() -> None:
+def test_pi_contract_islands_preserve_only_versioned_machine_boundaries() -> None:
     family = _text(FAMILY_ISLAND / "AGENTS.md")
     prime_b = _text(PRIME_B_ISLAND / "AGENTS.md")
     prime_s = _text(PRIME_S_ISLAND / "AGENTS.md")
 
-    assert "PI_LOCAL_COGNITION_CONTRACT_ISLAND_V1" in family
-    assert "PI_SURFACE_PRIME_B_V3" in prime_b
-    assert "PI_SURFACE_PRIME_S_V1" in prime_s
-    assert "研究 session" in family and "进化 session" in family
-    assert "主 `prime`" in family and "PrimeB" in family
-    assert "一次性冷备快照" in family
-    assert "不做例行升级、测试、报告或提起" in family
-    assert "当前开放成熟周期同时保留两条未闭压力" in family
-    assert "已有正收益前沿时继续推进" in family
-    assert "不得假称不存在的自动唤醒能力" in family
-    assert "不是由用户或 Codex 逐包续命的作业终端" in family
-    assert "coherent effect unit" in family
-    assert "不能自行产生父任务完成、等待或" in family
-    assert "不得再说成“没有任务”或等待下一包" in family
-    assert "不得用无收益计算、形式提交、重复 fanout 或报告墙假装" in family
-    assert "每次进化还要记录错误最先由谁发现" in family
-    assert "不能冒充 PiS 已能自发发现同类缺口" in family
-    assert "不建立常驻自审、固定巡逻或每步检查表" in family
-    assert "仓库级 Owner" in family
-    assert "外层用户代理职责" in family
-    assert "旧材料中“科学只能由 Codex 形成”" in family
-    assert "当前有效层" in family and "历史层" in family
-    assert "PiS 新澳认识不只覆盖领域内部" in family
-    assert "自己的仓库 Owner 和根研究职责" in family
-    assert "完整主体的可观察闭环" in family
-    assert "不得上卷成“自循环研究/进化已经成熟”" in family
-    assert "稳定性层级必须分开" in family
-    assert "token、context、延迟、cache、孩子数量、重试和总 API 成本" in family
-    assert "单位昂贵认知资源带来的真实认识与消费者效果" in family
-    assert "不能作为认识根的 required marker" in family
-    assert "不能把旧续点变成新题库" in family
-    assert "需要你：否" in family
-    assert "不得恢复" in prime_b
-    assert "不是“Evolution Pi”" in prime_s
-    assert "thinking/reasoning 块默认展开并使用自然简体中文" in prime_s
-    assert "`Working...`、工具卡、subagent 的前台/后台与 lane" in prime_s
-    assert "不能让一个永远旋转的 `Working...` 冒充健康" in prime_s
-    assert "阶段摘要是用户观察连续工作的界面" in prime_s
-    assert "不得因刚完成提交、验证或一段 coherent effect unit 就停成" in prime_s
+    assert "SENTINEL:PI_LOCAL_COMPATIBILITY_BOUNDARY_V3" in family
+    assert "SENTINEL:PI_SURFACE_PRIME_B_V3" in prime_b
+    assert "SENTINEL:PI_SURFACE_PRIME_S_VERSIONED_V2" in prime_s
+    assert "Pi 官方产品和能力仍在快速演化" in family
+    assert "本文件不定义 Pi 应怎样思考、研究、组织孩子" in family
+    assert "Owner 是一个具名 effect scope 内的正式责任席" in family
+    assert "官方能力覆盖后可删除或降档" in family
+    assert "不得因当前一版实现" in family
+    assert "外部 transport/observation edge" in family and "具名机械作用域" in family
+    assert (
+        "表示之间可确定性恢复，只约束新增信息和独立证据权重；"
+        "不分配功能、本体、结算或消费者优先级。具体作用由当前关系、"
+        "仓库现实与真实消费者决定。"
+    ) in family
+    assert "current|verify|event|trajectory|evidence|source|evidence-check|identity|intent|material|runtime|effect|operator|replay" in family
+    assert "主管模式.txt" not in family
+    assert "studies" not in family and "study-check" not in family
+    assert "任何验收都只覆盖当时版本与相交能力" in family
+
+    assert "只保存主 `prime` 当前 profile 的本机事实" in prime_s
+    assert "不定义 Pi 的研究方式、模型组合、child 拓扑、主管身份或生命周期" in prime_s
+    assert "外部 transport/observation edge" in prime_s
+    assert "精确 profile、instance、session 与具名机械作用域" in prime_s
+    assert "return_to_parent" not in prime_s
+    assert "主管模式.txt" not in prime_s
+
+    for stale in (
+        "已有正收益前沿时继续推进",
+        "不得再说成“没有任务”或等待下一包",
+        "自己的仓库 Owner 和根研究职责",
+        "不得因刚完成提交、验证或一段 coherent effect unit 就停成",
+        "主管模式.txt",
+        "return_to_parent",
+    ):
+        assert stale not in family
+        assert stale not in prime_s
+
+    assert "隔离冷备快照岛" in prime_b
+    assert "不跟随主 `prime` 后续演化" in prime_b
     assert not (PRIME_B_ISLAND / "contracts" / "IDENTITY_AND_TRUST.md").exists()
     assert not (PRIME_B_ISLAND / "contracts" / "USER_RULES_AND_COMPLETION.md").exists()
     assert not (PRIME_B_ISLAND / "scripts" / "Start-Prime-Local-Cognition.ps1").exists()
@@ -1294,32 +1303,40 @@ def test_pi_contract_islands_keep_body_knowledge_outside_codex_and_s() -> None:
         / "RETIRED.md"
     )
     assert "PRIME_AGENT_0_7_ISLAND_EPOCH_RETIRED_V1" in retired
-    assert not str(FAMILY_ISLAND).lower().startswith(str(REPO_ROOT).lower())
-    assert not str(FAMILY_ISLAND).lower().startswith(str(MAIN_CODEX).lower())
 
     lineage = _text(FAMILY_ISLAND / "cognition" / "CURRENT_CAPABILITY_LINEAGE.md")
-    assert "PiS 身体成熟与新澳真实研究两条未闭压力" in lineage
-    assert "当前 Codex TUI 尚无已验证的" in lineage
-    assert "refine/refine.show/refine.rollback" in lineage
-    assert "现已进入主与冷备身体" in lineage
-    assert "没有配置 server、direct schema 或常驻工具面" in lineage
+    assert "能力观测账" in lineage
+    assert "不是 Pi 产品定义、研究合同或任务来源" in lineage
+    assert "不保存正在进行的研究、继续/等待状态或" in lineage
+    assert "外部 transport/observation edge 只在精确 profile" in lineage
+    assert "已从主 `prime` 的默认 package 真源移除" in lineage
+    assert "body-friction-auditor` 只保留为冷源" in lineage
+
+    assert not str(FAMILY_ISLAND).lower().startswith(str(REPO_ROOT).lower())
+    assert not str(FAMILY_ISLAND).lower().startswith(str(MAIN_CODEX).lower())
 
 
 @pytest.mark.skipif(
     not (MAIN_CODEX / "AGENTS.md").exists() or not (ACCOUNT_B_CODEX / "AGENTS.md").exists(),
     reason="canonical Codex behavior projections are not present",
 )
-def test_both_pi_surfaces_share_the_same_canonical_behavior_and_general_skills() -> None:
-    assert _sha256(MAIN_CODEX / "AGENTS.md") == _sha256(ACCOUNT_B_CODEX / "AGENTS.md")
-    live_agents = _text(MAIN_CODEX / "AGENTS.md")
-    assert "Owner 责任席按 effect scope 分辨" in live_agents
-    assert "科学或其他领域工作由当前具名 effect scope 的正式 Owner" in live_agents
-    assert "Codex、Pi 或其他 agent 都不因产品名天然取得或失去该资格" in live_agents
-    assert (MAIN_CODEX / "skills" / "dispatch-grok-worker-pool" / "SKILL.md").is_file()
-    assert (MAIN_CODEX / "skills" / "research-external-reality" / "SKILL.md").is_file()
+def test_codex_and_pi_instruction_sources_are_separate() -> None:
+    for codex_home in (MAIN_CODEX, ACCOUNT_B_CODEX):
+        live_agents = _text(codex_home / "AGENTS.md")
+        assert "SENTINEL:HUMAN_WORDS_BEFORE_ARTIFACTS_V2" in live_agents
+        assert "Pi 是单独且仍在快速演化的官方产品" in live_agents
+        assert "本机合同只保存身份、账号、隔离、兼容和恢复事实" in live_agents
+        assert "传输、观察、持久化和跨回合机制只承载具名作用域" in live_agents
+
+    common = _text(SOURCE_ROOT / "scripts" / "PiDualEntry.Common.ps1")
+    initializer = _text(SOURCE_ROOT / "scripts" / "Initialize-UpstreamPiProfiles.ps1")
     test_script = _text(SOURCE_ROOT / "scripts" / "Test-UpstreamPiDualEntry.ps1")
-    assert "skill:dispatch-grok-worker-pool" in test_script
-    assert "skill:research-external-reality" in test_script
-    assert "open_external_query_is_seed_not_automatic_boundary=true" in test_script
-    assert "external_findings_must_collide_with_live_local_baseline=true" in test_script
-    assert "exact_or_explicitly_narrow_lookup_stays_bounded=true" in test_script
+    assert "AgentsSource = 'E:\\XINAO_RESEARCH_WORKSPACES\\prime-s-local-cognition-island\\AGENTS.md'" in common
+    assert "AgentsSource = 'E:\\XINAO_RESEARCH_WORKSPACES\\prime-agent-local-cognition-island\\AGENTS.md'" in common
+    assert "AgentsSource = Join-Path $script:PiDualEntryBehaviorCodexHome 'AGENTS.md'" not in common
+    assert "skills = @()" in initializer
+    assert "PI_SURFACE_TEST_CODEX_SKILL_TREE_INJECTED" in test_script
+    assert "PI_SURFACE_TEST_CODEX_SKILLS_VISIBLE" in test_script
+    assert "shared_behavior_source" not in test_script
+    assert "shared_skills_source" not in test_script
+    assert "codex_skill_tree_injected = $false" in test_script

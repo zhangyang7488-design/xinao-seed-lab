@@ -11,7 +11,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 const scriptDir = dirname(fileURLToPath(import.meta.url));
 const sourceRoot = dirname(scriptDir);
 const extensionPath = join(sourceRoot, "surface-overlays", "prime-s", "extensions", "supervisor-ingress.ts");
-const clientPath = join(sourceRoot, "surface-overlays", "prime-s", "skills", "understand-and-steer-prime", "scripts", "pi-supervisor-command.mjs");
+const clientPath = join(sourceRoot, "operator-tools", "pi-native-ingress", "pi-native-control.mjs");
 const piPackageRoot = process.env.XINAO_PI_AGENT_PACKAGE_ROOT
 	|| "D:\\XINAO_RESEARCH_RUNTIME\\tools\\pi\\0.84.1\\node_modules\\@earendil-works\\pi-coding-agent";
 const jitiPath = join(piPackageRoot, "node_modules", "jiti", "lib", "jiti.mjs");

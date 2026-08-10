@@ -1,4 +1,8 @@
-# Pi 0.84.1 main `prime` with an isolated PiB cold snapshot
+# Versioned main `prime` compatibility body with an isolated PiB cold snapshot
+
+这是本机 Pi 0.84.1 的日期化工程映射，只说明当前启动链、兼容补丁和已验证消费者；它不定义
+Pi 的长期主体、模型、孩子拓扑、研究方式、主管关系或生命周期。当前官方 live 能力与当前人话
+先于这里的实现记录。
 
 S 只承载主 `prime` 与隔离 PiB 冷备的启动、投影、认证绑定、身体安装、验证和恢复胶水。Pi 自己的主体、功能、意图和演化正文不存放在这里：
 
@@ -16,7 +20,7 @@ S 只承载主 `prime` 与隔离 PiB 冷备的启动、投影、认证绑定、�
 `D:\XINAO_RESEARCH_RUNTIME\tools\pi\0.84.1`。所有 launcher、安装器和回归都从当前
 profile spec 取得 `PiToolRoot/PiCommand`；不存在可同时改动两边的共享活动 command。
 
-研究新澳和改进 Pi 自身都是主 `prime` 可以在同一个 active session 内开展的活动，不是角色、profile 或 session 类型。冷备复刻行为、能力器官、扩展、Pi-native 孩子与恢复链；不复刻 OAuth、`auth.json`、account binding、session、运行中孩子树、memory 数据、表面认知、活动状态或主快捷入口。它只在这次快照边界做 fresh 根/孩子验收，之后保持冻结。
+活动对象由当前人话和 live facts 决定；profile、session、仓库名或本说明不会创建研究/主管/执行角色。冷备复刻版本化能力、扩展、Pi-native 孩子与恢复链；不复刻 OAuth、`auth.json`、account binding、session、运行中孩子树、memory 数据、活动状态或主快捷入口。它只在这次快照边界做相交验收，之后保持冻结。
 
 每个 profile 内的 `account-binding.json` 只选择自己的 OAuth 来源。主 `prime` 可用 `Set-UpstreamPiAccountBinding.ps1 -Profile prime-s -Slot main|account-b` 在干净边界切换额度来源；它不改行为、Skills、session 或仓库。切换只替换 native `auth.json` 的 `openai-codex` 项；重启后的根与后续 OpenAI 孩子共同消费这一绑定，DeepSeek 等独立 provider 原样保留。PiB 保持自己的隔离绑定，普通账号切换不碰它。
 
@@ -27,7 +31,7 @@ Codex 外部 WorkerPool；具体任务是否调用某个器官仍由根 Pi 按�
 主 `prime` 另有 profile-local `peer`：它是 fresh、candidate-only、read-only 的无预分工
 认识面，不预装 reviewer/operator/task-generator 职业，可直接重建继承的完整对象并形成或
 拒绝局部问题。其长期默认模型是 Terra；根可按当次现实收益覆盖为 Sol，这不把临时额度口头
-许可写成长期策略，也不转移 PiS 的正式 Owner/effect 责任。
+许可写成长期策略，也不转移当前 effect scope 的正式责任。
 主 `prime` 还提供无固定职业的 `recursive-peer` 高容量面：`thinking=max`、模型继承当前根或由
 根按任务显式覆盖，不把一次额度口头授权固化成长期 provider 路由；它只暴露原生 `subagent`，
 不直接取得文件、shell、网络或写入工具，并由 capability ceiling 把所有后代继续锁为
@@ -93,8 +97,8 @@ Pi 正常启动。`prime` profile 另外固定 `closeOnExit=always`：失败或�
 第二个模型、不翻译或伪造隐藏思考，也不隐藏或替换原生 spinner、thinking、工具卡、FleetView
 和 transcript；根 Pi 仍按合同在证据或路线实质变化时自己给出稀疏中文语义摘要。
 
-主 `prime` 的可寻址通信由 profile-local `supervisor-ingress.ts` 和
-`understand-and-steer-prime` Skill 提供，支持 exact instance/session 的 prompt、忙态
+主 `prime` 的可寻址通信端点是 profile-local `supervisor-ingress.ts`；操作说明与客户端位于
+S 侧 `operator-tools/pi-native-ingress/`，不会作为 Skill 装进 Pi。它支持 exact instance/session 的 prompt、忙态
 steer、follow-up、abort 与 stop。ACK 只是运输证据；必须继续回读 message consumed、
 agent settled、native transcript 和真实效果。idle 投递会先越过 Pi 把 `isIdle` 置真但
 `agent_settled` 尚未退栈的竞争窗口，防止只见 `runtime_accepted` 而正文未进入 session；
@@ -194,20 +198,18 @@ no-policy 对照、pre-context 攻击、junction 和 pre-provider 负例；每�
 随后用 Windows 与 owner-stop 脚本 `-VerifyOnly` 证明精确 owner baseline。普通 launcher/installer
 会重新应用 FS 层，因此回滚验证期间不要调用它们；未知字节或半态不得用补丁覆盖。
 
-主 `prime` 另有 profile-local、root-only 的 `return_to_parent` 根工具。它只在根 Pi 已经判断一个局部问题、
-实验、动作或报告结算，而已绑定父现实仍有具体正收益前沿时，由根 Pi 自己调用。工具先保留普通
-tool result，让当前 run 消费局部结果；当且仅当该 run 以干净的 `stopReason=stop` 结算时，它才武装
-一次原生 custom follow-up，使根 Pi 在 terminal final 后自行获得一个新的完整 agent run。该续行 run
-可以包含多次 provider/tool/toolResult 往返；同一 run 结束后，带 arm id 的父现实指令会从以后普通
-prompt 与 resume context 中移除。下一次局部边界必须由根重新显式调用，不能靠旧 arm 自动续命。
+主 `prime` 另有 profile-local、root-only 的 `return_to_parent` 一次性传输工具。根 run 以
+`local_boundary` 标记局部边界，以不透明 `activity_context_ref` 绑定产生事实时的活动上下文，并用
+`returned_fact` 携带精确文本或序列化 JSON。工具先返回普通 tool result；当且仅当同一 run 以
+`stopReason=stop` 干净结算时，才发送一次带唯一 arm id 的 native custom follow-up。arm 在投递后
+消费，普通 prompt、resume 和以后 run 不继承它。
 
 这条能力要求 launcher 在每次启动前先清除继承的
 `XINAO_PI_NATIVE_CONTINUATION_ABORT_FENCE`，依次验证 MidTurn underlay 与 native abort fence 后，才给
 实际主 Pi 进程设置 handshake。缺 handshake、`PI_SUBAGENT_CHILD=1`、Stop/abort/error/length/shutdown
 时扩展保持 inert 或清除当前 arm；孩子仍以 subagent result 返回根。核心 fence 同时覆盖 agent_start
 后与 provider 调用紧前的 abort，避免 follow-up 已入队后 Stop 又逃出一次新请求。它不调用
-`sendUserMessage`，不建立 timer、daemon、任务队列、跨重启接管或固定研究节拍；整个合法空间真实
-无正收益、用户关口与父完成仍可诚实等待或结算。
+`sendUserMessage`，也不建立 timer、daemon、任务队列或跨重启接管。
 
 `Apply-PiSNativeContinuationCompatibility.ps1` 只接受完整 MidTurn final 或完整 native final；重复
 Start 时 MidTurn 层只验证 exact downstream-composed 三文件组合，不把它反向改回 underlay。回滚必须
@@ -227,7 +229,8 @@ Start 时 MidTurn 层只验证 exact downstream-composed 三文件组合，不�
 
 `scripts\Test-PiCrossRepositoryContext.ps1` 默认只验证主 `prime`；只有明确恢复冷备时才显式传
 `-Profile prime-b`。探针用 fresh、no-session、只读工具实际读取新澳仓的 `AGENTS.md` 与
-`STATUS.md`，验证跨仓连续性来自当前对象识别和局部语义恢复，而不是切换 Pi 身份或只让模型复述热合同。
+`README.md` 与 `python -B -m xinao_research current`，验证跨仓接触来自当前对象识别和 live
+事实读取，而不是切换 Pi 身份或只让模型复述热合同。
 
 `codex-skills\steward-pis-evolution` 是 Codex 侧的薄恢复/操作入口：它不复制 Pi 认知正文，
 而是先回读共同合同岛与当前能力谱系，再按需进入真实 profile、通信边缘、身体实验室和消费者。

@@ -25,15 +25,18 @@ foreach ($profileName in $Profile) {
 
     $settingsPath = Join-Path $spec.AgentDir 'settings.json'
     $existingPackages = @()
+    $existingDefaultModel = $null
     if (Test-Path -LiteralPath $settingsPath -PathType Leaf) {
         try {
             $existing = Get-Content -Raw -LiteralPath $settingsPath -Encoding UTF8 | ConvertFrom-Json
             if ($null -ne $existing.packages) { $existingPackages = @($existing.packages) }
+            if ($null -ne $existing.PSObject.Properties['defaultModel']) {
+                $existingDefaultModel = [string]$existing.defaultModel
+            }
         } catch { throw "PI_PROFILE_SETTINGS_INVALID: $settingsPath" }
     }
     $settings = [ordered]@{
         defaultProvider = 'openai-codex'
-        defaultModel = 'gpt-5.6-sol'
         defaultThinkingLevel = 'max'
         tuiMode = 'fullscreen'
         fullscreenScrollbar = 'always'
@@ -47,7 +50,9 @@ foreach ($profileName in $Profile) {
             maxRetries = 3
             provider = [ordered]@{maxRetries=0;maxRetryDelayMs=60000}
         }
-        skills = @($spec.CodexHome.Replace('\','/') + '/skills')
+        # Codex Skills are operator capabilities, not Pi identity. Pi discovers only
+        # profile/package-local skills unless a future versioned consumer adds an exact path.
+        skills = @()
         enableSkillCommands = $true
         subagents = [ordered]@{
             disableBuiltins = $true
@@ -67,6 +72,13 @@ foreach ($profileName in $Profile) {
         'openai-codex/gpt-5.6-*',
         'deepseek/deepseek-v4-*'
     )
+    if (-not [string]::IsNullOrWhiteSpace($existingDefaultModel)) {
+        # Preserve the user's current upstream selection without defining a permanent Pi model.
+        $settings.defaultModel = $existingDefaultModel
+    }
+    if ($profileName -eq 'prime-s') {
+        $existingPackages = @($existingPackages | Where-Object { [string]$_ -cne 'npm:pi-autoresearch@1.6.2' })
+    }
     if ($existingPackages.Count -gt 0) { $settings.packages = $existingPackages }
     Write-PiDualEntryJsonAtomic -Path $settingsPath -Value $settings
 
@@ -89,7 +101,9 @@ foreach ($profileName in $Profile) {
         $item = Get-Item -LiteralPath $agentsPath -Force
         $knownTargets = @(
             'C:\Users\xx363\.codex\AGENTS.md',
-            'C:\Users\xx363\.codex-s-hardmode-account-b\AGENTS.md'
+            'C:\Users\xx363\.codex-s-hardmode-account-b\AGENTS.md',
+            'E:\XINAO_RESEARCH_WORKSPACES\prime-agent-local-cognition-island\AGENTS.md',
+            'E:\XINAO_RESEARCH_WORKSPACES\prime-s-local-cognition-island\AGENTS.md'
         )
         if ($item.LinkType -eq 'SymbolicLink' -and [string]$item.Target -in $knownTargets) {
             if ([string]$item.Target -ne $spec.AgentsSource) {
@@ -112,7 +126,12 @@ foreach ($profileName in $Profile) {
         Join-Path (Split-Path -Parent $PSScriptRoot) 'agents\shared\fanout.md'
     )
     if (Test-Path -LiteralPath $spec.OverlayAgentDir -PathType Container) {
-        $agentSources += @(Get-ChildItem -LiteralPath $spec.OverlayAgentDir -File -Filter '*.md' | Sort-Object Name | Select-Object -ExpandProperty FullName)
+        $agentSources += @(
+            Get-ChildItem -LiteralPath $spec.OverlayAgentDir -File -Filter '*.md' |
+                Where-Object { $_.Name -notin @($spec.ExcludedOverlayAgentNames) } |
+                Sort-Object Name |
+                Select-Object -ExpandProperty FullName
+        )
     }
     $duplicateAgentNames = @($agentSources | Group-Object { Split-Path -Leaf $_ } | Where-Object Count -gt 1)
     if ($duplicateAgentNames.Count -gt 0) {

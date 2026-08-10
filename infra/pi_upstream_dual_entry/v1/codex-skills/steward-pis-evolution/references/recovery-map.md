@@ -10,8 +10,9 @@ Use this map only after the current parent result and active Pi object are bound
 - Main `prime` surface island: `E:\XINAO_RESEARCH_WORKSPACES\prime-s-local-cognition-island`
 - Isolated PiB cold-snapshot island: `E:\XINAO_RESEARCH_WORKSPACES\prime-agent-local-cognition-island`
 
-The family contract carries stable Pi-specific intent and lifecycle. A surface island carries that
-surface's body lineage, candidate evidence, acceptance, and rollback. Neither creates a task.
+The family contract carries stable machine binding, isolation, compatibility, and recovery facts.
+A surface island carries dated body evidence, acceptance, and rollback. Neither defines Pi or
+creates a task.
 
 ## Live products
 
@@ -99,10 +100,10 @@ readback without exposing the credential.
 
 ## Communication
 
-- Source operation Skill:
-  `E:\XINAO_RESEARCH_WORKSPACES\S\infra\pi_upstream_dual_entry\v1\surface-overlays\prime-s\skills\understand-and-steer-prime\SKILL.md`
-- Source client:
-  `E:\XINAO_RESEARCH_WORKSPACES\S\infra\pi_upstream_dual_entry\v1\surface-overlays\prime-s\skills\understand-and-steer-prime\scripts\pi-supervisor-command.mjs`
+- Codex/S-side protocol note:
+  `E:\XINAO_RESEARCH_WORKSPACES\S\infra\pi_upstream_dual_entry\v1\operator-tools\pi-native-ingress\README.md`
+- Codex/S-side client:
+  `E:\XINAO_RESEARCH_WORKSPACES\S\infra\pi_upstream_dual_entry\v1\operator-tools\pi-native-ingress\pi-native-control.mjs`
 - Default PiS pipe: `\\.\pipe\xinao-pi-supervisor-prime-s-v1`
 
 The client accepts delivery content on stdin or from a file. Always list/read state before a
@@ -174,10 +175,9 @@ ritual or an automatic claim of self-evolution:
   the base agent, root Pi contract, safety, tools, acceptance, or scientific route. Refine only an
   agent with recent bounded evidence and verify a later fresh child; absence of an overlay means the
   capability is available but has not been consumed.
-- `pi-autoresearch` is for an isolated, measurable edit -> benchmark -> keep/revert loop with a
-  scalar metric and external correctness checks. It writes `.auto`, commits experiments, and can
-  resume after compaction. Never point it at open XINAO question formation, an unbounded semantic
-  world, or a dirty formal worktree merely because the package is installed.
+- `pi-autoresearch` is not in the main `prime` active default package set. An exact third-party
+  package copy may remain on disk or in a cold snapshot; leave those bytes untouched. Address it
+  only through a separately selected isolated benchmark scope if a future live task requires it.
 - Hermes memory/session search is a recovery and learning organ. In policy-only mode it should be
   searched when durable context can change the action; it does not inject a second authoritative
   Pi identity, task queue, or scientific ontology.
@@ -190,23 +190,13 @@ candidate -> positive/negative/fresh evidence -> keep or rollback -> return to t
 activity. Record who detected the friction first and whether the root actually absorbed the child or
 tool result into a changed judgment.
 
-## XINAO epistemic sources
+## XINAO repository entry
 
-When the live parent is XINAO research or repair of its research body, the current repository-owned
-epistemic entry is authoritative after current user words and live facts:
+When the live activity explicitly addresses XINAO research or its local mechanics, enter through:
 
 - Repository: `E:\XINAO_RESEARCH_WORKSPACES\xinao-native-research`
-- Current visible human entry: `C:\Users\xx363\Desktop\主线`
-- Migration chronology: `C:\Users\xx363\Desktop\迁移`
-- Read-only historical archaeology root: `C:\Users\xx363\Desktop\历史备用 不动`
-- Early complete construction/double-loop source:
-  `C:\Users\xx363\Desktop\历史备用 不动\新建文件夹\新澳完整研究施工与旁路双环进化_施工级终稿_v1.0_2026-07-13.txt`
-- Early background-model source:
-  `C:\Users\xx363\Desktop\历史备用 不动\新建文件夹\新澳背景模型前置约束-与验收定义.txt`
-- First-principles research source: `C:\Users\xx363\Desktop\研究开奖序列_第一性原理.txt`
+- Current instructions: `AGENTS.md` and `README.md`
+- Current CLI: `python -B -m xinao_research current|verify|event|trajectory|evidence|source|evidence-check|identity|intent|material|runtime|effect|operator|replay`
 
-Do not read these roots on every startup or modify the historical root. The repository's current
-effective semantic world should absorb the presently valid understanding. Use the old sources only
-for a named provenance gap, intent event, background event, or drift explanation. Current user words
-supersede every conflicting historical role, architecture, ontology, and route; preservation of a
-historical event never restores its authority.
+Desktop, migration, and historical carriers are not startup inputs. Address one only for a current,
+named provenance-recovery task. `C:\Users\xx363\Desktop\历史备用 不动` remains read-only.

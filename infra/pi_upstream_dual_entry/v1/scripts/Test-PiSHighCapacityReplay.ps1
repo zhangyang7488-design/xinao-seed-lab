@@ -3,7 +3,8 @@ param(
     [Parameter(Mandatory)][string]$AgentDir,
     [Parameter(Mandatory)][string]$PiToolRoot,
     [string]$ReceiptPath,
-    [string]$TypeScriptCompilerPath
+    [string]$TypeScriptCompilerPath,
+    [switch]$ProjectionOnly
 )
 
 $ErrorActionPreference = 'Stop'
@@ -674,6 +675,50 @@ function Resolve-TypeScriptCompiler {
     return $bundled
 }
 
+function Get-HighCapacityAcceptanceSourceSet {
+    param(
+        [Parameter(Mandatory)][string]$Root,
+        [Parameter(Mandatory)][string[]]$Path
+    )
+    $canonicalRoot = Get-CanonicalDirectory -Path $Root -Label 'high-capacity acceptance source root'
+    $prefix = $canonicalRoot.TrimEnd('\','/') + [IO.Path]::DirectorySeparatorChar
+    $seen = @{}
+    $members = @()
+    foreach ($candidate in @($Path | Sort-Object)) {
+        $file = Get-RequiredFile -Path $candidate -Label 'high-capacity acceptance source'
+        Assert-NoReparseContainedPath -Root $canonicalRoot -Path $file -Label 'high-capacity acceptance source'
+        $full = [IO.Path]::GetFullPath($file)
+        if (-not $full.StartsWith($prefix,[StringComparison]::OrdinalIgnoreCase)) {
+            throw "PI_HIGH_CAPACITY_REPLAY_ACCEPTANCE_SOURCE_OUTSIDE_ROOT: $full"
+        }
+        $relative = $full.Substring($prefix.Length).Replace('\','/')
+        if ($seen.ContainsKey($relative)) {
+            throw "PI_HIGH_CAPACITY_REPLAY_ACCEPTANCE_SOURCE_DUPLICATE: $relative"
+        }
+        $seen[$relative] = $true
+        $members += [ordered]@{
+            path = $relative
+            bytes = [int64](Get-Item -LiteralPath $full).Length
+            sha256 = (Get-FileHash -LiteralPath $full -Algorithm SHA256).Hash.ToLowerInvariant()
+        }
+    }
+    $canonicalLines = @($members | Sort-Object path | ForEach-Object {
+        "$($_.path)`t$($_.bytes)`t$($_.sha256)"
+    }) -join "`n"
+    $sha = [Security.Cryptography.SHA256]::Create()
+    try {
+        $aggregate = ([BitConverter]::ToString($sha.ComputeHash([Text.UTF8Encoding]::new($false).GetBytes($canonicalLines)))).Replace('-','').ToLowerInvariant()
+    } finally {
+        $sha.Dispose()
+    }
+    return [ordered]@{
+        kind = 'relative-path-bytes-sha256-v1'
+        count = $members.Count
+        aggregate_sha256 = $aggregate
+        members = @($members | Sort-Object path)
+    }
+}
+
 $scriptFiles = [ordered]@{
     runtime_ledger = @{ file = 'Test-PiSHighCapacityRuntimeLedger.test.mjs'; expected = 11 }
     provider_gate = @{ file = 'Test-PiSHighCapacityProviderGate.test.mjs'; expected = 10 }
@@ -698,8 +743,9 @@ $filesystemCleanupVerified = $true
 $cleanupVerified = $false
 $startedAt = [DateTimeOffset]::Now
 $receipt = [ordered]@{
-    schema = 'xinao.pi_s_high_capacity_replay_acceptance.v1'
+    schema = $(if ($ProjectionOnly) { 'xinao.pi_s_high_capacity_active_projection_acceptance.v1' } else { 'xinao.pi_s_high_capacity_replay_acceptance.v1' })
     status = 'running'
+    projection_only = [bool]$ProjectionOnly
     started_at = $startedAt.ToString('o')
     agent_dir = $null
     pi_tool_root = $null
@@ -713,6 +759,7 @@ $receipt = [ordered]@{
     runtime_projection = $null
     candidate_manifest = $null
     compatibility_inputs = $null
+    acceptance_sources = $null
     filesystem_resume_cross_product = $null
     peer = $null
     temp_cleanup = $false
@@ -724,6 +771,17 @@ try {
     $canonicalPiToolRoot = Get-CanonicalDirectory -Path $PiToolRoot -Label 'PiToolRoot'
     $receipt.agent_dir = $canonicalAgentDir
     $receipt.pi_tool_root = $canonicalPiToolRoot
+    if (-not $ProjectionOnly) {
+        $allowedLabRoot = [IO.Path]::GetFullPath('D:\XINAO_RESEARCH_RUNTIME\state\pi\0.84.1\body-labs\prime-s').TrimEnd('\','/')
+        $requiredLabPrefix = $allowedLabRoot + [IO.Path]::DirectorySeparatorChar
+        if (-not $canonicalAgentDir.StartsWith($requiredLabPrefix,[StringComparison]::OrdinalIgnoreCase)) {
+            throw "PI_HIGH_CAPACITY_REPLAY_DISPOSABLE_MAIN_LAB_REQUIRED: $canonicalAgentDir"
+        }
+        $requiredPairedPiRoot = [IO.Path]::GetFullPath((Join-Path $canonicalAgentDir 'pi-tool-root')).TrimEnd('\','/')
+        if ($canonicalPiToolRoot -cne $requiredPairedPiRoot) {
+            throw "PI_HIGH_CAPACITY_REPLAY_PAIRED_PI_ROOT_REQUIRED: agent=$canonicalAgentDir pi_tool_root=$canonicalPiToolRoot"
+        }
+    }
 
     $typeShim = Get-VerifiedTypeShim -ShimRoot (Join-Path $PSScriptRoot 'Test-PiSHighCapacityTypeShim') -ManifestPath (Join-Path $PSScriptRoot 'Test-PiSHighCapacityTypeShim.manifest.json')
     $receipt.type_shim = [ordered]@{
@@ -817,6 +875,12 @@ try {
     }
 
     $allNodeFiles = @($scriptFiles.Values | ForEach-Object { Join-Path $PSScriptRoot $_.file }) + @($supportFiles | ForEach-Object { Join-Path $PSScriptRoot $_ })
+    $receipt.acceptance_sources = Get-HighCapacityAcceptanceSourceSet -Root $PSScriptRoot -Path (@(
+        $PSCommandPath
+        $allNodeFiles
+        (Join-Path $PSScriptRoot 'Test-PiSHighCapacityFilesystemResume.ps1')
+        (Join-Path $PSScriptRoot 'Test-PiSubagentFilesystemPolicyBodyLab.mjs')
+    ))
     foreach ($file in $allNodeFiles) {
         $checked = Get-RequiredFile -Path $file -Label 'high-capacity acceptance script'
         $syntaxResult = Invoke-HiddenProcess -FilePath $nodePath -Arguments @('--check',$checked) -Environment $childEnvironment -TimeoutMs 30000
@@ -895,6 +959,7 @@ try {
     }
     $receipt.strict_typescript = [ordered]@{ status = 'pass'; compiler = $tscPath; compiler_version = $compilerFixture.version; compiler_sha256 = $compilerFixture.compiler_sha256; strict = $true; no_unchecked_indexed_access = $true; skip_lib_check = $false; fixture_tree_sha256 = $typeShim.tree_sha256 }
 
+    if (-not $ProjectionOnly) {
     $filesystemScript = Get-RequiredFile -Path (Join-Path $PSScriptRoot 'Test-PiSHighCapacityFilesystemResume.ps1') -Label 'high-capacity filesystem resume cross-product'
     $filesystemScriptSha = (Get-FileHash -LiteralPath $filesystemScript -Algorithm SHA256).Hash.ToLowerInvariant()
     if ($filesystemScriptSha -cne 'cc95bdf0a8e59cb0af20211ac1b2cfdfa8e71b17d4c753c7315724c3a6dd320d') {
@@ -1119,7 +1184,8 @@ try {
         candidate_child_sessions_restored = [bool]$clean.child_sessions.restored_exactly
         work_root_cleanup = $null
     }
-    $receipt.status = 'verified'
+    }
+    $receipt.status = $(if ($ProjectionOnly) { 'active_projection_verified' } else { 'verified' })
 } catch {
     $receipt.status = 'blocked'
     $receipt.error = [string]$_.Exception.Message
@@ -1180,4 +1246,5 @@ try {
     Write-Output $json
 }
 
-if ($receipt.status -cne 'verified') { exit 1 }
+$expectedTerminalStatus = $(if ($ProjectionOnly) { 'active_projection_verified' } else { 'verified' })
+if ($receipt.status -cne $expectedTerminalStatus) { exit 1 }

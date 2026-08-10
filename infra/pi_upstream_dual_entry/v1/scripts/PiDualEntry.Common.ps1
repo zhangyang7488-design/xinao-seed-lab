@@ -356,7 +356,6 @@ function Get-PiDualEntrySpec {
         AgentDir = $agentDir
         SessionDir = Join-Path $agentDir 'sessions'
         CodexHome = $script:PiDualEntryBehaviorCodexHome
-        AgentsSource = Join-Path $script:PiDualEntryBehaviorCodexHome 'AGENTS.md'
         CodexAuthSource = Join-Path $account.CodexHome 'auth.json'
         FamilyContractSource = $script:PiDualEntryFamilyContract
         ContractProjection = Join-Path $agentDir 'PI_CONTRACT.md'
@@ -374,9 +373,11 @@ function Get-PiDualEntrySpec {
             DisplayName = 'PrimeB'
             Workspace = 'E:\XINAO_RESEARCH_WORKSPACES\prime-agent-local-cognition-island'
             SurfaceIsland = 'E:\XINAO_RESEARCH_WORKSPACES\prime-agent-local-cognition-island'
+            AgentsSource = 'E:\XINAO_RESEARCH_WORKSPACES\prime-agent-local-cognition-island\AGENTS.md'
             SurfaceContractSource = 'E:\XINAO_RESEARCH_WORKSPACES\prime-agent-local-cognition-island\AGENTS.md'
             SurfaceSentinel = 'PI_SURFACE_PRIME_B_V3'
             Packages = @('npm:pi-subagents@0.44.0','npm:pi-autoresearch@1.6.2','npm:pi-hermes-memory@0.9.4','npm:pi-mcp-adapter@2.21.1')
+            ExcludedOverlayAgentNames = @()
             ExcludedTools = @('skill_manage','mcp','mcpScript')
             MutexName = 'Local\XinaoUpstreamPi0841B'
         })
@@ -386,9 +387,11 @@ function Get-PiDualEntrySpec {
         DisplayName = 'prime'
         Workspace = 'E:\XINAO_RESEARCH_WORKSPACES\S'
         SurfaceIsland = 'E:\XINAO_RESEARCH_WORKSPACES\prime-s-local-cognition-island'
+        AgentsSource = 'E:\XINAO_RESEARCH_WORKSPACES\prime-s-local-cognition-island\AGENTS.md'
         SurfaceContractSource = 'E:\XINAO_RESEARCH_WORKSPACES\prime-s-local-cognition-island\AGENTS.md'
-        SurfaceSentinel = 'PI_SURFACE_PRIME_S_V1'
-        Packages = @('npm:pi-subagents@0.44.0','npm:pi-autoresearch@1.6.2','npm:pi-hermes-memory@0.9.4','npm:pi-mcp-adapter@2.21.1')
+        SurfaceSentinel = 'PI_SURFACE_PRIME_S_VERSIONED_V2'
+        Packages = @('npm:pi-subagents@0.44.0','npm:pi-hermes-memory@0.9.4','npm:pi-mcp-adapter@2.21.1')
+        ExcludedOverlayAgentNames = @('body-friction-auditor.md')
         ExcludedTools = @('skill_manage','mcp','mcpScript')
         MutexName = 'Local\XinaoUpstreamPi0841S'
     })
@@ -504,6 +507,7 @@ function Sync-PiDualEntrySurfaceOverlay {
         if (-not (Test-Path -LiteralPath $sourceRoot -PathType Container)) { continue }
         $sourcePrefix = [IO.Path]::GetFullPath($sourceRoot).TrimEnd('\','/') + [IO.Path]::DirectorySeparatorChar
         foreach ($source in @(Get-ChildItem -LiteralPath $sourceRoot -Recurse -File | Sort-Object FullName)) {
+            if ($kind -eq 'agents' -and $source.Name -in @($Spec.ExcludedOverlayAgentNames)) { continue }
             $sourceFull = [IO.Path]::GetFullPath($source.FullName)
             if (-not $sourceFull.StartsWith($sourcePrefix,[StringComparison]::OrdinalIgnoreCase)) {
                 throw "PI_PROFILE_OVERLAY_SOURCE_ESCAPE: $sourceFull"

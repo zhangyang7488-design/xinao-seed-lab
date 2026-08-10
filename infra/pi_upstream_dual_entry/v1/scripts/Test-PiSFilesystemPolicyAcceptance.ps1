@@ -16,6 +16,16 @@ function Get-NormalizedPiSFilesystemAcceptancePath {
     [IO.Path]::GetFullPath($Path).TrimEnd('\','/')
 }
 
+function Get-PiSFilesystemAcceptanceBytesSha256 {
+    param([Parameter(Mandatory)][byte[]]$Bytes)
+    try {
+        $sha = [Security.Cryptography.SHA256]::Create()
+        ([BitConverter]::ToString($sha.ComputeHash($Bytes))).Replace('-','').ToLowerInvariant()
+    } finally {
+        if ($null -ne $sha) { $sha.Dispose() }
+    }
+}
+
 function Assert-PiSFilesystemAcceptanceNoReparseAncestor {
     param([Parameter(Mandatory)][string]$Path)
     $cursor = Get-NormalizedPiSFilesystemAcceptancePath -Path $Path
@@ -89,6 +99,7 @@ $stopHarness = Join-Path $PSScriptRoot 'Test-PiSubagentSessionStopProcess.mjs'
 $stopExtension = Join-Path $PSScriptRoot 'fixtures\pi-owner-stop-autolaunch.ts'
 $stopFixture = Join-Path $PSScriptRoot 'fixtures\pi-owner-stop-child.mjs'
 $applyScript = Join-Path $PSScriptRoot 'Apply-PiSSubagentsFilesystemPolicy.ps1'
+$commonScript = Join-Path $PSScriptRoot 'PiDualEntry.Common.ps1'
 $windowsScript = Join-Path $PSScriptRoot 'Apply-PiSSubagentsWindowsCompatibility.ps1'
 $ownerStopScript = Join-Path $PSScriptRoot 'Apply-PiSSubagentsSessionStopCompatibility.ps1'
 $startScript = Join-Path $PSScriptRoot 'Start-UpstreamPi.ps1'
@@ -99,7 +110,7 @@ $readmePath = Join-Path (Split-Path -Parent $PSScriptRoot) 'README.md'
 $patchPath = Join-Path (Split-Path -Parent $PSScriptRoot) 'patches\pi-subagents-0.44.0-filesystem-policy.patch'
 foreach ($required in @(
     (Join-Path $packageRoot 'package.json'),$cliPath,$rpcClientPath,$securityHarness,$bodyHarness,
-    $stopHarness,$stopExtension,$stopFixture,$applyScript,$windowsScript,$ownerStopScript,
+    $stopHarness,$stopExtension,$stopFixture,$applyScript,$commonScript,$windowsScript,$ownerStopScript,
     $startScript,$installScript,$bodyLabFactory,$dualEntryAcceptance,$readmePath,$patchPath
 )) {
     if (-not (Test-Path -LiteralPath $required -PathType Leaf)) {
@@ -352,18 +363,50 @@ if (
     $bodyReceipt.no_policy_detached_resume_unchanged -ne $true
 ) { throw 'PI_S_FILESYSTEM_POLICY_BODY_LAB_ACCEPTANCE_INVALID' }
 
-$transcriptEvidence = @($bodyReceipt.child_tool_result_evidence.PSObject.Properties | ForEach-Object { $_.Value })
-if ($transcriptEvidence.Count -ne 11) { throw "PI_S_FILESYSTEM_POLICY_TRANSCRIPT_EVIDENCE_COUNT_INVALID: $($transcriptEvidence.Count)" }
+$expectedTranscriptCases = @(
+    'CASE_BASH_DENY','CASE_BROAD_GREP','CASE_DENIED_READ','CASE_DETACHED_SAFE',
+    'CASE_FOREGROUND_SAFE','CASE_JUNCTION_READ','CASE_NO_POLICY_BASH',
+    'CASE_NO_POLICY_DETACHED_SAFE','CASE_NO_POLICY_RESUME_SAFE','CASE_RESUME_SAFE',
+    'CASE_SAFE_GREP'
+)
+$transcriptEvidenceProperties = @($bodyReceipt.child_tool_result_evidence.PSObject.Properties)
+$transcriptEvidence = @($transcriptEvidenceProperties | ForEach-Object { $_.Value })
+$actualTranscriptCases = @($transcriptEvidenceProperties | ForEach-Object { [string]$_.Name } | Sort-Object)
+if (
+    $transcriptEvidence.Count -ne $expectedTranscriptCases.Count -or
+    ($actualTranscriptCases -join "`n") -cne (@($expectedTranscriptCases | Sort-Object) -join "`n") -or
+    @($transcriptEvidenceProperties | Where-Object { [string]$_.Name -cne [string]$_.Value.caseName }).Count -ne 0
+) { throw 'PI_S_FILESYSTEM_POLICY_TRANSCRIPT_CASE_SET_INVALID' }
+$totalTranscriptBytes = [int64]0
 foreach ($evidence in $transcriptEvidence) {
     if (-not (Test-Path -LiteralPath ([string]$evidence.transcriptPath) -PathType Leaf)) {
         throw "PI_S_FILESYSTEM_POLICY_TRANSCRIPT_MISSING: $($evidence.transcriptPath)"
     }
-    $actualHash = (Get-FileHash -Algorithm SHA256 -LiteralPath ([string]$evidence.transcriptPath)).Hash.ToLowerInvariant()
+    $transcriptBytes = [IO.File]::ReadAllBytes([string]$evidence.transcriptPath)
+    $actualHash = Get-PiSFilesystemAcceptanceBytesSha256 -Bytes $transcriptBytes
     if ($actualHash -cne [string]$evidence.transcriptSha256) {
         throw "PI_S_FILESYSTEM_POLICY_TRANSCRIPT_HASH_MISMATCH: case=$($evidence.caseName)"
     }
+    if ([int64]$evidence.transcriptBytes -ne [int64]$transcriptBytes.Length) {
+        throw "PI_S_FILESYSTEM_POLICY_TRANSCRIPT_LENGTH_MISMATCH: case=$($evidence.caseName)"
+    }
+    if ($transcriptBytes.Length -le 0 -or $transcriptBytes.Length -gt 65536) {
+        throw "PI_S_FILESYSTEM_POLICY_TRANSCRIPT_SIZE_OUT_OF_RANGE: case=$($evidence.caseName) bytes=$($transcriptBytes.Length)"
+    }
+    $totalTranscriptBytes += [int64]$transcriptBytes.Length
     if ($null -eq $evidence.isError) { throw "PI_S_FILESYSTEM_POLICY_TRANSCRIPT_IS_ERROR_MISSING: case=$($evidence.caseName)" }
+    $evidence | Add-Member -NotePropertyName sourceTranscriptPath -NotePropertyValue ([string]$evidence.transcriptPath) -Force
+    $evidence.PSObject.Properties.Remove('transcriptPath')
+    $evidence | Add-Member -NotePropertyName transcriptBase64 -NotePropertyValue ([Convert]::ToBase64String($transcriptBytes)) -Force
 }
+if ($totalTranscriptBytes -gt 1048576) {
+    throw "PI_S_FILESYSTEM_POLICY_TRANSCRIPT_TOTAL_SIZE_OUT_OF_RANGE: $totalTranscriptBytes"
+}
+$transcriptBinding = (@($transcriptEvidence | Sort-Object caseName | ForEach-Object {
+    "$($_.caseName)`t$($_.transcriptBytes)`t$($_.transcriptSha256)"
+}) -join "`n")
+$bodyReceipt.child_tool_transcript_binding_sha256 = Get-PiSFilesystemAcceptanceBytesSha256 -Bytes ([Text.UTF8Encoding]::new($false).GetBytes($transcriptBinding))
+$bodyReceipt | Add-Member -NotePropertyName child_tool_transcript_binding_kind -NotePropertyValue 'case-bytes-sha256-v2' -Force
 $piCliAfterSha256 = (Get-FileHash -Algorithm SHA256 -LiteralPath $cliPath).Hash.ToLowerInvariant()
 $piRpcClientAfterSha256 = (Get-FileHash -Algorithm SHA256 -LiteralPath $rpcClientPath).Hash.ToLowerInvariant()
 if ($piCliAfterSha256 -cne $piCliBeforeSha256 -or $piRpcClientAfterSha256 -cne $piRpcClientBeforeSha256) {
@@ -384,6 +427,7 @@ if ($primeBPackageAfter -cne $primeBPackageBefore) {
 
 $sourceFiles = [ordered]@{
     acceptance_wrapper = $PSCommandPath
+    common = $commonScript
     apply = $applyScript
     windows = $windowsScript
     owner_stop = $ownerStopScript
@@ -404,7 +448,7 @@ foreach ($entry in $sourceFiles.GetEnumerator()) {
     $sourceHashes[$entry.Key] = (Get-FileHash -Algorithm SHA256 -LiteralPath $entry.Value).Hash.ToLowerInvariant()
 }
 $receipt = [ordered]@{
-    schema = 'xinao.pi_s_subagents_filesystem_policy_acceptance.v1'
+    schema = 'xinao.pi_s_subagents_filesystem_policy_acceptance.v2'
     status = 'verified'
     generated_at = [DateTimeOffset]::Now.ToString('o')
     lab_agent_dir = $target
@@ -446,6 +490,7 @@ $receipt = [ordered]@{
     }
     source_sha256 = $sourceHashes
     transcript_count = $transcriptEvidence.Count
+    transcript_total_bytes = $totalTranscriptBytes
     transcript_hashes_read_back_equal = $true
     active_pi_subagents_source_before_sha256 = $activePackageBefore
     active_pi_subagents_source_after_sha256 = $activePackageAfter
@@ -455,4 +500,15 @@ $receipt = [ordered]@{
     prime_b_pi_subagents_source_unchanged = ($primeBPackageAfter -ceq $primeBPackageBefore)
 }
 Write-PiDualEntryJsonAtomic -Path $ReceiptPath -Value $receipt
-$receipt | ConvertTo-Json -Depth 15
+$receiptFile = Get-Item -LiteralPath $ReceiptPath
+[ordered]@{
+    schema = 'xinao.pi_s_subagents_filesystem_policy_receipt_identity.v1'
+    status = 'verified'
+    path = [IO.Path]::GetFullPath($ReceiptPath)
+    bytes = [int64]$receiptFile.Length
+    sha256 = (Get-FileHash -Algorithm SHA256 -LiteralPath $ReceiptPath).Hash.ToLowerInvariant()
+    receipt_schema = [string]$receipt.schema
+    transcript_count = [int]$receipt.transcript_count
+    transcript_total_bytes = [int64]$receipt.transcript_total_bytes
+    transcript_binding_sha256 = [string]$receipt.body_lab.child_tool_transcript_binding_sha256
+} | ConvertTo-Json -Depth 5

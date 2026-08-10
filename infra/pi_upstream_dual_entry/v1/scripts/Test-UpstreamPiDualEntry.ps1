@@ -22,6 +22,16 @@ function Get-PiSurfaceTextSha256 {
     }
 }
 
+function Get-PiSurfaceBytesSha256 {
+    param([Parameter(Mandatory)][byte[]]$Bytes)
+    try {
+        $sha = [Security.Cryptography.SHA256]::Create()
+        ([BitConverter]::ToString($sha.ComputeHash($Bytes))).Replace('-','').ToLowerInvariant()
+    } finally {
+        if ($null -ne $sha) { $sha.Dispose() }
+    }
+}
+
 function Get-PiSubagentsSourceAggregateSha256 {
     param([Parameter(Mandatory)][string]$AgentDir)
     $sourceRoot = Join-Path $AgentDir 'npm\node_modules\pi-subagents\src'
@@ -76,7 +86,9 @@ foreach ($profileName in $Profile) {
     )) {
         if (-not (Test-Path -LiteralPath $overlayKind.Root -PathType Container)) { continue }
         $overlayKindPrefix = [IO.Path]::GetFullPath($overlayKind.Root).TrimEnd('\','/') + [IO.Path]::DirectorySeparatorChar
-        $expectedOverlayOwned += @(Get-ChildItem -LiteralPath $overlayKind.Root -Recurse -File | ForEach-Object {
+        $expectedOverlayOwned += @(Get-ChildItem -LiteralPath $overlayKind.Root -Recurse -File | Where-Object {
+            $overlayKind.Name -cne 'agents' -or $_.Name -notin @($spec.ExcludedOverlayAgentNames)
+        } | ForEach-Object {
             "$($overlayKind.Name)/$([IO.Path]::GetFullPath($_.FullName).Substring($overlayKindPrefix.Length).Replace('\','/'))"
         })
     }
@@ -107,7 +119,7 @@ foreach ($profileName in $Profile) {
         throw "PI_SURFACE_TEST_AGENTS_DRIFT: $profileName"
     }
     $contractText = Get-Content -Raw -LiteralPath $spec.ContractProjection -Encoding UTF8
-    foreach ($sentinel in @('PI_LOCAL_COGNITION_CONTRACT_ISLAND_V1',$spec.SurfaceSentinel)) {
+    foreach ($sentinel in @('PI_LOCAL_COMPATIBILITY_BOUNDARY_V3',$spec.SurfaceSentinel)) {
         if ($contractText -notmatch [regex]::Escape($sentinel)) {
             throw "PI_SURFACE_TEST_CONTRACT_SENTINEL_MISSING: profile=$profileName sentinel=$sentinel"
         }
@@ -116,6 +128,9 @@ foreach ($profileName in $Profile) {
     $settings = Get-Content -Raw -LiteralPath $settingsPath -Encoding UTF8 | ConvertFrom-Json
     $subagentConfig = Get-Content -Raw -LiteralPath $subagentConfigPath -Encoding UTF8 | ConvertFrom-Json
     $hermesConfig = Get-Content -Raw -LiteralPath $hermesConfigPath -Encoding UTF8 | ConvertFrom-Json
+    if (@($settings.skills).Count -ne 0) {
+        throw "PI_SURFACE_TEST_CODEX_SKILL_TREE_INJECTED: profile=$profileName"
+    }
     if ([string]$hermesConfig.memoryOverflowStrategy -cne 'reject' -or $hermesConfig.failureInjectionEnabled -ne $false) {
         throw "PI_SURFACE_TEST_HERMES_MEMORY_POLICY_INVALID: profile=$profileName"
     }
@@ -207,7 +222,9 @@ foreach ($profileName in $Profile) {
     }
     $expectedAgentNames = @('probe','operator','verifier','fanout')
     if (Test-Path -LiteralPath $spec.OverlayAgentDir -PathType Container) {
-        $expectedAgentNames += @(Get-ChildItem -LiteralPath $spec.OverlayAgentDir -File -Filter '*.md' | ForEach-Object { $_.BaseName })
+        $expectedAgentNames += @(Get-ChildItem -LiteralPath $spec.OverlayAgentDir -File -Filter '*.md' | Where-Object {
+            $_.Name -notin @($spec.ExcludedOverlayAgentNames)
+        } | ForEach-Object { $_.BaseName })
     }
     foreach ($agentName in $expectedAgentNames) {
         if (-not (Test-Path -LiteralPath (Join-Path $spec.AgentDir "agents\$agentName.md") -PathType Leaf)) {
@@ -240,8 +257,8 @@ foreach ($profileName in $Profile) {
             'model: openai-codex/gpt-5.6-terra',
             'acceptanceRole: read-only',
             'maxSubagentDepth: 0',
-            'without a fixed profession or preselected local question',
-            'A local no-action or route closure does not settle the whole inherited parent',
+            'without a permanent profession',
+            'Work directly on the exact object, evidence, and requested result',
             'do not modify repositories or external state'
         )
         $peerMissingFragments = @($peerRequiredFragments | Where-Object { $peerAgentNormalized.IndexOf($_, [StringComparison]::Ordinal) -lt 0 })
@@ -255,7 +272,7 @@ foreach ($profileName in $Profile) {
             per_run_model_override_allowed = $true
             repository_effects_allowed = $false
             candidate_only = $true
-            local_no_action_closes_parent = $false
+            lifecycle_decision_encoded = $false
             source_sha256 = $peerAgentSourceSha256
             active_sha256 = $peerAgentActiveSha256
             manifest_sha256 = $peerAgentManifestSha256
@@ -277,9 +294,9 @@ foreach ($profileName in $Profile) {
             'async: true',
             'maxSubagentDepth: 3',
             'turnBudget: {"maxTurns":30,"graceTurns":0}',
-            'without a fixed profession',
+            'Fresh candidate computation',
             'Keep doing your own synthesis while children run',
-            'A local no-action returns to the inherited parent'
+            'Recursion expands candidate computation, not authority'
         )
         $recursivePeerMissing = @($recursivePeerRequiredFragments | Where-Object {
             $recursivePeerNormalized.IndexOf($_, [StringComparison]::Ordinal) -lt 0
@@ -305,12 +322,8 @@ foreach ($profileName in $Profile) {
             candidate_only = $true
         }
         $bodyFrictionPath = Join-Path $spec.AgentDir 'agents\body-friction-auditor.md'
-        if (-not (Test-Path -LiteralPath $bodyFrictionPath -PathType Leaf)) {
-            throw "PI_SURFACE_TEST_BODY_FRICTION_AGENT_MISSING: $bodyFrictionPath"
-        }
-        $bodyFrictionText = Get-Content -Raw -LiteralPath $bodyFrictionPath -Encoding UTF8
-        if ($bodyFrictionText.IndexOf('turnBudget: {"maxTurns":30,"graceTurns":0}', [StringComparison]::Ordinal) -lt 0) {
-            throw "PI_SURFACE_TEST_BODY_FRICTION_TURN_BUDGET_EXCEEDS_MAIN_CEILING: $bodyFrictionPath"
+        if (Test-Path -LiteralPath $bodyFrictionPath -PathType Leaf) {
+            throw "PI_SURFACE_TEST_EXCLUDED_BODY_FRICTION_AGENT_PRESENT: $bodyFrictionPath"
         }
     }
 
@@ -328,16 +341,16 @@ foreach ($profileName in $Profile) {
     $commandResponse = $rpcObjects | Where-Object { $_.type -eq 'response' -and $_.command -eq 'get_commands' -and $_.success -eq $true } | Select-Object -Last 1
     if ($null -eq $commandResponse) { throw "PI_SURFACE_TEST_COMMAND_CATALOG_MISSING: $profileName" }
     $names = @($commandResponse.data.commands | ForEach-Object { [string]$_.name })
-    $requiredSkills = @(
+    $codexOnlySkills = @(
         'skill:productivity',
         'skill:repair-agent-behavior',
         'skill:operate-for-user',
         'skill:research-external-reality',
         'skill:dispatch-grok-worker-pool'
     )
-    $missingSkills = @($requiredSkills | Where-Object { $_ -notin $names })
-    if ($missingSkills.Count -gt 0) {
-        throw "PI_SURFACE_TEST_REQUIRED_SKILLS_MISSING: profile=$profileName skills=$($missingSkills -join ',')"
+    $injectedSkills = @($codexOnlySkills | Where-Object { $_ -in $names })
+    if ($injectedSkills.Count -gt 0) {
+        throw "PI_SURFACE_TEST_CODEX_SKILLS_VISIBLE: profile=$profileName skills=$($injectedSkills -join ',')"
     }
 
     $numpadAcceptance = $null
@@ -348,11 +361,15 @@ foreach ($profileName in $Profile) {
     $ownerSessionStopProcessAcceptance = $null
     $filesystemPolicyCompatibility = $null
     $filesystemPolicyAcceptance = $null
+    $filesystemPolicyReceiptIdentity = $null
     $supervisorIngressAcceptance = $null
     $nativeContinuationCompatibility = $null
     $nativeContinuationAbsence = $null
     $highCapacityCompatibility = $null
     $highCapacityAcceptance = $null
+    $highCapacityActiveProjectionReceiptIdentity = $null
+    $highCapacityReplayAcceptance = $null
+    $highCapacityReplayReceiptIdentity = $null
     $highCapacityAbsence = $null
     $midTurnRaw = @(& (Join-Path $PSScriptRoot 'Apply-PiSMidTurnCompactionCompatibility.ps1') -PiToolRoot $spec.PiToolRoot -VerifyOnly 2>&1)
     $midTurnCompactionAcceptance = ($midTurnRaw -join [Environment]::NewLine) | ConvertFrom-Json
@@ -452,13 +469,22 @@ foreach ($profileName in $Profile) {
             $highCapacityCompatibility.changed -ne $false -or
             $highCapacityCompatibility.handshake_written -ne $false
         ) { throw "PI_SURFACE_TEST_HIGH_CAPACITY_PATCH_INVALID: $($highCapacityRaw -join ' ')" }
-        $highCapacityReceiptPath = Join-Path $script:PiDualEntryStateRoot 'acceptance\pi-high-capacity-v1.json'
-        $highCapacityReplayRaw = @(& (Join-Path $PSScriptRoot 'Test-PiSHighCapacityReplay.ps1') -AgentDir $spec.AgentDir -PiToolRoot $spec.PiToolRoot -ReceiptPath $highCapacityReceiptPath 2>&1)
-        $highCapacityAcceptance = ($highCapacityReplayRaw -join [Environment]::NewLine) | ConvertFrom-Json
+        $highCapacityProjectionReceiptPath = Join-Path $script:PiDualEntryStateRoot 'acceptance\pi-high-capacity-active-projection-v1.json'
+        $highCapacityProjectionRaw = @(& (Join-Path $PSScriptRoot 'Test-PiSHighCapacityReplay.ps1') -AgentDir $spec.AgentDir -PiToolRoot $spec.PiToolRoot -ProjectionOnly -ReceiptPath $highCapacityProjectionReceiptPath 2>&1)
+        $highCapacityAcceptance = ($highCapacityProjectionRaw -join [Environment]::NewLine) | ConvertFrom-Json
         $currentPeerSourceSha256 = (Get-FileHash -Algorithm SHA256 -LiteralPath (Join-Path $spec.OverlayAgentDir 'peer.md')).Hash.ToLowerInvariant()
+        $highCapacityManifestPath = Join-Path (Split-Path -Parent $PSScriptRoot) 'patches\pi-s-high-capacity-v4.2-manifest.json'
+        $currentHighCapacityManifestSha256 = (Get-FileHash -Algorithm SHA256 -LiteralPath $highCapacityManifestPath).Hash.ToLowerInvariant()
+        $filesystemApplyPath = Join-Path $PSScriptRoot 'Apply-PiSSubagentsFilesystemPolicy.ps1'
+        $currentFilesystemApplySha256 = (Get-FileHash -Algorithm SHA256 -LiteralPath $filesystemApplyPath).Hash.ToLowerInvariant()
+        $filesystemResumeScriptPath = Join-Path $PSScriptRoot 'Test-PiSHighCapacityFilesystemResume.ps1'
+        $currentFilesystemResumeScriptSha256 = (Get-FileHash -Algorithm SHA256 -LiteralPath $filesystemResumeScriptPath).Hash.ToLowerInvariant()
+        $bodyLabHarnessPath = Join-Path $PSScriptRoot 'Test-PiSubagentFilesystemPolicyBodyLab.mjs'
+        $currentBodyLabHarnessSha256 = (Get-FileHash -Algorithm SHA256 -LiteralPath $bodyLabHarnessPath).Hash.ToLowerInvariant()
         if (
-            [string]$highCapacityAcceptance.schema -cne 'xinao.pi_s_high_capacity_replay_acceptance.v1' -or
-            [string]$highCapacityAcceptance.status -cne 'verified' -or
+            [string]$highCapacityAcceptance.schema -cne 'xinao.pi_s_high_capacity_active_projection_acceptance.v1' -or
+            [string]$highCapacityAcceptance.status -cne 'active_projection_verified' -or
+            $highCapacityAcceptance.projection_only -ne $true -or
             [int]$highCapacityAcceptance.tests.expected -ne 48 -or
             [int]$highCapacityAcceptance.tests.observed -ne 48 -or
             [int]$highCapacityAcceptance.tests.passed -ne 48 -or
@@ -470,9 +496,143 @@ foreach ($profileName in $Profile) {
             $highCapacityAcceptance.runtime_projection.byte_equal -ne $true -or
             [int64]$highCapacityAcceptance.runtime_projection.bytes -ne 47259 -or
             [string]$highCapacityAcceptance.runtime_projection.sha256 -cne 'ba5614b01ee3b2c15194d1006596bef50134fdd4f86125713cf61987f7be76b2' -or
+            [string]$highCapacityAcceptance.candidate_manifest.sha256 -cne $currentHighCapacityManifestSha256 -or
+            [string]$highCapacityAcceptance.compatibility_inputs.filesystem_apply_sha256 -cne $currentFilesystemApplySha256 -or
+            [string]$highCapacityAcceptance.acceptance_sources.kind -cne 'relative-path-bytes-sha256-v1' -or
+            [int]$highCapacityAcceptance.acceptance_sources.count -ne 11 -or
             [string]$highCapacityAcceptance.peer.sha256 -cne $currentPeerSourceSha256 -or
             $highCapacityAcceptance.temp_cleanup -ne $true
-        ) { throw "PI_SURFACE_TEST_HIGH_CAPACITY_ACCEPTANCE_INVALID: $highCapacityReceiptPath" }
+        ) { throw "PI_SURFACE_TEST_HIGH_CAPACITY_ACTIVE_PROJECTION_INVALID: $highCapacityProjectionReceiptPath" }
+        $highCapacityProjectionReceiptFile = Get-Item -LiteralPath $highCapacityProjectionReceiptPath
+        $highCapacityActiveProjectionReceiptIdentity = [ordered]@{
+            path = $highCapacityProjectionReceiptPath
+            bytes = [int64]$highCapacityProjectionReceiptFile.Length
+            sha256 = (Get-FileHash -Algorithm SHA256 -LiteralPath $highCapacityProjectionReceiptPath).Hash.ToLowerInvariant()
+            schema = [string]$highCapacityAcceptance.schema
+            status = [string]$highCapacityAcceptance.status
+            projection_only = [bool]$highCapacityAcceptance.projection_only
+            tests_passed = [int]$highCapacityAcceptance.tests.passed
+            runtime_projection = [ordered]@{
+                bytes = [int64]$highCapacityAcceptance.runtime_projection.bytes
+                sha256 = [string]$highCapacityAcceptance.runtime_projection.sha256
+            }
+            acceptance_sources = [ordered]@{
+                kind = [string]$highCapacityAcceptance.acceptance_sources.kind
+                count = [int]$highCapacityAcceptance.acceptance_sources.count
+                aggregate_sha256 = [string]$highCapacityAcceptance.acceptance_sources.aggregate_sha256
+            }
+            candidate_manifest_sha256 = [string]$highCapacityAcceptance.candidate_manifest.sha256
+            filesystem_apply_sha256 = [string]$highCapacityAcceptance.compatibility_inputs.filesystem_apply_sha256
+            peer_sha256 = [string]$highCapacityAcceptance.peer.sha256
+            temp_cleanup = [bool]$highCapacityAcceptance.temp_cleanup
+        }
+
+        # The active profile proves only its projected bytes. Provider, resume, hostile-environment,
+        # owner-stop, and filesystem recovery run in a disposable paired body-lab and are accepted
+        # only when that receipt is bound to the exact current acceptance sources and inputs above.
+        $highCapacityReplayReceiptPath = Join-Path $script:PiDualEntryStateRoot 'acceptance\pi-high-capacity-current-lab-replay-v1.json'
+        if (-not (Test-Path -LiteralPath $highCapacityReplayReceiptPath -PathType Leaf)) {
+            throw "PI_SURFACE_TEST_HIGH_CAPACITY_LAB_REPLAY_RECEIPT_MISSING: $highCapacityReplayReceiptPath"
+        }
+        $highCapacityReplayAcceptance = Get-Content -Raw -LiteralPath $highCapacityReplayReceiptPath -Encoding UTF8 | ConvertFrom-Json
+        $activeAcceptanceSourceRows = @($highCapacityAcceptance.acceptance_sources.members | ForEach-Object {
+            "$([string]$_.path)`t$([int64]$_.bytes)`t$([string]$_.sha256)"
+        } | Sort-Object)
+        $replayAcceptanceSourceRows = @($highCapacityReplayAcceptance.acceptance_sources.members | ForEach-Object {
+            "$([string]$_.path)`t$([int64]$_.bytes)`t$([string]$_.sha256)"
+        } | Sort-Object)
+        $bodyLabRoot = [IO.Path]::GetFullPath((Join-Path $script:PiDualEntryStateRoot 'body-labs\prime-s')).TrimEnd('\','/')
+        $replayAgentDir = [IO.Path]::GetFullPath([string]$highCapacityReplayAcceptance.agent_dir).TrimEnd('\','/')
+        $replayPiToolRoot = [IO.Path]::GetFullPath([string]$highCapacityReplayAcceptance.pi_tool_root).TrimEnd('\','/')
+        $expectedReplayPiToolRoot = [IO.Path]::GetFullPath((Join-Path $replayAgentDir 'pi-tool-root')).TrimEnd('\','/')
+        if (
+            [string]$highCapacityReplayAcceptance.schema -cne 'xinao.pi_s_high_capacity_replay_acceptance.v1' -or
+            [string]$highCapacityReplayAcceptance.status -cne 'verified' -or
+            $highCapacityReplayAcceptance.projection_only -ne $false -or
+            -not $replayAgentDir.StartsWith($bodyLabRoot + [IO.Path]::DirectorySeparatorChar, [StringComparison]::OrdinalIgnoreCase) -or
+            $replayPiToolRoot -cne $expectedReplayPiToolRoot -or
+            [int]$highCapacityReplayAcceptance.tests.expected -ne 48 -or
+            [int]$highCapacityReplayAcceptance.tests.observed -ne 48 -or
+            [int]$highCapacityReplayAcceptance.tests.passed -ne 48 -or
+            [int]$highCapacityReplayAcceptance.tests.failed -ne 0 -or
+            [string]$highCapacityReplayAcceptance.strict_typescript.status -cne 'pass' -or
+            $highCapacityReplayAcceptance.strict_typescript.strict -ne $true -or
+            $highCapacityReplayAcceptance.strict_typescript.no_unchecked_indexed_access -ne $true -or
+            $highCapacityReplayAcceptance.strict_typescript.skip_lib_check -ne $false -or
+            $highCapacityReplayAcceptance.runtime_projection.byte_equal -ne $true -or
+            [int64]$highCapacityReplayAcceptance.runtime_projection.bytes -ne 47259 -or
+            [string]$highCapacityReplayAcceptance.runtime_projection.sha256 -cne 'ba5614b01ee3b2c15194d1006596bef50134fdd4f86125713cf61987f7be76b2' -or
+            [string]$highCapacityReplayAcceptance.candidate_manifest.sha256 -cne $currentHighCapacityManifestSha256 -or
+            [string]$highCapacityReplayAcceptance.compatibility_inputs.filesystem_apply_sha256 -cne $currentFilesystemApplySha256 -or
+            [string]$highCapacityReplayAcceptance.acceptance_sources.kind -cne 'relative-path-bytes-sha256-v1' -or
+            [int]$highCapacityReplayAcceptance.acceptance_sources.count -ne 11 -or
+            [string]$highCapacityReplayAcceptance.acceptance_sources.aggregate_sha256 -cne [string]$highCapacityAcceptance.acceptance_sources.aggregate_sha256 -or
+            ($replayAcceptanceSourceRows -join "`n") -cne ($activeAcceptanceSourceRows -join "`n") -or
+            [string]$highCapacityReplayAcceptance.peer.sha256 -cne $currentPeerSourceSha256 -or
+            [string]$highCapacityReplayAcceptance.filesystem_resume_cross_product.schema -cne 'xinao.pi_s_high_capacity_filesystem_resume_acceptance.v1' -or
+            [string]$highCapacityReplayAcceptance.filesystem_resume_cross_product.status -cne 'verified' -or
+            [string]$highCapacityReplayAcceptance.filesystem_resume_cross_product.script_sha256 -cne $currentFilesystemResumeScriptSha256 -or
+            [string]$highCapacityReplayAcceptance.filesystem_resume_cross_product.canonical_harness_sha256 -cne $currentBodyLabHarnessSha256 -or
+            $highCapacityReplayAcceptance.filesystem_resume_cross_product.paired_pi_tool_root -ne $true -or
+            $highCapacityReplayAcceptance.filesystem_resume_cross_product.core_paths_no_reparse -ne $true -or
+            $highCapacityReplayAcceptance.filesystem_resume_cross_product.owner_stop_process_terminated -ne $true -or
+            $highCapacityReplayAcceptance.filesystem_resume_cross_product.candidate_mutable_files_restored -ne $true -or
+            $highCapacityReplayAcceptance.filesystem_resume_cross_product.candidate_child_sessions_restored -ne $true -or
+            $highCapacityReplayAcceptance.filesystem_resume_cross_product.work_root_cleanup.removed -ne $true -or
+            $highCapacityReplayAcceptance.filesystem_resume_cross_product.hostile_root_cleanup.removed -ne $true -or
+            $highCapacityReplayAcceptance.temp_cleanup -ne $true
+        ) { throw "PI_SURFACE_TEST_HIGH_CAPACITY_LAB_REPLAY_INVALID: $highCapacityReplayReceiptPath" }
+        $highCapacityReplayReceiptFile = Get-Item -LiteralPath $highCapacityReplayReceiptPath
+        $highCapacityReplayReceiptIdentity = [ordered]@{
+            path = $highCapacityReplayReceiptPath
+            bytes = [int64]$highCapacityReplayReceiptFile.Length
+            sha256 = (Get-FileHash -Algorithm SHA256 -LiteralPath $highCapacityReplayReceiptPath).Hash.ToLowerInvariant()
+            schema = [string]$highCapacityReplayAcceptance.schema
+            status = [string]$highCapacityReplayAcceptance.status
+            projection_only = [bool]$highCapacityReplayAcceptance.projection_only
+            agent_dir = [string]$highCapacityReplayAcceptance.agent_dir
+            pi_tool_root = [string]$highCapacityReplayAcceptance.pi_tool_root
+            tests_passed = [int]$highCapacityReplayAcceptance.tests.passed
+            runtime_projection = [ordered]@{
+                bytes = [int64]$highCapacityReplayAcceptance.runtime_projection.bytes
+                sha256 = [string]$highCapacityReplayAcceptance.runtime_projection.sha256
+            }
+            acceptance_sources = [ordered]@{
+                kind = [string]$highCapacityReplayAcceptance.acceptance_sources.kind
+                count = [int]$highCapacityReplayAcceptance.acceptance_sources.count
+                aggregate_sha256 = [string]$highCapacityReplayAcceptance.acceptance_sources.aggregate_sha256
+            }
+            candidate_manifest = [ordered]@{
+                sha256 = [string]$highCapacityReplayAcceptance.candidate_manifest.sha256
+                generation = [string]$highCapacityReplayAcceptance.candidate_manifest.generation
+                package_files = [int]$highCapacityReplayAcceptance.candidate_manifest.package_files
+                core_files = [int]$highCapacityReplayAcceptance.candidate_manifest.core_files
+            }
+            compatibility_inputs = [ordered]@{
+                filesystem_apply_bytes = [int64]$highCapacityReplayAcceptance.compatibility_inputs.filesystem_apply_bytes
+                filesystem_apply_sha256 = [string]$highCapacityReplayAcceptance.compatibility_inputs.filesystem_apply_sha256
+            }
+            filesystem_resume = [ordered]@{
+                schema = [string]$highCapacityReplayAcceptance.filesystem_resume_cross_product.schema
+                status = [string]$highCapacityReplayAcceptance.filesystem_resume_cross_product.status
+                script_sha256 = [string]$highCapacityReplayAcceptance.filesystem_resume_cross_product.script_sha256
+                receipt_sha256 = [string]$highCapacityReplayAcceptance.filesystem_resume_cross_product.receipt_sha256
+                receipt_bytes = [int64]$highCapacityReplayAcceptance.filesystem_resume_cross_product.receipt_bytes
+                canonical_harness_sha256 = [string]$highCapacityReplayAcceptance.filesystem_resume_cross_product.canonical_harness_sha256
+                projected_harness_sha256 = [string]$highCapacityReplayAcceptance.filesystem_resume_cross_product.projected_harness_sha256
+                capacity_config_sha256 = [string]$highCapacityReplayAcceptance.filesystem_resume_cross_product.capacity_config_sha256
+                filesystem_policy_digest = [string]$highCapacityReplayAcceptance.filesystem_resume_cross_product.filesystem_policy_digest
+                resume_reached_provider = [bool]$highCapacityReplayAcceptance.filesystem_resume_cross_product.resume_reached_provider
+                no_policy_resume_reached_provider = [bool]$highCapacityReplayAcceptance.filesystem_resume_cross_product.no_policy_resume_reached_provider
+                owner_stop_process_terminated = [bool]$highCapacityReplayAcceptance.filesystem_resume_cross_product.owner_stop_process_terminated
+                candidate_mutable_files_restored = [bool]$highCapacityReplayAcceptance.filesystem_resume_cross_product.candidate_mutable_files_restored
+                candidate_child_sessions_restored = [bool]$highCapacityReplayAcceptance.filesystem_resume_cross_product.candidate_child_sessions_restored
+                work_root_removed = [bool]$highCapacityReplayAcceptance.filesystem_resume_cross_product.work_root_cleanup.removed
+                hostile_root_removed = [bool]$highCapacityReplayAcceptance.filesystem_resume_cross_product.hostile_root_cleanup.removed
+            }
+            peer_sha256 = [string]$highCapacityReplayAcceptance.peer.sha256
+            temp_cleanup = [bool]$highCapacityReplayAcceptance.temp_cleanup
+        }
         $ownerStopBehaviorRaw = @(& node (Join-Path $PSScriptRoot 'Test-PiSubagentSessionStop.mjs') 2>&1)
         if ($LASTEXITCODE -ne 0) { throw "PI_SURFACE_TEST_OWNER_SESSION_STOP_FAILED: $($ownerStopBehaviorRaw -join ' ')" }
         $ownerSessionStopAcceptance = ($ownerStopBehaviorRaw -join [Environment]::NewLine) | ConvertFrom-Json
@@ -492,7 +652,17 @@ foreach ($profileName in $Profile) {
         if (-not (Test-Path -LiteralPath $filesystemPolicyReceiptPath -PathType Leaf)) {
             throw "PI_SURFACE_TEST_FILESYSTEM_POLICY_RECEIPT_MISSING: $filesystemPolicyReceiptPath"
         }
-        $filesystemPolicyAcceptance = Get-Content -Raw -LiteralPath $filesystemPolicyReceiptPath -Encoding UTF8 | ConvertFrom-Json
+        $filesystemPolicyReceiptBytes = [IO.File]::ReadAllBytes($filesystemPolicyReceiptPath)
+        if ($filesystemPolicyReceiptBytes.Length -le 0 -or $filesystemPolicyReceiptBytes.Length -gt 2097152) {
+            throw "PI_SURFACE_TEST_FILESYSTEM_POLICY_RECEIPT_SIZE_INVALID: $($filesystemPolicyReceiptBytes.Length)"
+        }
+        $filesystemPolicyReceiptSha256 = Get-PiSurfaceBytesSha256 -Bytes $filesystemPolicyReceiptBytes
+        try {
+            $filesystemPolicyReceiptRaw = [Text.UTF8Encoding]::new($false,$true).GetString($filesystemPolicyReceiptBytes)
+        } catch {
+            throw 'PI_SURFACE_TEST_FILESYSTEM_POLICY_RECEIPT_UTF8_INVALID'
+        }
+        $filesystemPolicyAcceptance = $filesystemPolicyReceiptRaw | ConvertFrom-Json
         $policyBody = $filesystemPolicyAcceptance.body_lab
         $policySecurity = $filesystemPolicyAcceptance.security
         $currentActivePiSubagentsSourceSha256 = Get-PiSubagentsSourceAggregateSha256 -AgentDir $spec.AgentDir
@@ -500,6 +670,7 @@ foreach ($profileName in $Profile) {
         $currentPrimeBPiSubagentsSourceSha256 = Get-PiSubagentsSourceAggregateSha256 -AgentDir $primeBSpecForFilesystemReceipt.AgentDir
         $policySourceFiles = [ordered]@{
             acceptance_wrapper = Join-Path $PSScriptRoot 'Test-PiSFilesystemPolicyAcceptance.ps1'
+            common = Join-Path $PSScriptRoot 'PiDualEntry.Common.ps1'
             apply = Join-Path $PSScriptRoot 'Apply-PiSSubagentsFilesystemPolicy.ps1'
             windows = Join-Path $PSScriptRoot 'Apply-PiSSubagentsWindowsCompatibility.ps1'
             owner_stop = Join-Path $PSScriptRoot 'Apply-PiSSubagentsSessionStopCompatibility.ps1'
@@ -524,18 +695,52 @@ foreach ($profileName in $Profile) {
             -not (Test-Path -LiteralPath $sourcePath -PathType Leaf) -or
             (Get-FileHash -Algorithm SHA256 -LiteralPath $sourcePath).Hash.ToLowerInvariant() -cne [string]$_.Value
         })
-        $transcriptEvidence = @($policyBody.child_tool_result_evidence.PSObject.Properties | ForEach-Object { $_.Value })
-        $transcriptHashMismatch = @($transcriptEvidence | Where-Object {
-            -not (Test-Path -LiteralPath ([string]$_.transcriptPath) -PathType Leaf) -or
-            (Get-FileHash -Algorithm SHA256 -LiteralPath ([string]$_.transcriptPath)).Hash.ToLowerInvariant() -cne [string]$_.transcriptSha256 -or
-            $null -eq $_.isError
-        })
+        $expectedTranscriptCases = @(
+            'CASE_BASH_DENY','CASE_BROAD_GREP','CASE_DENIED_READ','CASE_DETACHED_SAFE',
+            'CASE_FOREGROUND_SAFE','CASE_JUNCTION_READ','CASE_NO_POLICY_BASH',
+            'CASE_NO_POLICY_DETACHED_SAFE','CASE_NO_POLICY_RESUME_SAFE','CASE_RESUME_SAFE',
+            'CASE_SAFE_GREP'
+        )
+        $transcriptEvidenceProperties = @($policyBody.child_tool_result_evidence.PSObject.Properties)
+        $transcriptEvidence = @($transcriptEvidenceProperties | ForEach-Object { $_.Value })
+        $actualTranscriptCases = @($transcriptEvidenceProperties | ForEach-Object { [string]$_.Name } | Sort-Object)
+        $transcriptCaseSetValid =
+            $transcriptEvidence.Count -eq $expectedTranscriptCases.Count -and
+            ($actualTranscriptCases -join "`n") -ceq (@($expectedTranscriptCases | Sort-Object) -join "`n") -and
+            @($transcriptEvidenceProperties | Where-Object { [string]$_.Name -cne [string]$_.Value.caseName }).Count -eq 0
+        $transcriptHashMismatch = @()
+        $transcriptTotalBytes = [int64]0
+        foreach ($evidence in $transcriptEvidence) {
+            $transcriptBytes = $null
+            $declaredTranscriptBytes = [int64]$evidence.transcriptBytes
+            $encodedTranscript = [string]$evidence.transcriptBase64
+            $expectedEncodedLength = if ($declaredTranscriptBytes -gt 0 -and $declaredTranscriptBytes -le 65536) {
+                [int64](4 * [Math]::Ceiling($declaredTranscriptBytes / 3.0))
+            } else { -1 }
+            if ($expectedEncodedLength -lt 0 -or [int64]$encodedTranscript.Length -ne $expectedEncodedLength) {
+                $transcriptHashMismatch += $evidence
+                continue
+            }
+            try {
+                $transcriptBytes = [Convert]::FromBase64String($encodedTranscript)
+            } catch {
+                $transcriptHashMismatch += $evidence
+                continue
+            }
+            if (
+                [int64]$transcriptBytes.Length -ne $declaredTranscriptBytes -or
+                [Convert]::ToBase64String($transcriptBytes) -cne $encodedTranscript -or
+                (Get-PiSurfaceBytesSha256 -Bytes $transcriptBytes) -cne [string]$evidence.transcriptSha256 -or
+                $null -eq $evidence.isError
+            ) { $transcriptHashMismatch += $evidence }
+            $transcriptTotalBytes += [int64]$transcriptBytes.Length
+        }
         $transcriptBinding = (@($transcriptEvidence | Sort-Object caseName | ForEach-Object {
-            "$($_.caseName)`t$($_.transcriptPath)`t$($_.transcriptSha256)"
+            "$($_.caseName)`t$($_.transcriptBytes)`t$($_.transcriptSha256)"
         }) -join "`n")
         $securityFailures = @($policySecurity.checks.PSObject.Properties | Where-Object { $_.Value -ne $true })
         if (
-            [string]$filesystemPolicyAcceptance.schema -cne 'xinao.pi_s_subagents_filesystem_policy_acceptance.v1' -or
+            [string]$filesystemPolicyAcceptance.schema -cne 'xinao.pi_s_subagents_filesystem_policy_acceptance.v2' -or
             [string]$filesystemPolicyAcceptance.status -cne 'verified' -or
             [string]$policySecurity.schema -cne 'xinao.pi_subagents_filesystem_policy_security_acceptance.v1' -or
             $securityFailures.Count -ne 0 -or
@@ -573,8 +778,13 @@ foreach ($profileName in $Profile) {
             $filesystemPolicyAcceptance.wiring.prime_b_source_overlay_absent -ne $true -or
             $policySourceHashMismatch.Count -ne 0 -or
             $packageSourceHashMismatch.Count -ne 0 -or
+            $transcriptCaseSetValid -ne $true -or
             $transcriptEvidence.Count -ne 11 -or
+            [int]$filesystemPolicyAcceptance.transcript_count -ne $transcriptEvidence.Count -or
             $transcriptHashMismatch.Count -ne 0 -or
+            $transcriptTotalBytes -ne [int64]$filesystemPolicyAcceptance.transcript_total_bytes -or
+            $transcriptTotalBytes -gt 1048576 -or
+            [string]$policyBody.child_tool_transcript_binding_kind -cne 'case-bytes-sha256-v2' -or
             (Get-PiSurfaceTextSha256 -Text $transcriptBinding) -cne [string]$policyBody.child_tool_transcript_binding_sha256 -or
             $filesystemPolicyAcceptance.transcript_hashes_read_back_equal -ne $true -or
             $filesystemPolicyAcceptance.active_pi_subagents_source_unchanged -ne $true -or
@@ -584,6 +794,30 @@ foreach ($profileName in $Profile) {
             [string]$filesystemPolicyAcceptance.active_pi_subagents_source_after_sha256 -cne $currentActivePiSubagentsSourceSha256 -or
             [string]$filesystemPolicyAcceptance.prime_b_pi_subagents_source_after_sha256 -cne $currentPrimeBPiSubagentsSourceSha256
         ) { throw "PI_SURFACE_TEST_FILESYSTEM_POLICY_ACCEPTANCE_INVALID: $filesystemPolicyReceiptPath" }
+        if (
+            (Get-Item -LiteralPath $filesystemPolicyReceiptPath).Length -ne $filesystemPolicyReceiptBytes.Length -or
+            (Get-FileHash -Algorithm SHA256 -LiteralPath $filesystemPolicyReceiptPath).Hash.ToLowerInvariant() -cne $filesystemPolicyReceiptSha256
+        ) { throw 'PI_SURFACE_TEST_FILESYSTEM_POLICY_RECEIPT_CHANGED_DURING_VALIDATION' }
+        $filesystemPolicyReceiptIdentity = [ordered]@{
+            path = $filesystemPolicyReceiptPath
+            bytes = [int64]$filesystemPolicyReceiptBytes.Length
+            sha256 = $filesystemPolicyReceiptSha256
+            schema = [string]$filesystemPolicyAcceptance.schema
+            status = [string]$filesystemPolicyAcceptance.status
+            generated_at = [string]$filesystemPolicyAcceptance.generated_at
+            transcript_count = [int]$filesystemPolicyAcceptance.transcript_count
+            transcript_total_bytes = [int64]$filesystemPolicyAcceptance.transcript_total_bytes
+            transcript_binding = [ordered]@{
+                kind = [string]$policyBody.child_tool_transcript_binding_kind
+                sha256 = [string]$policyBody.child_tool_transcript_binding_sha256
+            }
+            source_bound_embedded_transcripts = $true
+            source_paths_required_for_readback = $false
+            active_pi_subagents_source_sha256 = [string]$filesystemPolicyAcceptance.active_pi_subagents_source_after_sha256
+            prime_b_pi_subagents_source_sha256 = [string]$filesystemPolicyAcceptance.prime_b_pi_subagents_source_after_sha256
+            security_schema = [string]$policySecurity.schema
+            body_schema = [string]$policyBody.schema
+        }
         $ownerStopProcessReceiptPath = $filesystemPolicyReceiptPath
         $ownerSessionStopProcessAcceptance = $policyBody.owner_stop_process_receipt
         $ownerStopProcessSourceHashes = [ordered]@{
@@ -653,21 +887,22 @@ foreach ($profileName in $Profile) {
         if ($LASTEXITCODE -ne 0) { throw "PI_SURFACE_TEST_RETURN_TO_PARENT_FAILED: $($returnToParentRaw -join ' ')" }
         $returnToParentAcceptance = ($returnToParentRaw -join [Environment]::NewLine) | ConvertFrom-Json
         if (
-            [string]$returnToParentAcceptance.schema -cne 'xinao.pi_return_to_parent.acceptance.v3' -or
+            [string]$returnToParentAcceptance.schema -cne 'xinao.pi_return_to_parent.acceptance.v5' -or
             [string]$returnToParentAcceptance.status -ne 'mechanically_verified' -or
-            [string]$returnToParentAcceptance.behavior_selection_status -ne 'pending_live_sol' -or
+            [string]$returnToParentAcceptance.live_transport_status -ne 'pending_live_consumer' -or
             $returnToParentAcceptance.root_only_registration -ne $true -or
             $returnToParentAcceptance.abort_fence_runtime_handshake_required -ne $true -or
             $returnToParentAcceptance.missing_handshake_inert -ne $true -or
             $returnToParentAcceptance.normalized_empty_rejected -ne $true -or
             $returnToParentAcceptance.same_run_continuation_after_local_boundary -ne $true -or
-            $returnToParentAcceptance.scripted_no_action_path_does_not_auto_continue -ne $true -or
+            $returnToParentAcceptance.unarmed_run_does_not_follow_up -ne $true -or
             $returnToParentAcceptance.pre_execute_abort_rejected -ne $true -or
             $returnToParentAcceptance.turn_boundary_abort_prevents_next_provider -ne $true -or
             [int]$returnToParentAcceptance.queued_user_messages -ne 0 -or
-            $returnToParentAcceptance.automatic_wake -ne $true -or
+            $returnToParentAcceptance.one_shot_follow_up_armed -ne $true -or
             $returnToParentAcceptance.native_one_shot_follow_up -ne $true -or
-            $returnToParentAcceptance.next_contact_may_already_be_consumed -ne $true -or
+            $returnToParentAcceptance.activity_context_ref_bound -ne $true -or
+            $returnToParentAcceptance.returned_fact_bound -ne $true -or
             $returnToParentAcceptance.repeated_calls_single_follow_up -ne $true -or
             $returnToParentAcceptance.abort_error_stop_shutdown_suppress_follow_up -ne $true -or
             $returnToParentAcceptance.strict_clean_stop_reason_allowlist -ne $true -or
@@ -689,8 +924,8 @@ foreach ($profileName in $Profile) {
             $returnToParentAcceptance.live_parser_matching_arm_first_and_unique -ne $true -or
             $returnToParentAcceptance.live_parser_ambiguity_rejected -ne $true -or
             $returnToParentAcceptance.no_residual_continuation_queue -ne $true -or
-            [int]$returnToParentAcceptance.provider_calls_positive -ne 2 -or
-            [int]$returnToParentAcceptance.provider_calls_negative -ne 1 -or
+            [int]$returnToParentAcceptance.provider_calls_armed -ne 2 -or
+            [int]$returnToParentAcceptance.provider_calls_unarmed -ne 1 -or
             [int]$returnToParentAcceptance.provider_calls_native_continuation -ne 3 -or
             [int]$returnToParentAcceptance.provider_calls_multi_provider_continuation -ne 5
         ) { throw "PI_SURFACE_TEST_RETURN_TO_PARENT_INVALID: $($returnToParentRaw -join ' ')" }
@@ -699,7 +934,7 @@ foreach ($profileName in $Profile) {
             if ($LASTEXITCODE -ne 0) { throw "PI_SURFACE_TEST_RETURN_TO_PARENT_LIVE_FAILED: $($returnToParentLiveRaw -join ' ')" }
             $returnToParentLiveAcceptance = ($returnToParentLiveRaw -join [Environment]::NewLine) | ConvertFrom-Json
             if (
-                [string]$returnToParentLiveAcceptance.schema -cne 'xinao.pi_return_to_parent_live_sol_acceptance.v3' -or
+                [string]$returnToParentLiveAcceptance.schema -cne 'xinao.pi_return_to_parent_live_transport_acceptance.v5' -or
                 [string]$returnToParentLiveAcceptance.status -ne 'live_sol_native_continuation_abort_fenced_verified' -or
                 [string]$returnToParentLiveAcceptance.maturity -ne 'not_yet_mature' -or
                 [string]$returnToParentLiveAcceptance.provider -ne 'openai-codex' -or
@@ -708,12 +943,13 @@ foreach ($profileName in $Profile) {
                 $returnToParentLiveAcceptance.normalized_argument_binding -ne $true -or
                 $returnToParentLiveAcceptance.matching_tool_result_unique -ne $true -or
                 $returnToParentLiveAcceptance.matching_arm_first_and_unique -ne $true -or
+                $returnToParentLiveAcceptance.activity_context_ref_bound -ne $true -or
+                $returnToParentLiveAcceptance.returned_fact_bound -ne $true -or
                 $returnToParentLiveAcceptance.tool_result_consumed_before_first_run_final -ne $true -or
                 $returnToParentLiveAcceptance.first_run_reached_terminal_assistant_before_native_follow_up -ne $true -or
                 $returnToParentLiveAcceptance.native_custom_follow_up_triggered_second_provider -ne $true -or
                 $returnToParentLiveAcceptance.one_shot -ne $true -or
                 [string]::IsNullOrWhiteSpace([string]$returnToParentLiveAcceptance.arm_id) -or
-                $returnToParentLiveAcceptance.next_contact_may_already_be_consumed -ne $true -or
                 $returnToParentLiveAcceptance.abort_fenced -ne $true -or
                 [string]$returnToParentLiveAcceptance.provider_context_visibility -cne 'single_current_arm'
             ) { throw "PI_SURFACE_TEST_RETURN_TO_PARENT_LIVE_INVALID: $($returnToParentLiveRaw -join ' ')" }
@@ -734,7 +970,7 @@ foreach ($profileName in $Profile) {
     $liveProbe = $null
     if ($RunLiveModelProbe) {
         $probePrompt = @"
-Without using tools, report instructions already present in your current context. Return exactly one minified JSON object and nothing else with these keys and values: global_sentinel="HUMAN_INTENT_CONTINUITY_ROLE_SEPARATION_V1"; family_sentinel="PI_LOCAL_COGNITION_CONTRACT_ISLAND_V1"; surface_sentinel="$($spec.SurfaceSentinel)"; current_surface="$profileName"; surface_role="$($spec.Role)"; runtime_version="0.84.1"; research_and_self_evolution_are_tasks=true; one_session_can_cross_repositories=true; profile_auth_session_and_island_are_independent=true; codex_behavior_and_skills_are_shared_baseline=true; pi_specific_contract_stays_outside_codex_and_s=true; main_prime_is_default_subject=true; unqualified_pi_means_main_prime=true; prime_s_is_internal_compat_profile=true; account_binding_is_quota_source_not_identity=true; pi_b_is_isolated_cold_snapshot=true; cold_snapshot_preserves_auth_session_child_cognition_isolation=true; cold_snapshot_not_live_sync_peer=true; owner_eligibility_depends_on_consumed_intent_and_responsibility_not_shell=true; sibling_repository_local_context_must_be_read_before_effects=true; open_external_query_is_seed_not_automatic_boundary=true; external_findings_must_collide_with_live_local_baseline=true; exact_or_explicitly_narrow_lookup_stays_bounded=true; natural_chinese_commentary_without_status_templates=true.
+Without using tools, report instructions already present in your current context. Return exactly one minified JSON object and nothing else with these keys and values: global_sentinel="HUMAN_WORDS_BEFORE_ARTIFACTS_V2"; family_sentinel="PI_LOCAL_COMPATIBILITY_BOUNDARY_V3"; surface_sentinel="$($spec.SurfaceSentinel)"; current_surface="$profileName"; runtime_version="$($script:PiDualEntryVersion)"; local_contract_does_not_define_pi=true; official_live_capability_precedes_overlay=true; main_prime_default_handle=true; prime_s_internal_profile=true; account_binding_not_identity=true; prime_b_isolated=true; owner_scope_not_product=true; repository_context_is_local=true; supervisor_mode_is_codex_side_candidate=true.
 "@.Trim()
         Push-Location -LiteralPath $spec.Workspace
         try {
@@ -746,30 +982,20 @@ Without using tools, report instructions already present in your current context
         $probeText = ($probeRaw -join [Environment]::NewLine).Trim()
         try { $probe = $probeText | ConvertFrom-Json } catch { throw "PI_SURFACE_TEST_LIVE_MODEL_JSON_INVALID: profile=$profileName text=$probeText" }
         if (
-            [string]$probe.global_sentinel -ne 'HUMAN_INTENT_CONTINUITY_ROLE_SEPARATION_V1' -or
-            [string]$probe.family_sentinel -ne 'PI_LOCAL_COGNITION_CONTRACT_ISLAND_V1' -or
+            [string]$probe.global_sentinel -ne 'HUMAN_WORDS_BEFORE_ARTIFACTS_V2' -or
+            [string]$probe.family_sentinel -ne 'PI_LOCAL_COMPATIBILITY_BOUNDARY_V3' -or
             [string]$probe.surface_sentinel -ne $spec.SurfaceSentinel -or
             [string]$probe.current_surface -ne $profileName -or
-            [string]$probe.surface_role -ne $spec.Role -or
-            [string]$probe.runtime_version -ne '0.84.1' -or
-            $probe.research_and_self_evolution_are_tasks -ne $true -or
-            $probe.one_session_can_cross_repositories -ne $true -or
-            $probe.profile_auth_session_and_island_are_independent -ne $true -or
-            $probe.codex_behavior_and_skills_are_shared_baseline -ne $true -or
-            $probe.pi_specific_contract_stays_outside_codex_and_s -ne $true -or
-            $probe.main_prime_is_default_subject -ne $true -or
-            $probe.unqualified_pi_means_main_prime -ne $true -or
-            $probe.prime_s_is_internal_compat_profile -ne $true -or
-            $probe.account_binding_is_quota_source_not_identity -ne $true -or
-            $probe.pi_b_is_isolated_cold_snapshot -ne $true -or
-            $probe.cold_snapshot_preserves_auth_session_child_cognition_isolation -ne $true -or
-            $probe.cold_snapshot_not_live_sync_peer -ne $true -or
-            $probe.owner_eligibility_depends_on_consumed_intent_and_responsibility_not_shell -ne $true -or
-            $probe.sibling_repository_local_context_must_be_read_before_effects -ne $true -or
-            $probe.open_external_query_is_seed_not_automatic_boundary -ne $true -or
-            $probe.external_findings_must_collide_with_live_local_baseline -ne $true -or
-            $probe.exact_or_explicitly_narrow_lookup_stays_bounded -ne $true -or
-            $probe.natural_chinese_commentary_without_status_templates -ne $true
+            [string]$probe.runtime_version -ne $script:PiDualEntryVersion -or
+            $probe.local_contract_does_not_define_pi -ne $true -or
+            $probe.official_live_capability_precedes_overlay -ne $true -or
+            $probe.main_prime_default_handle -ne $true -or
+            $probe.prime_s_internal_profile -ne $true -or
+            $probe.account_binding_not_identity -ne $true -or
+            $probe.pi_b_isolated -ne $true -or
+            $probe.owner_scope_not_product -ne $true -or
+            $probe.repository_context_is_local -ne $true -or
+            $probe.supervisor_mode_is_codex_side_candidate -ne $true
         ) { throw "PI_SURFACE_TEST_LIVE_MODEL_BEHAVIOR_MISMATCH: profile=$profileName text=$probeText" }
         $liveProbe = $probe
     }
@@ -787,12 +1013,13 @@ Without using tools, report instructions already present in your current context
         session_dir = $spec.SessionDir
         starting_workspace = $spec.Workspace
         surface_island = $spec.SurfaceIsland
+        agents_source = $spec.AgentsSource
         agents_sha256 = (Get-FileHash -Algorithm SHA256 -LiteralPath $agentsPath).Hash.ToLowerInvariant()
         contract_projection_sha256 = $projection.Sha256
         family_contract_sha256 = $projection.FamilySha256
         surface_contract_sha256 = $projection.SurfaceSha256
         skill_count = @($names | Where-Object { $_ -like 'skill:*' }).Count
-        required_skills_loaded = $true
+        codex_skills_injected = $false
         packages = $actualPackages
         hermes_memory_capacity = $hermesMemoryCapacity
         subagent_capacity = $subagentCapacity
@@ -811,9 +1038,10 @@ Without using tools, report instructions already present in your current context
         subagents_owner_session_stop = $ownerSessionStopAcceptance
         subagents_owner_session_stop_process = $ownerSessionStopProcessAcceptance
         subagents_filesystem_policy_compatibility = $filesystemPolicyCompatibility
-        subagents_filesystem_policy = $filesystemPolicyAcceptance
+        subagents_filesystem_policy = $filesystemPolicyReceiptIdentity
         high_capacity_compatibility = $highCapacityCompatibility
-        high_capacity_acceptance = $highCapacityAcceptance
+        high_capacity_active_projection = $highCapacityActiveProjectionReceiptIdentity
+        high_capacity_replay = $highCapacityReplayReceiptIdentity
         high_capacity_absence = $highCapacityAbsence
         supervisor_ingress = $supervisorIngressAcceptance
         post_0841_upstream_compatibility = $post0841UpstreamAcceptance
@@ -957,8 +1185,8 @@ $acceptance = [ordered]@{
     node_minimum_satisfied = $node.MinimumSatisfied
     surfaces = $surfaceResults
     family_contract = $script:PiDualEntryFamilyContract
-    shared_behavior_source = Join-Path $script:PiDualEntryBehaviorCodexHome 'AGENTS.md'
-    shared_skills_source = Join-Path $script:PiDualEntryBehaviorCodexHome 'skills'
+    profile_instruction_sources = @($surfaceResults | ForEach-Object { $_.agents_source })
+    codex_skill_tree_injected = $false
     native_background_child_windows_hidden = $allNativeWindowsHide
     prime_b_memory_capacity_explicit_limits_absent = $true
     task_topology = 'prime is the one default active subject; prime-s is only its internal compatibility profile and account binding is a quota source.'

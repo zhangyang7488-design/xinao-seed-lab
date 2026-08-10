@@ -1,4 +1,8 @@
-# PiS runtime and native control
+# Pi native process control edge
+
+This is a Codex/S-side operating note, not a Skill installed in Pi and not a definition of Pi.
+The existing `supervisor` names are retained only as wire-compatibility identifiers for the local
+pipe and extension. They do not assign a supervisor role to Codex, Pi, or any child.
 
 ## Active seam
 
@@ -42,7 +46,7 @@ Never collapse the ladder. `get_events` is a bounded in-process ring and resets 
 - Pi 0.84.1's interactive abort restores queued steering/follow-up text into the visible editor. The ingress records only its own in-memory unconsumed deliveries, snapshots the pre-abort editor, and after native abort removes the restored prefix only when the entire expected composition matches exactly. A mismatch is preserved and emitted as `owned_editor_reconcile_skipped`; an exact cleanup emits `owned_editor_residue_removed`. Existing user text is never cleared by a partial or fuzzy match.
 - `stop` first cancels ingress-owned unconsumed delayed/queued delivery, aborts an active run when necessary, and then invokes the official process shutdown after acknowledging the exact request. Its response is only `shutdown_requested=true` / `process_shutdown=false`; only disappearance of the addressed pipe and owned process proves exit. Use it for an explicit human Stop or a planned body restart, then confirm no owned child process continues.
 
-Request IDs are idempotency keys. Repeating the same ID with the same command and content hash returns the already reached phase without dispatching again; reuse with different content or command fails with `PI_SUPERVISOR_REQUEST_ID_CONFLICT`. For ordinary supervision, the client call should include `--until message_consumed`; `dispatch_failed`, missing runtime acceptance, or missing idle-prompt consumption ends that wait as a typed failure. Timeout still means unverified, not permission to paste into the editor or blindly resend under a new ID.
+Request IDs are idempotency keys. Repeating the same ID with the same command and content hash returns the already reached phase without dispatching again; reuse with different content or command fails with `PI_SUPERVISOR_REQUEST_ID_CONFLICT`. For ordinary addressed operation, the client call should include `--until message_consumed`; `dispatch_failed`, missing runtime acceptance, or missing idle-prompt consumption ends that wait as a typed failure. Timeout still means unverified, not permission to paste into the editor or blindly resend under a new ID.
 
 ## Required negative checks
 
@@ -57,7 +61,7 @@ Before calling this edge verified, prove:
 - duplicate delivery with one request ID is consumed at most once, and conflicting reuse is rejected;
 - a pre-existing editor draft survives busy steer/follow-up and abort byte-for-byte while exact supervisor-owned abort residue is removed;
 - an editor mismatch is left untouched rather than heuristically cleaned;
-- unqualified Pi targets the main `prime` (`prime-s` internally); the isolated PiB cold snapshot may expose its own exact pipe and copied Skill only when explicitly launched for recovery, never as a default second target;
+- unqualified Pi targets the main `prime` (`prime-s` internally); the isolated PiB cold snapshot may expose its own exact pipe only when explicitly launched for recovery, never as a default second target;
 - Stop shuts down the addressed PiS process and leaves its durable session resumable;
 - a fresh desktop launch restores the edge without manual file copying.
 

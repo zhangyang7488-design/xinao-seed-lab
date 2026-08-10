@@ -2,15 +2,15 @@ import { randomUUID } from "node:crypto";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 
-const RETURN_SCHEMA = "xinao.pi_return_to_parent.v3";
-const CONTINUATION_SCHEMA = "xinao.pi_return_to_parent_continuation.v2";
+const RETURN_SCHEMA = "xinao.pi_return_to_parent.v5";
+const CONTINUATION_SCHEMA = "xinao.pi_return_to_parent_continuation.v4";
 
 interface ContinuationArm {
 	armId: string;
 	sequence: number;
 	localBoundary: string;
-	survivingParent: string;
-	nextContact: string;
+	activityContextRef: string;
+	returnedFact: string;
 	runSignal: AbortSignal | undefined;
 }
 
@@ -26,9 +26,13 @@ function cleaned(value: string): string {
 	return value.replace(/\s+/g, " ").trim();
 }
 
+function trimmed(value: string): string {
+	return value.trim();
+}
+
 export default function returnToParent(pi: ExtensionAPI): void {
-	// This is a root-subject seam. Bounded Pi children already return through the
-	// subagent tool result and must never inherit a second lifecycle authority.
+	// This is a root-only transport seam. Bounded Pi children already return
+	// through the subagent tool result.
 	if (process.env.PI_SUBAGENT_CHILD === "1") return;
 	// The extension must not expose an unsafe half-install. Start sets this only
 	// after the native abort-fence compatibility has applied or verified cleanly.
@@ -106,7 +110,7 @@ export default function returnToParent(pi: ExtensionAPI): void {
 			else endingGrant.candidateRunSignal = undefined;
 		}
 		// Consume before checking any exit condition. A failed/aborted/shutdown run
-		// must not leave a latent continuation for a later unrelated prompt.
+		// must not leave a latent delivery for a later unrelated prompt.
 		const arm = armed;
 		armed = undefined;
 		if (!arm || shuttingDown) return;
@@ -117,7 +121,7 @@ export default function returnToParent(pi: ExtensionAPI): void {
 			.reverse()
 			.find((message) => message.role === "assistant");
 		// Only an explicit, ordinary terminal stop is clean. Length/max-token,
-		// deferred, toolUse, pending, error, and aborted exits cannot auto-continue.
+		// deferred, toolUse, pending, error, and aborted exits cannot auto-deliver.
 		if (!signal || signal !== arm.runSignal || signal.aborted || !lastAssistant || lastAssistant.stopReason !== "stop") return;
 		continuationContextGrant = { armId: arm.armId, sequence: arm.sequence, sourceSignal: signal };
 
@@ -126,27 +130,23 @@ export default function returnToParent(pi: ExtensionAPI): void {
 				customType: "xinao-return-to-parent-continuation",
 				display: true,
 				content: [
-					"ROOT_PARENT_CONTINUATION_ONE_SHOT",
-					"A root-local boundary explicitly armed this one additional cognition turn.",
-					`Settled local scope: ${arm.localBoundary}`,
-					`Surviving parent: ${arm.survivingParent}`,
-					"The contact below was the first concrete frontier named when the arm was set. It may already have been consumed by the run that just ended:",
-					`Armed first contact: ${arm.nextContact}`,
-					"Put every new effect and finding from that just-ended run back into the surviving parent and recompute the whole currently legal parent now. Do not mechanically repeat the armed contact. Directly take a further concrete positive-value contact only if one still exists. If the whole current legal space now truly has no positive-value action, or Stop/Pause/authority/effect boundaries apply, settle honestly without another continuation.",
-					"This one-shot arm is now spent. Crossing another local boundary requires another explicit return_to_parent call by the root Pi.",
+					"ROOT_ACTIVITY_RETURN_ONE_SHOT",
+					`Local boundary: ${arm.localBoundary}`,
+					`Activity context ref: ${arm.activityContextRef}`,
+					`Returned fact: ${arm.returnedFact}`,
+					"This one-shot transport is spent.",
 				].join("\n"),
 					details: {
 						schema: CONTINUATION_SCHEMA,
 						arm_id: arm.armId,
 						arm_sequence: arm.sequence,
-					local_boundary: arm.localBoundary,
-					surviving_parent: arm.survivingParent,
-					armed_first_contact: arm.nextContact,
-					one_shot: true,
-					next_contact_may_already_be_consumed: true,
-					abort_fenced: true,
-					provider_context_visibility: "single_current_arm",
-				},
+						local_boundary: arm.localBoundary,
+						activity_context_ref: arm.activityContextRef,
+						returned_fact: arm.returnedFact,
+						one_shot: true,
+						abort_fenced: true,
+						provider_context_visibility: "single_current_arm",
+					},
 			},
 			{ deliverAs: "followUp", triggerTurn: true },
 		);
@@ -156,29 +156,29 @@ export default function returnToParent(pi: ExtensionAPI): void {
 		name: "return_to_parent",
 		label: "Return to Parent",
 		description:
-			"Root Pi only: close the named local scope and continue this same root run from an already-bound surviving parent. Bounded children return normally to their root caller and never use this tool. Call it only when the local question, experiment, action, repository slice, or report is settled but the current legal parent still has a concrete positive-value frontier. It does not create a parent, prove value, queue a user message, or authorize work beyond the current scope.",
+			"Root Pi only: transport one bounded local fact across one clean terminal turn boundary. Bounded children return through their caller and never use this tool.",
 		promptSnippet:
-			"return_to_parent: cross a local boundary without turning it into parent completion or waiting for another user/Codex prompt",
+			"return_to_parent: one-shot transport for a bounded local fact",
 		promptGuidelines: [
-			"Only the root Pi may use this tool. Bounded children finish normally and return through their subagent result. When a local result is complete but an already-bound parent still has a concrete positive-value frontier, call return_to_parent before a terminal answer and continue from its tool result. The call also arms exactly one native follow-up after this root run ends cleanly, so the whole parent is recomputed with every effect produced after the call.",
-			"The armed next_contact is first-contact evidence, not a task to repeat blindly: the current run may already consume it. A later local boundary needs another explicit root call. Do not call after Stop/Pause, at a real user-only or major external boundary, after parent completion, or when the whole current legal space truly has no positive-value action. This is not a timer, daemon, task generator, or reason to busy-loop.",
+			"Only the root Pi may use this tool. Supply the bounded local boundary, an opaque activity context reference, and the exact returned fact.",
+			"One clean stopReason=stop may deliver one native follow-up. Abort, error, length, shutdown, unrelated prompt, and resumed history stay fenced.",
 		],
 		parameters: Type.Object(
 			{
 				local_boundary: Type.String({
 					minLength: 1,
 					maxLength: 1600,
-					description: "The bounded local scope that has just settled; never name the whole parent here unless it is genuinely complete.",
+					description: "A caller-named bounded local scope identifier or description.",
 				}),
-				surviving_parent: Type.String({
+				activity_context_ref: Type.String({
 					minLength: 1,
 					maxLength: 2400,
-					description: "The already-existing parent result or reality that remains live under current words and facts.",
+					description: "An opaque reference to the activity context in which the fact was produced.",
 				}),
-				next_contact: Type.String({
+				returned_fact: Type.String({
 					minLength: 1,
 					maxLength: 1600,
-					description: "The concrete unresolved reality, evidence, consumer, or action frontier to contact next without inventing a new task.",
+					description: "The exact bounded fact to transport as text or serialized JSON.",
 				}),
 			},
 			{ additionalProperties: false },
@@ -192,17 +192,17 @@ export default function returnToParent(pi: ExtensionAPI): void {
 			}
 
 			const localBoundary = cleaned(params.local_boundary);
-			const survivingParent = cleaned(params.surviving_parent);
-			const nextContact = cleaned(params.next_contact);
-			if (!localBoundary || !survivingParent || !nextContact) {
+			const activityContextRef = cleaned(params.activity_context_ref);
+			const returnedFact = trimmed(params.returned_fact);
+			if (!localBoundary || !activityContextRef || !returnedFact) {
 				throw new Error("RETURN_TO_PARENT_FIELDS_REQUIRED_AFTER_NORMALIZATION");
 			}
 			armed = {
 				armId: randomUUID(),
 				sequence: ++armSequence,
 				localBoundary,
-				survivingParent,
-				nextContact,
+				activityContextRef,
+				returnedFact,
 				runSignal: signal,
 			};
 			return {
@@ -210,23 +210,23 @@ export default function returnToParent(pi: ExtensionAPI): void {
 					{
 						type: "text",
 						text: [
-							"LOCAL_BOUNDARY_ONLY",
-							`Settled local scope: ${localBoundary}`,
-							`Surviving parent: ${survivingParent}`,
-							`Return now to: ${nextContact}`,
-							"Continue this same root run from the whole relevant parent. Recompute after the local result instead of reporting it as parent completion. Current Stop/Pause, authority, effect, and true whole-space no-action boundaries remain unchanged.",
+							"LOCAL_FACT_RETURN_ARMED",
+							`Local boundary: ${localBoundary}`,
+							`Activity context ref: ${activityContextRef}`,
+							`Returned fact: ${returnedFact}`,
 						].join("\n"),
 					},
 				],
 				details: {
 					schema: RETURN_SCHEMA,
 					local_boundary: localBoundary,
-					surviving_parent: survivingParent,
-					next_contact: nextContact,
-					queued_message: false,
-					automatic_wake: true,
-					continuation_mode: "one_shot_agent_end_follow_up_abort_fenced",
-					continuation_armed: true,
+					activity_context_ref: activityContextRef,
+					returned_fact: returnedFact,
+					arm_id: armed.armId,
+					arm_sequence: armed.sequence,
+					one_shot_follow_up_armed: true,
+					abort_fenced: true,
+					clean_terminal_stop_required: true,
 				},
 			};
 		},

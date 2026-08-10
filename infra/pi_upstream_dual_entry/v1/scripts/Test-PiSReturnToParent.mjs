@@ -79,9 +79,30 @@ async function fireRoot(event, data, ctx) {
 assert.equal(registered?.name, "return_to_parent");
 assert.equal(registered.executionMode, "sequential");
 assert.match(registered.description, /Root Pi only/);
-assert.match(registered.promptSnippet, /local boundary/);
+assert.match(registered.promptSnippet, /bounded local fact/);
 assert.equal(registered.promptGuidelines.length, 2);
-assert.match(registered.promptGuidelines[1], /not a timer, daemon, task generator/);
+assert.match(registered.promptGuidelines[1], /stopReason=stop/);
+assert.deepEqual(
+	Object.keys(registered.parameters.properties),
+	["local_boundary", "activity_context_ref", "returned_fact"],
+);
+assert.deepEqual(
+	registered.parameters.required,
+	["local_boundary", "activity_context_ref", "returned_fact"],
+);
+assert.equal(registered.parameters.additionalProperties, false);
+const hotToolText = JSON.stringify({
+	description: registered.description,
+	promptSnippet: registered.promptSnippet,
+	promptGuidelines: registered.promptGuidelines,
+	parameters: registered.parameters,
+});
+for (const forbidden of [
+	["surviving", "parent"].join("_"),
+	["next", "contact"].join("_"),
+	["front", "ier"].join(""),
+	["AB", "STAIN"].join(""),
+]) assert.equal(hotToolText.toLowerCase().includes(forbidden.toLowerCase()), false);
 
 let childRegistered;
 process.env.PI_SUBAGENT_CHILD = "1";
@@ -94,8 +115,8 @@ else process.env.PI_SUBAGENT_CHILD = originalChildMarker;
 
 const args = {
 	local_boundary: "  local evidence slice   settled ",
-	surviving_parent: " parent reality remains   open ",
-	next_contact: " contact the second unresolved consumer ",
+	activity_context_ref: " activity://xinao/research/root-run ",
+	returned_fact: " second consumer returned  a source-bound receipt ",
 };
 
 function providerContextText(context) {
@@ -109,28 +130,34 @@ function providerContextText(context) {
 }
 
 function taggedContinuationCount(context) {
-	return providerContextText(context).split("ROOT_PARENT_CONTINUATION_ONE_SHOT").length - 1;
+	return providerContextText(context).split("ROOT_ACTIVITY_RETURN_ONE_SHOT").length - 1;
 }
 const directController = new AbortController();
 const direct = await registered.execute("direct", args, directController.signal, undefined, {});
-assert.equal(direct.details.schema, "xinao.pi_return_to_parent.v3");
+assert.equal(direct.details.schema, "xinao.pi_return_to_parent.v5");
 assert.equal(direct.details.local_boundary, "local evidence slice settled");
-assert.equal(direct.details.queued_message, false);
-assert.equal(direct.details.automatic_wake, true);
-assert.equal(direct.details.continuation_mode, "one_shot_agent_end_follow_up_abort_fenced");
-assert.match(direct.content[0].text, /Continue this same root run/);
+assert.equal(direct.details.activity_context_ref, "activity://xinao/research/root-run");
+assert.equal(direct.details.returned_fact, "second consumer returned  a source-bound receipt");
+assert.equal(direct.details.one_shot_follow_up_armed, true);
+assert.equal(direct.details.abort_fenced, true);
+assert.equal(direct.details.clean_terminal_stop_required, true);
+assert.match(direct.details.arm_id, /^[0-9a-f-]{36}$/i);
+assert.equal(direct.details.arm_sequence, 1);
+assert.match(direct.content[0].text, /LOCAL_FACT_RETURN_ARMED/);
 assert.equal(sendUserMessageCalls, 0);
 
 await fireRoot(
 	"agent_end",
-	{ messages: [fauxAssistantMessage("FIRST_RUN_ALREADY_CONSUMED_NEXT_CONTACT", { stopReason: "stop" })] },
+	{ messages: [fauxAssistantMessage("FIRST_RUN_RECORDED_RETURNED_FACT", { stopReason: "stop" })] },
 	{ signal: directController.signal },
 );
 assert.equal(sentCustomMessages.length, 1);
 assert.deepEqual(sentCustomMessages[0].options, { deliverAs: "followUp", triggerTurn: true });
-assert.match(sentCustomMessages[0].message.content, /may already have been consumed/i);
-assert.match(sentCustomMessages[0].message.content, /Do not mechanically repeat/i);
-assert.equal(sentCustomMessages[0].message.details.schema, "xinao.pi_return_to_parent_continuation.v2");
+assert.match(sentCustomMessages[0].message.content, /Activity context ref:/i);
+assert.match(sentCustomMessages[0].message.content, /Returned fact:/i);
+assert.equal(sentCustomMessages[0].message.details.schema, "xinao.pi_return_to_parent_continuation.v4");
+assert.equal(sentCustomMessages[0].message.details.activity_context_ref, "activity://xinao/research/root-run");
+assert.equal(sentCustomMessages[0].message.details.returned_fact, "second consumer returned  a source-bound receipt");
 assert.equal(sentCustomMessages[0].message.details.abort_fenced, true);
 assert.equal(sentCustomMessages[0].message.details.provider_context_visibility, "single_current_arm");
 assert.match(sentCustomMessages[0].message.details.arm_id, /^[0-9a-f-]{36}$/i);
@@ -226,27 +253,27 @@ async function runScripted(responses, options = {}) {
 	return { faux, events, messages };
 }
 
-const positive = await runScripted([
+const armedRun = await runScripted([
 	fauxAssistantMessage(fauxToolCall("return_to_parent", args, { id: "return-parent-1" }), { stopReason: "toolUse" }),
-	fauxAssistantMessage("PARENT_FRONTIER_CONTINUED", { stopReason: "stop" }),
+	fauxAssistantMessage("ARMED_RUN_REACHED_CLEAN_TERMINAL", { stopReason: "stop" }),
 ]);
-assert.equal(positive.faux.state.callCount, 2);
-assert.equal(positive.events.filter((event) => event.type === "tool_execution_start").length, 1);
-assert.equal(positive.events.filter((event) => event.type === "turn_start").length, 2);
-assert.equal(positive.events.filter((event) => event.type === "agent_end").length, 1);
-assert.ok(positive.messages.some((message) => message.role === "toolResult"));
-assert.ok(positive.messages.some((message) =>
+assert.equal(armedRun.faux.state.callCount, 2);
+assert.equal(armedRun.events.filter((event) => event.type === "tool_execution_start").length, 1);
+assert.equal(armedRun.events.filter((event) => event.type === "turn_start").length, 2);
+assert.equal(armedRun.events.filter((event) => event.type === "agent_end").length, 1);
+assert.ok(armedRun.messages.some((message) => message.role === "toolResult"));
+assert.ok(armedRun.messages.some((message) =>
 	message.role === "assistant"
-	&& message.content.some((part) => part.type === "text" && part.text === "PARENT_FRONTIER_CONTINUED")
+	&& message.content.some((part) => part.type === "text" && part.text === "ARMED_RUN_REACHED_CLEAN_TERMINAL")
 ));
 
-const negative = await runScripted([
-	fauxAssistantMessage("WHOLE_PARENT_HAS_NO_POSITIVE_FRONTIER", { stopReason: "stop" }),
+const unarmedRun = await runScripted([
+	fauxAssistantMessage("UNARMED_RUN_REACHED_CLEAN_TERMINAL", { stopReason: "stop" }),
 ]);
-assert.equal(negative.faux.state.callCount, 1);
-assert.equal(negative.events.filter((event) => event.type === "tool_execution_start").length, 0);
-assert.equal(negative.events.filter((event) => event.type === "turn_start").length, 1);
-assert.equal(negative.events.filter((event) => event.type === "agent_end").length, 1);
+assert.equal(unarmedRun.faux.state.callCount, 1);
+assert.equal(unarmedRun.events.filter((event) => event.type === "tool_execution_start").length, 0);
+assert.equal(unarmedRun.events.filter((event) => event.type === "turn_start").length, 1);
+assert.equal(unarmedRun.events.filter((event) => event.type === "agent_end").length, 1);
 
 const boundaryAbortController = new AbortController();
 const boundaryAbort = await runScripted([
@@ -333,7 +360,7 @@ async function runNativeSession(responses, options = {}) {
 const nativeAcceptanceSessionDir = process.env.XINAO_RETURN_TO_PARENT_ACCEPTANCE_SESSION_DIR;
 const nativeContinuation = await runNativeSession([
 	fauxAssistantMessage(fauxToolCall("return_to_parent", args, { id: "return-parent-native-1" }), { stopReason: "toolUse" }),
-	fauxAssistantMessage("FIRST_RUN_ALREADY_CONTACTED_ARMED_FRONTIER", { stopReason: "stop" }),
+	fauxAssistantMessage("FIRST_RUN_RECORDED_LOCAL_FACT", { stopReason: "stop" }),
 	(context) => {
 		const continuationText = context.messages
 			.filter((message) => message.role === "user")
@@ -341,9 +368,9 @@ const nativeContinuation = await runNativeSession([
 			.filter((part) => part.type === "text")
 			.map((part) => part.text)
 			.join("\n");
-		assert.match(continuationText, /may already have been consumed/i);
-		assert.match(continuationText, /do not mechanically repeat/i);
-		return fauxAssistantMessage("SECOND_PROVIDER_RECOMPUTED_SURVIVING_PARENT", { stopReason: "stop" });
+		assert.match(continuationText, /activity:\/\/xinao\/research\/root-run/i);
+		assert.match(continuationText, /source-bound receipt/i);
+		return fauxAssistantMessage("SECOND_PROVIDER_RECEIVED_LOCAL_FACT", { stopReason: "stop" });
 	},
 ], nativeAcceptanceSessionDir
 	? { sessionManager: SessionManager.create(sourceRoot, nativeAcceptanceSessionDir) }
@@ -355,7 +382,7 @@ assert.equal(nativeContinuation.hasQueuedMessages, false);
 assert.deepEqual(nativeContinuation.providerContexts.map(taggedContinuationCount), [0, 0, 1]);
 assert.ok(nativeContinuation.messages.some((message) =>
 	message.role === "assistant"
-	&& message.content.some((part) => part.type === "text" && part.text === "SECOND_PROVIDER_RECOMPUTED_SURVIVING_PARENT")
+	&& message.content.some((part) => part.type === "text" && part.text === "SECOND_PROVIDER_RECEIVED_LOCAL_FACT")
 ));
 
 const multiProviderSignals = [];
@@ -366,8 +393,8 @@ const captureMultiProviderSignals = (pi) => {
 };
 const rearmArgs = {
 	local_boundary: "continuation run tool boundary",
-	surviving_parent: "same parent survives the continuation run",
-	next_contact: "contact after the continuation run tool result",
+	activity_context_ref: "activity://xinao/research/continuation-run",
+	returned_fact: "continuation run tool returned a second bounded fact",
 };
 const multiProviderContinuation = await runNativeSession([
 	fauxAssistantMessage(fauxToolCall("return_to_parent", args, { id: "return-parent-multi-provider-source" }), { stopReason: "toolUse" }),
@@ -416,7 +443,7 @@ assert.deepEqual(stoppedDuringContinuation.providerContexts.map(taggedContinuati
 assert.equal(stoppedDuringContinuation.hasQueuedMessages, false);
 
 const noArmNative = await runNativeSession([
-	fauxAssistantMessage("WHOLE_PARENT_REALLY_SETTLED_WITHOUT_ARM", { stopReason: "stop" }),
+	fauxAssistantMessage("CLEAN_TERMINAL_WITHOUT_ARM", { stopReason: "stop" }),
 ]);
 assert.equal(noArmNative.faux.state.callCount, 1);
 assert.equal(noArmNative.messages.filter((message) => message.role === "custom").length, 0);
@@ -502,8 +529,8 @@ assert.equal(resumedSession.messages.filter((message) =>
 ).length, 1, "historical receipt may remain in the transcript but must be filtered from resumed provider context");
 const resumedRearmArgs = {
 	local_boundary: "resumed process local boundary",
-	surviving_parent: "resumed process surviving parent",
-	next_contact: "resumed newest concrete contact",
+	activity_context_ref: "activity://xinao/research/resumed-process",
+	returned_fact: "resumed process returned a fresh bounded fact",
 };
 const resumedRearmedSession = await runNativeSession([
 	fauxAssistantMessage(fauxToolCall("return_to_parent", resumedRearmArgs, { id: "return-parent-after-resume-sequence-collision" }), { stopReason: "toolUse" }),
@@ -512,13 +539,13 @@ const resumedRearmedSession = await runNativeSession([
 ], { sessionManager: resumeSessionManager });
 assert.deepEqual(resumedRearmedSession.providerContexts.map(taggedContinuationCount), [0, 0, 1]);
 const resumedRearmedContextText = providerContextText(resumedRearmedSession.providerContexts[2]);
-assert.match(resumedRearmedContextText, /resumed newest concrete contact/);
-assert.doesNotMatch(resumedRearmedContextText, /Armed first contact: contact the second unresolved consumer/);
+assert.match(resumedRearmedContextText, /resumed process returned a fresh bounded fact/);
+assert.equal(taggedContinuationCount(resumedRearmedSession.providerContexts[2]), 1);
 
 const secondArgs = {
 	local_boundary: "later local boundary",
-	surviving_parent: "same surviving parent with newer effects",
-	next_contact: "newest concrete contact",
+	activity_context_ref: "activity://xinao/research/later-boundary",
+	returned_fact: "newest bounded effect receipt",
 };
 const repeatedArmNative = await runNativeSession([
 	fauxAssistantMessage([
@@ -531,7 +558,8 @@ const repeatedArmNative = await runNativeSession([
 const repeatedCustom = repeatedArmNative.messages.filter((message) => message.role === "custom");
 assert.equal(repeatedArmNative.faux.state.callCount, 3);
 assert.equal(repeatedCustom.length, 1, "multiple calls in one root run must still arm only one follow-up");
-assert.equal(repeatedCustom[0].details.armed_first_contact, secondArgs.next_contact);
+assert.equal(repeatedCustom[0].details.activity_context_ref, secondArgs.activity_context_ref);
+assert.equal(repeatedCustom[0].details.returned_fact, secondArgs.returned_fact);
 assert.equal(repeatedArmNative.hasQueuedMessages, false);
 
 const queueOrdinaryFollowUp = (pi) => {
@@ -728,8 +756,8 @@ const parserBaseRecords = [
 				name: "return_to_parent",
 				arguments: {
 					local_boundary: "  parser   local boundary ",
-					surviving_parent: " parser parent   survives ",
-					next_contact: " parser   next contact ",
+					activity_context_ref: " activity://parser/root-run ",
+					returned_fact: "  parser returned fact  ",
 				},
 			}],
 		},
@@ -743,12 +771,12 @@ const parserBaseRecords = [
 			role: "toolResult",
 			toolCallId: "parser-return-call",
 			toolName: "return_to_parent",
-			content: [{ type: "text", text: "LOCAL_BOUNDARY_ONLY" }],
+			content: [{ type: "text", text: "LOCAL_FACT_RETURN_ARMED" }],
 			details: {
-				schema: "xinao.pi_return_to_parent.v3",
+				schema: "xinao.pi_return_to_parent.v5",
 				local_boundary: "parser local boundary",
-				surviving_parent: "parser parent survives",
-				next_contact: "parser next contact",
+				activity_context_ref: "activity://parser/root-run",
+				returned_fact: "parser returned fact",
 			},
 		},
 	},
@@ -771,16 +799,15 @@ const parserBaseRecords = [
 		parentId: "parser-first-final",
 		timestamp: "2026-08-09T12:00:00.004Z",
 		customType: "xinao-return-to-parent-continuation",
-		content: "ROOT_PARENT_CONTINUATION_ONE_SHOT\nIt may already have been consumed. Do not mechanically repeat.",
+		content: "ROOT_ACTIVITY_RETURN_ONE_SHOT\nActivity context ref: activity://parser/root-run\nReturned fact: parser returned fact",
 		details: {
-			schema: "xinao.pi_return_to_parent_continuation.v2",
+			schema: "xinao.pi_return_to_parent_continuation.v4",
 			arm_id: "11111111-1111-4111-8111-111111111111",
 			arm_sequence: 1,
 			local_boundary: "parser local boundary",
-			surviving_parent: "parser parent survives",
-			armed_first_contact: "parser next contact",
+			activity_context_ref: "activity://parser/root-run",
+			returned_fact: "parser returned fact",
 			one_shot: true,
-			next_contact_may_already_be_consumed: true,
 			abort_fenced: true,
 			provider_context_visibility: "single_current_arm",
 		},
@@ -819,14 +846,16 @@ try {
 	assert.equal(parserPositiveAcceptance.normalized_argument_binding, true);
 	assert.equal(parserPositiveAcceptance.matching_tool_result_unique, true);
 	assert.equal(parserPositiveAcceptance.matching_arm_first_and_unique, true);
+	assert.equal(parserPositiveAcceptance.activity_context_ref_bound, true);
+	assert.equal(parserPositiveAcceptance.returned_fact_bound, true);
 
 	const resultMismatchRecords = structuredClone(parserBaseRecords);
-	resultMismatchRecords.find((record) => record.id === "parser-tool-result").message.details.next_contact = "wrong contact";
+	resultMismatchRecords.find((record) => record.id === "parser-tool-result").message.details.returned_fact = "wrong fact";
 	const parserResultMismatch = runLiveParserFixture(resultMismatchRecords);
 	assert.notEqual(parserResultMismatch.status, 0, "toolResult details not equal to normalized call args must be rejected");
 
 	const armMismatchRecords = structuredClone(parserBaseRecords);
-	armMismatchRecords.find((record) => record.id === "parser-arm").details.armed_first_contact = "wrong contact";
+	armMismatchRecords.find((record) => record.id === "parser-arm").details.activity_context_ref = "activity://wrong";
 	const parserArmMismatch = runLiveParserFixture(armMismatchRecords);
 	assert.notEqual(parserArmMismatch.status, 0, "arm details not equal to normalized call args must be rejected");
 
@@ -851,7 +880,7 @@ try {
 	const wrongFirstArm = structuredClone(nonFirstArmRecords.find((record) => record.id === "parser-arm"));
 	wrongFirstArm.id = "parser-wrong-first-arm";
 	wrongFirstArm.details.arm_id = "22222222-2222-4222-8222-222222222222";
-	wrongFirstArm.details.armed_first_contact = "another contact";
+	wrongFirstArm.details.returned_fact = "another fact";
 	const matchingArmIndex = nonFirstArmRecords.findIndex((record) => record.id === "parser-arm");
 	nonFirstArmRecords.splice(matchingArmIndex, 0, wrongFirstArm);
 	const parserNonFirstArm = runLiveParserFixture(nonFirstArmRecords);
@@ -865,21 +894,22 @@ if (originalFenceMarker === undefined) delete process.env.XINAO_PI_NATIVE_CONTIN
 else process.env.XINAO_PI_NATIVE_CONTINUATION_ABORT_FENCE = originalFenceMarker;
 
 process.stdout.write(`${JSON.stringify({
-	schema: "xinao.pi_return_to_parent.acceptance.v3",
+	schema: "xinao.pi_return_to_parent.acceptance.v5",
 	status: "mechanically_verified",
-	behavior_selection_status: "pending_live_sol",
+	live_transport_status: "pending_live_consumer",
 	root_only_registration: true,
 	abort_fence_runtime_handshake_required: true,
 	missing_handshake_inert: true,
 	normalized_empty_rejected: true,
 	same_run_continuation_after_local_boundary: true,
-	scripted_no_action_path_does_not_auto_continue: true,
+	unarmed_run_does_not_follow_up: true,
 	pre_execute_abort_rejected: true,
 	turn_boundary_abort_prevents_next_provider: true,
 	queued_user_messages: 0,
-	automatic_wake: true,
+	one_shot_follow_up_armed: true,
 	native_one_shot_follow_up: true,
-	next_contact_may_already_be_consumed: true,
+	activity_context_ref_bound: true,
+	returned_fact_bound: true,
 	repeated_calls_single_follow_up: true,
 	abort_error_stop_shutdown_suppress_follow_up: true,
 	strict_clean_stop_reason_allowlist: true,
@@ -901,8 +931,8 @@ process.stdout.write(`${JSON.stringify({
 	live_parser_matching_arm_first_and_unique: true,
 	live_parser_ambiguity_rejected: true,
 	no_residual_continuation_queue: true,
-	provider_calls_positive: positive.faux.state.callCount,
-	provider_calls_negative: negative.faux.state.callCount,
+	provider_calls_armed: armedRun.faux.state.callCount,
+	provider_calls_unarmed: unarmedRun.faux.state.callCount,
 	provider_calls_native_continuation: nativeContinuation.faux.state.callCount,
 	provider_calls_multi_provider_continuation: multiProviderContinuation.faux.state.callCount,
 })}\n`);
